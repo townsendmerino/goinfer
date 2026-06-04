@@ -8,7 +8,7 @@ The forward-pass and quantization numerics are parity-gated against HuggingFace
 and are the stable contract. The loader and architecture-descriptor surface is
 pre-1.0 and may change as new model families and quant formats land.
 
-## [Unreleased]
+## [v0.1.1] — 2026-06-04
 
 ### Added
 - **`decoder`** — generic decoder-only forward pass with HuggingFace logit
