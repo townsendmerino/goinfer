@@ -1,0 +1,29 @@
+goinfer
+Copyright (c) 2026 Francis Townsend-Merino
+
+goinfer is a pure-Go LLM runtime. It does not embed or distribute any model
+weights itself — users supply their own open-weight checkpoints (safetensors,
+GGUF, GPTQ, or AWQ) at runtime, under whatever license those checkpoints carry.
+
+──────────────────────────────────────────────────────────────────────────────
+Third-party Go dependencies
+──────────────────────────────────────────────────────────────────────────────
+
+    golang.org/x/text
+    Copyright (c) The Go Authors.
+    Licensed under the BSD 3-Clause License.
+
+    github.com/townsendmerino/aikit   (embedding + tensor primitives)
+    Copyright (c) 2026 Francis Townsend-Merino
+    Licensed under the MIT License.
+
+The optional WebGPU backend (./gpu submodule, built only under `-tags gpu`)
+additionally links:
+
+    github.com/cogentcore/webgpu
+    Licensed under the BSD 3-Clause License.
+
+──────────────────────────────────────────────────────────────────────────────
+
+For a generated listing of Go-module dependencies and their licenses, see
+THIRD_PARTY_LICENSES.md (produced by `go-licenses report`).
