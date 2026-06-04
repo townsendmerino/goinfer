@@ -1,0 +1,87 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  # Root module: the pure-Go runtime (decoder / tokenizer / constrain / demo).
+  # Resolves the published aikit from the proxy — no workspace needed.
+  root:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "::error::gofmt needed on:"; echo "$unformatted"; exit 1
+          fi
+
+      - name: build
+        run: go build ./...
+
+      - name: vet
+        run: go vet ./...
+
+      # Core promise: the cgo WebGPU dependency must never enter the runtime's
+      # module graph. webgpu lives only in the opt-in ./gpu submodule.
+      - name: cleanliness guard (no webgpu in root)
+        run: |
+          if go list -deps ./... | grep -Eiq 'cogentcore/webgpu'; then
+            echo "::error::webgpu leaked into the goinfer root module graph"
+            go list -deps ./... | grep -Ei 'cogentcore/webgpu'
+            exit 1
+          fi
+          echo "clean: no webgpu in goinfer root"
+
+      # Model-asset parity tests skip themselves when their checkpoints /
+      # goldens are absent (see testdata/README), so this is green on a fresh
+      # checkout. Race detector on, matching aikit.
+      - name: test
+        run: go test -race ./...
+
+  # GPU submodule: the opt-in WebGPU backend, built under -tags gpu (cgo).
+  # It imports the as-yet-unpublished goinfer root, so we stitch an ephemeral
+  # workspace (the committed repo has none — go.work is gitignored). Once
+  # goinfer is tagged, bump gpu/go.mod's goinfer require to the real version
+  # and these workspace steps become unnecessary.
+  gpu:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: gpu/go.sum
+
+      # cogentcore/webgpu (wgpu-native) cgo build deps for Linux.
+      - name: install GPU build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1-mesa-dev xorg-dev
+
+      - name: workspace (resolve unpublished goinfer locally)
+        run: |
+          go work init . ./gpu
+          go work edit -replace github.com/townsendmerino/goinfer@v0.0.0=./
+
+      - name: build -tags gpu
+        run: go build -tags gpu ./gpu/...
+
+      - name: vet -tags gpu
+        run: go vet -tags gpu ./gpu/...
+
+      # GPU tests skip cleanly with no adapter (headless runner); this confirms
+      # they compile and the resident-matmul path is exercised where possible.
+      - name: test -tags gpu
+        run: go test -tags gpu ./gpu/...

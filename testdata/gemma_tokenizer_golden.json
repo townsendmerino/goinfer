@@ -1,0 +1,492 @@
+{
+  "model_id": "google/gemma-3-270m",
+  "note": "M2 tokenizer oracle. ids_bos is encode() with the post_processor (<bos> prepended); ids is add_special_tokens=False. The Go tokenizer must reproduce both id-for-id, and Decode(ids) must equal `decode`. Byte-fallback BPE, normalize space->U+2581.",
+  "special_tokens": {
+    "bos": 2,
+    "eos": 1,
+    "pad": 0,
+    "unk": 3,
+    "start_of_turn": 105,
+    "end_of_turn": 106
+  },
+  "cases": [
+    {
+      "text": "Hello world",
+      "ids_bos": [
+        2,
+        9259,
+        1902
+      ],
+      "ids": [
+        9259,
+        1902
+      ],
+      "tokens": [
+        "Hello",
+        "▁world"
+      ],
+      "decode_bos": "<bos>Hello world",
+      "decode": "Hello world"
+    },
+    {
+      "text": "Hello",
+      "ids_bos": [
+        2,
+        9259
+      ],
+      "ids": [
+        9259
+      ],
+      "tokens": [
+        "Hello"
+      ],
+      "decode_bos": "<bos>Hello",
+      "decode": "Hello"
+    },
+    {
+      "text": " Hello",
+      "ids_bos": [
+        2,
+        26352
+      ],
+      "ids": [
+        26352
+      ],
+      "tokens": [
+        "▁Hello"
+      ],
+      "decode_bos": "<bos> Hello",
+      "decode": " Hello"
+    },
+    {
+      "text": "Hello world ",
+      "ids_bos": [
+        2,
+        9259,
+        1902,
+        236743
+      ],
+      "ids": [
+        9259,
+        1902,
+        236743
+      ],
+      "tokens": [
+        "Hello",
+        "▁world",
+        "▁"
+      ],
+      "decode_bos": "<bos>Hello world ",
+      "decode": "Hello world "
+    },
+    {
+      "text": "  two  spaces",
+      "ids_bos": [
+        2,
+        138,
+        13498,
+        138,
+        35220
+      ],
+      "ids": [
+        138,
+        13498,
+        138,
+        35220
+      ],
+      "tokens": [
+        "▁▁",
+        "two",
+        "▁▁",
+        "spaces"
+      ],
+      "decode_bos": "<bos>  two  spaces",
+      "decode": "  two  spaces"
+    },
+    {
+      "text": "The quick brown fox jumps over the lazy dog.",
+      "ids_bos": [
+        2,
+        818,
+        3823,
+        8864,
+        37423,
+        38167,
+        1024,
+        506,
+        31770,
+        4799,
+        236761
+      ],
+      "ids": [
+        818,
+        3823,
+        8864,
+        37423,
+        38167,
+        1024,
+        506,
+        31770,
+        4799,
+        236761
+      ],
+      "tokens": [
+        "The",
+        "▁quick",
+        "▁brown",
+        "▁fox",
+        "▁jumps",
+        "▁over",
+        "▁the",
+        "▁lazy",
+        "▁dog",
+        "."
+      ],
+      "decode_bos": "<bos>The quick brown fox jumps over the lazy dog.",
+      "decode": "The quick brown fox jumps over the lazy dog."
+    },
+    {
+      "text": "café 中文 — naïve façade",
+      "ids_bos": [
+        2,
+        123125,
+        236859,
+        17346,
+        237364,
+        2192,
+        120362,
+        96008
+      ],
+      "ids": [
+        123125,
+        236859,
+        17346,
+        237364,
+        2192,
+        120362,
+        96008
+      ],
+      "tokens": [
+        "caf",
+        "é",
+        "▁中",
+        "文",
+        "▁—",
+        "▁naïve",
+        "▁façade"
+      ],
+      "decode_bos": "<bos>café 中文 — naïve façade",
+      "decode": "café 中文 — naïve façade"
+    },
+    {
+      "text": "𝕳ello",
+      "ids_bos": [
+        2,
+        478,
+        395,
+        387,
+        417,
+        4327
+      ],
+      "ids": [
+        478,
+        395,
+        387,
+        417,
+        4327
+      ],
+      "tokens": [
+        "<0xF0>",
+        "<0x9D>",
+        "<0x95>",
+        "<0xB3>",
+        "ello"
+      ],
+      "decode_bos": "<bos>𝕳ello",
+      "decode": "𝕳ello"
+    },
+    {
+      "text": "emoji 🦄 and 🏳️‍🌈",
+      "ids_bos": [
+        2,
+        67906,
+        236743,
+        245802,
+        532,
+        236743,
+        248177,
+        238178,
+        237243,
+        243712
+      ],
+      "ids": [
+        67906,
+        236743,
+        245802,
+        532,
+        236743,
+        248177,
+        238178,
+        237243,
+        243712
+      ],
+      "tokens": [
+        "emoji",
+        "▁",
+        "🦄",
+        "▁and",
+        "▁",
+        "🏳",
+        "️",
+        "‍",
+        "🌈"
+      ],
+      "decode_bos": "<bos>emoji 🦄 and 🏳️‍🌈",
+      "decode": "emoji 🦄 and 🏳️‍🌈"
+    },
+    {
+      "text": "a\tb\nc\n\nd",
+      "ids_bos": [
+        2,
+        236746,
+        255968,
+        236763,
+        107,
+        236755,
+        108,
+        236753
+      ],
+      "ids": [
+        236746,
+        255968,
+        236763,
+        107,
+        236755,
+        108,
+        236753
+      ],
+      "tokens": [
+        "a",
+        "\t",
+        "b",
+        "\n",
+        "c",
+        "\n\n",
+        "d"
+      ],
+      "decode_bos": "<bos>a\tb\nc\n\nd",
+      "decode": "a\tb\nc\n\nd"
+    },
+    {
+      "text": "<bos>hi<eos>",
+      "ids_bos": [
+        2,
+        2,
+        2202,
+        1
+      ],
+      "ids": [
+        2,
+        2202,
+        1
+      ],
+      "tokens": [
+        "<bos>",
+        "hi",
+        "<eos>"
+      ],
+      "decode_bos": "<bos><bos>hi<eos>",
+      "decode": "<bos>hi<eos>"
+    },
+    {
+      "text": "<start_of_turn>user\nHi<end_of_turn>",
+      "ids_bos": [
+        2,
+        105,
+        2364,
+        107,
+        10979,
+        106
+      ],
+      "ids": [
+        105,
+        2364,
+        107,
+        10979,
+        106
+      ],
+      "tokens": [
+        "<start_of_turn>",
+        "user",
+        "\n",
+        "Hi",
+        "<end_of_turn>"
+      ],
+      "decode_bos": "<bos><start_of_turn>user\nHi<end_of_turn>",
+      "decode": "<start_of_turn>user\nHi<end_of_turn>"
+    },
+    {
+      "text": "func main() { fmt.Println(\"hi\") }",
+      "ids_bos": [
+        2,
+        6823,
+        1689,
+        825,
+        642,
+        22766,
+        236761,
+        29006,
+        885,
+        2202,
+        1373,
+        682
+      ],
+      "ids": [
+        6823,
+        1689,
+        825,
+        642,
+        22766,
+        236761,
+        29006,
+        885,
+        2202,
+        1373,
+        682
+      ],
+      "tokens": [
+        "func",
+        "▁main",
+        "()",
+        "▁{",
+        "▁fmt",
+        ".",
+        "Println",
+        "(\"",
+        "hi",
+        "\")",
+        "▁}"
+      ],
+      "decode_bos": "<bos>func main() { fmt.Println(\"hi\") }",
+      "decode": "func main() { fmt.Println(\"hi\") }"
+    },
+    {
+      "text": "1234567890 +-*/= 3.14159",
+      "ids_bos": [
+        2,
+        236770,
+        236778,
+        236800,
+        236812,
+        236810,
+        236825,
+        236832,
+        236828,
+        236819,
+        236771,
+        900,
+        161853,
+        236784,
+        236743,
+        236800,
+        236761,
+        236770,
+        236812,
+        236770,
+        236810,
+        236819
+      ],
+      "ids": [
+        236770,
+        236778,
+        236800,
+        236812,
+        236810,
+        236825,
+        236832,
+        236828,
+        236819,
+        236771,
+        900,
+        161853,
+        236784,
+        236743,
+        236800,
+        236761,
+        236770,
+        236812,
+        236770,
+        236810,
+        236819
+      ],
+      "tokens": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "0",
+        "▁+",
+        "-*/",
+        "=",
+        "▁",
+        "3",
+        ".",
+        "1",
+        "4",
+        "1",
+        "5",
+        "9"
+      ],
+      "decode_bos": "<bos>1234567890 +-*/= 3.14159",
+      "decode": "1234567890 +-*/= 3.14159"
+    },
+    {
+      "text": "Mixed CASE and    irregular   spacing",
+      "ids_bos": [
+        2,
+        105367,
+        69203,
+        532,
+        140,
+        221627,
+        139,
+        25370
+      ],
+      "ids": [
+        105367,
+        69203,
+        532,
+        140,
+        221627,
+        139,
+        25370
+      ],
+      "tokens": [
+        "Mixed",
+        "▁CASE",
+        "▁and",
+        "▁▁▁▁",
+        "irregular",
+        "▁▁▁",
+        "spacing"
+      ],
+      "decode_bos": "<bos>Mixed CASE and    irregular   spacing",
+      "decode": "Mixed CASE and    irregular   spacing"
+    },
+    {
+      "text": "",
+      "ids_bos": [
+        2
+      ],
+      "ids": [],
+      "tokens": [],
+      "decode_bos": "<bos>",
+      "decode": ""
+    }
+  ]
+}

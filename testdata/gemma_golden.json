@@ -1,0 +1,95 @@
+{
+  "model_id": "google/gemma-3-270m",
+  "note": "M1 loader oracle. Per-tensor shape/dtype from the safetensors header; sum and sum_sq are float64 reductions over the f32 values AFTER bf16->f32 widening (exact). The Go loader must reproduce shape exactly and the checksums to <=1e-6 relative.",
+  "checksum_method": "sum += f64(v); sum_sq += f64(v)*f64(v)  over widened-f32 values",
+  "sampled_tensors": [
+    "model.embed_tokens.weight",
+    "model.layers.0.self_attn.q_proj.weight",
+    "model.norm.weight"
+  ],
+  "config": {
+    "_sliding_window_pattern": 6,
+    "architectures": [
+      "Gemma3ForCausalLM"
+    ],
+    "attention_bias": false,
+    "attention_dropout": 0.0,
+    "attn_logit_softcapping": null,
+    "bos_token_id": 2,
+    "eos_token_id": 1,
+    "final_logit_softcapping": null,
+    "head_dim": 256,
+    "hidden_activation": "gelu_pytorch_tanh",
+    "hidden_size": 640,
+    "initializer_range": 0.02,
+    "intermediate_size": 2048,
+    "layer_types": [
+      "sliding_attention",
+      "sliding_attention",
+      "sliding_attention",
+      "sliding_attention",
+      "sliding_attention",
+      "full_attention",
+      "sliding_attention",
+      "sliding_attention",
+      "sliding_attention",
+      "sliding_attention",
+      "sliding_attention",
+      "full_attention",
+      "sliding_attention",
+      "sliding_attention",
+      "sliding_attention",
+      "sliding_attention",
+      "sliding_attention",
+      "full_attention"
+    ],
+    "max_position_embeddings": 32768,
+    "model_type": "gemma3_text",
+    "num_attention_heads": 4,
+    "num_hidden_layers": 18,
+    "num_key_value_heads": 1,
+    "pad_token_id": 0,
+    "query_pre_attn_scalar": 256,
+    "rms_norm_eps": 1e-06,
+    "rope_local_base_freq": 10000.0,
+    "rope_scaling": null,
+    "rope_theta": 1000000.0,
+    "sliding_window": 512,
+    "torch_dtype": "bfloat16",
+    "transformers_version": "4.55.0.dev0",
+    "use_bidirectional_attention": false,
+    "use_cache": true,
+    "vocab_size": 262144
+  },
+  "tensors": {
+    "model.embed_tokens.weight": {
+      "shape": [
+        262144,
+        640
+      ],
+      "dtype": "BF16",
+      "n": 167772160,
+      "sum": -27665.439283237196,
+      "sum_sq": 278685.1619488307
+    },
+    "model.layers.0.self_attn.q_proj.weight": {
+      "shape": [
+        1024,
+        640
+      ],
+      "dtype": "BF16",
+      "n": 655360,
+      "sum": -49.82034847768955,
+      "sum_sq": 1024.0132854970834
+    },
+    "model.norm.weight": {
+      "shape": [
+        640
+      ],
+      "dtype": "BF16",
+      "n": 640,
+      "sum": 16221.6953125,
+      "sum_sq": 1838011.637512207
+    }
+  }
+}

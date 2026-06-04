@@ -1,0 +1,720 @@
+{
+  "model_id": "TinyLlama/TinyLlama-1.1B-Chat-v1.0 (Llama-2 SentencePiece tokenizer)",
+  "note": "SPM/byte-fallback oracle (Llama-2, TinyLlama). The normalizer prepends ▁ (SentencePiece dummy prefix) then replaces spaces with ▁; BPE is merge-rank with <0xNN> byte fallback. The Go GGUF tokenizer (tokenizer.LoadGGUF, built from the bare .gguf metadata) must reproduce ids id-for-id, and Decode(ids) must equal `decode`. (tokenizer.Load from tokenizer.json is Gemma-specific for this family, so it is not the path under test here.)",
+  "special_tokens": {
+    "bos": 1,
+    "eos": 2,
+    "unk": 0
+  },
+  "cases": [
+    {
+      "text": "Hello world",
+      "ids_bos": [
+        1,
+        15043,
+        3186
+      ],
+      "ids": [
+        15043,
+        3186
+      ],
+      "tokens": [
+        "▁Hello",
+        "▁world"
+      ],
+      "decode_bos": "<s> Hello world",
+      "decode": "Hello world"
+    },
+    {
+      "text": " Hello",
+      "ids_bos": [
+        1,
+        29871,
+        15043
+      ],
+      "ids": [
+        29871,
+        15043
+      ],
+      "tokens": [
+        "▁",
+        "▁Hello"
+      ],
+      "decode_bos": "<s>  Hello",
+      "decode": " Hello"
+    },
+    {
+      "text": "  two  spaces",
+      "ids_bos": [
+        1,
+        259,
+        1023,
+        29871,
+        8162
+      ],
+      "ids": [
+        259,
+        1023,
+        29871,
+        8162
+      ],
+      "tokens": [
+        "▁▁",
+        "▁two",
+        "▁",
+        "▁spaces"
+      ],
+      "decode_bos": "<s>   two  spaces",
+      "decode": "  two  spaces"
+    },
+    {
+      "text": "trailing   ",
+      "ids_bos": [
+        1,
+        25053,
+        1678
+      ],
+      "ids": [
+        25053,
+        1678
+      ],
+      "tokens": [
+        "▁trailing",
+        "▁▁▁"
+      ],
+      "decode_bos": "<s> trailing   ",
+      "decode": "trailing   "
+    },
+    {
+      "text": "The quick brown fox jumps over the lazy dog.",
+      "ids_bos": [
+        1,
+        450,
+        4996,
+        17354,
+        1701,
+        29916,
+        432,
+        17204,
+        975,
+        278,
+        17366,
+        11203,
+        29889
+      ],
+      "ids": [
+        450,
+        4996,
+        17354,
+        1701,
+        29916,
+        432,
+        17204,
+        975,
+        278,
+        17366,
+        11203,
+        29889
+      ],
+      "tokens": [
+        "▁The",
+        "▁quick",
+        "▁brown",
+        "▁fo",
+        "x",
+        "▁j",
+        "umps",
+        "▁over",
+        "▁the",
+        "▁lazy",
+        "▁dog",
+        "."
+      ],
+      "decode_bos": "<s> The quick brown fox jumps over the lazy dog.",
+      "decode": "The quick brown fox jumps over the lazy dog."
+    },
+    {
+      "text": "café 中文 — naïve façade",
+      "ids_bos": [
+        1,
+        274,
+        28059,
+        29871,
+        30275,
+        30333,
+        813,
+        1055,
+        30085,
+        345,
+        2258,
+        30019,
+        1943
+      ],
+      "ids": [
+        274,
+        28059,
+        29871,
+        30275,
+        30333,
+        813,
+        1055,
+        30085,
+        345,
+        2258,
+        30019,
+        1943
+      ],
+      "tokens": [
+        "▁c",
+        "afé",
+        "▁",
+        "中",
+        "文",
+        "▁—",
+        "▁na",
+        "ï",
+        "ve",
+        "▁fa",
+        "ç",
+        "ade"
+      ],
+      "decode_bos": "<s> café 中文 — naïve façade",
+      "decode": "café 中文 — naïve façade"
+    },
+    {
+      "text": "𝕳ello",
+      "ids_bos": [
+        1,
+        29871,
+        243,
+        160,
+        152,
+        182,
+        3156
+      ],
+      "ids": [
+        29871,
+        243,
+        160,
+        152,
+        182,
+        3156
+      ],
+      "tokens": [
+        "▁",
+        "<0xF0>",
+        "<0x9D>",
+        "<0x95>",
+        "<0xB3>",
+        "ello"
+      ],
+      "decode_bos": "<s> 𝕳ello",
+      "decode": "𝕳ello"
+    },
+    {
+      "text": "emoji 🦄 and 🏳️‍🌈",
+      "ids_bos": [
+        1,
+        953,
+        29877,
+        2397,
+        29871,
+        243,
+        162,
+        169,
+        135,
+        322,
+        29871,
+        243,
+        162,
+        146,
+        182,
+        30598,
+        30722,
+        243,
+        162,
+        143,
+        139
+      ],
+      "ids": [
+        953,
+        29877,
+        2397,
+        29871,
+        243,
+        162,
+        169,
+        135,
+        322,
+        29871,
+        243,
+        162,
+        146,
+        182,
+        30598,
+        30722,
+        243,
+        162,
+        143,
+        139
+      ],
+      "tokens": [
+        "▁em",
+        "o",
+        "ji",
+        "▁",
+        "<0xF0>",
+        "<0x9F>",
+        "<0xA6>",
+        "<0x84>",
+        "▁and",
+        "▁",
+        "<0xF0>",
+        "<0x9F>",
+        "<0x8F>",
+        "<0xB3>",
+        "️",
+        "‍",
+        "<0xF0>",
+        "<0x9F>",
+        "<0x8C>",
+        "<0x88>"
+      ],
+      "decode_bos": "<s> emoji 🦄 and 🏳️‍🌈",
+      "decode": "emoji 🦄 and 🏳️‍🌈"
+    },
+    {
+      "text": "a\tb\nc\n\nd",
+      "ids_bos": [
+        1,
+        263,
+        12,
+        29890,
+        13,
+        29883,
+        13,
+        13,
+        29881
+      ],
+      "ids": [
+        263,
+        12,
+        29890,
+        13,
+        29883,
+        13,
+        13,
+        29881
+      ],
+      "tokens": [
+        "▁a",
+        "<0x09>",
+        "b",
+        "<0x0A>",
+        "c",
+        "<0x0A>",
+        "<0x0A>",
+        "d"
+      ],
+      "decode_bos": "<s> a\tb\nc\n\nd",
+      "decode": "a\tb\nc\n\nd"
+    },
+    {
+      "text": "newline\n\n\nthree",
+      "ids_bos": [
+        1,
+        25899,
+        13,
+        13,
+        13,
+        17536
+      ],
+      "ids": [
+        25899,
+        13,
+        13,
+        13,
+        17536
+      ],
+      "tokens": [
+        "▁newline",
+        "<0x0A>",
+        "<0x0A>",
+        "<0x0A>",
+        "three"
+      ],
+      "decode_bos": "<s> newline\n\n\nthree",
+      "decode": "newline\n\n\nthree"
+    },
+    {
+      "text": "don't can't I'LL we've",
+      "ids_bos": [
+        1,
+        1016,
+        29915,
+        29873,
+        508,
+        29915,
+        29873,
+        306,
+        29915,
+        2208,
+        591,
+        29915,
+        345
+      ],
+      "ids": [
+        1016,
+        29915,
+        29873,
+        508,
+        29915,
+        29873,
+        306,
+        29915,
+        2208,
+        591,
+        29915,
+        345
+      ],
+      "tokens": [
+        "▁don",
+        "'",
+        "t",
+        "▁can",
+        "'",
+        "t",
+        "▁I",
+        "'",
+        "LL",
+        "▁we",
+        "'",
+        "ve"
+      ],
+      "decode_bos": "<s> don't can't I'LL we've",
+      "decode": "don't can't I'LL we've"
+    },
+    {
+      "text": "func main() { fmt.Println(\"hi\") }",
+      "ids_bos": [
+        1,
+        3653,
+        1667,
+        580,
+        426,
+        19200,
+        29889,
+        11816,
+        3083,
+        703,
+        2918,
+        1159,
+        500
+      ],
+      "ids": [
+        3653,
+        1667,
+        580,
+        426,
+        19200,
+        29889,
+        11816,
+        3083,
+        703,
+        2918,
+        1159,
+        500
+      ],
+      "tokens": [
+        "▁func",
+        "▁main",
+        "()",
+        "▁{",
+        "▁fmt",
+        ".",
+        "Print",
+        "ln",
+        "(\"",
+        "hi",
+        "\")",
+        "▁}"
+      ],
+      "decode_bos": "<s> func main() { fmt.Println(\"hi\") }",
+      "decode": "func main() { fmt.Println(\"hi\") }"
+    },
+    {
+      "text": "Number 1234567 and 56 and 8",
+      "ids_bos": [
+        1,
+        9681,
+        29871,
+        29896,
+        29906,
+        29941,
+        29946,
+        29945,
+        29953,
+        29955,
+        322,
+        29871,
+        29945,
+        29953,
+        322,
+        29871,
+        29947
+      ],
+      "ids": [
+        9681,
+        29871,
+        29896,
+        29906,
+        29941,
+        29946,
+        29945,
+        29953,
+        29955,
+        322,
+        29871,
+        29945,
+        29953,
+        322,
+        29871,
+        29947
+      ],
+      "tokens": [
+        "▁Number",
+        "▁",
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "▁and",
+        "▁",
+        "5",
+        "6",
+        "▁and",
+        "▁",
+        "8"
+      ],
+      "decode_bos": "<s> Number 1234567 and 56 and 8",
+      "decode": "Number 1234567 and 56 and 8"
+    },
+    {
+      "text": "year 2024, pi 3.14159, 1000000",
+      "ids_bos": [
+        1,
+        1629,
+        29871,
+        29906,
+        29900,
+        29906,
+        29946,
+        29892,
+        2930,
+        29871,
+        29941,
+        29889,
+        29896,
+        29946,
+        29896,
+        29945,
+        29929,
+        29892,
+        29871,
+        29896,
+        29900,
+        29900,
+        29900,
+        29900,
+        29900,
+        29900
+      ],
+      "ids": [
+        1629,
+        29871,
+        29906,
+        29900,
+        29906,
+        29946,
+        29892,
+        2930,
+        29871,
+        29941,
+        29889,
+        29896,
+        29946,
+        29896,
+        29945,
+        29929,
+        29892,
+        29871,
+        29896,
+        29900,
+        29900,
+        29900,
+        29900,
+        29900,
+        29900
+      ],
+      "tokens": [
+        "▁year",
+        "▁",
+        "2",
+        "0",
+        "2",
+        "4",
+        ",",
+        "▁pi",
+        "▁",
+        "3",
+        ".",
+        "1",
+        "4",
+        "1",
+        "5",
+        "9",
+        ",",
+        "▁",
+        "1",
+        "0",
+        "0",
+        "0",
+        "0",
+        "0",
+        "0"
+      ],
+      "decode_bos": "<s> year 2024, pi 3.14159, 1000000",
+      "decode": "year 2024, pi 3.14159, 1000000"
+    },
+    {
+      "text": "x:=3; y==4 && z!=5",
+      "ids_bos": [
+        1,
+        921,
+        9361,
+        29941,
+        29936,
+        343,
+        1360,
+        29946,
+        2607,
+        503,
+        19216,
+        29945
+      ],
+      "ids": [
+        921,
+        9361,
+        29941,
+        29936,
+        343,
+        1360,
+        29946,
+        2607,
+        503,
+        19216,
+        29945
+      ],
+      "tokens": [
+        "▁x",
+        ":=",
+        "3",
+        ";",
+        "▁y",
+        "==",
+        "4",
+        "▁&&",
+        "▁z",
+        "!=",
+        "5"
+      ],
+      "decode_bos": "<s> x:=3; y==4 && z!=5",
+      "decode": "x:=3; y==4 && z!=5"
+    },
+    {
+      "text": "<s>hi</s>",
+      "ids_bos": [
+        1,
+        1,
+        7251,
+        2
+      ],
+      "ids": [
+        1,
+        7251,
+        2
+      ],
+      "tokens": [
+        "<s>",
+        "▁hi",
+        "</s>"
+      ],
+      "decode_bos": "<s><s> hi</s>",
+      "decode": "<s> hi</s>"
+    },
+    {
+      "text": "<unk>",
+      "ids_bos": [
+        1,
+        0
+      ],
+      "ids": [
+        0
+      ],
+      "tokens": [
+        "<unk>"
+      ],
+      "decode_bos": "<s><unk>",
+      "decode": "<unk>"
+    },
+    {
+      "text": "Mixed CASE and    irregular   spacing",
+      "ids_bos": [
+        1,
+        341,
+        11925,
+        29134,
+        322,
+        1678,
+        27931,
+        259,
+        29250
+      ],
+      "ids": [
+        341,
+        11925,
+        29134,
+        322,
+        1678,
+        27931,
+        259,
+        29250
+      ],
+      "tokens": [
+        "▁M",
+        "ixed",
+        "▁CASE",
+        "▁and",
+        "▁▁▁",
+        "▁irregular",
+        "▁▁",
+        "▁spacing"
+      ],
+      "decode_bos": "<s> Mixed CASE and    irregular   spacing",
+      "decode": "Mixed CASE and    irregular   spacing"
+    },
+    {
+      "text": "",
+      "ids_bos": [
+        1
+      ],
+      "ids": [],
+      "tokens": [],
+      "decode_bos": "<s>",
+      "decode": ""
+    }
+  ]
+}

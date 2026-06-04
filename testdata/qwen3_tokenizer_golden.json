@@ -1,0 +1,555 @@
+{
+  "model_id": "Qwen/Qwen3-1.7B",
+  "note": "G3 byte-level BPE tokenizer oracle. Qwen adds no special tokens at encode (post_processor is plain ByteLevel, bos null) so ids_bos==ids. The Go tokenizer must reproduce ids id-for-id and Decode(ids) must equal `decode`. NFC normalize, GPT-2 split regex, byte->unicode map, ignore_merges=true, no byte-fallback.",
+  "special_tokens": {
+    "eos_im_end": 151645,
+    "endoftext": 151643,
+    "im_start": 151644
+  },
+  "cases": [
+    {
+      "text": "Hello world",
+      "ids_bos": [
+        9707,
+        1879
+      ],
+      "ids": [
+        9707,
+        1879
+      ],
+      "tokens": [
+        "Hello",
+        "Ġworld"
+      ],
+      "decode_bos": "Hello world",
+      "decode": "Hello world"
+    },
+    {
+      "text": "Hello",
+      "ids_bos": [
+        9707
+      ],
+      "ids": [
+        9707
+      ],
+      "tokens": [
+        "Hello"
+      ],
+      "decode_bos": "Hello",
+      "decode": "Hello"
+    },
+    {
+      "text": " Hello",
+      "ids_bos": [
+        21927
+      ],
+      "ids": [
+        21927
+      ],
+      "tokens": [
+        "ĠHello"
+      ],
+      "decode_bos": " Hello",
+      "decode": " Hello"
+    },
+    {
+      "text": "Hello world ",
+      "ids_bos": [
+        9707,
+        1879,
+        220
+      ],
+      "ids": [
+        9707,
+        1879,
+        220
+      ],
+      "tokens": [
+        "Hello",
+        "Ġworld",
+        "Ġ"
+      ],
+      "decode_bos": "Hello world ",
+      "decode": "Hello world "
+    },
+    {
+      "text": "  two  spaces",
+      "ids_bos": [
+        220,
+        1378,
+        220,
+        12621
+      ],
+      "ids": [
+        220,
+        1378,
+        220,
+        12621
+      ],
+      "tokens": [
+        "Ġ",
+        "Ġtwo",
+        "Ġ",
+        "Ġspaces"
+      ],
+      "decode_bos": "  two  spaces",
+      "decode": "  two  spaces"
+    },
+    {
+      "text": "trailing   ",
+      "ids_bos": [
+        376,
+        14277,
+        262
+      ],
+      "ids": [
+        376,
+        14277,
+        262
+      ],
+      "tokens": [
+        "tr",
+        "ailing",
+        "ĠĠĠ"
+      ],
+      "decode_bos": "trailing   ",
+      "decode": "trailing   "
+    },
+    {
+      "text": "The quick brown fox jumps over the lazy dog.",
+      "ids_bos": [
+        785,
+        3974,
+        13876,
+        38835,
+        34208,
+        916,
+        279,
+        15678,
+        5562,
+        13
+      ],
+      "ids": [
+        785,
+        3974,
+        13876,
+        38835,
+        34208,
+        916,
+        279,
+        15678,
+        5562,
+        13
+      ],
+      "tokens": [
+        "The",
+        "Ġquick",
+        "Ġbrown",
+        "Ġfox",
+        "Ġjumps",
+        "Ġover",
+        "Ġthe",
+        "Ġlazy",
+        "Ġdog",
+        "."
+      ],
+      "decode_bos": "The quick brown fox jumps over the lazy dog.",
+      "decode": "The quick brown fox jumps over the lazy dog."
+    },
+    {
+      "text": "café 中文 — naïve façade",
+      "ids_bos": [
+        924,
+        58858,
+        72858,
+        16744,
+        1959,
+        94880,
+        586,
+        94872,
+        1021
+      ],
+      "ids": [
+        924,
+        58858,
+        72858,
+        16744,
+        1959,
+        94880,
+        586,
+        94872,
+        1021
+      ],
+      "tokens": [
+        "ca",
+        "fÃ©",
+        "Ġä¸Ń",
+        "æĸĩ",
+        "ĠâĢĶ",
+        "ĠnaÃ¯",
+        "ve",
+        "ĠfaÃ§",
+        "ade"
+      ],
+      "decode_bos": "café 中文 — naïve façade",
+      "decode": "café 中文 — naïve façade"
+    },
+    {
+      "text": "𝕳ello",
+      "ids_bos": [
+        149888,
+        4791
+      ],
+      "ids": [
+        149888,
+        4791
+      ],
+      "tokens": [
+        "ðĿķ³",
+        "ello"
+      ],
+      "decode_bos": "𝕳ello",
+      "decode": "𝕳ello"
+    },
+    {
+      "text": "emoji 🦄 and 🏳️‍🌈",
+      "ids_bos": [
+        37523,
+        11162,
+        99,
+        226,
+        323,
+        11162,
+        237,
+        111,
+        30543,
+        378,
+        235,
+        145354
+      ],
+      "ids": [
+        37523,
+        11162,
+        99,
+        226,
+        323,
+        11162,
+        237,
+        111,
+        30543,
+        378,
+        235,
+        145354
+      ],
+      "tokens": [
+        "emoji",
+        "ĠðŁ",
+        "¦",
+        "Ħ",
+        "Ġand",
+        "ĠðŁ",
+        "ı",
+        "³",
+        "ï¸ı",
+        "âĢ",
+        "į",
+        "ðŁĮĪ"
+      ],
+      "decode_bos": "emoji 🦄 and 🏳️‍🌈",
+      "decode": "emoji 🦄 and 🏳️‍🌈"
+    },
+    {
+      "text": "a\tb\nc\n\nd",
+      "ids_bos": [
+        64,
+        2233,
+        198,
+        66,
+        271,
+        67
+      ],
+      "ids": [
+        64,
+        2233,
+        198,
+        66,
+        271,
+        67
+      ],
+      "tokens": [
+        "a",
+        "ĉb",
+        "Ċ",
+        "c",
+        "ĊĊ",
+        "d"
+      ],
+      "decode_bos": "a\tb\nc\n\nd",
+      "decode": "a\tb\nc\n\nd"
+    },
+    {
+      "text": "newline\n\n\nthree",
+      "ids_bos": [
+        89202,
+        1406,
+        27856
+      ],
+      "ids": [
+        89202,
+        1406,
+        27856
+      ],
+      "tokens": [
+        "newline",
+        "ĊĊĊ",
+        "three"
+      ],
+      "decode_bos": "newline\n\n\nthree",
+      "decode": "newline\n\n\nthree"
+    },
+    {
+      "text": "don't can't I'LL we've",
+      "ids_bos": [
+        15007,
+        944,
+        646,
+        944,
+        358,
+        6,
+        4086,
+        582,
+        3003
+      ],
+      "ids": [
+        15007,
+        944,
+        646,
+        944,
+        358,
+        6,
+        4086,
+        582,
+        3003
+      ],
+      "tokens": [
+        "don",
+        "'t",
+        "Ġcan",
+        "'t",
+        "ĠI",
+        "'",
+        "LL",
+        "Ġwe",
+        "'ve"
+      ],
+      "decode_bos": "don't can't I'LL we've",
+      "decode": "don't can't I'LL we've"
+    },
+    {
+      "text": "func main() { fmt.Println(\"hi\") }",
+      "ids_bos": [
+        2830,
+        1887,
+        368,
+        314,
+        8879,
+        12419,
+        445,
+        6023,
+        899,
+        335
+      ],
+      "ids": [
+        2830,
+        1887,
+        368,
+        314,
+        8879,
+        12419,
+        445,
+        6023,
+        899,
+        335
+      ],
+      "tokens": [
+        "func",
+        "Ġmain",
+        "()",
+        "Ġ{",
+        "Ġfmt",
+        ".Println",
+        "(\"",
+        "hi",
+        "\")",
+        "Ġ}"
+      ],
+      "decode_bos": "func main() { fmt.Println(\"hi\") }",
+      "decode": "func main() { fmt.Println(\"hi\") }"
+    },
+    {
+      "text": "Number 1234 and 56",
+      "ids_bos": [
+        2833,
+        220,
+        16,
+        17,
+        18,
+        19,
+        323,
+        220,
+        20,
+        21
+      ],
+      "ids": [
+        2833,
+        220,
+        16,
+        17,
+        18,
+        19,
+        323,
+        220,
+        20,
+        21
+      ],
+      "tokens": [
+        "Number",
+        "Ġ",
+        "1",
+        "2",
+        "3",
+        "4",
+        "Ġand",
+        "Ġ",
+        "5",
+        "6"
+      ],
+      "decode_bos": "Number 1234 and 56",
+      "decode": "Number 1234 and 56"
+    },
+    {
+      "text": "<|im_start|>user\nHi<|im_end|>",
+      "ids_bos": [
+        151644,
+        872,
+        198,
+        13048,
+        151645
+      ],
+      "ids": [
+        151644,
+        872,
+        198,
+        13048,
+        151645
+      ],
+      "tokens": [
+        "<|im_start|>",
+        "user",
+        "Ċ",
+        "Hi",
+        "<|im_end|>"
+      ],
+      "decode_bos": "<|im_start|>user\nHi<|im_end|>",
+      "decode": "<|im_start|>user\nHi<|im_end|>"
+    },
+    {
+      "text": "<|endoftext|>",
+      "ids_bos": [
+        151643
+      ],
+      "ids": [
+        151643
+      ],
+      "tokens": [
+        "<|endoftext|>"
+      ],
+      "decode_bos": "<|endoftext|>",
+      "decode": "<|endoftext|>"
+    },
+    {
+      "text": "x:=3; y==4 && z!=5",
+      "ids_bos": [
+        87,
+        14209,
+        18,
+        26,
+        379,
+        418,
+        19,
+        1009,
+        1147,
+        5824,
+        20
+      ],
+      "ids": [
+        87,
+        14209,
+        18,
+        26,
+        379,
+        418,
+        19,
+        1009,
+        1147,
+        5824,
+        20
+      ],
+      "tokens": [
+        "x",
+        ":=",
+        "3",
+        ";",
+        "Ġy",
+        "==",
+        "4",
+        "Ġ&&",
+        "Ġz",
+        "!=",
+        "5"
+      ],
+      "decode_bos": "x:=3; y==4 && z!=5",
+      "decode": "x:=3; y==4 && z!=5"
+    },
+    {
+      "text": "Mixed CASE and    irregular   spacing",
+      "ids_bos": [
+        86433,
+        38319,
+        323,
+        262,
+        41308,
+        256,
+        25943
+      ],
+      "ids": [
+        86433,
+        38319,
+        323,
+        262,
+        41308,
+        256,
+        25943
+      ],
+      "tokens": [
+        "Mixed",
+        "ĠCASE",
+        "Ġand",
+        "ĠĠĠ",
+        "Ġirregular",
+        "ĠĠ",
+        "Ġspacing"
+      ],
+      "decode_bos": "Mixed CASE and    irregular   spacing",
+      "decode": "Mixed CASE and    irregular   spacing"
+    },
+    {
+      "text": "",
+      "ids_bos": [],
+      "ids": [],
+      "tokens": [],
+      "decode_bos": "",
+      "decode": ""
+    }
+  ]
+}
