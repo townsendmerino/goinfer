@@ -8,6 +8,34 @@ The forward-pass and quantization numerics are parity-gated against HuggingFace
 and are the stable contract. The loader and architecture-descriptor surface is
 pre-1.0 and may change as new model families and quant formats land.
 
+## [Unreleased]
+
+### Added
+- **`decoder.LoadGGUFBytes`** / **`tokenizer.LoadGGUFBytes`** — load a GGUF model
+  and its tokenizer from an in-memory `[]byte`, touching no filesystem. The
+  shared GGUF build core is reused by the path-based `Load` / `LoadGGUF` (both
+  unchanged); EOS ids resolve from the GGUF's own metadata.
+
+### Changed
+- `demo/chat` (embed build) loads the baked-in model **from memory by default** —
+  no temp file, so the single-file binary runs on a read-only / `FROM scratch`
+  filesystem. `--model-tmp` / `GOINFER_MODEL_TMP=1` opts back into a temp-file +
+  mmap load (lower peak RAM for large models; tmpfs caveat documented). Load
+  progress prints to stderr.
+
+## [v0.1.2] — 2026-06-04
+
+### Added
+- **`demo/chat`** — "an entire LLM in one file": an interactive REPL with a
+  zstd-`//go:embed`-ed Qwen2.5-Coder-0.5B-Instruct model baked into a static,
+  no-cgo, cross-compiled binary (macOS / Linux / Windows × amd64/arm64).
+  Defaults to the fast int8×int8 (W8A8) kernel; ships live prompt-tuning
+  slash-commands and canned `/demo` prompts.
+
+### Changed
+- Requires `aikit ≥ v0.4.1`, which platform-guards the embed loader's mmap so the
+  decoder (and the demo binary) cross-compiles to `windows/amd64`.
+
 ## [v0.1.1] — 2026-06-04
 
 ### Added

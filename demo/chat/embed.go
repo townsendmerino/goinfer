@@ -21,33 +21,53 @@ import (
 //go:embed model.gguf.zst
 var modelZst []byte
 
-// materializeEmbedded inflates the baked-in model to a temp .gguf and returns
-// its path (decoder.Load mmaps a file). cleanup removes the temp file; call it
-// on exit. The plan's accepted cost: a second or two of cold start + the
-// inflated model briefly on disk.
-func materializeEmbedded() (path string, cleanup func(), ok bool) {
+// hasEmbeddedModel reports that this build has a baked-in model.
+const hasEmbeddedModel = true
+
+// embeddedModelBytes inflates the baked-in model fully into memory. This is the
+// default path: the returned GGUF bytes are loaded with no filesystem access,
+// so the binary runs on a read-only / FROM-scratch filesystem.
+func embeddedModelBytes() ([]byte, error) {
+	dec, err := zstd.NewReader(bytes.NewReader(modelZst))
+	if err != nil {
+		return nil, fmt.Errorf("embed: open zstd reader: %w", err)
+	}
+	defer dec.Close()
+	// Preallocate generously (compressed ≈ uncompressed for high-entropy int4
+	// weights) to avoid repeated buffer doubling on the way up to ~470 MB.
+	buf := bytes.NewBuffer(make([]byte, 0, len(modelZst)+len(modelZst)/4))
+	if _, err := io.Copy(buf, dec); err != nil {
+		return nil, fmt.Errorf("embed: inflate model: %w", err)
+	}
+	return buf.Bytes(), nil
+}
+
+// embeddedModelTemp stream-inflates the baked-in model to a temp .gguf and
+// returns its path (the --model-tmp / GOINFER_MODEL_TMP opt-out). Peak RAM is
+// lower than embeddedModelBytes — the inflated model lands on disk and is paged
+// in on demand during the load rather than held on the heap — at the cost of
+// needing a writable temp dir. cleanup removes the file; call it once the model
+// is built (the weights are fresh copies, so the file isn't needed after load).
+func embeddedModelTemp() (path string, cleanup func(), err error) {
 	f, err := os.CreateTemp("", "goinfer-model-*.gguf")
 	if err != nil {
-		fatal("embed: create temp file: %v", err)
+		return "", nil, fmt.Errorf("embed: create temp file: %w", err)
 	}
 	dec, err := zstd.NewReader(bytes.NewReader(modelZst))
 	if err != nil {
-		fatal("embed: open zstd reader: %v", err)
-	}
-	defer dec.Close()
-	if _, err := io.Copy(f, dec); err != nil {
 		f.Close()
 		os.Remove(f.Name())
-		fatal("embed: inflate model: %v", err)
+		return "", nil, fmt.Errorf("embed: open zstd reader: %w", err)
+	}
+	defer dec.Close()
+	if _, err := io.Copy(f, dec); err != nil { // streams to disk, not the heap
+		f.Close()
+		os.Remove(f.Name())
+		return "", nil, fmt.Errorf("embed: inflate model: %w", err)
 	}
 	if err := f.Close(); err != nil {
 		os.Remove(f.Name())
-		fatal("embed: close temp model: %v", err)
+		return "", nil, fmt.Errorf("embed: close temp model: %w", err)
 	}
-	return f.Name(), func() { os.Remove(f.Name()) }, true
-}
-
-func fatal(format string, a ...any) {
-	fmt.Fprintf(os.Stderr, format+"\n", a...)
-	os.Exit(1)
+	return f.Name(), func() { os.Remove(f.Name()) }, nil
 }

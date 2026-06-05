@@ -2,9 +2,17 @@
 
 package main
 
-// materializeEmbedded reports that there is no baked-in model in the default
-// build, so --model is required. The embed build (-tags embed) replaces this
-// with a version that inflates the //go:embed-ed zstd model to a temp file.
-func materializeEmbedded() (path string, cleanup func(), ok bool) {
-	return "", nil, false
+import "errors"
+
+// hasEmbeddedModel is false in the default build: there is no baked-in model, so
+// --model is required. The embed build (-tags embed) sets it true and provides
+// the inflate functions below.
+const hasEmbeddedModel = false
+
+func embeddedModelBytes() ([]byte, error) {
+	return nil, errors.New("no embedded model in this build (build with -tags embed)")
+}
+
+func embeddedModelTemp() (path string, cleanup func(), err error) {
+	return "", nil, errors.New("no embedded model in this build (build with -tags embed)")
 }

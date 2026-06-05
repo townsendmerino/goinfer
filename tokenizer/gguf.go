@@ -71,6 +71,22 @@ func LoadGGUF(path string) (*Tokenizer, error) {
 	return t, nil
 }
 
+// LoadGGUFBytes loads the tokenizer from an in-memory GGUF slice (e.g. an
+// inflated //go:embed asset) — the bytes counterpart of LoadGGUF, touching no
+// filesystem. raw only needs to live until this returns.
+func LoadGGUFBytes(raw []byte) (*Tokenizer, error) {
+	g, err := embed.OpenGGUFBytes(raw)
+	if err != nil {
+		return nil, fmt.Errorf("tokenizer.LoadGGUFBytes: %w", err)
+	}
+	defer g.Close()
+	t, err := fromGGUF(g)
+	if err != nil {
+		return nil, fmt.Errorf("tokenizer.LoadGGUFBytes: %w", err)
+	}
+	return t, nil
+}
+
 func fromGGUF(g *embed.GGUFFile) (*Tokenizer, error) {
 	model, ok := g.Str(ggufTokModel)
 	if !ok {

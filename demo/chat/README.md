@@ -91,7 +91,9 @@ model.
 - **No cgo → trivial cross-compilation.** `GOOS=windows GOARCH=arm64 go build`
   produces a working LLM. Try that with a C++ inference stack.
 - **Runs anywhere Go runs**, including locked-down or air-gapped machines with no
-  compiler and no admin rights. Drop the binary, run it.
+  compiler and no admin rights. Drop the binary, run it. It loads the model
+  straight from memory, so it even runs on a **read-only filesystem** (e.g. a
+  `FROM scratch` container) — no temp file, no writable disk.
 - **Constrained decoding** means structured output you can actually trust from a
   tiny model — a feature, not a wrapper around hope.
 - **Embeddable.** This whole demo is ~150 lines wrapping `goinfer/decoder`. The
@@ -113,6 +115,13 @@ go run ./demo/chat --model ~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
 int8×int8 (W8A8) SDOT kernel, which is **much** faster than the int4 path's
 per-token nibble unpacking. Other flags: `--system`, `--temp`, `--top-k`,
 `--top-p`, `--max`, `--seed`, `--backend`.
+
+**Memory vs. disk.** The embedded binary inflates its model into RAM by default
+(peak ~900 MB for the 0.5B; nothing written to disk). On a RAM-constrained
+machine, `--model-tmp` (or `GOINFER_MODEL_TMP=1`) streams the model to a temp
+file and mmaps it instead — lower peak RAM, but it needs a writable temp dir.
+Caveat: if your temp dir is a **tmpfs** (RAM-backed, common on Linux) it saves
+no RAM, since the file lives in memory anyway.
 
 **The single-file embedded binary** (what the releases are): compress a GGUF,
 bake it in with `//go:embed`, and cross-compile static, no-cgo binaries:

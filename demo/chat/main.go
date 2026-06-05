@@ -65,33 +65,38 @@ type session struct {
 
 func main() {
 	var (
-		model   = flag.String("model", "", "path to a .gguf file or HF checkpoint dir (omit in the -tags embed build to use the baked-in model)")
-		system  = flag.String("system", defaultSystem, "system prompt that steers the model")
-		backend = flag.String("backend", "cpu", "compute backend: cpu | webgpu")
-		quant   = flag.String("quant", "int8int8", "weight quant: \"\" (native) | int8 | int8int8 | int4. int8int8 (W8A8) uses the native int8×int8 SDOT kernel — much faster than int4's per-token nibble unpack")
-		maxTok  = flag.Int("max", 512, "max tokens per reply")
-		temp    = flag.Float64("temp", 0.7, "sampling temperature (0 = greedy)")
-		topK    = flag.Int("top-k", 20, "top-k filter (0 = off)")
-		topP    = flag.Float64("top-p", 0.8, "top-p / nucleus (0 = off)")
-		seed    = flag.Int64("seed", 0, "sampling RNG seed")
+		model    = flag.String("model", "", "path to a .gguf file or HF checkpoint dir (omit in the -tags embed build to use the baked-in model)")
+		system   = flag.String("system", defaultSystem, "system prompt that steers the model")
+		backend  = flag.String("backend", "cpu", "compute backend: cpu | webgpu")
+		quant    = flag.String("quant", "int8int8", "weight quant: \"\" (native) | int8 | int8int8 | int4. int8int8 (W8A8) uses the native int8×int8 SDOT kernel — much faster than int4's per-token nibble unpack")
+		maxTok   = flag.Int("max", 512, "max tokens per reply")
+		temp     = flag.Float64("temp", 0.7, "sampling temperature (0 = greedy)")
+		topK     = flag.Int("top-k", 20, "top-k filter (0 = off)")
+		topP     = flag.Float64("top-p", 0.8, "top-p / nucleus (0 = off)")
+		seed     = flag.Int64("seed", 0, "sampling RNG seed")
+		modelTmp = flag.Bool("model-tmp", false, "embed build: stream the baked-in model to a temp file + mmap instead of loading it into memory. Lower peak RAM for big models, but needs a writable temp dir. Also via GOINFER_MODEL_TMP=1. (If your temp dir is a tmpfs / RAM-backed, this saves no RAM.)")
 	)
 	flag.Parse()
 
-	modelPath := *model
-	if modelPath == "" {
-		// In the embed build (-tags embed) the model is baked in; inflate it to
-		// a temp file and load from there. Otherwise --model is required.
-		if p, cleanup, ok := materializeEmbedded(); ok {
-			modelPath = p
-			defer cleanup()
-		} else {
-			fmt.Fprintln(os.Stderr, "error: --model is required (path to a .gguf file or HF checkpoint dir)")
-			flag.Usage()
-			os.Exit(2)
-		}
-	}
+	opts := decoder.Options{Backend: *backend, Quant: *quant}
+	useTmp := *modelTmp || os.Getenv("GOINFER_MODEL_TMP") != ""
 
-	s, err := load(modelPath, *backend, *quant)
+	var s *session
+	var err error
+	switch {
+	case *model != "":
+		// Explicit checkpoint (a .gguf file or an HF dir) — load from disk.
+		s, err = loadFromPath(*model, opts)
+	case hasEmbeddedModel:
+		// Baked-in model (-tags embed): in-memory by default — no temp file, so
+		// the binary runs on a read-only filesystem. --model-tmp opts into the
+		// lower-peak-RAM disk path.
+		s, err = loadEmbedded(useTmp, opts)
+	default:
+		fmt.Fprintln(os.Stderr, "error: --model is required (path to a .gguf file or HF checkpoint dir)")
+		flag.Usage()
+		os.Exit(2)
+	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
@@ -103,35 +108,84 @@ func main() {
 	s.repl()
 }
 
-// load reads the tokenizer + model once. A bare .gguf carries its tokenizer in
-// metadata (LoadGGUF); an HF dir has a tokenizer.json (Load).
-func load(path, backend, quant string) (*session, error) {
+// loadEmbedded loads the baked-in model. By default it inflates the model into
+// memory and loads from the bytes — nothing touches the filesystem. With
+// --model-tmp / GOINFER_MODEL_TMP it stream-inflates to a temp file and mmaps
+// that (lower peak RAM, but needs a writable temp dir). The temp file is only
+// needed during the load (weights become fresh copies), so it's removed as soon
+// as the model is built.
+func loadEmbedded(useTmp bool, opts decoder.Options) (*session, error) {
+	if useTmp {
+		progress("decompressing model → temp file…")
+		path, cleanup, err := embeddedModelTemp()
+		if err != nil {
+			return nil, err
+		}
+		defer cleanup()
+		return loadFromPath(path, opts)
+	}
+	progress("decompressing model…")
+	raw, err := embeddedModelBytes()
+	if err != nil {
+		return nil, err
+	}
+	return loadFromBytes(raw, opts)
+}
+
+// loadFromPath loads the tokenizer + model from a path. A bare .gguf carries its
+// tokenizer in metadata (LoadGGUF); an HF dir has a tokenizer.json (Load).
+func loadFromPath(path string, opts decoder.Options) (*session, error) {
 	loadTok := tokenizer.Load
 	if strings.HasSuffix(path, ".gguf") {
 		loadTok = tokenizer.LoadGGUF
 	}
+	t0 := time.Now()
 	tk, err := loadTok(path)
 	if err != nil {
 		return nil, fmt.Errorf("load tokenizer: %w", err)
 	}
-	t0 := time.Now()
-	model, err := decoder.Load(path, decoder.Options{Backend: backend, Quant: quant})
+	progress("loading + quantizing…")
+	model, err := decoder.Load(path, opts)
 	if err != nil {
 		return nil, fmt.Errorf("load model: %w", err)
 	}
+	return newSession(tk, model, opts, time.Since(t0)), nil
+}
+
+// loadFromBytes loads the tokenizer + model from an in-memory GGUF slice — the
+// no-filesystem path used by the embedded binary.
+func loadFromBytes(raw []byte, opts decoder.Options) (*session, error) {
+	t0 := time.Now()
+	tk, err := tokenizer.LoadGGUFBytes(raw)
+	if err != nil {
+		return nil, fmt.Errorf("load tokenizer: %w", err)
+	}
+	progress("loading + quantizing…")
+	model, err := decoder.LoadGGUFBytes(raw, opts)
+	if err != nil {
+		return nil, fmt.Errorf("load model: %w", err)
+	}
+	return newSession(tk, model, opts, time.Since(t0)), nil
+}
+
+// newSession assembles the REPL session and prints the load summary to stderr.
+func newSession(tk *tokenizer.Tokenizer, model *decoder.Model, opts decoder.Options, dt time.Duration) *session {
 	cfg := model.Config()
-	q := quant
+	q := opts.Quant
 	if q == "" {
 		q = "native"
 	}
 	fmt.Fprintf(os.Stderr, "loaded %d-layer model (hidden %d, vocab %d) in %s [backend=%s quant=%s]\n",
-		cfg.NumLayers, cfg.HiddenDim, cfg.VocabSize, time.Since(t0).Round(time.Millisecond), backend, q)
+		cfg.NumLayers, cfg.HiddenDim, cfg.VocabSize, dt.Round(time.Millisecond), opts.Backend, q)
 	style := tk.ChatStyle()
 	if style == tokenizer.ChatStyleNone {
 		fmt.Fprintln(os.Stderr, "note: this checkpoint has no chat template; replies may be raw completions")
 	}
-	return &session{tk: tk, model: model, special: tk.Special(), style: style, vocab: cfg.VocabSize}, nil
+	return &session{tk: tk, model: model, special: tk.Special(), style: style, vocab: cfg.VocabSize}
 }
+
+// progress prints a one-line status to stderr (stdout stays clean for piping).
+func progress(msg string) { fmt.Fprintln(os.Stderr, msg) }
 
 // repl is the read–eval–print loop. Lines starting with '/' are commands; every
 // other line is a user turn that gets a streamed reply.

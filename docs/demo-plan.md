@@ -88,11 +88,14 @@ Notes:
 - **Strip:** `go build -ldflags="-s -w" -trimpath`. Free hygiene, but the binary
   is model-dominated (~400 MB model vs ~10 MB Go code+runtime), so stripping is a
   rounding error here. The only lever that moves a model-embedded binary is quant.
-- **Optional `//go:embed` + zstd:** store the model asset zstd-compressed,
-  inflate at startup. Int4 weights are high-entropy (~10% gain) but the
-  higher-precision embedding tensor compresses better → maybe shave 30–50 MB off
-  the *download*, at the cost of a second or two of cold start + transient RAM.
-  Wire as a build flag if we want the asset under ~360 MB.
+- **DONE — `//go:embed` + zstd (`-tags embed`):** the model is stored
+  zstd-compressed and inflated at startup (~2 s cold start). **In-memory load
+  shipped:** the binary inflates the model straight into RAM and loads from the
+  bytes (`decoder.LoadGGUFBytes` / `tokenizer.LoadGGUFBytes`) — **no temp file,
+  runs on a read-only / `FROM scratch` filesystem** (unblocks Demo 2). A
+  `--model-tmp` / `GOINFER_MODEL_TMP` opt-out streams to a temp file + mmap for
+  lower peak RAM on big models. (Int4 weights are high-entropy, so zstd only
+  shaves a little off the ~400 MB asset; the win was always portability, not size.)
 - **Optional build-tag trim:** compile only the Qwen architecture (tag out
   Gemma/Llama/Mistral/etc.) and exclude the `gpu` path — single-digit MB, low
   priority.

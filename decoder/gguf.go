@@ -280,6 +280,14 @@ func loadGGUFWeights(path string, quant quantMode) (*Weights, error) {
 		return nil, err
 	}
 	defer g.Close()
+	return buildGGUFWeights(g, quant)
+}
+
+// buildGGUFWeights builds the weight bundle from an already-open GGUF — whether
+// memory-mapped (loadGGUFWeights) or backed by an in-memory slice
+// (LoadGGUFBytes). It resolves the config + architecture from the GGUF's own
+// metadata, so both entry points produce an identical model.
+func buildGGUFWeights(g *embed.GGUFFile, quant quantMode) (*Weights, error) {
 	cfg, err := ggufConfig(g)
 	if err != nil {
 		return nil, err
@@ -289,6 +297,39 @@ func loadGGUFWeights(path string, quant quantMode) (*Weights, error) {
 		return nil, err
 	}
 	return buildWeightsFromGGUF(cfg, arch, g, quant)
+}
+
+// LoadGGUFBytes loads a GGUF model from an in-memory slice (e.g. an inflated
+// //go:embed asset) — same result as Load on the equivalent .gguf file, but
+// nothing touches the filesystem (no temp file, no writable disk needed). raw
+// is parsed in place and only needs to live until this returns; the built
+// weights are fresh copies.
+//
+// EOS ids come from the GGUF's own tokenizer metadata (there is no directory to
+// read a generation_config.json from), matching the file path's resolution for
+// a bare .gguf.
+func LoadGGUFBytes(raw []byte, opts Options) (*Model, error) {
+	be, beErr := NewBackend(opts.Backend)
+	quant, err := parseQuant(opts.Quant)
+	if err != nil {
+		closeBackend(be)
+		return nil, err
+	}
+	g, err := embed.OpenGGUFBytes(raw)
+	if err != nil {
+		closeBackend(be)
+		return nil, err
+	}
+	w, err := buildGGUFWeights(g, quant)
+	g.Close()
+	if err != nil {
+		closeBackend(be)
+		return nil, err
+	}
+	if beErr != nil {
+		fmt.Println(beErr) // webgpu requested but fell back — not fatal.
+	}
+	return &Model{w: w, be: be, eosIDs: w.Cfg.EOSIDs()}, nil
 }
 
 // buildWeightsFromGGUF dequantizes the GGUF tensors into the weight bundle.

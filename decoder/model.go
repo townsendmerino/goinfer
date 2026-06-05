@@ -33,28 +33,15 @@ func Load(dir string, opts Options) (*Model, error) {
 
 	// Resolve the quant mode first so the weights stream straight into the
 	// chosen precision at load — no whole-model f32 spike (see loadWeights).
-	var quant quantMode
-	switch opts.Quant {
-	case "", "f32":
-		quant = quantNone
-	case "int8":
-		quant = quantInt8
-	case "int8int8":
-		quant = quantInt8I8
-	case "int4":
-		quant = quantInt4
-	default:
-		if be != nil {
-			_ = be.Close()
-		}
-		return nil, fmt.Errorf("decoder.Load: unknown quant %q (have: int8, int8int8, int4)", opts.Quant)
+	quant, err := parseQuant(opts.Quant)
+	if err != nil {
+		closeBackend(be)
+		return nil, err
 	}
 
 	w, err := loadWeights(dir, quant)
 	if err != nil {
-		if be != nil {
-			_ = be.Close()
-		}
+		closeBackend(be)
 		return nil, err
 	}
 	if beErr != nil {
@@ -62,6 +49,29 @@ func Load(dir string, opts Options) (*Model, error) {
 		fmt.Println(beErr)
 	}
 	return &Model{w: w, be: be, eosIDs: resolveEOSIDs(dir, &w.Cfg)}, nil
+}
+
+// parseQuant maps Options.Quant to the internal quantMode.
+func parseQuant(q string) (quantMode, error) {
+	switch q {
+	case "", "f32":
+		return quantNone, nil
+	case "int8":
+		return quantInt8, nil
+	case "int8int8":
+		return quantInt8I8, nil
+	case "int4":
+		return quantInt4, nil
+	default:
+		return quantNone, fmt.Errorf("decoder: unknown quant %q (have: int8, int8int8, int4)", q)
+	}
+}
+
+// closeBackend closes a backend on a load-error path (nil-safe).
+func closeBackend(be Backend) {
+	if be != nil {
+		_ = be.Close()
+	}
 }
 
 // Config exposes the loaded architecture config.
