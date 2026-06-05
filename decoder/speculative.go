@@ -71,26 +71,15 @@ func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxT
 		tc := target.NewCache(room)
 		dc := draft.NewCache(room)
 
-		// Prefill the prompt into both caches. Only the target's last-token logits
-		// are needed (to seed the first generated token, cur); the draft just needs
-		// the KV, so runLayers (skips its LM head).
-		for _, id := range prompt[:len(prompt)-1] {
-			if _, err := target.runLayers(id, tc); err != nil {
-				g.err = err
-				return
-			}
-			if _, err := draft.runLayers(id, dc); err != nil {
-				g.err = err
-				return
-			}
-		}
-		last := prompt[len(prompt)-1]
-		seedLogits, err := target.forward(last, tc)
+		// Prefill the prompt into both caches (batched M=len(prompt) on the dense
+		// archs). The target's last-token logits seed cur; the draft's are
+		// discarded (it just needs its KV filled).
+		seedLogits, err := target.prefillLogits(prompt, tc)
 		if err != nil {
 			g.err = err
 			return
 		}
-		if _, err := draft.runLayers(last, dc); err != nil {
+		if _, err := draft.prefillLogits(prompt, dc); err != nil {
 			g.err = err
 			return
 		}

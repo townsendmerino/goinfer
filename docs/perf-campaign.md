@@ -301,11 +301,20 @@ GPU* win; on this CPU it can't clear the ≥1.3× gate (best case ~K=2 ≈ break
 exact, gated, and `--draft` is wired — it will win on a bandwidth-bound backend
 (a future GPU path) where compute is ~free. Don't advertise it as a CPU speedup.
 
-**The re-block's real payoff is batched prefill.** `forwardN` at prefill shape
-(large M) is ~0.51× → **~1.7–2× faster prompt prefill / time-to-first-token** on
-the 1.5B, since prefill is the one large-M, latency-visible path. That's the
-follow-up worth shipping (goinfer's prefill is currently sequential M=1). Decode
-itself is untouched (M=1) and stays the ~73/~36 tok/s headline.
+**The re-block's real payoff is batched prefill — SHIPPED.** Prefill is now one
+batched M=len(prompt) pass (`prefillLogits` → `forwardLayersN`, LM head on the
+last position only) instead of sequential M=1. Seed token bit-identical
+(`TestDecodeParity` green). Measured TTFT on the 1.5B:
+
+| prompt len | sequential | batched | speedup |
+|---|---|---|---|
+| 32 | 1324 ms | 459 ms | **2.9×** |
+| 80 | 2752 ms | 1276 ms | **2.2×** |
+| 160 | 5622 ms | 2961 ms | **1.9×** |
+
+So a typical ~80-token chat prompt's first-token wait on the 1.5B drops ~2.7s →
+~1.3s. Decode is untouched (M=1) — still ~73/~36 tok/s. Net: speculative parked,
+but the kernel re-block delivered a real, felt 1.5B latency win via prefill.
 
 ### (superseded) Phase-0 recommendation → Phase 3 first, then Phase 1; Phase 2 not yet
 

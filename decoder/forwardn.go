@@ -2,46 +2,30 @@ package decoder
 
 import "math"
 
-// forwardN runs a batched forward over the K tokens in ids — appended as the
-// next K positions of cache — and returns the logits at every position
-// ([K][VocabSize]). The weight matmuls run at M=K (each weight matrix streamed
-// from memory ONCE and reused across all K positions, the speculative-verify
-// efficiency win that batch=1 decode can't get); attention stays per-position
-// and causal. Output is numerically identical to K sequential forward calls, so
-// it does not move parity.
-//
-// Only the dense gated-MLP families (Qwen / Llama / Gemma — the speculative
-// target case) take the batched path; MoE, GPT-2 (non-gated + learned positions),
-// and K≤1 fall back to sequential single-token forwards (still correct).
-func (m *Model) forwardN(ids []int, cache *KVCache) ([][]float32, error) {
-	K := len(ids)
-	if K == 0 {
-		return nil, nil
-	}
-	arch := m.w.arch
-	if m.w.Embed.rows == 0 {
-		return nil, errNotImplemented
-	}
-	if K == 1 || arch.MoE != nil || arch.NonGatedMLP || arch.LearnedPosEmbed {
-		out := make([][]float32, K)
-		for i, id := range ids {
-			l, err := m.forward(id, cache)
-			if err != nil {
-				return nil, err
-			}
-			out[i] = append([]float32(nil), l...) // forward reuses scr.logits — copy
-		}
-		return out, nil
-	}
+// canBatchN reports whether the batched M=K path applies: the dense gated-MLP
+// families (Qwen / Llama / Gemma) with K>1. MoE, GPT-2 (non-gated + learned
+// positions), and K≤1 take the sequential fallback.
+func (m *Model) canBatchN(K int) bool {
+	a := m.w.arch
+	return K > 1 && m.w.Embed.rows != 0 && a.MoE == nil && !a.NonGatedMLP && !a.LearnedPosEmbed
+}
 
+// forwardLayersN runs the embedding + all transformer layers + final norm over
+// the K tokens in ids — appended as the next K positions of cache — and returns
+// the [K, HiddenDim] post-final-norm hidden states (the LM head is the caller's).
+// The weight matmuls run at M=K, so each weight streams from memory once and is
+// reused across the K rows (aikit's column-blocked W8A8 kernel); attention stays
+// per-position and causal. Bit-identical to K sequential forwards. Assumes
+// canBatchN(len(ids)) — callers check.
+func (m *Model) forwardLayersN(ids []int, cache *KVCache) ([]float32, error) {
+	K := len(ids)
+	arch := m.w.arch
 	be := m.be
 	hidden, nH, nKV, hd := arch.HiddenDim, arch.NumHeads, arch.NumKVHeads, arch.HeadDim
 	qDim, kvDim, inter := nH*hd, nKV*hd, arch.IntermediateDim
-	startPos := cache.Pos() // the K tokens occupy positions startPos .. startPos+K-1
+	startPos := cache.Pos()
 	sandwich := arch.NormPlacement == NormSandwich4
 
-	// [K, *] batch buffers (allocated per call — forwardN runs once per speculative
-	// round of K tokens, not per token, so this is off the hot path).
 	h := make([]float32, K*hidden)
 	for i, id := range ids {
 		m.w.Embed.embedRow(id, h[i*hidden:i*hidden+hidden])
@@ -61,7 +45,7 @@ func (m *Model) forwardN(ids []int, cache *KVCache) ([][]float32, error) {
 	gate := make([]float32, K*inter)
 	up := make([]float32, K*inter)
 	mlpOut := make([]float32, K*hidden)
-	var scores []float32 // grown to the largest nKeys
+	var scores []float32
 
 	row := func(b []float32, i, w int) []float32 { return b[i*w : i*w+w] }
 
@@ -73,7 +57,6 @@ func (m *Model) forwardN(ids []int, cache *KVCache) ([][]float32, error) {
 		for i := 0; i < K; i++ {
 			normalize(arch, row(norm, i, hidden), lw.PreAttnNorm, lw.PreAttnNormBias, hidden)
 		}
-		// Projections at M=K (weights streamed once, reused across the K rows).
 		lw.QProj.matmul(be, norm, q, K)
 		lw.KProj.matmul(be, norm, k, K)
 		lw.VProj.matmul(be, norm, v, K)
@@ -84,9 +67,6 @@ func (m *Model) forwardN(ids []int, cache *KVCache) ([][]float32, error) {
 				addBias(row(v, i, kvDim), lw.VBias)
 			}
 		}
-		// Per-position attention. Append in position order so each query attends
-		// causally to the earlier tokens of this batch (and all prior cache), never
-		// to later ones.
 		for i := 0; i < K; i++ {
 			pos := startPos + i
 			qi, ki, vi := row(q, i, qDim), row(k, i, kvDim), row(v, i, kvDim)
@@ -151,12 +131,18 @@ func (m *Model) forwardN(ids []int, cache *KVCache) ([][]float32, error) {
 	for i := 0; i < K; i++ {
 		normalize(arch, row(h, i, hidden), m.w.FinalNorm, m.w.FinalNormBias, hidden)
 	}
-	vocab := arch.VocabSize
-	logits := make([]float32, K*vocab)
+	return h, nil
+}
+
+// lmHeadN projects M post-final-norm hidden rows (h is [M, HiddenDim]) to logits
+// [M, VocabSize] (+ final-logit softcap), at M=K so the head weights stream once.
+func (m *Model) lmHeadN(h []float32, M int) []float32 {
+	arch := m.w.arch
+	logits := make([]float32, M*arch.VocabSize)
 	if arch.TiedLMHead {
-		m.w.Embed.matmul(be, h, logits, K)
+		m.w.Embed.matmul(m.be, h, logits, M)
 	} else {
-		m.w.LMHead.matmul(be, h, logits, K)
+		m.w.LMHead.matmul(m.be, h, logits, M)
 	}
 	if arch.FinalLogitSoftcap > 0 {
 		sc := float32(arch.FinalLogitSoftcap)
@@ -164,9 +150,63 @@ func (m *Model) forwardN(ids []int, cache *KVCache) ([][]float32, error) {
 			logits[j] = sc * float32(math.Tanh(float64(val/sc)))
 		}
 	}
+	return logits
+}
+
+// forwardN runs a batched forward over ids and returns the logits at every
+// position ([K][VocabSize]) — used by the speculative verifier. Bit-identical to
+// K sequential forwards. Falls back to sequential for the non-batched archs.
+func (m *Model) forwardN(ids []int, cache *KVCache) ([][]float32, error) {
+	K := len(ids)
+	if K == 0 {
+		return nil, nil
+	}
+	if !m.canBatchN(K) {
+		out := make([][]float32, K)
+		for i, id := range ids {
+			l, err := m.forward(id, cache)
+			if err != nil {
+				return nil, err
+			}
+			out[i] = append([]float32(nil), l...) // forward reuses scr.logits — copy
+		}
+		return out, nil
+	}
+	h, err := m.forwardLayersN(ids, cache)
+	if err != nil {
+		return nil, err
+	}
+	vocab := m.w.arch.VocabSize
+	logits := m.lmHeadN(h, K)
 	out := make([][]float32, K)
 	for i := 0; i < K; i++ {
 		out[i] = logits[i*vocab : i*vocab+vocab]
 	}
 	return out, nil
+}
+
+// prefillLogits processes the whole prompt and returns the logits at its LAST
+// position (the seed for the first generated token). On the batched archs it
+// runs the layers at M=len(prompt) in one pass — each weight streamed once,
+// reused across all positions (~1.7–2× faster prompt prefill / time-to-first-
+// token than sequential M=1) — and runs the LM head on the last position ONLY
+// (the others' logits aren't needed). Falls back to sequential runLayers +
+// forward otherwise. Bit-identical to the sequential prefill (the seed token is
+// unchanged). The cache is filled with the whole prompt either way.
+func (m *Model) prefillLogits(prompt []int, cache *KVCache) ([]float32, error) {
+	if !m.canBatchN(len(prompt)) {
+		for _, id := range prompt[:len(prompt)-1] {
+			if _, err := m.runLayers(id, cache); err != nil {
+				return nil, err
+			}
+		}
+		return m.forward(prompt[len(prompt)-1], cache)
+	}
+	h, err := m.forwardLayersN(prompt, cache)
+	if err != nil {
+		return nil, err
+	}
+	hidden := m.w.arch.HiddenDim
+	last := h[(len(prompt)-1)*hidden:] // [HiddenDim] — LM head on the last row only
+	return m.lmHeadN(last, 1), nil
 }
