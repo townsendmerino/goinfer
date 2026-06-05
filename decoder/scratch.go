@@ -1,5 +1,7 @@
 package decoder
 
+import "github.com/townsendmerino/aikit/linalg"
+
 // decodeScratch holds the per-stream float buffers the single-token forward
 // reuses across decode steps, so steady-state decode allocates ~nothing per
 // layer (Phase 1 of the perf campaign). One lives on each KVCache — a cache is
@@ -21,10 +23,17 @@ type decodeScratch struct {
 	up     []float32 // [inter] gatedMLP up
 	scores []float32 // [>=nKeys] attention scores; grown on demand as context extends
 	logits []float32 // [vocab]
+
+	ws        *linalg.Workspace // W8A8 activation-quant scratch (zero-alloc Into/Batch)
+	qkvOps    [3]linalg.W8A8Op  // reused q/k/v batch ops
+	gateUpOps [2]linalg.W8A8Op  // reused gate/up batch ops
 }
 
 func newDecodeScratch(a *Architecture) *decodeScratch {
 	qDim, kvDim := a.NumHeads*a.HeadDim, a.NumKVHeads*a.HeadDim
+	// Note: aikit's opt-in worker pool (Workspace.SetWorkers) is intentionally NOT
+	// used — goinfer's end-to-end sweep showed it neutral-to-slightly-slower than
+	// the spawn path (the batch=1 fork/join cost is a floor, not pool-fixable).
 	return &decodeScratch{
 		h:      make([]float32, a.HiddenDim),
 		norm:   make([]float32, a.HiddenDim),
@@ -36,6 +45,7 @@ func newDecodeScratch(a *Architecture) *decodeScratch {
 		gate:   make([]float32, a.IntermediateDim),
 		up:     make([]float32, a.IntermediateDim),
 		logits: make([]float32, a.VocabSize),
+		ws:     &linalg.Workspace{},
 	}
 }
 

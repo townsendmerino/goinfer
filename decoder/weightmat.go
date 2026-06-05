@@ -150,6 +150,21 @@ func (w *weightMat) matmul(be Backend, a, dst []float32, M int) {
 	}
 }
 
+// isW8A8 reports whether this matrix uses the int8×int8 (W8A8) path — the only
+// one with a zero-alloc Workspace + batched-dispatch kernel.
+func (w *weightMat) isW8A8() bool { return w.q8 != nil && w.w8a8 }
+
+// matmulInto is matmul using a Workspace for the W8A8 path, so steady-state
+// decode quantizes the activation once into reusable scratch (no per-call
+// allocation). Other quant paths ignore ws and use matmul.
+func (w *weightMat) matmulInto(ws *linalg.Workspace, be Backend, a, dst []float32, M int) {
+	if w.isW8A8() {
+		linalg.MatmulBTW8A8Into(ws, a, w.q8, w.scales, dst, M, w.cols, w.rows)
+		return
+	}
+	w.matmul(be, a, dst, M)
+}
+
 // embedRow writes row id (one token's embedding) into dst[:cols], dequantizing
 // on the fly when the table is quantized.
 func (w *weightMat) embedRow(id int, dst []float32) {

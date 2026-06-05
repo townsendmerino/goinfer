@@ -2,8 +2,11 @@ package decoder
 
 import (
 	"os"
+	"strconv"
 	"sync"
 	"testing"
+
+	"github.com/townsendmerino/aikit/linalg"
 )
 
 // benchModel loads the 0.5B once and caches it — the go test harness calls a
@@ -48,6 +51,16 @@ func BenchmarkDecode(b *testing.B) {
 	if err != nil {
 		b.Skipf("no model (%v); set GINFER_PREQUANT_GGUF", err)
 	}
+	// Measure the shipping config by default (the demo's decode threshold), so
+	// this is a faithful regression guard. GINFER_PAR_THRESHOLD overrides it (in
+	// MACs; 0 = parallelize everything, huge = serial) for sweeps.
+	thr := DefaultDecodeParallelThreshold
+	if t := os.Getenv("GINFER_PAR_THRESHOLD"); t != "" {
+		if v, err := strconv.Atoi(t); err == nil {
+			thr = v
+		}
+	}
+	linalg.SetParallelThreshold(thr)
 
 	// A short fixed prompt; greedy so the decode is deterministic.
 	prompt := []int{785, 264, 6573, 311, 1438, 279, 2038, 25}

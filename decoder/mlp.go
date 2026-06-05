@@ -3,6 +3,8 @@ package decoder
 import (
 	"fmt"
 	"math"
+
+	"github.com/townsendmerino/aikit/linalg"
 )
 
 // gatedMLP runs one block's gated MLP for the current position and returns the
@@ -194,9 +196,15 @@ func nonGatedMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend) 
 
 // No biases on any projection.
 func gatedMLP(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend, scr *decodeScratch) error {
-	gate, up := scr.gate, scr.up       // [inter] scratch; matmul fully overwrites each
-	lw.GateProj.matmul(be, h, gate, 1) // [1,inter] = h · GateProjᵀ
-	lw.UpProj.matmul(be, h, up, 1)
+	gate, up := scr.gate, scr.up // [inter] scratch; matmul fully overwrites each
+	if lw.GateProj.isW8A8() && lw.UpProj.isW8A8() {
+		scr.gateUpOps[0] = linalg.W8A8Op{BQ: lw.GateProj.q8, Scales: lw.GateProj.scales, Dst: gate, N: lw.GateProj.rows}
+		scr.gateUpOps[1] = linalg.W8A8Op{BQ: lw.UpProj.q8, Scales: lw.UpProj.scales, Dst: up, N: lw.UpProj.rows}
+		linalg.MatmulBTW8A8Batch(scr.ws, h, 1, lw.GateProj.cols, scr.gateUpOps[:]) // gate/up in one dispatch
+	} else {
+		lw.GateProj.matmulInto(scr.ws, be, h, gate, 1)
+		lw.UpProj.matmulInto(scr.ws, be, h, up, 1)
+	}
 	switch arch.Act {
 	case ActGeluTanh:
 		for i := range gate {
@@ -209,6 +217,6 @@ func gatedMLP(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend
 	default:
 		return fmt.Errorf("decoder: unsupported activation %d (have GeGLU/SwiGLU)", arch.Act)
 	}
-	lw.DownProj.matmul(be, gate, out, 1) // [1,hidden] = mid · DownProjᵀ
+	lw.DownProj.matmulInto(scr.ws, be, gate, out, 1) // [1,hidden] = mid · DownProjᵀ
 	return nil
 }

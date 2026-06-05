@@ -1,6 +1,10 @@
 package decoder
 
-import "math"
+import (
+	"math"
+
+	"github.com/townsendmerino/aikit/linalg"
+)
 
 // addBias adds a per-output bias vector to a projection result in place
 // (Qwen2's q/k/v projections). len(b) must equal len(x).
@@ -57,11 +61,21 @@ func causalAttention(
 	pos := cache.Pos() // this token's absolute position (stable across layers in one forward)
 
 	// 1. Project to q/k/v for the new position (scratch buffers; matmul fully
-	// overwrites each).
-	q, k, v := cache.scr.q, cache.scr.k, cache.scr.v
-	lw.QProj.matmul(be, h, q, 1)
-	lw.KProj.matmul(be, h, k, 1)
-	lw.VProj.matmul(be, h, v, 1)
+	// overwrites each). When all three are W8A8 they run in ONE batched dispatch
+	// (the activation is quantized once, weights read in place — no concat), which
+	// is the per-token dispatch cut without disturbing the prequant aliasing.
+	scr := cache.scr
+	q, k, v := scr.q, scr.k, scr.v
+	if lw.QProj.isW8A8() && lw.KProj.isW8A8() && lw.VProj.isW8A8() {
+		scr.qkvOps[0] = linalg.W8A8Op{BQ: lw.QProj.q8, Scales: lw.QProj.scales, Dst: q, N: lw.QProj.rows}
+		scr.qkvOps[1] = linalg.W8A8Op{BQ: lw.KProj.q8, Scales: lw.KProj.scales, Dst: k, N: lw.KProj.rows}
+		scr.qkvOps[2] = linalg.W8A8Op{BQ: lw.VProj.q8, Scales: lw.VProj.scales, Dst: v, N: lw.VProj.rows}
+		linalg.MatmulBTW8A8Batch(scr.ws, h, 1, lw.QProj.cols, scr.qkvOps[:])
+	} else {
+		lw.QProj.matmulInto(scr.ws, be, h, q, 1)
+		lw.KProj.matmulInto(scr.ws, be, h, k, 1)
+		lw.VProj.matmulInto(scr.ws, be, h, v, 1)
+	}
 	if arch.QKVBias {
 		addBias(q, lw.QBias)
 		addBias(k, lw.KBias)
@@ -136,7 +150,7 @@ func causalAttention(
 
 	// 7. Output projection into the caller's buffer (+ bias for GPT-2); the
 	// caller applies the post-attn norm + residual.
-	lw.OProj.matmul(be, ctx, out, 1)
+	lw.OProj.matmulInto(scr.ws, be, ctx, out, 1)
 	if arch.OutBias {
 		addBias(out, lw.OBias)
 	}

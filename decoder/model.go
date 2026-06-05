@@ -194,9 +194,9 @@ func (m *Model) forward(id int, cache *KVCache) ([]float32, error) {
 	normalize(arch, h, m.w.FinalNorm, m.w.FinalNormBias, arch.HiddenDim)
 	logits := cache.scr.logits // reused per stream; matmul fully overwrites it
 	if arch.TiedLMHead {
-		m.w.Embed.matmul(m.be, h, logits, 1) // tied: embedding doubles as the head
+		m.w.Embed.matmulInto(cache.scr.ws, m.be, h, logits, 1) // tied: embedding doubles as the head
 	} else {
-		m.w.LMHead.matmul(m.be, h, logits, 1) // separate output projection
+		m.w.LMHead.matmulInto(cache.scr.ws, m.be, h, logits, 1) // separate output projection
 	}
 	if arch.FinalLogitSoftcap > 0 {
 		softcap := float32(arch.FinalLogitSoftcap)
