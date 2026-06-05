@@ -2,5 +2,7 @@ github.com/klauspost/compress v1.18.6 h1:2jupLlAwFm95+YDR+NwD2MEfFO9d4z4Prjl1XXD
 github.com/klauspost/compress v1.18.6/go.mod h1:cwPg85FWrGar70rWktvGQj8/hthj3wpl0PGDogxkrSQ=
 github.com/townsendmerino/aikit v0.4.0 h1:fDHtlY+sFNHuuT1vlvaKDOtUgueniHEMxEh+/BbaIeA=
 github.com/townsendmerino/aikit v0.4.0/go.mod h1:UhgMEx0ow8/i5NAK9TUcJMtIQxrhHmGv4Xjg7DmsDDU=
+github.com/townsendmerino/aikit v0.4.1 h1:d61lffMxJ9nLtWR8xASeOXEImQHApIwpo4Y6b8KGBEM=
+github.com/townsendmerino/aikit v0.4.1/go.mod h1:UhgMEx0ow8/i5NAK9TUcJMtIQxrhHmGv4Xjg7DmsDDU=
 golang.org/x/text v0.37.0 h1:Cqjiwd9eSg8e0QAkyCaQTNHFIIzWtidPahFWR83rTrc=
 golang.org/x/text v0.37.0/go.mod h1:a5sjxXGs9hsn/AJVwuElvCAo9v8QYLzvavO5z2PiM38=
