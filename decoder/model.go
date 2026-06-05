@@ -283,8 +283,12 @@ func (m *Model) isStop(id int, sp SamplingParams) bool {
 	return slices.Contains(sp.StopIDs, id)
 }
 
-// Generation carries the terminal status of a Generate stream.
-type Generation struct{ err error }
+// Generation carries the terminal status of a Generate stream. Spec is non-nil
+// for GenerateSpeculative and carries acceptance telemetry.
+type Generation struct {
+	err  error
+	Spec *SpecStats
+}
 
 // Err returns the error that ended the stream, or nil if it ended cleanly
 // (EOS / stop / maxTokens). Read it after the channel closes.

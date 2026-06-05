@@ -102,20 +102,39 @@ func causalAttention(
 
 	// 4. Append this position's K/V, then attend over the stored history.
 	cache.Append(layer, k, v)
+	ctx := cache.scr.ctx
+	nKeys := len(cache.Keys(layer)) / kvDim
+	attendQuery(q, ctx, cache.scr.scoresBuf(nKeys), cache, layer, pos, global, arch)
+
+	// 7. Output projection into the caller's buffer (+ bias for GPT-2); the
+	// caller applies the post-attn norm + residual.
+	lw.OProj.matmulInto(scr.ws, be, ctx, out, 1)
+	if arch.OutBias {
+		addBias(out, lw.OBias)
+	}
+	return nil
+}
+
+// attendQuery computes the attention context for a single query q (already
+// RoPE'd / QK-normed, and whose K/V are already appended to the cache) over the
+// layer's stored keys/values in the causal/window range, into ctx ([qDim]):
+// per (GQA) head, scaled dot-product scores → softmax → weighted sum of values.
+// scores is a reusable buffer with len ≥ the number of stored keys. Shared by
+// causalAttention (M=1) and the batched forwardN, so the math has one home.
+func attendQuery(q, ctx, scores []float32, cache *KVCache, layer, pos int, global bool, arch *Architecture) {
+	nH, nKV, hd := arch.NumHeads, arch.NumKVHeads, arch.HeadDim
+	kvDim := nKV * hd
 	keys, vals := cache.Keys(layer), cache.Vals(layer)
-	nKeys := len(keys) / kvDim // == pos+1
+	nKeys := len(keys) / kvDim
 	start := cache.WindowStart(pos, global)
-	scale := arch.AttnScale // resolved: query_pre_attn_scalar^-0.5 (Gemma) or 1/sqrt(headDim)
+	scale := arch.AttnScale // query_pre_attn_scalar^-0.5 (Gemma) or 1/sqrt(headDim)
 	group := nH / nKV       // GQA: query heads per KV head
 
-	ctx := cache.scr.ctx
-	clear(ctx) // reused buffer — zero before the += accumulation below
-	scores := cache.scr.scoresBuf(nKeys)
+	clear(ctx) // accumulated into below
 	for qh := range nH {
 		kvh := qh / group
 		qHead := q[qh*hd : qh*hd+hd]
 
-		// 5. Scaled dot-product scores over the causal/window range.
 		maxS := math.Inf(-1)
 		for s := start; s < nKeys; s++ {
 			kHead := keys[s*kvDim+kvh*hd : s*kvDim+kvh*hd+hd]
@@ -130,7 +149,6 @@ func causalAttention(
 			}
 		}
 
-		// 6. Softmax → weighted sum of values into this head's context slice.
 		var sum float64
 		for s := start; s < nKeys; s++ {
 			e := math.Exp(float64(scores[s]) - maxS)
@@ -147,12 +165,4 @@ func causalAttention(
 			}
 		}
 	}
-
-	// 7. Output projection into the caller's buffer (+ bias for GPT-2); the
-	// caller applies the post-attn norm + residual.
-	lw.OProj.matmulInto(scr.ws, be, ctx, out, 1)
-	if arch.OutBias {
-		addBias(out, lw.OBias)
-	}
-	return nil
 }

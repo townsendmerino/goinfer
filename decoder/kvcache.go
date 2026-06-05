@@ -61,6 +61,23 @@ func (c *KVCache) Vals(layer int) []float32 { return c.vals[layer] }
 // Pos is the number of positions stored so far.
 func (c *KVCache) Pos() int { return c.pos }
 
+// TruncateTo drops every stored position at index ≥ pos in all layers and resets
+// Pos to pos — the KV-cache rollback speculative decoding needs after a partial
+// accept (the rejected draft positions were appended but aren't real). Cheap: a
+// reslice that keeps the backing arrays, so re-appending doesn't reallocate. pos
+// must be in [0, Pos()].
+func (c *KVCache) TruncateTo(pos int) {
+	if pos < 0 || pos > c.pos {
+		return
+	}
+	n := pos * c.kvDim
+	for l := range c.numLayers {
+		c.keys[l] = c.keys[l][:n]
+		c.vals[l] = c.vals[l][:n]
+	}
+	c.pos = pos
+}
+
 // WindowStart returns the first key index a query at absolute position pos
 // may attend to on a local (sliding-window) layer. Gemma's window of size W
 // admits keys j with pos−W < j ≤ pos, i.e. the W most recent keys
