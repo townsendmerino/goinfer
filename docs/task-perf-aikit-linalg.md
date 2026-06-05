@@ -90,6 +90,31 @@ fine), just keep `SetParallelThreshold` exported and overridable.** goinfer sets
 ~0.3 M for decode (and will re-sweep for the 1.5B). Treat 0.3 M as "a reasonable,
 overridable, hardware-specific value," not a universal constant.
 
+## Phase 3b — cut the per-dispatch fork/join latency (the next lever)
+
+After v0.5.0's threshold + batching + zero-alloc landed and goinfer wired it,
+**re-profiling the optimized 68-tok/s path shows ~71% of CPU is *still*
+`pthread_cond_signal/_wait` from `parallelSpawnCols`** — but now it's the
+*parallel* path (productive: 68 vs 51 serial). The tell: serial = 51 tok/s,
+8-core = 68 → only **~1.3× scaling off 6–8 cores**, and effective bandwidth is
+~18% of the M1 Pro roofline. Each batch=1 matmul's parallel work is microseconds,
+so the **per-dispatch fork/join latency** (futex park/wake) dominates even after
+batching reduced it to ~4 dispatches/layer.
+
+**`parallelSpawnCols` spawns + parks per call.** A **persistent worker pool that
+spins briefly before parking** (option 2 from the original spec, the part not yet
+done) should keep workers hot across the ~4 dispatches/layer × 24 layers, so
+back-to-back decode matmuls skip the full futex wake. Measure the scaling: target
+materially better than 1.3× on 6 P-cores. (Pin to P-cores or let the pool size be
+set — the M1 Pro's 2 E-cores may be causing load-imbalance stalls; goinfer's
+sweep had P=4 ≈ P=6 > P=8.)
+
+This is the path from 68 toward the bandwidth roofline. Honest ceiling: batch=1
+has ~4 serial matmul dependencies/layer that can't merge, so it stays
+fork/join-bound below the 330 tok/s pure-bandwidth figure — but 1.3× says a lot
+is recoverable. goinfer re-runs `BenchmarkDecode` + the GOMAXPROCS sweep as the
+arbiter (warm-pool microbenches will *under*-show the win, like last time).
+
 ## Done
 
 - [x] Dispatch reworked + batched primitive; goinfer decode is zero-alloc and the

@@ -186,6 +186,39 @@ matmuls parallel** (the batched dispatch parallelizes better than the old per-op
 was the wrong default. ~0.3 M MACs is a good cut (parallelizes the batched
 projections + LM head; leaves only trivially-small ops serial).
 
+### Phase 0 RE-RUN — profile the *optimized* path (2026-06-05)
+
+Re-profiled `BenchmarkDecode` at the shipping config (threshold 0.3 M, parallel,
+zero-alloc-serial / ~1.7 k-alloc-parallel). New breakdown:
+
+| bucket | ~CPU |
+|---|---|
+| parallel fork/join (`pthread_cond_signal`+`_wait`, `parallelSpawnCols`) | **~71%** |
+| matmul kernel (`dotI8SDOT`/`dotI8`/`w8a8Span`) | ~15% |
+| activation quant (`QuantizeRowInt8`) | ~9% |
+| attention (`causalAttention`) | ~4% |
+
+**The scaling is the problem, not the kernel.** Serial = 51 tok/s; 8-core
+parallel = 68 — only **~1.3× off 6–8 cores.** Each batch=1 matmul's parallel
+work is microseconds, so the per-dispatch **fork/join latency** (futex park/wake
+of the workers) dominates — even after batching cut it to ~4 fork/joins/layer.
+Effective ~36 GB/s = **~18% of the M1 Pro's ~200 GB/s roofline**: the headroom
+the user sees is real, and it's gated by parallel-dispatch latency.
+
+**Next lever (aikit, Phase 3b): cut the per-dispatch fork/join latency.** A
+**persistent worker pool that spins briefly before parking** keeps workers hot
+across the ~4 dispatches/layer × 24 layers, so back-to-back decode matmuls don't
+pay a full futex wake each time. `parallelSpawnCols` currently spawns/parks per
+call (the `Spawn` in the name). This is the path from 68 toward the bandwidth
+roofline. Caveat: batch=1 decode is *fundamentally* fork/join-bound (~4 serial
+dependencies/layer can't be merged), so the practical ceiling is below the 330
+tok/s pure-bandwidth number — but ~1.3× scaling says there's a lot left.
+
+goinfer is near its floor: ~4 matmuls/layer is near-minimal (o_proj/down/LM-head
+have distinct activations — can't batch further), scratch is reused, quant is
+batched. The remaining wins are in `aikit/linalg`'s pool. Spec updated in
+`docs/task-perf-aikit-linalg.md`.
+
 ### (superseded) Phase-0 recommendation → Phase 3 first, then Phase 1; Phase 2 not yet
 
 1. **Phase 3 (parallelism granularity) — biggest, clearest lever.** Per-matmul
