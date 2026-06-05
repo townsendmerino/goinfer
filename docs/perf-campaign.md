@@ -256,8 +256,11 @@ goinfer swept it (`BenchmarkDecode`, GOMAXPROCS default, threshold 0.3 M):
 
 | tier | W=4 | W=8 (GOMAXPROCS) | Δ |
 |---|---|---|---|
-| 0.5B (clean alternating A/B, 5 rounds) | ~75.3 | ~74.6 | **~1% (noise)** |
-| 1.5B (2 rounds) | ~37.6 | ~36.0 | ~4.4% |
+| 0.5B (alternating A/B, 4–5 rounds) | ~72.8 | ~72.7 | **~0% (wash)** |
+| 1.5B (alternating A/B, 4 rounds) | ~36.6 | ~34.7 | **+5% (real, confirmed)** |
+
+(Re-confirmed clean post-v0.5.2; decode/width is M=1 so the re-block didn't move
+it. The 1.5B +5% is genuine, not noise — but see the verdict below.)
 
 **Decision: default stays GOMAXPROCS (no win on the gate).** The gate is anchored
 on the 0.5B (shipping/headline tier), and there the cap is within noise (~1%, far
