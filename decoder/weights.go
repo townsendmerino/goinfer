@@ -84,7 +84,8 @@ type Weights struct {
 	FinalNormBias []float32     // [HiddenDim] final LayerNorm bias (GPT-2 ln_f)
 	Layers        []LayerWeights
 
-	st *embed.SafetensorsFile // retained so alias-backed slices stay valid
+	st      *embed.SafetensorsFile // retained so alias-backed slices stay valid
+	backing []byte                 // serialized-weights blob aliased by q8/q4 arrays (LoadSerializedWeights); keeps it reachable
 }
 
 // matmulWeights returns every quantizable matrix in the bundle (the projections,

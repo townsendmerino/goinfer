@@ -15,6 +15,14 @@ pre-1.0 and may change as new model families and quant formats land.
   and its tokenizer from an in-memory `[]byte`, touching no filesystem. The
   shared GGUF build core is reused by the path-based `Load` / `LoadGGUF` (both
   unchanged); EOS ids resolve from the GGUF's own metadata.
+- **`decoder.SerializeWeights` / `LoadSerializedWeights`** + `Model.Weights()` /
+  `Model.Quant()` / `NewModel` — a versioned binary format (`.giw`: magic +
+  version + config + quant guard + CRC, lazy fallback like ken's index) for an
+  already-quantized weight bundle. On load the big int8/int4 arrays are **aliased
+  zero-copy** out of the blob (float scales are copied for alignment), so a
+  prequant build skips dequant+requant *and* the resident-weight heap copy.
+- **`cmd/prequant`** — build-time generator: turns a GGUF into a `.giw` bundle
+  (serialized int8 weights + a metadata-only GGUF carrying the tokenizer).
 
 ### Changed
 - `demo/chat` (embed build) loads the baked-in model **from memory by default** —
@@ -22,6 +30,17 @@ pre-1.0 and may change as new model families and quant formats land.
   filesystem. `--model-tmp` / `GOINFER_MODEL_TMP=1` opts back into a temp-file +
   mmap load (lower peak RAM for large models; tmpfs caveat documented). Load
   progress prints to stderr.
+- `demo/chat` gains a **`-tags prequant`** build (now `build-embed.sh`'s default)
+  that embeds a `.giw` bundle and maps the int8 weights from the binary image.
+  Measured on the 0.5B (Qwen2.5-Coder, M-series CPU): cold start **2.3 s → 0.48 s**
+  and resident heap (`phys_footprint`) **772 MB → 78 MB**. The win scales with
+  model size — a 4B int8 model no longer needs a ~5 GB weight heap per launch.
+  Quant is fixed at bundle-build time; the runtime `--quant` flag and the GGUF
+  fallback apply only to the `--model <gguf>` path.
+- The embed build now bakes the GGUF **uncompressed** (dropping zstd — q4 weights
+  are high-entropy, so it shaved only ~3% while costing inflate time + a
+  full-size heap buffer). Removes the `klauspost/compress` dependency; the
+  default module graph is back to `aikit` + `x/text`.
 
 ## [v0.1.2] — 2026-06-04
 

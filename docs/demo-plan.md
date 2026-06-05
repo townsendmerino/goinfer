@@ -88,14 +88,21 @@ Notes:
 - **Strip:** `go build -ldflags="-s -w" -trimpath`. Free hygiene, but the binary
   is model-dominated (~400 MB model vs ~10 MB Go code+runtime), so stripping is a
   rounding error here. The only lever that moves a model-embedded binary is quant.
-- **DONE — `//go:embed` + zstd (`-tags embed`):** the model is stored
-  zstd-compressed and inflated at startup (~2 s cold start). **In-memory load
-  shipped:** the binary inflates the model straight into RAM and loads from the
-  bytes (`decoder.LoadGGUFBytes` / `tokenizer.LoadGGUFBytes`) — **no temp file,
-  runs on a read-only / `FROM scratch` filesystem** (unblocks Demo 2). A
-  `--model-tmp` / `GOINFER_MODEL_TMP` opt-out streams to a temp file + mmap for
-  lower peak RAM on big models. (Int4 weights are high-entropy, so zstd only
-  shaves a little off the ~400 MB asset; the win was always portability, not size.)
+- **DONE — embed, in-memory load, and PREQUANT (`-tags prequant`, the default):**
+  three steps shipped.
+  1. *Dropped zstd* — q4 is high-entropy (zstd shaved ~3%) so the GGUF is embedded
+     raw; removed the `klauspost/compress` dep and the inflate heap buffer.
+  2. *In-memory load* — `decoder.LoadGGUFBytes` / `tokenizer.LoadGGUFBytes` parse
+     the model from the binary image: **no temp file, runs on a read-only /
+     `FROM scratch` filesystem** (unblocks Demo 2). `--model-tmp` opt-out for a
+     temp-file + mmap load.
+  3. *Prequant bundle* (`cmd/prequant` → `.giw`: pre-serialized int8 weights +
+     metadata GGUF for the tokenizer) — the int8 weights are **aliased from the
+     image**, skipping dequant/requant AND the resident-weight heap copy. Measured
+     on the 0.5B (M-series CPU): **cold start 2.3 s → 0.48 s, resident heap
+     772 MB → 78 MB.** The RAM win scales with model size — the key enabler for
+     the 4B Mellum container (Demo 2). Quant is fixed at build time; `--quant` /
+     GGUF fallback apply only on the `--model <gguf>` path.
 - **Optional build-tag trim:** compile only the Qwen architecture (tag out
   Gemma/Llama/Mistral/etc.) and exclude the `gpu` path — single-digit MB, low
   priority.

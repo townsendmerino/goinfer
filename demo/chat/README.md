@@ -116,15 +116,8 @@ int8×int8 (W8A8) SDOT kernel, which is **much** faster than the int4 path's
 per-token nibble unpacking. Other flags: `--system`, `--temp`, `--top-k`,
 `--top-p`, `--max`, `--seed`, `--backend`.
 
-**Memory vs. disk.** The embedded binary inflates its model into RAM by default
-(peak ~900 MB for the 0.5B; nothing written to disk). On a RAM-constrained
-machine, `--model-tmp` (or `GOINFER_MODEL_TMP=1`) streams the model to a temp
-file and mmaps it instead — lower peak RAM, but it needs a writable temp dir.
-Caveat: if your temp dir is a **tmpfs** (RAM-backed, common on Linux) it saves
-no RAM, since the file lives in memory anyway.
-
-**The single-file embedded binary** (what the releases are): compress a GGUF,
-bake it in with `//go:embed`, and cross-compile static, no-cgo binaries:
+**The single-file embedded binary** (what the releases are): bake the model into
+a static, no-cgo, cross-compiled binary.
 
 ```bash
 ./demo/chat/build-embed.sh ~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf \
@@ -132,9 +125,24 @@ bake it in with `//go:embed`, and cross-compile static, no-cgo binaries:
 # → demo/chat/dist/goinfer-chat-<os>-<arch>
 ```
 
-The model file is a build input (gitignored — at ~430 MB it exceeds GitHub's
-100 MB file cap), so you supply its path; the resulting binaries are the release
-assets.
+The model is a build input (gitignored — it exceeds GitHub's 100 MB file cap),
+so you supply its path; the resulting binaries are the release assets.
+
+By default this builds a **prequant bundle** (`-tags prequant`): the int8 weights
+are pre-serialized at build time, so the binary **maps them straight from its own
+image at launch** — no decompress, no dequant/requant, no weight heap copy.
+Versus loading the raw GGUF, that's a ~5× faster cold start (≈0.5 s vs ≈2.3 s on
+the 0.5B) and ~10× less resident heap (≈78 MB vs ≈772 MB) — and the RAM gap grows
+with model size. Pass `--gguf` to bake the raw GGUF instead (smaller asset,
+slower start, full weight heap) if asset size matters more than RAM/speed.
+
+**Memory vs. disk.** The prequant binary needs no writable disk and barely any
+heap for weights (they're image-mapped). The GGUF (`--gguf`) build loads into RAM
+by default, also writing nothing; on a RAM-constrained machine `--model-tmp` (or
+`GOINFER_MODEL_TMP=1`) streams that model to a temp file + mmap instead — lower
+peak RAM, but needs a writable temp dir. Caveat: a **tmpfs** temp dir (RAM-backed,
+common on Linux) saves no RAM. (The prequant build ignores `--model-tmp`; it's
+already image-mapped.)
 
 ---
 

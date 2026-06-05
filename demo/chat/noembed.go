@@ -1,18 +1,18 @@
-//go:build !embed
+//go:build !embed && !prequant
 
 package main
 
-import "errors"
+import (
+	"errors"
 
-// hasEmbeddedModel is false in the default build: there is no baked-in model, so
-// --model is required. The embed build (-tags embed) sets it true and provides
-// the inflate functions below.
+	"github.com/townsendmerino/goinfer/decoder"
+)
+
+// hasEmbeddedModel is false in the default build: no baked-in model, so --model
+// is required. The -tags embed / -tags prequant builds set it true and supply
+// loadEmbedded.
 const hasEmbeddedModel = false
 
-func embeddedModelBytes() ([]byte, error) {
-	return nil, errors.New("no embedded model in this build (build with -tags embed)")
-}
-
-func embeddedModelTemp() (path string, cleanup func(), err error) {
-	return "", nil, errors.New("no embedded model in this build (build with -tags embed)")
+func loadEmbedded(_ bool, _ decoder.Options) (*session, error) {
+	return nil, errors.New("no embedded model in this build (build with -tags embed or -tags prequant)")
 }

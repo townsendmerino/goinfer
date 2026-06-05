@@ -108,29 +108,9 @@ func main() {
 	s.repl()
 }
 
-// loadEmbedded loads the baked-in model. By default it inflates the model into
-// memory and loads from the bytes — nothing touches the filesystem. With
-// --model-tmp / GOINFER_MODEL_TMP it stream-inflates to a temp file and mmaps
-// that (lower peak RAM, but needs a writable temp dir). The temp file is only
-// needed during the load (weights become fresh copies), so it's removed as soon
-// as the model is built.
-func loadEmbedded(useTmp bool, opts decoder.Options) (*session, error) {
-	if useTmp {
-		progress("decompressing model → temp file…")
-		path, cleanup, err := embeddedModelTemp()
-		if err != nil {
-			return nil, err
-		}
-		defer cleanup()
-		return loadFromPath(path, opts)
-	}
-	progress("decompressing model…")
-	raw, err := embeddedModelBytes()
-	if err != nil {
-		return nil, err
-	}
-	return loadFromBytes(raw, opts)
-}
+// loadEmbedded loads the baked-in model. Its implementation is build-tag
+// specific: -tags prequant maps a serialized weight bundle (zero-copy); -tags
+// embed loads the embedded GGUF; the default build has no embedded model.
 
 // loadFromPath loads the tokenizer + model from a path. A bare .gguf carries its
 // tokenizer in metadata (LoadGGUF); an HF dir has a tokenizer.json (Load).
@@ -171,12 +151,8 @@ func loadFromBytes(raw []byte, opts decoder.Options) (*session, error) {
 // newSession assembles the REPL session and prints the load summary to stderr.
 func newSession(tk *tokenizer.Tokenizer, model *decoder.Model, opts decoder.Options, dt time.Duration) *session {
 	cfg := model.Config()
-	q := opts.Quant
-	if q == "" {
-		q = "native"
-	}
 	fmt.Fprintf(os.Stderr, "loaded %d-layer model (hidden %d, vocab %d) in %s [backend=%s quant=%s]\n",
-		cfg.NumLayers, cfg.HiddenDim, cfg.VocabSize, dt.Round(time.Millisecond), opts.Backend, q)
+		cfg.NumLayers, cfg.HiddenDim, cfg.VocabSize, dt.Round(time.Millisecond), opts.Backend, model.Quant())
 	style := tk.ChatStyle()
 	if style == tokenizer.ChatStyleNone {
 		fmt.Fprintln(os.Stderr, "note: this checkpoint has no chat template; replies may be raw completions")
