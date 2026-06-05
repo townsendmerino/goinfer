@@ -293,8 +293,11 @@ func (s *session) command(line string) bool {
 		fmt.Println("canned demo prompts — run with /demo <n|name>:")
 		for i, d := range demos {
 			tag := ""
+			if d.tier == "big" {
+				tag += "  \033[2m[1.5B]\033[0m"
+			}
 			if d.json {
-				tag = "  \033[2m[json]\033[0m"
+				tag += "  \033[2m[json]\033[0m"
 			}
 			fmt.Printf("  %d  %-8s %s%s\n", i+1, d.name, firstLine(d.prompt), tag)
 		}
@@ -442,7 +445,8 @@ func short(s string) string {
 // prompt (and risking typos on camera). Run with /demo <n|name>.
 type demo struct {
 	name, system, prompt string
-	json                 bool // one-shot JSON-constrained output for this prompt
+	json                 bool   // one-shot JSON-constrained output for this prompt
+	tier                 string // "" / "fast" run great on the 0.5B; "big" flatter the 1.5B
 }
 
 var demos = []demo{
@@ -475,6 +479,16 @@ var demos = []demo{
 		json:   true,
 		prompt: "Extract the name, version, and language as a JSON object from:\nken v0.4.0 — a fast Go code-search tool for agents",
 	},
+	// Bigger-model tier: multi-step bugs, small algorithms, concurrency, a
+	// conceptual answer, richer extraction — these flatter the 1.5B (and still run
+	// on the 0.5B). Kept brief: at ~20 tok/s a 400-token answer is ~20 s on screen.
+	{name: "race", tier: "big", prompt: "What's the bug and the fix?\n\nfunc main() {\n\tfor i := 0; i < 3; i++ {\n\t\tgo func() { fmt.Println(i) }()\n\t}\n\ttime.Sleep(time.Second)\n}"},
+	{name: "lru", tier: "big", prompt: "Implement an LRU cache in Go with O(1) Get and Put. Code only, brief."},
+	{name: "pool", tier: "big", prompt: "Write a worker pool in Go: N goroutines consume a jobs channel and send results on another channel, coordinated with sync.WaitGroup. Concise."},
+	{name: "test", tier: "big", prompt: "Write IsBalanced(s string) bool that checks balanced (), [], and {}, plus a table-driven test for it. Concise."},
+	{name: "niltl", tier: "big", prompt: "Explain the difference between a nil slice and an empty slice in Go, with a one-line example of each. Two sentences."},
+	{name: "wrap", tier: "big", prompt: "Write a Go function that opens a file and returns a wrapped error with %w, then show a caller using errors.Is. Concise."},
+	{name: "extract", json: true, prompt: "Extract repo, version, language, and license as a JSON object from:\nken v0.4.0 is an MIT-licensed Go code-search tool."},
 }
 
 // pickDemo resolves a /demo argument by 1-based index or by name.

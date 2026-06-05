@@ -86,7 +86,10 @@ Type a message to chat. Lines starting with `/` are commands:
 ### Canned demos (`/demo`)
 
 So you don't have to type prompts (handy for a quick try or a screen recording),
-`/demos` lists ready-made ones and `/demo <name>` runs them:
+`/demos` lists ready-made ones and `/demo <name>` runs them. **Every demo runs on
+either binary** — the `[1.5B]` ones just look better on the bigger model.
+
+Great on the **0.5B** (short, verifiable):
 
 | name | shows |
 |---|---|
@@ -96,11 +99,22 @@ So you don't have to type prompts (handy for a quick try or a screen recording),
 | `reverse` | reverse a slice in place |
 | `fim` | fill in a function body from its doc comment |
 | `range` | refactor a C-style loop to `range` |
-| `json` | **guaranteed-valid JSON** extraction (constrained decoding) |
+| `json` / `extract` | **guaranteed-valid JSON** extraction (constrained decoding) |
 
-The `json` one is the party trick: with constrained decoding on, the output
-*cannot* be malformed JSON — the grammar masks the logits — even from a 0.5B
-model.
+Show off the **1.5B** (`[1.5B]` in `/demos` — multi-step, longer):
+
+| name | shows |
+|---|---|
+| `race` | find + fix a goroutine loop-variable data race |
+| `lru` | implement an O(1) LRU cache |
+| `pool` | a worker pool with a jobs channel + `sync.WaitGroup` |
+| `test` | `IsBalanced` + a table-driven test for it |
+| `niltl` | explain nil vs empty slice (a correct conceptual answer) |
+| `wrap` | error wrapping with `%w` + `errors.Is` |
+
+The `json` / `extract` ones are the party trick: with constrained decoding on,
+the output *cannot* be malformed JSON — the grammar masks the logits — even from
+the 0.5B.
 
 ---
 
