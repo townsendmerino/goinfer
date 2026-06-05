@@ -19,6 +19,22 @@ runtime, no provider API.
 Built on [`aikit`](https://github.com/townsendmerino/aikit)'s embedding and tensor
 primitives.
 
+## Try it: an LLM in one file
+
+[`demo/chat`](demo/chat) is a local coding assistant that's a **single static
+binary** — the runtime *and* the model in one file. Download it, run it, chat
+offline: no install, no Python, no cgo, no model download.
+
+Grab a binary from the [latest release](https://github.com/townsendmerino/goinfer/releases/latest)
+(macOS / Linux / Windows, Intel + ARM), or run from source against your own GGUF:
+
+```bash
+go run ./demo/chat --model ~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
+```
+
+See [`demo/chat/README.md`](demo/chat/README.md) for commands, canned demos, and
+how the single-file binary is built.
+
 ## Status
 
 Pre-1.0; the forward-pass / quantization contract is parity-gated and stable, the
