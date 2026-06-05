@@ -270,6 +270,43 @@ cores (statistical at best). The knob stays exported in aikit for consumers that
 know their hardware / run the 1.5B on M-series; goinfer ships no default width.
 Allocs unchanged. (`GINFER_PAR_WIDTH` left on `BenchmarkDecode` for future sweeps.)
 
+### Speculative decoding — PARKED on CPU (the win is bandwidth-bound, this isn't)
+
+goinfer built greedy speculative decoding (0.5B drafts K tokens, 1.5B verifies in
+one `forwardN(M=K+1)`; token-identical to plain greedy — gates green) and aikit
+re-blocked the W8A8 kernel column-outer (v0.5.2) so M>1 reuses each weight across
+the M rows. Both correct; both bit-identical (`TestDecodeParity`,
+`TestForwardN_matchesSequential`, `TestSpeculativeGreedyParity`). Decode (M=1)
+unchanged at ~73 tok/s.
+
+**But end-to-end speculative is ~0.65–0.70× — a loss — even with the re-block,
+and even at 85% acceptance.** Isolated `forwardN(M=K)` vs K plain decode steps
+(1.5B, 120-token context, v0.5.2):
+
+| M | forwardN cost vs M decodes |
+|---|---|
+| 4 | 0.78× |
+| 8 | 0.67× |
+| 16–32 | **0.51×** (asymptote) |
+
+The re-block *works* (without it this was ~1.0× / flat), but it asymptotes at
+**~0.5×, not ~1×.** The reason is the campaign's recurring lesson: **pure-Go CPU
+int8 decode is ~half compute** (the SDOT), and compute is K× at M=K — only the
+dispatch + weight-bandwidth (~half) amortize. Speculative's verify runs at small
+M (K=4–5 → 0.78×) and adds draft cost on top, so the round costs **more** than the
+(accepted+1) plain decodes it replaces. Speculative is a *bandwidth-bound /
+GPU* win; on this CPU it can't clear the ≥1.3× gate (best case ~K=2 ≈ break-even).
+
+**Decision: PARK the speculative speed claim; keep the code.** It's correct,
+exact, gated, and `--draft` is wired — it will win on a bandwidth-bound backend
+(a future GPU path) where compute is ~free. Don't advertise it as a CPU speedup.
+
+**The re-block's real payoff is batched prefill.** `forwardN` at prefill shape
+(large M) is ~0.51× → **~1.7–2× faster prompt prefill / time-to-first-token** on
+the 1.5B, since prefill is the one large-M, latency-visible path. That's the
+follow-up worth shipping (goinfer's prefill is currently sequential M=1). Decode
+itself is untouched (M=1) and stays the ~73/~36 tok/s headline.
+
 ### (superseded) Phase-0 recommendation → Phase 3 first, then Phase 1; Phase 2 not yet
 
 1. **Phase 3 (parallelism granularity) — biggest, clearest lever.** Per-matmul
