@@ -13,17 +13,27 @@
 #
 # Cross-compiles a static, no-cgo binary per target into demo/chat/dist/.
 #
+# Output binaries are <name>-<os>-<arch>[.exe] (--name sets <name>, default
+# goinfer-chat) — so two model tiers can build side by side without clobbering.
+#
 # Usage:
 #   ./build-embed.sh ~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
-#   ./build-embed.sh <model.gguf> darwin/arm64 darwin/amd64 linux/amd64 linux/arm64 windows/amd64
+#   ./build-embed.sh --name goinfer-chat-1.5b <model.gguf> darwin/arm64 linux/amd64 ...
 #   ./build-embed.sh --gguf <model.gguf> [os/arch ...]
 #
 # With no targets it builds for the host.
 set -euo pipefail
 
 MODE=prequant
-if [ "${1:-}" = "--gguf" ]; then MODE=gguf; shift; fi
-MODEL="${1:?usage: build-embed.sh [--gguf] <model.gguf> [os/arch ...]}"
+NAME=goinfer-chat
+while true; do
+  case "${1:-}" in
+    --gguf) MODE=gguf; shift ;;
+    --name) NAME="${2:?--name needs a value}"; shift 2 ;;
+    *) break ;;
+  esac
+done
+MODEL="${1:?usage: build-embed.sh [--gguf] [--name <basename>] <model.gguf> [os/arch ...]}"
 shift || true
 DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$DIR/../.." && pwd)"
@@ -47,7 +57,7 @@ if [ ${#TARGETS[@]} -eq 0 ]; then TARGETS=("$(go env GOOS)/$(go env GOARCH)"); f
 mkdir -p "$DIR/dist"
 for t in "${TARGETS[@]}"; do
   os="${t%/*}"; arch="${t#*/}"
-  out="$DIR/dist/goinfer-chat-$os-$arch"
+  out="$DIR/dist/$NAME-$os-$arch"
   [ "$os" = "windows" ] && out="$out.exe"
   echo "building $os/$arch ($TAGS) -> dist/$(basename "$out")"
   CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" \

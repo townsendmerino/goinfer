@@ -14,6 +14,22 @@ anywhere?"* — not *"is it faster?"*
 
 ## Decisions locked
 
+- **Two size tiers of Demo 1 (SHIPPED both).** Same program, built twice with
+  different embedded models. Measured (prequant `.giw`, M-series CPU,
+  fixed prompt+seed):
+
+  | tier | binary | cold start | resident heap | tok/s | role |
+  |---|---|---|---|---|---|
+  | **Qwen2.5-Coder-0.5B** | 617 MB | 0.48 s | 77 MB | ~44 | headline ("LLM in one file") |
+  | **Qwen2.5-Coder-1.5B** | 1.72 GB | 1.23 s | 87 MB | ~20 | "bigger, smarter, still one file" |
+
+  **Gate (§"two-tiers" task) → ship both.** The 1.5B streams at ~20 tok/s, well
+  above the ~6–8 tok/s readability bar, and prequant keeps its heap at 87 MB
+  (≈ the 0.5B) so RAM is a non-issue. 1.5B binary is under the 2 GiB asset cap
+  (327 MB headroom); 3B int8 (~3.2 GB) would not fit — 1.5B is the single-asset
+  ceiling. The 0.5B remains the headline regardless; the 1.5B is capability upside.
+  (This is two *sizes of Demo 1* — distinct from the Mellum-4B `FROM scratch`
+  container, which stays a separate future demo below.)
 - **Headline model: Qwen2.5-Coder-0.5B-Instruct.** Small enough to embed,
   code-flavored (on-brand with ken/aikit), and Instruct-tuned so it can actually
   respond. It's the smallest in the Qwen2.5-Coder family.

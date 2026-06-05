@@ -10,39 +10,59 @@ no native libraries. That's the whole point of goinfer: a pure-Go LLM runtime yo
 can `scp`.
 
 ```
-$ ./goinfer-chat-darwin-arm64
-loaded 24-layer model (hidden 896, vocab 151936) in 2.1s [backend=cpu quant=int8int8]
+$ ./goinfer-chat-0.5b-darwin-arm64
+mapping weights…
+loaded 24-layer model (hidden 896, vocab 151936) in 0.48s [backend=cpu quant=int8int8]
 goinfer chat — /help for commands, /quit to exit.
 you> write a Go function that reverses a slice of ints in place
 ```
 
-The embedded model is **Qwen2.5-Coder-0.5B-Instruct** (Q4_K_M), run with the fast
-int8×int8 kernel — interactive on a laptop CPU, no GPU required.
+The embedded model is **Qwen2.5-Coder-Instruct** (run with the fast int8×int8
+kernel) — interactive on a laptop CPU, no GPU required.
 
 ---
 
 ## Download & run
 
-Grab the binary for your platform from the [latest release](https://github.com/townsendmerino/goinfer/releases/latest):
+Two size tiers — same program, pick one. Grab the binary for your platform from
+the [latest release](https://github.com/townsendmerino/goinfer/releases/latest):
+
+**0.5B — the headline: tiny + fast** (~617 MB, ~44 tok/s on a laptop CPU):
 
 | Platform | Asset |
 |---|---|
-| macOS (Apple Silicon) | `goinfer-chat-darwin-arm64` |
-| macOS (Intel) | `goinfer-chat-darwin-amd64` |
-| Linux (x86-64) | `goinfer-chat-linux-amd64` |
-| Linux (ARM64) | `goinfer-chat-linux-arm64` |
-| Windows (x86-64) | `goinfer-chat-windows-amd64.exe` |
+| macOS (Apple Silicon) | `goinfer-chat-0.5b-darwin-arm64` |
+| macOS (Intel) | `goinfer-chat-0.5b-darwin-amd64` |
+| Linux (x86-64) | `goinfer-chat-0.5b-linux-amd64` |
+| Linux (ARM64) | `goinfer-chat-0.5b-linux-arm64` |
+| Windows (x86-64) | `goinfer-chat-0.5b-windows-amd64.exe` |
+
+**1.5B — bigger, smarter, still one file** (~1.7 GB, ~20 tok/s — slower but
+noticeably more capable):
+
+| Platform | Asset |
+|---|---|
+| macOS (Apple Silicon) | `goinfer-chat-1.5b-darwin-arm64` |
+| macOS (Intel) | `goinfer-chat-1.5b-darwin-amd64` |
+| Linux (x86-64) | `goinfer-chat-1.5b-linux-amd64` |
+| Linux (ARM64) | `goinfer-chat-1.5b-linux-arm64` |
+| Windows (x86-64) | `goinfer-chat-1.5b-windows-amd64.exe` |
+
+The tradeoff: the 1.5B is ~1.1 GB more to download and ~2× slower per token, for
+better code and reasoning. Both load in ~1 s and use < 100 MB of heap (the
+weights are mapped from the binary image). Start with the 0.5B; reach for the
+1.5B when you want more capability.
 
 ```bash
-chmod +x goinfer-chat-darwin-arm64
-./goinfer-chat-darwin-arm64
+chmod +x goinfer-chat-0.5b-darwin-arm64
+./goinfer-chat-0.5b-darwin-arm64
 ```
 
 **macOS:** the binary is unsigned, so Gatekeeper will block it on first run.
 Clear the quarantine flag once:
 
 ```bash
-xattr -dr com.apple.quarantine ./goinfer-chat-darwin-arm64
+xattr -dr com.apple.quarantine ./goinfer-chat-0.5b-darwin-arm64
 ```
 
 (or right-click → Open the first time). That's it — there's nothing else to
@@ -120,9 +140,15 @@ per-token nibble unpacking. Other flags: `--system`, `--temp`, `--top-k`,
 a static, no-cgo, cross-compiled binary.
 
 ```bash
-./demo/chat/build-embed.sh ~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf \
+# 0.5B tier (default name goinfer-chat; --name sets the tier so tiers don't clobber):
+./demo/chat/build-embed.sh --name goinfer-chat-0.5b \
+    ~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf \
     darwin/arm64 darwin/amd64 linux/amd64 linux/arm64 windows/amd64
-# → demo/chat/dist/goinfer-chat-<os>-<arch>
+# 1.5B tier:
+./demo/chat/build-embed.sh --name goinfer-chat-1.5b \
+    ~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf \
+    darwin/arm64 darwin/amd64 linux/amd64 linux/arm64 windows/amd64
+# → demo/chat/dist/<name>-<os>-<arch>
 ```
 
 The model is a build input (gitignored — it exceeds GitHub's 100 MB file cap),

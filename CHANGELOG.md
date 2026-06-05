@@ -41,6 +41,12 @@ pre-1.0 and may change as new model families and quant formats land.
   are high-entropy, so it shaved only ~3% while costing inflate time + a
   full-size heap buffer). Removes the `klauspost/compress` dependency; the
   default module graph is back to `aikit` + `x/text`.
+- `demo/chat` now ships in **two size tiers** built from the same program:
+  Qwen2.5-Coder **0.5B** (~617 MB, ~44 tok/s — the headline) and **1.5B**
+  (~1.7 GB, ~20 tok/s — bigger, smarter, still one file). `build-embed.sh --name`
+  parameterizes the output basename so the tiers build side by side without
+  clobbering. Prequant keeps the 1.5B's resident heap at ~87 MB (≈ the 0.5B), and
+  the 1.5B binary stays under GitHub's 2 GiB asset cap.
 
 ## [v0.1.2] — 2026-06-04
 
