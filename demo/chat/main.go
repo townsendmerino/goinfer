@@ -61,6 +61,9 @@ type session struct {
 	sp      decoder.SamplingParams
 	maxTok  int
 	jsonOut bool
+
+	draft *decoder.Model // optional speculative-decoding draft model (--draft)
+	specK int            // speculative draft length per verify pass
 }
 
 func main() {
@@ -75,6 +78,8 @@ func main() {
 		topP     = flag.Float64("top-p", 0.8, "top-p / nucleus (0 = off)")
 		seed     = flag.Int64("seed", 0, "sampling RNG seed")
 		modelTmp = flag.Bool("model-tmp", false, "embed build: stream the baked-in model to a temp file + mmap instead of loading it into memory. Lower peak RAM for big models, but needs a writable temp dir. Also via GOINFER_MODEL_TMP=1. (If your temp dir is a tmpfs / RAM-backed, this saves no RAM.)")
+		draft    = flag.String("draft", "", "path to a smaller .gguf draft model for speculative decoding (e.g. the 0.5B drafting for a 1.5B target). Greedy only (--temp 0); output is token-identical to plain greedy, just faster. Must share the target's tokenizer/vocab.")
+		specK    = flag.Int("spec-k", 4, "speculative decoding: draft tokens proposed per verify pass (with --draft)")
 	)
 	flag.Parse()
 
@@ -108,6 +113,21 @@ func main() {
 	s.system = *system
 	s.maxTok = *maxTok
 	s.sp = decoder.SamplingParams{Temperature: *temp, TopK: *topK, TopP: *topP, Seed: *seed}
+
+	if *draft != "" {
+		progress("loading draft model…")
+		dm, derr := decoder.Load(*draft, opts)
+		if derr != nil {
+			fmt.Fprintf(os.Stderr, "load draft model: %v\n", derr)
+			os.Exit(1)
+		}
+		s.draft = dm
+		s.specK = *specK
+		fmt.Fprintf(os.Stderr, "speculative decoding on (draft=%s, K=%d) — greedy only\n", *draft, *specK)
+		if *temp != 0 {
+			fmt.Fprintf(os.Stderr, "  note: --temp %.2g is not greedy; set --temp 0 to use the draft (else plain decode)\n", *temp)
+		}
+	}
 
 	s.repl()
 }
@@ -220,7 +240,22 @@ func (s *session) generate() string {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	stream, gen := s.model.Generate(ctx, ids, s.maxTok, sp)
+	// Speculative path when a draft model is loaded and we're greedy (temp 0) with
+	// no logit masking — output is token-identical to plain greedy, just faster.
+	var stream <-chan int
+	var gen *decoder.Generation
+	useSpec := s.draft != nil && sp.Temperature == 0 && sp.LogitProcessor == nil
+	if useSpec {
+		var serr error
+		stream, gen, serr = s.model.GenerateSpeculative(ctx, ids, s.maxTok, s.draft, s.specK, sp)
+		if serr != nil {
+			fmt.Fprintf(os.Stderr, "(speculative unavailable: %v; using plain decode)\n", serr)
+			useSpec = false
+		}
+	}
+	if !useSpec {
+		stream, gen = s.model.Generate(ctx, ids, s.maxTok, sp)
+	}
 
 	// Stream with UTF-8 holdback: decode the whole generated slice each step and
 	// print only newly-completed bytes (a byte-fallback token may be a partial
@@ -255,7 +290,11 @@ func (s *session) generate() string {
 		fmt.Fprintf(os.Stderr, "(generation error: %v)\n", err)
 	}
 	if elapsed := time.Since(start); elapsed > 0 && len(out) > 0 {
-		fmt.Fprintf(os.Stderr, "\033[2m[%d tok, %.1f tok/s]\033[0m\n", len(out), float64(len(out))/elapsed.Seconds())
+		fmt.Fprintf(os.Stderr, "\033[2m[%d tok, %.1f tok/s]\033[0m", len(out), float64(len(out))/elapsed.Seconds())
+		if gen.Spec != nil {
+			fmt.Fprintf(os.Stderr, "\033[2m [spec: %.0f%% accepted, %.1f tok/pass]\033[0m", gen.Spec.AcceptanceRate()*100, gen.Spec.TokensPerRound())
+		}
+		fmt.Fprintln(os.Stderr)
 	}
 	text, _ := s.tk.Decode(out)
 	return strings.TrimSpace(text)
