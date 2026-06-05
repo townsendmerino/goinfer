@@ -160,7 +160,22 @@ Threshold × GOMAXPROCS sweep (the end-to-end arbiter the aikit caveat asked for
 | serial decode (aikit default 16.78M) | 51 | 51 | 51 | 52 |
 | **parallel decode (threshold ≈0.3M)** | 51 | 65 | **68** | 66 |
 
-**~68 tok/s vs the ~48 tok/s baseline — +40%, zero-alloc, parity-identical.**
+**~68 tok/s vs the ~48 tok/s baseline — +42%, zero-alloc, parity-identical.**
+
+Two numbers, kept distinct (be honest at launch):
+- **Runtime decode (`BenchmarkDecode`, pure forward+sample): ~48 → ~68 tok/s.**
+- **Demo end-to-end (`demo/chat`, longer gen): ~44 → ~58 tok/s.** The ~10 tok/s
+  gap is streaming overhead — the channel handoff in `Generate` + the per-token
+  decode/stdout — which is a *larger relative* share now that decode is faster
+  (constant ~2–3 ms/token overhead vs a 14.7 ms vs old 21 ms decode step). It's
+  real streaming cost; quote the demo number for the README, the benchmark for
+  ARCHITECTURE/this log. (A buffered `Generate` channel — let the model compute
+  the next token while the UI prints the current — should narrow it; optional.)
+
+goinfer owns the tuning: `decoder.SetDecodeParallelThreshold` (the demo calls it
+with `DefaultDecodeParallelThreshold` = 0.3 M MACs). aikit's library default
+stays conservative — the crossover is hardware/model-specific (x86, core count,
+1.5B), so the consumer that knows the workload sets it.
 
 Read: Phase-0's "70% `pthread_cond`" was **idle worker threads parking**, not
 critical-path cost — serial decode (≈51) only matches old GOMAXPROCS=1, while

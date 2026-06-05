@@ -71,14 +71,24 @@ warm, so the cold park/wake never dominates):
 **Parallel decode wins: ~68 vs ~51 tok/s (and ~48 pre-campaign) — +40%.** The
 Phase-0 "70% `pthread_cond`" was idle workers *parking*, not critical-path cost.
 
-### → ONE ask: lower the default `parallelThreshold` to ~0.3 M MACs (was 16.78 M)
+### → No aikit-default change needed: goinfer owns its threshold
 
-Before you push v0.5.0, drop the default so decode parallelizes. ~0.3 M
-parallelizes the batched projections (q/k/v ≈1.0 M, gate/up ≈8.7 M MACs at M=1)
-and the LM head, and leaves only trivially-small ops serial — best in the sweep.
-Serial was the wrong default; my old profile mismeasured idle-worker parking as
-cost. `SetParallelThreshold` stays for per-consumer override. (Confirm prefill /
-encoder large-M still parallelize — they're far above 0.3 M, so unaffected.)
+Earlier draft said "lower aikit's default to 0.3 M." Revised — **goinfer will call
+`SetParallelThreshold` itself** for its batch=1 decode (~0.3 M MACs). That's
+better than baking goinfer's number into aikit's shipped default, because:
+
+- **0.3 M is not universal** — it's the *M1-Pro / 0.5B / batch=1* optimum. The
+  crossover moves on x86/AVX2, on fewer-core machines, and for the 1.5B (bigger
+  matmuls parallelize sooner). aikit/linalg also serves the **encoder (reranker)
+  and ken**, whose shapes differ; a global default tuned to goinfer decode could
+  mis-tune those.
+- **Decoupling:** goinfer's speed shouldn't depend on aikit shipping a specific
+  default or silently change if aikit retunes later.
+
+So: **keep aikit's default whatever your own benches justify (conservative is
+fine), just keep `SetParallelThreshold` exported and overridable.** goinfer sets
+~0.3 M for decode (and will re-sweep for the 1.5B). Treat 0.3 M as "a reasonable,
+overridable, hardware-specific value," not a universal constant.
 
 ## Done
 
@@ -86,6 +96,8 @@ encoder large-M still parallelize — they're far above 0.3 M, so unaffected.)
       `pthread_cond_*` share is gone in serial / amortized in batched-parallel.
 - [x] Kernel decode allocs ~zero with the `Workspace` path (verified: 19/op).
 - [x] Parity bit-identical (goinfer `TestDecodeParity`).
-- [ ] **Lower default `parallelThreshold` → ~0.3 M** (the arbiter result above),
-      then push the aikit v0.5.0 tag. goinfer then bumps `go.mod` v0.5.0, commits
-      its held wiring, and rebuilds the demo at ~68 tok/s.
+- [x] `SetParallelThreshold` exported + tunable (goinfer sets it, not aikit's
+      default). Keep aikit's default to whatever its own benches justify.
+- [ ] Push the aikit v0.5.0 tag. goinfer then bumps `go.mod` v0.5.0, sets its
+      decode threshold, commits its held wiring, re-sweeps the 1.5B, reconciles
+      the doc tok/s numbers, and rebuilds the demos.
