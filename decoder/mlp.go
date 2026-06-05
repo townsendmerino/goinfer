@@ -18,14 +18,28 @@ import (
 // mlp runs the block's feed-forward network, dispatching on the descriptor:
 // a sparse mixture of experts (Mixtral), GPT-2's non-gated up→act→down with
 // biases, or the gated GeGLU/SwiGLU shared by Gemma/Llama/Qwen.
-func mlp(h []float32, lw *LayerWeights, arch *Architecture, be Backend) ([]float32, error) {
+// mlp writes the FFN output for input h into out ([hidden]); the caller applies
+// any post-MLP norm + residual. The hot dense path (gatedMLP) reuses scratch and
+// writes straight into out; the rarer MoE / non-gated paths still allocate
+// internally and are copied into out.
+func mlp(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend, scr *decodeScratch) error {
 	switch {
 	case arch.MoE != nil:
-		return moeMLP(h, lw, arch, be)
+		g, err := moeMLP(h, lw, arch, be)
+		if err != nil {
+			return err
+		}
+		copy(out, g)
+		return nil
 	case arch.NonGatedMLP:
-		return nonGatedMLP(h, lw, arch, be)
+		g, err := nonGatedMLP(h, lw, arch, be)
+		if err != nil {
+			return err
+		}
+		copy(out, g)
+		return nil
 	default:
-		return gatedMLP(h, lw, arch, be)
+		return gatedMLP(h, out, lw, arch, be, scr)
 	}
 }
 
@@ -179,10 +193,8 @@ func nonGatedMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend) 
 }
 
 // No biases on any projection.
-func gatedMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend) ([]float32, error) {
-	inter, hidden := arch.IntermediateDim, arch.HiddenDim
-	gate := make([]float32, inter)
-	up := make([]float32, inter)
+func gatedMLP(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend, scr *decodeScratch) error {
+	gate, up := scr.gate, scr.up       // [inter] scratch; matmul fully overwrites each
 	lw.GateProj.matmul(be, h, gate, 1) // [1,inter] = h · GateProjᵀ
 	lw.UpProj.matmul(be, h, up, 1)
 	switch arch.Act {
@@ -195,9 +207,8 @@ func gatedMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend) ([]
 			gate[i] = silu(gate[i]) * up[i]
 		}
 	default:
-		return nil, fmt.Errorf("decoder: unsupported activation %d (have GeGLU/SwiGLU)", arch.Act)
+		return fmt.Errorf("decoder: unsupported activation %d (have GeGLU/SwiGLU)", arch.Act)
 	}
-	out := make([]float32, hidden)
 	lw.DownProj.matmul(be, gate, out, 1) // [1,hidden] = mid · DownProjᵀ
-	return out, nil
+	return nil
 }

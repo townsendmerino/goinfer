@@ -81,7 +81,9 @@ func (m *Model) Config() *Config { return &m.w.Cfg }
 // a known max length (0 = grow on demand).
 func (m *Model) NewCache(capHint int) *KVCache {
 	a := m.w.arch
-	return NewKVCache(a.NumLayers, a.NumKVHeads, a.HeadDim, a.SlidingWindow, capHint)
+	c := NewKVCache(a.NumLayers, a.NumKVHeads, a.HeadDim, a.SlidingWindow, capHint)
+	c.scr = newDecodeScratch(a)
+	return c
 }
 
 // runLayers advances one decode step for token id at position cache.Pos():
@@ -109,8 +111,12 @@ func (m *Model) runLayers(id int, cache *KVCache) ([]float32, error) {
 	if m.w.Embed.rows == 0 {
 		return nil, fmt.Errorf("decoder.forward: weights not loaded %w [M1]", errNotImplemented)
 	}
+	if cache.scr == nil { // caches from NewKVCache directly (tests); Generate uses NewCache
+		cache.scr = newDecodeScratch(arch)
+	}
+	scr := cache.scr
 	hidden := arch.HiddenDim
-	h := make([]float32, hidden)
+	h := scr.h                // residual stream (reused per stream; fully overwritten below)
 	m.w.Embed.embedRow(id, h) // f32 copy, or int8 dequant when quantized
 	// Embedding scale (Gemma = √hidden; 0/1 = none). NOTE: HF computes this
 	// normalizer as sqrt(hidden) cast to the model's dtype — bf16 for a bf16
@@ -138,29 +144,27 @@ func (m *Model) runLayers(id int, cache *KVCache) ([]float32, error) {
 	sandwich := arch.NormPlacement == NormSandwich4
 	for l := 0; l < arch.NumLayers; l++ {
 		lw := &m.w.Layers[l]
-		n := append([]float32(nil), h...)
-		normalize(arch, n, lw.PreAttnNorm, lw.PreAttnNormBias, hidden)
-		att, err := causalAttention(l, n, lw, arch, cache, m.be)
-		if err != nil {
+		copy(scr.norm, h)
+		normalize(arch, scr.norm, lw.PreAttnNorm, lw.PreAttnNormBias, hidden)
+		if err := causalAttention(l, scr.norm, scr.sub, lw, arch, cache, m.be); err != nil {
 			return nil, err
 		}
 		if sandwich {
-			normalize(arch, att, lw.PostAttnNorm, nil, hidden)
+			normalize(arch, scr.sub, lw.PostAttnNorm, nil, hidden)
 		}
 		for i := range h {
-			h[i] += att[i]
+			h[i] += scr.sub[i]
 		}
-		n2 := append([]float32(nil), h...)
-		normalize(arch, n2, lw.PreMLPNorm, lw.PreMLPNormBias, hidden)
-		g, err := mlp(n2, lw, arch, m.be)
-		if err != nil {
+		copy(scr.norm, h)
+		normalize(arch, scr.norm, lw.PreMLPNorm, lw.PreMLPNormBias, hidden)
+		if err := mlp(scr.norm, scr.sub, lw, arch, m.be, scr); err != nil {
 			return nil, err
 		}
 		if sandwich {
-			normalize(arch, g, lw.PostMLPNorm, nil, hidden)
+			normalize(arch, scr.sub, lw.PostMLPNorm, nil, hidden)
 		}
 		for i := range h {
-			h[i] += g[i]
+			h[i] += scr.sub[i]
 		}
 	}
 	return h, nil
@@ -188,7 +192,7 @@ func (m *Model) forward(id int, cache *KVCache) ([]float32, error) {
 		return nil, err
 	}
 	normalize(arch, h, m.w.FinalNorm, m.w.FinalNormBias, arch.HiddenDim)
-	logits := make([]float32, arch.VocabSize)
+	logits := cache.scr.logits // reused per stream; matmul fully overwrites it
 	if arch.TiedLMHead {
 		m.w.Embed.matmul(m.be, h, logits, 1) // tied: embedding doubles as the head
 	} else {

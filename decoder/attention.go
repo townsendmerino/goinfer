@@ -37,23 +37,28 @@ func addBias(x, b []float32) {
 //	   head h → kv head h/(NumHeads/NumKVHeads). scale by 1/sqrt(QueryPreAttnScalar).
 //	6. softmax (shared kernel) → weighted sum of values → ctx
 //	7. out = OProj·ctx ; caller applies post-attn norm + residual add.
+//
+// causalAttention computes one position's attention block and writes the
+// output-projected result into out ([hidden]); the caller applies the post-attn
+// norm + residual add. The q/k/v/ctx/scores buffers are reused from the cache's
+// per-stream scratch — no per-call allocation in steady-state decode.
 func causalAttention(
 	layer int,
 	h []float32,
+	out []float32,
 	lw *LayerWeights,
 	arch *Architecture,
 	cache *KVCache,
 	be Backend,
-) ([]float32, error) {
-	hidden, nH, nKV, hd := arch.HiddenDim, arch.NumHeads, arch.NumKVHeads, arch.HeadDim
-	qDim, kvDim := nH*hd, nKV*hd
+) error {
+	nH, nKV, hd := arch.NumHeads, arch.NumKVHeads, arch.HeadDim
+	kvDim := nKV * hd
 	global := arch.isGlobalLayer(layer)
 	pos := cache.Pos() // this token's absolute position (stable across layers in one forward)
 
-	// 1. Project to q/k/v for the new position.
-	q := make([]float32, qDim)
-	k := make([]float32, kvDim)
-	v := make([]float32, kvDim)
+	// 1. Project to q/k/v for the new position (scratch buffers; matmul fully
+	// overwrites each).
+	q, k, v := cache.scr.q, cache.scr.k, cache.scr.v
 	lw.QProj.matmul(be, h, q, 1)
 	lw.KProj.matmul(be, h, k, 1)
 	lw.VProj.matmul(be, h, v, 1)
@@ -89,8 +94,9 @@ func causalAttention(
 	scale := arch.AttnScale // resolved: query_pre_attn_scalar^-0.5 (Gemma) or 1/sqrt(headDim)
 	group := nH / nKV       // GQA: query heads per KV head
 
-	ctx := make([]float32, qDim)
-	scores := make([]float32, nKeys)
+	ctx := cache.scr.ctx
+	clear(ctx) // reused buffer — zero before the += accumulation below
+	scores := cache.scr.scoresBuf(nKeys)
 	for qh := range nH {
 		kvh := qh / group
 		qHead := q[qh*hd : qh*hd+hd]
@@ -128,11 +134,11 @@ func causalAttention(
 		}
 	}
 
-	// 7. Output projection (+ bias for GPT-2); caller applies post-attn norm + residual.
-	out := make([]float32, hidden)
+	// 7. Output projection into the caller's buffer (+ bias for GPT-2); the
+	// caller applies the post-attn norm + residual.
 	lw.OProj.matmul(be, ctx, out, 1)
 	if arch.OutBias {
 		addBias(out, lw.OBias)
 	}
-	return out, nil
+	return nil
 }

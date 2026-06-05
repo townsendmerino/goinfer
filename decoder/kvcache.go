@@ -19,6 +19,8 @@ type KVCache struct {
 	keys [][]float32 // per layer, appended [pos*kvDim]
 	vals [][]float32
 	pos  int // number of positions stored (the next position index)
+
+	scr *decodeScratch // per-stream reusable forward buffers (Model.NewCache sets it)
 }
 
 // NewKVCache allocates an empty cache for a model with the given geometry.

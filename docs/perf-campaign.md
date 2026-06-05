@@ -120,6 +120,27 @@ the M1 Pro's ~200 GB/s rated → **~18% of the roofline.** Compute/overhead-boun
 with large headroom, as premised. We can't reach the roofline while dispatch
 caps useful parallelism at ~2 cores.
 
+### Phase 1 (goinfer) — decoder scratch reuse (2026-06-05, done)
+
+Reuse per-stream forward buffers off the KV cache (`decodeScratch`): the residual
+`h`, the norm input, the attn/MLP output, q/k/v/ctx/scores, gate/up, and the
+vocab-sized logits — no per-layer allocation in the hot path. Parity green
+(`TestDecodeParity` unchanged).
+
+| metric | before | after |
+|---|---|---|
+| bytes/op | 4.3 MB | **2.07 MB** (−52%) |
+| allocs/op | 4660 | 4395 (−6%) |
+| tok/s | ~48 | ~48 (flat) |
+
+Read: this halved the *bytes* churned (the big float buffers were the decoder's),
+but the alloc *count* and tok/s are unchanged — because the remaining ~4400
+allocs/op are the **aikit kernel's per-call allocations** (`MatmulBTW8A8.func1`),
+and tok/s is gated by **dispatch**, not GC. So goinfer Phase 1 is a real
+memory-churn / latency-jitter win that **pairs with** aikit's Phase 1 (kernel
+scratch) — it is not a standalone tok/s mover. Confirms the bottleneck is in
+aikit (dispatch + kernel allocs), per the spec.
+
 ### Recommendation → Phase 3 first, then Phase 1; Phase 2 not yet
 
 1. **Phase 3 (parallelism granularity) — biggest, clearest lever.** Per-matmul
