@@ -43,8 +43,8 @@ one machine — no per-platform toolchain, no native libraries.
 
 ### Download — two sizes, same program
 
-**0.5B** — tiny + fast (~617 MB, ~44 tok/s): `goinfer-chat-0.5b-<platform>`
-**1.5B** — bigger, smarter (~1.7 GB, ~20 tok/s): `goinfer-chat-1.5b-<platform>`
+**0.5B** — tiny + fast (~617 MB, ~57 tok/s): `goinfer-chat-0.5b-<platform>`
+**1.5B** — bigger, smarter (~1.7 GB, ~26 tok/s): `goinfer-chat-1.5b-<platform>`
 
 | Platform | 0.5B | 1.5B |
 |---|---|---|

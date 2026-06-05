@@ -27,7 +27,7 @@ kernel) — interactive on a laptop CPU, no GPU required.
 Two size tiers — same program, pick one. Grab the binary for your platform from
 the [latest release](https://github.com/townsendmerino/goinfer/releases/latest):
 
-**0.5B — the headline: tiny + fast** (~617 MB, ~44 tok/s on a laptop CPU):
+**0.5B — the headline: tiny + fast** (~617 MB, ~57 tok/s on a laptop CPU):
 
 | Platform | Asset |
 |---|---|
@@ -37,7 +37,7 @@ the [latest release](https://github.com/townsendmerino/goinfer/releases/latest):
 | Linux (ARM64) | `goinfer-chat-0.5b-linux-arm64` |
 | Windows (x86-64) | `goinfer-chat-0.5b-windows-amd64.exe` |
 
-**1.5B — bigger, smarter, still one file** (~1.7 GB, ~20 tok/s — slower but
+**1.5B — bigger, smarter, still one file** (~1.7 GB, ~26 tok/s — slower but
 noticeably more capable):
 
 | Platform | Asset |

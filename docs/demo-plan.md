@@ -20,10 +20,12 @@ anywhere?"* — not *"is it faster?"*
 
   | tier | binary | cold start | resident heap | tok/s | role |
   |---|---|---|---|---|---|
-  | **Qwen2.5-Coder-0.5B** | 617 MB | 0.48 s | 77 MB | ~44 | headline ("LLM in one file") |
-  | **Qwen2.5-Coder-1.5B** | 1.72 GB | 1.23 s | 87 MB | ~20 | "bigger, smarter, still one file" |
+  | **Qwen2.5-Coder-0.5B** | 617 MB | 0.48 s | 77 MB | ~57 | headline ("LLM in one file") |
+  | **Qwen2.5-Coder-1.5B** | 1.72 GB | 1.23 s | 87 MB | ~26 | "bigger, smarter, still one file" |
 
-  **Gate (§"two-tiers" task) → ship both.** The 1.5B streams at ~20 tok/s, well
+  (tok/s = end-to-end demo, post-v0.5.0 perf work; runtime decode is ~70 / ~36.)
+
+  **Gate (§"two-tiers" task) → ship both.** The 1.5B streams at ~26 tok/s, well
   above the ~6–8 tok/s readability bar, and prequant keeps its heap at 87 MB
   (≈ the 0.5B) so RAM is a non-issue. 1.5B binary is under the 2 GiB asset cap
   (327 MB headroom); 3B int8 (~3.2 GB) would not fit — 1.5B is the single-asset

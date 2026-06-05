@@ -94,10 +94,15 @@ the binary's read-only image. Measured on Qwen2.5-Coder-0.5B (M-series CPU):
 The RAM win scales with model size, which is what lets the demo ship in **two
 size tiers** from one program (prequant `.giw`, M-series CPU, fixed prompt+seed):
 
-| tier | binary | cold start | resident heap | tok/s |
+| tier | binary | cold start | resident heap | tok/s (demo) |
 |---|---|---|---|---|
-| Qwen2.5-Coder-0.5B | 617 MB | 0.48 s | 77 MB | ~44 |
-| Qwen2.5-Coder-1.5B | 1.72 GB | 1.23 s | 87 MB | ~20 |
+| Qwen2.5-Coder-0.5B | 617 MB | 0.48 s | 77 MB | ~57 |
+| Qwen2.5-Coder-1.5B | 1.72 GB | 1.23 s | 87 MB | ~26 |
+
+(End-to-end demo tok/s, M1 Pro, after the v0.5.0 perf work — see
+`docs/perf-campaign.md`. Pure runtime decode is higher: ~70 / ~36 tok/s on
+`BenchmarkDecode`; the gap is streaming/UI overhead. ±a few tok/s by thermal
+state.)
 
 The 1.5B has ~3× the weights but **near-identical resident heap** (77 → 87 MB) —
 they're image-mapped, not heap-copied — and stays under GitHub's 2 GiB asset cap.
