@@ -55,11 +55,37 @@ above), goinfer gets the dispatch reduction with **no weight copy** — the
 preferred path. Tell goinfer which way you go so it fuses (concat) or batches
 (multi-matmul) accordingly.
 
+## RESULT — goinfer end-to-end arbiter (2026-06-05, M1 Pro, 0.5B int8int8)
+
+Your v0.5.0 is wired in goinfer: per-stream `Workspace`, batched q/k/v + gate/up,
+`Into` for o_proj/down/LM-head. **Allocations 4395 → 19/op (zero-alloc decode);
+parity bit-identical.** Now the threshold call, from the real decode loop (the
+arbiter your microbench couldn't reproduce — back-to-back steps keep the pool
+warm, so the cold park/wake never dominates):
+
+| config | P=1 | P=2 | P=4 | P=8 |
+|---|---|---|---|---|
+| serial decode (your default 16.78 M) | 51 | 51 | 51 | 52 |
+| **parallel decode (threshold ≈0.3 M)** | 51 | 65 | **68** | 66 |
+
+**Parallel decode wins: ~68 vs ~51 tok/s (and ~48 pre-campaign) — +40%.** The
+Phase-0 "70% `pthread_cond`" was idle workers *parking*, not critical-path cost.
+
+### → ONE ask: lower the default `parallelThreshold` to ~0.3 M MACs (was 16.78 M)
+
+Before you push v0.5.0, drop the default so decode parallelizes. ~0.3 M
+parallelizes the batched projections (q/k/v ≈1.0 M, gate/up ≈8.7 M MACs at M=1)
+and the LM head, and leaves only trivially-small ops serial — best in the sweep.
+Serial was the wrong default; my old profile mismeasured idle-worker parking as
+cost. `SetParallelThreshold` stays for per-consumer override. (Confirm prefill /
+encoder large-M still parallelize — they're far above 0.3 M, so unaffected.)
+
 ## Done
 
-- [ ] Dispatch reworked; goinfer `BenchmarkDecode` shows the `pthread_cond_*`
-      share gone and positive multi-core scaling.
-- [ ] Kernel decode allocs ~zero with the scratch path.
-- [ ] Parity green (goinfer `TestDecodeParity` + `*_forward_golden`).
-- [ ] Cut an aikit release; tell goinfer the version + the fusion/batched-matmul
-      decision so it bumps `go.mod` and wires its side.
+- [x] Dispatch reworked + batched primitive; goinfer decode is zero-alloc and the
+      `pthread_cond_*` share is gone in serial / amortized in batched-parallel.
+- [x] Kernel decode allocs ~zero with the `Workspace` path (verified: 19/op).
+- [x] Parity bit-identical (goinfer `TestDecodeParity`).
+- [ ] **Lower default `parallelThreshold` → ~0.3 M** (the arbiter result above),
+      then push the aikit v0.5.0 tag. goinfer then bumps `go.mod` v0.5.0, commits
+      its held wiring, and rebuilds the demo at ~68 tok/s.

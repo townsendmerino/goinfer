@@ -141,7 +141,37 @@ memory-churn / latency-jitter win that **pairs with** aikit's Phase 1 (kernel
 scratch) — it is not a standalone tok/s mover. Confirms the bottleneck is in
 aikit (dispatch + kernel allocs), per the spec.
 
-### Recommendation → Phase 3 first, then Phase 1; Phase 2 not yet
+### Phases 1+3 combined — aikit v0.5.0 wiring (2026-06-05, M1 Pro)
+
+aikit v0.5.0 added `Workspace` + `MatmulBTW8A8Into` (zero-alloc activation quant)
+and `MatmulBTW8A8Batch` (q/k/v or gate/up in one quantize + one parallel region,
+weights read **in place** — no concat, prequant aliasing intact) + a tunable
+`SetParallelThreshold`. goinfer wired: a `Workspace` per stream (on the cache),
+batched q/k/v and gate/up, `Into` for o_proj/down/LM-head.
+
+**Allocations: 4395 → 19 allocs/op (1.5 KB/op).** Decode is now zero-alloc.
+**Parity: bit-identical** (`TestDecodeParity` unchanged — the batched/Into kernels
+are numerically identical by construction).
+
+Threshold × GOMAXPROCS sweep (the end-to-end arbiter the aikit caveat asked for):
+
+| config | P=1 | P=2 | P=4 | P=8 |
+|---|---|---|---|---|
+| serial decode (aikit default 16.78M) | 51 | 51 | 51 | 52 |
+| **parallel decode (threshold ≈0.3M)** | 51 | 65 | **68** | 66 |
+
+**~68 tok/s vs the ~48 tok/s baseline — +40%, zero-alloc, parity-identical.**
+
+Read: Phase-0's "70% `pthread_cond`" was **idle worker threads parking**, not
+critical-path cost — serial decode (≈51) only matches old GOMAXPROCS=1, while
+*parallel* batched decode hits ~66–68. So the win was zero-alloc + **keeping the
+matmuls parallel** (the batched dispatch parallelizes better than the old per-op:
+66–68 vs the old 60). **Recommendation to aikit: lower the default
+`parallelThreshold`** (decode parallelizes) — the end-to-end arbiter says serial
+was the wrong default. ~0.3 M MACs is a good cut (parallelizes the batched
+projections + LM head; leaves only trivially-small ops serial).
+
+### (superseded) Phase-0 recommendation → Phase 3 first, then Phase 1; Phase 2 not yet
 
 1. **Phase 3 (parallelism granularity) — biggest, clearest lever.** Per-matmul
    `parallelCols` over-dispatches; the GOMAXPROCS sweep shows negative scaling
