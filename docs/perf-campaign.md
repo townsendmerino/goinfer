@@ -246,6 +246,30 @@ Further gains would need a different approach (bigger batch, speculative decode,
 or a fundamentally faster single-thread kernel), i.e. diminishing returns — and
 speed was never the pitch.
 
+### Fan-out width cap (aikit v0.5.1 `SetParallelWidth`) — NO default change
+
+Hypothesis: capping the matmul fan-out below GOMAXPROCS tightens the fork/join
+join by avoiding an E-core straggler (M1 Pro 6 P + 2 E). aikit added
+`SetParallelWidth` (parity bit-identical at every width — output columns are
+partitioned, not the K-reduction; confirmed `TestDecodeParity` green at W∈{1,4,8}).
+goinfer swept it (`BenchmarkDecode`, GOMAXPROCS default, threshold 0.3 M):
+
+| tier | W=4 | W=8 (GOMAXPROCS) | Δ |
+|---|---|---|---|
+| 0.5B (clean alternating A/B, 5 rounds) | ~75.3 | ~74.6 | **~1% (noise)** |
+| 1.5B (2 rounds) | ~37.6 | ~36.0 | ~4.4% |
+
+**Decision: default stays GOMAXPROCS (no win on the gate).** The gate is anchored
+on the 0.5B (shipping/headline tier), and there the cap is within noise (~1%, far
+under the ≳3% bar — the earlier apparent win was thermal drift). The 1.5B *does*
+gain ~4.4% at W=4 (bigger matmuls + straggler), but: (a) it doesn't meet the
+0.5B-anchored gate, and (b) a *fixed* `DefaultDecodeParallelWidth` would cap
+high-core machines too (a 16-core x86 server forced to 4-way) — the width is
+hardware-specific, as the task doc itself notes, and pure Go can't pin P vs E
+cores (statistical at best). The knob stays exported in aikit for consumers that
+know their hardware / run the 1.5B on M-series; goinfer ships no default width.
+Allocs unchanged. (`GINFER_PAR_WIDTH` left on `BenchmarkDecode` for future sweeps.)
+
 ### (superseded) Phase-0 recommendation → Phase 3 first, then Phase 1; Phase 2 not yet
 
 1. **Phase 3 (parallelism granularity) — biggest, clearest lever.** Per-matmul

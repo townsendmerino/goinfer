@@ -61,6 +61,11 @@ func BenchmarkDecode(b *testing.B) {
 		}
 	}
 	linalg.SetParallelThreshold(thr)
+	// GINFER_PAR_WIDTH caps the matmul fan-out (0 = GOMAXPROCS) — the P-core
+	// straggler sweep.
+	if w, err := strconv.Atoi(os.Getenv("GINFER_PAR_WIDTH")); err == nil {
+		linalg.SetParallelWidth(w)
+	}
 
 	// A short fixed prompt; greedy so the decode is deterministic.
 	prompt := []int{785, 264, 6573, 311, 1438, 279, 2038, 25}
