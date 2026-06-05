@@ -73,7 +73,7 @@ jobs:
       - name: workspace (resolve unpublished goinfer locally)
         run: |
           go work init . ./gpu
-          go work edit -replace github.com/townsendmerino/goinfer@v0.0.0=./
+          go work edit -replace github.com/townsendmerino/goinfer@v0.1.3=./
 
       - name: build -tags gpu
         run: go build -tags gpu ./gpu/...
