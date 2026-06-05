@@ -46,7 +46,7 @@ Benchmark a decode loop, capture CPU + alloc profiles, report the breakdown:
 how much time is in the matmul kernel vs `mallocgc`/GC vs goroutine
 dispatch/scheduling vs attention vs activation quantization — plus `allocs/op`
 and the effective GB/s. This turns "there's probably headroom" into "here's the
-30% sitting in X." **See `docs/task-perf-phase0-profile.md`.** Decide the next
+30% sitting in X." **See `docs/internal/task-perf-phase0-profile.md`.** Decide the next
 phase from the numbers.
 
 ### Phase 1 — kill per-token allocations (`goinfer/decoder`)
@@ -217,7 +217,7 @@ tok/s pure-bandwidth number — but ~1.3× scaling says there's a lot left.
 goinfer is near its floor: ~4 matmuls/layer is near-minimal (o_proj/down/LM-head
 have distinct activations — can't batch further), scratch is reused, quant is
 batched. The remaining wins are in `aikit/linalg`'s pool. Spec updated in
-`docs/task-perf-aikit-linalg.md`.
+`docs/internal/task-perf-aikit-linalg.md`.
 
 ### Phase 3b ARBITER — persistent pool does NOT win (2026-06-05)
 
