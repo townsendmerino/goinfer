@@ -219,6 +219,33 @@ have distinct activations — can't batch further), scratch is reused, quant is
 batched. The remaining wins are in `aikit/linalg`'s pool. Spec updated in
 `docs/task-perf-aikit-linalg.md`.
 
+### Phase 3b ARBITER — persistent pool does NOT win (2026-06-05)
+
+aikit added an opt-in persistent worker pool (`Workspace.SetWorkers`) that spins
+before parking. goinfer is the arbiter; end-to-end decode sweep (threshold 0.3 M):
+
+| | P=4 | P=6 | P=8 |
+|---|---|---|---|
+| pool **off** (spawn) | **67.6** | 61.9 | 65.0 |
+| pool on, workers=4/6 | 64.1 | ~62 | ~62 |
+
+**Pool is neutral-to-slightly-slower.** Parity bit-identical, but no tok/s win —
+matching the aikit microbench. The deeper finding: spawn ≈ pool, so the
+Phase-0 "71% `pthread_cond`" is **not pool-fixable** — it's the *inherent* cost
+of synchronizing workers for a batch=1 matmul whose parallel work is
+microseconds, plus idle-worker park samples that overcount. The fork/join is a
+**floor**, not an overhead a hotter pool removes.
+
+**Decision: don't enable the pool in goinfer; recommend aikit ship v0.5.0 as the
+proven Phases 1/3 and pull the experimental pool** (the aikit Claude offered
+this). ~68 tok/s is the practical ceiling for pure-Go batch=1 CPU decode with
+this approach — the ~330 tok/s pure-bandwidth roofline is unreachable at batch=1
+(can't parallelize the tiny per-token matmuls efficiently). Net campaign result:
+**~48 → ~68 tok/s runtime (+42%), ~44 → ~58 demo, zero-alloc, parity-identical.**
+Further gains would need a different approach (bigger batch, speculative decode,
+or a fundamentally faster single-thread kernel), i.e. diminishing returns — and
+speed was never the pitch.
+
 ### (superseded) Phase-0 recommendation → Phase 3 first, then Phase 1; Phase 2 not yet
 
 1. **Phase 3 (parallelism granularity) — biggest, clearest lever.** Per-matmul

@@ -115,6 +115,23 @@ fork/join-bound below the 330 tok/s pure-bandwidth figure — but 1.3× says a l
 is recoverable. goinfer re-runs `BenchmarkDecode` + the GOMAXPROCS sweep as the
 arbiter (warm-pool microbenches will *under*-show the win, like last time).
 
+### ARBITER VERDICT (goinfer end-to-end, 2026-06-05): pool does NOT win → pull it
+
+You built it correctly (parity bit-identical, opt-in, -race clean). goinfer swept
+it end-to-end — **neutral-to-slightly-slower**: spawn P=4 = 67.6 tok/s, pool
+workers=4 P=4 = 64.1 (and ~62 elsewhere). The hypothesis was wrong: spawn ≈ pool,
+so the "71% pthread_cond" was **not** recoverable latency — it's the inherent
+batch=1 sync floor + idle-worker park samples that overcount. A hotter pool
+doesn't remove a floor.
+
+**Recommendation: ship v0.5.0 as the proven Phases 1/3 (threshold + batched +
+zero-alloc, the validated +42%) and PULL the pool** (`pool.go` + `SetWorkers`/
+`Close`) — exactly the option you offered. No consumer enables it, it doesn't
+address the real limit, and unproven concurrency isn't worth the maintenance
+surface. ~68 tok/s is the practical pure-Go batch=1 CPU ceiling; the rest is a
+different-approach problem (and speed was never the pitch). Thanks for the clean,
+honest build — the opt-in design is exactly why pulling it is trivial.
+
 ## Done
 
 - [x] Dispatch reworked + batched primitive; goinfer decode is zero-alloc and the
