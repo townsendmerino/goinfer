@@ -23,8 +23,30 @@ pre-1.0 and may change as new model families and quant formats land.
   prequant build skips dequant+requant *and* the resident-weight heap copy.
 - **`cmd/prequant`** — build-time generator: turns a GGUF into a `.giw` bundle
   (serialized int8 weights + a metadata-only GGUF carrying the tokenizer).
+- **`decoder.GenerateSpeculative`** + **`demo/chat --draft <gguf>`** — greedy
+  speculative decoding: a small draft model proposes K tokens, the target
+  verifies them in one batched pass (`forwardN`), keeping the matching prefix.
+  Output is **token-identical to plain target greedy** (gated by
+  `TestSpeculativeGreedyParity`); `cache.TruncateTo` does the KV rollback. On the
+  pure-Go CPU int8 kernel it's ~break-even (decode is ~half compute, which
+  doesn't amortize at M=K), so it's a forward-looking / bandwidth-bound-backend
+  feature — correct and exact, not a CPU speedup.
+- **`decoder.SetDecodeParallelThreshold`** / `DefaultDecodeParallelThreshold` —
+  goinfer-owned tuning of aikit's matmul parallelism crossover for batch=1
+  decode (the demo sets it; aikit's library default stays conservative).
 
 ### Changed
+- **Faster decode (~48 → ~70 tok/s on the 0.5B, +42%; ~36 on the 1.5B; M-series
+  CPU)** via aikit v0.5.x: a per-stream `Workspace` makes steady-state decode
+  **zero-alloc** (4660 → 19 allocs/op), q/k/v and gate/up run as **batched**
+  matmuls, and a decode-tuned parallelism threshold parallelizes the per-token
+  weight matmuls. Numerics bit-identical (`TestDecodeParity`).
+- **Batched prompt prefill** — the prompt now runs through one `M=len(prompt)`
+  pass instead of sequential single-token forwards, **~1.9–2.9× faster
+  time-to-first-token** on the 1.5B (e.g. ~2.7 s → ~1.3 s for an 80-token
+  prompt). Seed token bit-identical.
+- Requires **aikit ≥ v0.5.2** (the `Workspace` / batched / `Into` W8A8 matmul API
+  and the column-blocked W8A8 kernel that reuses weights across M>1 rows).
 - `demo/chat` (embed build) loads the baked-in model **from memory by default** —
   no temp file, so the single-file binary runs on a read-only / `FROM scratch`
   filesystem. `--model-tmp` / `GOINFER_MODEL_TMP=1` opts back into a temp-file +
@@ -42,8 +64,8 @@ pre-1.0 and may change as new model families and quant formats land.
   full-size heap buffer). Removes the `klauspost/compress` dependency; the
   default module graph is back to `aikit` + `x/text`.
 - `demo/chat` now ships in **two size tiers** built from the same program:
-  Qwen2.5-Coder **0.5B** (~617 MB, ~44 tok/s — the headline) and **1.5B**
-  (~1.7 GB, ~20 tok/s — bigger, smarter, still one file). `build-embed.sh --name`
+  Qwen2.5-Coder **0.5B** (~617 MB, ~57 tok/s — the headline) and **1.5B**
+  (~1.7 GB, ~26 tok/s — bigger, smarter, still one file). `build-embed.sh --name`
   parameterizes the output basename so the tiers build side by side without
   clobbering. Prequant keeps the 1.5B's resident heap at ~87 MB (≈ the 0.5B), and
   the 1.5B binary stays under GitHub's 2 GiB asset cap.
