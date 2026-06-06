@@ -404,12 +404,6 @@ func buildGGUFWeights(g *embed.GGUFFile, quant quantMode) (*Weights, error) {
 	if err != nil {
 		return nil, err
 	}
-	if arch.Name == "gemma4" {
-		// Config + descriptor parse correctly (Increment 1); the weight loader for
-		// gemma4's layout (variable head_dim/FFN, KV-shared layers, PLE tensors) and
-		// the forward pass are the next increments. Fail loudly rather than mis-load.
-		return nil, fmt.Errorf("decoder(gguf): gemma4 config+descriptor OK, but weight loading is not implemented yet — see docs/internal/task-gemma4-support.md")
-	}
 	return buildWeightsFromGGUF(cfg, arch, g, quant)
 }
 
@@ -569,6 +563,96 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			return nil, err
 		}
 		arch.TiedLMHead = false
+	}
+
+	// Gemma 4 (E-models): a dedicated layer loader. Per-layer head_dim/FFN, the
+	// global/sliding split, the cross-layer KV-shared tail (layers ≥ first-shared
+	// carry no k/v), and the PLE branch (inp_gate/proj/post_norm + layer scalar).
+	// The model-level PLE inputs (per_layer_*) load here. NEOX rope ⇒ no q/k
+	// permute, so plain mat() throughout.
+	if g4 := arch.gemma4; g4 != nil {
+		if g4.HiddenSizePerLayerInput > 0 {
+			pleTotal := arch.NumLayers * g4.HiddenSizePerLayerInput
+			if w.PerLayerTokenEmbed, err = embMat("per_layer_token_embd.weight", cfg.VocabSize, pleTotal); err != nil {
+				return nil, err
+			}
+			if w.PerLayerModelProj, err = mat("per_layer_model_proj.weight", pleTotal, hidden); err != nil {
+				return nil, err
+			}
+			if w.PerLayerProjNorm, err = vnorm("per_layer_proj_norm.weight", g4.HiddenSizePerLayerInput); err != nil {
+				return nil, err
+			}
+		}
+		firstShared := arch.NumLayers - g4.SharedKVLayers
+		loadG4 := func(i int) error {
+			l := &w.Layers[i]
+			p := fmt.Sprintf("blk.%d.", i)
+			hdL := arch.headDimAt(i)
+			qDimL, kvDimL, ffn := arch.NumHeads*hdL, arch.kvHeadsAt(i)*hdL, arch.ffnAt(i)
+			var e error
+			if l.PreAttnNorm, e = vnorm(p+"attn_norm.weight", hidden); e != nil {
+				return e
+			}
+			if l.PostAttnNorm, e = vnorm(p+"post_attention_norm.weight", hidden); e != nil {
+				return e
+			}
+			if l.PreMLPNorm, e = vnorm(p+"ffn_norm.weight", hidden); e != nil {
+				return e
+			}
+			if l.PostMLPNorm, e = vnorm(p+"post_ffw_norm.weight", hidden); e != nil {
+				return e
+			}
+			if l.QProj, e = mat(p+"attn_q.weight", qDimL, hidden); e != nil {
+				return e
+			}
+			if l.QNorm, e = vnorm(p+"attn_q_norm.weight", hdL); e != nil {
+				return e
+			}
+			l.KVShared = i >= firstShared
+			if !l.KVShared {
+				if l.KProj, e = mat(p+"attn_k.weight", kvDimL, hidden); e != nil {
+					return e
+				}
+				if l.VProj, e = mat(p+"attn_v.weight", kvDimL, hidden); e != nil {
+					return e
+				}
+				if l.KNorm, e = vnorm(p+"attn_k_norm.weight", hdL); e != nil {
+					return e
+				}
+			}
+			if l.OProj, e = mat(p+"attn_output.weight", hidden, qDimL); e != nil {
+				return e
+			}
+			if l.GateProj, e = mat(p+"ffn_gate.weight", ffn, hidden); e != nil {
+				return e
+			}
+			if l.UpProj, e = mat(p+"ffn_up.weight", ffn, hidden); e != nil {
+				return e
+			}
+			if l.DownProj, e = mat(p+"ffn_down.weight", hidden, ffn); e != nil {
+				return e
+			}
+			if g4.HiddenSizePerLayerInput > 0 {
+				if l.PLEGate, e = mat(p+"inp_gate.weight", g4.HiddenSizePerLayerInput, hidden); e != nil {
+					return e
+				}
+				if l.PLEProj, e = mat(p+"proj.weight", hidden, g4.HiddenSizePerLayerInput); e != nil {
+					return e
+				}
+				if l.PostPLENorm, e = vnorm(p+"post_norm.weight", hidden); e != nil {
+					return e
+				}
+			}
+			l.LayerScalar = 1
+			if sc, se := vec(p+"layer_output_scale.weight", 1); se == nil {
+				l.LayerScalar = sc[0]
+			}
+			return nil
+		}
+		if err = parallelLayers(arch.NumLayers, loadG4); err != nil {
+			return nil, err
+		}
+		return w, nil
 	}
 
 	qDim, kvDim := arch.NumHeads*hd, arch.NumKVHeads*hd

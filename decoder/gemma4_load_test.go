@@ -85,3 +85,54 @@ func TestGemma4Config_realGGUF(t *testing.T) {
 	eq("headDimAt(0)", arch.headDimAt(0), 256)
 	eq("headDimAt(4)", arch.headDimAt(4), 512)
 }
+
+// TestGemma4Load is Increment 2: the full weight load. It exercises the gemma4
+// loader against the real E2B GGUF — per-layer head_dim/FFN, the KV-shared tail
+// (layers ≥ 15 carry no k/v), and the PLE tensors. int4 keeps it light on 16 GB.
+// (Forward pass is Increment 3, so this checks the bundle, not generation.)
+func TestGemma4Load(t *testing.T) {
+	path := os.Getenv("HOME") + "/models/gemma-4-E2B_q4_0-it.gguf"
+	if _, err := os.Stat(path); err != nil {
+		t.Skipf("no E2B gguf (%v)", err)
+	}
+	m, err := Load(path, Options{Quant: "int4"})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	w := m.w
+	if len(w.Layers) != 35 {
+		t.Fatalf("layers = %d, want 35", len(w.Layers))
+	}
+	// Layer 0: sliding, owns its KV; has the PLE branch + a layer scalar.
+	if w.Layers[0].KVShared {
+		t.Error("layer 0 should not be KV-shared")
+	}
+	if w.Layers[0].KProj.rows == 0 || w.Layers[0].VProj.rows == 0 {
+		t.Error("layer 0 missing K/V projection")
+	}
+	if w.Layers[0].PLEGate.rows == 0 || w.Layers[0].PLEProj.rows == 0 {
+		t.Error("layer 0 missing PLE gate/proj")
+	}
+	if w.Layers[0].PostPLENorm == nil || w.Layers[0].LayerScalar == 0 {
+		t.Error("layer 0 missing PLE norm / layer scalar")
+	}
+	// Layer 20 (≥ 35−20 = 15): KV-shared → no own k/v.
+	if !w.Layers[20].KVShared {
+		t.Error("layer 20 should be KV-shared")
+	}
+	if w.Layers[20].KProj.rows != 0 || w.Layers[20].VProj.rows != 0 {
+		t.Error("layer 20 (KV-shared) should carry no K/V")
+	}
+	if w.Layers[20].QProj.rows == 0 {
+		t.Error("layer 20 still needs its own Q")
+	}
+	// Model-level PLE inputs.
+	if w.PerLayerTokenEmbed.rows == 0 || w.PerLayerModelProj.rows == 0 {
+		t.Error("missing model-level PLE tensors")
+	}
+	if len(w.PerLayerProjNorm) != 256 {
+		t.Errorf("PerLayerProjNorm len = %d, want 256", len(w.PerLayerProjNorm))
+	}
+	t.Logf("loaded E2B int4: 35 layers; layer0 KProj rows=%d PLEGate rows=%d scalar=%.3f; layer20 KVShared=%v",
+		w.Layers[0].KProj.rows, w.Layers[0].PLEGate.rows, w.Layers[0].LayerScalar, w.Layers[20].KVShared)
+}

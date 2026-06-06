@@ -61,6 +61,14 @@ type LayerWeights struct {
 	// > 0). An always-on gated MLP scaled by sigmoid(SharedGate·h).
 	SharedExpert expertWeights // gated SwiGLU MLP at SharedIntermediateDim
 	SharedGate   weightMat     // [1, HiddenDim] → sigmoid scalar gate
+
+	// Gemma 4 per-layer extras (zero for every other family). The PLE branch runs
+	// after the MLP residual: gate→gelu→×per-layer-embedding→proj→norm→+residual.
+	PLEGate     weightMat // [HiddenSizePerLayerInput, HiddenDim] (GGUF inp_gate)
+	PLEProj     weightMat // [HiddenDim, HiddenSizePerLayerInput] (GGUF proj)
+	PostPLENorm []float32 // [HiddenDim] post_per_layer_input_norm (GGUF post_norm)
+	LayerScalar float32   // per-layer output scalar (GGUF layer_output_scale); 1 if absent
+	KVShared    bool      // carries no k/v and reuses an earlier layer's KV (Gemma 4 E-models)
 }
 
 // expertWeights is one MoE expert: a gated (SwiGLU) MLP with no biases.
@@ -83,6 +91,13 @@ type Weights struct {
 	FinalNorm     []float32     // [HiddenDim] final norm before the LM head
 	FinalNormBias []float32     // [HiddenDim] final LayerNorm bias (GPT-2 ln_f)
 	Layers        []LayerWeights
+
+	// Gemma 4 PLE inputs (zero for every other family). The per-layer input is
+	// (token_identity + context_aware)/√2: token_identity from PerLayerTokenEmbed,
+	// context_aware from PerLayerModelProj normed by PerLayerProjNorm.
+	PerLayerTokenEmbed weightMat // [VocabSize, NumLayers*HiddenSizePerLayerInput] (per_layer_token_embd)
+	PerLayerModelProj  weightMat // [NumLayers*HiddenSizePerLayerInput, HiddenDim] (per_layer_model_proj)
+	PerLayerProjNorm   []float32 // [HiddenSizePerLayerInput] (per_layer_proj_norm)
 
 	st      *embed.SafetensorsFile // retained so alias-backed slices stay valid
 	backing []byte                 // serialized-weights blob aliased by q8/q4 arrays (LoadSerializedWeights); keeps it reachable
@@ -108,6 +123,12 @@ func (w *Weights) matmulWeights() []*weightMat {
 		if l.SharedExpert.Gate.rows > 0 {
 			ms = append(ms, &l.SharedExpert.Gate, &l.SharedExpert.Up, &l.SharedExpert.Down, &l.SharedGate)
 		}
+		if l.PLEGate.rows > 0 { // Gemma 4 PLE branch
+			ms = append(ms, &l.PLEGate, &l.PLEProj)
+		}
+	}
+	if w.PerLayerTokenEmbed.rows > 0 { // Gemma 4 model-level PLE inputs
+		ms = append(ms, &w.PerLayerTokenEmbed, &w.PerLayerModelProj)
 	}
 	return ms
 }
