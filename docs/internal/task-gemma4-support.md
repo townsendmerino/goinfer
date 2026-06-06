@@ -301,3 +301,44 @@ Per layer: `per_layer_input_gate` [256,H], `per_layer_projection` [H,256],
 - Forward pass (variable head_dim/KV/K=V, v_norm, per-type RoPE, PLE branch +
   inputs, layer_scalar): **~4–7 days** — bounded, no AltUp/Laurel.
 - HF golden (E2B fits 16 GB) + parity gate: ~1 day. Total ~1–1.5 weeks.
+
+---
+
+## STEP 0 COMPLETE — real E2B GGUF dump (`gemma-4-E2B_q4_0-it.gguf`, 3.1 GB)
+
+`general.architecture = "gemma4"`. The two TODOs are resolved and several more
+parity-critical deltas surfaced. **E2B differs from the 12B** (no K=V; heavy KV
+sharing; PLE present). Descriptor fixes already applied: `AttnScale=1.0`,
+`RMSAddOne=false`. **Still to encode (forward-pass phase):**
+
+**Metadata (`gemma4.*`):**
+- dims: `embedding_length 1536`, `block_count 35`, `attention.head_count 8`,
+  `head_count_kv 1`, `embedding_length_per_layer_input 256` (PLE dim).
+- **variable head_dim**: `attention.key_length/value_length 512` (global),
+  `*_swa 256` (sliding); `rope.dimension_count 512` / `_swa 256`.
+- **variable FFN**: `feed_forward_length = [6144×15, 12288×20]` (per-layer!).
+- **`attention.shared_kv_layers 20`** → first-shared = 35−20 = layer 15.
+- `attention.sliding_window 512`; `sliding_window_pattern` = explicit per-layer
+  bool array, **4 sliding : 1 global** (global at i where (i+1)%5==0: 4,9,…,34).
+- **`final_logit_softcapping 30`** ⚠️ (Gemma 4 re-added it; verify HF applies it).
+- RoPE: `rope.freq_base 1e6` (global), `freq_base_swa 10000` (sliding).
+- `tokenizer.ggml.eos_token_id 1`.
+
+**Per-layer tensors (llama.cpp names):** `attn_norm` (input), `post_attention_norm`,
+`ffn_norm` (pre-FFN), `post_ffw_norm` (post-FFN), **`post_norm`** (= the PLE branch's
+post_per_layer_input_norm), `attn_q/k/v`, `attn_q_norm`/`attn_k_norm` (**no v_norm
+weight** — scale-less), `ffn_gate/up/down`, **`inp_gate`** [H,256] (per_layer_input_gate),
+**`proj`** [256,H] (per_layer_projection), **`layer_output_scale`** [1] (layer_scalar).
+- **Layers 0–14**: own `attn_k/v` + `k_norm` (k/v length 256 sliding / 512 global).
+- **Layers 15–34 (KV-shared)**: NO `attn_k`/`attn_v`/`attn_k_norm` — reuse the KV
+  of the last non-shared layer *of the same type* (sliding vs global), per the HF
+  `shared_kv_states[layer_type]` + `store_full_length_kv` logic.
+
+**Model-level:** `token_embd`, `output_norm`, the PLE inputs (`per_layer_token_embd`
+[262144, 35·256], `per_layer_model_projection`, `per_layer_projection_norm`) —
+confirm exact names on the next dump.
+
+**Descriptor additions still needed:** `FinalLogitSoftcap=30`; per-layer
+`IntermediateDim` (variable FFN); per-layer head_dim/KV via the bool pattern;
+`SharedKVLayers=20` (+ the same-type reuse rule); PLE dims. The K=V flag is OFF
+for E2B (distinct V) — it's the 12B that sets `attention_k_eq_v`.

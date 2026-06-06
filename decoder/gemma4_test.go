@@ -54,7 +54,7 @@ func TestGemma4Architecture(t *testing.T) {
 		{"NumKVHeads", arch.NumKVHeads, 8},
 		{"HeadDim (local)", arch.HeadDim, 256},
 		{"Norm", arch.Norm, NormRMS},
-		{"RMSAddOne", arch.RMSAddOne, true},
+		{"RMSAddOne", arch.RMSAddOne, false}, // Gemma4RMSNorm is plain x*weight (init 1), not x*(1+w)
 		{"NormPlacement", arch.NormPlacement, NormSandwich4},
 		{"Act", arch.Act, ActGeluTanh},
 		{"QKNorm", arch.QKNorm, true},
@@ -70,9 +70,10 @@ func TestGemma4Architecture(t *testing.T) {
 		}
 	}
 
-	// query_pre_attn_scalar^-0.5 = 256^-0.5 = 1/16.
-	if want := math.Pow(256, -0.5); arch.AttnScale != want {
-		t.Errorf("AttnScale = %v, want %v", arch.AttnScale, want)
+	// Gemma 4 text attention uses scale 1.0 (q/k-norm absorb scaling), not
+	// Gemma 3's query_pre_attn_scalar^-0.5.
+	if arch.AttnScale != 1.0 {
+		t.Errorf("AttnScale = %v, want 1.0", arch.AttnScale)
 	}
 	// EmbedScale = sqrt(hidden).
 	if want := math.Sqrt(3840); arch.EmbedScale != want {

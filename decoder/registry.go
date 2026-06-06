@@ -96,8 +96,10 @@ func gemma3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 // 5:1 local:global interleave — PLUS Gemma 4's per-layer attention deltas
 // (gemma4Params): global/full layers use a wider head (global_head_dim), a single
 // KV head (num_global_key_value_heads), shared K=V (attention_k_eq_v), and
-// partial-rotary RoPE (partial_rotary_factor). The 12B dense checkpoint is
-// PLE/AltUp/Laurel-free (verified); the E-models add those (a later phase).
+// partial-rotary RoPE (partial_rotary_factor). The 12B dense is PLE-free; the
+// E-models (E2B/E4B) add PLE (per-layer embeddings) — there is NO AltUp/Laurel
+// (those are Gemma 3n). E2B also has cross-layer KV sharing + variable FFN +
+// final-logit softcap 30 (see docs/internal/task-gemma4-support.md "STEP 0").
 //
 // NOT yet registered: the forward pass that consumes the per-layer deltas is
 // unimplemented, so the GGUF loader returns a clear WIP error. This descriptor +
@@ -118,18 +120,25 @@ func gemma4Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		IntermediateDim: cfg.IntermediateDim,
 		VocabSize:       cfg.VocabSize,
 		Norm:            NormRMS,
-		RMSAddOne:       true,
-		NormEps:         cfg.RMSNormEps,
-		NormPlacement:   NormSandwich4,
-		Act:             ActGeluTanh,
-		QKNorm:          true,
-		AttnScale:       math.Pow(cfg.QueryPreAttnScalar, -0.5),
-		SlidingWindow:   cfg.SlidingWindow,
-		layerIsGlobal:   cfg.IsGlobalLayer,
-		RoPELocalBase:   cfg.RoPELocalBase,
-		RoPEGlobalBase:  cfg.RoPEGlobalBase,
-		EmbedScale:      math.Sqrt(float64(cfg.HiddenDim)),
-		TiedLMHead:      true,
+		// HF Gemma4RMSNorm is plain `x*weight` (weight init 1), NOT Gemma 3's
+		// `x*(1+weight)` (init 0). So the SPEC is no offset (false). ⚠️ verify
+		// against the real GGUF: if llama.cpp's gemma4 convert pre-subtracts 1
+		// (as some Gemma converts do), flip this to true. (modeling_gemma4.py L~150)
+		RMSAddOne:     false,
+		NormEps:       cfg.RMSNormEps,
+		NormPlacement: NormSandwich4,
+		Act:           ActGeluTanh,
+		QKNorm:        true,
+		// Gemma 4 text attention uses scale 1.0 (modeling_gemma4.py L1194): the
+		// learned q/k-norm weights absorb the scaling, unlike Gemma 3's explicit
+		// query_pre_attn_scalar^-0.5. A new scale-less v_norm normalizes V.
+		AttnScale:      1.0,
+		SlidingWindow:  cfg.SlidingWindow,
+		layerIsGlobal:  cfg.IsGlobalLayer,
+		RoPELocalBase:  cfg.RoPELocalBase,
+		RoPEGlobalBase: cfg.RoPEGlobalBase,
+		EmbedScale:     math.Sqrt(float64(cfg.HiddenDim)),
+		TiedLMHead:     true,
 		gemma4: &gemma4Params{
 			GlobalHeadDim:    cfg.GlobalHeadDim,
 			NumGlobalKVHeads: cfg.NumGlobalKVHeads,
