@@ -83,6 +83,9 @@ func (m *Model) NewCache(capHint int) *KVCache {
 	a := m.w.arch
 	c := NewKVCache(a.NumLayers, a.NumKVHeads, a.HeadDim, a.SlidingWindow, capHint)
 	c.scr = newDecodeScratch(a)
+	if a.gemma4 != nil {
+		c.manualPos = true // gemma4's last layer is KV-shared; pos advances via Advance()
+	}
 	return c
 }
 
@@ -110,6 +113,9 @@ func (m *Model) runLayers(id int, cache *KVCache) ([]float32, error) {
 	arch := m.w.arch
 	if m.w.Embed.rows == 0 {
 		return nil, fmt.Errorf("decoder.forward: weights not loaded %w [M1]", errNotImplemented)
+	}
+	if arch.gemma4 != nil { // Gemma 4: per-layer head_dim, KV-sharing, PLE — own path.
+		return m.runLayersGemma4(id, cache)
 	}
 	if cache.scr == nil { // caches from NewKVCache directly (tests); Generate uses NewCache
 		cache.scr = newDecodeScratch(arch)

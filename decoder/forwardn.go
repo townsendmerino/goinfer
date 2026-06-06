@@ -7,7 +7,9 @@ import "math"
 // positions), and K≤1 take the sequential fallback.
 func (m *Model) canBatchN(K int) bool {
 	a := m.w.arch
-	return K > 1 && m.w.Embed.rows != 0 && a.MoE == nil && !a.NonGatedMLP && !a.LearnedPosEmbed
+	// Gemma 4 has its own sequential forward (per-layer head_dim, KV-sharing, PLE);
+	// the batched M=K path here is the uniform-shape gemma3-family one, so exclude it.
+	return K > 1 && m.w.Embed.rows != 0 && a.MoE == nil && !a.NonGatedMLP && !a.LearnedPosEmbed && a.gemma4 == nil
 }
 
 // forwardLayersN runs the embedding + all transformer layers + final norm over

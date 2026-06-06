@@ -20,6 +20,11 @@ type KVCache struct {
 	vals [][]float32
 	pos  int // number of positions stored (the next position index)
 
+	// manualPos decouples pos from Append's last-layer trigger. Gemma 4's last
+	// layer is KV-shared (never appends), so the caller advances pos explicitly
+	// via Advance() after each token's full layer sweep.
+	manualPos bool
+
 	scr *decodeScratch // per-stream reusable forward buffers (Model.NewCache sets it)
 }
 
@@ -47,12 +52,17 @@ func NewKVCache(numLayers, numKVHeads, headDim, window, capHint int) *KVCache {
 func (c *KVCache) Append(layer int, k, v []float32) int {
 	c.keys[layer] = append(c.keys[layer], k...)
 	c.vals[layer] = append(c.vals[layer], v...)
-	// pos advances once per layer-0 append so all layers stay in lockstep.
-	if layer == c.numLayers-1 {
+	// pos advances once per last-layer append so all layers stay in lockstep —
+	// unless manualPos (gemma4), where the caller calls Advance() after the sweep.
+	if !c.manualPos && layer == c.numLayers-1 {
 		c.pos++
 	}
 	return c.pos
 }
+
+// Advance bumps the stored-position count by one — the gemma4 forward's explicit
+// pos step (its last layer is KV-shared, so Append's auto-advance never fires).
+func (c *KVCache) Advance() { c.pos++ }
 
 // Keys / Vals return the stored history for a layer as [storedPos, kvDim].
 func (c *KVCache) Keys(layer int) []float32 { return c.keys[layer] }
