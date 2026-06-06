@@ -320,7 +320,9 @@ sharing; PLE present). Descriptor fixes already applied: `AttnScale=1.0`,
 - **`attention.shared_kv_layers 20`** → first-shared = 35−20 = layer 15.
 - `attention.sliding_window 512`; `sliding_window_pattern` = explicit per-layer
   bool array, **4 sliding : 1 global** (global at i where (i+1)%5==0: 4,9,…,34).
-- **`final_logit_softcapping 30`** ⚠️ (Gemma 4 re-added it; verify HF applies it).
+- **`final_logit_softcapping 30`** ✅ RESOLVED: HF *does* apply it (E2B
+  text_config sets 30.0; modeling_gemma4 L1889/L2532 does `30·tanh(logits/30)`).
+  So `FinalLogitSoftcap=30` is correct; attn-softcap stays 0 (text attn has none).
 - RoPE: `rope.freq_base 1e6` (global), `freq_base_swa 10000` (sliding).
 - `tokenizer.ggml.eos_token_id 1`.
 
