@@ -18,6 +18,7 @@ type archAdapter func(*Config) (*Architecture, *tensorSchema, error)
 var registry = map[string]archAdapter{
 	"gemma3":      gemma3Architecture,
 	"gemma3_text": gemma3Architecture,   // the 270M/1B text checkpoints
+	"gemma4":      gemma4Architecture,   // Gemma 4 (descriptor only; gguf guards weight-load until forward lands)
 	"qwen3":       qwen3Architecture,    // Qwen3 dense (0.6B/1.7B/4B/8B/…)
 	"qwen2":       qwen2Architecture,    // Qwen2/Qwen2.5 dense (llama + q/k/v bias)
 	"qwen2_moe":   qwen2MoeArchitecture, // Qwen-MoE/Qwen2-MoE (qwen2 + sparse MoE + shared expert)
@@ -139,13 +140,20 @@ func gemma4Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		RoPEGlobalBase: cfg.RoPEGlobalBase,
 		EmbedScale:     math.Sqrt(float64(cfg.HiddenDim)),
 		TiedLMHead:     true,
+		// Gemma 4 re-added Gemma 2's final-logit softcap (30 in the GGUF); Gemma 3
+		// had dropped it. Attn softcap stays 0.
+		FinalLogitSoftcap: cfg.FinalLogitSoftcap,
 		gemma4: &gemma4Params{
-			GlobalHeadDim:    cfg.GlobalHeadDim,
-			NumGlobalKVHeads: cfg.NumGlobalKVHeads,
-			GlobalRotaryDim:  globalRotary,
-			KVShared:         cfg.AttentionKEqV,
+			GlobalHeadDim:           cfg.GlobalHeadDim,
+			NumGlobalKVHeads:        cfg.NumGlobalKVHeads,
+			GlobalRotaryDim:         globalRotary,
+			KVShared:                cfg.AttentionKEqV,
+			SharedKVLayers:          cfg.SharedKVLayers,
+			FFNPerLayer:             cfg.FFNPerLayer,
+			HiddenSizePerLayerInput: cfg.HiddenSizePerLayerInput,
+			VocabSizePerLayerInput:  cfg.VocabSizePerLayerInput,
 		},
-	}, &gemma3TensorSchema, nil // a gemma4 tensor schema (K=V) lands with the loader work
+	}, &gemma3TensorSchema, nil // a dedicated gemma4 tensor schema lands with the loader work
 }
 
 // qwen3Architecture expresses Qwen3 dense (multi-model-plan G2): RMSNorm

@@ -36,12 +36,7 @@ func ggufConfig(g *embed.GGUFFile) (*Config, error) {
 	case "gemma3", "gemma3_text":
 		return ggufGemmaConfig(g)
 	case "gemma4":
-		// Recognized but WIP: gemma4Architecture (the descriptor) is in place, but
-		// the forward pass that consumes its per-layer deltas — wider global head
-		// (256/512), a single global KV head, K=V sharing, partial-rotary RoPE, and
-		// (E-models) PLE/AltUp/Laurel — is not implemented yet. Fail loudly rather
-		// than mis-run on the uniform-head path.
-		return nil, fmt.Errorf("decoder(gguf): Gemma 4 (arch %q) is recognized but not yet supported — forward pass is WIP; see docs/internal/task-gemma4-support.md", arch)
+		return ggufGemma4Config(g)
 	case "mellum":
 		return ggufMellumConfig(g)
 	default:
@@ -210,6 +205,112 @@ func ggufGemmaConfig(g *embed.GGUFFile) (*Config, error) {
 	return cfg, nil
 }
 
+// ggufIntArray / ggufBoolArray coerce a GGUF array metadatum (parsed as []any)
+// into a typed slice — for gemma4's per-layer feed_forward_length and the
+// sliding/global bool pattern.
+func ggufIntArray(v any) []int {
+	a, ok := v.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]int, len(a))
+	for i, e := range a {
+		switch n := e.(type) {
+		case int:
+			out[i] = n
+		case int32:
+			out[i] = int(n)
+		case int64:
+			out[i] = int(n)
+		case uint32:
+			out[i] = int(n)
+		case uint64:
+			out[i] = int(n)
+		case float64:
+			out[i] = int(n)
+		}
+	}
+	return out
+}
+
+func ggufBoolArray(v any) []bool {
+	a, ok := v.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]bool, len(a))
+	for i, e := range a {
+		if b, ok := e.(bool); ok {
+			out[i] = b
+		}
+	}
+	return out
+}
+
+// ggufGemma4Config builds a Gemma 4 (E-model) Config from the gemma4.* metadata:
+// the variable per-layer FFN width + head_dim, the cross-layer KV-sharing count,
+// the PLE (per-layer-embedding) dims, the explicit sliding/global bool pattern,
+// dual-base RoPE, and the re-added final-logit softcap (30). The proportional
+// (partial-rotary) factor for the global layers isn't in the GGUF metadata, so
+// it's set from the known Gemma 4 value (0.25). Defaults mirror ggufGemmaConfig.
+func ggufGemma4Config(g *embed.GGUFFile) (*Config, error) {
+	u := func(k string) int {
+		v, _ := g.Uint("gemma4." + k)
+		return int(v)
+	}
+	cfg := &Config{
+		ModelType:               "gemma4",
+		HiddenDim:               u("embedding_length"),
+		NumLayers:               u("block_count"),
+		NumHeads:                u("attention.head_count"),
+		NumKVHeads:              u("attention.head_count_kv"),
+		HeadDim:                 u("attention.key_length_swa"), // sliding/local head_dim (256)
+		GlobalHeadDim:           u("attention.key_length"),     // global/full head_dim (512)
+		SlidingWindow:           u("attention.sliding_window"),
+		SharedKVLayers:          u("attention.shared_kv_layers"),
+		HiddenSizePerLayerInput: u("embedding_length_per_layer_input"),
+		HiddenActivation:        "gelu_pytorch_tanh",
+		VocabSize:               ggufVocabSize(g),
+		PartialRotaryFactor:     0.25, // proportional RoPE on the global layers; not in GGUF metadata
+	}
+	cfg.VocabSizePerLayerInput = cfg.VocabSize // PLE table shares the main vocab
+	// Variable per-layer FFN width (e.g. 6144 then 12288); fall back to a scalar.
+	if a, ok := g.Metadata["gemma4.feed_forward_length"]; ok {
+		cfg.FFNPerLayer = ggufIntArray(a)
+	}
+	if len(cfg.FFNPerLayer) > 0 {
+		cfg.IntermediateDim = cfg.FFNPerLayer[0]
+	} else {
+		cfg.IntermediateDim = u("feed_forward_length")
+	}
+	// Explicit per-layer attention type (true = sliding, false = full/global).
+	if a, ok := g.Metadata["gemma4.attention.sliding_window_pattern"]; ok {
+		for _, sliding := range ggufBoolArray(a) {
+			if sliding {
+				cfg.LayerTypes = append(cfg.LayerTypes, "sliding_attention")
+			} else {
+				cfg.LayerTypes = append(cfg.LayerTypes, "full_attention")
+			}
+		}
+	}
+	if eps, ok := g.Float("gemma4.attention.layer_norm_rms_epsilon"); ok {
+		cfg.RMSNormEps = eps
+	}
+	cfg.RoPEGlobalBase = 1000000
+	if base, ok := g.Float("gemma4.rope.freq_base"); ok {
+		cfg.RoPEGlobalBase = base
+	}
+	cfg.RoPELocalBase = 10000
+	if base, ok := g.Float("gemma4.rope.freq_base_swa"); ok {
+		cfg.RoPELocalBase = base
+	}
+	if sc, ok := g.Float("gemma4.final_logit_softcapping"); ok {
+		cfg.FinalLogitSoftcap = sc
+	}
+	ggufEOS(g, cfg)
+	return cfg, nil
+}
+
 // ggufMellumConfig builds a Mellum2 Config from the mellum.* metadata: dims,
 // the MoE counts (incl. the narrower expert_feed_forward_length), the sliding/
 // full layer pattern, and the YaRN rope scaling — synthesized into the same
@@ -302,6 +403,12 @@ func buildGGUFWeights(g *embed.GGUFFile, quant quantMode) (*Weights, error) {
 	arch, _, err := resolveArchitecture(cfg) // llama descriptor + finalizeRoPE
 	if err != nil {
 		return nil, err
+	}
+	if arch.Name == "gemma4" {
+		// Config + descriptor parse correctly (Increment 1); the weight loader for
+		// gemma4's layout (variable head_dim/FFN, KV-shared layers, PLE tensors) and
+		// the forward pass are the next increments. Fail loudly rather than mis-load.
+		return nil, fmt.Errorf("decoder(gguf): gemma4 config+descriptor OK, but weight loading is not implemented yet — see docs/internal/task-gemma4-support.md")
 	}
 	return buildWeightsFromGGUF(cfg, arch, g, quant)
 }

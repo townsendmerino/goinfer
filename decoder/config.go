@@ -79,6 +79,16 @@ type Config struct {
 	NumGlobalKVHeads int  `json:"num_global_key_value_heads"`
 	AttentionKEqV    bool `json:"attention_k_eq_v"`
 
+	// Gemma 4 E-model extras. SharedKVLayers: the last N layers carry no k/v
+	// projection and reuse the KV of the last non-shared layer of their type
+	// (sliding vs full). HiddenSizePerLayerInput/VocabSizePerLayerInput size the
+	// PLE (per-layer-embedding) table. FFNPerLayer is the variable per-layer FFN
+	// width from the GGUF (config.json carries a scalar intermediate_size).
+	SharedKVLayers          int   `json:"num_kv_shared_layers"`
+	HiddenSizePerLayerInput int   `json:"hidden_size_per_layer_input"`
+	VocabSizePerLayerInput  int   `json:"vocab_size_per_layer_input"`
+	FFNPerLayer             []int `json:"-"`
+
 	// GPT-2 (multi-model-plan G5) uses a different config vocabulary: n_embd /
 	// n_head / n_layer / n_positions / n_inner / layer_norm_epsilon /
 	// activation_function instead of hidden_size etc. The gpt2 adapter reads

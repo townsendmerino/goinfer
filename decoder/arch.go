@@ -81,9 +81,40 @@ type Architecture struct {
 // docs/internal/task-gemma4-support.md).
 type gemma4Params struct {
 	GlobalHeadDim    int  // global head_dim (e.g. 512); local = Architecture.HeadDim (256)
-	NumGlobalKVHeads int  // global KV-head count (e.g. 1); local = Architecture.NumKVHeads (8)
+	NumGlobalKVHeads int  // global KV-head count; local = Architecture.NumKVHeads. 0 ⇒ same as local
 	GlobalRotaryDim  int  // rotated dims on global layers = partial_rotary_factor * GlobalHeadDim; local = full
-	KVShared         bool // attention_k_eq_v: K and V are the same tensor on global layers
+	KVShared         bool // attention_k_eq_v: V reuses K's projection on global layers (12B; off for E2B)
+
+	// E-model (E2B/E4B) extras; zero/empty on the dense 12B.
+	SharedKVLayers          int   // last N layers carry no k/v and reuse an earlier layer's KV (per type)
+	FFNPerLayer             []int // variable per-layer FFN width (else Architecture.IntermediateDim is uniform)
+	HiddenSizePerLayerInput int   // PLE per-layer dim (256); 0 ⇒ no PLE
+	VocabSizePerLayerInput  int   // PLE embedding-table vocab (== main vocab)
+}
+
+// headDimAt / kvHeadsAt / ffnAt give layer i's attention head_dim, KV-head count,
+// and FFN width — Gemma 4's global layers diverge from local ones, and its FFN
+// width varies per layer. For every other family these collapse to the uniform
+// Architecture fields.
+func (a *Architecture) headDimAt(i int) int {
+	if a.gemma4 != nil && a.gemma4.GlobalHeadDim > 0 && a.isGlobalLayer(i) {
+		return a.gemma4.GlobalHeadDim
+	}
+	return a.HeadDim
+}
+
+func (a *Architecture) kvHeadsAt(i int) int {
+	if a.gemma4 != nil && a.gemma4.NumGlobalKVHeads > 0 && a.isGlobalLayer(i) {
+		return a.gemma4.NumGlobalKVHeads
+	}
+	return a.NumKVHeads
+}
+
+func (a *Architecture) ffnAt(i int) int {
+	if a.gemma4 != nil && i >= 0 && i < len(a.gemma4.FFNPerLayer) {
+		return a.gemma4.FFNPerLayer[i]
+	}
+	return a.IntermediateDim
 }
 
 // MoEConfig describes a sparse mixture-of-experts FFN (multi-model-plan G6).
