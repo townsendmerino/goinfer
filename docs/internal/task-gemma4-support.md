@@ -220,3 +220,84 @@ gate: `gguf_forward_test.go` + `scripts/pin_gemma4_forward.py` + `testdata/gemma
 ### Sources
 Gemma 4 QAT blog · transformers `gemma4` docs · `google/gemma-4-*-qat-q4_0`
 collection (configs + GGUFs) · llama.cpp PLE issue #22243 · `convert_hf_to_gguf.py`.
+
+---
+
+## UPDATE — source-grounded spec (read `transformers/modeling_gemma4.py`)
+
+Pivoted the target to **E2B** (it's the only Gemma 4 that fits 16 GB end-to-end:
+goinfer-run at int4 ~2.5 GB **and** the HF bf16 golden ~10–12 GB). The reference
+is **HF transformers**, not llama.cpp — so llama.cpp's PLE gap is irrelevant. Read
+the real forward pass from `modeling_gemma4.py` (2645 lines; key classes below).
+
+### Big correction: there is **NO AltUp and NO Laurel**
+`grep` of the source finds neither — those are **Gemma 3n** mechanisms the earlier
+research conflated. Gemma 4's only E-model addition is **PLE** (per-layer
+embeddings). The forward pass is a standard Gemma sandwich block + a bounded PLE
+residual branch + a per-layer learned scalar. Much smaller than feared.
+
+### Decoder layer (`Gemma4TextDecoderLayer.forward`, ~L1398) — per layer i
+```
+# attention sandwich
+r = h;  x = input_layernorm(h);  x = self_attn(x, layer_type);
+x = post_attention_layernorm(x);  h = r + x
+# MLP sandwich (E2B dense GeGLU gelu_tanh; MoE only if enable_moe_block → 26B)
+r = h;  x = pre_feedforward_layernorm(h);  x = mlp(x);
+x = post_feedforward_layernorm(x);  h = r + x
+# PLE branch (only if hidden_size_per_layer_input > 0)
+r = h;  x = per_layer_input_gate(h)          # Linear hidden→256, no bias
+x = gelu_tanh(x);  x = x * per_layer_input_i # elementwise gate by layer i's PLE vec [256]
+x = per_layer_projection(x)                  # Linear 256→hidden, no bias
+x = post_per_layer_input_norm(x);  h = r + x # RMSNorm
+h = h * layer_scalar                         # per-layer learned scalar (buffer, init 1)
+```
+All norms are Gemma RMSNorm with the `(1+w)` offset.
+
+### Attention (`Gemma4TextAttention`, L1177)
+```
+is_sliding = layer_type=="sliding_attention"
+head_dim   = (!is_sliding && global_head_dim) ? global_head_dim(512) : head_dim(256)
+alt        = attention_k_eq_v && !is_sliding          # K=V on global layers
+n_kv       = alt ? num_global_key_value_heads(1) : num_key_value_heads(8)
+q = q_norm(q_proj(h));  q = rope(q, layer_type)
+k = k_proj(h);  v = alt ? k_proj_output : v_proj(h)   # alt → V shares K's projection
+k = k_norm(k);  k = rope(k, layer_type)
+v = v_norm(v)                                         # NEW: RMSNorm WITHOUT scale (with_scale=False)
+attn = softmax(qkᵀ * scaling) · v;  out = o_proj(attn)
+```
+- **`self.scaling = 1.0`** (NOT 1/√head_dim, NOT query_pre_attn_scalar^-0.5 like
+  Gemma 3) — ⚠️ verify against the golden where the query scaling actually lives
+  (q_norm? folded?). This is the #1 parity risk.
+- New vs Gemma 3: **v_norm** (scale-less RMSNorm on V), variable head_dim/KV-heads,
+  K=V on global.
+
+### RoPE (`Gemma4TextRotaryEmbedding`, L1093) — per layer_type
+Separate inv_freq per type. `sliding` = default RoPE (base `rope_local`, dim 256).
+`full` = **`proportional`** rope (`ROPE_INIT_FUNCTIONS["proportional"]`, base
+`rope_global` 1e6, `head_dim_key="global_head_dim"` 512, `partial_rotary_factor`
+0.25) — this is the "p-RoPE". **TODO: pull the exact `proportional` formula from
+`transformers/modeling_rope_utils.py`.**
+
+### PLE inputs (`Gemma4TextModel`, L1586 + `get/project_per_layer_inputs`)
+```
+embed_tokens_per_layer: ScaledWordEmbedding(vocab_per_layer 262144 → L*256, scale √256=16)
+token_identity   = embed_tokens_per_layer(input_ids).reshape(.,L,256)
+context_aware    = per_layer_projection_norm( per_layer_model_projection(inputs_embeds) * hidden^-0.5 ).reshape(.,L,256)
+per_layer_inputs = (token_identity + context_aware) * 2^-0.5    # per_layer_input_scale
+# layer i consumes per_layer_inputs[:,:,i,:]
+```
+main embed: `embed_tokens(ids) * √hidden`. Final: `norm` then tied `lm_head`.
+
+### New tensors for E2B (vs gemma3TensorSchema)
+Per layer: `per_layer_input_gate` [256,H], `per_layer_projection` [H,256],
+`post_per_layer_input_norm` [H], `v_norm` [head_dim] (scale-less → may be absent),
+`layer_scalar` [1]. Model: `embed_tokens_per_layer` [262144, L*256],
+`per_layer_model_projection` [L*256, H], `per_layer_projection_norm` [256].
+(GGUF names per `convert_hf_to_gguf.py` — pin from a real dump in Step 0.)
+
+### Revised effort (E2B, against HF spec, validated on 16 GB)
+- Resolve the 2 TODOs (proportional rope formula; the scaling=1.0 query question)
+  + get the E2B config dims + a GGUF tensor-name dump: ~0.5 day.
+- Forward pass (variable head_dim/KV/K=V, v_norm, per-type RoPE, PLE branch +
+  inputs, layer_scalar): **~4–7 days** — bounded, no AltUp/Laurel.
+- HF golden (E2B fits 16 GB) + parity gate: ~1 day. Total ~1–1.5 weeks.
