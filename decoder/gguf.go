@@ -293,6 +293,21 @@ func ggufGemma4Config(g *embed.GGUFFile) (*Config, error) {
 			}
 		}
 	}
+	// head_count_kv may be a per-layer array (12B: 8 on sliding, 1 on global) or a
+	// scalar (E2B/E4B: 1). For the array, pull the sliding + global values; the
+	// scalar literal above already covered the uniform case.
+	if arr := ggufIntArray(g.Metadata["gemma4.attention.head_count_kv"]); len(arr) > 0 {
+		for i, lt := range cfg.LayerTypes {
+			if i >= len(arr) {
+				break
+			}
+			if lt == "full_attention" {
+				cfg.NumGlobalKVHeads = arr[i]
+			} else {
+				cfg.NumKVHeads = arr[i]
+			}
+		}
+	}
 	if eps, ok := g.Float("gemma4.attention.layer_norm_rms_epsilon"); ok {
 		cfg.RMSNormEps = eps
 	}
@@ -613,11 +628,18 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 				if l.KProj, e = mat(p+"attn_k.weight", kvDimL, hidden); e != nil {
 					return e
 				}
-				if l.VProj, e = mat(p+"attn_v.weight", kvDimL, hidden); e != nil {
-					return e
-				}
 				if l.KNorm, e = vnorm(p+"attn_k_norm.weight", hdL); e != nil {
 					return e
+				}
+				// attention_k_eq_v (12B global layers): no v_proj — V reuses K's
+				// projection. Detect by the tensor's absence (robust to whether the
+				// converter omits or duplicates it).
+				if g.Has(p + "attn_v.weight") {
+					if l.VProj, e = mat(p+"attn_v.weight", kvDimL, hidden); e != nil {
+						return e
+					}
+				} else {
+					l.VFromK = true
 				}
 			}
 			if l.OProj, e = mat(p+"attn_output.weight", hidden, qDimL); e != nil {
@@ -651,6 +673,15 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 		}
 		if err = parallelLayers(arch.NumLayers, loadG4); err != nil {
 			return nil, err
+		}
+		// K=V (attention_k_eq_v, the 12B global layers) produces incorrect logits —
+		// a subtle direction error in that path (the hidden norms stay healthy, but
+		// the argmax is wrong). E2B/E4B (no K=V) are parity-clean. Fail loudly until
+		// it's debugged against HF intermediate activations (needs a >16GB box).
+		for i := range w.Layers {
+			if w.Layers[i].VFromK {
+				return nil, fmt.Errorf("decoder(gguf): gemma4 attention_k_eq_v (12B-style K=V) forward is WIP — incorrect logits; E2B/E4B work. See docs/internal/task-gemma4-support.md")
+			}
 		}
 		return w, nil
 	}

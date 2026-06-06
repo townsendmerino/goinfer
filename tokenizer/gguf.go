@@ -92,6 +92,9 @@ func fromGGUF(g *embed.GGUFFile) (*Tokenizer, error) {
 	if !ok {
 		return nil, fmt.Errorf("missing %s (not a GGUF with an embedded tokenizer)", ggufTokModel)
 	}
+	if model == "gemma4" {
+		model = "llama" // Gemma 4 uses the same SentencePiece byte-fallback tokenizer as the llama/gemma family
+	}
 	if model != "llama" && model != "gpt2" {
 		return nil, fmt.Errorf("unsupported tokenizer model %q (have: llama [SPM byte-fallback], gpt2 [byte-level])", model)
 	}

@@ -1,6 +1,12 @@
 package decoder
 
-import "math"
+import (
+	"fmt"
+	"math"
+	"os"
+)
+
+var g4debug = os.Getenv("G4DEBUG") != "" // env-gated per-layer hidden-norm trace
 
 // runLayersGemma4 is the Gemma 4 (E-model) forward over one token. It diverges
 // from the generic runLayers enough to warrant its own path: per-layer head_dim
@@ -105,12 +111,16 @@ func (m *Model) runLayersGemma4(id int, cache *KVCache) ([]float32, error) {
 
 		if l < firstShared { // owns its KV
 			k := make([]float32, nKV*hd)
-			v := make([]float32, nKV*hd)
 			lw.KProj.matmul(be, normd, k, 1)
-			lw.VProj.matmul(be, normd, v, 1)
-			rmsNorm(k, lw.KNorm, nKV, hd, arch.NormEps, arch.RMSAddOne)
+			v := make([]float32, nKV*hd)
+			if lw.VFromK { // attention_k_eq_v: V is v_norm(k_proj output)
+				copy(v, k)
+			} else {
+				lw.VProj.matmul(be, normd, v, 1)
+			}
+			rmsNorm(k, lw.KNorm, nKV, hd, arch.NormEps, arch.RMSAddOne) // K: k_norm + RoPE
 			applyRoPE(k, nKV, hd, pos, invFreq, 1.0)
-			rmsNormNoWeight(v, nKV, hd, arch.NormEps) // scale-less v_norm
+			rmsNormNoWeight(v, nKV, hd, arch.NormEps) // V: scale-less v_norm, no RoPE
 			cache.Append(l, k, v)
 		}
 		src := kvSrc(l)
@@ -166,6 +176,21 @@ func (m *Model) runLayersGemma4(id int, cache *KVCache) ([]float32, error) {
 			for i := range h {
 				h[i] *= lw.LayerScalar
 			}
+		}
+		if g4debug {
+			var ss float64
+			for _, e := range h {
+				ss += float64(e) * float64(e)
+			}
+			kind := "loc"
+			if global {
+				kind = "GLB"
+			}
+			vk := ""
+			if lw.VFromK {
+				vk = " kv=eq"
+			}
+			fmt.Printf("  L%-2d %s hd=%d nkv=%d scale=%.4f ||h||=%.3f%s\n", l, kind, hd, nKV, lw.LayerScalar, math.Sqrt(ss), vk)
 		}
 	}
 	cache.Advance()

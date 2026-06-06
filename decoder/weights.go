@@ -69,6 +69,7 @@ type LayerWeights struct {
 	PostPLENorm []float32 // [HiddenDim] post_per_layer_input_norm (GGUF post_norm)
 	LayerScalar float32   // per-layer output scalar (GGUF layer_output_scale); 1 if absent
 	KVShared    bool      // carries no k/v and reuses an earlier layer's KV (Gemma 4 E-models)
+	VFromK      bool      // attention_k_eq_v: no v_proj — V is v_norm(k_proj output) (Gemma 4 12B global layers)
 }
 
 // expertWeights is one MoE expert: a gated (SwiGLU) MLP with no biases.

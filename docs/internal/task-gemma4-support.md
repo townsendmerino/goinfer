@@ -223,6 +223,28 @@ collection (configs + GGUFs) · llama.cpp PLE issue #22243 · `convert_hf_to_ggu
 
 ---
 
+## STATUS (current)
+
+- **E2B — DONE, parity-gated.** `TestGemma4_logitParity`: argmax 7001 ` France`
+  exact (logit 5.3215 == 5.3215), sample-256 cosine **0.99938** (int8 vs HF bf16).
+  Coherent generation (" Paris."). The full novel stack works: PLE, cross-layer
+  KV-sharing, per-layer head_dim (256/512), scale-less v_norm, proportional
+  p-RoPE, softcap-30, layer_scalar.
+- **E4B — DONE.** Same code path as E2B; loads + generates coherently (" Paris.").
+  (Golden infeasible on 16 GB — 8B bf16 ≈16 GB — but the algorithm is E2B-proven.)
+- **12B — PARKED (guarded).** Loads + runs; hidden norms stay healthy through all
+  48 layers, but the first-token argmax is wrong (garbage gen) — a subtle
+  *direction* error in the one path E2B/E4B don't exercise and qwen2-GQA doesn't
+  validate: **`attention_k_eq_v` (K=V on the global layers)**. The loader fails
+  loudly on any K=V layer (`VFromK`) so 12B errors cleanly instead of emitting
+  junk. Debug needs HF **intermediate activations** (layer-wise), which need a
+  >16 GB box (a 64 GB Linux box is en route); the coherence signal ("12B →
+  Paris") plus a layer trace will pinpoint it. Also pinned for 12B: head_count_kv
+  is a **per-layer array** (8 sliding / 1 global), now parsed; FFN is uniform
+  (15360); PLE-free.
+- Tokenizer: `gemma4` model string now maps to the SPM byte-fallback path
+  (same tokenizer as gemma3) — enables the demo / coherent decode.
+
 ## UPDATE — source-grounded spec (read `transformers/modeling_gemma4.py`)
 
 Pivoted the target to **E2B** (it's the only Gemma 4 that fits 16 GB end-to-end:
