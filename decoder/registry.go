@@ -89,6 +89,56 @@ func gemma3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	}, &gemma3TensorSchema, nil
 }
 
+// gemma4Architecture expresses Gemma 4 dense (HF model_type
+// "gemma4_unified_text"; GGUF arch "gemma4"). It is Gemma 3's stack — RMSNorm
+// (1+w), Sandwich4 norm placement, GeGLU (gelu_tanh), QK-norm, query_pre_attn
+// scaling, √hidden embed scale, tied head, no soft-capping, dual-base RoPE with a
+// 5:1 local:global interleave — PLUS Gemma 4's per-layer attention deltas
+// (gemma4Params): global/full layers use a wider head (global_head_dim), a single
+// KV head (num_global_key_value_heads), shared K=V (attention_k_eq_v), and
+// partial-rotary RoPE (partial_rotary_factor). The 12B dense checkpoint is
+// PLE/AltUp/Laurel-free (verified); the E-models add those (a later phase).
+//
+// NOT yet registered: the forward pass that consumes the per-layer deltas is
+// unimplemented, so the GGUF loader returns a clear WIP error. This descriptor +
+// its test pin the verified architecture so the forward work has a contract. See
+// docs/internal/task-gemma4-support.md.
+func gemma4Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+	globalRotary := 0
+	if cfg.PartialRotaryFactor > 0 && cfg.GlobalHeadDim > 0 {
+		globalRotary = int(cfg.PartialRotaryFactor * float64(cfg.GlobalHeadDim))
+	}
+	return &Architecture{
+		Name:            "gemma4",
+		HiddenDim:       cfg.HiddenDim,
+		NumLayers:       cfg.NumLayers,
+		NumHeads:        cfg.NumHeads,
+		NumKVHeads:      cfg.NumKVHeads,
+		HeadDim:         cfg.HeadDim,
+		IntermediateDim: cfg.IntermediateDim,
+		VocabSize:       cfg.VocabSize,
+		Norm:            NormRMS,
+		RMSAddOne:       true,
+		NormEps:         cfg.RMSNormEps,
+		NormPlacement:   NormSandwich4,
+		Act:             ActGeluTanh,
+		QKNorm:          true,
+		AttnScale:       math.Pow(cfg.QueryPreAttnScalar, -0.5),
+		SlidingWindow:   cfg.SlidingWindow,
+		layerIsGlobal:   cfg.IsGlobalLayer,
+		RoPELocalBase:   cfg.RoPELocalBase,
+		RoPEGlobalBase:  cfg.RoPEGlobalBase,
+		EmbedScale:      math.Sqrt(float64(cfg.HiddenDim)),
+		TiedLMHead:      true,
+		gemma4: &gemma4Params{
+			GlobalHeadDim:    cfg.GlobalHeadDim,
+			NumGlobalKVHeads: cfg.NumGlobalKVHeads,
+			GlobalRotaryDim:  globalRotary,
+			KVShared:         cfg.AttentionKEqV,
+		},
+	}, &gemma3TensorSchema, nil // a gemma4 tensor schema (K=V) lands with the loader work
+}
+
 // qwen3Architecture expresses Qwen3 dense (multi-model-plan G2): RMSNorm
 // without the (1+w) offset, the Pre2 norm placement (no post-sublayer norms),
 // SwiGLU, QK-norm (Qwen3 keeps it), 1/√head_dim attention scale, single-base

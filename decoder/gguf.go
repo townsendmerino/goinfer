@@ -35,10 +35,17 @@ func ggufConfig(g *embed.GGUFFile) (*Config, error) {
 		return ggufQwen3Config(g)
 	case "gemma3", "gemma3_text":
 		return ggufGemmaConfig(g)
+	case "gemma4":
+		// Recognized but WIP: gemma4Architecture (the descriptor) is in place, but
+		// the forward pass that consumes its per-layer deltas — wider global head
+		// (256/512), a single global KV head, K=V sharing, partial-rotary RoPE, and
+		// (E-models) PLE/AltUp/Laurel — is not implemented yet. Fail loudly rather
+		// than mis-run on the uniform-head path.
+		return nil, fmt.Errorf("decoder(gguf): Gemma 4 (arch %q) is recognized but not yet supported — forward pass is WIP; see docs/internal/task-gemma4-support.md", arch)
 	case "mellum":
 		return ggufMellumConfig(g)
 	default:
-		return nil, fmt.Errorf("decoder(gguf): architecture %q unsupported (have: llama, qwen2, qwen3, gemma3, mellum)", arch)
+		return nil, fmt.Errorf("decoder(gguf): architecture %q unsupported (have: llama, qwen2, qwen3, gemma3, gemma4 [wip], mellum)", arch)
 	}
 }
 

@@ -67,6 +67,23 @@ type Architecture struct {
 	// Output soft-capping (Gemma 2; 0 = none, which is Gemma 3).
 	FinalLogitSoftcap float64
 	AttnLogitSoftcap  float64
+
+	// gemma4, when non-nil, carries Gemma 4's per-layer attention deltas (the
+	// global/full layers differ from the local/sliding ones). nil for every
+	// other family — they keep the uniform HeadDim/NumKVHeads/full-rotary path.
+	gemma4 *gemma4Params
+}
+
+// gemma4Params describes how Gemma 4's global (full-attention) layers diverge
+// from its local (sliding) layers. Local layers use Architecture.HeadDim /
+// NumKVHeads and full rotary; global layers use these instead. Set by
+// gemma4Architecture; consumed per-layer by the forward pass (WIP — see
+// docs/internal/task-gemma4-support.md).
+type gemma4Params struct {
+	GlobalHeadDim    int  // global head_dim (e.g. 512); local = Architecture.HeadDim (256)
+	NumGlobalKVHeads int  // global KV-head count (e.g. 1); local = Architecture.NumKVHeads (8)
+	GlobalRotaryDim  int  // rotated dims on global layers = partial_rotary_factor * GlobalHeadDim; local = full
+	KVShared         bool // attention_k_eq_v: K and V are the same tensor on global layers
 }
 
 // MoEConfig describes a sparse mixture-of-experts FFN (multi-model-plan G6).

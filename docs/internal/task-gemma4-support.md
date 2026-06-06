@@ -90,12 +90,25 @@ is the existing gemma3 descriptor.
 
 ## 3. File-by-file changes
 
-### Step 0 (still required before code)
-12B `config.json` is verified above. Still pin from a **real GGUF dump**: the
-`general.architecture` string the GGUF uses (HF `model_type` is `gemma4_unified_text`
-— confirm the GGUF spelling), the exact `gemma4*.*` metadata keys, and the tensor
-names (esp. how K=V is stored: one tensor or duplicated). Also pull the **E2B**
-config to confirm the PLE/AltUp/Laurel fields for Phase 2.
+### Step 0 — partly done
+
+**Landed (this pass — no model needed, fully unit-tested):**
+- **GGUF `general.architecture` = `"gemma4"`** (confirmed via the HF API; note it
+  differs from the HF `model_type` `gemma4_unified_text`). File:
+  `gemma-4-12b-it-qat-q4_0.gguf` (~11.9 GB), ships an `mmproj-*` sibling (optional
+  vision — ignore for text decode).
+- `Config` fields `GlobalHeadDim` / `NumGlobalKVHeads` / `AttentionKEqV`
+  (`config.go`); `Architecture.gemma4 *gemma4Params` (`arch.go`).
+- **`gemma4Architecture(cfg)`** descriptor (`registry.go`) encoding the verified
+  12B arch, with `TestGemma4Architecture` pinning every knob (head_dim 256/512,
+  p-RoPE 128 = 0.25·512, K=V, dual RoPE, 5:1 interleave, QK-norm, Sandwich4, …).
+  **Not registered yet** — the GGUF loader returns a clear WIP error for `"gemma4"`
+  so nothing mis-runs on the uniform-head path.
+
+**Still required before the forward pass (needs a real checkpoint):** the exact
+`gemma4.*` GGUF metadata key names + tensor names (esp. how K=V is stored — one
+tensor or duplicated), and the **E2B** config to confirm the PLE/AltUp/Laurel
+fields for Phase 2.
 
 ### `decoder/arch.go`
 - Per-layer head_dim: add `headDimFor func(i int) int` (mirror `layerIsGlobal`) or

@@ -69,6 +69,16 @@ type Config struct {
 	// 0/absent means full rotary. Consumed via Config.rotaryDim.
 	PartialRotaryFactor float64 `json:"partial_rotary_factor"`
 
+	// Gemma 4 attention deltas (HF model_type "gemma4_unified_text"; GGUF
+	// general.architecture "gemma4"). The global/full-attention layers use a
+	// wider head (GlobalHeadDim, e.g. 512 vs the 256 local HeadDim), a single KV
+	// head (NumGlobalKVHeads), share K and V (AttentionKEqV), and apply
+	// partial-rotary RoPE (PartialRotaryFactor, e.g. 0.25). Local/sliding layers
+	// keep HeadDim / NumKVHeads / full rotary. Absent/zero for every other family.
+	GlobalHeadDim    int  `json:"global_head_dim"`
+	NumGlobalKVHeads int  `json:"num_global_key_value_heads"`
+	AttentionKEqV    bool `json:"attention_k_eq_v"`
+
 	// GPT-2 (multi-model-plan G5) uses a different config vocabulary: n_embd /
 	// n_head / n_layer / n_positions / n_inner / layer_norm_epsilon /
 	// activation_function instead of hidden_size etc. The gpt2 adapter reads
