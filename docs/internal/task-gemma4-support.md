@@ -334,9 +334,29 @@ weight** — scale-less), `ffn_gate/up/down`, **`inp_gate`** [H,256] (per_layer_
   of the last non-shared layer *of the same type* (sliding vs global), per the HF
   `shared_kv_states[layer_type]` + `store_full_length_kv` logic.
 
-**Model-level:** `token_embd`, `output_norm`, the PLE inputs (`per_layer_token_embd`
-[262144, 35·256], `per_layer_model_projection`, `per_layer_projection_norm`) —
-confirm exact names on the next dump.
+**Model-level (confirmed names + dims):** `token_embd.weight` [1536,262144],
+`output_norm.weight` [1536], and the PLE inputs: `per_layer_token_embd.weight`
+[8960,262144] (8960 = 35·256), `per_layer_model_proj.weight` [1536,8960],
+`per_layer_proj_norm.weight` [256]. (`rope_freqs.weight` [256] is llama.cpp's
+precomputed freqs — ignore; goinfer builds its own.)
+
+**RMSAddOne resolved (empirically):** the GGUF norm weights store the effective
+scale (`attn_norm` mean ≈10, `q_norm` ≈0.98 ≈1) — plain `×weight`, init 1, NOT
+centered-at-0. And since goinfer's `subOneNorm` is paired to `RMSAddOne`, both
+`false` (plain ×w) and `true` (subtract-1 then ×(1+w)) yield ×w — so
+`RMSAddOne=false` is correct and the loader needs no offset. ✅
+
+### Increment 2 (loader) — fully specified, ready to implement
+All inputs known; pure implementation now. Add to `LayerWeights`: PLE gate
+(`inp_gate`→[256,H]) + projection (`proj`→[H,256]) + `post_norm` ([H]) +
+`layer_output_scale` ([1]) + a `KVShared bool`. Add to `Weights`:
+`per_layer_token_embd` + `per_layer_model_proj` (weightMat) + `per_layer_proj_norm`
+([256]). Write `buildGemma4WeightsFromGGUF` (or branch the loop) with **per-layer
+qDim/kvDim/FFN** (`headDimAt`/`kvHeadsAt`/`ffnAt`), and for layers ≥ 15 (=
+NumLayers−SharedKVLayers) **skip `attn_k`/`attn_v`/`attn_k_norm`** (KV-shared; mark
+the layer). No `v_norm` tensor (scale-less — handled in the forward). Then drop the
+gguf weight-load guard. Test: clean load of `gemma-4-E2B_q4_0-it.gguf` with all
+shapes checking out.
 
 **Descriptor additions still needed:** `FinalLogitSoftcap=30`; per-layer
 `IntermediateDim` (variable FFN); per-layer head_dim/KV via the bool pattern;
