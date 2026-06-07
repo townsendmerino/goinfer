@@ -11,6 +11,15 @@ pre-1.0 and may change as new model families and quant formats land.
 ## [Unreleased]
 
 ### Added
+- **`chat` package** — chat templating as a library feature (no Jinja engine).
+  `chat.Detect(meta)` fingerprints the GGUF/HF `tokenizer.chat_template` string
+  (falling back to a vocab-marker heuristic for bare checkpoints) and returns a
+  `Template`; `Template.Render(system, turns)` produces the exact prompt string
+  and `Template.Stops()` the turn-stop markers. Native Go renderers for **Gemma 3,
+  Gemma 4, ChatML (Qwen), Llama-3, and Mistral**, each **byte-exact against HF
+  `apply_chat_template`** (golden fixtures in `testdata/chat_goldens`). An
+  unrecognized template is an explicit `ErrUnknownTemplate` (caller falls back to
+  raw completion). New tokenizer accessors `ChatTemplate()`, `Has()`, `TokenID()`.
 - **Sampling completeness** in `SamplingParams` / `Sampler` — the standard
   controls a llama.cpp/Ollama/vLLM user expects:
   - **min-p** (`MinP`) — keep tokens with prob ≥ min-p·max-prob (a relative
@@ -27,6 +36,15 @@ pre-1.0 and may change as new model families and quant formats land.
   `Sample(logits)` and the greedy parity path are unchanged. `demo/chat` gains
   `--min-p`, `--repeat-penalty`, `--presence-penalty`, `--frequency-penalty`,
   `--repeat-last-n`.
+
+### Changed
+- `demo/chat` and `demo/gemma-web` now render prompts via the `chat` package
+  (was duplicated per-demo). The Gemma 4 demo render matches HF exactly,
+  including the `<|channel>thought` scaffold (so the model may emit reasoning).
+
+### Removed
+- `tokenizer.ChatStyle` (enum + method, shipped in v0.2.0) — superseded by
+  `chat.Detect`, whose fallback subsumes the old vocab-marker heuristic.
 
 ## [v0.2.0] — 2026-06-06
 

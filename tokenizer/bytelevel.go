@@ -45,6 +45,7 @@ func (t *Tokenizer) initByteLevel(tj *tokenizerJSON, dir string) error {
 	// families standardize on <|im_start|>/<|im_end|>. Left -1 if absent.
 	t.special.StartOfTurn = lookup("<|im_start|>")
 	t.special.EndOfTurn = lookup("<|im_end|>")
+	t.chatTemplate = cfg.ChatTemplate // for chat.Detect; "" if absent
 	return nil
 }
 
@@ -466,9 +467,10 @@ func digitRunCap(pattern string) int {
 // tokenizerConfig is the subset of tokenizer_config.json we read for special
 // tokens (the byte-level families don't hardcode them in tokenizer.json).
 type tokenizerConfig struct {
-	BosToken string
-	EosToken string
-	PadToken string
+	BosToken     string
+	EosToken     string
+	PadToken     string
+	ChatTemplate string
 }
 
 func readTokenizerConfig(dir string) tokenizerConfig {
@@ -478,9 +480,10 @@ func readTokenizerConfig(dir string) tokenizerConfig {
 		return cfg
 	}
 	var m struct {
-		BosToken json.RawMessage `json:"bos_token"`
-		EosToken json.RawMessage `json:"eos_token"`
-		PadToken json.RawMessage `json:"pad_token"`
+		BosToken     json.RawMessage `json:"bos_token"`
+		EosToken     json.RawMessage `json:"eos_token"`
+		PadToken     json.RawMessage `json:"pad_token"`
+		ChatTemplate json.RawMessage `json:"chat_template"`
 	}
 	if json.Unmarshal(raw, &m) != nil {
 		return cfg
@@ -488,6 +491,8 @@ func readTokenizerConfig(dir string) tokenizerConfig {
 	cfg.BosToken = tokenContent(m.BosToken)
 	cfg.EosToken = tokenContent(m.EosToken)
 	cfg.PadToken = tokenContent(m.PadToken)
+	// chat_template is usually a JSON string; ignore the rarer list form.
+	_ = json.Unmarshal(m.ChatTemplate, &cfg.ChatTemplate)
 	return cfg
 }
 

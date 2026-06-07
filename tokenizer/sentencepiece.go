@@ -92,44 +92,30 @@ type Tokenizer struct {
 	splitDigits  bool          // a Digits{individual_digits} pretokenizer runs before the byte-level regex (Mellum2): isolate each digit, so a leading space never attaches to one
 
 	added *addedTrie // added/special token surface forms → id
+
+	chatTemplate string // raw GGUF/HF tokenizer.chat_template (Jinja); "" if absent. For chat.Detect.
 }
+
+// ChatTemplate returns the model's raw chat-template string (GGUF
+// tokenizer.chat_template / HF tokenizer_config.json chat_template), or "" if
+// the checkpoint carries none. The chat package fingerprints it to pick a
+// native renderer.
+func (t *Tokenizer) ChatTemplate() string { return t.chatTemplate }
+
+// Has reports whether the surface form exists as a token in the vocab — the
+// probe chat.Detect uses to recognize a bare checkpoint with no chat template.
+func (t *Tokenizer) Has(piece string) bool { _, ok := t.vocab[piece]; return ok }
+
+// TokenID returns the id of a vocab piece (e.g. a chat stop marker like
+// "<end_of_turn>") and whether it exists.
+func (t *Tokenizer) TokenID(piece string) (int, bool) { id, ok := t.vocab[piece]; return int(id), ok }
 
 // Special returns the resolved special-token ids.
 func (t *Tokenizer) Special() SpecialTokens { return t.special }
 
-// ChatStyle names the conversation template a checkpoint was trained on.
-type ChatStyle int
-
-const (
-	// ChatStyleNone: no recognized chat markers (raw completion only).
-	ChatStyleNone ChatStyle = iota
-	// ChatStyleGemma: "<start_of_turn>{role}\n…<end_of_turn>\n"; roles
-	// "user"/"model"; no native system role (fold system into the first turn).
-	ChatStyleGemma
-	// ChatStyleChatML: "<|im_start|>{role}\n…<|im_end|>\n"; roles
-	// "system"/"user"/"assistant" (Llama-3/Qwen/most byte-level families).
-	ChatStyleChatML
-	// ChatStyleGemma4: "<|turn>{role}\n…<turn|>\n"; roles "user"/"model".
-	// Gemma 4 replaced Gemma 3's <start_of_turn>/<end_of_turn> markers; it also
-	// has a <|channel> "thought" system (reasoning/tools) the basic demo skips.
-	ChatStyleGemma4
-)
-
-// ChatStyle reports which chat template the loaded special tokens imply,
-// detected from the markers present in the vocab. The demos use it to render
-// the conversation in the form the model expects.
-func (t *Tokenizer) ChatStyle() ChatStyle {
-	if _, ok := t.vocab["<|im_start|>"]; ok {
-		return ChatStyleChatML
-	}
-	if _, ok := t.vocab["<start_of_turn>"]; ok {
-		return ChatStyleGemma
-	}
-	if _, ok := t.vocab["<|turn>"]; ok {
-		return ChatStyleGemma4
-	}
-	return ChatStyleNone
-}
+// Chat-template selection moved to the chat package: chat.Detect fingerprints
+// ChatTemplate() (or falls back to Has() vocab markers) and returns a native
+// renderer. (The old ChatStyle enum/heuristic lived here.)
 
 // --- tokenizer.json schema (only the fields we need) ---
 

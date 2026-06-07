@@ -27,16 +27,17 @@ import (
 
 // GGUF tokenizer metadata keys (the llama.cpp convention).
 const (
-	ggufTokModel  = "tokenizer.ggml.model"
-	ggufTokTokens = "tokenizer.ggml.tokens"
-	ggufTokMerges = "tokenizer.ggml.merges"
-	ggufTokTypes  = "tokenizer.ggml.token_type"
-	ggufTokPre    = "tokenizer.ggml.pre"
-	ggufTokBOS    = "tokenizer.ggml.bos_token_id"
-	ggufTokEOS    = "tokenizer.ggml.eos_token_id"
-	ggufTokUnk    = "tokenizer.ggml.unknown_token_id"
-	ggufTokPad    = "tokenizer.ggml.padding_token_id"
-	ggufTokPrefix = "tokenizer.ggml.add_space_prefix"
+	ggufTokModel    = "tokenizer.ggml.model"
+	ggufTokTokens   = "tokenizer.ggml.tokens"
+	ggufTokMerges   = "tokenizer.ggml.merges"
+	ggufTokTypes    = "tokenizer.ggml.token_type"
+	ggufTokPre      = "tokenizer.ggml.pre"
+	ggufTokChatTmpl = "tokenizer.chat_template"
+	ggufTokBOS      = "tokenizer.ggml.bos_token_id"
+	ggufTokEOS      = "tokenizer.ggml.eos_token_id"
+	ggufTokUnk      = "tokenizer.ggml.unknown_token_id"
+	ggufTokPad      = "tokenizer.ggml.padding_token_id"
+	ggufTokPrefix   = "tokenizer.ggml.add_space_prefix"
 )
 
 // ggml token types (tokenizer.ggml.token_type values). NORMAL and BYTE pieces
@@ -137,7 +138,7 @@ func fromGGUF(g *embed.GGUFFile) (*Tokenizer, error) {
 
 	// Special-token ids come straight from metadata (the surface forms vary by
 	// model: <s>/</s>/<unk> for Llama-2). Chat-turn markers, if any, are
-	// recognized by surface (ChatStyle() reads the same vocab entries).
+	// resolved by surface form below; chat.Detect reads the chat template.
 	t.special = SpecialTokens{
 		BOS:         ggufTokenID(g, ggufTokBOS),
 		EOS:         ggufTokenID(g, ggufTokEOS),
@@ -154,6 +155,7 @@ func fromGGUF(g *embed.GGUFFile) (*Tokenizer, error) {
 			*dst = int(id)
 		}
 	}
+	t.chatTemplate, _ = g.Str(ggufTokChatTmpl) // for chat.Detect; "" if absent
 
 	// Per-family pipeline setup: SPM byte-fallback (llama) vs byte-level (gpt2).
 	switch model {

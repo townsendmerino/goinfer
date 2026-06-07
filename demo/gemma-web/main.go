@@ -2,10 +2,9 @@
 // checkpoint running on aikit's pure-Go decoder. Pure standard library only
 // (net/http + Server-Sent Events); no external assets, no cgo.
 //
-// It runs any family the decoder + tokenizer support — Gemma 3 and the
-// byte-level (Qwen/Llama-3) families — picking the chat template (ChatStyle)
-// and stop tokens from the loaded checkpoint, so the same binary chats with
-// either.
+// It runs any family the decoder + tokenizer support — Gemma 3/4, Qwen, Llama-3,
+// Mistral — picking the chat template (chat.Detect) and stop tokens from the
+// loaded checkpoint, so the same binary chats with any of them.
 //
 // The model + tokenizer are loaded ONCE at startup and reused across requests;
 // the naive CPU backend is single-stream, so generations are serialized (a
@@ -31,6 +30,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
@@ -67,7 +67,9 @@ type server struct {
 	tk      *tokenizer.Tokenizer
 	model   *decoder.Model
 	special tokenizer.SpecialTokens
-	mu      sync.Mutex // held for the duration of a generation
+	tmpl    *chat.Template // nil → raw-completion fallback
+	stopIDs []int          // turn-stop ids resolved from tmpl.Stops()
+	mu      sync.Mutex     // held for the duration of a generation
 }
 
 func main() {
@@ -117,7 +119,19 @@ func newServer(modelDir, backend, quant string) (*server, error) {
 	}
 	fmt.Printf("loaded %d-layer model (hidden %d, vocab %d) in %s [backend=%s quant=%s]\n",
 		cfg.NumLayers, cfg.HiddenDim, cfg.VocabSize, time.Since(t0).Round(time.Millisecond), backend, q)
-	return &server{tk: tk, model: model, special: tk.Special()}, nil
+	srv := &server{tk: tk, model: model, special: tk.Special()}
+	if tmpl, derr := chat.Detect(chat.Meta{ChatTemplate: tk.ChatTemplate(), HasToken: tk.Has}); derr == nil {
+		srv.tmpl = tmpl
+		for _, str := range tmpl.Stops().Strings {
+			if id, ok := tk.TokenID(str); ok {
+				srv.stopIDs = append(srv.stopIDs, id)
+			}
+		}
+		log.Printf("chat template: %s", tmpl.Name())
+	} else {
+		log.Printf("note: no recognized chat template; replies are raw completions")
+	}
+	return srv, nil
 }
 
 func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
@@ -152,7 +166,9 @@ func (s *server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 	defer s.mu.Unlock()
 
-	promptIDs, err := s.tk.Encode(buildPrompt(req, s.tk.ChatStyle()), true /* addBOS */)
+	// Rendered templates include the family's BOS marker; only the raw fallback
+	// needs Encode to prepend one.
+	promptIDs, err := s.tk.Encode(s.buildPrompt(req), s.tmpl == nil /* addBOS */)
 	if err != nil {
 		http.Error(w, "encode: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -169,16 +185,12 @@ func (s *server) handleChat(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 
-	var stopIDs []int
-	if s.special.EndOfTurn >= 0 {
-		stopIDs = []int{s.special.EndOfTurn} // end the model turn cleanly (config EOS handled too)
-	}
 	s.stream(r.Context(), w, flusher, promptIDs, maxTok, decoder.SamplingParams{
 		Temperature: req.Temperature,
 		TopK:        req.TopK,
 		TopP:        req.TopP,
 		Seed:        req.Seed,
-		StopIDs:     stopIDs,
+		StopIDs:     s.stopIDs,
 	})
 }
 
@@ -236,77 +248,33 @@ func (s *server) stream(ctx context.Context, w http.ResponseWriter, f http.Flush
 	})
 }
 
-// buildPrompt renders the conversation into the chat-template string the model
-// was trained on, picked from the tokenizer's special tokens (ChatStyle). The
-// turn markers are added-vocabulary tokens the tokenizer recognizes; BOS, if
-// the family uses one, is prepended by Encode(addBOS=true).
-func buildPrompt(req chatRequest, style tokenizer.ChatStyle) string {
-	if style == tokenizer.ChatStyleChatML {
-		return buildChatML(req)
-	}
-	return buildGemmaPrompt(req)
-}
-
-// buildGemmaPrompt renders Gemma's template: each turn is
-// "<start_of_turn>{role}\n{content}<end_of_turn>\n" (role "user" or "model"),
-// the system text folded into the first user turn (Gemma has no system role),
-// ending with "<start_of_turn>model\n" for the model to continue.
-func buildGemmaPrompt(req chatRequest) string {
-	var b strings.Builder
+// buildPrompt renders the conversation into the model's chat-template string via
+// the chat package (family resolved at startup). Roles are normalized to
+// user/assistant; the system prompt is passed separately. Unrecognized template
+// → a plain raw completion.
+func (s *server) buildPrompt(req chatRequest) string {
 	system := strings.TrimSpace(req.System)
-	firstUser := true
-	for _, m := range req.Messages {
-		role := m.Role
-		if role == "assistant" {
-			role = "model"
-		}
-		if role != "user" && role != "model" {
-			role = "user"
-		}
-		content := m.Content
-		if role == "user" && firstUser {
-			firstUser = false
-			if system != "" {
-				content = system + "\n\n" + content
-			}
-		}
-		b.WriteString("<start_of_turn>")
-		b.WriteString(role)
-		b.WriteString("\n")
-		b.WriteString(content)
-		b.WriteString("<end_of_turn>\n")
-	}
-	b.WriteString("<start_of_turn>model\n")
-	return b.String()
-}
-
-// buildChatML renders ChatML — the template Qwen/Llama-3 and most byte-level
-// families use: each turn is "<|im_start|>{role}\n{content}<|im_end|>\n" with a
-// native system role, ending with "<|im_start|>assistant\n" for the model to
-// continue.
-func buildChatML(req chatRequest) string {
-	var b strings.Builder
-	turn := func(role, content string) {
-		b.WriteString("<|im_start|>")
-		b.WriteString(role)
-		b.WriteString("\n")
-		b.WriteString(content)
-		b.WriteString("<|im_end|>\n")
-	}
-	if system := strings.TrimSpace(req.System); system != "" {
-		turn("system", system)
-	}
+	turns := make([]chat.Turn, 0, len(req.Messages))
 	for _, m := range req.Messages {
 		role := m.Role
 		if role == "model" {
 			role = "assistant"
 		}
-		if role != "user" && role != "assistant" && role != "system" {
+		if role != "assistant" {
 			role = "user"
 		}
-		turn(role, m.Content)
+		turns = append(turns, chat.Turn{Role: role, Content: m.Content})
 	}
-	b.WriteString("<|im_start|>assistant\n")
+	if s.tmpl != nil {
+		return s.tmpl.Render(system, turns)
+	}
+	var b strings.Builder
+	if system != "" {
+		b.WriteString(system + "\n\n")
+	}
+	for _, t := range turns {
+		b.WriteString(t.Content + "\n")
+	}
 	return b.String()
 }
 

@@ -36,6 +36,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/constrain"
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/tokenizer"
@@ -53,7 +54,8 @@ type session struct {
 	tk      *tokenizer.Tokenizer
 	model   *decoder.Model
 	special tokenizer.SpecialTokens
-	style   tokenizer.ChatStyle
+	tmpl    *chat.Template // nil → raw-completion fallback (unrecognized template)
+	stopIDs []int          // turn-stop token ids resolved from tmpl.Stops()
 	vocab   int
 
 	system  string
@@ -185,11 +187,20 @@ func newSession(tk *tokenizer.Tokenizer, model *decoder.Model, opts decoder.Opti
 	cfg := model.Config()
 	fmt.Fprintf(os.Stderr, "loaded %d-layer model (hidden %d, vocab %d) in %s [backend=%s quant=%s]\n",
 		cfg.NumLayers, cfg.HiddenDim, cfg.VocabSize, dt.Round(time.Millisecond), opts.Backend, model.Quant())
-	style := tk.ChatStyle()
-	if style == tokenizer.ChatStyleNone {
-		fmt.Fprintln(os.Stderr, "note: this checkpoint has no chat template; replies may be raw completions")
+	s := &session{tk: tk, model: model, special: tk.Special(), vocab: cfg.VocabSize}
+	tmpl, err := chat.Detect(chat.Meta{ChatTemplate: tk.ChatTemplate(), HasToken: tk.Has})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "note: no recognized chat template; replies may be raw completions")
+	} else {
+		s.tmpl = tmpl
+		for _, str := range tmpl.Stops().Strings {
+			if id, ok := tk.TokenID(str); ok {
+				s.stopIDs = append(s.stopIDs, id)
+			}
+		}
+		fmt.Fprintf(os.Stderr, "chat template: %s\n", tmpl.Name())
 	}
-	return &session{tk: tk, model: model, special: tk.Special(), style: style, vocab: cfg.VocabSize}
+	return s
 }
 
 // progress prints a one-line status to stderr (stdout stays clean for piping).
@@ -231,16 +242,16 @@ func (s *session) repl() {
 // generation cancels just this turn.
 func (s *session) generate() string {
 	prompt := s.buildPrompt()
-	ids, err := s.tk.Encode(prompt, true /* addBOS */)
+	// Rendered templates already include the family's BOS marker; only the raw
+	// fallback needs the tokenizer to prepend one.
+	ids, err := s.tk.Encode(prompt, s.tmpl == nil /* addBOS */)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "encode: %v\n", err)
 		return ""
 	}
 
 	sp := s.sp
-	if s.special.EndOfTurn >= 0 {
-		sp.StopIDs = []int{s.special.EndOfTurn} // stop at <|im_end|>/<end_of_turn>
-	}
+	sp.StopIDs = s.stopIDs // turn-stop markers for this family (e.g. <end_of_turn>)
 	if s.jsonOut {
 		sp.LogitProcessor = s.jsonMasker()
 	}
@@ -382,88 +393,31 @@ func (s *session) printParams() {
 		s.sp.Temperature, s.sp.TopK, s.sp.TopP, s.sp.Seed, s.maxTok, s.jsonOut, len(s.history), short(s.system))
 }
 
-// buildPrompt renders system + history into the model's chat template.
+// buildPrompt renders system + history into the model's chat template via the
+// chat package (the family was resolved at load). With no recognized template it
+// falls back to a plain raw completion.
 func (s *session) buildPrompt() string {
-	switch s.style {
-	case tokenizer.ChatStyleGemma:
-		return s.buildGemma()
-	case tokenizer.ChatStyleGemma4:
-		return s.buildGemma4()
+	system := strings.TrimSpace(s.system)
+	turns := make([]chat.Turn, len(s.history))
+	for i, m := range s.history {
+		turns[i] = chat.Turn{Role: m.role, Content: m.content}
 	}
-	return s.buildChatML() // ChatML default; also a reasonable raw fallback
+	if s.tmpl != nil {
+		return s.tmpl.Render(system, turns)
+	}
+	return rawPrompt(system, turns)
 }
 
-func (s *session) buildChatML() string {
+// rawPrompt is the unrecognized-template fallback: the conversation as plain
+// text for the model to continue (no special markers).
+func rawPrompt(system string, turns []chat.Turn) string {
 	var b strings.Builder
-	turn := func(role, content string) {
-		b.WriteString("<|im_start|>")
-		b.WriteString(role)
-		b.WriteByte('\n')
-		b.WriteString(content)
-		b.WriteString("<|im_end|>\n")
+	if system != "" {
+		b.WriteString(system + "\n\n")
 	}
-	if sys := strings.TrimSpace(s.system); sys != "" {
-		turn("system", sys)
+	for _, t := range turns {
+		b.WriteString(t.Content + "\n")
 	}
-	for _, m := range s.history {
-		turn(m.role, m.content)
-	}
-	b.WriteString("<|im_start|>assistant\n")
-	return b.String()
-}
-
-func (s *session) buildGemma() string {
-	var b strings.Builder
-	sys := strings.TrimSpace(s.system)
-	firstUser := true
-	for _, m := range s.history {
-		role := m.role
-		if role == "assistant" {
-			role = "model"
-		}
-		content := m.content
-		if role == "user" && firstUser {
-			firstUser = false
-			if sys != "" {
-				content = sys + "\n\n" + content
-			}
-		}
-		b.WriteString("<start_of_turn>")
-		b.WriteString(role)
-		b.WriteByte('\n')
-		b.WriteString(content)
-		b.WriteString("<end_of_turn>\n")
-	}
-	b.WriteString("<start_of_turn>model\n")
-	return b.String()
-}
-
-// buildGemma4 renders the Gemma 4 turn template: "<|turn>{role}\n…<turn|>\n",
-// roles user/model, system folded into the first user turn. (Gemma 4's
-// <|channel> "thought" reasoning system is skipped — a plain answer turn.)
-func (s *session) buildGemma4() string {
-	var b strings.Builder
-	sys := strings.TrimSpace(s.system)
-	firstUser := true
-	for _, m := range s.history {
-		role := m.role
-		if role == "assistant" {
-			role = "model"
-		}
-		content := m.content
-		if role == "user" && firstUser {
-			firstUser = false
-			if sys != "" {
-				content = sys + "\n\n" + content
-			}
-		}
-		b.WriteString("<|turn>")
-		b.WriteString(role)
-		b.WriteByte('\n')
-		b.WriteString(content)
-		b.WriteString("<turn|>\n")
-	}
-	b.WriteString("<|turn>model\n")
 	return b.String()
 }
 
