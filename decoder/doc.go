@@ -8,7 +8,7 @@
 // ecosystem with logit/argmax parity validated against HuggingFace:
 //
 //   - Families: Gemma 3/4, Qwen3, Qwen2.5 (+ Qwen2-MoE), Llama-2/3, Mistral,
-//     Mellum, GPT-2, and Mixtral (sparse-MoE).
+//     Mellum2 (MoE + sliding/full interleave + YaRN), GPT-2, and Mixtral (sparse-MoE).
 //   - Axes: RMSNorm/LayerNorm · RoPE (incl. llama3 scaling)/learned positions ·
 //     gated/non-gated/sparse-MoE MLP · full/sliding attention · tied/untied
 //     heads · optional QKV/output bias · Linear/Conv1D layouts.

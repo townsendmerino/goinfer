@@ -8,6 +8,41 @@ The forward-pass and quantization numerics are parity-gated against HuggingFace
 and are the stable contract. The loader and architecture-descriptor surface is
 pre-1.0 and may change as new model families and quant formats land.
 
+## [Unreleased]
+
+### Added
+- **Qwen3.5/3.6-MoE (`qwen3_5_moe`)** — the hybrid linear/softmax-attention MoE.
+  Most layers are **Gated DeltaNet** (linear attention with a recurrent matrix
+  state — short causal conv + gated delta rule + gated RMSNorm, its own forward
+  primitive), the rest gated softmax attention (double-width q_proj → query‖gate,
+  QK-norm, partial RoPE, output gate), over a 256-expert + shared MoE on every
+  layer. A **hybrid cache** holds KV for the softmax layers + a fixed-size
+  `deltaState` per linear layer; prefix-reuse / speculative fall back for the
+  hybrid (recurrent state isn't position-truncatable). Loads from safetensors,
+  bit-exact vs the HF oracle: the DeltaNet primitive op-for-op (cosine 1.0,
+  `deltanet_test.go`) and the full model argmax + cosine 1.0
+  (`qwen35_forward_test.go`). Parity-first f32 forward; GGUF loading + a chunked
+  scan are follow-ons. See `docs/qwen3_5_moe.md`.
+- **Mellum2 chat template** — `chat.Mellum2()` (a named ChatML alias) + a `Detect`
+  fingerprint (its distinctive `normalize_content` macro) so JetBrains Mellum2 is
+  identified as `mellum2` by `cmd/serve` / `demo/chat` rather than falling through
+  to generic ChatML. Its template is ChatML byte-for-byte (`<|im_start|>`/
+  `<|im_end|>` turns, stop `<|im_end|>` = EOS id 28, Hermes `<tool_call>` tools),
+  verified against HF `apply_chat_template` (`testdata/chat_goldens/mellum2.json`:
+  system+user, multi-turn, no-system) — the same byte-exact gate as the other five
+  families. Tools ride the existing ChatML Hermes `RenderTools`/`ParseToolCalls`.
+
+### Changed
+- **Mellum2 parity-gated** — Mellum2 is no longer the README family list's parity
+  exception. `TestMellum2_logitParity` pins the forward (MoE 64/top-8, 3:1
+  sliding/full interleave, YaRN-on-full RoPE, QK-norm) against the HF bf16 oracle
+  on a chat-templated prompt: argmax exact (`Paris`), sample-256 cosine **0.99955**
+  (int8int8 vs bf16). The sliding-window EVICTION path — untested when validation
+  stayed under the 1024 window — now has a model-free unit proof
+  (`TestMellum2_slidingWindowEviction`: a sliding layer's output is invariant to an
+  out-of-window key, a full layer's isn't) plus a real-checkpoint past-window point
+  (`TestMellum2_windowParity`: 1441-token prompt, cosine **0.99636**).
+
 ## [v0.3.0] — 2026-06-07
 
 ### Added

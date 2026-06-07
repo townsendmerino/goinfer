@@ -8,7 +8,7 @@
 cross-compiled static binary, with HuggingFace logit parity.
 
 goinfer is a pure-Go, no-cgo decoder-only LLM runtime. It loads open-weight
-models — Gemma 3/4, Qwen 2.5/3, Llama 2/3, Mistral, Mixtral, GPT-2, Mellum —
+models — Gemma 3/4, Qwen 2.5/3, Llama 2/3, Mistral, Mixtral, GPT-2, Mellum2 —
 directly from safetensors (single or sharded), GGUF, GPTQ, or AWQ checkpoints and
 runs them in-process: f32/bf16/f16 plus int8 and int4 quantization, KV-cache, all
 standard samplers, LoRA adapters (PEFT, merged at load), and
