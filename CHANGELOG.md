@@ -8,6 +8,28 @@ The forward-pass and quantization numerics are parity-gated against HuggingFace
 and are the stable contract. The loader and architecture-descriptor surface is
 pre-1.0 and may change as new model families and quant formats land.
 
+## [Unreleased]
+
+### Added
+- **Gemma 4 support** (HF `model_type` `gemma4_unified_text`; GGUF arch
+  `gemma4`) — the **E2B** and **E4B** "E-models" plus the **12B dense**, all
+  parity-gated against the HF bf16 oracle. Gemma 4 is a meaningfully new
+  architecture on top of the Gemma 3 stack, driven entirely through the
+  `Architecture` descriptor:
+  - per-layer **head_dim** (256 local / 512 global) and per-layer **KV-head
+    count**, scale-less **v-norm**, **proportional (partial-rotary) RoPE** on the
+    global layers, dual-base RoPE, and the final-logit softcap (30);
+  - the E-model additions — **Per-Layer Embeddings (PLE)** branch, **cross-layer
+    KV sharing**, variable per-layer **FFN width**, and a per-layer output
+    scalar (no AltUp/Laurel — those are Gemma 3n);
+  - the 12B's **`attention_k_eq_v`** (V reuses K's projection on the global
+    layers).
+
+  Greedy generation is coherent ("Paris"). Gates: `TestGemma4_logitParity`
+  (E2B, sample-256 cosine **0.99938** vs HF bf16) and `TestGemma4_12B_logitParity`
+  (12B, argmax exact + cosine **0.990**). Out of scope: the 26B-A4B MoE and 31B
+  multimodal vision towers (text-only runtime).
+
 ## [v0.1.3] — 2026-06-05
 
 ### Added

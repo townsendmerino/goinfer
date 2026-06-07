@@ -7,8 +7,8 @@
 // resolved from the checkpoint, serves a broad slice of the open-weights
 // ecosystem with logit/argmax parity validated against HuggingFace:
 //
-//   - Families: Gemma 3, Qwen3, Qwen2.5, Llama-2/3, Mistral, GPT-2, and
-//     Mixtral (sparse-MoE).
+//   - Families: Gemma 3/4, Qwen3, Qwen2.5 (+ Qwen2-MoE), Llama-2/3, Mistral,
+//     Mellum, GPT-2, and Mixtral (sparse-MoE).
 //   - Axes: RMSNorm/LayerNorm · RoPE (incl. llama3 scaling)/learned positions ·
 //     gated/non-gated/sparse-MoE MLP · full/sliding attention · tied/untied
 //     heads · optional QKV/output bias · Linear/Conv1D layouts.

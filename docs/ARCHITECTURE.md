@@ -6,7 +6,7 @@ the **load + memory paths**, and the **module map**.
 
 > These diagrams are intentionally drawn at the *stage* level, not the
 > struct-field level. goinfer is descriptor-driven — one generic decoder runs
-> Gemma/Qwen/Llama/Mistral/Mixtral/GPT-2/Mellum by reading an `Architecture`
+> Gemma 3/4, Qwen, Llama, Mistral, Mixtral, GPT-2, and Mellum by reading an `Architecture`
 > descriptor — so the per-model specifics (which norm, GQA ratio, RoPE scaling,
 > tied vs separate head) are *config*, not separate code paths. Drawing stages
 > keeps these accurate across new model families; the numeric contract is the
