@@ -232,16 +232,24 @@ collection (configs + GGUFs) · llama.cpp PLE issue #22243 · `convert_hf_to_ggu
   p-RoPE, softcap-30, layer_scalar.
 - **E4B — DONE.** Same code path as E2B; loads + generates coherently (" Paris.").
   (Golden infeasible on 16 GB — 8B bf16 ≈16 GB — but the algorithm is E2B-proven.)
-- **12B — PARKED (guarded).** Loads + runs; hidden norms stay healthy through all
-  48 layers, but the first-token argmax is wrong (garbage gen) — a subtle
-  *direction* error in the one path E2B/E4B don't exercise and qwen2-GQA doesn't
-  validate: **`attention_k_eq_v` (K=V on the global layers)**. The loader fails
-  loudly on any K=V layer (`VFromK`) so 12B errors cleanly instead of emitting
-  junk. Debug needs HF **intermediate activations** (layer-wise), which need a
-  >16 GB box (a 64 GB Linux box is en route); the coherence signal ("12B →
-  Paris") plus a layer trace will pinpoint it. Also pinned for 12B: head_count_kv
-  is a **per-layer array** (8 sliding / 1 global), now parsed; FFN is uniform
-  (15360); PLE-free.
+- **12B — DONE, parity-gated (UNPARKED 2026-06-06).** `TestGemma4_12B_logitParity`
+  (64 GB box, real `gemma-4-12b-it-qat-q4_0.gguf` + HF bf16 oracle): argmax **50429
+  `Paris`** exact (logit 26.4489 == 26.4489), sample-256 cosine **0.99012** (int8
+  vs HF bf16). Greedy generation is coherent ("Paris"). **The K=V / p-RoPE forward
+  was already correct** — the parked "garbage argmax" diagnosis was *stale*. What
+  actually happened: a layer-trace diff (HF `output_hidden_states` vs a goinfer
+  per-layer hook, see `scripts/dump_gemma4_12b_trace.py` + `diff_gemma4_12b.py`)
+  showed the residual stream matching HF across the full 48-layer stack — **no
+  cosine cliff at the global layers** (5,11,…,47) where K=V/p-RoPE live. Confirmed
+  by source audit: `value_states = key_states` in `modeling_gemma4` captures the
+  *raw* k_proj output (Python rebinds before k_norm), so `v = v_norm(k_proj)` —
+  exactly goinfer's `copy(v,k)` ordering; and HF's `proportional` rope
+  (`partial_rotary_factor 0.25`, head_dim denominator) matches `gemma4InvFreq`.
+  The earlier "garbage" was likely an instruction-tuned model fed a raw completion
+  prompt (no chat template → e.g. `'0','1',…`); the golden now uses the chat
+  template so its argmax is the real answer token. Pinned: head_count_kv is a
+  per-layer array (8 sliding / 1 global), FFN uniform (15360), PLE-free,
+  `num_kv_shared_layers 0` (12B owns all KV). The `VFromK` load-guard is removed.
 - Tokenizer: `gemma4` model string now maps to the SPM byte-fallback path
   (same tokenizer as gemma3) — enables the demo / coherent decode.
 

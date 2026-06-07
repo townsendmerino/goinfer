@@ -674,15 +674,9 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 		if err = parallelLayers(arch.NumLayers, loadG4); err != nil {
 			return nil, err
 		}
-		// K=V (attention_k_eq_v, the 12B global layers) produces incorrect logits —
-		// a subtle direction error in that path (the hidden norms stay healthy, but
-		// the argmax is wrong). E2B/E4B (no K=V) are parity-clean. Fail loudly until
-		// it's debugged against HF intermediate activations (needs a >16GB box).
-		for i := range w.Layers {
-			if w.Layers[i].VFromK {
-				return nil, fmt.Errorf("decoder(gguf): gemma4 attention_k_eq_v (12B-style K=V) forward is WIP — incorrect logits; E2B/E4B work. See docs/internal/task-gemma4-support.md")
-			}
-		}
+		// K=V (attention_k_eq_v) on the 12B global layers: V reuses K's projection
+		// (v_norm(k_proj) — see loadG4/runLayersGemma4). Parity-gated against the HF
+		// bf16 oracle by TestGemma4_12B_logitParity (argmax exact, cosine 0.990).
 		return w, nil
 	}
 

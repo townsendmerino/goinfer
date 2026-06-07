@@ -8,6 +8,16 @@ import (
 
 var g4debug = os.Getenv("G4DEBUG") != "" // env-gated per-layer hidden-norm trace
 
+// g4traceHidden, when non-nil, receives the residual stream after each layer
+// (layer -1 = post-embedding) on every runLayersGemma4 call. Debug/test only:
+// set it around the final token's forward to capture a last-position layer trace
+// for diffing against the HF reference. The callback must copy h if it retains it.
+var g4traceHidden func(layer int, h []float32)
+
+// g4traceQKV, when non-nil, receives the post-norm/RoPE q, k, v for each layer on
+// every runLayersGemma4 call (k/v nil on KV-shared layers). Debug/test only.
+var g4traceQKV func(layer int, q, k, v []float32)
+
 // runLayersGemma4 is the Gemma 4 (E-model) forward over one token. It diverges
 // from the generic runLayers enough to warrant its own path: per-layer head_dim
 // (256 local / 512 global), per-layer KV-head count, scale-less v-norm,
@@ -33,6 +43,9 @@ func (m *Model) runLayersGemma4(id int, cache *KVCache) ([]float32, error) {
 	es := float32(arch.EmbedScale)
 	for i := range h {
 		h[i] *= es
+	}
+	if g4traceHidden != nil {
+		g4traceHidden(-1, h)
 	}
 
 	// RoPE tables: local (full rotary, base 10k) and global (proportional /
@@ -122,6 +135,11 @@ func (m *Model) runLayersGemma4(id int, cache *KVCache) ([]float32, error) {
 			applyRoPE(k, nKV, hd, pos, invFreq, 1.0)
 			rmsNormNoWeight(v, nKV, hd, arch.NormEps) // V: scale-less v_norm, no RoPE
 			cache.Append(l, k, v)
+			if g4traceQKV != nil {
+				g4traceQKV(l, q, k, v)
+			}
+		} else if g4traceQKV != nil {
+			g4traceQKV(l, q, nil, nil)
 		}
 		src := kvSrc(l)
 		keys, vals := cache.Keys(src), cache.Vals(src)
@@ -191,6 +209,9 @@ func (m *Model) runLayersGemma4(id int, cache *KVCache) ([]float32, error) {
 				vk = " kv=eq"
 			}
 			fmt.Printf("  L%-2d %s hd=%d nkv=%d scale=%.4f ||h||=%.3f%s\n", l, kind, hd, nKV, lw.LayerScalar, math.Sqrt(ss), vk)
+		}
+		if g4traceHidden != nil {
+			g4traceHidden(l, h)
 		}
 	}
 	cache.Advance()
