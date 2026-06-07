@@ -9,8 +9,9 @@ import (
 	"testing"
 )
 
-// G7 GGUF parity. Loads quantized TinyLlama GGUFs (Q8_0, Q4_0) — the same model
-// as testdata/tinyllama-1.1b — through the generic forward and compares to the
+// G7 GGUF parity. Loads quantized TinyLlama GGUFs (Q8_0, Q4_0, and the K-quants
+// Q2_K/Q3_K_M/Q4_K_S/Q4_K_M/Q5_K_M/Q6_K) — the same model as testdata/tinyllama-1.1b
+// — through the generic forward and compares to the
 // f32 oracle (llama_forward_golden.json + llama_forward_full.json). Quantization
 // is lossy, so the bar is the right one for each type: argmax must still land on
 // ' Paris', and the cosine vs the f32 logits must clear a per-type floor (Q8_0
@@ -291,6 +292,20 @@ func TestGGUF_Q3_K_M_parity(t *testing.T) {
 // so the loosest floor; argmax must still hold.
 func TestGGUF_Q2_K_parity(t *testing.T) {
 	testGGUFParity(t, "../testdata/tinyllama-gguf/tinyllama-1.1b-chat-v1.0.Q2_K.gguf", 0.97)
+}
+
+// Q6_K — the highest-fidelity K-quant (6-bit, per-16 int8 block scales under an
+// f16 super-scale). Most repos ship it next to Q4_K_M/Q5_K_M; it's also the
+// mix-in for the output/embedding tensors in the lower K-quants. Near-lossless,
+// so the tightest K-quant floor — here Q6_K is the dominant type, not a mix-in.
+func TestGGUF_Q6_K_parity(t *testing.T) {
+	testGGUFParity(t, "../testdata/tinyllama-gguf/tinyllama-1.1b-chat-v1.0.Q6_K.gguf", 0.999)
+}
+
+// Q4_K_S — the same Q4_K block dequant as Q4_K_M (ggml type 12), a leaner mix
+// (fewer Q6_K tensors). Confirms the Q4_K path covers both the _S and _M recipes.
+func TestGGUF_Q4_K_S_parity(t *testing.T) {
+	testGGUFParity(t, "../testdata/tinyllama-gguf/tinyllama-1.1b-chat-v1.0.Q4_K_S.gguf", 0.99)
 }
 
 // GGUF + resident int8 (streaming-quant). Loads the Q8_0 GGUF with

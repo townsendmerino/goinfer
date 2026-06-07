@@ -11,6 +11,11 @@ pre-1.0 and may change as new model families and quant formats land.
 ## [Unreleased]
 
 ### Added
+- **K-quant coverage confirmed: Q6_K and Q4_K_S** now have dedicated logit-parity
+  tests (TinyLlama, same harness as the other GGUF quant tests), alongside the
+  existing Q2_K/Q3_K_M/Q4_K_M/Q5_K_M. The dequant paths (via `aikit/embed`) were
+  already present — most HF repos ship Q5_K_M/Q6_K next to Q4_K_M and goinfer
+  loads them all; these tests pin per-quant parity (argmax exact; cosine-floored).
 - **JSON Schema constrained decoding** (the v0.2 flagship) — `constrain.JSONSchema`
   compiles a JSON Schema into the existing incremental byte-level `Grammar`, so the
   streaming logit masker drives it unchanged: the model **physically cannot** emit
