@@ -70,6 +70,25 @@ type LayerWeights struct {
 	LayerScalar float32   // per-layer output scalar (GGUF layer_output_scale); 1 if absent
 	KVShared    bool      // carries no k/v and reuses an earlier layer's KV (Gemma 4 E-models)
 	VFromK      bool      // attention_k_eq_v: no v_proj — V is v_norm(k_proj output) (Gemma 4 12B global layers)
+
+	// qwen3_5_moe per-layer attention. Exactly one is set on the hybrid's layers:
+	// delta on the Gated DeltaNet (linear) layers, qattn on the softmax layers.
+	// Both nil for every other family. Stored f32 (the qwen3_5_moe forward is
+	// parity-first, like Gemma 4's); the MoE FFN above is shared by both kinds.
+	delta *deltaNetWeights
+	qattn *qwenAttnWeights
+}
+
+// qwenAttnWeights holds a qwen3_5_moe softmax layer's gated attention, f32.
+// q_proj is DOUBLE-WIDTH — per head it emits [query ‖ gate]; the forward splits
+// it and gates the attention output by sigmoid(gate). See docs/qwen3_5_moe.md.
+type qwenAttnWeights struct {
+	qProj []float32 // [numHeads*headDim*2, hidden]  (query ‖ gate per head)
+	kProj []float32 // [numKVHeads*headDim, hidden]
+	vProj []float32 // [numKVHeads*headDim, hidden]
+	oProj []float32 // [hidden, numHeads*headDim]
+	qNorm []float32 // [headDim]
+	kNorm []float32 // [headDim]
 }
 
 // expertWeights is one MoE expert: a gated (SwiGLU) MLP with no biases.
@@ -403,38 +422,47 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 	loadLayer := func(i int) error {
 		l := &w.Layers[i]
 		var err error
-		// Attention projections ([out, in] row-major).
-		if l.QProj, err = loadProj(tensorName(i, s.QProj), qDim, hd); err != nil {
-			return err
-		}
-		if l.KProj, err = loadProj(tensorName(i, s.KProj), kvDim, hd); err != nil {
-			return err
-		}
-		if l.VProj, err = loadProj(tensorName(i, s.VProj), kvDim, hd); err != nil {
-			return err
-		}
-		if l.OProj, err = loadProj(tensorName(i, s.OProj), hd, qDim); err != nil {
-			return err
-		}
-		// Projection bias (Qwen2 q/k/v; o_proj stays biasless). Absent → empty suffix.
-		if s.QBias != "" {
-			if l.QBias, err = loadF32(st, tensorName(i, s.QBias), []int{qDim}); err != nil {
+		// qwen3_5_moe: per-layer kind decides the attention tensor set (Gated
+		// DeltaNet vs gated softmax); both share the MoE FFN loaded below. Stored
+		// f32 (parity-first forward). Other families take the generic path.
+		if arch.qwen35 != nil {
+			if err = loadQwen35Attn(st, i, l, arch, hd); err != nil {
 				return err
 			}
-			if l.KBias, err = loadF32(st, tensorName(i, s.KBias), []int{kvDim}); err != nil {
+		} else {
+			// Attention projections ([out, in] row-major).
+			if l.QProj, err = loadProj(tensorName(i, s.QProj), qDim, hd); err != nil {
 				return err
 			}
-			if l.VBias, err = loadF32(st, tensorName(i, s.VBias), []int{kvDim}); err != nil {
+			if l.KProj, err = loadProj(tensorName(i, s.KProj), kvDim, hd); err != nil {
 				return err
 			}
-		}
-		// QK-norm (Gemma 3, Qwen3): RMSNorm over head_dim. Absent → empty suffix.
-		if s.QNorm != "" {
-			if l.QNorm, err = loadF32(st, tensorName(i, s.QNorm), []int{headDim}); err != nil {
+			if l.VProj, err = loadProj(tensorName(i, s.VProj), kvDim, hd); err != nil {
 				return err
 			}
-			if l.KNorm, err = loadF32(st, tensorName(i, s.KNorm), []int{headDim}); err != nil {
+			if l.OProj, err = loadProj(tensorName(i, s.OProj), hd, qDim); err != nil {
 				return err
+			}
+			// Projection bias (Qwen2 q/k/v; o_proj stays biasless). Absent → empty suffix.
+			if s.QBias != "" {
+				if l.QBias, err = loadF32(st, tensorName(i, s.QBias), []int{qDim}); err != nil {
+					return err
+				}
+				if l.KBias, err = loadF32(st, tensorName(i, s.KBias), []int{kvDim}); err != nil {
+					return err
+				}
+				if l.VBias, err = loadF32(st, tensorName(i, s.VBias), []int{kvDim}); err != nil {
+					return err
+				}
+			}
+			// QK-norm (Gemma 3, Qwen3): RMSNorm over head_dim. Absent → empty suffix.
+			if s.QNorm != "" {
+				if l.QNorm, err = loadF32(st, tensorName(i, s.QNorm), []int{headDim}); err != nil {
+					return err
+				}
+				if l.KNorm, err = loadF32(st, tensorName(i, s.KNorm), []int{headDim}); err != nil {
+					return err
+				}
 			}
 		}
 		// Block norms — Pre2 has only Pre*; Sandwich4 adds Post*.
@@ -506,6 +534,74 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 		return nil, err
 	}
 	return w, nil
+}
+
+// loadQwen35Attn loads one qwen3_5_moe layer's attention tensors as f32 (the
+// parity-first forward uses plain matvec): the Gated DeltaNet set on linear
+// layers (linear_attn.*), the gated-softmax set on the rest (self_attn.*, with a
+// double-width q_proj — query ‖ gate per head). The MoE FFN is loaded by the
+// shared path. See docs/qwen3_5_moe.md.
+func loadQwen35Attn(st *embed.SafetensorsFile, i int, l *LayerWeights, arch *Architecture, hidden int) error {
+	g := arch.qwen35
+	var err error
+	nm := func(suf string) string { return tensorName(i, suf) }
+	if arch.isLinearLayer(i) {
+		keyDim, valueDim := g.KeyHeadDim*g.NumKeyHeads, g.ValueHeadDim*g.NumValueHeads
+		convDim := 2*keyDim + valueDim
+		d := &deltaNetWeights{}
+		if d.inProjQKV, err = loadF32(st, nm("linear_attn.in_proj_qkv.weight"), []int{convDim, hidden}); err != nil {
+			return err
+		}
+		if d.inProjZ, err = loadF32(st, nm("linear_attn.in_proj_z.weight"), []int{valueDim, hidden}); err != nil {
+			return err
+		}
+		if d.inProjB, err = loadF32(st, nm("linear_attn.in_proj_b.weight"), []int{g.NumValueHeads, hidden}); err != nil {
+			return err
+		}
+		if d.inProjA, err = loadF32(st, nm("linear_attn.in_proj_a.weight"), []int{g.NumValueHeads, hidden}); err != nil {
+			return err
+		}
+		if d.convW, err = loadF32(st, nm("linear_attn.conv1d.weight"), []int{convDim, 1, g.ConvKernel}); err != nil {
+			return err
+		}
+		if d.dtBias, err = loadF32(st, nm("linear_attn.dt_bias"), []int{g.NumValueHeads}); err != nil {
+			return err
+		}
+		if d.aLog, err = loadF32(st, nm("linear_attn.A_log"), []int{g.NumValueHeads}); err != nil {
+			return err
+		}
+		if d.normW, err = loadF32(st, nm("linear_attn.norm.weight"), []int{g.ValueHeadDim}); err != nil {
+			return err
+		}
+		if d.outProj, err = loadF32(st, nm("linear_attn.out_proj.weight"), []int{hidden, valueDim}); err != nil {
+			return err
+		}
+		l.delta = d
+		return nil
+	}
+	hd := arch.HeadDim
+	kvd := arch.NumKVHeads * hd
+	a := &qwenAttnWeights{}
+	if a.qProj, err = loadF32(st, nm("self_attn.q_proj.weight"), []int{arch.NumHeads * hd * 2, hidden}); err != nil {
+		return err
+	}
+	if a.kProj, err = loadF32(st, nm("self_attn.k_proj.weight"), []int{kvd, hidden}); err != nil {
+		return err
+	}
+	if a.vProj, err = loadF32(st, nm("self_attn.v_proj.weight"), []int{kvd, hidden}); err != nil {
+		return err
+	}
+	if a.oProj, err = loadF32(st, nm("self_attn.o_proj.weight"), []int{hidden, arch.NumHeads * hd}); err != nil {
+		return err
+	}
+	if a.qNorm, err = loadF32(st, nm("self_attn.q_norm.weight"), []int{hd}); err != nil {
+		return err
+	}
+	if a.kNorm, err = loadF32(st, nm("self_attn.k_norm.weight"), []int{hd}); err != nil {
+		return err
+	}
+	l.qattn = a
+	return nil
 }
 
 // loadF32 fetches a tensor, shape-validates it against want, and decodes it
@@ -738,6 +834,35 @@ var qwen2TensorSchema = tensorSchema{
 // qwen2MoeTensorSchema: qwen2 attention (q/k/v bias) with the FFN replaced by a
 // sparse MoE (router mlp.gate + per-expert mlp.experts.%d.*) plus an always-on
 // shared expert (mlp.shared_expert.* + the mlp.shared_expert_gate sigmoid gate).
+// qwen35TensorSchema covers the qwen3_5_moe SOFTMAX layers (QK-norm, no bias) +
+// the routed/shared MoE common to every layer. The Gated DeltaNet (linear) layers
+// carry an entirely different tensor set (in_proj_qkv/z/a/b, conv1d, A_log,
+// dt_bias, norm, out_proj) that the current tensorSchema can't express; loading
+// those — and pinning the exact fused-expert tensor names against a real
+// checkpoint — is Phase 4 (see docs/qwen3_5_moe.md). Used today only for
+// descriptor resolution.
+var qwen35TensorSchema = tensorSchema{
+	Embed:            "model.embed_tokens.weight",
+	LMHead:           "lm_head.weight",
+	FinalNorm:        "model.norm.weight",
+	QProj:            "self_attn.q_proj.weight",
+	KProj:            "self_attn.k_proj.weight",
+	VProj:            "self_attn.v_proj.weight",
+	OProj:            "self_attn.o_proj.weight",
+	QNorm:            "self_attn.q_norm.weight",
+	KNorm:            "self_attn.k_norm.weight",
+	PreAttnNorm:      "input_layernorm.weight",
+	PreMLPNorm:       "post_attention_layernorm.weight",
+	Router:           "mlp.gate.weight",
+	ExpertGate:       "mlp.experts.%d.gate_proj.weight",
+	ExpertUp:         "mlp.experts.%d.up_proj.weight",
+	ExpertDown:       "mlp.experts.%d.down_proj.weight",
+	SharedGate:       "mlp.shared_expert.gate_proj.weight",
+	SharedUp:         "mlp.shared_expert.up_proj.weight",
+	SharedDown:       "mlp.shared_expert.down_proj.weight",
+	SharedExpertGate: "mlp.shared_expert_gate.weight",
+}
+
 var qwen2MoeTensorSchema = tensorSchema{
 	Embed:            "model.embed_tokens.weight",
 	LMHead:           "lm_head.weight",

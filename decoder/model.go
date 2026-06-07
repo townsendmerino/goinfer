@@ -103,6 +103,17 @@ func (m *Model) NewCache(capHint int) *KVCache {
 	if a.gemma4 != nil {
 		c.manualPos = true // gemma4's last layer is KV-shared; pos advances via Advance()
 	}
+	if a.qwen35 != nil {
+		// Hybrid cache: KV for the softmax layers + a recurrent DeltaState for each
+		// linear layer. manualPos because the linear layers never Append.
+		c.manualPos = true
+		c.delta = make([]*deltaState, a.NumLayers)
+		for l := 0; l < a.NumLayers; l++ {
+			if a.isLinearLayer(l) {
+				c.delta[l] = newDeltaState(*a.qwen35)
+			}
+		}
+	}
 	return c
 }
 
@@ -133,6 +144,9 @@ func (m *Model) runLayers(id int, cache *KVCache) ([]float32, error) {
 	}
 	if arch.gemma4 != nil { // Gemma 4: per-layer head_dim, KV-sharing, PLE — own path.
 		return m.runLayersGemma4(id, cache)
+	}
+	if arch.qwen35 != nil { // qwen3_5_moe: Gated DeltaNet / softmax hybrid — own path.
+		return m.runLayersQwen35(id, cache)
 	}
 	if cache.scr == nil { // caches from NewKVCache directly (tests); Generate uses NewCache
 		cache.scr = newDecodeScratch(arch)

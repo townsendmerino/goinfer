@@ -70,6 +70,24 @@ type Architecture struct {
 	// global/full layers differ from the local/sliding ones). nil for every
 	// other family — they keep the uniform HeadDim/NumKVHeads/full-rotary path.
 	gemma4 *gemma4Params
+
+	// qwen35, when non-nil, marks a qwen3_5_moe hybrid: most layers are Gated
+	// DeltaNet (linear attention with a recurrent matrix state), the rest softmax.
+	// layerIsLinear picks which. The full-attention layers run the normal causal
+	// path; the linear ones run the DeltaNet primitive. nil for every other family.
+	qwen35        *qwen35Params
+	layerIsLinear func(i int) bool
+}
+
+// qwen35Params carries the Gated DeltaNet geometry for a qwen3_5_moe model's
+// linear-attention layers (see docs/qwen3_5_moe.md). The softmax layers use the
+// uniform Architecture attention fields; only the linear layers read these.
+type qwen35Params struct {
+	ConvKernel    int // depthwise causal conv width over [q;k;v] (linear_conv_kernel_dim)
+	KeyHeadDim    int // per-head key/query dim (linear_key_head_dim)
+	ValueHeadDim  int // per-head value dim (linear_value_head_dim)
+	NumKeyHeads   int // linear_num_key_heads
+	NumValueHeads int // linear_num_value_heads (GVA: a multiple of NumKeyHeads)
 }
 
 // gemma4Params describes how Gemma 4's global (full-attention) layers diverge
@@ -171,6 +189,13 @@ func (a *Architecture) isGlobalLayer(i int) bool {
 		return a.layerIsGlobal(i)
 	}
 	return true
+}
+
+// isLinearLayer reports whether layer i is a Gated DeltaNet (linear-attention)
+// layer rather than softmax attention — the qwen3_5_moe hybrid. False when no
+// per-layer function is set (every non-hybrid family).
+func (a *Architecture) isLinearLayer(i int) bool {
+	return a.layerIsLinear != nil && a.layerIsLinear(i)
 }
 
 // ropeBase returns the RoPE base for layer i (Gemma uses a smaller base on the

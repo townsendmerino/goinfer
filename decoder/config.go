@@ -50,6 +50,17 @@ type Config struct {
 	// (Qwen-MoE/Qwen2-MoE). 0/absent ⇒ no shared expert.
 	SharedExpertIntermediateSize int `json:"shared_expert_intermediate_size"`
 
+	// Gated DeltaNet (qwen3_5_moe linear-attention layers). The linear layers
+	// replace softmax attention with a gated delta-rule recurrence over a
+	// fixed-size matrix state; these size its conv + per-head key/value dims.
+	// GVA: LinearNumValueHeads is a multiple of LinearNumKeyHeads (q/k are
+	// repeat-interleaved to the value-head count). Absent for every other family.
+	LinearConvKernelDim int `json:"linear_conv_kernel_dim"`
+	LinearKeyHeadDim    int `json:"linear_key_head_dim"`
+	LinearValueHeadDim  int `json:"linear_value_head_dim"`
+	LinearNumKeyHeads   int `json:"linear_num_key_heads"`
+	LinearNumValueHeads int `json:"linear_num_value_heads"`
+
 	// RopeScaling is HF's rope_scaling object (llama3 / linear / yarn / …).
 	// Plain Llama-3.0 and Qwen3 leave it null; Llama-3.1+/3.2 set it. Kept raw
 	// and decoded by parseRopeScaling (G4: linear + llama3 + yarn supported).
@@ -136,6 +147,13 @@ func (c *Config) IsGlobalLayer(i int) bool {
 		return true // no pattern configured → all-global (degenerate)
 	}
 	return (i+1)%p == 0
+}
+
+// IsLinearLayer reports whether layer i is a Gated DeltaNet (linear-attention)
+// layer rather than a softmax-attention layer — the qwen3_5_moe 3:1 hybrid, read
+// from layer_types. False for every non-hybrid family.
+func (c *Config) IsLinearLayer(i int) bool {
+	return i >= 0 && i < len(c.LayerTypes) && c.LayerTypes[i] == "linear_attention"
 }
 
 // headDim returns the per-head dimension, falling back to hidden/heads when
@@ -280,6 +298,37 @@ func (c *Config) validateMellum() error {
 		return fmt.Errorf("decoder(mellum): rope_parameters required (full_attention + sliding_attention)")
 	case len(c.LayerTypes) != c.NumLayers:
 		return fmt.Errorf("decoder(mellum): layer_types has %d entries, want %d", len(c.LayerTypes), c.NumLayers)
+	}
+	return nil
+}
+
+// validateQwen35 pins the qwen3_5_moe assumptions: a 3:1 linear/full layer mix
+// (layer_types), the Gated DeltaNet dims (GVA value-head count a multiple of the
+// key-head count), per-attention-type RoPE in rope_parameters, QK-norm softmax
+// layers, and a routed + shared MoE on every layer.
+func (c *Config) validateQwen35() error {
+	switch {
+	case c.HiddenDim == 0 || c.NumLayers == 0 || c.NumHeads == 0 || c.HeadDim == 0:
+		return fmt.Errorf("decoder(qwen3_5_moe): missing core dims (hidden=%d layers=%d heads=%d headDim=%d)",
+			c.HiddenDim, c.NumLayers, c.NumHeads, c.HeadDim)
+	case c.NumKVHeads == 0 || c.NumHeads%c.NumKVHeads != 0:
+		return fmt.Errorf("decoder(qwen3_5_moe): num_heads %d not a multiple of num_kv_heads %d (GQA)", c.NumHeads, c.NumKVHeads)
+	case len(c.LayerTypes) != c.NumLayers:
+		return fmt.Errorf("decoder(qwen3_5_moe): layer_types has %d entries, want %d", len(c.LayerTypes), c.NumLayers)
+	case c.LinearConvKernelDim <= 0 || c.LinearKeyHeadDim <= 0 || c.LinearValueHeadDim <= 0:
+		return fmt.Errorf("decoder(qwen3_5_moe): missing linear (DeltaNet) dims (conv=%d kHead=%d vHead=%d)",
+			c.LinearConvKernelDim, c.LinearKeyHeadDim, c.LinearValueHeadDim)
+	case c.LinearNumKeyHeads <= 0 || c.LinearNumValueHeads <= 0 || c.LinearNumValueHeads%c.LinearNumKeyHeads != 0:
+		return fmt.Errorf("decoder(qwen3_5_moe): linear_num_value_heads %d not a multiple of linear_num_key_heads %d (GVA)",
+			c.LinearNumValueHeads, c.LinearNumKeyHeads)
+	case c.NumExperts <= 0 || c.NumExpertsPerTok <= 0 || c.NumExpertsPerTok > c.NumExperts:
+		return fmt.Errorf("decoder(qwen3_5_moe): bad MoE (experts=%d top_k=%d)", c.NumExperts, c.NumExpertsPerTok)
+	case c.MoeIntermediateSize <= 0:
+		return fmt.Errorf("decoder(qwen3_5_moe): moe_intermediate_size must be >0")
+	case len(c.RopeParameters) == 0:
+		return fmt.Errorf("decoder(qwen3_5_moe): rope_parameters required")
+	case c.RMSNormEps <= 0:
+		return fmt.Errorf("decoder(qwen3_5_moe): rms_norm_eps must be >0")
 	}
 	return nil
 }

@@ -22,8 +22,14 @@ type KVCache struct {
 
 	// manualPos decouples pos from Append's last-layer trigger. Gemma 4's last
 	// layer is KV-shared (never appends), so the caller advances pos explicitly
-	// via Advance() after each token's full layer sweep.
+	// via Advance() after each token's full layer sweep. qwen3_5_moe sets it too
+	// (its linear layers don't Append, so the last-layer trigger is unreliable).
 	manualPos bool
+
+	// delta holds the Gated DeltaNet recurrent state for qwen3_5_moe's linear
+	// layers (nil entry on softmax layers, nil slice on every other family). This
+	// is the recurrent half of the hybrid cache — see docs/qwen3_5_moe.md.
+	delta []*deltaState
 
 	scr *decodeScratch // per-stream reusable forward buffers (Model.NewCache sets it)
 }

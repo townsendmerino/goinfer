@@ -154,6 +154,22 @@ func parseRopeSpec(name string, raw json.RawMessage) (*ropeLayerSpec, error) {
 	return spec, nil
 }
 
+// parseRopeFlat reads the qwen3_5_moe flat rope_parameters object
+// {rope_type, rope_theta, partial_rotary_factor, …}: one ropeLayerSpec (base +
+// optional scaling) plus the partial-rotary fraction (HF defaults it to 0.25
+// inside this object, so it is read here rather than from the top-level config).
+func parseRopeFlat(raw json.RawMessage) (spec *ropeLayerSpec, partialRotary float64, err error) {
+	spec, err = parseRopeSpec("rope_parameters", raw)
+	if err != nil {
+		return nil, 0, err
+	}
+	var head struct {
+		PartialRotaryFactor float64 `json:"partial_rotary_factor"`
+	}
+	_ = json.Unmarshal(raw, &head)
+	return spec, head.PartialRotaryFactor, nil
+}
+
 // newYarnScaling builds a YaRN ropeScaling, mirroring HF
 // _compute_yarn_parameters' defaults: beta_fast 32, beta_slow 1, and an
 // attention_factor of get_mscale(factor) = 0.1·ln(factor)+1 when not given.
