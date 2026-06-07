@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/townsendmerino/aikit/embed"
+	"github.com/townsendmerino/aikit/encoder"
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/constrain"
 	"github.com/townsendmerino/goinfer/decoder"
@@ -18,14 +20,24 @@ import (
 const defaultMaxTokens = 512
 
 type server struct {
-	tk      *tokenizer.Tokenizer
-	model   *decoder.Model
-	tmpl    *chat.Template // nil → raw completion
-	stopIDs []int          // turn-stop token ids from the template
-	eosIDs  []int
-	vocab   int
-	modelID string
-	mu      sync.Mutex // serialize generations (one model, shared compute)
+	// Generative (decoder) half — nil when only an embedding model is served.
+	tk       *tokenizer.Tokenizer
+	model    *decoder.Model
+	tmpl     *chat.Template // nil → raw completion
+	stopIDs  []int          // turn-stop token ids from the template
+	eosIDs   []int
+	vocab    int
+	modelID  string
+	sessions *sessionLRU // prefix-keyed KV reuse across requests
+	mu       sync.Mutex  // serialize generations (one model, shared compute)
+
+	// Embedding (encoder) half — nil when only a generative model is served.
+	// The encoder is goroutine-safe for concurrent Encode, so /v1/embeddings is
+	// served without s.mu (which guards only the single shared decoder).
+	embed    encoder.Encoder
+	embedTok *embed.Tokenizer // counts tokens for usage.prompt_tokens
+	embedID  string
+	embedDim int
 }
 
 // --- OpenAI request shapes (the subset we honor) ---
@@ -104,15 +116,18 @@ type usage struct {
 	TotalTokens      int `json:"total_tokens"`
 }
 
-// handleModels reports the single served model (Open WebUI calls this to populate
-// its model picker).
+// handleModels reports the served model(s) — the decoder and/or the embedding
+// model (Open WebUI calls this to populate its model picker).
 func (s *server) handleModels(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{
-		"object": "list",
-		"data": []map[string]any{
-			{"id": s.modelID, "object": "model", "created": time.Now().Unix(), "owned_by": "goinfer"},
-		},
-	})
+	created := time.Now().Unix()
+	data := []map[string]any{}
+	if s.model != nil {
+		data = append(data, map[string]any{"id": s.modelID, "object": "model", "created": created, "owned_by": "goinfer"})
+	}
+	if s.embed != nil {
+		data = append(data, map[string]any{"id": s.embedID, "object": "model", "created": created, "owned_by": "goinfer"})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"object": "list", "data": data})
 }
 
 func (s *server) handleChat(w http.ResponseWriter, r *http.Request) {
@@ -339,7 +354,10 @@ func (s *server) chatPrompt(msgs []chatMessage) []int {
 func (s *server) drive(parent context.Context, gr genRequest, onText func(string)) (string, int, []decoder.SampleInfo) {
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
-	stream, gen := s.model.Generate(ctx, gr.promptIDs, gr.maxTokens, gr.sp)
+	// Reuse the KV of whichever cached session already holds this prompt as a
+	// prefix (continuing chat / agent loop): only the new suffix is prefilled.
+	sess := s.sessions.acquire(gr.promptIDs)
+	stream, gen := sess.Generate(ctx, gr.promptIDs, gr.maxTokens, gr.sp)
 
 	var ids []int
 	printed := 0

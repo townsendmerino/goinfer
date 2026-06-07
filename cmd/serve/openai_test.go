@@ -135,7 +135,7 @@ func TestServe_integration(t *testing.T) {
 	if path == "" {
 		t.Skip("set GOINFER_SERVE_MODEL=<.gguf> to run the serve integration test")
 	}
-	srv, err := newServer(path, "cpu", "int8int8", "", "test-model")
+	srv, err := newServer(config{modelPath: path, backend: "cpu", quant: "int8int8", name: "test-model", kvSessions: 4})
 	if err != nil {
 		t.Fatalf("newServer: %v", err)
 	}
@@ -225,7 +225,7 @@ func TestServe_tools_integration(t *testing.T) {
 	if path == "" {
 		t.Skip("set GOINFER_SERVE_MODEL=<.gguf> to run the serve tool test")
 	}
-	srv, err := newServer(path, "cpu", "int8int8", "", "test-model")
+	srv, err := newServer(config{modelPath: path, backend: "cpu", quant: "int8int8", name: "test-model", kvSessions: 4})
 	if err != nil {
 		t.Fatalf("newServer: %v", err)
 	}

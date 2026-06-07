@@ -93,7 +93,7 @@ constrained generation validates against its schema.
 ## OpenAI-compatible server
 
 [`cmd/serve`](cmd/serve) is a pure-stdlib (`net/http`, no deps) OpenAI-compatible
-server for one model — point Open WebUI, LangChain, or the OpenAI SDKs at it:
+server — point Open WebUI, LangChain, or the OpenAI SDKs at it:
 
 ```bash
 go run ./cmd/serve --model ~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
@@ -106,6 +106,29 @@ sampling knobs (`temperature`/`top_p`/`top_k`/`seed`/`frequency_penalty`/
 `{"type":"json_schema", …}` or `{"type":"json_object"}` gives schema-constrained
 output the model cannot violate (the same grammar as above). The chat template is
 auto-detected per model.
+
+**Prompt-prefix KV caching.** Across requests the server reuses the KV cache for
+the longest token prefix a new prompt shares with a recent one, prefilling only
+the new suffix — so a continuing chat (or an agent loop with a fixed system
+prompt + tool specs) skips re-encoding the whole history. Reuse is exact
+(bit-identical to a cold prefill). `--kv-sessions N` sets how many conversations
+to keep warm (default 4; 0 disables); `--session-dir DIR` persists the warm
+sessions to disk and restores them on restart.
+
+**Embeddings.** Point `--embed-model` at a [CodeRankEmbed](https://huggingface.co/nomic-ai/CodeRankEmbed)
+HF snapshot to serve `/v1/embeddings` (`--embed-quant f32|q8`). `--model` and
+`--embed-model` are each optional and can run together — generation and
+embeddings from one process, or either alone:
+
+```bash
+go run ./cmd/serve --embed-model ~/models/coderankembed         # /v1/embeddings only
+```
+
+`input` (string or array), `encoding_format: float|base64`, and `dimensions`
+(truncate + renormalize) follow the OpenAI shape; vectors are L2-normalized. For
+this encoder's asymmetric query/document encoding, an optional `input_type:
+"query"|"document"` (default `document`, the Cohere/Voyage convention) selects the
+query instruction prefix.
 
 ## Status
 
