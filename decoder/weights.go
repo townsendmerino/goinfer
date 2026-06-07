@@ -148,7 +148,7 @@ func (w *Weights) matmulWeights() []*weightMat {
 //
 // Use LoadWeightsFromFS for fs.FS-backed (MapFS, embed.FS) paths — that
 // route stays heap-backed because fs.FS doesn't expose a file descriptor.
-func LoadWeights(dir string) (*Weights, error) { return loadWeights(dir, quantNone) }
+func LoadWeights(dir string) (*Weights, error) { return loadWeights(dir, quantNone, nil) }
 
 // parallelLayers runs fn over the n layer indices across a worker pool, so the
 // per-tensor dequant + re-quant (independent per layer — distinct weightMat
@@ -209,9 +209,9 @@ func parallelLayers(n int, fn func(i int) error) error {
 // big quantized checkpoint load in a quarter (int8) or eighth (int4) of the RAM
 // the load-everything-then-quantize path needed. The forward output is identical
 // to quantizing after load; only the peak memory differs.
-func loadWeights(dir string, quant quantMode) (*Weights, error) {
+func loadWeights(dir string, quant quantMode, lora *loraAdapter) (*Weights, error) {
 	if strings.HasSuffix(dir, ".gguf") {
-		return loadGGUFWeights(dir, quant) // quantized llama.cpp checkpoint (G7)
+		return loadGGUFWeights(dir, quant) // quantized llama.cpp checkpoint (G7); LoRA guarded in Load
 	}
 	cfg, err := loadConfig(os.DirFS(dir), "config.json")
 	if err != nil {
@@ -225,7 +225,7 @@ func loadWeights(dir string, quant quantMode) (*Weights, error) {
 	if err != nil {
 		return nil, err
 	}
-	return buildWeightsFromSafetensors(cfg, arch, schema, st, quant)
+	return buildWeightsFromSafetensors(cfg, arch, schema, st, quant, lora)
 }
 
 const shardIndexFile = "model.safetensors.index.json"
@@ -273,7 +273,7 @@ func loadWeightsFromFS(fsys fs.FS, dir string, quant quantMode) (*Weights, error
 	if err != nil {
 		return nil, err
 	}
-	return buildWeightsFromSafetensors(cfg, arch, schema, st, quant)
+	return buildWeightsFromSafetensors(cfg, arch, schema, st, quant, nil)
 }
 
 // openCheckpointFromFS is the fs.FS counterpart of openCheckpointMmap (heap):
@@ -299,9 +299,17 @@ func openCheckpointFromFS(fsys fs.FS, dir string) (*embed.SafetensorsFile, error
 // against Cfg. Factored out so the heap (fs.FS) and mmap paths share one
 // tensor-name + shape contract — a schema change is one edit, not two.
 // Mirrors encoder.buildWeightsFromSafetensors.
-func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchema, st *embed.SafetensorsFile, quant quantMode) (*Weights, error) {
+func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchema, st *embed.SafetensorsFile, quant quantMode, lora *loraAdapter) (*Weights, error) {
 	if arch.Name == "gpt2" {
+		if lora != nil {
+			return nil, fmt.Errorf("decoder: LoRA merge unsupported for the gpt2 (Conv1D/fused-QKV) layout")
+		}
 		return buildGPT2Weights(cfg, arch, st, quant) // Conv1D layout + fused QKV need a dedicated path
+	}
+	if lora != nil {
+		if err := lora.validateTargets(cfg.NumLayers, s); err != nil {
+			return nil, err
+		}
 	}
 	hd := cfg.HiddenDim
 	headDim := arch.HeadDim           // resolved (Llama configs may omit head_dim; arch derives it)
@@ -317,10 +325,9 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 		return nil, err
 	}
 
-	// loadMatQ loads a matmul weight and, when quant is set, quantizes it to
-	// per-row int8 immediately — freeing the f32 before the next tensor loads
-	// (the streaming-quant memory win; see loadWeights). Norms still use loadF32
-	// and stay f32.
+	// loadMatQ loads a matmul weight and quantizes it immediately (the
+	// streaming-quant memory win). Used for tensors that aren't LoRA targets
+	// (MoE experts, router); the LoRA-mergeable projections go through loadProj.
 	loadMatQ := func(name string, rows, cols int) (weightMat, error) {
 		m, merr := loadMat(st, name, rows, cols)
 		if merr == nil {
@@ -328,23 +335,31 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 		}
 		return m, merr
 	}
-	// loadProj loads a (per-layer) attention/MLP projection: a GPTQ/AWQ
+	// loadProj loads a (per-layer) attention/MLP projection to f32 — a GPTQ/AWQ
 	// reconstruction when the checkpoint is pre-quantized, else a plain weight
-	// load. Either way the result is then streamed through the requested resident
-	// quant. (Embeddings/norms/LM head are not quantized — they keep loadMat/loadF32.)
+	// load — merges any LoRA delta into it, then quantizes to the requested
+	// resident format (freeing the f32 before the next tensor; the streaming-quant
+	// memory win). The LoRA merge must happen here, on the f32, before quantization.
 	loadProj := func(name string, out, in int) (weightMat, error) {
-		if qc == nil {
-			return loadMatQ(name, out, in)
-		}
-		base := strings.TrimSuffix(name, ".weight")
 		var data []float32
 		var derr error
-		if qc.method == "awq" {
-			data, derr = awqReconstruct(st, base, in, out)
-		} else {
-			data, derr = gptqReconstruct(st, base, in, out)
+		switch {
+		case qc == nil:
+			data, derr = loadF32(st, name, []int{out, in})
+			// loadF32 may alias the read-only mmap for F32 tensors; the in-place
+			// merge needs a writable copy (only for the targeted tensors).
+			if derr == nil && lora.has(name) {
+				data = append([]float32(nil), data...)
+			}
+		case qc.method == "awq":
+			data, derr = awqReconstruct(st, strings.TrimSuffix(name, ".weight"), in, out)
+		default:
+			data, derr = gptqReconstruct(st, strings.TrimSuffix(name, ".weight"), in, out)
 		}
 		if derr != nil {
+			return weightMat{}, derr
+		}
+		if derr = lora.merge(name, data, out, in); derr != nil {
 			return weightMat{}, derr
 		}
 		m := newWeightMat(data, out, in)

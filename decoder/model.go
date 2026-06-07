@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"slices"
+	"strings"
 )
 
 // Model is a loaded Gemma 3 checkpoint plus the compute backend. Goroutine
@@ -21,6 +22,7 @@ type Model struct {
 type Options struct {
 	Backend string // "cpu" (default) or "webgpu"
 	Quant   string // "" (f32), "int8" (weight-only per-row), "int8int8" (full int8×int8 W8A8), or "int4" (group-wise) (M8)
+	LoRA    string // optional PEFT adapter dir (adapter_config.json + adapter_model.safetensors), merged into the base at load. Safetensors base only.
 }
 
 // Load reads a Gemma 3 snapshot (config.json + model.safetensors) from dir
@@ -39,7 +41,22 @@ func Load(dir string, opts Options) (*Model, error) {
 		return nil, err
 	}
 
-	w, err := loadWeights(dir, quant)
+	// Optional LoRA adapter, merged into the base weights at load (safetensors base
+	// only — PEFT targets HF module names).
+	var lora *loraAdapter
+	if opts.LoRA != "" {
+		if strings.HasSuffix(dir, ".gguf") {
+			closeBackend(be)
+			return nil, fmt.Errorf("decoder: LoRA merge needs a safetensors base, not a .gguf")
+		}
+		if lora, err = loadLoRA(opts.LoRA); err != nil {
+			closeBackend(be)
+			return nil, err
+		}
+		defer lora.close()
+	}
+
+	w, err := loadWeights(dir, quant, lora)
 	if err != nil {
 		closeBackend(be)
 		return nil, err

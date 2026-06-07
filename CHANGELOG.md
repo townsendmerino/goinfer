@@ -11,6 +11,12 @@ pre-1.0 and may change as new model families and quant formats land.
 ## [Unreleased]
 
 ### Added
+- **LoRA adapter loading** — `decoder.Options.LoRA` merges a PEFT adapter
+  (`adapter_config.json` + `adapter_model.safetensors`) into the base weights at
+  load: W′ = W + (α/r)·B·A (α/√r under rslora), applied to the f32 weight *before*
+  quantization, so a merged model costs nothing extra at decode. Targets the
+  per-layer attention/MLP projections; an unsupported target (e.g. `embed_tokens`)
+  or a GGUF base is a loud error. `demo/chat` and `cmd/serve` gain `--lora`.
 - **Tool calling** — composes chat templates + JSON-Schema constraint + a
   per-family parser (parse against the model's template, not a naive JSON scan).
   `chat.Template.RenderTools` declares tools in each family's syntax and

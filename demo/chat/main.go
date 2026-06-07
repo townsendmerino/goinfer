@@ -75,6 +75,7 @@ func main() {
 		system   = flag.String("system", defaultSystem, "system prompt that steers the model")
 		backend  = flag.String("backend", "cpu", "compute backend: cpu | webgpu")
 		quant    = flag.String("quant", "int8int8", "weight quant: \"\" (native) | int8 | int8int8 | int4. int8int8 (W8A8) uses the native int8×int8 SDOT kernel — much faster than int4's per-token nibble unpack")
+		lora     = flag.String("lora", "", "optional PEFT LoRA adapter dir, merged into the safetensors base at load")
 		maxTok   = flag.Int("max", 512, "max tokens per reply")
 		temp     = flag.Float64("temp", 0.7, "sampling temperature (0 = greedy)")
 		topK     = flag.Int("top-k", 20, "top-k filter (0 = off)")
@@ -92,7 +93,7 @@ func main() {
 	)
 	flag.Parse()
 
-	opts := decoder.Options{Backend: *backend, Quant: *quant}
+	opts := decoder.Options{Backend: *backend, Quant: *quant, LoRA: *lora}
 	useTmp := *modelTmp || os.Getenv("GOINFER_MODEL_TMP") != ""
 
 	// Tune matmul parallelism for batch=1 decode (parallelize the per-token

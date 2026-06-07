@@ -31,6 +31,7 @@ func main() {
 		addr    = flag.String("addr", ":8080", "listen address")
 		backend = flag.String("backend", "cpu", "compute backend: cpu | webgpu")
 		quant   = flag.String("quant", "int8int8", "weight quant: \"\" | int8 | int8int8 | int4")
+		lora    = flag.String("lora", "", "optional PEFT LoRA adapter dir, merged into the (safetensors) base at load")
 		name    = flag.String("served-model-name", "", "model id reported by /v1/models (default: file/dir basename)")
 	)
 	flag.Parse()
@@ -40,7 +41,7 @@ func main() {
 		os.Exit(2)
 	}
 
-	srv, err := newServer(*model, *backend, *quant, *name)
+	srv, err := newServer(*model, *backend, *quant, *lora, *name)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
@@ -59,7 +60,7 @@ func main() {
 }
 
 // newServer loads the tokenizer + model once and resolves the chat template.
-func newServer(path, backend, quant, name string) (*server, error) {
+func newServer(path, backend, quant, lora, name string) (*server, error) {
 	loadTok := tokenizer.Load
 	if strings.HasSuffix(path, ".gguf") {
 		loadTok = tokenizer.LoadGGUF
@@ -69,7 +70,7 @@ func newServer(path, backend, quant, name string) (*server, error) {
 		return nil, fmt.Errorf("load tokenizer: %w", err)
 	}
 	t0 := time.Now()
-	model, err := decoder.Load(path, decoder.Options{Backend: backend, Quant: quant})
+	model, err := decoder.Load(path, decoder.Options{Backend: backend, Quant: quant, LoRA: lora})
 	if err != nil {
 		return nil, fmt.Errorf("load model: %w", err)
 	}
