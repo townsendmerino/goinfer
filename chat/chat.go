@@ -81,6 +81,10 @@ func Detect(meta Meta) (*Template, error) {
 			return Gemma3(), nil
 		case strings.Contains(t, "<|start_header_id|>"):
 			return Llama3(), nil
+		// Mellum2 IS ChatML; its distinctive normalize_content macro lets Detect
+		// name it "mellum2" (banner/serve) before the generic <|im_start|> branch.
+		case strings.Contains(t, "normalize_content") && strings.Contains(t, "<|im_start|>"):
+			return Mellum2(), nil
 		case strings.Contains(t, "<|im_start|>"):
 			return ChatML(), nil
 		case strings.Contains(t, "[INST]"):

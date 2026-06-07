@@ -23,7 +23,7 @@ type goldenFile struct {
 }
 
 var ctors = map[string]func() *Template{
-	"gemma3": Gemma3, "gemma4": Gemma4, "chatml": ChatML, "llama3": Llama3, "mistral": Mistral,
+	"gemma3": Gemma3, "gemma4": Gemma4, "chatml": ChatML, "llama3": Llama3, "mistral": Mistral, "mellum2": Mellum2,
 }
 
 func loadGoldens(t *testing.T) []goldenFile {

@@ -70,6 +70,19 @@ func ChatML() *Template {
 	}}
 }
 
+// Mellum2 (JetBrains Mellum2) renders ChatML — its chat template is ChatML
+// byte-for-byte (<|im_start|>/<|im_end|> turns, stop <|im_end|>, Hermes
+// <tool_call> tools), verified vs HF apply_chat_template
+// (testdata/chat_goldens/mellum2.json). It is a named alias so Detect / cmd/serve
+// / demo/chat identify it as "mellum2" distinctly; the render, stops, and tools
+// are the ChatML path. Detect fingerprints its distinctive normalize_content
+// macro before the generic <|im_start|> ChatML branch.
+func Mellum2() *Template {
+	t := ChatML()
+	t.name = "mellum2"
+	return t
+}
+
 // Llama3 — "<|begin_of_text|>", an always-present system block carrying the
 // date preamble (then the system text), per turn
 // "<|start_header_id|>{role}<|end_header_id|>\n\n{content}<|eot_id|>", and the

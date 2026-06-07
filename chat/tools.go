@@ -35,7 +35,7 @@ func (t *Template) RenderTools(system string, turns []Turn, tools []Tool) string
 		return t.Render(system, turns)
 	}
 	switch t.name {
-	case "chatml":
+	case "chatml", "mellum2":
 		return renderChatMLTools(system, turns, tools)
 	case "mistral":
 		return renderMistralTools(system, turns, tools)
@@ -50,7 +50,7 @@ func (t *Template) RenderTools(system string, turns []Turn, tools []Tool) string
 // SupportsTools reports whether this family has a tool-calling template.
 func (t *Template) SupportsTools() bool {
 	switch t.name {
-	case "chatml", "mistral", "llama3", "gemma4":
+	case "chatml", "mellum2", "mistral", "llama3", "gemma4":
 		return true
 	}
 	return false
@@ -63,7 +63,7 @@ func (t *Template) SupportsTools() bool {
 // (Gemma 4's bespoke micro-language → parse-only, no logit constraint).
 func (t *Template) ToolCallWrapper() (prefix, suffix, argsKey string, array, ok bool) {
 	switch t.name {
-	case "chatml":
+	case "chatml", "mellum2":
 		return "<tool_call>\n", "\n</tool_call>", "arguments", false, true
 	case "llama3":
 		return "", "", "parameters", false, true
@@ -78,7 +78,7 @@ func (t *Template) ToolCallWrapper() (prefix, suffix, argsKey string, array, ok 
 // calls means the model answered normally.
 func (t *Template) ParseToolCalls(out string) ([]ToolCall, string) {
 	switch t.name {
-	case "chatml":
+	case "chatml", "mellum2":
 		return parseChatMLTools(out)
 	case "mistral":
 		return parseMistralTools(out)

@@ -24,6 +24,7 @@ func TestParseToolCalls(t *testing.T) {
 		fam, out string
 	}{
 		"chatml":  {"chatml", "<tool_call>\n{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}}\n</tool_call>"},
+		"mellum2": {"mellum2", "<tool_call>\n{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}}\n</tool_call>"},
 		"mistral": {"mistral", "[TOOL_CALLS] [{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}}]"},
 		"llama3":  {"llama3", "{\"name\": \"get_weather\", \"parameters\": {\"location\": \"Paris\"}}"},
 		"gemma4":  {"gemma4", "<|tool_call>call:get_weather{location:<|\"|>Paris<|\"|>}<tool_call|>"},
@@ -79,6 +80,7 @@ func TestParseToolCalls_trailing(t *testing.T) {
 func TestRenderTools_declarations(t *testing.T) {
 	markers := map[string][]string{
 		"chatml":  {"<tools>", "get_weather", "<tool_call>"},
+		"mellum2": {"<tools>", "get_weather", "<tool_call>"},
 		"mistral": {"[AVAILABLE_TOOLS]", "get_weather"},
 		"llama3":  {"function call", "get_weather"},
 		"gemma4":  {"<|tool>declaration:get_weather", `<|"|>OBJECT<|"|>`},
