@@ -84,13 +84,13 @@ func main() {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
 	}
-	if srv.sessions != nil && *sessionDir != "" && cfg.kvSessions > 0 {
-		srv.sessions.load(*sessionDir)
+	if srv.gen != nil && *sessionDir != "" && cfg.kvSessions > 0 {
+		srv.gen.sessions.load(*sessionDir)
 	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/models", srv.handleModels)
-	if srv.model != nil {
+	if srv.gen != nil {
 		mux.HandleFunc("POST /v1/chat/completions", srv.handleChat)
 		mux.HandleFunc("POST /v1/completions", srv.handleCompletions)
 	}
@@ -112,10 +112,10 @@ func main() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		_ = httpSrv.Shutdown(ctx)
-		if srv.sessions != nil && *sessionDir != "" && cfg.kvSessions > 0 {
-			srv.mu.Lock()
-			_ = srv.sessions.save(*sessionDir)
-			srv.mu.Unlock()
+		if srv.gen != nil && *sessionDir != "" && cfg.kvSessions > 0 {
+			srv.gen.mu.Lock()
+			_ = srv.gen.sessions.save(*sessionDir)
+			srv.gen.mu.Unlock()
 		}
 	}()
 
@@ -165,21 +165,24 @@ func (s *server) loadDecoder(cfg config) error {
 	if name == "" {
 		name = strings.TrimSuffix(filepath.Base(cfg.modelPath), ".gguf")
 	}
-	s.tk, s.model = tk, model
-	s.vocab, s.eosIDs, s.modelID = mcfg.VocabSize, mcfg.EOSIDs(), name
-	// capHint 0: KV grows on demand. The fingerprint binds disk snapshots to this
-	// exact model+quant so a -session-dir reused across models is rejected.
-	s.sessions = newSessionLRU(model, cfg.kvSessions, 0, modelFingerprint(cfg.modelPath, model.Quant()))
+	fp := modelFingerprint(cfg.modelPath, model.Quant())
+	lm := &loadedModel{
+		tk: tk, model: model, vocab: mcfg.VocabSize, eosIDs: mcfg.EOSIDs(), name: name, fp: fp,
+		// capHint 0: KV grows on demand. The fingerprint binds disk snapshots to
+		// this exact model+quant so a -session-dir reused across models is rejected.
+		sessions: newSessionLRU(model, cfg.kvSessions, 0, fp),
+	}
 	if tmpl, derr := chat.Detect(chat.Meta{ChatTemplate: tk.ChatTemplate(), HasToken: tk.Has}); derr == nil {
-		s.tmpl = tmpl
+		lm.tmpl = tmpl
 		for _, str := range tmpl.Stops().Strings {
 			if id, ok := tk.TokenID(str); ok {
-				s.stopIDs = append(s.stopIDs, id)
+				lm.stopIDs = append(lm.stopIDs, id)
 			}
 		}
 	}
+	s.gen = lm
 	fmt.Fprintf(os.Stderr, "loaded %d-layer model (vocab %d) in %s [chat: %s]\n",
-		mcfg.NumLayers, mcfg.VocabSize, time.Since(t0).Round(time.Millisecond), templateName(s.tmpl))
+		mcfg.NumLayers, mcfg.VocabSize, time.Since(t0).Round(time.Millisecond), templateName(lm.tmpl))
 	return nil
 }
 
@@ -224,8 +227,8 @@ func (s *server) loadEncoder(cfg config) error {
 // endpointSummary describes the registered endpoints for the startup banner.
 func (s *server) endpointSummary() string {
 	var parts []string
-	if s.model != nil {
-		parts = append(parts, fmt.Sprintf("chat:%q kv-sessions:%d", s.modelID, s.sessions.size))
+	if s.gen != nil {
+		parts = append(parts, fmt.Sprintf("chat:%q kv-sessions:%d", s.gen.name, s.gen.sessions.size))
 	}
 	if s.embed != nil {
 		parts = append(parts, fmt.Sprintf("embeddings:%q", s.embedID))

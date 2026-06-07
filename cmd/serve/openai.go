@@ -19,21 +19,32 @@ import (
 
 const defaultMaxTokens = 512
 
-type server struct {
-	// Generative (decoder) half — nil when only an embedding model is served.
+// loadedModel is one resident generative model and the per-model state a request
+// needs: its tokenizer, chat template, stop ids, vocab, warm-KV sessions, and the
+// mutex that serializes its generations (one model = one shared compute stream).
+// The server holds exactly one today; multi-model serving (Track B Inc2) makes it
+// a registry keyed by served name, each with its own mutex so distinct models run
+// in parallel.
+type loadedModel struct {
 	tk       *tokenizer.Tokenizer
 	model    *decoder.Model
 	tmpl     *chat.Template // nil → raw completion
 	stopIDs  []int          // turn-stop token ids from the template
 	eosIDs   []int
 	vocab    int
-	modelID  string
+	name     string      // served id (reported by /v1/models, matched on the request model field)
+	fp       string      // model fingerprint (binds --session-dir snapshots)
 	sessions *sessionLRU // prefix-keyed KV reuse across requests
-	mu       sync.Mutex  // serialize generations (one model, shared compute)
+	mu       sync.Mutex  // serialize this model's generations
+}
+
+type server struct {
+	// Generative (decoder) half — nil when only an embedding model is served.
+	gen *loadedModel
 
 	// Embedding (encoder) half — nil when only a generative model is served.
 	// The encoder is goroutine-safe for concurrent Encode, so /v1/embeddings is
-	// served without s.mu (which guards only the single shared decoder).
+	// served without a mutex (the per-model mutex guards only the shared decoder).
 	embed    encoder.Encoder
 	embedTok *embed.Tokenizer // counts tokens for usage.prompt_tokens
 	embedID  string
@@ -121,8 +132,8 @@ type usage struct {
 func (s *server) handleModels(w http.ResponseWriter, _ *http.Request) {
 	created := time.Now().Unix()
 	data := []map[string]any{}
-	if s.model != nil {
-		data = append(data, map[string]any{"id": s.modelID, "object": "model", "created": created, "owned_by": "goinfer"})
+	if s.gen != nil {
+		data = append(data, map[string]any{"id": s.gen.name, "object": "model", "created": created, "owned_by": "goinfer"})
 	}
 	if s.embed != nil {
 		data = append(data, map[string]any{"id": s.embedID, "object": "model", "created": created, "owned_by": "goinfer"})
@@ -140,13 +151,14 @@ func (s *server) handleChat(w http.ResponseWriter, r *http.Request) {
 		s.handleChatTools(w, r, req)
 		return
 	}
-	gr, err := s.prepare(req.sampling, s.chatPrompt(req.Messages))
+	lm := s.gen
+	gr, err := lm.prepare(req.sampling, lm.chatPrompt(req.Messages))
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	lm.mu.Lock()
+	defer lm.mu.Unlock()
 	id := "chatcmpl-" + reqID()
 	created := time.Now().Unix()
 
@@ -155,28 +167,28 @@ func (s *server) handleChat(w http.ResponseWriter, r *http.Request) {
 		if !ok {
 			return
 		}
-		role := chatChunk(id, created, s.modelID, delta{Role: "assistant"}, nil)
+		role := chatChunk(id, created, lm.name, delta{Role: "assistant"}, nil)
 		sseSend(w, f, role)
-		finish, _, _ := s.drive(r.Context(), gr, func(t string) {
-			sseSend(w, f, chatChunk(id, created, s.modelID, delta{Content: t}, nil))
+		finish, _, _ := lm.drive(r.Context(), gr, func(t string) {
+			sseSend(w, f, chatChunk(id, created, lm.name, delta{Content: t}, nil))
 		})
-		sseSend(w, f, chatChunk(id, created, s.modelID, delta{}, &finish))
+		sseSend(w, f, chatChunk(id, created, lm.name, delta{}, &finish))
 		sseDone(w, f)
 		return
 	}
 
 	var sb strings.Builder
-	finish, nComp, lps := s.drive(r.Context(), gr, func(t string) { sb.WriteString(t) })
+	finish, nComp, lps := lm.drive(r.Context(), gr, func(t string) { sb.WriteString(t) })
 	choice := map[string]any{
 		"index":         0,
 		"message":       chatMessage{Role: "assistant", Content: sb.String()},
 		"finish_reason": finish,
 	}
 	if req.Logprobs {
-		choice["logprobs"] = s.logprobs(lps)
+		choice["logprobs"] = lm.logprobs(lps)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"id": id, "object": "chat.completion", "created": created, "model": s.modelID,
+		"id": id, "object": "chat.completion", "created": created, "model": lm.name,
 		"choices": []any{choice},
 		"usage":   usage{len(gr.promptIDs), nComp, len(gr.promptIDs) + nComp},
 	})
@@ -188,19 +200,20 @@ func (s *server) handleCompletions(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
 	}
+	lm := s.gen
 	prompt := firstString(req.Prompt)
-	ids, err := s.tk.Encode(prompt, true) // raw completion: tokenizer adds BOS
+	ids, err := lm.tk.Encode(prompt, true) // raw completion: tokenizer adds BOS
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "encode: "+err.Error())
 		return
 	}
-	gr, err := s.prepare(req.sampling, ids)
+	gr, err := lm.prepare(req.sampling, ids)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	lm.mu.Lock()
+	defer lm.mu.Unlock()
 	id := "cmpl-" + reqID()
 	created := time.Now().Unix()
 
@@ -209,17 +222,17 @@ func (s *server) handleCompletions(w http.ResponseWriter, r *http.Request) {
 		if !ok {
 			return
 		}
-		finish, _, _ := s.drive(r.Context(), gr, func(t string) {
-			sseSend(w, f, completionChunk(id, created, s.modelID, t, nil))
+		finish, _, _ := lm.drive(r.Context(), gr, func(t string) {
+			sseSend(w, f, completionChunk(id, created, lm.name, t, nil))
 		})
-		sseSend(w, f, completionChunk(id, created, s.modelID, "", &finish))
+		sseSend(w, f, completionChunk(id, created, lm.name, "", &finish))
 		sseDone(w, f)
 		return
 	}
 	var sb strings.Builder
-	finish, nComp, _ := s.drive(r.Context(), gr, func(t string) { sb.WriteString(t) })
+	finish, nComp, _ := lm.drive(r.Context(), gr, func(t string) { sb.WriteString(t) })
 	writeJSON(w, http.StatusOK, map[string]any{
-		"id": id, "object": "text_completion", "created": created, "model": s.modelID,
+		"id": id, "object": "text_completion", "created": created, "model": lm.name,
 		"choices": []any{map[string]any{"index": 0, "text": sb.String(), "finish_reason": finish}},
 		"usage":   usage{len(gr.promptIDs), nComp, len(gr.promptIDs) + nComp},
 	})
@@ -236,11 +249,11 @@ type genRequest struct {
 
 // prepare translates the OpenAI sampling fields into goinfer's SamplingParams,
 // wires response_format into a constraint masker, and resolves stop strings.
-func (s *server) prepare(sm sampling, promptIDs []int) (genRequest, error) {
+func (lm *loadedModel) prepare(sm sampling, promptIDs []int) (genRequest, error) {
 	sp := decoder.SamplingParams{
 		Temperature: deref(sm.Temperature, 1.0),
 		Seed:        deref(sm.Seed, 0),
-		StopIDs:     s.stopIDs,
+		StopIDs:     lm.stopIDs,
 		Logprobs:    sm.Logprobs,
 		TopLogprobs: deref(sm.TopLogprobs, 0),
 	}
@@ -267,8 +280,8 @@ func (s *server) prepare(sm sampling, promptIDs []int) (genRequest, error) {
 		return genRequest{}, err
 	}
 	if g != nil {
-		eos := append(append([]int(nil), s.eosIDs...), s.stopIDs...)
-		m := constrain.NewMasker(g, constrain.TokenBytes(s.vocab, s.tk.TokenText), eos).StopWhenComplete()
+		eos := append(append([]int(nil), lm.eosIDs...), lm.stopIDs...)
+		m := constrain.NewMasker(g, constrain.TokenBytes(lm.vocab, lm.tk.TokenText), eos).StopWhenComplete()
 		gr.sp.LogitProcessor = m.Process
 	}
 	return gr, nil
@@ -333,30 +346,30 @@ func rawPrompt(system string, turns []chat.Turn) string {
 
 // encode tokenizes a rendered prompt; rendered templates already include the
 // family BOS marker, so only the raw fallback asks the tokenizer to add one.
-func (s *server) encode(prompt string) []int {
-	ids, _ := s.tk.Encode(prompt, s.tmpl == nil)
+func (lm *loadedModel) encode(prompt string) []int {
+	ids, _ := lm.tk.Encode(prompt, lm.tmpl == nil)
 	return ids
 }
 
 // chatPrompt renders system + messages into the model's chat template (no tools).
-func (s *server) chatPrompt(msgs []chatMessage) []int {
+func (lm *loadedModel) chatPrompt(msgs []chatMessage) []int {
 	system, turns := messagesToTurns(msgs)
-	if s.tmpl != nil {
-		return s.encode(s.tmpl.Render(system, turns))
+	if lm.tmpl != nil {
+		return lm.encode(lm.tmpl.Render(system, turns))
 	}
-	return s.encode(rawPrompt(system, turns))
+	return lm.encode(rawPrompt(system, turns))
 }
 
 // drive runs the generation, applying stop strings and UTF-8 holdback, calling
 // onText with each newly-completed text fragment. Returns the finish reason
 // ("stop" | "length"), the completion token count, and (non-stream) per-token
 // logprobs. The context is cancelled on a stop-string hit to end generation.
-func (s *server) drive(parent context.Context, gr genRequest, onText func(string)) (string, int, []decoder.SampleInfo) {
+func (lm *loadedModel) drive(parent context.Context, gr genRequest, onText func(string)) (string, int, []decoder.SampleInfo) {
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	// Reuse the KV of whichever cached session already holds this prompt as a
 	// prefix (continuing chat / agent loop): only the new suffix is prefilled.
-	sess := s.sessions.acquire(gr.promptIDs)
+	sess := lm.sessions.acquire(gr.promptIDs)
 	stream, gen := sess.Generate(ctx, gr.promptIDs, gr.maxTokens, gr.sp)
 
 	var ids []int
@@ -368,7 +381,7 @@ func (s *server) drive(parent context.Context, gr genRequest, onText func(string
 			continue // drain so the generation goroutine exits cleanly
 		}
 		ids = append(ids, id)
-		text, _ := s.tk.Decode(ids)
+		text, _ := lm.tk.Decode(ids)
 		if cut, hit := firstStop(text, gr.stopStrings); hit {
 			if cut > printed {
 				onText(text[printed:cut])
@@ -383,7 +396,7 @@ func (s *server) drive(parent context.Context, gr genRequest, onText func(string
 		}
 	}
 	if !stopping { // flush any held-back trailing bytes
-		if text, _ := s.tk.Decode(ids); len(text) > printed {
+		if text, _ := lm.tk.Decode(ids); len(text) > printed {
 			onText(text[printed:])
 		}
 		if len(ids) >= gr.maxTokens {
@@ -396,18 +409,18 @@ func (s *server) drive(parent context.Context, gr genRequest, onText func(string
 }
 
 // logprobs maps goinfer's per-token SampleInfo to the OpenAI chat logprobs shape.
-func (s *server) logprobs(lps []decoder.SampleInfo) map[string]any {
+func (lm *loadedModel) logprobs(lps []decoder.SampleInfo) map[string]any {
 	content := make([]any, 0, len(lps))
 	for _, lp := range lps {
 		top := make([]any, 0, len(lp.Top))
 		for _, t := range lp.Top {
-			top = append(top, map[string]any{"token": s.tokenText(t.ID), "logprob": t.Logprob})
+			top = append(top, map[string]any{"token": lm.tokenText(t.ID), "logprob": t.Logprob})
 		}
 		content = append(content, map[string]any{
-			"token": s.tokenText(lp.ID), "logprob": lp.Logprob, "top_logprobs": top,
+			"token": lm.tokenText(lp.ID), "logprob": lp.Logprob, "top_logprobs": top,
 		})
 	}
 	return map[string]any{"content": content}
 }
 
-func (s *server) tokenText(id int) string { return string(s.tk.TokenText(id)) }
+func (lm *loadedModel) tokenText(id int) string { return string(lm.tk.TokenText(id)) }

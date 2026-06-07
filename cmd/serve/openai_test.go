@@ -81,10 +81,10 @@ func TestGrammarFor(t *testing.T) {
 
 // prepare's sampling translation (no model needed when there's no response_format).
 func TestPrepare_sampling(t *testing.T) {
-	s := &server{}
+	lm := &loadedModel{}
 	f := func(v float64) *float64 { return &v }
 	i := func(v int) *int { return &v }
-	gr, err := s.prepare(sampling{
+	gr, err := lm.prepare(sampling{
 		Temperature: f(0.3), TopP: f(0.9), TopK: i(40), MaxTokens: i(128),
 		FrequencyPenalty: f(0.5), PresencePenalty: f(0.2),
 	}, []int{1, 2, 3})
@@ -98,7 +98,7 @@ func TestPrepare_sampling(t *testing.T) {
 		t.Errorf("penalties not mapped: %+v", gr.sp)
 	}
 	// Defaults: no fields → temperature 1, max_tokens default, top_p disabled (0).
-	def, _ := s.prepare(sampling{}, nil)
+	def, _ := lm.prepare(sampling{}, nil)
 	if def.sp.Temperature != 1.0 || def.maxTokens != defaultMaxTokens || def.sp.TopP != 0 {
 		t.Errorf("defaults wrong: temp %v max %d topP %v", def.sp.Temperature, def.maxTokens, def.sp.TopP)
 	}

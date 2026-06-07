@@ -15,7 +15,8 @@ import (
 // unambiguous (one tool or a forced function), generates, then PARSES the output
 // against the family's template into OpenAI tool_calls.
 func (s *server) handleChatTools(w http.ResponseWriter, r *http.Request, req chatReq) {
-	if s.tmpl == nil || !s.tmpl.SupportsTools() {
+	lm := s.gen
+	if lm.tmpl == nil || !lm.tmpl.SupportsTools() {
 		writeErr(w, http.StatusBadRequest, "this model has no tool-calling template")
 		return
 	}
@@ -24,7 +25,7 @@ func (s *server) handleChatTools(w http.ResponseWriter, r *http.Request, req cha
 		tools[i] = chat.Tool{Name: t.Function.Name, Description: t.Function.Description, Parameters: t.Function.Parameters}
 	}
 	system, turns := messagesToTurns(req.Messages)
-	gr, err := s.prepare(req.sampling, s.encode(s.tmpl.RenderTools(system, turns, tools)))
+	gr, err := lm.prepare(req.sampling, lm.encode(lm.tmpl.RenderTools(system, turns, tools)))
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
@@ -33,24 +34,24 @@ func (s *server) handleChatTools(w http.ResponseWriter, r *http.Request, req cha
 	// Tight when unambiguous: a forced function or a lone tool ⇒ constrain the
 	// call to that tool's schema (when the family has a JSON call form).
 	if forced := forcedTool(req.ToolChoice, tools); forced != nil {
-		if prefix, suffix, argsKey, array, ok := s.tmpl.ToolCallWrapper(); ok {
+		if prefix, suffix, argsKey, array, ok := lm.tmpl.ToolCallWrapper(); ok {
 			if g, gerr := constrain.ToolCallGrammar(prefix, suffix, argsKey, forced.Name, array, forced.Parameters); gerr == nil {
-				eos := append(append([]int(nil), s.eosIDs...), s.stopIDs...)
-				m := constrain.NewMasker(g, constrain.TokenBytes(s.vocab, s.tk.TokenText), eos).StopWhenComplete()
+				eos := append(append([]int(nil), lm.eosIDs...), lm.stopIDs...)
+				m := constrain.NewMasker(g, constrain.TokenBytes(lm.vocab, lm.tk.TokenText), eos).StopWhenComplete()
 				gr.sp.LogitProcessor = m.Process
 			}
 		}
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	lm.mu.Lock()
+	defer lm.mu.Unlock()
 	id := "chatcmpl-" + reqID()
 	created := time.Now().Unix()
 
 	// Tool decisions need the whole output, so buffer (even when streaming).
 	var sb strings.Builder
-	finish, nComp, _ := s.drive(r.Context(), gr, func(t string) { sb.WriteString(t) })
-	calls, lead := s.tmpl.ParseToolCalls(sb.String())
+	finish, nComp, _ := lm.drive(r.Context(), gr, func(t string) { sb.WriteString(t) })
+	calls, lead := lm.tmpl.ParseToolCalls(sb.String())
 
 	msg := map[string]any{"role": "assistant"}
 	if len(calls) > 0 {
@@ -79,16 +80,16 @@ func (s *server) handleChatTools(w http.ResponseWriter, r *http.Request, req cha
 		} else {
 			d["content"] = msg["content"]
 		}
-		sseSend(w, f, map[string]any{"id": id, "object": "chat.completion.chunk", "created": created, "model": s.modelID,
+		sseSend(w, f, map[string]any{"id": id, "object": "chat.completion.chunk", "created": created, "model": lm.name,
 			"choices": []any{map[string]any{"index": 0, "delta": d, "finish_reason": nil}}})
 		fin := finish
-		sseSend(w, f, map[string]any{"id": id, "object": "chat.completion.chunk", "created": created, "model": s.modelID,
+		sseSend(w, f, map[string]any{"id": id, "object": "chat.completion.chunk", "created": created, "model": lm.name,
 			"choices": []any{map[string]any{"index": 0, "delta": map[string]any{}, "finish_reason": &fin}}})
 		sseDone(w, f)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"id": id, "object": "chat.completion", "created": created, "model": s.modelID,
+		"id": id, "object": "chat.completion", "created": created, "model": lm.name,
 		"choices": []any{choice}, "usage": usagev,
 	})
 }
