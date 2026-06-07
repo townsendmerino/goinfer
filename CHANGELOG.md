@@ -29,6 +29,11 @@ pre-1.0 and may change as new model families and quant formats land.
   (E2B, sample-256 cosine **0.99938** vs HF bf16) and `TestGemma4_12B_logitParity`
   (12B, argmax exact + cosine **0.990**). Out of scope: the 26B-A4B MoE and 31B
   multimodal vision towers (text-only runtime).
+- **Gemma 4 chat template** in the tokenizer + `demo/chat` — Gemma 4 replaced
+  Gemma 3's `<start_of_turn>`/`<end_of_turn>` with new `<|turn>`/`<turn|>`
+  markers. `Tokenizer.ChatStyle` now detects them (`ChatStyleGemma4`), the GGUF
+  loader resolves the turn-stop token, and the demo renders the right template
+  so replies are clean and stop correctly.
 
 ## [v0.1.3] — 2026-06-05
 

@@ -148,6 +148,7 @@ func fromGGUF(g *embed.GGUFFile) (*Tokenizer, error) {
 	for piece, dst := range map[string]*int{
 		"<start_of_turn>": &t.special.StartOfTurn, "<end_of_turn>": &t.special.EndOfTurn,
 		"<|im_start|>": &t.special.StartOfTurn, "<|im_end|>": &t.special.EndOfTurn,
+		"<|turn>": &t.special.StartOfTurn, "<turn|>": &t.special.EndOfTurn, // Gemma 4 turn markers
 	} {
 		if id, ok := t.vocab[piece]; ok {
 			*dst = int(id)

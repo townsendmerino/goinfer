@@ -376,8 +376,11 @@ func (s *session) printParams() {
 
 // buildPrompt renders system + history into the model's chat template.
 func (s *session) buildPrompt() string {
-	if s.style == tokenizer.ChatStyleGemma {
+	switch s.style {
+	case tokenizer.ChatStyleGemma:
 		return s.buildGemma()
+	case tokenizer.ChatStyleGemma4:
+		return s.buildGemma4()
 	}
 	return s.buildChatML() // ChatML default; also a reasonable raw fallback
 }
@@ -424,6 +427,35 @@ func (s *session) buildGemma() string {
 		b.WriteString("<end_of_turn>\n")
 	}
 	b.WriteString("<start_of_turn>model\n")
+	return b.String()
+}
+
+// buildGemma4 renders the Gemma 4 turn template: "<|turn>{role}\n…<turn|>\n",
+// roles user/model, system folded into the first user turn. (Gemma 4's
+// <|channel> "thought" reasoning system is skipped — a plain answer turn.)
+func (s *session) buildGemma4() string {
+	var b strings.Builder
+	sys := strings.TrimSpace(s.system)
+	firstUser := true
+	for _, m := range s.history {
+		role := m.role
+		if role == "assistant" {
+			role = "model"
+		}
+		content := m.content
+		if role == "user" && firstUser {
+			firstUser = false
+			if sys != "" {
+				content = sys + "\n\n" + content
+			}
+		}
+		b.WriteString("<|turn>")
+		b.WriteString(role)
+		b.WriteByte('\n')
+		b.WriteString(content)
+		b.WriteString("<turn|>\n")
+	}
+	b.WriteString("<|turn>model\n")
 	return b.String()
 }
 

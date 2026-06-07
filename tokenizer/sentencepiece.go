@@ -109,6 +109,10 @@ const (
 	// ChatStyleChatML: "<|im_start|>{role}\n…<|im_end|>\n"; roles
 	// "system"/"user"/"assistant" (Llama-3/Qwen/most byte-level families).
 	ChatStyleChatML
+	// ChatStyleGemma4: "<|turn>{role}\n…<turn|>\n"; roles "user"/"model".
+	// Gemma 4 replaced Gemma 3's <start_of_turn>/<end_of_turn> markers; it also
+	// has a <|channel> "thought" system (reasoning/tools) the basic demo skips.
+	ChatStyleGemma4
 )
 
 // ChatStyle reports which chat template the loaded special tokens imply,
@@ -120,6 +124,9 @@ func (t *Tokenizer) ChatStyle() ChatStyle {
 	}
 	if _, ok := t.vocab["<start_of_turn>"]; ok {
 		return ChatStyleGemma
+	}
+	if _, ok := t.vocab["<|turn>"]; ok {
+		return ChatStyleGemma4
 	}
 	return ChatStyleNone
 }

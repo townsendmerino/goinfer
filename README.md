@@ -36,6 +36,27 @@ Grab a binary from the [latest release](https://github.com/townsendmerino/goinfe
 go run ./demo/chat --model ~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
 ```
 
+### Run Gemma 4 (pure Go, no cgo)
+
+goinfer runs Google's **Gemma 4** end to end in pure Go — including the
+**E-models** (E2B/E4B) with their Per-Layer-Embedding stack, and the **12B
+dense**. Grab the QAT GGUF and point the demo at it (the Gemma 4 chat template
+is applied automatically):
+
+```bash
+# E2B (~3 GB Q4_0) — the small one; E4B and the 12B dense work the same way
+go run ./demo/chat --model ~/models/gemma-4-E2B_q4_0-it.gguf
+```
+
+```
+you> What is the capital of France?
+The capital of France is Paris.
+```
+
+Every Gemma 4 forward is parity-gated against the HuggingFace bf16 reference
+(argmax-exact + logit cosine). Text models only — the 26B-A4B MoE and 31B
+multimodal vision towers are out of scope.
+
 See [`demo/chat/README.md`](demo/chat/README.md) for commands, canned demos, and
 how the single-file binary is built.
 
