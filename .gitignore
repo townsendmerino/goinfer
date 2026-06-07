@@ -44,3 +44,6 @@ __pycache__/
 # Internal docs — sprint scratchpads, planning, strategy. Public repo, so the
 # whole dir stays local ("internal" by name, not by visibility).
 docs/internal/
+
+# Stray binaries from `go build ./cmd/...` in the repo root
+/serve
