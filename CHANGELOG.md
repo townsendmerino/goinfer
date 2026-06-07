@@ -11,6 +11,18 @@ pre-1.0 and may change as new model families and quant formats land.
 ## [Unreleased]
 
 ### Added
+- **JSON Schema constrained decoding** (the v0.2 flagship) — `constrain.JSONSchema`
+  compiles a JSON Schema into the existing incremental byte-level `Grammar`, so the
+  streaming logit masker drives it unchanged: the model **physically cannot** emit
+  non-conforming JSON (invalid tokens are −∞, i.e. unreachable). Supported subset:
+  objects (required + optional, `additionalProperties:false`), arrays
+  (`items`/`minItems`/`maxItems`), `string`/`number`/`integer`/`boolean`/`null`,
+  `enum`/`const`, arbitrary nesting; unsupported keywords are a loud compile error.
+  **`constrain.GrammarFromStruct(v)`** derives the schema from a Go struct's json
+  tags — "a struct the model cannot violate": constrain → `json.Unmarshal` always
+  succeeds. `demo/chat --schema <file.json>` constrains the demo. A property-based
+  test asserts every constrained generation validates against its schema; the
+  unconstrained path is untouched (purely additive).
 - **`chat` package** — chat templating as a library feature (no Jinja engine).
   `chat.Detect(meta)` fingerprints the GGUF/HF `tokenizer.chat_template` string
   (falling back to a vocab-marker heuristic for bare checkpoints) and returns a

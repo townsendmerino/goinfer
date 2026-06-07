@@ -63,6 +63,7 @@ type session struct {
 	sp      decoder.SamplingParams
 	maxTok  int
 	jsonOut bool
+	schema  []byte // when set, JSON output is constrained to this JSON Schema
 
 	draft *decoder.Model // optional speculative-decoding draft model (--draft)
 	specK int            // speculative draft length per verify pass
@@ -83,6 +84,7 @@ func main() {
 		presPen  = flag.Float64("presence-penalty", 0, "presence penalty: flat logit drop for tokens already seen (0 = off)")
 		freqPen  = flag.Float64("frequency-penalty", 0, "frequency penalty: logit drop ∝ token count (0 = off)")
 		repLastN = flag.Int("repeat-last-n", 64, "window (in tokens) the repetition penalties consider (≤0 = whole context)")
+		schema   = flag.String("schema", "", "constrain output to a JSON Schema file (implies JSON mode); the model cannot emit non-conforming JSON")
 		seed     = flag.Int64("seed", 0, "sampling RNG seed")
 		modelTmp = flag.Bool("model-tmp", false, "embed build: stream the baked-in model to a temp file + mmap instead of loading it into memory. Lower peak RAM for big models, but needs a writable temp dir. Also via GOINFER_MODEL_TMP=1. (If your temp dir is a tmpfs / RAM-backed, this saves no RAM.)")
 		draft    = flag.String("draft", "", "path to a smaller .gguf draft model for speculative decoding (e.g. the 0.5B drafting for a 1.5B target). Greedy only (--temp 0); output is token-identical to plain greedy, just faster. Must share the target's tokenizer/vocab.")
@@ -122,6 +124,20 @@ func main() {
 	s.sp = decoder.SamplingParams{
 		Temperature: *temp, TopK: *topK, TopP: *topP, MinP: *minP, Seed: *seed,
 		RepeatPenalty: *repPen, PresencePenalty: *presPen, FrequencyPenalty: *freqPen, RepeatLastN: *repLastN,
+	}
+	if *schema != "" {
+		raw, rerr := os.ReadFile(*schema)
+		if rerr != nil {
+			fmt.Fprintf(os.Stderr, "read schema: %v\n", rerr)
+			os.Exit(1)
+		}
+		if _, cerr := constrain.JSONSchema(raw); cerr != nil { // fail fast on a bad schema
+			fmt.Fprintf(os.Stderr, "compile schema: %v\n", cerr)
+			os.Exit(1)
+		}
+		s.schema = raw
+		s.jsonOut = true
+		fmt.Fprintf(os.Stderr, "constraining output to JSON Schema %s\n", *schema)
 	}
 
 	if *draft != "" {
@@ -430,7 +446,13 @@ func (s *session) jsonMasker() func(generated []int, logits []float32) {
 			eos = append(eos, id)
 		}
 	}
-	m := constrain.NewMasker(constrain.JSON(), constrain.TokenBytes(s.vocab, s.tk.TokenText), eos).StopWhenComplete()
+	g := constrain.JSON()
+	if s.schema != nil { // --schema: constrain to the schema, not just well-formed JSON
+		if sg, err := constrain.JSONSchema(s.schema); err == nil {
+			g = sg
+		}
+	}
+	m := constrain.NewMasker(g, constrain.TokenBytes(s.vocab, s.tk.TokenText), eos).StopWhenComplete()
 	return m.Process
 }
 

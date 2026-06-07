@@ -60,6 +60,36 @@ multimodal vision towers are out of scope.
 See [`demo/chat/README.md`](demo/chat/README.md) for commands, canned demos, and
 how the single-file binary is built.
 
+## A Go struct the model cannot violate
+
+Derive a JSON Schema from a Go struct, constrain generation to it, and
+`json.Unmarshal` the result — the model **physically cannot** emit JSON that
+doesn't fit the struct. The constraint is a logit mask over goinfer's incremental
+byte-level grammar: at every step, tokens that would break the schema are set to
+−∞, so an invalid token is *unreachable* (not retried — impossible).
+
+```go
+type Person struct {
+    Name string   `json:"name"`
+    Age  int      `json:"age"`
+    Tags []string `json:"tags"`
+}
+
+g, _ := constrain.GrammarFromStruct(Person{})       // struct → JSON Schema → grammar
+sp.LogitProcessor = constrain.NewMasker(g, toks, eos).StopWhenComplete().Process
+
+out := generate(sp)                                  // constrained decode
+var p Person
+_ = json.Unmarshal(out, &p)                          // always succeeds
+```
+
+Works from any JSON Schema too (`constrain.JSONSchema(bytes)`), or from the demo:
+`go run ./demo/chat --model … --schema person.schema.json`. Supported subset:
+objects (required + optional, `additionalProperties:false`), arrays
+(`items`/`minItems`/`maxItems`), `string`/`number`/`integer`/`boolean`/`null`,
+`enum`/`const`, and arbitrary nesting. A property-based test asserts that every
+constrained generation validates against its schema.
+
 ## Status
 
 Pre-1.0; the forward-pass / quantization contract is parity-gated and stable, the
@@ -78,7 +108,7 @@ go get github.com/townsendmerino/goinfer
 |---|---|---|
 | `decoder` | generic decoder-only forward pass; f32/bf16/f16 + int8/int4; safetensors/GGUF/GPTQ/AWQ; KV-cache; samplers | `aikit/embed`, `aikit/linalg`, `goinfer/tokenizer` |
 | `tokenizer` | BPE tokenizers the decoder LLMs ship — byte-level + SentencePiece byte-fallback, from `tokenizer.json` or a bare `.gguf`; HF-exact id parity | `aikit/embed`, `golang.org/x/text` |
-| `constrain` | constrained / structured decoding — a logit mask that forces output to satisfy a grammar; ships a streaming JSON grammar | — |
+| `constrain` | constrained / structured decoding — a logit mask that forces output to satisfy a grammar; streaming JSON grammar + JSON Schema (and Go-struct) compiler | — |
 | `gpu` (opt-in, `-tags gpu`) | WebGPU compute backend for matmul (Metal / Vulkan / DX12) | `cogentcore/webgpu` (cgo), `aikit/encoder`, `goinfer/decoder` |
 
 The cgo WebGPU dependency is confined to the `gpu` submodule; the default build is
