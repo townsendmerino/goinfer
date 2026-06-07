@@ -90,6 +90,23 @@ objects (required + optional, `additionalProperties:false`), arrays
 `enum`/`const`, and arbitrary nesting. A property-based test asserts that every
 constrained generation validates against its schema.
 
+## OpenAI-compatible server
+
+[`cmd/serve`](cmd/serve) is a pure-stdlib (`net/http`, no deps) OpenAI-compatible
+server for one model — point Open WebUI, LangChain, or the OpenAI SDKs at it:
+
+```bash
+go run ./cmd/serve --model ~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
+# OpenAI base URL: http://localhost:8080/v1
+```
+
+`/v1/chat/completions`, `/v1/completions`, `/v1/models`; streaming (SSE); the
+sampling knobs (`temperature`/`top_p`/`top_k`/`seed`/`frequency_penalty`/
+`presence_penalty`/`stop`/`logprobs`); and **`response_format`** —
+`{"type":"json_schema", …}` or `{"type":"json_object"}` gives schema-constrained
+output the model cannot violate (the same grammar as above). The chat template is
+auto-detected per model.
+
 ## Status
 
 Pre-1.0; the forward-pass / quantization contract is parity-gated and stable, the

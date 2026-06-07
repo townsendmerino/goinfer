@@ -11,6 +11,15 @@ pre-1.0 and may change as new model families and quant formats land.
 ## [Unreleased]
 
 ### Added
+- **OpenAI-compatible HTTP server** (`cmd/serve`) — pure stdlib `net/http`, no
+  deps. `/v1/chat/completions`, `/v1/completions`, `/v1/models`; streaming via
+  SSE; the sampling knobs (temperature/top_p/top_k/seed/frequency_penalty/
+  presence_penalty/stop/logprobs) map onto goinfer's sampler; and
+  **`response_format`** (`json_object` / `json_schema`) rides the constrain
+  grammar for output the model cannot violate. Chat templates auto-detected per
+  model (the `chat` package). Point Open WebUI / LangChain / the OpenAI SDKs at
+  `http://host:8080/v1`. (Its own release; depends on the chat-template,
+  sampling, and JSON-Schema work above.)
 - **K-quant coverage confirmed: Q6_K and Q4_K_S** now have dedicated logit-parity
   tests (TinyLlama, same harness as the other GGUF quant tests), alongside the
   existing Q2_K/Q3_K_M/Q4_K_M/Q5_K_M. The dequant paths (via `aikit/embed`) were
