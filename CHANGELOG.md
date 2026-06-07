@@ -8,6 +8,26 @@ The forward-pass and quantization numerics are parity-gated against HuggingFace
 and are the stable contract. The loader and architecture-descriptor surface is
 pre-1.0 and may change as new model families and quant formats land.
 
+## [Unreleased]
+
+### Added
+- **Sampling completeness** in `SamplingParams` / `Sampler` — the standard
+  controls a llama.cpp/Ollama/vLLM user expects:
+  - **min-p** (`MinP`) — keep tokens with prob ≥ min-p·max-prob (a relative
+    floor), composable with top-k/top-p.
+  - **repetition controls** — llama.cpp-style `RepeatPenalty` (scales repeated
+    tokens' logits) plus OpenAI-style `PresencePenalty` and `FrequencyPenalty`,
+    over a `RepeatLastN` window (the prompt is seeded so it counts). `Generate`
+    wires the history automatically.
+  - **`LogitBias`** — per-token logit offsets (force or ban specific tokens).
+  - **logprobs out** — `Sampler.SampleWithInfo` and `SamplingParams.Logprobs` /
+    `TopLogprobs` report the chosen token's log-probability and the top
+    alternatives; `Generation.Logprobs` collects them per emitted token.
+  - `Seed` (already present) gives reproducible draws.
+  `Sample(logits)` and the greedy parity path are unchanged. `demo/chat` gains
+  `--min-p`, `--repeat-penalty`, `--presence-penalty`, `--frequency-penalty`,
+  `--repeat-last-n`.
+
 ## [v0.2.0] — 2026-06-06
 
 ### Added

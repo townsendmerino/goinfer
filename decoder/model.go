@@ -232,6 +232,7 @@ func (m *Model) Generate(ctx context.Context, prompt []int, maxTokens int, sp Sa
 		}
 		cache := m.NewCache(len(prompt) + maxTokens)
 		sampler := NewSampler(sp)
+		sampler.Observe(prompt...) // so repetition penalties see the prompt
 		// Prefill the prompt and seed the first token's logits. On the batched
 		// archs this runs the layers at M=len(prompt) in one pass (each weight
 		// streamed once — ~1.7–2× faster TTFT than sequential), LM head on the
@@ -255,13 +256,17 @@ func (m *Model) Generate(ctx context.Context, prompt []int, maxTokens int, sp Sa
 			if sp.LogitProcessor != nil {
 				sp.LogitProcessor(generated, logits)
 			}
-			next, err := sampler.Sample(logits)
+			info, err := sampler.SampleWithInfo(logits)
 			if err != nil {
 				g.err = err
 				return
 			}
+			next := info.ID
 			if m.isStop(next, sp) {
 				return
+			}
+			if sp.Logprobs {
+				g.Logprobs = append(g.Logprobs, info)
 			}
 			out <- next
 			generated = append(generated, next)
@@ -289,6 +294,10 @@ func (m *Model) isStop(id int, sp SamplingParams) bool {
 type Generation struct {
 	err  error
 	Spec *SpecStats
+	// Logprobs holds one entry per emitted token (in order) when
+	// SamplingParams.Logprobs was set — the chosen token's log-probability and
+	// any requested top alternatives. Complete once the stream has closed.
+	Logprobs []SampleInfo
 }
 
 // Err returns the error that ended the stream, or nil if it ended cleanly

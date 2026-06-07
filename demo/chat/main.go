@@ -76,6 +76,11 @@ func main() {
 		temp     = flag.Float64("temp", 0.7, "sampling temperature (0 = greedy)")
 		topK     = flag.Int("top-k", 20, "top-k filter (0 = off)")
 		topP     = flag.Float64("top-p", 0.8, "top-p / nucleus (0 = off)")
+		minP     = flag.Float64("min-p", 0, "min-p: keep tokens with prob ≥ min-p×max-prob (0 = off)")
+		repPen   = flag.Float64("repeat-penalty", 0, "repetition penalty over the last --repeat-last-n tokens (1 or 0 = off)")
+		presPen  = flag.Float64("presence-penalty", 0, "presence penalty: flat logit drop for tokens already seen (0 = off)")
+		freqPen  = flag.Float64("frequency-penalty", 0, "frequency penalty: logit drop ∝ token count (0 = off)")
+		repLastN = flag.Int("repeat-last-n", 64, "window (in tokens) the repetition penalties consider (≤0 = whole context)")
 		seed     = flag.Int64("seed", 0, "sampling RNG seed")
 		modelTmp = flag.Bool("model-tmp", false, "embed build: stream the baked-in model to a temp file + mmap instead of loading it into memory. Lower peak RAM for big models, but needs a writable temp dir. Also via GOINFER_MODEL_TMP=1. (If your temp dir is a tmpfs / RAM-backed, this saves no RAM.)")
 		draft    = flag.String("draft", "", "path to a smaller .gguf draft model for speculative decoding (e.g. the 0.5B drafting for a 1.5B target). Greedy only (--temp 0); output is token-identical to plain greedy, just faster. Must share the target's tokenizer/vocab.")
@@ -112,7 +117,10 @@ func main() {
 	}
 	s.system = *system
 	s.maxTok = *maxTok
-	s.sp = decoder.SamplingParams{Temperature: *temp, TopK: *topK, TopP: *topP, Seed: *seed}
+	s.sp = decoder.SamplingParams{
+		Temperature: *temp, TopK: *topK, TopP: *topP, MinP: *minP, Seed: *seed,
+		RepeatPenalty: *repPen, PresencePenalty: *presPen, FrequencyPenalty: *freqPen, RepeatLastN: *repLastN,
+	}
 
 	if *draft != "" {
 		progress("loading draft model…")
