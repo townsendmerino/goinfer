@@ -8,9 +8,30 @@ The forward-pass and quantization numerics are parity-gated against HuggingFace
 and are the stable contract. The loader and architecture-descriptor surface is
 pre-1.0 and may change as new model families and quant formats land.
 
-## [Unreleased]
+## [v0.3.0] — 2026-06-07
 
 ### Added
+- **Embeddings endpoint** — `cmd/serve` serves OpenAI `/v1/embeddings` from an
+  `--embed-model` CodeRankEmbed encoder (`--embed-quant f32|q8`), alongside or
+  instead of the generative `--model`; endpoints register for whatever loaded.
+  Honors `input` (string|array), `encoding_format` (`float`|`base64`), and
+  `dimensions` (truncate + renormalize); vectors are L2-normalized. An optional
+  `input_type` (`query`|`document`, default document — the Cohere/Voyage
+  convention) selects the encoder's asymmetric query instruction prefix.
+  `usage.prompt_tokens` is counted via the encoder's tokenizer; the encoder is
+  goroutine-safe, so embeddings serve without the decoder's lock. Rides aikit
+  v1.0.0's frozen `encoder` API (`Encode`/`EncodeBatch`/`HiddenDim`).
+- **Prompt-prefix KV caching / cross-call session reuse** — `decoder.Session`
+  pairs a KV cache with the tokens materialized in it and reuses the KV of the
+  longest token prefix a new prompt shares, prefilling only the divergent suffix
+  (exact — bit-identical to a cold prefill). `cmd/serve` layers a session LRU
+  (`--kv-sessions`, default 4; 0 disables) so a continuing chat — or an agent
+  loop with a fixed system prompt + tool specs — skips re-encoding the whole
+  history; `--session-dir` persists warm sessions to CRC+identity-guarded
+  `.giw-kv` snapshots and restores them across restarts. Fixes
+  `KVCache.TruncateTo` to derive each layer's stride from what it holds, so it is
+  correct on Gemma 4's per-layer KV widths and KV-shared tail layers. Reuse
+  parity is gated id-for-id vs a cold prefill (Qwen 2.5 + Gemma 4 E2B).
 - **LoRA adapter loading** — `decoder.Options.LoRA` merges a PEFT adapter
   (`adapter_config.json` + `adapter_model.safetensors`) into the base weights at
   load: W′ = W + (α/r)·B·A (α/√r under rslora), applied to the f32 weight *before*
@@ -84,6 +105,12 @@ pre-1.0 and may change as new model families and quant formats land.
   `--repeat-last-n`.
 
 ### Changed
+- Depends on **aikit v1.0.0** (was v0.5.2): its now-frozen Hard tier covers the
+  embedding encoder behind `/v1/embeddings`. The `goinfer/gpu` submodule is
+  bumped to match, so both modules ship against the same published aikit.
+- `cmd/serve` `--model` is now optional when `--embed-model` is given (and vice
+  versa); at least one is required. The single-model flag set moved to a config
+  struct as the server grew a generative and an embedding half.
 - `demo/chat` and `demo/gemma-web` now render prompts via the `chat` package
   (was duplicated per-demo). The Gemma 4 demo render matches HF exactly,
   including the `<|channel>thought` scaffold (so the model may emit reasoning).

@@ -121,30 +121,40 @@ models).
 ## 3. Module map (and where cgo is quarantined)
 
 goinfer is the LLM-runtime half; the tensor/embedding primitives live in
-`aikit`. Everything in the default build is pure Go, no cgo. The one cgo
-dependency (`cogentcore/webgpu`) is sealed inside the opt-in `goinfer/gpu`
-submodule, built only under `-tags gpu`.
+`aikit`. On top of the `decoder` sit `chat` (per-family chat templates + tool
+calling), `constrain` (schema-constrained decoding), and `cmd/serve` — an
+OpenAI-compatible HTTP server for generation (chat/completions, with cross-call
+KV reuse) and, via aikit's `encoder`, embeddings. Everything in the default
+build is pure Go, no cgo. The one cgo dependency (`cogentcore/webgpu`) is sealed
+inside the opt-in `goinfer/gpu` submodule, built only under `-tags gpu`.
 
 ```mermaid
 flowchart TB
   subgraph GOINFER["github.com/townsendmerino/goinfer  (pure Go)"]
     direction TB
-    DEC["decoder<br/>forward pass · quant kernels · KV cache · samplers<br/>GGUF / .giw loaders"]
+    DEC["decoder<br/>forward pass · quant kernels · KV cache + cross-call reuse · samplers<br/>LoRA merge · GGUF / .giw loaders"]
     TKN["tokenizer<br/>byte-level BPE · SentencePiece byte-fallback"]
-    CON["constrain<br/>logit-mask grammars (JSON)"]
+    CON["constrain<br/>logit-mask grammars · JSON Schema + Go-struct"]
+    CHT["chat<br/>chat templates + tool calling (per family)"]
+    SRV["cmd/serve<br/>OpenAI HTTP · chat/completions · embeddings"]
     DEC --> TKN
     CON -. "LogitProcessor" .-> DEC
+    SRV --> DEC
+    SRV --> CHT
+    SRV --> CON
   end
 
   subgraph AIKIT["github.com/townsendmerino/aikit  (pure Go)"]
     direction TB
     EMBP["embed<br/>GGUF/safetensors parse · OpenGGUFBytes"]
     LIN["linalg<br/>SIMD dot/matmul (NEON · AVX2/FMA)"]
+    ENC["encoder<br/>CodeRankEmbed embeddings (f32 / int8)"]
   end
 
   DEC --> EMBP
   DEC --> LIN
   TKN --> EMBP
+  SRV --> ENC
 
   subgraph GPU["goinfer/gpu  (opt-in · -tags gpu · cgo)"]
     WG["WebGPU backend → cogentcore/webgpu<br/>registers a matmul Backend"]

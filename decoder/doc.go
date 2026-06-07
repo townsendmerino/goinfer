@@ -14,7 +14,9 @@
 //     heads · optional QKV/output bias · Linear/Conv1D layouts.
 //   - Weights: f32, bf16, f16, and int8/int4 quantized; from a single
 //     safetensors file, a sharded checkpoint, or a self-describing GGUF
-//     (Q8_0/Q4_0/Q4_K_M) needing no sidecar config or tokenizer.
+//     (Q8_0/Q4_0/Q4_K_M) needing no sidecar config or tokenizer. An optional
+//     PEFT LoRA adapter (Options.LoRA) is merged into the f32 weights before
+//     quantization, so it costs nothing extra at decode.
 //
 // See docs/ARCHITECTURE.md for the descriptor design and the per-family adapters.
 //
