@@ -17,8 +17,7 @@ import (
 // NAIVE kernel — no shared-memory tiling, every invocation streams a
 // full a-row and b-row from global memory. It is correct and proves
 // the whole upload/dispatch/readback pipeline; a tiled kernel that
-// stages K-strips into workgroup memory is the throughput follow-up
-// (see docs/cpu-acceleration.md).
+// stages K-strips into workgroup memory is the throughput follow-up.
 const matmulShaderWGSL = `
 struct Dims { m: u32, k: u32, n: u32, _pad: u32 };
 

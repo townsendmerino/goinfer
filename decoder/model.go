@@ -147,7 +147,7 @@ func (m *Model) runLayers(id int, cache *KVCache) ([]float32, error) {
 	// (≈25.2982). It matches our parity gate because the next op (PreAttnNorm
 	// RMSNorm) divides out a global scalar, so the difference only survives in
 	// the residual and stays well under the ≥1−1e-4 cosine bar. If that bar is
-	// ever tightened past ~1e-5, round the scale to bf16. See M3-forward.md.
+	// ever tightened past ~1e-5, round the scale to bf16.
 	if arch.EmbedScale != 0 && arch.EmbedScale != 1 {
 		scale := float32(arch.EmbedScale)
 		for i := range h {

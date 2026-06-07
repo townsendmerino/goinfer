@@ -18,7 +18,7 @@ import (
 // Byte-level BPE — the GPT-2 / Llama-3 / Qwen family (G3). Same ordered-merge
 // core as Gemma (mergeSymbols); the wrapper differs: NFC normalize, a GPT-2
 // split-regex pretokenizer, and a byte→printable-rune map so every initial
-// symbol is in-vocab (no byte-fallback). See docs/milestones/G3-tokenizer.md.
+// symbol is in-vocab (no byte-fallback).
 
 // initByteLevel builds the byte↔unicode tables and resolves special tokens
 // from tokenizer_config.json. Unlike Gemma, no special token is required —
