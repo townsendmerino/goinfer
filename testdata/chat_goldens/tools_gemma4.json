@@ -1,0 +1,77 @@
+{
+ "family": "gemma4",
+ "repo": "google/gemma-4-12B-it-qat-q4_0-unquantized",
+ "tools": [
+  {
+   "type": "function",
+   "function": {
+    "name": "get_weather",
+    "description": "Get the current weather for a city.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "location": {
+       "type": "string",
+       "description": "City name"
+      },
+      "unit": {
+       "type": "string",
+       "enum": [
+        "celsius",
+        "fahrenheit"
+       ]
+      }
+     },
+     "required": [
+      "location"
+     ]
+    }
+   }
+  }
+ ],
+ "cases": [
+  {
+   "name": "declare",
+   "messages": [
+    {
+     "role": "user",
+     "content": "Weather in Paris?"
+    }
+   ],
+   "rendered": "<bos><|turn>system\n<|tool>declaration:get_weather{description:<|\"|>Get the current weather for a city.<|\"|>,parameters:{properties:{location:{description:<|\"|>City name<|\"|>,type:<|\"|>STRING<|\"|>},unit:{enum:[<|\"|>celsius<|\"|>,<|\"|>fahrenheit<|\"|>],type:<|\"|>STRING<|\"|>}},required:[<|\"|>location<|\"|>],type:<|\"|>OBJECT<|\"|>}}<tool|><turn|>\n<|turn>user\nWeather in Paris?<turn|>\n<|turn>model\n<|channel>thought\n<channel|>"
+  },
+  {
+   "name": "call_result",
+   "messages": [
+    {
+     "role": "user",
+     "content": "Weather in Paris?"
+    },
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "abc123def",
+       "type": "function",
+       "function": {
+        "name": "get_weather",
+        "arguments": {
+         "location": "Paris",
+         "unit": "celsius"
+        }
+       }
+      }
+     ]
+    },
+    {
+     "role": "tool",
+     "name": "get_weather",
+     "tool_call_id": "abc123def",
+     "content": "18C, sunny"
+    }
+   ],
+   "rendered": "<bos><|turn>system\n<|tool>declaration:get_weather{description:<|\"|>Get the current weather for a city.<|\"|>,parameters:{properties:{location:{description:<|\"|>City name<|\"|>,type:<|\"|>STRING<|\"|>},unit:{enum:[<|\"|>celsius<|\"|>,<|\"|>fahrenheit<|\"|>],type:<|\"|>STRING<|\"|>}},required:[<|\"|>location<|\"|>],type:<|\"|>OBJECT<|\"|>}}<tool|><turn|>\n<|turn>user\nWeather in Paris?<turn|>\n<|turn>model\n<|tool_call>call:get_weather{location:<|\"|>Paris<|\"|>,unit:<|\"|>celsius<|\"|>}<tool_call|><|tool_response>response:get_weather{value:<|\"|>18C, sunny<|\"|>}<tool_response|>"
+  }
+ ]
+}

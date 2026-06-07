@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -33,6 +34,9 @@ func loadGoldens(t *testing.T) []goldenFile {
 	}
 	var gs []goldenFile
 	for _, p := range paths {
+		if strings.HasPrefix(filepath.Base(p), "tools_") {
+			continue // tool-render goldens are exercised by tools_test.go
+		}
 		raw, err := os.ReadFile(p)
 		if err != nil {
 			t.Fatalf("read %s: %v", p, err)

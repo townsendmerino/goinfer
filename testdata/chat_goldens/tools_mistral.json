@@ -1,0 +1,77 @@
+{
+ "family": "mistral",
+ "repo": "mistralai/Mistral-7B-Instruct-v0.3",
+ "tools": [
+  {
+   "type": "function",
+   "function": {
+    "name": "get_weather",
+    "description": "Get the current weather for a city.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "location": {
+       "type": "string",
+       "description": "City name"
+      },
+      "unit": {
+       "type": "string",
+       "enum": [
+        "celsius",
+        "fahrenheit"
+       ]
+      }
+     },
+     "required": [
+      "location"
+     ]
+    }
+   }
+  }
+ ],
+ "cases": [
+  {
+   "name": "declare",
+   "messages": [
+    {
+     "role": "user",
+     "content": "Weather in Paris?"
+    }
+   ],
+   "rendered": "<s>[AVAILABLE_TOOLS] [{\"type\": \"function\", \"function\": {\"name\": \"get_weather\", \"description\": \"Get the current weather for a city.\", \"parameters\": {\"type\": \"object\", \"properties\": {\"location\": {\"type\": \"string\", \"description\": \"City name\"}, \"unit\": {\"type\": \"string\", \"enum\": [\"celsius\", \"fahrenheit\"]}}, \"required\": [\"location\"]}}}][/AVAILABLE_TOOLS][INST] Weather in Paris?[/INST]"
+  },
+  {
+   "name": "call_result",
+   "messages": [
+    {
+     "role": "user",
+     "content": "Weather in Paris?"
+    },
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "abc123def",
+       "type": "function",
+       "function": {
+        "name": "get_weather",
+        "arguments": {
+         "location": "Paris",
+         "unit": "celsius"
+        }
+       }
+      }
+     ]
+    },
+    {
+     "role": "tool",
+     "name": "get_weather",
+     "tool_call_id": "abc123def",
+     "content": "18C, sunny"
+    }
+   ],
+   "rendered": "<s>[AVAILABLE_TOOLS] [{\"type\": \"function\", \"function\": {\"name\": \"get_weather\", \"description\": \"Get the current weather for a city.\", \"parameters\": {\"type\": \"object\", \"properties\": {\"location\": {\"type\": \"string\", \"description\": \"City name\"}, \"unit\": {\"type\": \"string\", \"enum\": [\"celsius\", \"fahrenheit\"]}}, \"required\": [\"location\"]}}}][/AVAILABLE_TOOLS][INST] Weather in Paris?[/INST][TOOL_CALLS] [{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\", \"unit\": \"celsius\"}, \"id\": \"abc123def\"}]</s>[TOOL_RESULTS] {\"content\": 18C, sunny, \"call_id\": \"abc123def\"}[/TOOL_RESULTS]"
+  }
+ ]
+}

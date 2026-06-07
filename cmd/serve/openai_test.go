@@ -216,3 +216,63 @@ func TestServe_integration(t *testing.T) {
 		t.Errorf("stream: chunks=%d done=%d (want chunks>0, done=1)", chunks, done)
 	}
 }
+
+// TestServe_tools_integration drives a tool call end to end: one tool (so the
+// call is constrained), a weather question, and we assert the response is a
+// tool_calls finish with valid arguments. Gated on GOINFER_SERVE_MODEL.
+func TestServe_tools_integration(t *testing.T) {
+	path := os.Getenv("GOINFER_SERVE_MODEL")
+	if path == "" {
+		t.Skip("set GOINFER_SERVE_MODEL=<.gguf> to run the serve tool test")
+	}
+	srv, err := newServer(path, "cpu", "int8int8", "test-model")
+	if err != nil {
+		t.Fatalf("newServer: %v", err)
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /v1/chat/completions", srv.handleChat)
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+
+	body := `{"model":"test-model","max_tokens":120,"temperature":0,
+		"messages":[{"role":"user","content":"What is the weather in Paris? Use the tool."}],
+		"tools":[{"type":"function","function":{"name":"get_weather",
+			"description":"Get the current weather for a city.",
+			"parameters":{"type":"object","additionalProperties":false,
+				"properties":{"location":{"type":"string"},"unit":{"enum":["celsius","fahrenheit"]}},
+				"required":["location"]}}}],
+		"tool_choice":"auto"}`
+	resp, err := http.Post(ts.URL+"/v1/chat/completions", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+	var out struct {
+		Choices []struct {
+			FinishReason string `json:"finish_reason"`
+			Message      struct {
+				ToolCalls []struct {
+					Function struct{ Name, Arguments string } `json:"function"`
+				} `json:"tool_calls"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	ch := out.Choices[0]
+	if ch.FinishReason != "tool_calls" || len(ch.Message.ToolCalls) != 1 {
+		t.Fatalf("expected a tool call, got finish=%q calls=%d", ch.FinishReason, len(ch.Message.ToolCalls))
+	}
+	tc := ch.Message.ToolCalls[0]
+	if tc.Function.Name != "get_weather" {
+		t.Errorf("tool name = %q, want get_weather", tc.Function.Name)
+	}
+	var args struct {
+		Location string `json:"location"`
+	}
+	if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil || args.Location == "" {
+		t.Errorf("arguments not valid / missing location: %q (%v)", tc.Function.Arguments, err)
+	}
+	t.Logf("tool call: %s(%s)", tc.Function.Name, tc.Function.Arguments)
+}

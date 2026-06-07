@@ -17,6 +17,7 @@ func testVocab() (tokens [][]byte, eos int) {
 	for b := byte(0x20); b <= 0x7e; b++ {
 		tokens = append(tokens, []byte{b})
 	}
+	tokens = append(tokens, []byte("\n"), []byte("\t")) // whitespace control bytes (tool wrappers use \n)
 	for _, s := range []string{"true", "false", "null", "{}", "[]", "\":\"", "\",\""} {
 		tokens = append(tokens, []byte(s))
 	}

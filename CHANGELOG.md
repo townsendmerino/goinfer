@@ -11,6 +11,20 @@ pre-1.0 and may change as new model families and quant formats land.
 ## [Unreleased]
 
 ### Added
+- **Tool calling** — composes chat templates + JSON-Schema constraint + a
+  per-family parser (parse against the model's template, not a naive JSON scan).
+  `chat.Template.RenderTools` declares tools in each family's syntax and
+  `ParseToolCalls` recovers structured calls; supported: ChatML/Qwen (Hermes
+  `<tool_call>`), Mistral (`[TOOL_CALLS]`), Llama-3 (bare `{name,parameters}`),
+  and Gemma 4's bespoke `<|tool_call>` micro-language (incl. its declaration
+  format, byte-exact). `constrain.ToolCallGrammar` constrains a call to a tool's
+  schema (the family wrapper around `{"name":const,…:<args schema>}`). `cmd/serve`
+  honors OpenAI `tools` / `tool_choice`: renders declarations, constrains the call
+  when unambiguous (one tool or a forced function — Gemma 4 is parse-only, no
+  logit constraint), and returns `tool_calls` with `finish_reason:"tool_calls"`.
+  Tested: per-family parse + round-trip, the tool-grammar property (every
+  constrained generation is a valid, schema-conforming call), and a server
+  integration call (Qwen → `get_weather(...)`).
 - **OpenAI-compatible HTTP server** (`cmd/serve`) — pure stdlib `net/http`, no
   deps. `/v1/chat/completions`, `/v1/completions`, `/v1/models`; streaming via
   SSE; the sampling knobs (temperature/top_p/top_k/seed/frequency_penalty/

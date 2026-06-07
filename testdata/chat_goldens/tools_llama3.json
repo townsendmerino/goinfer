@@ -1,0 +1,77 @@
+{
+ "family": "llama3",
+ "repo": "unsloth/Llama-3.2-1B-Instruct",
+ "tools": [
+  {
+   "type": "function",
+   "function": {
+    "name": "get_weather",
+    "description": "Get the current weather for a city.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "location": {
+       "type": "string",
+       "description": "City name"
+      },
+      "unit": {
+       "type": "string",
+       "enum": [
+        "celsius",
+        "fahrenheit"
+       ]
+      }
+     },
+     "required": [
+      "location"
+     ]
+    }
+   }
+  }
+ ],
+ "cases": [
+  {
+   "name": "declare",
+   "messages": [
+    {
+     "role": "user",
+     "content": "Weather in Paris?"
+    }
+   ],
+   "rendered": "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nEnvironment: ipython\nCutting Knowledge Date: December 2023\nToday Date: 01 Jan 2025\n\n<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nGiven the following functions, please respond with a JSON for a function call with its proper arguments that best answers the given prompt.\n\nRespond in the format {\"name\": function name, \"parameters\": dictionary of argument name and its value}.Do not use variables.\n\n{\n    \"type\": \"function\",\n    \"function\": {\n        \"name\": \"get_weather\",\n        \"description\": \"Get the current weather for a city.\",\n        \"parameters\": {\n            \"type\": \"object\",\n            \"properties\": {\n                \"location\": {\n                    \"type\": \"string\",\n                    \"description\": \"City name\"\n                },\n                \"unit\": {\n                    \"type\": \"string\",\n                    \"enum\": [\n                        \"celsius\",\n                        \"fahrenheit\"\n                    ]\n                }\n            },\n            \"required\": [\n                \"location\"\n            ]\n        }\n    }\n}\n\nWeather in Paris?<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+  },
+  {
+   "name": "call_result",
+   "messages": [
+    {
+     "role": "user",
+     "content": "Weather in Paris?"
+    },
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "abc123def",
+       "type": "function",
+       "function": {
+        "name": "get_weather",
+        "arguments": {
+         "location": "Paris",
+         "unit": "celsius"
+        }
+       }
+      }
+     ]
+    },
+    {
+     "role": "tool",
+     "name": "get_weather",
+     "tool_call_id": "abc123def",
+     "content": "18C, sunny"
+    }
+   ],
+   "rendered": "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nEnvironment: ipython\nCutting Knowledge Date: December 2023\nToday Date: 01 Jan 2025\n\n<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nGiven the following functions, please respond with a JSON for a function call with its proper arguments that best answers the given prompt.\n\nRespond in the format {\"name\": function name, \"parameters\": dictionary of argument name and its value}.Do not use variables.\n\n{\n    \"type\": \"function\",\n    \"function\": {\n        \"name\": \"get_weather\",\n        \"description\": \"Get the current weather for a city.\",\n        \"parameters\": {\n            \"type\": \"object\",\n            \"properties\": {\n                \"location\": {\n                    \"type\": \"string\",\n                    \"description\": \"City name\"\n                },\n                \"unit\": {\n                    \"type\": \"string\",\n                    \"enum\": [\n                        \"celsius\",\n                        \"fahrenheit\"\n                    ]\n                }\n            },\n            \"required\": [\n                \"location\"\n            ]\n        }\n    }\n}\n\nWeather in Paris?<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n{\"name\": \"get_weather\", \"parameters\": {\"location\": \"Paris\", \"unit\": \"celsius\"}}<|eot_id|><|start_header_id|>ipython<|end_header_id|>\n\n\"18C, sunny\"<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+  }
+ ]
+}

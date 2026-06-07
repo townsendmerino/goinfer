@@ -53,15 +53,40 @@ type respFormat struct {
 }
 
 type chatReq struct {
-	Model    string        `json:"model"`
-	Messages []chatMessage `json:"messages"`
-	Stream   bool          `json:"stream"`
+	Model      string          `json:"model"`
+	Messages   []chatMessage   `json:"messages"`
+	Stream     bool            `json:"stream"`
+	Tools      []toolSpec      `json:"tools"`
+	ToolChoice json.RawMessage `json:"tool_choice"` // "auto"|"none"|{"type":"function","function":{"name":…}}
 	sampling
 }
 
 type chatMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role       string        `json:"role"`
+	Content    string        `json:"content"`
+	Name       string        `json:"name,omitempty"`         // tool messages: function name
+	ToolCallID string        `json:"tool_call_id,omitempty"` // tool messages: id answered
+	ToolCalls  []apiToolCall `json:"tool_calls,omitempty"`   // assistant messages
+}
+
+// toolSpec is an OpenAI tool definition (we honor type:"function").
+type toolSpec struct {
+	Type     string `json:"type"`
+	Function struct {
+		Name        string          `json:"name"`
+		Description string          `json:"description"`
+		Parameters  json.RawMessage `json:"parameters"`
+	} `json:"function"`
+}
+
+// apiToolCall is the OpenAI wire form of a tool call (arguments is a JSON string).
+type apiToolCall struct {
+	ID       string `json:"id"`
+	Type     string `json:"type"`
+	Function struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	} `json:"function"`
 }
 
 type completionReq struct {
@@ -94,6 +119,10 @@ func (s *server) handleChat(w http.ResponseWriter, r *http.Request) {
 	var req chatReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+	if len(req.Tools) > 0 && toolChoiceMode(req.ToolChoice) != "none" {
+		s.handleChatTools(w, r, req)
 		return
 	}
 	gr, err := s.prepare(req.sampling, s.chatPrompt(req.Messages))
@@ -250,36 +279,57 @@ func grammarFor(rf *respFormat) (constrain.Grammar, error) {
 	}
 }
 
-// chatPrompt renders the messages into the model's chat template (or a raw
-// fallback) and encodes them. The system message is passed separately.
-func (s *server) chatPrompt(msgs []chatMessage) []int {
+// messagesToTurns maps OpenAI messages to chat turns, carrying tool history
+// (assistant tool_calls and tool-result turns). The system message is returned
+// separately (families place it differently).
+func messagesToTurns(msgs []chatMessage) (string, []chat.Turn) {
 	var system string
 	var turns []chat.Turn
 	for _, m := range msgs {
 		switch m.Role {
 		case "system":
 			system = m.Content
+		case "tool":
+			turns = append(turns, chat.Turn{Role: "tool", Content: m.Content, ToolName: m.Name, ToolCallID: m.ToolCallID})
 		case "assistant":
-			turns = append(turns, chat.Turn{Role: "assistant", Content: m.Content})
+			var tc []chat.ToolCall
+			for _, c := range m.ToolCalls {
+				tc = append(tc, chat.ToolCall{ID: c.ID, Name: c.Function.Name, Arguments: json.RawMessage(c.Function.Arguments)})
+			}
+			turns = append(turns, chat.Turn{Role: "assistant", Content: m.Content, ToolCalls: tc})
 		default:
 			turns = append(turns, chat.Turn{Role: "user", Content: m.Content})
 		}
 	}
-	var prompt string
-	addBOS := true
-	if s.tmpl != nil {
-		prompt = s.tmpl.Render(system, turns) // includes the family BOS marker
-		addBOS = false
-	} else {
-		if system != "" {
-			prompt = system + "\n\n"
-		}
-		for _, t := range turns {
-			prompt += t.Content + "\n"
-		}
+	return system, turns
+}
+
+// rawPrompt is the unrecognized-template fallback (plain conversation text).
+func rawPrompt(system string, turns []chat.Turn) string {
+	var b strings.Builder
+	if system != "" {
+		b.WriteString(system + "\n\n")
 	}
-	ids, _ := s.tk.Encode(prompt, addBOS)
+	for _, t := range turns {
+		b.WriteString(t.Content + "\n")
+	}
+	return b.String()
+}
+
+// encode tokenizes a rendered prompt; rendered templates already include the
+// family BOS marker, so only the raw fallback asks the tokenizer to add one.
+func (s *server) encode(prompt string) []int {
+	ids, _ := s.tk.Encode(prompt, s.tmpl == nil)
 	return ids
+}
+
+// chatPrompt renders system + messages into the model's chat template (no tools).
+func (s *server) chatPrompt(msgs []chatMessage) []int {
+	system, turns := messagesToTurns(msgs)
+	if s.tmpl != nil {
+		return s.encode(s.tmpl.Render(system, turns))
+	}
+	return s.encode(rawPrompt(system, turns))
 }
 
 // drive runs the generation, applying stop strings and UTF-8 holdback, calling

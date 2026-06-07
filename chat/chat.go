@@ -16,11 +16,16 @@ import (
 	"time"
 )
 
-// Turn is one conversation message. Role is "user" or "assistant"; the system
-// prompt is passed separately to Render (families place it differently).
+// Turn is one conversation message. Role is "user", "assistant", or "tool" (a
+// tool result); the system prompt is passed separately to Render. For tool
+// calling: an assistant turn may carry ToolCalls (what the model asked for), and
+// a "tool" turn carries the result of one call (ToolName + ToolCallID + Content).
 type Turn struct {
-	Role    string
-	Content string
+	Role       string
+	Content    string
+	ToolCalls  []ToolCall // assistant turns: the calls the model made
+	ToolName   string     // tool turns: the function this result is for
+	ToolCallID string     // tool turns: the id of the call being answered
 }
 
 // Stops are the strings that end a model turn for this family (e.g.
