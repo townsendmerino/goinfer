@@ -16,7 +16,7 @@ import (
 // the opt-in github.com/townsendmerino/goinfer/gpu module: importing it under
 // `-tags gpu` calls RegisterBackend("webgpu", …) on init, so the decoder gains
 // GPU acceleration WITHOUT pulling github.com/cogentcore/webgpu (cgo) into
-// goinfer's core dependency graph. See docs/gemma-decoder-plan.md §5.
+// goinfer's core dependency graph.
 type Backend interface {
 	// Name identifies the backend ("cpu", "webgpu").
 	Name() string

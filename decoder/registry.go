@@ -13,12 +13,12 @@ import (
 type archAdapter func(*Config) (*Architecture, *tensorSchema, error)
 
 // registry maps config.json model_type → its adapter. Adding a family
-// (multi-model-plan G2+) is a new entry here plus its tensor schema — the
+// is a new entry here plus its tensor schema — the
 // forward pass itself doesn't change.
 var registry = map[string]archAdapter{
 	"gemma3":      gemma3Architecture,
 	"gemma3_text": gemma3Architecture,   // the 270M/1B text checkpoints
-	"gemma4":      gemma4Architecture,   // Gemma 4 (descriptor only; gguf guards weight-load until forward lands)
+	"gemma4":      gemma4Architecture,   // Gemma 4 (E2B/E4B + 12B dense; parity-gated)
 	"qwen3":       qwen3Architecture,    // Qwen3 dense (0.6B/1.7B/4B/8B/…)
 	"qwen2":       qwen2Architecture,    // Qwen2/Qwen2.5 dense (llama + q/k/v bias)
 	"qwen2_moe":   qwen2MoeArchitecture, // Qwen-MoE/Qwen2-MoE (qwen2 + sparse MoE + shared expert)
@@ -100,12 +100,10 @@ func gemma3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 // partial-rotary RoPE (partial_rotary_factor). The 12B dense is PLE-free; the
 // E-models (E2B/E4B) add PLE (per-layer embeddings) — there is NO AltUp/Laurel
 // (those are Gemma 3n). E2B also has cross-layer KV sharing + variable FFN +
-// final-logit softcap 30 (see docs/internal/task-gemma4-support.md "STEP 0").
+// final-logit softcap 30.
 //
-// NOT yet registered: the forward pass that consumes the per-layer deltas is
-// unimplemented, so the GGUF loader returns a clear WIP error. This descriptor +
-// its test pin the verified architecture so the forward work has a contract. See
-// docs/internal/task-gemma4-support.md.
+// The forward pass (runLayersGemma4) consumes the per-layer deltas; E2B/E4B and
+// the 12B dense (K=V) variants are parity-gated against the HF bf16 oracle.
 func gemma4Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	globalRotary := 0
 	if cfg.PartialRotaryFactor > 0 && cfg.GlobalHeadDim > 0 {
@@ -156,7 +154,7 @@ func gemma4Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	}, &gemma3TensorSchema, nil // a dedicated gemma4 tensor schema lands with the loader work
 }
 
-// qwen3Architecture expresses Qwen3 dense (multi-model-plan G2): RMSNorm
+// qwen3Architecture expresses Qwen3 dense: RMSNorm
 // without the (1+w) offset, the Pre2 norm placement (no post-sublayer norms),
 // SwiGLU, QK-norm (Qwen3 keeps it), 1/√head_dim attention scale, single-base
 // RoPE, no embedding scale, and a separate lm_head (untied). No QKV bias
@@ -280,7 +278,7 @@ func mistralArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	}, &llamaTensorSchema, nil
 }
 
-// gpt2Architecture expresses GPT-2 (multi-model-plan G5): the GPT-2/NeoX class
+// gpt2Architecture expresses GPT-2: the GPT-2/NeoX class
 // that breaks the Llama mold on several axes — LayerNorm (mean-centered, with
 // bias) instead of RMSNorm, learned absolute position embeddings instead of
 // RoPE, a non-gated GELU MLP (up→gelu→down) instead of a gated one, fused q/k/v
@@ -328,7 +326,7 @@ func gpt2Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	}, &gpt2TensorSchema, nil
 }
 
-// mixtralArchitecture expresses Mixtral (multi-model-plan G6): the llama
+// mixtralArchitecture expresses Mixtral: the llama
 // descriptor (RMS no-offset, Pre2, SwiGLU experts, single-base RoPE, no QK-norm,
 // no bias, untied head) with the dense FFN replaced by a sparse mixture of
 // experts — a router picks top-k of NumExperts experts per token. Recent HF

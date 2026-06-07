@@ -143,7 +143,7 @@ func (w *Weights) matmulWeights() []*weightMat {
 // Float16sToF32 allocate), which roughly doubles resident RAM vs keeping
 // the tensors bf16. That's the M1 correctness-first choice; the
 // half-the-RAM route is per-tile widen inside matmul.
-// TODO(M8): bf16-resident matmul tiling (gemma-decoder-plan §2/§8) to
+// TODO(M8): bf16-resident matmul tiling to
 // drop the widen-on-load 2× memory cost for the 1B+ checkpoints.
 //
 // Use LoadWeightsFromFS for fs.FS-backed (MapFS, embed.FS) paths — that

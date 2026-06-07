@@ -7,7 +7,7 @@ import (
 	"github.com/townsendmerino/aikit/embed"
 )
 
-// GGUF loading (multi-model-plan G7) — read a quantized llama.cpp checkpoint and
+// GGUF loading — read a quantized llama.cpp checkpoint and
 // run it through the generic forward. The GGUF file carries both the
 // architecture config (metadata) and the weights (dequantized from the mmap,
 // then optionally re-quantized to resident int8/int4 per the quant mode), so no

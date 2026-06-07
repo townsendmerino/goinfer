@@ -8,8 +8,8 @@ import (
 // TestGemma4Architecture pins the Gemma 4 descriptor against the verified 12B
 // config (google/gemma-4-12B-it…/config.json): Gemma-3-style stack PLUS the
 // per-layer attention deltas. Pure unit test — no model asset. It's the contract
-// the (WIP) forward pass must satisfy; the GGUF loader returns a clear error
-// until that lands (see docs/internal/task-gemma4-support.md).
+// the forward pass (runLayersGemma4) satisfies; end-to-end parity is gated by
+// TestGemma4_12B_logitParity.
 func TestGemma4Architecture(t *testing.T) {
 	// Verified 12B (gemma4_unified_text) values.
 	cfg := &Config{

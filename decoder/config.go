@@ -89,7 +89,7 @@ type Config struct {
 	VocabSizePerLayerInput  int   `json:"vocab_size_per_layer_input"`
 	FFNPerLayer             []int `json:"-"`
 
-	// GPT-2 (multi-model-plan G5) uses a different config vocabulary: n_embd /
+	// GPT-2 uses a different config vocabulary: n_embd /
 	// n_head / n_layer / n_positions / n_inner / layer_norm_epsilon /
 	// activation_function instead of hidden_size etc. The gpt2 adapter reads
 	// these directly.

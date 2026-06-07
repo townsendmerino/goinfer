@@ -16,8 +16,7 @@
 //     safetensors file, a sharded checkpoint, or a self-describing GGUF
 //     (Q8_0/Q4_0/Q4_K_M) needing no sidecar config or tokenizer.
 //
-// See docs/multi-model-plan.md for the descriptor design and the per-family
-// adapters, and docs/gemma-decoder-plan.md for the original Gemma 3 milestones.
+// See docs/ARCHITECTURE.md for the descriptor design and the per-family adapters.
 //
 // # Carry-over invariants (read once)
 //
@@ -47,6 +46,5 @@ package decoder
 import "errors"
 
 // errNotImplemented is the sentinel for a path that cannot run — today only
-// the "weights not loaded" guard in runLayers. It is wrapped with a
-// milestone/section tag so a caller hitting it gets a pointer, not a mystery.
-var errNotImplemented = errors.New("decoder: not implemented (see docs/gemma-decoder-plan.md)")
+// the "weights not loaded" guard in runLayers.
+var errNotImplemented = errors.New("decoder: not implemented")

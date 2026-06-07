@@ -189,7 +189,7 @@ func normalize(arch *Architecture, x, weight, bias []float32, dim int) {
 
 // forward runs runLayers then the final norm + LM head, returning the logit
 // vector ([VocabSize]) for the next token. The head is the tied embedding
-// (Gemma) or a separate lm_head (untied; multi-model-plan G2). Optional final
+// (Gemma) or a separate lm_head (untied). Optional final
 // logit soft-capping (Gemma 2; Gemma 3 = none).
 func (m *Model) forward(id int, cache *KVCache) ([]float32, error) {
 	arch := m.w.arch

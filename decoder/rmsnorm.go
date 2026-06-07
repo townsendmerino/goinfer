@@ -36,7 +36,7 @@ func rmsNorm(x, weight []float32, rows, dim int, eps float64, addOne bool) {
 }
 
 // layerNorm applies LayerNorm in place over each row of x ([rows, dim]) — the
-// GPT-2/NeoX normalization (multi-model-plan G5). Unlike RMSNorm it subtracts
+// GPT-2/NeoX normalization. Unlike RMSNorm it subtracts
 // the mean and adds a bias:
 //
 //	mean = mean(x)
@@ -67,7 +67,7 @@ func layerNorm(x, weight, bias []float32, rows, dim int, eps float64) {
 
 // silu is x·sigmoid(x), the SwiGLU activation Llama/Mistral/Qwen use (computed
 // in float64 like geluTanh for parity). Gemma uses geluTanh; this is here for
-// the SwiGLU families (multi-model-plan G2).
+// the SwiGLU families.
 func silu(x float32) float32 {
 	x64 := float64(x)
 	return float32(x64 / (1 + math.Exp(-x64)))

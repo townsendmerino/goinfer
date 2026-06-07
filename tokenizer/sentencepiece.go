@@ -13,7 +13,7 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
-var errNotImplemented = errors.New("tokenizer: not implemented (see docs/gemma-decoder-plan.md §9, M2)")
+var errNotImplemented = errors.New("tokenizer: not implemented")
 
 // spaceMarker is SentencePiece's "▁" (U+2581 LOWER ONE EIGHTH BLOCK), which
 // Gemma's normalizer substitutes for every ASCII space before BPE.

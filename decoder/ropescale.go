@@ -6,7 +6,7 @@ import (
 	"math"
 )
 
-// RoPE frequency scaling (multi-model-plan G4). HF's rope_scaling object
+// RoPE frequency scaling. HF's rope_scaling object
 // transforms the base inverse-frequency table so a model trained at one context
 // length serves a longer one. Only the variants whose math this file implements
 // load; the rest (yarn, longrope/su, dynamic) are rejected loudly by the

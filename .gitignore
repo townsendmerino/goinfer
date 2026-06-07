@@ -41,6 +41,6 @@ __pycache__/
 .idea/
 *.swp
 
-# Private launch/promotion notes — internal strategy + pre-written copy. This is
-# a public repo, so keep it local ("internal" by name, not by visibility).
-docs/internal/launch-playbook.md
+# Internal docs — sprint scratchpads, planning, strategy. Public repo, so the
+# whole dir stays local ("internal" by name, not by visibility).
+docs/internal/

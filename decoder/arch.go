@@ -3,14 +3,12 @@ package decoder
 // Architecture is the resolved, family-agnostic description of a decoder LLM's
 // structure. ONE generic forward pass (runLayers/forward/causalAttention/
 // gatedMLP) reads it; per-family adapters (registry.go) populate it from that
-// family's config.json. Gemma 3 is currently the only family — it's expressed
-// as a descriptor here so adding Llama/Mistral/Qwen (multi-model-plan G2) is
+// family's config.json. Every supported family — Gemma/Llama/Mistral/Qwen/
+// GPT-2/Mixtral/Mellum — is expressed as a descriptor here, so adding one is
 // descriptor population, not new forward code.
 //
-// Every field below is consumed by the forward pass. Behavioural knobs that
-// need new tensors (untied LM head, QKV bias, MoE) are deferred to later G-
-// milestones; the forward pass rejects descriptor values it doesn't implement
-// rather than silently mis-running.
+// Every field below is consumed by the forward pass, which rejects descriptor
+// values it doesn't implement rather than silently mis-running.
 type Architecture struct {
 	Name string // family name, for logs/errors ("gemma3")
 
@@ -77,8 +75,7 @@ type Architecture struct {
 // gemma4Params describes how Gemma 4's global (full-attention) layers diverge
 // from its local (sliding) layers. Local layers use Architecture.HeadDim /
 // NumKVHeads and full rotary; global layers use these instead. Set by
-// gemma4Architecture; consumed per-layer by the forward pass (WIP — see
-// docs/internal/task-gemma4-support.md).
+// gemma4Architecture; consumed per-layer by the forward pass (runLayersGemma4).
 type gemma4Params struct {
 	GlobalHeadDim    int  // global head_dim (e.g. 512); local = Architecture.HeadDim (256)
 	NumGlobalKVHeads int  // global KV-head count; local = Architecture.NumKVHeads. 0 ⇒ same as local
@@ -117,7 +114,7 @@ func (a *Architecture) ffnAt(i int) int {
 	return a.IntermediateDim
 }
 
-// MoEConfig describes a sparse mixture-of-experts FFN (multi-model-plan G6).
+// MoEConfig describes a sparse mixture-of-experts FFN.
 // A router scores all experts, the top-k run as gated MLPs, and their outputs
 // combine weighted by the (renormalized) router probabilities. Mixtral:
 // NumExperts=8, TopK=2, NormTopKProb=true.
@@ -139,8 +136,8 @@ type MoEConfig struct {
 	SharedIntermediateDim int
 }
 
-// NormKind selects the normalization. Only RMSNorm is implemented today;
-// LayerNorm (GPT-2/NeoX) is multi-model-plan G5.
+// NormKind selects the normalization: RMSNorm (Llama/Gemma/Qwen/…) or
+// LayerNorm (GPT-2/NeoX).
 type NormKind int
 
 const (

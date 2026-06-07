@@ -100,7 +100,7 @@ size tiers** from one program (prequant `.giw`, M-series CPU, fixed prompt+seed)
 | Qwen2.5-Coder-1.5B | 1.72 GB | 1.23 s | 87 MB | ~26 |
 
 (End-to-end demo tok/s, M1 Pro, after the v0.5.0 perf work — see
-`docs/internal/perf-campaign.md`. Pure runtime decode is higher: ~70 / ~36 tok/s on
+`docs/perf-campaign.md`. Pure runtime decode is higher: ~70 / ~36 tok/s on
 `BenchmarkDecode`; the gap is streaming/UI overhead. ±a few tok/s by thermal
 state.)
 
