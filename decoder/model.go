@@ -241,59 +241,76 @@ func (m *Model) forward(id int, cache *KVCache) ([]float32, error) {
 func (m *Model) Generate(ctx context.Context, prompt []int, maxTokens int, sp SamplingParams) (<-chan int, *Generation) {
 	out := make(chan int)
 	g := &Generation{}
+	cache := m.NewCache(len(prompt) + maxTokens)
 	go func() {
 		defer close(out)
-		if len(prompt) == 0 {
-			g.err = fmt.Errorf("decoder.Generate: empty prompt")
+		m.generateInto(ctx, out, g, cache, prompt, 0, maxTokens, sp, nil)
+	}()
+	return out, g
+}
+
+// generateInto is the shared prefill+decode loop behind Model.Generate and
+// Session.Generate. It assumes cache already holds prompt[:prefillFrom] (0 for a
+// fresh generation), prefills prompt[prefillFrom:] (always ≥1 token — the seed,
+// whose last position's logits start the decode), then decodes up to maxTokens,
+// streaming each id to out. It does NOT close out: the caller owns the channel so
+// it can run post-generation bookkeeping (e.g. a Session reconciling its token
+// list) before the consumer observes the close. commit, if non-nil, is invoked
+// with each id once its forward has committed that position to the cache — the
+// seam Session uses to track exactly what the cache holds. Terminal status lands
+// on g.err.
+func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation, cache *KVCache, prompt []int, prefillFrom, maxTokens int, sp SamplingParams, commit func(int)) {
+	if len(prompt) == 0 {
+		g.err = fmt.Errorf("decoder.Generate: empty prompt")
+		return
+	}
+	sampler := NewSampler(sp)
+	sampler.Observe(prompt...) // repetition penalties see the whole prompt, reused prefix included
+	// Prefill the (divergent suffix of the) prompt and seed the first token's
+	// logits. On the batched archs this runs the layers at M=len in one pass (each
+	// weight streamed once — ~1.7–2× faster TTFT than sequential), LM head on the
+	// last position only. Reuse means len here is the suffix, not the whole prompt.
+	logits, err := m.prefillLogits(prompt[prefillFrom:], cache)
+	if err != nil {
+		g.err = err
+		return
+	}
+	// Decode loop.
+	var generated []int
+	for range maxTokens {
+		select {
+		case <-ctx.Done():
+			g.err = ctx.Err()
 			return
+		default:
 		}
-		cache := m.NewCache(len(prompt) + maxTokens)
-		sampler := NewSampler(sp)
-		sampler.Observe(prompt...) // so repetition penalties see the prompt
-		// Prefill the prompt and seed the first token's logits. On the batched
-		// archs this runs the layers at M=len(prompt) in one pass (each weight
-		// streamed once — ~1.7–2× faster TTFT than sequential), LM head on the
-		// last position only.
-		logits, err := m.prefillLogits(prompt, cache)
+		// Constrained decoding: let the processor mask this step's logits
+		// (based on what's been generated) before sampling and the stop check.
+		if sp.LogitProcessor != nil {
+			sp.LogitProcessor(generated, logits)
+		}
+		info, err := sampler.SampleWithInfo(logits)
 		if err != nil {
 			g.err = err
 			return
 		}
-		// Decode loop.
-		var generated []int
-		for range maxTokens {
-			select {
-			case <-ctx.Done():
-				g.err = ctx.Err()
-				return
-			default:
-			}
-			// Constrained decoding: let the processor mask this step's logits
-			// (based on what's been generated) before sampling and the stop check.
-			if sp.LogitProcessor != nil {
-				sp.LogitProcessor(generated, logits)
-			}
-			info, err := sampler.SampleWithInfo(logits)
-			if err != nil {
-				g.err = err
-				return
-			}
-			next := info.ID
-			if m.isStop(next, sp) {
-				return
-			}
-			if sp.Logprobs {
-				g.Logprobs = append(g.Logprobs, info)
-			}
-			out <- next
-			generated = append(generated, next)
-			if logits, err = m.forward(next, cache); err != nil {
-				g.err = err
-				return
-			}
+		next := info.ID
+		if m.isStop(next, sp) {
+			return
 		}
-	}()
-	return out, g
+		if sp.Logprobs {
+			g.Logprobs = append(g.Logprobs, info)
+		}
+		out <- next
+		generated = append(generated, next)
+		if logits, err = m.forward(next, cache); err != nil {
+			g.err = err
+			return
+		}
+		if commit != nil {
+			commit(next)
+		}
+	}
 }
 
 // isStop reports whether id ends generation: a checkpoint EOS id (from

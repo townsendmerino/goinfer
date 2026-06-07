@@ -72,16 +72,27 @@ func (c *KVCache) Vals(layer int) []float32 { return c.vals[layer] }
 func (c *KVCache) Pos() int { return c.pos }
 
 // TruncateTo drops every stored position at index ≥ pos in all layers and resets
-// Pos to pos — the KV-cache rollback speculative decoding needs after a partial
-// accept (the rejected draft positions were appended but aren't real). Cheap: a
+// Pos to pos — the rollback speculative decoding needs after a partial accept
+// (rejected draft positions were appended but aren't real), and the seam prefix
+// reuse rides on to rewind to a shared prompt prefix (see Session). Cheap: a
 // reslice that keeps the backing arrays, so re-appending doesn't reallocate. pos
 // must be in [0, Pos()].
+//
+// Per-position stride is derived per layer from what the layer actually holds
+// (len/Pos), not the cache's nominal kvDim, because two Gemma 4 facts break a
+// uniform stride: per-layer head_dim / KV-head counts make widths differ between
+// layers, and KV-shared tail layers Append nothing (length 0). Deriving the
+// stride handles both — a shared layer's stride is simply 0, so it stays empty.
 func (c *KVCache) TruncateTo(pos int) {
 	if pos < 0 || pos > c.pos {
 		return
 	}
-	n := pos * c.kvDim
 	for l := range c.numLayers {
+		perPos := 0
+		if c.pos > 0 {
+			perPos = len(c.keys[l]) / c.pos // == this layer's width (0 for KV-shared)
+		}
+		n := pos * perPos
 		c.keys[l] = c.keys[l][:n]
 		c.vals[l] = c.vals[l][:n]
 	}
