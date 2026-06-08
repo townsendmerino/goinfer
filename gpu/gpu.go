@@ -106,6 +106,15 @@ type Context struct {
 	kvStoreShader     *wgpu.ShaderModule
 	kvStorePipeline   *wgpu.ComputePipeline
 	kvStoreLayout     *wgpu.BindGroupLayout
+
+	// §2 fused glue kernels (ensureFuse, decodefuse.go): fold quantize into its
+	// producer to shorten the serialized decode dependency chain.
+	rmsQuantShader      *wgpu.ShaderModule
+	rmsQuantPipeline    *wgpu.ComputePipeline
+	rmsQuantLayout      *wgpu.BindGroupLayout
+	swigluQuantShader   *wgpu.ShaderModule
+	swigluQuantPipeline *wgpu.ComputePipeline
+	swigluQuantLayout   *wgpu.BindGroupLayout
 }
 
 // New initializes a GPU context: instance → adapter (high-performance
@@ -222,6 +231,12 @@ func (c *Context) Close() {
 		c.ropeStoreShader.Release()
 		c.kvStorePipeline.Release()
 		c.kvStoreShader.Release()
+	}
+	if c.rmsQuantPipeline != nil {
+		c.rmsQuantPipeline.Release()
+		c.rmsQuantShader.Release()
+		c.swigluQuantPipeline.Release()
+		c.swigluQuantShader.Release()
 	}
 	c.pipeline.Release()
 	c.shader.Release()

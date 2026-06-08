@@ -42,7 +42,7 @@ type posUni struct {
 
 // NewDecodeRunner builds the persistent plan for a resident model.
 func (c *Context) NewDecodeRunner(m ModelW, hidden, nH, nKV, hd, inter, start int, eps, scale float32, addOne bool) (*DecodeRunner, error) {
-	for _, e := range []func() error{c.ensureGEMV, c.ensureQuantize, c.ensureLayer, c.ensureAttn} {
+	for _, e := range []func() error{c.ensureGEMV, c.ensureQuantize, c.ensureLayer, c.ensureAttn, c.ensureFuse} {
 		if err := e(); err != nil {
 			return nil, err
 		}
@@ -75,11 +75,23 @@ func (c *Context) NewDecodeRunner(m ModelW, hidden, nH, nKV, hd, inter, start in
 	}
 
 	// op builders (record a step against persistent buffers):
-	rms := func(in, w *wgpu.Buffer) *wgpu.Buffer {
-		out := storF(hidden)
-		p := uni([]uint32{uint32(hidden), f32bits(eps), boolU32(addOne), 0})
-		add(c.rmsnormPipeline, bind(c.rmsnormLayout, in, w, out, p), 64, 1)
-		return out
+	// rmsQuant fuses RMSNorm→quantize: one dispatch, no xn round-trip, one fewer
+	// link on the serialized decode spine (§2). Bit-exact with rms→quant.
+	rmsQuant := func(in, w *wgpu.Buffer, K int) (*wgpu.Buffer, *wgpu.Buffer) {
+		kp := padK(K)
+		q, s := storF(kp/4), storF(1)
+		p := uni([]uint32{uint32(K), f32bits(eps), boolU32(addOne), uint32(kp)})
+		add(c.rmsQuantPipeline, bind(c.rmsQuantLayout, in, w, q, s, p), 1, 1)
+		return q, s
+	}
+	// swigluQuant fuses SwiGLU→quantize: the inter-wide product never materializes
+	// or crosses a barrier — one fewer link and the big buffer stays off the spine.
+	swigluQuant := func(gate, up *wgpu.Buffer, K int) (*wgpu.Buffer, *wgpu.Buffer) {
+		kp := padK(K)
+		q, s := storF(kp/4), storF(1)
+		p := uni([]uint32{uint32(K), uint32(kp), 0, 0})
+		add(c.swigluQuantPipeline, bind(c.swigluQuantLayout, gate, up, q, s, p), 1, 1)
+		return q, s
 	}
 	quant := func(in *wgpu.Buffer, K int) (*wgpu.Buffer, *wgpu.Buffer) {
 		kp := padK(K)
@@ -94,6 +106,13 @@ func (c *Context) NewDecodeRunner(m ModelW, hidden, nH, nKV, hd, inter, start in
 		gx, gy := gemvGrid(rm.rows)
 		add(c.gemvPipeline, bind(c.gemvLayout, aq, rm.bq, as, rm.bScales, out, p), gx, gy)
 		return out
+	}
+	// gemvAdd is gemv with the residual fused into the epilogue: dst (the running
+	// hidden state) gets dst[n] += result, deleting a standalone residual link.
+	gemvAdd := func(aq, as *wgpu.Buffer, rm *ResidentW8A8, dst *wgpu.Buffer) {
+		p := uni([]uint32{1, uint32(rm.kp), uint32(rm.rows), 1})
+		gx, gy := gemvGrid(rm.rows)
+		add(c.gemvPipeline, bind(c.gemvLayout, aq, rm.bq, as, rm.bScales, dst, p), gx, gy)
 	}
 	rope := func(vec, invFreq *wgpu.Buffer, heads int) {
 		half := hd / 2
@@ -123,10 +142,6 @@ func (c *Context) NewDecodeRunner(m ModelW, hidden, nH, nKV, hd, inter, start in
 		}})
 		add(c.kvStorePipeline, bind(c.kvStoreLayout, src, cache, p), uint32(r.kvDim+63)/64, 1)
 	}
-	residual := func(x, y *wgpu.Buffer) {
-		p := uni([]uint32{uint32(hidden), 0, 0, 0})
-		add(c.residualPipeline, bind(c.residualLayout, x, y, p), uint32(hidden+63)/64, 1)
-	}
 
 	r.xd = keepBuf(func() *wgpu.Buffer {
 		b, _ := c.device.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(hidden * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst | wgpu.BufferUsageCopySrc})
@@ -135,8 +150,7 @@ func (c *Context) NewDecodeRunner(m ModelW, hidden, nH, nKV, hd, inter, start in
 
 	for i := range m.Layers {
 		lw := &m.Layers[i]
-		xn := rms(r.xd, lw.Attn.Norm.buf)
-		aq, as := quant(xn, hidden)
+		aq, as := rmsQuant(r.xd, lw.Attn.Norm.buf, hidden)
 		q, k, v := gemv(aq, as, lw.Attn.QProj), gemv(aq, as, lw.Attn.KProj), gemv(aq, as, lw.Attn.VProj)
 		rope(q, lw.Attn.InvFreq.buf, nH)
 		ropeStore(k, lw.Attn.InvFreq.buf, lw.Attn.KCache.buf, nKV) // rotate K + append into cache
@@ -148,18 +162,13 @@ func (c *Context) NewDecodeRunner(m ModelW, hidden, nH, nKV, hd, inter, start in
 		}})
 		add(c.attnPipeline, bind(c.attnLayout, q, lw.Attn.KCache.buf, lw.Attn.VCache.buf, ctxv, ap), uint32(nH), 1)
 		cq, cs := quant(ctxv, nH*hd)
-		residual(r.xd, gemv(cq, cs, lw.Attn.OProj))
-		xn2 := rms(r.xd, lw.MLPNorm.buf)
-		mq, ms := quant(xn2, hidden)
+		gemvAdd(cq, cs, lw.Attn.OProj, r.xd) // o-proj + residual into xd
+		mq, ms := rmsQuant(r.xd, lw.MLPNorm.buf, hidden)
 		gate, up := gemv(mq, ms, lw.Gate), gemv(mq, ms, lw.Up)
-		mid := storF(inter)
-		sp := uni([]uint32{uint32(inter), 0, 0, 0})
-		add(c.swigluPipeline, bind(c.swigluLayout, gate, up, mid, sp), uint32(inter+63)/64, 1)
-		dq, ds := quant(mid, inter)
-		residual(r.xd, gemv(dq, ds, lw.Down))
+		dq, ds := swigluQuant(gate, up, inter)
+		gemvAdd(dq, ds, lw.Down, r.xd) // down-proj + residual into xd
 	}
-	xnf := rms(r.xd, m.FinalNorm.buf)
-	fq, fs := quant(xnf, hidden)
+	fq, fs := rmsQuant(r.xd, m.FinalNorm.buf, hidden)
 	logits := gemv(fq, fs, m.LMHead)
 	r.lastLogits = logits
 	stag, _ := c.device.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(r.vocab * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})

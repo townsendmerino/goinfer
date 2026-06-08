@@ -16,7 +16,7 @@ import (
 // reads consecutive words (coalesced), then a tree-reduce sums the partials.
 // Decode is bandwidth-bound, so coalescing the weight stream is the actual unlock.
 const gemvW8A8ShaderWGSL = `
-struct Dims { m: u32, kp: u32, n: u32, _pad: u32 };
+struct Dims { m: u32, kp: u32, n: u32, addResidual: u32 };  // addResidual=1 ⇒ dst[n] += result (fused residual epilogue)
 
 // vec4<u32> view of the packed int8 (16 int8 / 16-byte transaction): wider loads
 // raise memory throughput vs scalar u32. kp is a multiple of 16, so kp/16 vec4s.
@@ -61,7 +61,12 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid
         stride = stride / 2u;
     }
     if (t == 0u) {
-        dst[n] = f32(partial[0]) * aScales[0] * bScales[n];
+        let r = f32(partial[0]) * aScales[0] * bScales[n];
+        // addResidual folds the residual-add into the matmul epilogue: dst is the
+        // running hidden state, dst[n] += r deletes a standalone residual dispatch
+        // (and its barrier link). Default 0 ⇒ overwrite, unchanged for all other
+        // callers (they pass dims._pad/addResidual = 0).
+        if (dims.addResidual == 1u) { dst[n] = dst[n] + r; } else { dst[n] = r; }
     }
 }
 `
