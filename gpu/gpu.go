@@ -144,9 +144,12 @@ func New() (*Context, error) {
 	lim := wgpu.DefaultLimits()
 	al := adapter.GetLimits().Limits
 	lim.MaxStorageBufferBindingSize = al.MaxStorageBufferBindingSize
-	if lim.MaxBufferSize < al.MaxStorageBufferBindingSize {
-		lim.MaxBufferSize = al.MaxStorageBufferBindingSize
-	}
+	// Raise MaxBufferSize to the binding max (2 GB on this card) so large single
+	// weights fit — a 7B's LM head is ~272 MB int4 / ~545 MB int8, past the 256 MB
+	// WebGPU default. Set unconditionally: DefaultLimits() leaves MaxBufferSize at
+	// the u64-max "unset" sentinel, so a `<` guard never fires and the device
+	// silently keeps the 256 MB default (it must be a concrete value to take).
+	lim.MaxBufferSize = al.MaxStorageBufferBindingSize
 	// The default cap (65535) is below a vocab-sized GEMV (one workgroup per output
 	// column → 152k for the LM head); raise it to the adapter's max.
 	if al.MaxComputeWorkgroupsPerDimension > lim.MaxComputeWorkgroupsPerDimension {
