@@ -4,6 +4,7 @@ package gpu
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/cogentcore/webgpu/wgpu"
 )
@@ -24,7 +25,7 @@ struct Dims { m: u32, kp: u32, n: u32, _pad: u32 };  // kp = K padded to mult of
 @group(0) @binding(0) var<storage, read>       aq:      array<vec4<u32>>;  // [kp/16] int8 act, 16/vec4
 @group(0) @binding(1) var<storage, read>       bq:      array<vec4<u32>>;  // [N*kp/32] nibbles, 32/vec4
 @group(0) @binding(2) var<storage, read>       aScale:  array<f32>;        // [1]
-@group(0) @binding(3) var<storage, read>       bScales: array<f32>;        // [N*kp/32] per-group
+@group(0) @binding(3) var<storage, read>       bScales: array<u32>;        // [N*kp/32] f16 group scales, 2/u32
 @group(0) @binding(4) var<storage, read_write> dst:     array<f32>;        // [N]
 @group(0) @binding(5) var<uniform>             dims:    Dims;
 
@@ -67,7 +68,9 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid
         idot = idot + dot8(w4.y, a0.z, a0.w);      // elems 8–15
         idot = idot + dot8(w4.z, a1.x, a1.y);      // elems 16–23
         idot = idot + dot8(w4.w, a1.z, a1.w);      // elems 24–31
-        acc = acc + f32(idot) * bScales[sBase + v];
+        let s = sBase + v;                          // f16 scales, 2 per u32
+        let pair = unpack2x16float(bScales[s >> 1u]);
+        acc = acc + f32(idot) * select(pair.x, pair.y, (s & 1u) == 1u);
     }
     partial[t] = acc;
     workgroupBarrier();
@@ -108,6 +111,66 @@ func (rm *ResidentW4A8) Release() {
 
 func padK32(k int) int { return (k + 31) &^ 31 }
 
+// f32to16 rounds float32 → IEEE-754 half (round-half-up). The per-group scales
+// are ~⅕ of the W4A8 stream at f32; half width halves that. Scales are small
+// positives — inf/subnormal/sign paths are handled but not exercised here.
+func f32to16(f float32) uint16 {
+	b := math.Float32bits(f)
+	sign := uint16((b >> 16) & 0x8000)
+	exp := int32((b>>23)&0xff) - 127 + 15
+	mant := b & 0x7fffff
+	if exp >= 0x1f {
+		return sign | 0x7c00
+	}
+	if exp <= 0 {
+		return sign
+	}
+	half := sign | uint16(exp<<10) | uint16(mant>>13)
+	if mant&0x1000 != 0 { // round up (carry propagates mantissa→exponent)
+		half++
+	}
+	return half
+}
+
+// f16to32 expands an IEEE-754 half to float32 (so the parity reference can
+// dequantize with the exact f16 the GPU reads).
+func f16to32(h uint16) float32 {
+	sign := uint32(h&0x8000) << 16
+	exp := uint32(h>>10) & 0x1f
+	mant := uint32(h & 0x3ff)
+	switch exp {
+	case 0:
+		if mant == 0 {
+			return math.Float32frombits(sign)
+		}
+		e := uint32(127 - 15 + 1)
+		for mant&0x400 == 0 {
+			mant <<= 1
+			e--
+		}
+		return math.Float32frombits(sign | e<<23 | (mant&0x3ff)<<13)
+	case 0x1f:
+		return math.Float32frombits(sign | 0x7f800000 | mant<<13)
+	default:
+		return math.Float32frombits(sign | (exp-15+127)<<23 | mant<<13)
+	}
+}
+
+// packF16Pairs packs []float32 into u32 words, two f16 per word (even index in
+// the low half), for the GPU's unpack2x16float reads. Odd length zero-pads.
+func packF16Pairs(f []float32) []uint32 {
+	out := make([]uint32, (len(f)+1)/2)
+	for i, v := range f {
+		h := uint32(f32to16(v))
+		if i&1 == 0 {
+			out[i/2] |= h
+		} else {
+			out[i/2] |= h << 16
+		}
+	}
+	return out
+}
+
 // packNibbles packs a [rows, cols] int4 matrix (values 0..15, already nibbles)
 // into [rows, kp/8] u32 words: element k of a row goes to word (k%kp)/8 at nibble
 // (k%8), i.e. word |= nib << (4*(k%8)). Rows zero-padded to kp (mult of 32).
@@ -147,13 +210,14 @@ func (c *Context) UploadW4A8(nib []uint8, scales []float32, N, K int) (*Resident
 	if err != nil {
 		return nil, fmt.Errorf("gpu: create W4A8 weight buffer: %w", err)
 	}
-	// pad scales to N*nGroups (the GPU reads a full nGroups per row)
+	// pad scales to N*nGroups, store at f16 (2 per u32) — the scale bytes are ~⅕
+	// of the stream; f16 halves that.
 	sc := make([]float32, N*nGroups)
 	for r := 0; r < N; r++ {
 		copy(sc[r*nGroups:(r+1)*nGroups], scales[r*nGroups:(r+1)*nGroups])
 	}
 	bs, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{
-		Label: "w4a8-bscales", Contents: wgpu.ToBytes(sc), Usage: wgpu.BufferUsageStorage,
+		Label: "w4a8-bscales", Contents: wgpu.ToBytes(packF16Pairs(sc)), Usage: wgpu.BufferUsageStorage,
 	})
 	if err != nil {
 		bq.Release()

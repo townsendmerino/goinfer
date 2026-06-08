@@ -57,7 +57,7 @@ func TestW4A8_parity_and_bandwidth(t *testing.T) {
 				}
 				idot += (int(nib[n*K+k]) - 8) * int(act[k])
 			}
-			total += float64(idot) * float64(scales[n*nGroups+g])
+			total += float64(idot) * float64(f16to32(f32to16(scales[n*nGroups+g]))) // f16 as the GPU reads them
 		}
 		ref[n] = float32(total * float64(aScale))
 	}
@@ -146,27 +146,21 @@ func TestW4A8_parity_and_bandwidth(t *testing.T) {
 	}
 	tlo, thi := timeKd(1, 20), timeKd(200, 20)
 	perUs := float64((thi - tlo).Microseconds()) / 199.0
-	// bytes this GEMV streams: nibbles (kp/2 per row) + f32 group scales (nGroups*4 per row)
-	wBytes := float64(N*kp/2 + N*nGroups*4)
+	// bytes this GEMV streams: nibbles (kp/2 per row) + f16 group scales (nGroups*2 per row)
+	wBytes := float64(N*kp/2 + N*nGroups*2)
 	gbs := wBytes / (perUs * 1e3)
-	// int8 equivalent of the SAME matrix for the ratio:
-	int8Bytes := float64(N*kp + N*4)
-	t.Logf("W4A8 GEMV: %.1f µs/dispatch | %.2f MB (%.0f%% of int8's %.2f MB) | %.1f GB/s",
+	int8Bytes := float64(N*kp + N*4) // same matrix at int8, for the ratio
+	t.Logf("W4A8 GEMV (f16 scales): %.1f µs/dispatch | %.2f MB (%.0f%% of int8's %.2f MB) | %.1f GB/s",
 		perUs, wBytes/1e6, wBytes/int8Bytes*100, int8Bytes/1e6, gbs)
 
 	// --- project the decode token vs the measured int8 baseline ---
 	// int8 token = 11.15 ms = gemv 4.3 (1.55 GB @ ~360 GB/s) + (glue+attn+
 	// barriers+host) 6.85 (fixed — W4A8 doesn't touch it). The W4A8 token gemv
-	// streams the whole model at the measured per-matrix ratio and the MEASURED
-	// W4A8 GB/s (302, not int8's 360 — int4 unpack is more ALU-bound).
+	// streams the whole model at the measured per-matrix byte ratio AND the
+	// measured W4A8 GB/s (int4 unpack is more ALU-bound than int8).
 	const int8TokenGemvGB, fixedMs = 1.55, 6.85
-	w4TokenGemvGB := int8TokenGemvGB * (wBytes / int8Bytes) // ~0.62× → ~0.96 GB
-	w4GemvMs := w4TokenGemvGB / gbs * 1e3
+	w4GemvMs := int8TokenGemvGB * (wBytes / int8Bytes) / gbs * 1e3
 	tokMs := w4GemvMs + fixedMs
 	t.Logf("projected token: gemv %.2f ms (was 4.3) + fixed %.2f → %.2f ms = %.0f tok/s (int8 was 89.7)",
 		w4GemvMs, fixedMs, tokMs, 1000.0/tokMs)
-	// f16 group scales would cut the scale bytes in half (~20%→~11% of the stream):
-	w4f16GB := int8TokenGemvGB * (float64(N*kp/2+N*nGroups*2) / int8Bytes)
-	t.Logf("  with f16 group scales: gemv ~%.2f ms → ~%.0f tok/s (the scale-overhead lever)",
-		w4f16GB/gbs*1e3+0, 1000.0/(w4f16GB/gbs*1e3+fixedMs))
 }
