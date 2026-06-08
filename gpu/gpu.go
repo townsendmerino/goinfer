@@ -115,6 +115,11 @@ type Context struct {
 	swigluQuantShader   *wgpu.ShaderModule
 	swigluQuantPipeline *wgpu.ComputePipeline
 	swigluQuantLayout   *wgpu.BindGroupLayout
+
+	// W4A8 decode GEMV (ensureGEMVW4, gemv_w4a8.go): int4 group-wise weights.
+	gemvW4Shader   *wgpu.ShaderModule
+	gemvW4Pipeline *wgpu.ComputePipeline
+	gemvW4Layout   *wgpu.BindGroupLayout
 }
 
 // New initializes a GPU context: instance → adapter (high-performance
@@ -237,6 +242,10 @@ func (c *Context) Close() {
 		c.rmsQuantShader.Release()
 		c.swigluQuantPipeline.Release()
 		c.swigluQuantShader.Release()
+	}
+	if c.gemvW4Pipeline != nil {
+		c.gemvW4Pipeline.Release()
+		c.gemvW4Shader.Release()
 	}
 	c.pipeline.Release()
 	c.shader.Release()
