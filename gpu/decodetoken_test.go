@@ -143,4 +143,20 @@ func TestDecodeToken_parity(t *testing.T) {
 	if cosF < 0.999 {
 		t.Errorf("DecodeTokenFused diverges: cosine=%.6f maxAbs=%.3e", cosF, maxAbsF)
 	}
+
+	// The persistent runner (pre-built buffers/bindgroups) must also match.
+	runner, err := ctx.NewDecodeRunner(mw, hidden, nH, nKV, hd, inter, 0, eps, scale, false)
+	if err != nil {
+		t.Fatalf("NewDecodeRunner: %v", err)
+	}
+	defer runner.Release()
+	gotR, err := runner.Run(x0, pos)
+	if err != nil {
+		t.Fatalf("DecodeRunner.Run: %v", err)
+	}
+	cosR, maxAbsR := cosine(gotR, refLogits)
+	t.Logf("DecodeRunner parity: cosine=%.6f maxAbs=%.3e", cosR, maxAbsR)
+	if cosR < 0.999 {
+		t.Errorf("DecodeRunner diverges: cosine=%.6f maxAbs=%.3e", cosR, maxAbsR)
+	}
 }

@@ -80,9 +80,24 @@ func TestDecodeToken_throughput(t *testing.T) {
 		ctx.DecodeTokenFused(x0, mw, hidden, nH, nKV, hd, inter, pos, 0, eps, scale, false)
 	}
 	perFused := time.Since(t1) / iters
+	// persistent runner: build once, time Run
+	runner, err := ctx.NewDecodeRunner(mw, hidden, nH, nKV, hd, inter, 0, eps, scale, false)
+	if err != nil {
+		t.Fatalf("NewDecodeRunner: %v", err)
+	}
+	defer runner.Release()
+	runner.Run(x0, pos)
+	t2 := time.Now()
+	for i := 0; i < iters; i++ {
+		runner.Run(x0, pos)
+	}
+	perRun := time.Since(t2) / iters
+
 	ms := func(d time.Duration) float64 { return float64(d.Microseconds()) / 1000 }
 	tps := func(d time.Duration) float64 { return 1e6 / float64(d.Microseconds()) }
-	t.Logf("per-op-submit DecodeToken: %.1f ms = %.1f tok/s", ms(perMulti), tps(perMulti))
-	t.Logf("one-buffer DecodeTokenFused: %.1f ms = %.1f tok/s  (staged E2E 25.6 tok/s = 3.07× CPU; CUDA ceiling 171)", ms(perFused), tps(perFused))
-	t.Logf("  → fused vs per-op-submit %.2f×", float64(perMulti)/float64(perFused))
+	t.Logf("per-op-submit DecodeToken:   %.1f ms = %5.1f tok/s", ms(perMulti), tps(perMulti))
+	t.Logf("one-buffer DecodeTokenFused: %.1f ms = %5.1f tok/s", ms(perFused), tps(perFused))
+	t.Logf("persistent DecodeRunner:     %.1f ms = %5.1f tok/s", ms(perRun), tps(perRun))
+	t.Logf("  → runner vs staged-E2E(25.6) %.2fx | vs CPU(8.5) %.2fx | %.0f%% of CUDA ceiling(171)",
+		tps(perRun)/25.6, tps(perRun)/8.5, tps(perRun)/171*100)
 }
