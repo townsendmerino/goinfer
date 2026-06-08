@@ -88,6 +88,14 @@ type Context struct {
 	residualShader   *wgpu.ShaderModule
 	residualPipeline *wgpu.ComputePipeline
 	residualLayout   *wgpu.BindGroupLayout
+
+	// RoPE + single-query attention pipelines, lazy via ensureAttn (attention.go).
+	ropeShader   *wgpu.ShaderModule
+	ropePipeline *wgpu.ComputePipeline
+	ropeLayout   *wgpu.BindGroupLayout
+	attnShader   *wgpu.ShaderModule
+	attnPipeline *wgpu.ComputePipeline
+	attnLayout   *wgpu.BindGroupLayout
 }
 
 // New initializes a GPU context: instance → adapter (high-performance
@@ -194,6 +202,12 @@ func (c *Context) Close() {
 		c.swigluShader.Release()
 		c.residualPipeline.Release()
 		c.residualShader.Release()
+	}
+	if c.ropePipeline != nil {
+		c.ropePipeline.Release()
+		c.ropeShader.Release()
+		c.attnPipeline.Release()
+		c.attnShader.Release()
 	}
 	c.pipeline.Release()
 	c.shader.Release()
