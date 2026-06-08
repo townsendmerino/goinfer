@@ -5,15 +5,69 @@
 > class, and what does it cost? Grounded in the current `gpu/` module
 > (~750 lines) and `decoder.Backend` as of v0.3.0.
 >
-> **STATUS (2026-06-08): Stages 1–3 executed and measured (seven commits,
-> `7ad1fd5` → `18cd52d`, held locally) — then REOPENED on roofline review.**
-> §0 records the measurements; **§0.5 shows they sit at ~20% of the
-> RTX 2070 SUPER's ceiling and names the suspect (sync/submission
-> structure), with the decisive next experiment.** §§2–3 are the original
-> pre-implementation plan, kept for the record with verdicts annotated.
-> Reading order: §0 → §0.5.
+> **STATUS (2026-06-08): RESOLVED — GPU residency wins. 84.5 tok/s, 3.3×
+> the CPU-glue hybrid, 9.95× CPU, ~49% of the CUDA ceiling.** Read §0.0
+> first; §0 and §0.5 below are the (now-superseded) intermediate
+> conclusions, kept as the investigation trail. Reading order: §0.0 → §0 →
+> §0.5 → §3.
 
-## 0. Measured outcome (2026-06-08)
+## 0.0 RESOLVED (2026-06-08): full-token GPU residency wins decisively
+
+The decode question is closed in favor of **a full-token on-GPU forward**,
+the opposite of §0's "staged hybrid optimal." §0 was a local optimum of an
+*unfused, single-thread-attention* implementation; once the real bottleneck
+was instrumented and fixed, residency wins by 3.3×.
+
+Campaign on the 1.5B int8 `.giw` (RTX 2070 SUPER / 3700X), bit-exact at
+every step:
+
+| step | tok/s | GB/s | whole-token GPU |
+|---|---|---|---|
+| §1 single command-buffer (KV copies removed, one pass) | 22.4 | 34.7 | 41.9 ms |
+| + rms+quant fused | 23.6 | 36.5 | 39.7 ms |
+| + swiglu+quant fused (36 KB intermediate off the spine) | 27.0 | 41.8 | 34.7 ms |
+| + residual→gemv epilogue | 27.1 | 42.0 | 34.7 ms |
+| + **attn warp-per-head** | **84.5** | **130.8** | **9.7 ms** |
+
+84.5 tok/s = **3.3× the staged hybrid (25.6)**, 9.95× CPU, ~49% of the
+CUDA ceiling, 37% of the streaming roofline. Commits `fbdb71f`, `decfccd`,
+`93d53c9` (main).
+
+**The finding that corrects the §5 model: the serialization tax was
+concentrated in ONE kernel, not spread across links.** The fusions
+(rms/residual, bordering cheap 6 KB buffers) landed only ~1.2× combined;
+swiglu+quant was the exception (+0.8×) because it kept a 36 KB intermediate
+off the spine. The attn rewrite alone landed **3.1×**: the
+`@workgroup_size(1)` kernel (12 single-thread workgroups) sat 28× on the
+un-overlappable RAW spine and *was* the bottleneck. Warp-per-head (one
+workgroup/head, 128 lanes, tree-reduced scores) dropped it 5.8 ms → 0.3 ms
+and collapsed the whole-token GPU time 34.7 → 9.7 ms. **Lesson: find the
+one kernel pinning the critical path before fusing anything — link-counting
+mispredicted by ~3×.**
+
+**The ceiling, now visible from the decomposition.** Token = 11.8 ms =
+9.7 GPU + 2.1 host. GPU 9.7 ms = gemv **4.3 (at roofline, ~360 GB/s,
+irreducible without W4A8)** + glue ~4.0 + attn 0.3. So:
+
+- The **≥100 tok/s gate is gated by host overhead, not the GPU** — the GPU
+  side is already ~103 tok/s-equivalent (9.7 ms). The lever is coalescing
+  the per-token uniform `WriteBuffer`s (§4), not more GPU link-folds (which
+  §5 + this campaign prove are diminishing on 6 KB buffers).
+- The **WebGPU decode wall** sits near gemv-floor + irreducible-glue ≈
+  7–8 ms (**~125–140 tok/s**). Below that needs a single-dispatch megakernel
+  (persistent-thread, whole layer in one dispatch), which **WGSL cannot
+  express** — that's the native-CUDA/Metal advantage, and the honest cap on
+  the pure-Go/WebGPU path.
+
+**Strategic verdict:** the bet is won. At 3.3× the prior hybrid, ~10× CPU,
+~49% of CUDA on one import with zero install and the same binary running
+CPU-only elsewhere, GPU residency is the right architecture and the
+embedding use case is served. Remaining work is a bounded host-overhead
+trim (§4) to cross 100, and W4A8 (fewer weight bytes → the only lever on
+the 4.3 ms gemv floor) as a future decode win. `dot4I8Packed` remains a
+*prefill* lever, upstream-blocked.
+
+## 0. Measured outcome (2026-06-08) — SUPERSEDED by §0.0
 
 | Stage | Verdict |
 |---|---|
