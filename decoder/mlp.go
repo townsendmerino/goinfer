@@ -200,7 +200,7 @@ func gatedMLP(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend
 	if lw.GateProj.isW8A8() && lw.UpProj.isW8A8() {
 		scr.gateUpOps[0] = linalg.W8A8Op{BQ: lw.GateProj.q8, Scales: lw.GateProj.scales, Dst: gate, N: lw.GateProj.rows}
 		scr.gateUpOps[1] = linalg.W8A8Op{BQ: lw.UpProj.q8, Scales: lw.UpProj.scales, Dst: up, N: lw.UpProj.rows}
-		linalg.MatmulBTW8A8Batch(scr.ws, h, 1, lw.GateProj.cols, scr.gateUpOps[:]) // gate/up in one dispatch
+		matmulW8A8Batch(be, scr.ws, h, 1, lw.GateProj.cols, scr.gateUpOps[:]) // gate/up in one dispatch (GPU: one submit)
 	} else {
 		lw.GateProj.matmulInto(scr.ws, be, h, gate, 1)
 		lw.UpProj.matmulInto(scr.ws, be, h, up, 1)

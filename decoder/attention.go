@@ -70,7 +70,7 @@ func causalAttention(
 		scr.qkvOps[0] = linalg.W8A8Op{BQ: lw.QProj.q8, Scales: lw.QProj.scales, Dst: q, N: lw.QProj.rows}
 		scr.qkvOps[1] = linalg.W8A8Op{BQ: lw.KProj.q8, Scales: lw.KProj.scales, Dst: k, N: lw.KProj.rows}
 		scr.qkvOps[2] = linalg.W8A8Op{BQ: lw.VProj.q8, Scales: lw.VProj.scales, Dst: v, N: lw.VProj.rows}
-		linalg.MatmulBTW8A8Batch(scr.ws, h, 1, lw.QProj.cols, scr.qkvOps[:])
+		matmulW8A8Batch(be, scr.ws, h, 1, lw.QProj.cols, scr.qkvOps[:])
 	} else {
 		lw.QProj.matmulInto(scr.ws, be, h, q, 1)
 		lw.KProj.matmulInto(scr.ws, be, h, k, 1)

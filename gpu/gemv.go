@@ -91,6 +91,135 @@ func (c *Context) ensureGEMV() error {
 	return nil
 }
 
+// BatchGEMV runs several decode GEMVs that share one activation (the fused
+// qkv / gate-up projections) as ONE submit with ONE Poll — the sync-floor cut.
+// aq+aScale are the quantized shared activation; rms are the resident weights
+// (all the same K). Returns each op's [rms[i].rows] output. Buffers are per-call
+// (the win here is collapsing N syncs to one, not buffer reuse).
+func (c *Context) BatchGEMV(aq []int8, aScale float32, rms []*ResidentW8A8) ([][]float32, error) {
+	if err := c.ensureGEMV(); err != nil {
+		return nil, err
+	}
+	K := rms[0].cols
+	aBuf, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{
+		Label: "batch-act", Contents: wgpu.ToBytes(packInt8(aq, 1, K)), Usage: wgpu.BufferUsageStorage,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("gpu: BatchGEMV act: %w", err)
+	}
+	defer aBuf.Release()
+	asBuf, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{
+		Label: "batch-ascale", Contents: wgpu.ToBytes([]float32{aScale}), Usage: wgpu.BufferUsageStorage,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("gpu: BatchGEMV ascale: %w", err)
+	}
+	defer asBuf.Release()
+
+	type perOp struct {
+		dst, dims, stag *wgpu.Buffer
+		bg              *wgpu.BindGroup
+		n               int
+	}
+	pops := make([]perOp, len(rms))
+	release := func() {
+		for _, p := range pops {
+			if p.dst != nil {
+				p.dst.Release()
+			}
+			if p.dims != nil {
+				p.dims.Release()
+			}
+			if p.stag != nil {
+				p.stag.Release()
+			}
+			if p.bg != nil {
+				p.bg.Release()
+			}
+		}
+	}
+
+	enc, _ := c.device.CreateCommandEncoder(nil)
+	defer enc.Release()
+	pass := enc.BeginComputePass(nil)
+	pass.SetPipeline(c.gemvPipeline)
+	for i, rm := range rms {
+		N := rm.rows
+		dst, err := c.device.CreateBuffer(&wgpu.BufferDescriptor{Label: "batch-dst", Size: uint64(N * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
+		if err != nil {
+			pass.Release()
+			release()
+			return nil, fmt.Errorf("gpu: BatchGEMV dst: %w", err)
+		}
+		dims, _ := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "batch-dims", Contents: wgpu.ToBytes([]uint32{1, uint32(rm.kp), uint32(N), 0}), Usage: wgpu.BufferUsageUniform})
+		bg, err := c.device.CreateBindGroup(&wgpu.BindGroupDescriptor{
+			Layout: c.gemvLayout,
+			Entries: []wgpu.BindGroupEntry{
+				{Binding: 0, Buffer: aBuf, Size: aBuf.GetSize()},
+				{Binding: 1, Buffer: rm.bq, Size: rm.bq.GetSize()},
+				{Binding: 2, Buffer: asBuf, Size: asBuf.GetSize()},
+				{Binding: 3, Buffer: rm.bScales, Size: rm.bScales.GetSize()},
+				{Binding: 4, Buffer: dst, Size: dst.GetSize()},
+				{Binding: 5, Buffer: dims, Size: dims.GetSize()},
+			},
+		})
+		if err != nil {
+			dst.Release()
+			dims.Release()
+			pass.Release()
+			release()
+			return nil, fmt.Errorf("gpu: BatchGEMV bind: %w", err)
+		}
+		pops[i] = perOp{dst: dst, dims: dims, bg: bg, n: N}
+		pass.SetBindGroup(0, bg, nil)
+		pass.DispatchWorkgroups(uint32(N), 1, 1)
+	}
+	if err := pass.End(); err != nil {
+		pass.Release()
+		release()
+		return nil, fmt.Errorf("gpu: BatchGEMV pass: %w", err)
+	}
+	pass.Release()
+	for i := range pops {
+		stag, err := c.device.CreateBuffer(&wgpu.BufferDescriptor{Label: "batch-stage", Size: uint64(pops[i].n * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
+		if err != nil {
+			release()
+			return nil, fmt.Errorf("gpu: BatchGEMV stage: %w", err)
+		}
+		pops[i].stag = stag
+		if err := enc.CopyBufferToBuffer(pops[i].dst, 0, stag, 0, uint64(pops[i].n*4)); err != nil {
+			release()
+			return nil, fmt.Errorf("gpu: BatchGEMV copy: %w", err)
+		}
+	}
+	cmd, _ := enc.Finish(nil)
+	defer cmd.Release()
+	c.queue.Submit(cmd)
+
+	statuses := make([]wgpu.BufferMapAsyncStatus, len(pops))
+	for i := range pops {
+		idx := i
+		if err := pops[i].stag.MapAsync(wgpu.MapModeRead, 0, uint64(pops[i].n*4), func(s wgpu.BufferMapAsyncStatus) { statuses[idx] = s }); err != nil {
+			release()
+			return nil, fmt.Errorf("gpu: BatchGEMV map: %w", err)
+		}
+	}
+	c.device.Poll(true, nil) // ONE sync for the whole batch
+	outs := make([][]float32, len(pops))
+	for i := range pops {
+		if statuses[i] != wgpu.BufferMapAsyncStatusSuccess {
+			release()
+			return nil, fmt.Errorf("gpu: BatchGEMV map[%d] failed: %v", i, statuses[i])
+		}
+		out := make([]float32, pops[i].n)
+		copy(out, wgpu.FromBytes[float32](pops[i].stag.GetMappedRange(0, uint(pops[i].n*4))))
+		pops[i].stag.Unmap()
+		outs[i] = out
+	}
+	release()
+	return outs, nil
+}
+
 // GEMVRunner is the steady-state decode path: it allocates the activation /
 // scale / output / staging buffers and the bind group ONCE for a given resident
 // weight, then each Run only WriteBuffers the new activation and dispatches —

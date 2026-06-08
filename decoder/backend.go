@@ -40,6 +40,26 @@ type QuantBackend interface {
 	MatmulW8A8(a []float32, bQ []int8, bScales []float32, dst []float32, M, K, N int) bool
 }
 
+// QuantBatchBackend additionally runs a SET of W8A8 matmuls that share one
+// activation a[M,K] — the fused qkv and gate/up projections — as a single
+// submit: quantize once, dispatch all ops, sync once. This is what makes the GPU
+// worthwhile at decode (a token issues hundreds of tiny matmuls, each otherwise a
+// separate submit+poll; batching the independent ones cuts the sync count). The
+// backend keeps each op's weight resident keyed by &op.BQ[0]. Returns false to
+// decline (the caller uses the CPU batch kernel).
+type QuantBatchBackend interface {
+	MatmulW8A8Batch(a []float32, M, K int, ops []linalg.W8A8Op) bool
+}
+
+// matmulW8A8Batch routes a shared-activation W8A8 batch through a
+// QuantBatchBackend (one GPU submit) when available, else the CPU batch kernel.
+func matmulW8A8Batch(be Backend, ws *linalg.Workspace, a []float32, M, K int, ops []linalg.W8A8Op) {
+	if qb, ok := be.(QuantBatchBackend); ok && qb.MatmulW8A8Batch(a, M, K, ops) {
+		return
+	}
+	linalg.MatmulBTW8A8Batch(ws, a, M, K, ops)
+}
+
 var (
 	backendMu       sync.RWMutex
 	backendRegistry = map[string]func() (Backend, error){}

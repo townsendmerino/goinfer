@@ -158,6 +158,44 @@ func (b *webgpuBackend) matmulLocked(a, bMat []float32, M, K, N int) ([]float32,
 	return b.ctx.MatmulBTResident(a, rm, M)
 }
 
+// MatmulW8A8Batch runs the fused qkv / gate-up projections (shared activation,
+// M=1 decode) as one GPU submit — quantize once, dispatch all, sync once. Falls
+// back (returns false) for M>1 or any GPU error.
+func (b *webgpuBackend) MatmulW8A8Batch(a []float32, M, K int, ops []linalg.W8A8Op) bool {
+	if M != 1 || len(ops) == 0 {
+		return false
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	rms := make([]*ResidentW8A8, len(ops))
+	for i, op := range ops {
+		if len(op.BQ) == 0 {
+			return false
+		}
+		qr := b.qresident[&op.BQ[0]]
+		if qr == nil {
+			rm, err := b.ctx.UploadW8A8(op.BQ, op.Scales, op.N, K)
+			if err != nil {
+				b.fallbacks++
+				return false
+			}
+			qr = &qResident{rm: rm}
+			b.qresident[&op.BQ[0]] = qr
+		}
+		rms[i] = qr.rm
+	}
+	aq, aScales := linalg.QuantizeRowsInt8(a, 1, K)
+	outs, err := b.ctx.BatchGEMV(aq, aScales[0], rms)
+	if err != nil {
+		b.fallbacks++
+		return false
+	}
+	for i := range ops {
+		copy(ops[i].Dst, outs[i])
+	}
+	return true
+}
+
 func (b *webgpuBackend) Close() error {
 	b.mu.Lock()
 	for _, rm := range b.resident {
