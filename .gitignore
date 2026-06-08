@@ -46,6 +46,8 @@ __pycache__/
 # Internal docs — sprint scratchpads, planning, strategy. Public repo, so the
 # whole dir stays local ("internal" by name, not by visibility).
 docs/internal/
+# …except gpu-assessment.md — tracked so it syncs across machines.
+!docs/internal/gpu-assessment.md
 
 # Stray binaries from `go build ./cmd/...` in the repo root
 /serve
