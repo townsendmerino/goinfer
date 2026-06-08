@@ -7,9 +7,15 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/townsendmerino/goinfer/internal/giw"
 )
+
+// decodeTiming env-gates per-component decode timing (GOINFER_DECODE_TIMING=1) so
+// the residency path's per-token cost can be decomposed without touching the hot
+// path otherwise.
+var decodeTiming = os.Getenv("GOINFER_DECODE_TIMING") != ""
 
 // Model is a loaded Gemma 3 checkpoint plus the compute backend. Goroutine
 // safety follows encoder.Model: Weights are immutable after Load; per-
@@ -327,27 +333,36 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	// logits. On the batched archs this runs the layers at M=len in one pass (each
 	// weight streamed once — ~1.7–2× faster TTFT than sequential), LM head on the
 	// last position only. Reuse means len here is the suffix, not the whole prompt.
-	logits, err := m.prefillLogits(prompt[prefillFrom:], cache)
-	if err != nil {
-		g.err = err
-		return
-	}
 	// GPU full-residency decode (webgpu + eligible arch + plain stateless
-	// Generate). Prefill ran on the CPU above (batched, fast TTFT); upload its
-	// post-RoPE K/V into the resident GPU caches, then decode on the GPU. Sessions
-	// (commit != nil) and prefix-reuse (prefillFrom > 0) keep the CPU/staged path.
+	// Generate). Sessions (commit != nil) and prefix-reuse (prefillFrom > 0) keep
+	// the CPU/staged path. Prefill = option (a): run the prompt through the
+	// resident DecodeRunner sequentially to build its GPU KV (also warms the
+	// pipelines); the last token's logits seed decode. O(prompt-len) GPU Runs —
+	// fast for typical prompts since a GPU Run ≫ a CPU int4 forward (the K/V-upload
+	// bridge stays for future prefix-reuse; batched on-device prefill, the
+	// long-prompt fix, is deferred).
 	useGPU := m.resident != nil && prefillFrom == 0 && commit == nil
-	gpuPos := cache.Pos()
+	gpuPos := 0
+	var logits []float32
+	var err error
 	if useGPU {
-		for l := 0; l < m.w.arch.NumLayers; l++ {
-			if e := m.resident.UploadKV(l, cache.Keys(l), cache.Vals(l)); e != nil {
-				g.err = e
+		for i, id := range prompt {
+			if logits, err = m.resident.Forward(m.embedResident(id), i); err != nil {
+				g.err = err
 				return
 			}
+		}
+		gpuPos = len(prompt)
+	} else {
+		if logits, err = m.prefillLogits(prompt[prefillFrom:], cache); err != nil {
+			g.err = err
+			return
 		}
 	}
 	// Decode loop.
 	var generated []int
+	var tProc, tSample, tEmbed, tFwd time.Duration
+	var nFwd int
 	for range maxTokens {
 		select {
 		case <-ctx.Done():
@@ -355,19 +370,30 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 			return
 		default:
 		}
+		var t0 time.Time
+		if decodeTiming {
+			t0 = time.Now()
+		}
 		// Constrained decoding: let the processor mask this step's logits
 		// (based on what's been generated) before sampling and the stop check.
 		if sp.LogitProcessor != nil {
 			sp.LogitProcessor(generated, logits)
+		}
+		if decodeTiming {
+			tProc += time.Since(t0)
+			t0 = time.Now()
 		}
 		info, err := sampler.SampleWithInfo(logits)
 		if err != nil {
 			g.err = err
 			return
 		}
+		if decodeTiming {
+			tSample += time.Since(t0)
+		}
 		next := info.ID
 		if m.isStop(next, sp) {
-			return
+			break
 		}
 		if sp.Logprobs {
 			g.Logprobs = append(g.Logprobs, info)
@@ -375,10 +401,23 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		out <- next
 		generated = append(generated, next)
 		if useGPU {
-			logits, err = m.resident.Forward(m.embedResident(next), gpuPos)
+			var emb []float32
+			if decodeTiming {
+				t0 = time.Now()
+				emb = m.embedResident(next)
+				tEmbed += time.Since(t0)
+				t0 = time.Now()
+			} else {
+				emb = m.embedResident(next)
+			}
+			logits, err = m.resident.Forward(emb, gpuPos)
 			gpuPos++
 		} else {
 			logits, err = m.forward(next, cache)
+		}
+		if decodeTiming {
+			tFwd += time.Since(t0)
+			nFwd++
 		}
 		if err != nil {
 			g.err = err
@@ -387,6 +426,11 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		if commit != nil {
 			commit(next)
 		}
+	}
+	if decodeTiming && nFwd > 0 {
+		ms := func(d time.Duration) float64 { return float64(d.Microseconds()) / 1000 / float64(nFwd) }
+		fmt.Printf("DECODE TIMING (%d tok, gpu=%v): forward %.1f ms | sample %.2f ms | logitProc %.2f ms | embed %.2f ms /token\n",
+			nFwd, useGPU, ms(tFwd), ms(tSample), ms(tProc), ms(tEmbed))
 	}
 }
 
