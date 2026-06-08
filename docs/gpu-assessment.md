@@ -30,9 +30,25 @@ every step:
 | + **attn warp-per-head** | **84.5** | **130.8** | **9.7 ms** |
 | + §4 share per-token uniforms | **89.7** | **138.8** | 9.7 ms (host 1.0) |
 
-89.7 tok/s = **3.50× the staged hybrid (25.6)**, 10.6× CPU, ~52% of the
-CUDA ceiling, 40% of the streaming roofline. Commits `fbdb71f`, `decfccd`,
-`93d53c9`, `eaf9a6c` (main).
+89.7 tok/s = **3.50× the staged hybrid (25.6)**, 10.6× CPU, 40% of the
+streaming roofline. Commits `fbdb71f`, `decfccd`, `93d53c9`, `eaf9a6c`
+(main).
+
+**Ollama/llama.cpp calibration — MEASURED (2026-06-08, same RTX 2070 SUPER,
+100% GPU), replacing the earlier estimated "CUDA ceiling":**
+
+| engine | quant | bytes/tok | decode tok/s | eff. GB/s | % roofline |
+|---|---|---|---|---|---|
+| Ollama / llama.cpp CUDA | Qwen 1.5B q4 | ~0.9 GB | ~191 | ~170 | ~49% |
+| goinfer / WebGPU | Qwen 1.5B int8 | ~1.55 GB | 89.7 | ~139 | ~40% |
+
+Raw, goinfer is **47% of Ollama's tok/s** — but that's not equal-quant:
+Ollama runs q4 (~half the weight bytes), and decode is bandwidth-bound, so
+q4 gets ~2× tok/s for free. The honest engine-vs-engine number is **per-byte
+efficiency: goinfer is at ~82% of Ollama's GB/s (≈1.2× gap)** — one WebGPU
+shader set vs years of fused-CUDA tuning, exactly the tradeoff §2 chose. The
+predicted "40–60% of llama.cpp throughput" band (§2) and the guessed ~171
+ceiling both held (actual 191).
 
 **The finding that corrects the §5 model: the serialization tax was
 concentrated in ONE kernel, not spread across links.** The fusions
@@ -72,13 +88,24 @@ irreducible without W4A8)** + glue ~4.0 + attn 0.3. So:
   card (the 4.3 + 4.0 split is the evidence — no grind needed to know it).
 
 **Strategic verdict:** the bet is won. At 3.50× the prior hybrid, ~10.6× CPU,
-52% of CUDA on one import with zero install and the same binary running
-CPU-only elsewhere, GPU residency is the right architecture and the
-embedding use case is served. The remaining ~10% to the 100 headline would
-come only from cutting GPU glue (the megakernel wall) — not worth grinding;
-W4A8 (fewer weight bytes → the only lever on the 4.3 ms gemv floor) is the
-real future decode win. `dot4I8Packed` remains a *prefill* lever,
-upstream-blocked.
+~82% of Ollama's per-byte efficiency on one import with zero install and the
+same binary running CPU-only elsewhere, GPU residency is the right
+architecture and the embedding use case is served. The remaining ~10% to the
+100 headline would come only from cutting GPU glue (the megakernel wall) —
+not worth grinding.
+
+**W4A8 is the real future decode lever — but size it honestly.** It cuts
+*only* the gemv (4.3 → ~2.2 ms; half the weight bytes); the glue (4.0),
+attn (0.3) and encode (1.0) operate on activations / dispatch count and are
+**fixed**. So the token goes ~11.15 → ~9.0 ms ≈ **~110 tok/s**, not the
+naive "scale the whole token by bytes → ~175." That's ~58% of Ollama's q4
+191 at *equal* quant (goinfer-int4 vs Ollama-q4) — a real, worthwhile gain
+that closes about half the raw gap, but it does **not** reach parity:
+as the token shrinks, the fixed glue+encode overhead becomes a *larger*
+fraction, so per-byte efficiency drops below today's 82%. That fixed
+WebGPU encode/glue tax is exactly what Ollama's fused-CUDA megakernel
+avoids — the same wall, now measured against Ollama. `dot4I8Packed` remains
+a *prefill* lever, upstream-blocked.
 
 ## 0. Measured outcome (2026-06-08) — SUPERSEDED by §0.0
 
@@ -158,12 +185,11 @@ artifact diagnoses:
 
 **Still open before any conclusion:**
 
-1. **llama.cpp calibration — blocked on tooling** (no CUDA toolkit;
-   Vulkan needs a source build). Cheap unblock for the CUDA *ceiling*
-   number: **Ollama's prebuilt bundle ships its own CUDA runtime** — no
-   toolkit needed; `ollama run --verbose` reports eval tok/s on the same
-   q4 1.5B in minutes. The same-API Vulkan comparison still wants a
-   llama.cpp source build (moderate yak-shave; worth it once).
+1. **llama.cpp calibration — DONE (2026-06-08)** via Ollama's bundled CUDA
+   runtime: Qwen 1.5B q4 = ~191 tok/s / ~170 GB/s on the 2070S. goinfer is
+   47% raw / **~82% per-byte efficiency**. See §0.0 table. (A from-source
+   Vulkan llama.cpp build for the same-API comparison is still optional;
+   the CUDA number was the one that mattered.)
 2. **Real full-token on-GPU forward** (attention + KV resident, zero CPU
    interleave per token) — the probe's 1.48× floor plus the roofline
    says build it. **The E2E model-packaging blocker is already solved
