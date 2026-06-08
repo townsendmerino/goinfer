@@ -77,6 +77,17 @@ type Context struct {
 	tiledShader   *wgpu.ShaderModule
 	tiledPipeline *wgpu.ComputePipeline
 	tiledLayout   *wgpu.BindGroupLayout
+
+	// Elementwise/norm pipelines for the fused MLP, lazy via ensureLayer (layer.go).
+	rmsnormShader    *wgpu.ShaderModule
+	rmsnormPipeline  *wgpu.ComputePipeline
+	rmsnormLayout    *wgpu.BindGroupLayout
+	swigluShader     *wgpu.ShaderModule
+	swigluPipeline   *wgpu.ComputePipeline
+	swigluLayout     *wgpu.BindGroupLayout
+	residualShader   *wgpu.ShaderModule
+	residualPipeline *wgpu.ComputePipeline
+	residualLayout   *wgpu.BindGroupLayout
 }
 
 // New initializes a GPU context: instance → adapter (high-performance
@@ -156,6 +167,14 @@ func (c *Context) Close() {
 	if c.tiledPipeline != nil {
 		c.tiledPipeline.Release()
 		c.tiledShader.Release()
+	}
+	if c.rmsnormPipeline != nil {
+		c.rmsnormPipeline.Release()
+		c.rmsnormShader.Release()
+		c.swigluPipeline.Release()
+		c.swigluShader.Release()
+		c.residualPipeline.Release()
+		c.residualShader.Release()
 	}
 	c.pipeline.Release()
 	c.shader.Release()
