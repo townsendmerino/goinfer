@@ -57,6 +57,11 @@ type Context struct {
 	shader   *wgpu.ShaderModule
 	pipeline *wgpu.ComputePipeline
 	layout   *wgpu.BindGroupLayout
+
+	// W8A8 (int8×int8) pipeline, compiled lazily by ensureQuant (quant.go).
+	quantShader   *wgpu.ShaderModule
+	quantPipeline *wgpu.ComputePipeline
+	quantLayout   *wgpu.BindGroupLayout
 }
 
 // New initializes a GPU context: instance → adapter (high-performance
@@ -121,6 +126,10 @@ func (c *Context) Backend() string {
 // Close releases all GPU resources. Safe to call once; the Context must
 // not be used afterward.
 func (c *Context) Close() {
+	if c.quantPipeline != nil {
+		c.quantPipeline.Release()
+		c.quantShader.Release()
+	}
 	c.pipeline.Release()
 	c.shader.Release()
 	c.queue.Release()
