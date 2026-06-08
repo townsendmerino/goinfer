@@ -35,7 +35,35 @@ type loadedModel struct {
 	name     string      // served id (reported by /v1/models, matched on the request model field)
 	fp       string      // model fingerprint (binds --session-dir snapshots)
 	sessions *sessionLRU // prefix-keyed KV reuse across requests
-	mu       sync.Mutex  // serialize this model's generations
+	mu       sync.Mutex  // serialize this model's generations (the single decode worker)
+	// queue bounds in-flight+waiting requests (cap = 1 running + --max-queue
+	// waiting); a request claims a slot before mu. nil = unbounded. Honest
+	// backpressure, not continuous batching — queue-full returns 429 Retry-After.
+	queue chan struct{}
+}
+
+// enter claims a queue slot then locks the model's mutex (the decode worker). On
+// a full queue it writes a 429 + Retry-After and returns false.
+func (lm *loadedModel) enter(w http.ResponseWriter) bool {
+	if lm.queue != nil {
+		select {
+		case lm.queue <- struct{}{}:
+		default:
+			w.Header().Set("Retry-After", "1")
+			writeErr(w, http.StatusTooManyRequests, fmt.Sprintf("model %q queue full; retry", lm.name))
+			return false
+		}
+	}
+	lm.mu.Lock()
+	return true
+}
+
+// exit releases the mutex then the queue slot (paired with enter).
+func (lm *loadedModel) exit() {
+	lm.mu.Unlock()
+	if lm.queue != nil {
+		<-lm.queue
+	}
 }
 
 type server struct {
@@ -206,8 +234,10 @@ func (s *server) handleChat(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	lm.mu.Lock()
-	defer lm.mu.Unlock()
+	if !lm.enter(w) {
+		return
+	}
+	defer lm.exit()
 	id := "chatcmpl-" + reqID()
 	created := time.Now().Unix()
 
@@ -265,8 +295,10 @@ func (s *server) handleCompletions(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	lm.mu.Lock()
-	defer lm.mu.Unlock()
+	if !lm.enter(w) {
+		return
+	}
+	defer lm.exit()
 	id := "cmpl-" + reqID()
 	created := time.Now().Unix()
 

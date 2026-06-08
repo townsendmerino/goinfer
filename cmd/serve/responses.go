@@ -136,8 +136,10 @@ func (s *server) handleResponses(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	lm.mu.Lock()
-	defer lm.mu.Unlock()
+	if !lm.enter(w) {
+		return
+	}
+	defer lm.exit()
 	inTok := len(gr.promptIDs)
 
 	if req.Stream {
@@ -193,8 +195,10 @@ func (s *server) respondTools(w http.ResponseWriter, lm *loadedModel, req respon
 			}
 		}
 	}
-	lm.mu.Lock()
-	defer lm.mu.Unlock()
+	if !lm.enter(w) {
+		return
+	}
+	defer lm.exit()
 	inTok := len(gr.promptIDs)
 	var sb strings.Builder
 	_, nComp, _ := lm.drive(context.Background(), gr, func(t string) { sb.WriteString(t) })

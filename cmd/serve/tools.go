@@ -47,8 +47,10 @@ func (s *server) handleChatTools(w http.ResponseWriter, r *http.Request, req cha
 		}
 	}
 
-	lm.mu.Lock()
-	defer lm.mu.Unlock()
+	if !lm.enter(w) {
+		return
+	}
+	defer lm.exit()
 	id := "chatcmpl-" + reqID()
 	created := time.Now().Unix()
 

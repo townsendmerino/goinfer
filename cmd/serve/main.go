@@ -79,6 +79,7 @@ type config struct {
 	name       string // -served-model-name (applies only to a single unnamed --model)
 	kvSessions int
 	sessionDir string // -session-dir (also where /admin unload snapshots warm KV)
+	maxQueue   int    // -max-queue: bounded per-model queue depth (0 = unbounded)
 	allowAdmin bool   // -allow-admin: enable POST /admin/models/{load,unload}
 
 	embedPath  string // encoder (-embed-model); "" = no /v1/embeddings
@@ -102,6 +103,7 @@ func main() {
 	flag.StringVar(&cfg.lora, "lora", "", "optional PEFT LoRA adapter dir, merged into the (safetensors) base at load")
 	flag.StringVar(&cfg.name, "served-model-name", "", "served id for a single unnamed --model (default: file/dir basename)")
 	flag.IntVar(&cfg.kvSessions, "kv-sessions", 4, "number of conversations to keep prefilled for prompt-prefix KV reuse (0 disables)")
+	flag.IntVar(&cfg.maxQueue, "max-queue", 8, "per-model backpressure: max queued requests before 429 (0 = unbounded)")
 	flag.StringVar(&cfg.embedPath, "embed-model", "", "embedding model: a CodeRankEmbed HF dir (config.json + model.safetensors + tokenizer.json) for /v1/embeddings")
 	flag.StringVar(&cfg.embedQuant, "embed-quant", "f32", "embedding weight precision: f32 | q8")
 	flag.StringVar(&cfg.embedName, "embed-served-model-name", "", "embedding model id reported by /v1/models (default: dir basename)")
@@ -226,6 +228,9 @@ func loadDecoder(spec modelSpec, cfg config) (*loadedModel, error) {
 		// capHint 0: KV grows on demand. The fingerprint binds disk snapshots to
 		// this exact model+quant so a -session-dir reused across models is rejected.
 		sessions: newSessionLRU(model, cfg.kvSessions, 0, fp),
+	}
+	if cfg.maxQueue > 0 {
+		lm.queue = make(chan struct{}, 1+cfg.maxQueue)
 	}
 	if tmpl, derr := chat.Detect(chat.Meta{ChatTemplate: tk.ChatTemplate(), HasToken: tk.Has}); derr == nil {
 		lm.tmpl = tmpl
