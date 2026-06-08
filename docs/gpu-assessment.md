@@ -101,10 +101,11 @@ architecture and the embedding use case is served. The remaining ~10% to the
 100 headline would come only from cutting GPU glue (the megakernel wall) —
 not worth grinding.
 
-**W4A8 — PROBED (2026-06-08, commits `5c3777f`, `196bd6d`). It is a
-FOOTPRINT lever, not a speed lever.** The GPU int4 group-wise GEMV kernel is
-built and bit-exact (cosine 1.0 vs a grouped int8×int4 reference; format
-matches aikit's int4-resident — group 32, nibble−8, f16 group scales). The
+**W4A8 — PROBED + WIRED + 7B FOOTPRINT PROVEN (2026-06-08, commits `5c3777f`,
+`196bd6d`, `ecfe527`, `3331d1c`). It is a FOOTPRINT lever, not a speed lever.**
+The GPU int4 group-wise GEMV kernel is built, bit-exact, AND wired into the
+DecodeRunner (steps 1–2): a `decodeWeight` interface lets one builder run W8A8
+or W4A8; the full-token int4 forward matches a CPU oracle (cosine 1.0). The
 gate-shape probe corrects two naive assumptions:
 
 - **Bytes: int4 is 56% of int8, not 50%** — the per-group f16 scales add
@@ -117,25 +118,49 @@ gate-shape probe corrects two naive assumptions:
   ALU-bound also means f16 scales **don't help speed** (96 vs 97) — their win
   is footprint.
 
-So the decode number is a byproduct; **the value is footprint**, and the fit
-arithmetic clears (Qwen2.5-7B, the model that does NOT fit at int8):
+So the decode number is a byproduct; **the value is footprint, now MEASURED
+end-to-end on the GPU** (Qwen2.5-7B shape, the model that does NOT fit at int8):
 
-| | int8 | int4 (W4A8) |
+| | int8 | int4 (W4A8), measured |
 |---|---|---|
 | 7B resident weights | 7.07 GB (won't fit) | **3.98 GB** |
-| + KV f32 @ 4k / 16k / 32k ctx | — | 4.55 / 5.96 / 7.84 GB total |
+| + 16k f32 KV | — | **+1.88 GB** |
+| total resident | 8.95 GB → won't fit | **5.86 GB → fits** |
+| empirical peak VRAM | — | **6937 / 8192 MiB (~1.25 GB headroom)** |
+| decode throughput | — | **51 tok/s, 204 GB/s = 58% roofline** |
 
-7B int4 fits the 8 GB card **comfortably at ≤16k context** (~4.5–6 GB,
-clearing ~7 GB usable after desktop); only full 32k is tight → wants f16 KV
-(a separate item). int4 is what makes the **7–12B class runnable at all** on
-this card — a capability expansion, the actual W4A8 win. It does **not** close
-the engine gap vs Ollama — measured ~96 vs Ollama's q4_K_M **186** is **~52%**
-at equal 4-bit quant, even a touch *below* the q8 ratio (61%) because the
-ALU-bound int4 kernel gives up efficiency as the token shrinks and the fixed
-encode/glue tax becomes a larger fraction. W4A8 ships 4-bit at Ollama's
-footprint, a parity-of-*capability* story, not parity-of-*speed*. It also
-unifies one int4 `.giw` across the GPU path and the already-dequant-bound CPU
-`MatmulBTQ4` path. `dot4I8Packed` remains a *prefill* lever, upstream-blocked.
+**A 7B that cannot run at int8 on this 8 GB card RUNS at int4** — fit confirmed
+empirically (no OOM, real allocation), measured 5.86 GB matches the 5.96 GB
+prediction. Throughput 51 tok/s / 204 GB/s is **58% of roofline — HIGHER per
+byte than the 1.5B int4** (~84 GB/s full-token, ~24% roofline): the fixed
+per-token overhead (encode/glue/barriers) amortizes over a bigger model, so
+W4A8 engine-efficiency *improves* at scale, not drops. int4 is what makes the
+**7–12B class runnable at all** on this card — the actual W4A8 win, a
+parity-of-*capability* story (it does NOT close the ~60% speed gap vs Ollama;
+the WebGPU encode/glue wall is unchanged). It also unifies one int4 `.giw`
+across the GPU path and the dequant-bound CPU `MatmulBTQ4`. `dot4I8Packed`
+remains a *prefill* lever, upstream-blocked.
+
+**Two 7B-scale findings surfaced during wiring (one fixed, one open):**
+
+- **FIXED — device buffer cap (commit `3331d1c`).** `New()` left `MaxBufferSize`
+  at the WebGPU 256 MB default (the guarded raise never fired —
+  `DefaultLimits()` leaves it at the u64-max "unset" sentinel). A 7B LM head is
+  272 MB int4 / 545 MB int8 → over 256 MB. Now set unconditionally to the 2 GB
+  binding max; int8 unaffected (its 233 MB head was already under).
+- **FIXED — `.giw` 4 GiB ceiling.** `prequant --quant int4` on the 7B failed: the
+  weights blob is **5.17 GB**, but `internal/giw/bundle.go` stored
+  `uint32(len(weights))` → truncated past 2³² → CRC mismatch (the 1.5B at 1.2 GB
+  was fine). Fixed with a bundle v2 (u64 weights length; v1 still readable, tok
+  stays u32). The 7B int4 `.giw` now emits (4.93 GB — projections int4,
+  embeddings/head int8) and **decodes coherent tokens on CPU** ("Recursion is a
+  method of solving problems where the solution depends on solutions to smaller
+  instances…") — the real disk→CPU path, closed. The GPU fit numbers above used
+  the real 7B shape with synthetic int4 (footprint is shape-determined);
+  bit-exactness stays gated on the 1.5B. The real-`.giw`-*on-GPU* path still
+  needs a decoder→GPU residency bridge (the DecodeRunner is not wired into
+  `decoder.Generate` — only per-matmul primitives are) and Qwen2 q/k/v bias
+  support in the runner.
 
 ## 0. Measured outcome (2026-06-08) — SUPERSEDED by §0.0
 

@@ -162,3 +162,39 @@ only real risk and it's already retired.
   that's a *measurement*, not a v1 blocker (the footprint claim stands
   regardless of the exact tok/s).
 - Chasing the 1.5B decode number. W4A8's value is fit, not speed.
+
+## RESULT (2026-06-08) — steps 1–2 + 4 done; step 3 (real .giw→GPU) scoped
+
+Commits `ecfe527` (steps 1–2), `3331d1c` (MaxBufferSize + 7B fit bench), giw v2 +
+bundle fix.
+
+**Steps 1–2 (de-risked core): DONE, bit-exact.** `decodeWeight` interface →
+one DecodeRunner builder for W8A8 or W4A8; W4A8 kernel got the addResidual
+epilogue. Full-token int4 forward vs a CPU oracle (same int8-act×int4-weight
+math): **cosine 1.000000, maxAbs 3.8e-6**. W8A8 path transparent (still
+cosine 1.0 / maxAbs 0).
+
+**Step 4 (the value prop): DONE — footprint PROVEN.** Real Qwen2.5-7B shape
+resident int4 + 16k f32 KV on the 8 GB card:
+- **FIT: 5.86 GB resident (3.98 weights + 1.88 KV), peak VRAM 6937/8192 MiB,
+  ~1.25 GB headroom.** int8 weights alone = 7.07 GB → won't fit. A model that
+  can't run at int8 runs at int4.
+- **THROUGHPUT: 51 tok/s, 204 GB/s = 58% roofline** — HIGHER per byte than the
+  1.5B int4 (~84 GB/s, ~24%); fixed per-token overhead amortizes at scale.
+- Footprint is shape-determined → measured on the real 7B shape with synthetic
+  int4; correctness gated on the 1.5B.
+
+**Two 7B-scale findings, both resolved:**
+- **MaxBufferSize** (`3331d1c`): device kept the 256 MB WebGPU default (the
+  guarded raise never fired — `DefaultLimits()` u64-max sentinel). 7B head is
+  272 MB int4 / 545 MB int8. Now unconditionally 2 GB.
+- **.giw 4 GiB ceiling** (giw v2): bundle stored `uint32(len(weights))`,
+  truncating the 5.17 GB 7B int4 blob → CRC corruption. Fixed (u64 length, v1
+  readable). The 7B int4 `.giw` now emits (4.93 GB) and **decodes coherent
+  tokens on CPU** — real disk→CPU closed.
+
+**Still OPEN — real `.giw` *on GPU* (step 3 end-to-end):** needs a decoder→GPU
+residency bridge (DecodeRunner is not wired into `decoder.Generate`; the webgpu
+backend only exposes per-matmul primitives) + Qwen2 q/k/v **bias** support in the
+DecodeRunner. Both are their own pieces; the footprint claim and CPU int4 path
+are proven without them.

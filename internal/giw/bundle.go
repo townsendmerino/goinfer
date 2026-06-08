@@ -12,18 +12,21 @@ import (
 )
 
 const (
-	bundleMagic   = "GINFB"
-	bundleVersion = 1
+	bundleMagic = "GINFB"
+	// v2 writes the weights length as u64; v1 used u32 and so truncated weight
+	// blobs > 4 GiB (a 7B int4 blob is ~5.2 GB → corruption). v1 bundles still
+	// load. tok stays u32 — it's a metadata-only GGUF, always well under 4 GiB.
+	bundleVersion = 2
 )
 
 // Write frames the weights blob + tokenizer GGUF into a single bundle:
 //
-//	magic "GINFB" | u32 version | u32 len(weights) | weights | u32 len(tok) | tok
+//	magic "GINFB" | u32 version=2 | u64 len(weights) | weights | u32 len(tok) | tok
 func Write(weights, tok []byte) []byte {
-	out := make([]byte, 0, len(bundleMagic)+12+len(weights)+len(tok))
+	out := make([]byte, 0, len(bundleMagic)+16+len(weights)+len(tok))
 	out = append(out, bundleMagic...)
 	out = binary.LittleEndian.AppendUint32(out, bundleVersion)
-	out = binary.LittleEndian.AppendUint32(out, uint32(len(weights)))
+	out = binary.LittleEndian.AppendUint64(out, uint64(len(weights)))
 	out = append(out, weights...)
 	out = binary.LittleEndian.AppendUint32(out, uint32(len(tok)))
 	out = append(out, tok...)
@@ -33,17 +36,21 @@ func Write(weights, tok []byte) []byte {
 // Read splits a bundle back into the weights blob and the tokenizer GGUF. The
 // returned slices alias data (zero-copy), so data must outlive their use — which
 // is the point: the weights half is aliased all the way down to the int8 arrays.
-// Returns an error on a bad magic/version or truncation so the caller can fall
-// back to a GGUF.
+// Reads both v1 (u32 weights length) and v2 (u64). Returns an error on a bad
+// magic/version or truncation so the caller can fall back to a GGUF.
 func Read(data []byte) (weights, tok []byte, err error) {
 	c := &cur{b: data}
 	if got := c.take(len(bundleMagic)); string(got) != bundleMagic {
 		return nil, nil, fmt.Errorf("giw: bad bundle magic %q (want %q)", got, bundleMagic)
 	}
-	if v := c.u32(); v != bundleVersion {
-		return nil, nil, fmt.Errorf("giw: bundle version %d, this build reads %d", v, bundleVersion)
+	switch v := c.u32(); v {
+	case 1:
+		weights = c.take(int(c.u32())) // v1: u32 weights length (≤ 4 GiB)
+	case 2:
+		weights = c.take(int(c.u64())) // v2: u64 weights length
+	default:
+		return nil, nil, fmt.Errorf("giw: bundle version %d, this build reads 1–2", v)
 	}
-	weights = c.take(int(c.u32()))
 	tok = c.take(int(c.u32()))
 	if c.err != nil {
 		return nil, nil, fmt.Errorf("giw: truncated bundle")
@@ -63,6 +70,14 @@ func (c *cur) u32() uint32 {
 		return 0
 	}
 	return binary.LittleEndian.Uint32(b)
+}
+
+func (c *cur) u64() uint64 {
+	b := c.take(8)
+	if b == nil {
+		return 0
+	}
+	return binary.LittleEndian.Uint64(b)
 }
 
 func (c *cur) take(n int) []byte {
