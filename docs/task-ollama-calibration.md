@@ -107,3 +107,34 @@ W4A8 sizing (see §0.0): it cuts *only* goinfer's gemv (4.3→2.2 ms), not the f
 glue/encode, so goinfer-int4 ≈ 110 tok/s — ~59% of Ollama's q4 186, i.e. the same
 ~60% engine ratio, NOT parity. Caveat: an earlier `qwen15-q4` run (191 tok/s) was
 a Qwen1.5-**1.8B** q4 — wrong model, discarded.
+
+## 7B CALIBRATION (2026-06-08) — the engine gap NARROWS at scale
+
+Same box (RTX 2070 SUPER), Ollama bundled CUDA, warm, `ollama ps`-confirmed
+placement. Qwen2.5-Coder-7B (qwen2 7.6B, embedding 3584 — goinfer's 7B shape).
+
+| engine | quant | placement | tok/s | eff. GB/s | % roofline |
+|---|---|---|---|---|---|
+| goinfer / WebGPU | int4 | 100% GPU | **51** | ~204 | **58%** |
+| Ollama / CUDA | q4_K_M | 100% GPU | **72.8** | ~310 | ~89% |
+| Ollama / CUDA | q8_0 | **31% CPU / 69% GPU** | — | — | — (does NOT fit 8 GB) |
+
+- **q8_0 7B (8.5 GB) does not fit 100% GPU on the 8 GB card** — Ollama offloads
+  31% to CPU, so there is no valid pure-GPU q8 number at 7B. This is the int4
+  value prop restated from the engine side: at 7B, *only 4-bit runs pure-GPU on
+  8 GB*; int8/q8 can't. (At 1.5B both fit; at 7B the int8 class is out.)
+- **goinfer's 7B-shape 58% roofline NARROWS the engine gap vs llama.cpp at
+  scale.** At equal 4-bit quant, goinfer-GPU / Ollama-CUDA tok/s went **52% →
+  70%** (1.5B 96/186 → 7B 51/72.8); per-byte (roofline %), **49% → 65%**
+  (1.5B 24%/49% → 7B 58%/89%). Both engines amortize their fixed per-token
+  overhead at scale, but goinfer gains MORE — it had more fixed overhead (the
+  WebGPU encode/glue tax) to amortize — so it closes ~⅓ of the gap going 1.5B→7B.
+  The structural wall (WebGPU dispatch model vs CUDA megakernel) remains, but its
+  *relative* cost shrinks as the model grows: pure-Go/WebGPU at 7B is ~70% of
+  llama.cpp-CUDA tok/s at equal quant, up from ~52% at 1.5B.
+
+**Headline:** the 7B is exactly where the capability story and the closing
+engine gap meet — int4 is the *only* way to run a 7B pure-GPU on 8 GB, and at
+that scale goinfer reaches ~70% of llama.cpp's tok/s (vs ~52% at 1.5B). The
+goinfer 51 tok/s is the real-GPU-shape number; the real-weights end-to-end GPU
+decode (DecodeRunner through `decoder.Generate`) is the remaining wiring.
