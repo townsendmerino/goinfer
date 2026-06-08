@@ -78,6 +78,8 @@ type config struct {
 	lora       string
 	name       string // -served-model-name (applies only to a single unnamed --model)
 	kvSessions int
+	sessionDir string // -session-dir (also where /admin unload snapshots warm KV)
+	allowAdmin bool   // -allow-admin: enable POST /admin/models/{load,unload}
 
 	embedPath  string // encoder (-embed-model); "" = no /v1/embeddings
 	embedQuant string // "" | f32 | q8
@@ -86,10 +88,11 @@ type config struct {
 
 func main() {
 	var (
-		cfg        config
-		addr       = flag.String("addr", ":8080", "listen address")
-		sessionDir = flag.String("session-dir", "", "optional dir to persist/restore KV sessions across restarts (.giw-kv snapshots)")
+		cfg  config
+		addr = flag.String("addr", ":8080", "listen address")
 	)
+	flag.StringVar(&cfg.sessionDir, "session-dir", "", "optional dir to persist/restore KV sessions across restarts (.giw-kv snapshots)")
+	flag.BoolVar(&cfg.allowAdmin, "allow-admin", false, "enable POST /admin/models/{load,unload} (loads attacker-named paths — deliberate opt-in)")
 	flag.Var(&cfg.models, "model", "generative model: a .gguf/.giw file or HF dir (chat/completions). Repeatable\n"+
 		"as `name=path` to serve a model zoo from one process; requests route on the\n"+
 		"OpenAI `model` field. N resident int8 models are expensive — prequant `.giw`\n"+
@@ -103,12 +106,12 @@ func main() {
 	flag.StringVar(&cfg.embedQuant, "embed-quant", "f32", "embedding weight precision: f32 | q8")
 	flag.StringVar(&cfg.embedName, "embed-served-model-name", "", "embedding model id reported by /v1/models (default: dir basename)")
 	flag.Parse()
-	if len(cfg.models) == 0 && cfg.embedPath == "" {
-		fmt.Fprintln(os.Stderr, "error: at least one of --model or --embed-model is required")
+	if len(cfg.models) == 0 && cfg.embedPath == "" && !cfg.allowAdmin {
+		fmt.Fprintln(os.Stderr, "error: need at least one of --model, --embed-model, or --allow-admin")
 		flag.Usage()
 		os.Exit(2)
 	}
-	if err := sessionDirOK(*sessionDir); err != nil {
+	if err := sessionDirOK(cfg.sessionDir); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(2)
 	}
@@ -118,9 +121,9 @@ func main() {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
 	}
-	if *sessionDir != "" && cfg.kvSessions > 0 {
+	if cfg.sessionDir != "" && cfg.kvSessions > 0 {
 		for _, lm := range srv.models {
-			lm.sessions.load(sessionSubdir(*sessionDir, lm.fp))
+			lm.sessions.load(sessionSubdir(cfg.sessionDir, lm.fp))
 		}
 	}
 
@@ -133,6 +136,8 @@ func main() {
 	if srv.embed != nil {
 		mux.HandleFunc("POST /v1/embeddings", srv.handleEmbeddings)
 	}
+	mux.HandleFunc("POST /admin/models/load", srv.handleAdminLoad)
+	mux.HandleFunc("POST /admin/models/unload", srv.handleAdminUnload)
 
 	httpSrv := &http.Server{Addr: *addr, Handler: mux}
 	// Graceful shutdown: on SIGINT/SIGTERM, stop accepting, drain in-flight
@@ -148,10 +153,10 @@ func main() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		_ = httpSrv.Shutdown(ctx)
-		if *sessionDir != "" && cfg.kvSessions > 0 {
+		if cfg.sessionDir != "" && cfg.kvSessions > 0 {
 			for _, lm := range srv.models {
 				lm.mu.Lock()
-				_ = lm.sessions.save(sessionSubdir(*sessionDir, lm.fp))
+				_ = lm.sessions.save(sessionSubdir(cfg.sessionDir, lm.fp))
 				lm.mu.Unlock()
 			}
 		}
@@ -169,7 +174,7 @@ func main() {
 // template, and KV sessions) and/or an encoder (with its tokenizer for token
 // counting). At least one must be configured.
 func newServer(cfg config) (*server, error) {
-	s := &server{models: map[string]*loadedModel{}}
+	s := &server{models: map[string]*loadedModel{}, cfg: cfg}
 	for _, spec := range cfg.models {
 		lm, err := loadDecoder(spec, cfg)
 		if err != nil {

@@ -42,7 +42,12 @@ type server struct {
 	// Generative (decoder) registry — served name → model. Empty when only an
 	// embedding model is served. Requests route on the OpenAI `model` field via
 	// pick; each model has its own mutex, so distinct models run in parallel.
+	// regMu guards the map structure (dynamic load/unload mutate it concurrently
+	// with request routing); a request holds the picked *loadedModel beyond the
+	// RLock, so unload uses the model's own mutex to refuse a busy model.
+	regMu  sync.RWMutex
 	models map[string]*loadedModel
+	cfg    config // backend/quant/lora/kv/session-dir/allow-admin for admin loads
 
 	// Embedding (encoder) half — nil when only a generative model is served.
 	// The encoder is goroutine-safe for concurrent Encode, so /v1/embeddings is
@@ -58,6 +63,8 @@ type server struct {
 // send an arbitrary name) the sole model when only one is loaded. nil otherwise —
 // the handler returns an OpenAI-shaped 404.
 func (s *server) pick(name string) *loadedModel {
+	s.regMu.RLock()
+	defer s.regMu.RUnlock()
 	if lm, ok := s.models[name]; ok {
 		return lm
 	}
@@ -76,10 +83,12 @@ func (s *server) modelNotFound(w http.ResponseWriter, name string) {
 
 // servedNames lists the loaded generative + embedding model ids (sorted).
 func (s *server) servedNames() []string {
+	s.regMu.RLock()
 	names := make([]string, 0, len(s.models)+1)
 	for n := range s.models {
 		names = append(names, n)
 	}
+	s.regMu.RUnlock()
 	if s.embed != nil {
 		names = append(names, s.embedID)
 	}
