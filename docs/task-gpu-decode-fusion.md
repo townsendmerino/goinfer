@@ -166,6 +166,51 @@ Decision rule: (a) slow → fix kernel; (b) high floor + (c) glue-dominated
 write the "staged hybrid optimal, X µs/dispatch on this stack" conclusion
 with the number behind it.
 
+### §5 RESULT (committed 626b3eb) — the actual finding
+
+Decode is **glue-serialization-bound, not bandwidth- or dispatch-bound.**
+- phase split: write 0.4 / encode 1.4 / submit+poll 42.3 ms ⇒ all GPU exec.
+- (a) gate GEMV standalone ~380 GB/s ⇒ kernel bandwidth-perfect.
+- (b) per-dispatch floor 1.2–1.5 µs even at 550-deep distinct-buffer chain
+  ⇒ dispatch overhead is NOT it (kills the ~80 µs/dispatch guess).
+- attribution: 41.9 ms = gemv 4.1 + glue 37.2. Matmul roofline floor is
+  4.1 ms (~240 tok/s if glue were free); glue is 89% of the token.
+- the tell: each glue pipeline isolated sums ~7–11 ms, but the SAME
+  dispatches in the real RAW dependency chain cost 37 ms. The ~30 ms gap
+  is per-link barrier serialization — isolated dispatches overlap; chained
+  ones force a drain whose latency scales with the bordering kernel's data.
+
+### §2/§3 — REVISED by the §5 finding (the lever is critical-PATH length)
+
+Because the cost is the serialized RAW spine, optimize **critical-path
+links, not dispatch count:**
+
+- **Fold every `quantize` into its producer** (rms+quant, swiglu+quant,
+  attn-context-quant into the attn epilogue) — 4 links/layer gone.
+- **Fold both residual-adds into the o-proj / down-proj epilogues** — 2
+  links gone.
+- **Fold RoPE into the qkv epilogue** — 1 link gone. Path ~15 → ~8/layer.
+- **§3 QKV / gate+up concatenation removes DISPATCHES but not LINKS**
+  (distinct-buffer writes already overlap per (b)); it helps
+  occupancy/bandwidth, not serialization — deprioritize vs the fusions.
+- **If per-link drain scales with data:** the 8960-wide MLP intermediates
+  (swiglu out, quant-mid) are the costly borders — fusing swiglu+quant so
+  that ~36 KB vector never materializes/re-reads is a double win; keep it
+  in workgroup memory.
+- **Parallelize the attn kernel** (`@workgroup_size(1)` → warp-per-head):
+  ~5.8 ms alone, on the critical path, untouched by fusion. Independent
+  work — land in parallel.
+
+Honest expectation: fusion (~15→~8 links) + attn fix ≈ 2–2.5× → ~45–60
+tok/s. That decisively beats the staged hybrid (25.6) and overturns §0.
+**The ≥100 tok/s / 50%-roofline gate may be unreachable in WebGPU** — the
+only way past a per-link serialization floor is a single megakernel
+(persistent-thread, whole layer in one dispatch), which WGSL can't express.
+If fusion plateaus short of the gate, that ceiling IS the finding:
+"WebGPU's dispatch model floors decode at ~N tok/s; native CUDA/Metal
+megakernel is the only way past." Measure; if the plateau appears, write
+it rather than grind.
+
 ## Gate (this is what falsifies-or-confirms the §0 conclusion)
 
 - **Primary:** full-token GPU decode on the 1.5B int8 `.giw`
