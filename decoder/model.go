@@ -4,8 +4,11 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"os"
 	"slices"
 	"strings"
+
+	"github.com/townsendmerino/goinfer/internal/giw"
 )
 
 // Model is a loaded Gemma 3 checkpoint plus the compute backend. Goroutine
@@ -32,6 +35,32 @@ func Load(dir string, opts Options) (*Model, error) {
 	be, beErr := NewBackend(opts.Backend)
 	// beErr is non-nil for the not-yet-implemented webgpu fallback; keep the
 	// (cpu) backend and surface the note rather than abort.
+
+	// Prequant bundle (.giw): the weights are already quantized and serialized, so
+	// they alias straight out of the file — no GGUF/safetensors load, no requant
+	// (opts.Quant/LoRA do not apply). giw.Read splits the weight blob from the
+	// metadata-GGUF that carries the tokenizer.
+	if strings.HasSuffix(dir, ".giw") {
+		data, rerr := os.ReadFile(dir)
+		if rerr != nil {
+			closeBackend(be)
+			return nil, fmt.Errorf("decoder: read .giw: %w", rerr)
+		}
+		weightsBlob, _, gerr := giw.Read(data)
+		if gerr != nil {
+			closeBackend(be)
+			return nil, fmt.Errorf("decoder: parse .giw bundle: %w", gerr)
+		}
+		w, lerr := LoadSerializedWeights(weightsBlob)
+		if lerr != nil {
+			closeBackend(be)
+			return nil, lerr
+		}
+		if beErr != nil {
+			fmt.Println(beErr)
+		}
+		return &Model{w: w, be: be, eosIDs: w.Cfg.EOSIDs()}, nil
+	}
 
 	// Resolve the quant mode first so the weights stream straight into the
 	// chosen precision at load — no whole-model f32 spike (see loadWeights).

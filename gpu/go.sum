@@ -2,7 +2,5 @@ github.com/cogentcore/webgpu v0.23.0 h1:hrjnnuDZAPSRsqBjQAsJOyg2COGztIkBbxL87r0Q
 github.com/cogentcore/webgpu v0.23.0/go.mod h1:ciqaxChrmRRMU1SnI5OE12Cn3QWvOKO+e5nSy+N9S1o=
 github.com/townsendmerino/aikit v1.0.0 h1:z7zLh57d3PNgKyT45ukr3SsZuMPY8y/OXsYwD3QGH3w=
 github.com/townsendmerino/aikit v1.0.0/go.mod h1:UhgMEx0ow8/i5NAK9TUcJMtIQxrhHmGv4Xjg7DmsDDU=
-github.com/townsendmerino/goinfer v0.3.0 h1:X0tZumm7SYoq6qz0UwMLKdV6qPcTl+KmOnmJQEc2uLk=
-github.com/townsendmerino/goinfer v0.3.0/go.mod h1:pso9izxmAxM2/7V///5vlvJqetTuJzqw0H7ahZKqe64=
 golang.org/x/text v0.37.0 h1:Cqjiwd9eSg8e0QAkyCaQTNHFIIzWtidPahFWR83rTrc=
 golang.org/x/text v0.37.0/go.mod h1:a5sjxXGs9hsn/AJVwuElvCAo9v8QYLzvavO5z2PiM38=
