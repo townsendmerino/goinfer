@@ -127,14 +127,23 @@ end-to-end on the GPU** (Qwen2.5-7B shape, the model that does NOT fit at int8):
 | + 16k f32 KV | — | **+1.88 GB** |
 | total resident | 8.95 GB → won't fit | **5.86 GB → fits** |
 | empirical peak VRAM | — | **6937 / 8192 MiB (~1.25 GB headroom)** |
-| decode throughput | — | **51 tok/s, 204 GB/s = 58% roofline** |
+| decode throughput (real end-to-end) | — | **51.7 tok/s** (1.5B: 102.4) |
+
+**RESIDENCY WIRED (commit `0eefd77`, `6d8e681`).** The full-token DecodeRunner now
+runs through `decoder.Generate` on the webgpu backend (dense Qwen2/Llama), not
+just the per-matmul staged path — a real 7B int4 `.giw` decodes coherently,
+greedy 16/16 matching the CPU oracle. Real end-to-end **51.7 tok/s (7B) / 102.4
+(1.5B)**, TTFT 1.3 s / 0.66 s on a ~30-token prompt (option-(a) GPU prefill); the
+CPU sampler is 0.14 ms/token (negligible), so end-to-end equals the shape-bench.
+v1 limits: stateless Generate only (Sessions / prefix-reuse / spec-decode →
+staged fallback), 16k f32 KV, O(prompt-len) prefill.
 
 **A 7B that cannot run at int8 on this 8 GB card RUNS at int4** — fit confirmed
 empirically (no OOM, real allocation), measured 5.86 GB matches the 5.96 GB
-prediction. Throughput 51 tok/s / 204 GB/s is **58% of roofline — HIGHER per
-byte than the 1.5B int4** (~84 GB/s full-token, ~24% roofline): the fixed
-per-token overhead (encode/glue/barriers) amortizes over a bigger model, so
-W4A8 engine-efficiency *improves* at scale, not drops. int4 is what makes the
+prediction. 51.7 tok/s = ~204 GB/s effective = **58% of roofline — HIGHER per
+byte than the 1.5B int4** (~24% roofline): the fixed per-token overhead
+(encode/glue/barriers) amortizes over a bigger model, so W4A8 engine-efficiency
+*improves* at scale. int4 is what makes the
 **7–12B class runnable at all** on this card — the actual W4A8 win, a
 parity-of-*capability* story (it does NOT close the ~60% speed gap vs Ollama;
 the WebGPU encode/glue wall is unchanged). It also unifies one int4 `.giw`

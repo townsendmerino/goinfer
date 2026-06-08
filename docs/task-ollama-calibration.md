@@ -123,18 +123,23 @@ placement. Qwen2.5-Coder-7B (qwen2 7.6B, embedding 3584 — goinfer's 7B shape).
   31% to CPU, so there is no valid pure-GPU q8 number at 7B. This is the int4
   value prop restated from the engine side: at 7B, *only 4-bit runs pure-GPU on
   8 GB*; int8/q8 can't. (At 1.5B both fit; at 7B the int8 class is out.)
-- **goinfer's 7B-shape 58% roofline NARROWS the engine gap vs llama.cpp at
-  scale.** At equal 4-bit quant, goinfer-GPU / Ollama-CUDA tok/s went **52% →
-  70%** (1.5B 96/186 → 7B 51/72.8); per-byte (roofline %), **49% → 65%**
-  (1.5B 24%/49% → 7B 58%/89%). Both engines amortize their fixed per-token
-  overhead at scale, but goinfer gains MORE — it had more fixed overhead (the
-  WebGPU encode/glue tax) to amortize — so it closes ~⅓ of the gap going 1.5B→7B.
-  The structural wall (WebGPU dispatch model vs CUDA megakernel) remains, but its
-  *relative* cost shrinks as the model grows: pure-Go/WebGPU at 7B is ~70% of
-  llama.cpp-CUDA tok/s at equal quant, up from ~52% at 1.5B.
+- **goinfer's 7B engine ratio NARROWS the gap vs llama.cpp at scale — now
+  MEASURED end-to-end (commit 6d8e681), not shape-bench.** A real int4 `.giw`
+  through `decoder.Generate` on the webgpu residency path (greedy 16/16 matching
+  the CPU oracle): **1.5B 102.4 tok/s, 7B 51.7 tok/s** (TTFT 0.66 s / 1.3 s for a
+  ~30-token prompt, option-(a) GPU prefill). At equal 4-bit quant, goinfer-GPU /
+  Ollama-CUDA tok/s is **55% → 71%** (1.5B 102.4/186 → 7B 51.7/72.8). Both
+  engines amortize their fixed per-token overhead at scale, but goinfer gains
+  MORE — it had more fixed overhead (the WebGPU encode/glue tax) to amortize — so
+  it closes ~⅓ of the gap going 1.5B→7B. (The earlier 52%/70% shape-bench
+  estimates were right: the CPU sampler is 0.14 ms/token, negligible, so
+  end-to-end ≈ shape-bench. The apples-to-oranges worry — shape-bench excludes a
+  sampler Ollama's eval-rate includes — does not bite.) The structural wall
+  (WebGPU dispatch vs CUDA megakernel) remains, but its *relative* cost shrinks
+  with model size.
 
-**Headline:** the 7B is exactly where the capability story and the closing
-engine gap meet — int4 is the *only* way to run a 7B pure-GPU on 8 GB, and at
-that scale goinfer reaches ~70% of llama.cpp's tok/s (vs ~52% at 1.5B). The
-goinfer 51 tok/s is the real-GPU-shape number; the real-weights end-to-end GPU
-decode (DecodeRunner through `decoder.Generate`) is the remaining wiring.
+**Headline:** the 7B is where the capability story and the closing engine gap
+meet — int4 is the *only* way to run a 7B pure-GPU on 8 GB, and at that scale
+goinfer reaches **~71% of llama.cpp's tok/s end-to-end** (up from ~55% at 1.5B).
+Measured through the production `decoder.Generate` path on the webgpu backend, not
+a shape-bench.
