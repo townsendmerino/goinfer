@@ -114,33 +114,40 @@ func (c *Context) NewDecodeRunner(m ModelW, hidden, nH, nKV, hd, inter, start in
 		gx, gy := gemvGrid(rm.rows)
 		add(c.gemvPipeline, bind(c.gemvLayout, aq, rm.bq, as, rm.bScales, dst, p), gx, gy)
 	}
-	rope := func(vec, invFreq *wgpu.Buffer, heads int) {
-		half := hd / 2
-		p := uni([]uint32{uint32(heads), uint32(hd), uint32(half), 0, f32bits(1), 0, 0, 0})
-		r.posUnis = append(r.posUnis, posUni{buf: p, gen: func(pos int) []uint32 {
-			return []uint32{uint32(heads), uint32(hd), uint32(half), uint32(pos), f32bits(1), 0, 0, 0}
-		}})
-		add(c.ropePipeline, bind(c.ropeLayout, vec, invFreq, p), uint32(heads*half+63)/64, 1)
+	// §4: the per-token uniforms (rope-q, rope-store-k, v-store, attn) depend only
+	// on pos, NOT on layer index — their contents are identical across all 28
+	// layers. So allocate ONE buffer per type and let every layer's dispatch bind
+	// it; Run then writes 4 small uniforms per token instead of ~112. The builders
+	// below reference these shared buffers and no longer append per-call posUnis.
+	half := hd / 2
+	ropeQUni := uni([]uint32{uint32(nH), uint32(hd), uint32(half), 0, f32bits(1), 0, 0, 0})
+	r.posUnis = append(r.posUnis, posUni{buf: ropeQUni, gen: func(pos int) []uint32 {
+		return []uint32{uint32(nH), uint32(hd), uint32(half), uint32(pos), f32bits(1), 0, 0, 0}
+	}})
+	ropeKUni := uni([]uint32{uint32(nKV), uint32(hd), uint32(half), 0, f32bits(1), 0, 0, 0})
+	r.posUnis = append(r.posUnis, posUni{buf: ropeKUni, gen: func(pos int) []uint32 {
+		return []uint32{uint32(nKV), uint32(hd), uint32(half), uint32(pos), f32bits(1), uint32(pos * r.kvDim), 0, 0}
+	}})
+	vStoreUni := uni([]uint32{uint32(r.kvDim), 0, 0, 0})
+	r.posUnis = append(r.posUnis, posUni{buf: vStoreUni, gen: func(pos int) []uint32 {
+		return []uint32{uint32(r.kvDim), uint32(pos * r.kvDim), 0, 0}
+	}})
+	attnUni := uni([]uint32{uint32(nH), uint32(nKV), uint32(hd), 0, uint32(start), uint32(nH / nKV), f32bits(scale), 0})
+	r.posUnis = append(r.posUnis, posUni{buf: attnUni, gen: func(pos int) []uint32 {
+		return []uint32{uint32(nH), uint32(nKV), uint32(hd), uint32(pos + 1), uint32(start), uint32(nH / nKV), f32bits(scale), 0}
+	}})
+	rope := func(vec, invFreq *wgpu.Buffer) {
+		add(c.ropePipeline, bind(c.ropeLayout, vec, invFreq, ropeQUni), uint32(nH*half+63)/64, 1)
 	}
 	// ropeStore rotates src (the K projection) and writes it straight into the KV
 	// cache at pos*kvDim — replacing the K CopyBufferToBuffer append so the token
-	// stays one compute pass. base is rewritten per token via the posUni.
-	ropeStore := func(src, invFreq, cache *wgpu.Buffer, heads int) {
-		half := hd / 2
-		p := uni([]uint32{uint32(heads), uint32(hd), uint32(half), 0, f32bits(1), 0, 0, 0})
-		r.posUnis = append(r.posUnis, posUni{buf: p, gen: func(pos int) []uint32 {
-			return []uint32{uint32(heads), uint32(hd), uint32(half), uint32(pos), f32bits(1), uint32(pos * r.kvDim), 0, 0}
-		}})
-		add(c.ropeStorePipeline, bind(c.ropeStoreLayout, src, invFreq, cache, p), uint32(heads*half+63)/64, 1)
+	// stays one compute pass. base rides the shared ropeKUni.
+	ropeStore := func(src, invFreq, cache *wgpu.Buffer) {
+		add(c.ropeStorePipeline, bind(c.ropeStoreLayout, src, invFreq, cache, ropeKUni), uint32(nKV*half+63)/64, 1)
 	}
-	// vStore copies src (the V projection) into the V cache at pos*kvDim —
-	// replacing the V CopyBufferToBuffer append.
+	// vStore copies src (the V projection) into the V cache at pos*kvDim.
 	vStore := func(src, cache *wgpu.Buffer) {
-		p := uni([]uint32{uint32(r.kvDim), 0, 0, 0})
-		r.posUnis = append(r.posUnis, posUni{buf: p, gen: func(pos int) []uint32 {
-			return []uint32{uint32(r.kvDim), uint32(pos * r.kvDim), 0, 0}
-		}})
-		add(c.kvStorePipeline, bind(c.kvStoreLayout, src, cache, p), uint32(r.kvDim+63)/64, 1)
+		add(c.kvStorePipeline, bind(c.kvStoreLayout, src, cache, vStoreUni), uint32(r.kvDim+63)/64, 1)
 	}
 
 	r.xd = keepBuf(func() *wgpu.Buffer {
@@ -152,15 +159,11 @@ func (c *Context) NewDecodeRunner(m ModelW, hidden, nH, nKV, hd, inter, start in
 		lw := &m.Layers[i]
 		aq, as := rmsQuant(r.xd, lw.Attn.Norm.buf, hidden)
 		q, k, v := gemv(aq, as, lw.Attn.QProj), gemv(aq, as, lw.Attn.KProj), gemv(aq, as, lw.Attn.VProj)
-		rope(q, lw.Attn.InvFreq.buf, nH)
-		ropeStore(k, lw.Attn.InvFreq.buf, lw.Attn.KCache.buf, nKV) // rotate K + append into cache
-		vStore(v, lw.Attn.VCache.buf)                              // append V into cache
+		rope(q, lw.Attn.InvFreq.buf)
+		ropeStore(k, lw.Attn.InvFreq.buf, lw.Attn.KCache.buf) // rotate K + append into cache
+		vStore(v, lw.Attn.VCache.buf)                         // append V into cache
 		ctxv := storF(nH * hd)
-		ap := uni([]uint32{uint32(nH), uint32(nKV), uint32(hd), 0, uint32(start), uint32(nH / nKV), f32bits(scale), 0})
-		r.posUnis = append(r.posUnis, posUni{buf: ap, gen: func(pos int) []uint32 {
-			return []uint32{uint32(nH), uint32(nKV), uint32(hd), uint32(pos + 1), uint32(start), uint32(nH / nKV), f32bits(scale), 0}
-		}})
-		add(c.attnPipeline, bind(c.attnLayout, q, lw.Attn.KCache.buf, lw.Attn.VCache.buf, ctxv, ap), uint32(nH), 1)
+		add(c.attnPipeline, bind(c.attnLayout, q, lw.Attn.KCache.buf, lw.Attn.VCache.buf, ctxv, attnUni), uint32(nH), 1)
 		cq, cs := quant(ctxv, nH*hd)
 		gemvAdd(cq, cs, lw.Attn.OProj, r.xd) // o-proj + residual into xd
 		mq, ms := rmsQuant(r.xd, lw.MLPNorm.buf, hidden)
