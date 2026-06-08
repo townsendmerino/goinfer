@@ -100,12 +100,27 @@ go run ./cmd/serve --model ~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
 # OpenAI base URL: http://localhost:8080/v1
 ```
 
-`/v1/chat/completions`, `/v1/completions`, `/v1/models`; streaming (SSE); the
-sampling knobs (`temperature`/`top_p`/`top_k`/`seed`/`frequency_penalty`/
-`presence_penalty`/`stop`/`logprobs`); and **`response_format`** —
-`{"type":"json_schema", …}` or `{"type":"json_object"}` gives schema-constrained
+`/v1/chat/completions`, `/v1/completions`, `/v1/responses`, `/v1/models`;
+streaming (SSE); the sampling knobs (`temperature`/`top_p`/`top_k`/`seed`/
+`frequency_penalty`/`presence_penalty`/`stop`/`logprobs`); and **`response_format`**
+— `{"type":"json_schema", …}` or `{"type":"json_object"}` gives schema-constrained
 output the model cannot violate (the same grammar as above). The chat template is
 auto-detected per model.
+
+**Multi-model.** `--model` is repeatable as `name=path` to serve a model zoo from
+one process; requests route on the OpenAI `model` field, `/v1/models` lists all,
+and distinct models run in parallel (per-model mutex). Resident int8 models are
+expensive — prequant `.giw` maps weights zero-copy for a cheap zoo. With
+`--allow-admin` (off by default — it loads attacker-named paths), `POST
+/admin/models/{load,unload}` manage the registry at runtime (unload refuses a
+busy model). `--max-queue N` (default 8) bounds each model's queue: a full queue
+returns 429 + Retry-After (single decode worker per model; no continuous batching).
+
+**Responses API.** `/v1/responses` honors `input` (string or message items),
+`instructions`, `text.format` (→ the same constrained grammar), `tools`, and
+streaming (`response.created`/`output_text.delta`/`completed`). `store` +
+`previous_response_id` continue a conversation from an in-memory ring — by
+construction a prompt-prefix extension, so it rides the warm-KV cache below.
 
 **Prompt-prefix KV caching.** Across requests the server reuses the KV cache for
 the longest token prefix a new prompt shares with a recent one, prefilling only

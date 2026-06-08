@@ -11,6 +11,20 @@ pre-1.0 and may change as new model families and quant formats land.
 ## [Unreleased]
 
 ### Added
+- **cmd/serve: multi-model + admin + Responses API.** `--model` is now repeatable
+  as `name=path` to serve a model zoo from one process; requests route on the
+  OpenAI `model` field (exact match, or the sole model for single-model compat),
+  unknown → an OpenAI-shaped 404, and `/v1/models` lists all. Each model has its
+  own mutex (distinct models run in parallel) and warm-KV dir
+  (`--session-dir/<fp>/`). **Admin API** (gated behind `--allow-admin`, default
+  off — RCE-adjacent): `POST /admin/models/{load,unload}`, with unload refusing a
+  busy model (409) and snapshotting its warm KV. **`/v1/responses`** (OpenAI
+  Responses API): `input`/`instructions`/`text.format`(→constrain)/`tools`,
+  streaming event shapes, and `store`/`previous_response_id` (an in-memory ring
+  that rides the per-model sessionLRU for warm KV). **Backpressure**: a bounded
+  per-model queue (`--max-queue`, default 8) returns 429 + Retry-After when full
+  (single decode worker per model; not continuous batching). Internally the
+  generative half is a `loadedModel` registry. Pure stdlib `net/http`, no deps.
 - **Qwen3.5/3.6-MoE (`qwen3_5_moe`)** — the hybrid linear/softmax-attention MoE.
   Most layers are **Gated DeltaNet** (linear attention with a recurrent matrix
   state — short causal conv + gated delta rule + gated RMSNorm, its own forward
