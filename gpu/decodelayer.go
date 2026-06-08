@@ -147,28 +147,17 @@ type AttnWeights struct {
 	KCache, VCache      *DeviceBuffer // [maxLen*kvDim] resident
 }
 
-// AttnBlock runs the attention sub-block for one decode token entirely on device,
-// syncing once: x += OProj(attn(rope(QKV(rmsnorm(x))))). x is updated in place;
-// returns the (read-back) result. pos is the new token's absolute position;
-// nKeys = pos+1; start = the window start (0 for full attention).
-func (c *Context) AttnBlock(x []float32, w AttnWeights, hidden, nH, nKV, hd, pos, start int, eps, scale float32, addOne bool) ([]float32, error) {
+// attnBlockInto runs the attention sub-block on the device buffer xd IN PLACE
+// (xd += OProj(attn(rope(QKV(rmsnorm(xd)))))), submitting with no Poll. It returns
+// the cleanup funcs for its scratch — the caller must NOT run them until after the
+// final fence (the buffers are read by queued-but-unexecuted dispatches).
+func (c *Context) attnBlockInto(xd *DeviceBuffer, w AttnWeights, hidden, nH, nKV, hd, pos, start int, eps, scale float32, addOne bool) ([]func(), error) {
 	var frees []func()
-	defer func() {
-		for _, f := range frees {
-			f()
-		}
-	}()
 	keep := func(fs []func(), err error) error {
 		frees = append(frees, fs...)
 		return err
 	}
 	kvDim := nKV * hd
-
-	xd, err := c.UploadF32(x)
-	if err != nil {
-		return nil, err
-	}
-	frees = append(frees, func() { xd.Release() })
 
 	xn, fs, err := c.rmsnormDevice(xd, w.Norm, hidden, eps, addOne)
 	if err := keep(fs, err); err != nil {
@@ -223,7 +212,162 @@ func (c *Context) AttnBlock(x []float32, w AttnWeights, hidden, nH, nKV, hd, pos
 	if err := keep(c.residualInPlace(xd, attnOut, hidden)); err != nil {
 		return nil, err
 	}
-	return c.Readback(xd) // the single sync
+	return frees, nil
+}
+
+// AttnBlock is the standalone (host in/out) wrapper around attnBlockInto: upload,
+// run, read back (the single sync), free. Used by the parity test.
+func (c *Context) AttnBlock(x []float32, w AttnWeights, hidden, nH, nKV, hd, pos, start int, eps, scale float32, addOne bool) ([]float32, error) {
+	xd, err := c.UploadF32(x)
+	if err != nil {
+		return nil, err
+	}
+	defer xd.Release()
+	frees, err := c.attnBlockInto(xd, w, hidden, nH, nKV, hd, pos, start, eps, scale, addOne)
+	if err != nil {
+		return nil, err
+	}
+	out, err := c.Readback(xd) // the single sync
+	for _, f := range frees {
+		f()
+	}
+	return out, err
+}
+
+// swigluDevice: silu(gate)·up → new device buffer (submit, no poll).
+func (c *Context) swigluDevice(gate, up *DeviceBuffer, inter int) (*DeviceBuffer, []func(), error) {
+	if err := c.ensureLayer(); err != nil {
+		return nil, nil, err
+	}
+	mid, err := c.newF32("swiglu-mid", inter)
+	if err != nil {
+		return nil, nil, err
+	}
+	pbuf, _ := c.dims4("swiglu-p", uint32(inter), 0)
+	bg, err := c.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.swigluLayout, Entries: []wgpu.BindGroupEntry{
+		{Binding: 0, Buffer: gate.buf, Size: gate.buf.GetSize()}, {Binding: 1, Buffer: up.buf, Size: up.buf.GetSize()},
+		{Binding: 2, Buffer: mid, Size: mid.GetSize()}, {Binding: 3, Buffer: pbuf, Size: pbuf.GetSize()},
+	}})
+	if err != nil {
+		mid.Release()
+		pbuf.Release()
+		return nil, nil, err
+	}
+	if err := c.submitUnary(c.swigluPipeline, bg, inter); err != nil {
+		return nil, nil, err
+	}
+	return &DeviceBuffer{buf: mid, n: inter}, []func(){func() { mid.Release() }, pbuf.Release, bg.Release}, nil
+}
+
+// mlpInto runs the gated-MLP sub-block on xd in place (xd += Down(swiglu(Gate/Up
+// (rmsnorm(xd))))), submit-no-poll. Returns scratch frees (free after the fence).
+func (c *Context) mlpInto(xd, rmsW *DeviceBuffer, gate, up, down *ResidentW8A8, hidden, inter int, eps float32, addOne bool) ([]func(), error) {
+	var frees []func()
+	keep := func(fs []func(), err error) error { frees = append(frees, fs...); return err }
+	xn, fs, err := c.rmsnormDevice(xd, rmsW, hidden, eps, addOne)
+	if err := keep(fs, err); err != nil {
+		return frees, err
+	}
+	qb, sb, err := c.quantizeDevice(xn, 1, hidden)
+	if err != nil {
+		return frees, err
+	}
+	frees = append(frees, func() { qb.Release() }, func() { sb.Release() })
+	gd, err := c.matmulW8A8Device(qb, sb, gate, 1)
+	if err != nil {
+		return frees, err
+	}
+	ud, err := c.matmulW8A8Device(qb, sb, up, 1)
+	if err != nil {
+		return frees, err
+	}
+	frees = append(frees, func() { gd.Release() }, func() { ud.Release() })
+	mid, fs2, err := c.swigluDevice(gd, ud, inter)
+	if err := keep(fs2, err); err != nil {
+		return frees, err
+	}
+	qb2, sb2, err := c.quantizeDevice(mid, 1, inter)
+	if err != nil {
+		return frees, err
+	}
+	frees = append(frees, func() { qb2.Release() }, func() { sb2.Release() })
+	dd, err := c.matmulW8A8Device(qb2, sb2, down, 1)
+	if err != nil {
+		return frees, err
+	}
+	frees = append(frees, func() { dd.Release() })
+	if err := keep(c.residualInPlace(xd, dd, hidden)); err != nil {
+		return frees, err
+	}
+	return frees, nil
+}
+
+// LayerW is one transformer layer's resident GPU weights (attention + gated MLP).
+type LayerW struct {
+	Attn           AttnWeights
+	MLPNorm        *DeviceBuffer
+	Gate, Up, Down *ResidentW8A8
+}
+
+// ModelW is a decode-resident model: layers + final norm + LM head.
+type ModelW struct {
+	Layers    []LayerW
+	FinalNorm *DeviceBuffer
+	LMHead    *ResidentW8A8
+}
+
+// DecodeToken runs a full decode step for one token entirely on device — every
+// layer's attention + MLP chained, then final norm + LM head — as ONE command
+// stream with ONE fence (the logits readback). x is the token's input embedding;
+// returns the logits. This is the one-command-buffer-per-token forward.
+func (c *Context) DecodeToken(x []float32, m ModelW, hidden, nH, nKV, hd, inter, pos, start int, eps, scale float32, addOne bool) ([]float32, error) {
+	xd, err := c.UploadF32(x)
+	if err != nil {
+		return nil, err
+	}
+	var frees []func()
+	relAll := func() {
+		xd.Release()
+		for _, f := range frees {
+			f()
+		}
+	}
+	for i := range m.Layers {
+		lw := &m.Layers[i]
+		fa, err := c.attnBlockInto(xd, lw.Attn, hidden, nH, nKV, hd, pos, start, eps, scale, addOne)
+		frees = append(frees, fa...)
+		if err != nil {
+			relAll()
+			return nil, err
+		}
+		fm, err := c.mlpInto(xd, lw.MLPNorm, lw.Gate, lw.Up, lw.Down, hidden, inter, eps, addOne)
+		frees = append(frees, fm...)
+		if err != nil {
+			relAll()
+			return nil, err
+		}
+	}
+	xn, fs, err := c.rmsnormDevice(xd, m.FinalNorm, hidden, eps, addOne)
+	frees = append(frees, fs...)
+	if err != nil {
+		relAll()
+		return nil, err
+	}
+	qb, sb, err := c.quantizeDevice(xn, 1, hidden)
+	if err != nil {
+		relAll()
+		return nil, err
+	}
+	frees = append(frees, func() { qb.Release() }, func() { sb.Release() })
+	logits, err := c.matmulW8A8Device(qb, sb, m.LMHead, 1)
+	if err != nil {
+		relAll()
+		return nil, err
+	}
+	frees = append(frees, func() { logits.Release() })
+	out, err := c.Readback(logits) // the single fence for the whole token
+	relAll()
+	return out, err
 }
 
 // NewKVCache creates a resident KV cache buffer of capElems f32 with the first
