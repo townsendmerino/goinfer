@@ -95,6 +95,116 @@ func (c *Context) ensureTiled() error {
 	return nil
 }
 
+// BatchTiled runs several tiled GEMMs that share one activation aq[M,K] (the
+// prefill qkv / gate-up projections) as ONE submit with ONE Poll — the prefill
+// analogue of BatchGEMV. The activation is uploaded once; each op dispatches the
+// tiled kernel into its own dst, all in one command buffer. Returns each op's
+// [M, rms[i].rows] result.
+func (c *Context) BatchTiled(aq []int8, aScales []float32, M int, rms []*ResidentW8A8) ([][]float32, error) {
+	if err := c.ensureTiled(); err != nil {
+		return nil, err
+	}
+	K := rms[0].cols
+	aBuf, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "btiled-act", Contents: wgpu.ToBytes(packInt8(aq, M, K)), Usage: wgpu.BufferUsageStorage})
+	if err != nil {
+		return nil, fmt.Errorf("gpu: BatchTiled act: %w", err)
+	}
+	defer aBuf.Release()
+	asBuf, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "btiled-ascales", Contents: wgpu.ToBytes(aScales[:M]), Usage: wgpu.BufferUsageStorage})
+	if err != nil {
+		return nil, fmt.Errorf("gpu: BatchTiled ascales: %w", err)
+	}
+	defer asBuf.Release()
+
+	type perOp struct {
+		dst, dims, stag *wgpu.Buffer
+		bg              *wgpu.BindGroup
+		n               int
+	}
+	pops := make([]perOp, len(rms))
+	release := func() {
+		for _, p := range pops {
+			for _, b := range []*wgpu.Buffer{p.dst, p.dims, p.stag} {
+				if b != nil {
+					b.Release()
+				}
+			}
+			if p.bg != nil {
+				p.bg.Release()
+			}
+		}
+	}
+	enc, _ := c.device.CreateCommandEncoder(nil)
+	defer enc.Release()
+	pass := enc.BeginComputePass(nil)
+	pass.SetPipeline(c.tiledPipeline)
+	for i, rm := range rms {
+		N := rm.rows
+		dst, err := c.device.CreateBuffer(&wgpu.BufferDescriptor{Label: "btiled-dst", Size: uint64(M * N * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
+		if err != nil {
+			pass.Release()
+			release()
+			return nil, fmt.Errorf("gpu: BatchTiled dst: %w", err)
+		}
+		dims, _ := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "btiled-dims", Contents: wgpu.ToBytes([]uint32{uint32(M), uint32(rm.kp), uint32(N), 0}), Usage: wgpu.BufferUsageUniform})
+		bg, err := c.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.tiledLayout, Entries: []wgpu.BindGroupEntry{
+			{Binding: 0, Buffer: aBuf, Size: aBuf.GetSize()}, {Binding: 1, Buffer: rm.bq, Size: rm.bq.GetSize()},
+			{Binding: 2, Buffer: asBuf, Size: asBuf.GetSize()}, {Binding: 3, Buffer: rm.bScales, Size: rm.bScales.GetSize()},
+			{Binding: 4, Buffer: dst, Size: dst.GetSize()}, {Binding: 5, Buffer: dims, Size: dims.GetSize()},
+		}})
+		if err != nil {
+			dst.Release()
+			dims.Release()
+			pass.Release()
+			release()
+			return nil, fmt.Errorf("gpu: BatchTiled bind: %w", err)
+		}
+		pops[i] = perOp{dst: dst, dims: dims, bg: bg, n: N}
+		pass.SetBindGroup(0, bg, nil)
+		pass.DispatchWorkgroups((uint32(N)+15)/16, (uint32(M)+15)/16, 1)
+	}
+	if err := pass.End(); err != nil {
+		pass.Release()
+		release()
+		return nil, fmt.Errorf("gpu: BatchTiled pass: %w", err)
+	}
+	pass.Release()
+	for i := range pops {
+		stag, err := c.device.CreateBuffer(&wgpu.BufferDescriptor{Label: "btiled-stage", Size: uint64(M * pops[i].n * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
+		if err != nil {
+			release()
+			return nil, fmt.Errorf("gpu: BatchTiled stage: %w", err)
+		}
+		pops[i].stag = stag
+		enc.CopyBufferToBuffer(pops[i].dst, 0, stag, 0, uint64(M*pops[i].n*4))
+	}
+	cmd, _ := enc.Finish(nil)
+	defer cmd.Release()
+	c.queue.Submit(cmd)
+	statuses := make([]wgpu.BufferMapAsyncStatus, len(pops))
+	for i := range pops {
+		idx := i
+		if err := pops[i].stag.MapAsync(wgpu.MapModeRead, 0, uint64(M*pops[i].n*4), func(s wgpu.BufferMapAsyncStatus) { statuses[idx] = s }); err != nil {
+			release()
+			return nil, fmt.Errorf("gpu: BatchTiled map: %w", err)
+		}
+	}
+	c.device.Poll(true, nil) // ONE sync for the whole batch
+	outs := make([][]float32, len(pops))
+	for i := range pops {
+		if statuses[i] != wgpu.BufferMapAsyncStatusSuccess {
+			release()
+			return nil, fmt.Errorf("gpu: BatchTiled map[%d] failed: %v", i, statuses[i])
+		}
+		out := make([]float32, M*pops[i].n)
+		copy(out, wgpu.FromBytes[float32](pops[i].stag.GetMappedRange(0, uint(M*pops[i].n*4))))
+		pops[i].stag.Unmap()
+		outs[i] = out
+	}
+	release()
+	return outs, nil
+}
+
 // MatmulW8A8Tiled computes dst[M,N] = (aq int8 [M,K]) · rmᵀ with the shared-memory
 // tiled kernel — the prefill (M>1) path. aq + per-row scales are uploaded each
 // call; the weight rm stays resident.

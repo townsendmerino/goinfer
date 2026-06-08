@@ -1,6 +1,10 @@
 package decoder
 
-import "math"
+import (
+	"math"
+
+	"github.com/townsendmerino/aikit/linalg"
+)
 
 // canBatchN reports whether the batched M=K path applies: the dense gated-MLP
 // families (Qwen / Llama / Gemma) with K>1. MoE, GPT-2 (non-gated + learned
@@ -48,6 +52,11 @@ func (m *Model) forwardLayersN(ids []int, cache *KVCache) ([]float32, error) {
 	up := make([]float32, K*inter)
 	mlpOut := make([]float32, K*hidden)
 	var scores []float32
+	// Batch the qkv and gate/up projections (shared activation) so a GPU backend
+	// runs each group as one submit (BatchTiled) instead of per-matmul syncs.
+	var ws linalg.Workspace
+	var qkvOps [3]linalg.W8A8Op
+	var guOps [2]linalg.W8A8Op
 
 	row := func(b []float32, i, w int) []float32 { return b[i*w : i*w+w] }
 
@@ -59,9 +68,16 @@ func (m *Model) forwardLayersN(ids []int, cache *KVCache) ([]float32, error) {
 		for i := 0; i < K; i++ {
 			normalize(arch, row(norm, i, hidden), lw.PreAttnNorm, lw.PreAttnNormBias, hidden)
 		}
-		lw.QProj.matmul(be, norm, q, K)
-		lw.KProj.matmul(be, norm, k, K)
-		lw.VProj.matmul(be, norm, v, K)
+		if lw.QProj.isW8A8() && lw.KProj.isW8A8() && lw.VProj.isW8A8() {
+			qkvOps[0] = linalg.W8A8Op{BQ: lw.QProj.q8, Scales: lw.QProj.scales, Dst: q, N: lw.QProj.rows}
+			qkvOps[1] = linalg.W8A8Op{BQ: lw.KProj.q8, Scales: lw.KProj.scales, Dst: k, N: lw.KProj.rows}
+			qkvOps[2] = linalg.W8A8Op{BQ: lw.VProj.q8, Scales: lw.VProj.scales, Dst: v, N: lw.VProj.rows}
+			matmulW8A8Batch(be, &ws, norm, K, lw.QProj.cols, qkvOps[:])
+		} else {
+			lw.QProj.matmul(be, norm, q, K)
+			lw.KProj.matmul(be, norm, k, K)
+			lw.VProj.matmul(be, norm, v, K)
+		}
 		if arch.QKVBias {
 			for i := 0; i < K; i++ {
 				addBias(row(q, i, qDim), lw.QBias)
@@ -105,8 +121,14 @@ func (m *Model) forwardLayersN(ids []int, cache *KVCache) ([]float32, error) {
 		for i := 0; i < K; i++ {
 			normalize(arch, row(norm, i, hidden), lw.PreMLPNorm, lw.PreMLPNormBias, hidden)
 		}
-		lw.GateProj.matmul(be, norm, gate, K)
-		lw.UpProj.matmul(be, norm, up, K)
+		if lw.GateProj.isW8A8() && lw.UpProj.isW8A8() {
+			guOps[0] = linalg.W8A8Op{BQ: lw.GateProj.q8, Scales: lw.GateProj.scales, Dst: gate, N: lw.GateProj.rows}
+			guOps[1] = linalg.W8A8Op{BQ: lw.UpProj.q8, Scales: lw.UpProj.scales, Dst: up, N: lw.UpProj.rows}
+			matmulW8A8Batch(be, &ws, norm, K, lw.GateProj.cols, guOps[:])
+		} else {
+			lw.GateProj.matmul(be, norm, gate, K)
+			lw.UpProj.matmul(be, norm, up, K)
+		}
 		switch arch.Act {
 		case ActGeluTanh:
 			for j := range gate {

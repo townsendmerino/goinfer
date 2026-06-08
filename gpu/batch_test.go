@@ -57,6 +57,54 @@ func TestBatchGEMV_parity(t *testing.T) {
 	t.Logf("BatchGEMV parity OK across %d ops", len(outs))
 }
 
+// TestBatchTiled_parity checks the M>1 (prefill) shared-activation batch against
+// the integer reference.
+func TestBatchTiled_parity(t *testing.T) {
+	ctx, err := New()
+	if err != nil {
+		t.Skipf("no GPU adapter: %v", err)
+	}
+	defer ctx.Close()
+
+	const M, K = 37, 1536
+	act := randMat(M*K, 7)
+	aq, aScales := linalg.QuantizeRowsInt8(act, M, K)
+	rms := make([]*ResidentW8A8, len(qkvShapes))
+	refs := make([][]float32, len(qkvShapes))
+	for i, sh := range qkvShapes {
+		w := randMat(sh.N*K, uint64(i)+1)
+		bq, bScales := linalg.QuantizeRowsInt8(w, sh.N, K)
+		rm, err := ctx.UploadW8A8(bq, bScales, sh.N, K)
+		if err != nil {
+			t.Fatalf("UploadW8A8: %v", err)
+		}
+		defer rm.Release()
+		rms[i] = rm
+		ref := make([]float32, M*sh.N)
+		for m := 0; m < M; m++ {
+			for n := 0; n < sh.N; n++ {
+				var acc int32
+				for kk := 0; kk < K; kk++ {
+					acc += int32(aq[m*K+kk]) * int32(bq[n*K+kk])
+				}
+				ref[m*sh.N+n] = float32(acc) * aScales[m] * bScales[n]
+			}
+		}
+		refs[i] = ref
+	}
+	outs, err := ctx.BatchTiled(aq, aScales, M, rms)
+	if err != nil {
+		t.Fatalf("BatchTiled: %v", err)
+	}
+	for i := range outs {
+		cos, maxAbs := cosine(outs[i], refs[i])
+		if cos < 0.99999 || maxAbs > 1e-3 {
+			t.Errorf("op %d diverges: cosine=%.8f maxAbs=%.3e", i, cos, maxAbs)
+		}
+	}
+	t.Logf("BatchTiled parity OK across %d ops (M=%d)", len(outs), M)
+}
+
 // TestBatchGEMV_microbench measures the sync-floor cut: the fused batch (one
 // Poll for all ops) vs the same ops as separate synced GEMVRunner calls (one Poll
 // each) vs the CPU batch kernel. Logs; run -v.

@@ -162,7 +162,7 @@ func (b *webgpuBackend) matmulLocked(a, bMat []float32, M, K, N int) ([]float32,
 // M=1 decode) as one GPU submit — quantize once, dispatch all, sync once. Falls
 // back (returns false) for M>1 or any GPU error.
 func (b *webgpuBackend) MatmulW8A8Batch(a []float32, M, K int, ops []linalg.W8A8Op) bool {
-	if M != 1 || len(ops) == 0 {
+	if M < 1 || len(ops) == 0 {
 		return false
 	}
 	b.mu.Lock()
@@ -184,8 +184,14 @@ func (b *webgpuBackend) MatmulW8A8Batch(a []float32, M, K int, ops []linalg.W8A8
 		}
 		rms[i] = qr.rm
 	}
-	aq, aScales := linalg.QuantizeRowsInt8(a, 1, K)
-	outs, err := b.ctx.BatchGEMV(aq, aScales[0], rms)
+	aq, aScales := linalg.QuantizeRowsInt8(a, M, K)
+	var outs [][]float32
+	var err error
+	if M == 1 { // coalesced GEMV (decode); else tiled GEMM (prefill) — both one sync
+		outs, err = b.ctx.BatchGEMV(aq, aScales[0], rms)
+	} else {
+		outs, err = b.ctx.BatchTiled(aq, aScales, M, rms)
+	}
 	if err != nil {
 		b.fallbacks++
 		return false
