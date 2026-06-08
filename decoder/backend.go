@@ -28,6 +28,18 @@ type Backend interface {
 	Close() error
 }
 
+// QuantBackend is an optional Backend extension: a backend that can run the
+// int8×int8 (W8A8) weight matmul on-device. weightMat type-asserts for it and
+// routes the W8A8 path through it — keeping the weight resident, keyed by the q8
+// slice's backing pointer — falling back to the CPU kernel when the backend
+// doesn't implement it or a call declines (returns false on any GPU error, so
+// results stay correct). The fused qkv / gate-up batch dispatches
+// (MatmulBTW8A8Batch) are a CPU optimization and are NOT routed here yet; full
+// decode coverage needs a batch equivalent (a follow-on).
+type QuantBackend interface {
+	MatmulW8A8(a []float32, bQ []int8, bScales []float32, dst []float32, M, K, N int) bool
+}
+
 var (
 	backendMu       sync.RWMutex
 	backendRegistry = map[string]func() (Backend, error){}

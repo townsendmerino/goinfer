@@ -46,7 +46,14 @@ type webgpuBackend struct {
 
 	mu        sync.Mutex // Context is not goroutine-safe
 	resident  map[*float32]*ResidentMatrix
+	qresident map[*int8]*qResident // W8A8 weights kept resident (+ a decode runner)
 	fallbacks int
+}
+
+// qResident is a resident int8 weight plus its cached decode (GEMV) runner.
+type qResident struct {
+	rm     *ResidentW8A8
+	runner *GEMVRunner // lazily built on the first M=1 call
 }
 
 // newWebGPUBackend initializes a WebGPU context for the named consumer
@@ -61,13 +68,62 @@ func newWebGPUBackend(who string) (*webgpuBackend, error) {
 		return nil, fmt.Errorf("gpu: no WebGPU adapter for %s (%v)", who, err)
 	}
 	return &webgpuBackend{
-		ctx:      ctx,
-		name:     "webgpu:" + ctx.Backend(),
-		resident: make(map[*float32]*ResidentMatrix),
+		ctx:       ctx,
+		name:      "webgpu:" + ctx.Backend(),
+		resident:  make(map[*float32]*ResidentMatrix),
+		qresident: make(map[*int8]*qResident),
 	}, nil
 }
 
 func (b *webgpuBackend) Name() string { return b.name }
+
+// MatmulW8A8 runs the int8×int8 weight matmul on the GPU: the weight is uploaded
+// once (resident, keyed by &bQ[0]); each call quantizes the activation and
+// dispatches the coalesced GEMV (decode, M=1) or the tiled GEMM (prefill, M>1).
+// Returns false on any GPU error so weightMat falls back to the CPU kernel.
+func (b *webgpuBackend) MatmulW8A8(a []float32, bQ []int8, bScales []float32, dst []float32, M, K, N int) bool {
+	if len(bQ) == 0 {
+		return false
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	key := &bQ[0]
+	qr := b.qresident[key]
+	if qr == nil {
+		rm, err := b.ctx.UploadW8A8(bQ, bScales, N, K)
+		if err != nil {
+			b.fallbacks++
+			return false
+		}
+		qr = &qResident{rm: rm}
+		b.qresident[key] = qr
+	}
+	aq, aScales := linalg.QuantizeRowsInt8(a, M, K)
+	if M == 1 {
+		if qr.runner == nil {
+			r, err := b.ctx.NewGEMVRunner(qr.rm)
+			if err != nil {
+				b.fallbacks++
+				return false
+			}
+			qr.runner = r
+		}
+		out, err := qr.runner.Run(aq, aScales[0])
+		if err != nil {
+			b.fallbacks++
+			return false
+		}
+		copy(dst, out)
+		return true
+	}
+	out, err := b.ctx.MatmulW8A8Tiled(aq, aScales, qr.rm, M)
+	if err != nil {
+		b.fallbacks++
+		return false
+	}
+	copy(dst, out)
+	return true
+}
 
 // MatmulBT computes dst[M,N] = a · bMatᵀ, with bMat (the weight) uploaded once
 // and reused. bMat's identity is its backing pointer — the forward pass passes
@@ -108,6 +164,13 @@ func (b *webgpuBackend) Close() error {
 		rm.Release()
 	}
 	b.resident = nil
+	for _, qr := range b.qresident {
+		if qr.runner != nil {
+			qr.runner.Release()
+		}
+		qr.rm.Release()
+	}
+	b.qresident = nil
 	b.mu.Unlock()
 	b.ctx.Close()
 	return nil

@@ -142,6 +142,9 @@ func (w *weightMat) matmul(be Backend, a, dst []float32, M int) {
 	case w.q4 != nil:
 		linalg.MatmulBTQ4(a, w.q4, w.q4s, dst, M, w.cols, w.rows, w.group)
 	case w.q8 != nil && w.w8a8:
+		if qb, ok := be.(QuantBackend); ok && qb.MatmulW8A8(a, w.q8, w.scales, dst, M, w.cols, w.rows) {
+			return
+		}
 		linalg.MatmulBTW8A8(a, w.q8, w.scales, dst, M, w.cols, w.rows)
 	case w.q8 != nil:
 		linalg.MatmulBTQ8(a, w.q8, w.scales, dst, M, w.cols, w.rows)
@@ -159,6 +162,9 @@ func (w *weightMat) isW8A8() bool { return w.q8 != nil && w.w8a8 }
 // allocation). Other quant paths ignore ws and use matmul.
 func (w *weightMat) matmulInto(ws *linalg.Workspace, be Backend, a, dst []float32, M int) {
 	if w.isW8A8() {
+		if qb, ok := be.(QuantBackend); ok && qb.MatmulW8A8(a, w.q8, w.scales, dst, M, w.cols, w.rows) {
+			return
+		}
 		linalg.MatmulBTW8A8Into(ws, a, w.q8, w.scales, dst, M, w.cols, w.rows)
 		return
 	}
