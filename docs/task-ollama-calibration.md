@@ -88,3 +88,22 @@ number contradicts the estimate.
 - One-line verdict written: "at equal (q8) quant, goinfer-GPU is N% of
   Ollama-CUDA on the 2070S" — the honest competitive number the whole
   assessment was missing.
+
+## RESULT (2026-06-08) — DONE
+
+Qwen2.5-Coder-1.5B (qwen2 arch, embedding 1536 = goinfer's shape), warm, two
+runs each, `ollama ps` = 100% GPU, Ollama 0.30.6 bundled CUDA, RTX 2070 SUPER.
+
+| engine | quant | bytes/tok | decode tok/s | vs goinfer-GPU |
+|---|---|---|---|---|
+| goinfer GPU (WebGPU) | int8 | ~1.55 GB | 89.7 | 1.00× |
+| Ollama (CUDA) | q8_0 | ~1.6 GB | 147 (146.2, 149.1) | 1.64× *(engine, equal quant)* |
+| Ollama (CUDA) | q4_K_M | ~0.9 GB | 186 (187.5, 184.9) | 2.07× *(engine + quant)* |
+
+**Verdict: at equal quant (q8/int8), goinfer-GPU is 61% of Ollama-CUDA** (89.7 vs
+147) — top of the predicted 40–60% band, thesis confirmed with margin. Ollama's
+own q4→q8 is only 1.27× (186/147), so the as-shipped gap is mostly quant width.
+W4A8 sizing (see §0.0): it cuts *only* goinfer's gemv (4.3→2.2 ms), not the fixed
+glue/encode, so goinfer-int4 ≈ 110 tok/s — ~59% of Ollama's q4 186, i.e. the same
+~60% engine ratio, NOT parity. Caveat: an earlier `qwen15-q4` run (191 tok/s) was
+a Qwen1.5-**1.8B** q4 — wrong model, discarded.

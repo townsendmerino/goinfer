@@ -6,7 +6,8 @@
 > (~750 lines) and `decoder.Backend` as of v0.3.0.
 >
 > **STATUS (2026-06-08): RESOLVED — GPU residency wins. 89.7 tok/s, 3.50×
-> the CPU-glue hybrid, 10.6× CPU, ~52% of the CUDA ceiling.** Read §0.0
+> the CPU-glue hybrid, 10.6× CPU, and — now MEASURED at EQUAL quant — 61%
+> of Ollama/llama.cpp-CUDA on the same card.** Read §0.0
 > first; §0 and §0.5 below are the (now-superseded) intermediate
 > conclusions, kept as the investigation trail. Reading order: §0.0 → §0 →
 > §0.5 → §3.
@@ -35,20 +36,26 @@ streaming roofline. Commits `fbdb71f`, `decfccd`, `93d53c9`, `eaf9a6c`
 (main).
 
 **Ollama/llama.cpp calibration — MEASURED (2026-06-08, same RTX 2070 SUPER,
-100% GPU), replacing the earlier estimated "CUDA ceiling":**
+warm, `ollama ps` 100% GPU; Qwen2.5-Coder-1.5B, same shape as the goinfer
+`.giw`), replacing the earlier estimated "CUDA ceiling". Both Ollama quants
+run, so the engine gap and the quant gap are separated:**
 
-| engine | quant | bytes/tok | decode tok/s | eff. GB/s | % roofline |
+| engine | quant | bytes/tok | decode tok/s | eff. GB/s | vs goinfer |
 |---|---|---|---|---|---|
-| Ollama / llama.cpp CUDA | Qwen 1.5B q4 | ~0.9 GB | ~191 | ~170 | ~49% |
-| goinfer / WebGPU | Qwen 1.5B int8 | ~1.55 GB | 89.7 | ~139 | ~40% |
+| goinfer / WebGPU | int8 | ~1.55 GB | **89.7** | ~139 | 1.00× |
+| Ollama / CUDA | q8_0 (≈int8) | ~1.6 GB | **147** | ~228 | 1.64× *(engine, equal quant)* |
+| Ollama / CUDA | q4_K_M | ~0.9 GB | **186** | ~167 | 2.07× *(engine + quant)* |
 
-Raw, goinfer is **47% of Ollama's tok/s** — but that's not equal-quant:
-Ollama runs q4 (~half the weight bytes), and decode is bandwidth-bound, so
-q4 gets ~2× tok/s for free. The honest engine-vs-engine number is **per-byte
-efficiency: goinfer is at ~82% of Ollama's GB/s (≈1.2× gap)** — one WebGPU
-shader set vs years of fused-CUDA tuning, exactly the tradeoff §2 chose. The
-predicted "40–60% of llama.cpp throughput" band (§2) and the guessed ~171
-ceiling both held (actual 191).
+**Equal-quant engine verdict: goinfer-GPU is 61% of Ollama-CUDA** (89.7 vs
+147 tok/s, both ~int8 / ~1.55 GB/token). Per-byte that is ~139 vs ~228 GB/s
+(40% vs ~65% of the streaming roofline) — one WebGPU shader set reaching ~3/5
+of llama.cpp's years-tuned CUDA at equal quant, the **top of the predicted
+40–60% band** (§2), not below it. The earlier "~52% of a guessed ~171
+ceiling" is superseded; the real equal-quant ceiling is 147. (An earlier
+`qwen15-q4` run, 191 tok/s, was a Qwen1.5-**1.8B** q4 — wrong model,
+discarded.) The q4→q8 gap inside Ollama is only 1.27× (186/147), far under
+the ~1.7× byte ratio because q4_K_M carries dequant overhead — relevant to
+sizing W4A8 below.
 
 **The finding that corrects the §5 model: the serialization tax was
 concentrated in ONE kernel, not spread across links.** The fusions
@@ -88,7 +95,7 @@ irreducible without W4A8)** + glue ~4.0 + attn 0.3. So:
   card (the 4.3 + 4.0 split is the evidence — no grind needed to know it).
 
 **Strategic verdict:** the bet is won. At 3.50× the prior hybrid, ~10.6× CPU,
-~82% of Ollama's per-byte efficiency on one import with zero install and the
+61% of Ollama-CUDA at equal quant on one import with zero install and the
 same binary running CPU-only elsewhere, GPU residency is the right
 architecture and the embedding use case is served. The remaining ~10% to the
 100 headline would come only from cutting GPU glue (the megakernel wall) —
@@ -98,14 +105,17 @@ not worth grinding.
 *only* the gemv (4.3 → ~2.2 ms; half the weight bytes); the glue (4.0),
 attn (0.3) and encode (1.0) operate on activations / dispatch count and are
 **fixed**. So the token goes ~11.15 → ~9.0 ms ≈ **~110 tok/s**, not the
-naive "scale the whole token by bytes → ~175." That's ~58% of Ollama's q4
-191 at *equal* quant (goinfer-int4 vs Ollama-q4) — a real, worthwhile gain
-that closes about half the raw gap, but it does **not** reach parity:
-as the token shrinks, the fixed glue+encode overhead becomes a *larger*
-fraction, so per-byte efficiency drops below today's 82%. That fixed
-WebGPU encode/glue tax is exactly what Ollama's fused-CUDA megakernel
-avoids — the same wall, now measured against Ollama. `dot4I8Packed` remains
-a *prefill* lever, upstream-blocked.
+naive "scale the whole token by bytes → ~145–175." That's ~59% of Ollama's
+q4_K_M (186) at *equal* 4-bit quant — i.e. W4A8 holds the SAME ~60% engine
+ratio as q8 (89.7/147=61%), it does **not** close the gap: it lets goinfer
+ship 4-bit like Ollama does, moving 89.7 → ~110, while Ollama's q4 sits at
+186. The engine gap is structural — as the token shrinks the fixed
+glue+encode overhead becomes a *larger* fraction, so per-byte efficiency
+falls below today's 65%-of-Ollama. That fixed WebGPU encode/glue tax is
+exactly what Ollama's fused-CUDA megakernel avoids — the same wall, now
+measured. So W4A8's value is **shipping 4-bit (≈Ollama's footprint) at
+~110 tok/s AND helping the CPU path (which is dequant-bound)**, not reaching
+CUDA parity. `dot4I8Packed` remains a *prefill* lever, upstream-blocked.
 
 ## 0. Measured outcome (2026-06-08) — SUPERSEDED by §0.0
 
@@ -186,10 +196,11 @@ artifact diagnoses:
 **Still open before any conclusion:**
 
 1. **llama.cpp calibration — DONE (2026-06-08)** via Ollama's bundled CUDA
-   runtime: Qwen 1.5B q4 = ~191 tok/s / ~170 GB/s on the 2070S. goinfer is
-   47% raw / **~82% per-byte efficiency**. See §0.0 table. (A from-source
-   Vulkan llama.cpp build for the same-API comparison is still optional;
-   the CUDA number was the one that mattered.)
+   runtime, Qwen2.5-Coder-1.5B, warm, 100% GPU on the 2070S: **q8_0 = 147
+   tok/s** (equal quant → goinfer-GPU is **61%** of it), **q4_K_M = 186
+   tok/s** (as-shipped). See §0.0 table. The earlier 191 was a Qwen1.5-1.8B
+   q4 (wrong model), discarded. (A from-source Vulkan llama.cpp build for the
+   same-API comparison is still optional; the CUDA number was the priority.)
 2. **Real full-token on-GPU forward** (attention + KV resident, zero CPU
    interleave per token) — the probe's 1.48× floor plus the roofline
    says build it. **The E2E model-packaging blocker is already solved
