@@ -62,18 +62,27 @@ func TestDecodeToken_throughput(t *testing.T) {
 		})
 	}
 
-	// warm up + time
+	// warm up both
 	if _, err := ctx.DecodeToken(x0, mw, hidden, nH, nKV, hd, inter, pos, 0, eps, scale, false); err != nil {
 		t.Fatalf("DecodeToken: %v", err)
+	}
+	if _, err := ctx.DecodeTokenFused(x0, mw, hidden, nH, nKV, hd, inter, pos, 0, eps, scale, false); err != nil {
+		t.Fatalf("DecodeTokenFused: %v", err)
 	}
 	const iters = 30
 	t0 := time.Now()
 	for i := 0; i < iters; i++ {
-		if _, err := ctx.DecodeToken(x0, mw, hidden, nH, nKV, hd, inter, pos, 0, eps, scale, false); err != nil {
-			t.Fatalf("DecodeToken: %v", err)
-		}
+		ctx.DecodeToken(x0, mw, hidden, nH, nKV, hd, inter, pos, 0, eps, scale, false)
 	}
-	per := time.Since(t0) / iters
-	t.Logf("one-fence DecodeToken: %.2f ms/token = %.1f tok/s  (vs staged E2E 25.6 tok/s = 3.07× CPU)",
-		float64(per.Microseconds())/1000, 1e6/float64(per.Microseconds()))
+	perMulti := time.Since(t0) / iters
+	t1 := time.Now()
+	for i := 0; i < iters; i++ {
+		ctx.DecodeTokenFused(x0, mw, hidden, nH, nKV, hd, inter, pos, 0, eps, scale, false)
+	}
+	perFused := time.Since(t1) / iters
+	ms := func(d time.Duration) float64 { return float64(d.Microseconds()) / 1000 }
+	tps := func(d time.Duration) float64 { return 1e6 / float64(d.Microseconds()) }
+	t.Logf("per-op-submit DecodeToken: %.1f ms = %.1f tok/s", ms(perMulti), tps(perMulti))
+	t.Logf("one-buffer DecodeTokenFused: %.1f ms = %.1f tok/s  (staged E2E 25.6 tok/s = 3.07× CPU; CUDA ceiling 171)", ms(perFused), tps(perFused))
+	t.Logf("  → fused vs per-op-submit %.2f×", float64(perMulti)/float64(perFused))
 }

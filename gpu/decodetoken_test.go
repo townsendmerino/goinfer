@@ -131,4 +131,16 @@ func TestDecodeToken_parity(t *testing.T) {
 	if cos < 0.999 {
 		t.Errorf("DecodeToken diverges: cosine=%.6f maxAbs=%.3e", cos, maxAbs)
 	}
+
+	// The fast single-encoder variant must match the reference too (same math,
+	// one command buffer instead of ~500 submits).
+	gotF, err := ctx.DecodeTokenFused(x0, mw, hidden, nH, nKV, hd, inter, pos, 0, eps, scale, false)
+	if err != nil {
+		t.Fatalf("DecodeTokenFused: %v", err)
+	}
+	cosF, maxAbsF := cosine(gotF, refLogits)
+	t.Logf("DecodeTokenFused parity: cosine=%.6f maxAbs=%.3e", cosF, maxAbsF)
+	if cosF < 0.999 {
+		t.Errorf("DecodeTokenFused diverges: cosine=%.6f maxAbs=%.3e", cosF, maxAbsF)
+	}
 }
