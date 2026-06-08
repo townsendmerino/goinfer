@@ -1,6 +1,9 @@
 package decoder
 
-import "math"
+import (
+	"math"
+	"os"
+)
 
 // GPU full-residency decode support. When the backend is webgpu AND the arch is
 // DecodeRunner-eligible (dense Qwen2/Llama shape), the per-token forward can run
@@ -92,6 +95,9 @@ func (m *Model) NormEps() float32 {
 // the arch is eligible, then returns m. A no-op for the CPU backend / ineligible
 // archs (m.resident stays nil → staged/CPU path). Called at every model-load site.
 func (m *Model) withResidency() *Model {
+	if os.Getenv("GOINFER_NO_RESIDENCY") != "" {
+		return m // force the per-matmul staged path (decision-matrix measurement)
+	}
 	rb, ok := m.be.(ResidencyBackend)
 	if !ok || !m.DecodeRunnerEligible() {
 		return m

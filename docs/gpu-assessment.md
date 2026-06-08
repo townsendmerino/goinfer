@@ -171,6 +171,62 @@ remains a *prefill* lever, upstream-blocked.
   `decoder.Generate` — only per-matmul primitives are) and Qwen2 q/k/v bias
   support in the runner.
 
+## 1. Decision matrix — which path for which size (2026-06-08)
+
+All cells are **real `decoder.Generate`** measurements: greedy/temp-0, warm (the
+first run is discarded so first-token pipeline compilation doesn't poison the
+rate), real weights, this box (RTX 2070 SUPER, ~860 MiB desktop VRAM baseline).
+TTFT is on a 256-token prompt (GPU-residency uses option-(a) GPU prefill, which is
+**O(prompt-len)** — linear, fine for typical prompts). Effective GB/s = resident
+weight bytes × tok/s vs the ~350 GB/s streaming roofline (shown for the
+bandwidth-bound residency paths). External reference (Ollama/llama.cpp-CUDA on the
+same card) is **not** duplicated here — see `docs/task-ollama-calibration.md`.
+Harness: `gpu/matrix_bench_test.go` (`GOINFER_MATRIX_*`, real HW). Ineligible archs
+mark `→ staged`; we don't invent residency numbers for them.
+
+**Qwen2.5-1.5B**
+
+| path | fits / VRAM | decode tok/s | eff GB/s (% roofline) | TTFT 256-tok |
+|---|---|---|---|---|
+| CPU int8 | yes (host) | 8.3 | — | 6.6 s |
+| CPU int4 | yes (host) | **0.3** ⚠ | — | 82 s |
+| GPU staged (int8, per-matmul) | yes / 0.9 GB | 28.8 | — | 6.0 s |
+| GPU residency int8 | yes / 3.7 GB | 95.1 | ~147 (42%) | 3.1 s |
+| **GPU residency int4** | yes / 3.0 GB | **102.8** | ~89 (25%) | 2.8 s |
+
+**Qwen2.5-7B**
+
+| path | fits / VRAM | decode tok/s | eff GB/s (% roofline) | TTFT 256-tok |
+|---|---|---|---|---|
+| CPU int8 | yes (host) | 3.0 | — | 20 s |
+| CPU int4 | yes (host) | **0.3** ⚠ | — | 402 s |
+| GPU staged (int8, per-matmul) | yes / 0.9 GB | 8.0 | — | 14 s |
+| GPU residency int8 | **marginal / 7.8 GB** ⚠ | 6.3 | ~32 (9%) | 38 s |
+| **GPU residency int4** | yes / 7.2 GB | **51.1** | ~203 (58%) | 5.3 s |
+
+Reading the cells (the empty/marginal ones ARE the decision):
+
+- **⚠ CPU int4 = 0.3 tok/s at both sizes** (28× slower than CPU int8). The aikit
+  SIMD `MatmulBTQ4` path is not engaging in this build — so **int4 is a GPU
+  footprint win, NOT a CPU win** (this corrects the earlier "int4 helps the
+  dequant-bound CPU path" line). Avoid CPU int4.
+- **⚠ 7B int8 residency loads but doesn't run well**: 7.8 / 8.0 GB resident
+  (~400 MB free) → memory-pressured → 6.3 tok/s, 38 s TTFT, 9% roofline. Not the
+  clean "won't fit" predicted, but effectively unusable — int4 (7.2 GB, ~1 GB
+  free) has the headroom and runs at 51 tok/s.
+- **GPU staged** keeps weights host-side (per-matmul, VRAM ~0.9 GB) so it fits any
+  size, but is slow (the ~25-tok/s-class hybrid).
+
+**Pick-this-path rule.** **≤~1.5B:** any GPU path works; GPU residency (int4 *or*
+int8) is fastest (~100 tok/s — 3.5× staged, 12× CPU), and int4-vs-int8 is moot
+(both fit, both fast). Ineligible arch → GPU staged (28.8). No GPU → CPU int8
+(8.3). **7B and up on 8 GB: int4 residency is the only path that is both resident
+and fast (51 tok/s)** — int8 residency lacks the VRAM headroom (7.8 GB → thrashes
+to 6.3), staged is host-bound (8.0), CPU is unusable (3.0 / 0.3). The **int8 class
+tops out for fast GPU decode around ~3 B** on this card; above that, **int4
+residency is the recommended path** — and the thing that makes the 7–12 B class
+usable on 8 GB at all.
+
 ## 0. Measured outcome (2026-06-08) — SUPERSEDED by §0.0
 
 | Stage | Verdict |
