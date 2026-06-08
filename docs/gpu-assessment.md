@@ -128,12 +128,14 @@ arithmetic clears (Qwen2.5-7B, the model that does NOT fit at int8):
 7B int4 fits the 8 GB card **comfortably at ≤16k context** (~4.5–6 GB,
 clearing ~7 GB usable after desktop); only full 32k is tight → wants f16 KV
 (a separate item). int4 is what makes the **7–12B class runnable at all** on
-this card — a capability expansion, the actual W4A8 win. It does **not** move
-the ~60% engine ratio vs Ollama (the WebGPU encode/glue wall is unchanged):
-W4A8 ships 4-bit at Ollama's footprint, a parity-of-*capability* story, not
-parity-of-*speed*. It also unifies one int4 `.giw` across the GPU path and the
-already-dequant-bound CPU `MatmulBTQ4` path. `dot4I8Packed` remains a
-*prefill* lever, upstream-blocked.
+this card — a capability expansion, the actual W4A8 win. It does **not** close
+the engine gap vs Ollama — measured ~96 vs Ollama's q4_K_M **186** is **~52%**
+at equal 4-bit quant, even a touch *below* the q8 ratio (61%) because the
+ALU-bound int4 kernel gives up efficiency as the token shrinks and the fixed
+encode/glue tax becomes a larger fraction. W4A8 ships 4-bit at Ollama's
+footprint, a parity-of-*capability* story, not parity-of-*speed*. It also
+unifies one int4 `.giw` across the GPU path and the already-dequant-bound CPU
+`MatmulBTQ4` path. `dot4I8Packed` remains a *prefill* lever, upstream-blocked.
 
 ## 0. Measured outcome (2026-06-08) — SUPERSEDED by §0.0
 
