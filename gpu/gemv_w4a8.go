@@ -20,7 +20,7 @@ import (
 const w4a8GroupSize = 32
 
 const gemvW4A8ShaderWGSL = `
-struct Dims { m: u32, kp: u32, n: u32, _pad: u32 };  // kp = K padded to mult of 32
+struct Dims { m: u32, kp: u32, n: u32, addResidual: u32 };  // kp = K padded to 32; addResidual=1 ⇒ dst[n]+=result
 
 @group(0) @binding(0) var<storage, read>       aq:      array<vec4<u32>>;  // [kp/16] int8 act, 16/vec4
 @group(0) @binding(1) var<storage, read>       bq:      array<vec4<u32>>;  // [N*kp/32] nibbles, 32/vec4
@@ -82,7 +82,8 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid
         stride = stride / 2u;
     }
     if (t == 0u) {
-        dst[n] = partial[0] * aScale[0];
+        let r = partial[0] * aScale[0];
+        if (dims.addResidual == 1u) { dst[n] = dst[n] + r; } else { dst[n] = r; }
     }
 }
 `
@@ -248,3 +249,31 @@ func (c *Context) ensureGEMVW4() error {
 	c.gemvW4Layout = pl.GetBindGroupLayout(0)
 	return nil
 }
+
+// decodeWeight is a resident projection matrix the DecodeRunner can GEMV —
+// either W8A8 or W4A8. Both kernels share the same 6-binding layout
+// (aq, weights, aScale, scales, dst, dims) and the dims.addResidual epilogue, so
+// the runner's gemv/gemvAdd builders are uniform across precisions; only the
+// pipeline/layout and the weight/scale buffers differ.
+type decodeWeight interface {
+	gPipe(c *Context) *wgpu.ComputePipeline
+	gLayout(c *Context) *wgpu.BindGroupLayout
+	wbuf() *wgpu.Buffer // packed weights (int8 or int4 nibbles)
+	sbuf() *wgpu.Buffer // scales (f32 per-row, or f16 per-group)
+	nRows() int         // output features N
+	kPad() int          // K padded (mult of 4 for int8, 32 for int4)
+}
+
+func (rm *ResidentW8A8) gPipe(c *Context) *wgpu.ComputePipeline   { return c.gemvPipeline }
+func (rm *ResidentW8A8) gLayout(c *Context) *wgpu.BindGroupLayout { return c.gemvLayout }
+func (rm *ResidentW8A8) wbuf() *wgpu.Buffer                       { return rm.bq }
+func (rm *ResidentW8A8) sbuf() *wgpu.Buffer                       { return rm.bScales }
+func (rm *ResidentW8A8) nRows() int                               { return rm.rows }
+func (rm *ResidentW8A8) kPad() int                                { return rm.kp }
+
+func (rm *ResidentW4A8) gPipe(c *Context) *wgpu.ComputePipeline   { return c.gemvW4Pipeline }
+func (rm *ResidentW4A8) gLayout(c *Context) *wgpu.BindGroupLayout { return c.gemvW4Layout }
+func (rm *ResidentW4A8) wbuf() *wgpu.Buffer                       { return rm.bq }
+func (rm *ResidentW4A8) sbuf() *wgpu.Buffer                       { return rm.bScales }
+func (rm *ResidentW4A8) nRows() int                               { return rm.rows }
+func (rm *ResidentW4A8) kPad() int                                { return rm.kp }

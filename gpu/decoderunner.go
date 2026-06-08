@@ -40,14 +40,49 @@ type posUni struct {
 	gen func(pos int) []uint32 // uniform contents for this pos
 }
 
-// NewDecodeRunner builds the persistent plan for a resident model.
+// runLayer / runModel are the DecodeRunner's precision-agnostic view of a resident
+// model: the f32 buffers (norms, RoPE freqs, KV caches) plus the projection
+// weights as decodeWeight (W8A8 or W4A8). The public constructors adapt a concrete
+// ModelW / ModelW4 into this; the builder below works the same for either.
+type runLayer struct {
+	attnNorm, invFreq, kCache, vCache, mlpNorm *wgpu.Buffer
+	q, k, v, o, gate, up, down                 decodeWeight
+}
+
+type runModel struct {
+	layers    []runLayer
+	finalNorm *wgpu.Buffer
+	lmHead    decodeWeight
+}
+
+// w8Model adapts the W8A8 ModelW into the precision-agnostic runModel.
+func w8Model(m ModelW) runModel {
+	rm := runModel{finalNorm: m.FinalNorm.buf, lmHead: m.LMHead}
+	for i := range m.Layers {
+		lw := &m.Layers[i]
+		rm.layers = append(rm.layers, runLayer{
+			attnNorm: lw.Attn.Norm.buf, invFreq: lw.Attn.InvFreq.buf,
+			kCache: lw.Attn.KCache.buf, vCache: lw.Attn.VCache.buf, mlpNorm: lw.MLPNorm.buf,
+			q: lw.Attn.QProj, k: lw.Attn.KProj, v: lw.Attn.VProj, o: lw.Attn.OProj,
+			gate: lw.Gate, up: lw.Up, down: lw.Down,
+		})
+	}
+	return rm
+}
+
+// NewDecodeRunner builds the persistent plan for a resident W8A8 model.
 func (c *Context) NewDecodeRunner(m ModelW, hidden, nH, nKV, hd, inter, start int, eps, scale float32, addOne bool) (*DecodeRunner, error) {
-	for _, e := range []func() error{c.ensureGEMV, c.ensureQuantize, c.ensureLayer, c.ensureAttn, c.ensureFuse} {
+	return c.newDecodeRunner(w8Model(m), hidden, nH, nKV, hd, inter, start, eps, scale, addOne)
+}
+
+// newDecodeRunner builds the persistent decode plan for either precision.
+func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start int, eps, scale float32, addOne bool) (*DecodeRunner, error) {
+	for _, e := range []func() error{c.ensureGEMV, c.ensureQuantize, c.ensureLayer, c.ensureAttn, c.ensureFuse, c.ensureGEMVW4} {
 		if err := e(); err != nil {
 			return nil, err
 		}
 	}
-	r := &DecodeRunner{c: c, vocab: m.LMHead.rows, kvDim: nKV * hd}
+	r := &DecodeRunner{c: c, vocab: m.lmHead.nRows(), kvDim: nKV * hd}
 	keepBuf := func(b *wgpu.Buffer) *wgpu.Buffer { r.keep = append(r.keep, b.Release); return b }
 	keepBG := func(b *wgpu.BindGroup) *wgpu.BindGroup { r.keep = append(r.keep, b.Release); return b }
 	storF := func(n int) *wgpu.Buffer {
@@ -100,19 +135,21 @@ func (c *Context) NewDecodeRunner(m ModelW, hidden, nH, nKV, hd, inter, start in
 		add(c.quantizePipeline, bind(c.quantizeLayout, in, q, s, p), 1, 1)
 		return q, s
 	}
-	gemv := func(aq, as *wgpu.Buffer, rm *ResidentW8A8) *wgpu.Buffer {
-		out := storF(rm.rows)
-		p := uni([]uint32{1, uint32(rm.kp), uint32(rm.rows), 0})
-		gx, gy := gemvGrid(rm.rows)
-		add(c.gemvPipeline, bind(c.gemvLayout, aq, rm.bq, as, rm.bScales, out, p), gx, gy)
+	// gemv records a projection matmul against any resident precision (W8A8 or
+	// W4A8 — both expose the same 6-binding gemv + addResidual via decodeWeight).
+	gemv := func(aq, as *wgpu.Buffer, w decodeWeight) *wgpu.Buffer {
+		out := storF(w.nRows())
+		p := uni([]uint32{1, uint32(w.kPad()), uint32(w.nRows()), 0})
+		gx, gy := gemvGrid(w.nRows())
+		add(w.gPipe(c), bind(w.gLayout(c), aq, w.wbuf(), as, w.sbuf(), out, p), gx, gy)
 		return out
 	}
 	// gemvAdd is gemv with the residual fused into the epilogue: dst (the running
 	// hidden state) gets dst[n] += result, deleting a standalone residual link.
-	gemvAdd := func(aq, as *wgpu.Buffer, rm *ResidentW8A8, dst *wgpu.Buffer) {
-		p := uni([]uint32{1, uint32(rm.kp), uint32(rm.rows), 1})
-		gx, gy := gemvGrid(rm.rows)
-		add(c.gemvPipeline, bind(c.gemvLayout, aq, rm.bq, as, rm.bScales, dst, p), gx, gy)
+	gemvAdd := func(aq, as *wgpu.Buffer, w decodeWeight, dst *wgpu.Buffer) {
+		p := uni([]uint32{1, uint32(w.kPad()), uint32(w.nRows()), 1})
+		gx, gy := gemvGrid(w.nRows())
+		add(w.gPipe(c), bind(w.gLayout(c), aq, w.wbuf(), as, w.sbuf(), dst, p), gx, gy)
 	}
 	// §4: the per-token uniforms (rope-q, rope-store-k, v-store, attn) depend only
 	// on pos, NOT on layer index — their contents are identical across all 28
@@ -155,24 +192,24 @@ func (c *Context) NewDecodeRunner(m ModelW, hidden, nH, nKV, hd, inter, start in
 		return b
 	}())
 
-	for i := range m.Layers {
-		lw := &m.Layers[i]
-		aq, as := rmsQuant(r.xd, lw.Attn.Norm.buf, hidden)
-		q, k, v := gemv(aq, as, lw.Attn.QProj), gemv(aq, as, lw.Attn.KProj), gemv(aq, as, lw.Attn.VProj)
-		rope(q, lw.Attn.InvFreq.buf)
-		ropeStore(k, lw.Attn.InvFreq.buf, lw.Attn.KCache.buf) // rotate K + append into cache
-		vStore(v, lw.Attn.VCache.buf)                         // append V into cache
+	for i := range m.layers {
+		lw := &m.layers[i]
+		aq, as := rmsQuant(r.xd, lw.attnNorm, hidden)
+		q, k, v := gemv(aq, as, lw.q), gemv(aq, as, lw.k), gemv(aq, as, lw.v)
+		rope(q, lw.invFreq)
+		ropeStore(k, lw.invFreq, lw.kCache) // rotate K + append into cache
+		vStore(v, lw.vCache)                // append V into cache
 		ctxv := storF(nH * hd)
-		add(c.attnPipeline, bind(c.attnLayout, q, lw.Attn.KCache.buf, lw.Attn.VCache.buf, ctxv, attnUni), uint32(nH), 1)
+		add(c.attnPipeline, bind(c.attnLayout, q, lw.kCache, lw.vCache, ctxv, attnUni), uint32(nH), 1)
 		cq, cs := quant(ctxv, nH*hd)
-		gemvAdd(cq, cs, lw.Attn.OProj, r.xd) // o-proj + residual into xd
-		mq, ms := rmsQuant(r.xd, lw.MLPNorm.buf, hidden)
-		gate, up := gemv(mq, ms, lw.Gate), gemv(mq, ms, lw.Up)
+		gemvAdd(cq, cs, lw.o, r.xd) // o-proj + residual into xd
+		mq, ms := rmsQuant(r.xd, lw.mlpNorm, hidden)
+		gate, up := gemv(mq, ms, lw.gate), gemv(mq, ms, lw.up)
 		dq, ds := swigluQuant(gate, up, inter)
-		gemvAdd(dq, ds, lw.Down, r.xd) // down-proj + residual into xd
+		gemvAdd(dq, ds, lw.down, r.xd) // down-proj + residual into xd
 	}
-	fq, fs := rmsQuant(r.xd, m.FinalNorm.buf, hidden)
-	logits := gemv(fq, fs, m.LMHead)
+	fq, fs := rmsQuant(r.xd, m.finalNorm, hidden)
+	logits := gemv(fq, fs, m.lmHead)
 	r.lastLogits = logits
 	stag, _ := c.device.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(r.vocab * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
 	r.stag = keepBuf(stag)
