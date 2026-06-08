@@ -92,18 +92,40 @@ Per-layer: ~7 → ~5 dispatches.
 `Run` does a `WriteBuffer` per `posUni` every token. Pack all pos-dependent
 uniforms into ONE buffer and write once. Minor vs §1–2, but free.
 
-### 5. If §1 underdelivers: instrument before theorizing
+### RESULT LOG
 
-- Enable timestamp queries if the binding exposes them (`device.go`
-  features); otherwise bisect with wall-clock: time an N-dispatch
-  no-op-kernel pass vs the real pass to separate per-pass cost from kernel
-  cost.
-- Confirm the big GEMVs (gate/up/down, ~13 MB each) actually hit bandwidth
-  in isolation — bench one resident GEMV standalone, compute its GB/s. If a
-  single GEMV is already far below roofline, the kernel (not the dispatch
-  count) is the problem and §1–3 won't save it. (The kernel in `gemv.go`
-  looks bandwidth-correct — coalesced vec4 loads, workgroup-per-row,
-  tree-reduce — so this is a check, not the expected culprit.)
+- **§1 done (commit it):** KV copies eliminated (RoPE writes K into cache,
+  kv-store writes V; offsets ride posUni), whole token in one
+  `BeginComputePass`. Bit-exact (cosine 1.0). **17.6→22.4 tok/s, 27.3→34.7
+  GB/s = 1.27×**, ~8%→~10% of roofline. **The §1 "93% pass overhead"
+  hypothesis was wrong** — pass wrapper is only ~24 µs each; 44.7 ms (~10%
+  roofline) remains, ~80 µs/dispatch unexplained. ⇒ **§5 instrumentation
+  BEFORE §2** — that's the second hypothesis about this code to miss by ~4×
+  (after the §0.5 1.48× probe); stop predicting, decompose the 44.7 ms.
+
+### 5. Instrument before §2 — decompose the remaining 44.7 ms
+
+Three measurements that fully split the cost; the decision rule chooses
+§2 vs kernel-fix vs earned-conclusion. **Do not start §2 until all three
+are in.**
+
+- **(a) one resident gate/up GEMV (~13.8 MB) standalone in a loop → GB/s.**
+  ~40–80 µs ⇒ kernel is bandwidth-correct, problem is dispatch count →
+  §2/§3 pay. 200 µs+ ⇒ kernel is the problem, fusion won't save it. (The
+  `gemv.go` kernel looks bandwidth-correct — coalesced vec4 loads,
+  workgroup-per-row, tree-reduce — so this is a check, not the expected
+  culprit, but the §1 miss says verify, don't assume.)
+- **(b) a pass of K no-op / 1-workgroup dispatches → per-dispatch floor.**
+  Isolates launch+barrier from kernel work. Floor that scales with K ⇒ cut
+  dispatch count (§2/§3). High floor independent of work ⇒ wgpu/Vulkan
+  structural cost → native-backend territory.
+- **(c) full forward, glue dispatches removed (matmul-only, wrong output,
+  timing only).** Splits 44.7 ms into matmul-time vs glue-dispatch-time.
+
+Decision rule: (a) slow → fix kernel; (b) high floor + (c) glue-dominated
+→ §2/§3 fusion lands the remaining ~10×; (b) high irreducible floor →
+write the "staged hybrid optimal, X µs/dispatch on this stack" conclusion
+with the number behind it.
 
 ## Gate (this is what falsifies-or-confirms the §0 conclusion)
 
