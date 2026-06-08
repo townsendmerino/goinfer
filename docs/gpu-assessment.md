@@ -5,8 +5,8 @@
 > class, and what does it cost? Grounded in the current `gpu/` module
 > (~750 lines) and `decoder.Backend` as of v0.3.0.
 >
-> **STATUS (2026-06-08): RESOLVED — GPU residency wins. 84.5 tok/s, 3.3×
-> the CPU-glue hybrid, 9.95× CPU, ~49% of the CUDA ceiling.** Read §0.0
+> **STATUS (2026-06-08): RESOLVED — GPU residency wins. 89.7 tok/s, 3.50×
+> the CPU-glue hybrid, 10.6× CPU, ~52% of the CUDA ceiling.** Read §0.0
 > first; §0 and §0.5 below are the (now-superseded) intermediate
 > conclusions, kept as the investigation trail. Reading order: §0.0 → §0 →
 > §0.5 → §3.
@@ -28,10 +28,11 @@ every step:
 | + swiglu+quant fused (36 KB intermediate off the spine) | 27.0 | 41.8 | 34.7 ms |
 | + residual→gemv epilogue | 27.1 | 42.0 | 34.7 ms |
 | + **attn warp-per-head** | **84.5** | **130.8** | **9.7 ms** |
+| + §4 share per-token uniforms | **89.7** | **138.8** | 9.7 ms (host 1.0) |
 
-84.5 tok/s = **3.3× the staged hybrid (25.6)**, 9.95× CPU, ~49% of the
-CUDA ceiling, 37% of the streaming roofline. Commits `fbdb71f`, `decfccd`,
-`93d53c9` (main).
+89.7 tok/s = **3.50× the staged hybrid (25.6)**, 10.6× CPU, ~52% of the
+CUDA ceiling, 40% of the streaming roofline. Commits `fbdb71f`, `decfccd`,
+`93d53c9`, `eaf9a6c` (main).
 
 **The finding that corrects the §5 model: the serialization tax was
 concentrated in ONE kernel, not spread across links.** The fusions
@@ -49,23 +50,35 @@ mispredicted by ~3×.**
 9.7 GPU + 2.1 host. GPU 9.7 ms = gemv **4.3 (at roofline, ~360 GB/s,
 irreducible without W4A8)** + glue ~4.0 + attn 0.3. So:
 
-- The **≥100 tok/s gate is gated by host overhead, not the GPU** — the GPU
-  side is already ~103 tok/s-equivalent (9.7 ms). The lever is coalescing
-  the per-token uniform `WriteBuffer`s (§4), not more GPU link-folds (which
-  §5 + this campaign prove are diminishing on 6 KB buffers).
-- The **WebGPU decode wall** sits near gemv-floor + irreducible-glue ≈
-  7–8 ms (**~125–140 tok/s**). Below that needs a single-dispatch megakernel
-  (persistent-thread, whole layer in one dispatch), which **WGSL cannot
-  express** — that's the native-CUDA/Metal advantage, and the honest cap on
-  the pure-Go/WebGPU path.
+- **§4 done (commit eaf9a6c): 89.7 tok/s, 138.8 GB/s, 40% roofline.** The
+  per-token uniforms are layer-invariant (depend only on pos), so they were
+  coalesced from ~112 buffers/writes to 4. Host `write` 0.3→0.0 ms, and the
+  hidden per-buffer staging cost in submit fell too (submit+poll 10.1→9.8).
+- **This CORRECTS the "host overhead is the lever" call: it wasn't.** §4
+  removed essentially all the attackable host cost (write→0), yet we land at
+  89.7, not >100. What remains is the ~1.0 ms `encode` (re-recording ~420
+  dispatches via cgo — irreducible in WebGPU; compute command buffers are
+  single-use, no reusable bundles) plus the 9.7 ms GPU. So the token-level
+  **≥100 gate is blocked by the GPU glue wall, not host**: GPU alone is
+  ~103 tok/s (9.7 ms), and with the irreducible encode the token floors near
+  ~93 tok/s. Crossing 100 needs cutting the 9.7 ms GPU itself.
+- The **WebGPU decode wall**: GPU 9.7 ms = gemv **4.3 (at roofline)** + glue
+  **4.0** + barriers ~1.4. The 4.0 ms glue is residual per-link serialization
+  over small (6 KB) buffers — §5 + this campaign prove it is only marginally
+  reducible without a single-dispatch megakernel (persistent-thread, whole
+  layer in one dispatch) that **WGSL cannot express**. That megakernel is the
+  native-CUDA/Metal advantage and the honest cap on the pure-Go/WebGPU path;
+  practical WebGPU decode tops out near **~90–100 tok/s token-level** on this
+  card (the 4.3 + 4.0 split is the evidence — no grind needed to know it).
 
-**Strategic verdict:** the bet is won. At 3.3× the prior hybrid, ~10× CPU,
-~49% of CUDA on one import with zero install and the same binary running
+**Strategic verdict:** the bet is won. At 3.50× the prior hybrid, ~10.6× CPU,
+52% of CUDA on one import with zero install and the same binary running
 CPU-only elsewhere, GPU residency is the right architecture and the
-embedding use case is served. Remaining work is a bounded host-overhead
-trim (§4) to cross 100, and W4A8 (fewer weight bytes → the only lever on
-the 4.3 ms gemv floor) as a future decode win. `dot4I8Packed` remains a
-*prefill* lever, upstream-blocked.
+embedding use case is served. The remaining ~10% to the 100 headline would
+come only from cutting GPU glue (the megakernel wall) — not worth grinding;
+W4A8 (fewer weight bytes → the only lever on the 4.3 ms gemv floor) is the
+real future decode win. `dot4I8Packed` remains a *prefill* lever,
+upstream-blocked.
 
 ## 0. Measured outcome (2026-06-08) — SUPERSEDED by §0.0
 

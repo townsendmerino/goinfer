@@ -255,6 +255,29 @@ or is the per-link-serialization wall the megakernel-only argument predicts
 is the open question; the result already overturns §0 regardless. **Stopped
 here for a decision rather than grinding the last 16%.**
 
+### §4 RESULT (committed eaf9a6c) — 84.5→89.7 tok/s; host floor confirmed
+
+The per-token uniforms (rope-q, rope-store-k, v-store, attn) are
+layer-invariant — they depend only on pos, not layer index — so they
+collapse from ~112 buffers/writes to 4 shared buffers, written once each.
+Bit-exact (cosine=1.000000 maxAbs=0).
+
+  before  84.5 tok/s  130.8 GB/s  | write 0.3  encode 1.0  submit+poll 10.1
+  after   89.7 tok/s  138.8 GB/s  | write 0.0  encode 1.0  submit+poll  9.8
+
+Gain exceeds the 0.3 ms write because the 112 per-buffer staging copies also
+burdened submit. **This corrects the "host overhead is the lever" call:** §4
+removed the attackable host cost (write→0), yet we land at 89.7, not >100.
+The remainder is the ~1.0 ms `encode` (re-recording ~420 dispatches via cgo
+— irreducible in WebGPU: compute command buffers are single-use, no
+reusable bundles) + the 9.7 ms GPU. So the ≥100 token-level gate is blocked
+by the GPU glue wall, not host — GPU alone is ~103 tok/s, the irreducible
+encode floors the token near ~93. **Campaign closed at 89.7 tok/s** (3.50×
+the staged hybrid, 52% of CUDA, 40% roofline); crossing 100 needs cutting
+the 9.7 ms GPU itself (the megakernel wall WGSL can't express), not host or
+the diminishing-return link-folds. Not grinding it — the wall is the
+finding. `docs/gpu-assessment.md` §0.0 records the closed result.
+
 ## Gate (this is what falsifies-or-confirms the §0 conclusion)
 
 - **Primary:** full-token GPU decode on the 1.5B int8 `.giw`
