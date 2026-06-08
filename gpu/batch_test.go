@@ -37,7 +37,7 @@ func TestBatchGEMV_parity(t *testing.T) {
 		ref := make([]float32, sh.N)
 		for n := 0; n < sh.N; n++ {
 			var acc int32
-			for k := 0; k < K; k++ {
+			for k := range K {
 				acc += int32(aq[k]) * int32(bq[n*K+k])
 			}
 			ref[n] = float32(acc) * aScales[0] * bScales[n]
@@ -81,10 +81,10 @@ func TestBatchTiled_parity(t *testing.T) {
 		defer rm.Release()
 		rms[i] = rm
 		ref := make([]float32, M*sh.N)
-		for m := 0; m < M; m++ {
+		for m := range M {
 			for n := 0; n < sh.N; n++ {
 				var acc int32
-				for kk := 0; kk < K; kk++ {
+				for kk := range K {
 					acc += int32(aq[m*K+kk]) * int32(bq[n*K+kk])
 				}
 				ref[m*sh.N+n] = float32(acc) * aScales[m] * bScales[n]
@@ -143,7 +143,7 @@ func TestBatchGEMV_microbench(t *testing.T) {
 	}
 
 	t0 := time.Now()
-	for it := 0; it < iters; it++ {
+	for range iters {
 		if _, err := ctx.BatchGEMV(aq, aScales[0], rms); err != nil {
 			t.Fatalf("BatchGEMV: %v", err)
 		}
@@ -151,7 +151,7 @@ func TestBatchGEMV_microbench(t *testing.T) {
 	batch := time.Since(t0) / iters
 
 	t1 := time.Now()
-	for it := 0; it < iters; it++ {
+	for range iters {
 		for _, r := range runners {
 			if _, err := r.Run(aq, aScales[0]); err != nil {
 				t.Fatalf("runner: %v", err)
@@ -162,7 +162,7 @@ func TestBatchGEMV_microbench(t *testing.T) {
 
 	var ws linalg.Workspace
 	t2 := time.Now()
-	for it := 0; it < iters; it++ {
+	for range iters {
 		linalg.MatmulBTW8A8Batch(&ws, act, 1, K, ops)
 	}
 	cpu := time.Since(t2) / iters

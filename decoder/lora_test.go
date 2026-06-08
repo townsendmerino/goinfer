@@ -32,10 +32,10 @@ func TestLoRAMerge(t *testing.T) {
 	}
 	// want[o,j] = scale · Σ_k B[o,k]·A[k,j]
 	want := make([]float32, out*in)
-	for o := 0; o < out; o++ {
-		for j := 0; j < in; j++ {
+	for o := range out {
+		for j := range in {
 			var s float64
-			for k := 0; k < r; k++ {
+			for k := range r {
 				s += float64(b[o*r+k]) * float64(a[k*in+j])
 			}
 			want[o*in+j] = float32(scale * s)
@@ -176,10 +176,10 @@ func TestLoRA_mergeAtLoad(t *testing.T) {
 
 	q0, q1 := w0.Layers[0].QProj.f32, w1.Layers[0].QProj.f32
 	const scale = 2.0
-	for o := 0; o < qDim; o++ {
-		for j := 0; j < hidden; j++ {
+	for o := range qDim {
+		for j := range hidden {
 			var s float64
-			for k := 0; k < r; k++ {
+			for k := range r {
 				s += float64(bData[o*r+k]) * float64(aData[k*hidden+j])
 			}
 			want := q0[o*hidden+j] + float32(scale*s)

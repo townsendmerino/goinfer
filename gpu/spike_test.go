@@ -3,6 +3,7 @@
 package gpu
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/cogentcore/webgpu/wgpu"
@@ -54,10 +55,5 @@ fn main() {
 }
 
 func hasFeature(fs []wgpu.FeatureName, want wgpu.FeatureName) bool {
-	for _, f := range fs {
-		if f == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(fs, want)
 }

@@ -129,7 +129,7 @@ func (m *Model) LoadSession(data []byte, wantID string) (*Session, error) {
 	}
 
 	tokens := r.ints()
-	for l := 0; l < numLayers; l++ {
+	for l := range numLayers {
 		k, v := r.f32(), r.f32()
 		// f32 returns nil for a len-0 field (KV-shared layers); keep the cache's
 		// empty-but-non-nil slice so Append/Keys stay well-formed.

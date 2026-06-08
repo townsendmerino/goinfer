@@ -136,7 +136,7 @@ func loraTensor(st *embed.SafetensorsFile, name string) ([]float32, []int, error
 // embed_tokens) fails loudly rather than silently no-op'ing.
 func (a *loraAdapter) validateTargets(numLayers int, s *tensorSchema) error {
 	known := map[string]bool{}
-	for i := 0; i < numLayers; i++ {
+	for i := range numLayers {
 		for _, suf := range []string{s.QProj, s.KProj, s.VProj, s.OProj, s.GateProj, s.UpProj, s.DownProj} {
 			if suf != "" {
 				known[tensorName(i, suf)] = true
@@ -166,7 +166,7 @@ func (a *loraAdapter) merge(name string, data []float32, out, in int) error {
 		return fmt.Errorf("decoder(lora): %q delta [%d,%d] != base [%d,%d]", name, d.out, d.in, out, in)
 	}
 	sc := float32(d.scale)
-	for o := 0; o < out; o++ {
+	for o := range out {
 		brow := d.b[o*d.r : o*d.r+d.r]
 		row := data[o*in : o*in+in]
 		for k := 0; k < d.r; k++ {
@@ -175,7 +175,7 @@ func (a *loraAdapter) merge(name string, data []float32, out, in int) error {
 				continue
 			}
 			arow := d.a[k*in : k*in+in]
-			for j := 0; j < in; j++ {
+			for j := range in {
 				row[j] += bk * arow[j]
 			}
 		}

@@ -56,10 +56,7 @@ func (s *Session) Generate(ctx context.Context, prompt []int, maxTokens int, sp 
 	// prefill (the seed logits come from re-running the last prompt token), so
 	// cap reuse at len(prompt)-1 even on an exact-prompt repeat. matched falls to
 	// 0 on an empty prompt; generateInto then reports the empty-prompt error.
-	matched := commonPrefixLen(s.tokens, prompt)
-	if matched > len(prompt)-1 {
-		matched = len(prompt) - 1
-	}
+	matched := min(commonPrefixLen(s.tokens, prompt), len(prompt)-1)
 	if matched < 0 {
 		matched = 0
 	}

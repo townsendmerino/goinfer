@@ -119,12 +119,12 @@ func packInt8(q []int8, rows, cols int) []uint32 {
 	kp := padK(cols)
 	kw := kp / 4
 	out := make([]uint32, rows*kw)
-	for r := 0; r < rows; r++ {
+	for r := range rows {
 		src := q[r*cols : r*cols+cols]
 		dst := out[r*kw : r*kw+kw]
-		for w := 0; w < kw; w++ {
+		for w := range kw {
 			var word uint32
-			for j := 0; j < 4; j++ {
+			for j := range 4 {
 				if k := w*4 + j; k < cols {
 					word |= uint32(uint8(src[k])) << (8 * j)
 				}

@@ -60,7 +60,7 @@ func TestResolveQwen35(t *testing.T) {
 	}
 
 	// Per-layer dispatch: layers 0-2 linear, layer 3 full (softmax).
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		if !arch.isLinearLayer(i) || arch.isGlobalLayer(i) {
 			t.Errorf("layer %d: isLinear=%v isGlobal=%v, want linear", i, arch.isLinearLayer(i), arch.isGlobalLayer(i))
 		}

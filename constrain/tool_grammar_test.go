@@ -23,7 +23,7 @@ func TestToolGrammar_property(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			for i := 0; i < 100; i++ {
+			for i := range 100 {
 				g, err := ToolCallGrammar(c.prefix, c.suffix, c.argsKey, "get_weather", c.array, weatherParams)
 				if err != nil {
 					t.Fatalf("build: %v", err)

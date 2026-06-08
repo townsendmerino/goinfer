@@ -42,12 +42,12 @@ func TestDecode_instrument(t *testing.T) {
 	// scheduler noise; the blocking Poll makes wall ≈ encode + GPU-exec + sync.
 	timeK := func(pl *wgpu.ComputePipeline, bg *wgpu.BindGroup, gx, gy uint32, K, reps int) time.Duration {
 		best := time.Hour
-		for r := 0; r < reps; r++ {
+		for range reps {
 			enc, _ := ctx.device.CreateCommandEncoder(nil)
 			pass := enc.BeginComputePass(nil)
 			pass.SetPipeline(pl)
 			pass.SetBindGroup(0, bg, nil)
-			for i := 0; i < K; i++ {
+			for range K {
 				pass.DispatchWorkgroups(gx, gy, 1)
 			}
 			pass.End()
@@ -158,11 +158,11 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>) { dst[lid.x] = src[lid.x] 
 	}
 	timeChain := func(K, reps int) time.Duration {
 		best := time.Hour
-		for r := 0; r < reps; r++ {
+		for range reps {
 			enc, _ := ctx.device.CreateCommandEncoder(nil)
 			pass := enc.BeginComputePass(nil)
 			pass.SetPipeline(cpl)
-			for i := 0; i < K; i++ {
+			for i := range K {
 				pass.SetBindGroup(0, cbgs[i], nil) // distinct bg → distinct buffers → real RAW chain
 				pass.DispatchWorkgroups(1, 1, 1)
 			}

@@ -47,7 +47,7 @@ func TestDecodeToken_throughput(t *testing.T) {
 	t.Logf("uploading %d-layer resident model (~1.7 GB int8)…", L)
 	mw := ModelW{FinalNorm: up32(randMat(hidden, 1)), LMHead: mk(vocab, hidden, 7)}
 	var sd uint64 = 10
-	for l := 0; l < L; l++ {
+	for l := range L {
 		prior := randMat(pos*kvDim, uint64(l))
 		kc, _ := ctx.NewKVCache(prior, maxLen*kvDim)
 		vc, _ := ctx.NewKVCache(prior, maxLen*kvDim)
@@ -70,12 +70,12 @@ func TestDecodeToken_throughput(t *testing.T) {
 	}
 	const iters = 30
 	t0 := time.Now()
-	for i := 0; i < iters; i++ {
+	for range iters {
 		ctx.DecodeToken(x0, mw, hidden, nH, nKV, hd, inter, pos, 0, eps, scale, false)
 	}
 	perMulti := time.Since(t0) / iters
 	t1 := time.Now()
-	for i := 0; i < iters; i++ {
+	for range iters {
 		ctx.DecodeTokenFused(x0, mw, hidden, nH, nKV, hd, inter, pos, 0, eps, scale, false)
 	}
 	perFused := time.Since(t1) / iters
@@ -87,7 +87,7 @@ func TestDecodeToken_throughput(t *testing.T) {
 	defer runner.Release()
 	runner.Run(x0, pos)
 	t2 := time.Now()
-	for i := 0; i < iters; i++ {
+	for range iters {
 		runner.Run(x0, pos)
 	}
 	perRun := time.Since(t2) / iters
@@ -98,7 +98,7 @@ func TestDecodeToken_throughput(t *testing.T) {
 	// execution into matmul-kernel time vs glue-kernel time directly.
 	timeSteps := func(keep func(s runStep) bool) time.Duration {
 		best := time.Hour
-		for r := 0; r < 30; r++ {
+		for range 30 {
 			enc, _ := ctx.device.CreateCommandEncoder(nil)
 			pass := enc.BeginComputePass(nil)
 			for _, s := range runner.steps {

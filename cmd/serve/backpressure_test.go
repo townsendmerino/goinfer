@@ -34,10 +34,8 @@ func TestServe_backpressure(t *testing.T) {
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	codes := map[int]int{}
-	for i := 0; i < burst; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range burst {
+		wg.Go(func() {
 			// A non-trivial generation so the burst overlaps and the queue fills.
 			r, err := http.Post(ts.URL+"/v1/chat/completions", "application/json",
 				strings.NewReader(`{"model":"m","max_tokens":48,"temperature":0,"messages":[{"role":"user","content":"Write a haiku about Go."}]}`))
@@ -53,7 +51,7 @@ func TestServe_backpressure(t *testing.T) {
 			if r.StatusCode == http.StatusTooManyRequests && retry == "" {
 				t.Errorf("429 without Retry-After header")
 			}
-		}()
+		})
 	}
 	wg.Wait() // no deadlock: every request returned
 

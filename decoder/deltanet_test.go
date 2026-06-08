@@ -53,7 +53,7 @@ func TestGatedDeltaNet_parity(t *testing.T) {
 	}
 
 	h := make([][]float32, seq)
-	for t := 0; t < seq; t++ {
+	for t := range seq {
 		h[t] = g.In[t*hidden : (t+1)*hidden]
 	}
 	out := gatedDeltaNet(h, w, p, hidden, g.Dims["rms_eps"])
@@ -61,8 +61,8 @@ func TestGatedDeltaNet_parity(t *testing.T) {
 	// Compare flattened output: max abs diff + cosine. (chunk vs recurrent fp
 	// drift is removed by the golden, so the tolerance is tight.)
 	var maxAbs, dot, na, nb float64
-	for t := 0; t < seq; t++ {
-		for j := 0; j < hidden; j++ {
+	for t := range seq {
+		for j := range hidden {
 			got, want := float64(out[t][j]), float64(g.Out[t*hidden+j])
 			if ad := math.Abs(got - want); ad > maxAbs {
 				maxAbs = ad

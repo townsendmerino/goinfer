@@ -25,9 +25,9 @@ func TestGEMV_parity(t *testing.T) {
 	aq, aScales := linalg.QuantizeRowsInt8(act, 1, K)
 
 	ref := make([]float32, N)
-	for n := 0; n < N; n++ {
+	for n := range N {
 		var acc int32
-		for k := 0; k < K; k++ {
+		for k := range K {
 			acc += int32(aq[k]) * int32(bq[n*K+k])
 		}
 		ref[n] = float32(acc) * aScales[0] * bScales[n]
@@ -82,13 +82,13 @@ func TestGEMV_microbench(t *testing.T) {
 	}
 
 	t0 := time.Now()
-	for i := 0; i < iters; i++ {
+	for range iters {
 		linalg.MatmulBTW8A8(act, bq, bScales, cpuDst, 1, K, N)
 	}
 	cpu := time.Since(t0) / iters
 
 	t1 := time.Now()
-	for i := 0; i < iters; i++ {
+	for range iters {
 		if _, err := ctx.MatmulW8A8(aq, aScale, rm, 1); err != nil {
 			t.Fatalf("naive: %v", err)
 		}
@@ -96,7 +96,7 @@ func TestGEMV_microbench(t *testing.T) {
 	naive := time.Since(t1) / iters
 
 	t2 := time.Now()
-	for i := 0; i < iters; i++ {
+	for range iters {
 		if _, err := ctx.MatmulW8A8GEMV(aq, aScale[0], rm); err != nil {
 			t.Fatalf("gemv: %v", err)
 		}
@@ -114,7 +114,7 @@ func TestGEMV_microbench(t *testing.T) {
 		t.Fatalf("runner warmup: %v", err)
 	}
 	t3 := time.Now()
-	for i := 0; i < iters; i++ {
+	for range iters {
 		if _, err := runner.Run(aq, aScale[0]); err != nil {
 			t.Fatalf("runner: %v", err)
 		}

@@ -65,7 +65,7 @@ func (m *Model) forwardLayersN(ids []int, cache *KVCache) ([]float32, error) {
 		global := arch.isGlobalLayer(l)
 
 		copy(norm, h)
-		for i := 0; i < K; i++ {
+		for i := range K {
 			normalize(arch, row(norm, i, hidden), lw.PreAttnNorm, lw.PreAttnNormBias, hidden)
 		}
 		if lw.QProj.isW8A8() && lw.KProj.isW8A8() && lw.VProj.isW8A8() {
@@ -79,13 +79,13 @@ func (m *Model) forwardLayersN(ids []int, cache *KVCache) ([]float32, error) {
 			lw.VProj.matmul(be, norm, v, K)
 		}
 		if arch.QKVBias {
-			for i := 0; i < K; i++ {
+			for i := range K {
 				addBias(row(q, i, qDim), lw.QBias)
 				addBias(row(k, i, kvDim), lw.KBias)
 				addBias(row(v, i, kvDim), lw.VBias)
 			}
 		}
-		for i := 0; i < K; i++ {
+		for i := range K {
 			pos := startPos + i
 			qi, ki, vi := row(q, i, qDim), row(k, i, kvDim), row(v, i, kvDim)
 			if arch.QKNorm {
@@ -104,12 +104,12 @@ func (m *Model) forwardLayersN(ids []int, cache *KVCache) ([]float32, error) {
 		}
 		lw.OProj.matmul(be, ctx, att, K)
 		if arch.OutBias {
-			for i := 0; i < K; i++ {
+			for i := range K {
 				addBias(row(att, i, hidden), lw.OBias)
 			}
 		}
 		if sandwich {
-			for i := 0; i < K; i++ {
+			for i := range K {
 				normalize(arch, row(att, i, hidden), lw.PostAttnNorm, nil, hidden)
 			}
 		}
@@ -118,7 +118,7 @@ func (m *Model) forwardLayersN(ids []int, cache *KVCache) ([]float32, error) {
 		}
 
 		copy(norm, h)
-		for i := 0; i < K; i++ {
+		for i := range K {
 			normalize(arch, row(norm, i, hidden), lw.PreMLPNorm, lw.PreMLPNormBias, hidden)
 		}
 		if lw.GateProj.isW8A8() && lw.UpProj.isW8A8() {
@@ -143,7 +143,7 @@ func (m *Model) forwardLayersN(ids []int, cache *KVCache) ([]float32, error) {
 		}
 		lw.DownProj.matmul(be, gate, mlpOut, K)
 		if sandwich {
-			for i := 0; i < K; i++ {
+			for i := range K {
 				normalize(arch, row(mlpOut, i, hidden), lw.PostMLPNorm, nil, hidden)
 			}
 		}
@@ -152,7 +152,7 @@ func (m *Model) forwardLayersN(ids []int, cache *KVCache) ([]float32, error) {
 		}
 	}
 
-	for i := 0; i < K; i++ {
+	for i := range K {
 		normalize(arch, row(h, i, hidden), m.w.FinalNorm, m.w.FinalNormBias, hidden)
 	}
 	return h, nil
@@ -203,7 +203,7 @@ func (m *Model) forwardN(ids []int, cache *KVCache) ([][]float32, error) {
 	vocab := m.w.arch.VocabSize
 	logits := m.lmHeadN(h, K)
 	out := make([][]float32, K)
-	for i := 0; i < K; i++ {
+	for i := range K {
 		out[i] = logits[i*vocab : i*vocab+vocab]
 	}
 	return out, nil

@@ -46,7 +46,7 @@ func genConstrained(t *testing.T, g Grammar, seed int64, maxDigitRun int) []byte
 	var generated []int
 	var out bytes.Buffer
 	neg := float32(math.Inf(-1))
-	for step := 0; step < 5000; step++ {
+	for range 5000 {
 		logits := make([]float32, len(tokens))
 		m.Process(generated, logits)
 		var allowed []int
@@ -135,7 +135,7 @@ func TestSchema_propertyValidates(t *testing.T) {
 		if err := json.Unmarshal(schema, &doc); err != nil {
 			t.Fatalf("%s: bad schema: %v", name, err)
 		}
-		for i := 0; i < 200; i++ {
+		for i := range 200 {
 			g, err := JSONSchema(schema)
 			if err != nil {
 				t.Fatalf("%s: compile: %v", name, err)
@@ -172,7 +172,7 @@ func TestGrammarFromStruct_roundTrip(t *testing.T) {
 		Address Address  `json:"address"`
 		Email   *string  `json:"email,omitempty"`
 	}
-	for i := 0; i < 200; i++ {
+	for i := range 200 {
 		g, err := GrammarFromStruct(Person{})
 		if err != nil {
 			t.Fatalf("GrammarFromStruct: %v", err)

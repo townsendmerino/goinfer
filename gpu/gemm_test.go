@@ -25,10 +25,10 @@ func TestTiled_parity(t *testing.T) {
 	aq, aScales := linalg.QuantizeRowsInt8(act, M, K)
 
 	ref := make([]float32, M*N)
-	for m := 0; m < M; m++ {
-		for n := 0; n < N; n++ {
+	for m := range M {
+		for n := range N {
 			var acc int32
-			for k := 0; k < K; k++ {
+			for k := range K {
 				acc += int32(aq[m*K+k]) * int32(bq[n*K+k])
 			}
 			ref[m*N+n] = float32(acc) * aScales[m] * bScales[n]
@@ -82,19 +82,19 @@ func TestTiled_microbench(t *testing.T) {
 		}
 
 		t0 := time.Now()
-		for i := 0; i < iters; i++ {
+		for range iters {
 			linalg.MatmulBTW8A8(act, bq, bScales, cpuDst, M, K, N)
 		}
 		cpu := time.Since(t0) / time.Duration(iters)
 		t1 := time.Now()
-		for i := 0; i < iters; i++ {
+		for range iters {
 			if _, err := ctx.MatmulW8A8(aq, aScales, rm, M); err != nil {
 				t.Fatalf("naive: %v", err)
 			}
 		}
 		naive := time.Since(t1) / time.Duration(iters)
 		t2 := time.Now()
-		for i := 0; i < iters; i++ {
+		for range iters {
 			if _, err := ctx.MatmulW8A8Tiled(aq, aScales, rm, M); err != nil {
 				t.Fatalf("tiled: %v", err)
 			}

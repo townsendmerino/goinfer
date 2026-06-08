@@ -147,8 +147,8 @@ func renderChatMLTools(system string, turns []Turn, tools []Tool) string {
 
 func parseChatMLTools(out string) ([]ToolCall, string) {
 	lead := out
-	if i := strings.Index(out, "<tool_call>"); i >= 0 {
-		lead = out[:i]
+	if before, _, ok := strings.Cut(out, "<tool_call>"); ok {
+		lead = before
 	}
 	var calls []ToolCall
 	for rest := out; ; {
@@ -220,12 +220,12 @@ func renderMistralTools(system string, turns []Turn, tools []Tool) string {
 }
 
 func parseMistralTools(out string) ([]ToolCall, string) {
-	i := strings.Index(out, "[TOOL_CALLS]")
-	if i < 0 {
+	before, after, ok := strings.Cut(out, "[TOOL_CALLS]")
+	if !ok {
 		return nil, strings.TrimSpace(out)
 	}
-	lead := strings.TrimSpace(out[:i])
-	rest := out[i+len("[TOOL_CALLS]"):]
+	lead := strings.TrimSpace(before)
+	rest := after
 	if lb := strings.IndexByte(rest, '['); lb >= 0 {
 		rest = rest[lb:]
 	}
@@ -242,11 +242,12 @@ func renderLlama3Tools(system string, turns []Turn, tools []Tool) string {
 		b.WriteString(s)
 	}
 	b.WriteString("<|eot_id|>")
-	instr := "Given the following functions, please respond with a JSON for a function call with its proper arguments that best answers the given prompt.\n\nRespond in the format {\"name\": function name, \"parameters\": dictionary of argument name and its value}.Do not use variables.\n\n"
+	var instr strings.Builder
+	instr.WriteString("Given the following functions, please respond with a JSON for a function call with its proper arguments that best answers the given prompt.\n\nRespond in the format {\"name\": function name, \"parameters\": dictionary of argument name and its value}.Do not use variables.\n\n")
 	for i, tl := range tools {
-		instr += funcDefJSON(tl)
+		instr.WriteString(funcDefJSON(tl))
 		if i < len(tools)-1 {
-			instr += "\n"
+			instr.WriteString("\n")
 		}
 	}
 	first := true
@@ -263,7 +264,7 @@ func renderLlama3Tools(system string, turns []Turn, tools []Tool) string {
 		default:
 			content := m.Content
 			if first { // tool instructions ride the first user turn
-				content = instr + "\n\n" + content
+				content = instr.String() + "\n\n" + content
 				first = false
 			}
 			b.WriteString("<|start_header_id|>user<|end_header_id|>\n\n" + content + "<|eot_id|>")

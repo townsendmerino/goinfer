@@ -63,7 +63,7 @@ func TestKVCache_TruncateTo_kvShared(t *testing.T) {
 	c.manualPos = true                  // gemma4 advances pos explicitly
 	narrow := []float32{1, 2, 3, 4}     // layer 0: width 4 (== nominal kvDim)
 	wide := []float32{1, 2, 3, 4, 5, 6} // layer 1: width 6 (per-layer head_dim ≠ nominal)
-	for p := 0; p < 5; p++ {
+	for range 5 {
 		c.Append(0, narrow, narrow)
 		c.Append(1, wide, wide)
 		// layer 2 is KV-shared: intentionally never appended (stays empty).

@@ -51,8 +51,8 @@ func SchemaFromStruct(v any) ([]byte, error) {
 func structSchema(t reflect.Type) (map[string]any, error) {
 	props := map[string]any{}
 	var required []string
-	for i := 0; i < t.NumField(); i++ {
-		f := t.Field(i)
+	for f := range t.Fields() {
+		f := f
 		if !f.IsExported() {
 			continue
 		}

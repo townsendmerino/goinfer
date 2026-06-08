@@ -15,7 +15,7 @@ import (
 func cpuChainW8A8(act []float32, M, K int, bq []int8, bScales []float32, depth int) []float32 {
 	cur := append([]float32(nil), act...)
 	dst := make([]float32, M*K)
-	for d := 0; d < depth; d++ {
+	for range depth {
 		linalg.MatmulBTW8A8(cur, bq, bScales, dst, M, K, K) // N==K (square)
 		copy(cur, dst)
 	}
@@ -101,7 +101,7 @@ func TestChainW8A8_microbench(t *testing.T) {
 	// GPU per-call (Stage-1): CPU requant + a synced MatmulW8A8 per step.
 	perCall := func() {
 		cur := append([]float32(nil), act...)
-		for d := 0; d < depth; d++ {
+		for range depth {
 			aq, aScales := linalg.QuantizeRowsInt8(cur, M, K)
 			out, err := ctx.MatmulW8A8(aq, aScales, rm, M)
 			if err != nil {
@@ -117,7 +117,7 @@ func TestChainW8A8_microbench(t *testing.T) {
 	perCall()
 
 	t0 := time.Now()
-	for i := 0; i < iters; i++ {
+	for range iters {
 		if _, err := ctx.ChainW8A8(act, M, chain); err != nil {
 			t.Fatalf("ChainW8A8: %v", err)
 		}
@@ -125,16 +125,16 @@ func TestChainW8A8_microbench(t *testing.T) {
 	chained := time.Since(t0) / iters
 
 	t1 := time.Now()
-	for i := 0; i < iters; i++ {
+	for range iters {
 		perCall()
 	}
 	percall := time.Since(t1) / iters
 
 	dst := make([]float32, M*K)
 	t2 := time.Now()
-	for i := 0; i < iters; i++ {
+	for range iters {
 		cur := append([]float32(nil), act...)
-		for d := 0; d < depth; d++ {
+		for range depth {
 			linalg.MatmulBTW8A8(cur, bq, bScales, dst, M, K, K)
 			copy(cur, dst)
 		}

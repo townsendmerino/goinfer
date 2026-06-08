@@ -146,19 +146,19 @@ func TestFusedMLP_microbench(t *testing.T) {
 	staged()
 
 	t0 := time.Now()
-	for i := 0; i < iters; i++ {
+	for range iters {
 		if _, err := ctx.FusedMLP(f.x, f.rmsWDev, f.gateRM, f.upRM, f.downRM, f.eps, false); err != nil {
 			t.Fatalf("FusedMLP: %v", err)
 		}
 	}
 	fused := time.Since(t0) / iters
 	t1 := time.Now()
-	for i := 0; i < iters; i++ {
+	for range iters {
 		staged()
 	}
 	stg := time.Since(t1) / iters
 	t2 := time.Now()
-	for i := 0; i < iters; i++ {
+	for range iters {
 		cpuMLP(f.x, f.rmsW, f.gBQ, f.uBQ, f.dBQ, f.gS, f.uS, f.dS, H, I, f.eps, false)
 	}
 	cpu := time.Since(t2) / iters

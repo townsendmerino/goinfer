@@ -28,10 +28,10 @@ func refRMSNorm(x, w []float32, H int, eps float32, addOne bool) []float32 {
 
 func refRoPE(vec []float32, heads, hd, pos int, invFreq []float32) {
 	half := hd / 2
-	for d := 0; d < half; d++ {
+	for d := range half {
 		theta := float64(pos) * float64(invFreq[d])
 		c, s := math.Cos(theta), math.Sin(theta)
-		for h := 0; h < heads; h++ {
+		for h := range heads {
 			off := h * hd
 			x1, x2 := float64(vec[off+d]), float64(vec[off+half+d])
 			vec[off+d] = float32(x1*c - x2*s)
@@ -44,13 +44,13 @@ func refAttn(q, keys, vals []float32, nH, nKV, hd, nKeys int, scale float32) []f
 	kvDim := nKV * hd
 	group := nH / nKV
 	out := make([]float32, nH*hd)
-	for qh := 0; qh < nH; qh++ {
+	for qh := range nH {
 		kvh := qh / group
 		maxS := math.Inf(-1)
 		sc := make([]float64, nKeys)
-		for s := 0; s < nKeys; s++ {
+		for s := range nKeys {
 			var dot float64
-			for d := 0; d < hd; d++ {
+			for d := range hd {
 				dot += float64(q[qh*hd+d]) * float64(keys[s*kvDim+kvh*hd+d])
 			}
 			sc[s] = dot * float64(scale)
@@ -59,13 +59,13 @@ func refAttn(q, keys, vals []float32, nH, nKV, hd, nKeys int, scale float32) []f
 			}
 		}
 		var sum float64
-		for s := 0; s < nKeys; s++ {
+		for s := range nKeys {
 			sc[s] = math.Exp(sc[s] - maxS)
 			sum += sc[s]
 		}
-		for s := 0; s < nKeys; s++ {
+		for s := range nKeys {
 			w := sc[s] / sum
-			for d := 0; d < hd; d++ {
+			for d := range hd {
 				out[qh*hd+d] += float32(w * float64(vals[s*kvDim+kvh*hd+d]))
 			}
 		}

@@ -39,7 +39,7 @@ func TestForwardN_matchesSequential(t *testing.T) {
 		t.Fatalf("cache positions: seq=%d batch=%d want %d", cseq.Pos(), cbat.Pos(), K)
 	}
 
-	for i := 0; i < K; i++ {
+	for i := range K {
 		if argmax(seq[i]) != argmax(bat[i]) {
 			t.Fatalf("position %d: argmax seq=%d batch=%d", i, argmax(seq[i]), argmax(bat[i]))
 		}

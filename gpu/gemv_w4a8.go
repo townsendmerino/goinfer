@@ -178,10 +178,10 @@ func packNibbles(nib []uint8, rows, cols int) []uint32 {
 	kp := padK32(cols)
 	wpr := kp / 8 // u32 words per row
 	out := make([]uint32, rows*wpr)
-	for r := 0; r < rows; r++ {
+	for r := range rows {
 		src := nib[r*cols : r*cols+cols]
 		dst := out[r*wpr : r*wpr+wpr]
-		for k := 0; k < cols; k++ {
+		for k := range cols {
 			dst[k/8] |= uint32(src[k]&0xF) << (4 * (k % 8))
 		}
 	}
@@ -213,7 +213,7 @@ func (c *Context) UploadW4A8(nib []uint8, scales []float32, N, K int) (*Resident
 	// pad scales to N*nGroups, store at f16 (2 per u32) — the scale bytes are ~⅕
 	// of the stream; f16 halves that.
 	sc := make([]float32, N*nGroups)
-	for r := 0; r < N; r++ {
+	for r := range N {
 		copy(sc[r*nGroups:(r+1)*nGroups], scales[r*nGroups:(r+1)*nGroups])
 	}
 	bs, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{

@@ -31,10 +31,10 @@ type deltaNetWeights struct {
 // matvec computes y[r] = Σ_c W[r*cols+c]·x[c] for a row-major [rows,cols] weight.
 func matvec(w []float32, rows, cols int, x []float32) []float32 {
 	y := make([]float32, rows)
-	for r := 0; r < rows; r++ {
+	for r := range rows {
 		var s float32
 		row := w[r*cols : r*cols+cols]
-		for c := 0; c < cols; c++ {
+		for c := range cols {
 			s += row[c] * x[c]
 		}
 		y[r] = s
@@ -85,7 +85,7 @@ func gatedDeltaNetStep(h []float32, w *deltaNetWeights, p qwen35Params, hidden i
 	mixed := matvec(w.inProjQKV, convDim, hidden, h)
 	conv := make([]float32, convDim)
 	win := st.convWin
-	for c := 0; c < convDim; c++ {
+	for c := range convDim {
 		s := w.convW[c*K+(K-1)] * mixed[c] // j=K-1 tap = current token
 		for j := 0; j < K-1; j++ {
 			if idx := len(win) - (K - 1) + j; idx >= 0 {
@@ -107,7 +107,7 @@ func gatedDeltaNetStep(h []float32, w *deltaNetWeights, p qwen35Params, hidden i
 
 	// 3. Gated delta-rule recurrence, per value head; state persists in st.s.
 	core := make([]float32, valueDim)
-	for headV := 0; headV < nv; headV++ {
+	for headV := range nv {
 		headK := headV / rep
 		q := l2normScaled(conv[headK*hk:headK*hk+hk], qScale)
 		k := l2normScaled(conv[keyDim+headK*hk:keyDim+headK*hk+hk], 1)
@@ -121,14 +121,14 @@ func gatedDeltaNetStep(h []float32, w *deltaNetWeights, p qwen35Params, hidden i
 			S[i] *= gt
 		}
 		out := core[headV*hv : headV*hv+hv]
-		for vd := 0; vd < hv; vd++ {
+		for vd := range hv {
 			var kv float32
-			for kd := 0; kd < hk; kd++ {
+			for kd := range hk {
 				kv += S[kd*hv+vd] * k[kd]
 			}
 			delta := (v[vd] - kv) * beta
 			var o float32
-			for kd := 0; kd < hk; kd++ {
+			for kd := range hk {
 				S[kd*hv+vd] += k[kd] * delta
 				o += S[kd*hv+vd] * q[kd]
 			}
@@ -137,7 +137,7 @@ func gatedDeltaNetStep(h []float32, w *deltaNetWeights, p qwen35Params, hidden i
 	}
 
 	// 4. Gated RMSNorm (over head_v_dim, × SiLU(z)) then out_proj.
-	for headV := 0; headV < nv; headV++ {
+	for headV := range nv {
 		seg := core[headV*hv : headV*hv+hv]
 		zt := z[headV*hv : headV*hv+hv]
 		var ss float64
@@ -145,7 +145,7 @@ func gatedDeltaNetStep(h []float32, w *deltaNetWeights, p qwen35Params, hidden i
 			ss += float64(x) * float64(x)
 		}
 		inv := float32(1 / math.Sqrt(ss/float64(hv)+eps))
-		for vd := 0; vd < hv; vd++ {
+		for vd := range hv {
 			seg[vd] = seg[vd] * inv * w.normW[vd] * silu(zt[vd])
 		}
 	}

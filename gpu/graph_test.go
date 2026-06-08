@@ -169,7 +169,7 @@ func TestGraph_oneFencePerToken(t *testing.T) {
 			gemvOp(gemvBG(aI, asI, wDown, dSmall), H),
 		)
 	}
-	for i := 0; i < L; i++ {
+	for range L {
 		addLayer()
 	}
 	ops = append(ops,
@@ -211,10 +211,7 @@ func TestGraph_oneFencePerToken(t *testing.T) {
 	grp := (len(ops) + fences - 1) / fences
 	staged := func() {
 		for i := 0; i < len(ops); i += grp {
-			end := i + grp
-			if end > len(ops) {
-				end = len(ops)
-			}
+			end := min(i+grp, len(ops))
 			enc, _ := ctx.device.CreateCommandEncoder(nil)
 			pass := enc.BeginComputePass(nil)
 			for _, o := range ops[i:end] {
@@ -235,12 +232,12 @@ func TestGraph_oneFencePerToken(t *testing.T) {
 	oneFence()
 	staged() // warm
 	t0 := time.Now()
-	for i := 0; i < iters; i++ {
+	for range iters {
 		oneFence()
 	}
 	one := time.Since(t0) / iters
 	t1 := time.Now()
-	for i := 0; i < iters; i++ {
+	for range iters {
 		staged()
 	}
 	stg := time.Since(t1) / iters

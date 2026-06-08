@@ -60,7 +60,7 @@ func (m *Model) qwen35Attention(n []float32, lw *LayerWeights, arch *Architectur
 	qg := matvec(a.qProj, nH*hd*2, hidden, n)
 	q := make([]float32, nH*hd)
 	gate := make([]float32, nH*hd)
-	for hh := 0; hh < nH; hh++ {
+	for hh := range nH {
 		copy(q[hh*hd:hh*hd+hd], qg[hh*2*hd:hh*2*hd+hd])
 		copy(gate[hh*hd:hh*hd+hd], qg[hh*2*hd+hd:hh*2*hd+2*hd])
 	}

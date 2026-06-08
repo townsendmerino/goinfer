@@ -53,8 +53,8 @@ func renderGemma4Tools(system string, turns []Turn, tools []Tool) string {
 
 func parseGemma4Tools(out string) ([]ToolCall, string) {
 	lead := out
-	if i := strings.Index(out, "<|tool_call>"); i >= 0 {
-		lead = out[:i]
+	if before, _, ok := strings.Cut(out, "<|tool_call>"); ok {
+		lead = before
 	}
 	var calls []ToolCall
 	for rest := out; ; {
@@ -185,12 +185,12 @@ func gemmaValue(v any) string {
 func gemmaBodyToJSON(body string) json.RawMessage {
 	out := map[string]any{}
 	for _, kv := range splitGemmaPairs(body) {
-		c := strings.IndexByte(kv, ':')
-		if c < 0 {
+		before, after, ok := strings.Cut(kv, ":")
+		if !ok {
 			continue
 		}
-		key := strings.TrimSpace(kv[:c])
-		val := strings.TrimSpace(kv[c+1:])
+		key := strings.TrimSpace(before)
+		val := strings.TrimSpace(after)
 		switch {
 		case strings.HasPrefix(val, gq):
 			out[key] = strings.TrimSuffix(strings.TrimPrefix(val, gq), gq)

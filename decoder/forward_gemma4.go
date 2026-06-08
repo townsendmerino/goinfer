@@ -84,7 +84,7 @@ func (m *Model) runLayersGemma4(id int, cache *KVCache) ([]float32, error) {
 	// non-shared layer of their type (sliding vs global).
 	firstShared := arch.NumLayers - g4.SharedKVLayers
 	lastSliding, lastGlobal := -1, -1
-	for i := 0; i < firstShared; i++ {
+	for i := range firstShared {
 		if arch.isGlobalLayer(i) {
 			lastGlobal = i
 		} else {
@@ -228,7 +228,7 @@ func gemma4InvFreq(headDim, rotaryDim int, base float64) []float64 {
 	half := headDim / 2
 	inv := make([]float64, half)
 	angles := rotaryDim / 2
-	for i := 0; i < angles; i++ {
+	for i := range angles {
 		inv[i] = 1.0 / math.Pow(base, float64(2*i)/float64(headDim))
 	}
 	return inv // entries [angles:half] stay 0 → no rotation there
@@ -237,7 +237,7 @@ func gemma4InvFreq(headDim, rotaryDim int, base float64) []float64 {
 // rmsNormNoWeight applies a scale-less RMSNorm per head (Gemma 4's v_norm:
 // with_scale=False — normalize V by RMS, no learned weight).
 func rmsNormNoWeight(x []float32, rows, dim int, eps float64) {
-	for r := 0; r < rows; r++ {
+	for r := range rows {
 		v := x[r*dim : r*dim+dim]
 		var ss float64
 		for _, e := range v {
@@ -258,14 +258,14 @@ func gemma4Attend(q, ctx, keys, vals []float32, nH, nKV, hd, start, nKeys int, s
 	group := nH / nKV
 	clear(ctx)
 	scores := make([]float32, nKeys)
-	for qh := 0; qh < nH; qh++ {
+	for qh := range nH {
 		kvh := qh / group
 		qHead := q[qh*hd : qh*hd+hd]
 		maxS := math.Inf(-1)
 		for s := start; s < nKeys; s++ {
 			kHead := keys[s*kvDim+kvh*hd : s*kvDim+kvh*hd+hd]
 			var dot float64
-			for d := 0; d < hd; d++ {
+			for d := range hd {
 				dot += float64(qHead[d]) * float64(kHead[d])
 			}
 			sc := dot * scale
@@ -285,7 +285,7 @@ func gemma4Attend(q, ctx, keys, vals []float32, nH, nKV, hd, start, nKeys int, s
 		for s := start; s < nKeys; s++ {
 			w := float32(float64(scores[s]) * inv)
 			vHead := vals[s*kvDim+kvh*hd : s*kvDim+kvh*hd+hd]
-			for d := 0; d < hd; d++ {
+			for d := range hd {
 				oHead[d] += w * vHead[d]
 			}
 		}

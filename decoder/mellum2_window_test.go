@@ -28,7 +28,7 @@ func TestMellum2_slidingWindowEviction(t *testing.T) {
 	pos := N - 1 // 7
 	build := func(blowUpPos0 bool) *KVCache {
 		c := NewKVCache(1, 1, hd, W, N)
-		for p := 0; p < N; p++ {
+		for p := range N {
 			k, v := []float32{float32(p + 1), 0}, []float32{float32(p + 1), float32(p + 1)}
 			if blowUpPos0 && p == 0 {
 				k, v = []float32{999, 0}, []float32{999, 999} // a key far OUTSIDE the [4,7] window

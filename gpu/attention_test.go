@@ -25,11 +25,11 @@ func TestRoPE_parity(t *testing.T) {
 	const scale = 1.0
 
 	ref := append([]float32(nil), vec...)
-	for d := 0; d < half; d++ {
+	for d := range half {
 		theta := float64(pos) * float64(invFreq[d])
 		c := math.Cos(theta) * scale
 		s := math.Sin(theta) * scale
-		for h := 0; h < heads; h++ {
+		for h := range heads {
 			off := h * hd
 			x1, x2 := float64(vec[off+d]), float64(vec[off+half+d])
 			ref[off+d] = float32(x1*c - x2*s)
@@ -66,13 +66,13 @@ func TestAttention_parity(t *testing.T) {
 
 	// CPU reference (mirrors attendQuery, f64).
 	ref := make([]float32, nH*hd)
-	for qh := 0; qh < nH; qh++ {
+	for qh := range nH {
 		kvh := qh / group
 		maxS := math.Inf(-1)
 		sc := make([]float64, nKeys)
-		for s := start; s < nKeys; s++ {
+		for s := range nKeys {
 			var dot float64
-			for d := 0; d < hd; d++ {
+			for d := range hd {
 				dot += float64(q[qh*hd+d]) * float64(keys[s*kvDim+kvh*hd+d])
 			}
 			sc[s] = dot * float64(scale)
@@ -81,13 +81,13 @@ func TestAttention_parity(t *testing.T) {
 			}
 		}
 		var sum float64
-		for s := start; s < nKeys; s++ {
+		for s := range nKeys {
 			sc[s] = math.Exp(sc[s] - maxS)
 			sum += sc[s]
 		}
-		for s := start; s < nKeys; s++ {
+		for s := range nKeys {
 			w := sc[s] / sum
-			for d := 0; d < hd; d++ {
+			for d := range hd {
 				ref[qh*hd+d] += float32(w * float64(vals[s*kvDim+kvh*hd+d]))
 			}
 		}

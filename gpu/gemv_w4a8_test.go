@@ -39,18 +39,18 @@ func TestW4A8_parity_and_bandwidth(t *testing.T) {
 		scales[i] = 0.02 + float32(next()%100)/5000 // ~0.02..0.04
 	}
 	act := make([]int8, kp)
-	for i := 0; i < K; i++ {
+	for i := range K {
 		act[i] = int8(int(next()%255) - 127)
 	}
 	aScale := float32(0.013)
 
 	// CPU reference: dst[n] = aScale * Σ_g scale[n,g] · Σ_{k in g} (nib-8)·act[k]
 	ref := make([]float32, N)
-	for n := 0; n < N; n++ {
+	for n := range N {
 		var total float64
-		for g := 0; g < nGroups; g++ {
+		for g := range nGroups {
 			var idot int
-			for e := 0; e < group; e++ {
+			for e := range group {
 				k := g*group + e
 				if k >= K {
 					break
@@ -121,12 +121,12 @@ func TestW4A8_parity_and_bandwidth(t *testing.T) {
 	// --- bandwidth: K dispatches in one pass, slope removes fixed submit/poll ---
 	timeKd := func(Kd, reps int) time.Duration {
 		best := time.Hour
-		for r := 0; r < reps; r++ {
+		for range reps {
 			e, _ := dev.CreateCommandEncoder(nil)
 			p := e.BeginComputePass(nil)
 			p.SetPipeline(ctx.gemvW4Pipeline)
 			p.SetBindGroup(0, bg, nil)
-			for i := 0; i < Kd; i++ {
+			for range Kd {
 				p.DispatchWorkgroups(gx, gy, 1)
 			}
 			p.End()
