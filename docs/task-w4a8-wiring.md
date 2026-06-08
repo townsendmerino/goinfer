@@ -29,8 +29,11 @@ int8* becomes runnable. Fit arithmetic (Qwen2.5-7B, GPU KV f32):
 7B int4 fits 8 GB **comfortably at ≤16k context**; 32k is tight → f16 KV (out of
 scope, F2). W4A8 does **not** move the ~60% engine ratio vs Ollama (the WebGPU
 encode/glue wall is unchanged) — it ships 4-bit at Ollama's footprint, a
-parity-of-**capability** story. It also unifies one int4 `.giw` across the GPU
-path and the already-dequant-bound CPU `MatmulBTQ4`.
+parity-of-**capability** story. It unifies one int4 `.giw` *format* across the
+GPU and CPU paths — but int4's win is GPU **footprint**, NOT CPU speed: the
+decision matrix (`gpu-assessment.md` §1) measured CPU int4 at **0.3 tok/s** (28×
+slower than CPU int8) — the aikit SIMD `MatmulBTQ4` path isn't engaging, a known
+aikit bug to investigate separately (not now).
 
 ## Contracts to pin BEFORE code (the irreversible / forky bits)
 
@@ -147,7 +150,7 @@ only real risk and it's already retired.
 - `docs/gpu-assessment.md` §0.0 updated: probe → wired, measured 7B fit + tok/s
   replacing the projection. **CHANGELOG** entry framed as footprint/capability
   ("7–12B class now runs on 8 GB"), NOT speed.
-- `feature-plan-v0.2.md`: GPU arc closed — note W4A8 done, then **pivot**. The
+- `docs/roadmap.md`: GPU arc closed (Track C) — note W4A8 done, then **pivot**. The
   higher-leverage work is Track A (qwen3_5_moe GGUF, real-checkpoint parity) and
   Track B serve, not more GPU decode tuning.
 

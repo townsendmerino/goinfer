@@ -1,4 +1,4 @@
-# goinfer feature plan — v0.4 planning (updated 2026-06-07, post-v0.3.0)
+# goinfer roadmap (rolling; updated 2026-06-08, post-v0.3.0 → v0.4 planning)
 
 > **Audience:** internal planning doc (docs/internal/ is gitignored). Started
 > as the v0.2 gap analysis vs llama.cpp / Ollama / mistral.rs; v0.2.0 and
@@ -81,16 +81,37 @@ battlegrounds now:
 
 ### Track B: serve polish — IN PROGRESS (execution doc: `task-serve-polish.md`; commits `3baead4` → `b516209` held locally)
 
-### Track C (unplanned, landed): GPU decode investigation — REOPENED
+### Track C (unplanned): GPU decode investigation — CLOSED (2026-06-08)
 
-Seven commits (`7ad1fd5` → `18cd52d`, held locally) executed the
-`gpu-assessment.md` Stages 1–3: W8A8 WGSL bit-exact, staged shape 4× CPU
-on the FFN block, full fusion measured slower. **Roofline review against
-the actual hardware (RTX 2070 SUPER vs 3700X: ceiling ~8–10×) showed the
-measured 1.83× decode is ~20% of the card — a software gap (sync/submission
-structure), not physics.** Next: the one-command-buffer-per-token
-experiment + llama.cpp CUDA/Vulkan calibration on the same box. See
-`gpu-assessment.md` §0.5.
+**Full writeup + the decision matrix: `docs/gpu-assessment.md` (§0.0, §1).**
+
+The arc that began as "is the staged hybrid optimal?" closed in the opposite
+place: a **full-token on-GPU residency forward** wins. Shipped:
+
+- **GPU full-residency decode wired into `decoder.Generate`** (webgpu backend,
+  dense Qwen2/Llama). Real int4 `.giw` models now run **pure-GPU** end-to-end,
+  not the per-matmul staged path. Greedy output matches the CPU decode.
+- **W4A8 (int4) is the capability unlock:** a **7B int4 fits and runs pure-GPU
+  on the 8 GB card at ~51 tok/s** — the model class that does NOT fit at int8 —
+  at **~71% of llama.cpp-CUDA** tok/s at equal 4-bit quant (1.5B: 102 tok/s,
+  ~55%). The engine gap *narrows* with model size; this is a footprint/capability
+  win, not a speed record (the WebGPU dispatch model still trails CUDA's
+  megakernel). int8 decode peaks ~89.7 tok/s on the 1.5B (3.5× the staged hybrid).
+
+Deferred follow-ons (named, **not scheduled** — pick up if a use case pulls):
+
+- **Batched on-device GPU prefill** — today's prefill is option-(a) sequential
+  GPU `Run`, O(prompt-len); a batched M=len pass would fix long-prompt TTFT.
+- **f16 KV cache** — unlocks 32k context for a 7B on 8 GB (v1 caps at 16k, f32).
+- **CPU-int4 SIMD bug** — the §1 matrix measured CPU int4 at 0.3 tok/s (28×
+  slower than CPU int8); the aikit SIMD `MatmulBTQ4` path isn't engaging. An
+  aikit bug to investigate; int4 is a GPU footprint win, not a CPU win.
+- **W4A8-on-disk format** — f16 group scales in the `.giw` (smaller files; the
+  kernel is ALU-bound so it wouldn't speed decode).
+
+**Pivot:** the GPU arc is closed; the next leverage is **Track A
+(qwen3_5_moe real-checkpoint parity)** and **Track B (serve polish)** — not more
+GPU decode tuning.
 
 - **Multi-model serving + dynamic load/unload** — serve N models from one
   process; `/v1/models` lists them, requests route by `model` field;

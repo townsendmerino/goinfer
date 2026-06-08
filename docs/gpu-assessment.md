@@ -146,9 +146,11 @@ byte than the 1.5B int4** (~24% roofline): the fixed per-token overhead
 *improves* at scale. int4 is what makes the
 **7–12B class runnable at all** on this card — the actual W4A8 win, a
 parity-of-*capability* story (it does NOT close the ~60% speed gap vs Ollama;
-the WebGPU encode/glue wall is unchanged). It also unifies one int4 `.giw`
-across the GPU path and the dequant-bound CPU `MatmulBTQ4`. `dot4I8Packed`
-remains a *prefill* lever, upstream-blocked.
+the WebGPU encode/glue wall is unchanged). It unifies one int4 `.giw` *format*
+across the GPU and CPU paths, but int4 is a GPU footprint win, NOT a CPU win: the
+§1 matrix measured CPU int4 at **0.3 tok/s** (28× slower than CPU int8) — the
+aikit SIMD `MatmulBTQ4` path isn't engaging, a known bug to investigate later.
+`dot4I8Packed` remains a *prefill* lever, upstream-blocked.
 
 **Two 7B-scale findings surfaced during wiring (one fixed, one open):**
 

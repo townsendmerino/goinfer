@@ -11,6 +11,21 @@ pre-1.0 and may change as new model families and quant formats land.
 ## [Unreleased]
 
 ### Added
+- **GPU full-residency decode (W4A8 int4) — run bigger models pure-GPU.** Real
+  int4 `.giw` models now decode entirely on the GPU through `decoder.Generate` on
+  the `webgpu` backend (dense Qwen2/Llama): the full-token forward is the resident
+  DecodeRunner, not the per-matmul staged path. The win is **footprint, not a
+  speed record** — int4 halves resident weights, so a **7B int4 fits and decodes
+  at ~51 tok/s on an 8 GB card** (the model class that does NOT fit at int8), at
+  **~71% of llama.cpp-CUDA** tok/s at equal 4-bit quant (greedy output matches the
+  CPU decode bit-for-bit on the first tokens). int8 residency peaks ~89.7 tok/s on
+  the 1.5B (3.5× the staged hybrid). v1 limits: **stateless `Generate` only**
+  (`Session`/prefix-reuse/`GenerateSpeculative` fall back to the staged path),
+  **16k context cap** (f32 KV), **eligible archs only** (dense Qwen2/Llama;
+  MoE/Gemma/hybrid → staged). See `docs/gpu-assessment.md` §0.0 + the §1 decision
+  matrix. (The `.giw` bundle's weights length is now u64 — v2 — so int4 models
+  past 4 GiB, i.e. the 7B+ class, serialize without truncation; v1 bundles still
+  load.)
 - **cmd/serve: multi-model + admin + Responses API.** `--model` is now repeatable
   as `name=path` to serve a model zoo from one process; requests route on the
   OpenAI `model` field (exact match, or the sole model for single-model compat),
