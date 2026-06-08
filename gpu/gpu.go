@@ -103,7 +103,26 @@ func New() (*Context, error) {
 		inst.Release()
 		return nil, fmt.Errorf("gpu: request adapter: %w", err)
 	}
-	device, err := adapter.RequestDevice(nil)
+	// Raise the storage-buffer binding limit: the DEFAULT device caps it at 128 MB,
+	// smaller than a real model's LM head / embedding at int8 (e.g. 152k vocab ×
+	// hidden ≈ 233 MB). Start from the valid default limit set and bump only the two
+	// size limits to the adapter's max (requiring the adapter's full limit set
+	// verbatim fails — some advertised limits, e.g. maxBufferSize, aren't valid as
+	// required limits). maxBufferSize must be ≥ the binding size.
+	lim := wgpu.DefaultLimits()
+	al := adapter.GetLimits().Limits
+	lim.MaxStorageBufferBindingSize = al.MaxStorageBufferBindingSize
+	if lim.MaxBufferSize < al.MaxStorageBufferBindingSize {
+		lim.MaxBufferSize = al.MaxStorageBufferBindingSize
+	}
+	// The default cap (65535) is below a vocab-sized GEMV (one workgroup per output
+	// column → 152k for the LM head); raise it to the adapter's max.
+	if al.MaxComputeWorkgroupsPerDimension > lim.MaxComputeWorkgroupsPerDimension {
+		lim.MaxComputeWorkgroupsPerDimension = al.MaxComputeWorkgroupsPerDimension
+	}
+	device, err := adapter.RequestDevice(&wgpu.DeviceDescriptor{
+		RequiredLimits: &wgpu.RequiredLimits{Limits: lim},
+	})
 	if err != nil {
 		adapter.Release()
 		inst.Release()

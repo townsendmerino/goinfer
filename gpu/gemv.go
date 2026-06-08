@@ -40,7 +40,7 @@ var<workgroup> partial: array<i32, 64>;
 
 @compute @workgroup_size(64)
 fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid: vec3<u32>) {
-    let n = wid.x;  // one workgroup per output column
+    let n = wid.x + wid.y * 32768u;  // 2D grid: vocab-sized N exceeds the 65535/dim cap
     if (n >= dims.n) { return; }
     let t = lid.x;
     let kv = dims.kp / 16u;     // vec4s per row
@@ -172,7 +172,8 @@ func (c *Context) BatchGEMV(aq []int8, aScale float32, rms []*ResidentW8A8) ([][
 		}
 		pops[i] = perOp{dst: dst, dims: dims, bg: bg, n: N}
 		pass.SetBindGroup(0, bg, nil)
-		pass.DispatchWorkgroups(uint32(N), 1, 1)
+		gx, gy := gemvGrid(N)
+		pass.DispatchWorkgroups(gx, gy, 1)
 	}
 	if err := pass.End(); err != nil {
 		pass.Release()
@@ -296,7 +297,8 @@ func (r *GEMVRunner) Run(aq []int8, aScale float32) ([]float32, error) {
 	pass := enc.BeginComputePass(nil)
 	pass.SetPipeline(c.gemvPipeline)
 	pass.SetBindGroup(0, r.bg, nil)
-	pass.DispatchWorkgroups(uint32(r.n), 1, 1)
+	gx, gy := gemvGrid(r.n)
+	pass.DispatchWorkgroups(gx, gy, 1)
 	if err := pass.End(); err != nil {
 		pass.Release()
 		return nil, fmt.Errorf("gpu: GEMVRunner pass: %w", err)
@@ -332,6 +334,16 @@ func (r *GEMVRunner) Release() {
 	r.dimsBuf.Release()
 	r.stag.Release()
 	r.bg.Release()
+}
+
+// gemvGrid maps N output columns to a 2D workgroup grid (X capped at 32768 so
+// vocab-sized N stays under the 65535/dimension limit). The kernel reconstructs
+// n = x + y*32768.
+func gemvGrid(n int) (uint32, uint32) {
+	if n <= 32768 {
+		return uint32(n), 1
+	}
+	return 32768, uint32((n + 32767) / 32768)
 }
 
 // MatmulW8A8GEMV computes dst[N] = (aq quantized int8, 1×K) · rmᵀ with the
@@ -404,7 +416,8 @@ func (c *Context) MatmulW8A8GEMV(aq []int8, aScale float32, rm *ResidentW8A8) ([
 	pass := enc.BeginComputePass(nil)
 	pass.SetPipeline(c.gemvPipeline)
 	pass.SetBindGroup(0, bg, nil)
-	pass.DispatchWorkgroups(uint32(N), 1, 1) // one workgroup per output column
+	gx, gy := gemvGrid(N)
+	pass.DispatchWorkgroups(gx, gy, 1)
 	if err := pass.End(); err != nil {
 		pass.Release()
 		return nil, fmt.Errorf("gpu: GEMV pass: %w", err)
