@@ -101,21 +101,39 @@ architecture and the embedding use case is served. The remaining ~10% to the
 100 headline would come only from cutting GPU glue (the megakernel wall) —
 not worth grinding.
 
-**W4A8 is the real future decode lever — but size it honestly.** It cuts
-*only* the gemv (4.3 → ~2.2 ms; half the weight bytes); the glue (4.0),
-attn (0.3) and encode (1.0) operate on activations / dispatch count and are
-**fixed**. So the token goes ~11.15 → ~9.0 ms ≈ **~110 tok/s**, not the
-naive "scale the whole token by bytes → ~145–175." That's ~59% of Ollama's
-q4_K_M (186) at *equal* 4-bit quant — i.e. W4A8 holds the SAME ~60% engine
-ratio as q8 (89.7/147=61%), it does **not** close the gap: it lets goinfer
-ship 4-bit like Ollama does, moving 89.7 → ~110, while Ollama's q4 sits at
-186. The engine gap is structural — as the token shrinks the fixed
-glue+encode overhead becomes a *larger* fraction, so per-byte efficiency
-falls below today's 65%-of-Ollama. That fixed WebGPU encode/glue tax is
-exactly what Ollama's fused-CUDA megakernel avoids — the same wall, now
-measured. So W4A8's value is **shipping 4-bit (≈Ollama's footprint) at
-~110 tok/s AND helping the CPU path (which is dequant-bound)**, not reaching
-CUDA parity. `dot4I8Packed` remains a *prefill* lever, upstream-blocked.
+**W4A8 — PROBED (2026-06-08, commits `5c3777f`, `196bd6d`). It is a
+FOOTPRINT lever, not a speed lever.** The GPU int4 group-wise GEMV kernel is
+built and bit-exact (cosine 1.0 vs a grouped int8×int4 reference; format
+matches aikit's int4-resident — group 32, nibble−8, f16 group scales). The
+gate-shape probe corrects two naive assumptions:
+
+- **Bytes: int4 is 56% of int8, not 50%** — the per-group f16 scales add
+  ~⅛ byte/weight (0.5625 B/weight). (f32 scales were 62%; f16 recovers most,
+  see below.)
+- **Speed: ~96 tok/s, not ~110/145.** The kernel measures ~250–280 GB/s
+  (vs int8's ~360 — nibble-unpack + per-group madd is ALU-bound), so the
+  token gemv only falls 4.3 → ~3.6 ms: token ~11.15 → ~10.5 ms ≈ **~96 tok/s**
+  (a real ~1.07×, crosses 100 with headroom-free margin). The kernel being
+  ALU-bound also means f16 scales **don't help speed** (96 vs 97) — their win
+  is footprint.
+
+So the decode number is a byproduct; **the value is footprint**, and the fit
+arithmetic clears (Qwen2.5-7B, the model that does NOT fit at int8):
+
+| | int8 | int4 (W4A8) |
+|---|---|---|
+| 7B resident weights | 7.07 GB (won't fit) | **3.98 GB** |
+| + KV f32 @ 4k / 16k / 32k ctx | — | 4.55 / 5.96 / 7.84 GB total |
+
+7B int4 fits the 8 GB card **comfortably at ≤16k context** (~4.5–6 GB,
+clearing ~7 GB usable after desktop); only full 32k is tight → wants f16 KV
+(a separate item). int4 is what makes the **7–12B class runnable at all** on
+this card — a capability expansion, the actual W4A8 win. It does **not** move
+the ~60% engine ratio vs Ollama (the WebGPU encode/glue wall is unchanged):
+W4A8 ships 4-bit at Ollama's footprint, a parity-of-*capability* story, not
+parity-of-*speed*. It also unifies one int4 `.giw` across the GPU path and the
+already-dequant-bound CPU `MatmulBTQ4` path. `dot4I8Packed` remains a
+*prefill* lever, upstream-blocked.
 
 ## 0. Measured outcome (2026-06-08) — SUPERSEDED by §0.0
 
