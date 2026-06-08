@@ -95,6 +95,32 @@ is the only delta.
    spike) — only after Gate 1 is green AND the probe confirms a Gate-2 reference.
 4. **Gate 2 (full-model int8 token-agreement)** vs the offloaded HF golden.
 
+## Loader gap found by Gate-1 prep (2026-06-08) — the real build, scoped
+
+Inspecting the real checkpoint's tensor index **before** running Gate 1 surfaced
+that the released `Qwen/Qwen3.6-35B-A3B` is a **multimodal (VL) model** whose text
+decoder is packed differently from the tiny text-only golden goinfer's loader was
+built and parity-tested against. The DeltaNet half matches; the MoE packing and
+the prefix do not. Precise deltas (real → what goinfer's safetensors loader
+expects):
+
+| surface | real checkpoint | goinfer expects | gap |
+|---|---|---|---|
+| prefix | `model.language_model.layers.N.*`, `…embed_tokens` | `model.layers.N.*`, `model.embed_tokens` | inject `language_model.` (lm_head stays top-level `lm_head.weight`) |
+| **MoE experts** | **fused + stacked**: `mlp.experts.gate_up_proj` (one 3-D `[256, 2·moe_inter, hidden]`) + `mlp.experts.down_proj` (one 3-D) | per-expert **separate** `…experts.%d.{gate,up,down}_proj` | **split fused gate_up + de-stack 256 experts** — the real lift |
+| shared expert | `mlp.shared_expert.{gate,up,down}_proj`, `mlp.shared_expert_gate` | `SharedExpert.{Gate,Up,Down}`, `SharedGate` | minor name mapping |
+| DeltaNet | `linear_attn.{in_proj_qkv,in_proj_z,in_proj_a,in_proj_b,conv1d,A_log,dt_bias,norm,out_proj}` | **same** | ✅ none |
+| MTP / vision | `mtp.*`, `model.visual.*` | — | ignore (don't request) |
+
+**So Gate 1 is blocked on a real, well-scoped loader build** — not "slice-load and
+compare." The scary novel surface (DeltaNet geometry) is already name-compatible;
+the work is (1) the `language_model.` prefix and (2) **fused-`gate_up` + stacked-3-D
+expert unpacking in the safetensors path** (goinfer's `stackedExperts` exists for
+the GGUF MoE path — that logic is the model for the safetensors side, plus the
+gate_up split). This is the genuine Track A loader task; the recon's "just load
+real weights" understated it. Once built, Gate 1 (slice f32 parity) validates it,
+then int8 → Gate 2.
+
 ## Known v1 limit (keep visible)
 
 Hybrid models opt out of prefix-reuse / spec-decode — the recurrent `deltaState`
