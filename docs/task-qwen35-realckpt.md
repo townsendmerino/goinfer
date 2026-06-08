@@ -24,13 +24,34 @@ not vibes.
 
 ## Gate 1 — slice f32 parity (proves the loader; cheap, bit-exact)
 
-Load the **first 2–3 real layers + a couple of real experts** from the real
-checkpoint at **f32** (a few GB — fits trivially), run goinfer's forward on that
-slice, compare **bit-exact (cosine ≥ 1−1e-5)** against HF on the same slice. This
-isolates the actual risk — real-tensor mapping at real shapes — at the same
-standard the tiny golden meets, no full-model run. **This is the gate that proves
-the loader.** Run it BEFORE building the int8 path: if the loader is wrong on real
-tensors, you find out cheaply here.
+Load the **first 4 real layers** (embed + layers 0–3) from the real checkpoint at
+**f32**, run goinfer's forward on that slice, compare the hidden state after the
+slice **bit-exact (cosine ≥ 1−1e-5)** against HF on the same slice. No full-model
+run, no offload. **This is the gate that proves the loader.** Run it BEFORE
+building the int8 path: if the loader is wrong on real tensors, you find out
+cheaply here.
+
+**Slice composition is deliberate — it must exercise the parts that actually
+differ from a vanilla transformer, or it passes for the wrong reason.** Layers
+0–3 of qwen3_5_moe cover both novel surfaces:
+- **DeltaNet / linear-attention** layers 0,1,2 (full_attention_interval 4 → the
+  3:1 mix: 0,1,2 linear, 3 softmax) — the recurrent state geometry, the easiest
+  thing to get subtly wrong.
+- **256-expert MoE** on every layer — tests the **expert-weight stacking** tensor
+  mapping (`stackedExperts`), not just dense projections.
+- the softmax (full-attention) layer 3 + per-head QK-norm, for completeness.
+A slice of only embed + a dense block would pass while proving nothing about the
+two things that matter (MoE expert-stacking, DeltaNet recurrence). Both the
+router/expert path and the deltaState path must be inside the bit-exact compare.
+
+**Dtype honesty (do not fudge the bar against a bf16 golden).** Gate 1 is f32 on
+goinfer's side; run **HF on the slice in f32 too** — the slice is small (4 layers,
+a few GB), so force f32, no offload, and hold the tight **1−1e-5** bar. Do NOT
+compare goinfer-f32 against the bf16 offloaded reference at 1e-5: bf16's ~3-decimal
+mantissa floors achievable cosine at ~1−1e-4, so a 1e-5 bar would either fail for
+the wrong reason or get quietly fudged. f32-vs-f32 on the small slice is feasible,
+so do that and keep the tight bar. (The bf16 offloaded golden is for Gate 2, where
+there's no choice — and there the bar is the int8 quant tolerance, looser anyway.)
 
 ## Gate 2 — full-model int8 token-agreement (proves the quant path end-to-end)
 
@@ -38,6 +59,13 @@ goinfer int8 (streamed load, ~35 GB, fits 62 GB) vs an **offloaded bf16 HF
 reference** on ~10 fixed prompts: greedy **top-1 token agreement** + logit cosine
 within the expected int8 quant tolerance. "Coherent tokens" rides on top as a
 **human smoke test — NOT the gate.** The gate is the agreement number.
+
+**Golden banked (2026-06-08):** `~/models/qwen35_real_golden/` (outside the repo
+— ~80 MB) — 10 fixed prompts × 8 greedy steps, full last-position logits per step
+(`promptNN_logits.npy` [8, vocab]) + `manifest.json` (prompt_ids, gen_ids,
+gen_text). Captured while HF was warm in page cache (~7 s/step). This is the
+Gate-2 reference; goinfer int8 greedy-decodes the same prompts and compares
+top-1 token + per-step logit cosine.
 
 ## The reference is achievable (don't despair)
 
@@ -82,9 +110,16 @@ isn't position-truncatable (`deltanet.go`). State it; the gate doesn't cover it.
 - **Don't build the GGUF DeltaNet loader just to get a reference** — offloaded HF
   is cheaper.
 
-## Status / first deliverable
+## Status
 
-The probe result (step 1): does offloaded HF load + forward the real 35B on this
-box, and roughly how slow per pass? That single fact decides "spec it and build"
-vs "the box can't hold the reference — re-scope to slice-parity-only." Reported
-before writing the int8 path.
+- ✅ **Precondition:** `Qwen/Qwen3.6-35B-A3B` downloaded (67 GB, 26 shards) at
+  `~/models/qwen3.6-35b-a3b`.
+- ✅ **PROBE (green):** offloaded HF (`device_map=auto`, cpu 23 / disk 21 layers,
+  no GPU) loads and forwards the real 35B — **~52 s cold / ~5–7 s warm per pass**,
+  correct argmax ("The capital of France is" → `Paris`). The box *can* hold the
+  reference → **spec-and-build**, not re-scope.
+- ✅ **Gate-2 golden banked** (`~/models/qwen35_real_golden/`) while warm.
+- ▶ **NEXT: Gate 1 (slice f32 parity)** — embed + layers 0–3, f32 both sides,
+  cosine ≥ 1−1e-5, slice chosen to cover the DeltaNet + MoE-expert-stacking paths.
+- ⏸ int8 streaming quant path — **only after Gate 1 is green** (don't build the
+  measured thing before the measurement).
