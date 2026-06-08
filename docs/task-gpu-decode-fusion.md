@@ -211,6 +211,50 @@ If fusion plateaus short of the gate, that ceiling IS the finding:
 megakernel is the only way past." Measure; if the plateau appears, write
 it rather than grind.
 
+### §2 RESULT (committed fbdb71f + decfccd) — 27→85 tok/s; §0 falsified
+
+All bit-exact (DecodeRunner parity cosine=1.000000 maxAbs=0 after every
+step; attn cosine=1.0 maxAbs=1.2e-7 from f32 reduction order). Steps, each
+measured (1.55 GB resident, 2070 SUPER):
+
+| step | tok/s | GB/s | all-GPU ms |
+|---|---|---|---|
+| §1 single-pass (baseline) | 22.4 | 34.7 | 41.9 |
+| + rms+quant fused | 23.6 | 36.5 | 39.7 |
+| + swiglu+quant fused (36 KB double-win) | 27.0 | 41.8 | 34.7 |
+| + residual→gemv epilogue | 27.1 | 42.0 | 34.7 |
+| **+ attn warp-per-head** | **84.5** | **130.8** | **9.7** |
+
+- **The fusions landed ~1.2× — modest, as the serialization model predicts:**
+  the rms/residual links border small (6 KB) buffers so their per-link drain
+  is cheap; swiglu+quant was the exception (36 KB intermediate kept off the
+  spine, +0.8× alone).
+- **The attn rewrite landed 3.1× by itself — far more than its isolated
+  5.8 ms.** `@workgroup_size(1)` (12 single-thread workgroups) wasn't just
+  slow, it was the chain's serialization bottleneck: un-overlappable, 28× on
+  the spine, every layer stalled on it. Warp-per-head (one workgroup/head,
+  128 lanes, tree-reduced scores) dropped it to 0.3 ms AND collapsed the
+  whole-token GPU time 34.7→9.7 ms. The serialization tax was concentrated in
+  this one kernel far more than the link-count model suggested.
+- **Result: 84.5 tok/s = 3.3× the staged hybrid (25.6), 9.95× CPU, 49% of the
+  CUDA ceiling (171), 37% of the streaming roofline.** Step attribution:
+  9.7 ms = gemv 4.3 (the matmul floor, already ~360 GB/s = at roofline) +
+  glue 4.0. **§0 "GPU residency loses" is decisively falsified** —
+  `docs/gpu-assessment.md` §0/§0.5 should be rewritten: residency wins
+  handily once the dependency chain is unblocked; the staged hybrid was a
+  local optimum of an unfused, single-threaded-attn implementation.
+
+**On the ≥100 / 50%-roofline gate (currently 84.5 / 37%):** within ~16% but
+not reached. The matmul floor is 4.3 ms (≈230 tok/s at 100% roofline); the
+token is 11.8 ms = 9.7 GPU + 2.1 host. Closing the remaining gap means
+shaving the 4.0 ms glue and ~2 ms host, i.e. more link-folds (vStore→V-gemv
+epilogue, rope-q→attn-on-read) and uniform coalescing (§4) — diminishing
+returns on small-buffer links, plus §3 QKV/gate-up concat (occupancy, not
+serialization — deprioritized). Whether 50% roofline is reachable in WebGPU
+or is the per-link-serialization wall the megakernel-only argument predicts
+is the open question; the result already overturns §0 regardless. **Stopped
+here for a decision rather than grinding the last 16%.**
+
 ## Gate (this is what falsifies-or-confirms the §0 conclusion)
 
 - **Primary:** full-token GPU decode on the 1.5B int8 `.giw`
