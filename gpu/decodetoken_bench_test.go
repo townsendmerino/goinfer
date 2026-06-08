@@ -1,0 +1,79 @@
+//go:build gpu
+
+package gpu
+
+import (
+	"math"
+	"testing"
+	"time"
+)
+
+// TestDecodeToken_throughput times the one-fence DecodeToken on the real Qwen-1.5B
+// shapes (28 layers, hidden 1536, GQA 12/2, FFN 8960, vocab 151936) with resident
+// random weights — the shapes drive the timing. This is the practical payoff: the
+// per-token decode rate of the one-command-buffer forward, to compare against the
+// staged W8A8 path (25.6 tok/s E2E, 3.07× CPU). Logs; run -v.
+func TestDecodeToken_throughput(t *testing.T) {
+	if testing.Short() {
+		t.Skip("throughput")
+	}
+	ctx, err := New()
+	if err != nil {
+		t.Skipf("no GPU adapter: %v", err)
+	}
+	defer ctx.Close()
+
+	const hidden, nH, nKV, hd, inter, vocab, L = 1536, 12, 2, 128, 8960, 151936, 28
+	const pos, maxLen = 100, 256
+	qDim, kvDim := nH*hd, nKV*hd
+	half := hd / 2
+	eps := float32(1e-6)
+	scale := float32(1.0 / math.Sqrt(float64(hd)))
+	x0 := randMat(hidden, 100)
+	invFreq := make([]float32, half)
+	for d := range invFreq {
+		invFreq[d] = float32(1.0 / math.Pow(1e6, float64(2*d)/float64(hd)))
+	}
+	mk := func(N, K int, seed uint64) *ResidentW8A8 {
+		bq, s := quantW(N, K, seed)
+		rm, e := ctx.UploadW8A8(bq, s, N, K)
+		if e != nil {
+			t.Fatal(e)
+		}
+		return rm
+	}
+	up32 := func(v []float32) *DeviceBuffer { d, _ := ctx.UploadF32(v); return d }
+	invD := up32(invFreq)
+
+	t.Logf("uploading %d-layer resident model (~1.7 GB int8)…", L)
+	mw := ModelW{FinalNorm: up32(randMat(hidden, 1)), LMHead: mk(vocab, hidden, 7)}
+	var sd uint64 = 10
+	for l := 0; l < L; l++ {
+		prior := randMat(pos*kvDim, uint64(l))
+		kc, _ := ctx.NewKVCache(prior, maxLen*kvDim)
+		vc, _ := ctx.NewKVCache(prior, maxLen*kvDim)
+		sd += 7
+		mw.Layers = append(mw.Layers, LayerW{
+			Attn: AttnWeights{
+				Norm: up32(randMat(hidden, sd)), QProj: mk(qDim, hidden, sd+1), KProj: mk(kvDim, hidden, sd+2),
+				VProj: mk(kvDim, hidden, sd+3), OProj: mk(hidden, qDim, sd+4), InvFreq: invD, KCache: kc, VCache: vc,
+			},
+			MLPNorm: up32(randMat(hidden, sd+5)), Gate: mk(inter, hidden, sd+6), Up: mk(inter, hidden, sd+7), Down: mk(hidden, inter, sd+8),
+		})
+	}
+
+	// warm up + time
+	if _, err := ctx.DecodeToken(x0, mw, hidden, nH, nKV, hd, inter, pos, 0, eps, scale, false); err != nil {
+		t.Fatalf("DecodeToken: %v", err)
+	}
+	const iters = 30
+	t0 := time.Now()
+	for i := 0; i < iters; i++ {
+		if _, err := ctx.DecodeToken(x0, mw, hidden, nH, nKV, hd, inter, pos, 0, eps, scale, false); err != nil {
+			t.Fatalf("DecodeToken: %v", err)
+		}
+	}
+	per := time.Since(t0) / iters
+	t.Logf("one-fence DecodeToken: %.2f ms/token = %.1f tok/s  (vs staged E2E 25.6 tok/s = 3.07× CPU)",
+		float64(per.Microseconds())/1000, 1e6/float64(per.Microseconds()))
+}
