@@ -62,6 +62,16 @@ type Context struct {
 	quantShader   *wgpu.ShaderModule
 	quantPipeline *wgpu.ComputePipeline
 	quantLayout   *wgpu.BindGroupLayout
+
+	// On-GPU activation int8 quantize pipeline, lazy via ensureQuantize (device.go).
+	quantizeShader   *wgpu.ShaderModule
+	quantizePipeline *wgpu.ComputePipeline
+	quantizeLayout   *wgpu.BindGroupLayout
+
+	// Coalesced W8A8 GEMV (decode) pipeline, lazy via ensureGEMV (gemv.go).
+	gemvShader   *wgpu.ShaderModule
+	gemvPipeline *wgpu.ComputePipeline
+	gemvLayout   *wgpu.BindGroupLayout
 }
 
 // New initializes a GPU context: instance → adapter (high-performance
@@ -129,6 +139,14 @@ func (c *Context) Close() {
 	if c.quantPipeline != nil {
 		c.quantPipeline.Release()
 		c.quantShader.Release()
+	}
+	if c.quantizePipeline != nil {
+		c.quantizePipeline.Release()
+		c.quantizeShader.Release()
+	}
+	if c.gemvPipeline != nil {
+		c.gemvPipeline.Release()
+		c.gemvShader.Release()
 	}
 	c.pipeline.Release()
 	c.shader.Release()
