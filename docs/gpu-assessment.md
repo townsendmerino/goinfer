@@ -16,7 +16,7 @@
 The decode question is closed in favor of **a full-token on-GPU forward**,
 the opposite of §0's "staged hybrid optimal." §0 was a local optimum of an
 *unfused, single-thread-attention* implementation; once the real bottleneck
-was instrumented and fixed, residency wins by 3.3×.
+was instrumented and fixed, residency wins by 3.50×.
 
 Campaign on the 1.5B int8 `.giw` (RTX 2070 SUPER / 3700X), bit-exact at
 every step:

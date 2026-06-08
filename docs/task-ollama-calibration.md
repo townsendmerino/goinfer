@@ -1,0 +1,90 @@
+# Task (goinfer/gpu): Ollama/llama.cpp calibration — the one missing measured number
+
+> **For:** Claude Code on the RTX 2070 SUPER / 3700X box. The GPU decode
+> campaign closed at **89.7 tok/s** (1.5B int8, `docs/gpu-assessment.md`
+> §0.0), but every external-comparison figure in the doc ("~52% of the CUDA
+> ceiling") is **estimated, not measured** — no Ollama/llama.cpp number was
+> ever run on this hardware. This task fills that in so the assessment's
+> competitive claim rests on a real number. ~30 min; no toolkit build
+> (Ollama ships its own CUDA runtime).
+
+## What we have vs what's missing
+
+Measured on this box, all real: goinfer CPU 8.5 tok/s · goinfer GPU **89.7**
+· staged hybrid 25.6. **Missing:** any llama.cpp/Ollama decode rate on the
+same card. The doc's "CUDA ceiling ~170 tok/s" is roofline-scaled from a
+generic "4090 / 7B ~150–200 tok/s" figure — replace it with a measurement.
+
+## The apples-to-apples trap (read before running)
+
+goinfer's 89.7 is **int8 weights (~1.55 GB streamed/token)**. Ollama's
+default 1.5B is **q4_K_M (~0.9 GB)**. Decode is bandwidth-bound, so q4 reads
+~1.7× fewer weight bytes and *should* be ~1.5–1.7× faster — that's quant,
+not engine quality. Two honest comparisons; run both:
+
+1. **Same-quant (engine vs engine):** pull/serve an **int8 / q8_0** 1.5B in
+   Ollama so both stream ~the same bytes. This isolates "goinfer GPU vs
+   llama.cpp CUDA at equal quant" — the real engine-efficiency number.
+2. **As-shipped (what a user gets):** Ollama default q4_K_M vs goinfer int8.
+   This is the honest "what each tool does out of the box" gap, and it
+   motivates the **W4A8** future-work item (the only lever on goinfer's
+   4.3 ms gemv floor).
+
+Match everything else: same model family (Qwen2.5-Coder-1.5B — goinfer's
+demo model), greedy/temp 0, a warm run (discard the first, cold-load
+skews), and read the **eval/decode tok/s** (not prompt-eval/prefill).
+
+## Steps
+
+```bash
+# Ollama ships a bundled CUDA runtime — no nvcc/toolkit needed.
+# (install per ollama.com if absent; confirm it sees the GPU)
+ollama --version
+nvidia-smi            # confirm the 2070S is visible to Ollama
+
+# (2) as-shipped q4_K_M
+ollama pull qwen2.5-coder:1.5b
+ollama run --verbose qwen2.5-coder:1.5b "Write a Go function that reverses a slice." 
+#   → read "eval rate: N tokens/s" from the --verbose footer; rerun once warm.
+
+# (1) same-quant q8_0 (int8-equivalent) — the fair engine comparison
+ollama pull qwen2.5-coder:1.5b-instruct-q8_0    # or `ollama show` to find the q8 tag
+ollama run --verbose qwen2.5-coder:1.5b-instruct-q8_0 "Write a Go function that reverses a slice."
+```
+
+- Confirm Ollama is actually on the GPU (`nvidia-smi` shows the process; or
+  `ollama ps` shows `100% GPU`). A CPU-fallback Ollama number is worthless
+  here.
+- If a q8_0 tag isn't published for this model, note it and use q4_K_M only,
+  clearly labelled — don't silently compare int8-goinfer to q4-Ollama as if
+  same-quant.
+- Optional, only if cheap: the same-API Vulkan llama.cpp build
+  (`-DGGML_VULKAN=ON`, `llama-bench`) — the fair WebGPU-vs-Vulkan number.
+  Skip if it's a yak-shave; the Ollama CUDA number is the priority.
+
+## Record (in `docs/gpu-assessment.md`)
+
+Replace the estimated "~52% of the CUDA ceiling" in §0.0 and the open item
+(§0.5 list, the "llama.cpp calibration — blocked" bullet) with a small table:
+
+| engine | quant | bytes/tok | decode tok/s | vs goinfer-GPU |
+|---|---|---|---|---|
+| goinfer GPU (WebGPU) | int8 | ~1.55 GB | 89.7 | 1.00× |
+| Ollama (CUDA) | q8_0 | ~1.55 GB | ? | ? (engine gap) |
+| Ollama (CUDA) | q4_K_M | ~0.9 GB | ? | ? (+ quant) |
+
+Then state the takeaway honestly: the q8_0 row is the engine-efficiency
+verdict (how close pure-Go/WebGPU gets to llama.cpp's tuned CUDA at equal
+quant); the q4 gap quantifies what W4A8 would recover. Update the §0.0
+"~52% of CUDA ceiling" line to cite the measured ratio, or delete it if the
+number contradicts the estimate.
+
+## Done when
+
+- Both Ollama runs measured warm, confirmed GPU-resident, eval-rate
+  recorded.
+- §0.0 + §0.5 updated: estimate replaced by the table; the calibration open
+  item closed.
+- One-line verdict written: "at equal (q8) quant, goinfer-GPU is N% of
+  Ollama-CUDA on the 2070S" — the honest competitive number the whole
+  assessment was missing.
