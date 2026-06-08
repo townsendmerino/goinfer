@@ -13,10 +13,7 @@ import (
 // attention + MLP chained on device, then final norm + LM head) against a Go
 // reference of the same math. 2 layers exercises the inter-layer xd flow.
 func TestDecodeToken_parity(t *testing.T) {
-	ctx, err := New()
-	if err != nil {
-		t.Skipf("no GPU adapter: %v", err)
-	}
+	ctx := newOrSkipHW(t) // bit-exact gate — skip on software (imprecise), run on real HW
 	defer ctx.Close()
 
 	const hidden, nH, nKV, hd, inter, pos, vocab, L = 1536, 12, 2, 128, 8960, 20, 4096, 2

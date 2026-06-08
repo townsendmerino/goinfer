@@ -107,10 +107,7 @@ func TestFusedMLP_microbench(t *testing.T) {
 	if testing.Short() {
 		t.Skip("microbench")
 	}
-	ctx, err := New()
-	if err != nil {
-		t.Skipf("no GPU adapter: %v", err)
-	}
+	ctx := newOrSkipHW(t)
 	defer ctx.Close()
 	const H, I, iters = 1536, 8960, 100
 	f := newMLPFixture(t, ctx, H, I)

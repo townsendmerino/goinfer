@@ -56,10 +56,7 @@ func TestTiled_microbench(t *testing.T) {
 	if testing.Short() {
 		t.Skip("microbench")
 	}
-	ctx, err := New()
-	if err != nil {
-		t.Skipf("no GPU adapter: %v", err)
-	}
+	ctx := newOrSkipHW(t)
 	defer ctx.Close()
 	t.Logf("backend: %s", ctx.Backend())
 

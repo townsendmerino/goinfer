@@ -70,10 +70,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libgl1-mesa-dev xorg-dev
 
+      # Stitch root + gpu into an ephemeral workspace so `./gpu/...` resolves
+      # the unpublished goinfer root from this checkout. gpu/go.mod already has
+      # `replace github.com/townsendmerino/goinfer => ../`, so `go work init`
+      # alone is enough — no version-pinned `go work edit` needed.
       - name: workspace (resolve unpublished goinfer locally)
-        run: |
-          go work init . ./gpu
-          go work edit -replace github.com/townsendmerino/goinfer@v0.1.3=./
+        run: go work init . ./gpu
 
       - name: build -tags gpu
         run: go build -tags gpu ./gpu/...

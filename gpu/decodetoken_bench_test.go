@@ -19,10 +19,7 @@ func TestDecodeToken_throughput(t *testing.T) {
 	if testing.Short() {
 		t.Skip("throughput")
 	}
-	ctx, err := New()
-	if err != nil {
-		t.Skipf("no GPU adapter: %v", err)
-	}
+	ctx := newOrSkipHW(t)
 	defer ctx.Close()
 
 	const hidden, nH, nKV, hd, inter, vocab, L = 1536, 12, 2, 128, 8960, 151936, 28

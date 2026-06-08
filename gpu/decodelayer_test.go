@@ -77,10 +77,7 @@ func refAttn(q, keys, vals []float32, nH, nKV, hd, nKeys int, scale float32) []f
 // (rmsnorm → qkv → RoPE → KV-append → attention → o_proj → residual, one fence)
 // against a Go reference of the same math.
 func TestAttnBlock_parity(t *testing.T) {
-	ctx, err := New()
-	if err != nil {
-		t.Skipf("no GPU adapter: %v", err)
-	}
+	ctx := newOrSkipHW(t) // bit-exact gate — skip on software (imprecise), run on real HW
 	defer ctx.Close()
 
 	const hidden, nH, nKV, hd, pos = 1536, 12, 2, 128, 20

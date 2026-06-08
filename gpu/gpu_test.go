@@ -5,7 +5,10 @@ package gpu
 import (
 	"math"
 	"math/rand/v2"
+	"strings"
 	"testing"
+
+	"github.com/cogentcore/webgpu/wgpu"
 )
 
 // naiveMatmulBT is the ground-truth reference: dst[m,n] = Σ_k a[m,k]·b[n,k].
@@ -37,6 +40,68 @@ func newOrSkip(t *testing.T) *Context {
 	c, err := New()
 	if err != nil {
 		t.Skipf("no GPU available: %v", err)
+	}
+	return c
+}
+
+// isSoftwareAdapter reports whether the context resolved to a CPU/software
+// renderer (Mesa lavapipe/llvmpipe, SwiftShader, …). CI's headless runner has
+// no real GPU and falls back to one of these; its limits are lower (can't bind
+// a real model's 233 MB LM head) and its math is imprecise/slow, so
+// hardware-sensitive tests must skip on it. AdapterType==CPU catches the Vulkan
+// software path (lavapipe → what CI uses); the name match catches the OpenGL
+// software path (llvmpipe reports AdapterTypeUnknown) and other backends.
+func isSoftwareAdapter(c *Context) bool { return softwareAdapterInfo(c.adapter.GetInfo()) }
+
+// softwareAdapterInfo is the pure detection (unit-tested without a GPU).
+func softwareAdapterInfo(info wgpu.AdapterInfo) bool {
+	if info.AdapterType == wgpu.AdapterTypeCPU {
+		return true
+	}
+	name := strings.ToLower(info.Name + " " + info.DriverDescription)
+	for _, s := range []string{"llvmpipe", "lavapipe", "softpipe", "swiftshader", "software"} {
+		if strings.Contains(name, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// TestSoftwareAdapterDetection pins the software-adapter heuristic (runs with no
+// GPU). CI's lavapipe reports AdapterType==CPU; the OpenGL software path
+// (llvmpipe) reports Unknown but a tell-tale name; a real GPU (this box's NVIDIA,
+// via the GL backend, also reports Unknown) must NOT match.
+func TestSoftwareAdapterDetection(t *testing.T) {
+	cases := []struct {
+		info wgpu.AdapterInfo
+		want bool
+	}{
+		{wgpu.AdapterInfo{AdapterType: wgpu.AdapterTypeCPU, Name: "llvmpipe (LLVM 17.0.6, 256 bits)"}, true}, // CI Vulkan/lavapipe
+		{wgpu.AdapterInfo{AdapterType: wgpu.AdapterTypeUnknown, Name: "llvmpipe (LLVM 17.0.6, 256 bits)"}, true},
+		{wgpu.AdapterInfo{AdapterType: wgpu.AdapterTypeUnknown, Name: "SwiftShader Device (LLVM)"}, true},
+		{wgpu.AdapterInfo{AdapterType: wgpu.AdapterTypeUnknown, Name: "NVIDIA GeForce RTX 2070 SUPER/PCIe/SSE2"}, false}, // this box, GL backend
+		{wgpu.AdapterInfo{AdapterType: wgpu.AdapterTypeDiscreteGPU, Name: "AMD Radeon RX 7900"}, false},
+		{wgpu.AdapterInfo{AdapterType: wgpu.AdapterTypeIntegratedGPU, Name: "Intel(R) Arc(tm) Graphics"}, false},
+	}
+	for _, tc := range cases {
+		if got := softwareAdapterInfo(tc.info); got != tc.want {
+			t.Errorf("softwareAdapterInfo(type=%v %q) = %v, want %v", tc.info.AdapterType, tc.info.Name, got, tc.want)
+		}
+	}
+}
+
+// newOrSkipHW builds a Context or skips on no-adapter OR a software adapter —
+// for hardware-sensitive tests: bit-exact parity gates (imprecise on software),
+// perf/microbenches (meaningless on software), and full-model tests (their large
+// buffers exceed software-adapter binding limits). Keeps the bit-exact gates
+// running on real hardware while making CI robust to environment drift.
+func newOrSkipHW(t *testing.T) *Context {
+	t.Helper()
+	c := newOrSkip(t)
+	if isSoftwareAdapter(c) {
+		info := c.adapter.GetInfo()
+		c.Close()
+		t.Skipf("software adapter (%s %q); hardware-dependent test", info.AdapterType, info.Name)
 	}
 	return c
 }

@@ -22,10 +22,7 @@ func TestGraph_oneFencePerToken(t *testing.T) {
 	if testing.Short() {
 		t.Skip("graph probe")
 	}
-	ctx, err := New()
-	if err != nil {
-		t.Skipf("no GPU adapter: %v", err)
-	}
+	ctx := newOrSkipHW(t)
 	defer ctx.Close()
 	if err := ctx.ensureGEMV(); err != nil {
 		t.Fatal(err)
