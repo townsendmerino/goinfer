@@ -80,6 +80,50 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>) {
 }
 `
 
+// ropeStore: like rope, but reads the q/k-projection output from a separate src
+// buffer and writes the rotated result into dst (the KV cache) at element offset
+// p.base = pos*kvDim. Used for K so the decode token never needs a
+// CopyBufferToBuffer to append the cache — the rotate IS the append. One thread
+// per (head, d) pair. p.base is rewritten per token via the runner's posUni.
+const ropeStoreShaderWGSL = `
+struct P { heads: u32, headDim: u32, half: u32, pos: u32, scale: f32, base: u32, _b: u32, _c: u32 };
+@group(0) @binding(0) var<storage, read>       src:     array<f32>;  // [heads*headDim]
+@group(0) @binding(1) var<storage, read>       invFreq: array<f32>;  // [half]
+@group(0) @binding(2) var<storage, read_write> dst:     array<f32>;  // KV cache [maxLen*kvDim]
+@group(0) @binding(3) var<uniform>             p:       P;
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let idx = gid.x;
+    if (idx >= p.heads * p.half) { return; }
+    let h = idx / p.half;
+    let d = idx % p.half;
+    let theta = f32(p.pos) * invFreq[d];
+    let c = cos(theta) * p.scale;
+    let s = sin(theta) * p.scale;
+    let off = h * p.headDim;
+    let x1 = src[off + d];
+    let x2 = src[off + p.half + d];
+    dst[p.base + off + d]          = x1 * c - x2 * s;
+    dst[p.base + off + p.half + d] = x2 * c + x1 * s;
+}
+`
+
+// kvStore: copy src [n] into dst (the V cache) at element offset p.base=pos*kvDim.
+// A compute-pass-safe replacement for the V CopyBufferToBuffer append, so the
+// decode token stays a single compute pass. p.base is rewritten per token.
+const kvStoreShaderWGSL = `
+struct P { n: u32, base: u32, _b: u32, _c: u32 };
+@group(0) @binding(0) var<storage, read>       src: array<f32>;
+@group(0) @binding(1) var<storage, read_write> dst: array<f32>;
+@group(0) @binding(2) var<uniform>             p:   P;
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x;
+    if (i >= p.n) { return; }
+    dst[p.base + i] = src[i];
+}
+`
+
 func (c *Context) ensureAttn() error {
 	if c.ropePipeline != nil {
 		return nil
@@ -101,6 +145,12 @@ func (c *Context) ensureAttn() error {
 		return err
 	}
 	if c.attnShader, c.attnPipeline, c.attnLayout, err = mk("attn", attnShaderWGSL); err != nil {
+		return err
+	}
+	if c.ropeStoreShader, c.ropeStorePipeline, c.ropeStoreLayout, err = mk("rope-store", ropeStoreShaderWGSL); err != nil {
+		return err
+	}
+	if c.kvStoreShader, c.kvStorePipeline, c.kvStoreLayout, err = mk("kv-store", kvStoreShaderWGSL); err != nil {
 		return err
 	}
 	return nil

@@ -93,11 +93,21 @@ func TestDecodeToken_throughput(t *testing.T) {
 	}
 	perRun := time.Since(t2) / iters
 
+	// Resident int8 weight bytes streamed once per token (the decode roofline
+	// denominator): per-layer qkv+o+gate+up+down, plus the LM head, plus the f32
+	// per-row scales. effective GB/s = weightBytes × tok/s, vs ~448 peak / ~350
+	// streaming on this card.
+	perLayer := qDim*hidden + 2*kvDim*hidden + hidden*qDim + 3*inter*hidden
+	scales := (qDim + 2*kvDim + hidden + 3*inter) * 4 // f32 scale per row, per layer
+	weightBytes := float64(L*(perLayer+scales) + vocab*hidden + vocab*4)
 	ms := func(d time.Duration) float64 { return float64(d.Microseconds()) / 1000 }
 	tps := func(d time.Duration) float64 { return 1e6 / float64(d.Microseconds()) }
-	t.Logf("per-op-submit DecodeToken:   %.1f ms = %5.1f tok/s", ms(perMulti), tps(perMulti))
-	t.Logf("one-buffer DecodeTokenFused: %.1f ms = %5.1f tok/s", ms(perFused), tps(perFused))
-	t.Logf("persistent DecodeRunner:     %.1f ms = %5.1f tok/s", ms(perRun), tps(perRun))
+	gbs := func(d time.Duration) float64 { return weightBytes * tps(d) / 1e9 }
+	t.Logf("resident weight bytes/token: %.2f GB", weightBytes/1e9)
+	t.Logf("per-op-submit DecodeToken:   %.1f ms = %5.1f tok/s = %5.1f GB/s", ms(perMulti), tps(perMulti), gbs(perMulti))
+	t.Logf("one-buffer DecodeTokenFused: %.1f ms = %5.1f tok/s = %5.1f GB/s", ms(perFused), tps(perFused), gbs(perFused))
+	t.Logf("persistent DecodeRunner:     %.1f ms = %5.1f tok/s = %5.1f GB/s (%.0f%% of 350 GB/s roofline)",
+		ms(perRun), tps(perRun), gbs(perRun), gbs(perRun)/350*100)
 	t.Logf("  → runner vs staged-E2E(25.6) %.2fx | vs CPU(8.5) %.2fx | %.0f%% of CUDA ceiling(171)",
 		tps(perRun)/25.6, tps(perRun)/8.5, tps(perRun)/171*100)
 }

@@ -96,6 +96,16 @@ type Context struct {
 	attnShader   *wgpu.ShaderModule
 	attnPipeline *wgpu.ComputePipeline
 	attnLayout   *wgpu.BindGroupLayout
+
+	// KV-cache writers (ensureAttn): rope-and-store K into KCache, store V into
+	// VCache — both at pos*kvDim via a per-token uniform base, so the decode token
+	// is a single compute pass with no CopyBufferToBuffer to break it.
+	ropeStoreShader   *wgpu.ShaderModule
+	ropeStorePipeline *wgpu.ComputePipeline
+	ropeStoreLayout   *wgpu.BindGroupLayout
+	kvStoreShader     *wgpu.ShaderModule
+	kvStorePipeline   *wgpu.ComputePipeline
+	kvStoreLayout     *wgpu.BindGroupLayout
 }
 
 // New initializes a GPU context: instance → adapter (high-performance
@@ -208,6 +218,10 @@ func (c *Context) Close() {
 		c.ropeShader.Release()
 		c.attnPipeline.Release()
 		c.attnShader.Release()
+		c.ropeStorePipeline.Release()
+		c.ropeStoreShader.Release()
+		c.kvStorePipeline.Release()
+		c.kvStoreShader.Release()
 	}
 	c.pipeline.Release()
 	c.shader.Release()

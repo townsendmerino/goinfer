@@ -25,11 +25,9 @@ type DecodeRunner struct {
 }
 
 type runStep struct {
-	pl     *wgpu.ComputePipeline // nil ⇒ a KV-append copy
+	pl     *wgpu.ComputePipeline
 	bg     *wgpu.BindGroup
 	gx, gy uint32
-	src    *wgpu.Buffer // copy: source (k or v)
-	cache  *wgpu.Buffer // copy: KV cache
 }
 
 type posUni struct {
@@ -100,6 +98,26 @@ func (c *Context) NewDecodeRunner(m ModelW, hidden, nH, nKV, hd, inter, start in
 		}})
 		add(c.ropePipeline, bind(c.ropeLayout, vec, invFreq, p), uint32(heads*half+63)/64, 1)
 	}
+	// ropeStore rotates src (the K projection) and writes it straight into the KV
+	// cache at pos*kvDim — replacing the K CopyBufferToBuffer append so the token
+	// stays one compute pass. base is rewritten per token via the posUni.
+	ropeStore := func(src, invFreq, cache *wgpu.Buffer, heads int) {
+		half := hd / 2
+		p := uni([]uint32{uint32(heads), uint32(hd), uint32(half), 0, f32bits(1), 0, 0, 0})
+		r.posUnis = append(r.posUnis, posUni{buf: p, gen: func(pos int) []uint32 {
+			return []uint32{uint32(heads), uint32(hd), uint32(half), uint32(pos), f32bits(1), uint32(pos * r.kvDim), 0, 0}
+		}})
+		add(c.ropeStorePipeline, bind(c.ropeStoreLayout, src, invFreq, cache, p), uint32(heads*half+63)/64, 1)
+	}
+	// vStore copies src (the V projection) into the V cache at pos*kvDim —
+	// replacing the V CopyBufferToBuffer append.
+	vStore := func(src, cache *wgpu.Buffer) {
+		p := uni([]uint32{uint32(r.kvDim), 0, 0, 0})
+		r.posUnis = append(r.posUnis, posUni{buf: p, gen: func(pos int) []uint32 {
+			return []uint32{uint32(r.kvDim), uint32(pos * r.kvDim), 0, 0}
+		}})
+		add(c.kvStorePipeline, bind(c.kvStoreLayout, src, cache, p), uint32(r.kvDim+63)/64, 1)
+	}
 	residual := func(x, y *wgpu.Buffer) {
 		p := uni([]uint32{uint32(hidden), 0, 0, 0})
 		add(c.residualPipeline, bind(c.residualLayout, x, y, p), uint32(hidden+63)/64, 1)
@@ -116,8 +134,8 @@ func (c *Context) NewDecodeRunner(m ModelW, hidden, nH, nKV, hd, inter, start in
 		aq, as := quant(xn, hidden)
 		q, k, v := gemv(aq, as, lw.Attn.QProj), gemv(aq, as, lw.Attn.KProj), gemv(aq, as, lw.Attn.VProj)
 		rope(q, lw.Attn.InvFreq.buf, nH)
-		rope(k, lw.Attn.InvFreq.buf, nKV)
-		r.steps = append(r.steps, runStep{src: k, cache: lw.Attn.KCache.buf}, runStep{src: v, cache: lw.Attn.VCache.buf})
+		ropeStore(k, lw.Attn.InvFreq.buf, lw.Attn.KCache.buf, nKV) // rotate K + append into cache
+		vStore(v, lw.Attn.VCache.buf)                              // append V into cache
 		ctxv := storF(nH * hd)
 		ap := uni([]uint32{uint32(nH), uint32(nKV), uint32(hd), 0, uint32(start), uint32(nH / nKV), f32bits(scale), 0})
 		r.posUnis = append(r.posUnis, posUni{buf: ap, gen: func(pos int) []uint32 {
@@ -161,18 +179,18 @@ func (r *DecodeRunner) Run(x []float32, pos int) ([]float32, error) {
 		return nil, err
 	}
 	defer enc.Release()
+	// One compute pass for the whole token: WebGPU runs the dispatches in record
+	// order and the backend inserts the minimal storage-buffer barriers between
+	// data-dependent dispatches. The KV appends are now compute kernels (rope-store
+	// / kv-store), so nothing forces a pass break.
+	pass := enc.BeginComputePass(nil)
 	for _, s := range r.steps {
-		if s.pl == nil { // KV-append copy
-			enc.CopyBufferToBuffer(s.src, 0, s.cache, uint64(pos*r.kvDim*4), uint64(r.kvDim*4))
-			continue
-		}
-		pass := enc.BeginComputePass(nil)
 		pass.SetPipeline(s.pl)
 		pass.SetBindGroup(0, s.bg, nil)
 		pass.DispatchWorkgroups(s.gx, s.gy, 1)
-		pass.End()
-		pass.Release()
 	}
+	pass.End()
+	pass.Release()
 	enc.CopyBufferToBuffer(r.lastLogits, 0, r.stag, 0, uint64(r.vocab*4))
 	cmd, err := enc.Finish(nil)
 	if err != nil {
