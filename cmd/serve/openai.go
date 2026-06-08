@@ -56,6 +56,9 @@ type server struct {
 	embedTok *embed.Tokenizer // counts tokens for usage.prompt_tokens
 	embedID  string
 	embedDim int
+
+	// Responses API (/v1/responses) state store for store/previous_response_id.
+	responses *responseStore
 }
 
 // pick resolves the OpenAI `model` field to a loaded generative model: an exact

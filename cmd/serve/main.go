@@ -132,6 +132,7 @@ func main() {
 	if len(srv.models) > 0 {
 		mux.HandleFunc("POST /v1/chat/completions", srv.handleChat)
 		mux.HandleFunc("POST /v1/completions", srv.handleCompletions)
+		mux.HandleFunc("POST /v1/responses", srv.handleResponses)
 	}
 	if srv.embed != nil {
 		mux.HandleFunc("POST /v1/embeddings", srv.handleEmbeddings)
@@ -174,7 +175,7 @@ func main() {
 // template, and KV sessions) and/or an encoder (with its tokenizer for token
 // counting). At least one must be configured.
 func newServer(cfg config) (*server, error) {
-	s := &server{models: map[string]*loadedModel{}, cfg: cfg}
+	s := &server{models: map[string]*loadedModel{}, cfg: cfg, responses: newResponseStore(256)}
 	for _, spec := range cfg.models {
 		lm, err := loadDecoder(spec, cfg)
 		if err != nil {
