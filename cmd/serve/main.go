@@ -20,6 +20,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
@@ -27,6 +29,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -38,14 +41,42 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
+// modelSpec is one --model entry: a served name (optional, from name=path) and
+// the checkpoint path. Repeatable to serve a model zoo from one process.
+type modelSpec struct{ name, path string }
+
+// modelFlag collects repeated --model flags. Each value is "path" or "name=path".
+type modelFlag []modelSpec
+
+func (m *modelFlag) String() string {
+	ps := make([]string, len(*m))
+	for i, s := range *m {
+		ps[i] = s.path
+	}
+	return strings.Join(ps, ",")
+}
+
+func (m *modelFlag) Set(v string) error {
+	spec := modelSpec{path: v}
+	// "name=path": split on the first '=' (a served name has no '=').
+	if i := strings.IndexByte(v, '='); i > 0 {
+		spec.name, spec.path = v[:i], v[i+1:]
+	}
+	if spec.path == "" {
+		return fmt.Errorf("empty model path in %q", v)
+	}
+	*m = append(*m, spec)
+	return nil
+}
+
 // config is the resolved command line for newServer (the flag set outgrew a
 // positional signature once embeddings landed).
 type config struct {
-	modelPath  string // decoder (-model); "" = no generative endpoints
+	models     modelFlag // decoder(s) (-model, repeatable); empty = no generative endpoints
 	backend    string
-	quant      string
+	quant      string // global (per-model overrides are a follow-on)
 	lora       string
-	name       string // -served-model-name
+	name       string // -served-model-name (applies only to a single unnamed --model)
 	kvSessions int
 
 	embedPath  string // encoder (-embed-model); "" = no /v1/embeddings
@@ -59,17 +90,20 @@ func main() {
 		addr       = flag.String("addr", ":8080", "listen address")
 		sessionDir = flag.String("session-dir", "", "optional dir to persist/restore KV sessions across restarts (.giw-kv snapshots)")
 	)
-	flag.StringVar(&cfg.modelPath, "model", "", "generative model: a .gguf file or HF checkpoint dir (chat/completions)")
+	flag.Var(&cfg.models, "model", "generative model: a .gguf/.giw file or HF dir (chat/completions). Repeatable\n"+
+		"as `name=path` to serve a model zoo from one process; requests route on the\n"+
+		"OpenAI `model` field. N resident int8 models are expensive — prequant `.giw`\n"+
+		"(--model name=path.giw) maps weights zero-copy and is the cheap way to keep a zoo.")
 	flag.StringVar(&cfg.backend, "backend", "cpu", "compute backend: cpu | webgpu")
-	flag.StringVar(&cfg.quant, "quant", "int8int8", "decoder weight quant: \"\" | int8 | int8int8 | int4")
+	flag.StringVar(&cfg.quant, "quant", "int8int8", "decoder weight quant (global): \"\" | int8 | int8int8 | int4")
 	flag.StringVar(&cfg.lora, "lora", "", "optional PEFT LoRA adapter dir, merged into the (safetensors) base at load")
-	flag.StringVar(&cfg.name, "served-model-name", "", "decoder id reported by /v1/models (default: file/dir basename)")
+	flag.StringVar(&cfg.name, "served-model-name", "", "served id for a single unnamed --model (default: file/dir basename)")
 	flag.IntVar(&cfg.kvSessions, "kv-sessions", 4, "number of conversations to keep prefilled for prompt-prefix KV reuse (0 disables)")
 	flag.StringVar(&cfg.embedPath, "embed-model", "", "embedding model: a CodeRankEmbed HF dir (config.json + model.safetensors + tokenizer.json) for /v1/embeddings")
 	flag.StringVar(&cfg.embedQuant, "embed-quant", "f32", "embedding weight precision: f32 | q8")
 	flag.StringVar(&cfg.embedName, "embed-served-model-name", "", "embedding model id reported by /v1/models (default: dir basename)")
 	flag.Parse()
-	if cfg.modelPath == "" && cfg.embedPath == "" {
+	if len(cfg.models) == 0 && cfg.embedPath == "" {
 		fmt.Fprintln(os.Stderr, "error: at least one of --model or --embed-model is required")
 		flag.Usage()
 		os.Exit(2)
@@ -84,13 +118,15 @@ func main() {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
 	}
-	if srv.gen != nil && *sessionDir != "" && cfg.kvSessions > 0 {
-		srv.gen.sessions.load(*sessionDir)
+	if *sessionDir != "" && cfg.kvSessions > 0 {
+		for _, lm := range srv.models {
+			lm.sessions.load(sessionSubdir(*sessionDir, lm.fp))
+		}
 	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/models", srv.handleModels)
-	if srv.gen != nil {
+	if len(srv.models) > 0 {
 		mux.HandleFunc("POST /v1/chat/completions", srv.handleChat)
 		mux.HandleFunc("POST /v1/completions", srv.handleCompletions)
 	}
@@ -112,10 +148,12 @@ func main() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		_ = httpSrv.Shutdown(ctx)
-		if srv.gen != nil && *sessionDir != "" && cfg.kvSessions > 0 {
-			srv.gen.mu.Lock()
-			_ = srv.gen.sessions.save(*sessionDir)
-			srv.gen.mu.Unlock()
+		if *sessionDir != "" && cfg.kvSessions > 0 {
+			for _, lm := range srv.models {
+				lm.mu.Lock()
+				_ = lm.sessions.save(sessionSubdir(*sessionDir, lm.fp))
+				lm.mu.Unlock()
+			}
 		}
 	}()
 
@@ -131,11 +169,16 @@ func main() {
 // template, and KV sessions) and/or an encoder (with its tokenizer for token
 // counting). At least one must be configured.
 func newServer(cfg config) (*server, error) {
-	s := &server{}
-	if cfg.modelPath != "" {
-		if err := s.loadDecoder(cfg); err != nil {
+	s := &server{models: map[string]*loadedModel{}}
+	for _, spec := range cfg.models {
+		lm, err := loadDecoder(spec, cfg)
+		if err != nil {
 			return nil, err
 		}
+		if _, dup := s.models[lm.name]; dup {
+			return nil, fmt.Errorf("duplicate served model name %q (use --model name=path to disambiguate)", lm.name)
+		}
+		s.models[lm.name] = lm
 	}
 	if cfg.embedPath != "" {
 		if err := s.loadEncoder(cfg); err != nil {
@@ -145,27 +188,33 @@ func newServer(cfg config) (*server, error) {
 	return s, nil
 }
 
-// loadDecoder loads the generative model + tokenizer and resolves the chat template.
-func (s *server) loadDecoder(cfg config) error {
+// loadDecoder loads one generative model + tokenizer, resolves its chat template,
+// and returns it as a *loadedModel. The served name is the spec's name=, else (a
+// single unnamed --model) --served-model-name, else the file/dir basename.
+func loadDecoder(spec modelSpec, cfg config) (*loadedModel, error) {
 	loadTok := tokenizer.Load
-	if strings.HasSuffix(cfg.modelPath, ".gguf") {
+	if strings.HasSuffix(spec.path, ".gguf") {
 		loadTok = tokenizer.LoadGGUF
 	}
-	tk, err := loadTok(cfg.modelPath)
+	tk, err := loadTok(spec.path)
 	if err != nil {
-		return fmt.Errorf("load tokenizer: %w", err)
+		return nil, fmt.Errorf("load tokenizer (%s): %w", spec.path, err)
 	}
 	t0 := time.Now()
-	model, err := decoder.Load(cfg.modelPath, decoder.Options{Backend: cfg.backend, Quant: cfg.quant, LoRA: cfg.lora})
+	model, err := decoder.Load(spec.path, decoder.Options{Backend: cfg.backend, Quant: cfg.quant, LoRA: cfg.lora})
 	if err != nil {
-		return fmt.Errorf("load model: %w", err)
+		return nil, fmt.Errorf("load model (%s): %w", spec.path, err)
 	}
 	mcfg := model.Config()
-	name := cfg.name
+	name := spec.name
 	if name == "" {
-		name = strings.TrimSuffix(filepath.Base(cfg.modelPath), ".gguf")
+		if len(cfg.models) == 1 && cfg.name != "" {
+			name = cfg.name
+		} else {
+			name = strings.TrimSuffix(filepath.Base(spec.path), ".gguf")
+		}
 	}
-	fp := modelFingerprint(cfg.modelPath, model.Quant())
+	fp := modelFingerprint(spec.path, model.Quant())
 	lm := &loadedModel{
 		tk: tk, model: model, vocab: mcfg.VocabSize, eosIDs: mcfg.EOSIDs(), name: name, fp: fp,
 		// capHint 0: KV grows on demand. The fingerprint binds disk snapshots to
@@ -180,10 +229,9 @@ func (s *server) loadDecoder(cfg config) error {
 			}
 		}
 	}
-	s.gen = lm
-	fmt.Fprintf(os.Stderr, "loaded %d-layer model (vocab %d) in %s [chat: %s]\n",
-		mcfg.NumLayers, mcfg.VocabSize, time.Since(t0).Round(time.Millisecond), templateName(lm.tmpl))
-	return nil
+	fmt.Fprintf(os.Stderr, "loaded %q: %d-layer model (vocab %d) in %s [chat: %s]\n",
+		name, mcfg.NumLayers, mcfg.VocabSize, time.Since(t0).Round(time.Millisecond), templateName(lm.tmpl))
+	return lm, nil
 }
 
 // loadEncoder loads the embedding model (f32 or int8) plus its tokenizer (used
@@ -227,13 +275,26 @@ func (s *server) loadEncoder(cfg config) error {
 // endpointSummary describes the registered endpoints for the startup banner.
 func (s *server) endpointSummary() string {
 	var parts []string
-	if s.gen != nil {
-		parts = append(parts, fmt.Sprintf("chat:%q kv-sessions:%d", s.gen.name, s.gen.sessions.size))
+	if len(s.models) > 0 {
+		names := make([]string, 0, len(s.models))
+		for n := range s.models {
+			names = append(names, n)
+		}
+		sort.Strings(names)
+		parts = append(parts, fmt.Sprintf("chat:[%s]", strings.Join(names, " ")))
 	}
 	if s.embed != nil {
 		parts = append(parts, fmt.Sprintf("embeddings:%q", s.embedID))
 	}
 	return strings.Join(parts, " | ")
+}
+
+// sessionSubdir gives a model its own --session-dir folder so warm-KV snapshots
+// from different models don't collide (the dir name is a short hash of the
+// fingerprint; the snapshot's own identity guard still rejects a mismatch).
+func sessionSubdir(base, fp string) string {
+	h := sha256.Sum256([]byte(fp))
+	return filepath.Join(base, hex.EncodeToString(h[:8]))
 }
 
 // modelFingerprint identifies the loaded model for binding KV snapshots to it:

@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestParseStop(t *testing.T) {
@@ -126,6 +127,90 @@ func TestChatChunkShape(t *testing.T) {
 	}
 }
 
+// TestServe_multiModel is the Inc2 gate: two generative models in one process,
+// requests routed on the OpenAI `model` field, /v1/models listing both, unknown
+// model → 404, and concurrent cross-model requests running in parallel (per-model
+// mutex). Gated on two .gguf paths so it skips in normal CI.
+//
+//	GOINFER_SERVE_MODEL=~/models/a.gguf GOINFER_SERVE_MODEL2=~/models/b.gguf \
+//	  go test ./cmd/serve -run TestServe_multiModel -v
+func TestServe_multiModel(t *testing.T) {
+	p1, p2 := os.Getenv("GOINFER_SERVE_MODEL"), os.Getenv("GOINFER_SERVE_MODEL2")
+	if p1 == "" || p2 == "" {
+		t.Skip("set GOINFER_SERVE_MODEL + GOINFER_SERVE_MODEL2 (two .gguf) for the multi-model test")
+	}
+	srv, err := newServer(config{
+		models:  modelFlag{{name: "m1", path: p1}, {name: "m2", path: p2}},
+		backend: "cpu", quant: "int8int8", kvSessions: 2,
+	})
+	if err != nil {
+		t.Fatalf("newServer: %v", err)
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /v1/chat/completions", srv.handleChat)
+	mux.HandleFunc("GET /v1/models", srv.handleModels)
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+
+	// /v1/models lists both.
+	resp, _ := http.Get(ts.URL + "/v1/models")
+	var ml struct {
+		Data []struct{ ID string } `json:"data"`
+	}
+	json.NewDecoder(resp.Body).Decode(&ml)
+	resp.Body.Close()
+	got := map[string]bool{}
+	for _, m := range ml.Data {
+		got[m.ID] = true
+	}
+	if !got["m1"] || !got["m2"] {
+		t.Errorf("/v1/models = %v, want m1 + m2", ml.Data)
+	}
+
+	// chat returns the responded model id + status + latency.
+	chat := func(model string) (int, string, time.Duration) {
+		body := `{"model":"` + model + `","max_tokens":24,"temperature":0,"messages":[{"role":"user","content":"Write a one-line hello in Go."}]}`
+		t0 := time.Now()
+		r, err := http.Post(ts.URL+"/v1/chat/completions", "application/json", strings.NewReader(body))
+		if err != nil {
+			t.Fatalf("POST %s: %v", model, err)
+		}
+		defer r.Body.Close()
+		var out struct {
+			Model string `json:"model"`
+		}
+		json.NewDecoder(r.Body).Decode(&out)
+		return r.StatusCode, out.Model, time.Since(t0)
+	}
+
+	// Routing: each request's response model field matches the requested model.
+	for _, m := range []string{"m1", "m2"} {
+		if code, model, _ := chat(m); code != 200 || model != m {
+			t.Errorf("route %s: status %d model %q, want 200/%s", m, code, model, m)
+		}
+	}
+	// Unknown model → OpenAI-shaped 404.
+	if code, _, _ := chat("nope"); code != http.StatusNotFound {
+		t.Errorf("unknown model: status %d, want 404", code)
+	}
+
+	// Parallelism: two concurrent requests to DIFFERENT models share no mutex, so
+	// they overlap — cross-model wall time should be well under the sum of the two
+	// serial times. (Soft: per-model mutexes guarantee it structurally; logged.)
+	s1, s2 := func() time.Duration { _, _, d := chat("m1"); return d }(), func() time.Duration { _, _, d := chat("m2"); return d }()
+	done := make(chan struct{}, 2)
+	t0 := time.Now()
+	go func() { chat("m1"); done <- struct{}{} }()
+	go func() { chat("m2"); done <- struct{}{} }()
+	<-done
+	<-done
+	wall := time.Since(t0)
+	t.Logf("serial m1=%v m2=%v (sum %v) | concurrent cross-model wall=%v", s1, s2, s1+s2, wall)
+	if wall >= s1+s2 {
+		t.Errorf("cross-model requests did not overlap: wall %v >= serial sum %v", wall, s1+s2)
+	}
+}
+
 // TestServe_integration exercises the real HTTP path end to end against a loaded
 // model. Gated on GOINFER_SERVE_MODEL (a .gguf path) so it skips in normal CI.
 //
@@ -135,7 +220,7 @@ func TestServe_integration(t *testing.T) {
 	if path == "" {
 		t.Skip("set GOINFER_SERVE_MODEL=<.gguf> to run the serve integration test")
 	}
-	srv, err := newServer(config{modelPath: path, backend: "cpu", quant: "int8int8", name: "test-model", kvSessions: 4})
+	srv, err := newServer(config{models: modelFlag{{name: "test-model", path: path}}, backend: "cpu", quant: "int8int8", kvSessions: 4})
 	if err != nil {
 		t.Fatalf("newServer: %v", err)
 	}
@@ -225,7 +310,7 @@ func TestServe_tools_integration(t *testing.T) {
 	if path == "" {
 		t.Skip("set GOINFER_SERVE_MODEL=<.gguf> to run the serve tool test")
 	}
-	srv, err := newServer(config{modelPath: path, backend: "cpu", quant: "int8int8", name: "test-model", kvSessions: 4})
+	srv, err := newServer(config{models: modelFlag{{name: "test-model", path: path}}, backend: "cpu", quant: "int8int8", kvSessions: 4})
 	if err != nil {
 		t.Fatalf("newServer: %v", err)
 	}

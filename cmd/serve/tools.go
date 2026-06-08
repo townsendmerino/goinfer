@@ -15,7 +15,11 @@ import (
 // unambiguous (one tool or a forced function), generates, then PARSES the output
 // against the family's template into OpenAI tool_calls.
 func (s *server) handleChatTools(w http.ResponseWriter, r *http.Request, req chatReq) {
-	lm := s.gen
+	lm := s.pick(req.Model)
+	if lm == nil {
+		s.modelNotFound(w, req.Model)
+		return
+	}
 	if lm.tmpl == nil || !lm.tmpl.SupportsTools() {
 		writeErr(w, http.StatusBadRequest, "this model has no tool-calling template")
 		return

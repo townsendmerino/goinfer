@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -22,9 +23,8 @@ const defaultMaxTokens = 512
 // loadedModel is one resident generative model and the per-model state a request
 // needs: its tokenizer, chat template, stop ids, vocab, warm-KV sessions, and the
 // mutex that serializes its generations (one model = one shared compute stream).
-// The server holds exactly one today; multi-model serving (Track B Inc2) makes it
-// a registry keyed by served name, each with its own mutex so distinct models run
-// in parallel.
+// The server registry holds N of them keyed by served name; each has its own
+// mutex, so requests to distinct models run in parallel.
 type loadedModel struct {
 	tk       *tokenizer.Tokenizer
 	model    *decoder.Model
@@ -39,8 +39,10 @@ type loadedModel struct {
 }
 
 type server struct {
-	// Generative (decoder) half — nil when only an embedding model is served.
-	gen *loadedModel
+	// Generative (decoder) registry — served name → model. Empty when only an
+	// embedding model is served. Requests route on the OpenAI `model` field via
+	// pick; each model has its own mutex, so distinct models run in parallel.
+	models map[string]*loadedModel
 
 	// Embedding (encoder) half — nil when only a generative model is served.
 	// The encoder is goroutine-safe for concurrent Encode, so /v1/embeddings is
@@ -49,6 +51,40 @@ type server struct {
 	embedTok *embed.Tokenizer // counts tokens for usage.prompt_tokens
 	embedID  string
 	embedDim int
+}
+
+// pick resolves the OpenAI `model` field to a loaded generative model: an exact
+// served-name match, else (for single-model OpenAI compatibility, where clients
+// send an arbitrary name) the sole model when only one is loaded. nil otherwise —
+// the handler returns an OpenAI-shaped 404.
+func (s *server) pick(name string) *loadedModel {
+	if lm, ok := s.models[name]; ok {
+		return lm
+	}
+	if len(s.models) == 1 {
+		for _, lm := range s.models {
+			return lm
+		}
+	}
+	return nil
+}
+
+// modelNotFound writes the OpenAI-shaped 404 for an unknown model field.
+func (s *server) modelNotFound(w http.ResponseWriter, name string) {
+	writeErr(w, http.StatusNotFound, fmt.Sprintf("model %q not found (served: %s)", name, strings.Join(s.servedNames(), ", ")))
+}
+
+// servedNames lists the loaded generative + embedding model ids (sorted).
+func (s *server) servedNames() []string {
+	names := make([]string, 0, len(s.models)+1)
+	for n := range s.models {
+		names = append(names, n)
+	}
+	if s.embed != nil {
+		names = append(names, s.embedID)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // --- OpenAI request shapes (the subset we honor) ---
@@ -132,11 +168,8 @@ type usage struct {
 func (s *server) handleModels(w http.ResponseWriter, _ *http.Request) {
 	created := time.Now().Unix()
 	data := []map[string]any{}
-	if s.gen != nil {
-		data = append(data, map[string]any{"id": s.gen.name, "object": "model", "created": created, "owned_by": "goinfer"})
-	}
-	if s.embed != nil {
-		data = append(data, map[string]any{"id": s.embedID, "object": "model", "created": created, "owned_by": "goinfer"})
+	for _, name := range s.servedNames() {
+		data = append(data, map[string]any{"id": name, "object": "model", "created": created, "owned_by": "goinfer"})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"object": "list", "data": data})
 }
@@ -151,7 +184,11 @@ func (s *server) handleChat(w http.ResponseWriter, r *http.Request) {
 		s.handleChatTools(w, r, req)
 		return
 	}
-	lm := s.gen
+	lm := s.pick(req.Model)
+	if lm == nil {
+		s.modelNotFound(w, req.Model)
+		return
+	}
 	gr, err := lm.prepare(req.sampling, lm.chatPrompt(req.Messages))
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
@@ -200,7 +237,11 @@ func (s *server) handleCompletions(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
 	}
-	lm := s.gen
+	lm := s.pick(req.Model)
+	if lm == nil {
+		s.modelNotFound(w, req.Model)
+		return
+	}
 	prompt := firstString(req.Prompt)
 	ids, err := lm.tk.Encode(prompt, true) // raw completion: tokenizer adds BOS
 	if err != nil {
