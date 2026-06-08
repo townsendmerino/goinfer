@@ -18,15 +18,22 @@ import (
 const gemvW8A8ShaderWGSL = `
 struct Dims { m: u32, kp: u32, n: u32, _pad: u32 };
 
-@group(0) @binding(0) var<storage, read>       aq:      array<u32>;  // [1, kp/4]
-@group(0) @binding(1) var<storage, read>       bq:      array<u32>;  // [N, kp/4]
-@group(0) @binding(2) var<storage, read>       aScales: array<f32>;  // [1]
-@group(0) @binding(3) var<storage, read>       bScales: array<f32>;  // [N]
-@group(0) @binding(4) var<storage, read_write> dst:     array<f32>;  // [N]
+// vec4<u32> view of the packed int8 (16 int8 / 16-byte transaction): wider loads
+// raise memory throughput vs scalar u32. kp is a multiple of 16, so kp/16 vec4s.
+@group(0) @binding(0) var<storage, read>       aq:      array<vec4<u32>>;  // [1, kp/16]
+@group(0) @binding(1) var<storage, read>       bq:      array<vec4<u32>>;  // [N, kp/16]
+@group(0) @binding(2) var<storage, read>       aScales: array<f32>;        // [1]
+@group(0) @binding(3) var<storage, read>       bScales: array<f32>;        // [N]
+@group(0) @binding(4) var<storage, read_write> dst:     array<f32>;        // [N]
 @group(0) @binding(5) var<uniform>             dims:    Dims;
 
 fn unpack_i8x4(w: u32) -> vec4<i32> {
     return vec4<i32>(i32(w << 24u) >> 24u, i32(w << 16u) >> 24u, i32(w << 8u) >> 24u, i32(w) >> 24u);
+}
+fn dotw(a: u32, b: u32) -> i32 {
+    let av = unpack_i8x4(a);
+    let bv = unpack_i8x4(b);
+    return av.x*bv.x + av.y*bv.y + av.z*bv.z + av.w*bv.w;
 }
 
 var<workgroup> partial: array<i32, 64>;
@@ -36,13 +43,13 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid
     let n = wid.x;  // one workgroup per output column
     if (n >= dims.n) { return; }
     let t = lid.x;
-    let kw = dims.kp / 4u;
-    let bBase = n * kw;
+    let kv = dims.kp / 16u;     // vec4s per row
+    let bBase = n * kv;
     var acc: i32 = 0;
-    for (var w: u32 = t; w < kw; w = w + 64u) {   // warp reads consecutive words ⇒ coalesced
-        let av = unpack_i8x4(aq[w]);
-        let bv = unpack_i8x4(bq[bBase + w]);
-        acc = acc + av.x*bv.x + av.y*bv.y + av.z*bv.z + av.w*bv.w;
+    for (var v: u32 = t; v < kv; v = v + 64u) {   // warp reads consecutive vec4s ⇒ coalesced
+        let a4 = aq[v];
+        let b4 = bq[bBase + v];
+        acc = acc + dotw(a4.x, b4.x) + dotw(a4.y, b4.y) + dotw(a4.z, b4.z) + dotw(a4.w, b4.w);
     }
     partial[t] = acc;
     workgroupBarrier();
@@ -82,6 +89,120 @@ func (c *Context) ensureGEMV() error {
 	c.gemvPipeline = pl
 	c.gemvLayout = pl.GetBindGroupLayout(0)
 	return nil
+}
+
+// GEMVRunner is the steady-state decode path: it allocates the activation /
+// scale / output / staging buffers and the bind group ONCE for a given resident
+// weight, then each Run only WriteBuffers the new activation and dispatches —
+// avoiding the per-call buffer churn that dominated the one-shot MatmulW8A8GEMV
+// (GPU sync is cheap; wgpu buffer creation is not). This is what the decoder
+// caches per weight matrix.
+type GEMVRunner struct {
+	c                                  *Context
+	rm                                 *ResidentW8A8
+	aBuf, asBuf, dstBuf, dimsBuf, stag *wgpu.Buffer
+	bg                                 *wgpu.BindGroup
+	n                                  int
+}
+
+// NewGEMVRunner builds a reusable decode runner for a resident weight.
+func (c *Context) NewGEMVRunner(rm *ResidentW8A8) (*GEMVRunner, error) {
+	if err := c.ensureGEMV(); err != nil {
+		return nil, err
+	}
+	N := rm.rows
+	mk := func(label string, size uint64, usage wgpu.BufferUsage) (*wgpu.Buffer, error) {
+		return c.device.CreateBuffer(&wgpu.BufferDescriptor{Label: label, Size: size, Usage: usage})
+	}
+	aBuf, err := mk("gemvr-act", uint64(rm.kp/4*4), wgpu.BufferUsageStorage|wgpu.BufferUsageCopyDst)
+	if err != nil {
+		return nil, err
+	}
+	asBuf, _ := mk("gemvr-ascale", 4, wgpu.BufferUsageStorage|wgpu.BufferUsageCopyDst)
+	dstBuf, _ := mk("gemvr-dst", uint64(N*4), wgpu.BufferUsageStorage|wgpu.BufferUsageCopySrc)
+	stag, _ := mk("gemvr-stage", uint64(N*4), wgpu.BufferUsageMapRead|wgpu.BufferUsageCopyDst)
+	dimsBuf, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{
+		Label: "gemvr-dims", Contents: wgpu.ToBytes([]uint32{1, uint32(rm.kp), uint32(N), 0}), Usage: wgpu.BufferUsageUniform,
+	})
+	if err != nil {
+		aBuf.Release()
+		asBuf.Release()
+		dstBuf.Release()
+		stag.Release()
+		return nil, err
+	}
+	bg, err := c.device.CreateBindGroup(&wgpu.BindGroupDescriptor{
+		Layout: c.gemvLayout,
+		Entries: []wgpu.BindGroupEntry{
+			{Binding: 0, Buffer: aBuf, Size: aBuf.GetSize()},
+			{Binding: 1, Buffer: rm.bq, Size: rm.bq.GetSize()},
+			{Binding: 2, Buffer: asBuf, Size: asBuf.GetSize()},
+			{Binding: 3, Buffer: rm.bScales, Size: rm.bScales.GetSize()},
+			{Binding: 4, Buffer: dstBuf, Size: dstBuf.GetSize()},
+			{Binding: 5, Buffer: dimsBuf, Size: dimsBuf.GetSize()},
+		},
+	})
+	if err != nil {
+		aBuf.Release()
+		asBuf.Release()
+		dstBuf.Release()
+		stag.Release()
+		dimsBuf.Release()
+		return nil, err
+	}
+	return &GEMVRunner{c: c, rm: rm, aBuf: aBuf, asBuf: asBuf, dstBuf: dstBuf, dimsBuf: dimsBuf, stag: stag, bg: bg, n: N}, nil
+}
+
+// Run computes dst[N] = (aq quantized int8) · rmᵀ, reusing the runner's buffers.
+func (r *GEMVRunner) Run(aq []int8, aScale float32) ([]float32, error) {
+	c := r.c
+	if err := c.queue.WriteBuffer(r.aBuf, 0, wgpu.ToBytes(packInt8(aq, 1, r.rm.cols))); err != nil {
+		return nil, fmt.Errorf("gpu: GEMVRunner write act: %w", err)
+	}
+	if err := c.queue.WriteBuffer(r.asBuf, 0, wgpu.ToBytes([]float32{aScale})); err != nil {
+		return nil, fmt.Errorf("gpu: GEMVRunner write scale: %w", err)
+	}
+	enc, _ := c.device.CreateCommandEncoder(nil)
+	defer enc.Release()
+	pass := enc.BeginComputePass(nil)
+	pass.SetPipeline(c.gemvPipeline)
+	pass.SetBindGroup(0, r.bg, nil)
+	pass.DispatchWorkgroups(uint32(r.n), 1, 1)
+	if err := pass.End(); err != nil {
+		pass.Release()
+		return nil, fmt.Errorf("gpu: GEMVRunner pass: %w", err)
+	}
+	pass.Release()
+	if err := enc.CopyBufferToBuffer(r.dstBuf, 0, r.stag, 0, uint64(r.n*4)); err != nil {
+		return nil, fmt.Errorf("gpu: GEMVRunner copy: %w", err)
+	}
+	cmd, _ := enc.Finish(nil)
+	defer cmd.Release()
+	c.queue.Submit(cmd)
+	status := wgpu.BufferMapAsyncStatusUnknown
+	if err := r.stag.MapAsync(wgpu.MapModeRead, 0, uint64(r.n*4), func(s wgpu.BufferMapAsyncStatus) { status = s }); err != nil {
+		return nil, fmt.Errorf("gpu: GEMVRunner map: %w", err)
+	}
+	c.device.Poll(true, nil)
+	if status != wgpu.BufferMapAsyncStatusSuccess {
+		return nil, fmt.Errorf("gpu: GEMVRunner map failed: %v", status)
+	}
+	out := make([]float32, r.n)
+	copy(out, wgpu.FromBytes[float32](r.stag.GetMappedRange(0, uint(r.n*4))))
+	if err := r.stag.Unmap(); err != nil {
+		return nil, fmt.Errorf("gpu: GEMVRunner unmap: %w", err)
+	}
+	return out, nil
+}
+
+// Release frees the runner's buffers (not the resident weight).
+func (r *GEMVRunner) Release() {
+	r.aBuf.Release()
+	r.asBuf.Release()
+	r.dstBuf.Release()
+	r.dimsBuf.Release()
+	r.stag.Release()
+	r.bg.Release()
 }
 
 // MatmulW8A8GEMV computes dst[N] = (aq quantized int8, 1×K) · rmᵀ with the

@@ -108,8 +108,10 @@ func (rm *ResidentW8A8) Release() {
 	}
 }
 
-// padK rounds K up to a multiple of 4.
-func padK(k int) int { return (k + 3) &^ 3 }
+// padK rounds K up to a multiple of 16, so the packed word count (kp/4) is a
+// multiple of 4 — letting the GEMV kernel read vec4<u32> (16 int8) per memory
+// transaction. The pad int8s are 0 on both sides, contributing nothing.
+func padK(k int) int { return (k + 15) &^ 15 }
 
 // packInt8 packs a [rows, cols] int8 matrix into [rows, padK(cols)/4] u32 words,
 // little-endian, zero-padding each row to a multiple of 4.

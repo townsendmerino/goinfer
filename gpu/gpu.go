@@ -72,6 +72,11 @@ type Context struct {
 	gemvShader   *wgpu.ShaderModule
 	gemvPipeline *wgpu.ComputePipeline
 	gemvLayout   *wgpu.BindGroupLayout
+
+	// Tiled W8A8 GEMM (prefill) pipeline, lazy via ensureTiled (gemm.go).
+	tiledShader   *wgpu.ShaderModule
+	tiledPipeline *wgpu.ComputePipeline
+	tiledLayout   *wgpu.BindGroupLayout
 }
 
 // New initializes a GPU context: instance → adapter (high-performance
@@ -147,6 +152,10 @@ func (c *Context) Close() {
 	if c.gemvPipeline != nil {
 		c.gemvPipeline.Release()
 		c.gemvShader.Release()
+	}
+	if c.tiledPipeline != nil {
+		c.tiledPipeline.Release()
+		c.tiledShader.Release()
 	}
 	c.pipeline.Release()
 	c.shader.Release()

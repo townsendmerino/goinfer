@@ -106,8 +106,27 @@ func TestGEMV_microbench(t *testing.T) {
 	}
 	gemv := time.Since(t2) / iters
 
+	// Reusable runner (steady-state decode: buffers allocated once, WriteBuffer
+	// the activation per call) — the path the decoder caches per weight.
+	runner, err := ctx.NewGEMVRunner(rm)
+	if err != nil {
+		t.Fatalf("NewGEMVRunner: %v", err)
+	}
+	defer runner.Release()
+	if _, err := runner.Run(aq, aScale[0]); err != nil {
+		t.Fatalf("runner warmup: %v", err)
+	}
+	t3 := time.Now()
+	for i := 0; i < iters; i++ {
+		if _, err := runner.Run(aq, aScale[0]); err != nil {
+			t.Fatalf("runner: %v", err)
+		}
+	}
+	runr := time.Since(t3) / iters
+
 	bw := func(d time.Duration) float64 { return float64(N*K) / d.Seconds() / 1e9 } // GB/s (1B/weight)
-	t.Logf("M=1 K=N=%d  |  CPU %6.3f ms (%5.1f GB/s)  |  GPU naive %6.3f ms (%5.1f GB/s)  |  GPU GEMV %6.3f ms (%5.1f GB/s)",
-		K, ms(cpu), bw(cpu), ms(naive), bw(naive), ms(gemv), bw(gemv))
-	t.Logf("  → GEMV vs CPU %.2f×  |  GEMV vs naive %.2f×", float64(cpu)/float64(gemv), float64(naive)/float64(gemv))
+	t.Logf("M=1 K=N=%d  |  CPU %6.3f ms (%5.1f GB/s)  |  GPU naive %6.3f ms (%5.1f GB/s)  |  GPU GEMV one-shot %6.3f ms (%5.1f GB/s)  |  GPU GEMV runner %6.3f ms (%5.1f GB/s)",
+		K, ms(cpu), bw(cpu), ms(naive), bw(naive), ms(gemv), bw(gemv), ms(runr), bw(runr))
+	t.Logf("  → runner vs CPU %.2f×  |  runner vs one-shot %.2f×  |  one-shot vs CPU %.2f×",
+		float64(cpu)/float64(runr), float64(gemv)/float64(runr), float64(cpu)/float64(gemv))
 }
