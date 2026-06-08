@@ -105,6 +105,19 @@ artifact diagnoses:
    the W8A8 GPU path a real model without waiting on expert paging for
    Mellum2.
 
+**Design requirement for the full-token build (MoE):** dense models keep
+all dispatch shapes known at encode time, but an MoE layer's router
+output chooses the expert matmuls — a CPU-side choice forces a mid-token
+readback and destroys the one-submit architecture for exactly the models
+(2.5B-active MoE) most attractive on 8 GB (the ~757 syncs/token Mellum2
+count is this, structurally). The WebGPU answer is GPU-side top-k routing
++ `dispatchWorkgroupsIndirect`. Build the full-token pass dense-first,
+but do not bake in "dispatch arguments known on CPU" — the indirect path
+must be retrofittable. (Compute has no `GPURenderBundle` equivalent;
+command buffers are single-use, so per-token re-encoding of ~367
+dispatches is unavoidable — already inside the measured 14.1 ms and
+acceptable.)
+
 Speculative decoding's unpark condition (strongly bandwidth-bound decode)
 is not yet met; revisit after the full-token build lands a real E2E
 number.
