@@ -103,6 +103,45 @@ uniforms into ONE buffer and write once. Minor vs §1–2, but free.
   BEFORE §2** — that's the second hypothesis about this code to miss by ~4×
   (after the §0.5 1.48× probe); stop predicting, decompose the 44.7 ms.
 
+- **§5 done — the decode is NOT bandwidth-bound; it is glue-serialization-
+  bound.** Measured (`decode_instrument_test.go` + the throughput bench's
+  phase-split / step-attribution; 2070 SUPER):
+  - **Phase split of `Run`:** write 0.4 ms · encode 1.4 ms · **submit+poll
+    42.3 ms**. The whole token IS GPU-execution time; host-side (the
+    WriteBuffer storm §4 worried about) is negligible. §4 is moot.
+  - **(a) gate GEMV [8960×1536] standalone: ~37 µs/dispatch = ~380 GB/s
+    (≈108% of the 350 estimate, near the 448 peak).** The matmul kernel is
+    bandwidth-perfect. Not the problem. Whole-token matmul stream = **4.1 ms**.
+  - **(b) per-dispatch floor: 1.2–1.5 µs** (same-bg AND distinct-buffer
+    550-deep RAW chain both). Dispatch/launch/barrier overhead is NOT the
+    cost. The "~80 µs/dispatch" guess was wrong too (3rd miss).
+  - **Step attribution (real built plan, GPU exec): all 41.9 ms = gemv 4.1 +
+    glue 37.2.** Glue (rmsnorm/quant/rope/attn/swiglu/residual) is **89% of
+    the token** while touching only KB each.
+  - **The tell:** timing each glue pipeline *type in isolation* sums to only
+    ~7–11 ms, but the glue dispatches *run together in the real dependency
+    chain* cost 37 ms. The ~30 ms delta is **dependency-chain serialization**:
+    isolated same-type dispatches are independent and the GPU overlaps them;
+    in the real token each link (rmsnorm→quant→gemv→…→attn→…) forces a
+    barrier the GPU can't hide, and the per-link drain/cache-flush latency
+    scales with the data the bordering kernel touched (why (b2)'s 256-byte
+    chain was free but the real 13-MB-gemv chain is not). `attn` alone
+    (`@workgroup_size(1)`, one thread/head) is ~5.8 ms even overlapped.
+  - **Verdict (refines the decision rule):** (a) fast + (b) low floor + (c)
+    glue-dominated — but NOT via dispatch overhead. The matmul roofline floor
+    is **4.1 ms ⇒ ~240 tok/s** if glue were free. So **§2/§3 fusion IS the
+    lever**, but for the *measured* reason — it shortens the serialized
+    dependency chain (~18→~5 dispatches/layer ⇒ fewer barrier links), not
+    because "elementwise is free and dispatch is the cost" (the doc's premise,
+    now falsified: glue arithmetic is cheap, glue *serialization* is the tax).
+    **Plus a second, independent lever the doc underweighted: the `attn`
+    kernel must be parallelized** (warp-per-head, not 1 thread) — it is the
+    single largest kernel and fusion won't touch it. Do §2 (fuse
+    rmsnorm+quant, residual epilogue, swiglu+quant) AND the attn rewrite; both
+    are now justified by numbers. The §0 "staged hybrid optimal" claim stays
+    falsified: the GPU floor is 4.1 ms, the implementation just serializes 535
+    dependent dispatches on top of it.
+
 ### 5. Instrument before §2 — decompose the remaining 44.7 ms
 
 Three measurements that fully split the cost; the decision rule chooses

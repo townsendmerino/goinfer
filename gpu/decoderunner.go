@@ -4,6 +4,7 @@ package gpu
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/cogentcore/webgpu/wgpu"
 )
@@ -22,6 +23,10 @@ type DecodeRunner struct {
 	vocab                int
 	kvDim                int
 	keep                 []func()
+
+	// §5 instrumentation: wall time of each Run phase, overwritten per call.
+	// Zero overhead when ignored; the decomposition test reads them.
+	TWrite, TEncode, TSync time.Duration
 }
 
 type runStep struct {
@@ -166,6 +171,7 @@ func (c *Context) NewDecodeRunner(m ModelW, hidden, nH, nKV, hd, inter, start in
 // input embedding [hidden]; returns the logits [vocab]. One Submit + one Poll.
 func (r *DecodeRunner) Run(x []float32, pos int) ([]float32, error) {
 	c := r.c
+	tw := time.Now()
 	if err := c.queue.WriteBuffer(r.xd, 0, wgpu.ToBytes(x)); err != nil {
 		return nil, err
 	}
@@ -174,6 +180,8 @@ func (r *DecodeRunner) Run(x []float32, pos int) ([]float32, error) {
 			return nil, err
 		}
 	}
+	r.TWrite = time.Since(tw)
+	te := time.Now()
 	enc, err := c.device.CreateCommandEncoder(nil)
 	if err != nil {
 		return nil, err
@@ -197,12 +205,15 @@ func (r *DecodeRunner) Run(x []float32, pos int) ([]float32, error) {
 		return nil, err
 	}
 	defer cmd.Release()
+	r.TEncode = time.Since(te)
+	ts := time.Now()
 	c.queue.Submit(cmd)
 	st := wgpu.BufferMapAsyncStatusUnknown
 	if err := r.stag.MapAsync(wgpu.MapModeRead, 0, uint64(r.vocab*4), func(s wgpu.BufferMapAsyncStatus) { st = s }); err != nil {
 		return nil, err
 	}
 	c.device.Poll(true, nil)
+	r.TSync = time.Since(ts)
 	if st != wgpu.BufferMapAsyncStatusSuccess {
 		return nil, fmt.Errorf("gpu: DecodeRunner map failed: %v", st)
 	}

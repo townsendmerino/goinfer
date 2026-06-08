@@ -6,6 +6,8 @@ import (
 	"math"
 	"testing"
 	"time"
+
+	"github.com/cogentcore/webgpu/wgpu"
 )
 
 // TestDecodeToken_throughput times the one-fence DecodeToken on the real Qwen-1.5B
@@ -93,6 +95,51 @@ func TestDecodeToken_throughput(t *testing.T) {
 	}
 	perRun := time.Since(t2) / iters
 
+	// §5 attribution: time the built plan with only the gemv dispatches vs only
+	// the non-gemv (glue) dispatches, each one pass + submit + blocking Poll, min
+	// over reps. Correctness is irrelevant here — this splits the 42 ms of GPU
+	// execution into matmul-kernel time vs glue-kernel time directly.
+	timeSteps := func(keep func(s runStep) bool) time.Duration {
+		best := time.Hour
+		for r := 0; r < 30; r++ {
+			enc, _ := ctx.device.CreateCommandEncoder(nil)
+			pass := enc.BeginComputePass(nil)
+			for _, s := range runner.steps {
+				if !keep(s) {
+					continue
+				}
+				pass.SetPipeline(s.pl)
+				pass.SetBindGroup(0, s.bg, nil)
+				pass.DispatchWorkgroups(s.gx, s.gy, 1)
+			}
+			pass.End()
+			pass.Release()
+			cmd, _ := enc.Finish(nil)
+			t0 := time.Now()
+			ctx.queue.Submit(cmd)
+			ctx.device.Poll(true, nil)
+			d := time.Since(t0)
+			cmd.Release()
+			enc.Release()
+			if d < best {
+				best = d
+			}
+		}
+		return best
+	}
+	mss := func(d time.Duration) float64 { return float64(d.Microseconds()) / 1000 }
+	isGemv := func(s runStep) bool { return s.pl == ctx.gemvPipeline }
+	byPipe := func(pl *wgpu.ComputePipeline) time.Duration {
+		return timeSteps(func(s runStep) bool { return s.pl == pl })
+	}
+	allSteps := timeSteps(func(s runStep) bool { return true })
+	t.Logf("  step attribution (GPU exec, min/30): all %.1f ms | gemv %.1f ms | glue %.1f ms",
+		mss(allSteps), mss(timeSteps(isGemv)), mss(timeSteps(func(s runStep) bool { return !isGemv(s) })))
+	t.Logf("  per-kernel: quantize %.1f | rmsnorm %.1f | attn %.1f | rope %.1f | ropeStore %.1f | kvStore %.1f | swiglu %.1f | residual %.1f ms",
+		mss(byPipe(ctx.quantizePipeline)), mss(byPipe(ctx.rmsnormPipeline)), mss(byPipe(ctx.attnPipeline)),
+		mss(byPipe(ctx.ropePipeline)), mss(byPipe(ctx.ropeStorePipeline)), mss(byPipe(ctx.kvStorePipeline)),
+		mss(byPipe(ctx.swigluPipeline)), mss(byPipe(ctx.residualPipeline)))
+
 	// Resident int8 weight bytes streamed once per token (the decode roofline
 	// denominator): per-layer qkv+o+gate+up+down, plus the LM head, plus the f32
 	// per-row scales. effective GB/s = weightBytes × tok/s, vs ~448 peak / ~350
@@ -108,6 +155,9 @@ func TestDecodeToken_throughput(t *testing.T) {
 	t.Logf("one-buffer DecodeTokenFused: %.1f ms = %5.1f tok/s = %5.1f GB/s", ms(perFused), tps(perFused), gbs(perFused))
 	t.Logf("persistent DecodeRunner:     %.1f ms = %5.1f tok/s = %5.1f GB/s (%.0f%% of 350 GB/s roofline)",
 		ms(perRun), tps(perRun), gbs(perRun), gbs(perRun)/350*100)
+	// §5 phase split of the last Run: where the per-token wall actually goes.
+	t.Logf("  phase split: write %.1f ms | encode %.1f ms | submit+poll %.1f ms",
+		ms(runner.TWrite), ms(runner.TEncode), ms(runner.TSync))
 	t.Logf("  → runner vs staged-E2E(25.6) %.2fx | vs CPU(8.5) %.2fx | %.0f%% of CUDA ceiling(171)",
 		tps(perRun)/25.6, tps(perRun)/8.5, tps(perRun)/171*100)
 }
