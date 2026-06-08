@@ -42,7 +42,12 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 // Single-query attention (decode): one workgroup per query head, an online
 // (FlashAttention-style) softmax over keys [start, nKeys) so it is numerically
 // stable and needs no scratch for the full score row. GQA maps kvh = qh/group.
-// First-cut: one active thread per head (correctness over occupancy).
+// Parallel over the head dimension: workgroup_size = WG (one lane per dim, hd ≤
+// WG), so each key's score is a workgroup tree-reduce and the value accumulate is
+// one lane per dim — replacing the original single-thread-per-head kernel (the §5
+// finding's largest remaining glue kernel, ~5.8 ms). acc/m/l for the online
+// softmax: acc is per-dim (per lane); m and l are replicated identically across
+// lanes (every lane sees the same score x), so no extra reduction is needed.
 const attnShaderWGSL = `
 struct P { nH: u32, nKV: u32, hd: u32, nKeys: u32, start: u32, group: u32, scale: f32, _p: u32 };
 @group(0) @binding(0) var<storage, read>       q:    array<f32>;  // [nH*hd]  (RoPE'd)
@@ -50,33 +55,46 @@ struct P { nH: u32, nKV: u32, hd: u32, nKeys: u32, start: u32, group: u32, scale
 @group(0) @binding(2) var<storage, read>       vals: array<f32>;  // [nKeys*nKV*hd]
 @group(0) @binding(3) var<storage, read_write> ctx:  array<f32>;  // [nH*hd]
 @group(0) @binding(4) var<uniform>             p:    P;
-@compute @workgroup_size(1)
-fn main(@builtin(workgroup_id) wid: vec3<u32>) {
+var<workgroup> red: array<f32, 128>;  // per-key dot-product reduction
+@compute @workgroup_size(128)
+fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid: vec3<u32>) {
     let qh = wid.x;
     if (qh >= p.nH) { return; }
+    let d = lid.x;
     let hd = p.hd;
     let kvDim = p.nKV * hd;
     let kvh = qh / p.group;
     let qbase = qh * hd;
     let kvbase = kvh * hd;
+    let lane = d < hd;
+    var qd: f32 = 0.0;
+    if (lane) { qd = q[qbase + d]; }
+    var acc: f32 = 0.0;
     var m: f32 = -1e30;
     var l: f32 = 0.0;
-    var acc: array<f32, 256>;  // hd ≤ 256
-    for (var d: u32 = 0u; d < hd; d = d + 1u) { acc[d] = 0.0; }
     for (var s: u32 = p.start; s < p.nKeys; s = s + 1u) {
         let kbase = s * kvDim + kvbase;
-        var dot: f32 = 0.0;
-        for (var d: u32 = 0u; d < hd; d = d + 1u) { dot = dot + q[qbase + d] * keys[kbase + d]; }
-        let x = dot * p.scale;
+        var prod: f32 = 0.0;
+        if (lane) { prod = qd * keys[kbase + d]; }
+        red[d] = prod;
+        workgroupBarrier();
+        var stride: u32 = 64u;
+        loop {
+            if (stride == 0u) { break; }
+            if (d < stride) { red[d] = red[d] + red[d + stride]; }
+            workgroupBarrier();
+            stride = stride / 2u;
+        }
+        let x = red[0] * p.scale;
         let mnew = max(m, x);
         let corr = exp(m - mnew);
         let pe = exp(x - mnew);
+        if (lane) { acc = acc * corr + pe * vals[kbase + d]; }
         l = l * corr + pe;
-        for (var d: u32 = 0u; d < hd; d = d + 1u) { acc[d] = acc[d] * corr + pe * vals[kbase + d]; }
         m = mnew;
+        workgroupBarrier();  // all lanes done reading red[0] before next key overwrites red[d]
     }
-    let inv = 1.0 / l;
-    for (var d: u32 = 0u; d < hd; d = d + 1u) { ctx[qbase + d] = acc[d] * inv; }
+    if (lane) { ctx[qbase + d] = acc / l; }
 }
 `
 
