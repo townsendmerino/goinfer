@@ -16,9 +16,10 @@ import (
 // sequence state (the KV cache) is owned by each Generate call, so distinct
 // sequences can run concurrently, but a single KVCache is not shared.
 type Model struct {
-	w      *Weights
-	be     Backend
-	eosIDs []int // end-of-sequence ids from config (generation stops on these)
+	w        *Weights
+	be       Backend
+	eosIDs   []int           // end-of-sequence ids from config (generation stops on these)
+	resident ResidentForward // GPU full-residency decode path (webgpu + eligible arch); nil ⇒ staged/CPU
 }
 
 // Options configures Load.
@@ -59,7 +60,7 @@ func Load(dir string, opts Options) (*Model, error) {
 		if beErr != nil {
 			fmt.Println(beErr)
 		}
-		return &Model{w: w, be: be, eosIDs: w.Cfg.EOSIDs()}, nil
+		return (&Model{w: w, be: be, eosIDs: w.Cfg.EOSIDs()}).withResidency(), nil
 	}
 
 	// Resolve the quant mode first so the weights stream straight into the
@@ -94,7 +95,7 @@ func Load(dir string, opts Options) (*Model, error) {
 		// webgpu requested but fell back — not fatal.
 		fmt.Println(beErr)
 	}
-	return &Model{w: w, be: be, eosIDs: resolveEOSIDs(dir, &w.Cfg)}, nil
+	return (&Model{w: w, be: be, eosIDs: resolveEOSIDs(dir, &w.Cfg)}).withResidency(), nil
 }
 
 // parseQuant maps Options.Quant to the internal quantMode.
@@ -122,6 +123,19 @@ func closeBackend(be Backend) {
 
 // Config exposes the loaded architecture config.
 func (m *Model) Config() *Config { return &m.w.Cfg }
+
+// Close releases backend resources (GPU resident buffers + the backend); a no-op
+// for the CPU backend. Safe to call once after the model is done.
+func (m *Model) Close() error {
+	if m.resident != nil {
+		_ = m.resident.Close()
+		m.resident = nil
+	}
+	if m.be != nil {
+		return m.be.Close()
+	}
+	return nil
+}
 
 // NewCache allocates a KV cache sized for this model. capHint pre-sizes for
 // a known max length (0 = grow on demand).
@@ -318,6 +332,20 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		g.err = err
 		return
 	}
+	// GPU full-residency decode (webgpu + eligible arch + plain stateless
+	// Generate). Prefill ran on the CPU above (batched, fast TTFT); upload its
+	// post-RoPE K/V into the resident GPU caches, then decode on the GPU. Sessions
+	// (commit != nil) and prefix-reuse (prefillFrom > 0) keep the CPU/staged path.
+	useGPU := m.resident != nil && prefillFrom == 0 && commit == nil
+	gpuPos := cache.Pos()
+	if useGPU {
+		for l := 0; l < m.w.arch.NumLayers; l++ {
+			if e := m.resident.UploadKV(l, cache.Keys(l), cache.Vals(l)); e != nil {
+				g.err = e
+				return
+			}
+		}
+	}
 	// Decode loop.
 	var generated []int
 	for range maxTokens {
@@ -346,7 +374,13 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		}
 		out <- next
 		generated = append(generated, next)
-		if logits, err = m.forward(next, cache); err != nil {
+		if useGPU {
+			logits, err = m.resident.Forward(m.embedResident(next), gpuPos)
+			gpuPos++
+		} else {
+			logits, err = m.forward(next, cache)
+		}
+		if err != nil {
 			g.err = err
 			return
 		}

@@ -49,6 +49,42 @@ type weightMat struct {
 	cols   int       // in features (K)
 }
 
+// Read-only accessors for the GPU residency bridge (gpu package): a loaded
+// Model's projections are weightMat (an unexported type behind exported
+// LayerWeights fields), so these exported methods are how the bridge pulls the
+// resident quantized arrays out without the GPU package importing internals.
+
+// Kind reports the resident precision: "int4", "int8", "f32", or "" (empty).
+func (w *weightMat) Kind() string {
+	switch {
+	case w.q4 != nil:
+		return "int4"
+	case w.q8 != nil:
+		return "int8"
+	case w.f32 != nil:
+		return "f32"
+	default:
+		return ""
+	}
+}
+
+func (w *weightMat) Rows() int { return w.rows }
+func (w *weightMat) Cols() int { return w.cols }
+
+// Int4 returns the packed nibbles, per-group scales, and group size (ok=false
+// unless the matrix is resident int4).
+func (w *weightMat) Int4() (q4 []byte, q4s []float32, group int, ok bool) {
+	return w.q4, w.q4s, w.group, w.q4 != nil
+}
+
+// Int8 returns the int8 weights and per-row scales (ok=false unless int8).
+func (w *weightMat) Int8() (q8 []int8, scales []float32, ok bool) {
+	return w.q8, w.scales, w.q8 != nil
+}
+
+// F32 returns the dense weights (ok=false unless f32-resident).
+func (w *weightMat) F32() (f32 []float32, ok bool) { return w.f32, w.f32 != nil }
+
 func newWeightMat(f32 []float32, rows, cols int) weightMat {
 	return weightMat{f32: f32, rows: rows, cols: cols}
 }

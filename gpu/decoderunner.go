@@ -47,6 +47,7 @@ type posUni struct {
 type runLayer struct {
 	attnNorm, invFreq, kCache, vCache, mlpNorm *wgpu.Buffer
 	q, k, v, o, gate, up, down                 decodeWeight
+	qBias, kBias, vBias                        *wgpu.Buffer // optional (Qwen2); nil ⇒ no bias
 }
 
 type runModel struct {
@@ -186,6 +187,12 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 	vStore := func(src, cache *wgpu.Buffer) {
 		add(c.kvStorePipeline, bind(c.kvStoreLayout, src, cache, vStoreUni), uint32(r.kvDim+63)/64, 1)
 	}
+	// biasAdd adds a per-output bias into a projection result (Qwen2 q/k/v bias),
+	// reusing the residual kernel (vec[i] += bias[i]); n is the projection width.
+	biasAdd := func(vec, bias *wgpu.Buffer, n int) {
+		p := uni([]uint32{uint32(n), 0, 0, 0})
+		add(c.residualPipeline, bind(c.residualLayout, vec, bias, p), uint32(n+63)/64, 1)
+	}
 
 	r.xd = keepBuf(func() *wgpu.Buffer {
 		b, _ := c.device.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(hidden * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst | wgpu.BufferUsageCopySrc})
@@ -196,6 +203,11 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		lw := &m.layers[i]
 		aq, as := rmsQuant(r.xd, lw.attnNorm, hidden)
 		q, k, v := gemv(aq, as, lw.q), gemv(aq, as, lw.k), gemv(aq, as, lw.v)
+		if lw.qBias != nil { // Qwen2 q/k/v bias, added before RoPE (matches CPU attention)
+			biasAdd(q, lw.qBias, nH*hd)
+			biasAdd(k, lw.kBias, r.kvDim)
+			biasAdd(v, lw.vBias, r.kvDim)
+		}
 		rope(q, lw.invFreq)
 		ropeStore(k, lw.invFreq, lw.kCache) // rotate K + append into cache
 		vStore(v, lw.vCache)                // append V into cache

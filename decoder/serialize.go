@@ -176,7 +176,7 @@ func NewModel(w *Weights, backend string) (*Model, error) {
 	if beErr != nil {
 		fmt.Println(beErr) // webgpu requested but fell back — not fatal.
 	}
-	return &Model{w: w, be: be, eosIDs: w.Cfg.EOSIDs()}, nil
+	return (&Model{w: w, be: be, eosIDs: w.Cfg.EOSIDs()}).withResidency(), nil
 }
 
 // quantMode reports the precision the bundle's matmul weights are in, derived
