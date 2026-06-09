@@ -184,8 +184,8 @@ rate), real weights, this box (RTX 2070 SUPER, ~860 MiB desktop VRAM baseline).
 TTFT is on a 256-token prompt (GPU-residency uses option-(a) GPU prefill, which is
 **O(prompt-len)** — linear, fine for typical prompts). Effective GB/s = resident
 weight bytes × tok/s vs the ~350 GB/s streaming roofline (shown for the
-bandwidth-bound residency paths). External reference (Ollama/llama.cpp-CUDA on the
-same card) is **not** duplicated here — see `docs/task-ollama-calibration.md`.
+bandwidth-bound residency paths). The external reference (Ollama/llama.cpp-CUDA on
+the same card) is the MEASURED §0.0 figure, not re-derived here.
 Harness: `gpu/matrix_bench_test.go` (`GOINFER_MATRIX_*`, real HW). Ineligible archs
 mark `→ staged`; we don't invent residency numbers for them.
 

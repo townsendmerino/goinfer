@@ -4,7 +4,7 @@
 // model at f32 is ~134 GB (33.5B params × 4 B) and does NOT fit this box's 62 GB —
 // the "infeasible-gate trap" the task doc named. So Gate 2 runs goinfer **int8**
 // (streaming-quant the fused experts, ~39 GB resident, fits) vs the banked HF
-// **bf16** golden, exactly as docs/task-qwen35-realckpt.md §"Gate 2" specs and what
+// **bf16** golden, exactly as the Gate 2 spec specifies and what
 // the golden was captured for (the precision-gap floor is the int8-vs-bf16 one,
 // ~0.99, per the Gemma-4-12B reference). Greedy top-1 token agreement is the hard
 // gate; last-position logit cosine over the quant floor rides on top.

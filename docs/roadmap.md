@@ -50,9 +50,9 @@ battlegrounds now:
 
 ### Track A: model freshness — LANDED (2026-06-07), with follow-ons
 
-- ✅ **Mellum2** (`f70cf51`, `4b0e7be`) — fully closed per
-  `task-mellum2-close.md`: chat template (named-ChatML alias, byte-exact
-  golden), HF logit-parity golden, sliding-window eviction exercised.
+- ✅ **Mellum2** (`f70cf51`, `4b0e7be`) — fully closed: chat template
+  (named-ChatML alias, byte-exact golden), HF logit-parity golden,
+  sliding-window eviction exercised.
 - ✅ **Qwen 3.5/3.6-MoE** (`f70c013`) — **the largest forward-pass addition
   to date**: Gated DeltaNet hybrid (3:1 linear/softmax attention), new
   `deltanet.go` sequence-mixing primitive, hybrid cache (per-layer

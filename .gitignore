@@ -44,10 +44,9 @@ __pycache__/
 *.swp
 
 # Internal docs — sprint scratchpads, planning, strategy. Public repo, so the
-# whole dir stays local ("internal" by name, not by visibility).
+# whole dir stays local ("internal" by name, not by visibility). Cross-machine
+# docs (gpu-assessment.md, the deferred task-*.md plans) live in docs/ proper.
 docs/internal/
-# …except gpu-assessment.md — tracked so it syncs across machines.
-!docs/internal/gpu-assessment.md
 
 # Stray binaries from `go build ./cmd/...` in the repo root
 /serve
