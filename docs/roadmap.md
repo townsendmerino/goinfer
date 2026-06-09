@@ -37,18 +37,14 @@ battlegrounds now:
 | **Serving surface** | mistral.rs v0.7: dynamic model load/unload, **multi-model serving**, initial **OpenAI Responses API**, prefix caching; LM Studio: MCP host + OAuth; Ollama: `launch` app integrations | `cmd/serve` is one model per process, Chat Completions + embeddings. Prefix caching: at parity (landed same season as mistral.rs's). Multi-model + Responses API are the live gaps. |
 | **Quantization frontier** | Native FP8/FP4 (DeepSeek V4 in llama.cpp), TurboQuant (4.9x vs f16, tracked in llama.cpp #20969), NVFP4 on Apple | int8/int4 runtime + broad K-quant dequant coverage. FP8/FP4 is GPU-hardware-driven — not our fight on CPU. Watch TurboQuant: a CPU-implementable 3–4 bit quant with near-paper MSE could matter for the embed-demo size/quality curve. |
 
-### Timely, high-fit openings
+### Timely, high-fit openings — BOTH LANDED (detail in Track A)
 
-1. **Mellum2 (JetBrains, released 2026-06-06)** — 12B MoE, **2.5B active**,
-   Apache 2.0, code-focused. We already run Mellum 1 *and* two MoE families
-   (Mixtral, Qwen2-MoE). 2.5B active is the right compute envelope for CPU
-   decode, and "first pure-Go runtime to run Mellum2" is a fast, ownable
-   claim with a JetBrains-audience hook (Go developers, IDE crowd).
-2. **Qwen 3.6** — the model the entire field optimized for in May. Dense
-   27B is the MTP-era flagship; the 35B-A3B MoE is the local-inference
-   darling. If the architecture is descriptor-close to Qwen3 (likely),
-   support is high-leverage. The Coder variants slot straight into the
-   demo/serve story.
+1. ✅ **Mellum2 (JetBrains)** — 12B MoE / 2.5B active, code-focused. Fully
+   closed: parity golden, chat template, window eviction.
+2. ✅ **Qwen 3.6 (35B-A3B)** — landed as the largest forward-pass addition to
+   date (Gated DeltaNet hybrid). **Real-checkpoint int8 full-model parity
+   validated** (Gate 2, `e3eb033`). Remaining before a headline "Qwen 3.6
+   support" claim: the GGUF loader (loads safetensors today). See Track A.
 
 ## v0.4 — theme: "new models + serve polish"
 
@@ -62,24 +58,44 @@ battlegrounds now:
   `deltanet.go` sequence-mixing primitive, hybrid cache (per-layer
   deltaState alongside KV), 256-expert + shared MoE. Bit-exact vs the HF
   oracle (argmax + cosine 1.0) on a generated tiny checkpoint.
-- **Open follow-ons from the commit itself** (Track A isn't *practically*
-  done until these land):
-  - [ ] GGUF loading for `qwen3_5_moe` + int8/int4 quant path (parity-first
-        f32 only today) — without it the real 35B-A3B isn't runnable at
-        size.
-  - [ ] Real-checkpoint parity (the tiny generated model proves the
-        algorithm; the released weights prove the loader).
-  - [ ] **Hybrid models opt out of prefix-reuse and speculative** (the
-        recurrent deltaState isn't position-truncatable — fallback is
-        correct but silent). Document the limitation in Session/serve
-        docs; a deltaState snapshot-at-position scheme is possible but
-        priced separately.
-  - [ ] Chunked/parallel DeltaNet scan for prefill throughput.
+- ✅ **Real-checkpoint parity — DONE** (`e3eb033`, Gate 2 GREEN). The real
+  Qwen3.6-35B-A3B ships as a **VL model**; goinfer loads its **text decoder**
+  (`language_model.` prefix + fused/stacked 256-expert MoE unpack; vision/MTP
+  ignored). Gate 1 (slice, f32) cosine 1.0 bit-exact; **Gate 2 (full 40-layer,
+  int8, ~39 GB resident via streaming-quant fused experts, vs bf16 golden):
+  argmax 74/80 (92.5%), 8/10 prompts reproduce the golden continuation, logit
+  cosine min 0.99466 / mean 0.99859** (both misses near-ties, <3% of range).
+  **It runs at int8 from safetensors** — not f32-only.
+- **Open follow-ons** (Track A isn't *practically* done until these land):
+  - [ ] **GGUF loading for `qwen3_5_moe`** — loads safetensors today; the GGUF
+        path (the common distribution format) + a chunked DeltaNet scan are
+        the named follow-ons. This is the gate before "Qwen 3.6 support" is a
+        release headline.
+  - [x] **Hybrid models opt out of prefix-reuse and speculative** — the
+        recurrent deltaState isn't position-truncatable; fall back to the
+        staged path, documented. (A deltaState snapshot-at-position scheme is
+        possible but priced separately.)
 - Process note (validated twice now): each family lands as descriptor +
   loader + parity golden, and the whole v0.2/v0.3 surface (templates,
   tools, constrain, serve) inherits automatically. The moat compounds.
 
-### Track B: serve polish — IN PROGRESS (execution doc: `task-serve-polish.md`; commits `3baead4` → `b516209` held locally)
+### Track B: serve polish — LANDED (in CHANGELOG `[Unreleased]`)
+
+`cmd/serve` grew from one-model/Chat-Completions to a model host, pure stdlib:
+
+- ✅ **Multi-model** — `--model name=path` repeatable; requests route on the
+  OpenAI `model` field; `/v1/models` lists all; per-model mutex (distinct
+  models run in parallel) + per-model warm-KV dir.
+- ✅ **Admin API** (`--allow-admin`, default off — RCE-adjacent):
+  `POST /admin/models/{load,unload}`; unload refuses a busy model (409) and
+  snapshots its warm KV.
+- ✅ **OpenAI Responses API** (`/v1/responses`): `input`/`instructions`/
+  `text.format`(→constrain)/`tools`, streaming event shapes,
+  `store`/`previous_response_id` (in-memory ring riding the per-model
+  sessionLRU).
+- ✅ **Backpressure** — bounded per-model queue (`--max-queue`, default 8) →
+  429 + Retry-After when full (single decode worker/model; not continuous
+  batching, which stays deferred).
 
 ### Track C (unplanned): GPU decode investigation — CLOSED (2026-06-08)
 
@@ -112,21 +128,11 @@ Deferred follow-ons (named, **not scheduled** — pick up if a use case pulls):
 - **W4A8-on-disk format** — f16 group scales in the `.giw` (smaller files; the
   kernel is ALU-bound so it wouldn't speed decode).
 
-**Pivot:** the GPU arc is closed; the next leverage is **Track A
-(qwen3_5_moe real-checkpoint parity)** and **Track B (serve polish)** — not more
-GPU decode tuning.
-
-- **Multi-model serving + dynamic load/unload** — serve N models from one
-  process; `/v1/models` lists them, requests route by `model` field;
-  load/unload at runtime (mistral.rs v0.7's headline, Ollama's core UX).
-  Fits the one-binary story: one goinfer process = a local model zoo.
-  Memory discipline via prequant `.giw` mapping keeps N models cheap.
-- **OpenAI Responses API** (`/v1/responses`) — the API surface is shifting
-  under Chat Completions; mistral.rs already started. Getting in early
-  keeps "point your SDK at goinfer" true through 2026.
-- Carried from last revision (as usage appears): request queue + N decode
-  workers (today: one mutex); true incremental tool-call streaming (today:
-  buffered, then deltas).
+**Pivot (updated 2026-06-08):** the GPU arc is closed AND Track A/B largely
+landed. The one real open item across both tracks is the **`qwen3_5_moe` GGUF
+loader** (it runs int8 from safetensors today; GGUF is the distribution-format
+gate). Smaller carried items: true incremental tool-call streaming (today
+buffered-then-deltas); N decode workers per model (today one).
 
 ### Watching, still not doing
 
