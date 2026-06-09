@@ -10,15 +10,18 @@ pre-1.0 and may change as new model families and quant formats land.
 
 ## [Unreleased]
 
+## [v0.4.0] — 2026-06-09
+
 ### Added
 - **GPU full-residency decode (W4A8 int4) — run bigger models pure-GPU.** Real
   int4 `.giw` models now decode entirely on the GPU through `decoder.Generate` on
   the `webgpu` backend (dense Qwen2/Llama): the full-token forward is the resident
   DecodeRunner, not the per-matmul staged path. The win is **footprint, not a
   speed record** — int4 halves resident weights, so a **7B int4 fits and decodes
-  at ~51 tok/s on an 8 GB card** (the model class that does NOT fit at int8), at
-  **~71% of llama.cpp-CUDA** tok/s at equal 4-bit quant (greedy output matches the
-  CPU decode bit-for-bit on the first tokens). int8 residency peaks ~89.7 tok/s on
+  at ~51 tok/s on an 8 GB card** (the model class that does NOT fit at int8), with
+  the engine measured at **~61% of llama.cpp-CUDA** tok/s at equal quant (greedy
+  output matches the CPU decode bit-for-bit on the first tokens). int8 residency
+  peaks ~89.7 tok/s on
   the 1.5B (3.5× the staged hybrid). v1 limits: **stateless `Generate` only**
   (`Session`/prefix-reuse/`GenerateSpeculative` fall back to the staged path),
   **16k context cap** (f32 KV), **eligible archs only** (dense Qwen2/Llama;
@@ -50,8 +53,14 @@ pre-1.0 and may change as new model families and quant formats land.
   hybrid (recurrent state isn't position-truncatable). Loads from safetensors,
   bit-exact vs the HF oracle: the DeltaNet primitive op-for-op (cosine 1.0,
   `deltanet_test.go`) and the full model argmax + cosine 1.0
-  (`qwen35_forward_test.go`). Parity-first f32 forward; GGUF loading + a chunked
-  scan are follow-ons. See `docs/qwen3_5_moe.md`.
+  (`qwen35_forward_test.go`). **Loads from both safetensors and GGUF** — the
+  `qwen3_5_moe` loader reverses llama.cpp's fused/stacked transform back to the
+  per-expert layout — with **real-checkpoint int8 parity on the 35B-A3B** (Gate 2:
+  argmax **74/80**, sample cosine **0.99466** vs the banked HF bf16 golden), and the
+  GGUF path proven by weight-diff against the safetensors load. **Honest scope:**
+  this is the **text decoder of the Qwen3-VL 35B-A3B** model (the language tower),
+  and the hybrid arch runs the **staged path — not GPU residency**. Parity-first f32
+  forward. See `docs/qwen3_5_moe.md`.
 - **Mellum2 chat template** — `chat.Mellum2()` (a named ChatML alias) + a `Detect`
   fingerprint (its distinctive `normalize_content` macro) so JetBrains Mellum2 is
   identified as `mellum2` by `cmd/serve` / `demo/chat` rather than falling through
@@ -71,6 +80,13 @@ pre-1.0 and may change as new model families and quant formats land.
   (`TestMellum2_slidingWindowEviction`: a sliding layer's output is invariant to an
   out-of-window key, a full layer's isn't) plus a real-checkpoint past-window point
   (`TestMellum2_windowParity`: 1441-token prompt, cosine **0.99636**).
+- **CPU int4 decode is now usable** — the `decoder.Generate` int4 path moved onto
+  aikit v1.1.1's `MatmulBTW4A8` (int4×int8 integer decode) from the f32-activation
+  `MatmulBTQ4`, which was dequant-bound at M=1. CPU int4 goes from **~20–45× slower
+  than int8 to ~1.4–1.9× int8** (arm64 + amd64), so int4 is now a real CPU
+  footprint option, not only a GPU one.
+- **aikit → v1.1.1** — adds the `MatmulBTW4A8` CPU int4 kernel above (the
+  `embed`/`linalg` deps; both modules track it).
 
 ## [v0.3.0] — 2026-06-07
 
