@@ -53,7 +53,15 @@ sliding-window mask per query row, GQA broadcast (`nH/nKV`). Workgroup-per-(quer
 head) or tiled. Add `ensureAttnBatched` + the pipeline.
 - [ ] **Gate:** bit-exact vs M sequential single-query `attn` dispatches over the
       same cache (clone `TestAttnBlock_parity`, software-adapter-skipped, run on
-      real HW). Both local (windowed) and global layers.
+      real HW). **Use M > `sliding_window`** — each query row has a *different*
+      `windowStart(startPos+i, global)`, so the batched mask is M distinct
+      causal+window masks. If the whole prompt fits inside the window, windowed and
+      full attention are identical and a window bug passes **silently**; the test
+      must have early rows whose window clips keys that later rows include (or vice
+      versa) on a **local** layer, plus the **global** layers. Both oracles read a
+      **fully pre-populated cache** — write all M K/V first, then attend; the
+      sequential oracle must read the *same complete* cache (causal-masked per
+      query), not rebuild it incrementally, or it isn't apples-to-apples.
 
 ### Increment 2 — the prefill runner (the M-sized plan)
 A `PrefillRunner` (or a `DecodeRunner` M-mode), **built per-prompt** at M (prefill
@@ -88,7 +96,10 @@ The M-sized scratch is transient (freed after prefill) but real: `gate`/`up` are
 very long prompts, **chunk** the prefill into blocks of e.g. 256 — each block is a
 batched pass attending to the growing cache — keeping scratch bounded while still
 amortizing the weight stream. Start unchunked; add chunking only if a real prompt
-length needs it.
+length needs it. **When chunking lands: the window-start stays GLOBAL-position-
+based, not block-relative** — a query in block 2 can legitimately need keys from
+block 1 within its window. Compute `windowStart` from the absolute position, and
+attend over the whole cache written so far, not just the current block.
 
 ## Scope / constraints
 
@@ -103,11 +114,21 @@ length needs it.
 
 ## Why deferred / when to pick up
 
-Typical prompts already prefill in ~0.7–1.3 s, so there's no felt pain today. The
-win is **long prompts** — RAG with large retrieved context, big system prompts,
-long-document summarization. Pick up when a consumer's prompt lengths make option
-(a)'s linear TTFT the bottleneck. The `UploadKV` bridge (kept in the residency
-path) is the adjacent prefix-reuse direction.
+Typical single-shot prompts already prefill in ~0.7–1.3 s, so there's no felt pain
+*today*, and this is the **least urgent** open GPU follow-on — keep it behind
+release-gating work (e.g. the qwen3.6 GGUF loader) until the trigger below fires.
+
+**The concrete trigger — and it's sharper than "long prompts":** the residency
+path is **stateless in v1** (no `Session` / prefix-reuse — that was the documented
+W4A8 limit; `UploadKV` is the kept bridge toward fixing it). So a **multi-turn or
+RAG user on the residency path re-prefills the *entire growing history every
+turn*** at O(len) — there is **no warm-KV escape hatch** there like the staged
+path's `sessionLRU` has. That makes long-prompt prefill bite *exactly* the
+7B-on-8GB residency users the W4A8 work targeted, harder than "no felt pain"
+implies. **Pick-up signal: someone runs multi-turn chat or RAG on the GPU
+residency path** — at that point this jumps the queue (and pairs with either
+residency prefix-reuse via `UploadKV`, or the f16-KV item for the long context
+those workloads imply).
 
 ## Definition of done
 
