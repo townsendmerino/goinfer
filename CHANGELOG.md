@@ -18,11 +18,11 @@ pre-1.0 and may change as new model families and quant formats land.
   the `webgpu` backend (dense Qwen2/Llama): the full-token forward is the resident
   DecodeRunner, not the per-matmul staged path. The win is **footprint, not a
   speed record** — int4 halves resident weights, so a **7B int4 fits and decodes
-  at ~51 tok/s on an 8 GB card** (the model class that does NOT fit at int8), with
-  the engine measured at **~61% of llama.cpp-CUDA** tok/s at equal quant (greedy
+  at ~51 tok/s on an 8 GB card** (the model class that does NOT fit at int8), at
+  **~71% of llama.cpp-CUDA (q4) at equal 4-bit quant** (51.7 vs 72.8 tok/s; greedy
   output matches the CPU decode bit-for-bit on the first tokens). int8 residency
-  peaks ~89.7 tok/s on
-  the 1.5B (3.5× the staged hybrid). v1 limits: **stateless `Generate` only**
+  peaks ~89.7 tok/s on the 1.5B (3.5× the staged hybrid; **61% of Ollama-q8** at
+  equal int8 quant, 89.7 vs 147). v1 limits: **stateless `Generate` only**
   (`Session`/prefix-reuse/`GenerateSpeculative` fall back to the staged path),
   **16k context cap** (f32 KV), **eligible archs only** (dense Qwen2/Llama;
   MoE/Gemma/hybrid → staged). See `docs/gpu-assessment.md` §0.0 + the §1 decision
