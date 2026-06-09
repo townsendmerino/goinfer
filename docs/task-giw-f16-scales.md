@@ -50,10 +50,21 @@ So the `.giw` change shrinks the *file*, not the *working set*. Decode-neutral.
   (widened to f32) means f16-rounded scales → a tiny numeric change. It needs the
   **cosine gate re-run** (the W4A8 quant-gate shape). Upside: it makes the CPU and
   GPU W4A8 paths use the *same* f16 scales — more consistent, not less.
-- **Versioning.** Changing `q4s` to f16 is a format change. The reader currently
-  **hard-rejects** other versions, so existing v1 `.giw` files would break. Need a
-  **`giwVersion` bump + version-aware read** (v1 → read f32; v2 → read f16), or a
-  documented re-quant.
+- **Versioning — and a naming trap.** Changing `q4s` to f16 is a format change;
+  the reader **hard-rejects** mismatched versions, so existing files break without
+  a **bump + version-aware read** (v1 → read f32; v2 → read f16). **Bump the RIGHT
+  field — there are two version counters at two layers:**
+  - `decoder/serialize.go` `giwVersion = 1` — the `GINFW` **weight-bundle**, which
+    owns the `q4s` dtype. **This is the one to bump (→ 2).**
+  - `internal/giw/bundle.go` `bundleVersion = 2` — the `GINFB` **container
+    wrapper**, *already* at v2 for the u64-length ceiling fix (reads v1 u32 / v2
+    u64). **Leave it alone.**
+
+  Bumping `giwVersion` 1→2 numerically collides with the existing `bundleVersion =
+  2` at a different layer — don't confuse the two "v2"s (bumping the wrong field, or
+  assuming back-compat is "already handled" because a v2 exists). The back-compat
+  fixture must be a **v1-`giwVersion`** file specifically (its container is already
+  `bundleVersion = 2`).
 
 ## Increments
 
@@ -83,15 +94,25 @@ So the `.giw` change shrinks the *file*, not the *working set*. Decode-neutral.
 ## Why deferred / when to pick up
 
 **Lowest-value of the open follow-ons:** ~10% smaller files, **zero** decode or
-fit improvement, and it adds a format version + a lossy CPU re-gate. Pick it up
-only when **`.giw` distribution size is a real cost** — shipping a model zoo,
-bandwidth-constrained downloads, or bundling int4 weights into a release artifact.
-Until then the f32 scales are simpler and bit-exact on CPU. Strictly behind the
-batched-prefill and f16-KV items, which themselves are behind release-gating work.
+fit improvement, and it adds a permanent format-version branch + a lossy CPU
+re-gate. But note it *is* **the best available `.giw` shrink lever**: general
+compression is already off the table — zstd was tried and dropped because q4
+nibbles are high-entropy (it shaved only ~3%, and removing `klauspost/compress`
+was the win; see `CHANGELOG.md` / `demo/chat/embed.go`), and the nibbles can't
+shrink further without going sub-4-bit. So f16 scales (~10%) is the *only*
+meaningful lever left.
+
+Still correctly last: a forever-maintenance format branch + a lossy CPU re-gate,
+for 10%, that helps no one until **`.giw` distribution size is a real cost** —
+shipping a model zoo, bandwidth-constrained downloads, bundling int4 into a release
+artifact. Pick it up on an actual distribution-size pain signal, not before;
+strictly behind the batched-prefill and f16-KV items, which are themselves behind
+release-gating work.
 
 ## Definition of done
 
 - [ ] Increments 1–2 landed; v2 writer, version-aware reader, both gates green.
 - [ ] File-size delta measured on a real W4A8 model + recorded; CPU cosine recorded;
       GPU bit-identical confirmed.
-- [ ] Back-compat with banked v1 `.giw` files verified (a v1 fixture in the test).
+- [ ] Back-compat verified with a banked **v1-`giwVersion`** fixture (its container
+      is already `bundleVersion = 2` — don't conflate the two version fields).
