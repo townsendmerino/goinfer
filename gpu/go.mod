@@ -5,7 +5,7 @@ go 1.26.3
 require (
 	github.com/cogentcore/webgpu v0.23.0
 	github.com/townsendmerino/aikit v1.1.1
-	github.com/townsendmerino/goinfer v0.3.0
+	github.com/townsendmerino/goinfer v0.4.0
 )
 
 require golang.org/x/text v0.37.0 // indirect
