@@ -47,7 +47,7 @@ func TestGatedDeltaNet_parity(t *testing.T) {
 		inProjA:   g.W["in_proj_a"],
 		convW:     g.W["conv1d_weight"],
 		dtBias:    g.W["dt_bias"],
-		aLog:      g.W["A_log"],
+		negExpA:   negExpAFromLog(g.W["A_log"]),
 		normW:     g.W["norm_weight"],
 		outProj:   g.W["out_proj"],
 	}

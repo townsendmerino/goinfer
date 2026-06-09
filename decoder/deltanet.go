@@ -23,9 +23,23 @@ type deltaNetWeights struct {
 	inProjA   []float32 // [numV, hidden]      → decay-gate input a
 	convW     []float32 // [convDim, K]        depthwise causal conv ([convDim,1,K] flattened)
 	dtBias    []float32 // [numV]
-	aLog      []float32 // [numV]
+	negExpA   []float32 // [numV]              −exp(A_log), precomputed (see negExpAFromLog)
 	normW     []float32 // [headVDim]          gated RMSNorm weight
 	outProj   []float32 // [hidden, valueDim]
+}
+
+// negExpAFromLog precomputes the DeltaNet decay coefficient −exp(A_log) that the
+// recurrence multiplies by softplus(a+dt_bias). The safetensors path stores raw
+// A_log and converts here at load; the GGUF path stores −exp(A_log) already
+// (llama.cpp's converter bakes it), so it loads straight into negExpA. Computing
+// it once at load keeps the per-step recurrence free of the exp and lets both
+// container formats share one forward.
+func negExpAFromLog(aLog []float32) []float32 {
+	out := make([]float32, len(aLog))
+	for i, v := range aLog {
+		out[i] = -float32(math.Exp(float64(v)))
+	}
+	return out
 }
 
 // matvec computes y[r] = Σ_c W[r*cols+c]·x[c] for a row-major [rows,cols] weight.
@@ -112,7 +126,7 @@ func gatedDeltaNetStep(h []float32, w *deltaNetWeights, p qwen35Params, hidden i
 		q := l2normScaled(conv[headK*hk:headK*hk+hk], qScale)
 		k := l2normScaled(conv[keyDim+headK*hk:keyDim+headK*hk+hk], 1)
 		v := conv[2*keyDim+headV*hv : 2*keyDim+headV*hv+hv]
-		g := -float32(math.Exp(float64(w.aLog[headV]))) * softplusf(at[headV]+w.dtBias[headV]) // log-decay
+		g := w.negExpA[headV] * softplusf(at[headV]+w.dtBias[headV]) // log-decay (negExpA = −exp(A_log))
 		gt := float32(math.Exp(float64(g)))
 		beta := sigmoidf(bt[headV])
 

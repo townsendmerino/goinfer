@@ -600,9 +600,11 @@ func loadQwen35Attn(st *embed.SafetensorsFile, i int, l *LayerWeights, arch *Arc
 		if d.dtBias, err = loadF32(st, nm("linear_attn.dt_bias"), []int{g.NumValueHeads}); err != nil {
 			return err
 		}
-		if d.aLog, err = loadF32(st, nm("linear_attn.A_log"), []int{g.NumValueHeads}); err != nil {
-			return err
+		aLog, aerr := loadF32(st, nm("linear_attn.A_log"), []int{g.NumValueHeads})
+		if aerr != nil {
+			return aerr
 		}
+		d.negExpA = negExpAFromLog(aLog) // store −exp(A_log) (GGUF bakes this; here we compute it)
 		if d.normW, err = loadF32(st, nm("linear_attn.norm.weight"), []int{g.ValueHeadDim}); err != nil {
 			return err
 		}

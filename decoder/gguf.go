@@ -39,8 +39,10 @@ func ggufConfig(g *embed.GGUFFile) (*Config, error) {
 		return ggufGemma4Config(g)
 	case "mellum":
 		return ggufMellumConfig(g)
+	case "qwen35moe":
+		return ggufQwen35Config(g)
 	default:
-		return nil, fmt.Errorf("decoder(gguf): architecture %q unsupported (have: llama, qwen2, qwen3, gemma3, gemma4 [wip], mellum)", arch)
+		return nil, fmt.Errorf("decoder(gguf): architecture %q unsupported (have: llama, qwen2, qwen3, gemma3, gemma4 [wip], mellum, qwen35moe)", arch)
 	}
 }
 
@@ -578,6 +580,169 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			return nil, err
 		}
 		arch.TiedLMHead = false
+	}
+
+	// qwen3_5_moe (qwen35moe): the Gated DeltaNet / gated-softmax hybrid. The GGUF
+	// converter bakes layout transforms the HF safetensors path never sees — V
+	// heads tiled (num_v>num_k), A_log stored as −exp(A_log), the standard norms
+	// (1+w)'d (ssm_norm exempt) — all reversed here so the shared forward runs
+	// unchanged. Attention stays f32 (parity-first, like the safetensors path);
+	// experts/embeddings quantize. Only blk.{0..NumLayers-1} load — the trailing
+	// NextN/MTP block is excluded by ggufQwen35Config's NumLayers.
+	if q := arch.qwen35; q != nil {
+		numK, numV := q.NumKeyHeads, q.NumValueHeads
+		vpk := numV / numK
+		hkd, hvd := q.KeyHeadDim, q.ValueHeadDim
+		keyDim, valueDim := hkd*numK, hvd*numV
+		convDim := 2*keyDim + valueDim
+		// f32mat dequantizes a [out, in] tensor to a row-major f32 slice — the
+		// DeltaNet/softmax projections stay f32 (parity-first), matching the
+		// safetensors qwen35 path (loadQwen35Attn), so only experts/embeddings quantize.
+		f32mat := func(name string, out, in int) ([]float32, error) {
+			dims, data, derr := g.Tensor(name)
+			if derr != nil {
+				return nil, derr
+			}
+			if len(dims) != 2 || dims[0] != in || dims[1] != out {
+				return nil, fmt.Errorf("decoder(gguf-qwen35): %q dims %v, want [in=%d, out=%d]", name, dims, in, out)
+			}
+			return data, nil
+		}
+		loadQ35 := func(i int) error {
+			l := &w.Layers[i]
+			p := fmt.Sprintf("blk.%d.", i)
+			var e error
+			// attn_norm = input_layernorm (pre-attn); post_attention_norm =
+			// post_attention_layernorm (pre-MLP, Pre2). Both (1+w)'d → vnorm subtracts.
+			if l.PreAttnNorm, e = vnorm(p+"attn_norm.weight", hidden); e != nil {
+				return e
+			}
+			if l.PreMLPNorm, e = vnorm(p+"post_attention_norm.weight", hidden); e != nil {
+				return e
+			}
+			if arch.isLinearLayer(i) {
+				d := &deltaNetWeights{}
+				// in_proj_qkv (attn_qkv): only the V output rows are tiled; q/k untouched.
+				qkv, err := f32mat(p+"attn_qkv.weight", convDim, hidden)
+				if err != nil {
+					return err
+				}
+				vOff := 2 * keyDim * hidden
+				copy(qkv[vOff:], untileVHeads(qkv[vOff:], 1, numK, vpk, hvd, hidden))
+				d.inProjQKV = qkv
+				// in_proj_z (attn_gate): all rows tiled.
+				z, err := f32mat(p+"attn_gate.weight", valueDim, hidden)
+				if err != nil {
+					return err
+				}
+				d.inProjZ = untileVHeads(z, 1, numK, vpk, hvd, hidden)
+				// in_proj_a / in_proj_b (ssm_alpha/ssm_beta): one row per value head (hd=1).
+				a, err := f32mat(p+"ssm_alpha.weight", numV, hidden)
+				if err != nil {
+					return err
+				}
+				d.inProjA = untileVHeads(a, 1, numK, vpk, 1, hidden)
+				b, err := f32mat(p+"ssm_beta.weight", numV, hidden)
+				if err != nil {
+					return err
+				}
+				d.inProjB = untileVHeads(b, 1, numK, vpk, 1, hidden)
+				// conv1d (ssm_conv1d): only the V channel block tiled; trail = kernel width.
+				cw, err := f32mat(p+"ssm_conv1d.weight", convDim, q.ConvKernel)
+				if err != nil {
+					return err
+				}
+				vOffC := 2 * keyDim * q.ConvKernel
+				copy(cw[vOffC:], untileVHeads(cw[vOffC:], 1, numK, vpk, hvd, q.ConvKernel))
+				d.convW = cw
+				// ssm_a is already −exp(A_log); reorder by value head (1-D).
+				av, err := vec(p+"ssm_a", numV)
+				if err != nil {
+					return err
+				}
+				d.negExpA = untileVHeads(av, 1, numK, vpk, 1, 1)
+				// dt_bias (ssm_dt.bias): reorder by value head (1-D).
+				dt, err := vec(p+"ssm_dt.bias", numV)
+				if err != nil {
+					return err
+				}
+				d.dtBias = untileVHeads(dt, 1, numK, vpk, 1, 1)
+				// ssm_norm: per-head_v_dim gated-RMSNorm weight — NOT tiled and NOT
+				// (1+w)'d by the converter, so load raw (vec, not vnorm).
+				if d.normW, err = vec(p+"ssm_norm.weight", hvd); err != nil {
+					return err
+				}
+				// out_proj (ssm_out): the value/input columns are tiled.
+				op, err := f32mat(p+"ssm_out.weight", hidden, valueDim)
+				if err != nil {
+					return err
+				}
+				d.outProj = untileVHeads(op, hidden, numK, vpk, hvd, 1)
+				l.delta = d
+			} else {
+				// Gated softmax layer: double-width q_proj (query ‖ gate per head, kept
+				// fused in attn_q), per-head QK-norm. NEOX rope ⇒ no q/k permute.
+				a := &qwenAttnWeights{}
+				shd := arch.HeadDim
+				kvDim := arch.NumKVHeads * shd
+				if a.qProj, e = f32mat(p+"attn_q.weight", arch.NumHeads*shd*2, hidden); e != nil {
+					return e
+				}
+				if a.kProj, e = f32mat(p+"attn_k.weight", kvDim, hidden); e != nil {
+					return e
+				}
+				if a.vProj, e = f32mat(p+"attn_v.weight", kvDim, hidden); e != nil {
+					return e
+				}
+				if a.oProj, e = f32mat(p+"attn_output.weight", hidden, arch.NumHeads*shd); e != nil {
+					return e
+				}
+				if a.qNorm, e = vnorm(p+"attn_q_norm.weight", shd); e != nil {
+					return e
+				}
+				if a.kNorm, e = vnorm(p+"attn_k_norm.weight", shd); e != nil {
+					return e
+				}
+				l.qattn = a
+			}
+			// MoE FFN (every layer): router f32 (matching safetensors), 256 stacked
+			// experts quantized, shared expert quantized + f32 sigmoid gate.
+			if l.Router, e = streamMat(p+"ffn_gate_inp.weight", arch.MoE.NumExperts, hidden, quantNone, func(r int) int { return r * hidden }); e != nil {
+				return e
+			}
+			expInter := arch.MoE.IntermediateDim
+			gate, gerr := stackedExperts(p+"ffn_gate_exps.weight", expInter, hidden, arch.MoE.NumExperts)
+			up, uerr := stackedExperts(p+"ffn_up_exps.weight", expInter, hidden, arch.MoE.NumExperts)
+			down, derr := stackedExperts(p+"ffn_down_exps.weight", hidden, expInter, arch.MoE.NumExperts)
+			if gerr != nil || uerr != nil || derr != nil {
+				return fmt.Errorf("decoder(gguf-qwen35): experts layer %d: %v / %v / %v", i, gerr, uerr, derr)
+			}
+			l.Experts = make([]expertWeights, arch.MoE.NumExperts)
+			for ei := range arch.MoE.NumExperts {
+				l.Experts[ei] = expertWeights{Gate: gate[ei], Up: up[ei], Down: down[ei]}
+			}
+			sInter := arch.MoE.SharedIntermediateDim
+			if l.SharedExpert.Gate, e = mat(p+"ffn_gate_shexp.weight", sInter, hidden); e != nil {
+				return e
+			}
+			if l.SharedExpert.Up, e = mat(p+"ffn_up_shexp.weight", sInter, hidden); e != nil {
+				return e
+			}
+			if l.SharedExpert.Down, e = mat(p+"ffn_down_shexp.weight", hidden, sInter); e != nil {
+				return e
+			}
+			// shared_expert_gate (ffn_gate_inp_shexp): 1-D [hidden] → [1, hidden] f32.
+			sg, err := vec(p+"ffn_gate_inp_shexp.weight", hidden)
+			if err != nil {
+				return err
+			}
+			l.SharedGate = newWeightMat(sg, 1, hidden)
+			return nil
+		}
+		if err := parallelLayers(arch.NumLayers, loadQ35); err != nil {
+			return nil, err
+		}
+		return w, nil
 	}
 
 	// Gemma 4 (E-models): a dedicated layer loader. Per-layer head_dim/FFN, the
