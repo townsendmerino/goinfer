@@ -22,7 +22,9 @@ card the proven fit (peak 6937/8192 MiB):
 **32k f32** doubles the KV to +3.76 GB → ~7.7 GB + scratch → over the card, so v1
 **hard-caps context at 16k**. **f16 KV (2 bytes) halves the per-token cost:** 32k
 f16 = **1.88 GB — identical to 16k f32.** Same total (5.86 GB), same headroom,
-**2× the context window.** That is the entire win.
+**2× the context window.** That's the headline win — and f16 KV *also speeds up
+long-context decode* (the attention kernel is KV-read-bound; half the bytes = half
+the read), so it's "2× context **and** faster" — see Increment 2.
 
 ## What already exists (building blocks)
 
@@ -56,9 +58,13 @@ but it's real. Consequences for the design:
   (reuse `packF16Pairs` / the WGSL f16-pack helper).
 - `attnShaderWGSL`: read the f16 cache and `f16to32`-unpack each K/V element before
   the dot product / weighted sum. (The query stays f32; only the cache is f16.)
-- [ ] **Gate:** on a fixed prompt, f16-KV decode vs f32-KV decode — **argmax
-      preserved every step**, full-logit **cosine ≥ 0.99**. Real HW (software-
-      adapter-skipped). Confirm both local (windowed) and global layers.
+- [ ] **Gate:** f16-KV decode vs f32-KV decode — **argmax preserved every step**,
+      full-logit **cosine ≥ 0.99** — **run at long context, near the 32k it unlocks**
+      (or the longest the cap allows until Increment 2 lifts it). That's where
+      per-element f16 rounding acts over the most keys and a long-range near-tie can
+      flip; a short-prompt cosine is necessary but says nothing about the regime the
+      feature exists for. Real HW (software-adapter-skipped). (No windowed layers —
+      the residency path is full-attention-only, `SlidingWindow == 0`.)
 
 ### Increment 2 — the precision knob + the 32k unlock
 - Plumb a KV-precision option (`Options.KVPrecision` / serve `--kv f16|f32`,
@@ -67,6 +73,11 @@ but it's real. Consequences for the design:
 - [ ] **Gate:** 7B int4 + **32k f16 KV** fits 8 GB — real allocation, no OOM,
       record peak VRAM (target ≈ the 16k-f32 5.86 GB). f32 default unchanged →
       `TestDecodeParity` still bit-exact.
+- [ ] **Secondary win (measure + record):** at long context the attention kernel
+      is **KV-read-bound**, so halving the cache bytes should **speed up
+      long-context decode** — at equal context, f16-KV decode tok/s should beat
+      f32-KV (e.g. 16k-f16 vs 16k-f32). Measure and record it; "2× context AND
+      faster long-context decode" is a stronger story than "fits."
 
 ## Scope / constraints
 
@@ -91,5 +102,6 @@ item: long context implies long prompts, which is where that one matters too.)
 - [ ] Increments 1–2 landed, each gated on real hardware.
 - [ ] f16-KV cosine/argmax parity recorded; **f32 default still bit-exact**
       (`TestDecodeParity` untouched).
-- [ ] 32k-f16 7B fit measured (peak VRAM) + noted in the GPU campaign doc /
-      CHANGELOG; the `--kv` knob documented in the serve README.
+- [ ] 32k-f16 7B fit measured (peak VRAM) **and the long-context decode speedup
+      (f16 vs f32 at equal context)** + noted in the GPU campaign doc / CHANGELOG;
+      the `--kv` knob documented in the serve README.

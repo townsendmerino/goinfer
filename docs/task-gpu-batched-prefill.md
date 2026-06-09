@@ -38,30 +38,30 @@ TTFT. The CPU analog already ships (`prefillLogits`/`forwardLayersN`, ~1.7–2×
 
 Today's attention (`gpu/attention.go` `attnShaderWGSL`, `c.attnPipeline`) is
 **single-query**: one query position, `nH` workgroups, attends to all cached keys
-`[start, pos]`. Prefill needs **M queries**, each query i (abs pos `startPos+i`)
-attending causally to keys `[windowStart(startPos+i, global), startPos+i]` — the
-causal mask + the per-layer sliding window. K/V for all M are written into the
-resident cache by the batched `ropeStore`/`vStore` *before* the attention reads
-it, so it's a self-contained pass. This kernel does not exist yet — it's the bulk
-of the work and the main parity risk.
+`[0, pos]`. Prefill needs **M queries**, each query i (abs pos `startPos+i`)
+attending causally to keys `[0, startPos+i]` — a **plain causal mask, no sliding
+window.** `DecodeRunnerEligible` requires `SlidingWindow == 0` (verified,
+`residency.go:54`), so the residency path is **full-attention-only** by
+construction — there are no local/windowed layers to handle. K/V for all M are
+written into the resident cache by the batched `ropeStore`/`vStore` *before* the
+attention reads it, so it's a self-contained pass. This kernel doesn't exist yet,
+but with no per-row window it's a straight causal mask, not M distinct windowed
+masks.
 
 ## Increments
 
-### Increment 1 — batched causal attention kernel (do first; riskiest)
-WGSL: `[M, nH, hd]` queries × the resident `[nKeys, nKV*hd]` K/V cache, causal +
-sliding-window mask per query row, GQA broadcast (`nH/nKV`). Workgroup-per-(query,
-head) or tiled. Add `ensureAttnBatched` + the pipeline.
+### Increment 1 — batched causal attention kernel (do first)
+WGSL: `[M, nH, hd]` queries × the resident `[nKeys, nKV*hd]` K/V cache, **plain
+causal mask** per row (query i attends to keys `[0, startPos+i]`), GQA broadcast
+(`nH/nKV`). Workgroup-per-(query, head) or tiled. Add `ensureAttnBatched` + the
+pipeline.
 - [ ] **Gate:** bit-exact vs M sequential single-query `attn` dispatches over the
       same cache (clone `TestAttnBlock_parity`, software-adapter-skipped, run on
-      real HW). **Use M > `sliding_window`** — each query row has a *different*
-      `windowStart(startPos+i, global)`, so the batched mask is M distinct
-      causal+window masks. If the whole prompt fits inside the window, windowed and
-      full attention are identical and a window bug passes **silently**; the test
-      must have early rows whose window clips keys that later rows include (or vice
-      versa) on a **local** layer, plus the **global** layers. Both oracles read a
-      **fully pre-populated cache** — write all M K/V first, then attend; the
-      sequential oracle must read the *same complete* cache (causal-masked per
-      query), not rebuild it incrementally, or it isn't apples-to-apples.
+      real HW). Both oracles read a **fully pre-populated cache** — write all M K/V
+      first, then attend; the sequential oracle must read the *same complete* cache
+      (causal-masked per query), not rebuild it incrementally, or it isn't
+      apples-to-apples. (No sliding-window case — the path is full-attention-only;
+      the off-by-one to watch is the causal bound `j ≤ startPos+i`.)
 
 ### Increment 2 — the prefill runner (the M-sized plan)
 A `PrefillRunner` (or a `DecodeRunner` M-mode), **built per-prompt** at M (prefill
@@ -96,21 +96,21 @@ The M-sized scratch is transient (freed after prefill) but real: `gate`/`up` are
 very long prompts, **chunk** the prefill into blocks of e.g. 256 — each block is a
 batched pass attending to the growing cache — keeping scratch bounded while still
 amortizing the weight stream. Start unchunked; add chunking only if a real prompt
-length needs it. **When chunking lands: the window-start stays GLOBAL-position-
-based, not block-relative** — a query in block 2 can legitimately need keys from
-block 1 within its window. Compute `windowStart` from the absolute position, and
-attend over the whole cache written so far, not just the current block.
+length needs it. **When chunking lands: a query in block 2 attends causally over
+ALL keys written so far (blocks 1–2), not a block-relative range** — the causal
+bound is the query's absolute position, so each block attends over the whole
+growing cache.
 
 ## Scope / constraints
 
-- **Residency-eligible archs only** (dense Qwen2/Llama). Staged/CPU path, Gemma 4,
-  qwen3_5_moe keep their existing prefill (Gemma 4 / qwen3_5 are CPU-orchestrated;
-  the CPU `prefillLogits` already batches the dense ones).
+- **Residency-eligible archs only** (dense Qwen2/Llama, `SlidingWindow == 0` ⇒
+  **full-attention-only**). Staged/CPU path, Gemma 4, qwen3_5_moe keep their
+  existing prefill (Gemma 4 / qwen3_5 are CPU-orchestrated; the CPU `prefillLogits`
+  already batches the dense ones).
 - **W8A8 and W4A8** (both have tiled GEMMs).
 - **Bit-exact** with the sequential GPU prefill — greedy decode parity must not
-  move. The batched attention is the place a subtle mask/window bug hides; the
-  Increment-1 gate is the guard.
-- Sliding-window correctness **per layer type** (local vs global window start).
+  move. The batched attention is the place a subtle **causal-mask off-by-one**
+  hides (there's no window to get wrong); the Increment-1 gate is the guard.
 
 ## Why deferred / when to pick up
 
