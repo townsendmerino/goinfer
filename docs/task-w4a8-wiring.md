@@ -30,17 +30,20 @@ int8* becomes runnable. Fit arithmetic (Qwen2.5-7B, GPU KV f32):
 scope, F2). W4A8 does **not** move the ~60% engine ratio vs Ollama (the WebGPU
 encode/glue wall is unchanged) — it ships 4-bit at Ollama's footprint, a
 parity-of-**capability** story. It unifies one int4 `.giw` *format* across the
-GPU and CPU paths — but int4's win is GPU **footprint**, NOT CPU speed: the
-decision matrix (`gpu-assessment.md` §1) measures CPU int4 **decode** at
-**~0.15–0.18 tok/s** (20–45× slower than CPU int8int8). **aikit v1.0.1 rewrote
-`MatmulBTQ4`** (dequant-row-once + single vectorized dot + column-outer M-reuse) —
-a real win for **prefill / M>1** (at the 7B down shape: M=4 → 1.6× Q8, M=16 → 0.5×,
-i.e. *faster* than Q8), but the §1 number is **decode (M=1)** where there is no
-M-reuse, so it is unchanged from v1.0.0 (~7× slower than even `MatmulBTQ8`, and
-`int8int8` decode uses the much faster `MatmulBTW8A8` quantized-activation kernel
-→ the ~20–45× gap). Closing CPU int4 **decode** needs a genuine int4×int8 integer
-kernel (W4A8-on-CPU, no f32 dequant) — its own aikit task, flagged 2026-06-08;
-**keep avoiding CPU int4 for decode.**
+GPU and CPU paths. int4's win is primarily GPU **footprint**, but CPU int4
+**decode** is now usable too. Originally the decision matrix (`gpu-assessment.md`
+§1) measured CPU int4 decode at **~0.15–0.18 tok/s** (20–45× slower than CPU
+int8int8) because `MatmulBTQ4` (f32 activation) was dequant-bound at M=1 — the
+column-outer M-reuse only amortizes the per-weight f32 dequant at M>1.
+**aikit v1.1.1 added `MatmulBTW4A8`** — a CPU int4×int8 *integer* decode kernel
+(int8-quantized activation, AVX2 fused nibble-unpack + madd, no f32 dequant), the
+analogue of `MatmulBTW8A8`. goinfer routes M=1 int4 decode to it
+(`decoder/weightmat.go`); `MatmulBTQ4` stays the **prefill / M>1** path. Re-measured
+2026-06-08: CPU int4 decode **2.1–4.3 tok/s** (14–24× the old number), **1.4–1.9×
+of CPU int8int8** — usable. Numerics shift to the int8-activation domain by design
+(decode tracks the GPU `gemv_w4a8` reference, not the old f32-activation output).
+int8int8 stays the faster CPU decode; **use CPU int4 when int8/f32 won't fit host
+RAM.**
 
 ## Contracts to pin BEFORE code (the irreversible / forky bits)
 

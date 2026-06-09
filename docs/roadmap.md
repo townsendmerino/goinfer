@@ -103,9 +103,12 @@ Deferred follow-ons (named, **not scheduled** — pick up if a use case pulls):
 - **Batched on-device GPU prefill** — today's prefill is option-(a) sequential
   GPU `Run`, O(prompt-len); a batched M=len pass would fix long-prompt TTFT.
 - **f16 KV cache** — unlocks 32k context for a 7B on 8 GB (v1 caps at 16k, f32).
-- **CPU-int4 SIMD bug** — the §1 matrix measured CPU int4 at 0.3 tok/s (28×
-  slower than CPU int8); the aikit SIMD `MatmulBTQ4` path isn't engaging. An
-  aikit bug to investigate; int4 is a GPU footprint win, not a CPU win.
+- **CPU-int4 decode — RESOLVED (2026-06-08, aikit v1.1.1).** The §1 matrix
+  measured CPU int4 at ~0.15–0.18 tok/s because `MatmulBTQ4` (f32 activation) is
+  dequant-bound at M=1. aikit v1.1.1's `MatmulBTW4A8` (int4×int8 integer decode
+  kernel) replaced it for M=1 decode (`MatmulBTQ4` stays prefill); re-measured at
+  **2.1–4.3 tok/s, 1.4–1.9× of CPU int8int8** — CPU int4 is now usable, not only a
+  GPU footprint win.
 - **W4A8-on-disk format** — f16 group scales in the `.giw` (smaller files; the
   kernel is ALU-bound so it wouldn't speed decode).
 

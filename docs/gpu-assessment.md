@@ -147,12 +147,13 @@ byte than the 1.5B int4** (~24% roofline): the fixed per-token overhead
 **7–12B class runnable at all** on this card — the actual W4A8 win, a
 parity-of-*capability* story (it does NOT close the ~60% speed gap vs Ollama;
 the WebGPU encode/glue wall is unchanged). It unifies one int4 `.giw` *format*
-across the GPU and CPU paths, but int4 is a GPU footprint win, NOT a CPU win: the
-§1 matrix measures CPU int4 **decode** at **~0.15–0.18 tok/s** (20–45× slower than
-CPU int8int8). aikit **v1.0.1** rewrote `MatmulBTQ4` (dequant-once + column-outer
-M-reuse) and made it fast for **prefill/M>1** — but decode is **M=1** (no reuse),
-so the §1 number is unchanged; closing it needs a CPU int4×int8 integer kernel
-(its own aikit task). `dot4I8Packed` remains a *prefill* lever, upstream-blocked.
+across the GPU and CPU paths. int4 is primarily a GPU footprint win, but CPU int4
+**decode** is now usable too: aikit **v1.1.1** added `MatmulBTW4A8` (int4-weight ×
+int8-activation, an integer kernel — no f32 dequant), goinfer routes M=1 decode to
+it (`MatmulBTQ4` stays the M>1 prefill path), and the §1 CPU int4 decode jumped
+**0.15–0.18 → 2.1–4.3 tok/s** (14–24×) — now **1.4–1.9× of CPU int8int8**, not
+20–45×. int8int8 is still the faster CPU decode; CPU int4 is for when int8/f32
+won't fit host RAM. `dot4I8Packed` remains a *prefill* lever, upstream-blocked.
 
 **Two 7B-scale findings surfaced during wiring (one fixed, one open):**
 
@@ -193,7 +194,7 @@ mark `→ staged`; we don't invent residency numbers for them.
 | path | fits / VRAM | decode tok/s | eff GB/s (% roofline) | TTFT 256-tok |
 |---|---|---|---|---|
 | CPU int8 | yes (host) | 8.3 | — | 6.6 s |
-| CPU int4 | yes (host) | **0.18** ⚠ | — | 82 s |
+| CPU int4 | yes (host) | **4.3** | — | 82 s |
 | GPU staged (int8, per-matmul) | yes / 0.9 GB | 28.8 | — | 6.0 s |
 | GPU residency int8 | yes / 3.7 GB | 95.1 | ~147 (42%) | 3.1 s |
 | **GPU residency int4** | yes / 3.0 GB | **102.8** | ~89 (25%) | 2.8 s |
@@ -203,22 +204,28 @@ mark `→ staged`; we don't invent residency numbers for them.
 | path | fits / VRAM | decode tok/s | eff GB/s (% roofline) | TTFT 256-tok |
 |---|---|---|---|---|
 | CPU int8 | yes (host) | 3.0 | — | 20 s |
-| CPU int4 | yes (host) | **0.15** ⚠ | — | 402 s |
+| CPU int4 | yes (host) | **2.1** | — | 402 s |
 | GPU staged (int8, per-matmul) | yes / 0.9 GB | 8.0 | — | 14 s |
 | GPU residency int8 | **marginal / 7.8 GB** ⚠ | 6.3 | ~32 (9%) | 38 s |
 | **GPU residency int4** | yes / 7.2 GB | **51.1** | ~203 (58%) | 5.3 s |
 
 Reading the cells (the empty/marginal ones ARE the decision):
 
-- **⚠ CPU int4 decode = 0.18 / 0.15 tok/s** (1.5B / 7B; 45× / 20× slower than CPU
-  int8int8). Re-measured 2026-06-08 on **aikit v1.0.1**, whose `MatmulBTQ4` rewrite
-  (dequant-row-once + column-outer M-reuse) is a real **prefill/M>1** win (7B down
-  shape: M=4 → 1.6× `MatmulBTQ8`, M=16 → 0.5×) but leaves **decode (M=1)**
-  unchanged — at M=1 there is no weight-row reuse, so it stays ~7× slower than
-  `MatmulBTQ8`, and `int8int8` decode rides the much faster `MatmulBTW8A8`
-  quantized-activation kernel (→ the 20–45× gap). So **int4 is a GPU footprint win,
-  NOT a CPU win.** Closing CPU int4 decode needs a genuine CPU int4×int8 integer
-  kernel (no f32 dequant) — flagged back to aikit, its own task. Avoid CPU int4.
+- **CPU int4 decode = 4.3 / 2.1 tok/s** (1.5B / 7B; **1.9× / 1.4× slower** than CPU
+  int8int8 — usable). Re-measured 2026-06-08 on **aikit v1.1.1**, which adds
+  `MatmulBTW4A8` — an int4-weight × **int8-activation** decode kernel (the integer
+  analogue of `MatmulBTW8A8`). goinfer's CPU int4 decode (M=1) now routes to it
+  (`weightmat.matmul`); the old `MatmulBTQ4` (f32 activation, dequant-row-once)
+  stays the **prefill (M>1)** path. The jump from the prior 0.18 / 0.15 is **24× /
+  14×**: `MatmulBTQ4` was dequant-bound at M=1 (~72% of decode in per-weight f32
+  dequant, which its column-outer reuse only amortizes at M>1), whereas W4A8 stays
+  in the integer domain (AVX2 fused nibble-unpack + SDOT-style madd on this box, no
+  per-weight f32 dequant). Numerics change by design — the activation is int8-quantized
+  like W8A8, so decode tracks the int8-activation / GPU `gemv_w4a8` reference, not the
+  old f32-activation `MatmulBTQ4` output (greedy: first 11/16 tokens bit-match the
+  W8A8 reference, the rest are quant-noise near-tie flips). **So int4 is now usable on
+  CPU too, not only a GPU footprint win** — though int8int8 stays the faster CPU
+  decode; int4 on CPU is for when the f32/int8 footprint doesn't fit host RAM.
 - **⚠ 7B int8 residency loads but doesn't run well**: 7.8 / 8.0 GB resident
   (~400 MB free) → memory-pressured → 6.3 tok/s, 38 s TTFT, 9% roofline. Not the
   clean "won't fit" predicted, but effectively unusable — int4 (7.2 GB, ~1 GB
@@ -231,7 +238,8 @@ int8) is fastest (~100 tok/s — 3.5× staged, 12× CPU), and int4-vs-int8 is mo
 (both fit, both fast). Ineligible arch → GPU staged (28.8). No GPU → CPU int8
 (8.3). **7B and up on 8 GB: int4 residency is the only path that is both resident
 and fast (51 tok/s)** — int8 residency lacks the VRAM headroom (7.8 GB → thrashes
-to 6.3), staged is host-bound (8.0), CPU is unusable (3.0 / 0.3). The **int8 class
+to 6.3), staged is host-bound (8.0), CPU is slow but now functional (int8 3.0 /
+int4 2.1). The **int8 class
 tops out for fast GPU decode around ~3 B** on this card; above that, **int4
 residency is the recommended path** — and the thing that makes the 7–12 B class
 usable on 8 GB at all.

@@ -176,7 +176,23 @@ func (w *weightMat) quantizeInt4(group int) {
 func (w *weightMat) matmul(be Backend, a, dst []float32, M int) {
 	switch {
 	case w.q4 != nil:
-		linalg.MatmulBTQ4(a, w.q4, w.q4s, dst, M, w.cols, w.rows, w.group)
+		if M == 1 {
+			// Decode (M=1): the new int8-activation W4A8 kernel (aikit ≥v1.1.1).
+			// MatmulBTQ4 dequantizes each weight row to f32 — ~72% of M=1 decode
+			// per aikit profiling — which its column-outer reuse only amortizes at
+			// M>1. W4A8 stays integer (int4 weight × int8 activation), no per-weight
+			// f32 dequant; on this box (AVX2, group 32) it is ~24–37× MatmulBTQ4 at
+			// M=1. Activations quantize to int8 internally, so decode output tracks
+			// the int8-activation / GPU gemv_w4a8 reference, NOT the old f32-act Q4.
+			linalg.MatmulBTW4A8(a, w.q4, w.q4s, dst, M, w.cols, w.rows, w.group)
+		} else {
+			// Prefill (M>1): keep the f32-activation column-outer kernel — it
+			// dequantizes each weight row once and reuses it across the M rows, and
+			// is bit-exact to the dequant-f32 reference. (W4A8 also benchmarks faster
+			// here on AVX2, but moving prefill would change its numerics too; that is
+			// a separate, deliberate step.)
+			linalg.MatmulBTQ4(a, w.q4, w.q4s, dst, M, w.cols, w.rows, w.group)
+		}
 	case w.q8 != nil && w.w8a8:
 		if qb, ok := be.(QuantBackend); ok && qb.MatmulW8A8(a, w.q8, w.scales, dst, M, w.cols, w.rows) {
 			return
