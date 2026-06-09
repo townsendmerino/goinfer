@@ -144,8 +144,8 @@ func TestQwen35GGUF_weightDiff(t *testing.T) {
 			check("in_proj_b", dg.inProjB, dr.inProjB)
 			check("conv1d", dg.convW, dr.convW) // V-channel un-tile
 			check("dt_bias", dg.dtBias, dr.dtBias)
-			check("negExpA", dg.negExpA, dr.negExpA) // −exp(A_log) bake vs computed
-			check("ssm_norm", dg.normW, dr.normW)    // NOT (1+w)'d — raw load
+			check("negExpA", dg.negExpA, dr.negExpA)  // −exp(A_log) bake vs computed
+			check("ssm_norm", dg.normW, dr.normW)     // NOT (1+w)'d — raw load
 			check("out_proj", dg.outProj, dr.outProj) // column un-tile
 		} else if lr.qattn != nil && lg.qattn != nil {
 			ar, ag := lr.qattn, lg.qattn
