@@ -461,5 +461,24 @@ func loadConfig(fsys fs.FS, name string) (*Config, error) {
 	if err := json.Unmarshal(b, &c); err != nil {
 		return nil, fmt.Errorf("decoder: parse %s: %w", name, err)
 	}
+	// Composite/VL checkpoints (e.g. Qwen3.6-35B's qwen3_5_moe, shipped as a
+	// *ForConditionalGeneration with a vision tower) nest the TEXT decoder's dims
+	// under "text_config" rather than at the top level. Flatten it: decode
+	// text_config into c first so its dims (hidden_size, num_hidden_layers,
+	// num_experts, rope_parameters, layer_types, …) populate the otherwise-zero
+	// fields, then re-apply the top-level keys so anything authoritative there
+	// (model_type, tied-head signals) wins. json.Unmarshal only writes keys that
+	// are present, so a flat config.json is unaffected (text_config absent).
+	var nest struct {
+		TextConfig json.RawMessage `json:"text_config"`
+	}
+	if json.Unmarshal(b, &nest) == nil && len(nest.TextConfig) > 0 {
+		if err := json.Unmarshal(nest.TextConfig, &c); err != nil {
+			return nil, fmt.Errorf("decoder: parse %s text_config: %w", name, err)
+		}
+		if err := json.Unmarshal(b, &c); err != nil {
+			return nil, fmt.Errorf("decoder: parse %s: %w", name, err)
+		}
+	}
 	return &c, nil
 }

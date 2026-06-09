@@ -337,6 +337,32 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 
 	w := &Weights{Cfg: *cfg, arch: arch, st: st, Layers: make([]LayerWeights, cfg.NumLayers)}
 
+	// The released qwen3_5_moe ships as a VL model: its TEXT DECODER lives under
+	// model.language_model.* with the MoE experts stored as fused+stacked tensors
+	// (mlp.experts.gate_up_proj / down_proj), whereas the tiny text-only golden
+	// uses flat model.* + per-expert tensors. Auto-detect both from the tensor
+	// index so one loader serves both — the vision tower (model.visual.*) and MTP
+	// heads (mtp.*) are simply never requested. (This loads the VL model's text
+	// decoder, NOT Qwen3.6-VL multimodal support.)
+	have := make(map[string]bool)
+	for _, n := range st.Names() {
+		have[n] = true
+	}
+	modelPrefix := ""
+	if have["model.language_model.embed_tokens.weight"] {
+		modelPrefix = "language_model."
+	}
+	mp := func(n string) string { // inject the prefix after the leading "model."
+		if modelPrefix != "" && strings.HasPrefix(n, "model.") {
+			return "model." + modelPrefix + n[len("model."):]
+		}
+		return n
+	}
+	tn := func(i int, suf string) string {
+		return fmt.Sprintf("model.%slayers.%d.%s", modelPrefix, i, suf)
+	}
+	fusedExperts := arch.MoE != nil && have[tn(0, "mlp.experts.gate_up_proj")]
+
 	// GPTQ/AWQ checkpoints ship their projections as packed int4 (qweight/…);
 	// resolve the params once. nil ⇒ a normal f32/bf16 checkpoint.
 	qc, err := parseQuantConfig(cfg.QuantizationConfig)
@@ -389,11 +415,11 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 	// Input embedding + final norm. The embedding is the (tied or untied) LM
 	// head, so it is logit-critical — quantize it with the embedding policy
 	// (int8 even in int4 mode), not the projection mode.
-	if w.Embed, err = loadMat(st, s.Embed, cfg.VocabSize, hd); err != nil {
+	if w.Embed, err = loadMat(st, mp(s.Embed), cfg.VocabSize, hd); err != nil {
 		return nil, err
 	}
 	w.Embed.quantize(quant.embedding())
-	if w.FinalNorm, err = loadF32(st, s.FinalNorm, []int{hd}); err != nil {
+	if w.FinalNorm, err = loadF32(st, mp(s.FinalNorm), []int{hd}); err != nil {
 		return nil, err
 	}
 	// LM head: separate tensor when the family/checkpoint is untied, else the
@@ -414,7 +440,7 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 		if suffix == "" {
 			return nil, nil
 		}
-		return loadF32(st, tensorName(i, suffix), []int{hd})
+		return loadF32(st, tn(i, suffix), []int{hd})
 	}
 
 	// Layers load in parallel — each is independent over the read-only mmap, and
@@ -426,41 +452,41 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 		// DeltaNet vs gated softmax); both share the MoE FFN loaded below. Stored
 		// f32 (parity-first forward). Other families take the generic path.
 		if arch.qwen35 != nil {
-			if err = loadQwen35Attn(st, i, l, arch, hd); err != nil {
+			if err = loadQwen35Attn(st, i, l, arch, hd, tn); err != nil {
 				return err
 			}
 		} else {
 			// Attention projections ([out, in] row-major).
-			if l.QProj, err = loadProj(tensorName(i, s.QProj), qDim, hd); err != nil {
+			if l.QProj, err = loadProj(tn(i, s.QProj), qDim, hd); err != nil {
 				return err
 			}
-			if l.KProj, err = loadProj(tensorName(i, s.KProj), kvDim, hd); err != nil {
+			if l.KProj, err = loadProj(tn(i, s.KProj), kvDim, hd); err != nil {
 				return err
 			}
-			if l.VProj, err = loadProj(tensorName(i, s.VProj), kvDim, hd); err != nil {
+			if l.VProj, err = loadProj(tn(i, s.VProj), kvDim, hd); err != nil {
 				return err
 			}
-			if l.OProj, err = loadProj(tensorName(i, s.OProj), hd, qDim); err != nil {
+			if l.OProj, err = loadProj(tn(i, s.OProj), hd, qDim); err != nil {
 				return err
 			}
 			// Projection bias (Qwen2 q/k/v; o_proj stays biasless). Absent → empty suffix.
 			if s.QBias != "" {
-				if l.QBias, err = loadF32(st, tensorName(i, s.QBias), []int{qDim}); err != nil {
+				if l.QBias, err = loadF32(st, tn(i, s.QBias), []int{qDim}); err != nil {
 					return err
 				}
-				if l.KBias, err = loadF32(st, tensorName(i, s.KBias), []int{kvDim}); err != nil {
+				if l.KBias, err = loadF32(st, tn(i, s.KBias), []int{kvDim}); err != nil {
 					return err
 				}
-				if l.VBias, err = loadF32(st, tensorName(i, s.VBias), []int{kvDim}); err != nil {
+				if l.VBias, err = loadF32(st, tn(i, s.VBias), []int{kvDim}); err != nil {
 					return err
 				}
 			}
 			// QK-norm (Gemma 3, Qwen3): RMSNorm over head_dim. Absent → empty suffix.
 			if s.QNorm != "" {
-				if l.QNorm, err = loadF32(st, tensorName(i, s.QNorm), []int{headDim}); err != nil {
+				if l.QNorm, err = loadF32(st, tn(i, s.QNorm), []int{headDim}); err != nil {
 					return err
 				}
-				if l.KNorm, err = loadF32(st, tensorName(i, s.KNorm), []int{headDim}); err != nil {
+				if l.KNorm, err = loadF32(st, tn(i, s.KNorm), []int{headDim}); err != nil {
 					return err
 				}
 			}
@@ -481,21 +507,28 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 		// FFN: sparse MoE (Mixtral) or dense gated MLP. The schema's MoE name
 		// templates carry a %d for the expert index.
 		if arch.MoE != nil {
-			if l.Router, err = loadMat(st, tensorName(i, s.Router), arch.MoE.NumExperts, hd); err != nil {
+			if l.Router, err = loadMat(st, tn(i, s.Router), arch.MoE.NumExperts, hd); err != nil {
 				return err
 			}
 			expInter := arch.MoE.IntermediateDim // expert FFN width (Mellum: moe_intermediate_size)
-			l.Experts = make([]expertWeights, arch.MoE.NumExperts)
-			for e := 0; e < arch.MoE.NumExperts; e++ {
-				ex := &l.Experts[e]
-				if ex.Gate, err = loadMatQ(tensorName(i, fmt.Sprintf(s.ExpertGate, e)), expInter, hd); err != nil {
+			if fusedExperts {
+				// Real qwen3_5_moe: all experts in two stacked 3-D tensors.
+				if l.Experts, err = loadFusedExperts(st, tn(i, "mlp.experts.gate_up_proj"), tn(i, "mlp.experts.down_proj"), arch.MoE.NumExperts, expInter, hd, quant); err != nil {
 					return err
 				}
-				if ex.Up, err = loadMatQ(tensorName(i, fmt.Sprintf(s.ExpertUp, e)), expInter, hd); err != nil {
-					return err
-				}
-				if ex.Down, err = loadMatQ(tensorName(i, fmt.Sprintf(s.ExpertDown, e)), hd, expInter); err != nil {
-					return err
+			} else {
+				l.Experts = make([]expertWeights, arch.MoE.NumExperts)
+				for e := 0; e < arch.MoE.NumExperts; e++ {
+					ex := &l.Experts[e]
+					if ex.Gate, err = loadMatQ(tn(i, fmt.Sprintf(s.ExpertGate, e)), expInter, hd); err != nil {
+						return err
+					}
+					if ex.Up, err = loadMatQ(tn(i, fmt.Sprintf(s.ExpertUp, e)), expInter, hd); err != nil {
+						return err
+					}
+					if ex.Down, err = loadMatQ(tn(i, fmt.Sprintf(s.ExpertDown, e)), hd, expInter); err != nil {
+						return err
+					}
 				}
 			}
 			// Shared expert (Qwen2-MoE): an always-on gated MLP + a scalar sigmoid
@@ -503,29 +536,29 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 			// s.SharedExpertGate is the [1, hidden] sigmoid gate.
 			if arch.MoE.SharedIntermediateDim > 0 {
 				sInter := arch.MoE.SharedIntermediateDim
-				if l.SharedExpert.Gate, err = loadMatQ(tensorName(i, s.SharedGate), sInter, hd); err != nil {
+				if l.SharedExpert.Gate, err = loadMatQ(tn(i, s.SharedGate), sInter, hd); err != nil {
 					return err
 				}
-				if l.SharedExpert.Up, err = loadMatQ(tensorName(i, s.SharedUp), sInter, hd); err != nil {
+				if l.SharedExpert.Up, err = loadMatQ(tn(i, s.SharedUp), sInter, hd); err != nil {
 					return err
 				}
-				if l.SharedExpert.Down, err = loadMatQ(tensorName(i, s.SharedDown), hd, sInter); err != nil {
+				if l.SharedExpert.Down, err = loadMatQ(tn(i, s.SharedDown), hd, sInter); err != nil {
 					return err
 				}
-				if l.SharedGate, err = loadMat(st, tensorName(i, s.SharedExpertGate), 1, hd); err != nil {
+				if l.SharedGate, err = loadMat(st, tn(i, s.SharedExpertGate), 1, hd); err != nil {
 					return err
 				}
 			}
 			return nil
 		}
 		// Gated MLP (GeGLU / SwiGLU — same weights, activation differs).
-		if l.GateProj, err = loadProj(tensorName(i, s.GateProj), cfg.IntermediateDim, hd); err != nil {
+		if l.GateProj, err = loadProj(tn(i, s.GateProj), cfg.IntermediateDim, hd); err != nil {
 			return err
 		}
-		if l.UpProj, err = loadProj(tensorName(i, s.UpProj), cfg.IntermediateDim, hd); err != nil {
+		if l.UpProj, err = loadProj(tn(i, s.UpProj), cfg.IntermediateDim, hd); err != nil {
 			return err
 		}
-		if l.DownProj, err = loadProj(tensorName(i, s.DownProj), hd, cfg.IntermediateDim); err != nil {
+		if l.DownProj, err = loadProj(tn(i, s.DownProj), hd, cfg.IntermediateDim); err != nil {
 			return err
 		}
 		return nil
@@ -541,10 +574,10 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 // layers (linear_attn.*), the gated-softmax set on the rest (self_attn.*, with a
 // double-width q_proj — query ‖ gate per head). The MoE FFN is loaded by the
 // shared path. See docs/qwen3_5_moe.md.
-func loadQwen35Attn(st *embed.SafetensorsFile, i int, l *LayerWeights, arch *Architecture, hidden int) error {
+func loadQwen35Attn(st *embed.SafetensorsFile, i int, l *LayerWeights, arch *Architecture, hidden int, tn func(int, string) string) error {
 	g := arch.qwen35
 	var err error
-	nm := func(suf string) string { return tensorName(i, suf) }
+	nm := func(suf string) string { return tn(i, suf) }
 	if arch.isLinearLayer(i) {
 		keyDim, valueDim := g.KeyHeadDim*g.NumKeyHeads, g.ValueHeadDim*g.NumValueHeads
 		convDim := 2*keyDim + valueDim
@@ -602,6 +635,38 @@ func loadQwen35Attn(st *embed.SafetensorsFile, i int, l *LayerWeights, arch *Arc
 	}
 	l.qattn = a
 	return nil
+}
+
+// loadFusedExperts unpacks the real qwen3_5_moe MoE FFN, which stores all experts
+// as two stacked 3-D tensors instead of per-expert weights: gate_up_proj
+// [nExpert, 2*inter, hidden] (gate ‖ up concatenated on the output/row axis) and
+// down_proj [nExpert, hidden, inter]. Splits the fused gate_up and de-stacks per
+// expert (the safetensors analogue of the GGUF stackedExperts path), then
+// quantizes each into the resident format. Each expert slice is copied so the two
+// big 3-D arrays are released after the layer rather than aliased.
+func loadFusedExperts(st *embed.SafetensorsFile, gateUpName, downName string, nExpert, inter, hidden int, quant quantMode) ([]expertWeights, error) {
+	gu, err := loadF32(st, gateUpName, []int{nExpert, 2 * inter, hidden})
+	if err != nil {
+		return nil, err
+	}
+	down, err := loadF32(st, downName, []int{nExpert, hidden, inter})
+	if err != nil {
+		return nil, err
+	}
+	guStride, downStride, half := 2*inter*hidden, hidden*inter, inter*hidden
+	experts := make([]expertWeights, nExpert)
+	for e := range experts {
+		guE := gu[e*guStride : (e+1)*guStride]
+		dnE := down[e*downStride : (e+1)*downStride]
+		gate := newWeightMat(append([]float32(nil), guE[:half]...), inter, hidden)
+		up := newWeightMat(append([]float32(nil), guE[half:]...), inter, hidden)
+		dn := newWeightMat(append([]float32(nil), dnE...), hidden, inter)
+		gate.quantize(quant)
+		up.quantize(quant)
+		dn.quantize(quant)
+		experts[e] = expertWeights{Gate: gate, Up: up, Down: dn}
+	}
+	return experts, nil
 }
 
 // loadF32 fetches a tensor, shape-validates it against want, and decodes it

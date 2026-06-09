@@ -121,6 +121,30 @@ gate_up split). This is the genuine Track A loader task; the recon's "just load
 real weights" understated it. Once built, Gate 1 (slice f32 parity) validates it,
 then int8 → Gate 2.
 
+### Loader build — DONE + GREEN (2026-06-08)
+
+Built and validated bit-exact. Three deltas, all in `decoder/`:
+1. **VL `text_config` flattening** (`config.go loadConfig`) — a third gap the
+   table missed: the VL config nests every text dim under `text_config`, so a flat
+   parse read zeros. Flatten it (text_config fills the dims, top-level keys stay
+   authoritative); flat configs are unaffected.
+2. **`language_model.` prefix injection** (`weights.go`, `mp()`/`tn()` helpers,
+   auto-detected from `model.language_model.embed_tokens.weight`; `lm_head.weight`
+   stays top-level).
+3. **Fused-stacked expert unpacking** (`loadFusedExperts`): splits
+   `gate_up_proj [256, 2·moe_inter, hidden]` on the row axis and de-stacks all 256
+   experts from the two 3-D tensors, copying each slice so the big arrays free per
+   layer. Auto-selected when `mlp.experts.gate_up_proj` is present.
+
+Reference: `scripts/pin_qwen35_slice.py` (HF, `num_hidden_layers=4`, f32, loads
+only the 4 shards holding the slice — no offload, ~17 GB). **Subtlety that cost a
+debug loop:** HF's `output_hidden_states` applies the final `model.norm` to its
+LAST entry (the standard decoder loop appends post-norm). `model.norm` here has
+`‖1+w‖≈119`, so comparing goinfer's pre-norm `runLayers` output against
+`hidden_states[N]` failed at cosine 0.90 / a 60× magnitude gap — a reference bug,
+not a loader bug (layers 0–2 already matched bit-exact). The script now captures
+the pre-norm input to `model.norm` via a forward-pre-hook.
+
 ## Known v1 limit (keep visible)
 
 Hybrid models opt out of prefix-reuse / spec-decode — the recurrent `deltaState`
@@ -145,7 +169,17 @@ isn't position-truncatable (`deltanet.go`). State it; the gate doesn't cover it.
   correct argmax ("The capital of France is" → `Paris`). The box *can* hold the
   reference → **spec-and-build**, not re-scope.
 - ✅ **Gate-2 golden banked** (`~/models/qwen35_real_golden/`) while warm.
-- ▶ **NEXT: Gate 1 (slice f32 parity)** — embed + layers 0–3, f32 both sides,
-  cosine ≥ 1−1e-5, slice chosen to cover the DeltaNet + MoE-expert-stacking paths.
-- ⏸ int8 streaming quant path — **only after Gate 1 is green** (don't build the
-  measured thing before the measurement).
+- ✅ **Loader build (VL prefix + fused-stacked experts + text_config flatten)** —
+  loads the real 4-layer slice at f32, all shapes validated against real tensors.
+- ✅ **Gate 1 (slice f32 parity) GREEN** — `decoder/qwen35_realckpt_test.go`
+  (behind the `realckpt` build tag — needs the 67 GB checkpoint, too heavy for the
+  default 10-min `go test` budget; run
+  `go test -tags realckpt ./decoder/ -run TestQwen35Real -v`): embed + layers 0–3,
+  f32 both sides, **cosine = 1.0000000000 bit-exact at every layer boundary**
+  (0.7140 / 0.9128 / 1.2667 / 1.3515, goinfer ≡ HF). The slice covers DeltaNet
+  recurrence (layers 0–2), the 256-expert fused-stacked MoE (every layer), and
+  softmax + partial-rotary + output-gate + QK-norm (layer 3). Reference banked at
+  `~/models/qwen35_real_golden/slice4_f32.json` (`scripts/pin_qwen35_slice.py`).
+- ▶ **NEXT: int8 streaming quant path** for qwen3_5_moe — Gate 1 is green and the
+  Gate-2 reference exists, so the precondition is met. Then **Gate 2** (full-model
+  int8 token-agreement vs the offloaded-HF golden).
