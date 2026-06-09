@@ -31,9 +31,16 @@ scope, F2). W4A8 does **not** move the ~60% engine ratio vs Ollama (the WebGPU
 encode/glue wall is unchanged) — it ships 4-bit at Ollama's footprint, a
 parity-of-**capability** story. It unifies one int4 `.giw` *format* across the
 GPU and CPU paths — but int4's win is GPU **footprint**, NOT CPU speed: the
-decision matrix (`gpu-assessment.md` §1) measured CPU int4 at **0.3 tok/s** (28×
-slower than CPU int8) — the aikit SIMD `MatmulBTQ4` path isn't engaging, a known
-aikit bug to investigate separately (not now).
+decision matrix (`gpu-assessment.md` §1) measures CPU int4 **decode** at
+**~0.15–0.18 tok/s** (20–45× slower than CPU int8int8). **aikit v1.0.1 rewrote
+`MatmulBTQ4`** (dequant-row-once + single vectorized dot + column-outer M-reuse) —
+a real win for **prefill / M>1** (at the 7B down shape: M=4 → 1.6× Q8, M=16 → 0.5×,
+i.e. *faster* than Q8), but the §1 number is **decode (M=1)** where there is no
+M-reuse, so it is unchanged from v1.0.0 (~7× slower than even `MatmulBTQ8`, and
+`int8int8` decode uses the much faster `MatmulBTW8A8` quantized-activation kernel
+→ the ~20–45× gap). Closing CPU int4 **decode** needs a genuine int4×int8 integer
+kernel (W4A8-on-CPU, no f32 dequant) — its own aikit task, flagged 2026-06-08;
+**keep avoiding CPU int4 for decode.**
 
 ## Contracts to pin BEFORE code (the irreversible / forky bits)
 

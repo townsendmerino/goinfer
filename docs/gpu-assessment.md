@@ -148,9 +148,11 @@ byte than the 1.5B int4** (~24% roofline): the fixed per-token overhead
 parity-of-*capability* story (it does NOT close the ~60% speed gap vs Ollama;
 the WebGPU encode/glue wall is unchanged). It unifies one int4 `.giw` *format*
 across the GPU and CPU paths, but int4 is a GPU footprint win, NOT a CPU win: the
-§1 matrix measured CPU int4 at **0.3 tok/s** (28× slower than CPU int8) — the
-aikit SIMD `MatmulBTQ4` path isn't engaging, a known bug to investigate later.
-`dot4I8Packed` remains a *prefill* lever, upstream-blocked.
+§1 matrix measures CPU int4 **decode** at **~0.15–0.18 tok/s** (20–45× slower than
+CPU int8int8). aikit **v1.0.1** rewrote `MatmulBTQ4` (dequant-once + column-outer
+M-reuse) and made it fast for **prefill/M>1** — but decode is **M=1** (no reuse),
+so the §1 number is unchanged; closing it needs a CPU int4×int8 integer kernel
+(its own aikit task). `dot4I8Packed` remains a *prefill* lever, upstream-blocked.
 
 **Two 7B-scale findings surfaced during wiring (one fixed, one open):**
 
@@ -191,7 +193,7 @@ mark `→ staged`; we don't invent residency numbers for them.
 | path | fits / VRAM | decode tok/s | eff GB/s (% roofline) | TTFT 256-tok |
 |---|---|---|---|---|
 | CPU int8 | yes (host) | 8.3 | — | 6.6 s |
-| CPU int4 | yes (host) | **0.3** ⚠ | — | 82 s |
+| CPU int4 | yes (host) | **0.18** ⚠ | — | 82 s |
 | GPU staged (int8, per-matmul) | yes / 0.9 GB | 28.8 | — | 6.0 s |
 | GPU residency int8 | yes / 3.7 GB | 95.1 | ~147 (42%) | 3.1 s |
 | **GPU residency int4** | yes / 3.0 GB | **102.8** | ~89 (25%) | 2.8 s |
@@ -201,17 +203,22 @@ mark `→ staged`; we don't invent residency numbers for them.
 | path | fits / VRAM | decode tok/s | eff GB/s (% roofline) | TTFT 256-tok |
 |---|---|---|---|---|
 | CPU int8 | yes (host) | 3.0 | — | 20 s |
-| CPU int4 | yes (host) | **0.3** ⚠ | — | 402 s |
+| CPU int4 | yes (host) | **0.15** ⚠ | — | 402 s |
 | GPU staged (int8, per-matmul) | yes / 0.9 GB | 8.0 | — | 14 s |
 | GPU residency int8 | **marginal / 7.8 GB** ⚠ | 6.3 | ~32 (9%) | 38 s |
 | **GPU residency int4** | yes / 7.2 GB | **51.1** | ~203 (58%) | 5.3 s |
 
 Reading the cells (the empty/marginal ones ARE the decision):
 
-- **⚠ CPU int4 = 0.3 tok/s at both sizes** (28× slower than CPU int8). The aikit
-  SIMD `MatmulBTQ4` path is not engaging in this build — so **int4 is a GPU
-  footprint win, NOT a CPU win** (this corrects the earlier "int4 helps the
-  dequant-bound CPU path" line). Avoid CPU int4.
+- **⚠ CPU int4 decode = 0.18 / 0.15 tok/s** (1.5B / 7B; 45× / 20× slower than CPU
+  int8int8). Re-measured 2026-06-08 on **aikit v1.0.1**, whose `MatmulBTQ4` rewrite
+  (dequant-row-once + column-outer M-reuse) is a real **prefill/M>1** win (7B down
+  shape: M=4 → 1.6× `MatmulBTQ8`, M=16 → 0.5×) but leaves **decode (M=1)**
+  unchanged — at M=1 there is no weight-row reuse, so it stays ~7× slower than
+  `MatmulBTQ8`, and `int8int8` decode rides the much faster `MatmulBTW8A8`
+  quantized-activation kernel (→ the 20–45× gap). So **int4 is a GPU footprint win,
+  NOT a CPU win.** Closing CPU int4 decode needs a genuine CPU int4×int8 integer
+  kernel (no f32 dequant) — flagged back to aikit, its own task. Avoid CPU int4.
 - **⚠ 7B int8 residency loads but doesn't run well**: 7.8 / 8.0 GB resident
   (~400 MB free) → memory-pressured → 6.3 tok/s, 38 s TTFT, 9% roofline. Not the
   clean "won't fit" predicted, but effectively unusable — int4 (7.2 GB, ~1 GB
