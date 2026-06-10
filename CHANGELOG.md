@@ -10,6 +10,63 @@ pre-1.0 and may change as new model families and quant formats land.
 
 ## [Unreleased]
 
+_Carries a user-visible behavior change (`constrain` schema validation, under
+Changed), so per SemVer the next release is a **minor bump (v0.5.0)**, not a
+patch — alongside the ~3.4× prefill speedup and the untrusted-input fuzzing
+hardening._
+
+### Changed
+- **`constrain` rejects unenforceable / unsatisfiable JSON Schemas at compile**
+  instead of silently accepting them. Schemas that previously compiled but could
+  never be enforced now return an error: a `required` entry naming a property
+  absent from `properties`, an array with `maxItems` < `minItems`, and
+  negative / non-integer array bounds. **Behavior change** — a caller that relied
+  on the old silent-accept (and the non-conforming output it produced) now gets a
+  compile error instead. (`3cb27e6`)
+- **aikit `v1.1.1` → `v1.2.1`** — a hardened `embed.parseGGUF` (overflow-safe
+  length checks, map/array pre-sizing capped to the remaining input, so a hostile
+  GGUF header errors instead of panicking / OOM-ing one import down) plus the
+  scores·V attention vectorization. Bumped in both the root and `gpu` modules.
+  (`b77922c`)
+
+### Added
+- **Chunked-parallel Gated DeltaNet scan kernel** (`deltanet_chunked.go`) — the
+  reformulation the `qwen3_5_moe` perf rewrite needs, unrolling the gated
+  delta-rule recurrence over a chunk into the matmul-friendly form. Proven
+  algebraically equivalent to the sequential recurrence over random
+  inputs/chunk sizes (`TestGatedDeltaNet_chunkedMatchesSequential`; self-contained,
+  no checkpoint/torch). Not yet on the hot path — the forward is still
+  single-token streaming — so it's a zero-regression-risk reference. (`750b4ac`)
+
+### Security
+- **Hostile model files / request bodies now error, never panic.** A fuzzing pass
+  over the untrusted-input surface (Go native fuzzing, CI-enforced via committed
+  seed corpora) found and fixed five panic/OOM vectors, each turned into a typed
+  error with a regression test:
+  - GGUF: a metadata `block_count` ≥ 2³¹ overflowed `int` to a negative
+    `NumLayers` → `make([]LayerWeights, …)` panic. (`9cdf98d`)
+  - `.giw` bundle: a near-`maxint64` v2 length overflowed the bound check in
+    `cur.take` → slice-bounds panic. (`92f0d83`)
+  - `tokenizer.json`: a hostile token id overflowed / OOM'd / negative-indexed the
+    `idToPiece` allocation. (`8e0b8bd`)
+  - GPTQ/AWQ: dims not a multiple of 8 slipped past the integer-division shape
+    check → dequant indexed out of bounds. (`aebbd45`)
+  - Serialized `.giw` weights: a corrupt blob could drive a multi-GB allocation;
+    the layer/expert count gates were tightened to sane bounds. (`c6b5ff2`)
+  Fuzz targets now cover `constrain`, the GGUF / serialized-weights / GPTQ-AWQ
+  loaders, the `.giw` frame, `tokenizer.json`, and the serve request shapers, and a
+  `-race` serve soak/chaos test exercises multi-model + admin + sessions under
+  concurrency (zero goroutine leaks, byte-identical warm-KV restore). The GGUF
+  interpretation fuzzer was re-enabled after the aikit hardening landed (`e3bc98d`).
+
+### Performance
+- **~3.4× prompt prefill** — vectorized the prefill attention (QKᵀ + scores·V)
+  onto the SIMD path. (`7fa82c2`)
+- **~1.7× Gemma 4 prefill** — the same treatment for gemma4 attention. (`88b7aaa`)
+- `qwen3_5_moe`: softmax attention reuses the cache scratch for scores
+  (`4fcc069`), and its M=1 projections route through the SIMD A·Bᵀ kernel
+  (`443ab7a`).
+
 ## [v0.4.0] — 2026-06-09
 
 ### Added
