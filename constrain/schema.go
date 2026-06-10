@@ -3,6 +3,7 @@ package constrain
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"sort"
 )
 
@@ -147,12 +148,30 @@ func compileObject(s map[string]any) (*node, error) {
 		names = append(names, name)
 	}
 	sort.Strings(names) // deterministic index→bit assignment
+	declared := make(map[string]bool, len(names))
+	for _, name := range names {
+		declared[name] = true
+	}
+	// A `required` entry naming an undeclared property is unenforceable: the
+	// closed object can never emit that key, so the constraint would be silently
+	// dropped and the masker would happily produce output the schema rejects.
+	// Reject it loudly (the package's invariant: an unenforceable schema fails to
+	// compile rather than mis-constrain at decode time).
 	req := map[string]bool{}
-	if rl, ok := s["required"].([]any); ok {
+	if rraw, present := s["required"]; present {
+		rl, ok := rraw.([]any)
+		if !ok {
+			return nil, fmt.Errorf("constrain: required must be an array of property names")
+		}
 		for _, r := range rl {
-			if rs, ok := r.(string); ok {
-				req[rs] = true
+			rs, ok := r.(string)
+			if !ok {
+				return nil, fmt.Errorf("constrain: required entries must be strings, got %T", r)
 			}
+			if !declared[rs] {
+				return nil, fmt.Errorf("constrain: required property %q is not declared in properties", rs)
+			}
+			req[rs] = true
 		}
 	}
 	n := &node{kind: kObject}
@@ -183,13 +202,41 @@ func compileArray(s map[string]any) (*node, error) {
 		return nil, fmt.Errorf("constrain: array items: %w", err)
 	}
 	n := &node{kind: kArray, items: items, maxItems: -1}
-	if v, ok := s["minItems"].(float64); ok {
-		n.minItems = int(v)
+	if v, present, err := intKeyword(s, "minItems"); err != nil {
+		return nil, err
+	} else if present {
+		n.minItems = v
 	}
-	if v, ok := s["maxItems"].(float64); ok {
-		n.maxItems = int(v)
+	if v, present, err := intKeyword(s, "maxItems"); err != nil {
+		return nil, err
+	} else if present {
+		// maxItems < minItems is unsatisfiable: the masker could never close the
+		// array (too few items to satisfy minItems, too many to add another), so
+		// it would livelock on whitespace. Reject at compile.
+		if v < n.minItems {
+			return nil, fmt.Errorf("constrain: maxItems %d < minItems %d (unsatisfiable)", v, n.minItems)
+		}
+		n.maxItems = v
 	}
 	return n, nil
+}
+
+// intKeyword reads a JSON Schema integer keyword. present is false when the key
+// is absent; it errors for a non-numeric, non-integral, or negative value (the
+// array-bound keywords are defined as non-negative integers).
+func intKeyword(s map[string]any, key string) (val int, present bool, err error) {
+	raw, ok := s[key]
+	if !ok {
+		return 0, false, nil
+	}
+	f, ok := raw.(float64)
+	if !ok {
+		return 0, true, fmt.Errorf("constrain: %s must be a number", key)
+	}
+	if f < 0 || f != math.Trunc(f) {
+		return 0, true, fmt.Errorf("constrain: %s must be a non-negative integer, got %v", key, raw)
+	}
+	return int(f), true, nil
 }
 
 // encodeLiteral renders an enum/const value to the compact JSON bytes the model

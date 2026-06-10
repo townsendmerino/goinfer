@@ -200,6 +200,43 @@ func TestSchema_unsupported(t *testing.T) {
 	}
 }
 
+// TestSchema_rejectsUnsatisfiable covers the unenforceable/unsatisfiable schema
+// classes found by FuzzJSONSchema: compile must reject them loudly rather than
+// silently drop the constraint and let the masker emit non-conforming output.
+func TestSchema_rejectsUnsatisfiable(t *testing.T) {
+	reject := []string{
+		// required names a property absent from properties → constraint silently
+		// dropped, grammar emits {} which the schema forbids.
+		`{"type":"object","required":[""]}`,
+		`{"type":"object","properties":{"a":{"type":"string"}},"required":["b"]}`,
+		// required must be an array of strings.
+		`{"type":"object","properties":{"a":{"type":"string"}},"required":"a"}`,
+		`{"type":"object","properties":{"a":{"type":"string"}},"required":[1]}`,
+		// array bounds: maxItems < minItems can never close.
+		`{"type":"array","items":{"type":"integer"},"minItems":5,"maxItems":2}`,
+		// negative bounds are not valid non-negative integers.
+		`{"type":"array","items":{"type":"integer"},"maxItems":-1}`,
+		`{"type":"array","items":{"type":"integer"},"minItems":-3}`,
+	}
+	for _, s := range reject {
+		if _, err := JSONSchema([]byte(s)); err == nil {
+			t.Errorf("expected compile error for unsatisfiable schema %s", s)
+		}
+	}
+	// Adjacent valid forms must still compile (no over-rejection).
+	accept := []string{
+		`{"type":"object","properties":{"a":{"type":"string"}},"required":["a"]}`,
+		`{"type":"array","items":{"type":"integer"},"minItems":2,"maxItems":2}`,
+		`{"type":"array","items":{"type":"integer"},"minItems":0}`,
+		`{"type":"array","items":{"type":"integer"}}`,
+	}
+	for _, s := range accept {
+		if _, err := JSONSchema([]byte(s)); err != nil {
+			t.Errorf("valid schema rejected: %s (%v)", s, err)
+		}
+	}
+}
+
 // TestSchema_rejectsInvalid spot-checks that the grammar refuses non-conforming
 // prefixes (the masker would −∞ the token that produced them).
 func TestSchema_rejectsInvalid(t *testing.T) {
