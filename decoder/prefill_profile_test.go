@@ -29,9 +29,9 @@ func BenchmarkPrefillLong(b *testing.B) {
 			L = v
 		}
 	}
-	if !m.canBatchN(L) {
-		b.Skipf("model not canBatchN-eligible (L=%d)", L)
-	}
+	// prefillLogits auto-routes: batched forwardLayersN for canBatchN archs, else
+	// the sequential per-token path (Gemma4 / MoE). Both are worth profiling.
+	b.Logf("canBatchN(%d)=%v", L, m.canBatchN(L))
 	// Synthetic but valid token ids — this benchmarks prefill SHAPE/cost, not
 	// output correctness (bit-exactness is gated by the parity tests).
 	vocab := m.w.arch.VocabSize

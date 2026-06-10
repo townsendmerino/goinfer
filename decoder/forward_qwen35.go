@@ -78,7 +78,7 @@ func (m *Model) qwen35Attention(n []float32, lw *LayerWeights, arch *Architectur
 	cache.Append(layer, k, v)
 	ctx := make([]float32, nH*hd)
 	nKeys := len(cache.Keys(layer)) / (nKV * hd)
-	attendQuery(q, ctx, make([]float32, nKeys), cache, layer, pos, true /*full attention*/, arch)
+	attendQuery(q, ctx, cache.scr.scoresBuf(nKeys), cache, layer, pos, true /*full attention*/, arch)
 
 	// Output gate, then o_proj.
 	for i := range ctx {
