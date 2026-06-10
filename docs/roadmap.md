@@ -24,6 +24,23 @@ parity pins, and aikit v1.0.0 across both modules.
 deliberate deferrals: continuous batching/PagedAttention and multimodal.
 The catch-up phase is over; v0.4 should play offense.
 
+> **PENDING (run on the Linux box) — overnight GGUF fuzz soak.** aikit v1.2.1
+> hardened `embed.parseGGUF` (overflow-safe `need`, capped map/array pre-sizing);
+> goinfer bumped to it (`b77922c`) and re-enabled the GGUF interpretation fuzzer
+> (`e3bc98d`) — clean for 9.8M execs in a 50s smoke run. Before release notes can
+> claim "hostile model files error, never panic," run the real soak:
+>
+> ```
+> go test -run xxx -fuzz 'FuzzGGUFConfig$' -fuzztime 8h ./decoder/
+> ```
+>
+> Pass = `PASS`, no crasher under `decoder/testdata/fuzz/`. A crasher in
+> `ggufConfig`/`validateGGUFDims` is a goinfer bug (fix + keep the seed); one a
+> frame down in `aikit/embed` is an upstream regression. Optional follow-up: a
+> deeper target over `buildWeightsFromGGUF` (dequant/shape-check/requant with real
+> tensor data) — still unfuzzed on goinfer's side (the K-quant kernels are aikit's,
+> fuzzed in `6f416ca`).
+
 ## Fresh peer survey (2026-06-07)
 
 The field's competition moved while we closed the library gap. Five
