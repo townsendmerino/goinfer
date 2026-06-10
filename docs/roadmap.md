@@ -79,9 +79,15 @@ battlegrounds now:
         a real Qwen3.6-35B-A3B Q8_0 GGUF (~35–40 GB) on disk. Asset-gated
         (the tests skip when absent), maintainer-only — not a code blocker. This
         is the gate before "Qwen 3.6 support" is a release headline.
-  - [ ] **Chunked DeltaNet scan** — `deltanet.go` is the parity-first, plain-f32,
-        sequential reference; a chunked/parallel scan (+ quantized projections) is
-        a perf follow-on, separable from correctness.
+  - [x] **Chunked DeltaNet scan — kernel** — `deltanet_chunked.go`: the
+        chunked-parallel gated-delta scan, proven algebraically equivalent to the
+        sequential recurrence over random inputs/chunk sizes
+        (`TestGatedDeltaNet_chunkedMatchesSequential`; self-contained, no
+        asset/torch). gt = exp(g) ∈ (0,1) keeps every decay ratio ≤ 1 → stable.
+  - [ ] **Wire the chunked scan into a batched `qwen3_5_moe` prefill** — the
+        forward is still single-token streaming (`runLayersQwen35`), so the scan
+        kernel isn't yet on the hot path; this + batched projections (+ quantized)
+        is the perf win, to be validated end-to-end against the checkpoint.
   - [x] **Hybrid models opt out of prefix-reuse and speculative** — the
         recurrent deltaState isn't position-truncatable; fall back to the
         staged path, documented. (A deltaState snapshot-at-position scheme is
