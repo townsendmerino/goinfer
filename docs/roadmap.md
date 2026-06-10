@@ -128,11 +128,10 @@ Deferred follow-ons (named, **not scheduled** — pick up if a use case pulls):
 - **W4A8-on-disk format** — f16 group scales in the `.giw` (smaller files; the
   kernel is ALU-bound so it wouldn't speed decode).
 
-**Pivot (updated 2026-06-08):** the GPU arc is closed AND Track A/B largely
-landed. The one real open item across both tracks is the **`qwen3_5_moe` GGUF
-loader** (it runs int8 from safetensors today; GGUF is the distribution-format
-gate). Smaller carried items: true incremental tool-call streaming (today
-buffered-then-deltas); N decode workers per model (today one).
+**Pivot (updated 2026-06-09):** the GPU arc is closed and Track A/B landed,
+**including the `qwen3_5_moe` GGUF loader** (`166d957` — the transform-reverser,
+weightDiff-proven). So **v0.4.0 is feature-complete**; the remaining work is the
+backlog below (mostly deferred/triggered, none release-gating). See "Backlog".
 
 ### Watching, still not doing
 
@@ -141,6 +140,148 @@ buffered-then-deltas); N decode workers per model (today one).
 - TurboQuant — track #20969; CPU-friendly, could earn a spot if it survives
   scrutiny.
 - Continuous batching / PagedAttention, multimodal — unchanged deferrals.
+
+## Backlog — every surfaced idea (2026-06-09)
+
+A full capture of ideas raised across the GPU/W4A8/qwen3.6 work, with honest
+status + the trigger that would promote each. **None of these is release-gating;
+v0.4.0 ships without them.** Grouped by theme; ordered within a group by leverage.
+
+### GPU decode performance (the residency path)
+
+- **More decode-fusion headroom exists, but the WebGPU wall is near.** Decode is
+  **glue-serialization-bound**, not bandwidth-bound (`gpu-assessment.md` §0.5,
+  `task-gpu-decode-fusion.md`): the matmul roofline floor is ~4.1 ms ⇒ ~240 tok/s
+  if glue were free, but the real token is ~11 ms (89.7 tok/s int8 1.5B) because
+  each glue link forces a barrier the GPU can't hide. Fusion + the attn
+  warp-per-head rewrite already took it 22→89.7. The remaining ~4 ms glue + ~1 ms
+  encode is the gap; squeezing it further needs a single-dispatch **megakernel
+  (whole layer in one dispatch), which WGSL cannot express.** So ~90–100 tok/s is
+  roughly the WebGPU ceiling on this card; past it needs native CUDA/Metal.
+  **Status: effectively at the practical ceiling. Don't grind.**
+- **`dot4I8Packed` (dp4a) — prefill compute boost, upstream-blocked.** The native
+  int8-dot WGSL feature would speed the M>1 prefill GEMM (TU104 has DP4A
+  hardware). Blocked on the `cogentcore/webgpu` binding exposing it. **Trigger:
+  the binding ships it.**
+
+### GPU long-context (both deferred, de-risked, coupled)
+
+These two are a natural pair (long context ⟹ long prompts) and both target the
+8 GB-residency users the W4A8 work serves. The residency path is **stateless in
+v1** (no prefix-reuse), so a multi-turn / RAG user re-prefills the whole history
+every turn at O(len) AND hits the 16k cap — there's no warm-KV escape hatch like
+the staged path has. **That coupling is the felt-pain trigger for both.**
+
+- **Batched on-device GPU prefill** (`task-gpu-batched-prefill.md`) — kills the
+  O(prompt-len) TTFT (1 k-token prompt ≈ 18 s today). De-risked: residency is
+  full-attention-only (`SlidingWindow == 0` eligibility), so the batched attention
+  is **plain causal, no per-query sliding-window mask** — the doc's "main parity
+  risk" evaporates.
+- **f16 KV cache** (`task-gpu-f16-kv.md`) — 2× context (16k → 32k) on the same
+  8 GB, **and faster long-context decode** (halves the KV bytes the attention
+  reads — a bonus the doc undersells). Manual WGSL f16 (the W4A8 pattern), no
+  `shader-f16` device feature, so CI's software adapter still works. Gate must run
+  **near 32k**, not a short prompt. Default stays f32/bit-exact; f16 is an opt-in
+  knob.
+- **Decision that gates both:** how central is GPU residency to the pitch? If it's
+  a marketed "run a 7B locally on a small GPU" capability people run real
+  workloads on, schedule these right after the release (they're cheap now). If
+  it's a niche/demo, leave deferred — don't gold-plate a path users won't hit.
+
+### GPU residency coverage
+
+- **Hybrid models (qwen3_5_moe) stay on the staged path** — `deltaState` isn't
+  residency-eligible and isn't position-truncatable (so no prefix-reuse /
+  speculative either). A **deltaState snapshot-at-position** scheme could enable
+  prefix-reuse for hybrids; priced separately, no demand yet.
+- MoE / Gemma 4 also excluded from residency (eligibility = dense Qwen2/Llama,
+  full attention). Expanding the eligible set is open-ended; do it per-arch on
+  demand.
+
+### Quantization & CPU kernels
+
+- ✅ **Scalar attention → SIMD prefill (LANDED, post-0.4.0).** An end-to-end CPU
+  profile (the aikit attention bug, checked for transfer) found per-position
+  scalar QKᵀ + scores·V was **~49% of dense prefill CPU**, and `gemma4Attend`
+  ~99 s flat (the #1 gemma4 hotspot). Routed both O(L²) terms onto the SIMD A·Bᵀ
+  kernel (`MatmulBT`): dense prefill **3.4×** (12.3→42.1 tok/s, L=2048 1.5B),
+  gemma4 **1.7×** (9.5→16.25, E2B); qwen3_5_moe weight `matvec`→`MatmulBT`
+  (DeltaNet cosine 1.0). Parity = argmax-exact + cosine (f32 SIMD, the
+  GPU-attention standard), not bit-identical. Commits `7fa82c2`/`88b7aaa`/
+  `443ab7a`/`4fcc069`.
+  - **Deferred follow-on — profile-first on the 64 GB box:** the
+    `forwardN`-ineligible MoE families + GPT-2 still take scalar `attendQuery` per
+    prefill token. Likely win: extend `canBatchN` to the MoE families (their
+    attention is standard; `moeMLP` is already SIMD) so `attendBatchedHeads`
+    applies — **but profile a real MoE prefill first**. Also measure the
+    qwen3.6-35B `matvec`→SIMD delta there (correctness proven; tok/s not, no MoE
+    model on the Mac).
+- **Route int4 *prefill* to W4A8 too.** Benchmarks showed `MatmulBTW4A8` wins at
+  every M on AVX2, but prefill stays on `MatmulBTQ4` (f32 activation) per the
+  decode-only scoping. Routing prefill to W4A8 would be faster AND unify the
+  activation precision (today an int4 generation uses f32-activation for the
+  prompt, int8-activation for generated tokens). Needs prefill parity + TTFT
+  re-measure. Low risk, small win.
+- **W4A8 CPU VNNI variant** — aikit deferred the `VPDPBUSD` (AVX-512 VNNI) path;
+  drop-in behind the same CPUID gate, needs a VNNI box to validate.
+- **`.giw` f16 group scales** (`task-giw-f16-scales.md`) — **lowest value of all**:
+  ~10% smaller files, zero decode/fit win, adds a permanent format-version branch
+  (`giwVersion 1→2`, distinct from the container `bundleVersion=2`) + a lossy CPU
+  re-gate. f16 scales is the *only* file-size lever left (zstd was dropped — q4 is
+  high-entropy, ~3%). **Trigger: a real distribution-size complaint** (model zoo,
+  bundled release artifact).
+- **TurboQuant** (llama.cpp #20969) — a CPU-implementable 3–4-bit quant with
+  near-paper MSE; could improve the embed-demo size/quality curve. Watch.
+
+### Speculative / MTP
+
+- **Re-evaluate spec-decode against the *measured* GPU numbers.** It was parked on
+  CPU (compute-bound). The GPU unpark condition was "bandwidth-bound decode," but
+  decode turned out **glue-serialization-bound** (not cleanly bandwidth-bound), so
+  the batched-verify economics need re-deriving against real numbers before
+  building. The exact `GenerateSpeculative` + `TruncateTo` machinery is ready.
+- **MTP heads** (the whole field shipped them) — same gating logic; only worth it
+  on a backend where the M=K verify is genuinely cheap.
+
+### Serve hardening (as usage appears)
+
+- True **incremental tool-call streaming** (today: buffer full output, then emit
+  deltas — correct, not progressive).
+- **N decode workers per model** (today: one worker + a bounded queue). True
+  continuous batching stays deferred (server-scale, wrong weight class).
+
+### Model freshness
+
+- Next descriptor-close families on demand: **DeepSeek V4, GLM-4 MoE, Granite
+  Hybrid, Gemma 3n, Nemotron**. The recurring muscle (descriptor + loader + parity
+  golden) makes each cheap; the v0.2/v0.3 feature surface inherits automatically.
+- **Granite Hybrid / GLM are the v1.0 trigger** (see below) — a *second* hybrid
+  family landing on the deltanet/hybrid-cache shapes is the evidence the loader
+  contract has settled.
+
+### Measurement / calibration gaps
+
+- **7B-int4-specific Vulkan llama.cpp number.** The engine ratios are CUDA-only;
+  a from-source `-DGGML_VULKAN=ON` build gives the fair *same-API* (WebGPU-vs-
+  Vulkan) comparison. Moderate yak-shave; the CUDA number was the priority and is
+  done.
+- **qwen3.6 full-model GGUF *forward* parity gate** is OOM-skipped (two ~39 GB
+  models won't coexist on the 62 GB box; `weightDiff` is the proof instead).
+  Re-run the full bf16 forward oracle if a larger-RAM box becomes available — nice
+  to have, not needed (weightDiff + the shared Gate-2-validated forward is sound).
+
+### Pure-Go / packaging
+
+- **wasm/browser GPU — the uniquely-Go demo, and it's cgo-free.** Native GPU is
+  cgo (`cogentcore/webgpu` → wgpu-native). But browser WebGPU via `GOOS=js` reaches
+  `navigator.gpu` through `syscall/js` — **no cgo**. A "0.5B in a tab, pure Go
+  wasm" demo (gpu-assessment Stage 4) is something no other Go runtime can ship.
+  Needs a `syscall/js` WebGPU backend; bounded to small models (browser memory +
+  download, and `dot4I8Packed` support is spotty in browsers → likely f32).
+- **purego native GPU (if cgo-on-the-GPU-build ever becomes a problem)** — dlopen
+  wgpu-native via purego instead of the cgo binding, the way yzma/gollama.cpp stay
+  cgo-free. Different dependency, a real port; not worth it while the `-tags gpu`
+  quarantine already keeps the default build pure.
 
 ### The v1.0 question (rolling — updated 2026-06-07)
 
