@@ -67,10 +67,21 @@ battlegrounds now:
   cosine min 0.99466 / mean 0.99859** (both misses near-ties, <3% of range).
   **It runs at int8 from safetensors** — not f32-only.
 - **Open follow-ons** (Track A isn't *practically* done until these land):
-  - [ ] **GGUF loading for `qwen3_5_moe`** — loads safetensors today; the GGUF
-        path (the common distribution format) + a chunked DeltaNet scan are
-        the named follow-ons. This is the gate before "Qwen 3.6 support" is a
-        release headline.
+  - [x] **GGUF loader for `qwen3_5_moe`** — LANDED (`166d957`, the
+        transform-reverser). It reverses the layout transforms the GGUF
+        converter bakes that the safetensors path never sees (V-head un-tiling,
+        q‖gate split, `A_log` as pre-baked −exp, norm `(1+w)` un-baking).
+        Bit-level proven by `TestQwen35GGUF_weightDiff` (every transform-bearing
+        tensor diffed against the bit-exact safetensors loader, to Q8_0
+        tolerance — no oracle/torch needed).
+  - [ ] **Release-headline verification** — run the full Q8_0-vs-bf16 parity gate
+        (`TestQwen35GGUF_gate`, ~40 min) + the `-tags realckpt` weightDiff against
+        a real Qwen3.6-35B-A3B Q8_0 GGUF (~35–40 GB) on disk. Asset-gated
+        (the tests skip when absent), maintainer-only — not a code blocker. This
+        is the gate before "Qwen 3.6 support" is a release headline.
+  - [ ] **Chunked DeltaNet scan** — `deltanet.go` is the parity-first, plain-f32,
+        sequential reference; a chunked/parallel scan (+ quantized projections) is
+        a perf follow-on, separable from correctness.
   - [x] **Hybrid models opt out of prefix-reuse and speculative** — the
         recurrent deltaState isn't position-truncatable; fall back to the
         staged path, documented. (A deltaState snapshot-at-position scheme is
