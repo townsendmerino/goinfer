@@ -23,13 +23,28 @@ hardening._
   negative / non-integer array bounds. **Behavior change** — a caller that relied
   on the old silent-accept (and the non-conforming output it produced) now gets a
   compile error instead. (`3cb27e6`)
-- **aikit `v1.1.1` → `v1.2.1`** — a hardened `embed.parseGGUF` (overflow-safe
+- **aikit `v1.1.1` → `v1.3.0`** — a hardened `embed.parseGGUF` (overflow-safe
   length checks, map/array pre-sizing capped to the remaining input, so a hostile
-  GGUF header errors instead of panicking / OOM-ing one import down) plus the
-  scores·V attention vectorization. Bumped in both the root and `gpu` modules.
-  (`b77922c`)
+  GGUF header errors instead of panicking / OOM-ing one import down) and the
+  scores·V attention vectorization (`v1.2.1`), plus `MatmulBTAcc64` — an
+  f64-accumulating A·Bᵀ matmul (bit-identical to a sequential-order f64 reduction)
+  that the MoE attention path needs (`v1.3.0`). Bumped in both the root and `gpu`
+  modules. (`b77922c`)
+- **MoE attention now runs through the f64-accumulating matmul** (decode AND
+  prefill). It is more accurate than — and may differ at routing near-ties from —
+  the prior f32/scalar path, but stays parity-gated against the HF bf16 oracle
+  (Mellum2 logit/window parity unchanged). The discrete top-k router amplifies any
+  attention reassociation, so the precision is load-bearing, not cosmetic.
 
 ### Added
+- **f16 GPU KV cache** (`--kv f16`, opt-in; default `f32` stays bit-exact) — halves
+  per-token KV bytes on the full-residency path, unlocking **32k context for a
+  7B-int4 on an 8 GB card** (32k f16 fits in the same VRAM as 16k f32 — measured
+  6912 vs 6926 MiB on an RTX 2070 SUPER). Manual WGSL f16 via the core
+  `pack2x16float`/`unpack2x16float` builtins (no `shader-f16` device feature, so the
+  CI software adapter still compiles). Decode parity vs an f32 cache: argmax
+  preserved, full-logit cosine ≥0.998 over an 8000-key context. (`138d5e0`,
+  `b40d8dd`)
 - **Chunked-parallel Gated DeltaNet scan kernel** (`deltanet_chunked.go`) — the
   reformulation the `qwen3_5_moe` perf rewrite needs, unrolling the gated
   delta-rule recurrence over a chunk into the matmul-friendly form. Proven
@@ -66,6 +81,15 @@ hardening._
 - `qwen3_5_moe`: softmax attention reuses the cache scratch for scores
   (`4fcc069`), and its M=1 projections route through the SIMD A·Bᵀ kernel
   (`443ab7a`).
+- **~2.4× sparse-MoE prompt prefill** (Mellum2 12B-A2.5B: 3.36 → 8.11 tok/s at a
+  1024-token context). `canBatchN` now admits standard sparse-MoE (Mellum / Mixtral),
+  so their prefill batches the attention onto the SIMD A·Bᵀ kernel like the dense
+  families — a CPU profile put the scalar per-token attention at ~83% of MoE prefill,
+  the expert matmuls only ~17% (those stay per-token: the router picks different
+  experts per row). The batched attention uses the f64-accumulating `MatmulBTAcc64`
+  and decode is routed through the same kernel, so the result is **bit-identical to
+  the sequential forward** (the discrete router won't tolerate an f32 matmul's ~1e-6
+  reassociation). The qwen3_5_moe DeltaNet hybrid and Gemma 4 keep their own forwards.
 
 ## [v0.4.0] — 2026-06-09
 

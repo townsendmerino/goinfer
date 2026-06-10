@@ -6,14 +6,18 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// canBatchN reports whether the batched M=K path applies: the dense gated-MLP
-// families (Qwen / Llama / Gemma) with K>1. MoE, GPT-2 (non-gated + learned
-// positions), and K≤1 take the sequential fallback.
+// canBatchN reports whether the batched M=K path applies: the gated-MLP families
+// (Qwen / Llama / Gemma) AND standard sparse-MoE (Mellum / Mixtral) with K>1 —
+// their attention is plain GQA softmax, so the SIMD attendBatchedHeads applies
+// (the L² hotspot: a profile put scalar attendQuery at ~83% of MoE prefill). The
+// MoE FFN itself stays per-row (router picks different experts per token).
+// GPT-2 (non-gated + learned positions) and K≤1 take the sequential fallback.
 func (m *Model) canBatchN(K int) bool {
 	a := m.w.arch
-	// Gemma 4 has its own sequential forward (per-layer head_dim, KV-sharing, PLE);
-	// the batched M=K path here is the uniform-shape gemma3-family one, so exclude it.
-	return K > 1 && m.w.Embed.rows != 0 && a.MoE == nil && !a.NonGatedMLP && !a.LearnedPosEmbed && a.gemma4 == nil
+	// Gemma 4 (per-layer head_dim, KV-sharing, PLE) and qwen3_5_moe (Gated DeltaNet
+	// linear attention — NOT plain GQA, so attendBatchedHeads doesn't apply) each
+	// have their own sequential forward; exclude both.
+	return K > 1 && m.w.Embed.rows != 0 && !a.NonGatedMLP && !a.LearnedPosEmbed && a.gemma4 == nil && a.qwen35 == nil
 }
 
 // forwardLayersN runs the embedding + all transformer layers + final norm over
@@ -107,7 +111,10 @@ func (m *Model) forwardLayersN(ids []int, cache *KVCache) ([]float32, error) {
 		}
 		// QKᵀ and scores·V for all K positions, per head, on the SIMD A·Bᵀ kernel
 		// (the L² terms) instead of the scalar per-position attendQuery.
-		attendBatchedHeads(q, ctx, cache, l, startPos, K, global, arch, aqh, akh, avt, ascores, ach)
+		// MoE attention uses the f64-accumulating matmul (bit-identical to the
+		// sequential reference, which decode also uses — so the discrete router never
+		// cascades); dense keeps the faster f32 MatmulBT (cosine ≥0.99 is fine there).
+		attendBatchedHeads(q, ctx, cache, l, startPos, K, global, arch, arch.MoE != nil, aqh, akh, avt, ascores, ach)
 		lw.OProj.matmul(be, ctx, att, K)
 		if arch.OutBias {
 			for i := range K {
@@ -126,6 +133,26 @@ func (m *Model) forwardLayersN(ids []int, cache *KVCache) ([]float32, error) {
 		copy(norm, h)
 		for i := range K {
 			normalize(arch, row(norm, i, hidden), lw.PreMLPNorm, lw.PreMLPNormBias, hidden)
+		}
+		if arch.MoE != nil {
+			// Sparse MoE (Mellum / Mixtral): the router selects different experts per
+			// token, so the FFN isn't batchable across K — run the existing per-token
+			// moeMLP for each row (bit-identical to the sequential path). The prefill
+			// hotspot (attention) is already batched above; this is the residual ~17%.
+			for i := range K {
+				ff, err := moeMLP(row(norm, i, hidden), lw, arch, be)
+				if err != nil {
+					return nil, err
+				}
+				if sandwich {
+					normalize(arch, ff, lw.PostMLPNorm, nil, hidden)
+				}
+				hi := row(h, i, hidden)
+				for j := range ff {
+					hi[j] += ff[j]
+				}
+			}
+			continue
 		}
 		if lw.GateProj.isW8A8() && lw.UpProj.isW8A8() {
 			guOps[0] = linalg.W8A8Op{BQ: lw.GateProj.q8, Scales: lw.GateProj.scales, Dst: gate, N: lw.GateProj.rows}
@@ -183,13 +210,22 @@ func (m *Model) forwardLayersN(ids []int, cache *KVCache) ([]float32, error) {
 // stays per-row in float64. Scratch slices (qh:[K*hd], kh:[maxKeys*hd],
 // vt:[maxKeys*hd], scores:[K*maxKeys], ch:[K*hd]) are caller-owned, reused across
 // layers.
-func attendBatchedHeads(q, ctx []float32, cache *KVCache, layer, startPos, K int, global bool, arch *Architecture, qh, kh, vt, scores, ch []float32) {
+func attendBatchedHeads(q, ctx []float32, cache *KVCache, layer, startPos, K int, global bool, arch *Architecture, useAcc64 bool, qh, kh, vt, scores, ch []float32) {
 	nH, nKV, hd := arch.NumHeads, arch.NumKVHeads, arch.HeadDim
 	kvDim, qDim := nKV*hd, nH*hd
 	group := nH / nKV
 	scale := arch.AttnScale
 	keys, vals := cache.Keys(layer), cache.Vals(layer)
 	nKeys := len(keys) / kvDim
+	// MoE routing is discontinuous: the f32 QKᵀ reassociation (~4.6e-5) flips a
+	// top-k expert at a near-tie and cascades, changing the output. MatmulBTAcc64
+	// accumulates the dot in f64 (bit-identical to the sequential f64 reference),
+	// killing that perturbation — ~3.7× slower than f32 but still ≫ the scalar
+	// path. Dense MLPs tolerate the f32 error (cosine ≥0.99), so they keep MatmulBT.
+	matmul := linalg.MatmulBT
+	if useAcc64 {
+		matmul = linalg.MatmulBTAcc64
+	}
 
 	for kvh := 0; kvh < nKV; kvh++ {
 		// Gather this KV head's keys [nKeys,hd] and values transposed [hd,nKeys]
@@ -210,7 +246,7 @@ func attendBatchedHeads(q, ctx []float32, cache *KVCache, layer, startPos, K int
 				copy(qh[i*hd:i*hd+hd], q[base:base+hd])
 			}
 			// QKᵀ: scores[K,nKeys] = Q_head[K,hd] · K_head[nKeys,hd]ᵀ
-			linalg.MatmulBT(qh[:K*hd], kh[:nKeys*hd], scores[:K*nKeys], K, hd, nKeys)
+			matmul(qh[:K*hd], kh[:nKeys*hd], scores[:K*nKeys], K, hd, nKeys)
 			// Scaled, masked softmax per query row; zero the out-of-range entries
 			// so they contribute nothing to the scores·V matmul below.
 			for i := 0; i < K; i++ {
@@ -244,7 +280,7 @@ func attendBatchedHeads(q, ctx []float32, cache *KVCache, layer, startPos, K int
 			}
 			// scores·V: ctx_head[K,hd] = scores[K,nKeys] · V_head[nKeys,hd]
 			//                          = MatmulBT(scores, V_headᵀ[hd,nKeys])
-			linalg.MatmulBT(scores[:K*nKeys], vt[:hd*nKeys], ch[:K*hd], K, nKeys, hd)
+			matmul(scores[:K*nKeys], vt[:hd*nKeys], ch[:K*hd], K, nKeys, hd)
 			for i := 0; i < K; i++ { // scatter ctx_head into ctx[K,qDim]
 				base := i*qDim + qhead*hd
 				copy(ctx[base:base+hd], ch[i*hd:i*hd+hd])

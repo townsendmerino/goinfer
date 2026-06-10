@@ -3,6 +3,6 @@ module github.com/townsendmerino/goinfer
 go 1.26.3
 
 require (
-	github.com/townsendmerino/aikit v1.2.1
+	github.com/townsendmerino/aikit v1.3.0
 	golang.org/x/text v0.37.0
 )

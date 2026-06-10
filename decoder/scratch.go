@@ -24,6 +24,12 @@ type decodeScratch struct {
 	scores []float32 // [>=nKeys] attention scores; grown on demand as context extends
 	logits []float32 // [vocab]
 
+	// Gather buffers for the MoE decode path, which routes single-token attention
+	// through attendBatchedHeads (K=1) so it uses the SAME acc64 matmul as the
+	// batched MoE prefill — bit-identical, so the discrete router never sees a
+	// prefill↔decode numerical discontinuity. akh/avt grow with context like scores.
+	aqh, akh, avt, ach []float32
+
 	ws        *linalg.Workspace // W8A8 activation-quant scratch (zero-alloc Into/Batch)
 	qkvOps    [3]linalg.W8A8Op  // reused q/k/v batch ops
 	gateUpOps [2]linalg.W8A8Op  // reused gate/up batch ops
@@ -56,4 +62,19 @@ func (s *decodeScratch) scoresBuf(n int) []float32 {
 		s.scores = make([]float32, n)
 	}
 	return s.scores[:n]
+}
+
+// attnBatchBufs returns the K=1 scratch slices attendBatchedHeads needs for the
+// MoE decode path (qh[hd], kh[nKeys*hd], vt[nKeys*hd], scores[nKeys], ch[hd]),
+// growing the context-sized backings once as decode extends.
+func (s *decodeScratch) attnBatchBufs(nKeys, hd int) (qh, kh, vt, scores, ch []float32) {
+	if cap(s.aqh) < hd {
+		s.aqh = make([]float32, hd)
+		s.ach = make([]float32, hd)
+	}
+	if cap(s.akh) < nKeys*hd {
+		s.akh = make([]float32, nKeys*hd)
+		s.avt = make([]float32, nKeys*hd)
+	}
+	return s.aqh[:hd], s.akh[:nKeys*hd], s.avt[:nKeys*hd], s.scoresBuf(nKeys), s.ach[:hd]
 }

@@ -104,7 +104,16 @@ func causalAttention(
 	cache.Append(layer, k, v)
 	ctx := cache.scr.ctx
 	nKeys := len(cache.Keys(layer)) / kvDim
-	attendQuery(q, ctx, cache.scr.scoresBuf(nKeys), cache, layer, pos, global, arch)
+	if arch.MoE != nil {
+		// MoE: route single-token attention through the SAME acc64 batched kernel
+		// the prefill uses (at K=1), so decode and prefill are bit-identical and the
+		// discrete top-k router never diverges across the prefill↔decode boundary.
+		// (Dense tolerates the f32 attendQuery — cosine ≥0.99 — so it stays scalar.)
+		qh, kh, vt, sc, ch := scr.attnBatchBufs(nKeys, hd)
+		attendBatchedHeads(q, ctx, cache, layer, pos, 1, global, arch, true, qh, kh, vt, sc, ch)
+	} else {
+		attendQuery(q, ctx, cache.scr.scoresBuf(nKeys), cache, layer, pos, global, arch)
+	}
 
 	// 7. Output projection into the caller's buffer (+ bias for GPT-2); the
 	// caller applies the post-attn norm + residual.
