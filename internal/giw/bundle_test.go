@@ -39,6 +39,26 @@ func TestBundle_v1_compat(t *testing.T) {
 	}
 }
 
+// TestBundle_hostileLength_noPanic is the regression for the cur.take overflow
+// FuzzGIWRead found: a v2 weights length near maxint64 made c.off+n wrap negative,
+// slipping past the bound check and panicking the slice. Read must return a typed
+// error instead.
+func TestBundle_hostileLength_noPanic(t *testing.T) {
+	var b []byte
+	b = append(b, bundleMagic...)
+	b = binary.LittleEndian.AppendUint32(b, 2)                  // v2
+	b = binary.LittleEndian.AppendUint64(b, 0x7fffffffffffffff) // ~maxint64 weights length
+	b = append(b, "some-bytes"...)
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("Read panicked on hostile v2 length: %v", r)
+		}
+	}()
+	if _, _, err := Read(b); err == nil {
+		t.Fatal("expected a short-read error for an oversized weights length")
+	}
+}
+
 func TestBundle_badVersion(t *testing.T) {
 	var b []byte
 	b = append(b, bundleMagic...)

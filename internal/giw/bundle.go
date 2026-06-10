@@ -81,7 +81,12 @@ func (c *cur) u64() uint64 {
 }
 
 func (c *cur) take(n int) []byte {
-	if c.err != nil || n < 0 || c.off+n > len(c.b) {
+	// `n > len(c.b)-c.off` rather than `c.off+n > len(c.b)`: a hostile v2 length
+	// (int(u64) near maxint64) makes c.off+n overflow to a negative value that
+	// slips past the bound check and panics the slice. c.off <= len(c.b) is an
+	// invariant (take only advances on a valid read), so len(c.b)-c.off is a safe,
+	// non-negative right-hand side.
+	if c.err != nil || n < 0 || n > len(c.b)-c.off {
 		if c.err == nil {
 			c.err = fmt.Errorf("giw: short read")
 		}
