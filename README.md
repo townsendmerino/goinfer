@@ -23,6 +23,14 @@ runtime, no provider API.
 Built on [`aikit`](https://github.com/townsendmerino/aikit)'s embedding and tensor
 primitives.
 
+**The lane:** goinfer runs the weights *in-process in pure Go* — the single-file,
+zero-install, HF-parity-gated lane no other maintained runtime occupies (the Go
+llama.cpp bindings still ship a native `.so`; the pure-Go ports are archived toys).
+On a GPU it decodes at **~60–70% of llama.cpp/Ollama-CUDA at equal 4-bit quant** — a
+portable WebGPU backend vs years-tuned CUDA — in a static binary that boots in ~0.5 s.
+Full capability matrix + measured numbers, every cell with provenance:
+[docs/benchmarks.md](docs/benchmarks.md).
+
 ## Try it: an LLM in one file
 
 [`demo/chat`](demo/chat) is a local coding assistant that's a **single static
