@@ -1,6 +1,10 @@
 package decoder
 
-import "math"
+import (
+	"math"
+
+	"github.com/townsendmerino/aikit/linalg"
+)
 
 // Gated DeltaNet — the linear-attention primitive of Qwen3.5/3.6-MoE
 // (qwen3_5_moe). It replaces softmax attention on most layers with a gated
@@ -42,17 +46,15 @@ func negExpAFromLog(aLog []float32) []float32 {
 	return out
 }
 
-// matvec computes y[r] = Σ_c W[r*cols+c]·x[c] for a row-major [rows,cols] weight.
+// matvec computes y[r] = Σ_c W[r*cols+c]·x[c] for a row-major [rows,cols] weight
+// — the M=1 weight projection for the qwen3_5_moe path (DeltaNet in/out-proj and
+// the softmax-attention q/k/v/o). It carries the dominant decode term, so it runs
+// on the SIMD A·Bᵀ kernel (W[rows,cols]·x = MatmulBT at M=1) rather than the
+// scalar row loop. f32 in, f32 out — this is SIMD reassociation only (no
+// precision change of kind), unlike the float64→f32 attention vectorization.
 func matvec(w []float32, rows, cols int, x []float32) []float32 {
 	y := make([]float32, rows)
-	for r := range rows {
-		var s float32
-		row := w[r*cols : r*cols+cols]
-		for c := range cols {
-			s += row[c] * x[c]
-		}
-		y[r] = s
-	}
+	linalg.MatmulBT(x, w, y, 1, cols, rows)
 	return y
 }
 
