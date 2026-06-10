@@ -238,6 +238,25 @@ func (m *Model) runLayers(id int, cache *KVCache) ([]float32, error) {
 			h[i] += pe[i]
 		}
 	}
+	return m.runLayersFromEmbed(h, cache)
+}
+
+// runLayersFromEmbed runs the transformer layers over a precomputed
+// residual-stream embedding h ([hidden]) and returns it (mutated in place). For
+// a text token h is the embedding lookup (+ scale/pos) that runLayers just
+// computed; for an IMAGE position (multimodal) it is the projected vision
+// embedding the interleaver substitutes in place of a token-id lookup. Splitting
+// it out is the embed-by-vector seam: text behavior is unchanged (runLayers is
+// exactly embed-then-this), and image embeddings reach the decoder without
+// passing through embed_tokens. Generic path only (gemma4/qwen35 have their own
+// runLayers and grow the same seam when those families go multimodal).
+func (m *Model) runLayersFromEmbed(h []float32, cache *KVCache) ([]float32, error) {
+	arch := m.w.arch
+	if cache.scr == nil { // direct callers (tests / the interleaver) may skip runLayers
+		cache.scr = newDecodeScratch(arch)
+	}
+	scr := cache.scr
+	hidden := arch.HiddenDim
 	sandwich := arch.NormPlacement == NormSandwich4
 	for l := 0; l < arch.NumLayers; l++ {
 		lw := &m.w.Layers[l]
@@ -267,6 +286,27 @@ func (m *Model) runLayers(id int, cache *KVCache) ([]float32, error) {
 	return h, nil
 }
 
+// embedToken writes the residual-stream embedding for token id into dst ([hidden])
+// — the embed_tokens row with the architecture's embedding scale + GPT-2 learned
+// positional embedding applied, i.e. exactly the vector runLayers feeds into
+// runLayersFromEmbed. Exposed so the multimodal interleaver can build a mixed
+// text/image embedding sequence (text positions via this, image positions via
+// the projected vision features) and drive runLayersFromEmbed per position.
+func (m *Model) embedToken(id int, dst []float32) {
+	arch := m.w.arch
+	m.w.Embed.embedRow(id, dst)
+	if arch.EmbedScale != 0 && arch.EmbedScale != 1 {
+		scale := float32(arch.EmbedScale)
+		for i := range dst {
+			dst[i] *= scale
+		}
+	}
+	// NOTE: GPT-2 learned positional embedding is position-dependent, so it is
+	// applied in runLayers (which knows cache.Pos()), not here. embedToken is the
+	// position-independent token embedding; the interleaver adds pos if a future
+	// learned-pos family goes multimodal (none today do).
+}
+
 // normalize applies the architecture's normalization in place over one row:
 // LayerNorm (mean-centered, with bias) for GPT-2/NeoX, else RMSNorm. bias is
 // ignored by RMSNorm (and nil for the Sandwich4 post-norms).
@@ -283,11 +323,31 @@ func normalize(arch *Architecture, x, weight, bias []float32, dim int) {
 // (Gemma) or a separate lm_head (untied). Optional final
 // logit soft-capping (Gemma 2; Gemma 3 = none).
 func (m *Model) forward(id int, cache *KVCache) ([]float32, error) {
-	arch := m.w.arch
 	h, err := m.runLayers(id, cache)
 	if err != nil {
 		return nil, err
 	}
+	return m.logitsFromHidden(h, cache), nil
+}
+
+// forwardFromEmbed is forward for a position whose residual-stream embedding is
+// supplied directly (the multimodal embed-by-vector seam): it runs the layers
+// from h and projects to logits, identical to forward(id) when h is that token's
+// embedding. The generic path only (gemma4/qwen35 keep their own forward).
+func (m *Model) forwardFromEmbed(h []float32, cache *KVCache) ([]float32, error) {
+	h, err := m.runLayersFromEmbed(h, cache)
+	if err != nil {
+		return nil, err
+	}
+	return m.logitsFromHidden(h, cache), nil
+}
+
+// logitsFromHidden applies the final norm + LM head (tied embedding or separate
+// lm_head) + optional Gemma logit soft-cap to a layer-stack output h, returning
+// the next-token logits ([VocabSize]). One home for the head math, shared by
+// forward and forwardFromEmbed.
+func (m *Model) logitsFromHidden(h []float32, cache *KVCache) []float32 {
+	arch := m.w.arch
 	normalize(arch, h, m.w.FinalNorm, m.w.FinalNormBias, arch.HiddenDim)
 	logits := cache.scr.logits // reused per stream; matmul fully overwrites it
 	if arch.TiedLMHead {
@@ -301,7 +361,7 @@ func (m *Model) forward(id int, cache *KVCache) ([]float32, error) {
 			logits[i] = softcap * float32(math.Tanh(float64(v/softcap)))
 		}
 	}
-	return logits, nil
+	return logits
 }
 
 // Generate streams generated token ids over the returned channel until EOS,
