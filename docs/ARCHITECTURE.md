@@ -6,11 +6,18 @@ the **load + memory paths**, and the **module map**.
 
 > These diagrams are intentionally drawn at the *stage* level, not the
 > struct-field level. goinfer is descriptor-driven — one generic decoder runs
-> Gemma 3/4, Qwen, Llama, Mistral, Mixtral, GPT-2, and Mellum by reading an `Architecture`
-> descriptor — so the per-model specifics (which norm, GQA ratio, RoPE scaling,
-> tied vs separate head) are *config*, not separate code paths. Drawing stages
-> keeps these accurate across new model families; the numeric contract is the
-> parity gate against HuggingFace, not this doc.
+> Gemma 3/4, Qwen 2.5/3, Llama, Mistral, Mixtral, GPT-2, Mellum/Mellum2 by reading
+> an `Architecture` descriptor — so the per-model specifics (which norm, GQA ratio,
+> RoPE scaling, tied vs separate head) are *config*, not separate code paths.
+> Drawing stages keeps these accurate across new model families; the numeric
+> contract is the parity gate against HuggingFace, not this doc.
+>
+> **One exception to "config, not code paths":** the hybrid linear/softmax MoE
+> family (Qwen 3.6 / `qwen3_5_moe`) adds a genuinely new sequence-mixing
+> primitive — most layers are **Gated DeltaNet** (linear attention with a
+> recurrent matrix state) rather than softmax attention, with a hybrid cache
+> (KV for the softmax layers + a per-layer `deltaState`). That's a second forward
+> primitive (`deltanet.go`), descriptor-selected per layer, not just a config knob.
 
 ## 1. The forward pass (one decode step)
 
@@ -74,11 +81,13 @@ flowchart TB
   ALIAS --> W["resident weightMats"]
   REQ --> W
 
-  W --> DISP{"matmul dispatch<br/>(per weightMat precision)"}
-  DISP -->|int4| K4["MatmulBTQ4 · CPU (nibble unpack)"]
+  W --> DISP{"matmul dispatch<br/>(per weightMat precision · M=1 decode vs M&gt;1 prefill)"}
+  DISP -->|int4 decode| K4D["MatmulBTW4A8 · CPU int4×int8 integer kernel<br/>(NEON/AVX2, aikit v1.1.1)"]
+  DISP -->|int4 prefill| K4["MatmulBTQ4 · CPU (f32-activation, M-reuse)"]
   DISP -->|int8 W8A8| K8["MatmulBTW8A8 · CPU SDOT (fast default)"]
   DISP -->|int8| KQ["MatmulBTQ8 · CPU"]
-  DISP -->|f32| BE["Backend.MatmulBT<br/>pure-Go SIMD · or webgpu (-tags gpu)"]
+  DISP -->|f32| BE["Backend.MatmulBT · pure-Go SIMD"]
+  W --> GPUR["OR: full-residency GPU forward (-tags gpu, webgpu)<br/>whole token on the GPU via DecodeRunner<br/>W8A8 / W4A8 GPU kernels · dense Qwen2/Llama only"]
 ```
 
 Why the `.giw` path is the headline: it skips decompress **and** dequant/requant
@@ -114,9 +123,16 @@ the GGUF fallback apply only to the `--model <gguf>` path. Any bundle
 mismatch (magic / version / quant / CRC) returns a typed error — never a panic —
 and the user falls back via `--model`.
 
-Note the GPU path only substitutes for the **f32** kernel; quantized matmuls are
-CPU-only, so the int8 demo is CPU by design (`-tags gpu` helps only unquantized
-models).
+**Two GPU modes (`-tags gpu`, WebGPU).** (1) A per-matmul `Backend` that
+substitutes for the f32 kernel — the original, arch-agnostic path. (2) **Full
+residency** (v0.4.0): for dense Qwen2/Llama the *entire token forward* runs on
+the GPU through `DecodeRunner`, with **quantized** GPU kernels — `W8A8` (int8)
+and `W4A8` (int4). This is the headline: a **7B int4 fits and decodes pure-GPU on
+an 8 GB card** (~51 tok/s, ~71% of llama.cpp-CUDA at equal 4-bit quant) — the
+model class that does *not* fit at int8. v1 residency limits: stateless
+`Generate` only (Session/prefix-reuse fall back to the staged path), 16k context
+(f32 KV), dense Qwen2/Llama only (MoE / Gemma / hybrid → staged). Full numbers:
+`docs/gpu-assessment.md`.
 
 ## 3. Module map (and where cgo is quarantined)
 
@@ -132,7 +148,7 @@ inside the opt-in `goinfer/gpu` submodule, built only under `-tags gpu`.
 flowchart TB
   subgraph GOINFER["github.com/townsendmerino/goinfer  (pure Go)"]
     direction TB
-    DEC["decoder<br/>forward pass · quant kernels · KV cache + cross-call reuse · samplers<br/>LoRA merge · GGUF / .giw loaders"]
+    DEC["decoder<br/>forward pass (softmax + Gated-DeltaNet hybrid) · quant kernels · KV + deltaState cache<br/>cross-call reuse · samplers · LoRA merge · safetensors / GGUF / .giw loaders"]
     TKN["tokenizer<br/>byte-level BPE · SentencePiece byte-fallback"]
     CON["constrain<br/>logit-mask grammars · JSON Schema + Go-struct"]
     CHT["chat<br/>chat templates + tool calling (per family)"]
@@ -157,16 +173,18 @@ flowchart TB
   SRV --> ENC
 
   subgraph GPU["goinfer/gpu  (opt-in · -tags gpu · cgo)"]
-    WG["WebGPU backend → cogentcore/webgpu<br/>registers a matmul Backend"]
+    WG["WebGPU → cogentcore/webgpu (wgpu-native)<br/>(1) registers a matmul Backend<br/>(2) full-residency DecodeRunner (W8A8/W4A8 token forward)"]
   end
   GPU -. "registers into" .-> DEC
   GPU -. "and aikit/encoder" .-> AIKIT
 ```
 
 The arrows into `gpu` are dashed because the dependency is *inverted*: `gpu`
-imports `decoder`/`encoder` and registers a backend on init, so `webgpu` never
+imports `decoder`/`encoder` and registers into them on init, so `webgpu` never
 enters the core module graph. The default `go build` pulls only `aikit` +
-`golang.org/x/text`.
+`golang.org/x/text` — pure Go, no cgo. (Native GPU is cgo via wgpu-native; a
+future browser/wasm backend would reach `navigator.gpu` through `syscall/js`,
+cgo-free — see `docs/roadmap.md`.)
 
 ## The contract
 
