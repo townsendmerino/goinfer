@@ -118,9 +118,12 @@ Deferred follow-ons (named, **not scheduled** — pick up if a use case pulls):
 
 - **Batched on-device GPU prefill** — today's prefill is option-(a) sequential
   GPU `Run`, O(prompt-len); a batched M=len pass *might* fix long-prompt TTFT.
-  **Evaluated 2026-06-09 (Metal): weight-stream-bound, but the tiled GEMM doesn't
-  amortize the read there (≈1.2×) — needs an RTX tiled-vs-GEMV measurement before
-  building. See Backlog → GPU long-context.**
+  **Evaluated 2026-06-09 on BOTH backends — WASH until dp4a, gated on
+  `dot4I8Packed`.** Weight-stream-bound; the lever is amortizing the VRAM weight
+  read via a compute-bound tiled GEMM, but the WGSL tiled kernel can't reach DP4A
+  so it tops out below the bandwidth-bound GEMV: Metal ≈1.2×, RTX ≈0.91× (tiled
+  680 GFLOP/s vs the M=1 GEMV's 748 GFLOP/s-equiv). Not silicon-limited — kernel-
+  limited. See Backlog → GPU long-context.
 - **f16 KV cache** — unlocks 32k context for a 7B on 8 GB (v1 caps at 16k, f32).
 - **CPU-int4 decode — RESOLVED (2026-06-08, aikit v1.1.1).** The §1 matrix
   measured CPU int4 at ~0.15–0.18 tok/s because `MatmulBTQ4` (f32 activation) is
@@ -165,7 +168,10 @@ v0.4.0 ships without them.** Grouped by theme; ordered within a group by leverag
 - **`dot4I8Packed` (dp4a) — prefill compute boost, upstream-blocked.** The native
   int8-dot WGSL feature would speed the M>1 prefill GEMM (TU104 has DP4A
   hardware). Blocked on the `cogentcore/webgpu` binding exposing it. **Trigger:
-  the binding ships it.**
+  the binding ships it.** **This now gates _batched on-device GPU prefill_** (GPU
+  long-context) — the 2026-06-09 RTX measurement showed the tiled GEMM stuck at
+  680 GFLOP/s (≈50× under the DP4A int8 ceiling, *below* the 748 GFLOP/s-equiv
+  bandwidth-bound GEMV), so prefill batching is a wash until this lands.
 
 ### GPU long-context (both deferred, de-risked, coupled)
 
@@ -176,23 +182,33 @@ every turn at O(len) AND hits the 16k cap — there's no warm-KV escape hatch li
 the staged path has. **That coupling is the felt-pain trigger for both.**
 
 - **Batched on-device GPU prefill** (`task-gpu-batched-prefill.md`) — **EVALUATED
-  2026-06-09 (M1 Pro Metal, component-level on real HW).** Mechanism corrected:
-  option-(a) prefill is **weight-stream-bound, not fence-bound** — a 1.5B M=1 token
-  is 16 ms, **91% (14.6 ms) re-reading the 1.55 GB resident weights from VRAM** at
-  M=1 GEMV (106 GB/s, 30% roofline); sync 1 ms, glue 0.4 ms. So batching's lever is
-  amortizing that VRAM weight read (same as the CPU prefill win), NOT cutting
-  fences. **On Metal the lever underdelivers:** the M=L tiled GEMM tops out at
-  245 GFLOP/s ≈ the GEMV's 212 GFLOP/s-equiv (and is *slower* than CPU's 303) —
-  still ~bandwidth-bound, not amortizing the read → batched prefill ≈ **1.2×**, not
-  worth building for Metal. **The RTX answer hinges on one unmeasured number:** does
-  the RTX tiled GEMM go compute-bound (effective GFLOP/s ≫ the bandwidth-equiv)?
-  gpu-assessment claims tiled ~3× CPU there (vs 0.7× on Metal), which *suggests*
-  yes — but **run `TestTiled_microbench` + `TestDecode_instrument` on the RTX and
-  compare M=1 GEMV GB/s to M=512 tiled effective throughput** before building:
-  ratio ≫1 ⇒ wins ~that on the 91% term, ≈1 ⇒ wash. De-risked separately:
-  residency is full-attention-only (`SlidingWindow == 0`), so the batched attention
-  is **plain causal, no per-query sliding-window mask** — the doc's main parity risk
-  is moot.
+  2026-06-09 on BOTH backends (M1 Pro Metal + RTX 2070 SUPER / TU104, component-level
+  on real HW). Verdict: WASH on both — shelved until `dot4I8Packed` (dp4a) unblocks;
+  that item is now the PREREQUISITE, not a parallel nice-to-have.** Mechanism
+  corrected: option-(a) prefill is **weight-stream-bound, not fence-bound** — a 1.5B
+  M=1 token is 16 ms, **91% (14.6 ms) re-reading the 1.55 GB resident weights from
+  VRAM** at M=1 GEMV (Metal 106 GB/s, 30% roofline; **RTX 374 GB/s, ~83% of the
+  448 GB/s peak — already bandwidth-saturated**); sync ~1 ms, glue ~0.4–0.5 ms. So
+  batching's lever is amortizing that VRAM weight read (same as the CPU prefill win),
+  NOT cutting fences — and prefill competes against the GPU's own bandwidth-bound
+  GEMV, NOT the CPU.
+    - **Metal:** M=L tiled tops out at 245 GFLOP/s ≈ the GEMV's 212 GFLOP/s-equiv →
+      ≈ **1.2×**, wash.
+    - **RTX (measured `TestTiled_microbench`+`TestDecode_instrument`):** tiled M=512
+      = **680 GFLOP/s** (2.87× CPU's 237, 1.54× the naive GPU path) vs the M=1 GEMV's
+      **748 GFLOP/s-equiv** (374 GB/s × 2 ops/byte) → ratio **≈0.91× — wash, slight
+      loss.** The 2.87×-CPU optimism (gpu-assessment) was a red herring: the CPU was
+      never the competitor.
+    - **Why it's a wash and why it's recoverable:** 680 GFLOP/s is ~50× below the
+      card's int8 ceiling (~36 TOP/s via DP4A) — the WGSL tiled kernel is **ALU/binding-
+      limited (no `dot4I8Packed`), not silicon- or bandwidth-limited.** The RTX has the
+      bandwidth headroom AND the DP4A hardware; the `cogentcore/webgpu` binding just
+      can't reach it. **When dp4a unblocks, tiled should jump toward the 36 TOP/s
+      ceiling, clear the 748 bandwidth wall, and batched prefill wins big** — see the
+      `dot4I8Packed` item under *GPU decode performance*.
+  De-risked separately: residency is full-attention-only (`SlidingWindow == 0`), so
+  the batched attention is **plain causal, no per-query sliding-window mask** — the
+  doc's main parity risk is moot.
 - **f16 KV cache** (`task-gpu-f16-kv.md`) — 2× context (16k → 32k) on the same
   8 GB, **and faster long-context decode** (halves the KV bytes the attention
   reads — a bonus the doc undersells). Manual WGSL f16 (the W4A8 pattern), no

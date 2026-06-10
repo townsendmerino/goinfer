@@ -5,6 +5,16 @@
 > independently shippable. **Bit-exact greedy parity is the non-negotiable gate —
 > none of this touches the CPU forward; it must match the sequential GPU prefill
 > token-for-token.** Pure-Go core CI job stays untouched.
+>
+> **⚠️ GATED — do not build yet (measured 2026-06-09, RTX 2070 SUPER + M1 Pro).**
+> The whole premise — amortize the 91% VRAM weight-read with a compute-bound tiled
+> GEMM — fails on current hardware because the WGSL tiled GEMM has no `dot4I8Packed`
+> and tops out at 680 GFLOP/s (RTX), *below* the bandwidth-bound M=1 GEMV's
+> 748 GFLOP/s-equiv → batched prefill ≈ 0.91× (RTX), ≈1.2× (Metal): a wash. It's
+> kernel-limited, not silicon-limited. **Prerequisite: `dot4I8Packed` unblocks in
+> `cogentcore/webgpu`** (TU104 has the DP4A hardware) — only then does the tiled GEMM
+> clear the bandwidth wall and these increments pay off. See `docs/roadmap.md`
+> (Backlog → GPU long-context, and the dp4a item).
 
 ## Problem
 
