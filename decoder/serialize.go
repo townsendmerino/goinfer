@@ -44,6 +44,13 @@ import (
 const (
 	giwMagic   = "GINFW"
 	giwVersion = 1
+	// Sanity ceilings on the count fields, generous vs any real checkpoint
+	// (largest models: ~120 layers, a few hundred experts) but low enough that a
+	// corrupt/hostile blob can't drive a multi-GB make() before the body reader
+	// hits its first short read. A LayerWeights is a large struct, so an unbounded
+	// layer count is the worst offender.
+	maxSerializedLayers  = 4096
+	maxSerializedExperts = 4096
 )
 
 // SerializeError is returned by LoadSerializedWeights on any magic/version/
@@ -131,7 +138,7 @@ func LoadSerializedWeights(data []byte) (*Weights, error) {
 	w.FinalNorm = r.f32()
 	w.FinalNormBias = r.f32()
 	n := int(r.u32())
-	if n < 0 || n > 1<<20 {
+	if n < 0 || n > maxSerializedLayers {
 		return nil, &SerializeError{"implausible layer count"}
 	}
 	w.Layers = make([]LayerWeights, n)
@@ -430,7 +437,7 @@ func (r *giwReader) layer(l *LayerWeights) {
 	l.PostMLPNorm = r.f32()
 	l.Router = r.weightMat()
 	ne := int(r.u32())
-	if ne < 0 || ne > 1<<16 {
+	if ne < 0 || ne > maxSerializedExperts {
 		r.fail("implausible expert count")
 		return
 	}
