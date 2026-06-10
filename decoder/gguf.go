@@ -417,11 +417,49 @@ func buildGGUFWeights(g *embed.GGUFFile, quant quantMode) (*Weights, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := validateGGUFDims(cfg); err != nil {
+		return nil, err
+	}
 	arch, _, err := resolveArchitecture(cfg) // llama descriptor + finalizeRoPE
 	if err != nil {
 		return nil, err
 	}
 	return buildWeightsFromGGUF(cfg, arch, g, quant)
+}
+
+// Generous sanity ceilings for the metadata-derived core dims — orders of
+// magnitude above any real checkpoint (largest open models: ~120 layers, hidden
+// ~16K, vocab ~256K), but low enough that an untrusted GGUF can't drive a
+// pathological allocation. They exist to turn a hostile header into a typed
+// error instead of a panic/OOM, not to police legitimate models.
+const (
+	maxGGUFLayers    = 4096
+	maxGGUFHidden    = 1 << 20
+	maxGGUFHeads     = 1 << 16
+	maxGGUFVocabSize = 1 << 24
+)
+
+// validateGGUFDims rejects core dimensions that are out of range before they
+// reach an allocation. GGUF reads counts as uint64 and narrows to int, so a
+// hostile metadata value (e.g. block_count = 1<<63) silently becomes negative
+// and would panic make([]LayerWeights, n) ("makeslice: len out of range"); a
+// merely-huge positive value would OOM. Both are caught here. Only the dims
+// every family sets from metadata are checked (HeadDim is derived per family;
+// IntermediateDim is vestigial/zero for some MoE checkpoints).
+func validateGGUFDims(cfg *Config) error {
+	switch {
+	case cfg.NumLayers <= 0 || cfg.NumLayers > maxGGUFLayers:
+		return fmt.Errorf("decoder(gguf): block_count %d out of range (1..%d)", cfg.NumLayers, maxGGUFLayers)
+	case cfg.HiddenDim <= 0 || cfg.HiddenDim > maxGGUFHidden:
+		return fmt.Errorf("decoder(gguf): embedding_length %d out of range (1..%d)", cfg.HiddenDim, maxGGUFHidden)
+	case cfg.NumHeads <= 0 || cfg.NumHeads > maxGGUFHeads:
+		return fmt.Errorf("decoder(gguf): head_count %d out of range (1..%d)", cfg.NumHeads, maxGGUFHeads)
+	case cfg.NumKVHeads <= 0 || cfg.NumKVHeads > maxGGUFHeads:
+		return fmt.Errorf("decoder(gguf): head_count_kv %d out of range (1..%d)", cfg.NumKVHeads, maxGGUFHeads)
+	case cfg.VocabSize <= 0 || cfg.VocabSize > maxGGUFVocabSize:
+		return fmt.Errorf("decoder(gguf): vocab_size %d out of range (1..%d)", cfg.VocabSize, maxGGUFVocabSize)
+	}
+	return nil
 }
 
 // LoadGGUFBytes loads a GGUF model from an in-memory slice (e.g. an inflated
