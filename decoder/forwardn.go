@@ -51,7 +51,14 @@ func (m *Model) forwardLayersN(ids []int, cache *KVCache) ([]float32, error) {
 	gate := make([]float32, K*inter)
 	up := make([]float32, K*inter)
 	mlpOut := make([]float32, K*hidden)
-	var scores []float32
+	// Batched per-head attention scratch (reused across layers; nKeys = startPos+K
+	// is the same for every layer in this sweep). See attendBatchedHeads.
+	maxKeys := startPos + K
+	aqh := make([]float32, K*hd)
+	akh := make([]float32, maxKeys*hd)
+	avt := make([]float32, maxKeys*hd)
+	ascores := make([]float32, K*maxKeys)
+	ach := make([]float32, K*hd)
 	// Batch the qkv and gate/up projections (shared activation) so a GPU backend
 	// runs each group as one submit (BatchTiled) instead of per-matmul syncs.
 	var ws linalg.Workspace
@@ -85,6 +92,8 @@ func (m *Model) forwardLayersN(ids []int, cache *KVCache) ([]float32, error) {
 				addBias(row(v, i, kvDim), lw.VBias)
 			}
 		}
+		invFreq := arch.ropeInvFreq(l)
+		ms := arch.ropeMscale(l)
 		for i := range K {
 			pos := startPos + i
 			qi, ki, vi := row(q, i, qDim), row(k, i, kvDim), row(v, i, kvDim)
@@ -92,16 +101,13 @@ func (m *Model) forwardLayersN(ids []int, cache *KVCache) ([]float32, error) {
 				rmsNorm(qi, lw.QNorm, nH, hd, arch.NormEps, arch.RMSAddOne)
 				rmsNorm(ki, lw.KNorm, nKV, hd, arch.NormEps, arch.RMSAddOne)
 			}
-			invFreq := arch.ropeInvFreq(l)
-			ms := arch.ropeMscale(l)
 			applyRoPE(qi, nH, hd, pos, invFreq, ms)
 			applyRoPE(ki, nKV, hd, pos, invFreq, ms)
 			cache.Append(l, ki, vi)
-			if n := len(cache.Keys(l)) / kvDim; cap(scores) < n {
-				scores = make([]float32, n)
-			}
-			attendQuery(qi, row(ctx, i, qDim), scores, cache, l, pos, global, arch)
 		}
+		// QKᵀ and scores·V for all K positions, per head, on the SIMD A·Bᵀ kernel
+		// (the L² terms) instead of the scalar per-position attendQuery.
+		attendBatchedHeads(q, ctx, cache, l, startPos, K, global, arch, aqh, akh, avt, ascores, ach)
 		lw.OProj.matmul(be, ctx, att, K)
 		if arch.OutBias {
 			for i := range K {
@@ -156,6 +162,95 @@ func (m *Model) forwardLayersN(ids []int, cache *KVCache) ([]float32, error) {
 		normalize(arch, row(h, i, hidden), m.w.FinalNorm, m.w.FinalNormBias, hidden)
 	}
 	return h, nil
+}
+
+// attendBatchedHeads computes grouped-query causal attention for K query
+// positions at once, per head, via the SIMD A·Bᵀ matmul (linalg.MatmulBT)
+// instead of the scalar per-position attendQuery. The two O(L²) terms — QKᵀ and
+// scores·V — move off the scalar triple-loops onto the vector kernel, which an
+// end-to-end prefill profile showed were ~half the forward's CPU time.
+//
+// Per KV head it gathers K_head [nKeys,hd] and V_headᵀ [hd,nKeys] once (reused
+// across the GQA group). Per query head: scores[K,nKeys] = Q_head·K_headᵀ; a
+// scaled, causal/window-masked softmax per row (row i attends to
+// [WindowStart(startPos+i), startPos+i], masked entries zeroed so they drop out
+// of the next matmul); then ctx_head[K,hd] = scores·V_head, expressed as
+// MatmulBT(scores, V_headᵀ); scattered into ctx[K,qDim].
+//
+// NOT bit-identical to attendQuery: QKᵀ moves from float64 to f32 accumulation
+// and the matmul reassociates the reduction. Parity is argmax-exact + cosine —
+// the same standard the GPU residency attention already meets. The softmax exp
+// stays per-row in float64. Scratch slices (qh:[K*hd], kh:[maxKeys*hd],
+// vt:[maxKeys*hd], scores:[K*maxKeys], ch:[K*hd]) are caller-owned, reused across
+// layers.
+func attendBatchedHeads(q, ctx []float32, cache *KVCache, layer, startPos, K int, global bool, arch *Architecture, qh, kh, vt, scores, ch []float32) {
+	nH, nKV, hd := arch.NumHeads, arch.NumKVHeads, arch.HeadDim
+	kvDim, qDim := nKV*hd, nH*hd
+	group := nH / nKV
+	scale := arch.AttnScale
+	keys, vals := cache.Keys(layer), cache.Vals(layer)
+	nKeys := len(keys) / kvDim
+
+	for kvh := 0; kvh < nKV; kvh++ {
+		// Gather this KV head's keys [nKeys,hd] and values transposed [hd,nKeys]
+		// once; every query head in the GQA group reuses them. The V transpose is
+		// folded into the gather (free) so scores·V is MatmulBT(scores, V_headᵀ).
+		for s := 0; s < nKeys; s++ {
+			base := s*kvDim + kvh*hd
+			copy(kh[s*hd:s*hd+hd], keys[base:base+hd])
+			vrow := vals[base : base+hd]
+			for d := 0; d < hd; d++ {
+				vt[d*nKeys+s] = vrow[d]
+			}
+		}
+		for g := 0; g < group; g++ {
+			qhead := kvh*group + g
+			for i := 0; i < K; i++ { // gather Q_head [K,hd]
+				base := i*qDim + qhead*hd
+				copy(qh[i*hd:i*hd+hd], q[base:base+hd])
+			}
+			// QKᵀ: scores[K,nKeys] = Q_head[K,hd] · K_head[nKeys,hd]ᵀ
+			linalg.MatmulBT(qh[:K*hd], kh[:nKeys*hd], scores[:K*nKeys], K, hd, nKeys)
+			// Scaled, masked softmax per query row; zero the out-of-range entries
+			// so they contribute nothing to the scores·V matmul below.
+			for i := 0; i < K; i++ {
+				pos := startPos + i
+				start := cache.WindowStart(pos, global)
+				rowS := scores[i*nKeys : i*nKeys+nKeys]
+				maxS := math.Inf(-1)
+				for s := start; s <= pos; s++ {
+					sc := float64(rowS[s]) * scale
+					rowS[s] = float32(sc)
+					if sc > maxS {
+						maxS = sc
+					}
+				}
+				var sum float64
+				for s := start; s <= pos; s++ {
+					e := math.Exp(float64(rowS[s]) - maxS)
+					rowS[s] = float32(e)
+					sum += e
+				}
+				inv := 1.0 / sum
+				for s := 0; s < start; s++ {
+					rowS[s] = 0
+				}
+				for s := start; s <= pos; s++ {
+					rowS[s] = float32(float64(rowS[s]) * inv)
+				}
+				for s := pos + 1; s < nKeys; s++ {
+					rowS[s] = 0
+				}
+			}
+			// scores·V: ctx_head[K,hd] = scores[K,nKeys] · V_head[nKeys,hd]
+			//                          = MatmulBT(scores, V_headᵀ[hd,nKeys])
+			linalg.MatmulBT(scores[:K*nKeys], vt[:hd*nKeys], ch[:K*hd], K, nKeys, hd)
+			for i := 0; i < K; i++ { // scatter ctx_head into ctx[K,qDim]
+				base := i*qDim + qhead*hd
+				copy(ctx[base:base+hd], ch[i*hd:i*hd+hd])
+			}
+		}
+	}
 }
 
 // lmHeadN projects M post-final-norm hidden rows (h is [M, HiddenDim]) to logits
