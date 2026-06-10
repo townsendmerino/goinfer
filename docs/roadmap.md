@@ -117,7 +117,10 @@ place: a **full-token on-GPU residency forward** wins. Shipped:
 Deferred follow-ons (named, **not scheduled** — pick up if a use case pulls):
 
 - **Batched on-device GPU prefill** — today's prefill is option-(a) sequential
-  GPU `Run`, O(prompt-len); a batched M=len pass would fix long-prompt TTFT.
+  GPU `Run`, O(prompt-len); a batched M=len pass *might* fix long-prompt TTFT.
+  **Evaluated 2026-06-09 (Metal): weight-stream-bound, but the tiled GEMM doesn't
+  amortize the read there (≈1.2×) — needs an RTX tiled-vs-GEMV measurement before
+  building. See Backlog → GPU long-context.**
 - **f16 KV cache** — unlocks 32k context for a 7B on 8 GB (v1 caps at 16k, f32).
 - **CPU-int4 decode — RESOLVED (2026-06-08, aikit v1.1.1).** The §1 matrix
   measured CPU int4 at ~0.15–0.18 tok/s because `MatmulBTQ4` (f32 activation) is
@@ -172,11 +175,24 @@ v1** (no prefix-reuse), so a multi-turn / RAG user re-prefills the whole history
 every turn at O(len) AND hits the 16k cap — there's no warm-KV escape hatch like
 the staged path has. **That coupling is the felt-pain trigger for both.**
 
-- **Batched on-device GPU prefill** (`task-gpu-batched-prefill.md`) — kills the
-  O(prompt-len) TTFT (1 k-token prompt ≈ 18 s today). De-risked: residency is
-  full-attention-only (`SlidingWindow == 0` eligibility), so the batched attention
-  is **plain causal, no per-query sliding-window mask** — the doc's "main parity
-  risk" evaporates.
+- **Batched on-device GPU prefill** (`task-gpu-batched-prefill.md`) — **EVALUATED
+  2026-06-09 (M1 Pro Metal, component-level on real HW).** Mechanism corrected:
+  option-(a) prefill is **weight-stream-bound, not fence-bound** — a 1.5B M=1 token
+  is 16 ms, **91% (14.6 ms) re-reading the 1.55 GB resident weights from VRAM** at
+  M=1 GEMV (106 GB/s, 30% roofline); sync 1 ms, glue 0.4 ms. So batching's lever is
+  amortizing that VRAM weight read (same as the CPU prefill win), NOT cutting
+  fences. **On Metal the lever underdelivers:** the M=L tiled GEMM tops out at
+  245 GFLOP/s ≈ the GEMV's 212 GFLOP/s-equiv (and is *slower* than CPU's 303) —
+  still ~bandwidth-bound, not amortizing the read → batched prefill ≈ **1.2×**, not
+  worth building for Metal. **The RTX answer hinges on one unmeasured number:** does
+  the RTX tiled GEMM go compute-bound (effective GFLOP/s ≫ the bandwidth-equiv)?
+  gpu-assessment claims tiled ~3× CPU there (vs 0.7× on Metal), which *suggests*
+  yes — but **run `TestTiled_microbench` + `TestDecode_instrument` on the RTX and
+  compare M=1 GEMV GB/s to M=512 tiled effective throughput** before building:
+  ratio ≫1 ⇒ wins ~that on the 91% term, ≈1 ⇒ wash. De-risked separately:
+  residency is full-attention-only (`SlidingWindow == 0`), so the batched attention
+  is **plain causal, no per-query sliding-window mask** — the doc's main parity risk
+  is moot.
 - **f16 KV cache** (`task-gpu-f16-kv.md`) — 2× context (16k → 32k) on the same
   8 GB, **and faster long-context decode** (halves the KV bytes the attention
   reads — a bonus the doc undersells). Manual WGSL f16 (the W4A8 pattern), no
