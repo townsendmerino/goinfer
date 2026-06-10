@@ -19,6 +19,11 @@ var errNotImplemented = errors.New("tokenizer: not implemented")
 // Gemma's normalizer substitutes for every ASCII space before BPE.
 const spaceMarker = "▁"
 
+// maxTokenID bounds a token id read from a tokenizer.json: idToPiece is sized to
+// maxID+1, so an unbounded id would overflow (int32) or OOM. ~2M is an order of
+// magnitude above the largest real vocabulary (~300K).
+const maxTokenID = 1 << 21
+
 // SpecialTokens holds the Gemma chat/control token ids resolved from the
 // vocab at load time. The generation loop needs BOS/EOS; the chat template
 // needs the turn markers.
@@ -197,6 +202,15 @@ func Load(path string) (*Tokenizer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("tokenizer.Load: %w", err)
 	}
+	return parseTokenizerJSON(raw, jsonPath)
+}
+
+// parseTokenizerJSON builds a Tokenizer from raw tokenizer.json bytes. jsonPath
+// is the display path (for error messages) and locates any sibling files a
+// byte-level pipeline references (via its directory). Split out from Load so the
+// parse — the untrusted-input surface — is testable and fuzzable without a file
+// on disk.
+func parseTokenizerJSON(raw []byte, jsonPath string) (*Tokenizer, error) {
 	var tj tokenizerJSON
 	if err := json.Unmarshal(raw, &tj); err != nil {
 		return nil, fmt.Errorf("tokenizer.Load: parse %s: %w", jsonPath, err)
@@ -231,13 +245,24 @@ func Load(path string) (*Tokenizer, error) {
 	// Added/special tokens may live outside model.vocab with higher ids (Qwen
 	// keeps its <|im_*|> tokens only in added_tokens), so fold them in too —
 	// otherwise Decode can't render an emitted special id.
+	// Every id must be a valid non-negative index below a sane ceiling. An
+	// untrusted tokenizer.json could otherwise carry a negative id (index panic
+	// in the fill loops below) or a huge one (maxID+1 overflows int32 to negative
+	// → make panics, or a multi-GB idToPiece). The ceiling is far above any real
+	// vocabulary (largest ~300K) but bounds the allocation.
 	maxID := int32(-1)
-	for _, id := range tj.Model.Vocab {
+	for piece, id := range tj.Model.Vocab {
+		if id < 0 || id > maxTokenID {
+			return nil, fmt.Errorf("tokenizer.Load: vocab id %d for %q out of range [0,%d]", id, piece, maxTokenID)
+		}
 		if id > maxID {
 			maxID = id
 		}
 	}
 	for _, a := range tj.AddedTokens {
+		if a.ID < 0 || a.ID > maxTokenID {
+			return nil, fmt.Errorf("tokenizer.Load: added-token id %d out of range [0,%d]", a.ID, maxTokenID)
+		}
 		if a.ID > maxID {
 			maxID = a.ID
 		}

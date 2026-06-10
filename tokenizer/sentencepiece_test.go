@@ -5,8 +5,40 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"strings"
 	"testing"
 )
+
+// TestParseTokenizerJSON_hostileIDs is the regression for the makeslice panic
+// FuzzParseTokenizerJSON found: a token id that overflows the idToPiece sizing
+// (or a negative id that indexes out of bounds) must yield a typed error, never
+// a panic. A normal vocab must still parse.
+func TestParseTokenizerJSON_hostileIDs(t *testing.T) {
+	bad := []string{
+		`{"model":{"type":"BPE","vocab":{"x":2147483647}}}`,                                             // maxID+1 overflows int32
+		`{"model":{"type":"BPE","vocab":{"x":-5}}}`,                                                     // negative id
+		`{"model":{"type":"BPE","vocab":{"x":1073741824}}}`,                                             // far above the ceiling
+		`{"model":{"type":"BPE","vocab":{"a":0},"merges":[]},"added_tokens":[{"id":-1,"content":"a"}]}`, // negative added id
+	}
+	for _, s := range bad {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Fatalf("parseTokenizerJSON panicked on %q: %v", s, r)
+				}
+			}()
+			if _, err := parseTokenizerJSON([]byte(s), "x/tokenizer.json"); err == nil {
+				t.Errorf("expected an out-of-range error for %q", s)
+			}
+		}()
+	}
+	// An in-range high id (well below the ceiling) must NOT be rejected by the
+	// bounds check — any error here is for another reason (e.g. missing special
+	// tokens), never "out of range".
+	if _, err := parseTokenizerJSON([]byte(`{"model":{"type":"BPE","vocab":{"a":300000}}}`), "x/tokenizer.json"); err != nil && strings.Contains(err.Error(), "out of range") {
+		t.Fatalf("in-range id wrongly rejected as out of range: %v", err)
+	}
+}
 
 // M2 tokenizer parity. Assets live under testdata/ and are per-machine (the
 // 270M checkpoint ships tokenizer.json); the test SKIPS cleanly when they're
