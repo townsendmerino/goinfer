@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math"
 	"os"
+
+	"github.com/townsendmerino/aikit/linalg"
 )
 
 var g4debug = os.Getenv("G4DEBUG") != "" // env-gated per-layer hidden-norm trace
@@ -101,6 +103,22 @@ func (m *Model) runLayersGemma4(id int, cache *KVCache) ([]float32, error) {
 		return lastSliding
 	}
 
+	// Attention scratch: allocated once per token, reused across layers (the
+	// batched-over-heads gemma4Attend gathers K_head/V_headᵀ + per-head scores).
+	// Sized to the widest per-layer head_dim and the current key count.
+	maxHd := arch.HeadDim
+	if g4.GlobalHeadDim > maxHd {
+		maxHd = g4.GlobalHeadDim
+	}
+	nkMax := pos + 1
+	g4sc := g4attnScratch{
+		kh:     make([]float32, nkMax*maxHd),
+		vt:     make([]float32, nkMax*maxHd),
+		qstack: make([]float32, nH*maxHd),
+		scores: make([]float32, nH*nkMax),
+		cstack: make([]float32, nH*maxHd),
+	}
+
 	for l := 0; l < arch.NumLayers; l++ {
 		lw := &m.w.Layers[l]
 		global := arch.isGlobalLayer(l)
@@ -147,7 +165,7 @@ func (m *Model) runLayersGemma4(id int, cache *KVCache) ([]float32, error) {
 		nKeys := len(keys) / kvDim
 		ctx := make([]float32, nH*hd)
 		start := cache.WindowStart(pos, global)
-		gemma4Attend(q, ctx, keys, vals, nH, nKV, hd, start, nKeys, arch.AttnScale)
+		gemma4Attend(q, ctx, keys, vals, nH, nKV, hd, start, nKeys, arch.AttnScale, &g4sc)
 
 		attnOut := make([]float32, hidden)
 		lw.OProj.matmul(be, ctx, attnOut, 1)
@@ -250,44 +268,75 @@ func rmsNormNoWeight(x []float32, rows, dim int, eps float64) {
 	}
 }
 
-// gemma4Attend is attendQuery with explicit per-layer dims (head_dim and
-// KV-head count vary by layer). scale is arch.AttnScale (1.0 — the q/k-norm
-// weights absorb the scaling).
-func gemma4Attend(q, ctx, keys, vals []float32, nH, nKV, hd, start, nKeys int, scale float64) {
+// g4attnScratch holds the batched-over-heads gemma4 attention buffers: the
+// gathered K_head [n,hd] / V_headᵀ [hd,n] for one KV head, the stacked query-head
+// group, its scores, and the context. Allocated once per token in
+// runLayersGemma4 (sized to the widest head_dim and current key count), reused
+// across layers — replaces the per-layer-per-token `scores := make`.
+type g4attnScratch struct {
+	kh, vt, qstack, scores, cstack []float32
+}
+
+// gemma4Attend computes one token's grouped-query attention over keys
+// [start, nKeys), with explicit per-layer dims (head_dim / KV-head count vary by
+// layer). It batches the query heads sharing a KV head into one A·Bᵀ matmul: the
+// token is a single query position, so every head attends the same key range
+// (no causal mask). Per KV head — gather K_head [n,hd] + V_headᵀ [hd,n] once,
+// QKᵀ = MatmulBT(group_q, K_head), a scaled softmax per row, scores·V =
+// MatmulBT(scores, V_headᵀ), scatter into ctx. This moves the QKᵀ/scores·V
+// scalar triple-loops (the per-token O(L²) prefill cost) onto the SIMD kernel.
+// scale is arch.AttnScale (1.0 for gemma4 — the q/k-norm weights absorb it).
+// Parity is argmax + cosine, not bit-identical (float64→f32 SIMD).
+func gemma4Attend(q, ctx, keys, vals []float32, nH, nKV, hd, start, nKeys int, scale float64, sc *g4attnScratch) {
 	kvDim := nKV * hd
 	group := nH / nKV
-	clear(ctx)
-	scores := make([]float32, nKeys)
-	for qh := range nH {
-		kvh := qh / group
-		qHead := q[qh*hd : qh*hd+hd]
-		maxS := math.Inf(-1)
-		for s := start; s < nKeys; s++ {
-			kHead := keys[s*kvDim+kvh*hd : s*kvDim+kvh*hd+hd]
-			var dot float64
-			for d := range hd {
-				dot += float64(qHead[d]) * float64(kHead[d])
-			}
-			sc := dot * scale
-			scores[s] = float32(sc)
-			if sc > maxS {
-				maxS = sc
+	n := nKeys - start
+	for kvh := 0; kvh < nKV; kvh++ {
+		kh, vt := sc.kh[:n*hd], sc.vt[:hd*n]
+		for j := 0; j < n; j++ {
+			base := (start+j)*kvDim + kvh*hd
+			copy(kh[j*hd:j*hd+hd], keys[base:base+hd])
+			vrow := vals[base : base+hd]
+			for d := 0; d < hd; d++ {
+				vt[d*n+j] = vrow[d]
 			}
 		}
-		var sum float64
-		for s := start; s < nKeys; s++ {
-			e := math.Exp(float64(scores[s]) - maxS)
-			scores[s] = float32(e)
-			sum += e
+		qs := sc.qstack[:group*hd]
+		for g := 0; g < group; g++ {
+			qhead := kvh*group + g
+			copy(qs[g*hd:g*hd+hd], q[qhead*hd:qhead*hd+hd])
 		}
-		inv := 1.0 / sum
-		oHead := ctx[qh*hd : qh*hd+hd]
-		for s := start; s < nKeys; s++ {
-			w := float32(float64(scores[s]) * inv)
-			vHead := vals[s*kvDim+kvh*hd : s*kvDim+kvh*hd+hd]
-			for d := range hd {
-				oHead[d] += w * vHead[d]
+		// QKᵀ: scores[group,n] = group_q[group,hd] · K_head[n,hd]ᵀ
+		scores := sc.scores[:group*n]
+		linalg.MatmulBT(qs, kh, scores, group, hd, n)
+		for g := 0; g < group; g++ {
+			rowS := scores[g*n : g*n+n]
+			maxS := math.Inf(-1)
+			for j := 0; j < n; j++ {
+				v := float64(rowS[j]) * scale
+				rowS[j] = float32(v)
+				if v > maxS {
+					maxS = v
+				}
 			}
+			var sum float64
+			for j := 0; j < n; j++ {
+				e := math.Exp(float64(rowS[j]) - maxS)
+				rowS[j] = float32(e)
+				sum += e
+			}
+			inv := 1.0 / sum
+			for j := 0; j < n; j++ {
+				rowS[j] = float32(float64(rowS[j]) * inv)
+			}
+		}
+		// scores·V: ctx_group[group,hd] = scores[group,n] · V_head[n,hd]
+		//                               = MatmulBT(scores, V_headᵀ[hd,n])
+		cs := sc.cstack[:group*hd]
+		linalg.MatmulBT(scores, vt, cs, group, n, hd)
+		for g := 0; g < group; g++ {
+			qhead := kvh*group + g
+			copy(ctx[qhead*hd:qhead*hd+hd], cs[g*hd:g*hd+hd])
 		}
 	}
 }
