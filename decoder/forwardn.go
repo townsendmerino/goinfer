@@ -252,9 +252,14 @@ func attendBatchedHeads(q, ctx []float32, cache *KVCache, layer, startPos, K int
 			for i := 0; i < K; i++ {
 				pos := startPos + i
 				start := cache.WindowStart(pos, global)
+				// hi is the inclusive upper key bound: pos for a causal text query,
+				// or the image-block end for a bidirectional image position (so it
+				// also attends to the block's future tokens). Equals pos when no
+				// image blocks are set — the seam is inert for text-only prefill.
+				hi := cache.attendHi(pos)
 				rowS := scores[i*nKeys : i*nKeys+nKeys]
 				maxS := math.Inf(-1)
-				for s := start; s <= pos; s++ {
+				for s := start; s <= hi; s++ {
 					sc := float64(rowS[s]) * scale
 					rowS[s] = float32(sc)
 					if sc > maxS {
@@ -262,7 +267,7 @@ func attendBatchedHeads(q, ctx []float32, cache *KVCache, layer, startPos, K int
 					}
 				}
 				var sum float64
-				for s := start; s <= pos; s++ {
+				for s := start; s <= hi; s++ {
 					e := math.Exp(float64(rowS[s]) - maxS)
 					rowS[s] = float32(e)
 					sum += e
@@ -271,10 +276,10 @@ func attendBatchedHeads(q, ctx []float32, cache *KVCache, layer, startPos, K int
 				for s := 0; s < start; s++ {
 					rowS[s] = 0
 				}
-				for s := start; s <= pos; s++ {
+				for s := start; s <= hi; s++ {
 					rowS[s] = float32(float64(rowS[s]) * inv)
 				}
-				for s := pos + 1; s < nKeys; s++ {
+				for s := hi + 1; s < nKeys; s++ {
 					rowS[s] = 0
 				}
 			}

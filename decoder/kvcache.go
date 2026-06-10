@@ -13,8 +13,9 @@ package decoder
 // Not goroutine-safe: one cache belongs to one in-flight sequence.
 type KVCache struct {
 	numLayers int
-	kvDim     int // NumKVHeads * HeadDim
-	window    int // sliding-window cap for local layers; 0 = unbounded
+	kvDim     int      // NumKVHeads * HeadDim
+	window    int      // sliding-window cap for local layers; 0 = unbounded
+	imgBlocks [][2]int // multimodal: position ranges [start,end) that attend bidirectionally (image blocks); nil = all-causal
 
 	keys [][]float32 // per layer, appended [pos*kvDim]
 	vals [][]float32
@@ -120,4 +121,23 @@ func (c *KVCache) WindowStart(pos int, global bool) int {
 	}
 	start := max(pos-c.window+1, 0)
 	return start
+}
+
+// SetImageBlocks marks position ranges [start,end) (e.g. an image's token block)
+// as bidirectional for batched-prefill attention: a query inside a block sees the
+// whole block, not just the causal prefix. nil/empty ⇒ fully causal (the
+// text-only default). Multimodal prefill sets this; see docs/multimodal.md §5a.
+func (c *KVCache) SetImageBlocks(blocks [][2]int) { c.imgBlocks = blocks }
+
+// attendHi returns the inclusive upper key bound for a query at pos: pos for a
+// causal (text) position, or end-1 if pos lies in a bidirectional image block
+// [start,end) — so [start,pos] ∪ (pos,end) = [start,end) becomes visible. With no
+// image blocks it always returns pos, so the seam is inert for text-only decode.
+func (c *KVCache) attendHi(pos int) int {
+	for _, b := range c.imgBlocks {
+		if pos >= b[0] && pos < b[1] {
+			return b[1] - 1
+		}
+	}
+	return pos
 }

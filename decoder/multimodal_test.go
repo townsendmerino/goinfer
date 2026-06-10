@@ -94,6 +94,49 @@ func TestMultimodal_embedInjectionMatchesIDPath(t *testing.T) {
 	}
 }
 
+// TestMultimodal_imageBlockMask: the bidirectional image-block mask seam.
+// Comparing the batched prefill with a block set vs no block (same code path, the
+// only difference being attendHi): a position OUTSIDE the block is bit-identical
+// (the seam is inert for text), and the first IN-block position changes (it now
+// attends to the block's future tokens — the mask is actually wired).
+func TestMultimodal_imageBlockMask(t *testing.T) {
+	m, _ := tinyLlamaModel(t)
+	seq := []int{3, 7, 1, 12, 5} // K=5 > 1 → the batched attendBatchedHeads path
+
+	baseCache := m.NewCache(len(seq))
+	baseline, err := m.forwardN(seq, baseCache) // no image blocks → fully causal
+	if err != nil {
+		t.Fatalf("forwardN baseline: %v", err)
+	}
+
+	maskCache := m.NewCache(len(seq))
+	maskCache.SetImageBlocks([][2]int{{1, 4}}) // positions 1,2,3 attend bidirectionally
+	masked, err := m.forwardN(seq, maskCache)
+	if err != nil {
+		t.Fatalf("forwardN masked: %v", err)
+	}
+
+	// Position 0 is before the block and causal — its attention and residual never
+	// depend on positions 1..4, so it must be bit-identical (seam inert off-block).
+	for i := range baseline[0] {
+		if masked[0][i] != baseline[0][i] {
+			t.Fatalf("pos 0 (outside block) changed at logit %d: %v vs %v — mask not inert for text", i, masked[0][i], baseline[0][i])
+		}
+	}
+	// Position 1 is the first in-block position: bidirectional attention now sees
+	// the block's future tokens (2,3), so its logits must differ from causal.
+	same := true
+	for i := range baseline[1] {
+		if masked[1][i] != baseline[1][i] {
+			same = false
+			break
+		}
+	}
+	if same {
+		t.Fatal("pos 1 (in bidirectional block) identical to causal — the mask had no effect")
+	}
+}
+
 // TestMultimodal_embedInjectionSequence: a multi-position decode driven through
 // the embed-injection path (every token fed as its own embedding) reproduces the
 // id-path token-for-token — the seam composes across positions / a growing KV
