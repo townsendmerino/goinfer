@@ -83,7 +83,13 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	w := m.Weights()
 	hidden, _, nH, nKV, hd, inter, vocab := m.Dims() // arch-backed (Cfg may be zero for GGUF/.giw)
 	eps := m.NormEps()
-	const ctxCap = 16384 // F2: f32 KV, 16k context cap
+	// f32 KV caps context at 16k (the proven 8 GB fit); f16 halves per-token KV
+	// bytes, so the same VRAM holds 32k (task-gpu-f16-kv.md).
+	kvF16 := m.KVCacheF16()
+	ctxCap := 16384
+	if kvF16 {
+		ctxCap = 32768
+	}
 	kvDim := nKV * hd
 
 	rd := &residentDecoder{c: c}
@@ -142,8 +148,15 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 			return fail(e)
 		}
 		rl.invFreq = invD
-		kc, e1 := c.NewKVCache(nil, ctxCap*kvDim)
-		vc, e2 := c.NewKVCache(nil, ctxCap*kvDim)
+		var kc, vc *DeviceBuffer
+		var e1, e2 error
+		if kvF16 {
+			kc, e1 = c.NewKVCacheF16(nil, ctxCap*kvDim)
+			vc, e2 = c.NewKVCacheF16(nil, ctxCap*kvDim)
+		} else {
+			kc, e1 = c.NewKVCache(nil, ctxCap*kvDim)
+			vc, e2 = c.NewKVCache(nil, ctxCap*kvDim)
+		}
 		if e1 != nil || e2 != nil {
 			return fail(fmt.Errorf("gpu: residency KV alloc (layer %d): %v %v", i, e1, e2))
 		}
@@ -186,6 +199,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	}
 	_ = vocab // logits length is lmHead.nRows()
 
+	rd.rm.kvF16 = kvF16 // the runner picks the f16 attn/store kernels off this
 	runner, err := c.newDecodeRunner(rd.rm, hidden, nH, nKV, hd, inter, 0, eps, m.AttnScale(), m.RMSAddOne())
 	if err != nil {
 		return fail(err)

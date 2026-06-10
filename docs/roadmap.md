@@ -249,16 +249,23 @@ the staged path has. **That coupling is the felt-pain trigger for both.**
   De-risked separately: residency is full-attention-only (`SlidingWindow == 0`), so
   the batched attention is **plain causal, no per-query sliding-window mask** — the
   doc's main parity risk is moot.
-- **f16 KV cache** (`task-gpu-f16-kv.md`) — 2× context (16k → 32k) on the same
-  8 GB, **and faster long-context decode** (halves the KV bytes the attention
-  reads — a bonus the doc undersells). Manual WGSL f16 (the W4A8 pattern), no
-  `shader-f16` device feature, so CI's software adapter still works. Gate must run
-  **near 32k**, not a short prompt. Default stays f32/bit-exact; f16 is an opt-in
-  knob.
-- **Decision that gates both:** how central is GPU residency to the pitch? If it's
-  a marketed "run a 7B locally on a small GPU" capability people run real
-  workloads on, schedule these right after the release (they're cheap now). If
-  it's a niche/demo, leave deferred — don't gold-plate a path users won't hit.
+- **f16 KV cache** (`task-gpu-f16-kv.md`) — **LANDED 2026-06-10 (RTX 2070 SUPER),
+  Increments 1–2.** Opt-in `--kv f16` (default f32/bit-exact): cache is array<u32>,
+  2 f16/word via core pack2x16float/unpack2x16float — **no shader-f16 feature, CI
+  software adapter still compiles.** Gates: f16-vs-f32 decode over an 8k-key context
+  cosine min 0.99868 (15/16 argmax, the flip a 0.22% near-tie); f32 path still
+  cosine 1.000000. **Fit (the headline): Qwen2.5-7B int4 + 32k f16 KV peaks at
+  6912 MiB whole-device ≈ 16k f32's 6926 MiB — fits the 8 GB card, 2× context for
+  free.** Commits `138d5e0` (Inc 1) + the Inc-2 knob. **Open:** the predicted
+  *faster* long-context decode is UNMEASURED — at ctx ~1k it's 0.99× (neutral, decode
+  is weight-stream-bound there, not KV-read-bound); the speedup needs a 16k+ context
+  to show, which needs a long sequential prefill (coupled to the shelved batched-
+  prefill item). The 2×-context win stands without it.
+- **Decision (was "gates both"):** f16 KV landed cheaply and stands alone (2× context,
+  no speed regression). Batched prefill stays shelved on the dp4a gate above. If GPU
+  residency is marketed as "run a 7B locally on a small GPU," f16 KV is now the
+  long-context answer; the long-context *speedup* and batched prefill wait for their
+  triggers (a real >16k workload; dp4a).
 
 ### GPU residency coverage
 

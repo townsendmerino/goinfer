@@ -26,13 +26,24 @@ type Model struct {
 	be       Backend
 	eosIDs   []int           // end-of-sequence ids from config (generation stops on these)
 	resident ResidentForward // GPU full-residency decode path (webgpu + eligible arch); nil ⇒ staged/CPU
+	kvF16    bool            // residency KV cache precision request (Options.KVPrecision == "f16")
 }
+
+// KVCacheF16 reports whether the GPU residency path should use an f16 KV cache
+// (Options.KVPrecision == "f16"): 2× context (32k) on the same VRAM, lossy. The
+// residency builder reads it; off the residency path it has no effect.
+func (m *Model) KVCacheF16() bool { return m.kvF16 }
 
 // Options configures Load.
 type Options struct {
 	Backend string // "cpu" (default) or "webgpu"
 	Quant   string // "" (f32), "int8" (weight-only per-row), "int8int8" (full int8×int8 W8A8), or "int4" (group-wise) (M8)
 	LoRA    string // optional PEFT adapter dir (adapter_config.json + adapter_model.safetensors), merged into the base at load. Safetensors base only.
+	// KVPrecision selects the GPU residency KV cache precision: "" / "f32"
+	// (default, bit-exact, 16k context cap) or "f16" (lossy, 2× context to 32k +
+	// faster long-context decode). Ignored off the residency path. See
+	// task-gpu-f16-kv.md.
+	KVPrecision string
 }
 
 // Load reads a Gemma 3 snapshot (config.json + model.safetensors) from dir
@@ -66,7 +77,7 @@ func Load(dir string, opts Options) (*Model, error) {
 		if beErr != nil {
 			fmt.Println(beErr)
 		}
-		return (&Model{w: w, be: be, eosIDs: w.Cfg.EOSIDs()}).withResidency(), nil
+		return (&Model{w: w, be: be, eosIDs: w.Cfg.EOSIDs(), kvF16: opts.KVPrecision == "f16"}).withResidency(), nil
 	}
 
 	// Resolve the quant mode first so the weights stream straight into the
@@ -101,7 +112,7 @@ func Load(dir string, opts Options) (*Model, error) {
 		// webgpu requested but fell back — not fatal.
 		fmt.Println(beErr)
 	}
-	return (&Model{w: w, be: be, eosIDs: resolveEOSIDs(dir, &w.Cfg)}).withResidency(), nil
+	return (&Model{w: w, be: be, eosIDs: resolveEOSIDs(dir, &w.Cfg), kvF16: opts.KVPrecision == "f16"}).withResidency(), nil
 }
 
 // parseQuant maps Options.Quant to the internal quantMode.

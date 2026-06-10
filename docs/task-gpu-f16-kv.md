@@ -99,9 +99,20 @@ item: long context implies long prompts, which is where that one matters too.)
 
 ## Definition of done
 
-- [ ] Increments 1–2 landed, each gated on real hardware.
-- [ ] f16-KV cosine/argmax parity recorded; **f32 default still bit-exact**
-      (`TestDecodeParity` untouched).
-- [ ] 32k-f16 7B fit measured (peak VRAM) **and the long-context decode speedup
-      (f16 vs f32 at equal context)** + noted in the GPU campaign doc / CHANGELOG;
-      the `--kv` knob documented in the serve README.
+- [x] **Increments 1–2 landed, gated on the RTX 2070 SUPER** (2026-06-10).
+- [x] **f16-KV parity recorded; f32 default still bit-exact.** `TestKVCacheF16_parity`
+      (real HW): f16-KV vs f32-KV decode over an 8000-key context — cosine min
+      0.99868 mean 0.99918, 15/16 argmax exact (the 1 flip a 0.22%-of-range near-tie,
+      guarded by the qwen35 gate's 3% rule). f32 path unchanged: `TestDecodeToken_parity`
+      / `TestDecodeRunnerW4A8_parity` still cosine 1.000000.
+- [x] **32k-f16 7B fit measured** (`TestKVCacheF16_fit`, Qwen2.5-7B int4 on the 8 GB
+      card): **32k f16 peak whole-device VRAM 6912 MiB ≈ 16k f32's 6926 MiB — fits,
+      no OOM. 2× context on the same VRAM.** The `--kv f16|f32` knob is wired in
+      `cmd/serve` (default f32).
+- [ ] **Long-context decode speedup — UNMEASURED / not yet shown.** At ctx ~1k,
+      f16 vs f32 decode is 0.99× (neutral) — expected, since at short context decode
+      is weight-stream-bound (the ~4 GB int4 weights dominate), not KV-read-bound, so
+      halving KV bytes doesn't move tok/s. The predicted speedup only appears near
+      16k–32k; measuring it needs a 16k+ sequential prefill (slow without batched
+      prefill — coupled to that shelved item). Left open; the 2×-context win stands on
+      its own.
