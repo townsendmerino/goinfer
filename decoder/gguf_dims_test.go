@@ -11,12 +11,11 @@ import (
 
 // Track 2.2 (testing campaign): goinfer's INTERPRETATION of a GGUF — metadata →
 // Config synthesis — must turn a hostile header into a typed error, never a
-// panic. This file holds the regression for the makeslice panic that surfaced
-// (block_count overflowing int → negative NumLayers), plus a minimal GGUF
-// encoder. The broader FuzzGGUFConfig target is deferred until the fuzz-hardened
-// aikit lands: the container parse itself (string lengths, map pre-sizing) is
-// aikit's and still panics on hostile input, so a full fuzz of this surface
-// belongs with that upgrade, not here.
+// panic. FuzzGGUFConfig fuzzes that path; TestGGUF_hostileDims_typedError is the
+// regression for the makeslice panic that surfaced (block_count overflowing int
+// → negative NumLayers). The container parse below it (string lengths, map
+// pre-sizing) is aikit's and was hardened in v1.2.1, so the fuzzer now reaches
+// goinfer's layer instead of dying in the parser.
 
 // --- a minimal, faithful GGUF encoder (matches aikit/embed.parseGGUF) ---
 
@@ -24,7 +23,9 @@ import (
 const (
 	gtUint32  uint32 = 4
 	gtFloat32 uint32 = 6
+	gtBool    uint32 = 7
 	gtString  uint32 = 8
+	gtArray   uint32 = 9
 	gtUint64  uint32 = 10
 )
 
@@ -53,6 +54,21 @@ func kvU32(k string, v uint32) ggufKV  { return ggufKV{k, gtUint32, gU32(v)} }
 func kvU64(k string, v uint64) ggufKV  { return ggufKV{k, gtUint64, gU64(v)} }
 func kvF32(k string, v float32) ggufKV { return ggufKV{k, gtFloat32, gF32(v)} }
 func kvStr(k, v string) ggufKV         { return ggufKV{k, gtString, gStr(v)} }
+
+func gBool(v bool) []byte {
+	if v {
+		return []byte{1}
+	}
+	return []byte{0}
+}
+
+func kvBoolArr(k string, vs []bool) ggufKV {
+	b := append(gU32(gtBool), gU64(uint64(len(vs)))...)
+	for _, v := range vs {
+		b = append(b, gBool(v)...)
+	}
+	return ggufKV{k, gtArray, b}
+}
 
 // buildGGUF encodes a complete GGUF v3 byte image from metadata + tensor decls,
 // padding to the 32-byte data alignment with an empty data section.
@@ -127,4 +143,95 @@ func TestGGUF_hostileDims_typedError(t *testing.T) {
 			}
 		})
 	}
+}
+
+// ggufSeeds builds one tiny, valid GGUF per supported architecture so the mutator
+// starts from headers that reach each family config builder.
+func ggufSeeds() [][]byte {
+	emb := embedTensor(8, 32)
+	dense := func(arch string) []byte {
+		return buildGGUF([]ggufKV{
+			kvStr("general.architecture", arch),
+			kvU32(arch+".embedding_length", 8),
+			kvU32(arch+".block_count", 2),
+			kvU32(arch+".attention.head_count", 4),
+			kvU32(arch+".attention.head_count_kv", 2),
+			kvU32(arch+".attention.key_length", 2),
+			kvU32(arch+".feed_forward_length", 16),
+			kvU32(arch+".attention.sliding_window", 4),
+			kvF32(arch+".attention.layer_norm_rms_epsilon", 1e-6),
+			kvF32(arch+".rope.freq_base", 10000),
+			kvU32("tokenizer.ggml.eos_token_id", 1),
+		}, []ggufTensorDecl{emb})
+	}
+	gemma4 := buildGGUF([]ggufKV{
+		kvStr("general.architecture", "gemma4"),
+		kvU32("gemma4.embedding_length", 8),
+		kvU32("gemma4.block_count", 2),
+		kvU32("gemma4.attention.head_count", 4),
+		kvU32("gemma4.attention.head_count_kv", 2),
+		kvU32("gemma4.attention.key_length", 4),
+		kvU32("gemma4.attention.key_length_swa", 2),
+		kvU32("gemma4.feed_forward_length", 16),
+		kvU32("gemma4.attention.sliding_window", 4),
+		kvU32("gemma4.attention.shared_kv_layers", 1),
+		kvU32("gemma4.embedding_length_per_layer_input", 4),
+		kvBoolArr("gemma4.attention.sliding_window_pattern", []bool{true, false}),
+		kvF32("gemma4.attention.layer_norm_rms_epsilon", 1e-6),
+	}, []ggufTensorDecl{emb})
+	mellum := buildGGUF([]ggufKV{
+		kvStr("general.architecture", "mellum"),
+		kvU32("mellum.embedding_length", 8),
+		kvU32("mellum.block_count", 2),
+		kvU32("mellum.attention.head_count", 4),
+		kvU32("mellum.attention.head_count_kv", 2),
+		kvU32("mellum.attention.key_length", 2),
+		kvU32("mellum.feed_forward_length", 16),
+		kvU32("mellum.expert_feed_forward_length", 8),
+		kvU32("mellum.expert_count", 4),
+		kvU32("mellum.expert_used_count", 2),
+		kvU32("mellum.attention.sliding_window", 4),
+		kvF32("mellum.attention.layer_norm_rms_epsilon", 1e-6),
+		kvF32("mellum.rope.freq_base", 10000),
+		kvBoolArr("mellum.attention.sliding_window_pattern", []bool{true, false}),
+	}, []ggufTensorDecl{emb})
+
+	var seeds [][]byte
+	for _, a := range []string{"llama", "qwen2", "qwen3", "gemma3"} {
+		seeds = append(seeds, dense(a))
+	}
+	seeds = append(seeds, gemma4, mellum)
+	seeds = append(seeds, gU32(0x46554747), buildGGUF(nil, nil)) // raw-edge: truncated, header-only
+	return seeds
+}
+
+// FuzzGGUFConfig fuzzes goinfer's GGUF metadata → Config interpretation (the
+// per-family config builders). With aikit's container parse hardened (v1.2.1),
+// arbitrary bytes either fail aikit's typed parse or reach ggufConfig, which must
+// never panic. And the dim gate's contract: if validateGGUFDims accepts a config,
+// its core dims must be safe to allocate (positive, within bounds) — the gate is
+// what stands between a hostile uint64→int overflow and a make() panic/OOM.
+func FuzzGGUFConfig(f *testing.F) {
+	for _, s := range ggufSeeds() {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, raw []byte) {
+		g, err := embed.OpenGGUFBytes(raw)
+		if err != nil {
+			return // aikit rejected the container — not goinfer's layer
+		}
+		defer g.Close()
+		cfg, err := ggufConfig(g)
+		if err != nil {
+			return // a typed interpretation error is the correct outcome
+		}
+		if validateGGUFDims(cfg) == nil { // accepted ⇒ must be safe to allocate
+			if cfg.NumLayers <= 0 || cfg.NumLayers > maxGGUFLayers ||
+				cfg.HiddenDim <= 0 || cfg.HiddenDim > maxGGUFHidden ||
+				cfg.NumHeads <= 0 || cfg.NumKVHeads <= 0 ||
+				cfg.VocabSize <= 0 || cfg.VocabSize > maxGGUFVocabSize {
+				t.Fatalf("validateGGUFDims accepted an unsafe config: %+v", cfg)
+			}
+		}
+	})
 }
