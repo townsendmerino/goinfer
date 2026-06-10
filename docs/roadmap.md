@@ -91,11 +91,17 @@ battlegrounds now:
         Bit-level proven by `TestQwen35GGUF_weightDiff` (every transform-bearing
         tensor diffed against the bit-exact safetensors loader, to Q8_0
         tolerance — no oracle/torch needed).
-  - [ ] **Release-headline verification** — run the full Q8_0-vs-bf16 parity gate
-        (`TestQwen35GGUF_gate`, ~40 min) + the `-tags realckpt` weightDiff against
-        a real Qwen3.6-35B-A3B Q8_0 GGUF (~35–40 GB) on disk. Asset-gated
-        (the tests skip when absent), maintainer-only — not a code blocker. This
-        is the gate before "Qwen 3.6 support" is a release headline.
+  - [x] **Release-headline verification — DONE** (2026-06-10, Linux box, real
+        Qwen3.6-35B-A3B Q8_0 GGUF 36 GB + safetensors + bf16 golden all on disk).
+        `TestQwen35GGUF_weightDiff` GREEN (worst tensor cos 0.999980 = Q8_0 dequant
+        tol; norms/negExpA/dt_bias bit-identical). Full Q8_0-vs-bf16 gate
+        `TestQwen35GGUF_gate` GREEN: **argmax 72/80 (90.0%), 7/10 prompts coherent,
+        cosine min 0.99583 / mean 0.99850, worst div gap 0.0052** — the 3 misses all
+        rank-2 near-ties (Q8_0 quant noise, not a loader defect). (Ran ~4.8 min, not
+        the stale ~40 min estimate — the SIMD prefill attention sped it up. Cosine min
+        now *exceeds* the original Gate-2 bf16 bar 0.99466; only argmax 72<74, so the
+        relaxed 66/80+0.9943 GGUF bars stay and pass with margin.) **"Qwen 3.6
+        support" is now release-headline-ready.**
   - [x] **Chunked DeltaNet scan — kernel** — `deltanet_chunked.go`: the
         chunked-parallel gated-delta scan, proven algebraically equivalent to the
         sequential recurrence over random inputs/chunk sizes
