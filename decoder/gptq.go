@@ -67,6 +67,13 @@ func parseQuantConfig(raw json.RawMessage) (*quantConfig, error) {
 // "model.layers.0.self_attn.q_proj") to a [out, in] row-major f32 matrix — the
 // transpose of the [in, out] reconstruction, matching nn.Linear's [out, in].
 func gptqReconstruct(st *embed.SafetensorsFile, base string, in, out int) ([]float32, error) {
+	// 8 4-bit codes pack into each int32 along BOTH dims (qweight packs the input
+	// dim, qzeros the output dim), so non-multiple-of-8 in/out would make the
+	// (in/8)*out and out/8 shape checks pass via integer division with undersized
+	// tensors, then the dequant loop would index out of bounds. Reject up front.
+	if in <= 0 || out <= 0 || in%8 != 0 || out%8 != 0 {
+		return nil, fmt.Errorf("gptq %q: in=%d out=%d must be positive multiples of 8 (4-bit packing)", base, in, out)
+	}
 	qw, err := i32Tensor(st, base+".qweight")
 	if err != nil {
 		return nil, err

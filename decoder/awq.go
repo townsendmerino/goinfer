@@ -26,6 +26,13 @@ var awqOrder = [8]uint{0, 4, 1, 5, 2, 6, 3, 7}
 // awqReconstruct dequantizes one AWQ linear (named base) to a [out, in]
 // row-major f32 matrix.
 func awqReconstruct(st *embed.SafetensorsFile, base string, in, out int) ([]float32, error) {
+	// 8 4-bit codes pack into each int32 along the output dim, so a
+	// non-multiple-of-8 out would make the out/8 shape check pass via integer
+	// division with an undersized qweight/qzeros, then the dequant loop would
+	// index out of bounds. Reject up front.
+	if in <= 0 || out <= 0 || out%8 != 0 {
+		return nil, fmt.Errorf("awq %q: in=%d out=%d invalid (out must be a positive multiple of 8, in positive)", base, in, out)
+	}
 	qw, err := i32Tensor(st, base+".qweight") // [in, out/8]
 	if err != nil {
 		return nil, err
