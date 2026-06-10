@@ -54,6 +54,7 @@ type runModel struct {
 	layers    []runLayer
 	finalNorm *wgpu.Buffer
 	lmHead    decodeWeight
+	kvF16     bool // KCache/VCache are f16-packed (NewKVCacheF16) → use the f16 kernels
 }
 
 // w8Model adapts the W8A8 ModelW into the precision-agnostic runModel.
@@ -179,12 +180,23 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 	}
 	// ropeStore rotates src (the K projection) and writes it straight into the KV
 	// cache at pos*kvDim — replacing the K CopyBufferToBuffer append so the token
-	// stays one compute pass. base rides the shared ropeKUni.
+	// stays one compute pass. base rides the shared ropeKUni. The f16 variant packs
+	// 2 rotated elems/word (one thread per word = nKV*half, same dispatch count).
 	ropeStore := func(src, invFreq, cache *wgpu.Buffer) {
-		add(c.ropeStorePipeline, bind(c.ropeStoreLayout, src, invFreq, cache, ropeKUni), uint32(nKV*half+63)/64, 1)
+		pl, ly := c.ropeStorePipeline, c.ropeStoreLayout
+		if m.kvF16 {
+			pl, ly = c.ropeStoreF16Pipeline, c.ropeStoreF16Layout
+		}
+		add(pl, bind(ly, src, invFreq, cache, ropeKUni), uint32(nKV*half+63)/64, 1)
 	}
-	// vStore copies src (the V projection) into the V cache at pos*kvDim.
+	// vStore copies src (the V projection) into the V cache at pos*kvDim. The f16
+	// variant packs 2 elems/word, so it dispatches half as many threads (one/word).
 	vStore := func(src, cache *wgpu.Buffer) {
+		if m.kvF16 {
+			words := r.kvDim / 2
+			add(c.kvStoreF16Pipeline, bind(c.kvStoreF16Layout, src, cache, vStoreUni), uint32(words+63)/64, 1)
+			return
+		}
 		add(c.kvStorePipeline, bind(c.kvStoreLayout, src, cache, vStoreUni), uint32(r.kvDim+63)/64, 1)
 	}
 	// biasAdd adds a per-output bias into a projection result (Qwen2 q/k/v bias),
@@ -212,7 +224,11 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		ropeStore(k, lw.invFreq, lw.kCache) // rotate K + append into cache
 		vStore(v, lw.vCache)                // append V into cache
 		ctxv := storF(nH * hd)
-		add(c.attnPipeline, bind(c.attnLayout, q, lw.kCache, lw.vCache, ctxv, attnUni), uint32(nH), 1)
+		attnPl, attnLy := c.attnPipeline, c.attnLayout
+		if m.kvF16 {
+			attnPl, attnLy = c.attnF16Pipeline, c.attnF16Layout
+		}
+		add(attnPl, bind(attnLy, q, lw.kCache, lw.vCache, ctxv, attnUni), uint32(nH), 1)
 		cq, cs := quant(ctxv, nH*hd)
 		gemvAdd(cq, cs, lw.o, r.xd) // o-proj + residual into xd
 		mq, ms := rmsQuant(r.xd, lw.mlpNorm, hidden)

@@ -107,6 +107,20 @@ type Context struct {
 	kvStorePipeline   *wgpu.ComputePipeline
 	kvStoreLayout     *wgpu.BindGroupLayout
 
+	// f16-KV variants of the three above (ensureAttn): the cache is array<u32>
+	// (2 f16/word, packed/read via core pack2x16float/unpack2x16float — no
+	// shader-f16 feature). Opt-in precision knob; the f32 path above is untouched
+	// and stays bit-exact. See task-gpu-f16-kv.md.
+	attnF16Shader        *wgpu.ShaderModule
+	attnF16Pipeline      *wgpu.ComputePipeline
+	attnF16Layout        *wgpu.BindGroupLayout
+	ropeStoreF16Shader   *wgpu.ShaderModule
+	ropeStoreF16Pipeline *wgpu.ComputePipeline
+	ropeStoreF16Layout   *wgpu.BindGroupLayout
+	kvStoreF16Shader     *wgpu.ShaderModule
+	kvStoreF16Pipeline   *wgpu.ComputePipeline
+	kvStoreF16Layout     *wgpu.BindGroupLayout
+
 	// §2 fused glue kernels (ensureFuse, decodefuse.go): fold quantize into its
 	// producer to shorten the serialized decode dependency chain.
 	rmsQuantShader      *wgpu.ShaderModule
@@ -239,6 +253,14 @@ func (c *Context) Close() {
 		c.ropeStoreShader.Release()
 		c.kvStorePipeline.Release()
 		c.kvStoreShader.Release()
+	}
+	if c.attnF16Pipeline != nil {
+		c.attnF16Pipeline.Release()
+		c.attnF16Shader.Release()
+		c.ropeStoreF16Pipeline.Release()
+		c.ropeStoreF16Shader.Release()
+		c.kvStoreF16Pipeline.Release()
+		c.kvStoreF16Shader.Release()
 	}
 	if c.rmsQuantPipeline != nil {
 		c.rmsQuantPipeline.Release()

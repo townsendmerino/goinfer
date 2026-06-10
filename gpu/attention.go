@@ -142,6 +142,124 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 `
 
+// --- f16-KV variants (opt-in precision knob; see task-gpu-f16-kv.md) ---
+// The KV cache is array<u32>, two f16 per word, packed/read with the core WGSL
+// builtins pack2x16float / unpack2x16float — NO shader-f16 device feature, so the
+// CI software adapter still compiles them. The query and the ctx output stay f32;
+// only the resident cache is f16. Logical element e of a cache lives at word e>>1,
+// half e&1; base (pos*kvDim) is even (kvDim even), so a token's words align and
+// each store thread owns one whole word (writes both halves) — no atomics, no race.
+
+// attnF16: attnShaderWGSL with the K/V cache as packed f16. Identical online-softmax
+// math; the only change is unpacking each cached K/V element to f32 before use.
+const attnF16ShaderWGSL = `
+struct P { nH: u32, nKV: u32, hd: u32, nKeys: u32, start: u32, group: u32, scale: f32, _p: u32 };
+@group(0) @binding(0) var<storage, read>       q:    array<f32>;  // [nH*hd]  (RoPE'd, f32)
+@group(0) @binding(1) var<storage, read>       keys: array<u32>;  // [nKeys*nKV*hd] f16-packed
+@group(0) @binding(2) var<storage, read>       vals: array<u32>;  // [nKeys*nKV*hd] f16-packed
+@group(0) @binding(3) var<storage, read_write> ctx:  array<f32>;  // [nH*hd]
+@group(0) @binding(4) var<uniform>             p:    P;
+var<workgroup> red: array<f32, 128>;
+@compute @workgroup_size(128)
+fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid: vec3<u32>) {
+    let qh = wid.x;
+    if (qh >= p.nH) { return; }
+    let d = lid.x;
+    let hd = p.hd;
+    let kvDim = p.nKV * hd;
+    let kvh = qh / p.group;
+    let qbase = qh * hd;
+    let kvbase = kvh * hd;
+    let lane = d < hd;
+    var qd: f32 = 0.0;
+    if (lane) { qd = q[qbase + d]; }
+    var acc: f32 = 0.0;
+    var m: f32 = -1e30;
+    var l: f32 = 0.0;
+    for (var s: u32 = p.start; s < p.nKeys; s = s + 1u) {
+        let ki = s * kvDim + kvbase + d;  // logical element index of this lane's K/V
+        var prod: f32 = 0.0;
+        if (lane) {
+            let kpair = unpack2x16float(keys[ki >> 1u]);
+            prod = qd * select(kpair.x, kpair.y, (ki & 1u) == 1u);
+        }
+        red[d] = prod;
+        workgroupBarrier();
+        var stride: u32 = 64u;
+        loop {
+            if (stride == 0u) { break; }
+            if (d < stride) { red[d] = red[d] + red[d + stride]; }
+            workgroupBarrier();
+            stride = stride / 2u;
+        }
+        let x = red[0] * p.scale;
+        let mnew = max(m, x);
+        let corr = exp(m - mnew);
+        let pe = exp(x - mnew);
+        if (lane) {
+            let vpair = unpack2x16float(vals[ki >> 1u]);
+            acc = acc * corr + pe * select(vpair.x, vpair.y, (ki & 1u) == 1u);
+        }
+        l = l * corr + pe;
+        m = mnew;
+        workgroupBarrier();
+    }
+    if (lane) { ctx[qbase + d] = acc / l; }
+}
+`
+
+// ropeStoreF16: rotate K and store as f16. One thread per cache WORD (kvDim/2
+// threads — same count as the f32 ropeStore's nKV*half), owning the two logical
+// elements 2*idx, 2*idx+1. Each is rotated independently (its (d,half+d) RoPE
+// partner is read from src) and the pair is pack2x16float'd into one word.
+const ropeStoreF16ShaderWGSL = `
+struct P { heads: u32, headDim: u32, half: u32, pos: u32, scale: f32, base: u32, _b: u32, _c: u32 };
+@group(0) @binding(0) var<storage, read>       src:     array<f32>;  // [heads*headDim]
+@group(0) @binding(1) var<storage, read>       invFreq: array<f32>;  // [half]
+@group(0) @binding(2) var<storage, read_write> dst:     array<u32>;  // KV cache f16-packed
+@group(0) @binding(3) var<uniform>             p:       P;
+fn rotated(e: u32) -> f32 {
+    let h = e / p.headDim;
+    let dd = e - h * p.headDim;
+    let off = h * p.headDim;
+    if (dd < p.half) {
+        let theta = f32(p.pos) * invFreq[dd];
+        let c = cos(theta) * p.scale;
+        let s = sin(theta) * p.scale;
+        return src[off + dd] * c - src[off + p.half + dd] * s;
+    } else {
+        let d = dd - p.half;
+        let theta = f32(p.pos) * invFreq[d];
+        let c = cos(theta) * p.scale;
+        let s = sin(theta) * p.scale;
+        return src[off + p.half + d] * c + src[off + d] * s;
+    }
+}
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let idx = gid.x;                       // word within the token
+    if (idx >= p.heads * p.half) { return; } // heads*half = kvDim/2 words
+    let e0 = 2u * idx;
+    dst[(p.base >> 1u) + idx] = pack2x16float(vec2<f32>(rotated(e0), rotated(e0 + 1u)));
+}
+`
+
+// kvStoreF16: store V as f16. One thread per word, packing the two adjacent
+// V elements 2*idx, 2*idx+1. base (pos*kvDim) is even so words align.
+const kvStoreF16ShaderWGSL = `
+struct P { n: u32, base: u32, _b: u32, _c: u32 };
+@group(0) @binding(0) var<storage, read>       src: array<f32>;
+@group(0) @binding(1) var<storage, read_write> dst: array<u32>;  // V cache f16-packed
+@group(0) @binding(2) var<uniform>             p:   P;
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let idx = gid.x;
+    if (2u * idx >= p.n) { return; }
+    let e0 = 2u * idx;
+    dst[(p.base >> 1u) + idx] = pack2x16float(vec2<f32>(src[e0], src[e0 + 1u]));
+}
+`
+
 func (c *Context) ensureAttn() error {
 	if c.ropePipeline != nil {
 		return nil
@@ -169,6 +287,15 @@ func (c *Context) ensureAttn() error {
 		return err
 	}
 	if c.kvStoreShader, c.kvStorePipeline, c.kvStoreLayout, err = mk("kv-store", kvStoreShaderWGSL); err != nil {
+		return err
+	}
+	if c.attnF16Shader, c.attnF16Pipeline, c.attnF16Layout, err = mk("attn-f16", attnF16ShaderWGSL); err != nil {
+		return err
+	}
+	if c.ropeStoreF16Shader, c.ropeStoreF16Pipeline, c.ropeStoreF16Layout, err = mk("rope-store-f16", ropeStoreF16ShaderWGSL); err != nil {
+		return err
+	}
+	if c.kvStoreF16Shader, c.kvStoreF16Pipeline, c.kvStoreF16Layout, err = mk("kv-store-f16", kvStoreF16ShaderWGSL); err != nil {
 		return err
 	}
 	return nil

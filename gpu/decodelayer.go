@@ -386,4 +386,25 @@ func (c *Context) NewKVCache(initial []float32, capElems int) (*DeviceBuffer, er
 	return &DeviceBuffer{buf: buf, n: capElems}, nil
 }
 
+// NewKVCacheF16 creates a resident f16 KV cache holding capElems logical elements
+// in ceil(capElems/2) u32 words (2 f16/word) — half the bytes of NewKVCache, the
+// 2×-context lever. The ropeStoreF16/kvStoreF16 kernels pack into it and attnF16
+// unpacks; the buffer is opaque u32 to WGSL. n stays the logical element count.
+// initial (prior positions) is f16-packed before upload (the same rounding the
+// kernels apply), so a prefilled f16 cache matches what a decode would have written.
+func (c *Context) NewKVCacheF16(initial []float32, capElems int) (*DeviceBuffer, error) {
+	words := (capElems + 1) / 2
+	buf, err := c.device.CreateBuffer(&wgpu.BufferDescriptor{Label: "kvcache-f16", Size: uint64(words * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst | wgpu.BufferUsageCopySrc})
+	if err != nil {
+		return nil, err
+	}
+	if len(initial) > 0 {
+		if err := c.queue.WriteBuffer(buf, 0, wgpu.ToBytes(packF16Pairs(initial))); err != nil {
+			buf.Release()
+			return nil, err
+		}
+	}
+	return &DeviceBuffer{buf: buf, n: capElems}, nil
+}
+
 var _ = fmt.Sprint
