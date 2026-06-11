@@ -108,7 +108,8 @@ go run ./cmd/serve --model ~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
 # OpenAI base URL: http://localhost:8080/v1
 ```
 
-`/v1/chat/completions`, `/v1/completions`, `/v1/responses`, `/v1/models`;
+`/v1/chat/completions`, `/v1/completions`, `/v1/responses`, `/v1/messages`
+(Anthropic — see below), `/v1/models`;
 streaming (SSE); the sampling knobs (`temperature`/`top_p`/`top_k`/`seed`/
 `frequency_penalty`/`presence_penalty`/`stop`/`logprobs`); and **`response_format`**
 — `{"type":"json_schema", …}` or `{"type":"json_object"}` gives schema-constrained
@@ -129,6 +130,27 @@ returns 429 + Retry-After (single decode worker per model; no continuous batchin
 streaming (`response.created`/`output_text.delta`/`completed`). `store` +
 `previous_response_id` continue a conversation from an in-memory ring — by
 construction a prompt-prefix extension, so it rides the warm-KV cache below.
+
+**Anthropic Messages API.** `/v1/messages` and `/v1/messages/count_tokens` speak
+the second de-facto standard (the one llama.cpp, Ollama, and LM Studio also
+serve), so Anthropic-speaking tools — **Claude Code** included — can point at a
+pure-Go single-binary runtime. It honors `system` (string or block array),
+content blocks (`text`, `tool_use`/`tool_result` replay), `tools` (note:
+`input_schema`), `tool_choice` (`auto`/`any`/`tool` — `any`/`tool` ride the same
+constrained decoding, so a malformed tool call is impossible), `stop_sequences`,
+and streaming (the named-event SSE protocol: `message_start` → `content_block_*`
+→ `message_delta` → `message_stop`, no `[DONE]`). Point Claude Code at it — all
+three env vars are required:
+
+```bash
+go run ./cmd/serve --model ~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+ANTHROPIC_BASE_URL=http://127.0.0.1:8080 ANTHROPIC_AUTH_TOKEN=goinfer \
+  ANTHROPIC_MODEL=qwen2.5-coder-1.5b-instruct-q4_k_m claude
+```
+
+Compatible, not full-spec (llama.cpp's bar): image blocks 400, and `thinking` /
+`cache_control` / `metadata` are accepted and ignored. Agentic use wants a
+roomy-context model (≥32k).
 
 **Prompt-prefix KV caching.** Across requests the server reuses the KV cache for
 the longest token prefix a new prompt shares with a recent one, prefilling only

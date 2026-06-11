@@ -105,22 +105,23 @@ func firstString(raw json.RawMessage) string {
 	return ""
 }
 
-// firstStop returns the byte index of the earliest stop string in text (and
-// true), so the caller can truncate there — OpenAI omits the stop sequence.
-func firstStop(text string, stops []string) (int, bool) {
-	cut := -1
+// firstStop returns the byte index of the earliest stop string in text (and the
+// string itself, and true), so the caller can truncate there — OpenAI omits the
+// stop sequence, and the Anthropic endpoint reports which one was hit.
+func firstStop(text string, stops []string) (int, string, bool) {
+	cut, which := -1, ""
 	for _, st := range stops {
 		if st == "" {
 			continue
 		}
 		if i := strings.Index(text, st); i >= 0 && (cut < 0 || i < cut) {
-			cut = i
+			cut, which = i, st
 		}
 	}
 	if cut < 0 {
-		return 0, false
+		return 0, "", false
 	}
-	return cut, true
+	return cut, which, true
 }
 
 // completeUTF8 returns the length of the longest prefix of s ending on a rune

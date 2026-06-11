@@ -56,7 +56,7 @@ func (s *server) handleChatTools(w http.ResponseWriter, r *http.Request, req cha
 
 	// Tool decisions need the whole output, so buffer (even when streaming).
 	var sb strings.Builder
-	finish, nComp, _ := lm.drive(r.Context(), gr, func(t string) { sb.WriteString(t) })
+	finish, nComp, _, _ := lm.drive(r.Context(), gr, func(t string) { sb.WriteString(t) })
 	calls, lead := lm.tmpl.ParseToolCalls(sb.String())
 
 	msg := map[string]any{"role": "assistant"}

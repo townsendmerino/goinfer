@@ -47,6 +47,37 @@ func FuzzServeChatRequest(f *testing.F) {
 	})
 }
 
+var messagesSeeds = []string{
+	`{"model":"m","max_tokens":64,"messages":[{"role":"user","content":"hi"}]}`,
+	`{"max_tokens":1,"system":[{"type":"text","text":"s"}],"messages":[{"role":"user","content":[{"type":"text","text":"x","cache_control":{"type":"ephemeral"}},{"type":"image","source":{}}]}]}`,
+	`{"messages":[{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"f","input":{"a":1}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":[{"type":"text","text":"r"}]}]}]}`,
+	`{"messages":[{"role":"user","content":[1,2,3]}],"tool_choice":{"type":"tool","name":"f"},"tools":[{"name":"f","input_schema":{}}]}`,
+	`{"stop_sequences":["END"],"temperature":2,"top_k":-1,"top_p":-9,"max_tokens":-3,"messages":[{"role":"x","content":null}]}`,
+}
+
+// FuzzServeMessagesRequest decodes arbitrary bytes as an Anthropic /v1/messages
+// request and runs the model-free shapers: system+message→turn translation
+// (string-or-block content, tool_use/tool_result replay, image rejection,
+// adjacent-role merge), tool_choice parsing, and the sampling translation. Bar:
+// never a panic, whatever the body.
+func FuzzServeMessagesRequest(f *testing.F) {
+	for _, s := range messagesSeeds {
+		f.Add([]byte(s))
+	}
+	f.Fuzz(func(t *testing.T, data []byte) {
+		var req anthropicReq
+		if json.Unmarshal(data, &req) != nil {
+			return // a decode error is the handler's invalid_request_error path — fine
+		}
+		_, _, _ = anthropicTurns(&req)
+		_ = anthropicText(req.System)
+		mode, name := anthropicToolMode(req.ToolChoice)
+		_ = anthropicForcedTool(mode, name, anthropicTools(req.Tools))
+		lm := &loadedModel{}
+		_, _ = lm.prepare(req.toSampling(), []int{1, 2, 3})
+	})
+}
+
 // FuzzServeResponsesInput fuzzes the /v1/responses `input` parser (a string, or
 // an array of message items whose content is a string or an array of parts) and
 // the content flattener — both pure, both attacker-supplied.

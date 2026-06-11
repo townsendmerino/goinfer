@@ -31,13 +31,13 @@ func TestParseStop(t *testing.T) {
 }
 
 func TestFirstStop(t *testing.T) {
-	if i, hit := firstStop("hello END world", []string{"END"}); !hit || i != 6 {
-		t.Errorf("got (%d,%v), want (6,true)", i, hit)
+	if i, which, hit := firstStop("hello END world", []string{"END"}); !hit || i != 6 || which != "END" {
+		t.Errorf("got (%d,%q,%v), want (6,END,true)", i, which, hit)
 	}
-	if i, hit := firstStop("abc STOP xyz END", []string{"END", "STOP"}); !hit || i != 4 {
-		t.Errorf("earliest stop: got (%d,%v), want (4,true)", i, hit)
+	if i, which, hit := firstStop("abc STOP xyz END", []string{"END", "STOP"}); !hit || i != 4 || which != "STOP" {
+		t.Errorf("earliest stop: got (%d,%q,%v), want (4,STOP,true)", i, which, hit)
 	}
-	if _, hit := firstStop("no stop here", []string{"END"}); hit {
+	if _, _, hit := firstStop("no stop here", []string{"END"}); hit {
 		t.Error("false positive stop")
 	}
 }

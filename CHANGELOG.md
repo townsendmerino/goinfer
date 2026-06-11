@@ -37,6 +37,22 @@ hardening._
   attention reassociation, so the precision is load-bearing, not cosmetic.
 
 ### Added
+- **Anthropic Messages API** (`POST /v1/messages`, `POST /v1/messages/count_tokens`)
+  alongside the OpenAI surface — point **Claude Code** (or any tool that speaks
+  `ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOKEN` + `ANTHROPIC_MODEL`) at a pure-Go
+  single-binary runtime. The second de-facto-standard chat surface, served by the
+  same edge-translation trick llama.cpp/Ollama/LM Studio use: the request is
+  mapped into the existing internal path (system + turns + sampling + tools) and
+  the result mapped back out — `drive`/`prepare` unchanged. Honors `system`
+  (string or text-block array), content blocks (`text`, plus `tool_use`/
+  `tool_result` conversation replay), `tools` (`input_schema`) and `tool_choice`
+  (`auto`/`any`/`tool` — `any`/`tool` reuse the constrained-decoding path, so a
+  malformed tool call is physically impossible), `stop_sequences`, and the named-
+  event streaming SSE protocol (`message_start` → `content_block_*` →
+  `message_delta` → `message_stop`, no `[DONE]`). Compatible-not-full-spec (the
+  llama.cpp bar): image blocks 400; `thinking` / `cache_control` / `metadata`
+  accepted and ignored (Claude Code sends `cache_control` on every request).
+  Pure stdlib `net/http`, no new deps.
 - **f16 GPU KV cache** (`--kv f16`, opt-in; default `f32` stays bit-exact) — halves
   per-token KV bytes on the full-residency path, unlocking **32k context for a
   7B-int4 on an 8 GB card** (32k f16 fits in the same VRAM as 16k f32 — measured

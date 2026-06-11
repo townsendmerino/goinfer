@@ -151,7 +151,7 @@ func (s *server) handleResponses(w http.ResponseWriter, r *http.Request) {
 			"type": "response.created", "response": responseObject(id, lm.name, created, "in_progress", []any{}, inTok, 0),
 		})
 		var sb strings.Builder
-		_, nComp, _ := lm.drive(r.Context(), gr, func(t string) {
+		_, nComp, _, _ := lm.drive(r.Context(), gr, func(t string) {
 			sb.WriteString(t)
 			sseEvent(w, f, "response.output_text.delta", map[string]any{
 				"type": "response.output_text.delta", "item_id": id + "-msg", "output_index": 0, "content_index": 0, "delta": t,
@@ -167,7 +167,7 @@ func (s *server) handleResponses(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var sb strings.Builder
-	_, nComp, _ := lm.drive(r.Context(), gr, func(t string) { sb.WriteString(t) })
+	_, nComp, _, _ := lm.drive(r.Context(), gr, func(t string) { sb.WriteString(t) })
 	out := []any{outputMessage(id+"-msg", sb.String())}
 	writeJSON(w, http.StatusOK, responseObject(id, lm.name, created, "completed", out, inTok, nComp))
 	s.maybeStore(store, id, lm.name, messages, sb.String())
@@ -201,7 +201,7 @@ func (s *server) respondTools(w http.ResponseWriter, lm *loadedModel, req respon
 	defer lm.exit()
 	inTok := len(gr.promptIDs)
 	var sb strings.Builder
-	_, nComp, _ := lm.drive(context.Background(), gr, func(t string) { sb.WriteString(t) })
+	_, nComp, _, _ := lm.drive(context.Background(), gr, func(t string) { sb.WriteString(t) })
 	calls, lead := lm.tmpl.ParseToolCalls(sb.String())
 
 	var out []any

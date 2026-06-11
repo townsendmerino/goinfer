@@ -137,6 +137,8 @@ func main() {
 		mux.HandleFunc("POST /v1/chat/completions", srv.handleChat)
 		mux.HandleFunc("POST /v1/completions", srv.handleCompletions)
 		mux.HandleFunc("POST /v1/responses", srv.handleResponses)
+		mux.HandleFunc("POST /v1/messages", srv.handleMessages)
+		mux.HandleFunc("POST /v1/messages/count_tokens", srv.handleCountTokens)
 	}
 	if srv.embed != nil {
 		mux.HandleFunc("POST /v1/embeddings", srv.handleEmbeddings)

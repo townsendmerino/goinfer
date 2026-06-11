@@ -42,19 +42,28 @@ type loadedModel struct {
 	queue chan struct{}
 }
 
-// enter claims a queue slot then locks the model's mutex (the decode worker). On
-// a full queue it writes a 429 + Retry-After and returns false.
-func (lm *loadedModel) enter(w http.ResponseWriter) bool {
+// tryEnter claims a queue slot then locks the model's mutex (the decode worker).
+// It returns false (writing nothing) when the queue is full, so each API surface
+// can render the backpressure failure in its own error shape.
+func (lm *loadedModel) tryEnter() bool {
 	if lm.queue != nil {
 		select {
 		case lm.queue <- struct{}{}:
 		default:
-			w.Header().Set("Retry-After", "1")
-			writeErr(w, http.StatusTooManyRequests, fmt.Sprintf("model %q queue full; retry", lm.name))
 			return false
 		}
 	}
 	lm.mu.Lock()
+	return true
+}
+
+// enter is the OpenAI-flavored wrapper: a full queue writes a 429 + Retry-After.
+func (lm *loadedModel) enter(w http.ResponseWriter) bool {
+	if !lm.tryEnter() {
+		w.Header().Set("Retry-After", "1")
+		writeErr(w, http.StatusTooManyRequests, fmt.Sprintf("model %q queue full; retry", lm.name))
+		return false
+	}
 	return true
 }
 
@@ -248,7 +257,7 @@ func (s *server) handleChat(w http.ResponseWriter, r *http.Request) {
 		}
 		role := chatChunk(id, created, lm.name, delta{Role: "assistant"}, nil)
 		sseSend(w, f, role)
-		finish, _, _ := lm.drive(r.Context(), gr, func(t string) {
+		finish, _, _, _ := lm.drive(r.Context(), gr, func(t string) {
 			sseSend(w, f, chatChunk(id, created, lm.name, delta{Content: t}, nil))
 		})
 		sseSend(w, f, chatChunk(id, created, lm.name, delta{}, &finish))
@@ -257,7 +266,7 @@ func (s *server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var sb strings.Builder
-	finish, nComp, lps := lm.drive(r.Context(), gr, func(t string) { sb.WriteString(t) })
+	finish, nComp, lps, _ := lm.drive(r.Context(), gr, func(t string) { sb.WriteString(t) })
 	choice := map[string]any{
 		"index":         0,
 		"message":       chatMessage{Role: "assistant", Content: sb.String()},
@@ -307,7 +316,7 @@ func (s *server) handleCompletions(w http.ResponseWriter, r *http.Request) {
 		if !ok {
 			return
 		}
-		finish, _, _ := lm.drive(r.Context(), gr, func(t string) {
+		finish, _, _, _ := lm.drive(r.Context(), gr, func(t string) {
 			sseSend(w, f, completionChunk(id, created, lm.name, t, nil))
 		})
 		sseSend(w, f, completionChunk(id, created, lm.name, "", &finish))
@@ -315,7 +324,7 @@ func (s *server) handleCompletions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var sb strings.Builder
-	finish, nComp, _ := lm.drive(r.Context(), gr, func(t string) { sb.WriteString(t) })
+	finish, nComp, _, _ := lm.drive(r.Context(), gr, func(t string) { sb.WriteString(t) })
 	writeJSON(w, http.StatusOK, map[string]any{
 		"id": id, "object": "text_completion", "created": created, "model": lm.name,
 		"choices": []any{map[string]any{"index": 0, "text": sb.String(), "finish_reason": finish}},
@@ -439,6 +448,13 @@ func (lm *loadedModel) encode(prompt string) []int {
 // chatPrompt renders system + messages into the model's chat template (no tools).
 func (lm *loadedModel) chatPrompt(msgs []chatMessage) []int {
 	system, turns := messagesToTurns(msgs)
+	return lm.promptFor(system, turns)
+}
+
+// promptFor renders system + turns into token ids via the model's chat template
+// (raw-conversation fallback when the family is unrecognized). Shared by the
+// OpenAI and Anthropic chat paths so both encode prompts identically.
+func (lm *loadedModel) promptFor(system string, turns []chat.Turn) []int {
 	if lm.tmpl != nil {
 		return lm.encode(lm.tmpl.Render(system, turns))
 	}
@@ -447,9 +463,11 @@ func (lm *loadedModel) chatPrompt(msgs []chatMessage) []int {
 
 // drive runs the generation, applying stop strings and UTF-8 holdback, calling
 // onText with each newly-completed text fragment. Returns the finish reason
-// ("stop" | "length"), the completion token count, and (non-stream) per-token
-// logprobs. The context is cancelled on a stop-string hit to end generation.
-func (lm *loadedModel) drive(parent context.Context, gr genRequest, onText func(string)) (string, int, []decoder.SampleInfo) {
+// ("stop" | "length"), the completion token count, (non-stream) per-token
+// logprobs, and the stop string that was hit (empty unless a stop sequence
+// ended the turn). The context is cancelled on a stop-string hit to end
+// generation.
+func (lm *loadedModel) drive(parent context.Context, gr genRequest, onText func(string)) (string, int, []decoder.SampleInfo, string) {
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	// Reuse the KV of whichever cached session already holds this prompt as a
@@ -460,6 +478,7 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, onText func(
 	var ids []int
 	printed := 0
 	finish := ""
+	stopHit := ""
 	stopping := false
 	for id := range stream {
 		if stopping {
@@ -467,11 +486,11 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, onText func(
 		}
 		ids = append(ids, id)
 		text, _ := lm.tk.Decode(ids)
-		if cut, hit := firstStop(text, gr.stopStrings); hit {
+		if cut, which, hit := firstStop(text, gr.stopStrings); hit {
 			if cut > printed {
 				onText(text[printed:cut])
 			}
-			finish, stopping = "stop", true
+			finish, stopHit, stopping = "stop", which, true
 			cancel()
 			continue
 		}
@@ -490,7 +509,7 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, onText func(
 			finish = "stop" // EOS / turn-stop
 		}
 	}
-	return finish, len(ids), gen.Logprobs
+	return finish, len(ids), gen.Logprobs, stopHit
 }
 
 // logprobs maps goinfer's per-token SampleInfo to the OpenAI chat logprobs shape.
