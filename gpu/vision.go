@@ -66,12 +66,13 @@ struct P { n: u32, _a: u32, _b: u32, _c: u32 };
 @group(0) @binding(0) var<storage, read_write> x: array<f32>;
 @group(0) @binding(1) var<uniform>             p: P;
 @compute @workgroup_size(64)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let i = gid.x;
-    if (i >= p.n) { return; }
-    let v = x[i];
+fn main(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workgroups) ng: vec3<u32>) {
+    let total = ng.x * 64u;
     let c = 0.7978845608028654; // sqrt(2/pi)
-    x[i] = 0.5 * v * (1.0 + tanh(c * (v + 0.044715 * v * v * v)));
+    for (var i: u32 = gid.x; i < p.n; i = i + total) {
+        let v = x[i];
+        x[i] = 0.5 * v * (1.0 + tanh(c * (v + 0.044715 * v * v * v)));
+    }
 }
 `
 
@@ -137,6 +138,65 @@ func (c *Context) ensureVision() error {
 	if c.softmaxPipeline, c.softmaxLayout, err = mk("softmaxRows", softmaxRowsWGSL); err != nil {
 		return err
 	}
+	if c.addRowsPipeline, c.addRowsLayout, err = mk("addRows", addRowsWGSL); err != nil {
+		return err
+	}
+	if c.copyHeadPipeline, c.copyHeadLayout, err = mk("copyHead", copyHeadWGSL); err != nil {
+		return err
+	}
+	return nil
+}
+
+// maxWG caps a 1D workgroup count at the WebGPU per-dimension limit; the
+// grid-strided kernels (addRows, gelu) cover the rest by looping.
+func maxWG(groups int) int {
+	if groups > 65535 {
+		return 65535
+	}
+	return groups
+}
+
+// addRowsDevice: dst += add, broadcasting add[cols] over dst when mode=0, else
+// elementwise (mode=1). n = len(dst). No Poll.
+func (c *Context) addRowsDevice(dst, add *wgpu.Buffer, n, cols, mode int) error {
+	return c.twoBufKernel(c.addRowsPipeline, c.addRowsLayout, dst, add, []uint32{uint32(n), uint32(cols), uint32(mode), 0}, maxWG((n+63)/64))
+}
+
+// copyHeadDevice: per-head strided copy (dir 0 gather / 1 scatter / 2 gatherT).
+func (c *Context) copyHeadDevice(src, dst *wgpu.Buffer, rows, hd, srcStride, off, dir int) error {
+	return c.twoBufKernel(c.copyHeadPipeline, c.copyHeadLayout, src, dst, []uint32{uint32(rows), uint32(hd), uint32(srcStride), uint32(off), uint32(dir), 0, 0, 0}, (rows*hd+63)/64)
+}
+
+// twoBufKernel runs a kernel with two storage buffers (binding 0,1) + a uniform.
+func (c *Context) twoBufKernel(pl *wgpu.ComputePipeline, layout *wgpu.BindGroupLayout, b0, b1 *wgpu.Buffer, p []uint32, dispatch int) error {
+	pbuf, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "k-p", Contents: wgpu.ToBytes(p), Usage: wgpu.BufferUsageUniform})
+	if err != nil {
+		return err
+	}
+	defer pbuf.Release()
+	bg, err := c.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: layout, Entries: []wgpu.BindGroupEntry{
+		{Binding: 0, Buffer: b0, Size: b0.GetSize()},
+		{Binding: 1, Buffer: b1, Size: b1.GetSize()},
+		{Binding: 2, Buffer: pbuf, Size: pbuf.GetSize()},
+	}})
+	if err != nil {
+		return err
+	}
+	defer bg.Release()
+	enc, _ := c.device.CreateCommandEncoder(nil)
+	defer enc.Release()
+	pass := enc.BeginComputePass(nil)
+	pass.SetPipeline(pl)
+	pass.SetBindGroup(0, bg, nil)
+	pass.DispatchWorkgroups(uint32(dispatch), 1, 1)
+	if err := pass.End(); err != nil {
+		pass.Release()
+		return err
+	}
+	pass.Release()
+	cmd, _ := enc.Finish(nil)
+	defer cmd.Release()
+	c.queue.Submit(cmd)
 	return nil
 }
 
@@ -240,6 +300,88 @@ func (c *Context) layerNormRowsDevice(src *wgpu.Buffer, weight, bias *wgpu.Buffe
 	c.queue.Submit(cmd)
 	return nil
 }
+
+// matmulF32Device runs dst[M,N] = a[M,K] · b[N,K]ᵀ on the naive f32 matmul
+// pipeline (c.pipeline), output to a fresh device buffer, NO Poll. Used for the
+// patch-embed and the attention QKᵀ / scores·V (activation×activation, no resident
+// weight). a,b are device buffers.
+func (c *Context) matmulF32Device(a, b *wgpu.Buffer, M, K, N int) (*DeviceBuffer, error) {
+	dst, err := c.device.CreateBuffer(&wgpu.BufferDescriptor{Label: "mm", Size: uint64(M * N * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
+	if err != nil {
+		return nil, err
+	}
+	dims, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "dims", Contents: wgpu.ToBytes([]uint32{uint32(M), uint32(K), uint32(N), 0}), Usage: wgpu.BufferUsageUniform})
+	if err != nil {
+		return nil, err
+	}
+	defer dims.Release()
+	bg, err := c.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.layout, Entries: []wgpu.BindGroupEntry{
+		{Binding: 0, Buffer: a, Size: a.GetSize()},
+		{Binding: 1, Buffer: b, Size: b.GetSize()},
+		{Binding: 2, Buffer: dst, Size: dst.GetSize()},
+		{Binding: 3, Buffer: dims, Size: dims.GetSize()},
+	}})
+	if err != nil {
+		return nil, err
+	}
+	defer bg.Release()
+	enc, _ := c.device.CreateCommandEncoder(nil)
+	defer enc.Release()
+	pass := enc.BeginComputePass(nil)
+	pass.SetPipeline(c.pipeline)
+	pass.SetBindGroup(0, bg, nil)
+	pass.DispatchWorkgroups((uint32(M)+15)/16, (uint32(N)+15)/16, 1)
+	if err := pass.End(); err != nil {
+		pass.Release()
+		return nil, err
+	}
+	pass.Release()
+	cmd, _ := enc.Finish(nil)
+	defer cmd.Release()
+	c.queue.Submit(cmd)
+	return &DeviceBuffer{buf: dst, n: M * N}, nil
+}
+
+// addRowsWGSL: dst[i] += bias[i % cols] (broadcast a [cols] bias over [rows,cols])
+// when mode=0; dst[i] += other[i] (elementwise, posEmb / residual) when mode=1.
+const addRowsWGSL = `
+struct P { n: u32, cols: u32, mode: u32, _p: u32 };
+@group(0) @binding(0) var<storage, read_write> dst: array<f32>;
+@group(0) @binding(1) var<storage, read>       add: array<f32>;
+@group(0) @binding(2) var<uniform>             p:   P;
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workgroups) ng: vec3<u32>) {
+    let total = ng.x * 64u;
+    for (var i: u32 = gid.x; i < p.n; i = i + total) {
+        if (p.mode == 0u) { dst[i] = dst[i] + add[i % p.cols]; }
+        else { dst[i] = dst[i] + add[i]; }
+    }
+}
+`
+
+// copyHeadWGSL: per-head strided copy between [rows, srcStride] and [rows, hd]
+// (gather a head's slice / scatter it back / build vᵀ), driven by dir:
+//
+//	0 gather : dst[i*hd + d]      = src[i*srcStride + off + d]
+//	1 scatter: dst[i*srcStride+off+d] = src[i*hd + d]
+//	2 gatherT: dst[d*rows + i]    = src[i*srcStride + off + d]   (transpose to [hd,rows])
+const copyHeadWGSL = `
+struct P { rows: u32, hd: u32, srcStride: u32, off: u32, dir: u32, _a: u32, _b: u32, _c: u32 };
+@group(0) @binding(0) var<storage, read>       src: array<f32>;
+@group(0) @binding(1) var<storage, read_write> dst: array<f32>;
+@group(0) @binding(2) var<uniform>             p:   P;
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let n = p.rows * p.hd;
+    let k = gid.x;
+    if (k >= n) { return; }
+    let i = k / p.hd;
+    let d = k % p.hd;
+    if (p.dir == 0u)      { dst[i*p.hd + d]              = src[i*p.srcStride + p.off + d]; }
+    else if (p.dir == 1u) { dst[i*p.srcStride + p.off + d] = src[i*p.hd + d]; }
+    else                  { dst[d*p.rows + i]            = src[i*p.srcStride + p.off + d]; }
+}
+`
 
 // LayerNormRowsHost is a host-in/host-out wrapper used by the parity test.
 func (c *Context) LayerNormRowsHost(src, weight, bias []float32, rows, h int, eps float32) ([]float32, error) {
