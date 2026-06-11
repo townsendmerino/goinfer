@@ -38,7 +38,7 @@ func tinyLlamaModel(t *testing.T) (*Model, int) {
 		"model.norm.weight":         {[]int{hidden}, fill(hidden)},
 		"lm_head.weight":            {[]int{vocab, hidden}, fill(vocab * hidden)},
 	}
-	for l := 0; l < layers; l++ {
+	for l := range layers {
 		p := fmt.Sprintf("model.layers.%d.", l)
 		ts[p+"self_attn.q_proj.weight"] = stTensor{[]int{qDim, hidden}, fill(qDim * hidden)}
 		ts[p+"self_attn.k_proj.weight"] = stTensor{[]int{qDim, hidden}, fill(qDim * hidden)}

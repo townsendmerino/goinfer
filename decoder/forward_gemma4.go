@@ -106,10 +106,7 @@ func (m *Model) runLayersGemma4(id int, cache *KVCache) ([]float32, error) {
 	// Attention scratch: allocated once per token, reused across layers (the
 	// batched-over-heads gemma4Attend gathers K_head/V_headᵀ + per-head scores).
 	// Sized to the widest per-layer head_dim and the current key count.
-	maxHd := arch.HeadDim
-	if g4.GlobalHeadDim > maxHd {
-		maxHd = g4.GlobalHeadDim
-	}
+	maxHd := max(g4.GlobalHeadDim, arch.HeadDim)
 	nkMax := pos + 1
 	g4sc := g4attnScratch{
 		kh:     make([]float32, nkMax*maxHd),
@@ -291,28 +288,28 @@ func gemma4Attend(q, ctx, keys, vals []float32, nH, nKV, hd, start, nKeys int, s
 	kvDim := nKV * hd
 	group := nH / nKV
 	n := nKeys - start
-	for kvh := 0; kvh < nKV; kvh++ {
+	for kvh := range nKV {
 		kh, vt := sc.kh[:n*hd], sc.vt[:hd*n]
-		for j := 0; j < n; j++ {
+		for j := range n {
 			base := (start+j)*kvDim + kvh*hd
 			copy(kh[j*hd:j*hd+hd], keys[base:base+hd])
 			vrow := vals[base : base+hd]
-			for d := 0; d < hd; d++ {
+			for d := range hd {
 				vt[d*n+j] = vrow[d]
 			}
 		}
 		qs := sc.qstack[:group*hd]
-		for g := 0; g < group; g++ {
+		for g := range group {
 			qhead := kvh*group + g
 			copy(qs[g*hd:g*hd+hd], q[qhead*hd:qhead*hd+hd])
 		}
 		// QKᵀ: scores[group,n] = group_q[group,hd] · K_head[n,hd]ᵀ
 		scores := sc.scores[:group*n]
 		linalg.MatmulBT(qs, kh, scores, group, hd, n)
-		for g := 0; g < group; g++ {
+		for g := range group {
 			rowS := scores[g*n : g*n+n]
 			maxS := math.Inf(-1)
-			for j := 0; j < n; j++ {
+			for j := range n {
 				v := float64(rowS[j]) * scale
 				rowS[j] = float32(v)
 				if v > maxS {
@@ -320,13 +317,13 @@ func gemma4Attend(q, ctx, keys, vals []float32, nH, nKV, hd, start, nKeys int, s
 				}
 			}
 			var sum float64
-			for j := 0; j < n; j++ {
+			for j := range n {
 				e := math.Exp(float64(rowS[j]) - maxS)
 				rowS[j] = float32(e)
 				sum += e
 			}
 			inv := 1.0 / sum
-			for j := 0; j < n; j++ {
+			for j := range n {
 				rowS[j] = float32(float64(rowS[j]) * inv)
 			}
 		}
@@ -334,7 +331,7 @@ func gemma4Attend(q, ctx, keys, vals []float32, nH, nKV, hd, start, nKeys int, s
 		//                               = MatmulBT(scores, V_headᵀ[hd,n])
 		cs := sc.cstack[:group*hd]
 		linalg.MatmulBT(scores, vt, cs, group, n, hd)
-		for g := 0; g < group; g++ {
+		for g := range group {
 			qhead := kvh*group + g
 			copy(ctx[qhead*hd:qhead*hd+hd], cs[g*hd:g*hd+hd])
 		}

@@ -129,8 +129,8 @@ func (e *Encoder) Forward(pixels []float32) ([]float32, error) {
 		for gw := 0; gw < e.grid; gw++ {
 			dst := patches[(gh*e.grid+gw)*cpp:]
 			for ch := 0; ch < c.NumChannels; ch++ {
-				for kh := 0; kh < P; kh++ {
-					for kw := 0; kw < P; kw++ {
+				for kh := range P {
+					for kw := range P {
 						dst[(ch*P+kh)*P+kw] = pixels[ch*W*W+(gh*P+kh)*W+(gw*P+kw)]
 					}
 				}
@@ -193,24 +193,24 @@ func (e *Encoder) attention(x []float32, lw *encLayer, np int) []float32 {
 
 	out := make([]float32, np*hidden)
 	scores := make([]float32, np)
-	for head := 0; head < nH; head++ {
+	for head := range nH {
 		off := head * hd
-		for i := 0; i < np; i++ {
+		for i := range np {
 			qi := q[i*hidden+off : i*hidden+off+hd]
-			for j := 0; j < np; j++ {
+			for j := range np {
 				kj := k[j*hidden+off : j*hidden+off+hd]
 				var dot float64
-				for d := 0; d < hd; d++ {
+				for d := range hd {
 					dot += float64(qi[d]) * float64(kj[d])
 				}
 				scores[j] = float32(dot * scale)
 			}
 			softmaxRow(scores)
 			oi := out[i*hidden+off : i*hidden+off+hd]
-			for j := 0; j < np; j++ {
+			for j := range np {
 				w := scores[j]
 				vj := v[j*hidden+off : j*hidden+off+hd]
-				for d := 0; d < hd; d++ {
+				for d := range hd {
 					oi[d] += w * vj[d]
 				}
 			}
@@ -239,7 +239,7 @@ func tensorF32(st *embed.SafetensorsFile, name string) ([]float32, error) {
 
 func layerNorm(x, w, b []float32, rows, dim int, eps float64) []float32 {
 	out := make([]float32, rows*dim)
-	for r := 0; r < rows; r++ {
+	for r := range rows {
 		xr := x[r*dim : r*dim+dim]
 		var mean float64
 		for _, val := range xr {
@@ -254,7 +254,7 @@ func layerNorm(x, w, b []float32, rows, dim int, eps float64) []float32 {
 		variance /= float64(dim)
 		inv := 1.0 / math.Sqrt(variance+eps)
 		dst := out[r*dim : r*dim+dim]
-		for d := 0; d < dim; d++ {
+		for d := range dim {
 			dst[d] = float32((float64(xr[d])-mean)*inv)*w[d] + b[d]
 		}
 	}
@@ -270,9 +270,9 @@ func geluTanh(x []float32) {
 }
 
 func addBias(x, bias []float32, rows, dim int) {
-	for r := 0; r < rows; r++ {
+	for r := range rows {
 		dst := x[r*dim : r*dim+dim]
-		for d := 0; d < dim; d++ {
+		for d := range dim {
 			dst[d] += bias[d]
 		}
 	}

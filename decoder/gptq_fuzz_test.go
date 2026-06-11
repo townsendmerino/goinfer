@@ -125,7 +125,7 @@ func fillI32(n int, content []byte) []int32 {
 	}
 	for i := range out {
 		var w uint32
-		for b := 0; b < 4; b++ {
+		for b := range 4 {
 			w = w<<8 | uint32(content[(i*4+b)%len(content)])
 		}
 		out[i] = int32(w)

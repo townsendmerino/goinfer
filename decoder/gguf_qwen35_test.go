@@ -22,9 +22,9 @@ func fwdReorderRef(src []float32, lead, numK, numVPerK, hd, trail int) []float32
 	mid := numK * numVPerK * hd
 	// perm[destRow] = srcRow, matching grouped[k,v]→tiled[v,k].
 	perm := make([]int, mid)
-	for k := 0; k < numK; k++ {
-		for v := 0; v < numVPerK; v++ {
-			for c := 0; c < hd; c++ {
+	for k := range numK {
+		for v := range numVPerK {
+			for c := range hd {
 				srcRow := (k*numVPerK+v)*hd + c // HF grouped: [numK, numVPerK, hd]
 				dstRow := (v*numK+k)*hd + c     // GGUF tiled: [numVPerK, numK, hd]
 				perm[dstRow] = srcRow
@@ -32,8 +32,8 @@ func fwdReorderRef(src []float32, lead, numK, numVPerK, hd, trail int) []float32
 		}
 	}
 	dst := make([]float32, len(src))
-	for l := 0; l < lead; l++ {
-		for r := 0; r < mid; r++ {
+	for l := range lead {
+		for r := range mid {
 			s := (l*mid + perm[r]) * trail
 			d := (l*mid + r) * trail
 			copy(dst[d:d+trail], src[s:s+trail])

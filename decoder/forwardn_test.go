@@ -31,7 +31,7 @@ func TestAttendBatchedHeads_vsNaive(t *testing.T) {
 		q[i] = float32(rng.NormFloat64()) * 0.1
 	}
 	cache := m.NewCache(K + 1)
-	for s := 0; s < K; s++ {
+	for range K {
 		kv := make([]float32, kvDim)
 		vv := make([]float32, kvDim)
 		for j := range kv {
@@ -43,14 +43,14 @@ func TestAttendBatchedHeads_vsNaive(t *testing.T) {
 
 	keys, vals := cache.Keys(0), cache.Vals(0)
 	ref := make([]float32, K*qDim)
-	for i := 0; i < K; i++ {
-		for qh := 0; qh < nH; qh++ {
+	for i := range K {
+		for qh := range nH {
 			kvh := qh / group
 			sc := make([]float64, i+1)
 			maxS := math.Inf(-1)
 			for s := 0; s <= i; s++ {
 				var dot float64
-				for d := 0; d < hd; d++ {
+				for d := range hd {
 					dot += float64(q[i*qDim+qh*hd+d]) * float64(keys[s*kvDim+kvh*hd+d])
 				}
 				sc[s] = dot * scale
@@ -63,7 +63,7 @@ func TestAttendBatchedHeads_vsNaive(t *testing.T) {
 				sc[s] = math.Exp(sc[s] - maxS)
 				sum += sc[s]
 			}
-			for d := 0; d < hd; d++ {
+			for d := range hd {
 				var o float64
 				for s := 0; s <= i; s++ {
 					o += sc[s] / sum * float64(vals[s*kvDim+kvh*hd+d])

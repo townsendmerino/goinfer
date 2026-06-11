@@ -66,7 +66,7 @@ func ggufQwen35Config(g *embed.GGUFFile) (*Config, error) {
 	if eps, ok := g.Float("qwen35moe.attention.layer_norm_rms_epsilon"); ok {
 		cfg.RMSNormEps = eps
 	}
-	for i := 0; i < numLayers; i++ {
+	for i := range numLayers {
 		if (i+1)%interval == 0 {
 			cfg.LayerTypes = append(cfg.LayerTypes, "full_attention")
 		} else {
@@ -107,13 +107,13 @@ func ggufQwen35Config(g *embed.GGUFFile) (*Config, error) {
 func reorderVHeads(src []float32, lead, outer, inner, hd, trail int) []float32 {
 	mid := outer * inner * hd
 	dst := make([]float32, len(src))
-	for l := 0; l < lead; l++ {
+	for l := range lead {
 		base := l * mid
-		for o := 0; o < outer; o++ {
-			for i := 0; i < inner; i++ {
+		for o := range outer {
+			for i := range inner {
 				srcRow := base + (o*inner+i)*hd // [outer, inner, hd]
 				dstRow := base + (i*outer+o)*hd // [inner, outer, hd]
-				for c := 0; c < hd; c++ {
+				for c := range hd {
 					s := (srcRow + c) * trail
 					d := (dstRow + c) * trail
 					copy(dst[d:d+trail], src[s:s+trail])

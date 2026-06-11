@@ -91,10 +91,7 @@ func gatedDeltaNetChunked(h [][]float32, w *deltaNetWeights, p qwen35Params, hid
 		headK := headV / rep
 		S := make([]float32, hk*hv) // [hk, hv], persists across chunks
 		for start := 0; start < n; start += chunk {
-			end := start + chunk
-			if end > n {
-				end = n
-			}
+			end := min(start+chunk, n)
 			scanChunk(core, S, conv, gt, beta, start, end, headV, headK, hk, hv, keyDim, qScale)
 		}
 	}
@@ -157,7 +154,7 @@ func scanChunk(core [][]float32, S []float32, conv, gt, beta [][]float32,
 			ui[vd] = bta[i] * (v[i][vd] - c[i]*sk)
 		}
 		// − β_i·Σ_{m<i} (c_i/c_m)(k_m·k_i)·u_m
-		for m := 0; m < i; m++ {
+		for m := range i {
 			var kk float32
 			for kd := range hk {
 				kk += k[m][kd] * k[i][kd]

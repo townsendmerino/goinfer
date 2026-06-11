@@ -52,7 +52,6 @@ func structSchema(t reflect.Type) (map[string]any, error) {
 	props := map[string]any{}
 	var required []string
 	for f := range t.Fields() {
-		f := f
 		if !f.IsExported() {
 			continue
 		}

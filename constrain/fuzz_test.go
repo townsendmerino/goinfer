@@ -77,7 +77,7 @@ func driveAndValidate(t *testing.T, g Grammar, doc map[string]any, schema, choic
 	var out bytes.Buffer
 	ci := 0
 	const budget = 2000 // large schemas may not finish; that is not a bug, just stop
-	for step := 0; step < budget; step++ {
+	for range budget {
 		for i := range logits {
 			logits[i] = 0
 		}
@@ -163,7 +163,7 @@ func isWSByte(tok []byte) bool {
 // plus a trailing EOS id, so the masker can spell any byte a schema may require.
 func fullByteVocab() (tokens [][]byte, eos int) {
 	tokens = make([][]byte, 256, 257)
-	for b := 0; b < 256; b++ {
+	for b := range 256 {
 		tokens[b] = []byte{byte(b)}
 	}
 	eos = len(tokens)

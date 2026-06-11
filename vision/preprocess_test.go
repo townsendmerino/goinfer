@@ -49,8 +49,8 @@ func TestPreprocess_solidColor(t *testing.T) {
 			(float32(c.b)/255 - 0.5) / 0.5,
 		}
 		plane := size * size
-		for ch := 0; ch < 3; ch++ {
-			for i := 0; i < plane; i++ {
+		for ch := range 3 {
+			for i := range plane {
 				if got := pv.Data[ch*plane+i]; math.Abs(float64(got-want[ch])) > 1e-4 {
 					t.Fatalf("rgb(%d,%d,%d) ch %d idx %d = %v, want %v", c.r, c.g, c.b, ch, i, got, want[ch])
 				}

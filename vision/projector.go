@@ -76,8 +76,8 @@ func LoadProjector(dir string) (*Projector, error) {
 	// Transpose [visionHidden, textHidden] → [textHidden, visionHidden] for MatmulBT.
 	vh, th := p.visionHidden, p.textHidden
 	p.projWt = make([]float32, th*vh)
-	for i := 0; i < vh; i++ {
-		for o := 0; o < th; o++ {
+	for i := range vh {
+		for o := range th {
 			p.projWt[o*vh+i] = projW[i*th+o]
 		}
 	}
@@ -100,10 +100,10 @@ func (p *Projector) Forward(visionHidden []float32) ([]float32, error) {
 
 	// 2D average pool the grid → tps×tps (patch (ph,pw) at seq ph*grid+pw).
 	pooled := make([]float32, mm*vh)
-	for oh := 0; oh < tps; oh++ {
-		for ow := 0; ow < tps; ow++ {
+	for oh := range tps {
+		for ow := range tps {
 			row := pooled[(oh*tps+ow)*vh:]
-			for i := 0; i < vh; i++ {
+			for i := range vh {
 				var sum float64
 				for ph := oh * kernel; ph < (oh+1)*kernel; ph++ {
 					for pw := ow * kernel; pw < (ow+1)*kernel; pw++ {
@@ -115,14 +115,14 @@ func (p *Projector) Forward(visionHidden []float32) ([]float32, error) {
 		}
 	}
 	// Gemma3RMSNorm: x · rsqrt(mean(x²)+eps) · (1 + weight).
-	for t := 0; t < mm; t++ {
+	for t := range mm {
 		row := pooled[t*vh : t*vh+vh]
 		var ms float64
 		for _, v := range row {
 			ms += float64(v) * float64(v)
 		}
 		inv := 1.0 / math.Sqrt(ms/float64(vh)+p.eps)
-		for i := 0; i < vh; i++ {
+		for i := range vh {
 			row[i] = float32(float64(row[i])*inv) * (1.0 + p.normW[i])
 		}
 	}

@@ -247,21 +247,21 @@ func attendBatchedHeads(q, ctx []float32, cache *KVCache, layer, startPos, K int
 		matmul = linalg.MatmulBTAcc64
 	}
 
-	for kvh := 0; kvh < nKV; kvh++ {
+	for kvh := range nKV {
 		// Gather this KV head's keys [nKeys,hd] and values transposed [hd,nKeys]
 		// once; every query head in the GQA group reuses them. The V transpose is
 		// folded into the gather (free) so scores·V is MatmulBT(scores, V_headᵀ).
-		for s := 0; s < nKeys; s++ {
+		for s := range nKeys {
 			base := s*kvDim + kvh*hd
 			copy(kh[s*hd:s*hd+hd], keys[base:base+hd])
 			vrow := vals[base : base+hd]
-			for d := 0; d < hd; d++ {
+			for d := range hd {
 				vt[d*nKeys+s] = vrow[d]
 			}
 		}
-		for g := 0; g < group; g++ {
+		for g := range group {
 			qhead := kvh*group + g
-			for i := 0; i < K; i++ { // gather Q_head [K,hd]
+			for i := range K { // gather Q_head [K,hd]
 				base := i*qDim + qhead*hd
 				copy(qh[i*hd:i*hd+hd], q[base:base+hd])
 			}
@@ -269,7 +269,7 @@ func attendBatchedHeads(q, ctx []float32, cache *KVCache, layer, startPos, K int
 			matmul(qh[:K*hd], kh[:nKeys*hd], scores[:K*nKeys], K, hd, nKeys)
 			// Scaled, masked softmax per query row; zero the out-of-range entries
 			// so they contribute nothing to the scores·V matmul below.
-			for i := 0; i < K; i++ {
+			for i := range K {
 				pos := startPos + i
 				start := cache.WindowStart(pos, global)
 				// hi is the inclusive upper key bound: pos for a causal text query,
@@ -293,7 +293,7 @@ func attendBatchedHeads(q, ctx []float32, cache *KVCache, layer, startPos, K int
 					sum += e
 				}
 				inv := 1.0 / sum
-				for s := 0; s < start; s++ {
+				for s := range start {
 					rowS[s] = 0
 				}
 				for s := start; s <= hi; s++ {
@@ -306,7 +306,7 @@ func attendBatchedHeads(q, ctx []float32, cache *KVCache, layer, startPos, K int
 			// scores·V: ctx_head[K,hd] = scores[K,nKeys] · V_head[nKeys,hd]
 			//                          = MatmulBT(scores, V_headᵀ[hd,nKeys])
 			matmul(scores[:K*nKeys], vt[:hd*nKeys], ch[:K*hd], K, nKeys, hd)
-			for i := 0; i < K; i++ { // scatter ctx_head into ctx[K,qDim]
+			for i := range K { // scatter ctx_head into ctx[K,qDim]
 				base := i*qDim + qhead*hd
 				copy(ctx[base:base+hd], ch[i*hd:i*hd+hd])
 			}
