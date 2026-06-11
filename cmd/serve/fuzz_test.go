@@ -78,6 +78,36 @@ func FuzzServeMessagesRequest(f *testing.F) {
 	})
 }
 
+var imagePartSeeds = []string{
+	`"plain string content"`,
+	`[{"type":"text","text":"hi"},{"type":"image_url","image_url":{"url":"data:image/png;base64,iVBORw0KGgo="}}]`,
+	`[{"type":"image_url","image_url":{"url":"http://x/y.png"}}]`,
+	`[{"type":"image_url","image_url":{"url":"data:;base64,!!!notbase64"}}]`,
+	`[{"type":"image_url","image_url":{"url":"data:image/png,nope"}}]`,
+	`[{"type":"image_url"}]`,
+	`[1,2,3]`,
+	`{}`,
+}
+
+// FuzzServeImageParts decodes arbitrary bytes as OpenAI message content and runs
+// the model-free image-extraction shapers — contentPartsText, contentPartsImages
+// (data-URI decode + the SSRF URL reject), decodeDataURI — plus an Anthropic
+// image-block decode. Bar: never a panic, whatever the body.
+func FuzzServeImageParts(f *testing.F) {
+	for _, s := range imagePartSeeds {
+		f.Add([]byte(s))
+	}
+	f.Fuzz(func(t *testing.T, data []byte) {
+		raw := json.RawMessage(data)
+		_ = contentPartsText(raw)
+		_, _ = contentPartsImages(raw)
+		_, _ = decodeDataURI(string(data))
+		// Anthropic image block (the source is the same base64 path).
+		req := &anthropicReq{Messages: []anthropicMessage{{Role: "user", Content: raw}}}
+		_, _ = anthropicImages(req)
+	})
+}
+
 // FuzzServeResponsesInput fuzzes the /v1/responses `input` parser (a string, or
 // an array of message items whose content is a string or an array of parts) and
 // the content flattener — both pure, both attacker-supplied.

@@ -148,9 +148,24 @@ ANTHROPIC_BASE_URL=http://127.0.0.1:8080 ANTHROPIC_AUTH_TOKEN=goinfer \
   ANTHROPIC_MODEL=qwen2.5-coder-1.5b-instruct-q4_k_m claude
 ```
 
-Compatible, not full-spec (llama.cpp's bar): image blocks 400, and `thinking` /
-`cache_control` / `metadata` are accepted and ignored. Agentic use wants a
-roomy-context model (≥32k).
+Compatible, not full-spec (llama.cpp's bar): `thinking` / `cache_control` /
+`metadata` are accepted and ignored. Agentic use wants a roomy-context model
+(≥32k).
+
+**Vision (image→text), pure Go.** With a Gemma 3 VL checkpoint loaded behind
+`--vision <dir>` (auto-discovered when `--model` is a VL dir), `cmd/serve` accepts
+images on both surfaces — OpenAI `image_url` content parts and Anthropic `image`
+blocks — **base64 / `data:` URIs only** (a remote URL is never fetched: an SSRF
+guard, returns 400). An image runs through the pure-Go `vision` tower (SigLIP
+encoder + projector, HF-parity-gated) into the decoder's embed-by-vector seam;
+image tokens count in `usage`. `demo/agent`'s web UI takes a dropped/pasted image
+too. Caveat: the SigLIP prefill is CPU-heavy (~3 min/image at 896²) — correct but
+slow; an int8 tower is the planned speedup (`docs/task-cpu-vision-prefill.md`).
+
+```bash
+go run ./cmd/serve --model ~/models/gemma-3-4b-it --vision ~/models/gemma-3-4b-it
+# then POST an image_url data: URI to /v1/chat/completions, or an image block to /v1/messages
+```
 
 **Prompt-prefix KV caching.** Across requests the server reuses the KV cache for
 the longest token prefix a new prompt shares with a recent one, prefilling only

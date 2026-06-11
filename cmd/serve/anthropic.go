@@ -63,6 +63,12 @@ type anthropicBlock struct {
 	// type:tool_result (user replay):
 	ToolUseID string          `json:"tool_use_id"`
 	Content   json.RawMessage `json:"content"` // string | []text block
+	// type:image (multimodal): source.{type:"base64", media_type, data}
+	Source *struct {
+		Type      string `json:"type"`
+		MediaType string `json:"media_type"`
+		Data      string `json:"data"`
+	} `json:"source"`
 }
 
 // toSampling maps the Anthropic sampling fields onto the shared sampling struct
@@ -181,7 +187,9 @@ func anthropicTurns(req *anthropicReq) (string, []chat.Turn, *apiErr) {
 					ToolCallID: bl.ToolUseID,
 				})
 			case "image":
-				return "", nil, &apiErr{http.StatusBadRequest, "invalid_request_error", "image input not supported"}
+				// Collected separately by anthropicImages and routed to the vision
+				// path; skip here. The handler 400s an image when no vision tower is
+				// loaded, so a text-only model never silently drops it.
 			default:
 				// unknown block type (and cache_control-bearing blocks) — ignore.
 			}
@@ -195,6 +203,33 @@ func anthropicTurns(req *anthropicReq) (string, []chat.Turn, *apiErr) {
 		}
 	}
 	return system, mergeAdjacent(turns), nil
+}
+
+// anthropicImages collects inline images from the message content blocks
+// (type:image with a base64 source). A non-base64 source is an error (no URL
+// fetch — SSRF guard). No images → nil.
+func anthropicImages(req *anthropicReq) ([]imageRef, error) {
+	var out []imageRef
+	for _, m := range req.Messages {
+		var blocks []anthropicBlock
+		if json.Unmarshal(m.Content, &blocks) != nil {
+			continue // plain-string content carries no images
+		}
+		for _, bl := range blocks {
+			if bl.Type != "image" {
+				continue
+			}
+			if bl.Source == nil || bl.Source.Type != "base64" {
+				return nil, fmt.Errorf("image source must be type \"base64\" (url sources are not fetched)")
+			}
+			ref, err := decodeBase64Image(bl.Source.MediaType, bl.Source.Data)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, ref)
+		}
+	}
+	return out, nil
 }
 
 // anthropicRole maps the wire role to an internal turn role (assistant passes
@@ -350,6 +385,16 @@ func (s *server) handleMessages(w http.ResponseWriter, r *http.Request) {
 	lm := s.pick(req.Model)
 	if lm == nil {
 		s.anthropicModelNotFound(w, req.Model)
+		return
+	}
+	// Multimodal: image blocks route to the vision path.
+	imgs, ierr := anthropicImages(&req)
+	if ierr != nil {
+		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", ierr.Error())
+		return
+	}
+	if len(imgs) > 0 {
+		s.serveVisionMessages(w, r, &req, lm, imgs)
 		return
 	}
 	system, turns, aerr := anthropicTurns(&req)

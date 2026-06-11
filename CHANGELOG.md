@@ -10,6 +10,26 @@ pre-1.0 and may change as new model families and quant formats land.
 
 ## [Unreleased]
 
+### Added
+- **Multimodal vision input (Gemma 3 VL) — image→text end to end, pure Go.** An
+  image now flows through `vision` (preprocess → SigLIP encoder → projector) into
+  the text decoder's embed-by-vector seam (`decoder.GenerateVL`), and the serve
+  surface accepts it on **both** the OpenAI `/v1/chat/completions` (`image_url`
+  content parts) and Anthropic `/v1/messages` (`image` blocks) APIs —
+  **base64/data-URI only** (a remote URL is never fetched; SSRF guard). Start with
+  `--vision <dir>` (auto-discovered when the `--model` dir is a Gemma 3 VL
+  checkpoint). Image tokens (256/image) count in `usage`. `demo/agent` (the web UI)
+  also gains image input: drop, paste, or pick an image and the agent answers it
+  via the same path. Numerics are HF-parity-gated (encoder/projector/end-to-end
+  goldens). Loading a real `google/gemma-3-4b-it` now works directly (sharded +
+  prefixed VL safetensors, nested `vision_config`, and the Gemma3-text class
+  defaults the minimal `text_config` omits). **Caveat:** the SigLIP prefill is
+  heavy on CPU (~3 min/image at 896², 4096 patches) — correct but slow; an int8
+  tower is the planned speedup (`docs/task-cpu-vision-prefill.md`).
+- **SigLIP attention vectorized** — QKᵀ/scores·V moved onto the SIMD A·Bᵀ kernels
+  (QKᵀ f64-accumulating for parity), >2× faster vision prefill (>400 s → ~190 s),
+  bit-faithful (encoder golden cosine 1.0).
+
 ## [v0.5.0] — 2026-06-11
 
 _A **minor bump** per SemVer: `constrain` schema validation carries a

@@ -103,7 +103,7 @@ func (s *server) handleResponses(w http.ResponseWriter, r *http.Request) {
 		}
 		messages = append(messages, prior.messages...)
 	} else if req.Instructions != "" {
-		messages = append(messages, chatMessage{Role: "system", Content: req.Instructions})
+		messages = append(messages, chatMessage{Role: "system", Content: rawStr(req.Instructions)})
 	}
 	inputMsgs, err := responseInputToMessages(req.Input)
 	if err != nil {
@@ -238,7 +238,7 @@ func (s *server) maybeStore(store bool, id, model string, messages []chatMessage
 	if !store || s.responses == nil {
 		return
 	}
-	full := append(append([]chatMessage(nil), messages...), chatMessage{Role: "assistant", Content: assistant})
+	full := append(append([]chatMessage(nil), messages...), chatMessage{Role: "assistant", Content: rawStr(assistant)})
 	s.responses.put(id, &responseEntry{model: model, messages: full})
 }
 
@@ -252,7 +252,7 @@ func responseInputToMessages(raw json.RawMessage) ([]chatMessage, error) {
 	}
 	var str string
 	if json.Unmarshal(raw, &str) == nil {
-		return []chatMessage{{Role: "user", Content: str}}, nil
+		return []chatMessage{{Role: "user", Content: rawStr(str)}}, nil
 	}
 	var items []struct {
 		Role    string          `json:"role"`
@@ -267,7 +267,7 @@ func responseInputToMessages(raw json.RawMessage) ([]chatMessage, error) {
 		if role == "" {
 			role = "user"
 		}
-		msgs = append(msgs, chatMessage{Role: role, Content: contentText(it.Content)})
+		msgs = append(msgs, chatMessage{Role: role, Content: rawStr(contentText(it.Content))})
 	}
 	return msgs, nil
 }

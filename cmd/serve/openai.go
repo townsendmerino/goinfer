@@ -16,6 +16,7 @@ import (
 	"github.com/townsendmerino/goinfer/constrain"
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/tokenizer"
+	"github.com/townsendmerino/goinfer/vision"
 )
 
 const defaultMaxTokens = 512
@@ -40,7 +41,19 @@ type loadedModel struct {
 	// waiting); a request claims a slot before mu. nil = unbounded. Honest
 	// backpressure, not continuous batching — queue-full returns 429 Retry-After.
 	queue chan struct{}
+
+	// Vision tower (--vision): nil unless a multimodal model is loaded. When
+	// present the model is "vision-capable" — serve accepts image content parts,
+	// runs them through preprocess → encoder → projector, and routes the turn to
+	// GenerateVL. The decode mutex above serializes vision turns too.
+	venc    *vision.Encoder
+	vproj   *vision.Projector
+	vcfg    vision.Config
+	vimgTok int // image-soft-token id (the placeholder embed-by-vector overrides); -1 if unresolved
 }
+
+// visionCapable reports whether this model has a loaded vision tower.
+func (lm *loadedModel) visionCapable() bool { return lm.venc != nil && lm.vproj != nil }
 
 // tryEnter claims a queue slot then locks the model's mutex (the decode worker).
 // It returns false (writing nothing) when the queue is full, so each API surface
@@ -170,12 +183,26 @@ type chatReq struct {
 }
 
 type chatMessage struct {
-	Role       string        `json:"role"`
-	Content    string        `json:"content"`
-	Name       string        `json:"name,omitempty"`         // tool messages: function name
-	ToolCallID string        `json:"tool_call_id,omitempty"` // tool messages: id answered
-	ToolCalls  []apiToolCall `json:"tool_calls,omitempty"`   // assistant messages
+	Role       string          `json:"role"`
+	Content    json.RawMessage `json:"content"`                // string | [{"type":"text"|"image_url",…}, …]
+	Name       string          `json:"name,omitempty"`         // tool messages: function name
+	ToolCallID string          `json:"tool_call_id,omitempty"` // tool messages: id answered
+	ToolCalls  []apiToolCall   `json:"tool_calls,omitempty"`   // assistant messages
 }
+
+// text returns the message's text: the plain-string content, or the concatenated
+// text parts of an OpenAI content array (image_url and other parts ignored here —
+// images are pulled separately by imageData).
+func (m chatMessage) text() string { return contentPartsText(m.Content) }
+
+// imageData returns the data-URI images carried in an OpenAI content array
+// (image_url parts), as decoded bytes. URL (non-data:) images return an error so
+// the handler can reject them (no server-side fetch — SSRF guard).
+func (m chatMessage) imageData() ([]imageRef, error) { return contentPartsImages(m.Content) }
+
+// rawStr wraps a plain string as JSON content (for messages we construct rather
+// than parse, e.g. /v1/responses building an internal message list).
+func rawStr(s string) json.RawMessage { b, _ := json.Marshal(s); return b }
 
 // toolSpec is an OpenAI tool definition (we honor type:"function").
 type toolSpec struct {
@@ -229,6 +256,16 @@ func (s *server) handleChat(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
 	}
+	// Multimodal: a message carrying an image_url part routes to the vision path.
+	imgs, ierr := chatImages(req.Messages)
+	if ierr != nil {
+		writeErr(w, http.StatusBadRequest, ierr.Error())
+		return
+	}
+	if len(imgs) > 0 {
+		s.serveVisionChat(w, r, req, imgs)
+		return
+	}
 	if len(req.Tools) > 0 && toolChoiceMode(req.ToolChoice) != "none" {
 		s.handleChatTools(w, r, req)
 		return
@@ -269,7 +306,7 @@ func (s *server) handleChat(w http.ResponseWriter, r *http.Request) {
 	finish, nComp, lps, _ := lm.drive(r.Context(), gr, func(t string) { sb.WriteString(t) })
 	choice := map[string]any{
 		"index":         0,
-		"message":       chatMessage{Role: "assistant", Content: sb.String()},
+		"message":       map[string]any{"role": "assistant", "content": sb.String()},
 		"finish_reason": finish,
 	}
 	if req.Logprobs {
@@ -410,17 +447,17 @@ func messagesToTurns(msgs []chatMessage) (string, []chat.Turn) {
 	for _, m := range msgs {
 		switch m.Role {
 		case "system":
-			system = m.Content
+			system = m.text()
 		case "tool":
-			turns = append(turns, chat.Turn{Role: "tool", Content: m.Content, ToolName: m.Name, ToolCallID: m.ToolCallID})
+			turns = append(turns, chat.Turn{Role: "tool", Content: m.text(), ToolName: m.Name, ToolCallID: m.ToolCallID})
 		case "assistant":
 			var tc []chat.ToolCall
 			for _, c := range m.ToolCalls {
 				tc = append(tc, chat.ToolCall{ID: c.ID, Name: c.Function.Name, Arguments: json.RawMessage(c.Function.Arguments)})
 			}
-			turns = append(turns, chat.Turn{Role: "assistant", Content: m.Content, ToolCalls: tc})
+			turns = append(turns, chat.Turn{Role: "assistant", Content: m.text(), ToolCalls: tc})
 		default:
-			turns = append(turns, chat.Turn{Role: "user", Content: m.Content})
+			turns = append(turns, chat.Turn{Role: "user", Content: m.text()})
 		}
 	}
 	return system, turns
@@ -474,7 +511,30 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, onText func(
 	// prefix (continuing chat / agent loop): only the new suffix is prefilled.
 	sess := lm.sessions.acquire(gr.promptIDs)
 	stream, gen := sess.Generate(ctx, gr.promptIDs, gr.maxTokens, gr.sp)
+	finish, n, stopHit := lm.streamTokens(cancel, stream, gr, onText)
+	return finish, n, gen.Logprobs, stopHit
+}
 
+// driveVL is drive for a multimodal turn: it prefills gr.promptIDs with the
+// projected vision `feats` spliced in at the [imgPos, imgPos+imgLen) placeholder
+// run (GenerateVL), then streams the continuation through the same stop/UTF-8
+// machinery as drive. Stateless — no warm-KV session (multimodal opts out of
+// prefix reuse). Returns finish reason, completion token count, and stop string.
+func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, feats []float32, imgPos, imgLen int, onText func(string)) (string, int, string) {
+	ctx, cancel := context.WithCancel(parent)
+	defer cancel()
+	stream, _ := lm.model.GenerateVL(ctx, gr.promptIDs, feats, imgPos, imgLen, gr.maxTokens, gr.sp)
+	return lm.streamTokens(cancel, stream, gr, onText)
+}
+
+// streamTokens consumes a token-id channel, applying stop strings and UTF-8
+// holdback and calling onText with each newly-completed fragment. It is the
+// shared tail of every generation path (text via Session.Generate, multimodal
+// via driveVL) — the token *source* is orthogonal to this stop/stream logic.
+// cancel ends the producing generation on a stop-string hit. Returns the finish
+// reason ("stop" | "length"), the completion token count, and the stop string
+// that was hit (empty unless a stop sequence ended the turn).
+func (lm *loadedModel) streamTokens(cancel context.CancelFunc, stream <-chan int, gr genRequest, onText func(string)) (string, int, string) {
 	var ids []int
 	printed := 0
 	finish := ""
@@ -509,7 +569,7 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, onText func(
 			finish = "stop" // EOS / turn-stop
 		}
 	}
-	return finish, len(ids), gen.Logprobs, stopHit
+	return finish, len(ids), stopHit
 }
 
 // logprobs maps goinfer's per-token SampleInfo to the OpenAI chat logprobs shape.

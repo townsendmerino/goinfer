@@ -102,6 +102,23 @@ guard, default 0.3; small models loop without it), `--presence-penalty`,
 `--temp` (answer phase; the decide phase is always greedy), `--max`, `--quant`;
 agent-web adds `--addr` (default `127.0.0.1:8484`).
 
+### Images (Gemma 3 VL)
+
+Run with a Gemma 3 VL model + its vision tower and **agent-web takes images** —
+drop one on the page, paste from the clipboard, or click 📎:
+
+```bash
+GOWORK=off go run ./cmd/agent-web \
+    --model ~/models/gemma-3-4b-it --vision ~/models/gemma-3-4b-it --ken /tmp/ken-stub
+```
+
+`--vision` is auto-discovered when `--model` is a VL checkpoint dir. An image turn
+skips the ken search (the image is the context) and answers it through goinfer's
+pure-Go vision path (SigLIP encoder + projector → the decoder's embed-by-vector
+seam). **Heads-up:** the SigLIP prefill is CPU-heavy — expect a minute or two per
+image (the UI shows "analyzing image…"); a faster int8 tower is the planned
+follow-on (`docs/task-cpu-vision-prefill.md`).
+
 ## Demo script
 
 The 14 vetted queries in ken's

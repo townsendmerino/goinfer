@@ -107,7 +107,13 @@
     padding: .35rem .9rem; cursor: pointer;
   }
   .inputrow button:disabled { opacity: .45; cursor: default; }
+  #attach { background: transparent; font-size: 1.1rem; padding: .3rem .45rem; }
   .hint { max-width: 46rem; margin: .45rem auto 0; font-size: .72rem; color: var(--dim); }
+  .preview { max-width: 46rem; margin: 0 auto .4rem; display: flex; align-items: center; gap: .4rem; }
+  .preview .thumb { height: 56px; border-radius: 8px; border: 1px solid var(--line, #3334); }
+  .preview .rmimg { background: transparent; border: none; color: var(--dim); font-size: 1.2rem; cursor: pointer; padding: 0 .3rem; }
+  .user .uimg { display: block; margin-top: .45rem; max-width: 240px; max-height: 240px; border-radius: 10px; }
+  body.dragging { outline: 3px dashed var(--accent); outline-offset: -8px; }
 </style>
 </head>
 <body>
@@ -118,8 +124,11 @@
 </header>
 <main><div class="col" id="log"></div></main>
 <footer>
+  <div id="preview" class="preview" hidden></div>
   <div class="inputrow">
-    <textarea id="input" rows="1" placeholder="Ask the Go standard library anything…"></textarea>
+    <input type="file" id="file" accept="image/*" hidden>
+    <button id="attach" title="Attach an image — click, drag-drop, or paste">📎</button>
+    <textarea id="input" rows="1" placeholder="Ask the Go standard library anything… (or drop an image)"></textarea>
     <button id="send">Send</button>
   </div>
   <div class="hint">local goinfer model · ken hybrid retrieval · constrained-JSON tool calls — no network, no API</div>
@@ -129,6 +138,26 @@
 const log = document.getElementById("log");
 const input = document.getElementById("input");
 const sendBtn = document.getElementById("send");
+const preview = document.getElementById("preview");
+
+// Pending image (a data: URL) attached to the next send. Set by drag-drop, paste,
+// or the 📎 file picker; cleared after send or via the preview's × button.
+let pendingImage = null;
+function setPendingImage(dataURL) {
+  pendingImage = dataURL;
+  preview.innerHTML = "";
+  const im = el("img", "thumb"); im.src = dataURL;
+  const x = el("button", "rmimg", "×"); x.title = "Remove image"; x.onclick = clearPendingImage;
+  preview.append(im, x);
+  preview.hidden = false;
+}
+function clearPendingImage() { pendingImage = null; preview.hidden = true; preview.innerHTML = ""; }
+function readImageFile(file) {
+  if (!file || !file.type.startsWith("image/")) return;
+  const fr = new FileReader();
+  fr.onload = () => setPendingImage(fr.result); // data:<mime>;base64,...
+  fr.readAsDataURL(file);
+}
 let aborter = null; // non-null while a turn is streaming
 
 fetch("/api/info").then(r => r.json()).then(i => {
@@ -192,20 +221,25 @@ function makeThinking(label) {
 
 async function send() {
   const text = input.value.trim();
-  if (!text || aborter) return;
+  const img = pendingImage; // data: URL, or null
+  if ((!text && !img) || aborter) return;
   input.value = "";
   autosize();
+  clearPendingImage();
 
   const turnDiv = el("div", "turn");
-  turnDiv.appendChild(el("div", "user", text));
+  const userDiv = el("div", "user", text);
+  if (img) { const im = el("img", "uimg"); im.src = img; userDiv.appendChild(im); }
+  turnDiv.appendChild(userDiv);
   log.appendChild(turnDiv);
   const answer = el("div", "assistant");
   const cursor = el("span", "cursor");
   let raw = "";
   let chip = null;
   // Animated feedback for the slow phases (no token for several seconds while the
-  // constrained decision generates, then while the answer prefills the prompt).
-  const thinking = makeThinking("Deciding…");
+  // constrained decision generates, then while the answer prefills the prompt; a
+  // vision turn is heaviest — the SigLIP prefill runs for a minute or two on CPU).
+  const thinking = makeThinking(img ? "Analyzing image… (a minute or two on CPU)" : "Deciding…");
   turnDiv.appendChild(thinking.node);
   scroll();
 
@@ -215,7 +249,7 @@ async function send() {
     const res = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: text }),
+      body: JSON.stringify(img ? { message: text, image: img } : { message: text }),
       signal: aborter.signal,
     });
     if (!res.ok) throw new Error(await res.text());
@@ -232,7 +266,9 @@ async function send() {
         const line = buf.slice(0, nl); buf = buf.slice(nl + 1);
         if (!line.trim()) continue;
         const ev = JSON.parse(line);
-        if (ev.type === "decision") {
+        if (ev.type === "vision") {
+          thinking.set(ev.text || "Analyzing image…");
+        } else if (ev.type === "decision") {
           chip = addChip(turnDiv, ev.action, ev.query);
           thinking.set(ev.action === "search" ? "Searching the stdlib…" : "Thinking…");
           turnDiv.appendChild(thinking.node); // keep the indicator below the chip
@@ -284,6 +320,27 @@ input.addEventListener("keydown", e => {
   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
 });
 sendBtn.onclick = () => { if (aborter) aborter.abort(); else send(); };
+
+// Image attach: 📎 file picker, clipboard paste, and drag-drop onto the page.
+const fileInput = document.getElementById("file");
+document.getElementById("attach").onclick = () => fileInput.click();
+fileInput.onchange = () => { readImageFile(fileInput.files[0]); fileInput.value = ""; };
+document.addEventListener("paste", e => {
+  for (const it of (e.clipboardData?.items || [])) {
+    if (it.type.startsWith("image/")) { readImageFile(it.getAsFile()); e.preventDefault(); break; }
+  }
+});
+["dragover", "drop"].forEach(t => document.addEventListener(t, e => {
+  e.preventDefault();
+  document.body.classList.toggle("dragging", t === "dragover");
+  if (t === "drop") {
+    document.body.classList.remove("dragging");
+    const f = [...(e.dataTransfer?.files || [])].find(f => f.type.startsWith("image/"));
+    if (f) readImageFile(f);
+  }
+}));
+document.addEventListener("dragleave", e => { if (e.relatedTarget === null) document.body.classList.remove("dragging"); });
+
 input.focus();
 </script>
 </body>

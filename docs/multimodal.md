@@ -1,13 +1,14 @@
 # Multimodal (vision-language) for goinfer — plan
 
-> Status: **P0–P3 DONE** (landed through `9412e4e`, 2026-06-10): Gemma 3 VL
-> image→logits is at HF parity end to end — preprocessing, the SigLIP encoder,
-> the projector, image-block interleaving + bidirectional mask, and the
-> embed-by-vector forward seam are all in the `vision/` package + decoder seams.
-> **P4–P5 remain** (serve vision API + tokenizer image tokens + fuzz/security;
-> the Qwen2.5-VL second family + GGUF `mmproj`). NOT yet a user-facing feature —
-> there is no serve image path, so it is held out of the release notes for now.
-> (This is the doc `benchmarks.md` references.)
+> Status: **P0–P4 DONE.** P0–P3 (image→logits at HF parity) landed through
+> `9412e4e`; **P4 (serve vision API + agent image input) is now a real
+> user-facing feature**: `cmd/serve` accepts images on both the OpenAI
+> (`image_url`) and Anthropic (`image`) surfaces, base64/data-URI only, behind
+> `--vision <dir>`; `demo/agent` (web UI) takes a dropped/pasted image; loading a
+> real `google/gemma-3-4b-it` works directly; the SigLIP attention is vectorized
+> (~190 s/image, parity-preserved). Remaining: a faster (int8) vision tower
+> (`docs/task-cpu-vision-prefill.md`) and **P5** (Qwen2.5-VL second family +
+> m-RoPE + GGUF `mmproj`). (This is the doc `benchmarks.md` references.)
 > Drafted 2026-06-10 (vscode session), revised after external review (Claude
 > app): added the bidirectional-mask forward-path item, the serve security
 > surface, usage accounting, and firm recommendations on the five open
@@ -130,7 +131,7 @@ Pin each stage against HF, committed KB-scale goldens:
 - ✅ **P2 — vision encoder descriptor** + `last_hidden_state` parity.
 - ✅ **P3 — projector + interleaving + bidirectional mask + end-to-end logit
   parity** ← the real gate (HF parity, `9412e4e`).
-- **P4 — tokenizer image tokens + chat template + serve vision API** (data-URI
+- ✅ **P4 — tokenizer image tokens + chat template + serve vision API** (data-URI
   only) + the security/fuzz items; the whole surface inherits.
 - **P5 — second family (Qwen2.5-VL: m-RoPE + dynamic resolution) to prove the
   descriptor generalizes**, + the GGUF `mmproj` companion-file seam.

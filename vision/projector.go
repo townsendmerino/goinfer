@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
 )
 
@@ -62,7 +61,7 @@ func LoadProjector(dir string) (*Projector, error) {
 		tokensPerSide:   int(math.Round(math.Sqrt(float64(c.MMTokensPerImage)))),
 		eps:             eps,
 	}
-	st, err := embed.OpenSafetensorsMmap(filepath.Join(dir, "model.safetensors"))
+	st, err := openWeights(dir) // single model.safetensors (tiny) or the sharded set (real VL)
 	if err != nil {
 		return nil, fmt.Errorf("vision: open VL safetensors: %w", err)
 	}

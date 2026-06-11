@@ -63,14 +63,26 @@ func LoadEncoder(dir string) (*Encoder, error) {
 	if err != nil {
 		return nil, fmt.Errorf("vision: read config: %w", err)
 	}
-	var cfg EncoderConfig
-	if err := json.Unmarshal(raw, &cfg); err != nil {
+	// The tiny pinned tower's config.json IS the SigLIP EncoderConfig (flat); a
+	// real HF VL checkpoint nests it under "vision_config". Prefer the nested one.
+	var wrap struct {
+		EncoderConfig
+		VisionConfig *EncoderConfig `json:"vision_config"`
+	}
+	if err := json.Unmarshal(raw, &wrap); err != nil {
 		return nil, fmt.Errorf("vision: parse config: %w", err)
+	}
+	cfg := wrap.EncoderConfig
+	if wrap.VisionConfig != nil {
+		cfg = *wrap.VisionConfig
 	}
 	if cfg.LayerNormEps == 0 {
 		cfg.LayerNormEps = 1e-6
 	}
-	st, err := embed.OpenSafetensorsMmap(filepath.Join(dir, "model.safetensors"))
+	if cfg.NumChannels == 0 {
+		cfg.NumChannels = 3 // SigLIP is RGB; real vision_config omits num_channels
+	}
+	st, err := openWeights(dir)
 	if err != nil {
 		return nil, fmt.Errorf("vision: open safetensors: %w", err)
 	}
@@ -79,12 +91,15 @@ func LoadEncoder(dir string) (*Encoder, error) {
 	e := &Encoder{Cfg: cfg}
 	e.grid = cfg.ImageSize / cfg.PatchSize
 	e.numPatches = e.grid * e.grid
+	// "" for the tiny stripped tower, "vision_tower.vision_model." inside a real
+	// gemma-3-4b-it (where the SigLIP tower lives in the model shards).
+	pfx := tensorPrefix(st, "embeddings.patch_embedding.weight", "vision_tower.vision_model.")
 	get := func(name string) []float32 {
 		if err != nil {
 			return nil
 		}
 		var v []float32
-		v, err = tensorF32(st, name)
+		v, err = tensorF32(st, pfx+name)
 		return append([]float32(nil), v...) // copy out so st can close
 	}
 	e.patchW = get("embeddings.patch_embedding.weight") // [hidden,C,P,P] → flat [hidden, C*P*P]
@@ -173,14 +188,16 @@ func (e *Encoder) Forward(pixels []float32) ([]float32, error) {
 	return layerNorm(h, e.postLNw, e.postLNb, np, hidden, c.LayerNormEps), nil
 }
 
-// attention runs bidirectional multi-head self-attention (no causal mask) over the
-// np patches. Scalar per-(head,query) — correctness-first for v1; at real SigLIP
-// sizes (≈4096 patches) the QKᵀ / scores·V terms should move onto linalg.MatmulBT
-// like the text path's attendBatchedHeads (a noted follow-on).
+// attention runs bidirectional multi-head self-attention (no causal mask) over
+// the np patches. Per head, QKᵀ and scores·V run on the SIMD A·Bᵀ kernels (like
+// the text path's attendBatchedHeads): QKᵀ uses the f64-accumulating MatmulBTAcc64
+// (preserving the scalar path's f64 dot-product, so the parity golden holds),
+// scores·V uses MatmulBT(scores, Vᵀ). At SigLIP sizes (≈4096 patches) this is the
+// difference between minutes and seconds per image vs the old scalar triple-loop.
 func (e *Encoder) attention(x []float32, lw *encLayer, np int) []float32 {
 	hidden, nH := e.Cfg.HiddenSize, e.Cfg.NumAttentionHeads
 	hd := hidden / nH
-	scale := 1.0 / math.Sqrt(float64(hd))
+	scale := float32(1.0 / math.Sqrt(float64(hd)))
 	q := make([]float32, np*hidden)
 	k := make([]float32, np*hidden)
 	v := make([]float32, np*hidden)
@@ -192,28 +209,35 @@ func (e *Encoder) attention(x []float32, lw *encLayer, np int) []float32 {
 	addBias(v, lw.vb, np, hidden)
 
 	out := make([]float32, np*hidden)
-	scores := make([]float32, np)
+	// Per-head scratch: contiguous q/k [np,hd], vᵀ [hd,np], scores [np,np], out [np,hd].
+	qh := make([]float32, np*hd)
+	kh := make([]float32, np*hd)
+	vt := make([]float32, hd*np)
+	scores := make([]float32, np*np)
+	oh := make([]float32, np*hd)
 	for head := range nH {
 		off := head * hd
 		for i := range np {
-			qi := q[i*hidden+off : i*hidden+off+hd]
-			for j := range np {
-				kj := k[j*hidden+off : j*hidden+off+hd]
-				var dot float64
-				for d := range hd {
-					dot += float64(qi[d]) * float64(kj[d])
-				}
-				scores[j] = float32(dot * scale)
+			copy(qh[i*hd:(i+1)*hd], q[i*hidden+off:i*hidden+off+hd])
+			copy(kh[i*hd:(i+1)*hd], k[i*hidden+off:i*hidden+off+hd])
+			vrow := v[i*hidden+off : i*hidden+off+hd]
+			for d := range hd {
+				vt[d*np+i] = vrow[d] // vᵀ so scores·V = MatmulBT(scores, vᵀ)
 			}
-			softmaxRow(scores)
-			oi := out[i*hidden+off : i*hidden+off+hd]
-			for j := range np {
-				w := scores[j]
-				vj := v[j*hidden+off : j*hidden+off+hd]
-				for d := range hd {
-					oi[d] += w * vj[d]
-				}
+		}
+		// scores[np,np] = qh · khᵀ (f64-accumulating for parity), scaled, row-softmax.
+		linalg.MatmulBTAcc64(qh, kh, scores, np, hd, np)
+		for i := range np {
+			row := scores[i*np : (i+1)*np]
+			for j := range row {
+				row[j] *= scale
 			}
+			softmaxRow(row)
+		}
+		// out_head[np,hd] = scores[np,np] · v_head[np,hd] = MatmulBT(scores, vᵀ).
+		linalg.MatmulBT(scores, vt, oh, np, np, hd)
+		for i := range np {
+			copy(out[i*hidden+off:i*hidden+off+hd], oh[i*hd:(i+1)*hd])
 		}
 	}
 	return out

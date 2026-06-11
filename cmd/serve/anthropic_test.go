@@ -59,12 +59,36 @@ func TestAnthropicTurns_cacheControlAndUnknownIgnored(t *testing.T) {
 	}
 }
 
-func TestAnthropicTurns_imageRejected(t *testing.T) {
+// anthropicTurns now SKIPS image blocks (they're collected by anthropicImages and
+// routed to the vision path); the handler 400s an image when no vision tower is
+// loaded. So turn-building drops the image and keeps the text.
+func TestAnthropicTurns_imageSkipped(t *testing.T) {
 	req := &anthropicReq{Messages: []anthropicMessage{{Role: "user",
-		Content: json.RawMessage(`[{"type":"image","source":{"type":"base64"}}]`)}}}
-	_, _, aerr := anthropicTurns(req)
-	if aerr == nil || aerr.code != http.StatusBadRequest || aerr.kind != "invalid_request_error" {
-		t.Fatalf("image should 400 invalid_request_error, got %v", aerr)
+		Content: json.RawMessage(`[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"x"}},{"type":"text","text":"caption it"}]`)}}}
+	_, turns, aerr := anthropicTurns(req)
+	if aerr != nil {
+		t.Fatalf("image block should be skipped, not error: %v", aerr)
+	}
+	if len(turns) != 1 || turns[0].Content != "caption it" {
+		t.Errorf("turns = %+v, want one user turn 'caption it'", turns)
+	}
+}
+
+// anthropicImages decodes base64 image blocks and rejects a non-base64 source.
+func TestAnthropicImages(t *testing.T) {
+	// 1x1 px PNG, base64.
+	const png1x1 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+	req := &anthropicReq{Messages: []anthropicMessage{{Role: "user",
+		Content: json.RawMessage(`[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"` + png1x1 + `"}}]`)}}}
+	imgs, err := anthropicImages(req)
+	if err != nil || len(imgs) != 1 || len(imgs[0].data) == 0 {
+		t.Fatalf("decode base64 image: imgs=%d err=%v", len(imgs), err)
+	}
+	// URL source → rejected (SSRF guard).
+	bad := &anthropicReq{Messages: []anthropicMessage{{Role: "user",
+		Content: json.RawMessage(`[{"type":"image","source":{"type":"url","url":"http://x/y.png"}}]`)}}}
+	if _, err := anthropicImages(bad); err == nil {
+		t.Error("url image source should be rejected")
 	}
 }
 

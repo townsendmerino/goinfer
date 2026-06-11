@@ -25,6 +25,7 @@ package main
 import (
 	"context"
 	_ "embed"
+	"encoding/base64"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -60,6 +61,7 @@ func main() {
 	var (
 		addr    = flag.String("addr", "127.0.0.1:8484", "listen address")
 		model   = flag.String("model", "", "path to a .gguf file or HF checkpoint dir (omit in the -tags embed build)")
+		visDir  = flag.String("vision", "", "optional Gemma 3 VL vision-tower dir to enable image input (defaults to --model when it carries a tower)")
 		ken     = flag.String("ken", "ken-demo-go-stdlib", "path to the ken go-stdlib MCP demo binary (or any ken-mcp server)")
 		quant   = flag.String("quant", "int8int8", "weight quant: \"\" | int8 | int8int8 | int4")
 		maxTok  = flag.Int("max", 512, "max tokens per answer")
@@ -73,7 +75,7 @@ func main() {
 	flag.Parse()
 
 	opts := agent.Options{
-		ModelPath: *model, Quant: *quant,
+		ModelPath: *model, Quant: *quant, Vision: *visDir,
 		KenBin: *ken, KenTopK: *kTop,
 		MaxTokens: *maxTok, Temperature: *temp, TopK: *topK, TopP: *topP,
 		FrequencyPenalty: *freqPen, PresencePenalty: *presPen,
@@ -134,10 +136,32 @@ func (s *server) handleReset(w http.ResponseWriter, _ *http.Request) {
 func (s *server) handleChat(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Message string `json:"message"`
+		Image   string `json:"image"` // optional base64 data-URI (data:image/...;base64,...) or raw base64
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Message) == "" {
-		http.Error(w, "expected JSON body {\"message\": \"...\"}", http.StatusBadRequest)
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "expected JSON body {\"message\": \"...\", \"image\"?: \"data:...\"}", http.StatusBadRequest)
 		return
+	}
+	hasImage := strings.TrimSpace(req.Image) != ""
+	if strings.TrimSpace(req.Message) == "" && !hasImage {
+		http.Error(w, "expected a message or an image", http.StatusBadRequest)
+		return
+	}
+	var imgBytes []byte
+	if hasImage {
+		if !s.sess.HasVision() {
+			http.Error(w, "this model has no vision tower; start with --vision <dir> (e.g. a gemma-3-4b-it dir)", http.StatusBadRequest)
+			return
+		}
+		b, derr := decodeImage(req.Image)
+		if derr != nil {
+			http.Error(w, "decode image: "+derr.Error(), http.StatusBadRequest)
+			return
+		}
+		imgBytes = b
+		if strings.TrimSpace(req.Message) == "" {
+			req.Message = "Describe this image."
+		}
 	}
 	if !s.mu.TryLock() {
 		http.Error(w, "a turn is already in progress", http.StatusConflict)
@@ -156,7 +180,7 @@ func (s *server) handleChat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	reply, err := s.sess.Turn(r.Context(), req.Message, agent.Events{
+	ev := agent.Events{
 		Decision: func(action, query string) {
 			emit(event{Type: "decision", Action: action, Query: query})
 		},
@@ -170,10 +194,36 @@ func (s *server) handleChat(w http.ResponseWriter, r *http.Request) {
 		Token: func(text string) {
 			emit(event{Type: "token", Text: text})
 		},
-	})
+	}
+
+	var reply string
+	var err error
+	if hasImage {
+		// The SigLIP prefill is heavy on CPU (minutes/image) — tell the UI to wait.
+		emit(event{Type: "vision", Text: "analyzing image…"})
+		reply, err = s.sess.TurnImage(r.Context(), req.Message, imgBytes, ev)
+	} else {
+		reply, err = s.sess.Turn(r.Context(), req.Message, ev)
+	}
 	if err != nil && r.Context().Err() == nil {
 		emit(event{Type: "error", Error: err.Error()})
 		return
 	}
 	emit(event{Type: "done", Reply: reply})
+}
+
+// decodeImage decodes a base64 image: a data: URI (data:<media>;base64,<payload>)
+// or a bare base64 string. URL fetching is intentionally unsupported.
+func decodeImage(s string) ([]byte, error) {
+	payload := s
+	if strings.HasPrefix(s, "data:") {
+		i := strings.IndexByte(s, ',')
+		if i < 0 {
+			return nil, fmt.Errorf("malformed data: URI")
+		}
+		payload = s[i+1:]
+	} else if strings.Contains(s, "://") {
+		return nil, fmt.Errorf("image must be base64 (a remote URL is not fetched)")
+	}
+	return base64.StdEncoding.DecodeString(strings.TrimSpace(payload))
 }

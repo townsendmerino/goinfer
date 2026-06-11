@@ -80,6 +80,33 @@ func gemma3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 			cfg.RoPELocalBase = sliding.base
 		}
 	}
+	// Gemma3TextConfig class defaults. A VL checkpoint's nested text_config (e.g.
+	// gemma-3-4b-it) carries only the dims that differ from the transformers
+	// Gemma3TextConfig defaults — hidden/intermediate/layers/sliding_window — and
+	// OMITS the rest, which HF fills from the class. Mirror that here: backfill
+	// each scalar only when absent, so a flat config that sets them explicitly
+	// (gemma-3-270m sets heads=4) is untouched, while the minimal VL text_config
+	// loads with the correct 4B/12B/27B head + rope geometry. (Sizes that differ
+	// from the defaults, like 270m's 4 heads, always set them in their config.)
+	defScalarI := func(p *int, def int) {
+		if *p == 0 {
+			*p = def
+		}
+	}
+	defScalarF := func(p *float64, def float64) {
+		if *p == 0 {
+			*p = def
+		}
+	}
+	defScalarI(&cfg.NumHeads, 8)
+	defScalarI(&cfg.NumKVHeads, 4)
+	defScalarI(&cfg.HeadDim, 256)
+	defScalarI(&cfg.VocabSize, 262208)
+	defScalarI(&cfg.SlidingWindowPattern, 6)
+	defScalarF(&cfg.QueryPreAttnScalar, 256)
+	defScalarF(&cfg.RMSNormEps, 1e-6)
+	defScalarF(&cfg.RoPEGlobalBase, 1_000_000)
+	defScalarF(&cfg.RoPELocalBase, 10_000)
 	if err := cfg.ValidateAssumptions(); err != nil {
 		return nil, nil, err
 	}

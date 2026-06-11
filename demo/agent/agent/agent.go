@@ -32,12 +32,18 @@ import (
 	"github.com/townsendmerino/goinfer/constrain"
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/tokenizer"
+	"github.com/townsendmerino/goinfer/vision"
 )
 
 // answerSystem steers the grounded-answer phase.
 const answerSystem = "You are a concise Go expert answering questions about the Go standard library. " +
 	"Ground every claim in the search results you are given and cite them as file:line. " +
 	"If the results do not contain the answer, say so instead of guessing."
+
+// visionSystem steers an image turn — a plain visual assistant, NOT the Go-stdlib
+// RAG persona (which derails into "I searched the stdlib…" on an image).
+const visionSystem = "You are a helpful assistant. Look at the image and answer the user's " +
+	"question about it directly and concisely. Describe only what you actually see."
 
 // decideSystem steers the tool-decision phase. Kept short and imperative —
 // small Instruct models follow concrete rules better than prose.
@@ -80,6 +86,7 @@ type Options struct {
 	ModelPath  string // path to a .gguf file or HF checkpoint dir
 	ModelBytes []byte // in-memory GGUF (the -tags embed path)
 	Quant      string // "" | int8 | int8int8 | int4
+	Vision     string // optional vision-tower dir (Gemma 3 VL); defaults to ModelPath when it carries one. Enables TurnImage.
 
 	KenBin  string // path to a ken MCP server binary (e.g. ken-demo-go-stdlib)
 	KenTopK int    // chunks per search (default 5)
@@ -116,6 +123,14 @@ type Session struct {
 	tmpl    *chat.Template
 	stopIDs []int
 	vocab   int
+
+	// Vision tower (Gemma 3 VL) — nil unless Options.Vision is set / auto-discovered.
+	// When present, TurnImage runs an image through preprocess → encoder → projector
+	// and answers it via decoder.GenerateVL.
+	venc    *vision.Encoder
+	vproj   *vision.Projector
+	vcfg    vision.Config
+	vimgTok int
 
 	ken *kenClient
 
@@ -155,6 +170,21 @@ func New(ctx context.Context, o Options) (*Session, error) {
 		return nil, err
 	}
 	s.opts = o
+
+	// Vision tower (optional): -vision dir, else the ModelPath dir when it carries
+	// a Gemma 3 VL tower (auto-discover). Enables TurnImage.
+	if vdir := o.Vision; vdir != "" || o.ModelPath != "" {
+		if vdir == "" {
+			if _, derr := vision.LoadProjector(o.ModelPath); derr == nil {
+				vdir = o.ModelPath // the model dir carries a projector → it's a VL checkpoint
+			}
+		}
+		if vdir != "" {
+			if err := s.loadVision(vdir); err != nil {
+				return nil, err
+			}
+		}
+	}
 
 	kc, err := dialKen(ctx, o.KenBin, o.KenTopK)
 	if err != nil {
@@ -228,6 +258,84 @@ func (s *Session) Turn(ctx context.Context, user string, ev Events) (string, err
 	return reply, err
 }
 
+// HasVision reports whether a vision tower is loaded (TurnImage usable).
+func (s *Session) HasVision() bool { return s.venc != nil && s.vproj != nil }
+
+// loadVision attaches a Gemma 3 SigLIP encoder + projector from dir and resolves
+// the image-soft-token id (the placeholder the embed-by-vector seam overrides).
+func (s *Session) loadVision(dir string) error {
+	enc, err := vision.LoadEncoder(dir)
+	if err != nil {
+		return fmt.Errorf("load vision encoder (%s): %w", dir, err)
+	}
+	proj, err := vision.LoadProjector(dir)
+	if err != nil {
+		return fmt.Errorf("load vision projector (%s): %w", dir, err)
+	}
+	id, ok := s.tk.TokenID(vision.ImageSoftToken)
+	if !ok {
+		return fmt.Errorf("vision: tokenizer has no %q token", vision.ImageSoftToken)
+	}
+	s.venc, s.vproj, s.vcfg, s.vimgTok = enc, proj, vision.Gemma3(), id
+	return nil
+}
+
+// TurnImage answers a question about an image: it runs the image through the
+// vision tower (preprocess → SigLIP encoder → projector), assembles the Gemma 3
+// image block into the user turn, and generates a grounded answer via
+// decoder.GenerateVL. An image turn skips the RAG search — the image is the
+// context, not the Go-stdlib index. NOTE: the SigLIP prefill is heavy on CPU
+// (minutes per image); show a "processing…" affordance.
+func (s *Session) TurnImage(ctx context.Context, user string, image []byte, ev Events) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.HasVision() {
+		return "", fmt.Errorf("agent: no vision tower loaded (set Options.Vision)")
+	}
+	pv, err := vision.Preprocess(image, s.vcfg)
+	if err != nil {
+		return "", err
+	}
+	hidden, err := s.venc.Forward(pv.Data)
+	if err != nil {
+		return "", fmt.Errorf("vision encoder: %w", err)
+	}
+	feats, err := s.vproj.Forward(hidden)
+	if err != nil {
+		return "", fmt.Errorf("vision projector: %w", err)
+	}
+	n := s.vproj.MMTokens()
+
+	turns := append([]msg(nil), s.history...)
+	turns = append(turns, msg{"user", vision.Gemma3ImageBlock(n) + "\n" + user})
+	ids, err := s.tk.Encode(s.buildPrompt(visionSystem, turns), s.tmpl == nil)
+	if err != nil {
+		return "", fmt.Errorf("encode: %w", err)
+	}
+	imgPos, imgLen := vision.FindImageRun(ids, s.vimgTok)
+	if imgLen != n {
+		return "", fmt.Errorf("image placeholder run = %d, want %d (template/tokenizer mismatch)", imgLen, n)
+	}
+
+	sp := decoder.SamplingParams{
+		Temperature:      s.opts.Temperature,
+		TopK:             s.opts.TopK,
+		TopP:             s.opts.TopP,
+		FrequencyPenalty: s.opts.FrequencyPenalty,
+		PresencePenalty:  s.opts.PresencePenalty,
+		StopIDs:          s.stopIDs,
+	}
+	tokens, gen := s.model.GenerateVL(ctx, ids, feats, imgPos, imgLen, s.opts.MaxTokens, sp)
+	reply, err := s.streamGen(ctx, tokens, gen, ev.Token)
+
+	// History keeps the user text + reply (the image bytes are not retained).
+	s.history = append(s.history, msg{"user", user})
+	if reply != "" {
+		s.history = append(s.history, msg{"assistant", reply})
+	}
+	return reply, err
+}
+
 // decide runs the constrained phase-1 generation and parses its JSON. The
 // grammar mask guarantees conformance, so a parse failure would indicate a
 // bug, not bad model output — we still fail soft (search with the raw user
@@ -255,12 +363,16 @@ func (s *Session) generate(ctx context.Context, system string, turns []msg, sp d
 		return "", fmt.Errorf("encode: %w", err)
 	}
 	sp.StopIDs = s.stopIDs
-
 	tokens, gen := s.model.Generate(ctx, ids, maxTok, sp)
+	return s.streamGen(ctx, tokens, gen, onToken)
+}
 
-	// Stream with UTF-8 holdback: decode the whole generated slice each step
-	// and emit only newly-completed bytes (a byte-fallback token may be a
-	// partial rune).
+// streamGen drains a token channel into text with UTF-8 holdback, emitting each
+// newly-completed span to onToken. Shared by the text path (generate) and the
+// vision path (generateImage).
+func (s *Session) streamGen(ctx context.Context, tokens <-chan int, gen *decoder.Generation, onToken func(string)) (string, error) {
+	// Decode the whole generated slice each step and emit only newly-completed
+	// bytes (a byte-fallback token may be a partial rune).
 	var out []int
 	emitted := 0
 	flush := func(final bool) {

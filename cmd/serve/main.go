@@ -40,6 +40,7 @@ import (
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/tokenizer"
+	"github.com/townsendmerino/goinfer/vision"
 )
 
 // modelSpec is one --model entry: a served name (optional, from name=path) and
@@ -83,6 +84,7 @@ type config struct {
 	sessionDir string // -session-dir (also where /admin unload snapshots warm KV)
 	maxQueue   int    // -max-queue: bounded per-model queue depth (0 = unbounded)
 	allowAdmin bool   // -allow-admin: enable POST /admin/models/{load,unload}
+	visionPath string // -vision: dir holding the vision tower (SigLIP + projector) for a multimodal --model
 
 	embedPath  string // encoder (-embed-model); "" = no /v1/embeddings
 	embedQuant string // "" | f32 | q8
@@ -96,6 +98,7 @@ func main() {
 	)
 	flag.StringVar(&cfg.sessionDir, "session-dir", "", "optional dir to persist/restore KV sessions across restarts (.giw-kv snapshots)")
 	flag.BoolVar(&cfg.allowAdmin, "allow-admin", false, "enable POST /admin/models/{load,unload} (loads attacker-named paths — deliberate opt-in)")
+	flag.StringVar(&cfg.visionPath, "vision", "", "vision tower dir (SigLIP encoder + projector) for a multimodal --model; enables image content parts. Defaults to the --model dir when it contains a vision tower")
 	flag.Var(&cfg.models, "model", "generative model: a .gguf/.giw file or HF dir (chat/completions). Repeatable\n"+
 		"as `name=path` to serve a model zoo from one process; requests route on the\n"+
 		"OpenAI `model` field. N resident int8 models are expensive — prequant `.giw`\n"+
@@ -198,7 +201,57 @@ func newServer(cfg config) (*server, error) {
 			return nil, err
 		}
 	}
+	if err := s.loadVisionTower(cfg); err != nil {
+		return nil, err
+	}
 	return s, nil
+}
+
+// loadVisionTower attaches a SigLIP encoder + projector to the (single) loaded
+// model, making it vision-capable (serve then accepts image content parts). The
+// dir is -vision if set, else the sole --model's own dir when it carries a vision
+// tower (auto-discovery). A multimodal tower only makes sense for a single model,
+// so it errors if -vision is set with a model zoo. Absent a tower it is a no-op:
+// text-only serving is unchanged.
+func (s *server) loadVisionTower(cfg config) error {
+	dir := cfg.visionPath
+	if dir == "" {
+		// Auto-discover: a single --model whose dir holds the projector weights.
+		if len(cfg.models) == 1 {
+			cand := cfg.models[0].path
+			if fi, err := os.Stat(cand); err == nil && fi.IsDir() {
+				if _, err := vision.LoadProjector(cand); err == nil {
+					dir = cand
+				}
+			}
+		}
+		if dir == "" {
+			return nil // no vision tower — text-only model
+		}
+	}
+	if len(s.models) != 1 {
+		return fmt.Errorf("-vision needs exactly one --model (got %d)", len(s.models))
+	}
+	enc, err := vision.LoadEncoder(dir)
+	if err != nil {
+		return fmt.Errorf("load vision encoder (%s): %w", dir, err)
+	}
+	proj, err := vision.LoadProjector(dir)
+	if err != nil {
+		return fmt.Errorf("load vision projector (%s): %w", dir, err)
+	}
+	for _, lm := range s.models {
+		lm.venc, lm.vproj, lm.vcfg = enc, proj, vision.Gemma3()
+		lm.vimgTok = -1
+		if id, ok := lm.tk.TokenID(imageSoftToken); ok {
+			lm.vimgTok = id
+		}
+		if lm.vimgTok < 0 {
+			return fmt.Errorf("vision: tokenizer has no %q token (needed to place image embeddings)", imageSoftToken)
+		}
+		fmt.Fprintf(os.Stderr, "loaded vision tower for %q (%d image tokens/image, soft-token id %d) from %s\n", lm.name, proj.MMTokens(), lm.vimgTok, dir)
+	}
+	return nil
 }
 
 // loadDecoder loads one generative model + tokenizer, resolves its chat template,

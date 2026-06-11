@@ -14,7 +14,8 @@
 > goinfer is the only maintained runtime that executes production-scope weights in
 > pure Go with **no native dependency** — and the only one that can compile the model
 > **into** the binary. It trades peak throughput and breadth (no continuous batching,
-> no multimodal, 11 architectures) for a static binary that boots in ~0.5 s.
+> vision-in only — no audio, CPU-slow — 11 architectures) for a static binary that
+> boots in ~0.5 s.
 
 ---
 
@@ -57,7 +58,7 @@ at each goinfer tag.
 | LoRA adapters | ✓ PEFT, merged at load ʰ | ✓ | ✓ | ✓ | ✓ | — | ✗ |
 | GPU | ~ WebGPU, dense-only residency ⁱ | ✓ CUDA/Metal/Vulkan | ✓ CUDA/ROCm/Vulkan/Metal | ✓ CUDA/Metal | ✓ CUDA/TPU/+ | ✓ inherits llama.cpp | ✗ CPU only |
 | Continuous batching | ✗ | ✓ | ~ parallel slots via llama-server ᵇ | ✓ | ✓ PagedAttention | — | ✗ |
-| Multimodal (vision/audio) | ✗ | ✓ | ✓ | ✓ | ✓ | ~ (yzma VLMs; gollama —) | ✗ |
+| Multimodal (vision/audio) | ~ **vision in** (Gemma 3 VL, pure-Go SigLIP → serve + agent; CPU-slow, no audio) | ✓ | ✓ | ✓ | ✓ | ~ (yzma VLMs; gollama —) | ✗ |
 | Model coverage | ~ **11 architectures** ʲ | ✓ dozens | ✓ broad | ✓ broad | ✓ 200+ | ✓ inherits llama.cpp | ✗ Llama-2 toy |
 
 **Reading it:** goinfer wins cleanly on *no-native-dep pure-Go execution* and
