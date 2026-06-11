@@ -1,0 +1,5 @@
+# Build inputs/outputs — never committed (the GGUF exceeds GitHub's 100 MB cap).
+internal/embedmodel/model.gguf
+model.gguf
+model.giw
+dist/

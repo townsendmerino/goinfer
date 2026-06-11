@@ -1,0 +1,290 @@
+<!doctype html>
+<!-- agent-web — the single embedded page. No external assets, no CDNs:
+     the whole UI ships inside the binary via //go:embed. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>stdlib-agent</title>
+<style>
+  :root {
+    --bg: #faf9f5; --fg: #1a1915; --dim: #8a857a;
+    --user-bg: #f0eee6; --card: #ffffff; --border: #e3e0d5;
+    --accent: #c2410c; --chip-bg: #f4f1e8; --code-bg: #f4f1e8;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1f1e1a; --fg: #ece9e2; --dim: #8a857a;
+      --user-bg: #34322b; --card: #28261f; --border: #3b3930;
+      --accent: #fb923c; --chip-bg: #2e2c24; --code-bg: #2e2c24;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 16px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    display: flex; flex-direction: column; height: 100dvh;
+  }
+  header {
+    display: flex; align-items: baseline; gap: .75rem;
+    padding: .7rem 1.25rem; border-bottom: 1px solid var(--border);
+  }
+  header h1 { font-size: 1rem; margin: 0; font-weight: 600; }
+  header .sub { font-size: .78rem; color: var(--dim); flex: 1;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  header button {
+    font-size: .78rem; color: var(--dim); background: none;
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: .2rem .6rem; cursor: pointer;
+  }
+  header button:hover { color: var(--fg); }
+  main { flex: 1; overflow-y: auto; }
+  .col { max-width: 46rem; margin: 0 auto; padding: 1.25rem 1rem 2rem; }
+  .turn { margin: 1.1rem 0; }
+  .user {
+    background: var(--user-bg); border-radius: 14px;
+    padding: .6rem .9rem; margin-left: 18%; white-space: pre-wrap;
+  }
+  .assistant { white-space: pre-wrap; }
+  .assistant.rendered { white-space: normal; }
+  .assistant pre {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 8px; padding: .7rem .9rem; overflow-x: auto;
+    font-size: .85rem; white-space: pre;
+  }
+  .assistant code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .88em; }
+  .assistant :not(pre) > code {
+    background: var(--code-bg); border-radius: 4px; padding: .08em .3em;
+  }
+  .cite { color: var(--accent); font-family: ui-monospace, monospace; font-size: .88em; }
+  .chip {
+    display: block; margin: .4rem 0; border: 1px solid var(--border);
+    border-radius: 10px; background: var(--chip-bg); font-size: .82rem;
+  }
+  .chip summary {
+    cursor: pointer; padding: .45rem .75rem; color: var(--dim);
+    list-style: none; user-select: none;
+  }
+  .chip summary::before { content: "▸ "; }
+  .chip[open] summary::before { content: "▾ "; }
+  .chip .body {
+    border-top: 1px solid var(--border); padding: .6rem .75rem;
+    max-height: 22rem; overflow-y: auto; white-space: pre-wrap;
+    font-family: ui-monospace, monospace; font-size: .78rem;
+  }
+  .chip summary b { color: var(--fg); font-weight: 600; }
+  .err { color: #b91c1c; font-size: .85rem; }
+  .cursor { display: inline-block; width: .55em; height: 1.1em;
+    background: var(--accent); vertical-align: text-bottom;
+    animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  /* "thinking" indicator shown during the dead-air phases (constrained decide,
+     and the answer-prefill wait after a search) — small bouncing accent dots. */
+  .thinking { display: flex; align-items: center; gap: .5rem; color: var(--dim);
+    font-size: .82rem; margin: .45rem 0; }
+  .thinking .dots { display: inline-flex; gap: .28rem; }
+  .thinking .dots i { width: .42rem; height: .42rem; border-radius: 50%;
+    background: var(--accent); animation: tdot 1.1s infinite ease-in-out both; }
+  .thinking .dots i:nth-child(2) { animation-delay: .16s; }
+  .thinking .dots i:nth-child(3) { animation-delay: .32s; }
+  @keyframes tdot {
+    0%, 70%, 100% { transform: translateY(0); opacity: .3; }
+    35% { transform: translateY(-.32rem); opacity: 1; }
+  }
+  footer { border-top: 1px solid var(--border); padding: .8rem 1rem 1rem; }
+  .inputrow {
+    max-width: 46rem; margin: 0 auto; display: flex; gap: .6rem;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 14px; padding: .55rem .55rem .55rem .9rem;
+  }
+  textarea {
+    flex: 1; border: none; outline: none; resize: none; background: none;
+    color: var(--fg); font: inherit; max-height: 10rem;
+  }
+  .inputrow button {
+    align-self: flex-end; border: none; border-radius: 10px;
+    background: var(--accent); color: #fff; font: inherit; font-size: .9rem;
+    padding: .35rem .9rem; cursor: pointer;
+  }
+  .inputrow button:disabled { opacity: .45; cursor: default; }
+  .hint { max-width: 46rem; margin: .45rem auto 0; font-size: .72rem; color: var(--dim); }
+</style>
+</head>
+<body>
+<header>
+  <h1>stdlib-agent</h1>
+  <span class="sub" id="info">connecting…</span>
+  <button id="reset" title="clear conversation">reset</button>
+</header>
+<main><div class="col" id="log"></div></main>
+<footer>
+  <div class="inputrow">
+    <textarea id="input" rows="1" placeholder="Ask the Go standard library anything…"></textarea>
+    <button id="send">Send</button>
+  </div>
+  <div class="hint">local goinfer model · ken hybrid retrieval · constrained-JSON tool calls — no network, no API</div>
+</footer>
+<script>
+"use strict";
+const log = document.getElementById("log");
+const input = document.getElementById("input");
+const sendBtn = document.getElementById("send");
+let aborter = null; // non-null while a turn is streaming
+
+fetch("/api/info").then(r => r.json()).then(i => {
+  document.getElementById("info").textContent = i.summary + " · ken tools: " + i.tools.join(", ");
+}).catch(() => {});
+
+document.getElementById("reset").onclick = async () => {
+  if (aborter) aborter.abort();
+  await fetch("/api/reset", { method: "POST" });
+  log.innerHTML = "";
+};
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+function scroll() { log.parentElement.scrollTop = log.parentElement.scrollHeight; }
+function esc(s) { return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+
+// renderMarkdownLite: fenced code blocks, inline code, **bold**, and
+// file.go:123 citations. Deliberately tiny — full markdown is a TODO.
+function renderMarkdownLite(text) {
+  const parts = text.split(/```(?:\w*\n)?/);
+  let html = "";
+  for (let i = 0; i < parts.length; i++) {
+    if (i % 2 === 1) { html += "<pre><code>" + esc(parts[i]) + "</code></pre>"; continue; }
+    let t = esc(parts[i]);
+    t = t.replace(/`([^`\n]+)`/g, "<code>$1</code>");
+    t = t.replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>");
+    t = t.replace(/([\w\/.-]+\.(?:go|c|h|py|rs|js|ts))(:\d+(?:-\d+)?)/g, '<span class="cite">$1$2</span>');
+    html += t;
+  }
+  return html;
+}
+
+// addChip renders the agent machinery: the constrained tool call as a
+// collapsible pill, filled with ken's results when they arrive.
+function addChip(turnDiv, action, query) {
+  const chip = el("details", "chip");
+  const sum = el("summary");
+  sum.innerHTML = action === "search"
+    ? 'searching the stdlib: <b>' + esc(query) + "</b>"
+    : "answering without search";
+  chip.appendChild(sum);
+  const body = el("div", "body", "…");
+  chip.appendChild(body);
+  turnDiv.appendChild(chip);
+  return { chip, body, sum };
+}
+
+// makeThinking builds the animated "working" row: bouncing dots + a phase label.
+function makeThinking(label) {
+  const node = el("div", "thinking");
+  const dots = el("span", "dots"); dots.innerHTML = "<i></i><i></i><i></i>";
+  const lab = el("span", "tlabel", label);
+  node.append(dots, lab);
+  return { node, set: s => { lab.textContent = s; }, remove: () => node.remove() };
+}
+
+async function send() {
+  const text = input.value.trim();
+  if (!text || aborter) return;
+  input.value = "";
+  autosize();
+
+  const turnDiv = el("div", "turn");
+  turnDiv.appendChild(el("div", "user", text));
+  log.appendChild(turnDiv);
+  const answer = el("div", "assistant");
+  const cursor = el("span", "cursor");
+  let raw = "";
+  let chip = null;
+  // Animated feedback for the slow phases (no token for several seconds while the
+  // constrained decision generates, then while the answer prefills the prompt).
+  const thinking = makeThinking("Deciding…");
+  turnDiv.appendChild(thinking.node);
+  scroll();
+
+  aborter = new AbortController();
+  sendBtn.textContent = "Stop";
+  try {
+    const res = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: text }),
+      signal: aborter.signal,
+    });
+    if (!res.ok) throw new Error(await res.text());
+
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = "";
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let nl;
+      while ((nl = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, nl); buf = buf.slice(nl + 1);
+        if (!line.trim()) continue;
+        const ev = JSON.parse(line);
+        if (ev.type === "decision") {
+          chip = addChip(turnDiv, ev.action, ev.query);
+          thinking.set(ev.action === "search" ? "Searching the stdlib…" : "Thinking…");
+          turnDiv.appendChild(thinking.node); // keep the indicator below the chip
+        } else if (ev.type === "search") {
+          if (chip) {
+            if (ev.error) {
+              chip.body.textContent = "";
+              chip.body.appendChild(el("span", "err", "search failed: " + ev.error + " — answering without retrieval"));
+            } else {
+              chip.body.textContent = ev.results;
+            }
+          }
+          thinking.set("Reading results…"); // the slow answer-prefill wait
+        } else if (ev.type === "token") {
+          thinking.remove(); // first token: streaming has started
+          if (!answer.parentElement) { turnDiv.appendChild(answer); answer.appendChild(cursor); }
+          raw += ev.text;
+          cursor.remove();
+          answer.textContent = raw;
+          answer.appendChild(cursor);
+        } else if (ev.type === "done") {
+          cursor.remove();
+          answer.classList.add("rendered");
+          answer.innerHTML = renderMarkdownLite(ev.reply || raw);
+        } else if (ev.type === "error") {
+          cursor.remove();
+          turnDiv.appendChild(el("div", "err", ev.error));
+        }
+        scroll();
+      }
+    }
+  } catch (e) {
+    cursor.remove();
+    if (e.name !== "AbortError") turnDiv.appendChild(el("div", "err", String(e.message || e)));
+  } finally {
+    thinking.remove(); // safety: clear it on error / abort / no-token paths
+    aborter = null;
+    sendBtn.textContent = "Send";
+    scroll();
+  }
+}
+
+function autosize() {
+  input.style.height = "auto";
+  input.style.height = Math.min(input.scrollHeight, 160) + "px";
+}
+input.addEventListener("input", autosize);
+input.addEventListener("keydown", e => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+});
+sendBtn.onclick = () => { if (aborter) aborter.abort(); else send(); };
+input.focus();
+</script>
+</body>
+</html>
