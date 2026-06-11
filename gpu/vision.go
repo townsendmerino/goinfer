@@ -75,6 +75,41 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 `
 
+// softmaxRowsWGSL: numerically-stable row softmax over `rows`×`n`, applying
+// `scale` to each element first (the attention 1/√d). In place. One workgroup
+// per row (e.g. one per (head, query) attention row).
+const softmaxRowsWGSL = `
+struct P { rows: u32, n: u32, scale: f32, _p: u32 };
+@group(0) @binding(0) var<storage, read_write> x: array<f32>; // [rows, n]
+@group(0) @binding(1) var<uniform>             p: P;
+var<workgroup> sh: array<f32, 64>;
+@compute @workgroup_size(64)
+fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid: vec3<u32>) {
+    let row = wid.x;
+    if (row >= p.rows) { return; }
+    let base = row * p.n;
+    let t = lid.x;
+    // row max (of scaled scores)
+    var m: f32 = -3.4e38;
+    for (var i: u32 = t; i < p.n; i = i + 64u) { let v = x[base + i] * p.scale; if (v > m) { m = v; } }
+    sh[t] = m;
+    workgroupBarrier();
+    var stride: u32 = 32u;
+    loop { if (stride == 0u) { break; } if (t < stride) { sh[t] = max(sh[t], sh[t + stride]); } workgroupBarrier(); stride = stride / 2u; }
+    let rmax = sh[0];
+    workgroupBarrier();
+    // exp + sum
+    var s: f32 = 0.0;
+    for (var i: u32 = t; i < p.n; i = i + 64u) { let e = exp(x[base + i] * p.scale - rmax); x[base + i] = e; s = s + e; }
+    sh[t] = s;
+    workgroupBarrier();
+    stride = 32u;
+    loop { if (stride == 0u) { break; } if (t < stride) { sh[t] = sh[t] + sh[t + stride]; } workgroupBarrier(); stride = stride / 2u; }
+    let inv = 1.0 / sh[0];
+    for (var i: u32 = t; i < p.n; i = i + 64u) { x[base + i] = x[base + i] * inv; }
+}
+`
+
 // ensureVision compiles the vision-only kernels (lazily, once per Context).
 func (c *Context) ensureVision() error {
 	if c.lnRowsPipeline != nil {
@@ -99,7 +134,75 @@ func (c *Context) ensureVision() error {
 	if c.geluPipeline, c.geluLayout, err = mk("geluTanh", geluTanhWGSL); err != nil {
 		return err
 	}
+	if c.softmaxPipeline, c.softmaxLayout, err = mk("softmaxRows", softmaxRowsWGSL); err != nil {
+		return err
+	}
 	return nil
+}
+
+// inplaceKernel runs an in-place compute op (one read_write buffer + a uniform),
+// no Poll. dispatch = number of workgroups. Shared by gelu (n/64 groups) and
+// softmaxRows (one group per row).
+func (c *Context) inplaceKernel(pl *wgpu.ComputePipeline, layout *wgpu.BindGroupLayout, x *wgpu.Buffer, p []uint32, dispatch int) error {
+	pbuf, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "ip-p", Contents: wgpu.ToBytes(p), Usage: wgpu.BufferUsageUniform})
+	if err != nil {
+		return err
+	}
+	defer pbuf.Release()
+	bg, err := c.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: layout, Entries: []wgpu.BindGroupEntry{
+		{Binding: 0, Buffer: x, Size: x.GetSize()},
+		{Binding: 1, Buffer: pbuf, Size: pbuf.GetSize()},
+	}})
+	if err != nil {
+		return err
+	}
+	defer bg.Release()
+	enc, _ := c.device.CreateCommandEncoder(nil)
+	defer enc.Release()
+	pass := enc.BeginComputePass(nil)
+	pass.SetPipeline(pl)
+	pass.SetBindGroup(0, bg, nil)
+	pass.DispatchWorkgroups(uint32(dispatch), 1, 1)
+	if err := pass.End(); err != nil {
+		pass.Release()
+		return err
+	}
+	pass.Release()
+	cmd, _ := enc.Finish(nil)
+	defer cmd.Release()
+	c.queue.Submit(cmd)
+	return nil
+}
+
+// softmaxRowsHost / geluHost: host wrappers for the parity tests.
+func (c *Context) softmaxRowsHost(x []float32, rows, n int, scale float32) ([]float32, error) {
+	if err := c.ensureVision(); err != nil {
+		return nil, err
+	}
+	xd, err := c.UploadF32(x)
+	if err != nil {
+		return nil, err
+	}
+	defer xd.buf.Release()
+	if err := c.inplaceKernel(c.softmaxPipeline, c.softmaxLayout, xd.buf, []uint32{uint32(rows), uint32(n), math.Float32bits(scale), 0}, rows); err != nil {
+		return nil, err
+	}
+	return c.Readback(&DeviceBuffer{buf: xd.buf, n: rows * n})
+}
+
+func (c *Context) geluHost(x []float32) ([]float32, error) {
+	if err := c.ensureVision(); err != nil {
+		return nil, err
+	}
+	xd, err := c.UploadF32(x)
+	if err != nil {
+		return nil, err
+	}
+	defer xd.buf.Release()
+	if err := c.inplaceKernel(c.geluPipeline, c.geluLayout, xd.buf, []uint32{uint32(len(x)), 0, 0, 0}, (len(x)+63)/64); err != nil {
+		return nil, err
+	}
+	return c.Readback(&DeviceBuffer{buf: xd.buf, n: len(x)})
 }
 
 // layerNormRowsDevice runs LayerNorm over `rows`×`h`, src→dst device buffers, no

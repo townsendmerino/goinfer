@@ -90,10 +90,12 @@ type Context struct {
 	residualLayout   *wgpu.BindGroupLayout
 
 	// Resident vision-encoder pipelines, lazy via ensureVision (vision.go).
-	lnRowsPipeline *wgpu.ComputePipeline
-	lnRowsLayout   *wgpu.BindGroupLayout
-	geluPipeline   *wgpu.ComputePipeline
-	geluLayout     *wgpu.BindGroupLayout
+	lnRowsPipeline  *wgpu.ComputePipeline
+	lnRowsLayout    *wgpu.BindGroupLayout
+	geluPipeline    *wgpu.ComputePipeline
+	geluLayout      *wgpu.BindGroupLayout
+	softmaxPipeline *wgpu.ComputePipeline
+	softmaxLayout   *wgpu.BindGroupLayout
 
 	// RoPE + single-query attention pipelines, lazy via ensureAttn (attention.go).
 	ropeShader   *wgpu.ShaderModule
