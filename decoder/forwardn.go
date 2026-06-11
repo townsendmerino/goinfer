@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"fmt"
 	"math"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -28,15 +29,15 @@ func (m *Model) canBatchN(K int) bool {
 // per-position and causal. Bit-identical to K sequential forwards. Assumes
 // canBatchN(len(ids)) — callers check.
 func (m *Model) forwardLayersN(ids []int, cache *KVCache) ([]float32, error) {
-	K := len(ids)
-	arch := m.w.arch
-	be := m.be
-	hidden, nH, nKV, hd := arch.HiddenDim, arch.NumHeads, arch.NumKVHeads, arch.HeadDim
-	qDim, kvDim, inter := nH*hd, nKV*hd, arch.IntermediateDim
-	startPos := cache.Pos()
-	sandwich := arch.NormPlacement == NormSandwich4
+	return m.runLayersFromEmbedN(m.embedN(ids), cache)
+}
 
-	h := make([]float32, K*hidden)
+// embedN returns the [K*HiddenDim] embedding rows for ids (the per-row token embed
+// times any embedding scale) — the text input to the batched stack.
+func (m *Model) embedN(ids []int) []float32 {
+	arch := m.w.arch
+	hidden := arch.HiddenDim
+	h := make([]float32, len(ids)*hidden)
 	for i, id := range ids {
 		m.w.Embed.embedRow(id, h[i*hidden:i*hidden+hidden])
 	}
@@ -46,6 +47,25 @@ func (m *Model) forwardLayersN(ids []int, cache *KVCache) ([]float32, error) {
 			h[i] *= s
 		}
 	}
+	return h
+}
+
+// runLayersFromEmbedN runs the batched layer stack over K pre-embedded rows
+// h [K*HiddenDim] — the batched analog of the streaming runLayersFromEmbed, so a
+// multimodal caller can inject projected vision embeddings at <image> positions
+// (and SetImageBlocks for the bidirectional mask) before the forward. Text rows
+// must already carry the embedding scale; injected vision rows are raw (HF's
+// masked_scatter overwrites the scaled placeholder embed). Returns the [K,
+// HiddenDim] post-final-norm hidden states (the LM head is the caller's).
+func (m *Model) runLayersFromEmbedN(h []float32, cache *KVCache) ([]float32, error) {
+	arch := m.w.arch
+	be := m.be
+	hidden, nH, nKV, hd := arch.HiddenDim, arch.NumHeads, arch.NumKVHeads, arch.HeadDim
+	qDim, kvDim, inter := nH*hd, nKV*hd, arch.IntermediateDim
+	K := len(h) / hidden
+	startPos := cache.Pos()
+	sandwich := arch.NormPlacement == NormSandwich4
+
 	norm := make([]float32, K*hidden)
 	q := make([]float32, K*qDim)
 	k := make([]float32, K*kvDim)
@@ -369,4 +389,33 @@ func (m *Model) prefillLogits(prompt []int, cache *KVCache) ([]float32, error) {
 	hidden := m.w.arch.HiddenDim
 	last := h[(len(prompt)-1)*hidden:] // [HiddenDim] — LM head on the last row only
 	return m.lmHeadN(last, 1), nil
+}
+
+// prefillLogitsVL prefills a multimodal prompt and returns the last-position
+// logits: the text token embeddings with the projected vision embeddings
+// (imageEmbeds, [imgLen*HiddenDim]) substituted at the <image> placeholder run
+// [imgPos, imgPos+imgLen), under a bidirectional attention mask over that block
+// (so the image tokens see each other). Requires the batched path — the
+// bidirectional image-block attention lives in attendBatchedHeads. The injected
+// embeddings are RAW (the projector output), matching HF's masked_scatter, which
+// overwrites the scaled placeholder embed. See docs/multimodal.md §4–5.
+func (m *Model) prefillLogitsVL(ids []int, imageEmbeds []float32, imgPos, imgLen int, cache *KVCache) ([]float32, error) {
+	if !m.canBatchN(len(ids)) {
+		return nil, fmt.Errorf("decoder: multimodal prefill needs the batched path (canBatchN false)")
+	}
+	hidden := m.w.arch.HiddenDim
+	if imgPos < 0 || imgLen <= 0 || imgPos+imgLen > len(ids) {
+		return nil, fmt.Errorf("decoder: image run [%d,%d) out of range for %d tokens", imgPos, imgPos+imgLen, len(ids))
+	}
+	if len(imageEmbeds) != imgLen*hidden {
+		return nil, fmt.Errorf("decoder: imageEmbeds len %d, want %d (%d tokens × %d)", len(imageEmbeds), imgLen*hidden, imgLen, hidden)
+	}
+	h := m.embedN(ids)
+	copy(h[imgPos*hidden:(imgPos+imgLen)*hidden], imageEmbeds) // raw projected features, no embed scale
+	cache.SetImageBlocks([][2]int{{imgPos, imgPos + imgLen}})
+	hN, err := m.runLayersFromEmbedN(h, cache)
+	if err != nil {
+		return nil, err
+	}
+	return m.lmHeadN(hN[(len(ids)-1)*hidden:], 1), nil
 }
