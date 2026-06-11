@@ -62,6 +62,24 @@ func knownModelTypes() string {
 // a tied LM head with no soft-capping. ValidateAssumptions pins the bits this
 // forward pass can't vary (Gemma-2 soft-capping, unsupported activation).
 func gemma3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+	// transformers ≥5.10 carries the dual RoPE bases in rope_parameters
+	// ({full_attention, sliding_attention}.rope_theta) instead of the flat
+	// rope_theta / rope_local_base_freq that gemma-3-270m uses (and the VL configs
+	// nest it under text_config, flattened by loadConfig). Backfill the flat fields
+	// from rope_parameters when absent so the adapter + ValidateAssumptions see
+	// populated bases either format.
+	if cfg.RoPEGlobalBase == 0 && len(cfg.RopeParameters) > 0 {
+		full, sliding, err := parseRopeParameters(cfg.RopeParameters)
+		if err != nil {
+			return nil, nil, fmt.Errorf("decoder(gemma3): rope_parameters: %w", err)
+		}
+		if full != nil {
+			cfg.RoPEGlobalBase = full.base
+		}
+		if sliding != nil {
+			cfg.RoPELocalBase = sliding.base
+		}
+	}
 	if err := cfg.ValidateAssumptions(); err != nil {
 		return nil, nil, err
 	}

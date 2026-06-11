@@ -352,14 +352,23 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 	if have["model.language_model.embed_tokens.weight"] {
 		modelPrefix = "language_model."
 	}
+	// Gemma 3 VL (transformers ≥5.10) wraps the WHOLE text decoder as
+	// language_model.* — i.e. language_model.model.* + language_model.lm_head.* —
+	// rather than qwen35's model.language_model.*. A uniform top-level prefix on
+	// every requested name handles it; the vision_tower.* / multi_modal_projector.*
+	// tensors are simply never requested (that's vision/, not the text decoder).
+	topPrefix := ""
+	if have["language_model.model.embed_tokens.weight"] {
+		topPrefix = "language_model."
+	}
 	mp := func(n string) string { // inject the prefix after the leading "model."
 		if modelPrefix != "" && strings.HasPrefix(n, "model.") {
-			return "model." + modelPrefix + n[len("model."):]
+			n = "model." + modelPrefix + n[len("model."):]
 		}
-		return n
+		return topPrefix + n
 	}
 	tn := func(i int, suf string) string {
-		return fmt.Sprintf("model.%slayers.%d.%s", modelPrefix, i, suf)
+		return topPrefix + fmt.Sprintf("model.%slayers.%d.%s", modelPrefix, i, suf)
 	}
 	fusedExperts := arch.MoE != nil && have[tn(0, "mlp.experts.gate_up_proj")]
 
