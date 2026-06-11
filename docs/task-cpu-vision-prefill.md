@@ -106,12 +106,14 @@ doing if Increment 1 doesn't already subsume the attention path.
 ## The real fix (now the recommended next step): GPU tower
 
 With int8 a wash on AVX2 (Increment 1), there is **no big CPU-only win** — the
-~190 s f32 prefill is near the compute floor. The latency fix is to run the SigLIP
-tower on the **GPU** (`-tags gpu` WebGPU backend), where the ~5 TFLOP forward is
-~20 ms instead of minutes. The WebGPU backend is currently matmul-substitution
-for the decoder; hosting the ViT (patch-embed + 27 transformer blocks) on it is
-its own project, tracked with the GPU work. This is the path that makes a vision
-turn feel like the hosted apps.
+~190 s f32 prefill is near the compute floor. The latency fix is the **GPU**
+(`-tags gpu`). **Measured on the RTX 2070 here** (see `docs/task-gpu-vision-tower.md`):
+the tiled W8A8 GPU GEMM runs the encoder matmuls in ~8–12 s/image (a ~15–20×
+win) with simple offload, and keeping activations resident on-device (like the
+decoder's DecodeRunner) targets ~1–2 s. Crucially the **int8 `qmat` work above is
+the GPU's fast path** — int8 is a wash on AVX2 but the tiled-W8A8 win on GPU. Full
+plan + integration (a `vision.Backend` mirroring `decoder/backend.go`) in
+`docs/task-gpu-vision-tower.md`.
 
 ## Non-goals / explicitly deferred
 - **Reducing patch count** — Gemma 3 fixes 896×896 → 4096 patches; pan-and-scan
