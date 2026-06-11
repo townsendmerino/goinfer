@@ -14,9 +14,10 @@ import (
 // SigLIP / ViT vision encoder (the Gemma 3 vision tower) as a pure-Go forward —
 // the P2 piece of docs/multimodal.md. It maps preprocessed pixel_values to a
 // last_hidden_state, the sequence of patch embeddings the projector turns into
-// image tokens. f32 throughout (the tower is ~0.4B; int8 is a follow-on);
-// parity is cosine vs the HF SiglipVisionModel golden (scripts/pin_siglip_vision.py),
-// the same standard the rest of the f32-SIMD attention path meets.
+// image tokens. The attention/FFN projections run f32 or int8 W8A8 (LoadEncoder's
+// quant flag; the patch-embed conv stays f32); parity is cosine vs the HF
+// SiglipVisionModel golden (scripts/pin_siglip_vision.py) — 1.0 for f32, ~0.9999
+// for int8 — the standard the rest of the f32-SIMD attention path meets.
 //
 // Structure (all reused from the text side's primitives): Conv2d patch embedding
 // (as im2col + matmul), learned position embeddings, N pre-LN transformer blocks
@@ -36,19 +37,19 @@ type EncoderConfig struct {
 }
 
 type encLayer struct {
-	ln1w, ln1b             []float32
-	qw, qb, kw, kb, vw, vb []float32 // each [hidden,hidden] / [hidden]
-	ow, ob                 []float32
-	ln2w, ln2b             []float32
-	fc1w, fc1b             []float32 // [inter,hidden] / [inter]
-	fc2w, fc2b             []float32 // [hidden,inter] / [hidden]
+	ln1w, ln1b     []float32
+	qw, kw, vw, ow qmat      // [hidden,hidden] matmul weights (f32 or int8)
+	qb, kb, vb, ob []float32 // biases stay f32
+	ln2w, ln2b     []float32
+	fc1w, fc2w     qmat // [inter,hidden] / [hidden,inter] matmul weights
+	fc1b, fc2b     []float32
 }
 
 // Encoder is a loaded SigLIP vision tower.
 type Encoder struct {
 	Cfg              EncoderConfig
 	grid, numPatches int
-	patchW           []float32 // [hidden, C*P*P] (Conv2d weight flattened per out channel)
+	patchW           []float32 // [hidden, C*P*P] (Conv2d weight, kept f32 — input embedding)
 	patchB           []float32 // [hidden]
 	posEmb           []float32 // [numPatches, hidden]
 	layers           []encLayer
@@ -58,7 +59,7 @@ type Encoder struct {
 // LoadEncoder reads a SigLIP vision checkpoint (config.json + model.safetensors)
 // and returns a ready Encoder. Weights are copied out, so the safetensors file is
 // closed before return (no retained mmap).
-func LoadEncoder(dir string) (*Encoder, error) {
+func LoadEncoder(dir string, quant bool) (*Encoder, error) {
 	raw, err := os.ReadFile(filepath.Join(dir, "config.json"))
 	if err != nil {
 		return nil, fmt.Errorf("vision: read config: %w", err)
@@ -102,7 +103,18 @@ func LoadEncoder(dir string) (*Encoder, error) {
 		v, err = tensorF32(st, pfx+name)
 		return append([]float32(nil), v...) // copy out so st can close
 	}
-	e.patchW = get("embeddings.patch_embedding.weight") // [hidden,C,P,P] → flat [hidden, C*P*P]
+	hidden, inter := cfg.HiddenSize, cfg.IntermediateSize
+	// qm wraps a matmul weight as f32 or int8 (W8A8). Attention/FFN projections
+	// quantize under -vision-quant; the patch-embed conv stays f32 (input
+	// embedding — quant error there propagates through every layer).
+	qm := func(name string, rows, cols int) qmat {
+		w := get(name)
+		if err != nil {
+			return qmat{}
+		}
+		return newQMat(w, rows, cols, quant)
+	}
+	e.patchW = get("embeddings.patch_embedding.weight") // [hidden, C*P*P], f32
 	e.patchB = get("embeddings.patch_embedding.bias")
 	e.posEmb = get("embeddings.position_embedding.weight")
 	e.layers = make([]encLayer, cfg.NumHiddenLayers)
@@ -110,13 +122,13 @@ func LoadEncoder(dir string) (*Encoder, error) {
 		p := fmt.Sprintf("encoder.layers.%d.", l)
 		lw := &e.layers[l]
 		lw.ln1w, lw.ln1b = get(p+"layer_norm1.weight"), get(p+"layer_norm1.bias")
-		lw.qw, lw.qb = get(p+"self_attn.q_proj.weight"), get(p+"self_attn.q_proj.bias")
-		lw.kw, lw.kb = get(p+"self_attn.k_proj.weight"), get(p+"self_attn.k_proj.bias")
-		lw.vw, lw.vb = get(p+"self_attn.v_proj.weight"), get(p+"self_attn.v_proj.bias")
-		lw.ow, lw.ob = get(p+"self_attn.out_proj.weight"), get(p+"self_attn.out_proj.bias")
+		lw.qw, lw.qb = qm(p+"self_attn.q_proj.weight", hidden, hidden), get(p+"self_attn.q_proj.bias")
+		lw.kw, lw.kb = qm(p+"self_attn.k_proj.weight", hidden, hidden), get(p+"self_attn.k_proj.bias")
+		lw.vw, lw.vb = qm(p+"self_attn.v_proj.weight", hidden, hidden), get(p+"self_attn.v_proj.bias")
+		lw.ow, lw.ob = qm(p+"self_attn.out_proj.weight", hidden, hidden), get(p+"self_attn.out_proj.bias")
 		lw.ln2w, lw.ln2b = get(p+"layer_norm2.weight"), get(p+"layer_norm2.bias")
-		lw.fc1w, lw.fc1b = get(p+"mlp.fc1.weight"), get(p+"mlp.fc1.bias")
-		lw.fc2w, lw.fc2b = get(p+"mlp.fc2.weight"), get(p+"mlp.fc2.bias")
+		lw.fc1w, lw.fc1b = qm(p+"mlp.fc1.weight", inter, hidden), get(p+"mlp.fc1.bias")
+		lw.fc2w, lw.fc2b = qm(p+"mlp.fc2.weight", hidden, inter), get(p+"mlp.fc2.bias")
 	}
 	e.postLNw, e.postLNb = get("post_layernorm.weight"), get("post_layernorm.bias")
 	if err != nil {
@@ -166,7 +178,7 @@ func (e *Encoder) Forward(pixels []float32) ([]float32, error) {
 		n1 := layerNorm(h, lw.ln1w, lw.ln1b, np, hidden, c.LayerNormEps)
 		att := e.attention(n1, lw, np)
 		o := make([]float32, np*hidden)
-		linalg.MatmulBT(att, lw.ow, o, np, hidden, hidden)
+		lw.ow.matmul(att, o, np)
 		addBias(o, lw.ob, np, hidden)
 		for i := range h {
 			h[i] += o[i]
@@ -175,11 +187,11 @@ func (e *Encoder) Forward(pixels []float32) ([]float32, error) {
 		n2 := layerNorm(h, lw.ln2w, lw.ln2b, np, hidden, c.LayerNormEps)
 		inter := c.IntermediateSize
 		mid := make([]float32, np*inter)
-		linalg.MatmulBT(n2, lw.fc1w, mid, np, hidden, inter)
+		lw.fc1w.matmul(n2, mid, np)
 		addBias(mid, lw.fc1b, np, inter)
 		geluTanh(mid)
 		mlp := make([]float32, np*hidden)
-		linalg.MatmulBT(mid, lw.fc2w, mlp, np, inter, hidden)
+		lw.fc2w.matmul(mid, mlp, np)
 		addBias(mlp, lw.fc2b, np, hidden)
 		for i := range h {
 			h[i] += mlp[i]
@@ -201,11 +213,11 @@ func (e *Encoder) attention(x []float32, lw *encLayer, np int) []float32 {
 	q := make([]float32, np*hidden)
 	k := make([]float32, np*hidden)
 	v := make([]float32, np*hidden)
-	linalg.MatmulBT(x, lw.qw, q, np, hidden, hidden)
+	lw.qw.matmul(x, q, np)
 	addBias(q, lw.qb, np, hidden)
-	linalg.MatmulBT(x, lw.kw, k, np, hidden, hidden)
+	lw.kw.matmul(x, k, np)
 	addBias(k, lw.kb, np, hidden)
-	linalg.MatmulBT(x, lw.vw, v, np, hidden, hidden)
+	lw.vw.matmul(x, v, np)
 	addBias(v, lw.vb, np, hidden)
 
 	out := make([]float32, np*hidden)

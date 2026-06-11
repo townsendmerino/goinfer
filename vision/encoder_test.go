@@ -30,7 +30,7 @@ func TestSiglipEncoder_parity(t *testing.T) {
 		t.Fatalf("parse golden: %v", err)
 	}
 
-	enc, err := LoadEncoder(ckpt)
+	enc, err := LoadEncoder(ckpt, false) // f32: bit-exact path
 	if err != nil {
 		t.Fatalf("LoadEncoder: %v", err)
 	}
@@ -47,9 +47,25 @@ func TestSiglipEncoder_parity(t *testing.T) {
 	}
 
 	cos, maxAbs := cosine(got, g.LastHiddenState)
-	t.Logf("SigLIP encoder vs HF golden: cosine=%.8f, max abs diff=%.3e (shape %v)", cos, maxAbs, g.LastHiddenShape)
+	t.Logf("SigLIP encoder vs HF golden (f32): cosine=%.8f, max abs diff=%.3e (shape %v)", cos, maxAbs, g.LastHiddenShape)
 	if cos < 0.9999 {
 		t.Errorf("last_hidden_state cosine %.8f < 0.9999 — SigLIP forward diverges from HF", cos)
+	}
+
+	// int8 (W8A8) encoder: the projections/FFN run as integer matmuls. Lossier
+	// than f32 but must stay close to the HF golden (the W8A8 decode tolerance).
+	encQ, err := LoadEncoder(ckpt, true)
+	if err != nil {
+		t.Fatalf("LoadEncoder int8: %v", err)
+	}
+	gotQ, err := encQ.Forward(g.PixelValues)
+	if err != nil {
+		t.Fatalf("Forward int8: %v", err)
+	}
+	cosQ, maxAbsQ := cosine(gotQ, g.LastHiddenState)
+	t.Logf("SigLIP encoder vs HF golden (int8 W8A8): cosine=%.8f, max abs diff=%.3e", cosQ, maxAbsQ)
+	if cosQ < 0.99 {
+		t.Errorf("int8 last_hidden_state cosine %.8f < 0.99", cosQ)
 	}
 }
 

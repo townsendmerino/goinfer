@@ -74,17 +74,18 @@ func (m *modelFlag) Set(v string) error {
 // config is the resolved command line for newServer (the flag set outgrew a
 // positional signature once embeddings landed).
 type config struct {
-	models     modelFlag // decoder(s) (-model, repeatable); empty = no generative endpoints
-	backend    string
-	quant      string // global (per-model overrides are a follow-on)
-	kvPrec     string // GPU residency KV cache precision: "" | f32 | f16 (-kv)
-	lora       string
-	name       string // -served-model-name (applies only to a single unnamed --model)
-	kvSessions int
-	sessionDir string // -session-dir (also where /admin unload snapshots warm KV)
-	maxQueue   int    // -max-queue: bounded per-model queue depth (0 = unbounded)
-	allowAdmin bool   // -allow-admin: enable POST /admin/models/{load,unload}
-	visionPath string // -vision: dir holding the vision tower (SigLIP + projector) for a multimodal --model
+	models      modelFlag // decoder(s) (-model, repeatable); empty = no generative endpoints
+	backend     string
+	quant       string // global (per-model overrides are a follow-on)
+	kvPrec      string // GPU residency KV cache precision: "" | f32 | f16 (-kv)
+	lora        string
+	name        string // -served-model-name (applies only to a single unnamed --model)
+	kvSessions  int
+	sessionDir  string // -session-dir (also where /admin unload snapshots warm KV)
+	maxQueue    int    // -max-queue: bounded per-model queue depth (0 = unbounded)
+	allowAdmin  bool   // -allow-admin: enable POST /admin/models/{load,unload}
+	visionPath  string // -vision: dir holding the vision tower (SigLIP + projector) for a multimodal --model
+	visionQuant string // -vision-quant: "f32" (default) | "int8" (W8A8; only faster on AVX512-VNNI — a WASH on AVX2)
 
 	embedPath  string // encoder (-embed-model); "" = no /v1/embeddings
 	embedQuant string // "" | f32 | q8
@@ -99,6 +100,7 @@ func main() {
 	flag.StringVar(&cfg.sessionDir, "session-dir", "", "optional dir to persist/restore KV sessions across restarts (.giw-kv snapshots)")
 	flag.BoolVar(&cfg.allowAdmin, "allow-admin", false, "enable POST /admin/models/{load,unload} (loads attacker-named paths — deliberate opt-in)")
 	flag.StringVar(&cfg.visionPath, "vision", "", "vision tower dir (SigLIP encoder + projector) for a multimodal --model; enables image content parts. Defaults to the --model dir when it contains a vision tower")
+	flag.StringVar(&cfg.visionQuant, "vision-quant", "f32", "vision encoder weight quant: f32 (default, bit-exact) | int8 (W8A8, cosine ~0.999) — int8 only speeds the compute-bound ViT prefill on AVX512-VNNI; on AVX2 it's a wash, so f32 is the default")
 	flag.Var(&cfg.models, "model", "generative model: a .gguf/.giw file or HF dir (chat/completions). Repeatable\n"+
 		"as `name=path` to serve a model zoo from one process; requests route on the\n"+
 		"OpenAI `model` field. N resident int8 models are expensive — prequant `.giw`\n"+
@@ -232,7 +234,7 @@ func (s *server) loadVisionTower(cfg config) error {
 	if len(s.models) != 1 {
 		return fmt.Errorf("-vision needs exactly one --model (got %d)", len(s.models))
 	}
-	enc, err := vision.LoadEncoder(dir)
+	enc, err := vision.LoadEncoder(dir, cfg.visionQuant == "int8")
 	if err != nil {
 		return fmt.Errorf("load vision encoder (%s): %w", dir, err)
 	}
@@ -249,7 +251,11 @@ func (s *server) loadVisionTower(cfg config) error {
 		if lm.vimgTok < 0 {
 			return fmt.Errorf("vision: tokenizer has no %q token (needed to place image embeddings)", imageSoftToken)
 		}
-		fmt.Fprintf(os.Stderr, "loaded vision tower for %q (%d image tokens/image, soft-token id %d) from %s\n", lm.name, proj.MMTokens(), lm.vimgTok, dir)
+		vq := "f32"
+		if cfg.visionQuant == "int8" {
+			vq = "int8"
+		}
+		fmt.Fprintf(os.Stderr, "loaded vision tower for %q (%d image tokens/image, soft-token id %d, encoder %s) from %s\n", lm.name, proj.MMTokens(), lm.vimgTok, vq, dir)
 	}
 	return nil
 }

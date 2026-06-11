@@ -83,10 +83,11 @@ type msg struct{ role, content string }
 
 // Options configures New. Exactly one of ModelPath / ModelBytes must be set.
 type Options struct {
-	ModelPath  string // path to a .gguf file or HF checkpoint dir
-	ModelBytes []byte // in-memory GGUF (the -tags embed path)
-	Quant      string // "" | int8 | int8int8 | int4
-	Vision     string // optional vision-tower dir (Gemma 3 VL); defaults to ModelPath when it carries one. Enables TurnImage.
+	ModelPath   string // path to a .gguf file or HF checkpoint dir
+	ModelBytes  []byte // in-memory GGUF (the -tags embed path)
+	Quant       string // "" | int8 | int8int8 | int4
+	Vision      string // optional vision-tower dir (Gemma 3 VL); defaults to ModelPath when it carries one. Enables TurnImage.
+	VisionQuant string // vision encoder quant: "f32" (default) | "int8" (W8A8; only faster on AVX512-VNNI)
 
 	KenBin  string // path to a ken MCP server binary (e.g. ken-demo-go-stdlib)
 	KenTopK int    // chunks per search (default 5)
@@ -264,7 +265,7 @@ func (s *Session) HasVision() bool { return s.venc != nil && s.vproj != nil }
 // loadVision attaches a Gemma 3 SigLIP encoder + projector from dir and resolves
 // the image-soft-token id (the placeholder the embed-by-vector seam overrides).
 func (s *Session) loadVision(dir string) error {
-	enc, err := vision.LoadEncoder(dir)
+	enc, err := vision.LoadEncoder(dir, s.opts.VisionQuant == "int8")
 	if err != nil {
 		return fmt.Errorf("load vision encoder (%s): %w", dir, err)
 	}

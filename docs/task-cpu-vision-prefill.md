@@ -50,23 +50,35 @@ so the parity golden is unchanged), row-softmax, then scores·V via
 `MatmulBT(scores, Vᵀ)`. **>400 s → ~190 s**, `TestSiglipEncoder_parity` still
 cosine 1.0 (max abs diff 1.19e-6). Mirrors the text path's `attendBatchedHeads`.
 
-## Increment 1 — int8 (W8A8) vision tower  ← the main CPU lever
+## Increment 1 — int8 (W8A8) vision tower — ⚠️ EVALUATED, NO CPU WIN (a wash on AVX2)
 
-Quantize the tower's projection + FFN weights to int8 and run them through
-aikit's `linalg.MatmulBTW8A8` (the same W8A8 kernel the decoder's int8 path
-already uses), instead of f32 `MatmulBT`. The encoder is matmul-bound and that
-~1.7 TMAC of projections/FFN is the bulk of the 190 s, so int8 is the biggest
-single CPU win (the decoder sees ~2–4× on equivalent matmul-bound work).
+**Built and measured; it does NOT speed up the encoder on a non-VNNI CPU.** The
+tower's projection + FFN weights quantize to int8 (`--vision-quant int8`, the
+`qmat` type + `linalg.MatmulBTW8A8`); parity holds (encoder golden cosine
+**0.99996**, f32 stays 1.0). But on the real gemma-3-4b-it tower:
 
-- Load the tower at a chosen quant (a `--vision-quant int8` knob, mirroring
-  `--quant`); store int8 weights + per-row scales in `Encoder`.
-- Swap the projection/FFN `MatmulBT` calls for `MatmulBTW8A8`; keep LayerNorm,
-  softmax, GELU, and the patch-embed conv in f32.
-- Decide whether QKᵀ/scores·V also go int8 (activations are dynamic) or stay f32.
-- **Gate:** `TestSiglipEncoder_parity` / `TestProjector_parity` re-pinned at an
-  int8 tolerance (cosine ≥ 0.999, like the W8A8 decode gate); end-to-end
-  `gemma3_vl_tiny` image parity still argmax-exact. Record the new
-  `encoder.Forward` time in `docs/benchmarks.md`.
+| | encoder.Forward |
+|---|---|
+| f32 | **3m11s** |
+| int8 W8A8 | **3m18s** (slightly *slower*) |
+
+**Why the decoder's int8 win doesn't transfer.** The decoder's ~2–4× is on
+**bandwidth-bound M=1 decode** — int8 weights are half the bytes to stream from
+RAM, and decode is memory-bound. The vision prefill is the opposite regime:
+**compute-bound, M=4096**. On this **AVX2-only** CPU there is no int8 SIMD
+dot-product (AVX512-VNNI), so the integer matmul is no faster than f32 SIMD FMA —
+and W8A8 *adds* work (it dynamically re-quantizes the 4096-row activation matrix
+every matmul). Net: a wash, and lossier, so **f32 is the default**.
+
+The int8 path stays as an opt-in (`--vision-quant int8`) — it should win on an
+**AVX512-VNNI** host (Intel Ice Lake+/Sapphire Rapids, AMD Zen4+) where the int8
+dot is hardware-accelerated. The `qmat` abstraction is also the right seam for a
+GPU int8 path (where the win is real).
+
+**Conclusion: there is no big CPU-only lever.** The ~190 s f32 prefill is close
+to the compute floor on AVX2. The real fix is **GPU residency for the tower**
+(below). The remaining CPU options are marginal (Increment 3) or about *not
+redoing* the work (Increment 2, feature cache).
 
 ## Increment 2 — projected-feature cache (multi-turn / repeated image)
 
@@ -91,11 +103,17 @@ doing if Increment 1 doesn't already subsume the attention path.
 - **Gate:** `TestSiglipEncoder_parity` cosine still ≥ 0.9999; if it drops, keep
   Acc64.
 
-## Non-goals / explicitly deferred
+## The real fix (now the recommended next step): GPU tower
 
-- **GPU residency for the tower** — the real answer for latency, but the WebGPU
-  backend is matmul-substitution only; a resident ViT is its own project
-  (tracked with the GPU work, not here). Out of scope for the pure-Go CPU path.
+With int8 a wash on AVX2 (Increment 1), there is **no big CPU-only win** — the
+~190 s f32 prefill is near the compute floor. The latency fix is to run the SigLIP
+tower on the **GPU** (`-tags gpu` WebGPU backend), where the ~5 TFLOP forward is
+~20 ms instead of minutes. The WebGPU backend is currently matmul-substitution
+for the decoder; hosting the ViT (patch-embed + 27 transformer blocks) on it is
+its own project, tracked with the GPU work. This is the path that makes a vision
+turn feel like the hosted apps.
+
+## Non-goals / explicitly deferred
 - **Reducing patch count** — Gemma 3 fixes 896×896 → 4096 patches; pan-and-scan
   is already out of scope. Can't trim without diverging from HF.
 - **Async/background encode** — a UX patch (return a job id, poll), not a speedup;

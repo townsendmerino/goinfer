@@ -62,6 +62,7 @@ func main() {
 		addr    = flag.String("addr", "127.0.0.1:8484", "listen address")
 		model   = flag.String("model", "", "path to a .gguf file or HF checkpoint dir (omit in the -tags embed build)")
 		visDir  = flag.String("vision", "", "optional Gemma 3 VL vision-tower dir to enable image input (defaults to --model when it carries a tower)")
+		visQ    = flag.String("vision-quant", "f32", "vision encoder quant: f32 (default) | int8 (W8A8; only faster on AVX512-VNNI, a wash on AVX2)")
 		ken     = flag.String("ken", "ken-demo-go-stdlib", "path to the ken go-stdlib MCP demo binary (or any ken-mcp server)")
 		quant   = flag.String("quant", "int8int8", "weight quant: \"\" | int8 | int8int8 | int4")
 		maxTok  = flag.Int("max", 512, "max tokens per answer")
@@ -75,7 +76,7 @@ func main() {
 	flag.Parse()
 
 	opts := agent.Options{
-		ModelPath: *model, Quant: *quant, Vision: *visDir,
+		ModelPath: *model, Quant: *quant, Vision: *visDir, VisionQuant: *visQ,
 		KenBin: *ken, KenTopK: *kTop,
 		MaxTokens: *maxTok, Temperature: *temp, TopK: *topK, TopP: *topP,
 		FrequencyPenalty: *freqPen, PresencePenalty: *presPen,
