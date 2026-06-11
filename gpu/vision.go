@@ -1,0 +1,170 @@
+//go:build gpu
+
+package gpu
+
+import (
+	"fmt"
+	"math"
+
+	"github.com/cogentcore/webgpu/wgpu"
+)
+
+// Resident SigLIP vision encoder — the path to a GPU-fast image prefill
+// (docs/task-gpu-vision-tower.md). Per-call matmul offload was a measured dead
+// end (WebGPU's ~1s submit+readback overhead × ~162 matmuls/forward ≈ the whole
+// runtime). The fix is residency: keep the [np, hidden] activation in device
+// buffers through all layers, chaining each op as a Submit with NO Poll (queue
+// order guarantees the dependency), so the forward syncs once. This file builds
+// the batched (M = np patches) kernels the encoder needs that the decode path
+// lacks: standard LayerNorm (mean/var, vs RMSNorm), gelu-tanh (vs silu-gated),
+// and a bidirectional softmax — composed with the existing device matmul /
+// quantize / residual primitives.
+
+// layerNormRowsWGSL: standard LayerNorm over each of `rows` independent rows of
+// width `h`: y = (x-mean)/sqrt(var+eps) * weight + bias, population variance
+// (var = mean(x²) - mean(x)²), matching HF nn.LayerNorm. One workgroup per row.
+const layerNormRowsWGSL = `
+struct P { rows: u32, h: u32, eps: f32, _p: u32 };
+@group(0) @binding(0) var<storage, read>       src:    array<f32>; // [rows, h]
+@group(0) @binding(1) var<storage, read>       weight: array<f32>; // [h]
+@group(0) @binding(2) var<storage, read>       bias:   array<f32>; // [h]
+@group(0) @binding(3) var<storage, read_write> dst:    array<f32>; // [rows, h]
+@group(0) @binding(4) var<uniform>             p:      P;
+var<workgroup> smean: array<f32, 64>;
+var<workgroup> svar:  array<f32, 64>;
+@compute @workgroup_size(64)
+fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid: vec3<u32>) {
+    let row = wid.x;
+    if (row >= p.rows) { return; }
+    let base = row * p.h;
+    let t = lid.x;
+    var s: f32 = 0.0;
+    var s2: f32 = 0.0;
+    for (var i: u32 = t; i < p.h; i = i + 64u) { let v = src[base + i]; s = s + v; s2 = s2 + v*v; }
+    smean[t] = s; svar[t] = s2;
+    workgroupBarrier();
+    var stride: u32 = 32u;
+    loop {
+        if (stride == 0u) { break; }
+        if (t < stride) { smean[t] = smean[t] + smean[t + stride]; svar[t] = svar[t] + svar[t + stride]; }
+        workgroupBarrier();
+        stride = stride / 2u;
+    }
+    let mean = smean[0] / f32(p.h);
+    let varr = svar[0] / f32(p.h) - mean * mean;
+    let inv = 1.0 / sqrt(varr + p.eps);
+    for (var i: u32 = t; i < p.h; i = i + 64u) {
+        dst[base + i] = (src[base + i] - mean) * inv * weight[i] + bias[i];
+    }
+}
+`
+
+// geluTanhWGSL: the tanh approximation of GELU (SigLIP's hidden_act), elementwise.
+// 0.5x(1 + tanh(√(2/π)(x + 0.044715x³))).
+const geluTanhWGSL = `
+struct P { n: u32, _a: u32, _b: u32, _c: u32 };
+@group(0) @binding(0) var<storage, read_write> x: array<f32>;
+@group(0) @binding(1) var<uniform>             p: P;
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x;
+    if (i >= p.n) { return; }
+    let v = x[i];
+    let c = 0.7978845608028654; // sqrt(2/pi)
+    x[i] = 0.5 * v * (1.0 + tanh(c * (v + 0.044715 * v * v * v)));
+}
+`
+
+// ensureVision compiles the vision-only kernels (lazily, once per Context).
+func (c *Context) ensureVision() error {
+	if c.lnRowsPipeline != nil {
+		return nil
+	}
+	mk := func(label, code string) (*wgpu.ComputePipeline, *wgpu.BindGroupLayout, error) {
+		sh, err := c.device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{Label: label, WGSLDescriptor: &wgpu.ShaderModuleWGSLDescriptor{Code: code}})
+		if err != nil {
+			return nil, nil, fmt.Errorf("gpu: compile %s: %w", label, err)
+		}
+		pl, err := c.device.CreateComputePipeline(&wgpu.ComputePipelineDescriptor{Label: label, Compute: wgpu.ProgrammableStageDescriptor{Module: sh, EntryPoint: "main"}})
+		if err != nil {
+			sh.Release()
+			return nil, nil, fmt.Errorf("gpu: pipeline %s: %w", label, err)
+		}
+		return pl, pl.GetBindGroupLayout(0), nil
+	}
+	var err error
+	if c.lnRowsPipeline, c.lnRowsLayout, err = mk("layerNormRows", layerNormRowsWGSL); err != nil {
+		return err
+	}
+	if c.geluPipeline, c.geluLayout, err = mk("geluTanh", geluTanhWGSL); err != nil {
+		return err
+	}
+	return nil
+}
+
+// layerNormRowsDevice runs LayerNorm over `rows`×`h`, src→dst device buffers, no
+// Poll (chains into the next op). weight/bias are resident [h] buffers.
+func (c *Context) layerNormRowsDevice(src *wgpu.Buffer, weight, bias *wgpu.Buffer, dst *wgpu.Buffer, rows, h int, eps float32) error {
+	pbuf, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "ln-p", Contents: wgpu.ToBytes([]uint32{uint32(rows), uint32(h), math.Float32bits(eps), 0}), Usage: wgpu.BufferUsageUniform})
+	if err != nil {
+		return err
+	}
+	defer pbuf.Release()
+	bg, err := c.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.lnRowsLayout, Entries: []wgpu.BindGroupEntry{
+		{Binding: 0, Buffer: src, Size: src.GetSize()},
+		{Binding: 1, Buffer: weight, Size: weight.GetSize()},
+		{Binding: 2, Buffer: bias, Size: bias.GetSize()},
+		{Binding: 3, Buffer: dst, Size: dst.GetSize()},
+		{Binding: 4, Buffer: pbuf, Size: pbuf.GetSize()},
+	}})
+	if err != nil {
+		return err
+	}
+	defer bg.Release()
+	enc, _ := c.device.CreateCommandEncoder(nil)
+	defer enc.Release()
+	pass := enc.BeginComputePass(nil)
+	pass.SetPipeline(c.lnRowsPipeline)
+	pass.SetBindGroup(0, bg, nil)
+	pass.DispatchWorkgroups(uint32(rows), 1, 1) // one workgroup per row
+	if err := pass.End(); err != nil {
+		pass.Release()
+		return err
+	}
+	pass.Release()
+	cmd, _ := enc.Finish(nil)
+	defer cmd.Release()
+	c.queue.Submit(cmd)
+	return nil
+}
+
+// LayerNormRowsHost is a host-in/host-out wrapper used by the parity test.
+func (c *Context) LayerNormRowsHost(src, weight, bias []float32, rows, h int, eps float32) ([]float32, error) {
+	if err := c.ensureVision(); err != nil {
+		return nil, err
+	}
+	sd, err := c.UploadF32(src)
+	if err != nil {
+		return nil, err
+	}
+	defer sd.buf.Release()
+	wd, err := c.UploadF32(weight)
+	if err != nil {
+		return nil, err
+	}
+	defer wd.buf.Release()
+	bd, err := c.UploadF32(bias)
+	if err != nil {
+		return nil, err
+	}
+	defer bd.buf.Release()
+	out, err := c.newF32("ln-out", rows*h)
+	if err != nil {
+		return nil, err
+	}
+	defer out.Release()
+	if err := c.layerNormRowsDevice(sd.buf, wd.buf, bd.buf, out, rows, h, eps); err != nil {
+		return nil, err
+	}
+	return c.Readback(&DeviceBuffer{buf: out, n: rows * h})
+}
