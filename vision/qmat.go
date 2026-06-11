@@ -26,11 +26,13 @@ func newQMat(w []float32, rows, cols int, quant bool) qmat {
 	return qmat{rows: rows, cols: cols, f32: append([]float32(nil), w...)}
 }
 
-// matmul computes dst[M, rows] = a[M, cols] · weightᵀ.
+// matmul computes dst[M, rows] = a[M, cols] · weightᵀ (CPU; an int8 weight uses
+// the W8A8 kernel, f32 uses MatmulBT). The GPU path is the resident encoder in
+// the gpu module, not a per-call offload here.
 func (m qmat) matmul(a, dst []float32, M int) {
 	if m.q != nil {
 		linalg.MatmulBTW8A8(a, m.q, m.scales, dst, M, m.cols, m.rows)
-	} else {
-		linalg.MatmulBT(a, m.f32, dst, M, m.cols, m.rows)
+		return
 	}
+	linalg.MatmulBT(a, m.f32, dst, M, m.cols, m.rows)
 }

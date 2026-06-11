@@ -201,11 +201,12 @@ func (e *Encoder) Forward(pixels []float32) ([]float32, error) {
 }
 
 // attention runs bidirectional multi-head self-attention (no causal mask) over
-// the np patches. Per head, QKᵀ and scores·V run on the SIMD A·Bᵀ kernels (like
-// the text path's attendBatchedHeads): QKᵀ uses the f64-accumulating MatmulBTAcc64
-// (preserving the scalar path's f64 dot-product, so the parity golden holds),
-// scores·V uses MatmulBT(scores, Vᵀ). At SigLIP sizes (≈4096 patches) this is the
-// difference between minutes and seconds per image vs the old scalar triple-loop.
+// the np patches. Per head, QKᵀ and scores·V run on the f32 SIMD A·Bᵀ kernel
+// (MatmulBT) — f32 is ample here (HF runs SigLIP in bf16/f16, far less precise),
+// and the f64-accumulate the text path uses for the discrete MoE router is just
+// dead weight on a vision tower, where it dominated the CPU prefill time. At
+// SigLIP sizes (≈4096 patches) this is the difference between minutes and seconds
+// per image vs the old scalar triple-loop.
 func (e *Encoder) attention(x []float32, lw *encLayer, np int) []float32 {
 	hidden, nH := e.Cfg.HiddenSize, e.Cfg.NumAttentionHeads
 	hd := hidden / nH
@@ -237,8 +238,8 @@ func (e *Encoder) attention(x []float32, lw *encLayer, np int) []float32 {
 				vt[d*np+i] = vrow[d] // vᵀ so scores·V = MatmulBT(scores, vᵀ)
 			}
 		}
-		// scores[np,np] = qh · khᵀ (f64-accumulating for parity), scaled, row-softmax.
-		linalg.MatmulBTAcc64(qh, kh, scores, np, hd, np)
+		// scores[np,np] = qh · khᵀ, scaled, row-softmax.
+		linalg.MatmulBT(qh, kh, scores, np, hd, np)
 		for i := range np {
 			row := scores[i*np : (i+1)*np]
 			for j := range row {

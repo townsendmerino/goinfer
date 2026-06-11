@@ -47,37 +47,41 @@ under `//go:build gpu`. Mirror it for vision:
   hardcodes cpu — add a flag) wires the vision GPU backend the same way it wires
   the decoder's.
 
-## Increment 1 — matmul offload (per-call transfer): ~190 s → ~10 s
+## Increment 1 — per-call matmul offload — ⚠️ MEASURED DEAD END (built + reverted)
 
-The encoder forward stays structured as it is; only the projection/FFN matmuls go
-to the GPU.
+Routing the encoder's projection/FFN matmuls to the GPU one call at a time (the
+`vision.Backend` per-call seam, reusing the decoder's `QuantBackend.MatmulW8A8`)
+was built, **proved bit-correct** (GPU-W8A8 == CPU cosine 1.0), and **measured: no
+speedup at all** — real gemma-3-4b-it, cached forward **3m6s ≈ the CPU 171–191s**.
 
-- At load (when a GPU backend is set + `--vision-quant int8` implied for GPU),
-  upload each `qmat`'s int8 weights as a resident `ResidentW8A8`; keep the handle.
-- In `Encoder.Forward`, route `qmat.matmul` (the 4 attention projections + fc1/fc2)
-  through the backend: quantize the activation rows to int8 (`linalg.QuantizeRowsInt8`,
-  already used by W8A8), call the GPU tiled kernel, read back. LayerNorm, softmax,
-  GELU, the patch-embed conv, and QKᵀ/scores·V stay on CPU for now.
-- **Gate:** `TestSiglipEncoder_parity` under `-tags gpu` cosine ≥ 0.999 (W8A8
-  tolerance) vs the HF golden; end-to-end `gemma3_vl` image caption unchanged.
-  Re-time `encoder.Forward` on real gemma-3-4b-it; land it in `docs/benchmarks.md`.
-- Expect ~8–12 s (matmuls) + CPU layernorm/attention + per-call transfer overhead.
+**Why it can't work.** A forward issues ~162 weight matmuls. Each GPU call pays
+WebGPU's fixed **submit + synchronous-readback overhead (~1 s/call here)** — create
+the activation buffer, dispatch, block-poll, copy back. 162 × ~1 s ≈ the whole
+runtime; the isolated-kernel ~28 ms is noise next to the per-call sync. Offloading
+attention too (the old "Inc 2") is the same trap with more round-trips. **The
+per-call seam was reverted** (the int8 `qmat` weights + the f32-QKᵀ CPU win stay).
 
-## Increment 2 — offload QKᵀ / scores·V too
+## Increment 1 (revised) — the RESIDENT encoder is the only path
 
-The bidirectional attention is two more big matmuls per head (M=4096). Route them
-through the GPU (f32 `MatmulBT` or a W8A8 of the activations); softmax stays CPU
-(cheap) or moves to a small kernel. Shaves the remaining CPU matmul time.
+Submit the whole forward as one (or few) command buffer(s): upload pixels once,
+keep the [4096, hidden] activation **on-device** through all 27 layers, read back
+last_hidden_state once. Pay WebGPU's overhead ~once, not 162×. This is exactly the
+decoder `DecodeRunner` pattern — a new `VisionEncoder` runner in the gpu module
+that holds the uploaded weights + scratch buffers and runs the SigLIP forward
+on-device. Needs new WGSL kernels (the gpu module flags this as "remaining work,"
+backend.go:42):
 
-## Increment 3 — resident encoder (activations stay on-device): ~10 s → ~1–2 s
+- **LayerNorm** (mean/var) — NEW (the module has RMSNorm, not standard LayerNorm).
+- **Bidirectional attention** — the existing attention kernel is causal/cached for
+  decode; the encoder is full bidirectional over 4096 patches.
+- **gelu-tanh** — the module has silu-gated MLP; SigLIP is gelu-tanh, non-gated.
+- **Resident orchestration** — patch-embed → per layer {LN, qkv, attn, out-proj,
+  residual, LN, fc1, gelu, fc2, residual} → final LN, all on-device, the weight
+  matmuls on the tiled W8A8 kernel (int8 `qmat`), no intermediate readback.
 
-The big remaining cost is shuttling the [4096, hidden] activation CPU↔GPU between
-every op (162 round-trips/image). Keep the activation resident on the GPU across
-the whole forward — upload pixels once, run all 27 layers on-device, read back the
-last_hidden_state once — exactly what the decoder's `DecodeRunner` does for decode.
-This needs on-device LayerNorm / softmax / GELU kernels (the decoder has RMSNorm +
-gated-MLP kernels to crib from; LayerNorm = mean/var is new). Biggest effort, the
-path to "feels like the hosted app."
+Build incrementally, parity-gating each stage (cosine vs the CPU encoder on the
+tiny golden). Target ~1–2 s/image. This is a multi-stage GPU-kernel effort, not a
+quick offload — the dead-end above is *why*.
 
 ## Non-goals
 
