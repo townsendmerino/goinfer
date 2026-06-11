@@ -194,6 +194,7 @@ go get github.com/townsendmerino/goinfer
 | `decoder` | generic decoder-only forward pass; f32/bf16/f16 + int8/int4; safetensors/GGUF/GPTQ/AWQ; KV-cache; samplers | `aikit/embed`, `aikit/linalg`, `goinfer/tokenizer` |
 | `tokenizer` | BPE tokenizers the decoder LLMs ship — byte-level + SentencePiece byte-fallback, from `tokenizer.json` or a bare `.gguf`; HF-exact id parity | `aikit/embed`, `golang.org/x/text` |
 | `constrain` | constrained / structured decoding — a logit mask that forces output to satisfy a grammar; streaming JSON grammar + JSON Schema (and Go-struct) compiler | — |
+| `chat` | chat-template detection + byte-exact native renderers (Gemma 3/4, ChatML/Qwen, Llama-3, Mistral) and per-family tool calling (render + parse) | — |
 | `gpu` (opt-in, `-tags gpu`) | WebGPU compute backend for matmul (Metal / Vulkan / DX12) | `cogentcore/webgpu` (cgo), `aikit/encoder`, `goinfer/decoder` |
 
 The cgo WebGPU dependency is confined to the `gpu` submodule; the default build is
@@ -202,4 +203,6 @@ pure Go, no cgo.
 ## Quick start
 
 See `demo/gemma` for a working CLI: load a tokenizer (GGUF or HF), load a decoder,
-stream tokens with optional sampling and JSON-constrained output.
+stream tokens with optional sampling and JSON-constrained output. `demo/chat` is a
+single-binary local chat GUI, and `demo/agent` is a fully-local stdlib RAG coding
+agent built on goinfer.

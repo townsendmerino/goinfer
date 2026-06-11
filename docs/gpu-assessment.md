@@ -136,7 +136,10 @@ greedy 16/16 matching the CPU oracle. Real end-to-end **51.7 tok/s (7B) / 102.4
 (1.5B)**, TTFT 1.3 s / 0.66 s on a ~30-token prompt (option-(a) GPU prefill); the
 CPU sampler is 0.14 ms/token (negligible), so end-to-end equals the shape-bench.
 v1 limits: stateless Generate only (Sessions / prefix-reuse / spec-decode →
-staged fallback), 16k f32 KV, O(prompt-len) prefill.
+staged fallback), 16k f32 KV, O(prompt-len) prefill. **Update (v0.5.0):** the
+opt-in f16 GPU KV cache (`--kv f16`) doubles the context ceiling to **~32k at the
+same VRAM** (32k f16 ≈ 16k f32 — measured 6912 vs 6926 MiB on an RTX 2070 SUPER),
+default `f32` stays bit-exact.
 
 **A 7B that cannot run at int8 on this 8 GB card RUNS at int4** — fit confirmed
 empirically (no OOM, real allocation), measured 5.86 GB matches the 5.96 GB

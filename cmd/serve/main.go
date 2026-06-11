@@ -1,10 +1,11 @@
-// Command serve is an OpenAI-compatible HTTP server for goinfer models: pure
-// stdlib net/http, no dependencies. It speaks /v1/chat/completions,
-// /v1/completions, /v1/embeddings, and /v1/models — enough for Open WebUI,
-// LangChain, the OpenAI SDKs, and anything else that points at an OpenAI base
-// URL — including streaming (SSE) and `response_format: json_schema` constrained
-// decoding (the model physically cannot emit non-conforming JSON; see the
-// constrain package).
+// Command serve is an OpenAI- and Anthropic-compatible HTTP server for goinfer
+// models: pure stdlib net/http, no dependencies. It speaks /v1/chat/completions,
+// /v1/completions, /v1/responses, /v1/embeddings, /v1/models, and the Anthropic
+// Messages API (/v1/messages, /v1/messages/count_tokens) — enough for Open WebUI,
+// LangChain, the OpenAI SDKs, Claude Code, and anything else that points at an
+// OpenAI or Anthropic base URL — including streaming (SSE) and
+// `response_format: json_schema` constrained decoding (the model physically
+// cannot emit non-conforming JSON; see the constrain package).
 //
 // A generative (decoder) model is served via -model; an embedding (encoder)
 // model via -embed-model. Either or both may be loaded in one process — like

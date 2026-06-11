@@ -20,8 +20,8 @@ no `go.mod` under `demo/`). Instead:
        darwin/arm64 darwin/amd64 linux/amd64 linux/arm64 windows/amd64
    # then create the release and upload both tiers' assets, e.g.:
    ( cd demo/chat/dist && shasum -a 256 goinfer-chat-* > checksums.txt )
-   gh release create v0.1.3 demo/chat/dist/* \
-       --title "goinfer v0.1.3 — chat demo (0.5B + 1.5B)" \
+   gh release create v0.5.0 demo/chat/dist/* \
+       --title "goinfer v0.5.0 — chat demo (0.5B + 1.5B)" \
        --notes-file demo/chat/RELEASE_TEMPLATE.md
    ```
 

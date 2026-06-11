@@ -1,5 +1,9 @@
 # goinfer performance campaign (decode tok/s)
 
+> **Status: concluded** — net result ~48 → ~68–70 tok/s on the 0.5B (zero-alloc,
+> parity-identical); each phase below is resolved/parked inline. Prefill got its
+> own ~3.4× win later (see CHANGELOG / `docs/benchmarks.md`).
+>
 > Opportunistic, profile-driven. The goal is to recover the tok/s goinfer is
 > leaving on the table **without** changing what it competes on (portability /
 > embeddability, not raw throughput) and **without** touching numerics.

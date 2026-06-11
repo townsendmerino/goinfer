@@ -131,7 +131,8 @@ and `W4A8` (int4). This is the headline: a **7B int4 fits and decodes pure-GPU o
 an 8 GB card** (~51 tok/s, ~71% of llama.cpp-CUDA at equal 4-bit quant) — the
 model class that does *not* fit at int8. v1 residency limits: stateless
 `Generate` only (Session/prefix-reuse fall back to the staged path), 16k context
-(f32 KV), dense Qwen2/Llama only (MoE / Gemma / hybrid → staged). Full numbers:
+(f32 KV) — or **~32k with the opt-in f16 KV cache (`--kv f16`, v0.5.0)** at the
+same VRAM — dense Qwen2/Llama only (MoE / Gemma / hybrid → staged). Full numbers:
 `docs/gpu-assessment.md`.
 
 ## 3. Module map (and where cgo is quarantined)
@@ -139,8 +140,9 @@ model class that does *not* fit at int8. v1 residency limits: stateless
 goinfer is the LLM-runtime half; the tensor/embedding primitives live in
 `aikit`. On top of the `decoder` sit `chat` (per-family chat templates + tool
 calling), `constrain` (schema-constrained decoding), and `cmd/serve` — an
-OpenAI-compatible HTTP server for generation (chat/completions, with cross-call
-KV reuse) and, via aikit's `encoder`, embeddings. Everything in the default
+HTTP server speaking both the OpenAI surface (chat/completions, completions,
+Responses, with cross-call KV reuse) and the **Anthropic Messages API**
+(`/v1/messages`), plus embeddings via aikit's `encoder`. Everything in the default
 build is pure Go, no cgo. The one cgo dependency (`cogentcore/webgpu`) is sealed
 inside the opt-in `goinfer/gpu` submodule, built only under `-tags gpu`.
 
@@ -152,7 +154,7 @@ flowchart TB
     TKN["tokenizer<br/>byte-level BPE · SentencePiece byte-fallback"]
     CON["constrain<br/>logit-mask grammars · JSON Schema + Go-struct"]
     CHT["chat<br/>chat templates + tool calling (per family)"]
-    SRV["cmd/serve<br/>OpenAI HTTP · chat/completions · embeddings"]
+    SRV["cmd/serve<br/>OpenAI + Anthropic HTTP · chat/completions · responses · /v1/messages · embeddings"]
     DEC --> TKN
     CON -. "LogitProcessor" .-> DEC
     SRV --> DEC

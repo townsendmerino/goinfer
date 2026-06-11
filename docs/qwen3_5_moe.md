@@ -118,17 +118,25 @@ Optimizing those for hybrid models (state checkpoints) is a later track.
 
 ## Plan (parity-first, matches the Gemma 4 bring-up)
 
+> **STATUS: shipped.** Steps 1–4 landed in v0.4.0 (descriptor, DeltaNet forward
+> at cosine 1.0, hybrid cache, full-model int8 real-checkpoint parity, and the
+> GGUF loader — commit `166d957`). Step 5's perf work landed across v0.4.0/v0.5.0
+> (the chunked-parallel DeltaNet scan kernel `750b4ac`, plus the SIMD A·Bᵀ matvec
+> and scratch-reuse rewrites `4fcc069`/`443ab7a`). Still deferred: state-checkpoint
+> KV reuse + speculative decoding for hybrid models.
+
 1. **1a ✅** Confirm HF oracle (`transformers 5.10.2` has `qwen3_5_moe`) + pin the
    math (this doc).
-2. **1b** `qwen3_5_moe` config + validator + `Architecture` descriptor: per-layer
+2. **1b ✅** `qwen3_5_moe` config + validator + `Architecture` descriptor: per-layer
    linear/full dispatch (extend the `layerIsGlobal`-style mechanism to a 3-way
    layer kind), DeltaNet params, output-gate flag, partial RoPE, MoE-256.
-3. **1c** Tiny-random `qwen3_5_moe` HF golden (`scripts/pin_qwen35_forward.py` →
+3. **1c ✅** Tiny-random `qwen3_5_moe` HF golden (`scripts/pin_qwen35_forward.py` →
    `testdata/qwen35_forward_golden.json`) + a decode golden; parity test scaffold.
-4. **2** Gated DeltaNet forward (conv + gated delta recurrence + gated RMSNorm),
+4. **2 ✅** Gated DeltaNet forward (conv + gated delta recurrence + gated RMSNorm),
    sequential, gated to argmax-exact + logit-cosine on the tiny golden.
-5. **3** Hybrid cache wired into `Generate`/prefill/`runLayers`; reuse/spec fall
+5. **3 ✅** Hybrid cache wired into `Generate`/prefill/`runLayers`; reuse/spec fall
    back for hybrid models.
-6. **4** Gated-Attention output gate + tensor schema (safetensors + GGUF) +
+6. **4 ✅** Gated-Attention output gate + tensor schema (safetensors + GGUF) +
    full-model smoke on a real checkpoint (Mellum2-style).
-7. **5 (later)** perf (chunked/parallel scan), reuse/spec for hybrid models.
+7. **5 ✅ (perf landed; reuse/spec still deferred)** perf (chunked/parallel scan);
+   state-checkpoint reuse/spec for hybrid models is a later track.

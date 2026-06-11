@@ -1,4 +1,4 @@
-# goinfer roadmap (rolling; updated 2026-06-08, post-v0.3.0 → v0.4 planning)
+# goinfer roadmap (rolling; updated 2026-06-11, v0.4.0 shipped → v0.5.0 tagging)
 
 > **Audience:** internal planning doc (docs/internal/ is gitignored). Started
 > as the v0.2 gap analysis vs llama.cpp / Ollama / mistral.rs; v0.2.0 and
@@ -24,19 +24,12 @@ parity pins, and aikit v1.0.0 across both modules.
 deliberate deferrals: continuous batching/PagedAttention and multimodal.
 The catch-up phase is over; v0.4 should play offense.
 
-> **PENDING (run on the Linux box) — overnight GGUF fuzz soak.** aikit v1.2.1
-> hardened `embed.parseGGUF` (overflow-safe `need`, capped map/array pre-sizing);
-> goinfer bumped to it (`b77922c`) and re-enabled the GGUF interpretation fuzzer
-> (`e3bc98d`) — clean for 9.8M execs in a 50s smoke run. Before release notes can
-> claim "hostile model files error, never panic," run the real soak:
->
-> ```
-> go test -run xxx -fuzz 'FuzzGGUFConfig$' -fuzztime 8h ./decoder/
-> ```
->
-> Pass = `PASS`, no crasher under `decoder/testdata/fuzz/`. A crasher in
-> `ggufConfig`/`validateGGUFDims` is a goinfer bug (fix + keep the seed); one a
-> frame down in `aikit/embed` is an upstream regression. Optional follow-up: a
+> **✅ DONE — overnight GGUF fuzz soak PASSED (2026-06-10→11).** A clean full 8h
+> `FuzzGGUFConfig` run on the Linux box: **~4.91B execs, no crasher** under
+> `decoder/testdata/fuzz/`. This clears the release-notes claim "hostile model
+> files error, never panic" (shipped in v0.5.0). (Run soaks ALONE — an earlier
+> attempt died at ~4h52m with a non-reproducing false-hang crasher purely because
+> concurrent `-race ./...` runs starved the box.) Optional future follow-up: a
 > deeper target over `buildWeightsFromGGUF` (dequant/shape-check/requant with real
 > tensor data) — still unfuzzed on goinfer's side (the K-quant kernels are aikit's,
 > fuzzed in `6f416ca`).
@@ -51,7 +44,7 @@ battlegrounds now:
 | **MTP speculative decoding** (models ship multi-token heads; no draft model; ~2x on dense) | llama.cpp (Qwen 3.6 MTP, PR #22673), Ollama 0.23.1 (Gemma 4 MTP via MLX, 2x on 31B), LM Studio 0.4.14 (stable), vLLM (Gemma 4 MTP; EAGLE 3.1 in v0.22) | Greedy draft-model spec exists, parked on CPU. **MTP doesn't change the math**: CPU decode is compute-bound, so an M=K verify pass costs ~K sequential decodes regardless of how cheap drafting is. Stays parked; revisit with a bandwidth-bound (GPU) backend. Caveat from the field: even llama.cpp sees *no* MoE single-stream win on consumer hardware. |
 | **Model freshness** | Qwen 3.6 (dense 27B + 35B-A3B MoE), DeepSeek V4, GLM-4 MoE, Gemma 3n, Nemotron 3, Mellum2 | This is the race the descriptor design lets us run cheaply — and the one to enter (see v0.4). Gemma 4 already in, incl. PLE (which llama.cpp struggled with). |
 | **Hardware acceleration depth** | CUDA kernel fusion (+24% on 4090), Vulkan now beating CUDA on some hardware, M5 Neural Accelerators (MLX-only, up to 4x TTFT) | Structural gap, accepted trade. Pure-Go CPU SIMD + opt-in WebGPU. The counter-position *is* portability: one static binary, every platform, no driver. Don't fight on kernels. |
-| **Serving surface** | mistral.rs v0.7: dynamic model load/unload, **multi-model serving**, initial **OpenAI Responses API**, prefix caching; LM Studio: MCP host + OAuth; Ollama: `launch` app integrations | `cmd/serve` is one model per process, Chat Completions + embeddings. Prefix caching: at parity (landed same season as mistral.rs's). Multi-model + Responses API are the live gaps. |
+| **Serving surface** | mistral.rs v0.7: dynamic model load/unload, **multi-model serving**, initial **OpenAI Responses API**, prefix caching; LM Studio: MCP host + OAuth; Ollama: `launch` app integrations | **Largely closed:** multi-model + dynamic admin load/unload and the OpenAI Responses API shipped v0.4.0; prefix caching at parity; the **Anthropic Messages API** (`/v1/messages`) adds a second chat surface in v0.5.0 (Claude Code points at goinfer). Remaining true gaps: MCP host / OAuth / `launch`-style app integrations. |
 | **Quantization frontier** | Native FP8/FP4 (DeepSeek V4 in llama.cpp), TurboQuant (4.9x vs f16, tracked in llama.cpp #20969), NVFP4 on Apple | int8/int4 runtime + broad K-quant dequant coverage. FP8/FP4 is GPU-hardware-driven — not our fight on CPU. Watch TurboQuant: a CPU-implementable 3–4 bit quant with near-paper MSE could matter for the embed-demo size/quality curve. |
 
 ### Timely, high-fit openings — BOTH LANDED (detail in Track A)
@@ -119,7 +112,7 @@ battlegrounds now:
   loader + parity golden, and the whole v0.2/v0.3 surface (templates,
   tools, constrain, serve) inherits automatically. The moat compounds.
 
-### Track B: serve polish — LANDED (in CHANGELOG `[Unreleased]`)
+### Track B: serve polish — LANDED (shipped v0.4.0; Anthropic Messages API added v0.5.0)
 
 `cmd/serve` grew from one-model/Chat-Completions to a model host, pure stdlib:
 
@@ -176,8 +169,15 @@ Deferred follow-ons (named, **not scheduled** — pick up if a use case pulls):
 
 **Pivot (updated 2026-06-09):** the GPU arc is closed and Track A/B landed,
 **including the `qwen3_5_moe` GGUF loader** (`166d957` — the transform-reverser,
-weightDiff-proven). So **v0.4.0 is feature-complete**; the remaining work is the
+weightDiff-proven). So **v0.4.0 was feature-complete**; the remaining work is the
 backlog below (mostly deferred/triggered, none release-gating). See "Backlog".
+
+**v0.5.0 (tagging 2026-06-11):** the Anthropic Messages API (`/v1/messages` —
+Claude Code points at goinfer), the f16 GPU KV cache (`--kv f16`, ~32k context),
+~2.4× batched sparse-MoE prefill, fuzz-hardening now soak-verified (clean 8h
+`FuzzGGUFConfig`), and `demo/agent`. Multimodal vision P0–P3 (Gemma 3 VL
+image→logits at HF parity) is on `main` but **held from the release notes** —
+no user-facing serve path yet (P4–P5 remain).
 
 ### Watching, still not doing
 

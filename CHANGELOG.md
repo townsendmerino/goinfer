@@ -10,10 +10,13 @@ pre-1.0 and may change as new model families and quant formats land.
 
 ## [Unreleased]
 
-_Carries a user-visible behavior change (`constrain` schema validation, under
-Changed), so per SemVer the next release is a **minor bump (v0.5.0)**, not a
-patch — alongside the ~3.4× prefill speedup and the untrusted-input fuzzing
-hardening._
+## [v0.5.0] — 2026-06-11
+
+_A **minor bump** per SemVer: `constrain` schema validation carries a
+user-visible behavior change (under Changed) — shipped alongside the Anthropic
+Messages API (Claude Code can point at a pure-Go runtime), the f16 GPU KV cache,
+the ~2.4× sparse-MoE / ~3.4× dense prefill speedups, and the now soak-verified
+untrusted-input fuzzing hardening._
 
 ### Changed
 - **`constrain` rejects unenforceable / unsatisfiable JSON Schemas at compile**
@@ -52,7 +55,10 @@ hardening._
   `message_delta` → `message_stop`, no `[DONE]`). Compatible-not-full-spec (the
   llama.cpp bar): image blocks 400; `thinking` / `cache_control` / `metadata`
   accepted and ignored (Claude Code sends `cache_control` on every request).
-  Pure stdlib `net/http`, no new deps.
+  Pure stdlib `net/http`, no new deps. (`d0b0f66`)
+- **`demo/agent`: a fully-local stdlib RAG coding agent** over goinfer + the
+  `ken` MCP retrieval server — a CLI and a single-binary web UI, kept in its own
+  module so its MCP dependency stays out of the goinfer root graph. (`36eae14`)
 - **f16 GPU KV cache** (`--kv f16`, opt-in; default `f32` stays bit-exact) — halves
   per-token KV bytes on the full-residency path, unlocking **32k context for a
   7B-int4 on an 8 GB card** (32k f16 fits in the same VRAM as 16k f32 — measured

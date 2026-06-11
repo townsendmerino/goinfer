@@ -1,6 +1,13 @@
 # Multimodal (vision-language) for goinfer — plan
 
-> Status: **planned, not started** (this is the doc `benchmarks.md` references).
+> Status: **P0–P3 DONE** (landed through `9412e4e`, 2026-06-10): Gemma 3 VL
+> image→logits is at HF parity end to end — preprocessing, the SigLIP encoder,
+> the projector, image-block interleaving + bidirectional mask, and the
+> embed-by-vector forward seam are all in the `vision/` package + decoder seams.
+> **P4–P5 remain** (serve vision API + tokenizer image tokens + fuzz/security;
+> the Qwen2.5-VL second family + GGUF `mmproj`). NOT yet a user-facing feature —
+> there is no serve image path, so it is held out of the release notes for now.
+> (This is the doc `benchmarks.md` references.)
 > Drafted 2026-06-10 (vscode session), revised after external review (Claude
 > app): added the bidirectional-mask forward-path item, the serve security
 > surface, usage accounting, and firm recommendations on the five open
@@ -110,17 +117,19 @@ Pin each stage against HF, committed KB-scale goldens:
 
 ## Phasing
 
-- **P0 — scope + harness**: first family (see §1); HF reference + pin scripts;
+(✅ P0–P3 landed through `9412e4e`; P4–P5 open.)
+
+- ✅ **P0 — scope + harness**: first family (see §1); HF reference + pin scripts;
   tiny synthetic VL checkpoint (mirrors the qwen35-tiny approach); **pin
   gemma-3-4b text-only logit parity** (the gemma3 gate today is gemma-3-270m, a
   *text-only* checkpoint — confirm the descriptor scales to 4B before layering
   vision); design **both** forward-path seams (mask + embed-inject, §5); decide
   preprocess lives in goinfer (not aikit — no cross-repo churn for v1).
-- **P1 — preprocessing** + `pixel_values` golden (tolerance), with the
+- ✅ **P1 — preprocessing** + `pixel_values` golden (tolerance), with the
   end-to-end gate decoupled via precomputed `pixel_values`.
-- **P2 — vision encoder descriptor** + `last_hidden_state` parity.
-- **P3 — projector + interleaving + bidirectional mask + end-to-end logit
-  parity** ← the real gate.
+- ✅ **P2 — vision encoder descriptor** + `last_hidden_state` parity.
+- ✅ **P3 — projector + interleaving + bidirectional mask + end-to-end logit
+  parity** ← the real gate (HF parity, `9412e4e`).
 - **P4 — tokenizer image tokens + chat template + serve vision API** (data-URI
   only) + the security/fuzz items; the whole surface inherits.
 - **P5 — second family (Qwen2.5-VL: m-RoPE + dynamic resolution) to prove the

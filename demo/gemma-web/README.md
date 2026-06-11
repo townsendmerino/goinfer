@@ -7,11 +7,11 @@ HTML page (`//go:embed`), no external assets/CDNs, no cgo, no new dependencies.
 ## Run
 
 ```bash
-# from the repo root, against the checkpoint already under testdata/:
-go run ./demo/gemma-web --model testdata/gemma-3-270m
+# point --model at any HF-layout Gemma 3 checkpoint dir:
+go run ./demo/gemma-web --model ~/models/gemma-3-270m
 # → gemma-web listening on http://127.0.0.1:8080
 
-# or point --model at any HF-layout Gemma 3 dir you have:
+# int8 weights for a smaller footprint:
 go run ./demo/gemma-web --model ~/models/gemma-3-270m-it --quant int8
 ```
 
