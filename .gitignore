@@ -15,6 +15,9 @@ testdata/model
 testdata/models
 testdata/*-gguf
 testdata/*-sharded
+# downloaded quantized HF checkpoints for the GPTQ/AWQ parity gates (~0.8 GB each)
+testdata/*-gptq
+testdata/*-awq
 # generated tiny qwen3_5_moe parity checkpoint (scripts/pin_qwen35_forward.py)
 testdata/qwen35-tiny/
 # generated tiny vision-language parity checkpoints (scripts/pin_siglip_vision.py,
