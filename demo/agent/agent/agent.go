@@ -86,8 +86,9 @@ type Options struct {
 	ModelPath   string // path to a .gguf file or HF checkpoint dir
 	ModelBytes  []byte // in-memory GGUF (the -tags embed path)
 	Quant       string // "" | int8 | int8int8 | int4
-	Vision      string // optional vision-tower dir (Gemma 3 VL); defaults to ModelPath when it carries one. Enables TurnImage.
-	VisionQuant string // vision encoder quant: "f32" (default) | "int8" (W8A8; only faster on AVX512-VNNI)
+	Vision        string // optional vision-tower dir (Gemma 3 VL); defaults to ModelPath when it carries one. Enables TurnImage.
+	VisionQuant   string // vision encoder quant: "f32" (default) | "int8" (W8A8; only faster on AVX512-VNNI)
+	VisionBackend string // "cpu" (default) | "webgpu" — webgpu runs the SigLIP tower on the resident GPU encoder (~9× faster image prefill; needs -tags gpu + int8 weights)
 
 	KenBin  string // path to a ken MCP server binary (e.g. ken-demo-go-stdlib)
 	KenTopK int    // chunks per search (default 5)
@@ -195,10 +196,14 @@ func New(ctx context.Context, o Options) (*Session, error) {
 	return s, nil
 }
 
-// Close shuts down the ken subprocess.
+// Close shuts down the ken subprocess and releases the vision encoder (GPU
+// buffers, when a resident backend is attached).
 func (s *Session) Close() {
 	if s.ken != nil {
 		s.ken.close()
+	}
+	if s.venc != nil {
+		s.venc.Close()
 	}
 }
 
@@ -265,9 +270,17 @@ func (s *Session) HasVision() bool { return s.venc != nil && s.vproj != nil }
 // loadVision attaches a Gemma 3 SigLIP encoder + projector from dir and resolves
 // the image-soft-token id (the placeholder the embed-by-vector seam overrides).
 func (s *Session) loadVision(dir string) error {
-	enc, err := vision.LoadEncoder(dir, s.opts.VisionQuant == "int8")
+	// The resident GPU encoder needs int8 (W8A8) matmul weights, so webgpu implies
+	// an int8 tower even if --vision-quant wasn't set.
+	webgpu := s.opts.VisionBackend == "webgpu"
+	enc, err := vision.LoadEncoder(dir, s.opts.VisionQuant == "int8" || webgpu)
 	if err != nil {
 		return fmt.Errorf("load vision encoder (%s): %w", dir, err)
+	}
+	if webgpu {
+		if err := enc.EnableResident(); err != nil {
+			return fmt.Errorf("enable resident GPU vision encoder: %w", err)
+		}
 	}
 	proj, err := vision.LoadProjector(dir)
 	if err != nil {
@@ -278,6 +291,11 @@ func (s *Session) loadVision(dir string) error {
 		return fmt.Errorf("vision: tokenizer has no %q token", vision.ImageSoftToken)
 	}
 	s.venc, s.vproj, s.vcfg, s.vimgTok = enc, proj, vision.Gemma3(), id
+	be := "cpu"
+	if webgpu {
+		be = "int8/webgpu-resident"
+	}
+	s.LoadSummary += fmt.Sprintf(" + vision tower (%d img tokens, encoder %s)", proj.MMTokens(), be)
 	return nil
 }
 
