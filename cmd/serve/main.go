@@ -234,9 +234,17 @@ func (s *server) loadVisionTower(cfg config) error {
 	if len(s.models) != 1 {
 		return fmt.Errorf("-vision needs exactly one --model (got %d)", len(s.models))
 	}
-	enc, err := vision.LoadEncoder(dir, cfg.visionQuant == "int8")
+	// The resident GPU encoder needs int8 (W8A8) matmul weights, so --backend
+	// webgpu implies an int8 tower even if --vision-quant wasn't set.
+	int8Tower := cfg.visionQuant == "int8" || cfg.backend == "webgpu"
+	enc, err := vision.LoadEncoder(dir, int8Tower)
 	if err != nil {
 		return fmt.Errorf("load vision encoder (%s): %w", dir, err)
+	}
+	if cfg.backend == "webgpu" {
+		if err := enc.EnableResident(); err != nil {
+			return fmt.Errorf("enable resident GPU vision encoder: %w", err)
+		}
 	}
 	proj, err := vision.LoadProjector(dir)
 	if err != nil {
@@ -252,8 +260,11 @@ func (s *server) loadVisionTower(cfg config) error {
 			return fmt.Errorf("vision: tokenizer has no %q token (needed to place image embeddings)", imageSoftToken)
 		}
 		vq := "f32"
-		if cfg.visionQuant == "int8" {
+		if int8Tower {
 			vq = "int8"
+		}
+		if cfg.backend == "webgpu" {
+			vq = "int8/webgpu-resident"
 		}
 		fmt.Fprintf(os.Stderr, "loaded vision tower for %q (%d image tokens/image, soft-token id %d, encoder %s) from %s\n", lm.name, proj.MMTokens(), lm.vimgTok, vq, dir)
 	}

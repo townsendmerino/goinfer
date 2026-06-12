@@ -222,3 +222,51 @@ func cosG(a, b []float32) float64 {
 	}
 	return d / (math.Sqrt(na) * math.Sqrt(nb))
 }
+
+// TestVisionEnableResident_parity exercises the full serve seam: EnableResident
+// (gpu init → vision.RegisterResident → residentFactory) then Encoder.Forward
+// delegating to the device. Compares vs a separate CPU encoder.
+func TestVisionEnableResident_parity(t *testing.T) {
+	if _, err := New(); err != nil {
+		t.Skipf("no gpu: %v", err)
+	}
+	const ckpt = "../testdata/siglip-tiny"
+	if _, err := os.Stat(ckpt); err != nil {
+		t.Skip("no siglip-tiny")
+	}
+	raw, err := os.ReadFile("../testdata/siglip_vision_golden.json")
+	if err != nil {
+		t.Skip("no golden")
+	}
+	var g struct {
+		PixelValues []float32 `json:"pixel_values"`
+	}
+	json.Unmarshal(raw, &g)
+
+	cpu, err := vision.LoadEncoder(ckpt, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := cpu.Forward(g.PixelValues)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	gpuEnc, err := vision.LoadEncoder(ckpt, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := gpuEnc.EnableResident(); err != nil {
+		t.Fatal(err)
+	}
+	defer gpuEnc.Close()
+	got, err := gpuEnc.Forward(g.PixelValues) // delegates to the device
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := cosG(got, want)
+	t.Logf("EnableResident Forward vs CPU cosine=%.6f", c)
+	if c < 0.99 {
+		t.Errorf("resident-delegated Forward cosine %.6f < 0.99", c)
+	}
+}
