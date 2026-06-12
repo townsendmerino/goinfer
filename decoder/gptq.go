@@ -74,19 +74,19 @@ func gptqReconstruct(st *embed.SafetensorsFile, base string, in, out int) ([]flo
 	if in <= 0 || out <= 0 || in%8 != 0 || out%8 != 0 {
 		return nil, fmt.Errorf("gptq %q: in=%d out=%d must be positive multiples of 8 (4-bit packing)", base, in, out)
 	}
-	qw, err := i32Tensor(st, base+".qweight")
+	qw, err := st.TensorI32(base + ".qweight")
 	if err != nil {
 		return nil, err
 	}
-	qz, err := i32Tensor(st, base+".qzeros")
+	qz, err := st.TensorI32(base + ".qzeros")
 	if err != nil {
 		return nil, err
 	}
-	gidx, err := i32Tensor(st, base+".g_idx")
+	gidx, err := st.TensorI32(base + ".g_idx")
 	if err != nil {
 		return nil, err
 	}
-	sc, err := f16Tensor(st, base+".scales")
+	sc, err := st.TensorF32(base + ".scales")
 	if err != nil {
 		return nil, err
 	}
@@ -117,28 +117,4 @@ func gptqReconstruct(st *embed.SafetensorsFile, base string, in, out int) ([]flo
 		}
 	}
 	return res, nil
-}
-
-func i32Tensor(st *embed.SafetensorsFile, name string) ([]int32, error) {
-	t, err := st.Tensor(name)
-	if err != nil {
-		return nil, fmt.Errorf("decoder(gptq): tensor %q: %w", name, err)
-	}
-	return t.Int32s()
-}
-
-func f16Tensor(st *embed.SafetensorsFile, name string) ([]float32, error) {
-	t, err := st.Tensor(name)
-	if err != nil {
-		return nil, fmt.Errorf("decoder(gptq): tensor %q: %w", name, err)
-	}
-	switch t.DType {
-	case "F16":
-		return t.Float16sToF32()
-	case "BF16":
-		return t.BFloat16sToF32()
-	case "F32":
-		return t.Float32s()
-	}
-	return nil, fmt.Errorf("decoder(gptq): scales %q dtype %q (want F16/BF16/F32)", name, t.DType)
 }

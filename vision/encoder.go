@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
 )
 
@@ -101,7 +100,7 @@ func LoadEncoder(dir string, quant bool) (*Encoder, error) {
 			return nil
 		}
 		var v []float32
-		v, err = tensorF32(st, pfx+name)
+		v, err = st.TensorF32(pfx + name)
 		return append([]float32(nil), v...) // copy out so st can close
 	}
 	hidden, inter := cfg.HiddenSize, cfg.IntermediateSize
@@ -267,22 +266,6 @@ func (e *Encoder) attention(x []float32, lw *encLayer, np int) []float32 {
 }
 
 // --- small f32 helpers (LayerNorm is standard — mean/var — not RMS) ---
-
-func tensorF32(st *embed.SafetensorsFile, name string) ([]float32, error) {
-	t, err := st.Tensor(name)
-	if err != nil {
-		return nil, fmt.Errorf("vision: tensor %q: %w", name, err)
-	}
-	switch t.DType {
-	case "F32":
-		return t.Float32s()
-	case "BF16":
-		return t.BFloat16sToF32()
-	case "F16":
-		return t.Float16sToF32()
-	}
-	return nil, fmt.Errorf("vision: tensor %q dtype %q unsupported (want F32/BF16/F16)", name, t.DType)
-}
 
 func layerNorm(x, w, b []float32, rows, dim int, eps float64) []float32 {
 	out := make([]float32, rows*dim)

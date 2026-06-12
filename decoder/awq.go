@@ -33,15 +33,15 @@ func awqReconstruct(st *embed.SafetensorsFile, base string, in, out int) ([]floa
 	if in <= 0 || out <= 0 || out%8 != 0 {
 		return nil, fmt.Errorf("awq %q: in=%d out=%d invalid (out must be a positive multiple of 8, in positive)", base, in, out)
 	}
-	qw, err := i32Tensor(st, base+".qweight") // [in, out/8]
+	qw, err := st.TensorI32(base + ".qweight") // [in, out/8]
 	if err != nil {
 		return nil, err
 	}
-	qz, err := i32Tensor(st, base+".qzeros") // [groups, out/8]
+	qz, err := st.TensorI32(base + ".qzeros") // [groups, out/8]
 	if err != nil {
 		return nil, err
 	}
-	sc, err := f16Tensor(st, base+".scales") // [groups, out]
+	sc, err := st.TensorF32(base + ".scales") // [groups, out]
 	if err != nil {
 		return nil, err
 	}

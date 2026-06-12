@@ -399,8 +399,8 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 		var derr error
 		switch {
 		case qc == nil:
-			data, derr = loadF32(st, name, []int{out, in})
-			// loadF32 may alias the read-only mmap for F32 tensors; the in-place
+			data, derr = st.TensorF32(name, out, in)
+			// TensorF32 may alias the read-only mmap for F32 tensors; the in-place
 			// merge needs a writable copy (only for the targeted tensors).
 			if derr == nil && lora.has(name) {
 				data = append([]float32(nil), data...)
@@ -428,7 +428,7 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 		return nil, err
 	}
 	w.Embed.quantize(quant.embedding())
-	if w.FinalNorm, err = loadF32(st, mp(s.FinalNorm), []int{hd}); err != nil {
+	if w.FinalNorm, err = st.TensorF32(mp(s.FinalNorm), hd); err != nil {
 		return nil, err
 	}
 	// LM head: separate tensor when the family/checkpoint is untied, else the
@@ -449,7 +449,7 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 		if suffix == "" {
 			return nil, nil
 		}
-		return loadF32(st, tn(i, suffix), []int{hd})
+		return st.TensorF32(tn(i, suffix), hd)
 	}
 
 	// Layers load in parallel — each is independent over the read-only mmap, and
@@ -480,22 +480,22 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 			}
 			// Projection bias (Qwen2 q/k/v; o_proj stays biasless). Absent → empty suffix.
 			if s.QBias != "" {
-				if l.QBias, err = loadF32(st, tn(i, s.QBias), []int{qDim}); err != nil {
+				if l.QBias, err = st.TensorF32(tn(i, s.QBias), qDim); err != nil {
 					return err
 				}
-				if l.KBias, err = loadF32(st, tn(i, s.KBias), []int{kvDim}); err != nil {
+				if l.KBias, err = st.TensorF32(tn(i, s.KBias), kvDim); err != nil {
 					return err
 				}
-				if l.VBias, err = loadF32(st, tn(i, s.VBias), []int{kvDim}); err != nil {
+				if l.VBias, err = st.TensorF32(tn(i, s.VBias), kvDim); err != nil {
 					return err
 				}
 			}
 			// QK-norm (Gemma 3, Qwen3): RMSNorm over head_dim. Absent → empty suffix.
 			if s.QNorm != "" {
-				if l.QNorm, err = loadF32(st, tn(i, s.QNorm), []int{headDim}); err != nil {
+				if l.QNorm, err = st.TensorF32(tn(i, s.QNorm), headDim); err != nil {
 					return err
 				}
-				if l.KNorm, err = loadF32(st, tn(i, s.KNorm), []int{headDim}); err != nil {
+				if l.KNorm, err = st.TensorF32(tn(i, s.KNorm), headDim); err != nil {
 					return err
 				}
 			}
@@ -591,33 +591,33 @@ func loadQwen35Attn(st *embed.SafetensorsFile, i int, l *LayerWeights, arch *Arc
 		keyDim, valueDim := g.KeyHeadDim*g.NumKeyHeads, g.ValueHeadDim*g.NumValueHeads
 		convDim := 2*keyDim + valueDim
 		d := &deltaNetWeights{}
-		if d.inProjQKV, err = loadF32(st, nm("linear_attn.in_proj_qkv.weight"), []int{convDim, hidden}); err != nil {
+		if d.inProjQKV, err = st.TensorF32(nm("linear_attn.in_proj_qkv.weight"), convDim, hidden); err != nil {
 			return err
 		}
-		if d.inProjZ, err = loadF32(st, nm("linear_attn.in_proj_z.weight"), []int{valueDim, hidden}); err != nil {
+		if d.inProjZ, err = st.TensorF32(nm("linear_attn.in_proj_z.weight"), valueDim, hidden); err != nil {
 			return err
 		}
-		if d.inProjB, err = loadF32(st, nm("linear_attn.in_proj_b.weight"), []int{g.NumValueHeads, hidden}); err != nil {
+		if d.inProjB, err = st.TensorF32(nm("linear_attn.in_proj_b.weight"), g.NumValueHeads, hidden); err != nil {
 			return err
 		}
-		if d.inProjA, err = loadF32(st, nm("linear_attn.in_proj_a.weight"), []int{g.NumValueHeads, hidden}); err != nil {
+		if d.inProjA, err = st.TensorF32(nm("linear_attn.in_proj_a.weight"), g.NumValueHeads, hidden); err != nil {
 			return err
 		}
-		if d.convW, err = loadF32(st, nm("linear_attn.conv1d.weight"), []int{convDim, 1, g.ConvKernel}); err != nil {
+		if d.convW, err = st.TensorF32(nm("linear_attn.conv1d.weight"), convDim, 1, g.ConvKernel); err != nil {
 			return err
 		}
-		if d.dtBias, err = loadF32(st, nm("linear_attn.dt_bias"), []int{g.NumValueHeads}); err != nil {
+		if d.dtBias, err = st.TensorF32(nm("linear_attn.dt_bias"), g.NumValueHeads); err != nil {
 			return err
 		}
-		aLog, aerr := loadF32(st, nm("linear_attn.A_log"), []int{g.NumValueHeads})
+		aLog, aerr := st.TensorF32(nm("linear_attn.A_log"), g.NumValueHeads)
 		if aerr != nil {
 			return aerr
 		}
 		d.negExpA = negExpAFromLog(aLog) // store −exp(A_log) (GGUF bakes this; here we compute it)
-		if d.normW, err = loadF32(st, nm("linear_attn.norm.weight"), []int{g.ValueHeadDim}); err != nil {
+		if d.normW, err = st.TensorF32(nm("linear_attn.norm.weight"), g.ValueHeadDim); err != nil {
 			return err
 		}
-		if d.outProj, err = loadF32(st, nm("linear_attn.out_proj.weight"), []int{hidden, valueDim}); err != nil {
+		if d.outProj, err = st.TensorF32(nm("linear_attn.out_proj.weight"), hidden, valueDim); err != nil {
 			return err
 		}
 		l.delta = d
@@ -626,22 +626,22 @@ func loadQwen35Attn(st *embed.SafetensorsFile, i int, l *LayerWeights, arch *Arc
 	hd := arch.HeadDim
 	kvd := arch.NumKVHeads * hd
 	a := &qwenAttnWeights{}
-	if a.qProj, err = loadF32(st, nm("self_attn.q_proj.weight"), []int{arch.NumHeads * hd * 2, hidden}); err != nil {
+	if a.qProj, err = st.TensorF32(nm("self_attn.q_proj.weight"), arch.NumHeads*hd*2, hidden); err != nil {
 		return err
 	}
-	if a.kProj, err = loadF32(st, nm("self_attn.k_proj.weight"), []int{kvd, hidden}); err != nil {
+	if a.kProj, err = st.TensorF32(nm("self_attn.k_proj.weight"), kvd, hidden); err != nil {
 		return err
 	}
-	if a.vProj, err = loadF32(st, nm("self_attn.v_proj.weight"), []int{kvd, hidden}); err != nil {
+	if a.vProj, err = st.TensorF32(nm("self_attn.v_proj.weight"), kvd, hidden); err != nil {
 		return err
 	}
-	if a.oProj, err = loadF32(st, nm("self_attn.o_proj.weight"), []int{hidden, arch.NumHeads * hd}); err != nil {
+	if a.oProj, err = st.TensorF32(nm("self_attn.o_proj.weight"), hidden, arch.NumHeads*hd); err != nil {
 		return err
 	}
-	if a.qNorm, err = loadF32(st, nm("self_attn.q_norm.weight"), []int{hd}); err != nil {
+	if a.qNorm, err = st.TensorF32(nm("self_attn.q_norm.weight"), hd); err != nil {
 		return err
 	}
-	if a.kNorm, err = loadF32(st, nm("self_attn.k_norm.weight"), []int{hd}); err != nil {
+	if a.kNorm, err = st.TensorF32(nm("self_attn.k_norm.weight"), hd); err != nil {
 		return err
 	}
 	l.qattn = a
@@ -656,11 +656,11 @@ func loadQwen35Attn(st *embed.SafetensorsFile, i int, l *LayerWeights, arch *Arc
 // quantizes each into the resident format. Each expert slice is copied so the two
 // big 3-D arrays are released after the layer rather than aliased.
 func loadFusedExperts(st *embed.SafetensorsFile, gateUpName, downName string, nExpert, inter, hidden int, quant quantMode) ([]expertWeights, error) {
-	gu, err := loadF32(st, gateUpName, []int{nExpert, 2 * inter, hidden})
+	gu, err := st.TensorF32(gateUpName, nExpert, 2*inter, hidden)
 	if err != nil {
 		return nil, err
 	}
-	down, err := loadF32(st, downName, []int{nExpert, hidden, inter})
+	down, err := st.TensorF32(downName, nExpert, hidden, inter)
 	if err != nil {
 		return nil, err
 	}
@@ -680,56 +680,15 @@ func loadFusedExperts(st *embed.SafetensorsFile, gateUpName, downName string, nE
 	return experts, nil
 }
 
-// loadF32 fetches a tensor, shape-validates it against want, and decodes it
-// to []float32 dispatching on DType: F32 is a zero-copy view; BF16/F16 are
-// widened (allocating). One clear "shape %v != want %v" error otherwise.
-// Mirrors encoder.loadF32, extended with the bf16/f16 dispatch.
-func loadF32(st *embed.SafetensorsFile, name string, want []int) ([]float32, error) {
-	t, err := st.Tensor(name)
-	if err != nil {
-		return nil, fmt.Errorf("decoder: tensor %q: %w", name, err)
-	}
-	if !shapeEqual(t.Shape, want) {
-		return nil, fmt.Errorf("decoder: tensor %q shape %v != want %v", name, t.Shape, want)
-	}
-	var data []float32
-	switch t.DType {
-	case "F32":
-		data, err = t.Float32s()
-	case "BF16":
-		data, err = t.BFloat16sToF32()
-	case "F16":
-		data, err = t.Float16sToF32()
-	default:
-		return nil, fmt.Errorf("decoder: tensor %q unsupported dtype %q (want F32/BF16/F16)", name, t.DType)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("decoder: tensor %q decode: %w", name, err)
-	}
-	return data, nil
-}
-
-// loadMat loads + shape-validates a [rows, cols] matrix and wraps it as a
-// (f32) weightMat ready for matmul/quantization. Mirrors loadF32 for the
-// matmul'd projections; the norms keep loadF32 (they stay f32).
+// loadMat loads + shape-validates a [rows, cols] matrix (via the aikit
+// embed.SafetensorsFile.TensorF32 typed read — F32/BF16/F16 dispatch + shape
+// check) and wraps it as a (f32) weightMat ready for matmul/quantization.
 func loadMat(st *embed.SafetensorsFile, name string, rows, cols int) (weightMat, error) {
-	data, err := loadF32(st, name, []int{rows, cols})
+	data, err := st.TensorF32(name, rows, cols)
 	if err != nil {
 		return weightMat{}, err
 	}
 	return newWeightMat(data, rows, cols), nil
-}
-
-func shapeEqual(a, b []int) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }
 
 // tensorName returns the HF safetensors key for a per-layer tensor. Kept in
@@ -967,7 +926,7 @@ var qwen2MoeTensorSchema = tensorSchema{
 // stores these weights as [in, out] (nn.Conv1D, not nn.Linear), so a plain load
 // would compute the wrong product.
 func conv1DTransposed(st *embed.SafetensorsFile, name string, in, out int) ([]float32, error) {
-	src, err := loadF32(st, name, []int{in, out}) // [in, out] row-major
+	src, err := st.TensorF32(name, in, out) // [in, out] row-major
 	if err != nil {
 		return nil, err
 	}
@@ -1013,10 +972,10 @@ func buildGPT2Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile
 		return nil, err
 	}
 	// Final LayerNorm (weight + bias).
-	if w.FinalNorm, err = loadF32(st, "ln_f.weight", []int{hidden}); err != nil {
+	if w.FinalNorm, err = st.TensorF32("ln_f.weight", hidden); err != nil {
 		return nil, err
 	}
-	if w.FinalNormBias, err = loadF32(st, "ln_f.bias", []int{hidden}); err != nil {
+	if w.FinalNormBias, err = st.TensorF32("ln_f.bias", hidden); err != nil {
 		return nil, err
 	}
 
@@ -1025,10 +984,10 @@ func buildGPT2Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile
 		p := fmt.Sprintf("h.%d.", i)
 
 		// ln_1 (pre-attention LayerNorm).
-		if l.PreAttnNorm, err = loadF32(st, p+"ln_1.weight", []int{hidden}); err != nil {
+		if l.PreAttnNorm, err = st.TensorF32(p+"ln_1.weight", hidden); err != nil {
 			return nil, err
 		}
-		if l.PreAttnNormBias, err = loadF32(st, p+"ln_1.bias", []int{hidden}); err != nil {
+		if l.PreAttnNormBias, err = st.TensorF32(p+"ln_1.bias", hidden); err != nil {
 			return nil, err
 		}
 
@@ -1041,7 +1000,7 @@ func buildGPT2Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile
 		l.QProj = maybeQuant(newWeightMat(qkv[0:hidden*hidden], hidden, hidden))
 		l.KProj = maybeQuant(newWeightMat(qkv[hidden*hidden:2*hidden*hidden], hidden, hidden))
 		l.VProj = maybeQuant(newWeightMat(qkv[2*hidden*hidden:3*hidden*hidden], hidden, hidden))
-		qkvB, berr := loadF32(st, p+"attn.c_attn.bias", []int{3 * hidden})
+		qkvB, berr := st.TensorF32(p+"attn.c_attn.bias", 3*hidden)
 		if berr != nil {
 			return nil, berr
 		}
@@ -1053,15 +1012,15 @@ func buildGPT2Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile
 			return nil, oerr
 		}
 		l.OProj = maybeQuant(newWeightMat(oData, hidden, hidden))
-		if l.OBias, err = loadF32(st, p+"attn.c_proj.bias", []int{hidden}); err != nil {
+		if l.OBias, err = st.TensorF32(p+"attn.c_proj.bias", hidden); err != nil {
 			return nil, err
 		}
 
 		// ln_2 (pre-MLP LayerNorm).
-		if l.PreMLPNorm, err = loadF32(st, p+"ln_2.weight", []int{hidden}); err != nil {
+		if l.PreMLPNorm, err = st.TensorF32(p+"ln_2.weight", hidden); err != nil {
 			return nil, err
 		}
-		if l.PreMLPNormBias, err = loadF32(st, p+"ln_2.bias", []int{hidden}); err != nil {
+		if l.PreMLPNormBias, err = st.TensorF32(p+"ln_2.bias", hidden); err != nil {
 			return nil, err
 		}
 
@@ -1072,7 +1031,7 @@ func buildGPT2Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile
 			return nil, uerr
 		}
 		l.UpProj = maybeQuant(newWeightMat(upData, inter, hidden))
-		if l.UpBias, err = loadF32(st, p+"mlp.c_fc.bias", []int{inter}); err != nil {
+		if l.UpBias, err = st.TensorF32(p+"mlp.c_fc.bias", inter); err != nil {
 			return nil, err
 		}
 		downData, derr := conv1DTransposed(st, p+"mlp.c_proj.weight", inter, hidden)
@@ -1080,7 +1039,7 @@ func buildGPT2Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile
 			return nil, derr
 		}
 		l.DownProj = maybeQuant(newWeightMat(downData, hidden, inter))
-		if l.DownBias, err = loadF32(st, p+"mlp.c_proj.bias", []int{hidden}); err != nil {
+		if l.DownBias, err = st.TensorF32(p+"mlp.c_proj.bias", hidden); err != nil {
 			return nil, err
 		}
 	}

@@ -106,6 +106,9 @@ func loraBaseName(key, suffix string) string {
 	return strings.TrimSuffix(strings.TrimPrefix(key, "base_model.model."), suffix) + ".weight"
 }
 
+// loraTensor reads a rank-2 adapter tensor as f32 (the dtype dispatch delegated to
+// the aikit embed.SafetensorsFile.TensorF32 typed read) and returns its shape — the
+// shape is why this keeps a thin wrapper rather than calling TensorF32 directly.
 func loraTensor(st *embed.SafetensorsFile, name string) ([]float32, []int, error) {
 	t, err := st.Tensor(name)
 	if err != nil {
@@ -114,17 +117,7 @@ func loraTensor(st *embed.SafetensorsFile, name string) ([]float32, []int, error
 	if len(t.Shape) != 2 {
 		return nil, nil, fmt.Errorf("decoder(lora): %q rank %d, want 2", name, len(t.Shape))
 	}
-	var data []float32
-	switch t.DType {
-	case "F32":
-		data, err = t.Float32s()
-	case "BF16":
-		data, err = t.BFloat16sToF32()
-	case "F16":
-		data, err = t.Float16sToF32()
-	default:
-		return nil, nil, fmt.Errorf("decoder(lora): %q dtype %q unsupported (F32/BF16/F16)", name, t.DType)
-	}
+	data, err := st.TensorF32(name) // F32/BF16/F16 → f32 (rank checked above; no shape assert)
 	if err != nil {
 		return nil, nil, err
 	}

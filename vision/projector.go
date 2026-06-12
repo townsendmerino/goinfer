@@ -66,8 +66,8 @@ func LoadProjector(dir string) (*Projector, error) {
 		return nil, fmt.Errorf("vision: open VL safetensors: %w", err)
 	}
 	defer st.Close()
-	normW, e1 := tensorF32(st, "multi_modal_projector.mm_soft_emb_norm.weight")
-	projW, e2 := tensorF32(st, "multi_modal_projector.mm_input_projection_weight") // [visionHidden, textHidden]
+	normW, e1 := st.TensorF32("multi_modal_projector.mm_soft_emb_norm.weight")
+	projW, e2 := st.TensorF32("multi_modal_projector.mm_input_projection_weight") // [visionHidden, textHidden]
 	if e1 != nil || e2 != nil {
 		return nil, fmt.Errorf("vision: projector weights: %v %v", e1, e2)
 	}

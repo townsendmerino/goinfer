@@ -11,7 +11,7 @@ import (
 // model.safetensors.index.json when present (a real HF VL checkpoint like
 // gemma-3-4b-it ships its tower inside the model shards), else the single
 // model.safetensors (the tiny pinned tower under testdata/). Both yield the same
-// SafetensorsFile, so tensorF32 reads either.
+// SafetensorsFile, read via embed.SafetensorsFile.TensorF32 (F32/BF16/F16 dispatch).
 func openWeights(dir string) (*embed.SafetensorsFile, error) {
 	idx := filepath.Join(dir, "model.safetensors.index.json")
 	if _, err := os.Stat(idx); err == nil {
