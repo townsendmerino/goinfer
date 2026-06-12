@@ -166,13 +166,21 @@ and the wrong metric).
       existing goldens green.
 - [ ] **Memory gate:** measured heap at 16k ctx, 1.5B: ~940 MB → **~245 MB**.
 
-### Increment 2 — batched prefill + knob
-- Dequant-into-scratch in `attendBatchedHeads`; `Options.KVQuant`; serve
-  `--kv-quant`. Speculative decoding runs the gate suite under int8
-  (TruncateTo interplay is the risk spot — a rollback/re-append property test).
-- [ ] **Gate:** prefill→decode boundary parity under int8 (the qwen35-gate
-      shape); TTFT regression ≤ 5% (quantize-on-write is O(kvDim)/token —
-      noise next to the projection matmuls).
+### ✅ Increment 2 — batched prefill + knob — DONE
+- Batched int8 prefill: the int8 cache is dequantized into the caller's f32
+  scratch (`dequantGlobalLayer` for global; `batchReadLocal` int8 branch for
+  rings — ring history dequant + the K new rows round-tripped quantize→dequant so
+  prefill attends the SAME values decode will) — `attendBatchedHeads`'s f32
+  matmul is unchanged (f32 path bit-exact). Dropped the Inc-1 `canBatchN` int8
+  forcing, so int8 prefills batched, not sequentially.
+- `Options.KVQuant` plumbed to serve `--kv-quant f32|i8`.
+- **Gates (green):** batched int8 prefill vs batched f32 on gemma-3-4b-it —
+  argmax 92.5% / cosine 0.9934. **TTFT regression 2.3%** (int8/f32 = 1.023,
+  meets ≤5%) — after pre-sizing the int8 arrays + quantizing in place to kill
+  the per-token allocation churn (a naive append-with-make was 18%; the fix also
+  speeds the decode Append path). Spec-decode rollback under int8:
+  `TestKVI8_truncateReappend` — TruncateTo+re-append leaves the int8 cache
+  (global + ring) byte-identical to a fresh one. f32 default bit-exact.
 
 ### Increment 3 — `.giw-kv` v2
 - Versioned int8 snapshot + restore; sessionLRU untouched.

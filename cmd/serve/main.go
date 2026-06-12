@@ -78,6 +78,7 @@ type config struct {
 	backend     string
 	quant       string // global (per-model overrides are a follow-on)
 	kvPrec      string // GPU residency KV cache precision: "" | f32 | f16 (-kv)
+	kvQuant     string // CPU KV cache storage precision: "" | f32 | i8 (-kv-quant)
 	lora        string
 	name        string // -served-model-name (applies only to a single unnamed --model)
 	kvSessions  int
@@ -108,6 +109,7 @@ func main() {
 	flag.StringVar(&cfg.backend, "backend", "cpu", "compute backend: cpu | webgpu")
 	flag.StringVar(&cfg.quant, "quant", "int8int8", "decoder weight quant (global): \"\" | int8 | int8int8 | int4")
 	flag.StringVar(&cfg.kvPrec, "kv", "f32", "GPU residency KV cache precision: f32 (bit-exact, 16k ctx) | f16 (lossy, 32k ctx + faster long-context decode)")
+	flag.StringVar(&cfg.kvQuant, "kv-quant", "f32", "CPU KV cache storage: f32 (default, bit-exact) | i8 (per-head int8, ~4× smaller, lossy — argmax ~90%+; excludes MoE/gemma4/qwen3.5)")
 	flag.StringVar(&cfg.lora, "lora", "", "optional PEFT LoRA adapter dir, merged into the (safetensors) base at load")
 	flag.StringVar(&cfg.name, "served-model-name", "", "served id for a single unnamed --model (default: file/dir basename)")
 	flag.IntVar(&cfg.kvSessions, "kv-sessions", 4, "number of conversations to keep prefilled for prompt-prefix KV reuse (0 disables)")
@@ -284,7 +286,7 @@ func loadDecoder(spec modelSpec, cfg config) (*loadedModel, error) {
 		return nil, fmt.Errorf("load tokenizer (%s): %w", spec.path, err)
 	}
 	t0 := time.Now()
-	model, err := decoder.Load(spec.path, decoder.Options{Backend: cfg.backend, Quant: cfg.quant, LoRA: cfg.lora, KVPrecision: cfg.kvPrec})
+	model, err := decoder.Load(spec.path, decoder.Options{Backend: cfg.backend, Quant: cfg.quant, LoRA: cfg.lora, KVPrecision: cfg.kvPrec, KVQuant: cfg.kvQuant})
 	if err != nil {
 		return nil, fmt.Errorf("load model (%s): %w", spec.path, err)
 	}

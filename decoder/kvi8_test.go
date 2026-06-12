@@ -5,6 +5,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/tokenizer"
@@ -39,7 +40,7 @@ func TestKVI8_decodeQuality(t *testing.T) {
 	f32.scr = newDecodeScratch(arch)
 
 	i8 := NewKVCache(nLayers, nKV, hd, W, N+1)
-	i8.setQuant(kvI8)
+	i8.setQuant(kvI8, N+1)
 	i8.enableRings(W, arch.isGlobalLayer)
 	i8.scr = newDecodeScratch(arch)
 
@@ -75,6 +76,69 @@ func TestKVI8_decodeQuality(t *testing.T) {
 	}
 	if len(i8.keysQ[1]) != N*kvDim || len(i8.keys[1]) != 0 {
 		t.Errorf("int8 global: keysQ=%d (want %d), keys=%d (want 0)", len(i8.keysQ[1]), N*kvDim, len(i8.keys[1]))
+	}
+}
+
+// TestKVI8_truncateReappend: the spec-decode rollback mechanic under int8 —
+// append, TruncateTo (drop rejected drafts), re-append (accepted) must leave the
+// int8 cache byte-identical to one that only ever saw the final positions. Covers
+// global int8 + an int8 ring (unwrapped, as short-context spec-decode is). The
+// risk the doc flags (TruncateTo × quant interplay), model-free.
+func TestKVI8_truncateReappend(t *testing.T) {
+	const nLayers, nH, nKV, hd, W = 2, 4, 2, 8, 16
+	kvDim := nKV * hd
+	arch := ringTestArch(nH, nKV, hd, W, func(l int) bool { return l == 1 }) // L0 ring, L1 global
+	mk := func() *KVCache {
+		c := NewKVCache(nLayers, nKV, hd, W, 16)
+		c.setQuant(kvI8, 16)
+		c.enableRings(W, arch.isGlobalLayer)
+		c.scr = newDecodeScratch(arch)
+		return c
+	}
+	rng := rand.New(rand.NewSource(5))
+	vec := func() []float32 { return randVec(rng, kvDim) }
+	// final[p] = the K/V that position p ends up with (draft positions 6..9 rejected,
+	// re-appended with different values).
+	final := make([][2][]float32, 10)
+	for p := range final {
+		final[p] = [2][]float32{vec(), vec()}
+	}
+
+	// (1) append 0..5, draft 6..9 (garbage), truncate to 6, re-append 6..9 (final).
+	got := mk()
+	for p := 0; p < 6; p++ {
+		for l := 0; l < nLayers; l++ {
+			got.Append(l, append([]float32(nil), final[p][0]...), append([]float32(nil), final[p][1]...))
+		}
+	}
+	for p := 6; p < 10; p++ { // rejected drafts
+		for l := 0; l < nLayers; l++ {
+			got.Append(l, vec(), vec())
+		}
+	}
+	got.TruncateTo(6)
+	for p := 6; p < 10; p++ { // re-append the accepted tokens
+		for l := 0; l < nLayers; l++ {
+			got.Append(l, append([]float32(nil), final[p][0]...), append([]float32(nil), final[p][1]...))
+		}
+	}
+	// (2) reference: only ever the final 10.
+	ref := mk()
+	for p := 0; p < 10; p++ {
+		for l := 0; l < nLayers; l++ {
+			ref.Append(l, append([]float32(nil), final[p][0]...), append([]float32(nil), final[p][1]...))
+		}
+	}
+	if got.pos != ref.pos {
+		t.Fatalf("pos %d != %d", got.pos, ref.pos)
+	}
+	// global int8 layer 1: int8 rows + scales must match byte-for-byte.
+	if !slices.Equal(got.keysQ[1], ref.keysQ[1]) || !slices.Equal(got.keyScale[1], ref.keyScale[1]) {
+		t.Errorf("global int8: truncate+reappend keysQ/scale != fresh")
+	}
+	// ring int8 layer 0: count + live int8 slots must match.
+	if got.rings[0].count != ref.rings[0].count || !slices.Equal(got.rings[0].kq, ref.rings[0].kq) {
+		t.Errorf("ring int8: truncate+reappend kq/count != fresh")
 	}
 }
 
@@ -148,3 +212,59 @@ func TestKVI8_genParity(t *testing.T) {
 }
 
 const kvi8GateText = "The history of computing began in the early nineteenth century with the work of Charles Babbage, who designed the Analytical Engine, a general-purpose mechanical computer. Ada Lovelace wrote the first algorithm intended for such a machine. Modern electronic computers emerged in the 1940s with ENIAC and the stored-program architecture described by John von Neumann. The transistor and the integrated circuit made computers smaller and cheaper, leading to the microprocessor and the personal computer."
+
+// TestKVI8_batchedPrefill: int8 KV through the BATCHED prefill path (forwardN,
+// Increment 2's dequant-into-scratch) vs batched f32 — teacher-forced per-step
+// argmax + cosine. Catches bugs in the int8 dequant/round-trip and confirms int8
+// no longer forces sequential prefill. Skips without a checkpoint + tokenizer.
+func TestKVI8_batchedPrefill(t *testing.T) {
+	dir := os.Getenv("GINFER_TEST_MODEL")
+	if dir == "" {
+		dir = os.Getenv("HOME") + "/models/gemma-3-4b-it"
+	}
+	tkPath := filepath.Join(dir, "tokenizer.json")
+	if _, err := os.Stat(tkPath); err != nil {
+		t.Skipf("no checkpoint with tokenizer.json at %s", dir)
+	}
+	tk, err := tokenizer.Load(tkPath)
+	if err != nil {
+		t.Skipf("tokenizer: %v", err)
+	}
+	m, err := Load(dir, Options{Quant: "int8int8"})
+	if err != nil {
+		t.Fatalf("load %s: %v", dir, err)
+	}
+	if m.w.arch.MoE != nil || m.w.arch.gemma4 != nil || m.w.arch.qwen35 != nil {
+		t.Skip("int8 KV excluded for this family")
+	}
+	ids, err := tk.Encode(kvi8GateText, true)
+	if err != nil || len(ids) < 16 || !m.canBatchN(len(ids)) {
+		t.Skipf("encode/canBatchN: %v (n=%d)", err, len(ids))
+	}
+
+	prefill := func(kvI8 bool) [][]float32 {
+		mm := *m
+		mm.kvI8 = kvI8
+		lg, _ := mm.forwardN(ids, mm.NewCache(len(ids)+1)) // batched (canBatchN true)
+		return lg
+	}
+	refL := prefill(false)
+	gotL := prefill(true)
+	match := 0
+	var cosSum float64
+	for i := range ids {
+		if argmax(gotL[i]) == argmax(refL[i]) {
+			match++
+		}
+		cosSum += logitCosine(refL[i], gotL[i])
+	}
+	agree := 100 * float64(match) / float64(len(ids))
+	cos := cosSum / float64(len(ids))
+	t.Logf("batched int8 prefill vs batched f32 (%d tokens): argmax %.1f%%, avg cosine %.5f", len(ids), agree, cos)
+	if agree < 80 {
+		t.Errorf("batched int8 prefill argmax agreement %.1f%% < 80%%", agree)
+	}
+	if cos < 0.99 {
+		t.Errorf("batched int8 prefill avg cosine %.5f < 0.99", cos)
+	}
+}

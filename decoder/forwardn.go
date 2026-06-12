@@ -18,11 +18,7 @@ func (m *Model) canBatchN(K int) bool {
 	// Gemma 4 (per-layer head_dim, KV-sharing, PLE) and qwen3_5_moe (Gated DeltaNet
 	// linear attention — NOT plain GQA, so attendBatchedHeads doesn't apply) each
 	// have their own sequential forward; exclude both.
-	// int8 KV: the batched prefill (attendBatchedHeads) reads f32 cache slices;
-	// quantized prefill (dequant-into-scratch) is Increment 2. Until then an int8
-	// cache prefills sequentially (runLayers → attendQuery, which has the int8
-	// path), so force the scalar path here.
-	return K > 1 && m.w.Embed.rows != 0 && !a.NonGatedMLP && !a.LearnedPosEmbed && a.gemma4 == nil && a.qwen35 == nil && !m.kvI8
+	return K > 1 && m.w.Embed.rows != 0 && !a.NonGatedMLP && !a.LearnedPosEmbed && a.gemma4 == nil && a.qwen35 == nil
 }
 
 // forwardLayersN runs the embedding + all transformer layers + final norm over
@@ -87,11 +83,11 @@ func (m *Model) runLayersFromEmbedN(h []float32, cache *KVCache) ([]float32, err
 	avt := make([]float32, maxKeys*hd)
 	ascores := make([]float32, K*maxKeys)
 	ach := make([]float32, K*hd)
-	// Local layers assemble a contiguous [base, startPos+K) read window (ring
-	// history + the K new rows) here; ≤ maxKeys rows wide. Only allocated when the
-	// model has sliding-window (ring) layers.
+	// f32 scratch for the assembled local window (ring history + new rows) AND for
+	// dequantizing int8 layers into for the f32 attention; ≤ maxKeys rows wide.
+	// Allocated when the model has ring layers or an int8 cache.
 	var alk, alv []float32
-	if cache.localAny {
+	if cache.localAny || cache.quant == kvI8 {
 		alk = make([]float32, maxKeys*kvDim)
 		alv = make([]float32, maxKeys*kvDim)
 	}
@@ -156,6 +152,11 @@ func (m *Model) runLayersFromEmbedN(h []float32, cache *KVCache) ([]float32, err
 			base, nRows := cache.batchReadLocal(l, startPos, K, k, v, alk, alv)
 			attendBatchedHeads(q, ctx, alk[:nRows*kvDim], alv[:nRows*kvDim], base, cache, l, startPos, K, global, arch, arch.MoE != nil, aqh, akh, avt, ascores, ach)
 			cache.commitBatch(l, startPos, K, k, v)
+		} else if cache.quant == kvI8 {
+			// int8 global: the Append loop above already quantized the new K/V into
+			// the layer; dequant the full history into f32 scratch for the matmul.
+			nKeys := cache.dequantGlobalLayer(l, kvDim, alk, alv)
+			attendBatchedHeads(q, ctx, alk[:nKeys*kvDim], alv[:nKeys*kvDim], 0, cache, l, startPos, K, global, arch, arch.MoE != nil, aqh, akh, avt, ascores, ach)
 		} else {
 			attendBatchedHeads(q, ctx, cache.Keys(l), cache.Vals(l), 0, cache, l, startPos, K, global, arch, arch.MoE != nil, aqh, akh, avt, ascores, ach)
 		}

@@ -24,6 +24,18 @@ func quantizeHeads(src []float32, q []int8, scales []float32, nKV, headDim int) 
 	}
 }
 
+// dequantHeads reconstructs nKV int8 head-rows (each headDim wide, scale per
+// head) back to f32 in dst — the inverse of quantizeHeads, for the batched
+// prefill's dequant-into-scratch (the f32 matmul kernels stay unchanged).
+func dequantHeads(q []int8, scales []float32, nKV, headDim int, dst []float32) {
+	for h := 0; h < nKV; h++ {
+		o, s := h*headDim, scales[h]
+		for c := 0; c < headDim; c++ {
+			dst[o+c] = float32(q[o+c]) * s
+		}
+	}
+}
+
 // KVCache holds the per-layer key/value history for one generation
 // sequence. The cache, not a growing per-call buffer, is the decoder's
 // memory model: each decode step appends one position's K and V per layer
@@ -182,13 +194,22 @@ func (c *KVCache) enableRings(window int, isGlobal func(int) bool) {
 // setQuant switches the cache to int8 KV storage (kvI8). Global (append-forever)
 // layers get parallel int8 + scale arrays; ring layers inherit the mode via
 // enableRings (call setQuant FIRST). f32 default leaves everything bit-exact.
-func (c *KVCache) setQuant(q kvQuant) {
+func (c *KVCache) setQuant(q kvQuant, capHint int) {
 	c.quant = q
 	if q == kvI8 {
+		nKV := c.kvDim / c.headDim
 		c.keysQ = make([][]int8, c.numLayers)
 		c.valsQ = make([][]int8, c.numLayers)
 		c.keyScale = make([][]float32, c.numLayers)
 		c.valScale = make([][]float32, c.numLayers)
+		// Pre-size the global int8 arrays so the per-token Append grows in place
+		// (reslice, no alloc) instead of churning a fresh make() each step.
+		for l := range c.numLayers {
+			c.keysQ[l] = make([]int8, 0, capHint*c.kvDim)
+			c.valsQ[l] = make([]int8, 0, capHint*c.kvDim)
+			c.keyScale[l] = make([]float32, 0, capHint*nKV)
+			c.valScale[l] = make([]float32, 0, capHint*nKV)
+		}
 	}
 }
 
@@ -219,14 +240,33 @@ func (c *KVCache) Append(layer int, k, v []float32) int {
 // per-head scales to a global (append-forever) int8 layer.
 func (c *KVCache) appendQuant(layer int, k, v []float32) {
 	nKV := c.kvDim / c.headDim
-	kq, ksc := make([]int8, c.kvDim), make([]float32, nKV)
-	vq, vsc := make([]int8, c.kvDim), make([]float32, nKV)
-	quantizeHeads(k, kq, ksc, nKV, c.headDim)
-	quantizeHeads(v, vq, vsc, nKV, c.headDim)
-	c.keysQ[layer] = append(c.keysQ[layer], kq...)
-	c.keyScale[layer] = append(c.keyScale[layer], ksc...)
-	c.valsQ[layer] = append(c.valsQ[layer], vq...)
-	c.valScale[layer] = append(c.valScale[layer], vsc...)
+	// Grow each array by one position (reslice into the pre-reserved cap; append
+	// only reallocs past it) and quantize directly into the new tail — no per-call
+	// scratch allocation, which dominated the int8 prefill TTFT overhead.
+	ko := len(c.keysQ[layer])
+	c.keysQ[layer] = growI8(c.keysQ[layer], c.kvDim)
+	c.valsQ[layer] = growI8(c.valsQ[layer], c.kvDim)
+	so := len(c.keyScale[layer])
+	c.keyScale[layer] = growF32(c.keyScale[layer], nKV)
+	c.valScale[layer] = growF32(c.valScale[layer], nKV)
+	quantizeHeads(k, c.keysQ[layer][ko:], c.keyScale[layer][so:], nKV, c.headDim)
+	quantizeHeads(v, c.valsQ[layer][ko:], c.valScale[layer][so:], nKV, c.headDim)
+}
+
+// growI8/growF32 extend a slice by n, reslicing within capacity when possible
+// (zero-alloc) and falling back to append (amortized) past it.
+func growI8(s []int8, n int) []int8 {
+	if cap(s)-len(s) >= n {
+		return s[:len(s)+n]
+	}
+	return append(s, make([]int8, n)...)
+}
+
+func growF32(s []float32, n int) []float32 {
+	if cap(s)-len(s) >= n {
+		return s[:len(s)+n]
+	}
+	return append(s, make([]float32, n)...)
 }
 
 // Advance bumps the stored-position count by one — the gemma4 forward's explicit
@@ -306,6 +346,26 @@ func (c *KVCache) batchReadLocal(layer, startPos, K int, newK, newV, dstK, dstV 
 	}
 	base = max(startPos-r.w+1, 0)
 	hist := startPos - base // resident history rows, ≤ W-1 and ≤ r.count
+	if r.quant == kvI8 {
+		// int8 ring: dequant the resident window from int8, and round-trip the K
+		// new rows (quantize→dequant) so prefill attends the SAME dequantized K/V
+		// decode will (commitBatch writes the same int8). The f32 matmul is unchanged.
+		nKV := stride / r.headDim
+		for p := base; p < startPos; p++ {
+			o, so, d := (p%r.w)*stride, (p%r.w)*nKV, (p-base)*stride
+			dequantHeads(r.kq[o:o+stride], r.ksc[so:so+nKV], nKV, r.headDim, dstK[d:d+stride])
+			dequantHeads(r.vq[o:o+stride], r.vsc[so:so+nKV], nKV, r.headDim, dstV[d:d+stride])
+		}
+		tq, tsc := make([]int8, stride), make([]float32, nKV)
+		for i := 0; i < K; i++ {
+			d := (hist + i) * stride
+			quantizeHeads(newK[i*stride:(i+1)*stride], tq, tsc, nKV, r.headDim)
+			dequantHeads(tq, tsc, nKV, r.headDim, dstK[d:d+stride])
+			quantizeHeads(newV[i*stride:(i+1)*stride], tq, tsc, nKV, r.headDim)
+			dequantHeads(tq, tsc, nKV, r.headDim, dstV[d:d+stride])
+		}
+		return base, hist + K
+	}
 	for p := base; p < startPos; p++ {
 		o := (p % r.w) * stride
 		d := (p - base) * stride
@@ -315,6 +375,22 @@ func (c *KVCache) batchReadLocal(layer, startPos, K int, newK, newV, dstK, dstV 
 	copy(dstK[hist*stride:(hist+K)*stride], newK[:K*stride])
 	copy(dstV[hist*stride:(hist+K)*stride], newV[:K*stride])
 	return base, hist + K
+}
+
+// dequantGlobalLayer dequantizes a global (append-forever) int8 layer's stored
+// K/V into the caller's f32 scratch dstK/dstV (≥ storedRows*kvDim) for the
+// batched prefill's f32 attention. Returns the stored row count. The new keys
+// were already quantized into the layer by the prefill's Append loop, so this
+// dequant covers history + new uniformly (matching decode's dequant reads).
+func (c *KVCache) dequantGlobalLayer(layer, kvDim int, dstK, dstV []float32) int {
+	nKV := kvDim / c.headDim
+	n := len(c.keysQ[layer]) / kvDim
+	for p := 0; p < n; p++ {
+		o, so := p*kvDim, p*nKV
+		dequantHeads(c.keysQ[layer][o:o+kvDim], c.keyScale[layer][so:so+nKV], nKV, c.headDim, dstK[o:o+kvDim])
+		dequantHeads(c.valsQ[layer][o:o+kvDim], c.valScale[layer][so:so+nKV], nKV, c.headDim, dstV[o:o+kvDim])
+	}
+	return n
 }
 
 // commitBatch writes a batched prefill's K new positions into the ring, after

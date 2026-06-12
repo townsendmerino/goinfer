@@ -171,7 +171,7 @@ func (m *Model) NewCache(capHint int) *KVCache {
 	// routing (quantized KV would reopen that), and gemma4/qwen3_5_moe have their
 	// own forward. Must precede enableRings so local layers inherit the mode.
 	if m.kvI8 && a.gemma4 == nil && a.qwen35 == nil && a.MoE == nil {
-		c.setQuant(kvI8)
+		c.setQuant(kvI8, capHint)
 	}
 	// Ring-buffer storage on sliding-window (local) layers: keep only the W most
 	// recent positions, the only ones a future query can read. Restricted to the
