@@ -37,9 +37,10 @@ pre-1.0 and may change as new model families and quant formats land.
   New WGSL kernels (batched LayerNorm, gelu-tanh, row softmax, bias/residual
   add, per-head gather/scatter) join the existing tiled W8A8 GEMM. The pure-Go
   default build is untouched (`vision.Encoder` delegates to the device only when a
-  resident backend is attached). The attention matmuls still use a naive f32
-  kernel — a tiled GEMM there is the next lever toward the ~8–12 s estimate
-  (`docs/task-gpu-vision-tower.md`).
+  resident backend is attached). `demo/agent` (the web UI) gets it too via
+  `--vision-backend webgpu` — dropped/pasted image captions go ~9× faster. The
+  attention matmuls still use a naive f32 kernel — a tiled GEMM there is the next
+  lever toward the ~8–12 s estimate (`docs/task-gpu-vision-tower.md`).
 - **SigLIP attention vectorized** — QKᵀ/scores·V moved onto the SIMD A·Bᵀ kernels
   (QKᵀ f64-accumulating for parity), >2× faster vision prefill (>400 s → ~190 s),
   bit-faithful (encoder golden cosine 1.0).

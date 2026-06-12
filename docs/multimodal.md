@@ -10,11 +10,11 @@
 > GPU SigLIP encoder, parity cosine 1.000000 (`886c8fd`/`5d7c572`,
 > `docs/task-gpu-vision-tower.md`). An int8 CPU tower was evaluated and is a wash on
 > AVX2 (no VNNI; `docs/task-cpu-vision-prefill.md`) — GPU is the real speedup.
-> Remaining (all optional / new scope): a **tiled attention GEMM** to push the GPU
-> path below 18.8 s (attention QKᵀ/scores·V are still naive f32); **wiring
-> `demo/agent` to the GPU encoder** (it hardcodes CPU today); and **P5**
-> (Qwen2.5-VL second family + m-RoPE + GGUF `mmproj`). (This is the doc
-> `benchmarks.md` references.)
+> Both serve (`--backend webgpu`) and `demo/agent` (`--vision-backend webgpu`)
+> run on the GPU encoder. Remaining (all optional / new scope): a **tiled
+> attention GEMM** to push the GPU path below 18.8 s (attention QKᵀ/scores·V are
+> still naive f32); and **P5** (Qwen2.5-VL second family + m-RoPE + GGUF
+> `mmproj`). (This is the doc `benchmarks.md` references.)
 > Drafted 2026-06-10 (vscode session), revised after external review (Claude
 > app): added the bidirectional-mask forward-path item, the serve security
 > surface, usage accounting, and firm recommendations on the five open
@@ -140,10 +140,10 @@ Pin each stage against HF, committed KB-scale goldens:
   parity** ← the real gate (HF parity, `9412e4e`).
 - ✅ **P4 — tokenizer image tokens + chat template + serve vision API** (data-URI
   only) + the security/fuzz items; the whole surface inherits.
-- ✅ **P4.5 — resident GPU SigLIP encoder** (`-tags gpu`, `--backend webgpu`):
-  171 s → 18.8 s/image, parity cosine 1.0 (`886c8fd`/`5d7c572`). Follow-ups: a
-  tiled attention GEMM (attention is still naive f32), and wiring `demo/agent`
-  (CPU-hardcoded today) to the GPU encoder.
+- ✅ **P4.5 — resident GPU SigLIP encoder** (`-tags gpu`): 171 s → 18.8 s/image,
+  parity cosine 1.0 (`886c8fd`/`5d7c572`). Wired into both serve (`--backend
+  webgpu`) and `demo/agent` (`--vision-backend webgpu`, `87f127d`). Follow-up: a
+  tiled attention GEMM (attention QKᵀ/scores·V are still naive f32).
 - **P5 — second family (Qwen2.5-VL: m-RoPE + dynamic resolution) to prove the
   descriptor generalizes**, + the GGUF `mmproj` companion-file seam.
 
