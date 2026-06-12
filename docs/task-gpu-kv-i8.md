@@ -88,6 +88,47 @@ and gate bars arrive pre-validated.
 
 ---
 
+## Progress (branch `gpu-kv-i8-wip`, not yet merged)
+
+- ✅ **The three int8 kernels + their correctness gate** (`6b681f8`): `ropeStoreI8`,
+  `kvStoreI8` (one thread per KV head: rotate/read → per-head absmax → maxabs/127
+  scale → quantize → pack 4/word + scale-store), `attnI8` (f16 attn with int8
+  unpack × per-head scale; q+ctx stay f32). Verified real-HW
+  (`gpu/kv_i8_test.go`): WRITE kernels match the CPU per-head quant **cosine
+  1.000000**; attnI8 matches f32-over-dequant **cosine 1.000000**. **The doc's
+  flagged risk (the WRITE-kernel per-head reduction) is retired.**
+- ✅ **Tri-state `--kv f32|f16|i8` knob** (`b6865a4`): `Options.KVPrecision="i8"` →
+  `Model.kvPrecI8` + `KVCacheI8()`, serve `--kv i8`.
+- ✅ **Residency integration — DONE + parity-gated (this session).** `NewKVCacheI8`
+  (`decodelayer.go`: `(capElems+3)/4` data words + a `ctxCap*nKV` f32 scale buffer;
+  `packKVInt8` CPU per-head prefill mirror); `runLayer` gained `kScale/vScale` and
+  `runModel` a `kvI8` flag; the three op builders in `decoderunner.go` each grew an
+  int8 third arm (`ropeStoreI8`/`kvStoreI8` one workgroup per KV head; `attnI8` with
+  the two extra scale binds), with the shared `ropeKUni` carrying `nKV` in its spare
+  slot and a dedicated `vStoreI8Uni` per-token uniform. `residency.go` allocates the
+  int8 caches + scales and sets `ctxCap=65536`; `rd.rm.kvI8=kvI8`.
+  - **The "prefill upload-quantize seam" turned out to be a no-op:** stateless
+    `Generate` prefills the GPU caches via sequential `m.resident.Forward` (the WRITE
+    kernels), not `UploadKV` (which has no caller). So `ropeStoreI8`/`kvStoreI8`
+    quantize both prefill and decode writes on-device — no separate CPU upload path
+    needed. `UploadKV` was nonetheless made precision-correct (f32/f16/int8) so the
+    future prefix-reuse bridge can't silently corrupt a lossy cache.
+  - **Gate (`gpu/kv_i8_parity_test.go`, `TestKVCacheI8_parity`):** int8-KV vs f32-KV
+    decode, 8k prefilled keys + 16 steps → argmax 13/16 with every flip a sub-3%
+    near-tie (worst 2.1%), **mean cosine 0.99739, min 0.98374**. Hard gate = the
+    argmax 3%-rule + mean cosine ≥0.99; min-cosine tripwire relaxed to 0.98 (vs
+    f16's 0.99) because int8's 8-bit mantissa dips one synthetic near-uniform step
+    below 0.99 from pure rounding — the kernels are bit-exact (cosine 1.000000), so
+    that's the synthetic floor, not degradation. f16 + f32 + W4A8 parities stay green.
+  - **Inc 2 fit gate** folded into `TestKVCacheF16_fit` (added an `i8` arm: 64k cap,
+    8 GB fit assert, tok/s vs f32 — also the real-Qwen-7B-distribution check, since
+    it loads the model with `KVPrecision="i8"` through the live residency path).
+    **Measured (Qwen2.5-7B int4, 8 GB card):** i8 64k peak **6977 MiB** (fits, ~50
+    MiB over f32-16k — the caches are sized so 64k·i8 = 32k·f16 = 16k·f32 bytes, so
+    int8's win is 4× context at flat VRAM, not lower VRAM); decode 20.3 vs f32 21.1
+    tok/s = **0.96× at 1k context** (weight-stream-bound short-ctx, matching f16's
+    0.99×; the KV-read-bound speedup only appears at long context, unmeasured here).
+
 ## Grounded scoping (2026-06-12 — after CPU int8 Inc 1–3 shipped)
 
 Mapped against the live f16-KV implementation (the template) and updated with what

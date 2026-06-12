@@ -4,6 +4,7 @@ package gpu
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/cogentcore/webgpu/wgpu"
 )
@@ -405,6 +406,81 @@ func (c *Context) NewKVCacheF16(initial []float32, capElems int) (*DeviceBuffer,
 		}
 	}
 	return &DeviceBuffer{buf: buf, n: capElems}, nil
+}
+
+// NewKVCacheI8 creates a resident int8 KV cache holding capElems logical elements
+// packed 4/word into ceil(capElems/4) u32 words (a quarter of NewKVCache's bytes,
+// half of NewKVCacheF16's), plus a per-(position,KV-head) f32 scale side buffer of
+// capElems/hd entries. The ropeStoreI8/kvStoreI8 kernels write packed int8 + scales
+// during decode (and prefill, which is sequential Forward); attnI8 unpacks ×scale.
+// initial (prior positions, [nPos*kvDim]) is per-head quantized (maxabs/127 — the
+// same scheme the kernels and the CPU int8 cache use) so a prefilled cache matches
+// what a decode would have written. nKV/hd give the per-head grouping for scales.
+// Returns (packed data, scales); the caller Releases both.
+func (c *Context) NewKVCacheI8(initial []float32, capElems, nKV, hd int) (*DeviceBuffer, *DeviceBuffer, error) {
+	words := (capElems + 3) / 4
+	scaleElems := capElems / hd // = ctxCap*nKV (one scale per position×KV-head)
+	dataBuf, err := c.device.CreateBuffer(&wgpu.BufferDescriptor{Label: "kvcache-i8", Size: uint64(words * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst | wgpu.BufferUsageCopySrc})
+	if err != nil {
+		return nil, nil, err
+	}
+	scaleBuf, err := c.device.CreateBuffer(&wgpu.BufferDescriptor{Label: "kvcache-i8-scale", Size: uint64(scaleElems * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst | wgpu.BufferUsageCopySrc})
+	if err != nil {
+		dataBuf.Release()
+		return nil, nil, err
+	}
+	if len(initial) > 0 {
+		w, s := packKVInt8(initial, nKV, hd)
+		if err := c.queue.WriteBuffer(dataBuf, 0, wgpu.ToBytes(w)); err != nil {
+			dataBuf.Release()
+			scaleBuf.Release()
+			return nil, nil, err
+		}
+		if err := c.queue.WriteBuffer(scaleBuf, 0, wgpu.ToBytes(s)); err != nil {
+			dataBuf.Release()
+			scaleBuf.Release()
+			return nil, nil, err
+		}
+	}
+	return &DeviceBuffer{buf: dataBuf, n: capElems}, &DeviceBuffer{buf: scaleBuf, n: scaleElems}, nil
+}
+
+// packKVInt8 per-head quantizes a [nPos*nKV*hd] f32 KV slab to int8 (4/word) plus a
+// [nPos*nKV] f32 scale (maxabs/127 per (position,KV-head)) — the CPU mirror of the
+// ropeStoreI8/kvStoreI8 WRITE kernels, used to prefill a resident int8 cache.
+func packKVInt8(vals []float32, nKV, hd int) ([]uint32, []float32) {
+	kvDim := nKV * hd
+	nPos := len(vals) / kvDim
+	words := make([]uint32, (len(vals)+3)/4)
+	scales := make([]float32, nPos*nKV)
+	for p := 0; p < nPos; p++ {
+		for h := 0; h < nKV; h++ {
+			base := p*kvDim + h*hd
+			var amax float32
+			for d := 0; d < hd; d++ {
+				if a := float32(math.Abs(float64(vals[base+d]))); a > amax {
+					amax = a
+				}
+			}
+			sc := amax / 127
+			if sc == 0 {
+				sc = 1
+			}
+			scales[p*nKV+h] = sc
+			inv := 1 / sc
+			for d := 0; d < hd; d++ {
+				q := int32(math.Round(float64(vals[base+d] * inv)))
+				if q > 127 {
+					q = 127
+				} else if q < -127 {
+					q = -127
+				}
+				e := base + d
+				words[e>>2] |= uint32(uint8(int8(q))) << ((e & 3) * 8)
+			}
+		}
+	}
+	return words, scales
 }
 
 var _ = fmt.Sprint

@@ -46,6 +46,7 @@ type posUni struct {
 // ModelW / ModelW4 into this; the builder below works the same for either.
 type runLayer struct {
 	attnNorm, invFreq, kCache, vCache, mlpNorm *wgpu.Buffer
+	kScale, vScale                             *wgpu.Buffer // int8-KV per-(pos,head) scales; nil unless kvI8
 	q, k, v, o, gate, up, down                 decodeWeight
 	qBias, kBias, vBias                        *wgpu.Buffer // optional (Qwen2); nil ⇒ no bias
 }
@@ -55,6 +56,7 @@ type runModel struct {
 	finalNorm *wgpu.Buffer
 	lmHead    decodeWeight
 	kvF16     bool // KCache/VCache are f16-packed (NewKVCacheF16) → use the f16 kernels
+	kvI8      bool // KCache/VCache are int8-packed (NewKVCacheI8) + scales → int8 kernels
 }
 
 // w8Model adapts the W8A8 ModelW into the precision-agnostic runModel.
@@ -163,14 +165,25 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 	r.posUnis = append(r.posUnis, posUni{buf: ropeQUni, gen: func(pos int) []uint32 {
 		return []uint32{uint32(nH), uint32(hd), uint32(half), uint32(pos), f32bits(1), 0, 0, 0}
 	}})
-	ropeKUni := uni([]uint32{uint32(nKV), uint32(hd), uint32(half), 0, f32bits(1), 0, 0, 0})
+	// slot 6 carries nKV for the int8 ropeStore (it indexes scales[pos*nKV+head]);
+	// the f32/f16 ropeStore ignore it (it's their unused _b pad), so it rides along.
+	ropeKUni := uni([]uint32{uint32(nKV), uint32(hd), uint32(half), 0, f32bits(1), 0, uint32(nKV), 0})
 	r.posUnis = append(r.posUnis, posUni{buf: ropeKUni, gen: func(pos int) []uint32 {
-		return []uint32{uint32(nKV), uint32(hd), uint32(half), uint32(pos), f32bits(1), uint32(pos * r.kvDim), 0, 0}
+		return []uint32{uint32(nKV), uint32(hd), uint32(half), uint32(pos), f32bits(1), uint32(pos * r.kvDim), uint32(nKV), 0}
 	}})
 	vStoreUni := uni([]uint32{uint32(r.kvDim), 0, 0, 0})
 	r.posUnis = append(r.posUnis, posUni{buf: vStoreUni, gen: func(pos int) []uint32 {
 		return []uint32{uint32(r.kvDim), uint32(pos * r.kvDim), 0, 0}
 	}})
+	// int8 V store needs its own (differently-laid-out) per-token uniform:
+	// {heads=nKV, headDim=hd, base=pos*kvDim, pos, nKV}. Only allocated for kvI8.
+	var vStoreI8Uni *wgpu.Buffer
+	if m.kvI8 {
+		vStoreI8Uni = uni([]uint32{uint32(nKV), uint32(hd), 0, 0, uint32(nKV), 0, 0, 0})
+		r.posUnis = append(r.posUnis, posUni{buf: vStoreI8Uni, gen: func(pos int) []uint32 {
+			return []uint32{uint32(nKV), uint32(hd), uint32(pos * r.kvDim), uint32(pos), uint32(nKV), 0, 0, 0}
+		}})
+	}
 	attnUni := uni([]uint32{uint32(nH), uint32(nKV), uint32(hd), 0, uint32(start), uint32(nH / nKV), f32bits(scale), 0})
 	r.posUnis = append(r.posUnis, posUni{buf: attnUni, gen: func(pos int) []uint32 {
 		return []uint32{uint32(nH), uint32(nKV), uint32(hd), uint32(pos + 1), uint32(start), uint32(nH / nKV), f32bits(scale), 0}
@@ -182,7 +195,12 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 	// cache at pos*kvDim — replacing the K CopyBufferToBuffer append so the token
 	// stays one compute pass. base rides the shared ropeKUni. The f16 variant packs
 	// 2 rotated elems/word (one thread per word = nKV*half, same dispatch count).
-	ropeStore := func(src, invFreq, cache *wgpu.Buffer) {
+	ropeStore := func(src, invFreq, cache, scale *wgpu.Buffer) {
+		if m.kvI8 {
+			// one thread per KV head: per-head absmax → scale → quantize + pack 4/word.
+			add(c.ropeStoreI8Pipeline, bind(c.ropeStoreI8Layout, src, invFreq, cache, scale, ropeKUni), uint32(nKV+63)/64, 1)
+			return
+		}
 		pl, ly := c.ropeStorePipeline, c.ropeStoreLayout
 		if m.kvF16 {
 			pl, ly = c.ropeStoreF16Pipeline, c.ropeStoreF16Layout
@@ -190,8 +208,13 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		add(pl, bind(ly, src, invFreq, cache, ropeKUni), uint32(nKV*half+63)/64, 1)
 	}
 	// vStore copies src (the V projection) into the V cache at pos*kvDim. The f16
-	// variant packs 2 elems/word, so it dispatches half as many threads (one/word).
-	vStore := func(src, cache *wgpu.Buffer) {
+	// variant packs 2 elems/word, so it dispatches half as many threads (one/word);
+	// the int8 variant is one thread per KV head (per-head absmax → scale → pack).
+	vStore := func(src, cache, scale *wgpu.Buffer) {
+		if m.kvI8 {
+			add(c.kvStoreI8Pipeline, bind(c.kvStoreI8Layout, src, cache, scale, vStoreI8Uni), uint32(nKV+63)/64, 1)
+			return
+		}
 		if m.kvF16 {
 			words := r.kvDim / 2
 			add(c.kvStoreF16Pipeline, bind(c.kvStoreF16Layout, src, cache, vStoreUni), uint32(words+63)/64, 1)
@@ -221,14 +244,19 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			biasAdd(v, lw.vBias, r.kvDim)
 		}
 		rope(q, lw.invFreq)
-		ropeStore(k, lw.invFreq, lw.kCache) // rotate K + append into cache
-		vStore(v, lw.vCache)                // append V into cache
+		ropeStore(k, lw.invFreq, lw.kCache, lw.kScale) // rotate K + append into cache
+		vStore(v, lw.vCache, lw.vScale)                // append V into cache
 		ctxv := storF(nH * hd)
-		attnPl, attnLy := c.attnPipeline, c.attnLayout
-		if m.kvF16 {
-			attnPl, attnLy = c.attnF16Pipeline, c.attnF16Layout
+		if m.kvI8 {
+			// attnI8 reads packed int8 K/V + the per-(pos,head) scale side buffers.
+			add(c.attnI8Pipeline, bind(c.attnI8Layout, q, lw.kCache, lw.vCache, lw.kScale, lw.vScale, ctxv, attnUni), uint32(nH), 1)
+		} else {
+			attnPl, attnLy := c.attnPipeline, c.attnLayout
+			if m.kvF16 {
+				attnPl, attnLy = c.attnF16Pipeline, c.attnF16Layout
+			}
+			add(attnPl, bind(attnLy, q, lw.kCache, lw.vCache, ctxv, attnUni), uint32(nH), 1)
 		}
-		add(attnPl, bind(attnLy, q, lw.kCache, lw.vCache, ctxv, attnUni), uint32(nH), 1)
 		cq, cs := quant(ctxv, nH*hd)
 		gemvAdd(cq, cs, lw.o, r.xd) // o-proj + residual into xd
 		mq, ms := rmsQuant(r.xd, lw.mlpNorm, hidden)

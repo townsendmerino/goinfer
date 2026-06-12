@@ -260,6 +260,137 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 `
 
+// --- int8-KV variants (opt-in; see task-gpu-kv-i8.md) ---
+// Cache is array<u32>, 4 int8/word; a side buffer holds one f32 scale per
+// (position, KV-head) at [pos*nKV + head]. WRITE kernels run one thread per KV
+// head: rotate (K) / read (V) the head's headDim elements, reduce absmax → scale
+// (maxabs/127, matching the CPU QuantizeRowInt8), quantize, pack 4/word. The
+// query + ctx stay f32; only the resident cache is int8. base (pos*kvDim) and
+// headDim are multiples of 4, so a head's elements pack into whole words.
+
+// attnI8: attnShaderWGSL reading int8 K/V — unpack each element (sign-extend the
+// byte) and scale by the per-(position,head) f32 scale. q stays f32; the dot is
+// f32 (no integer dot / DP4A — a free future upgrade).
+const attnI8ShaderWGSL = `
+struct P { nH: u32, nKV: u32, hd: u32, nKeys: u32, start: u32, group: u32, scale: f32, _p: u32 };
+@group(0) @binding(0) var<storage, read>       q:      array<f32>;  // [nH*hd] (RoPE'd, f32)
+@group(0) @binding(1) var<storage, read>       keys:   array<u32>;  // [nKeys*nKV*hd] int8-packed (4/word)
+@group(0) @binding(2) var<storage, read>       vals:   array<u32>;  // [nKeys*nKV*hd] int8-packed
+@group(0) @binding(3) var<storage, read>       kScale: array<f32>;  // [nKeys*nKV]
+@group(0) @binding(4) var<storage, read>       vScale: array<f32>;  // [nKeys*nKV]
+@group(0) @binding(5) var<storage, read_write> ctx:    array<f32>;  // [nH*hd]
+@group(0) @binding(6) var<uniform>             p:      P;
+var<workgroup> red: array<f32, 128>;
+fn unpacki8(w: u32, e: u32) -> f32 {
+    let b = (e & 3u) * 8u;
+    return f32(i32(w << (24u - b)) >> 24u);
+}
+@compute @workgroup_size(128)
+fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid: vec3<u32>) {
+    let qh = wid.x;
+    if (qh >= p.nH) { return; }
+    let d = lid.x;
+    let hd = p.hd;
+    let kvDim = p.nKV * hd;
+    let kvh = qh / p.group;
+    let qbase = qh * hd;
+    let kvbase = kvh * hd;
+    let lane = d < hd;
+    var qd: f32 = 0.0;
+    if (lane) { qd = q[qbase + d]; }
+    var acc: f32 = 0.0;
+    var m: f32 = -1e30;
+    var l: f32 = 0.0;
+    for (var s: u32 = p.start; s < p.nKeys; s = s + 1u) {
+        let ki = s * kvDim + kvbase + d;
+        let sci = s * p.nKV + kvh;
+        var prod: f32 = 0.0;
+        if (lane) { prod = qd * unpacki8(keys[ki >> 2u], ki) * kScale[sci]; }
+        red[d] = prod;
+        workgroupBarrier();
+        var stride: u32 = 64u;
+        loop {
+            if (stride == 0u) { break; }
+            if (d < stride) { red[d] = red[d] + red[d + stride]; }
+            workgroupBarrier();
+            stride = stride / 2u;
+        }
+        let x = red[0] * p.scale;
+        let mnew = max(m, x);
+        let corr = exp(m - mnew);
+        let pe = exp(x - mnew);
+        if (lane) { acc = acc * corr + pe * unpacki8(vals[ki >> 2u], ki) * vScale[sci]; }
+        l = l * corr + pe;
+        m = mnew;
+        workgroupBarrier();
+    }
+    if (lane) { ctx[qbase + d] = acc / l; }
+}
+`
+
+// ropeStoreI8: rotate K, per-head absmax → int8. One thread per KV head; two
+// passes over headDim (recompute the cheap rope rather than spill a local array).
+const ropeStoreI8ShaderWGSL = `
+struct P { heads: u32, headDim: u32, half: u32, pos: u32, scale: f32, base: u32, nKV: u32, _c: u32 };
+@group(0) @binding(0) var<storage, read>       src:     array<f32>;  // [heads*headDim]
+@group(0) @binding(1) var<storage, read>       invFreq: array<f32>;  // [half]
+@group(0) @binding(2) var<storage, read_write> dst:     array<u32>;  // K cache int8-packed
+@group(0) @binding(3) var<storage, read_write> scales:  array<f32>;  // [maxLen*nKV]
+@group(0) @binding(4) var<uniform>             p:       P;
+fn rot(off: u32, dd: u32) -> f32 {
+    if (dd < p.half) {
+        let theta = f32(p.pos) * invFreq[dd];
+        return src[off + dd] * cos(theta) * p.scale - src[off + p.half + dd] * sin(theta) * p.scale;
+    }
+    let d = dd - p.half;
+    let theta = f32(p.pos) * invFreq[d];
+    return src[off + p.half + d] * cos(theta) * p.scale + src[off + d] * sin(theta) * p.scale;
+}
+fn qb(x: f32, inv: f32) -> u32 { return u32(i32(clamp(round(x * inv), -127.0, 127.0))) & 0xffu; }
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let h = gid.x;
+    if (h >= p.heads) { return; }
+    let off = h * p.headDim;
+    var amax: f32 = 0.0;
+    for (var d: u32 = 0u; d < p.headDim; d = d + 1u) { amax = max(amax, abs(rot(off, d))); }
+    var sc: f32 = amax / 127.0;
+    if (sc == 0.0) { sc = 1.0; }
+    scales[p.pos * p.nKV + h] = sc;
+    let inv = 1.0 / sc;
+    let wbase = (p.base + off) / 4u;
+    for (var d: u32 = 0u; d < p.headDim; d = d + 4u) {
+        dst[wbase + d / 4u] = qb(rot(off, d), inv) | (qb(rot(off, d+1u), inv) << 8u) | (qb(rot(off, d+2u), inv) << 16u) | (qb(rot(off, d+3u), inv) << 24u);
+    }
+}
+`
+
+// kvStoreI8: store V as int8, per-head absmax → scale. One thread per KV head.
+const kvStoreI8ShaderWGSL = `
+struct P { heads: u32, headDim: u32, base: u32, pos: u32, nKV: u32, _a: u32, _b: u32, _c: u32 };
+@group(0) @binding(0) var<storage, read>       src:    array<f32>;  // [heads*headDim]
+@group(0) @binding(1) var<storage, read_write> dst:    array<u32>;  // V cache int8-packed
+@group(0) @binding(2) var<storage, read_write> scales: array<f32>;  // [maxLen*nKV]
+@group(0) @binding(3) var<uniform>             p:      P;
+fn qb(x: f32, inv: f32) -> u32 { return u32(i32(clamp(round(x * inv), -127.0, 127.0))) & 0xffu; }
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let h = gid.x;
+    if (h >= p.heads) { return; }
+    let off = h * p.headDim;
+    var amax: f32 = 0.0;
+    for (var d: u32 = 0u; d < p.headDim; d = d + 1u) { amax = max(amax, abs(src[off + d])); }
+    var sc: f32 = amax / 127.0;
+    if (sc == 0.0) { sc = 1.0; }
+    scales[p.pos * p.nKV + h] = sc;
+    let inv = 1.0 / sc;
+    let wbase = (p.base + off) / 4u;
+    for (var d: u32 = 0u; d < p.headDim; d = d + 4u) {
+        dst[wbase + d / 4u] = qb(src[off+d], inv) | (qb(src[off+d+1u], inv) << 8u) | (qb(src[off+d+2u], inv) << 16u) | (qb(src[off+d+3u], inv) << 24u);
+    }
+}
+`
+
 func (c *Context) ensureAttn() error {
 	if c.ropePipeline != nil {
 		return nil
@@ -296,6 +427,15 @@ func (c *Context) ensureAttn() error {
 		return err
 	}
 	if c.kvStoreF16Shader, c.kvStoreF16Pipeline, c.kvStoreF16Layout, err = mk("kv-store-f16", kvStoreF16ShaderWGSL); err != nil {
+		return err
+	}
+	if c.attnI8Shader, c.attnI8Pipeline, c.attnI8Layout, err = mk("attn-i8", attnI8ShaderWGSL); err != nil {
+		return err
+	}
+	if c.ropeStoreI8Shader, c.ropeStoreI8Pipeline, c.ropeStoreI8Layout, err = mk("rope-store-i8", ropeStoreI8ShaderWGSL); err != nil {
+		return err
+	}
+	if c.kvStoreI8Shader, c.kvStoreI8Pipeline, c.kvStoreI8Layout, err = mk("kv-store-i8", kvStoreI8ShaderWGSL); err != nil {
 		return err
 	}
 	return nil

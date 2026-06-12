@@ -65,10 +65,11 @@ func (c *Context) uploadProj(w projWeight) (decodeWeight, error) {
 // residentDecoder is the gpu side of decoder.ResidentForward: a persistent
 // DecodeRunner + the runModel (for KV upload), built once per model.
 type residentDecoder struct {
-	c      *Context
-	runner *DecodeRunner
-	rm     runModel
-	keep   []func() // release the resident buffers (norms, biases, KV, projections)
+	c       *Context
+	runner  *DecodeRunner
+	rm      runModel
+	nKV, hd int      // KV grouping — UploadKV needs it to per-head quantize int8
+	keep    []func() // release the resident buffers (norms, biases, KV, projections)
 }
 
 // BuildResident builds a resident DecodeRunner from m, or (nil,false,nil) when
@@ -84,15 +85,19 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	hidden, _, nH, nKV, hd, inter, vocab := m.Dims() // arch-backed (Cfg may be zero for GGUF/.giw)
 	eps := m.NormEps()
 	// f32 KV caps context at 16k (the proven 8 GB fit); f16 halves per-token KV
-	// bytes, so the same VRAM holds 32k (task-gpu-f16-kv.md).
+	// bytes → 32k (task-gpu-f16-kv.md); int8 quarters them → ~64k (task-gpu-kv-i8.md).
 	kvF16 := m.KVCacheF16()
+	kvI8 := m.KVCacheI8()
 	ctxCap := 16384
-	if kvF16 {
+	switch {
+	case kvI8:
+		ctxCap = 65536
+	case kvF16:
 		ctxCap = 32768
 	}
 	kvDim := nKV * hd
 
-	rd := &residentDecoder{c: c}
+	rd := &residentDecoder{c: c, nKV: nKV, hd: hd}
 	keepF := func(f func()) { rd.keep = append(rd.keep, f) }
 	up32 := func(v []float32) (*wgpu.Buffer, error) {
 		d, err := c.UploadF32(v)
@@ -150,10 +155,20 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 		rl.invFreq = invD
 		var kc, vc *DeviceBuffer
 		var e1, e2 error
-		if kvF16 {
+		switch {
+		case kvI8:
+			var ks, vs *DeviceBuffer
+			kc, ks, e1 = c.NewKVCacheI8(nil, ctxCap*kvDim, nKV, hd)
+			vc, vs, e2 = c.NewKVCacheI8(nil, ctxCap*kvDim, nKV, hd)
+			if e1 == nil && e2 == nil {
+				keepF(ks.Release)
+				keepF(vs.Release)
+				rl.kScale, rl.vScale = ks.buf, vs.buf
+			}
+		case kvF16:
 			kc, e1 = c.NewKVCacheF16(nil, ctxCap*kvDim)
 			vc, e2 = c.NewKVCacheF16(nil, ctxCap*kvDim)
-		} else {
+		default:
 			kc, e1 = c.NewKVCache(nil, ctxCap*kvDim)
 			vc, e2 = c.NewKVCache(nil, ctxCap*kvDim)
 		}
@@ -200,6 +215,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	_ = vocab // logits length is lmHead.nRows()
 
 	rd.rm.kvF16 = kvF16 // the runner picks the f16 attn/store kernels off this
+	rd.rm.kvI8 = kvI8   // …or the int8 kernels + scale binds
 	runner, err := c.newDecodeRunner(rd.rm, hidden, nH, nKV, hd, inter, 0, eps, m.AttnScale(), m.RMSAddOne())
 	if err != nil {
 		return fail(err)
@@ -213,16 +229,40 @@ func (rd *residentDecoder) Forward(embedding []float32, pos int) ([]float32, err
 }
 
 // UploadKV writes a layer's post-RoPE K and raw V (positions 0..n-1) into the
-// resident caches — the prefill bridge. keys/vals are [n*kvDim] f32.
+// resident caches — the prefill bridge. keys/vals are [n*kvDim] f32, packed to the
+// cache's precision (f32 raw, f16 via packF16Pairs, int8 per-head + scales) so the
+// upload matches what an on-device decode would have written. Currently unused (the
+// stateless prefill seeds the caches via sequential Forward); kept for prefix-reuse.
 func (rd *residentDecoder) UploadKV(layer int, keys, vals []float32) error {
 	if layer < 0 || layer >= len(rd.rm.layers) {
 		return fmt.Errorf("gpu: UploadKV layer %d out of range", layer)
 	}
 	l := rd.rm.layers[layer]
-	if err := rd.c.queue.WriteBuffer(l.kCache, 0, wgpu.ToBytes(keys)); err != nil {
-		return err
+	switch {
+	case rd.rm.kvI8:
+		kw, ks := packKVInt8(keys, rd.nKV, rd.hd)
+		vw, vs := packKVInt8(vals, rd.nKV, rd.hd)
+		if err := rd.c.queue.WriteBuffer(l.kCache, 0, wgpu.ToBytes(kw)); err != nil {
+			return err
+		}
+		if err := rd.c.queue.WriteBuffer(l.kScale, 0, wgpu.ToBytes(ks)); err != nil {
+			return err
+		}
+		if err := rd.c.queue.WriteBuffer(l.vCache, 0, wgpu.ToBytes(vw)); err != nil {
+			return err
+		}
+		return rd.c.queue.WriteBuffer(l.vScale, 0, wgpu.ToBytes(vs))
+	case rd.rm.kvF16:
+		if err := rd.c.queue.WriteBuffer(l.kCache, 0, wgpu.ToBytes(packF16Pairs(keys))); err != nil {
+			return err
+		}
+		return rd.c.queue.WriteBuffer(l.vCache, 0, wgpu.ToBytes(packF16Pairs(vals)))
+	default:
+		if err := rd.c.queue.WriteBuffer(l.kCache, 0, wgpu.ToBytes(keys)); err != nil {
+			return err
+		}
+		return rd.c.queue.WriteBuffer(l.vCache, 0, wgpu.ToBytes(vals))
 	}
-	return rd.c.queue.WriteBuffer(l.vCache, 0, wgpu.ToBytes(vals))
 }
 
 func (rd *residentDecoder) Reset() {} // positions overwritten on next decode; caller tracks pos

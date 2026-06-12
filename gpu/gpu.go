@@ -133,6 +133,21 @@ type Context struct {
 	kvStoreF16Pipeline   *wgpu.ComputePipeline
 	kvStoreF16Layout     *wgpu.BindGroupLayout
 
+	// int8-KV variants (ensureAttn): the cache is array<u32> (4 int8/word) + a
+	// per-(position,KV-head) f32 scale side buffer. WRITE kernels (ropeStoreI8,
+	// kvStoreI8) reduce per-head absmax → scale → quantize (one thread per KV
+	// head); the READ kernel (attnI8) unpacks int8 and multiplies by qd·scale in
+	// f32. 4× vs f32 / 2× vs f16. Opt-in; f32 + f16 paths untouched. task-gpu-kv-i8.md.
+	attnI8Shader        *wgpu.ShaderModule
+	attnI8Pipeline      *wgpu.ComputePipeline
+	attnI8Layout        *wgpu.BindGroupLayout
+	ropeStoreI8Shader   *wgpu.ShaderModule
+	ropeStoreI8Pipeline *wgpu.ComputePipeline
+	ropeStoreI8Layout   *wgpu.BindGroupLayout
+	kvStoreI8Shader     *wgpu.ShaderModule
+	kvStoreI8Pipeline   *wgpu.ComputePipeline
+	kvStoreI8Layout     *wgpu.BindGroupLayout
+
 	// §2 fused glue kernels (ensureFuse, decodefuse.go): fold quantize into its
 	// producer to shorten the serialized decode dependency chain.
 	rmsQuantShader      *wgpu.ShaderModule

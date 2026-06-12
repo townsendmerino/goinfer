@@ -27,7 +27,8 @@ type Model struct {
 	eosIDs   []int           // end-of-sequence ids from config (generation stops on these)
 	resident ResidentForward // GPU full-residency decode path (webgpu + eligible arch); nil ⇒ staged/CPU
 	kvF16    bool            // residency KV cache precision request (Options.KVPrecision == "f16")
-	kvI8     bool            // CPU KV cache int8 storage request (Options.KVQuant == "i8")
+	kvPrecI8 bool            // residency KV cache int8 request (Options.KVPrecision == "i8") — GPU
+	kvI8     bool            // CPU KV cache int8 storage request (Options.KVQuant == "i8") — CPU staged path
 }
 
 // KVCacheF16 reports whether the GPU residency path should use an f16 KV cache
@@ -35,15 +36,20 @@ type Model struct {
 // residency builder reads it; off the residency path it has no effect.
 func (m *Model) KVCacheF16() bool { return m.kvF16 }
 
+// KVCacheI8 reports whether the GPU residency path should use an int8 KV cache
+// (Options.KVPrecision == "i8"): 4× vs f32 / 2× vs f16, ~64k context on the 8 GB
+// card. Lossy; f32 + f16 paths unchanged. Distinct from KVQuant (the CPU cache).
+func (m *Model) KVCacheI8() bool { return m.kvPrecI8 }
+
 // Options configures Load.
 type Options struct {
 	Backend string // "cpu" (default) or "webgpu"
 	Quant   string // "" (f32), "int8" (weight-only per-row), "int8int8" (full int8×int8 W8A8), or "int4" (group-wise) (M8)
 	LoRA    string // optional PEFT adapter dir (adapter_config.json + adapter_model.safetensors), merged into the base at load. Safetensors base only.
 	// KVPrecision selects the GPU residency KV cache precision: "" / "f32"
-	// (default, bit-exact, 16k context cap) or "f16" (lossy, 2× context to 32k +
-	// faster long-context decode). Ignored off the residency path. See
-	// task-gpu-f16-kv.md.
+	// (default, bit-exact, 16k context cap), "f16" (lossy, 2× context to 32k), or
+	// "i8" (lossy, 4× vs f32 → ~64k context). Ignored off the residency path. See
+	// task-gpu-f16-kv.md / task-gpu-kv-i8.md.
 	KVPrecision string
 	// KVQuant selects the CPU KV cache storage precision: "" / "f32" (default,
 	// bit-exact) or "i8" (per-(position,KV-head) symmetric int8, 4× smaller +
@@ -83,7 +89,7 @@ func Load(dir string, opts Options) (*Model, error) {
 		if beErr != nil {
 			fmt.Println(beErr)
 		}
-		return (&Model{w: w, be: be, eosIDs: w.Cfg.EOSIDs(), kvF16: opts.KVPrecision == "f16", kvI8: opts.KVQuant == "i8"}).withResidency(), nil
+		return (&Model{w: w, be: be, eosIDs: w.Cfg.EOSIDs(), kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8"}).withResidency(), nil
 	}
 
 	// Resolve the quant mode first so the weights stream straight into the
@@ -118,7 +124,7 @@ func Load(dir string, opts Options) (*Model, error) {
 		// webgpu requested but fell back — not fatal.
 		fmt.Println(beErr)
 	}
-	return (&Model{w: w, be: be, eosIDs: resolveEOSIDs(dir, &w.Cfg), kvF16: opts.KVPrecision == "f16", kvI8: opts.KVQuant == "i8"}).withResidency(), nil
+	return (&Model{w: w, be: be, eosIDs: resolveEOSIDs(dir, &w.Cfg), kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8"}).withResidency(), nil
 }
 
 // parseQuant maps Options.Quant to the internal quantMode.
