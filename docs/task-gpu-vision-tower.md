@@ -61,6 +61,33 @@ runtime; the isolated-kernel ~28 ms is noise next to the per-call sync. Offloadi
 attention too (the old "Inc 2") is the same trap with more round-trips. **The
 per-call seam was reverted** (the int8 `qmat` weights + the f32-QKᵀ CPU win stay).
 
+## ✅ RESULT — resident encoder DONE (commits 886c8fd, 5d7c572)
+
+Built and measured on this box (RTX 2070 SUPER, 8 GB, `-tags gpu`):
+
+| path | gemma-3-4b-it image prefill | parity vs CPU W8A8 |
+|---|---|---|
+| CPU (f32 QKᵀ) | ~171 s | — |
+| **resident GPU encoder** | **18.8 s** (~9×; +676 ms one-time weight upload) | **cosine 1.000000** (0.999959 vs HF golden) |
+
+The full forward runs on-device — patch-embed → 27 layers → final LN → one
+readback — paying WebGPU's submit/sync ~27× (one Poll/layer to bound scratch)
+instead of the per-op offload's ~162× (the dead end below). New WGSL kernels:
+batched LayerNorm, gelu-tanh, bidirectional row softmax, addRows
+(broadcast/elementwise bias+residual), per-head gather/scatter — composed with
+the existing device matmul/quantize primitives. Wired into serve: `--backend
+webgpu` attaches it via `vision.Encoder.EnableResident()` (gpu init →
+`vision.RegisterResident`). Gotcha fixed: `addRows`/`gelu` grid-stride with the
+dispatch capped at the 65535 workgroups/dim limit — the real model's
+`np*inter/64 ≈ 275k` blocks fail `ComputePassEncoder.End()` validation otherwise
+(the tiny ckpt slipped under it — small-ckpt parity ≠ real-model-safe).
+
+**Not the ~1–2 s target.** The FFN/proj matmuls use the tiled W8A8 kernel, but
+the attention QKᵀ / scores·V still use the **naive f32** `matmulF32Device` — that
+is the remaining limiter. A tiled f32 (or int8) GEMM for the attention shapes
+(M=N=4096, K=72) is the follow-up to close the gap toward the ~8–12 s matmul
+estimate below. 18.8 s is what the naive attention kernel delivers today.
+
 ## Increment 1 (revised) — the RESIDENT encoder is the only path
 
 Submit the whole forward as one (or few) command buffer(s): upload pixels once,

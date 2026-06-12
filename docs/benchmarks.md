@@ -58,7 +58,7 @@ at each goinfer tag.
 | LoRA adapters | ✓ PEFT, merged at load ʰ | ✓ | ✓ | ✓ | ✓ | — | ✗ |
 | GPU | ~ WebGPU, dense-only residency ⁱ | ✓ CUDA/Metal/Vulkan | ✓ CUDA/ROCm/Vulkan/Metal | ✓ CUDA/Metal | ✓ CUDA/TPU/+ | ✓ inherits llama.cpp | ✗ CPU only |
 | Continuous batching | ✗ | ✓ | ~ parallel slots via llama-server ᵇ | ✓ | ✓ PagedAttention | — | ✗ |
-| Multimodal (vision/audio) | ~ **vision in** (Gemma 3 VL, pure-Go SigLIP → serve + agent; CPU-slow, no audio) | ✓ | ✓ | ✓ | ✓ | ~ (yzma VLMs; gollama —) | ✗ |
+| Multimodal (vision/audio) | ~ **vision in** (Gemma 3 VL, pure-Go SigLIP → serve + agent; ~171 s/image CPU or **18.8 s on `-tags gpu`**, no audio) | ✓ | ✓ | ✓ | ✓ | ~ (yzma VLMs; gollama —) | ✗ |
 | Model coverage | ~ **11 architectures** ʲ | ✓ dozens | ✓ broad | ✓ broad | ✓ 200+ | ✓ inherits llama.cpp | ✗ Llama-2 toy |
 
 **Reading it:** goinfer wins cleanly on *no-native-dep pure-Go execution* and
@@ -121,6 +121,13 @@ read-only image, not heap-copied.
 12B-A2.5B (**3.36 → 8.11 tok/s** at a 1024-token prompt), measured on the RTX-box CPU
 (**Ryzen 7 3700X**, `08acc11`, 2026-06-10) — a *different* rig, listed separately so it
 isn't conflated with the M1 numbers above.
+
+**Vision prefill (SigLIP, gemma-3-4b-it, 896², 4096 patches):** ~171 s/image on
+CPU (compute-bound matmul; int8 is a wash on AVX2 — no VNNI). On `-tags gpu` with
+`--backend webgpu` the resident GPU encoder runs the whole tower on-device:
+**18.8 s/image** (~9×) on an **RTX 2070 SUPER**, parity cosine 1.000000 vs the CPU
+W8A8 encoder (`886c8fd`/`5d7c572`, 2026-06-11). The attention matmuls are still
+naive f32 — a tiled GEMM there is the next lever (`docs/task-gpu-vision-tower.md`).
 
 ### B. GPU residency vs native CUDA, at equal quant
 

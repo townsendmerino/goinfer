@@ -23,9 +23,23 @@ pre-1.0 and may change as new model families and quant formats land.
   via the same path. Numerics are HF-parity-gated (encoder/projector/end-to-end
   goldens). Loading a real `google/gemma-3-4b-it` now works directly (sharded +
   prefixed VL safetensors, nested `vision_config`, and the Gemma3-text class
-  defaults the minimal `text_config` omits). **Caveat:** the SigLIP prefill is
-  heavy on CPU (~3 min/image at 896², 4096 patches) — correct but slow; an int8
-  tower is the planned speedup (`docs/task-cpu-vision-prefill.md`).
+  defaults the minimal `text_config` omits). **Caveat (CPU):** the SigLIP prefill
+  is heavy on CPU (~171 s/image at 896², 4096 patches) — correct but slow. The GPU
+  encoder below is the fix.
+- **Resident GPU SigLIP encoder (`-tags gpu`, opt-in) — ~9× faster image
+  prefill.** `--backend webgpu` runs the whole vision tower on the GPU: the tower
+  uploads once, the `[4096, hidden]` activation stays on-device through all 27
+  layers (patch-embed → LayerNorm → int8 qkv → bidirectional attention → gelu-tanh
+  MLP → residuals → final LN), and there is one readback — paying WebGPU's
+  submit/sync cost ~27× instead of the ~162× a per-op offload would (a measured
+  dead end). On an RTX 2070 SUPER: **gemma-3-4b-it image prefill 171 s → 18.8 s**,
+  parity **cosine 1.000000** vs the CPU W8A8 encoder (0.999959 vs the HF golden).
+  New WGSL kernels (batched LayerNorm, gelu-tanh, row softmax, bias/residual
+  add, per-head gather/scatter) join the existing tiled W8A8 GEMM. The pure-Go
+  default build is untouched (`vision.Encoder` delegates to the device only when a
+  resident backend is attached). The attention matmuls still use a naive f32
+  kernel — a tiled GEMM there is the next lever toward the ~8–12 s estimate
+  (`docs/task-gpu-vision-tower.md`).
 - **SigLIP attention vectorized** — QKᵀ/scores·V moved onto the SIMD A·Bᵀ kernels
   (QKᵀ f64-accumulating for parity), >2× faster vision prefill (>400 s → ~190 s),
   bit-faithful (encoder golden cosine 1.0).
