@@ -27,6 +27,7 @@ type Model struct {
 	eosIDs   []int           // end-of-sequence ids from config (generation stops on these)
 	resident ResidentForward // GPU full-residency decode path (webgpu + eligible arch); nil ⇒ staged/CPU
 	kvF16    bool            // residency KV cache precision request (Options.KVPrecision == "f16")
+	kvI8     bool            // CPU KV cache int8 storage request (Options.KVQuant == "i8")
 }
 
 // KVCacheF16 reports whether the GPU residency path should use an f16 KV cache
@@ -44,6 +45,11 @@ type Options struct {
 	// faster long-context decode). Ignored off the residency path. See
 	// task-gpu-f16-kv.md.
 	KVPrecision string
+	// KVQuant selects the CPU KV cache storage precision: "" / "f32" (default,
+	// bit-exact) or "i8" (per-(position,KV-head) symmetric int8, 4× smaller +
+	// SDOT decode). Lossy, opt-in; excluded on MoE / gemma4 / qwen3_5_moe in v1.
+	// See task-cpu-kv-quant.md.
+	KVQuant string
 }
 
 // Load reads a Gemma 3 snapshot (config.json + model.safetensors) from dir
@@ -77,7 +83,7 @@ func Load(dir string, opts Options) (*Model, error) {
 		if beErr != nil {
 			fmt.Println(beErr)
 		}
-		return (&Model{w: w, be: be, eosIDs: w.Cfg.EOSIDs(), kvF16: opts.KVPrecision == "f16"}).withResidency(), nil
+		return (&Model{w: w, be: be, eosIDs: w.Cfg.EOSIDs(), kvF16: opts.KVPrecision == "f16", kvI8: opts.KVQuant == "i8"}).withResidency(), nil
 	}
 
 	// Resolve the quant mode first so the weights stream straight into the
@@ -112,7 +118,7 @@ func Load(dir string, opts Options) (*Model, error) {
 		// webgpu requested but fell back — not fatal.
 		fmt.Println(beErr)
 	}
-	return (&Model{w: w, be: be, eosIDs: resolveEOSIDs(dir, &w.Cfg), kvF16: opts.KVPrecision == "f16"}).withResidency(), nil
+	return (&Model{w: w, be: be, eosIDs: resolveEOSIDs(dir, &w.Cfg), kvF16: opts.KVPrecision == "f16", kvI8: opts.KVQuant == "i8"}).withResidency(), nil
 }
 
 // parseQuant maps Options.Quant to the internal quantMode.
@@ -160,6 +166,13 @@ func (m *Model) NewCache(capHint int) *KVCache {
 	a := m.w.arch
 	c := NewKVCache(a.NumLayers, a.NumKVHeads, a.HeadDim, a.SlidingWindow, capHint)
 	c.scr = newDecodeScratch(a)
+	// int8 KV storage (opt-in, Options.KVQuant=="i8"): the uniform dense families
+	// only — MoE routes attention through the acc64 kernel for bit-stable expert
+	// routing (quantized KV would reopen that), and gemma4/qwen3_5_moe have their
+	// own forward. Must precede enableRings so local layers inherit the mode.
+	if m.kvI8 && a.gemma4 == nil && a.qwen35 == nil && a.MoE == nil {
+		c.setQuant(kvI8)
+	}
 	// Ring-buffer storage on sliding-window (local) layers: keep only the W most
 	// recent positions, the only ones a future query can read. Restricted to the
 	// uniform-stride families whose forward uses attendQuery/attendBatchedHeads;

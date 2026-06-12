@@ -492,7 +492,7 @@ func LoadGGUFBytes(raw []byte, opts Options) (*Model, error) {
 	if beErr != nil {
 		fmt.Println(beErr) // webgpu requested but fell back — not fatal.
 	}
-	return (&Model{w: w, be: be, eosIDs: w.Cfg.EOSIDs(), kvF16: opts.KVPrecision == "f16"}).withResidency(), nil
+	return (&Model{w: w, be: be, eosIDs: w.Cfg.EOSIDs(), kvF16: opts.KVPrecision == "f16", kvI8: opts.KVQuant == "i8"}).withResidency(), nil
 }
 
 // buildWeightsFromGGUF dequantizes the GGUF tensors into the weight bundle.

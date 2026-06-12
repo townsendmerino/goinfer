@@ -18,7 +18,11 @@ func (m *Model) canBatchN(K int) bool {
 	// Gemma 4 (per-layer head_dim, KV-sharing, PLE) and qwen3_5_moe (Gated DeltaNet
 	// linear attention — NOT plain GQA, so attendBatchedHeads doesn't apply) each
 	// have their own sequential forward; exclude both.
-	return K > 1 && m.w.Embed.rows != 0 && !a.NonGatedMLP && !a.LearnedPosEmbed && a.gemma4 == nil && a.qwen35 == nil
+	// int8 KV: the batched prefill (attendBatchedHeads) reads f32 cache slices;
+	// quantized prefill (dequant-into-scratch) is Increment 2. Until then an int8
+	// cache prefills sequentially (runLayers → attendQuery, which has the int8
+	// path), so force the scalar path here.
+	return K > 1 && m.w.Embed.rows != 0 && !a.NonGatedMLP && !a.LearnedPosEmbed && a.gemma4 == nil && a.qwen35 == nil && !m.kvI8
 }
 
 // forwardLayersN runs the embedding + all transformer layers + final norm over

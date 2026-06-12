@@ -151,6 +151,10 @@ func causalAttention(
 // scores is a reusable buffer with len ≥ the number of stored keys. Shared by
 // causalAttention (M=1) and the batched forwardN, so the math has one home.
 func attendQuery(q, ctx, scores []float32, cache *KVCache, layer, pos int, global bool, arch *Architecture) {
+	if cache.quant == kvI8 {
+		attendQueryI8(q, ctx, scores, cache, layer, pos, global, arch)
+		return
+	}
 	nH, nKV, hd := arch.NumHeads, arch.NumKVHeads, arch.HeadDim
 	kvDim := nKV * hd
 	keys, vals := cache.Keys(layer), cache.Vals(layer)
@@ -206,6 +210,71 @@ func attendQuery(q, ctx, scores []float32, cache *KVCache, layer, pos int, globa
 			vHead := vals[rowBase(s)+kvh*hd : rowBase(s)+kvh*hd+hd]
 			for d := range hd {
 				oHead[d] += w * vHead[d]
+			}
+		}
+	}
+}
+
+// attendQueryI8 is attendQuery over an int8 KV cache (kvI8): the query head is
+// quantized once per head, key scores are the integer dot DotI8 rescaled by
+// qScale·kScale[s,head] (the f64-accum scalar loop becomes an SDOT — decode
+// attention gets faster, not just smaller), and the V-weighted sum dequantizes
+// inline. Handles both ring (local, s%W) and append-forever (global) int8 layers.
+func attendQueryI8(q, ctx, scores []float32, cache *KVCache, layer, pos int, global bool, arch *Architecture) {
+	nH, nKV, hd := arch.NumHeads, arch.NumKVHeads, arch.HeadDim
+	kvDim := nKV * hd
+
+	// Storage selection: a ring (local) layer reads its int8 fields with row s%W;
+	// a global layer reads the parallel append-forever int8 arrays at row s.
+	var kQ, vQ []int8
+	var kSc, vSc []float32
+	var nKeys, wrap int
+	if r := cache.rings[layer]; r != nil {
+		kQ, vQ, kSc, vSc, nKeys, wrap = r.kq, r.vq, r.ksc, r.vsc, r.count, r.w
+	} else {
+		kQ, vQ, kSc, vSc, nKeys = cache.keysQ[layer], cache.valsQ[layer], cache.keyScale[layer], cache.valScale[layer], len(cache.keysQ[layer])/kvDim
+	}
+	phys := func(s int) int {
+		if wrap > 0 {
+			return s % wrap
+		}
+		return s
+	}
+	start := cache.WindowStart(pos, global)
+	scale := arch.AttnScale
+	group := nH / nKV
+	qq := make([]int8, hd) // quantized query head (reused across keys)
+
+	clear(ctx)
+	for qh := range nH {
+		kvh := qh / group
+		qScale := float64(linalg.QuantizeRowInt8(q[qh*hd:qh*hd+hd], qq))
+
+		maxS := math.Inf(-1)
+		for s := start; s < nKeys; s++ {
+			row, srow := phys(s)*kvDim+kvh*hd, phys(s)*nKV+kvh
+			dot := linalg.DotI8(qq, kQ[row:row+hd])
+			sc := float64(dot) * qScale * float64(kSc[srow]) * scale
+			scores[s] = float32(sc)
+			if sc > maxS {
+				maxS = sc
+			}
+		}
+		var sum float64
+		for s := start; s < nKeys; s++ {
+			e := math.Exp(float64(scores[s]) - maxS)
+			scores[s] = float32(e)
+			sum += e
+		}
+		inv := 1.0 / sum
+		oHead := ctx[qh*hd : qh*hd+hd]
+		for s := start; s < nKeys; s++ {
+			w := float32(float64(scores[s]) * inv)
+			row, srow := phys(s)*kvDim+kvh*hd, phys(s)*nKV+kvh
+			vs := vSc[srow]
+			vrow := vQ[row : row+hd]
+			for d := range hd {
+				oHead[d] += w * vs * float32(vrow[d])
 			}
 		}
 	}

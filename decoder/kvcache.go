@@ -1,5 +1,29 @@
 package decoder
 
+import "github.com/townsendmerino/aikit/linalg"
+
+// kvQuant selects the CPU KV-cache storage precision. kvF32 (default) is
+// bit-exact; kvI8 stores K and V as per-(position,KV-head) symmetric int8 + a
+// f32 scale each — 4× smaller, and decode reads them with the SDOT integer dot
+// (DotI8) instead of scalar f64. Opt-in (lossy); see docs/task-cpu-kv-quant.md.
+type kvQuant uint8
+
+const (
+	kvqF32 kvQuant = iota
+	kvI8
+)
+
+// quantizeHeads writes src (nKV contiguous rows of headDim) as int8 into q with
+// one symmetric maxabs/127 scale per head into scales[:nKV]. Per-head (not
+// per-kvDim-row) scales bound RoPE'd-key outlier channels — the cheap KIVI-style
+// win. headDim is 64/128, a clean multiple of the SDOT/AVX2 width.
+func quantizeHeads(src []float32, q []int8, scales []float32, nKV, headDim int) {
+	for h := 0; h < nKV; h++ {
+		o := h * headDim
+		scales[h] = linalg.QuantizeRowInt8(src[o:o+headDim], q[o:o+headDim])
+	}
+}
+
 // KVCache holds the per-layer key/value history for one generation
 // sequence. The cache, not a growing per-call buffer, is the decoder's
 // memory model: each decode step appends one position's K and V per layer
@@ -31,6 +55,14 @@ type KVCache struct {
 	rings    []*ring
 	localAny bool // any ring layer present (gates prefill's assembly scratch)
 
+	// int8 KV (quant == kvI8): global (append-forever) layers store K/V as int8
+	// here, parallel to keys/vals, with one symmetric scale per (position,KV-head).
+	// Ring layers carry their own int8 fields. kvqF32 leaves all of this nil.
+	quant              kvQuant
+	headDim            int         // per-head width, for int8 scale striding
+	keysQ, valsQ       [][]int8    // [pos*kvDim] (global int8 layers)
+	keyScale, valScale [][]float32 // [pos*nKV]   (per-(position,head) scale)
+
 	// manualPos decouples pos from Append's last-layer trigger. Gemma 4's last
 	// layer is KV-shared (never appends), so the caller advances pos explicitly
 	// via Advance() after each token's full layer sweep. qwen3_5_moe sets it too
@@ -53,6 +85,7 @@ func NewKVCache(numLayers, numKVHeads, headDim, window, capHint int) *KVCache {
 	c := &KVCache{
 		numLayers: numLayers,
 		kvDim:     kvDim,
+		headDim:   headDim,
 		window:    window,
 		keys:      make([][]float32, numLayers),
 		vals:      make([][]float32, numLayers),
@@ -72,23 +105,43 @@ func NewKVCache(numLayers, numKVHeads, headDim, window, capHint int) *KVCache {
 // the logical length — total positions ever written; the live window (everything
 // a future query can read) is [max(0,count-w), count).
 type ring struct {
-	k, v   []float32 // [w*stride] each; position p lives at offset (p%w)*stride
-	w      int       // window size (slot count)
-	stride int       // per-layer KV width; 0 until the first write sizes it
-	count  int       // logical positions written (the absolute next position)
+	k, v     []float32 // f32 mode: [w*stride] each; position p at offset (p%w)*stride
+	kq, vq   []int8    // int8 mode: [w*stride]
+	ksc, vsc []float32 // int8 mode: per-(slot,head) scale, [w*nKV]
+	w        int       // window size (slot count)
+	stride   int       // per-layer KV width; 0 until the first write sizes it
+	count    int       // logical positions written (the absolute next position)
+	quant    kvQuant   // kvF32 | kvI8 (set by enableRings)
+	headDim  int       // for int8 scale striding (nKV = stride/headDim)
 }
 
 // write stores position p's k/v into slot p%w and advances count past p. O(stride),
-// no growth or realloc after the first write.
+// no growth or realloc after the first write. Quantizes per head when kvI8.
 func (r *ring) write(p int, k, v []float32) {
 	if r.stride == 0 {
 		r.stride = len(k)
-		r.k = make([]float32, r.w*r.stride)
-		r.v = make([]float32, r.w*r.stride)
+		if r.quant == kvI8 {
+			nKV := r.stride / r.headDim
+			r.kq = make([]int8, r.w*r.stride)
+			r.vq = make([]int8, r.w*r.stride)
+			r.ksc = make([]float32, r.w*nKV)
+			r.vsc = make([]float32, r.w*nKV)
+		} else {
+			r.k = make([]float32, r.w*r.stride)
+			r.v = make([]float32, r.w*r.stride)
+		}
 	}
-	o := (p % r.w) * r.stride
-	copy(r.k[o:o+r.stride], k)
-	copy(r.v[o:o+r.stride], v)
+	slot := p % r.w
+	if r.quant == kvI8 {
+		nKV := r.stride / r.headDim
+		o, so := slot*r.stride, slot*nKV
+		quantizeHeads(k, r.kq[o:o+r.stride], r.ksc[so:so+nKV], nKV, r.headDim)
+		quantizeHeads(v, r.vq[o:o+r.stride], r.vsc[so:so+nKV], nKV, r.headDim)
+	} else {
+		o := slot * r.stride
+		copy(r.k[o:o+r.stride], k)
+		copy(r.v[o:o+r.stride], v)
+	}
 	if p+1 > r.count {
 		r.count = p + 1
 	}
@@ -120,9 +173,22 @@ func (c *KVCache) enableRings(window int, isGlobal func(int) bool) {
 	}
 	for l := range c.numLayers {
 		if !isGlobal(l) {
-			c.rings[l] = &ring{w: window}
+			c.rings[l] = &ring{w: window, quant: c.quant, headDim: c.headDim}
 			c.localAny = true
 		}
+	}
+}
+
+// setQuant switches the cache to int8 KV storage (kvI8). Global (append-forever)
+// layers get parallel int8 + scale arrays; ring layers inherit the mode via
+// enableRings (call setQuant FIRST). f32 default leaves everything bit-exact.
+func (c *KVCache) setQuant(q kvQuant) {
+	c.quant = q
+	if q == kvI8 {
+		c.keysQ = make([][]int8, c.numLayers)
+		c.valsQ = make([][]int8, c.numLayers)
+		c.keyScale = make([][]float32, c.numLayers)
+		c.valScale = make([][]float32, c.numLayers)
 	}
 }
 
@@ -134,7 +200,9 @@ func (c *KVCache) Append(layer int, k, v []float32) int {
 	// prefill does NOT route local layers here — it defers the ring write past the
 	// read (commitBatch), since writing all K first would evict in-batch history.
 	if r := c.rings[layer]; r != nil {
-		r.write(c.pos, k, v)
+		r.write(c.pos, k, v) // ring quantizes internally when kvI8
+	} else if c.quant == kvI8 {
+		c.appendQuant(layer, k, v)
 	} else {
 		c.keys[layer] = append(c.keys[layer], k...)
 		c.vals[layer] = append(c.vals[layer], v...)
@@ -145,6 +213,20 @@ func (c *KVCache) Append(layer int, k, v []float32) int {
 		c.pos++
 	}
 	return c.pos
+}
+
+// appendQuant quantizes one position's K/V per head and appends the int8 rows +
+// per-head scales to a global (append-forever) int8 layer.
+func (c *KVCache) appendQuant(layer int, k, v []float32) {
+	nKV := c.kvDim / c.headDim
+	kq, ksc := make([]int8, c.kvDim), make([]float32, nKV)
+	vq, vsc := make([]int8, c.kvDim), make([]float32, nKV)
+	quantizeHeads(k, kq, ksc, nKV, c.headDim)
+	quantizeHeads(v, vq, vsc, nKV, c.headDim)
+	c.keysQ[layer] = append(c.keysQ[layer], kq...)
+	c.keyScale[layer] = append(c.keyScale[layer], ksc...)
+	c.valsQ[layer] = append(c.valsQ[layer], vq...)
+	c.valScale[layer] = append(c.valScale[layer], vsc...)
 }
 
 // Advance bumps the stored-position count by one — the gemma4 forward's explicit
@@ -177,6 +259,20 @@ func (c *KVCache) TruncateTo(pos int) {
 	for l := range c.numLayers {
 		if r := c.rings[l]; r != nil {
 			r.truncate(pos) // exactness flag consumed by the rewind rule (Inc 2)
+			continue
+		}
+		if c.quant == kvI8 {
+			// int8 global: reslice the int8 rows + the per-(position,head) scales,
+			// each strided per-layer (len/pos), so per-layer widths stay correct.
+			perPos, perScale := 0, 0
+			if c.pos > 0 {
+				perPos = len(c.keysQ[l]) / c.pos
+				perScale = len(c.keyScale[l]) / c.pos
+			}
+			c.keysQ[l] = c.keysQ[l][:pos*perPos]
+			c.valsQ[l] = c.valsQ[l][:pos*perPos]
+			c.keyScale[l] = c.keyScale[l][:pos*perScale]
+			c.valScale[l] = c.valScale[l][:pos*perScale]
 			continue
 		}
 		perPos := 0
@@ -242,6 +338,9 @@ func (c *KVCache) isLocal(layer int) bool { return c.rings[layer] != nil }
 func (c *KVCache) storedRows(layer, kvDim int) int {
 	if r := c.rings[layer]; r != nil {
 		return r.count
+	}
+	if c.quant == kvI8 {
+		return len(c.keysQ[layer]) / kvDim
 	}
 	return len(c.keys[layer]) / kvDim
 }

@@ -49,12 +49,13 @@ func (e *SnapshotError) Error() string { return "decoder: kv snapshot: " + e.Rea
 // with Model.LoadSession on a model of the same architecture.
 func (s *Session) Snapshot(id string) []byte {
 	c := s.cache
-	// Ring (sliding-window) layers keep their KV in c.rings, not c.keys/c.vals, so
-	// the per-layer serialization below would persist empty history for them and
-	// restore wrong. Windowed persistence is Increment 3 (a versioned format with
-	// ringBase + the live window); until then, refuse — the caller skips the write
-	// and the session cold-prefills on restore. See docs/task-kv-ring-eviction.md.
-	if c.localAny {
+	// Ring (sliding-window) layers keep their KV in c.rings, and int8 caches in
+	// c.keysQ/valsQ + scales — not in c.keys/c.vals — so the per-layer f32
+	// serialization below would persist empty history and restore wrong. The
+	// merged snapshot v2 (windowed ring + int8 payload) is Increment 3 of both KV
+	// programs; until then, refuse — the caller skips the write and the session
+	// cold-prefills on restore. See docs/task-kv-ring-eviction.md / task-cpu-kv-quant.md.
+	if c.localAny || c.quant == kvI8 {
 		return nil
 	}
 	wr := &giwWriter{}
