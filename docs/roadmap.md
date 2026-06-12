@@ -1,4 +1,4 @@
-# goinfer roadmap (rolling; updated 2026-06-11, v0.5.0 tagging + KV-memory program scoped)
+# goinfer roadmap (rolling; updated 2026-06-12, KV-memory program steps 1–2 shipped; int4 deferred)
 
 > **Audience:** internal planning doc (docs/internal/ is gitignored). Started
 > as the v0.2 gap analysis vs llama.cpp / Ollama / mistral.rs; v0.2.0 and
@@ -199,23 +199,40 @@ layers at long context, 4× on full-attention families, 4× smaller `.giw-kv`
 warm sessions.** This is the natural sequel to the v0.5.0 f16-KV work: same
 "context per byte" battleground, attacked on CPU and GPU.
 
+**Status (2026-06-12): steps 1 + 2 SHIPPED to main** (ring eviction + CPU int8
+KV Inc 1–3 — the ~20×-stacked headline on Gemma local layers, opt-in, default
+bit-exact). Steps 3 (GPU int8 KV) + 4 (TurboQuant spike) remain open; int4 KV is
+deferred (see step 2).
+
 In order (rationale: free memory with zero precision argument first, then the
 quant rungs with pre-validated gate bars):
 
-1. **[Ring-buffer eviction for sliding-window layers](task-kv-ring-eviction.md)**
-   — today `WindowStart` only bounds *reads*; `Append` stores every position
-   forever, so on Gemma (5 local : 1 global, window ≤1024) ~81% of KV at 32k
-   context is provably dead. Rings on local layers: **~5.2× KV on Gemma-class,
-   LOSSLESS (bit-exact gate** — the existing window goldens pin the
-   invariance). One real seam: `TruncateTo` rewinding deeper than the window →
-   cold-prefill fallback. ~3–5 days.
-2. **[CPU int8 KV cache, Increments 1–3](task-cpu-kv-quant.md)** — the core
-   quant step, on shipped aikit kernels (`DotI8`/SDOT, `QuantizeRowInt8`).
-   **4× KV RAM on full-attention families, 4× smaller warm sessions,
-   ~1.5–2.5× long-context decode on small models.** Opt-in `--kv-quant i8`;
-   gate argmax-preserved + cosine ≥0.999. ~6–9 days. Coordinate the
-   snapshot-v2 format bump with step 1's windowed persistence — **the format
-   bumps once.**
+1. ✅ **DONE — [Ring-buffer eviction for sliding-window layers](task-kv-ring-eviction.md)**
+   (commit `4a9c2b5`, 2026-06-11/12). Rings on local layers: **~5.2× KV on
+   Gemma-class, LOSSLESS** (bit-exact gate — real Mellum2 window golden + 3
+   model-free gates). Gotcha the doc missed: batched prefill (K>W) needed a
+   deferred-write + assembled-window path, not a naive `s%W`.
+2. ✅ **DONE — [CPU int8 KV cache, Increments 1–3](task-cpu-kv-quant.md)**
+   (commits `71d4ef1` / `d78eea9` / `d4e7830`). Per-head int8 on shipped aikit
+   kernels (`DotI8`/SDOT). Inc 1 storage+decode, Inc 2 batched prefill + serve
+   `--kv-quant i8` + spec-decode rollback parity (**TTFT 1.023×** after killing
+   alloc churn), Inc 3 snapshot-v2 (merged with step 1's windowed persistence —
+   **the format bumped once**). Opt-in, **default f32 bit-exact**. Measured gate:
+   argmax ~87–93% / cosine ~0.993 on gemma-3-4b-it, coherent generation (in line
+   with the shipped full-int8-*weights* precedent, 92.5%). The 0.999 cosine bar in
+   the original plan was wrong — unreachable over 34 layers; argmax/cosine on a
+   *model-tokenized* prompt is the right gate (a garbage-input test bug — foreign
+   token-ids — once faked a 0.73 "failure"; lesson logged).
+   - **Inc 4 (int4 KV, group=32) — DEFERRED, by design.** Trigger: int8 shipped
+     clean (done) **AND** a concrete >32k-single-context or fat-multi-session RAM
+     wall that 20×-stacked int8 doesn't clear. Why not now: int4 buys only **~1.6×
+     over int8** (at group=32 the scales dominate — 0.5 + ~0.125 B/value), and on
+     the quant-sensitive arch (gemma3: QK-norm, 256-dim heads, 34 layers) it
+     **likely needs per-channel keys (KIVI) → chunked storage + an f32 residual** —
+     the exact streaming-cache complexity int8 was validated NOT to need. So
+     int4-now ≈ a week of high-risk work that may miss its own gate, plus permanent
+     code surface, for ~1.6× over a 20× we already ship, with no demand. Easy call
+     to flip the moment a real RAM wall appears.
 3. **[GPU int8 KV cache](task-gpu-kv-i8.md)** — third rung after the shipped
    `--kv f16`, via the existing `runQuant`/W8A8 WGSL idiom: **~64k context on
    the 8 GB card in the 32k-f16 envelope.** ~3–4 days, sequenced after step 2
