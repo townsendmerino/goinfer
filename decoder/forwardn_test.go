@@ -74,7 +74,7 @@ func TestAttendBatchedHeads_vsNaive(t *testing.T) {
 	}
 
 	ctx := make([]float32, K*qDim)
-	attendBatchedHeads(q, ctx, cache, 0, 0, K, true, arch, false, // useAcc64=false: validate the f32 (dense) kernel vs the f64 naive ref
+	attendBatchedHeads(q, ctx, keys, vals, 0, cache, 0, 0, K, true, arch, false, // useAcc64=false: validate the f32 (dense) kernel vs the f64 naive ref
 		make([]float32, K*hd), make([]float32, K*hd), make([]float32, K*hd),
 		make([]float32, K*K), make([]float32, K*hd))
 

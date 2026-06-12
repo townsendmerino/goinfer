@@ -49,6 +49,14 @@ func (e *SnapshotError) Error() string { return "decoder: kv snapshot: " + e.Rea
 // with Model.LoadSession on a model of the same architecture.
 func (s *Session) Snapshot(id string) []byte {
 	c := s.cache
+	// Ring (sliding-window) layers keep their KV in c.rings, not c.keys/c.vals, so
+	// the per-layer serialization below would persist empty history for them and
+	// restore wrong. Windowed persistence is Increment 3 (a versioned format with
+	// ringBase + the live window); until then, refuse — the caller skips the write
+	// and the session cold-prefills on restore. See docs/task-kv-ring-eviction.md.
+	if c.localAny {
+		return nil
+	}
 	wr := &giwWriter{}
 	wr.raw([]byte(kvSnapMagic))
 	wr.u32(kvSnapVersion)

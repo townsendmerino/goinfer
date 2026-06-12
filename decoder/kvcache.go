@@ -17,9 +17,19 @@ type KVCache struct {
 	window    int      // sliding-window cap for local layers; 0 = unbounded
 	imgBlocks [][2]int // multimodal: position ranges [start,end) that attend bidirectionally (image blocks); nil = all-causal
 
-	keys [][]float32 // per layer, appended [pos*kvDim]
+	keys [][]float32 // per layer, appended [pos*kvDim] (global / append-forever layers)
 	vals [][]float32
 	pos  int // number of positions stored (the next position index)
+
+	// rings holds a fixed-W ring buffer for each sliding-window (local) layer;
+	// nil entry = a global layer that append-forevers into keys/vals above. Set by
+	// enableRings (from NewCache) for the families that take the attendQuery /
+	// attendBatchedHeads paths — full-attention families (no local layers),
+	// gemma4, and qwen3_5_moe keep append-forever (rings all nil). A local layer
+	// stores only the W most recent positions (the only ones any future query can
+	// read), so its KV is O(W) not O(context). See docs/task-kv-ring-eviction.md.
+	rings    []*ring
+	localAny bool // any ring layer present (gates prefill's assembly scratch)
 
 	// manualPos decouples pos from Append's last-layer trigger. Gemma 4's last
 	// layer is KV-shared (never appends), so the caller advances pos explicitly
@@ -51,14 +61,84 @@ func NewKVCache(numLayers, numKVHeads, headDim, window, capHint int) *KVCache {
 		c.keys[l] = make([]float32, 0, capHint*kvDim)
 		c.vals[l] = make([]float32, 0, capHint*kvDim)
 	}
+	c.rings = make([]*ring, numLayers) // all nil: append-forever until enableRings
 	return c
+}
+
+// ring is the sliding-window KV store for one local layer: it physically holds
+// at most w positions, the slot for absolute position p being p%w. The per-layer
+// stride (KV width = NumKVHeads*HeadDim for this layer) is learned on the first
+// write, so per-layer-width families (Gemma 4) need no special-casing. count is
+// the logical length — total positions ever written; the live window (everything
+// a future query can read) is [max(0,count-w), count).
+type ring struct {
+	k, v   []float32 // [w*stride] each; position p lives at offset (p%w)*stride
+	w      int       // window size (slot count)
+	stride int       // per-layer KV width; 0 until the first write sizes it
+	count  int       // logical positions written (the absolute next position)
+}
+
+// write stores position p's k/v into slot p%w and advances count past p. O(stride),
+// no growth or realloc after the first write.
+func (r *ring) write(p int, k, v []float32) {
+	if r.stride == 0 {
+		r.stride = len(k)
+		r.k = make([]float32, r.w*r.stride)
+		r.v = make([]float32, r.w*r.stride)
+	}
+	o := (p % r.w) * r.stride
+	copy(r.k[o:o+r.stride], k)
+	copy(r.v[o:o+r.stride], v)
+	if p+1 > r.count {
+		r.count = p + 1
+	}
+}
+
+// truncate drops logical positions ≥ p. Returns true iff the result is exact —
+// i.e. every position the post-truncation window [max(0,p-w), p) is still
+// physically resident. That holds whenever the ring never wrapped (count ≤ w);
+// a deeper rewind on a wrapped ring would need positions already evicted, so it
+// returns false and the caller must cold-prefill (the rewind rule, wired into
+// sessions in Increment 2). Spec-decode draft depths ≪ w on short contexts never
+// wrap, so they stay exact.
+func (r *ring) truncate(p int) bool {
+	if p >= r.count {
+		return true
+	}
+	exact := r.count <= r.w || p >= r.count-1
+	r.count = p
+	return exact
+}
+
+// enableRings switches the local (sliding-window) layers to ring storage: layer l
+// is local iff window>0 and it is not a global layer. Called by NewCache for the
+// families whose forward uses attendQuery/attendBatchedHeads; other families pass
+// a nil predicate or window 0 and keep append-forever. Idempotent-safe to call once.
+func (c *KVCache) enableRings(window int, isGlobal func(int) bool) {
+	if window <= 0 || isGlobal == nil {
+		return
+	}
+	for l := range c.numLayers {
+		if !isGlobal(l) {
+			c.rings[l] = &ring{w: window}
+			c.localAny = true
+		}
+	}
 }
 
 // Append stores one position's K and V for the given layer. k and v must
 // each be kvDim long. Returns the position index just written.
 func (c *KVCache) Append(layer int, k, v []float32) int {
-	c.keys[layer] = append(c.keys[layer], k...)
-	c.vals[layer] = append(c.vals[layer], v...)
+	// Decode (single query) appends this token's K/V at the current position. A
+	// local layer rings it (slot pos%W); a global layer append-forevers. Batched
+	// prefill does NOT route local layers here — it defers the ring write past the
+	// read (commitBatch), since writing all K first would evict in-batch history.
+	if r := c.rings[layer]; r != nil {
+		r.write(c.pos, k, v)
+	} else {
+		c.keys[layer] = append(c.keys[layer], k...)
+		c.vals[layer] = append(c.vals[layer], v...)
+	}
 	// pos advances once per last-layer append so all layers stay in lockstep —
 	// unless manualPos (gemma4), where the caller calls Advance() after the sweep.
 	if !c.manualPos && layer == c.numLayers-1 {
@@ -95,6 +175,10 @@ func (c *KVCache) TruncateTo(pos int) {
 		return
 	}
 	for l := range c.numLayers {
+		if r := c.rings[l]; r != nil {
+			r.truncate(pos) // exactness flag consumed by the rewind rule (Inc 2)
+			continue
+		}
 		perPos := 0
 		if c.pos > 0 {
 			perPos = len(c.keys[l]) / c.pos // == this layer's width (0 for KV-shared)
@@ -104,6 +188,62 @@ func (c *KVCache) TruncateTo(pos int) {
 		c.vals[l] = c.vals[l][:n]
 	}
 	c.pos = pos
+}
+
+// advanceTo sets the stored-position count directly — the batched prefill's
+// explicit pos step, since it defers local-layer Appends past attention (so the
+// last-layer Append auto-advance can't be relied on when that layer is local).
+func (c *KVCache) advanceTo(pos int) { c.pos = pos }
+
+// batchReadLocal assembles the contiguous [base, startPos+K) read buffer a local
+// layer's batched prefill needs: the resident window [base, startPos) unwrapped
+// from the ring in absolute order, followed by the K new K/V rows (already
+// contiguous in newK/newV from the post-RoPE batch buffers). base = the absolute
+// position of physical row 0 = max(0, startPos-W+1). dstK/dstV are caller scratch
+// (≥ (startPos-base+K)*stride). Returns base and the physical row count. Does NOT
+// write the ring — commitBatch does that after attention reads the history.
+func (c *KVCache) batchReadLocal(layer, startPos, K int, newK, newV, dstK, dstV []float32) (base, nRows int) {
+	r := c.rings[layer]
+	stride := r.stride
+	if stride == 0 {
+		stride = len(newK) / K // first prefill: ring not yet sized
+	}
+	base = max(startPos-r.w+1, 0)
+	hist := startPos - base // resident history rows, ≤ W-1 and ≤ r.count
+	for p := base; p < startPos; p++ {
+		o := (p % r.w) * stride
+		d := (p - base) * stride
+		copy(dstK[d:d+stride], r.k[o:o+stride])
+		copy(dstV[d:d+stride], r.v[o:o+stride])
+	}
+	copy(dstK[hist*stride:(hist+K)*stride], newK[:K*stride])
+	copy(dstV[hist*stride:(hist+K)*stride], newV[:K*stride])
+	return base, hist + K
+}
+
+// commitBatch writes a batched prefill's K new positions into the ring, after
+// attention has read the (now safe to overwrite) history. The ring keeps the last
+// W of [startPos, startPos+K).
+func (c *KVCache) commitBatch(layer, startPos, K int, newK, newV []float32) {
+	r := c.rings[layer]
+	stride := len(newK) / K
+	for i := range K {
+		o := i * stride
+		r.write(startPos+i, newK[o:o+stride], newV[o:o+stride])
+	}
+}
+
+// isLocal reports whether layer is a ring (sliding-window) layer.
+func (c *KVCache) isLocal(layer int) bool { return c.rings[layer] != nil }
+
+// storedRows is the logical number of positions held for a layer: the ring's
+// count (it physically keeps only W) for a local layer, else the append-forever
+// length / width.
+func (c *KVCache) storedRows(layer, kvDim int) int {
+	if r := c.rings[layer]; r != nil {
+		return r.count
+	}
+	return len(c.keys[layer]) / kvDim
 }
 
 // WindowStart returns the first key index a query at absolute position pos

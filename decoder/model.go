@@ -160,6 +160,15 @@ func (m *Model) NewCache(capHint int) *KVCache {
 	a := m.w.arch
 	c := NewKVCache(a.NumLayers, a.NumKVHeads, a.HeadDim, a.SlidingWindow, capHint)
 	c.scr = newDecodeScratch(a)
+	// Ring-buffer storage on sliding-window (local) layers: keep only the W most
+	// recent positions, the only ones a future query can read. Restricted to the
+	// uniform-stride families whose forward uses attendQuery/attendBatchedHeads;
+	// gemma4 (per-layer widths + KV-sharing) and qwen3_5_moe (linear attention)
+	// have their own forward and keep append-forever for now (a later increment).
+	// See docs/task-kv-ring-eviction.md.
+	if a.gemma4 == nil && a.qwen35 == nil {
+		c.enableRings(a.SlidingWindow, a.isGlobalLayer)
+	}
 	if a.gemma4 != nil {
 		c.manualPos = true // gemma4's last layer is KV-shared; pos advances via Advance()
 	}

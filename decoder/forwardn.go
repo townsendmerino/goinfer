@@ -83,6 +83,14 @@ func (m *Model) runLayersFromEmbedN(h []float32, cache *KVCache) ([]float32, err
 	avt := make([]float32, maxKeys*hd)
 	ascores := make([]float32, K*maxKeys)
 	ach := make([]float32, K*hd)
+	// Local layers assemble a contiguous [base, startPos+K) read window (ring
+	// history + the K new rows) here; ≤ maxKeys rows wide. Only allocated when the
+	// model has sliding-window (ring) layers.
+	var alk, alv []float32
+	if cache.localAny {
+		alk = make([]float32, maxKeys*kvDim)
+		alv = make([]float32, maxKeys*kvDim)
+	}
 	// Batch the qkv and gate/up projections (shared activation) so a GPU backend
 	// runs each group as one submit (BatchTiled) instead of per-matmul syncs.
 	var ws linalg.Workspace
@@ -118,6 +126,7 @@ func (m *Model) runLayersFromEmbedN(h []float32, cache *KVCache) ([]float32, err
 		}
 		invFreq := arch.ropeInvFreq(l)
 		ms := arch.ropeMscale(l)
+		isLocal := cache.isLocal(l)
 		for i := range K {
 			pos := startPos + i
 			qi, ki, vi := row(q, i, qDim), row(k, i, kvDim), row(v, i, kvDim)
@@ -127,14 +136,25 @@ func (m *Model) runLayersFromEmbedN(h []float32, cache *KVCache) ([]float32, err
 			}
 			applyRoPE(qi, nH, hd, pos, invFreq, ms)
 			applyRoPE(ki, nKV, hd, pos, invFreq, ms)
-			cache.Append(l, ki, vi)
+			if !isLocal {
+				cache.Append(l, ki, vi) // global: append now; local: deferred to commitBatch below
+			}
 		}
 		// QKᵀ and scores·V for all K positions, per head, on the SIMD A·Bᵀ kernel
 		// (the L² terms) instead of the scalar per-position attendQuery.
 		// MoE attention uses the f64-accumulating matmul (bit-identical to the
 		// sequential reference, which decode also uses — so the discrete router never
 		// cascades); dense keeps the faster f32 MatmulBT (cosine ≥0.99 is fine there).
-		attendBatchedHeads(q, ctx, cache, l, startPos, K, global, arch, arch.MoE != nil, aqh, akh, avt, ascores, ach)
+		// Local layers read an assembled [base, startPos+K) window (ring history +
+		// the K new rows in k/v); the ring write is deferred until after the read so
+		// a K>W batch can't evict in-batch history. Global layers read append-forever.
+		if isLocal {
+			base, nRows := cache.batchReadLocal(l, startPos, K, k, v, alk, alv)
+			attendBatchedHeads(q, ctx, alk[:nRows*kvDim], alv[:nRows*kvDim], base, cache, l, startPos, K, global, arch, arch.MoE != nil, aqh, akh, avt, ascores, ach)
+			cache.commitBatch(l, startPos, K, k, v)
+		} else {
+			attendBatchedHeads(q, ctx, cache.Keys(l), cache.Vals(l), 0, cache, l, startPos, K, global, arch, arch.MoE != nil, aqh, akh, avt, ascores, ach)
+		}
 		lw.OProj.matmul(be, ctx, att, K)
 		if arch.OutBias {
 			for i := range K {
@@ -205,6 +225,12 @@ func (m *Model) runLayersFromEmbedN(h []float32, cache *KVCache) ([]float32, err
 		}
 	}
 
+	// Advance the cache by K explicitly: a local last layer defers its Append
+	// (commitBatch doesn't touch pos), so the per-token last-layer auto-advance
+	// can't be relied on. Idempotent when the last layer is global (Append already
+	// stepped pos to startPos+K). canBatchN excludes the manualPos families.
+	cache.advanceTo(startPos + K)
+
 	for i := range K {
 		normalize(arch, row(h, i, hidden), m.w.FinalNorm, m.w.FinalNormBias, hidden)
 	}
@@ -230,12 +256,18 @@ func (m *Model) runLayersFromEmbedN(h []float32, cache *KVCache) ([]float32, err
 // stays per-row in float64. Scratch slices (qh:[K*hd], kh:[maxKeys*hd],
 // vt:[maxKeys*hd], scores:[K*maxKeys], ch:[K*hd]) are caller-owned, reused across
 // layers.
-func attendBatchedHeads(q, ctx []float32, cache *KVCache, layer, startPos, K int, global bool, arch *Architecture, useAcc64 bool, qh, kh, vt, scores, ch []float32) {
+// keys/vals are the contiguous K/V the gather reads, with physical row 0 holding
+// absolute key position `base`: for a global layer that's cache.Keys(layer) at
+// base 0; for a local (sliding-window) layer it's an assembled [base, startPos+K)
+// window (the resident ring history + the K new rows) so the ring's wrap is
+// invisible here and the math is byte-identical to append-forever. Per-query
+// masking stays in absolute positions (WindowStart/attendHi) and maps to physical
+// columns s-base.
+func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, layer, startPos, K int, global bool, arch *Architecture, useAcc64 bool, qh, kh, vt, scores, ch []float32) {
 	nH, nKV, hd := arch.NumHeads, arch.NumKVHeads, arch.HeadDim
 	kvDim, qDim := nKV*hd, nH*hd
 	group := nH / nKV
 	scale := arch.AttnScale
-	keys, vals := cache.Keys(layer), cache.Vals(layer)
 	nKeys := len(keys) / kvDim
 	// MoE routing is discontinuous: the f32 QKᵀ reassociation (~4.6e-5) flips a
 	// top-k expert at a near-tie and cascades, changing the output. MatmulBTAcc64
@@ -271,15 +303,16 @@ func attendBatchedHeads(q, ctx []float32, cache *KVCache, layer, startPos, K int
 			// so they contribute nothing to the scores·V matmul below.
 			for i := range K {
 				pos := startPos + i
-				start := cache.WindowStart(pos, global)
-				// hi is the inclusive upper key bound: pos for a causal text query,
-				// or the image-block end for a bidirectional image position (so it
-				// also attends to the block's future tokens). Equals pos when no
-				// image blocks are set — the seam is inert for text-only prefill.
-				hi := cache.attendHi(pos)
+				// Absolute attend range [start, hi]; map to physical columns by −base
+				// (base = absolute position of column 0). hi is the inclusive upper
+				// key bound: pos for a causal text query, or the image-block end for a
+				// bidirectional image position (so it also attends to the block's
+				// future tokens). Equals pos with no image blocks — inert for text.
+				loP := cache.WindowStart(pos, global) - base
+				hiP := cache.attendHi(pos) - base
 				rowS := scores[i*nKeys : i*nKeys+nKeys]
 				maxS := math.Inf(-1)
-				for s := start; s <= hi; s++ {
+				for s := loP; s <= hiP; s++ {
 					sc := float64(rowS[s]) * scale
 					rowS[s] = float32(sc)
 					if sc > maxS {
@@ -287,19 +320,19 @@ func attendBatchedHeads(q, ctx []float32, cache *KVCache, layer, startPos, K int
 					}
 				}
 				var sum float64
-				for s := start; s <= hi; s++ {
+				for s := loP; s <= hiP; s++ {
 					e := math.Exp(float64(rowS[s]) - maxS)
 					rowS[s] = float32(e)
 					sum += e
 				}
 				inv := 1.0 / sum
-				for s := range start {
+				for s := range loP {
 					rowS[s] = 0
 				}
-				for s := start; s <= hi; s++ {
+				for s := loP; s <= hiP; s++ {
 					rowS[s] = float32(float64(rowS[s]) * inv)
 				}
-				for s := hi + 1; s < nKeys; s++ {
+				for s := hiP + 1; s < nKeys; s++ {
 					rowS[s] = 0
 				}
 			}

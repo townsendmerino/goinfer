@@ -30,6 +30,10 @@ type decodeScratch struct {
 	// prefill↔decode numerical discontinuity. akh/avt grow with context like scores.
 	aqh, akh, avt, ach []float32
 
+	// localK/localV assemble a local (ring) layer's [base, pos] read window for the
+	// K=1 MoE decode path (resident ring history + this token's K/V); ≤ W rows.
+	localK, localV []float32
+
 	ws        *linalg.Workspace // W8A8 activation-quant scratch (zero-alloc Into/Batch)
 	qkvOps    [3]linalg.W8A8Op  // reused q/k/v batch ops
 	gateUpOps [2]linalg.W8A8Op  // reused gate/up batch ops
@@ -77,4 +81,14 @@ func (s *decodeScratch) attnBatchBufs(nKeys, hd int) (qh, kh, vt, scores, ch []f
 		s.avt = make([]float32, nKeys*hd)
 	}
 	return s.aqh[:hd], s.akh[:nKeys*hd], s.avt[:nKeys*hd], s.scoresBuf(nKeys), s.ach[:hd]
+}
+
+// localBufs returns two length-n scratch slices (grown once on demand) for
+// assembling a local layer's contiguous read window in the K=1 MoE decode path.
+func (s *decodeScratch) localBufs(n int) (lk, lv []float32) {
+	if cap(s.localK) < n {
+		s.localK = make([]float32, n)
+		s.localV = make([]float32, n)
+	}
+	return s.localK[:n], s.localV[:n]
 }

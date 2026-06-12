@@ -101,17 +101,37 @@ func causalAttention(
 	}
 
 	// 4. Append this position's K/V, then attend over the stored history.
-	cache.Append(layer, k, v)
 	ctx := cache.scr.ctx
-	nKeys := len(cache.Keys(layer)) / kvDim
 	if arch.MoE != nil {
 		// MoE: route single-token attention through the SAME acc64 batched kernel
 		// the prefill uses (at K=1), so decode and prefill are bit-identical and the
 		// discrete top-k router never diverges across the prefill↔decode boundary.
 		// (Dense tolerates the f32 attendQuery — cosine ≥0.99 — so it stays scalar.)
+		var keys, vals []float32
+		var base, nKeys int
+		if cache.rings[layer] != nil {
+			// Local ring layer: defer the write past the read and assemble the
+			// [base, pos] window (resident history + this token's K/V), mirroring the
+			// deferred-write batched prefill so decode↔prefill stay bit-identical.
+			rows := pos - cache.WindowStart(pos, global) + 1
+			lk, lv := scr.localBufs(rows * kvDim)
+			base, nKeys = cache.batchReadLocal(layer, pos, 1, k, v, lk, lv)
+			keys, vals = lk[:nKeys*kvDim], lv[:nKeys*kvDim]
+		} else {
+			cache.Append(layer, k, v)
+			keys, vals, base, nKeys = cache.Keys(layer), cache.Vals(layer), 0, cache.storedRows(layer, kvDim)
+		}
 		qh, kh, vt, sc, ch := scr.attnBatchBufs(nKeys, hd)
-		attendBatchedHeads(q, ctx, cache, layer, pos, 1, global, arch, true, qh, kh, vt, sc, ch)
+		attendBatchedHeads(q, ctx, keys, vals, base, cache, layer, pos, 1, global, arch, true, qh, kh, vt, sc, ch)
+		if cache.rings[layer] != nil {
+			cache.commitBatch(layer, pos, 1, k, v)
+			if !cache.manualPos && layer == cache.numLayers-1 {
+				cache.pos++ // commitBatch doesn't step pos; mirror Append's last-layer advance
+			}
+		}
 	} else {
+		cache.Append(layer, k, v)
+		nKeys := cache.storedRows(layer, kvDim) // logical count (ring layers store only W)
 		attendQuery(q, ctx, cache.scr.scoresBuf(nKeys), cache, layer, pos, global, arch)
 	}
 
@@ -135,6 +155,21 @@ func attendQuery(q, ctx, scores []float32, cache *KVCache, layer, pos int, globa
 	kvDim := nKV * hd
 	keys, vals := cache.Keys(layer), cache.Vals(layer)
 	nKeys := len(keys) / kvDim
+	// Local (sliding-window) layers store only the last W positions in a ring; the
+	// K/V for absolute key s live at row s%W. nKeys becomes the logical count, and
+	// the window guarantees every read s ∈ [start, nKeys) ≥ count-W is resident.
+	// wrap=0 ⇒ global append-forever, row = s (unchanged). scores stays indexed by
+	// absolute s (its scratch is already context-sized).
+	wrap := 0
+	if r := cache.rings[layer]; r != nil {
+		keys, vals, nKeys, wrap = r.k, r.v, r.count, r.w
+	}
+	rowBase := func(s int) int {
+		if wrap > 0 {
+			return (s % wrap) * kvDim
+		}
+		return s * kvDim
+	}
 	start := cache.WindowStart(pos, global)
 	scale := arch.AttnScale // query_pre_attn_scalar^-0.5 (Gemma) or 1/sqrt(headDim)
 	group := nH / nKV       // GQA: query heads per KV head
@@ -146,7 +181,7 @@ func attendQuery(q, ctx, scores []float32, cache *KVCache, layer, pos int, globa
 
 		maxS := math.Inf(-1)
 		for s := start; s < nKeys; s++ {
-			kHead := keys[s*kvDim+kvh*hd : s*kvDim+kvh*hd+hd]
+			kHead := keys[rowBase(s)+kvh*hd : rowBase(s)+kvh*hd+hd]
 			var dot float64
 			for d := range hd {
 				dot += float64(qHead[d]) * float64(kHead[d])
@@ -168,7 +203,7 @@ func attendQuery(q, ctx, scores []float32, cache *KVCache, layer, pos int, globa
 		oHead := ctx[qh*hd : qh*hd+hd]
 		for s := start; s < nKeys; s++ {
 			w := float32(float64(scores[s]) * inv)
-			vHead := vals[s*kvDim+kvh*hd : s*kvDim+kvh*hd+hd]
+			vHead := vals[rowBase(s)+kvh*hd : rowBase(s)+kvh*hd+hd]
 			for d := range hd {
 				oHead[d] += w * vHead[d]
 			}

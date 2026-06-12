@@ -134,8 +134,12 @@ func (l *sessionLRU) save(dir string) error {
 		if len(s.Tokens()) == 0 {
 			continue
 		}
+		blob := s.Snapshot(l.fp)
+		if blob == nil {
+			continue // sliding-window (ring) cache: not yet persistable (Inc 3)
+		}
 		p := filepath.Join(dir, fmt.Sprintf("session-%02d%s", i, sessionSnapExt))
-		if err := os.WriteFile(p, s.Snapshot(l.fp), 0o644); err != nil {
+		if err := os.WriteFile(p, blob, 0o644); err != nil {
 			fmt.Fprintf(os.Stderr, "session snapshot %s: %v\n", p, err)
 			continue
 		}
