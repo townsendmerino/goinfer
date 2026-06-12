@@ -83,9 +83,9 @@ type msg struct{ role, content string }
 
 // Options configures New. Exactly one of ModelPath / ModelBytes must be set.
 type Options struct {
-	ModelPath   string // path to a .gguf file or HF checkpoint dir
-	ModelBytes  []byte // in-memory GGUF (the -tags embed path)
-	Quant       string // "" | int8 | int8int8 | int4
+	ModelPath     string // path to a .gguf file or HF checkpoint dir
+	ModelBytes    []byte // in-memory GGUF (the -tags embed path)
+	Quant         string // "" | int8 | int8int8 | int4
 	Vision        string // optional vision-tower dir (Gemma 3 VL); defaults to ModelPath when it carries one. Enables TurnImage.
 	VisionQuant   string // vision encoder quant: "f32" (default) | "int8" (W8A8; only faster on AVX512-VNNI)
 	VisionBackend string // "cpu" (default) | "webgpu" — webgpu runs the SigLIP tower on the resident GPU encoder (~9× faster image prefill; needs -tags gpu + int8 weights)

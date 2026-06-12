@@ -48,10 +48,10 @@ func (e *Encoder) GPUWeights() (GPUWeights, error) {
 		Hidden: c.HiddenSize, Inter: c.IntermediateSize, NumLayers: c.NumHiddenLayers,
 		NumHeads: c.NumAttentionHeads, HeadDim: c.HiddenSize / c.NumAttentionHeads,
 		NumPatches: e.numPatches, Grid: e.grid, PatchSize: c.PatchSize, NumChannels: c.NumChannels,
-		Eps:     float32(c.LayerNormEps),
-		PatchW:  e.patchW, PatchB: e.patchB, PosEmb: e.posEmb,
+		Eps:    float32(c.LayerNormEps),
+		PatchW: e.patchW, PatchB: e.patchB, PosEmb: e.posEmb,
 		PostLNw: e.postLNw, PostLNb: e.postLNb,
-		Layers:  make([]GPULayer, len(e.layers)),
+		Layers: make([]GPULayer, len(e.layers)),
 	}
 	for i := range e.layers {
 		l := &e.layers[i]

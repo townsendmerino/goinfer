@@ -290,4 +290,3 @@ func (ve *VisionEncoder) Close() {
 		}
 	}
 }
-
