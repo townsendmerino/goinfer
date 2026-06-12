@@ -1,4 +1,4 @@
-# goinfer roadmap (rolling; updated 2026-06-11, v0.4.0 shipped → v0.5.0 tagging)
+# goinfer roadmap (rolling; updated 2026-06-11, v0.5.0 tagging + KV-memory program scoped)
 
 > **Audience:** internal planning doc (docs/internal/ is gitignored). Started
 > as the v0.2 gap analysis vs llama.cpp / Ollama / mistral.rs; v0.2.0 and
@@ -183,9 +183,52 @@ no user-facing serve path yet (P4–P5 remain).
 
 - MTP speculative — parked (compute-bound CPU; see survey). Re-evaluate the
   moment the WebGPU backend graduates from matmul-only.
-- TurboQuant — track #20969; CPU-friendly, could earn a spot if it survives
-  scrutiny.
-- Continuous batching / PagedAttention, multimodal — unchanged deferrals.
+- TurboQuant — promoted from "watch" to a **scoped, timeboxed spike** inside the
+  KV-memory program below (`task-turboquant-spike.md` — pointed at KV, not
+  weights, with a written go/no-go bar).
+- Continuous batching / PagedAttention — unchanged deferral. Multimodal —
+  no longer deferred: P0–P3 landed (`docs/multimodal.md`), P4–P5 open.
+
+## v0.6 candidate program: KV-cache memory reduction (scoped 2026-06-11)
+
+**Umbrella + index: [`task-memory-program.md`](task-memory-program.md).** Four
+independently-shippable steps, each with its own gates; the default decode path
+stays **bit-exact** throughout — every lossy step is an opt-in knob (house
+rule). Combined headline (steps 1+2): **~20× smaller KV on Gemma-class local
+layers at long context, 4× on full-attention families, 4× smaller `.giw-kv`
+warm sessions.** This is the natural sequel to the v0.5.0 f16-KV work: same
+"context per byte" battleground, attacked on CPU and GPU.
+
+In order (rationale: free memory with zero precision argument first, then the
+quant rungs with pre-validated gate bars):
+
+1. **[Ring-buffer eviction for sliding-window layers](task-kv-ring-eviction.md)**
+   — today `WindowStart` only bounds *reads*; `Append` stores every position
+   forever, so on Gemma (5 local : 1 global, window ≤1024) ~81% of KV at 32k
+   context is provably dead. Rings on local layers: **~5.2× KV on Gemma-class,
+   LOSSLESS (bit-exact gate** — the existing window goldens pin the
+   invariance). One real seam: `TruncateTo` rewinding deeper than the window →
+   cold-prefill fallback. ~3–5 days.
+2. **[CPU int8 KV cache, Increments 1–3](task-cpu-kv-quant.md)** — the core
+   quant step, on shipped aikit kernels (`DotI8`/SDOT, `QuantizeRowInt8`).
+   **4× KV RAM on full-attention families, 4× smaller warm sessions,
+   ~1.5–2.5× long-context decode on small models.** Opt-in `--kv-quant i8`;
+   gate argmax-preserved + cosine ≥0.999. ~6–9 days. Coordinate the
+   snapshot-v2 format bump with step 1's windowed persistence — **the format
+   bumps once.**
+3. **[GPU int8 KV cache](task-gpu-kv-i8.md)** — third rung after the shipped
+   `--kv f16`, via the existing `runQuant`/W8A8 WGSL idiom: **~64k context on
+   the 8 GB card in the 32k-f16 envelope.** ~3–4 days, sequenced after step 2
+   so granularity + gate bars arrive pre-validated from the CPU side.
+4. **[TurboQuant spike](task-turboquant-spike.md)** — the only research-risk
+   item; 2–3 day timebox, pointed at KV (the published near-zero-loss 3-bit
+   claim), written go/no-go bar. Go ⇒ replaces step 2's deferred int4
+   increment; no-go ⇒ the watch item closes for KV.
+
+Assessed and rejected for the program (reasons in `task-cpu-kv-quant.md`
+§Non-goals): CPU f16 KV (dominated by int8 on CPU), XQuant rematerialization
+(wrong direction when compute-bound), attention-score eviction / AhaKV
+(quality-risky, breaks exact prefix-reuse).
 
 ## Backlog — every surfaced idea (2026-06-09)
 
@@ -265,7 +308,9 @@ the staged path has. **That coupling is the felt-pain trigger for both.**
   no speed regression). Batched prefill stays shelved on the dp4a gate above. If GPU
   residency is marketed as "run a 7B locally on a small GPU," f16 KV is now the
   long-context answer; the long-context *speedup* and batched prefill wait for their
-  triggers (a real >16k workload; dp4a).
+  triggers (a real >16k workload; dp4a). **Next rung after f16: GPU int8 KV**
+  (`task-gpu-kv-i8.md`, step 3 of the KV-memory program above — ~64k in the
+  32k-f16 envelope).
 
 ### GPU residency coverage
 
@@ -310,7 +355,10 @@ the staged path has. **That coupling is the felt-pain trigger for both.**
   high-entropy, ~3%). **Trigger: a real distribution-size complaint** (model zoo,
   bundled release artifact).
 - **TurboQuant** (llama.cpp #20969) — a CPU-implementable 3–4-bit quant with
-  near-paper MSE; could improve the embed-demo size/quality curve. Watch.
+  near-paper MSE. **No longer just a watch item:** scoped as the timeboxed
+  KV-pointed spike in the KV-memory program (`task-turboquant-spike.md`,
+  step 4 — go/no-go bar written). The *weights* angle (embed-demo
+  size/quality curve) stays a watch.
 
 ### Speculative / MTP
 
