@@ -17,23 +17,33 @@ import (
 // fatal. Keys/values are written as plain little-endian float32 (the snapshot is
 // an offline artifact, not the hot path — gzip-wrap the bytes if size matters).
 //
-// Format (little-endian throughout, reusing serialize.go's giwWriter/giwReader):
+// Format v2 (little-endian throughout, reusing serialize.go's giwWriter/giwReader):
 //
 //	magic     [5]byte = "GINFK"
-//	version   uint32
+//	version   uint32 = 2
 //	id        str      (conversation/model identity, for tooling; not validated)
 //	numLayers uint32   \
-//	kvDim     uint32    | geometry guard — must match the loading model's cache
-//	window    uint32    | (else the KV is for a different architecture)
-//	manualPos uint8    /
+//	kvDim     uint32    |
+//	window    uint32    | geometry guard — must match the loading model's cache
+//	headDim   uint32    | (else the KV is for a different architecture)
+//	manualPos uint8     |
+//	quant     uint8    /  (0=f32, 1=int8)
 //	pos       uint32   (stored position count)
 //	tokens    u32 len + len*uint32
-//	  per layer: f32 keys[l] ; f32 vals[l]   (KV-shared layers serialize len 0)
+//	  per layer, in cache-structure order (the loader rebuilds the same rings +
+//	  quant from the model, so layers carry no tag):
+//	    ring layer:  count u32, then {i8 kq; i8 vq; f32 ksc; f32 vsc} if int8
+//	                 else {f32 k; f32 v}   — the W-slot window
+//	    global:      {i8 keysQ; i8 valsQ; f32 keyScale; f32 valScale} if int8
+//	                 else {f32 keys; f32 vals}   (KV-shared layers serialize len 0)
 //	crc       uint32   (CRC32-IEEE over every preceding byte)
+//
+// v1 (f32-global-only) blobs are rejected by the version guard — snapshots are a
+// regenerable cache, so a version bump just triggers a cold prefill.
 
 const (
 	kvSnapMagic   = "GINFK"
-	kvSnapVersion = 1
+	kvSnapVersion = 2 // v2: ring windowed persistence × {f32 | int8} payload
 )
 
 // SnapshotError is returned by Model.LoadSession on any magic/version/geometry/
@@ -49,13 +59,11 @@ func (e *SnapshotError) Error() string { return "decoder: kv snapshot: " + e.Rea
 // with Model.LoadSession on a model of the same architecture.
 func (s *Session) Snapshot(id string) []byte {
 	c := s.cache
-	// Ring (sliding-window) layers keep their KV in c.rings, and int8 caches in
-	// c.keysQ/valsQ + scales — not in c.keys/c.vals — so the per-layer f32
-	// serialization below would persist empty history and restore wrong. The
-	// merged snapshot v2 (windowed ring + int8 payload) is Increment 3 of both KV
-	// programs; until then, refuse — the caller skips the write and the session
-	// cold-prefills on restore. See docs/task-kv-ring-eviction.md / task-cpu-kv-quant.md.
-	if c.localAny || c.quant == kvI8 {
+	// qwen3_5_moe's hybrid cache carries a recurrent DeltaNet state (c.delta) that
+	// this format does not persist; snapshotting it would restore wrong. Refuse
+	// (caller skips → cold prefill). All other families serialize fully below,
+	// including ring (windowed) and int8 layers.
+	if c.delta != nil {
 		return nil
 	}
 	wr := &giwWriter{}
@@ -65,16 +73,68 @@ func (s *Session) Snapshot(id string) []byte {
 	wr.u32(uint32(c.numLayers))
 	wr.u32(uint32(c.kvDim))
 	wr.u32(uint32(c.window))
+	wr.u32(uint32(c.headDim))
+	manualPos := byte(0)
 	if c.manualPos {
-		wr.buf = append(wr.buf, 1)
-	} else {
-		wr.buf = append(wr.buf, 0)
+		manualPos = 1
 	}
+	wr.buf = append(wr.buf, manualPos, byte(c.quant))
 	wr.u32(uint32(c.pos))
 	wr.ints(s.tokens)
+	// Per layer, in cache-structure order (the loader reconstructs the same rings +
+	// quant from the model, so no per-layer tags are needed): ring layers store
+	// their W-slot window + logical count; global layers append-forever. Each
+	// payload is f32 or int8 (+ per-head scales) per the cache's quant mode. Empty
+	// fields (KV-shared / never-written rings) serialize as len 0.
 	for l := 0; l < c.numLayers; l++ {
-		wr.f32(c.keys[l])
-		wr.f32(c.vals[l])
+		if r := c.rings[l]; r != nil {
+			// Compact: write only the live window [count-W, count) (min(count,W)
+			// rows), unwrapped into absolute order — not the full W physical slots
+			// (which over-store a short, un-wrapped session). Restore re-wraps.
+			lo := max(0, r.count-r.w)
+			nLive := r.count - lo
+			wr.u32(uint32(r.count))
+			wr.u32(uint32(nLive))
+			wr.u32(uint32(r.stride))
+			if r.stride == 0 || nLive == 0 {
+				continue // never-written ring: count/nLive/stride suffice
+			}
+			st := r.stride
+			if c.quant == kvI8 {
+				nKV := st / r.headDim
+				kb, vb := make([]int8, nLive*st), make([]int8, nLive*st)
+				ks, vs := make([]float32, nLive*nKV), make([]float32, nLive*nKV)
+				for i, p := 0, lo; p < r.count; i, p = i+1, p+1 {
+					so, do := (p%r.w)*st, i*st
+					copy(kb[do:do+st], r.kq[so:so+st])
+					copy(vb[do:do+st], r.vq[so:so+st])
+					sso, sdo := (p%r.w)*nKV, i*nKV
+					copy(ks[sdo:sdo+nKV], r.ksc[sso:sso+nKV])
+					copy(vs[sdo:sdo+nKV], r.vsc[sso:sso+nKV])
+				}
+				wr.i8(kb)
+				wr.i8(vb)
+				wr.f32(ks)
+				wr.f32(vs)
+			} else {
+				kb, vb := make([]float32, nLive*st), make([]float32, nLive*st)
+				for i, p := 0, lo; p < r.count; i, p = i+1, p+1 {
+					so, do := (p%r.w)*st, i*st
+					copy(kb[do:do+st], r.k[so:so+st])
+					copy(vb[do:do+st], r.v[so:so+st])
+				}
+				wr.f32(kb)
+				wr.f32(vb)
+			}
+		} else if c.quant == kvI8 {
+			wr.i8(c.keysQ[l])
+			wr.i8(c.valsQ[l])
+			wr.f32(c.keyScale[l])
+			wr.f32(c.valScale[l])
+		} else {
+			wr.f32(c.keys[l])
+			wr.f32(c.vals[l])
+		}
 	}
 	wr.u32(crc32.ChecksumIEEE(wr.buf))
 	return wr.buf
@@ -101,12 +161,13 @@ func (m *Model) LoadSession(data []byte, wantID string) (*Session, error) {
 		return nil, &SnapshotError{fmt.Sprintf("format version %d, this build reads %d", v, kvSnapVersion)}
 	}
 	gotID := r.str()
-	numLayers, kvDim, window := int(r.u32()), int(r.u32()), int(r.u32())
-	if !r.need(1) {
+	numLayers, kvDim, window, headDim := int(r.u32()), int(r.u32()), int(r.u32()), int(r.u32())
+	if !r.need(2) {
 		return nil, &SnapshotError{"truncated header"}
 	}
 	manualPos := r.data[r.off] == 1
-	r.off++
+	quant := kvQuant(r.data[r.off+1])
+	r.off += 2
 	pos := int(r.u32())
 	if r.err != nil {
 		return nil, &SnapshotError{"truncated header"}
@@ -131,22 +192,58 @@ func (m *Model) LoadSession(data []byte, wantID string) (*Session, error) {
 	// Geometry guard: the snapshot's cache layout must match this model's, or its
 	// KV is meaningless here. NewCache derives the same values from the arch.
 	ref := m.NewCache(pos)
-	if numLayers != ref.numLayers || kvDim != ref.kvDim || window != ref.window || manualPos != ref.manualPos {
+	if numLayers != ref.numLayers || kvDim != ref.kvDim || window != ref.window ||
+		headDim != ref.headDim || manualPos != ref.manualPos || quant != ref.quant {
 		return nil, &SnapshotError{fmt.Sprintf(
-			"geometry mismatch: snapshot {layers:%d kvDim:%d window:%d manualPos:%v} vs model {layers:%d kvDim:%d window:%d manualPos:%v}",
-			numLayers, kvDim, window, manualPos, ref.numLayers, ref.kvDim, ref.window, ref.manualPos)}
+			"geometry mismatch: snapshot {layers:%d kvDim:%d window:%d headDim:%d manualPos:%v quant:%d} vs model {layers:%d kvDim:%d window:%d headDim:%d manualPos:%v quant:%d}",
+			numLayers, kvDim, window, headDim, manualPos, quant, ref.numLayers, ref.kvDim, ref.window, ref.headDim, ref.manualPos, ref.quant)}
 	}
 
 	tokens := r.ints()
+	// Same per-layer structure order as Snapshot; ref already has the right rings
+	// + quant from NewCache, so fill its fields in place.
 	for l := range numLayers {
-		k, v := r.f32(), r.f32()
-		// f32 returns nil for a len-0 field (KV-shared layers); keep the cache's
-		// empty-but-non-nil slice so Append/Keys stay well-formed.
-		if k != nil {
-			ref.keys[l] = k
-		}
-		if v != nil {
-			ref.vals[l] = v
+		if rr := ref.rings[l]; rr != nil {
+			rr.count = int(r.u32())
+			nLive, st := int(r.u32()), int(r.u32())
+			rr.stride = st
+			if st == 0 || nLive == 0 {
+				continue // never-written ring
+			}
+			lo := max(0, rr.count-rr.w)
+			if quant == kvI8 {
+				nKV := st / rr.headDim
+				rr.kq, rr.vq = make([]int8, rr.w*st), make([]int8, rr.w*st)
+				rr.ksc, rr.vsc = make([]float32, rr.w*nKV), make([]float32, rr.w*nKV)
+				kb, vb, ks, vs := r.i8(), r.i8(), r.f32(), r.f32()
+				for i, p := 0, lo; p < rr.count; i, p = i+1, p+1 {
+					so, do := (p%rr.w)*st, i*st
+					copy(rr.kq[so:so+st], kb[do:do+st])
+					copy(rr.vq[so:so+st], vb[do:do+st])
+					sso, sdo := (p%rr.w)*nKV, i*nKV
+					copy(rr.ksc[sso:sso+nKV], ks[sdo:sdo+nKV])
+					copy(rr.vsc[sso:sso+nKV], vs[sdo:sdo+nKV])
+				}
+			} else {
+				rr.k, rr.v = make([]float32, rr.w*st), make([]float32, rr.w*st)
+				kb, vb := r.f32(), r.f32()
+				for i, p := 0, lo; p < rr.count; i, p = i+1, p+1 {
+					so, do := (p%rr.w)*st, i*st
+					copy(rr.k[so:so+st], kb[do:do+st])
+					copy(rr.v[so:so+st], vb[do:do+st])
+				}
+			}
+		} else if quant == kvI8 {
+			ref.keysQ[l], ref.valsQ[l], ref.keyScale[l], ref.valScale[l] = r.i8(), r.i8(), r.f32(), r.f32()
+		} else {
+			// f32 returns nil for a len-0 field (KV-shared layers); keep the cache's
+			// empty-but-non-nil slice so Append/Keys stay well-formed.
+			if k := r.f32(); k != nil {
+				ref.keys[l] = k
+			}
+			if v := r.f32(); v != nil {
+				ref.vals[l] = v
+			}
 		}
 	}
 	if r.err != nil {

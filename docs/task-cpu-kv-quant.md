@@ -182,11 +182,21 @@ and the wrong metric).
   `TestKVI8_truncateReappend` — TruncateTo+re-append leaves the int8 cache
   (global + ring) byte-identical to a fresh one. f32 default bit-exact.
 
-### Increment 3 — `.giw-kv` v2
-- Versioned int8 snapshot + restore; sessionLRU untouched.
-- [ ] **Gate:** snapshot→restore→continue is bit-identical to never-snapshotted
-      int8 decode; v1 f32 blobs still load (or fail loud per policy — pick one,
-      document it).
+### ✅ Increment 3 — `.giw-kv` v2 — DONE (merged ring + int8)
+- One version bump (v1→v2) covering BOTH KV programs: ring windowed persistence ×
+  {f32 | int8}. Per layer, in cache-structure order (loader rebuilds rings + quant
+  from the model, no per-layer tags): ring layers store `count` + only the **live
+  window** (`min(count,W)` rows, unwrapped — restore re-wraps into slots, so short
+  sessions aren't bloated to the full W); global layers append-forever. Header
+  gained `headDim` + `quant`; geometry guard checks both. sessionLRU untouched
+  (`Snapshot` no longer refuses ring/int8; still refuses qwen3_5_moe — its DeltaNet
+  state isn't serialized).
+- **Gate (green):** `TestKVI8_snapshotRoundtrip` on gemma-3-4b-it int8 (int8 rings
+  + int8 global): snapshot→restore→next-token logits **bit-identical** to
+  never-snapshotted. Compact serialization cut the blob ~9.6× (62 MB → 6.5 MB on a
+  93-token session). **v1 policy:** the version guard rejects v1 blobs loudly
+  (`SnapshotError`) → caller cold-prefills; snapshots are a regenerable cache, so a
+  bump just re-prefills.
 
 ### Increment 4 (deferred, separately gated) — int4 KV, group=32
 - `QuantizeGroupInt4Row` / W4A8 kernels exist; 6.6–7× vs f32 (scales weigh

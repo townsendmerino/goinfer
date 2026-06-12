@@ -142,6 +142,65 @@ func TestKVI8_truncateReappend(t *testing.T) {
 	}
 }
 
+// TestKVI8_snapshotRoundtrip: snapshot v2 must reconstruct an int8 + ring cache
+// exactly — the next forward after snapshot→restore is BIT-IDENTICAL to one that
+// never snapshotted. gemma-3-4b-it int8 covers both layer kinds (int8 rings on the
+// sliding-window layers + int8 global layers). Skips without the checkpoint.
+func TestKVI8_snapshotRoundtrip(t *testing.T) {
+	dir := os.Getenv("GINFER_TEST_MODEL")
+	if dir == "" {
+		dir = os.Getenv("HOME") + "/models/gemma-3-4b-it"
+	}
+	tkPath := filepath.Join(dir, "tokenizer.json")
+	if _, err := os.Stat(tkPath); err != nil {
+		t.Skipf("no checkpoint at %s", dir)
+	}
+	tk, err := tokenizer.Load(tkPath)
+	if err != nil {
+		t.Skipf("tokenizer: %v", err)
+	}
+	m, err := Load(dir, Options{Quant: "int8int8", KVQuant: "i8"})
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if !m.kvI8 {
+		t.Fatal("expected int8 KV")
+	}
+	ids, _ := tk.Encode(kvi8GateText, true)
+	if len(ids) < 8 {
+		t.Skip("short encode")
+	}
+	prefix, next := ids[:len(ids)-1], ids[len(ids)-1]
+
+	prefill := func() *KVCache {
+		c := m.NewCache(len(ids) + 1)
+		for _, id := range prefix {
+			m.runLayers(id, c)
+		}
+		return c
+	}
+	// (A) no snapshot: forward the next token.
+	logitsA, _ := m.forward(next, prefill())
+	// (B) snapshot the prefilled cache, restore, forward the same next token.
+	sess := &Session{m: m, cache: prefill(), tokens: prefix}
+	blob := sess.Snapshot("rt")
+	if blob == nil {
+		t.Fatal("Snapshot returned nil (int8+ring should serialize)")
+	}
+	sess2, err := m.LoadSession(blob, "rt")
+	if err != nil {
+		t.Fatalf("LoadSession: %v", err)
+	}
+	logitsB, _ := m.forward(next, sess2.cache)
+
+	for i := range logitsA {
+		if logitsA[i] != logitsB[i] {
+			t.Fatalf("snapshot→restore NOT bit-identical: logit[%d] %v != %v", i, logitsA[i], logitsB[i])
+		}
+	}
+	t.Logf("snapshot v2 (int8 + ring) round-trip: next-token logits bit-identical (%d-dim, %d-byte blob)", len(logitsA), len(blob))
+}
+
 // TestKVI8_genParity: real-checkpoint int8 KV vs f32 KV on a COHERENT prompt,
 // teacher-forced (both see the same tokens). Gate = per-step argmax agreement +
 // avg per-step logit cosine — NOT a 0.999 bar (int8 KV lands ~0.993/~93% over a
