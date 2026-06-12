@@ -28,11 +28,12 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/townsendmerino/aikit/vision"
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/constrain"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/multimodal"
 	"github.com/townsendmerino/goinfer/tokenizer"
-	"github.com/townsendmerino/goinfer/vision"
 )
 
 // answerSystem steers the grounded-answer phase.
@@ -130,7 +131,7 @@ type Session struct {
 	// When present, TurnImage runs an image through preprocess → encoder → projector
 	// and answers it via decoder.GenerateVL.
 	venc    *vision.Encoder
-	vproj   *vision.Projector
+	vproj   *multimodal.Projector
 	vcfg    vision.Config
 	vimgTok int
 
@@ -177,7 +178,7 @@ func New(ctx context.Context, o Options) (*Session, error) {
 	// a Gemma 3 VL tower (auto-discover). Enables TurnImage.
 	if vdir := o.Vision; vdir != "" || o.ModelPath != "" {
 		if vdir == "" {
-			if _, derr := vision.LoadProjector(o.ModelPath); derr == nil {
+			if _, derr := multimodal.LoadProjector(o.ModelPath); derr == nil {
 				vdir = o.ModelPath // the model dir carries a projector → it's a VL checkpoint
 			}
 		}
@@ -282,13 +283,13 @@ func (s *Session) loadVision(dir string) error {
 			return fmt.Errorf("enable resident GPU vision encoder: %w", err)
 		}
 	}
-	proj, err := vision.LoadProjector(dir)
+	proj, err := multimodal.LoadProjector(dir)
 	if err != nil {
 		return fmt.Errorf("load vision projector (%s): %w", dir, err)
 	}
-	id, ok := s.tk.TokenID(vision.ImageSoftToken)
+	id, ok := s.tk.TokenID(multimodal.ImageSoftToken)
 	if !ok {
-		return fmt.Errorf("vision: tokenizer has no %q token", vision.ImageSoftToken)
+		return fmt.Errorf("vision: tokenizer has no %q token", multimodal.ImageSoftToken)
 	}
 	s.venc, s.vproj, s.vcfg, s.vimgTok = enc, proj, vision.Gemma3(), id
 	be := "cpu"
@@ -326,12 +327,12 @@ func (s *Session) TurnImage(ctx context.Context, user string, image []byte, ev E
 	n := s.vproj.MMTokens()
 
 	turns := append([]msg(nil), s.history...)
-	turns = append(turns, msg{"user", vision.Gemma3ImageBlock(n) + "\n" + user})
+	turns = append(turns, msg{"user", multimodal.Gemma3ImageBlock(n) + "\n" + user})
 	ids, err := s.tk.Encode(s.buildPrompt(visionSystem, turns), s.tmpl == nil)
 	if err != nil {
 		return "", fmt.Errorf("encode: %w", err)
 	}
-	imgPos, imgLen := vision.FindImageRun(ids, s.vimgTok)
+	imgPos, imgLen := multimodal.FindImageRun(ids, s.vimgTok)
 	if imgLen != n {
 		return "", fmt.Errorf("image placeholder run = %d, want %d (template/tokenizer mismatch)", imgLen, n)
 	}

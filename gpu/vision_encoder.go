@@ -7,7 +7,7 @@ import (
 	"math"
 
 	"github.com/cogentcore/webgpu/wgpu"
-	"github.com/townsendmerino/goinfer/vision"
+	"github.com/townsendmerino/aikit/vision"
 )
 
 // VisionEncoder is the resident GPU SigLIP forward. It uploads the tower once

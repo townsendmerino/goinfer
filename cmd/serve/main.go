@@ -37,10 +37,11 @@ import (
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/encoder"
+	"github.com/townsendmerino/aikit/vision"
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/multimodal"
 	"github.com/townsendmerino/goinfer/tokenizer"
-	"github.com/townsendmerino/goinfer/vision"
 )
 
 // modelSpec is one --model entry: a served name (optional, from name=path) and
@@ -224,7 +225,7 @@ func (s *server) loadVisionTower(cfg config) error {
 		if len(cfg.models) == 1 {
 			cand := cfg.models[0].path
 			if fi, err := os.Stat(cand); err == nil && fi.IsDir() {
-				if _, err := vision.LoadProjector(cand); err == nil {
+				if _, err := multimodal.LoadProjector(cand); err == nil {
 					dir = cand
 				}
 			}
@@ -248,7 +249,7 @@ func (s *server) loadVisionTower(cfg config) error {
 			return fmt.Errorf("enable resident GPU vision encoder: %w", err)
 		}
 	}
-	proj, err := vision.LoadProjector(dir)
+	proj, err := multimodal.LoadProjector(dir)
 	if err != nil {
 		return fmt.Errorf("load vision projector (%s): %w", dir, err)
 	}

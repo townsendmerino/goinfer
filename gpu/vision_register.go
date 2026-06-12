@@ -2,7 +2,7 @@
 
 package gpu
 
-import "github.com/townsendmerino/goinfer/vision"
+import "github.com/townsendmerino/aikit/vision"
 
 // init plugs the resident WebGPU SigLIP encoder into the vision package, so a
 // `-tags gpu` build that blank-imports gpu lets vision.Encoder.EnableResident()

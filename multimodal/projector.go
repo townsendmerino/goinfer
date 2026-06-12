@@ -1,4 +1,4 @@
-package vision
+package multimodal
 
 import (
 	"encoding/json"
@@ -44,11 +44,11 @@ type vlConfig struct {
 func LoadProjector(dir string) (*Projector, error) {
 	raw, err := os.ReadFile(filepath.Join(dir, "config.json"))
 	if err != nil {
-		return nil, fmt.Errorf("vision: read VL config: %w", err)
+		return nil, fmt.Errorf("multimodal: read VL config: %w", err)
 	}
 	var c vlConfig
 	if err := json.Unmarshal(raw, &c); err != nil {
-		return nil, fmt.Errorf("vision: parse VL config: %w", err)
+		return nil, fmt.Errorf("multimodal: parse VL config: %w", err)
 	}
 	eps := c.VisionConfig.LayerNormEps
 	if eps == 0 {
@@ -63,13 +63,13 @@ func LoadProjector(dir string) (*Projector, error) {
 	}
 	st, err := openWeights(dir) // single model.safetensors (tiny) or the sharded set (real VL)
 	if err != nil {
-		return nil, fmt.Errorf("vision: open VL safetensors: %w", err)
+		return nil, fmt.Errorf("multimodal: open VL safetensors: %w", err)
 	}
 	defer st.Close()
 	normW, e1 := st.TensorF32("multi_modal_projector.mm_soft_emb_norm.weight")
 	projW, e2 := st.TensorF32("multi_modal_projector.mm_input_projection_weight") // [visionHidden, textHidden]
 	if e1 != nil || e2 != nil {
-		return nil, fmt.Errorf("vision: projector weights: %v %v", e1, e2)
+		return nil, fmt.Errorf("multimodal: projector weights: %v %v", e1, e2)
 	}
 	p.normW = append([]float32(nil), normW...)
 	// Transpose [visionHidden, textHidden] → [textHidden, visionHidden] for MatmulBT.
@@ -92,7 +92,7 @@ func (p *Projector) Forward(visionHidden []float32) ([]float32, error) {
 	vh, grid, tps := p.visionHidden, p.patchesPerImage, p.tokensPerSide
 	np := grid * grid
 	if len(visionHidden) != np*vh {
-		return nil, fmt.Errorf("vision: projector input len %d, want %d (%d patches × %d)", len(visionHidden), np*vh, np, vh)
+		return nil, fmt.Errorf("multimodal: projector input len %d, want %d (%d patches × %d)", len(visionHidden), np*vh, np, vh)
 	}
 	kernel := grid / tps
 	mm := tps * tps

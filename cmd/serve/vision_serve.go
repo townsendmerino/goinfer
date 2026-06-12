@@ -6,14 +6,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/townsendmerino/aikit/vision"
 	"github.com/townsendmerino/goinfer/chat"
-	"github.com/townsendmerino/goinfer/vision"
+	"github.com/townsendmerino/goinfer/multimodal"
 )
 
 // imageSoftToken is the Gemma 3 image placeholder token; the per-image block and
 // run-finder live in the vision package (shared with demo/agent).
 const (
-	imageSoftToken   = vision.ImageSoftToken
+	imageSoftToken   = multimodal.ImageSoftToken
 	maxImagesPerTurn = 1 // v1: a single image per request (the interleave API is shaped for N)
 )
 
@@ -55,9 +56,9 @@ func (lm *loadedModel) visionPrompt(system string, turns []chat.Turn, img imageR
 		return nil, nil, 0, 0, fmt.Errorf("vision projector: %w", err)
 	}
 	n := lm.vproj.MMTokens()
-	turns[idx].Content = vision.Gemma3ImageBlock(n) + "\n" + turns[idx].Content
+	turns[idx].Content = multimodal.Gemma3ImageBlock(n) + "\n" + turns[idx].Content
 	ids = lm.encode(lm.tmpl.Render(system, turns))
-	imgPos, imgLen = vision.FindImageRun(ids, lm.vimgTok)
+	imgPos, imgLen = multimodal.FindImageRun(ids, lm.vimgTok)
 	if imgLen != n {
 		return nil, nil, 0, 0, fmt.Errorf("image placeholder run = %d soft tokens, want %d (tokenizer/template mismatch)", imgLen, n)
 	}

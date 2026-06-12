@@ -1,4 +1,4 @@
-package vision
+package multimodal
 
 import (
 	"encoding/json"

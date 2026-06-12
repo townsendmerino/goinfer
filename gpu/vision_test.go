@@ -8,7 +8,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/townsendmerino/goinfer/vision"
+	"github.com/townsendmerino/aikit/vision"
 )
 
 // cpuLayerNorm: reference (population variance), matching HF nn.LayerNorm and

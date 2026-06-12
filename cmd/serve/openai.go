@@ -12,11 +12,12 @@ import (
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/encoder"
+	"github.com/townsendmerino/aikit/vision"
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/constrain"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/multimodal"
 	"github.com/townsendmerino/goinfer/tokenizer"
-	"github.com/townsendmerino/goinfer/vision"
 )
 
 const defaultMaxTokens = 512
@@ -47,7 +48,7 @@ type loadedModel struct {
 	// runs them through preprocess → encoder → projector, and routes the turn to
 	// GenerateVL. The decode mutex above serializes vision turns too.
 	venc    *vision.Encoder
-	vproj   *vision.Projector
+	vproj   *multimodal.Projector
 	vcfg    vision.Config
 	vimgTok int // image-soft-token id (the placeholder embed-by-vector overrides); -1 if unresolved
 }

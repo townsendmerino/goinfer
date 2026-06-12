@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/townsendmerino/goinfer/vision"
+	"github.com/townsendmerino/aikit/vision"
 )
 
 func TestVisionEncoder_timing(t *testing.T) {
