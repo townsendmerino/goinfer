@@ -5,10 +5,16 @@
 > user-facing feature**: `cmd/serve` accepts images on both the OpenAI
 > (`image_url`) and Anthropic (`image`) surfaces, base64/data-URI only, behind
 > `--vision <dir>`; `demo/agent` (web UI) takes a dropped/pasted image; loading a
-> real `google/gemma-3-4b-it` works directly; the SigLIP attention is vectorized
-> (~190 s/image, parity-preserved). Remaining: a faster (int8) vision tower
-> (`docs/task-cpu-vision-prefill.md`) and **P5** (Qwen2.5-VL second family +
-> m-RoPE + GGUF `mmproj`). (This is the doc `benchmarks.md` references.)
+> real `google/gemma-3-4b-it` works directly. Image prefill is **~171 s/image on
+> CPU**, or **18.8 s (~9×) on `-tags gpu` with `--backend webgpu`** — the resident
+> GPU SigLIP encoder, parity cosine 1.000000 (`886c8fd`/`5d7c572`,
+> `docs/task-gpu-vision-tower.md`). An int8 CPU tower was evaluated and is a wash on
+> AVX2 (no VNNI; `docs/task-cpu-vision-prefill.md`) — GPU is the real speedup.
+> Remaining (all optional / new scope): a **tiled attention GEMM** to push the GPU
+> path below 18.8 s (attention QKᵀ/scores·V are still naive f32); **wiring
+> `demo/agent` to the GPU encoder** (it hardcodes CPU today); and **P5**
+> (Qwen2.5-VL second family + m-RoPE + GGUF `mmproj`). (This is the doc
+> `benchmarks.md` references.)
 > Drafted 2026-06-10 (vscode session), revised after external review (Claude
 > app): added the bidirectional-mask forward-path item, the serve security
 > surface, usage accounting, and firm recommendations on the five open
@@ -118,7 +124,8 @@ Pin each stage against HF, committed KB-scale goldens:
 
 ## Phasing
 
-(✅ P0–P3 landed through `9412e4e`; P4–P5 open.)
+(✅ P0–P4 done — P0–P3 through `9412e4e`, P4 + the resident GPU encoder pushed;
+**P5 open**.)
 
 - ✅ **P0 — scope + harness**: first family (see §1); HF reference + pin scripts;
   tiny synthetic VL checkpoint (mirrors the qwen35-tiny approach); **pin
@@ -133,6 +140,10 @@ Pin each stage against HF, committed KB-scale goldens:
   parity** ← the real gate (HF parity, `9412e4e`).
 - ✅ **P4 — tokenizer image tokens + chat template + serve vision API** (data-URI
   only) + the security/fuzz items; the whole surface inherits.
+- ✅ **P4.5 — resident GPU SigLIP encoder** (`-tags gpu`, `--backend webgpu`):
+  171 s → 18.8 s/image, parity cosine 1.0 (`886c8fd`/`5d7c572`). Follow-ups: a
+  tiled attention GEMM (attention is still naive f32), and wiring `demo/agent`
+  (CPU-hardcoded today) to the GPU encoder.
 - **P5 — second family (Qwen2.5-VL: m-RoPE + dynamic resolution) to prove the
   descriptor generalizes**, + the GGUF `mmproj` companion-file seam.
 
@@ -169,9 +180,11 @@ Pin each stage against HF, committed KB-scale goldens:
    step — mitigated by designing both in P0 and the existing parity harness (any
    drift in *text-only* behavior is a hard fail: both seams must be provably
    inert when no image block is present).
-3. ViT prefill cost on CPU (hundreds of patches × ~27 layers) — acceptable v1;
-   flag in `benchmarks.md`; GPU residency for the tower is explicitly out of
-   scope.
+3. ViT prefill cost on CPU (hundreds of patches × ~27 layers) — acceptable v1
+   (~171 s/image), flagged in `benchmarks.md`. **RESOLVED for GPU:** the resident
+   WebGPU tower (`--backend webgpu`) brings it to 18.8 s/image (~9×); originally
+   scoped out, built after the int8-CPU lever proved a wash. See
+   `docs/task-gpu-vision-tower.md`.
 4. KV/positions/sessions accounting with image blocks — prefix-reuse opts out
    v1; revisit with a "image-block-aligned prefix" scheme later.
 5. Serve security surface — bounded by data-URI-only + pixel caps + fuzzing.
