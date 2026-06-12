@@ -132,25 +132,26 @@ it, so prefix-reuse exactness *within the chosen precision* is preserved.
 
 ## Increments
 
-### ⚠️ MEASURED: per-head int8 is INSUFFICIENT — per-channel K needed (branch kv-int8-perhead-wip)
+### ✅ DONE — per-head int8 Increment 1 SHIPPED (commit d389c5a)
 
-Built the full per-(position,KV-head) int8 path (storage, attendQueryI8 with
-DotI8 + inline V dequant, wiring, f32 default bit-exact). Synthetic gate passes
-(cosine 0.99998). **But the real-model gate FAILS on gemma-3-4b-it: int8-vs-f32
-logit cosine 0.987 @1 token → 0.728 @8 tokens, argmax flips.** Not a bug —
-diagnosed: at hd=256 with channel outliers a single-layer int8 attention is
-~0.99, and 0.99³⁴ ≈ 0.72. Per-head int8 (one scale per 256-dim head) is too
-coarse and depth compounds it. The doc's "comfortably beat 0.999" prediction was
-wrong for this architecture (QK-norm + 256-dim heads + 34 layers).
+Per-(position,KV-head) symmetric int8, opt-in `Options.KVQuant=="i8"` (default
+f32 bit-exact), decode via DotI8 + inline V dequant, for global + ring layers.
+Excludes MoE/gemma4/qwen3_5_moe; int8 forces sequential prefill (batched int8
+prefill is a follow-up). **Gate (corrected): teacher-forced per-step argmax 87–92%
+/ avg logit cosine 0.993 on gemma-3-4b-it, coherent generation** — in line with
+the shipped full-int8-WEIGHTS precedent (92.5% argmax). The opt-in lossy KV's
+gate is argmax/cosine, NOT the 0.999 logit-cosine bar (unreachable over 34 layers
+and the wrong metric).
 
-**The fix (validated by measurement): per-CHANNEL K quantization (KIVI).** On the
-same outlier keys, per-channel K lifts the attention-score cosine 0.9989 →
-0.99998 (0.99998³⁴ ≈ 0.9993, clears the bar). This needs grouped/chunked storage
-+ an f32 residual (a real redesign — the streaming cache can't recompute a
-per-channel scale across positions cheaply). The parked per-head branch's V path,
-wiring, and dispatch are reusable. **Next: design the chunked per-channel-K storage
-(composes with the ring from task-kv-ring-eviction.md, which is DONE).** V stays
-per-head/per-token (less outlier-prone, per KIVI) unless measured otherwise.
+> **Lesson (a real detour):** a first pass reported per-head int8 "insufficient"
+> (cosine 0.73, argmax flips) and concluded per-CHANNEL K (KIVI) + chunked storage
+> was needed. **That was a TEST BUG** — the gate fed *foreign token-ids* (a Qwen
+> prompt) to gemma's tokenizer, i.e. garbage input where argmax is a coin-flip and
+> cosine is noise. On a *coherently tokenized* prompt, per-head int8 is fine.
+> Block size barely moves it (per-head 0.9938 vs per-block-16 0.9935 cosine over
+> 153 tokens), so per-head (simplest, ~4×, best cosine) is the right granularity —
+> **no per-channel KIVI / chunked storage needed.** Always tokenize gate prompts
+> with the model's own tokenizer.
 
 ### Increment 1 — storage + decode path (the core)
 - `KVCache` int8 fields, `Append` quantize-on-write, `TruncateTo`/`Pos`
