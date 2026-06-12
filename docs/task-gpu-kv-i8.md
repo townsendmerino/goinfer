@@ -85,3 +85,82 @@ KV-read-bound, and int8 halves the bytes f16 left on the table.
 **Trigger:** same as f16's was — a real >32k workload, or marketing the 8 GB
 story harder. Sequence *after* the CPU int8 cache lands so the granularity
 and gate bars arrive pre-validated.
+
+---
+
+## Grounded scoping (2026-06-12 — after CPU int8 Inc 1–3 shipped)
+
+Mapped against the live f16-KV implementation (the template) and updated with what
+the CPU int8 work measured. Net: **lower risk than the original notes assumed**,
+with one real new kernel wrinkle.
+
+### The big de-risk: GPU residency = dense Qwen2/Llama only
+`DecodeRunnerEligible` (`decoder/residency.go:45`) rejects MoE / gemma4 / qwen3_5 /
+**QK-norm** / **sliding-window** / learned-pos / softcap. So GPU int8 KV targets
+**full-attention Qwen2/Llama with NO QK-norm and NO 256-dim-head gemma3** — i.e.
+the families that are *least* outlier-prone post-RoPE. The CPU session's
+quant-sensitive worst case (gemma3-4b: per-head int8 = 0.993 cosine / ~93% argmax,
+borderline) **cannot occur here**; f16 KV already measured **cosine 0.99868 @ 8k on
+Qwen 7B**, and per-head int8 should land just under that, comfortably ≥0.99. ⇒ the
+**"KIVI per-channel-key split" fallback is almost certainly unneeded** — don't build
+it unless the gate actually misses.
+
+### The f16 path is a clean 3-kernel template; the READ arm is easy, the WRITE arm isn't
+Each kernel branches once on `m.kvF16` (`decoderunner.go:187-230`); int8 is a third
+arm — but they're not equal in effort:
+- **attn (READ) — easy.** `attnF16ShaderWGSL` reads f32 `q`, `unpack2x16float`s K/V.
+  The int8 arm: unpack 4×int8/word (shift+mask), `score += q[d]·f32(k_i8)·kScale[s,h]`,
+  `ctx += w·f32(v_i8)·vScale[s,h]`. q stays f32 — no integer dot, no DP4A needed
+  (that's a free future upside when `dot4I8Packed` lands). Pure "second arm."
+- **ropeStore / vStore (WRITE) — the real new work.** f16's write is scale-free
+  (just `pack2x16float`, one thread per word, no cross-thread comms). int8 needs a
+  **per-head absmax → scale → quantize**, i.e. a reduction over `headDim` (64–128)
+  per head *before* packing. Restructure to **one workgroup per (KV-head)** doing a
+  shared-memory absmax reduction, then quantize+pack its `headDim` lane, and write
+  the per-head scale to the side buffer. This is genuinely more than an unpack arm —
+  it's the increment's main risk/effort.
+
+### Buffers + the prefill-upload quantize (reuse CPU code)
+- Data buffer: `array<u32>`, **4 int8/word** → `NewKVCacheI8` sizes `(capElems+3)/4`
+  words (vs f16's `(capElems+1)/2`). Plus a **scale side buffer** `[ctxCap*nKV] f32`
+  per K and per V, indexed `[pos*nKV + head]` (the CPU doc's granularity — <1%
+  overhead, one scheme shared CPU↔GPU).
+- **Prefill K/V is computed on CPU** (the residency path uploads post-RoPE K/V into
+  the GPU caches; only decode runs on GPU — `residency.go`). So the upload must
+  quantize: reuse the shipped CPU `quantizeHeads` (per-(pos,head) int8 + scales),
+  upload int8 + scales. **Decode-time** new-token K/V quantize on-device via the
+  WRITE kernels above. Both per-head ⇒ uniform with the CPU cache + snapshots.
+- 64k cap: `ctxCap = 65536` when int8 (`residency.go:88`); pure arithmetic, gated by
+  a real allocation test.
+
+### Knob: a tri-state `--kv`, distinct from CPU `--kv-quant`
+Two independent axes already coexist: CPU `--kv-quant f32|i8` (`Options.KVQuant` →
+`m.kvI8`, the shipped CPU cache) and GPU `--kv f32|f16` (`Options.KVPrecision` →
+`m.kvF16`, residency). int8 GPU extends the **GPU** knob to `--kv f32|f16|i8`.
+Refactor the `m.kvF16 bool` to carry the precision (e.g. a small enum or keep the
+string) so the residency builder + kernel selection branch on f32/f16/i8; add a
+`KVCacheI8()` getter mirroring `KVCacheF16()`. (Don't overload `m.kvI8` — that's the
+CPU cache.)
+
+### Increments (refined)
+1. **int8 storage + 3 kernels + tri-state knob.** `NewKVCacheI8` (+ scale buffers),
+   `ropeStoreI8`/`vStore I8` (per-head absmax reduction + quantize + scale store),
+   `attnI8` (unpack + scale READ arm), upload-quantize via CPU `quantizeHeads`,
+   `--kv i8`. **Gate (corrected):** int8-KV vs f32-KV decode at ≥8k keys on real HW
+   — argmax-preserved (3%-near-tie rule) + cosine **≥0.99** (NOT the original
+   ≥0.999 — that bar was unreachable on CPU over deep stacks and is the wrong
+   metric; argmax/cosine is the gate). Mirror `TestKVCacheF16_parity`'s synthetic
+   shape, **plus** a real-7B int8-KV-vs-f32-KV decode-argmax check (synthetic random
+   weights may not reflect real RoPE'd K/V; the CPU "garbage-input" lesson — always
+   exercise real distributions). f32 + f16 parities stay green.
+2. **64k cap + fit gate.** 7B int4 + 64k int8 KV on the 8 GB card, no OOM, peak
+   recorded (~6.9 GiB expected) — extend `TestKVCacheF16_fit`. **Measure** the
+   long-context decode tok/s vs f16 at equal context (the KV-read-bound speedup the
+   f16 doc left open — now 4× the lever). Report measured, don't predict.
+
+### Risk register
+- **WRITE-kernel per-head reduction** — the one non-trivial bit; isolated to two
+  kernels, testable against the CPU `quantizeHeads` output for exactness.
+- Quality — low risk (Qwen/Llama, full attention; f16 already at 0.99868).
+- The two-knob (`--kv` vs `--kv-quant`) coexistence — a naming/UX wrinkle to keep
+  clear in `--help`, not a technical risk.
