@@ -86,11 +86,20 @@ build-time or Options bool for one release if paranoia wins; delete after.)
 
 ## Increments
 
-1. **Ring storage + decode/prefill index mapping**, full-attention families
-   untouched. Gate: **bit-exact** vs main on the Gemma window golden, the
-   Mellum2 window golden, and a long (≥4×W) generation diff — same tokens,
-   same logits, byte-identical. Memory: assert local-layer cache bytes
-   == `W·stride` regardless of context length.
+1. ✅ **DONE (commit 4a9c2b5).** Ring storage + decode/prefill index mapping,
+   full-attention families untouched; gemma4 + qwen3_5_moe deferred (per-layer
+   widths / linear attention — their own forward). **The doc's "just map s→s%W"
+   is decode-only**: batched prefill writes all K then reads, so a prompt wider
+   than W (the Mellum2 golden is 1441 > 1024) would evict in-batch history a
+   naive ring still needs. Resolution: decode dense reads the ring directly
+   (`s%W`); batched prefill + MoE decode DEFER the ring write, assemble a
+   contiguous `[base, startPos+K)` window (ring history + the K new rows), attend
+   with a base offset (`s−base`), then commit. `attendBatchedHeads` gained a
+   `(keys,vals,base)` arg — global layers pass `cache.Keys/0` (bit-exact).
+   Gates (green): real-model Mellum2 logit + window parity (MoE+sliding, both
+   paths, argmax exact / cosine 0.998); three model-free bit-exact gates
+   (`decoder/ring_test.go`: decode 4×W wrap, batched K=19≫W=4, MoE K=1
+   multi-step) vs append-forever; local-layer bytes == `W·stride` at any context.
 2. **TruncateTo rewind rule + spec-decode/session property tests**; sessions
    fall back gracefully. Gate: spec-decode suite green under rings; a
    deeper-than-ring rewind triggers cold prefill, never wrong output.
