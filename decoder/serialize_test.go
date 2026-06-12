@@ -55,13 +55,13 @@ func TestSerializeWeights_roundTrip(t *testing.T) {
 		t.Fatalf("matmul weight count: %d vs %d", len(a), len(b))
 	}
 	for i := range a {
-		if a[i].rows != b[i].rows || a[i].cols != b[i].cols || a[i].group != b[i].group || a[i].w8a8 != b[i].w8a8 {
+		if a[i].Rows() != b[i].Rows() || a[i].Cols() != b[i].Cols() || tGroup(a[i]) != tGroup(b[i]) || tW8A8(a[i]) != tW8A8(b[i]) {
 			t.Fatalf("weight %d shape mismatch", i)
 		}
-		if !slices.Equal(a[i].q8, b[i].q8) {
+		if !slices.Equal(tQ8(a[i]), tQ8(b[i])) {
 			t.Fatalf("weight %d q8 bytes differ", i)
 		}
-		if !slices.Equal(a[i].scales, b[i].scales) {
+		if !slices.Equal(tScales(a[i]), tScales(b[i])) {
 			t.Fatalf("weight %d scales differ", i)
 		}
 	}
@@ -70,13 +70,13 @@ func TestSerializeWeights_roundTrip(t *testing.T) {
 	// Aliasing: the deserialized q8 must point INTO blob (zero-copy); scales must
 	// be a copy (independent of blob).
 	for _, w := range b {
-		if len(w.q8) == 0 {
+		if len(tQ8(w)) == 0 {
 			continue
 		}
-		if !aliases(w.q8, blob) {
-			t.Errorf("q8 (%d rows) is NOT aliased into the blob — expected zero-copy", w.rows)
+		if !aliases(tQ8(w), blob) {
+			t.Errorf("q8 (%d rows) is NOT aliased into the blob — expected zero-copy", w.Rows())
 		}
-		if len(w.scales) > 0 && aliasesF32(w.scales, blob) {
+		if len(tScales(w)) > 0 && aliasesF32(tScales(w), blob) {
 			t.Errorf("scales are aliased into the blob — expected a copy (alignment)")
 		}
 		break // one is enough

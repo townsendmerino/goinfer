@@ -174,7 +174,7 @@ func TestLoRA_mergeAtLoad(t *testing.T) {
 		t.Fatalf("load merged: %v", err)
 	}
 
-	q0, q1 := w0.Layers[0].QProj.f32, w1.Layers[0].QProj.f32
+	q0, q1 := tF32(&w0.Layers[0].QProj), tF32(&w1.Layers[0].QProj)
 	const scale = 2.0
 	for o := range qDim {
 		for j := range hidden {
@@ -189,8 +189,8 @@ func TestLoRA_mergeAtLoad(t *testing.T) {
 		}
 	}
 	// k_proj (not a target) must be identical.
-	for i := range w0.Layers[0].KProj.f32 {
-		if w0.Layers[0].KProj.f32[i] != w1.Layers[0].KProj.f32[i] {
+	for i := range tF32(&w0.Layers[0].KProj) {
+		if tF32(&w0.Layers[0].KProj)[i] != tF32(&w1.Layers[0].KProj)[i] {
 			t.Fatalf("k_proj changed at %d (should be untouched)", i)
 		}
 	}

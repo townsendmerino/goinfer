@@ -118,6 +118,6 @@ func (m *Model) ResidentActive() bool { return m.resident != nil }
 // half of the residency forward (eligible archs have no embedding scale).
 func (m *Model) embedResident(id int) []float32 {
 	h := make([]float32, m.w.arch.HiddenDim)
-	m.w.Embed.embedRow(id, h)
+	m.w.Embed.Row(id, h)
 	return h
 }

@@ -227,7 +227,7 @@ func (m *Model) NewCache(capHint int) *KVCache {
 //	  h += g
 func (m *Model) runLayers(id int, cache *KVCache) ([]float32, error) {
 	arch := m.w.arch
-	if m.w.Embed.rows == 0 {
+	if m.w.Embed.Rows() == 0 {
 		return nil, fmt.Errorf("decoder.forward: weights not loaded %w [M1]", errNotImplemented)
 	}
 	if arch.gemma4 != nil { // Gemma 4: per-layer head_dim, KV-sharing, PLE — own path.
@@ -241,8 +241,8 @@ func (m *Model) runLayers(id int, cache *KVCache) ([]float32, error) {
 	}
 	scr := cache.scr
 	hidden := arch.HiddenDim
-	h := scr.h                // residual stream (reused per stream; fully overwritten below)
-	m.w.Embed.embedRow(id, h) // f32 copy, or int8 dequant when quantized
+	h := scr.h           // residual stream (reused per stream; fully overwritten below)
+	m.w.Embed.Row(id, h) // f32 copy, or int8 dequant when quantized
 	// Embedding scale (Gemma = √hidden; 0/1 = none). NOTE: HF computes this
 	// normalizer as sqrt(hidden) cast to the model's dtype — bf16 for a bf16
 	// checkpoint (≈25.25 here) — then multiplies. We use the f32 value
@@ -261,7 +261,7 @@ func (m *Model) runLayers(id int, cache *KVCache) ([]float32, error) {
 	// attention, so cache.Pos() here is still this step's position).
 	if arch.LearnedPosEmbed {
 		pe := make([]float32, hidden)
-		m.w.PosEmbed.embedRow(cache.Pos(), pe)
+		m.w.PosEmbed.Row(cache.Pos(), pe)
 		for i := range h {
 			h[i] += pe[i]
 		}
@@ -322,7 +322,7 @@ func (m *Model) runLayersFromEmbed(h []float32, cache *KVCache) ([]float32, erro
 // the projected vision features) and drive runLayersFromEmbed per position.
 func (m *Model) embedToken(id int, dst []float32) {
 	arch := m.w.arch
-	m.w.Embed.embedRow(id, dst)
+	m.w.Embed.Row(id, dst)
 	if arch.EmbedScale != 0 && arch.EmbedScale != 1 {
 		scale := float32(arch.EmbedScale)
 		for i := range dst {
@@ -379,9 +379,9 @@ func (m *Model) logitsFromHidden(h []float32, cache *KVCache) []float32 {
 	normalize(arch, h, m.w.FinalNorm, m.w.FinalNormBias, arch.HiddenDim)
 	logits := cache.scr.logits // reused per stream; matmul fully overwrites it
 	if arch.TiedLMHead {
-		m.w.Embed.matmulInto(cache.scr.ws, m.be, h, logits, 1) // tied: embedding doubles as the head
+		matmulInto(cache.scr.ws, m.be, &m.w.Embed, h, logits, 1) // tied: embedding doubles as the head
 	} else {
-		m.w.LMHead.matmulInto(cache.scr.ws, m.be, h, logits, 1) // separate output projection
+		matmulInto(cache.scr.ws, m.be, &m.w.LMHead, h, logits, 1) // separate output projection
 	}
 	if arch.FinalLogitSoftcap > 0 {
 		softcap := float32(arch.FinalLogitSoftcap)

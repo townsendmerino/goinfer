@@ -128,17 +128,17 @@ func TestQwen35Real_loaderSlice(t *testing.T) {
 			t.Fatalf("layer %d: %d experts, want %d", l, len(exps), moe.NumExperts)
 		}
 		e0 := exps[0]
-		if e0.Gate.rows != moe.IntermediateDim || e0.Gate.cols != m.w.arch.HiddenDim {
+		if e0.Gate.Rows() != moe.IntermediateDim || e0.Gate.Cols() != m.w.arch.HiddenDim {
 			t.Errorf("layer %d expert0 gate shape = [%d,%d], want [%d,%d]",
-				l, e0.Gate.rows, e0.Gate.cols, moe.IntermediateDim, m.w.arch.HiddenDim)
+				l, e0.Gate.Rows(), e0.Gate.Cols(), moe.IntermediateDim, m.w.arch.HiddenDim)
 		}
-		if e0.Down.rows != m.w.arch.HiddenDim || e0.Down.cols != moe.IntermediateDim {
+		if e0.Down.Rows() != m.w.arch.HiddenDim || e0.Down.Cols() != moe.IntermediateDim {
 			t.Errorf("layer %d expert0 down shape = [%d,%d], want [%d,%d]",
-				l, e0.Down.rows, e0.Down.cols, m.w.arch.HiddenDim, moe.IntermediateDim)
+				l, e0.Down.Rows(), e0.Down.Cols(), m.w.arch.HiddenDim, moe.IntermediateDim)
 		}
-		if m.w.Layers[l].SharedExpert.Gate.rows != moe.SharedIntermediateDim {
+		if m.w.Layers[l].SharedExpert.Gate.Rows() != moe.SharedIntermediateDim {
 			t.Errorf("layer %d shared-expert gate rows = %d, want %d",
-				l, m.w.Layers[l].SharedExpert.Gate.rows, moe.SharedIntermediateDim)
+				l, m.w.Layers[l].SharedExpert.Gate.Rows(), moe.SharedIntermediateDim)
 		}
 	}
 

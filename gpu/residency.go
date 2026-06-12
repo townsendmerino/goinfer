@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/cogentcore/webgpu/wgpu"
+	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
@@ -15,21 +16,14 @@ import (
 // the decoder calls BuildResident when the arch is eligible, then routes the
 // per-token forward through the returned ResidentForward (decoder/residency.go).
 
-// projWeight matches the read-only accessors decoder.weightMat exposes, so the
-// bridge can pull a projection's resident arrays without naming the unexported
-// type. *decoder.weightMat (via &model.Weights().Layers[i].QProj) satisfies it.
-type projWeight interface {
-	Kind() string
-	Rows() int
-	Cols() int
-	Int4() (q4 []byte, q4s []float32, group int, ok bool)
-	Int8() (q8 []int8, scales []float32, ok bool)
-}
+// The decoder's projections are now linalg.WeightMat (the aikit consolidation), so
+// the bridge pulls a projection's resident arrays via its exported accessors
+// (Kind/Rows/Cols/Int4/Int8) directly — no goinfer-local interface needed.
 
 // uploadProj uploads one projection to the device at its native precision,
 // returning a decodeWeight the DecodeRunner can GEMV. int4 and int8 only (the
 // .giw cases); f32 is unsupported here (caller falls back).
-func (c *Context) uploadProj(w projWeight) (decodeWeight, error) {
+func (c *Context) uploadProj(w *linalg.WeightMat) (decodeWeight, error) {
 	N, K := w.Rows(), w.Cols()
 	switch w.Kind() {
 	case "int4":
@@ -55,7 +49,7 @@ func (c *Context) uploadProj(w projWeight) (decodeWeight, error) {
 		}
 		return c.UploadW4A8(nib, q4s, N, K)
 	case "int8":
-		q8, scales, _ := w.Int8()
+		q8, scales, _, _ := w.Int8()
 		return c.UploadW8A8(q8, scales, N, K)
 	default:
 		return nil, fmt.Errorf("gpu: residency unsupported projection precision %q", w.Kind())
@@ -107,7 +101,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 		keepF(d.Release)
 		return d.buf, nil
 	}
-	proj := func(pw projWeight) (decodeWeight, error) {
+	proj := func(pw *linalg.WeightMat) (decodeWeight, error) {
 		dw, err := c.uploadProj(pw)
 		if err != nil {
 			return nil, err
@@ -132,7 +126,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 		return fail(err)
 	}
 	// LM head: tied (LMHead empty → the Embed matrix is the head) or separate.
-	headW := projWeight(&w.LMHead)
+	headW := &w.LMHead
 	if w.LMHead.Rows() == 0 {
 		headW = &w.Embed
 	}

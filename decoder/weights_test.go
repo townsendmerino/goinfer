@@ -81,9 +81,9 @@ func TestLoadWeights_goldenChecksums(t *testing.T) {
 func checkSampledChecksums(t *testing.T, w *Weights, g *gemmaGolden) {
 	t.Helper()
 	loaded := map[string][]float32{
-		"model.embed_tokens.weight":              w.Embed.f32,
+		"model.embed_tokens.weight":              tF32(&w.Embed),
 		"model.norm.weight":                      w.FinalNorm,
-		"model.layers.0.self_attn.q_proj.weight": w.Layers[0].QProj.f32,
+		"model.layers.0.self_attn.q_proj.weight": tF32(&w.Layers[0].QProj),
 	}
 	const relTol = 1e-6
 	for name, want := range g.Tensors {

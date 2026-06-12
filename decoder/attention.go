@@ -66,15 +66,15 @@ func causalAttention(
 	// is the per-token dispatch cut without disturbing the prequant aliasing.
 	scr := cache.scr
 	q, k, v := scr.q, scr.k, scr.v
-	if lw.QProj.isW8A8() && lw.KProj.isW8A8() && lw.VProj.isW8A8() {
-		scr.qkvOps[0] = linalg.W8A8Op{BQ: lw.QProj.q8, Scales: lw.QProj.scales, Dst: q, N: lw.QProj.rows}
-		scr.qkvOps[1] = linalg.W8A8Op{BQ: lw.KProj.q8, Scales: lw.KProj.scales, Dst: k, N: lw.KProj.rows}
-		scr.qkvOps[2] = linalg.W8A8Op{BQ: lw.VProj.q8, Scales: lw.VProj.scales, Dst: v, N: lw.VProj.rows}
-		matmulW8A8Batch(be, scr.ws, h, 1, lw.QProj.cols, scr.qkvOps[:])
+	if isW8A8(&lw.QProj) && isW8A8(&lw.KProj) && isW8A8(&lw.VProj) {
+		scr.qkvOps[0] = linalg.W8A8Op{BQ: wmInt8(&lw.QProj), Scales: wmScales(&lw.QProj), Dst: q, N: lw.QProj.Rows()}
+		scr.qkvOps[1] = linalg.W8A8Op{BQ: wmInt8(&lw.KProj), Scales: wmScales(&lw.KProj), Dst: k, N: lw.KProj.Rows()}
+		scr.qkvOps[2] = linalg.W8A8Op{BQ: wmInt8(&lw.VProj), Scales: wmScales(&lw.VProj), Dst: v, N: lw.VProj.Rows()}
+		matmulW8A8Batch(be, scr.ws, h, 1, lw.QProj.Cols(), scr.qkvOps[:])
 	} else {
-		lw.QProj.matmulInto(scr.ws, be, h, q, 1)
-		lw.KProj.matmulInto(scr.ws, be, h, k, 1)
-		lw.VProj.matmulInto(scr.ws, be, h, v, 1)
+		matmulInto(scr.ws, be, &lw.QProj, h, q, 1)
+		matmulInto(scr.ws, be, &lw.KProj, h, k, 1)
+		matmulInto(scr.ws, be, &lw.VProj, h, v, 1)
 	}
 	if arch.QKVBias {
 		addBias(q, lw.QBias)
@@ -137,7 +137,7 @@ func causalAttention(
 
 	// 7. Output projection into the caller's buffer (+ bias for GPT-2); the
 	// caller applies the post-attn norm + residual.
-	lw.OProj.matmulInto(scr.ws, be, ctx, out, 1)
+	matmulInto(scr.ws, be, &lw.OProj, ctx, out, 1)
 	if arch.OutBias {
 		addBias(out, lw.OBias)
 	}

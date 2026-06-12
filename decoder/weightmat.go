@@ -2,6 +2,14 @@ package decoder
 
 import "github.com/townsendmerino/aikit/linalg"
 
+// Weight matrices are linalg.WeightMat (aikit): one type that hides f32 / per-row
+// int8 / group-wise int4 storage behind uniform accessors + the linalg kernels.
+// goinfer keeps the model POLICY here — which table gets which precision
+// (quantMode), the int4 group size, and the matmul backend routing (the staged
+// GPU hooks below) — while the storage wrapper, quantize primitives, and Row
+// dequant live in linalg. (Consolidates the wrapper formerly open-coded as
+// decoder.weightMat; see aikit linalg.WeightMat.)
+
 // quantMode selects the resident weight precision the loader streams into (see
 // loadWeights). The f32 path keeps the widened weights; int8 is per-row symmetric
 // (¼ f32); int4 is group-wise symmetric (~⅛ f32).
@@ -32,203 +40,124 @@ func (q quantMode) embedding() quantMode {
 // stays ~0.125 byte/element.
 const int4GroupSize = 32
 
-// weightMat is one [rows, cols] = [out, in] weight matrix in one of three
-// precisions: f32 (default), per-row int8 (quantizeInt8), or group-wise int4
-// (quantizeInt4). It hides the storage choice from the forward pass: every
-// matmul site calls matmul, and the tied embedding lookup calls embedRow,
-// regardless of precision.
-type weightMat struct {
-	f32    []float32 // [rows*cols], set unless quantized
-	q8     []int8    // [rows*cols], set for int8
-	scales []float32 // [rows], per-row scale for int8
-	q4     []byte    // [rows*((cols+1)/2)] packed nibbles, set for int4
-	q4s    []float32 // [rows*nGroups], per-group scale for int4
-	group  int       // int4 group size (0 unless int4)
-	w8a8   bool      // int8 weights but full int8×int8 matmul (quantInt8I8)
-	rows   int       // out features (N)
-	cols   int       // in features (K)
-}
-
-// Read-only accessors for the GPU residency bridge (gpu package): a loaded
-// Model's projections are weightMat (an unexported type behind exported
-// LayerWeights fields), so these exported methods are how the bridge pulls the
-// resident quantized arrays out without the GPU package importing internals.
-
-// Kind reports the resident precision: "int4", "int8", "f32", or "" (empty).
-func (w *weightMat) Kind() string {
-	switch {
-	case w.q4 != nil:
-		return "int4"
-	case w.q8 != nil:
-		return "int8"
-	case w.f32 != nil:
-		return "f32"
-	default:
-		return ""
-	}
-}
-
-func (w *weightMat) Rows() int { return w.rows }
-func (w *weightMat) Cols() int { return w.cols }
-
-// Int4 returns the packed nibbles, per-group scales, and group size (ok=false
-// unless the matrix is resident int4).
-func (w *weightMat) Int4() (q4 []byte, q4s []float32, group int, ok bool) {
-	return w.q4, w.q4s, w.group, w.q4 != nil
-}
-
-// Int8 returns the int8 weights and per-row scales (ok=false unless int8).
-func (w *weightMat) Int8() (q8 []int8, scales []float32, ok bool) {
-	return w.q8, w.scales, w.q8 != nil
-}
-
-// F32 returns the dense weights (ok=false unless f32-resident).
-func (w *weightMat) F32() (f32 []float32, ok bool) { return w.f32, w.f32 != nil }
-
-func newWeightMat(f32 []float32, rows, cols int) weightMat {
-	return weightMat{f32: f32, rows: rows, cols: cols}
-}
-
-// streamQuantized builds a [rows, cols] weightMat in the target precision by
-// dequantizing each row through rowInto (into a reused cols-wide scratch) and
+// streamQuantized builds a [rows, cols] linalg.WeightMat in the target precision
+// by dequantizing each row through rowInto (into a reused cols-wide scratch) and
 // quantizing it straight into the resident arrays — never materializing the whole
 // [rows*cols] f32. This is the load-time memory-bandwidth win: a big GGUF tensor's
 // f32 intermediate stays one row wide (in cache) instead of streaming to DRAM and
-// back. The result is bit-identical to newWeightMat(fullF32).quantize(mode): the
-// per-row primitives here are exactly the ones QuantizeRowsInt8 / QuantizeGroupsInt4
-// call internally, just driven one row at a time.
-func streamQuantized(rows, cols int, mode quantMode, rowInto func(r int, dst []float32) error) (weightMat, error) {
-	w := weightMat{rows: rows, cols: cols}
+// back. Bit-identical to quantizeWM(WrapF32(fullF32), mode): the per-row primitives
+// here are exactly the ones linalg.Quantize{Rows,Groups} call internally, just
+// driven one row at a time; the result is WrapInt8/WrapInt4/WrapF32'd (no copy).
+func streamQuantized(rows, cols int, mode quantMode, rowInto func(r int, dst []float32) error) (linalg.WeightMat, error) {
 	scratch := make([]float32, cols)
 	switch mode {
 	case quantInt8, quantInt8I8:
-		w.q8 = make([]int8, rows*cols)
-		w.scales = make([]float32, rows)
-		w.w8a8 = mode == quantInt8I8
+		q8 := make([]int8, rows*cols)
+		scales := make([]float32, rows)
 		for r := range rows {
 			if err := rowInto(r, scratch); err != nil {
-				return weightMat{}, err
+				return linalg.WeightMat{}, err
 			}
-			w.scales[r] = linalg.QuantizeRowInt8(scratch, w.q8[r*cols:(r+1)*cols])
+			scales[r] = linalg.QuantizeRowInt8(scratch, q8[r*cols:(r+1)*cols])
 		}
+		return linalg.WrapInt8(q8, scales, rows, cols, mode == quantInt8I8), nil
 	case quantInt4:
 		const group = int4GroupSize
 		nGroups := (cols + group - 1) / group
 		bpr := (cols + 1) / 2
-		w.q4 = make([]byte, rows*bpr)
-		w.q4s = make([]float32, rows*nGroups)
-		w.group = group
+		q4 := make([]byte, rows*bpr)
+		q4s := make([]float32, rows*nGroups)
 		for r := range rows {
 			if err := rowInto(r, scratch); err != nil {
-				return weightMat{}, err
+				return linalg.WeightMat{}, err
 			}
-			linalg.QuantizeGroupInt4Row(scratch, cols, group, w.q4[r*bpr:(r+1)*bpr], w.q4s[r*nGroups:(r+1)*nGroups])
+			linalg.QuantizeGroupInt4Row(scratch, cols, group, q4[r*bpr:(r+1)*bpr], q4s[r*nGroups:(r+1)*nGroups])
 		}
+		return linalg.WrapInt4(q4, q4s, rows, cols, group), nil
 	default: // quantNone — no quant target, keep the full f32
-		w.f32 = make([]float32, rows*cols)
+		f32 := make([]float32, rows*cols)
 		for r := range rows {
-			if err := rowInto(r, w.f32[r*cols:(r+1)*cols]); err != nil {
-				return weightMat{}, err
+			if err := rowInto(r, f32[r*cols:(r+1)*cols]); err != nil {
+				return linalg.WeightMat{}, err
 			}
 		}
+		return linalg.WrapF32(f32, rows, cols), nil
 	}
-	return w, nil
 }
 
-// quantize streams this matrix to the requested resident precision, freeing the
-// f32 backing. No-op for quantNone or if already quantized.
-func (w *weightMat) quantize(mode quantMode) {
+// quantizeWM returns w streamed to the requested resident precision — the
+// immutable-WeightMat replacement for the old in-place weightMat.quantize (the
+// freed-f32 memory win comes from dropping the old f32 reference at the call site).
+// No-op for quantNone or if w isn't f32-resident (already quantized / empty).
+func quantizeWM(w linalg.WeightMat, mode quantMode) linalg.WeightMat {
+	f32, ok := w.F32()
+	if !ok {
+		return w
+	}
 	switch mode {
 	case quantInt8:
-		w.quantizeInt8()
+		return linalg.QuantizeInt8(f32, w.Rows(), w.Cols(), false)
 	case quantInt8I8:
-		w.quantizeInt8()
-		w.w8a8 = true
+		return linalg.QuantizeInt8(f32, w.Rows(), w.Cols(), true)
 	case quantInt4:
-		w.quantizeInt4(int4GroupSize)
+		return linalg.QuantizeInt4(f32, w.Rows(), w.Cols(), int4GroupSize)
+	default:
+		return w
 	}
 }
 
-// quantizeInt8 converts f32 → per-row int8 in place and frees the f32 backing
-// (the M8 memory win). No-op if already quantized.
-func (w *weightMat) quantizeInt8() {
-	if w.q8 != nil || w.q4 != nil || w.f32 == nil {
+// isW8A8 reports whether w uses the int8×int8 (W8A8) path — the only one with a
+// zero-alloc Workspace + batched-dispatch kernel.
+func isW8A8(w *linalg.WeightMat) bool {
+	_, _, w8a8, ok := w.Int8()
+	return ok && w8a8
+}
+
+// wmInt8 / wmScales pull the int8 codes / per-row scales out of a WeightMat for the
+// batched W8A8 ops (the forward's only sites that read the raw arrays directly, to
+// fuse several matrices into one matmulW8A8Batch dispatch). Both assume isW8A8(w).
+func wmInt8(w *linalg.WeightMat) []int8      { q8, _, _, _ := w.Int8(); return q8 }
+func wmScales(w *linalg.WeightMat) []float32 { _, s, _, _ := w.Int8(); return s }
+
+// matmul computes dst[M, rows] = a[M, cols] · wᵀ, dispatching on w's precision
+// with goinfer's backend routing: the f32 and W8A8 paths can run on a GPU backend
+// (be.MatmulBT / QuantBackend.MatmulW8A8); int4 (W4A8) and weight-only int8 (Q8)
+// stay CPU. (The old weightMat.matmul, now a free function over linalg.WeightMat.)
+func matmul(be Backend, w *linalg.WeightMat, a, dst []float32, M int) {
+	if q4, q4s, group, ok := w.Int4(); ok {
+		// int4 weights run the int8-activation W4A8 integer kernel at EVERY M (decode
+		// AND prefill): it stays integer (int4 weight × int8 activation) and benchmarks
+		// faster than the dequant-to-f32 Q4 path at every M, and its per-output result
+		// is M-independent so batched prefill is bit-identical to sequential decode.
+		linalg.MatmulBTW4A8(a, q4, q4s, dst, M, w.Cols(), w.Rows(), group)
 		return
 	}
-	w.q8, w.scales = linalg.QuantizeRowsInt8(w.f32, w.rows, w.cols)
-	w.f32 = nil
-}
-
-// quantizeInt4 converts f32 → group-wise int4 in place and frees the f32
-// backing (~⅛ f32). No-op if already quantized.
-func (w *weightMat) quantizeInt4(group int) {
-	if w.q4 != nil || w.q8 != nil || w.f32 == nil {
-		return
-	}
-	w.q4, w.q4s = linalg.QuantizeGroupsInt4(w.f32, w.rows, w.cols, group)
-	w.group = group
-	w.f32 = nil
-}
-
-// matmul computes dst[M, rows] = a[M, cols] · this[rows, cols]ᵀ, dispatching to
-// the int4, int8, or f32 kernel. The f32 path uses the backend (so a GPU backend
-// can substitute); the quantized paths are CPU-only for now.
-func (w *weightMat) matmul(be Backend, a, dst []float32, M int) {
-	switch {
-	case w.q4 != nil:
-		// int4 weights run the int8-activation W4A8 integer kernel at EVERY M
-		// (decode AND prefill). The alternative, MatmulBTQ4, dequantizes each weight
-		// row to f32 — the dominant decode cost (~72% at M=1 per aikit profiling),
-		// only amortized across rows at large M — whereas W4A8 stays integer (int4
-		// weight × int8 activation, activations quantized to int8 internally) and
-		// benchmarks faster at every M, so prefill joins decode here. This also
-		// removes the prefill↔decode numerics seam: both now track the
-		// int8-activation / GPU gemv_w4a8 reference (not the old f32-activation Q4),
-		// and the per-output result is M-independent, so batched prefill is
-		// bit-identical to sequential decode for int4 (TestMatmulInt4_MConsistent).
-		linalg.MatmulBTW4A8(a, w.q4, w.q4s, dst, M, w.cols, w.rows, w.group)
-	case w.q8 != nil && w.w8a8:
-		if qb, ok := be.(QuantBackend); ok && qb.MatmulW8A8(a, w.q8, w.scales, dst, M, w.cols, w.rows) {
+	if q8, scales, w8a8, ok := w.Int8(); ok {
+		if w8a8 {
+			if qb, ok := be.(QuantBackend); ok && qb.MatmulW8A8(a, q8, scales, dst, M, w.Cols(), w.Rows()) {
+				return
+			}
+			linalg.MatmulBTW8A8(a, q8, scales, dst, M, w.Cols(), w.Rows())
 			return
 		}
-		linalg.MatmulBTW8A8(a, w.q8, w.scales, dst, M, w.cols, w.rows)
-	case w.q8 != nil:
-		linalg.MatmulBTQ8(a, w.q8, w.scales, dst, M, w.cols, w.rows)
-	default:
-		be.MatmulBT(a, w.f32, dst, M, w.cols, w.rows)
-	}
-}
-
-// isW8A8 reports whether this matrix uses the int8×int8 (W8A8) path — the only
-// one with a zero-alloc Workspace + batched-dispatch kernel.
-func (w *weightMat) isW8A8() bool { return w.q8 != nil && w.w8a8 }
-
-// matmulInto is matmul using a Workspace for the W8A8 path, so steady-state
-// decode quantizes the activation once into reusable scratch (no per-call
-// allocation). Other quant paths ignore ws and use matmul.
-func (w *weightMat) matmulInto(ws *linalg.Workspace, be Backend, a, dst []float32, M int) {
-	if w.isW8A8() {
-		if qb, ok := be.(QuantBackend); ok && qb.MatmulW8A8(a, w.q8, w.scales, dst, M, w.cols, w.rows) {
-			return
-		}
-		linalg.MatmulBTW8A8Into(ws, a, w.q8, w.scales, dst, M, w.cols, w.rows)
+		linalg.MatmulBTQ8(a, q8, scales, dst, M, w.Cols(), w.Rows())
 		return
 	}
-	w.matmul(be, a, dst, M)
+	f32, _ := w.F32()
+	be.MatmulBT(a, f32, dst, M, w.Cols(), w.Rows())
 }
 
-// embedRow writes row id (one token's embedding) into dst[:cols], dequantizing
-// on the fly when the table is quantized.
-func (w *weightMat) embedRow(id int, dst []float32) {
-	switch {
-	case w.q4 != nil:
-		bpr := (w.cols + 1) / 2
-		nGroups := (w.cols + w.group - 1) / w.group
-		linalg.DequantizeRowInt4(w.q4[id*bpr:(id+1)*bpr], w.q4s[id*nGroups:(id+1)*nGroups], w.group, w.cols, dst)
-	case w.q8 != nil:
-		lo := id * w.cols
-		linalg.DequantizeRowInt8(w.q8[lo:lo+w.cols], w.scales[id], dst)
-	default:
-		copy(dst, w.f32[id*w.cols:id*w.cols+w.cols])
+// matmulInto is matmul using a Workspace for the W8A8 path, so steady-state decode
+// quantizes the activation once into reusable scratch (no per-call allocation).
+// Other quant paths ignore ws and use matmul.
+func matmulInto(ws *linalg.Workspace, be Backend, w *linalg.WeightMat, a, dst []float32, M int) {
+	if isW8A8(w) {
+		q8, scales, _, _ := w.Int8()
+		if qb, ok := be.(QuantBackend); ok && qb.MatmulW8A8(a, q8, scales, dst, M, w.Cols(), w.Rows()) {
+			return
+		}
+		linalg.MatmulBTW8A8Into(ws, a, q8, scales, dst, M, w.Cols(), w.Rows())
+		return
 	}
+	matmul(be, w, a, dst, M)
 }

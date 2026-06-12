@@ -64,7 +64,7 @@ func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend) ([]fl
 
 	// Router logits → full softmax → top-k probabilities.
 	logits := make([]float32, nE)
-	lw.Router.matmul(be, h, logits, 1)
+	matmul(be, &lw.Router, h, logits, 1)
 	probs := softmaxF32(logits)
 	idx, wts := topK(probs, k)
 	if moe.NormTopKProb {
@@ -98,7 +98,7 @@ func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend) ([]fl
 	if moe.SharedIntermediateDim > 0 {
 		swiGLUExpert(&lw.SharedExpert, h, expOut, moe.SharedIntermediateDim, be)
 		var gl [1]float32
-		lw.SharedGate.matmul(be, h, gl[:], 1)
+		matmul(be, &lw.SharedGate, h, gl[:], 1)
 		g := float32(1.0 / (1.0 + math.Exp(-float64(gl[0])))) // sigmoid
 		for i := range out {
 			out[i] += g * expOut[i]
@@ -112,12 +112,12 @@ func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend) ([]fl
 func swiGLUExpert(ex *expertWeights, h, dst []float32, inter int, be Backend) {
 	gate := make([]float32, inter)
 	up := make([]float32, inter)
-	ex.Gate.matmul(be, h, gate, 1)
-	ex.Up.matmul(be, h, up, 1)
+	matmul(be, &ex.Gate, h, gate, 1)
+	matmul(be, &ex.Up, h, up, 1)
 	for i := range gate {
 		gate[i] = silu(gate[i]) * up[i]
 	}
-	ex.Down.matmul(be, gate, dst, 1)
+	matmul(be, &ex.Down, gate, dst, 1)
 }
 
 // softmaxF32 returns the softmax of xs (float64 accumulation, max-shifted for
@@ -174,7 +174,7 @@ func topK(xs []float32, k int) ([]int, []float32) {
 func nonGatedMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend) ([]float32, error) {
 	inter, hidden := arch.IntermediateDim, arch.HiddenDim
 	mid := make([]float32, inter)
-	lw.UpProj.matmul(be, h, mid, 1)
+	matmul(be, &lw.UpProj, h, mid, 1)
 	if lw.UpBias != nil {
 		addBias(mid, lw.UpBias)
 	}
@@ -187,7 +187,7 @@ func nonGatedMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend) 
 		return nil, fmt.Errorf("decoder: unsupported non-gated activation %d (have gelu-tanh)", arch.Act)
 	}
 	out := make([]float32, hidden)
-	lw.DownProj.matmul(be, mid, out, 1)
+	matmul(be, &lw.DownProj, mid, out, 1)
 	if lw.DownBias != nil {
 		addBias(out, lw.DownBias)
 	}
@@ -197,13 +197,13 @@ func nonGatedMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend) 
 // No biases on any projection.
 func gatedMLP(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend, scr *decodeScratch) error {
 	gate, up := scr.gate, scr.up // [inter] scratch; matmul fully overwrites each
-	if lw.GateProj.isW8A8() && lw.UpProj.isW8A8() {
-		scr.gateUpOps[0] = linalg.W8A8Op{BQ: lw.GateProj.q8, Scales: lw.GateProj.scales, Dst: gate, N: lw.GateProj.rows}
-		scr.gateUpOps[1] = linalg.W8A8Op{BQ: lw.UpProj.q8, Scales: lw.UpProj.scales, Dst: up, N: lw.UpProj.rows}
-		matmulW8A8Batch(be, scr.ws, h, 1, lw.GateProj.cols, scr.gateUpOps[:]) // gate/up in one dispatch (GPU: one submit)
+	if isW8A8(&lw.GateProj) && isW8A8(&lw.UpProj) {
+		scr.gateUpOps[0] = linalg.W8A8Op{BQ: wmInt8(&lw.GateProj), Scales: wmScales(&lw.GateProj), Dst: gate, N: lw.GateProj.Rows()}
+		scr.gateUpOps[1] = linalg.W8A8Op{BQ: wmInt8(&lw.UpProj), Scales: wmScales(&lw.UpProj), Dst: up, N: lw.UpProj.Rows()}
+		matmulW8A8Batch(be, scr.ws, h, 1, lw.GateProj.Cols(), scr.gateUpOps[:]) // gate/up in one dispatch (GPU: one submit)
 	} else {
-		lw.GateProj.matmulInto(scr.ws, be, h, gate, 1)
-		lw.UpProj.matmulInto(scr.ws, be, h, up, 1)
+		matmulInto(scr.ws, be, &lw.GateProj, h, gate, 1)
+		matmulInto(scr.ws, be, &lw.UpProj, h, up, 1)
 	}
 	switch arch.Act {
 	case ActGeluTanh:
@@ -217,6 +217,6 @@ func gatedMLP(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend
 	default:
 		return fmt.Errorf("decoder: unsupported activation %d (have GeGLU/SwiGLU)", arch.Act)
 	}
-	lw.DownProj.matmulInto(scr.ws, be, gate, out, 1) // [1,hidden] = mid · DownProjᵀ
+	matmulInto(scr.ws, be, &lw.DownProj, gate, out, 1) // [1,hidden] = mid · DownProjᵀ
 	return nil
 }

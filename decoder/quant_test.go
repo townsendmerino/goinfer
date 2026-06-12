@@ -35,15 +35,15 @@ func TestQuantInt8_accuracy(t *testing.T) {
 		t.Fatalf("Load int8: %v", err)
 	}
 	// The quantization must have replaced f32 with int8 (the memory win).
-	if m.w.Embed.f32 != nil || m.w.Embed.q8 == nil {
-		t.Fatalf("Embed not quantized: f32=%v q8=%v", m.w.Embed.f32 != nil, m.w.Embed.q8 != nil)
+	if m.w.Embed.Kind() == "f32" || m.w.Embed.Kind() != "int8" {
+		t.Fatalf("Embed not quantized: f32=%v q8=%v", m.w.Embed.Kind() == "f32", m.w.Embed.Kind() == "int8")
 	}
 
 	// Retained weight footprint: int8 codes + f32 scales vs the f32 originals.
 	var q8Bytes, f32Bytes int
 	for _, wm := range m.w.matmulWeights() {
-		n := wm.rows * wm.cols
-		q8Bytes += n + 4*wm.rows // int8 codes + per-row f32 scale
+		n := wm.Rows() * wm.Cols()
+		q8Bytes += n + 4*wm.Rows() // int8 codes + per-row f32 scale
 		f32Bytes += 4 * n
 	}
 	ratio := float64(f32Bytes) / float64(q8Bytes)
@@ -107,12 +107,12 @@ func TestQuantInt4_accuracy(t *testing.T) {
 	// The projections must be int4 (the bulk of the win); the embedding/tied head
 	// stays int8 (logit-critical — the embedding policy). Both must have freed f32.
 	gate := &m.w.Layers[0].GateProj
-	if gate.f32 != nil || gate.q4 == nil {
-		t.Fatalf("GateProj not int4: f32=%v q4=%v", gate.f32 != nil, gate.q4 != nil)
+	if gate.Kind() == "f32" || gate.Kind() != "int4" {
+		t.Fatalf("GateProj not int4: f32=%v q4=%v", gate.Kind() == "f32", gate.Kind() == "int4")
 	}
-	if m.w.Embed.f32 != nil || m.w.Embed.q8 == nil {
+	if m.w.Embed.Kind() == "f32" || m.w.Embed.Kind() != "int8" {
 		t.Fatalf("Embed not int8 (embedding policy): f32=%v q8=%v q4=%v",
-			m.w.Embed.f32 != nil, m.w.Embed.q8 != nil, m.w.Embed.q4 != nil)
+			m.w.Embed.Kind() == "f32", m.w.Embed.Kind() == "int8", m.w.Embed.Kind() == "int4")
 	}
 
 	// Retained footprint vs the f32 originals: int4 = packed nibbles + per-group
@@ -122,13 +122,13 @@ func TestQuantInt4_accuracy(t *testing.T) {
 	// and the ratio approaches int4's ~6.4×.
 	var qBytes, f32Bytes int
 	for _, wm := range m.w.matmulWeights() {
-		f32Bytes += 4 * wm.rows * wm.cols
+		f32Bytes += 4 * wm.Rows() * wm.Cols()
 		switch {
-		case wm.q4 != nil:
-			nGroups := (wm.cols + int4GroupSize - 1) / int4GroupSize
-			qBytes += wm.rows*((wm.cols+1)/2) + 4*wm.rows*nGroups
-		case wm.q8 != nil:
-			qBytes += wm.rows*wm.cols + 4*wm.rows
+		case wm.Kind() == "int4":
+			nGroups := (wm.Cols() + int4GroupSize - 1) / int4GroupSize
+			qBytes += wm.Rows()*((wm.Cols()+1)/2) + 4*wm.Rows()*nGroups
+		case wm.Kind() == "int8":
+			qBytes += wm.Rows()*wm.Cols() + 4*wm.Rows()
 		}
 	}
 	ratio := float64(f32Bytes) / float64(qBytes)
@@ -184,8 +184,8 @@ func TestQuantInt8I8_accuracy(t *testing.T) {
 		t.Fatalf("Load int8int8: %v", err)
 	}
 	// int8 weights stored, and the W8A8 matmul path selected.
-	if gate := &m.w.Layers[0].GateProj; gate.q8 == nil || !gate.w8a8 || gate.f32 != nil {
-		t.Fatalf("GateProj not W8A8 (q8=%v w8a8=%v f32=%v)", gate.q8 != nil, gate.w8a8, gate.f32 != nil)
+	if gate := &m.w.Layers[0].GateProj; gate.Kind() != "int8" || !tW8A8(gate) || gate.Kind() == "f32" {
+		t.Fatalf("GateProj not W8A8 (q8=%v w8a8=%v f32=%v)", gate.Kind() == "int8", tW8A8(gate), gate.Kind() == "f32")
 	}
 
 	cache := m.NewCache(len(g.IDs))

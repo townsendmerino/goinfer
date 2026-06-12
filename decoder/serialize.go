@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"github.com/townsendmerino/aikit/linalg"
 	"hash/crc32"
 	"math"
 	"unsafe"
@@ -190,14 +191,16 @@ func NewModel(w *Weights, backend string) (*Model, error) {
 // from the first non-empty weightMat (they are all quantized uniformly at load).
 func (w *Weights) quantMode() quantMode {
 	for _, m := range w.matmulWeights() {
-		switch {
-		case m.rows == 0:
+		if m.Rows() == 0 {
 			continue
-		case m.q4 != nil:
+		}
+		switch m.Kind() {
+		case "int4":
 			return quantInt4
-		case m.q8 != nil && m.w8a8:
-			return quantInt8I8
-		case m.q8 != nil:
+		case "int8":
+			if _, _, w8a8, _ := m.Int8(); w8a8 {
+				return quantInt8I8
+			}
 			return quantInt8
 		default:
 			return quantNone
@@ -230,38 +233,41 @@ func (w *giwWriter) i8(s []int8) {
 	}
 }
 
-func (w *giwWriter) weightMat(m *weightMat) {
-	if m.rows == 0 {
+func (w *giwWriter) weightMat(m *linalg.WeightMat) {
+	if m.Rows() == 0 {
 		w.buf = append(w.buf, 0) // empty
 		return
 	}
+	q4, q4s, group, isQ4 := m.Int4()
+	q8, scales, w8a8, isQ8 := m.Int8()
+	f32, _ := m.F32()
 	var kind byte
 	switch {
-	case m.q4 != nil:
+	case isQ4:
 		kind = 3
-	case m.q8 != nil:
+	case isQ8:
 		kind = 2
 	default:
 		kind = 1 // f32
 	}
 	w.buf = append(w.buf, kind)
-	w.u32(uint32(m.rows))
-	w.u32(uint32(m.cols))
-	w.u32(uint32(m.group))
-	if m.w8a8 {
+	w.u32(uint32(m.Rows()))
+	w.u32(uint32(m.Cols()))
+	w.u32(uint32(group)) // 0 unless int4
+	if w8a8 {
 		w.buf = append(w.buf, 1)
 	} else {
 		w.buf = append(w.buf, 0)
 	}
 	switch kind {
 	case 1:
-		w.f32(m.f32)
+		w.f32(f32)
 	case 2:
-		w.f32(m.scales)
-		w.i8(m.q8)
+		w.f32(scales)
+		w.i8(q8)
 	case 3:
-		w.f32(m.q4s)
-		w.bytesField(m.q4)
+		w.f32(q4s)
+		w.bytesField(q4)
 	}
 }
 
@@ -383,34 +389,36 @@ func (r *giwReader) rawAlias() []byte {
 	return b
 }
 
-func (r *giwReader) weightMat() weightMat {
+func (r *giwReader) weightMat() linalg.WeightMat {
 	if !r.need(1) {
-		return weightMat{}
+		return linalg.WeightMat{}
 	}
 	kind := r.data[r.off]
 	r.off++
 	if kind == 0 {
-		return weightMat{}
+		return linalg.WeightMat{}
 	}
-	m := weightMat{rows: int(r.u32()), cols: int(r.u32()), group: int(r.u32())}
+	rows, cols, group := int(r.u32()), int(r.u32()), int(r.u32())
 	if !r.need(1) {
-		return weightMat{}
+		return linalg.WeightMat{}
 	}
-	m.w8a8 = r.data[r.off] == 1
+	w8a8 := r.data[r.off] == 1
 	r.off++
 	switch kind {
 	case 1:
-		m.f32 = r.f32()
+		return linalg.WrapF32(r.f32(), rows, cols)
 	case 2:
-		m.scales = r.f32()
-		m.q8 = r.i8()
+		scales := r.f32() // read order matches the writer (scales, then codes)
+		q8 := r.i8()
+		return linalg.WrapInt8(q8, scales, rows, cols, w8a8)
 	case 3:
-		m.q4s = r.f32()
-		m.q4 = r.rawAlias()
+		q4s := r.f32()
+		q4 := r.rawAlias() // zero-copy alias into the mmap'd blob (WrapInt4 keeps it)
+		return linalg.WrapInt4(q4, q4s, rows, cols, group)
 	default:
 		r.fail(fmt.Sprintf("unknown weightMat kind %d", kind))
+		return linalg.WeightMat{}
 	}
-	return m
 }
 
 func (r *giwReader) layer(l *LayerWeights) {

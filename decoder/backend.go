@@ -29,7 +29,7 @@ type Backend interface {
 }
 
 // QuantBackend is an optional Backend extension: a backend that can run the
-// int8×int8 (W8A8) weight matmul on-device. weightMat type-asserts for it and
+// int8×int8 (W8A8) weight matmul on-device. linalg.WeightMat type-asserts for it and
 // routes the W8A8 path through it — keeping the weight resident, keyed by the q8
 // slice's backing pointer — falling back to the CPU kernel when the backend
 // doesn't implement it or a call declines (returns false on any GPU error, so

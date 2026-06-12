@@ -18,7 +18,7 @@ func (m *Model) canBatchN(K int) bool {
 	// Gemma 4 (per-layer head_dim, KV-sharing, PLE) and qwen3_5_moe (Gated DeltaNet
 	// linear attention — NOT plain GQA, so attendBatchedHeads doesn't apply) each
 	// have their own sequential forward; exclude both.
-	return K > 1 && m.w.Embed.rows != 0 && !a.NonGatedMLP && !a.LearnedPosEmbed && a.gemma4 == nil && a.qwen35 == nil
+	return K > 1 && m.w.Embed.Rows() != 0 && !a.NonGatedMLP && !a.LearnedPosEmbed && a.gemma4 == nil && a.qwen35 == nil
 }
 
 // forwardLayersN runs the embedding + all transformer layers + final norm over
@@ -39,7 +39,7 @@ func (m *Model) embedN(ids []int) []float32 {
 	hidden := arch.HiddenDim
 	h := make([]float32, len(ids)*hidden)
 	for i, id := range ids {
-		m.w.Embed.embedRow(id, h[i*hidden:i*hidden+hidden])
+		m.w.Embed.Row(id, h[i*hidden:i*hidden+hidden])
 	}
 	if arch.EmbedScale != 0 && arch.EmbedScale != 1 {
 		s := float32(arch.EmbedScale)
@@ -107,15 +107,15 @@ func (m *Model) runLayersFromEmbedN(h []float32, cache *KVCache) ([]float32, err
 		for i := range K {
 			normalize(arch, row(norm, i, hidden), lw.PreAttnNorm, lw.PreAttnNormBias, hidden)
 		}
-		if lw.QProj.isW8A8() && lw.KProj.isW8A8() && lw.VProj.isW8A8() {
-			qkvOps[0] = linalg.W8A8Op{BQ: lw.QProj.q8, Scales: lw.QProj.scales, Dst: q, N: lw.QProj.rows}
-			qkvOps[1] = linalg.W8A8Op{BQ: lw.KProj.q8, Scales: lw.KProj.scales, Dst: k, N: lw.KProj.rows}
-			qkvOps[2] = linalg.W8A8Op{BQ: lw.VProj.q8, Scales: lw.VProj.scales, Dst: v, N: lw.VProj.rows}
-			matmulW8A8Batch(be, &ws, norm, K, lw.QProj.cols, qkvOps[:])
+		if isW8A8(&lw.QProj) && isW8A8(&lw.KProj) && isW8A8(&lw.VProj) {
+			qkvOps[0] = linalg.W8A8Op{BQ: wmInt8(&lw.QProj), Scales: wmScales(&lw.QProj), Dst: q, N: lw.QProj.Rows()}
+			qkvOps[1] = linalg.W8A8Op{BQ: wmInt8(&lw.KProj), Scales: wmScales(&lw.KProj), Dst: k, N: lw.KProj.Rows()}
+			qkvOps[2] = linalg.W8A8Op{BQ: wmInt8(&lw.VProj), Scales: wmScales(&lw.VProj), Dst: v, N: lw.VProj.Rows()}
+			matmulW8A8Batch(be, &ws, norm, K, lw.QProj.Cols(), qkvOps[:])
 		} else {
-			lw.QProj.matmul(be, norm, q, K)
-			lw.KProj.matmul(be, norm, k, K)
-			lw.VProj.matmul(be, norm, v, K)
+			matmul(be, &lw.QProj, norm, q, K)
+			matmul(be, &lw.KProj, norm, k, K)
+			matmul(be, &lw.VProj, norm, v, K)
 		}
 		if arch.QKVBias {
 			for i := range K {
@@ -160,7 +160,7 @@ func (m *Model) runLayersFromEmbedN(h []float32, cache *KVCache) ([]float32, err
 		} else {
 			attendBatchedHeads(q, ctx, cache.Keys(l), cache.Vals(l), 0, cache, l, startPos, K, global, arch, arch.MoE != nil, aqh, akh, avt, ascores, ach)
 		}
-		lw.OProj.matmul(be, ctx, att, K)
+		matmul(be, &lw.OProj, ctx, att, K)
 		if arch.OutBias {
 			for i := range K {
 				addBias(row(att, i, hidden), lw.OBias)
@@ -199,13 +199,13 @@ func (m *Model) runLayersFromEmbedN(h []float32, cache *KVCache) ([]float32, err
 			}
 			continue
 		}
-		if lw.GateProj.isW8A8() && lw.UpProj.isW8A8() {
-			guOps[0] = linalg.W8A8Op{BQ: lw.GateProj.q8, Scales: lw.GateProj.scales, Dst: gate, N: lw.GateProj.rows}
-			guOps[1] = linalg.W8A8Op{BQ: lw.UpProj.q8, Scales: lw.UpProj.scales, Dst: up, N: lw.UpProj.rows}
-			matmulW8A8Batch(be, &ws, norm, K, lw.GateProj.cols, guOps[:])
+		if isW8A8(&lw.GateProj) && isW8A8(&lw.UpProj) {
+			guOps[0] = linalg.W8A8Op{BQ: wmInt8(&lw.GateProj), Scales: wmScales(&lw.GateProj), Dst: gate, N: lw.GateProj.Rows()}
+			guOps[1] = linalg.W8A8Op{BQ: wmInt8(&lw.UpProj), Scales: wmScales(&lw.UpProj), Dst: up, N: lw.UpProj.Rows()}
+			matmulW8A8Batch(be, &ws, norm, K, lw.GateProj.Cols(), guOps[:])
 		} else {
-			lw.GateProj.matmul(be, norm, gate, K)
-			lw.UpProj.matmul(be, norm, up, K)
+			matmul(be, &lw.GateProj, norm, gate, K)
+			matmul(be, &lw.UpProj, norm, up, K)
 		}
 		switch arch.Act {
 		case ActGeluTanh:
@@ -219,7 +219,7 @@ func (m *Model) runLayersFromEmbedN(h []float32, cache *KVCache) ([]float32, err
 		default:
 			return nil, errNotImplemented
 		}
-		lw.DownProj.matmul(be, gate, mlpOut, K)
+		matmul(be, &lw.DownProj, gate, mlpOut, K)
 		if sandwich {
 			for i := range K {
 				normalize(arch, row(mlpOut, i, hidden), lw.PostMLPNorm, nil, hidden)
@@ -358,9 +358,9 @@ func (m *Model) lmHeadN(h []float32, M int) []float32 {
 	arch := m.w.arch
 	logits := make([]float32, M*arch.VocabSize)
 	if arch.TiedLMHead {
-		m.w.Embed.matmul(m.be, h, logits, M)
+		matmul(m.be, &m.w.Embed, h, logits, M)
 	} else {
-		m.w.LMHead.matmul(m.be, h, logits, M)
+		matmul(m.be, &m.w.LMHead, h, logits, M)
 	}
 	if arch.FinalLogitSoftcap > 0 {
 		sc := float32(arch.FinalLogitSoftcap)

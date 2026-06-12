@@ -15,7 +15,7 @@ func (m *Model) runLayersQwen35(id int, cache *KVCache) ([]float32, error) {
 	pos := cache.Pos() // this token's absolute position (stable; Advance() at the end)
 
 	h := make([]float32, hidden)
-	m.w.Embed.embedRow(id, h) // no embedding scale for qwen3_5_moe
+	m.w.Embed.Row(id, h) // no embedding scale for qwen3_5_moe
 
 	for l := 0; l < arch.NumLayers; l++ {
 		lw := &m.w.Layers[l]

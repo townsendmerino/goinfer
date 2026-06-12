@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/townsendmerino/aikit/embed"
+	"github.com/townsendmerino/aikit/linalg"
 )
 
 // LayerWeights bundles one decoder block's tensors. Matrices follow
@@ -21,11 +22,11 @@ import (
 // pre- AND post-norms on both the attention and MLP sub-blocks, and
 // optional QK-norm weights.
 type LayerWeights struct {
-	// Attention projections (matmul'd → weightMat, quantizable).
-	QProj weightMat // [NumHeads*HeadDim, HiddenDim]
-	KProj weightMat // [NumKVHeads*HeadDim, HiddenDim]
-	VProj weightMat // [NumKVHeads*HeadDim, HiddenDim]
-	OProj weightMat // [HiddenDim, NumHeads*HeadDim]
+	// Attention projections (matmul'd → linalg.WeightMat, quantizable).
+	QProj linalg.WeightMat // [NumHeads*HeadDim, HiddenDim]
+	KProj linalg.WeightMat // [NumKVHeads*HeadDim, HiddenDim]
+	VProj linalg.WeightMat // [NumKVHeads*HeadDim, HiddenDim]
+	OProj linalg.WeightMat // [HiddenDim, NumHeads*HeadDim]
 	// Projection biases ([out]; Qwen2 q/k/v only). Nil when the family/checkpoint
 	// has no bias.
 	QBias []float32 // [NumHeads*HeadDim]
@@ -42,34 +43,34 @@ type LayerWeights struct {
 
 	// MLP: projections quantizable, norms f32. UpBias/DownBias are set only for
 	// the non-gated MLP (GPT-2 c_fc/c_proj); gated families leave them nil.
-	GateProj       weightMat // [IntermediateDim, HiddenDim] (unused for non-gated MLP)
-	UpProj         weightMat // [IntermediateDim, HiddenDim]
-	UpBias         []float32 // [IntermediateDim] (GPT-2 c_fc bias)
-	DownProj       weightMat // [HiddenDim, IntermediateDim]
-	DownBias       []float32 // [HiddenDim] (GPT-2 c_proj bias)
-	PreMLPNorm     []float32 // [HiddenDim]
-	PreMLPNormBias []float32 // [HiddenDim] LayerNorm bias (GPT-2 ln_2)
-	PostMLPNorm    []float32 // [HiddenDim]
+	GateProj       linalg.WeightMat // [IntermediateDim, HiddenDim] (unused for non-gated MLP)
+	UpProj         linalg.WeightMat // [IntermediateDim, HiddenDim]
+	UpBias         []float32        // [IntermediateDim] (GPT-2 c_fc bias)
+	DownProj       linalg.WeightMat // [HiddenDim, IntermediateDim]
+	DownBias       []float32        // [HiddenDim] (GPT-2 c_proj bias)
+	PreMLPNorm     []float32        // [HiddenDim]
+	PreMLPNormBias []float32        // [HiddenDim] LayerNorm bias (GPT-2 ln_2)
+	PostMLPNorm    []float32        // [HiddenDim]
 
 	// Mixture-of-experts FFN (Mixtral; set only when arch.MoE != nil). Router
 	// scores experts; each expert is a gated (SwiGLU) MLP. The dense GateProj/
 	// UpProj/DownProj above are unused in that case.
-	Router  weightMat       // [NumExperts, HiddenDim] router/gate logits
-	Experts []expertWeights // [NumExperts] gated MLPs
+	Router  linalg.WeightMat // [NumExperts, HiddenDim] router/gate logits
+	Experts []expertWeights  // [NumExperts] gated MLPs
 
 	// Shared expert (Qwen-MoE / Qwen2-MoE; set when arch.MoE.SharedIntermediateDim
 	// > 0). An always-on gated MLP scaled by sigmoid(SharedGate·h).
-	SharedExpert expertWeights // gated SwiGLU MLP at SharedIntermediateDim
-	SharedGate   weightMat     // [1, HiddenDim] → sigmoid scalar gate
+	SharedExpert expertWeights    // gated SwiGLU MLP at SharedIntermediateDim
+	SharedGate   linalg.WeightMat // [1, HiddenDim] → sigmoid scalar gate
 
 	// Gemma 4 per-layer extras (zero for every other family). The PLE branch runs
 	// after the MLP residual: gate→gelu→×per-layer-embedding→proj→norm→+residual.
-	PLEGate     weightMat // [HiddenSizePerLayerInput, HiddenDim] (GGUF inp_gate)
-	PLEProj     weightMat // [HiddenDim, HiddenSizePerLayerInput] (GGUF proj)
-	PostPLENorm []float32 // [HiddenDim] post_per_layer_input_norm (GGUF post_norm)
-	LayerScalar float32   // per-layer output scalar (GGUF layer_output_scale); 1 if absent
-	KVShared    bool      // carries no k/v and reuses an earlier layer's KV (Gemma 4 E-models)
-	VFromK      bool      // attention_k_eq_v: no v_proj — V is v_norm(k_proj output) (Gemma 4 12B global layers)
+	PLEGate     linalg.WeightMat // [HiddenSizePerLayerInput, HiddenDim] (GGUF inp_gate)
+	PLEProj     linalg.WeightMat // [HiddenDim, HiddenSizePerLayerInput] (GGUF proj)
+	PostPLENorm []float32        // [HiddenDim] post_per_layer_input_norm (GGUF post_norm)
+	LayerScalar float32          // per-layer output scalar (GGUF layer_output_scale); 1 if absent
+	KVShared    bool             // carries no k/v and reuses an earlier layer's KV (Gemma 4 E-models)
+	VFromK      bool             // attention_k_eq_v: no v_proj — V is v_norm(k_proj output) (Gemma 4 12B global layers)
 
 	// qwen3_5_moe per-layer attention. Exactly one is set on the hybrid's layers:
 	// delta on the Gated DeltaNet (linear) layers, qattn on the softmax layers.
@@ -94,9 +95,9 @@ type qwenAttnWeights struct {
 // expertWeights is one MoE expert: a gated (SwiGLU) MLP with no biases.
 // Mixtral names these w1=gate, w3=up, w2=down.
 type expertWeights struct {
-	Gate weightMat // [IntermediateDim, HiddenDim] (w1)
-	Up   weightMat // [IntermediateDim, HiddenDim] (w3)
-	Down weightMat // [HiddenDim, IntermediateDim] (w2)
+	Gate linalg.WeightMat // [IntermediateDim, HiddenDim] (w1)
+	Up   linalg.WeightMat // [IntermediateDim, HiddenDim] (w3)
+	Down linalg.WeightMat // [HiddenDim, IntermediateDim] (w2)
 }
 
 // Weights is the immutable per-checkpoint bundle. Embeddings are TIED:
@@ -104,20 +105,20 @@ type expertWeights struct {
 // separate output projection tensor.
 type Weights struct {
 	Cfg           Config
-	arch          *Architecture // resolved descriptor the forward pass reads
-	Embed         weightMat     // [VocabSize, HiddenDim] — input embedding (AND tied LM head when LMHead unset)
-	LMHead        weightMat     // [VocabSize, HiddenDim] — separate output head (untied families); zero value when tied
-	PosEmbed      weightMat     // [MaxPositions, HiddenDim] — learned position embedding (GPT-2); zero value otherwise
-	FinalNorm     []float32     // [HiddenDim] final norm before the LM head
-	FinalNormBias []float32     // [HiddenDim] final LayerNorm bias (GPT-2 ln_f)
+	arch          *Architecture    // resolved descriptor the forward pass reads
+	Embed         linalg.WeightMat // [VocabSize, HiddenDim] — input embedding (AND tied LM head when LMHead unset)
+	LMHead        linalg.WeightMat // [VocabSize, HiddenDim] — separate output head (untied families); zero value when tied
+	PosEmbed      linalg.WeightMat // [MaxPositions, HiddenDim] — learned position embedding (GPT-2); zero value otherwise
+	FinalNorm     []float32        // [HiddenDim] final norm before the LM head
+	FinalNormBias []float32        // [HiddenDim] final LayerNorm bias (GPT-2 ln_f)
 	Layers        []LayerWeights
 
 	// Gemma 4 PLE inputs (zero for every other family). The per-layer input is
 	// (token_identity + context_aware)/√2: token_identity from PerLayerTokenEmbed,
 	// context_aware from PerLayerModelProj normed by PerLayerProjNorm.
-	PerLayerTokenEmbed weightMat // [VocabSize, NumLayers*HiddenSizePerLayerInput] (per_layer_token_embd)
-	PerLayerModelProj  weightMat // [NumLayers*HiddenSizePerLayerInput, HiddenDim] (per_layer_model_proj)
-	PerLayerProjNorm   []float32 // [HiddenSizePerLayerInput] (per_layer_proj_norm)
+	PerLayerTokenEmbed linalg.WeightMat // [VocabSize, NumLayers*HiddenSizePerLayerInput] (per_layer_token_embd)
+	PerLayerModelProj  linalg.WeightMat // [NumLayers*HiddenSizePerLayerInput, HiddenDim] (per_layer_model_proj)
+	PerLayerProjNorm   []float32        // [HiddenSizePerLayerInput] (per_layer_proj_norm)
 
 	st      *embed.SafetensorsFile // retained so alias-backed slices stay valid
 	backing []byte                 // serialized-weights blob aliased by q8/q4 arrays (LoadSerializedWeights); keeps it reachable
@@ -125,29 +126,29 @@ type Weights struct {
 
 // matmulWeights returns every quantizable matrix in the bundle (the projections,
 // the embedding, and the untied head if present); norms stay f32.
-func (w *Weights) matmulWeights() []*weightMat {
-	ms := []*weightMat{&w.Embed}
-	if w.LMHead.rows > 0 {
+func (w *Weights) matmulWeights() []*linalg.WeightMat {
+	ms := []*linalg.WeightMat{&w.Embed}
+	if w.LMHead.Rows() > 0 {
 		ms = append(ms, &w.LMHead)
 	}
 	for i := range w.Layers {
 		l := &w.Layers[i]
 		ms = append(ms, &l.QProj, &l.KProj, &l.VProj, &l.OProj, &l.GateProj, &l.UpProj, &l.DownProj)
-		if l.Router.rows > 0 {
+		if l.Router.Rows() > 0 {
 			ms = append(ms, &l.Router)
 		}
 		for e := range l.Experts {
 			ex := &l.Experts[e]
 			ms = append(ms, &ex.Gate, &ex.Up, &ex.Down)
 		}
-		if l.SharedExpert.Gate.rows > 0 {
+		if l.SharedExpert.Gate.Rows() > 0 {
 			ms = append(ms, &l.SharedExpert.Gate, &l.SharedExpert.Up, &l.SharedExpert.Down, &l.SharedGate)
 		}
-		if l.PLEGate.rows > 0 { // Gemma 4 PLE branch
+		if l.PLEGate.Rows() > 0 { // Gemma 4 PLE branch
 			ms = append(ms, &l.PLEGate, &l.PLEProj)
 		}
 	}
-	if w.PerLayerTokenEmbed.rows > 0 { // Gemma 4 model-level PLE inputs
+	if w.PerLayerTokenEmbed.Rows() > 0 { // Gemma 4 model-level PLE inputs
 		ms = append(ms, &w.PerLayerTokenEmbed, &w.PerLayerModelProj)
 	}
 	return ms
@@ -170,7 +171,7 @@ func (w *Weights) matmulWeights() []*weightMat {
 func LoadWeights(dir string) (*Weights, error) { return loadWeights(dir, quantNone, nil) }
 
 // parallelLayers runs fn over the n layer indices across a worker pool, so the
-// per-tensor dequant + re-quant (independent per layer — distinct weightMat
+// per-tensor dequant + re-quant (independent per layer — distinct linalg.WeightMat
 // slots, read-only source) fans out across cores. The first error stops further
 // work and is returned. Transient memory scales with the worker count (each
 // in-flight layer briefly holds its dequantized f32); GOMAXPROCS workers on a
@@ -382,10 +383,10 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 	// loadMatQ loads a matmul weight and quantizes it immediately (the
 	// streaming-quant memory win). Used for tensors that aren't LoRA targets
 	// (MoE experts, router); the LoRA-mergeable projections go through loadProj.
-	loadMatQ := func(name string, rows, cols int) (weightMat, error) {
+	loadMatQ := func(name string, rows, cols int) (linalg.WeightMat, error) {
 		m, merr := loadMat(st, name, rows, cols)
 		if merr == nil {
-			m.quantize(quant)
+			m = quantizeWM(m, quant)
 		}
 		return m, merr
 	}
@@ -394,7 +395,7 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 	// load — merges any LoRA delta into it, then quantizes to the requested
 	// resident format (freeing the f32 before the next tensor; the streaming-quant
 	// memory win). The LoRA merge must happen here, on the f32, before quantization.
-	loadProj := func(name string, out, in int) (weightMat, error) {
+	loadProj := func(name string, out, in int) (linalg.WeightMat, error) {
 		var data []float32
 		var derr error
 		switch {
@@ -411,13 +412,13 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 			data, derr = gptqReconstruct(st, strings.TrimSuffix(name, ".weight"), in, out)
 		}
 		if derr != nil {
-			return weightMat{}, derr
+			return linalg.WeightMat{}, derr
 		}
 		if derr = lora.merge(name, data, out, in); derr != nil {
-			return weightMat{}, derr
+			return linalg.WeightMat{}, derr
 		}
-		m := newWeightMat(data, out, in)
-		m.quantize(quant)
+		m := linalg.WrapF32(data, out, in)
+		m = quantizeWM(m, quant)
 		return m, nil
 	}
 
@@ -427,7 +428,7 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 	if w.Embed, err = loadMat(st, mp(s.Embed), cfg.VocabSize, hd); err != nil {
 		return nil, err
 	}
-	w.Embed.quantize(quant.embedding())
+	w.Embed = quantizeWM(w.Embed, quant.embedding())
 	if w.FinalNorm, err = st.TensorF32(mp(s.FinalNorm), hd); err != nil {
 		return nil, err
 	}
@@ -437,7 +438,7 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 	arch.TiedLMHead = true
 	if s.LMHead != "" {
 		if head, herr := loadMat(st, s.LMHead, cfg.VocabSize, hd); herr == nil {
-			head.quantize(quant.embedding())
+			head = quantizeWM(head, quant.embedding())
 			w.LMHead = head
 			arch.TiedLMHead = false
 		}
@@ -669,12 +670,12 @@ func loadFusedExperts(st *embed.SafetensorsFile, gateUpName, downName string, nE
 	for e := range experts {
 		guE := gu[e*guStride : (e+1)*guStride]
 		dnE := down[e*downStride : (e+1)*downStride]
-		gate := newWeightMat(append([]float32(nil), guE[:half]...), inter, hidden)
-		up := newWeightMat(append([]float32(nil), guE[half:]...), inter, hidden)
-		dn := newWeightMat(append([]float32(nil), dnE...), hidden, inter)
-		gate.quantize(quant)
-		up.quantize(quant)
-		dn.quantize(quant)
+		gate := linalg.WrapF32(append([]float32(nil), guE[:half]...), inter, hidden)
+		up := linalg.WrapF32(append([]float32(nil), guE[half:]...), inter, hidden)
+		dn := linalg.WrapF32(append([]float32(nil), dnE...), hidden, inter)
+		gate = quantizeWM(gate, quant)
+		up = quantizeWM(up, quant)
+		dn = quantizeWM(dn, quant)
 		experts[e] = expertWeights{Gate: gate, Up: up, Down: dn}
 	}
 	return experts, nil
@@ -682,13 +683,13 @@ func loadFusedExperts(st *embed.SafetensorsFile, gateUpName, downName string, nE
 
 // loadMat loads + shape-validates a [rows, cols] matrix (via the aikit
 // embed.SafetensorsFile.TensorF32 typed read — F32/BF16/F16 dispatch + shape
-// check) and wraps it as a (f32) weightMat ready for matmul/quantization.
-func loadMat(st *embed.SafetensorsFile, name string, rows, cols int) (weightMat, error) {
+// check) and wraps it as a (f32) linalg.WeightMat ready for matmul/quantization.
+func loadMat(st *embed.SafetensorsFile, name string, rows, cols int) (linalg.WeightMat, error) {
 	data, err := st.TensorF32(name, rows, cols)
 	if err != nil {
-		return weightMat{}, err
+		return linalg.WeightMat{}, err
 	}
-	return newWeightMat(data, rows, cols), nil
+	return linalg.WrapF32(data, rows, cols), nil
 }
 
 // tensorName returns the HF safetensors key for a per-layer tensor. Kept in
@@ -955,8 +956,8 @@ func buildGPT2Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile
 	// freeing its f32 (see loadWeights). The Conv1D projections are built with
 	// newWeightMat (post-transpose), so the quantization is applied here rather
 	// than in a loader closure.
-	maybeQuant := func(m weightMat) weightMat {
-		m.quantize(quant)
+	maybeQuant := func(m linalg.WeightMat) linalg.WeightMat {
+		m = quantizeWM(m, quant)
 		return m
 	}
 
@@ -967,7 +968,7 @@ func buildGPT2Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile
 	if w.Embed, err = loadMat(st, "wte.weight", vocab, hidden); err != nil {
 		return nil, err
 	}
-	w.Embed.quantize(quant.embedding())
+	w.Embed = quantizeWM(w.Embed, quant.embedding())
 	if w.PosEmbed, err = loadMat(st, "wpe.weight", arch.MaxPositions, hidden); err != nil {
 		return nil, err
 	}
@@ -997,9 +998,9 @@ func buildGPT2Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile
 		if cerr != nil {
 			return nil, cerr
 		}
-		l.QProj = maybeQuant(newWeightMat(qkv[0:hidden*hidden], hidden, hidden))
-		l.KProj = maybeQuant(newWeightMat(qkv[hidden*hidden:2*hidden*hidden], hidden, hidden))
-		l.VProj = maybeQuant(newWeightMat(qkv[2*hidden*hidden:3*hidden*hidden], hidden, hidden))
+		l.QProj = maybeQuant(linalg.WrapF32(qkv[0:hidden*hidden], hidden, hidden))
+		l.KProj = maybeQuant(linalg.WrapF32(qkv[hidden*hidden:2*hidden*hidden], hidden, hidden))
+		l.VProj = maybeQuant(linalg.WrapF32(qkv[2*hidden*hidden:3*hidden*hidden], hidden, hidden))
 		qkvB, berr := st.TensorF32(p+"attn.c_attn.bias", 3*hidden)
 		if berr != nil {
 			return nil, berr
@@ -1011,7 +1012,7 @@ func buildGPT2Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile
 		if oerr != nil {
 			return nil, oerr
 		}
-		l.OProj = maybeQuant(newWeightMat(oData, hidden, hidden))
+		l.OProj = maybeQuant(linalg.WrapF32(oData, hidden, hidden))
 		if l.OBias, err = st.TensorF32(p+"attn.c_proj.bias", hidden); err != nil {
 			return nil, err
 		}
@@ -1030,7 +1031,7 @@ func buildGPT2Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile
 		if uerr != nil {
 			return nil, uerr
 		}
-		l.UpProj = maybeQuant(newWeightMat(upData, inter, hidden))
+		l.UpProj = maybeQuant(linalg.WrapF32(upData, inter, hidden))
 		if l.UpBias, err = st.TensorF32(p+"mlp.c_fc.bias", inter); err != nil {
 			return nil, err
 		}
@@ -1038,7 +1039,7 @@ func buildGPT2Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile
 		if derr != nil {
 			return nil, derr
 		}
-		l.DownProj = maybeQuant(newWeightMat(downData, hidden, inter))
+		l.DownProj = maybeQuant(linalg.WrapF32(downData, hidden, inter))
 		if l.DownBias, err = st.TensorF32(p+"mlp.c_proj.bias", hidden); err != nil {
 			return nil, err
 		}

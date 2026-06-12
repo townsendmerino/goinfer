@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"github.com/townsendmerino/aikit/linalg"
 	"math/rand"
 	"testing"
 )
@@ -22,19 +23,19 @@ func TestMatmulInt4_MConsistent(t *testing.T) {
 		}
 		return s
 	}
-	w := weightMat{rows: rows, cols: cols, f32: uni(rows * cols)}
-	w.quantize(quantInt4)
-	if w.q4 == nil {
+	w := linalg.WrapF32(uni(rows*cols), rows, cols)
+	w = quantizeWM(w, quantInt4)
+	if w.Kind() != "int4" {
 		t.Fatal("weights did not quantize to int4")
 	}
 
 	a := uni(K * cols)
 	prefill := make([]float32, K*rows)
-	w.matmul(nil, a, prefill, K) // M=K (int4 path doesn't touch the backend)
+	matmul(nil, &w, a, prefill, K) // M=K (int4 path doesn't touch the backend)
 
 	for i := range K {
 		decode := make([]float32, rows)
-		w.matmul(nil, a[i*cols:(i+1)*cols], decode, 1) // M=1
+		matmul(nil, &w, a[i*cols:(i+1)*cols], decode, 1) // M=1
 		for j := range rows {
 			if prefill[i*rows+j] != decode[j] {
 				t.Fatalf("row %d out %d: prefill(M=%d)=%v != decode(M=1)=%v — int4 matmul not M-consistent",

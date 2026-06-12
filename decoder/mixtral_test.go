@@ -58,8 +58,8 @@ func TestMixtral_forwardParity(t *testing.T) {
 	if got := len(m.w.Layers[0].Experts); got != 8 {
 		t.Fatalf("layer 0 loaded %d experts, want 8", got)
 	}
-	if m.w.Layers[0].Router.rows != 8 {
-		t.Fatalf("router rows = %d, want 8", m.w.Layers[0].Router.rows)
+	if m.w.Layers[0].Router.Rows() != 8 {
+		t.Fatalf("router rows = %d, want 8", m.w.Layers[0].Router.Rows())
 	}
 
 	cache := m.NewCache(len(g.IDs))

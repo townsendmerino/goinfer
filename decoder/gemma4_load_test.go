@@ -107,10 +107,10 @@ func TestGemma4Load(t *testing.T) {
 	if w.Layers[0].KVShared {
 		t.Error("layer 0 should not be KV-shared")
 	}
-	if w.Layers[0].KProj.rows == 0 || w.Layers[0].VProj.rows == 0 {
+	if w.Layers[0].KProj.Rows() == 0 || w.Layers[0].VProj.Rows() == 0 {
 		t.Error("layer 0 missing K/V projection")
 	}
-	if w.Layers[0].PLEGate.rows == 0 || w.Layers[0].PLEProj.rows == 0 {
+	if w.Layers[0].PLEGate.Rows() == 0 || w.Layers[0].PLEProj.Rows() == 0 {
 		t.Error("layer 0 missing PLE gate/proj")
 	}
 	if w.Layers[0].PostPLENorm == nil || w.Layers[0].LayerScalar == 0 {
@@ -120,19 +120,19 @@ func TestGemma4Load(t *testing.T) {
 	if !w.Layers[20].KVShared {
 		t.Error("layer 20 should be KV-shared")
 	}
-	if w.Layers[20].KProj.rows != 0 || w.Layers[20].VProj.rows != 0 {
+	if w.Layers[20].KProj.Rows() != 0 || w.Layers[20].VProj.Rows() != 0 {
 		t.Error("layer 20 (KV-shared) should carry no K/V")
 	}
-	if w.Layers[20].QProj.rows == 0 {
+	if w.Layers[20].QProj.Rows() == 0 {
 		t.Error("layer 20 still needs its own Q")
 	}
 	// Model-level PLE inputs.
-	if w.PerLayerTokenEmbed.rows == 0 || w.PerLayerModelProj.rows == 0 {
+	if w.PerLayerTokenEmbed.Rows() == 0 || w.PerLayerModelProj.Rows() == 0 {
 		t.Error("missing model-level PLE tensors")
 	}
 	if len(w.PerLayerProjNorm) != 256 {
 		t.Errorf("PerLayerProjNorm len = %d, want 256", len(w.PerLayerProjNorm))
 	}
 	t.Logf("loaded E2B int4: 35 layers; layer0 KProj rows=%d PLEGate rows=%d scalar=%.3f; layer20 KVShared=%v",
-		w.Layers[0].KProj.rows, w.Layers[0].PLEGate.rows, w.Layers[0].LayerScalar, w.Layers[20].KVShared)
+		w.Layers[0].KProj.Rows(), w.Layers[0].PLEGate.Rows(), w.Layers[0].LayerScalar, w.Layers[20].KVShared)
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/townsendmerino/aikit/embed"
+	"github.com/townsendmerino/aikit/linalg"
 )
 
 // GGUF loading — read a quantized llama.cpp checkpoint and
@@ -506,32 +507,32 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 	hidden, hd := arch.HiddenDim, arch.HeadDim
 	w := &Weights{Cfg: *cfg, arch: arch, Layers: make([]LayerWeights, arch.NumLayers)}
 
-	// streamMat builds a [out, in] weightMat by streaming the tensor's rows through
+	// streamMat builds a [out, in] linalg.WeightMat by streaming the tensor's rows through
 	// the GGUF dequantizer and quantizing each row directly into the resident
 	// arrays — no whole-tensor f32 intermediate (see streamQuantized). rowSrc maps
 	// a destination row index to its source element offset in the tensor (identity
 	// for a plain load; a permutation for the RoPE-permuted q/k projections).
-	streamMat := func(name string, out, in int, mode quantMode, rowSrc func(r int) int) (weightMat, error) {
+	streamMat := func(name string, out, in int, mode quantMode, rowSrc func(r int) int) (linalg.WeightMat, error) {
 		dims, into, err := g.RowDequantizer(name)
 		if err != nil {
-			return weightMat{}, err
+			return linalg.WeightMat{}, err
 		}
 		if len(dims) != 2 || dims[0] != in || dims[1] != out {
-			return weightMat{}, fmt.Errorf("decoder(gguf): %q dims %v, want [in=%d, out=%d]", name, dims, in, out)
+			return linalg.WeightMat{}, fmt.Errorf("decoder(gguf): %q dims %v, want [in=%d, out=%d]", name, dims, in, out)
 		}
 		return streamQuantized(out, in, mode, func(r int, dst []float32) error {
 			return into(rowSrc(r), dst)
 		})
 	}
-	// mat loads a tensor as a [out, in] weightMat, shape-checked, quantized when
+	// mat loads a tensor as a [out, in] linalg.WeightMat, shape-checked, quantized when
 	// requested.
-	mat := func(name string, out, in int) (weightMat, error) {
+	mat := func(name string, out, in int) (linalg.WeightMat, error) {
 		return streamMat(name, out, in, quant, func(r int) int { return r * in })
 	}
 	// embMat loads the embedding / LM head, which is logit-critical — quantize
 	// it with the embedding policy (int8 even in int4 mode), not the projection
 	// mode.
-	embMat := func(name string, out, in int) (weightMat, error) {
+	embMat := func(name string, out, in int) (linalg.WeightMat, error) {
 		return streamMat(name, out, in, quant.embedding(), func(r int) int { return r * in })
 	}
 	// vec loads a 1-D tensor (norm or bias).
@@ -569,7 +570,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 	// quantize, we dequant the rows straight into HF order — destination row hfRow
 	// pulls from GGUF source row (h*hd + 2*j + s) — and quantize in place. See
 	// ggufInvPermute for the index derivation.
-	permMat := func(name string, out, in, nHead int) (weightMat, error) {
+	permMat := func(name string, out, in, nHead int) (linalg.WeightMat, error) {
 		hd := out / nHead
 		half := hd / 2
 		return streamMat(name, out, in, quant, func(hfRow int) int {
@@ -580,8 +581,8 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 	}
 	// stackedExperts loads a GGUF MoE expert tensor — a 3-D [in, out, nExpert]
 	// (fastest-first) blob where each expert occupies a contiguous [out, in]
-	// row-major slice — and returns one quantized weightMat per expert.
-	stackedExperts := func(name string, out, in, nExpert int) ([]weightMat, error) {
+	// row-major slice — and returns one quantized linalg.WeightMat per expert.
+	stackedExperts := func(name string, out, in, nExpert int) ([]linalg.WeightMat, error) {
 		dims, into, err := g.RowDequantizer(name)
 		if err != nil {
 			return nil, err
@@ -590,8 +591,8 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			return nil, fmt.Errorf("decoder(gguf): %q dims %v, want [in=%d, out=%d, experts=%d]", name, dims, in, out, nExpert)
 		}
 		// Each expert occupies a contiguous [out, in] row-major slice; stream its
-		// rows directly into a per-expert quantized weightMat (no whole-tensor f32).
-		res := make([]weightMat, nExpert)
+		// rows directly into a per-expert quantized linalg.WeightMat (no whole-tensor f32).
+		res := make([]linalg.WeightMat, nExpert)
 		for e := range nExpert {
 			m, err := streamQuantized(out, in, quant, func(r int, dst []float32) error {
 				return into((e*out+r)*in, dst)
@@ -774,7 +775,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			if err != nil {
 				return err
 			}
-			l.SharedGate = newWeightMat(sg, 1, hidden)
+			l.SharedGate = linalg.WrapF32(sg, 1, hidden)
 			return nil
 		}
 		if err := parallelLayers(arch.NumLayers, loadQ35); err != nil {
@@ -889,13 +890,13 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 	// mellum). The NEOX rope type (qwen2/qwen3/gemma) leaves q/k in HF order, so
 	// no un-permutation is needed there.
 	permuteQK := ggufQKPermuted(arch.Name)
-	loadQK := func(name string, out, nHead int) (weightMat, error) {
+	loadQK := func(name string, out, nHead int) (linalg.WeightMat, error) {
 		if permuteQK {
 			return permMat(name, out, hidden, nHead)
 		}
 		return mat(name, out, hidden)
 	}
-	// Load the layers in parallel: each is independent (its own weightMat slots
+	// Load the layers in parallel: each is independent (its own linalg.WeightMat slots
 	// over the read-only mmap), and the per-tensor dequant + re-quant is the load's
 	// cost — fanning it out across cores turns a 12B GGUF's ~2 min load into seconds.
 	loadLayer := func(i int) error {

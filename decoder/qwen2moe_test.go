@@ -56,7 +56,7 @@ func TestQwen2Moe_forwardParity(t *testing.T) {
 	if len(l0.Experts) != m.w.arch.MoE.NumExperts {
 		t.Fatalf("layer 0 has %d experts, want %d", len(l0.Experts), m.w.arch.MoE.NumExperts)
 	}
-	if l0.SharedExpert.Gate.rows == 0 || l0.SharedGate.rows == 0 {
+	if l0.SharedExpert.Gate.Rows() == 0 || l0.SharedGate.Rows() == 0 {
 		t.Fatalf("shared expert / gate not loaded for layer 0")
 	}
 

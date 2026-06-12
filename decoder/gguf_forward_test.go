@@ -341,9 +341,9 @@ func TestGGUF_int8_resident(t *testing.T) {
 	}
 	// Resident int8: every matmul weight kept its int8 codes and freed its f32.
 	for _, wm := range m.w.matmulWeights() {
-		if wm.q8 == nil || wm.f32 != nil {
+		if wm.Kind() != "int8" || wm.Kind() == "f32" {
 			t.Fatalf("matmul weight %dx%d not resident int8 (q8=%v f32=%v)",
-				wm.rows, wm.cols, wm.q8 != nil, wm.f32 != nil)
+				wm.Rows(), wm.Cols(), wm.Kind() == "int8", wm.Kind() == "f32")
 		}
 	}
 
@@ -398,11 +398,11 @@ func TestGGUF_int4_resident(t *testing.T) {
 		t.Fatalf("Load int4: %v", err)
 	}
 	// Projections int4, embedding/head int8 (the embedding policy), f32 freed.
-	if gate := &m.w.Layers[0].GateProj; gate.q4 == nil || gate.f32 != nil {
-		t.Fatalf("GateProj not int4 (q4=%v f32=%v)", gate.q4 != nil, gate.f32 != nil)
+	if gate := &m.w.Layers[0].GateProj; gate.Kind() != "int4" || gate.Kind() == "f32" {
+		t.Fatalf("GateProj not int4 (q4=%v f32=%v)", gate.Kind() == "int4", gate.Kind() == "f32")
 	}
-	if m.w.Embed.q8 == nil || m.w.Embed.f32 != nil {
-		t.Fatalf("Embed not int8 (q8=%v f32=%v)", m.w.Embed.q8 != nil, m.w.Embed.f32 != nil)
+	if m.w.Embed.Kind() != "int8" || m.w.Embed.Kind() == "f32" {
+		t.Fatalf("Embed not int8 (q8=%v f32=%v)", m.w.Embed.Kind() == "int8", m.w.Embed.Kind() == "f32")
 	}
 
 	cache := m.NewCache(len(g.IDs))

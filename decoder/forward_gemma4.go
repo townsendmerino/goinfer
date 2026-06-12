@@ -41,7 +41,7 @@ func (m *Model) runLayersGemma4(id int, cache *KVCache) ([]float32, error) {
 
 	// Embedding × √hidden (inputs_embeds).
 	h := make([]float32, hidden)
-	m.w.Embed.embedRow(id, h)
+	m.w.Embed.Row(id, h)
 	es := float32(arch.EmbedScale)
 	for i := range h {
 		h[i] *= es
@@ -60,13 +60,13 @@ func (m *Model) runLayersGemma4(id int, cache *KVCache) ([]float32, error) {
 	// context_aware = norm( per_layer_model_proj(inputs_embeds) × hidden^-0.5 ).
 	perLayer := make([]float32, arch.NumLayers*pleDim)
 	if pleDim > 0 {
-		m.w.PerLayerTokenEmbed.embedRow(id, perLayer)
+		m.w.PerLayerTokenEmbed.Row(id, perLayer)
 		tScale := float32(math.Sqrt(float64(pleDim)))
 		for i := range perLayer {
 			perLayer[i] *= tScale
 		}
 		ctxAware := make([]float32, arch.NumLayers*pleDim)
-		m.w.PerLayerModelProj.matmul(be, h, ctxAware, 1)
+		matmul(be, &m.w.PerLayerModelProj, h, ctxAware, 1)
 		cScale := float32(1.0 / math.Sqrt(float64(hidden)))
 		for i := range ctxAware {
 			ctxAware[i] *= cScale
@@ -133,18 +133,18 @@ func (m *Model) runLayersGemma4(id int, cache *KVCache) ([]float32, error) {
 		normalize(arch, normd, lw.PreAttnNorm, nil, hidden)
 
 		q := make([]float32, nH*hd)
-		lw.QProj.matmul(be, normd, q, 1)
+		matmul(be, &lw.QProj, normd, q, 1)
 		rmsNorm(q, lw.QNorm, nH, hd, arch.NormEps, arch.RMSAddOne)
 		applyRoPE(q, nH, hd, pos, invFreq, 1.0)
 
 		if l < firstShared { // owns its KV
 			k := make([]float32, nKV*hd)
-			lw.KProj.matmul(be, normd, k, 1)
+			matmul(be, &lw.KProj, normd, k, 1)
 			v := make([]float32, nKV*hd)
 			if lw.VFromK { // attention_k_eq_v: V is v_norm(k_proj output)
 				copy(v, k)
 			} else {
-				lw.VProj.matmul(be, normd, v, 1)
+				matmul(be, &lw.VProj, normd, v, 1)
 			}
 			rmsNorm(k, lw.KNorm, nKV, hd, arch.NormEps, arch.RMSAddOne) // K: k_norm + RoPE
 			applyRoPE(k, nKV, hd, pos, invFreq, 1.0)
@@ -165,7 +165,7 @@ func (m *Model) runLayersGemma4(id int, cache *KVCache) ([]float32, error) {
 		gemma4Attend(q, ctx, keys, vals, nH, nKV, hd, start, nKeys, arch.AttnScale, &g4sc)
 
 		attnOut := make([]float32, hidden)
-		lw.OProj.matmul(be, ctx, attnOut, 1)
+		matmul(be, &lw.OProj, ctx, attnOut, 1)
 		normalize(arch, attnOut, lw.PostAttnNorm, nil, hidden) // post-attn (sandwich)
 		for i := range h {
 			h[i] += attnOut[i]
@@ -176,13 +176,13 @@ func (m *Model) runLayersGemma4(id int, cache *KVCache) ([]float32, error) {
 		normalize(arch, normd, lw.PreMLPNorm, nil, hidden)
 		gate := make([]float32, ffn)
 		up := make([]float32, ffn)
-		lw.GateProj.matmul(be, normd, gate, 1)
-		lw.UpProj.matmul(be, normd, up, 1)
+		matmul(be, &lw.GateProj, normd, gate, 1)
+		matmul(be, &lw.UpProj, normd, up, 1)
 		for i := range gate {
 			gate[i] = geluTanh(gate[i]) * up[i]
 		}
 		mlpOut := make([]float32, hidden)
-		lw.DownProj.matmul(be, gate, mlpOut, 1)
+		matmul(be, &lw.DownProj, gate, mlpOut, 1)
 		normalize(arch, mlpOut, lw.PostMLPNorm, nil, hidden) // post-FFN (sandwich)
 		for i := range h {
 			h[i] += mlpOut[i]
@@ -192,12 +192,12 @@ func (m *Model) runLayersGemma4(id int, cache *KVCache) ([]float32, error) {
 		if pleDim > 0 {
 			pl := perLayer[l*pleDim : (l+1)*pleDim]
 			px := make([]float32, pleDim)
-			lw.PLEGate.matmul(be, h, px, 1)
+			matmul(be, &lw.PLEGate, h, px, 1)
 			for i := range px {
 				px[i] = geluTanh(px[i]) * pl[i]
 			}
 			pout := make([]float32, hidden)
-			lw.PLEProj.matmul(be, px, pout, 1)
+			matmul(be, &lw.PLEProj, px, pout, 1)
 			normalize(arch, pout, lw.PostPLENorm, nil, hidden)
 			for i := range h {
 				h[i] += pout[i]
