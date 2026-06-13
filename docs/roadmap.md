@@ -191,7 +191,7 @@ no user-facing serve path yet (P4–P5 remain).
 
 ## v0.6 candidate program: KV-cache memory reduction (scoped 2026-06-11)
 
-**Umbrella + index: [`task-memory-program.md`](task-memory-program.md).** Four
+**Umbrella + index: [`task-memory-program.md`](completed/task-memory-program.md).** Four
 independently-shippable steps, each with its own gates; the default decode path
 stays **bit-exact** throughout — every lossy step is an opt-in knob (house
 rule). Combined headline (steps 1+2): **~20× smaller KV on Gemma-class local
@@ -207,12 +207,12 @@ deferred (see step 2).
 In order (rationale: free memory with zero precision argument first, then the
 quant rungs with pre-validated gate bars):
 
-1. ✅ **DONE — [Ring-buffer eviction for sliding-window layers](task-kv-ring-eviction.md)**
+1. ✅ **DONE — [Ring-buffer eviction for sliding-window layers](completed/task-kv-ring-eviction.md)**
    (commit `4a9c2b5`, 2026-06-11/12). Rings on local layers: **~5.2× KV on
    Gemma-class, LOSSLESS** (bit-exact gate — real Mellum2 window golden + 3
    model-free gates). Gotcha the doc missed: batched prefill (K>W) needed a
    deferred-write + assembled-window path, not a naive `s%W`.
-2. ✅ **DONE — [CPU int8 KV cache, Increments 1–3](task-cpu-kv-quant.md)**
+2. ✅ **DONE — [CPU int8 KV cache, Increments 1–3](completed/task-cpu-kv-quant.md)**
    (commits `71d4ef1` / `d78eea9` / `d4e7830`). Per-head int8 on shipped aikit
    kernels (`DotI8`/SDOT). Inc 1 storage+decode, Inc 2 batched prefill + serve
    `--kv-quant i8` + spec-decode rollback parity (**TTFT 1.023×** after killing
@@ -233,7 +233,7 @@ quant rungs with pre-validated gate bars):
      int4-now ≈ a week of high-risk work that may miss its own gate, plus permanent
      code surface, for ~1.6× over a 20× we already ship, with no demand. Easy call
      to flip the moment a real RAM wall appears.
-3. **[GPU int8 KV cache](task-gpu-kv-i8.md)** — third rung after the shipped
+3. **[GPU int8 KV cache](completed/task-gpu-kv-i8.md)** — third rung after the shipped
    `--kv f16`, via the existing `runQuant`/W8A8 WGSL idiom: **~64k context on
    the 8 GB card in the 32k-f16 envelope.** ~3–4 days, sequenced after step 2
    so granularity + gate bars arrive pre-validated from the CPU side.
@@ -242,7 +242,7 @@ quant rungs with pre-validated gate bars):
    claim), written go/no-go bar. Go ⇒ replaces step 2's deferred int4
    increment; no-go ⇒ the watch item closes for KV.
 
-Assessed and rejected for the program (reasons in `task-cpu-kv-quant.md`
+Assessed and rejected for the program (reasons in `completed/task-cpu-kv-quant.md`
 §Non-goals): CPU f16 KV (dominated by int8 on CPU), XQuant rematerialization
 (wrong direction when compute-bound), attention-score eviction / AhaKV
 (quality-risky, breaks exact prefix-reuse).
@@ -257,7 +257,7 @@ v0.4.0 ships without them.** Grouped by theme; ordered within a group by leverag
 
 - **More decode-fusion headroom exists, but the WebGPU wall is near.** Decode is
   **glue-serialization-bound**, not bandwidth-bound (`gpu-assessment.md` §0.5,
-  `task-gpu-decode-fusion.md`): the matmul roofline floor is ~4.1 ms ⇒ ~240 tok/s
+  `internal/completed/task-gpu-decode-fusion.md`): the matmul roofline floor is ~4.1 ms ⇒ ~240 tok/s
   if glue were free, but the real token is ~11 ms (89.7 tok/s int8 1.5B) because
   each glue link forces a barrier the GPU can't hide. Fusion + the attn
   warp-per-head rewrite already took it 22→89.7. The remaining ~4 ms glue + ~1 ms
@@ -309,7 +309,7 @@ the staged path has. **That coupling is the felt-pain trigger for both.**
   De-risked separately: residency is full-attention-only (`SlidingWindow == 0`), so
   the batched attention is **plain causal, no per-query sliding-window mask** — the
   doc's main parity risk is moot.
-- **f16 KV cache** (`task-gpu-f16-kv.md`) — **LANDED 2026-06-10 (RTX 2070 SUPER),
+- **f16 KV cache** (`completed/task-gpu-f16-kv.md`) — **LANDED 2026-06-10 (RTX 2070 SUPER),
   Increments 1–2.** Opt-in `--kv f16` (default f32/bit-exact): cache is array<u32>,
   2 f16/word via core pack2x16float/unpack2x16float — **no shader-f16 feature, CI
   software adapter still compiles.** Gates: f16-vs-f32 decode over an 8k-key context
@@ -326,7 +326,7 @@ the staged path has. **That coupling is the felt-pain trigger for both.**
   residency is marketed as "run a 7B locally on a small GPU," f16 KV is now the
   long-context answer; the long-context *speedup* and batched prefill wait for their
   triggers (a real >16k workload; dp4a). **Next rung after f16: GPU int8 KV**
-  (`task-gpu-kv-i8.md`, step 3 of the KV-memory program above — ~64k in the
+  (`completed/task-gpu-kv-i8.md`, step 3 of the KV-memory program above — ~64k in the
   32k-f16 envelope).
 
 ### GPU residency coverage

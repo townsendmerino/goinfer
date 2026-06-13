@@ -98,9 +98,9 @@ peer commands are how you fill it.
 ### A. Apple Silicon CPU (the pure-Go lane)
 
 Rig: **Apple M1 Pro** (6P+2E), prequant `.giw` int8, greedy + fixed prompt/seed,
-plugged in. Source: `docs/ARCHITECTURE.md` §2 + `docs/perf-campaign.md`, "after the
+plugged in. Source: `docs/ARCHITECTURE.md` §2 + `docs/completed/perf-campaign.md`, "after the
 v0.5.0 perf work." goinfer commit for these: the v0.5.0-era CPU campaign (see
-perf-campaign.md). Peers were **not** run on this rig → `—` (use the script).
+completed/perf-campaign.md). Peers were **not** run on this rig → `—` (use the script).
 
 | metric (M1 Pro · `.giw` int8 · greedy/fixed seed) | goinfer 0.5B | goinfer 1.5B | peers |
 |---|---|---|---|
@@ -127,7 +127,7 @@ CPU (compute-bound matmul; int8 is a wash on AVX2 — no VNNI). On `-tags gpu` w
 `--backend webgpu` the resident GPU encoder runs the whole tower on-device:
 **18.8 s/image** (~9×) on an **RTX 2070 SUPER**, parity cosine 1.000000 vs the CPU
 W8A8 encoder (`886c8fd`/`5d7c572`, 2026-06-11). The attention matmuls are still
-naive f32 — a tiled GEMM there is the next lever (`docs/task-gpu-vision-tower.md`).
+naive f32 — a tiled GEMM there is the next lever (`docs/completed/task-gpu-vision-tower.md`).
 
 ### B. GPU residency vs native CUDA, at equal quant
 
@@ -193,7 +193,7 @@ GINFER_PREQUANT_GGUF=~/models/qwen2.5-coder-1.5b-instruct-q8_0.gguf \
 **goinfer (in-repo):** `docs/gpu-assessment.md` §0.0 (GPU residency: 89.7 / 51.7 tok/s;
 61% / 71% of CUDA at equal quant; the discarded wrong-model 191 tok/s; commit `eaf9a6c`,
 2026-06-08) · `docs/ARCHITECTURE.md` §2 (cold-start / heap / binary tiers; embedded-GGUF
-vs `.giw`) · `docs/perf-campaign.md` (M1 Pro CPU decode, measurement conventions) ·
+vs `.giw`) · `docs/completed/perf-campaign.md` (M1 Pro CPU decode, measurement conventions) ·
 `CHANGELOG.md` v0.4.0/v0.5.0 (prefill 3.4× / 1.7×; MoE prefill `08acc11`) ·
 `decoder/registry.go` (13 `model_type` keys, 11 distinct architectures) · `CHANGELOG.md`
 v0.5.0 (the 7B int4 row: **51.7 vs llama.cpp-CUDA 72.8 tok/s = ~71%** — this peer

@@ -160,7 +160,7 @@ guard, returns 400). An image runs through the pure-Go `vision` tower (SigLIP
 encoder + projector, HF-parity-gated) into the decoder's embed-by-vector seam;
 image tokens count in `usage`. `demo/agent`'s web UI takes a dropped/pasted image
 too. Caveat: the SigLIP prefill is CPU-heavy (~3 min/image at 896²) — correct but
-slow; an int8 tower is the planned speedup (`docs/task-cpu-vision-prefill.md`).
+slow; an int8 tower is the planned speedup (`docs/completed/task-cpu-vision-prefill.md`).
 
 ```bash
 go run ./cmd/serve --model ~/models/gemma-3-4b-it --vision ~/models/gemma-3-4b-it

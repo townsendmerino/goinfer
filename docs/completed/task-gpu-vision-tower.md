@@ -1,7 +1,7 @@
 # Task (goinfer): GPU vision tower — the real fix for image-prefill latency
 
 > **For:** Claude Code, in `~/mycode/goinfer` (GPU work → the RTX box; `-tags gpu`,
-> cgo WebGPU). Follow-on from `docs/task-cpu-vision-prefill.md` (which established
+> cgo WebGPU). Follow-on from `docs/completed/task-cpu-vision-prefill.md` (which established
 > there is NO big CPU-only lever — int8 is a wash on AVX2). Increments ordered and
 > independently shippable. Parity-gated: the GPU encoder forward must match the
 > CPU/HF golden (cosine, like the existing `gpu/forward_parity_test.go`). The
@@ -10,7 +10,7 @@
 ## Problem & premise (measured)
 
 A Gemma 3 image prefill is ~190 s on CPU (4096 patches × 27 SigLIP layers, f32;
-`docs/task-cpu-vision-prefill.md`). The encoder is compute-bound matmul, which is
+`docs/completed/task-cpu-vision-prefill.md`). The encoder is compute-bound matmul, which is
 the GPU's home turf. **Measured on this box (RTX 2070 SUPER, `-tags gpu`)** at the
 encoder's exact dims (M=4096):
 

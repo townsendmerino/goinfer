@@ -1,7 +1,7 @@
 # Task (goinfer): quantized CPU KV cache (int8 now, int4 later)
 
 > **For:** `~/tmcode/goinfer` (+ one small aikit kernel). Follows the shape of
-> `docs/task-gpu-f16-kv.md` — the GPU cache already got its precision knob
+> `docs/completed/task-gpu-f16-kv.md` — the GPU cache already got its precision knob
 > (`--kv f16`, landed 2026-06-10); this is the CPU-side counterpart, and it goes
 > further (int8 = 4×, not 2×) because on CPU integer kernels beat software f16.
 > Maps to the current literature: per-token KV quantization (KIVI-family / the

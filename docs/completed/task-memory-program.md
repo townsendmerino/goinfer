@@ -39,7 +39,7 @@
    ~3–4 days. Sequenced after doc 2 so the quant granularity and gate bars
    arrive pre-validated from the CPU side.
 
-4. ⏳ **OPEN — [TurboQuant spike](task-turboquant-spike.md)** — the only
+4. ⏳ **OPEN — [TurboQuant spike](../task-turboquant-spike.md)** — the only
    research-risk item; 2–3 day timebox, pointed at KV (3-bit, the published
    near-zero-loss claim) rather than weights, with a written go/no-go bar.
    **Go** ⇒ it replaces doc 2's deferred int4 increment; **no-go** ⇒ the

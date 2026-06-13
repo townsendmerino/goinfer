@@ -8,8 +8,8 @@
 > real `google/gemma-3-4b-it` works directly. Image prefill is **~171 s/image on
 > CPU**, or **18.8 s (~9×) on `-tags gpu` with `--backend webgpu`** — the resident
 > GPU SigLIP encoder, parity cosine 1.000000 (`886c8fd`/`5d7c572`,
-> `docs/task-gpu-vision-tower.md`). An int8 CPU tower was evaluated and is a wash on
-> AVX2 (no VNNI; `docs/task-cpu-vision-prefill.md`) — GPU is the real speedup.
+> `docs/completed/task-gpu-vision-tower.md`). An int8 CPU tower was evaluated and is a wash on
+> AVX2 (no VNNI; `docs/completed/task-cpu-vision-prefill.md`) — GPU is the real speedup.
 > Both serve (`--backend webgpu`) and `demo/agent` (`--vision-backend webgpu`)
 > run on the GPU encoder. Remaining (all optional / new scope): a **tiled
 > attention GEMM** to push the GPU path below 18.8 s (attention QKᵀ/scores·V are
@@ -184,7 +184,7 @@ Pin each stage against HF, committed KB-scale goldens:
    (~171 s/image), flagged in `benchmarks.md`. **RESOLVED for GPU:** the resident
    WebGPU tower (`--backend webgpu`) brings it to 18.8 s/image (~9×); originally
    scoped out, built after the int8-CPU lever proved a wash. See
-   `docs/task-gpu-vision-tower.md`.
+   `docs/completed/task-gpu-vision-tower.md`.
 4. KV/positions/sessions accounting with image blocks — prefix-reuse opts out
    v1; revisit with a "image-block-aligned prefix" scheme later.
 5. Serve security surface — bounded by data-URI-only + pixel caps + fuzzing.

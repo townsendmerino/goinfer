@@ -16,7 +16,7 @@
   measured accuracy loss** (and 8x-faster attention logits on H100, which is
   hardware-irrelevant here, but the *accuracy* result transfers). If it
   holds on CPU-implementable math, it slots into the exact seam
-  `task-cpu-kv-quant.md` Increment 4 reserves (int4 territory), beating
+  `completed/task-cpu-kv-quant.md` Increment 4 reserves (int4 territory), beating
   int4-with-KIVI on both size and quality — 10.7× vs f32 before scale
   overhead.
 
@@ -41,7 +41,7 @@
 ## Deliverable
 
 A short findings note appended here + go/no-go: **go** ⇒ it becomes
-`task-cpu-kv-quant.md` Increment 4 (replacing plain int4), with the aikit
+`completed/task-cpu-kv-quant.md` Increment 4 (replacing plain int4), with the aikit
 kernel additions (rotation + 3-bit pack/dot) scoped then; **no-go** ⇒ the
 watch item closes for KV and stays weights-only-if-triggered.
 
