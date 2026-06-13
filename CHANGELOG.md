@@ -11,6 +11,48 @@ pre-1.0 and may change as new model families and quant formats land.
 ## [Unreleased]
 
 ### Added
+- **GPU int8 KV cache (`--kv i8`, opt-in `-tags gpu`) — 4× vs f32, ~64k context on
+  8 GB.** The full-residency decode path (dense Qwen2/Llama) gains an int8 KV cache
+  alongside f32 (16k ctx) and f16 (32k): per-(position, KV-head) symmetric int8,
+  written and read by on-device kernels (RoPE-store / V-store quantize per head;
+  attention unpacks ×scale), so decode and prefill stay on the GPU. ~6.9 GiB peak for
+  a 7B int4 model + 64k KV. Lossy but argmax-faithful (≥0.99 cosine vs the f32 cache).
+  The f32 and f16 KV paths are unchanged. Selected by `serve --kv i8`.
+
+### Changed
+- **aikit dependency consolidated and bumped `v1.3.0` → `v1.7.3`.** Three surfaces
+  goinfer had open-coded moved onto aikit's shared types — pure de-duplication, no
+  behaviour change: (1) the SigLIP vision encoder now lives in `aikit/vision` (goinfer
+  keeps only the Gemma projector + soft-token glue, as package `multimodal`); (2) the
+  shape-checked safetensors weight reads collapse onto
+  `embed.SafetensorsFile.TensorF32` / `TensorI32`; (3) the decoder's three-precision
+  quantized-weight matrix (f32 / per-row int8 / group-wise int4) is now
+  `linalg.WeightMat`, with goinfer retaining only its matmul backend-routing policy —
+  the `.giw` zero-copy load is preserved via aikit's `WrapInt8` / `WrapInt4`. 1.7.3
+  also makes `linalg.MatmulBT` M-invariant (a row computed alone is bit-identical to
+  the same row inside a batch) and fixes an amd64-only AVX2 reduction bug on
+  odd-length-`K` shapes.
+
+### Fixed
+- **`--backend webgpu` falls back to CPU when the GPU device fails to initialize,
+  instead of panicking.** The webgpu backend factory returned a typed-nil
+  `*webgpuBackend` on adapter/device failure, which auto-converts to a *non-nil*
+  `Backend` interface — so `Model.withResidency` saw a "real" backend, type-asserted
+  it, and dereferenced a nil receiver (`BuildResident` → nil mutex). The factory now
+  returns a literal `nil` interface on error, so a headless box (or GPU exhaustion)
+  cleanly uses the CPU path with a note, as intended. `-tags gpu` only.
+- **Same-model speculative decoding is now bit-exact with plain greedy.** Dense decode
+  computed attention with a scalar kernel that was not bit-identical to the batched
+  kernel the speculative *verify* pass uses (cosine ≥0.99, not exact), so the target
+  rejected ~11% of its own draft tokens (acceptance ~0.89) and the streamed output
+  could drift from greedy. Decode now runs the same batched attention as
+  prefill/verify, with f64 accumulation, so decode == prefill == verify exactly —
+  speculative output is token-identical to greedy and acceptance is ~1.0. This also
+  removes the decode↔prefill numerics seam for all dense models; combined with aikit
+  1.7.3's M-invariant `MatmulBT` it holds across f32/int8/int4. (int4 greedy decode
+  now tracks the higher-precision reference one token further as a side effect.)
+
+### Added
 - **Multimodal vision input (Gemma 3 VL) — image→text end to end, pure Go.** An
   image now flows through `vision` (preprocess → SigLIP encoder → projector) into
   the text decoder's embed-by-vector seam (`decoder.GenerateVL`), and the serve
