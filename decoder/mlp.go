@@ -7,6 +7,13 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
+// moeSelTrace — when non-nil, records the top-k expert indices of every moeMLP call
+// in forward order. SPIKE instrumentation for the #2 (MoE expert demand-paging)
+// viability measurement (docs/ideas-weight-memory.md): de-interleave by NumLayers to
+// get per-(layer, token) selections, then simulate LRU hit rate. Off (nil) in
+// production — a single nil-check per MoE FFN, zero allocation. Set by the spike test.
+var moeSelTrace [][]int
+
 // gatedMLP runs one block's gated MLP for the current position and returns the
 // output (caller applies the post-MLP norm + residual add). The gate/up/down
 // structure is shared by GeGLU (Gemma) and SwiGLU (Llama/Mistral/Qwen); only
@@ -67,6 +74,9 @@ func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend) ([]fl
 	matmul(be, &lw.Router, h, logits, 1)
 	probs := softmaxF32(logits)
 	idx, wts := topK(probs, k)
+	if moeSelTrace != nil { // SPIKE: record this call's expert selection (forward order)
+		moeSelTrace = append(moeSelTrace, append([]int(nil), idx...))
+	}
 	if moe.NormTopKProb {
 		var s float32
 		for _, w := range wts {

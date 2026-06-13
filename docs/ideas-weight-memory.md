@@ -78,14 +78,16 @@ cosine vs the current heap-dequant path on the Q4_K / Q6_K goldens already in th
 repo, **plus a decode tok/s non-regression bar** (the ALU trade above). This is
 the program's foundation-generalization step, not its opener — see sequencing.
 
-### 2. MoE inference-time expert demand-paging (the 10× for big MoE)
+### 2. MoE inference-time expert demand-paging (run big MoE on less RAM)
 
 **The win:** a 35B-A3B activates ~3 B params/token but resides at ~39 GB (fact
 2). Keep the expert weights **mmap'd and not heap-resident**, fault in only the
 experts the router selects per token, and hold a small **LRU of hot experts** in
 heap (quantized). Resident RAM drops from "all experts" toward "active + hot set"
-— potentially **~10× for the 35B-A3B class** — turning models that need a 64 GB
-box into ones that run on 16–24 GB.
+— a measured **~2× for the 35B-A3B class** at an interactive operating point (see
+the spike numbers below), turning a model that needs a ~40 GB box into one that
+runs on ~16–20 GB. Not the "10×" originally guessed here — the skew is real but
+finite, and the floor is the active set K·L, not a handful of hot experts.
 
 **Why it's plausible:** the router already produces the per-token expert
 selection before the expert matmuls run, so the demand signal exists at exactly
@@ -94,13 +96,35 @@ units. Expert-activation skew (a minority of experts dominate) means a modest LR
 gets a high hit rate; the cold misses are an mmap fault, bounded by NVMe
 bandwidth.
 
+**Measured (2026-06-13 viability spike — `decoder/moepaging_spike_test.go`,
+real Qwen3.6-35B-A3B, int8, 200 generated tokens, 40 layers × 256 experts ×
+top-8, expert ≈ 3.1 MB, all-experts ≈ 32 GB):** the skew is real but finite —
+the hottest 10% of experts absorb 72% of accesses, hottest 25% absorb 94%, and
+only 50% of the universe is ever touched. The active set (the unavoidable
+resident floor) is K·L = 320 experts ≈ 1.0 GB. Whole-expert LRU, hit-rate /
+added-latency vs cache budget (NVMe ≈ 20 µs seek + 3 GB/s):
+
+| cache | pages | hit % | miss/tok | +ms/tok |
+|------:|------:|------:|---------:|--------:|
+| 3 GB  |   960 |  51.3 |    155.8 |   166.4 |
+| 8 GB  |  2560 |  89.6 |     33.2 |    35.5 |
+| 16 GB |  5120 |  92.9 |     22.7 |    24.3 |
+
+So the realistic interactive operating point is ~16 GB cache → **93% hit,
+≈ +24 ms/token** (≈ ½ the experts resident, ~2× RAM reduction). Below ~8 GB the
+miss tail dominates and it stops being interactive. The cold-miss cost is
+**bandwidth-bound and unhideable** — the router selects just-in-time, so there's
+no prefetch lead. Build to *this* point, not the dead "10×".
+
 **Cost / risk:** medium-high. Token latency becomes hit-rate-dependent (a cold
 expert = a page-fault stall), so it's an **opt-in `--moe-page` mode** for the
 RAM-bound case, not the default. Needs: an expert-residency LRU, `madvise`
-hints, and a measured hit-rate/latency curve on a real 35B-A3B. **This is the
-single highest-capability idea here** — it's the only thing that makes the
-largest models in the zoo run on consumer RAM, and MoE is where the field is
-going (Qwen3.6, DeepSeek V4, GLM-4 MoE, Mellum2 all in the roadmap).
+hints (the spike's curve already stands in for the measurement). **The
+highest-capability idea here** — it's the thing that makes the largest models in
+the zoo run on less RAM, and MoE is where the field is going (Qwen3.6, DeepSeek
+V4, GLM-4 MoE, Mellum2 all in the roadmap). The hook seam is `mlp.go`'s router
+selection (the `idx` returned by `topK` in `moeMLP`); the spike's `moeSelTrace`
+sits exactly there.
 
 ### 3. Sub-int8 embedding/head for big-vocab small models (the *narrowed* idea — the easy version is already done)
 
