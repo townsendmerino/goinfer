@@ -342,3 +342,110 @@ func TestServe_warmKVRestore(t *testing.T) {
 	}
 	t.Logf("warm-restored continuation byte-identical to cold prefill: %q", cold)
 }
+
+// TestServe_tieredKVDemoteFaultBack exercises idea #8 (tiered KV): a warm session
+// that goes idle is demoted to disk (RAM freed), and the next continuation faults
+// it back transparently — producing a continuation byte-identical to a cold
+// prefill. The LRU's clock is injected so idle demotion is deterministic.
+func TestServe_tieredKVDemoteFaultBack(t *testing.T) {
+	path := os.Getenv("GOINFER_SERVE_MODEL")
+	if path == "" {
+		t.Skip("set GOINFER_SERVE_MODEL=<.gguf> for the tiered-KV test")
+	}
+	dir := t.TempDir()
+
+	chat := func(ts *httptest.Server, msgs string) (string, error) {
+		r, err := http.Post(ts.URL+"/v1/chat/completions", "application/json",
+			strings.NewReader(`{"model":"m","max_tokens":16,"temperature":0,"messages":`+msgs+`}`))
+		if err != nil {
+			return "", err
+		}
+		defer r.Body.Close()
+		b, _ := io.ReadAll(r.Body)
+		if r.StatusCode != http.StatusOK {
+			return "", fmt.Errorf("status %d: %s", r.StatusCode, truncate(b))
+		}
+		var resp struct {
+			Choices []struct {
+				Message struct{ Content string } `json:"message"`
+			} `json:"choices"`
+		}
+		if err := json.Unmarshal(b, &resp); err != nil || len(resp.Choices) == 0 {
+			return "", fmt.Errorf("bad body: %s", truncate(b))
+		}
+		return resp.Choices[0].Message.Content, nil
+	}
+
+	// One RAM session + tiering on, with an injected clock so we control idleness.
+	srv, err := newServer(config{models: modelFlag{{name: "m", path: path}}, backend: "cpu", quant: "int8int8", kvSessions: 1, sessionDir: dir})
+	if err != nil {
+		t.Fatalf("newServer: %v", err)
+	}
+	lm := srv.models["m"]
+	base := time.Unix(1_700_000_000, 0)
+	clk := base
+	lm.sessions.now = func() time.Time { return clk }
+	lm.sessions.enableTiering(sessionSubdir(dir, lm.fp), 10*time.Minute, 64)
+	ts := httptest.NewServer(chaosMux(srv))
+	defer ts.Close()
+
+	const turn1 = `[{"role":"user","content":"Name three primary colors."}]`
+	a1, err := chat(ts, turn1)
+	if err != nil {
+		t.Fatalf("turn 1: %v", err)
+	}
+
+	// Go idle past the threshold, then run the background sweep: the session is
+	// snapshotted to disk and its RAM slot freed.
+	lm.mu.Lock()
+	if got := len(lm.sessions.order); got != 1 {
+		lm.mu.Unlock()
+		t.Fatalf("after turn 1 resident sessions = %d, want 1", got)
+	}
+	clk = base.Add(11 * time.Minute)
+	n := lm.sessions.demoteIdle()
+	resid, cold := len(lm.sessions.order), len(lm.sessions.cold)
+	var blob string
+	if cold == 1 {
+		blob = lm.sessions.cold[0].path
+	}
+	lm.mu.Unlock()
+	if n != 1 || resid != 0 || cold != 1 {
+		t.Fatalf("demoteIdle: demoted=%d resident=%d cold=%d, want 1/0/1", n, resid, cold)
+	}
+	if _, err := os.Stat(blob); err != nil {
+		t.Fatalf("cold blob not on disk: %v", err)
+	}
+
+	// The continuation should fault the demoted session back and reuse its KV.
+	follow := fmt.Sprintf(`[{"role":"user","content":"Name three primary colors."},{"role":"assistant","content":%q},{"role":"user","content":"Now name three more."}]`, a1)
+	warm, err := chat(ts, follow)
+	if err != nil {
+		t.Fatalf("fault-back follow-up: %v", err)
+	}
+	lm.mu.Lock()
+	resid, cold = len(lm.sessions.order), len(lm.sessions.cold)
+	lm.mu.Unlock()
+	if resid != 1 || cold != 0 {
+		t.Fatalf("after fault-back resident=%d cold=%d, want 1/0", resid, cold)
+	}
+	if _, err := os.Stat(blob); !os.IsNotExist(err) {
+		t.Errorf("cold blob should be removed after fault-back, stat err = %v", err)
+	}
+
+	// Cold reference: a fresh server with no reuse at all, same follow-up.
+	srvC, err := newServer(config{models: modelFlag{{name: "m", path: path}}, backend: "cpu", quant: "int8int8", kvSessions: 0})
+	if err != nil {
+		t.Fatalf("newServer cold: %v", err)
+	}
+	tsC := httptest.NewServer(chaosMux(srvC))
+	defer tsC.Close()
+	coldText, err := chat(tsC, follow)
+	if err != nil {
+		t.Fatalf("cold follow-up: %v", err)
+	}
+	if warm != coldText {
+		t.Fatalf("tiered-KV fault-back changed the continuation:\n warm: %q\n cold: %q", warm, coldText)
+	}
+	t.Logf("demote→fault-back continuation byte-identical to cold prefill: %q", coldText)
+}

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 )
@@ -57,6 +59,49 @@ func TestBestExtend(t *testing.T) {
 	// Empty session list.
 	if got := bestExtend(nil, promptA); got != -1 {
 		t.Errorf("empty: bestExtend = %d, want -1", got)
+	}
+}
+
+// TestColdTierOverflow covers the disk-tier bookkeeping that needs no model:
+// the cold tier is capped at demotedMax (oldest blobs deleted), and dropCold
+// removes an entry and its blob.
+func TestColdTierOverflow(t *testing.T) {
+	dir := t.TempDir()
+	mk := func(name string) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte("kv"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	gone := func(name string) bool {
+		_, err := os.Stat(filepath.Join(dir, name))
+		return os.IsNotExist(err)
+	}
+
+	// cold is most-recently-demoted first; c1 is the oldest.
+	l := &sessionLRU{demotedMax: 2, cold: []*coldSession{
+		{tokens: []int{3}, path: mk("c3")},
+		{tokens: []int{2}, path: mk("c2")},
+		{tokens: []int{1}, path: mk("c1")},
+	}}
+	l.evictColdOverflow()
+	if len(l.cold) != 2 {
+		t.Fatalf("after overflow trim len(cold) = %d, want 2", len(l.cold))
+	}
+	if !gone("c1") {
+		t.Errorf("oldest cold blob c1 should have been deleted")
+	}
+	if gone("c2") || gone("c3") {
+		t.Errorf("c2/c3 should survive the trim")
+	}
+
+	l.dropCold(0) // drop the newest (c3)
+	if len(l.cold) != 1 || l.cold[0].tokens[0] != 2 {
+		t.Fatalf("after dropCold cold = %+v, want just c2", l.cold)
+	}
+	if !gone("c3") {
+		t.Errorf("dropCold should have deleted c3's blob")
 	}
 }
 

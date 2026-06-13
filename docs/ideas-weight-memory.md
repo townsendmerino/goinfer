@@ -285,7 +285,18 @@ delta in the forward: `Y = W_base·x + (B(A·x))·s`. Five adapters then cost
 **Trigger:** `cmd/serve` is asked to host several adapters of one base and goes
 RAM-bound on the duplicated transformer.
 
-### 8. Tiered KV: demote idle warm sessions RAM → NVMe
+### 8. Tiered KV: demote idle warm sessions RAM → NVMe  ✅ SHIPPED (2026-06-13)
+
+**Shipped** as `serve --kv-idle-demote <dur>` (+ `--kv-demoted-max`, default 64).
+A background sweep demotes any resident session idle past the threshold to a
+`.giw-kv` blob under `--session-dir` and frees its RAM; capacity evictions tier the
+coldest to disk instead of discarding it; the next continuation faults it back
+**byte-identically** to a cold prefill. Pure serve-layer policy over the existing
+persistence — no decoder changes — exactly as scoped below. The cold tier is
+in-process (cross-restart cold-tier persistence is a possible Inc 2). Gated by the
+model-driven `TestServe_tieredKVDemoteFaultBack` (demote → fault-back continuation
+== cold prefill) + the model-free `TestColdTierOverflow`.
+
 
 **The win:** `--kv-sessions` pins RAM for every warm conversation. The
 serialization to do something about it **already exists** — `--session-dir`

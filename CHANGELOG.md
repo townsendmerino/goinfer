@@ -10,6 +10,20 @@ pre-1.0 and may change as new model families and quant formats land.
 
 ## [Unreleased]
 
+### Added
+- **Tiered KV cache (`serve --kv-idle-demote`) — demote idle warm sessions RAM →
+  NVMe.** `--kv-sessions` pins RAM for every warm conversation; tiered KV adds a
+  policy over the existing `--session-dir` `.giw-kv` persistence so a small-RAM box
+  can hold many intermittent chats. A session untouched for `--kv-idle-demote`
+  (e.g. `10m`) is snapshotted to disk and its RAM freed by a background sweep;
+  capacity evictions tier the coldest session to disk instead of discarding it; the
+  next request whose prompt extends a demoted session faults it back transparently.
+  The fault-back continuation is **byte-identical** to a cold prefill (exact
+  `.giw-kv` restore). The on-disk tier is bounded by `--kv-demoted-max` (default 64)
+  and is in-process scratch (the resident tier is what survives a restart). Off by
+  default; needs `--session-dir` and `--kv-sessions > 0`. Pure serve-layer policy —
+  no decoder changes.
+
 ## [v0.6.0] — 2026-06-13
 
 ### Added

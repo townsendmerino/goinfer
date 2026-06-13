@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
 )
@@ -18,19 +19,76 @@ import (
 //
 // Not goroutine-safe. The server holds s.mu across every generation, which
 // serializes all access — the same lock that already serializes the shared model.
+// The optional tiered-KV demotion (see enableTiering) runs under that same lock,
+// so the background demoter and the request path never race.
 type sessionLRU struct {
 	model   *decoder.Model
 	size    int
 	capHint int
 	fp      string             // model fingerprint stamped into / checked against snapshots
-	order   []*decoder.Session // most-recently-used first; len ≤ size
+	order   []*decoder.Session // most-recently-used first; resident in RAM; len ≤ size
+
+	// Tiered KV (idea #8): demote idle warm sessions RAM → NVMe. Zero value =
+	// disabled, in which case behavior is exactly the original RAM-only LRU.
+	// Enabled via enableTiering; demoteAfter > 0 is the on switch.
+	demoteAfter time.Duration                  // idle threshold; a session untouched this long is demoted
+	demotedMax  int                            // cap on the on-disk cold tier (older cold sessions are evicted)
+	dir         string                         // where cold blobs are written (the model's -session-dir subdir)
+	cold        []*coldSession                 // demoted (on-disk) sessions, most-recently-demoted first
+	touched     map[*decoder.Session]time.Time // last-acquire time per resident session
+	seq         int                            // monotonic counter for unique cold-blob filenames
+	now         func() time.Time               // clock seam (tests override); defaults to time.Now
+}
+
+// coldSession is a demoted session: its KV lives in a .giw-kv blob on disk and its
+// RAM is freed. Only its token sequence (so the LRU can still prefix-match it) and
+// the blob path stay resident — a few hundred bytes versus the full cache.
+type coldSession struct {
+	tokens []int
+	path   string
 }
 
 func newSessionLRU(m *decoder.Model, size, capHint int, fp string) *sessionLRU {
 	if size < 0 {
 		size = 0
 	}
-	return &sessionLRU{model: m, size: size, capHint: capHint, fp: fp}
+	return &sessionLRU{model: m, size: size, capHint: capHint, fp: fp, now: time.Now}
+}
+
+// enableTiering turns on tiered KV: resident sessions idle longer than after are
+// demoted to .giw-kv blobs under dir (freeing RAM) and faulted back on the next
+// matching request; capacity evictions also tier the coldest session to disk
+// instead of discarding it. dir is the model's -session-dir subdir; max bounds the
+// on-disk tier (oldest cold sessions beyond it are deleted). Stale cold blobs from
+// a previous run are removed — the cold tier is in-process (the resident tier is
+// what save/load persists across restarts). No-op when after ≤ 0 or size == 0.
+func (l *sessionLRU) enableTiering(dir string, after time.Duration, max int) {
+	if after <= 0 || l.size == 0 {
+		return
+	}
+	if max < 1 {
+		max = 1
+	}
+	l.dir, l.demoteAfter, l.demotedMax = dir, after, max
+	if l.touched == nil {
+		l.touched = make(map[*decoder.Session]time.Time, l.size)
+	}
+	// Drop any orphaned cold blobs from a prior process (not in our index).
+	old, _ := filepath.Glob(filepath.Join(dir, "cold-*"+sessionSnapExt))
+	for _, p := range old {
+		_ = os.Remove(p)
+	}
+}
+
+// tiering reports whether tiered KV is active.
+func (l *sessionLRU) tiering() bool { return l.demoteAfter > 0 }
+
+// mark records that s was just acquired (for the idle-demotion clock). No-op when
+// tiering is off.
+func (l *sessionLRU) mark(s *decoder.Session) {
+	if l.touched != nil {
+		l.touched[s] = l.now()
+	}
 }
 
 // acquire returns the session to generate prompt against and marks it most-
@@ -54,7 +112,15 @@ func (l *sessionLRU) acquire(prompt []int) *decoder.Session {
 	}
 	if i := bestExtend(lists, prompt); i >= 0 {
 		moveToFront(l.order, i)
+		l.mark(l.order[0])
 		return l.order[0]
+	}
+	// No resident match. With tiered KV, the continuation may belong to a session
+	// we demoted to disk — fault it back rather than re-prefilling from cold.
+	if l.tiering() {
+		if s := l.faultBack(prompt); s != nil {
+			return s
+		}
 	}
 	return l.fresh()
 }
@@ -77,17 +143,161 @@ func bestExtend(sessions [][]int, prompt []int) int {
 }
 
 // fresh returns an empty session at the front: a new one if there's room, else
-// the evicted-and-reset coldest session (reusing its backing arrays).
+// the evicted-and-reset coldest session (reusing its backing arrays). With tiered
+// KV the coldest is first demoted to disk (so its KV survives, faultable on a
+// later continuation) and its now-empty backing arrays reused for the new slot.
 func (l *sessionLRU) fresh() *decoder.Session {
 	if len(l.order) < l.size {
 		s := l.model.NewSession(l.capHint)
 		l.order = append([]*decoder.Session{s}, l.order...)
+		l.mark(s)
 		return s
+	}
+	if l.tiering() {
+		if s, ok := l.tierOut(len(l.order) - 1); ok {
+			s.Reset() // reuse the demoted session's backing arrays for the fresh slot
+			l.order = append([]*decoder.Session{s}, l.order...)
+			l.mark(s)
+			return s
+		}
+		// coldest couldn't be tiered (non-persistable cache / IO error): fall
+		// through to the original in-place reset eviction below.
 	}
 	s := l.order[len(l.order)-1] // coldest
 	s.Reset()
 	moveToFront(l.order, len(l.order)-1)
+	l.mark(s)
 	return s
+}
+
+// --- tiered KV: demote idle / overflow sessions to disk, fault back on demand ---
+
+// demoteIdle moves every resident session untouched for longer than demoteAfter
+// into the on-disk cold tier, freeing its RAM. Returns the number demoted. The
+// server calls this from a background ticker under the model lock; it is a no-op
+// when tiering is off. Sessions whose cache can't be serialized (a recurrent
+// hybrid cache) are left resident.
+func (l *sessionLRU) demoteIdle() int {
+	if !l.tiering() {
+		return 0
+	}
+	cutoff := l.now().Add(-l.demoteAfter)
+	n := 0
+	// Walk coldest→newest and remove in place; tierOut deletes index i, leaving
+	// the lower indices we haven't visited yet unchanged.
+	for i := len(l.order) - 1; i >= 0; i-- {
+		t, ok := l.touched[l.order[i]]
+		if ok && t.After(cutoff) {
+			continue // still warm
+		}
+		if _, done := l.tierOut(i); done {
+			n++ // freed session dropped (RAM reclaimed by GC), not reused
+		}
+	}
+	return n
+}
+
+// tierOut snapshots order[i] to a fresh cold blob, removes it from the resident
+// order, and records it in the cold tier. It returns the removed *decoder.Session
+// (whose backing arrays the caller may Reset+reuse) and true on success. It
+// returns (nil, false) without modifying order when the session is empty, its
+// cache is non-persistable, or the write fails — the caller then keeps/evicts it
+// the ordinary way.
+func (l *sessionLRU) tierOut(i int) (*decoder.Session, bool) {
+	s := l.order[i]
+	if len(s.Tokens()) == 0 {
+		return nil, false // nothing worth preserving
+	}
+	blob := s.Snapshot(l.fp)
+	if blob == nil {
+		return nil, false // recurrent/hybrid cache: not persistable (Snapshot refuses)
+	}
+	if err := os.MkdirAll(l.dir, 0o755); err != nil {
+		fmt.Fprintf(os.Stderr, "tiered-kv: mkdir %s: %v\n", l.dir, err)
+		return nil, false
+	}
+	l.seq++
+	path := filepath.Join(l.dir, fmt.Sprintf("cold-%06d%s", l.seq, sessionSnapExt))
+	if err := os.WriteFile(path, blob, 0o644); err != nil {
+		fmt.Fprintf(os.Stderr, "tiered-kv: write %s: %v\n", path, err)
+		return nil, false
+	}
+	l.cold = append([]*coldSession{{tokens: append([]int(nil), s.Tokens()...), path: path}}, l.cold...)
+	l.order = append(l.order[:i], l.order[i+1:]...)
+	delete(l.touched, s)
+	l.evictColdOverflow()
+	return s, true
+}
+
+// faultBack restores a demoted session whose tokens are a prefix of prompt, making
+// room in the resident tier (tiering the coldest, or evicting it if that fails),
+// and returns it marked most-recently-used. nil if no cold session matches or its
+// blob is unreadable/stale (caller falls back to a cold prefill).
+func (l *sessionLRU) faultBack(prompt []int) *decoder.Session {
+	lists := make([][]int, len(l.cold))
+	for i, c := range l.cold {
+		lists[i] = c.tokens
+	}
+	i := bestExtend(lists, prompt)
+	if i < 0 {
+		return nil
+	}
+	c := l.cold[i]
+	s, err := l.readCold(c)
+	l.dropCold(i) // remove from index + delete blob whether or not it loaded
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "tiered-kv: fault-back %s: %v\n", filepath.Base(c.path), err)
+		return nil
+	}
+	l.makeRoom()
+	l.order = append([]*decoder.Session{s}, l.order...)
+	l.mark(s)
+	return s
+}
+
+// readCold deserializes a cold session's blob back into a live *decoder.Session.
+func (l *sessionLRU) readCold(c *coldSession) (*decoder.Session, error) {
+	data, err := os.ReadFile(c.path)
+	if err != nil {
+		return nil, err
+	}
+	return l.model.LoadSession(data, l.fp)
+}
+
+// makeRoom ensures the resident tier has space for one more session, tiering the
+// coldest to disk (preferred) or, if that fails, evicting it outright.
+func (l *sessionLRU) makeRoom() {
+	if len(l.order) < l.size {
+		return
+	}
+	if _, ok := l.tierOut(len(l.order) - 1); ok {
+		return
+	}
+	i := len(l.order) - 1 // couldn't tier: drop the coldest to free the slot
+	delete(l.touched, l.order[i])
+	l.order = l.order[:i]
+}
+
+// dropCold removes cold[i] from the index and deletes its blob.
+func (l *sessionLRU) dropCold(i int) {
+	_ = os.Remove(l.cold[i].path)
+	l.cold = append(l.cold[:i], l.cold[i+1:]...)
+}
+
+// evictColdOverflow trims the cold tier to demotedMax, deleting the oldest blobs.
+func (l *sessionLRU) evictColdOverflow() {
+	for len(l.cold) > l.demotedMax {
+		l.dropCold(len(l.cold) - 1)
+	}
+}
+
+// removeColdFiles deletes every cold blob this LRU has on disk (in-process tier
+// teardown — the resident tier is what save persists across restarts).
+func (l *sessionLRU) removeColdFiles() {
+	for i := range l.cold {
+		_ = os.Remove(l.cold[i].path)
+	}
+	l.cold = nil
 }
 
 // moveToFront promotes s[i] to index 0, shifting the rest right (LRU recency).

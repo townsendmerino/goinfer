@@ -75,19 +75,21 @@ func (m *modelFlag) Set(v string) error {
 // config is the resolved command line for newServer (the flag set outgrew a
 // positional signature once embeddings landed).
 type config struct {
-	models      modelFlag // decoder(s) (-model, repeatable); empty = no generative endpoints
-	backend     string
-	quant       string // global (per-model overrides are a follow-on)
-	kvPrec      string // GPU residency KV cache precision: "" | f32 | f16 (-kv)
-	kvQuant     string // CPU KV cache storage precision: "" | f32 | i8 (-kv-quant)
-	lora        string
-	name        string // -served-model-name (applies only to a single unnamed --model)
-	kvSessions  int
-	sessionDir  string // -session-dir (also where /admin unload snapshots warm KV)
-	maxQueue    int    // -max-queue: bounded per-model queue depth (0 = unbounded)
-	allowAdmin  bool   // -allow-admin: enable POST /admin/models/{load,unload}
-	visionPath  string // -vision: dir holding the vision tower (SigLIP + projector) for a multimodal --model
-	visionQuant string // -vision-quant: "f32" (default) | "int8" (W8A8; only faster on AVX512-VNNI — a WASH on AVX2)
+	models       modelFlag // decoder(s) (-model, repeatable); empty = no generative endpoints
+	backend      string
+	quant        string // global (per-model overrides are a follow-on)
+	kvPrec       string // GPU residency KV cache precision: "" | f32 | f16 (-kv)
+	kvQuant      string // CPU KV cache storage precision: "" | f32 | i8 (-kv-quant)
+	lora         string
+	name         string // -served-model-name (applies only to a single unnamed --model)
+	kvSessions   int
+	sessionDir   string        // -session-dir (also where /admin unload snapshots warm KV)
+	kvIdleDemote time.Duration // -kv-idle-demote: tiered KV — demote a session idle this long to disk (0 = off)
+	kvDemotedMax int           // -kv-demoted-max: cap on the on-disk cold tier
+	maxQueue     int           // -max-queue: bounded per-model queue depth (0 = unbounded)
+	allowAdmin   bool          // -allow-admin: enable POST /admin/models/{load,unload}
+	visionPath   string        // -vision: dir holding the vision tower (SigLIP + projector) for a multimodal --model
+	visionQuant  string        // -vision-quant: "f32" (default) | "int8" (W8A8; only faster on AVX512-VNNI — a WASH on AVX2)
 
 	embedPath  string // encoder (-embed-model); "" = no /v1/embeddings
 	embedQuant string // "" | f32 | q8
@@ -113,7 +115,9 @@ func main() {
 	flag.StringVar(&cfg.kvQuant, "kv-quant", "f32", "CPU KV cache storage: f32 (default, bit-exact) | i8 (per-head int8, ~4× smaller, lossy — argmax ~90%+; excludes MoE/gemma4/qwen3.5)")
 	flag.StringVar(&cfg.lora, "lora", "", "optional PEFT LoRA adapter dir, merged into the (safetensors) base at load")
 	flag.StringVar(&cfg.name, "served-model-name", "", "served id for a single unnamed --model (default: file/dir basename)")
-	flag.IntVar(&cfg.kvSessions, "kv-sessions", 4, "number of conversations to keep prefilled for prompt-prefix KV reuse (0 disables)")
+	flag.IntVar(&cfg.kvSessions, "kv-sessions", 4, "number of conversations to keep prefilled in RAM for prompt-prefix KV reuse (0 disables)")
+	flag.DurationVar(&cfg.kvIdleDemote, "kv-idle-demote", 0, "tiered KV: demote a warm session's KV to -session-dir once it's been idle this long, faulting it back on the next matching request (e.g. 10m; 0 = off). Lets a small-RAM box serve many intermittent chats. Needs -session-dir and -kv-sessions > 0")
+	flag.IntVar(&cfg.kvDemotedMax, "kv-demoted-max", 64, "tiered KV: max demoted (on-disk) sessions to keep; older ones are dropped (only with -kv-idle-demote)")
 	flag.IntVar(&cfg.maxQueue, "max-queue", 8, "per-model backpressure: max queued requests before 429 (0 = unbounded)")
 	flag.StringVar(&cfg.embedPath, "embed-model", "", "embedding model: a CodeRankEmbed HF dir (config.json + model.safetensors + tokenizer.json) for /v1/embeddings")
 	flag.StringVar(&cfg.embedQuant, "embed-quant", "f32", "embedding weight precision: f32 | q8")
@@ -128,6 +132,10 @@ func main() {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(2)
 	}
+	if cfg.kvIdleDemote > 0 && (cfg.sessionDir == "" || cfg.kvSessions <= 0) {
+		fmt.Fprintln(os.Stderr, "error: -kv-idle-demote needs -session-dir and -kv-sessions > 0")
+		os.Exit(2)
+	}
 
 	srv, err := newServer(cfg)
 	if err != nil {
@@ -136,7 +144,11 @@ func main() {
 	}
 	if cfg.sessionDir != "" && cfg.kvSessions > 0 {
 		for _, lm := range srv.models {
-			lm.sessions.load(sessionSubdir(cfg.sessionDir, lm.fp))
+			sub := sessionSubdir(cfg.sessionDir, lm.fp)
+			lm.sessions.load(sub)
+			if cfg.kvIdleDemote > 0 {
+				lm.sessions.enableTiering(sub, cfg.kvIdleDemote, cfg.kvDemotedMax)
+			}
 		}
 	}
 
@@ -156,6 +168,15 @@ func main() {
 	mux.HandleFunc("POST /admin/models/unload", srv.handleAdminUnload)
 
 	httpSrv := &http.Server{Addr: *addr, Handler: mux}
+
+	// Tiered KV: a background ticker demotes idle sessions to disk. It takes the
+	// same per-model lock the request path holds, so it never races a generation;
+	// stopDemote halts it before the shutdown checkpoint runs.
+	stopDemote := make(chan struct{})
+	if cfg.kvIdleDemote > 0 {
+		go demoteLoop(srv, cfg.kvIdleDemote, stopDemote)
+	}
+
 	// Graceful shutdown: on SIGINT/SIGTERM, stop accepting, drain in-flight
 	// generations, then checkpoint the KV sessions to -session-dir (if set).
 	// done closes once that's complete so main waits for the save before exit.
@@ -166,6 +187,7 @@ func main() {
 		defer close(done)
 		<-sig
 		fmt.Fprintln(os.Stderr, "\nshutting down…")
+		close(stopDemote) // stop demoting before we checkpoint
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		_ = httpSrv.Shutdown(ctx)
@@ -173,6 +195,7 @@ func main() {
 			for _, lm := range srv.models {
 				lm.mu.Lock()
 				_ = lm.sessions.save(sessionSubdir(cfg.sessionDir, lm.fp))
+				lm.sessions.removeColdFiles() // the cold tier is in-process; clear its scratch
 				lm.mu.Unlock()
 			}
 		}
@@ -376,6 +399,36 @@ func (s *server) endpointSummary() string {
 		parts = append(parts, fmt.Sprintf("embeddings:%q", s.embedID))
 	}
 	return strings.Join(parts, " | ")
+}
+
+// demoteLoop periodically demotes idle KV sessions across all models to disk
+// (tiered KV). It polls at a fraction of the idle threshold (clamped to [5s, 1m])
+// and takes each model's lock per sweep, so it stalls no in-flight generation and
+// skips a busy model until its lock is free. Returns when stop is closed.
+func demoteLoop(srv *server, idle time.Duration, stop <-chan struct{}) {
+	period := idle / 4
+	if period < 5*time.Second {
+		period = 5 * time.Second
+	}
+	if period > time.Minute {
+		period = time.Minute
+	}
+	t := time.NewTicker(period)
+	defer t.Stop()
+	for {
+		select {
+		case <-stop:
+			return
+		case <-t.C:
+			for _, lm := range srv.models {
+				lm.mu.Lock()
+				if n := lm.sessions.demoteIdle(); n > 0 {
+					fmt.Fprintf(os.Stderr, "tiered-kv: demoted %d idle session(s) for %q\n", n, lm.name)
+				}
+				lm.mu.Unlock()
+			}
+		}
+	}
 }
 
 // sessionSubdir gives a model its own --session-dir folder so warm-KV snapshots
