@@ -129,18 +129,31 @@ at once without either storing it twice (no RAM win) or storing it at int4 and
 letting the head read int4 (the exact thing the `embedding()` policy forbids
 because it flips logits). The clean two-precision split only exists for **untied**
 big-vocab models (two tensors) — and those are rarer. So the honest version is one
-of: (a) scope this to untied models only, accept the narrower reach; or (b) find a
-tied-compatible mechanism — e.g. **int4 storage + a small int8 residual on only
-the head-critical rows/components**, restoring head precision where it moves the
-argmax without paying int8 across the whole table. (b) is the real win but is
-unproven and needs a hard look first.
+of: (a) scope this to untied models only, accept the narrower reach; or (b) a
+tied-compatible **frequency row-blocking** scheme (the strongest version, from the
+external review). Store the **hot head of the vocab** (the few-thousand most-used
+token rows — which carry the large majority of the token stream) at int8/f16 and
+the **long tail** at int4, in one logical table; the gather indexes by token id
+into whichever tier the row lives in, and the head matmul becomes two
+concatenated matmuls (int8 block ‖ int4 block). One array's worth of RAM, tiered —
+no double storage, and the tied head is protected where it matters.
 
-**Cost / risk:** medium for (a), research-flavored for (b). Rides directly on the
-logit-parity gate the `embedding()` policy was written to protect. **Gate:**
-argmax + cosine on the per-model goldens, same bar the current int8 pin clears.
-**Trigger:** a big-vocab small model (256 k-class vocab, ≤4 B) where the int8
-embed/head table is measured as the dominant resident tensor — i.e. the
-"LLM-in-one-file" footprint actually bites.
+**The nuance that decides whether (b) is real:** "top-k tokens = 90% of the
+stream" is an *input/gather* frequency stat — and the gather is the tolerant path
+anyway. The *head* dots the hidden state against **every** row, tail included, so
+a correct-but-rare next token still gets ranked from its int4 row. The bet is that
+the argmax rarely lands on a tail row and is "good enough" when it does — plausible
+(it's the same class of bet as the existing `embedding()` int8 pin), but it must be
+gated on **rare-token continuations specifically**, not average-case argmax, or the
+tail-token regressions hide in the aggregate.
+
+**Cost / risk:** medium for (a); medium + a frequency permutation / per-row tier
+map for (b). Rides directly on the logit-parity gate the `embedding()` policy was
+written to protect. **Gate:** argmax + cosine on the per-model goldens **plus a
+rare-token-continuation stress set** (the (b)-specific bar above). **Trigger:** a
+big-vocab small model (256 k-class vocab, ≤4 B) where the int8 embed/head table is
+measured as the dominant resident tensor — i.e. the "LLM-in-one-file" footprint
+actually bites.
 
 ---
 
@@ -214,6 +227,67 @@ being "25% off a file" and becomes a capability multiplier on the other ideas.
 TurboQuant KV spike. **Treat it identically:** 2–3 day reading + CPU-prototype
 spike, written go/no-go bar (≥ int4's measured cosine at 3 bits, or it closes).
 Sequence it *after* #1–#4 ship, so the cheap wins land first.
+
+---
+
+### Serve-side density (multi-tenant footprint — from the external review)
+
+These two attack a different RAM axis than #1–#6: not one model's resident
+weights, but the **multiplier from serving many tenants** (adapters, sessions).
+Both ride the same zero-copy base-residency substrate as #2/#4.
+
+### 7. Multi-adapter weight sharing (don't merge LoRA — add it at compute time)
+
+**The win:** today LoRA is *"merged at load"* (`lora.go`), so serving one base
+model with N fine-tunes pays the full transformer RAM **N times over** — 5
+adapters on a 7 B = ~20 GB. Keep the base **immutable and zero-copy mmap'd**
+(the substrate), store each adapter's low-rank `A`/`B` separately, and apply the
+delta in the forward: `Y = W_base·x + (B(A·x))·s`. Five adapters then cost
+~base + 5 small deltas ≈ **~4.2 GB instead of ~20 GB.**
+
+**Two corrections to the framing (vs. how it was pitched):**
+- **RAM-density only, not throughput.** S-LoRA's headline is many adapters *in one
+  batch* via segmented GEMM; goinfer's serve is **single-decode-worker-per-model,
+  no continuous batching** (deferred, roadmap). So the win is "N adapters share one
+  resident base," not concurrent high-density serving — real, but it's a footprint
+  play, consistent with this doc's whole thesis.
+- **Cost is medium-**_high_**, not medium.** The delta is an f32/f16 low-rank
+  branch that must fuse onto goinfer's *quantized* matmul seam (int4/W4A8/int8 base
+  + f32 add), on the hot path in every arch's forward. Merged-LoRA stays the
+  faster, simpler default; this is the opt-in RAM-vs-speed knob (house rule).
+
+**Cost / risk:** medium-high. **Gate:** bit-exact vs the merged-adapter path
+(the add is exact); decode tok/s non-regression (the extra low-rank pass).
+**Trigger:** `cmd/serve` is asked to host several adapters of one base and goes
+RAM-bound on the duplicated transformer.
+
+### 8. Tiered KV: demote idle warm sessions RAM → NVMe
+
+**The win:** `--kv-sessions` pins RAM for every warm conversation. The
+serialization to do something about it **already exists** — `--session-dir`
+persists warm sessions to disk via `.giw-kv` and restores them exactly. The new
+piece is only the **policy**: an idle-LRU that demotes a session's KV to disk after
+N minutes untouched and faults it back on the next request, instead of holding all
+of them resident. A small-RAM box then serves **hundreds of intermittent** chats
+without OOMing.
+
+**Cost / risk:** low — mostly policy plumbing in serve's `sessionLRU`; composes
+with the shipped int8 KV (already 4× smaller on disk) and the exact `.giw-kv`
+restore. The only real cost is fault-back latency (deserialize on resume), which is
+exactly what an idle threshold trades against. Scope it as *"automatic tiering over
+the existing persistence,"* not new machinery. **Trigger:** warm-session RAM is the
+serve OOM cause (many intermittent tenants on a small box).
+
+### Assessed and rejected (keep the record, KV-program style)
+
+- **Cross-model tensor dedup (content-addressable weights)** — *rejected.* The
+  premise that sibling fine-tunes (e.g. Coder vs Instruct) share **bit-identical**
+  tensors is mostly false: instruction-tuning perturbs ~all layers. The cases where
+  it holds are already covered — the *same file* loaded twice shares pages via the
+  **OS page cache** (we mmap), and "one base, many adapters" is #7 done properly.
+  So it pays a real load-time hashing cost (hashing GB of weights) for an unlikely
+  cross-file hit rate. Only salvageable as an explicit base+delta *packaging*
+  format — a niche choice, not a general win.
 
 ---
 
@@ -291,7 +365,15 @@ faces of this:
 
 - **#2 = the MoE face.** The demand signal is the router (runs *before* the expert
   matmuls — the seam is already in the forward): fault in selected experts, hold a
-  hot-expert LRU. Headline: *35B-A3B on a 24 GB box.*
+  hot-expert LRU. Headline: *35B-A3B on a 24 GB box.* **Implementation seam:** the
+  residency hook belongs at `moeMLP`'s router output (`idx, wts := topK(probs, k)`,
+  `mlp.go:69`), where the **whole selected set** for the layer is known — prefetch
+  that set (and ideally the next layer's likely experts) in one shot, *before* the
+  expert loop dereferences `&lw.Experts[e]`. **Not** a per-expert, error-returning
+  call inside the loop after the matmul (that faults the expert *after* using it and
+  stalls serially on each cold one); branch once on whether a pager is attached so
+  the default forward stays byte-for-byte unchanged, and carry residency state on
+  the pager/model, not on `LayerWeights`.
 - **#4 = the dense face.** The demand signal is layer order: prefetch layer L+1
   while computing L (`MADV_WILLNEED` / a prefetch goroutine), let consumed layers
   reclaim. Headline: *a 70B off NVMe on a 16 GB laptop.*
@@ -315,12 +397,19 @@ once, then the router-driven and order-driven policies are small specializations
    the timeboxed research spike, last — it compounds with the substrate (smaller
    weights → higher hit rate / streamed tok/s); **#3** as its own narrow,
    trigger-gated item.
+5. **Serve-side density (#7 LoRA sharing, #8 tiered KV)** — a separate axis from
+   the substrate (multi-tenant multiplier, not one model's footprint). **#8 is the
+   cheapest win in the whole doc** (policy over existing `.giw-kv` persistence) and
+   can land independently; **#7** rides the same immutable-base residency as the
+   substrate and fires when `cmd/serve` goes adapter-RAM-bound.
 
 ## What this is *not* (keeping the house rules)
 
 - Default decode stays **bit-exact**: #1 falls back to heap-dequant on any
   block-format mismatch; #2/#4 are opt-in `--moe-page` / `--stream-weights`;
-  #5/#6 are build-time `.giw` precisions behind their own gates.
+  #5/#6 are build-time `.giw` precisions behind their own gates; #7 is bit-exact
+  vs. the merged-adapter path (the low-rank add is exact); #8 restores KV exactly
+  from `.giw-kv`. Merged-LoRA stays the default — #7 is the opt-in density knob.
 - Not chasing kernel throughput (the roadmap's standing filter) — every idea here
   is a **footprint/capability** play, not a tok/s record. The one that *also*
   helps speed (#1/#3, smaller working set on a weight-stream-bound decode) does so
