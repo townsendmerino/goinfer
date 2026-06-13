@@ -141,24 +141,26 @@ func (m *Model) runLayersFromEmbedN(h []float32, cache *KVCache) ([]float32, err
 			}
 		}
 		// QKᵀ and scores·V for all K positions, per head, on the SIMD A·Bᵀ kernel
-		// (the L² terms) instead of the scalar per-position attendQuery.
-		// MoE attention uses the f64-accumulating matmul (bit-identical to the
-		// sequential reference, which decode also uses — so the discrete router never
-		// cascades); dense keeps the faster f32 MatmulBT (cosine ≥0.99 is fine there).
+		// (the L² terms) instead of the scalar per-position attendQuery. f64
+		// accumulation (the `true` acc64 arg) is bit-identical to the sequential
+		// reference decode also runs (causalAttention), so a batched verify reproduces
+		// sequential greedy EXACTLY — required for same-model speculative decoding and
+		// for the MoE top-k router never to cascade. (Was f32 for dense — only cosine
+		// ≥0.99, which broke spec parity since f32's reduction is M-dependent.)
 		// Local layers read an assembled [base, startPos+K) window (ring history +
 		// the K new rows in k/v); the ring write is deferred until after the read so
 		// a K>W batch can't evict in-batch history. Global layers read append-forever.
 		if isLocal {
 			base, nRows := cache.batchReadLocal(l, startPos, K, k, v, alk, alv)
-			attendBatchedHeads(q, ctx, alk[:nRows*kvDim], alv[:nRows*kvDim], base, cache, l, startPos, K, global, arch, arch.MoE != nil, aqh, akh, avt, ascores, ach)
+			attendBatchedHeads(q, ctx, alk[:nRows*kvDim], alv[:nRows*kvDim], base, cache, l, startPos, K, global, arch, true, aqh, akh, avt, ascores, ach)
 			cache.commitBatch(l, startPos, K, k, v)
 		} else if cache.quant == kvI8 {
 			// int8 global: the Append loop above already quantized the new K/V into
 			// the layer; dequant the full history into f32 scratch for the matmul.
 			nKeys := cache.dequantGlobalLayer(l, kvDim, alk, alv)
-			attendBatchedHeads(q, ctx, alk[:nKeys*kvDim], alv[:nKeys*kvDim], 0, cache, l, startPos, K, global, arch, arch.MoE != nil, aqh, akh, avt, ascores, ach)
+			attendBatchedHeads(q, ctx, alk[:nKeys*kvDim], alv[:nKeys*kvDim], 0, cache, l, startPos, K, global, arch, true, aqh, akh, avt, ascores, ach)
 		} else {
-			attendBatchedHeads(q, ctx, cache.Keys(l), cache.Vals(l), 0, cache, l, startPos, K, global, arch, arch.MoE != nil, aqh, akh, avt, ascores, ach)
+			attendBatchedHeads(q, ctx, cache.Keys(l), cache.Vals(l), 0, cache, l, startPos, K, global, arch, true, aqh, akh, avt, ascores, ach)
 		}
 		matmul(be, &lw.OProj, ctx, att, K)
 		if arch.OutBias {

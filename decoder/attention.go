@@ -100,39 +100,50 @@ func causalAttention(
 		applyRoPE(k, nKV, hd, pos, invFreq, ms)
 	}
 
-	// 4. Append this position's K/V, then attend over the stored history.
+	// 4. Append this position's K/V, then attend over the stored history. Route
+	// single-token decode through the SAME attendBatchedHeads kernel (at K=1) the
+	// batched prefill/verify (forwardN) uses, with f64 accumulation (acc64) — so
+	// decode is BIT-IDENTICAL to the batched forward for BOTH dense and MoE.
+	// Same-model speculative decoding requires it: the target's batched verify must
+	// reproduce sequential greedy exactly. The old dense path used the scalar
+	// attendQuery + an f32 (MatmulBT) batched verify, only cosine ≥0.99 — that flipped
+	// ~11% of argmaxes (spec output diverged) and left ~7% of speculations rejected
+	// (acceptance 0.93). f32's QKᵀ/AV reduction is M-dependent (K=1 decode ≠ M=K
+	// verify) at every aikit version; f64 is order-independent ⇒ exact. MoE already
+	// used acc64 for the same reason (top-k router stability); dense joins it — the
+	// f64 attention cost buys bit-exact decode==prefill==verify (gate:
+	// TestForwardN_matchesSequential / TestSpeculativeGreedyParity). The three cases
+	// mirror forwardN's: ring window, int8-KV global (dequant to f32 scratch), f32
+	// global (append-forever).
 	ctx := cache.scr.ctx
-	if arch.MoE != nil {
-		// MoE: route single-token attention through the SAME acc64 batched kernel
-		// the prefill uses (at K=1), so decode and prefill are bit-identical and the
-		// discrete top-k router never diverges across the prefill↔decode boundary.
-		// (Dense tolerates the f32 attendQuery — cosine ≥0.99 — so it stays scalar.)
-		var keys, vals []float32
-		var base, nKeys int
-		if cache.rings[layer] != nil {
-			// Local ring layer: defer the write past the read and assemble the
-			// [base, pos] window (resident history + this token's K/V), mirroring the
-			// deferred-write batched prefill so decode↔prefill stay bit-identical.
-			rows := pos - cache.WindowStart(pos, global) + 1
-			lk, lv := scr.localBufs(rows * kvDim)
-			base, nKeys = cache.batchReadLocal(layer, pos, 1, k, v, lk, lv)
-			keys, vals = lk[:nKeys*kvDim], lv[:nKeys*kvDim]
-		} else {
-			cache.Append(layer, k, v)
-			keys, vals, base, nKeys = cache.Keys(layer), cache.Vals(layer), 0, cache.storedRows(layer, kvDim)
-		}
+	acc64 := true
+	switch {
+	case cache.rings[layer] != nil:
+		// Local ring layer: defer the write past the read and assemble the [base, pos]
+		// window (resident history + this token's K/V), as the batched prefill does.
+		rows := pos - cache.WindowStart(pos, global) + 1
+		lk, lv := scr.localBufs(rows * kvDim)
+		base, nKeys := cache.batchReadLocal(layer, pos, 1, k, v, lk, lv)
 		qh, kh, vt, sc, ch := scr.attnBatchBufs(nKeys, hd)
-		attendBatchedHeads(q, ctx, keys, vals, base, cache, layer, pos, 1, global, arch, true, qh, kh, vt, sc, ch)
-		if cache.rings[layer] != nil {
-			cache.commitBatch(layer, pos, 1, k, v)
-			if !cache.manualPos && layer == cache.numLayers-1 {
-				cache.pos++ // commitBatch doesn't step pos; mirror Append's last-layer advance
-			}
+		attendBatchedHeads(q, ctx, lk[:nKeys*kvDim], lv[:nKeys*kvDim], base, cache, layer, pos, 1, global, arch, acc64, qh, kh, vt, sc, ch)
+		cache.commitBatch(layer, pos, 1, k, v)
+		if !cache.manualPos && layer == cache.numLayers-1 {
+			cache.pos++ // commitBatch doesn't step pos; mirror Append's last-layer advance
 		}
-	} else {
+	case cache.quant == kvI8:
+		// int8-KV global: Append quantizes the new K/V into the layer, then dequant the
+		// full history into f32 scratch for the matmul (mirrors forwardN's int8 branch).
 		cache.Append(layer, k, v)
-		nKeys := cache.storedRows(layer, kvDim) // logical count (ring layers store only W)
-		attendQuery(q, ctx, cache.scr.scoresBuf(nKeys), cache, layer, pos, global, arch)
+		lk, lv := scr.localBufs(cache.storedRows(layer, kvDim) * kvDim)
+		nKeys := cache.dequantGlobalLayer(layer, kvDim, lk, lv)
+		qh, kh, vt, sc, ch := scr.attnBatchBufs(nKeys, hd)
+		attendBatchedHeads(q, ctx, lk[:nKeys*kvDim], lv[:nKeys*kvDim], 0, cache, layer, pos, 1, global, arch, acc64, qh, kh, vt, sc, ch)
+	default:
+		// f32 global (append-forever): read the whole stored history.
+		cache.Append(layer, k, v)
+		nKeys := cache.storedRows(layer, kvDim)
+		qh, kh, vt, sc, ch := scr.attnBatchBufs(nKeys, hd)
+		attendBatchedHeads(q, ctx, cache.Keys(layer), cache.Vals(layer), 0, cache, layer, pos, 1, global, arch, acc64, qh, kh, vt, sc, ch)
 	}
 
 	// 7. Output projection into the caller's buffer (+ bias for GPT-2); the
