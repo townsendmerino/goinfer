@@ -36,7 +36,14 @@ RSS. These ideas attack that.
 
 ---
 
-## Tier 1 — high leverage, uses kernels we already ship
+## The ideas (the menu)
+
+> These are written as a catalogue, grouped loosely by leverage. **The
+> authoritative sequencing is the dependency + trigger sections at the end**, not
+> the order here — in particular #1 reads first but is the *hardest*, late item
+> once you account for the prerequisite structure.
+
+### High leverage on the resident weight footprint
 
 ### 1. Zero-copy GGUF: score native K-quant blocks from the mmap (kill the heap requant)
 
@@ -48,20 +55,28 @@ zero-copy from the mmap, a GGUF model would cost ~0 heap for its weights — the
 and no second file. For a 7 B Q4_K model that's ~4 GB of heap that simply
 disappears (moves to reclaimable page cache shared with the OS).
 
-**Why it's plausible:** the dequant kernels for these block formats already exist
-(aikit K-quant dequant, fuzzed). The new piece is a *scoring* kernel that
-consumes a super-block (sub-scales + packed nibbles) without first expanding it —
-i.e. a `MatmulBT`-shaped path over Q4_K blocks, analogous to the existing
-`MatmulBTW4A8` but reading the llama.cpp block struct instead of goinfer's
-per-row int4. Decode is ALU-bound, so this need not be *faster*; it just has to
-hit the parity gate while reading from the alias.
+**What it actually takes (corrected — this is the hardest item, not a medium
+one):** the existing kernels *dequant* a K-quant block → f32; this needs a
+different thing, a **scoring** kernel (block · activation → output *without*
+expanding the block). Those are not the same kernel, and it isn't one kernel —
+it's **one per K-quant type** (Q4_K, Q5_K, Q6_K, Q2_K, Q3_K, Q4_0, Q8_0…), each
+parity-gated, each carrying llama.cpp's fiddly super-block layout (Q4_K's 6-bit
+scale packing is its own small nightmare). That's a **parallel quant
+representation** standing alongside goinfer's flat per-row int4/int8 — real,
+permanent maintenance surface, not a reuse of what's there.
 
-**Cost / risk:** medium. K-quant super-blocks (sub-block scales, min, the Q4_K
-6-bit scale packing) are fiddlier than goinfer's flat per-row int8/int4, and
-you'd want it behind the same lazy-fallback discipline as `.giw` (mismatch →
-dequant-to-heap path). But it's the single biggest weight-RAM win for the most
-common input. **Gate:** argmax + cosine vs the current heap-dequant path, on the
-Q4_K / Q6_K goldens already in the repo.
+**And the trade is real, not free.** "Need not be faster" undersells it: scoring
+from the block means you **re-dequant every block every token** — you're trading
+heap RAM for per-token ALU. On a stream-bound decode that's *plausibly* neutral
+(fewer bytes read from the working set, more ALU per byte), but it must be stated
+as the trade it is and **measured**, not waved off. It could regress decode on an
+ALU-bound CPU path.
+
+**Cost / risk:** **HIGH.** Behind the same lazy-fallback discipline as `.giw`
+(any block-format mismatch → today's dequant-to-heap path). **Gate:** argmax +
+cosine vs the current heap-dequant path on the Q4_K / Q6_K goldens already in the
+repo, **plus a decode tok/s non-regression bar** (the ALU trade above). This is
+the program's foundation-generalization step, not its opener — see sequencing.
 
 ### 2. MoE inference-time expert demand-paging (the 10× for big MoE)
 
@@ -104,22 +119,32 @@ happening — scratch the easy win.
 **single largest resident tensor for a big-vocab small model at int4.** A 2 B
 model at int4 has its transformer at ~⅛ f32, but a 256 k × hidden embedding held
 at int8 (¼ f32) — order ~0.5 GB — can still **outweigh the entire transformer
-stack**. The opportunity is a *careful* sub-int8 scheme for this one table that
-doesn't flip logits: e.g. int4 on the **input-embedding read path** (a gather, far
-more tolerant) while keeping the **tied-head matmul** at the higher-precision
-"Q6_K output" idiom — i.e. split the precision of the two roles the tied tensor
-plays, instead of pinning both to int8 for the head's sake.
+stack**.
 
-**Cost / risk:** medium (up from "low" — it's no longer a free quantize). It needs
-the tied-tensor split (two precisions, one storage) and rides directly on the
-logit-parity gate that the `embedding()` policy was written to protect. **Gate:**
+**The mechanism problem (must be solved before this is real).** The obvious pitch
+— "int4 on the tolerant gather, Q6_K on the logit-critical head" — **does not work
+for a tied model**, which is the common case here (Gemma, small Qwen). A tied
+embedding is *one array*; it can't be int4-for-the-gather and higher-for-the-head
+at once without either storing it twice (no RAM win) or storing it at int4 and
+letting the head read int4 (the exact thing the `embedding()` policy forbids
+because it flips logits). The clean two-precision split only exists for **untied**
+big-vocab models (two tensors) — and those are rarer. So the honest version is one
+of: (a) scope this to untied models only, accept the narrower reach; or (b) find a
+tied-compatible mechanism — e.g. **int4 storage + a small int8 residual on only
+the head-critical rows/components**, restoring head precision where it moves the
+argmax without paying int8 across the whole table. (b) is the real win but is
+unproven and needs a hard look first.
+
+**Cost / risk:** medium for (a), research-flavored for (b). Rides directly on the
+logit-parity gate the `embedding()` policy was written to protect. **Gate:**
 argmax + cosine on the per-model goldens, same bar the current int8 pin clears.
-Highest payoff on exactly the "LLM-in-one-file" small models the README leads
-with — where this table is the footprint.
+**Trigger:** a big-vocab small model (256 k-class vocab, ≤4 B) where the int8
+embed/head table is measured as the dominant resident tensor — i.e. the
+"LLM-in-one-file" footprint actually bites.
 
 ---
 
-## Tier 2 — bigger swings, real capability unlocks
+### Bigger swings — capability unlocks
 
 ### 4. Bigger-than-RAM weight streaming (run a 70B on a 16 GB laptop)
 
@@ -192,21 +217,104 @@ Sequence it *after* #1–#4 ship, so the cheap wins land first.
 
 ---
 
-## Suggested order (mirrors the KV program's "free/cheap before research")
+## The dependency that reorders everything (corrects the first draft)
 
-1. **#1 zero-copy GGUF** — biggest win for the most common input; reuses dequant
-   kernels + `.giw` fallback discipline.
-2. **#2 MoE expert paging** — highest *capability* unlock; the only thing that
-   runs 35B-A3B-class on consumer RAM.
-3. **#4 weight streaming** — shares machinery with #2; the "bigger than RAM"
-   positioning win.
-4. **#5 mixed precision** — the `.giw` header already represents it; a packer +
-   scorer.
-5. **#3 sub-int8 embed/head** — narrowed (the easy quantize is already shipped);
-   the tied-tensor precision split is the residual lever for big-vocab small
-   models, on the logit gate.
-6. **#6 rotation 3-bit weights** — the lone research-risk item; spike last,
-   written go/no-go, compounds with #2 and #4.
+The first draft led with #1 (zero-copy GGUF) and called #2/#4 "share machinery."
+That's wrong, and the relationship is the most important thing in this doc:
+**#2 (MoE paging) and #4 (streaming) require zero-copy weight residency as a hard
+prerequisite.** You cannot demand-page or stream a heap-resident `WeightMat` — it
+is *already in heap*; that's the thing you're trying to avoid. Paging/streaming
+only mean anything when the weights stay mmap'd and fault in on demand. **Today
+exactly one path provides that substrate: `.giw`** (the zero-copy aliasing in
+`serialize.go`). #1 is not the opener — it's the step that *generalizes that
+substrate to plain GGUF*, and it's the hardest item in the program.
+
+So the marquee capability (#2/#4) does **not** have to wait behind the expensive
+kernel work. Prove it on the substrate that already exists:
+
+**Phase 1 — capability, on the `.giw` substrate that ships today (the headline).**
+Build #2 (MoE expert demand-paging) and/or #4 (dense weight streaming) on `.giw`'s
+existing zero-copy mmap. This front-loads the marquee — *"run a 35B-A3B / a 70B on
+a 16–24 GB laptop, single static Go binary, no install, offline"* — and de-risks
+the program **without writing a single K-quant scoring kernel.** Users prequant to
+`.giw` (the path the multi-model zoo already wants).
+
+**Phase 2 — generalize the substrate to plain GGUF (#1, HIGH cost).** Only once
+the capability is proven and wanted, bring it to the format users already have, by
+making GGUF zero-copy too (the per-K-quant scoring kernels). This is the right
+place for the expensive, parallel-quant-representation work — *after* it has a
+proven payoff pulling it, not gating the whole program behind it.
+
+**Parallel / independent of the substrate:**
+- **#5 mixed precision** — the safe incremental tuner; the `.giw` header already
+  represents per-tensor kind, so it's a packer + scorer. Ships anytime.
+- **#3 sub-int8 embed/head** — narrowed, and blocked on the tied-tensor mechanism
+  above; do (a) untied-only or solve (b) first.
+- **#6 rotation 3-bit weights** — the lone research-risk item; timeboxed spike,
+  written go/no-go, **last.** Compounds with #2/#4 (smaller weights → more
+  experts/layers per RAM byte → higher hit rate / streamed tok/s).
+
+## Triggers (the KV program had these; this one needs them too)
+
+The first draft was "the roadmap watches weights, so here's the program" with no
+firing condition. Explicit triggers, so this is a *scoped program* and not a
+standing menu:
+
+- **#2 (MoE paging) fires when:** a big-MoE model in the roadmap pipeline
+  (DeepSeek V4, GLM-4 MoE, and the already-landed Qwen3.6-35B-A3B / Mellum2)
+  becomes something an adopter wants to run **under its all-resident footprint** —
+  e.g. "35B-A3B on a 24 GB box," or the multi-model zoo going RAM-bound on stacked
+  MoE.
+- **#4 (streaming) fires when:** a concrete *bigger-dense-than-RAM* ask appears —
+  "run a 70B/dense-class off NVMe on a 16 GB laptop." Without that ask it stays a
+  positioning idea, not scheduled work.
+- **#1 (zero-copy GGUF) fires when:** #2 or #4 is proven on `.giw` **and** the
+  "but my model is a plain GGUF" friction is real (i.e. the prequant-to-`.giw`
+  step is the adoption blocker).
+- **#5 / #3 / #6:** #5 on a measured "uniform int8 leaves quality/size on the
+  table" case; #3 on the big-vocab-small-model footprint biting (its own trigger
+  above); #6 only as a deliberate research spike when the proven rungs are in —
+  same discipline as the TurboQuant KV spike.
+
+## Scope decision (2026-06-13): build the shared substrate
+
+The scoping question — *MoE-on-small-RAM (#2) or bigger-dense-than-RAM (#4)?* —
+was answered **both**. So the program does **not** collapse to one headline; it
+collapses to **the substrate they share**, built once, with #2 and #4 as its two
+specializations. That's the spine:
+
+**The shared substrate — zero-copy, demand-resident, layer-sequential weights.**
+Weights stay mmap'd (the `.giw` aliasing, generalized), never fully heap-resident;
+the forward's existing layer-sequential loop drives residency on demand; RSS is
+bounded by a working set, not the whole model. Everything below is one of two
+faces of this:
+
+- **#2 = the MoE face.** The demand signal is the router (runs *before* the expert
+  matmuls — the seam is already in the forward): fault in selected experts, hold a
+  hot-expert LRU. Headline: *35B-A3B on a 24 GB box.*
+- **#4 = the dense face.** The demand signal is layer order: prefetch layer L+1
+  while computing L (`MADV_WILLNEED` / a prefetch goroutine), let consumed layers
+  reclaim. Headline: *a 70B off NVMe on a 16 GB laptop.*
+
+They are the **same machinery** (mmap residency + a prefetch/eviction policy over
+the layer-sequential loop) with two demand sources — which is *why* "both" is
+coherent rather than double the work: build the residency core + policy interface
+once, then the router-driven and order-driven policies are small specializations.
+
+**Revised plan of record:**
+
+1. **Substrate core on `.giw`** — mmap-resident weights + a prefetch/eviction
+   policy seam over the layer loop. No new kernels. (Phase 1.)
+2. **#4 dense streaming policy** (order-driven prefetch) and **#2 MoE paging
+   policy** (router-driven + hot LRU) as the two policies on that seam — sequence
+   by whichever adopter ask lands first; both are in scope.
+3. **#1 zero-copy GGUF** — generalize the substrate off `.giw` to plain GGUF (the
+   HIGH-cost per-K-quant scoring kernels), once the capability is proven and the
+   "my model is a GGUF" friction is the live blocker. (Phase 2.)
+4. **#5 mixed precision** in parallel (tuner, ships anytime); **#6 rotation 3-bit**
+   the timeboxed research spike, last — it compounds with the substrate (smaller
+   weights → higher hit rate / streamed tok/s); **#3** as its own narrow,
+   trigger-gated item.
 
 ## What this is *not* (keeping the house rules)
 
