@@ -28,11 +28,19 @@ func loadInt4Model(tb testing.TB) *Model {
 // — the int4 analog of parityWant (which pins int8int8). It guards the WHOLE int4
 // forward, including the prefill→W4A8 switch (decoder/weightmat.go), against
 // silent numerics drift: greedy + fixed prompt → fully deterministic. The first
-// 4 ids match parityWant (the prompt's strongest continuation survives 4-bit);
+// 5 ids match parityWant (the prompt's strongest continuation survives 4-bit);
 // they diverge after as int4's coarser weights bend the path. Regenerate ONLY
 // when an int4 numerics change is intentional and parity-reviewed (set this to
 // nil for a capture run — the test logs the new list and skips).
-var parityWantInt4 = []int{4710, 73594, 12669, 198, 474, 2643, 198, 474, 5708, 198, 474, 882, 271, 750, 1887, 3932, 262, 1173, 445, 13936, 311, 279, 15623, 2923}
+//
+// Re-captured 2026-06-12 after the dense-attention fix (causalAttention routes
+// decode through the f64 attendBatchedHeads, batched-identical to prefill — see
+// attention.go). The PRIOR golden was recorded under the old decode≠prefill bug
+// (scalar f32 attendQuery, aikit 1.3.0) and diverged from int8int8 already at id
+// 4 (474 vs parityWant's 750) — i.e. it pinned the buggy output. The fixed int4
+// decode now MATCHES int8int8 through id 4 (both 750) and tracks it one token
+// further before int4 lossiness bends off — the more-correct continuation.
+var parityWantInt4 = []int{4710, 73594, 12669, 198, 750, 11047, 10784, 15890, 24337, 982, 262, 2790, 15890, 284, 220, 15, 198, 262, 369, 1509, 304, 3589, 510, 286}
 
 // TestDecodeParityInt4 greedily continues parityPrompt at int4 and checks the
 // token ids against parityWantInt4. The prompt is prefilled (batched
