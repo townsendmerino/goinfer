@@ -10,6 +10,8 @@ pre-1.0 and may change as new model families and quant formats land.
 
 ## [Unreleased]
 
+## [v0.6.0] — 2026-06-13
+
 ### Added
 - **GPU int8 KV cache (`--kv i8`, opt-in `-tags gpu`) — 4× vs f32, ~64k context on
   8 GB.** The full-residency decode path (dense Qwen2/Llama) gains an int8 KV cache
