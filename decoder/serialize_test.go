@@ -3,9 +3,12 @@ package decoder
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 	"unsafe"
+
+	"github.com/townsendmerino/goinfer/internal/giw"
 )
 
 // prequantGGUF is the model used for the serialize round-trip test. It skips
@@ -132,6 +135,64 @@ func TestLoadSerializedWeights_guards(t *testing.T) {
 	bumped[len(giwMagic)]++ // first byte of the version word
 	if _, err := LoadSerializedWeights(bumped); err == nil {
 		t.Fatal("bumped version: expected error")
+	}
+}
+
+// TestLoadGIW_mmap gates the residency substrate's first step: loading a model
+// from a .giw file maps the weights (instead of os.ReadFile) so the int8 weights
+// are pageable views into the mapping, and that path is bit-exact — the greedy
+// token from the mmap'd .giw matches the GGUF it was prequantized from. Writes a
+// real bundle to a temp file and loads it through Model.Load's .giw branch.
+func TestLoadGIW_mmap(t *testing.T) {
+	path := prequantGGUF(t)
+
+	m1, err := Load(path, Options{Quant: "int8int8"})
+	if err != nil {
+		t.Fatalf("load gguf: %v", err)
+	}
+	defer m1.Close()
+	blob, err := SerializeWeights(m1.w, "mmap-test")
+	if err != nil {
+		t.Fatalf("serialize: %v", err)
+	}
+	// Frame a .giw bundle (weights + a tokenizer half, unused by the decoder load)
+	// and write it to disk so Load takes the mmap path.
+	giwPath := filepath.Join(t.TempDir(), "model.giw")
+	if err := os.WriteFile(giwPath, giw.Write(blob, nil), 0o644); err != nil {
+		t.Fatalf("write .giw: %v", err)
+	}
+
+	m2, err := Load(giwPath, Options{})
+	if err != nil {
+		t.Fatalf("load .giw: %v", err)
+	}
+	defer m2.Close()
+	if m2.mmap == nil {
+		t.Fatal("loaded .giw but Model.mmap is nil — weights were not mapped")
+	}
+
+	// The int8 weights must be views INTO the mapping (zero-copy, pageable), not
+	// heap copies — the whole point of the substrate.
+	mapped := 0
+	for _, w := range m2.w.matmulWeights() {
+		q8 := tQ8(w)
+		if len(q8) == 0 {
+			continue
+		}
+		if !aliases(q8, m2.mmap) {
+			t.Fatalf("a %d-row weight's q8 is NOT aliased into the mmap region — expected pageable residency", w.Rows())
+		}
+		mapped++
+	}
+	if mapped == 0 {
+		t.Fatal("no int8 weights found to check aliasing")
+	}
+	t.Logf("%d matmul weights alias the mmap region (pageable)", mapped)
+
+	// Bit-exact: the mmap'd .giw produces the same greedy token as its source GGUF.
+	prompt := []int{1, 2, 3, 4, 5, 6, 7, 8}
+	if g1, g2 := greedyFirst(t, m1, prompt), greedyFirst(t, m2, prompt); g1 != g2 {
+		t.Fatalf("greedy token differs: gguf=%d mmap-giw=%d", g1, g2)
 	}
 }
 

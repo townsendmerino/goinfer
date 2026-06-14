@@ -29,6 +29,7 @@ type Model struct {
 	kvF16    bool            // residency KV cache precision request (Options.KVPrecision == "f16")
 	kvPrecI8 bool            // residency KV cache int8 request (Options.KVPrecision == "i8") — GPU
 	kvI8     bool            // CPU KV cache int8 storage request (Options.KVQuant == "i8") — CPU staged path
+	mmap     []byte          // .giw mmap region the int8/int4 weights alias; munmap'd by Close (nil off the .giw mmap path)
 }
 
 // KVCacheF16 reports whether the GPU residency path should use an f16 KV cache
@@ -68,28 +69,33 @@ func Load(dir string, opts Options) (*Model, error) {
 
 	// Prequant bundle (.giw): the weights are already quantized and serialized, so
 	// they alias straight out of the file — no GGUF/safetensors load, no requant
-	// (opts.Quant/LoRA do not apply). giw.Read splits the weight blob from the
-	// metadata-GGUF that carries the tokenizer.
+	// (opts.Quant/LoRA do not apply). The file is mmap'd read-only so the aliased
+	// int8/int4 weights are pageable (faulted from the page cache, evictable) rather
+	// than copied to the heap — the substrate the streaming / expert-paging policies
+	// build on. giw.Read splits the weight blob from the metadata-GGUF tokenizer; the
+	// mapping is held on the Model and released by Close.
 	if strings.HasSuffix(dir, ".giw") {
-		data, rerr := os.ReadFile(dir)
+		data, rerr := mmapReadOnly(dir)
 		if rerr != nil {
 			closeBackend(be)
-			return nil, fmt.Errorf("decoder: read .giw: %w", rerr)
+			return nil, fmt.Errorf("decoder: mmap .giw: %w", rerr)
 		}
 		weightsBlob, _, gerr := giw.Read(data)
 		if gerr != nil {
+			_ = munmap(data)
 			closeBackend(be)
 			return nil, fmt.Errorf("decoder: parse .giw bundle: %w", gerr)
 		}
 		w, lerr := LoadSerializedWeights(weightsBlob)
 		if lerr != nil {
+			_ = munmap(data)
 			closeBackend(be)
 			return nil, lerr
 		}
 		if beErr != nil {
 			fmt.Println(beErr)
 		}
-		return (&Model{w: w, be: be, eosIDs: w.Cfg.EOSIDs(), kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8"}).withResidency(), nil
+		return (&Model{w: w, be: be, mmap: data, eosIDs: w.Cfg.EOSIDs(), kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8"}).withResidency(), nil
 	}
 
 	// Resolve the quant mode first so the weights stream straight into the
@@ -153,17 +159,24 @@ func closeBackend(be Backend) {
 // Config exposes the loaded architecture config.
 func (m *Model) Config() *Config { return &m.w.Cfg }
 
-// Close releases backend resources (GPU resident buffers + the backend); a no-op
-// for the CPU backend. Safe to call once after the model is done.
+// Close releases backend resources (GPU resident buffers + the backend) and
+// unmaps the .giw mapping if the model was loaded from a prequant bundle. A no-op
+// for the CPU backend with no mapping. Safe to call once after the model is done;
+// the weights must not be touched afterward (the mapping is gone).
 func (m *Model) Close() error {
 	if m.resident != nil {
 		_ = m.resident.Close()
 		m.resident = nil
 	}
+	var err error
 	if m.be != nil {
-		return m.be.Close()
+		err = m.be.Close()
 	}
-	return nil
+	if m.mmap != nil {
+		_ = munmap(m.mmap)
+		m.mmap = nil
+	}
+	return err
 }
 
 // NewCache allocates a KV cache sized for this model. capHint pre-sizes for
