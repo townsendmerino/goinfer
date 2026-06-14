@@ -61,6 +61,44 @@ func TestWriteStream_matchesWrite(t *testing.T) {
 	}
 }
 
+// TestReadTokFile_matchesRead: reading just the tokenizer half from a bundle file
+// (seek past the weights, used to serve a large .giw without aliasing its tens of
+// GB of weights) returns the same bytes as Read's tok half — for both v2 and v1
+// frames.
+func TestReadTokFile_matchesRead(t *testing.T) {
+	weights := []byte("a-multi-gb-weights-blob-stand-in")
+	tok := []byte("the-metadata-gguf-tokenizer-half")
+
+	// v2 (via Write)
+	pathV2 := t.TempDir() + "/v2.giw"
+	if err := os.WriteFile(pathV2, Write(weights, tok), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ReadTokFile(pathV2)
+	if err != nil {
+		t.Fatalf("ReadTokFile v2: %v", err)
+	}
+	if !bytes.Equal(got, tok) {
+		t.Fatalf("v2 tok = %q, want %q", got, tok)
+	}
+
+	// v1 frame (u32 weights length), hand-built like TestBundle_v1_compat
+	var v1 []byte
+	v1 = append(v1, bundleMagic...)
+	v1 = binary.LittleEndian.AppendUint32(v1, 1)
+	v1 = binary.LittleEndian.AppendUint32(v1, uint32(len(weights)))
+	v1 = append(v1, weights...)
+	v1 = binary.LittleEndian.AppendUint32(v1, uint32(len(tok)))
+	v1 = append(v1, tok...)
+	pathV1 := t.TempDir() + "/v1.giw"
+	if err := os.WriteFile(pathV1, v1, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := ReadTokFile(pathV1); err != nil || !bytes.Equal(got, tok) {
+		t.Fatalf("v1 ReadTokFile = %q, err=%v, want %q", got, err, tok)
+	}
+}
+
 // TestBundle_v1_compat: a v1 bundle (u32 weights length) still loads, so existing
 // .giw files keep working after the v2 (u64) bump.
 func TestBundle_v1_compat(t *testing.T) {

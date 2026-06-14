@@ -155,6 +155,13 @@ func Load(dir string, opts Options) (*Model, error) {
 		// webgpu requested but fell back — not fatal.
 		fmt.Println(beErr)
 	}
+	if opts.StreamWeights {
+		// Weight streaming pages weights out of the read-only mmap, which only the
+		// .giw path provides; a GGUF/safetensors load dequantizes into the heap, so
+		// there's nothing to page. Make the no-op visible rather than silently
+		// running fully resident (prequant to .giw with cmd/prequant to use it).
+		fmt.Fprintln(os.Stderr, "decoder: --stream-weights ignored — weights are heap-resident; prequant to .giw (cmd/prequant) to enable streaming")
+	}
 	return (&Model{w: w, be: be, eosIDs: resolveEOSIDs(dir, &w.Cfg), kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8"}).withResidency(), nil
 }
 

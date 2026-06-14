@@ -40,6 +40,7 @@ import (
 	"github.com/townsendmerino/aikit/vision"
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/giw"
 	"github.com/townsendmerino/goinfer/multimodal"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
@@ -305,11 +306,7 @@ func (s *server) loadVisionTower(cfg config) error {
 // and returns it as a *loadedModel. The served name is the spec's name=, else (a
 // single unnamed --model) --served-model-name, else the file/dir basename.
 func loadDecoder(spec modelSpec, cfg config) (*loadedModel, error) {
-	loadTok := tokenizer.Load
-	if strings.HasSuffix(spec.path, ".gguf") {
-		loadTok = tokenizer.LoadGGUF
-	}
-	tk, err := loadTok(spec.path)
+	tk, err := loadDecoderTokenizer(spec.path)
 	if err != nil {
 		return nil, fmt.Errorf("load tokenizer (%s): %w", spec.path, err)
 	}
@@ -348,6 +345,25 @@ func loadDecoder(spec modelSpec, cfg config) (*loadedModel, error) {
 	fmt.Fprintf(os.Stderr, "loaded %q: %d-layer model (vocab %d) in %s [chat: %s]\n",
 		name, mcfg.NumLayers, mcfg.VocabSize, time.Since(t0).Round(time.Millisecond), templateName(lm.tmpl))
 	return lm, nil
+}
+
+// loadDecoderTokenizer loads the tokenizer for a decoder model, picking the loader
+// by extension: a prequant .giw carries its tokenizer as an embedded metadata-GGUF
+// (read just that half — the weights are tens of GB and mmap'd by decoder.Load), a
+// .gguf reads its own metadata, and anything else is a SentencePiece/HF dir.
+func loadDecoderTokenizer(path string) (*tokenizer.Tokenizer, error) {
+	switch {
+	case strings.HasSuffix(path, ".giw"):
+		tokGGUF, err := giw.ReadTokFile(path)
+		if err != nil {
+			return nil, err
+		}
+		return tokenizer.LoadGGUFBytes(tokGGUF)
+	case strings.HasSuffix(path, ".gguf"):
+		return tokenizer.LoadGGUF(path)
+	default:
+		return tokenizer.Load(path)
+	}
 }
 
 // loadEncoder loads the embedding model (f32 or int8) plus its tokenizer (used

@@ -216,8 +216,12 @@ slides a window over the `runLayersFromEmbed` / `runLayersFromEmbedN` layer loop
 because the order is known, it `MADV_WILLNEED`s the next layer while the current one
 computes (overlapping the fault — the latency hiding MoE's just-in-time router can't
 do) and `MADV_DONTNEED`s the layer sliding out the back. Resident weight RAM is
-bounded to a window of layers (sized by `--weight-cache`); the floor is NVMe
-bandwidth (a model that doesn't fit is re-read ~once per token). Bit-exact by the
+bounded to **floor + window** (sized by `--weight-cache`) — *floor* because only the
+7 per-layer projections stream; embed / final-norm / LM-head aren't per-layer and
+stay resident, so for a big-vocab model that floor is multi-GB on its own (the
+complementary lever is #3 sub-int8 embed/head — "bigger than RAM" is not "≈ 0 RAM").
+The latency floor is NVMe bandwidth (a model that doesn't fit is re-read ~once per
+token). Bit-exact by the
 read-only-re-fault property — gated by `TestLayerPaging_bitExact` (3-layer window,
 decode byte-identical to fully resident, prefetches + evictions > 0). Built on the
 mmap substrate (Inc 1); reuses the expert pager's `alignedMappedSpan` + `madviseBytes`.

@@ -19,6 +19,12 @@ import (
 // the mapping is read-only and file-backed, so a released layer re-faults from disk
 // with identical bytes (TestMadvise_dontneedRefaultsIntact proves the property).
 //
+// The resident floor is NOT zero: only the 7 per-layer projections stream. The token
+// embedding, final norm, and LM head aren't per-layer, so they stay resident, plus
+// the live window. For a big-vocab model embed+head alone can be a multi-GB floor —
+// the complementary lever there is idea #3 (sub-int8 embed/head). So "bigger than
+// RAM" means bounded to floor + window, not ≈ 0.
+//
 // Built only for mmap-backed dense .giw models; nil when the model is MoE (that's
 // idea #2's expertPager), heap-backed, or small enough to fit the budget whole.
 // Not goroutine-safe — one decode stream drives it, like the KV cache.

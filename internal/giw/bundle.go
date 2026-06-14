@@ -71,6 +71,44 @@ func WriteStream(f *os.File, tok []byte, writeWeights func(io.Writer) (int64, er
 	return nil
 }
 
+// ReadTokFile reads only the tokenizer half of a bundle file, without pulling the
+// (potentially many-GB) weights half into memory: it parses the small header, then
+// ReadAts the trailing tokenizer GGUF past the weights. For serving a large .giw
+// where the weights are mmap'd by the decoder — the tokenizer is a few MB, the
+// weights tens of GB, so Read (which aliases the whole file) would be ruinous here.
+func ReadTokFile(path string) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	var hdr [17]byte // magic(5) + u32 version + u64 weights-len (v2; v1 uses 4 of the 8)
+	if _, err := f.ReadAt(hdr[:], 0); err != nil {
+		return nil, fmt.Errorf("giw: read header: %w", err)
+	}
+	if string(hdr[:len(bundleMagic)]) != bundleMagic {
+		return nil, fmt.Errorf("giw: bad bundle magic %q", hdr[:len(bundleMagic)])
+	}
+	var tokOff int64
+	switch ver := binary.LittleEndian.Uint32(hdr[5:9]); ver {
+	case 1:
+		tokOff = 13 + int64(binary.LittleEndian.Uint32(hdr[9:13])) // magic+u32ver+u32len
+	case 2:
+		tokOff = 17 + int64(binary.LittleEndian.Uint64(hdr[9:17])) // magic+u32ver+u64len
+	default:
+		return nil, fmt.Errorf("giw: bundle version %d, this build reads 1–2", ver)
+	}
+	var tl [4]byte
+	if _, err := f.ReadAt(tl[:], tokOff); err != nil {
+		return nil, fmt.Errorf("giw: read tok length: %w", err)
+	}
+	tok := make([]byte, binary.LittleEndian.Uint32(tl[:]))
+	if _, err := f.ReadAt(tok, tokOff+4); err != nil {
+		return nil, fmt.Errorf("giw: read tok: %w", err)
+	}
+	return tok, nil
+}
+
 // Read splits a bundle back into the weights blob and the tokenizer GGUF. The
 // returned slices alias data (zero-copy), so data must outlive their use — which
 // is the point: the weights half is aliased all the way down to the int8 arrays.

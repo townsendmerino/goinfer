@@ -17,9 +17,11 @@ pre-1.0 and may change as new model families and quant formats land.
   sequential and known in advance, a sliding-window pager prefetches the next
   layer's weights (`MADV_WILLNEED`) while the current layer computes — overlapping
   the fault — and releases the layer that slides out the back (`MADV_DONTNEED`).
-  Resident weight RAM is bounded to a window of layers (sized by `--weight-cache`)
+  Resident weight RAM is bounded to **floor + window** (sized by `--weight-cache`)
   instead of the whole model, so a model too big for RAM still runs (floored by
-  NVMe bandwidth). Bit-exact by the same read-only-re-fault property as expert
+  NVMe bandwidth). The floor is non-zero: only the per-layer projections stream;
+  embed / final-norm / LM-head stay resident (multi-GB for big-vocab models — the
+  complementary lever is sub-int8 embed/head). Bit-exact by the same read-only-re-fault property as expert
   paging — validated byte-identical over a decode with a 3-layer window evicting
   and re-faulting most layers every token. Same `--stream-weights` flag, which now
   picks expert paging for MoE and layer streaming for dense; no-op when the model
