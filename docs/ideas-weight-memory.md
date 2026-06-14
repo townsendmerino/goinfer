@@ -106,7 +106,20 @@ cost (super-block sub-scale dequant) live. Measure three numbers; they decide it
    fidelity win real, or does int4-requant already pass — collapsing A to convenience,
    i.e. ship D and shelve native blocks?).
 
-**Verdict / scope.** Build **D now**. Gate **A** on the Q6_K spike; if it clears,
+**Spike result (2026-06-13 — Qwen2.5-0.5B Q6_K, 74 real-prefix next-token preds;
+`cmd/spikeq6k`, since removed).** Top-1 agreement vs native (f32-dequant ≡ what A's
+dequant-on-fly produces): **weight-only int8 = 98.6%** (73/74 — ~lossless), W8A8
+int8int8 = 91.9%, int4 = 81.1%. Compute: aikit has only a *scalar* reference dequant
+(~0.3 GB/s, ~11× the SIMD dot) — A would need new per-format SIMD fused dequant-dot
+kernels. **Read: A is NOT justified.** The fidelity case collapses — *weight-only int8
+already reproduces native Q6_K* (+1 pt for A = noise); int4 is the only lossy option
+(81%), which argues "use int8 for D," not "build A." A's sole remaining benefit is
+**−22% RAM vs int8** (Q6_K), streaming-only, at HIGH cost. **Decision: shelve A; ship
+D.** (Side note for D: prefer `--quant int8` (weight-only, 98.6%) over the
+`int8int8`/W8A8 default (91.9%) when fidelity matters more than matmul speed.)
+
+**Verdict / scope.** Build **D now**. Gate **A** on the Q6_K spike (RAN — see result
+above: shelved); if it clears,
 implement **only the mid-bit K-quants that fit neither int8 nor int4 well — Q4_K_M,
 Q5_K, Q6_K (~3, not ~12)** — everything else falls back to D. Note Q8_0 (≈int8) and
 Q4_0 (≈int4) are **not** A cases: D's requant is byte-equivalent in width, so a
