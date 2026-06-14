@@ -77,8 +77,8 @@ A doesn't implement falls back here.
 
 **A — native-block `WeightMat` kind (the narrow optimization; gated on the spike).**
 The one thing D cannot do: goinfer's `WeightMat` is f32/int8/int4 only, so a **mid-
-bit K-quant (Q5_K/Q6_K) must round up to int8 (~33% bigger resident than native
-Q6_K) or down to int4 (lossy).** A native-block kind holds it at native ~5–6.5 bits
+bit K-quant (Q5_K/Q6_K) must round up to int8 (~22% bigger for Q6_K, ~45% for Q5_K)
+or down to int4 (lossy).** A native-block kind holds it at native ~5–6.5 bits
 — *smaller than the int8 requant and more accurate than the int4 requant.* That's
 the actual case for #1, narrower than "generalize to all GGUF." It's intrinsically a
 **streaming** tool: native blocks require dequant-on-the-fly (dequant-once defeats
@@ -104,9 +104,11 @@ cost (super-block sub-scale dequant) live. Measure three numbers; they decide it
    i.e. ship D and shelve native blocks?).
 
 **Verdict / scope.** Build **D now**. Gate **A** on the Q6_K spike; if it clears,
-implement **only the formats people run big or want native — Q4_K_M, Q5_K, Q6_K,
-Q8_0 (~4, not ~12)** — everything else falls back to D. **Cost / risk:** D low; A
-HIGH and only if the three numbers justify it.
+implement **only the mid-bit K-quants that fit neither int8 nor int4 well — Q4_K_M,
+Q5_K, Q6_K (~3, not ~12)** — everything else falls back to D. Note Q8_0 (≈int8) and
+Q4_0 (≈int4) are **not** A cases: D's requant is byte-equivalent in width, so a
+native-block kind would only add per-token dequant cost for no footprint/fidelity
+gain. **Cost / risk:** D low; A HIGH and only if the three numbers justify it.
 
 ### 2. MoE inference-time expert demand-paging (run big MoE on less RAM)  ✅ SHIPPED (2026-06-13)
 
