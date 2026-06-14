@@ -332,6 +332,23 @@ precision tag in the `.giw` header (which already carries per-`weightMat` kind �
 this is a packer + a chooser, not a format change). Offline, so **zero decode
 cost**.
 
+**Spike result (2026-06-14 — qwen2.5-coder-0.5B Q4_K_M, per-tensor-type sensitivity
+sweep; throwaway harness via a temporary GOINFER_SPIKE_INT8 env-guard on streamMat,
+since reverted). GO — and concentrated in the cheap tensors.** Starting from uniform
+int4 (embed pinned int8) and promoting one GGUF tensor-type to int8, next-token top-1
+recovery toward int8: **attn_output +21 pts** (>half the int4→int8 gap), attn_k +10,
+attn_v +8, attn_q +3; the **BIG ffn_* tensors recover ~0 / noise** (they're int4-
+tolerant). So the loss lives in **attention** — the *cheap* third of the weights
+(FFN's intermediate≫hidden makes ffn ≈ ⅔ of params). The natural config is
+**attention→int8, FFN→int4**: ~0.78× uniform-int8 RAM at most of int8's quality (or
+~int4 size at far-better-than-int4 quality). Notably this is a *simple per-tensor-type
+rule* (extend the embed-pin idea), not requiring the full calibration scorer for v1.
+Caveats: small sample / 0.5B only / brittle argmax (the negative ffn readings are
+noise) — attn_output dominance is credible (textbook sensitive tensor) but magnitudes
+need firming on a bigger model before shipping. It's a *middle* quality/size point
+(int4↔int8), niche like the embed-int4 knob. **Minimal build = an opt-in
+"attn-int8/ffn-int4" mixed quant mode; calibration scorer = optional refinement.**
+
 **Cost / risk:** medium. The research risk is the sensitivity metric (MSE-on-
 calibration vs. end-to-end argmax). Timebox the scorer; the fallback is uniform
 quant, which we already ship. **Gate:** the per-model goldens, plus "mixed ≤
