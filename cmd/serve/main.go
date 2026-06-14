@@ -41,6 +41,7 @@ import (
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/giw"
+	"github.com/townsendmerino/goinfer/internal/prequant"
 	"github.com/townsendmerino/goinfer/multimodal"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
@@ -121,7 +122,7 @@ func main() {
 	flag.IntVar(&cfg.kvSessions, "kv-sessions", 4, "number of conversations to keep prefilled in RAM for prompt-prefix KV reuse (0 disables)")
 	flag.DurationVar(&cfg.kvIdleDemote, "kv-idle-demote", 0, "tiered KV: demote a warm session's KV to -session-dir once it's been idle this long, faulting it back on the next matching request (e.g. 10m; 0 = off). Lets a small-RAM box serve many intermittent chats. Needs -session-dir and -kv-sessions > 0")
 	flag.IntVar(&cfg.kvDemotedMax, "kv-demoted-max", 64, "tiered KV: max demoted (on-disk) sessions to keep; older ones are dropped (only with -kv-idle-demote)")
-	flag.BoolVar(&cfg.streamWeights, "stream-weights", false, "page model weights on demand out of an mmap'd .giw, capping resident RAM to -weight-cache instead of holding all weights: MoE expert demand-paging (run a 35B-A3B on ~16-20 GB) or dense per-layer streaming (run a model bigger than RAM). Bit-exact; trades RAM for fault latency. Needs a .giw model")
+	flag.BoolVar(&cfg.streamWeights, "stream-weights", false, "page model weights on demand out of an mmap'd .giw, capping resident RAM to -weight-cache instead of holding all weights: MoE expert demand-paging (run a 35B-A3B on ~16-20 GB) or dense per-layer streaming (run a model bigger than RAM). Bit-exact; trades RAM for fault latency. A plain .gguf is transparently transcoded to a sidecar .giw cache on first use (one-time)")
 	flag.Float64Var(&cfg.weightCacheGB, "weight-cache", 0, "resident expert-weight budget in GB for -stream-weights (0 = auto, ~half of available RAM)")
 	flag.IntVar(&cfg.maxQueue, "max-queue", 8, "per-model backpressure: max queued requests before 429 (0 = unbounded)")
 	flag.StringVar(&cfg.embedPath, "embed-model", "", "embedding model: a CodeRankEmbed HF dir (config.json + model.safetensors + tokenizer.json) for /v1/embeddings")
@@ -306,14 +307,27 @@ func (s *server) loadVisionTower(cfg config) error {
 // and returns it as a *loadedModel. The served name is the spec's name=, else (a
 // single unnamed --model) --served-model-name, else the file/dir basename.
 func loadDecoder(spec modelSpec, cfg config) (*loadedModel, error) {
-	tk, err := loadDecoderTokenizer(spec.path)
+	// Weight streaming needs the read-only mmap that only .giw provides. For a plain
+	// .gguf, transparently transcode to a sidecar .giw cache once (idea #1 "D") and
+	// load that — so --stream-weights "just works" without a manual prequant step.
+	// The served name still derives from the original --model spec, not the cache.
+	loadPath := spec.path
+	if cfg.streamWeights && strings.HasSuffix(spec.path, ".gguf") {
+		giwPath, err := prequant.EnsureCachedGIW(spec.path, cfg.quant)
+		if err != nil {
+			return nil, fmt.Errorf("stream-weights cache (%s): %w", spec.path, err)
+		}
+		loadPath = giwPath
+	}
+
+	tk, err := loadDecoderTokenizer(loadPath)
 	if err != nil {
-		return nil, fmt.Errorf("load tokenizer (%s): %w", spec.path, err)
+		return nil, fmt.Errorf("load tokenizer (%s): %w", loadPath, err)
 	}
 	t0 := time.Now()
-	model, err := decoder.Load(spec.path, decoder.Options{Backend: cfg.backend, Quant: cfg.quant, LoRA: cfg.lora, KVPrecision: cfg.kvPrec, KVQuant: cfg.kvQuant, StreamWeights: cfg.streamWeights, WeightCacheBytes: int64(cfg.weightCacheGB * 1e9)})
+	model, err := decoder.Load(loadPath, decoder.Options{Backend: cfg.backend, Quant: cfg.quant, LoRA: cfg.lora, KVPrecision: cfg.kvPrec, KVQuant: cfg.kvQuant, StreamWeights: cfg.streamWeights, WeightCacheBytes: int64(cfg.weightCacheGB * 1e9)})
 	if err != nil {
-		return nil, fmt.Errorf("load model (%s): %w", spec.path, err)
+		return nil, fmt.Errorf("load model (%s): %w", loadPath, err)
 	}
 	mcfg := model.Config()
 	name := spec.name

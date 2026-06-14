@@ -1,4 +1,4 @@
-package main
+package prequant
 
 import (
 	"encoding/binary"

@@ -66,7 +66,10 @@ K-quant type, each parity-gated, each carrying llama.cpp's super-block layout) p
 a **per-token dequant-on-the-fly** cost. That's a lot of permanent surface for
 "skip the prequant step."
 
-**D — transparent `.giw` cache (the floor; build this, no aikit change).** On
+**D — transparent `.giw` cache (the floor; build this, no aikit change). ✅ SHIPPED
+(2026-06-13).** `internal/prequant.EnsureCachedGIW` + serve wiring: `--stream-weights`
+on a `.gguf` transcodes once to a sidecar `<model>.<quant>.giw`, reuses it after, and
+rebuilds it if the `.gguf` changes (mtime). No aikit change, no per-token cost. On
 `--stream-weights` against a `.gguf` with no cached `.giw`, transcode once (the
 prequant path already streams at ~20 GB peak, so no OOM), mmap that, stream;
 subsequent runs skip it. The user never runs a manual prequant step. This reuses

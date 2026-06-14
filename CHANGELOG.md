@@ -11,6 +11,14 @@ pre-1.0 and may change as new model families and quant formats land.
 ## [Unreleased]
 
 ### Added
+- **`serve --stream-weights` now works on a plain `.gguf` (transparent `.giw` cache,
+  idea #1 "D").** Streaming needs the read-only mmap that only `.giw` provides; rather
+  than make users run `prequant` by hand, serve now transcodes a `.gguf` to a sidecar
+  `<model>.<quant>.giw` once (streamed, ~model-size peak RAM — no OOM) and loads that,
+  reusing it on later runs and rebuilding it if the `.gguf` changes. The one-time
+  transcode is logged. No per-token cost (resident bytes stay the dequant-once
+  int8/int4); it's the convenience floor of #1. The transcode core moved to
+  `internal/prequant` (shared by `cmd/prequant` and serve).
 - **Dense weight streaming (`serve --stream-weights` on a dense `.giw`) — run a
   model bigger than RAM.** The companion to MoE expert paging for dense models
   (Llama / Qwen2 / Qwen3 / Mistral): because the transformer layer loop is
