@@ -11,6 +11,27 @@ pre-1.0 and may change as new model families and quant formats land.
 ## [Unreleased]
 
 ### Added
+- **MoE expert demand-paging (`serve --stream-weights` + `--weight-cache <GB>`) —
+  run a big MoE on less RAM.** A sparse MoE (e.g. Qwen3-A3B class) resides at tens
+  of GB of experts but activates only K·L per token. With `--stream-weights`, a
+  `.giw` MoE model keeps its experts in the (now mmap'd, idea-Inc-1) read-only
+  mapping and pages them on demand: the router's top-k selection drives an LRU
+  bounded by `--weight-cache` GB (0 = auto, ~½ available RAM), releasing the tail
+  with `MADV_DONTNEED` and faulting misses with `MADV_WILLNEED`. **Bit-exact** —
+  the mapping is read-only and file-backed, so an evicted-then-reused expert simply
+  re-faults from disk (identical bytes); the cost is the cold-miss fault, ~+24 ms/
+  token at a 16 GB budget on a measured 35B-A3B (≈2× RAM reduction; see the spike
+  in `decoder/moepaging_spike_test.go`). Opt-in, CPU `.giw` MoE only; a no-op for
+  non-MoE / non-`.giw` / sub-page-expert models. Page-granular eviction, so it
+  caps RAM on Linux firmly and best-effort on other unixes.
+- **`.giw` weights are now mmap'd (pageable residency).** The prequant `.giw` fast
+  path already aliased its int8/int4 weights with no per-tensor copy, but read the
+  bundle with `os.ReadFile` (heap, not pageable). It now maps the file read-only
+  (`MAP_PRIVATE`), so the aliased weights are views into the OS page cache —
+  faulted in lazily, evictable, and shared across processes mapping the same file.
+  Bit-exact and lower load time; released by `Model.Close`. The substrate the
+  expert paging above (and future weight streaming) builds on. Windows falls back
+  to the prior heap read.
 - **Tiered KV cache (`serve --kv-idle-demote`) — demote idle warm sessions RAM →
   NVMe.** `--kv-sessions` pins RAM for every warm conversation; tiered KV adds a
   policy over the existing `--session-dir` `.giw-kv` persistence so a small-RAM box

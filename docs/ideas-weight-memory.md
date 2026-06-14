@@ -78,7 +78,21 @@ cosine vs the current heap-dequant path on the Q4_K / Q6_K goldens already in th
 repo, **plus a decode tok/s non-regression bar** (the ALU trade above). This is
 the program's foundation-generalization step, not its opener — see sequencing.
 
-### 2. MoE inference-time expert demand-paging (run big MoE on less RAM)
+### 2. MoE inference-time expert demand-paging (run big MoE on less RAM)  ✅ SHIPPED (2026-06-13)
+
+**Shipped** as `serve --stream-weights` + `--weight-cache <GB>` (0 = auto). Built on
+the mmap substrate (Inc 1, below): a `.giw` MoE keeps its experts in the read-only
+mapping; the router's top-k drives an LRU bounded by the budget, releasing the tail
+with `MADV_DONTNEED` and faulting misses with `MADV_WILLNEED`. Bit-exact by
+construction — the read-only file-backed mapping re-faults an evicted-then-reused
+expert with identical bytes (proven model-free by `TestMadvise_dontneedRefaultsIntact`;
+LRU policy by `TestExpertPager_lruEviction`; end-to-end paged==full bit-identity by
+`TestExpertPaging_bitExact`, asset-gated on `GOINFER_MOE_GIW`). Page-granular, so
+sub-page experts aren't paged (irrelevant for the multi-MB real target). Hook seam:
+the `topK` selection in `moeMLP` (`mlp.go`), where the spike's `moeSelTrace` sat.
+**Substrate Inc 1 (mmap the `.giw` load) shipped first** — `.giw` was zero-per-tensor-
+copy but `os.ReadFile`-heap (not pageable); now `MAP_PRIVATE` read-only, bit-exact.
+
 
 **The win:** a 35B-A3B activates ~3 B params/token but resides at ~39 GB (fact
 2). Keep the expert weights **mmap'd and not heap-resident**, fault in only the

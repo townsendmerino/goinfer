@@ -30,6 +30,7 @@ type Model struct {
 	kvPrecI8 bool            // residency KV cache int8 request (Options.KVPrecision == "i8") — GPU
 	kvI8     bool            // CPU KV cache int8 storage request (Options.KVQuant == "i8") — CPU staged path
 	mmap     []byte          // .giw mmap region the int8/int4 weights alias; munmap'd by Close (nil off the .giw mmap path)
+	pager    *expertPager    // MoE expert demand-paging over the mapping (Options.StreamWeights); nil = all-resident
 }
 
 // KVCacheF16 reports whether the GPU residency path should use an f16 KV cache
@@ -57,6 +58,14 @@ type Options struct {
 	// SDOT decode). Lossy, opt-in; excluded on MoE / gemma4 / qwen3_5_moe in v1.
 	// See task-cpu-kv-quant.md.
 	KVQuant string
+	// StreamWeights enables on-demand weight residency (idea #2): for an mmap-backed
+	// .giw MoE model, expert weights are paged out of the mapping under a RAM budget
+	// (WeightCacheBytes) instead of all held resident. Bit-exact (read-only re-fault);
+	// trades RAM for cold-miss fault latency. No-op for non-MoE / non-.giw models.
+	StreamWeights bool
+	// WeightCacheBytes is the resident-bytes budget for streamed weights (0 = auto,
+	// ~half of available RAM). Only meaningful with StreamWeights.
+	WeightCacheBytes int64
 }
 
 // Load reads a Gemma 3 snapshot (config.json + model.safetensors) from dir
@@ -95,7 +104,15 @@ func Load(dir string, opts Options) (*Model, error) {
 		if beErr != nil {
 			fmt.Println(beErr)
 		}
-		return (&Model{w: w, be: be, mmap: data, eosIDs: w.Cfg.EOSIDs(), kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8"}).withResidency(), nil
+		m := &Model{w: w, be: be, mmap: data, eosIDs: w.Cfg.EOSIDs(), kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8"}
+		if opts.StreamWeights {
+			if m.pager = newExpertPager(w, data, opts.WeightCacheBytes); m.pager != nil {
+				fmt.Fprintln(os.Stderr, "decoder: "+pagerSummary(m.pager))
+			} else {
+				fmt.Fprintln(os.Stderr, "decoder: --stream-weights ignored (model has no mmap-backed MoE experts to page)")
+			}
+		}
+		return m.withResidency(), nil
 	}
 
 	// Resolve the quant mode first so the weights stream straight into the
@@ -314,7 +331,7 @@ func (m *Model) runLayersFromEmbed(h []float32, cache *KVCache) ([]float32, erro
 		}
 		copy(scr.norm, h)
 		normalize(arch, scr.norm, lw.PreMLPNorm, lw.PreMLPNormBias, hidden)
-		if err := mlp(scr.norm, scr.sub, lw, arch, m.be, scr); err != nil {
+		if err := mlp(scr.norm, scr.sub, lw, arch, m.be, scr, m.pager); err != nil {
 			return nil, err
 		}
 		if sandwich {

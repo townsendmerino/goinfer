@@ -187,7 +187,7 @@ func (m *Model) runLayersFromEmbedN(h []float32, cache *KVCache) ([]float32, err
 			// moeMLP for each row (bit-identical to the sequential path). The prefill
 			// hotspot (attention) is already batched above; this is the residual ~17%.
 			for i := range K {
-				ff, err := moeMLP(row(norm, i, hidden), lw, arch, be)
+				ff, err := moeMLP(row(norm, i, hidden), lw, arch, be, m.pager)
 				if err != nil {
 					return nil, err
 				}

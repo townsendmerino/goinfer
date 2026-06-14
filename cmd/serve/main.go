@@ -75,21 +75,23 @@ func (m *modelFlag) Set(v string) error {
 // config is the resolved command line for newServer (the flag set outgrew a
 // positional signature once embeddings landed).
 type config struct {
-	models       modelFlag // decoder(s) (-model, repeatable); empty = no generative endpoints
-	backend      string
-	quant        string // global (per-model overrides are a follow-on)
-	kvPrec       string // GPU residency KV cache precision: "" | f32 | f16 (-kv)
-	kvQuant      string // CPU KV cache storage precision: "" | f32 | i8 (-kv-quant)
-	lora         string
-	name         string // -served-model-name (applies only to a single unnamed --model)
-	kvSessions   int
-	sessionDir   string        // -session-dir (also where /admin unload snapshots warm KV)
-	kvIdleDemote time.Duration // -kv-idle-demote: tiered KV — demote a session idle this long to disk (0 = off)
-	kvDemotedMax int           // -kv-demoted-max: cap on the on-disk cold tier
-	maxQueue     int           // -max-queue: bounded per-model queue depth (0 = unbounded)
-	allowAdmin   bool          // -allow-admin: enable POST /admin/models/{load,unload}
-	visionPath   string        // -vision: dir holding the vision tower (SigLIP + projector) for a multimodal --model
-	visionQuant  string        // -vision-quant: "f32" (default) | "int8" (W8A8; only faster on AVX512-VNNI — a WASH on AVX2)
+	models        modelFlag // decoder(s) (-model, repeatable); empty = no generative endpoints
+	backend       string
+	quant         string // global (per-model overrides are a follow-on)
+	kvPrec        string // GPU residency KV cache precision: "" | f32 | f16 (-kv)
+	kvQuant       string // CPU KV cache storage precision: "" | f32 | i8 (-kv-quant)
+	lora          string
+	name          string // -served-model-name (applies only to a single unnamed --model)
+	kvSessions    int
+	sessionDir    string        // -session-dir (also where /admin unload snapshots warm KV)
+	kvIdleDemote  time.Duration // -kv-idle-demote: tiered KV — demote a session idle this long to disk (0 = off)
+	kvDemotedMax  int           // -kv-demoted-max: cap on the on-disk cold tier
+	streamWeights bool          // -stream-weights: page MoE expert weights out of an mmap'd .giw under a RAM budget
+	weightCacheGB float64       // -weight-cache: resident expert-weight budget in GB (0 = auto)
+	maxQueue      int           // -max-queue: bounded per-model queue depth (0 = unbounded)
+	allowAdmin    bool          // -allow-admin: enable POST /admin/models/{load,unload}
+	visionPath    string        // -vision: dir holding the vision tower (SigLIP + projector) for a multimodal --model
+	visionQuant   string        // -vision-quant: "f32" (default) | "int8" (W8A8; only faster on AVX512-VNNI — a WASH on AVX2)
 
 	embedPath  string // encoder (-embed-model); "" = no /v1/embeddings
 	embedQuant string // "" | f32 | q8
@@ -118,6 +120,8 @@ func main() {
 	flag.IntVar(&cfg.kvSessions, "kv-sessions", 4, "number of conversations to keep prefilled in RAM for prompt-prefix KV reuse (0 disables)")
 	flag.DurationVar(&cfg.kvIdleDemote, "kv-idle-demote", 0, "tiered KV: demote a warm session's KV to -session-dir once it's been idle this long, faulting it back on the next matching request (e.g. 10m; 0 = off). Lets a small-RAM box serve many intermittent chats. Needs -session-dir and -kv-sessions > 0")
 	flag.IntVar(&cfg.kvDemotedMax, "kv-demoted-max", 64, "tiered KV: max demoted (on-disk) sessions to keep; older ones are dropped (only with -kv-idle-demote)")
+	flag.BoolVar(&cfg.streamWeights, "stream-weights", false, "page a MoE model's expert weights on demand out of an mmap'd .giw, capping resident RAM to -weight-cache instead of holding all experts (run a 35B-A3B on ~16-20 GB). Bit-exact; trades RAM for cold-miss fault latency. Needs a .giw MoE model")
+	flag.Float64Var(&cfg.weightCacheGB, "weight-cache", 0, "resident expert-weight budget in GB for -stream-weights (0 = auto, ~half of available RAM)")
 	flag.IntVar(&cfg.maxQueue, "max-queue", 8, "per-model backpressure: max queued requests before 429 (0 = unbounded)")
 	flag.StringVar(&cfg.embedPath, "embed-model", "", "embedding model: a CodeRankEmbed HF dir (config.json + model.safetensors + tokenizer.json) for /v1/embeddings")
 	flag.StringVar(&cfg.embedQuant, "embed-quant", "f32", "embedding weight precision: f32 | q8")
@@ -310,7 +314,7 @@ func loadDecoder(spec modelSpec, cfg config) (*loadedModel, error) {
 		return nil, fmt.Errorf("load tokenizer (%s): %w", spec.path, err)
 	}
 	t0 := time.Now()
-	model, err := decoder.Load(spec.path, decoder.Options{Backend: cfg.backend, Quant: cfg.quant, LoRA: cfg.lora, KVPrecision: cfg.kvPrec, KVQuant: cfg.kvQuant})
+	model, err := decoder.Load(spec.path, decoder.Options{Backend: cfg.backend, Quant: cfg.quant, LoRA: cfg.lora, KVPrecision: cfg.kvPrec, KVQuant: cfg.kvQuant, StreamWeights: cfg.streamWeights, WeightCacheBytes: int64(cfg.weightCacheGB * 1e9)})
 	if err != nil {
 		return nil, fmt.Errorf("load model (%s): %w", spec.path, err)
 	}

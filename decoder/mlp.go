@@ -31,10 +31,10 @@ var moeSelTrace [][]int
 // any post-MLP norm + residual. The hot dense path (gatedMLP) reuses scratch and
 // writes straight into out; the rarer MoE / non-gated paths still allocate
 // internally and are copied into out.
-func mlp(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend, scr *decodeScratch) error {
+func mlp(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend, scr *decodeScratch, pager *expertPager) error {
 	switch {
 	case arch.MoE != nil:
-		g, err := moeMLP(h, lw, arch, be)
+		g, err := moeMLP(h, lw, arch, be, pager)
 		if err != nil {
 			return err
 		}
@@ -62,7 +62,7 @@ func mlp(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend, scr
 //	out     = Σ_j w[j] · expert_{e[j]}(h)    // expert = down(silu(gate(h)) ⊙ up(h))
 //
 // Only the chosen experts are evaluated — the point of MoE.
-func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend) ([]float32, error) {
+func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend, pager *expertPager) ([]float32, error) {
 	moe := arch.MoE
 	nE, k := moe.NumExperts, moe.TopK
 	if arch.Act != ActSiLU {
@@ -76,6 +76,15 @@ func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend) ([]fl
 	idx, wts := topK(probs, k)
 	if moeSelTrace != nil { // SPIKE: record this call's expert selection (forward order)
 		moeSelTrace = append(moeSelTrace, append([]int(nil), idx...))
+	}
+	// Weight residency (idea #2): the router selection is the demand signal. Touch
+	// every chosen expert before the matmuls so the pager faults them in and keeps
+	// resident RAM within budget (releasing the LRU tail). Bit-exact — released
+	// experts re-fault from the read-only mapping.
+	if pager != nil {
+		for _, e := range idx {
+			pager.touch(&lw.Experts[e])
+		}
 	}
 	if moe.NormTopKProb {
 		var s float32

@@ -36,7 +36,7 @@ func (m *Model) runLayersQwen35(id int, cache *KVCache) ([]float32, error) {
 		// MoE FFN sub-block (Pre2). post_attention_layernorm is the pre-MLP norm.
 		n2 := append([]float32(nil), h...)
 		rmsNorm(n2, lw.PreMLPNorm, 1, hidden, eps, arch.RMSAddOne)
-		ffn, err := moeMLP(n2, lw, arch, m.be)
+		ffn, err := moeMLP(n2, lw, arch, m.be, m.pager)
 		if err != nil {
 			return nil, err
 		}
