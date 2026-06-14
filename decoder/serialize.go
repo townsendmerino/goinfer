@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/townsendmerino/aikit/linalg"
 	"hash/crc32"
+	"io"
 	"math"
 	"unsafe"
 )
@@ -65,11 +66,41 @@ func (e *SerializeError) Error() string { return "decoder: serialized weights: "
 // current precision) to a flat little-endian blob suitable for embedding. id is
 // an opaque model-identity string (e.g. the source filename) stored for tooling.
 func SerializeWeights(w *Weights, id string) ([]byte, error) {
+	wr := &giwWriter{}
+	if err := wr.writeBundle(w, id); err != nil {
+		return nil, err
+	}
+	wr.u32(crc32.ChecksumIEEE(wr.buf)) // CRC over the body; appended last
+	return wr.buf, nil
+}
+
+// SerializeWeightsTo streams the same bundle directly to out, never materializing
+// the whole blob in memory — so prequantizing a large model peaks at ~the resident
+// weight size, not 2× (resident + blob). It returns the number of bytes written
+// (body + trailing CRC). The big int8/int4 arrays are written straight from the
+// resident slices (one write each); only the small per-tensor scale/norm vectors
+// are buffered transiently. out should be a regular file for the prequant path.
+func SerializeWeightsTo(out io.Writer, w *Weights, id string) (int64, error) {
+	wr := &giwWriter{sink: out}
+	if err := wr.writeBundle(w, id); err != nil {
+		return wr.n, err
+	}
+	var crc [4]byte
+	binary.LittleEndian.PutUint32(crc[:], wr.crc) // running CRC over the body
+	if _, err := out.Write(crc[:]); err != nil {
+		return wr.n, err
+	}
+	return wr.n + 4, nil
+}
+
+// writeBundle writes the bundle body (everything but the trailing CRC) via the
+// writer's current sink (buffer or stream). Shared by SerializeWeights and
+// SerializeWeightsTo so the field order can't drift between them or from the reader.
+func (wr *giwWriter) writeBundle(w *Weights, id string) error {
 	cfgJSON, err := json.Marshal(w.Cfg)
 	if err != nil {
-		return nil, fmt.Errorf("decoder: marshal config: %w", err)
+		return fmt.Errorf("decoder: marshal config: %w", err)
 	}
-	wr := &giwWriter{}
 	wr.raw([]byte(giwMagic))
 	wr.u32(giwVersion)
 	wr.u32(uint32(w.quantMode()))
@@ -86,10 +117,7 @@ func SerializeWeights(w *Weights, id string) ([]byte, error) {
 	for i := range w.Layers {
 		wr.layer(&w.Layers[i])
 	}
-
-	crc := crc32.ChecksumIEEE(wr.buf)
-	wr.u32(crc)
-	return wr.buf, nil
+	return wr.err
 }
 
 // LoadSerializedWeights reconstructs a *Weights from a SerializeWeights blob
@@ -211,19 +239,55 @@ func (w *Weights) quantMode() quantMode {
 
 // --- writer ---
 
-type giwWriter struct{ buf []byte }
+// giwWriter serializes the .giw / .giw-kv formats in one of two modes: buffer mode
+// (sink == nil) accumulates into buf — the caller reads buf and appends its own CRC
+// (SerializeWeights, kvsnapshot); stream mode (sink != nil) writes straight to sink
+// while maintaining a running CRC and byte count, so a large bundle never lives in
+// memory (SerializeWeightsTo). Both modes route every byte through raw, so the two
+// produce identical bytes.
+type giwWriter struct {
+	buf  []byte    // buffer mode
+	sink io.Writer // stream mode (nil ⇒ buffer mode)
+	crc  uint32    // running CRC32-IEEE over bytes written (stream mode)
+	n    int64     // bytes written (stream mode)
+	err  error     // first sink error (stream mode)
+}
 
-func (w *giwWriter) u32(v uint32) { w.buf = binary.LittleEndian.AppendUint32(w.buf, v) }
-func (w *giwWriter) raw(b []byte) { w.buf = append(w.buf, b...) }
+func (w *giwWriter) raw(b []byte) {
+	if w.sink == nil {
+		w.buf = append(w.buf, b...)
+		return
+	}
+	if w.err == nil {
+		if _, err := w.sink.Write(b); err != nil {
+			w.err = err
+		}
+	}
+	w.crc = crc32.Update(w.crc, crc32.IEEETable, b)
+	w.n += int64(len(b))
+}
+
+func (w *giwWriter) u32(v uint32) {
+	var b [4]byte
+	binary.LittleEndian.PutUint32(b[:], v)
+	w.raw(b[:])
+}
 func (w *giwWriter) str(s string) { w.u32(uint32(len(s))); w.raw([]byte(s)) }
 
 func (w *giwWriter) bytesField(b []byte) { w.u32(uint32(len(b))); w.raw(b) }
 
+// f32 batches into one raw write (a per-tensor temp), not 4 bytes at a time — the
+// stream path would otherwise do millions of tiny writes.
 func (w *giwWriter) f32(s []float32) {
 	w.u32(uint32(len(s)))
-	for _, v := range s {
-		w.u32(math.Float32bits(v))
+	if len(s) == 0 {
+		return
 	}
+	b := make([]byte, 4*len(s))
+	for i, v := range s {
+		binary.LittleEndian.PutUint32(b[4*i:], math.Float32bits(v))
+	}
+	w.raw(b)
 }
 
 func (w *giwWriter) i8(s []int8) {
@@ -235,7 +299,7 @@ func (w *giwWriter) i8(s []int8) {
 
 func (w *giwWriter) weightMat(m *linalg.WeightMat) {
 	if m.Rows() == 0 {
-		w.buf = append(w.buf, 0) // empty
+		w.raw([]byte{0}) // empty
 		return
 	}
 	q4, q4s, group, isQ4 := m.Int4()
@@ -250,14 +314,14 @@ func (w *giwWriter) weightMat(m *linalg.WeightMat) {
 	default:
 		kind = 1 // f32
 	}
-	w.buf = append(w.buf, kind)
+	w.raw([]byte{kind})
 	w.u32(uint32(m.Rows()))
 	w.u32(uint32(m.Cols()))
 	w.u32(uint32(group)) // 0 unless int4
 	if w8a8 {
-		w.buf = append(w.buf, 1)
+		w.raw([]byte{1})
 	} else {
-		w.buf = append(w.buf, 0)
+		w.raw([]byte{0})
 	}
 	switch kind {
 	case 1:

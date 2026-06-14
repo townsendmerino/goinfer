@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -194,6 +195,36 @@ func TestLoadGIW_mmap(t *testing.T) {
 	if g1, g2 := greedyFirst(t, m1, prompt), greedyFirst(t, m2, prompt); g1 != g2 {
 		t.Fatalf("greedy token differs: gguf=%d mmap-giw=%d", g1, g2)
 	}
+}
+
+// TestSerializeWeightsTo_matchesBuffer gates the streaming serializer: writing the
+// bundle to an io.Writer must produce bytes byte-for-byte identical to the in-memory
+// SerializeWeights (same CRC, same length). Streaming is how a 35B is prequantized
+// without a full-blob RAM spike, so it must not diverge from the buffered format.
+func TestSerializeWeightsTo_matchesBuffer(t *testing.T) {
+	path := prequantGGUF(t)
+	m, err := Load(path, Options{Quant: "int8int8"})
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	defer m.Close()
+
+	want, err := SerializeWeights(m.w, "stream-test")
+	if err != nil {
+		t.Fatalf("buffered serialize: %v", err)
+	}
+	var buf bytes.Buffer
+	n, err := SerializeWeightsTo(&buf, m.w, "stream-test")
+	if err != nil {
+		t.Fatalf("streamed serialize: %v", err)
+	}
+	if int(n) != len(want) {
+		t.Fatalf("streamed length %d != buffered %d", n, len(want))
+	}
+	if !bytes.Equal(buf.Bytes(), want) {
+		t.Fatal("streamed bytes differ from buffered SerializeWeights")
+	}
+	t.Logf("streamed %d bytes, byte-identical to buffered", n)
 }
 
 func greedyFirst(t *testing.T, m *Model, prompt []int) int {

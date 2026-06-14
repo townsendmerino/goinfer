@@ -78,7 +78,7 @@ func (s *Session) Snapshot(id string) []byte {
 	if c.manualPos {
 		manualPos = 1
 	}
-	wr.buf = append(wr.buf, manualPos, byte(c.quant))
+	wr.raw([]byte{manualPos, byte(c.quant)})
 	wr.u32(uint32(c.pos))
 	wr.ints(s.tokens)
 	// Per layer, in cache-structure order (the loader reconstructs the same rings +

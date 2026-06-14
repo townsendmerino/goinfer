@@ -9,6 +9,8 @@ package giw
 import (
 	"encoding/binary"
 	"fmt"
+	"io"
+	"os"
 )
 
 const (
@@ -31,6 +33,42 @@ func Write(weights, tok []byte) []byte {
 	out = binary.LittleEndian.AppendUint32(out, uint32(len(tok)))
 	out = append(out, tok...)
 	return out
+}
+
+// WriteStream frames a bundle straight to f without ever holding the weights blob
+// in memory — for prequantizing a large model where that blob is tens of GB. It
+// writes the header with a placeholder weights length, calls writeWeights to stream
+// the weights directly into f (returning the bytes written), appends tok, then
+// patches the length field via WriteAt. The result is byte-identical to Write and
+// loads with Read. f must be a regular, seekable file opened for writing.
+func WriteStream(f *os.File, tok []byte, writeWeights func(io.Writer) (int64, error)) error {
+	if _, err := f.Write([]byte(bundleMagic)); err != nil {
+		return err
+	}
+	var hdr [12]byte // u32 version + u64 placeholder weights length
+	binary.LittleEndian.PutUint32(hdr[0:4], bundleVersion)
+	if _, err := f.Write(hdr[:]); err != nil {
+		return err
+	}
+	lenOff := int64(len(bundleMagic) + 4) // offset of the u64 weights-length field
+	n, err := writeWeights(f)
+	if err != nil {
+		return fmt.Errorf("stream weights: %w", err)
+	}
+	var tl [4]byte
+	binary.LittleEndian.PutUint32(tl[:], uint32(len(tok)))
+	if _, err := f.Write(tl[:]); err != nil {
+		return err
+	}
+	if _, err := f.Write(tok); err != nil {
+		return err
+	}
+	var nb [8]byte
+	binary.LittleEndian.PutUint64(nb[:], uint64(n))
+	if _, err := f.WriteAt(nb[:], lenOff); err != nil {
+		return fmt.Errorf("patch weights length: %w", err)
+	}
+	return nil
 }
 
 // Read splits a bundle back into the weights blob and the tokenizer GGUF. The

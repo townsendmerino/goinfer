@@ -3,6 +3,7 @@ package giw
 import (
 	"bytes"
 	"encoding/binary"
+	"io"
 	"os"
 	"testing"
 )
@@ -13,6 +14,47 @@ func TestBundle_v2_roundtrip(t *testing.T) {
 	w, tk, err := Read(Write(weights, tok))
 	if err != nil {
 		t.Fatalf("Read: %v", err)
+	}
+	if !bytes.Equal(w, weights) || !bytes.Equal(tk, tok) {
+		t.Fatalf("round-trip mismatch: weights=%q tok=%q", w, tk)
+	}
+}
+
+// TestWriteStream_matchesWrite: the streaming framer (placeholder length + WriteAt
+// patch, used to prequant a large model without a full-blob RAM spike) must produce
+// a file byte-identical to the in-memory Write, and Read must split it correctly.
+func TestWriteStream_matchesWrite(t *testing.T) {
+	weights := []byte("the-quantized-weights-blob-streamed-in-chunks")
+	tok := []byte("metadata-gguf-tokenizer")
+
+	path := t.TempDir() + "/bundle.giw"
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = WriteStream(f, tok, func(w io.Writer) (int64, error) {
+		// stream the weights in two chunks to exercise the running byte count
+		n1, _ := w.Write(weights[:10])
+		n2, e := w.Write(weights[10:])
+		return int64(n1 + n2), e
+	})
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		t.Fatalf("WriteStream: %v", err)
+	}
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := Write(weights, tok); !bytes.Equal(got, want) {
+		t.Fatalf("streamed bundle differs from Write:\n got  %q\n want %q", got, want)
+	}
+	w, tk, err := Read(got)
+	if err != nil {
+		t.Fatalf("Read streamed bundle: %v", err)
 	}
 	if !bytes.Equal(w, weights) || !bytes.Equal(tk, tok) {
 		t.Fatalf("round-trip mismatch: weights=%q tok=%q", w, tk)
