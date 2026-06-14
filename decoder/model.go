@@ -32,6 +32,7 @@ type Model struct {
 	mmap       []byte          // .giw mmap region the int8/int4 weights alias; munmap'd by Close (nil off the .giw mmap path)
 	pager      *expertPager    // MoE expert demand-paging over the mapping (Options.StreamWeights); nil = all-resident
 	layerPager *layerPager     // dense per-layer streaming over the mapping (Options.StreamWeights); nil = all-resident
+	quant      string          // the requested Options.Quant for a direct load ("" for a prequant .giw → Quant() derives from kinds)
 }
 
 // KVCacheF16 reports whether the GPU residency path should use an f16 KV cache
@@ -167,7 +168,7 @@ func Load(dir string, opts Options) (*Model, error) {
 		// running fully resident (prequant to .giw with cmd/prequant to use it).
 		fmt.Fprintln(os.Stderr, "decoder: --stream-weights ignored — weights are heap-resident; prequant to .giw (cmd/prequant) to enable streaming")
 	}
-	return (&Model{w: w, be: be, eosIDs: resolveEOSIDs(dir, &w.Cfg), kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8"}).withResidency(), nil
+	return (&Model{w: w, be: be, quant: opts.Quant, eosIDs: resolveEOSIDs(dir, &w.Cfg), kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8"}).withResidency(), nil
 }
 
 // Validate checks the stringly-typed knobs against their allowed values, so an
@@ -209,8 +210,10 @@ func parseQuant(q string) (quantMode, error) {
 		return quantInt8I8, nil
 	case "int4":
 		return quantInt4, nil
+	case "int4mix":
+		return quantInt4Mix, nil
 	default:
-		return quantNone, fmt.Errorf("decoder: unknown quant %q (have: int8, int8int8, int4)", q)
+		return quantNone, fmt.Errorf("decoder: unknown quant %q (have: int8, int8int8, int4, int4mix)", q)
 	}
 }
 

@@ -493,7 +493,7 @@ func LoadGGUFBytes(raw []byte, opts Options) (*Model, error) {
 	if beErr != nil {
 		fmt.Println(beErr) // webgpu requested but fell back — not fatal.
 	}
-	return (&Model{w: w, be: be, eosIDs: w.Cfg.EOSIDs(), kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8"}).withResidency(), nil
+	return (&Model{w: w, be: be, quant: opts.Quant, eosIDs: w.Cfg.EOSIDs(), kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8"}).withResidency(), nil
 }
 
 // buildWeightsFromGGUF dequantizes the GGUF tensors into the weight bundle.
@@ -527,7 +527,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 	// mat loads a tensor as a [out, in] linalg.WeightMat, shape-checked, quantized when
 	// requested.
 	mat := func(name string, out, in int) (linalg.WeightMat, error) {
-		return streamMat(name, out, in, quant, func(r int) int { return r * in })
+		return streamMat(name, out, in, matmulQuant(quant, name), func(r int) int { return r * in })
 	}
 	// embMat loads the embedding / LM head, which is logit-critical — quantize
 	// it with the embedding policy (int8 even in int4 mode), not the projection
@@ -573,7 +573,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 	permMat := func(name string, out, in, nHead int) (linalg.WeightMat, error) {
 		hd := out / nHead
 		half := hd / 2
-		return streamMat(name, out, in, quant, func(hfRow int) int {
+		return streamMat(name, out, in, matmulQuant(quant, name), func(hfRow int) int {
 			h, rem := hfRow/hd, hfRow%hd
 			ggufRow := h*hd + 2*(rem%half) + rem/half
 			return ggufRow * in
@@ -594,7 +594,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 		// rows directly into a per-expert quantized linalg.WeightMat (no whole-tensor f32).
 		res := make([]linalg.WeightMat, nExpert)
 		for e := range nExpert {
-			m, err := streamQuantized(out, in, quant, func(r int, dst []float32) error {
+			m, err := streamQuantized(out, in, matmulQuant(quant, name), func(r int, dst []float32) error {
 				return into((e*out+r)*in, dst)
 			})
 			if err != nil {

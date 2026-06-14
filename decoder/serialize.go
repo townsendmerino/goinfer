@@ -198,6 +198,13 @@ func (m *Model) Weights() *Weights { return m.w }
 // ("int8int8" | "int8" | "int4" | "native"). For a prequant model the runtime
 // --quant flag is moot — this reports what was actually baked in.
 func (m *Model) Quant() string {
+	// A direct load records the requested quant — accurate for the KV-snapshot
+	// fingerprint (so int4 / int4mix / int8 don't collide on the same file). A
+	// prequant .giw leaves it empty and derives from the resident weight kinds.
+	switch m.quant {
+	case "int8", "int8int8", "int4", "int4mix":
+		return m.quant
+	}
 	switch m.w.quantMode() {
 	case quantInt8I8:
 		return "int8int8"

@@ -348,6 +348,10 @@ noise) — attn_output dominance is credible (textbook sensitive tensor) but mag
 need firming on a bigger model before shipping. It's a *middle* quality/size point
 (int4↔int8), niche like the embed-int4 knob. **Minimal build = an opt-in
 "attn-int8/ffn-int4" mixed quant mode; calibration scorer = optional refinement.**
+**✅ SHIPPED (2026-06-14):** `--quant int4mix` / `decoder.Options.Quant="int4mix"` —
+attention+embed/head int8, FFN(+experts) int4, keyed on tensor names (`matmulQuant`);
+GGUF-only; resolved per-tensor int8/int4 round-trips through `.giw`; gated by
+`TestInt4MixMode`. The calibration scorer (per-model tuning) is the unbuilt refinement.
 
 **Cost / risk:** medium. The research risk is the sensitivity metric (MSE-on-
 calibration vs. end-to-end argmax). Timebox the scorer; the fallback is uniform

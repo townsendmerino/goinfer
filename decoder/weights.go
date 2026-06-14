@@ -233,6 +233,9 @@ func loadWeights(dir string, quant quantMode, embedInt4 bool, lora *loraAdapter)
 	if strings.HasSuffix(dir, ".gguf") {
 		return loadGGUFWeights(dir, quant, embedInt4) // quantized llama.cpp checkpoint (G7); LoRA guarded in Load
 	}
+	if quant == quantInt4Mix {
+		return nil, fmt.Errorf("decoder: int4mix is GGUF-only (got safetensors %s)", dir)
+	}
 	// embedInt4 is wired only through the GGUF path for now (its target is big-vocab
 	// small .gguf models); a safetensors load keeps the int8 pin.
 	cfg, err := loadConfig(os.DirFS(dir), "config.json")

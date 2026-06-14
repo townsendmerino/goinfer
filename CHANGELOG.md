@@ -11,6 +11,18 @@ pre-1.0 and may change as new model families and quant formats land.
 ## [Unreleased]
 
 ### Added
+- **`--quant int4mix`: per-tensor mixed precision (idea #5).** A calibration spike
+  found the int4→int8 quality loss is concentrated in **attention** (promoting
+  `attn_output` alone recovered >half the gap), while the **FFN bulk is int4-tolerant**
+  — and attention is the *cheaper* tensors. So int4mix keeps attention (q/k/v/o) +
+  embed/head at int8 and the FFN (gate/up/down/experts) at int4: **near-int8 quality
+  below int8 RAM** (≈0.5–0.8× int8, model-dependent on the FFN ratio). It's a
+  load-time policy keyed on llama.cpp tensor names (`matmulQuant`); the resident
+  weights and `.giw` carry the resolved per-tensor int8/int4 kinds (the format already
+  stores per-`weightMat` kind, so a mixed model round-trips). No new kernels, no format
+  change, zero decode cost. GGUF load path only. `Model.Quant()` now reports the
+  requested quant for direct loads so int4/int4mix/int8 don't collide in the KV
+  fingerprint. Gated by `TestInt4MixMode`.
 - **Per-model `serve` overrides — a heterogeneous model zoo.** `--model` now takes
   comma-separated per-model overrides of the server-global defaults:
   `--model big=moe.giw,stream,weight-cache=16,quant=int4 --model fast=small.giw`

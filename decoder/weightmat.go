@@ -1,6 +1,10 @@
 package decoder
 
-import "github.com/townsendmerino/aikit/linalg"
+import (
+	"strings"
+
+	"github.com/townsendmerino/aikit/linalg"
+)
 
 // Weight matrices are linalg.WeightMat (aikit): one type that hides f32 / per-row
 // int8 / group-wise int4 storage behind uniform accessors + the linalg kernels.
@@ -20,7 +24,27 @@ const (
 	quantInt8
 	quantInt4
 	quantInt8I8 // weights int8 (as quantInt8) but matmul is full int8×int8 (W8A8)
+	// quantInt4Mix is a per-tensor mixed mode (idea #5): attention (+ embed/head/
+	// router) at int8 where a calibration spike found the int4→int8 quality loss
+	// concentrated, the FFN bulk (gate/up/down/experts) at int4. It is a LOAD-TIME
+	// policy only — matmulQuant resolves it to int8/int4 per tensor, so the resident
+	// weights and the .giw never carry quantInt4Mix itself. GGUF load path only.
+	quantInt4Mix
 )
+
+// matmulQuant resolves a matmul tensor's resident precision under the base quant.
+// Uniform for every mode except the mixed mode (quantInt4Mix), which keeps the
+// (cheap, sensitive) attention tensors at int8 and the (large, int4-tolerant) FFN
+// tensors at int4 — keyed off llama.cpp's tensor names (ffn_* vs attn_*).
+func matmulQuant(base quantMode, name string) quantMode {
+	if base != quantInt4Mix {
+		return base
+	}
+	if strings.Contains(name, "ffn_") {
+		return quantInt4
+	}
+	return quantInt8
+}
 
 // embedding returns the precision to use for the token-embedding table (and the
 // LM head, tied or not). These are logit-critical: at int4 they flip the argmax
@@ -28,7 +52,7 @@ const (
 // mode keeps them at int8 — mirroring how GGUF Q4_K_M keeps token_embd/output at
 // Q6_K while the projections go 4-bit. int8 and f32 modes use themselves.
 func (q quantMode) embedding() quantMode {
-	if q == quantInt4 {
+	if q == quantInt4 || q == quantInt4Mix {
 		return quantInt8
 	}
 	return q
