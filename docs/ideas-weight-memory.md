@@ -208,7 +208,19 @@ actually bites.
 
 ### Bigger swings — capability unlocks
 
-### 4. Bigger-than-RAM weight streaming (run a 70B on a 16 GB laptop)
+### 4. Bigger-than-RAM weight streaming (run a 70B on a 16 GB laptop)  ✅ SHIPPED (2026-06-13)
+
+**Shipped** as `serve --stream-weights` on a dense `.giw` (the same flag picks expert
+paging for MoE, layer streaming for dense). A `layerPager` (decoder/layerpaging.go)
+slides a window over the `runLayersFromEmbed` / `runLayersFromEmbedN` layer loop:
+because the order is known, it `MADV_WILLNEED`s the next layer while the current one
+computes (overlapping the fault — the latency hiding MoE's just-in-time router can't
+do) and `MADV_DONTNEED`s the layer sliding out the back. Resident weight RAM is
+bounded to a window of layers (sized by `--weight-cache`); the floor is NVMe
+bandwidth (a model that doesn't fit is re-read ~once per token). Bit-exact by the
+read-only-re-fault property — gated by `TestLayerPaging_bitExact` (3-layer window,
+decode byte-identical to fully resident, prefetches + evictions > 0). Built on the
+mmap substrate (Inc 1); reuses the expert pager's `alignedMappedSpan` + `madviseBytes`.
 
 **The win:** decode touches each weight **once per token, in strict layer
 order** (fact 3). That access pattern is the ideal case for streaming: mmap the

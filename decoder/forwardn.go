@@ -99,7 +99,13 @@ func (m *Model) runLayersFromEmbedN(h []float32, cache *KVCache) ([]float32, err
 
 	row := func(b []float32, i, w int) []float32 { return b[i*w : i*w+w] }
 
+	if m.layerPager != nil {
+		defer m.layerPager.finishLayers()
+	}
 	for l := 0; l < arch.NumLayers; l++ {
+		if m.layerPager != nil {
+			m.layerPager.enterLayer(l) // dense weight streaming (#4)
+		}
 		lw := &m.w.Layers[l]
 		global := arch.isGlobalLayer(l)
 

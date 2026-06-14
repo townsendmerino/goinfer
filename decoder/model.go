@@ -22,15 +22,16 @@ var decodeTiming = os.Getenv("GOINFER_DECODE_TIMING") != ""
 // sequence state (the KV cache) is owned by each Generate call, so distinct
 // sequences can run concurrently, but a single KVCache is not shared.
 type Model struct {
-	w        *Weights
-	be       Backend
-	eosIDs   []int           // end-of-sequence ids from config (generation stops on these)
-	resident ResidentForward // GPU full-residency decode path (webgpu + eligible arch); nil ⇒ staged/CPU
-	kvF16    bool            // residency KV cache precision request (Options.KVPrecision == "f16")
-	kvPrecI8 bool            // residency KV cache int8 request (Options.KVPrecision == "i8") — GPU
-	kvI8     bool            // CPU KV cache int8 storage request (Options.KVQuant == "i8") — CPU staged path
-	mmap     []byte          // .giw mmap region the int8/int4 weights alias; munmap'd by Close (nil off the .giw mmap path)
-	pager    *expertPager    // MoE expert demand-paging over the mapping (Options.StreamWeights); nil = all-resident
+	w          *Weights
+	be         Backend
+	eosIDs     []int           // end-of-sequence ids from config (generation stops on these)
+	resident   ResidentForward // GPU full-residency decode path (webgpu + eligible arch); nil ⇒ staged/CPU
+	kvF16      bool            // residency KV cache precision request (Options.KVPrecision == "f16")
+	kvPrecI8   bool            // residency KV cache int8 request (Options.KVPrecision == "i8") — GPU
+	kvI8       bool            // CPU KV cache int8 storage request (Options.KVQuant == "i8") — CPU staged path
+	mmap       []byte          // .giw mmap region the int8/int4 weights alias; munmap'd by Close (nil off the .giw mmap path)
+	pager      *expertPager    // MoE expert demand-paging over the mapping (Options.StreamWeights); nil = all-resident
+	layerPager *layerPager     // dense per-layer streaming over the mapping (Options.StreamWeights); nil = all-resident
 }
 
 // KVCacheF16 reports whether the GPU residency path should use an f16 KV cache
@@ -106,10 +107,17 @@ func Load(dir string, opts Options) (*Model, error) {
 		}
 		m := &Model{w: w, be: be, mmap: data, eosIDs: w.Cfg.EOSIDs(), kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8"}
 		if opts.StreamWeights {
-			if m.pager = newExpertPager(w, data, opts.WeightCacheBytes); m.pager != nil {
-				fmt.Fprintln(os.Stderr, "decoder: "+pagerSummary(m.pager))
+			// MoE → expert demand-paging (#2); dense → per-layer streaming (#4).
+			if w.arch.MoE != nil {
+				if m.pager = newExpertPager(w, data, opts.WeightCacheBytes); m.pager != nil {
+					fmt.Fprintln(os.Stderr, "decoder: "+pagerSummary(m.pager))
+				} else {
+					fmt.Fprintln(os.Stderr, "decoder: --stream-weights ignored (no mmap-backed MoE experts to page)")
+				}
+			} else if m.layerPager = newLayerPager(w, data, opts.WeightCacheBytes); m.layerPager != nil {
+				fmt.Fprintln(os.Stderr, "decoder: "+layerPagerSummary(m.layerPager))
 			} else {
-				fmt.Fprintln(os.Stderr, "decoder: --stream-weights ignored (model has no mmap-backed MoE experts to page)")
+				fmt.Fprintln(os.Stderr, "decoder: --stream-weights ignored (model fits the budget, or no mmap-backed layer weights)")
 			}
 		}
 		return m.withResidency(), nil
@@ -316,7 +324,13 @@ func (m *Model) runLayersFromEmbed(h []float32, cache *KVCache) ([]float32, erro
 	scr := cache.scr
 	hidden := arch.HiddenDim
 	sandwich := arch.NormPlacement == NormSandwich4
+	if m.layerPager != nil {
+		defer m.layerPager.finishLayers()
+	}
 	for l := 0; l < arch.NumLayers; l++ {
+		if m.layerPager != nil {
+			m.layerPager.enterLayer(l) // prefetch l+1, release the layer behind (#4)
+		}
 		lw := &m.w.Layers[l]
 		copy(scr.norm, h)
 		normalize(arch, scr.norm, lw.PreAttnNorm, lw.PreAttnNormBias, hidden)
