@@ -40,43 +40,73 @@ RSS. These ideas attack that.
 
 > These are written as a catalogue, grouped loosely by leverage. **The
 > authoritative sequencing is the dependency + trigger sections at the end**, not
-> the order here — in particular #1 reads first but is the *hardest*, late item
-> once you account for the prerequisite structure.
+> the order here — in particular #1 reads first but splits (per its decision
+> record) into a cheap floor (D) and a measured, narrow optimization (A); the
+> native-block half is the *hardest*, late item once you account for the
+> prerequisite structure.
 
 ### High leverage on the resident weight footprint
 
-### 1. Zero-copy GGUF: score native K-quant blocks from the mmap (kill the heap requant)
+### 1. Generalize the substrate to plain GGUF — Phase-2 decision record (2026-06-13)
 
-**The win:** today `.giw` is the only zero-copy weight path; a plain GGUF pays
-full heap for its quantized weights (fact 1). If `MatmulBT` could score directly
-against the GGUF's native Q4_K / Q6_K / Q8_0 **super-block layout** read
-zero-copy from the mmap, a GGUF model would cost ~0 heap for its weights — the
-`.giw` RAM win, but for the format everyone already has, with no extra build step
-and no second file. For a 7 B Q4_K model that's ~4 GB of heap that simply
-disappears (moves to reclaimable page cache shared with the OS).
+> Restructured after the post-#2 stopping-point review. The original pitch
+> ("score native K-quant blocks from the mmap, kill the heap requant") is the
+> *hardest* version of #1 and, it turns out, the wrong default. The decision tree
+> below splits it into a cheap floor (D) that captures the convenience for **zero
+> aikit change**, and a narrow native-block optimization (A) gated on a measured
+> spike. Cross-repo mechanics: `task-aikit-substrate-extraction.md` (goinfer) +
+> aikit's `task-mmap-residency-leaf.md`.
 
-**What it actually takes (corrected — this is the hardest item, not a medium
-one):** the existing kernels *dequant* a K-quant block → f32; this needs a
-different thing, a **scoring** kernel (block · activation → output *without*
-expanding the block). Those are not the same kernel, and it isn't one kernel —
-it's **one per K-quant type** (Q4_K, Q5_K, Q6_K, Q2_K, Q3_K, Q4_0, Q8_0…), each
-parity-gated, each carrying llama.cpp's fiddly super-block layout (Q4_K's 6-bit
-scale packing is its own small nightmare). That's a **parallel quant
-representation** standing alongside goinfer's flat per-row int4/int8 — real,
-permanent maintenance surface, not a reuse of what's there.
+**The prior question (before "how to build native blocks").** #1 is *convenience +
+fidelity over a shipped capability* — "prequant to `.giw`, then stream" already
+runs a GGUF bigger than RAM today (#2/#4, shipped). So the real question isn't the
+aikit/goinfer split; it's **what part of #1 actually earns its keep**, because the
+native-block path is a parallel quant representation (~one scoring kernel per
+K-quant type, each parity-gated, each carrying llama.cpp's super-block layout) plus
+a **per-token dequant-on-the-fly** cost. That's a lot of permanent surface for
+"skip the prequant step."
 
-**And the trade is real, not free.** "Need not be faster" undersells it: scoring
-from the block means you **re-dequant every block every token** — you're trading
-heap RAM for per-token ALU. On a stream-bound decode that's *plausibly* neutral
-(fewer bytes read from the working set, more ALU per byte), but it must be stated
-as the trade it is and **measured**, not waved off. It could regress decode on an
-ALU-bound CPU path.
+**D — transparent `.giw` cache (the floor; build this, no aikit change).** On
+`--stream-weights` against a `.gguf` with no cached `.giw`, transcode once (the
+prequant path already streams at ~20 GB peak, so no OOM), mmap that, stream;
+subsequent runs skip it. The user never runs a manual prequant step. This reuses
+the entire shipped substrate, adds **no per-token regression** (resident bytes stay
+the dequant-once int8/int4), and captures *everything #1 offers except native
+K-quant width.* It is also the **graceful-degradation floor** under A: any format
+A doesn't implement falls back here.
 
-**Cost / risk:** **HIGH.** Behind the same lazy-fallback discipline as `.giw`
-(any block-format mismatch → today's dequant-to-heap path). **Gate:** argmax +
-cosine vs the current heap-dequant path on the Q4_K / Q6_K goldens already in the
-repo, **plus a decode tok/s non-regression bar** (the ALU trade above). This is
-the program's foundation-generalization step, not its opener — see sequencing.
+**A — native-block `WeightMat` kind (the narrow optimization; gated on the spike).**
+The one thing D cannot do: goinfer's `WeightMat` is f32/int8/int4 only, so a **mid-
+bit K-quant (Q5_K/Q6_K) must round up to int8 (~33% bigger resident than native
+Q6_K) or down to int4 (lossy).** A native-block kind holds it at native ~5–6.5 bits
+— *smaller than the int8 requant and more accurate than the int4 requant.* That's
+the actual case for #1, narrower than "generalize to all GGUF." It's intrinsically a
+**streaming** tool: native blocks require dequant-on-the-fly (dequant-once defeats
+pageability), and that compute hit only hides when disk-bound — in the fits-RAM case
+you'd dequant-once (today's path) and never use it. So A adds value over D in exactly
+one regime: *streaming a mid-bit K-quant for 5–6 bit fidelity at sub-int8 footprint.*
+
+**Home: A in aikit, not goinfer.** aikit owns `WeightMat`, the per-block dequant
+kernels, and the SIMD dots; a "B" split (expose raw bytes, rebuild dequant+matmul in
+goinfer) doesn't *reduce* complexity, it *relocates* it to the worse place and
+couples goinfer to GGML's drifting block layouts. A new GGUF kind ships
+**Experimental** (`WeightMat` is widely used + serialized; design the kind tag so it
+doesn't perturb the `.giw`/serialize format or int8/int4 dispatch).
+
+**The gate: a Q6_K spike (NOT Q8_0).** Q8_0 dequant is nearly free and would
+*understate* the cost — spike **Q6_K**, where both the value (mid-bit width) and the
+cost (super-block sub-scale dequant) live. Measure three numbers; they decide it:
+1. **Compute hit** — dequant-on-the-fly vs dequant-once, streaming (is it hidden by
+   disk?) and fits-RAM (the regression you'd never actually pay).
+2. **Resident bytes** — native Q6_K vs the int8 requant (is the footprint win real?).
+3. **Parity** — native Q6_K vs the int4 requant on the existing goldens (is the
+   fidelity win real, or does int4-requant already pass — collapsing A to convenience,
+   i.e. ship D and shelve native blocks?).
+
+**Verdict / scope.** Build **D now**. Gate **A** on the Q6_K spike; if it clears,
+implement **only the formats people run big or want native — Q4_K_M, Q5_K, Q6_K,
+Q8_0 (~4, not ~12)** — everything else falls back to D. **Cost / risk:** D low; A
+HIGH and only if the three numbers justify it.
 
 ### 2. MoE inference-time expert demand-paging (run big MoE on less RAM)  ✅ SHIPPED (2026-06-13)
 
@@ -377,7 +407,9 @@ is *already in heap*; that's the thing you're trying to avoid. Paging/streaming
 only mean anything when the weights stay mmap'd and fault in on demand. **Today
 exactly one path provides that substrate: `.giw`** (the zero-copy aliasing in
 `serialize.go`). #1 is not the opener — it's the step that *generalizes that
-substrate to plain GGUF*, and it's the hardest item in the program.
+substrate to plain GGUF*; its cheap half (D, a transparent `.giw` cache) reuses the
+substrate as-is, while its hard half (A, the native-block kind) is the most
+expensive item in the program and is gated on the Q6_K spike.
 
 So the marquee capability (#2/#4) does **not** have to wait behind the expensive
 kernel work. Prove it on the substrate that already exists:
@@ -389,11 +421,11 @@ a 16–24 GB laptop, single static Go binary, no install, offline"* — and de-r
 the program **without writing a single K-quant scoring kernel.** Users prequant to
 `.giw` (the path the multi-model zoo already wants).
 
-**Phase 2 — generalize the substrate to plain GGUF (#1, HIGH cost).** Only once
-the capability is proven and wanted, bring it to the format users already have, by
-making GGUF zero-copy too (the per-K-quant scoring kernels). This is the right
-place for the expensive, parallel-quant-representation work — *after* it has a
-proven payoff pulling it, not gating the whole program behind it.
+**Phase 2 — generalize to plain GGUF (#1).** Split per the decision record in #1:
+ship **D (transparent `.giw` cache)** for the convenience + as the fallback floor —
+zero aikit change; gate the **native-block kind (A)** on the Q6_K spike, and only if
+it clears build the ~4 mid-bit-worthy formats. The expensive parallel-quant work is
+no longer the whole of Phase 2 — it's a measured, narrow optimization on top of D.
 
 **Parallel / independent of the substrate:**
 - **#5 mixed precision** — the safe incremental tuner; the `.giw` header already
@@ -418,9 +450,11 @@ standing menu:
 - **#4 (streaming) fires when:** a concrete *bigger-dense-than-RAM* ask appears —
   "run a 70B/dense-class off NVMe on a 16 GB laptop." Without that ask it stays a
   positioning idea, not scheduled work.
-- **#1 (zero-copy GGUF) fires when:** #2 or #4 is proven on `.giw` **and** the
-  "but my model is a plain GGUF" friction is real (i.e. the prequant-to-`.giw`
-  step is the adoption blocker).
+- **#1 splits (see the decision record):** **D (transparent `.giw` cache)** fires
+  as soon as the prequant-to-`.giw` step is felt friction — it's cheap and is also
+  the fallback floor, so it can land early. **A (native-block kind)** fires only if
+  the **Q6_K spike** clears (footprint + parity win over the int8/int4 requant), and
+  even then only for the ~4 mid-bit-worthy formats.
 - **#5 / #3 / #6:** #5 on a measured "uniform int8 leaves quality/size on the
   table" case; #3 on the big-vocab-small-model footprint biting (its own trigger
   above); #6 only as a deliberate research spike when the proven rungs are in —
@@ -466,9 +500,10 @@ once, then the router-driven and order-driven policies are small specializations
 2. **#4 dense streaming policy** (order-driven prefetch) and **#2 MoE paging
    policy** (router-driven + hot LRU) as the two policies on that seam — sequence
    by whichever adopter ask lands first; both are in scope.
-3. **#1 zero-copy GGUF** — generalize the substrate off `.giw` to plain GGUF (the
-   HIGH-cost per-K-quant scoring kernels), once the capability is proven and the
-   "my model is a GGUF" friction is the live blocker. (Phase 2.)
+3. **#1 generalize to plain GGUF** — ship **D (transparent `.giw` cache)** for the
+   convenience + fallback floor (no aikit change); gate the **native-block kind (A)**
+   on the Q6_K spike and build only the ~4 mid-bit-worthy formats if it clears.
+   (Phase 2 — see the §1 decision record.)
 4. **#5 mixed precision** in parallel (tuner, ships anytime); **#6 rotation 3-bit**
    the timeboxed research spike, last — it compounds with the substrate (smaller
    weights → higher hit rate / streamed tok/s); **#3** as its own narrow,
@@ -481,8 +516,9 @@ once, then the router-driven and order-driven policies are small specializations
 
 ## What this is *not* (keeping the house rules)
 
-- Default decode stays **bit-exact**: #1 falls back to heap-dequant on any
-  block-format mismatch; #2/#4 are opt-in `--moe-page` / `--stream-weights`;
+- Default decode stays **bit-exact**: #1's D path runs the existing dequant-once
+  weights (a cached `.giw`), and any format the native-block kind (A) doesn't
+  implement falls back to D; #2/#4 are opt-in `--moe-page` / `--stream-weights`;
   #5/#6 are build-time `.giw` precisions behind their own gates; #7 is bit-exact
   vs. the merged-adapter path (the low-rank add is exact); #8 restores KV exactly
   from `.giw-kv`. Merged-LoRA stays the default — #7 is the opt-in density knob.
