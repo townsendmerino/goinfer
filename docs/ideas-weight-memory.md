@@ -93,6 +93,17 @@ the `topK` selection in `moeMLP` (`mlp.go`), where the spike's `moeSelTrace` sat
 **Substrate Inc 1 (mmap the `.giw` load) shipped first** — `.giw` was zero-per-tensor-
 copy but `os.ReadFile`-heap (not pageable); now `MAP_PRIVATE` read-only, bit-exact.
 
+**Validated end-to-end on the real 35B-A3B (2026-06-13).** Three enablers were
+needed first: the mmap substrate (Inc 1); streaming `.giw` serialization
+(`SerializeWeightsTo` + `giw.WriteStream`) so the 35B prequantizes at ~20 GB peak
+instead of OOMing; and `.giw` format **v2**, which serializes the `qwen3_5_moe`
+DeltaNet-hybrid's per-layer `delta`/`qattn` tensors (the 35B-A3B *is* that arch — it
+couldn't round-trip through `.giw` before, segfaulting on nil delta). Result, at a
+512 MB expert cache vs 16 GB of experts: `hits=4706 misses=5534 evictions=5190`,
+decode **byte-identical** to fully resident over 24 tokens — i.e. `MADV_DONTNEED` on
+the read-only mapping is provably lossless even when thousands of in-use experts are
+evicted and re-faulted mid-decode.
+
 
 **The win:** a 35B-A3B activates ~3 B params/token but resides at ~39 GB (fact
 2). Keep the expert weights **mmap'd and not heap-resident**, fault in only the
