@@ -11,6 +11,19 @@ pre-1.0 and may change as new model families and quant formats land.
 ## [Unreleased]
 
 ### Added
+- **Per-model `serve` overrides — a heterogeneous model zoo.** `--model` now takes
+  comma-separated per-model overrides of the server-global defaults:
+  `--model big=moe.giw,stream,weight-cache=16,quant=int4 --model fast=small.giw`
+  streams the big MoE while the small one stays resident — the case the old flat
+  global config (the `// per-model overrides are a follow-on` TODO) couldn't serve.
+  Keys: `quant,lora,kv,kv-quant,stream,weight-cache,embed-int4`; overrides are
+  pointer-typed so "inherit the default" stays distinct from a real `""` (f32).
+  Backward compatible — no comma suffix inherits the globals. Paths may not contain
+  commas.
+- **`decoder.Options.Validate()`** checks the stringly-typed knobs (`Quant`,
+  `Backend`, `KVPrecision`, `KVQuant`) against their allowed values, so an invalid
+  enum (e.g. `-kv-quant=int8` instead of `i8`) is a clear load-time error instead of
+  a silent fall-through to the default. serve calls it once per resolved model.
 - **`--embed-int4`: relax the int8 embed/head pin to int4 (idea #3, opt-in lossy).**
   In int4 mode the token-embedding / LM-head table is pinned to int8 because it's
   logit-critical; for a big-vocab small model that pinned table is the single largest

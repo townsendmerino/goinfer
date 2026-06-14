@@ -170,6 +170,34 @@ func Load(dir string, opts Options) (*Model, error) {
 	return (&Model{w: w, be: be, eosIDs: resolveEOSIDs(dir, &w.Cfg), kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8"}).withResidency(), nil
 }
 
+// Validate checks the stringly-typed knobs against their allowed values, so an
+// invalid enum (e.g. -kv-quant=int8 instead of i8) is a clear load-time error
+// rather than a silent fall-through to the default. Callers building Options from
+// untrusted input (cmd/serve's per-model flags) should call it before Load; Load
+// itself does not, to keep existing direct callers unchanged. Path/arch-dependent
+// rules (StreamWeights needs a .giw; KVQuant i8 excludes MoE) stay runtime checks.
+func (o Options) Validate() error {
+	if _, err := parseQuant(o.Quant); err != nil {
+		return err
+	}
+	switch o.Backend {
+	case "", "cpu", "webgpu":
+	default:
+		return fmt.Errorf("decoder: invalid backend %q (cpu | webgpu)", o.Backend)
+	}
+	switch o.KVPrecision {
+	case "", "f32", "f16", "i8":
+	default:
+		return fmt.Errorf("decoder: invalid -kv %q (f32 | f16 | i8)", o.KVPrecision)
+	}
+	switch o.KVQuant {
+	case "", "f32", "i8":
+	default:
+		return fmt.Errorf("decoder: invalid -kv-quant %q (f32 | i8)", o.KVQuant)
+	}
+	return nil
+}
+
 // parseQuant maps Options.Quant to the internal quantMode.
 func parseQuant(q string) (quantMode, error) {
 	switch q {

@@ -31,6 +31,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -46,11 +47,27 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// modelSpec is one --model entry: a served name (optional, from name=path) and
-// the checkpoint path. Repeatable to serve a model zoo from one process.
-type modelSpec struct{ name, path string }
+// modelSpec is one --model entry: a served name (optional, from name=path), the
+// checkpoint path, and optional per-model overrides of knobs that are otherwise
+// server-global defaults — so a zoo can be heterogeneous (e.g. stream-page a big
+// MoE while a small dense model stays resident). Override fields are pointers
+// because "inherit the default" must be distinct from the zero value (quant="" is
+// f32, a real setting, not "unset").
+type modelSpec struct {
+	name, path string
 
-// modelFlag collects repeated --model flags. Each value is "path" or "name=path".
+	quant       *string  // quant=
+	lora        *string  // lora=
+	kvPrec      *string  // kv=
+	kvQuant     *string  // kv-quant=
+	stream      *bool    // stream (bare) or stream=true|false
+	weightCache *float64 // weight-cache= (GB)
+	embedInt4   *bool    // embed-int4 (bare) or embed-int4=true|false
+}
+
+// modelFlag collects repeated --model flags. Each value is
+// "[name=]path[,key=val|,flag]..." — the first comma field is the (optionally
+// named) path, the rest are per-model overrides. Paths may not contain commas.
 type modelFlag []modelSpec
 
 func (m *modelFlag) String() string {
@@ -62,24 +79,105 @@ func (m *modelFlag) String() string {
 }
 
 func (m *modelFlag) Set(v string) error {
-	spec := modelSpec{path: v}
-	// "name=path": split on the first '=' (a served name has no '=').
-	if i := strings.IndexByte(v, '='); i > 0 {
-		spec.name, spec.path = v[:i], v[i+1:]
+	fields := strings.Split(v, ",")
+	spec := modelSpec{path: fields[0]}
+	// "name=path": split the first field on the first '=' (a served name has no '=').
+	if i := strings.IndexByte(fields[0], '='); i > 0 {
+		spec.name, spec.path = fields[0][:i], fields[0][i+1:]
 	}
 	if spec.path == "" {
 		return fmt.Errorf("empty model path in %q", v)
+	}
+	for _, f := range fields[1:] {
+		key, val, hasVal := strings.Cut(f, "=")
+		if err := spec.setOverride(key, val, hasVal); err != nil {
+			return fmt.Errorf("--model %q: %w", spec.path, err)
+		}
 	}
 	*m = append(*m, spec)
 	return nil
 }
 
+// setOverride records one per-model "key=val" (or bare "flag") override.
+func (s *modelSpec) setOverride(key, val string, hasVal bool) error {
+	pbool := func() (*bool, error) {
+		b := true
+		if hasVal {
+			var err error
+			if b, err = strconv.ParseBool(val); err != nil {
+				return nil, fmt.Errorf("%s=%q: %w", key, val, err)
+			}
+		}
+		return &b, nil
+	}
+	var err error
+	switch key {
+	case "quant":
+		s.quant = &val
+	case "lora":
+		s.lora = &val
+	case "kv":
+		s.kvPrec = &val
+	case "kv-quant":
+		s.kvQuant = &val
+	case "weight-cache":
+		gb, perr := strconv.ParseFloat(val, 64)
+		if perr != nil {
+			return fmt.Errorf("weight-cache=%q: %w", val, perr)
+		}
+		s.weightCache = &gb
+	case "stream":
+		s.stream, err = pbool()
+	case "embed-int4":
+		s.embedInt4, err = pbool()
+	default:
+		return fmt.Errorf("unknown per-model option %q", key)
+	}
+	return err
+}
+
+// options resolves this spec's overrides over the server-global defaults in cfg
+// into a decoder.Options. Backend is process-wide (GPU device init), never per-model.
+func (s modelSpec) options(cfg config) decoder.Options {
+	return decoder.Options{
+		Backend:          cfg.backend,
+		Quant:            orStr(s.quant, cfg.quant),
+		LoRA:             orStr(s.lora, cfg.lora),
+		KVPrecision:      orStr(s.kvPrec, cfg.kvPrec),
+		KVQuant:          orStr(s.kvQuant, cfg.kvQuant),
+		StreamWeights:    orBool(s.stream, cfg.streamWeights),
+		WeightCacheBytes: int64(orFloat(s.weightCache, cfg.weightCacheGB) * 1e9),
+		EmbedInt4:        orBool(s.embedInt4, cfg.embedInt4),
+	}
+}
+
+func orStr(p *string, def string) string {
+	if p != nil {
+		return *p
+	}
+	return def
+}
+func orBool(p *bool, def bool) bool {
+	if p != nil {
+		return *p
+	}
+	return def
+}
+func orFloat(p *float64, def float64) float64 {
+	if p != nil {
+		return *p
+	}
+	return def
+}
+
 // config is the resolved command line for newServer (the flag set outgrew a
 // positional signature once embeddings landed).
 type config struct {
-	models        modelFlag // decoder(s) (-model, repeatable); empty = no generative endpoints
-	backend       string
-	quant         string // global (per-model overrides are a follow-on)
+	models  modelFlag // decoder(s) (-model, repeatable); empty = no generative endpoints
+	backend string
+	// quant + the per-model knobs below are server-global DEFAULTS; a --model spec
+	// can override each one (see modelSpec / modelFlag.Set).
+	quant         string
 	kvPrec        string // GPU residency KV cache precision: "" | f32 | f16 (-kv)
 	kvQuant       string // CPU KV cache storage precision: "" | f32 | i8 (-kv-quant)
 	lora          string
@@ -112,10 +210,12 @@ func main() {
 	flag.StringVar(&cfg.visionQuant, "vision-quant", "f32", "vision encoder weight quant: f32 (default, bit-exact) | int8 (W8A8, cosine ~0.999) — int8 only speeds the compute-bound ViT prefill on AVX512-VNNI; on AVX2 it's a wash, so f32 is the default")
 	flag.Var(&cfg.models, "model", "generative model: a .gguf/.giw file or HF dir (chat/completions). Repeatable\n"+
 		"as `name=path` to serve a model zoo from one process; requests route on the\n"+
-		"OpenAI `model` field. N resident int8 models are expensive — prequant `.giw`\n"+
-		"(--model name=path.giw) maps weights zero-copy and is the cheap way to keep a zoo.")
-	flag.StringVar(&cfg.backend, "backend", "cpu", "compute backend: cpu | webgpu")
-	flag.StringVar(&cfg.quant, "quant", "int8int8", "decoder weight quant (global): \"\" | int8 | int8int8 | int4")
+		"OpenAI `model` field. Append comma-separated per-model overrides of the global\n"+
+		"defaults below: `--model big=moe.giw,stream,weight-cache=16 --model fast=small.giw`\n"+
+		"streams only the big MoE. Keys: quant,lora,kv,kv-quant,stream,weight-cache,embed-int4.\n"+
+		"(Paths may not contain commas.)")
+	flag.StringVar(&cfg.backend, "backend", "cpu", "compute backend: cpu | webgpu (process-wide)")
+	flag.StringVar(&cfg.quant, "quant", "int8int8", "default decoder weight quant: \"\" | int8 | int8int8 | int4 (per-model: --model p,quant=…)")
 	flag.StringVar(&cfg.kvPrec, "kv", "f32", "GPU residency KV cache precision: f32 (bit-exact, 16k ctx) | f16 (lossy, 32k ctx) | i8 (lossy, ~64k ctx) — webgpu backend only")
 	flag.StringVar(&cfg.kvQuant, "kv-quant", "f32", "CPU KV cache storage: f32 (default, bit-exact) | i8 (per-head int8, ~4× smaller, lossy — argmax ~90%+; excludes MoE/gemma4/qwen3.5)")
 	flag.StringVar(&cfg.lora, "lora", "", "optional PEFT LoRA adapter dir, merged into the (safetensors) base at load")
@@ -309,16 +409,23 @@ func (s *server) loadVisionTower(cfg config) error {
 // and returns it as a *loadedModel. The served name is the spec's name=, else (a
 // single unnamed --model) --served-model-name, else the file/dir basename.
 func loadDecoder(spec modelSpec, cfg config) (*loadedModel, error) {
+	// Resolve this model's knobs (per-model overrides over server-global defaults)
+	// and reject invalid enums up front.
+	opts := spec.options(cfg)
+	if err := opts.Validate(); err != nil {
+		return nil, fmt.Errorf("--model %q: %w", spec.path, err)
+	}
+
 	// Weight streaming needs the read-only mmap that only .giw provides. For a plain
 	// .gguf, transparently transcode to a sidecar .giw cache once (idea #1 "D") and
 	// load that — so --stream-weights "just works" without a manual prequant step.
 	// The served name still derives from the original --model spec, not the cache.
 	loadPath := spec.path
-	if cfg.streamWeights && strings.HasSuffix(spec.path, ".gguf") {
-		if cfg.embedInt4 {
-			fmt.Fprintln(os.Stderr, "note: -embed-int4 is ignored with -stream-weights (the cached .giw keeps the int8 pin); prequant the model with -embed-int4 to bake it")
+	if opts.StreamWeights && strings.HasSuffix(spec.path, ".gguf") {
+		if opts.EmbedInt4 {
+			fmt.Fprintln(os.Stderr, "note: embed-int4 is ignored with stream-weights (the cached .giw keeps the int8 pin); prequant the model with embed-int4 to bake it")
 		}
-		giwPath, err := prequant.EnsureCachedGIW(spec.path, cfg.quant)
+		giwPath, err := prequant.EnsureCachedGIW(spec.path, opts.Quant)
 		if err != nil {
 			return nil, fmt.Errorf("stream-weights cache (%s): %w", spec.path, err)
 		}
@@ -330,7 +437,7 @@ func loadDecoder(spec modelSpec, cfg config) (*loadedModel, error) {
 		return nil, fmt.Errorf("load tokenizer (%s): %w", loadPath, err)
 	}
 	t0 := time.Now()
-	model, err := decoder.Load(loadPath, decoder.Options{Backend: cfg.backend, Quant: cfg.quant, LoRA: cfg.lora, KVPrecision: cfg.kvPrec, KVQuant: cfg.kvQuant, StreamWeights: cfg.streamWeights, WeightCacheBytes: int64(cfg.weightCacheGB * 1e9), EmbedInt4: cfg.embedInt4})
+	model, err := decoder.Load(loadPath, opts)
 	if err != nil {
 		return nil, fmt.Errorf("load model (%s): %w", loadPath, err)
 	}
