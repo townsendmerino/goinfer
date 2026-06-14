@@ -244,6 +244,23 @@ the argmax rarely lands on a tail row and is "good enough" when it does — plau
 gated on **rare-token continuations specifically**, not average-case argmax, or the
 tail-token regressions hide in the aggregate.
 
+**Spike result (2026-06-13 — qwen2.5-coder-1.5B Q4_K_M, 131 real-prefix preds, 38
+hot / 93 rare; throwaway harness, since removed). (b) is SHELVED.** int4 embed/head
+vs the int8 pin, top-1 agreement vs native(f32): overall 86.3% vs 88.5% (**−2.3
+pts**), but split: **hot tokens 0.0 pts, rare tokens −3.2 pts** — the damage is
+*entirely* on the tail, and *hidden in the aggregate* exactly as feared above (which
+also vindicates the general point that argmax-in-aggregate masks tail regressions —
+applies to the #1 fidelity number too). The kicker for (b): the loss comes from
+**int4 *tail* rows**, but (b) keeps the tail at int4 — so it incurs the same rare-
+token loss as full-int4 while saving *less* RAM (hot rows pinned int8 for no quality
+gain, since hot is already 0-pt at int4). **(b) is dominated by both endpoints.**
+The real lever is therefore a simple binary: keep the int8 pin (default, safe) **or**
+an opt-in `--embed-int4` knob that relaxes it (halves the dominant resident tensor on
+a big-vocab small model, costs ~2.3 pts top-1 / 3.2 on rare). (a) untied-only still
+holds as a *free* win where it applies (the input embed is a pure gather — int4 it,
+keep the separate head int8), but untied small big-vocab models are rare. Net: ship
+the knob if wanted; don't build the row-blocking machinery.
+
 **Cost / risk:** medium for (a); medium + a frequency permutation / per-row tier
 map for (b). Rides directly on the logit-parity gate the `embedding()` policy was
 written to protect. **Gate:** argmax + cosine on the per-model goldens **plus a
