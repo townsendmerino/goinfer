@@ -11,6 +11,15 @@ pre-1.0 and may change as new model families and quant formats land.
 ## [Unreleased]
 
 ### Added
+- **`--embed-int4`: relax the int8 embed/head pin to int4 (idea #3, opt-in lossy).**
+  In int4 mode the token-embedding / LM-head table is pinned to int8 because it's
+  logit-critical; for a big-vocab small model that pinned table is the single largest
+  resident tensor. `--embed-int4` (decoder `Options.EmbedInt4`) stores it at int4 too,
+  halving it, for ~2.3 pts top-1 (a 1.5B Q4_K_M spike — ≈0 on frequent tokens, ~3 on
+  rare). Default off keeps the bit-exact int8 pin. GGUF direct-load path only (not the
+  `--stream-weights` `.giw` cache — prequant with the knob to bake it). The doc's
+  stronger "row-blocking" variant (b) was spiked and shelved: the int4 damage is
+  entirely on tail rows, which tiering keeps at int4, so it's dominated by full-int4.
 - **`serve --stream-weights` now works on a plain `.gguf` (transparent `.giw` cache,
   idea #1 "D").** Streaming needs the read-only mmap that only `.giw` provides; rather
   than make users run `prequant` by hand, serve now transcodes a `.gguf` to a sidecar

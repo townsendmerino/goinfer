@@ -90,6 +90,7 @@ type config struct {
 	kvDemotedMax  int           // -kv-demoted-max: cap on the on-disk cold tier
 	streamWeights bool          // -stream-weights: page MoE expert weights out of an mmap'd .giw under a RAM budget
 	weightCacheGB float64       // -weight-cache: resident expert-weight budget in GB (0 = auto)
+	embedInt4     bool          // -embed-int4: relax the int8 embed/head pin to int4 (lossy, big-vocab small models)
 	maxQueue      int           // -max-queue: bounded per-model queue depth (0 = unbounded)
 	allowAdmin    bool          // -allow-admin: enable POST /admin/models/{load,unload}
 	visionPath    string        // -vision: dir holding the vision tower (SigLIP + projector) for a multimodal --model
@@ -124,6 +125,7 @@ func main() {
 	flag.IntVar(&cfg.kvDemotedMax, "kv-demoted-max", 64, "tiered KV: max demoted (on-disk) sessions to keep; older ones are dropped (only with -kv-idle-demote)")
 	flag.BoolVar(&cfg.streamWeights, "stream-weights", false, "page model weights on demand out of an mmap'd .giw, capping resident RAM to -weight-cache instead of holding all weights: MoE expert demand-paging (run a 35B-A3B on ~16-20 GB) or dense per-layer streaming (run a model bigger than RAM). Bit-exact; trades RAM for fault latency. A plain .gguf is transparently transcoded to a sidecar .giw cache on first use (one-time)")
 	flag.Float64Var(&cfg.weightCacheGB, "weight-cache", 0, "resident expert-weight budget in GB for -stream-weights (0 = auto, ~half of available RAM)")
+	flag.BoolVar(&cfg.embedInt4, "embed-int4", false, "with -quant int4, store the token-embedding/LM-head table at int4 too instead of the int8 pin — halves the largest resident tensor on a big-vocab small model. Lossy (~2.3 pts top-1, mostly rare tokens); GGUF direct load only (not the -stream-weights .giw cache)")
 	flag.IntVar(&cfg.maxQueue, "max-queue", 8, "per-model backpressure: max queued requests before 429 (0 = unbounded)")
 	flag.StringVar(&cfg.embedPath, "embed-model", "", "embedding model: a CodeRankEmbed HF dir (config.json + model.safetensors + tokenizer.json) for /v1/embeddings")
 	flag.StringVar(&cfg.embedQuant, "embed-quant", "f32", "embedding weight precision: f32 | q8")
@@ -313,6 +315,9 @@ func loadDecoder(spec modelSpec, cfg config) (*loadedModel, error) {
 	// The served name still derives from the original --model spec, not the cache.
 	loadPath := spec.path
 	if cfg.streamWeights && strings.HasSuffix(spec.path, ".gguf") {
+		if cfg.embedInt4 {
+			fmt.Fprintln(os.Stderr, "note: -embed-int4 is ignored with -stream-weights (the cached .giw keeps the int8 pin); prequant the model with -embed-int4 to bake it")
+		}
 		giwPath, err := prequant.EnsureCachedGIW(spec.path, cfg.quant)
 		if err != nil {
 			return nil, fmt.Errorf("stream-weights cache (%s): %w", spec.path, err)
@@ -325,7 +330,7 @@ func loadDecoder(spec modelSpec, cfg config) (*loadedModel, error) {
 		return nil, fmt.Errorf("load tokenizer (%s): %w", loadPath, err)
 	}
 	t0 := time.Now()
-	model, err := decoder.Load(loadPath, decoder.Options{Backend: cfg.backend, Quant: cfg.quant, LoRA: cfg.lora, KVPrecision: cfg.kvPrec, KVQuant: cfg.kvQuant, StreamWeights: cfg.streamWeights, WeightCacheBytes: int64(cfg.weightCacheGB * 1e9)})
+	model, err := decoder.Load(loadPath, decoder.Options{Backend: cfg.backend, Quant: cfg.quant, LoRA: cfg.lora, KVPrecision: cfg.kvPrec, KVQuant: cfg.kvQuant, StreamWeights: cfg.streamWeights, WeightCacheBytes: int64(cfg.weightCacheGB * 1e9), EmbedInt4: cfg.embedInt4})
 	if err != nil {
 		return nil, fmt.Errorf("load model (%s): %w", loadPath, err)
 	}

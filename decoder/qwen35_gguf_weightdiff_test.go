@@ -56,7 +56,7 @@ func loadQwen35GGUFSlice(t *testing.T, path string, nLayer int) (*Weights, func(
 		t.Fatalf("resolveArchitecture: %v", err)
 	}
 	quant, _ := parseQuant("int8int8") // experts int8; the compared attn tensors stay f32
-	w, err := buildWeightsFromGGUF(cfg, arch, g, quant)
+	w, err := buildWeightsFromGGUF(cfg, arch, g, quant, false)
 	if err != nil {
 		g.Close()
 		t.Fatalf("buildWeightsFromGGUF (GGUF slice): %v", err)

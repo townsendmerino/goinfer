@@ -397,7 +397,7 @@ func ggufMellumConfig(g *embed.GGUFFile) (*Config, error) {
 
 // loadGGUFWeights parses a .gguf file and builds the weight bundle, mapping
 // llama.cpp tensor names to the descriptor and un-permuting q/k.
-func loadGGUFWeights(path string, quant quantMode) (*Weights, error) {
+func loadGGUFWeights(path string, quant quantMode, embedInt4 bool) (*Weights, error) {
 	// mmap, not heap-read: the raw quantized bytes stay in reclaimable page
 	// cache while we dequantize tensor-by-tensor. The weights end up as fresh
 	// (f32 or int8) copies, so the mapping is unneeded once the build returns.
@@ -406,14 +406,14 @@ func loadGGUFWeights(path string, quant quantMode) (*Weights, error) {
 		return nil, err
 	}
 	defer g.Close()
-	return buildGGUFWeights(g, quant)
+	return buildGGUFWeights(g, quant, embedInt4)
 }
 
 // buildGGUFWeights builds the weight bundle from an already-open GGUF — whether
 // memory-mapped (loadGGUFWeights) or backed by an in-memory slice
 // (LoadGGUFBytes). It resolves the config + architecture from the GGUF's own
 // metadata, so both entry points produce an identical model.
-func buildGGUFWeights(g *embed.GGUFFile, quant quantMode) (*Weights, error) {
+func buildGGUFWeights(g *embed.GGUFFile, quant quantMode, embedInt4 bool) (*Weights, error) {
 	cfg, err := ggufConfig(g)
 	if err != nil {
 		return nil, err
@@ -425,7 +425,7 @@ func buildGGUFWeights(g *embed.GGUFFile, quant quantMode) (*Weights, error) {
 	if err != nil {
 		return nil, err
 	}
-	return buildWeightsFromGGUF(cfg, arch, g, quant)
+	return buildWeightsFromGGUF(cfg, arch, g, quant, embedInt4)
 }
 
 // Generous sanity ceilings for the metadata-derived core dims — orders of
@@ -484,7 +484,7 @@ func LoadGGUFBytes(raw []byte, opts Options) (*Model, error) {
 		closeBackend(be)
 		return nil, err
 	}
-	w, err := buildGGUFWeights(g, quant)
+	w, err := buildGGUFWeights(g, quant, opts.EmbedInt4)
 	g.Close()
 	if err != nil {
 		closeBackend(be)
@@ -503,7 +503,7 @@ func LoadGGUFBytes(raw []byte, opts Options) (*Model, error) {
 // ever materializing the whole model in f32 (see loadWeights). The GGUF's own
 // quant is lossy and so is the re-quant, but it captures nearly all of what a
 // Q4_K_M file carries.
-func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, quant quantMode) (*Weights, error) {
+func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, quant quantMode, embedInt4 bool) (*Weights, error) {
 	hidden, hd := arch.HiddenDim, arch.HeadDim
 	w := &Weights{Cfg: *cfg, arch: arch, Layers: make([]LayerWeights, arch.NumLayers)}
 
@@ -533,7 +533,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 	// it with the embedding policy (int8 even in int4 mode), not the projection
 	// mode.
 	embMat := func(name string, out, in int) (linalg.WeightMat, error) {
-		return streamMat(name, out, in, quant.embedding(), func(r int) int { return r * in })
+		return streamMat(name, out, in, quant.embeddingWith(embedInt4), func(r int) int { return r * in })
 	}
 	// vec loads a 1-D tensor (norm or bias).
 	vec := func(name string, n int) ([]float32, error) {

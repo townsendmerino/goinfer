@@ -259,7 +259,9 @@ an opt-in `--embed-int4` knob that relaxes it (halves the dominant resident tens
 a big-vocab small model, costs ~2.3 pts top-1 / 3.2 on rare). (a) untied-only still
 holds as a *free* win where it applies (the input embed is a pure gather — int4 it,
 keep the separate head int8), but untied small big-vocab models are rare. Net: ship
-the knob if wanted; don't build the row-blocking machinery.
+the knob; don't build the row-blocking machinery. **✅ Knob SHIPPED (2026-06-13):**
+`serve --embed-int4` / `decoder.Options.EmbedInt4`, GGUF direct-load path, gated by
+`TestEmbedInt4Knob`. Row-blocking (b) shelved.
 
 **Cost / risk:** medium for (a); medium + a frequency permutation / per-row tier
 map for (b). Rides directly on the logit-parity gate the `embedding()` policy was

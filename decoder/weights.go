@@ -168,7 +168,7 @@ func (w *Weights) matmulWeights() []*linalg.WeightMat {
 //
 // Use LoadWeightsFromFS for fs.FS-backed (MapFS, embed.FS) paths — that
 // route stays heap-backed because fs.FS doesn't expose a file descriptor.
-func LoadWeights(dir string) (*Weights, error) { return loadWeights(dir, quantNone, nil) }
+func LoadWeights(dir string) (*Weights, error) { return loadWeights(dir, quantNone, false, nil) }
 
 // parallelLayers runs fn over the n layer indices across a worker pool, so the
 // per-tensor dequant + re-quant (independent per layer — distinct linalg.WeightMat
@@ -229,10 +229,12 @@ func parallelLayers(n int, fn func(i int) error) error {
 // big quantized checkpoint load in a quarter (int8) or eighth (int4) of the RAM
 // the load-everything-then-quantize path needed. The forward output is identical
 // to quantizing after load; only the peak memory differs.
-func loadWeights(dir string, quant quantMode, lora *loraAdapter) (*Weights, error) {
+func loadWeights(dir string, quant quantMode, embedInt4 bool, lora *loraAdapter) (*Weights, error) {
 	if strings.HasSuffix(dir, ".gguf") {
-		return loadGGUFWeights(dir, quant) // quantized llama.cpp checkpoint (G7); LoRA guarded in Load
+		return loadGGUFWeights(dir, quant, embedInt4) // quantized llama.cpp checkpoint (G7); LoRA guarded in Load
 	}
+	// embedInt4 is wired only through the GGUF path for now (its target is big-vocab
+	// small .gguf models); a safetensors load keeps the int8 pin.
 	cfg, err := loadConfig(os.DirFS(dir), "config.json")
 	if err != nil {
 		return nil, err

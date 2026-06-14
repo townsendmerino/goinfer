@@ -34,6 +34,18 @@ func (q quantMode) embedding() quantMode {
 	return q
 }
 
+// embeddingWith resolves the embed/head precision allowing the int8 pin to be
+// relaxed to int4 (Options.EmbedInt4): in int4 mode the table goes int4 too,
+// halving what is the single largest resident tensor on a big-vocab small model.
+// Lossy and opt-in — a 1.5B Q4_K_M spike measured ~2.3 pts top-1 vs the pin (≈0 on
+// frequent tokens, ~3 on rare). Off (the pin) is the default and the bit-exact path.
+func (q quantMode) embeddingWith(embedInt4 bool) quantMode {
+	if embedInt4 && q == quantInt4 {
+		return quantInt4
+	}
+	return q.embedding()
+}
+
 // int4GroupSize is the number of consecutive input features that share one f32
 // scale in the int4 path. 32 matches GGUF Q4_K's sub-block granularity — small
 // enough to keep 4-bit accuracy, large enough that the per-group scale overhead

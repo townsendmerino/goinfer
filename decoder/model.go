@@ -67,6 +67,11 @@ type Options struct {
 	// WeightCacheBytes is the resident-bytes budget for streamed weights (0 = auto,
 	// ~half of available RAM). Only meaningful with StreamWeights.
 	WeightCacheBytes int64
+	// EmbedInt4 relaxes the int8 pin on the token-embedding/LM-head table in int4
+	// mode, storing it at int4 too — halving the single largest resident tensor on a
+	// big-vocab small model. Lossy + opt-in (~2.3 pts top-1, mostly on rare tokens);
+	// default off keeps the bit-exact int8 pin. GGUF load path only.
+	EmbedInt4 bool
 }
 
 // Load reads a Gemma 3 snapshot (config.json + model.safetensors) from dir
@@ -146,7 +151,7 @@ func Load(dir string, opts Options) (*Model, error) {
 		defer lora.close()
 	}
 
-	w, err := loadWeights(dir, quant, lora)
+	w, err := loadWeights(dir, quant, opts.EmbedInt4, lora)
 	if err != nil {
 		closeBackend(be)
 		return nil, err

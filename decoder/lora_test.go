@@ -160,7 +160,7 @@ func TestLoRA_mergeAtLoad(t *testing.T) {
 		"base_model.model.model.layers.0.self_attn.q_proj.lora_B.weight": {[]int{qDim, r}, bData},
 	})
 
-	w0, err := loadWeights(base, quantNone, nil)
+	w0, err := loadWeights(base, quantNone, false, nil)
 	if err != nil {
 		t.Fatalf("load base: %v", err)
 	}
@@ -169,7 +169,7 @@ func TestLoRA_mergeAtLoad(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer lo.close()
-	w1, err := loadWeights(base, quantNone, lo)
+	w1, err := loadWeights(base, quantNone, false, lo)
 	if err != nil {
 		t.Fatalf("load merged: %v", err)
 	}
