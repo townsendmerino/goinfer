@@ -197,6 +197,57 @@ func TestLoadGIW_mmap(t *testing.T) {
 	}
 }
 
+// TestSerializeQwen35_roundTrip gates the v2 format extension: the qwen3_5_moe
+// DeltaNet-hybrid must survive a .giw round-trip — its per-layer delta (linear
+// layers) and qattn (softmax layers) tensors are restored, and the greedy decode
+// is unchanged. Before v2 these were dropped, so a .giw-loaded hybrid segfaulted
+// on the first forward (nil delta). Uses the tiny hybrid checkpoint.
+func TestSerializeQwen35_roundTrip(t *testing.T) {
+	const ckpt = "../testdata/qwen35-tiny"
+	if _, err := os.Stat(ckpt); err != nil {
+		t.Skipf("no hybrid checkpoint at %s — run scripts/pin_qwen35_forward.py", ckpt)
+	}
+	m1, err := Load(ckpt, Options{Quant: "int8int8"})
+	if err != nil {
+		t.Fatalf("load checkpoint: %v", err)
+	}
+	defer m1.Close()
+
+	blob, err := SerializeWeights(m1.w, "qwen35-rt")
+	if err != nil {
+		t.Fatalf("serialize: %v", err)
+	}
+	w2, err := LoadSerializedWeights(blob)
+	if err != nil {
+		t.Fatalf("deserialize: %v", err)
+	}
+
+	// Both hybrid layer kinds must have been restored.
+	var nDelta, nQattn int
+	for i := range w2.Layers {
+		if w2.Layers[i].delta != nil {
+			nDelta++
+		}
+		if w2.Layers[i].qattn != nil {
+			nQattn++
+		}
+	}
+	if nDelta == 0 || nQattn == 0 {
+		t.Fatalf("hybrid tensors lost on round-trip: delta layers=%d qattn layers=%d", nDelta, nQattn)
+	}
+
+	m2, err := NewModel(w2, "cpu")
+	if err != nil {
+		t.Fatalf("new model: %v", err)
+	}
+	prompt := []int{1, 2, 3, 4, 5, 6, 7, 8}
+	a, b := greedyN(t, m1, prompt, 8), greedyN(t, m2, prompt, 8)
+	if !slicesEqualInt(a, b) {
+		t.Fatalf("qwen3_5_moe .giw round-trip changed the decode:\n direct:    %v\n round-trip: %v", a, b)
+	}
+	t.Logf("qwen3_5_moe round-trips: %d delta + %d qattn layers, decode byte-identical", nDelta, nQattn)
+}
+
 // TestSerializeWeightsTo_matchesBuffer gates the streaming serializer: writing the
 // bundle to an io.Writer must produce bytes byte-for-byte identical to the in-memory
 // SerializeWeights (same CRC, same length). Streaming is how a 35B is prequantized

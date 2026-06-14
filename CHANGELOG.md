@@ -11,6 +11,21 @@ pre-1.0 and may change as new model families and quant formats land.
 ## [Unreleased]
 
 ### Added
+- **`.giw` now round-trips the `qwen3_5_moe` DeltaNet-hybrid family (format v2).**
+  The prequant `.giw` serializer dropped the hybrid's per-layer `delta` (Gated
+  DeltaNet) and `qattn` (gated-softmax) tensor sets, so a `.giw`-loaded 35B-A3B
+  segfaulted on the first forward (nil delta). v2 appends a one-byte-per-layer
+  hybrid tail carrying those f32 tensors; v1 blobs are rejected by the version
+  guard and rebuilt from the GGUF (a `.giw` is a regenerable cache). This is what
+  lets MoE expert demand-paging (below) actually run its headline 35B-A3B — now
+  validated end-to-end: a 512 MB expert cache against 16 GB of experts evicted and
+  re-faulted 5k+ in-use experts over a decode with byte-identical output.
+- **Streaming `.giw` serialization (`prequant` no longer OOMs on big models).**
+  `decoder.SerializeWeightsTo(io.Writer)` + `giw.WriteStream` write the bundle
+  straight to disk with a running CRC and a seek-back length patch, so peak RAM is
+  ~the resident weight size instead of 2×+ (resident + full blob + bundle copy). A
+  35B int4 now prequantizes at ~20 GB peak instead of thrashing into swap; the
+  streamed bytes are byte-identical to the in-memory path.
 - **MoE expert demand-paging (`serve --stream-weights` + `--weight-cache <GB>`) —
   run a big MoE on less RAM.** A sparse MoE (e.g. Qwen3-A3B class) resides at tens
   of GB of experts but activates only K·L per token. With `--stream-weights`, a

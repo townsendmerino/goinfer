@@ -42,8 +42,8 @@ func TestExpertPager_lruEviction(t *testing.T) {
 	if !equalEv(log, want) {
 		t.Fatalf("phase 1 advise log = %v, want %v", log, want)
 	}
-	if h, m := p.stats(); h != 0 || m != 3 {
-		t.Fatalf("phase 1 stats = (%d hits, %d misses), want (0, 3)", h, m)
+	if h, m, e := p.stats(); h != 0 || m != 3 || e != 1 {
+		t.Fatalf("phase 1 stats = (%d hits, %d misses, %d evict), want (0, 3, 1)", h, m, e)
 	}
 
 	log = nil
@@ -53,8 +53,8 @@ func TestExpertPager_lruEviction(t *testing.T) {
 	if !equalEv(log, want) {
 		t.Fatalf("phase 2 advise log = %v, want %v", log, want)
 	}
-	if h, m := p.stats(); h != 1 || m != 4 {
-		t.Fatalf("phase 2 stats = (%d hits, %d misses), want (1, 4)", h, m)
+	if h, m, e := p.stats(); h != 1 || m != 4 || e != 2 {
+		t.Fatalf("phase 2 stats = (%d hits, %d misses, %d evict), want (1, 4, 2)", h, m, e)
 	}
 }
 
@@ -117,13 +117,13 @@ func TestMadvise_dontneedRefaultsIntact(t *testing.T) {
 // TestExpertPaging_bitExact is the end-to-end correctness gate for idea #2: paging
 // experts out of the read-only mapping must not change a single output token. It
 // loads a real large-expert MoE .giw (GOINFER_MOE_GIW) twice — fully resident and
-// with a 1-expert budget (so every token evicts an in-use expert and re-faults it)
-// — and asserts the greedy decodes are byte-identical and that eviction actually
-// happened (misses > 0). Skipped without the asset (no small MoE .giw round-trips
-// on this box — the tiny hybrid fixture's DeltaNet weights aren't .giw-serializable
-// and its experts are sub-page anyway). The page-granular safety it relies on is
-// proven model-free by TestMadvise_dontneedRefaultsIntact; the LRU policy by
-// TestExpertPager_lruEviction.
+// with a small expert-cache budget (forcing the LRU to evict and the decode to
+// re-fault evicted experts) — and asserts the greedy decodes are byte-identical and
+// that eviction actually happened (evictions > 0, not just cold-start misses).
+// Skipped without the asset (no small MoE .giw round-trips on this box — the tiny
+// hybrid fixture's DeltaNet weights aren't .giw-serializable and its experts are
+// sub-page anyway). The page-granular safety it relies on is proven model-free by
+// TestMadvise_dontneedRefaultsIntact; the LRU policy by TestExpertPager_lruEviction.
 func TestExpertPaging_bitExact(t *testing.T) {
 	giwPath := os.Getenv("GOINFER_MOE_GIW")
 	if giwPath == "" {
@@ -136,9 +136,13 @@ func TestExpertPaging_bitExact(t *testing.T) {
 	}
 	defer full.Close()
 
-	// WeightCacheBytes 1 clamps to a single expert: with top-k > 1 every token
-	// touches more experts than fit, forcing evict-then-reuse (the re-fault path).
-	paged, err := Load(giwPath, Options{StreamWeights: true, WeightCacheBytes: 1})
+	// A 512 MB expert cache is a small fraction of a multi-GB MoE, so the LRU evicts
+	// across tokens and cold experts re-fault — exercising the path under test —
+	// while still holding roughly a token's working set, so the decode stays fast
+	// enough to run many tokens. (Correctness doesn't depend on the budget; this is
+	// chosen to force eviction at a sane speed.)
+	const budget = 512 << 20
+	paged, err := Load(giwPath, Options{StreamWeights: true, WeightCacheBytes: budget})
 	if err != nil {
 		t.Fatalf("load paged .giw: %v", err)
 	}
@@ -148,19 +152,20 @@ func TestExpertPaging_bitExact(t *testing.T) {
 	}
 
 	prompt := []int{1, 2, 3, 4, 5, 6, 7, 8}
-	a := greedyN(t, full, prompt, 16)
-	b := greedyN(t, paged, prompt, 16)
+	a := greedyN(t, full, prompt, 24)
+	b := greedyN(t, paged, prompt, 24)
 	if len(a) == 0 {
 		t.Fatal("no tokens generated")
 	}
 	if !slicesEqualInt(a, b) {
 		t.Fatalf("paging changed the decode:\n full:  %v\n paged: %v", a, b)
 	}
-	if _, misses := paged.pager.stats(); misses == 0 {
-		t.Fatal("pager recorded zero misses — eviction/re-fault path was not exercised")
-	} else {
-		t.Logf("paged decode byte-identical over %d tokens; pager misses=%d (evict/re-fault proven lossless)", len(a), misses)
+	hits, misses, evictions := paged.pager.stats()
+	if evictions == 0 {
+		t.Fatalf("pager evicted nothing (hits=%d misses=%d) — budget too large to exercise eviction", hits, misses)
 	}
+	t.Logf("paged decode byte-identical over %d tokens at %d MB budget; pager hits=%d misses=%d evictions=%d (evict/re-fault proven lossless on a real %s MoE)",
+		len(a), budget>>20, hits, misses, evictions, "35B-class")
 }
 
 func bytesEqual(a, b []byte) bool {

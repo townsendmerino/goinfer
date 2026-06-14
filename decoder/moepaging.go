@@ -33,7 +33,7 @@ type expertPager struct {
 	pos      map[*expertWeights]*list.Element // membership + O(1) promotion
 	advise   func([]byte, bool) error         // residency hint (real madvise; overridable in tests)
 
-	hits, misses int64
+	hits, misses, evictions int64
 }
 
 // newExpertPager builds a pager over the experts of an mmap-backed MoE model, or
@@ -123,14 +123,19 @@ func (p *expertPager) touch(ex *expertWeights) {
 		p.lru.Remove(back)
 		delete(p.pos, victim)
 		p.resident -= p.bytes[victim]
+		p.evictions++
 		for _, s := range p.ranges[victim] {
 			_ = p.advise(s, false) // DONTNEED: release the victim's pages
 		}
 	}
 }
 
-// stats returns cumulative (hits, misses) over all touch calls.
-func (p *expertPager) stats() (hits, misses int64) { return p.hits, p.misses }
+// stats returns cumulative (hits, misses, evictions) over all touch calls. A
+// non-zero eviction count means the budget was actually enforced (the LRU tail was
+// released), as opposed to mere cold-start misses.
+func (p *expertPager) stats() (hits, misses, evictions int64) {
+	return p.hits, p.misses, p.evictions
+}
 
 // alignedMappedSpan returns the page-aligned interior of wm's quantized backing
 // bytes, but only if they lie inside the [base,end) mapping (so heap-backed f32 /

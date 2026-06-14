@@ -33,7 +33,9 @@ import (
 //	Embed, LMHead, PosEmbed     weightMat
 //	FinalNorm, FinalNormBias    f32
 //	numLayers uint32
-//	  per layer: the LayerWeights fields, in declaration order
+//	  per layer: the LayerWeights fields, in declaration order, then a v2 hybrid
+//	  tail (uint8 kind: 0 none | 1 DeltaNet | 2 gated-softmax) with the
+//	  qwen3_5_moe per-layer delta / qattn f32 tensors when set.
 //	crc     uint32   (CRC32-IEEE over every preceding byte)
 //
 // str  = uint32 len + len bytes
@@ -42,10 +44,14 @@ import (
 // raw  = uint32 len + len bytes                (aliased on load)
 // weightMat = uint8 kind (0 empty|1 f32|2 q8|3 q4); if non-empty:
 //             int32 rows, cols, group; uint8 w8a8; then the kind's arrays.
+//
+// v2 added the per-layer hybrid tail so the qwen3_5_moe (DeltaNet + gated-softmax)
+// family round-trips through .giw; v1 blobs (no tail) are rejected by the version
+// guard and rebuilt from the source GGUF.
 
 const (
 	giwMagic   = "GINFW"
-	giwVersion = 1
+	giwVersion = 2 // v2: per-layer qwen3_5_moe hybrid tail (delta / qattn)
 	// Sanity ceilings on the count fields, generous vs any real checkpoint
 	// (largest models: ~120 layers, a few hundred experts) but low enough that a
 	// corrupt/hostile blob can't drive a multi-GB make() before the body reader
@@ -368,6 +374,38 @@ func (w *giwWriter) layer(l *LayerWeights) {
 	w.weightMat(&l.SharedExpert.Up)
 	w.weightMat(&l.SharedExpert.Down)
 	w.weightMat(&l.SharedGate)
+	w.hybridLayer(l)
+}
+
+// hybridLayer writes the qwen3_5_moe per-layer extras (v2): a kind byte then the
+// DeltaNet (linear-layer) or gated-softmax (qattn) f32 tensor set. Every other
+// family writes kind 0 and nothing more, so the field stays one byte per layer.
+func (w *giwWriter) hybridLayer(l *LayerWeights) {
+	switch {
+	case l.delta != nil:
+		w.raw([]byte{1})
+		d := l.delta
+		w.f32(d.inProjQKV)
+		w.f32(d.inProjZ)
+		w.f32(d.inProjB)
+		w.f32(d.inProjA)
+		w.f32(d.convW)
+		w.f32(d.dtBias)
+		w.f32(d.negExpA) // the precomputed −exp(A_log); stored as-is, no recompute on load
+		w.f32(d.normW)
+		w.f32(d.outProj)
+	case l.qattn != nil:
+		w.raw([]byte{2})
+		q := l.qattn
+		w.f32(q.qProj)
+		w.f32(q.kProj)
+		w.f32(q.vProj)
+		w.f32(q.oProj)
+		w.f32(q.qNorm)
+		w.f32(q.kNorm)
+	default:
+		w.raw([]byte{0})
+	}
 }
 
 // --- reader (cursor over data; big arrays aliased, floats copied) ---
@@ -415,6 +453,15 @@ func (r *giwReader) rawN(n int) []byte {
 
 func (r *giwReader) str() string        { return string(r.rawN(int(r.u32()))) }
 func (r *giwReader) bytesField() []byte { return r.rawN(int(r.u32())) }
+
+func (r *giwReader) u8() byte {
+	if !r.need(1) {
+		return 0
+	}
+	b := r.data[r.off]
+	r.off++
+	return b
+}
 
 // f32 copies (the input isn't guaranteed aligned). len 0 ⇒ nil, preserving the
 // "absent ⇒ nil" convention the forward pass checks for biases/norms.
@@ -525,4 +572,37 @@ func (r *giwReader) layer(l *LayerWeights) {
 	l.SharedExpert.Up = r.weightMat()
 	l.SharedExpert.Down = r.weightMat()
 	l.SharedGate = r.weightMat()
+	r.hybridLayer(l)
+}
+
+// hybridLayer reconstructs the qwen3_5_moe per-layer extras written by
+// giwWriter.hybridLayer. negExpA was stored precomputed, so it loads straight in.
+func (r *giwReader) hybridLayer(l *LayerWeights) {
+	switch r.u8() {
+	case 0:
+		// no hybrid extras (every non-qwen3_5_moe family)
+	case 1:
+		l.delta = &deltaNetWeights{
+			inProjQKV: r.f32(),
+			inProjZ:   r.f32(),
+			inProjB:   r.f32(),
+			inProjA:   r.f32(),
+			convW:     r.f32(),
+			dtBias:    r.f32(),
+			negExpA:   r.f32(),
+			normW:     r.f32(),
+			outProj:   r.f32(),
+		}
+	case 2:
+		l.qattn = &qwenAttnWeights{
+			qProj: r.f32(),
+			kProj: r.f32(),
+			vProj: r.f32(),
+			oProj: r.f32(),
+			qNorm: r.f32(),
+			kNorm: r.f32(),
+		}
+	default:
+		r.fail("unknown per-layer hybrid kind")
+	}
 }
