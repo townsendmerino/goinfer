@@ -243,9 +243,13 @@ quant rungs with pre-validated gate bars):
    `attnI8` unpack+scale READ arm) + residency integration + tri-state knob. Real-HW
    gate (Qwen2.5-7B int4, 8 GB): int8-vs-f32 decode **mean cosine 0.99739** (argmax
    3%-near-tie rule), 64k peak **6977 MiB** (fits), decode **0.96× at 1k ctx**
-   (weight-stream-bound short-ctx; the KV-read-bound long-ctx speedup is the one
-   unmeasured residual). The WRITE-kernel per-head reduction risk retired (kernels
-   bit-exact vs CPU, cosine 1.000000).
+   (weight-stream-bound short-ctx). The WRITE-kernel per-head reduction risk retired
+   (kernels bit-exact vs CPU, cosine 1.000000). **Long-ctx residual now MEASURED
+   (2026-06-15): the KV-read-bound speedup does NOT materialize** — i8/f32 stays
+   ~0.96× *flat* at 1k/4k/8k (f16 ~0.98×). Decode is steeply attention-bound at depth
+   (~5× falloff) but the attention kernel is compute-bound on the f32 dequant+dot, not
+   bandwidth-bound on KV bytes; fewer bytes don't speed it. int8/f16 KV are **capacity
+   wins (4×/2× context per VRAM), not decode-speed wins** pre-`dot4I8Packed`/DP4A.
 4. ✅ **SPIKED → NO-GO — [TurboQuant spike](completed/task-turboquant-spike.md)**
    (2026-06-14). Recon screen on real qwen2.5-coder-1.5B post-RoPE K/V: 3-bit KV
    with the CPU-cheap foldable random-sign Hadamard is **22–30× worse than int8**
@@ -329,11 +333,13 @@ the staged path has. **That coupling is the felt-pain trigger for both.**
   cosine min 0.99868 (15/16 argmax, the flip a 0.22% near-tie); f32 path still
   cosine 1.000000. **Fit (the headline): Qwen2.5-7B int4 + 32k f16 KV peaks at
   6912 MiB whole-device ≈ 16k f32's 6926 MiB — fits the 8 GB card, 2× context for
-  free.** Commits `138d5e0` (Inc 1) + the Inc-2 knob. **Open:** the predicted
-  *faster* long-context decode is UNMEASURED — at ctx ~1k it's 0.99× (neutral, decode
-  is weight-stream-bound there, not KV-read-bound); the speedup needs a 16k+ context
-  to show, which needs a long sequential prefill (coupled to the shelved batched-
-  prefill item). The 2×-context win stands without it.
+  free.** Commits `138d5e0` (Inc 1) + the Inc-2 knob. **MEASURED (2026-06-15): the
+  predicted *faster* long-context decode does NOT materialize** — f16/f32 stays ~0.98×
+  *flat* at 1k/4k/8k (int8 ~0.96×). Decode is steeply attention-bound at depth but the
+  attention kernel is compute-bound on the f32 dequant+dot, not bandwidth-bound on KV
+  bytes, so fewer bytes don't speed it (gated on `dot4I8Packed`/DP4A, like prefill).
+  f16/int8 KV are **capacity wins (2×/4× context), not speed wins** on this card. The
+  2×-context win stands; the speedup claim is retracted.
 - **Decision (was "gates both"):** f16 KV landed cheaply and stands alone (2× context,
   no speed regression). Batched prefill stays shelved on the dp4a gate above. If GPU
   residency is marketed as "run a 7B locally on a small GPU," f16 KV is now the
@@ -341,7 +347,9 @@ the staged path has. **That coupling is the felt-pain trigger for both.**
   triggers (a real >16k workload; dp4a). **Rung after f16: GPU int8 KV — SHIPPED**
   (`completed/task-gpu-kv-i8.md`, step 3 of the KV-memory program above; v0.6.0,
   `3e27dcc`): `--kv i8`, ~64k in the 32k-f16 envelope. The long-context *speedup*
-  stays the shared open residual (int8 is also 0.96× at 1k ctx; needs a 16k+ run).
+  residual is now MEASURED (2026-06-15) — it does NOT materialize (i8/f32 ~0.96×
+  flat at 1k/4k/8k; attention is compute-bound, not KV-byte-bound, until DP4A). KV
+  precision is a capacity lever, not a speed lever, on this card.
 
 ### GPU residency coverage
 

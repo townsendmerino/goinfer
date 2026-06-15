@@ -127,7 +127,28 @@ and gate bars arrive pre-validated.
     MiB over f32-16k — the caches are sized so 64k·i8 = 32k·f16 = 16k·f32 bytes, so
     int8's win is 4× context at flat VRAM, not lower VRAM); decode 20.3 vs f32 21.1
     tok/s = **0.96× at 1k context** (weight-stream-bound short-ctx, matching f16's
-    0.99×; the KV-read-bound speedup only appears at long context, unmeasured here).
+    0.99×).
+
+    **LONG-CONTEXT RESIDUAL — MEASURED (2026-06-15, RTX 2070 SUPER, GOINFER_KV_LONGCTX
+    bench): the predicted KV-read-bound speedup DOES NOT materialize.** Decode tok/s
+    at depth 1k/4k/8k:
+
+    | depth | i8 | f16 | f32 | i8/f32 | f16/f32 |
+    |---|---|---|---|---|---|
+    | 1024 | 20.57 | 21.07 | 21.33 | 0.96× | 0.99× |
+    | 4096 | 7.33 | 7.47 | 7.60 | 0.96× | 0.98× |
+    | 8192 | 3.95 | 4.02 | 4.09 | 0.97× | 0.98× |
+
+    The ratios are **flat across depth** — int8 stays ~0.96× (4% *slower*), f16 ~0.98×.
+    Decode IS steeply attention-bound at depth (~5× falloff 1k→8k), but all three
+    precisions fall off by the **same factor** ⇒ the attention kernel is **compute-bound
+    on the f32 dequant-then-dot per key, NOT bandwidth-bound on the KV bytes**. Fewer KV
+    bytes don't speed it up; the unpack overhead makes i8/f16 marginally slower. The
+    speedup is gated on the SAME `dot4I8Packed`/DP4A upstream block as the prefill item
+    — only an integer attention dot makes the KV-byte read the bottleneck where int8
+    wins. **NET: int8/f16 KV are CAPACITY wins (4×/2× context per VRAM), not decode-speed
+    wins on this card pre-DP4A.** The §Estimated-impact "predicted 1.2–1.8× at 16k+" row
+    is retracted (it assumed a bandwidth-bound attention dot that doesn't exist yet).
 
 ## Grounded scoping (2026-06-12 — after CPU int8 Inc 1–3 shipped)
 
