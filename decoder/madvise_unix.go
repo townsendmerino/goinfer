@@ -1,4 +1,4 @@
-//go:build unix
+//go:build unix && !darwin
 
 package decoder
 
@@ -14,9 +14,10 @@ import "syscall"
 // expert pager cap resident RAM without any correctness risk (an evicted-then-
 // reused expert costs a re-fault, never wrong data).
 //
-// Linux frees the pages immediately on MADV_DONTNEED; the other unixes treat it
-// as a weaker hint (darwin's real free is MADV_FREE), so the RAM cap is firm on
-// Linux and best-effort elsewhere. b must be page-aligned (the caller aligns).
+// On Linux and the BSDs, MADV_DONTNEED frees the resident pages immediately, so the
+// RAM cap here is firm. darwin needs a different flag (MADV_DONTNEED is only a weak
+// hint there) and lives in madvise_darwin.go; platforms without madvise fall to the
+// no-op in madvise_other.go. b must be page-aligned (the caller aligns).
 func madviseBytes(b []byte, willNeed bool) error {
 	if len(b) == 0 {
 		return nil
