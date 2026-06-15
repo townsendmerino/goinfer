@@ -45,6 +45,41 @@ A short findings note appended here + go/no-go: **go** ⇒ it becomes
 kernel additions (rotation + 3-bit pack/dot) scoped then; **no-go** ⇒ the
 watch item closes for KV and stays weights-only-if-triggered.
 
+## Findings + verdict (2026-06-14): **NO-GO**
+
+Throwaway recon spike (decoder test, since removed): real qwen2.5-coder-1.5B,
+512-token prefill, post-RoPE K/V, per-head relative-Frobenius reconstruction error
+over 3584 head-vectors (headDim 128). K-recon error ∝ score error averaged over
+query directions; V-recon bounds the weighted-sum output — the principled cheap
+screen (the metric the #6 weights spike used). The rotation tested is the
+**CPU-cheap foldable** one the pitch promises: a fixed random-sign Walsh–Hadamard
+per head (QuaRot incoherence transform; orthogonal ⇒ cancels in the q·k dot, so the
+integer-dot story survives — spike Q2 OK).
+
+| | int8 | int3 plain | int3 + rand-sign WHT |
+|---|---|---|---|
+| **K** | 0.0116 | 0.4398 | **0.2593** (22.4× int8) |
+| **V** | 0.0087 | 0.3570 | **0.2666** (30.6× int8) |
+
+Rotation helps 3-bit by **41% (K) / 25% (V)** — real, but nowhere near enough. The
+bar to replace the int4 increment was *≥ int8's cosine, or ≥0.995*; int3+rot recon
+~0.26 vs int8 ~0.01 misses by 22–30×. Cross-check that validates the measurement:
+int3-plain (0.44) ≈ **42× int8 (0.0116) — exactly the level-count ratio 127/3**, so
+the gap is fundamental quantizer coarseness, not an implementation artifact; the
+rotation can't overcome a 42× level deficit.
+
+The published "near-zero-loss 3-bit KV" does **not transfer** to a CPU-cheap
+foldable rotation. Closing the gap would need a data-dependent / per-channel scheme
+(full online rotation, per-channel-key KIVI split, asymmetric quant) — exactly the
+online cost the foldable-Hadamard premise (spike Q1) was meant to avoid. Mirrors
+**#6** (foldable rotation too weak for 3-bit *weights*; here a full per-head H is
+stronger — 41% vs #6's 7% — yet still far short for *KV*).
+
+**Verdict: NO-GO.** The KV watch item closes. int4 KV (task-cpu-kv-quant.md Inc 4)
+stays DEFERRED behind the already-shipped 20×-stacked int8 (sufficient, no demand).
+TurboQuant stays a weights-only-if-triggered watch item. This was the last
+research-risk item in the v0.6 KV-memory program — the program is now fully resolved.
+
 ## Priority
 
 Below kv-quant Inc 1–3, ring eviction, and GPU int8 — those are shipped

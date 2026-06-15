@@ -199,11 +199,13 @@ layers at long context, 4× on full-attention families, 4× smaller `.giw-kv`
 warm sessions.** This is the natural sequel to the v0.5.0 f16-KV work: same
 "context per byte" battleground, attacked on CPU and GPU.
 
-**Status (2026-06-14): steps 1 + 2 + 3 SHIPPED to main** (ring eviction + CPU int8
-KV Inc 1–3 + GPU int8 KV — the ~20×-stacked headline on Gemma local layers plus
-~64k GPU context, opt-in, default bit-exact). Step 3 shipped in **v0.6.0**
-(`3e27dcc`). Only step 4 (TurboQuant spike) remains open; int4 KV is deferred
-(see step 2).
+**Status (2026-06-14): the KV-memory program is fully resolved.** Steps 1 + 2 + 3
+SHIPPED to main (ring eviction + CPU int8 KV Inc 1–3 + GPU int8 KV — the ~20×-stacked
+headline on Gemma local layers plus ~64k GPU context, opt-in, default bit-exact;
+step 3 in **v0.6.0**, `3e27dcc`). Step 4 (TurboQuant spike) **spiked → NO-GO**
+(`completed/task-turboquant-spike.md`): 3-bit KV with a CPU-cheap foldable Hadamard
+is 22–30× worse than int8 in recon — the watch item closes. int4 KV stays deferred
+behind the sufficient int8 (see step 2).
 
 In order (rationale: free memory with zero precision argument first, then the
 quant rungs with pre-validated gate bars):
@@ -244,10 +246,14 @@ quant rungs with pre-validated gate bars):
    (weight-stream-bound short-ctx; the KV-read-bound long-ctx speedup is the one
    unmeasured residual). The WRITE-kernel per-head reduction risk retired (kernels
    bit-exact vs CPU, cosine 1.000000).
-4. **[TurboQuant spike](task-turboquant-spike.md)** — the only research-risk
-   item; 2–3 day timebox, pointed at KV (the published near-zero-loss 3-bit
-   claim), written go/no-go bar. Go ⇒ replaces step 2's deferred int4
-   increment; no-go ⇒ the watch item closes for KV.
+4. ✅ **SPIKED → NO-GO — [TurboQuant spike](completed/task-turboquant-spike.md)**
+   (2026-06-14). Recon screen on real qwen2.5-coder-1.5B post-RoPE K/V: 3-bit KV
+   with the CPU-cheap foldable random-sign Hadamard is **22–30× worse than int8**
+   (K int8 0.012 → int3+rot 0.259; V 0.009 → 0.267) — the rotation helps 25–41% but
+   can't overcome a 42× level-count deficit (int3 ≈ 42× int8, matching 127/3). The
+   published near-zero-loss 3-bit KV doesn't transfer to a foldable rotation; closing
+   it needs data-dependent/per-channel cost the premise rejects. Watch item closed;
+   TurboQuant stays weights-only-if-triggered.
 
 Assessed and rejected for the program (reasons in `completed/task-cpu-kv-quant.md`
 §Non-goals): CPU f16 KV (dominated by int8 on CPU), XQuant rematerialization
