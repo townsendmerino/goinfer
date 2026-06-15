@@ -43,6 +43,11 @@ type Architecture struct {
 	// HeadDim. <HeadDim is partial rotary (Phi's partial_rotary_factor), where
 	// the trailing dims pass through unrotated.
 	RotaryDim int
+	// MRopeSection is Qwen2.5-VL's m-RoPE head_dim/2 split over the (temporal,
+	// height, width) position components; nil = plain scalar RoPE. For text tokens
+	// the 3 components are equal so m-RoPE ≡ scalar RoPE; it only diverges over
+	// image tokens (the 3D grid positions). (P5)
+	MRopeSection []int
 	// ropeScaling transforms the GLOBAL (full-attention) inv-freq table (Llama-3
 	// llama3 / linear / yarn); nil = none. ropeScalingLocal does the same for the
 	// LOCAL (sliding) table — usually nil even when the global table is scaled

@@ -76,6 +76,12 @@ type Config struct {
 	// a rope_scaling-style object. Decoded by parseRopeParameters.
 	RopeParameters json.RawMessage `json:"rope_parameters"`
 
+	// MRopeSection is Qwen2.5-VL's m-RoPE head_dim/2 split across the (temporal,
+	// height, width) position components. Not parsed directly from JSON — the
+	// qwen2_5_vl adapter extracts it from the nested rope_parameters. nil = plain
+	// scalar RoPE (every other family). (P5)
+	MRopeSection []int `json:"-"`
+
 	// PartialRotaryFactor is the fraction of head_dim RoPE rotates (Phi: 0.4);
 	// 0/absent means full rotary. Consumed via Config.rotaryDim.
 	PartialRotaryFactor float64 `json:"partial_rotary_factor"`

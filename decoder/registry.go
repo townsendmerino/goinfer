@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"sort"
@@ -17,18 +18,19 @@ type archAdapter func(*Config) (*Architecture, *tensorSchema, error)
 // forward pass itself doesn't change.
 var registry = map[string]archAdapter{
 	"gemma3":           gemma3Architecture,
-	"gemma3_text":      gemma3Architecture,   // the 270M/1B text checkpoints
-	"gemma4":           gemma4Architecture,   // Gemma 4 (E2B/E4B + 12B dense; parity-gated)
-	"qwen3":            qwen3Architecture,    // Qwen3 dense (0.6B/1.7B/4B/8B/…)
-	"qwen2":            qwen2Architecture,    // Qwen2/Qwen2.5 dense (llama + q/k/v bias)
-	"qwen2_moe":        qwen2MoeArchitecture, // Qwen-MoE/Qwen2-MoE (qwen2 + sparse MoE + shared expert)
-	"llama":            llamaArchitecture,    // Llama-2/3 dense (single-base RoPE, no QK-norm)
-	"mistral":          mistralArchitecture,  // Llama + all-layer sliding-window attention
-	"gpt2":             gpt2Architecture,     // GPT-2: LayerNorm, learned pos, non-gated GELU MLP, fused QKV
-	"mixtral":          mixtralArchitecture,  // Llama + sparse MoE FFN (router + top-k experts)
-	"mellum":           mellumArchitecture,   // JetBrains Mellum2: MoE + sliding/full interleave + YaRN
-	"qwen3_5_moe":      qwen35Architecture,   // Qwen3.5/3.6-MoE: Gated DeltaNet (linear) + softmax hybrid + MoE
-	"qwen3_5_moe_text": qwen35Architecture,   // the text-only checkpoint's model_type
+	"gemma3_text":      gemma3Architecture,     // the 270M/1B text checkpoints
+	"gemma4":           gemma4Architecture,     // Gemma 4 (E2B/E4B + 12B dense; parity-gated)
+	"qwen3":            qwen3Architecture,      // Qwen3 dense (0.6B/1.7B/4B/8B/…)
+	"qwen2":            qwen2Architecture,      // Qwen2/Qwen2.5 dense (llama + q/k/v bias)
+	"qwen2_5_vl":       qwen2_5_vlArchitecture, // Qwen2.5-VL text decoder (qwen2 + m-RoPE; nested rope_parameters)
+	"qwen2_moe":        qwen2MoeArchitecture,   // Qwen-MoE/Qwen2-MoE (qwen2 + sparse MoE + shared expert)
+	"llama":            llamaArchitecture,      // Llama-2/3 dense (single-base RoPE, no QK-norm)
+	"mistral":          mistralArchitecture,    // Llama + all-layer sliding-window attention
+	"gpt2":             gpt2Architecture,       // GPT-2: LayerNorm, learned pos, non-gated GELU MLP, fused QKV
+	"mixtral":          mixtralArchitecture,    // Llama + sparse MoE FFN (router + top-k experts)
+	"mellum":           mellumArchitecture,     // JetBrains Mellum2: MoE + sliding/full interleave + YaRN
+	"qwen3_5_moe":      qwen35Architecture,     // Qwen3.5/3.6-MoE: Gated DeltaNet (linear) + softmax hybrid + MoE
+	"qwen3_5_moe_text": qwen35Architecture,     // the text-only checkpoint's model_type
 }
 
 // resolveArchitecture picks the adapter for cfg.ModelType and builds the
@@ -589,6 +591,34 @@ func qwen2Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		EmbedScale:      0,
 		TiedLMHead:      false, // finalized from lm_head.weight presence at load
 	}, &qwen2TensorSchema, nil
+}
+
+// qwen2_5_vlArchitecture expresses the Qwen2.5-VL TEXT decoder: a Qwen2 dense
+// decoder (q/k/v bias, GQA, RMSNorm, SwiGLU, derived head_dim) whose RoPE config
+// lives under transformers-5.x's nested rope_parameters {mrope_section, rope_theta}
+// instead of a top-level rope_theta. For TEXT, m-RoPE degenerates to standard
+// scalar RoPE (the 3 position components are equal), so the text path is exactly
+// Qwen2 — the 3D-position machinery only engages on the image path (P5). The
+// vision_config is ignored here, like the Gemma 3 VL text side. (P5)
+func qwen2_5_vlArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+	if cfg.RoPEGlobalBase == 0 && len(cfg.RopeParameters) > 0 {
+		var rp struct {
+			RopeTheta    float64 `json:"rope_theta"`
+			MRopeSection []int   `json:"mrope_section"`
+		}
+		if err := json.Unmarshal(cfg.RopeParameters, &rp); err != nil {
+			return nil, nil, fmt.Errorf("decoder(qwen2_5_vl): parse rope_parameters: %w", err)
+		}
+		cfg.RoPEGlobalBase = rp.RopeTheta
+		cfg.MRopeSection = rp.MRopeSection // carried to the forward for the image m-RoPE path
+	}
+	arch, schema, err := qwen2Architecture(cfg)
+	if err != nil {
+		return nil, nil, err
+	}
+	arch.Name = "qwen2_5_vl"
+	arch.MRopeSection = cfg.MRopeSection
+	return arch, schema, nil
 }
 
 // qwen2MoeArchitecture expresses Qwen-MoE / Qwen2-MoE (Qwen1.5-MoE-A2.7B,
