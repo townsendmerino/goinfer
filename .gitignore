@@ -63,3 +63,4 @@ docs/internal/
 /prequant
 /spikeembed
 /spikeq6k
+testdata/glm-tiny/
