@@ -140,10 +140,11 @@ func QwenPreprocess(data []byte, cfg QwenPreprocessConfig) ([]float32, [3]int, e
 }
 
 // qwenSmartResize rounds (h,w) to multiples of factor within [minPixels,maxPixels],
-// preserving aspect ratio — the HF smart_resize. (Banker's-rounding edge cases vs
-// Python round() are sub-factor and don't affect grid-aligned inputs.)
+// preserving aspect ratio — the HF smart_resize. Uses round-half-to-even
+// (math.RoundToEven) to match Python's round(), so the chosen grid is identical
+// (half-away-from-zero would pick a different size at x.5/factor).
 func qwenSmartResize(h, w, factor, minPixels, maxPixels int) (int, int) {
-	roundF := func(x int) int { return int(math.Round(float64(x)/float64(factor))) * factor }
+	roundF := func(x int) int { return int(math.RoundToEven(float64(x)/float64(factor))) * factor }
 	hb := max(factor, roundF(h))
 	wb := max(factor, roundF(w))
 	if hb*wb > maxPixels {
@@ -159,56 +160,140 @@ func qwenSmartResize(h, w, factor, minPixels, maxPixels int) (int, int) {
 }
 
 // qwenResizeNormalize resizes the image to (hb,wb) — identity when already that
-// size, else bilinear — then rescales /255 and CLIP-normalizes, returning HWC
-// float [hb*wb*3]. Bilinear is a placeholder for PIL-bicubic (resize-parity is a
-// follow-on); grid-aligned inputs skip it entirely for bit-exact output.
+// size, else PIL bicubic — then rescales /255 and CLIP-normalizes, returning HWC
+// float [hb*wb*3]. Grid-aligned inputs skip the resize for bit-exact output.
 func qwenResizeNormalize(img image.Image, h, w, hb, wb int, cfg QwenPreprocessConfig) []float32 {
-	b := img.Bounds()
-	at := func(y, x int) (r, g, bl float32) {
-		cr, cg, cb, _ := img.At(b.Min.X+x, b.Min.Y+y).RGBA() // 16-bit; >>8 recovers the 8-bit value exactly
-		return float32(cr >> 8), float32(cg >> 8), float32(cb >> 8)
+	src := qwenExtractRGB(img, h, w) // [h*w*3], 0..255
+	resized := src
+	if hb != h || wb != w {
+		resized = qwenBicubicU8(src, h, w, hb, wb)
 	}
 	out := make([]float32, hb*wb*3)
-	for y := 0; y < hb; y++ {
-		for x := 0; x < wb; x++ {
-			var r, g, bl float32
-			if hb == h && wb == w {
-				r, g, bl = at(y, x)
-			} else {
-				fy := (float64(y)+0.5)*float64(h)/float64(hb) - 0.5
-				fx := (float64(x)+0.5)*float64(w)/float64(wb) - 0.5
-				r, g, bl = qwenBilinear(at, fy, fx, h, w)
-			}
-			i := (y*wb + x) * 3
-			out[i+0] = (r/255 - cfg.Mean[0]) / cfg.Std[0]
-			out[i+1] = (g/255 - cfg.Mean[1]) / cfg.Std[1]
-			out[i+2] = (bl/255 - cfg.Mean[2]) / cfg.Std[2]
+	for i := range out {
+		c := i % 3
+		out[i] = (resized[i]/255 - cfg.Mean[c]) / cfg.Std[c]
+	}
+	return out
+}
+
+// qwenExtractRGB reads img into a [h*w*3] 0..255 channel-last float buffer. The
+// >>8 recovers the 8-bit channel value exactly for an 8-bit (PNG/JPEG) source.
+func qwenExtractRGB(img image.Image, h, w int) []float32 {
+	b := img.Bounds()
+	out := make([]float32, h*w*3)
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			cr, cg, cb, _ := img.At(b.Min.X+x, b.Min.Y+y).RGBA()
+			i := (y*w + x) * 3
+			out[i+0], out[i+1], out[i+2] = float32(cr>>8), float32(cg>>8), float32(cb>>8)
 		}
 	}
 	return out
 }
 
-func qwenBilinear(at func(y, x int) (float32, float32, float32), fy, fx float64, h, w int) (float32, float32, float32) {
-	clamp := func(v, hi int) int {
-		if v < 0 {
-			return 0
+// qwenBicubicU8 resizes src ([h*w*3] 0..255 channel-last) to [hb*wb*3] with PIL's
+// bicubic filter (Keys cubic a=-0.5, antialiased on downscale), separable
+// horizontal then vertical with a uint8 clamp+round between/after passes (matching
+// PIL's uint8 intermediates). Tolerance-matched to PIL — float coefficients, not
+// PIL's fixed-point, so not bit-exact.
+func qwenBicubicU8(src []float32, h, w, hb, wb int) []float32 {
+	hxmin, hk := qwenCubicCoeffs(w, wb) // horizontal: w -> wb
+	tmp := make([]float32, h*wb*3)
+	for y := 0; y < h; y++ {
+		for xx := 0; xx < wb; xx++ {
+			k := hk[xx]
+			var s [3]float64
+			for x := range k {
+				si := (y*w + hxmin[xx] + x) * 3
+				s[0] += k[x] * float64(src[si])
+				s[1] += k[x] * float64(src[si+1])
+				s[2] += k[x] * float64(src[si+2])
+			}
+			di := (y*wb + xx) * 3
+			tmp[di], tmp[di+1], tmp[di+2] = qwenClip8(s[0]), qwenClip8(s[1]), qwenClip8(s[2])
 		}
-		if v > hi {
-			return hi
-		}
-		return v
 	}
-	y0, x0 := int(math.Floor(fy)), int(math.Floor(fx))
-	dy, dx := float32(fy-float64(y0)), float32(fx-float64(x0))
-	y0c, y1c := clamp(y0, h-1), clamp(y0+1, h-1)
-	x0c, x1c := clamp(x0, w-1), clamp(x0+1, w-1)
-	r00, g00, b00 := at(y0c, x0c)
-	r01, g01, b01 := at(y0c, x1c)
-	r10, g10, b10 := at(y1c, x0c)
-	r11, g11, b11 := at(y1c, x1c)
-	lerp := func(a, b, t float32) float32 { return a + (b-a)*t }
-	r := lerp(lerp(r00, r01, dx), lerp(r10, r11, dx), dy)
-	g := lerp(lerp(g00, g01, dx), lerp(g10, g11, dx), dy)
-	bl := lerp(lerp(b00, b01, dx), lerp(b10, b11, dx), dy)
-	return r, g, bl
+	vymin, vk := qwenCubicCoeffs(h, hb) // vertical: h -> hb
+	dst := make([]float32, hb*wb*3)
+	for yy := 0; yy < hb; yy++ {
+		k := vk[yy]
+		for x := 0; x < wb; x++ {
+			var s [3]float64
+			for y := range k {
+				si := ((vymin[yy]+y)*wb + x) * 3
+				s[0] += k[y] * float64(tmp[si])
+				s[1] += k[y] * float64(tmp[si+1])
+				s[2] += k[y] * float64(tmp[si+2])
+			}
+			di := (yy*wb + x) * 3
+			dst[di], dst[di+1], dst[di+2] = qwenClip8(s[0]), qwenClip8(s[1]), qwenClip8(s[2])
+		}
+	}
+	return dst
+}
+
+func qwenClip8(v float64) float32 {
+	v = math.Round(v) // PIL: (int)(v+0.5) — round-half-up for the non-negative resampled range
+	if v < 0 {
+		return 0
+	}
+	if v > 255 {
+		return 255
+	}
+	return float32(v)
+}
+
+// qwenCubicCoeffs precomputes PIL's per-output-pixel sample start (xmin) and
+// normalized cubic weights for a 1-D resize inSize->outSize (precompute_coeffs).
+func qwenCubicCoeffs(inSize, outSize int) (xmins []int, kk [][]float64) {
+	scale := float64(inSize) / float64(outSize)
+	filterscale := scale
+	if filterscale < 1 {
+		filterscale = 1
+	}
+	support := 2.0 * filterscale // cubic support = 2.0
+	xmins = make([]int, outSize)
+	kk = make([][]float64, outSize)
+	for xx := 0; xx < outSize; xx++ {
+		center := (float64(xx) + 0.5) * scale
+		ss := 1.0 / filterscale
+		xmin := int(center - support + 0.5)
+		if xmin < 0 {
+			xmin = 0
+		}
+		xmax := int(center + support + 0.5)
+		if xmax > inSize {
+			xmax = inSize
+		}
+		n := xmax - xmin
+		k := make([]float64, n)
+		var ww float64
+		for x := 0; x < n; x++ {
+			w := qwenCubicFilter((float64(x+xmin) - center + 0.5) * ss)
+			k[x] = w
+			ww += w
+		}
+		if ww != 0 {
+			for x := range k {
+				k[x] /= ww
+			}
+		}
+		xmins[xx], kk[xx] = xmin, k
+	}
+	return
+}
+
+func qwenCubicFilter(x float64) float64 {
+	const a = -0.5
+	if x < 0 {
+		x = -x
+	}
+	switch {
+	case x < 1:
+		return ((a+2)*x-(a+3))*x*x + 1
+	case x < 2:
+		return (((x-5)*x+8)*x - 4) * a
+	default:
+		return 0
+	}
 }

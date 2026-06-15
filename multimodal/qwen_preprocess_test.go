@@ -65,3 +65,57 @@ func TestQwenPreprocess_exact(t *testing.T) {
 		t.Errorf("pixel_values maxAbs diff %.3g > 1e-4 (not bit-exact)", maxAbs)
 	}
 }
+
+// TestQwenPreprocess_resize gates the PIL-bicubic resize port on a NON-aligned
+// image (90×150 → smart_resize 84×140, so PIL BICUBIC actually runs) at a tolerance
+// — float coefficients vs PIL's fixed-point aren't bit-exact, but pixel_values
+// cosine must be ~1 (the downstream ViT is robust to the last-ULP resize diff).
+func TestQwenPreprocess_resize(t *testing.T) {
+	const golden = "../testdata/qwen25vl_preprocess_resize_golden.json"
+	const imgPath = "../testdata/qwen25vl_preprocess_image_resize.png"
+	raw, err := os.ReadFile(golden)
+	if errors.Is(err, fs.ErrNotExist) {
+		t.Skipf("no golden — run scripts/pin_qwen25vl_preprocess.py")
+	}
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+	var g struct {
+		GridTHW     [][3]int  `json:"grid_thw"`
+		PixelValues []float32 `json:"pixel_values"`
+	}
+	if err := json.Unmarshal(raw, &g); err != nil {
+		t.Fatalf("parse golden: %v", err)
+	}
+	imgData, err := os.ReadFile(imgPath)
+	if err != nil {
+		t.Skipf("no image — run scripts/pin_qwen25vl_preprocess.py")
+	}
+	cfg := QwenDefaultPreprocess() // standard min/max so 90×150 → 84×140 (matches the pin)
+
+	pv, grid, err := QwenPreprocess(imgData, cfg)
+	if err != nil {
+		t.Fatalf("QwenPreprocess: %v", err)
+	}
+	if grid != [3]int{g.GridTHW[0][0], g.GridTHW[0][1], g.GridTHW[0][2]} {
+		t.Fatalf("grid_thw = %v, want %v (smart_resize rounding mismatch?)", grid, g.GridTHW[0])
+	}
+	if len(pv) != len(g.PixelValues) {
+		t.Fatalf("pixel_values len %d, want %d", len(pv), len(g.PixelValues))
+	}
+	var dot, na, nb, maxAbs float64
+	for i := range pv {
+		a, b := float64(pv[i]), float64(g.PixelValues[i])
+		dot += a * b
+		na += a * a
+		nb += b * b
+		if d := math.Abs(a - b); d > maxAbs {
+			maxAbs = d
+		}
+	}
+	cos := dot / (math.Sqrt(na)*math.Sqrt(nb) + 1e-12)
+	t.Logf("qwen preprocess resize (bicubic): cosine %.6f, maxAbs %.4g", cos, maxAbs)
+	if cos < 0.999 {
+		t.Errorf("resized pixel_values cosine %.6f < 0.999 (bicubic parity off)", cos)
+	}
+}

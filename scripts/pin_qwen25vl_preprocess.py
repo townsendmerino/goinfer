@@ -77,6 +77,31 @@ def main():
     print(f"wrote {IMG}\nwrote {OUT}")
     print(f"  grid_thw={grid.tolist()}  pixel_values_shape={list(pv.shape)}  mean={golden['image_mean']}")
 
+    # Resize case: a NON-aligned image (90×150) that smart_resize maps to 84×140 —
+    # PIL BICUBIC actually runs, so this gates the Go bicubic port at a tolerance.
+    RH, RW = 90, 150
+    yy, xx = np.mgrid[0:RH, 0:RW]
+    arr2 = np.stack([(xx * 255 // RW), (yy * 255 // RH), ((xx + yy) * 255 // (RW + RH))], -1).astype(np.uint8)
+    img2_path = os.path.join(HERE, "..", "testdata", "qwen25vl_preprocess_image_resize.png")
+    Image.fromarray(arr2, "RGB").save(img2_path)
+    with open(img2_path, "rb") as f:
+        img2 = Image.open(io.BytesIO(f.read())).convert("RGB")
+    out2 = proc(images=img2, return_tensors="np")
+    pv2, grid2 = out2["pixel_values"], out2["image_grid_thw"]
+    rgolden = {
+        "note": "Qwen2.5-VL image preprocess; 90×150 → smart_resize 84×140 (PIL BICUBIC runs) — tolerance gate",
+        "image_png": "qwen25vl_preprocess_image_resize.png",
+        "image_height": RH, "image_width": RW,
+        "grid_thw": grid2.tolist(),
+        "pixel_values_shape": list(pv2.shape),
+        "pixel_values": pv2.reshape(-1).astype(float).tolist(),
+    }
+    rout = os.path.join(HERE, "..", "testdata", "qwen25vl_preprocess_resize_golden.json")
+    with open(rout, "w") as f:
+        json.dump(rgolden, f)
+    print(f"wrote {img2_path}\nwrote {rout}")
+    print(f"  resize grid_thw={grid2.tolist()}  pixel_values_shape={list(pv2.shape)}")
+
 
 if __name__ == "__main__":
     main()
