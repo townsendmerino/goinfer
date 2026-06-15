@@ -42,8 +42,10 @@ func ggufConfig(g *embed.GGUFFile) (*Config, error) {
 		return ggufMellumConfig(g)
 	case "qwen35moe":
 		return ggufQwen35Config(g)
+	case "glm4moe":
+		return ggufGlm4MoeConfig(g)
 	default:
-		return nil, fmt.Errorf("decoder(gguf): architecture %q unsupported (have: llama, qwen2, qwen3, gemma3, gemma4 [wip], mellum, qwen35moe)", arch)
+		return nil, fmt.Errorf("decoder(gguf): architecture %q unsupported (have: llama, qwen2, qwen3, gemma3, gemma4 [wip], mellum, qwen35moe, glm4moe)", arch)
 	}
 }
 
@@ -391,6 +393,64 @@ func ggufMellumConfig(g *embed.GGUFFile) (*Config, error) {
 		base, gf("rope.scaling.factor"), gf("rope.scaling.original_context_length"),
 		gf("rope.scaling.yarn_beta_fast"), gf("rope.scaling.yarn_beta_slow"),
 		gf("rope.scaling.yarn_attn_factor"), baseSwa))
+	ggufEOS(g, cfg)
+	return cfg, nil
+}
+
+// ggufGlm4MoeConfig builds a GLM-4.5/4.6 Config from the glm4moe.* metadata: dims,
+// the DeepSeek-style MoE counts (expert_count / expert_used_count /
+// expert_shared_count / expert_feed_forward_length), the leading_dense_block_count
+// dense prefix, routed_scaling_factor (expert_weights_scale), and a synthesized
+// rope_parameters JSON (partial_rotary_factor = rope.dimension_count / head_dim) so
+// glm4moeArchitecture runs the identical descriptor build as the safetensors path.
+func ggufGlm4MoeConfig(g *embed.GGUFFile) (*Config, error) {
+	u := func(k string) int {
+		v, _ := g.Uint("glm4moe." + k)
+		return int(v)
+	}
+	gf := func(k string) float64 {
+		if v, ok := g.Float("glm4moe." + k); ok {
+			return v
+		}
+		v, _ := g.Uint("glm4moe." + k)
+		return float64(v)
+	}
+	normTopK := true
+	if b, ok := g.Metadata["glm4moe.expert_weights_norm"].(bool); ok {
+		normTopK = b
+	}
+	headDim := u("attention.key_length")
+	scale := gf("expert_weights_scale")
+	if scale == 0 {
+		scale = 1
+	}
+	cfg := &Config{
+		ModelType:           "glm4_moe",
+		HiddenDim:           u("embedding_length"),
+		NumLayers:           u("block_count"),
+		NumHeads:            u("attention.head_count"),
+		NumKVHeads:          u("attention.head_count_kv"),
+		HeadDim:             headDim,
+		IntermediateDim:     u("feed_forward_length"),        // dense prefix width
+		MoeIntermediateSize: u("expert_feed_forward_length"), // expert FFN width
+		NRoutedExperts:      u("expert_count"),
+		NumExpertsPerTok:    u("expert_used_count"),
+		NSharedExperts:      u("expert_shared_count"),
+		FirstKDenseReplace:  u("leading_dense_block_count"),
+		RoutedScalingFactor: scale,
+		NormTopKProb:        &normTopK,
+		HiddenAct:           "silu",
+		VocabSize:           ggufVocabSize(g),
+		RMSNormEps:          gf("attention.layer_norm_rms_epsilon"),
+	}
+	rot := u("rope.dimension_count")
+	partial := 0.0
+	if headDim > 0 {
+		partial = float64(rot) / float64(headDim)
+	}
+	cfg.RopeParameters = json.RawMessage(fmt.Sprintf(
+		`{"rope_type":"default","rope_theta":%g,"partial_rotary_factor":%g}`,
+		gf("rope.freq_base"), partial))
 	ggufEOS(g, cfg)
 	return cfg, nil
 }
@@ -951,7 +1011,14 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			}
 			l.QNorm, l.KNorm = qn, kn
 		}
-		if l.PreMLPNorm, err = vnorm(p+"ffn_norm.weight", hidden); err != nil {
+		// Pre-MLP norm. GLM4_MOE has no ffn_norm — llama.cpp stores its (positionally
+		// pre-MLP, Pre2) post_attention_layernorm under the ATTN_POST_NORM name; every
+		// other family here uses ffn_norm.
+		preMLPNorm := "ffn_norm.weight"
+		if arch.Name == "glm4_moe" {
+			preMLPNorm = "post_attention_norm.weight"
+		}
+		if l.PreMLPNorm, err = vnorm(p+preMLPNorm, hidden); err != nil {
 			return err
 		}
 		// Sandwich norms (Gemma 3): a post-attention and a post-FFN RMSNorm in
@@ -965,22 +1032,51 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 				return err
 			}
 		}
-		if arch.MoE != nil {
-			// Sparse MoE (Mellum): router + stacked per-expert SwiGLU at the
-			// narrower moe_intermediate_size.
+		if arch.MoE != nil && i >= arch.FirstKDense {
+			// Sparse MoE: router + stacked per-expert SwiGLU at the narrower
+			// moe_intermediate_size. Mellum stops there; GLM/DeepSeek add an
+			// e_score_correction_bias (exp_probs_b) and an always-on shared expert
+			// (ffn_*_shexp, ungated). GLM's first_k_dense_replace prefix (i < FirstKDense)
+			// has no router and falls through to the dense FFN below.
 			expInter := arch.MoE.IntermediateDim
 			if l.Router, err = mat(p+"ffn_gate_inp.weight", arch.MoE.NumExperts, hidden); err != nil {
 				return err
+			}
+			if arch.MoE.RouterSigmoid { // DeepSeek/GLM e_score_correction_bias (a bias term)
+				if l.RouterBias, err = vec(p+"exp_probs_b.bias", arch.MoE.NumExperts); err != nil {
+					return err
+				}
 			}
 			gate, gerr := stackedExperts(p+"ffn_gate_exps.weight", expInter, hidden, arch.MoE.NumExperts)
 			up, uerr := stackedExperts(p+"ffn_up_exps.weight", expInter, hidden, arch.MoE.NumExperts)
 			down, derr := stackedExperts(p+"ffn_down_exps.weight", hidden, expInter, arch.MoE.NumExperts)
 			if gerr != nil || uerr != nil || derr != nil {
-				return fmt.Errorf("decoder(gguf): mellum experts layer %d: %v / %v / %v", i, gerr, uerr, derr)
+				return fmt.Errorf("decoder(gguf): experts layer %d: %v / %v / %v", i, gerr, uerr, derr)
 			}
 			l.Experts = make([]expertWeights, arch.MoE.NumExperts)
 			for e := range arch.MoE.NumExperts {
 				l.Experts[e] = expertWeights{Gate: gate[e], Up: up[e], Down: down[e]}
+			}
+			// Shared always-on expert (GLM: ffn_*_shexp). Ungated for GLM/DeepSeek;
+			// Qwen2-MoE-style families would also carry a sigmoid gate (not in GGUF here).
+			if arch.MoE.SharedIntermediateDim > 0 {
+				sInter := arch.MoE.SharedIntermediateDim
+				if l.SharedExpert.Gate, err = mat(p+"ffn_gate_shexp.weight", sInter, hidden); err != nil {
+					return err
+				}
+				if l.SharedExpert.Up, err = mat(p+"ffn_up_shexp.weight", sInter, hidden); err != nil {
+					return err
+				}
+				if l.SharedExpert.Down, err = mat(p+"ffn_down_shexp.weight", hidden, sInter); err != nil {
+					return err
+				}
+				if !arch.MoE.SharedUngated {
+					sg, serr := vec(p+"ffn_gate_inp_shexp.weight", hidden)
+					if serr != nil {
+						return serr
+					}
+					l.SharedGate = linalg.WrapF32(sg, 1, hidden)
+				}
 			}
 			return nil
 		}
