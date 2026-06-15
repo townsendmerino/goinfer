@@ -601,7 +601,12 @@ func qwen2Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 // Qwen2 — the 3D-position machinery only engages on the image path (P5). The
 // vision_config is ignored here, like the Gemma 3 VL text side. (P5)
 func qwen2_5_vlArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
-	if cfg.RoPEGlobalBase == 0 && len(cfg.RopeParameters) > 0 {
+	// mrope_section + rope_theta live under EITHER the transformers-5.x nested
+	// rope_parameters {mrope_section, rope_theta} (the tiny synthetic) OR the older
+	// top-level rope_scaling {type:mrope, mrope_section} + rope_theta (the real 3B).
+	// Extract from whichever is present.
+	var section []int
+	if len(cfg.RopeParameters) > 0 {
 		var rp struct {
 			RopeTheta    float64 `json:"rope_theta"`
 			MRopeSection []int   `json:"mrope_section"`
@@ -609,15 +614,37 @@ func qwen2_5_vlArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		if err := json.Unmarshal(cfg.RopeParameters, &rp); err != nil {
 			return nil, nil, fmt.Errorf("decoder(qwen2_5_vl): parse rope_parameters: %w", err)
 		}
-		cfg.RoPEGlobalBase = rp.RopeTheta
-		cfg.MRopeSection = rp.MRopeSection // carried to the forward for the image m-RoPE path
+		section = rp.MRopeSection
+		if cfg.RoPEGlobalBase == 0 {
+			cfg.RoPEGlobalBase = rp.RopeTheta
+		}
 	}
+	if len(cfg.RopeScaling) > 0 {
+		var rs struct {
+			Type         string `json:"type"`
+			RopeType     string `json:"rope_type"`
+			MRopeSection []int  `json:"mrope_section"`
+		}
+		if err := json.Unmarshal(cfg.RopeScaling, &rs); err != nil {
+			return nil, nil, fmt.Errorf("decoder(qwen2_5_vl): parse rope_scaling: %w", err)
+		}
+		if rs.Type == "mrope" || rs.RopeType == "mrope" {
+			if section == nil {
+				section = rs.MRopeSection
+			}
+			// m-RoPE is not a parseRopeScaling kind (linear/llama3/yarn) — the
+			// per-component split IS the "scaling". Clear it so qwen2Architecture's
+			// parseRopeScaling doesn't reject rope_type "mrope".
+			cfg.RopeScaling = nil
+		}
+	}
+	cfg.MRopeSection = section
 	arch, schema, err := qwen2Architecture(cfg)
 	if err != nil {
 		return nil, nil, err
 	}
 	arch.Name = "qwen2_5_vl"
-	arch.MRopeSection = cfg.MRopeSection
+	arch.MRopeSection = section
 	return arch, schema, nil
 }
 
