@@ -42,6 +42,18 @@ func applyRoPE(vec []float32, heads, headDim, pos int, invFreq []float64, scale 
 	}
 }
 
+// ropeAt rotates the token at absolute sequence position seqPos, choosing m-RoPE
+// (Qwen2.5-VL image prefill — section non-nil and mropePos carries this position)
+// or plain scalar RoPE otherwise. The single seam both the batched (forwardN) and
+// sequential (causalAttention) RoPE sites call, so adding m-RoPE didn't fork them.
+func ropeAt(vec []float32, heads, headDim, seqPos int, invFreq []float64, scale float64, section []int, mropePos [][3]int) {
+	if section != nil && seqPos < len(mropePos) {
+		applyMRoPE(vec, heads, headDim, mropePos[seqPos], section, invFreq, scale)
+		return
+	}
+	applyRoPE(vec, heads, headDim, seqPos, invFreq, scale)
+}
+
 // applyMRoPE is Qwen2.5-VL's multimodal RoPE: same rotate_half rotation as
 // applyRoPE, but the len(invFreq) frequencies are partitioned into section[]
 // chunks assigned to the (temporal, height, width) position components, so each

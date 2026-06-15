@@ -140,8 +140,8 @@ func (m *Model) runLayersFromEmbedN(h []float32, cache *KVCache) ([]float32, err
 				rmsNorm(qi, lw.QNorm, nH, hd, arch.NormEps, arch.RMSAddOne)
 				rmsNorm(ki, lw.KNorm, nKV, hd, arch.NormEps, arch.RMSAddOne)
 			}
-			applyRoPE(qi, nH, hd, pos, invFreq, ms)
-			applyRoPE(ki, nKV, hd, pos, invFreq, ms)
+			ropeAt(qi, nH, hd, pos, invFreq, ms, arch.MRopeSection, cache.mropePos)
+			ropeAt(ki, nKV, hd, pos, invFreq, ms, arch.MRopeSection, cache.mropePos)
 			if !isLocal {
 				cache.Append(l, ki, vi) // global: append now; local: deferred to commitBatch below
 			}
@@ -463,6 +463,39 @@ func (m *Model) prefillLogitsVL(ids []int, imageEmbeds []float32, imgPos, imgLen
 	h := m.embedN(ids)
 	copy(h[imgPos*hidden:(imgPos+imgLen)*hidden], imageEmbeds) // raw projected features, no embed scale
 	cache.SetImageBlocks([][2]int{{imgPos, imgPos + imgLen}})
+	hN, err := m.runLayersFromEmbedN(h, cache)
+	if err != nil {
+		return nil, err
+	}
+	return m.lmHeadN(hN[(len(ids)-1)*hidden:], 1), nil
+}
+
+// prefillLogitsQwenVL prefills a Qwen2.5-VL multimodal prompt and returns the
+// last-position logits: text embeddings with the merged vision features
+// (imageFeats, [imgLen*HiddenDim] from the ViT+merger) substituted at the <image>
+// run [imgPos,imgPos+imgLen), under m-RoPE 3D positions (mropePos, one (t,h,w) per
+// absolute sequence position). Two deltas vs prefillLogitsVL (Gemma 3): the image
+// tokens attend CAUSALLY — no bidirectional image block (Qwen's bidirectionality is
+// inside the ViT, not the decoder) — and the rotary uses m-RoPE (ropeAt reads
+// cache.mropePos). The merged features are RAW (no embed scale), matching HF's
+// scatter into inputs_embeds. (P5)
+func (m *Model) prefillLogitsQwenVL(ids []int, imageFeats []float32, imgPos, imgLen int, mropePos [][3]int, cache *KVCache) ([]float32, error) {
+	if !m.canBatchN(len(ids)) {
+		return nil, fmt.Errorf("decoder: Qwen2.5-VL prefill needs the batched path (canBatchN false)")
+	}
+	hidden := m.w.arch.HiddenDim
+	if imgPos < 0 || imgLen <= 0 || imgPos+imgLen > len(ids) {
+		return nil, fmt.Errorf("decoder: image run [%d,%d) out of range for %d tokens", imgPos, imgPos+imgLen, len(ids))
+	}
+	if len(imageFeats) != imgLen*hidden {
+		return nil, fmt.Errorf("decoder: imageFeats len %d, want %d (%d tokens × %d)", len(imageFeats), imgLen*hidden, imgLen, hidden)
+	}
+	if len(mropePos) != len(ids) {
+		return nil, fmt.Errorf("decoder: mropePos len %d, want %d (one per token)", len(mropePos), len(ids))
+	}
+	h := m.embedN(ids)
+	copy(h[imgPos*hidden:(imgPos+imgLen)*hidden], imageFeats) // raw merged features, no embed scale
+	cache.mropePos = mropePos                                 // ropeAt switches to m-RoPE for this prefill
 	hN, err := m.runLayersFromEmbedN(h, cache)
 	if err != nil {
 		return nil, err

@@ -93,6 +93,66 @@ func TestApplyMRoPE_scalarEquivalence(t *testing.T) {
 	}
 }
 
+// TestQwen25VL_imageParity is the P5 end-to-end decoder gate: inject the (HF
+// golden) merged image features at the <image> run + thread m-RoPE 3D positions
+// through the prefill, and match HF's last-position logits. Decoupled from the ViT
+// (uses the pinned image_features, like the Gemma 3 image gate) so this isolates
+// the decoder-side image path — feature injection, causal (not bidirectional)
+// attention over the image tokens, and m-RoPE.
+func TestQwen25VL_imageParity(t *testing.T) {
+	const golden = "../testdata/qwen25vl_tiny_image_golden.json"
+	const ckpt = "../testdata/qwen25vl-tiny"
+	raw, err := os.ReadFile(golden)
+	if errors.Is(err, fs.ErrNotExist) {
+		t.Skipf("no golden — run scripts/pin_qwen25vl_image.py")
+	}
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+	if _, err := os.Stat(ckpt); errors.Is(err, fs.ErrNotExist) {
+		t.Skipf("no checkpoint — run scripts/pin_qwen25vl_tiny.py")
+	}
+	var g struct {
+		InputIDs      []int     `json:"input_ids"`
+		ImageToken    int       `json:"image_token_id"`
+		ImageStart    int       `json:"image_token_start"`
+		NImageTokens  int       `json:"n_image_tokens"`
+		GridTHW       [][3]int  `json:"grid_thw"`
+		ImageFeatures []float32 `json:"image_features"`
+		Argmax        int       `json:"argmax"`
+		LastLogits    []float32 `json:"last_logits"`
+	}
+	if err := json.Unmarshal(raw, &g); err != nil {
+		t.Fatalf("parse golden: %v", err)
+	}
+	const merge = 2 // testdata/qwen25vl-tiny spatial_merge_size
+
+	m, err := Load(ckpt, Options{})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	defer m.Close()
+
+	mropePos, err := mropePositions(g.InputIDs, g.ImageToken, g.GridTHW, merge)
+	if err != nil {
+		t.Fatalf("mropePositions: %v", err)
+	}
+	cache := m.NewCache(len(g.InputIDs))
+	logits, err := m.prefillLogitsQwenVL(g.InputIDs, g.ImageFeatures, g.ImageStart, g.NImageTokens, mropePos, cache)
+	if err != nil {
+		t.Fatalf("prefillLogitsQwenVL: %v", err)
+	}
+	gotArg := argmax(logits)
+	cos := logitCosine(logits, g.LastLogits)
+	t.Logf("qwen2.5-VL image parity: argmax got=%d want=%d | logit cosine=%.6f", gotArg, g.Argmax, cos)
+	if gotArg != g.Argmax {
+		t.Errorf("image-path argmax = %d, want %d", gotArg, g.Argmax)
+	}
+	if cos < 0.99 {
+		t.Errorf("image-path last-logit cosine %.6f < 0.99", cos)
+	}
+}
+
 // TestQwen25VL_textParity loads the tiny Qwen2.5-VL checkpoint (scripts/
 // pin_qwen25vl_tiny.py) through goinfer's loader + forward and asserts the
 // TEXT-ONLY path matches the HF golden — the P5 invariant: a Qwen2.5-VL
