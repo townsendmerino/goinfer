@@ -521,9 +521,13 @@ func (s *server) loadQwenVisionTower(dir string, int8Tower bool) error {
 	if err != nil {
 		return fmt.Errorf("load qwen2.5-vl vision encoder (%s): %w", dir, err)
 	}
+	pp, err := multimodal.LoadQwenPreprocessConfig(dir)
+	if err != nil {
+		return fmt.Errorf("qwen2.5-vl preprocessor config (%s): %w", dir, err)
+	}
 	for _, lm := range s.models {
 		lm.qwenEnc = enc
-		lm.qwenPP = multimodal.QwenDefaultPreprocess()
+		lm.qwenPP = pp
 		lm.qwenMerge = enc.Cfg.SpatialMergeSize
 		lm.qwenImgTok = -1
 		if id, ok := lm.tk.TokenID(multimodal.QwenImagePad); ok {

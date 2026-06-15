@@ -2,11 +2,14 @@ package multimodal
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"image"
 	_ "image/jpeg" // decode JPEG inputs
 	_ "image/png"  // decode PNG inputs
 	"math"
+	"os"
+	"path/filepath"
 )
 
 // Qwen2.5-VL image preprocessing: image bytes -> pre-flattened pixel_values
@@ -38,6 +41,52 @@ func QwenDefaultPreprocess() QwenPreprocessConfig {
 		Mean: [3]float32{0.48145466, 0.4578275, 0.40821073},
 		Std:  [3]float32{0.26862954, 0.26130258, 0.27577711},
 	}
+}
+
+// LoadQwenPreprocessConfig reads dir/preprocessor_config.json into a
+// QwenPreprocessConfig, falling back to QwenDefaultPreprocess for an absent file or
+// field — so a model dir with a tuned min/max or non-CLIP normalization is honored,
+// while a stripped checkpoint still works on the standard defaults.
+func LoadQwenPreprocessConfig(dir string) (QwenPreprocessConfig, error) {
+	cfg := QwenDefaultPreprocess()
+	raw, err := os.ReadFile(filepath.Join(dir, "preprocessor_config.json"))
+	if err != nil {
+		return cfg, nil // no file: standard Qwen2.5-VL defaults
+	}
+	var pc struct {
+		MinPixels         int       `json:"min_pixels"`
+		MaxPixels         int       `json:"max_pixels"`
+		PatchSize         int       `json:"patch_size"`
+		MergeSize         int       `json:"merge_size"`
+		TemporalPatchSize int       `json:"temporal_patch_size"`
+		ImageMean         []float32 `json:"image_mean"`
+		ImageStd          []float32 `json:"image_std"`
+	}
+	if err := json.Unmarshal(raw, &pc); err != nil {
+		return cfg, fmt.Errorf("multimodal(qwen): parse preprocessor_config: %w", err)
+	}
+	if pc.MinPixels > 0 {
+		cfg.MinPixels = pc.MinPixels
+	}
+	if pc.MaxPixels > 0 {
+		cfg.MaxPixels = pc.MaxPixels
+	}
+	if pc.PatchSize > 0 {
+		cfg.PatchSize = pc.PatchSize
+	}
+	if pc.MergeSize > 0 {
+		cfg.MergeSize = pc.MergeSize
+	}
+	if pc.TemporalPatchSize > 0 {
+		cfg.TemporalPatchSize = pc.TemporalPatchSize
+	}
+	if len(pc.ImageMean) == 3 {
+		cfg.Mean = [3]float32{pc.ImageMean[0], pc.ImageMean[1], pc.ImageMean[2]}
+	}
+	if len(pc.ImageStd) == 3 {
+		cfg.Std = [3]float32{pc.ImageStd[0], pc.ImageStd[1], pc.ImageStd[2]}
+	}
+	return cfg, nil
 }
 
 // QwenPreprocess turns image bytes into the Qwen2.5-VL vision input. Returns the
