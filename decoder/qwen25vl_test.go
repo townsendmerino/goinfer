@@ -7,7 +7,76 @@ import (
 	"math"
 	"os"
 	"testing"
+
+	"github.com/townsendmerino/aikit/vision"
 )
+
+// TestQwen25VL_e2eChain runs the REAL goinfer pipeline end-to-end: the aikit ViT
+// encoder (Forward on the golden pixel_values) → the decoder image prefill (inject
+// + m-RoPE) → logits, matched against HF. Unlike TestQwen25VL_imageParity (which
+// feeds the GOLDEN image_features to isolate the decoder), this chains the two
+// stages goinfer actually wires, so it catches an encoder↔decoder seam mismatch.
+func TestQwen25VL_e2eChain(t *testing.T) {
+	const golden = "../testdata/qwen25vl_tiny_image_golden.json"
+	const ckpt = "../testdata/qwen25vl-tiny"
+	raw, err := os.ReadFile(golden)
+	if errors.Is(err, fs.ErrNotExist) {
+		t.Skipf("no golden — run scripts/pin_qwen25vl_image.py")
+	}
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+	if _, err := os.Stat(ckpt); errors.Is(err, fs.ErrNotExist) {
+		t.Skipf("no checkpoint — run scripts/pin_qwen25vl_tiny.py")
+	}
+	var g struct {
+		InputIDs     []int     `json:"input_ids"`
+		ImageToken   int       `json:"image_token_id"`
+		ImageStart   int       `json:"image_token_start"`
+		NImageTokens int       `json:"n_image_tokens"`
+		GridTHW      [][3]int  `json:"grid_thw"`
+		PixelValues  []float32 `json:"pixel_values"`
+		Argmax       int       `json:"argmax"`
+		LastLogits   []float32 `json:"last_logits"`
+	}
+	if err := json.Unmarshal(raw, &g); err != nil {
+		t.Fatalf("parse golden: %v", err)
+	}
+	const merge = 2
+
+	enc, err := vision.LoadQwenVisionEncoder(ckpt, false)
+	if err != nil {
+		t.Fatalf("LoadQwenVisionEncoder: %v", err)
+	}
+	feats, err := enc.Forward(g.PixelValues, g.GridTHW) // ViT + merger → merged features
+	if err != nil {
+		t.Fatalf("encoder Forward: %v", err)
+	}
+
+	m, err := Load(ckpt, Options{})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	defer m.Close()
+	mropePos, err := mropePositions(g.InputIDs, g.ImageToken, g.GridTHW, merge)
+	if err != nil {
+		t.Fatalf("mropePositions: %v", err)
+	}
+	cache := m.NewCache(len(g.InputIDs))
+	logits, err := m.prefillLogitsQwenVL(g.InputIDs, feats, g.ImageStart, g.NImageTokens, mropePos, cache)
+	if err != nil {
+		t.Fatalf("prefillLogitsQwenVL: %v", err)
+	}
+	gotArg := argmax(logits)
+	cos := logitCosine(logits, g.LastLogits)
+	t.Logf("qwen2.5-VL e2e (encoder→decoder): argmax got=%d want=%d | cosine=%.6f", gotArg, g.Argmax, cos)
+	if gotArg != g.Argmax {
+		t.Errorf("e2e argmax = %d, want %d", gotArg, g.Argmax)
+	}
+	if cos < 0.99 {
+		t.Errorf("e2e last-logit cosine %.6f < 0.99", cos)
+	}
+}
 
 // TestMRoPEPositions gates the get_rope_index port against the pinned HF golden
 // (scripts/pin_qwen25vl_image.py): the 3D (t,h,w) positions for a text+image
