@@ -60,15 +60,27 @@ ships.
    safetensors path doesn't see; prove each transform-bearing tensor with a
    `weightDiff` test against the bit-exact safetensors loader (no oracle needed).
 3. **MTP / output head:** confirm tied vs untied head; drop the MTP head tensors.
+4. **QK-norm × partial-RoPE ordering (assembly subtlety).** Each ships alone, but
+   the *combination* has an order: QK-norm is over the full `head_dim`, partial-RoPE
+   rotates only the `RotaryDim` prefix. goinfer's gemma3/qwen3 do QK-norm → *full*
+   RoPE; GLM is QK-norm → *partial* RoPE. Confirm the order matches HF
+   (`q_norm` then `apply_rotary(prefix)`) — a 1-line detail, silent-wrong-logits if
+   reversed. The layer-slice oracle (above) catches it.
 
 ### Target + gates
 
-- **Parity-testable target: GLM-4.5-Air** (~106B / ~12B active) — fits the box for
-  a real bf16 forward oracle. **GLM-4.6** (355B) is the headline and rides #2
-  expert-paging; its full-forward oracle is `weightDiff`-proven if it won't
-  co-resident with bf16 (same call we made for qwen3.6-35B).
-- **Gate:** argmax-exact + logit cosine vs the HF bf16 reference on the Air model;
-  GGUF `weightDiff` to Q8_0 tolerance; coherent generation on the canned prompts.
+- **Parity-testable target: GLM-4.5-Air** (~106B / ~12B active). ⚠️ **Correction
+  (2026-06-15): a *full* bf16 forward oracle does NOT fit the box.** A forward oracle
+  needs every weight resident — 106B × bf16 ≈ **212 GB** on a **65 GB** box, the same
+  wall qwen3.6-35B hit (≈70 GB → OOM-skip). So Air gets the **qwen35 pattern, not a
+  full oracle**: (a) **`weightDiff`** (bit-exact goinfer loader vs the Q8_0 GGUF,
+  no oracle needed), and (b) a **layer-slice numeric oracle** — load embed + layers
+  0–3 at bf16 and run goinfer's forward on that slice vs HF (the `qwen35_realckpt`
+  Gate-1 pattern: catches a wrong name/prefix/expert-stacking cheaply, no full model).
+  **GLM-4.6** (355B) rides #2 expert-paging; `weightDiff`-proven, same call.
+- **Gate:** `weightDiff` (loader bit-exactness) + the layer-slice argmax/cosine vs
+  HF bf16 + GGUF `weightDiff` to Q8_0 tolerance + coherent generation on canned
+  prompts. (No full-model bf16 logit oracle — infeasible at this scale on the box.)
 - **Inherited for free:** chat template (GLM's), tool calling, constrained
   decoding, `cmd/serve` routing — the descriptor-close process delivers all of it.
 
@@ -118,8 +130,11 @@ primitive on built scaffolding*, not a from-scratch hybrid runtime.
    **algebraically equivalent** over random inputs/chunk sizes (the exact pattern
    `deltanet_chunked.go` / `TestGatedDeltaNet_chunkedMatchesSequential` already
    set — self-contained, no asset/torch).
-2. **A Mamba-2 cache-state kind** in `kvcache.go` next to `deltaState` (the SSM
-   conv + ssm state), wired through the hybrid cache.
+2. **A Mamba-2 cache-state kind** in `kvcache.go` next to `deltaState`. Note Mamba-2
+   carries **two** recurrent states per layer, not one: a short causal **conv1d
+   window** *before* the scan + the **SSM state** itself. So the state-kind is
+   `{conv window, ssm state}` — a small extension of `deltaState`'s single slot;
+   size it for both from the start. Wired through the hybrid cache.
 3. **`graniteArchitecture(cfg) (...)`** + `graniteTensorSchema`: per-layer-kind =
    `{mamba | attention}` (generalize `isLinearLayer` to a layer-kind enum if the
    binary split gets strained), MoE config for the H variants (reuse `moeMLP`).
@@ -156,7 +171,9 @@ new primitive + its parity, on existing scaffolding.
 **Order:** GLM now (low-risk popular win + a real #2-paging showcase), Granite
 after (the milestone). They share nothing on the hot path — GLM is pure MoE,
 Granite adds the Mamba mixer — so GLM can't accidentally de-risk Granite; do them
-in series.
+in series. **Caveat (2026-06-15):** GLM explicitly does *not* move v1.0, so the only
+risk in going GLM-first is letting its easiness make it the destination. Granite is
+the milestone — bag GLM as a quick win, keep Granite as the actual target.
 
 **Explicitly deferred (unchanged):**
 - **DeepSeek V4** — **MLA** (multi-head latent attention) is a new attention
