@@ -75,6 +75,16 @@ def main():
         # Stage 3: end-to-end logits (interleave + m-RoPE attention).
         out = model(input_ids=ids, pixel_values=pixel_values, image_grid_thw=grid_thw, use_cache=False)
         last_logits = out.logits[0, -1].float().tolist()
+        # Stage 4: greedy continuation past the image prompt — gates DECODE-time
+        # m-RoPE (text positions resume at max+1, i.e. seqPos + mrope_delta). Recompute
+        # the full forward each step (no cache); pixel_values stay at the image run.
+        N_CONT = 4
+        cur, cont = list(input_ids), []
+        for _ in range(N_CONT):
+            o = model(input_ids=torch.tensor([cur]), pixel_values=pixel_values,
+                      image_grid_thw=grid_thw, use_cache=False)
+            cont.append(int(o.logits[0, -1].argmax()))
+            cur.append(cont[-1])
 
     golden = {
         "note": "tiny Qwen2.5-VL image->logits; CPU fp32 (P5 end-to-end gate)",
@@ -93,6 +103,7 @@ def main():
         "mrope_position_delta": int(mrope_delta.reshape(-1)[0]),
         "argmax": int(torch.tensor(last_logits).argmax()),
         "last_logits": last_logits,                                      # end-to-end (final gate)
+        "continuation_ids": cont,                                        # greedy decode past the image (decode m-RoPE gate)
     }
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     with open(OUT, "w") as f:

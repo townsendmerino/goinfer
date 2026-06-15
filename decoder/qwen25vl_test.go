@@ -190,6 +190,7 @@ func TestQwen25VL_imageParity(t *testing.T) {
 		ImageFeatures []float32 `json:"image_features"`
 		Argmax        int       `json:"argmax"`
 		LastLogits    []float32 `json:"last_logits"`
+		Continuation  []int     `json:"continuation_ids"`
 	}
 	if err := json.Unmarshal(raw, &g); err != nil {
 		t.Fatalf("parse golden: %v", err)
@@ -206,7 +207,7 @@ func TestQwen25VL_imageParity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("mropePositions: %v", err)
 	}
-	cache := m.NewCache(len(g.InputIDs))
+	cache := m.NewCache(len(g.InputIDs) + len(g.Continuation))
 	logits, err := m.prefillLogitsQwenVL(g.InputIDs, g.ImageFeatures, g.ImageStart, g.NImageTokens, mropePos, cache)
 	if err != nil {
 		t.Fatalf("prefillLogitsQwenVL: %v", err)
@@ -219,6 +220,24 @@ func TestQwen25VL_imageParity(t *testing.T) {
 	}
 	if cos < 0.99 {
 		t.Errorf("image-path last-logit cosine %.6f < 0.99", cos)
+	}
+
+	// Decode past the image prompt — gates decode-time m-RoPE (positions resume at
+	// seqPos+mropeDelta). The cache carries mropePos+mropeDelta from the prefill.
+	got := make([]int, 0, len(g.Continuation))
+	for range g.Continuation {
+		id := argmax(logits)
+		got = append(got, id)
+		if logits, err = m.forward(id, cache); err != nil {
+			t.Fatalf("continuation forward: %v", err)
+		}
+	}
+	t.Logf("qwen2.5-VL decode continuation: got=%v want=%v", got, g.Continuation)
+	for i := range g.Continuation {
+		if got[i] != g.Continuation[i] {
+			t.Errorf("continuation[%d] = %d, want %d", i, got[i], g.Continuation[i])
+			break
+		}
 	}
 }
 

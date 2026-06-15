@@ -48,11 +48,12 @@ func dequantHeads(q []int8, scales []float32, nKV, headDim int, dst []float32) {
 //
 // Not goroutine-safe: one cache belongs to one in-flight sequence.
 type KVCache struct {
-	numLayers int
-	kvDim     int      // NumKVHeads * HeadDim
-	window    int      // sliding-window cap for local layers; 0 = unbounded
-	imgBlocks [][2]int // multimodal: position ranges [start,end) that attend bidirectionally (image blocks); nil = all-causal
-	mropePos  [][3]int // Qwen2.5-VL m-RoPE: per-sequence-position (t,h,w) rotary positions; nil = scalar RoPE. Indexed by absolute sequence position. (P5)
+	numLayers  int
+	kvDim      int      // NumKVHeads * HeadDim
+	window     int      // sliding-window cap for local layers; 0 = unbounded
+	imgBlocks  [][2]int // multimodal: position ranges [start,end) that attend bidirectionally (image blocks); nil = all-causal
+	mropePos   [][3]int // Qwen2.5-VL m-RoPE: per-sequence-position (t,h,w) rotary positions; nil = scalar RoPE. Indexed by absolute sequence position. (P5)
+	mropeDelta int      // m-RoPE position delta: decode positions past the prefill are scalar seqPos+mropeDelta (the image compresses positions, so delta is usually negative). (P5)
 
 	keys [][]float32 // per layer, appended [pos*kvDim] (global / append-forever layers)
 	vals [][]float32

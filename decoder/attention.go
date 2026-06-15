@@ -104,8 +104,8 @@ func causalAttention(
 	if !arch.LearnedPosEmbed {
 		invFreq := arch.ropeInvFreq(layer)
 		ms := arch.ropeMscale(layer)
-		ropeAt(q, nH, hd, pos, invFreq, ms, arch.MRopeSection, cache.mropePos)
-		ropeAt(k, nKV, hd, pos, invFreq, ms, arch.MRopeSection, cache.mropePos)
+		ropeAt(q, nH, hd, pos, invFreq, ms, arch.MRopeSection, cache.mropePos, cache.mropeDelta)
+		ropeAt(k, nKV, hd, pos, invFreq, ms, arch.MRopeSection, cache.mropePos, cache.mropeDelta)
 	}
 
 	// 4. Append this position's K/V, then attend over the stored history. Route

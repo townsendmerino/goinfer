@@ -43,15 +43,38 @@ func applyRoPE(vec []float32, heads, headDim, pos int, invFreq []float64, scale 
 }
 
 // ropeAt rotates the token at absolute sequence position seqPos, choosing m-RoPE
-// (Qwen2.5-VL image prefill — section non-nil and mropePos carries this position)
-// or plain scalar RoPE otherwise. The single seam both the batched (forwardN) and
-// sequential (causalAttention) RoPE sites call, so adding m-RoPE didn't fork them.
-func ropeAt(vec []float32, heads, headDim, seqPos int, invFreq []float64, scale float64, section []int, mropePos [][3]int) {
-	if section != nil && seqPos < len(mropePos) {
+// vs plain scalar RoPE. The single seam both the batched (forwardN) and sequential
+// (causalAttention) RoPE sites call, so adding m-RoPE didn't fork them.
+//
+//   - Not VL (mropePos nil): scalar RoPE at seqPos — every non-Qwen2.5-VL model.
+//   - VL prefill (seqPos within the prefilled m-RoPE positions): m-RoPE 3D.
+//   - VL decode (seqPos past the prefill): text positions resume at the block max +
+//     1, i.e. scalar RoPE at seqPos+mropeDelta (the image-token grid compressed the
+//     position count, so mropeDelta is typically negative).
+func ropeAt(vec []float32, heads, headDim, seqPos int, invFreq []float64, scale float64, section []int, mropePos [][3]int, mropeDelta int) {
+	switch {
+	case mropePos == nil:
+		applyRoPE(vec, heads, headDim, seqPos, invFreq, scale)
+	case seqPos < len(mropePos):
 		applyMRoPE(vec, heads, headDim, mropePos[seqPos], section, invFreq, scale)
-		return
+	default:
+		applyRoPE(vec, heads, headDim, seqPos+mropeDelta, invFreq, scale)
 	}
-	applyRoPE(vec, heads, headDim, seqPos, invFreq, scale)
+}
+
+// mropeDelta returns the m-RoPE position delta for decode: max(any position
+// component) + 1 - seqLen, so a token appended at sequence index s decodes at the
+// scalar position s + delta (matching HF get_rope_index's mrope_position_delta).
+func mropeDelta(pos [][3]int, seqLen int) int {
+	maxP := 0
+	for _, p := range pos {
+		for _, c := range p {
+			if c > maxP {
+				maxP = c
+			}
+		}
+	}
+	return maxP + 1 - seqLen
 }
 
 // applyMRoPE is Qwen2.5-VL's multimodal RoPE: same rotate_half rotation as

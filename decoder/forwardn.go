@@ -140,8 +140,8 @@ func (m *Model) runLayersFromEmbedN(h []float32, cache *KVCache) ([]float32, err
 				rmsNorm(qi, lw.QNorm, nH, hd, arch.NormEps, arch.RMSAddOne)
 				rmsNorm(ki, lw.KNorm, nKV, hd, arch.NormEps, arch.RMSAddOne)
 			}
-			ropeAt(qi, nH, hd, pos, invFreq, ms, arch.MRopeSection, cache.mropePos)
-			ropeAt(ki, nKV, hd, pos, invFreq, ms, arch.MRopeSection, cache.mropePos)
+			ropeAt(qi, nH, hd, pos, invFreq, ms, arch.MRopeSection, cache.mropePos, cache.mropeDelta)
+			ropeAt(ki, nKV, hd, pos, invFreq, ms, arch.MRopeSection, cache.mropePos, cache.mropeDelta)
 			if !isLocal {
 				cache.Append(l, ki, vi) // global: append now; local: deferred to commitBatch below
 			}
@@ -496,6 +496,7 @@ func (m *Model) prefillLogitsQwenVL(ids []int, imageFeats []float32, imgPos, img
 	h := m.embedN(ids)
 	copy(h[imgPos*hidden:(imgPos+imgLen)*hidden], imageFeats) // raw merged features, no embed scale
 	cache.mropePos = mropePos                                 // ropeAt switches to m-RoPE for this prefill
+	cache.mropeDelta = mropeDelta(mropePos, len(ids))         // decode past the prefill rotates at seqPos+delta
 	hN, err := m.runLayersFromEmbedN(h, cache)
 	if err != nil {
 		return nil, err
