@@ -87,3 +87,55 @@ jobs:
       # they compile and the resident-matmul path is exercised where possible.
       - name: test -tags gpu
         run: go test -tags gpu ./gpu/...
+
+  # Root module on darwin/arm64. The Linux jobs above can't catch
+  # platform-specific build breaks — e.g. a syscall the darwin syscall package
+  # lacks under a too-broad `//go:build unix` (see decoder/madvise_*.go). This
+  # job exists so that class of break fails CI instead of surfacing only in a
+  # manual Apple-silicon sweep. macos-latest is Apple Silicon (arm64).
+  root-darwin:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: build
+        run: go build ./...
+
+      - name: vet
+        run: go vet ./...
+
+      # Model-asset parity tests self-skip without their checkpoints, so this is
+      # green and fast on a fresh checkout (the heavy 12B parity only runs where
+      # assets are present, e.g. the local sweep box). Race detector on.
+      - name: test
+        run: go test -race ./...
+
+  # GPU submodule on darwin/arm64 — the resident Metal decode path. Same
+  # ephemeral-workspace stitch as the Linux gpu job, but no apt deps: Metal is a
+  # system framework on macOS (linked via Xcode CLT, present on the runner).
+  # Tests skip cleanly with no usable adapter; the build/vet alone compile-check
+  # the cgo Metal path that the Linux jobs never touch.
+  gpu-darwin:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: gpu/go.sum
+
+      - name: workspace (resolve unpublished goinfer locally)
+        run: go work init . ./gpu
+
+      - name: build -tags gpu
+        run: go build -tags gpu ./gpu/...
+
+      - name: vet -tags gpu
+        run: go vet -tags gpu ./gpu/...
+
+      - name: test -tags gpu
+        run: go test -tags gpu ./gpu/...
