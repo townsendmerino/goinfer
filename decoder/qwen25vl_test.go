@@ -4,9 +4,94 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
+	"math"
 	"os"
 	"testing"
 )
+
+// TestMRoPEPositions gates the get_rope_index port against the pinned HF golden
+// (scripts/pin_qwen25vl_image.py): the 3D (t,h,w) positions for a text+image
+// sequence must match HF token-for-token — text scalar, image block on the merged
+// grid, scalar resuming from the block max + 1.
+func TestMRoPEPositions(t *testing.T) {
+	const golden = "../testdata/qwen25vl_tiny_image_golden.json"
+	raw, err := os.ReadFile(golden)
+	if errors.Is(err, fs.ErrNotExist) {
+		t.Skipf("no golden — run scripts/pin_qwen25vl_image.py")
+	}
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+	var g struct {
+		InputIDs    []int    `json:"input_ids"`
+		ImageToken  int      `json:"image_token_id"`
+		GridTHW     [][3]int `json:"grid_thw"`
+		PositionIDs [][]int  `json:"position_ids"` // [3][seq] = t,h,w rows
+	}
+	if err := json.Unmarshal(raw, &g); err != nil {
+		t.Fatalf("parse golden: %v", err)
+	}
+	const merge = 2 // testdata/qwen25vl-tiny spatial_merge_size
+
+	got, err := mropePositions(g.InputIDs, g.ImageToken, g.GridTHW, merge)
+	if err != nil {
+		t.Fatalf("mropePositions: %v", err)
+	}
+	if len(got) != len(g.InputIDs) {
+		t.Fatalf("got %d positions, want %d", len(got), len(g.InputIDs))
+	}
+	for i := range got {
+		for c := range 3 {
+			if got[i][c] != g.PositionIDs[c][i] {
+				t.Errorf("pos[%d][%d] = %d, want %d (got row-major %v)", i, c, got[i][c], g.PositionIDs[c][i], got[i])
+			}
+		}
+	}
+}
+
+// TestApplyMRoPE_scalarEquivalence is the text-path-stays-inert gate at the kernel
+// level: for a TEXT token (all three position components equal), applyMRoPE must
+// produce EXACTLY what applyRoPE does for that scalar position — so text decode is
+// bit-identical whether or not the m-RoPE path is taken.
+func TestApplyMRoPE_scalarEquivalence(t *testing.T) {
+	const heads, headDim = 2, 16
+	half := headDim / 2
+	section := []int{4, 2, 2} // sums to half=8
+	invFreq := make([]float64, half)
+	for d := range invFreq {
+		invFreq[d] = math.Pow(10000, -2*float64(d)/float64(headDim))
+	}
+	base := make([]float32, heads*headDim)
+	for i := range base {
+		base[i] = float32((i*7)%13)*0.1 - 0.6
+	}
+	for _, pos := range []int{0, 1, 5, 42, 1000} {
+		a := append([]float32(nil), base...)
+		b := append([]float32(nil), base...)
+		applyRoPE(a, heads, headDim, pos, invFreq, 1.0)
+		applyMRoPE(b, heads, headDim, [3]int{pos, pos, pos}, section, invFreq, 1.0)
+		for i := range a {
+			if a[i] != b[i] {
+				t.Fatalf("pos %d: applyMRoPE[%d]=%v != applyRoPE %v", pos, i, b[i], a[i])
+			}
+		}
+	}
+	// A divergent (image) position must NOT equal the scalar result (non-vacuous).
+	a := append([]float32(nil), base...)
+	b := append([]float32(nil), base...)
+	applyRoPE(a, heads, headDim, 4, invFreq, 1.0)
+	applyMRoPE(b, heads, headDim, [3]int{4, 5, 6}, section, invFreq, 1.0)
+	same := true
+	for i := range a {
+		if a[i] != b[i] {
+			same = false
+			break
+		}
+	}
+	if same {
+		t.Error("divergent t/h/w positions produced the scalar result — m-RoPE has no effect")
+	}
+}
 
 // TestQwen25VL_textParity loads the tiny Qwen2.5-VL checkpoint (scripts/
 // pin_qwen25vl_tiny.py) through goinfer's loader + forward and asserts the
