@@ -8,9 +8,28 @@ The forward-pass and quantization numerics are parity-gated against HuggingFace
 and are the stable contract. The loader and architecture-descriptor surface is
 pre-1.0 and may change as new model families and quant formats land.
 
-## [Unreleased]
+## [v0.7.0] — 2026-06-15
 
 ### Added
+- **Qwen2.5-VL — a second vision-language family (image→text, pure Go).** goinfer's
+  vision path now generalizes beyond Gemma 3 / SigLIP. The whole pipeline is gated
+  against HuggingFace: HF-exact preprocessing (smart-resize + a PIL-bicubic port +
+  the spatial-merge patchify), the aikit Qwen2.5-VL ViT + patch merger (dynamic
+  resolution), **m-RoPE** (3D temporal/height/width positions — `applyMRoPE` + a port
+  of `get_rope_index`, prefill *and* decode), and the decoder image path (merged-
+  feature injection, causal attention). `serve` accepts image requests for a
+  Qwen2.5-VL `--model` (OpenAI + Anthropic), validated end-to-end on the real
+  Qwen2.5-VL-3B. Text decode for every other model stays byte-identical (m-RoPE
+  reduces to scalar RoPE when the three position components are equal). New API:
+  `decoder.GenerateQwenVL`; `cmd/serve` family auto-detection + routing.
+- **Compute-time multi-adapter LoRA (`serve --adapter <name>=<base>=<dir>`) — N
+  fine-tunes on one resident base.** Instead of merging a LoRA into the weights (a
+  full base copy per adapter), the low-rank `A`/`B` are applied in the forward
+  (`Y = W·x + s·B(A·x)`), so N adapters of one base cost ≈ base + N small deltas — the
+  multi-tenant footprint win. Each adapter is a served model that shares the base's
+  resident weights but keeps its own KV sessions; requests route via the OpenAI
+  `model` field. Merged `--lora` stays the faster single-fine-tune default. Safetensors
+  base, dense gated-MLP archs; an active adapter takes the sequential prefill path.
 - **`--quant int4mix`: per-tensor mixed precision (idea #5).** A calibration spike
   found the int4→int8 quality loss is concentrated in **attention** (promoting
   `attn_output` alone recovered >half the gap), while the **FFN bulk is int4-tolerant**
@@ -116,6 +135,24 @@ pre-1.0 and may change as new model families and quant formats land.
   and is in-process scratch (the resident tier is what survives a restart). Off by
   default; needs `--session-dir` and `--kv-sessions > 0`. Pure serve-layer policy —
   no decoder changes.
+
+### Changed
+- **aikit `v1.7.3` → `v1.8.1`.** Adds the pure-Go Qwen2.5-VL vision tower
+  (`vision.LoadQwenVisionEncoder` / `Forward` / `ForwardViT`) — RMSNorm ViT, windowed
+  + full attention, 2D rotary, the spatial-merge patch merger — parity-gated against
+  HuggingFace. Bumped in both the root and `gpu` modules.
+
+### Fixed
+- **darwin (Apple-silicon) build break.** The MoE-paging madvise helper called
+  `syscall.Madvise` under `//go:build unix`, but darwin has no `syscall.Madvise`
+  (it lives in `golang.org/x/sys/unix`), so the root module — and everything
+  downstream — failed to compile on macOS. Split per-platform: Linux/BSD keep
+  `syscall` + `MADV_DONTNEED` (firm RAM cap, unchanged); darwin uses `x/sys/unix`
+  for the `MADV_WILLNEED` prefetch and no-ops eviction (no macOS syscall reclaims a
+  read-only file-backed mapping, so the `--weight-cache` cap is best-effort on
+  darwin — the OS reclaims the clean, re-faultable pages under memory pressure).
+  Adds `golang.org/x/sys` as a direct root dependency. (CI now runs darwin/arm64
+  jobs to catch this class of platform gap.)
 
 ## [v0.6.0] — 2026-06-13
 
