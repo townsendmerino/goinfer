@@ -50,6 +50,17 @@ type Config struct {
 	// (Qwen-MoE/Qwen2-MoE). 0/absent ⇒ no shared expert.
 	SharedExpertIntermediateSize int `json:"shared_expert_intermediate_size"`
 
+	// DeepSeek-style MoE (GLM-4.5/4.6, model_type glm4_moe). NRoutedExperts is the
+	// routed expert count (the n_routed_experts spelling, vs num_experts); each
+	// shared expert is moe_intermediate_size wide, so the always-on shared FFN width
+	// is NSharedExperts × MoeIntermediateSize. FirstKDenseReplace layers at the top
+	// of the stack are plain dense MLPs (no router); the rest are MoE.
+	// RoutedScalingFactor multiplies the routed top-k weights.
+	NRoutedExperts      int     `json:"n_routed_experts"`
+	NSharedExperts      int     `json:"n_shared_experts"`
+	FirstKDenseReplace  int     `json:"first_k_dense_replace"`
+	RoutedScalingFactor float64 `json:"routed_scaling_factor"`
+
 	// Gated DeltaNet (qwen3_5_moe linear-attention layers). The linear layers
 	// replace softmax attention with a gated delta-rule recurrence over a
 	// fixed-size matrix state; these size its conv + per-head key/value dims.
@@ -281,6 +292,27 @@ func (c *Config) validateQwen2Moe() error {
 		return fmt.Errorf("decoder(qwen2_moe): moe_intermediate_size must be >0, got %d", c.MoeIntermediateSize)
 	case c.SharedExpertIntermediateSize <= 0:
 		return fmt.Errorf("decoder(qwen2_moe): shared_expert_intermediate_size must be >0, got %d", c.SharedExpertIntermediateSize)
+	}
+	return nil
+}
+
+// validateGlm4Moe pins the GLM-4.5/4.6 (glm4_moe) assumptions: a valid DeepSeek-style
+// sparse MoE (n_routed_experts / num_experts_per_tok / moe_intermediate_size) with a
+// shared expert (n_shared_experts ≥ 1), and a first_k_dense_replace in [0, num_layers)
+// dense prefix. The attention is qwen3-like (QK-norm, partial RoPE, no bias) and is
+// validated by the generic head-dim/layer checks at resolve time.
+func (c *Config) validateGlm4Moe() error {
+	switch {
+	case c.NRoutedExperts <= 0:
+		return fmt.Errorf("decoder(glm4_moe): n_routed_experts must be >0, got %d", c.NRoutedExperts)
+	case c.NumExpertsPerTok <= 0 || c.NumExpertsPerTok > c.NRoutedExperts:
+		return fmt.Errorf("decoder(glm4_moe): num_experts_per_tok %d out of range (1..%d)", c.NumExpertsPerTok, c.NRoutedExperts)
+	case c.MoeIntermediateSize <= 0:
+		return fmt.Errorf("decoder(glm4_moe): moe_intermediate_size must be >0, got %d", c.MoeIntermediateSize)
+	case c.NSharedExperts <= 0:
+		return fmt.Errorf("decoder(glm4_moe): n_shared_experts must be >0, got %d", c.NSharedExperts)
+	case c.FirstKDenseReplace < 0 || c.FirstKDenseReplace >= c.NumLayers:
+		return fmt.Errorf("decoder(glm4_moe): first_k_dense_replace %d out of range (0..%d)", c.FirstKDenseReplace, c.NumLayers-1)
 	}
 	return nil
 }

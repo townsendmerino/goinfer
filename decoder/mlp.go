@@ -33,7 +33,9 @@ var moeSelTrace [][]int
 // internally and are copied into out.
 func mlp(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend, scr *decodeScratch, pager *expertPager, lora *loraLayerDelta) error {
 	switch {
-	case arch.MoE != nil:
+	case arch.MoE != nil && lw.Experts != nil:
+		// Per-layer: GLM's first_k_dense_replace dense layers carry no experts and
+		// fall through to gatedMLP; Mixtral/Qwen-MoE have experts on every layer.
 		g, err := moeMLP(h, lw, arch, be, pager) // compute-time LoRA on experts not wired — LoadAdapter rejects MoE
 		if err != nil {
 			return err
@@ -69,11 +71,11 @@ func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend, pager
 		return nil, fmt.Errorf("decoder: MoE expert activation %d unsupported (SwiGLU only)", arch.Act)
 	}
 
-	// Router logits → full softmax → top-k probabilities.
+	// Router logits → top-k experts + weights. softmax-topk (Mixtral/Qwen2-MoE) or
+	// the DeepSeek/GLM sigmoid-score + selection-bias path — routeExperts unifies both.
 	logits := make([]float32, nE)
 	matmul(be, &lw.Router, h, logits, 1)
-	probs := softmaxF32(logits)
-	idx, wts := topK(probs, k)
+	idx, wts := routeExperts(logits, lw.RouterBias, k, moe.RouterSigmoid, moe.NormTopKProb, moe.RoutedScale)
 	if moeSelTrace != nil { // SPIKE: record this call's expert selection (forward order)
 		moeSelTrace = append(moeSelTrace, append([]int(nil), idx...))
 	}
@@ -84,17 +86,6 @@ func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend, pager
 	if pager != nil {
 		for _, e := range idx {
 			pager.touch(&lw.Experts[e])
-		}
-	}
-	if moe.NormTopKProb {
-		var s float32
-		for _, w := range wts {
-			s += w
-		}
-		if s > 0 {
-			for j := range wts {
-				wts[j] /= s
-			}
 		}
 	}
 
@@ -112,18 +103,72 @@ func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend, pager
 		}
 	}
 
-	// Shared expert (Qwen2-MoE): an always-on gated MLP whose output is scaled by
-	// a per-token sigmoid gate and added to the routed sum.
+	// Shared always-on expert (Qwen2-MoE / GLM). Qwen2 scales it by a per-token
+	// sigmoid(SharedGate·h) gate; GLM/DeepSeek add it ungated.
 	if moe.SharedIntermediateDim > 0 {
 		swiGLUExpert(&lw.SharedExpert, h, expOut, moe.SharedIntermediateDim, be)
-		var gl [1]float32
-		matmul(be, &lw.SharedGate, h, gl[:], 1)
-		g := float32(1.0 / (1.0 + math.Exp(-float64(gl[0])))) // sigmoid
-		for i := range out {
-			out[i] += g * expOut[i]
+		if moe.SharedUngated {
+			for i := range out {
+				out[i] += expOut[i]
+			}
+		} else {
+			var gl [1]float32
+			matmul(be, &lw.SharedGate, h, gl[:], 1)
+			g := float32(1.0 / (1.0 + math.Exp(-float64(gl[0])))) // sigmoid
+			for i := range out {
+				out[i] += g * expOut[i]
+			}
 		}
 	}
 	return out, nil
+}
+
+// routeExperts selects the top-k experts and their weights from router logits.
+// Mixtral/Qwen2-MoE: softmax over experts, top-k by probability, weights = those
+// probabilities. DeepSeek/GLM (sigmoid=true): per-expert sigmoid scores; if bias
+// (e_score_correction_bias) is present it shifts the top-k SELECTION only, while the
+// weights are the chosen experts' UN-biased sigmoid scores. norm renormalizes the
+// weights to sum 1; scale (routed_scaling_factor) multiplies them (0/1 = no-op).
+// With sigmoid=false, bias=nil, scale∈{0,1} this is the exact prior Mixtral path.
+func routeExperts(logits, bias []float32, k int, sigmoid, norm bool, scale float64) (idx []int, wts []float32) {
+	var scores []float32
+	if sigmoid {
+		scores = make([]float32, len(logits))
+		for i, l := range logits {
+			scores[i] = float32(1.0 / (1.0 + math.Exp(-float64(l))))
+		}
+	} else {
+		scores = softmaxF32(logits)
+	}
+	sel := scores
+	if bias != nil {
+		sel = make([]float32, len(scores))
+		for i := range scores {
+			sel[i] = scores[i] + bias[i]
+		}
+	}
+	idx, _ = topK(sel, k) // top-k by selection score
+	wts = make([]float32, len(idx))
+	for j, e := range idx {
+		wts[j] = scores[e] // weights are the un-biased scores
+	}
+	if norm {
+		var s float32
+		for _, w := range wts {
+			s += w
+		}
+		if s > 0 {
+			for j := range wts {
+				wts[j] /= s
+			}
+		}
+	}
+	if scale != 0 && scale != 1 {
+		for j := range wts {
+			wts[j] *= float32(scale)
+		}
+	}
+	return idx, wts
 }
 
 // swiGLUExpert evaluates one gated (SwiGLU) expert MLP of the given intermediate

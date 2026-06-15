@@ -187,11 +187,12 @@ func (m *Model) runLayersFromEmbedN(h []float32, cache *KVCache) ([]float32, err
 		for i := range K {
 			normalize(arch, row(norm, i, hidden), lw.PreMLPNorm, lw.PreMLPNormBias, hidden)
 		}
-		if arch.MoE != nil {
+		if arch.MoE != nil && lw.Experts != nil {
 			// Sparse MoE (Mellum / Mixtral): the router selects different experts per
 			// token, so the FFN isn't batchable across K — run the existing per-token
 			// moeMLP for each row (bit-identical to the sequential path). The prefill
 			// hotspot (attention) is already batched above; this is the residual ~17%.
+			// GLM's dense prefix layers (Experts nil) fall through to the dense FFN below.
 			for i := range K {
 				ff, err := moeMLP(row(norm, i, hidden), lw, arch, be, m.pager)
 				if err != nil {

@@ -55,8 +55,9 @@ type LayerWeights struct {
 	// Mixture-of-experts FFN (Mixtral; set only when arch.MoE != nil). Router
 	// scores experts; each expert is a gated (SwiGLU) MLP. The dense GateProj/
 	// UpProj/DownProj above are unused in that case.
-	Router  linalg.WeightMat // [NumExperts, HiddenDim] router/gate logits
-	Experts []expertWeights  // [NumExperts] gated MLPs
+	Router     linalg.WeightMat // [NumExperts, HiddenDim] router/gate logits
+	RouterBias []float32        // [NumExperts] DeepSeek/GLM e_score_correction_bias added to scores for top-k SELECTION (nil = none)
+	Experts    []expertWeights  // [NumExperts] gated MLPs
 
 	// Shared expert (Qwen-MoE / Qwen2-MoE; set when arch.MoE.SharedIntermediateDim
 	// > 0). An always-on gated MLP scaled by sigmoid(SharedGate·h).
@@ -522,10 +523,18 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 			return err
 		}
 		// FFN: sparse MoE (Mixtral) or dense gated MLP. The schema's MoE name
-		// templates carry a %d for the expert index.
-		if arch.MoE != nil {
+		// templates carry a %d for the expert index. GLM's first_k_dense_replace
+		// prefix layers (i < FirstKDense) are dense and fall through to the gated MLP
+		// below — leaving l.Experts nil, which the forward path keys off.
+		if arch.MoE != nil && i >= arch.FirstKDense {
 			if l.Router, err = loadMat(st, tn(i, s.Router), arch.MoE.NumExperts, hd); err != nil {
 				return err
+			}
+			// DeepSeek/GLM e_score_correction_bias: steers the top-k selection.
+			if s.RouterBias != "" {
+				if l.RouterBias, err = st.TensorF32(tn(i, s.RouterBias), arch.MoE.NumExperts); err != nil {
+					return err
+				}
 			}
 			expInter := arch.MoE.IntermediateDim // expert FFN width (Mellum: moe_intermediate_size)
 			if fusedExperts {
@@ -562,8 +571,12 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 				if l.SharedExpert.Down, err = loadMatQ(tn(i, s.SharedDown), hd, sInter); err != nil {
 					return err
 				}
-				if l.SharedGate, err = loadMat(st, tn(i, s.SharedExpertGate), 1, hd); err != nil {
-					return err
+				// Sigmoid gate (Qwen2-MoE). GLM/DeepSeek add the shared expert ungated
+				// (SharedExpertGate empty); moeMLP reads moe.SharedUngated, not l.SharedGate.
+				if s.SharedExpertGate != "" {
+					if l.SharedGate, err = loadMat(st, tn(i, s.SharedExpertGate), 1, hd); err != nil {
+						return err
+					}
 				}
 			}
 			return nil
@@ -729,6 +742,7 @@ type tensorSchema struct {
 	// MoE (Mixtral): router + per-expert gate/up/down. The Expert* templates
 	// contain a single %d for the expert index. Empty ⇒ dense FFN.
 	Router                           string
+	RouterBias                       string // "" = none; DeepSeek/GLM e_score_correction_bias [NumExperts]
 	ExpertGate, ExpertUp, ExpertDown string
 	// Shared expert (Qwen2-MoE): an always-on gated MLP + a sigmoid gate. Empty ⇒
 	// no shared expert.
@@ -927,6 +941,41 @@ var qwen2MoeTensorSchema = tensorSchema{
 	SharedUp:         "mlp.shared_expert.up_proj.weight",
 	SharedDown:       "mlp.shared_expert.down_proj.weight",
 	SharedExpertGate: "mlp.shared_expert_gate.weight",
+}
+
+// glm4moeTensorSchema: GLM-4.5/4.6 (glm4_moe). qwen3-like attention (per-head
+// QK-norm, NO q/k/v bias) over a DeepSeek-style MoE — router gate + an
+// e_score_correction_bias, per-expert gate/up/down, and an always-on shared expert
+// under the PLURAL "shared_experts" name with NO sigmoid gate (SharedExpertGate
+// empty ⇒ the ungated path). The first_k_dense_replace prefix layers carry the
+// dense mlp.{gate,up,down}_proj instead; the loader uses those suffixes on
+// i < FirstKDense and the MoE ones on i ≥ FirstKDense.
+var glm4moeTensorSchema = tensorSchema{
+	Embed:       "model.embed_tokens.weight",
+	LMHead:      "lm_head.weight",
+	FinalNorm:   "model.norm.weight",
+	QProj:       "self_attn.q_proj.weight",
+	KProj:       "self_attn.k_proj.weight",
+	VProj:       "self_attn.v_proj.weight",
+	OProj:       "self_attn.o_proj.weight",
+	QNorm:       "self_attn.q_norm.weight",
+	KNorm:       "self_attn.k_norm.weight",
+	PreAttnNorm: "input_layernorm.weight",
+	PreMLPNorm:  "post_attention_layernorm.weight",
+	// dense prefix (first_k_dense_replace) layers use these
+	GateProj: "mlp.gate_proj.weight",
+	UpProj:   "mlp.up_proj.weight",
+	DownProj: "mlp.down_proj.weight",
+	// MoE layers use these
+	Router:     "mlp.gate.weight",
+	RouterBias: "mlp.gate.e_score_correction_bias",
+	ExpertGate: "mlp.experts.%d.gate_proj.weight",
+	ExpertUp:   "mlp.experts.%d.up_proj.weight",
+	ExpertDown: "mlp.experts.%d.down_proj.weight",
+	SharedGate: "mlp.shared_experts.gate_proj.weight",
+	SharedUp:   "mlp.shared_experts.up_proj.weight",
+	SharedDown: "mlp.shared_experts.down_proj.weight",
+	// SharedExpertGate empty: GLM adds the shared expert ungated.
 }
 
 // conv1DTransposed loads a GPT-2 Conv1D weight and returns it transposed to the

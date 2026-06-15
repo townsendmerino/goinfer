@@ -27,6 +27,7 @@ type Architecture struct {
 	Act         ActKind
 	NonGatedMLP bool       // GPT-2: up → act → down (no gate), with biases; else gated (GeGLU/SwiGLU)
 	MoE         *MoEConfig // non-nil ⇒ sparse mixture-of-experts FFN (Mixtral); nil ⇒ dense
+	FirstKDense int        // GLM/DeepSeek (first_k_dense_replace): layers [0,FirstKDense) are plain dense MLPs, the rest MoE. 0 ⇒ every layer MoE (Mixtral/Qwen-MoE/Mellum).
 
 	// Attention.
 	QKVBias         bool             // additive bias on the q/k/v projections (Qwen2, GPT-2)
@@ -155,8 +156,14 @@ type MoEConfig struct {
 	// (Qwen-MoE / Qwen2-MoE: shared_expert_intermediate_size). 0 means no shared
 	// expert (Mixtral/Mellum). When set, every token additionally runs a gated
 	// SwiGLU shared expert scaled by sigmoid(shared_gate·h), added to the routed
-	// sum.
+	// sum — unless SharedUngated (GLM/DeepSeek add it with no gate).
 	SharedIntermediateDim int
+
+	// DeepSeek-style routing (GLM-4.5/4.6). Defaults (false / 0) reproduce the
+	// Mixtral/Qwen2-MoE softmax-topk path exactly.
+	RouterSigmoid bool    // score experts with per-expert sigmoid(logit) instead of softmax; top-k weights are the chosen sigmoid scores (then NormTopKProb). e_score_correction_bias (LayerWeights.RouterBias) shifts the top-k SELECTION only.
+	RoutedScale   float64 // routed_scaling_factor applied to the top-k weights (0 or 1 = no-op).
+	SharedUngated bool    // GLM/DeepSeek add the shared expert with NO sigmoid gate (out += shared(h)); else the Qwen2-MoE sigmoid(SharedGate·h) gate.
 }
 
 // NormKind selects the normalization: RMSNorm (Llama/Gemma/Qwen/…) or
