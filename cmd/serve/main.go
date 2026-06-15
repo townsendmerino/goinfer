@@ -23,6 +23,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -437,11 +438,14 @@ func (s *server) loadAdapters(cfg config) error {
 func (s *server) loadVisionTower(cfg config) error {
 	dir := cfg.visionPath
 	if dir == "" {
-		// Auto-discover: a single --model whose dir holds the projector weights.
+		// Auto-discover: a single --model dir that holds a vision tower — either the
+		// Gemma 3 projector or a Qwen2.5-VL checkpoint (its ViT lives in the same dir).
 		if len(cfg.models) == 1 {
 			cand := cfg.models[0].path
 			if fi, err := os.Stat(cand); err == nil && fi.IsDir() {
-				if _, err := multimodal.LoadProjector(cand); err == nil {
+				if visionModelType(cand) == "qwen2_5_vl" {
+					dir = cand
+				} else if _, err := multimodal.LoadProjector(cand); err == nil {
 					dir = cand
 				}
 			}
@@ -456,6 +460,9 @@ func (s *server) loadVisionTower(cfg config) error {
 	// The resident GPU encoder needs int8 (W8A8) matmul weights, so --backend
 	// webgpu implies an int8 tower even if --vision-quant wasn't set.
 	int8Tower := cfg.visionQuant == "int8" || cfg.backend == "webgpu"
+	if visionModelType(dir) == "qwen2_5_vl" {
+		return s.loadQwenVisionTower(dir, int8Tower)
+	}
 	enc, err := vision.LoadEncoder(dir, int8Tower)
 	if err != nil {
 		return fmt.Errorf("load vision encoder (%s): %w", dir, err)
@@ -486,6 +493,46 @@ func (s *server) loadVisionTower(cfg config) error {
 			vq = "int8/webgpu-resident"
 		}
 		fmt.Fprintf(os.Stderr, "loaded vision tower for %q (%d image tokens/image, soft-token id %d, encoder %s) from %s\n", lm.name, proj.MMTokens(), lm.vimgTok, vq, dir)
+	}
+	return nil
+}
+
+// visionModelType returns dir/config.json's model_type ("" if absent/unreadable) —
+// the family discriminator for the vision path (qwen2_5_vl vs Gemma 3 SigLIP).
+func visionModelType(dir string) string {
+	raw, err := os.ReadFile(filepath.Join(dir, "config.json"))
+	if err != nil {
+		return ""
+	}
+	var c struct {
+		ModelType string `json:"model_type"`
+	}
+	_ = json.Unmarshal(raw, &c)
+	return c.ModelType
+}
+
+// loadQwenVisionTower attaches the Qwen2.5-VL ViT (aikit) to the single loaded
+// model. Unlike Gemma 3 there's no separate projector — the merger is in the
+// encoder; preprocessing + m-RoPE are Qwen-specific (the image path branches on
+// qwenEnc). Image placeholders use <|image_pad|>, expanded per image to the merged
+// patch count.
+func (s *server) loadQwenVisionTower(dir string, int8Tower bool) error {
+	enc, err := vision.LoadQwenVisionEncoder(dir, int8Tower)
+	if err != nil {
+		return fmt.Errorf("load qwen2.5-vl vision encoder (%s): %w", dir, err)
+	}
+	for _, lm := range s.models {
+		lm.qwenEnc = enc
+		lm.qwenPP = multimodal.QwenDefaultPreprocess()
+		lm.qwenMerge = enc.Cfg.SpatialMergeSize
+		lm.qwenImgTok = -1
+		if id, ok := lm.tk.TokenID(multimodal.QwenImagePad); ok {
+			lm.qwenImgTok = id
+		}
+		if lm.qwenImgTok < 0 {
+			return fmt.Errorf("vision: tokenizer has no %q token (needed to place image embeddings)", multimodal.QwenImagePad)
+		}
+		fmt.Fprintf(os.Stderr, "loaded Qwen2.5-VL vision tower for %q (merge %d, image-pad id %d) from %s\n", lm.name, lm.qwenMerge, lm.qwenImgTok, dir)
 	}
 	return nil
 }

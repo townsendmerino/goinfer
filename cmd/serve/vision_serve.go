@@ -29,43 +29,79 @@ func lastUserTurn(turns []chat.Turn) int {
 	return -1
 }
 
-// visionPrompt runs img through the tower (preprocess → SigLIP encoder →
-// projector) and assembles the multimodal prompt: the text turns with the
-// Gemma 3 image block prepended to the last user turn, so the rendered+encoded
-// ids carry a run of image-soft-token ids the embed seam overrides. Returns the
-// encoded ids, the projected features ([MMTokens*textHidden]), and the
-// placeholder run [imgPos, imgPos+imgLen).
-func (lm *loadedModel) visionPrompt(system string, turns []chat.Turn, img imageRef) (ids []int, feats []float32, imgPos, imgLen int, err error) {
+// visionInput is the assembled multimodal prompt: encoded ids carrying the image
+// placeholder run [imgPos,imgPos+imgLen), the vision features replacing it, and (for
+// Qwen2.5-VL) the image grid driving m-RoPE. qwen selects the decode path.
+type visionInput struct {
+	ids            []int
+	feats          []float32
+	imgPos, imgLen int
+	grid           [3]int // Qwen m-RoPE grid (t,h,w in patch units); zero ⇒ Gemma 3
+	qwen           bool
+}
+
+// visionPrompt runs img through the tower and assembles the multimodal prompt: the
+// text turns with the family's image block prepended to the last user turn, so the
+// rendered+encoded ids carry a placeholder run the embed seam overrides.
+func (lm *loadedModel) visionPrompt(system string, turns []chat.Turn, img imageRef) (visionInput, error) {
 	if lm.tmpl == nil {
-		return nil, nil, 0, 0, fmt.Errorf("this model has no chat template for vision")
+		return visionInput{}, fmt.Errorf("this model has no chat template for vision")
 	}
 	idx := lastUserTurn(turns)
 	if idx < 0 {
-		return nil, nil, 0, 0, fmt.Errorf("no user turn to attach the image to")
+		return visionInput{}, fmt.Errorf("no user turn to attach the image to")
+	}
+	if lm.qwenEnc != nil {
+		return lm.qwenVisionPrompt(system, turns, idx, img)
 	}
 	pv, err := vision.Preprocess(img.data, lm.vcfg)
 	if err != nil {
-		return nil, nil, 0, 0, err
+		return visionInput{}, err
 	}
 	hidden, err := lm.venc.Forward(pv.Data)
 	if err != nil {
-		return nil, nil, 0, 0, fmt.Errorf("vision encoder: %w", err)
+		return visionInput{}, fmt.Errorf("vision encoder: %w", err)
 	}
-	feats, err = lm.vproj.Forward(hidden)
+	feats, err := lm.vproj.Forward(hidden)
 	if err != nil {
-		return nil, nil, 0, 0, fmt.Errorf("vision projector: %w", err)
+		return visionInput{}, fmt.Errorf("vision projector: %w", err)
 	}
 	n := lm.vproj.MMTokens()
 	turns[idx].Content = multimodal.Gemma3ImageBlock(n) + "\n" + turns[idx].Content
-	ids = lm.encode(lm.tmpl.Render(system, turns))
-	imgPos, imgLen = multimodal.FindImageRun(ids, lm.vimgTok)
+	ids := lm.encode(lm.tmpl.Render(system, turns))
+	imgPos, imgLen := multimodal.FindImageRun(ids, lm.vimgTok)
 	if imgLen != n {
-		return nil, nil, 0, 0, fmt.Errorf("image placeholder run = %d soft tokens, want %d (tokenizer/template mismatch)", imgLen, n)
+		return visionInput{}, fmt.Errorf("image placeholder run = %d soft tokens, want %d (tokenizer/template mismatch)", imgLen, n)
 	}
 	if len(feats) != n*lm.model.Config().HiddenDim {
-		return nil, nil, 0, 0, fmt.Errorf("projector emitted %d features, want %d", len(feats), n*lm.model.Config().HiddenDim)
+		return visionInput{}, fmt.Errorf("projector emitted %d features, want %d", len(feats), n*lm.model.Config().HiddenDim)
 	}
-	return ids, feats, imgPos, imgLen, nil
+	return visionInput{ids: ids, feats: feats, imgPos: imgPos, imgLen: imgLen}, nil
+}
+
+// qwenVisionPrompt is the Qwen2.5-VL image path: smart-resize preprocess → ViT +
+// merger (the merged features replace the <|image_pad|> run) → the prompt with the
+// vision block prepended. The grid drives m-RoPE in GenerateQwenVL.
+func (lm *loadedModel) qwenVisionPrompt(system string, turns []chat.Turn, idx int, img imageRef) (visionInput, error) {
+	pv, grid, err := multimodal.QwenPreprocess(img.data, lm.qwenPP)
+	if err != nil {
+		return visionInput{}, err
+	}
+	feats, err := lm.qwenEnc.Forward(pv, [][3]int{grid})
+	if err != nil {
+		return visionInput{}, fmt.Errorf("qwen vision encoder: %w", err)
+	}
+	n := multimodal.QwenMergedTokens(grid, lm.qwenMerge)
+	turns[idx].Content = multimodal.QwenImageBlock(n) + "\n" + turns[idx].Content
+	ids := lm.encode(lm.tmpl.Render(system, turns))
+	imgPos, imgLen := multimodal.FindImageRun(ids, lm.qwenImgTok)
+	if imgLen != n {
+		return visionInput{}, fmt.Errorf("image placeholder run = %d pads, want %d (template mismatch)", imgLen, n)
+	}
+	if len(feats) != n*lm.model.Config().HiddenDim {
+		return visionInput{}, fmt.Errorf("qwen encoder emitted %d features, want %d", len(feats), n*lm.model.Config().HiddenDim)
+	}
+	return visionInput{ids: ids, feats: feats, imgPos: imgPos, imgLen: imgLen, grid: grid, qwen: true}, nil
 }
 
 // serveVisionChat handles an OpenAI /v1/chat/completions request that carries an
@@ -88,12 +124,12 @@ func (s *server) serveVisionChat(w http.ResponseWriter, r *http.Request, req cha
 		return
 	}
 	system, turns := messagesToTurns(req.Messages)
-	ids, feats, imgPos, imgLen, err := lm.visionPrompt(system, turns, imgs[0])
+	vi, err := lm.visionPrompt(system, turns, imgs[0])
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	gr, err := lm.prepare(req.sampling, ids)
+	gr, err := lm.prepare(req.sampling, vi.ids)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
@@ -111,7 +147,7 @@ func (s *server) serveVisionChat(w http.ResponseWriter, r *http.Request, req cha
 			return
 		}
 		sseSend(w, f, chatChunk(id, created, lm.name, delta{Role: "assistant"}, nil))
-		finish, _, _ := lm.driveVL(r.Context(), gr, feats, imgPos, imgLen, func(t string) {
+		finish, _, _ := lm.driveVL(r.Context(), gr, vi, func(t string) {
 			sseSend(w, f, chatChunk(id, created, lm.name, delta{Content: t}, nil))
 		})
 		sseSend(w, f, chatChunk(id, created, lm.name, delta{}, &finish))
@@ -119,7 +155,7 @@ func (s *server) serveVisionChat(w http.ResponseWriter, r *http.Request, req cha
 		return
 	}
 	var sb strings.Builder
-	finish, nComp, _ := lm.driveVL(r.Context(), gr, feats, imgPos, imgLen, func(t string) { sb.WriteString(t) })
+	finish, nComp, _ := lm.driveVL(r.Context(), gr, vi, func(t string) { sb.WriteString(t) })
 	writeJSON(w, http.StatusOK, map[string]any{
 		"id": id, "object": "chat.completion", "created": created, "model": lm.name,
 		"choices": []any{map[string]any{
@@ -149,12 +185,12 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 		aerr.write(w)
 		return
 	}
-	ids, feats, imgPos, imgLen, err := lm.visionPrompt(system, turns, imgs[0])
+	vi, err := lm.visionPrompt(system, turns, imgs[0])
 	if err != nil {
 		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return
 	}
-	gr, err := lm.prepare(req.toSampling(), ids)
+	gr, err := lm.prepare(req.toSampling(), vi.ids)
 	if err != nil {
 		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return
@@ -185,7 +221,7 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 			"type": "content_block_start", "index": 0,
 			"content_block": map[string]any{"type": "text", "text": ""},
 		})
-		finish, nComp, stopSeq := lm.driveVL(r.Context(), gr, feats, imgPos, imgLen, func(t string) {
+		finish, nComp, stopSeq := lm.driveVL(r.Context(), gr, vi, func(t string) {
 			anthropicEvent(w, f, "content_block_delta", map[string]any{
 				"type": "content_block_delta", "index": 0,
 				"delta": map[string]any{"type": "text_delta", "text": t},
@@ -197,7 +233,7 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 		return
 	}
 	var sb strings.Builder
-	finish, nComp, stopSeq := lm.driveVL(r.Context(), gr, feats, imgPos, imgLen, func(t string) { sb.WriteString(t) })
+	finish, nComp, stopSeq := lm.driveVL(r.Context(), gr, vi, func(t string) { sb.WriteString(t) })
 	reason, seq := anthropicStopReason(finish, stopSeq)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"id": id, "type": "message", "role": "assistant", "model": lm.name,

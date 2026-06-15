@@ -52,10 +52,20 @@ type loadedModel struct {
 	vproj   *multimodal.Projector
 	vcfg    vision.Config
 	vimgTok int // image-soft-token id (the placeholder embed-by-vector overrides); -1 if unresolved
+
+	// Qwen2.5-VL vision tower (P5; nil ⇒ Gemma3/text). The merger is in the encoder
+	// (no separate projector); preprocessing + m-RoPE are Qwen-specific, so the image
+	// path branches on qwenEnc != nil.
+	qwenEnc    *vision.QwenVisionEncoder
+	qwenPP     multimodal.QwenPreprocessConfig
+	qwenMerge  int // spatial_merge_size
+	qwenImgTok int // <|image_pad|> id
 }
 
 // visionCapable reports whether this model has a loaded vision tower.
-func (lm *loadedModel) visionCapable() bool { return lm.venc != nil && lm.vproj != nil }
+func (lm *loadedModel) visionCapable() bool {
+	return (lm.venc != nil && lm.vproj != nil) || lm.qwenEnc != nil
+}
 
 // tryEnter claims a queue slot then locks the model's mutex (the decode worker).
 // It returns false (writing nothing) when the queue is full, so each API surface
@@ -522,10 +532,15 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, onText func(
 // run (GenerateVL), then streams the continuation through the same stop/UTF-8
 // machinery as drive. Stateless — no warm-KV session (multimodal opts out of
 // prefix reuse). Returns finish reason, completion token count, and stop string.
-func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, feats []float32, imgPos, imgLen int, onText func(string)) (string, int, string) {
+func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionInput, onText func(string)) (string, int, string) {
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
-	stream, _ := lm.model.GenerateVL(ctx, gr.promptIDs, feats, imgPos, imgLen, gr.maxTokens, gr.sp)
+	var stream <-chan int
+	if vi.qwen {
+		stream, _ = lm.model.GenerateQwenVL(ctx, gr.promptIDs, vi.feats, vi.imgPos, vi.imgLen, [][3]int{vi.grid}, lm.qwenMerge, lm.qwenImgTok, gr.maxTokens, gr.sp)
+	} else {
+		stream, _ = lm.model.GenerateVL(ctx, gr.promptIDs, vi.feats, vi.imgPos, vi.imgLen, gr.maxTokens, gr.sp)
+	}
 	return lm.streamTokens(cancel, stream, gr, onText)
 }
 
