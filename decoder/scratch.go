@@ -37,6 +37,17 @@ type decodeScratch struct {
 	ws        *linalg.Workspace // W8A8 activation-quant scratch (zero-alloc Into/Batch)
 	qkvOps    [3]linalg.W8A8Op  // reused q/k/v batch ops
 	gateUpOps [2]linalg.W8A8Op  // reused gate/up batch ops
+
+	loraTmp []float32 // [>=r] compute-time LoRA A·x scratch (#7); nil until an adapter is active
+}
+
+// loraBuf returns a length-r scratch for the compute-time LoRA A·x intermediate,
+// growing the (per-stream, reused) backing array once on demand.
+func (s *decodeScratch) loraBuf(r int) []float32 {
+	if cap(s.loraTmp) < r {
+		s.loraTmp = make([]float32, r)
+	}
+	return s.loraTmp[:r]
 }
 
 func newDecodeScratch(a *Architecture) *decodeScratch {

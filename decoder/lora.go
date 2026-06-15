@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/townsendmerino/aikit/embed"
+	"github.com/townsendmerino/aikit/linalg"
 )
 
 // LoRA adapter loading (PEFT safetensors), merged into the base weights at load:
@@ -188,5 +189,123 @@ func (a *loraAdapter) has(name string) bool {
 func (a *loraAdapter) close() {
 	if a != nil && a.st != nil {
 		a.st.Close()
+	}
+}
+
+// --- Compute-time LoRA (#7): apply the low-rank delta in the forward instead of
+// merging it into the base weight. Keeping the base immutable + zero-copy lets N
+// adapters of one base share a single resident transformer (≈ base + N small
+// deltas) rather than paying the full RAM N times over. Opt-in: merged-LoRA stays
+// the faster, simpler default — this trades a little decode speed for that density.
+// Only the generic dense forward (runLayersFromEmbed → causalAttention + gatedMLP)
+// is wired; Model.LoadAdapter rejects the special-forward / MoE / non-gated archs.
+
+// loraLayerDelta holds one transformer layer's per-projection deltas; a nil entry
+// is a projection the adapter does not target (the apply is a no-op).
+type loraLayerDelta struct {
+	q, k, v, o, gate, up, down *loraDelta
+}
+
+// loraRuntime is a loaded adapter indexed for the forward: layer → projection
+// deltas. The deltas alias the adapter's mmapped tensors (read-only), so it costs
+// only the low-rank A/B bytes on top of the shared base.
+type loraRuntime struct {
+	name   string
+	layers []loraLayerDelta
+	a      *loraAdapter // retains the mmap so the aliased delta data stays valid
+}
+
+func (rt *loraRuntime) close() {
+	if rt != nil {
+		rt.a.close()
+	}
+}
+
+// buildLoraRuntime indexes a loaded adapter by (layer, projection) for compute-time
+// application, mapping each schema suffix to the adapter's HF-named delta.
+func buildLoraRuntime(name string, a *loraAdapter, numLayers int, s *tensorSchema) *loraRuntime {
+	rt := &loraRuntime{name: name, layers: make([]loraLayerDelta, numLayers), a: a}
+	get := func(i int, suf string) *loraDelta {
+		if suf == "" {
+			return nil
+		}
+		d, ok := a.deltas[tensorName(i, suf)]
+		if !ok {
+			return nil
+		}
+		dd := d // a fresh addressable copy per slot (loop-var capture is irrelevant — value semantics)
+		return &dd
+	}
+	for i := 0; i < numLayers; i++ {
+		rt.layers[i] = loraLayerDelta{
+			q: get(i, s.QProj), k: get(i, s.KProj), v: get(i, s.VProj), o: get(i, s.OProj),
+			gate: get(i, s.GateProj), up: get(i, s.UpProj), down: get(i, s.DownProj),
+		}
+	}
+	return rt
+}
+
+// LoadAdapter loads a PEFT LoRA adapter for compute-time application (#7) and
+// registers it under name. Unlike the merge-at-load path (Options.Lora), the base
+// stays immutable, so many adapters of one base share its resident weights — the
+// density win. Only the generic dense forward is wired: MoE, non-gated, and the
+// special-forward families (gemma4, qwen3_5_moe) are rejected, as is a
+// GGUF/serialized base (the adapter is HF-named — it needs the safetensors schema).
+func (m *Model) LoadAdapter(name, dir string) error {
+	arch := m.w.arch
+	switch {
+	case m.w.schema == nil:
+		return fmt.Errorf("decoder: compute-time LoRA needs a safetensors base (HF tensor names)")
+	case arch.gemma4 != nil || arch.qwen35 != nil:
+		return fmt.Errorf("decoder: compute-time LoRA unsupported for %s (own forward path)", arch.Name)
+	case arch.MoE != nil:
+		return fmt.Errorf("decoder: compute-time LoRA unsupported for MoE (expert FFN not wired)")
+	case arch.NonGatedMLP:
+		return fmt.Errorf("decoder: compute-time LoRA unsupported for the non-gated MLP layout (%s)", arch.Name)
+	}
+	a, err := loadLoRA(dir)
+	if err != nil {
+		return err
+	}
+	if err := a.validateTargets(arch.NumLayers, m.w.schema); err != nil {
+		a.close()
+		return err
+	}
+	if m.adapters == nil {
+		m.adapters = map[string]*loraRuntime{}
+	}
+	if old := m.adapters[name]; old != nil {
+		old.close()
+	}
+	m.adapters[name] = buildLoraRuntime(name, a, arch.NumLayers, m.w.schema)
+	return nil
+}
+
+// HasAdapter reports whether a compute-time adapter is registered under name.
+func (m *Model) HasAdapter(name string) bool {
+	_, ok := m.adapters[name]
+	return ok
+}
+
+// applyLoRA adds the low-rank delta s·B(A·x) into y in place — the compute-time
+// equivalent of merge(): (W + s·B·A)·x = W·x + s·B·(A·x), where y already holds the
+// base output W·x. x is the projection input ([d.in]), y the output ([d.out]).
+// No-op when d is nil. Not bit-identical to merge() (the f32 reduction is split
+// across two dots instead of one fused weight) but algebraically equal — the gate
+// is greedy-token parity, not bit-exactness (see TestLoRACompute_matchesMerge).
+func applyLoRA(d *loraDelta, x, y []float32, scr *decodeScratch) {
+	if d == nil {
+		return
+	}
+	t := scr.loraBuf(d.r)
+	linalg.MatmulBT(x, d.a, t, 1, d.in, d.r) // t = A·x  (A is [r,in])
+	sc := float32(d.scale)
+	for o := 0; o < d.out; o++ {
+		brow := d.b[o*d.r : o*d.r+d.r]
+		var s float32
+		for k := 0; k < d.r; k++ {
+			s += brow[k] * t[k]
+		}
+		y[o] += sc * s
 	}
 }

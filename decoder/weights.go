@@ -122,6 +122,8 @@ type Weights struct {
 
 	st      *embed.SafetensorsFile // retained so alias-backed slices stay valid
 	backing []byte                 // serialized-weights blob aliased by q8/q4 arrays (LoadSerializedWeights); keeps it reachable
+
+	schema *tensorSchema // resolved tensor-name schema (safetensors loads); used by compute-time LoRA (#7) to map projections → adapter deltas. nil for GGUF/serialized loads.
 }
 
 // matmulWeights returns every quantizable matrix in the bundle (the projections,
@@ -341,7 +343,7 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 	qDim := cfg.NumHeads * headDim    // query projection rows
 	kvDim := cfg.NumKVHeads * headDim // key/value projection rows (narrower under GQA)
 
-	w := &Weights{Cfg: *cfg, arch: arch, st: st, Layers: make([]LayerWeights, cfg.NumLayers)}
+	w := &Weights{Cfg: *cfg, arch: arch, st: st, schema: s, Layers: make([]LayerWeights, cfg.NumLayers)}
 
 	// The released qwen3_5_moe ships as a VL model: its TEXT DECODER lives under
 	// model.language_model.* with the MoE experts stored as fused+stacked tensors

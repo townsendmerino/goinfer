@@ -420,7 +420,11 @@ func (m *Model) forwardN(ids []int, cache *KVCache) ([][]float32, error) {
 // forward otherwise. Bit-identical to the sequential prefill (the seed token is
 // unchanged). The cache is filled with the whole prompt either way.
 func (m *Model) prefillLogits(prompt []int, cache *KVCache) ([]float32, error) {
-	if !m.canBatchN(len(prompt)) {
+	// Compute-time LoRA (#7) is wired only into the sequential forward (causalAttention
+	// + gatedMLP), so an active adapter takes the M=1 path — the prompt's K/V must carry
+	// the delta or decode would continue a base-projected context. The RAM-density win
+	// (N adapters share one base) is unaffected; only adapter'd prefill speed regresses.
+	if cache.lora != nil || !m.canBatchN(len(prompt)) {
 		for _, id := range prompt[:len(prompt)-1] {
 			if _, err := m.runLayers(id, cache); err != nil {
 				return nil, err

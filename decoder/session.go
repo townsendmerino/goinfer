@@ -1,6 +1,9 @@
 package decoder
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
 
 // Session couples a KVCache with the token sequence currently materialized in
 // it, so successive generations that share a leading token prefix reuse the
@@ -35,6 +38,23 @@ func (m *Model) NewSession(capHint int) *Session {
 // last prompt plus everything generated from it). Read-only — callers must not
 // mutate the returned slice. The SessionLRU keys prefix matching off it.
 func (s *Session) Tokens() []int { return s.tokens }
+
+// UseAdapter activates a compute-time LoRA adapter (Model.LoadAdapter, #7) for
+// this session's subsequent Generate calls, so a single resident base serves many
+// fine-tunes without paying its RAM per adapter. Switching adapters changes the
+// projections, so any KV built under a different (or no) adapter is stale — the
+// caller should Reset first if the cached prefix was produced by another adapter.
+func (s *Session) UseAdapter(name string) error {
+	rt := s.m.adapters[name]
+	if rt == nil {
+		return fmt.Errorf("decoder: no compute-time adapter %q loaded", name)
+	}
+	s.cache.lora = rt
+	return nil
+}
+
+// ClearAdapter reverts this session to the base (merged/no-adapter) projections.
+func (s *Session) ClearAdapter() { s.cache.lora = nil }
 
 // Reset drops all cached KV, returning the session to empty without freeing the
 // backing arrays (so the next generation re-grows into them).

@@ -26,6 +26,7 @@ type sessionLRU struct {
 	size    int
 	capHint int
 	fp      string             // model fingerprint stamped into / checked against snapshots
+	adapter string             // compute-time LoRA adapter name bound to every session here (#7); "" = base
 	order   []*decoder.Session // most-recently-used first; resident in RAM; len ≤ size
 
 	// Tiered KV (idea #8): demote idle warm sessions RAM → NVMe. Zero value =
@@ -53,6 +54,25 @@ func newSessionLRU(m *decoder.Model, size, capHint int, fp string) *sessionLRU {
 		size = 0
 	}
 	return &sessionLRU{model: m, size: size, capHint: capHint, fp: fp, now: time.Now}
+}
+
+// newSession creates an empty session bound to this LRU's compute-time adapter
+// (#7) — so every session it hands out projects through the right fine-tune. Base
+// LRUs (adapter == "") get a plain session. UseAdapter can't fail here: the
+// adapter was registered on the shared model at load before any LRU referenced it.
+func (l *sessionLRU) newSession() *decoder.Session {
+	s := l.model.NewSession(l.capHint)
+	l.bindAdapter(s)
+	return s
+}
+
+// bindAdapter activates this LRU's adapter on s (no-op for a base LRU). Applied to
+// freshly created and fault-back-restored sessions alike, since a snapshot carries
+// KV but not the active adapter.
+func (l *sessionLRU) bindAdapter(s *decoder.Session) {
+	if l.adapter != "" {
+		_ = s.UseAdapter(l.adapter)
+	}
 }
 
 // enableTiering turns on tiered KV: resident sessions idle longer than after are
@@ -104,7 +124,7 @@ func (l *sessionLRU) mark(s *decoder.Session) {
 // re-prefill-everything behavior).
 func (l *sessionLRU) acquire(prompt []int) *decoder.Session {
 	if l.size == 0 {
-		return l.model.NewSession(l.capHint)
+		return l.newSession()
 	}
 	lists := make([][]int, len(l.order))
 	for i, s := range l.order {
@@ -148,7 +168,7 @@ func bestExtend(sessions [][]int, prompt []int) int {
 // later continuation) and its now-empty backing arrays reused for the new slot.
 func (l *sessionLRU) fresh() *decoder.Session {
 	if len(l.order) < l.size {
-		s := l.model.NewSession(l.capHint)
+		s := l.newSession()
 		l.order = append([]*decoder.Session{s}, l.order...)
 		l.mark(s)
 		return s
@@ -261,7 +281,12 @@ func (l *sessionLRU) readCold(c *coldSession) (*decoder.Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	return l.model.LoadSession(data, l.fp)
+	s, err := l.model.LoadSession(data, l.fp)
+	if err != nil {
+		return nil, err
+	}
+	l.bindAdapter(s) // the snapshot carries KV but not the active adapter (#7)
+	return s, nil
 }
 
 // makeRoom ensures the resident tier has space for one more session, tiering the
@@ -379,6 +404,7 @@ func (l *sessionLRU) load(dir string) int {
 			fmt.Fprintf(os.Stderr, "skip %s: %v\n", filepath.Base(p), err)
 			continue
 		}
+		l.bindAdapter(s) // restored KV is base-projected bytes; re-activate the adapter (#7)
 		l.order = append(l.order, s)
 		loaded++
 	}

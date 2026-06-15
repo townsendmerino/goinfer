@@ -36,6 +36,7 @@ type loadedModel struct {
 	vocab    int
 	name     string      // served id (reported by /v1/models, matched on the request model field)
 	fp       string      // model fingerprint (binds --session-dir snapshots)
+	adapter  string      // compute-time LoRA adapter name (#7); "" = base model. Shares model with its base.
 	sessions *sessionLRU // prefix-keyed KV reuse across requests
 	mu       sync.Mutex  // serialize this model's generations (the single decode worker)
 	// queue bounds in-flight+waiting requests (cap = 1 running + --max-queue

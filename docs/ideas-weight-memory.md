@@ -436,6 +436,43 @@ delta in the forward: `Y = W_base·x + (B(A·x))·s`. Five adapters then cost
 **Trigger:** `cmd/serve` is asked to host several adapters of one base and goes
 RAM-bound on the duplicated transformer.
 
+**✅ SHIPPED (2026-06-14).** Compute-time LoRA, two increments:
+
+*Inc 1 — decoder.* `Model.LoadAdapter(name, dir)` keeps the base immutable and
+applies `Y = W_base·x + s·B(A·x)` in the forward (`applyLoRA`: `MatmulBT` for `A·x`,
+manual accumulate for `B·tmp`), wired after q/k/v/o and gate/up/down — exactly where
+merge would have folded the delta, before QK-norm/RoPE/activation. The deltas alias
+the adapter's mmapped low-rank `A`/`B`, so N adapters of one base cost ~base + N
+small deltas. `cache.lora` is per-stream (`Session.UseAdapter`); a non-nil adapter
+forces the **sequential prefill** path (the delta isn't wired into the batched
+`forwardN`), so the whole feature lives in **one** code path — RAM win intact, only
+adapter'd-prefill speed regresses. *One correction to the original framing:* against
+a **quantized** base the result is NOT bit-exact vs merge (`quant(W)·x + δ·x` ≠
+`quant(W+δ)·x` — quantization is nonlinear; compute-time is arguably *more* faithful,
+keeping δ in f32); on an **f32** base they're algebraically equal, differing only in
+f32 reduction order. So the realized gate is **greedy-token + tight-cosine parity**,
+not bit-exactness. Guards: safetensors base only (HF-named deltas need the schema),
+and gemma4/qwen3.5/MoE/non-gated rejected (own forwards / expert FFN not wired).
+Gates: `TestLoRACompute_matchesMerge` (apply ≡ merge math) +
+`TestLoRACompute_forwardParity` (q/v/gate/down, compute-time logits == merged,
+argmax + cosine ≥ 0.99999, non-vacuous); no regression
+(`TestForwardN_matchesSequential` + GGUF Q8_0/Q4_K_M/qwen2 decode parity green —
+nil-lora is a true no-op).
+
+*Inc 2 — serve.* `--adapter serveName=baseName=dir` (repeatable): each adapter is
+its own `loadedModel` **sharing the base's resident `decoder.Model`** (the RAM win)
+with its own KV-session LRU, decode mutex, and queue; the per-LRU adapter binding
+makes every session it hands out (fresh + fault-back-restored) project through the
+fine-tune. Requests route to the fine-tune via the OpenAI `model` field. All-resident
+weights are read-only during a forward (per-stream scratch + KV), so base + adapters
+run as independent decode workers safely — hence `--stream-weights` (mutable per-layer
+paging on the shared model) is rejected. Gate: `TestServe_multiAdapter` (one base,
+two adapters; assert shared model, separate LRUs, routing, and distinct base/a1/a2
+greedy outputs) + `TestAdapterFlag_parse` + `TestLoadAdapters_errors`.
+
+*Deferred follow-ons:* batched-prefill LoRA (drop the sequential-prefill fallback);
+gemma4/qwen3.5/MoE-expert adapters; decode tok/s benchmark of the low-rank pass.
+
 ### 8. Tiered KV: demote idle warm sessions RAM → NVMe  ✅ SHIPPED (2026-06-13)
 
 **Shipped** as `serve --kv-idle-demote <dur>` (+ `--kv-demoted-max`, default 64).

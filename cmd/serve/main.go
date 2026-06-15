@@ -151,6 +151,40 @@ func (s modelSpec) options(cfg config) decoder.Options {
 	}
 }
 
+// adapterSpec is one --adapter entry (#7): a served name, the --model it attaches
+// to (base), and the PEFT adapter dir. The base's resident weights are shared, so
+// each adapter costs only its low-rank A/B bytes — N fine-tunes off one base.
+type adapterSpec struct {
+	name, base, dir string
+}
+
+// adapterFlag collects repeated --adapter flags, each "serveName=baseName=dir".
+type adapterFlag []adapterSpec
+
+func (a *adapterFlag) String() string {
+	ns := make([]string, len(*a))
+	for i, s := range *a {
+		ns[i] = s.name
+	}
+	return strings.Join(ns, ",")
+}
+
+func (a *adapterFlag) Set(v string) error {
+	name, rest, ok := strings.Cut(v, "=")
+	if !ok {
+		return fmt.Errorf("--adapter %q: want serveName=baseName=dir", v)
+	}
+	base, dir, ok := strings.Cut(rest, "=")
+	if !ok {
+		return fmt.Errorf("--adapter %q: want serveName=baseName=dir", v)
+	}
+	if name == "" || base == "" || dir == "" {
+		return fmt.Errorf("--adapter %q: serveName, baseName, and dir are all required", v)
+	}
+	*a = append(*a, adapterSpec{name: name, base: base, dir: dir})
+	return nil
+}
+
 func orStr(p *string, def string) string {
 	if p != nil {
 		return *p
@@ -173,8 +207,9 @@ func orFloat(p *float64, def float64) float64 {
 // config is the resolved command line for newServer (the flag set outgrew a
 // positional signature once embeddings landed).
 type config struct {
-	models  modelFlag // decoder(s) (-model, repeatable); empty = no generative endpoints
-	backend string
+	models   modelFlag   // decoder(s) (-model, repeatable); empty = no generative endpoints
+	adapters adapterFlag // compute-time LoRA adapters (-adapter, repeatable); each shares a base model's resident weights (#7)
+	backend  string
 	// quant + the per-model knobs below are server-global DEFAULTS; a --model spec
 	// can override each one (see modelSpec / modelFlag.Set).
 	quant         string
@@ -219,6 +254,10 @@ func main() {
 	flag.StringVar(&cfg.kvPrec, "kv", "f32", "GPU residency KV cache precision: f32 (bit-exact, 16k ctx) | f16 (lossy, 32k ctx) | i8 (lossy, ~64k ctx) — webgpu backend only")
 	flag.StringVar(&cfg.kvQuant, "kv-quant", "f32", "CPU KV cache storage: f32 (default, bit-exact) | i8 (per-head int8, ~4× smaller, lossy — argmax ~90%+; excludes MoE/gemma4/qwen3.5)")
 	flag.StringVar(&cfg.lora, "lora", "", "optional PEFT LoRA adapter dir, merged into the (safetensors) base at load")
+	flag.Var(&cfg.adapters, "adapter", "compute-time LoRA adapter sharing a base model's resident weights: `serveName=baseName=dir`.\n"+
+		"Repeatable. Unlike --lora (merged, one base per fine-tune), N adapters of one base cost ~base + N\n"+
+		"low-rank deltas — request the fine-tune via the OpenAI `model` field. Base must be a safetensors\n"+
+		"--model (dense, gated MLP; not MoE/gemma4/qwen3.5). Incompatible with --stream-weights.")
 	flag.StringVar(&cfg.name, "served-model-name", "", "served id for a single unnamed --model (default: file/dir basename)")
 	flag.IntVar(&cfg.kvSessions, "kv-sessions", 4, "number of conversations to keep prefilled in RAM for prompt-prefix KV reuse (0 disables)")
 	flag.DurationVar(&cfg.kvIdleDemote, "kv-idle-demote", 0, "tiered KV: demote a warm session's KV to -session-dir once it's been idle this long, faulting it back on the next matching request (e.g. 10m; 0 = off). Lets a small-RAM box serve many intermittent chats. Needs -session-dir and -kv-sessions > 0")
@@ -332,6 +371,9 @@ func newServer(cfg config) (*server, error) {
 		}
 		s.models[lm.name] = lm
 	}
+	if err := s.loadAdapters(cfg); err != nil {
+		return nil, err
+	}
 	if cfg.embedPath != "" {
 		if err := s.loadEncoder(cfg); err != nil {
 			return nil, err
@@ -341,6 +383,49 @@ func newServer(cfg config) (*server, error) {
 		return nil, err
 	}
 	return s, nil
+}
+
+// loadAdapters registers each --adapter (#7) against its base --model: it shares
+// the base's resident decoder.Model (the RAM win — only the low-rank A/B bytes are
+// new) but gets its own served name, KV-session LRU, decode mutex, and queue. A
+// request routes to the fine-tune via the OpenAI `model` field; the per-LRU
+// adapter binding makes each session project through it. The shared all-resident
+// weights are read-only during a forward (per-stream scratch + KV), so the base
+// and its adapters run as independent decode workers safely — hence --stream-weights
+// (mutable per-layer paging on the shared model) is rejected.
+func (s *server) loadAdapters(cfg config) error {
+	for _, spec := range cfg.adapters {
+		if cfg.streamWeights {
+			return fmt.Errorf("--adapter %q: compute-time LoRA is incompatible with --stream-weights", spec.name)
+		}
+		base, ok := s.models[spec.base]
+		if !ok {
+			return fmt.Errorf("--adapter %q: base model %q not loaded (declare it with --model %s=…)", spec.name, spec.base, spec.base)
+		}
+		if base.adapter != "" {
+			return fmt.Errorf("--adapter %q: base %q is itself an adapter — attach to the underlying --model", spec.name, spec.base)
+		}
+		if _, dup := s.models[spec.name]; dup {
+			return fmt.Errorf("--adapter %q: name collides with a loaded model", spec.name)
+		}
+		t0 := time.Now()
+		if err := base.model.LoadAdapter(spec.name, spec.dir); err != nil {
+			return fmt.Errorf("--adapter %q: %w", spec.name, err)
+		}
+		fp := base.fp + "+adapter:" + spec.name // distinct snapshot namespace from the base + sibling adapters
+		lm := &loadedModel{
+			tk: base.tk, model: base.model, tmpl: base.tmpl, stopIDs: base.stopIDs,
+			eosIDs: base.eosIDs, vocab: base.vocab, name: spec.name, fp: fp, adapter: spec.name,
+			sessions: newSessionLRU(base.model, cfg.kvSessions, 0, fp),
+		}
+		lm.sessions.adapter = spec.name
+		if cfg.maxQueue > 0 {
+			lm.queue = make(chan struct{}, 1+cfg.maxQueue)
+		}
+		s.models[spec.name] = lm
+		fmt.Fprintf(os.Stderr, "loaded adapter %q on base %q in %s\n", spec.name, spec.base, time.Since(t0).Round(time.Millisecond))
+	}
+	return nil
 }
 
 // loadVisionTower attaches a SigLIP encoder + projector to the (single) loaded

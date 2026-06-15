@@ -87,6 +87,12 @@ type KVCache struct {
 	delta []*deltaState
 
 	scr *decodeScratch // per-stream reusable forward buffers (Model.NewCache sets it)
+
+	// lora is the active compute-time LoRA adapter for this stream (#7), nil for
+	// the merged/base default. Set per-stream (Session.UseAdapter); the forward
+	// adds each layer's low-rank delta after the base projection. A non-nil lora
+	// forces the sequential prefill path (the batched forwardN is not wired).
+	lora *loraRuntime
 }
 
 // NewKVCache allocates an empty cache for a model with the given geometry.

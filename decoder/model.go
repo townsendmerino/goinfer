@@ -33,6 +33,11 @@ type Model struct {
 	pager      *expertPager    // MoE expert demand-paging over the mapping (Options.StreamWeights); nil = all-resident
 	layerPager *layerPager     // dense per-layer streaming over the mapping (Options.StreamWeights); nil = all-resident
 	quant      string          // the requested Options.Quant for a direct load ("" for a prequant .giw → Quant() derives from kinds)
+
+	// adapters holds compute-time LoRA adapters loaded against this base (#7),
+	// keyed by name. Each costs only its low-rank A/B bytes; they share the one
+	// resident base. A stream activates one via Session.UseAdapter / cache.lora.
+	adapters map[string]*loraRuntime
 }
 
 // KVCacheF16 reports whether the GPU residency path should use an f16 KV cache
@@ -244,6 +249,10 @@ func (m *Model) Close() error {
 		_ = munmap(m.mmap)
 		m.mmap = nil
 	}
+	for _, rt := range m.adapters { // release each compute-time adapter's mmap (#7)
+		rt.close()
+	}
+	m.adapters = nil
 	return err
 }
 
@@ -375,9 +384,13 @@ func (m *Model) runLayersFromEmbed(h []float32, cache *KVCache) ([]float32, erro
 			m.layerPager.enterLayer(l) // prefetch l+1, release the layer behind (#4)
 		}
 		lw := &m.w.Layers[l]
+		var ld *loraLayerDelta // compute-time LoRA deltas for this layer (#7); nil when no adapter is active
+		if cache.lora != nil {
+			ld = &cache.lora.layers[l]
+		}
 		copy(scr.norm, h)
 		normalize(arch, scr.norm, lw.PreAttnNorm, lw.PreAttnNormBias, hidden)
-		if err := causalAttention(l, scr.norm, scr.sub, lw, arch, cache, m.be); err != nil {
+		if err := causalAttention(l, scr.norm, scr.sub, lw, arch, cache, m.be, ld); err != nil {
 			return nil, err
 		}
 		if sandwich {
@@ -388,7 +401,7 @@ func (m *Model) runLayersFromEmbed(h []float32, cache *KVCache) ([]float32, erro
 		}
 		copy(scr.norm, h)
 		normalize(arch, scr.norm, lw.PreMLPNorm, lw.PreMLPNormBias, hidden)
-		if err := mlp(scr.norm, scr.sub, lw, arch, m.be, scr, m.pager); err != nil {
+		if err := mlp(scr.norm, scr.sub, lw, arch, m.be, scr, m.pager, ld); err != nil {
 			return nil, err
 		}
 		if sandwich {

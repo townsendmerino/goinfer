@@ -31,24 +31,24 @@ var moeSelTrace [][]int
 // any post-MLP norm + residual. The hot dense path (gatedMLP) reuses scratch and
 // writes straight into out; the rarer MoE / non-gated paths still allocate
 // internally and are copied into out.
-func mlp(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend, scr *decodeScratch, pager *expertPager) error {
+func mlp(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend, scr *decodeScratch, pager *expertPager, lora *loraLayerDelta) error {
 	switch {
 	case arch.MoE != nil:
-		g, err := moeMLP(h, lw, arch, be, pager)
+		g, err := moeMLP(h, lw, arch, be, pager) // compute-time LoRA on experts not wired — LoadAdapter rejects MoE
 		if err != nil {
 			return err
 		}
 		copy(out, g)
 		return nil
 	case arch.NonGatedMLP:
-		g, err := nonGatedMLP(h, lw, arch, be)
+		g, err := nonGatedMLP(h, lw, arch, be) // LoadAdapter rejects non-gated archs
 		if err != nil {
 			return err
 		}
 		copy(out, g)
 		return nil
 	default:
-		return gatedMLP(h, out, lw, arch, be, scr)
+		return gatedMLP(h, out, lw, arch, be, scr, lora)
 	}
 }
 
@@ -214,7 +214,7 @@ func nonGatedMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend) 
 }
 
 // No biases on any projection.
-func gatedMLP(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend, scr *decodeScratch) error {
+func gatedMLP(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend, scr *decodeScratch, lora *loraLayerDelta) error {
 	gate, up := scr.gate, scr.up // [inter] scratch; matmul fully overwrites each
 	if isW8A8(&lw.GateProj) && isW8A8(&lw.UpProj) {
 		scr.gateUpOps[0] = linalg.W8A8Op{BQ: wmInt8(&lw.GateProj), Scales: wmScales(&lw.GateProj), Dst: gate, N: lw.GateProj.Rows()}
@@ -223,6 +223,10 @@ func gatedMLP(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend
 	} else {
 		matmulInto(scr.ws, be, &lw.GateProj, h, gate, 1)
 		matmulInto(scr.ws, be, &lw.UpProj, h, up, 1)
+	}
+	if lora != nil { // compute-time LoRA (#7): delta into gate/up before the activation
+		applyLoRA(lora.gate, h, gate, scr)
+		applyLoRA(lora.up, h, up, scr)
 	}
 	switch arch.Act {
 	case ActGeluTanh:
@@ -236,6 +240,9 @@ func gatedMLP(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend
 	default:
 		return fmt.Errorf("decoder: unsupported activation %d (have GeGLU/SwiGLU)", arch.Act)
 	}
-	matmulInto(scr.ws, be, &lw.DownProj, gate, out, 1) // [1,hidden] = mid · DownProjᵀ
+	matmulInto(scr.ws, be, &lw.DownProj, gate, out, 1) // [1,hidden] = mid · DownProjᵀ (gate now holds the activated mid)
+	if lora != nil {
+		applyLoRA(lora.down, gate, out, scr)
+	}
 	return nil
 }

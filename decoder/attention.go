@@ -54,6 +54,7 @@ func causalAttention(
 	arch *Architecture,
 	cache *KVCache,
 	be Backend,
+	lora *loraLayerDelta, // compute-time LoRA deltas for this layer (#7); nil = none
 ) error {
 	nH, nKV, hd := arch.NumHeads, arch.NumKVHeads, arch.HeadDim
 	kvDim := nKV * hd
@@ -75,6 +76,13 @@ func causalAttention(
 		matmulInto(scr.ws, be, &lw.QProj, h, q, 1)
 		matmulInto(scr.ws, be, &lw.KProj, h, k, 1)
 		matmulInto(scr.ws, be, &lw.VProj, h, v, 1)
+	}
+	// Compute-time LoRA (#7): add the low-rank delta to each projection output,
+	// exactly where merge would have folded it into the weight — before QK-norm/RoPE.
+	if lora != nil {
+		applyLoRA(lora.q, h, q, scr)
+		applyLoRA(lora.k, h, k, scr)
+		applyLoRA(lora.v, h, v, scr)
 	}
 	if arch.QKVBias {
 		addBias(q, lw.QBias)
@@ -149,6 +157,9 @@ func causalAttention(
 	// 7. Output projection into the caller's buffer (+ bias for GPT-2); the
 	// caller applies the post-attn norm + residual.
 	matmulInto(scr.ws, be, &lw.OProj, ctx, out, 1)
+	if lora != nil {
+		applyLoRA(lora.o, ctx, out, scr)
+	}
 	if arch.OutBias {
 		addBias(out, lw.OBias)
 	}
