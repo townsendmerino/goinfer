@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io/fs"
@@ -236,6 +237,62 @@ func TestQwen25VL_imageParity(t *testing.T) {
 	for i := range g.Continuation {
 		if got[i] != g.Continuation[i] {
 			t.Errorf("continuation[%d] = %d, want %d", i, got[i], g.Continuation[i])
+			break
+		}
+	}
+}
+
+// TestQwen25VL_generate gates the GenerateQwenVL streaming entry (the API serve
+// calls): greedy generation from the image prompt must match HF's pinned greedy
+// continuation token-for-token — exercising prefill (inject + m-RoPE) and decode
+// (m-RoPE delta) through the public generation loop.
+func TestQwen25VL_generate(t *testing.T) {
+	const golden = "../testdata/qwen25vl_tiny_image_golden.json"
+	const ckpt = "../testdata/qwen25vl-tiny"
+	raw, err := os.ReadFile(golden)
+	if errors.Is(err, fs.ErrNotExist) {
+		t.Skipf("no golden — run scripts/pin_qwen25vl_image.py")
+	}
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+	if _, err := os.Stat(ckpt); errors.Is(err, fs.ErrNotExist) {
+		t.Skipf("no checkpoint")
+	}
+	var g struct {
+		InputIDs      []int     `json:"input_ids"`
+		ImageToken    int       `json:"image_token_id"`
+		ImageStart    int       `json:"image_token_start"`
+		NImageTokens  int       `json:"n_image_tokens"`
+		GridTHW       [][3]int  `json:"grid_thw"`
+		ImageFeatures []float32 `json:"image_features"`
+		Continuation  []int     `json:"continuation_ids"`
+	}
+	if err := json.Unmarshal(raw, &g); err != nil {
+		t.Fatalf("parse golden: %v", err)
+	}
+	m, err := Load(ckpt, Options{})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	defer m.Close()
+
+	ch, gen := m.GenerateQwenVL(context.Background(), g.InputIDs, g.ImageFeatures,
+		g.ImageStart, g.NImageTokens, g.GridTHW, 2, g.ImageToken, len(g.Continuation), SamplingParams{})
+	var got []int
+	for id := range ch {
+		got = append(got, id)
+	}
+	if gen.Err() != nil {
+		t.Fatalf("GenerateQwenVL: %v", gen.Err())
+	}
+	t.Logf("GenerateQwenVL greedy: got=%v want=%v", got, g.Continuation)
+	if len(got) != len(g.Continuation) {
+		t.Fatalf("generated %d tokens, want %d", len(got), len(g.Continuation))
+	}
+	for i := range g.Continuation {
+		if got[i] != g.Continuation[i] {
+			t.Errorf("token[%d] = %d, want %d", i, got[i], g.Continuation[i])
 			break
 		}
 	}

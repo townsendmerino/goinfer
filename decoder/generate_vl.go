@@ -66,3 +66,63 @@ func (m *Model) GenerateVL(ctx context.Context, ids []int, features []float32, i
 	}()
 	return out, g
 }
+
+// GenerateQwenVL streams a continuation for a Qwen2.5-VL multimodal prompt. Like
+// GenerateVL but for the Qwen family: the merged vision features (the ViT+merger
+// output, [imgLen*HiddenDim]) replace the <image> run at [imgPos,imgPos+imgLen),
+// and rotary positions are m-RoPE — computed from the image grid(s) (gridTHW, t/h/w
+// in patch units; merge = spatial_merge_size; imageToken = the placeholder id).
+// Image tokens attend CAUSALLY (no bidirectional block — Qwen's bidirectionality is
+// in the ViT). Decode past the prompt resumes scalar positions at the block max + 1
+// (handled by the cache's m-RoPE delta). Stateless + CPU-only, like GenerateVL.
+func (m *Model) GenerateQwenVL(ctx context.Context, ids []int, features []float32, imgPos, imgLen int, gridTHW [][3]int, merge, imageToken, maxTokens int, sp SamplingParams) (<-chan int, *Generation) {
+	out := make(chan int)
+	g := &Generation{}
+	go func() {
+		defer close(out)
+		mropePos, err := mropePositions(ids, imageToken, gridTHW, merge)
+		if err != nil {
+			g.err = err
+			return
+		}
+		cache := m.NewCache(len(ids) + maxTokens)
+		logits, err := m.prefillLogitsQwenVL(ids, features, imgPos, imgLen, mropePos, cache)
+		if err != nil {
+			g.err = err
+			return
+		}
+		sampler := NewSampler(sp)
+		sampler.Observe(ids...)
+		var generated []int
+		for range maxTokens {
+			select {
+			case <-ctx.Done():
+				g.err = ctx.Err()
+				return
+			default:
+			}
+			if sp.LogitProcessor != nil {
+				sp.LogitProcessor(generated, logits)
+			}
+			info, err := sampler.SampleWithInfo(logits)
+			if err != nil {
+				g.err = err
+				return
+			}
+			next := info.ID
+			if m.isStop(next, sp) {
+				break
+			}
+			if sp.Logprobs {
+				g.Logprobs = append(g.Logprobs, info)
+			}
+			out <- next
+			generated = append(generated, next)
+			if logits, err = m.forward(next, cache); err != nil { // decode m-RoPE via cache.mropeDelta
+				g.err = err
+				return
+			}
+		}
+	}()
+	return out, g
+}
