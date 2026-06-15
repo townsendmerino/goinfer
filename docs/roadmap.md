@@ -371,12 +371,14 @@ the staged path has. **That coupling is the felt-pain trigger for both.**
     applies — **but profile a real MoE prefill first**. Also measure the
     qwen3.6-35B `matvec`→SIMD delta there (correctness proven; tok/s not, no MoE
     model on the Mac).
-- **Route int4 *prefill* to W4A8 too.** Benchmarks showed `MatmulBTW4A8` wins at
-  every M on AVX2, but prefill stays on `MatmulBTQ4` (f32 activation) per the
-  decode-only scoping. Routing prefill to W4A8 would be faster AND unify the
-  activation precision (today an int4 generation uses f32-activation for the
-  prompt, int8-activation for generated tokens). Needs prefill parity + TTFT
-  re-measure. Low risk, small win.
+- ✅ **DONE — Route int4 *prefill* to W4A8 too** (commit `17a9ff4`, 2026-06-12).
+  `matmul()` now runs `MatmulBTW4A8` at EVERY M (decode + prefill) and drops the
+  dequant-bound `MatmulBTQ4` (f32-activation) path — faster at every M on AVX2 and
+  it unifies activation precision (an int4 generation is int8-activation for the
+  prompt AND generated tokens; W4A8 is per-output M-independent, so batched prefill
+  is bit-identical to sequential decode). The lone remaining refinement — a *fused*
+  W4A8 batch (one activation-quant for qkv/gate-up, like `MatmulBTW8A8Batch`) —
+  needs an aikit `MatmulBTW4A8Batch` (doesn't exist yet; cross-repo, not on this box).
 - **W4A8 CPU VNNI variant** — aikit deferred the `VPDPBUSD` (AVX-512 VNNI) path;
   drop-in behind the same CPUID gate, needs a VNNI box to validate.
 - **`.giw` f16 group scales** (`task-giw-f16-scales.md`) — **lowest value of all**:

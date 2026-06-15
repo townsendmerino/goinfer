@@ -81,9 +81,8 @@ flowchart TB
   ALIAS --> W["resident weightMats"]
   REQ --> W
 
-  W --> DISP{"matmul dispatch<br/>(per weightMat precision · M=1 decode vs M&gt;1 prefill)"}
-  DISP -->|int4 decode| K4D["MatmulBTW4A8 · CPU int4×int8 integer kernel<br/>(NEON/AVX2, aikit v1.1.1)"]
-  DISP -->|int4 prefill| K4["MatmulBTQ4 · CPU (f32-activation, M-reuse)"]
+  W --> DISP{"matmul dispatch<br/>(per weightMat precision · same kernel at every M)"}
+  DISP -->|int4 decode + prefill| K4["MatmulBTW4A8 · CPU int4×int8 integer kernel<br/>(NEON/AVX2; every M, bit-identical decode==prefill)"]
   DISP -->|int8 W8A8| K8["MatmulBTW8A8 · CPU SDOT (fast default)"]
   DISP -->|int8| KQ["MatmulBTQ8 · CPU"]
   DISP -->|f32| BE["Backend.MatmulBT · pure-Go SIMD"]
