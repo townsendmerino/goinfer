@@ -199,10 +199,11 @@ layers at long context, 4× on full-attention families, 4× smaller `.giw-kv`
 warm sessions.** This is the natural sequel to the v0.5.0 f16-KV work: same
 "context per byte" battleground, attacked on CPU and GPU.
 
-**Status (2026-06-12): steps 1 + 2 SHIPPED to main** (ring eviction + CPU int8
-KV Inc 1–3 — the ~20×-stacked headline on Gemma local layers, opt-in, default
-bit-exact). Steps 3 (GPU int8 KV) + 4 (TurboQuant spike) remain open; int4 KV is
-deferred (see step 2).
+**Status (2026-06-14): steps 1 + 2 + 3 SHIPPED to main** (ring eviction + CPU int8
+KV Inc 1–3 + GPU int8 KV — the ~20×-stacked headline on Gemma local layers plus
+~64k GPU context, opt-in, default bit-exact). Step 3 shipped in **v0.6.0**
+(`3e27dcc`). Only step 4 (TurboQuant spike) remains open; int4 KV is deferred
+(see step 2).
 
 In order (rationale: free memory with zero precision argument first, then the
 quant rungs with pre-validated gate bars):
@@ -233,10 +234,16 @@ quant rungs with pre-validated gate bars):
      int4-now ≈ a week of high-risk work that may miss its own gate, plus permanent
      code surface, for ~1.6× over a 20× we already ship, with no demand. Easy call
      to flip the moment a real RAM wall appears.
-3. **[GPU int8 KV cache](completed/task-gpu-kv-i8.md)** — third rung after the shipped
-   `--kv f16`, via the existing `runQuant`/W8A8 WGSL idiom: **~64k context on
-   the 8 GB card in the 32k-f16 envelope.** ~3–4 days, sequenced after step 2
-   so granularity + gate bars arrive pre-validated from the CPU side.
+3. ✅ **DONE — [GPU int8 KV cache](completed/task-gpu-kv-i8.md)** (commit `3e27dcc`,
+   shipped in v0.6.0). Third rung after `--kv f16`, via the existing `runQuant`/W8A8
+   WGSL idiom: **~64k context on the 8 GB card in the 32k-f16 envelope** (`--kv i8`).
+   The three int8 kernels (`ropeStoreI8`/`kvStoreI8` per-head absmax+quantize,
+   `attnI8` unpack+scale READ arm) + residency integration + tri-state knob. Real-HW
+   gate (Qwen2.5-7B int4, 8 GB): int8-vs-f32 decode **mean cosine 0.99739** (argmax
+   3%-near-tie rule), 64k peak **6977 MiB** (fits), decode **0.96× at 1k ctx**
+   (weight-stream-bound short-ctx; the KV-read-bound long-ctx speedup is the one
+   unmeasured residual). The WRITE-kernel per-head reduction risk retired (kernels
+   bit-exact vs CPU, cosine 1.000000).
 4. **[TurboQuant spike](task-turboquant-spike.md)** — the only research-risk
    item; 2–3 day timebox, pointed at KV (the published near-zero-loss 3-bit
    claim), written go/no-go bar. Go ⇒ replaces step 2's deferred int4
@@ -325,9 +332,10 @@ the staged path has. **That coupling is the felt-pain trigger for both.**
   no speed regression). Batched prefill stays shelved on the dp4a gate above. If GPU
   residency is marketed as "run a 7B locally on a small GPU," f16 KV is now the
   long-context answer; the long-context *speedup* and batched prefill wait for their
-  triggers (a real >16k workload; dp4a). **Next rung after f16: GPU int8 KV**
-  (`completed/task-gpu-kv-i8.md`, step 3 of the KV-memory program above — ~64k in the
-  32k-f16 envelope).
+  triggers (a real >16k workload; dp4a). **Rung after f16: GPU int8 KV — SHIPPED**
+  (`completed/task-gpu-kv-i8.md`, step 3 of the KV-memory program above; v0.6.0,
+  `3e27dcc`): `--kv i8`, ~64k in the 32k-f16 envelope. The long-context *speedup*
+  stays the shared open residual (int8 is also 0.96× at 1k ctx; needs a 16k+ run).
 
 ### GPU residency coverage
 
