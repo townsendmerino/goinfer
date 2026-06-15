@@ -358,6 +358,27 @@ calibration vs. end-to-end argmax). Timebox the scorer; the fallback is uniform
 quant, which we already ship. **Gate:** the per-model goldens, plus "mixed ≤
 uniform-int8 size AND ≥ uniform-int8 cosine."
 
+**Calibration scorer — SPIKED (2026-06-14), KEEP THE HEURISTIC.** Built the obvious
+cheap scorer: a calibration pass (REAL text, 123 tokens, qwen2.5-coder-0.5B; random
+ids first, same result — not a garbage-input artifact) capturing per-channel
+activation energy, scoring each tensor's activation-weighted int4-vs-int8 error
+`Σⱼ E[x²]ⱼ·(colErr4−colErr8)ⱼ = ‖ΔW·x‖²` (the diagonal/AWQ-style metric). **It
+INVERTS the validated int4mix end-to-end spike.** Cheap-metric score/byte: **up
+1.2e-5, gate 4.7e-6 (FFN = MOST int4-sensitive); o-proj 8.1e-7 (attention = LEAST)**
+— the *opposite* of the shipped rule's basis (the end-to-end next-token spike found
+attn_output sensitive +21 pts, FFN ~0/tolerant). Reason: `‖ΔW·x‖²` is the *local*
+injected error; it can't see that FFN errors are *absorbed* downstream while
+attn_output errors *propagate* to the logits — that's loss-curvature (Hessian)
+information the cheap metric lacks (the textbook reason GPTQ/AWQ use the Hessian, not
+raw activation-MSE). So a scorer on the cheap metric would make the **wrong**
+per-tensor choices. The correct metric is the spike's end-to-end argmax-recovery,
+which is expensive (≈ per-tensor forwards) and is **already encoded in the shipped
+`attn→int8/ffn→int4` heuristic**. **Verdict: the calibration scorer is research-risk,
+not a cheap refinement; the fixed rule (end-to-end-grounded) is the better-grounded
+choice — keep it.** Spike code reverted; the spike-first cut avoided shipping a
+scorer built on a misleading metric. (The `cache.calib` activation-capture seam +
+the end-to-end argmax metric are the prerequisites if this is ever revisited.)
+
 ### 6. Rotation/incoherence 3-bit weights at `.giw` build time (the TurboQuant weights angle, de-risked)
 
 **The win:** the roadmap dismisses 3-bit weights ("weak ROI, no decode speed,
