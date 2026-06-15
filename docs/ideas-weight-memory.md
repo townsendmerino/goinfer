@@ -381,6 +381,28 @@ TurboQuant KV spike. **Treat it identically:** 2–3 day reading + CPU-prototype
 spike, written go/no-go bar (≥ int4's measured cosine at 3 bits, or it closes).
 Sequence it *after* #1–#4 ship, so the cheap wins land first.
 
+**Spike result + verdict (2026-06-14): SHELVED.** Two independent findings sink it.
+(1) **Quality — the foldable rotation is too weak.** A cheap weight-reconstruction
+spike (cmd/spike6, removed; 0.5B Q4_K_M, per-group-32 random-sign Walsh-Hadamard =
+the *foldable, no-decode-cost* rotation the pitch promises): relative Frobenius quant
+error, int4 plain **0.103**, int4+rot **0.096** (~7% better), int3 plain **0.237**,
+int3+rot **0.225**. So foldable rotation barely dents it and **int3+rot (0.225) is
+~2.2× int4 plain (0.103)** — nowhere near "3-bit ≈ int4." A *full-dimension* rotation
+(real QuIP#/QuaRot) would help more, but it needs an **online Hadamard** on
+activations → decode cost, which **contradicts the "folded offline, no decode cost"**
+premise that was the whole de-risking. You can't have both. (2) **Speed — low-bit
+unpack is compute-bound, not bandwidth-bound** (aikit W4A8 NEON data, 2026-06-14):
+W4A8 reads 1.6× fewer bytes than W8A8 yet runs **1.58× slower** (15 vs 38 GB/s) — the
+nibble-unpack ALU is the limiter. 3-bit packing is *messier* than 4-bit nibbles, so a
+3-bit dot unpacks even slower → **3-bit is slower than int4 at decode for 25% less
+RAM** (the roadmap's original "no decode speed" objection, confirmed). Net: #6 is a
+high-effort research build (rotation machinery + a 3-bit kernel) for a benefit that is
+either not-near-lossless (foldable rotation) or not-no-decode-cost (full rotation), and
+slower at decode regardless. **#5 (int4mix, shipped) already captures the practical
+"better quality below int8 RAM" point.** Shelved; the lone salvage is that foldable
+rotation gives a *small* int4 quality bump (esp. attn_q: 0.150→0.089) using the
+existing int4 kernel — a minor, separate idea if ever wanted.
+
 ---
 
 ### Serve-side density (multi-tenant footprint — from the external review)
