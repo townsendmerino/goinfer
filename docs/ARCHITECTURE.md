@@ -149,7 +149,7 @@ A plain `.gguf` is transparently transcoded to a sidecar `.giw` on first use, an
 that transcode is itself **streaming** — `StreamTranscodeGGUF` converts one layer at
 a time, so a model far larger than RAM (e.g. a 106B-A12B at int4) prequantizes with
 a peak of ~one layer, not the whole model. Validated on real GLM-4.5-Air (106B):
-loads via expert-paging and generates within the box's 62 GB.
+prequantizes and then loads + generates via expert-paging on a 62 GB host.
 
 **Two GPU modes (`-tags gpu`, WebGPU).** (1) A per-matmul `Backend` that
 substitutes for the f32 kernel — the original, arch-agnostic path. (2) **Full
