@@ -83,6 +83,23 @@ type Architecture struct {
 	// path; the linear ones run the DeltaNet primitive. nil for every other family.
 	qwen35        *qwen35Params
 	layerIsLinear func(i int) bool
+
+	// granite, when non-nil, marks a Granite-4.0-H hybrid: per-layer mixer is
+	// Mamba-2 (layerIsMamba true) or softmax attention (false), every layer a
+	// routed+shared MoE. Carries the Mamba-2 geometry + the Granite multipliers.
+	// LogitScale (logits_scaling) divides the final logits; 0/1 = none.
+	granite      *graniteParams
+	layerIsMamba func(i int) bool
+	LogitScale   float64
+}
+
+// graniteParams carries Granite-4.0-H's Mamba-2 mixer geometry (for the mamba
+// layers; the attention layers use the uniform Architecture fields) and the three
+// in-block scalar multipliers. The fourth Granite scalar, logits_scaling, lives on
+// Architecture.LogitScale (it's applied at the shared head, not per layer).
+type graniteParams struct {
+	NHeads, HeadDim, DState, NGroups, DConv int     // Mamba-2 dims
+	EmbMul, ResidMul                        float32 // embedding scale, residual-add scale (attention scale is Architecture.AttnScale)
 }
 
 // qwen35Params carries the Gated DeltaNet geometry for a qwen3_5_moe model's
@@ -208,6 +225,12 @@ func (a *Architecture) isGlobalLayer(i int) bool {
 // per-layer function is set (every non-hybrid family).
 func (a *Architecture) isLinearLayer(i int) bool {
 	return a.layerIsLinear != nil && a.layerIsLinear(i)
+}
+
+// isMambaLayer reports whether layer i is a Mamba-2 mixer rather than softmax
+// attention — the Granite-4.0-H hybrid. False for every non-Granite family.
+func (a *Architecture) isMambaLayer(i int) bool {
+	return a.layerIsMamba != nil && a.layerIsMamba(i)
 }
 
 // ropeBase returns the RoPE base for layer i (Gemma uses a smaller base on the

@@ -61,6 +61,22 @@ type Config struct {
 	FirstKDenseReplace  int     `json:"first_k_dense_replace"`
 	RoutedScalingFactor float64 `json:"routed_scaling_factor"`
 
+	// Granite-4.0-H (GraniteMoeHybrid): the Mamba-2 mixer dims (per-layer kind in
+	// LayerTypes = "mamba" | "attention"), the shared-expert width, and the four
+	// Granite scalar multipliers applied in the forward (embedding scale, attention
+	// scale, residual-add scale, final-logit divisor). MoE on every layer reuses
+	// NumLocalExperts / NumExpertsPerTok / IntermediateDim.
+	MambaNHeads            int     `json:"mamba_n_heads"`
+	MambaDHead             int     `json:"mamba_d_head"`
+	MambaDState            int     `json:"mamba_d_state"`
+	MambaDConv             int     `json:"mamba_d_conv"`
+	MambaNGroups           int     `json:"mamba_n_groups"`
+	SharedIntermediateSize int     `json:"shared_intermediate_size"`
+	EmbeddingMultiplier    float64 `json:"embedding_multiplier"`
+	AttentionMultiplier    float64 `json:"attention_multiplier"`
+	ResidualMultiplier     float64 `json:"residual_multiplier"`
+	LogitsScaling          float64 `json:"logits_scaling"`
+
 	// Gated DeltaNet (qwen3_5_moe linear-attention layers). The linear layers
 	// replace softmax attention with a gated delta-rule recurrence over a
 	// fixed-size matrix state; these size its conv + per-head key/value dims.
@@ -313,6 +329,26 @@ func (c *Config) validateGlm4Moe() error {
 		return fmt.Errorf("decoder(glm4_moe): n_shared_experts must be >0, got %d", c.NSharedExperts)
 	case c.FirstKDenseReplace < 0 || c.FirstKDenseReplace >= c.NumLayers:
 		return fmt.Errorf("decoder(glm4_moe): first_k_dense_replace %d out of range (0..%d)", c.FirstKDenseReplace, c.NumLayers-1)
+	}
+	return nil
+}
+
+// validateGranite pins the Granite-4.0-H (granitemoehybrid) assumptions: a layer_types
+// list covering every layer (mamba | attention), a valid Mamba-2 geometry, and a
+// routed+shared MoE (num_local_experts / num_experts_per_tok / intermediate_size /
+// shared_intermediate_size).
+func (c *Config) validateGranite() error {
+	switch {
+	case len(c.LayerTypes) != c.NumLayers:
+		return fmt.Errorf("decoder(granite): layer_types has %d entries, want %d", len(c.LayerTypes), c.NumLayers)
+	case c.MambaNHeads <= 0 || c.MambaDHead <= 0 || c.MambaDState <= 0 || c.MambaDConv <= 0 || c.MambaNGroups <= 0:
+		return fmt.Errorf("decoder(granite): bad mamba dims (n_heads=%d d_head=%d d_state=%d d_conv=%d n_groups=%d)", c.MambaNHeads, c.MambaDHead, c.MambaDState, c.MambaDConv, c.MambaNGroups)
+	case c.MambaNHeads%c.MambaNGroups != 0:
+		return fmt.Errorf("decoder(granite): mamba_n_heads %d not divisible by mamba_n_groups %d", c.MambaNHeads, c.MambaNGroups)
+	case c.NumLocalExperts <= 0 || c.NumExpertsPerTok <= 0 || c.NumExpertsPerTok > c.NumLocalExperts:
+		return fmt.Errorf("decoder(granite): bad MoE (experts=%d top_k=%d)", c.NumLocalExperts, c.NumExpertsPerTok)
+	case c.IntermediateDim <= 0 || c.SharedIntermediateSize <= 0:
+		return fmt.Errorf("decoder(granite): intermediate_size=%d shared_intermediate_size=%d must be >0", c.IntermediateDim, c.SharedIntermediateSize)
 	}
 	return nil
 }

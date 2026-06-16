@@ -32,6 +32,7 @@ var registry = map[string]archAdapter{
 	"qwen3_5_moe":      qwen35Architecture,     // Qwen3.5/3.6-MoE: Gated DeltaNet (linear) + softmax hybrid + MoE
 	"qwen3_5_moe_text": qwen35Architecture,     // the text-only checkpoint's model_type
 	"glm4_moe":         glm4moeArchitecture,    // GLM-4.5/4.6: DeepSeek-style MoE (sigmoid routing + bias) + dense prefix + QK-norm + partial RoPE
+	"granitemoehybrid": graniteArchitecture,    // Granite-4.0-H: Mamba-2 + attention hybrid + MoE-on-every-layer + Granite multipliers
 }
 
 // resolveArchitecture picks the adapter for cfg.ModelType and builds the
@@ -771,4 +772,78 @@ func glm4moeArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		EmbedScale:     0,
 		TiedLMHead:     false, // finalized from lm_head.weight presence at load
 	}, &glm4moeTensorSchema, nil
+}
+
+// graniteArchitecture expresses Granite-4.0-H (model_type granitemoehybrid): a
+// Mamba-2 + softmax-attention hybrid (per-layer kind from layer_types) with a routed
+// + shared MoE on EVERY layer, plus four Granite scalar multipliers. The mamba
+// layers run the selective-scan mixer (mamba2.go) with recurrent state in the hybrid
+// cache; the attention layers are plain GQA + RoPE (no QK-norm, no bias) scaled by
+// attention_multiplier instead of 1/√d. The MoE is GraniteMoe-style (fused gate+up
+// experts + an ungated shared expert) but its softmax-top-k routing is identical to
+// the Mixtral path, so moeMLP serves it unchanged once the fused tensors are split
+// at load. Dedicated loader (buildGraniteWeights) + forward (runLayersGranite).
+func graniteArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+	if err := cfg.validateGranite(); err != nil {
+		return nil, nil, err
+	}
+	spec, _, err := parseRopeFlat(cfg.RopeParameters)
+	if err != nil {
+		return nil, nil, fmt.Errorf("decoder(granite): %w", err)
+	}
+	hd := cfg.HiddenDim / cfg.NumHeads
+	types := cfg.LayerTypes
+	one := func(v float64) float32 {
+		if v == 0 {
+			return 1
+		}
+		return float32(v)
+	}
+	attnMul := cfg.AttentionMultiplier
+	if attnMul == 0 {
+		attnMul = math.Pow(float64(hd), -0.5) // HF default when unset
+	}
+	logitScale := cfg.LogitsScaling
+	if logitScale == 0 {
+		logitScale = 1
+	}
+	return &Architecture{
+		Name:            "granitemoehybrid",
+		HiddenDim:       cfg.HiddenDim,
+		NumLayers:       cfg.NumLayers,
+		NumHeads:        cfg.NumHeads,
+		NumKVHeads:      cfg.NumKVHeads,
+		HeadDim:         hd,
+		IntermediateDim: cfg.IntermediateDim, // expert FFN width (GraniteMoe uses intermediate_size)
+		VocabSize:       cfg.VocabSize,
+		Norm:            NormRMS,
+		RMSAddOne:       false,
+		NormEps:         cfg.RMSNormEps,
+		NormPlacement:   NormPre2,
+		Act:             ActSiLU,
+		QKVBias:         false,
+		QKNorm:          false,
+		MoE: &MoEConfig{
+			NumExperts:            cfg.NumLocalExperts,
+			TopK:                  cfg.NumExpertsPerTok,
+			NormTopKProb:          true, // top-k then softmax == softmax then top-k+renorm
+			IntermediateDim:       cfg.IntermediateDim,
+			SharedIntermediateDim: cfg.SharedIntermediateSize,
+			SharedUngated:         true, // GraniteMoe shared_mlp has no sigmoid gate
+		},
+		AttnScale:      attnMul, // Granite attention_multiplier (not 1/√d)
+		RoPELocalBase:  spec.base,
+		RoPEGlobalBase: spec.base,
+		ropeScaling:    spec.scaling,
+		RotaryDim:      0, // full rotary
+		EmbedScale:     0, // embedding_multiplier applied in runLayersGranite, not the Gemma sqrt path
+		TiedLMHead:     false,
+		LogitScale:     logitScale,
+		layerIsMamba:   func(i int) bool { return i < len(types) && types[i] == "mamba" },
+		granite: &graniteParams{
+			NHeads: cfg.MambaNHeads, HeadDim: cfg.MambaDHead, DState: cfg.MambaDState,
+			NGroups: cfg.MambaNGroups, DConv: cfg.MambaDConv,
+			EmbMul: one(cfg.EmbeddingMultiplier), ResidMul: one(cfg.ResidualMultiplier),
+		},
+	}, &graniteTensorSchema, nil
 }

@@ -79,6 +79,11 @@ type LayerWeights struct {
 	// parity-first, like Gemma 4's); the MoE FFN above is shared by both kinds.
 	delta *deltaNetWeights
 	qattn *qwenAttnWeights
+
+	// Granite-4.0-H Mamba-2 mixer weights, set only on the mamba layers (the
+	// attention layers use QProj/KProj/VProj/OProj above). nil for every other
+	// family. Stored f32 (parity-first, like the qwen35 hybrid).
+	mamba *mamba2Weights
 }
 
 // qwenAttnWeights holds a qwen3_5_moe softmax layer's gated attention, f32.
@@ -333,6 +338,12 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 			return nil, fmt.Errorf("decoder: LoRA merge unsupported for the gpt2 (Conv1D/fused-QKV) layout")
 		}
 		return buildGPT2Weights(cfg, arch, st, quant) // Conv1D layout + fused QKV need a dedicated path
+	}
+	if arch.granite != nil {
+		if lora != nil {
+			return nil, fmt.Errorf("decoder: LoRA merge unsupported for the granitemoehybrid (Mamba-2 + fused-MoE) layout")
+		}
+		return buildGraniteWeights(cfg, arch, st, quant) // per-layer mamba/attention + fused experts
 	}
 	if lora != nil {
 		if err := lora.validateTargets(cfg.NumLayers, s); err != nil {
@@ -986,6 +997,12 @@ var glm4moeTensorSchema = tensorSchema{
 	// SharedExpertGate empty: GLM adds the shared expert ungated.
 }
 
+// graniteTensorSchema is a marker — Granite-4.0-H's per-layer-kind tensors (Mamba-2
+// mixer vs attention) and fused-stacked GraniteMoe experts don't fit the per-suffix
+// schema, so buildGraniteWeights loads them directly. Kept non-empty for a valid
+// (unused) schema return.
+var graniteTensorSchema = tensorSchema{Embed: "model.embed_tokens.weight"}
+
 // conv1DTransposed loads a GPT-2 Conv1D weight and returns it transposed to the
 // [out, in] row-major layout the rest of the decoder (MatmulBT) expects. GPT-2
 // stores these weights as [in, out] (nn.Conv1D, not nn.Linear), so a plain load
@@ -1109,5 +1126,118 @@ func buildGPT2Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile
 		}
 	}
 	arch.TiedLMHead = true // GPT-2 has no separate lm_head tensor
+	return w, nil
+}
+
+// buildGraniteWeights loads a Granite-4.0-H (granitemoehybrid) checkpoint: per layer
+// either a Mamba-2 mixer (f32, parity-first, like the qwen35 hybrid) or GQA
+// attention, plus a GraniteMoe routed+shared MoE on EVERY layer. The fused
+// GraniteMoe experts (input_linear [E, 2·inter, hidden] = gate‖up, output_linear
+// [E, hidden, inter] = down) are exactly the loadFusedExperts layout, so the routed
+// FFN reuses moeMLP unchanged once split; the ungated shared_mlp loads into
+// SharedExpert. Embeddings/experts/attention quantize; the Mamba-2 mixer stays f32.
+func buildGraniteWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile, quant quantMode) (*Weights, error) {
+	hidden, vocab, inter := arch.HiddenDim, arch.VocabSize, arch.IntermediateDim
+	g := arch.granite
+	w := &Weights{Cfg: *cfg, arch: arch, st: st, Layers: make([]LayerWeights, arch.NumLayers)}
+	var err error
+	if w.Embed, err = loadMat(st, "model.embed_tokens.weight", vocab, hidden); err != nil {
+		return nil, err
+	}
+	w.Embed = quantizeWM(w.Embed, quant.embedding())
+	if w.FinalNorm, err = st.TensorF32("model.norm.weight", hidden); err != nil {
+		return nil, err
+	}
+	arch.TiedLMHead = true
+	if head, herr := loadMat(st, "lm_head.weight", vocab, hidden); herr == nil {
+		w.LMHead = quantizeWM(head, quant.embedding())
+		arch.TiedLMHead = false
+	}
+
+	dInner := g.NHeads * g.HeadDim
+	convDim := dInner + 2*g.NGroups*g.DState
+	projDim := 2*dInner + 2*g.NGroups*g.DState + g.NHeads
+	hd := arch.HeadDim
+	qDim, kvDim := arch.NumHeads*hd, arch.NumKVHeads*hd
+
+	loadLayer := func(l int) error {
+		lw := &w.Layers[l]
+		tn := func(suf string) string { return fmt.Sprintf("model.layers.%d.%s", l, suf) }
+		var e error
+		if lw.PreAttnNorm, e = st.TensorF32(tn("input_layernorm.weight"), hidden); e != nil {
+			return e
+		}
+		if lw.PreMLPNorm, e = st.TensorF32(tn("post_attention_layernorm.weight"), hidden); e != nil {
+			return e
+		}
+		// Sequence mixer: Mamba-2 (f32) or GQA attention (quantized).
+		if arch.isMambaLayer(l) {
+			mw := &mamba2Weights{}
+			if mw.inProj, e = st.TensorF32(tn("mamba.in_proj.weight"), projDim, hidden); e != nil {
+				return e
+			}
+			if mw.convW, e = st.TensorF32(tn("mamba.conv1d.weight"), convDim, 1, g.DConv); e != nil {
+				return e
+			}
+			if mw.convB, e = st.TensorF32(tn("mamba.conv1d.bias"), convDim); e != nil {
+				return e
+			}
+			if mw.aLog, e = st.TensorF32(tn("mamba.A_log"), g.NHeads); e != nil {
+				return e
+			}
+			if mw.d, e = st.TensorF32(tn("mamba.D"), g.NHeads); e != nil {
+				return e
+			}
+			if mw.dtBias, e = st.TensorF32(tn("mamba.dt_bias"), g.NHeads); e != nil {
+				return e
+			}
+			if mw.normW, e = st.TensorF32(tn("mamba.norm.weight"), dInner); e != nil {
+				return e
+			}
+			if mw.outProj, e = st.TensorF32(tn("mamba.out_proj.weight"), hidden, dInner); e != nil {
+				return e
+			}
+			lw.mamba = mw
+		} else {
+			if lw.QProj, e = loadMat(st, tn("self_attn.q_proj.weight"), qDim, hidden); e != nil {
+				return e
+			}
+			if lw.KProj, e = loadMat(st, tn("self_attn.k_proj.weight"), kvDim, hidden); e != nil {
+				return e
+			}
+			if lw.VProj, e = loadMat(st, tn("self_attn.v_proj.weight"), kvDim, hidden); e != nil {
+				return e
+			}
+			if lw.OProj, e = loadMat(st, tn("self_attn.o_proj.weight"), hidden, qDim); e != nil {
+				return e
+			}
+			lw.QProj, lw.KProj = quantizeWM(lw.QProj, quant), quantizeWM(lw.KProj, quant)
+			lw.VProj, lw.OProj = quantizeWM(lw.VProj, quant), quantizeWM(lw.OProj, quant)
+		}
+		// MoE FFN (every layer): router (f32) + fused routed experts + ungated shared.
+		if lw.Router, e = loadMat(st, tn("block_sparse_moe.router.layer.weight"), arch.MoE.NumExperts, hidden); e != nil {
+			return e
+		}
+		if lw.Experts, e = loadFusedExperts(st, tn("block_sparse_moe.input_linear.weight"), tn("block_sparse_moe.output_linear.weight"), arch.MoE.NumExperts, inter, hidden, quant); e != nil {
+			return e
+		}
+		sInter := arch.MoE.SharedIntermediateDim
+		gu, gerr := st.TensorF32(tn("shared_mlp.input_linear.weight"), 2*sInter, hidden)
+		if gerr != nil {
+			return gerr
+		}
+		dn, derr := st.TensorF32(tn("shared_mlp.output_linear.weight"), hidden, sInter)
+		if derr != nil {
+			return derr
+		}
+		half := sInter * hidden
+		lw.SharedExpert.Gate = quantizeWM(linalg.WrapF32(append([]float32(nil), gu[:half]...), sInter, hidden), quant)
+		lw.SharedExpert.Up = quantizeWM(linalg.WrapF32(append([]float32(nil), gu[half:]...), sInter, hidden), quant)
+		lw.SharedExpert.Down = quantizeWM(linalg.WrapF32(append([]float32(nil), dn...), hidden, sInter), quant)
+		return nil
+	}
+	if err := parallelLayers(arch.NumLayers, loadLayer); err != nil {
+		return nil, err
+	}
 	return w, nil
 }

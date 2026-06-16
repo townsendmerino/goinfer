@@ -266,7 +266,7 @@ func (m *Model) NewCache(capHint int) *KVCache {
 	// only — MoE routes attention through the acc64 kernel for bit-stable expert
 	// routing (quantized KV would reopen that), and gemma4/qwen3_5_moe have their
 	// own forward. Must precede enableRings so local layers inherit the mode.
-	if m.kvI8 && a.gemma4 == nil && a.qwen35 == nil && a.MoE == nil {
+	if m.kvI8 && a.gemma4 == nil && a.qwen35 == nil && a.granite == nil && a.MoE == nil {
 		c.setQuant(kvI8, capHint)
 	}
 	// Ring-buffer storage on sliding-window (local) layers: keep only the W most
@@ -275,7 +275,7 @@ func (m *Model) NewCache(capHint int) *KVCache {
 	// gemma4 (per-layer widths + KV-sharing) and qwen3_5_moe (linear attention)
 	// have their own forward and keep append-forever for now (a later increment).
 	// See docs/task-kv-ring-eviction.md.
-	if a.gemma4 == nil && a.qwen35 == nil {
+	if a.gemma4 == nil && a.qwen35 == nil && a.granite == nil {
 		c.enableRings(a.SlidingWindow, a.isGlobalLayer)
 	}
 	if a.gemma4 != nil {
@@ -289,6 +289,18 @@ func (m *Model) NewCache(capHint int) *KVCache {
 		for l := 0; l < a.NumLayers; l++ {
 			if a.isLinearLayer(l) {
 				c.delta[l] = newDeltaState(*a.qwen35)
+			}
+		}
+	}
+	if a.granite != nil {
+		// Hybrid cache: KV for the attention layers + a Mamba-2 recurrent state for
+		// each mamba layer. manualPos because the mamba layers never Append.
+		c.manualPos = true
+		c.mamba = make([]*mamba2State, a.NumLayers)
+		mp := mamba2Params{NHeads: a.granite.NHeads, HeadDim: a.granite.HeadDim, DState: a.granite.DState, NGroups: a.granite.NGroups, DConv: a.granite.DConv, Hidden: a.HiddenDim}
+		for l := 0; l < a.NumLayers; l++ {
+			if a.isMambaLayer(l) {
+				c.mamba[l] = newMamba2State(mp)
 			}
 		}
 	}
@@ -325,6 +337,9 @@ func (m *Model) runLayers(id int, cache *KVCache) ([]float32, error) {
 	}
 	if arch.qwen35 != nil { // qwen3_5_moe: Gated DeltaNet / softmax hybrid — own path.
 		return m.runLayersQwen35(id, cache)
+	}
+	if arch.granite != nil { // granitemoehybrid: Mamba-2 / softmax hybrid — own path.
+		return m.runLayersGranite(id, cache)
 	}
 	if cache.scr == nil { // caches from NewKVCache directly (tests); Generate uses NewCache
 		cache.scr = newDecodeScratch(arch)
@@ -487,6 +502,12 @@ func (m *Model) logitsFromHidden(h []float32, cache *KVCache) []float32 {
 		softcap := float32(arch.FinalLogitSoftcap)
 		for i, v := range logits {
 			logits[i] = softcap * float32(math.Tanh(float64(v/softcap)))
+		}
+	}
+	if arch.LogitScale != 0 && arch.LogitScale != 1 { // Granite logits_scaling: logits /= scale
+		inv := float32(1 / arch.LogitScale)
+		for i := range logits {
+			logits[i] *= inv
 		}
 	}
 	return logits

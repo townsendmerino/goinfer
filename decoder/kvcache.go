@@ -88,6 +88,11 @@ type KVCache struct {
 	// is the recurrent half of the hybrid cache — see docs/qwen3_5_moe.md.
 	delta []*deltaState
 
+	// mamba holds the Mamba-2 recurrent state ({conv window, SSM state}) for
+	// Granite-4.0-H's mamba layers (nil entry on attention layers, nil slice on
+	// every other family). The Granite analogue of delta.
+	mamba []*mamba2State
+
 	scr *decodeScratch // per-stream reusable forward buffers (Model.NewCache sets it)
 
 	// lora is the active compute-time LoRA adapter for this stream (#7), nil for
