@@ -6,18 +6,36 @@ the **load + memory paths**, and the **module map**.
 
 > These diagrams are intentionally drawn at the *stage* level, not the
 > struct-field level. goinfer is descriptor-driven — one generic decoder runs
-> Gemma 3/4, Qwen 2.5/3, Llama, Mistral, Mixtral, GPT-2, Mellum/Mellum2 by reading
-> an `Architecture` descriptor — so the per-model specifics (which norm, GQA ratio,
-> RoPE scaling, tied vs separate head) are *config*, not separate code paths.
-> Drawing stages keeps these accurate across new model families; the numeric
-> contract is the parity gate against HuggingFace, not this doc.
+> Gemma 3/4, Qwen 2.5/3 (+ Qwen2.5-VL), Llama, Mistral, GPT-2, Mellum/Mellum2, and
+> the MoE families (Mixtral, Qwen-MoE, GLM-4.5/4.6, Granite-4.0-H) by reading an
+> `Architecture` descriptor — so the per-model specifics (which norm, GQA ratio,
+> RoPE scaling, tied vs separate head, **MoE routing variant**) are *config*, not
+> separate code paths. Even the sparse-MoE FFN is mostly config: a router scores
+> experts, the top-k run as gated MLPs, plus an optional always-on shared expert —
+> one `moeMLP` covers Mixtral (softmax top-k), Qwen-MoE (sigmoid-gated shared), GLM
+> (DeepSeek sigmoid routing + an `e_score_correction_bias` that steers selection +
+> an ungated shared expert), and Granite (the same, fused experts). Drawing stages
+> keeps these accurate across new families; the numeric contract is the parity gate
+> against HuggingFace, not this doc.
 >
-> **One exception to "config, not code paths":** the hybrid linear/softmax MoE
-> family (Qwen 3.6 / `qwen3_5_moe`) adds a genuinely new sequence-mixing
-> primitive — most layers are **Gated DeltaNet** (linear attention with a
-> recurrent matrix state) rather than softmax attention, with a hybrid cache
-> (KV for the softmax layers + a per-layer `deltaState`). That's a second forward
-> primitive (`deltanet.go`), descriptor-selected per layer, not just a config knob.
+> **The exceptions to "config, not code paths"** are the two **hybrid** families,
+> which add genuinely new *sequence-mixing primitives* — descriptor-selected per
+> layer, not config knobs — both running over a hybrid cache (KV for the softmax
+> layers + a per-layer recurrent state):
+>
+> - **Qwen 3.6 / `qwen3_5_moe`**: most layers are **Gated DeltaNet** (linear
+>   attention with a recurrent matrix state) — `deltanet.go`, state `deltaState`.
+> - **Granite-4.0-H / `granitemoehybrid`**: a ~9:1 mix of **Mamba-2 selective
+>   state-space** layers and softmax attention, MoE on every layer, plus four
+>   Granite scalar multipliers (embedding / attention / residual / logits) —
+>   `mamba2.go` (sequential scan + an equivalent chunked scan), state `mamba2State`
+>   (`{conv window, SSM state}`), forward in `forward_granite.go`.
+>
+> Both have a dedicated forward (`forward_qwen35.go` / `forward_granite.go`) and are
+> excluded from multi-token batched prefill — their recurrence is inherently
+> sequential. A new mixer is one new primitive + its parity test on the existing
+> hybrid scaffolding, which is what made Granite (Mamba-2) land on the shapes
+> qwen3_5_moe (DeltaNet) first proved.
 
 ## 1. The forward pass (one decode step)
 
@@ -31,11 +49,11 @@ flowchart TB
 
   subgraph BLK["decoder block × N  (Architecture descriptor)"]
     direction TB
-    N1["norm · RMSNorm or LayerNorm"] --> ATT["causal attention<br/>RoPE (linear / llama3 / yarn)<br/>GQA · optional sliding window<br/>reads + appends KV cache"]
+    N1["norm · RMSNorm or LayerNorm"] --> ATT["sequence mixer (descriptor per layer)<br/>causal attention: RoPE · GQA · opt. sliding window · KV cache<br/>OR recurrent: Gated DeltaNet / Mamba-2 (hybrid families)"]
     ATT --> PA{"sandwich norm?"}
     PA -->|yes| N1b["post-attn norm"] --> R1(("+ residual"))
     PA -->|no| R1
-    R1 --> N2["norm"] --> MLP["MLP · SwiGLU (SiLU gate · up → down)"]
+    R1 --> N2["norm"] --> MLP["MLP · dense SwiGLU<br/>OR sparse MoE: router top-k experts + opt. shared expert"]
     MLP --> PB{"sandwich norm?"}
     PB -->|yes| N2b["post-mlp norm"] --> R2(("+ residual"))
     PB -->|no| R2
@@ -122,6 +140,17 @@ the GGUF fallback apply only to the `--model <gguf>` path. Any bundle
 mismatch (magic / version / quant / CRC) returns a typed error — never a panic —
 and the user falls back via `--model`.
 
+**Running bigger than RAM (`--stream-weights`).** The `.giw` is also an mmap-able
+substrate: with `--stream-weights` the weights are paged on demand out of a
+read-only mapping under a RAM budget (`--weight-cache`) instead of all held
+resident — MoE expert demand-paging (run a 35B-A3B in ~16–20 GB) or dense per-layer
+streaming. Bit-exact (read-only re-fault), trading RAM for cold-miss fault latency.
+A plain `.gguf` is transparently transcoded to a sidecar `.giw` on first use, and
+that transcode is itself **streaming** — `StreamTranscodeGGUF` converts one layer at
+a time, so a model far larger than RAM (e.g. a 106B-A12B at int4) prequantizes with
+a peak of ~one layer, not the whole model. Validated on real GLM-4.5-Air (106B):
+loads via expert-paging and generates within the box's 62 GB.
+
 **Two GPU modes (`-tags gpu`, WebGPU).** (1) A per-matmul `Backend` that
 substitutes for the f32 kernel — the original, arch-agnostic path. (2) **Full
 residency** (v0.4.0): for dense Qwen2/Llama the *entire token forward* runs on
@@ -149,7 +178,7 @@ inside the opt-in `goinfer/gpu` submodule, built only under `-tags gpu`.
 flowchart TB
   subgraph GOINFER["github.com/townsendmerino/goinfer  (pure Go)"]
     direction TB
-    DEC["decoder<br/>forward pass (softmax + Gated-DeltaNet hybrid) · quant kernels · KV + deltaState cache<br/>cross-call reuse · samplers · LoRA merge · safetensors / GGUF / .giw loaders"]
+    DEC["decoder<br/>forward (softmax + Gated-DeltaNet + Mamba-2 hybrids · dense + sparse MoE) · quant kernels<br/>hybrid cache (KV + deltaState + mamba2State) · cross-call reuse · samplers · LoRA<br/>safetensors / GGUF / .giw loaders · streaming transcode + weight paging"]
     TKN["tokenizer<br/>byte-level BPE · SentencePiece byte-fallback"]
     CON["constrain<br/>logit-mask grammars · JSON Schema + Go-struct"]
     CHT["chat<br/>chat templates + tool calling (per family)"]
