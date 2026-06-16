@@ -1,8 +1,10 @@
 package decoder
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"io"
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
@@ -424,10 +426,18 @@ func ggufGlm4MoeConfig(g *embed.GGUFFile) (*Config, error) {
 	if scale == 0 {
 		scale = 1
 	}
+	// block_count includes the trailing NextN/MTP block(s) goinfer drops.
+	numLayers := u("block_count") - u("nextn_predict_layers")
+	// GLM-4.5/4.6 carry q/k/v bias but NO QK-norm; the tiny synthetic is the
+	// reverse. Neither has a metadata flag, so detect both from blk.0's tensors.
+	_, attnBias := g.Dims("blk.0.attn_q.bias")
+	_, qkNorm := g.Dims("blk.0.attn_q_norm.weight")
 	cfg := &Config{
 		ModelType:           "glm4_moe",
 		HiddenDim:           u("embedding_length"),
-		NumLayers:           u("block_count"),
+		NumLayers:           numLayers,
+		AttentionBias:       attnBias,
+		UseQKNorm:           qkNorm,
 		NumHeads:            u("attention.head_count"),
 		NumKVHeads:          u("attention.head_count_kv"),
 		HeadDim:             headDim,
@@ -485,7 +495,56 @@ func buildGGUFWeights(g *embed.GGUFFile, quant quantMode, embedInt4 bool) (*Weig
 	if err != nil {
 		return nil, err
 	}
-	return buildWeightsFromGGUF(cfg, arch, g, quant, embedInt4)
+	return buildWeightsFromGGUF(cfg, arch, g, quant, embedInt4, nil, "")
+}
+
+// StreamTranscodeGGUF transcodes the GGUF at path into a .giw weights body written
+// to out (the GINFW serialization + trailing CRC), loading ONE layer at a time so
+// peak RAM is ~one layer rather than the whole model — the streaming analogue of
+// Load + SerializeWeightsTo, for models too large to hold resident (the build-time
+// hump that otherwise blocks running a >RAM MoE). Generic-loader families stream;
+// the qwen35/gemma4 dedicated loaders fall back to a resident build + serialize
+// (those models fit). Returns the bytes written. Typically invoked inside
+// giw.WriteStream as the weights half of a .giw bundle.
+func StreamTranscodeGGUF(path string, out io.Writer, quant string, embedInt4 bool, id string) (int64, error) {
+	q, err := parseQuant(quant)
+	if err != nil {
+		return 0, err
+	}
+	g, err := embed.OpenGGUFMmap(path)
+	if err != nil {
+		return 0, err
+	}
+	defer g.Close()
+	cfg, err := ggufConfig(g)
+	if err != nil {
+		return 0, err
+	}
+	if err := validateGGUFDims(cfg); err != nil {
+		return 0, err
+	}
+	arch, _, err := resolveArchitecture(cfg)
+	if err != nil {
+		return 0, err
+	}
+	// Dedicated-loader families (qwen35/gemma4) can't stream; they fit resident.
+	if arch.qwen35 != nil || arch.gemma4 != nil {
+		w, berr := buildWeightsFromGGUF(cfg, arch, g, q, embedInt4, nil, "")
+		if berr != nil {
+			return 0, berr
+		}
+		return SerializeWeightsTo(out, w, id)
+	}
+	wr := &giwWriter{sink: out}
+	if _, err := buildWeightsFromGGUF(cfg, arch, g, q, embedInt4, wr, id); err != nil {
+		return wr.n, err
+	}
+	var crc [4]byte
+	binary.LittleEndian.PutUint32(crc[:], wr.crc) // running CRC over the streamed body
+	if _, err := out.Write(crc[:]); err != nil {
+		return wr.n, err
+	}
+	return wr.n + 4, nil
 }
 
 // Generous sanity ceilings for the metadata-derived core dims — orders of
@@ -563,7 +622,14 @@ func LoadGGUFBytes(raw []byte, opts Options) (*Model, error) {
 // ever materializing the whole model in f32 (see loadWeights). The GGUF's own
 // quant is lossy and so is the re-quant, but it captures nearly all of what a
 // Q4_K_M file carries.
-func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, quant quantMode, embedInt4 bool) (*Weights, error) {
+// When sink is non-nil, the weights are STREAMED to it (a .giw body) instead of
+// retained: the header + globals are written, then each layer is loaded, written,
+// and freed in turn, so peak RAM is ~one layer rather than the whole model — this is
+// what lets a model larger than RAM be transcoded. The returned *Weights then holds
+// no layer tensors (they were freed); the caller writes the trailing CRC. Streaming
+// is supported for the generic per-layer loader (llama/qwen2/qwen3/mellum/glm4_moe);
+// the qwen35/gemma4 dedicated paths reject it (those models fit resident).
+func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, quant quantMode, embedInt4 bool, sink *giwWriter, id string) (*Weights, error) {
 	hidden, hd := arch.HiddenDim, arch.HeadDim
 	w := &Weights{Cfg: *cfg, arch: arch, Layers: make([]LayerWeights, arch.NumLayers)}
 
@@ -679,6 +745,17 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			return nil, err
 		}
 		arch.TiedLMHead = false
+	}
+
+	// Streaming transcode: emit the header + globals now; each layer is written and
+	// freed as it loads (below), so the whole model never sits resident.
+	if sink != nil {
+		if arch.qwen35 != nil || arch.gemma4 != nil {
+			return nil, fmt.Errorf("decoder(gguf): streaming transcode unsupported for %s (load resident + prequant instead)", arch.Name)
+		}
+		if err := sink.writeHeadGlobals(w, id); err != nil {
+			return nil, err
+		}
 	}
 
 	// qwen3_5_moe (qwen35moe): the Gated DeltaNet / gated-softmax hybrid. The GGUF
@@ -1090,6 +1167,20 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			return err
 		}
 		return nil
+	}
+	if sink != nil {
+		// Sequential load → write → free: peak RAM is one layer, not the model.
+		for i := 0; i < arch.NumLayers; i++ {
+			if err := loadLayer(i); err != nil {
+				return nil, err
+			}
+			sink.layer(&w.Layers[i])
+			if sink.err != nil {
+				return nil, sink.err
+			}
+			w.Layers[i] = LayerWeights{} // release before the next layer
+		}
+		return w, nil
 	}
 	if err := parallelLayers(arch.NumLayers, loadLayer); err != nil {
 		return nil, err

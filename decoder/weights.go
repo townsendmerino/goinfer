@@ -487,8 +487,10 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 			if l.OProj, err = loadProj(tn(i, s.OProj), hd, qDim); err != nil {
 				return err
 			}
-			// Projection bias (Qwen2 q/k/v; o_proj stays biasless). Absent → empty suffix.
-			if s.QBias != "" {
+			// Projection bias (Qwen2 q/k/v; o_proj stays biasless). Gated on QKVBias so
+			// a family whose schema lists the bias suffix but whose config disables it
+			// (GLM's attention_bias) doesn't demand the absent tensor.
+			if arch.QKVBias && s.QBias != "" {
 				if l.QBias, err = st.TensorF32(tn(i, s.QBias), qDim); err != nil {
 					return err
 				}
@@ -499,8 +501,10 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 					return err
 				}
 			}
-			// QK-norm (Gemma 3, Qwen3): RMSNorm over head_dim. Absent → empty suffix.
-			if s.QNorm != "" {
+			// QK-norm (Gemma 3, Qwen3): RMSNorm over head_dim. Gated on arch.QKNorm so a
+			// family whose schema lists the suffix but whose config disables it (GLM's
+			// use_qk_norm=false) doesn't demand the absent tensor.
+			if arch.QKNorm && s.QNorm != "" {
 				if l.QNorm, err = st.TensorF32(tn(i, s.QNorm), headDim); err != nil {
 					return err
 				}
@@ -951,13 +955,17 @@ var qwen2MoeTensorSchema = tensorSchema{
 // dense mlp.{gate,up,down}_proj instead; the loader uses those suffixes on
 // i < FirstKDense and the MoE ones on i ≥ FirstKDense.
 var glm4moeTensorSchema = tensorSchema{
-	Embed:       "model.embed_tokens.weight",
-	LMHead:      "lm_head.weight",
-	FinalNorm:   "model.norm.weight",
-	QProj:       "self_attn.q_proj.weight",
-	KProj:       "self_attn.k_proj.weight",
-	VProj:       "self_attn.v_proj.weight",
-	OProj:       "self_attn.o_proj.weight",
+	Embed:     "model.embed_tokens.weight",
+	LMHead:    "lm_head.weight",
+	FinalNorm: "model.norm.weight",
+	QProj:     "self_attn.q_proj.weight",
+	KProj:     "self_attn.k_proj.weight",
+	VProj:     "self_attn.v_proj.weight",
+	OProj:     "self_attn.o_proj.weight",
+	// q/k/v bias (o_proj biasless), loaded only when arch.QKVBias (attention_bias).
+	QBias:       "self_attn.q_proj.bias",
+	KBias:       "self_attn.k_proj.bias",
+	VBias:       "self_attn.v_proj.bias",
 	QNorm:       "self_attn.q_norm.weight",
 	KNorm:       "self_attn.k_norm.weight",
 	PreAttnNorm: "input_layernorm.weight",

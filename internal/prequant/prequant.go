@@ -46,23 +46,18 @@ func Transcode(in, out, quant string) error {
 		return fmt.Errorf("metadata GGUF does not load a tokenizer: %w", err)
 	}
 
-	// 2) Weights half: load at the target quant and stream the bundle directly to
-	// the output file, freeing the resident model before the self-check so peak RAM
-	// stays ~resident, not resident+blob+bundle.
-	m, err := decoder.Load(in, decoder.Options{Quant: quant})
-	if err != nil {
-		return fmt.Errorf("load model: %w", err)
-	}
+	// 2) Weights half: transcode the GGUF straight into the bundle, ONE LAYER at a
+	// time (decoder.StreamTranscodeGGUF), so peak RAM is ~one layer rather than the
+	// whole resident model — this is what lets a model larger than RAM be prequant'd
+	// (e.g. a 106B-A12B int4 on a 62 GB box). The dedicated qwen35/gemma4 loaders fall
+	// back to a resident build inside StreamTranscodeGGUF (those models fit).
 	f, err := os.Create(out)
 	if err != nil {
-		_ = m.Close()
 		return fmt.Errorf("create %s: %w", out, err)
 	}
 	werr := giw.WriteStream(f, tokBytes, func(w io.Writer) (int64, error) {
-		return decoder.SerializeWeightsTo(w, m.Weights(), filepath.Base(in))
+		return decoder.StreamTranscodeGGUF(in, w, quant, false, filepath.Base(in))
 	})
-	_ = m.Close()
-	m = nil
 	runtime.GC()
 	if cerr := f.Close(); werr == nil {
 		werr = cerr

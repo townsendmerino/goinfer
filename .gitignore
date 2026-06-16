@@ -64,3 +64,4 @@ docs/internal/
 /spikeembed
 /spikeq6k
 testdata/glm-tiny/
+testdata/glm-tiny-bias/

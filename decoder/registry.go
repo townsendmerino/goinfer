@@ -748,8 +748,8 @@ func glm4moeArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		NormEps:         cfg.RMSNormEps,
 		NormPlacement:   NormPre2,
 		Act:             ActSiLU,
-		QKVBias:         false, // GLM attention_bias false
-		QKNorm:          true,  // per-head q_norm/k_norm (use_qk_norm)
+		QKVBias:         cfg.AttentionBias, // GLM-4.5/4.6 carry q/k/v bias (o_proj biasless); the tiny synthetic turns it off
+		QKNorm:          cfg.UseQKNorm,     // use_qk_norm: true on the tiny synthetic, FALSE on the real GLM-4.5-Air/4.6
 		FirstKDense:     cfg.FirstKDenseReplace,
 		MoE: &MoEConfig{
 			NumExperts:            cfg.NRoutedExperts,

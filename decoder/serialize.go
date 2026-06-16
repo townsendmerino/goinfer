@@ -51,7 +51,7 @@ import (
 
 const (
 	giwMagic   = "GINFW"
-	giwVersion = 2 // v2: per-layer qwen3_5_moe hybrid tail (delta / qattn)
+	giwVersion = 3 // v3: per-layer RouterBias (DeepSeek/GLM e_score_correction_bias); v2: qwen3_5_moe hybrid tail
 	// Sanity ceilings on the count fields, generous vs any real checkpoint
 	// (largest models: ~120 layers, a few hundred experts) but low enough that a
 	// corrupt/hostile blob can't drive a multi-GB make() before the body reader
@@ -103,6 +103,22 @@ func SerializeWeightsTo(out io.Writer, w *Weights, id string) (int64, error) {
 // writer's current sink (buffer or stream). Shared by SerializeWeights and
 // SerializeWeightsTo so the field order can't drift between them or from the reader.
 func (wr *giwWriter) writeBundle(w *Weights, id string) error {
+	if err := wr.writeHeadGlobals(w, id); err != nil {
+		return err
+	}
+	for i := range w.Layers {
+		wr.layer(&w.Layers[i])
+	}
+	return wr.err
+}
+
+// writeHeadGlobals writes everything up to and including the layer count: the
+// header (magic/version/quant/id/config), the global tensors, and u32(len(Layers)).
+// Split out so a streaming transcode can emit the head, then produce-write-free each
+// layer one at a time (peak RAM ~one layer, not the whole model) before the loop in
+// writeBundle. The layer count is len(w.Layers), so the streamer must allocate
+// w.Layers to NumLayers up front even though it never fills them all at once.
+func (wr *giwWriter) writeHeadGlobals(w *Weights, id string) error {
 	cfgJSON, err := json.Marshal(w.Cfg)
 	if err != nil {
 		return fmt.Errorf("decoder: marshal config: %w", err)
@@ -120,9 +136,6 @@ func (wr *giwWriter) writeBundle(w *Weights, id string) error {
 	wr.f32(w.FinalNormBias)
 
 	wr.u32(uint32(len(w.Layers)))
-	for i := range w.Layers {
-		wr.layer(&w.Layers[i])
-	}
 	return wr.err
 }
 
@@ -371,6 +384,7 @@ func (w *giwWriter) layer(l *LayerWeights) {
 	w.f32(l.PreMLPNormBias)
 	w.f32(l.PostMLPNorm)
 	w.weightMat(&l.Router)
+	w.f32(l.RouterBias) // v3: DeepSeek/GLM e_score_correction_bias
 	w.u32(uint32(len(l.Experts)))
 	for e := range l.Experts {
 		w.weightMat(&l.Experts[e].Gate)
@@ -562,6 +576,7 @@ func (r *giwReader) layer(l *LayerWeights) {
 	l.PreMLPNormBias = r.f32()
 	l.PostMLPNorm = r.f32()
 	l.Router = r.weightMat()
+	l.RouterBias = r.f32() // v3: DeepSeek/GLM e_score_correction_bias
 	ne := int(r.u32())
 	if ne < 0 || ne > maxSerializedExperts {
 		r.fail("implausible expert count")
