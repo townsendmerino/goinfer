@@ -266,7 +266,7 @@ func (m *Model) NewCache(capHint int) *KVCache {
 	// only — MoE routes attention through the acc64 kernel for bit-stable expert
 	// routing (quantized KV would reopen that), and gemma4/qwen3_5_moe have their
 	// own forward. Must precede enableRings so local layers inherit the mode.
-	if m.kvI8 && a.gemma4 == nil && a.qwen35 == nil && a.granite == nil && a.MoE == nil {
+	if m.kvI8 && a.gemma4 == nil && a.qwen35 == nil && a.granite == nil && a.nemotron == nil && a.MoE == nil {
 		c.setQuant(kvI8, capHint)
 	}
 	// Ring-buffer storage on sliding-window (local) layers: keep only the W most
@@ -275,7 +275,7 @@ func (m *Model) NewCache(capHint int) *KVCache {
 	// gemma4 (per-layer widths + KV-sharing) and qwen3_5_moe (linear attention)
 	// have their own forward and keep append-forever for now (a later increment).
 	// See docs/task-kv-ring-eviction.md.
-	if a.gemma4 == nil && a.qwen35 == nil && a.granite == nil {
+	if a.gemma4 == nil && a.qwen35 == nil && a.granite == nil && a.nemotron == nil {
 		c.enableRings(a.SlidingWindow, a.isGlobalLayer)
 	}
 	if a.gemma4 != nil {
@@ -300,6 +300,18 @@ func (m *Model) NewCache(capHint int) *KVCache {
 		mp := mamba2Params{NHeads: a.granite.NHeads, HeadDim: a.granite.HeadDim, DState: a.granite.DState, NGroups: a.granite.NGroups, DConv: a.granite.DConv, Hidden: a.HiddenDim}
 		for l := 0; l < a.NumLayers; l++ {
 			if a.isMambaLayer(l) {
+				c.mamba[l] = newMamba2State(mp)
+			}
+		}
+	}
+	if a.nemotron != nil {
+		// Single-op-block hybrid: only attention layers touch KV (manualPos), mamba
+		// layers carry a Mamba-2 recurrent state, mlp layers neither.
+		c.manualPos = true
+		c.mamba = make([]*mamba2State, a.NumLayers)
+		mp := mamba2Params{NHeads: a.nemotron.NHeads, HeadDim: a.nemotron.HeadDim, DState: a.nemotron.DState, NGroups: a.nemotron.NGroups, DConv: a.nemotron.DConv, Hidden: a.HiddenDim}
+		for l := 0; l < a.NumLayers; l++ {
+			if a.nemotron.blockKind[l] == nemoMamba {
 				c.mamba[l] = newMamba2State(mp)
 			}
 		}
@@ -340,6 +352,9 @@ func (m *Model) runLayers(id int, cache *KVCache) ([]float32, error) {
 	}
 	if arch.granite != nil { // granitemoehybrid: Mamba-2 / softmax hybrid — own path.
 		return m.runLayersGranite(id, cache)
+	}
+	if arch.nemotron != nil { // nemotron_h: single-op-per-block hybrid — own path.
+		return m.runLayersNemotron(id, cache)
 	}
 	if cache.scr == nil { // caches from NewKVCache directly (tests); Generate uses NewCache
 		cache.scr = newDecodeScratch(arch)

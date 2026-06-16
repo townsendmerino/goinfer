@@ -33,6 +33,7 @@ var registry = map[string]archAdapter{
 	"qwen3_5_moe_text": qwen35Architecture,     // the text-only checkpoint's model_type
 	"glm4_moe":         glm4moeArchitecture,    // GLM-4.5/4.6: DeepSeek-style MoE (sigmoid routing + bias) + dense prefix + QK-norm + partial RoPE
 	"granitemoehybrid": graniteArchitecture,    // Granite-4.0-H: Mamba-2 + attention hybrid + MoE-on-every-layer + Granite multipliers
+	"nemotron_h":       nemotronhArchitecture,  // Nemotron-H: single-op-per-block hybrid (mamba | NoPE-attention | relu² MLP)
 }
 
 // resolveArchitecture picks the adapter for cfg.ModelType and builds the
@@ -846,4 +847,59 @@ func graniteArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 			EmbMul: one(cfg.EmbeddingMultiplier), ResidMul: one(cfg.ResidualMultiplier),
 		},
 	}, &graniteTensorSchema, nil
+}
+
+// nemotronhArchitecture expresses Nemotron-H (model_type nemotron_h): a SINGLE-OP-
+// per-block hybrid — each layer is exactly one of mamba / attention / mlp
+// (layers_block_type), pre-norm + op + residual, NOT the mixer+FFN block every other
+// family uses. The mamba layers reuse the Mamba-2 mixer (mamba2.go); the attention
+// layers are NoPE GQA (no RoPE — the SSM layers carry position); the mlp layers are
+// non-gated relu². Plain RMSNorm, no multipliers. Dedicated loader + forward
+// (buildNemotronWeights / runLayersNemotron).
+func nemotronhArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+	// Nemotron-H's config has no num_hidden_layers — the layer count IS the length
+	// of layers_block_type.
+	if cfg.NumLayers == 0 {
+		cfg.NumLayers = len(cfg.LayersBlockType)
+	}
+	if err := cfg.validateNemotron(); err != nil {
+		return nil, nil, err
+	}
+	hd := cfg.headDim()
+	kind := make([]uint8, cfg.NumLayers)
+	for i, t := range cfg.LayersBlockType {
+		switch t {
+		case "attention":
+			kind[i] = nemoAttn
+		case "mlp":
+			kind[i] = nemoMLP
+		default: // "mamba"
+			kind[i] = nemoMamba
+		}
+	}
+	return &Architecture{
+		Name:            "nemotron_h",
+		HiddenDim:       cfg.HiddenDim,
+		NumLayers:       cfg.NumLayers,
+		NumHeads:        cfg.NumHeads,
+		NumKVHeads:      cfg.NumKVHeads,
+		HeadDim:         hd,
+		IntermediateDim: cfg.IntermediateDim, // mlp-block width
+		VocabSize:       cfg.VocabSize,
+		Norm:            NormRMS,
+		RMSAddOne:       false,
+		NormEps:         cfg.LayerNormEpsilon,
+		Act:             ActReLU2,
+		NonGatedMLP:     true,
+		QKVBias:         false,
+		QKNorm:          false,
+		AttnScale:       math.Pow(float64(hd), -0.5), // NoPE GQA, standard scale
+		RotaryDim:       0,                           // no RoPE
+		EmbedScale:      0,
+		TiedLMHead:      false,
+		nemotron: &nemotronParams{
+			NHeads: cfg.MambaNumHeads, HeadDim: cfg.MambaHeadDim, DState: cfg.SSMStateSize,
+			NGroups: cfg.NGroups, DConv: cfg.ConvKernel, blockKind: kind,
+		},
+	}, &nemotronTensorSchema, nil
 }

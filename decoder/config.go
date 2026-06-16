@@ -77,6 +77,17 @@ type Config struct {
 	ResidualMultiplier     float64 `json:"residual_multiplier"`
 	LogitsScaling          float64 `json:"logits_scaling"`
 
+	// Nemotron-H (NemotronH): single-op-per-block hybrid (layers_block_type entries
+	// "mamba" | "attention" | "mlp"), NoPE attention, non-gated relu² MLP. Its
+	// Mamba-2 uses its own key spellings (mamba_num_heads / mamba_head_dim /
+	// ssm_state_size / n_groups / conv_kernel) and layer_norm_epsilon for eps.
+	LayersBlockType []string `json:"layers_block_type"`
+	MambaNumHeads   int      `json:"mamba_num_heads"`
+	MambaHeadDim    int      `json:"mamba_head_dim"`
+	SSMStateSize    int      `json:"ssm_state_size"`
+	NGroups         int      `json:"n_groups"`
+	ConvKernel      int      `json:"conv_kernel"`
+
 	// Gated DeltaNet (qwen3_5_moe linear-attention layers). The linear layers
 	// replace softmax attention with a gated delta-rule recurrence over a
 	// fixed-size matrix state; these size its conv + per-head key/value dims.
@@ -349,6 +360,25 @@ func (c *Config) validateGranite() error {
 		return fmt.Errorf("decoder(granite): bad MoE (experts=%d top_k=%d)", c.NumLocalExperts, c.NumExpertsPerTok)
 	case c.IntermediateDim <= 0 || c.SharedIntermediateSize <= 0:
 		return fmt.Errorf("decoder(granite): intermediate_size=%d shared_intermediate_size=%d must be >0", c.IntermediateDim, c.SharedIntermediateSize)
+	}
+	return nil
+}
+
+// validateNemotron pins the Nemotron-H (nemotron_h) assumptions: a layers_block_type
+// covering every layer (mamba | attention | mlp), a valid Mamba-2 geometry, and a
+// usable mlp width + layer-norm eps.
+func (c *Config) validateNemotron() error {
+	switch {
+	case len(c.LayersBlockType) != c.NumLayers:
+		return fmt.Errorf("decoder(nemotron_h): layers_block_type has %d entries, want %d", len(c.LayersBlockType), c.NumLayers)
+	case c.MambaNumHeads <= 0 || c.MambaHeadDim <= 0 || c.SSMStateSize <= 0 || c.ConvKernel <= 0 || c.NGroups <= 0:
+		return fmt.Errorf("decoder(nemotron_h): bad mamba dims (num_heads=%d head_dim=%d state=%d conv=%d groups=%d)", c.MambaNumHeads, c.MambaHeadDim, c.SSMStateSize, c.ConvKernel, c.NGroups)
+	case c.MambaNumHeads%c.NGroups != 0:
+		return fmt.Errorf("decoder(nemotron_h): mamba_num_heads %d not divisible by n_groups %d", c.MambaNumHeads, c.NGroups)
+	case c.IntermediateDim <= 0:
+		return fmt.Errorf("decoder(nemotron_h): intermediate_size must be >0")
+	case c.LayerNormEpsilon <= 0:
+		return fmt.Errorf("decoder(nemotron_h): layer_norm_epsilon must be >0")
 	}
 	return nil
 }

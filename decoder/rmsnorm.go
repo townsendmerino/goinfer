@@ -73,6 +73,14 @@ func silu(x float32) float32 {
 	return float32(x64 / (1 + math.Exp(-x64)))
 }
 
+// relu2 is ReLU-squared (relu(x)²), Nemotron-H's non-gated MLP activation.
+func relu2(x float32) float32 {
+	if x <= 0 {
+		return 0
+	}
+	return x * x
+}
+
 // geluTanh is the tanh-approximate GELU Gemma's GeGLU MLP uses
 // ("gelu_pytorch_tanh"). Provided here so mlp.go (stub) and tests have the
 // activation ready.

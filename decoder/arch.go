@@ -91,7 +91,28 @@ type Architecture struct {
 	granite      *graniteParams
 	layerIsMamba func(i int) bool
 	LogitScale   float64
+
+	// nemotron, when non-nil, marks a Nemotron-H single-op-block hybrid. nil for
+	// every other family.
+	nemotron *nemotronParams
 }
+
+// nemotronParams marks a Nemotron-H hybrid: a SINGLE-OP-per-block stack where each
+// layer is exactly one of {mamba, attention, mlp} (blockKind, from layers_block_type)
+// over a pre-norm residual — NOT the mixer+FFN block every other family uses. The
+// mamba layers reuse the Mamba-2 mixer (same geometry fields as graniteParams); the
+// attention layers are NoPE GQA (no RoPE); the mlp layers are non-gated relu². No
+// Granite-style multipliers. forward_nemotron.go consumes this.
+type nemotronParams struct {
+	NHeads, HeadDim, DState, NGroups, DConv int     // Mamba-2 dims
+	blockKind                               []uint8 // per layer: 0 mamba · 1 attention · 2 mlp
+}
+
+const (
+	nemoMamba uint8 = iota
+	nemoAttn
+	nemoMLP
+)
 
 // graniteParams carries Granite-4.0-H's Mamba-2 mixer geometry (for the mamba
 // layers; the attention layers use the uniform Architecture fields) and the three
@@ -209,6 +230,7 @@ type ActKind int
 const (
 	ActGeluTanh ActKind = iota
 	ActSiLU
+	ActReLU2 // ReLU-squared (relu(x)²) — Nemotron-H's non-gated MLP
 )
 
 // isGlobalLayer reports whether layer i uses full (global) attention vs local

@@ -345,6 +345,12 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 		}
 		return buildGraniteWeights(cfg, arch, st, quant) // per-layer mamba/attention + fused experts
 	}
+	if arch.nemotron != nil {
+		if lora != nil {
+			return nil, fmt.Errorf("decoder: LoRA merge unsupported for the nemotron_h (single-op-block) layout")
+		}
+		return buildNemotronWeights(cfg, arch, st, quant) // per-layer mamba | attention | mlp
+	}
 	if lora != nil {
 		if err := lora.validateTargets(cfg.NumLayers, s); err != nil {
 			return nil, err
@@ -1003,6 +1009,11 @@ var glm4moeTensorSchema = tensorSchema{
 // (unused) schema return.
 var graniteTensorSchema = tensorSchema{Embed: "model.embed_tokens.weight"}
 
+// nemotronTensorSchema is a marker — Nemotron-H's single-op-per-block layout
+// (per-layer one of mamba/attention/mlp under a "mixer" prefix) is loaded directly
+// by buildNemotronWeights.
+var nemotronTensorSchema = tensorSchema{Embed: "backbone.embedding.weight"}
+
 // conv1DTransposed loads a GPT-2 Conv1D weight and returns it transposed to the
 // [out, in] row-major layout the rest of the decoder (MatmulBT) expects. GPT-2
 // stores these weights as [in, out] (nn.Conv1D, not nn.Linear), so a plain load
@@ -1234,6 +1245,102 @@ func buildGraniteWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsF
 		lw.SharedExpert.Gate = quantizeWM(linalg.WrapF32(append([]float32(nil), gu[:half]...), sInter, hidden), quant)
 		lw.SharedExpert.Up = quantizeWM(linalg.WrapF32(append([]float32(nil), gu[half:]...), sInter, hidden), quant)
 		lw.SharedExpert.Down = quantizeWM(linalg.WrapF32(append([]float32(nil), dn...), hidden, sInter), quant)
+		return nil
+	}
+	if err := parallelLayers(arch.NumLayers, loadLayer); err != nil {
+		return nil, err
+	}
+	return w, nil
+}
+
+// buildNemotronWeights loads a Nemotron-H (nemotron_h) checkpoint: a single-op-per-
+// block stack where each layer (under a "mixer" prefix) is a Mamba-2 mixer (f32,
+// parity-first, reusing the Granite conventions), a NoPE GQA attention, or a
+// non-gated relu² MLP — keyed by arch.nemotron.blockKind. Plain RMSNorm per layer.
+func buildNemotronWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile, quant quantMode) (*Weights, error) {
+	hidden, vocab, inter := arch.HiddenDim, arch.VocabSize, arch.IntermediateDim
+	np := arch.nemotron
+	w := &Weights{Cfg: *cfg, arch: arch, st: st, Layers: make([]LayerWeights, arch.NumLayers)}
+	var err error
+	if w.Embed, err = loadMat(st, "backbone.embedding.weight", vocab, hidden); err != nil {
+		return nil, err
+	}
+	w.Embed = quantizeWM(w.Embed, quant.embedding())
+	if w.FinalNorm, err = st.TensorF32("backbone.norm_f.weight", hidden); err != nil {
+		return nil, err
+	}
+	arch.TiedLMHead = true
+	if head, herr := loadMat(st, "lm_head.weight", vocab, hidden); herr == nil {
+		w.LMHead = quantizeWM(head, quant.embedding())
+		arch.TiedLMHead = false
+	}
+
+	dInner := np.NHeads * np.HeadDim
+	convDim := dInner + 2*np.NGroups*np.DState
+	projDim := 2*dInner + 2*np.NGroups*np.DState + np.NHeads
+	hd := arch.HeadDim
+	qDim, kvDim := arch.NumHeads*hd, arch.NumKVHeads*hd
+
+	loadLayer := func(l int) error {
+		lw := &w.Layers[l]
+		tn := func(suf string) string { return fmt.Sprintf("backbone.layers.%d.%s", l, suf) }
+		var e error
+		// The single pre-op RMSNorm (held in PreAttnNorm regardless of op kind).
+		if lw.PreAttnNorm, e = st.TensorF32(tn("norm.weight"), hidden); e != nil {
+			return e
+		}
+		switch np.blockKind[l] {
+		case nemoMamba:
+			mw := &mamba2Weights{}
+			if mw.inProj, e = st.TensorF32(tn("mixer.in_proj.weight"), projDim, hidden); e != nil {
+				return e
+			}
+			if mw.convW, e = st.TensorF32(tn("mixer.conv1d.weight"), convDim, 1, np.DConv); e != nil {
+				return e
+			}
+			if mw.convB, e = st.TensorF32(tn("mixer.conv1d.bias"), convDim); e != nil {
+				return e
+			}
+			if mw.aLog, e = st.TensorF32(tn("mixer.A_log"), np.NHeads); e != nil {
+				return e
+			}
+			if mw.d, e = st.TensorF32(tn("mixer.D"), np.NHeads); e != nil {
+				return e
+			}
+			if mw.dtBias, e = st.TensorF32(tn("mixer.dt_bias"), np.NHeads); e != nil {
+				return e
+			}
+			if mw.normW, e = st.TensorF32(tn("mixer.norm.weight"), dInner); e != nil {
+				return e
+			}
+			if mw.outProj, e = st.TensorF32(tn("mixer.out_proj.weight"), hidden, dInner); e != nil {
+				return e
+			}
+			lw.mamba = mw
+		case nemoAttn:
+			if lw.QProj, e = loadMat(st, tn("mixer.q_proj.weight"), qDim, hidden); e != nil {
+				return e
+			}
+			if lw.KProj, e = loadMat(st, tn("mixer.k_proj.weight"), kvDim, hidden); e != nil {
+				return e
+			}
+			if lw.VProj, e = loadMat(st, tn("mixer.v_proj.weight"), kvDim, hidden); e != nil {
+				return e
+			}
+			if lw.OProj, e = loadMat(st, tn("mixer.o_proj.weight"), hidden, qDim); e != nil {
+				return e
+			}
+			lw.QProj, lw.KProj = quantizeWM(lw.QProj, quant), quantizeWM(lw.KProj, quant)
+			lw.VProj, lw.OProj = quantizeWM(lw.VProj, quant), quantizeWM(lw.OProj, quant)
+		case nemoMLP:
+			if lw.UpProj, e = loadMat(st, tn("mixer.up_proj.weight"), inter, hidden); e != nil {
+				return e
+			}
+			if lw.DownProj, e = loadMat(st, tn("mixer.down_proj.weight"), hidden, inter); e != nil {
+				return e
+			}
+			lw.UpProj, lw.DownProj = quantizeWM(lw.UpProj, quant), quantizeWM(lw.DownProj, quant)
+		}
 		return nil
 	}
 	if err := parallelLayers(arch.NumLayers, loadLayer); err != nil {
