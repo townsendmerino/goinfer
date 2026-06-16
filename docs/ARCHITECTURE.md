@@ -25,17 +25,27 @@ the **load + memory paths**, and the **module map**.
 >
 > - **Qwen 3.6 / `qwen3_5_moe`**: most layers are **Gated DeltaNet** (linear
 >   attention with a recurrent matrix state) — `deltanet.go`, state `deltaState`.
-> - **Granite-4.0-H / `granitemoehybrid`**: a ~9:1 mix of **Mamba-2 selective
->   state-space** layers and softmax attention, MoE on every layer, plus four
+> - **Granite-4.0-H / `granitemoehybrid`** (and **Nemotron-H / `nemotron_h`**, a
+>   single-op-per-block variant): a mix of **Mamba-2 selective state-space** layers
+>   and softmax attention, MoE on every layer, plus four
 >   Granite scalar multipliers (embedding / attention / residual / logits) —
 >   `mamba2.go` (sequential scan + an equivalent chunked scan), state `mamba2State`
->   (`{conv window, SSM state}`), forward in `forward_granite.go`.
+>   (`{conv window, SSM state}`), forward in `forward_granite.go` / `forward_nemotron.go`.
+> - **DeepSeek-V2/V3 / `deepseek_v2` `deepseek_v3`**: **Multi-head Latent Attention**
+>   — the third axis, *latent-KV*. K/V compress to a shared low-rank latent
+>   (`kv_lora_rank`) which is the ONLY thing cached (a new **latent cache kind**,
+>   `KVCache.mlaLatent`, alongside full-KV and recurrent state); per-head K/V are
+>   reconstructed from it each step, with decoupled RoPE on a separate slice. The
+>   per-head q·k width differs from the v width, so it runs its own attention rather
+>   than the uniform path — `forward_deepseek.go`. MoE rides the shared `moeMLP`
+>   (config-driven softmax-V2 vs sigmoid-group-V3 routing).
 >
-> Both have a dedicated forward (`forward_qwen35.go` / `forward_granite.go`) and are
-> excluded from multi-token batched prefill — their recurrence is inherently
-> sequential. A new mixer is one new primitive + its parity test on the existing
-> hybrid scaffolding, which is what made Granite (Mamba-2) land on the shapes
-> qwen3_5_moe (DeltaNet) first proved.
+> Each has a dedicated forward and is
+> excluded from multi-token batched prefill — their recurrence / latent
+> reconstruction is inherently sequential. A new mixer (or attention-kind) is one new
+> primitive + its parity test on the existing per-layer-kind scaffolding, which is
+> what let Granite (Mamba-2) land on the shapes qwen3_5_moe (DeltaNet) first proved,
+> and MLA's latent cache slot in beside them.
 
 ## 1. The forward pass (one decode step)
 
