@@ -20,7 +20,7 @@ CFG = dict(
     vocab_size=256, hidden_size=64, intermediate_size=128, num_hidden_layers=2,
     num_attention_heads=4, num_key_value_heads=2,
     mamba_n_heads=8, mamba_d_head=16, mamba_d_state=16, mamba_d_conv=4,
-    mamba_n_groups=1, mamba_expand=2,
+    mamba_n_groups=2, mamba_expand=2,
     num_local_experts=8, num_experts_per_tok=2, shared_intermediate_size=128,
     max_position_embeddings=128, layer_types=["mamba", "mamba"],
 )

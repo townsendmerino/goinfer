@@ -21,6 +21,11 @@ type mamba2Params struct {
 	NGroups int
 	DConv   int // K (causal conv kernel)
 	Hidden  int
+	// NormGroups is the group count for the GATED RMSNorm specifically — families
+	// differ here: Granite (GraniteMoeHybridRMSNormGated) normalizes over the FULL
+	// dInner (NormGroups 1), Nemotron-H (Zamba2RMSNormGated) normalizes per group
+	// (NormGroups = NGroups). Equal when NGroups==1. 0 ⇒ treated as 1.
+	NormGroups int
 }
 
 func (p mamba2Params) dInner() int  { return p.NHeads * p.HeadDim }
@@ -113,18 +118,37 @@ func mamba2Step(h []float32, w *mamba2Weights, p mamba2Params, eps float64, st *
 		}
 	}
 
-	// 5. Gated RMSNorm over dInner (y · SiLU(z), normalized, × weight), then out_proj.
-	var ss float64
+	// 5. Gated RMSNorm (y · SiLU(z), normalized × weight), then out_proj. The norm is
+	// GROUPED by NGroups (group_size = dInner/NGroups): each group normalizes
+	// independently (Zamba2/Mamba-2 RMSNormGated). NGroups=1 ⇒ a single flat norm.
 	gated := make([]float32, dInner)
 	for i := range dInner {
 		gated[i] = y[i] * silu(z[i])
-		ss += float64(gated[i]) * float64(gated[i])
 	}
-	inv := float32(1 / math.Sqrt(ss/float64(dInner)+eps))
-	for i := range dInner {
-		gated[i] = w.normW[i] * gated[i] * inv
-	}
+	gatedRMSNormGrouped(gated, w.normW, p.NormGroups, eps)
 	return matvec(w.outProj, p.Hidden, dInner, gated)
+}
+
+// gatedRMSNormGrouped applies the Mamba-2 gated RMSNorm in place: x already holds
+// y·SiLU(gate); it is split into nGroups contiguous groups (group_size = len/nGroups)
+// and each group is RMS-normalized independently, then scaled by weight[i]. nGroups=1
+// is a single flat RMSNorm over the whole vector.
+func gatedRMSNormGrouped(x, weight []float32, nGroups int, eps float64) {
+	if nGroups < 1 {
+		nGroups = 1
+	}
+	groupSize := len(x) / nGroups
+	for g := 0; g < nGroups; g++ {
+		seg := x[g*groupSize : (g+1)*groupSize]
+		var ss float64
+		for _, v := range seg {
+			ss += float64(v) * float64(v)
+		}
+		inv := float32(1 / math.Sqrt(ss/float64(groupSize)+eps))
+		for j := range seg {
+			seg[j] = weight[g*groupSize+j] * seg[j] * inv
+		}
+	}
 }
 
 // mamba2Seq runs the mixer over a whole sequence from a fresh state — a thin loop

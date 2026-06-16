@@ -16,7 +16,7 @@ func (m *Model) runLayersGranite(id int, cache *KVCache) ([]float32, error) {
 	pos := cache.Pos()
 	mp := mamba2Params{
 		NHeads: g.NHeads, HeadDim: g.HeadDim, DState: g.DState,
-		NGroups: g.NGroups, DConv: g.DConv, Hidden: hidden,
+		NGroups: g.NGroups, DConv: g.DConv, Hidden: hidden, NormGroups: 1,
 	}
 
 	h := make([]float32, hidden)

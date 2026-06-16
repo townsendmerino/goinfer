@@ -21,7 +21,7 @@ func TestMamba2_chunkedMatchesSequential(t *testing.T) {
 		return s
 	}
 
-	p := mamba2Params{NHeads: 6, HeadDim: 8, DState: 8, NGroups: 2, DConv: 4, Hidden: 16}
+	p := mamba2Params{NHeads: 6, HeadDim: 8, DState: 8, NGroups: 2, DConv: 4, Hidden: 16, NormGroups: 2}
 	const eps = 1e-6
 	convDim, dInner := p.convDim(), p.dInner()
 

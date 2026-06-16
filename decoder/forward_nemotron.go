@@ -16,7 +16,7 @@ func (m *Model) runLayersNemotron(id int, cache *KVCache) ([]float32, error) {
 	pos := cache.Pos()
 	mp := mamba2Params{
 		NHeads: np.NHeads, HeadDim: np.HeadDim, DState: np.DState,
-		NGroups: np.NGroups, DConv: np.DConv, Hidden: hidden,
+		NGroups: np.NGroups, DConv: np.DConv, Hidden: hidden, NormGroups: np.NGroups,
 	}
 
 	h := make([]float32, hidden)

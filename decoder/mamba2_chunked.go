@@ -143,19 +143,14 @@ func mamba2Chunked(h [][]float32, w *mamba2Weights, p mamba2Params, eps float64,
 		}
 	}
 
-	// --- gated RMSNorm (y·SiLU(z)) then out_proj, per position ---
+	// --- grouped gated RMSNorm (y·SiLU(z)) then out_proj, per position ---
 	out := make([][]float32, n)
 	for t := range n {
-		var ss float64
 		gated := make([]float32, dInner)
 		for i := range dInner {
 			gated[i] = y[t][i] * silu(z[t][i])
-			ss += float64(gated[i]) * float64(gated[i])
 		}
-		inv := float32(1 / math.Sqrt(ss/float64(dInner)+eps))
-		for i := range dInner {
-			gated[i] = w.normW[i] * gated[i] * inv
-		}
+		gatedRMSNormGrouped(gated, w.normW, p.NormGroups, eps)
 		out[t] = matvec(w.outProj, p.Hidden, dInner, gated)
 	}
 	return out

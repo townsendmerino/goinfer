@@ -49,8 +49,10 @@ func ggufConfig(g *embed.GGUFFile) (*Config, error) {
 		return ggufGlm4MoeConfig(g)
 	case "granitehybrid":
 		return ggufGraniteConfig(g)
+	case "nemotron_h":
+		return ggufNemotronConfig(g)
 	default:
-		return nil, fmt.Errorf("decoder(gguf): architecture %q unsupported (have: llama, qwen2, qwen3, gemma3, gemma4 [wip], mellum, qwen35moe, glm4moe, granitehybrid)", arch)
+		return nil, fmt.Errorf("decoder(gguf): architecture %q unsupported (have: llama, qwen2, qwen3, gemma3, gemma4 [wip], mellum, qwen35moe, glm4moe, granitehybrid, nemotron_h)", arch)
 	}
 }
 
@@ -541,6 +543,83 @@ func ggufGraniteConfig(g *embed.GGUFFile) (*Config, error) {
 	}
 	cfg.RopeParameters = json.RawMessage(fmt.Sprintf(
 		`{"rope_type":"default","rope_theta":%g}`, gf("rope.freq_base")))
+	ggufEOS(g, cfg)
+	return cfg, nil
+}
+
+// ggufNemotronConfig builds a Nemotron-H Config from the nemotron_h.* metadata. Per-
+// layer kind comes from two parallel arrays: attention.head_count_kv (>0 ⇒ attention)
+// and feed_forward_length (>0 ⇒ mlp); the rest are mamba. head_dim is attention.
+// key_length (NOT embedding/heads). Attention is NoPE (the rope.* keys are vestigial).
+func ggufNemotronConfig(g *embed.GGUFFile) (*Config, error) {
+	u := func(k string) int {
+		v, _ := g.Uint("nemotron_h." + k)
+		return int(v)
+	}
+	gf := func(k string) float64 {
+		if v, ok := g.Float("nemotron_h." + k); ok {
+			return v
+		}
+		v, _ := g.Uint("nemotron_h." + k)
+		return float64(v)
+	}
+	intAt := func(arr []any, i int) int { // tolerant int read from a metadata array
+		if i >= len(arr) {
+			return 0
+		}
+		switch v := arr[i].(type) {
+		case uint32:
+			return int(v)
+		case int32:
+			return int(v)
+		case uint64:
+			return int(v)
+		case int64:
+			return int(v)
+		}
+		return 0
+	}
+	nLayers := u("block_count")
+	kvArr, _ := g.Metadata["nemotron_h.attention.head_count_kv"].([]any)
+	ffArr, _ := g.Metadata["nemotron_h.feed_forward_length"].([]any)
+	types := make([]string, nLayers)
+	kvHeads, ffLen := 0, 0
+	for i := 0; i < nLayers; i++ {
+		switch {
+		case intAt(kvArr, i) > 0:
+			types[i] = "attention"
+			kvHeads = intAt(kvArr, i)
+		case intAt(ffArr, i) > 0:
+			types[i] = "mlp"
+			ffLen = intAt(ffArr, i)
+		default:
+			types[i] = "mamba"
+		}
+	}
+	nHeadsMamba := u("ssm.time_step_rank")
+	inner := u("ssm.inner_size")
+	eps := gf("attention.layer_norm_rms_epsilon")
+	if eps == 0 {
+		eps = gf("attention.layer_norm_epsilon")
+	}
+	cfg := &Config{
+		ModelType:        "nemotron_h",
+		HiddenDim:        u("embedding_length"),
+		NumLayers:        nLayers,
+		NumHeads:         u("attention.head_count"),
+		NumKVHeads:       kvHeads,
+		HeadDim:          u("attention.key_length"), // explicit — heads*head_dim != hidden
+		IntermediateDim:  ffLen,
+		MambaNumHeads:    nHeadsMamba,
+		MambaHeadDim:     inner / nHeadsMamba,
+		SSMStateSize:     u("ssm.state_size"),
+		NGroups:          u("ssm.group_count"),
+		ConvKernel:       u("ssm.conv_kernel"),
+		LayersBlockType:  types,
+		LayerNormEpsilon: eps,
+		HiddenAct:        "silu",
+		VocabSize:        ggufVocabSize(g),
+	}
 	ggufEOS(g, cfg)
 	return cfg, nil
 }
@@ -1119,6 +1198,107 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			return nil
 		}
 		if err := parallelLayers(arch.NumLayers, loadGranite); err != nil {
+			return nil, err
+		}
+		return w, nil
+	}
+
+	// Nemotron-H (nemotron_h): single-op-per-block hybrid. Each layer is one of
+	// mamba / attention (NoPE — no q/k permute) / non-gated mlp, under a single
+	// attn_norm. The ssm_* tensors reuse llama.cpp's conventions (ssm_a = −exp(A_log),
+	// conv [convDim,K], grouped ssm_norm). Mixer f32; attention/mlp/embeddings quantize.
+	if npar := arch.nemotron; npar != nil {
+		dInner := npar.NHeads * npar.HeadDim
+		convDim := dInner + 2*npar.NGroups*npar.DState
+		projDim := 2*dInner + 2*npar.NGroups*npar.DState + npar.NHeads
+		hd := arch.HeadDim
+		qDim, kvDim := arch.NumHeads*hd, arch.NumKVHeads*hd
+		inter := arch.IntermediateDim
+		f32mat := func(name string, out, in int) ([]float32, error) {
+			dims, data, derr := g.Tensor(name)
+			if derr != nil {
+				return nil, derr
+			}
+			if len(dims) != 2 || dims[0] != in || dims[1] != out {
+				return nil, fmt.Errorf("decoder(gguf-nemotron): %q dims %v, want [in=%d, out=%d]", name, dims, in, out)
+			}
+			return data, nil
+		}
+		flat := func(name string, n int) ([]float32, error) {
+			_, data, derr := g.Tensor(name)
+			if derr != nil {
+				return nil, derr
+			}
+			if len(data) != n {
+				return nil, fmt.Errorf("decoder(gguf-nemotron): %q has %d elems, want %d", name, len(data), n)
+			}
+			return data, nil
+		}
+		loadNemo := func(i int) error {
+			l := &w.Layers[i]
+			p := fmt.Sprintf("blk.%d.", i)
+			var e error
+			if l.PreAttnNorm, e = vnorm(p+"attn_norm.weight", hidden); e != nil {
+				return e
+			}
+			switch npar.blockKind[i] {
+			case nemoMamba:
+				mw := &mamba2Weights{}
+				if mw.inProj, e = f32mat(p+"ssm_in.weight", projDim, hidden); e != nil {
+					return e
+				}
+				if mw.convW, e = f32mat(p+"ssm_conv1d.weight", convDim, npar.DConv); e != nil {
+					return e
+				}
+				if mw.convB, e = flat(p+"ssm_conv1d.bias", convDim); e != nil {
+					return e
+				}
+				if mw.d, e = flat(p+"ssm_d", npar.NHeads); e != nil {
+					return e
+				}
+				if mw.dtBias, e = flat(p+"ssm_dt.bias", npar.NHeads); e != nil {
+					return e
+				}
+				if mw.normW, e = flat(p+"ssm_norm.weight", dInner); e != nil {
+					return e
+				}
+				if mw.outProj, e = f32mat(p+"ssm_out.weight", hidden, dInner); e != nil {
+					return e
+				}
+				a, aerr := flat(p+"ssm_a", npar.NHeads)
+				if aerr != nil {
+					return aerr
+				}
+				mw.aLog = make([]float32, npar.NHeads)
+				for h := range a {
+					mw.aLog[h] = float32(math.Log(-float64(a[h])))
+				}
+				l.mamba = mw
+			case nemoAttn:
+				// NoPE → no q/k permute.
+				if l.QProj, e = mat(p+"attn_q.weight", qDim, hidden); e != nil {
+					return e
+				}
+				if l.KProj, e = mat(p+"attn_k.weight", kvDim, hidden); e != nil {
+					return e
+				}
+				if l.VProj, e = mat(p+"attn_v.weight", kvDim, hidden); e != nil {
+					return e
+				}
+				if l.OProj, e = mat(p+"attn_output.weight", hidden, qDim); e != nil {
+					return e
+				}
+			case nemoMLP:
+				if l.UpProj, e = mat(p+"ffn_up.weight", inter, hidden); e != nil {
+					return e
+				}
+				if l.DownProj, e = mat(p+"ffn_down.weight", hidden, inter); e != nil {
+					return e
+				}
+			}
+			return nil
+		}
+		if err := parallelLayers(arch.NumLayers, loadNemo); err != nil {
 			return nil, err
 		}
 		return w, nil

@@ -55,6 +55,7 @@ func TestMamba2_parity(t *testing.T) {
 	p := mamba2Params{
 		NHeads: g.Dims.NHeads, HeadDim: g.Dims.HeadDim, DState: g.Dims.DState,
 		NGroups: g.Dims.NGroups, DConv: g.Dims.DConv, Hidden: g.Dims.Hidden,
+		NormGroups: 1, // GraniteMoeHybrid mixer uses a FULL gated norm
 	}
 	w := &mamba2Weights{
 		inProj: g.Weights.InProj, convW: g.Weights.ConvW, convB: g.Weights.ConvB,
