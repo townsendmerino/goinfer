@@ -26,8 +26,8 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 
 | Family | model_type(s) | MoE | Sliding window | QK-norm | RoPE | Norm | Activation | Tied head | Loaders | Modality | GPU-resident | Parity |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| DeepSeek-V2 | `deepseek_v2` | sparse +shared | none | no | partial | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no | pending |
-| DeepSeek-V3 | `deepseek_v3` | sparse +shared | none | no | partial | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no | pending |
+| DeepSeek-V2 | `deepseek_v2` | sparse +shared | none | no | partial | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no | real-oracle 100.0%/0.99902 |
+| DeepSeek-V3 | `deepseek_v3` | sparse +shared | none | no | partial | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no | real-oracle 100.0%/0.99954 |
 | Kimi K2 | `kimi_k2` | sparse +shared | none | no | partial | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no | pending |
 
 ## softmax-GQA
@@ -67,11 +67,11 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 | Gemma 3 | `gemma3`, `gemma3_text` | dense | interleave | yes | dual-base | RMSNorm, sandwich | GeGLU | yes | safetensors, GGUF | text (+ vision via VL text_config) | no | pending |
 | Gemma 4 | `gemma4` | dense | interleave | yes | dual-base | RMSNorm, sandwich | GeGLU | yes | safetensors, GGUF | text | no | pending |
 | Llama | `llama` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF, GPTQ, AWQ | text | yes | pending |
-| Llama 4 | `llama4_text` | sparse +shared | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no | pending |
+| Llama 4 | `llama4_text` | sparse +shared | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no | coherent-gen |
 | Mellum2 | `mellum` | sparse, no-shared | interleave | yes | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no | pending |
 | Mistral | `mistral` | dense | all-layer | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no | pending |
 | Mixtral | `mixtral` | sparse, no-shared | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no | pending |
-| Phi-3 / Phi-4 | `phi3` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | pending |
+| Phi-3 / Phi-4 | `phi3` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | full-oracle 100.0%/1.00000 |
 | Qwen2 / Qwen2.5 | `qwen2` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | pending |
 | Qwen2-MoE | `qwen2_moe` | sparse +shared | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no | pending |
 | Qwen2.5-VL | `qwen2_5_vl` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors | text (+ vision tower) | yes | pending |

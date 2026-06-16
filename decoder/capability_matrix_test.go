@@ -284,8 +284,10 @@ type capabilityRow struct {
 }
 
 // parityColumn renders a family's parity cell from its manifest entry: a short
-// method label + argmax%/cosine_min for validated families, "pending"
-// otherwise. The methodLabel map shortens the manifest's method strings.
+// method label + argmax%/cosine_min for validated families with a numeric oracle,
+// just the method label for qualitative gates (coherent-generation on a real model
+// too large for an oracle, e.g. Llama 4 Scout), and "pending" otherwise. The
+// methodLabel map shortens the manifest's method strings.
 func parityColumn(fam familyParity) string {
 	if string(fam.Status) != `"validated"` {
 		return "pending"
@@ -297,6 +299,10 @@ func parityColumn(fam familyParity) string {
 		method = "full-oracle"
 	case "weightDiff":
 		method = "weight-diff"
+	case "real-model-oracle":
+		method = "real-oracle"
+	case "coherent-generation":
+		return "coherent-gen" // qualitative real-model gate (no numeric oracle — weights too large / gated)
 	}
 	var metrics struct {
 		ArgmaxPct float64 `json:"argmax_pct"`

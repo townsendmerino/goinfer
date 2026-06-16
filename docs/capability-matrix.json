@@ -38,7 +38,7 @@
     "loaders": "safetensors, GGUF",
     "modality": "text",
     "gpu_residency_eligible": false,
-    "parity": "pending"
+    "parity": "real-oracle 100.0%/0.99902"
   },
   {
     "name": "deepseek_v3",
@@ -58,7 +58,7 @@
     "loaders": "safetensors, GGUF",
     "modality": "text",
     "gpu_residency_eligible": false,
-    "parity": "pending"
+    "parity": "real-oracle 100.0%/0.99954"
   },
   {
     "name": "kimi_k2",
@@ -199,7 +199,7 @@
     "loaders": "safetensors, GGUF",
     "modality": "text",
     "gpu_residency_eligible": false,
-    "parity": "pending"
+    "parity": "coherent-gen"
   },
   {
     "name": "mellum",
@@ -279,7 +279,7 @@
     "loaders": "safetensors, GGUF",
     "modality": "text",
     "gpu_residency_eligible": true,
-    "parity": "pending"
+    "parity": "full-oracle 100.0%/1.00000"
   },
   {
     "name": "qwen2",

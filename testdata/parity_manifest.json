@@ -48,13 +48,17 @@
         "decoder/forward_deepseek.go"
       ],
       "deps_hash": "sha256:3bec44185a73c6d1a087ae593870487578daecb9c78d8789e052941635727f48",
-      "status": "pending",
-      "validated_at": null,
-      "date": null,
-      "reference": null,
-      "machine": null,
-      "method": null,
-      "metrics": null
+      "status": "validated",
+      "validated_at": "b8bd8b0",
+      "date": "2026-06-16",
+      "reference": "HF bf16 (DeepSeek-V2-Lite 15.7B; int8 resident)",
+      "machine": "linux-62gb",
+      "method": "real-model-oracle",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 0.999016,
+        "cosine_mean": 0.999016
+      }
     },
     "deepseek_v3": {
       "uses": [
@@ -67,13 +71,17 @@
         "decoder/forward_deepseek.go"
       ],
       "deps_hash": "sha256:3bec44185a73c6d1a087ae593870487578daecb9c78d8789e052941635727f48",
-      "status": "pending",
-      "validated_at": null,
-      "date": null,
-      "reference": null,
-      "machine": null,
-      "method": null,
-      "metrics": null
+      "status": "validated",
+      "validated_at": "72b22ca",
+      "date": "2026-06-16",
+      "reference": "HF bf16 (Moonlight-16B-A3B; int8 resident)",
+      "machine": "linux-62gb",
+      "method": "real-model-oracle",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 0.99954,
+        "cosine_mean": 0.99954
+      }
     },
     "gemma3": {
       "uses": [
@@ -208,12 +216,12 @@
         "decoder/forward_llama4.go"
       ],
       "deps_hash": "sha256:73b8aba2b099b0cac81de282dd49f46e3f0f7c2088d2af9b4606fbbb46c0bb2b",
-      "status": "pending",
-      "validated_at": null,
-      "date": null,
-      "reference": null,
-      "machine": null,
-      "method": null,
+      "status": "validated",
+      "validated_at": "3f23c96",
+      "date": "2026-06-16",
+      "reference": "Llama-4-Scout-17B-16E Q2_K GGUF (int4 resident; coherent+factual)",
+      "machine": "linux-62gb",
+      "method": "coherent-generation",
       "metrics": null
     },
     "mellum": {
@@ -293,13 +301,17 @@
       ],
       "own": [],
       "deps_hash": "sha256:fabb6786b5e3b272ffa6f266ffda297b11511a175c46482e13cf9f8c31f50f0a",
-      "status": "pending",
-      "validated_at": null,
-      "date": null,
-      "reference": null,
-      "machine": null,
-      "method": null,
-      "metrics": null
+      "status": "validated",
+      "validated_at": "af813a0",
+      "date": "2026-06-16",
+      "reference": "HF f32 (Phi-3-mini-4k-instruct 3.8B)",
+      "machine": "linux-62gb",
+      "method": "full-forward-oracle",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 1.0,
+        "cosine_mean": 1.0
+      }
     },
     "qwen2": {
       "uses": [

@@ -56,6 +56,10 @@ GATES=(
   "gpt2              |TestGPT2_forwardParity"
   "qwen3_5_moe-tiny  |TestQwen35_forwardParity"
   "deltanet          |TestGatedDeltaNet_parity"
+  "deepseek-tiny     |TestDeepseek_textParity"
+  "kimi-tiny         |TestKimi_textParity"
+  "phi3-tiny         |TestPhi3_textParity"
+  "llama4-tiny       |TestLlama4_textParity"
   "gguf-Q8_0         |TestGGUF_Q8_0_parity"
   "gguf-Q4_0         |TestGGUF_Q4_0_parity"
   "gguf-Q4_K_M       |TestGGUF_Q4_K_M_parity"
@@ -73,18 +77,25 @@ GATES=(
   "tok-mellum2       |TestByteLevel_mellum2GoldenParity"
   "tok-tinyllama     |TestLoadGGUF_tinyllamaParity"
 )
-# qwen3_5_moe 35B real-checkpoint gates (build-tagged realckpt).
+# Real-checkpoint gates (build-tagged realckpt). Heavy (large downloads / RAM); each
+# SKIPs when its asset is absent (see the test files for the default paths / env vars).
 REALCKPT_GATES=(
   "qwen3.6-gguf-gate |TestQwen35GGUF_gate"
   "qwen3.6-weightdiff|TestQwen35GGUF_weightDiff"
   "qwen3.6-gate2     |TestQwen35Real_gate2FullModel"
+  "deepseek-v2lite   |TestDeepseekV2LiteReal_gate"
+  "deepseek-moonlight|TestDeepseekMoonlightReal_gate"
+  "deepseek-gguf     |TestDeepseekGGUFReal_gate"
+  "phi3-mini-oracle  |TestPhi3MiniReal_gate"
+  "phi3-gguf         |TestPhi3GGUFReal_gate"
+  "llama4-scout-gguf |TestLlama4Real_gate"
 )
 
 echo "-- running ./decoder/ ./tokenizer/ (verbose) ..."
 go test -v -timeout "$TIMEOUT" ./decoder/ ./tokenizer/ >>"$LOG" 2>&1
 if [ "$REALCKPT" = "1" ]; then
-  echo "-- running -tags realckpt qwen3_5_moe gates ..."
-  go test -tags realckpt -v -timeout "$TIMEOUT" ./decoder/ -run 'Qwen35' >>"$LOG" 2>&1
+  echo "-- running -tags realckpt real-model gates ..."
+  go test -tags realckpt -v -timeout "$TIMEOUT" ./decoder/ -run 'Qwen35|Real_gate' >>"$LOG" 2>&1
 fi
 
 # classify(name) → PASS | FAIL | SKIP | MISSING (the test never ran)
