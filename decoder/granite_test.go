@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io/fs"
@@ -107,6 +108,27 @@ func TestGranite_textParity(t *testing.T) {
 	for i := range g.ContinuationIDs {
 		if got[i] != g.ContinuationIDs[i] {
 			t.Errorf("continuation[%d] = %d, want %d (got %v want %v)", i, got[i], g.ContinuationIDs[i], got, g.ContinuationIDs)
+			break
+		}
+	}
+
+	// Generate() path (greedy) must match too — it exercises the multi-token batched
+	// prefill, which canBatchN MUST exclude for the hybrid (the mamba scan is
+	// sequential). Regression guard for that exclusion (the m.forward loop above
+	// wouldn't catch a batched-prefill bug).
+	gm, err := Load(ckpt, Options{})
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	defer gm.Close()
+	out, _ := gm.Generate(context.Background(), g.PromptIDs, g.NNew, SamplingParams{})
+	gen := make([]int, 0, g.NNew)
+	for id := range out {
+		gen = append(gen, id)
+	}
+	for i := range g.ContinuationIDs {
+		if i >= len(gen) || gen[i] != g.ContinuationIDs[i] {
+			t.Errorf("Generate continuation[%d] mismatch: got %v want %v (batched-prefill / canBatchN?)", i, gen, g.ContinuationIDs)
 			break
 		}
 	}

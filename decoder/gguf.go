@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
@@ -46,8 +47,10 @@ func ggufConfig(g *embed.GGUFFile) (*Config, error) {
 		return ggufQwen35Config(g)
 	case "glm4moe":
 		return ggufGlm4MoeConfig(g)
+	case "granitehybrid":
+		return ggufGraniteConfig(g)
 	default:
-		return nil, fmt.Errorf("decoder(gguf): architecture %q unsupported (have: llama, qwen2, qwen3, gemma3, gemma4 [wip], mellum, qwen35moe, glm4moe)", arch)
+		return nil, fmt.Errorf("decoder(gguf): architecture %q unsupported (have: llama, qwen2, qwen3, gemma3, gemma4 [wip], mellum, qwen35moe, glm4moe, granitehybrid)", arch)
 	}
 }
 
@@ -461,6 +464,83 @@ func ggufGlm4MoeConfig(g *embed.GGUFFile) (*Config, error) {
 	cfg.RopeParameters = json.RawMessage(fmt.Sprintf(
 		`{"rope_type":"default","rope_theta":%g,"partial_rotary_factor":%g}`,
 		gf("rope.freq_base"), partial))
+	ggufEOS(g, cfg)
+	return cfg, nil
+}
+
+// ggufGraniteConfig builds a Granite-4.0-H Config from the granitehybrid.* metadata.
+// Per-layer kind comes from the attention.head_count_kv array (>0 ⇒ attention layer,
+// 0 ⇒ mamba). The Mamba-2 geometry is the ssm.* keys (time_step_rank IS the head
+// count; head_dim = inner_size / time_step_rank). The four Granite scalars are
+// embedding_scale / attention.scale / residual_scale / logit_scale. rope_parameters
+// is synthesized so graniteArchitecture runs the same descriptor build as safetensors.
+func ggufGraniteConfig(g *embed.GGUFFile) (*Config, error) {
+	u := func(k string) int {
+		v, _ := g.Uint("granitehybrid." + k)
+		return int(v)
+	}
+	gf := func(k string) float64 {
+		if v, ok := g.Float("granitehybrid." + k); ok {
+			return v
+		}
+		v, _ := g.Uint("granitehybrid." + k)
+		return float64(v)
+	}
+	nLayers := u("block_count")
+	// Per-layer kind + the (uniform) attention KV-head count from the head_count_kv
+	// array: nonzero entries are the attention layers.
+	kvArr, _ := g.Metadata["granitehybrid.attention.head_count_kv"].([]any)
+	layerTypes := make([]string, nLayers)
+	kvHeads := 0
+	for i := 0; i < nLayers; i++ {
+		kv := 0
+		if i < len(kvArr) {
+			switch v := kvArr[i].(type) {
+			case uint32:
+				kv = int(v)
+			case int32:
+				kv = int(v)
+			case uint64:
+				kv = int(v)
+			case int64:
+				kv = int(v)
+			}
+		}
+		if kv > 0 {
+			layerTypes[i] = "attention"
+			kvHeads = kv
+		} else {
+			layerTypes[i] = "mamba"
+		}
+	}
+	nHeadsMamba := u("ssm.time_step_rank")
+	innerSize := u("ssm.inner_size")
+	cfg := &Config{
+		ModelType:              "granitemoehybrid",
+		HiddenDim:              u("embedding_length"),
+		NumLayers:              nLayers,
+		NumHeads:               u("attention.head_count"),
+		NumKVHeads:             kvHeads,
+		IntermediateDim:        u("feed_forward_length"),               // expert FFN width
+		SharedIntermediateSize: u("expert_shared_feed_forward_length"), // shared expert width
+		NumLocalExperts:        u("expert_count"),
+		NumExpertsPerTok:       u("expert_used_count"),
+		MambaNHeads:            nHeadsMamba,
+		MambaDHead:             innerSize / nHeadsMamba,
+		MambaDState:            u("ssm.state_size"),
+		MambaDConv:             u("ssm.conv_kernel"),
+		MambaNGroups:           u("ssm.group_count"),
+		EmbeddingMultiplier:    gf("embedding_scale"),
+		AttentionMultiplier:    gf("attention.scale"),
+		ResidualMultiplier:     gf("residual_scale"),
+		LogitsScaling:          gf("logit_scale"),
+		LayerTypes:             layerTypes,
+		HiddenAct:              "silu",
+		VocabSize:              ggufVocabSize(g),
+		RMSNormEps:             gf("attention.layer_norm_rms_epsilon"),
+	}
+	cfg.RopeParameters = json.RawMessage(fmt.Sprintf(
+		`{"rope_type":"default","rope_theta":%g}`, gf("rope.freq_base")))
 	ggufEOS(g, cfg)
 	return cfg, nil
 }
@@ -916,6 +996,129 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			return nil
 		}
 		if err := parallelLayers(arch.NumLayers, loadQ35); err != nil {
+			return nil, err
+		}
+		return w, nil
+	}
+
+	// Granite-4.0-H (granitehybrid): per-layer Mamba-2 mixer or GQA attention, MoE on
+	// every layer. The Mamba-2 ssm_* tensors use llama.cpp's conventions (shared with
+	// qwen35): ssm_a stores −exp(A_log) directly (reversed to A_log via log(−a) so the
+	// shared mamba2Step works), conv1d is [convDim, K], ssm_norm raw. Mixer stays f32
+	// (parity-first); experts/attention/embeddings quantize. NEOX rope ⇒ no q/k permute.
+	if gp := arch.granite; gp != nil {
+		dInner := gp.NHeads * gp.HeadDim
+		convDim := dInner + 2*gp.NGroups*gp.DState
+		projDim := 2*dInner + 2*gp.NGroups*gp.DState + gp.NHeads
+		hd := arch.HeadDim
+		qDim, kvDim := arch.NumHeads*hd, arch.NumKVHeads*hd
+		f32mat := func(name string, out, in int) ([]float32, error) {
+			dims, data, derr := g.Tensor(name)
+			if derr != nil {
+				return nil, derr
+			}
+			if len(dims) != 2 || dims[0] != in || dims[1] != out {
+				return nil, fmt.Errorf("decoder(gguf-granite): %q dims %v, want [in=%d, out=%d]", name, dims, in, out)
+			}
+			return data, nil
+		}
+		flat := func(name string, n int) ([]float32, error) { // 1-D or [1,n]/[n,1] tensor → n floats
+			_, data, derr := g.Tensor(name)
+			if derr != nil {
+				return nil, derr
+			}
+			if len(data) != n {
+				return nil, fmt.Errorf("decoder(gguf-granite): %q has %d elems, want %d", name, len(data), n)
+			}
+			return data, nil
+		}
+		loadGranite := func(i int) error {
+			l := &w.Layers[i]
+			p := fmt.Sprintf("blk.%d.", i)
+			var e error
+			if l.PreAttnNorm, e = vnorm(p+"attn_norm.weight", hidden); e != nil {
+				return e
+			}
+			if l.PreMLPNorm, e = vnorm(p+"ffn_norm.weight", hidden); e != nil {
+				return e
+			}
+			if arch.isMambaLayer(i) {
+				mw := &mamba2Weights{}
+				if mw.inProj, e = f32mat(p+"ssm_in.weight", projDim, hidden); e != nil {
+					return e
+				}
+				if mw.convW, e = f32mat(p+"ssm_conv1d.weight", convDim, gp.DConv); e != nil {
+					return e
+				}
+				if mw.convB, e = flat(p+"ssm_conv1d.bias", convDim); e != nil {
+					return e
+				}
+				if mw.d, e = flat(p+"ssm_d", gp.NHeads); e != nil {
+					return e
+				}
+				if mw.dtBias, e = flat(p+"ssm_dt.bias", gp.NHeads); e != nil {
+					return e
+				}
+				if mw.normW, e = flat(p+"ssm_norm.weight", dInner); e != nil {
+					return e
+				}
+				if mw.outProj, e = f32mat(p+"ssm_out.weight", hidden, dInner); e != nil {
+					return e
+				}
+				// ssm_a is −exp(A_log); reverse to A_log so mamba2Step's −exp(aLog) recovers it.
+				a, aerr := flat(p+"ssm_a", gp.NHeads)
+				if aerr != nil {
+					return aerr
+				}
+				mw.aLog = make([]float32, gp.NHeads)
+				for h := range a {
+					mw.aLog[h] = float32(math.Log(-float64(a[h])))
+				}
+				l.mamba = mw
+			} else {
+				// llama.cpp converts GraniteHybrid attention with undo_permute=True, so
+				// q/k are RoPE-permuted in the GGUF (like Llama) and must be un-permuted.
+				if l.QProj, e = permMat(p+"attn_q.weight", qDim, hidden, arch.NumHeads); e != nil {
+					return e
+				}
+				if l.KProj, e = permMat(p+"attn_k.weight", kvDim, hidden, arch.NumKVHeads); e != nil {
+					return e
+				}
+				if l.VProj, e = mat(p+"attn_v.weight", kvDim, hidden); e != nil {
+					return e
+				}
+				if l.OProj, e = mat(p+"attn_output.weight", hidden, qDim); e != nil {
+					return e
+				}
+			}
+			// MoE on every layer: router + stacked routed experts + ungated shared.
+			expInter := arch.MoE.IntermediateDim
+			if l.Router, e = mat(p+"ffn_gate_inp.weight", arch.MoE.NumExperts, hidden); e != nil {
+				return e
+			}
+			gate, ge := stackedExperts(p+"ffn_gate_exps.weight", expInter, hidden, arch.MoE.NumExperts)
+			up, ue := stackedExperts(p+"ffn_up_exps.weight", expInter, hidden, arch.MoE.NumExperts)
+			down, de := stackedExperts(p+"ffn_down_exps.weight", hidden, expInter, arch.MoE.NumExperts)
+			if ge != nil || ue != nil || de != nil {
+				return fmt.Errorf("decoder(gguf-granite): experts layer %d: %v / %v / %v", i, ge, ue, de)
+			}
+			l.Experts = make([]expertWeights, arch.MoE.NumExperts)
+			for ei := range arch.MoE.NumExperts {
+				l.Experts[ei] = expertWeights{Gate: gate[ei], Up: up[ei], Down: down[ei]}
+			}
+			sInter := arch.MoE.SharedIntermediateDim
+			if l.SharedExpert.Gate, e = mat(p+"ffn_gate_shexp.weight", sInter, hidden); e != nil {
+				return e
+			}
+			if l.SharedExpert.Up, e = mat(p+"ffn_up_shexp.weight", sInter, hidden); e != nil {
+				return e
+			}
+			if l.SharedExpert.Down, e = mat(p+"ffn_down_shexp.weight", hidden, sInter); e != nil {
+				return e
+			}
+			return nil
+		}
+		if err := parallelLayers(arch.NumLayers, loadGranite); err != nil {
 			return nil, err
 		}
 		return w, nil

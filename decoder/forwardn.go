@@ -15,10 +15,10 @@ import (
 // GPT-2 (non-gated + learned positions) and K≤1 take the sequential fallback.
 func (m *Model) canBatchN(K int) bool {
 	a := m.w.arch
-	// Gemma 4 (per-layer head_dim, KV-sharing, PLE) and qwen3_5_moe (Gated DeltaNet
-	// linear attention — NOT plain GQA, so attendBatchedHeads doesn't apply) each
-	// have their own sequential forward; exclude both.
-	return K > 1 && m.w.Embed.Rows() != 0 && !a.NonGatedMLP && !a.LearnedPosEmbed && a.gemma4 == nil && a.qwen35 == nil
+	// Gemma 4 (per-layer head_dim, KV-sharing, PLE), qwen3_5_moe (Gated DeltaNet),
+	// and granitemoehybrid (Mamba-2) each have their own sequential forward whose
+	// recurrent layers can't be batched across positions; exclude all three.
+	return K > 1 && m.w.Embed.Rows() != 0 && !a.NonGatedMLP && !a.LearnedPosEmbed && a.gemma4 == nil && a.qwen35 == nil && a.granite == nil
 }
 
 // forwardLayersN runs the embedding + all transformer layers + final norm over
