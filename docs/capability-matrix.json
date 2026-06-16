@@ -182,6 +182,26 @@
     "parity": "pending"
   },
   {
+    "name": "llama4_text",
+    "model_types": [
+      "llama4_text"
+    ],
+    "display_name": "Llama 4",
+    "description": "Meta Llama 4 (Scout/Maverick) text decoder: iRoPE (RoPE/NoPE interleave) + L2 QK-norm + attn-temp + dense/MoE interleave (top-1 sigmoid + shared)",
+    "coverage_axis": "softmax-GQA",
+    "moe": "sparse +shared",
+    "sliding_window": "none",
+    "qk_norm": false,
+    "rope_style": "full",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors",
+    "modality": "text",
+    "gpu_residency_eligible": false,
+    "parity": "pending"
+  },
+  {
     "name": "mellum",
     "model_types": [
       "mellum"
