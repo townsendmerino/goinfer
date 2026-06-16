@@ -22,12 +22,21 @@ per-family **CI golden** universal.
 **Why first:** it's the only thing that fixes false-green on the big models we
 *can't* put in CI, and it's the mechanism behind the policy's claim discipline.
 
-**1a. `testdata/parity_manifest.json`** — the source of truth. One entry per
-family:
+**1a. `testdata/parity_manifest.json`** — the source of truth. Named **shared
+sets** + a per-family **dependency set** (the `core_hash`/two-bucket model is
+dropped — see 1c for why it leaked):
 
 ```json
 {
-  "core_hash": "sha256:…",                 // shared numerics files (see 1c)
+  "aikit_version": "v1.7.3",
+  "shared_sets": {
+    "core":     ["decoder/model.go","decoder/forwardn.go","decoder/attention.go","decoder/mlp.go","decoder/kvcache.go","decoder/rope.go","decoder/ropescale.go","decoder/rmsnorm.go","decoder/registry.go","decoder/arch.go","decoder/config.go"],
+    "loaders":  ["decoder/weights.go","decoder/gguf.go","decoder/serialize.go"],
+    "quant":    ["decoder/weightmat.go","decoder/gptq.go","decoder/awq.go"],
+    "moe":      ["decoder/mlp.go"],
+    "deltanet": ["decoder/deltanet.go","decoder/deltanet_chunked.go"],
+    "mamba2":   ["decoder/mamba2.go","decoder/mamba2_chunked.go"]
+  },
   "families": {
     "gemma4": {
       "validated_at": "e3eb033",
@@ -36,30 +45,52 @@ family:
       "machine": "linux-62gb",
       "metrics": { "argmax_pct": 92.5, "cosine_min": 0.99466, "cosine_mean": 0.99859 },
       "method": "full-forward-oracle",       // or "weightDiff" when the oracle OOMs
-      "files": ["registry.go:gemma4Architecture", "forward_gemma4.go", "gemma4_*.go"],
-      "files_hash": "sha256:…"
+      "uses": ["core","loaders","quant"],    // the shared sets this family's numerics depend on
+      "own":  ["decoder/forward_gemma4.go","decoder/gemma4.go"],
+      "deps_hash": "sha256:…"                 // over (∪ uses' files) ∪ own ∪ aikit_version
     }
   }
 }
 ```
 
 **1b. The staleness test (`TestParityManifest_fresh`, T1 — model-free, in CI).**
-For each family: recompute the hash over its declared `files` set and the shared
-`core_hash`; if either differs from the recorded value, **fail** with
-`"parity stale for <family>: numerics changed since <validated_at> — re-run T3
-(scripts/parity_sweep.sh) and update parity_manifest.json"`. Pure hashing + JSON
-read; needs no assets, so it runs every push.
+For each family: resolve its `uses` sets to file lists, union with `own`, hash
+that set's contents plus the recorded `aikit_version`; if it differs from
+`deps_hash`, **fail** with `"parity stale for <family>: numerics changed since
+<validated_at> — re-run T3 (scripts/parity_sweep.sh) and update
+parity_manifest.json"`. Pure hashing + JSON read; needs no assets, runs every push.
 
-**1c. The hashing rule (coarse-first, refine if noisy).** Two inputs:
-- **Shared core** — `attention.go`, `mlp.go`, `model.go`, `kvcache.go`, `rope.go`,
-  `rmsnorm.go`, plus the active `linalg` version. A change here marks **all**
-  families stale (correct: it can move everyone's numerics).
-- **Per-family files** — the family's arch-adapter, tensor schema, and dedicated
-  forward/loader files. A change marks just that family stale.
+**1c. The hashing rule — a per-family dependency set, NOT a two-bucket core (this
+fixes a real false-green hole).** The first draft modeled numerics as a 6-file
+"shared core" + per-family files. That **leaks**, two ways, and leaking is exactly
+what Item 1 exists to prevent:
 
-Start coarse (whole-file hashes). If the core hash trips too often on no-op edits
-(comments/formatting), narrow to AST-of-exported-numerics or accept the re-run
-cost — don't over-engineer before it's actually noisy.
+- **The core was too narrow.** Cross-family numerics and loader logic also live in
+  `registry.go`, `gguf.go`, `weights.go`, `config.go`, `arch.go`, and the
+  quant/dequant path (`weightmat.go`/`gptq.go`/`awq.go`). A bug in `gguf.go`
+  dequant moves many families' numerics but, under the narrow core, **trips no
+  hash → silent green.**
+- **Shared *primitives* belong to a subset, which neither bucket can express.**
+  `mamba2.go` is shared by **{Granite, Nemotron}**; `deltanet.go` by
+  **{qwen3_5_moe}**. A `mamba2.go` change must mark *those* families stale — not
+  everyone (over-trip), not no-one (under-trip).
+
+**Fix:** drop the global-core special case. Each family declares the **full set of
+files its numerics depend on** via `uses` (named shared sets, including the *wide*
+core, the loaders, the quant path, and any shared primitive) + `own`. The shared
+sets express the subset mappings directly: `mamba2.go` lives only in the `mamba2`
+set, so editing it re-hashes only families whose `uses` includes `mamba2`. A
+`gguf.go` edit re-hashes every family that `uses` `loaders` — i.e. all of them —
+closing the dequant hole.
+
+Two concrete rules: **(i) full paths always** — `attention.go` exists in *both*
+`gpu/` and `decoder/`, so the manifest uses `decoder/attention.go` (the `gpu/`
+backend is gated separately, policy's backend axis). **(ii) coarse is fine in the
+*over*-trip direction** — `registry.go` holds every family's adapter, so editing
+one adapter re-hashes all families that `use` `core`; that's safe (re-validate
+more than needed). Only narrow (AST-of-the-adapter-func) if the over-trip is
+actually noisy. The forbidden direction is under-trip, which the dependency set
+eliminates.
 
 **1d. `parity_sweep.sh` emits the manifest rows** it validates (commit, metrics,
 method, hashes), so a T3 run *updates the truth* rather than printing to a log
@@ -121,15 +152,19 @@ the cost is breadth (backfill).
 
 ---
 
-## Item 4 — systematize `weightDiff` as the "oracle won't fit" tier
+## Item 4 — extract the shared `weightDiff` helper (two call sites already exist)
 
-**Why:** the qwen3.6 precedent (`TestQwen35GGUF_weightDiff`) proved a loader
-without an oracle by diffing GGUF against the bit-exact safetensors loader to
-Q8_0 tolerance. Make it the *standard* T3 substitute for any family whose full
-forward oracle OOMs (the big MoE / dense families), recorded in the manifest with
-`"method": "weightDiff"`. No new mechanism — a documented requirement + reuse.
+**Why:** `weightDiff` proves a loader without an oracle — diff the GGUF load
+against the bit-exact safetensors loader to Q8_0 tolerance. It's further along
+than "one precedent": **two** call sites already use the pattern —
+`decoder/qwen35_gguf_weightdiff_test.go` (`TestQwen35GGUF_weightDiff`) **and**
+`decoder/glm4moe_gguf_test.go`. So Item 4 is **extract the shared helper from the
+two existing sites**, then make it the *standard* T3 substitute for any family
+whose full forward oracle OOMs (the big MoE / dense families), recorded in the
+manifest with `"method": "weightDiff"`.
 
-**Effort:** low (pattern exists; apply per big family).
+**Effort:** very low — it's a refactor of two committed tests into one helper plus
+a documented requirement, not new mechanism.
 
 ---
 
@@ -143,17 +178,20 @@ forward oracle OOMs (the big MoE / dense families), recorded in the manifest wit
 4. **Item 4 (weightDiff standardization)** — folds in as big families are
    (re)validated.
 
-**Trigger to prioritize all four:** the GLM / Granite families landing
-(`task-model-families-glm-granite.md`) — they're the first families to go through
-the completed "definition of done" checklist, so the harness should exist as they
-land rather than be retrofitted. Until then, Item 1 alone already stops the
-silent-skip bleeding and is worth doing immediately.
+**Trigger status: FIRED (2026-06-15) — do this now.** The trigger was "GLM /
+Granite landing." They've effectively landed: `glm4moe{,_air,_gguf}_test.go`,
+`granite{,_real}_test.go`, `mamba2.go` + `mamba2_chunked.go`, and
+`pin_glm_*`/`pin_granite_*` are all committed. So the harness is being
+retrofitted, not pre-built — which makes Item 1 (stop the silent-skip bleeding)
+more urgent, not less. Order remains 1 → 3 → 2 → 4; start immediately.
 
 ## Backfill checklist (the currently-claimed families)
 
 For each of {Gemma 3, Gemma 4 (incl. E/PLE, 12B), Qwen2/2.5, Qwen3, Qwen3.5/3.6-MoE,
-Llama 2/3, Mistral, Mixtral, GPT-2, Mellum, Mellum2, Gemma 3 VL}: confirm a T1
-golden (Item 3), a manifest row (Item 1) by full-oracle or `weightDiff` (Item 4),
-and a T2 sweep entry (Item 2). Anything missing all three is relabeled
-experimental in the README until filled — this is the concrete output that makes
-the support claims honest.
+**GLM (4.5-Air / 4.6)**, **Granite 4.0 Hybrid**, Llama 2/3, Mistral, Mixtral, GPT-2,
+Mellum, Mellum2, Gemma 3 VL}: confirm a T1 golden (Item 3), a manifest row (Item 1)
+by full-oracle or `weightDiff` (Item 4), and a T2 sweep entry (Item 2). Anything
+missing all three is relabeled experimental in the README until filled — this is
+the concrete output that makes the support claims honest. **GLM and Granite are
+newly landed, so they're the highest-priority rows to validate first** (their
+`pin_*`/`weightDiff` tests already exist — wire them into the manifest).

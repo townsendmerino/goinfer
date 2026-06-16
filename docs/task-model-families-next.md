@@ -167,6 +167,8 @@ multimodal early-fusion** (Llama 4 vision) unless image demand pulls.
 `parity-coverage-policy.md` definition of done — arch adapter + loader, a **T1
 committed tiny golden**, a **T3 manifest row** (full oracle where it fits — Nemotron
 and the small MLA model — else `weightDiff`), a **T2 small-real-model sweep entry**,
-and a README support row **only after** those exist. Nemotron and MLA are the first
-families to run the completed checklist end-to-end, so the parity-coverage harness
-(`task-parity-coverage.md`) should be in place as they land.
+and a README support row **only after** those exist. With GLM/Granite already
+landed (their `pin_*`/`weightDiff` tests committed), the parity-coverage harness
+(`task-parity-coverage.md`) is being **retrofitted now** — stand it up first and
+backfill GLM/Granite as its first rows, so Nemotron and MLA land *onto* a working
+checklist rather than extending the gap.
