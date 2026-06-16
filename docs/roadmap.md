@@ -44,7 +44,7 @@ is **covering the axes, not counting models**:
 |---|---|---|
 | **gated-linear** | Gated DeltaNet (recurrent matrix state) | ✅ qwen3_5_moe |
 | **state-space** | Mamba-2 selective scan | ✅ Granite-4.0-H |
-| **latent-KV** | MLA (compressed low-rank KV) | ✅ DeepSeek-V2/V3 (deepseek_v2 / deepseek_v3) |
+| **latent-KV** | MLA (compressed low-rank KV) | ✅ DeepSeek-V2/V3 (deepseek_v2 / deepseek_v3) + Kimi K2 (kimi_k2, same path) |
 
 "Runs every modern attention variant in one cgo-free static binary" is a stronger,
 more defensible claim than "supports N models," and one no other pure-Go runtime can
@@ -449,8 +449,10 @@ the staged path has. **That coupling is the felt-pain trigger for both.**
   in `docs/completed/task-model-families-next.md`): **Nemotron-H** (free — reuses Mamba-2,
   fully bf16-oracle-testable) ✅ and **MLA/DeepSeek** (the third axis, latent-KV —
   the one real new primitive) ✅ have shipped, completing all three efficient-attention
-  axes. **Phi-3/Phi-4** shipped (momentum, no new axis — fused qkv/gate_up on the llama
-  rails); **Llama 4** remains as the last popularity-momentum pick.
+  axes. **Phi-3/Phi-4** shipped (momentum — fused qkv/gate_up on the llama rails) and
+  **Kimi K2** shipped (the strongest open coding model — "basically DeepSeek-V3", so it
+  rides the MLA path as a config alias: 64 heads / 384 experts, zero new forward code);
+  **Llama 4** remains as the last popularity-momentum pick.
 
 ### Measurement / calibration gaps
 

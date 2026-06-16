@@ -36,6 +36,7 @@ var registry = map[string]archAdapter{
 	"nemotron_h":       nemotronhArchitecture,  // Nemotron-H: single-op-per-block hybrid (mamba | NoPE-attention | relu² MLP)
 	"deepseek_v2":      deepseekArchitecture,   // DeepSeek-V2 (MLA + DeepSeekMoE; softmax routing, V2-Lite has no q-LoRA)
 	"deepseek_v3":      deepseekArchitecture,   // DeepSeek-V3 (MLA + DeepSeekMoE; sigmoid + e_score_correction_bias group-limited routing)
+	"kimi_k2":          deepseekArchitecture,   // Kimi K2/K2.x (architectures=DeepseekV3ForCausalLM): MLA + DeepSeekMoE, "basically V3" — 64 heads / 384 experts, config scalars only
 	"phi3":             phi3Architecture,       // Phi-3 / Phi-4 dense: llama skeleton + fused qkv_proj / gate_up_proj (split at load) + partial rotary
 }
 
@@ -973,8 +974,10 @@ func deepseekArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	// Routing flavor. V3 (noaux_tc) scores with sigmoid + e_score_correction_bias and
 	// limits to topk_group groups; V2 scores with softmax. Honor explicit scoring_func/
 	// topk_method when present, else default by model_type. norm_topk_prob defaults true
-	// (HF DeepseekV3Config) but V2-Lite sets it false.
-	sigmoid := cfg.ModelType == "deepseek_v3"
+	// (HF DeepseekV3Config) but V2-Lite sets it false. Kimi K2 is V3-style (sigmoid +
+	// noaux_tc) — its config sets scoring_func="sigmoid", but default it to sigmoid too so
+	// a variant that omits the field never silently falls to the softmax (V2) branch.
+	sigmoid := cfg.ModelType == "deepseek_v3" || cfg.ModelType == "kimi_k2"
 	if cfg.ScoringFunc != "" {
 		sigmoid = cfg.ScoringFunc == "sigmoid"
 	}
