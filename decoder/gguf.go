@@ -51,8 +51,10 @@ func ggufConfig(g *embed.GGUFFile) (*Config, error) {
 		return ggufGraniteConfig(g)
 	case "nemotron_h":
 		return ggufNemotronConfig(g)
+	case "deepseek2":
+		return ggufDeepseekConfig(g)
 	default:
-		return nil, fmt.Errorf("decoder(gguf): architecture %q unsupported (have: llama, qwen2, qwen3, gemma3, gemma4 [wip], mellum, qwen35moe, glm4moe, granitehybrid, nemotron_h)", arch)
+		return nil, fmt.Errorf("decoder(gguf): architecture %q unsupported (have: llama, qwen2, qwen3, gemma3, gemma4 [wip], mellum, qwen35moe, glm4moe, granitehybrid, nemotron_h, deepseek2)", arch)
 	}
 }
 
@@ -622,6 +624,147 @@ func ggufNemotronConfig(g *embed.GGUFFile) (*Config, error) {
 	}
 	ggufEOS(g, cfg)
 	return cfg, nil
+}
+
+// ggufDeepseekConfig builds a DeepSeek-V2/V3 (MLA) Config from the deepseek2.* metadata
+// (llama.cpp maps BOTH V2 and V3 to arch "deepseek2"; the routing flavor is
+// expert_gating_func: 1/absent = softmax = V2, 2 = sigmoid noaux_tc = V3). The MLA head
+// split comes from attention.key_length (= qk_head_dim = nope+rope) minus
+// rope.dimension_count (= qk_rope), with value_length the (different) v_head_dim and
+// kv_lora_rank the cached-latent width; q_lora_rank is present only on the q-LoRA models.
+// The yarn block is synthesized into rope_scaling so deepseekArchitecture runs the same
+// descriptor build as safetensors (yarn_log_multiplier = 0.1·mscale; DeepSeek's
+// mscale == mscale_all_dim ⇒ the cos/sin attention_factor ratio is 1.0).
+func ggufDeepseekConfig(g *embed.GGUFFile) (*Config, error) {
+	u := func(k string) int {
+		v, _ := g.Uint("deepseek2." + k)
+		return int(v)
+	}
+	gf := func(k string) float64 {
+		if v, ok := g.Float("deepseek2." + k); ok {
+			return v
+		}
+		v, _ := g.Uint("deepseek2." + k)
+		return float64(v)
+	}
+	keyLen := u("attention.key_length")  // qk_nope_head_dim + qk_rope_head_dim
+	ropeDim := u("rope.dimension_count") // qk_rope_head_dim
+	sigmoid := u("expert_gating_func") == 2
+	modelType := "deepseek_v2"
+	scoring := "softmax"
+	if sigmoid {
+		modelType, scoring = "deepseek_v3", "sigmoid"
+	}
+	// expert_weights_norm: absent ⇒ V2 false / V3 true (matches the released configs).
+	normTopK := sigmoid
+	if b, ok := g.Metadata["deepseek2.expert_weights_norm"].(bool); ok {
+		normTopK = b
+	}
+	scale := gf("expert_weights_scale")
+	if scale == 0 {
+		scale = 1
+	}
+	cfg := &Config{
+		ModelType:           modelType,
+		ScoringFunc:         scoring,
+		HiddenDim:           u("embedding_length"),
+		NumLayers:           u("block_count"),
+		NumHeads:            u("attention.head_count"),
+		NumKVHeads:          u("attention.head_count_kv"),
+		QLoRARank:           u("attention.q_lora_rank"), // absent ⇒ 0 (direct q_proj)
+		KVLoRARank:          u("attention.kv_lora_rank"),
+		QKRopeHeadDim:       ropeDim,
+		QKNopeHeadDim:       keyLen - ropeDim,
+		VHeadDim:            u("attention.value_length"),
+		IntermediateDim:     u("feed_forward_length"),        // dense prefix width
+		MoeIntermediateSize: u("expert_feed_forward_length"), // expert FFN width
+		NRoutedExperts:      u("expert_count"),
+		NumExpertsPerTok:    u("expert_used_count"),
+		NSharedExperts:      u("expert_shared_count"),
+		FirstKDenseReplace:  u("leading_dense_block_count"),
+		RoutedScalingFactor: scale,
+		NGroup:              u("expert_group_count"),      // absent ⇒ 0 (no group limiting)
+		TopkGroup:           u("expert_group_used_count"), // absent ⇒ 0
+		NormTopKProb:        &normTopK,
+		HiddenAct:           "silu",
+		VocabSize:           ggufVocabSize(g),
+		RMSNormEps:          gf("attention.layer_norm_rms_epsilon"),
+		RoPEGlobalBase:      gf("rope.freq_base"),
+	}
+	// YaRN (V2-Lite, V3): synthesize the rope_scaling object. llama.cpp stores
+	// yarn_log_multiplier = 0.1·mscale; DeepSeek sets mscale == mscale_all_dim, so emit
+	// both (deepseekArchitecture's ratio collapses to 1.0). The inv-freq ramp uses
+	// factor + original_context_length + the default beta_fast/beta_slow.
+	if t, _ := g.Str("deepseek2.rope.scaling.type"); t == "yarn" {
+		mscale := gf("rope.scaling.yarn_log_multiplier") * 10 // 0.1·mscale ⇒ mscale
+		cfg.RopeScaling = json.RawMessage(fmt.Sprintf(
+			`{"type":"yarn","factor":%g,"original_max_position_embeddings":%g,"mscale":%g,"mscale_all_dim":%g,"beta_fast":32,"beta_slow":1}`,
+			gf("rope.scaling.factor"), gf("rope.scaling.original_context_length"), mscale, mscale))
+	}
+	ggufEOS(g, cfg)
+	return cfg, nil
+}
+
+// loadDeepseekAttnGGUF loads one DeepSeek MLA layer's attention tensors as f32 (the
+// parity-first forward uses plain matvec, like the qwen35/granite mixer weights), from
+// llama.cpp's deepseek2 names: attn_q_a/attn_q_a_norm/attn_q_b (q-LoRA) or attn_q
+// (direct), attn_kv_a_mqa, attn_kv_a_norm, attn_kv_b, attn_output. GGUF stores each matrix
+// as dims [in, out] with the data row-major [out, in] — exactly the layout mlaWeights
+// expects (and what g.Tensor dequantizes to).
+func loadDeepseekAttnGGUF(g *embed.GGUFFile, p string, l *LayerWeights, arch *Architecture) error {
+	pa := arch.mla
+	qkHeadDim := pa.qkHeadDim()
+	f32 := func(name string, out, in int) ([]float32, error) {
+		dims, data, err := g.Tensor(name)
+		if err != nil {
+			return nil, err
+		}
+		if len(dims) != 2 || dims[0] != in || dims[1] != out {
+			return nil, fmt.Errorf("decoder(gguf-deepseek): %q dims %v, want [in=%d, out=%d]", name, dims, in, out)
+		}
+		return data, nil
+	}
+	flat := func(name string, n int) ([]float32, error) {
+		dims, data, err := g.Tensor(name)
+		if err != nil {
+			return nil, err
+		}
+		if len(data) != n {
+			return nil, fmt.Errorf("decoder(gguf-deepseek): %q has %d elems, want %d (dims %v)", name, len(data), n, dims)
+		}
+		return data, nil
+	}
+	w := &mlaWeights{}
+	var err error
+	if pa.QLoRARank > 0 { // q-LoRA bottleneck (V3 671B); V2-Lite/Moonlight are direct-q
+		if w.qAProj, err = f32(p+"attn_q_a.weight", pa.QLoRARank, arch.HiddenDim); err != nil {
+			return err
+		}
+		if w.qALayernorm, err = flat(p+"attn_q_a_norm.weight", pa.QLoRARank); err != nil {
+			return err
+		}
+		if w.qBProj, err = f32(p+"attn_q_b.weight", arch.NumHeads*qkHeadDim, pa.QLoRARank); err != nil {
+			return err
+		}
+	} else {
+		if w.qProj, err = f32(p+"attn_q.weight", arch.NumHeads*qkHeadDim, arch.HiddenDim); err != nil {
+			return err
+		}
+	}
+	if w.kvAProj, err = f32(p+"attn_kv_a_mqa.weight", pa.KVLoRARank+pa.QKRopeHeadDim, arch.HiddenDim); err != nil {
+		return err
+	}
+	if w.kvALayernorm, err = flat(p+"attn_kv_a_norm.weight", pa.KVLoRARank); err != nil {
+		return err
+	}
+	if w.kvBProj, err = f32(p+"attn_kv_b.weight", arch.NumHeads*(pa.QKNopeHeadDim+pa.VHeadDim), pa.KVLoRARank); err != nil {
+		return err
+	}
+	if w.oProj, err = f32(p+"attn_output.weight", arch.HiddenDim, arch.NumHeads*pa.VHeadDim); err != nil {
+		return err
+	}
+	l.mla = w
+	return nil
 }
 
 // loadGGUFWeights parses a .gguf file and builds the weight bundle, mapping
@@ -1426,50 +1569,59 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 		if l.PreAttnNorm, err = vnorm(p+"attn_norm.weight", hidden); err != nil {
 			return err
 		}
-		if l.QProj, err = loadQK(p+"attn_q.weight", qDim, arch.NumHeads); err != nil {
-			return err
-		}
-		if l.KProj, err = loadQK(p+"attn_k.weight", kvDim, arch.NumKVHeads); err != nil {
-			return err
-		}
-		if l.VProj, err = mat(p+"attn_v.weight", kvDim, hidden); err != nil {
-			return err
-		}
-		if l.OProj, err = mat(p+"attn_output.weight", hidden, qDim); err != nil {
-			return err
-		}
-		// q/k/v projection bias (Qwen2): the q and k biases are per-output-row, so
-		// llama.cpp's RoPE row permutation applies to them exactly as to the q/k
-		// weight rows (ggufInvPermute with in=1); the v bias is not permuted.
-		if arch.QKVBias {
-			qb, qe := vec(p+"attn_q.bias", qDim)
-			kb, ke := vec(p+"attn_k.bias", kvDim)
-			vb, ve := vec(p+"attn_v.bias", kvDim)
-			if qe != nil || ke != nil || ve != nil {
-				return fmt.Errorf("decoder(gguf): qkv bias layer %d: %v / %v / %v", i, qe, ke, ve)
+		if arch.mla != nil {
+			// DeepSeek MLA: the latent-attention tensor set (q-LoRA / kv down+up + the
+			// two latent norms), loaded f32 — not the standard q/k/v/o. The FFN block
+			// below is shared with the other DeepSeek-style MoE families.
+			if err = loadDeepseekAttnGGUF(g, p, l, arch); err != nil {
+				return err
 			}
-			if permuteQK {
-				qb = ggufInvPermute(qb, qDim, 1, arch.NumHeads)
-				kb = ggufInvPermute(kb, kvDim, 1, arch.NumKVHeads)
+		} else {
+			if l.QProj, err = loadQK(p+"attn_q.weight", qDim, arch.NumHeads); err != nil {
+				return err
 			}
-			l.QBias, l.KBias, l.VBias = qb, kb, vb
-		}
-		// QK-norm (Mellum, Qwen3): per-head RMSNorm over head_dim, before RoPE.
-		// llama.cpp permutes the q/k weights for its RoPE, so the matching
-		// per-head-dim norm weights are un-permuted the same way.
-		if arch.QKNorm {
-			qn, kerr := vnorm(p+"attn_q_norm.weight", hd)
-			if kerr != nil {
-				return kerr
+			if l.KProj, err = loadQK(p+"attn_k.weight", kvDim, arch.NumKVHeads); err != nil {
+				return err
 			}
-			kn, kerr := vnorm(p+"attn_k_norm.weight", hd)
-			if kerr != nil {
-				return kerr
+			if l.VProj, err = mat(p+"attn_v.weight", kvDim, hidden); err != nil {
+				return err
 			}
-			if permuteQK {
-				qn, kn = ggufInvPermuteVec(qn), ggufInvPermuteVec(kn)
+			if l.OProj, err = mat(p+"attn_output.weight", hidden, qDim); err != nil {
+				return err
 			}
-			l.QNorm, l.KNorm = qn, kn
+			// q/k/v projection bias (Qwen2): the q and k biases are per-output-row, so
+			// llama.cpp's RoPE row permutation applies to them exactly as to the q/k
+			// weight rows (ggufInvPermute with in=1); the v bias is not permuted.
+			if arch.QKVBias {
+				qb, qe := vec(p+"attn_q.bias", qDim)
+				kb, ke := vec(p+"attn_k.bias", kvDim)
+				vb, ve := vec(p+"attn_v.bias", kvDim)
+				if qe != nil || ke != nil || ve != nil {
+					return fmt.Errorf("decoder(gguf): qkv bias layer %d: %v / %v / %v", i, qe, ke, ve)
+				}
+				if permuteQK {
+					qb = ggufInvPermute(qb, qDim, 1, arch.NumHeads)
+					kb = ggufInvPermute(kb, kvDim, 1, arch.NumKVHeads)
+				}
+				l.QBias, l.KBias, l.VBias = qb, kb, vb
+			}
+			// QK-norm (Mellum, Qwen3): per-head RMSNorm over head_dim, before RoPE.
+			// llama.cpp permutes the q/k weights for its RoPE, so the matching
+			// per-head-dim norm weights are un-permuted the same way.
+			if arch.QKNorm {
+				qn, kerr := vnorm(p+"attn_q_norm.weight", hd)
+				if kerr != nil {
+					return kerr
+				}
+				kn, kerr := vnorm(p+"attn_k_norm.weight", hd)
+				if kerr != nil {
+					return kerr
+				}
+				if permuteQK {
+					qn, kn = ggufInvPermuteVec(qn), ggufInvPermuteVec(kn)
+				}
+				l.QNorm, l.KNorm = qn, kn
+			}
 		}
 		// Pre-MLP norm. GLM4_MOE has no ffn_norm — llama.cpp stores its (positionally
 		// pre-MLP, Pre2) post_attention_layernorm under the ATTN_POST_NORM name; every

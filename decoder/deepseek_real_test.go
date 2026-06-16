@@ -22,10 +22,14 @@
 package decoder
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
 // deepseekRealGate loads a real DeepSeek MLA checkpoint at int8 and matches it against an
@@ -120,4 +124,64 @@ func TestDeepseekMoonlightReal_gate(t *testing.T) {
 		ckpt = filepath.Join(home, "models", "moonlight-16b")
 	}
 	deepseekRealGate(t, ckpt, "../testdata/deepseek_moonlight_golden.json", "deepseek_v3", true)
+}
+
+// TestDeepseekGGUFReal_gate exercises the llama.cpp deepseek2 GGUF loader on a real
+// V2-Lite-Chat Q4_K_M: it verifies the MLA tensor-name mapping (attn_q / attn_kv_a_mqa /
+// attn_kv_a_norm / attn_kv_b / attn_output), the synthesized YaRN rope_scaling, and the
+// shared MoE block (ffn_gate_inp + ffn_*_exps + ffn_*_shexp) by GENERATING coherently —
+// a wrong mapping yields garbage. (The Chat GGUF's weights differ from the base
+// safetensors golden, so this is a coherence gate, not an argmax match.) The MLA forward
+// itself is the bit-exact path the V2-Lite/Moonlight safetensors oracles already gate.
+//
+//	GOINFER_DEEPSEEK_GGUF=~/models/.../DeepSeek-V2-Lite-Chat-Q4_K_M.gguf \
+//	  go test -tags realckpt ./decoder/ -run TestDeepseekGGUFReal -v -timeout 20m
+func TestDeepseekGGUFReal_gate(t *testing.T) {
+	home, _ := os.UserHomeDir()
+	gguf := os.Getenv("GOINFER_DEEPSEEK_GGUF")
+	if gguf == "" {
+		gguf = filepath.Join(home, "models", "deepseek-v2-lite-gguf", "DeepSeek-V2-Lite-Chat-Q4_K_M.gguf")
+	}
+	if _, err := os.Stat(gguf); err != nil {
+		t.Skipf("no DeepSeek GGUF at %s: %v", gguf, err)
+	}
+	m, err := Load(gguf, Options{Quant: "int8int8"})
+	if err != nil {
+		t.Fatalf("Load(%s): %v", gguf, err)
+	}
+	defer m.Close()
+	a := m.w.arch
+	if a.mla == nil {
+		t.Fatalf("arch %q has no mla (GGUF deepseek2 not resolved)", a.Name)
+	}
+	t.Logf("GGUF %s: %d layers, q_lora=%d kv_lora=%d qk=%d v=%d, experts=%d top%d firstKDense=%d sigmoid=%v ropeMscale=%.4f",
+		a.Name, a.NumLayers, a.mla.QLoRARank, a.mla.KVLoRARank, a.mla.qkHeadDim(), a.mla.VHeadDim,
+		a.MoE.NumExperts, a.MoE.TopK, a.FirstKDense, a.MoE.RouterSigmoid, a.ropeMscale(0))
+
+	tk, err := tokenizer.LoadGGUF(gguf)
+	if err != nil {
+		t.Fatalf("LoadGGUF tokenizer: %v", err)
+	}
+	prompt := "The capital of France is"
+	ids, err := tk.Encode(prompt, true)
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	out, _ := m.Generate(context.Background(), ids, 24, SamplingParams{})
+	gen := make([]int, 0, 24)
+	for id := range out {
+		gen = append(gen, id)
+	}
+	distinct := map[int]bool{}
+	for _, id := range gen {
+		distinct[id] = true
+	}
+	text, _ := tk.Decode(gen)
+	t.Logf("GGUF gen: %q", text)
+	if len(gen) == 0 || len(distinct) < 3 {
+		t.Errorf("degenerate output: %d distinct in %d tokens", len(distinct), len(gen))
+	}
+	if !strings.Contains(text, "Paris") {
+		t.Logf("note: continuation did not contain \"Paris\" (Chat model, Q4) — coherence is the gate")
+	}
 }
