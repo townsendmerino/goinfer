@@ -1116,9 +1116,23 @@ func llama4Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if cfg.NumLocalExperts <= 0 || cfg.NumExpertsPerTok <= 0 {
 		return nil, nil, fmt.Errorf("decoder(llama4): bad MoE (num_local_experts=%d num_experts_per_tok=%d)", cfg.NumLocalExperts, cfg.NumExpertsPerTok)
 	}
-	spec, _, err := parseRopeFlat(cfg.RopeParameters)
-	if err != nil {
-		return nil, nil, fmt.Errorf("decoder(llama4): %w", err)
+	// RoPE: safetensors carries the flat rope_parameters; the GGUF path sets a
+	// top-level rope_theta (+ optional rope_scaling). Accept both.
+	var base float64
+	var ropeSc *ropeScaling
+	if len(cfg.RopeParameters) > 0 {
+		spec, _, err := parseRopeFlat(cfg.RopeParameters)
+		if err != nil {
+			return nil, nil, fmt.Errorf("decoder(llama4): %w", err)
+		}
+		base, ropeSc = spec.base, spec.scaling
+	} else {
+		base = cfg.RoPEGlobalBase
+		sc, err := parseRopeScaling(cfg.RopeScaling)
+		if err != nil {
+			return nil, nil, fmt.Errorf("decoder(llama4): %w", err)
+		}
+		ropeSc = sc
 	}
 	hd := cfg.HeadDim
 	if hd == 0 {
@@ -1190,9 +1204,9 @@ func llama4Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 			SharedUngated:         true,
 		},
 		AttnScale:      math.Pow(float64(hd), -0.5),
-		RoPELocalBase:  spec.base,
-		RoPEGlobalBase: spec.base,
-		ropeScaling:    spec.scaling,
+		RoPELocalBase:  base,
+		RoPEGlobalBase: base,
+		ropeScaling:    ropeSc,
 		RotaryDim:      0, // full head_dim
 		EmbedScale:     0,
 		TiedLMHead:     false, // finalized from lm_head.weight presence at load

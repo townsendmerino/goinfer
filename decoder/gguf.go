@@ -55,6 +55,8 @@ func ggufConfig(g *embed.GGUFFile) (*Config, error) {
 		return ggufDeepseekConfig(g)
 	case "phi3":
 		return ggufPhi3Config(g)
+	case "llama4":
+		return ggufLlama4Config(g)
 	default:
 		return nil, fmt.Errorf("decoder(gguf): architecture %q unsupported (have: llama, qwen2, qwen3, gemma3, gemma4 [wip], mellum, qwen35moe, glm4moe, granitehybrid, nemotron_h, deepseek2, phi3)", arch)
 	}
@@ -745,6 +747,63 @@ func ggufPhi3Config(g *embed.GGUFFile) (*Config, error) {
 	}
 	if rd := u("rope.dimension_count"); rd > 0 && rd < headDim {
 		cfg.PartialRotaryFactor = float64(rd) / float64(headDim)
+	}
+	ggufEOS(g, cfg)
+	return cfg, nil
+}
+
+// ggufLlama4Config builds a Llama 4 text-decoder Config from the llama4.* metadata. The
+// GGUF carries the dims/expert counts but OMITS the iRoPE scalars (no_rope_layers,
+// use_qk_norm, attn_temperature, floor_scale, attn_scale) — llama.cpp applies them by arch
+// convention — so they are injected here: NoPE every 4th layer (the interval-4 pattern),
+// QK-norm + attention-temperature on (8192, 0.1). interleave_moe_layer_step (in the GGUF)
+// drives the dense/MoE split (Scout=1 ⇒ all MoE). The llama3 long-context rope scaling is
+// NOT applied (negligible below original_max_position_embeddings; the GGUF stores it as a
+// precomputed rope_freqs.weight goinfer doesn't consume) — fine for short-prompt gates.
+func ggufLlama4Config(g *embed.GGUFFile) (*Config, error) {
+	u := func(k string) int {
+		v, _ := g.Uint("llama4." + k)
+		return int(v)
+	}
+	gf := func(k string) float64 {
+		if v, ok := g.Float("llama4." + k); ok {
+			return v
+		}
+		v, _ := g.Uint("llama4." + k)
+		return float64(v)
+	}
+	nLayers := u("block_count")
+	cfg := &Config{
+		ModelType:              "llama4_text",
+		HiddenDim:              u("embedding_length"),
+		NumLayers:              nLayers,
+		NumHeads:               u("attention.head_count"),
+		NumKVHeads:             u("attention.head_count_kv"),
+		HeadDim:                u("attention.key_length"),
+		IntermediateDim:        u("expert_feed_forward_length"), // routed/shared expert width (intermediate_size)
+		IntermediateSizeMLP:    u("feed_forward_length"),        // dense-layer width (intermediate_size_mlp)
+		NumLocalExperts:        u("expert_count"),
+		NumExpertsPerTok:       u("expert_used_count"),
+		InterleaveMoeLayerStep: u("interleave_moe_layer_step"),
+		VocabSize:              ggufVocabSize(g),
+		RMSNormEps:             gf("attention.layer_norm_rms_epsilon"),
+		RoPEGlobalBase:         gf("rope.freq_base"),
+		HiddenAct:              "silu",
+		// Injected iRoPE scalars (absent from the GGUF; llama.cpp arch defaults).
+		UseQKNorm:             true,
+		AttnTemperatureTuning: true,
+		FloorScale:            8192,
+		AttnScaleL4:           0.1,
+	}
+	// no_rope_layers: NoPE on every 4th layer ((i+1)%4==0), else RoPE — the released
+	// Scout/Maverick pattern.
+	cfg.NoRopeLayers = make([]int, nLayers)
+	for i := range cfg.NoRopeLayers {
+		if (i+1)%4 == 0 {
+			cfg.NoRopeLayers[i] = 0
+		} else {
+			cfg.NoRopeLayers[i] = 1
+		}
 	}
 	ggufEOS(g, cfg)
 	return cfg, nil
@@ -1604,6 +1663,78 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 		// K=V (attention_k_eq_v) on the 12B global layers: V reuses K's projection
 		// (v_norm(k_proj) — see loadG4/runLayersGemma4). Parity-gated against the HF
 		// bf16 oracle by TestGemma4_12B_logitParity (argmax exact, cosine 0.990).
+		return w, nil
+	}
+
+	if lp := arch.llama4; lp != nil {
+		// Llama 4: separate q/k/v/o (no q/k-norm tensors — the L2 QK-norm is
+		// parameter-free, applied in the forward), per-layer dense/MoE. MoE = router
+		// (NO exp_probs_b — top-1 sigmoid, no bias) + stacked per-expert SwiGLU
+		// (ffn_{gate,up,down}_exps, the standard [in,out,nE] layout) + an ungated shared
+		// expert. NEOX/interleaved rope ⇒ no q/k permute.
+		qDim, kvDim := arch.NumHeads*hd, arch.NumKVHeads*hd
+		expInter, denseInter, nE := arch.MoE.IntermediateDim, arch.IntermediateDim, arch.MoE.NumExperts
+		loadL4 := func(i int) error {
+			l := &w.Layers[i]
+			p := fmt.Sprintf("blk.%d.", i)
+			var e error
+			if l.PreAttnNorm, e = vnorm(p+"attn_norm.weight", hidden); e != nil {
+				return e
+			}
+			if l.QProj, e = mat(p+"attn_q.weight", qDim, hidden); e != nil {
+				return e
+			}
+			if l.KProj, e = mat(p+"attn_k.weight", kvDim, hidden); e != nil {
+				return e
+			}
+			if l.VProj, e = mat(p+"attn_v.weight", kvDim, hidden); e != nil {
+				return e
+			}
+			if l.OProj, e = mat(p+"attn_output.weight", hidden, qDim); e != nil {
+				return e
+			}
+			if l.PreMLPNorm, e = vnorm(p+"ffn_norm.weight", hidden); e != nil {
+				return e
+			}
+			if !lp.isMoE[i] {
+				if l.GateProj, e = mat(p+"ffn_gate.weight", denseInter, hidden); e != nil {
+					return e
+				}
+				if l.UpProj, e = mat(p+"ffn_up.weight", denseInter, hidden); e != nil {
+					return e
+				}
+				if l.DownProj, e = mat(p+"ffn_down.weight", hidden, denseInter); e != nil {
+					return e
+				}
+				return nil
+			}
+			if l.Router, e = mat(p+"ffn_gate_inp.weight", nE, hidden); e != nil {
+				return e
+			}
+			gate, ge := stackedExperts(p+"ffn_gate_exps.weight", expInter, hidden, nE)
+			up, ue := stackedExperts(p+"ffn_up_exps.weight", expInter, hidden, nE)
+			down, de := stackedExperts(p+"ffn_down_exps.weight", hidden, expInter, nE)
+			if ge != nil || ue != nil || de != nil {
+				return fmt.Errorf("decoder(gguf-llama4): experts layer %d: %v / %v / %v", i, ge, ue, de)
+			}
+			l.Experts = make([]expertWeights, nE)
+			for x := range l.Experts {
+				l.Experts[x] = expertWeights{Gate: gate[x], Up: up[x], Down: down[x]}
+			}
+			if l.SharedExpert.Gate, e = mat(p+"ffn_gate_shexp.weight", expInter, hidden); e != nil {
+				return e
+			}
+			if l.SharedExpert.Up, e = mat(p+"ffn_up_shexp.weight", expInter, hidden); e != nil {
+				return e
+			}
+			if l.SharedExpert.Down, e = mat(p+"ffn_down_shexp.weight", hidden, expInter); e != nil {
+				return e
+			}
+			return nil
+		}
+		if err = parallelLayers(arch.NumLayers, loadL4); err != nil {
+			return nil, err
+		}
 		return w, nil
 	}
 
