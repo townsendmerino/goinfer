@@ -48,7 +48,13 @@ type ResidencyBackend interface {
 // sliding-window / logit-softcap / output-bias. q/k/v bias (Qwen2) and the (1+w)
 // RMS offset are handled, so they're allowed. Anything else → staged fallback.
 func (m *Model) DecodeRunnerEligible() bool {
-	a := m.w.arch
+	return m.w.arch.decodeRunnerEligible()
+}
+
+// decodeRunnerEligible is the arch-only predicate behind DecodeRunnerEligible —
+// usable directly from a resolved Architecture (e.g. the capability matrix)
+// without a loaded Model.
+func (a *Architecture) decodeRunnerEligible() bool {
 	return a.MoE == nil && a.gemma4 == nil && a.qwen35 == nil &&
 		!a.NonGatedMLP && !a.QKNorm && !a.LearnedPosEmbed && !a.OutBias &&
 		a.NormPlacement == NormPre2 && a.SlidingWindow == 0 &&

@@ -27,6 +27,11 @@ runtime, no provider API.
 Built on [`aikit`](https://github.com/townsendmerino/aikit)'s embedding and tensor
 primitives.
 
+Full, generated support map (every supported `model_type`, how each family is
+configured — coverage axis, MoE, RoPE, norm, loaders, modality):
+[docs/capability-matrix.md](docs/capability-matrix.md) (generated from the
+registry; do not hand-edit).
+
 **The lane:** goinfer runs the weights *in-process in pure Go* — the single-file,
 zero-install, HF-parity-gated lane no other maintained runtime occupies (the Go
 llama.cpp bindings still ship a native `.so`; the pure-Go ports are archived toys).

@@ -246,6 +246,18 @@ const (
 	NormLayer
 )
 
+// String renders the norm kind for the capability matrix / logs.
+func (n NormKind) String() string {
+	switch n {
+	case NormRMS:
+		return "RMSNorm"
+	case NormLayer:
+		return "LayerNorm"
+	default:
+		return "unknown"
+	}
+}
+
 // NormPlacement selects where norms sit relative to the residual adds. Pre2 is
 // the Llama/Mistral/Qwen norm-before-each-sublayer; Sandwich4 is Gemma's
 // pre+post norm on both attention and MLP.
@@ -256,6 +268,18 @@ const (
 	NormSandwich4
 )
 
+// String renders the norm placement for the capability matrix / logs.
+func (p NormPlacement) String() string {
+	switch p {
+	case NormPre2:
+		return "pre-norm"
+	case NormSandwich4:
+		return "sandwich"
+	default:
+		return "unknown"
+	}
+}
+
 // ActKind selects the MLP activation. GeluTanh = Gemma's GeGLU; SiLU = the
 // SwiGLU used by Llama/Mistral/Qwen. Gelu/ReLU2/non-gated MLPs are later G's.
 type ActKind int
@@ -265,6 +289,21 @@ const (
 	ActSiLU
 	ActReLU2 // ReLU-squared (relu(x)²) — Nemotron-H's non-gated MLP
 )
+
+// String renders the activation for the capability matrix / logs. The gated vs
+// non-gated distinction is rendered by the matrix from Architecture.NonGatedMLP.
+func (a ActKind) String() string {
+	switch a {
+	case ActGeluTanh:
+		return "GELU-tanh"
+	case ActSiLU:
+		return "SiLU"
+	case ActReLU2:
+		return "ReLU²"
+	default:
+		return "unknown"
+	}
+}
 
 // isGlobalLayer reports whether layer i uses full (global) attention vs local
 // (sliding-window). Defaults to global when no per-layer function is set.

@@ -1,0 +1,365 @@
+[
+  {
+    "name": "qwen3_5_moe",
+    "model_types": [
+      "qwen3_5_moe",
+      "qwen3_5_moe_text"
+    ],
+    "display_name": "Qwen3.5-MoE",
+    "description": "Qwen3.5/3.6 hybrid: Gated DeltaNet + softmax + MoE",
+    "coverage_axis": "gated-linear hybrid (Gated DeltaNet)",
+    "moe": "sparse +shared",
+    "sliding_window": "none",
+    "qk_norm": true,
+    "rope_style": "partial",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors, GGUF",
+    "modality": "text",
+    "gpu_residency_eligible": false
+  },
+  {
+    "name": "deepseek_v2",
+    "model_types": [
+      "deepseek_v2"
+    ],
+    "display_name": "DeepSeek-V2",
+    "description": "DeepSeek-V2/V2-Lite: MLA + DeepSeekMoE (softmax routing)",
+    "coverage_axis": "latent-KV (MLA)",
+    "moe": "sparse +shared",
+    "sliding_window": "none",
+    "qk_norm": false,
+    "rope_style": "partial",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors, GGUF",
+    "modality": "text",
+    "gpu_residency_eligible": false
+  },
+  {
+    "name": "deepseek_v3",
+    "model_types": [
+      "deepseek_v3"
+    ],
+    "display_name": "DeepSeek-V3",
+    "description": "DeepSeek-V3: MLA + DeepSeekMoE (sigmoid + group-limited routing)",
+    "coverage_axis": "latent-KV (MLA)",
+    "moe": "sparse +shared",
+    "sliding_window": "none",
+    "qk_norm": false,
+    "rope_style": "partial",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors, GGUF",
+    "modality": "text",
+    "gpu_residency_eligible": false
+  },
+  {
+    "name": "kimi_k2",
+    "model_types": [
+      "kimi_k2"
+    ],
+    "display_name": "Kimi K2",
+    "description": "Moonshot Kimi K2 (DeepseekV3 arch: MLA + DeepSeekMoE)",
+    "coverage_axis": "latent-KV (MLA)",
+    "moe": "sparse +shared",
+    "sliding_window": "none",
+    "qk_norm": false,
+    "rope_style": "partial",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors, GGUF",
+    "modality": "text",
+    "gpu_residency_eligible": false
+  },
+  {
+    "name": "glm4_moe",
+    "model_types": [
+      "glm4_moe"
+    ],
+    "display_name": "GLM-4.5/4.6",
+    "description": "Zhipu GLM-4.5/4.6 DeepSeek-style MoE (sigmoid routing + dense prefix)",
+    "coverage_axis": "softmax-GQA",
+    "moe": "sparse +shared",
+    "sliding_window": "none",
+    "qk_norm": true,
+    "rope_style": "partial",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors, GGUF",
+    "modality": "text",
+    "gpu_residency_eligible": false
+  },
+  {
+    "name": "gpt2",
+    "model_types": [
+      "gpt2"
+    ],
+    "display_name": "GPT-2",
+    "description": "GPT-2/NeoX (LayerNorm, learned positions, non-gated GELU)",
+    "coverage_axis": "softmax-GQA",
+    "moe": "dense",
+    "sliding_window": "none",
+    "qk_norm": false,
+    "rope_style": "learned/none",
+    "norm": "LayerNorm, pre-norm",
+    "activation": "GELU-tanh (non-gated)",
+    "tied_lm_head": true,
+    "loaders": "safetensors, GGUF",
+    "modality": "text",
+    "gpu_residency_eligible": false
+  },
+  {
+    "name": "gemma3",
+    "model_types": [
+      "gemma3",
+      "gemma3_text"
+    ],
+    "display_name": "Gemma 3",
+    "description": "Google Gemma 3 dense (270M/1B/4B/12B/27B)",
+    "coverage_axis": "softmax-GQA",
+    "moe": "dense",
+    "sliding_window": "interleave",
+    "qk_norm": true,
+    "rope_style": "dual-base",
+    "norm": "RMSNorm, sandwich",
+    "activation": "GeGLU",
+    "tied_lm_head": true,
+    "loaders": "safetensors, GGUF",
+    "modality": "text (+ vision via VL text_config)",
+    "gpu_residency_eligible": false
+  },
+  {
+    "name": "gemma4",
+    "model_types": [
+      "gemma4"
+    ],
+    "display_name": "Gemma 4",
+    "description": "Google Gemma 4 dense + E-models (per-layer attention deltas, PLE)",
+    "coverage_axis": "softmax-GQA",
+    "moe": "dense",
+    "sliding_window": "interleave",
+    "qk_norm": true,
+    "rope_style": "dual-base",
+    "norm": "RMSNorm, sandwich",
+    "activation": "GeGLU",
+    "tied_lm_head": true,
+    "loaders": "safetensors, GGUF",
+    "modality": "text",
+    "gpu_residency_eligible": false
+  },
+  {
+    "name": "llama",
+    "model_types": [
+      "llama"
+    ],
+    "display_name": "Llama",
+    "description": "Meta Llama 2/3 dense (single-base RoPE)",
+    "coverage_axis": "softmax-GQA",
+    "moe": "dense",
+    "sliding_window": "none",
+    "qk_norm": false,
+    "rope_style": "full",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors, GGUF, GPTQ, AWQ",
+    "modality": "text",
+    "gpu_residency_eligible": true
+  },
+  {
+    "name": "mellum",
+    "model_types": [
+      "mellum"
+    ],
+    "display_name": "Mellum2",
+    "description": "JetBrains Mellum2 code model (MoE + sliding/full interleave + YaRN)",
+    "coverage_axis": "softmax-GQA",
+    "moe": "sparse, no-shared",
+    "sliding_window": "interleave",
+    "qk_norm": true,
+    "rope_style": "full",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors, GGUF",
+    "modality": "text",
+    "gpu_residency_eligible": false
+  },
+  {
+    "name": "mistral",
+    "model_types": [
+      "mistral"
+    ],
+    "display_name": "Mistral",
+    "description": "Mistral dense (all-layer sliding window)",
+    "coverage_axis": "softmax-GQA",
+    "moe": "dense",
+    "sliding_window": "all-layer",
+    "qk_norm": false,
+    "rope_style": "full",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors, GGUF",
+    "modality": "text",
+    "gpu_residency_eligible": false
+  },
+  {
+    "name": "mixtral",
+    "model_types": [
+      "mixtral"
+    ],
+    "display_name": "Mixtral",
+    "description": "Mistral + sparse MoE FFN (router + top-k experts)",
+    "coverage_axis": "softmax-GQA",
+    "moe": "sparse, no-shared",
+    "sliding_window": "none",
+    "qk_norm": false,
+    "rope_style": "full",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors, GGUF",
+    "modality": "text",
+    "gpu_residency_eligible": false
+  },
+  {
+    "name": "phi3",
+    "model_types": [
+      "phi3"
+    ],
+    "display_name": "Phi-3 / Phi-4",
+    "description": "Microsoft Phi-3/Phi-4 dense (fused qkv/gate-up, partial rotary)",
+    "coverage_axis": "softmax-GQA",
+    "moe": "dense",
+    "sliding_window": "none",
+    "qk_norm": false,
+    "rope_style": "full",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors, GGUF",
+    "modality": "text",
+    "gpu_residency_eligible": true
+  },
+  {
+    "name": "qwen2",
+    "model_types": [
+      "qwen2"
+    ],
+    "display_name": "Qwen2 / Qwen2.5",
+    "description": "Alibaba Qwen2/2.5 dense (q/k/v bias)",
+    "coverage_axis": "softmax-GQA",
+    "moe": "dense",
+    "sliding_window": "none",
+    "qk_norm": false,
+    "rope_style": "full",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors, GGUF",
+    "modality": "text",
+    "gpu_residency_eligible": true
+  },
+  {
+    "name": "qwen2_moe",
+    "model_types": [
+      "qwen2_moe"
+    ],
+    "display_name": "Qwen2-MoE",
+    "description": "Qwen1.5/2 MoE (sparse + always-on shared expert)",
+    "coverage_axis": "softmax-GQA",
+    "moe": "sparse +shared",
+    "sliding_window": "none",
+    "qk_norm": false,
+    "rope_style": "full",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors, GGUF",
+    "modality": "text",
+    "gpu_residency_eligible": false
+  },
+  {
+    "name": "qwen2_5_vl",
+    "model_types": [
+      "qwen2_5_vl"
+    ],
+    "display_name": "Qwen2.5-VL",
+    "description": "Qwen2.5-VL text decoder (qwen2 + m-RoPE)",
+    "coverage_axis": "softmax-GQA",
+    "moe": "dense",
+    "sliding_window": "none",
+    "qk_norm": false,
+    "rope_style": "full",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors",
+    "modality": "text (+ vision tower)",
+    "gpu_residency_eligible": true
+  },
+  {
+    "name": "qwen3",
+    "model_types": [
+      "qwen3"
+    ],
+    "display_name": "Qwen3",
+    "description": "Alibaba Qwen3 dense (QK-norm, no bias)",
+    "coverage_axis": "softmax-GQA",
+    "moe": "dense",
+    "sliding_window": "none",
+    "qk_norm": true,
+    "rope_style": "full",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors, GGUF",
+    "modality": "text",
+    "gpu_residency_eligible": false
+  },
+  {
+    "name": "granitemoehybrid",
+    "model_types": [
+      "granitemoehybrid"
+    ],
+    "display_name": "Granite-4.0-H",
+    "description": "IBM Granite-4.0-H: Mamba-2 + attention hybrid + MoE-on-every-layer",
+    "coverage_axis": "state-space hybrid (Mamba-2)",
+    "moe": "sparse +shared",
+    "sliding_window": "none",
+    "qk_norm": false,
+    "rope_style": "full",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors, GGUF",
+    "modality": "text",
+    "gpu_residency_eligible": false
+  },
+  {
+    "name": "nemotron_h",
+    "model_types": [
+      "nemotron_h"
+    ],
+    "display_name": "Nemotron-H",
+    "description": "NVIDIA Nemotron-H single-op-per-block hybrid (mamba | attention | relu² MLP)",
+    "coverage_axis": "state-space hybrid (Mamba-2, single-op)",
+    "moe": "dense",
+    "sliding_window": "none",
+    "qk_norm": false,
+    "rope_style": "none",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "ReLU² (non-gated)",
+    "tied_lm_head": false,
+    "loaders": "safetensors, GGUF",
+    "modality": "text",
+    "gpu_residency_eligible": false
+  }
+]
