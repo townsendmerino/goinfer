@@ -62,23 +62,70 @@ func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxT
 		K = 4
 	}
 
+	// When the target's GPU-resident decode path is built (webgpu + eligible arch),
+	// run its verify on the device: the prompt seeds the resident KV via per-token
+	// Forward, the K+1-token verify is a single batched ForwardN (one Submit/Poll —
+	// the speculative win amortizes the cgo-encode glue over K), and the rollback is
+	// the resident no-op TruncateTo. The draft stays CPU (small). Output is still
+	// token-identical to plain greedy (TestSpeculativeResident_parity).
+	resident := target.resident != nil && target.DecodeRunnerEligible()
+
 	out := make(chan int)
 	stats := &SpecStats{}
 	g := &Generation{Spec: stats}
 	go func() {
 		defer close(out)
 		room := len(prompt) + maxTokens + K + 8
-		tc := target.NewCache(room)
+		var tc *KVCache // target CPU cache (nil on the resident path)
+		if !resident {
+			tc = target.NewCache(room)
+		}
 		dc := draft.NewCache(room)
 
-		// Prefill the prompt into both caches (batched M=len(prompt) on the dense
-		// archs). The target's last-token logits seed cur; the draft's are
-		// discarded (it just needs its KV filled).
-		seedLogits, err := target.prefillLogits(prompt, tc)
-		if err != nil {
-			g.err = err
-			return
+		// targetVerify runs one target pass over seq (= [cur, drafts...]) at absolute
+		// position base, returning a logit row after each. tpos tracks the target's
+		// confirmed position (== tc.Pos() on the CPU path). targetTruncate rolls the
+		// confirmed length back after an accept.
+		tpos := 0
+		targetVerify := func(seq []int, base int) ([][]float32, error) {
+			if resident {
+				embs := make([][]float32, len(seq))
+				for i, tok := range seq {
+					embs[i] = target.embedResident(tok)
+				}
+				return target.resident.ForwardN(embs, base)
+			}
+			return target.forwardN(seq, tc)
 		}
+		targetTruncate := func(keep int) {
+			tpos = keep
+			if resident {
+				target.resident.TruncateTo(keep)
+			} else {
+				tc.TruncateTo(keep)
+			}
+		}
+
+		// Prefill the prompt. The target's last-token logits seed cur; the draft's are
+		// discarded (it just needs its KV filled). Resident: seed the GPU KV with
+		// O(prompt) Forwards (mirrors resident Generate). CPU: batched prefillLogits.
+		var seedLogits []float32
+		var err error
+		if resident {
+			for i, id := range prompt {
+				if seedLogits, err = target.resident.Forward(target.embedResident(id), i); err != nil {
+					g.err = err
+					return
+				}
+			}
+		} else {
+			seedLogits, err = target.prefillLogits(prompt, tc)
+			if err != nil {
+				g.err = err
+				return
+			}
+		}
+		tpos = len(prompt)
 		if _, err := draft.prefillLogits(prompt, dc); err != nil {
 			g.err = err
 			return
@@ -122,11 +169,11 @@ func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxT
 
 			// 2. Verify: one target pass over [cur, draftTok...] gives the target's
 			// argmax after each, in one weight stream (the speculative win).
-			base := tc.Pos() // cur will be appended at this position
+			base := tpos // cur will be appended at this position
 			seq := make([]int, 0, K+1)
 			seq = append(seq, cur)
 			seq = append(seq, draftTok...)
-			logitsN, err := target.forwardN(seq, tc)
+			logitsN, err := targetVerify(seq, base)
 			if err != nil {
 				g.err = err
 				return
@@ -158,7 +205,7 @@ func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxT
 			// accepted draft tokens. nextTok stays pending (fed next round), exactly
 			// as plain decode would carry it.
 			keep := base + 1 + accepted
-			tc.TruncateTo(keep)
+			targetTruncate(keep)
 			if allAccept {
 				// The draft only cached cur..draftTok[K-2]; on a full accept,
 				// draftTok[K-1] is confirmed too, so feed it once to sync the draft
