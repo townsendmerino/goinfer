@@ -939,6 +939,35 @@ func deepseekArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		}
 		scaling = sc
 	}
+	// DeepSeek's YaRN attention_factor (the cos/sin mscale) is NOT the generic
+	// 0.1·ln(factor)+1 — transformers computes it as the RATIO
+	// get_mscale(factor, mscale) / get_mscale(factor, mscale_all_dim). When the config's
+	// mscale == mscale_all_dim (V2-Lite: both 0.707) the ratio is exactly 1.0, so cos/sin
+	// are unscaled. (The attention softmax scale stays qk_head_dim^-0.5 — transformers
+	// 5.12 does NOT fold mscale² into it, unlike the old standalone modeling_deepseek.)
+	// Override the generic yarn mscale parseRopeScaling computed.
+	if scaling != nil && scaling.kind == ropeScaleYarn {
+		raw := cfg.RopeScaling
+		if len(cfg.RopeParameters) > 0 {
+			raw = cfg.RopeParameters
+		}
+		var y struct {
+			Factor       float64  `json:"factor"`
+			Mscale       *float64 `json:"mscale"`
+			MscaleAllDim *float64 `json:"mscale_all_dim"`
+		}
+		_ = json.Unmarshal(raw, &y)
+		if y.Mscale != nil || y.MscaleAllDim != nil {
+			m, mAll := 1.0, 1.0
+			if y.Mscale != nil {
+				m = *y.Mscale
+			}
+			if y.MscaleAllDim != nil {
+				mAll = *y.MscaleAllDim
+			}
+			scaling.mscale = yarnGetMscale(y.Factor, m) / yarnGetMscale(y.Factor, mAll)
+		}
+	}
 
 	// Routing flavor. V3 (noaux_tc) scores with sigmoid + e_score_correction_bias and
 	// limits to topk_group groups; V2 scores with softmax. Honor explicit scoring_func/

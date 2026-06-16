@@ -196,6 +196,16 @@ func newYarnScaling(factor, origMax float64, betaFast, betaSlow, attnFactor *flo
 	}, nil
 }
 
+// yarnGetMscale is HF's yarn_get_mscale: 1.0 at scale ≤ 1, else 0.1·m·ln(scale)+1.
+// DeepSeek's cos/sin attention_factor is the RATIO of this at the two mscale knobs
+// (mscale / mscale_all_dim); equal knobs (V2-Lite) ⇒ 1.0.
+func yarnGetMscale(scale, m float64) float64 {
+	if scale <= 1 {
+		return 1.0
+	}
+	return 0.1*m*math.Log(scale) + 1.0
+}
+
 // computeInvFreq builds the per-dimension inverse-frequency table RoPE rotates
 // with: invFreq[d] = base^(-2d/rotaryDim) for d in [0, rotaryDim/2), with any
 // scaling transform applied. rotaryDim is the number of rotated dims (== head

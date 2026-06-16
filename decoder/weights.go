@@ -576,8 +576,11 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 			if l.Router, err = loadMat(st, tn(i, s.Router), arch.MoE.NumExperts, hd); err != nil {
 				return err
 			}
-			// DeepSeek/GLM e_score_correction_bias: steers the top-k selection.
-			if s.RouterBias != "" {
+			// DeepSeek/GLM e_score_correction_bias: steers the top-k selection. Only
+			// the sigmoid-scored (noaux_tc) routers carry it — GLM and DeepSeek-V3.
+			// DeepSeek-V2 (softmax/greedy, e.g. V2-Lite) has no such tensor, so gate
+			// the load on RouterSigmoid even though the schema lists the suffix.
+			if s.RouterBias != "" && arch.MoE.RouterSigmoid {
 				if l.RouterBias, err = st.TensorF32(tn(i, s.RouterBias), arch.MoE.NumExperts); err != nil {
 					return err
 				}
