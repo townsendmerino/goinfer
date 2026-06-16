@@ -8,11 +8,14 @@
 cross-compiled static binary, with HuggingFace logit parity.
 
 goinfer is a pure-Go, no-cgo decoder-only LLM runtime. It loads open-weight
-models — Gemma 3/4, Qwen 2.5/3, Llama 2/3, Mistral, Mixtral, GPT-2, Mellum2 —
-directly from safetensors (single or sharded), GGUF, GPTQ, or AWQ checkpoints and
-runs them in-process: f32/bf16/f16 plus int8 and int4 quantization, KV-cache, all
-standard samplers, LoRA adapters (PEFT, merged at load), and
-constrained/structured decoding (a model that *cannot* emit malformed JSON). Forward-pass numerics are parity-gated against HuggingFace;
+models — Gemma 3/4, Qwen 2.5/3, Llama 2/3, Mistral, Mixtral, Qwen-MoE,
+GLM-4.5/4.6, Granite-4.0-H, GPT-2, Mellum2 — directly from safetensors (single or
+sharded), GGUF, GPTQ, or AWQ checkpoints and runs them in-process: f32/bf16/f16 plus
+int8 and int4 quantization, KV-cache, all standard samplers, LoRA adapters (PEFT,
+merged at load), and constrained/structured decoding (a model that *cannot* emit
+malformed JSON). It runs the major modern attention/sequence-mixing families in one
+binary — softmax/GQA, **gated-linear** (Gated DeltaNet) and **state-space**
+(Mamba-2), with **latent-KV** (MLA) on the roadmap. Forward-pass numerics are parity-gated against HuggingFace;
 matmul is SIMD-accelerated (NEON on arm64, AVX2/FMA on amd64). Because it's pure
 Go with no cgo, it cross-compiles to a single static binary — no Python, no native
 runtime, no provider API.

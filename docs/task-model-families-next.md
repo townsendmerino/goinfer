@@ -1,8 +1,10 @@
 # Plan: model families after GLM + Granite — go for coverage axes, not model count
 
 > **Audience:** internal planning, the sequel to
-> `task-model-families-glm-granite.md` (GLM shipping, Granite in progress on the
-> Linux box). This doc covers what comes *after* those two, and reframes the
+> `task-model-families-glm-granite.md` (GLM-4.5/4.6 **shipped** — safetensors +
+> GGUF + real GLM-4.5-Air; Granite-4.0-H **shipped** — Phases 0–3, Mamba-2 scan +
+> hybrid loader/forward + GGUF, real granite-4.0-h-tiny generating coherently).
+> This doc covers what comes *after* those two, and reframes the
 > selection rule: **stop counting models, start covering attention/​mixing
 > axes.** Same recurring muscle — arch adapter + tensor schema + loader + parity
 > golden, with the v0.2–v0.5 surface inheriting — and the per-family "definition
@@ -25,7 +27,13 @@ doc — it should live where the roadmap and positioning are read.
 
 ---
 
-## Step 0 — document the coverage-axis positioning (do this first, it's cheap)
+## Step 0 — document the coverage-axis positioning ✅ DONE
+
+Recorded "coverage axes, not model count" where it steers decisions:
+`docs/roadmap.md` now has a "Positioning: attention-coverage axes" section + the
+Model-freshness lines reframed axis-first (pointing here); `README.md` states the
+axis claim (latent-KV gated on MLA landing); `docs/ARCHITECTURE.md` documents the
+two recurrent mixers. Original step text below.
 
 **Explicit, required step:** record "coverage axes, not model count" where it
 will actually steer decisions, not only here:
