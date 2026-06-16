@@ -26,9 +26,22 @@ type ResidentForward interface {
 	// Forward runs token-at-pos: returns logits for the embedding at absolute
 	// position pos (the runner appends this position's K/V to its resident cache).
 	Forward(embedding []float32, pos int) (logits []float32, err error)
+	// ForwardN runs K tokens at consecutive positions startPos..startPos+K-1 in ONE
+	// command buffer (one Submit/Poll), appending K KV positions and returning K
+	// logit rows — the batched verify for speculative decoding. Causal: row i attends
+	// to positions [0, startPos+i]. Bit-identical to K sequential Forward calls
+	// (TestResidentForwardN_parity), so it amortizes the cgo-encode glue over K
+	// without changing numerics. nil/empty embeddings ⇒ no-op.
+	ForwardN(embeddings [][]float32, startPos int) (logits [][]float32, err error)
 	// UploadKV writes a layer's post-RoPE K and raw V (each [n*kvDim], positions
 	// 0..n-1) into the resident GPU caches — the prefill bridge.
 	UploadKV(layer int, keys, vals []float32) error
+	// TruncateTo drops resident KV positions ≥ pos — the rollback after a partial
+	// speculative accept. The resident cache is positional and Forward sets
+	// nKeys=pos+1, so stale entries past pos are simply never read and get overwritten
+	// next round; this is therefore a no-op (the caller tracks pos), kept for the
+	// interface symmetry with the CPU KVCache.
+	TruncateTo(pos int)
 	// Reset clears resident KV for a fresh generation (positions overwritten).
 	Reset()
 	// Close releases the resident GPU buffers.
@@ -119,6 +132,11 @@ func (m *Model) withResidency() *Model {
 // ResidentActive reports whether the GPU full-residency decode path is built and
 // will run for a plain stateless Generate (webgpu backend + eligible arch).
 func (m *Model) ResidentActive() bool { return m.resident != nil }
+
+// ResidentForwardForTest exposes the resident forward (nil when not resident) for the
+// GPU ForwardN-vs-Forward parity gate. Test-only seam; production code routes through
+// Generate / GenerateSpeculative, not this.
+func (m *Model) ResidentForwardForTest() ResidentForward { return m.resident }
 
 // embedResident returns the raw input embedding [hidden] for token id — the CPU
 // half of the residency forward (eligible archs have no embedding scale).

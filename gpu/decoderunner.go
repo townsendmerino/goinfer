@@ -272,18 +272,41 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 	return r, nil
 }
 
+// writeInputs uploads the per-token input embedding + pos-dependent uniforms (the
+// only buffers that vary per call; the fixed dispatch plan reads them). Split out so
+// the batched RunN can prime K runners before recording one command buffer.
+func (r *DecodeRunner) writeInputs(x []float32, pos int) error {
+	if err := r.c.queue.WriteBuffer(r.xd, 0, wgpu.ToBytes(x)); err != nil {
+		return err
+	}
+	for _, pu := range r.posUnis {
+		if err := r.c.queue.WriteBuffer(pu.buf, 0, wgpu.ToBytes(pu.gen(pos))); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// record appends this runner's dispatch plan to an existing compute pass. The plan
+// reads r.xd / r.posUnis (set by writeInputs) and the resident weights + KV caches,
+// leaving logits in r.lastLogits. WebGPU inserts the storage barriers between
+// data-dependent dispatches; across batched runners sharing one KV cache, a row's
+// kv-store thus correctly precedes a later row's attention read.
+func (r *DecodeRunner) record(pass *wgpu.ComputePassEncoder) {
+	for _, s := range r.steps {
+		pass.SetPipeline(s.pl)
+		pass.SetBindGroup(0, s.bg, nil)
+		pass.DispatchWorkgroups(s.gx, s.gy, 1)
+	}
+}
+
 // Run executes the plan for one token at absolute position pos. x is the token's
 // input embedding [hidden]; returns the logits [vocab]. One Submit + one Poll.
 func (r *DecodeRunner) Run(x []float32, pos int) ([]float32, error) {
 	c := r.c
 	tw := time.Now()
-	if err := c.queue.WriteBuffer(r.xd, 0, wgpu.ToBytes(x)); err != nil {
+	if err := r.writeInputs(x, pos); err != nil {
 		return nil, err
-	}
-	for _, pu := range r.posUnis {
-		if err := c.queue.WriteBuffer(pu.buf, 0, wgpu.ToBytes(pu.gen(pos))); err != nil {
-			return nil, err
-		}
 	}
 	r.TWrite = time.Since(tw)
 	te := time.Now()
@@ -297,11 +320,7 @@ func (r *DecodeRunner) Run(x []float32, pos int) ([]float32, error) {
 	// data-dependent dispatches. The KV appends are now compute kernels (rope-store
 	// / kv-store), so nothing forces a pass break.
 	pass := enc.BeginComputePass(nil)
-	for _, s := range r.steps {
-		pass.SetPipeline(s.pl)
-		pass.SetBindGroup(0, s.bg, nil)
-		pass.DispatchWorkgroups(s.gx, s.gy, 1)
-	}
+	r.record(pass)
 	pass.End()
 	pass.Release()
 	enc.CopyBufferToBuffer(r.lastLogits, 0, r.stag, 0, uint64(r.vocab*4))
@@ -325,6 +344,65 @@ func (r *DecodeRunner) Run(x []float32, pos int) ([]float32, error) {
 	out := make([]float32, r.vocab)
 	copy(out, wgpu.FromBytes[float32](r.stag.GetMappedRange(0, uint(r.vocab*4))))
 	r.stag.Unmap()
+	return out, nil
+}
+
+// runBatch executes K runners (sharing the resident weights + KV caches, distinct
+// scratch) over inputs xs[i] at positions startPos+i in ONE command buffer — one
+// Submit, one Poll, K logit rows. The runners' steps are recorded in row order into a
+// single compute pass, so each row's kv-store is visible to the next row's attention
+// (causal: row i sees positions [0, startPos+i]). This amortizes the cgo-encode glue
+// + the sync over K (the dominant decode cost — see gpu-assessment.md §0.5), which is
+// the speculative-decode win. len(runners) must be ≥ len(xs).
+func runBatch(c *Context, runners []*DecodeRunner, xs [][]float32, startPos int) ([][]float32, error) {
+	n := len(xs)
+	if n == 0 {
+		return nil, nil
+	}
+	for i := 0; i < n; i++ {
+		if err := runners[i].writeInputs(xs[i], startPos+i); err != nil {
+			return nil, err
+		}
+	}
+	enc, err := c.device.CreateCommandEncoder(nil)
+	if err != nil {
+		return nil, err
+	}
+	defer enc.Release()
+	pass := enc.BeginComputePass(nil)
+	for i := 0; i < n; i++ {
+		runners[i].record(pass)
+	}
+	pass.End()
+	pass.Release()
+	for i := 0; i < n; i++ {
+		enc.CopyBufferToBuffer(runners[i].lastLogits, 0, runners[i].stag, 0, uint64(runners[i].vocab*4))
+	}
+	cmd, err := enc.Finish(nil)
+	if err != nil {
+		return nil, err
+	}
+	defer cmd.Release()
+	c.queue.Submit(cmd)
+	sts := make([]wgpu.BufferMapAsyncStatus, n)
+	for i := 0; i < n; i++ {
+		i := i
+		sts[i] = wgpu.BufferMapAsyncStatusUnknown
+		if err := runners[i].stag.MapAsync(wgpu.MapModeRead, 0, uint64(runners[i].vocab*4), func(s wgpu.BufferMapAsyncStatus) { sts[i] = s }); err != nil {
+			return nil, err
+		}
+	}
+	c.device.Poll(true, nil) // one sync drains all K maps
+	out := make([][]float32, n)
+	for i := 0; i < n; i++ {
+		if sts[i] != wgpu.BufferMapAsyncStatusSuccess {
+			return nil, fmt.Errorf("gpu: runBatch row %d map failed: %v", i, sts[i])
+		}
+		row := make([]float32, runners[i].vocab)
+		copy(row, wgpu.FromBytes[float32](runners[i].stag.GetMappedRange(0, uint(runners[i].vocab*4))))
+		runners[i].stag.Unmap()
+		out[i] = row
+	}
 	return out, nil
 }
 

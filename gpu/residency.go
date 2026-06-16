@@ -64,6 +64,12 @@ type residentDecoder struct {
 	rm      runModel
 	nKV, hd int      // KV grouping — UploadKV needs it to per-head quantize int8
 	keep    []func() // release the resident buffers (norms, biases, KV, projections)
+
+	// Batched verify (ForwardN): extra DecodeRunner instances sharing rm (the same
+	// resident weights + KV caches) with their own scratch/uniforms, built lazily up
+	// to the largest K seen. batch[0] aliases runner. newRunner builds one more.
+	newRunner func() (*DecodeRunner, error)
+	batch     []*DecodeRunner
 }
 
 // BuildResident builds a resident DecodeRunner from m, or (nil,false,nil) when
@@ -210,7 +216,11 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 
 	rd.rm.kvF16 = kvF16 // the runner picks the f16 attn/store kernels off this
 	rd.rm.kvI8 = kvI8   // …or the int8 kernels + scale binds
-	runner, err := c.newDecodeRunner(rd.rm, hidden, nH, nKV, hd, inter, 0, eps, m.AttnScale(), m.RMSAddOne())
+	scale, addOne := m.AttnScale(), m.RMSAddOne()
+	rd.newRunner = func() (*DecodeRunner, error) {
+		return c.newDecodeRunner(rd.rm, hidden, nH, nKV, hd, inter, 0, eps, scale, addOne)
+	}
+	runner, err := rd.newRunner()
 	if err != nil {
 		return fail(err)
 	}
@@ -221,6 +231,33 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 func (rd *residentDecoder) Forward(embedding []float32, pos int) ([]float32, error) {
 	return rd.runner.Run(embedding, pos)
 }
+
+// ForwardN runs K tokens at startPos..startPos+K-1 in one command buffer. It lazily
+// grows a pool of K DecodeRunners that share rd.rm (the resident weights + KV caches)
+// but own their scratch/uniforms, then records all K into a single submit (runBatch).
+// Causal across the shared KV: row i's kv-store precedes row i+1's attention read.
+func (rd *residentDecoder) ForwardN(embeddings [][]float32, startPos int) ([][]float32, error) {
+	n := len(embeddings)
+	if n == 0 {
+		return nil, nil
+	}
+	if len(rd.batch) == 0 {
+		rd.batch = append(rd.batch, rd.runner) // batch[0] aliases the M=1 runner
+	}
+	for len(rd.batch) < n {
+		r, err := rd.newRunner()
+		if err != nil {
+			return nil, err
+		}
+		rd.batch = append(rd.batch, r)
+	}
+	return runBatch(rd.c, rd.batch, embeddings, startPos)
+}
+
+// TruncateTo is a no-op on the resident cache: it is positional and Forward sets
+// nKeys=pos+1, so entries past pos are never read and get overwritten next round
+// (see the ResidentForward.TruncateTo contract).
+func (rd *residentDecoder) TruncateTo(pos int) {}
 
 // UploadKV writes a layer's post-RoPE K and raw V (positions 0..n-1) into the
 // resident caches — the prefill bridge. keys/vals are [n*kvDim] f32, packed to the
@@ -264,6 +301,12 @@ func (rd *residentDecoder) Reset() {} // positions overwritten on next decode; c
 func (rd *residentDecoder) Close() error { rd.release(); return nil }
 
 func (rd *residentDecoder) release() {
+	// batch[0] aliases rd.runner; release the extra verify runners (batch[1:]) — they
+	// own scratch but share rm's weights/KV (freed via rd.keep below).
+	for i := 1; i < len(rd.batch); i++ {
+		rd.batch[i].Release()
+	}
+	rd.batch = nil
 	if rd.runner != nil {
 		rd.runner.Release()
 		rd.runner = nil
