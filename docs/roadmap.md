@@ -51,7 +51,7 @@ more defensible claim than "supports N models," and one no other pure-Go runtime
 make — the per-layer-kind machinery already generalizes from mixer-kind to
 attention-kind. **Family selection is axis-driven; popularity breaks ties, it
 doesn't lead.** Full sequencing (Nemotron-H → MLA → Llama 4 / Phi momentum) and the
-per-family definition-of-done are in `docs/task-model-families-next.md` (built on
+per-family definition-of-done are in `docs/completed/task-model-families-next.md` (built on
 `docs/parity-coverage-policy.md`).
 
 ## Fresh peer survey (2026-06-07)
@@ -62,7 +62,7 @@ battlegrounds now:
 | Battleground | Who's pushing | goinfer position |
 |---|---|---|
 | **MTP speculative decoding** (models ship multi-token heads; no draft model; ~2x on dense) | llama.cpp (Qwen 3.6 MTP, PR #22673), Ollama 0.23.1 (Gemma 4 MTP via MLX, 2x on 31B), LM Studio 0.4.14 (stable), vLLM (Gemma 4 MTP; EAGLE 3.1 in v0.22) | Greedy draft-model spec exists, parked on CPU. **MTP doesn't change the math**: CPU decode is compute-bound, so an M=K verify pass costs ~K sequential decodes regardless of how cheap drafting is. Stays parked; revisit with a bandwidth-bound (GPU) backend. Caveat from the field: even llama.cpp sees *no* MoE single-stream win on consumer hardware. |
-| **Model freshness** | Qwen 3.6, DeepSeek (MLA), GLM-4.5/4.6, Granite 4.0, Nemotron-H, Gemma 3n, Llama 4, Phi | The race the descriptor design lets us run cheaply — now **axis-driven** (see "Positioning: attention-coverage axes" above): GLM-4.5/4.6 + Granite-4.0-H (Mamba-2) + Nemotron-H + DeepSeek-V2/V3 (MLA, latent-KV) shipped — all three efficient-attention axes covered. Plan: `docs/task-model-families-next.md`. Gemma 4 already in, incl. PLE (which llama.cpp struggled with). |
+| **Model freshness** | Qwen 3.6, DeepSeek (MLA), GLM-4.5/4.6, Granite 4.0, Nemotron-H, Gemma 3n, Llama 4, Phi | The race the descriptor design lets us run cheaply — now **axis-driven** (see "Positioning: attention-coverage axes" above): GLM-4.5/4.6 + Granite-4.0-H (Mamba-2) + Nemotron-H + DeepSeek-V2/V3 (MLA, latent-KV) shipped — all three efficient-attention axes covered. Plan: `docs/completed/task-model-families-next.md`. Gemma 4 already in, incl. PLE (which llama.cpp struggled with). |
 | **Hardware acceleration depth** | CUDA kernel fusion (+24% on 4090), Vulkan now beating CUDA on some hardware, M5 Neural Accelerators (MLX-only, up to 4x TTFT) | Structural gap, accepted trade. Pure-Go CPU SIMD + opt-in WebGPU. The counter-position *is* portability: one static binary, every platform, no driver. Don't fight on kernels. |
 | **Serving surface** | mistral.rs v0.7: dynamic model load/unload, **multi-model serving**, initial **OpenAI Responses API**, prefix caching; LM Studio: MCP host + OAuth; Ollama: `launch` app integrations | **Largely closed:** multi-model + dynamic admin load/unload and the OpenAI Responses API shipped v0.4.0; prefix caching at parity; the **Anthropic Messages API** (`/v1/messages`) adds a second chat surface in v0.5.0 (Claude Code points at goinfer). Remaining true gaps: MCP host / OAuth / `launch`-style app integrations. |
 | **Quantization frontier** | Native FP8/FP4 (DeepSeek V4 in llama.cpp), TurboQuant (4.9x vs f16, tracked in llama.cpp #20969), NVFP4 on Apple | int8/int4 runtime + broad K-quant dequant coverage. FP8/FP4 is GPU-hardware-driven — not our fight on CPU. Watch TurboQuant: a CPU-implementable 3–4 bit quant with near-paper MSE could matter for the embed-demo size/quality curve. |
@@ -446,7 +446,7 @@ the staged path has. **That coupling is the felt-pain trigger for both.**
   deltanet/hybrid-cache shapes — the **v1.0 trigger** (a second hybrid family,
   *different* mixer, shapes unchanged: the loader contract has settled).
 - **Axis-driven** (see "Positioning: attention-coverage axes" + the full plan
-  in `docs/task-model-families-next.md`): **Nemotron-H** (free — reuses Mamba-2,
+  in `docs/completed/task-model-families-next.md`): **Nemotron-H** (free — reuses Mamba-2,
   fully bf16-oracle-testable) ✅ and **MLA/DeepSeek** (the third axis, latent-KV —
   the one real new primitive) ✅ have shipped, completing all three efficient-attention
   axes. **Llama 4 / Phi** remain as popularity momentum on the existing rails.

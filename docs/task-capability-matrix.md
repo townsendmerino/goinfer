@@ -40,7 +40,7 @@ So:
    - **`docs/capability-matrix.md`** — a rendered table, **organized by the
      coverage axes** (softmax-GQA / gated-linear / state-space / latent-KV, MoE
      vs dense, hybrid), i.e. the matrix the coverage-axis positioning
-     (`task-model-families-next.md` Step 0) already calls for.
+     (`completed/task-model-families-next.md` Step 0) already calls for.
 2. **A freshness gate (CI, model-free).** A test that regenerates and `git diff`s —
    dirty tree ⇒ fail "regenerate the capability matrix." Plus: every `registry`
    key must be representable (have a resolvable config), so adding a family without
@@ -80,7 +80,7 @@ and the coverage test asserts every registry key has one.
 
 ## Tie-ins (this isn't a standalone artifact)
 
-- **Coverage-axis positioning** (`task-model-families-next.md` Step 0): this
+- **Coverage-axis positioning** (`completed/task-model-families-next.md` Step 0): this
   generated, axis-organized matrix *is* the rendered table that step asks for —
   building it discharges part of that step.
 - **Parity manifest** (`task-parity-coverage.md`): the matrix joins each family to

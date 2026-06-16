@@ -75,7 +75,7 @@ gate.
 ## Definition of done for a new family (the recurring muscle, completed)
 
 "Descriptor + loader + parity golden" gains an explicit, enforced checklist —
-applies to the GLM / Granite work (`task-model-families-glm-granite.md`) and
+applies to the GLM / Granite work (`completed/task-model-families-glm-granite.md`) and
 every family after:
 
 1. Arch adapter + tensor schema (`registry.go`) and loader(s).
