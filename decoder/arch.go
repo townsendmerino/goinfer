@@ -95,6 +95,14 @@ type Architecture struct {
 	// nemotron, when non-nil, marks a Nemotron-H single-op-block hybrid. nil for
 	// every other family.
 	nemotron *nemotronParams
+
+	// mla, when non-nil, marks a DeepSeek Multi-head Latent Attention family
+	// (deepseek_v2 / deepseek_v3). Attention reconstructs per-head K/V from a
+	// cached low-rank latent (compressed-KV by construction) with decoupled RoPE;
+	// the per-head dims are asymmetric (qk_head_dim ≠ v_head_dim), so it runs its
+	// own forward path (forward_deepseek.go) rather than the uniform causalAttention.
+	// nil for every other family.
+	mla *mlaParams
 }
 
 // nemotronParams marks a Nemotron-H hybrid: a SINGLE-OP-per-block stack where each
@@ -113,6 +121,23 @@ const (
 	nemoAttn
 	nemoMLP
 )
+
+// mlaParams carries DeepSeek Multi-head Latent Attention geometry. The cached state
+// is the compressed latent [KVLoRARank + QKRopeHeadDim] per position (the KV-memory
+// payoff: ~576 floats/token vs the ~41k a reconstructed full K+V would need); per-head
+// K/V are rebuilt from it each step via kv_b_proj. QLoRARank 0 ⇒ a direct q_proj (the
+// V2-Lite path) instead of the q_a/q_b LoRA bottleneck. forward_deepseek.go consumes this.
+type mlaParams struct {
+	QLoRARank      int  // q_a_proj bottleneck width; 0 ⇒ direct q_proj (no q-LoRA)
+	KVLoRARank     int  // compressed KV latent width (the cached payload, minus the rope key)
+	QKNopeHeadDim  int  // per-head Q/K dims WITHOUT RoPE
+	QKRopeHeadDim  int  // per-head Q/K dims carrying decoupled RoPE (one K shared across heads)
+	VHeadDim       int  // per-head V width (≠ QKNopeHeadDim+QKRopeHeadDim)
+	ropeInterleave bool // GPT-J pairwise (true, V3 default) vs NeoX half-split RoPE on the rope dims
+}
+
+// qkHeadDim is the query·key dot-product width: the no-rope dims plus the rope dims.
+func (p *mlaParams) qkHeadDim() int { return p.QKNopeHeadDim + p.QKRopeHeadDim }
 
 // graniteParams carries Granite-4.0-H's Mamba-2 mixer geometry (for the mamba
 // layers; the attention layers use the uniform Architecture fields) and the three
@@ -202,6 +227,14 @@ type MoEConfig struct {
 	RouterSigmoid bool    // score experts with per-expert sigmoid(logit) instead of softmax; top-k weights are the chosen sigmoid scores (then NormTopKProb). e_score_correction_bias (LayerWeights.RouterBias) shifts the top-k SELECTION only.
 	RoutedScale   float64 // routed_scaling_factor applied to the top-k weights (0 or 1 = no-op).
 	SharedUngated bool    // GLM/DeepSeek add the shared expert with NO sigmoid gate (out += shared(h)); else the Qwen2-MoE sigmoid(SharedGate·h) gate.
+
+	// Group-limited routing (DeepSeek-V3 noaux_tc). Experts are partitioned into
+	// NGroup contiguous groups; each group is scored by its top-2 selection scores
+	// summed, the top TopkGroup groups are kept, and the per-token top-k is taken
+	// only among experts in those groups. NGroup ≤ 1 (GLM, V2-Lite) ⇒ no grouping,
+	// the plain global top-k.
+	NGroup    int
+	TopkGroup int
 }
 
 // NormKind selects the normalization: RMSNorm (Llama/Gemma/Qwen/…) or

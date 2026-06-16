@@ -34,6 +34,8 @@ var registry = map[string]archAdapter{
 	"glm4_moe":         glm4moeArchitecture,    // GLM-4.5/4.6: DeepSeek-style MoE (sigmoid routing + bias) + dense prefix + QK-norm + partial RoPE
 	"granitemoehybrid": graniteArchitecture,    // Granite-4.0-H: Mamba-2 + attention hybrid + MoE-on-every-layer + Granite multipliers
 	"nemotron_h":       nemotronhArchitecture,  // Nemotron-H: single-op-per-block hybrid (mamba | NoPE-attention | relu² MLP)
+	"deepseek_v2":      deepseekArchitecture,   // DeepSeek-V2 (MLA + DeepSeekMoE; softmax routing, V2-Lite has no q-LoRA)
+	"deepseek_v3":      deepseekArchitecture,   // DeepSeek-V3 (MLA + DeepSeekMoE; sigmoid + e_score_correction_bias group-limited routing)
 }
 
 // resolveArchitecture picks the adapter for cfg.ModelType and builds the
@@ -902,4 +904,104 @@ func nemotronhArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 			NGroups: cfg.NGroups, DConv: cfg.ConvKernel, blockKind: kind,
 		},
 	}, &nemotronTensorSchema, nil
+}
+
+// deepseekArchitecture expresses DeepSeek-V2/V3 (model_type deepseek_v2 / deepseek_v3):
+// Multi-head Latent Attention over a DeepSeekMoE FFN. MLA is the new coverage axis —
+// latent-KV attention: K/V compress to a shared low-rank latent (kv_lora_rank, the only
+// thing cached), per-head K/V are reconstructed via kv_b_proj, and a separate
+// qk_rope_head_dim key (shared across heads) carries decoupled RoPE; queries optionally
+// route through a q_lora_rank bottleneck. The per-head dims are asymmetric
+// (qk_head_dim = qk_nope+qk_rope ≠ v_head_dim), so it runs forward_deepseek.go rather than
+// the uniform causalAttention. The MoE reuses moeMLP; routing flavor is config-driven —
+// V3 scores experts with sigmoid + an e_score_correction_bias and limits selection to
+// topk_group of n_group groups (noaux_tc), while V2/V2-Lite use softmax + plain greedy
+// top-k. first_k_dense_replace dense-MLP prefix, ungated shared expert (the GLM path).
+func deepseekArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+	if err := cfg.validateDeepseek(); err != nil {
+		return nil, nil, err
+	}
+	// RoPE: the tiny synthetic carries rope_parameters {rope_theta, rope_type}; the real
+	// V2-Lite/V3 carry a top-level rope_theta + a rope_scaling yarn object. Accept both.
+	var base float64
+	var scaling *ropeScaling
+	if len(cfg.RopeParameters) > 0 {
+		spec, _, err := parseRopeFlat(cfg.RopeParameters)
+		if err != nil {
+			return nil, nil, fmt.Errorf("decoder(%s): %w", cfg.ModelType, err)
+		}
+		base, scaling = spec.base, spec.scaling
+	} else {
+		base = cfg.RoPEGlobalBase
+		sc, err := parseRopeScaling(cfg.RopeScaling)
+		if err != nil {
+			return nil, nil, fmt.Errorf("decoder(%s): %w", cfg.ModelType, err)
+		}
+		scaling = sc
+	}
+
+	// Routing flavor. V3 (noaux_tc) scores with sigmoid + e_score_correction_bias and
+	// limits to topk_group groups; V2 scores with softmax. Honor explicit scoring_func/
+	// topk_method when present, else default by model_type. norm_topk_prob defaults true
+	// (HF DeepseekV3Config) but V2-Lite sets it false.
+	sigmoid := cfg.ModelType == "deepseek_v3"
+	if cfg.ScoringFunc != "" {
+		sigmoid = cfg.ScoringFunc == "sigmoid"
+	}
+	normTopK := true
+	if cfg.NormTopKProb != nil {
+		normTopK = *cfg.NormTopKProb
+	}
+	scale := cfg.RoutedScalingFactor // 0/1 ⇒ no-op (V2-Lite is 1.0)
+
+	qk := cfg.QKNopeHeadDim + cfg.QKRopeHeadDim
+	ropeInterleave := true // DeepseekV3Config default
+	if cfg.RopeInterleave != nil {
+		ropeInterleave = *cfg.RopeInterleave
+	}
+	return &Architecture{
+		Name:            cfg.ModelType,
+		HiddenDim:       cfg.HiddenDim,
+		NumLayers:       cfg.NumLayers,
+		NumHeads:        cfg.NumHeads,
+		NumKVHeads:      cfg.NumHeads, // MLA reconstructs per-head K/V; the cache is the shared latent
+		HeadDim:         qk,           // q·k dot-product width (≠ v_head_dim); forward_deepseek uses mlaParams
+		IntermediateDim: cfg.IntermediateDim,
+		VocabSize:       cfg.VocabSize,
+		Norm:            NormRMS,
+		RMSAddOne:       false,
+		NormEps:         cfg.RMSNormEps,
+		NormPlacement:   NormPre2,
+		Act:             ActSiLU,
+		QKVBias:         false,
+		QKNorm:          false,
+		FirstKDense:     cfg.FirstKDenseReplace,
+		MoE: &MoEConfig{
+			NumExperts:            cfg.NRoutedExperts,
+			TopK:                  cfg.NumExpertsPerTok,
+			NormTopKProb:          normTopK,
+			IntermediateDim:       cfg.MoeIntermediateSize,
+			SharedIntermediateDim: cfg.NSharedExperts * cfg.MoeIntermediateSize,
+			RouterSigmoid:         sigmoid,
+			RoutedScale:           scale,
+			SharedUngated:         true,
+			NGroup:                cfg.NGroup,
+			TopkGroup:             cfg.TopkGroup,
+		},
+		// Plain qk_head_dim^-0.5. ⚠️ Phase 3: the real V2-Lite/V3 fold YaRN's
+		// mscale_all_dim² into this scale (DeepSeek's dual-mscale); wire that with the
+		// real-model gate. The tiny golden uses default RoPE, so no mscale.
+		AttnScale:      math.Pow(float64(qk), -0.5),
+		RoPELocalBase:  base,
+		RoPEGlobalBase: base,
+		ropeScaling:    scaling,
+		RotaryDim:      cfg.QKRopeHeadDim, // RoPE rotates only the rope-carrying dims
+		EmbedScale:     0,
+		TiedLMHead:     false, // finalized from lm_head.weight presence at load
+		mla: &mlaParams{
+			QLoRARank: cfg.QLoRARank, KVLoRARank: cfg.KVLoRARank,
+			QKNopeHeadDim: cfg.QKNopeHeadDim, QKRopeHeadDim: cfg.QKRopeHeadDim,
+			VHeadDim: cfg.VHeadDim, ropeInterleave: ropeInterleave,
+		},
+	}, &deepseekTensorSchema, nil
 }

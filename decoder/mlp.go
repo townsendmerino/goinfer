@@ -75,7 +75,7 @@ func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend, pager
 	// the DeepSeek/GLM sigmoid-score + selection-bias path — routeExperts unifies both.
 	logits := make([]float32, nE)
 	matmul(be, &lw.Router, h, logits, 1)
-	idx, wts := routeExperts(logits, lw.RouterBias, k, moe.RouterSigmoid, moe.NormTopKProb, moe.RoutedScale)
+	idx, wts := routeExperts(logits, lw.RouterBias, k, moe.RouterSigmoid, moe.NormTopKProb, moe.RoutedScale, moe.NGroup, moe.TopkGroup)
 	if moeSelTrace != nil { // SPIKE: record this call's expert selection (forward order)
 		moeSelTrace = append(moeSelTrace, append([]int(nil), idx...))
 	}
@@ -129,8 +129,12 @@ func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend, pager
 // (e_score_correction_bias) is present it shifts the top-k SELECTION only, while the
 // weights are the chosen experts' UN-biased sigmoid scores. norm renormalizes the
 // weights to sum 1; scale (routed_scaling_factor) multiplies them (0/1 = no-op).
-// With sigmoid=false, bias=nil, scale∈{0,1} this is the exact prior Mixtral path.
-func routeExperts(logits, bias []float32, k int, sigmoid, norm bool, scale float64) (idx []int, wts []float32) {
+// With sigmoid=false, bias=nil, scale∈{0,1}, nGroup≤1 this is the exact prior Mixtral path.
+//
+// nGroup>1 (DeepSeek-V3 noaux_tc) adds group-limited selection: experts are partitioned
+// into nGroup contiguous groups, each group scored by the sum of its top-2 selection
+// scores; only experts in the top topkGroup groups are eligible for the per-token top-k.
+func routeExperts(logits, bias []float32, k int, sigmoid, norm bool, scale float64, nGroup, topkGroup int) (idx []int, wts []float32) {
 	var scores []float32
 	if sigmoid {
 		scores = make([]float32, len(logits))
@@ -146,6 +150,9 @@ func routeExperts(logits, bias []float32, k int, sigmoid, norm bool, scale float
 		for i := range scores {
 			sel[i] = scores[i] + bias[i]
 		}
+	}
+	if nGroup > 1 {
+		sel = groupLimit(sel, nGroup, topkGroup) // mask experts outside the top groups to -inf
 	}
 	idx, _ = topK(sel, k) // top-k by selection score
 	wts = make([]float32, len(idx))
@@ -169,6 +176,45 @@ func routeExperts(logits, bias []float32, k int, sigmoid, norm bool, scale float
 		}
 	}
 	return idx, wts
+}
+
+// groupLimit implements DeepSeek-V3's group-limited expert selection. The experts'
+// selection scores are partitioned into nGroup contiguous equal-size groups; each
+// group is scored by the sum of its top-2 scores; the top topkGroup groups are kept
+// and every expert outside them is masked to -inf. Returns a fresh slice (sel is not
+// mutated). Mirrors DeepseekV3MoE.route_tokens_to_experts.
+func groupLimit(sel []float32, nGroup, topkGroup int) []float32 {
+	gsz := len(sel) / nGroup
+	negInf := float32(math.Inf(-1))
+	// Per-group score = sum of its two largest selection scores.
+	gscore := make([]float32, nGroup)
+	for g := 0; g < nGroup; g++ {
+		var top1, top2 float32 = negInf, negInf
+		for _, v := range sel[g*gsz : (g+1)*gsz] {
+			if v > top1 {
+				top1, top2 = v, top1
+			} else if v > top2 {
+				top2 = v
+			}
+		}
+		gscore[g] = top1 + top2
+	}
+	keepIdx, _ := topK(gscore, topkGroup)
+	keep := make([]bool, nGroup)
+	for _, g := range keepIdx {
+		keep[g] = true
+	}
+	out := make([]float32, len(sel))
+	for g := 0; g < nGroup; g++ {
+		for i := g * gsz; i < (g+1)*gsz; i++ {
+			if keep[g] {
+				out[i] = sel[i]
+			} else {
+				out[i] = negInf
+			}
+		}
+	}
+	return out
 }
 
 // swiGLUExpert evaluates one gated (SwiGLU) expert MLP of the given intermediate

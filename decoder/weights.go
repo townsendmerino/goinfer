@@ -84,6 +84,11 @@ type LayerWeights struct {
 	// attention layers use QProj/KProj/VProj/OProj above). nil for every other
 	// family. Stored f32 (parity-first, like the qwen35 hybrid).
 	mamba *mamba2Weights
+
+	// DeepSeek MLA attention weights (deepseek_v2 / deepseek_v3). nil for every
+	// other family. Stored f32 (parity-first). The FFN side (dense prefix / MoE /
+	// shared expert) reuses the generic Router/Experts/SharedExpert fields above.
+	mla *mlaWeights
 }
 
 // qwenAttnWeights holds a qwen3_5_moe softmax layer's gated attention, f32.
@@ -96,6 +101,22 @@ type qwenAttnWeights struct {
 	oProj []float32 // [hidden, numHeads*headDim]
 	qNorm []float32 // [headDim]
 	kNorm []float32 // [headDim]
+}
+
+// mlaWeights holds one DeepSeek MLA layer's projections, stored f32 (parity-first,
+// like qwenAttnWeights). Queries route through the q_a/q_b LoRA bottleneck when
+// qAProj != nil, else the direct qProj (V2-Lite). K/V down-project to the latent
+// (kvAProj: the kv_lora_rank latent ‖ the qk_rope_head_dim rope key) and up-project
+// per head from the normalized latent (kvBProj → k_nope ‖ v per head).
+type mlaWeights struct {
+	qAProj       []float32 // [q_lora_rank, hidden]                 (nil ⇒ direct qProj)
+	qALayernorm  []float32 // [q_lora_rank]
+	qBProj       []float32 // [numHeads*qk_head_dim, q_lora_rank]
+	qProj        []float32 // [numHeads*qk_head_dim, hidden]        (V2-Lite direct path)
+	kvAProj      []float32 // [kv_lora_rank+qk_rope_head_dim, hidden]
+	kvALayernorm []float32 // [kv_lora_rank]
+	kvBProj      []float32 // [numHeads*(qk_nope+v_head_dim), kv_lora_rank]
+	oProj        []float32 // [hidden, numHeads*v_head_dim]
 }
 
 // expertWeights is one MoE expert: a gated (SwiGLU) MLP with no biases.
@@ -490,6 +511,10 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 			if err = loadQwen35Attn(st, i, l, arch, hd, tn); err != nil {
 				return err
 			}
+		} else if arch.mla != nil {
+			if err = loadDeepseekAttn(st, i, l, arch, hd, tn); err != nil {
+				return err
+			}
 		} else {
 			// Attention projections ([out, in] row-major).
 			if l.QProj, err = loadProj(tn(i, s.QProj), qDim, hd); err != nil {
@@ -687,6 +712,50 @@ func loadQwen35Attn(st *embed.SafetensorsFile, i int, l *LayerWeights, arch *Arc
 		return err
 	}
 	l.qattn = a
+	return nil
+}
+
+// loadDeepseekAttn loads one DeepSeek MLA layer's attention tensors as f32 (the
+// parity-first forward uses plain matvec). q-LoRA (q_a_proj→norm→q_b_proj) when
+// arch.mla.QLoRARank > 0, else a direct q_proj (V2-Lite). The KV down-proj
+// (kv_a_proj_with_mqa) emits the latent ‖ the shared rope key; kv_b_proj reconstructs
+// per-head k_nope ‖ v from the normalized latent.
+func loadDeepseekAttn(st *embed.SafetensorsFile, i int, l *LayerWeights, arch *Architecture, hidden int, tn func(int, string) string) error {
+	p := arch.mla
+	qkHeadDim := p.qkHeadDim()
+	qOut := arch.NumHeads * qkHeadDim
+	kvUp := arch.NumHeads * (p.QKNopeHeadDim + p.VHeadDim)
+	nm := func(suf string) string { return tn(i, suf) }
+	w := &mlaWeights{}
+	var err error
+	if p.QLoRARank > 0 {
+		if w.qAProj, err = st.TensorF32(nm("self_attn.q_a_proj.weight"), p.QLoRARank, hidden); err != nil {
+			return err
+		}
+		if w.qALayernorm, err = st.TensorF32(nm("self_attn.q_a_layernorm.weight"), p.QLoRARank); err != nil {
+			return err
+		}
+		if w.qBProj, err = st.TensorF32(nm("self_attn.q_b_proj.weight"), qOut, p.QLoRARank); err != nil {
+			return err
+		}
+	} else {
+		if w.qProj, err = st.TensorF32(nm("self_attn.q_proj.weight"), qOut, hidden); err != nil {
+			return err
+		}
+	}
+	if w.kvAProj, err = st.TensorF32(nm("self_attn.kv_a_proj_with_mqa.weight"), p.KVLoRARank+p.QKRopeHeadDim, hidden); err != nil {
+		return err
+	}
+	if w.kvALayernorm, err = st.TensorF32(nm("self_attn.kv_a_layernorm.weight"), p.KVLoRARank); err != nil {
+		return err
+	}
+	if w.kvBProj, err = st.TensorF32(nm("self_attn.kv_b_proj.weight"), kvUp, p.KVLoRARank); err != nil {
+		return err
+	}
+	if w.oProj, err = st.TensorF32(nm("self_attn.o_proj.weight"), hidden, arch.NumHeads*p.VHeadDim); err != nil {
+		return err
+	}
+	l.mla = w
 	return nil
 }
 
@@ -1001,6 +1070,34 @@ var glm4moeTensorSchema = tensorSchema{
 	SharedUp:   "mlp.shared_experts.up_proj.weight",
 	SharedDown: "mlp.shared_experts.down_proj.weight",
 	// SharedExpertGate empty: GLM adds the shared expert ungated.
+}
+
+// deepseekTensorSchema: DeepSeek-V2/V3 (MLA). The attention tensors are the MLA set
+// (q_a/q_b/kv_a/kv_b + the two latent layernorms), loaded by loadDeepseekAttn rather
+// than the QProj/KProj/VProj/OProj suffixes here — so those stay empty. The FFN side is
+// identical to GLM: dense prefix (first_k_dense_replace), DeepSeekMoE (router gate +
+// e_score_correction_bias, per-expert gate/up/down), and an ungated shared expert under
+// the plural "shared_experts" name.
+var deepseekTensorSchema = tensorSchema{
+	Embed:       "model.embed_tokens.weight",
+	LMHead:      "lm_head.weight",
+	FinalNorm:   "model.norm.weight",
+	PreAttnNorm: "input_layernorm.weight",
+	PreMLPNorm:  "post_attention_layernorm.weight",
+	// dense prefix (first_k_dense_replace) layers use these
+	GateProj: "mlp.gate_proj.weight",
+	UpProj:   "mlp.up_proj.weight",
+	DownProj: "mlp.down_proj.weight",
+	// MoE layers use these
+	Router:     "mlp.gate.weight",
+	RouterBias: "mlp.gate.e_score_correction_bias",
+	ExpertGate: "mlp.experts.%d.gate_proj.weight",
+	ExpertUp:   "mlp.experts.%d.up_proj.weight",
+	ExpertDown: "mlp.experts.%d.down_proj.weight",
+	SharedGate: "mlp.shared_experts.gate_proj.weight",
+	SharedUp:   "mlp.shared_experts.up_proj.weight",
+	SharedDown: "mlp.shared_experts.down_proj.weight",
+	// SharedExpertGate empty: DeepSeek adds the shared expert ungated.
 }
 
 // graniteTensorSchema is a marker — Granite-4.0-H's per-layer-kind tensors (Mamba-2

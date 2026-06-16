@@ -61,6 +61,28 @@ type Config struct {
 	FirstKDenseReplace  int     `json:"first_k_dense_replace"`
 	RoutedScalingFactor float64 `json:"routed_scaling_factor"`
 
+	// DeepSeek MLA + DeepSeekMoE (deepseek_v2 / deepseek_v3). MLA splits the
+	// per-head dims: queries route through an optional q_lora_rank bottleneck
+	// (q_a_proj→norm→q_b_proj; null/0 ⇒ a direct q_proj, the V2-Lite path), K/V
+	// compress to a shared kv_lora_rank latent (the CACHED state) plus a
+	// qk_rope_head_dim rope-carrying key shared across heads. Q/K are
+	// qk_nope_head_dim (no RoPE) + qk_rope_head_dim (decoupled RoPE); V is the
+	// (different) v_head_dim. The MoE routing flavor is config-driven: V3 scores
+	// with sigmoid + an e_score_correction_bias and limits selection to TopkGroup
+	// of NGroup expert groups (noaux_tc); V2 scores with softmax and (for V2-Lite)
+	// has NGroup=1 ⇒ plain greedy top-k. ScoringFunc/TopkMethod carry those knobs.
+	QLoRARank      int     `json:"q_lora_rank"`
+	KVLoRARank     int     `json:"kv_lora_rank"`
+	QKNopeHeadDim  int     `json:"qk_nope_head_dim"`
+	QKRopeHeadDim  int     `json:"qk_rope_head_dim"`
+	VHeadDim       int     `json:"v_head_dim"`
+	NGroup         int     `json:"n_group"`
+	TopkGroup      int     `json:"topk_group"`
+	ScoringFunc    string  `json:"scoring_func"` // "sigmoid" (V3) | "softmax" (V2); absent ⇒ family default
+	TopkMethod     string  `json:"topk_method"`  // "noaux_tc" (V3) | "greedy"/"group_limited_greedy" (V2)
+	RopeInterleave *bool   `json:"rope_interleave"`
+	AttnScaleMul   float64 `json:"-"` // yarn mscale² folded into the attention scale (0 ⇒ plain qk_head_dim^-0.5)
+
 	// Granite-4.0-H (GraniteMoeHybrid): the Mamba-2 mixer dims (per-layer kind in
 	// LayerTypes = "mamba" | "attention"), the shared-expert width, and the four
 	// Granite scalar multipliers applied in the forward (embedding scale, attention
@@ -340,6 +362,37 @@ func (c *Config) validateGlm4Moe() error {
 		return fmt.Errorf("decoder(glm4_moe): n_shared_experts must be >0, got %d", c.NSharedExperts)
 	case c.FirstKDenseReplace < 0 || c.FirstKDenseReplace >= c.NumLayers:
 		return fmt.Errorf("decoder(glm4_moe): first_k_dense_replace %d out of range (0..%d)", c.FirstKDenseReplace, c.NumLayers-1)
+	}
+	return nil
+}
+
+// validateDeepseek pins the DeepSeek-V2/V3 (MLA) assumptions: a valid MLA geometry
+// (kv_lora_rank + the split per-head qk_nope/qk_rope/v dims) and a DeepSeekMoE
+// (n_routed_experts / num_experts_per_tok / moe_intermediate_size + n_shared_experts ≥ 1,
+// a first_k_dense_replace dense prefix). q_lora_rank 0/absent is the V2-Lite direct-q
+// path. Group-limited routing (n_group/topk_group) is optional (≤1 ⇒ plain top-k).
+func (c *Config) validateDeepseek() error {
+	switch {
+	case c.KVLoRARank <= 0:
+		return fmt.Errorf("decoder(%s): kv_lora_rank must be >0, got %d", c.ModelType, c.KVLoRARank)
+	case c.QKNopeHeadDim <= 0 || c.QKRopeHeadDim <= 0 || c.VHeadDim <= 0:
+		return fmt.Errorf("decoder(%s): bad MLA head dims (qk_nope=%d qk_rope=%d v=%d)", c.ModelType, c.QKNopeHeadDim, c.QKRopeHeadDim, c.VHeadDim)
+	case c.QLoRARank < 0:
+		return fmt.Errorf("decoder(%s): q_lora_rank must be ≥0, got %d", c.ModelType, c.QLoRARank)
+	case c.NRoutedExperts <= 0:
+		return fmt.Errorf("decoder(%s): n_routed_experts must be >0, got %d", c.ModelType, c.NRoutedExperts)
+	case c.NumExpertsPerTok <= 0 || c.NumExpertsPerTok > c.NRoutedExperts:
+		return fmt.Errorf("decoder(%s): num_experts_per_tok %d out of range (1..%d)", c.ModelType, c.NumExpertsPerTok, c.NRoutedExperts)
+	case c.MoeIntermediateSize <= 0:
+		return fmt.Errorf("decoder(%s): moe_intermediate_size must be >0, got %d", c.ModelType, c.MoeIntermediateSize)
+	case c.NSharedExperts <= 0:
+		return fmt.Errorf("decoder(%s): n_shared_experts must be >0, got %d", c.ModelType, c.NSharedExperts)
+	case c.FirstKDenseReplace < 0 || c.FirstKDenseReplace >= c.NumLayers:
+		return fmt.Errorf("decoder(%s): first_k_dense_replace %d out of range (0..%d)", c.ModelType, c.FirstKDenseReplace, c.NumLayers-1)
+	case c.NGroup > 1 && (c.TopkGroup <= 0 || c.TopkGroup > c.NGroup):
+		return fmt.Errorf("decoder(%s): topk_group %d out of range (1..%d)", c.ModelType, c.TopkGroup, c.NGroup)
+	case c.NGroup > 1 && c.NRoutedExperts%c.NGroup != 0:
+		return fmt.Errorf("decoder(%s): n_routed_experts %d not divisible by n_group %d", c.ModelType, c.NRoutedExperts, c.NGroup)
 	}
 	return nil
 }

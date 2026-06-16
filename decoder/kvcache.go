@@ -93,6 +93,15 @@ type KVCache struct {
 	// every other family). The Granite analogue of delta.
 	mamba []*mamba2State
 
+	// mlaLatent holds DeepSeek MLA's compressed-KV latent per layer, appended
+	// [pos*latentDim] where latentDim = kv_lora_rank + qk_rope_head_dim. This is
+	// the whole point of MLA: cache the low-rank latent (~576 floats/token), not a
+	// reconstructed full K+V (~41k). forward_deepseek rebuilds per-head K/V from it
+	// each step. nil slice on every other family. latentDim is the per-position
+	// stride (learned on the first append). The standard keys/vals stay empty.
+	mlaLatent [][]float32
+	latentDim int
+
 	scr *decodeScratch // per-stream reusable forward buffers (Model.NewCache sets it)
 
 	// lora is the active compute-time LoRA adapter for this stream (#7), nil for
@@ -290,6 +299,20 @@ func (c *KVCache) Advance() { c.pos++ }
 func (c *KVCache) Keys(layer int) []float32 { return c.keys[layer] }
 func (c *KVCache) Vals(layer int) []float32 { return c.vals[layer] }
 
+// AppendLatent stores one position's MLA latent (the compressed KV ‖ rope-key vector)
+// for a layer, growing the per-layer store. Append-forever (no ring/quant yet — the
+// latent is already the compressed state). The caller advances pos once per token via
+// Advance() (manualPos), since the standard Append path is bypassed.
+func (c *KVCache) AppendLatent(layer int, latent []float32) {
+	if c.latentDim == 0 {
+		c.latentDim = len(latent)
+	}
+	c.mlaLatent[layer] = append(c.mlaLatent[layer], latent...)
+}
+
+// Latent returns the stored MLA latent history for a layer as [storedPos, latentDim].
+func (c *KVCache) Latent(layer int) []float32 { return c.mlaLatent[layer] }
+
 // Pos is the number of positions stored so far.
 func (c *KVCache) Pos() int { return c.pos }
 
@@ -310,6 +333,10 @@ func (c *KVCache) TruncateTo(pos int) {
 		return
 	}
 	for l := range c.numLayers {
+		if c.mlaLatent != nil { // DeepSeek MLA: reslice the per-layer latent store
+			c.mlaLatent[l] = c.mlaLatent[l][:pos*c.latentDim]
+			continue
+		}
 		if r := c.rings[l]; r != nil {
 			r.truncate(pos) // exactness flag consumed by the rewind rule (Inc 2)
 			continue

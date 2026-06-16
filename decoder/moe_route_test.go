@@ -16,7 +16,7 @@ func TestRouteExperts(t *testing.T) {
 	// selection score goes negative, so top-2 are {1,0}, NOT {2,1} — yet the weights
 	// use expert 1/0's UN-biased sigmoid scores.
 	bias := []float32{0, 0, -5, 0}
-	idx, wts := routeExperts(logits, bias, 2, true, true, 1.0)
+	idx, wts := routeExperts(logits, bias, 2, true, true, 1.0, 0, 0)
 	sel := map[int]float32{}
 	for j, e := range idx {
 		sel[e] = wts[j]
@@ -42,7 +42,7 @@ func TestRouteExperts(t *testing.T) {
 	}
 
 	// --- Mixtral path: softmax + top-k + renorm, unchanged from the prior code ---
-	mi, mw := routeExperts(logits, nil, 2, false, true, 0)
+	mi, mw := routeExperts(logits, nil, 2, false, true, 0, 0, 0)
 	// reference: the exact old path.
 	probs := softmaxF32(logits)
 	oi, ow := topK(probs, 2)
@@ -67,8 +67,8 @@ func TestRouteExperts(t *testing.T) {
 	}
 
 	// --- routed_scaling_factor multiplies the weights ---
-	_, sw := routeExperts(logits, nil, 2, true, false, 2.5)
-	_, sw1 := routeExperts(logits, nil, 2, true, false, 1.0)
+	_, sw := routeExperts(logits, nil, 2, true, false, 2.5, 0, 0)
+	_, sw1 := routeExperts(logits, nil, 2, true, false, 1.0, 0, 0)
 	for j := range sw {
 		if d := math.Abs(float64(sw[j] - 2.5*sw1[j])); d > 1e-5 {
 			t.Errorf("scale: weight[%d]=%v, want 2.5×%v", j, sw[j], sw1[j])

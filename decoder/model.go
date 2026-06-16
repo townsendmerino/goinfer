@@ -316,6 +316,13 @@ func (m *Model) NewCache(capHint int) *KVCache {
 			}
 		}
 	}
+	if a.mla != nil {
+		// DeepSeek MLA: the cache is the per-layer compressed latent, not full K/V.
+		// manualPos because the forward appends via AppendLatent (not the standard
+		// Append) and advances pos once per token after the full layer sweep.
+		c.manualPos = true
+		c.mlaLatent = make([][]float32, a.NumLayers)
+	}
 	return c
 }
 
@@ -355,6 +362,9 @@ func (m *Model) runLayers(id int, cache *KVCache) ([]float32, error) {
 	}
 	if arch.nemotron != nil { // nemotron_h: single-op-per-block hybrid — own path.
 		return m.runLayersNemotron(id, cache)
+	}
+	if arch.mla != nil { // deepseek_v2/v3: Multi-head Latent Attention — own path.
+		return m.runLayersDeepseek(id, cache)
 	}
 	if cache.scr == nil { // caches from NewKVCache directly (tests); Generate uses NewCache
 		cache.scr = newDecodeScratch(arch)

@@ -16,9 +16,10 @@ import (
 func (m *Model) canBatchN(K int) bool {
 	a := m.w.arch
 	// Gemma 4 (per-layer head_dim, KV-sharing, PLE), qwen3_5_moe (Gated DeltaNet),
-	// and granitemoehybrid (Mamba-2) each have their own sequential forward whose
-	// recurrent layers can't be batched across positions; exclude all three.
-	return K > 1 && m.w.Embed.Rows() != 0 && !a.NonGatedMLP && !a.LearnedPosEmbed && a.gemma4 == nil && a.qwen35 == nil && a.granite == nil && a.nemotron == nil
+	// granitemoehybrid + nemotron_h (Mamba-2), and deepseek_v2/v3 (MLA latent cache)
+	// each have their own sequential forward — the recurrent / latent-reconstruction
+	// layers can't be batched across positions; exclude them all.
+	return K > 1 && m.w.Embed.Rows() != 0 && !a.NonGatedMLP && !a.LearnedPosEmbed && a.gemma4 == nil && a.qwen35 == nil && a.granite == nil && a.nemotron == nil && a.mla == nil
 }
 
 // forwardLayersN runs the embedding + all transformer layers + final norm over
