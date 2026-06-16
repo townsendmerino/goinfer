@@ -372,6 +372,12 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 		}
 		return buildNemotronWeights(cfg, arch, st, quant) // per-layer mamba | attention | mlp
 	}
+	if arch.Name == "phi3" {
+		if lora != nil {
+			return nil, fmt.Errorf("decoder: LoRA merge unsupported for the phi3 (fused qkv/gate_up) layout")
+		}
+		return buildPhi3Weights(cfg, arch, st, quant) // split fused qkv_proj + gate_up_proj → generic forward
+	}
 	if lora != nil {
 		if err := lora.validateTargets(cfg.NumLayers, s); err != nil {
 			return nil, err
@@ -1109,6 +1115,10 @@ var deepseekTensorSchema = tensorSchema{
 // (unused) schema return.
 var graniteTensorSchema = tensorSchema{Embed: "model.embed_tokens.weight"}
 
+// phi3TensorSchema is a marker — Phi-3/Phi-4's fused qkv_proj + gate_up_proj are split by
+// buildPhi3Weights into the standard fields, after which the generic llama forward runs.
+var phi3TensorSchema = tensorSchema{Embed: "model.embed_tokens.weight"}
+
 // nemotronTensorSchema is a marker — Nemotron-H's single-op-per-block layout
 // (per-layer one of mamba/attention/mlp under a "mixer" prefix) is loaded directly
 // by buildNemotronWeights.
@@ -1441,6 +1451,73 @@ func buildNemotronWeights(cfg *Config, arch *Architecture, st *embed.Safetensors
 			}
 			lw.UpProj, lw.DownProj = quantizeWM(lw.UpProj, quant), quantizeWM(lw.DownProj, quant)
 		}
+		return nil
+	}
+	if err := parallelLayers(arch.NumLayers, loadLayer); err != nil {
+		return nil, err
+	}
+	return w, nil
+}
+
+// buildPhi3Weights loads a Phi-3 / Phi-4 (phi3) checkpoint. Phi-3 is the llama skeleton
+// (RMSNorm no-offset, Pre2, SwiGLU, NeoX RoPE, no QK-norm, no bias, untied head) with two
+// FUSED tensors that this loader splits into the standard LayerWeights fields so the
+// generic runLayers handles the forward unchanged: self_attn.qkv_proj is q‖k‖v stacked by
+// output rows (split at NumHeads*HeadDim, then +NumKVHeads*HeadDim), and mlp.gate_up_proj
+// is gate‖up (split in half). The fused tensors load to f32, slice by rows, and quantize
+// per the resident mode (the GPT-2 fused-QKV precedent).
+func buildPhi3Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile, quant quantMode) (*Weights, error) {
+	hidden, inter, vocab := arch.HiddenDim, arch.IntermediateDim, arch.VocabSize
+	hd := arch.HeadDim
+	qDim, kvDim := arch.NumHeads*hd, arch.NumKVHeads*hd
+	w := &Weights{Cfg: *cfg, arch: arch, st: st, Layers: make([]LayerWeights, arch.NumLayers)}
+	var err error
+	if w.Embed, err = loadMat(st, "model.embed_tokens.weight", vocab, hidden); err != nil {
+		return nil, err
+	}
+	w.Embed = quantizeWM(w.Embed, quant.embedding())
+	if w.FinalNorm, err = st.TensorF32("model.norm.weight", hidden); err != nil {
+		return nil, err
+	}
+	arch.TiedLMHead = true
+	if head, herr := loadMat(st, "lm_head.weight", vocab, hidden); herr == nil {
+		w.LMHead = quantizeWM(head, quant.embedding())
+		arch.TiedLMHead = false
+	}
+
+	loadLayer := func(i int) error {
+		l := &w.Layers[i]
+		p := fmt.Sprintf("model.layers.%d.", i)
+		var e error
+		if l.PreAttnNorm, e = st.TensorF32(p+"input_layernorm.weight", hidden); e != nil {
+			return e
+		}
+		if l.PreMLPNorm, e = st.TensorF32(p+"post_attention_layernorm.weight", hidden); e != nil {
+			return e
+		}
+		// Fused qkv_proj [qDim+2*kvDim, hidden] → Q ‖ K ‖ V by output rows.
+		qkv, qerr := st.TensorF32(p+"self_attn.qkv_proj.weight", qDim+2*kvDim, hidden)
+		if qerr != nil {
+			return qerr
+		}
+		l.QProj = quantizeWM(linalg.WrapF32(qkv[0:qDim*hidden], qDim, hidden), quant)
+		l.KProj = quantizeWM(linalg.WrapF32(qkv[qDim*hidden:(qDim+kvDim)*hidden], kvDim, hidden), quant)
+		l.VProj = quantizeWM(linalg.WrapF32(qkv[(qDim+kvDim)*hidden:(qDim+2*kvDim)*hidden], kvDim, hidden), quant)
+		if l.OProj, e = loadMat(st, p+"self_attn.o_proj.weight", hidden, qDim); e != nil {
+			return e
+		}
+		l.OProj = quantizeWM(l.OProj, quant)
+		// Fused gate_up_proj [2*inter, hidden] → gate ‖ up (SwiGLU: down(silu(gate)·up)).
+		gu, gerr := st.TensorF32(p+"mlp.gate_up_proj.weight", 2*inter, hidden)
+		if gerr != nil {
+			return gerr
+		}
+		l.GateProj = quantizeWM(linalg.WrapF32(gu[0:inter*hidden], inter, hidden), quant)
+		l.UpProj = quantizeWM(linalg.WrapF32(gu[inter*hidden:2*inter*hidden], inter, hidden), quant)
+		if l.DownProj, e = loadMat(st, p+"mlp.down_proj.weight", hidden, inter); e != nil {
+			return e
+		}
+		l.DownProj = quantizeWM(l.DownProj, quant)
 		return nil
 	}
 	if err := parallelLayers(arch.NumLayers, loadLayer); err != nil {
