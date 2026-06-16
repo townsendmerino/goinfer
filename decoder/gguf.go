@@ -53,8 +53,10 @@ func ggufConfig(g *embed.GGUFFile) (*Config, error) {
 		return ggufNemotronConfig(g)
 	case "deepseek2":
 		return ggufDeepseekConfig(g)
+	case "phi3":
+		return ggufPhi3Config(g)
 	default:
-		return nil, fmt.Errorf("decoder(gguf): architecture %q unsupported (have: llama, qwen2, qwen3, gemma3, gemma4 [wip], mellum, qwen35moe, glm4moe, granitehybrid, nemotron_h, deepseek2)", arch)
+		return nil, fmt.Errorf("decoder(gguf): architecture %q unsupported (have: llama, qwen2, qwen3, gemma3, gemma4 [wip], mellum, qwen35moe, glm4moe, granitehybrid, nemotron_h, deepseek2, phi3)", arch)
 	}
 }
 
@@ -705,6 +707,49 @@ func ggufDeepseekConfig(g *embed.GGUFFile) (*Config, error) {
 	return cfg, nil
 }
 
+// ggufPhi3Config builds a Phi-3/Phi-4 (phi3) Config from the phi3.* metadata. The fused
+// attn_qkv + ffn_up (gate‖up) tensors are split by buildWeightsFromGGUF's phi3 branch.
+// rope.freq_base is omitted when default (10000); rope.dimension_count < head_dim ⇒ partial
+// rotary. LongRoPE (128k variants) is deferred — those store a rope.scaling block that this
+// minimal reader doesn't translate (and phi3Architecture would reject).
+func ggufPhi3Config(g *embed.GGUFFile) (*Config, error) {
+	u := func(k string) int {
+		v, _ := g.Uint("phi3." + k)
+		return int(v)
+	}
+	gf := func(k string) float64 {
+		if v, ok := g.Float("phi3." + k); ok {
+			return v
+		}
+		v, _ := g.Uint("phi3." + k)
+		return float64(v)
+	}
+	hidden, heads := u("embedding_length"), u("attention.head_count")
+	headDim := hidden / heads
+	base := gf("rope.freq_base")
+	if base == 0 {
+		base = 10000 // llama.cpp omits the key at the default
+	}
+	cfg := &Config{
+		ModelType:       "phi3",
+		HiddenDim:       hidden,
+		NumLayers:       u("block_count"),
+		NumHeads:        heads,
+		NumKVHeads:      u("attention.head_count_kv"),
+		IntermediateDim: u("feed_forward_length"),
+		VocabSize:       ggufVocabSize(g),
+		RMSNormEps:      gf("attention.layer_norm_rms_epsilon"),
+		RoPEGlobalBase:  base,
+		MaxPositions:    u("context_length"),
+		HiddenAct:       "silu",
+	}
+	if rd := u("rope.dimension_count"); rd > 0 && rd < headDim {
+		cfg.PartialRotaryFactor = float64(rd) / float64(headDim)
+	}
+	ggufEOS(g, cfg)
+	return cfg, nil
+}
+
 // loadDeepseekAttnGGUF loads one DeepSeek MLA layer's attention tensors as f32 (the
 // parity-first forward uses plain matvec, like the qwen35/granite mixer weights), from
 // llama.cpp's deepseek2 names: attn_q_a/attn_q_a_norm/attn_q_b (q-LoRA) or attn_q
@@ -1031,6 +1076,21 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			res[e] = m
 		}
 		return res, nil
+	}
+	// fusedSplit streams the output-row range [rowStart, rowStart+rows) of a fused
+	// [outTotal, in] tensor into its own quantized linalg.WeightMat — Phi-3's fused
+	// attn_qkv (q‖k‖v) and ffn_up (gate‖up), split without a whole-tensor f32 buffer.
+	fusedSplit := func(name string, outTotal, in, rowStart, rows int) (linalg.WeightMat, error) {
+		dims, into, err := g.RowDequantizer(name)
+		if err != nil {
+			return linalg.WeightMat{}, err
+		}
+		if len(dims) != 2 || dims[0] != in || dims[1] != outTotal {
+			return linalg.WeightMat{}, fmt.Errorf("decoder(gguf-phi3): %q dims %v, want [in=%d, out=%d]", name, dims, in, outTotal)
+		}
+		return streamQuantized(rows, in, matmulQuant(quant, name), func(r int, dst []float32) error {
+			return into((rowStart+r)*in, dst)
+		})
 	}
 
 	var err error
@@ -1576,6 +1636,21 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			if err = loadDeepseekAttnGGUF(g, p, l, arch); err != nil {
 				return err
 			}
+		} else if arch.Name == "phi3" {
+			// Phi-3/Phi-4: fused attn_qkv [qDim+2*kvDim, hidden] → Q ‖ K ‖ V by output
+			// rows (NEOX rope ⇒ no permute). o_proj is unfused.
+			if l.QProj, err = fusedSplit(p+"attn_qkv.weight", qDim+2*kvDim, hidden, 0, qDim); err != nil {
+				return err
+			}
+			if l.KProj, err = fusedSplit(p+"attn_qkv.weight", qDim+2*kvDim, hidden, qDim, kvDim); err != nil {
+				return err
+			}
+			if l.VProj, err = fusedSplit(p+"attn_qkv.weight", qDim+2*kvDim, hidden, qDim+kvDim, kvDim); err != nil {
+				return err
+			}
+			if l.OProj, err = mat(p+"attn_output.weight", hidden, qDim); err != nil {
+				return err
+			}
 		} else {
 			if l.QProj, err = loadQK(p+"attn_q.weight", qDim, arch.NumHeads); err != nil {
 				return err
@@ -1689,6 +1764,21 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 					}
 					l.SharedGate = linalg.WrapF32(sg, 1, hidden)
 				}
+			}
+			return nil
+		}
+		if arch.Name == "phi3" {
+			// Phi-3/Phi-4: fused ffn_up [2*inter, hidden] is gate‖up (no separate
+			// ffn_gate); ffn_down is unfused.
+			inter := arch.IntermediateDim
+			if l.GateProj, err = fusedSplit(p+"ffn_up.weight", 2*inter, hidden, 0, inter); err != nil {
+				return err
+			}
+			if l.UpProj, err = fusedSplit(p+"ffn_up.weight", 2*inter, hidden, inter, inter); err != nil {
+				return err
+			}
+			if l.DownProj, err = mat(p+"ffn_down.weight", hidden, inter); err != nil {
+				return err
 			}
 			return nil
 		}
