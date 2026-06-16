@@ -1,0 +1,376 @@
+{
+  "aikit_version": "v1.8.1",
+  "shared_sets": {
+    "core": [
+      "decoder/model.go",
+      "decoder/forwardn.go",
+      "decoder/attention.go",
+      "decoder/mlp.go",
+      "decoder/kvcache.go",
+      "decoder/rope.go",
+      "decoder/ropescale.go",
+      "decoder/rmsnorm.go",
+      "decoder/registry.go",
+      "decoder/arch.go",
+      "decoder/config.go"
+    ],
+    "deltanet": [
+      "decoder/deltanet.go",
+      "decoder/deltanet_chunked.go"
+    ],
+    "loaders": [
+      "decoder/weights.go",
+      "decoder/gguf.go",
+      "decoder/serialize.go"
+    ],
+    "mamba2": [
+      "decoder/mamba2.go",
+      "decoder/mamba2_chunked.go"
+    ],
+    "moe": [
+      "decoder/mlp.go"
+    ],
+    "quant": [
+      "decoder/weightmat.go",
+      "decoder/gptq.go",
+      "decoder/awq.go"
+    ]
+  },
+  "families": {
+    "deepseek_v2": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant",
+        "moe"
+      ],
+      "own": [
+        "decoder/forward_deepseek.go"
+      ],
+      "deps_hash": "sha256:73fa04a7a50d3be8e460c2113532af5546b918678fd52d23dd18ecf355cb7b72",
+      "status": "pending",
+      "validated_at": null,
+      "date": null,
+      "reference": null,
+      "machine": null,
+      "method": null,
+      "metrics": null
+    },
+    "deepseek_v3": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant",
+        "moe"
+      ],
+      "own": [
+        "decoder/forward_deepseek.go"
+      ],
+      "deps_hash": "sha256:73fa04a7a50d3be8e460c2113532af5546b918678fd52d23dd18ecf355cb7b72",
+      "status": "pending",
+      "validated_at": null,
+      "date": null,
+      "reference": null,
+      "machine": null,
+      "method": null,
+      "metrics": null
+    },
+    "gemma3": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant"
+      ],
+      "own": [],
+      "deps_hash": "sha256:169038e191f239a6b32927aae2238ecb2d7cd9de364b935bc3ffd45e2a181eb0",
+      "status": "pending",
+      "validated_at": null,
+      "date": null,
+      "reference": null,
+      "machine": null,
+      "method": null,
+      "metrics": null
+    },
+    "gemma4": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant"
+      ],
+      "own": [
+        "decoder/forward_gemma4.go"
+      ],
+      "deps_hash": "sha256:01076234ec7cc665b2e2db9087a2fd2abfeafb19ec27a5175cc87390214827b1",
+      "status": "pending",
+      "validated_at": null,
+      "date": null,
+      "reference": null,
+      "machine": null,
+      "method": null,
+      "metrics": null
+    },
+    "glm4_moe": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant",
+        "moe"
+      ],
+      "own": [],
+      "deps_hash": "sha256:169038e191f239a6b32927aae2238ecb2d7cd9de364b935bc3ffd45e2a181eb0",
+      "status": "pending",
+      "validated_at": null,
+      "date": null,
+      "reference": null,
+      "machine": null,
+      "method": null,
+      "metrics": null
+    },
+    "gpt2": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant"
+      ],
+      "own": [],
+      "deps_hash": "sha256:169038e191f239a6b32927aae2238ecb2d7cd9de364b935bc3ffd45e2a181eb0",
+      "status": "pending",
+      "validated_at": null,
+      "date": null,
+      "reference": null,
+      "machine": null,
+      "method": null,
+      "metrics": null
+    },
+    "granitemoehybrid": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant",
+        "moe",
+        "mamba2"
+      ],
+      "own": [
+        "decoder/forward_granite.go"
+      ],
+      "deps_hash": "sha256:cf01184c35fba47fb31426bcc37e677f96ae8b097ae007f8dfe502dbab8e64f0",
+      "status": "pending",
+      "validated_at": null,
+      "date": null,
+      "reference": null,
+      "machine": null,
+      "method": null,
+      "metrics": null
+    },
+    "kimi_k2": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant",
+        "moe"
+      ],
+      "own": [
+        "decoder/forward_deepseek.go"
+      ],
+      "deps_hash": "sha256:73fa04a7a50d3be8e460c2113532af5546b918678fd52d23dd18ecf355cb7b72",
+      "status": "pending",
+      "validated_at": null,
+      "date": null,
+      "reference": null,
+      "machine": null,
+      "method": null,
+      "metrics": null
+    },
+    "llama": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant"
+      ],
+      "own": [],
+      "deps_hash": "sha256:169038e191f239a6b32927aae2238ecb2d7cd9de364b935bc3ffd45e2a181eb0",
+      "status": "pending",
+      "validated_at": null,
+      "date": null,
+      "reference": null,
+      "machine": null,
+      "method": null,
+      "metrics": null
+    },
+    "mellum": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant",
+        "moe"
+      ],
+      "own": [],
+      "deps_hash": "sha256:169038e191f239a6b32927aae2238ecb2d7cd9de364b935bc3ffd45e2a181eb0",
+      "status": "pending",
+      "validated_at": null,
+      "date": null,
+      "reference": null,
+      "machine": null,
+      "method": null,
+      "metrics": null
+    },
+    "mistral": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant"
+      ],
+      "own": [],
+      "deps_hash": "sha256:169038e191f239a6b32927aae2238ecb2d7cd9de364b935bc3ffd45e2a181eb0",
+      "status": "pending",
+      "validated_at": null,
+      "date": null,
+      "reference": null,
+      "machine": null,
+      "method": null,
+      "metrics": null
+    },
+    "mixtral": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant",
+        "moe"
+      ],
+      "own": [],
+      "deps_hash": "sha256:169038e191f239a6b32927aae2238ecb2d7cd9de364b935bc3ffd45e2a181eb0",
+      "status": "pending",
+      "validated_at": null,
+      "date": null,
+      "reference": null,
+      "machine": null,
+      "method": null,
+      "metrics": null
+    },
+    "nemotron_h": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant",
+        "mamba2"
+      ],
+      "own": [
+        "decoder/forward_nemotron.go"
+      ],
+      "deps_hash": "sha256:8c9715936abcbac969f230a879945c439638f140f9e083c623f4e2d5c77c8a71",
+      "status": "pending",
+      "validated_at": null,
+      "date": null,
+      "reference": null,
+      "machine": null,
+      "method": null,
+      "metrics": null
+    },
+    "phi3": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant"
+      ],
+      "own": [],
+      "deps_hash": "sha256:169038e191f239a6b32927aae2238ecb2d7cd9de364b935bc3ffd45e2a181eb0",
+      "status": "pending",
+      "validated_at": null,
+      "date": null,
+      "reference": null,
+      "machine": null,
+      "method": null,
+      "metrics": null
+    },
+    "qwen2": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant"
+      ],
+      "own": [],
+      "deps_hash": "sha256:169038e191f239a6b32927aae2238ecb2d7cd9de364b935bc3ffd45e2a181eb0",
+      "status": "pending",
+      "validated_at": null,
+      "date": null,
+      "reference": null,
+      "machine": null,
+      "method": null,
+      "metrics": null
+    },
+    "qwen2_5_vl": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant"
+      ],
+      "own": [],
+      "deps_hash": "sha256:169038e191f239a6b32927aae2238ecb2d7cd9de364b935bc3ffd45e2a181eb0",
+      "status": "pending",
+      "validated_at": null,
+      "date": null,
+      "reference": null,
+      "machine": null,
+      "method": null,
+      "metrics": null
+    },
+    "qwen2_moe": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant",
+        "moe"
+      ],
+      "own": [],
+      "deps_hash": "sha256:169038e191f239a6b32927aae2238ecb2d7cd9de364b935bc3ffd45e2a181eb0",
+      "status": "pending",
+      "validated_at": null,
+      "date": null,
+      "reference": null,
+      "machine": null,
+      "method": null,
+      "metrics": null
+    },
+    "qwen3": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant"
+      ],
+      "own": [],
+      "deps_hash": "sha256:169038e191f239a6b32927aae2238ecb2d7cd9de364b935bc3ffd45e2a181eb0",
+      "status": "pending",
+      "validated_at": null,
+      "date": null,
+      "reference": null,
+      "machine": null,
+      "method": null,
+      "metrics": null
+    },
+    "qwen3_5_moe": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant",
+        "moe",
+        "deltanet"
+      ],
+      "own": [
+        "decoder/forward_qwen35.go",
+        "decoder/gguf_qwen35.go"
+      ],
+      "deps_hash": "sha256:a316d91c8d8a796ff32a0a6080a7361cf66f100a9467c97af85fd2538ec051fe",
+      "status": "validated",
+      "validated_at": "e3eb033",
+      "date": "2026-06-08",
+      "reference": "HF bf16 (Qwen3.6-35B-A3B text decoder)",
+      "machine": "linux-62gb",
+      "method": "full-forward-oracle",
+      "metrics": {
+        "argmax_pct": 92.5,
+        "cosine_min": 0.99466,
+        "cosine_mean": 0.99859
+      }
+    }
+  }
+}

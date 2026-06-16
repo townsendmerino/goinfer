@@ -12,9 +12,9 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 
 > **Qwen3.5-MoE** — Qwen3.5/3.6 hybrid: Gated DeltaNet + softmax + MoE
 
-| Family | model_type(s) | MoE | Sliding window | QK-norm | RoPE | Norm | Activation | Tied head | Loaders | Modality | GPU-resident |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| Qwen3.5-MoE | `qwen3_5_moe`, `qwen3_5_moe_text` | sparse +shared | none | yes | partial | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no |
+| Family | model_type(s) | MoE | Sliding window | QK-norm | RoPE | Norm | Activation | Tied head | Loaders | Modality | GPU-resident | Parity |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Qwen3.5-MoE | `qwen3_5_moe`, `qwen3_5_moe_text` | sparse +shared | none | yes | partial | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no | full-oracle 92.5%/0.99466 |
 
 ## latent-KV (MLA)
 
@@ -24,11 +24,11 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 
 > **Kimi K2** — Moonshot Kimi K2 (DeepseekV3 arch: MLA + DeepSeekMoE)
 
-| Family | model_type(s) | MoE | Sliding window | QK-norm | RoPE | Norm | Activation | Tied head | Loaders | Modality | GPU-resident |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| DeepSeek-V2 | `deepseek_v2` | sparse +shared | none | no | partial | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no |
-| DeepSeek-V3 | `deepseek_v3` | sparse +shared | none | no | partial | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no |
-| Kimi K2 | `kimi_k2` | sparse +shared | none | no | partial | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no |
+| Family | model_type(s) | MoE | Sliding window | QK-norm | RoPE | Norm | Activation | Tied head | Loaders | Modality | GPU-resident | Parity |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| DeepSeek-V2 | `deepseek_v2` | sparse +shared | none | no | partial | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no | pending |
+| DeepSeek-V3 | `deepseek_v3` | sparse +shared | none | no | partial | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no | pending |
+| Kimi K2 | `kimi_k2` | sparse +shared | none | no | partial | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no | pending |
 
 ## softmax-GQA
 
@@ -58,35 +58,35 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 
 > **Qwen3** — Alibaba Qwen3 dense (QK-norm, no bias)
 
-| Family | model_type(s) | MoE | Sliding window | QK-norm | RoPE | Norm | Activation | Tied head | Loaders | Modality | GPU-resident |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| GLM-4.5/4.6 | `glm4_moe` | sparse +shared | none | yes | partial | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no |
-| GPT-2 | `gpt2` | dense | none | no | learned/none | LayerNorm, pre-norm | GELU-tanh (non-gated) | yes | safetensors, GGUF | text | no |
-| Gemma 3 | `gemma3`, `gemma3_text` | dense | interleave | yes | dual-base | RMSNorm, sandwich | GeGLU | yes | safetensors, GGUF | text (+ vision via VL text_config) | no |
-| Gemma 4 | `gemma4` | dense | interleave | yes | dual-base | RMSNorm, sandwich | GeGLU | yes | safetensors, GGUF | text | no |
-| Llama | `llama` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF, GPTQ, AWQ | text | yes |
-| Mellum2 | `mellum` | sparse, no-shared | interleave | yes | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no |
-| Mistral | `mistral` | dense | all-layer | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no |
-| Mixtral | `mixtral` | sparse, no-shared | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no |
-| Phi-3 / Phi-4 | `phi3` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes |
-| Qwen2 / Qwen2.5 | `qwen2` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes |
-| Qwen2-MoE | `qwen2_moe` | sparse +shared | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no |
-| Qwen2.5-VL | `qwen2_5_vl` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors | text (+ vision tower) | yes |
-| Qwen3 | `qwen3` | dense | none | yes | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no |
+| Family | model_type(s) | MoE | Sliding window | QK-norm | RoPE | Norm | Activation | Tied head | Loaders | Modality | GPU-resident | Parity |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| GLM-4.5/4.6 | `glm4_moe` | sparse +shared | none | yes | partial | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no | pending |
+| GPT-2 | `gpt2` | dense | none | no | learned/none | LayerNorm, pre-norm | GELU-tanh (non-gated) | yes | safetensors, GGUF | text | no | pending |
+| Gemma 3 | `gemma3`, `gemma3_text` | dense | interleave | yes | dual-base | RMSNorm, sandwich | GeGLU | yes | safetensors, GGUF | text (+ vision via VL text_config) | no | pending |
+| Gemma 4 | `gemma4` | dense | interleave | yes | dual-base | RMSNorm, sandwich | GeGLU | yes | safetensors, GGUF | text | no | pending |
+| Llama | `llama` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF, GPTQ, AWQ | text | yes | pending |
+| Mellum2 | `mellum` | sparse, no-shared | interleave | yes | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no | pending |
+| Mistral | `mistral` | dense | all-layer | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no | pending |
+| Mixtral | `mixtral` | sparse, no-shared | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no | pending |
+| Phi-3 / Phi-4 | `phi3` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | pending |
+| Qwen2 / Qwen2.5 | `qwen2` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | pending |
+| Qwen2-MoE | `qwen2_moe` | sparse +shared | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no | pending |
+| Qwen2.5-VL | `qwen2_5_vl` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors | text (+ vision tower) | yes | pending |
+| Qwen3 | `qwen3` | dense | none | yes | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no | pending |
 
 ## state-space hybrid (Mamba-2)
 
 > **Granite-4.0-H** — IBM Granite-4.0-H: Mamba-2 + attention hybrid + MoE-on-every-layer
 
-| Family | model_type(s) | MoE | Sliding window | QK-norm | RoPE | Norm | Activation | Tied head | Loaders | Modality | GPU-resident |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| Granite-4.0-H | `granitemoehybrid` | sparse +shared | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no |
+| Family | model_type(s) | MoE | Sliding window | QK-norm | RoPE | Norm | Activation | Tied head | Loaders | Modality | GPU-resident | Parity |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Granite-4.0-H | `granitemoehybrid` | sparse +shared | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no | pending |
 
 ## state-space hybrid (Mamba-2, single-op)
 
 > **Nemotron-H** — NVIDIA Nemotron-H single-op-per-block hybrid (mamba | attention | relu² MLP)
 
-| Family | model_type(s) | MoE | Sliding window | QK-norm | RoPE | Norm | Activation | Tied head | Loaders | Modality | GPU-resident |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| Nemotron-H | `nemotron_h` | dense | none | no | none | RMSNorm, pre-norm | ReLU² (non-gated) | no | safetensors, GGUF | text | no |
+| Family | model_type(s) | MoE | Sliding window | QK-norm | RoPE | Norm | Activation | Tied head | Loaders | Modality | GPU-resident | Parity |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Nemotron-H | `nemotron_h` | dense | none | no | none | RMSNorm, pre-norm | ReLU² (non-gated) | no | safetensors, GGUF | text | no | pending |
 

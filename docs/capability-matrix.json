@@ -17,7 +17,8 @@
     "tied_lm_head": false,
     "loaders": "safetensors, GGUF",
     "modality": "text",
-    "gpu_residency_eligible": false
+    "gpu_residency_eligible": false,
+    "parity": "full-oracle 92.5%/0.99466"
   },
   {
     "name": "deepseek_v2",
@@ -36,7 +37,8 @@
     "tied_lm_head": false,
     "loaders": "safetensors, GGUF",
     "modality": "text",
-    "gpu_residency_eligible": false
+    "gpu_residency_eligible": false,
+    "parity": "pending"
   },
   {
     "name": "deepseek_v3",
@@ -55,7 +57,8 @@
     "tied_lm_head": false,
     "loaders": "safetensors, GGUF",
     "modality": "text",
-    "gpu_residency_eligible": false
+    "gpu_residency_eligible": false,
+    "parity": "pending"
   },
   {
     "name": "kimi_k2",
@@ -74,7 +77,8 @@
     "tied_lm_head": false,
     "loaders": "safetensors, GGUF",
     "modality": "text",
-    "gpu_residency_eligible": false
+    "gpu_residency_eligible": false,
+    "parity": "pending"
   },
   {
     "name": "glm4_moe",
@@ -93,7 +97,8 @@
     "tied_lm_head": false,
     "loaders": "safetensors, GGUF",
     "modality": "text",
-    "gpu_residency_eligible": false
+    "gpu_residency_eligible": false,
+    "parity": "pending"
   },
   {
     "name": "gpt2",
@@ -112,7 +117,8 @@
     "tied_lm_head": true,
     "loaders": "safetensors, GGUF",
     "modality": "text",
-    "gpu_residency_eligible": false
+    "gpu_residency_eligible": false,
+    "parity": "pending"
   },
   {
     "name": "gemma3",
@@ -132,7 +138,8 @@
     "tied_lm_head": true,
     "loaders": "safetensors, GGUF",
     "modality": "text (+ vision via VL text_config)",
-    "gpu_residency_eligible": false
+    "gpu_residency_eligible": false,
+    "parity": "pending"
   },
   {
     "name": "gemma4",
@@ -151,7 +158,8 @@
     "tied_lm_head": true,
     "loaders": "safetensors, GGUF",
     "modality": "text",
-    "gpu_residency_eligible": false
+    "gpu_residency_eligible": false,
+    "parity": "pending"
   },
   {
     "name": "llama",
@@ -170,7 +178,8 @@
     "tied_lm_head": false,
     "loaders": "safetensors, GGUF, GPTQ, AWQ",
     "modality": "text",
-    "gpu_residency_eligible": true
+    "gpu_residency_eligible": true,
+    "parity": "pending"
   },
   {
     "name": "mellum",
@@ -189,7 +198,8 @@
     "tied_lm_head": false,
     "loaders": "safetensors, GGUF",
     "modality": "text",
-    "gpu_residency_eligible": false
+    "gpu_residency_eligible": false,
+    "parity": "pending"
   },
   {
     "name": "mistral",
@@ -208,7 +218,8 @@
     "tied_lm_head": false,
     "loaders": "safetensors, GGUF",
     "modality": "text",
-    "gpu_residency_eligible": false
+    "gpu_residency_eligible": false,
+    "parity": "pending"
   },
   {
     "name": "mixtral",
@@ -227,7 +238,8 @@
     "tied_lm_head": false,
     "loaders": "safetensors, GGUF",
     "modality": "text",
-    "gpu_residency_eligible": false
+    "gpu_residency_eligible": false,
+    "parity": "pending"
   },
   {
     "name": "phi3",
@@ -246,7 +258,8 @@
     "tied_lm_head": false,
     "loaders": "safetensors, GGUF",
     "modality": "text",
-    "gpu_residency_eligible": true
+    "gpu_residency_eligible": true,
+    "parity": "pending"
   },
   {
     "name": "qwen2",
@@ -265,7 +278,8 @@
     "tied_lm_head": false,
     "loaders": "safetensors, GGUF",
     "modality": "text",
-    "gpu_residency_eligible": true
+    "gpu_residency_eligible": true,
+    "parity": "pending"
   },
   {
     "name": "qwen2_moe",
@@ -284,7 +298,8 @@
     "tied_lm_head": false,
     "loaders": "safetensors, GGUF",
     "modality": "text",
-    "gpu_residency_eligible": false
+    "gpu_residency_eligible": false,
+    "parity": "pending"
   },
   {
     "name": "qwen2_5_vl",
@@ -303,7 +318,8 @@
     "tied_lm_head": false,
     "loaders": "safetensors",
     "modality": "text (+ vision tower)",
-    "gpu_residency_eligible": true
+    "gpu_residency_eligible": true,
+    "parity": "pending"
   },
   {
     "name": "qwen3",
@@ -322,7 +338,8 @@
     "tied_lm_head": false,
     "loaders": "safetensors, GGUF",
     "modality": "text",
-    "gpu_residency_eligible": false
+    "gpu_residency_eligible": false,
+    "parity": "pending"
   },
   {
     "name": "granitemoehybrid",
@@ -341,7 +358,8 @@
     "tied_lm_head": false,
     "loaders": "safetensors, GGUF",
     "modality": "text",
-    "gpu_residency_eligible": false
+    "gpu_residency_eligible": false,
+    "parity": "pending"
   },
   {
     "name": "nemotron_h",
@@ -360,6 +378,7 @@
     "tied_lm_head": false,
     "loaders": "safetensors, GGUF",
     "modality": "text",
-    "gpu_residency_eligible": false
+    "gpu_residency_eligible": false,
+    "parity": "pending"
   }
 ]

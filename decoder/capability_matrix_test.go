@@ -271,7 +271,43 @@ type capabilityRow struct {
 	Loaders       string   `json:"loaders"`
 	Modality      string   `json:"modality"`
 	GPUResident   bool     `json:"gpu_residency_eligible"`
-	// TODO: join parity_manifest.json once docs/task-parity-coverage.md Item 1 lands
+	Parity        string   `json:"parity"` // joined from testdata/parity_manifest.json by Name
+}
+
+// parityColumn renders a family's parity cell from its manifest entry: a short
+// method label + argmax%/cosine_min for validated families, "pending"
+// otherwise. The methodLabel map shortens the manifest's method strings.
+func parityColumn(fam familyParity) string {
+	if string(fam.Status) != `"validated"` {
+		return "pending"
+	}
+	var method string
+	_ = json.Unmarshal(fam.Method, &method)
+	switch method {
+	case "full-forward-oracle":
+		method = "full-oracle"
+	case "weightDiff":
+		method = "weight-diff"
+	}
+	var metrics struct {
+		ArgmaxPct float64 `json:"argmax_pct"`
+		CosineMin float64 `json:"cosine_min"`
+	}
+	_ = json.Unmarshal(fam.Metrics, &metrics)
+	return fmt.Sprintf("%s %.1f%%/%.5f", method, metrics.ArgmaxPct, metrics.CosineMin)
+}
+
+// loadParityManifest reads testdata/parity_manifest.json for the matrix join.
+func loadParityManifest() (*parityManifest, error) {
+	raw, err := os.ReadFile(parityManifestPath)
+	if err != nil {
+		return nil, err
+	}
+	var m parityManifest
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return nil, err
+	}
+	return &m, nil
 }
 
 // moeColumn renders the MoE column from the resolved descriptor. Expert/top-k
@@ -362,6 +398,11 @@ func buildMatrix(t *testing.T) ([]capabilityRow, error) {
 	}
 	sort.Strings(keys)
 
+	manifest, err := loadParityManifest()
+	if err != nil {
+		return nil, fmt.Errorf("load parity manifest: %w", err)
+	}
+
 	rows := map[string]*capabilityRow{} // by Architecture.Name
 	for _, mt := range keys {
 		cfg := representativeConfig(mt)
@@ -378,6 +419,10 @@ func buildMatrix(t *testing.T) ([]capabilityRow, error) {
 		}
 		r, exists := rows[arch.Name]
 		if !exists {
+			parity := "pending"
+			if fam, ok := manifest.Families[arch.Name]; ok {
+				parity = parityColumn(fam)
+			}
 			r = &capabilityRow{
 				Name:          arch.Name,
 				DisplayName:   doc.DisplayName,
@@ -393,6 +438,7 @@ func buildMatrix(t *testing.T) ([]capabilityRow, error) {
 				Loaders:       doc.Loaders,
 				Modality:      doc.Modality,
 				GPUResident:   arch.decodeRunnerEligible(),
+				Parity:        parity,
 			}
 			rows[arch.Name] = r
 		}
@@ -446,8 +492,8 @@ func renderMarkdown(rows []capabilityRow) []byte {
 		byAxis[r.CoverageAxis] = append(byAxis[r.CoverageAxis], r)
 	}
 
-	cols := "| Family | model_type(s) | MoE | Sliding window | QK-norm | RoPE | Norm | Activation | Tied head | Loaders | Modality | GPU-resident |\n"
-	sep := "|---|---|---|---|---|---|---|---|---|---|---|---|\n"
+	cols := "| Family | model_type(s) | MoE | Sliding window | QK-norm | RoPE | Norm | Activation | Tied head | Loaders | Modality | GPU-resident | Parity |\n"
+	sep := "|---|---|---|---|---|---|---|---|---|---|---|---|---|\n"
 
 	for _, axis := range axes {
 		b.WriteString("## " + axis + "\n\n")
@@ -457,7 +503,7 @@ func renderMarkdown(rows []capabilityRow) []byte {
 		b.WriteString(cols)
 		b.WriteString(sep)
 		for _, r := range byAxis[axis] {
-			b.WriteString(fmt.Sprintf("| %s | `%s` | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |\n",
+			b.WriteString(fmt.Sprintf("| %s | `%s` | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |\n",
 				r.DisplayName,
 				strings.Join(r.Aliases, "`, `"),
 				r.MoE,
@@ -470,6 +516,7 @@ func renderMarkdown(rows []capabilityRow) []byte {
 				r.Loaders,
 				r.Modality,
 				yn(r.GPUResident),
+				r.Parity,
 			))
 		}
 		b.WriteString("\n")
