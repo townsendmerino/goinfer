@@ -103,6 +103,26 @@ type Architecture struct {
 	// own forward path (forward_deepseek.go) rather than the uniform causalAttention.
 	// nil for every other family.
 	mla *mlaParams
+
+	// llama4, when non-nil, marks a Llama 4 text decoder (llama4_text): the iRoPE
+	// stack — per-layer RoPE/NoPE interleave, parameter-free L2 QK-norm on the RoPE
+	// layers, attention-temperature tuning on the NoPE layers, and a dense/MoE
+	// interleave (top-1 sigmoid routing + an ungated shared expert). Own forward
+	// (forward_llama4.go). nil for every other family.
+	llama4 *llama4Params
+}
+
+// llama4Params carries Llama 4's per-layer iRoPE deltas. useRope[i]/isMoE[i] select layer
+// i's attention (RoPE+L2-QK-norm vs NoPE+attn-temperature) and FFN (dense vs MoE). The
+// dense layers use Architecture.IntermediateDim (intermediate_size_mlp); the routed +
+// shared experts use MoEConfig.IntermediateDim (intermediate_size). forward_llama4.go reads this.
+type llama4Params struct {
+	useRope    []bool  // per layer: RoPE (true) vs NoPE (false) — from no_rope_layers
+	isMoE      []bool  // per layer: MoE (true) vs dense (false) — from moe_layers
+	useQKNorm  bool    // parameter-free L2 (RMS-over-head-dim) QK-norm on the RoPE layers
+	attnTemp   bool    // attention-temperature tuning on the NoPE layers
+	floorScale float64 // attn-temp: log1p(floor((pos+1)/floorScale))·attnScale + 1
+	attnScale  float64
 }
 
 // nemotronParams marks a Nemotron-H hybrid: a SINGLE-OP-per-block stack where each

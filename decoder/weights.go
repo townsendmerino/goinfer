@@ -378,6 +378,12 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 		}
 		return buildPhi3Weights(cfg, arch, st, quant) // split fused qkv_proj + gate_up_proj → generic forward
 	}
+	if arch.llama4 != nil {
+		if lora != nil {
+			return nil, fmt.Errorf("decoder: LoRA merge unsupported for the llama4_text (iRoPE + fused-expert) layout")
+		}
+		return buildLlama4Weights(cfg, arch, st, quant) // per-layer dense/MoE + transposed fused experts
+	}
 	if lora != nil {
 		if err := lora.validateTargets(cfg.NumLayers, s); err != nil {
 			return nil, err
@@ -1119,6 +1125,10 @@ var graniteTensorSchema = tensorSchema{Embed: "model.embed_tokens.weight"}
 // buildPhi3Weights into the standard fields, after which the generic llama forward runs.
 var phi3TensorSchema = tensorSchema{Embed: "model.embed_tokens.weight"}
 
+// llama4TensorSchema is a marker — Llama 4's per-layer dense/MoE FFN, fused+transposed
+// batched experts, and parameter-free L2 QK-norm are loaded directly by buildLlama4Weights.
+var llama4TensorSchema = tensorSchema{Embed: "model.embed_tokens.weight"}
+
 // nemotronTensorSchema is a marker — Nemotron-H's single-op-per-block layout
 // (per-layer one of mamba/attention/mlp under a "mixer" prefix) is loaded directly
 // by buildNemotronWeights.
@@ -1518,6 +1528,133 @@ func buildPhi3Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile
 			return e
 		}
 		l.DownProj = quantizeWM(l.DownProj, quant)
+		return nil
+	}
+	if err := parallelLayers(arch.NumLayers, loadLayer); err != nil {
+		return nil, err
+	}
+	return w, nil
+}
+
+// buildLlama4Weights loads a Llama 4 text decoder (llama4_text). Attention is separate
+// q/k/v/o (no fusion, no bias; the L2 QK-norm is parameter-free, applied in the forward).
+// The FFN is per-layer: dense layers (arch.llama4.isMoE[l] false) use feed_forward.{gate,up,
+// down}_proj at intermediate_size_mlp; MoE layers use feed_forward.router + a SHARED expert
+// (feed_forward.shared_expert.*) + batched routed experts. The routed experts are stored
+// FUSED and TRANSPOSED for a bmm — gate_up_proj is [nE, hidden, 2*inter] and down_proj is
+// [nE, inter, hidden] ([in, out] per expert) — so each expert is transposed to goinfer's
+// [out, in] WeightMat and the gate‖up halves split out.
+func buildLlama4Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile, quant quantMode) (*Weights, error) {
+	hidden, vocab := arch.HiddenDim, arch.VocabSize
+	hd := arch.HeadDim
+	qDim, kvDim := arch.NumHeads*hd, arch.NumKVHeads*hd
+	denseInter := arch.IntermediateDim   // intermediate_size_mlp
+	expInter := arch.MoE.IntermediateDim // intermediate_size (routed + shared)
+	nE := arch.MoE.NumExperts
+	lp := arch.llama4
+	w := &Weights{Cfg: *cfg, arch: arch, st: st, Layers: make([]LayerWeights, arch.NumLayers)}
+	var err error
+	if w.Embed, err = loadMat(st, "model.embed_tokens.weight", vocab, hidden); err != nil {
+		return nil, err
+	}
+	w.Embed = quantizeWM(w.Embed, quant.embedding())
+	if w.FinalNorm, err = st.TensorF32("model.norm.weight", hidden); err != nil {
+		return nil, err
+	}
+	arch.TiedLMHead = true
+	if head, herr := loadMat(st, "lm_head.weight", vocab, hidden); herr == nil {
+		w.LMHead = quantizeWM(head, quant.embedding())
+		arch.TiedLMHead = false
+	}
+
+	loadLayer := func(i int) error {
+		l := &w.Layers[i]
+		p := fmt.Sprintf("model.layers.%d.", i)
+		var e error
+		if l.PreAttnNorm, e = st.TensorF32(p+"input_layernorm.weight", hidden); e != nil {
+			return e
+		}
+		if l.PreMLPNorm, e = st.TensorF32(p+"post_attention_layernorm.weight", hidden); e != nil {
+			return e
+		}
+		// Attention: separate q/k/v/o, no bias.
+		if l.QProj, e = loadMat(st, p+"self_attn.q_proj.weight", qDim, hidden); e != nil {
+			return e
+		}
+		if l.KProj, e = loadMat(st, p+"self_attn.k_proj.weight", kvDim, hidden); e != nil {
+			return e
+		}
+		if l.VProj, e = loadMat(st, p+"self_attn.v_proj.weight", kvDim, hidden); e != nil {
+			return e
+		}
+		if l.OProj, e = loadMat(st, p+"self_attn.o_proj.weight", hidden, qDim); e != nil {
+			return e
+		}
+		l.QProj, l.KProj = quantizeWM(l.QProj, quant), quantizeWM(l.KProj, quant)
+		l.VProj, l.OProj = quantizeWM(l.VProj, quant), quantizeWM(l.OProj, quant)
+		if !lp.isMoE[i] {
+			// Dense FFN at intermediate_size_mlp.
+			if l.GateProj, e = loadMat(st, p+"feed_forward.gate_proj.weight", denseInter, hidden); e != nil {
+				return e
+			}
+			if l.UpProj, e = loadMat(st, p+"feed_forward.up_proj.weight", denseInter, hidden); e != nil {
+				return e
+			}
+			if l.DownProj, e = loadMat(st, p+"feed_forward.down_proj.weight", hidden, denseInter); e != nil {
+				return e
+			}
+			l.GateProj, l.UpProj, l.DownProj = quantizeWM(l.GateProj, quant), quantizeWM(l.UpProj, quant), quantizeWM(l.DownProj, quant)
+			return nil
+		}
+		// MoE: router + ungated shared expert + batched fused routed experts.
+		if l.Router, e = loadMat(st, p+"feed_forward.router.weight", nE, hidden); e != nil {
+			return e
+		}
+		if l.SharedExpert.Gate, e = loadMat(st, p+"feed_forward.shared_expert.gate_proj.weight", expInter, hidden); e != nil {
+			return e
+		}
+		if l.SharedExpert.Up, e = loadMat(st, p+"feed_forward.shared_expert.up_proj.weight", expInter, hidden); e != nil {
+			return e
+		}
+		if l.SharedExpert.Down, e = loadMat(st, p+"feed_forward.shared_expert.down_proj.weight", hidden, expInter); e != nil {
+			return e
+		}
+		l.SharedExpert.Gate = quantizeWM(l.SharedExpert.Gate, quant)
+		l.SharedExpert.Up = quantizeWM(l.SharedExpert.Up, quant)
+		l.SharedExpert.Down = quantizeWM(l.SharedExpert.Down, quant)
+		// Routed experts: gate_up_proj [nE, hidden, 2*inter], down_proj [nE, inter, hidden]
+		// ([in, out] per expert) → transpose each to [out, in] + split gate‖up.
+		gu, gerr := st.TensorF32(p+"feed_forward.experts.gate_up_proj", nE, hidden, 2*expInter)
+		if gerr != nil {
+			return gerr
+		}
+		dn, derr := st.TensorF32(p+"feed_forward.experts.down_proj", nE, expInter, hidden)
+		if derr != nil {
+			return derr
+		}
+		l.Experts = make([]expertWeights, nE)
+		for ex := 0; ex < nE; ex++ {
+			guBase, dnBase := ex*hidden*2*expInter, ex*expInter*hidden
+			gate := make([]float32, expInter*hidden)
+			up := make([]float32, expInter*hidden)
+			down := make([]float32, hidden*expInter)
+			for r := 0; r < expInter; r++ {
+				for h := 0; h < hidden; h++ {
+					gate[r*hidden+h] = gu[guBase+h*2*expInter+r]
+					up[r*hidden+h] = gu[guBase+h*2*expInter+expInter+r]
+				}
+			}
+			for h := 0; h < hidden; h++ {
+				for ii := 0; ii < expInter; ii++ {
+					down[h*expInter+ii] = dn[dnBase+ii*hidden+h]
+				}
+			}
+			l.Experts[ex] = expertWeights{
+				Gate: quantizeWM(linalg.WrapF32(gate, expInter, hidden), quant),
+				Up:   quantizeWM(linalg.WrapF32(up, expInter, hidden), quant),
+				Down: quantizeWM(linalg.WrapF32(down, hidden, expInter), quant),
+			}
+		}
 		return nil
 	}
 	if err := parallelLayers(arch.NumLayers, loadLayer); err != nil {

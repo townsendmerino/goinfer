@@ -83,6 +83,22 @@ type Config struct {
 	RopeInterleave *bool   `json:"rope_interleave"`
 	AttnScaleMul   float64 `json:"-"` // yarn mscale² folded into the attention scale (0 ⇒ plain qk_head_dim^-0.5)
 
+	// Llama 4 text decoder (llama4_text): iRoPE. NoRopeLayers[i]==1 ⇒ layer i uses
+	// RoPE, ==0 ⇒ NoPE (no positional). MoeLayers lists the MoE layer indices (the
+	// rest are dense at IntermediateSizeMLP; experts + shared expert use
+	// intermediate_size). The NoPE layers apply attention-temperature tuning
+	// (q *= log1p(floor((pos+1)/FloorScale))·AttnScaleL4 + 1); the RoPE layers apply a
+	// parameter-free L2 (RMS-over-head-dim) QK-norm when use_qk_norm. AttentionChunkSize
+	// bounds local attention on RoPE layers (full causal for sequences below it).
+	IntermediateSizeMLP    int     `json:"intermediate_size_mlp"`
+	NoRopeLayers           []int   `json:"no_rope_layers"`
+	MoeLayers              []int   `json:"moe_layers"`
+	InterleaveMoeLayerStep int     `json:"interleave_moe_layer_step"`
+	AttnTemperatureTuning  bool    `json:"attn_temperature_tuning"`
+	FloorScale             float64 `json:"floor_scale"`
+	AttnScaleL4            float64 `json:"attn_scale"`
+	AttentionChunkSize     int     `json:"attention_chunk_size"`
+
 	// Granite-4.0-H (GraniteMoeHybrid): the Mamba-2 mixer dims (per-layer kind in
 	// LayerTypes = "mamba" | "attention"), the shared-expert width, and the four
 	// Granite scalar multipliers applied in the forward (embedding scale, attention

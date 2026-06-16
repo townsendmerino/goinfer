@@ -366,6 +366,9 @@ func (m *Model) runLayers(id int, cache *KVCache) ([]float32, error) {
 	if arch.mla != nil { // deepseek_v2/v3: Multi-head Latent Attention — own path.
 		return m.runLayersDeepseek(id, cache)
 	}
+	if arch.llama4 != nil { // llama4_text: iRoPE (per-layer RoPE/NoPE + L2 QK-norm + attn-temp) — own path.
+		return m.runLayersLlama4(id, cache)
+	}
 	if cache.scr == nil { // caches from NewKVCache directly (tests); Generate uses NewCache
 		cache.scr = newDecodeScratch(arch)
 	}
