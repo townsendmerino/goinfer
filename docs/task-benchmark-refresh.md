@@ -28,9 +28,15 @@ CHANGELOG v0.5.0). Two facts constrain any "re-benchmark with new families":
    in WGSL — `gpu-next-levers-assessment.md`). Re-running the *same* dense decode
    yields ~the same number; nothing coded since moves it.
 
-⇒ A naive "Granite/DeepSeek vs Ollama-CUDA" benchmark is either impossible (no
-resident GPU path) or compares goinfer's **staged/CPU** path to Ollama's **CUDA**
-path — category-confused, a misleading bad number. **Do not produce it.**
+⇒ This does **not** mean new families can't run on the GPU — they can, via the
+**staged path** (per-matmul dispatch; see the GPU-coverage levers below). It means
+a staged-path number is **not comparable to the residency 60–70% headline** and
+must never be presented as if it were. So: *measure it if useful, but label it
+"staged path, residency-ineligible" and keep it out of the headline row.* The
+mistake to avoid is the **framing** (equating staged with the residency claim, or
+calling it goinfer's competitive GPU lane), not the measurement itself. A blind
+"Granite vs Ollama-CUDA" with no path label is the category-confused number — don't
+produce *that*.
 
 ---
 
@@ -113,7 +119,60 @@ claims), several already partly measured:
   scaffold is real — marketing number, bounded effort, low perf risk.
 - **B13 — expanded GPU residency** numbers for more families — only if residency
   eligibility is ever widened (open-ended per-arch work, deferred; decode is walled
-  regardless, so this is low value as a benchmark driver).
+  regardless, so this is low value as a benchmark driver). See the coverage levers
+  below for *how* eligibility would widen.
+
+---
+
+## GPU coverage levers — running non-dense families on GPU at all
+
+This is the engineering context behind the benchmarks above: there are **two** GPU
+paths, and "residency-ineligible" ≠ "no GPU."
+
+- **Residency** — full-token on-GPU forward (`DecodeRunner`); dense-Qwen2/Llama only
+  (`decodeRunnerEligible`). The path the 60–70% headline measures.
+- **Staged** — per-matmul dispatch to the GPU backend, CPU glue between. From
+  `weightmat.go`'s `matmul`: **f32 and int8/W8A8 weights route to the GPU backend**
+  (`be.MatmulW8A8` / `be.MatmulBT`) for *any* arch. So every family already runs its
+  int8 matmuls on the GPU when built `-tags gpu` — just glue/dispatch-bound, not a
+  megakernel.
+
+The ladder, cheap → hard:
+
+- **Lever A — staged-path benchmark, today, no code (run int8).** Every ineligible
+  family (Granite, DeepSeek, GLM, Kimi, …) already does its int8 matmuls on the GPU.
+  So a real staged-GPU number exists now — see **B14** below. **Caveat from the
+  dispatch code:** **int4 (W4A8) stays on CPU** — the int4 branch calls
+  `linalg.MatmulBTW4A8` directly with no backend routing, so `-tags gpu` does nothing
+  for an int4 model. For a staged-GPU number, run **int8**.
+- **Lever B — route W4A8 to the GPU backend (small, real gap).** The int8 branch
+  checks `be.(QuantBackend)`; the int4 branch doesn't. Adding a GPU W4A8 path would
+  let int4 families use the staged GPU path too. Modest; bounded gain (staged is
+  still glue-bound).
+- **Lever C — extend residency eligibility, per-arch** (real engineering), ranked by
+  unlock: sliding-window residency → Mistral/Gemma3 (moderate); QK-norm / partial-RoPE
+  in the DecodeRunner → Qwen3/GLM-attn (small, per-feature); **MoE residency** →
+  DeepSeek/GLM/Kimi/Mixtral/Qwen-MoE (biggest unlock, hardest — GPU expert
+  routing/indirect dispatch + expert-VRAM); hybrid (Mamba-2 scan / MLA latent-KV /
+  Gemma4 PLE) ported to the resident runner → Granite/Nemotron/DeepSeek/Gemma4
+  (substantial, family-specific).
+
+**The wall caveat — decide capability vs ratio before investing in C.** Decode is at
+the WGSL wall (~90 tok/s int8; megakernel inexpressible in WGSL). So extending
+residency to a family makes it **run at the same ~60–70%-of-CUDA ceiling** — it buys
+*GPU coverage for that family*, **not a better ratio**. A higher ratio needs native
+CUDA/Metal, which is off-strategy. Pursue C for *capability* (e.g. sliding-window and
+the cheap QK-norm/partial-RoPE wins), never to beat the headline number.
+
+### B14 — staged-path GPU numbers for non-dense families (Lever A)
+
+Run the new families (int8) with `-tags gpu` and report decode tok/s **labeled
+"staged path, residency-ineligible"** — separate table, never the headline row, with
+the path stated. Useful as an honest "here's where goinfer's GPU staged path stands
+for MoE/hybrid/MLA," and as the before/after baseline if Lever B or C lands. Pair
+with the Tier-2 CPU numbers so the staged-vs-CPU delta per family is visible (on
+some families/quant the glue-bound staged path may not beat tuned CPU SIMD — that's
+a finding worth having).
 
 ---
 
@@ -139,13 +198,18 @@ claims), several already partly measured:
    honest number today, and these are their actual selling points; highest
    information-per-effort.
 3. **B8 + B9** (weight-memory + cold-start) — cheap, reinforces the v1.0 positioning.
-4. **B3, B7, B10** — context/honesty additions.
+4. **B3, B7, B10, B14** — context/honesty additions (B14 = staged-path GPU, labeled,
+   no code — cheap to fold in alongside the Tier-2 CPU runs).
 5. **B11–B13** — gated on their prerequisite work; don't pull forward.
 
 ## What this is not
 
 - Not a re-litigation of single-stream dense GPU decode — it's walled (`gpu-next-
   levers-assessment.md`); B1's spec-on is the only dense-GPU re-run worth doing.
-- Not a GPU-vs-CUDA benchmark for MoE/hybrid/MLA families — they have no resident
-  GPU path; Tier 2 (CPU + footprint vs llama.cpp-CPU) is their correct comparison.
-- Not new perf engineering — every Tier 1–3 item measures code that already exists.
+- Not a *headline* GPU-vs-CUDA number for MoE/hybrid/MLA families — they run on the
+  **staged** path, not residency, so any GPU number for them is reported separately
+  and **labeled "staged"** (B14); Tier 2 (CPU + footprint vs llama.cpp-CPU) remains
+  their primary, in-lane comparison. ("Impossible" was wrong — staged works today;
+  what's off-limits is presenting a staged number as the residency claim.)
+- Not new perf engineering — every Tier 1–3 + B14 item measures code that already
+  exists; Levers B/C are engineering, scoped separately and gated on the wall caveat.
