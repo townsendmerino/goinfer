@@ -213,11 +213,14 @@ func (c *Context) MLALatentStore(kvDown, normW, invFreq []float32, rank, qkRope,
 //   - lift:   a=wsum (aStride=rank),                                w=W_UV,  N=v_head_dim, K=rank
 //
 // One workgroup per output element over a 2D grid (H·N can exceed the 65535/dim cap).
+// outStride lets the absorb write strided into the combined qAbs buffer ([rank|qkRope]
+// per head): outStride=latDim places qNopeAbs at qAbs[h*latDim..+rank]. The lift writes
+// contiguously (outStride=N).
 const mlaHeadMatvecWGSL = `
-struct P { nH: u32, N: u32, K: u32, aStride: u32 };
+struct P { nH: u32, N: u32, K: u32, aStride: u32, outStride: u32, _a: u32, _b: u32, _c: u32 };
 @group(0) @binding(0) var<storage, read>       a:   array<f32>;  // [nH*aStride] per-head activation
 @group(0) @binding(1) var<storage, read>       w:   array<f32>;  // [nH*N*K] per-head weight, row-major
-@group(0) @binding(2) var<storage, read_write> dst: array<f32>;  // [nH*N]
+@group(0) @binding(2) var<storage, read_write> dst: array<f32>;  // [nH*outStride]
 @group(0) @binding(3) var<uniform>             p:   P;
 var<workgroup> red: array<f32, 64>;
 @compute @workgroup_size(64)
@@ -242,7 +245,44 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid
         workgroupBarrier();
         stride = stride / 2u;
     }
-    if (t == 0u) { dst[h * p.N + n] = red[0]; }
+    if (t == 0u) { dst[h * p.outStride + n] = red[0]; }
+}
+`
+
+// mlaQRope gathers each head's qk_rope slice from the projected query q [nH*qkHead]
+// (laid out [qk_nope | qk_rope] per head), decoupled-RoPEs it at the current position,
+// and writes it into the combined qAbs buffer at [h*latDim + rank ..] — directly after
+// the W_UK-absorbed qNopeAbs. Same de-interleave+NeoX as the key store (mlaLatentStore),
+// so the q·k rope dot matches. One thread per (head, rope-pair).
+const mlaQRopeWGSL = `
+struct P { nH: u32, qkHead: u32, qkNope: u32, qkRope: u32, rank: u32, latDim: u32, pos: u32, interleave: u32, ropeScale: f32, _a: u32, _b: u32, _c: u32 };
+@group(0) @binding(0) var<storage, read>       q:       array<f32>;  // [nH*qkHead]
+@group(0) @binding(1) var<storage, read>       invFreq: array<f32>;  // [qkRope/2]
+@group(0) @binding(2) var<storage, read_write> qAbs:    array<f32>;  // [nH*latDim], rope at [h*latDim+rank ..]
+@group(0) @binding(3) var<uniform>             p:       P;
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let half = p.qkRope / 2u;
+    let idx = gid.x;
+    if (idx >= p.nH * half) { return; }
+    let h = idx / half;
+    let i = idx % half;
+    let qbase = h * p.qkHead + p.qkNope;  // rope dims of head h
+    let theta = f32(p.pos) * invFreq[i];
+    let c = cos(theta) * p.ropeScale;
+    let s = sin(theta) * p.ropeScale;
+    var a: f32;
+    var b: f32;
+    if (p.interleave == 1u) {
+        a = q[qbase + 2u*i];
+        b = q[qbase + 2u*i + 1u];
+    } else {
+        a = q[qbase + i];
+        b = q[qbase + half + i];
+    }
+    let obase = h * p.latDim + p.rank;
+    qAbs[obase + i]        = a * c - b * s;
+    qAbs[obase + half + i] = b * c + a * s;
 }
 `
 
@@ -282,7 +322,7 @@ func (c *Context) MLAHeadMatvec(a, w []float32, nH, N, K, aStride int) ([]float3
 		return nil, err
 	}
 	defer dBuf.Release()
-	pBuf, _ := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "mla-hmv-p", Contents: wgpu.ToBytes([]uint32{uint32(nH), uint32(N), uint32(K), uint32(aStride)}), Usage: wgpu.BufferUsageUniform})
+	pBuf, _ := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "mla-hmv-p", Contents: wgpu.ToBytes([]uint32{uint32(nH), uint32(N), uint32(K), uint32(aStride), uint32(N), 0, 0, 0}), Usage: wgpu.BufferUsageUniform})
 	defer pBuf.Release()
 	bg, err := c.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.mlaHeadMVLayout, Entries: []wgpu.BindGroupEntry{
 		{Binding: 0, Buffer: aBuf, Size: aBuf.GetSize()},
@@ -310,6 +350,27 @@ func (c *Context) MLAHeadMatvec(a, w []float32, nH, N, K, aStride int) ([]float3
 	defer cmd.Release()
 	c.queue.Submit(cmd)
 	return c.Readback(&DeviceBuffer{buf: dBuf, n: nH * N})
+}
+
+func (c *Context) ensureMLAQRope() error {
+	if c.mlaQRopePipeline != nil {
+		return nil
+	}
+	sh, err := c.device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{
+		Label: "mlaQRope", WGSLDescriptor: &wgpu.ShaderModuleWGSLDescriptor{Code: mlaQRopeWGSL},
+	})
+	if err != nil {
+		return fmt.Errorf("gpu: compile mlaQRope: %w", err)
+	}
+	pl, err := c.device.CreateComputePipeline(&wgpu.ComputePipelineDescriptor{
+		Label: "mlaQRope", Compute: wgpu.ProgrammableStageDescriptor{Module: sh, EntryPoint: "main"},
+	})
+	if err != nil {
+		sh.Release()
+		return fmt.Errorf("gpu: pipeline mlaQRope: %w", err)
+	}
+	c.mlaQRopeShader, c.mlaQRopePipeline, c.mlaQRopeLayout = sh, pl, pl.GetBindGroupLayout(0)
+	return nil
 }
 
 func (c *Context) ensureMLAAttn() error {

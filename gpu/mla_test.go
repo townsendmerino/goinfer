@@ -5,7 +5,370 @@ package gpu
 import (
 	"math"
 	"testing"
+
+	"github.com/townsendmerino/aikit/linalg"
 )
+
+// mlaRopeRef mirrors decoder.mlaRope: optional de-interleave (V3 GPT-J pairwise) then
+// NeoX rotate_half on a single [ropeDim] vector at position pos.
+func mlaRopeRef(vec []float32, ropeDim, pos int, invFreq []float32, interleave bool) []float32 {
+	out := append([]float32(nil), vec...)
+	half := ropeDim / 2
+	if interleave {
+		tmp := make([]float32, ropeDim)
+		for i := 0; i < half; i++ {
+			tmp[i] = out[2*i]
+			tmp[half+i] = out[2*i+1]
+		}
+		copy(out, tmp)
+	}
+	rot := append([]float32(nil), out...)
+	for d := 0; d < half; d++ {
+		theta := float64(pos) * float64(invFreq[d])
+		c, s := float32(math.Cos(theta)), float32(math.Sin(theta))
+		rot[d] = out[d]*c - out[half+d]*s
+		rot[half+d] = out[half+d]*c + out[d]*s
+	}
+	return rot
+}
+
+// TestDecodeRunnerMLA_parity gates Lever C4c: the full MLA latent-attention forward on
+// the resident runner, end-to-end against a CPU int8 oracle that mirrors the same absorb
+// math. The tiny model is DeepSeek-V3-shaped — q-LoRA bottleneck, compressed-KV latent
+// cache, decoupled interleaved RoPE, and a DeepSeekMoE FFN (sigmoid routing + selection
+// bias + group-limited top-k + ungated shared expert). Every int8 GEMV runs identical
+// math both sides (W8A8); the absorb/lift/attention are f32. Cosine must be ~1.0, proving
+// the latent store, W_UK absorb, qRope, rank-space attend, W_UV lift, group routing, and
+// the shared-expert combine all land correctly on top of the C3 MoE machinery.
+func TestDecodeRunnerMLA_parity(t *testing.T) {
+	ctx := newOrSkipHW(t)
+	defer ctx.Close()
+
+	const hidden, nH = 256, 4
+	const qkNope, qkRope, vHead, rank, qLoRA = 32, 16, 32, 64, 96
+	const nE, topK, nGroup, topkGroup = 8, 2, 2, 1
+	const inter, sInter, pos, vocab, L = 64, 96, 6, 512, 2
+	const interleave = true
+	qkHead := qkNope + qkRope
+	latDim := rank + qkRope
+	eps := float32(1e-6)
+	scale := float32(1.0 / math.Sqrt(float64(qkHead)))
+	silu := func(g float32) float32 { return g / (1 + float32(math.Exp(float64(-g)))) }
+
+	invFreq := make([]float32, qkRope/2)
+	for d := range invFreq {
+		invFreq[d] = float32(1.0 / math.Pow(1e4, float64(2*d)/float64(qkRope)))
+	}
+
+	type lw struct {
+		an, mn                 []float32
+		qaBQ, qbBQ, kvaBQ, oBQ []int8
+		qaS, qbS, kvaS, oS     []float32
+		qaNorm, kvaNorm        []float32
+		wuk, wuv               []float32 // f32 absorb/lift, per head
+		rBQ                    []int8
+		rS, rBias              []float32
+		gBQ, uBQ, dBQ          [][]int8
+		gS, uS, dS             [][]float32
+		sgBQ, suBQ, sdBQ       []int8
+		sgS, suS, sdS          []float32
+		priorLat               []float32 // pos already-stored latents [pos*latDim]
+	}
+	x0 := randMat(hidden, 100)
+	layers := make([]lw, L)
+	seed := uint64(1)
+	W := func(N, K int) ([]int8, []float32) { seed++; return quantW(N, K, seed) }
+	for l := range layers {
+		layers[l].an = randMat(hidden, uint64(200+l))
+		layers[l].mn = randMat(hidden, uint64(300+l))
+		layers[l].qaBQ, layers[l].qaS = W(qLoRA, hidden)
+		layers[l].qbBQ, layers[l].qbS = W(nH*qkHead, qLoRA)
+		layers[l].kvaBQ, layers[l].kvaS = W(latDim, hidden)
+		layers[l].oBQ, layers[l].oS = W(hidden, nH*vHead)
+		layers[l].qaNorm = randMat(qLoRA, uint64(210+l))
+		layers[l].kvaNorm = randMat(rank, uint64(220+l))
+		layers[l].wuk = randMat(nH*rank*qkNope, uint64(230+l))
+		layers[l].wuv = randMat(nH*vHead*rank, uint64(240+l))
+		layers[l].rBQ, layers[l].rS = W(nE, hidden)
+		layers[l].rBias = randMat(nE, uint64(700+l))
+		layers[l].gBQ = make([][]int8, nE)
+		layers[l].uBQ = make([][]int8, nE)
+		layers[l].dBQ = make([][]int8, nE)
+		layers[l].gS = make([][]float32, nE)
+		layers[l].uS = make([][]float32, nE)
+		layers[l].dS = make([][]float32, nE)
+		for e := 0; e < nE; e++ {
+			layers[l].gBQ[e], layers[l].gS[e] = W(inter, hidden)
+			layers[l].uBQ[e], layers[l].uS[e] = W(inter, hidden)
+			layers[l].dBQ[e], layers[l].dS[e] = W(hidden, inter)
+		}
+		layers[l].sgBQ, layers[l].sgS = W(sInter, hidden)
+		layers[l].suBQ, layers[l].suS = W(sInter, hidden)
+		layers[l].sdBQ, layers[l].sdS = W(hidden, sInter)
+		layers[l].priorLat = randMat(pos*latDim, uint64(400+l))
+	}
+	fnorm := randMat(hidden, 600)
+	lmBQ, lmS := quantW(vocab, hidden, 999)
+
+	// routeRef mirrors decoder.routeExperts with group-limiting: sigmoid scores, +bias
+	// for SELECTION, group-limit (top-2-sum group score, keep topkGroup groups), top-k,
+	// weights are the un-biased scores renormalized to sum 1.
+	routeRef := func(logits, bias []float32) (idx []int, wts []float32) {
+		score := make([]float32, nE)
+		for i, v := range logits {
+			score[i] = float32(1.0 / (1.0 + math.Exp(-float64(v))))
+		}
+		sel := make([]float32, nE)
+		for i := range score {
+			sel[i] = score[i] + bias[i]
+		}
+		gsz := nE / nGroup
+		type gs struct {
+			g int
+			v float32
+		}
+		groups := make([]gs, nGroup)
+		for g := 0; g < nGroup; g++ {
+			t1, t2 := float32(math.Inf(-1)), float32(math.Inf(-1))
+			for i := g * gsz; i < (g+1)*gsz; i++ {
+				if sel[i] > t1 {
+					t1, t2 = sel[i], t1
+				} else if sel[i] > t2 {
+					t2 = sel[i]
+				}
+			}
+			groups[g] = gs{g, t1 + t2}
+		}
+		keep := make([]bool, nGroup)
+		for j := 0; j < topkGroup; j++ {
+			best, bv := -1, float32(math.Inf(-1))
+			for _, gg := range groups {
+				if !keep[gg.g] && gg.v > bv {
+					best, bv = gg.g, gg.v
+				}
+			}
+			keep[best] = true
+		}
+		for g := 0; g < nGroup; g++ {
+			if !keep[g] {
+				for i := g * gsz; i < (g+1)*gsz; i++ {
+					sel[i] = float32(math.Inf(-1))
+				}
+			}
+		}
+		idx = make([]int, topK)
+		wts = make([]float32, topK)
+		var wsum float32
+		for j := 0; j < topK; j++ {
+			best, bv := 0, float32(math.Inf(-1))
+			for i, v := range sel {
+				if v > bv {
+					best, bv = i, v
+				}
+			}
+			idx[j] = best
+			wts[j] = score[best]
+			wsum += score[best]
+			sel[best] = float32(math.Inf(-1))
+		}
+		for j := range wts {
+			wts[j] /= wsum
+		}
+		return idx, wts
+	}
+
+	// --- CPU oracle (op-by-op mirror of the resident MLA forward) ---
+	x := append([]float32(nil), x0...)
+	for l := range layers {
+		L := &layers[l]
+		xn := refRMSNorm(x, L.an, hidden, eps, false)
+		// q: q_a → norm → q_b LoRA bottleneck.
+		qa := make([]float32, qLoRA)
+		linalg.MatmulBTW8A8(xn, L.qaBQ, L.qaS, qa, 1, hidden, qLoRA)
+		qan := refRMSNorm(qa, L.qaNorm, qLoRA, eps, false)
+		q := make([]float32, nH*qkHead)
+		linalg.MatmulBTW8A8(qan, L.qbBQ, L.qbS, q, 1, qLoRA, nH*qkHead)
+		// kv-down → latent ‖ rope-key; store normalized+roped at pos.
+		kvDown := make([]float32, latDim)
+		linalg.MatmulBTW8A8(xn, L.kvaBQ, L.kvaS, kvDown, 1, hidden, latDim)
+		curLat := make([]float32, latDim)
+		cn := refRMSNorm(kvDown[:rank], L.kvaNorm, rank, eps, false)
+		copy(curLat[:rank], cn)
+		copy(curLat[rank:], mlaRopeRef(kvDown[rank:], qkRope, pos, invFreq, interleave))
+		// full latent set = priors ‖ current.
+		lat := append(append([]float32(nil), L.priorLat...), curLat...)
+		nKeys := pos + 1
+		// absorb W_UK + qRope → qAbs per head.
+		qNopeAbs := make([]float32, nH*rank)
+		for h := 0; h < nH; h++ {
+			for c := 0; c < rank; c++ {
+				var s float32
+				for d := 0; d < qkNope; d++ {
+					s += q[h*qkHead+d] * L.wuk[(h*rank+c)*qkNope+d]
+				}
+				qNopeAbs[h*rank+c] = s
+			}
+		}
+		qRope := make([]float32, nH*qkRope)
+		for h := 0; h < nH; h++ {
+			copy(qRope[h*qkRope:], mlaRopeRef(q[h*qkHead+qkNope:h*qkHead+qkHead], qkRope, pos, invFreq, interleave))
+		}
+		// rank-space attention.
+		wsum := make([]float32, nH*rank)
+		for h := 0; h < nH; h++ {
+			sc := make([]float64, nKeys)
+			mx := math.Inf(-1)
+			for j := 0; j < nKeys; j++ {
+				var dot float64
+				for c := 0; c < rank; c++ {
+					dot += float64(qNopeAbs[h*rank+c]) * float64(lat[j*latDim+c])
+				}
+				for d := 0; d < qkRope; d++ {
+					dot += float64(qRope[h*qkRope+d]) * float64(lat[j*latDim+rank+d])
+				}
+				sc[j] = dot * float64(scale)
+				if sc[j] > mx {
+					mx = sc[j]
+				}
+			}
+			var sum float64
+			for j := range sc {
+				sc[j] = math.Exp(sc[j] - mx)
+				sum += sc[j]
+			}
+			for j := 0; j < nKeys; j++ {
+				w := sc[j] / sum
+				for c := 0; c < rank; c++ {
+					wsum[h*rank+c] += float32(w * float64(lat[j*latDim+c]))
+				}
+			}
+		}
+		// lift W_UV → ctx.
+		cv := make([]float32, nH*vHead)
+		for h := 0; h < nH; h++ {
+			for e := 0; e < vHead; e++ {
+				var s float32
+				for c := 0; c < rank; c++ {
+					s += L.wuv[(h*vHead+e)*rank+c] * wsum[h*rank+c]
+				}
+				cv[h*vHead+e] = s
+			}
+		}
+		ao := make([]float32, hidden)
+		linalg.MatmulBTW8A8(cv, L.oBQ, L.oS, ao, 1, nH*vHead, hidden)
+		for i := range x {
+			x[i] += ao[i]
+		}
+		// DeepSeekMoE FFN (group-limited routing + ungated shared expert).
+		xn2 := refRMSNorm(x, L.mn, hidden, eps, false)
+		logits := make([]float32, nE)
+		linalg.MatmulBTW8A8(xn2, L.rBQ, L.rS, logits, 1, hidden, nE)
+		idx, wts := routeRef(logits, L.rBias)
+		for j, e := range idx {
+			gate := make([]float32, inter)
+			linalg.MatmulBTW8A8(xn2, L.gBQ[e], L.gS[e], gate, 1, hidden, inter)
+			up := make([]float32, inter)
+			linalg.MatmulBTW8A8(xn2, L.uBQ[e], L.uS[e], up, 1, hidden, inter)
+			mid := make([]float32, inter)
+			for i := range mid {
+				mid[i] = silu(gate[i]) * up[i]
+			}
+			down := make([]float32, hidden)
+			linalg.MatmulBTW8A8(mid, L.dBQ[e], L.dS[e], down, 1, inter, hidden)
+			for i := range x {
+				x[i] += wts[j] * down[i]
+			}
+		}
+		sgate := make([]float32, sInter)
+		linalg.MatmulBTW8A8(xn2, L.sgBQ, L.sgS, sgate, 1, hidden, sInter)
+		sup := make([]float32, sInter)
+		linalg.MatmulBTW8A8(xn2, L.suBQ, L.suS, sup, 1, hidden, sInter)
+		smid := make([]float32, sInter)
+		for i := range smid {
+			smid[i] = silu(sgate[i]) * sup[i]
+		}
+		sdown := make([]float32, hidden)
+		linalg.MatmulBTW8A8(smid, L.sdBQ, L.sdS, sdown, 1, sInter, hidden)
+		for i := range x {
+			x[i] += sdown[i]
+		}
+	}
+	xnf := refRMSNorm(x, fnorm, hidden, eps, false)
+	refLogits := make([]float32, vocab)
+	linalg.MatmulBTW8A8(xnf, lmBQ, lmS, refLogits, 1, hidden, vocab)
+
+	// --- GPU resident MLA runner ---
+	mk := func(bq []int8, s []float32, N, K int) *ResidentW8A8 {
+		rm, e := ctx.UploadW8A8(bq, s, N, K)
+		if e != nil {
+			t.Fatal(e)
+		}
+		return rm
+	}
+	stack := func(bq [][]int8, s [][]float32, N, K int) *ResidentStackedW8A8 {
+		st, e := ctx.UploadStackedExperts(bq, s, nE, N, K)
+		if e != nil {
+			t.Fatal(e)
+		}
+		return st
+	}
+	up32 := func(v []float32) *DeviceBuffer { d, _ := ctx.UploadF32(v); return d }
+	invD := up32(invFreq)
+	rm := runModel{
+		finalNorm: up32(fnorm).buf,
+		lmHead:    mk(lmBQ, lmS, vocab, hidden),
+		moe: &moeRunParams{
+			nE: nE, k: topK, inter: inter, sigmoid: true, norm: true, scale: 0,
+			sharedInter: sInter, sharedUngated: true, nGroup: nGroup, topkGroup: topkGroup,
+		},
+		mla: &mlaRunParams{
+			qLoRARank: qLoRA, kvLoRARank: rank, qkNope: qkNope, qkRope: qkRope,
+			vHead: vHead, interleave: interleave, ropeScale: 1.0,
+		},
+	}
+	for l := range layers {
+		L := &layers[l]
+		lc, _ := ctx.NewKVCache(L.priorLat, (pos+1)*latDim)
+		rl := runLayer{
+			attnNorm: up32(L.an).buf, invFreq: invD.buf, mlpNorm: up32(L.mn).buf,
+			isMoE:      true,
+			router:     mk(L.rBQ, L.rS, nE, hidden),
+			routerBias: up32(L.rBias).buf,
+			expGate:    stack(L.gBQ, L.gS, inter, hidden),
+			expUp:      stack(L.uBQ, L.uS, inter, hidden),
+			expDown:    stack(L.dBQ, L.dS, hidden, inter),
+			shGate:     mk(L.sgBQ, L.sgS, sInter, hidden),
+			shUp:       mk(L.suBQ, L.suS, sInter, hidden),
+			shDown:     mk(L.sdBQ, L.sdS, hidden, sInter),
+			mlaQA:      mk(L.qaBQ, L.qaS, qLoRA, hidden),
+			mlaQB:      mk(L.qbBQ, L.qbS, nH*qkHead, qLoRA),
+			mlaKVA:     mk(L.kvaBQ, L.kvaS, latDim, hidden),
+			mlaO:       mk(L.oBQ, L.oS, hidden, nH*vHead),
+			mlaQANorm:  up32(L.qaNorm).buf,
+			mlaKVANorm: up32(L.kvaNorm).buf,
+			mlaWUK:     up32(L.wuk).buf,
+			mlaWUV:     up32(L.wuv).buf,
+			latCache:   lc.buf,
+		}
+		rm.layers = append(rm.layers, rl)
+	}
+	runner, err := ctx.newDecodeRunner(rm, hidden, nH, 1, vHead, inter, 0, eps, scale, false)
+	if err != nil {
+		t.Fatalf("newDecodeRunner(MLA): %v", err)
+	}
+	defer runner.Release()
+	got, err := runner.Run(x0, pos)
+	if err != nil {
+		t.Fatalf("MLA Run: %v", err)
+	}
+	cos, maxAbs := cosine(got, refLogits)
+	t.Logf("MLA runner parity: cosine=%.6f maxAbs=%.3e", cos, maxAbs)
+	if cos < 0.9999 {
+		t.Errorf("MLA runner diverges: cosine=%.6f maxAbs=%.3e", cos, maxAbs)
+	}
+}
+
+// TestMLAHeadMatvec_parity gates Lever C4b's per-head block-diagonal matvec — the W_UK
 
 // TestMLALatentStore_parity gates Lever C4b's latent append: kvA-norm the rank latent +
 // decoupled-RoPE the key, mirroring decoder.cache.AppendLatent's normalized/roped form

@@ -196,6 +196,11 @@ type Context struct {
 	mlaHeadMVShader   *wgpu.ShaderModule
 	mlaHeadMVPipeline *wgpu.ComputePipeline
 	mlaHeadMVLayout   *wgpu.BindGroupLayout
+	// MLA query RoPE (Lever C4c): gather + decoupled-RoPE the qk_rope query slice into
+	// the combined qAbs buffer, after the absorbed qNopeAbs.
+	mlaQRopeShader   *wgpu.ShaderModule
+	mlaQRopePipeline *wgpu.ComputePipeline
+	mlaQRopeLayout   *wgpu.BindGroupLayout
 }
 
 // New initializes a GPU context: instance → adapter (high-performance

@@ -65,6 +65,17 @@ type runLayer struct {
 	// expert (Mixtral). shGateW is the [1,hidden] sigmoid gate for the qwen2_moe gated
 	// combine; nil ⇒ GLM/DeepSeek add the shared expert ungated (plain residual).
 	shGate, shUp, shDown, shGateW decodeWeight
+
+	// MLA attention (Lever C4c, DeepSeek/Kimi). Populated when runModel.mla != nil, in
+	// which case the runner takes the latent-attention path instead of the q/k/v/o
+	// block above. mlaQA/mlaQANorm/mlaQB are the q-LoRA bottleneck (nil mlaQA ⇒ the
+	// direct mlaQ, V2-Lite); mlaKVA down-projects to the latent, mlaKVANorm normalizes
+	// it; mlaWUK/mlaWUV are the per-head absorb/lift f32 weights; mlaO is the output
+	// projection; latCache is this layer's compressed-latent KV cache [ctxCap*latDim].
+	mlaQA, mlaQB, mlaQ, mlaKVA, mlaO decodeWeight
+	mlaQANorm, mlaKVANorm            *wgpu.Buffer
+	mlaWUK, mlaWUV                   *wgpu.Buffer
+	latCache                         *wgpu.Buffer
 }
 
 type runModel struct {
@@ -74,17 +85,31 @@ type runModel struct {
 	kvF16     bool          // KCache/VCache are f16-packed (NewKVCacheF16) → use the f16 kernels
 	kvI8      bool          // KCache/VCache are int8-packed (NewKVCacheI8) + scales → int8 kernels
 	moe       *moeRunParams // non-nil ⇒ the model has MoE layers (runLayer.isMoE picks which)
+	mla       *mlaRunParams // non-nil ⇒ MLA latent attention replaces the q/k/v/o block
+}
+
+// mlaRunParams carries the model-level MLA geometry (uniform across layers). Per-layer
+// weights + the latent cache live on runLayer. latDim = kvLoRARank + qkRope is the
+// cached payload width; qkHead = qkNope + qkRope is the per-head q·k width.
+type mlaRunParams struct {
+	qLoRARank      int     // q_a bottleneck width; 0 ⇒ direct q_proj (V2-Lite)
+	kvLoRARank     int     // rank of the compressed KV latent (the score/value body)
+	qkNope, qkRope int     // per-head no-rope / rope q·k dims
+	vHead          int     // per-head value width (≠ qkNope+qkRope)
+	interleave     bool    // V3 GPT-J pairwise RoPE layout (vs plain NeoX)
+	ropeScale      float32 // YaRN attention factor folded into cos/sin (1.0 when none)
 }
 
 // moeRunParams carries the model-level MoE selection knobs (uniform across layers):
 // the router top-k shape + scoring flavor. Per-layer data (router/expert weights,
 // selection bias) lives on runLayer. inter is the per-expert FFN width.
 type moeRunParams struct {
-	nE, k, inter  int
-	sigmoid, norm bool
-	scale         float32
-	sharedInter   int  // shared-expert FFN width (qwen2_moe / GLM); 0 ⇒ no shared expert
-	sharedUngated bool // GLM/DeepSeek add the shared expert with no sigmoid gate
+	nE, k, inter      int
+	sigmoid, norm     bool
+	scale             float32
+	sharedInter       int  // shared-expert FFN width (qwen2_moe / GLM); 0 ⇒ no shared expert
+	sharedUngated     bool // GLM/DeepSeek add the shared expert with no sigmoid gate
+	nGroup, topkGroup int  // DeepSeek group-limited routing; nGroup ≤ 1 ⇒ plain global top-k
 }
 
 // w8Model adapts the W8A8 ModelW into the precision-agnostic runModel.
@@ -115,6 +140,9 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		if m.moe.sharedInter > 0 && !m.moe.sharedUngated {
 			ensures = append(ensures, c.ensureSharedGate)
 		}
+	}
+	if m.mla != nil {
+		ensures = append(ensures, c.ensureMLAStore, c.ensureMLAHeadMV, c.ensureMLAQRope, c.ensureMLAAttn)
 	}
 	for _, e := range ensures {
 		if err := e(); err != nil {
@@ -278,7 +306,7 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 	if m.moe != nil {
 		mp := m.moe
 		moeRoute = func(logits, bias, idx, wgt *wgpu.Buffer, hasBias bool) {
-			p := uni([]uint32{uint32(mp.nE), uint32(mp.k), boolU32(mp.sigmoid), boolU32(mp.norm), f32bits(mp.scale), boolU32(hasBias), 0, 0})
+			p := uni([]uint32{uint32(mp.nE), uint32(mp.k), boolU32(mp.sigmoid), boolU32(mp.norm), f32bits(mp.scale), boolU32(hasBias), uint32(mp.nGroup), uint32(mp.topkGroup)})
 			add(c.moeRoutePipeline, bind(c.moeRouteLayout, logits, bias, idx, wgt, p), 1, 1)
 		}
 		// moeExpert records one indexed sparse-expert GEMV: dst[n] = expert[idx[slot]]·aq
@@ -298,6 +326,59 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		add(c.sharedGatePipeline, bind(c.sharedGateLayout, dst, src, gl, p), uint32(n+63)/64, 1)
 	}
 
+	// MLA op builders (Lever C4c). The latent store + attention uniforms are
+	// pos-dependent (base = pos·latDim, nKeys = pos+1), so they register posUnis like
+	// the standard attention path; the absorb/lift matvecs are pos-independent shapes.
+	var mlaStore func(kvDown, normW, invFreq, latCache *wgpu.Buffer)
+	var mlaAbsorb func(q, wuk, qAbs *wgpu.Buffer)
+	var mlaQRopeOp func(q, invFreq, qAbs *wgpu.Buffer)
+	var mlaAttnOp func(qAbs, latCache, wsum *wgpu.Buffer)
+	var mlaLift func(wsum, wuv, ctxv *wgpu.Buffer)
+	if m.mla != nil {
+		mp := m.mla
+		qkHead := mp.qkNope + mp.qkRope
+		latDim := mp.kvLoRARank + mp.qkRope
+		rank := mp.kvLoRARank
+		rhalf := mp.qkRope / 2
+		// Latent store: kvA-norm the rank latent + decoupled-RoPE the key into latCache
+		// at base = pos·latDim. One single-workgroup dispatch (the norm reduces in-WG).
+		mlaStoreUni := uni([]uint32{uint32(rank), uint32(mp.qkRope), 0, f32bits(eps), 0, f32bits(mp.ropeScale), boolU32(mp.interleave), 0})
+		r.posUnis = append(r.posUnis, posUni{buf: mlaStoreUni, gen: func(pos int) []uint32 {
+			return []uint32{uint32(rank), uint32(mp.qkRope), uint32(pos), f32bits(eps), uint32(pos * latDim), f32bits(mp.ropeScale), boolU32(mp.interleave), 0}
+		}})
+		mlaStore = func(kvDown, normW, invFreq, latCache *wgpu.Buffer) {
+			add(c.mlaStorePipeline, bind(c.mlaStoreLayout, kvDown, normW, invFreq, latCache, mlaStoreUni), 1, 1)
+		}
+		// W_UK absorb: qNopeAbs_h = W_UKᵀ_h·q_nope_h, written strided into qAbs[h·latDim..+rank].
+		mlaAbsorb = func(q, wuk, qAbs *wgpu.Buffer) {
+			p := uni([]uint32{uint32(nH), uint32(rank), uint32(mp.qkNope), uint32(qkHead), uint32(latDim), 0, 0, 0})
+			gx, gy := gemvGrid(nH * rank)
+			add(c.mlaHeadMVPipeline, bind(c.mlaHeadMVLayout, q, wuk, qAbs, p), gx, gy)
+		}
+		// Query RoPE: gather + rope q's rope dims into qAbs[h·latDim+rank..]. pos-dependent.
+		mlaQRopeUni := uni([]uint32{uint32(nH), uint32(qkHead), uint32(mp.qkNope), uint32(mp.qkRope), uint32(rank), uint32(latDim), 0, boolU32(mp.interleave), f32bits(mp.ropeScale), 0, 0, 0})
+		r.posUnis = append(r.posUnis, posUni{buf: mlaQRopeUni, gen: func(pos int) []uint32 {
+			return []uint32{uint32(nH), uint32(qkHead), uint32(mp.qkNope), uint32(mp.qkRope), uint32(rank), uint32(latDim), uint32(pos), boolU32(mp.interleave), f32bits(mp.ropeScale), 0, 0, 0}
+		}})
+		mlaQRopeOp = func(q, invFreq, qAbs *wgpu.Buffer) {
+			add(c.mlaQRopePipeline, bind(c.mlaQRopeLayout, q, invFreq, qAbs, mlaQRopeUni), uint32(nH*rhalf+63)/64, 1)
+		}
+		// Attention: rank-space online-softmax over nKeys = pos+1 latents. pos-dependent.
+		mlaAttnUni := uni([]uint32{uint32(nH), uint32(latDim), uint32(rank), 0, f32bits(scale), 0, 0, 0})
+		r.posUnis = append(r.posUnis, posUni{buf: mlaAttnUni, gen: func(pos int) []uint32 {
+			return []uint32{uint32(nH), uint32(latDim), uint32(rank), uint32(pos + 1), f32bits(scale), 0, 0, 0}
+		}})
+		mlaAttnOp = func(qAbs, latCache, wsum *wgpu.Buffer) {
+			add(c.mlaAttnPipeline, bind(c.mlaAttnLayout, qAbs, latCache, wsum, mlaAttnUni), uint32(nH), 1)
+		}
+		// W_UV lift: ctx_h = W_UV_h·wsum_h ([vHead] per head), contiguous output.
+		mlaLift = func(wsum, wuv, ctxv *wgpu.Buffer) {
+			p := uni([]uint32{uint32(nH), uint32(mp.vHead), uint32(rank), uint32(rank), uint32(mp.vHead), 0, 0, 0})
+			gx, gy := gemvGrid(nH * mp.vHead)
+			add(c.mlaHeadMVPipeline, bind(c.mlaHeadMVLayout, wsum, wuv, ctxv, p), gx, gy)
+		}
+	}
+
 	r.xd = keepBuf(func() *wgpu.Buffer {
 		b, _ := c.device.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(hidden * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst | wgpu.BufferUsageCopySrc})
 		return b
@@ -313,33 +394,61 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 
 	for i := range m.layers {
 		lw := &m.layers[i]
-		aq, as := rmsQuant(r.xd, lw.attnNorm, hidden)
-		q, k, v := gemv(aq, as, lw.q), gemv(aq, as, lw.k), gemv(aq, as, lw.v)
-		if lw.qBias != nil { // Qwen2 q/k/v bias, added before RoPE (matches CPU attention)
-			biasAdd(q, lw.qBias, nH*hd)
-			biasAdd(k, lw.kBias, r.kvDim)
-			biasAdd(v, lw.vBias, r.kvDim)
-		}
-		if lw.qNorm != nil { // Qwen3/GLM per-head QK-norm, after bias, before RoPE (matches CPU)
-			qkNorm(q, lw.qNorm, nH)
-			qkNorm(k, lw.kNorm, nKV)
-		}
-		rope(q, lw.invFreq)
-		ropeStore(k, lw.invFreq, lw.kCache, lw.kScale) // rotate K + append into cache
-		vStore(v, lw.vCache, lw.vScale)                // append V into cache
-		ctxv := storF(nH * hd)
-		if m.kvI8 {
-			// attnI8 reads packed int8 K/V + the per-(pos,head) scale side buffers.
-			add(c.attnI8Pipeline, bind(c.attnI8Layout, q, lw.kCache, lw.vCache, lw.kScale, lw.vScale, ctxv, attnUni), uint32(nH), 1)
-		} else {
-			attnPl, attnLy := c.attnPipeline, c.attnLayout
-			if m.kvF16 {
-				attnPl, attnLy = c.attnF16Pipeline, c.attnF16Layout
+		if m.mla != nil {
+			// MLA latent attention (Lever C4c): input-norm → q (LoRA/direct) + kv-down →
+			// latent store → W_UK-absorb + qRope → rank-space attend → W_UV-lift → o-proj.
+			mp := m.mla
+			latDim := mp.kvLoRARank + mp.qkRope
+			rank := mp.kvLoRARank
+			aq, as := rmsQuant(r.xd, lw.attnNorm, hidden)
+			var qf *wgpu.Buffer
+			if mp.qLoRARank > 0 { // q_a → norm → q_b LoRA bottleneck
+				qa := gemv(aq, as, lw.mlaQA)
+				qaq, qas := rmsQuant(qa, lw.mlaQANorm, mp.qLoRARank)
+				qf = gemv(qaq, qas, lw.mlaQB)
+			} else { // direct q_proj (V2-Lite)
+				qf = gemv(aq, as, lw.mlaQ)
 			}
-			add(attnPl, bind(attnLy, q, lw.kCache, lw.vCache, ctxv, attnUni), uint32(nH), 1)
+			kvDown := gemv(aq, as, lw.mlaKVA) // [latDim] = latent ‖ rope-key
+			mlaStore(kvDown, lw.mlaKVANorm, lw.invFreq, lw.latCache)
+			qAbs := storF(nH * latDim) // [qNopeAbs | qRope] per head
+			mlaAbsorb(qf, lw.mlaWUK, qAbs)
+			mlaQRopeOp(qf, lw.invFreq, qAbs)
+			wsum := storF(nH * rank)
+			mlaAttnOp(qAbs, lw.latCache, wsum)
+			ctxv := storF(nH * mp.vHead)
+			mlaLift(wsum, lw.mlaWUV, ctxv)
+			cq, cs := quant(ctxv, nH*mp.vHead)
+			gemvAdd(cq, cs, lw.mlaO, r.xd) // o-proj + residual into xd; FFN below is shared
+		} else {
+			aq, as := rmsQuant(r.xd, lw.attnNorm, hidden)
+			q, k, v := gemv(aq, as, lw.q), gemv(aq, as, lw.k), gemv(aq, as, lw.v)
+			if lw.qBias != nil { // Qwen2 q/k/v bias, added before RoPE (matches CPU attention)
+				biasAdd(q, lw.qBias, nH*hd)
+				biasAdd(k, lw.kBias, r.kvDim)
+				biasAdd(v, lw.vBias, r.kvDim)
+			}
+			if lw.qNorm != nil { // Qwen3/GLM per-head QK-norm, after bias, before RoPE (matches CPU)
+				qkNorm(q, lw.qNorm, nH)
+				qkNorm(k, lw.kNorm, nKV)
+			}
+			rope(q, lw.invFreq)
+			ropeStore(k, lw.invFreq, lw.kCache, lw.kScale) // rotate K + append into cache
+			vStore(v, lw.vCache, lw.vScale)                // append V into cache
+			ctxv := storF(nH * hd)
+			if m.kvI8 {
+				// attnI8 reads packed int8 K/V + the per-(pos,head) scale side buffers.
+				add(c.attnI8Pipeline, bind(c.attnI8Layout, q, lw.kCache, lw.vCache, lw.kScale, lw.vScale, ctxv, attnUni), uint32(nH), 1)
+			} else {
+				attnPl, attnLy := c.attnPipeline, c.attnLayout
+				if m.kvF16 {
+					attnPl, attnLy = c.attnF16Pipeline, c.attnF16Layout
+				}
+				add(attnPl, bind(attnLy, q, lw.kCache, lw.vCache, ctxv, attnUni), uint32(nH), 1)
+			}
+			cq, cs := quant(ctxv, nH*hd)
+			gemvAdd(cq, cs, lw.o, r.xd) // o-proj + residual into xd
 		}
-		cq, cs := quant(ctxv, nH*hd)
-		gemvAdd(cq, cs, lw.o, r.xd) // o-proj + residual into xd
 		mq, ms := rmsQuant(r.xd, lw.mlpNorm, hidden)
 		if lw.isMoE {
 			// Sparse MoE FFN: router top-k on the GPU, then for each chosen slot run the

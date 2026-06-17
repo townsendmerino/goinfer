@@ -23,7 +23,7 @@ import (
 // is not the cost, the expert GEMVs are.
 const moeRouteWGSL = `
 const MAXE: u32 = 256u;
-struct P { nE: u32, k: u32, sigmoid: u32, norm: u32, scale: f32, hasBias: u32, _a: u32, _b: u32 };
+struct P { nE: u32, k: u32, sigmoid: u32, norm: u32, scale: f32, hasBias: u32, nGroup: u32, topkGroup: u32 };
 @group(0) @binding(0) var<storage, read>       logits: array<f32>;  // [nE] router logits
 @group(0) @binding(1) var<storage, read>       bias:   array<f32>;  // [nE] selection bias (read only if hasBias)
 @group(0) @binding(2) var<storage, read_write> outIdx: array<u32>;  // [k] chosen expert indices
@@ -46,6 +46,37 @@ fn main() {
     for (var i: u32 = 0u; i < nE; i = i + 1u) {
         sel[i] = score[i];
         if (p.hasBias == 1u) { sel[i] = sel[i] + bias[i]; }
+    }
+    // Group-limited selection (DeepSeek nGroup>1): partition the nE selection scores into
+    // nGroup contiguous groups, score each group by its top-2 sum, keep the topkGroup best
+    // groups, mask every expert outside them to -inf. Mirrors decoder.groupLimit.
+    if (p.nGroup > 1u) {
+        let gsz = nE / p.nGroup;
+        var gscore: array<f32, 32>;
+        for (var g: u32 = 0u; g < p.nGroup; g = g + 1u) {
+            var t1: f32 = -3.4e38;
+            var t2: f32 = -3.4e38;
+            for (var i: u32 = g*gsz; i < (g+1u)*gsz; i = i + 1u) {
+                let v = sel[i];
+                if (v > t1) { t2 = t1; t1 = v; } else if (v > t2) { t2 = v; }
+            }
+            gscore[g] = t1 + t2;
+        }
+        var keep: array<bool, 32>;
+        for (var g: u32 = 0u; g < p.nGroup; g = g + 1u) { keep[g] = false; }
+        for (var j: u32 = 0u; j < p.topkGroup; j = j + 1u) {
+            var bg: u32 = 0u;
+            var bv: f32 = -3.4e38;
+            for (var g: u32 = 0u; g < p.nGroup; g = g + 1u) {
+                if (!keep[g] && gscore[g] > bv) { bv = gscore[g]; bg = g; }
+            }
+            keep[bg] = true;
+        }
+        for (var g: u32 = 0u; g < p.nGroup; g = g + 1u) {
+            if (!keep[g]) {
+                for (var i: u32 = g*gsz; i < (g+1u)*gsz; i = i + 1u) { sel[i] = -3.4e38; }
+            }
+        }
     }
     // top-k by selection score; weight is the un-biased score. Mask by selection index
     // (set sel to -inf after picking) so a chosen expert is not re-picked.
