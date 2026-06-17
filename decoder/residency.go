@@ -68,8 +68,10 @@ func (m *Model) DecodeRunnerEligible() bool {
 // usable directly from a resolved Architecture (e.g. the capability matrix)
 // without a loaded Model.
 func (a *Architecture) decodeRunnerEligible() bool {
+	// QK-norm (Qwen3/GLM/Mellum) is handled by the resident runner (Lever C: per-head
+	// RMSNorm of q/k before RoPE — gpu/qknorm.go), so it no longer blocks eligibility.
 	return a.MoE == nil && a.gemma4 == nil && a.qwen35 == nil &&
-		!a.NonGatedMLP && !a.QKNorm && !a.LearnedPosEmbed && !a.OutBias &&
+		!a.NonGatedMLP && !a.LearnedPosEmbed && !a.OutBias &&
 		a.NormPlacement == NormPre2 && a.SlidingWindow == 0 &&
 		a.FinalLogitSoftcap == 0 && a.AttnLogitSoftcap == 0 &&
 		(a.RotaryDim == 0 || a.RotaryDim == a.HeadDim)

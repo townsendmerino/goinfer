@@ -49,6 +49,7 @@ type runLayer struct {
 	kScale, vScale                             *wgpu.Buffer // int8-KV per-(pos,head) scales; nil unless kvI8
 	q, k, v, o, gate, up, down                 decodeWeight
 	qBias, kBias, vBias                        *wgpu.Buffer // optional (Qwen2); nil ⇒ no bias
+	qNorm, kNorm                               *wgpu.Buffer // optional per-head QK-norm weights [hd] (Qwen3/GLM); nil ⇒ none
 }
 
 type runModel struct {
@@ -81,7 +82,7 @@ func (c *Context) NewDecodeRunner(m ModelW, hidden, nH, nKV, hd, inter, start in
 
 // newDecodeRunner builds the persistent decode plan for either precision.
 func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start int, eps, scale float32, addOne bool) (*DecodeRunner, error) {
-	for _, e := range []func() error{c.ensureGEMV, c.ensureQuantize, c.ensureLayer, c.ensureAttn, c.ensureFuse, c.ensureGEMVW4} {
+	for _, e := range []func() error{c.ensureGEMV, c.ensureQuantize, c.ensureLayer, c.ensureAttn, c.ensureFuse, c.ensureGEMVW4, c.ensureQKNorm} {
 		if err := e(); err != nil {
 			return nil, err
 		}
@@ -228,6 +229,13 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		p := uni([]uint32{uint32(n), 0, 0, 0})
 		add(c.residualPipeline, bind(c.residualLayout, vec, bias, p), uint32(n+63)/64, 1)
 	}
+	// qkNorm RMS-normalizes each of `heads` heads of vec (q or k) over headDim in place
+	// with weight[hd], before RoPE (Qwen3/GLM/Mellum). One workgroup per head; the
+	// uniform is pos-independent so it's a plain uni, not a posUni.
+	qkNorm := func(vec, weight *wgpu.Buffer, heads int) {
+		p := uni([]uint32{uint32(heads), uint32(hd), f32bits(eps), boolU32(addOne)})
+		add(c.qkNormPipeline, bind(c.qkNormLayout, vec, weight, p), uint32(heads), 1)
+	}
 
 	r.xd = keepBuf(func() *wgpu.Buffer {
 		b, _ := c.device.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(hidden * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst | wgpu.BufferUsageCopySrc})
@@ -242,6 +250,10 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			biasAdd(q, lw.qBias, nH*hd)
 			biasAdd(k, lw.kBias, r.kvDim)
 			biasAdd(v, lw.vBias, r.kvDim)
+		}
+		if lw.qNorm != nil { // Qwen3/GLM per-head QK-norm, after bias, before RoPE (matches CPU)
+			qkNorm(q, lw.qNorm, nH)
+			qkNorm(k, lw.kNorm, nKV)
 		}
 		rope(q, lw.invFreq)
 		ropeStore(k, lw.invFreq, lw.kCache, lw.kScale) // rotate K + append into cache

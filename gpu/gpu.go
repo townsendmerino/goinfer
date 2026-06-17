@@ -157,6 +157,12 @@ type Context struct {
 	swigluQuantPipeline *wgpu.ComputePipeline
 	swigluQuantLayout   *wgpu.BindGroupLayout
 
+	// Per-head QK-norm (Lever C, qknorm.go): in-place RMSNorm of each q/k head over
+	// headDim before RoPE (Qwen3 / GLM / Mellum). One workgroup per head.
+	qkNormShader   *wgpu.ShaderModule
+	qkNormPipeline *wgpu.ComputePipeline
+	qkNormLayout   *wgpu.BindGroupLayout
+
 	// W4A8 decode GEMV (ensureGEMVW4, gemv_w4a8.go): int4 group-wise weights.
 	gemvW4Shader   *wgpu.ShaderModule
 	gemvW4Pipeline *wgpu.ComputePipeline

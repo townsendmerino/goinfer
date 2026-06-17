@@ -210,6 +210,14 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 				return fail(e)
 			}
 		}
+		if len(lw.QNorm) > 0 { // Qwen3/GLM per-head QK-norm (applied before RoPE)
+			if rl.qNorm, e = up32(lw.QNorm); e != nil {
+				return fail(e)
+			}
+			if rl.kNorm, e = up32(lw.KNorm); e != nil {
+				return fail(e)
+			}
+		}
 		rd.rm.layers = append(rd.rm.layers, rl)
 	}
 	_ = vocab // logits length is lmHead.nRows()
