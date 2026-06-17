@@ -86,6 +86,7 @@ type runModel struct {
 	kvI8      bool          // KCache/VCache are int8-packed (NewKVCacheI8) + scales → int8 kernels
 	moe       *moeRunParams // non-nil ⇒ the model has MoE layers (runLayer.isMoE picks which)
 	mla       *mlaRunParams // non-nil ⇒ MLA latent attention replaces the q/k/v/o block
+	ropeHalf  int           // rotated pairs per head = rotaryDim/2 (Lever C5 partial RoPE); 0 ⇒ HeadDim/2
 }
 
 // mlaRunParams carries the model-level MLA geometry (uniform across layers). Per-layer
@@ -223,7 +224,14 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 	// layers. So allocate ONE buffer per type and let every layer's dispatch bind
 	// it; Run then writes 4 small uniforms per token instead of ~112. The builders
 	// below reference these shared buffers and no longer append per-call posUnis.
+	// Rotated pairs per head: rotaryDim/2 = len(invFreq). m.ropeHalf carries it for
+	// partial RoPE (GLM/Phi rotary_dim < HeadDim, Lever C5); 0 ⇒ full HeadDim/2. The
+	// rope kernels pair vec[off+d] with vec[off+half+d] for d<half, leaving the trailing
+	// HeadDim-rotaryDim dims untouched — exactly decoder.applyRoPE's partial layout.
 	half := hd / 2
+	if m.ropeHalf > 0 {
+		half = m.ropeHalf
+	}
 	ropeQUni := uni([]uint32{uint32(nH), uint32(hd), uint32(half), 0, f32bits(1), 0, 0, 0})
 	r.posUnis = append(r.posUnis, posUni{buf: ropeQUni, gen: func(pos int) []uint32 {
 		return []uint32{uint32(nH), uint32(hd), uint32(half), uint32(pos), f32bits(1), 0, 0, 0}

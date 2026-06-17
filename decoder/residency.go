@@ -89,9 +89,11 @@ func (a *Architecture) decodeRunnerEligible() bool {
 		return true
 	}
 	// Standard GQA attention: QK-norm (Qwen3/GLM/Mellum) is handled (Lever C1 — per-head
-	// RMSNorm before RoPE), q/k/v bias (Qwen2) and the (1+w) RMS offset too. RoPE must be
-	// full-width; sliding window / learned pos / output bias are not.
-	return a.SlidingWindow == 0 && (a.RotaryDim == 0 || a.RotaryDim == a.HeadDim)
+	// RMSNorm before RoPE), q/k/v bias (Qwen2) and the (1+w) RMS offset too. Partial RoPE
+	// (GLM/Phi rotary_dim < HeadDim) is handled (Lever C5 — the rope dispatch rotates only
+	// rotaryDim/2 pairs, leaving the tail untouched). Sliding window / learned pos / output
+	// bias are not.
+	return a.SlidingWindow == 0
 }
 
 // moeResidentEligible reports whether this arch's MoE is a shape the GPU resident

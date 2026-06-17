@@ -144,7 +144,8 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 
 	fail := func(err error) (decoder.ResidentForward, bool, error) { rd.release(); return nil, false, err }
 
-	invD, err := up32(m.RopeInvFreq())
+	invFreq := m.RopeInvFreq()
+	invD, err := up32(invFreq)
 	if err != nil {
 		return fail(err)
 	}
@@ -161,7 +162,9 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	if err != nil {
 		return fail(err)
 	}
-	rd.rm = runModel{finalNorm: finalNorm, lmHead: lmHead}
+	// ropeHalf = len(invFreq) = rotaryDim/2 — drives the rope dispatch (partial RoPE,
+	// Lever C5: GLM/Phi rotate only the first rotaryDim dims of each head).
+	rd.rm = runModel{finalNorm: finalNorm, lmHead: lmHead, ropeHalf: len(invFreq)}
 
 	// MoE (Lever C3c): Mixtral-class models route to stacked int8 experts on-device.
 	// moeOK gates the per-layer FFN build below; the params are model-level.
