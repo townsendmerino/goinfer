@@ -51,6 +51,16 @@ func (c *Context) uploadProj(w *linalg.WeightMat) (decodeWeight, error) {
 	case "int8":
 		q8, scales, _, _ := w.Int8()
 		return c.UploadW8A8(q8, scales, N, K)
+	case "f32":
+		// Some projections stay f32 even under an int8 load (the MoE router is kept
+		// full-precision for selection stability). Quantize row-wise to int8 here so the
+		// resident GEMV can read it — the router logits feed a top-k, so int8 is ample.
+		f32, ok := w.F32()
+		if !ok {
+			return nil, fmt.Errorf("gpu: residency f32 projection has no data")
+		}
+		q8, scales := linalg.QuantizeRowsInt8(f32, N, K)
+		return c.UploadW8A8(q8, scales, N, K)
 	default:
 		return nil, fmt.Errorf("gpu: residency unsupported projection precision %q", w.Kind())
 	}
@@ -120,6 +130,17 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 		}
 		return dw, nil
 	}
+	// projF32 quantizes a raw f32 [N,K] weight to int8 row-wise and uploads it (the MLA
+	// projections are stored f32 in the decoder; the resident GEMVs are W8A8).
+	projF32 := func(w []float32, N, K int) (decodeWeight, error) {
+		q8, scales := linalg.QuantizeRowsInt8(w, N, K)
+		rm, err := c.UploadW8A8(q8, scales, N, K)
+		if err != nil {
+			return nil, err
+		}
+		keepF(rm.Release)
+		return rm, nil
+	}
 
 	fail := func(err error) (decoder.ResidentForward, bool, error) { rd.release(); return nil, false, err }
 
@@ -144,11 +165,21 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 
 	// MoE (Lever C3c): Mixtral-class models route to stacked int8 experts on-device.
 	// moeOK gates the per-layer FFN build below; the params are model-level.
-	nExp, topK, moeInter, shInter, sig, normTopK, shUngated, rScale, moeOK := m.MoEResidentParams()
+	nExp, topK, moeInter, shInter, sig, normTopK, shUngated, rScale, nGroup, topkGroup, moeOK := m.MoEResidentParams()
 	if moeOK {
 		rd.rm.moe = &moeRunParams{
 			nE: nExp, k: topK, inter: moeInter, sigmoid: sig, norm: normTopK, scale: float32(rScale),
-			sharedInter: shInter, sharedUngated: shUngated,
+			sharedInter: shInter, sharedUngated: shUngated, nGroup: nGroup, topkGroup: topkGroup,
+		}
+	}
+	// MLA (Lever C4): DeepSeek/Kimi latent attention replaces the q/k/v/o block. mlaOK
+	// gates the per-layer MLA build below; the geometry is model-level. attnScale
+	// overrides the GQA 1/√HeadDim with the resolved qk_head_dim score scale.
+	qLoRA, kvLoRA, qkNope, qkRope, vHead, interleave, mlaAttnScale, mlaRopeScale, mlaOK := m.MLAResidentParams()
+	if mlaOK {
+		rd.rm.mla = &mlaRunParams{
+			qLoRARank: qLoRA, kvLoRARank: kvLoRA, qkNope: qkNope, qkRope: qkRope,
+			vHead: vHead, interleave: interleave, ropeScale: float32(mlaRopeScale),
 		}
 	}
 	// buildStacked packs one projection (gate/up/down) across all nE experts into a
@@ -182,42 +213,102 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 			return fail(e)
 		}
 		rl.invFreq = invD
-		var kc, vc *DeviceBuffer
-		var e1, e2 error
-		switch {
-		case kvI8:
-			var ks, vs *DeviceBuffer
-			kc, ks, e1 = c.NewKVCacheI8(nil, ctxCap*kvDim, nKV, hd)
-			vc, vs, e2 = c.NewKVCacheI8(nil, ctxCap*kvDim, nKV, hd)
-			if e1 == nil && e2 == nil {
-				keepF(ks.Release)
-				keepF(vs.Release)
-				rl.kScale, rl.vScale = ks.buf, vs.buf
+		if mlaOK {
+			// MLA: a single compressed-latent cache [ctxCap·latDim] replaces the per-head
+			// K/V caches; the per-head K/V are rebuilt in rank-space, never materialized.
+			latDim := kvLoRA + qkRope
+			lc, e1 := c.NewKVCache(nil, ctxCap*latDim)
+			if e1 != nil {
+				return fail(fmt.Errorf("gpu: residency latent alloc (layer %d): %v", i, e1))
 			}
-		case kvF16:
-			kc, e1 = c.NewKVCacheF16(nil, ctxCap*kvDim)
-			vc, e2 = c.NewKVCacheF16(nil, ctxCap*kvDim)
-		default:
-			kc, e1 = c.NewKVCache(nil, ctxCap*kvDim)
-			vc, e2 = c.NewKVCache(nil, ctxCap*kvDim)
-		}
-		if e1 != nil || e2 != nil {
-			return fail(fmt.Errorf("gpu: residency KV alloc (layer %d): %v %v", i, e1, e2))
-		}
-		keepF(kc.Release)
-		keepF(vc.Release)
-		rl.kCache, rl.vCache = kc.buf, vc.buf
-		if rl.q, e = proj(&lw.QProj); e != nil {
-			return fail(e)
-		}
-		if rl.k, e = proj(&lw.KProj); e != nil {
-			return fail(e)
-		}
-		if rl.v, e = proj(&lw.VProj); e != nil {
-			return fail(e)
-		}
-		if rl.o, e = proj(&lw.OProj); e != nil {
-			return fail(e)
+			keepF(lc.Release)
+			rl.latCache = lc.buf
+			qA, qANorm, qB, qProj, kvA, kvANorm, kvB, oProj := m.MLALayerWeights(i)
+			if qLoRA > 0 { // q_a → norm → q_b LoRA bottleneck
+				if rl.mlaQA, e = projF32(qA, qLoRA, hidden); e != nil {
+					return fail(e)
+				}
+				if rl.mlaQB, e = projF32(qB, nH*(qkNope+qkRope), qLoRA); e != nil {
+					return fail(e)
+				}
+				if rl.mlaQANorm, e = up32(qANorm); e != nil {
+					return fail(e)
+				}
+			} else { // direct q_proj (V2-Lite)
+				if rl.mlaQ, e = projF32(qProj, nH*(qkNope+qkRope), hidden); e != nil {
+					return fail(e)
+				}
+			}
+			if rl.mlaKVA, e = projF32(kvA, latDim, hidden); e != nil {
+				return fail(e)
+			}
+			if rl.mlaKVANorm, e = up32(kvANorm); e != nil {
+				return fail(e)
+			}
+			if rl.mlaO, e = projF32(oProj, hidden, nH*vHead); e != nil {
+				return fail(e)
+			}
+			// kvB is [nH*(qkNope+vHead), kvLoRA] row-major (per head: k_nope rows ‖ v rows).
+			// Slice into W_UKᵀ [nH, kvLoRA, qkNope] (transposed for the absorb GEMV) and
+			// W_UV [nH, vHead, kvLoRA] (the lift, used as-is).
+			hRow := qkNope + vHead
+			wuk := make([]float32, nH*kvLoRA*qkNope)
+			wuv := make([]float32, nH*vHead*kvLoRA)
+			for h := 0; h < nH; h++ {
+				for d := 0; d < qkNope; d++ {
+					src := kvB[(h*hRow+d)*kvLoRA : (h*hRow+d)*kvLoRA+kvLoRA]
+					for cc := 0; cc < kvLoRA; cc++ {
+						wuk[(h*kvLoRA+cc)*qkNope+d] = src[cc] // transpose: [c][d] ← kvB[d][c]
+					}
+				}
+				for ev := 0; ev < vHead; ev++ {
+					copy(wuv[(h*vHead+ev)*kvLoRA:(h*vHead+ev)*kvLoRA+kvLoRA], kvB[(h*hRow+qkNope+ev)*kvLoRA:(h*hRow+qkNope+ev)*kvLoRA+kvLoRA])
+				}
+			}
+			if rl.mlaWUK, e = up32(wuk); e != nil {
+				return fail(e)
+			}
+			if rl.mlaWUV, e = up32(wuv); e != nil {
+				return fail(e)
+			}
+		} else {
+			var kc, vc *DeviceBuffer
+			var e1, e2 error
+			switch {
+			case kvI8:
+				var ks, vs *DeviceBuffer
+				kc, ks, e1 = c.NewKVCacheI8(nil, ctxCap*kvDim, nKV, hd)
+				vc, vs, e2 = c.NewKVCacheI8(nil, ctxCap*kvDim, nKV, hd)
+				if e1 == nil && e2 == nil {
+					keepF(ks.Release)
+					keepF(vs.Release)
+					rl.kScale, rl.vScale = ks.buf, vs.buf
+				}
+			case kvF16:
+				kc, e1 = c.NewKVCacheF16(nil, ctxCap*kvDim)
+				vc, e2 = c.NewKVCacheF16(nil, ctxCap*kvDim)
+			default:
+				kc, e1 = c.NewKVCache(nil, ctxCap*kvDim)
+				vc, e2 = c.NewKVCache(nil, ctxCap*kvDim)
+			}
+			if e1 != nil || e2 != nil {
+				return fail(fmt.Errorf("gpu: residency KV alloc (layer %d): %v %v", i, e1, e2))
+			}
+			keepF(kc.Release)
+			keepF(vc.Release)
+			rl.kCache, rl.vCache = kc.buf, vc.buf
+			if rl.q, e = proj(&lw.QProj); e != nil {
+				return fail(e)
+			}
+			if rl.k, e = proj(&lw.KProj); e != nil {
+				return fail(e)
+			}
+			if rl.v, e = proj(&lw.VProj); e != nil {
+				return fail(e)
+			}
+			if rl.o, e = proj(&lw.OProj); e != nil {
+				return fail(e)
+			}
 		}
 		if moeOK && len(lw.Experts) > 0 { // Mixtral-class sparse MoE FFN
 			rl.isMoE = true
@@ -294,6 +385,9 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	rd.rm.kvF16 = kvF16 // the runner picks the f16 attn/store kernels off this
 	rd.rm.kvI8 = kvI8   // …or the int8 kernels + scale binds
 	scale, addOne := m.AttnScale(), m.RMSAddOne()
+	if mlaOK { // MLA scores over qk_head_dim, not HeadDim — use the resolved score scale
+		scale = float32(mlaAttnScale)
+	}
 	rd.newRunner = func() (*DecodeRunner, error) {
 		return c.newDecodeRunner(rd.rm, hidden, nH, nKV, hd, inter, 0, eps, scale, addOne)
 	}

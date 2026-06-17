@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"fmt"
 	"math"
 	"os"
 )
@@ -68,40 +69,73 @@ func (m *Model) DecodeRunnerEligible() bool {
 // usable directly from a resolved Architecture (e.g. the capability matrix)
 // without a loaded Model.
 func (a *Architecture) decodeRunnerEligible() bool {
-	// QK-norm (Qwen3/GLM/Mellum) is handled by the resident runner (Lever C: per-head
-	// RMSNorm of q/k before RoPE — gpu/qknorm.go), so it no longer blocks eligibility.
-	// MoE is handled for the Mixtral-class shape only (Lever C3c — see
-	// moeResidentEligible); the hybrid/MLA/Llama-4 families keep their own forward.
-	return (a.MoE == nil || a.moeResidentEligible()) &&
-		a.gemma4 == nil && a.qwen35 == nil &&
-		a.granite == nil && a.nemotron == nil && a.mla == nil && a.llama4 == nil &&
-		!a.NonGatedMLP && !a.LearnedPosEmbed && !a.OutBias &&
-		a.NormPlacement == NormPre2 && a.SlidingWindow == 0 &&
-		a.FinalLogitSoftcap == 0 && a.AttnLogitSoftcap == 0 &&
-		(a.RotaryDim == 0 || a.RotaryDim == a.HeadDim)
+	// Families with their own non-uniform forward (hybrid mixers, Gemma-4, Llama-4,
+	// qwen3.5) keep the staged path regardless.
+	if a.gemma4 != nil || a.qwen35 != nil || a.granite != nil || a.nemotron != nil || a.llama4 != nil {
+		return false
+	}
+	if a.MoE != nil && !a.moeResidentEligible() {
+		return false
+	}
+	// FFN / norm / head constraints common to both attention paths.
+	if a.NonGatedMLP || a.LearnedPosEmbed || a.OutBias ||
+		a.NormPlacement != NormPre2 || a.FinalLogitSoftcap != 0 || a.AttnLogitSoftcap != 0 {
+		return false
+	}
+	// MLA (DeepSeek/Kimi) runs its own latent-attention path on the resident runner
+	// (Lever C4 — gpu/mla.go), so the standard GQA/RoPE/QK-norm/sliding-window checks
+	// don't apply; its decoupled RoPE rides a separate qk_rope slice, not HeadDim.
+	if a.mla != nil {
+		return true
+	}
+	// Standard GQA attention: QK-norm (Qwen3/GLM/Mellum) is handled (Lever C1 — per-head
+	// RMSNorm before RoPE), q/k/v bias (Qwen2) and the (1+w) RMS offset too. RoPE must be
+	// full-width; sliding window / learned pos / output bias are not.
+	return a.SlidingWindow == 0 && (a.RotaryDim == 0 || a.RotaryDim == a.HeadDim)
 }
 
 // moeResidentEligible reports whether this arch's MoE is a shape the GPU resident
-// runner handles: global top-k routing (NGroup ≤ 1). C3c covers the Mixtral form (no
-// shared expert, no dense prefix); C3d adds the always-on shared expert (qwen2_moe
-// sigmoid-gated, GLM/DeepSeek ungated) and dense prefix layers (FirstKDense > 0).
-// DeepSeek group-limited routing (NGroup > 1) is still C4.
+// runner handles. The route kernel now covers every routing flavor — softmax/sigmoid,
+// optional selection bias, norm_topk_prob, routed scaling, and DeepSeek group-limited
+// top-k (NGroup > 1, Lever C4c) — plus the always-on shared expert (C3d) and dense
+// prefix layers (FirstKDense > 0), so any int8-stackable MoE qualifies.
 func (a *Architecture) moeResidentEligible() bool {
-	m := a.MoE
-	return m != nil && m.NGroup <= 1
+	return a.MoE != nil
 }
 
-// MoEResidentParams returns the global-top-k MoE knobs the GPU resident runner needs
-// (ok=false for a dense model). Only shapes passing moeResidentEligible reach the
-// resident path. sharedInter > 0 marks an always-on shared expert; sharedUngated picks
-// the GLM/DeepSeek (no sigmoid gate) combine over the qwen2_moe gated one.
-func (m *Model) MoEResidentParams() (nE, k, inter, sharedInter int, sigmoid, norm, sharedUngated bool, scale float64, ok bool) {
+// MoEResidentParams returns the MoE knobs the GPU resident runner needs (ok=false for
+// a dense model). sharedInter > 0 marks an always-on shared expert; sharedUngated picks
+// the GLM/DeepSeek (no sigmoid gate) combine; nGroup > 1 is DeepSeek group-limited
+// routing (topkGroup groups kept).
+func (m *Model) MoEResidentParams() (nE, k, inter, sharedInter int, sigmoid, norm, sharedUngated bool, scale float64, nGroup, topkGroup int, ok bool) {
 	mo := m.w.arch.MoE
 	if mo == nil {
-		return 0, 0, 0, 0, false, false, false, 0, false
+		return 0, 0, 0, 0, false, false, false, 0, 0, 0, false
 	}
 	return mo.NumExperts, mo.TopK, mo.IntermediateDim, mo.SharedIntermediateDim,
-		mo.RouterSigmoid, mo.NormTopKProb, mo.SharedUngated, mo.RoutedScale, true
+		mo.RouterSigmoid, mo.NormTopKProb, mo.SharedUngated, mo.RoutedScale, mo.NGroup, mo.TopkGroup, true
+}
+
+// MLAResidentParams returns the DeepSeek/Kimi MLA geometry the GPU resident runner
+// needs (ok=false when the arch is not MLA). attnScale is the resolved q·k softmax
+// multiplier (qk_head_dim^-0.5, with any YaRN mscale²); ropeScale is the YaRN
+// attention factor folded into the decoupled RoPE cos/sin (1.0 when none).
+func (m *Model) MLAResidentParams() (qLoRA, kvLoRA, qkNope, qkRope, vHead int, interleave bool, attnScale, ropeScale float64, ok bool) {
+	p := m.w.arch.mla
+	if p == nil {
+		return 0, 0, 0, 0, 0, false, 0, 0, false
+	}
+	return p.QLoRARank, p.KVLoRARank, p.QKNopeHeadDim, p.QKRopeHeadDim, p.VHeadDim,
+		p.ropeInterleave, m.w.arch.AttnScale, m.w.arch.ropeMscale(0), true
+}
+
+// MLALayerWeights returns layer l's MLA projection weights (f32) for the resident
+// bridge: the q-LoRA bottleneck (qA/qANorm/qB) or direct qProj, the KV down-proj
+// (kvA) + its latent norm (kvANorm), the per-head kv up-proj kvB (sliced into W_UK /
+// W_UV on the GPU side), and the output proj. nil qA ⇒ the direct qProj (V2-Lite).
+func (m *Model) MLALayerWeights(l int) (qA, qANorm, qB, qProj, kvA, kvANorm, kvB, oProj []float32) {
+	w := m.w.Layers[l].mla
+	return w.qAProj, w.qALayernorm, w.qBProj, w.qProj, w.kvAProj, w.kvALayernorm, w.kvBProj, w.oProj
 }
 
 // RopeInvFreq returns the rotary inverse frequencies (layer 0; uniform across an
@@ -152,6 +186,9 @@ func (m *Model) withResidency() *Model {
 	}
 	rf, ok, err := rb.BuildResident(m)
 	if err != nil || !ok {
+		if os.Getenv("GOINFER_RESIDENT_DEBUG") != "" {
+			fmt.Fprintf(os.Stderr, "[resident-debug] BuildResident ok=%v err=%v\n", ok, err)
+		}
 		return m // build refused/failed → silently fall back
 	}
 	m.resident = rf

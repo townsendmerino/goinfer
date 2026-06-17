@@ -37,7 +37,7 @@
     "tied_lm_head": false,
     "loaders": "safetensors, GGUF",
     "modality": "text",
-    "gpu_residency_eligible": false,
+    "gpu_residency_eligible": true,
     "parity": "real-oracle 100.0%/0.99924"
   },
   {
@@ -57,7 +57,7 @@
     "tied_lm_head": false,
     "loaders": "safetensors, GGUF",
     "modality": "text",
-    "gpu_residency_eligible": false,
+    "gpu_residency_eligible": true,
     "parity": "real-oracle 100.0%/0.99951"
   },
   {
@@ -77,7 +77,7 @@
     "tied_lm_head": false,
     "loaders": "safetensors, GGUF",
     "modality": "text",
-    "gpu_residency_eligible": false,
+    "gpu_residency_eligible": true,
     "parity": "pending"
   },
   {
