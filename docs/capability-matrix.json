@@ -159,7 +159,7 @@
     "loaders": "safetensors, GGUF",
     "modality": "text",
     "gpu_residency_eligible": false,
-    "parity": "pending"
+    "parity": "full-oracle 100.0%/0.99128"
   },
   {
     "name": "llama",

@@ -109,13 +109,17 @@
         "decoder/forward_gemma4.go"
       ],
       "deps_hash": "sha256:d73e0c387884e0f4929100fff034d343ddc9fc175146a1ac60fc6f6e11c099a8",
-      "status": "pending",
-      "validated_at": null,
-      "date": null,
-      "reference": null,
-      "machine": null,
-      "method": null,
-      "metrics": null
+      "status": "validated",
+      "validated_at": "d64afe4",
+      "date": "2026-06-16",
+      "reference": "HF bf16 (google/gemma-4 E2B + 12B); q4_0 GGUF, argmax-exact + sample-256 cosine",
+      "machine": "macbook-arm64",
+      "method": "full-forward-oracle",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 0.99128,
+        "cosine_mean": 0.99526
+      }
     },
     "glm4_moe": {
       "uses": [
