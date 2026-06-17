@@ -69,6 +69,15 @@ func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxT
 	// the resident no-op TruncateTo. The draft stays CPU (small). Output is still
 	// token-identical to plain greedy (TestSpeculativeResident_parity).
 	resident := target.resident != nil && target.DecodeRunnerEligible()
+	// The draft runs on the GPU too when it was loaded --backend webgpu and is
+	// eligible. This is the decisive lever: a CPU draft is slower PER TOKEN than the
+	// GPU target it feeds (measured ~4.9× on the 2070S), so K CPU draft tokens/round
+	// cost far more than they save and speculation is a net loss; a resident draft is
+	// ~0.5× the target's per-token cost, which is the only regime where it can pay.
+	// Draft + target are separate Contexts (one device/queue each), driven
+	// sequentially here. Output stays token-identical to plain target greedy — the
+	// draft is only a proposer; the target decides (so its backend can't change it).
+	draftResident := draft.resident != nil && draft.DecodeRunnerEligible()
 
 	out := make(chan int)
 	stats := &SpecStats{}
@@ -80,7 +89,45 @@ func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxT
 		if !resident {
 			tc = target.NewCache(room)
 		}
-		dc := draft.NewCache(room)
+		var dc *KVCache // draft CPU cache (nil on the resident-draft path)
+		if !draftResident {
+			dc = draft.NewCache(room)
+		}
+
+		// dpos tracks the resident draft's next write position (mirrors dc.Pos() on the
+		// CPU path). draftForward/draftPrefill/draftTruncate route to the resident or CPU
+		// draft uniformly; the resident draft is positional (TruncateTo is a no-op, stale
+		// speculative KV past `keep` is overwritten next round), exactly like the target.
+		dpos := 0
+		draftForward := func(tok int) ([]float32, error) {
+			if draftResident {
+				l, err := draft.resident.Forward(draft.embedResident(tok), dpos)
+				dpos++
+				return l, err
+			}
+			return draft.forward(tok, dc)
+		}
+		draftPrefill := func() error {
+			if draftResident {
+				for i, id := range prompt {
+					if _, err := draft.resident.Forward(draft.embedResident(id), i); err != nil {
+						return err
+					}
+				}
+				dpos = len(prompt)
+				return nil
+			}
+			_, err := draft.prefillLogits(prompt, dc)
+			return err
+		}
+		draftTruncate := func(keep int) {
+			if draftResident {
+				dpos = keep
+				draft.resident.TruncateTo(keep)
+			} else {
+				dc.TruncateTo(keep)
+			}
+		}
 
 		// targetVerify runs one target pass over seq (= [cur, drafts...]) at absolute
 		// position base, returning a logit row after each. tpos tracks the target's
@@ -126,7 +173,7 @@ func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxT
 			}
 		}
 		tpos = len(prompt)
-		if _, err := draft.prefillLogits(prompt, dc); err != nil {
+		if err := draftPrefill(); err != nil {
 			g.err = err
 			return
 		}
@@ -158,7 +205,7 @@ func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxT
 			draftTok := make([]int, K)
 			d := cur
 			for i := 0; i < K; i++ {
-				dl, err := draft.forward(d, dc)
+				dl, err := draftForward(d)
 				if err != nil {
 					g.err = err
 					return
@@ -210,12 +257,12 @@ func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxT
 				// The draft only cached cur..draftTok[K-2]; on a full accept,
 				// draftTok[K-1] is confirmed too, so feed it once to sync the draft
 				// cache before trimming (a no-op trim here).
-				if _, err := draft.forward(draftTok[K-1], dc); err != nil {
+				if _, err := draftForward(draftTok[K-1]); err != nil {
 					g.err = err
 					return
 				}
 			}
-			dc.TruncateTo(keep)
+			draftTruncate(keep)
 
 			// 5. Stream the accepted draft tokens, then the correction/bonus, which
 			// becomes the next cur. Stop mid-stream on EOS/stop/maxTokens/cancel.

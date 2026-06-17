@@ -333,3 +333,39 @@ bump to. Lever 1 is not the "3–6 day version bump"; it needs an upstream
   weights streamed once, dispatch count not K×). Stage A is the correctness foundation
   + parity gate that Stage B slots in behind (same `ForwardN` signature). Next: an E2E
   tok/s number on real code prompts (kill-gate <1.3×), then Stage B.
+
+### Lever 2 — E2E kill-gate measured (2026-06-16): the DRAFT, not the verify, was the wall
+Ran the E2E tok/s gate (`gpu.TestSpeculativeResident_e2eThroughput` /
+`…_decomp`, 1.5B target + 0.5B draft, code prompt) and it found the original plan was
+aimed at the wrong cost. Measured per-token on the 2070S:
+
+| component | ms/tok | tok/s | vs target |
+|---|---|---|---|
+| GPU target (1.5B, resident) | 11.5 | 87 | 1.0× |
+| **CPU draft (0.5B)** | **56** | 18 | **4.9× slower** |
+| **GPU draft (0.5B, resident)** | **6.0** | 166 | **0.52×** |
+
+- **CPU draft is fatal.** A CPU draft is ~5× *slower per token* than the GPU target it
+  feeds, so K draft tokens/round cost far more than they save → measured **0.11×** (≈9×
+  *slower* than plain greedy). No verify optimization can fix a draft slower than the
+  target; **Stage B alone would have been wasted effort.**
+- **Resident draft is the real prerequisite** (now shipped — draft routed through its own
+  resident `Forward` in `GenerateSpeculative`, two Contexts/devices on the 8 GB card,
+  output still token-identical to plain greedy): **0.11× → 0.42×** at K=4 (4× better),
+  parity intact. Still <1× because the verify is *still* Stage A.
+- **Decompose the 0.42× (K=4, 88 ms/round, 3.2 tok/round):** ~24 ms draft (4×6) +
+  **~64 ms Stage-A verify** (5.5× one token — the K+1 rows re-record ~420 dispatches
+  each). Stage B collapses that verify to ~1 token. Projected: resident draft + ideal
+  Stage B ≈ **0.95× at this run's 0.55 acceptance, ~1.4× at the 0.78–0.89 acceptance**
+  seen on cleaner code. So the win is real but **acceptance-gated and marginal** — the
+  0.5B draft at 0.52× target (only 2× faster despite 3× smaller, because the fixed
+  ~420-dispatch glue doesn't shrink with model size) eats most of the headroom.
+- **Decision (2026-06-16): Stage B DEFERRED.** With the resident draft shipped, the
+  remaining lever (Stage B = M=K projection GEMMs so each weight streams once over the K
+  verify rows; attention/RoPE/kv-store touch no model weights and stay per-row, so NO new
+  M=K attention shader is needed) is a substantial build for a payoff the numbers show is
+  marginal: ~0.95× at 0.55 acceptance, ~1.4× only at 0.78–0.89. Not worth it now versus
+  other perf work (MLA absorb). The kill-gate did its job — it stopped a large build whose
+  measured ceiling barely clears break-even. If revisited, the scope is projection-GEMM
+  only; and if that still misses 1.3× broadly, a near-zero-cost draft (prompt-lookup /
+  n-gram) is the better lever, since the draft cost — not the verify — is what's left.
