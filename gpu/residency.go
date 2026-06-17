@@ -144,10 +144,21 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 
 	fail := func(err error) (decoder.ResidentForward, bool, error) { rd.release(); return nil, false, err }
 
+	// Per-layer RoPE (Lever C7): bind each layer the global or local invFreq table. Most
+	// models share one (cache keyed on the global/local flag); Mellum has two (YaRN global,
+	// default local). ropeHalf = rotaryDim/2 is uniform (the guard requires equal lengths).
 	invFreq := m.RopeInvFreq()
-	invD, err := up32(invFreq)
-	if err != nil {
-		return fail(err)
+	ropeInvCache := map[bool]*wgpu.Buffer{}
+	ropeInvBuf := func(global bool, layer int) (*wgpu.Buffer, error) {
+		if b, ok := ropeInvCache[global]; ok {
+			return b, nil
+		}
+		b, err := up32(m.RopeInvFreqLayer(layer))
+		if err != nil {
+			return nil, err
+		}
+		ropeInvCache[global] = b
+		return b, nil
 	}
 	finalNorm, err := up32(w.FinalNorm)
 	if err != nil {
@@ -207,7 +218,10 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 
 	for i := range w.Layers {
 		lw := &w.Layers[i]
-		rl := runLayer{isLocal: m.LayerIsLocalResident(i)} // sliding-window layer (Lever C6)
+		rl := runLayer{
+			isLocal:   m.LayerIsLocalResident(i),     // sliding-window layer (Lever C6)
+			ropeScale: float32(m.RopeMscaleLayer(i)), // per-layer YaRN mscale (Lever C7)
+		}
 		var e error
 		if rl.attnNorm, e = up32(lw.PreAttnNorm); e != nil {
 			return fail(e)
@@ -215,7 +229,9 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 		if rl.mlpNorm, e = up32(lw.PreMLPNorm); e != nil {
 			return fail(e)
 		}
-		rl.invFreq = invD
+		if rl.invFreq, e = ropeInvBuf(m.LayerRopeGlobal(i), i); e != nil {
+			return fail(e)
+		}
 		if mlaOK {
 			// MLA: a single compressed-latent cache [ctxCap·latDim] replaces the per-head
 			// K/V caches; the per-head K/V are rebuilt in rank-space, never materialized.

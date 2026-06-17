@@ -90,35 +90,21 @@ func (a *Architecture) decodeRunnerEligible() bool {
 	}
 	// Standard GQA attention: QK-norm (Qwen3/GLM/Mellum) is handled (Lever C1 — per-head
 	// RMSNorm before RoPE), q/k/v bias (Qwen2) and the (1+w) RMS offset too. Partial RoPE
-	// (GLM/Phi rotary_dim < HeadDim) is handled (Lever C5). Sliding window is handled
-	// (Lever C6 — per-layer windowed attention start) PROVIDED RoPE is uniform across
-	// layers: the resident runner uses a single invFreq + scale, so the per-layer-rope
-	// interleave families (Mellum YaRN-on-global, Gemma split-base) stay on the staged path.
-	return a.ropeUniformResident()
+	// (GLM/Phi rotary_dim < HeadDim) is handled (Lever C5), sliding window (Lever C6), and
+	// per-layer-type RoPE (Mellum YaRN-on-global vs default-local invFreq + mscale, Lever
+	// C7). The remaining gate: the local/global rope tables must be the SAME LENGTH so the
+	// runner's single rotaryDim/2 dispatch covers both (a per-layer rotary width — Gemma's
+	// global/local head-dim split — is not handled; Gemma is also softcapped out anyway).
+	return a.ropeResidentCompatible()
 }
 
-// ropeUniformResident reports whether every layer shares one RoPE inverse-freq table and
-// attention scale. The resident runner binds a single invFreq buffer and one softmax
-// scale, so a model whose local/global layers differ in RoPE base or YaRN scaling (the
-// sliding/full interleave families) cannot run resident even though its block shapes
-// otherwise qualify. Single-rope families (incl. uniform sliding-window Mistral) pass.
-func (a *Architecture) ropeUniformResident() bool {
-	if len(a.ropeInvFreqLocal) != len(a.ropeInvFreqGlobal) {
-		return false
-	}
-	for i := range a.ropeInvFreqLocal {
-		if a.ropeInvFreqLocal[i] != a.ropeInvFreqGlobal[i] {
-			return false
-		}
-	}
-	gm, lm := 1.0, 1.0
-	if a.ropeScaling != nil && a.ropeScaling.mscale != 0 {
-		gm = a.ropeScaling.mscale
-	}
-	if a.ropeScalingLocal != nil && a.ropeScalingLocal.mscale != 0 {
-		lm = a.ropeScalingLocal.mscale
-	}
-	return gm == lm
+// ropeResidentCompatible reports whether the resident runner's per-layer RoPE binding can
+// represent this arch. It binds a per-layer invFreq buffer + per-layer cos/sin scale, so
+// local/global layers MAY differ in RoPE base or YaRN scaling (Mellum) — but the two
+// inverse-freq tables must share a length, since the rope dispatch's rotaryDim/2 is one
+// model-level value. Single-rope families and uniform sliding-window Mistral pass trivially.
+func (a *Architecture) ropeResidentCompatible() bool {
+	return len(a.ropeInvFreqLocal) == len(a.ropeInvFreqGlobal)
 }
 
 // moeResidentEligible reports whether this arch's MoE is a shape the GPU resident
@@ -171,12 +157,30 @@ func (m *Model) MLALayerWeights(l int) (qA, qANorm, qB, qProj, kvA, kvANorm, kvB
 func (m *Model) SlidingWindowResident() int { return m.w.arch.SlidingWindow }
 
 // LayerIsLocalResident reports whether layer i is a sliding-window (local) layer — i.e. a
-// window is set AND the arch marks the layer non-global. Mistral is all-local; the
-// interleave families that would mix local/global are kept off the resident path by the
-// rope-uniformity guard, so in practice this is uniform per model.
+// window is set AND the arch marks the layer non-global. Mistral is all-local; Mellum
+// interleaves (3:1 sliding/full).
 func (m *Model) LayerIsLocalResident(i int) bool {
 	return m.w.arch.SlidingWindow > 0 && !m.w.arch.isGlobalLayer(i)
 }
+
+// LayerRopeGlobal reports whether layer i uses the global RoPE table (vs the local one) —
+// the per-layer-type RoPE selector (Lever C7). For single-rope models this is always true.
+func (m *Model) LayerRopeGlobal(i int) bool { return m.w.arch.isGlobalLayer(i) }
+
+// RopeInvFreqLayer returns layer i's RoPE inverse-frequency table as float32 — the global
+// or local table per the layer's attention type (Mellum YaRN-on-global vs default-local).
+func (m *Model) RopeInvFreqLayer(i int) []float32 {
+	inv := m.w.arch.ropeInvFreq(i)
+	out := make([]float32, len(inv))
+	for j, v := range inv {
+		out[j] = float32(v)
+	}
+	return out
+}
+
+// RopeMscaleLayer returns layer i's RoPE cos/sin scale (YaRN attention_factor; 1.0 for
+// non-YaRN layers) — folded into the resident rope kernel per layer.
+func (m *Model) RopeMscaleLayer(i int) float64 { return m.w.arch.ropeMscale(i) }
 
 // RopeInvFreq returns the rotary inverse frequencies (layer 0; uniform across an
 // eligible model's dense layers) as float32 — the GPU bridge's RoPE table.

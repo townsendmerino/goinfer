@@ -51,6 +51,7 @@ type runLayer struct {
 	qBias, kBias, vBias                        *wgpu.Buffer // optional (Qwen2); nil ⇒ no bias
 	qNorm, kNorm                               *wgpu.Buffer // optional per-head QK-norm weights [hd] (Qwen3/GLM); nil ⇒ none
 	isLocal                                    bool         // sliding-window (local) attention layer (Lever C6); false ⇒ full
+	ropeScale                                  float32      // per-layer RoPE cos/sin scale = mscale (Lever C7); 0 ⇒ 1.0
 
 	// MoE (Lever C3c, Mixtral-class): when isMoE, this layer's FFN is a sparse
 	// mixture of experts instead of the dense gate/up/down above. router scores all
@@ -234,16 +235,36 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 	if m.ropeHalf > 0 {
 		half = m.ropeHalf
 	}
-	ropeQUni := uni([]uint32{uint32(nH), uint32(hd), uint32(half), 0, f32bits(1), 0, 0, 0})
-	r.posUnis = append(r.posUnis, posUni{buf: ropeQUni, gen: func(pos int) []uint32 {
-		return []uint32{uint32(nH), uint32(hd), uint32(half), uint32(pos), f32bits(1), 0, 0, 0}
-	}})
-	// slot 6 carries nKV for the int8 ropeStore (it indexes scales[pos*nKV+head]);
-	// the f32/f16 ropeStore ignore it (it's their unused _b pad), so it rides along.
-	ropeKUni := uni([]uint32{uint32(nKV), uint32(hd), uint32(half), 0, f32bits(1), 0, uint32(nKV), 0})
-	r.posUnis = append(r.posUnis, posUni{buf: ropeKUni, gen: func(pos int) []uint32 {
-		return []uint32{uint32(nKV), uint32(hd), uint32(half), uint32(pos), f32bits(1), uint32(pos * r.kvDim), uint32(nKV), 0}
-	}})
+	// Per-layer RoPE scale (Lever C7): the cos/sin are multiplied by the layer's mscale
+	// (YaRN attention_factor; 1.0 for non-YaRN). Most models use one scale; the per-layer-
+	// rope interleave families (Mellum: YaRN on the global/full layers, default on the local/
+	// sliding ones) use two. Build one shared rope uniform per distinct scale, keyed by value.
+	// slot 6 of the K uniform carries nKV for the int8 ropeStore (it indexes
+	// scales[pos*nKV+head]); the f32/f16 ropeStore ignore it (their unused _b pad).
+	ropeQUnis := map[float32]*wgpu.Buffer{}
+	ropeQUniFor := func(rs float32) *wgpu.Buffer {
+		if b, ok := ropeQUnis[rs]; ok {
+			return b
+		}
+		b := uni([]uint32{uint32(nH), uint32(hd), uint32(half), 0, f32bits(rs), 0, 0, 0})
+		r.posUnis = append(r.posUnis, posUni{buf: b, gen: func(pos int) []uint32 {
+			return []uint32{uint32(nH), uint32(hd), uint32(half), uint32(pos), f32bits(rs), 0, 0, 0}
+		}})
+		ropeQUnis[rs] = b
+		return b
+	}
+	ropeKUnis := map[float32]*wgpu.Buffer{}
+	ropeKUniFor := func(rs float32) *wgpu.Buffer {
+		if b, ok := ropeKUnis[rs]; ok {
+			return b
+		}
+		b := uni([]uint32{uint32(nKV), uint32(hd), uint32(half), 0, f32bits(rs), 0, uint32(nKV), 0})
+		r.posUnis = append(r.posUnis, posUni{buf: b, gen: func(pos int) []uint32 {
+			return []uint32{uint32(nKV), uint32(hd), uint32(half), uint32(pos), f32bits(rs), uint32(pos * r.kvDim), uint32(nKV), 0}
+		}})
+		ropeKUnis[rs] = b
+		return b
+	}
 	vStoreUni := uni([]uint32{uint32(r.kvDim), 0, 0, 0})
 	r.posUnis = append(r.posUnis, posUni{buf: vStoreUni, gen: func(pos int) []uint32 {
 		return []uint32{uint32(r.kvDim), uint32(pos * r.kvDim), 0, 0}
@@ -277,24 +298,31 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			return []uint32{uint32(nH), uint32(nKV), uint32(hd), uint32(pos + 1), uint32(ws), uint32(nH / nKV), f32bits(scale), 0}
 		}})
 	}
-	rope := func(vec, invFreq *wgpu.Buffer) {
-		add(c.ropePipeline, bind(c.ropeLayout, vec, invFreq, ropeQUni), uint32(nH*half+63)/64, 1)
+	rope := func(vec, invFreq *wgpu.Buffer, ropeScale float32) {
+		if ropeScale == 0 {
+			ropeScale = 1
+		}
+		add(c.ropePipeline, bind(c.ropeLayout, vec, invFreq, ropeQUniFor(ropeScale)), uint32(nH*half+63)/64, 1)
 	}
 	// ropeStore rotates src (the K projection) and writes it straight into the KV
 	// cache at pos*kvDim — replacing the K CopyBufferToBuffer append so the token
-	// stays one compute pass. base rides the shared ropeKUni. The f16 variant packs
+	// stays one compute pass. base rides the per-scale ropeKUni. The f16 variant packs
 	// 2 rotated elems/word (one thread per word = nKV*half, same dispatch count).
-	ropeStore := func(src, invFreq, cache, scale *wgpu.Buffer) {
+	ropeStore := func(src, invFreq, cache, scale *wgpu.Buffer, ropeScale float32) {
+		if ropeScale == 0 {
+			ropeScale = 1
+		}
+		ku := ropeKUniFor(ropeScale)
 		if m.kvI8 {
 			// one thread per KV head: per-head absmax → scale → quantize + pack 4/word.
-			add(c.ropeStoreI8Pipeline, bind(c.ropeStoreI8Layout, src, invFreq, cache, scale, ropeKUni), uint32(nKV+63)/64, 1)
+			add(c.ropeStoreI8Pipeline, bind(c.ropeStoreI8Layout, src, invFreq, cache, scale, ku), uint32(nKV+63)/64, 1)
 			return
 		}
 		pl, ly := c.ropeStorePipeline, c.ropeStoreLayout
 		if m.kvF16 {
 			pl, ly = c.ropeStoreF16Pipeline, c.ropeStoreF16Layout
 		}
-		add(pl, bind(ly, src, invFreq, cache, ropeKUni), uint32(nKV*half+63)/64, 1)
+		add(pl, bind(ly, src, invFreq, cache, ku), uint32(nKV*half+63)/64, 1)
 	}
 	// vStore copies src (the V projection) into the V cache at pos*kvDim. The f16
 	// variant packs 2 elems/word, so it dispatches half as many threads (one/word);
@@ -458,9 +486,9 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 				qkNorm(q, lw.qNorm, nH)
 				qkNorm(k, lw.kNorm, nKV)
 			}
-			rope(q, lw.invFreq)
-			ropeStore(k, lw.invFreq, lw.kCache, lw.kScale) // rotate K + append into cache
-			vStore(v, lw.vCache, lw.vScale)                // append V into cache
+			rope(q, lw.invFreq, lw.ropeScale)
+			ropeStore(k, lw.invFreq, lw.kCache, lw.kScale, lw.ropeScale) // rotate K + append into cache
+			vStore(v, lw.vCache, lw.vScale)                              // append V into cache
 			ctxv := storF(nH * hd)
 			aUni := attnUni // local (sliding-window) layers use the windowed start (Lever C6)
 			if lw.isLocal {
