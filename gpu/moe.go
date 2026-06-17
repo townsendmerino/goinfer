@@ -70,6 +70,196 @@ fn main() {
 }
 `
 
+// Indexed sparse-expert GEMV (Lever C3b). Identical int8 GEMV math to gemvW8A8, but the
+// weight ROW base is computed from a DYNAMIC expert index read out of the routing buffer
+// (idx[slot], produced on-GPU by moeRoute) into a STACKED [nE,N,kp] weight buffer — so the
+// resident plan records a FIXED k dispatches (one per selected expert slot) while the
+// actual expert is chosen at run time, no host round-trip. mode 1 folds the router weight
+// into the epilogue (dst[n] += wgt[slot]·r) for the down-projection combine; mode 0
+// overwrites (gate/up into their own scratch).
+const moeExpertGEMVWGSL = `
+struct Dims { kp: u32, n: u32, slot: u32, mode: u32 };
+@group(0) @binding(0) var<storage, read>       aq:      array<vec4<u32>>;  // [kp/16] quantized activation
+@group(0) @binding(1) var<storage, read>       bq:      array<vec4<u32>>;  // [nE*N, kp/16] stacked experts
+@group(0) @binding(2) var<storage, read>       aScales: array<f32>;        // [1]
+@group(0) @binding(3) var<storage, read>       bScales: array<f32>;        // [nE*N] stacked
+@group(0) @binding(4) var<storage, read_write> dst:     array<f32>;        // [N]
+@group(0) @binding(5) var<storage, read>       idx:     array<u32>;        // [k] chosen expert indices
+@group(0) @binding(6) var<storage, read>       wgt:     array<f32>;        // [k] chosen expert weights
+@group(0) @binding(7) var<uniform>             dims:    Dims;
+fn unpack_i8x4e(w: u32) -> vec4<i32> {
+    return vec4<i32>(i32(w << 24u) >> 24u, i32(w << 16u) >> 24u, i32(w << 8u) >> 24u, i32(w) >> 24u);
+}
+fn dotwe(a: u32, b: u32) -> i32 {
+    let av = unpack_i8x4e(a); let bv = unpack_i8x4e(b);
+    return av.x*bv.x + av.y*bv.y + av.z*bv.z + av.w*bv.w;
+}
+var<workgroup> parte: array<i32, 64>;
+@compute @workgroup_size(64)
+fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid: vec3<u32>) {
+    let n = wid.x + wid.y * 32768u;
+    if (n >= dims.n) { return; }
+    let e = idx[dims.slot];
+    let t = lid.x;
+    let kv = dims.kp / 16u;
+    let row = e * dims.n + n;          // stacked: expert e, output row n
+    let bBase = row * kv;
+    var acc: i32 = 0;
+    for (var v: u32 = t; v < kv; v = v + 64u) {
+        let a4 = aq[v]; let b4 = bq[bBase + v];
+        acc = acc + dotwe(a4.x, b4.x) + dotwe(a4.y, b4.y) + dotwe(a4.z, b4.z) + dotwe(a4.w, b4.w);
+    }
+    parte[t] = acc;
+    workgroupBarrier();
+    var stride: u32 = 32u;
+    loop {
+        if (stride == 0u) { break; }
+        if (t < stride) { parte[t] = parte[t] + parte[t + stride]; }
+        workgroupBarrier();
+        stride = stride / 2u;
+    }
+    if (t == 0u) {
+        let r = f32(parte[0]) * aScales[0] * bScales[row];
+        if (dims.mode == 1u) { dst[n] = dst[n] + wgt[dims.slot] * r; } else { dst[n] = r; }
+    }
+}
+`
+
+// ResidentStackedW8A8 holds nE experts' W8A8 weight for ONE projection (gate, up, or
+// down) packed back-to-back in the gemvW8A8 layout, indexable by expert: row (e*N+n).
+type ResidentStackedW8A8 struct {
+	bq, bScales *wgpu.Buffer
+	nE, rows    int
+	cols, kp    int
+}
+
+// Release frees the stacked buffers.
+func (s *ResidentStackedW8A8) Release() {
+	if s.bq != nil {
+		s.bq.Release()
+	}
+	if s.bScales != nil {
+		s.bScales.Release()
+	}
+}
+
+// UploadStackedExperts packs nE experts' int8 weights [each N,K] + per-row scales [each N]
+// into one resident buffer (expert e's row n at packed-row e*N+n), the layout the indexed
+// expert GEMV reads. q8[e] / scales[e] are expert e's quantized projection.
+func (c *Context) UploadStackedExperts(q8 [][]int8, scales [][]float32, nE, N, K int) (*ResidentStackedW8A8, error) {
+	if nE <= 0 || N <= 0 || K <= 0 || len(q8) < nE || len(scales) < nE {
+		return nil, fmt.Errorf("gpu: UploadStackedExperts bad dims nE=%d N=%d K=%d", nE, N, K)
+	}
+	kp := padK(K)
+	words := kp / 4
+	packed := make([]uint32, nE*N*words)
+	allScales := make([]float32, nE*N)
+	for e := 0; e < nE; e++ {
+		if len(q8[e]) < N*K || len(scales[e]) < N {
+			return nil, fmt.Errorf("gpu: UploadStackedExperts expert %d too small", e)
+		}
+		copy(packed[e*N*words:(e+1)*N*words], packInt8(q8[e], N, K))
+		copy(allScales[e*N:(e+1)*N], scales[e][:N])
+	}
+	bq, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "moe-experts", Contents: wgpu.ToBytes(packed), Usage: wgpu.BufferUsageStorage})
+	if err != nil {
+		return nil, fmt.Errorf("gpu: stacked experts buffer: %w", err)
+	}
+	sc, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "moe-expert-scales", Contents: wgpu.ToBytes(allScales), Usage: wgpu.BufferUsageStorage})
+	if err != nil {
+		bq.Release()
+		return nil, fmt.Errorf("gpu: stacked expert scales buffer: %w", err)
+	}
+	return &ResidentStackedW8A8{bq: bq, bScales: sc, nE: nE, rows: N, cols: K, kp: kp}, nil
+}
+
+func (c *Context) ensureMoEExpert() error {
+	if c.moeExpertPipeline != nil {
+		return nil
+	}
+	sh, err := c.device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{
+		Label: "moeExpertGEMV", WGSLDescriptor: &wgpu.ShaderModuleWGSLDescriptor{Code: moeExpertGEMVWGSL},
+	})
+	if err != nil {
+		return fmt.Errorf("gpu: compile moeExpertGEMV: %w", err)
+	}
+	pl, err := c.device.CreateComputePipeline(&wgpu.ComputePipelineDescriptor{
+		Label: "moeExpertGEMV", Compute: wgpu.ProgrammableStageDescriptor{Module: sh, EntryPoint: "main"},
+	})
+	if err != nil {
+		sh.Release()
+		return fmt.Errorf("gpu: pipeline moeExpertGEMV: %w", err)
+	}
+	c.moeExpertShader, c.moeExpertPipeline, c.moeExpertLayout = sh, pl, pl.GetBindGroupLayout(0)
+	return nil
+}
+
+// IndexedGEMVForTest runs ONE indexed expert GEMV standalone (overwrite mode): dst[N] =
+// (aq·expert[idx[slot]]ᵀ). The C3b unit-test seam — isolates the stacked-index addressing
+// from the full MoE block (C3c). aq is the quantized activation [K], aScale its scale.
+func (c *Context) IndexedGEMVForTest(s *ResidentStackedW8A8, aq []int8, aScale float32, idx []int, slot int) ([]float32, error) {
+	if err := c.ensureMoEExpert(); err != nil {
+		return nil, err
+	}
+	N := s.rows
+	aBuf, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "ig-act", Contents: wgpu.ToBytes(packInt8(aq, 1, s.cols)), Usage: wgpu.BufferUsageStorage})
+	if err != nil {
+		return nil, err
+	}
+	defer aBuf.Release()
+	asBuf, _ := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "ig-as", Contents: wgpu.ToBytes([]float32{aScale}), Usage: wgpu.BufferUsageStorage})
+	defer asBuf.Release()
+	idxU := make([]uint32, len(idx))
+	for i, v := range idx {
+		idxU[i] = uint32(v)
+	}
+	idxBuf, _ := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "ig-idx", Contents: wgpu.ToBytes(idxU), Usage: wgpu.BufferUsageStorage})
+	defer idxBuf.Release()
+	wgtBuf, _ := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "ig-wgt", Contents: wgpu.ToBytes(make([]float32, len(idx))), Usage: wgpu.BufferUsageStorage})
+	defer wgtBuf.Release()
+	dstBuf, _ := c.device.CreateBuffer(&wgpu.BufferDescriptor{Label: "ig-dst", Size: uint64(N * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
+	defer dstBuf.Release()
+	dims, _ := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "ig-dims", Contents: wgpu.ToBytes([]uint32{uint32(s.kp), uint32(N), uint32(slot), 0}), Usage: wgpu.BufferUsageUniform})
+	defer dims.Release()
+	bg, err := c.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.moeExpertLayout, Entries: []wgpu.BindGroupEntry{
+		{Binding: 0, Buffer: aBuf, Size: aBuf.GetSize()}, {Binding: 1, Buffer: s.bq, Size: s.bq.GetSize()},
+		{Binding: 2, Buffer: asBuf, Size: asBuf.GetSize()}, {Binding: 3, Buffer: s.bScales, Size: s.bScales.GetSize()},
+		{Binding: 4, Buffer: dstBuf, Size: dstBuf.GetSize()}, {Binding: 5, Buffer: idxBuf, Size: idxBuf.GetSize()},
+		{Binding: 6, Buffer: wgtBuf, Size: wgtBuf.GetSize()}, {Binding: 7, Buffer: dims, Size: dims.GetSize()},
+	}})
+	if err != nil {
+		return nil, err
+	}
+	defer bg.Release()
+	enc, _ := c.device.CreateCommandEncoder(nil)
+	defer enc.Release()
+	pass := enc.BeginComputePass(nil)
+	pass.SetPipeline(c.moeExpertPipeline)
+	pass.SetBindGroup(0, bg, nil)
+	gx, gy := gemvGrid(N)
+	pass.DispatchWorkgroups(gx, gy, 1)
+	pass.End()
+	pass.Release()
+	stg, _ := c.device.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(N * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
+	defer stg.Release()
+	enc.CopyBufferToBuffer(dstBuf, 0, stg, 0, uint64(N*4))
+	cmd, _ := enc.Finish(nil)
+	defer cmd.Release()
+	c.queue.Submit(cmd)
+	var st wgpu.BufferMapAsyncStatus
+	if err := stg.MapAsync(wgpu.MapModeRead, 0, uint64(N*4), func(s wgpu.BufferMapAsyncStatus) { st = s }); err != nil {
+		return nil, err
+	}
+	c.device.Poll(true, nil)
+	if st != wgpu.BufferMapAsyncStatusSuccess {
+		return nil, fmt.Errorf("gpu: indexed gemv map failed: %v", st)
+	}
+	out := make([]float32, N)
+	copy(out, wgpu.FromBytes[float32](stg.GetMappedRange(0, uint(N*4))))
+	stg.Unmap()
+	return out, nil
+}
+
 func (c *Context) ensureMoERoute() error {
 	if c.moeRoutePipeline != nil {
 		return nil
