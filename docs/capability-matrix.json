@@ -199,7 +199,7 @@
     "loaders": "safetensors, GGUF",
     "modality": "text",
     "gpu_residency_eligible": false,
-    "parity": "coherent-gen"
+    "parity": "tiny-oracle 100.0%/1.00000 +coherent"
   },
   {
     "name": "mellum",

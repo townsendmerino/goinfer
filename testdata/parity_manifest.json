@@ -223,10 +223,14 @@
       "status": "validated",
       "validated_at": "3f23c96",
       "date": "2026-06-16",
-      "reference": "Llama-4-Scout-17B-16E Q2_K GGUF (int4 resident; coherent+factual)",
+      "reference": "tiny HF f32 Llama-4 golden (iRoPE/NoPE, L2 QK-norm, attn-temp, dense/MoE) + real Llama-4-Scout-17B-16E Q2_K GGUF (int4 resident; coherent+factual)",
       "machine": "linux-62gb",
-      "method": "coherent-generation",
-      "metrics": null
+      "method": "tiny-golden+coherent",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 1.0,
+        "cosine_mean": 1.0
+      }
     },
     "mellum": {
       "uses": [

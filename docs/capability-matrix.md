@@ -8,6 +8,8 @@ an adapter are grouped). Per-checkpoint dims (hidden size, layer/expert
 counts) are intentionally excluded — they vary by checkpoint. Regenerate
 with `go test ./decoder -run CapabilityMatrix -update`.
 
+**Parity** shows each family's strongest validation as `method argmax%/cosine_min`: `full-oracle`/`real-oracle`/`weight-diff` diff against a RELEASED model; `tiny-oracle` against the family's tiny HF-seeded golden (used when no released model is small enough to diff); a `+coherent` suffix means a real model also ran qualitatively; `coherent-gen` is a real-model coherence check with no numeric oracle; `pending` is not yet recorded. Source: `testdata/parity_manifest.json`.
+
 ## gated-linear hybrid (Gated DeltaNet)
 
 > **Qwen3.5-MoE** — Qwen3.5/3.6 hybrid: Gated DeltaNet + softmax + MoE
@@ -67,7 +69,7 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 | Gemma 3 | `gemma3`, `gemma3_text` | dense | interleave | yes | dual-base | RMSNorm, sandwich | GeGLU | yes | safetensors, GGUF | text (+ vision via VL text_config) | no | pending |
 | Gemma 4 | `gemma4` | dense | interleave | yes | dual-base | RMSNorm, sandwich | GeGLU | yes | safetensors, GGUF | text | no | full-oracle 100.0%/0.99128 |
 | Llama | `llama` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF, GPTQ, AWQ | text | yes | pending |
-| Llama 4 | `llama4_text` | sparse +shared | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no | coherent-gen |
+| Llama 4 | `llama4_text` | sparse +shared | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no | tiny-oracle 100.0%/1.00000 +coherent |
 | Mellum2 | `mellum` | sparse, no-shared | interleave | yes | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no | pending |
 | Mistral | `mistral` | dense | all-layer | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no | pending |
 | Mixtral | `mixtral` | sparse, no-shared | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no | pending |

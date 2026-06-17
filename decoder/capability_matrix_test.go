@@ -285,15 +285,22 @@ type capabilityRow struct {
 
 // parityColumn renders a family's parity cell from its manifest entry: a short
 // method label + argmax%/cosine_min for validated families with a numeric oracle,
-// just the method label for qualitative gates (coherent-generation on a real model
-// too large for an oracle, e.g. Llama 4 Scout), and "pending" otherwise. The
-// methodLabel map shortens the manifest's method strings.
+// just the method label for purely qualitative gates (coherent-generation on a real
+// model with no feasible oracle), and "pending" otherwise. Method labels:
+//
+//   - full-oracle / real-oracle / weight-diff: cosine vs a RELEASED model.
+//   - tiny-oracle: cosine vs the family's tiny HF-seeded golden (every family's first
+//     gate) — the strongest NUMERIC oracle when no released model is small enough to
+//     diff (e.g. Llama 4 Scout is 109B / Q2_K-only). "tiny-golden+coherent" additionally
+//     ran a real model qualitatively, rendered with a " +coherent" suffix so the cell
+//     shows BOTH the tiny numeric proof and that real weights were exercised.
 func parityColumn(fam familyParity) string {
 	if string(fam.Status) != `"validated"` {
 		return "pending"
 	}
 	var method string
 	_ = json.Unmarshal(fam.Method, &method)
+	suffix := ""
 	switch method {
 	case "full-forward-oracle":
 		method = "full-oracle"
@@ -301,15 +308,19 @@ func parityColumn(fam familyParity) string {
 		method = "weight-diff"
 	case "real-model-oracle":
 		method = "real-oracle"
+	case "tiny-golden":
+		method = "tiny-oracle"
+	case "tiny-golden+coherent":
+		method, suffix = "tiny-oracle", " +coherent"
 	case "coherent-generation":
-		return "coherent-gen" // qualitative real-model gate (no numeric oracle — weights too large / gated)
+		return "coherent-gen" // qualitative real-model gate, no numeric oracle at all
 	}
 	var metrics struct {
 		ArgmaxPct float64 `json:"argmax_pct"`
 		CosineMin float64 `json:"cosine_min"`
 	}
 	_ = json.Unmarshal(fam.Metrics, &metrics)
-	return fmt.Sprintf("%s %.1f%%/%.5f", method, metrics.ArgmaxPct, metrics.CosineMin)
+	return fmt.Sprintf("%s %.1f%%/%.5f%s", method, metrics.ArgmaxPct, metrics.CosineMin, suffix)
 }
 
 // loadParityManifest reads testdata/parity_manifest.json for the matrix join.
@@ -496,6 +507,12 @@ func renderMarkdown(rows []capabilityRow) []byte {
 	b.WriteString("an adapter are grouped). Per-checkpoint dims (hidden size, layer/expert\n")
 	b.WriteString("counts) are intentionally excluded — they vary by checkpoint. Regenerate\n")
 	b.WriteString("with `go test ./decoder -run CapabilityMatrix -update`.\n\n")
+	b.WriteString("**Parity** shows each family's strongest validation as `method argmax%/cosine_min`: ")
+	b.WriteString("`full-oracle`/`real-oracle`/`weight-diff` diff against a RELEASED model; ")
+	b.WriteString("`tiny-oracle` against the family's tiny HF-seeded golden (used when no released ")
+	b.WriteString("model is small enough to diff); a `+coherent` suffix means a real model also ran ")
+	b.WriteString("qualitatively; `coherent-gen` is a real-model coherence check with no numeric ")
+	b.WriteString("oracle; `pending` is not yet recorded. Source: `testdata/parity_manifest.json`.\n\n")
 
 	// Group by coverage axis, preserving the sorted order.
 	axes := []string{}
