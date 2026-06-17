@@ -52,6 +52,23 @@ the real checkpoint; when model + reference won't co-reside (the 35B-A3B case),
 in the validation manifest** (below). Run per release and whenever a family's
 numerics surface changes.
 
+**T3 valid `method` values:** `full-forward-oracle`, `real-model-oracle`
+(int8-resident vs bf16 reference), `weightDiff` (+ optional layer-slice), and
+**`shared-path (via <family>)`** — see next.
+
+**Shared-path validation (alias families).** When a family's adapter *aliases*
+another's (e.g. `kimi_k2 → deepseekArchitecture`) so that it shares the same
+forward file(s) **and the same `deps_hash`** as an already-validated family, its
+numerics for the shared surface are *already proven* by that family's T3 run.
+Such a family clears T3 with `method: shared-path (via <family>)`, `validated_at`
+= the shared commit, and a reference noting that its **config-delta** (the few
+scalars/flags that differ — e.g. head/expert counts, routing default) is covered
+by its descriptor + tiny-golden tests. No separate oracle run is required. This
+is sound precisely because the staleness gate keys on `deps_hash`: if the shared
+forward path changes, *both* families go stale together, so the proxy can never
+silently drift from its source. (If an alias family ever gains its own forward
+file or a distinct `deps_hash`, it loses proxy status and needs its own T3.)
+
 ## The validation manifest is the source of truth
 
 `testdata/parity_manifest.json` records, per family: the commit it was last
@@ -66,11 +83,12 @@ numerics predate their current code.
 ## Claim discipline (the answer to "models we claim to support")
 
 A family appears as **supported** in the README / capability matrix **only if** it
-has *both* a T1 committed golden **and** a current (non-stale) T3 manifest row.
-A family with neither, or with a stale row, is labeled **experimental /
-unverified** until re-validated. The "every cell with provenance" rule from
-`benchmarks.md` extends to the support matrix: no claim without a pointer to its
-gate.
+has *both* a T1 committed golden **and** a current (non-stale) T3 manifest row —
+where a `shared-path (via <family>)` row counts as T3, since the staleness gate
+binds it to its source family's validation by shared `deps_hash`. A family with
+neither, or with a stale row, is labeled **experimental / unverified** until
+re-validated. The "every cell with provenance" rule from `benchmarks.md` extends
+to the support matrix: no claim without a pointer to its gate.
 
 ## Definition of done for a new family (the recurring muscle, completed)
 
@@ -80,8 +98,9 @@ every family after:
 
 1. Arch adapter + tensor schema (`registry.go`) and loader(s).
 2. **T1:** a tiny-synthetic checkpoint test + committed golden (CI, no asset).
-3. **T3:** a real-checkpoint parity run (or `weightDiff` if the oracle OOMs),
-   recorded in `parity_manifest.json` at the landing commit.
+3. **T3:** a real-checkpoint parity run (or `weightDiff` if the oracle OOMs, or a
+   `shared-path` row if the family aliases an already-validated adapter and shares
+   its `deps_hash`), recorded in `parity_manifest.json` at the landing commit.
 4. **T2:** the family's smallest real model added to the sweep list.
 5. README support-matrix row added **only after** 2–4 exist.
 
