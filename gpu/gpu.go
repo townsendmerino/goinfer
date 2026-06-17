@@ -186,6 +186,16 @@ type Context struct {
 	mlaAttnShader   *wgpu.ShaderModule
 	mlaAttnPipeline *wgpu.ComputePipeline
 	mlaAttnLayout   *wgpu.BindGroupLayout
+	// MLA latent store (Lever C4b): kvA-norm the rank latent + decoupled-RoPE the key,
+	// written into the latent cache at the token's position (the append).
+	mlaStoreShader   *wgpu.ShaderModule
+	mlaStorePipeline *wgpu.ComputePipeline
+	mlaStoreLayout   *wgpu.BindGroupLayout
+	// MLA per-head f32 matvec (Lever C4b): the W_UK absorb (q_nope→rank) and W_UV lift
+	// (rank→v) — block-diagonal per head, so a dedicated batched matvec, not a GEMV.
+	mlaHeadMVShader   *wgpu.ShaderModule
+	mlaHeadMVPipeline *wgpu.ComputePipeline
+	mlaHeadMVLayout   *wgpu.BindGroupLayout
 }
 
 // New initializes a GPU context: instance → adapter (high-performance
