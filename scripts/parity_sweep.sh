@@ -27,7 +27,24 @@ SHA="$(git rev-parse --short HEAD)"
 TAGREF="$(git describe --tags --always 2>/dev/null || echo "$SHA")"
 TIMEOUT="${TIMEOUT:-120m}"
 REALCKPT="${REALCKPT:-1}"
+EMIT_MANIFEST="${EMIT_MANIFEST:-0}"
 LOG="$(mktemp -t parity_sweep.XXXXXX)"
+
+# EMIT_MANIFEST=1: gates that measured against a real oracle emit a PARITY_ROW line
+# (emitParityRow, no-op without this env); after the run we grep them out of $LOG and a
+# Go merge folds them into testdata/parity_manifest.json, then re-render the matrix. Off
+# by default → the manifest is never touched. Numeric-oracle gates expected to emit
+# (gate|family), so a passing gate that produced no row (emitter missing?) is visible.
+EMIT_GATES=(
+  "TestPhi3MiniReal_gate|phi3"
+  "TestDeepseekV2LiteReal_gate|deepseek_v2"
+  "TestDeepseekMoonlightReal_gate|deepseek_v3"
+  "TestQwen35Real_gate2FullModel|qwen3_5_moe"
+)
+if [ "$EMIT_MANIFEST" = "1" ]; then
+  export GOINFER_MANIFEST_EMIT=1
+  echo "== EMIT_MANIFEST=1: real-oracle gates will record measured rows into the manifest =="
+fi
 
 echo "== parity sweep on ${SHA} (${TAGREF}) =="
 if [ -n "$(git status --porcelain)" ]; then
@@ -138,6 +155,48 @@ grep -E '^--- SKIP: Test' "$LOG" \
   | grep -iE 'parity|gate|golden' \
   | grep -vE "$(printf '%s|' "${GATES[@]##*|}" "${REALCKPT_GATES[@]##*|}" | sed 's/|$//')" \
   | sed -E 's/\(.*//; s/^--- SKIP: /   skipped: /' | sort -u || true
+
+# EMIT_MANIFEST: fold the measured rows into the manifest, re-render the matrix, and
+# report coverage. The emitter only wrote rows for gates that PASSED (t.Failed guard),
+# so this never records a failed/skipped gate. Independent of the blocker count.
+if [ "$EMIT_MANIFEST" = "1" ]; then
+  echo
+  echo "-- EMIT_MANIFEST: merging measured PARITY_ROW lines into testdata/parity_manifest.json --"
+  ROWS="$(mktemp -t parity_rows.XXXXXX)"
+  grep '^PARITY_ROW ' "$LOG" >"$ROWS" || true
+  emitted_fams="$(sed -E 's/.*"family":"([^"]+)".*/\1/' "$ROWS" | sort -u)"
+  n_rows="$(grep -c '^PARITY_ROW ' "$LOG" || true)"
+
+  if [ "$n_rows" -gt 0 ]; then
+    if go test ./decoder -run '^TestParityManifest_merge$' -merge-rows "$ROWS" -count=1 >>"$LOG" 2>&1; then
+      echo "   merged $n_rows row(s); families recorded: $(echo $emitted_fams | tr '\n' ' ')"
+      echo "-- re-rendering docs/capability-matrix.{md,json} from the manifest --"
+      go test ./decoder -run 'CapabilityMatrix|ParityManifest' -update -count=1 >>"$LOG" 2>&1 \
+        && echo "   matrix + manifest re-rendered" \
+        || { echo "   ❌ matrix -update failed (see $LOG)"; blockers=$((blockers+1)); }
+    else
+      echo "   ❌ merge failed (see $LOG)"; blockers=$((blockers+1))
+    fi
+  else
+    echo "   no PARITY_ROW lines emitted (no numeric-oracle gate ran with its asset)"
+  fi
+
+  # Coverage: a numeric-oracle gate that PASSED but emitted no row means a missing
+  # emitParityRow call — surface it. SKIP/FAIL gates are expected to emit nothing.
+  echo "-- emitter coverage (numeric-oracle gates) --"
+  for g in "${EMIT_GATES[@]}"; do
+    name="${g%%|*}"; fam="${g##*|}"
+    r="$(classify "$name")"
+    if echo "$emitted_fams" | grep -qx "$fam"; then
+      printf '   %-34s %s\n' "$name" "✅ recorded row ($fam)"
+    elif [ "$r" = "PASS" ]; then
+      printf '   %-34s %s\n' "$name" "⚠️  PASSED but emitted NO row for $fam (emitter missing?)"
+    else
+      printf '   %-34s %s\n' "$name" "— $r (no row expected)"
+    fi
+  done
+  rm -f "$ROWS"
+fi
 
 echo
 echo "== ${SHA}: $([ "$blockers" -eq 0 ] && echo 'ALL REQUIRED GATES GREEN ✅' || echo "${blockers} BLOCKER(S) ❌") =="

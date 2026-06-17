@@ -242,6 +242,10 @@ func TestQwen35Real_gate2FullModel(t *testing.T) {
 	if maxDivFrac > 0.03 {
 		t.Errorf("an argmax divergence has gap %.4f of logit range (>3%%) — not a near-tie; suspect a forward error, not quant noise", maxDivFrac)
 	}
+	// Record the measured Gate-2 metrics (no-op unless GOINFER_MANIFEST_EMIT; skipped if
+	// the asserts above failed). Full-model int8-vs-bf16 forward oracle.
+	emitParityRow(t, "qwen3_5_moe", "full-forward-oracle", "HF bf16 (Qwen3.6-35B-A3B text decoder)",
+		100*float64(argmaxHits)/float64(totalSteps), minCos, meanCos)
 }
 
 // rankOf returns the 1-based rank of index tok in v (1 = the argmax).

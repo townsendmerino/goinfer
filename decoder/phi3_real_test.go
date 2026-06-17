@@ -86,6 +86,10 @@ func TestPhi3MiniReal_gate(t *testing.T) {
 			break
 		}
 	}
+	// Record the validated metrics (no-op unless GOINFER_MANIFEST_EMIT; skipped if any
+	// check above failed). f32 vs f32 → the tightest oracle; argmax + continuation are
+	// exact when the gate passes, so argmax_pct is 100.
+	emitParityRow(t, "phi3", "full-forward-oracle", "HF f32 (Phi-3-mini-4k-instruct 3.8B)", 100.0, float64(cos), float64(cos))
 }
 
 // TestPhi3GGUFReal_gate exercises the llama.cpp phi3 GGUF loader on Phi-3-mini-4k q4: the

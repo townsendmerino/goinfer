@@ -34,8 +34,9 @@ import (
 
 // deepseekRealGate loads a real DeepSeek MLA checkpoint at int8 and matches it against an
 // HF bf16 golden (argmax + greedy continuation + cosine). wantSigmoid asserts the resolved
-// routing flavor (V3 sigmoid/noaux_tc vs V2 softmax).
-func deepseekRealGate(t *testing.T, ckpt, golden, wantArch string, wantSigmoid bool) {
+// routing flavor (V3 sigmoid/noaux_tc vs V2 softmax); reference names the oracle for the
+// emitted manifest row.
+func deepseekRealGate(t *testing.T, ckpt, golden, wantArch, reference string, wantSigmoid bool) {
 	if _, err := os.Stat(ckpt); err != nil {
 		t.Skipf("no checkpoint at %s: %v", ckpt, err)
 	}
@@ -103,6 +104,9 @@ func deepseekRealGate(t *testing.T, ckpt, golden, wantArch string, wantSigmoid b
 			break
 		}
 	}
+	// int8-resident forward vs the HF bf16 reference — a real-model oracle. argmax +
+	// continuation are exact on a passing run, so argmax_pct is 100.
+	emitParityRow(t, wantArch, "real-model-oracle", reference, 100.0, float64(cos), float64(cos))
 }
 
 // TestDeepseekV2LiteReal_gate — V2-Lite (deepseek_v2): direct-q + SOFTMAX routing + YaRN.
@@ -112,7 +116,7 @@ func TestDeepseekV2LiteReal_gate(t *testing.T) {
 	if ckpt == "" {
 		ckpt = filepath.Join(home, "models", "deepseek-v2-lite")
 	}
-	deepseekRealGate(t, ckpt, "../testdata/deepseek_v2lite_golden.json", "deepseek_v2", false)
+	deepseekRealGate(t, ckpt, "../testdata/deepseek_v2lite_golden.json", "deepseek_v2", "HF bf16 (DeepSeek-V2-Lite 15.7B; int8 resident)", false)
 }
 
 // TestDeepseekMoonlightReal_gate — Moonlight-16B (deepseek_v3): direct-q + SIGMOID
@@ -123,7 +127,7 @@ func TestDeepseekMoonlightReal_gate(t *testing.T) {
 	if ckpt == "" {
 		ckpt = filepath.Join(home, "models", "moonlight-16b")
 	}
-	deepseekRealGate(t, ckpt, "../testdata/deepseek_moonlight_golden.json", "deepseek_v3", true)
+	deepseekRealGate(t, ckpt, "../testdata/deepseek_moonlight_golden.json", "deepseek_v3", "HF bf16 (Moonlight-16B-A3B; int8 resident)", true)
 }
 
 // TestDeepseekGGUFReal_gate exercises the llama.cpp deepseek2 GGUF loader on a real

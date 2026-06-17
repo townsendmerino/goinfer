@@ -23,11 +23,21 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"flag"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
+	"time"
 )
+
+// mergeRowsPath, when set, makes TestParityManifest_merge fold the collected
+// PARITY_ROW lines (emitted by the real-checkpoint gates under GOINFER_MANIFEST_EMIT)
+// from that file into the manifest — the machine-written alternative to hand-editing
+// validation fields. Driven by scripts/parity_sweep.sh EMIT_MANIFEST=1.
+var mergeRowsPath = flag.String("merge-rows", "", "merge collected PARITY_ROW lines from this file into the parity manifest")
 
 // parityManifest mirrors testdata/parity_manifest.json. familyParity uses
 // json.RawMessage for fields the test must preserve verbatim on -update
@@ -58,6 +68,105 @@ const parityManifestPath = "../testdata/parity_manifest.json"
 // repoPath resolves a repo-root-relative path (as stored in the manifest, e.g.
 // "decoder/model.go") to a path usable from the decoder package directory.
 func repoPath(p string) string { return filepath.Join("..", p) }
+
+// rawString quotes s as a JSON string literal for the RawMessage manifest fields.
+func rawString(s string) json.RawMessage { b, _ := json.Marshal(s); return b }
+
+// shortHEAD returns the short HEAD commit SHA stamped into newly-validated rows.
+func shortHEAD(t *testing.T) string {
+	out, err := exec.Command("git", "rev-parse", "--short", "HEAD").Output()
+	if err != nil {
+		t.Fatalf("git rev-parse HEAD: %v", err)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// TestParityManifest_merge folds collected PARITY_ROW lines into the manifest (Item
+// 1d): for each row it sets that family's status=validated, fills method/reference/
+// metrics from the gate's measurement, and stamps validated_at (short HEAD SHA), date
+// (today), and machine (GOINFER_MANIFEST_MACHINE, default linux-62gb) — the same stamp
+// across one run. Other families and all uses/own are preserved; every deps_hash is
+// then recomputed (the freshness hashing) and the manifest rewritten deterministically
+// (same path as -update). An unknown family in a row is a hard error (no silent drop).
+// Skips unless -merge-rows is set, so plain `go test` never touches the manifest.
+func TestParityManifest_merge(t *testing.T) {
+	if *mergeRowsPath == "" {
+		t.Skip("set -merge-rows <file> to merge collected PARITY_ROW lines")
+	}
+	raw, err := os.ReadFile(parityManifestPath)
+	if err != nil {
+		t.Fatalf("read %s: %v", parityManifestPath, err)
+	}
+	var m parityManifest
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatalf("unmarshal %s: %v", parityManifestPath, err)
+	}
+	rowsRaw, err := os.ReadFile(*mergeRowsPath)
+	if err != nil {
+		t.Fatalf("read rows %s: %v", *mergeRowsPath, err)
+	}
+
+	sha := shortHEAD(t)
+	date := time.Now().Format("2006-01-02")
+	machine := os.Getenv("GOINFER_MANIFEST_MACHINE")
+	if machine == "" {
+		machine = "linux-62gb"
+	}
+
+	applied := []string{}
+	for _, line := range strings.Split(string(rowsRaw), "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "PARITY_ROW ") {
+			continue
+		}
+		var row struct {
+			Family    string          `json:"family"`
+			Method    string          `json:"method"`
+			Reference string          `json:"reference"`
+			Metrics   json.RawMessage `json:"metrics"`
+		}
+		if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "PARITY_ROW ")), &row); err != nil {
+			t.Fatalf("bad PARITY_ROW line %q: %v", line, err)
+		}
+		f, ok := m.Families[row.Family]
+		if !ok {
+			t.Fatalf("PARITY_ROW for unknown family %q (not in %s)", row.Family, parityManifestPath)
+		}
+		f.Status = rawString("validated")
+		f.Method = rawString(row.Method)
+		f.Reference = rawString(row.Reference)
+		f.Metrics = row.Metrics
+		f.ValidatedAt = rawString(sha)
+		f.Date = rawString(date)
+		f.Machine = rawString(machine)
+		m.Families[row.Family] = f
+		applied = append(applied, row.Family)
+	}
+	if len(applied) == 0 {
+		t.Fatalf("no PARITY_ROW lines in %s", *mergeRowsPath)
+	}
+
+	// Recompute every deps_hash (same as -update) so the freshness gate stays green.
+	for fam := range m.Families {
+		f := m.Families[fam]
+		fresh, err := freshDepsHash(&m, f)
+		if err != nil {
+			t.Fatalf("hash deps for %s: %v", fam, err)
+		}
+		f.DepsHash = fresh
+		m.Families[fam] = f
+	}
+	out, err := json.MarshalIndent(&m, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal manifest: %v", err)
+	}
+	out = append(out, '\n')
+	if err := os.WriteFile(parityManifestPath, out, 0o644); err != nil {
+		t.Fatalf("write %s: %v", parityManifestPath, err)
+	}
+	sort.Strings(applied)
+	t.Logf("merged %d row(s) into %s at %s (%s): %v", len(applied), parityManifestPath, sha, date, applied)
+}
 
 // familyDepFiles returns the sorted, deduped union of all files reachable from a
 // family's `uses` shared sets plus its `own` list.
