@@ -40,8 +40,11 @@ func TestMixtral_forwardParity(t *testing.T) {
 	if err := json.Unmarshal(raw, &g); err != nil {
 		t.Fatalf("parse golden: %v", err)
 	}
-	if _, err := os.Stat(mixtralModelDir); errors.Is(err, fs.ErrNotExist) {
-		t.Skipf("no Mixtral checkpoint at %s", mixtralModelDir)
+	// Stat the weights file, not just the dir: the checkpoint is a local-only,
+	// gitignored fixture (regenerate with scripts/pin_mixtral_tiny.py), so it's absent
+	// in CI — skip cleanly rather than letting Load fail on the missing safetensors.
+	if _, err := os.Stat(mixtralModelDir + "/model.safetensors"); errors.Is(err, fs.ErrNotExist) {
+		t.Skipf("no Mixtral checkpoint at %s — regenerate with scripts/pin_mixtral_tiny.py", mixtralModelDir)
 	}
 
 	m, err := Load(mixtralModelDir, Options{})
