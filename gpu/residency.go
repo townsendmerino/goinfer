@@ -144,9 +144,12 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 
 	// MoE (Lever C3c): Mixtral-class models route to stacked int8 experts on-device.
 	// moeOK gates the per-layer FFN build below; the params are model-level.
-	nExp, topK, moeInter, sig, normTopK, rScale, moeOK := m.MoEResidentParams()
+	nExp, topK, moeInter, shInter, sig, normTopK, shUngated, rScale, moeOK := m.MoEResidentParams()
 	if moeOK {
-		rd.rm.moe = &moeRunParams{nE: nExp, k: topK, inter: moeInter, sigmoid: sig, norm: normTopK, scale: float32(rScale)}
+		rd.rm.moe = &moeRunParams{
+			nE: nExp, k: topK, inter: moeInter, sigmoid: sig, norm: normTopK, scale: float32(rScale),
+			sharedInter: shInter, sharedUngated: shUngated,
+		}
 	}
 	// buildStacked packs one projection (gate/up/down) across all nE experts into a
 	// resident stacked int8 buffer the indexed expert GEMV reads. int8 only — int4
@@ -238,6 +241,22 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 				return fail(e)
 			}
 			keepF(rl.expDown.Release)
+			if shInter > 0 { // always-on shared expert (qwen2_moe gated / GLM ungated)
+				if rl.shGate, e = proj(&lw.SharedExpert.Gate); e != nil {
+					return fail(e)
+				}
+				if rl.shUp, e = proj(&lw.SharedExpert.Up); e != nil {
+					return fail(e)
+				}
+				if rl.shDown, e = proj(&lw.SharedExpert.Down); e != nil {
+					return fail(e)
+				}
+				if !shUngated { // qwen2_moe: the [1,hidden] sigmoid gate
+					if rl.shGateW, e = proj(&lw.SharedGate); e != nil {
+						return fail(e)
+					}
+				}
+			}
 		} else {
 			if rl.gate, e = proj(&lw.GateProj); e != nil {
 				return fail(e)

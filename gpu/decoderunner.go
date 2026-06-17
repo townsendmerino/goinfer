@@ -60,6 +60,11 @@ type runLayer struct {
 	router                  decodeWeight         // [nE, hidden] router logits
 	routerBias              *wgpu.Buffer         // [nE] selection bias (DeepSeek/GLM); nil ⇒ none
 	expGate, expUp, expDown *ResidentStackedW8A8 // nE experts stacked per projection
+
+	// Always-on shared expert (Lever C3d, qwen2_moe / GLM). nil shGate ⇒ no shared
+	// expert (Mixtral). shGateW is the [1,hidden] sigmoid gate for the qwen2_moe gated
+	// combine; nil ⇒ GLM/DeepSeek add the shared expert ungated (plain residual).
+	shGate, shUp, shDown, shGateW decodeWeight
 }
 
 type runModel struct {
@@ -78,6 +83,8 @@ type moeRunParams struct {
 	nE, k, inter  int
 	sigmoid, norm bool
 	scale         float32
+	sharedInter   int  // shared-expert FFN width (qwen2_moe / GLM); 0 ⇒ no shared expert
+	sharedUngated bool // GLM/DeepSeek add the shared expert with no sigmoid gate
 }
 
 // w8Model adapts the W8A8 ModelW into the precision-agnostic runModel.
@@ -105,6 +112,9 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 	ensures := []func() error{c.ensureGEMV, c.ensureQuantize, c.ensureLayer, c.ensureAttn, c.ensureFuse, c.ensureGEMVW4, c.ensureQKNorm}
 	if m.moe != nil {
 		ensures = append(ensures, c.ensureMoERoute, c.ensureMoEExpert)
+		if m.moe.sharedInter > 0 && !m.moe.sharedUngated {
+			ensures = append(ensures, c.ensureSharedGate)
+		}
 	}
 	for _, e := range ensures {
 		if err := e(); err != nil {
@@ -281,6 +291,12 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			add(c.moeExpertPipeline, bind(c.moeExpertLayout, aq, s.bq, as, s.bScales, dst, idx, wgt, d), gx, gy)
 		}
 	}
+	// sharedGatedCombine records the qwen2_moe gated shared-expert add: dst[n] +=
+	// sigmoid(gl[0])·src[n]. The GLM/DeepSeek ungated case uses gemvAdd instead.
+	sharedGatedCombine := func(dst, src, gl *wgpu.Buffer, n int) {
+		p := uni([]uint32{uint32(n), 0, 0, 0})
+		add(c.sharedGatePipeline, bind(c.sharedGateLayout, dst, src, gl, p), uint32(n+63)/64, 1)
+	}
 
 	r.xd = keepBuf(func() *wgpu.Buffer {
 		b, _ := c.device.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(hidden * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst | wgpu.BufferUsageCopySrc})
@@ -346,6 +362,19 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 				moeExpert(mq, ms, lw.expUp, idx, wgt, upOut, j, 0)
 				dq, ds := swigluQuant(gateOut, upOut, mp.inter)
 				moeExpert(dq, ds, lw.expDown, idx, wgt, r.xd, j, 1)
+			}
+			// Always-on shared expert (qwen2_moe / GLM): a single gated SwiGLU MLP added
+			// to the residual — sigmoid-gated (qwen2_moe) or ungated (GLM/DeepSeek).
+			if lw.shGate != nil {
+				sg, su := gemv(mq, ms, lw.shGate), gemv(mq, ms, lw.shUp)
+				sdq, sds := swigluQuant(sg, su, mp.sharedInter)
+				if lw.shGateW != nil { // qwen2_moe: scale by sigmoid(SharedGate·h)
+					sdown := gemv(sdq, sds, lw.shDown)
+					gl := gemv(mq, ms, lw.shGateW) // [1] gate logit
+					sharedGatedCombine(r.xd, sdown, gl, hidden)
+				} else { // GLM/DeepSeek: ungated residual add
+					gemvAdd(sdq, sds, lw.shDown, r.xd)
+				}
 			}
 		} else {
 			gate, up := gemv(mq, ms, lw.gate), gemv(mq, ms, lw.up)

@@ -125,6 +125,47 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid
 }
 `
 
+// Gated shared-expert combine (Lever C3d). Qwen2-MoE adds an always-on shared expert
+// scaled by a per-token sigmoid gate g = sigmoid(SharedGate·h): xd[n] += g·sharedDown[n].
+// gl is the 1-element gate logit (the SharedGate GEMV result); each thread reads it and
+// sigmoids inline. GLM/DeepSeek add the shared expert UNGATED (a plain residual add via
+// gemvAdd), so they never reach this kernel.
+const sharedGateWGSL = `
+struct D { n: u32, _a: u32, _b: u32, _c: u32 };
+@group(0) @binding(0) var<storage, read_write> dst: array<f32>;  // [n] running residual
+@group(0) @binding(1) var<storage, read>       src: array<f32>;  // [n] shared-expert down output
+@group(0) @binding(2) var<storage, read>       gl:  array<f32>;  // [1] shared-gate logit
+@group(0) @binding(3) var<uniform>             d:   D;
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x;
+    if (i >= d.n) { return; }
+    let g = 1.0 / (1.0 + exp(-gl[0]));
+    dst[i] = dst[i] + g * src[i];
+}
+`
+
+func (c *Context) ensureSharedGate() error {
+	if c.sharedGatePipeline != nil {
+		return nil
+	}
+	sh, err := c.device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{
+		Label: "sharedGate", WGSLDescriptor: &wgpu.ShaderModuleWGSLDescriptor{Code: sharedGateWGSL},
+	})
+	if err != nil {
+		return fmt.Errorf("gpu: compile sharedGate: %w", err)
+	}
+	pl, err := c.device.CreateComputePipeline(&wgpu.ComputePipelineDescriptor{
+		Label: "sharedGate", Compute: wgpu.ProgrammableStageDescriptor{Module: sh, EntryPoint: "main"},
+	})
+	if err != nil {
+		sh.Release()
+		return fmt.Errorf("gpu: pipeline sharedGate: %w", err)
+	}
+	c.sharedGateShader, c.sharedGatePipeline, c.sharedGateLayout = sh, pl, pl.GetBindGroupLayout(0)
+	return nil
+}
+
 // ResidentStackedW8A8 holds nE experts' W8A8 weight for ONE projection (gate, up, or
 // down) packed back-to-back in the gemvW8A8 layout, indexable by expert: row (e*N+n).
 type ResidentStackedW8A8 struct {

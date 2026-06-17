@@ -171,6 +171,10 @@ type Context struct {
 	moeExpertShader   *wgpu.ShaderModule
 	moeExpertPipeline *wgpu.ComputePipeline
 	moeExpertLayout   *wgpu.BindGroupLayout
+	// Gated shared-expert combine (Lever C3d, qwen2_moe): xd[n] += sigmoid(gl[0])·src[n].
+	sharedGateShader   *wgpu.ShaderModule
+	sharedGatePipeline *wgpu.ComputePipeline
+	sharedGateLayout   *wgpu.BindGroupLayout
 
 	// W4A8 decode GEMV (ensureGEMVW4, gemv_w4a8.go): int4 group-wise weights.
 	gemvW4Shader   *wgpu.ShaderModule

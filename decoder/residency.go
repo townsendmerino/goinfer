@@ -81,25 +81,27 @@ func (a *Architecture) decodeRunnerEligible() bool {
 		(a.RotaryDim == 0 || a.RotaryDim == a.HeadDim)
 }
 
-// moeResidentEligible reports whether this arch's MoE is the Mixtral-class shape the
-// GPU resident runner handles (Lever C3c): global top-k routing (NGroup ≤ 1) with NO
-// always-on shared expert (SharedIntermediateDim == 0) and NO dense prefix layers
-// (FirstKDense == 0, so every layer is the same sparse-MoE shape). GLM / qwen2_moe
-// (shared expert) are C3d; DeepSeek group-limited routing (NGroup > 1) is C4.
+// moeResidentEligible reports whether this arch's MoE is a shape the GPU resident
+// runner handles: global top-k routing (NGroup ≤ 1). C3c covers the Mixtral form (no
+// shared expert, no dense prefix); C3d adds the always-on shared expert (qwen2_moe
+// sigmoid-gated, GLM/DeepSeek ungated) and dense prefix layers (FirstKDense > 0).
+// DeepSeek group-limited routing (NGroup > 1) is still C4.
 func (a *Architecture) moeResidentEligible() bool {
 	m := a.MoE
-	return m != nil && m.SharedIntermediateDim == 0 && m.NGroup <= 1 && a.FirstKDense == 0
+	return m != nil && m.NGroup <= 1
 }
 
-// MoEResidentParams returns the Mixtral-class MoE knobs the GPU resident runner needs
+// MoEResidentParams returns the global-top-k MoE knobs the GPU resident runner needs
 // (ok=false for a dense model). Only shapes passing moeResidentEligible reach the
-// resident path, so the caller can trust these are the global-top-k, no-shared form.
-func (m *Model) MoEResidentParams() (nE, k, inter int, sigmoid, norm bool, scale float64, ok bool) {
+// resident path. sharedInter > 0 marks an always-on shared expert; sharedUngated picks
+// the GLM/DeepSeek (no sigmoid gate) combine over the qwen2_moe gated one.
+func (m *Model) MoEResidentParams() (nE, k, inter, sharedInter int, sigmoid, norm, sharedUngated bool, scale float64, ok bool) {
 	mo := m.w.arch.MoE
 	if mo == nil {
-		return 0, 0, 0, false, false, 0, false
+		return 0, 0, 0, 0, false, false, false, 0, false
 	}
-	return mo.NumExperts, mo.TopK, mo.IntermediateDim, mo.RouterSigmoid, mo.NormTopKProb, mo.RoutedScale, true
+	return mo.NumExperts, mo.TopK, mo.IntermediateDim, mo.SharedIntermediateDim,
+		mo.RouterSigmoid, mo.NormTopKProb, mo.SharedUngated, mo.RoutedScale, true
 }
 
 // RopeInvFreq returns the rotary inverse frequencies (layer 0; uniform across an
