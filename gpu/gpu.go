@@ -180,6 +180,12 @@ type Context struct {
 	gemvW4Shader   *wgpu.ShaderModule
 	gemvW4Pipeline *wgpu.ComputePipeline
 	gemvW4Layout   *wgpu.BindGroupLayout
+
+	// MLA absorb-path attention (Lever C4, mla.go): rank-space single-query attention
+	// over the compressed latent cache (DeepSeek/Kimi). wsum[h] = Σ_j softmax_j·cn_j.
+	mlaAttnShader   *wgpu.ShaderModule
+	mlaAttnPipeline *wgpu.ComputePipeline
+	mlaAttnLayout   *wgpu.BindGroupLayout
 }
 
 // New initializes a GPU context: instance → adapter (high-performance
