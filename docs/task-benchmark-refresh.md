@@ -174,6 +174,28 @@ with the Tier-2 CPU numbers so the staged-vs-CPU delta per family is visible (on
 some families/quant the glue-bound staged path may not beat tuned CPU SIMD — that's
 a finding worth having).
 
+**MEASURED (2026-06-17, RTX 2070 SUPER, `gpu.TestStagedGPU_nonDense`):** the
+"finding worth having" landed — **the staged GPU path LOSES to CPU at decode.**
+
+| family | axis | quant | cpu tok/s | staged-gpu tok/s | gpu/cpu |
+|---|---|---|---|---|---|
+| deepseek-v2-lite | MoE + MLA | W8A8 (int8) | 2.87 | 1.63 | **0.57×** |
+
+- **Why it loses:** at M=1 decode the staged path is glue/dispatch-bound (each of the
+  hundreds of tiny per-token matmuls is a dispatch + the result round-trips host↔device),
+  and aikit's tuned CPU int8 SIMD beats it. Same wall as the resident path, minus the
+  fusion — so the staged path is *strictly worse* than CPU here.
+- **Coverage caveat — most families can't even use staged GPU:** only **W8A8** (full
+  int8×int8) matmuls route to the backend. **Q8_0 GGUF** (weight-only int8, e.g. the
+  granite/nemotron checkpoints on hand) hits `linalg.MatmulBTQ8` with no backend routing →
+  CPU regardless; **int4/W4A8** likewise (Lever B). So a staged-GPU number only exists for
+  a family loaded from safetensors at `Quant:"int8int8"`.
+- **Consequence for the ladder:** Lever B (route W4A8 to the same staged path) is
+  **contradicted** — if int8 staged already loses 0.57×, int4 staged (more unpack work)
+  cannot win at decode, and its prefill case is the DP4A-blocked wash. **The only path that
+  beats CPU for these families is the *resident* fused path (Lever C)** — staged GPU is not
+  a decode win on this hardware, at any quant. Recorded so it isn't re-litigated.
+
 ---
 
 ## Methodology (applies to every tier)
