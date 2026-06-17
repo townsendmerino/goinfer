@@ -47,17 +47,17 @@
       "own": [
         "decoder/forward_deepseek.go"
       ],
-      "deps_hash": "sha256:3bec44185a73c6d1a087ae593870487578daecb9c78d8789e052941635727f48",
+      "deps_hash": "sha256:c1682adc621d90198afa36bbbe587e7ae11f908b5c58b217016b6255b54bf061",
       "status": "validated",
-      "validated_at": "b8bd8b0",
-      "date": "2026-06-16",
+      "validated_at": "06d8133",
+      "date": "2026-06-17",
       "reference": "HF bf16 (DeepSeek-V2-Lite 15.7B; int8 resident)",
       "machine": "linux-62gb",
       "method": "real-model-oracle",
       "metrics": {
         "argmax_pct": 100.0,
-        "cosine_min": 0.999016,
-        "cosine_mean": 0.999016
+        "cosine_min": 0.99924,
+        "cosine_mean": 0.99924
       }
     },
     "deepseek_v3": {
@@ -70,17 +70,17 @@
       "own": [
         "decoder/forward_deepseek.go"
       ],
-      "deps_hash": "sha256:3bec44185a73c6d1a087ae593870487578daecb9c78d8789e052941635727f48",
+      "deps_hash": "sha256:c1682adc621d90198afa36bbbe587e7ae11f908b5c58b217016b6255b54bf061",
       "status": "validated",
-      "validated_at": "72b22ca",
-      "date": "2026-06-16",
+      "validated_at": "06d8133",
+      "date": "2026-06-17",
       "reference": "HF bf16 (Moonlight-16B-A3B; int8 resident)",
       "machine": "linux-62gb",
       "method": "real-model-oracle",
       "metrics": {
         "argmax_pct": 100.0,
-        "cosine_min": 0.99954,
-        "cosine_mean": 0.99954
+        "cosine_min": 0.99951,
+        "cosine_mean": 0.99951
       }
     },
     "gemma3": {
@@ -184,7 +184,7 @@
       "own": [
         "decoder/forward_deepseek.go"
       ],
-      "deps_hash": "sha256:3bec44185a73c6d1a087ae593870487578daecb9c78d8789e052941635727f48",
+      "deps_hash": "sha256:c1682adc621d90198afa36bbbe587e7ae11f908b5c58b217016b6255b54bf061",
       "status": "pending",
       "validated_at": null,
       "date": null,

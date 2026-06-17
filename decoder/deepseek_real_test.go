@@ -28,6 +28,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
@@ -117,6 +118,65 @@ func TestDeepseekV2LiteReal_gate(t *testing.T) {
 		ckpt = filepath.Join(home, "models", "deepseek-v2-lite")
 	}
 	deepseekRealGate(t, ckpt, "../testdata/deepseek_v2lite_golden.json", "deepseek_v2", "HF bf16 (DeepSeek-V2-Lite 15.7B; int8 resident)", false)
+}
+
+// TestMLAAbsorb_speed quantifies the absorb perf win on real V2-Lite (kv_lora_rank 512,
+// 16 heads): it generates a run of tokens (so the latent cache — and thus the per-step
+// attention work — grows) and times the absorb default vs the naive reconstruct-per-key
+// path. Absorb removes the O(nKeys·H·(qkNope+vHead)·rank) per-key kv_b_proj matvec, so
+// the gap widens with context. Output is identical (TestMLAAbsorb_parity gates that);
+// this only reports tok/s + speedup.
+func TestMLAAbsorb_speed(t *testing.T) {
+	if testing.Short() {
+		t.Skip("perf measurement: skipped in -short")
+	}
+	home, _ := os.UserHomeDir()
+	ckpt := os.Getenv("GOINFER_DEEPSEEK_V2LITE")
+	if ckpt == "" {
+		ckpt = filepath.Join(home, "models", "deepseek-v2-lite")
+	}
+	if _, err := os.Stat(ckpt); err != nil {
+		t.Skipf("no checkpoint at %s: %v", ckpt, err)
+	}
+	// Time IDENTICAL work on both paths: forward a fixed 128-token sequence (the latent
+	// cache grows to 128, so the per-step attention cost — where absorb wins — ramps up).
+	// Greedy-GENERATING would diverge: absorb and naive are two equally-valid int8
+	// approximations (both ~0.999 cosine vs HF), so a near-tie argmax eventually flips and
+	// the sequences differ — expected reorder noise, not error (TestMLAAbsorb_parity gates
+	// per-step equivalence). So we feed a fixed sequence and check the last-logit cosine.
+	const n = 128
+	seq := make([]int, n)
+	for i := range seq {
+		seq[i] = 100 + (i*7919)%20000 // arbitrary but fixed, in-vocab token ids
+	}
+	time1 := func(naive bool) (time.Duration, []float32) {
+		m, err := Load(ckpt, Options{Quant: "int8int8"})
+		if err != nil {
+			t.Fatalf("load: %v", err)
+		}
+		defer m.Close()
+		mlaForceNaive = naive
+		defer func() { mlaForceNaive = false }()
+		cache := m.NewCache(n + 1)
+		var logits []float32
+		t0 := time.Now()
+		for _, id := range seq {
+			if logits, err = m.forward(id, cache); err != nil {
+				t.Fatalf("forward: %v", err)
+			}
+		}
+		return time.Since(t0), logits
+	}
+	absDT, absLogits := time1(false)
+	naiveDT, naiveLogits := time1(true)
+	cos := logitCosine(absLogits, naiveLogits)
+	if cos < 0.999 {
+		t.Errorf("absorb vs naive last-logit cosine %.6f < 0.999 over %d-tok forward", cos, n)
+	}
+	aTPS := float64(n) / absDT.Seconds()
+	nTPS := float64(n) / naiveDT.Seconds()
+	t.Logf("MLA absorb: %.2f tok/s (%v) | naive: %.2f tok/s (%v) | absorb %.2f× faster | last-logit cosine %.6f (V2-Lite, %d-tok forward)",
+		aTPS, absDT.Round(time.Millisecond), nTPS, naiveDT.Round(time.Millisecond), aTPS/nTPS, cos, n)
 }
 
 // TestDeepseekMoonlightReal_gate — Moonlight-16B (deepseek_v3): direct-q + SIGMOID

@@ -38,7 +38,7 @@
     "loaders": "safetensors, GGUF",
     "modality": "text",
     "gpu_residency_eligible": false,
-    "parity": "real-oracle 100.0%/0.99902"
+    "parity": "real-oracle 100.0%/0.99924"
   },
   {
     "name": "deepseek_v3",
@@ -58,7 +58,7 @@
     "loaders": "safetensors, GGUF",
     "modality": "text",
     "gpu_residency_eligible": false,
-    "parity": "real-oracle 100.0%/0.99954"
+    "parity": "real-oracle 100.0%/0.99951"
   },
   {
     "name": "kimi_k2",

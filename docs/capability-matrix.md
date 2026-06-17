@@ -26,8 +26,8 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 
 | Family | model_type(s) | MoE | Sliding window | QK-norm | RoPE | Norm | Activation | Tied head | Loaders | Modality | GPU-resident | Parity |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| DeepSeek-V2 | `deepseek_v2` | sparse +shared | none | no | partial | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no | real-oracle 100.0%/0.99902 |
-| DeepSeek-V3 | `deepseek_v3` | sparse +shared | none | no | partial | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no | real-oracle 100.0%/0.99954 |
+| DeepSeek-V2 | `deepseek_v2` | sparse +shared | none | no | partial | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no | real-oracle 100.0%/0.99924 |
+| DeepSeek-V3 | `deepseek_v3` | sparse +shared | none | no | partial | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no | real-oracle 100.0%/0.99951 |
 | Kimi K2 | `kimi_k2` | sparse +shared | none | no | partial | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no | pending |
 
 ## softmax-GQA

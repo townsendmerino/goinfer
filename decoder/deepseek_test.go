@@ -160,3 +160,73 @@ func TestDeepseek_textParity(t *testing.T) {
 		}
 	}
 }
+
+// TestMLAAbsorb_parity gates the MLA "absorb" perf path (the production default) against
+// the naive reconstruct-per-key reference: across a greedy continuation they must give
+// the SAME argmax at every step and a last-logit cosine ~1.0. The two are algebraically
+// identical (absorb folds kv_b_proj's W_UK into q and W_UV into the output, never
+// reconstructing per-head K/V), differing only by f32 reordering. The real-model gates
+// (V2-Lite / Moonlight) confirm absorb still matches HF on real weights.
+func TestMLAAbsorb_parity(t *testing.T) {
+	const golden = "../testdata/deepseek_tiny_text_golden.json"
+	const ckpt = "../testdata/deepseek-tiny"
+	raw, err := os.ReadFile(golden)
+	if errors.Is(err, fs.ErrNotExist) {
+		t.Skipf("no golden — run scripts/pin_deepseek_tiny.py")
+	}
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+	if _, err := os.Stat(ckpt); errors.Is(err, fs.ErrNotExist) {
+		t.Skipf("no checkpoint at %s — run scripts/pin_deepseek_tiny.py", ckpt)
+	}
+	var g struct {
+		PromptIDs []int `json:"prompt_ids"`
+		NNew      int   `json:"n_new"`
+	}
+	if err := json.Unmarshal(raw, &g); err != nil {
+		t.Fatalf("parse golden: %v", err)
+	}
+
+	// run does prompt forward + g.NNew greedy continuation steps, returning the argmax
+	// at each step and the final last-token logits — under absorb or naive MLA.
+	run := func(naive bool) ([]int, []float32) {
+		m, err := Load(ckpt, Options{})
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		defer m.Close()
+		mlaForceNaive = naive
+		defer func() { mlaForceNaive = false }()
+		cache := m.NewCache(len(g.PromptIDs) + g.NNew + 1)
+		var logits []float32
+		for _, id := range g.PromptIDs {
+			if logits, err = m.forward(id, cache); err != nil {
+				t.Fatalf("forward: %v", err)
+			}
+		}
+		seq := make([]int, 0, g.NNew)
+		for range g.NNew {
+			id := argmax(logits)
+			seq = append(seq, id)
+			if logits, err = m.forward(id, cache); err != nil {
+				t.Fatalf("continuation forward: %v", err)
+			}
+		}
+		return seq, logits
+	}
+
+	absSeq, absLogits := run(false)
+	naiveSeq, naiveLogits := run(true)
+
+	cos := logitCosine(absLogits, naiveLogits)
+	t.Logf("MLA absorb vs naive: argmax seq abs=%v naive=%v | last-logit cosine=%.6f", absSeq, naiveSeq, cos)
+	for i := range naiveSeq {
+		if absSeq[i] != naiveSeq[i] {
+			t.Fatalf("absorb/naive argmax diverged at step %d: abs=%d naive=%d", i, absSeq[i], naiveSeq[i])
+		}
+	}
+	if cos < 0.9999 {
+		t.Errorf("absorb vs naive last-logit cosine %.6f < 0.9999", cos)
+	}
+}
