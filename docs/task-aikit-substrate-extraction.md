@@ -1,27 +1,33 @@
 # Plan (goinfer): promote the weight-paging substrate to aikit
 
-> **Status: DEFERRED — written now, executed later.** This is the goinfer half of
-> a two-repo extraction (the aikit half:
-> `aikit/docs/task-mmap-residency-leaf.md`). The substrate (mmap + madvise +
-> span-residency) **just shipped** with ideas #2/#4 (`ideas-weight-memory.md`) and
-> is still settling. Refactoring it onto an aikit dependency *before* it stops
-> moving would couple goinfer to a public API that's still finding its shape.
-> **Fire only when the trigger below is met.**
+> **Status: TRIGGER FIRED (2026-06-17) — READY TO EXECUTE.** This is the goinfer
+> half of a two-repo extraction (the aikit half: the prompt
+> `prompts/aikit-mmap-residency-leaf.md` / aikit's
+> `docs/task-mmap-residency-leaf.md`). The substrate (mmap + madvise +
+> span-residency) was deferred while it settled; the conditions below are now met.
+> **aikit ships its leaf first (the prompt); then goinfer refactors onto it.**
 
-## Trigger (when to execute)
+## Trigger (FIRED — evidence)
 
-Execute when **all** hold:
+Was: execute when all three hold. Status as of 2026-06-17:
 
-1. **Phase 1 is stable** — `expertPager` / `layerPager` have gone one goinfer minor
-   without an API-shape change.
-2. **GGUF Phase 2 (#1) is resolved** — zero-copy GGUF has landed or been shelved,
-   so we know whether the span-cache must serve heap-backed *and* mapping-backed
-   spans (it changes the aikit `SpanCache` contract).
-3. **aikit has shipped the leaf** — `aikit/mmap` + `linalg.WeightMat.MappedSpan`
-   are tagged in an aikit release (the aikit plan ships them as Experimental in the
-   next minor after v1.7.3). **Never refactor against an untagged aikit.**
+1. ✅ **Phase 1 is stable.** `expertPager` / `layerPager` have gone *many* minors
+   without an API-shape change — GLM, Granite, Nemotron, DeepSeek-V2/V3, Kimi, and
+   Qwen2.5-VL all landed since without touching the pager surface. (It only *grew*
+   in the OS-mechanism direction: a new `madvise_darwin.go` — generic paging
+   mechanism, exactly what belongs in the leaf.)
+2. ✅ **GGUF Phase 2 (#1) is resolved.** The native-block path is decided D-first
+   (transparent `.giw` cache) with the native-block kind gated on the Q6_K spike —
+   so a "span" stays **mapping-backed** for the foreseeable path; the `SpanCache`
+   contract does not need to serve heap-backed K-quant blocks. Contract settled.
+3. ⏳ **aikit ships the leaf** — the one remaining gate. The aikit-side prompt
+   (`prompts/aikit-mmap-residency-leaf.md`) does this; goinfer refactors **only
+   after** `aikit/mmap` + `linalg.WeightMat.MappedSpan` are tagged. **Never refactor
+   against an untagged aikit.**
 
-At trigger time, re-read this code before refactoring — it will have moved.
+So: hand aikit its prompt now; this goinfer refactor unblocks the moment aikit tags
+the leaf. **Re-read this code before refactoring — it has moved** (e.g. the darwin
+madvise path is new since this plan was written).
 
 ## Why move it down
 
@@ -84,8 +90,8 @@ as #2/#4 get tuned:
 
 ## Dependency + gate
 
-- **Bump:** `go.mod` `require github.com/townsendmerino/aikit` from `v1.7.3` to the
-  leaf-bearing release, in the same commit as the refactor.
+- **Bump:** `go.mod` `require github.com/townsendmerino/aikit` from the current
+  `v1.8.1` to the leaf-bearing release, in the same commit as the refactor.
 - **This is a pure refactor — behavior must not change.** The existing bit-exact
   gates are the proof and must stay green **unchanged**:
   `TestMadvise_dontneedRefaultsIntact` (model-free; it migrates down to aikit with
