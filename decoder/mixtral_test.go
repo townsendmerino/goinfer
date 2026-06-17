@@ -16,7 +16,9 @@ import (
 // through the generic forward and matches the HF float32 oracle — exercising
 // the router, top-k selection, and weighted expert combine.
 //
-// Regenerate:  .venv/bin/python scripts/pin_llama_forward.py testdata/mixtral-tiny mixtral
+// Regenerate (seeded tiny MixtralForCausalLM checkpoint + golden, both reproducible):
+//
+//	~/.venv-vl/bin/python scripts/pin_mixtral_tiny.py
 const (
 	mixtralModelDir        = "../testdata/mixtral-tiny"
 	mixtralForwardGolden   = "../testdata/mixtral_forward_golden.json"
