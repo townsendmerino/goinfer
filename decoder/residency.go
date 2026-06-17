@@ -90,10 +90,35 @@ func (a *Architecture) decodeRunnerEligible() bool {
 	}
 	// Standard GQA attention: QK-norm (Qwen3/GLM/Mellum) is handled (Lever C1 — per-head
 	// RMSNorm before RoPE), q/k/v bias (Qwen2) and the (1+w) RMS offset too. Partial RoPE
-	// (GLM/Phi rotary_dim < HeadDim) is handled (Lever C5 — the rope dispatch rotates only
-	// rotaryDim/2 pairs, leaving the tail untouched). Sliding window / learned pos / output
-	// bias are not.
-	return a.SlidingWindow == 0
+	// (GLM/Phi rotary_dim < HeadDim) is handled (Lever C5). Sliding window is handled
+	// (Lever C6 — per-layer windowed attention start) PROVIDED RoPE is uniform across
+	// layers: the resident runner uses a single invFreq + scale, so the per-layer-rope
+	// interleave families (Mellum YaRN-on-global, Gemma split-base) stay on the staged path.
+	return a.ropeUniformResident()
+}
+
+// ropeUniformResident reports whether every layer shares one RoPE inverse-freq table and
+// attention scale. The resident runner binds a single invFreq buffer and one softmax
+// scale, so a model whose local/global layers differ in RoPE base or YaRN scaling (the
+// sliding/full interleave families) cannot run resident even though its block shapes
+// otherwise qualify. Single-rope families (incl. uniform sliding-window Mistral) pass.
+func (a *Architecture) ropeUniformResident() bool {
+	if len(a.ropeInvFreqLocal) != len(a.ropeInvFreqGlobal) {
+		return false
+	}
+	for i := range a.ropeInvFreqLocal {
+		if a.ropeInvFreqLocal[i] != a.ropeInvFreqGlobal[i] {
+			return false
+		}
+	}
+	gm, lm := 1.0, 1.0
+	if a.ropeScaling != nil && a.ropeScaling.mscale != 0 {
+		gm = a.ropeScaling.mscale
+	}
+	if a.ropeScalingLocal != nil && a.ropeScalingLocal.mscale != 0 {
+		lm = a.ropeScalingLocal.mscale
+	}
+	return gm == lm
 }
 
 // moeResidentEligible reports whether this arch's MoE is a shape the GPU resident
@@ -138,6 +163,19 @@ func (m *Model) MLAResidentParams() (qLoRA, kvLoRA, qkNope, qkRope, vHead int, i
 func (m *Model) MLALayerWeights(l int) (qA, qANorm, qB, qProj, kvA, kvANorm, kvB, oProj []float32) {
 	w := m.w.Layers[l].mla
 	return w.qAProj, w.qALayernorm, w.qBProj, w.qProj, w.kvAProj, w.kvALayernorm, w.kvBProj, w.oProj
+}
+
+// SlidingWindowResident returns the sliding-window size for the resident runner (0 when
+// the model is full-attention). Local (windowed) layers attend only the last `window`
+// positions; the runner computes the per-token window start (Lever C6).
+func (m *Model) SlidingWindowResident() int { return m.w.arch.SlidingWindow }
+
+// LayerIsLocalResident reports whether layer i is a sliding-window (local) layer — i.e. a
+// window is set AND the arch marks the layer non-global. Mistral is all-local; the
+// interleave families that would mix local/global are kept off the resident path by the
+// rope-uniformity guard, so in practice this is uniform per model.
+func (m *Model) LayerIsLocalResident(i int) bool {
+	return m.w.arch.SlidingWindow > 0 && !m.w.arch.isGlobalLayer(i)
 }
 
 // RopeInvFreq returns the rotary inverse frequencies (layer 0; uniform across an

@@ -71,7 +71,7 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 | Llama | `llama` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF, GPTQ, AWQ | text | yes | pending |
 | Llama 4 | `llama4_text` | sparse +shared | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no | tiny-oracle 100.0%/1.00000 +coherent |
 | Mellum2 | `mellum` | sparse, no-shared | interleave | yes | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no | pending |
-| Mistral | `mistral` | dense | all-layer | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no | pending |
+| Mistral | `mistral` | dense | all-layer | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | pending |
 | Mixtral | `mixtral` | sparse, no-shared | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | pending |
 | Phi-3 / Phi-4 | `phi3` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | full-oracle 100.0%/1.00000 |
 | Qwen2 / Qwen2.5 | `qwen2` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | pending |

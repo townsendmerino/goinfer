@@ -50,6 +50,7 @@ type runLayer struct {
 	q, k, v, o, gate, up, down                 decodeWeight
 	qBias, kBias, vBias                        *wgpu.Buffer // optional (Qwen2); nil ⇒ no bias
 	qNorm, kNorm                               *wgpu.Buffer // optional per-head QK-norm weights [hd] (Qwen3/GLM); nil ⇒ none
+	isLocal                                    bool         // sliding-window (local) attention layer (Lever C6); false ⇒ full
 
 	// MoE (Lever C3c, Mixtral-class): when isMoE, this layer's FFN is a sparse
 	// mixture of experts instead of the dense gate/up/down above. router scores all
@@ -79,14 +80,15 @@ type runLayer struct {
 }
 
 type runModel struct {
-	layers    []runLayer
-	finalNorm *wgpu.Buffer
-	lmHead    decodeWeight
-	kvF16     bool          // KCache/VCache are f16-packed (NewKVCacheF16) → use the f16 kernels
-	kvI8      bool          // KCache/VCache are int8-packed (NewKVCacheI8) + scales → int8 kernels
-	moe       *moeRunParams // non-nil ⇒ the model has MoE layers (runLayer.isMoE picks which)
-	mla       *mlaRunParams // non-nil ⇒ MLA latent attention replaces the q/k/v/o block
-	ropeHalf  int           // rotated pairs per head = rotaryDim/2 (Lever C5 partial RoPE); 0 ⇒ HeadDim/2
+	layers        []runLayer
+	finalNorm     *wgpu.Buffer
+	lmHead        decodeWeight
+	kvF16         bool          // KCache/VCache are f16-packed (NewKVCacheF16) → use the f16 kernels
+	kvI8          bool          // KCache/VCache are int8-packed (NewKVCacheI8) + scales → int8 kernels
+	moe           *moeRunParams // non-nil ⇒ the model has MoE layers (runLayer.isMoE picks which)
+	mla           *mlaRunParams // non-nil ⇒ MLA latent attention replaces the q/k/v/o block
+	ropeHalf      int           // rotated pairs per head = rotaryDim/2 (Lever C5 partial RoPE); 0 ⇒ HeadDim/2
+	slidingWindow int           // >0 ⇒ local layers attend only the last N positions (Lever C6)
 }
 
 // mlaRunParams carries the model-level MLA geometry (uniform across layers). Per-layer
@@ -259,6 +261,22 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 	r.posUnis = append(r.posUnis, posUni{buf: attnUni, gen: func(pos int) []uint32 {
 		return []uint32{uint32(nH), uint32(nKV), uint32(hd), uint32(pos + 1), uint32(start), uint32(nH / nKV), f32bits(scale), 0}
 	}})
+	// Sliding-window (local) layers attend only the last `slidingWindow` positions: the
+	// attention start advances to max(0, pos+1-W) once pos reaches the window (Lever C6),
+	// matching decoder.KVCache.WindowStart. Full layers keep attnUni (start fixed). Only
+	// built when the model windows; local layers bind this instead of attnUni.
+	attnUniLocal := attnUni
+	if m.slidingWindow > 0 {
+		w := m.slidingWindow
+		attnUniLocal = uni([]uint32{uint32(nH), uint32(nKV), uint32(hd), 0, uint32(start), uint32(nH / nKV), f32bits(scale), 0})
+		r.posUnis = append(r.posUnis, posUni{buf: attnUniLocal, gen: func(pos int) []uint32 {
+			ws := start
+			if lo := pos + 1 - w; lo > ws {
+				ws = lo
+			}
+			return []uint32{uint32(nH), uint32(nKV), uint32(hd), uint32(pos + 1), uint32(ws), uint32(nH / nKV), f32bits(scale), 0}
+		}})
+	}
 	rope := func(vec, invFreq *wgpu.Buffer) {
 		add(c.ropePipeline, bind(c.ropeLayout, vec, invFreq, ropeQUni), uint32(nH*half+63)/64, 1)
 	}
@@ -444,15 +462,19 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			ropeStore(k, lw.invFreq, lw.kCache, lw.kScale) // rotate K + append into cache
 			vStore(v, lw.vCache, lw.vScale)                // append V into cache
 			ctxv := storF(nH * hd)
+			aUni := attnUni // local (sliding-window) layers use the windowed start (Lever C6)
+			if lw.isLocal {
+				aUni = attnUniLocal
+			}
 			if m.kvI8 {
 				// attnI8 reads packed int8 K/V + the per-(pos,head) scale side buffers.
-				add(c.attnI8Pipeline, bind(c.attnI8Layout, q, lw.kCache, lw.vCache, lw.kScale, lw.vScale, ctxv, attnUni), uint32(nH), 1)
+				add(c.attnI8Pipeline, bind(c.attnI8Layout, q, lw.kCache, lw.vCache, lw.kScale, lw.vScale, ctxv, aUni), uint32(nH), 1)
 			} else {
 				attnPl, attnLy := c.attnPipeline, c.attnLayout
 				if m.kvF16 {
 					attnPl, attnLy = c.attnF16Pipeline, c.attnF16Layout
 				}
-				add(attnPl, bind(attnLy, q, lw.kCache, lw.vCache, ctxv, attnUni), uint32(nH), 1)
+				add(attnPl, bind(attnLy, q, lw.kCache, lw.vCache, ctxv, aUni), uint32(nH), 1)
 			}
 			cq, cs := quant(ctxv, nH*hd)
 			gemvAdd(cq, cs, lw.o, r.xd) // o-proj + residual into xd
