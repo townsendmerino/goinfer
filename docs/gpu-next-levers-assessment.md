@@ -297,3 +297,39 @@ kernels.
   (`NATIVE_PACKED_INTEGER_DOT_PRODUCT` → `VK_KHR_shader_integer_dot_product`);
   Chrome for Developers "WebAssembly and WebGPU enhancements for faster Web AI,
   part 2" (1.7–2.9× on 8-bit ML).
+
+---
+
+## 7. Measured progress (2026-06-16) — assumptions turned into facts
+
+Ran on this box (RTX 2070 SUPER). Updates the assessment with numbers, not estimates.
+
+### Lever 1 (DP4A) — measured BLOCKED, worse than "stale status"
+`TestSpike_capabilities` at the pinned `cogentcore/webgpu v0.23.0`: `dot4I8Packed`
+**NOT supported** (naga: "no definition in scope for identifier 'dot4I8Packed'"), and
+`go list -m -versions cogentcore/webgpu` shows **v0.23.0 is the only published tag**.
+So the wgpu DP4A merge has NOT propagated to the Go binding — there is no version to
+bump to. Lever 1 is not the "3–6 day version bump"; it needs an upstream
+`cogentcore/webgpu` release (or a fork). Re-rank: do Lever 2 first (no upstream dep).
+
+### Lever 2 — right-sized GREEN, Stage A landed
+- **Acceptance (CPU, 0.5B draft / 1.5B target, qwen2.5-coder):** 0.95 @K=1, **0.78–0.89
+  @K=4** on code prompts (~4 tok/round); ~0.56/0.36 on a prose-y prompt. Well above the
+  "kill if poor" line — supports the predicted 1.4–2.0× on code. (decoder
+  `TestSpeculativeGreedyParity_draftTarget` with the env vars.)
+- **`TruncateTo` is ~free, not a missing capability:** the resident cache is positional
+  and `Forward` sets nKeys=pos+1, so rejected positions are never read / overwritten
+  next round → documented no-op.
+- **Stage A shipped (36379c8, cacbdd1):** `ForwardN` (K runners sharing rm, recorded
+  into one command buffer → one Submit/Poll = `runBatch`) + the resident
+  `GenerateSpeculative` wiring. Gates on the 2070S: `ForwardN` == K sequential `Forward`
+  **cosine 1.000000 / maxAbsDiff 0** (the cross-row KV hazard is correctly barriered);
+  resident speculative == resident greedy **token-identical** at K∈{4,8}.
+- **Refined perf finding (corrects §1/§2's framing):** the doc's "~1 ms cgo encode" is
+  the cost of RECORDING ~420 dispatches; `runBatch` records K×420 dispatches per round,
+  so the encode glue + the on-GPU dispatch-launch glue + the weight bandwidth do **NOT**
+  amortize in Stage A — only the (K−1) Submit/Poll syncs do. **The real 1.4–2.0× lives
+  almost entirely in Stage B** (true M=K GEMM verify: ~420 dispatches over K rows,
+  weights streamed once, dispatch count not K×). Stage A is the correctness foundation
+  + parity gate that Stage B slots in behind (same `ForwardN` signature). Next: an E2E
+  tok/s number on real code prompts (kill-gate <1.3×), then Stage B.
