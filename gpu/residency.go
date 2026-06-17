@@ -142,6 +142,32 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	}
 	rd.rm = runModel{finalNorm: finalNorm, lmHead: lmHead}
 
+	// MoE (Lever C3c): Mixtral-class models route to stacked int8 experts on-device.
+	// moeOK gates the per-layer FFN build below; the params are model-level.
+	nExp, topK, moeInter, sig, normTopK, rScale, moeOK := m.MoEResidentParams()
+	if moeOK {
+		rd.rm.moe = &moeRunParams{nE: nExp, k: topK, inter: moeInter, sigmoid: sig, norm: normTopK, scale: float32(rScale)}
+	}
+	// buildStacked packs one projection (gate/up/down) across all nE experts into a
+	// resident stacked int8 buffer the indexed expert GEMV reads. int8 only — int4
+	// experts aren't stacked yet (returns an error → silent staged fallback).
+	buildStacked := func(lw *decoder.LayerWeights, get func(e int) *linalg.WeightMat) (*ResidentStackedW8A8, error) {
+		nE := len(lw.Experts)
+		w0 := get(0)
+		N, K := w0.Rows(), w0.Cols()
+		q8 := make([][]int8, nE)
+		sc := make([][]float32, nE)
+		for e := 0; e < nE; e++ {
+			w := get(e)
+			if w.Kind() != "int8" {
+				return nil, fmt.Errorf("gpu: MoE residency expert %d kind %q (int8 only)", e, w.Kind())
+			}
+			q, s, _, _ := w.Int8()
+			q8[e], sc[e] = q, s
+		}
+		return c.UploadStackedExperts(q8, sc, nE, N, K)
+	}
+
 	for i := range w.Layers {
 		lw := &w.Layers[i]
 		rl := runLayer{}
@@ -190,14 +216,38 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 		if rl.o, e = proj(&lw.OProj); e != nil {
 			return fail(e)
 		}
-		if rl.gate, e = proj(&lw.GateProj); e != nil {
-			return fail(e)
-		}
-		if rl.up, e = proj(&lw.UpProj); e != nil {
-			return fail(e)
-		}
-		if rl.down, e = proj(&lw.DownProj); e != nil {
-			return fail(e)
+		if moeOK && len(lw.Experts) > 0 { // Mixtral-class sparse MoE FFN
+			rl.isMoE = true
+			if rl.router, e = proj(&lw.Router); e != nil {
+				return fail(e)
+			}
+			if len(lw.RouterBias) > 0 {
+				if rl.routerBias, e = up32(lw.RouterBias); e != nil {
+					return fail(e)
+				}
+			}
+			if rl.expGate, e = buildStacked(lw, func(x int) *linalg.WeightMat { return &lw.Experts[x].Gate }); e != nil {
+				return fail(e)
+			}
+			keepF(rl.expGate.Release)
+			if rl.expUp, e = buildStacked(lw, func(x int) *linalg.WeightMat { return &lw.Experts[x].Up }); e != nil {
+				return fail(e)
+			}
+			keepF(rl.expUp.Release)
+			if rl.expDown, e = buildStacked(lw, func(x int) *linalg.WeightMat { return &lw.Experts[x].Down }); e != nil {
+				return fail(e)
+			}
+			keepF(rl.expDown.Release)
+		} else {
+			if rl.gate, e = proj(&lw.GateProj); e != nil {
+				return fail(e)
+			}
+			if rl.up, e = proj(&lw.UpProj); e != nil {
+				return fail(e)
+			}
+			if rl.down, e = proj(&lw.DownProj); e != nil {
+				return fail(e)
+			}
 		}
 		if len(lw.QBias) > 0 { // Qwen2 q/k/v bias
 			if rl.qBias, e = up32(lw.QBias); e != nil {

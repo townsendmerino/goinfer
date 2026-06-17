@@ -50,14 +50,34 @@ type runLayer struct {
 	q, k, v, o, gate, up, down                 decodeWeight
 	qBias, kBias, vBias                        *wgpu.Buffer // optional (Qwen2); nil ⇒ no bias
 	qNorm, kNorm                               *wgpu.Buffer // optional per-head QK-norm weights [hd] (Qwen3/GLM); nil ⇒ none
+
+	// MoE (Lever C3c, Mixtral-class): when isMoE, this layer's FFN is a sparse
+	// mixture of experts instead of the dense gate/up/down above. router scores all
+	// nE experts; the on-GPU top-k (moeRoute) writes the chosen indices/weights,
+	// then k indexed GEMVs per projection read the right expert out of the stacked
+	// buffers (expGate/expUp/expDown) and the down-combine folds the router weight.
+	isMoE                   bool
+	router                  decodeWeight         // [nE, hidden] router logits
+	routerBias              *wgpu.Buffer         // [nE] selection bias (DeepSeek/GLM); nil ⇒ none
+	expGate, expUp, expDown *ResidentStackedW8A8 // nE experts stacked per projection
 }
 
 type runModel struct {
 	layers    []runLayer
 	finalNorm *wgpu.Buffer
 	lmHead    decodeWeight
-	kvF16     bool // KCache/VCache are f16-packed (NewKVCacheF16) → use the f16 kernels
-	kvI8      bool // KCache/VCache are int8-packed (NewKVCacheI8) + scales → int8 kernels
+	kvF16     bool          // KCache/VCache are f16-packed (NewKVCacheF16) → use the f16 kernels
+	kvI8      bool          // KCache/VCache are int8-packed (NewKVCacheI8) + scales → int8 kernels
+	moe       *moeRunParams // non-nil ⇒ the model has MoE layers (runLayer.isMoE picks which)
+}
+
+// moeRunParams carries the model-level MoE selection knobs (uniform across layers):
+// the router top-k shape + scoring flavor. Per-layer data (router/expert weights,
+// selection bias) lives on runLayer. inter is the per-expert FFN width.
+type moeRunParams struct {
+	nE, k, inter  int
+	sigmoid, norm bool
+	scale         float32
 }
 
 // w8Model adapts the W8A8 ModelW into the precision-agnostic runModel.
@@ -82,7 +102,11 @@ func (c *Context) NewDecodeRunner(m ModelW, hidden, nH, nKV, hd, inter, start in
 
 // newDecodeRunner builds the persistent decode plan for either precision.
 func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start int, eps, scale float32, addOne bool) (*DecodeRunner, error) {
-	for _, e := range []func() error{c.ensureGEMV, c.ensureQuantize, c.ensureLayer, c.ensureAttn, c.ensureFuse, c.ensureGEMVW4, c.ensureQKNorm} {
+	ensures := []func() error{c.ensureGEMV, c.ensureQuantize, c.ensureLayer, c.ensureAttn, c.ensureFuse, c.ensureGEMVW4, c.ensureQKNorm}
+	if m.moe != nil {
+		ensures = append(ensures, c.ensureMoERoute, c.ensureMoEExpert)
+	}
+	for _, e := range ensures {
 		if err := e(); err != nil {
 			return nil, err
 		}
@@ -236,11 +260,40 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		p := uni([]uint32{uint32(heads), uint32(hd), f32bits(eps), boolU32(addOne)})
 		add(c.qkNormPipeline, bind(c.qkNormLayout, vec, weight, p), uint32(heads), 1)
 	}
+	// MoE op builders (Lever C3c). moeRoute records the on-GPU router top-k SELECTION
+	// (logits[nE] + optional bias → idx[k], wgt[k]); the p uniform is pos-independent
+	// (model-level shape), so it's a plain uni. nE is tiny ⇒ one single-lane workgroup.
+	var moeRoute func(logits, bias, idx, wgt *wgpu.Buffer, hasBias bool)
+	var moeExpert func(aq, as *wgpu.Buffer, s *ResidentStackedW8A8, idx, wgt, dst *wgpu.Buffer, slot, mode int)
+	if m.moe != nil {
+		mp := m.moe
+		moeRoute = func(logits, bias, idx, wgt *wgpu.Buffer, hasBias bool) {
+			p := uni([]uint32{uint32(mp.nE), uint32(mp.k), boolU32(mp.sigmoid), boolU32(mp.norm), f32bits(mp.scale), boolU32(hasBias), 0, 0})
+			add(c.moeRoutePipeline, bind(c.moeRouteLayout, logits, bias, idx, wgt, p), 1, 1)
+		}
+		// moeExpert records one indexed sparse-expert GEMV: dst[n] = expert[idx[slot]]·aq
+		// (mode 0, overwrite gate/up scratch) or dst[n] += wgt[slot]·(expert[idx[slot]]·aq)
+		// (mode 1, the down-projection combine into the running residual). The expert is
+		// chosen at run time from idx[slot] — a fixed dispatch, no host round-trip.
+		moeExpert = func(aq, as *wgpu.Buffer, s *ResidentStackedW8A8, idx, wgt, dst *wgpu.Buffer, slot, mode int) {
+			d := uni([]uint32{uint32(s.kp), uint32(s.rows), uint32(slot), uint32(mode)})
+			gx, gy := gemvGrid(s.rows)
+			add(c.moeExpertPipeline, bind(c.moeExpertLayout, aq, s.bq, as, s.bScales, dst, idx, wgt, d), gx, gy)
+		}
+	}
 
 	r.xd = keepBuf(func() *wgpu.Buffer {
 		b, _ := c.device.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(hidden * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst | wgpu.BufferUsageCopySrc})
 		return b
 	}())
+
+	// A bound (all-zero) bias buffer for MoE layers without a selection bias
+	// (Mixtral softmax routing): the route kernel binds it but hasBias=0 keeps it
+	// out of the math. CreateBuffer zero-inits, so no upload needed.
+	var moeZeroBias *wgpu.Buffer
+	if m.moe != nil {
+		moeZeroBias = storF(m.moe.nE)
+	}
 
 	for i := range m.layers {
 		lw := &m.layers[i]
@@ -272,9 +325,33 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		cq, cs := quant(ctxv, nH*hd)
 		gemvAdd(cq, cs, lw.o, r.xd) // o-proj + residual into xd
 		mq, ms := rmsQuant(r.xd, lw.mlpNorm, hidden)
-		gate, up := gemv(mq, ms, lw.gate), gemv(mq, ms, lw.up)
-		dq, ds := swigluQuant(gate, up, inter)
-		gemvAdd(dq, ds, lw.down, r.xd) // down-proj + residual into xd
+		if lw.isMoE {
+			// Sparse MoE FFN: router top-k on the GPU, then for each chosen slot run the
+			// indexed gate/up GEMVs (overwrite scratch), fuse SwiGLU→quantize, and the
+			// indexed down GEMV accumulates wgt[slot]·expert(h) straight into the residual
+			// xd. The gate/up/dq scratch is reused across slots — WebGPU's storage
+			// barriers serialize the dependent dispatches, so slot j's down read precedes
+			// slot j+1's gate write. xd already holds the post-attention residual.
+			mp := m.moe
+			logits := gemv(mq, ms, lw.router)
+			idx, wgt := storF(mp.k), storF(mp.k)
+			bias, hasBias := moeZeroBias, false
+			if lw.routerBias != nil {
+				bias, hasBias = lw.routerBias, true
+			}
+			moeRoute(logits, bias, idx, wgt, hasBias)
+			gateOut, upOut := storF(mp.inter), storF(mp.inter)
+			for j := 0; j < mp.k; j++ {
+				moeExpert(mq, ms, lw.expGate, idx, wgt, gateOut, j, 0)
+				moeExpert(mq, ms, lw.expUp, idx, wgt, upOut, j, 0)
+				dq, ds := swigluQuant(gateOut, upOut, mp.inter)
+				moeExpert(dq, ds, lw.expDown, idx, wgt, r.xd, j, 1)
+			}
+		} else {
+			gate, up := gemv(mq, ms, lw.gate), gemv(mq, ms, lw.up)
+			dq, ds := swigluQuant(gate, up, inter)
+			gemvAdd(dq, ds, lw.down, r.xd) // down-proj + residual into xd
+		}
 	}
 	fq, fs := rmsQuant(r.xd, m.finalNorm, hidden)
 	logits := gemv(fq, fs, m.lmHead)

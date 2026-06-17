@@ -70,11 +70,36 @@ func (m *Model) DecodeRunnerEligible() bool {
 func (a *Architecture) decodeRunnerEligible() bool {
 	// QK-norm (Qwen3/GLM/Mellum) is handled by the resident runner (Lever C: per-head
 	// RMSNorm of q/k before RoPE — gpu/qknorm.go), so it no longer blocks eligibility.
-	return a.MoE == nil && a.gemma4 == nil && a.qwen35 == nil &&
+	// MoE is handled for the Mixtral-class shape only (Lever C3c — see
+	// moeResidentEligible); the hybrid/MLA/Llama-4 families keep their own forward.
+	return (a.MoE == nil || a.moeResidentEligible()) &&
+		a.gemma4 == nil && a.qwen35 == nil &&
+		a.granite == nil && a.nemotron == nil && a.mla == nil && a.llama4 == nil &&
 		!a.NonGatedMLP && !a.LearnedPosEmbed && !a.OutBias &&
 		a.NormPlacement == NormPre2 && a.SlidingWindow == 0 &&
 		a.FinalLogitSoftcap == 0 && a.AttnLogitSoftcap == 0 &&
 		(a.RotaryDim == 0 || a.RotaryDim == a.HeadDim)
+}
+
+// moeResidentEligible reports whether this arch's MoE is the Mixtral-class shape the
+// GPU resident runner handles (Lever C3c): global top-k routing (NGroup ≤ 1) with NO
+// always-on shared expert (SharedIntermediateDim == 0) and NO dense prefix layers
+// (FirstKDense == 0, so every layer is the same sparse-MoE shape). GLM / qwen2_moe
+// (shared expert) are C3d; DeepSeek group-limited routing (NGroup > 1) is C4.
+func (a *Architecture) moeResidentEligible() bool {
+	m := a.MoE
+	return m != nil && m.SharedIntermediateDim == 0 && m.NGroup <= 1 && a.FirstKDense == 0
+}
+
+// MoEResidentParams returns the Mixtral-class MoE knobs the GPU resident runner needs
+// (ok=false for a dense model). Only shapes passing moeResidentEligible reach the
+// resident path, so the caller can trust these are the global-top-k, no-shared form.
+func (m *Model) MoEResidentParams() (nE, k, inter int, sigmoid, norm bool, scale float64, ok bool) {
+	mo := m.w.arch.MoE
+	if mo == nil {
+		return 0, 0, 0, false, false, 0, false
+	}
+	return mo.NumExperts, mo.TopK, mo.IntermediateDim, mo.RouterSigmoid, mo.NormTopKProb, mo.RoutedScale, true
 }
 
 // RopeInvFreq returns the rotary inverse frequencies (layer 0; uniform across an
