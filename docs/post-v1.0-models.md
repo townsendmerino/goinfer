@@ -39,6 +39,14 @@ matter more than a sixth/seventh family and should land **before** this backlog:
   near-free alias on `deepseekArchitecture` with scalar deltas + the
   `scoring_func`-keying check (the Kimi gotcha). Treat new MLA models as alias-first.
 
+- **Watch — Kimi K3** (reportedly in development, ~3–4T params, billed as "the next
+  major architecture jump"). *Not* a Kimi K2.x point release — K2 through K2.7-Code
+  are the same DeepSeek-V3 arch and already supported via `kimi_k2` (no work). K3 is
+  the one that may bring a genuinely new shape (or new config quirks), so unlike the
+  K2.x line it could need real adapter work. **Default assumption: DeepSeek-V3-shaped
+  (alias-first) until proven otherwise — re-check the arch when weights drop**; only
+  if attention/MoE/routing diverged from V3 does it leave alias-first territory.
+
 ### Tier B — cheap dense/MoE on existing rails (popularity filler)
 
 - **Phi (Phi-4 / Phi-MoE)** — dense + MoE, no new primitive; popular for the

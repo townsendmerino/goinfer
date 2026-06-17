@@ -66,7 +66,7 @@
       "kimi_k2"
     ],
     "display_name": "Kimi K2",
-    "description": "Moonshot Kimi K2 (DeepseekV3 arch: MLA + DeepSeekMoE)",
+    "description": "Moonshot Kimi K2 / K2.5 / K2.6 / K2.7-Code (DeepseekV3 arch: MLA + DeepSeekMoE — same arch across the K2.x line)",
     "coverage_axis": "latent-KV (MLA)",
     "moe": "sparse +shared",
     "sliding_window": "none",

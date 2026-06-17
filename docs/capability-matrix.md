@@ -24,7 +24,7 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 
 > **DeepSeek-V3** — DeepSeek-V3: MLA + DeepSeekMoE (sigmoid + group-limited routing)
 
-> **Kimi K2** — Moonshot Kimi K2 (DeepseekV3 arch: MLA + DeepSeekMoE)
+> **Kimi K2** — Moonshot Kimi K2 / K2.5 / K2.6 / K2.7-Code (DeepseekV3 arch: MLA + DeepSeekMoE — same arch across the K2.x line)
 
 | Family | model_type(s) | MoE | Sliding window | QK-norm | RoPE | Norm | Activation | Tied head | Loaders | Modality | GPU-resident | Parity |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
