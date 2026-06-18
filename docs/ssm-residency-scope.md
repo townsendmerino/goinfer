@@ -123,6 +123,36 @@ trivial Granite multipliers. Bigger than a single C-lever, smaller than the MLA 
   families stay gated); confirm existing resident models bit-unchanged.
 - **P7** measure realized ms/token + tok/s vs 300 ms CPU; full `-tags gpu` suite.
 
+## Build status (P0→P7)
+
+The SSM decode **compute core is built and fully parity-gated**; the runner integration is the
+remaining funded work. Commits: `5a15e9f` (P3), `da584a0` (P2+P4), `66ec747` (P5a).
+
+| phase | status | parity gate |
+|---|---|---|
+| P0 measure prize | ✓ | CPU 300 ms/tok, staged 498 ms/tok (this doc) |
+| P1 characterize | ✓ | recurrence verdict + dispatch census (this doc) |
+| P2 `mambaConv` | ✓ DONE | `TestMambaConv_parity` cosine 1.0 / 64 tok (incl. zero-pad) |
+| P3 `mambaSSM` (spine) | ✓ DONE | `TestMambaSSM_driftParity` cosine 1.0, maxAbs ~5–10e-6 **non-growing @ 1/16/256/1k/2k tok** |
+| P4 `mambaGatedNorm` | ✓ DONE | `TestMambaGatedNorm_parity` cosine 1.0 (nGroups 1 & 8) |
+| P5a one-layer compose | ✓ DONE | `TestMambaLayer_compose` — conv→ssm→gatedNorm in ONE pass + persistent state, cosine 1.0 / 300 tok |
+| P5b runner integration | ☐ TODO | wire SSM step + state buffers into the DecodeRunner plan; interleave resident attn/MoE for granite; whole-model resident-vs-CPU parity |
+| P6 eligibility flip | ☐ TODO | guarded admit of granite/nemotron after whole-model parity |
+| P7 measure + suite | ☐ TODO | granite-tiny resident ms/tok vs 300/498; full suite no-regress |
+
+**De-risking result:** the riskiest piece — the f32 selective-state recurrence over long
+sequences — holds with **zero drift to 2k tokens** (the stable dA∈(0,1) keeps error bounded),
+and the three kernels chain correctly in a single command buffer with persistent state. The
+feasibility verdict is now empirically backed, not just argued.
+
+**Remaining P5b work (the integration, ~the size of the MLA port's wiring):** `runLayer` gains
+mamba weights + `{convWin, ssm}` state-buffer handles + an `isMamba` flag; `BuildResident`
+(gpu/residency.go) loads granite's in/out_proj as W8A8 + conv/aLog/dtBias/D/normW as f32 and
+allocates the build-once state; the per-layer plan branches mixer-kind (SSM dispatch set vs the
+existing resident attention) with the C3 MoE FFN and the four Granite multipliers; then
+whole-model resident-vs-CPU parity before the eligibility flip. The compute kernels it needs are
+done and gated; this phase is plumbing + a whole-model parity pass, no new algorithmic risk.
+
 ## Go / No-Go
 
 **GO — fund the build.** The reframe holds: Mamba *decode* is a resident-able bounded recurrence,
