@@ -35,6 +35,194 @@ func cosSim(a, b []float32) (cos, maxAbs float64) {
 	return dot / (math.Sqrt(na) * math.Sqrt(nb)), maxAbs
 }
 
+func siluRef(x float32) float32 { x64 := float64(x); return float32(x64 / (1 + math.Exp(-x64))) }
+
+// TestMambaGatedNorm_parity gates gated = y·silu(z) + grouped RMSNorm for both nGroups=1
+// (Granite) and nGroups>1 (Nemotron-H) vs mamba2.go step 5 / gatedRMSNormGrouped.
+func TestMambaGatedNorm_parity(t *testing.T) {
+	ctx := newOrSkipHW(t)
+	defer ctx.Close()
+	if err := ctx.ensureMambaGNorm(); err != nil {
+		t.Fatal(err)
+	}
+	const dInner = 2048
+	eps := float32(1e-5)
+	for _, nGroups := range []int{1, 8} {
+		groupSize := dInner / nGroups
+		rng := rand.New(rand.NewSource(int64(nGroups) + 11))
+		y := make([]float32, dInner)
+		z := make([]float32, dInner)
+		w := make([]float32, dInner)
+		for i := 0; i < dInner; i++ {
+			y[i] = float32(rng.NormFloat64())
+			z[i] = float32(rng.NormFloat64())
+			w[i] = float32(rng.NormFloat64()*0.2 + 1)
+		}
+		mk := func(c []float32, u wgpu.BufferUsage) *wgpu.Buffer {
+			b, _ := ctx.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(c), Usage: u})
+			return b
+		}
+		yB, zB, wB := mk(y, wgpu.BufferUsageStorage), mk(z, wgpu.BufferUsageStorage), mk(w, wgpu.BufferUsageStorage)
+		gB, _ := ctx.device.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(dInner * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
+		stag, _ := ctx.device.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(dInner * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
+		dims := mk([]float32{}, wgpu.BufferUsageUniform)
+		dims.Release()
+		dims, _ = ctx.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes([]uint32{dInner, uint32(nGroups), uint32(groupSize), math.Float32bits(eps)}), Usage: wgpu.BufferUsageUniform})
+		bg, _ := ctx.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: ctx.mambaGNormLayout, Entries: []wgpu.BindGroupEntry{
+			{Binding: 0, Buffer: yB, Size: yB.GetSize()}, {Binding: 1, Buffer: zB, Size: zB.GetSize()},
+			{Binding: 2, Buffer: wB, Size: wB.GetSize()}, {Binding: 3, Buffer: gB, Size: gB.GetSize()}, {Binding: 4, Buffer: dims, Size: dims.GetSize()},
+		}})
+		enc, _ := ctx.device.CreateCommandEncoder(nil)
+		pass := enc.BeginComputePass(nil)
+		pass.SetPipeline(ctx.mambaGNormPipeline)
+		pass.SetBindGroup(0, bg, nil)
+		pass.DispatchWorkgroups(uint32(nGroups), 1, 1)
+		pass.End()
+		pass.Release()
+		enc.CopyBufferToBuffer(gB, 0, stag, 0, uint64(dInner*4))
+		cmd, _ := enc.Finish(nil)
+		ctx.queue.Submit(cmd)
+		cmd.Release()
+		enc.Release()
+		st := wgpu.BufferMapAsyncStatusUnknown
+		stag.MapAsync(wgpu.MapModeRead, 0, uint64(dInner*4), func(s wgpu.BufferMapAsyncStatus) { st = s })
+		ctx.device.Poll(true, nil)
+		if st != wgpu.BufferMapAsyncStatusSuccess {
+			t.Fatalf("map: %v", st)
+		}
+		got := make([]float32, dInner)
+		copy(got, wgpu.FromBytes[float32](stag.GetMappedRange(0, uint(dInner*4))))
+		stag.Unmap()
+		// golden
+		gold := make([]float32, dInner)
+		for i := 0; i < dInner; i++ {
+			gold[i] = y[i] * siluRef(z[i])
+		}
+		for g := 0; g < nGroups; g++ {
+			var ss float64
+			for j := 0; j < groupSize; j++ {
+				v := gold[g*groupSize+j]
+				ss += float64(v) * float64(v)
+			}
+			inv := float32(1 / math.Sqrt(ss/float64(groupSize)+float64(eps)))
+			for j := 0; j < groupSize; j++ {
+				gold[g*groupSize+j] = w[g*groupSize+j] * gold[g*groupSize+j] * inv
+			}
+		}
+		cos, maxAbs := cosSim(gold, got)
+		t.Logf("  nGroups=%d: cosine=%.8f maxAbs=%.3g", nGroups, cos, maxAbs)
+		if cos < 0.99999 || maxAbs > 1e-3 {
+			t.Errorf("gatedNorm nGroups=%d drift: cosine=%.8f maxAbs=%.3g", nGroups, cos, maxAbs)
+		}
+		for _, b := range []*wgpu.Buffer{yB, zB, wB, gB, stag, dims} {
+			b.Release()
+		}
+		bg.Release()
+	}
+}
+
+// TestMambaConv_parity gates the depthwise causal conv + ring window over 64 tokens vs the
+// mamba2.go step-2 reference (incl. the early-token zero-pad), checked every token.
+func TestMambaConv_parity(t *testing.T) {
+	ctx := newOrSkipHW(t)
+	defer ctx.Close()
+	if err := ctx.ensureMambaConv(); err != nil {
+		t.Fatal(err)
+	}
+	const convDim, K = 1024, 4
+	rng := rand.New(rand.NewSource(3))
+	convW := make([]float32, convDim*K)
+	convB := make([]float32, convDim)
+	for i := range convW {
+		convW[i] = float32(rng.NormFloat64() * 0.4)
+	}
+	for i := range convB {
+		convB[i] = float32(rng.NormFloat64() * 0.2)
+	}
+
+	mk := func(label string, n int, u wgpu.BufferUsage) *wgpu.Buffer {
+		b, _ := ctx.device.CreateBuffer(&wgpu.BufferDescriptor{Label: label, Size: uint64(n * 4), Usage: u})
+		return b
+	}
+	xBuf := mk("xBC", convDim, wgpu.BufferUsageStorage|wgpu.BufferUsageCopyDst)
+	cwBuf, _ := ctx.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "convW", Contents: wgpu.ToBytes(convW), Usage: wgpu.BufferUsageStorage})
+	cbBuf, _ := ctx.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "convB", Contents: wgpu.ToBytes(convB), Usage: wgpu.BufferUsageStorage})
+	winBuf := mk("win", (K-1)*convDim, wgpu.BufferUsageStorage|wgpu.BufferUsageCopyDst)
+	convBuf := mk("conv", convDim, wgpu.BufferUsageStorage|wgpu.BufferUsageCopySrc)
+	stag := mk("stag", convDim, wgpu.BufferUsageMapRead|wgpu.BufferUsageCopyDst)
+	ctx.queue.WriteBuffer(winBuf, 0, wgpu.ToBytes(make([]float32, (K-1)*convDim))) // zero ring
+	dims, _ := ctx.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "dims", Contents: wgpu.ToBytes([]uint32{convDim, K, 0, 0}), Usage: wgpu.BufferUsageUniform})
+	bg, _ := ctx.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: ctx.mambaConvLayout, Entries: []wgpu.BindGroupEntry{
+		{Binding: 0, Buffer: xBuf, Size: xBuf.GetSize()}, {Binding: 1, Buffer: cwBuf, Size: cwBuf.GetSize()},
+		{Binding: 2, Buffer: cbBuf, Size: cbBuf.GetSize()}, {Binding: 3, Buffer: winBuf, Size: winBuf.GetSize()},
+		{Binding: 4, Buffer: convBuf, Size: convBuf.GetSize()}, {Binding: 5, Buffer: dims, Size: dims.GetSize()},
+	}})
+	defer func() {
+		for _, b := range []*wgpu.Buffer{xBuf, cwBuf, cbBuf, winBuf, convBuf, stag, dims} {
+			b.Release()
+		}
+		bg.Release()
+	}()
+	gpuConv := func(xBC []float32) []float32 {
+		ctx.queue.WriteBuffer(xBuf, 0, wgpu.ToBytes(xBC))
+		enc, _ := ctx.device.CreateCommandEncoder(nil)
+		pass := enc.BeginComputePass(nil)
+		pass.SetPipeline(ctx.mambaConvPipeline)
+		pass.SetBindGroup(0, bg, nil)
+		pass.DispatchWorkgroups((convDim+63)/64, 1, 1)
+		pass.End()
+		pass.Release()
+		enc.CopyBufferToBuffer(convBuf, 0, stag, 0, uint64(convDim*4))
+		cmd, _ := enc.Finish(nil)
+		ctx.queue.Submit(cmd)
+		cmd.Release()
+		enc.Release()
+		st := wgpu.BufferMapAsyncStatusUnknown
+		stag.MapAsync(wgpu.MapModeRead, 0, uint64(convDim*4), func(s wgpu.BufferMapAsyncStatus) { st = s })
+		ctx.device.Poll(true, nil)
+		if st != wgpu.BufferMapAsyncStatusSuccess {
+			t.Fatalf("map: %v", st)
+		}
+		out := make([]float32, convDim)
+		copy(out, wgpu.FromBytes[float32](stag.GetMappedRange(0, uint(convDim*4))))
+		stag.Unmap()
+		return out
+	}
+	var win [][]float32
+	golden := func(xBC []float32) []float32 {
+		conv := make([]float32, convDim)
+		for c := 0; c < convDim; c++ {
+			s := convB[c] + convW[c*K+(K-1)]*xBC[c]
+			for j := 0; j < K-1; j++ {
+				if idx := len(win) - (K - 1) + j; idx >= 0 {
+					s += convW[c*K+j] * win[idx][c]
+				}
+			}
+			conv[c] = siluRef(s)
+		}
+		win = append(win, append([]float32(nil), xBC...))
+		if len(win) > K-1 {
+			win = win[len(win)-(K-1):]
+		}
+		return conv
+	}
+	worst := 1.0
+	for tok := 1; tok <= 64; tok++ {
+		xBC := make([]float32, convDim)
+		for i := range xBC {
+			xBC[i] = float32(rng.NormFloat64())
+		}
+		cos, maxAbs := cosSim(golden(xBC), gpuConv(xBC))
+		if cos < worst {
+			worst = cos
+		}
+		if cos < 0.99999 || maxAbs > 1e-3 {
+			t.Errorf("conv tok %d: cosine=%.8f maxAbs=%.3g", tok, cos, maxAbs)
+		}
+	}
+	t.Logf("mambaConv worst cosine over 64 tokens: %.8f", worst)
+}
+
 // TestMambaSSM_driftParity is the SPINE gate: the resident selective-SSM state update vs
 // the f32 mamba2Step recurrence, run token-by-token with COMPOUNDING state, checked at
 // 1/16/256/1k/2k tokens. A pass requires parity that does not DRIFT long (the stable
