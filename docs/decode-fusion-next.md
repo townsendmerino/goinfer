@@ -20,24 +20,32 @@ The gain was smaller than the naive ceiling because **q/k/v-finalize are INDEPEN
 **dependent** dispatches. So the rule for future increments: **fuse dependent links,
 not independent ones.**
 
-## Deferred — Increments 2 & 3 (gated on a real-model decode bench)
+## The real-model bench (shipped, `901b8aa`)
 
-Both are *dependent*-chain fusions (bigger per-dispatch payoff than Increment 1), but
-they only fire for specific families and **the synthetic throughput bench
-(`TestDecodeToken_throughput`) has neither**, so they can't be measured there:
+`TestDecodeRealModel_throughput` loads a real GGUF model GPU-resident (int8) and
+measures steady-state inter-token rate (best-of-rounds, prefill excluded). Defaults to
+Qwen2.5-coder-1.5B; `GOINFER_DECODE_GGUF` overrides. This is the gate the family-specific
+folds (2 & 3) needed: the synthetic `TestDecodeToken_throughput` dispatches no bias /
+qk-norm, so it can't see them. **Baseline (Increment 1 in): 102.2 tok/s.**
 
-- **Increment 2 — q/k/v bias → GEMV epilogue.** The `biasAdd` dispatch depends on the
-  q/k/v GEMV output; fold it into the GEMV epilogue the way `gemvAdd` folds the
-  residual. Removes a barrier-bound dispatch ×3/layer. Benefits **Qwen2/Qwen2.5**
-  (which have qkv bias); no effect on bias-free models.
+## Done — Increment 2 (shipped, `38babc4`)
+
+q/k/v bias → GEMV epilogue: `gemvW8A8Bias` adds a 7th binding and computes
+`dst[n] = scale·acc + bias[n]`, deleting the three standalone `biasAdd` dispatches/layer
+(84/token on the 28-layer 1.5B) for **Qwen2/Qwen2.5** bias models. A *dependent*-chain
+fusion (biasAdd reads the GEMV output) → removes barrier cost. W8A8 only; W4A8+bias falls
+back to gemv+biasAdd. Bit-exact: `TestResidentForwardN_parity` (Qwen2.5-coder-0.5B)
+cosine=1.0, maxAbsDiff=0. **Measured: 102.2 → 104.5 tok/s (+2.3%)** — beats Increment 1's
++1.5%, confirming dependent folds pay more than independent ones.
+
+## Deferred — Increment 3 (no fitting model on this box)
+
 - **Increment 3 — QK-norm → fold into rope/GEMV.** `qkNorm` depends on the GEMV output
-  and precedes rope. Benefits **Qwen3 / GLM / Mellum**.
-
-**Decision (do not start until there is a real-model decode bench):** these are gated
-on a tok/s benchmark that loads an actual bias / qk-norm model (e.g. Qwen2.5-1.5B GGUF,
-Qwen3-1.7B), so the family-specific saving is *measured*, not assumed. Each stays
-bit-exact-gated by the existing parity tests. Until that bench exists, they are
-optional family-specific polish, not a headline lever.
+  and precedes rope; benefits **Qwen3 / GLM / Mellum**. Same dependent-fold shape as
+  Increment 2, so it should pay similarly. **Blocked on measurement, not design:** the
+  only qk-norm models here are Qwen3-35B-A3B MoE (won't fit 8 GB) and GLM-4.5-Air (106B);
+  no small dense qk-norm model is available to run the real-model bench against. Implement
+  + measure when a Qwen3-dense (e.g. 1.7B/4B) or Mellum GGUF lands on a box that fits it.
 
 ## Hard ceiling
 
