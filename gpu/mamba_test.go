@@ -223,6 +223,193 @@ func TestMambaConv_parity(t *testing.T) {
 	t.Logf("mambaConv worst cosine over 64 tokens: %.8f", worst)
 }
 
+// TestMambaLayer_compose chains conv → ssm → gatedNorm in ONE compute pass with persistent
+// {win, ssm} state (the resident single-pass model), and parity-gates the composed mixer
+// output vs the CPU reference (mamba2.go steps 2-5) over 300 tokens — the "one SSM layer
+// correct" milestone before wiring the full interleaved model. (in/out_proj are linear GEMVs,
+// validated separately; here random xBC/z/dt feed the new chain directly.)
+func TestMambaLayer_compose(t *testing.T) {
+	ctx := newOrSkipHW(t)
+	defer ctx.Close()
+	for _, e := range []func() error{ctx.ensureMambaConv, ctx.ensureMambaSSM, ctx.ensureMambaGNorm} {
+		if err := e(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const nHeads, P, N, nGroups, K = 8, 64, 128, 2, 4
+	const repeat = nHeads / nGroups
+	const dInner = nHeads * P
+	const gSize = nGroups * N
+	const convDim = dInner + 2*gSize
+	const normGroups = 1
+	eps := float32(1e-5)
+	rng := rand.New(rand.NewSource(5))
+	convW := make([]float32, convDim*K)
+	convB := make([]float32, convDim)
+	headP := make([]float32, nHeads*3)
+	aLog := make([]float32, nHeads)
+	dtBias := make([]float32, nHeads)
+	dW := make([]float32, nHeads)
+	normW := make([]float32, dInner)
+	for i := range convW {
+		convW[i] = float32(rng.NormFloat64() * 0.4)
+	}
+	for i := range convB {
+		convB[i] = float32(rng.NormFloat64() * 0.2)
+	}
+	for h := 0; h < nHeads; h++ {
+		aLog[h], dtBias[h], dW[h] = float32(rng.NormFloat64()*0.5-1), float32(rng.NormFloat64()*0.3), float32(rng.NormFloat64()*0.5)
+		headP[h*3], headP[h*3+1], headP[h*3+2] = float32(-math.Exp(float64(aLog[h]))), dtBias[h], dW[h]
+	}
+	for i := range normW {
+		normW[i] = float32(rng.NormFloat64()*0.2 + 1)
+	}
+	dev := ctx.device
+	stor := wgpu.BufferUsageStorage
+	mkW := func(c []float32) *wgpu.Buffer {
+		b, _ := dev.CreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(c), Usage: stor})
+		return b
+	}
+	mkRW := func(n int, extra wgpu.BufferUsage) *wgpu.Buffer {
+		b, _ := dev.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(n * 4), Usage: stor | extra})
+		return b
+	}
+	uni := func(v []uint32) *wgpu.Buffer {
+		b, _ := dev.CreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(v), Usage: wgpu.BufferUsageUniform})
+		return b
+	}
+	xBuf, zBuf, dtBuf := mkRW(convDim, wgpu.BufferUsageCopyDst), mkRW(dInner, wgpu.BufferUsageCopyDst), mkRW(nHeads, wgpu.BufferUsageCopyDst)
+	cwBuf, cbBuf, hpBuf, nwBuf := mkW(convW), mkW(convB), mkW(headP), mkW(normW)
+	winBuf, convBuf, yBuf, gBuf := mkRW((K-1)*convDim, wgpu.BufferUsageCopyDst), mkRW(convDim, 0), mkRW(dInner, 0), mkRW(dInner, wgpu.BufferUsageCopySrc)
+	ssmBuf := mkRW(nHeads*P*N, wgpu.BufferUsageCopyDst)
+	stag, _ := dev.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(dInner * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
+	ctx.queue.WriteBuffer(winBuf, 0, wgpu.ToBytes(make([]float32, (K-1)*convDim)))
+	ctx.queue.WriteBuffer(ssmBuf, 0, wgpu.ToBytes(make([]float32, nHeads*P*N)))
+	dConv := uni([]uint32{convDim, K, 0, 0})
+	dSSM := uni([]uint32{nHeads, P, N, nGroups, repeat, gSize, dInner, 0})
+	dGN := uni([]uint32{dInner, normGroups, dInner / normGroups, math.Float32bits(eps)})
+	ent := func(bufs ...*wgpu.Buffer) []wgpu.BindGroupEntry {
+		e := make([]wgpu.BindGroupEntry, len(bufs))
+		for i, b := range bufs {
+			e[i] = wgpu.BindGroupEntry{Binding: uint32(i), Buffer: b, Size: b.GetSize()}
+		}
+		return e
+	}
+	bgC, _ := dev.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: ctx.mambaConvLayout, Entries: ent(xBuf, cwBuf, cbBuf, winBuf, convBuf, dConv)})
+	bgS, _ := dev.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: ctx.mambaSSMLayout, Entries: ent(convBuf, dtBuf, hpBuf, ssmBuf, yBuf, dSSM)})
+	bgG, _ := dev.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: ctx.mambaGNormLayout, Entries: ent(yBuf, zBuf, nwBuf, gBuf, dGN)})
+
+	gpuMixer := func(xBC, z, dt []float32) []float32 {
+		ctx.queue.WriteBuffer(xBuf, 0, wgpu.ToBytes(xBC))
+		ctx.queue.WriteBuffer(zBuf, 0, wgpu.ToBytes(z))
+		ctx.queue.WriteBuffer(dtBuf, 0, wgpu.ToBytes(dt))
+		enc, _ := dev.CreateCommandEncoder(nil)
+		pass := enc.BeginComputePass(nil) // ONE pass: conv → ssm → gatedNorm (data-dependent barriers)
+		pass.SetPipeline(ctx.mambaConvPipeline)
+		pass.SetBindGroup(0, bgC, nil)
+		pass.DispatchWorkgroups((convDim+63)/64, 1, 1)
+		pass.SetPipeline(ctx.mambaSSMPipeline)
+		pass.SetBindGroup(0, bgS, nil)
+		pass.DispatchWorkgroups((nHeads*P+63)/64, 1, 1)
+		pass.SetPipeline(ctx.mambaGNormPipeline)
+		pass.SetBindGroup(0, bgG, nil)
+		pass.DispatchWorkgroups(normGroups, 1, 1)
+		pass.End()
+		pass.Release()
+		enc.CopyBufferToBuffer(gBuf, 0, stag, 0, uint64(dInner*4))
+		cmd, _ := enc.Finish(nil)
+		ctx.queue.Submit(cmd)
+		cmd.Release()
+		enc.Release()
+		stt := wgpu.BufferMapAsyncStatusUnknown
+		stag.MapAsync(wgpu.MapModeRead, 0, uint64(dInner*4), func(s wgpu.BufferMapAsyncStatus) { stt = s })
+		ctx.device.Poll(true, nil)
+		if stt != wgpu.BufferMapAsyncStatusSuccess {
+			t.Fatalf("map: %v", stt)
+		}
+		out := make([]float32, dInner)
+		copy(out, wgpu.FromBytes[float32](stag.GetMappedRange(0, uint(dInner*4))))
+		stag.Unmap()
+		return out
+	}
+	// CPU golden: mamba2.go steps 2-5 with its own persistent state.
+	var win [][]float32
+	ssm := make([]float32, nHeads*P*N)
+	cpuMixer := func(xBC, z, dt []float32) []float32 {
+		conv := make([]float32, convDim)
+		for c := 0; c < convDim; c++ {
+			s := convB[c] + convW[c*K+(K-1)]*xBC[c]
+			for j := 0; j < K-1; j++ {
+				if idx := len(win) - (K - 1) + j; idx >= 0 {
+					s += convW[c*K+j] * win[idx][c]
+				}
+			}
+			conv[c] = siluRef(s)
+		}
+		win = append(win, append([]float32(nil), xBC...))
+		if len(win) > K-1 {
+			win = win[len(win)-(K-1):]
+		}
+		x, B, C := conv[:dInner], conv[dInner:dInner+gSize], conv[dInner+gSize:]
+		y := make([]float32, dInner)
+		for head := 0; head < nHeads; head++ {
+			g := head / repeat
+			A := -math.Exp(float64(aLog[head]))
+			dth := softplusRef(dt[head] + dtBias[head])
+			dA := float32(math.Exp(float64(dth) * A))
+			for pi := 0; pi < P; pi++ {
+				sBase := (head*P + pi) * N
+				dx := dth * x[head*P+pi]
+				var acc float32
+				for n := 0; n < N; n++ {
+					ssm[sBase+n] = ssm[sBase+n]*dA + dx*B[g*N+n]
+					acc += ssm[sBase+n] * C[g*N+n]
+				}
+				y[head*P+pi] = acc + dW[head]*x[head*P+pi]
+			}
+		}
+		gated := make([]float32, dInner)
+		for i := range gated {
+			gated[i] = y[i] * siluRef(z[i])
+		}
+		var ss float64
+		for _, v := range gated {
+			ss += float64(v) * float64(v)
+		}
+		inv := float32(1 / math.Sqrt(ss/float64(dInner)+float64(eps)))
+		for i := range gated {
+			gated[i] = normW[i] * gated[i] * inv
+		}
+		return gated
+	}
+	worst := 1.0
+	for tok := 1; tok <= 300; tok++ {
+		xBC := make([]float32, convDim)
+		z := make([]float32, dInner)
+		dt := make([]float32, nHeads)
+		for i := range xBC {
+			xBC[i] = float32(rng.NormFloat64() * 0.7)
+		}
+		for i := range z {
+			z[i] = float32(rng.NormFloat64())
+		}
+		for i := range dt {
+			dt[i] = float32(rng.NormFloat64() * 0.4)
+		}
+		cos, maxAbs := cosSim(cpuMixer(xBC, z, dt), gpuMixer(xBC, z, dt))
+		if cos < worst {
+			worst = cos
+		}
+		if tok == 1 || tok == 300 {
+			t.Logf("  compose tok %d: cosine=%.8f maxAbs=%.3g", tok, cos, maxAbs)
+		}
+		if cos < 0.9999 || maxAbs > 1e-2 {
+			t.Errorf("compose tok %d drift: cosine=%.8f maxAbs=%.3g", tok, cos, maxAbs)
+		}
+	}
+	t.Logf("  one-pass conv→ssm→gatedNorm worst cosine over 300 tokens: %.8f", worst)
+}
+
 // TestMambaSSM_driftParity is the SPINE gate: the resident selective-SSM state update vs
 // the f32 mamba2Step recurrence, run token-by-token with COMPOUNDING state, checked at
 // 1/16/256/1k/2k tokens. A pass requires parity that does not DRIFT long (the stable
