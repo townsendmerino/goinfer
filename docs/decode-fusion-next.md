@@ -38,14 +38,34 @@ back to gemv+biasAdd. Bit-exact: `TestResidentForwardN_parity` (Qwen2.5-coder-0.
 cosine=1.0, maxAbsDiff=0. **Measured: 102.2 → 104.5 tok/s (+2.3%)** — beats Increment 1's
 +1.5%, confirming dependent folds pay more than independent ones.
 
-## Deferred — Increment 3 (no fitting model on this box)
+## Tried + rejected — Increment 3 (QK-norm fold REGRESSES, −2.7%)
 
-- **Increment 3 — QK-norm → fold into rope/GEMV.** `qkNorm` depends on the GEMV output
-  and precedes rope; benefits **Qwen3 / GLM / Mellum**. Same dependent-fold shape as
-  Increment 2, so it should pay similarly. **Blocked on measurement, not design:** the
-  only qk-norm models here are Qwen3-35B-A3B MoE (won't fit 8 GB) and GLM-4.5-Air (106B);
-  no small dense qk-norm model is available to run the real-model bench against. Implement
-  + measure when a Qwen3-dense (e.g. 1.7B/4B) or Mellum GGUF lands on a box that fits it.
+Measured on Qwen3-1.7B-Q8_0 (downloaded for exactly this; resident int8, 16 q / 8 kv
+heads, hd 128). Built `qkNormFinalize`: one **workgroup-per-head** dispatch doing
+per-head qk-norm + rope(q) + rope-store(k) + store(v), replacing the two `qkNorm`
+dispatches *and* `qkvFinalize`. Bit-exact (`TestResidentForwardN_parity` cosine=1.0,
+maxAbsDiff=0; qknorm-vs-CPU parity green). But decode went **104.6 → 101.8 tok/s
+(−2.7%)**, consistent across runs — so it was reverted (commit never landed).
+
+**Why it loses (the lesson the bench bought):** qk-norm is a per-head reduction over
+headDim, so it *must* be workgroup-per-head — only nH=16 workgroups on a 40-SM card,
+low occupancy. rope/store want the opposite: a flat, high-occupancy grid (that's what
+`qkvFinalize` is). Fusing them drags rope into the low-occupancy per-head geometry AND
+serializes two reductions (q then k) behind barriers inside each workgroup. The
+dispatch-count cut (3→1) didn't pay for the occupancy/serialization loss. This is the
+mirror image of Increment 2, which folded into the GEMV — already workgroup-per-output
+high-occupancy, with a trivial `+ bias[n]` epilogue.
+
+**Corollary to the Increment-1 rule:** "fuse dependent links" holds *only if the fused
+kernel keeps the better launch geometry*. Folding a reduction-shaped op (qk-norm,
+softmax, any cross-element reduce) into a flat elementwise kernel — or vice-versa —
+trades dispatch count for occupancy and can net out negative. Dispatch-count reduction
+is necessary, not sufficient. The real-model bench is what caught this; the
+"dependent-fold = win" heuristic alone would have shipped a regression.
+
+GLM-4.5 / Mellum share the qk-norm geometry, so the same fold would regress them too —
+not worth retrying without a fundamentally different approach (e.g. a higher-occupancy
+norm that doesn't need per-head workgroups).
 
 ## Hard ceiling
 
