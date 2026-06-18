@@ -138,7 +138,7 @@ func (c *Context) NewDecodeRunner(m ModelW, hidden, nH, nKV, hd, inter, start in
 
 // newDecodeRunner builds the persistent decode plan for either precision.
 func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start int, eps, scale float32, addOne bool) (*DecodeRunner, error) {
-	ensures := []func() error{c.ensureGEMV, c.ensureQuantize, c.ensureLayer, c.ensureAttn, c.ensureFuse, c.ensureGEMVW4, c.ensureQKNorm}
+	ensures := []func() error{c.ensureGEMV, c.ensureGEMVBias, c.ensureQuantize, c.ensureLayer, c.ensureAttn, c.ensureFuse, c.ensureGEMVW4, c.ensureQKNorm}
 	if m.moe != nil {
 		ensures = append(ensures, c.ensureMoERoute, c.ensureMoEExpert)
 		if m.moe.sharedInter > 0 && !m.moe.sharedUngated {
@@ -221,6 +221,16 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		p := uni([]uint32{1, uint32(w.kPad()), uint32(w.nRows()), 1})
 		gx, gy := gemvGrid(w.nRows())
 		add(w.gPipe(c), bind(w.gLayout(c), aq, w.wbuf(), as, w.sbuf(), dst, p), gx, gy)
+	}
+	// gemvBias is gemv with a per-output bias folded into the epilogue (dst[n] =
+	// r + bias[n]), deleting the standalone biasAdd link for q/k/v of bias models
+	// (Qwen2). W8A8 only — the bias kernel has the 7th (bias) binding.
+	gemvBias := func(aq, as *wgpu.Buffer, w decodeWeight, bias *wgpu.Buffer) *wgpu.Buffer {
+		out := storF(w.nRows())
+		p := uni([]uint32{1, uint32(w.kPad()), uint32(w.nRows()), 0})
+		gx, gy := gemvGrid(w.nRows())
+		add(c.gemvBiasPipeline, bind(c.gemvBiasLayout, aq, w.wbuf(), as, w.sbuf(), out, p, bias), gx, gy)
+		return out
 	}
 	// §4: the per-token uniforms (rope-q, rope-store-k, v-store, attn) depend only
 	// on pos, NOT on layer index — their contents are identical across all 28
@@ -502,11 +512,19 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			gemvAdd(cq, cs, lw.mlaO, r.xd) // o-proj + residual into xd; FFN below is shared
 		} else {
 			aq, as := rmsQuant(r.xd, lw.attnNorm, hidden)
-			q, k, v := gemv(aq, as, lw.q), gemv(aq, as, lw.k), gemv(aq, as, lw.v)
-			if lw.qBias != nil { // Qwen2 q/k/v bias, added before RoPE (matches CPU attention)
-				biasAdd(q, lw.qBias, nH*hd)
-				biasAdd(k, lw.kBias, r.kvDim)
-				biasAdd(v, lw.vBias, r.kvDim)
+			var q, k, v *wgpu.Buffer
+			_, w8 := lw.q.(*ResidentW8A8)
+			if lw.qBias != nil && w8 { // Qwen2 q/k/v bias folded into the GEMV epilogue (W8A8)
+				q = gemvBias(aq, as, lw.q, lw.qBias)
+				k = gemvBias(aq, as, lw.k, lw.kBias)
+				v = gemvBias(aq, as, lw.v, lw.vBias)
+			} else {
+				q, k, v = gemv(aq, as, lw.q), gemv(aq, as, lw.k), gemv(aq, as, lw.v)
+				if lw.qBias != nil { // bias on a non-W8A8 weight: standalone add (matches CPU)
+					biasAdd(q, lw.qBias, nH*hd)
+					biasAdd(k, lw.kBias, r.kvDim)
+					biasAdd(v, lw.vBias, r.kvDim)
+				}
 			}
 			if lw.qNorm != nil { // Qwen3/GLM per-head QK-norm, after bias, before RoPE (matches CPU)
 				qkNorm(q, lw.qNorm, nH)

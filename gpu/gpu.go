@@ -72,6 +72,11 @@ type Context struct {
 	gemvShader   *wgpu.ShaderModule
 	gemvPipeline *wgpu.ComputePipeline
 	gemvLayout   *wgpu.BindGroupLayout
+	// W8A8 GEMV with a per-output bias folded into the epilogue (ensureGEMVBias):
+	// dst[n] = scale·acc + bias[n], for the q/k/v projections of bias models (Qwen2).
+	gemvBiasShader   *wgpu.ShaderModule
+	gemvBiasPipeline *wgpu.ComputePipeline
+	gemvBiasLayout   *wgpu.BindGroupLayout
 
 	// Tiled W8A8 GEMM (prefill) pipeline, lazy via ensureTiled (gemm.go).
 	tiledShader   *wgpu.ShaderModule
