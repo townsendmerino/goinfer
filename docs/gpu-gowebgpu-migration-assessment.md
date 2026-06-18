@@ -6,6 +6,48 @@
 > v29). No code was changed. Gaps verified against the fetched go-webgpu v0.5.2
 > source at `$GOPATH/pkg/mod/github.com/go-webgpu/webgpu@v0.5.2/`.
 
+## ⛔ Runtime feasibility BLOCKER (found 2026-06-17 — overrides the verdict below)
+
+**Do not start this migration yet. go-webgpu v0.5.2 does not run on the project's
+toolchain.** Before writing any code, the runtime was validated empirically on the
+Linux GPU dev box (RTX 2070 SUPER, Vulkan, Go 1.26.3):
+
+1. `cmd/setup` fetched `wgpu-native v29.0.0.0` (`libwgpu_native.so`) fine.
+2. Running **go-webgpu's own `examples/compute`** (unmodified, with `WGPU_NATIVE_PATH`
+   set and `wgpu.Init()` called) **aborts with SIGABRT** inside the native library:
+
+   ```
+   thread '<unnamed>' panicked at src/lib.rs:2801:43: invalid callback
+   panic in a function that cannot unwind ... SIGABRT
+     #3 wgpuInstanceRequestAdapter
+   ```
+
+   It dies at the **first async call (RequestAdapter)** — goffi's pure-Go FFI callback
+   is rejected by wgpu-native as invalid. The GPU/Vulkan stack itself is healthy: the
+   current cogentcore binding runs the full `-tags gpu` suite green on this same box.
+
+**Not a goinfer bug, and not fixable from goinfer.** Reproduced with the upstream
+example (zero goinfer code). Ruled out: goffi v0.5.2 → v0.5.5 (same crash),
+`GODEBUG=asyncpreemptoff=1`, missing `wgpu.Init()`, nil-vs-options. Most likely a **Go
+1.26 vs goffi callback-ABI incompatibility** (go-webgpu/goffi declare/test against Go
+1.25; this repo is pinned to Go 1.26.3) or a callback-struct ABI mismatch with this
+wgpu-native build. Either way it is an upstream defect in the go-webgpu/goffi stack on
+this exact toolchain.
+
+**Consequence:** the *code* migration below is still accurate and tractable, but it
+**cannot be validated** here (the bit-exact parity gates — the whole point — can't run),
+and worse, a migrated GPU binary would **crash at adapter acquisition** on the project's
+own Linux box. The decision flips from "conditional GO on distribution" to:
+
+> **NO-GO right now.** Revisit only after go-webgpu's own `examples/compute` runs green
+> on Go 1.26 + wgpu-native v29 on Linux (verify upstream first — it is the gate; the
+> goinfer migration is downstream of it). Track the upstream fix; do not invest the
+> ~1 week until that smoke test passes. (Alternative paths if it's urgent: pin the GPU
+> build to Go 1.25, or wait for a goffi release that re-establishes Go-1.26 callback
+> support — neither confirmed to work.)
+
+---
+
 ## Verdict (one paragraph)
 
 **Tractable, ~1 engineer-week, mostly mechanical — but the go/no-go hinges on
