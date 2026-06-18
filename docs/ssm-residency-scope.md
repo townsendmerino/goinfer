@@ -136,9 +136,29 @@ remaining funded work. Commits: `5a15e9f` (P3), `da584a0` (P2+P4), `66ec747` (P5
 | P3 `mambaSSM` (spine) | ✓ DONE | `TestMambaSSM_driftParity` cosine 1.0, maxAbs ~5–10e-6 **non-growing @ 1/16/256/1k/2k tok** |
 | P4 `mambaGatedNorm` | ✓ DONE | `TestMambaGatedNorm_parity` cosine 1.0 (nGroups 1 & 8) |
 | P5a one-layer compose | ✓ DONE | `TestMambaLayer_compose` — conv→ssm→gatedNorm in ONE pass + persistent state, cosine 1.0 / 300 tok |
-| P5b runner integration | ☐ TODO | wire SSM step + state buffers into the DecodeRunner plan; interleave resident attn/MoE for granite; whole-model resident-vs-CPU parity |
-| P6 eligibility flip | ☐ TODO | guarded admit of granite/nemotron after whole-model parity |
+| P5b.1 resident bridge | ✓ DONE | `TestGraniteResidentBridge` — accessors expose dims + multipliers + per-layer mixer-kind + shape-checked mixer tensors |
+| P5b.2 mixer-kind branch | ☐ TODO | runLayer mamba fields + plan branches SSM vs attention (guarded; non-Mamba plan byte-identical) |
+| P5b.3 single-layer parity | ☐ TODO | one resident Granite layer (mamba mixer / attn) + multipliers + C3 MoE vs CPU |
+| P5b.4 full interleave | ☐ TODO | all layers; whole-model granite-tiny vs CPU at 1/16/256/1k/2k tok |
+| P6 eligibility flip | ☐ TODO | guarded admit of granite after P5b.4 parity |
 | P7 measure + suite | ☐ TODO | granite-tiny resident ms/tok vs 300/498; full suite no-regress |
+
+**Real granite-4.0-h-tiny dims (P5b.1 measured):** nHeads 48, headDim 64, dState 128, nGroups 1,
+dConv 4 → dInner 3072, convDim 3328, projDim 6448; ssm state = 48·64·128·4 B = 1.5 MB/layer ×
+36 mamba = ~57 MB resident. 36 mamba + 4 attention layers (90% Mamba). Multipliers: EmbMul 12,
+ResidMul 0.22, LogitScale 6, AttnScale 1/128.
+
+**Integration recipe (derived; the remaining P5b.2–P7 build):**
+- Resident Granite layer = standard Pre2 MoE layer (C3) with the *mixer* sub-block branched on
+  `GraniteMambaLayer(i)`: attention layers reuse the existing resident GQA block (scale =
+  AttnScale); mamba layers dispatch {quantize → inProj GEMV → mambaConv → mambaSSM →
+  mambaGatedNorm → quantize → outProj gemvAdd}, with build-once `{win[(K-1)·convDim], ssm}` state
+  reset per generation.
+- **Multiplier folding (no kernel change):** ResidMul → scale the o-proj / down-proj / expert-down
+  weights at upload (gemvAdd then adds ResidMul·result to the residual); EmbMul → scale the input
+  embedding; LogitScale → divide the lm_head weight. AttnScale → the resident attention scale param.
+- **Watch:** Granite's manualPos (mamba layers never Append KV → advance pos once/token); the
+  ResidMul-folded residual; NormGroups=1 gated norm; the 4-scalar placement.
 
 **De-risking result:** the riskiest piece — the f32 selective-state recurrence over long
 sequences — holds with **zero drift to 2k tokens** (the stable dA∈(0,1) keeps error bounded),
