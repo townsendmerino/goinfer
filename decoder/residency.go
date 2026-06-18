@@ -239,6 +239,41 @@ func (m *Model) withResidency() *Model {
 	return m
 }
 
+// --- Granite-4.0-H resident SSM bridge (P5b: resident Mamba decode, docs/ssm-residency-scope.md) ---
+// These expose the hybrid's per-layer mixer-kind + Mamba-2 mixer weights + scalar multipliers
+// to the gpu resident builder. Additive accessors; the eligibility flip (P6) is separate and
+// still gated, so production routing is unchanged until then.
+
+// GraniteResidentParams returns the Mamba-2 geometry + the four Granite scalar multipliers the
+// resident SSM path needs (ok=false for non-granite). logitScale divides the final logits;
+// attnScale is the attention q·k multiplier (folded into the resident attention scale). Granite
+// gated-RMSNorm is over the full dInner (NormGroups=1).
+func (m *Model) GraniteResidentParams() (nHeads, headDim, dState, nGroups, dConv int, embMul, residMul, logitScale, attnScale float32, ok bool) {
+	g := m.w.arch.granite
+	if g == nil {
+		return 0, 0, 0, 0, 0, 0, 0, 0, 0, false
+	}
+	ls := float32(1)
+	if m.w.arch.LogitScale != 0 {
+		ls = float32(m.w.arch.LogitScale)
+	}
+	return g.NHeads, g.HeadDim, g.DState, g.NGroups, g.DConv, g.EmbMul, g.ResidMul, ls, float32(m.w.arch.AttnScale), true
+}
+
+// GraniteMambaLayer reports whether layer i is a Mamba-2 mixer (vs GQA attention).
+func (m *Model) GraniteMambaLayer(i int) bool { return m.w.arch.isMambaLayer(i) }
+
+// GraniteMambaWeights returns layer i's f32 Mamba-2 mixer tensors (nil if the layer is an
+// attention layer). The resident build quantizes inProj/outProj to W8A8 and uploads
+// convW/convB/aLog/d/dtBias/normW as f32; aLog is folded to Aexp=-exp(aLog) at build.
+func (m *Model) GraniteMambaWeights(i int) (inProj, convW, convB, aLog, dW, dtBias, normW, outProj []float32) {
+	w := m.w.Layers[i].mamba
+	if w == nil {
+		return
+	}
+	return w.inProj, w.convW, w.convB, w.aLog, w.d, w.dtBias, w.normW, w.outProj
+}
+
 // ResidentActive reports whether the GPU full-residency decode path is built and
 // will run for a plain stateless Generate (webgpu backend + eligible arch).
 func (m *Model) ResidentActive() bool { return m.resident != nil }
