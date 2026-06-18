@@ -105,9 +105,14 @@ type Context struct {
 	ropeShader   *wgpu.ShaderModule
 	ropePipeline *wgpu.ComputePipeline
 	ropeLayout   *wgpu.BindGroupLayout
-	attnShader   *wgpu.ShaderModule
-	attnPipeline *wgpu.ComputePipeline
-	attnLayout   *wgpu.BindGroupLayout
+	// Fused q-rope + k-rope-store + v-store (decode fusion, f32 KV): one dispatch for the
+	// three post-projection KV ops, cutting two dispatches/layer off the decode chain.
+	qkvFinShader   *wgpu.ShaderModule
+	qkvFinPipeline *wgpu.ComputePipeline
+	qkvFinLayout   *wgpu.BindGroupLayout
+	attnShader     *wgpu.ShaderModule
+	attnPipeline   *wgpu.ComputePipeline
+	attnLayout     *wgpu.BindGroupLayout
 
 	// KV-cache writers (ensureAttn): rope-and-store K into KCache, store V into
 	// VCache — both at pos*kvDim via a per-token uniform base, so the decode token

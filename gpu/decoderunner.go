@@ -265,6 +265,20 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		ropeKUnis[rs] = b
 		return b
 	}
+	// Fused q-rope + k-rope-store + v-store uniform (decode fusion, f32 KV), per rope
+	// scale: {nH, nKV, hd, half, pos, base=pos*kvDim, scale, kvDim}.
+	qkvFinUnis := map[float32]*wgpu.Buffer{}
+	qkvFinUniFor := func(rs float32) *wgpu.Buffer {
+		if b, ok := qkvFinUnis[rs]; ok {
+			return b
+		}
+		b := uni([]uint32{uint32(nH), uint32(nKV), uint32(hd), uint32(half), 0, 0, f32bits(rs), uint32(r.kvDim)})
+		r.posUnis = append(r.posUnis, posUni{buf: b, gen: func(pos int) []uint32 {
+			return []uint32{uint32(nH), uint32(nKV), uint32(hd), uint32(half), uint32(pos), uint32(pos * r.kvDim), f32bits(rs), uint32(r.kvDim)}
+		}})
+		qkvFinUnis[rs] = b
+		return b
+	}
 	vStoreUni := uni([]uint32{uint32(r.kvDim), 0, 0, 0})
 	r.posUnis = append(r.posUnis, posUni{buf: vStoreUni, gen: func(pos int) []uint32 {
 		return []uint32{uint32(r.kvDim), uint32(pos * r.kvDim), 0, 0}
@@ -338,6 +352,18 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			return
 		}
 		add(c.kvStorePipeline, bind(c.kvStoreLayout, src, cache, vStoreUni), uint32(r.kvDim+63)/64, 1)
+	}
+	// qkvFinalize fuses rope(q) + rope-store(k) + store(v) into one dispatch (f32 KV
+	// only). Threads = max(nH·half, kvDim); each does whichever of the three apply.
+	qkvFinalize := func(q, k, v, invFreq, kCache, vCache *wgpu.Buffer, ropeScale float32) {
+		if ropeScale == 0 {
+			ropeScale = 1
+		}
+		n := nH * half
+		if r.kvDim > n {
+			n = r.kvDim
+		}
+		add(c.qkvFinPipeline, bind(c.qkvFinLayout, q, k, v, invFreq, kCache, vCache, qkvFinUniFor(ropeScale)), uint32(n+63)/64, 1)
 	}
 	// biasAdd adds a per-output bias into a projection result (Qwen2 q/k/v bias),
 	// reusing the residual kernel (vec[i] += bias[i]); n is the projection width.
@@ -486,9 +512,14 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 				qkNorm(q, lw.qNorm, nH)
 				qkNorm(k, lw.kNorm, nKV)
 			}
-			rope(q, lw.invFreq, lw.ropeScale)
-			ropeStore(k, lw.invFreq, lw.kCache, lw.kScale, lw.ropeScale) // rotate K + append into cache
-			vStore(v, lw.vCache, lw.vScale)                              // append V into cache
+			if m.kvF16 || m.kvI8 {
+				rope(q, lw.invFreq, lw.ropeScale)
+				ropeStore(k, lw.invFreq, lw.kCache, lw.kScale, lw.ropeScale) // rotate K + append into cache
+				vStore(v, lw.vCache, lw.vScale)                              // append V into cache
+			} else {
+				// f32 KV: one fused dispatch for rope(q) + rope-store(k) + store(v).
+				qkvFinalize(q, k, v, lw.invFreq, lw.kCache, lw.vCache, lw.ropeScale)
+			}
 			ctxv := storF(nH * hd)
 			aUni := attnUni // local (sliding-window) layers use the windowed start (Lever C6)
 			if lw.isLocal {

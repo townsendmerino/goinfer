@@ -142,6 +142,53 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 `
 
+// qkvFinalize fuses the three post-projection KV ops of the decode attention block —
+// rope(q) in place, rope(k)+store into KCache, store v into VCache — into ONE dispatch,
+// cutting two dispatches (and their barriers) per layer off the serially-dependent decode
+// chain. Math is bit-identical to the separate rope / ropeStore / kvStore f32 kernels
+// (same rotate_half, same base = pos*kvDim). f32-KV only; the f16/int8-KV caches keep
+// their own packed-store kernels. The three index ranges differ (q: nH·half, k: nKV·half,
+// v: kvDim), so each thread does whichever apply to its global index — independent writes,
+// no barrier needed between them.
+const qkvFinalizeShaderWGSL = `
+struct P { nH: u32, nKV: u32, hd: u32, half: u32, pos: u32, base: u32, scale: f32, kvDim: u32 };
+@group(0) @binding(0) var<storage, read_write> q:       array<f32>;  // [nH*hd] rotated in place
+@group(0) @binding(1) var<storage, read>       k:       array<f32>;  // [nKV*hd]
+@group(0) @binding(2) var<storage, read>       v:       array<f32>;  // [nKV*hd]
+@group(0) @binding(3) var<storage, read>       invFreq: array<f32>;  // [half]
+@group(0) @binding(4) var<storage, read_write> kCache:  array<f32>;  // rotated K at base
+@group(0) @binding(5) var<storage, read_write> vCache:  array<f32>;  // V at base
+@group(0) @binding(6) var<uniform>             p:       P;
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x;
+    // q rope (nH heads), in place.
+    if (i < p.nH * p.half) {
+        let h = i / p.half; let d = i % p.half;
+        let theta = f32(p.pos) * invFreq[d];
+        let c = cos(theta) * p.scale; let s = sin(theta) * p.scale;
+        let off = h * p.hd;
+        let x1 = q[off + d]; let x2 = q[off + p.half + d];
+        q[off + d]          = x1 * c - x2 * s;
+        q[off + p.half + d] = x2 * c + x1 * s;
+    }
+    // k rope (nKV heads) + store into KCache at base.
+    if (i < p.nKV * p.half) {
+        let h = i / p.half; let d = i % p.half;
+        let theta = f32(p.pos) * invFreq[d];
+        let c = cos(theta) * p.scale; let s = sin(theta) * p.scale;
+        let off = h * p.hd;
+        let x1 = k[off + d]; let x2 = k[off + p.half + d];
+        kCache[p.base + off + d]          = x1 * c - x2 * s;
+        kCache[p.base + off + p.half + d] = x2 * c + x1 * s;
+    }
+    // v store (kvDim elements) into VCache at base.
+    if (i < p.kvDim) {
+        vCache[p.base + i] = v[i];
+    }
+}
+`
+
 // --- f16-KV variants (opt-in precision knob; see task-gpu-f16-kv.md) ---
 // The KV cache is array<u32>, two f16 per word, packed/read with the core WGSL
 // builtins pack2x16float / unpack2x16float — NO shader-f16 device feature, so the
@@ -412,6 +459,9 @@ func (c *Context) ensureAttn() error {
 		return err
 	}
 	if c.attnShader, c.attnPipeline, c.attnLayout, err = mk("attn", attnShaderWGSL); err != nil {
+		return err
+	}
+	if c.qkvFinShader, c.qkvFinPipeline, c.qkvFinLayout, err = mk("qkvFinalize", qkvFinalizeShaderWGSL); err != nil {
 		return err
 	}
 	if c.ropeStoreShader, c.ropeStorePipeline, c.ropeStoreLayout, err = mk("rope-store", ropeStoreShaderWGSL); err != nil {
