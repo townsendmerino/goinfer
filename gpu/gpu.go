@@ -173,6 +173,19 @@ type Context struct {
 	qkNormPipeline *wgpu.ComputePipeline
 	qkNormLayout   *wgpu.BindGroupLayout
 
+	// Resident Mamba-2 SSM decode (mamba.go): the hybrid mixer as a bounded per-token
+	// recurrence — mambaConv (causal-conv ring), mambaSSM (selective state update),
+	// mambaGatedNorm (gated grouped RMSNorm). Granite-4.0-H / Nemotron-H.
+	mambaSSMShader     *wgpu.ShaderModule
+	mambaSSMPipeline   *wgpu.ComputePipeline
+	mambaSSMLayout     *wgpu.BindGroupLayout
+	mambaConvShader    *wgpu.ShaderModule
+	mambaConvPipeline  *wgpu.ComputePipeline
+	mambaConvLayout    *wgpu.BindGroupLayout
+	mambaGNormShader   *wgpu.ShaderModule
+	mambaGNormPipeline *wgpu.ComputePipeline
+	mambaGNormLayout   *wgpu.BindGroupLayout
+
 	// MoE residency (Lever C3, moe.go): router top-k selection (moeRoute) feeding the
 	// indexed sparse-expert GEMV — Mixtral / Qwen2-MoE / GLM / DeepSeek on the resident path.
 	moeRouteShader    *wgpu.ShaderModule
