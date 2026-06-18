@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/townsendmerino/aikit/mmap"
 )
 
 // vmRSSKB returns this process's total resident set (VmRSS) in KB. VmRSS counts
@@ -54,11 +56,11 @@ func TestMadvise_dontneedFreesRSS(t *testing.T) {
 	}
 	f.Close()
 
-	m, err := mmapReadOnly(path)
+	m, err := mmap.MapReadOnly(path)
 	if err != nil {
 		t.Fatalf("mmap: %v", err)
 	}
-	defer munmap(m)
+	defer mmap.Unmap(m)
 
 	// Fault every page in (sum into a sink the compiler can't drop).
 	var sink uint64
@@ -70,7 +72,7 @@ func TestMadvise_dontneedFreesRSS(t *testing.T) {
 	}
 	before := vmRSSKB(t)
 
-	if err := madviseBytes(m, false); err != nil { // MADV_DONTNEED the whole mapping
+	if err := mmap.Advise(m, false); err != nil { // MADV_DONTNEED the whole mapping
 		t.Fatalf("MADV_DONTNEED: %v", err)
 	}
 	after := vmRSSKB(t)

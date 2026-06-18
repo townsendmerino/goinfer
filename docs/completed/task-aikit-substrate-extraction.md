@@ -1,11 +1,29 @@
 # Plan (goinfer): promote the weight-paging substrate to aikit
 
-> **Status: TRIGGER FIRED (2026-06-17) — READY TO EXECUTE.** This is the goinfer
-> half of a two-repo extraction (the aikit half: the prompt
-> `prompts/aikit-mmap-residency-leaf.md` / aikit's
-> `docs/task-mmap-residency-leaf.md`). The substrate (mmap + madvise +
-> span-residency) was deferred while it settled; the conditions below are now met.
-> **aikit ships its leaf first (the prompt); then goinfer refactors onto it.**
+> **Status: DONE (2026-06-17).** aikit v1.9.0 shipped the leaf (`aikit/mmap`:
+> `MapReadOnly`/`Unmap`/`Advise`/`SpanCache`/`PageAlignedInterior`/`AutoBudget`/
+> `AvailableRAM`, plus `linalg.WeightMat.MappedSpan`); goinfer refactored onto it
+> in the same commit as the `v1.8.1→v1.9.0` bump. Outcome vs the plan below:
+> - **Deleted** all 5 primitive files (`mmap_{unix,other}.go`, `madvise_{unix,darwin,
+>   other}.go`) — they lifted verbatim to `aikit/mmap`. `alignedMappedSpan` →
+>   `WeightMat.MappedSpan`; `autoWeightBudget`/`availableRAMBytes` → `mmap.AutoBudget`/
+>   `AvailableRAM`.
+> - **expertPager** became a thin `mmap.SpanCache[*expertWeights]` wrapper (the LRU
+>   moved down); the MoE-router demand signal (`touch`, called from `moeMLP`) stayed.
+> - **layerPager** kept its windowed prefetch local (it is NOT an LRU, so it does not
+>   use `SpanCache` — re-eval checklist #2's acceptable outcome); it borrows only
+>   `Advise` + `MappedSpan` + `AutoBudget`.
+> - **Tests:** the LRU unit test + the refault test are now aikit's
+>   (`TestSpanCache_*`, `TestMadvise_dontneedRefaultsIntact`) and were dropped from
+>   goinfer; the goinfer-unique `TestMadvise_dontneedFreesRSS` was re-pointed at
+>   `mmap.MapReadOnly`/`Unmap`/`Advise` (passes — freed 262/262 MB). The end-to-end
+>   bit-exact gates (`TestExpertPaging_bitExact`, `TestLayerPaging_bitExact`) are
+>   unchanged (asset-gated; skip without the fixtures on this box).
+> - **go.mod:** minimal aikit bump in root + `gpu/` + `demo/agent/`, kept gpu-free
+>   (the maintainer's cross-module `-tags gpu` builds use an uncommitted go.work, so a
+>   bare `go mod tidy` wrongly injects `goinfer/gpu` — avoided).
+>
+> Original plan retained below for the record.
 
 ## Trigger (FIRED — evidence)
 

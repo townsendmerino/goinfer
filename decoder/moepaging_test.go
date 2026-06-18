@@ -1,118 +1,16 @@
 package decoder
 
 import (
-	"container/list"
 	"context"
 	"os"
-	"path/filepath"
 	"testing"
 )
 
-// TestExpertPager_lruEviction gates the pager's bookkeeping with no model: an LRU
-// over experts capped by a byte budget, releasing (MADV_DONTNEED) the tail and
-// faulting (MADV_WILLNEED) misses. The advise hook is captured so we can assert
-// exactly which experts were faulted/released and in what order.
-func TestExpertPager_lruEviction(t *testing.T) {
-	experts := []*expertWeights{{}, {}, {}, {}}
-	id := map[*byte]int{}
-	p := &expertPager{
-		budget: 25, // 10 bytes/expert ⇒ holds 2, the 3rd resident expert evicts the LRU tail
-		ranges: map[*expertWeights][][]byte{},
-		bytes:  map[*expertWeights]int64{},
-		lru:    list.New(),
-		pos:    map[*expertWeights]*list.Element{},
-	}
-	for i, ex := range experts {
-		b := []byte{byte(i)} // a unique 1-byte span standing in for the expert's pages
-		p.ranges[ex] = [][]byte{b}
-		p.bytes[ex] = 10
-		id[&b[0]] = i
-	}
-	var log []ev
-	p.advise = func(b []byte, willNeed bool) error {
-		log = append(log, ev{id[&b[0]], willNeed})
-		return nil
-	}
-
-	p.touch(experts[0]) // miss → WILLNEED 0; resident {0}
-	p.touch(experts[1]) // miss → WILLNEED 1; resident {1,0} = 20B
-	p.touch(experts[2]) // miss → WILLNEED 2; 30>25 → evict tail 0 (DONTNEED 0); resident {2,1}
-
-	want := []ev{{0, true}, {1, true}, {2, true}, {0, false}}
-	if !equalEv(log, want) {
-		t.Fatalf("phase 1 advise log = %v, want %v", log, want)
-	}
-	if h, m, e := p.stats(); h != 0 || m != 3 || e != 1 {
-		t.Fatalf("phase 1 stats = (%d hits, %d misses, %d evict), want (0, 3, 1)", h, m, e)
-	}
-
-	log = nil
-	p.touch(experts[1]) // hit (resident) — no advise
-	p.touch(experts[0]) // miss → WILLNEED 0; 30>25 → evict tail (now expert 2) (DONTNEED 2)
-	want = []ev{{0, true}, {2, false}}
-	if !equalEv(log, want) {
-		t.Fatalf("phase 2 advise log = %v, want %v", log, want)
-	}
-	if h, m, e := p.stats(); h != 1 || m != 4 || e != 2 {
-		t.Fatalf("phase 2 stats = (%d hits, %d misses, %d evict), want (1, 4, 2)", h, m, e)
-	}
-}
-
-type ev struct {
-	expert   int
-	willNeed bool
-}
-
-func equalEv(a, b []ev) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
-// TestMadvise_dontneedRefaultsIntact is the always-on proof of the property the
-// whole expert pager rests on: MADV_DONTNEED on a read-only, file-backed mapping
-// cannot corrupt data — the released pages re-fault from the file unchanged. We
-// map a multi-page file, checksum it, MADV_DONTNEED the whole span, read it back,
-// and require byte-identical contents (then MADV_WILLNEED + read again). If this
-// holds, evicting an in-use expert is always safe regardless of timing.
-func TestMadvise_dontneedRefaultsIntact(t *testing.T) {
-	page := os.Getpagesize()
-	want := make([]byte, 3*page)
-	for i := range want {
-		want[i] = byte((i*1103515245 + 12345) >> 7) // deterministic, non-trivial pattern
-	}
-	path := filepath.Join(t.TempDir(), "mapping.bin")
-	if err := os.WriteFile(path, want, 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	m, err := mmapReadOnly(path)
-	if err != nil {
-		t.Fatalf("mmap: %v", err)
-	}
-	defer munmap(m)
-	if !bytesEqual(m, want) {
-		t.Fatal("mapping differs from file before any advice")
-	}
-	if err := madviseBytes(m, false); err != nil { // DONTNEED: release all pages
-		t.Fatalf("MADV_DONTNEED: %v", err)
-	}
-	if !bytesEqual(m, want) { // touching re-faults from the file
-		t.Fatal("data changed after MADV_DONTNEED + re-fault — eviction is NOT lossless")
-	}
-	if err := madviseBytes(m, true); err != nil { // WILLNEED: hint back in
-		t.Fatalf("MADV_WILLNEED: %v", err)
-	}
-	if !bytesEqual(m, want) {
-		t.Fatal("data changed after MADV_WILLNEED")
-	}
-}
+// The pager's generic span-residency LRU (eviction over budget, WILLNEED/DONTNEED,
+// stats) now lives in aikit/mmap.SpanCache and is gated there
+// (TestSpanCache_evictsLRUTailOverBudget et al.); the page-granular re-fault safety
+// the whole pager rests on is gated by aikit's TestMadvise_dontneedRefaultsIntact.
+// This file keeps only the goinfer-specific end-to-end gate.
 
 // TestExpertPaging_bitExact is the end-to-end correctness gate for idea #2: paging
 // experts out of the read-only mapping must not change a single output token. It
@@ -122,8 +20,7 @@ func TestMadvise_dontneedRefaultsIntact(t *testing.T) {
 // that eviction actually happened (evictions > 0, not just cold-start misses).
 // Skipped without the asset (no small MoE .giw round-trips on this box — the tiny
 // hybrid fixture's DeltaNet weights aren't .giw-serializable and its experts are
-// sub-page anyway). The page-granular safety it relies on is proven model-free by
-// TestMadvise_dontneedRefaultsIntact; the LRU policy by TestExpertPager_lruEviction.
+// sub-page anyway).
 func TestExpertPaging_bitExact(t *testing.T) {
 	giwPath := os.Getenv("GOINFER_MOE_GIW")
 	if giwPath == "" {
@@ -166,18 +63,6 @@ func TestExpertPaging_bitExact(t *testing.T) {
 	}
 	t.Logf("paged decode byte-identical over %d tokens at %d MB budget; pager hits=%d misses=%d evictions=%d (evict/re-fault proven lossless on a real %s MoE)",
 		len(a), budget>>20, hits, misses, evictions, "35B-class")
-}
-
-func bytesEqual(a, b []byte) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }
 
 func greedyN(t *testing.T, m *Model, prompt []int, n int) []int {

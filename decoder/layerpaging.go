@@ -2,22 +2,26 @@ package decoder
 
 import (
 	"fmt"
-	"os"
 	"unsafe"
 
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/aikit/mmap"
 )
 
 // layerPager streams a DENSE model's per-layer weights out of the read-only .giw
 // mapping (idea #4, docs/ideas-weight-memory.md). Unlike MoE expert paging, the
 // transformer layer loop is sequential and fully known in advance, so the pager
-// PREFETCHES the upcoming layer (MADV_WILLNEED) while the current one computes —
-// overlapping the fault with compute — and RELEASES (MADV_DONTNEED) the layer that
-// slides out the back of a window. Resident weight RAM is bounded to ~window layers
-// instead of all of them, so a dense model too big for RAM still runs (the floor is
-// NVMe bandwidth: a model that doesn't fit is re-read ~once per token). Bit-exact —
-// the mapping is read-only and file-backed, so a released layer re-faults from disk
-// with identical bytes (TestMadvise_dontneedRefaultsIntact proves the property).
+// PREFETCHES the upcoming layer (Advise WILLNEED) while the current one computes —
+// overlapping the fault with compute — and RELEASES (Advise DONTNEED) the layer
+// that slides out the back of a window. This is a windowed prefetch, NOT an LRU, so
+// it does not use aikit/mmap.SpanCache (whose policy is least-recently-touched); it
+// borrows only the generic span-alignment (WeightMat.MappedSpan), the residency hint
+// (mmap.Advise), and the RAM budget (mmap.AutoBudget) — the layer-order demand signal
+// stays here. Resident weight RAM is bounded to ~window layers, so a dense model too
+// big for RAM still runs (the floor is NVMe bandwidth: a model that doesn't fit is
+// re-read ~once per token). Bit-exact — the mapping is read-only and file-backed, so
+// a released layer re-faults from disk with identical bytes (aikit's
+// TestMadvise_dontneedRefaultsIntact proves the property).
 //
 // The resident floor is NOT zero: only the 7 per-layer projections stream. The token
 // embedding, final norm, and LM head aren't per-layer, so they stay resident, plus
@@ -29,11 +33,10 @@ import (
 // idea #2's expertPager), heap-backed, or small enough to fit the budget whole.
 // Not goroutine-safe — one decode stream drives it, like the KV cache.
 type layerPager struct {
-	spans  [][][]byte               // [layer][weight] page-aligned spans within the mapping
-	window int                      // resident layer cap (the layer `window` behind is released)
-	ahead  int                      // prefetch distance (layers ahead to MADV_WILLNEED)
-	state  []bool                   // per-layer: currently hinted resident
-	advise func([]byte, bool) error // residency hint (real madvise; overridable in tests)
+	spans  [][][]byte // [layer][weight] page-aligned spans within the mapping
+	window int        // resident layer cap (the layer `window` behind is released)
+	ahead  int        // prefetch distance (layers ahead to Advise WILLNEED)
+	state  []bool     // per-layer: currently hinted resident
 
 	prefetches, evictions int64
 }
@@ -41,13 +44,12 @@ type layerPager struct {
 // newLayerPager builds a streaming pager over a dense mmap-backed model, or returns
 // nil when paging doesn't apply (MoE, not mmap-backed, no mapped layer weights, or
 // the budget already holds every layer). budget ≤ 0 selects ~half of available RAM.
-func newLayerPager(w *Weights, mmap []byte, budget int64) *layerPager {
-	if w.arch.MoE != nil || len(mmap) == 0 {
+func newLayerPager(w *Weights, mapping []byte, budget int64) *layerPager {
+	if w.arch.MoE != nil || len(mapping) == 0 {
 		return nil
 	}
-	base := uintptr(unsafe.Pointer(&mmap[0]))
-	end := base + uintptr(len(mmap))
-	page := os.Getpagesize()
+	base := uintptr(unsafe.Pointer(&mapping[0]))
+	end := base + uintptr(len(mapping))
 
 	n := len(w.Layers)
 	spans := make([][][]byte, n)
@@ -60,7 +62,7 @@ func newLayerPager(w *Weights, mmap []byte, budget int64) *layerPager {
 			&lw.QProj, &lw.KProj, &lw.VProj, &lw.OProj,
 			&lw.GateProj, &lw.UpProj, &lw.DownProj,
 		} {
-			s := alignedMappedSpan(wm, base, end, page)
+			s := wm.MappedSpan(base, end)
 			if len(s) == 0 {
 				continue
 			}
@@ -76,7 +78,7 @@ func newLayerPager(w *Weights, mmap []byte, budget int64) *layerPager {
 		return nil // heap-backed (e.g. GGUF) — nothing mapped to page
 	}
 	if budget <= 0 {
-		budget = autoWeightBudget()
+		budget = mmap.AutoBudget()
 	}
 	const ahead = 1
 	window := int(budget / maxLayer)
@@ -86,7 +88,7 @@ func newLayerPager(w *Weights, mmap []byte, budget int64) *layerPager {
 	if window >= n {
 		return nil // the whole model fits the budget — no streaming needed
 	}
-	return &layerPager{spans: spans, window: window, ahead: ahead, state: make([]bool, n), advise: madviseBytes}
+	return &layerPager{spans: spans, window: window, ahead: ahead, state: make([]bool, n)}
 }
 
 // enterLayer is called at the top of the layer loop before layer l is read. It
@@ -96,7 +98,7 @@ func (p *layerPager) enterLayer(l int) {
 	for _, t := range [2]int{l, l + p.ahead} {
 		if t >= 0 && t < len(p.spans) && !p.state[t] && len(p.spans[t]) > 0 {
 			for _, s := range p.spans[t] {
-				_ = p.advise(s, true) // WILLNEED
+				_ = mmap.Advise(s, true) // WILLNEED
 			}
 			p.state[t] = true
 			p.prefetches++
@@ -104,7 +106,7 @@ func (p *layerPager) enterLayer(l int) {
 	}
 	if e := l - p.window; e >= 0 && p.state[e] {
 		for _, s := range p.spans[e] {
-			_ = p.advise(s, false) // DONTNEED
+			_ = mmap.Advise(s, false) // DONTNEED
 		}
 		p.state[e] = false
 		p.evictions++
@@ -119,7 +121,7 @@ func (p *layerPager) finishLayers() {
 	for l := range p.state {
 		if p.state[l] {
 			for _, s := range p.spans[l] {
-				_ = p.advise(s, false)
+				_ = mmap.Advise(s, false)
 			}
 			p.state[l] = false
 			p.evictions++

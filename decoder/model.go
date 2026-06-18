@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/townsendmerino/aikit/mmap"
 	"github.com/townsendmerino/goinfer/internal/giw"
 )
 
@@ -96,20 +97,20 @@ func Load(dir string, opts Options) (*Model, error) {
 	// build on. giw.Read splits the weight blob from the metadata-GGUF tokenizer; the
 	// mapping is held on the Model and released by Close.
 	if strings.HasSuffix(dir, ".giw") {
-		data, rerr := mmapReadOnly(dir)
+		data, rerr := mmap.MapReadOnly(dir)
 		if rerr != nil {
 			closeBackend(be)
 			return nil, fmt.Errorf("decoder: mmap .giw: %w", rerr)
 		}
 		weightsBlob, _, gerr := giw.Read(data)
 		if gerr != nil {
-			_ = munmap(data)
+			_ = mmap.Unmap(data)
 			closeBackend(be)
 			return nil, fmt.Errorf("decoder: parse .giw bundle: %w", gerr)
 		}
 		w, lerr := LoadSerializedWeights(weightsBlob)
 		if lerr != nil {
-			_ = munmap(data)
+			_ = mmap.Unmap(data)
 			closeBackend(be)
 			return nil, lerr
 		}
@@ -246,7 +247,7 @@ func (m *Model) Close() error {
 		err = m.be.Close()
 	}
 	if m.mmap != nil {
-		_ = munmap(m.mmap)
+		_ = mmap.Unmap(m.mmap)
 		m.mmap = nil
 	}
 	for _, rt := range m.adapters { // release each compute-time adapter's mmap (#7)
