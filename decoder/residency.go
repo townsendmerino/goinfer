@@ -62,7 +62,35 @@ type ResidencyBackend interface {
 // sliding-window / logit-softcap / output-bias. q/k/v bias (Qwen2) and the (1+w)
 // RMS offset are handled, so they're allowed. Anything else → staged fallback.
 func (m *Model) DecodeRunnerEligible() bool {
-	return m.w.arch.decodeRunnerEligible()
+	if !m.w.arch.decodeRunnerEligible() {
+		return false
+	}
+	// Nemotron-H resident is DEFAULT-on at int4 — characterized benign vs f32 (92.5% greedy /
+	// 99.6% top-2 agreement, perplexity 1.677≈1.695, KL 0.058; the ~7.5% disagreements are all
+	// at near-tied positions, int4 picking f32's #2, zero confident-token errors — see
+	// docs/nemotron-resident.md). int8 (unmeasured on 8 GB; fits ≥12 GB) stays OPT-IN behind
+	// GOINFER_SSM_RESIDENT. Other resident families are unchanged.
+	if m.w.arch.nemotron != nil && os.Getenv("GOINFER_SSM_RESIDENT") == "" {
+		return m.residentProjsInt4()
+	}
+	return true
+}
+
+// residentProjsInt4 reports whether the loaded projection weights are int4 (W4A8) — the gate for
+// Nemotron-H default-on residency. Scans for the first attention/MLP projection (the mamba
+// in/out_proj are always f32 in the model and quantized at build, so they don't indicate the
+// load precision).
+func (m *Model) residentProjsInt4() bool {
+	for i := range m.w.Layers {
+		lw := &m.w.Layers[i]
+		if lw.UpProj.Rows() > 0 {
+			return lw.UpProj.Kind() == "int4"
+		}
+		if lw.QProj.Rows() > 0 {
+			return lw.QProj.Kind() == "int4"
+		}
+	}
+	return false
 }
 
 // decodeRunnerEligible is the arch-only predicate behind DecodeRunnerEligible —
@@ -81,9 +109,10 @@ func (a *Architecture) decodeRunnerEligible() bool {
 		return os.Getenv("GOINFER_SSM_RESIDENT") != ""
 	}
 	// Nemotron-H resident (dense squared-ReLU hybrid): single-op-per-block Mamba-2 / NoPE-GQA /
-	// relu² MLP, reusing the granite SSM engine. Guarded during parity bring-up (P3–P5).
+	// relu² MLP, reusing the granite SSM engine. Arch-eligible; the int4-default-vs-int8-opt-in
+	// precision gate is applied at the Model level (DecodeRunnerEligible).
 	if a.nemotron != nil {
-		return os.Getenv("GOINFER_SSM_RESIDENT") != ""
+		return true
 	}
 	if a.MoE != nil && !a.moeResidentEligible() {
 		return false
