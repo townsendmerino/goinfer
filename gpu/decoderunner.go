@@ -29,6 +29,12 @@ type DecodeRunner struct {
 	// §5 instrumentation: wall time of each Run phase, overwritten per call.
 	// Zero overhead when ignored; the decomposition test reads them.
 	TWrite, TEncode, TSync time.Duration
+
+	// Debug capture of the FIRST mamba layer's intermediate buffers (in_proj output,
+	// conv output, SSM output y, mixer output gated), recorded at build. ReadMambaCap
+	// copies the LAST run's values for the resident-vs-mamba2Step wiring diff
+	// (gpu/mamba_resident_capture_test.go). nil for non-hybrid; zero production cost.
+	mcapProj, mcapConv, mcapY, mcapGated *wgpu.Buffer
 }
 
 type runStep struct {
@@ -610,6 +616,9 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			mambaSSMOp(conv, proj, lw.mambaHeadP, lw.mambaSSM, y)
 			gated := storF(mp.dInner)
 			mambaGNormOp(y, proj, lw.mambaNormW, gated)
+			if r.mcapProj == nil { // debug: capture the FIRST mamba layer for the wiring diff
+				r.mcapProj, r.mcapConv, r.mcapY, r.mcapGated = proj, conv, y, gated
+			}
 			if lw.mambaOutProjF16 != nil { // f16 out_proj + residual (ResidMul folded into weights)
 				mambaF16Gemv(gated, lw.mambaOutProjF16, hidden, mp.dInner, true, r.xd)
 			} else {
@@ -761,6 +770,34 @@ func (r *DecodeRunner) writeInputs(x []float32, pos int) error {
 // leaving logits in r.lastLogits. WebGPU inserts the storage barriers between
 // data-dependent dispatches; across batched runners sharing one KV cache, a row's
 // kv-store thus correctly precedes a later row's attention read.
+// ReadMambaCap copies the first mamba layer's captured proj/conv/y/gated buffers (their
+// values from the most recent Run) back to the host — the resident's actual per-token kernel
+// I/O, for diffing against mamba2Step (gpu/mamba_resident_capture_test.go). projN/convN/dInner
+// are the element counts. Test-only; allocates fresh staging per call.
+func (r *DecodeRunner) ReadMambaCap(projN, convN, dInner int) (proj, conv, y, gated []float32) {
+	rd := func(b *wgpu.Buffer, n int) []float32 {
+		stag, _ := r.c.device.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(n * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
+		defer stag.Release()
+		enc, _ := r.c.device.CreateCommandEncoder(nil)
+		enc.CopyBufferToBuffer(b, 0, stag, 0, uint64(n*4))
+		cmd, _ := enc.Finish(nil)
+		r.c.queue.Submit(cmd)
+		cmd.Release()
+		enc.Release()
+		st := wgpu.BufferMapAsyncStatusUnknown
+		stag.MapAsync(wgpu.MapModeRead, 0, uint64(n*4), func(s wgpu.BufferMapAsyncStatus) { st = s })
+		r.c.device.Poll(true, nil)
+		if st != wgpu.BufferMapAsyncStatusSuccess {
+			panic("ReadMambaCap: map failed")
+		}
+		out := make([]float32, n)
+		copy(out, wgpu.FromBytes[float32](stag.GetMappedRange(0, uint(n*4))))
+		stag.Unmap()
+		return out
+	}
+	return rd(r.mcapProj, projN), rd(r.mcapConv, convN), rd(r.mcapY, dInner), rd(r.mcapGated, dInner)
+}
+
 func (r *DecodeRunner) record(pass *wgpu.ComputePassEncoder) {
 	for _, s := range r.steps {
 		pass.SetPipeline(s.pl)

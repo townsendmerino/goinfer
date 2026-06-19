@@ -72,13 +72,40 @@ prompts, while easy high-confidence ones survive:
 So int8 is usable for *easy greedy* lookups but produces factual/code errors and repetition on
 anything harder — consistent with the 66% agreement / 2.4× perplexity.
 
-## Why — SETTLED by localization experiments: it's the GPU mamba KERNELS
+## Why — CORRECTED again (Phase A): it is NOT the mamba kernels either
 
-> The two earlier guesses in this doc — "int8 mamba projections too lossy" and (after f16
-> failed) "f64-vs-f32 SSM compute + router sensitivity" — were **both wrong**. The
-> localization experiments below (E1/D1/D2/D3, `decoder/ssm_precision_localize_test.go` +
-> `gpu/ssm_kernel_control_test.go`) refute every precision/quant hypothesis and pin the gap
-> on the GPU mamba kernels.
+> Three guesses in this doc have now been refuted in turn: (1) "int8 mamba projections too
+> lossy", (2) "f64-vs-f32 SSM compute + router sensitivity", and now (3) "the GPU mamba
+> kernels". The D1/D2/D3 controls below correctly excluded precision/quant; they were read as
+> implicating the **GPU mamba kernels** because D3 (CPU mamba) = 93.6% vs the GPU resident =
+> 66%. But **that delta was never clean** — D3 runs attn/MoE through the *staged* tiled GEMM
+> while the resident runs its *own* W8A8 GEMVs (the Phase-A.1 confound). Direct capture proves
+> the mamba kernels are innocent:
+>
+> - **`gpu/mamba_realinput_test.go`** — replay REAL granite layer-0 in_proj outputs (captured
+>   from a live run) through the GPU conv/ssm/gatedNorm kernels vs `mamba2Step`, 66 tokens:
+>   **worst cosine 1.000000**. The kernels are bit-correct on real inputs in isolation.
+> - **`gpu/mamba_resident_capture_test.go`** — capture the resident's ACTUAL per-token layer-0
+>   kernel I/O from the full plan and diff vs `mamba2Step` on the resident's own proj, 60
+>   tokens: conv/y/gated **all cosine 1.000000**; and the resident's proj matches `mamba2Step`
+>   (cosine 0.9997, no divergence). So the mamba mixer-in-plan AND in_proj are correct — no
+>   barrier/race/state bug, no wiring bug in the mamba path.
+> - **`gpu/mamba_layersweep_test.go` + `staged_layersweep_test.go`** — token-0 hidden vs f32
+>   after each layer. Resident and staged are **bit-identical for layers 0–9**, then the
+>   resident accumulates more error, ending at **0.892** vs staged **0.951** (→ 66% vs 93.6%
+>   agreement). The drift is **distributed across the deep stack**, not any single op or layer
+>   (no jump at the attention layers 5/15/25/35; MoE-skipped sweep still drifts).
+>
+> **Verdict: there is no mamba-kernel bug to fix.** The kernels, in_proj, and out are correct.
+> The residual gap is the resident's all-GPU W8A8 forward accumulating modestly more error than
+> the staged (CPU-mamba + GPU tiled-GEMM) path — tiny per-layer f32/int8 differences amplified
+> by int8 re-quantization across granite's 40-layer all-MoE stack, then by cross-token state.
+> It is **not a single fixable kernel discrepancy**; closing it would mean reducing int8
+> re-quantization sensitivity (e.g. f16 activations on the residual stream / MoE), a precision
+> change — which the f16-mamba pass already showed is not worth it. **Recommendation stands:
+> opt-in greedy-only int8; do not fund a kernel hunt (there is no kernel bug).**
+
+### Original D1/D2/D3 controls (still valid — they excluded precision/quant)
 
 All runs teacher-forced vs the f32 CPU reference (R1), 219 tokens:
 
@@ -143,14 +170,14 @@ router sensitivity"; experiment E1 refuted that — f32 SSM is a no-op at 100%.)
    the experiments refute both premises (router robust at 97% with 22% benign flips; int8/f16
    projections cost only ~3%). The default stays int8; f16 stays behind `GOINFER_SSM_F16MAMBA`
    for the record only.
-4. **The gap is a GPU mamba-KERNEL bug, which means it is potentially recoverable at int8 speed
-   — a much better prize than "close as greedy-only".** D3 (CPU mamba) hits 93.6%; the resident
-   (GPU mamba) hits 66.2% on identical int8 weights. So the realistic options are:
-   - **(preferred, if funded) Debug the GPU mamba kernels.** Bisect the per-layer resident-mixer
-     vs `mamba2Step` divergence *over multiple tokens* (it's ~0.99 at token 1 but the multi-token
-     whole-model is 0.37 → the discrepancy is in the **state recurrence compounding**: suspect
-     the `ssm` state update / `dA` exp / conv-window ring, not the projections). Land it and
-     granite resident recovers ≈93% quality at **29.6 ms/tok (33.7 tok/s, 10× CPU)** — usable as
-     a default, not just greedy-only.
-   - **(fallback) Bank the opt-in int8 10× as greedy-only**, as today. No router island, no f16.
-     For quality, use the f32 CPU path (3.3 tok/s) until the kernel is fixed.
+4. **Do NOT fund a "GPU mamba kernel" debug — Phase A proved the kernels are bit-correct**
+   (`gpu/mamba_realinput_test.go`, `mamba_resident_capture_test.go`: cosine 1.000000 on real
+   inputs, in isolation and in-plan). The 93.6% (D3) vs 66.2% (resident) delta is the resident's
+   all-GPU W8A8 forward vs the staged tiled-GEMM path — a *distributed* accumulation across
+   granite's 40-layer all-MoE stack (resident/staged are bit-identical for the first ~10 layers,
+   then the resident drifts: token-0 final 0.892 vs 0.951), not a single fixable op. Closing it
+   would require a precision change (f16 residual stream / MoE activations), which the f16-mamba
+   pass already showed isn't worth it for a tiny model.
+5. **Bank the opt-in int8 10× as greedy-only** (the standing recommendation). For quality use the
+   f32 CPU path (3.3 tok/s). There is no cheap correctness fix; the gap is fundamental to the
+   all-GPU int8 path on this deep, every-layer-MoE architecture.

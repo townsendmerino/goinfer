@@ -149,8 +149,21 @@ func mamba2Step(h []float32, w *mamba2Weights, p mamba2Params, eps float64, st *
 	if ssmQ8CPU {
 		gated = q8RoundTrip(gated, 1, len(gated)) // the out_proj activation (resident quant → int8)
 	}
+	if mambaCapHook != nil { // test seam: capture real (in_proj output, mixer output) for GPU-kernel parity replay
+		mambaCapHook(proj, gated)
+	}
 	return matvec(outProj, p.Hidden, dInner, gated)
 }
+
+// mambaCapHook (test seam, gpu/mamba_realinput_test.go) captures each mamba2Step's in_proj
+// output and mixer output (post gated-norm, pre out_proj) so real per-token inputs can be
+// replayed through the GPU conv/ssm/gatedNorm kernels — the "green isolation / broken in-model"
+// reconciliation. nil in production.
+var mambaCapHook func(proj, gated []float32)
+
+// SetMambaCapHook installs/clears the capture hook (the gpu package can't import decoder-internal
+// state directly, so it drives this via the export, like SetSSMQ8CPU).
+func SetMambaCapHook(f func(proj, gated []float32)) { mambaCapHook = f }
 
 // ssmQ8CPU + q8RoundTrip are a confirmation seam (GOINFER_SSM_Q8CPU): round-trip the
 // Mamba projections through int8 so the CPU reference carries the SAME quantization error
