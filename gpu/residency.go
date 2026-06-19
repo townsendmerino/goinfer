@@ -91,7 +91,8 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	// eligibility flag (which flips at P6) so it can be parity-gated first. Production
 	// routing still goes through withResidency()'s DecodeRunnerEligible() check.
 	_, _, _, _, _, _, _, _, _, granOK := m.GraniteResidentParams()
-	if !m.DecodeRunnerEligible() && !granOK {
+	_, _, _, _, _, _, _, nemoOK := m.NemotronResidentParams()
+	if !m.DecodeRunnerEligible() && !granOK && !nemoOK {
 		return nil, false, nil
 	}
 	b.mu.Lock()
@@ -249,6 +250,22 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 			gSize: gNG * gDS, repeat: gNH / gNG, normGroups: 1,
 		}
 	}
+	// Nemotron-H (dense squared-ReLU hybrid): the same Mamba-2 geometry but the gated RMSNorm
+	// is PER GROUP (normGroups = NGroups), and there are NO multipliers (rmul/lmMult stay 1).
+	nNH, nHd, nDS, nNG, nK, nNormG, _, nemoOK := m.NemotronResidentParams()
+	var nemoZeroInvFreq *wgpu.Buffer // NoPE: a zeroed invFreq makes the rope kernel an identity
+	if nemoOK {
+		nIn := nNH * nHd
+		rd.rm.mamba = &mambaRunParams{
+			nHeads: nNH, hp: nHd, dn: nDS, nGroups: nNG, dConv: nK,
+			dInner: nIn, convDim: nIn + 2*nNG*nDS, projDim: 2*nIn + 2*nNG*nDS + nNH,
+			gSize: nNG * nDS, repeat: nNH / nNG, normGroups: nNormG,
+		}
+		var ze error
+		if nemoZeroInvFreq, ze = up32(make([]float32, hd/2)); ze != nil {
+			return fail(ze)
+		}
+	}
 	// LM head: tied (LMHead empty → the Embed matrix is the head) or separate.
 	headW := &w.LMHead
 	if w.LMHead.Rows() == 0 {
@@ -311,6 +328,86 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 			ropeScale: float32(m.RopeMscaleLayer(i)), // per-layer YaRN mscale (Lever C7)
 		}
 		var e error
+		if nemoOK {
+			// Nemotron-H single-op-per-block: ONE pre-norm (PreAttnNorm) + exactly one op +
+			// residual. No FFN pairing, no multipliers. The resident layer-loop branches on
+			// rl.nemoKind (mamba / NoPE-attn / relu²-MLP). int8 mamba projections (projF32);
+			// attn/MLP projections take the model's native precision via proj (W8A8 or W4A8).
+			if rl.attnNorm, e = up32(lw.PreAttnNorm); e != nil {
+				return fail(e)
+			}
+			rl.mlpNorm = rl.attnNorm // the relu²-MLP block reuses the single pre-norm
+			mp := rd.rm.mamba
+			switch m.NemotronBlockKind(i) {
+			case 0: // Mamba-2 mixer
+				rl.nemoKind = nemoKMamba
+				rl.isMamba = true
+				inP, cW, cB, aLog, dW, dtB, nW, outP := m.GraniteMambaWeights(i)
+				if rl.mambaInProj, e = projF32(inP, mp.projDim, hidden); e != nil {
+					return fail(e)
+				}
+				if rl.mambaOutProj, e = projF32(outP, hidden, mp.dInner); e != nil {
+					return fail(e)
+				}
+				if rl.mambaConvW, e = up32(cW); e != nil {
+					return fail(e)
+				}
+				if rl.mambaConvB, e = up32(cB); e != nil {
+					return fail(e)
+				}
+				headP := make([]float32, mp.nHeads*3)
+				for h := 0; h < mp.nHeads; h++ {
+					headP[h*3+0] = float32(-math.Exp(float64(aLog[h])))
+					headP[h*3+1] = dtB[h]
+					headP[h*3+2] = dW[h]
+				}
+				if rl.mambaHeadP, e = up32(headP); e != nil {
+					return fail(e)
+				}
+				if rl.mambaNormW, e = up32(nW); e != nil {
+					return fail(e)
+				}
+				if rl.mambaWin, e = stateBuf((mp.dConv - 1) * mp.convDim); e != nil {
+					return fail(e)
+				}
+				if rl.mambaSSM, e = stateBuf(mp.nHeads * mp.hp * mp.dn); e != nil {
+					return fail(e)
+				}
+			case 1: // NoPE GQA attention (identity rope via the zeroed invFreq)
+				rl.nemoKind = nemoKAttn
+				rl.invFreq = nemoZeroInvFreq
+				kc, e1 := c.NewKVCache(nil, ctxCap*kvDim)
+				vc, e2 := c.NewKVCache(nil, ctxCap*kvDim)
+				if e1 != nil || e2 != nil {
+					return fail(fmt.Errorf("gpu: nemotron KV alloc (layer %d): %v %v", i, e1, e2))
+				}
+				keepF(kc.Release)
+				keepF(vc.Release)
+				rl.kCache, rl.vCache = kc.buf, vc.buf
+				if rl.q, e = proj(&lw.QProj); e != nil {
+					return fail(e)
+				}
+				if rl.k, e = proj(&lw.KProj); e != nil {
+					return fail(e)
+				}
+				if rl.v, e = proj(&lw.VProj); e != nil {
+					return fail(e)
+				}
+				if rl.o, e = proj(&lw.OProj); e != nil {
+					return fail(e)
+				}
+			case 2: // non-gated relu² MLP
+				rl.nemoKind = nemoKMLP
+				if rl.up, e = proj(&lw.UpProj); e != nil {
+					return fail(e)
+				}
+				if rl.down, e = proj(&lw.DownProj); e != nil {
+					return fail(e)
+				}
+			}
+			rd.rm.layers = append(rd.rm.layers, rl)
+			continue
+		}
 		if rl.attnNorm, e = up32(lw.PreAttnNorm); e != nil {
 			return fail(e)
 		}

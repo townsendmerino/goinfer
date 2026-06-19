@@ -71,13 +71,18 @@ func (m *Model) DecodeRunnerEligible() bool {
 func (a *Architecture) decodeRunnerEligible() bool {
 	// Families with their own non-uniform forward (hybrid mixers, Gemma-4, Llama-4,
 	// qwen3.5) keep the staged path regardless.
-	if a.gemma4 != nil || a.qwen35 != nil || a.nemotron != nil || a.llama4 != nil {
+	if a.gemma4 != nil || a.qwen35 != nil || a.llama4 != nil {
 		return false
 	}
 	// Granite-4.0-H resident SSM hybrid (P5b): its own mixer-kind path (Mamba-2 ⊕
 	// attention), so it bypasses the standard GQA gates below. Guarded during the
 	// parity bring-up (P5b.3/P5b.4); P6 makes this unconditional.
 	if a.granite != nil {
+		return os.Getenv("GOINFER_SSM_RESIDENT") != ""
+	}
+	// Nemotron-H resident (dense squared-ReLU hybrid): single-op-per-block Mamba-2 / NoPE-GQA /
+	// relu² MLP, reusing the granite SSM engine. Guarded during parity bring-up (P3–P5).
+	if a.nemotron != nil {
 		return os.Getenv("GOINFER_SSM_RESIDENT") != ""
 	}
 	if a.MoE != nil && !a.moeResidentEligible() {
@@ -272,6 +277,23 @@ func (m *Model) GraniteResidentParams() (nHeads, headDim, dState, nGroups, dConv
 
 // GraniteMambaLayer reports whether layer i is a Mamba-2 mixer (vs GQA attention).
 func (m *Model) GraniteMambaLayer(i int) bool { return m.w.arch.isMambaLayer(i) }
+
+// NemotronResidentParams returns the resident geometry for Nemotron-H (the dense squared-ReLU
+// hybrid: Mamba-2 / NoPE-GQA / non-gated relu² MLP, single-op-per-block, no multipliers, no MoE).
+// attnScale is the GQA q·k multiplier (1/√head_dim). normGroups is the Mamba gated-RMSNorm group
+// count — Nemotron normalizes PER GROUP (NGroups), unlike Granite's full-dInner (1). ok=false for
+// non-nemotron archs.
+func (m *Model) NemotronResidentParams() (nHeads, headDim, dState, nGroups, dConv, normGroups int, attnScale float32, ok bool) {
+	np := m.w.arch.nemotron
+	if np == nil {
+		return 0, 0, 0, 0, 0, 0, 0, false
+	}
+	return np.NHeads, np.HeadDim, np.DState, np.NGroups, np.DConv, np.NGroups, float32(m.w.arch.AttnScale), true
+}
+
+// NemotronBlockKind returns layer i's single-op kind: 0 mamba · 1 attention · 2 mlp (the
+// arch's nemoMamba/nemoAttn/nemoMLP). Mamba weights reuse GraniteMambaWeights (model-agnostic).
+func (m *Model) NemotronBlockKind(i int) uint8 { return m.w.arch.nemotron.blockKind[i] }
 
 // GraniteMambaWeights returns layer i's f32 Mamba-2 mixer tensors (nil if the layer is an
 // attention layer). The resident build quantizes inProj/outProj to W8A8 and uploads

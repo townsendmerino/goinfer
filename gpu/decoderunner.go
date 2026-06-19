@@ -43,6 +43,15 @@ type runStep struct {
 	gx, gy uint32
 }
 
+// Nemotron-H per-layer single-op kinds. nemoNone (0) ⇒ the layer runs the standard
+// mixer+FFN path (every other resident family); the others run exactly one op + residual.
+const (
+	nemoNone uint8 = iota
+	nemoKMamba
+	nemoKAttn
+	nemoKMLP
+)
+
 type posUni struct {
 	buf *wgpu.Buffer
 	gen func(pos int) []uint32 // uniform contents for this pos
@@ -93,7 +102,10 @@ type runLayer struct {
 	// (causal-conv ring) + ssm (selective state) are build-once persistent state,
 	// updated in place per token and reset per generation. ResidMul is folded into
 	// mambaOutProj's scale (the residual add). isMamba=false ⇒ attention layer (above).
-	isMamba                                        bool
+	isMamba bool
+	// Nemotron-H single-op-per-block: each layer is exactly ONE op (no mixer+FFN pairing).
+	// nemoKind ∈ {nemoNone, nemoKMamba, nemoKAttn, nemoKMLP}; nemoNone ⇒ standard mixer+FFN.
+	nemoKind                                       uint8
 	mambaInProj, mambaOutProj                      decodeWeight // int8 path (nil when f16)
 	mambaInProjF16, mambaOutProjF16                *wgpu.Buffer // f16 path (default); nil ⇒ int8
 	mambaConvW, mambaConvB, mambaHeadP, mambaNormW *wgpu.Buffer
@@ -194,7 +206,7 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		ensures = append(ensures, c.ensureMLAStore, c.ensureMLAHeadMV, c.ensureMLAQRope, c.ensureMLAAttn)
 	}
 	if m.mamba != nil {
-		ensures = append(ensures, c.ensureMambaConv, c.ensureMambaSSM, c.ensureMambaGNorm, c.ensureMambaF16)
+		ensures = append(ensures, c.ensureMambaConv, c.ensureMambaSSM, c.ensureMambaGNorm, c.ensureMambaF16, c.ensureRelu2)
 	}
 	for _, e := range ensures {
 		if err := e(); err != nil {
@@ -265,6 +277,15 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		q, s := storF(kp/4), storF(1)
 		p := uni([]uint32{uint32(K), uint32(kp), 0, 0})
 		add(c.swigluQuantPipeline, bind(c.swigluQuantLayout, gate, up, q, s, p), 1, 1)
+		return q, s
+	}
+	// relu2Quant fuses Nemotron-H's non-gated relu²(up)→int8 (the squared-ReLU MLP), the
+	// unary analog of swigluQuant. Bindings: up / qout / scales / dims (4 — no gate).
+	relu2Quant := func(up *wgpu.Buffer, K int) (*wgpu.Buffer, *wgpu.Buffer) {
+		kp := padK(K)
+		q, s := storF(kp/4), storF(1)
+		p := uni([]uint32{uint32(K), uint32(kp), 0, 0})
+		add(c.relu2Pipeline, bind(c.relu2Layout, up, q, s, p), 1, 1)
 		return q, s
 	}
 	quant := func(in *wgpu.Buffer, K int) (*wgpu.Buffer, *wgpu.Buffer) {
@@ -639,6 +660,15 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		if ssmStopLayer >= 0 && i > ssmStopLayer {
 			break // GOINFER_SSM_STOP_LAYER debug: logits from xd after this layer
 		}
+		if lw.nemoKind == nemoKMLP {
+			// Nemotron-H non-gated relu² MLP block (single-op-per-block, no mixer): norm → up →
+			// relu²→int8 → down + residual into xd. The other kinds fall through to the mixer.
+			mq, ms := rmsQuant(r.xd, lw.mlpNorm, hidden)
+			up := gemv(mq, ms, lw.up)
+			rq, rs := relu2Quant(up, lw.up.nRows())
+			gemvAdd(rq, rs, lw.down, r.xd)
+			continue
+		}
 		if lw.isMamba {
 			// Mamba-2 SSM mixer (P5b): norm → in_proj → conv(ring) → ssm(state) → gatedNorm
 			// → out_proj+residual. State {win, ssm} persists in lw, updated in place per token.
@@ -738,6 +768,9 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			}
 			cq, cs := quant(ctxv, nH*hd)
 			gemvAdd(cq, cs, lw.o, r.xd) // o-proj + residual into xd
+		}
+		if lw.nemoKind == nemoKMamba || lw.nemoKind == nemoKAttn {
+			continue // Nemotron single-op-per-block: the mixer IS the layer — no FFN sub-block
 		}
 		if ssmSkipFFN { // GOINFER_SSM_SKIPFFN debug: isolate the mixer from the FFN
 			continue
