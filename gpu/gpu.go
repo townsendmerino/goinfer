@@ -198,6 +198,10 @@ type Context struct {
 	moeExpertW8A16Shader   *wgpu.ShaderModule
 	moeExpertW8A16Pipeline *wgpu.ComputePipeline
 	moeExpertW8A16Layout   *wgpu.BindGroupLayout
+	// Nemotron-H squared-ReLU FFN (relu2.go): fused relu²(up)→int8 for the non-gated MLP block.
+	relu2Shader   *wgpu.ShaderModule
+	relu2Pipeline *wgpu.ComputePipeline
+	relu2Layout   *wgpu.BindGroupLayout
 
 	// MoE residency (Lever C3, moe.go): router top-k selection (moeRoute) feeding the
 	// indexed sparse-expert GEMV — Mixtral / Qwen2-MoE / GLM / DeepSeek on the resident path.
