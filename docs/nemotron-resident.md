@@ -2,7 +2,8 @@
 
 Porting Nemotron-Nano (Nemotron-H hybrid) to the GPU full-residency DecodeRunner, reusing the
 granite SSM engine (`mambaConv`/`mambaSSM`/`mambaGatedNorm`, the parity/drift/quality harnesses).
-RTX 2070 SUPER (8 GB). Status: **P0/P1/P2 done; P3–P7 blocked on the 8 GB fit (see P0).**
+RTX 2070 SUPER (8 GB). Status: **COMPLETE (P0–P7).** Headline: **int4-resident 92.5% agreement /
+perplexity 1.677 vs f32 1.695 — NOT granite's wall; the dense/no-MoE hybrid quantizes cleanly.**
 
 ## P1 — architecture: DENSE squared-ReLU hybrid ✓ (no MoE)
 
@@ -49,21 +50,53 @@ the existing W8A8 path; this is the only new resident kernel.
 weights (so only the resident int8 *activation* quant differs), 32 tokens, non-mult-16 `inter` to
 exercise padding → **worst cosine 0.999567.** The new piece is correct.
 
-## P3–P7 — remaining (next session)
+## P3/P4 — wiring + whole-model long-context parity ✓ (cosine 1.0, no drift)
 
-- **P3/P4** single-layer then whole-model long-context parity (1/16/256/1k/2k) on the tiny nemotron
-  fixture — the cheap-insurance + drift gates. Needs the single-op-per-block wiring + bridge.
-- **P5 quality** — run the harness at **int4** (int8 doesn't fit). **Prediction (not assumption):**
-  Nemotron-H is the *same deep hybrid + recurrent mamba-state* architecture whose int8 gap granite
-  proved FUNDAMENTAL and precision-invariant (chaotic f32-reduction-order amplification, NOT the MoE
-  router). Removing MoE removes one *suspect* but not the proven *cause*, so a similar wall is
-  likely → expected outcome **opt-in, not default**. But the task is right that it must be MEASURED
-  (the no-MoE/relu² path could differ); the int4 proxy is the way to do it on this box.
-- **P6/P7** realized int4 ms/tok + tok/s vs CPU/staged; full `-tags gpu` suite green.
+`runLayer.nemoKind` (`gpu/decoderunner.go`): an early relu²-MLP branch + "skip FFN after the mixer"
+for mamba/attn layers (single-op-per-block); `nemoNone` (every other family) is untouched →
+byte-identical. Bridge (`gpu/residency.go`): a nemotron branch building per-layer weights by block
+kind (int8 mamba via `projF32`; attn/MLP via `proj` = model-native W8A8/W4A8), ONE pre-norm
+per layer, NO multipliers, **NoPE = a zeroed invFreq** (rope kernel → identity). Eligibility flips
+guarded (`a.nemotron != nil → GOINFER_SSM_RESIDENT`).
 
-## Decision (so far)
+**Parity** (`gpu/nemotron_resident_parity_test.go`, opt-in): resident vs CPU `runLayersNemotron`,
+matched int8, the 1/16/256/1k/2k ladder → **cosine 1.000000 (maxAbs ~6e-7) at EVERY checkpoint
+through 2048 tokens, ZERO drift.** The single-op routing, NoPE, relu²-FFN, and state threading
+(conv ring + ssm + KV) are bit-correct over long context.
 
-Dense confirmed, no router-wall-by-MoE. The squared-ReLU kernel is built and parity-clean. The
-default-vs-opt-in call is **deferred to the P5 int4 measurement** — but the granite evidence
-(fundamental, precision-invariant) makes **opt-in** the likely outcome. int8-on-the-real-9B is not
-measurable here (8 GB); a smaller Nemotron-Nano or more VRAM would be needed for the exact int8 number.
+## P5/P6 — quality + speed (int4, real 9B) — THE HEADLINE
+
+int8 doesn't fit 8 GB; the 9B fits at **int4** (int8 mamba projections + int4 attn/MLP, ~6–7 GB,
+`ResidentActive=true`). Teacher-forced vs the f32 CPU reference (R1), 159 held-out tokens
+(`gpu/nemotron_quality_test.go`):
+
+| metric | int4-resident vs f32 R1 |
+|---|---|
+| **greedy agreement** | **92.5%** |
+| **perplexity** | **1.677** (R1 1.695 — essentially identical) |
+| **mean KL(f32‖int4)** | **0.058** |
+| **top-5 overlap** | 88.2% |
+| **speed** | **77.2 ms/tok = 12.9 tok/s** (~13× the f32 CPU path) |
+
+Free-running greedy is coherent + factual: "Paris … the capital and largest city of France",
+"2+2 → 4", **"red, blue, and yellow"** (correct primary colors — granite's int8 resident said
+"red, blue, and **red**"). **This is the opposite of granite's wall** (granite int8 = 66% / KL 0.93
+/ 2.4× perplexity): Nemotron-H quantizes essentially losslessly in distribution.
+
+**Why the contrast:** granite's gap was proven NOT to be the MoE router *per se* — it's the chaotic
+f32-reduction-order amplification through a deep stack, which granite's **64-expert top-6 router**
+turns into hard expert-selection flips (a discrete cliff). Nemotron-H has **no router** — every
+block is a smooth dense op, so the same tiny perturbations stay *smooth* (KL 0.058, ppl unchanged)
+instead of flipping a discrete selection. The "no MoE router" really did matter — measured, not assumed.
+
+## Decision — keep OPT-IN (guarded), default-on at int8/adequate-VRAM
+
+Letting the number drive it: int4 agreement **92.5%** is just below the ≳95% default bar, so the
+eligibility flip stays **guarded (opt-in via `GOINFER_SSM_RESIDENT`)** — the principled call on a
+sub-95% greedy number. BUT this is a near-default result, not a degradation: perplexity and KL are
+at the f32 floor, generation is clean, and it's **vastly** better than granite. Two caveats push
+toward default-on in practice: (1) this is **int4** (the quant floor); int8 (the production default)
+would land higher — likely clearing 95% — but doesn't fit *this* 8 GB box (it fits on ≥12 GB GPUs);
+(2) nemotron is NOT at a precision-invariant wall (unlike granite), so precision genuinely helps
+here. **Recommendation: ship opt-in on 8 GB (int4); flip to default-on for int8 deployments with
+adequate VRAM.** Re-measure int8 agreement on a ≥12 GB GPU to confirm the ≥95% flip.
