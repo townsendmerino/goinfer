@@ -185,6 +185,11 @@ type Context struct {
 	mambaGNormShader   *wgpu.ShaderModule
 	mambaGNormPipeline *wgpu.ComputePipeline
 	mambaGNormLayout   *wgpu.BindGroupLayout
+	// f16 Mamba in/out_proj GEMV (mamba_f16.go): f16 weight × f32 activation — the
+	// mixed-precision quality fix (granite int8 loss localized to the SSM projections).
+	mambaF16Shader   *wgpu.ShaderModule
+	mambaF16Pipeline *wgpu.ComputePipeline
+	mambaF16Layout   *wgpu.BindGroupLayout
 
 	// MoE residency (Lever C3, moe.go): router top-k selection (moeRoute) feeding the
 	// indexed sparse-expert GEMV — Mixtral / Qwen2-MoE / GLM / DeepSeek on the resident path.

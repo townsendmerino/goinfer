@@ -77,8 +77,8 @@ func top5(p []float64) map[int]bool {
 // Measurement only; loads sequentially (granite f32 ≈ 28 GB RAM each). Deliverable:
 // docs/ssm-int8-quality.md.
 func TestSSMInt8Quality(t *testing.T) {
-	if testing.Short() {
-		t.Skip("ssm int8 quality")
+	if testing.Short() || os.Getenv("GOINFER_SSM_QUALITY") == "" {
+		t.Skip("ssm int8 quality eval — slow (5 granite loads); set GOINFER_SSM_QUALITY=1")
 	}
 	if _, err := New(); err != nil {
 		t.Skipf("no webgpu: %v", err)

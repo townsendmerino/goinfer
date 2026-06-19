@@ -5,6 +5,7 @@ package gpu
 import (
 	"fmt"
 	"math"
+	"os"
 
 	"github.com/cogentcore/webgpu/wgpu"
 	"github.com/townsendmerino/aikit/linalg"
@@ -326,11 +327,30 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 			rl.isMamba = true
 			mp := rd.rm.mamba
 			inP, cW, cB, aLog, dW, dtB, nW, outP := m.GraniteMambaWeights(i)
-			if rl.mambaInProj, e = projF32(inP, mp.projDim, hidden); e != nil {
-				return fail(e)
-			}
-			if rl.mambaOutProj, e = projF32Mul(outP, hidden, mp.dInner, rmul); e != nil {
-				return fail(e)
+			// DEFAULT int8: f16 on the mamba projections does NOT recover quality (measured
+			// 63.9% vs int8 66.2% — the loss is the SSM f32-vs-f64 exp feeding the
+			// hypersensitive 64-expert MoE router, not the projection precision; the f16
+			// GEMV is proven accurate) and is ~2× slower, so int8 is strictly better.
+			// GOINFER_SSM_F16MAMBA keeps the f16 path available for the record.
+			if os.Getenv("GOINFER_SSM_F16MAMBA") != "" { // f16 (no quality gain; kept for experiments)
+				var b *wgpu.Buffer
+				if b, e = c.UploadF16Weight(inP, mp.projDim, hidden, 1); e != nil {
+					return fail(e)
+				}
+				keepF(b.Release)
+				rl.mambaInProjF16 = b
+				if b, e = c.UploadF16Weight(outP, hidden, mp.dInner, rmul); e != nil {
+					return fail(e)
+				}
+				keepF(b.Release)
+				rl.mambaOutProjF16 = b
+			} else { // int8 (default): faster, same quality
+				if rl.mambaInProj, e = projF32(inP, mp.projDim, hidden); e != nil {
+					return fail(e)
+				}
+				if rl.mambaOutProj, e = projF32Mul(outP, hidden, mp.dInner, rmul); e != nil {
+					return fail(e)
+				}
 			}
 			if rl.mambaConvW, e = up32(cW); e != nil {
 				return fail(e)

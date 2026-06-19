@@ -88,7 +88,8 @@ type runLayer struct {
 	// updated in place per token and reset per generation. ResidMul is folded into
 	// mambaOutProj's scale (the residual add). isMamba=false ⇒ attention layer (above).
 	isMamba                                        bool
-	mambaInProj, mambaOutProj                      decodeWeight
+	mambaInProj, mambaOutProj                      decodeWeight // int8 path (nil when f16)
+	mambaInProjF16, mambaOutProjF16                *wgpu.Buffer // f16 path (default); nil ⇒ int8
 	mambaConvW, mambaConvB, mambaHeadP, mambaNormW *wgpu.Buffer
 	mambaWin, mambaSSM                             *wgpu.Buffer
 }
@@ -181,7 +182,7 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		ensures = append(ensures, c.ensureMLAStore, c.ensureMLAHeadMV, c.ensureMLAQRope, c.ensureMLAAttn)
 	}
 	if m.mamba != nil {
-		ensures = append(ensures, c.ensureMambaConv, c.ensureMambaSSM, c.ensureMambaGNorm)
+		ensures = append(ensures, c.ensureMambaConv, c.ensureMambaSSM, c.ensureMambaGNorm, c.ensureMambaF16)
 	}
 	for _, e := range ensures {
 		if err := e(); err != nil {
@@ -313,6 +314,27 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			es := []bgEnt{{y, 0, 0}, {proj, 0, 0}, {normW, 0, 0}, {gated, 0, 0}, {dG, 0, 0}}
 			add(c.mambaGNormPipeline, bindOff(c.mambaGNormLayout, es), uint32(mp.normGroups), 1)
 		}
+	}
+	// f16 mamba projections (quality fix): plain f32 rmsnorm activation + f16 weight GEMV.
+	rmsnormF32 := func(in, weight *wgpu.Buffer, n int) *wgpu.Buffer {
+		out := storF(n)
+		p := uni([]uint32{uint32(n), f32bits(eps), boolU32(addOne), 0})
+		add(c.rmsnormPipeline, bind(c.rmsnormLayout, in, weight, out, p), 1, 1)
+		return out
+	}
+	mambaF16Gemv := func(act, wf16 *wgpu.Buffer, N, K int, residual bool, dst *wgpu.Buffer) *wgpu.Buffer {
+		out := dst
+		if out == nil {
+			out = storF(N)
+		}
+		res := uint32(0)
+		if residual {
+			res = 1
+		}
+		p := uni([]uint32{uint32(K), uint32(N), res, 0})
+		gx, gy := gemvGrid(N)
+		add(c.mambaF16Pipeline, bind(c.mambaF16Layout, act, wf16, out, p), gx, gy)
+		return out
 	}
 	// §4: the per-token uniforms (rope-q, rope-store-k, v-store, attn) depend only
 	// on pos, NOT on layer index — their contents are identical across all 28
@@ -572,17 +594,28 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		if lw.isMamba {
 			// Mamba-2 SSM mixer (P5b): norm → in_proj → conv(ring) → ssm(state) → gatedNorm
 			// → out_proj+residual. State {win, ssm} persists in lw, updated in place per token.
-			// ResidMul folded into mambaOutProj's scale. The FFN sub-block below is shared.
-			aq, as := rmsQuant(r.xd, lw.attnNorm, hidden)
-			proj := gemv(aq, as, lw.mambaInProj) // [projDim] = z ‖ xBC ‖ dt
-			conv := storF(m.mamba.convDim)
+			// ResidMul folded into the out_proj weights. The FFN sub-block below is shared.
+			mp := m.mamba
+			var proj *wgpu.Buffer
+			if lw.mambaInProjF16 != nil { // f16 path (quality): f32 rmsnorm activation + f16 GEMV
+				normed := rmsnormF32(r.xd, lw.attnNorm, hidden)
+				proj = mambaF16Gemv(normed, lw.mambaInProjF16, mp.projDim, hidden, false, nil)
+			} else { // int8 path (flag)
+				aq, as := rmsQuant(r.xd, lw.attnNorm, hidden)
+				proj = gemv(aq, as, lw.mambaInProj)
+			}
+			conv := storF(mp.convDim)
 			mambaConvOp(proj, lw.mambaConvW, lw.mambaConvB, lw.mambaWin, conv)
-			y := storF(m.mamba.dInner)
+			y := storF(mp.dInner)
 			mambaSSMOp(conv, proj, lw.mambaHeadP, lw.mambaSSM, y)
-			gated := storF(m.mamba.dInner)
+			gated := storF(mp.dInner)
 			mambaGNormOp(y, proj, lw.mambaNormW, gated)
-			gq, gs := quant(gated, m.mamba.dInner)
-			gemvAdd(gq, gs, lw.mambaOutProj, r.xd) // out_proj + ResidMul·residual into xd
+			if lw.mambaOutProjF16 != nil { // f16 out_proj + residual (ResidMul folded into weights)
+				mambaF16Gemv(gated, lw.mambaOutProjF16, hidden, mp.dInner, true, r.xd)
+			} else {
+				gq, gs := quant(gated, mp.dInner)
+				gemvAdd(gq, gs, lw.mambaOutProj, r.xd)
+			}
 		} else if m.mla != nil {
 			// MLA latent attention (Lever C4c): input-norm → q (LoRA/direct) + kv-down →
 			// latent store → W_UK-absorb + qRope → rank-space attend → W_UV-lift → o-proj.

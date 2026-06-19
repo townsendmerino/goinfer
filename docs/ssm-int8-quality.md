@@ -76,6 +76,32 @@ downstream. Transformers tolerate int8 (~0.999); the Mamba mixer doesn't. The re
 *computationally correct* (cosine 0.99 vs an int8 reference) — it faithfully computes the int8
 model; the int8 **mamba** is the degraded artifact.
 
+## f16 mixed-precision attempt (built + measured) — does NOT recover quality
+
+Acting on the R2 localization, I raised the mamba `in/out_proj` to **f16** (f16 weights ×
+f32 activation; experts/attention/MoE stay int8) — `gpu/mamba_f16.go`, default-guarded to
+granite-resident. It **fails Gate 1**, essentially unchanged from int8:
+
+| config | agreement | KL | top-5 | perplexity | ms/tok |
+|---|---|---|---|---|---|
+| f32 R1 | 100% | 0 | 100% | 6.49 | 300 (CPU) |
+| **R2 staged (f32 mamba + int8 MoE)** | **95.4%** | **0.026** | 90.3% | **6.78** | 498 |
+| int8 resident | 66.2% | 0.93 | 58.3% | 15.73 | **29.6** |
+| **f16-mamba resident** | **63.9%** | **0.94** | 58.0% | **14.3** | 55.8 |
+
+f16 is **no better than int8** (63.9% vs 66.2%) and **2× slower** (f16 = 2× bandwidth on those
+GEMVs). Qualitatively it still loops ("red, blue, and red …"). **The f16 GEMV is proven
+accurate** (`cosine 1.000` vs f32 matvec in isolation), so this is **not an f16 bug** —
+**the projection precision is not the lever.** The R2-based hypothesis is refuted.
+
+**Corrected root cause.** R2 (95%) runs the *entire* mamba mixer in f64 on the CPU; the
+resident mixer runs the SSM `exp(dt·A)` recurrence in **f32 on the GPU** (no f64). That f32-vs-f64
+gap is ~1e-5 per step — but granite's **64-expert / top-6 MoE router** flips its expert
+*selection* on differences that small, and a flipped selection swaps whole experts → large
+divergence that compounds over 40 layers. f16/int8 weights don't touch the SSM-compute precision,
+so they don't help. The lever is the **SSM f64-precision (GPU can't) or MoE-router robustness** —
+a harder, model-specific problem, not the projection precision.
+
 ## Recommendation
 
 1. **Keep it opt-in, as shipped** (`GOINFER_SSM_RESIDENT`). It's coherent + factual on simple
@@ -84,9 +110,10 @@ model; the int8 **mamba** is the degraded artifact.
    the f32 default (CPU; granite's staged path is slower than CPU, so today's default IS f32).
 2. **Do NOT serve granite resident with sampling** (temp>0): KL 0.93 ⇒ sampled output is far
    worse than the already-degraded greedy.
-3. **Fund the f16 pass — and target the MAMBA PROJECTIONS, not the MoE** (corrected by R2: int8
-   MoE is fine with f32 mamba). f16 the mamba `in_proj`/`out_proj` (~2.1 GB f16 over 36 layers;
-   int8 everything else ≈ 5.6 GB total, fits 8 GB) — keep the 64 experts int8. Expected to
-   recover ≈R2 quality (95% / perplexity ~6.8) at resident speed. **Gap f16 must close (re-run
-   this harness):** greedy agreement **66% → ≥95%**, perplexity **15.73 → ≈6.8**, mean KL
-   **0.93 → ≤0.05**.
+3. **Do NOT fund further f16 work — it was tried and does not recover quality** (63.9%, above).
+   The granite-resident **default stays int8** (faster, same quality); the f16 path is kept
+   behind `GOINFER_SSM_F16MAMBA` for the record only. The remaining lever is the SSM
+   f64-precision (the GPU has no f64) or making the 64-expert MoE router robust to ~1e-5
+   selection perturbations — a hard, model-specific problem, **not worth it for a tiny model**.
+   Net: granite resident is a **greedy-only, opt-in 10× speedup** at reduced quality; for
+   quality use the f32 CPU path (3.3 tok/s).
