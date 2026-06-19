@@ -71,8 +71,14 @@ func (m *Model) DecodeRunnerEligible() bool {
 func (a *Architecture) decodeRunnerEligible() bool {
 	// Families with their own non-uniform forward (hybrid mixers, Gemma-4, Llama-4,
 	// qwen3.5) keep the staged path regardless.
-	if a.gemma4 != nil || a.qwen35 != nil || a.granite != nil || a.nemotron != nil || a.llama4 != nil {
+	if a.gemma4 != nil || a.qwen35 != nil || a.nemotron != nil || a.llama4 != nil {
 		return false
+	}
+	// Granite-4.0-H resident SSM hybrid (P5b): its own mixer-kind path (Mamba-2 ⊕
+	// attention), so it bypasses the standard GQA gates below. Guarded during the
+	// parity bring-up (P5b.3/P5b.4); P6 makes this unconditional.
+	if a.granite != nil {
+		return os.Getenv("GOINFER_SSM_RESIDENT") != ""
 	}
 	if a.MoE != nil && !a.moeResidentEligible() {
 		return false
@@ -257,7 +263,11 @@ func (m *Model) GraniteResidentParams() (nHeads, headDim, dState, nGroups, dConv
 	if m.w.arch.LogitScale != 0 {
 		ls = float32(m.w.arch.LogitScale)
 	}
-	return g.NHeads, g.HeadDim, g.DState, g.NGroups, g.DConv, g.EmbMul, g.ResidMul, ls, float32(m.w.arch.AttnScale), true
+	em, rm := g.EmbMul, g.ResidMul
+	if os.Getenv("GOINFER_SSM_NOMUL") != "" { // isolation seam: identity multipliers on both sides
+		em, rm, ls = 1, 1, 1
+	}
+	return g.NHeads, g.HeadDim, g.DState, g.NGroups, g.DConv, em, rm, ls, float32(m.w.arch.AttnScale), true
 }
 
 // GraniteMambaLayer reports whether layer i is a Mamba-2 mixer (vs GQA attention).
@@ -283,10 +293,26 @@ func (m *Model) ResidentActive() bool { return m.resident != nil }
 // Generate / GenerateSpeculative, not this.
 func (m *Model) ResidentForwardForTest() ResidentForward { return m.resident }
 
+// ForwardForTest / EmbedResidentForTest are CPU-reference seams for the gpu-package
+// resident parity gates (which can't be in package decoder — import cycle via gpu).
+// ForwardForTest is the CPU per-token logits; EmbedResidentForTest is the resident
+// input embedding (incl. Granite EmbMul). Test-only.
+func (m *Model) ForwardForTest(id int, cache *KVCache) ([]float32, error) {
+	return m.forward(id, cache)
+}
+func (m *Model) EmbedResidentForTest(id int) []float32 { return m.embedResident(id) }
+
 // embedResident returns the raw input embedding [hidden] for token id — the CPU
 // half of the residency forward (eligible archs have no embedding scale).
 func (m *Model) embedResident(id int) []float32 {
 	h := make([]float32, m.w.arch.HiddenDim)
 	m.w.Embed.Row(id, h)
+	// Granite embedding_multiplier — the resident residual stream starts at emb·EmbMul
+	// (P5b; the only Granite scalar applied outside the resident runner / weight folds).
+	if g := m.w.arch.granite; g != nil && g.EmbMul != 0 && g.EmbMul != 1 {
+		for i := range h {
+			h[i] *= g.EmbMul
+		}
+	}
 	return h
 }

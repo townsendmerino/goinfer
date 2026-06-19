@@ -67,7 +67,7 @@ func TestMambaGatedNorm_parity(t *testing.T) {
 		stag, _ := ctx.device.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(dInner * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
 		dims := mk([]float32{}, wgpu.BufferUsageUniform)
 		dims.Release()
-		dims, _ = ctx.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes([]uint32{dInner, uint32(nGroups), uint32(groupSize), math.Float32bits(eps)}), Usage: wgpu.BufferUsageUniform})
+		dims, _ = ctx.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes([]uint32{dInner, uint32(nGroups), uint32(groupSize), math.Float32bits(eps), 0, 0, 0, 0}), Usage: wgpu.BufferUsageUniform})
 		bg, _ := ctx.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: ctx.mambaGNormLayout, Entries: []wgpu.BindGroupEntry{
 			{Binding: 0, Buffer: yB, Size: yB.GetSize()}, {Binding: 1, Buffer: zB, Size: zB.GetSize()},
 			{Binding: 2, Buffer: wB, Size: wB.GetSize()}, {Binding: 3, Buffer: gB, Size: gB.GetSize()}, {Binding: 4, Buffer: dims, Size: dims.GetSize()},
@@ -287,7 +287,7 @@ func TestMambaLayer_compose(t *testing.T) {
 	ctx.queue.WriteBuffer(ssmBuf, 0, wgpu.ToBytes(make([]float32, nHeads*P*N)))
 	dConv := uni([]uint32{convDim, K, 0, 0})
 	dSSM := uni([]uint32{nHeads, P, N, nGroups, repeat, gSize, dInner, 0})
-	dGN := uni([]uint32{dInner, normGroups, dInner / normGroups, math.Float32bits(eps)})
+	dGN := uni([]uint32{dInner, normGroups, dInner / normGroups, math.Float32bits(eps), 0, 0, 0, 0})
 	ent := func(bufs ...*wgpu.Buffer) []wgpu.BindGroupEntry {
 		e := make([]wgpu.BindGroupEntry, len(bufs))
 		for i, b := range bufs {

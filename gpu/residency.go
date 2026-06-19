@@ -4,6 +4,7 @@ package gpu
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/cogentcore/webgpu/wgpu"
 	"github.com/townsendmerino/aikit/linalg"
@@ -85,7 +86,11 @@ type residentDecoder struct {
 // BuildResident builds a resident DecodeRunner from m, or (nil,false,nil) when
 // the arch is ineligible / a projection is f32 (caller uses the staged path).
 func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward, bool, error) {
-	if !m.DecodeRunnerEligible() {
+	// Granite-4.0-H resident SSM path (P5b): buildable independent of the public
+	// eligibility flag (which flips at P6) so it can be parity-gated first. Production
+	// routing still goes through withResidency()'s DecodeRunnerEligible() check.
+	_, _, _, _, _, _, _, _, _, granOK := m.GraniteResidentParams()
+	if !m.DecodeRunnerEligible() && !granOK {
 		return nil, false, nil
 	}
 	b.mu.Lock()
@@ -142,6 +147,67 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 		return rm, nil
 	}
 
+	// --- Granite multiplier folding (P5b): ResidMul → every residual-add weight scale
+	// (o-proj / mamba out-proj / MoE expert-down / shared-down); LogitScale → 1/LogitScale
+	// into the lm_head; EmbMul → the embedding (in decoder.embedResident). mult==1 ⇒ the
+	// plain proj path, byte-identical for non-granite models. ---
+	scaleCopy := func(s []float32, m float32) []float32 {
+		out := make([]float32, len(s))
+		for i, v := range s {
+			out[i] = v * m
+		}
+		return out
+	}
+	projMul := func(pw *linalg.WeightMat, mult float32) (decodeWeight, error) {
+		if mult == 1 {
+			return proj(pw)
+		}
+		N, K := pw.Rows(), pw.Cols()
+		var q8 []int8
+		var scales []float32
+		switch pw.Kind() {
+		case "int8":
+			q8, scales, _, _ = pw.Int8()
+		case "f32":
+			f32, ok := pw.F32()
+			if !ok {
+				return nil, fmt.Errorf("gpu: granite mult-fold f32 has no data")
+			}
+			q8, scales = linalg.QuantizeRowsInt8(f32, N, K)
+		default:
+			return nil, fmt.Errorf("gpu: granite mult-fold unsupported kind %q", pw.Kind())
+		}
+		rm, err := c.UploadW8A8(q8, scaleCopy(scales, mult), N, K)
+		if err != nil {
+			return nil, err
+		}
+		keepF(rm.Release)
+		return rm, nil
+	}
+	projF32Mul := func(w []float32, N, K int, mult float32) (decodeWeight, error) {
+		q8, scales := linalg.QuantizeRowsInt8(w, N, K)
+		if mult != 1 {
+			scales = scaleCopy(scales, mult)
+		}
+		rm, err := c.UploadW8A8(q8, scales, N, K)
+		if err != nil {
+			return nil, err
+		}
+		keepF(rm.Release)
+		return rm, nil
+	}
+	// stateBuf allocates a build-once, zeroed, in-place-updatable Mamba state buffer
+	// (Storage|CopyDst so Reset can re-zero it per generation).
+	stateBuf := func(n int) (*wgpu.Buffer, error) {
+		b2, err := c.device.CreateBuffer(&wgpu.BufferDescriptor{Label: "mamba-state", Size: uint64(n * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst})
+		if err != nil {
+			return nil, err
+		}
+		c.queue.WriteBuffer(b2, 0, wgpu.ToBytes(make([]float32, n)))
+		keepF(b2.Release)
+		return b2, nil
+	}
+
 	fail := func(err error) (decoder.ResidentForward, bool, error) { rd.release(); return nil, false, err }
 
 	// Per-layer RoPE (Lever C7): bind each layer the global or local invFreq table. Most
@@ -164,18 +230,36 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	if err != nil {
 		return fail(err)
 	}
+	// Granite-4.0-H (P5b): the Mamba/attention hybrid. rmul folds ResidMul into every
+	// residual-add weight; lmMult folds 1/LogitScale into the head. mambaP carries the
+	// model-level SSM geometry (per-layer mixer-kind from m.GraniteMambaLayer).
+	gNH, gHd, gDS, gNG, gK, _, gResidMul, gLogitScale, _, granOK := m.GraniteResidentParams()
+	rmul := float32(1)
+	lmMult := float32(1)
+	if granOK {
+		rmul = gResidMul
+		if gLogitScale != 0 {
+			lmMult = 1 / gLogitScale
+		}
+		gIn := gNH * gHd
+		rd.rm.mamba = &mambaRunParams{
+			nHeads: gNH, hp: gHd, dn: gDS, nGroups: gNG, dConv: gK,
+			dInner: gIn, convDim: gIn + 2*gNG*gDS, projDim: 2*gIn + 2*gNG*gDS + gNH,
+			gSize: gNG * gDS, repeat: gNH / gNG, normGroups: 1,
+		}
+	}
 	// LM head: tied (LMHead empty → the Embed matrix is the head) or separate.
 	headW := &w.LMHead
 	if w.LMHead.Rows() == 0 {
 		headW = &w.Embed
 	}
-	lmHead, err := proj(headW)
+	lmHead, err := projMul(headW, lmMult)
 	if err != nil {
 		return fail(err)
 	}
 	// ropeHalf = len(invFreq) = rotaryDim/2 — drives the rope dispatch (partial RoPE,
 	// Lever C5: GLM/Phi rotate only the first rotaryDim dims of each head).
-	rd.rm = runModel{finalNorm: finalNorm, lmHead: lmHead, ropeHalf: len(invFreq), slidingWindow: m.SlidingWindowResident()}
+	rd.rm.finalNorm, rd.rm.lmHead, rd.rm.ropeHalf, rd.rm.slidingWindow = finalNorm, lmHead, len(invFreq), m.SlidingWindowResident()
 
 	// MoE (Lever C3c): Mixtral-class models route to stacked int8 experts on-device.
 	// moeOK gates the per-layer FFN build below; the params are model-level.
@@ -199,7 +283,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	// buildStacked packs one projection (gate/up/down) across all nE experts into a
 	// resident stacked int8 buffer the indexed expert GEMV reads. int8 only — int4
 	// experts aren't stacked yet (returns an error → silent staged fallback).
-	buildStacked := func(lw *decoder.LayerWeights, get func(e int) *linalg.WeightMat) (*ResidentStackedW8A8, error) {
+	buildStacked := func(lw *decoder.LayerWeights, get func(e int) *linalg.WeightMat, mult float32) (*ResidentStackedW8A8, error) {
 		nE := len(lw.Experts)
 		w0 := get(0)
 		N, K := w0.Rows(), w0.Cols()
@@ -211,6 +295,9 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 				return nil, fmt.Errorf("gpu: MoE residency expert %d kind %q (int8 only)", e, w.Kind())
 			}
 			q, s, _, _ := w.Int8()
+			if mult != 1 { // Granite ResidMul fold into the expert-down residual add
+				s = scaleCopy(s, mult)
+			}
 			q8[e], sc[e] = q, s
 		}
 		return c.UploadStackedExperts(q8, sc, nE, N, K)
@@ -232,7 +319,44 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 		if rl.invFreq, e = ropeInvBuf(m.LayerRopeGlobal(i), i); e != nil {
 			return fail(e)
 		}
-		if mlaOK {
+		if granOK && m.GraniteMambaLayer(i) {
+			// Mamba-2 SSM mixer layer (P5b): in/out_proj W8A8, conv/headP/normW f32, build-once
+			// {win, ssm} state. headP interleaves the per-head [Aexp=-exp(aLog), dtBias, D].
+			// ResidMul folds into out_proj. No KV cache, no q/k/v/o (the plan branches on isMamba).
+			rl.isMamba = true
+			mp := rd.rm.mamba
+			inP, cW, cB, aLog, dW, dtB, nW, outP := m.GraniteMambaWeights(i)
+			if rl.mambaInProj, e = projF32(inP, mp.projDim, hidden); e != nil {
+				return fail(e)
+			}
+			if rl.mambaOutProj, e = projF32Mul(outP, hidden, mp.dInner, rmul); e != nil {
+				return fail(e)
+			}
+			if rl.mambaConvW, e = up32(cW); e != nil {
+				return fail(e)
+			}
+			if rl.mambaConvB, e = up32(cB); e != nil {
+				return fail(e)
+			}
+			headP := make([]float32, mp.nHeads*3)
+			for h := 0; h < mp.nHeads; h++ {
+				headP[h*3+0] = float32(-math.Exp(float64(aLog[h])))
+				headP[h*3+1] = dtB[h]
+				headP[h*3+2] = dW[h]
+			}
+			if rl.mambaHeadP, e = up32(headP); e != nil {
+				return fail(e)
+			}
+			if rl.mambaNormW, e = up32(nW); e != nil {
+				return fail(e)
+			}
+			if rl.mambaWin, e = stateBuf((mp.dConv - 1) * mp.convDim); e != nil {
+				return fail(e)
+			}
+			if rl.mambaSSM, e = stateBuf(mp.nHeads * mp.hp * mp.dn); e != nil {
+				return fail(e)
+			}
+		} else if mlaOK {
 			// MLA: a single compressed-latent cache [ctxCap·latDim] replaces the per-head
 			// K/V caches; the per-head K/V are rebuilt in rank-space, never materialized.
 			latDim := kvLoRA + qkRope
@@ -325,7 +449,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 			if rl.v, e = proj(&lw.VProj); e != nil {
 				return fail(e)
 			}
-			if rl.o, e = proj(&lw.OProj); e != nil {
+			if rl.o, e = projMul(&lw.OProj, rmul); e != nil {
 				return fail(e)
 			}
 		}
@@ -339,15 +463,15 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 					return fail(e)
 				}
 			}
-			if rl.expGate, e = buildStacked(lw, func(x int) *linalg.WeightMat { return &lw.Experts[x].Gate }); e != nil {
+			if rl.expGate, e = buildStacked(lw, func(x int) *linalg.WeightMat { return &lw.Experts[x].Gate }, 1); e != nil {
 				return fail(e)
 			}
 			keepF(rl.expGate.Release)
-			if rl.expUp, e = buildStacked(lw, func(x int) *linalg.WeightMat { return &lw.Experts[x].Up }); e != nil {
+			if rl.expUp, e = buildStacked(lw, func(x int) *linalg.WeightMat { return &lw.Experts[x].Up }, 1); e != nil {
 				return fail(e)
 			}
 			keepF(rl.expUp.Release)
-			if rl.expDown, e = buildStacked(lw, func(x int) *linalg.WeightMat { return &lw.Experts[x].Down }); e != nil {
+			if rl.expDown, e = buildStacked(lw, func(x int) *linalg.WeightMat { return &lw.Experts[x].Down }, rmul); e != nil {
 				return fail(e)
 			}
 			keepF(rl.expDown.Release)
@@ -358,7 +482,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 				if rl.shUp, e = proj(&lw.SharedExpert.Up); e != nil {
 					return fail(e)
 				}
-				if rl.shDown, e = proj(&lw.SharedExpert.Down); e != nil {
+				if rl.shDown, e = projMul(&lw.SharedExpert.Down, rmul); e != nil {
 					return fail(e)
 				}
 				if !shUngated { // qwen2_moe: the [1,hidden] sigmoid gate
@@ -374,7 +498,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 			if rl.up, e = proj(&lw.UpProj); e != nil {
 				return fail(e)
 			}
-			if rl.down, e = proj(&lw.DownProj); e != nil {
+			if rl.down, e = projMul(&lw.DownProj, rmul); e != nil {
 				return fail(e)
 			}
 		}
@@ -486,7 +610,23 @@ func (rd *residentDecoder) UploadKV(layer int, keys, vals []float32) error {
 	}
 }
 
-func (rd *residentDecoder) Reset() {} // positions overwritten on next decode; caller tracks pos
+// Reset clears resident state for a fresh generation. KV positions are overwritten
+// (caller tracks pos), but Mamba {win, ssm} state COMPOUNDS, so it must be re-zeroed
+// each generation or the recurrence carries over from the prior sequence.
+func (rd *residentDecoder) Reset() {
+	if rd.rm.mamba == nil {
+		return
+	}
+	mp := rd.rm.mamba
+	winZ := make([]float32, (mp.dConv-1)*mp.convDim)
+	ssmZ := make([]float32, mp.nHeads*mp.hp*mp.dn)
+	for i := range rd.rm.layers {
+		if lw := &rd.rm.layers[i]; lw.isMamba {
+			rd.c.queue.WriteBuffer(lw.mambaWin, 0, wgpu.ToBytes(winZ))
+			rd.c.queue.WriteBuffer(lw.mambaSSM, 0, wgpu.ToBytes(ssmZ))
+		}
+	}
+}
 
 func (rd *residentDecoder) Close() error { rd.release(); return nil }
 

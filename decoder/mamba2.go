@@ -1,6 +1,11 @@
 package decoder
 
-import "math"
+import (
+	"math"
+	"os"
+
+	"github.com/townsendmerino/aikit/linalg"
+)
 
 // Mamba-2 selective state-space sequence mixer (Granite-4.0 hybrid). Like Gated
 // DeltaNet (deltanet.go) it is an inherently sequential recurrence driven one token
@@ -66,7 +71,13 @@ func mamba2Step(h []float32, w *mamba2Weights, p mamba2Params, eps float64, st *
 	repeat := p.NHeads / p.NGroups
 
 	// 1. in_proj → [z (gate), xBC, dt].
-	proj := matvec(w.inProj, p.projDim(), p.Hidden, h)
+	inProj, outProj := w.inProj, w.outProj
+	if ssmQ8CPU { // confirmation seam: match the resident W8A8 — int8 weights AND int8 activations
+		inProj = q8RoundTrip(inProj, p.projDim(), p.Hidden)
+		outProj = q8RoundTrip(outProj, p.Hidden, dInner)
+		h = q8RoundTrip(h, 1, len(h)) // the in_proj activation (resident rmsQuant → int8)
+	}
+	proj := matvec(inProj, p.projDim(), p.Hidden, h)
 	z := proj[:dInner]
 	xBC := proj[dInner : dInner+convDim]
 	dt := proj[dInner+convDim:] // [nHeads]
@@ -126,7 +137,26 @@ func mamba2Step(h []float32, w *mamba2Weights, p mamba2Params, eps float64, st *
 		gated[i] = y[i] * silu(z[i])
 	}
 	gatedRMSNormGrouped(gated, w.normW, p.NormGroups, eps)
-	return matvec(w.outProj, p.Hidden, dInner, gated)
+	if ssmQ8CPU {
+		gated = q8RoundTrip(gated, 1, len(gated)) // the out_proj activation (resident quant → int8)
+	}
+	return matvec(outProj, p.Hidden, dInner, gated)
+}
+
+// ssmQ8CPU + q8RoundTrip are a confirmation seam (GOINFER_SSM_Q8CPU): round-trip the
+// Mamba projections through int8 so the CPU reference carries the SAME quantization error
+// as the resident W8A8 path — isolating kernel-correctness from int8 sensitivity.
+var ssmQ8CPU = os.Getenv("GOINFER_SSM_Q8CPU") != ""
+
+func q8RoundTrip(w []float32, N, K int) []float32 {
+	q, s := linalg.QuantizeRowsInt8(w, N, K)
+	out := make([]float32, N*K)
+	for r := 0; r < N; r++ {
+		for k := 0; k < K; k++ {
+			out[r*K+k] = float32(q[r*K+k]) * s[r]
+		}
+	}
+	return out
 }
 
 // gatedRMSNormGrouped applies the Mamba-2 gated RMSNorm in place: x already holds

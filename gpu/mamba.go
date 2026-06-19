@@ -27,9 +27,9 @@ import (
 // stable (dA∈(0,1) ⇒ state decays), so f32 drift over long sequences stays bounded —
 // gated at 1/16/256/1k/2k tokens by TestMambaSSM_driftParity.
 const mambaSSMShaderWGSL = `
-struct P { nHeads: u32, hp: u32, dn: u32, ng: u32, repeat: u32, gSize: u32, dInner: u32, _pad: u32 };
+struct P { nHeads: u32, hp: u32, dn: u32, ng: u32, repeat: u32, gSize: u32, dInner: u32, dtBase: u32 };
 @group(0) @binding(0) var<storage, read>       conv:  array<f32>;  // [x(dInner) | B(gSize) | C(gSize)]
-@group(0) @binding(1) var<storage, read>       dtRaw: array<f32>;  // [nHeads]
+@group(0) @binding(1) var<storage, read>       dtRaw: array<f32>;  // [.. dtBase ..] (in_proj slice)
 @group(0) @binding(2) var<storage, read>       headP: array<f32>;  // [nHeads*3]: Aexp, dtBias, D
 @group(0) @binding(3) var<storage, read_write> ssm:   array<f32>;  // [nHeads*hp*dn], in place
 @group(0) @binding(4) var<storage, read_write> yout:  array<f32>;  // [dInner]
@@ -50,7 +50,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let Aexp = headP[head * 3u + 0u];
     let dtb = headP[head * 3u + 1u];
     let Dw = headP[head * 3u + 2u];
-    let dth = softplus(dtRaw[head] + dtb);
+    let dth = softplus(dtRaw[p.dtBase + head] + dtb);
     let dA = exp(dth * Aexp);
     let xv = conv[head * p.hp + pi];
     let dx = dth * xv;
@@ -74,8 +74,8 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 // exactly reproduces the reference's early-token zero-padding (verified by trace). win is
 // stored [K-1, convDim] oldest-first; K (DConv) ≤ 8.
 const mambaConvShaderWGSL = `
-struct P { convDim: u32, K: u32, _a: u32, _b: u32 };
-@group(0) @binding(0) var<storage, read>       xBC:   array<f32>;  // [convDim]
+struct P { convDim: u32, K: u32, xbcBase: u32, _b: u32 };
+@group(0) @binding(0) var<storage, read>       xBC:   array<f32>;  // [.. xbcBase ..] (in_proj slice)
 @group(0) @binding(1) var<storage, read>       convW: array<f32>;  // [convDim*K]
 @group(0) @binding(2) var<storage, read>       convB: array<f32>;  // [convDim]
 @group(0) @binding(3) var<storage, read_write> win:   array<f32>;  // [(K-1)*convDim], in place
@@ -89,8 +89,9 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let c = gid.x;
     if (c >= p.convDim) { return; }
     let K = p.K;
+    let xc = xBC[p.xbcBase + c];
     var w: array<f32, 8>;
-    var s = convB[c] + convW[c * K + (K - 1u)] * xBC[c];
+    var s = convB[c] + convW[c * K + (K - 1u)] * xc;
     for (var j: u32 = 0u; j < K - 1u; j = j + 1u) {
         let wv = win[j * p.convDim + c];
         w[j] = wv;
@@ -98,7 +99,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     }
     conv[c] = silu(s);
     for (var j: u32 = 0u; j + 1u < K - 1u; j = j + 1u) { win[j * p.convDim + c] = w[j + 1u]; }
-    win[(K - 2u) * p.convDim + c] = xBC[c];
+    win[(K - 2u) * p.convDim + c] = xc;
 }
 `
 
@@ -128,9 +129,9 @@ func (c *Context) ensureMambaConv() error {
 // per group (groupSize = dInner/nGroups). Granite normalizes over full dInner (nGroups=1);
 // Nemotron-H per group (nGroups=NGroups).
 const mambaGNormShaderWGSL = `
-struct P { dInner: u32, nGroups: u32, groupSize: u32, eps: f32 };
+struct P { dInner: u32, nGroups: u32, groupSize: u32, eps: f32, zBase: u32, _a: u32, _b: u32, _c: u32 };
 @group(0) @binding(0) var<storage, read>       yin:    array<f32>;  // [dInner] (SSM output)
-@group(0) @binding(1) var<storage, read>       z:      array<f32>;  // [dInner] (gate)
+@group(0) @binding(1) var<storage, read>       z:      array<f32>;  // [.. zBase ..] (in_proj slice, gate)
 @group(0) @binding(2) var<storage, read>       weight: array<f32>;  // [dInner]
 @group(0) @binding(3) var<storage, read_write> gated:  array<f32>;  // [dInner] out
 @group(0) @binding(4) var<uniform>             p:      P;
@@ -146,7 +147,7 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid
     let base = g * p.groupSize;
     var ss: f32 = 0.0;
     for (var i: u32 = t; i < p.groupSize; i = i + 64u) {
-        let v = yin[base + i] * siluG(z[base + i]);
+        let v = yin[base + i] * siluG(z[p.zBase + base + i]);
         gated[base + i] = v;
         ss = ss + v * v;
     }

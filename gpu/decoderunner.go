@@ -4,6 +4,8 @@ package gpu
 
 import (
 	"fmt"
+	"os"
+	"strconv"
 	"time"
 
 	"github.com/cogentcore/webgpu/wgpu"
@@ -78,18 +80,30 @@ type runLayer struct {
 	mlaQANorm, mlaKVANorm            *wgpu.Buffer
 	mlaWUK, mlaWUV                   *wgpu.Buffer
 	latCache                         *wgpu.Buffer
+
+	// Mamba-2 SSM mixer (P5b, Granite-4.0-H/Nemotron-H hybrids). When isMamba, this
+	// layer's sequence-mixer is the resident SSM step (mamba.go kernels) instead of
+	// attention: in/out_proj are W8A8; convW/convB/headP/normW are f32 resident; win
+	// (causal-conv ring) + ssm (selective state) are build-once persistent state,
+	// updated in place per token and reset per generation. ResidMul is folded into
+	// mambaOutProj's scale (the residual add). isMamba=false ⇒ attention layer (above).
+	isMamba                                        bool
+	mambaInProj, mambaOutProj                      decodeWeight
+	mambaConvW, mambaConvB, mambaHeadP, mambaNormW *wgpu.Buffer
+	mambaWin, mambaSSM                             *wgpu.Buffer
 }
 
 type runModel struct {
 	layers        []runLayer
 	finalNorm     *wgpu.Buffer
 	lmHead        decodeWeight
-	kvF16         bool          // KCache/VCache are f16-packed (NewKVCacheF16) → use the f16 kernels
-	kvI8          bool          // KCache/VCache are int8-packed (NewKVCacheI8) + scales → int8 kernels
-	moe           *moeRunParams // non-nil ⇒ the model has MoE layers (runLayer.isMoE picks which)
-	mla           *mlaRunParams // non-nil ⇒ MLA latent attention replaces the q/k/v/o block
-	ropeHalf      int           // rotated pairs per head = rotaryDim/2 (Lever C5 partial RoPE); 0 ⇒ HeadDim/2
-	slidingWindow int           // >0 ⇒ local layers attend only the last N positions (Lever C6)
+	kvF16         bool            // KCache/VCache are f16-packed (NewKVCacheF16) → use the f16 kernels
+	kvI8          bool            // KCache/VCache are int8-packed (NewKVCacheI8) + scales → int8 kernels
+	moe           *moeRunParams   // non-nil ⇒ the model has MoE layers (runLayer.isMoE picks which)
+	mla           *mlaRunParams   // non-nil ⇒ MLA latent attention replaces the q/k/v/o block
+	mamba         *mambaRunParams // non-nil ⇒ hybrid: some layers (runLayer.isMamba) are SSM mixers
+	ropeHalf      int             // rotated pairs per head = rotaryDim/2 (Lever C5 partial RoPE); 0 ⇒ HeadDim/2
+	slidingWindow int             // >0 ⇒ local layers attend only the last N positions (Lever C6)
 }
 
 // mlaRunParams carries the model-level MLA geometry (uniform across layers). Per-layer
@@ -102,6 +116,17 @@ type mlaRunParams struct {
 	vHead          int     // per-head value width (≠ qkNope+qkRope)
 	interleave     bool    // V3 GPT-J pairwise RoPE layout (vs plain NeoX)
 	ropeScale      float32 // YaRN attention factor folded into cos/sin (1.0 when none)
+}
+
+// mambaRunParams carries the model-level Mamba-2 geometry (uniform across mamba layers).
+// dInner=nHeads·P, convDim=dInner+2·nGroups·N, projDim=2·dInner+2·nGroups·N+nHeads,
+// gSize=nGroups·N, repeat=nHeads/nGroups. normGroups is the gated-RMSNorm group count
+// (1 for Granite). The dispatches are pos-independent — the {win, ssm} state carries the
+// recurrence, so no posUni.
+type mambaRunParams struct {
+	nHeads, hp, dn, nGroups, dConv          int
+	dInner, convDim, projDim, gSize, repeat int
+	normGroups                              int
 }
 
 // moeRunParams carries the model-level MoE selection knobs (uniform across layers):
@@ -138,6 +163,13 @@ func (c *Context) NewDecodeRunner(m ModelW, hidden, nH, nKV, hd, inter, start in
 
 // newDecodeRunner builds the persistent decode plan for either precision.
 func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start int, eps, scale float32, addOne bool) (*DecodeRunner, error) {
+	ssmStopLayer := -1 // GOINFER_SSM_STOP_LAYER debug (resident SSM bring-up): truncate the plan
+	if v := os.Getenv("GOINFER_SSM_STOP_LAYER"); v != "" {
+		if n, e := strconv.Atoi(v); e == nil {
+			ssmStopLayer = n
+		}
+	}
+	ssmSkipFFN := os.Getenv("GOINFER_SSM_SKIPFFN") != "" // debug: mixer-only isolation
 	ensures := []func() error{c.ensureGEMV, c.ensureGEMVBias, c.ensureQuantize, c.ensureLayer, c.ensureAttn, c.ensureFuse, c.ensureGEMVW4, c.ensureQKNorm}
 	if m.moe != nil {
 		ensures = append(ensures, c.ensureMoERoute, c.ensureMoEExpert)
@@ -147,6 +179,9 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 	}
 	if m.mla != nil {
 		ensures = append(ensures, c.ensureMLAStore, c.ensureMLAHeadMV, c.ensureMLAQRope, c.ensureMLAAttn)
+	}
+	if m.mamba != nil {
+		ensures = append(ensures, c.ensureMambaConv, c.ensureMambaSSM, c.ensureMambaGNorm)
 	}
 	for _, e := range ensures {
 		if err := e(); err != nil {
@@ -231,6 +266,53 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		gx, gy := gemvGrid(w.nRows())
 		add(c.gemvBiasPipeline, bind(c.gemvBiasLayout, aq, w.wbuf(), as, w.sbuf(), out, p, bias), gx, gy)
 		return out
+	}
+	// Mamba-2 SSM mixer dispatches (P5b): the conv/ssm/gatedNorm kernels read slices of
+	// the in_proj output (z|xBC|dt) via bind-group offsets (256-aligned for granite), so
+	// no extra split kernel. The dispatches are pos-independent — {win, ssm} state carries
+	// the recurrence. mamba* are nil for non-hybrid models (the closures go unused).
+	type bgEnt struct {
+		b         *wgpu.Buffer
+		off, size uint64
+	}
+	bindOff := func(layout *wgpu.BindGroupLayout, es []bgEnt) *wgpu.BindGroup {
+		en := make([]wgpu.BindGroupEntry, len(es))
+		for i, e := range es {
+			sz := e.size
+			if sz == 0 {
+				sz = e.b.GetSize()
+			}
+			en[i] = wgpu.BindGroupEntry{Binding: uint32(i), Buffer: e.b, Offset: e.off, Size: sz}
+		}
+		bg, err := c.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: layout, Entries: en})
+		if err != nil {
+			r.release()
+			panic(err)
+		}
+		return keepBG(bg)
+	}
+	var mambaConvOp func(proj, convW, convB, win, conv *wgpu.Buffer)
+	var mambaSSMOp func(conv, proj, headP, ssm, y *wgpu.Buffer)
+	var mambaGNormOp func(y, proj, normW, gated *wgpu.Buffer)
+	if m.mamba != nil {
+		mp := m.mamba
+		// in_proj output slices addressed via base offsets in the uniform (alignment-free),
+		// binding the full proj buffer: z=proj[0:], xBC=proj[dInner:], dt=proj[dInner+convDim:].
+		dC := uni([]uint32{uint32(mp.convDim), uint32(mp.dConv), uint32(mp.dInner), 0})
+		dS := uni([]uint32{uint32(mp.nHeads), uint32(mp.hp), uint32(mp.dn), uint32(mp.nGroups), uint32(mp.repeat), uint32(mp.gSize), uint32(mp.dInner), uint32(mp.dInner + mp.convDim)})
+		dG := uni([]uint32{uint32(mp.dInner), uint32(mp.normGroups), uint32(mp.dInner / mp.normGroups), f32bits(eps), 0, 0, 0, 0})
+		mambaConvOp = func(proj, convW, convB, win, conv *wgpu.Buffer) {
+			es := []bgEnt{{proj, 0, 0}, {convW, 0, 0}, {convB, 0, 0}, {win, 0, 0}, {conv, 0, 0}, {dC, 0, 0}}
+			add(c.mambaConvPipeline, bindOff(c.mambaConvLayout, es), uint32(mp.convDim+63)/64, 1)
+		}
+		mambaSSMOp = func(conv, proj, headP, ssm, y *wgpu.Buffer) {
+			es := []bgEnt{{conv, 0, 0}, {proj, 0, 0}, {headP, 0, 0}, {ssm, 0, 0}, {y, 0, 0}, {dS, 0, 0}}
+			add(c.mambaSSMPipeline, bindOff(c.mambaSSMLayout, es), uint32(mp.nHeads*mp.hp+63)/64, 1)
+		}
+		mambaGNormOp = func(y, proj, normW, gated *wgpu.Buffer) {
+			es := []bgEnt{{y, 0, 0}, {proj, 0, 0}, {normW, 0, 0}, {gated, 0, 0}, {dG, 0, 0}}
+			add(c.mambaGNormPipeline, bindOff(c.mambaGNormLayout, es), uint32(mp.normGroups), 1)
+		}
 	}
 	// §4: the per-token uniforms (rope-q, rope-store-k, v-store, attn) depend only
 	// on pos, NOT on layer index — their contents are identical across all 28
@@ -484,7 +566,24 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 
 	for i := range m.layers {
 		lw := &m.layers[i]
-		if m.mla != nil {
+		if ssmStopLayer >= 0 && i > ssmStopLayer {
+			break // GOINFER_SSM_STOP_LAYER debug: logits from xd after this layer
+		}
+		if lw.isMamba {
+			// Mamba-2 SSM mixer (P5b): norm → in_proj → conv(ring) → ssm(state) → gatedNorm
+			// → out_proj+residual. State {win, ssm} persists in lw, updated in place per token.
+			// ResidMul folded into mambaOutProj's scale. The FFN sub-block below is shared.
+			aq, as := rmsQuant(r.xd, lw.attnNorm, hidden)
+			proj := gemv(aq, as, lw.mambaInProj) // [projDim] = z ‖ xBC ‖ dt
+			conv := storF(m.mamba.convDim)
+			mambaConvOp(proj, lw.mambaConvW, lw.mambaConvB, lw.mambaWin, conv)
+			y := storF(m.mamba.dInner)
+			mambaSSMOp(conv, proj, lw.mambaHeadP, lw.mambaSSM, y)
+			gated := storF(m.mamba.dInner)
+			mambaGNormOp(y, proj, lw.mambaNormW, gated)
+			gq, gs := quant(gated, m.mamba.dInner)
+			gemvAdd(gq, gs, lw.mambaOutProj, r.xd) // out_proj + ResidMul·residual into xd
+		} else if m.mla != nil {
 			// MLA latent attention (Lever C4c): input-norm → q (LoRA/direct) + kv-down →
 			// latent store → W_UK-absorb + qRope → rank-space attend → W_UV-lift → o-proj.
 			mp := m.mla
@@ -555,6 +654,9 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			}
 			cq, cs := quant(ctxv, nH*hd)
 			gemvAdd(cq, cs, lw.o, r.xd) // o-proj + residual into xd
+		}
+		if ssmSkipFFN { // GOINFER_SSM_SKIPFFN debug: isolate the mixer from the FFN
+			continue
 		}
 		mq, ms := rmsQuant(r.xd, lw.mlpNorm, hidden)
 		if lw.isMoE {

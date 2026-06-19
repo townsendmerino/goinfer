@@ -1,5 +1,10 @@
 package decoder
 
+import (
+	"os"
+	"strconv"
+)
+
 // Granite-4.0-H (granitemoehybrid) forward path — the hybrid: each layer is either a
 // Mamba-2 selective-scan mixer (recurrent state in the cache) or GQA softmax
 // attention (KV cache), every layer a routed+shared MoE. Four Granite scalars apply:
@@ -19,13 +24,26 @@ func (m *Model) runLayersGranite(id int, cache *KVCache) ([]float32, error) {
 		NGroups: g.NGroups, DConv: g.DConv, Hidden: hidden, NormGroups: 1,
 	}
 
+	embMul, residMul := g.EmbMul, g.ResidMul
+	if os.Getenv("GOINFER_SSM_NOMUL") != "" { // isolation seam (matches GraniteResidentParams)
+		embMul, residMul = 1, 1
+	}
 	h := make([]float32, hidden)
 	m.w.Embed.Row(id, h)
 	for i := range h {
-		h[i] *= g.EmbMul // embedding_multiplier
+		h[i] *= embMul // embedding_multiplier
 	}
 
+	stopLayer := -1 // GOINFER_SSM_STOP_LAYER debug: truncate to localize the resident SSM bug
+	if v := os.Getenv("GOINFER_SSM_STOP_LAYER"); v != "" {
+		if n, e := strconv.Atoi(v); e == nil {
+			stopLayer = n
+		}
+	}
 	for l := 0; l < arch.NumLayers; l++ {
+		if stopLayer >= 0 && l > stopLayer {
+			break
+		}
 		lw := &m.w.Layers[l]
 
 		// Sequence-mixer sub-block (Pre2: norm → mix → ×residual_multiplier → add).
@@ -38,18 +56,20 @@ func (m *Model) runLayersGranite(id int, cache *KVCache) ([]float32, error) {
 			mix = m.graniteAttention(n, lw, arch, cache, l, pos)
 		}
 		for i := range h {
-			h[i] += mix[i] * g.ResidMul
+			h[i] += mix[i] * residMul
 		}
 
 		// MoE FFN sub-block (Pre2). post_attention_layernorm is the pre-MLP norm.
-		n2 := append([]float32(nil), h...)
-		rmsNorm(n2, lw.PreMLPNorm, 1, hidden, eps, arch.RMSAddOne)
-		ffn, err := moeMLP(n2, lw, arch, m.be, m.pager)
-		if err != nil {
-			return nil, err
-		}
-		for i := range h {
-			h[i] += ffn[i] * g.ResidMul
+		if os.Getenv("GOINFER_SSM_SKIPFFN") == "" {
+			n2 := append([]float32(nil), h...)
+			rmsNorm(n2, lw.PreMLPNorm, 1, hidden, eps, arch.RMSAddOne)
+			ffn, err := moeMLP(n2, lw, arch, m.be, m.pager)
+			if err != nil {
+				return nil, err
+			}
+			for i := range h {
+				h[i] += ffn[i] * residMul
+			}
 		}
 	}
 	cache.Advance() // manualPos: the mamba layers never Append, so step pos once per token
