@@ -77,6 +77,9 @@ func mamba2Step(h []float32, w *mamba2Weights, p mamba2Params, eps float64, st *
 		inProj = q8RoundTrip(inProj, p.projDim(), p.Hidden)
 		outProj = q8RoundTrip(outProj, p.Hidden, dInner)
 		h = q8RoundTrip(h, 1, len(h)) // the in_proj activation (resident rmsQuant → int8)
+	} else if ssmQ8WeightsOnly { // W8A16 control: int8 mamba WEIGHTS, f32 activations (no act quant)
+		inProj = q8RoundTrip(inProj, p.projDim(), p.Hidden)
+		outProj = q8RoundTrip(outProj, p.Hidden, dInner)
 	}
 	proj := matvec(inProj, p.projDim(), p.Hidden, h)
 	z := proj[:dInner]
@@ -169,6 +172,10 @@ func SetMambaCapHook(f func(proj, gated []float32)) { mambaCapHook = f }
 // Mamba projections through int8 so the CPU reference carries the SAME quantization error
 // as the resident W8A8 path — isolating kernel-correctness from int8 sensitivity.
 var ssmQ8CPU = os.Getenv("GOINFER_SSM_Q8CPU") != ""
+
+// ssmQ8WeightsOnly (W8A16 control, set by tests) round-trips the mamba in/out_proj WEIGHTS
+// through int8 but keeps activations f32 — int8-weights / f32-activations, the W8A16 question.
+var ssmQ8WeightsOnly bool
 
 // ssmForceF32 (precision-localization seam, set by tests) downcasts the SSM compute
 // in mamba2Step to f32 — the exp(dt·A) argument and the gated-norm accumulation — to

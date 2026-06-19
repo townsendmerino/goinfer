@@ -190,6 +190,14 @@ type Context struct {
 	mambaF16Shader   *wgpu.ShaderModule
 	mambaF16Pipeline *wgpu.ComputePipeline
 	mambaF16Layout   *wgpu.BindGroupLayout
+	// W8A16 GEMVs (gemv_w8a16.go): int8 weight × f32 activation — the granite-resident
+	// activation-precision fix (stops the int8 re-quant cascade across the deep stack).
+	gemvW8A16Shader        *wgpu.ShaderModule
+	gemvW8A16Pipeline      *wgpu.ComputePipeline
+	gemvW8A16Layout        *wgpu.BindGroupLayout
+	moeExpertW8A16Shader   *wgpu.ShaderModule
+	moeExpertW8A16Pipeline *wgpu.ComputePipeline
+	moeExpertW8A16Layout   *wgpu.BindGroupLayout
 
 	// MoE residency (Lever C3, moe.go): router top-k selection (moeRoute) feeding the
 	// indexed sparse-expert GEMV — Mixtral / Qwen2-MoE / GLM / DeepSeek on the resident path.

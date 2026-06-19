@@ -177,7 +177,13 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		}
 	}
 	ssmSkipFFN := os.Getenv("GOINFER_SSM_SKIPFFN") != "" // debug: mixer-only isolation
+	// W8A16 (activation-precision fix, gemv_w8a16.go): int8 weights, f32 activations — no
+	// activation int8 quant, so the granite re-quant cascade can't compound. Off by default.
+	w8a16 := os.Getenv("GOINFER_SSM_W8A16") != ""
 	ensures := []func() error{c.ensureGEMV, c.ensureGEMVBias, c.ensureQuantize, c.ensureLayer, c.ensureAttn, c.ensureFuse, c.ensureGEMVW4, c.ensureQKNorm}
+	if w8a16 {
+		ensures = append(ensures, c.ensureGEMVW8A16)
+	}
 	if m.moe != nil {
 		ensures = append(ensures, c.ensureMoERoute, c.ensureMoEExpert)
 		if m.moe.sharedInter > 0 && !m.moe.sharedUngated {
@@ -225,7 +231,21 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 	// op builders (record a step against persistent buffers):
 	// rmsQuant fuses RMSNorm→quantize: one dispatch, no xn round-trip, one fewer
 	// link on the serialized decode spine (§2). Bit-exact with rms→quant.
+	// storFZ: a zeroed storage buffer (CopyDst) — W8A16 f32 activations are kp-padded and the
+	// tail must be 0 (the int8 weight is zero-padded to kp, so 0·act keeps the dot exact; a NaN
+	// in an uninit pad would poison it). Zeroed once at build; producers only write [0,K).
+	storFZ := func(n int) *wgpu.Buffer {
+		b, _ := c.device.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(n * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc | wgpu.BufferUsageCopyDst})
+		c.queue.WriteBuffer(b, 0, make([]byte, n*4))
+		return keepBuf(b)
+	}
 	rmsQuant := func(in, w *wgpu.Buffer, K int) (*wgpu.Buffer, *wgpu.Buffer) {
+		if w8a16 { // W8A16: f32 normed activation (kp-padded), nil scale signals the W8A16 GEMV
+			out := storFZ(padK(K))
+			p := uni([]uint32{uint32(K), f32bits(eps), boolU32(addOne), 0})
+			add(c.rmsnormPipeline, bind(c.rmsnormLayout, in, w, out, p), 1, 1)
+			return out, nil
+		}
 		kp := padK(K)
 		q, s := storF(kp/4), storF(1)
 		p := uni([]uint32{uint32(K), f32bits(eps), boolU32(addOne), uint32(kp)})
@@ -235,6 +255,12 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 	// swigluQuant fuses SwiGLU→quantize: the inter-wide product never materializes
 	// or crosses a barrier — one fewer link and the big buffer stays off the spine.
 	swigluQuant := func(gate, up *wgpu.Buffer, K int) (*wgpu.Buffer, *wgpu.Buffer) {
+		if w8a16 { // W8A16: f32 swiglu (kp-padded), nil scale
+			out := storFZ(padK(K))
+			p := uni([]uint32{uint32(K), 0, 0, 0})
+			add(c.swigluPipeline, bind(c.swigluLayout, gate, up, out, p), uint32(K+63)/64, 1)
+			return out, nil
+		}
 		kp := padK(K)
 		q, s := storF(kp/4), storF(1)
 		p := uni([]uint32{uint32(K), uint32(kp), 0, 0})
@@ -242,6 +268,10 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		return q, s
 	}
 	quant := func(in *wgpu.Buffer, K int) (*wgpu.Buffer, *wgpu.Buffer) {
+		if w8a16 { // W8A16: the input is already f32 — pass it through (K is mult-16 for the
+			// only granite caller, the mamba out_proj gated[dInner]); nil scale.
+			return in, nil
+		}
 		kp := padK(K)
 		q, s := storF(kp/4), storF(1)
 		p := uni([]uint32{1, uint32(K), uint32(kp), 0})
@@ -254,6 +284,10 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		out := storF(w.nRows())
 		p := uni([]uint32{1, uint32(w.kPad()), uint32(w.nRows()), 0})
 		gx, gy := gemvGrid(w.nRows())
+		if as == nil { // W8A16: aq is the f32 activation; int8 weight, no activation scale
+			add(c.gemvW8A16Pipeline, bind(c.gemvW8A16Layout, aq, w.wbuf(), w.sbuf(), out, p), gx, gy)
+			return out
+		}
 		add(w.gPipe(c), bind(w.gLayout(c), aq, w.wbuf(), as, w.sbuf(), out, p), gx, gy)
 		return out
 	}
@@ -262,6 +296,10 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 	gemvAdd := func(aq, as *wgpu.Buffer, w decodeWeight, dst *wgpu.Buffer) {
 		p := uni([]uint32{1, uint32(w.kPad()), uint32(w.nRows()), 1})
 		gx, gy := gemvGrid(w.nRows())
+		if as == nil { // W8A16 + residual
+			add(c.gemvW8A16Pipeline, bind(c.gemvW8A16Layout, aq, w.wbuf(), w.sbuf(), dst, p), gx, gy)
+			return
+		}
 		add(w.gPipe(c), bind(w.gLayout(c), aq, w.wbuf(), as, w.sbuf(), dst, p), gx, gy)
 	}
 	// gemvBias is gemv with a per-output bias folded into the epilogue (dst[n] =
@@ -516,6 +554,10 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		moeExpert = func(aq, as *wgpu.Buffer, s *ResidentStackedW8A8, idx, wgt, dst *wgpu.Buffer, slot, mode int) {
 			d := uni([]uint32{uint32(s.kp), uint32(s.rows), uint32(slot), uint32(mode)})
 			gx, gy := gemvGrid(s.rows)
+			if as == nil { // W8A16: f32 activation, int8 stacked weight
+				add(c.moeExpertW8A16Pipeline, bind(c.moeExpertW8A16Layout, aq, s.bq, s.bScales, dst, idx, wgt, d), gx, gy)
+				return
+			}
 			add(c.moeExpertPipeline, bind(c.moeExpertLayout, aq, s.bq, as, s.bScales, dst, idx, wgt, d), gx, gy)
 		}
 	}

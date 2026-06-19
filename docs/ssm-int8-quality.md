@@ -158,6 +158,36 @@ experiments above (added later) confirmed it and found the real cause — **the 
 kernels**, not precision. (An earlier draft of this section blamed "f64-vs-f32 SSM compute +
 router sensitivity"; experiment E1 refuted that — f32 SSM is a no-op at 100%.)
 
+## Control A/B (W8A16) — activation precision is NOT the lever; the gap is FUNDAMENTAL
+
+One last control: is the gap fixable activation-precision / accumulation, or fundamental? Built a
+**W8A16** path — int8 WEIGHTS × **f32 ACTIVATIONS**, no activation quantization (`gpu/gemv_w8a16.go`:
+a W8A16 GEMV + a W8A16 MoE-expert GEMV, wired through the resident behind `GOINFER_SSM_W8A16`).
+The W8A16 GEMV is proven accurate in isolation (cosine **1.000000** vs f32-dequant matvec).
+
+| resident config | weights | activations | accum | agreement | ms/tok |
+|---|---|---|---|---|---|
+| W8A8 (default) | int8 | int8 | int32 (exact) | **66.2%** | **29.6** |
+| f16-mamba | f16 (mamba) | int8 | int32 | 63.9% | 55.8 |
+| **W8A16** | int8 | **f32** | f32 | **62.6%** | 40.7 |
+
+**No recovery — 62.6%, unchanged.** The resident is **invariant to every precision/accumulation
+knob**: int8↔f16 weights, int8↔f32 activations, int32-exact↔f32 accumulation all land at ~63–66%.
+So:
+- **A (activation quant) is refuted** — f32 activations don't help (and the CPU W8A16 ceiling is
+  95.9%, so the headroom exists; the resident just doesn't reach it).
+- **B (accumulation) is moot** — the W8A8 GEMV already accumulates int8×int8 in **int32 (exact)**;
+  W8A16's f32 accumulation is strictly *less* accurate and is no worse, so accumulation isn't it.
+
+**Verdict: GENUINELY FUNDAMENTAL.** Combined with Phase A (mamba kernels + in_proj bit-correct;
+resident≡staged for the first ~10 layers, then drifts), the gap is the **chaotic amplification of
+f32-reduction-ORDER differences** between the all-GPU resident path and the f64-CPU-mamba
+reference — invariant to operand precision because it lives in the *order* of f32 adds across
+granite's deep all-MoE stack + the recurrent mamba state, not in the operands. The GPU has no f64
+and can't match the reference's reduction order, so there is **no precision/accumulation fix**.
+**Bank the opt-in int8 (29.6 ms, 10× CPU, greedy-only) and close.** (W8A16 kept behind
+`GOINFER_SSM_W8A16` for the record; it's slower and no better.)
+
 ## Recommendation
 
 1. **Keep it opt-in, as shipped** (`GOINFER_SSM_RESIDENT`). It's coherent + factual on simple
