@@ -3,6 +3,7 @@ package decoder
 import (
 	"math"
 	"os"
+	"sync"
 
 	"github.com/townsendmerino/aikit/linalg"
 )
@@ -114,7 +115,15 @@ func mamba2Step(h []float32, w *mamba2Weights, p mamba2Params, eps float64, st *
 		xh := x[head*P : (head+1)*P]
 		A := -math.Exp(float64(w.aLog[head]))
 		dth := softplusf(dt[head] + w.dtBias[head])
-		dA := float32(math.Exp(float64(dth) * A))
+		var dA float32
+		if ssmForceF32 {
+			// E1 (precision-localization seam): mimic the GPU f32 SSM — round the
+			// exp argument dt·A to f32 (the only f64→f32 "SSM compute" spot here; the
+			// S-update recurrence below is already f32 in both paths).
+			dA = float32(math.Exp(float64(float32(dth) * float32(A))))
+		} else {
+			dA = float32(math.Exp(float64(dth) * A)) // f64 product (CPU reference)
+		}
 		S := st.ssm[head*P*N : (head+1)*P*N] // [P, N]
 		out := y[head*P : (head+1)*P]
 		for pi := range P {
@@ -148,7 +157,36 @@ func mamba2Step(h []float32, w *mamba2Weights, p mamba2Params, eps float64, st *
 // as the resident W8A8 path — isolating kernel-correctness from int8 sensitivity.
 var ssmQ8CPU = os.Getenv("GOINFER_SSM_Q8CPU") != ""
 
+// ssmForceF32 (precision-localization seam, set by tests) downcasts the SSM compute
+// in mamba2Step to f32 — the exp(dt·A) argument and the gated-norm accumulation — to
+// reproduce the GPU's f32-only SSM on the CPU reference. Off in production.
+var ssmForceF32 bool
+
+// SetSSMForceF32 / SetSSMQ8CPU toggle the CPU-reference precision-localization seams
+// at runtime (gpu/ssm_kernel_control_test.go needs the staged webgpu backend, which
+// lives in a package the decoder can't import — so it drives these via the registry).
+func SetSSMForceF32(v bool) { ssmForceF32 = v }
+func SetSSMQ8CPU(v bool)    { ssmQ8CPU = v }
+
+// q8Memo caches the round-trip of the (stable) weight matrices so the confirmation
+// seam doesn't re-quantize 30M-element projections every token. Keyed by the slice's
+// backing pointer; weights never move. Activations (N==1) change per token → not cached.
+var q8Memo sync.Map
+
 func q8RoundTrip(w []float32, N, K int) []float32 {
+	if N > 1 {
+		key := &w[0]
+		if v, ok := q8Memo.Load(key); ok {
+			return v.([]float32)
+		}
+		out := q8roundtrip(w, N, K)
+		q8Memo.Store(key, out)
+		return out
+	}
+	return q8roundtrip(w, N, K)
+}
+
+func q8roundtrip(w []float32, N, K int) []float32 {
 	q, s := linalg.QuantizeRowsInt8(w, N, K)
 	out := make([]float32, N*K)
 	for r := 0; r < N; r++ {
@@ -170,11 +208,20 @@ func gatedRMSNormGrouped(x, weight []float32, nGroups int, eps float64) {
 	groupSize := len(x) / nGroups
 	for g := 0; g < nGroups; g++ {
 		seg := x[g*groupSize : (g+1)*groupSize]
-		var ss float64
-		for _, v := range seg {
-			ss += float64(v) * float64(v)
+		var inv float32
+		if ssmForceF32 { // E1: f32 accumulation, matching the GPU gated-norm kernel
+			var ss float32
+			for _, v := range seg {
+				ss += v * v
+			}
+			inv = float32(1 / math.Sqrt(float64(ss/float32(groupSize))+eps))
+		} else {
+			var ss float64
+			for _, v := range seg {
+				ss += float64(v) * float64(v)
+			}
+			inv = float32(1 / math.Sqrt(ss/float64(groupSize)+eps))
 		}
-		inv := float32(1 / math.Sqrt(ss/float64(groupSize)+eps))
 		for j := range seg {
 			seg[j] = weight[g*groupSize+j] * seg[j] * inv
 		}

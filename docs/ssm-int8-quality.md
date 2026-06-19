@@ -7,10 +7,14 @@ Measurement only (`gpu/ssm_int8_quality_test.go`); no production change. RTX 207
 
 ## Verdict
 
-**int8 resident is materially degraded vs f32 — too lossy for default. Ship opt-in only
-(coherent on easy prompts, 10× faster); fund the f16 mixed-precision pass.** Greedy
-teacher-forced agreement with f32 is **66%** and perplexity is **2.4×** worse — well outside
-the ≳98% / negligible-perplexity bar for a default path.
+**int8 resident is materially degraded vs f32 (66% greedy agreement, 2.4× perplexity) — too
+lossy for default; ship opt-in greedy-only as today.** But the cause is NOT what it first
+looked like: localization experiments (E1/D1/D2/D3, below) refute precision, int8 quant, AND
+the router as the lever, and pin the gap on the **GPU mamba kernels** — every CPU-side
+reproduction of the resident's arithmetic scores ≥93.6%; only swapping in the GPU
+conv/ssm/gatedNorm kernels drops it to 66%. So the loss is a **fixable GPU kernel discrepancy,
+not a hardware precision floor** — meaning ~93% quality at the int8 10× speed is recoverable if
+the kernel is debugged. The f16 pass and a router-precision island are both dead ends (refuted).
 
 ## Step 0 — references + precision
 
@@ -68,13 +72,41 @@ prompts, while easy high-confidence ones survive:
 So int8 is usable for *easy greedy* lookups but produces factual/code errors and repetition on
 anything harder — consistent with the 66% agreement / 2.4× perplexity.
 
-## Why
+## Why — SETTLED by localization experiments: it's the GPU mamba KERNELS
 
-int8 (W8A8) on the **mamba projections** is too lossy: the SSM's `exp(dt·A)` amplifies int8
-`dt`/`B`/`C` error, and that error feeds the 64-expert router and flips top-6 selection
-downstream. Transformers tolerate int8 (~0.999); the Mamba mixer doesn't. The resident path is
-*computationally correct* (cosine 0.99 vs an int8 reference) — it faithfully computes the int8
-model; the int8 **mamba** is the degraded artifact.
+> The two earlier guesses in this doc — "int8 mamba projections too lossy" and (after f16
+> failed) "f64-vs-f32 SSM compute + router sensitivity" — were **both wrong**. The
+> localization experiments below (E1/D1/D2/D3, `decoder/ssm_precision_localize_test.go` +
+> `gpu/ssm_kernel_control_test.go`) refute every precision/quant hypothesis and pin the gap
+> on the GPU mamba kernels.
+
+All runs teacher-forced vs the f32 CPU reference (R1), 219 tokens:
+
+| control | what it changes vs R1 | agreement | meanKL |
+|---|---|---|---|
+| **E1** cpu f32 SSM | SSM compute f64 → f32 (exp arg + gated-norm accum) | **100.0%** | ~0 |
+| **E2** cpu f32 SSM + f64 routing | + force the f64 router selection | **100.0%** | ~0 |
+| **D1** cpu int8 mamba (W8A8) | int8 mamba in/out_proj + int8 activation | **97.3%** | 0.029 |
+| **D2** cpu int8 mamba + f64 routing | + force the f64 router selection | 95.0% | 0.014 |
+| **R2** staged | int8 attn/MoE matmuls (f32 mamba) | **95.4%** | 0.026 |
+| **D3** staged + int8 mamba | **ALL** int8, mamba still on CPU (`mamba2Step`) | **93.6%** | 0.045 |
+| **GPU resident int8** | all int8 **+ GPU mamba kernels** | **66.2%** | 0.93 |
+
+Read top-to-bottom: stacking every precision/quant change the resident makes — f32→f32 SSM,
+int8 mamba, int8 attn/MoE — only takes the CPU reference from 100% to **93.6%**. The single
+remaining step, D3 → resident, swaps the CPU `mamba2Step` for the **GPU conv/ssm/gatedNorm
+kernels**, and *that alone* drops agreement 93.6% → 66%. So:
+
+- **Not SSM precision** — E1: f64→f32 SSM is a no-op (100%, 0/8760 router flips).
+- **Not int8 weights/activations** — D1: int8 mamba projections cost ~3% (97.3%); f16 (proven
+  cosine-1.0 GEMV) didn't help either — consistent, because the projections were never the lever.
+- **Not the router** — D1 has 22% *benign* router flips yet 97.3% agreement; forcing the f64
+  selection (E2/D2) doesn't help. The 64-expert router is robust here, not hypersensitive.
+- **It's the GPU mamba kernels.** D3 (CPU mamba) 93.6% vs resident (GPU mamba) 66.2% — a ~27-pt
+  drop attributable *only* to the GPU conv/ssm/gatedNorm path. This matches the earlier
+  per-layer signatures (SKIPFFN mixer cosine 0.965, whole-model 0.37): a per-step discrepancy
+  in the GPU mixer that **compounds over the 219-token recurrence** (it was ~0.99 at token 1).
+  A kernel bug / numerical divergence — **fixable in principle, not a hardware precision floor.**
 
 ## f16 mixed-precision attempt (built + measured) — does NOT recover quality
 
@@ -94,13 +126,10 @@ GEMVs). Qualitatively it still loops ("red, blue, and red …"). **The f16 GEMV 
 accurate** (`cosine 1.000` vs f32 matvec in isolation), so this is **not an f16 bug** —
 **the projection precision is not the lever.** The R2-based hypothesis is refuted.
 
-**Corrected root cause.** R2 (95%) runs the *entire* mamba mixer in f64 on the CPU; the
-resident mixer runs the SSM `exp(dt·A)` recurrence in **f32 on the GPU** (no f64). That f32-vs-f64
-gap is ~1e-5 per step — but granite's **64-expert / top-6 MoE router** flips its expert
-*selection* on differences that small, and a flipped selection swaps whole experts → large
-divergence that compounds over 40 layers. f16/int8 weights don't touch the SSM-compute precision,
-so they don't help. The lever is the **SSM f64-precision (GPU can't) or MoE-router robustness** —
-a harder, model-specific problem, not the projection precision.
+f16 failing was the first clue that the projections aren't the lever; the localization
+experiments above (added later) confirmed it and found the real cause — **the GPU mamba
+kernels**, not precision. (An earlier draft of this section blamed "f64-vs-f32 SSM compute +
+router sensitivity"; experiment E1 refuted that — f32 SSM is a no-op at 100%.)
 
 ## Recommendation
 
@@ -110,10 +139,18 @@ a harder, model-specific problem, not the projection precision.
    the f32 default (CPU; granite's staged path is slower than CPU, so today's default IS f32).
 2. **Do NOT serve granite resident with sampling** (temp>0): KL 0.93 ⇒ sampled output is far
    worse than the already-degraded greedy.
-3. **Do NOT fund further f16 work — it was tried and does not recover quality** (63.9%, above).
-   The granite-resident **default stays int8** (faster, same quality); the f16 path is kept
-   behind `GOINFER_SSM_F16MAMBA` for the record only. The remaining lever is the SSM
-   f64-precision (the GPU has no f64) or making the 64-expert MoE router robust to ~1e-5
-   selection perturbations — a hard, model-specific problem, **not worth it for a tiny model**.
-   Net: granite resident is a **greedy-only, opt-in 10× speedup** at reduced quality; for
-   quality use the f32 CPU path (3.3 tok/s).
+3. **Do NOT fund a router-precision island, and do NOT fund more f16/weight-precision work** —
+   the experiments refute both premises (router robust at 97% with 22% benign flips; int8/f16
+   projections cost only ~3%). The default stays int8; f16 stays behind `GOINFER_SSM_F16MAMBA`
+   for the record only.
+4. **The gap is a GPU mamba-KERNEL bug, which means it is potentially recoverable at int8 speed
+   — a much better prize than "close as greedy-only".** D3 (CPU mamba) hits 93.6%; the resident
+   (GPU mamba) hits 66.2% on identical int8 weights. So the realistic options are:
+   - **(preferred, if funded) Debug the GPU mamba kernels.** Bisect the per-layer resident-mixer
+     vs `mamba2Step` divergence *over multiple tokens* (it's ~0.99 at token 1 but the multi-token
+     whole-model is 0.37 → the discrepancy is in the **state recurrence compounding**: suspect
+     the `ssm` state update / `dA` exp / conv-window ring, not the projections). Land it and
+     granite resident recovers ≈93% quality at **29.6 ms/tok (33.7 tok/s, 10× CPU)** — usable as
+     a default, not just greedy-only.
+   - **(fallback) Bank the opt-in int8 10× as greedy-only**, as today. No router island, no f16.
+     For quality, use the f32 CPU path (3.3 tok/s) until the kernel is fixed.

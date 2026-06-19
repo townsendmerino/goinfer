@@ -14,6 +14,20 @@ import (
 // production — a single nil-check per MoE FFN, zero allocation. Set by the spike test.
 var moeSelTrace [][]int
 
+// moeWtsTrace mirrors moeSelTrace for the per-call routing WEIGHTS; together they
+// capture a forward's full routing decision. moeSelOverride/moeWtsOverride — when
+// non-nil — force each moeMLP call to REPLAY a recorded routing (idx+wts from a
+// higher-precision reference run) in forward order instead of routing on its own
+// hidden. The precision-localization experiment (E2, decoder/ssm_precision_localize_test.go):
+// does feeding the f32-SSM forward the f64 reference's routing recover quality
+// (→ a cheap router-selection island suffices) or not (→ the whole SSM needs precision)?
+var (
+	moeWtsTrace    [][]float32
+	moeSelOverride [][]int
+	moeWtsOverride [][]float32
+	moeOverridePos int
+)
+
 // gatedMLP runs one block's gated MLP for the current position and returns the
 // output (caller applies the post-MLP norm + residual add). The gate/up/down
 // structure is shared by GeGLU (Gemma) and SwiGLU (Llama/Mistral/Qwen); only
@@ -75,9 +89,17 @@ func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend, pager
 	// the DeepSeek/GLM sigmoid-score + selection-bias path — routeExperts unifies both.
 	logits := make([]float32, nE)
 	matmul(be, &lw.Router, h, logits, 1)
-	idx, wts := routeExperts(logits, lw.RouterBias, k, moe.RouterSigmoid, moe.NormTopKProb, moe.RoutedScale, moe.NGroup, moe.TopkGroup)
-	if moeSelTrace != nil { // SPIKE: record this call's expert selection (forward order)
+	var idx []int
+	var wts []float32
+	if moeSelOverride != nil { // E2: replay the higher-precision reference's routing
+		idx, wts = moeSelOverride[moeOverridePos], moeWtsOverride[moeOverridePos]
+		moeOverridePos++
+	} else {
+		idx, wts = routeExperts(logits, lw.RouterBias, k, moe.RouterSigmoid, moe.NormTopKProb, moe.RoutedScale, moe.NGroup, moe.TopkGroup)
+	}
+	if moeSelTrace != nil { // record this call's routing (forward order)
 		moeSelTrace = append(moeSelTrace, append([]int(nil), idx...))
+		moeWtsTrace = append(moeWtsTrace, append([]float32(nil), wts...))
 	}
 	// Weight residency (idea #2): the router selection is the demand signal. Touch
 	// every chosen expert before the matmuls so the pager faults them in and keeps
