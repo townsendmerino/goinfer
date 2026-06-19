@@ -46,6 +46,33 @@ own Linux box. The decision flips from "conditional GO on distribution" to:
 > build to Go 1.25, or wait for a goffi release that re-establishes Go-1.26 callback
 > support — neither confirmed to work.)
 
+## ✅ Update (2026-06-19): the blocker is goffi, NOT wgpu-native v29 — and v29 has no decode penalty
+
+Two things got conflated and are now separated by measurement:
+
+1. **The runtime crash is the goffi/zero-CGO FFI path, specific to it.** Confirmed by
+   running `github.com/oliverbestmann/webgpu` v1.33.4 — a **CGO** fork of cogentcore that
+   statically links **wgpu-native v29** — on this exact box (Go 1.26.3, Vulkan, RTX 2070
+   SUPER). It builds, links, acquires the adapter, and runs compute **fine**. So
+   wgpu-native v29 itself runs here; only the **goffi pure-Go callback ABI** is broken on
+   Go 1.26.
+
+2. **There is no "v29 decode penalty."** Matched gemv-shaped micro-benches (cogentcore/v22
+   vs oliverbestmann/v29, RTX 2070 SUPER, best-of-N throttle-free):
+   - gemv [4096×4096] f32: v22 0.62 ms vs v29 0.64 ms/dispatch (~4%, within throttling noise)
+   - per-dispatch cgo **record** cost: **identical**, 1.1 µs/dispatch on both
+   - 256-dispatch decode-shaped (record→submit→poll): v22 147 ms vs v29 152 ms (**+3.5%**,
+     attributable to the oliverbestmann fork's GC-finalizer layer, not v29)
+
+   The earlier "−23% v29 decode loss" does **not** reproduce. If a zero-CGO distribution
+   binding ever clears the Go-1.26 goffi gate, v29 perf is not a reason to avoid it.
+
+**Not worth switching to oliverbestmann, though:** it's not a drop-in (its GC redesign
+changed the API — single-return `CreateX`, `WGSLSource` vs `WGSLDescriptor` — so it's a
+real port across the ~35 binding files), it's still CGO (no distribution win over
+cogentcore), and it's marginally *slower* (the GC layer). Stay on cogentcore for zero
+churn; revisit only if cogentcore goes unmaintained.
+
 ---
 
 ## Verdict (one paragraph)

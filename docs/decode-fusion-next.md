@@ -2,9 +2,15 @@
 
 The decode path's throughput ceiling on WebGPU is the long, serially-dependent
 dispatch chain (~535 dispatches/token: ~197 GEMV + ~338 glue), where per-dispatch
-barrier cost dominates over kernel work. Cutting dispatch/barrier count is the lever;
-it helps cogentcore today and, because per-dispatch overhead is exactly wgpu-native
-v29's tax, it also shrinks the v29 decode penalty (see `perf-dot4-report.md`).
+barrier cost dominates over kernel work. Cutting dispatch/barrier count is the lever
+for cogentcore today.
+
+> **Correction (2026-06-19):** an earlier draft claimed a "wgpu-native v29 decode
+> penalty" that this fusion would also shrink. That penalty was **measured and does
+> NOT exist** — via the `oliverbestmann/webgpu` CGO v29 fork on the box, the
+> per-dispatch cgo record cost is **identical** to cogentcore/v22 (1.1 µs/dispatch
+> both) and gemv compute is ~equal (v29 0.64 ms vs v22 0.62 ms). So fusion's value is
+> the dispatch-chain throughput on the *current* binding, not a v29 hedge.
 
 ## Done — Increment 1 (shipped, `e8add57`)
 

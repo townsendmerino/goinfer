@@ -65,8 +65,8 @@ reference's reduction order, so there is no cheap fix. Detail: `ssm-int8-quality
 |---|---|---|
 | `dot4I8Packed` / DP4A TTFT | **bandwidth-bound, ~0 gain** | the opening thesis; measurement demolished it (`gpu-assessment.md`) |
 | kernel fusion (dispatch-count cut) | **bounded** | Incr1 rope+k+v +1.5%, Incr2 bias→GEMV epilogue +2.3% (real Qwen2.5), Incr3 qk-norm fold **rejected** −2.7% (occupancy). Lesson: dispatch-count cut is necessary not sufficient — keep launch geometry (`decode-fusion-next.md`) |
-| wgpu **v29 binding swap** | **net decode loss** | stay on cogentcore/webgpu (`decode-twe-split.md`) |
-| **go-webgpu** migration | **Go-1.26 crash** | blocked (`gpu-gowebgpu-migration-assessment.md`) |
+| **go-webgpu** (goffi, zero-CGO) binding | **Go-1.26 callback-ABI crash** at `RequestAdapter` — the REAL binding blocker (its own `examples/compute` SIGABRTs); but it's the **goffi FFI**, not wgpu-native v29 | blocked (`gpu-gowebgpu-migration-assessment.md`) |
+| ~~wgpu-native **v29 = decode slowdown**~~ | **REFUTED** — measured directly via the `oliverbestmann/webgpu` CGO v29 fork: gemv compute v29 0.64 ms ≈ v22 0.62 ms (~4%), per-dispatch record **identical** (1.1 µs both), 256-dispatch decode-shaped total +3.5% (the fork's GC layer). The earlier "−23% v29 decode penalty" does NOT reproduce | stay on cogentcore — but for *zero churn*, not a v29 perf cliff (`gpu-gowebgpu-migration-assessment.md`) |
 | granite f16 mamba / router-island / W8A16 | **all refuted** | see the wall section + `ssm-int8-quality.md` |
 
 ## Why the win is trustworthy (methodology)
