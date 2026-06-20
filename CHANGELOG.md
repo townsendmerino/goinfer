@@ -66,6 +66,16 @@ families served, and gains a Mamba-2 SSM engine for hybrids.** (See
   on the optional Config RawMessage fields keeps nil truly absent (`TestConfig_giwRoundTrip_nilRawMessage`).
 
 ### Findings (no API change)
+- **qwen3_5_moe numbers shifted slightly under the forward refactors — re-validated, still
+  gate-backed.** The v0.8.0 §1 re-run at HEAD (vs the `e3eb033` baseline) moved its int8-vs-bf16
+  Gate-2 from argmax 74/80, cosine_min 0.99466 → **66/80, 0.99333**. Benign: the mean barely
+  moved (0.99837), and *every* argmax divergence is a proven near-tie (worst gap 0.0045 of
+  range), so the forward is sound — the flips are coin-flips on tied tokens, amplified by the
+  `forward_qwen35.go` refactors (MoE demand-paging / WeightMat migration / scratch-reuse). The
+  bf16 Gate-2's enforced bar is **cosine_min ≥ 0.98 + all-near-tie**, both cleared; 0.99466 was
+  the *achieved* number that run, not a floor (the 66/80 + 0.9943 figure is the *separate* Q8_0
+  GGUF gate's relaxed bar). deepseek_v2/v3 re-ran clean to argmax 100% / cosine 0.999, confirming
+  the re-validation discriminates.
 - **Granite int8 resident is quality-limited and stays opt-in/greedy-only** — characterized as a
   *fundamental* cliff (not a bug): its 64-expert top-6 MoE router turns chaotic f32-reduction-order
   perturbations into discrete expert-selection flips. Proven precision-invariant (int8 ≈ f16 ≈

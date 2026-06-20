@@ -404,7 +404,7 @@
       "status": "validated",
       "validated_at": "b62ba30",
       "date": "2026-06-20",
-      "reference": "HF bf16 (Qwen3.6-35B-A3B text decoder)",
+      "reference": "HF bf16 (Qwen3.6-35B-A3B text decoder; int8-vs-bf16). v0.8.0 re-run at HEAD: argmax 66/80, cosine_min 0.99333 (\u003e=0.98 floor), all divergences near-ties (worst gap 0.0045). Down from the e3eb033 run (74/80, 0.99466) with the forward_qwen35.go refactors (demand-paging / WeightMat migration / scratch-reuse) \u2014 benign: mean ~unchanged (0.99837), no forward error.",
       "machine": "linux-62gb",
       "method": "full-forward-oracle",
       "metrics": {

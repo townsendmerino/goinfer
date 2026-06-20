@@ -119,9 +119,14 @@ battlegrounds now:
         cosine min 0.99583 / mean 0.99850, worst div gap 0.0052** — the 3 misses all
         rank-2 near-ties (Q8_0 quant noise, not a loader defect). (Ran ~4.8 min, not
         the stale ~40 min estimate — the SIMD prefill attention sped it up. Cosine min
-        now *exceeds* the original Gate-2 bf16 bar 0.99466; only argmax 72<74, so the
-        relaxed 66/80+0.9943 GGUF bars stay and pass with margin.) **"Qwen 3.6
+        now *exceeds* the original Gate-2 bf16 *achieved* cosine 0.99466; only argmax 72<74,
+        so the relaxed 66/80+0.9943 GGUF bars stay and pass with margin.) **"Qwen 3.6
         support" is now release-headline-ready.**
+        (NB to avoid conflating numbers: the **bf16 Gate-2's *enforced* bar is
+        `cosine_min ≥ 0.98` + all-near-tie**, NOT 0.99466 — see `qwen35_gate2_test.go`. 0.99466
+        / 0.9943 are an *achieved* value / the *separate* Q8_0 GGUF gate's relaxed bar. The
+        v0.8.0 §1 re-run at HEAD measured 66/80 + cosine_min 0.99333 — clears 0.98, all
+        divergences near-tie; the slight drop from the refactors is documented in CHANGELOG.)
   - [x] **Chunked DeltaNet scan — kernel** — `deltanet_chunked.go`: the
         chunked-parallel gated-delta scan, proven algebraically equivalent to the
         sequential recurrence over random inputs/chunk sizes
