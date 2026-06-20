@@ -97,6 +97,53 @@ func (s *Session) Generate(ctx context.Context, prompt []int, maxTokens int, sp 
 	return out, g
 }
 
+// GenerateNgramSpeculative is Session.Generate with n-gram speculative decoding:
+// it reuses the warm KV prefix exactly as Generate does (rewind to the longest
+// shared token prefix, prefill only the divergent suffix), then runs the lossless
+// speculative loop over the session's cache. Output matches Session.Generate in
+// distribution (token-identical when greedy). The win is largest on agent/chat
+// loops — a large warm prefix plus output that echoes the prompt is the n-gram
+// drafter's home turf.
+func (s *Session) GenerateNgramSpeculative(ctx context.Context, prompt []int, maxTokens int, drafter Drafter, K int, sp SamplingParams) (<-chan int, *Generation, error) {
+	return s.genSpec(ctx, prompt, maxTokens, drafter, K, sp, nil)
+}
+
+// GenerateNgramSpeculativeAdaptive is GenerateNgramSpeculative with the 04
+// adaptive-depth controller (nil ⇒ a fresh default).
+func (s *Session) GenerateNgramSpeculativeAdaptive(ctx context.Context, prompt []int, maxTokens int, drafter Drafter, ad *AdaptiveDepth, sp SamplingParams) (<-chan int, *Generation, error) {
+	if ad == nil {
+		ad = &AdaptiveDepth{}
+	}
+	ad.ensure()
+	return s.genSpec(ctx, prompt, maxTokens, drafter, ad.MaxDraft, sp, ad)
+}
+
+func (s *Session) genSpec(ctx context.Context, prompt []int, maxTokens int, drafter Drafter, K int, sp SamplingParams, ad *AdaptiveDepth) (<-chan int, *Generation, error) {
+	if err := validateNgramSpec(drafter, sp); err != nil {
+		return nil, nil, err
+	}
+	out := make(chan int)
+	stats := &SpecStats{}
+	g := &Generation{Spec: stats}
+
+	matched := max(min(commonPrefixLen(s.tokens, prompt), len(prompt)-1), 0)
+	s.cache.TruncateTo(matched)
+	seq := append([]int(nil), prompt...)
+	commit := func(id int) { seq = append(seq, id) }
+
+	go func() {
+		defer close(out)
+		s.m.genNgramInto(ctx, out, g, stats, drafter, prompt, matched, maxTokens, K, sp, nil, ad, s.cache, commit)
+		// Reconcile: seq == prompt + every token committed to the cache, so the
+		// session's token list mirrors the cache exactly for the next call's prefix
+		// match (the final pending token was emitted but not committed — one behind,
+		// same as a fresh prefill would leave it).
+		s.tokens = seq
+		s.cache.TruncateTo(len(seq))
+	}()
+	return out, g, nil
+}
+
 // commonPrefixLen returns the length of the longest common leading run of a and b.
 func commonPrefixLen(a, b []int) int {
 	n := min(len(a), len(b))

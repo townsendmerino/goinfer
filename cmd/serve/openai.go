@@ -37,6 +37,7 @@ type loadedModel struct {
 	name     string      // served id (reported by /v1/models, matched on the request model field)
 	fp       string      // model fingerprint (binds --session-dir snapshots)
 	adapter  string      // compute-time LoRA adapter name (#7); "" = base model. Shares model with its base.
+	spec     bool        // --spec ngram: lossless n-gram (prompt-lookup) speculative decode with adaptive depth
 	sessions *sessionLRU // prefix-keyed KV reuse across requests
 	mu       sync.Mutex  // serialize this model's generations (the single decode worker)
 	// queue bounds in-flight+waiting requests (cap = 1 running + --max-queue
@@ -522,7 +523,22 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, onText func(
 	// Reuse the KV of whichever cached session already holds this prompt as a
 	// prefix (continuing chat / agent loop): only the new suffix is prefilled.
 	sess := lm.sessions.acquire(gr.promptIDs)
-	stream, gen := sess.Generate(ctx, gr.promptIDs, gr.maxTokens, gr.sp)
+	var stream <-chan int
+	var gen *decoder.Generation
+	if lm.spec {
+		// Lossless n-gram speculative decode with adaptive depth. Falls back to plain
+		// Generate when the request's sampler isn't yet supported on the spec path
+		// (repetition/presence/frequency penalties, logit bias, or constrained/tool
+		// decoding via a LogitProcessor) — the validation error is returned before the
+		// session cache is touched, so the fallback is exact.
+		var err error
+		stream, gen, err = sess.GenerateNgramSpeculativeAdaptive(ctx, gr.promptIDs, gr.maxTokens, &decoder.NgramDrafter{}, &decoder.AdaptiveDepth{MaxDraft: 8}, gr.sp)
+		if err != nil {
+			stream, gen = sess.Generate(ctx, gr.promptIDs, gr.maxTokens, gr.sp)
+		}
+	} else {
+		stream, gen = sess.Generate(ctx, gr.promptIDs, gr.maxTokens, gr.sp)
+	}
 	finish, n, stopHit := lm.streamTokens(cancel, stream, gr, onText)
 	return finish, n, gen.Logprobs, stopHit
 }

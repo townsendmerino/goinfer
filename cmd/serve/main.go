@@ -226,6 +226,7 @@ type config struct {
 	weightCacheGB float64       // -weight-cache: resident expert-weight budget in GB (0 = auto)
 	embedInt4     bool          // -embed-int4: relax the int8 embed/head pin to int4 (lossy, big-vocab small models)
 	maxQueue      int           // -max-queue: bounded per-model queue depth (0 = unbounded)
+	spec          string        // -spec: "" (off) | "ngram" — lossless n-gram speculative decode
 	allowAdmin    bool          // -allow-admin: enable POST /admin/models/{load,unload}
 	visionPath    string        // -vision: dir holding the vision tower (SigLIP + projector) for a multimodal --model
 	visionQuant   string        // -vision-quant: "f32" (default) | "int8" (W8A8; only faster on AVX512-VNNI — a WASH on AVX2)
@@ -267,6 +268,7 @@ func main() {
 	flag.Float64Var(&cfg.weightCacheGB, "weight-cache", 0, "resident expert-weight budget in GB for -stream-weights (0 = auto, ~half of available RAM)")
 	flag.BoolVar(&cfg.embedInt4, "embed-int4", false, "with -quant int4, store the token-embedding/LM-head table at int4 too instead of the int8 pin — halves the largest resident tensor on a big-vocab small model. Lossy (~2.3 pts top-1, mostly rare tokens); GGUF direct load only (not the -stream-weights .giw cache)")
 	flag.IntVar(&cfg.maxQueue, "max-queue", 8, "per-model backpressure: max queued requests before 429 (0 = unbounded)")
+	flag.StringVar(&cfg.spec, "spec", "", "speculative decoding: \"\" (off) | ngram — lossless n-gram (prompt-lookup) drafting with adaptive depth. Wins on copy-heavy traffic (code edits / RAG / agent loops) on the CPU backend; output is identical (greedy bit-exact, sampled in-distribution). Auto-falls back to plain decode per-request when the sampler uses penalties/logit-bias or constrained/tool decoding")
 	flag.StringVar(&cfg.embedPath, "embed-model", "", "embedding model: a CodeRankEmbed HF dir (config.json + model.safetensors + tokenizer.json) for /v1/embeddings")
 	flag.StringVar(&cfg.embedQuant, "embed-quant", "f32", "embedding weight precision: f32 | q8")
 	flag.StringVar(&cfg.embedName, "embed-served-model-name", "", "embedding model id reported by /v1/models (default: dir basename)")
@@ -278,6 +280,10 @@ func main() {
 	}
 	if err := sessionDirOK(cfg.sessionDir); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(2)
+	}
+	if cfg.spec != "" && cfg.spec != "ngram" {
+		fmt.Fprintf(os.Stderr, "error: -spec must be \"\" or \"ngram\" (got %q)\n", cfg.spec)
 		os.Exit(2)
 	}
 	if cfg.kvIdleDemote > 0 && (cfg.sessionDir == "" || cfg.kvSessions <= 0) {
@@ -417,6 +423,7 @@ func (s *server) loadAdapters(cfg config) error {
 		lm := &loadedModel{
 			tk: base.tk, model: base.model, tmpl: base.tmpl, stopIDs: base.stopIDs,
 			eosIDs: base.eosIDs, vocab: base.vocab, name: spec.name, fp: fp, adapter: spec.name,
+			spec:     cfg.spec == "ngram",
 			sessions: newSessionLRU(base.model, cfg.kvSessions, 0, fp),
 		}
 		lm.sessions.adapter = spec.name
@@ -589,6 +596,7 @@ func loadDecoder(spec modelSpec, cfg config) (*loadedModel, error) {
 	fp := modelFingerprint(spec.path, model.Quant())
 	lm := &loadedModel{
 		tk: tk, model: model, vocab: mcfg.VocabSize, eosIDs: mcfg.EOSIDs(), name: name, fp: fp,
+		spec: cfg.spec == "ngram",
 		// capHint 0: KV grows on demand. The fingerprint binds disk snapshots to
 		// this exact model+quant so a -session-dir reused across models is rejected.
 		sessions: newSessionLRU(model, cfg.kvSessions, 0, fp),

@@ -111,48 +111,74 @@ func (target *Model) GenerateNgramSpeculative(ctx context.Context, prompt []int,
 	return target.genNgram(ctx, prompt, maxTokens, drafter, K, sp, nil, nil)
 }
 
-// genNgram is the body behind GenerateNgramSpeculative, plus an optional per-
-// position trace sink. When tr is non-nil it computes the target softmax at each
-// verified draft position to emit the exact per-position acceptance
-// (accept_prob = 1 − TV = p(token) for the n-gram's point-mass q) and diagnostic
-// features — the §06 SpecTrace dataset. That softmax is extra work, so tr stays
-// nil on the production path (the public wrapper) and is set only by the harness.
-func (target *Model) genNgram(ctx context.Context, prompt []int, maxTokens int, drafter Drafter, K int, sp SamplingParams, tr specTracer, ad *AdaptiveDepth) (<-chan int, *Generation, error) {
+// validateNgramSpec runs the synchronous precondition checks shared by the Model
+// and Session speculative entry points.
+func validateNgramSpec(drafter Drafter, sp SamplingParams) error {
 	if drafter == nil {
-		return nil, nil, fmt.Errorf("decoder.GenerateNgramSpeculative: nil drafter")
+		return fmt.Errorf("decoder.GenerateNgramSpeculative: nil drafter")
 	}
 	if sp.LogitProcessor != nil {
-		return nil, nil, fmt.Errorf("decoder.GenerateNgramSpeculative: LogitProcessor (constrained decoding) not supported yet; use Generate")
+		return fmt.Errorf("decoder.GenerateNgramSpeculative: LogitProcessor (constrained decoding) not supported yet; use Generate")
 	}
-	sampled := sp.Temperature > 0
-	var sampler *Sampler
-	if sampled {
-		sampler = NewSampler(sp)
-		if sampler.blocksSpecSampling() {
-			return nil, nil, fmt.Errorf("decoder.GenerateNgramSpeculative: sampled speculation supports temperature + top-k/top-p/min-p only; repetition/presence/frequency penalties and LogitBias are not yet threaded — use Generate")
-		}
+	if sp.Temperature > 0 && NewSampler(sp).blocksSpecSampling() {
+		return fmt.Errorf("decoder.GenerateNgramSpeculative: sampled speculation supports temperature + top-k/top-p/min-p only; repetition/presence/frequency penalties and LogitBias are not yet threaded — use Generate")
+	}
+	return nil
+}
+
+// genNgram is the async wrapper: it validates, launches genNgramInto in a
+// goroutine over a fresh self-owned cache, and returns the stream. Session-backed
+// callers use genNgramInto directly to thread their warm KV cache.
+func (target *Model) genNgram(ctx context.Context, prompt []int, maxTokens int, drafter Drafter, K int, sp SamplingParams, tr specTracer, ad *AdaptiveDepth) (<-chan int, *Generation, error) {
+	if err := validateNgramSpec(drafter, sp); err != nil {
+		return nil, nil, err
 	}
 	if len(prompt) == 0 {
 		return nil, nil, fmt.Errorf("decoder.GenerateNgramSpeculative: empty prompt")
 	}
-	if K < 1 {
-		K = 4
-	}
-
-	// Resident verify on the device when the target's GPU-resident decode path is
-	// built (webgpu + eligible arch): prompt seeds the resident KV via per-token
-	// Forward, the verify is a single batched ForwardN, rollback is the resident
-	// no-op TruncateTo. There is no draft model to place — the drafter is pure-Go —
-	// so this path adds no GPU memory, unlike GenerateSpeculative's draft model.
-	resident := target.resident != nil && target.DecodeRunnerEligible()
-
 	out := make(chan int)
 	stats := &SpecStats{}
 	g := &Generation{Spec: stats}
 	go func() {
 		defer close(out)
-		var tc *KVCache
-		if !resident {
+		target.genNgramInto(ctx, out, g, stats, drafter, prompt, 0, maxTokens, K, sp, tr, ad, nil, nil)
+	}()
+	return out, g, nil
+}
+
+// genNgramInto is the synchronous speculative decode loop, mirroring generateInto:
+// it assumes cache already holds prompt[:prefillFrom] (a Session's warm prefix; 0
+// and a nil cache for a fresh run), prefills the rest, then runs the n-gram verify
+// loop streaming each committed token to out. commit, if non-nil, is invoked with
+// each token as its forward commits it to the cache (the Session seam — note the
+// final pending token is emitted but not committed, exactly one behind the cache,
+// so reconciliation matches the cache contents). It does NOT close out. When cache
+// is non-nil the device-resident path is bypassed (sessions use the CPU cache, as
+// generateInto does); tr enables §06 trace emission.
+func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Generation, stats *SpecStats, drafter Drafter, prompt []int, prefillFrom, maxTokens, K int, sp SamplingParams, tr specTracer, ad *AdaptiveDepth, cache *KVCache, commit func(int)) {
+	if len(prompt) == 0 {
+		g.err = fmt.Errorf("decoder.GenerateNgramSpeculative: empty prompt")
+		return
+	}
+	if K < 1 {
+		K = 4
+	}
+	sampled := sp.Temperature > 0
+	var sampler *Sampler
+	if sampled {
+		sampler = NewSampler(sp)
+	}
+
+	// Resident verify on the device when the target's GPU-resident decode path is
+	// built (webgpu + eligible arch) AND no session cache was handed in: prompt seeds
+	// the resident KV via per-token Forward, the verify is a single batched ForwardN,
+	// rollback is the resident no-op TruncateTo. There is no draft model to place —
+	// the drafter is pure-Go — so this path adds no GPU memory. A session passes its
+	// CPU cache, which forces the staged path (as generateInto does).
+	resident := cache == nil && target.resident != nil && target.DecodeRunnerEligible()
+	{
+		tc := cache
+		if tc == nil && !resident {
 			tc = target.NewCache(len(prompt) + maxTokens + K + 8)
 		}
 
@@ -176,7 +202,7 @@ func (target *Model) genNgram(ctx context.Context, prompt []int, maxTokens int, 
 			}
 		}
 
-		// Prefill the prompt; the last token's logits seed cur.
+		// Prefill the (divergent suffix of the) prompt; the last token's logits seed cur.
 		var seedLogits []float32
 		var err error
 		if resident {
@@ -187,7 +213,7 @@ func (target *Model) genNgram(ctx context.Context, prompt []int, maxTokens int, 
 				}
 			}
 		} else {
-			if seedLogits, err = target.prefillLogits(prompt, tc); err != nil {
+			if seedLogits, err = target.prefillLogits(prompt[prefillFrom:], tc); err != nil {
 				g.err = err
 				return
 			}
@@ -321,9 +347,19 @@ func (target *Model) genNgram(ctx context.Context, prompt []int, maxTokens int, 
 			targetTruncate(base + 1 + accepted)
 
 			// 5. Commit to history: cur, then the accepted draft tokens. nextTok is
-			// the new cur and is committed at the top of the next round.
+			// the new cur and is committed at the top of the next round. The same
+			// tokens (now resident in the cache at positions base..base+accepted) are
+			// reported to the Session via commit, so its token list mirrors the cache.
 			hist = append(hist, cur)
-			hist = append(hist, draftTok[:accepted]...)
+			if commit != nil {
+				commit(cur)
+			}
+			for i := 0; i < accepted; i++ {
+				hist = append(hist, draftTok[i])
+				if commit != nil {
+					commit(draftTok[i])
+				}
+			}
 
 			// 6. Stream the accepted draft tokens, then the correction/bonus.
 			for i := 0; i < accepted; i++ {
@@ -336,6 +372,5 @@ func (target *Model) genNgram(ctx context.Context, prompt []int, maxTokens int, 
 				return
 			}
 		}
-	}()
-	return out, g, nil
+	}
 }
