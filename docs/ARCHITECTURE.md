@@ -163,15 +163,29 @@ prequantizes and then loads + generates via expert-paging on a 62 GB host.
 
 **Two GPU modes (`-tags gpu`, WebGPU).** (1) A per-matmul `Backend` that
 substitutes for the f32 kernel — the original, arch-agnostic path. (2) **Full
-residency** (v0.4.0): for dense Qwen2/Llama the *entire token forward* runs on
-the GPU through `DecodeRunner`, with **quantized** GPU kernels — `W8A8` (int8)
-and `W4A8` (int4). This is the headline: a **7B int4 fits and decodes pure-GPU on
-an 8 GB card** (~51 tok/s, ~71% of llama.cpp-CUDA at equal 4-bit quant) — the
-model class that does *not* fit at int8. v1 residency limits: stateless
-`Generate` only (Session/prefix-reuse fall back to the staged path), 16k context
-(f32 KV) — or **~32k with the opt-in f16 KV cache (`--kv f16`, v0.5.0)** at the
-same VRAM — dense Qwen2/Llama only (MoE / Gemma / hybrid → staged). Full numbers:
-`docs/gpu-assessment.md`.
+residency** (v0.4.0+): the *entire token forward* runs on the GPU through
+`DecodeRunner`, with **quantized** GPU kernels — `W8A8` (int8) and `W4A8` (int4).
+This is the headline: a **7B int4 fits and decodes pure-GPU on an 8 GB card**
+(~51 tok/s, ~71% of llama.cpp-CUDA at equal 4-bit quant) — the model class that
+does *not* fit at int8. v1 residency limits: stateless `Generate` only
+(Session/prefix-reuse fall back to staged), 16k context (f32 KV) — or **~32k with
+the opt-in f16 KV cache (`--kv f16`, v0.5.0) / ~64k with int8 KV (v0.6.0)** at the
+same VRAM.
+
+**Residency coverage has since widened to most families served (post-v0.7.0).** A
+ladder of bounded eligibility "levers" moved the staged-only archs onto the resident
+runner: **MoE** (Mixtral, qwen2_moe, **GLM-4.5/4.6**, and **DeepSeek-V2/V3 + Kimi-K2**
+via a **MLA latent-attention** residency bridge — C4/C5), **sliding-window** attention
+(Mistral — C6), and **per-layer RoPE** (Mellum — C7). On top of that sits a **resident
+Mamba-2 SSM decode engine** — the reframe that *decode is a bounded per-token recurrence,
+not the prefill scan* — which brings the **hybrid SSM families onto the GPU**:
+**Nemotron-H** (dense Mamba-2 / NoPE-GQA / squared-ReLU MLP) is **resident-DEFAULT at int4**
+(near-lossless — perplexity within noise of f32, KL 0.058 — and ~10× CPU), and
+**Granite-4.0-H** ports cleanly but stays **opt-in** (its int8 path hits a *fundamental*
+quant cliff where its 64-expert MoE router turns tiny perturbations into discrete
+expert-selection flips — see `docs/ssm-int8-quality.md`). Still staged: **Gemma** (logit/attn
+softcap own-forward), **Llama-4** (ports cleanly but needs ≥12 GB), gpt2. Full numbers:
+`docs/gpu-assessment.md`, `docs/gpu-residency-coverage.md`, `docs/decode-residency-campaign.md`.
 
 ## 3. Module map (and where cgo is quarantined)
 

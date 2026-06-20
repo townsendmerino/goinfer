@@ -5,8 +5,9 @@ grounded, per-family scoping of what putting each *remaining* family resident
 would take. Companion to [`capability-matrix.md`](capability-matrix.md) (the
 per-arch `gpu_residency_eligible` column) — this doc is the *why* and the *how*.
 
-Grounded in the live `gpu/` + `decoder/` seam as of the C7 lever (commit
-`6553d72`, 2026-06-17). No "would be easy" without a code reference.
+Grounded in the live `gpu/` + `decoder/` seam as of the resident **Mamba-2 SSM engine** +
+Nemotron-H default-on (commit `d2ba970`, 2026-06-19; the C-lever ladder through C7 is
+`6553d72`). No "would be easy" without a code reference.
 
 ## What "resident decode" is
 
@@ -45,9 +46,16 @@ normal path.
 | C5 | partial RoPE (rotary_dim < head_dim) | **GLM-4.5/4.6** | `f1bde3b` |
 | C6 | sliding-window (local) attention — per-layer windowed start | **Mistral** | `793252b` |
 | C7 | per-layer-type RoPE (different invFreq + mscale per global/local layer) | **Mellum** | `6553d72` |
+| **SSM** | **resident Mamba-2 decode engine** (`mambaConv`/`mambaSSM`/`mambaGatedNorm` kernels + build-once {conv-ring, ssm} state) + **single-op-per-block** wiring + **squared-ReLU MLP** (`relu2Quant`) + NoPE-via-zeroed-invFreq | **Granite-4.0-H** (opt-in), **Nemotron-H** (DEFAULT-on int4) | `ede17ae`/`f912a25`/`64aa9cc`/`0928611` |
 
 Resident coverage today: **dense Llama / Qwen2 / Qwen2.5 / Phi-3·Phi-4 / Qwen3 ·
-Mixtral · Qwen2-MoE · GLM-4.5/4.6 · DeepSeek-V2/V3 · Kimi K2 · Mistral · Mellum.**
+Mixtral · Qwen2-MoE · GLM-4.5/4.6 · DeepSeek-V2/V3 · Kimi K2 · Mistral · Mellum ·
+Granite-4.0-H (opt-in) · Nemotron-H (default-on int4)** — i.e. the first recurrent/hybrid
+SSM families, not just the attention transformers. The SSM engine came from the reframe that
+*decode is a bounded per-token recurrence, not the prefill scan*. Nemotron-H is default-on
+because, with no MoE router, it quantizes near-losslessly; Granite stays opt-in because its
+64-expert router makes int8 a fundamental cliff (`ssm-int8-quality.md`,
+`nemotron-resident.md`, `decode-residency-campaign.md`).
 
 Two design notes that recur:
 

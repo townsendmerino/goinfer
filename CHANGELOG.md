@@ -8,6 +8,46 @@ The forward-pass and quantization numerics are parity-gated against HuggingFace
 and are the stable contract. The loader and architecture-descriptor surface is
 pre-1.0 and may change as new model families and quant formats land.
 
+## [Unreleased]
+
+Theme: **the GPU resident-decode path expands from "dense Qwen2/Llama only" to most
+families served, and gains a Mamba-2 SSM engine for hybrids.** (See
+`docs/decode-residency-campaign.md` for the full arc, scorecard, and dead ends.)
+
+### Added
+- **Resident decode for most mainstream families** (the C-lever ladder — bounded
+  eligibility widenings, existing kernels reused). MoE: Mixtral / qwen2_moe / **GLM-4.5/4.6**
+  (partial-RoPE) / **DeepSeek-V2/V3 + Kimi-K2** via a new **MLA latent-attention** residency
+  bridge (rank-space attention + latent KV store + per-head absorb/lift kernels). **Mistral**
+  (sliding-window residency) and **Mellum** (per-layer-RoPE residency). Most served models now
+  decode pure-GPU instead of staged (~3× the per-token speed where it applies).
+- **Resident Mamba-2 SSM decode engine** for hybrid families — the reframe that *decode is a
+  bounded per-token recurrence, not the prefill scan*, so Mamba state slots onto the
+  `DecodeRunner` like a KV cache (`mambaConv`/`mambaSSM`/`mambaGatedNorm` kernels, build-once
+  persistent {conv-ring, ssm} state, drift-gated to 2k tokens).
+- **Nemotron-H resident, DEFAULT-on at int4** — the dense squared-ReLU hybrid (Mamba-2 /
+  NoPE-GQA / non-gated relu² MLP, single-op-per-block + a `relu2Quant` kernel). Near-lossless
+  (perplexity 1.677 vs f32 1.695, KL 0.058; the ~7.5% greedy disagreements are 100% benign —
+  99.6% top-2 agreement, every divergence at a near-tied position), ~13× the f32 CPU path.
+  Guarded: default-on only at int4; int8 opt-in behind `GOINFER_SSM_RESIDENT`.
+- **Granite-4.0-H resident** (Mamba-2 + attention + MoE-every-layer + the 4 Granite multipliers),
+  **opt-in** — a 10× greedy speedup, but int8-quality-limited (below).
+- **Decode kernel fusion** — fused q-rope + k-rope-store + v-store into one dispatch (+1.5%);
+  q/k/v bias folded into the GEMV epilogue for bias models (+2.3% real Qwen2.5).
+
+### Changed
+- The mmap/madvise/span-residency weight substrate moved to `aikit/mmap` (shared primitive).
+
+### Findings (no API change)
+- **Granite int8 resident is quality-limited and stays opt-in/greedy-only** — characterized as a
+  *fundamental* cliff (not a bug): its 64-expert top-6 MoE router turns chaotic f32-reduction-order
+  perturbations into discrete expert-selection flips. Proven precision-invariant (int8 ≈ f16 ≈
+  W8A16) and NOT a GPU-kernel bug (the SSM kernels are bit-correct). Nemotron-H, having no router,
+  does not hit this — which is why it's default-on. Full write-up: `docs/ssm-int8-quality.md`.
+- **No "wgpu-native v29 decode penalty"** — measured ≈ cogentcore/v22 (gemv + per-dispatch record);
+  the real binding blocker is the go-webgpu *goffi* (zero-CGO) Go-1.26 crash, not v29. Staying on
+  `cogentcore/webgpu`. (`docs/gpu-gowebgpu-migration-assessment.md`.)
+
 ## [v0.7.0] — 2026-06-15
 
 ### Added

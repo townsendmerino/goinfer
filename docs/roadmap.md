@@ -1,4 +1,11 @@
-# goinfer roadmap (rolling; updated 2026-06-12, KV-memory program steps 1–2 shipped; int4 deferred)
+# goinfer roadmap (rolling; updated 2026-06-19)
+
+> **Since v0.7.0 (the [Unreleased] block in CHANGELOG.md):** the GPU resident-decode
+> path expanded from "dense Qwen2/Llama only" to most served families (the C-lever
+> ladder — MLA/GLM/Mistral/Mellum) and gained a **Mamba-2 SSM decode engine** for
+> hybrids — **Nemotron-H is now resident-DEFAULT at int4** (near-lossless), Granite-4.0-H
+> resident opt-in. Full arc + scorecard + dead ends: `docs/decode-residency-campaign.md`.
+> (Prior line: updated 2026-06-12, KV-memory program steps 1–2 shipped; int4 deferred.)
 
 > **Audience:** internal planning doc (docs/internal/ is gitignored). Started
 > as the v0.2 gap analysis vs llama.cpp / Ollama / mistral.rs; v0.2.0 and

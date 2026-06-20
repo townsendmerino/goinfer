@@ -93,5 +93,5 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 
 | Family | model_type(s) | MoE | Sliding window | QK-norm | RoPE | Norm | Activation | Tied head | Loaders | Modality | GPU-resident | Parity |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Nemotron-H | `nemotron_h` | dense | none | no | none | RMSNorm, pre-norm | ReLU² (non-gated) | no | safetensors, GGUF | text | no | pending |
+| Nemotron-H | `nemotron_h` | dense | none | no | none | RMSNorm, pre-norm | ReLU² (non-gated) | no | safetensors, GGUF | text | yes | pending |
 
