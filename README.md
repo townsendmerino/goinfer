@@ -2,7 +2,7 @@
 
 ![goinfer chat — an entire LLM in one file](docs/assets/demo.gif)
 
-*An entire LLM in one file — instant boot (~0.5s), <100 MB heap, runs offline. No cgo, no Python, no model download.*
+*An entire 1.5B LLM in one file — instant boot (~0.4s), <100 MB heap, runs offline. Writes correct generic Go and **cannot** emit invalid JSON. No cgo, no Python, no model download.*
 
 **Run open-weight LLMs in pure Go.** No cgo, no Python, no llama.cpp — one
 cross-compiled static binary, with HuggingFace logit parity.
