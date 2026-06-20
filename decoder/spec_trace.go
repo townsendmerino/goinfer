@@ -51,6 +51,31 @@ func targetDist(logits []float32, token int) (pTop1, pEntropy, pToken float64) {
 	return pTop1, pEntropy, pToken
 }
 
+// traceFromDist builds a SpecTrace from a full normalized target distribution p
+// (the sampled path already computed it for the rejection step, so reuse it rather
+// than softmax again). accept_prob = p[token] is the exact per-position acceptance
+// for the point-mass draft; p is the *sampling* distribution (post temperature /
+// top-k/top-p/min-p), so PTop1/PEntropy describe what the sampler actually draws.
+func traceFromDist(step, pos, matchLen, token int, p []float64, accepted bool) SpecTrace {
+	var pTop1, pEnt, pTok float64
+	for i, v := range p {
+		if v > pTop1 {
+			pTop1 = v
+		}
+		if v > 0 {
+			pEnt -= v * math.Log(v)
+		}
+		if i == token {
+			pTok = v
+		}
+	}
+	return SpecTrace{
+		Step: step, Pos: pos, Source: "ngram", Token: token,
+		NgramMatch: matchLen, Streak: pos, QTop1: 1,
+		PTop1: pTop1, PEntropy: pEnt, TV: 1 - pTok, AcceptProb: pTok, Accepted: accepted,
+	}
+}
+
 // TraceCollector buffers SpecTraces in memory and (optionally) streams them as
 // JSONL. It is the harness-side sink for genNgram's tracer; not used in serving.
 type TraceCollector struct {

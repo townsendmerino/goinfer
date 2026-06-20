@@ -95,15 +95,18 @@ func (d *NgramDrafter) Draft(ctx []int, k int) []int {
 // [cur, draft…] in one batched ForwardN, keeps the matching prefix, replaces the
 // first mismatch with its own argmax, and rolls the cache back with TruncateTo.
 //
-// Output is **token-identical to plain target greedy** (TestNgramSpeculativeGreedyParity
-// is the gate) — losslessly so, because the target's argmax decides every position
-// and the drafter only proposes. On a drafter miss the round degenerates to one
-// plain decode step (no speculation, still correct). The win is amortizing the
-// target's weight stream over (accepted+1) tokens whenever the context repeats.
+// It is **lossless**: with Temperature==0 the output is token-identical to plain
+// greedy (the target's argmax decides every position; TestNgramSpeculativeGreedyParity
+// gates it); with Temperature>0 it reproduces the target sampler's distribution
+// exactly via rejection sampling (point-mass q ⇒ accept x w.p. p(x), residual
+// correction on reject — see spec_sample.go). On a drafter miss the round degenerates
+// to one plain decode step. The win is amortizing the target's weight stream over
+// (accepted+1) tokens whenever the context repeats.
 //
-// Greedy only for now (Temperature must be 0): sampled lossless speculation needs
-// the rejection-sampling residual rule, which is the next foundation task. The
-// returned Generation's Spec field carries acceptance telemetry.
+// Sampled mode supports temperature + top-k/top-p/min-p; it rejects the
+// history-dependent transforms (repetition/presence/frequency penalties, LogitBias,
+// LogitProcessor), which the per-position verify does not yet thread. The returned
+// Generation's Spec field carries acceptance telemetry.
 func (target *Model) GenerateNgramSpeculative(ctx context.Context, prompt []int, maxTokens int, drafter Drafter, K int, sp SamplingParams) (<-chan int, *Generation, error) {
 	return target.genNgram(ctx, prompt, maxTokens, drafter, K, sp, nil, nil)
 }
@@ -118,11 +121,16 @@ func (target *Model) genNgram(ctx context.Context, prompt []int, maxTokens int, 
 	if drafter == nil {
 		return nil, nil, fmt.Errorf("decoder.GenerateNgramSpeculative: nil drafter")
 	}
-	if sp.Temperature != 0 {
-		return nil, nil, fmt.Errorf("decoder.GenerateNgramSpeculative: greedy only (Temperature must be 0); use Generate for sampling")
-	}
 	if sp.LogitProcessor != nil {
 		return nil, nil, fmt.Errorf("decoder.GenerateNgramSpeculative: LogitProcessor (constrained decoding) not supported yet; use Generate")
+	}
+	sampled := sp.Temperature > 0
+	var sampler *Sampler
+	if sampled {
+		sampler = NewSampler(sp)
+		if sampler.blocksSpecSampling() {
+			return nil, nil, fmt.Errorf("decoder.GenerateNgramSpeculative: sampled speculation supports temperature + top-k/top-p/min-p only; repetition/presence/frequency penalties and LogitBias are not yet threaded — use Generate")
+		}
 	}
 	if len(prompt) == 0 {
 		return nil, nil, fmt.Errorf("decoder.GenerateNgramSpeculative: empty prompt")
@@ -190,7 +198,12 @@ func (target *Model) genNgram(ctx context.Context, prompt []int, maxTokens int, 
 		// committed token. cur is the next confirmed token (not yet in hist), exactly
 		// like plain decode's pending-next-token invariant.
 		hist := slices.Clone(prompt)
+		// The seed token is the target's own first draw: argmax (greedy) or a sample
+		// from the seed distribution (sampled) — exactly what plain decode emits first.
 		cur := argmax(seedLogits)
+		if sampled {
+			cur = sampler.drawDist(sampler.distVector(seedLogits))
+		}
 
 		emit := func(tok int) bool {
 			if target.isStop(tok, sp) {
@@ -237,34 +250,59 @@ func (target *Model) genNgram(ctx context.Context, prompt []int, maxTokens int, 
 				return
 			}
 
-			// 3. Greedy accept: keep draftTok[i] while it equals the target's argmax;
-			// the first mismatch is replaced by the target's own token.
+			// 3. Verify each draft position. Greedy: accept while draftTok[i] equals the
+			// target's argmax, replacing the first mismatch with the target's token.
+			// Sampled: accept draftTok[i] with probability p_i(draftTok[i]) (point-mass
+			// q ⇒ accept rate p(x)); on reject, the correction is drawn from the residual
+			// (p_i with draftTok[i] removed). Both are lossless; the first reject stops
+			// the chain (positions past it are conditioned on a token we didn't take).
 			stats.Rounds++
 			stats.Drafted += kEff
 			accepted := 0
 			allAccept := true
 			var nextTok int
 			for i := 0; i < kEff; i++ {
-				ti := argmax(logitsN[i])
-				acc := draftTok[i] == ti
-				if tr != nil {
-					pTop1, pEnt, pTok := targetDist(logitsN[i], draftTok[i])
-					tr(SpecTrace{
-						Step: stats.Rounds, Pos: i, Source: "ngram", Token: draftTok[i],
-						NgramMatch: matchLen, Streak: i, QTop1: 1,
-						PTop1: pTop1, PEntropy: pEnt, TV: 1 - pTok, AcceptProb: pTok, Accepted: acc,
-					})
+				var acc bool
+				if sampled {
+					p := sampler.distVector(logitsN[i])
+					var tok int
+					tok, acc = sampler.specStep(p, draftTok[i])
+					if tr != nil {
+						tr(traceFromDist(stats.Rounds, i, matchLen, draftTok[i], p, acc))
+					}
+					if !acc {
+						nextTok = tok
+					}
+				} else {
+					ti := argmax(logitsN[i])
+					acc = draftTok[i] == ti
+					if tr != nil {
+						pTop1, pEnt, pTok := targetDist(logitsN[i], draftTok[i])
+						tr(SpecTrace{
+							Step: stats.Rounds, Pos: i, Source: "ngram", Token: draftTok[i],
+							NgramMatch: matchLen, Streak: i, QTop1: 1,
+							PTop1: pTop1, PEntropy: pEnt, TV: 1 - pTok, AcceptProb: pTok, Accepted: acc,
+						})
+					}
+					if !acc {
+						nextTok = ti
+					}
 				}
 				if acc {
 					accepted++
 					continue
 				}
-				nextTok = ti
 				allAccept = false
 				break
 			}
 			if allAccept {
-				nextTok = argmax(logitsN[kEff]) // bonus token (also covers the kEff==0 miss)
+				// Bonus token from the position after the last accepted draft — the
+				// target's own draw (argmax / sample). Also covers the kEff==0 miss.
+				if sampled {
+					nextTok = sampler.drawDist(sampler.distVector(logitsN[kEff]))
+				} else {
+					nextTok = argmax(logitsN[kEff])
+				}
 			}
 			stats.Accepted += accepted
 

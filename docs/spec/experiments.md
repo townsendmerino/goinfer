@@ -24,7 +24,7 @@ SSM / linear-attention need the state-checkpoint path; softmax/MLA just truncate
 
 | Family | Rollback kind | Model | Greedy bit-exact | Sampled in-dist | Status |
 |---|---|---|---|---|---|
-| softmax / GQA | truncate KV | qwen2.5-coder-1.5b | ✅ (`TestSpeculativeGreedyParity`, `TestSpeculativeResident_parity`) | ⬜ | 🟡 greedy done; sampled-rejection path new |
+| softmax / GQA | truncate KV | qwen2.5-coder-1.5b | ✅ (`TestSpeculativeGreedyParity`, `TestSpeculativeResident_parity`) | ✅ (`TestSpecStepLossless` kernel + `TestNgramSampledFirstTokenMatchesPlain`) | ✅ greedy bit-exact + sampled in-dist (point-mass q rejection) |
 | MLA | truncate latent KV | deepseek-v2-lite / kimi | ⬜ | ⬜ | ⬜ |
 | Mamba-2 (SSM) | **state checkpoint** | nemotron-h / granite-4.0-h | ⬜ | ⬜ | ⬜ |
 | Gated DeltaNet (linear) | **state checkpoint** | (gated-linear model) | ⬜ | ⬜ | ⬜ |
@@ -193,3 +193,4 @@ Re-rank after each analysis pass; build the spoke with the most fixable acceptan
 | 2026-06-20 | (wip) | lx | SpecTrace + `TestNgramSpecHarness` measurement harness | ✅ rag 1.32× / agent 1.43× / codeedit 0.81× (CPU, K=8); α̅ 0.74–0.97; 308-row §06 dataset dumped. codeedit slowdown → motivates 04 adaptive depth |
 | 2026-06-20 | (wip) | lx | 04 `AdaptiveDepth` + `GenerateNgramSpeculativeAdaptive` | ✅ codeedit 0.79×→0.94× (slowdown fixed), rag 1.34×→1.55×, agent 1.46×→1.59×; lossless (`TestNgramAdaptiveGreedyParity`). Adaptive dominates fixed K=8 everywhere |
 | 2026-06-20 | (wip) | lx-gpu | GPU-resident re-measure (`TestNgramSpecResident_throughput`) | 🔴 win does NOT transfer: rag 1.00×, agent 0.96×, codeedit 0.90× (adaptive). Cause: resident `ForwardN`=K M=1 dispatches/1 sync (Stage-A wall), weights re-read per token. Parity green. Needs Stage B (M=K GEMM verify). Reverses "GPU wins bigger" guess |
+| 2026-06-20 | (wip) | lx | Sampled rejection sampling (`spec_sample.go`) | ✅ lossless under temperature + top-k/p/min-p: point-mass q ⇒ accept p(x), residual correction. `TestSpecStepLossless` (model-free, emitted dist==p exactly), first-token==plain, penalties/bias rejected. softmax/GQA sampled-in-dist gate now green |
