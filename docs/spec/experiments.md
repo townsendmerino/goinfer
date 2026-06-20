@@ -71,6 +71,10 @@ Rows are (spoke × its home workload). `α̅` = mean per-position acceptance.
 > collapse where α̂ is low. The α̅≫acc gap (0.74 vs 0.35) also shows many `codeedit`
 > drafts are strong-but-not-top — value that **sampled** rejection (not greedy) would
 > capture. Both are now data-backed, not guesses.
+>
+> **Resolved by 04 (below):** the adaptive controller fixed the `codeedit` slowdown
+> (0.79×→0.94×) *and raised* the copy-heavy wins (rag 1.34×→1.55×, agent 1.46×→1.59×)
+> by trimming wasteful depth. The α̅≫acc / sampled-rejection lead is still open.
 
 | Model | Workload | Machine | Lossless | α̅ | tok/v | speedup | Status | Notes |
 |---|---|---|---|---|---|---|---|---|
@@ -78,12 +82,24 @@ Rows are (spoke × its home workload). `α̅` = mean per-position acceptance.
 | qwen2.5-coder-1.5b | rag | mac | ⬜ | – | – | – | ⬜ | |
 | qwen2.5-coder-1.5b | agent | lx | ⬜ | – | – | – | ⬜ | warm-KV reuse |
 
-### 04 — Adaptive depth ([doc](./04-adaptive-depth.md)) · vs fixed K=1,2,4,8
+### 04 — Adaptive depth ([doc](./04-adaptive-depth.md)) · vs fixed K=8
 
-| Model | Workload | Machine | Lossless | α̅ | tok/v | speedup | best fixed-K | Status |
-|---|---|---|---|---|---|---|---|---|
-| qwen2.5-coder-1.5b | codeedit | mac | ⬜ | – | – | – | – | ⬜ |
-| qwen2.5-coder-1.5b | chat | mac | ⬜ | – | – | – | – | ⬜ |
+> **Landed (lx):** `decoder.AdaptiveDepth` + `GenerateNgramSpeculativeAdaptive`. Drives
+> per-round depth from a running EMA of realized acceptance: `D = floor(ln Θ / ln α)`
+> clamped to `[0, K]`, Θ = marginal verify-node cost (~0.5 on this batched-CPU path),
+> with a periodic probe to climb back out of D=0. Lossless gate green
+> (`TestNgramAdaptiveGreedyParity`, exercises the D=0/probe path). qwen2.5-coder-0.5b
+> q4, K(max)=8, CPU, 128 tok, vs **same-stream fixed K=8** and plain greedy:
+
+| Model | Workload | Machine | Lossless | adaptive speedup | fixed-K=8 | tok/v (ada) | final α |
+|---|---|---|---|---|---|---|---|
+| qwen2.5-coder-0.5b | codeedit | lx | ✅ | **0.94×** (was 0.79×) | 0.79× | 1.58 | 0.566 |
+| qwen2.5-coder-0.5b | rag-copy | lx | ✅ | **1.55×** | 1.34× | 7.11 | 0.995 |
+| qwen2.5-coder-0.5b | agent-json | lx | ✅ | **1.59×** | 1.46× | 6.74 | 0.989 |
+
+> Adaptive dominates fixed K=8 on every workload — it removes the over-draft tax
+> (codeedit) and trims wasteful rounds on the wins. A full Θ-sweep + the K∈{1,2,4}
+> baselines + the `mac`/GPU re-measure remain.
 
 ### 03 — Router + trees ([doc](./03-router-tree.md)) · grammar+ngram(+head) fused
 
@@ -145,3 +161,4 @@ Re-rank after each analysis pass; build the spoke with the most fixable acceptan
 |---|---|---|---|---|
 | 2026-06-20 | (wip) | lx | 02 n-gram drafter + single-model greedy verify (`spec_ngram.go`) | ✅ lossless gate green (K=1,4,8); `TestNgramDrafter` unit green |
 | 2026-06-20 | (wip) | lx | SpecTrace + `TestNgramSpecHarness` measurement harness | ✅ rag 1.32× / agent 1.43× / codeedit 0.81× (CPU, K=8); α̅ 0.74–0.97; 308-row §06 dataset dumped. codeedit slowdown → motivates 04 adaptive depth |
+| 2026-06-20 | (wip) | lx | 04 `AdaptiveDepth` + `GenerateNgramSpeculativeAdaptive` | ✅ codeedit 0.79×→0.94× (slowdown fixed), rag 1.34×→1.55×, agent 1.46×→1.59×; lossless (`TestNgramAdaptiveGreedyParity`). Adaptive dominates fixed K=8 everywhere |

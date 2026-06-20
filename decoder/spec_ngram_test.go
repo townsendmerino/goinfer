@@ -68,3 +68,36 @@ func TestNgramSpeculativeGreedyParity(t *testing.T) {
 		}
 	}
 }
+
+// TestNgramAdaptiveGreedyParity gates the adaptive-depth path: varying per-round
+// depth (including the D=0 "don't speculate" and the periodic probe) must not
+// change the output — still token-identical to plain greedy. The novel parity
+// prompts drive α low, exercising the back-off and probe branches.
+func TestNgramAdaptiveGreedyParity(t *testing.T) {
+	m, err := loadBenchModel()
+	if err != nil {
+		t.Skipf("no model (%v); set GINFER_PREQUANT_GGUF", err)
+	}
+	const n = 32
+	ctx := context.Background()
+	greedy := SamplingParams{Temperature: 0}
+
+	for pi, prompt := range specPrompts {
+		refCh, _ := m.Generate(ctx, prompt, n, greedy)
+		ref := collectTokens(refCh)
+		for _, maxK := range []int{4, 8} {
+			ad := &AdaptiveDepth{MaxDraft: maxK, ProbeEvery: 3} // small probe interval to hit that path
+			ch, g, err := m.GenerateNgramSpeculativeAdaptive(ctx, prompt, n, &NgramDrafter{}, ad, greedy)
+			if err != nil {
+				t.Fatalf("prompt %d maxK=%d: %v", pi, maxK, err)
+			}
+			got := collectTokens(ch)
+			if g.Err() != nil {
+				t.Fatalf("prompt %d maxK=%d: stream err %v", pi, maxK, g.Err())
+			}
+			if !slices.Equal(got, ref) {
+				t.Fatalf("prompt %d maxK=%d: adaptive != greedy\n got %v\n ref %v", pi, maxK, got, ref)
+			}
+		}
+	}
+}

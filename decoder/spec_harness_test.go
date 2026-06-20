@@ -88,50 +88,58 @@ func TestNgramSpecHarness(t *testing.T) {
 		t.Logf("SpecTrace JSONL → %s", out)
 	}
 
-	t.Logf("%-11s %6s  %6s  %6s  %6s  %8s %8s %7s", "workload", "tok", "α̅", "acc", "tok/v", "plain/s", "spec/s", "speedup")
+	t.Logf("%-11s %-8s %6s  %6s  %6s  %6s  %7s", "workload", "mode", "tok", "α̅/α", "acc", "tok/v", "speedup")
 	for _, w := range specWorkloads {
 		prompt, err := tk.Encode(w.prompt, true)
 		if err != nil {
 			t.Fatalf("%s: encode: %v", w.name, err)
 		}
 
-		// Plain greedy baseline (timed).
+		// Plain greedy baseline (timed) — the lossless reference and the speedup denom.
 		t0 := time.Now()
 		refCh, _ := m.Generate(ctx, prompt, maxTok, greedy)
 		ref := collectTokens(refCh)
 		plainDur := time.Since(t0)
 
-		// n-gram speculative greedy (timed, traced).
+		// Fixed-K n-gram speculative (timed, traced → the §06 JSONL dataset).
 		col := NewTraceCollector(nil)
 		if sink != nil {
 			col = NewTraceCollector(sink)
 			hdr, _ := json.Marshal(map[string]any{"_header": true, "workload": w.name, "model": benchGGUFPath(), "k": K, "max_tok": maxTok})
 			sink.Write(append(hdr, '\n'))
 		}
-		drafter := &NgramDrafter{}
 		t0 = time.Now()
-		ch, g, err := m.genNgram(ctx, prompt, maxTok, drafter, K, greedy, col.Record)
+		fixedCh, gFixed, err := m.genNgram(ctx, prompt, maxTok, &NgramDrafter{}, K, greedy, col.Record, nil)
 		if err != nil {
-			t.Fatalf("%s: %v", w.name, err)
+			t.Fatalf("%s fixed: %v", w.name, err)
 		}
-		got := collectTokens(ch)
-		specDur := time.Since(t0)
+		fixed := collectTokens(fixedCh)
+		fixedDur := time.Since(t0)
 		if err := col.Flush(); err != nil {
 			t.Fatalf("%s: flush trace: %v", w.name, err)
 		}
-		if g.Err() != nil {
-			t.Fatalf("%s: stream err %v", w.name, g.Err())
+
+		// Adaptive-depth n-gram speculative (timed). Same drafter, MaxDraft == K.
+		ad := &AdaptiveDepth{MaxDraft: K}
+		t0 = time.Now()
+		adaCh, gAda, err := m.GenerateNgramSpeculativeAdaptive(ctx, prompt, maxTok, &NgramDrafter{}, ad, greedy)
+		if err != nil {
+			t.Fatalf("%s adaptive: %v", w.name, err)
+		}
+		ada := collectTokens(adaCh)
+		adaDur := time.Since(t0)
+
+		// Lossless gate: both modes must equal plain greedy exactly.
+		if gFixed.Err() != nil || !slices.Equal(fixed, ref) {
+			t.Fatalf("%s fixed: speculative != greedy (err %v)\n got %v\n ref %v", w.name, gFixed.Err(), fixed, ref)
+		}
+		if gAda.Err() != nil || !slices.Equal(ada, ref) {
+			t.Fatalf("%s adaptive: speculative != greedy (err %v)\n got %v\n ref %v", w.name, gAda.Err(), ada, ref)
 		}
 
-		// Lossless gate: must match plain greedy exactly.
-		if !slices.Equal(got, ref) {
-			t.Fatalf("%s: speculative != greedy\n got %v\n ref %v", w.name, got, ref)
-		}
-
-		speedup := float64(plainDur) / float64(specDur)
-		plainTPS := float64(len(ref)) / plainDur.Seconds()
-		specTPS := float64(len(got)) / specDur.Seconds()
-		t.Logf("%-11s %6d  %6.3f  %6.3f  %6.2f  %8.1f %8.1f %6.2fx",
-			w.name, len(got), col.MeanAccept(), g.Spec.AcceptanceRate(), g.Spec.TokensPerRound(), plainTPS, specTPS, speedup)
+		t.Logf("%-11s %-8s %6d  %6.3f  %6.3f  %6.2f  %6.2fx",
+			w.name, "fixed", len(fixed), col.MeanAccept(), gFixed.Spec.AcceptanceRate(), gFixed.Spec.TokensPerRound(), float64(plainDur)/float64(fixedDur))
+		t.Logf("%-11s %-8s %6d  %6.3f  %6.3f  %6.2f  %6.2fx",
+			w.name, "adaptive", len(ada), ad.Alpha(), gAda.Spec.AcceptanceRate(), gAda.Spec.TokensPerRound(), float64(plainDur)/float64(adaDur))
 	}
 }

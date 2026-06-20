@@ -105,7 +105,7 @@ func (d *NgramDrafter) Draft(ctx []int, k int) []int {
 // the rejection-sampling residual rule, which is the next foundation task. The
 // returned Generation's Spec field carries acceptance telemetry.
 func (target *Model) GenerateNgramSpeculative(ctx context.Context, prompt []int, maxTokens int, drafter Drafter, K int, sp SamplingParams) (<-chan int, *Generation, error) {
-	return target.genNgram(ctx, prompt, maxTokens, drafter, K, sp, nil)
+	return target.genNgram(ctx, prompt, maxTokens, drafter, K, sp, nil, nil)
 }
 
 // genNgram is the body behind GenerateNgramSpeculative, plus an optional per-
@@ -114,7 +114,7 @@ func (target *Model) GenerateNgramSpeculative(ctx context.Context, prompt []int,
 // (accept_prob = 1 − TV = p(token) for the n-gram's point-mass q) and diagnostic
 // features — the §06 SpecTrace dataset. That softmax is extra work, so tr stays
 // nil on the production path (the public wrapper) and is set only by the harness.
-func (target *Model) genNgram(ctx context.Context, prompt []int, maxTokens int, drafter Drafter, K int, sp SamplingParams, tr specTracer) (<-chan int, *Generation, error) {
+func (target *Model) genNgram(ctx context.Context, prompt []int, maxTokens int, drafter Drafter, K int, sp SamplingParams, tr specTracer, ad *AdaptiveDepth) (<-chan int, *Generation, error) {
 	if drafter == nil {
 		return nil, nil, fmt.Errorf("decoder.GenerateNgramSpeculative: nil drafter")
 	}
@@ -212,7 +212,13 @@ func (target *Model) genNgram(ctx context.Context, prompt []int, maxTokens int, 
 		for {
 			// 1. Draft up to K tokens from the context ending at cur (zero on a miss).
 			lookupCtx := append(slices.Clone(hist), cur)
-			draftTok := drafter.Draft(lookupCtx, K)
+			proposed := drafter.Draft(lookupCtx, K)
+			// Fixed K verifies the whole proposal; the adaptive controller trims it to
+			// the depth its running acceptance estimate still justifies (04).
+			draftTok := proposed
+			if ad != nil {
+				draftTok = proposed[:ad.Depth(len(proposed))]
+			}
 			kEff := len(draftTok)
 			matchLen := 0
 			if tr != nil {
@@ -261,6 +267,16 @@ func (target *Model) genNgram(ctx context.Context, prompt []int, maxTokens int, 
 				nextTok = argmax(logitsN[kEff]) // bonus token (also covers the kEff==0 miss)
 			}
 			stats.Accepted += accepted
+
+			// Feed the realized outcome back to the depth controller: observed = the
+			// positions actually checked (accepts plus the one rejection, if any).
+			if ad != nil {
+				observed := accepted
+				if !allAccept {
+					observed = accepted + 1
+				}
+				ad.Observe(accepted, observed)
+			}
 
 			// 4. Roll the cache back to the confirmed length: cur (at base) plus the
 			// accepted draft tokens. nextTok stays pending for the next round.
