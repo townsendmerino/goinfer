@@ -39,6 +39,7 @@ import (
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/constrain"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/giw"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
@@ -164,14 +165,26 @@ func main() {
 // embed loads the embedded GGUF; the default build has no embedded model.
 
 // loadFromPath loads the tokenizer + model from a path. A bare .gguf carries its
-// tokenizer in metadata (LoadGGUF); an HF dir has a tokenizer.json (Load).
+// tokenizer in metadata (LoadGGUF); an HF dir has a tokenizer.json (Load); a prequant
+// .giw bundle carries the tokenizer in its tok half (GGUF metadata for a GGUF-sourced
+// bundle, or raw tokenizer.json for a safetensors-sourced one).
 func loadFromPath(path string, opts decoder.Options) (*session, error) {
-	loadTok := tokenizer.Load
-	if strings.HasSuffix(path, ".gguf") {
-		loadTok = tokenizer.LoadGGUF
-	}
 	t0 := time.Now()
-	tk, err := loadTok(path)
+	var tk *tokenizer.Tokenizer
+	var err error
+	switch {
+	case strings.HasSuffix(path, ".giw"):
+		var raw []byte
+		if raw, err = giw.ReadTokFile(path); err == nil {
+			if tk, err = tokenizer.LoadGGUFBytes(raw); err != nil {
+				tk, err = tokenizer.LoadJSONBytes(raw)
+			}
+		}
+	case strings.HasSuffix(path, ".gguf"):
+		tk, err = tokenizer.LoadGGUF(path)
+	default:
+		tk, err = tokenizer.Load(path)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("load tokenizer: %w", err)
 	}
