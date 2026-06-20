@@ -118,10 +118,7 @@ func validateNgramSpec(drafter Drafter, sp SamplingParams) error {
 		return fmt.Errorf("decoder.GenerateNgramSpeculative: nil drafter")
 	}
 	if sp.LogitProcessor != nil {
-		return fmt.Errorf("decoder.GenerateNgramSpeculative: LogitProcessor (constrained decoding) not supported yet; use Generate")
-	}
-	if sp.Temperature > 0 && NewSampler(sp).blocksSpecSampling() {
-		return fmt.Errorf("decoder.GenerateNgramSpeculative: sampled speculation supports temperature + top-k/top-p/min-p only; repetition/presence/frequency penalties and LogitBias are not yet threaded — use Generate")
+		return fmt.Errorf("decoder.GenerateNgramSpeculative: LogitProcessor (constrained/tool decoding) not supported yet; use Generate")
 	}
 	return nil
 }
@@ -165,8 +162,20 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 	}
 	sampled := sp.Temperature > 0
 	var sampler *Sampler
+	needHist := false
 	if sampled {
 		sampler = NewSampler(sp)
+		needHist = sampler.needsHistory() // penalties / logit bias ⇒ thread per-position history
+	}
+	// dist is the target's next-token sampling distribution at one position. With a
+	// history-dependent transform (penalties/bias) it is computed over `ph` (the
+	// tokens before this position); otherwise the cheap history-free path. Returns
+	// nil in greedy mode (callers use argmax there).
+	dist := func(logits []float32, ph []int) []float64 {
+		if needHist {
+			return sampler.distVectorHist(logits, ph)
+		}
+		return sampler.distVector(logits)
 	}
 
 	// Resident verify on the device when the target's GPU-resident decode path is
@@ -228,7 +237,7 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 		// from the seed distribution (sampled) — exactly what plain decode emits first.
 		cur := argmax(seedLogits)
 		if sampled {
-			cur = sampler.drawDist(sampler.distVector(seedLogits))
+			cur = sampler.drawDist(dist(seedLogits, hist)) // seed history = prompt
 		}
 
 		emit := func(tok int) bool {
@@ -287,10 +296,17 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 			accepted := 0
 			allAccept := true
 			var nextTok int
+			// ph is the penalty/bias history up to the current position: prompt +
+			// committed + cur, growing by each accepted draft token (nil when no
+			// history-dependent transform is active).
+			var ph []int
+			if needHist {
+				ph = append(slices.Clone(hist), cur)
+			}
 			for i := 0; i < kEff; i++ {
 				var acc bool
 				if sampled {
-					p := sampler.distVector(logitsN[i])
+					p := dist(logitsN[i], ph)
 					var tok int
 					tok, acc = sampler.specStep(p, draftTok[i])
 					if tr != nil {
@@ -298,6 +314,9 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 					}
 					if !acc {
 						nextTok = tok
+					}
+					if needHist {
+						ph = append(ph, draftTok[i]) // advance to the next position's history
 					}
 				} else {
 					ti := argmax(logitsN[i])
@@ -324,8 +343,10 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 			if allAccept {
 				// Bonus token from the position after the last accepted draft — the
 				// target's own draw (argmax / sample). Also covers the kEff==0 miss.
+				// ph here is prompt+committed+cur+draft[:kEff] — the bonus position's
+				// history.
 				if sampled {
-					nextTok = sampler.drawDist(sampler.distVector(logitsN[kEff]))
+					nextTok = sampler.drawDist(dist(logitsN[kEff], ph))
 				} else {
 					nextTok = argmax(logitsN[kEff])
 				}

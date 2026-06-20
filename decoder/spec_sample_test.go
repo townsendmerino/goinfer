@@ -3,6 +3,7 @@ package decoder
 import (
 	"context"
 	"math"
+	"slices"
 	"testing"
 )
 
@@ -108,24 +109,74 @@ func TestNgramSampledFirstTokenMatchesPlain(t *testing.T) {
 	}
 }
 
-// TestNgramSampledRejectsUnsupported guards the losslessness scope: sampled
-// speculation must refuse the history-dependent transforms it cannot yet thread,
-// rather than silently producing a biased distribution.
+// TestDistVectorHistMatchesSampler is the rigorous (model-free) gate for the
+// penalty/bias threading: distVectorHist(logits, history) must equal the
+// distribution the plain Sampler actually draws from after observing that history.
+// If it does, the speculative path reproduces plain sampling exactly at every
+// position — losslessly — even with repetition penalties and logit bias active.
+func TestDistVectorHistMatchesSampler(t *testing.T) {
+	const N = 300000
+	const tol = 0.01
+	sp := SamplingParams{
+		Temperature: 0.9, TopK: 5,
+		RepeatPenalty: 1.4, PresencePenalty: 0.3, FrequencyPenalty: 0.6,
+		LogitBias: map[int]float32{1: 1.0, 4: -0.5},
+	}
+	logits := []float32{2.0, 1.2, 0.7, 0.1, -0.4, -1.2, -2.0}
+	history := []int{0, 2, 2, 2, 5, 1} // repeats drive frequency/presence/repeat penalties
+
+	p := NewSampler(sp).distVectorHist(logits, history)
+
+	counts := make([]float64, len(logits))
+	for i := 0; i < N; i++ {
+		spi := sp
+		spi.Seed = int64(i) // vary only the RNG; the distribution is seed-independent
+		s := NewSampler(spi)
+		s.Observe(history...)
+		tok, _ := s.Sample(slices.Clone(logits))
+		counts[tok]++
+	}
+	var maxDiff float64
+	for i := range counts {
+		if d := math.Abs(counts[i]/N - p[i]); d > maxDiff {
+			maxDiff = d
+		}
+	}
+	if maxDiff > tol {
+		t.Errorf("distVectorHist != sampler draw distribution (maxDiff %.4f > %.4f)\n p   =%v\n draw=%v", maxDiff, tol, round(p), freq(counts, N))
+	}
+}
+
+// TestNgramSampledRejectsUnsupported guards the remaining scope boundary: sampled
+// speculation now threads penalties + logit bias (TestDistVectorHistMatchesSampler),
+// so those are accepted; only a LogitProcessor (constrained/tool decoding) is still
+// rejected rather than silently breaking losslessness.
 func TestNgramSampledRejectsUnsupported(t *testing.T) {
 	m, err := loadBenchModel()
 	if err != nil {
 		t.Skipf("no model (%v); set GINFER_PREQUANT_GGUF", err)
 	}
 	ctx := context.Background()
-	bad := []SamplingParams{
+	// Penalties + bias are now supported — must NOT error.
+	ok := []SamplingParams{
 		{Temperature: 0.8, RepeatPenalty: 1.1},
-		{Temperature: 0.8, PresencePenalty: 0.5},
-		{Temperature: 0.8, FrequencyPenalty: 0.5},
+		{Temperature: 0.8, PresencePenalty: 0.5, FrequencyPenalty: 0.5},
 		{Temperature: 0.8, LogitBias: map[int]float32{1: 5}},
 	}
-	for i, sp := range bad {
-		if _, _, err := m.GenerateNgramSpeculative(ctx, specPrompts[0], 4, &NgramDrafter{}, 8, sp); err == nil {
-			t.Errorf("case %d: expected rejection of unsupported sampler params, got nil error", i)
+	for i, sp := range ok {
+		ch, g, err := m.GenerateNgramSpeculative(ctx, specPrompts[0], 4, &NgramDrafter{}, 8, sp)
+		if err != nil {
+			t.Errorf("supported case %d: unexpected error %v", i, err)
+			continue
 		}
+		collectTokens(ch)
+		if g.Err() != nil {
+			t.Errorf("supported case %d: stream err %v", i, g.Err())
+		}
+	}
+	// A LogitProcessor (constrained/tool decoding) is still rejected.
+	bad := SamplingParams{Temperature: 0.8, LogitProcessor: func([]int, []float32) {}}
+	if _, _, err := m.GenerateNgramSpeculative(ctx, specPrompts[0], 4, &NgramDrafter{}, 8, bad); err == nil {
+		t.Error("LogitProcessor: expected rejection, got nil error")
 	}
 }

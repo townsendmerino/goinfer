@@ -1,5 +1,7 @@
 package decoder
 
+import "slices"
+
 // Sampled speculative decoding: lossless rejection sampling for a deterministic
 // (point-mass) drafter. The draft proposes one token x with q(x)=1, so the
 // Leviathan/Chen accept rule min(1, p(x)/q(x)) reduces to "accept x with
@@ -16,6 +18,12 @@ package decoder
 // thread — genNgram rejects them on the sampled path). Greedy (temp ≤ 0) returns
 // the argmax as a point mass.
 func (s *Sampler) distVector(logits []float32) []float64 {
+	return s.distVectorFrom(logits)
+}
+
+// distVectorFrom is distVector's temperature + top-k/p/min-p step over logits that
+// have ALREADY had any history-dependent transforms (bias/penalties) applied.
+func (s *Sampler) distVectorFrom(logits []float32) []float64 {
 	if s.p.Temperature <= 0 {
 		v := make([]float64, len(logits))
 		v[argmax(logits)] = 1
@@ -31,6 +39,32 @@ func (s *Sampler) distVector(logits []float32) []float64 {
 		v[ip.id] = ip.p
 	}
 	return v
+}
+
+// distVectorHist is distVector with the history-dependent transforms (LogitBias +
+// repetition/presence/frequency penalties) applied first, over the explicit token
+// history up to — but NOT including — this position. This is the per-position
+// context the speculative verify threads so sampled decoding stays lossless even
+// with penalties: it reproduces exactly the distribution the plain sampler would
+// draw from at that position (where its history is prompt + all tokens emitted so
+// far). Falls back to the cheap distVector when no such transform is configured.
+func (s *Sampler) distVectorHist(logits []float32, history []int) []float64 {
+	if !s.needsHistory() {
+		return s.distVectorFrom(logits)
+	}
+	work := slices.Clone(logits)
+	s.applyLogitBias(work)
+	if s.penaltiesConfigured() {
+		s.applyPenaltiesOver(work, penaltyWindowOf(history, s.p.RepeatLastN))
+	}
+	return s.distVectorFrom(work)
+}
+
+// needsHistory reports whether the sampling distribution depends on the token
+// history (penalties or logit bias) — i.e. whether the speculative path must
+// thread a per-position history rather than use the plain distVector.
+func (s *Sampler) needsHistory() bool {
+	return len(s.p.LogitBias) > 0 || s.penaltiesConfigured()
 }
 
 // specStep performs one lossless rejection-sampling step for a point-mass draft
@@ -84,13 +118,3 @@ func (s *Sampler) drawResidual(p []float64, x int) int {
 // drawDist draws a token from a full normalized vector via the sampler rng (the
 // seed token and the per-round bonus token; equivalent to a plain sampled draw).
 func (s *Sampler) drawDist(p []float64) int { return s.drawFull(p) }
-
-// blocksSpecSampling reports whether the sampler uses a per-position,
-// history-dependent transform that the sampled speculative path cannot yet
-// reproduce (penalties or logit bias). genNgram errors rather than silently
-// breaking losslessness.
-func (s *Sampler) blocksSpecSampling() bool {
-	p := s.p
-	repeat := p.RepeatPenalty > 0 && p.RepeatPenalty != 1
-	return repeat || p.PresencePenalty != 0 || p.FrequencyPenalty != 0 || len(p.LogitBias) > 0
-}

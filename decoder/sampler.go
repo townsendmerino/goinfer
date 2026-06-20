@@ -158,15 +158,38 @@ func (s *Sampler) applyLogitBias(logits []float32) {
 	}
 }
 
+// penaltiesConfigured reports whether any repetition penalty is set, independent
+// of history (penaltiesActive additionally requires a non-empty history). Used by
+// the speculative path, which threads its own per-position history.
+func (s *Sampler) penaltiesConfigured() bool {
+	return (s.p.RepeatPenalty > 0 && s.p.RepeatPenalty != 1) ||
+		s.p.PresencePenalty != 0 || s.p.FrequencyPenalty != 0
+}
+
+// penaltyWindowOf returns the last n tokens of history (the whole history when
+// n ≤ 0), the window the penalties consider — for an explicit history rather than
+// the sampler's own.
+func penaltyWindowOf(history []int, n int) []int {
+	if n <= 0 || n >= len(history) {
+		return history
+	}
+	return history[len(history)-n:]
+}
+
 // applyPenalties applies repeat/presence/frequency penalties to the logits of
-// tokens in the penalty window. Repeat scales (llama.cpp); presence/frequency
-// subtract (OpenAI). They compose.
+// tokens in the sampler's own penalty window. Repeat scales (llama.cpp);
+// presence/frequency subtract (OpenAI). They compose.
 func (s *Sampler) applyPenalties(logits []float32) {
 	if !s.penaltiesActive() {
 		return
 	}
+	s.applyPenaltiesOver(logits, s.penaltyWindow())
+}
+
+// applyPenaltiesOver applies the penalties over an explicit token window.
+func (s *Sampler) applyPenaltiesOver(logits []float32, window []int) {
 	counts := map[int]int{}
-	for _, id := range s.penaltyWindow() {
+	for _, id := range window {
 		counts[id]++
 	}
 	rep := s.p.RepeatPenalty
