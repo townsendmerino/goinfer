@@ -252,6 +252,9 @@ type Context struct {
 // no adapter/device is available (e.g. a headless box with no GPU), so
 // callers can fall back to the CPU path or skip GPU tests cleanly.
 func New() (*Context, error) {
+	// Quiet wgpu-native's benign warnings ("No windowing system present. Using surfaceless
+	// platform", "No config found!") — pure noise on a headless/server box. Errors still log.
+	wgpu.SetLogLevel(wgpu.LogLevelError)
 	inst := wgpu.CreateInstance(nil)
 	adapter, err := inst.RequestAdapter(&wgpu.RequestAdapterOptions{
 		PowerPreference: wgpu.PowerPreferenceHighPerformance,

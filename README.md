@@ -40,6 +40,15 @@ portable WebGPU backend vs years-tuned CUDA — in a static binary that boots in
 Full capability matrix + measured numbers, every cell with provenance:
 [docs/benchmarks.md](docs/benchmarks.md).
 
+![Mellum2 — a 12B coding MoE running GPU-resident on an 8 GB card, in pure Go](docs/assets/mellum2-gpu.gif)
+
+*Bigger than your VRAM: JetBrains **Mellum2** — a 12B sparse-MoE coding model — decoding
+**GPU-resident on a consumer 8 GB card**. The int4 experts stream into VRAM through a
+pure-Go WebGPU backend (no CUDA, no Python, no llama.cpp); a 12B that won't fit 8 GB at
+int8 runs **fully resident** at int4, ~13–21 tok/s. It writes idiomatic Go and **cannot**
+emit invalid JSON. Prequant the weights once to a `.giw` bundle and it reloads in ~13 s
+([docs/mellum2-resident.md](docs/mellum2-resident.md)).*
+
 ## Try it: an LLM in one file
 
 [`demo/chat`](demo/chat) is a local coding assistant that's a **single static
