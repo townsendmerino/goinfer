@@ -75,3 +75,23 @@ Cons: a real change to `internal/prequant` + the `.giw` tokenizer assumption; ne
 - `decoder.SerializeWeights` / `LoadSerializedWeights`, `decoder.StreamTranscodeGGUF`
 - `gpu/residency.go` `buildStacked` (int4 stacked-MoE, the consumer), `docs/mellum2-resident.md`
 - `docs/weight-memory-program.md` (the `.giw` substrate + `--stream-weights`)
+
+## Outcome (shipped)
+
+Both paths landed, plus a simpler-than-planned third win:
+
+1. **Path B** (`feat(prequant): build int4 .giw from a safetensors dir`): `cmd/prequant` /
+   `Transcode` accept a safetensors directory → resident-loadable int4 `.giw`. Mellum2 (and
+   any safetensors-only MoE) now prequants with one command.
+2. **GGUF→`.giw` rope round-trip fix**: nil `json.RawMessage` config fields marshalled to
+   `null` and re-fired "present" checks; `,omitempty` keeps them absent. (Unblocks GGUF→`.giw`
+   for MLA/YaRN families.)
+3. **Direct int4 upload** — the "GPU-layout `.giw`" turned out unnecessary: the decoder int4
+   storage is byte-identical to the GPU packed layout for K%32==0 (`gpu.TestInt4LayoutMatch`),
+   so the resident upload `CreateBufferInit`s the decoder bytes directly instead of
+   unpacking+`packNibbles`-repacking. Measured 52 s → 32 s on Mellum2's `.giw` load (1.6×),
+   token-identical, and it benefits every int4 resident load — no new bundle format needed.
+
+**Remaining lever (not done):** the ~32 s floor is `CreateBufferInit` + 7 GB PCIe + per-buffer
+overhead (thousands of projections). Coalescing into fewer/bigger buffers is the path toward
+seconds; deferred.

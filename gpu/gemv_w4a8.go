@@ -227,6 +227,46 @@ func (c *Context) UploadW4A8(nib []uint8, scales []float32, N, K int) (*Resident
 	return &ResidentW4A8{bq: bq, bScales: bs, rows: N, cols: K, kp: kp, nGroups: nGroups}, nil
 }
 
+// UploadW4A8Packed is the fast path of UploadW4A8: it uploads int4 weights whose bytes are
+// ALREADY in the GPU packed layout. The decoder's int4 storage (2 nibbles/byte) is
+// byte-identical to packNibbles' output when K is a multiple of the 32-wide group (no row
+// padding — proven by TestInt4LayoutMatch), so the resident upload is a straight
+// CreateBufferInit of the decoder bytes — skipping the per-element unpack + packNibbles
+// re-pack that costs ~30 s on a 12 B model (docs/task-mellum2-fast-load.md). q4 is the
+// decoder int4 bytes (≥ N*K/2); scales the per-group f32 (≥ N*K/32). Requires K%32==0;
+// callers fall back to UploadW4A8 otherwise. Same nibble value convention (value+8).
+func (c *Context) UploadW4A8Packed(q4 []byte, scales []float32, N, K int) (*ResidentW4A8, error) {
+	if N <= 0 || K <= 0 {
+		return nil, fmt.Errorf("gpu: UploadW4A8Packed non-positive dim N=%d K=%d", N, K)
+	}
+	if K%w4a8GroupSize != 0 {
+		return nil, fmt.Errorf("gpu: UploadW4A8Packed needs K%%%d==0, got K=%d", w4a8GroupSize, K)
+	}
+	kp := K // padK32(K) == K when K%32==0
+	nGroups := kp / w4a8GroupSize
+	wantBytes := N * kp / 2
+	if len(q4) < wantBytes {
+		return nil, fmt.Errorf("gpu: UploadW4A8Packed q4 too small: %d < %d", len(q4), wantBytes)
+	}
+	if len(scales) < N*nGroups {
+		return nil, fmt.Errorf("gpu: UploadW4A8Packed scales too small: %d < %d", len(scales), N*nGroups)
+	}
+	bq, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{
+		Label: "w4a8-weight", Contents: q4[:wantBytes], Usage: wgpu.BufferUsageStorage,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("gpu: create W4A8 weight buffer: %w", err)
+	}
+	bs, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{
+		Label: "w4a8-bscales", Contents: wgpu.ToBytes(packF16Pairs(scales[:N*nGroups])), Usage: wgpu.BufferUsageStorage,
+	})
+	if err != nil {
+		bq.Release()
+		return nil, fmt.Errorf("gpu: create W4A8 scales buffer: %w", err)
+	}
+	return &ResidentW4A8{bq: bq, bScales: bs, rows: N, cols: K, kp: kp, nGroups: nGroups}, nil
+}
+
 func (c *Context) ensureGEMVW4() error {
 	if c.gemvW4Pipeline != nil {
 		return nil

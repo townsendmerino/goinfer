@@ -95,13 +95,24 @@ go run ./cmd/prequant -quant int4 -o ~/models/mellum2.int4.giw ~/models/mellum2-
 go run ./cmd/serve  --model ~/models/mellum2.int4.giw --backend webgpu                  # no --quant; bundle is int4
 ```
 
-**Measured (RTX 2070 SUPER, `gpu.TestGIWInt4_resident`): `.giw` int4 load 45 s vs direct
-int4 66 s = 1.5×, decode token-IDENTICAL, both GPU-resident int4.** The win is exactly the
-~21 s requant the bundle skips — *not* "seconds." The remaining **~45 s is the GPU resident
-upload itself**: the int4 nibbles are unpacked + re-packed to the GPU layout and
-`UploadW4A8`'d for ~12 B params, CPU-bound, paid every launch regardless of source. Reaching
-seconds would need a **GPU-layout `.giw`** (store weights already in the resident packing so
-the upload is a straight copy) — a deeper follow-up, tracked in `docs/task-mellum2-fast-load.md`.
+**Measured (RTX 2070 SUPER): `.giw` int4 resident load ~32 s vs the bf16-safetensors int4
+load (read + quantize + upload), decode token-IDENTICAL, both GPU-resident int4.** Two levers
+got it there:
+
+1. **prequant `.giw` skips the requant** (~21 s bf16→int4) — the bundle stores the weights
+   already quantized.
+2. **Direct int4 upload skips the repack** (~20 s). The "GPU-layout `.giw`" turned out to be
+   unnecessary: the decoder's int4 storage (2 nibbles/byte) is **byte-identical** to the GPU
+   packed layout when K is a multiple of the 32-wide group (`gpu.TestInt4LayoutMatch`), so the
+   resident upload `CreateBufferInit`s the decoder bytes straight rather than unpacking to
+   per-element nibbles and re-packing with `packNibbles`. Measured on the same warm `.giw`:
+   load **52 s (unpack+repack) → 32 s (direct)** = 1.6× (`gpu.TestGIWInt4_loadtime`,
+   `GOINFER_INT4_SLOWPATH=1` to force the old path). This speeds **every** int4 resident load,
+   `.giw` and direct safetensors/GGUF alike.
+
+The remaining ~32 s is `CreateBufferInit` + the 7 GB PCIe upload + per-buffer overhead
+(thousands of projections) — the next lever would coalesce those into fewer big buffers.
+Not "seconds" yet, but the CPU-shuffle tax is gone.
 
 The bundle's tokenizer half carries the dir's `tokenizer.json` verbatim (serve loads it via
 `tokenizer.LoadJSONBytes` when the blob isn't GGUF metadata); the resident/decode path never

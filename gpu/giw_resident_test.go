@@ -13,6 +13,39 @@ import (
 	"github.com/townsendmerino/goinfer/gpu"
 )
 
+// TestGIWInt4_loadtime times JUST the int4 .giw resident load (no direct cross-load), so
+// the fast int4 upload (direct decoder bytes) can be compared against the old unpack+repack
+// path (GOINFER_INT4_SLOWPATH=1) on the SAME bundle + warm page cache — isolating the
+// fast-path delta from the bf16-read / quantize noise of a direct load. Run both modes
+// back-to-back; the first warms the mmap.
+//
+//	GOINFER_GIW_INT4=/tmp/mellum2.int4.giw go test -tags gpu ./gpu/ -run TestGIWInt4_loadtime -v
+//	GOINFER_GIW_INT4=/tmp/mellum2.int4.giw GOINFER_INT4_SLOWPATH=1 go test -tags gpu ./gpu/ -run TestGIWInt4_loadtime -v
+func TestGIWInt4_loadtime(t *testing.T) {
+	if _, err := gpu.New(); err != nil {
+		t.Skipf("no WebGPU adapter: %v", err)
+	}
+	giwPath := os.Getenv("GOINFER_GIW_INT4")
+	if giwPath == "" {
+		t.Skip("set GOINFER_GIW_INT4 to a prebuilt int4 .giw")
+	}
+	if _, err := os.Stat(giwPath); err != nil {
+		t.Skipf("missing %s: %v", giwPath, err)
+	}
+	t0 := time.Now()
+	m, err := decoder.Load(giwPath, decoder.Options{Backend: "webgpu"})
+	if err != nil {
+		t.Fatalf("load .giw: %v", err)
+	}
+	defer m.Close()
+	load := time.Since(t0)
+	mode := "fast (direct int4 upload)"
+	if os.Getenv("GOINFER_INT4_SLOWPATH") != "" {
+		mode = "slow (unpack+packNibbles)"
+	}
+	t.Logf("int4 .giw resident load: %v  [%s]  resident=%v", load.Round(time.Millisecond), mode, m.ResidentActive())
+}
+
 // TestGIWInt4_resident gates the int4 `.giw` → GPU-resident seam (docs/task-mellum2-fast-load.md
 // acceptance #2): a prequant int4 bundle must deserialize into the int4 linalg.WeightMat that the
 // resident builders (dense uploadProj + the stacked-MoE buildStacked "int4" path) consume — i.e.

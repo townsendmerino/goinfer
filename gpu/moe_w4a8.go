@@ -137,6 +137,42 @@ func (c *Context) UploadStackedExpertsInt4(nib [][]uint8, scales [][]float32, nE
 	return &ResidentStackedW8A8{bq: bq, bScales: sc, nE: nE, rows: N, cols: K, kp: kp, w4: true}, nil
 }
 
+// UploadStackedExpertsInt4Packed is the fast path of UploadStackedExpertsInt4: each
+// expert's q4 is ALREADY the GPU packed layout (decoder int4 == packNibbles when K%32==0,
+// TestInt4LayoutMatch), so it just concatenates the per-expert byte slices (one memcpy each,
+// ~10× a nibble unpack+repack) and CreateBufferInits — no per-element shuffle. q4[e] is
+// expert e's decoder int4 bytes (≥ N*K/2); scales[e] its per-group f32 (≥ N*K/32).
+func (c *Context) UploadStackedExpertsInt4Packed(q4 [][]byte, scales [][]float32, nE, N, K int) (*ResidentStackedW8A8, error) {
+	if nE <= 0 || N <= 0 || K <= 0 || len(q4) < nE || len(scales) < nE {
+		return nil, fmt.Errorf("gpu: UploadStackedExpertsInt4Packed bad dims nE=%d N=%d K=%d", nE, N, K)
+	}
+	if K%w4a8GroupSize != 0 {
+		return nil, fmt.Errorf("gpu: UploadStackedExpertsInt4Packed needs K%%%d==0, got K=%d", w4a8GroupSize, K)
+	}
+	kp := K
+	ng := kp / w4a8GroupSize
+	bpe := N * kp / 2 // bytes per expert
+	packed := make([]byte, nE*bpe)
+	allScales := make([]float32, nE*N*ng)
+	for e := 0; e < nE; e++ {
+		if len(q4[e]) < bpe || len(scales[e]) < N*ng {
+			return nil, fmt.Errorf("gpu: UploadStackedExpertsInt4Packed expert %d too small (q4 %d<%d, sc %d<%d)", e, len(q4[e]), bpe, len(scales[e]), N*ng)
+		}
+		copy(packed[e*bpe:(e+1)*bpe], q4[e][:bpe])
+		copy(allScales[e*N*ng:(e+1)*N*ng], scales[e][:N*ng])
+	}
+	bq, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "moe-experts-w4", Contents: packed, Usage: wgpu.BufferUsageStorage})
+	if err != nil {
+		return nil, fmt.Errorf("gpu: stacked w4 experts buffer: %w", err)
+	}
+	sc, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "moe-expert-w4-scales", Contents: wgpu.ToBytes(packF16Pairs(allScales)), Usage: wgpu.BufferUsageStorage})
+	if err != nil {
+		bq.Release()
+		return nil, fmt.Errorf("gpu: stacked w4 scales buffer: %w", err)
+	}
+	return &ResidentStackedW8A8{bq: bq, bScales: sc, nE: nE, rows: N, cols: K, kp: kp, w4: true}, nil
+}
+
 // IndexedGEMVForTestInt4 runs ONE indexed int4 expert GEMV standalone (overwrite
 // mode): dst[N] = aScale · (aq · dequant(expert[idx[slot]])ᵀ). The W4A8 analog of
 // IndexedGEMVForTest — the parity seam for the stacked-int4 path.
