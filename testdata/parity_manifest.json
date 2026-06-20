@@ -51,8 +51,8 @@
       ],
       "deps_hash": "sha256:94f1096a25b63f405442efd976c155b876de8dbe5d0f7d9c784c151d503750e0",
       "status": "validated",
-      "validated_at": "06d8133",
-      "date": "2026-06-17",
+      "validated_at": "b62ba30",
+      "date": "2026-06-20",
       "reference": "HF bf16 (DeepSeek-V2-Lite 15.7B; int8 resident)",
       "machine": "linux-62gb",
       "method": "real-model-oracle",
@@ -74,8 +74,8 @@
       ],
       "deps_hash": "sha256:94f1096a25b63f405442efd976c155b876de8dbe5d0f7d9c784c151d503750e0",
       "status": "validated",
-      "validated_at": "06d8133",
-      "date": "2026-06-17",
+      "validated_at": "b62ba30",
+      "date": "2026-06-20",
       "reference": "HF bf16 (Moonlight-16B-A3B; int8 resident)",
       "machine": "linux-62gb",
       "method": "real-model-oracle",
@@ -402,15 +402,15 @@
       ],
       "deps_hash": "sha256:9eb2bfe029b1ffe8547e6d127d671c24f31b9935e965dc84dbed9f6afa37c8ce",
       "status": "validated",
-      "validated_at": "e3eb033",
-      "date": "2026-06-08",
+      "validated_at": "b62ba30",
+      "date": "2026-06-20",
       "reference": "HF bf16 (Qwen3.6-35B-A3B text decoder)",
       "machine": "linux-62gb",
       "method": "full-forward-oracle",
       "metrics": {
-        "argmax_pct": 92.5,
-        "cosine_min": 0.99466,
-        "cosine_mean": 0.99859
+        "argmax_pct": 82.5,
+        "cosine_min": 0.99333,
+        "cosine_mean": 0.99837
       }
     }
   }

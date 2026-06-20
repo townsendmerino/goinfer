@@ -16,7 +16,7 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 
 | Family | model_type(s) | MoE | Sliding window | QK-norm | RoPE | Norm | Activation | Tied head | Loaders | Modality | GPU-resident | Parity |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Qwen3.5-MoE | `qwen3_5_moe`, `qwen3_5_moe_text` | sparse +shared | none | yes | partial | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no | full-oracle 92.5%/0.99466 |
+| Qwen3.5-MoE | `qwen3_5_moe`, `qwen3_5_moe_text` | sparse +shared | none | yes | partial | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no | full-oracle 82.5%/0.99333 |
 
 ## latent-KV (MLA)
 

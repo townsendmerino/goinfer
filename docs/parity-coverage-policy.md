@@ -80,6 +80,23 @@ differs from the manifest's recorded hash, CI fails with *"parity stale for
 `t.Skip` into tracked, visible debt: you always know which families' recorded
 numerics predate their current code.
 
+### A `deps_hash` refresh is not a re-validation
+
+The staleness gate goes green two ways, and only one is honest. **Re-validation:** the
+family's T3 gate was re-run at the new commit and passed — bump `deps_hash` **and**
+`validated_at` (and metrics) together. **Re-hash:** rewrite `deps_hash` to match HEAD
+while leaving `validated_at` at a pre-change commit — this silences the gate *without*
+re-running anything, converting stale→green by editing the answer key. That is the exact
+failure the gate exists to prevent.
+
+**Rule:** a bare `deps_hash` refresh for a `validated` family whose changed files include a
+**forward (`forward_*.go`) or core** file is **forbidden**. It is permitted only when
+either (a) the gate was re-run at that commit and `validated_at` is bumped with it, or (b)
+the changed files are provably non-numeric for that family — the `serialize` and `gpu/`
+residency sets, which the deps-split deliberately keeps out of every forward family's
+hashed set (so a `.giw`/upload-only edit legitimately doesn't touch their numerics). When
+in doubt, re-run the gate; the tool must never edit the answer key.
+
 ## Claim discipline (the answer to "models we claim to support")
 
 A family appears as **supported** in the README / capability matrix **only if** it

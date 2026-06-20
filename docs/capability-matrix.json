@@ -18,7 +18,7 @@
     "loaders": "safetensors, GGUF",
     "modality": "text",
     "gpu_residency_eligible": false,
-    "parity": "full-oracle 92.5%/0.99466"
+    "parity": "full-oracle 82.5%/0.99333"
   },
   {
     "name": "deepseek_v2",
