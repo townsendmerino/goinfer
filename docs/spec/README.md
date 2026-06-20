@@ -55,6 +55,7 @@ Why this fits goinfer specifically:
 | 04 | [Adaptive draft depth](./04-adaptive-depth.md) | Replace fixed K with optimal-γ / entropy-gated depth from the acceptance predictor. | Low–Med | Broad, cheap | proposed |
 | 05 | [EAGLE-3 feature head](./05-eagle3-head.md) | Feature-level autoregressive draft head over target hidden states; pure-Go. | High | Matches general-purpose SOTA | proposed |
 | 06 | [Acceptance analysis playbook](./06-acceptance-analysis.md) | The experimenter's runbook: trace schema → calibrated `α̂` → where to invest. Operationalizes 00-core §4. | Med | Powers 03/04, orders the backlog | proposed |
+| 07 | [Stage B: M=K GEMM verify](./07-stageb-gemm-verify.md) | Wire the existing (gated) tiled W8A8 GEMM into the resident verify so projection weights stream once across K rows — the only thing blocking a GPU speculative win. | High (runner surgery) | Unlocks GPU; CPU already ships | design |
 
 Build order: **00 first** (nothing is testable until verify + rollback +
 instrumentation exist), then 01 and 02 (cheapest wins, and they generate the
