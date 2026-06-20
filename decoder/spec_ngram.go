@@ -353,14 +353,16 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 			}
 			stats.Accepted += accepted
 
-			// Feed the realized outcome back to the depth controller: observed = the
-			// positions actually checked (accepts plus the one rejection, if any).
+			// evaluated = positions actually checked (accepts plus the one rejection,
+			// if any) — the denominator that makes EvalAcceptanceRate comparable to α̅,
+			// and the depth controller's observation.
+			evaluated := accepted
+			if !allAccept {
+				evaluated = accepted + 1
+			}
+			stats.Evaluated += evaluated
 			if ad != nil {
-				observed := accepted
-				if !allAccept {
-					observed = accepted + 1
-				}
-				ad.Observe(accepted, observed)
+				ad.Observe(accepted, evaluated)
 			}
 
 			// 4. Roll the cache back to the confirmed length: cur (at base) plus the

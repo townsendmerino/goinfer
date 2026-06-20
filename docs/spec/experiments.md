@@ -74,7 +74,19 @@ Rows are (spoke × its home workload). `α̅` = mean per-position acceptance.
 >
 > **Resolved by 04 (below):** the adaptive controller fixed the `codeedit` slowdown
 > (0.79×→0.94×) *and raised* the copy-heavy wins (rag 1.34×→1.55×, agent 1.46×→1.59×)
-> by trimming wasteful depth. The α̅≫acc / sampled-rejection lead is still open.
+> by trimming wasteful depth.
+>
+> **Sampled re-measure (`TestNgramSampledHarness`) — the α̅≫acc lead was a metric
+> artifact, and sampling HURTS the spoke.** `acc=Accepted/Drafted` charged the
+> untested post-reject tail; the new `EvalAcceptanceRate` (accepted/evaluated)
+> confirms **eval-acc ≈ α̅ everywhere** (rag sampled 0.690≈0.684, codeedit greedy
+> 0.753≈0.738) — i.e. the rejection math is exactly right, no hidden mass to capture.
+> The real finding: under temperature (0.7 + top-p 0.95) **tok/v collapses** (rag
+> 7.11→1.80, agent 8.53→7.11) because a *correct* verbatim copy run that greedy
+> commits whole is accepted only token-by-token w.p. p(x)<1 under sampling, so the
+> chain breaks ~every 1/(1−eval-acc) tokens. **The n-gram win is largely a greedy
+> phenomenon**; recovering it under sampling needs tree/multi-candidate verify (03)
+> or temperature-aware structural handling — future work, now data-backed.
 
 | Model | Workload | Machine | Lossless | α̅ | tok/v | speedup | Status | Notes |
 |---|---|---|---|---|---|---|---|---|
@@ -196,3 +208,4 @@ Re-rank after each analysis pass; build the spoke with the most fixable acceptan
 | 2026-06-20 | (wip) | lx | Sampled rejection sampling (`spec_sample.go`) | ✅ lossless under temperature + top-k/p/min-p: point-mass q ⇒ accept p(x), residual correction. `TestSpecStepLossless` (model-free, emitted dist==p exactly), first-token==plain, penalties/bias rejected. softmax/GQA sampled-in-dist gate now green |
 | 2026-06-20 | (wip) | lx | Session integration + `cmd/serve --spec ngram` | ✅ `Session.GenerateNgramSpeculative[Adaptive]` reuses warm-KV prefix (`genNgramInto`, mirrors `generateInto`); serve flag routes through it, auto-falls-back per-request for penalties/bias/tools. `TestSessionNgramSpecParity` (incl. 2-turn prefix reuse) + serve e2e diff == plain (lossless). Ships the CPU win to users |
 | 2026-06-20 | (wip) | lx | Penalty/bias threading for sampled (`distVectorHist`) | ✅ sampled spec now lossless WITH repetition/presence/frequency penalties + logit bias: per-position history threaded (prompt+committed+cur+draft[:i]). `TestDistVectorHistMatchesSampler` (model-free: distVectorHist == real sampler draw dist over 300k). Only constrained/tool decoding (LogitProcessor) still falls back. Serve now speculates on penalty-using OpenAI traffic |
+| 2026-06-20 | (wip) | lx | Sampled re-measure + `SpecStats.Evaluated`/`EvalAcceptanceRate` | 🔎 eval-acc ≈ α̅ everywhere (rejection math confirmed; the α̅≫acc "gap" was a Drafted-tail artifact). Real finding: sampling HURTS tok/v (rag 7.11→1.80) — probabilistic rejection shreds verbatim copy runs greedy commits whole. n-gram win is largely greedy; sampled recovery needs trees (03). `TestNgramSampledHarness` |

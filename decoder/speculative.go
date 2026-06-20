@@ -7,10 +7,11 @@ import (
 
 // SpecStats accumulates speculative-decoding telemetry for one Generate run.
 type SpecStats struct {
-	Rounds   int // verification passes (one expensive target forwardN each)
-	Drafted  int // draft tokens proposed (== Rounds*K)
-	Accepted int // draft tokens the target confirmed (excludes the per-round correction/bonus)
-	Emitted  int // tokens streamed to the caller
+	Rounds    int // verification passes (one expensive target forwardN each)
+	Drafted   int // draft tokens proposed (== Rounds*K)
+	Evaluated int // draft positions actually verified (accepts + the one rejection/round); ≤ Drafted because the chain stops at the first reject, leaving the proposed tail untested
+	Accepted  int // draft tokens the target confirmed (excludes the per-round correction/bonus)
+	Emitted   int // tokens streamed to the caller
 }
 
 // AcceptanceRate is accepted draft tokens / proposed — the lever on the speedup.
@@ -19,6 +20,19 @@ func (s *SpecStats) AcceptanceRate() float64 {
 		return 0
 	}
 	return float64(s.Accepted) / float64(s.Drafted)
+}
+
+// EvalAcceptanceRate is accepted / evaluated — the realized per-position accept
+// rate over positions actually tested, which (unlike AcceptanceRate) is directly
+// comparable to α̅ = mean accept_prob: it excludes the untested post-reject tail
+// that AcceptanceRate's denominator includes. The gap between this and
+// AcceptanceRate is exactly the chain-breaking waste (large when rejects come
+// early — e.g. sampled decode breaking long copy runs).
+func (s *SpecStats) EvalAcceptanceRate() float64 {
+	if s.Evaluated == 0 {
+		return 0
+	}
+	return float64(s.Accepted) / float64(s.Evaluated)
 }
 
 // TokensPerRound is the mean tokens confirmed per target pass (accepted + 1);
