@@ -8,7 +8,7 @@ The forward-pass and quantization numerics are parity-gated against HuggingFace
 and are the stable contract. The loader and architecture-descriptor surface is
 pre-1.0 and may change as new model families and quant formats land.
 
-## [Unreleased]
+## [v0.8.0] — 2026-06-20
 
 Theme: **the GPU resident-decode path expands from "dense Qwen2/Llama only" to most
 families served, and gains a Mamba-2 SSM engine for hybrids.** (See
@@ -34,9 +34,36 @@ families served, and gains a Mamba-2 SSM engine for hybrids.** (See
   **opt-in** — a 10× greedy speedup, but int8-quality-limited (below).
 - **Decode kernel fusion** — fused q-rope + k-rope-store + v-store into one dispatch (+1.5%);
   q/k/v bias folded into the GEMV epilogue for bias models (+2.3% real Qwen2.5).
+- **Mellum2 fast-load (and any safetensors MoE): prequant → int4 `.giw` + direct upload.**
+  `cmd/prequant` now accepts a safetensors **directory** (not just a GGUF), producing a
+  resident-loadable int4 bundle (`decoder.Load` + `SerializeWeightsTo`; tokenizer carried as the
+  dir's `tokenizer.json`, loaded via `tokenizer.LoadJSONBytes`). And the resident int4 upload
+  skips the per-element unpack + `packNibbles` repack: the decoder's int4 storage is
+  byte-identical to the GPU packed layout for K%32==0 (`TestInt4LayoutMatch`), so it
+  `CreateBufferInit`s the decoder bytes straight. Mellum2's 12B int4 resident load **~66 s →
+  ~13 s warm** (the bundle skips the requant; the direct upload skips the repack); benefits every
+  int4 resident load, `.giw` and direct alike. Gate: `gpu.TestGIWInt4_resident`.
 
 ### Changed
 - The mmap/madvise/span-residency weight substrate moved to `aikit/mmap` (shared primitive).
+- **Parity manifest: `serialize.go` split into its own `serialize` deps set** — serialize-only
+  edits (a new `.giw` quant layout, the safetensors dir-input path) no longer re-stale every
+  forward-parity row; the one place serialize affects numerics (the int4 deserialize→resident
+  seam) keeps its own gate (`TestGIWInt4_resident`). Policy: a bare `deps_hash` re-hash of a
+  validated family that changed a forward/core file is now forbidden (`parity-coverage-policy.md`).
+- **`Model.Quant()` reports `int4mix` for a mixed bundle** (int4 experts + an int8-kept
+  embedding/LM head) instead of mislabeling it `int8` — it scans all weight kinds. The `.giw`
+  format tag (`quantMode`) is untouched, so existing bundles still load. (Heads-up: this changes
+  the `.giw-kv` warm-snapshot fingerprint for mixed bundles → one-time cold prefill on upgrade.)
+- **wgpu-native's benign warnings silenced** — `gpu.New()` sets `LogLevelError`, so "No
+  windowing system present / No config found" no longer spams stderr on headless GPU runs.
+
+### Fixed
+- **GGUF→`.giw` dropped `rope_parameters` for MLA/YaRN families.** A nil `json.RawMessage` config
+  field marshals to the literal `null` (4 bytes), which on the `.giw` round-trip
+  (`json.Marshal(Cfg)` → reload) re-fired an "is it present?" check on an absent field — so a
+  GGUF DeepSeek bundle failed self-check with "rope_parameters: rope_theta must be >0". `,omitempty`
+  on the optional Config RawMessage fields keeps nil truly absent (`TestConfig_giwRoundTrip_nilRawMessage`).
 
 ### Findings (no API change)
 - **Granite int8 resident is quality-limited and stays opt-in/greedy-only** — characterized as a
