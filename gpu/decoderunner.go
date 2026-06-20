@@ -197,7 +197,7 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		ensures = append(ensures, c.ensureGEMVW8A16)
 	}
 	if m.moe != nil {
-		ensures = append(ensures, c.ensureMoERoute, c.ensureMoEExpert)
+		ensures = append(ensures, c.ensureMoERoute, c.ensureMoEExpert, c.ensureMoEExpertW4)
 		if m.moe.sharedInter > 0 && !m.moe.sharedUngated {
 			ensures = append(ensures, c.ensureSharedGate)
 		}
@@ -575,6 +575,10 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		moeExpert = func(aq, as *wgpu.Buffer, s *ResidentStackedW8A8, idx, wgt, dst *wgpu.Buffer, slot, mode int) {
 			d := uni([]uint32{uint32(s.kp), uint32(s.rows), uint32(slot), uint32(mode)})
 			gx, gy := gemvGrid(s.rows)
+			if s.w4 { // W4A8: int4 stacked expert (nibbles + f16 group scales) × int8 activation
+				add(c.moeExpertW4Pipeline, bind(c.moeExpertW4Layout, aq, s.bq, as, s.bScales, dst, idx, wgt, d), gx, gy)
+				return
+			}
 			if as == nil { // W8A16: f32 activation, int8 stacked weight
 				add(c.moeExpertW8A16Pipeline, bind(c.moeExpertW8A16Layout, aq, s.bq, s.bScales, dst, idx, wgt, d), gx, gy)
 				return

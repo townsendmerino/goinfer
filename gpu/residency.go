@@ -305,20 +305,60 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 		nE := len(lw.Experts)
 		w0 := get(0)
 		N, K := w0.Rows(), w0.Cols()
-		q8 := make([][]int8, nE)
-		sc := make([][]float32, nE)
-		for e := 0; e < nE; e++ {
-			w := get(e)
-			if w.Kind() != "int8" {
-				return nil, fmt.Errorf("gpu: MoE residency expert %d kind %q (int8 only)", e, w.Kind())
+		switch w0.Kind() {
+		case "int8":
+			q8 := make([][]int8, nE)
+			sc := make([][]float32, nE)
+			for e := 0; e < nE; e++ {
+				w := get(e)
+				if w.Kind() != "int8" {
+					return nil, fmt.Errorf("gpu: MoE residency expert %d kind %q (mixed; want int8)", e, w.Kind())
+				}
+				q, s, _, _ := w.Int8()
+				if mult != 1 { // Granite ResidMul fold into the expert-down residual add
+					s = scaleCopy(s, mult)
+				}
+				q8[e], sc[e] = q, s
 			}
-			q, s, _, _ := w.Int8()
-			if mult != 1 { // Granite ResidMul fold into the expert-down residual add
-				s = scaleCopy(s, mult)
+			return c.UploadStackedExperts(q8, sc, nE, N, K)
+		case "int4":
+			// int4 stacked experts (W4A8): fits VRAM where int8 spills (e.g. Mellum2 12B on
+			// 8 GB). K must be a multiple of the 32-wide W4A8 group. Unpack 2-nibble/byte → one
+			// nibble (0..15) per element, mirroring uploadProj's dense int4 path.
+			nib := make([][]uint8, nE)
+			sc := make([][]float32, nE)
+			for e := 0; e < nE; e++ {
+				w := get(e)
+				if w.Kind() != "int4" {
+					return nil, fmt.Errorf("gpu: MoE residency expert %d kind %q (mixed; want int4)", e, w.Kind())
+				}
+				q4, q4s, group, _ := w.Int4()
+				if group != w4a8GroupSize {
+					return nil, fmt.Errorf("gpu: MoE residency int4 group %d != %d", group, w4a8GroupSize)
+				}
+				un := make([]uint8, N*K)
+				for r := 0; r < N; r++ {
+					row := q4[r*((K+1)/2):]
+					d := un[r*K : r*K+K]
+					for k := 0; k < K; k++ {
+						b := row[k>>1]
+						if k&1 == 0 {
+							d[k] = b & 0x0F
+						} else {
+							d[k] = b >> 4
+						}
+					}
+				}
+				s := q4s
+				if mult != 1 { // Granite ResidMul fold (no-op for Mellum)
+					s = scaleCopy(s, mult)
+				}
+				nib[e], sc[e] = un, s
 			}
-			q8[e], sc[e] = q, s
+			return c.UploadStackedExpertsInt4(nib, sc, nE, N, K)
+		default:
+			return nil, fmt.Errorf("gpu: MoE residency expert kind %q (int8/int4 only)", w0.Kind())
 		}
-		return c.UploadStackedExperts(q8, sc, nE, N, K)
 	}
 
 	for i := range w.Layers {

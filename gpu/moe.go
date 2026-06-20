@@ -203,6 +203,9 @@ type ResidentStackedW8A8 struct {
 	bq, bScales *wgpu.Buffer
 	nE, rows    int
 	cols, kp    int
+	// w4 ⇒ this stack is int4 (W4A8): bq holds packed nibbles, bScales holds f16
+	// group scales (kp = padK32), and moeExpert dispatches the int4 kernel.
+	w4 bool
 }
 
 // Release frees the stacked buffers.
