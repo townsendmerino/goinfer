@@ -140,17 +140,21 @@ type Config struct {
 	// RopeScaling is HF's rope_scaling object (llama3 / linear / yarn / …).
 	// Plain Llama-3.0 and Qwen3 leave it null; Llama-3.1+/3.2 set it. Kept raw
 	// and decoded by parseRopeScaling (G4: linear + llama3 + yarn supported).
-	RopeScaling json.RawMessage `json:"rope_scaling"`
+	// omitempty: a nil RawMessage marshals to the literal `null` (4 bytes), which
+	// on a .giw round-trip (json.Marshal(Cfg) → reload) makes len()>0 fire a
+	// "present" check on absent config — omitempty keeps nil truly absent.
+	RopeScaling json.RawMessage `json:"rope_scaling,omitempty"`
 
 	// QuantizationConfig is HF's quantization_config object — for safetensors
 	// shipped pre-quantized (GPTQ: packed int4 qweight/qzeros/scales/g_idx).
 	// Decoded by parseGPTQ; absent for full-precision checkpoints.
-	QuantizationConfig json.RawMessage `json:"quantization_config"`
+	QuantizationConfig json.RawMessage `json:"quantization_config,omitempty"`
 
 	// RopeParameters is the newer per-attention-type RoPE config (Mellum):
 	// {"full_attention": {...}, "sliding_attention": {...}}, each a rope_theta +
-	// a rope_scaling-style object. Decoded by parseRopeParameters.
-	RopeParameters json.RawMessage `json:"rope_parameters"`
+	// a rope_scaling-style object. Decoded by parseRopeParameters. omitempty: see
+	// RopeScaling (nil must not round-trip through .giw as `null`).
+	RopeParameters json.RawMessage `json:"rope_parameters,omitempty"`
 
 	// MRopeSection is Qwen2.5-VL's m-RoPE head_dim/2 split across the (temporal,
 	// height, width) position components. Not parsed directly from JSON — the
@@ -202,7 +206,8 @@ type Config struct {
 
 	// EOSTokenID is the checkpoint's end-of-sequence id(s). HF stores it as
 	// either a scalar or a list, so it's kept raw and decoded by EOSIDs.
-	EOSTokenID json.RawMessage `json:"eos_token_id"`
+	// omitempty: nil must not round-trip through .giw as the literal `null`.
+	EOSTokenID json.RawMessage `json:"eos_token_id,omitempty"`
 
 	// Gemma 2 fields that MUST be absent/zero in a Gemma 3 checkpoint.
 	// ValidateAssumptions rejects a checkpoint that still sets them so we

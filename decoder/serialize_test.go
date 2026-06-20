@@ -3,6 +3,7 @@ package decoder
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"slices"
@@ -11,6 +12,42 @@ import (
 
 	"github.com/townsendmerino/goinfer/internal/giw"
 )
+
+// TestConfig_giwRoundTrip_nilRawMessage guards the .giw serialize bug where a nil
+// json.RawMessage Config field marshals to the literal `null` (4 bytes) and reappears as
+// "present" on reload — which made a GGUF-deepseek bundle re-resolve rope from an empty
+// rope_parameters and fail "rope_theta must be >0". The optional RawMessage fields carry
+// `,omitempty`, so a nil field stays absent across json.Marshal(Cfg) → Unmarshal (the .giw
+// round-trip path, serialize.go SerializeWeightsTo / LoadSerializedWeights).
+func TestConfig_giwRoundTrip_nilRawMessage(t *testing.T) {
+	// A GGUF-deepseek-shaped Config: rope lives in rope_scaling; rope_parameters is nil.
+	c := Config{
+		ModelType:      "deepseek_v2",
+		RoPEGlobalBase: 10000,
+		RopeScaling:    json.RawMessage(`{"type":"yarn","factor":40}`),
+		// RopeParameters / QuantizationConfig / EOSTokenID intentionally left nil.
+	}
+	b, err := json.Marshal(c)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var c2 Config
+	if err := json.Unmarshal(b, &c2); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	for name, raw := range map[string]json.RawMessage{
+		"rope_parameters":     c2.RopeParameters,
+		"quantization_config": c2.QuantizationConfig,
+		"eos_token_id":        c2.EOSTokenID,
+	} {
+		if len(raw) != 0 {
+			t.Errorf("nil %s round-tripped to %q (len %d) — a len>0 present-check would mis-fire", name, raw, len(raw))
+		}
+	}
+	if len(c2.RopeScaling) == 0 {
+		t.Error("set rope_scaling was lost in the round-trip")
+	}
+}
 
 // prequantGGUF is the model used for the serialize round-trip test. It skips
 // cleanly when absent (like the other GGUF parity tests). Point it at a real
