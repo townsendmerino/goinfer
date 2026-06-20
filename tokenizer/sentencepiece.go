@@ -205,6 +205,14 @@ func Load(path string) (*Tokenizer, error) {
 	return parseTokenizerJSON(raw, jsonPath)
 }
 
+// LoadJSONBytes parses a tokenizer from raw tokenizer.json bytes — the dir-less twin of
+// Load. Used to load the tokenizer carried in a prequant .giw built from a SAFETENSORS
+// model, whose tok half is the tokenizer.json itself (not a GGUF metadata blob, which is
+// what LoadGGUFBytes expects). Self-contained tokenizer.json only (no sibling files).
+func LoadJSONBytes(raw []byte) (*Tokenizer, error) {
+	return parseTokenizerJSON(raw, "tokenizer.json")
+}
+
 // parseTokenizerJSON builds a Tokenizer from raw tokenizer.json bytes. jsonPath
 // is the display path (for error messages) and locates any sibling files a
 // byte-level pipeline references (via its directory). Split out from Load so the

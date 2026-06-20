@@ -616,11 +616,16 @@ func loadDecoder(spec modelSpec, cfg config) (*loadedModel, error) {
 func loadDecoderTokenizer(path string) (*tokenizer.Tokenizer, error) {
 	switch {
 	case strings.HasSuffix(path, ".giw"):
-		tokGGUF, err := giw.ReadTokFile(path)
+		tokBytes, err := giw.ReadTokFile(path)
 		if err != nil {
 			return nil, err
 		}
-		return tokenizer.LoadGGUFBytes(tokGGUF)
+		// The tok half is GGUF metadata for a GGUF-sourced bundle, or the raw
+		// tokenizer.json for a safetensors-sourced one (prequant transcodeDir).
+		if tk, err := tokenizer.LoadGGUFBytes(tokBytes); err == nil {
+			return tk, nil
+		}
+		return tokenizer.LoadJSONBytes(tokBytes)
 	case strings.HasSuffix(path, ".gguf"):
 		return tokenizer.LoadGGUF(path)
 	default:

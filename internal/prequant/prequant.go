@@ -26,11 +26,16 @@ import (
 // 64 MiB is comfortably more than any real header.
 const metaPrefixCap = 64 << 20
 
-// Transcode writes a .giw bundle at out from the GGUF at in, quantized to quant
-// ("int8int8" | "int8" | "int4" | "" for f32). It streams the weights straight to
-// the file (peak RAM ≈ the resident weight size, not 2×+), so it fits a 35B on a
-// modest box. A failed write removes the partial output.
+// Transcode writes a .giw bundle at out from the model at in, quantized to quant
+// ("int8int8" | "int8" | "int4" | "" for f32). `in` may be a GGUF file (streamed one
+// layer at a time, peak RAM ≈ one layer — fits a 35B on a modest box) OR a safetensors
+// model DIRECTORY (loaded whole then serialized, peak RAM ≈ the resident weight size —
+// the path for safetensors-only models like Mellum2). A failed write removes the partial
+// output.
 func Transcode(in, out, quant string) error {
+	if fi, err := os.Stat(in); err == nil && fi.IsDir() {
+		return transcodeDir(in, out, quant)
+	}
 	// 1) Tokenizer half: the source GGUF truncated at the tensor-data boundary —
 	// metadata + tensor infos, no weight bytes. Only the file's head is read.
 	head, err := readHead(in, metaPrefixCap)
@@ -69,6 +74,53 @@ func Transcode(in, out, quant string) error {
 
 	// 3) Verify the bundle round-trips through the real (mmap) load path — cheap
 	// (lazy faults), confirms the streamed weights deserialize.
+	if err := selfCheck(out); err != nil {
+		_ = os.Remove(out)
+		return fmt.Errorf("self-check: %w", err)
+	}
+	return nil
+}
+
+// transcodeDir builds a .giw from a safetensors model DIRECTORY (no GGUF available — the
+// path for Mellum2 and other safetensors-only models). It loads the model at `quant`,
+// serializes the resident weights into the bundle, and carries the dir's tokenizer.json
+// verbatim as the tok half (the serve side loads it via tokenizer.LoadJSONBytes when the
+// blob isn't GGUF metadata). Peak RAM ≈ the resident weight size, since the whole model
+// is loaded rather than layer-streamed — acceptable for the models this targets.
+func transcodeDir(dir, out, quant string) error {
+	// Tokenizer half is best-effort: the resident/decode path never reads it (the Model
+	// is built from the serialized weights alone), so a missing or non-goinfer-loadable
+	// tokenizer.json must NOT block the weights bundle — it only affects serve. Carry the
+	// bytes when present; warn (don't fail) otherwise.
+	var tokBytes []byte
+	if b, rerr := os.ReadFile(filepath.Join(dir, "tokenizer.json")); rerr == nil {
+		if _, lerr := tokenizer.LoadJSONBytes(b); lerr != nil {
+			fmt.Fprintf(os.Stderr, "prequant: note: %s/tokenizer.json present but not goinfer-loadable (%v); bundle carries it, but serve may need the original tokenizer\n", dir, lerr)
+		}
+		tokBytes = b
+	} else {
+		fmt.Fprintf(os.Stderr, "prequant: note: no tokenizer.json in %s — weights-only bundle (serve needs a separate tokenizer)\n", dir)
+	}
+	m, err := decoder.Load(dir, decoder.Options{Quant: quant})
+	if err != nil {
+		return fmt.Errorf("load %s (%s): %w", dir, quant, err)
+	}
+	defer m.Close()
+	f, err := os.Create(out)
+	if err != nil {
+		return fmt.Errorf("create %s: %w", out, err)
+	}
+	werr := giw.WriteStream(f, tokBytes, func(w io.Writer) (int64, error) {
+		return decoder.SerializeWeightsTo(w, m.Weights(), filepath.Base(dir))
+	})
+	runtime.GC()
+	if cerr := f.Close(); werr == nil {
+		werr = cerr
+	}
+	if werr != nil {
+		_ = os.Remove(out)
+		return fmt.Errorf("write bundle: %w", werr)
+	}
 	if err := selfCheck(out); err != nil {
 		_ = os.Remove(out)
 		return fmt.Errorf("self-check: %w", err)

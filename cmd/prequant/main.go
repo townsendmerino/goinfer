@@ -27,7 +27,7 @@ func main() {
 	flag.Parse()
 	in := flag.Arg(0)
 	if in == "" || *out == "" {
-		fmt.Fprintln(os.Stderr, "usage: prequant -o <out.giw> <model.gguf>")
+		fmt.Fprintln(os.Stderr, "usage: prequant -o <out.giw> <model.gguf | safetensors-dir>")
 		flag.Usage()
 		os.Exit(2)
 	}

@@ -82,9 +82,40 @@ eliminating the PCIe traffic.
 
 Run int4: `GOINFER_MELLUM_QUANT=int4` (default in the bench).
 
+## Fast load — prequant int4 `.giw` (measured)
+
+The int4 *decode* is the win, but loading Mellum2 int4-resident from the 23 GB bf16
+safetensors costs **~66 s** every launch (read bf16 → quantize to group-wise int4 →
+upload to VRAM). `cmd/prequant` now accepts a **safetensors directory** (not just a GGUF)
+and bakes the already-quantized int4 weights into a `.giw` bundle, so subsequent loads
+skip the requant:
+
+```
+go run ./cmd/prequant -quant int4 -o ~/models/mellum2.int4.giw ~/models/mellum2-unq   # one-time, ~30 s / 44 GB RAM
+go run ./cmd/serve  --model ~/models/mellum2.int4.giw --backend webgpu                  # no --quant; bundle is int4
+```
+
+**Measured (RTX 2070 SUPER, `gpu.TestGIWInt4_resident`): `.giw` int4 load 45 s vs direct
+int4 66 s = 1.5×, decode token-IDENTICAL, both GPU-resident int4.** The win is exactly the
+~21 s requant the bundle skips — *not* "seconds." The remaining **~45 s is the GPU resident
+upload itself**: the int4 nibbles are unpacked + re-packed to the GPU layout and
+`UploadW4A8`'d for ~12 B params, CPU-bound, paid every launch regardless of source. Reaching
+seconds would need a **GPU-layout `.giw`** (store weights already in the resident packing so
+the upload is a straight copy) — a deeper follow-up, tracked in `docs/task-mellum2-fast-load.md`.
+
+The bundle's tokenizer half carries the dir's `tokenizer.json` verbatim (serve loads it via
+`tokenizer.LoadJSONBytes` when the blob isn't GGUF metadata); the resident/decode path never
+reads it. (Note: the GGUF→`.giw` path still drops `rope_parameters` for MLA/YaRN families —
+a separate pre-existing bug; the safetensors dir path here is unaffected because it carries
+the full config.json.)
+
 ## Reproduce
 
 ```
 GOINFER_MELLUM_BENCH=1 GOINFER_MELLUM_QUANT=int8int8 \
   go test -tags gpu -run TestMellum2_decodeThroughput -v -timeout 40m ./gpu
+
+# fast-load seam (prebuild the bundle first, then):
+GOINFER_GIW_INT4=~/models/mellum2.int4.giw GOINFER_GIW_SRC=~/models/mellum2-unq \
+  go test -tags gpu -run TestGIWInt4_resident -v -timeout 30m ./gpu
 ```
