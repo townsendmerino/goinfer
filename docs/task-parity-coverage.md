@@ -30,12 +30,13 @@ dropped — see 1c for why it leaked):
 {
   "aikit_version": "v1.7.3",
   "shared_sets": {
-    "core":     ["decoder/model.go","decoder/forwardn.go","decoder/attention.go","decoder/mlp.go","decoder/kvcache.go","decoder/rope.go","decoder/ropescale.go","decoder/rmsnorm.go","decoder/registry.go","decoder/arch.go","decoder/config.go"],
-    "loaders":  ["decoder/weights.go","decoder/gguf.go","decoder/serialize.go"],
-    "quant":    ["decoder/weightmat.go","decoder/gptq.go","decoder/awq.go"],
-    "moe":      ["decoder/mlp.go"],
-    "deltanet": ["decoder/deltanet.go","decoder/deltanet_chunked.go"],
-    "mamba2":   ["decoder/mamba2.go","decoder/mamba2_chunked.go"]
+    "core":      ["decoder/model.go","decoder/forwardn.go","decoder/attention.go","decoder/mlp.go","decoder/kvcache.go","decoder/rope.go","decoder/ropescale.go","decoder/rmsnorm.go","decoder/registry.go","decoder/arch.go","decoder/config.go"],
+    "loaders":   ["decoder/weights.go","decoder/gguf.go"],
+    "serialize": ["decoder/serialize.go"],
+    "quant":     ["decoder/weightmat.go","decoder/gptq.go","decoder/awq.go"],
+    "moe":       ["decoder/mlp.go"],
+    "deltanet":  ["decoder/deltanet.go","decoder/deltanet_chunked.go"],
+    "mamba2":    ["decoder/mamba2.go","decoder/mamba2_chunked.go"]
   },
   "families": {
     "gemma4": {
@@ -82,6 +83,16 @@ sets express the subset mappings directly: `mamba2.go` lives only in the `mamba2
 set, so editing it re-hashes only families whose `uses` includes `mamba2`. A
 `gguf.go` edit re-hashes every family that `uses` `loaders` — i.e. all of them —
 closing the dequant hole.
+
+**`serialize` is its own set, and the forward-oracle rows do NOT `use` it.** `serialize.go`
+is the `.giw` write+read round-trip; the forward / real-model / tiny oracles load from
+safetensors or GGUF and run the forward — they never execute `serialize.go`, so it is not a
+dependency of their numerics, and a serialize-only edit (a new `.giw` quant layout, the
+Mellum2 dir-input path) must not re-stale them. The one place serialize *does* affect
+numerics — the int4 deserialize→resident seam — has its own gate (`gpu.TestGIWInt4_resident`
++ the `internal/giw` round-trip tests), so that risk is covered without coupling it to every
+forward row. A future family validated *via* a `.giw` oracle would add `serialize` to its
+`uses`; none does today.
 
 Two concrete rules: **(i) full paths always** — `attention.go` exists in *both*
 `gpu/` and `decoder/`, so the manifest uses `decoder/attention.go` (the `gpu/`
