@@ -24,7 +24,7 @@ SSM / linear-attention need the state-checkpoint path; softmax/MLA just truncate
 
 | Family | Rollback kind | Model | Greedy bit-exact | Sampled in-dist | Status |
 |---|---|---|---|---|---|
-| softmax / GQA | truncate KV | qwen2.5-coder-1.5b | ⬜ | ⬜ | ⬜ |
+| softmax / GQA | truncate KV | qwen2.5-coder-1.5b | ✅ (`TestSpeculativeGreedyParity`, `TestSpeculativeResident_parity`) | ⬜ | 🟡 greedy done; sampled-rejection path new |
 | MLA | truncate latent KV | deepseek-v2-lite / kimi | ⬜ | ⬜ | ⬜ |
 | Mamba-2 (SSM) | **state checkpoint** | nemotron-h / granite-4.0-h | ⬜ | ⬜ | ⬜ |
 | Gated DeltaNet (linear) | **state checkpoint** | (gated-linear model) | ⬜ | ⬜ | ⬜ |
@@ -45,6 +45,32 @@ Rows are (spoke × its home workload). `α̅` = mean per-position acceptance.
 | gemma-4-E2B | structured | mac | ⬜ | – | – | – | ⬜ | |
 
 ### 02 — Cache / n-gram ([doc](./02-cache-ngram.md)) · home: codeedit / rag / agent
+
+> **Landed (lx):** `decoder.NgramDrafter` (prompt-lookup) + `GenerateNgramSpeculative`
+> (single-model greedy, rides the existing `ForwardN`/`TruncateTo` verify+rollback) +
+> `SpecTrace`/`TraceCollector` instrumentation + the `TestNgramSpecHarness` measurement
+> harness. Lossless gate **green** everywhere (`TestNgramSpeculativeGreedyParity` K∈{1,4,8};
+> harness asserts == plain greedy per workload). First real numbers below, on
+> qwen2.5-coder-0.5b q4 (loaded int8int8), K=8, CPU, 128 tok. Machine-independent
+> metrics (α̅, tok/v) hold across backends; the CPU wall-clock speedup does not (the
+> batched `ForwardN` amortizes the weight stream — a much bigger win on GPU/`mac`).
+> **First §06 dataset dumped**: 308 traced positions → `/tmp/spec_ngram_traces.jsonl`
+> (`GINFER_SPECTRACE_OUT`), schema matches §06 §2.
+
+| Model | Workload | Machine | Lossless | α̅ | acc | tok/v | speedup (CPU) | Status |
+|---|---|---|---|---|---|---|---|---|
+| qwen2.5-coder-0.5b | parity (novel) | lx | ✅ | – | – | – | – | ✅ lossless; no repetition to accept |
+| qwen2.5-coder-0.5b | rag-copy | lx | ✅ | 0.973 | 0.967 | 7.11 | **1.32×** | ✅ |
+| qwen2.5-coder-0.5b | agent-json | lx | ✅ | 0.955 | 0.933 | 8.53 | **1.43×** | ✅ |
+| qwen2.5-coder-0.5b | codeedit | lx | ✅ | 0.738 | 0.352 | 1.86 | 0.81× 🔴 | ✅ lossless, but K=8 too deep → net slowdown |
+
+> **Finding (orders the backlog):** copy-heavy workloads (rag/agent) already win
+> ~1.3–1.4× *on CPU* at fixed K=8. `codeedit` is a **slowdown** — α̅=0.74 but realized
+> acc=0.35, so the K=8 chain breaks early and the wide `ForwardN` isn't paid back. This
+> is the textbook case for **[04 adaptive depth](./04-adaptive-depth.md)**: depth should
+> collapse where α̂ is low. The α̅≫acc gap (0.74 vs 0.35) also shows many `codeedit`
+> drafts are strong-but-not-top — value that **sampled** rejection (not greedy) would
+> capture. Both are now data-backed, not guesses.
 
 | Model | Workload | Machine | Lossless | α̅ | tok/v | speedup | Status | Notes |
 |---|---|---|---|---|---|---|---|---|
@@ -117,4 +143,5 @@ Re-rank after each analysis pass; build the spoke with the most fixable acceptan
 
 | Date | SHA | Machine | What | Result |
 |---|---|---|---|---|
-| | | | | |
+| 2026-06-20 | (wip) | lx | 02 n-gram drafter + single-model greedy verify (`spec_ngram.go`) | ✅ lossless gate green (K=1,4,8); `TestNgramDrafter` unit green |
+| 2026-06-20 | (wip) | lx | SpecTrace + `TestNgramSpecHarness` measurement harness | ✅ rag 1.32× / agent 1.43× / codeedit 0.81× (CPU, K=8); α̅ 0.74–0.97; 308-row §06 dataset dumped. codeedit slowdown → motivates 04 adaptive depth |

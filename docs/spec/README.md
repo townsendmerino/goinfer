@@ -1,8 +1,14 @@
 # Speculative decoding in goinfer — design index
 
-> Status: **proposal / RFC**. Cut 2026-06-20. These are design docs, not committed code.
-> Treat every page here as a dated public disclosure (defensive publication): publish
-> before discussing the approaches elsewhere.
+> Status: **proposal / RFC**. Cut 2026-06-20. These are design docs for work not yet
+> built — **but not greenfield**: `decoder/speculative.go` already ships a
+> parity-gated *greedy, single-draft-model, fixed-K* speculator (`GenerateSpeculative`)
+> with batched `ForwardN` verify, softmax/GQA rollback via `TruncateTo`, GPU-resident
+> verify, and `SpecStats` telemetry. That is the substrate [00-core](./00-core.md)
+> extends; the new work is sampled-lossless rejection, the richer drafters (01/02/05),
+> trees (03), adaptive depth (04), instrumentation (`SpecTrace`), and per-family
+> rollback beyond softmax/GQA. Treat every page here as a dated public disclosure
+> (defensive publication): publish before discussing the approaches elsewhere.
 
 ## Thesis
 

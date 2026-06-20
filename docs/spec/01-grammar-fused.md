@@ -35,12 +35,22 @@ tokenizer segmentation). Concretely:
    field), emit no forced nodes; let another drafter (02 n-gram, 05 head) or plain
    decode handle that slot. This is the natural hand-off point for [03 router](./03-router-tree.md).
 
-A stronger variant worth measuring: when a forced run is **both** grammar-pinned
-*and* tokenization-unique (only one token sequence encodes those bytes), the target
-cannot change it without violating a constraint that is *already enforced* — so the
-forced bytes can be committed and the target pass over them skipped entirely. This
-is a genuine compute skip, not just a guaranteed accept. Gate it carefully (see
-risks) and prove it lossless before enabling.
+A stronger variant worth measuring — but the saving is narrower than it first looks.
+When a forced run is **both** grammar-pinned *and* tokenization-unique (only one token
+sequence encodes those bytes), the target cannot change it without violating a
+constraint that is *already enforced*. So those positions need no acceptance test
+(`α≡1`) and we can **skip the lm_head projection + sampling** over them — the win is
+that work, plus collapsing what would have been `k` sequential decode steps into one
+batched verify pass.
+
+What we **cannot** skip in general is the **transformer forward** over the forced run:
+its KV / hidden states are inputs to every later token (the first *free* slot after
+the run attends to them), so the attention/MLP layers must still run to populate the
+cache. The forward over a forced run is skippable *entirely* only when the run is
+**terminal** — nothing downstream consumes its KV (e.g. the closing `"}` immediately
+before EOS). Treat "skip lm_head/sampling on forced positions" (always sound) and
+"skip the whole forward on a terminal forced run" (sound only at end-of-generation) as
+two separate, separately-gated optimizations. Prove each lossless before enabling.
 
 ## Why it suits goinfer
 

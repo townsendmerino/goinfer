@@ -25,8 +25,19 @@ before, and propose the token(s) that followed — as a draft chain, or as sever
 branches when the suffix had multiple continuations (a natural tree for
 [03](./03-router-tree.md)).
 
-- `QProb` for copied tokens can be set from the empirical continuation frequency in
-  the index (good enough for the rejection step; the verifier holds the true `p`).
+- **`QProb` in the rejection step must be `q(x)=1` (a point mass), not the empirical
+  frequency.** An n-gram proposal is *deterministic* — we commit to one token, we do
+  not sample from a distribution — so the lossless coupling treats it as the point
+  mass `δ_x`: accept with probability `min(1, p(x)/q(x)) = min(1, p(x)) = p(x)`, and on
+  rejection sample the correction from `p` with `x` removed and renormalized
+  (`(p − δ_x)+`). Using a fractional `q` like `0.93` here would make the accept
+  probability `min(1, p(x)/0.93) ≥ p(x)` — it **over-accepts** and silently biases the
+  output away from `p`. The empirical continuation frequency is still valuable, but as
+  a **feature for `α̂`** ([00-core](./00-core.md) §4), never as the `q` in the
+  rejection arithmetic. (If we ever proposed *stochastically* — sampling a branch from
+  the index's frequencies — then `q` would legitimately equal those frequencies; we do
+  not, and shouldn't, since the deterministic top continuation is both cheaper and
+  higher-acceptance.)
 - Match length is the key acceptance signal: longer / more specific suffix matches
   predict higher acceptance ([00-core](./00-core.md) §4). Feed match length into
   `α̂` and let [04](./04-adaptive-depth.md) extend the copy run while `α̂` stays high.

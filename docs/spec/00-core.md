@@ -61,6 +61,15 @@ improvement factor over plain decoding is
 S(γ)  =  (1 − α^(γ+1)) / [ (1 − α) · (γ·c + 1) ]
 ```
 
+The `+1` in `(γ·c + 1)` is the target verify pass, charged as **one** target step —
+which holds only while that batched forward stays **memory-bound** (the weight stream,
+read once, dominates; the extra `γ` positions ride along ~free). This is exactly
+goinfer's single-stream on-device regime, but it is an *assumption with a ceiling*:
+once a tree (03) or depth (04) grows wide/deep enough to turn the verify
+compute-bound, the verify cost stops being `1` and this formula over-promises. That
+ceiling is the budget `B` the harness measures per backend (§7); treat `S(γ)` as valid
+for `γ`-and-tree-width within `B`.
+
 (Leviathan et al. 2023). Maximizing `S` over `γ` gives the optimal draft depth
 `γ*(α, c)`: it grows as `α → 1` and as `c → 0`. The marginal reading — *extend the
 draft while the expected marginal accepted token is worth more than the marginal
@@ -161,13 +170,34 @@ is the lever. This keeps us from over-investing on the wrong side of the loop.
 
 ## 6. The verify + rollback substrate
 
+The greedy/linear case already exists: `GenerateSpeculative` runs one target
+`ForwardN` over `[cur, draft…]`, accepts the matching prefix, replaces the first
+mismatch with the target's own argmax, and rolls back with `TruncateTo`. The work
+here is to (a) generalize the accept test from greedy argmax-equality to **sampled
+rejection sampling** (the `min(1, p/q)` rule, lossless under a sampler), (b) generalize
+the linear draft to a **tree**, and (c) extend rollback past softmax/GQA. The
+substrate below subsumes the existing path as its greedy, single-source, linear,
+softmax-only special case.
+
 All spokes share one verifier. Given a `DraftTree`, it:
 
 1. Runs the target model over all tree nodes in **one batched forward pass** with a
    tree/causal attention mask so each node attends only to its ancestors.
 2. Walks root→leaf applying per-token rejection sampling, selecting the **longest
-   accepted path**; on the first rejection it samples the corrected token from the
-   residual `(p − q)+` distribution (lossless), then stops.
+   accepted path**. The `q` used in the accept test is the drafter's *proposal*
+   distribution at that node: for a **deterministic** drafter (grammar 01, n-gram 02)
+   that is the point mass `q(x)=1`, so accept reduces to `min(1, p(x)) = p(x)`; for a
+   **distributional** drafter (model/head 05) it is the head's softmax. Getting this
+   `q` wrong is a silent losslessness bug, not a crash — see [02](./02-cache-ngram.md).
+   - **Linear chain:** on the first rejection, sample the corrected token from the
+     residual `(p − q)+` (normalized) and stop.
+   - **Tree (multi-child):** rejection is *not* terminal. When a child is rejected,
+     subtract its mass and try the next sibling against the renormalized residual
+     (SpecInfer / token-tree verification); only fall back to a fresh `(p − Σq)+`
+     sample once every sibling at that node is exhausted. The naive "stop on first
+     rejection" rule is lossless but throws away the other branches' work — and a
+     *wrong* sibling-retry is a distribution bug. This is the hardest correctness
+     surface in [03 router](./03-router-tree.md); gate it per family.
 3. **Rolls back** model state to the accepted prefix and emits the bonus token.
 
 Step 3 is where attention family matters — and where naive implementations are
@@ -175,7 +205,7 @@ silently wrong:
 
 | Family (goinfer) | KV/state shape | Rollback on partial accept |
 |---|---|---|
-| softmax / GQA | per-token K,V appended | truncate appended entries — trivial |
+| softmax / GQA | per-token K,V appended | truncate appended entries — trivial **(shipped: `TruncateTo`)** |
 | MLA (DeepSeek/Kimi) | per-token latent KV | truncate latent entries — trivial |
 | **Mamba-2 (SSM)** | single rolling recurrent state | **checkpoint state at block start; restore on partial accept.** Cannot "subtract" tokens. |
 | **Gated DeltaNet (linear attn)** | single rolling state matrix | **same: checkpoint + restore.** |
@@ -220,6 +250,10 @@ JSONL for the §4 analysis. The harness is the arbiter for the status table in t
 [README](./README.md): a spoke is "benched" only when it has numbers here.
 
 ## References
+
+> ⚠️ Verify every arXiv ID below against the live listing before treating this page as
+> a citable disclosure — the two 2024/2025 IDs are from memory and unconfirmed; a wrong
+> number in a defensive publication is worse than no number.
 
 - Leviathan, Kalman, Matias. *Fast Inference from Transformers via Speculative
   Decoding*, 2023 — the TV identity, expected length, speedup formula.
