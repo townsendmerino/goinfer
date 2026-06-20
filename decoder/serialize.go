@@ -218,13 +218,43 @@ func (m *Model) Quant() string {
 	case "int8", "int8int8", "int4", "int4mix":
 		return m.quant
 	}
-	switch m.w.quantMode() {
-	case quantInt8I8:
-		return "int8int8"
-	case quantInt8:
-		return "int8"
-	case quantInt4:
+	return m.w.quantLabel()
+}
+
+// quantLabel names the precision of the resident matmul weights for display + the
+// KV-snapshot fingerprint, accounting for MIXED bundles. quantMode (the .giw format tag)
+// reports only the FIRST weight's kind, which mislabels a mixed bundle — e.g. Mellum2's
+// int4 experts with an int8-kept embedding/LM head report as plain "int8" — so this scans
+// every matmul weight and returns "int4mix" when int4 coexists with higher-precision
+// tensors. Pure bundles collapse to int4 / int8int8 / int8 / native as before.
+func (w *Weights) quantLabel() string {
+	var hasInt4, hasInt8I8, hasInt8, hasOther bool
+	for _, m := range w.matmulWeights() {
+		if m.Rows() == 0 {
+			continue
+		}
+		switch m.Kind() {
+		case "int4":
+			hasInt4 = true
+		case "int8":
+			if _, _, w8a8, _ := m.Int8(); w8a8 {
+				hasInt8I8 = true
+			} else {
+				hasInt8 = true
+			}
+		default:
+			hasOther = true
+		}
+	}
+	switch {
+	case hasInt4 && (hasInt8I8 || hasInt8 || hasOther):
+		return "int4mix"
+	case hasInt4:
 		return "int4"
+	case hasInt8I8:
+		return "int8int8"
+	case hasInt8:
+		return "int8"
 	default:
 		return "native"
 	}
