@@ -99,7 +99,29 @@ Rows are (spoke × its home workload). `α̅` = mean per-position acceptance.
 
 > Adaptive dominates fixed K=8 on every workload — it removes the over-draft tax
 > (codeedit) and trims wasteful rounds on the wins. A full Θ-sweep + the K∈{1,2,4}
-> baselines + the `mac`/GPU re-measure remain.
+> baselines + the `mac` re-measure remain.
+>
+> **GPU-resident re-measure (lx, RTX 2070 SUPER, qwen2.5-coder-0.5b webgpu,
+> `TestNgramSpecResident_throughput`) — the win does NOT transfer to GPU yet:**
+>
+> | workload | plain tok/s | fixed K=8 | adaptive | tok/v (fixed) |
+> |---|---|---|---|---|
+> | codeedit | 78.2 | 0.60× 🔴 | 0.90× | 1.98 |
+> | rag-copy | 105.7 | 1.00× | 1.03× | 7.62 |
+> | agent-json | 115.6 | 0.96× | 0.96× | 8.42 |
+>
+> **Why (reverses the earlier "GPU should win bigger" guess):** the resident
+> `ForwardN` is **not** an M=K batched GEMM. `gpu/decoderunner.go:runBatch` records K
+> separate **M=1** runners into one command pass with a single Submit/Poll — it
+> amortizes only the sync, not the per-token weight stream (each runner re-reads all
+> weights). So committing 7.6 tok/verify still costs ~7.6 forwards of GPU compute →
+> ~1.0×. This is the **same Stage-A wall the draft-model Lever 2 hit**
+> ([memory: GPU spec-decode Lever 2]); the n-gram win is real only where `ForwardN`
+> truly batches the weight read — the **CPU batched-arch path** (rag 1.55× above).
+> Unlocking GPU needs **Stage B: a real M=K GEMM verify** (one weight stream across
+> all K positions). Adaptive depth is what keeps GPU *safe* meanwhile (codeedit
+> 0.60×→0.90×); note Θ should be **higher** (more conservative) on GPU, not lower —
+> deep verify isn't cheaper there.
 
 ### 03 — Router + trees ([doc](./03-router-tree.md)) · grammar+ngram(+head) fused
 
@@ -130,14 +152,22 @@ Per (model × workload mix). `α̂` is the calibrated predictor; ship-bar = mono
 ## 3. Cross-machine speed (because speed isn't portable)
 
 Same (spoke, model, workload) on each target. Confirms γ\* / depth thresholds per box.
-Note: `B` (verify width) differs sharply — the `lx` GPU affords a much wider "free"
-batch than `mac` CPU SIMD, so the **optimal tree shape (03) and depth (04) differ by
-backend**, not just tok/s. Tune the speculation policy per machine.
+**Headline so far: speed is NOT portable here, and not in the direction expected.**
+The CPU batched-arch `forwardN` is a true M-batched GEMM (one weight read for the
+whole verify) → n-gram spec wins (rag 1.55×). The GPU resident `ForwardN` is K
+M=1 dispatches sharing one sync (`runBatch`, Stage A) → weights re-read per token →
+~1.0× even at tok/v 7.6. So today the spoke wins on **CPU**, breaks even on **GPU**;
+the GPU win is gated on Stage B (M=K GEMM verify). Adaptive depth (04) is the per-box
+safety: it prevents the fixed-K GPU slowdown on low-acceptance streams.
 
-| Spoke | Model | Workload | Machine | c (draft:target) | B (verify width) | tok/s | speedup | Status |
+| Spoke | Model | Workload | Machine | mode | tok/v | tok/s | speedup | Status |
 |---|---|---|---|---|---|---|---|---|
+| 02 | qwen2.5-coder-0.5b | rag-copy | lx-cpu | adaptive | 7.11 | – | **1.55×** | ✅ |
+| 02 | qwen2.5-coder-0.5b | rag-copy | lx-gpu | fixed K=8 | 7.62 | 105.9 | 1.00× | 🔴 Stage-A wall |
+| 02 | qwen2.5-coder-0.5b | agent-json | lx-cpu | adaptive | 6.74 | – | **1.59×** | ✅ |
+| 02 | qwen2.5-coder-0.5b | agent-json | lx-gpu | adaptive | 7.27 | 111.5 | 0.96× | 🔴 Stage-A wall |
+| 02 | qwen2.5-coder-0.5b | codeedit | lx-gpu | adaptive | 1.29 | 70.3 | 0.90× | adaptive averts 0.60× fixed |
 | 02 | qwen2.5-coder-1.5b | codeedit | mac | – | – | – | – | ⬜ |
-| 02 | qwen2.5-coder-1.5b | codeedit | lx | – | – | – | – | ⬜ |
 
 ---
 
@@ -162,3 +192,4 @@ Re-rank after each analysis pass; build the spoke with the most fixable acceptan
 | 2026-06-20 | (wip) | lx | 02 n-gram drafter + single-model greedy verify (`spec_ngram.go`) | ✅ lossless gate green (K=1,4,8); `TestNgramDrafter` unit green |
 | 2026-06-20 | (wip) | lx | SpecTrace + `TestNgramSpecHarness` measurement harness | ✅ rag 1.32× / agent 1.43× / codeedit 0.81× (CPU, K=8); α̅ 0.74–0.97; 308-row §06 dataset dumped. codeedit slowdown → motivates 04 adaptive depth |
 | 2026-06-20 | (wip) | lx | 04 `AdaptiveDepth` + `GenerateNgramSpeculativeAdaptive` | ✅ codeedit 0.79×→0.94× (slowdown fixed), rag 1.34×→1.55×, agent 1.46×→1.59×; lossless (`TestNgramAdaptiveGreedyParity`). Adaptive dominates fixed K=8 everywhere |
+| 2026-06-20 | (wip) | lx-gpu | GPU-resident re-measure (`TestNgramSpecResident_throughput`) | 🔴 win does NOT transfer: rag 1.00×, agent 0.96×, codeedit 0.90× (adaptive). Cause: resident `ForwardN`=K M=1 dispatches/1 sync (Stage-A wall), weights re-read per token. Parity green. Needs Stage B (M=K GEMM verify). Reverses "GPU wins bigger" guess |
