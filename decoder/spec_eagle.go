@@ -87,10 +87,12 @@ func (m *Model) GenerateEagleSpeculativeTree(ctx context.Context, prompt []int, 
 			return stats.Emitted < maxTokens
 		}
 
+		hkvLen := len(prompt) - 1
+		hkv := head.Prefill(m.be, embedOf, confirmed[:hkvLen], feats[:hkvLen], 0)
+
 		for {
 			C := len(confirmed)
-			hst := head.Prefill(m.be, embedOf, confirmed[:C-1], feats[:C-1], 0)
-			td := head.DraftTree(m.be, hst, embedOf, confirmed[C-1], feats[C-1], C-1, B, D)
+			td := head.DraftTree(m.be, hkv.clone(), embedOf, confirmed[hkvLen], feats[hkvLen], hkvLen, B, D)
 
 			// Verify the whole tree in one batched pass under tree attention.
 			tc.treeRowPos, tc.treeMask = td.RowPos, td.Mask
@@ -150,6 +152,9 @@ func (m *Model) GenerateEagleSpeculativeTree(ctx context.Context, prompt []int, 
 			if !emit(correction) {
 				return
 			}
+			newRoot := len(confirmed) - 1
+			head.Extend(m.be, hkv, embedOf, confirmed[hkvLen:newRoot], feats[hkvLen:newRoot], hkvLen)
+			hkvLen = newRoot
 		}
 	}()
 	return out, g, nil
@@ -245,12 +250,16 @@ func (m *Model) GenerateEagleSpeculative(ctx context.Context, prompt []int, maxT
 			return stats.Emitted < maxTokens
 		}
 
+		// hkv holds the head's KV over the confirmed prefix confirmed[:hkvLen]; it grows
+		// incrementally each round (cloned for drafting) instead of being rebuilt — O(C²)
+		// rebuild was the dominant wall-clock cost.
+		hkvLen := len(prompt) - 1
+		hkv := head.Prefill(m.be, embedOf, confirmed[:hkvLen], feats[:hkvLen], 0)
+
 		for {
+			// Head drafts K tokens from the last confirmed token (position hkvLen).
+			draft := head.DraftFrom(m.be, hkv.clone(), embedOf, confirmed[hkvLen], feats[hkvLen], hkvLen, K)
 			C := len(confirmed)
-			// Head drafts K tokens: rebuild its KV over confirmed[:C-1], then draft from
-			// the last confirmed token + its feature. (O(C) head steps — head is tiny.)
-			hst := head.Prefill(m.be, embedOf, confirmed[:C-1], feats[:C-1], 0)
-			draft := head.DraftFrom(m.be, hst, embedOf, confirmed[C-1], feats[C-1], C-1, K)
 
 			// Verify the draft in one batched target pass at positions C..C+K-1.
 			dlogits, dfeats, err := captureN(draft)
@@ -300,6 +309,10 @@ func (m *Model) GenerateEagleSpeculative(ctx context.Context, prompt []int, maxT
 			if !emit(correction) {
 				return
 			}
+			// Grow the head KV over the newly-confirmed prefix tokens (up to the new root).
+			newRoot := len(confirmed) - 1
+			head.Extend(m.be, hkv, embedOf, confirmed[hkvLen:newRoot], feats[hkvLen:newRoot], hkvLen)
+			hkvLen = newRoot
 		}
 	}()
 	return out, g, nil

@@ -376,12 +376,19 @@ func (h *EagleHead) Draft(be Backend, embedOf func(tok int, dst []float32), firs
 // logits. Returns the populated state to DraftFrom.
 func (h *EagleHead) Prefill(be Backend, embedOf func(tok int, dst []float32), toks []int, feats [][]float32, startPos int) *eagleState {
 	st := h.NewState()
+	h.Extend(be, st, embedOf, toks, feats, startPos)
+	return st
+}
+
+// Extend appends context steps (toks[i] at position startPos+i, with feature feats[i])
+// onto an existing head state, discarding logits — so a speculative loop can grow the
+// head's KV incrementally across rounds instead of rebuilding it (O(C) → O(1)/round).
+func (h *EagleHead) Extend(be Backend, st *eagleState, embedOf func(tok int, dst []float32), toks []int, feats [][]float32, startPos int) {
 	emb := make([]float32, h.hidden)
 	for i, tok := range toks {
 		embedOf(tok, emb)
 		h.Step(be, emb, feats[i], startPos+i, st)
 	}
-	return st
 }
 
 // DraftFrom is Draft continuing from a pre-built state (its KV already populated over
