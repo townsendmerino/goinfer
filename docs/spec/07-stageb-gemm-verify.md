@@ -66,6 +66,23 @@ attention reads its own causal prefix from the (shared) resident KV.
    (GQA, MLA, MoE, SSM…). Each is a separate parity gate. MoE/SSM verify may not be
    worth it; decide per-arch with numbers.
 
+## Increment results
+
+- **Inc 1 (done, `b7e873b`):** `DecodeTokenFusedBatched` — batched M=K verify forward,
+  projections via the existing 16×16 tiled GEMM. **Bit-exact** vs M sequential
+  (`TestDecodeTokenFusedBatched_parity`, cosine 1.0 / maxAbs 0.0). Correctness proven.
+- **Inc 2 (done — KILL-GATE FIRED):** microbench at qwen2.5-0.5b dims, M=8, 24 layers:
+  batched **0.88×** (314 ms) vs per-row×M (278 ms) — *slower*. And the batched side is
+  *flattered* (1 submit vs M sequential submits), so vs the real `runBatch` (also 1
+  submit) it is worse still. Cause = the §risks "thin-M" item: the **16×16 tiled GEMM
+  wastes half its M rows at M=8** (it is the *prefill* kernel, M≫16), and the per-row
+  GEMV is already bandwidth-optimal. **The existing kernel cannot deliver Stage B.**
+  Production wiring into `ForwardN` is therefore NOT worth doing with this kernel.
+- **Inc 3 (next):** a **thin-M kernel** — one workgroup per output column n that loads
+  each weight word ONCE and accumulates all M activation rows (a "multi-row GEMV", no
+  wasted tile dimension; M≈8 register accumulators). Re-run the Inc-2 microbench; only
+  if it beats per-row do increments 4+ (production wiring) proceed.
+
 ## Risks
 
 - **Hot-path, multi-arch surgery** in the resident `DecodeRunner` (its fused `steps`
