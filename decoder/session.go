@@ -119,7 +119,7 @@ func (s *Session) GenerateNgramSpeculativeAdaptive(ctx context.Context, prompt [
 }
 
 func (s *Session) genSpec(ctx context.Context, prompt []int, maxTokens int, drafter Drafter, K int, sp SamplingParams, ad *AdaptiveDepth) (<-chan int, *Generation, error) {
-	if err := validateNgramSpec(drafter, sp); err != nil {
+	if err := validateNgramSpec(s.m, drafter, sp); err != nil {
 		return nil, nil, err
 	}
 	out := make(chan int)

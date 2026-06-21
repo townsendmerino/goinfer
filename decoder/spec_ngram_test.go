@@ -69,6 +69,32 @@ func TestNgramSpeculativeGreedyParity(t *testing.T) {
 	}
 }
 
+// TestSpecRollbackSafetyGuard gates the foundation invariant: the n-gram spec path
+// must REFUSE the recurrent families (Mamba-2 granite/nemotron, Gated DeltaNet
+// qwen3_5_moe), whose rolling state TruncateTo cannot roll back — running spec there
+// is a silent distribution bug (00-core §6). The entry point returns an error so the
+// caller (e.g. cmd/serve) falls back to plain decode, exactly like an unsupported
+// sampler. Model-free: validateNgramSpec rejects before any forward.
+func TestSpecRollbackSafetyGuard(t *testing.T) {
+	safe := &Model{w: &Weights{arch: &Architecture{}}}
+	if !safe.specRollbackSafe() {
+		t.Error("plain (softmax/GQA) arch must be spec-rollback-safe")
+	}
+	recurrent := map[string]*Model{
+		"granite":  {w: &Weights{arch: &Architecture{granite: &graniteParams{}}}},
+		"nemotron": {w: &Weights{arch: &Architecture{nemotron: &nemotronParams{}}}},
+		"qwen35":   {w: &Weights{arch: &Architecture{qwen35: &qwen35Params{}}}},
+	}
+	for name, m := range recurrent {
+		if m.specRollbackSafe() {
+			t.Errorf("%s (recurrent) must NOT be spec-rollback-safe", name)
+		}
+		if _, _, err := m.GenerateNgramSpeculative(context.Background(), []int{1, 2, 3}, 4, &NgramDrafter{}, 8, SamplingParams{}); err == nil {
+			t.Errorf("%s: GenerateNgramSpeculative must reject the recurrent family (silent-rollback-bug guard), got nil error", name)
+		}
+	}
+}
+
 // TestNgramAdaptiveGreedyParity gates the adaptive-depth path: varying per-round
 // depth (including the D=0 "don't speculate" and the periodic probe) must not
 // change the output — still token-identical to plain greedy. The novel parity

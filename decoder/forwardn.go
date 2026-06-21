@@ -22,6 +22,22 @@ func (m *Model) canBatchN(K int) bool {
 	return K > 1 && m.w.Embed.Rows() != 0 && !a.NonGatedMLP && !a.LearnedPosEmbed && a.gemma4 == nil && a.qwen35 == nil && a.granite == nil && a.nemotron == nil && a.mla == nil && a.llama4 == nil
 }
 
+// specRollbackSafe reports whether speculative decode's rollback — KVCache.TruncateTo
+// after a partial accept — correctly restores this model's state. True for softmax /
+// GQA (truncate the appended K/V) and MLA (reslice the latent KV) — both live in the
+// cache, so a verified-then-rejected draft block leaves no residue. FALSE for the
+// recurrent families — Mamba-2 (granite / nemotron_h) and Gated DeltaNet
+// (qwen3_5_moe) — whose rolling state mamba2Step / the delta scan mutate IN PLACE and
+// TruncateTo does NOT roll back (it only reslices KV layouts). Verifying a K-token
+// block over-advances that state, and the next round decodes from it: a silent
+// distribution bug, not a crash (00-core §6). Those families need the
+// checkpoint-at-block-start / restore path (not yet built); until then the n-gram
+// speculative entry points refuse them and the caller falls back to plain decode.
+func (m *Model) specRollbackSafe() bool {
+	a := m.w.arch
+	return a.granite == nil && a.nemotron == nil && a.qwen35 == nil
+}
+
 // forwardLayersN runs the embedding + all transformer layers + final norm over
 // the K tokens in ids — appended as the next K positions of cache — and returns
 // the [K, HiddenDim] post-final-norm hidden states (the LM head is the caller's).

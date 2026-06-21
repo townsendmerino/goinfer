@@ -113,12 +113,15 @@ func (target *Model) GenerateNgramSpeculative(ctx context.Context, prompt []int,
 
 // validateNgramSpec runs the synchronous precondition checks shared by the Model
 // and Session speculative entry points.
-func validateNgramSpec(drafter Drafter, sp SamplingParams) error {
+func validateNgramSpec(m *Model, drafter Drafter, sp SamplingParams) error {
 	if drafter == nil {
 		return fmt.Errorf("decoder.GenerateNgramSpeculative: nil drafter")
 	}
 	if sp.LogitProcessor != nil {
 		return fmt.Errorf("decoder.GenerateNgramSpeculative: LogitProcessor (constrained/tool decoding) not supported yet; use Generate")
+	}
+	if !m.specRollbackSafe() {
+		return fmt.Errorf("decoder.GenerateNgramSpeculative: this model's family has recurrent state (Mamba-2 / Gated DeltaNet) that speculative rollback cannot restore yet; use Generate")
 	}
 	return nil
 }
@@ -127,7 +130,7 @@ func validateNgramSpec(drafter Drafter, sp SamplingParams) error {
 // goroutine over a fresh self-owned cache, and returns the stream. Session-backed
 // callers use genNgramInto directly to thread their warm KV cache.
 func (target *Model) genNgram(ctx context.Context, prompt []int, maxTokens int, drafter Drafter, K int, sp SamplingParams, tr specTracer, ad *AdaptiveDepth) (<-chan int, *Generation, error) {
-	if err := validateNgramSpec(drafter, sp); err != nil {
+	if err := validateNgramSpec(target, drafter, sp); err != nil {
 		return nil, nil, err
 	}
 	if len(prompt) == 0 {
