@@ -114,9 +114,26 @@ The [00-core](./00-core.md) harness reports it directly; the §4 analysis predic
     1.13 tok per verify round** — the forced runs fire (keys/enum), losslessly.
   - The win is modest on a tiny JSON object and bounded by tokenization agreement
     (the model's split of forced bytes vs canonical); it scales with the structural-
-    token fraction / output length (inc-2 ceiling 44–74% bytes). Follow-ups: sampled
-    + resident paths; wire into `cmd/serve` constrained requests; measure on larger
-    tool-call traffic.
+    token fraction / output length (inc-2 ceiling 44–74% bytes).
+- **Inc 4 (done — density characterization, `TestGrammarSpecHarness`):** tok-per-verify
+  across schema densities (qwen2.5-coder-0.5b, greedy, CPU):
+
+  | schema | tok/round | accept | |
+  |---|---|---|---|
+  | free-string (1 string field) | 1.10 | 0.50 | only the key forces |
+  | mixed (string + 2-enum) | 1.11 | 0.22 | |
+  | enum-heavy (3× 2-choice enums) | 1.05 | 0.14 | the choice breaks the run at each disambiguation point |
+  | **fixed-keys (3× single-value enums)** | **1.45** | 0.53 | keys AND values fully determined |
+
+  **Verdict:** a real, lossless, zero-draft-cost win, but **modest (~1.05–1.45 tok/
+  round)** — best only when keys *and* values are fully fixed (const / single enum).
+  Multi-choice enums force less than intuition suggests (the choice point breaks the
+  forced run). On the batched-CPU path the wall-clock win is therefore ~1.1–1.3×
+  on structured output, not the "free structural skeleton" the intro imagined.
+  Worth wiring into `cmd/serve` *if the integration is cheap* (a miss costs ~nothing,
+  so it's safe to always run on constrained requests); not worth heavy investment.
+  Remaining follow-ups (unfunded unless the win justifies): sampled + resident
+  grammar-spec paths, the `cmd/serve` constrained/tool routing.
 
 ## Risks / open questions
 
