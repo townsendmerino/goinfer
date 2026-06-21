@@ -159,7 +159,7 @@ Rows are (spoke × its home workload). `α̅` = mean per-position acceptance.
 
 | Model | Workload | Machine | Lossless | α̅ | tok/v | speedup | head source | Status |
 |---|---|---|---|---|---|---|---|---|
-| (target w/ available head) | reasoning | lx | ⬜ | – | – | – | import? / train? | ⏸ |
+| Qwen3-4B + AngelSlim/Qwen3-4B_eagle3 | code/reasoning | lx | – | – | – | – | IMPORT (license ✓) | 🟡 gates cleared, planned (see 05 doc); multi-session build, lossless-safe |
 
 ---
 
@@ -234,3 +234,4 @@ Re-rank after each analysis pass; build the spoke with the most fixable acceptan
 | 2026-06-20 | (wip) | lx | 03 router inc 1: priority router (grammar+ngram) | ✅ `RouterDrafter` + pluggable-drafter masked verify. Lossless (`TestGrammarRouterSpec` == constrained Generate). FIRST fusion win: agent-loop (repeat tool-call) 4.25 tok/round (acc 0.82) vs 1.13 grammar-only; generic prose→schema 1.13 (n-gram can't echo prose context). Inc 2 = tree verify |
 | 2026-06-21 | (wip) | lx | 03 router inc 2: tree verification (go/no-go) | 🔴 DEFERRED (kill-gate). `TestTreeUpside`: 17.6% positions tree-recoverable on agent-loop, BUT it's priority-order suboptimality not a missing tree — grammar 2/5 correct (tokenization) vs n-gram 15/15; n-gram-FIRST 15/17 vs grammar-first 12/17 captures ALL of it by reordering. Tree's unique residual value ~0. Tree-mask forward (hardest build: non-contiguous attn mask × CPU/resident/int8/ring) NOT worth it. Inc 3 (α̂/confidence source selection) captures the win cheaply |
 | 2026-06-21 | (wip) | lx | 03 router inc 3: confidence-driven source selection | ✅ `RouterDrafter` takes most-confident source (n-gram match-len vs grammar const `grammarConf`). Captures the inc-2 tree upside cheaply: agent-loop 4.25→**5.67 tok/round** (acc 0.94), generic prose→schema 1.13 (NO regression). Lossless (`TestGrammarRouterSpec`, both cases). Tree-mask forward correctly skipped. Follow-up: swap heuristic for §06 α̂ |
+| 2026-06-21 | (wip) | lx | 05 EAGLE-3 feasibility (research) | 🟡 IMPORT decision: AngelSlim/Qwen3-4B_eagle3 (1-layer, hidden 2560, draft-vocab 32000, t2d/d2t; license Apache/MIT/CC-BY ✓ attribution). Base Qwen3 dense = goinfer-runnable; general head accelerates code too. No qwen2.5-coder head exists; code heads only for Qwen3-Coder-Next (DeltaNet, guarded-out, FP8). Reframe: head=Drafter ⇒ lossless verify protects correctness, imperfect head only lowers acceptance. Risk=protocol (fused layers/fusion/autoregress/t2d-d2t) lives in vLLM/SGLang/SpecForge code. Plan: seam→loader→forward→draft→measure. Multi-session

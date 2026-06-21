@@ -65,6 +65,60 @@ activity independent of EAGLE's grant.)
 - Acceptance is workload- and family-dependent; reproduce published numbers on our
   harness before claiming them.
 
+## Feasibility verdict (2026-06-21) — IMPORT a general head; build is large but lossless-safe
+
+Researched the import-vs-train decision (the doc's gating question). Decision: **import**,
+since we cannot train.
+
+**A usable head exists and the gates clear:**
+- **`AngelSlim/Qwen3-4B_eagle3`** (and a size ladder: 1.7B / 4B / 8B / 14B). Single
+  `model.safetensors` (437 MB ≈ 0.2 B params). `config.json`:
+  `Eagle3LlamaForCausalLM`, `num_hidden_layers: 1`, `hidden_size: 2560`,
+  `num_attention_heads: 32`, `num_key_value_heads: 8`, `head_dim: 128`,
+  `intermediate_size: 9728`, silu, `rope_theta: 1e6`, **`draft_vocab_size: 32000`**
+  (reduced draft vocab + a t2d/d2t map to the full 151936) — a single Qwen3/llama-style
+  transformer layer using only ops goinfer already has (GQA, RoPE, SwiGLU, RMSNorm) +
+  a feature-fusion linear + the draft-vocab head.
+- **License OK:** Apache-2.0 / MIT / CC-BY-4.0 components — commercial use,
+  redistribution, modification permitted; attribution required; no copyleft. Importable
+  into goinfer with attribution.
+- **Base is goinfer-runnable:** Qwen3 dense is already resident-eligible (Lever C1). The
+  head is *general* (not code-trained), but a head drafts whatever the base emits, so it
+  still accelerates code on a Qwen3 base. (Code-specific heads exist only for
+  Qwen3-Coder-**Next** = Gated DeltaNet, which goinfer guards OUT of speculation, and in
+  FP8 — not usable. No EAGLE head exists for qwen2.5-coder.)
+
+**The reframe that de-risks it:** the head is a *Drafter*. The existing spec verify is
+lossless regardless of draft quality, so an imperfect head **cannot break correctness** —
+it only yields low acceptance (no speedup). So we can build incrementally and *measure*
+acceptance, with no losslessness risk and no need for a bit-exact parity gate to ship
+safely.
+
+**The real risk = matching the protocol for good ACCEPTANCE, not correctness.** The
+EAGLE-3 wiring that the model repo does NOT document — **which 3 target layers are fused**
+(low/mid/high), the fusion detail, the head's autoregression, and the t2d/d2t mapping —
+lives in the vLLM / SGLang / SpecForge source. Reproducing it wrong gives poor acceptance,
+not wrong output. So the build extracts the protocol from that framework code and tunes to
+maximize measured acceptance.
+
+## Build increments (planned)
+
+1. **Hidden-state seam** (decoder, pure-Go, gateable now): export the target's hidden
+   states from 3 configurable layer indices during `forward`/`forwardN`, read-only,
+   forward output unchanged. The one reusable prerequisite; build first.
+2. **Head loader**: parse `model.safetensors` (fusion `fc`, the 1 layer's q/k/v/o +
+   gate/up/down + norms, the draft `lm_head[32000]`, `t2d`/`d2t`, embedding strategy).
+3. **Head forward**: fuse(3 hidden states) → 1 transformer layer → draft-vocab logits →
+   map to full vocab via d2t. Reuses goinfer's GQA/RoPE/SwiGLU/RMSNorm.
+4. **Autoregressive drafting + Drafter integration**: the head generates K tokens from
+   the target's last hidden state (via the seam) and its own outputs; wire as a `Drafter`
+   into the spec verify (it composes with the 03 router).
+5. **Measure acceptance** on `chat`/`reasoning`/`code`; tune the fused-layer indices to
+   match the framework. Extract exact protocol from vLLM/SGLang EAGLE-3 source.
+
+Status: gates cleared, planned. A multi-session build (the largest spoke); the
+hidden-state seam (inc 1) is the bounded, gateable starting point.
+
 ## Validation plan
 
 - Correctness: lossless by construction (verifier owns `p`); output ≡ baseline.
