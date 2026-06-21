@@ -101,12 +101,22 @@ The [00-core](./00-core.md) harness reports it directly; the §4 analysis predic
     "tokenizer segmentation" point), but the verify keeps it lossless and the masked
     target distribution over forced literals is concentrated, so acceptance should be
     high. The 44–74% byte ceiling is the headroom.
-- **Inc 3 (next):** redesign `ForcedRun` → `ForcedBytesRun` + `encode` hook (byte-run
-  → canonical tokens). Then the masked-verify integration: (a) thread a per-position
-  grammar mask into the spec verify (the path currently *rejects* `LogitProcessor`),
-  and (b) advance/rollback the grammar per accepted/rejected block (the same
-  per-position-state discipline as the sampled-penalty threading). Then measure real
-  acceptance + tok/v on `structured`.
+- **Inc 3 (done — works end-to-end, lossless):**
+  - **3a:** `constrain.Masker.ForcedBytesRun(max)` — byte-level forced-run primitive
+    (`TestForcedBytesRun`).
+  - **3b:** `decoder.GrammarDrafter` (forced byte-run → canonical retokenize) +
+    `GenerateGrammarSpeculative` (CPU, greedy). The verify masks every position with a
+    grammar clone rolled forward over the accepted prefix (`Masker.GrammarClone` /
+    `MaskAt` / `Commit` / `TokenBytes`), and the grammar advances only over emitted
+    tokens — so no rewind is needed. **Gate `TestGrammarSpecParity`: token-identical to
+    plain constrained `Generate`** (greedy, same schema), output
+    `{"location": "Paris", "unit": "celsius"}`, with realized **acceptance 0.40 /
+    1.13 tok per verify round** — the forced runs fire (keys/enum), losslessly.
+  - The win is modest on a tiny JSON object and bounded by tokenization agreement
+    (the model's split of forced bytes vs canonical); it scales with the structural-
+    token fraction / output length (inc-2 ceiling 44–74% bytes). Follow-ups: sampled
+    + resident paths; wire into `cmd/serve` constrained requests; measure on larger
+    tool-call traffic.
 
 ## Risks / open questions
 

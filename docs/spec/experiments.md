@@ -53,7 +53,7 @@ Rows are (spoke × its home workload). `α̅` = mean per-position acceptance.
 | Model | Workload | Machine | Lossless | α̅ | tok/v | speedup | Status | Notes |
 |---|---|---|---|---|---|---|---|---|
 | qwen2.5-coder-1.5b | structured | mac | ⬜ | – | – | – | ⬜ | |
-| qwen2.5-coder-1.5b | structured | lx | ⬜ | – | – | – | ⬜ | |
+| qwen2.5-coder-0.5b | structured | lx | ✅ `TestGrammarSpecParity` | – | 1.13 | – | ✅ lossless (==constrained greedy); acc 0.40, forced runs fire |
 | gemma-4-E2B | structured | mac | ⬜ | – | – | – | ⬜ | |
 
 ### 02 — Cache / n-gram ([doc](./02-cache-ngram.md)) · home: codeedit / rag / agent
@@ -228,3 +228,4 @@ Re-rank after each analysis pass; build the spoke with the most fixable acceptan
 | 2026-06-20 | (wip) | lx | Foundation: spec rollback-safety guard + MLA gate | ✅ `specRollbackSafe` REFUSES recurrent families (Mamba-2 granite/nemotron, DeltaNet qwen3_5_moe) — closes a silent rollback bug (`--spec` was unguarded); caller falls back to plain. `TestSpecRollbackSafetyGuard` (model-free). MLA gate flipped GREEN: `TestNgramSpecMLA_parity` bit-exact on real DeepSeek-V2-Lite (truncate latent rollback correct). softmax/GQA + MLA now spec-safe; SSM/DeltaNet need checkpoint/restore (unbuilt)
 | 2026-06-20 | (wip) | lx | 01 grammar-fused inc 1: `Masker.ForcedRun` + `Grammar.Clone` | ✅ forced-run extractor (non-mutating, via Clone) + Clone on all 3 grammars; `TestForcedRun` model-free. Finding: grammars allow optional ws everywhere ⇒ strict forcing fires only inside fixed literals (keys/enum), not scaffolding. Inc 2 = forced-fraction on real BPE tokenizer (go/no-go) before masked-verify integration |
 | 2026-06-20 | (wip) | lx | 01 grammar-fused inc 2: forced-fraction (go/no-go) | 🔎 `TestGrammarForcedFraction` real BPE: strict TOKEN-forcing 0% (prefix-ambiguity defeats it), BYTE-forcing ceiling 44–74%. GO but redesign byte-level: forced byte-run→canonical retokenize→propose (acceptance<1 via tokenization freedom, verify-lossless). Inc 3 = byte-level drafter + masked-verify integration |
+| 2026-06-20 | (wip) | lx | 01 grammar-fused inc 3: byte-level drafter + masked verify | ✅ END-TO-END: `ForcedBytesRun` + `GrammarDrafter` + `GenerateGrammarSpeculative` (CPU greedy). Masked verify with grammar clone rolled over accepted prefix; grammar advances only over emitted tokens (no rewind). `TestGrammarSpecParity` token-identical to constrained Generate; acc 0.40, 1.13 tok/round on weather JSON (forced runs fire, lossless). Modest on tiny JSON, scales w/ structural fraction. Fixed: tpos wasn't advancing (KV corruption). Follow-ups: sampled/resident, serve wiring |

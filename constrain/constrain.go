@@ -103,6 +103,45 @@ func (m *Masker) ForcedRun(max int) []int {
 	return run
 }
 
+// GrammarClone returns a clone of the masker's current grammar state — a working
+// copy for speculative per-position masking (MaskAt) and forced-run advance that the
+// verifier rolls forward over a draft block without touching the live grammar.
+func (m *Masker) GrammarClone() Grammar { return m.g.Clone() }
+
+// Commit advances the masker's LIVE grammar over a committed token (its surface
+// bytes), keeping it in sync as the speculative loop emits tokens — the
+// out-of-order analogue of Process's fold-in step.
+func (m *Masker) Commit(id int) { m.g.Commit(m.tokens[id]) }
+
+// TokenBytes returns the surface bytes of token id (for advancing a grammar clone
+// over an accepted draft token in the speculative verifier).
+func (m *Masker) TokenBytes(id int) []byte { return m.tokens[id] }
+
+// MaskAt masks logits to the tokens grammar state g permits — the same rule as
+// Process (EOS only when g.CanEnd; StopWhenComplete forces EOS at a completion
+// point) — but using the supplied g rather than the masker's own committed grammar.
+// Does not mutate m or g. The verifier uses it to mask each speculative position
+// against a clone rolled forward over the accepted draft prefix.
+func (m *Masker) MaskAt(g Grammar, logits []float32) {
+	neg := float32(math.Inf(-1))
+	canEnd := g.CanEnd()
+	for id := range logits {
+		if m.isEOS[id] {
+			if !canEnd {
+				logits[id] = neg
+			}
+			continue
+		}
+		if canEnd && m.stopAtEnd {
+			logits[id] = neg
+			continue
+		}
+		if !g.TryBytes(m.tokens[id]) {
+			logits[id] = neg
+		}
+	}
+}
+
 // ForcedBytesRun returns the maximal run of BYTES the grammar forces from its
 // current committed state — successive positions where exactly one byte is legal and
 // the document cannot yet end. This is the right granularity for a BPE vocab (unlike
