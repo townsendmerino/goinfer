@@ -165,6 +165,27 @@ in inc 2). Weights local; no further download needed.
 5. **Measure acceptance** on `chat`/`reasoning`/`code`; tune the fused-layer indices to
    match the framework. Extract exact protocol from vLLM/SGLang EAGLE-3 source.
 
+### Trees+sampled — kill-gate (2026-06-21): the bottleneck is α, not the verify
+
+Before building EAGLE tree drafting + sampled rejection (the path to the published
+~3-4×), measured the head's true per-position acceptance α = 1−TV(p,q) =
+Σ min(p,q) (`TestEagleAlpha`):
+- **Sampled rejection ~doubles acceptance** vs greedy exact-match (greedy 0.13 →
+  α 0.26 q8 / 0.29 bf16) — a real lever.
+- **But α plateaus ~0.3**, far below the published ~0.8. It is NOT base precision
+  (bf16 barely beats q8) and NOT capture layers (sweep plateaus ~0.3, peak
+  {1,12,26}=0.316). The head's distribution overlaps the target's only ~30%.
+- So the bottleneck is the **head↔target distribution match (α)**, i.e. a subtle
+  detail in the from-scratch EAGLE-3 forward (fusion / norm-before-fc / concat /
+  RoPE / d2t / exact aux layers) that depresses the *distribution* even where greedy
+  top-1 is at its ~40% plateau. Diagnosing it needs **exact parity against a Python
+  EAGLE-3 reference** (dump the head's q at a position, diff vs the Go forward).
+
+Verdict: trees + sampled multiply whatever α the head delivers; at α~0.3 they would
+give only modest gains. The real lever is **raising α via reference-parity
+debugging** — a separate, deeper dig — BEFORE the trees+sampled verify build. The
+end-to-end lossless pipeline already works; this is the path to the big numbers.
+
 ### Build status (2026-06-21) — full pipeline BUILT + WORKING at ~1.6 tok/verify
 
 Increments 1–4 done on the real AngelSlim/Qwen3-1.7B head + a local Qwen3-1.7B base:
