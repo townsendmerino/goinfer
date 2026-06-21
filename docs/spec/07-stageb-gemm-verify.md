@@ -78,10 +78,33 @@ attention reads its own causal prefix from the (shared) resident KV.
   wastes half its M rows at M=8** (it is the *prefill* kernel, M≫16), and the per-row
   GEMV is already bandwidth-optimal. **The existing kernel cannot deliver Stage B.**
   Production wiring into `ForwardN` is therefore NOT worth doing with this kernel.
-- **Inc 3 (next):** a **thin-M kernel** — one workgroup per output column n that loads
-  each weight word ONCE and accumulates all M activation rows (a "multi-row GEMV", no
-  wasted tile dimension; M≈8 register accumulators). Re-run the Inc-2 microbench; only
-  if it beats per-row do increments 4+ (production wiring) proceed.
+- **Inc 3 (done — thin-M kernel built, still no win):** `gpu/gemm_rows.go`
+  `gemmRowW8A8` — one workgroup per output column, each weight vec4 read ONCE and
+  accumulated against all M rows (M register accumulators, no wasted tile dim).
+  Bit-exact (the batched parity gate still passes). Microbench: batched
+  **0.98×** (was 0.88× with the tiled kernel) — the kernel choice mattered, but it is
+  **still ≤ 1×**. The projection-batching saving (weights 1× vs M×) is cancelled by
+  (a) per-row attention/rms/swiglu/quant — unchanged by batching, (b) the multi-row
+  kernel's M× ALU per weight load (compute-bound, not bandwidth-bound at M=8), and
+  (c) the gather/scatter copies. Versus the real `runBatch` (1 submit) it is worse.
+
+## Conclusion (2026-06-20): Stage B is marginal — NO-GO, do not wire into production
+
+Even with a **free** n-gram draft (removing the draft cost that sank the original
+Lever-2 Stage B) **and** a thin-M kernel built specifically for the verify block,
+the batched verify is ~break-even (0.98×) at M=8 on the 2070S. The resident decode
+at these dims is not dominated by projection weight-streaming to a degree that
+batching K≈8 rows recovers, once the per-row attention/elementwise and the
+quant/gather/scatter glue are counted. This **confirms and strengthens the prior
+deferral**: the GPU speculative win is not there. The CPU win (shipped via
+`--spec ngram`) stands; the resident verify stays Stage A (`runBatch`).
+
+The Inc-1/3 code (`DecodeTokenFusedBatched`, `gemmRowW8A8`) is kept as the gated
+Stage-B spike — correct and reusable if a future, much-larger model (projection-
+bound, big hidden/inter) or a non-square thin-M tile changes the arithmetic. Don't
+fund the hot-path multi-arch runner surgery on this evidence. Possible (unfunded)
+levers if revisited: quantize-into-combined-buffer + offset-bind reads to delete the
+gather/scatter; measure at larger M and larger hidden; profile bandwidth vs ALU.
 
 ## Risks
 

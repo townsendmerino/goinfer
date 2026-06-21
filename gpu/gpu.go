@@ -83,6 +83,13 @@ type Context struct {
 	tiledPipeline *wgpu.ComputePipeline
 	tiledLayout   *wgpu.BindGroupLayout
 
+	// Thin-M (multi-row GEMV) W8A8 GEMM for the Stage-B verify (gemm_rows.go): one
+	// workgroup per output column, each weight word read once and reused across all
+	// M rows. Beats the 16×16 tiled GEMM at the small M (≈K+1) of a verify block.
+	gemmRowShader   *wgpu.ShaderModule
+	gemmRowPipeline *wgpu.ComputePipeline
+	gemmRowLayout   *wgpu.BindGroupLayout
+
 	// Elementwise/norm pipelines for the fused MLP, lazy via ensureLayer (layer.go).
 	rmsnormShader    *wgpu.ShaderModule
 	rmsnormPipeline  *wgpu.ComputePipeline
@@ -349,6 +356,10 @@ func (c *Context) Close() {
 	if c.tiledPipeline != nil {
 		c.tiledPipeline.Release()
 		c.tiledShader.Release()
+	}
+	if c.gemmRowPipeline != nil {
+		c.gemmRowPipeline.Release()
+		c.gemmRowShader.Release()
 	}
 	if c.rmsnormPipeline != nil {
 		c.rmsnormPipeline.Release()

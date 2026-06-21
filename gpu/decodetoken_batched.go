@@ -30,7 +30,7 @@ func (c *Context) DecodeTokenFusedBatched(xs [][]float32, m ModelW, hidden, nH, 
 	if len(positions) != M {
 		return nil, fmt.Errorf("gpu: DecodeTokenFusedBatched %d rows but %d positions", M, len(positions))
 	}
-	for _, f := range []func() error{c.ensureGEMV, c.ensureQuantize, c.ensureLayer, c.ensureAttn, c.ensureTiled} {
+	for _, f := range []func() error{c.ensureGEMV, c.ensureQuantize, c.ensureLayer, c.ensureAttn, c.ensureGemmRow} {
 		if err := f(); err != nil {
 			return nil, err
 		}
@@ -123,7 +123,8 @@ func (c *Context) DecodeTokenFusedBatched(xs [][]float32, m ModelW, hidden, nH, 
 		}
 		dstC := storF(M * N)
 		p := uni([]uint32{uint32(M), uint32(rm.kp), uint32(N), 0})
-		disp(c.tiledPipeline, bind(c.tiledLayout, aqC, rm.bq, asC, rm.bScales, dstC, p), (uint32(N)+15)/16, (uint32(M)+15)/16)
+		gx, gy := gemvGrid(N) // thin-M kernel: one workgroup per output column
+		disp(c.gemmRowPipeline, bind(c.gemmRowLayout, aqC, rm.bq, asC, rm.bScales, dstC, p), gx, gy)
 		outs := make([]*wgpu.Buffer, M)
 		for r := range outs {
 			o := storF(N)
