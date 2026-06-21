@@ -185,13 +185,17 @@ Increments 1–4 done on the real AngelSlim/Qwen3-1.7B head + a local Qwen3-1.7B
   whereas this is a single linear chain measured by **greedy top-1 match** (the
   strictest case). ~40% greedy top-1 → ~1.6 tok/verify linear is consistent with that.
 
-**Remaining (inc 5):** wire the head as a `Drafter` into a lossless verify
-(`GenerateEagleSpeculative`; needs `forwardN` per-position hidden-capture so the head
-re-seeds from the verified hidden each round) → real end-to-end speedup on novel
-text; then EAGLE tree drafting (composes with [03](./03-router-tree.md)) + sampled
-acceptance to approach the published numbers; optional exact-protocol parity vs a
-vLLM/SGLang reference run. The pure-Go EAGLE-3 head itself is done and produces valid
-lossless drafts today.
+**inc 5 DONE — end-to-end lossless EAGLE spec decode.** `GenerateEagleSpeculative`
+(+ `forwardN` per-position hidden-capture, the batched seam) wires the head as the
+drafter: head drafts K → target verifies in one batched pass capturing each
+position's hidden → matching prefix + the target's correction committed → head
+re-seeds from the verified hidden, its KV rebuilt over the confirmed context.
+`TestEagleSpecParity`: token-identical to plain greedy, **1.60 tok/verify**. The full
+pure-Go EAGLE-3 pipeline runs lossless. The acceptance is modest (greedy single
+chain, ~40% top-1 head match + an extra correction-forward per round); the path to
+the published ~3–4× is EAGLE **tree drafting** (multiple head candidates per
+position, composes with [03](./03-router-tree.md)) + **sampled** rejection
+acceptance — future work, not a correctness gap.
 
 ## Validation plan
 

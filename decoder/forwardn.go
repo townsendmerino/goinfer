@@ -254,6 +254,15 @@ func (m *Model) runLayersFromEmbedN(h []float32, cache *KVCache) ([]float32, err
 		for j := range h {
 			h[j] += mlpOut[j]
 		}
+		// Read-only hidden-state seam (05), batched: copy all K rows of this layer's
+		// output when requested. captured[ci] holds [K*hidden]. nil ⇒ zero overhead.
+		if cache.captureLayers != nil {
+			for ci, cl := range cache.captureLayers {
+				if cl == l {
+					cache.captured[ci] = append(cache.captured[ci][:0], h...)
+				}
+			}
+		}
 	}
 
 	// Advance the cache by K explicitly: a local last layer defers its Append
