@@ -108,8 +108,12 @@ maximize measured acceptance.
    logits-byte-identical + last-layer capture reproduces logits exactly). Generic
    decode path; special-family archs return an error (not yet wired). `forwardN`
    (batched verify) capture is a follow-up for the full draft loop.
-2. **Head loader**: parse `model.safetensors` per the protocol below.
-3. **Head forward**: per the protocol below.
+2. **Head loader** (DONE): `decoder.LoadEagleHead(dir)` → `EagleHead` (fc, midlayer
+   q/k/v/o + gate/up/down, hidden/input/post-attn/final norms, draft `lm_head`, `d2t`),
+   via the aikit safetensors reader. `TestLoadEagleHead` gates the confirmed shapes
+   (fc 3*hidden, attn 2*hidden, lm_head draft-vocab, d2t in-range). Head converted
+   from the AngelSlim `.bin` to f32 safetensors with `~/.venv-vl` (torch+safetensors).
+3. **Head forward** (next): per the protocol below.
 
 ### EAGLE-3 protocol (extracted from vLLM `llama_eagle3.py` + SpecForge)
 
@@ -133,6 +137,28 @@ Forward (drafting one token from the target's hidden at the current position):
 OPEN: which 3 target layer indices feed step 1 (a training choice; vLLM reads
 `eagle_aux_hidden_state_layer_ids` or defaults). Confirm from the checkpoint/config
 or tune by measured acceptance (inc 5). Reuses goinfer's GQA/RoPE/SwiGLU/RMSNorm.
+
+### CONFIRMED tensor structure (AngelSlim/Qwen3-1.7B_eagle3, dumped 2026-06-21)
+
+Test target: local `qwen3-1.7b-q8_0.gguf` (hidden 2048, 28 layers, heads 16/8, hd 128).
+Head shipped as `pytorch_model.bin` → converted to f32 safetensors at
+`~/models/qwen3-1.7b-eagle3/model.safetensors` (via `~/.venv-vl` torch+safetensors).
+Tensors (`[out,in]`):
+- `fc.weight` [2048, **6144**] — fuse 3 concatenated target hidden (3·2048) → 2048.
+- `midlayer.self_attn.q_proj.weight` [2048, **4096**], `k_proj`/`v_proj` [1024, 4096],
+  `o_proj` [2048, 2048] — GQA 16/8 over `concat(embed, feature)` (2·2048=4096 in).
+- `midlayer.mlp.{gate,up}_proj` [6144, 2048], `down_proj` [2048, 6144] (SwiGLU).
+- `midlayer.input_layernorm` [2048] (norms the **embed**), `midlayer.hidden_norm`
+  [2048] (norms the **feature**), `midlayer.post_attention_layernorm` [2048] (pre-MLP),
+  `norm` [2048] (final, pre-head).
+- `lm_head.weight` [**32000**, 2048] (draft vocab). `d2t` (32000, int64), `t2d`
+  (151936, bool). **No `embed_tokens`** → reuse the TARGET's embedding (hidden matches).
+
+Refined forward: `feature = fc(concat(h_lo,h_mid,h_hi))`;
+`x = concat(input_layernorm(target_embed(tok)), hidden_norm(feature))` →
+midlayer (attn in=4096, residual over the 2048 feature) → `norm` → `lm_head` →
+draft logits[32000] → `target_id = draft_id + d2t[draft_id]` (confirm delta-vs-direct
+in inc 2). Weights local; no further download needed.
 4. **Autoregressive drafting + Drafter integration**: the head generates K tokens from
    the target's last hidden state (via the seam) and its own outputs; wire as a `Drafter`
    into the spec verify (it composes with the 03 router).
