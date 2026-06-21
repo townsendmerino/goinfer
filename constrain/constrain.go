@@ -103,6 +103,41 @@ func (m *Masker) ForcedRun(max int) []int {
 	return run
 }
 
+// ForcedBytesRun returns the maximal run of BYTES the grammar forces from its
+// current committed state — successive positions where exactly one byte is legal and
+// the document cannot yet end. This is the right granularity for a BPE vocab (unlike
+// ForcedRun's strict single-token test, which a real tokenizer almost never satisfies
+// because many tokens are legal byte-prefixes of a forced continuation): the caller
+// retokenizes the returned bytes (canonically) into draft tokens, and the verifier
+// confirms — lossless, with acceptance < 1 only where the model tokenizes the forced
+// bytes differently. Non-mutating (probes on a Clone). max caps the run in bytes.
+func (m *Masker) ForcedBytesRun(max int) []byte {
+	if max <= 0 {
+		return nil
+	}
+	g := m.g.Clone()
+	var run []byte
+	var probe [1]byte
+	for len(run) < max {
+		if g.CanEnd() {
+			break // a complete document ⇒ EOS is a legal alternative ⇒ not forced
+		}
+		only, count := byte(0), 0
+		for b := 0; b < 256 && count < 2; b++ {
+			probe[0] = byte(b)
+			if g.TryBytes(probe[:]) {
+				only, count = byte(b), count+1
+			}
+		}
+		if count != 1 {
+			break
+		}
+		run = append(run, only)
+		g.Commit([]byte{only})
+	}
+	return run
+}
+
 // StopWhenComplete makes the Masker mask every non-EOS token once the document
 // is complete (CanEnd), forcing the next token to be EOS — so generation stops
 // at the first complete document instead of trailing whitespace to maxTokens.

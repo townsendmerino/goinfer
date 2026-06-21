@@ -57,3 +57,36 @@ func TestForcedRun(t *testing.T) {
 		t.Errorf("ForcedRun(max=1) after `{\"` = %q, want `k`", got)
 	}
 }
+
+// TestForcedBytesRun gates the BYTE-level forced-run primitive (the BPE-appropriate
+// one). After `{"` the only property "k" forces the key char + its closing quote at
+// the byte level — the same bytes ForcedRun finds, but byte-level forcing keeps
+// firing where token-level forcing wouldn't on a real vocab (inc-2 finding).
+func TestForcedBytesRun(t *testing.T) {
+	type One struct {
+		K string `json:"k"`
+	}
+	tokens, eos := fullByteVocab()
+	masker := func(prefix string) *Masker {
+		g, err := GrammarFromStruct(One{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		m := NewMasker(g, tokens, []int{eos})
+		gen := make([]int, len(prefix))
+		for i := range prefix {
+			gen[i] = int(prefix[i])
+		}
+		m.Process(gen, make([]float32, len(tokens)))
+		return m
+	}
+	if got := string(masker(`{"`).ForcedBytesRun(16)); got != `k"` {
+		t.Errorf("ForcedBytesRun after `{\"` = %q, want `k\"`", got)
+	}
+	if got := masker(`{`).ForcedBytesRun(16); len(got) != 0 {
+		t.Errorf("ForcedBytesRun after `{` = %q, want empty (ws optional)", string(got))
+	}
+	if got := string(masker(`{"`).ForcedBytesRun(1)); got != `k` {
+		t.Errorf("ForcedBytesRun(max=1) = %q, want `k`", got)
+	}
+}
