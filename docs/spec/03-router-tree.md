@@ -60,6 +60,28 @@ harness measures `B` and the router reads it.
 
 Each step is independently benchable, so regressions are attributable.
 
+## Increments
+
+- **Inc 1 (done — priority router, linear):** `decoder.RouterDrafter{Sources}` returns
+  the first source's non-empty proposal (grammar → n-gram), feeding the existing
+  masked verify (`GenerateGrammarSpeculative` now takes a pluggable `Drafter` +
+  threads the generation context so an n-gram source can search it). Lossless:
+  `TestGrammarRouterSpec` — both grammar-only and the fused router are token-identical
+  to plain constrained `Generate`; the drafter only affects *which* tokens are
+  proposed, the masked verify decides.
+  - **Result (the first clear fusion win in the program):** on a generic "fill a
+    schema from prose" prompt the router = grammar-only (1.13 tok/round) — n-gram
+    can't fire because the JSON scaffolding context doesn't echo the prose. But on
+    the **agent-loop / repeated-tool-call** case (the prompt contains the JSON to
+    reproduce), the router hits **4.25 tok/round (acc 0.82) vs 1.13 grammar-only** —
+    grammar validates the structure while n-gram copies the repeated content, both
+    under one masked verify. Fusion compounds exactly where the doc predicted: output
+    that is *both* structured *and* repetitive.
+- **Inc 2 (next):** tree verification — verify multiple candidate branches per pass
+  (the data-backed lever to recover the sampled n-gram loss, where a single linear
+  chain breaks on the first probabilistic reject). The hardest correctness surface;
+  gate hard. **Inc 3:** α̂-driven allocation.
+
 ## Risks / open questions
 
 - **Verifier complexity:** tree masks + longest-path selection + correct rollback to

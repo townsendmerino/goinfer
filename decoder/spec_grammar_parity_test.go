@@ -52,8 +52,10 @@ func TestGrammarSpecParity(t *testing.T) {
 	refCh, _ := m.Generate(ctx, prompt, n, refSP)
 	ref := collectTokens(refCh)
 
-	// Grammar-fused speculative.
-	ch, g, err := m.GenerateGrammarSpeculative(ctx, prompt, n, newMask(), encode, 8, greedy)
+	// Grammar-fused speculative (grammar source only).
+	specMask := newMask()
+	gd := &GrammarDrafter{Mask: specMask, Encode: encode}
+	ch, g, err := m.GenerateGrammarSpeculative(ctx, prompt, n, specMask, gd, 8, greedy)
 	if err != nil {
 		t.Fatalf("GenerateGrammarSpeculative: %v", err)
 	}

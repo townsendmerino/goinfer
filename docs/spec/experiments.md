@@ -151,8 +151,9 @@ Rows are (spoke × its home workload). `α̅` = mean per-position acceptance.
 
 | Model | Workload | Machine | Lossless | α̅ | tok/v | speedup | build step | Status |
 |---|---|---|---|---|---|---|---|---|
-| qwen2.5-coder-1.5b | agent | mac | ⬜ | – | – | – | priority→tree→α̂ | ⬜ |
-| qwen2.5-coder-1.5b | structured | mac | ⬜ | – | – | – | priority | ⬜ |
+| qwen2.5-coder-0.5b | agent-loop (repeat tool-call) | lx | ✅ `TestGrammarRouterSpec` | – | 4.25 | – | priority (grammar+ngram) | ✅ fusion compounds: 4.25 vs 1.13 grammar-only, lossless |
+| qwen2.5-coder-0.5b | structured (prose→schema) | lx | ✅ | – | 1.13 | – | priority | ✅ router=grammar-only (n-gram can't echo prose context) |
+| qwen2.5-coder-1.5b | agent | mac | ⬜ | – | – | – | tree→α̂ | ⬜ |
 
 ### 05 — EAGLE-3 head ([doc](./05-eagle3-head.md)) · home: chat / reasoning
 
@@ -230,3 +231,4 @@ Re-rank after each analysis pass; build the spoke with the most fixable acceptan
 | 2026-06-20 | (wip) | lx | 01 grammar-fused inc 2: forced-fraction (go/no-go) | 🔎 `TestGrammarForcedFraction` real BPE: strict TOKEN-forcing 0% (prefix-ambiguity defeats it), BYTE-forcing ceiling 44–74%. GO but redesign byte-level: forced byte-run→canonical retokenize→propose (acceptance<1 via tokenization freedom, verify-lossless). Inc 3 = byte-level drafter + masked-verify integration |
 | 2026-06-20 | (wip) | lx | 01 grammar-fused inc 3: byte-level drafter + masked verify | ✅ END-TO-END: `ForcedBytesRun` + `GrammarDrafter` + `GenerateGrammarSpeculative` (CPU greedy). Masked verify with grammar clone rolled over accepted prefix; grammar advances only over emitted tokens (no rewind). `TestGrammarSpecParity` token-identical to constrained Generate; acc 0.40, 1.13 tok/round on weather JSON (forced runs fire, lossless). Modest on tiny JSON, scales w/ structural fraction. Fixed: tpos wasn't advancing (KV corruption). Follow-ups: sampled/resident, serve wiring |
 | 2026-06-20 | (wip) | lx | 01 grammar-fused inc 4: density characterization | 🔎 `TestGrammarSpecHarness` tok/round by schema density: free-string 1.10 / mixed 1.11 / enum-heavy(2-choice) 1.05 / fixed-keys(single-value) 1.45. Real lossless zero-draft win but MODEST (~1.05–1.45 tok/round), best only when keys+values fully fixed; multi-choice enums force less (choice breaks the run). Wire into serve only if cheap; not worth heavy investment |
+| 2026-06-20 | (wip) | lx | 03 router inc 1: priority router (grammar+ngram) | ✅ `RouterDrafter` + pluggable-drafter masked verify. Lossless (`TestGrammarRouterSpec` == constrained Generate). FIRST fusion win: agent-loop (repeat tool-call) 4.25 tok/round (acc 0.82) vs 1.13 grammar-only; generic prose→schema 1.13 (n-gram can't echo prose context). Inc 2 = tree verify |

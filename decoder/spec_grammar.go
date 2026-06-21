@@ -3,9 +3,31 @@ package decoder
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/townsendmerino/goinfer/constrain"
 )
+
+// RouterDrafter fuses drafters by fixed priority (03 router, increment 1): each
+// round it returns the first source that proposes anything. Order them by expected
+// acceptance × certainty — grammar (forced, ~1) before n-gram (copy) — so the
+// cheapest near-certain tokens are tried first; on a constrained request both ride
+// the same masked verify, the grammar covering structural tokens and the n-gram
+// copying free values that echo the context. (Tree verification + α̂-driven
+// allocation are increments 2–3.)
+type RouterDrafter struct {
+	Sources []Drafter
+}
+
+// Draft returns the first non-empty proposal among the sources, in priority order.
+func (r *RouterDrafter) Draft(ctx []int, k int) []int {
+	for _, s := range r.Sources {
+		if d := s.Draft(ctx, k); len(d) > 0 {
+			return d
+		}
+	}
+	return nil
+}
 
 // GrammarDrafter proposes the grammar's FORCED byte-run as draft tokens (01
 // grammar-fused). At positions where the grammar determines the bytes (inside object
@@ -38,18 +60,19 @@ func (d *GrammarDrafter) Draft(ctx []int, k int) []int {
 	return toks
 }
 
-// GenerateGrammarSpeculative is grammar-fused speculative decode (01): the grammar's
-// forced byte-runs are drafted for free and verified in one target pass, with the
-// grammar mask applied at every verified position so the output is exactly what
-// constrained Generate (sp.LogitProcessor = mask.Process) would produce — bit-exact
-// greedy (TestGrammarSpecParity). The win is on structured / tool-call output, where
-// keys and enum/const literals are grammar-determined.
+// GenerateGrammarSpeculative is grammar-masked speculative decode (01 / 03): the
+// drafter proposes tokens (a GrammarDrafter's forced byte-run, an n-gram copy, or a
+// RouterDrafter fusing them, 03), and the verify applies the grammar mask at every
+// position so the output is exactly what constrained Generate (sp.LogitProcessor =
+// mask.Process) would produce — bit-exact greedy (TestGrammarSpecParity). The grammar
+// forces structural tokens; an n-gram source additionally copies free values that
+// echo the context, all validated by the mask.
 //
 // First cut: greedy + CPU staged path. Sampling and the resident path are follow-ups;
 // the recurrent-family guard (specRollbackSafe) applies as for the n-gram path.
-func (target *Model) GenerateGrammarSpeculative(ctx context.Context, prompt []int, maxTokens int, mask *constrain.Masker, encode func(string) []int, K int, sp SamplingParams) (<-chan int, *Generation, error) {
-	if mask == nil || encode == nil {
-		return nil, nil, fmt.Errorf("decoder.GenerateGrammarSpeculative: nil mask/encode")
+func (target *Model) GenerateGrammarSpeculative(ctx context.Context, prompt []int, maxTokens int, mask *constrain.Masker, drafter Drafter, K int, sp SamplingParams) (<-chan int, *Generation, error) {
+	if mask == nil || drafter == nil {
+		return nil, nil, fmt.Errorf("decoder.GenerateGrammarSpeculative: nil mask/drafter")
 	}
 	if sp.Temperature != 0 {
 		return nil, nil, fmt.Errorf("decoder.GenerateGrammarSpeculative: greedy only for now (Temperature must be 0)")
@@ -63,7 +86,6 @@ func (target *Model) GenerateGrammarSpeculative(ctx context.Context, prompt []in
 	if K < 1 {
 		K = 8
 	}
-	drafter := &GrammarDrafter{Mask: mask, Encode: encode}
 
 	out := make(chan int)
 	stats := &SpecStats{}
@@ -100,11 +122,14 @@ func (target *Model) GenerateGrammarSpeculative(ctx context.Context, prompt []in
 			return
 		}
 
+		// hist = prompt + committed tokens, the context an n-gram source searches
+		// (the grammar source ignores it). cur is the pending next token.
+		hist := slices.Clone(prompt)
 		for {
 			// cur was confirmed last round — commit it to the live grammar, then draft
-			// the forced byte-run that follows it.
+			// from the source(s): grammar's forced byte-run and/or an n-gram copy.
 			mask.Commit(cur)
-			draftTok := drafter.Draft(nil, K)
+			draftTok := drafter.Draft(append(slices.Clone(hist), cur), K)
 			kEff := len(draftTok)
 
 			base := tpos
@@ -150,8 +175,10 @@ func (target *Model) GenerateGrammarSpeculative(ctx context.Context, prompt []in
 			// live grammar (cur was already committed above). nextTok stays pending.
 			tpos = base + 1 + accepted
 			tc.TruncateTo(tpos)
+			hist = append(hist, cur) // cur is now committed
 			for i := 0; i < accepted; i++ {
 				mask.Commit(draftTok[i])
+				hist = append(hist, draftTok[i])
 			}
 			for i := 0; i < accepted; i++ {
 				if !emit(draftTok[i]) {

@@ -48,7 +48,9 @@ func TestGrammarSpecHarness(t *testing.T) {
 		}
 		prompt, _ := tk.Encode("<|im_start|>user\nEmit a JSON object matching the schema.<|im_end|>\n<|im_start|>assistant\n", true)
 
-		ch, g, err := m.GenerateGrammarSpeculative(ctx, prompt, n, newMask(), encode, 8, greedy)
+		mask := newMask()
+		gd := &GrammarDrafter{Mask: mask, Encode: encode}
+		ch, g, err := m.GenerateGrammarSpeculative(ctx, prompt, n, mask, gd, 8, greedy)
 		if err != nil {
 			t.Fatalf("%s: %v", c.name, err)
 		}
