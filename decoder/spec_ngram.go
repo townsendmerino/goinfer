@@ -58,8 +58,51 @@ func (d *NgramDrafter) LastDraftInfo() DraftInfo { return DraftInfo{MatchLen: d.
 // Confidence is the router score of the last Draft: the suffix-match length. A
 // longer matched suffix is a more specific, more reliable copy (a long verbatim
 // repeat ⇒ high acceptance), so it should outrank grammar's forced proposal; a short
-// (possibly spurious) match should not. See grammarConf for the crossover.
-func (d *NgramDrafter) Confidence() float64 { return float64(d.lastMatch) }
+// (possibly spurious) match should not. Returns the CALIBRATED acceptance probability
+// α̂_ngram(match_len) ∈ [0,1] (the §06 artifact), so the router compares sources on a
+// common accept-prob scale instead of raw, incomparable match-length units. 0 on a
+// miss (the router skips empty proposals before consulting Confidence anyway).
+func (d *NgramDrafter) Confidence() float64 {
+	if d.lastMatch == 0 {
+		return 0
+	}
+	return ngramAlpha(d.lastMatch)
+}
+
+// ngramAlphaAnchors is α̂_ngram(match_len) — the calibrated acceptance probability by
+// suffix match length, fit (monotone non-decreasing, noise-smoothed) from the §06
+// trace measurement (TestNgramAlphaPredictor: AUC 0.818 for match_len → accept; copy-
+// heavy workloads, qwen2.5-coder-0.5b). The measured buckets were len2→0.70, len3→0.86,
+// len4→0.83 (noise), len11→0.92, len16(capped)→0.97. This is the tiny "coefficient
+// table" the §06 boundary permits in the pure-Go runtime — fit offline, evaluated as a
+// cheap interpolation on the hot path. Re-fit when a new family/workload lands (§06 §9);
+// an online per-source rate is the documented drift fallback.
+var ngramAlphaAnchors = [...]struct {
+	matchLen int
+	alpha    float64
+}{{2, 0.70}, {3, 0.86}, {11, 0.92}, {16, 0.97}}
+
+// ngramAlpha interpolates the calibrated acceptance probability for a suffix match of
+// the given length (piecewise-linear between anchors, clamped at both ends). Monotone
+// non-decreasing by construction (the anchors increase).
+func ngramAlpha(matchLen int) float64 {
+	a := ngramAlphaAnchors
+	if matchLen <= a[0].matchLen {
+		return a[0].alpha
+	}
+	last := len(a) - 1
+	if matchLen >= a[last].matchLen {
+		return a[last].alpha
+	}
+	for i := 0; i < last; i++ {
+		if matchLen <= a[i+1].matchLen {
+			lo, hi := a[i], a[i+1]
+			f := float64(matchLen-lo.matchLen) / float64(hi.matchLen-lo.matchLen)
+			return lo.alpha + f*(hi.alpha-lo.alpha)
+		}
+	}
+	return a[last].alpha
+}
 
 // Draft implements Drafter via longest-suffix prompt lookup.
 func (d *NgramDrafter) Draft(ctx []int, k int) []int {

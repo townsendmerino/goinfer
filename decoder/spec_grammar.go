@@ -63,15 +63,19 @@ type GrammarDrafter struct {
 	lastForced int // bytes in the most recent forced run (0 = abstained); for Confidence
 }
 
-// grammarConf is the router confidence of a forced grammar proposal. Set so a
-// SUBSTANTIAL n-gram copy (suffix match ≥ 4 tokens) outranks it but short/spurious
-// n-gram matches (2–3) don't — grammar's forced bytes are reliable structurally but
-// risk a tokenization mismatch (measured 2/5), so only a long, confident copy should
-// override it. Heuristic; the §06 α̂ would replace it.
-const grammarConf = 3.0
+// grammarConf is α̂_grammar: the calibrated acceptance probability of a forced grammar
+// proposal, on the SAME accept-prob scale as α̂_ngram (ngramAlpha) so the router (03)
+// compares sources principally (§06). On a constrained request the forced bytes are
+// grammar-legal by construction, so they verify unless their canonical tokenization
+// differs from the model's — generally high (~0.9), though a tokenization mismatch can
+// drop it (the 01 doc measured 2/5 on one enum). Crossover vs n-gram now lands near
+// match_len≈8 (ngramAlpha(8)≈0.90), so a short copy yields to grammar and a long
+// verbatim copy overrides it. Stand-in pending a trace-fit α̂_grammar (the §06 follow-up
+// needs a grammar-source tracer); 0.90 is a documented calibrated constant, not raw.
+const grammarConf = 0.90
 
-// Confidence reports the router score of the last Draft: grammarConf when the grammar
-// forced something, 0 when it abstained.
+// Confidence reports the calibrated acceptance probability α̂_grammar when the grammar
+// forced something this Draft, 0 when it abstained (the router skips empty proposals).
 func (d *GrammarDrafter) Confidence() float64 {
 	if d.lastForced > 0 {
 		return grammarConf

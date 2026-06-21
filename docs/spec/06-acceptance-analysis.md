@@ -6,6 +6,37 @@
 > diagnostic report, and a go/no-go signal for each spoke. Hand this to whoever runs
 > the experiments.
 
+## Status (2026-06-21): first α̂ artifact shipped — calibrated α̂_ngram, wired into the router
+
+The trace foundation and the first calibrated predictor are built and gated, following
+the doc's rule to *measure predictability before shipping anything heavier*:
+
+- **Emitter (§2):** `decoder.SpecTrace` (schema-matched) + the `specTracer` hook in the
+  n-gram path + `TraceCollector` (JSONL sink, `MeanAccept`). The harness dumps the §06
+  dataset with `GINFER_SPECTRACE_OUT`.
+- **Predictability verdict (§6):** `TestNgramAlphaPredictor` runs the copy-heavy
+  workloads, buckets traces by suffix `match_len`, and reports the calibration curve +
+  AUC. Result (qwen2.5-coder-0.5b): **match_len → accept AUC = 0.818**, monotone curve
+  (len2 → 0.70, len3 → 0.86, len11 → 0.92, len16-capped → 0.97). So acceptance IS
+  predictable from the one cheap draft-time feature — the minimal 1-D predictor suffices;
+  no tree ensemble, no Python needed (§4 ladder stops at step 1).
+- **Artifact + wiring (§9):** `ngramAlpha(match_len)` — a tiny monotone interpolation
+  table fit from that curve (the "small coefficient table" the §0 boundary permits in
+  the pure-Go runtime). `NgramDrafter.Confidence` now returns this **calibrated accept
+  probability** instead of raw match-length, and `grammarConf` is set on the same
+  accept-prob scale (α̂_grammar ≈ 0.90), so the [03 router](./03-router-tree.md) compares
+  sources principally. This fixes the heuristic's bug — a `match_len`=2 copy (only ~0.70
+  accept) no longer outranks grammar, while a long verbatim copy (~0.97) still does.
+  Routing only affects speed (the verify is lossless either way); `TestGrammarRouterSpec`
+  holds at 5.67 tok/round on the agent loop, `TestNgramAlphaTable` gates monotonicity +
+  range.
+
+Remaining §06 follow-ups (unfunded unless the win justifies): a trace-fit **α̂_grammar**
+(needs a grammar-source tracer; 0.90 is a documented stand-in), the **online per-source
+rate** drift fallback (§9), cross-workload held-out validation (§3 — the fit above is on
+copy-heavy workloads with one small model), and the offline GBM path (§4) only if a
+future source's acceptance proves un-predictable from 1-D features.
+
 ## 0. The boundary (keep the runtime pure-Go)
 
 The runtime's only two jobs here are: **(a)** emit `SpecTrace` JSONL behind a build
