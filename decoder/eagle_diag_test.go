@@ -41,12 +41,8 @@ func TestEagleAgreementSweep(t *testing.T) {
 	const steps = 32
 
 	configs := [][]int{
-		{2, 14, 25},
-		{3, 13, 24},
-		{7, 14, 21},
-		{4, 14, 23},
-		{2, 13, 24},
-		{5, 14, 24},
+		{2, 14, 25}, {2, 14, 26}, {3, 14, 25}, {2, 15, 25},
+		{1, 14, 26}, {0, 14, 25}, {2, 9, 25}, {2, 18, 25},
 	}
 	for _, cap := range configs {
 		// fresh greedy decode, drafting at each step.
@@ -74,7 +70,7 @@ func TestEagleAgreementSweep(t *testing.T) {
 			emb := make([]float32, hid)
 			base.embedToken(cur, emb)
 			st := head.NewState()
-			draft := head.Step(base.be, emb, feat, len(prompt)+s-1, st)
+			draft, _ := head.Step(base.be, emb, feat, len(prompt)+s-1, st)
 			if head.TargetID(argmax(draft)) == baseNext {
 				agree++
 			}

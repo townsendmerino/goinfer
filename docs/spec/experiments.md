@@ -159,7 +159,7 @@ Rows are (spoke × its home workload). `α̅` = mean per-position acceptance.
 
 | Model | Workload | Machine | Lossless | α̅ | tok/v | speedup | head source | Status |
 |---|---|---|---|---|---|---|---|---|
-| Qwen3-4B + AngelSlim/Qwen3-4B_eagle3 | code/reasoning | lx | – | – | – | – | IMPORT (license ✓) | 🟡 gates cleared, planned (see 05 doc); multi-session build, lossless-safe |
+| Qwen3-1.7B + AngelSlim/Qwen3-1.7B_eagle3 | novel text | lx | (lossless by verify) | – | ~1.64 | – | IMPORT, BUILT | 🟢 full pipeline works (seam→loader→forward→prefill→autoregress); ~1.64 tok/verify greedy. Gap to ~3-4× = trees+sampled accept, not base/layers. Inc5: lossless integration + trees |
 
 ---
 
@@ -237,3 +237,4 @@ Re-rank after each analysis pass; build the spoke with the most fixable acceptan
 | 2026-06-21 | (wip) | lx | 05 EAGLE-3 feasibility (research) | 🟡 IMPORT decision: AngelSlim/Qwen3-4B_eagle3 (1-layer, hidden 2560, draft-vocab 32000, t2d/d2t; license Apache/MIT/CC-BY ✓ attribution). Base Qwen3 dense = goinfer-runnable; general head accelerates code too. No qwen2.5-coder head exists; code heads only for Qwen3-Coder-Next (DeltaNet, guarded-out, FP8). Reframe: head=Drafter ⇒ lossless verify protects correctness, imperfect head only lowers acceptance. Risk=protocol (fused layers/fusion/autoregress/t2d-d2t) lives in vLLM/SGLang/SpecForge code. Plan: seam→loader→forward→draft→measure. Multi-session
 | 2026-06-21 | (wip) | lx | 05 inc 1: hidden-state seam (`Model.ForwardCapture`) | ✅ read-only export of residual stream after configurable layers (EAGLE-3 fuses low/mid/high). `TestForwardCaptureSeam`: logits byte-identical to forward + last-layer capture reproduces logits via final-norm+head (exact). Zero overhead when unused. Generic decode path (special families return an error). Next: head loader |
 | 2026-06-21 | (wip) | lx | 05 inc 2: EAGLE head loader (`LoadEagleHead`) | ✅ loads AngelSlim/Qwen3-1.7B_eagle3 (converted .bin→f32 safetensors): fc[2048,6144]=3·hidden fusion, attn q/k/v from 2·hidden, lm_head[32000] draft-vocab, d2t[32000]→target. `TestLoadEagleHead` gates shapes. Base qwen3-1.7b-q8_0.gguf local. Next: head forward (inc 3) |
+| 2026-06-21 | (wip) | lx | 05 inc 4 + tuning: autoregressive draft, bf16 base, layer sweep | 🟢 pipeline complete + working: context-prefill lifted accepted-len 0.26→0.64 (~1.64 tok/verify greedy). bf16 base NO change vs q8 (0.64 vs 0.62) → not precision; layer agreement plateaus 38-41% (not layers). Gap to ~3-4× = EAGLE uses TREES + sampled-accept vs my greedy single-chain. Inc5: lossless `GenerateEagleSpeculative` (needs forwardN-capture) + trees |

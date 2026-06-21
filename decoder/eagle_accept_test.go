@@ -3,6 +3,7 @@ package decoder
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/tokenizer"
@@ -28,12 +29,21 @@ func TestEagleAcceptedLength(t *testing.T) {
 		t.Fatalf("LoadEagleHead: %v", err)
 	}
 	defer head.Close()
-	base, err := Load(basePath, Options{Quant: "int8int8"})
+	// GINFER_EAGLE_BASE overrides the base (e.g. a bf16 safetensors dir — the head was
+	// trained on bf16 hidden states, so q8 likely depresses acceptance). f32 for a dir.
+	loadPath, quant := basePath, "int8int8"
+	if b := os.Getenv("GINFER_EAGLE_BASE"); b != "" {
+		loadPath = b
+		if !strings.HasSuffix(b, ".gguf") {
+			quant = "" // safetensors dir → f32 (max fidelity to the head's training)
+		}
+	}
+	base, err := Load(loadPath, Options{Quant: quant})
 	if err != nil {
-		t.Fatalf("Load base: %v", err)
+		t.Fatalf("Load base %s: %v", loadPath, err)
 	}
 	defer base.Close()
-	tk, _ := tokenizer.LoadGGUF(basePath)
+	tk, _ := tokenizer.LoadGGUF(basePath) // tokenizer (same vocab) from the local gguf
 	L := base.w.arch.NumLayers
 	capLayers := []int{2, L / 2, L - 3}
 	embedOf := func(tok int, dst []float32) { base.embedToken(tok, dst) }

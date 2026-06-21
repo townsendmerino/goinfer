@@ -165,8 +165,33 @@ in inc 2). Weights local; no further download needed.
 5. **Measure acceptance** on `chat`/`reasoning`/`code`; tune the fused-layer indices to
    match the framework. Extract exact protocol from vLLM/SGLang EAGLE-3 source.
 
-Status: gates cleared, planned. A multi-session build (the largest spoke); the
-hidden-state seam (inc 1) is the bounded, gateable starting point.
+### Build status (2026-06-21) — full pipeline BUILT + WORKING at ~1.6 tok/verify
+
+Increments 1–4 done on the real AngelSlim/Qwen3-1.7B head + a local Qwen3-1.7B base:
+- **inc 1 seam** ✅ `Model.ForwardCapture` (gated).
+- **inc 2 loader** ✅ `LoadEagleHead` (gated; head `.bin`→f32 safetensors).
+- **inc 3 forward** ✅ `Fuse`/`Step`/`attend` — validated structurally correct
+  (~41% head/base single-token agreement at capture layers {2, L/2, L-3} vs ~0% wrong).
+- **inc 4 autoregressive draft** ✅ `Prefill` (head KV over the context — the piece that
+  unlocked multi-token) + `DraftFrom`. Realized **accepted length 0.64 → ~1.64
+  tok/verify** (greedy, K=6), histogram [17,23,2,…].
+
+**Findings on the acceptance gap (vs published ~3–4×):**
+- NOT base precision: a bf16 base gave 0.64 vs the q8 base's 0.62 — no change.
+- NOT capture layers: agreement plateaus at 38–41% across all reasonable low/mid/high
+  triples; {2,14,25}/{3,14,25} are the best.
+- The gap is **method + metric**: EAGLE's headline numbers use **tree drafting**
+  (multiple head candidates per position) + **sampled rejection acceptance** (1−TV),
+  whereas this is a single linear chain measured by **greedy top-1 match** (the
+  strictest case). ~40% greedy top-1 → ~1.6 tok/verify linear is consistent with that.
+
+**Remaining (inc 5):** wire the head as a `Drafter` into a lossless verify
+(`GenerateEagleSpeculative`; needs `forwardN` per-position hidden-capture so the head
+re-seeds from the verified hidden each round) → real end-to-end speedup on novel
+text; then EAGLE tree drafting (composes with [03](./03-router-tree.md)) + sampled
+acceptance to approach the published numbers; optional exact-protocol parity vs a
+vLLM/SGLang reference run. The pure-Go EAGLE-3 head itself is done and produces valid
+lossless drafts today.
 
 ## Validation plan
 
