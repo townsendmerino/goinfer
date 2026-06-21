@@ -79,8 +79,10 @@ func TestEagleAcceptedLength(t *testing.T) {
 
 	// At each position i (past the prompt), prefill the head's KV over toks[:i] then
 	// draft K and compare to the realized continuation toks[i+1..].
-	var sumAcc, n int
+	var sumAcc, sumOracle, n int
+	var cosPre, cosPost float64
 	hist := make([]int, K+1)
+	emb := make([]float32, head.Hidden())
 	for i := len(prompt); i+K < len(toks); i++ {
 		st := head.Prefill(base.be, embedOf, toks[:i], feats[:i], 0)
 		draft := head.DraftFrom(base.be, st, embedOf, toks[i], feats[i], i, K)
@@ -94,11 +96,40 @@ func TestEagleAcceptedLength(t *testing.T) {
 		}
 		sumAcc += acc
 		hist[acc]++
+
+		// ORACLE recurrence: feed the TARGET's actual feature at each step (instead of the
+		// head's own hidden output). Isolates whether the self-recurrence feature is the
+		// multi-step weak link (oracle≫self) vs attention/position (oracle≈self).
+		sto := head.Prefill(base.be, embedOf, toks[:i], feats[:i], 0)
+		oacc, tok := 0, toks[i]
+		for j := 0; j < K; j++ {
+			base.embedToken(tok, emb)
+			lg, _ := head.Step(base.be, emb, feats[i+j], i+j, sto)
+			if head.TargetID(argmax(lg)) != toks[i+1+j] {
+				break
+			}
+			oacc++
+			tok = toks[i+1+j]
+		}
+		sumOracle += oacc
+
+		// How well does each candidate recurrence quantity predict the NEXT fused feature
+		// feats[i+1] (what step-0's output must become)? cos(pre-norm resid) vs
+		// cos(post-finalNorm). The oracle feeds feats[i+1] exactly.
+		stp := head.Prefill(base.be, embedOf, toks[:i], feats[:i], 0)
+		base.embedToken(toks[i], emb)
+		_, hOut := head.Step(base.be, emb, feats[i], i, stp)
+		post := append([]float32(nil), hOut...)
+		rmsNorm(post, head.finalNorm, 1, head.Hidden(), head.normEps, false)
+		cosPre += cosine(hOut, feats[i+1])
+		cosPost += cosine(post, feats[i+1])
 		n++
 	}
 	mean := float64(sumAcc) / float64(n)
-	t.Logf("EAGLE autoregressive accept (K=%d, %d positions): mean accepted %.2f → ~%.2f tok/verify | histogram %v",
-		K, n, mean, mean+1, hist)
+	t.Logf("EAGLE autoregressive accept (K=%d, %d positions): mean accepted %.2f → ~%.2f tok/verify | histogram %v | ORACLE-feature mean %.2f",
+		K, n, mean, mean+1, hist, float64(sumOracle)/float64(n))
+	t.Logf("recurrence-feature vs next fused feature: cos(pre-norm resid)=%.3f cos(post-finalNorm)=%.3f",
+		cosPre/float64(n), cosPost/float64(n))
 	// INC-4a FINDING: step-0 matches ~26-41% (the validated forward), but steps 1+ are
 	// ~0 — the head's attention KV starts EMPTY here, so it has no prompt context. A
 	// real EAGLE head keeps its own KV over the prompt (context-prefill), which needs
