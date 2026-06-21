@@ -8,25 +8,45 @@ import (
 	"github.com/townsendmerino/goinfer/constrain"
 )
 
-// RouterDrafter fuses drafters by fixed priority (03 router, increment 1): each
-// round it returns the first source that proposes anything. Order them by expected
-// acceptance × certainty — grammar (forced, ~1) before n-gram (copy) — so the
-// cheapest near-certain tokens are tried first; on a constrained request both ride
-// the same masked verify, the grammar covering structural tokens and the n-gram
-// copying free values that echo the context. (Tree verification + α̂-driven
-// allocation are increments 2–3.)
+// ConfidentDrafter reports a confidence for its most recent Draft, so RouterDrafter
+// can order sources by predicted acceptance per position (03 inc 3) rather than a
+// fixed priority. Higher = more likely accepted. (A heuristic stand-in for the §06
+// trained α̂; calibration is a follow-up.)
+type ConfidentDrafter interface {
+	Drafter
+	Confidence() float64
+}
+
+// RouterDrafter fuses drafters (03 router): each round it polls every source and
+// returns the proposal of the most CONFIDENT one (inc 3). This captures the inc-2
+// "tree-recoverable" upside without a tree — the measurement showed the linear
+// grammar-first priority mis-picked where a long n-gram copy was the reliable choice
+// (n-gram 15/15 vs grammar 2/5 under tokenization), and confidence ordering prefers
+// the long copy. Sources without a Confidence() score rank at 0; ties keep source
+// order. On a constrained request all ride the same masked verify, so the choice
+// only affects speed, never correctness.
 type RouterDrafter struct {
 	Sources []Drafter
 }
 
-// Draft returns the first non-empty proposal among the sources, in priority order.
+// Draft returns the most-confident source's non-empty proposal this position.
 func (r *RouterDrafter) Draft(ctx []int, k int) []int {
+	var best []int
+	bestConf := -1.0
 	for _, s := range r.Sources {
-		if d := s.Draft(ctx, k); len(d) > 0 {
-			return d
+		d := s.Draft(ctx, k)
+		if len(d) == 0 {
+			continue
+		}
+		conf := 0.0
+		if cd, ok := s.(ConfidentDrafter); ok {
+			conf = cd.Confidence()
+		}
+		if conf > bestConf {
+			best, bestConf = d, conf
 		}
 	}
-	return nil
+	return best
 }
 
 // GrammarDrafter proposes the grammar's FORCED byte-run as draft tokens (01
@@ -39,6 +59,24 @@ type GrammarDrafter struct {
 	Mask     *constrain.Masker  // the live grammar mask (advanced over committed tokens)
 	Encode   func(string) []int // tokenizer: forced bytes → canonical token ids
 	MaxBytes int                // cap on the forced byte-run probed per round (default 64)
+
+	lastForced int // bytes in the most recent forced run (0 = abstained); for Confidence
+}
+
+// grammarConf is the router confidence of a forced grammar proposal. Set so a
+// SUBSTANTIAL n-gram copy (suffix match ≥ 4 tokens) outranks it but short/spurious
+// n-gram matches (2–3) don't — grammar's forced bytes are reliable structurally but
+// risk a tokenization mismatch (measured 2/5), so only a long, confident copy should
+// override it. Heuristic; the §06 α̂ would replace it.
+const grammarConf = 3.0
+
+// Confidence reports the router score of the last Draft: grammarConf when the grammar
+// forced something, 0 when it abstained.
+func (d *GrammarDrafter) Confidence() float64 {
+	if d.lastForced > 0 {
+		return grammarConf
+	}
+	return 0
 }
 
 // Draft returns the canonical tokenization of the grammar's forced byte-run from the
@@ -50,6 +88,7 @@ func (d *GrammarDrafter) Draft(ctx []int, k int) []int {
 		mb = 64
 	}
 	bytes := d.Mask.ForcedBytesRun(mb)
+	d.lastForced = len(bytes)
 	if len(bytes) == 0 {
 		return nil
 	}

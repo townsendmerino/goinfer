@@ -151,7 +151,7 @@ Rows are (spoke × its home workload). `α̅` = mean per-position acceptance.
 
 | Model | Workload | Machine | Lossless | α̅ | tok/v | speedup | build step | Status |
 |---|---|---|---|---|---|---|---|---|
-| qwen2.5-coder-0.5b | agent-loop (repeat tool-call) | lx | ✅ `TestGrammarRouterSpec` | – | 4.25 | – | priority (grammar+ngram) | ✅ fusion compounds: 4.25 vs 1.13 grammar-only, lossless |
+| qwen2.5-coder-0.5b | agent-loop (repeat tool-call) | lx | ✅ `TestGrammarRouterSpec` | – | 5.67 | – | confidence (inc 3) | ✅ confidence-router 5.67 (inc-1 priority 4.25, grammar-only 1.13), lossless |
 | qwen2.5-coder-0.5b | structured (prose→schema) | lx | ✅ | – | 1.13 | – | priority | ✅ router=grammar-only (n-gram can't echo prose context) |
 | qwen2.5-coder-1.5b | agent | mac | ⬜ | – | – | – | tree→α̂ | ⬜ |
 
@@ -233,3 +233,4 @@ Re-rank after each analysis pass; build the spoke with the most fixable acceptan
 | 2026-06-20 | (wip) | lx | 01 grammar-fused inc 4: density characterization | 🔎 `TestGrammarSpecHarness` tok/round by schema density: free-string 1.10 / mixed 1.11 / enum-heavy(2-choice) 1.05 / fixed-keys(single-value) 1.45. Real lossless zero-draft win but MODEST (~1.05–1.45 tok/round), best only when keys+values fully fixed; multi-choice enums force less (choice breaks the run). Wire into serve only if cheap; not worth heavy investment |
 | 2026-06-20 | (wip) | lx | 03 router inc 1: priority router (grammar+ngram) | ✅ `RouterDrafter` + pluggable-drafter masked verify. Lossless (`TestGrammarRouterSpec` == constrained Generate). FIRST fusion win: agent-loop (repeat tool-call) 4.25 tok/round (acc 0.82) vs 1.13 grammar-only; generic prose→schema 1.13 (n-gram can't echo prose context). Inc 2 = tree verify |
 | 2026-06-21 | (wip) | lx | 03 router inc 2: tree verification (go/no-go) | 🔴 DEFERRED (kill-gate). `TestTreeUpside`: 17.6% positions tree-recoverable on agent-loop, BUT it's priority-order suboptimality not a missing tree — grammar 2/5 correct (tokenization) vs n-gram 15/15; n-gram-FIRST 15/17 vs grammar-first 12/17 captures ALL of it by reordering. Tree's unique residual value ~0. Tree-mask forward (hardest build: non-contiguous attn mask × CPU/resident/int8/ring) NOT worth it. Inc 3 (α̂/confidence source selection) captures the win cheaply |
+| 2026-06-21 | (wip) | lx | 03 router inc 3: confidence-driven source selection | ✅ `RouterDrafter` takes most-confident source (n-gram match-len vs grammar const `grammarConf`). Captures the inc-2 tree upside cheaply: agent-loop 4.25→**5.67 tok/round** (acc 0.94), generic prose→schema 1.13 (NO regression). Lossless (`TestGrammarRouterSpec`, both cases). Tree-mask forward correctly skipped. Follow-up: swap heuristic for §06 α̂ |

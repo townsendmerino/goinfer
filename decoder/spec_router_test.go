@@ -37,7 +37,6 @@ func TestGrammarRouterSpec(t *testing.T) {
 	// the whole object — including the free value the grammar leaves open — in long
 	// runs, while the grammar validates. This is where grammar+n-gram compound.
 	priorJSON := "{\n  \"location\": \"Paris\",\n  \"unit\": \"celsius\"\n}"
-	prompt, _ := tk.Encode("<|im_start|>user\nRepeat this JSON exactly:\n"+priorJSON+"<|im_end|>\n<|im_start|>assistant\n", true)
 	newMask := func() *constrain.Masker {
 		g, gerr := constrain.JSONSchema([]byte(schema))
 		if gerr != nil {
@@ -46,44 +45,50 @@ func TestGrammarRouterSpec(t *testing.T) {
 		return constrain.NewMasker(g, vocabBytes, m.eosIDs).StopWhenComplete()
 	}
 
-	// Reference: plain constrained Generate.
-	refSP := greedy
-	refSP.LogitProcessor = newMask().Process
-	refCh, _ := m.Generate(ctx, prompt, n, refSP)
-	ref := collectTokens(refCh)
+	cases := []struct {
+		name, prompt string
+	}{
+		// agent-loop: prompt holds the JSON to reproduce ⇒ n-gram copies it (fusion win).
+		{"agent-loop", "<|im_start|>user\nRepeat this JSON exactly:\n" + priorJSON + "<|im_end|>\n<|im_start|>assistant\n"},
+		// generic prose→schema: no repeat ⇒ n-gram shouldn't fire / mislead (no regression).
+		{"prose", "<|im_start|>user\nWeather for Paris in celsius as JSON.<|im_end|>\n<|im_start|>assistant\n"},
+	}
 
-	run := func(d Drafter) ([]int, *SpecStats) {
-		mask := newMask()
-		// rebind any GrammarDrafter source to this run's mask
-		if rd, ok := d.(*RouterDrafter); ok {
-			for _, s := range rd.Sources {
-				if gd, ok := s.(*GrammarDrafter); ok {
-					gd.Mask = mask
+	for _, c := range cases {
+		prompt, _ := tk.Encode(c.prompt, true)
+		refSP := greedy
+		refSP.LogitProcessor = newMask().Process
+		ref := collectTokens(first(m.Generate(ctx, prompt, n, refSP)))
+
+		run := func(d Drafter) ([]int, *SpecStats) {
+			mask := newMask()
+			if rd, ok := d.(*RouterDrafter); ok {
+				for _, s := range rd.Sources {
+					if gd, ok := s.(*GrammarDrafter); ok {
+						gd.Mask = mask
+					}
 				}
+			} else if gd, ok := d.(*GrammarDrafter); ok {
+				gd.Mask = mask
 			}
-		} else if gd, ok := d.(*GrammarDrafter); ok {
-			gd.Mask = mask
+			ch, g, err := m.GenerateGrammarSpeculative(ctx, prompt, n, mask, d, 8, greedy)
+			if err != nil {
+				t.Fatalf("%s: %v", c.name, err)
+			}
+			return collectTokens(ch), g.Spec
 		}
-		ch, g, err := m.GenerateGrammarSpeculative(ctx, prompt, n, mask, d, 8, greedy)
-		if err != nil {
-			t.Fatalf("spec: %v", err)
+
+		grOnly, gs := run(&GrammarDrafter{Encode: encode})
+		router, rs := run(&RouterDrafter{Sources: []Drafter{&GrammarDrafter{Encode: encode}, &NgramDrafter{}}})
+
+		if !slices.Equal(grOnly, ref) || !slices.Equal(router, ref) {
+			t.Fatalf("%s: spec != constrained greedy (fusion broke losslessness)", c.name)
 		}
-		return collectTokens(ch), g.Spec
-	}
-
-	grOnly, gs := run(&GrammarDrafter{Encode: encode})
-	router, rs := run(&RouterDrafter{Sources: []Drafter{&GrammarDrafter{Encode: encode}, &NgramDrafter{}}})
-
-	if !slices.Equal(grOnly, ref) {
-		t.Fatalf("grammar-only != constrained greedy")
-	}
-	if !slices.Equal(router, ref) {
-		t.Fatalf("router != constrained greedy (fusion broke losslessness)")
-	}
-	t.Logf("grammar-only: %.2f tok/round (acc %.3f) | router(grammar+ngram): %.2f tok/round (acc %.3f)",
-		gs.TokensPerRound(), gs.AcceptanceRate(), rs.TokensPerRound(), rs.AcceptanceRate())
-	if rs.TokensPerRound() < gs.TokensPerRound()-1e-6 {
-		t.Errorf("router committed fewer tok/round (%.2f) than grammar alone (%.2f) — fusion should not regress",
-			rs.TokensPerRound(), gs.TokensPerRound())
+		t.Logf("%-10s grammar-only %.2f tok/round (acc %.3f) | confidence-router %.2f tok/round (acc %.3f)",
+			c.name, gs.TokensPerRound(), gs.AcceptanceRate(), rs.TokensPerRound(), rs.AcceptanceRate())
+		if rs.TokensPerRound() < gs.TokensPerRound()-1e-6 {
+			t.Errorf("%s: router %.2f tok/round < grammar-only %.2f — selection regressed",
+				c.name, rs.TokensPerRound(), gs.TokensPerRound())
+		}
 	}
 }

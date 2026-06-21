@@ -92,10 +92,20 @@ Each step is independently benchable, so regressions are attributable.
     cheap source SELECTION. Trees would only add value for genuinely-competing,
     equally-plausible sources or sampled multi-branch — neither validated, both far
     less than the build cost.
-- **Inc 3 (the actual next lever):** α̂ / confidence-driven source selection — order
-  sources per position by predicted acceptance (n-gram match length, grammar-forced
-  flag) instead of a fixed grammar-first priority. Cheap, and it captures the inc-2
-  upside (15/17 vs 12/17). This is where the remaining router win is.
+- **Inc 3 (done — confidence-driven source selection):** `RouterDrafter` now polls
+  every source and takes the most CONFIDENT proposal (`ConfidentDrafter.Confidence`):
+  n-gram = suffix-match length (a long verbatim copy is reliable), grammar = a modest
+  constant (`grammarConf`, set so a ≥4-token copy outranks it but short/spurious
+  matches don't — grammar's forced bytes risk a tokenization mismatch). A heuristic
+  stand-in for the §06 trained α̂.
+  - **Result (captures the inc-2 tree upside, cheaply, lossless):** agent-loop **5.67
+    tok/round** (acc 0.94) — up from inc-1 fixed-priority's 4.25 and grammar-only's
+    1.13; generic prose→schema stays **1.13 (no regression)** — n-gram doesn't fire
+    without a real repeat. `TestGrammarRouterSpec` gates both (== constrained greedy +
+    no-regress). So the project's hardest build (the tree-mask forward) was correctly
+    skipped: a per-position confidence pick recovers its upside.
+  - Follow-up: replace the heuristic confidence with the §06 α̂ (per-source, calibrated)
+    once that pipeline exists; add more sources (05 head) to the same router.
 
 ## Risks / open questions
 

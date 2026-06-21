@@ -55,6 +55,12 @@ type TracingDrafter interface {
 // LastDraftInfo reports the suffix-match length behind the most recent Draft.
 func (d *NgramDrafter) LastDraftInfo() DraftInfo { return DraftInfo{MatchLen: d.lastMatch} }
 
+// Confidence is the router score of the last Draft: the suffix-match length. A
+// longer matched suffix is a more specific, more reliable copy (a long verbatim
+// repeat ⇒ high acceptance), so it should outrank grammar's forced proposal; a short
+// (possibly spurious) match should not. See grammarConf for the crossover.
+func (d *NgramDrafter) Confidence() float64 { return float64(d.lastMatch) }
+
 // Draft implements Drafter via longest-suffix prompt lookup.
 func (d *NgramDrafter) Draft(ctx []int, k int) []int {
 	d.lastMatch = 0
