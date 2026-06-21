@@ -77,10 +77,25 @@ Each step is independently benchable, so regressions are attributable.
     grammar validates the structure while n-gram copies the repeated content, both
     under one masked verify. Fusion compounds exactly where the doc predicted: output
     that is *both* structured *and* repetitive.
-- **Inc 2 (next):** tree verification — verify multiple candidate branches per pass
-  (the data-backed lever to recover the sampled n-gram loss, where a single linear
-  chain breaks on the first probabilistic reject). The hardest correctness surface;
-  gate hard. **Inc 3:** α̂-driven allocation.
+- **Inc 2 (DEFERRED — kill-gated):** before building tree verification (the project's
+  hardest surface — a non-contiguous tree-attention mask across the CPU / resident /
+  int8-KV / ring attention paths), `TestTreeUpside` measured the upside on the
+  agent-loop case (where the router already wins 4.25 tok/round):
+  - **17.6% of positions are "tree-recoverable"** (the chosen source's token rejected,
+    another source's token was the model's pick). Looks material — but:
+  - the cause is **priority-order suboptimality, not a missing tree**: grammar
+    proposed 5 tokens but only 2 were right (tokenization mismatch), while n-gram was
+    15/15. **n-gram-first scores 15/17 vs grammar-first 12/17 — reordering captures
+    ALL the tree-recoverable positions** with zero new infrastructure. The tree's
+    *unique* residual value (positions where neither source is right) is ~0.
+  - **Verdict: defer the tree-mask forward.** Its measured upside is captured by
+    cheap source SELECTION. Trees would only add value for genuinely-competing,
+    equally-plausible sources or sampled multi-branch — neither validated, both far
+    less than the build cost.
+- **Inc 3 (the actual next lever):** α̂ / confidence-driven source selection — order
+  sources per position by predicted acceptance (n-gram match length, grammar-forced
+  flag) instead of a fixed grammar-first priority. Cheap, and it captures the inc-2
+  upside (15/17 vs 12/17). This is where the remaining router win is.
 
 ## Risks / open questions
 
