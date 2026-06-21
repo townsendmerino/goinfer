@@ -106,6 +106,40 @@ fund the hot-path multi-arch runner surgery on this evidence. Possible (unfunded
 levers if revisited: quantize-into-combined-buffer + offset-bind reads to delete the
 gather/scatter; measure at larger M and larger hidden; profile bandwidth vs ALU.
 
+
+
+## Large-dim re-measure (2026-06-21): amortization IS there for BIG models + SHORT drafts
+
+Ran the unfunded lever the conclusion flagged ("measure at larger M and larger hidden")
+— `gpu/decodetoken_largedim_bench_test.go` (`TestDecodeTokenFusedBatched_largedim`),
+batched-vs-per-row×M on the 2070S, synthetic layers (L small to fit 8 GB):
+
+Dim ladder @ M=8: qwen0.5b **0.79–0.86×** · llama7b **0.98–1.09×** · llama13b
+**1.02–1.04×** (MHA: 40 KV heads ⇒ per-row attention dilutes the projection win) ·
+llama70b-layer **1.18–1.37×**. So the bandwidth-bound amortization **does appear** as
+hidden/inter grow — Stage B is NOT dead for large models.
+
+M-sweep @ 70B dims (h=8192, inter=28672): **M=4 1.58× · M=8 1.28× · M=16 1.18× ·
+M=32 1.13× · M=48 1.12×**. The amortization is **best at SMALL M and DECAYS with M** —
+the multi-row kernel is compute-bound (M× ALU per weight load), so wide batches lose
+the win. This is the key strategic flip:
+
+- **Trees are the WRONG structure for Stage B.** A big EAGLE tree (M=32–48 nodes) gets
+  only ~1.1× — the per-node ALU swamps the weight-reuse saving. Trees help CPU
+  tok/verify but kill GPU verify amortization.
+- **Short LINEAR drafts (K≈4) are right.** At 70B, M=4 = 1.58×. With a GPU-resident
+  drafter (head draft cost negligible vs a 70B target decode) and chat-regime
+  acceptance (~2 of 4), end-to-end ≈ (a+1)/(M/1.58): a=2 → ~1.2×, a=3 → ~1.58×. A
+  real, modest win.
+
+**Refined verdict:** Stage B is **conditional-GO for large (≈70B-class) models with a
+short, GPU-resident drafter**, NO-GO for small models and for trees. The remaining
+blockers are real: (1) a 70B model needs a >8 GB GPU to run resident (the test box
+can't — measured on synthetic single layers), (2) the GPU-resident drafter must make
+the draft ~free, (3) the high-risk multi-arch runner surgery still stands. So: not dead,
+but it only pays in a regime this hardware can't host — park it behind "have a big GPU +
+a large model we want to serve fast", then it's worth the build.
+
 ## Risks
 
 - **Hot-path, multi-arch surgery** in the resident `DecodeRunner` (its fused `steps`
