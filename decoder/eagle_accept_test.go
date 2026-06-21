@@ -41,17 +41,13 @@ func TestEagleAcceptedLength(t *testing.T) {
 	prompt, _ := tk.Encode("Write a short paragraph about the history of computing and its impact on society.", true)
 	const M, K = 48, 6
 
+	// Capture the target's fused feature at EVERY position (whole prompt + M greedy
+	// continuation), so the head can prefill its KV over the full context.
 	cache := base.NewCache(len(prompt) + M + 4)
-	for i := 0; i < len(prompt)-1; i++ {
-		base.forward(prompt[i], cache)
-	}
-	cur := prompt[len(prompt)-1]
-	pos := len(prompt) - 1
-
-	var toks []int        // token at each step position
-	var feats [][]float32 // fused target feature at each step position
-	for s := 0; s < M; s++ {
-		logits, hid, err := base.ForwardCapture(cur, cache, capLayers)
+	var toks []int        // token at each absolute position (from 0)
+	var feats [][]float32 // fused target feature at each position
+	feed := func(tok int) int {
+		logits, hid, err := base.ForwardCapture(tok, cache, capLayers)
 		if err != nil {
 			t.Fatalf("ForwardCapture: %v", err)
 		}
@@ -59,17 +55,25 @@ func TestEagleAcceptedLength(t *testing.T) {
 		for _, h := range hid {
 			h3 = append(h3, h...)
 		}
-		toks = append(toks, cur)
+		toks = append(toks, tok)
 		feats = append(feats, head.Fuse(base.be, h3))
-		cur = argmax(logits)
-		pos++
+		return argmax(logits)
 	}
-	// the realized greedy continuation after position i is toks[i+1], toks[i+2], ...
-	startPos := len(prompt) - 1
+	var next int
+	for _, id := range prompt {
+		next = feed(id) // teacher-forced over the prompt
+	}
+	for s := 0; s < M; s++ {
+		next = feed(next) // greedy continuation
+	}
+
+	// At each position i (past the prompt), prefill the head's KV over toks[:i] then
+	// draft K and compare to the realized continuation toks[i+1..].
 	var sumAcc, n int
-	hist := make([]int, K+1) // accepted-length histogram
-	for i := 0; i+K < len(toks); i++ {
-		draft := head.Draft(base.be, embedOf, toks[i], feats[i], startPos+i, K)
+	hist := make([]int, K+1)
+	for i := len(prompt); i+K < len(toks); i++ {
+		st := head.Prefill(base.be, embedOf, toks[:i], feats[:i], 0)
+		draft := head.DraftFrom(base.be, st, embedOf, toks[i], feats[i], i, K)
 		acc := 0
 		for j := 0; j < K; j++ {
 			if draft[j] == toks[i+1+j] {

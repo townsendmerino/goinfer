@@ -255,7 +255,27 @@ func (h *EagleHead) Step(be Backend, embedRow, feature []float32, pos int, st *e
 // the head's own hidden output as the feature (the EAGLE recurrence, no new target
 // forward). embedOf writes a token's TARGET embedding into dst.
 func (h *EagleHead) Draft(be Backend, embedOf func(tok int, dst []float32), firstTok int, seedFeature []float32, startPos, k int) []int {
+	return h.DraftFrom(be, h.NewState(), embedOf, firstTok, seedFeature, startPos, k)
+}
+
+// Prefill builds the head's KV over a context window so its attention has the prompt
+// context before drafting (without this, multi-step drafts collapse — the head only
+// sees the local draft chain). For each i it runs one head step over (token toks[i],
+// fused target feature feats[i]) at position startPos+i, keeping the KV and discarding
+// logits. Returns the populated state to DraftFrom.
+func (h *EagleHead) Prefill(be Backend, embedOf func(tok int, dst []float32), toks []int, feats [][]float32, startPos int) *eagleState {
 	st := h.NewState()
+	emb := make([]float32, h.hidden)
+	for i, tok := range toks {
+		embedOf(tok, emb)
+		h.Step(be, emb, feats[i], startPos+i, st)
+	}
+	return st
+}
+
+// DraftFrom is Draft continuing from a pre-built state (its KV already populated over
+// the context by Prefill). startPos is the absolute position of firstTok.
+func (h *EagleHead) DraftFrom(be Backend, st *eagleState, embedOf func(tok int, dst []float32), firstTok int, seedFeature []float32, startPos, k int) []int {
 	feature := seedFeature
 	tok := firstTok
 	emb := make([]float32, h.hidden)
