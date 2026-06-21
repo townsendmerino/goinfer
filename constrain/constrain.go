@@ -30,6 +30,9 @@ type Grammar interface {
 	CanEnd() bool
 	// Reset returns the grammar to its initial state.
 	Reset()
+	// Clone returns an independent copy of the grammar at its current state, for
+	// non-mutating multi-step lookahead (speculative forced-run extraction, 01).
+	Clone() Grammar
 }
 
 // Masker masks a step's logits to the tokens a Grammar permits. Build one with
@@ -55,6 +58,49 @@ func NewMasker(g Grammar, tokens [][]byte, eosIDs []int) *Masker {
 		eos[id] = true
 	}
 	return &Masker{g: g, tokens: tokens, isEOS: eos, eosIDs: eosIDs}
+}
+
+// ForcedRun returns up to max tokens the grammar FORCES from its current committed
+// state: successive positions where exactly one surface token is grammar-legal and
+// the document cannot yet end (so EOS is not an alternative). Under the grammar mask
+// such a position has a point-mass target distribution, so a drafter that proposes
+// the forced token is accepted with probability 1 at zero model cost (01
+// grammar-fused). Non-mutating — it probes on a Clone of the grammar; the caller
+// commits the run through the normal Process path once the verifier confirms it.
+//
+// CAVEAT: goinfer's grammars permit optional whitespace at every structural
+// boundary, so a whitespace token is also legal there — strict single-token forcing
+// fires mainly INSIDE fixed literals (object keys, enum/const values), not at the
+// scaffolding between them. Measure the forced fraction before relying on it.
+func (m *Masker) ForcedRun(max int) []int {
+	if max <= 0 {
+		return nil
+	}
+	g := m.g.Clone()
+	var run []int
+	for len(run) < max {
+		if g.CanEnd() {
+			break // a complete document ⇒ EOS is a legal alternative ⇒ not single-forced
+		}
+		forced, count := -1, 0
+		for id, b := range m.tokens {
+			if len(b) == 0 || m.isEOS[id] {
+				continue // control / EOS tokens are not surface continuations
+			}
+			if g.TryBytes(b) {
+				forced, count = id, count+1
+				if count > 1 {
+					break
+				}
+			}
+		}
+		if count != 1 {
+			break
+		}
+		run = append(run, forced)
+		g.Commit(m.tokens[forced])
+	}
+	return run
 }
 
 // StopWhenComplete makes the Masker mask every non-EOS token once the document

@@ -69,6 +69,27 @@ fraction of the output. For dense JSON / tool-call traffic that fraction is larg
 The [00-core](./00-core.md) harness reports it directly; the §4 analysis predicts
 `α̂ ≈ 1` on `Forced` rows as a sanity check.
 
+## Increments
+
+- **Inc 1 (done):** `constrain.Masker.ForcedRun(max)` + `Grammar.Clone()` (all three
+  grammars). Non-mutating forced-run extractor: probes on a cloned grammar, returns
+  the run of positions where exactly one surface token is legal and the doc can't yet
+  end. `TestForcedRun` (model-free, byte vocab) gates it.
+  - **FINDING that reshapes 01:** goinfer's grammars (json / schema / tool) permit
+    **optional whitespace at every structural boundary** (`isWS` throughout). So a
+    whitespace token is *also* legal at `{`, after a key, before `:`/values, etc. —
+    strict single-token forcing fires only **inside fixed literals** (object keys,
+    enum/const values), NOT at the scaffolding the doc's intro assumed. The win is
+    therefore narrower than "the whole structural skeleton" until/unless a
+    whitespace-free grammar mode exists.
+- **Inc 2 (next, go/no-go):** measure the **forced-token fraction** on real
+  tool-call / schema outputs with a *real BPE tokenizer* (not the byte vocab) — multi-
+  byte key/enum tokens force in bigger chunks. Only if the fraction is material does
+  the masked-verify integration pay. That integration must: (a) thread a per-position
+  grammar mask into the spec verify (the path currently *rejects* `LogitProcessor`),
+  and (b) advance/rollback the grammar per accepted/rejected block (the same
+  per-position-state discipline as the sampled-penalty threading).
+
 ## Risks / open questions
 
 - **Tokenizer segmentation.** "Grammatically forced bytes" ≠ "forced tokens": the

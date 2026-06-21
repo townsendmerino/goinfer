@@ -38,6 +38,14 @@ Rows are (spoke × its home workload). `α̅` = mean per-position acceptance.
 
 ### 01 — Grammar-fused ([doc](./01-grammar-fused.md)) · home: structured / tool-call
 
+> **Landed (lx):** `constrain.Masker.ForcedRun(max)` + `Grammar.Clone()` (json/schema/
+> tool) — non-mutating forced-run extractor, `TestForcedRun` model-free gate.
+> **Finding:** goinfer's grammars permit optional whitespace at every structural
+> boundary, so strict single-token forcing fires only INSIDE fixed literals (keys,
+> enum/const), not at the scaffolding. Inc-2 go/no-go = forced-fraction on real
+> tool/schema outputs with a real BPE tokenizer before building the masked-verify
+> integration. α̅/tok/v/speedup pending that.
+
 | Model | Workload | Machine | Lossless | α̅ | tok/v | speedup | Status | Notes |
 |---|---|---|---|---|---|---|---|---|
 | qwen2.5-coder-1.5b | structured | mac | ⬜ | – | – | – | ⬜ | |
@@ -214,3 +222,4 @@ Re-rank after each analysis pass; build the spoke with the most fixable acceptan
 | 2026-06-20 | (wip) | lx-gpu | Stage B increment 2: batched-vs-per-row microbench | 🔴 KILL-GATE: batched **0.88×** (slower) vs per-row×M at qwen2.5-0.5b dims, M=8, 24L (`TestDecodeTokenFusedBatched_microbench`). The 16×16 tiled GEMM is the PREFILL kernel — wastes half its M rows at M=8; per-row GEMV is already bandwidth-optimal. Existing kernel can't deliver Stage B; production wiring deferred. **Inc 3 = thin-M kernel (workgroup-per-column multi-row GEMV, weight read once, M accumulators)** then re-measure |
 | 2026-06-20 | (wip) | lx-gpu | Stage B increment 3: thin-M kernel (`gemmRowW8A8`) | 🔴 **Stage B NO-GO.** Thin-M multi-row GEMV (one workgroup/column, weight read once, M accumulators) — bit-exact parity holds; microbench 0.88×→**0.98×** (kernel choice mattered, still ≤1×). Projection-batching saving cancelled by per-row attn/rms/swiglu + multi-row M× ALU/load + gather-scatter glue; worse vs real `runBatch`. Even with free n-gram draft + right kernel, GPU verify ~break-even at M=8 → CONFIRMS prior deferral. CPU `--spec ngram` win stands; resident verify stays Stage A. Spike code kept + gated (see 07 conclusion) |
 | 2026-06-20 | (wip) | lx | Foundation: spec rollback-safety guard + MLA gate | ✅ `specRollbackSafe` REFUSES recurrent families (Mamba-2 granite/nemotron, DeltaNet qwen3_5_moe) — closes a silent rollback bug (`--spec` was unguarded); caller falls back to plain. `TestSpecRollbackSafetyGuard` (model-free). MLA gate flipped GREEN: `TestNgramSpecMLA_parity` bit-exact on real DeepSeek-V2-Lite (truncate latent rollback correct). softmax/GQA + MLA now spec-safe; SSM/DeltaNet need checkpoint/restore (unbuilt)
+| 2026-06-20 | (wip) | lx | 01 grammar-fused inc 1: `Masker.ForcedRun` + `Grammar.Clone` | ✅ forced-run extractor (non-mutating, via Clone) + Clone on all 3 grammars; `TestForcedRun` model-free. Finding: grammars allow optional ws everywhere ⇒ strict forcing fires only inside fixed literals (keys/enum), not scaffolding. Inc 2 = forced-fraction on real BPE tokenizer (go/no-go) before masked-verify integration |

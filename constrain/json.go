@@ -68,6 +68,15 @@ func (g *jsonGrammar) Reset() {
 	g.state, g.isKey, g.lit, g.num = jsValue, false, "", 0
 }
 
+// Clone returns an independent copy at the current state (value state + a deep copy
+// of the container stack; snapshot scratch is left fresh).
+func (g *jsonGrammar) Clone() Grammar {
+	c := *g
+	c.stack = append([]byte(nil), g.stack...)
+	c.sStack = nil
+	return &c
+}
+
 // CanEnd reports whether the input so far is a complete, valid JSON value (so
 // EOS may be emitted): the container stack is empty and we are either past a
 // finished value, or sitting on a complete top-level number (which has no

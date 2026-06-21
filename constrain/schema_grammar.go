@@ -65,6 +65,16 @@ func (g *schemaGrammar) Reset() {
 	g.done = false
 }
 
+// Clone returns an independent copy at the current state. root is the immutable
+// shared schema tree; the frame stack is value-copied (its *node fields point into
+// that shared, read-only tree). Snapshot scratch is left fresh.
+func (g *schemaGrammar) Clone() Grammar {
+	c := *g
+	c.stack = append([]frame(nil), g.stack...)
+	c.sStack = nil
+	return &c
+}
+
 // CanEnd reports whether the committed output is a complete document: the root
 // value finished, or we're sitting on a complete top-level scalar (a number or
 // enum literal has no closing delimiter, so it's done as soon as it can't extend).

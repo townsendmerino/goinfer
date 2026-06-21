@@ -62,6 +62,14 @@ func (g *toolGrammar) Reset() {
 	}
 }
 
+// Clone returns an independent copy at the current state (value fields + a cloned
+// inner schema grammar; prefix/suffix are immutable strings).
+func (g *toolGrammar) Clone() Grammar {
+	c := *g
+	c.inner = g.inner.Clone().(*schemaGrammar)
+	return &c
+}
+
 func (g *toolGrammar) CanEnd() bool {
 	switch g.phase {
 	case 1:
