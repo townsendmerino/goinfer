@@ -82,13 +82,31 @@ The [00-core](./00-core.md) harness reports it directly; the §4 analysis predic
     enum/const values), NOT at the scaffolding the doc's intro assumed. The win is
     therefore narrower than "the whole structural skeleton" until/unless a
     whitespace-free grammar mode exists.
-- **Inc 2 (next, go/no-go):** measure the **forced-token fraction** on real
-  tool-call / schema outputs with a *real BPE tokenizer* (not the byte vocab) — multi-
-  byte key/enum tokens force in bigger chunks. Only if the fraction is material does
-  the masked-verify integration pay. That integration must: (a) thread a per-position
+- **Inc 2 (done — GO, with a design correction):** measured on real DeepSeek/Qwen BPE
+  (`TestGrammarForcedFraction`, qwen2.5-coder vocab) over 3 tool/schema outputs:
+  - **Strict token-forcing (inc-1 `ForcedRun`) = 0%** everywhere. With a real BPE
+    vocab, even when the *bytes* are forced (inside `"approved"`), MANY tokens are
+    legal byte-prefixes of the continuation (`o`, `ov`, `oved`, …) — so "exactly one
+    legal token" almost never holds. The inc-1 token-level criterion is the WRONG
+    granularity.
+  - **Byte-level forcing ceiling = 44–74%** (weather 54%, record 44%, enum-heavy 74%).
+    Structural forcing is real and material — inside keys (`ocation"`) and enum/const
+    values (`approved"`, `elsius"`, `rue`) the byte continuation is fully determined;
+    the non-forced bytes are the optional-ws boundaries, the first char of each
+    key/enum, and free values (`Paris`, `30`).
+  - **Verdict: pursue 01, but the drafter must be BYTE-LEVEL.** Extract the forced
+    byte-run, retokenize it canonically (the tokenizer's own encoding — what the model
+    most likely emits), and propose those tokens. Acceptance is <1 (the model's
+    tokenization of the forced bytes is a real degree of freedom — exactly the §risks
+    "tokenizer segmentation" point), but the verify keeps it lossless and the masked
+    target distribution over forced literals is concentrated, so acceptance should be
+    high. The 44–74% byte ceiling is the headroom.
+- **Inc 3 (next):** redesign `ForcedRun` → `ForcedBytesRun` + `encode` hook (byte-run
+  → canonical tokens). Then the masked-verify integration: (a) thread a per-position
   grammar mask into the spec verify (the path currently *rejects* `LogitProcessor`),
   and (b) advance/rollback the grammar per accepted/rejected block (the same
-  per-position-state discipline as the sampled-penalty threading).
+  per-position-state discipline as the sampled-penalty threading). Then measure real
+  acceptance + tok/v on `structured`.
 
 ## Risks / open questions
 

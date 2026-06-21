@@ -44,7 +44,11 @@ Rows are (spoke × its home workload). `α̅` = mean per-position acceptance.
 > boundary, so strict single-token forcing fires only INSIDE fixed literals (keys,
 > enum/const), not at the scaffolding. Inc-2 go/no-go = forced-fraction on real
 > tool/schema outputs with a real BPE tokenizer before building the masked-verify
-> integration. α̅/tok/v/speedup pending that.
+> integration. **Inc-2 measured (`TestGrammarForcedFraction`): strict token-forcing
+> = 0% (BPE prefix-ambiguity), but BYTE-level forcing = 44–74% (weather 54 / record
+> 44 / enum-heavy 74). GO, but the drafter must be byte-level (forced byte-run →
+> canonical retokenize → propose; acceptance <1 via tokenization, verify-lossless).**
+> Inc 3 = byte-level `ForcedBytesRun` + masked-verify integration.
 
 | Model | Workload | Machine | Lossless | α̅ | tok/v | speedup | Status | Notes |
 |---|---|---|---|---|---|---|---|---|
@@ -223,3 +227,4 @@ Re-rank after each analysis pass; build the spoke with the most fixable acceptan
 | 2026-06-20 | (wip) | lx-gpu | Stage B increment 3: thin-M kernel (`gemmRowW8A8`) | 🔴 **Stage B NO-GO.** Thin-M multi-row GEMV (one workgroup/column, weight read once, M accumulators) — bit-exact parity holds; microbench 0.88×→**0.98×** (kernel choice mattered, still ≤1×). Projection-batching saving cancelled by per-row attn/rms/swiglu + multi-row M× ALU/load + gather-scatter glue; worse vs real `runBatch`. Even with free n-gram draft + right kernel, GPU verify ~break-even at M=8 → CONFIRMS prior deferral. CPU `--spec ngram` win stands; resident verify stays Stage A. Spike code kept + gated (see 07 conclusion) |
 | 2026-06-20 | (wip) | lx | Foundation: spec rollback-safety guard + MLA gate | ✅ `specRollbackSafe` REFUSES recurrent families (Mamba-2 granite/nemotron, DeltaNet qwen3_5_moe) — closes a silent rollback bug (`--spec` was unguarded); caller falls back to plain. `TestSpecRollbackSafetyGuard` (model-free). MLA gate flipped GREEN: `TestNgramSpecMLA_parity` bit-exact on real DeepSeek-V2-Lite (truncate latent rollback correct). softmax/GQA + MLA now spec-safe; SSM/DeltaNet need checkpoint/restore (unbuilt)
 | 2026-06-20 | (wip) | lx | 01 grammar-fused inc 1: `Masker.ForcedRun` + `Grammar.Clone` | ✅ forced-run extractor (non-mutating, via Clone) + Clone on all 3 grammars; `TestForcedRun` model-free. Finding: grammars allow optional ws everywhere ⇒ strict forcing fires only inside fixed literals (keys/enum), not scaffolding. Inc 2 = forced-fraction on real BPE tokenizer (go/no-go) before masked-verify integration |
+| 2026-06-20 | (wip) | lx | 01 grammar-fused inc 2: forced-fraction (go/no-go) | 🔎 `TestGrammarForcedFraction` real BPE: strict TOKEN-forcing 0% (prefix-ambiguity defeats it), BYTE-forcing ceiling 44–74%. GO but redesign byte-level: forced byte-run→canonical retokenize→propose (acceptance<1 via tokenization freedom, verify-lossless). Inc 3 = byte-level drafter + masked-verify integration |
