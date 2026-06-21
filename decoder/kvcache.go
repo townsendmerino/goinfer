@@ -104,6 +104,14 @@ type KVCache struct {
 
 	scr *decodeScratch // per-stream reusable forward buffers (Model.NewCache sets it)
 
+	// captureLayers, when non-nil, requests that runLayersFromEmbed copy the residual
+	// stream (the layer OUTPUT) after each listed layer index into captured[i] — the
+	// read-only hidden-state seam an EAGLE-style draft head consumes (05; the head
+	// fuses low/mid/high target hidden states). nil = no capture, zero overhead. The
+	// copies never feed back into the forward, so the token output is byte-identical.
+	captureLayers []int
+	captured      [][]float32
+
 	// lora is the active compute-time LoRA adapter for this stream (#7), nil for
 	// the merged/base default. Set per-stream (Session.UseAdapter); the forward
 	// adds each layer's low-rank delta after the base projection. A non-nil lora

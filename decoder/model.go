@@ -454,6 +454,15 @@ func (m *Model) runLayersFromEmbed(h []float32, cache *KVCache) ([]float32, erro
 		for i := range h {
 			h[i] += scr.sub[i]
 		}
+		// Read-only hidden-state seam (05): copy this layer's output residual stream
+		// when requested. A copy (not a reference) — h is mutated by later layers.
+		if cache.captureLayers != nil {
+			for i, cl := range cache.captureLayers {
+				if cl == l {
+					cache.captured[i] = append(cache.captured[i][:0], h...)
+				}
+			}
+		}
 	}
 	return h, nil
 }
@@ -500,6 +509,33 @@ func (m *Model) forward(id int, cache *KVCache) ([]float32, error) {
 		return nil, err
 	}
 	return m.logitsFromHidden(h, cache), nil
+}
+
+// ForwardCapture runs one forward for token id and returns the next-token logits
+// PLUS the residual stream after each layer in `layers` (cloned) — the read-only
+// hidden-state seam an EAGLE-3 draft head fuses (05). The forward is byte-identical
+// to forward(id): the captures are copies that never feed back. Layer indices are
+// 0-based into [0, NumLayers); out[i] corresponds to layers[i]. Generic decode path
+// (the families with their own runLayers don't capture yet — return an error there
+// rather than silently producing nothing).
+func (m *Model) ForwardCapture(id int, cache *KVCache, layers []int) (logits []float32, hidden [][]float32, err error) {
+	a := m.w.arch
+	if a.gemma4 != nil || a.qwen35 != nil || a.granite != nil || a.nemotron != nil || a.mla != nil || a.llama4 != nil {
+		return nil, nil, fmt.Errorf("decoder.ForwardCapture: hidden-state seam not wired for arch %q (own runLayers)", a.Name)
+	}
+	for _, l := range layers {
+		if l < 0 || l >= a.NumLayers {
+			return nil, nil, fmt.Errorf("decoder.ForwardCapture: layer %d out of range [0,%d)", l, a.NumLayers)
+		}
+	}
+	cache.captureLayers = layers
+	cache.captured = make([][]float32, len(layers))
+	defer func() { cache.captureLayers, cache.captured = nil, nil }()
+	lg, ferr := m.forward(id, cache)
+	if ferr != nil {
+		return nil, nil, ferr
+	}
+	return lg, cache.captured, nil
 }
 
 // forwardFromEmbed is forward for a position whose residual-stream embedding is

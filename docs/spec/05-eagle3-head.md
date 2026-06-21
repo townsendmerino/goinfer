@@ -103,9 +103,11 @@ maximize measured acceptance.
 
 ## Build increments (planned)
 
-1. **Hidden-state seam** (decoder, pure-Go, gateable now): export the target's hidden
-   states from 3 configurable layer indices during `forward`/`forwardN`, read-only,
-   forward output unchanged. The one reusable prerequisite; build first.
+1. **Hidden-state seam** (DONE): `Model.ForwardCapture(id, cache, layers)` exports the
+   residual stream after each listed layer (read-only; `TestForwardCaptureSeam` gates
+   logits-byte-identical + last-layer capture reproduces logits exactly). Generic
+   decode path; special-family archs return an error (not yet wired). `forwardN`
+   (batched verify) capture is a follow-up for the full draft loop.
 2. **Head loader**: parse `model.safetensors` (fusion `fc`, the 1 layer's q/k/v/o +
    gate/up/down + norms, the draft `lm_head[32000]`, `t2d`/`d2t`, embedding strategy).
 3. **Head forward**: fuse(3 hidden states) → 1 transformer layer → draft-vocab logits →
