@@ -132,8 +132,18 @@ The [00-core](./00-core.md) harness reports it directly; the §4 analysis predic
   on structured output, not the "free structural skeleton" the intro imagined.
   Worth wiring into `cmd/serve` *if the integration is cheap* (a miss costs ~nothing,
   so it's safe to always run on constrained requests); not worth heavy investment.
+
+  **WIRED (2026-06-21):** on a greedy constrained/tool request (`response_format` /
+  tool grammar) with `--spec` on, `drive` now routes to `GenerateGrammarSpeculative`
+  with a `RouterDrafter` fusing the grammar's forced byte-run + an n-gram source,
+  instead of falling back to plain decode. Shared the loop with the n-gram path via
+  `Model.genGrammarInto` (cache/prefill/commit-aware) + a `Session.GenerateGrammarSpeculative`
+  wrapper, so constrained requests keep warm-KV prefix reuse (the tool-call agent-loop
+  case). Lossless end-to-end: `TestServe_grammarSpecLossless` (--spec output byte-identical
+  to plain through the HTTP layer) + decoder `TestGrammarSpecParity`. The masker is carried
+  on `genRequest` from all four constraint sites (openai/tools/responses/anthropic).
   Remaining follow-ups (unfunded unless the win justifies): sampled + resident
-  grammar-spec paths, the `cmd/serve` constrained/tool routing.
+  grammar-spec paths.
 
 ## Risks / open questions
 

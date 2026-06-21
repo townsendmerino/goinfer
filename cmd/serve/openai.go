@@ -389,6 +389,7 @@ type genRequest struct {
 	sp          decoder.SamplingParams
 	maxTokens   int
 	stopStrings []string
+	masker      *constrain.Masker // set on constrained requests (response_format / tool grammar); enables grammar-spec
 }
 
 // prepare translates the OpenAI sampling fields into goinfer's SamplingParams,
@@ -427,6 +428,7 @@ func (lm *loadedModel) prepare(sm sampling, promptIDs []int) (genRequest, error)
 		eos := append(append([]int(nil), lm.eosIDs...), lm.stopIDs...)
 		m := constrain.NewMasker(g, constrain.TokenBytes(lm.vocab, lm.tk.TokenText), eos).StopWhenComplete()
 		gr.sp.LogitProcessor = m.Process
+		gr.masker = m // enables grammar-fused speculative decode (drive)
 	}
 	return gr, nil
 }
@@ -525,18 +527,37 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, onText func(
 	sess := lm.sessions.acquire(gr.promptIDs)
 	var stream <-chan int
 	var gen *decoder.Generation
-	if lm.spec {
+	switch {
+	case lm.spec && gr.masker != nil && gr.sp.Temperature == 0:
+		// Constrained request (response_format / tool grammar), greedy: grammar-fused
+		// speculative decode (01/03). A RouterDrafter fuses the grammar's forced byte-run
+		// (structural tokens) with an n-gram copy of free values that echo the context;
+		// the masked verify keeps output identical to constrained Generate. A miss costs
+		// ~nothing, so it's safe to always run here. Falls back to plain constrained
+		// decode on any validation error (the error precedes touching the session cache).
+		spSpec := gr.sp
+		spSpec.LogitProcessor = nil // the verify applies the grammar mask itself
+		drafter := &decoder.RouterDrafter{Sources: []decoder.Drafter{
+			&decoder.GrammarDrafter{Mask: gr.masker, Encode: func(s string) []int { ids, _ := lm.tk.Encode(s, false); return ids }},
+			&decoder.NgramDrafter{},
+		}}
+		var err error
+		stream, gen, err = sess.GenerateGrammarSpeculative(ctx, gr.promptIDs, gr.maxTokens, gr.masker, drafter, 8, spSpec)
+		if err != nil {
+			stream, gen = sess.Generate(ctx, gr.promptIDs, gr.maxTokens, gr.sp)
+		}
+	case lm.spec:
 		// Lossless n-gram speculative decode with adaptive depth. Falls back to plain
 		// Generate when the request's sampler isn't yet supported on the spec path
-		// (repetition/presence/frequency penalties, logit bias, or constrained/tool
-		// decoding via a LogitProcessor) — the validation error is returned before the
-		// session cache is touched, so the fallback is exact.
+		// (repetition/presence/frequency penalties, logit bias, or a constrained/tool
+		// LogitProcessor with temperature>0) — the validation error is returned before
+		// the session cache is touched, so the fallback is exact.
 		var err error
 		stream, gen, err = sess.GenerateNgramSpeculativeAdaptive(ctx, gr.promptIDs, gr.maxTokens, &decoder.NgramDrafter{}, &decoder.AdaptiveDepth{MaxDraft: 8}, gr.sp)
 		if err != nil {
 			stream, gen = sess.Generate(ctx, gr.promptIDs, gr.maxTokens, gr.sp)
 		}
-	} else {
+	default:
 		stream, gen = sess.Generate(ctx, gr.promptIDs, gr.maxTokens, gr.sp)
 	}
 	finish, n, stopHit := lm.streamTokens(cancel, stream, gr, onText)

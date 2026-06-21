@@ -192,6 +192,7 @@ func (s *server) respondTools(w http.ResponseWriter, lm *loadedModel, req respon
 				eos := append(append([]int(nil), lm.eosIDs...), lm.stopIDs...)
 				m := constrain.NewMasker(g, constrain.TokenBytes(lm.vocab, lm.tk.TokenText), eos).StopWhenComplete()
 				gr.sp.LogitProcessor = m.Process
+				gr.masker = m // enables grammar-fused speculative decode (drive)
 			}
 		}
 	}

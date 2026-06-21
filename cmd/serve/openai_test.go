@@ -361,3 +361,55 @@ func TestServe_tools_integration(t *testing.T) {
 	}
 	t.Logf("tool call: %s(%s)", tc.Function.Name, tc.Function.Arguments)
 }
+
+// TestServe_grammarSpecLossless verifies the grammar-fused speculative path wired into
+// drive (--spec on a constrained greedy request) produces output byte-identical to plain
+// constrained decode — the losslessness guarantee, end-to-end through the HTTP layer.
+// Set GOINFER_SERVE_MODEL=<.gguf>.
+func TestServe_grammarSpecLossless(t *testing.T) {
+	path := os.Getenv("GOINFER_SERVE_MODEL")
+	if path == "" {
+		t.Skip("set GOINFER_SERVE_MODEL=<.gguf> to run the grammar-spec losslessness test")
+	}
+	const body = `{"model":"test-model","max_tokens":80,"temperature":0,
+		"messages":[{"role":"user","content":"Return a JSON object for a person with a name and an integer age."}],
+		"response_format":{"type":"json_schema","json_schema":{"name":"person","schema":
+			{"type":"object","additionalProperties":false,
+			 "properties":{"name":{"type":"string"},"age":{"type":"integer"}},
+			 "required":["name","age"]}}}}`
+
+	run := func(spec string) string {
+		srv, err := newServer(config{models: modelFlag{{name: "test-model", path: path}}, backend: "cpu", quant: "int8int8", kvSessions: 4, spec: spec})
+		if err != nil {
+			t.Fatalf("newServer(spec=%q): %v", spec, err)
+		}
+		mux := http.NewServeMux()
+		mux.HandleFunc("POST /v1/chat/completions", srv.handleChat)
+		ts := httptest.NewServer(mux)
+		defer ts.Close()
+		resp, err := http.Post(ts.URL+"/v1/chat/completions", "application/json", strings.NewReader(body))
+		if err != nil {
+			t.Fatalf("POST(spec=%q): %v", spec, err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != 200 {
+			t.Fatalf("spec=%q status %d", spec, resp.StatusCode)
+		}
+		var out struct {
+			Choices []struct {
+				Message struct{ Content string } `json:"message"`
+			} `json:"choices"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+			t.Fatalf("decode(spec=%q): %v", spec, err)
+		}
+		return out.Choices[0].Message.Content
+	}
+
+	plain := run("")
+	spec := run("ngram") // constrained greedy ⇒ grammar-fused spec path
+	if plain != spec {
+		t.Fatalf("grammar-spec not lossless:\n plain=%q\n spec =%q", plain, spec)
+	}
+	t.Logf("grammar-spec lossless OK: %q", spec)
+}

@@ -3,6 +3,8 @@ package decoder
 import (
 	"context"
 	"fmt"
+
+	"github.com/townsendmerino/goinfer/constrain"
 )
 
 // Session couples a KVCache with the token sequence currently materialized in
@@ -116,6 +118,37 @@ func (s *Session) GenerateNgramSpeculativeAdaptive(ctx context.Context, prompt [
 	}
 	ad.ensure()
 	return s.genSpec(ctx, prompt, maxTokens, drafter, ad.MaxDraft, sp, ad)
+}
+
+// GenerateGrammarSpeculative is Session.Generate with grammar-masked speculative
+// decoding (01/03) for constrained requests: it reuses the warm KV prefix exactly as
+// Generate does, then runs the masked speculative loop over the session's cache. Output
+// is identical to constrained Generate (token-identical greedy). The drafter is usually
+// a RouterDrafter fusing the grammar's forced byte-run with an n-gram copy of free
+// values; the mask keeps every position lossless regardless.
+func (s *Session) GenerateGrammarSpeculative(ctx context.Context, prompt []int, maxTokens int, mask *constrain.Masker, drafter Drafter, K int, sp SamplingParams) (<-chan int, *Generation, error) {
+	if err := validateGrammarSpec(s.m, mask, drafter, sp); err != nil {
+		return nil, nil, err
+	}
+	if len(prompt) == 0 {
+		return nil, nil, fmt.Errorf("decoder.GenerateGrammarSpeculative: empty prompt")
+	}
+	out := make(chan int)
+	stats := &SpecStats{}
+	g := &Generation{Spec: stats}
+
+	matched := max(min(commonPrefixLen(s.tokens, prompt), len(prompt)-1), 0)
+	s.cache.TruncateTo(matched)
+	seq := append([]int(nil), prompt...)
+	commit := func(id int) { seq = append(seq, id) }
+
+	go func() {
+		defer close(out)
+		s.m.genGrammarInto(ctx, out, g, stats, mask, drafter, prompt, matched, maxTokens, K, sp, s.cache, commit)
+		s.tokens = seq
+		s.cache.TruncateTo(len(seq))
+	}()
+	return out, g, nil
 }
 
 func (s *Session) genSpec(ctx context.Context, prompt []int, maxTokens int, drafter Drafter, K int, sp SamplingParams, ad *AdaptiveDepth) (<-chan int, *Generation, error) {

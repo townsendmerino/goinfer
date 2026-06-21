@@ -331,6 +331,7 @@ func applyToolConstraint(lm *loadedModel, gr *genRequest, mode, name string, too
 			eos := append(append([]int(nil), lm.eosIDs...), lm.stopIDs...)
 			m := constrain.NewMasker(g, constrain.TokenBytes(lm.vocab, lm.tk.TokenText), eos).StopWhenComplete()
 			gr.sp.LogitProcessor = m.Process
+			gr.masker = m // enables grammar-fused speculative decode (drive)
 		}
 	}
 }

@@ -99,6 +99,21 @@ func (d *GrammarDrafter) Draft(ctx []int, k int) []int {
 	return toks
 }
 
+// validateGrammarSpec gates the grammar-spec path: a mask + drafter, greedy only, and
+// a rollback-safe (non-recurrent) family. Shared by the Model and Session entry points.
+func validateGrammarSpec(target *Model, mask *constrain.Masker, drafter Drafter, sp SamplingParams) error {
+	if mask == nil || drafter == nil {
+		return fmt.Errorf("decoder.GenerateGrammarSpeculative: nil mask/drafter")
+	}
+	if sp.Temperature != 0 {
+		return fmt.Errorf("decoder.GenerateGrammarSpeculative: greedy only for now (Temperature must be 0)")
+	}
+	if !target.specRollbackSafe() {
+		return fmt.Errorf("decoder.GenerateGrammarSpeculative: recurrent family (rollback unsupported); use Generate")
+	}
+	return nil
+}
+
 // GenerateGrammarSpeculative is grammar-masked speculative decode (01 / 03): the
 // drafter proposes tokens (a GrammarDrafter's forced byte-run, an n-gram copy, or a
 // RouterDrafter fusing them, 03), and the verify applies the grammar mask at every
@@ -110,125 +125,137 @@ func (d *GrammarDrafter) Draft(ctx []int, k int) []int {
 // First cut: greedy + CPU staged path. Sampling and the resident path are follow-ups;
 // the recurrent-family guard (specRollbackSafe) applies as for the n-gram path.
 func (target *Model) GenerateGrammarSpeculative(ctx context.Context, prompt []int, maxTokens int, mask *constrain.Masker, drafter Drafter, K int, sp SamplingParams) (<-chan int, *Generation, error) {
-	if mask == nil || drafter == nil {
-		return nil, nil, fmt.Errorf("decoder.GenerateGrammarSpeculative: nil mask/drafter")
-	}
-	if sp.Temperature != 0 {
-		return nil, nil, fmt.Errorf("decoder.GenerateGrammarSpeculative: greedy only for now (Temperature must be 0)")
-	}
-	if !target.specRollbackSafe() {
-		return nil, nil, fmt.Errorf("decoder.GenerateGrammarSpeculative: recurrent family (rollback unsupported); use Generate")
+	if err := validateGrammarSpec(target, mask, drafter, sp); err != nil {
+		return nil, nil, err
 	}
 	if len(prompt) == 0 {
 		return nil, nil, fmt.Errorf("decoder.GenerateGrammarSpeculative: empty prompt")
 	}
-	if K < 1 {
-		K = 8
-	}
-
 	out := make(chan int)
 	stats := &SpecStats{}
 	g := &Generation{Spec: stats}
 	go func() {
 		defer close(out)
-		tc := target.NewCache(len(prompt) + maxTokens + K + 8)
-		tpos := len(prompt)
+		target.genGrammarInto(ctx, out, g, stats, mask, drafter, prompt, 0, maxTokens, K, sp, nil, nil)
+	}()
+	return out, g, nil
+}
 
-		seedLogits, err := target.prefillLogits(prompt, tc)
+// genGrammarInto is the grammar-masked speculative loop, cache/prefill/commit-aware
+// (mirrors genNgramInto) so both Model.GenerateGrammarSpeculative (its own cache) and
+// Session.GenerateGrammarSpeculative (a warm KV prefix) share it. cache==nil makes its
+// own; otherwise the caller's cache must already hold prompt[:prefillFrom], and commit
+// is invoked as each confirmed token lands in the cache (so a Session can keep its
+// token list mirroring the cache for the next call's prefix match).
+func (target *Model) genGrammarInto(ctx context.Context, out chan<- int, g *Generation, stats *SpecStats, mask *constrain.Masker, drafter Drafter, prompt []int, prefillFrom, maxTokens, K int, sp SamplingParams, cache *KVCache, commit func(int)) {
+	if K < 1 {
+		K = 8
+	}
+	tc := cache
+	if tc == nil {
+		tc = target.NewCache(len(prompt) + maxTokens + K + 8)
+	}
+	tpos := len(prompt)
+
+	seedLogits, err := target.prefillLogits(prompt[prefillFrom:], tc)
+	if err != nil {
+		g.err = err
+		return
+	}
+	// The grammar masks only GENERATED tokens (not the prompt), starting fresh —
+	// matching constrained Generate. cur is the next confirmed token, pending.
+	mask.MaskAt(mask.GrammarClone(), seedLogits) // grammar at its initial state
+	cur := argmax(seedLogits)
+
+	emit := func(tok int) bool {
+		if target.isStop(tok, sp) {
+			return false
+		}
+		select {
+		case <-ctx.Done():
+			g.err = ctx.Err()
+			return false
+		case out <- tok:
+		}
+		stats.Emitted++
+		return stats.Emitted < maxTokens
+	}
+	if !emit(cur) {
+		return
+	}
+
+	// hist = prompt + committed tokens, the context an n-gram source searches
+	// (the grammar source ignores it). cur is the pending next token.
+	hist := slices.Clone(prompt)
+	for {
+		// cur was confirmed last round — commit it to the live grammar, then draft
+		// from the source(s): grammar's forced byte-run and/or an n-gram copy.
+		mask.Commit(cur)
+		draftTok := drafter.Draft(append(slices.Clone(hist), cur), K)
+		kEff := len(draftTok)
+
+		base := tpos
+		seq := append([]int{cur}, draftTok...)
+		logitsN, err := target.forwardN(seq, tc)
 		if err != nil {
 			g.err = err
 			return
 		}
-		// The grammar masks only GENERATED tokens (not the prompt), starting fresh —
-		// matching constrained Generate. cur is the next confirmed token, pending.
-		mask.MaskAt(mask.GrammarClone(), seedLogits) // grammar at its initial state
-		cur := argmax(seedLogits)
 
-		emit := func(tok int) bool {
-			if target.isStop(tok, sp) {
-				return false
+		// Verify each draft position against the GRAMMAR-MASKED target argmax,
+		// rolling a grammar clone forward over the accepted prefix so each position
+		// is masked at the right state (== what constrained Generate would emit).
+		stats.Rounds++
+		stats.Drafted += kEff
+		gc := mask.GrammarClone() // grammar state after cur
+		accepted := 0
+		allAccept := true
+		var nextTok int
+		for i := 0; i < kEff; i++ {
+			mask.MaskAt(gc, logitsN[i])
+			ti := argmax(logitsN[i])
+			if draftTok[i] != ti {
+				nextTok = ti
+				allAccept = false
+				break
 			}
-			select {
-			case <-ctx.Done():
-				g.err = ctx.Err()
-				return false
-			case out <- tok:
-			}
-			stats.Emitted++
-			return stats.Emitted < maxTokens
+			accepted++
+			gc.Commit(mask.TokenBytes(draftTok[i]))
 		}
+		if allAccept {
+			mask.MaskAt(gc, logitsN[kEff])
+			nextTok = argmax(logitsN[kEff])
+		}
+		stats.Accepted += accepted
+		evaluated := accepted
+		if !allAccept {
+			evaluated = accepted + 1
+		}
+		stats.Evaluated += evaluated
+
+		// Roll the cache back to cur + accepted; commit the accepted drafts to the
+		// live grammar (cur was already committed above). nextTok stays pending.
+		tpos = base + 1 + accepted
+		tc.TruncateTo(tpos)
+		hist = append(hist, cur) // cur is now committed (durable in the cache)
+		if commit != nil {
+			commit(cur)
+		}
+		for i := 0; i < accepted; i++ {
+			mask.Commit(draftTok[i])
+			hist = append(hist, draftTok[i])
+			if commit != nil {
+				commit(draftTok[i])
+			}
+		}
+		for i := 0; i < accepted; i++ {
+			if !emit(draftTok[i]) {
+				return
+			}
+		}
+		cur = nextTok
 		if !emit(cur) {
 			return
 		}
-
-		// hist = prompt + committed tokens, the context an n-gram source searches
-		// (the grammar source ignores it). cur is the pending next token.
-		hist := slices.Clone(prompt)
-		for {
-			// cur was confirmed last round — commit it to the live grammar, then draft
-			// from the source(s): grammar's forced byte-run and/or an n-gram copy.
-			mask.Commit(cur)
-			draftTok := drafter.Draft(append(slices.Clone(hist), cur), K)
-			kEff := len(draftTok)
-
-			base := tpos
-			seq := append([]int{cur}, draftTok...)
-			logitsN, err := target.forwardN(seq, tc)
-			if err != nil {
-				g.err = err
-				return
-			}
-
-			// Verify each draft position against the GRAMMAR-MASKED target argmax,
-			// rolling a grammar clone forward over the accepted prefix so each position
-			// is masked at the right state (== what constrained Generate would emit).
-			stats.Rounds++
-			stats.Drafted += kEff
-			gc := mask.GrammarClone() // grammar state after cur
-			accepted := 0
-			allAccept := true
-			var nextTok int
-			for i := 0; i < kEff; i++ {
-				mask.MaskAt(gc, logitsN[i])
-				ti := argmax(logitsN[i])
-				if draftTok[i] != ti {
-					nextTok = ti
-					allAccept = false
-					break
-				}
-				accepted++
-				gc.Commit(mask.TokenBytes(draftTok[i]))
-			}
-			if allAccept {
-				mask.MaskAt(gc, logitsN[kEff])
-				nextTok = argmax(logitsN[kEff])
-			}
-			stats.Accepted += accepted
-			evaluated := accepted
-			if !allAccept {
-				evaluated = accepted + 1
-			}
-			stats.Evaluated += evaluated
-
-			// Roll the cache back to cur + accepted; commit the accepted drafts to the
-			// live grammar (cur was already committed above). nextTok stays pending.
-			tpos = base + 1 + accepted
-			tc.TruncateTo(tpos)
-			hist = append(hist, cur) // cur is now committed
-			for i := 0; i < accepted; i++ {
-				mask.Commit(draftTok[i])
-				hist = append(hist, draftTok[i])
-			}
-			for i := 0; i < accepted; i++ {
-				if !emit(draftTok[i]) {
-					return
-				}
-			}
-			cur = nextTok
-			if !emit(cur) {
-				return
-			}
-		}
-	}()
-	return out, g, nil
+	}
 }
