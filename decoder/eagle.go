@@ -158,6 +158,12 @@ func LoadEagleHead(dir string) (*EagleHead, error) {
 	return head, nil
 }
 
+// eagleRecurFeature toggles the multi-step draft recurrence (inc 4a, set empirically
+// by accepted-length): true feeds the head's own hidden output as the next step's
+// feature (EAGLE-1/2 style); false keeps the step-0 target feature for all K steps
+// (the chain then comes only from the drafted-token embeddings + the head's KV).
+var eagleRecurFeature = true
+
 // eagleState is the head's own KV cache across the K autoregressive draft steps,
 // plus the RoPE inverse-frequency table (built once from the head's rope_theta).
 type eagleState struct {
@@ -184,10 +190,12 @@ func (h *EagleHead) Fuse(be Backend, h3 []float32) []float32 {
 }
 
 // Step runs one head forward at position pos: embedRow is the TARGET embedding of the
-// input token, feature is the fused target hidden. It appends this step's K/V to st
-// and returns draft-vocab logits. The decoder layer attends over concat(embed,
-// feature) (2*hidden in), with the residual taken over the hidden-dim feature.
-func (h *EagleHead) Step(be Backend, embedRow, feature []float32, pos int, st *eagleState) []float32 {
+// input token, feature is the fused target hidden (step 0) or the head's own previous
+// hidden output (autoregressive steps 1+). It appends this step's K/V to st and
+// returns the draft-vocab logits AND the head's hidden output (the pre-final-norm
+// residual) — which is the feature the NEXT autoregressive step consumes. The decoder
+// layer attends over concat(embed, feature) (2*hidden in), residual over the feature.
+func (h *EagleHead) Step(be Backend, embedRow, feature []float32, pos int, st *eagleState) (logits, hiddenOut []float32) {
 	hid := h.hidden
 	e := append([]float32(nil), embedRow...)
 	rmsNorm(e, h.inputNorm, 1, hid, h.normEps, false)
@@ -234,10 +242,36 @@ func (h *EagleHead) Step(be Backend, embedRow, feature []float32, pos int, st *e
 		resid[i] += down[i]
 	}
 
+	hiddenOut = append([]float32(nil), resid...) // pre-final-norm: the next step's feature
 	rmsNorm(resid, h.finalNorm, 1, hid, h.normEps, false)
-	logits := make([]float32, h.draftVocab)
+	logits = make([]float32, h.draftVocab)
 	matmul(be, &h.lmHead, resid, logits, 1)
-	return logits
+	return logits, hiddenOut
+}
+
+// Draft autoregressively drafts up to k tokens. firstTok is the last confirmed token
+// (its embedding is step 0's input); seedFeature = fc(3 target hidden) at firstTok's
+// position; startPos = that position. Step 0 uses seedFeature; each later step feeds
+// the head's own hidden output as the feature (the EAGLE recurrence, no new target
+// forward). embedOf writes a token's TARGET embedding into dst.
+func (h *EagleHead) Draft(be Backend, embedOf func(tok int, dst []float32), firstTok int, seedFeature []float32, startPos, k int) []int {
+	st := h.NewState()
+	feature := seedFeature
+	tok := firstTok
+	emb := make([]float32, h.hidden)
+	out := make([]int, 0, k)
+	for j := 0; j < k; j++ {
+		embedOf(tok, emb)
+		logits, hiddenOut := h.Step(be, emb, feature, startPos+j, st)
+		d := h.TargetID(argmax(logits))
+		out = append(out, d)
+		tok = d
+		if eagleRecurFeature {
+			feature = hiddenOut // EAGLE recurrence (hypothesis A)
+		}
+		// else: keep the step-0 target feature for all steps (hypothesis B)
+	}
+	return out
 }
 
 // attend is the head's single-query GQA attention over its stored K/V (causal by
