@@ -48,7 +48,7 @@ func TestEagleAcceptedLength(t *testing.T) {
 	capLayers := []int{2, L / 2, L - 3}
 	embedOf := func(tok int, dst []float32) { base.embedToken(tok, dst) }
 
-	prompt, _ := tk.Encode("Write a short paragraph about the history of computing and its impact on society.", true)
+	prompt, _ := tk.Encode("<|im_start|>user\nWrite a short paragraph about the history of computing.<|im_end|>\n<|im_start|>assistant\n", true)
 	const M, K = 48, 6
 
 	// Capture the target's fused feature at EVERY position (whole prompt + M greedy

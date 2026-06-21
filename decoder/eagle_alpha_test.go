@@ -44,8 +44,11 @@ func TestEagleAlpha(t *testing.T) {
 	defer base.Close()
 	tk, _ := tokenizer.LoadGGUF(basePath)
 	L := base.w.arch.NumLayers
-	prompt, _ := tk.Encode("Artificial intelligence has transformed many industries, and the next decade will", true)
-	const M = 24
+	// CHAT-formatted prompt: the head is trained on the target's hidden states over
+	// chat data, so the in-distribution regime (chatml + the model's own generation)
+	// is where its acceptance is real — raw completion text is out-of-distribution.
+	prompt, _ := tk.Encode("<|im_start|>user\nExplain how a transformer neural network works, in a few sentences.<|im_end|>\n<|im_start|>assistant\n", true)
+	const M = 32
 
 	// Decode the base greedily once, recording each position's token + all-layer hidden
 	// (capture every layer so the sweep is free), so we can score α for several

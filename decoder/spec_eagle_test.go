@@ -39,7 +39,7 @@ func TestEagleSpecParity(t *testing.T) {
 	greedy := SamplingParams{Temperature: 0}
 	const n = 24
 
-	prompt, _ := tk.Encode("The history of computing began with mechanical calculators, and", true)
+	prompt, _ := tk.Encode("<|im_start|>user\nWrite one sentence about the history of computing.<|im_end|>\n<|im_start|>assistant\n", true)
 
 	ref := collectTokens(first(base.Generate(ctx, prompt, n, greedy)))
 	ch, g, err := base.GenerateEagleSpeculative(ctx, prompt, n, head, capLayers, 5, greedy)
