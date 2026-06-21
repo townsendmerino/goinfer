@@ -6,6 +6,155 @@ import (
 	"slices"
 )
 
+// GenerateEagleSpeculativeTree is the tree-drafting variant of GenerateEagleSpeculative
+// (05): the head drafts a root-branched tree (top-B first tokens, each a depth-D chain),
+// the target verifies all B*D nodes in ONE batched pass under tree attention, and the
+// longest base-greedy-matching path is committed. Still lossless (the base's argmax
+// decides every token); the win over the linear chain is recovering positions where the
+// correct token is in the head's top-B but not top-1, and continuing from the TRUE token.
+func (m *Model) GenerateEagleSpeculativeTree(ctx context.Context, prompt []int, maxTokens int, head *EagleHead, capLayers []int, B, D int, sp SamplingParams) (<-chan int, *Generation, error) {
+	if head == nil {
+		return nil, nil, fmt.Errorf("decoder.GenerateEagleSpeculativeTree: nil head")
+	}
+	if sp.Temperature != 0 || sp.LogitProcessor != nil {
+		return nil, nil, fmt.Errorf("decoder.GenerateEagleSpeculativeTree: greedy only")
+	}
+	if !m.specRollbackSafe() {
+		return nil, nil, fmt.Errorf("decoder.GenerateEagleSpeculativeTree: recurrent family unsupported")
+	}
+	if head.Hidden() != m.w.arch.HiddenDim {
+		return nil, nil, fmt.Errorf("decoder.GenerateEagleSpeculativeTree: head hidden %d != target %d", head.Hidden(), m.w.arch.HiddenDim)
+	}
+	if len(prompt) < 2 {
+		return nil, nil, fmt.Errorf("decoder.GenerateEagleSpeculativeTree: prompt too short")
+	}
+	if B < 1 {
+		B = 2
+	}
+	if D < 1 {
+		D = 4
+	}
+	hidden := m.w.arch.HiddenDim
+	embedOf := func(tok int, dst []float32) { m.embedToken(tok, dst) }
+
+	out := make(chan int)
+	stats := &SpecStats{}
+	g := &Generation{Spec: stats}
+	go func() {
+		defer close(out)
+		tc := m.NewCache(len(prompt) + maxTokens + B*D + 8)
+		fuseAt := func(i int) []float32 {
+			h3 := make([]float32, 0, 3*hidden)
+			for ci := range capLayers {
+				row := tc.captured[ci][i*hidden : (i+1)*hidden]
+				h3 = append(h3, row...)
+			}
+			return head.Fuse(m.be, h3)
+		}
+		captureN := func(ids []int) (logits [][]float32, feats [][]float32, err error) {
+			tc.captureLayers = capLayers
+			tc.captured = make([][]float32, len(capLayers))
+			defer func() { tc.captureLayers, tc.captured = nil, nil }()
+			lg, e := m.forwardN(ids, tc)
+			if e != nil {
+				return nil, nil, e
+			}
+			feats = make([][]float32, len(ids))
+			for i := range ids {
+				feats[i] = fuseAt(i)
+			}
+			return lg, feats, nil
+		}
+		logitsN, feats, err := captureN(prompt)
+		if err != nil {
+			g.err = err
+			return
+		}
+		confirmed := slices.Clone(prompt)
+		curLogits := slices.Clone(logitsN[len(prompt)-1])
+
+		emit := func(tok int) bool {
+			if m.isStop(tok, sp) {
+				return false
+			}
+			select {
+			case <-ctx.Done():
+				g.err = ctx.Err()
+				return false
+			case out <- tok:
+			}
+			stats.Emitted++
+			return stats.Emitted < maxTokens
+		}
+
+		for {
+			C := len(confirmed)
+			hst := head.Prefill(m.be, embedOf, confirmed[:C-1], feats[:C-1], 0)
+			td := head.DraftTree(m.be, hst, embedOf, confirmed[C-1], feats[C-1], C-1, B, D)
+
+			// Verify the whole tree in one batched pass under tree attention.
+			tc.treeRowPos, tc.treeMask = td.RowPos, td.Mask
+			dlogits, _, err := captureN(td.Tokens)
+			tc.treeRowPos, tc.treeMask = nil, nil
+			if err != nil {
+				g.err = err
+				return
+			}
+			stats.Rounds++
+			stats.Drafted += td.B * td.D
+
+			// Best-path accept: walk the tree from the root, at each level following the
+			// child whose token is the base's greedy argmax, as far as it keeps matching.
+			var accepted []int
+			last := curLogits
+			parent := -1
+			for {
+				want := argmax(last)
+				hit := -1
+				for _, ch := range td.Children(parent) {
+					if td.Tokens[ch] == want {
+						hit = ch
+						break
+					}
+				}
+				if hit < 0 {
+					break
+				}
+				accepted = append(accepted, td.Tokens[hit])
+				last = dlogits[hit]
+				parent = hit
+			}
+			correction := argmax(last)
+			stats.Accepted += len(accepted)
+			stats.Evaluated += len(accepted) + 1
+
+			// Commit: drop the tree, re-forward the accepted path + correction cleanly so
+			// their KV lands at the right positions and we get fresh features + logits.
+			tc.TruncateTo(C)
+			commit := append(append([]int{}, accepted...), correction)
+			cl, cf, err := captureN(commit)
+			if err != nil {
+				g.err = err
+				return
+			}
+			for i, tk := range accepted {
+				confirmed = append(confirmed, tk)
+				feats = append(feats, cf[i])
+				if !emit(tk) {
+					return
+				}
+			}
+			confirmed = append(confirmed, correction)
+			feats = append(feats, cf[len(accepted)])
+			curLogits = slices.Clone(cl[len(accepted)])
+			if !emit(correction) {
+				return
+			}
+		}
+	}()
+	return out, g, nil
+}
+
 // GenerateEagleSpeculative is end-to-end lossless speculative decode with an EAGLE-3
 // draft head (05): the head drafts K tokens from the target's fused hidden, the target
 // verifies them in one batched pass, and the matching prefix (plus the target's own

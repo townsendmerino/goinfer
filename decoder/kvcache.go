@@ -112,6 +112,15 @@ type KVCache struct {
 	captureLayers []int
 	captured      [][]float32
 
+	// treeRowPos / treeMask, when non-nil, switch the batched verify (forwardN) from a
+	// linear causal chain to TREE attention (05 EAGLE tree drafting): row i takes its
+	// RoPE position from treeRowPos[i] (its depth) instead of startPos+i, and among the
+	// K new batch keys it attends only to columns j with treeMask[i][j] true (its
+	// ancestor path, including itself) plus the whole committed prefix. nil = the
+	// ordinary linear behavior, byte-identical (zero overhead on the common path).
+	treeRowPos []int
+	treeMask   [][]bool
+
 	// lora is the active compute-time LoRA adapter for this stream (#7), nil for
 	// the merged/base default. Set per-stream (Session.UseAdapter); the forward
 	// adds each layer's low-rank delta after the base projection. A non-nil lora

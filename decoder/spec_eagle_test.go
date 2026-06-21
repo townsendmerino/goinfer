@@ -54,4 +54,19 @@ func TestEagleSpecParity(t *testing.T) {
 		t.Fatalf("EAGLE spec != greedy (lossless broken)\n got %v\n ref %v", got, ref)
 	}
 	t.Logf("EAGLE spec parity OK: %d tok, %.3f acceptance, %.2f tok/verify", len(got), g.Spec.AcceptanceRate(), g.Spec.TokensPerRound())
+
+	// Tree variant: must also be lossless, and should commit more tokens/verify than the
+	// linear chain (root branching recovers top-2..B first tokens the chain misses).
+	tch, tg, err := base.GenerateEagleSpeculativeTree(ctx, prompt, n, head, capLayers, 2, 4, greedy)
+	if err != nil {
+		t.Fatalf("GenerateEagleSpeculativeTree: %v", err)
+	}
+	tgot := collectTokens(tch)
+	if tg.Err() != nil {
+		t.Fatalf("tree spec stream err: %v", tg.Err())
+	}
+	if !slices.Equal(tgot, ref) {
+		t.Fatalf("EAGLE tree spec != greedy (lossless broken)\n got %v\n ref %v", tgot, ref)
+	}
+	t.Logf("EAGLE TREE spec parity OK: %d tok, %.2f tok/verify (B=2,D=4) — vs linear %.2f", len(tgot), tg.Spec.TokensPerRound(), g.Spec.TokensPerRound())
 }

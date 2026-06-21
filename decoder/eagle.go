@@ -181,6 +181,117 @@ func (h *EagleHead) NewState() *eagleState {
 	return &eagleState{invFreq: inv}
 }
 
+// clone returns a copy of the head state's KV (sharing the immutable invFreq) so a
+// drafted tree can branch: each branch continues from the shared prefix independently.
+func (st *eagleState) clone() *eagleState {
+	c := &eagleState{invFreq: st.invFreq, k: make([][]float32, len(st.k)), v: make([][]float32, len(st.v))}
+	copy(c.k, st.k)
+	copy(c.v, st.v)
+	return c
+}
+
+// TreeDraft is a root-branched draft tree (05 EAGLE tree drafting): the head's top-b
+// candidates for the first draft position each seed a linear continuation of total
+// depth d. Verified in ONE batched target pass with tree attention, it recovers the
+// cases where the correct next token is in the head's top-b but not top-1 (the head's
+// top-1 is only ~0.56), and then the matching branch continues from the TRUE token.
+type TreeDraft struct {
+	Tokens []int    // node tokens in batch order
+	RowPos []int    // absolute RoPE position per node (startPos + depth)
+	Parent []int    // parent node index per node (-1 = child of the root/last-confirmed)
+	Depth  []int    // tree depth per node (1 = first draft position)
+	Mask   [][]bool // ancestor mask per node (its path to the root, plus itself)
+	B, D   int      // branch factor, max depth
+}
+
+// Children returns the node indices whose parent is p (-1 for the depth-1 roots).
+func (td TreeDraft) Children(p int) []int {
+	var c []int
+	for i, par := range td.Parent {
+		if par == p {
+			c = append(c, i)
+		}
+	}
+	return c
+}
+
+// topKDraftIdx returns the indices of the k largest logits (descending).
+func topKDraftIdx(logits []float32, k int) []int {
+	idx := make([]int, len(logits))
+	for i := range idx {
+		idx[i] = i
+	}
+	// partial selection sort for the top k (k is small)
+	for i := 0; i < k && i < len(idx); i++ {
+		best := i
+		for j := i + 1; j < len(idx); j++ {
+			if logits[idx[j]] > logits[idx[best]] {
+				best = j
+			}
+		}
+		idx[i], idx[best] = idx[best], idx[i]
+	}
+	if k > len(idx) {
+		k = len(idx)
+	}
+	return idx[:k]
+}
+
+// DraftTree builds a root-branched tree from a pre-built head state (KV over the
+// context). firstTok/seedFeature/startPos are the root (last confirmed token); b is the
+// branch factor at the first draft position, d the chain depth. C is the absolute
+// position of the first draft node (startPos+1).
+func (h *EagleHead) DraftTree(be Backend, st *eagleState, embedOf func(tok int, dst []float32), firstTok int, seedFeature []float32, startPos, b, d int) TreeDraft {
+	emb := make([]float32, h.hidden)
+	// expandable carries the per-node head state + feature needed to expand its children.
+	type expandable struct {
+		st      *eagleState
+		feature []float32 // the feature this node's own Step consumes (its parent's hidden)
+		idx     int       // node index, -1 for the synthetic root
+	}
+	td := TreeDraft{B: b, D: d}
+	// The root is the last confirmed token; its Step (at startPos) yields the depth-1
+	// candidates and the hidden feature the depth-1 nodes consume.
+	embedOf(firstTok, emb)
+	rootLogits, rootHidden := h.Step(be, emb, seedFeature, startPos, st)
+	frontier := []expandable{{st: st, feature: rootHidden, idx: -1}}
+	parentLogits := [][]float32{rootLogits}
+	for depth := 1; depth <= d; depth++ {
+		var next []expandable
+		var parentLogitsNext [][]float32
+		for fi, node := range frontier {
+			cands := topKDraftIdx(parentLogits[fi], b)
+			for _, di := range cands {
+				tok := h.TargetID(di)
+				idx := len(td.Tokens)
+				td.Tokens = append(td.Tokens, tok)
+				td.RowPos = append(td.RowPos, startPos+depth)
+				td.Parent = append(td.Parent, node.idx)
+				td.Depth = append(td.Depth, depth)
+				if depth < d { // expand: this node's Step produces its children's logits
+					stc := node.st.clone()
+					embedOf(tok, emb)
+					logits, hidden := h.Step(be, emb, node.feature, startPos+depth, stc)
+					next = append(next, expandable{st: stc, feature: hidden, idx: idx})
+					parentLogitsNext = append(parentLogitsNext, logits)
+				}
+			}
+		}
+		frontier = next
+		parentLogits = parentLogitsNext
+	}
+	// ancestor masks: walk parent pointers from each node up to the root.
+	n := len(td.Tokens)
+	td.Mask = make([][]bool, n)
+	for i := range td.Mask {
+		td.Mask[i] = make([]bool, n)
+		for j := i; j >= 0; j = td.Parent[j] {
+			td.Mask[i][j] = true
+		}
+	}
+	return td
+}
+
 // Fuse computes the fused feature [hidden] from the 3 concatenated target hidden
 // states h3 [3*hidden] (the ForwardCapture seam output): feature = fc · h3.
 func (h *EagleHead) Fuse(be Backend, h3 []float32) []float32 {

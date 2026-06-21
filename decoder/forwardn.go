@@ -152,6 +152,9 @@ func (m *Model) runLayersFromEmbedN(h []float32, cache *KVCache) ([]float32, err
 		isLocal := cache.isLocal(l)
 		for i := range K {
 			pos := startPos + i
+			if cache.treeRowPos != nil {
+				pos = cache.treeRowPos[i]
+			}
 			qi, ki, vi := row(q, i, qDim), row(k, i, kvDim), row(v, i, kvDim)
 			if arch.QKNorm {
 				rmsNorm(qi, lw.QNorm, nH, hd, arch.NormEps, arch.RMSAddOne)
@@ -343,6 +346,50 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 			// so they contribute nothing to the scores·V matmul below.
 			for i := range K {
 				pos := startPos + i
+				if cache.treeRowPos != nil {
+					pos = cache.treeRowPos[i]
+				}
+				rowS := scores[i*nKeys : i*nKeys+nKeys]
+				// TREE attention (05): row i attends to the whole committed prefix
+				// [loP, batchCol0) plus only its ancestor batch columns (treeMask[i][j]).
+				if cache.treeMask != nil {
+					loP := cache.WindowStart(pos, global) - base
+					batchCol0 := startPos - base
+					allowed := func(s int) bool {
+						if s < batchCol0 {
+							return s >= loP
+						}
+						j := s - batchCol0
+						return j < K && cache.treeMask[i][j]
+					}
+					maxS := math.Inf(-1)
+					for s := 0; s < nKeys; s++ {
+						if allowed(s) {
+							sc := float64(rowS[s]) * scale
+							rowS[s] = float32(sc)
+							if sc > maxS {
+								maxS = sc
+							}
+						}
+					}
+					var sum float64
+					for s := 0; s < nKeys; s++ {
+						if allowed(s) {
+							e := math.Exp(float64(rowS[s]) - maxS)
+							rowS[s] = float32(e)
+							sum += e
+						} else {
+							rowS[s] = 0
+						}
+					}
+					inv := 1.0 / sum
+					for s := 0; s < nKeys; s++ {
+						if rowS[s] != 0 {
+							rowS[s] = float32(float64(rowS[s]) * inv)
+						}
+					}
+					continue
+				}
 				// Absolute attend range [start, hi]; map to physical columns by −base
 				// (base = absolute position of column 0). hi is the inclusive upper
 				// key bound: pos for a causal text query, or the image-block end for a
@@ -350,7 +397,6 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 				// future tokens). Equals pos with no image blocks — inert for text.
 				loP := cache.WindowStart(pos, global) - base
 				hiP := cache.attendHi(pos) - base
-				rowS := scores[i*nKeys : i*nKeys+nKeys]
 				maxS := math.Inf(-1)
 				for s := loP; s <= hiP; s++ {
 					sc := float64(rowS[s]) * scale

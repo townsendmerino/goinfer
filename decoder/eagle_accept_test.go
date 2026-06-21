@@ -79,7 +79,8 @@ func TestEagleAcceptedLength(t *testing.T) {
 
 	// At each position i (past the prompt), prefill the head's KV over toks[:i] then
 	// draft K and compare to the realized continuation toks[i+1..].
-	var sumAcc, sumOracle, n int
+	var sumAcc, sumOracle, sumTree, n int
+	const treeB, treeD = 2, 5 // full binary tree to depth 5 = 62 nodes
 	var cosPre, cosPost float64
 	hist := make([]int, K+1)
 	emb := make([]float32, head.Hidden())
@@ -113,6 +114,27 @@ func TestEagleAcceptedLength(t *testing.T) {
 		}
 		sumOracle += oacc
 
+		// TREE accept: root-branch B, depth K. The tree recovers positions where the
+		// correct token toks[i+1] is in the head's top-B (not just top-1).
+		str := head.Prefill(base.be, embedOf, toks[:i], feats[:i], 0)
+		td := head.DraftTree(base.be, str, embedOf, toks[i], feats[i], i, treeB, treeD)
+		tacc, parent := 0, -1
+		for tacc < len(toks)-(i+1) { // walk the tree following the realized continuation
+			hit := -1
+			for _, ch := range td.Children(parent) {
+				if td.Tokens[ch] == toks[i+1+tacc] {
+					hit = ch
+					break
+				}
+			}
+			if hit < 0 {
+				break
+			}
+			tacc++
+			parent = hit
+		}
+		sumTree += tacc
+
 		// How well does each candidate recurrence quantity predict the NEXT fused feature
 		// feats[i+1] (what step-0's output must become)? cos(pre-norm resid) vs
 		// cos(post-finalNorm). The oracle feeds feats[i+1] exactly.
@@ -128,6 +150,7 @@ func TestEagleAcceptedLength(t *testing.T) {
 	mean := float64(sumAcc) / float64(n)
 	t.Logf("EAGLE autoregressive accept (K=%d, %d positions): mean accepted %.2f → ~%.2f tok/verify | histogram %v | ORACLE-feature mean %.2f",
 		K, n, mean, mean+1, hist, float64(sumOracle)/float64(n))
+	t.Logf("TREE accept (B=%d, D=%d): mean %.2f → ~%.2f tok/verify  [linear %.2f, oracle %.2f]", treeB, treeD, float64(sumTree)/float64(n), float64(sumTree)/float64(n)+1, mean, float64(sumOracle)/float64(n))
 	t.Logf("recurrence-feature vs next fused feature: cos(pre-norm resid)=%.3f cos(post-finalNorm)=%.3f",
 		cosPre/float64(n), cosPost/float64(n))
 	// INC-4a FINDING: step-0 matches ~26-41% (the validated forward), but steps 1+ are
