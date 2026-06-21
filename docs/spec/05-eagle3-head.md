@@ -108,10 +108,31 @@ maximize measured acceptance.
    logits-byte-identical + last-layer capture reproduces logits exactly). Generic
    decode path; special-family archs return an error (not yet wired). `forwardN`
    (batched verify) capture is a follow-up for the full draft loop.
-2. **Head loader**: parse `model.safetensors` (fusion `fc`, the 1 layer's q/k/v/o +
-   gate/up/down + norms, the draft `lm_head[32000]`, `t2d`/`d2t`, embedding strategy).
-3. **Head forward**: fuse(3 hidden states) → 1 transformer layer → draft-vocab logits →
-   map to full vocab via d2t. Reuses goinfer's GQA/RoPE/SwiGLU/RMSNorm.
+2. **Head loader**: parse `model.safetensors` per the protocol below.
+3. **Head forward**: per the protocol below.
+
+### EAGLE-3 protocol (extracted from vLLM `llama_eagle3.py` + SpecForge)
+
+Submodules / tensors in the checkpoint:
+- `embed_tokens` — the head's token embedding [vocab, hidden] (ships its own).
+- `fc` — ReplicatedLinear, **in = target_hidden × num_aux_hidden_states (=3·hidden), out = hidden**: fuses the 3 concatenated target hidden states into one feature.
+- `input_norm` — RMSNorm applied to the **concatenated 3-layer hidden** *before* `fc` (when `norm_before_fc`). (optional `fc_norm` per-aux RMSNorms in some variants.)
+- `layers` — ONE `LlamaDecoderLayer` (self_attn q/k/v/o + mlp gate/up/down + input_layernorm + post_attention_layernorm). **Its attention projects from 2·hidden** (see forward).
+- `norm` — final RMSNorm before the head.
+- `lm_head` — [draft_vocab(32000), hidden].
+- `draft_id_to_target_id` (d2t) — int map scattering draft-vocab logits into the 151936 target vocab.
+
+Forward (drafting one token from the target's hidden at the current position):
+1. Target forward exposes aux hidden states from **3 layers** (the inc-1 seam).
+2. `h3 = concat(low, mid, high)` → `input_norm(h3)` → `feature = fc(h3)`  → [hidden].
+3. `e = embed_tokens(prev_token)` → [hidden].
+4. **`layer_in = concat(e, feature)`** → [2·hidden] → the decoder layer (so its q/k/v_proj have `in_features = 2·hidden`) → `norm` → `lm_head` → draft logits [32000].
+5. Map to target vocab: `target_logits[d2t[i]] = draft_logits[i]`; argmax/sample → a target token id.
+6. Autoregress K steps: the head keeps its OWN KV cache; each step feeds the just-drafted token's embed concatenated with the SAME `feature` (the target hidden is fixed for this draft block) — confirm vs source in inc 4.
+
+OPEN: which 3 target layer indices feed step 1 (a training choice; vLLM reads
+`eagle_aux_hidden_state_layer_ids` or defaults). Confirm from the checkpoint/config
+or tune by measured acceptance (inc 5). Reuses goinfer's GQA/RoPE/SwiGLU/RMSNorm.
 4. **Autoregressive drafting + Drafter integration**: the head generates K tokens from
    the target's last hidden state (via the seam) and its own outputs; wire as a `Drafter`
    into the spec verify (it composes with the 03 router).
