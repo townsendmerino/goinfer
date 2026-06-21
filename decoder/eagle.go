@@ -3,6 +3,7 @@ package decoder
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 
@@ -37,6 +38,16 @@ type EagleHead struct {
 	postAttnNorm, finalNorm []float32
 
 	d2t []int32 // draft index → target id offset: target = i + d2t[i]
+
+	st *embed.SafetensorsFile // retained: the WeightMats alias its mmap (Close frees it)
+}
+
+// Close releases the head's mmap'd weights.
+func (h *EagleHead) Close() error {
+	if h.st != nil {
+		return h.st.Close()
+	}
+	return nil
 }
 
 // eagleConfig is the subset of the head's config.json the loader needs.
@@ -71,7 +82,7 @@ func LoadEagleHead(dir string) (*EagleHead, error) {
 	if err != nil {
 		return nil, fmt.Errorf("eagle: open safetensors: %w", err)
 	}
-	defer st.Close()
+	// st is retained on the head (the WeightMats alias its mmap); freed by Close.
 
 	h := c.HiddenSize
 	qDim := c.NumAttentionHeads * c.HeadDim
@@ -143,5 +154,136 @@ func LoadEagleHead(dir string) (*EagleHead, error) {
 	for i, v := range d2t64 {
 		head.d2t[i] = int32(v)
 	}
+	head.st = st
 	return head, nil
 }
+
+// eagleState is the head's own KV cache across the K autoregressive draft steps,
+// plus the RoPE inverse-frequency table (built once from the head's rope_theta).
+type eagleState struct {
+	k, v    [][]float32 // per step: [nKV*headDim]
+	invFreq []float64   // [headDim/2]
+}
+
+// NewState returns a fresh per-draft-block head state.
+func (h *EagleHead) NewState() *eagleState {
+	half := h.headDim / 2
+	inv := make([]float64, half)
+	for d := range inv {
+		inv[d] = math.Pow(h.ropeTheta, -float64(2*d)/float64(h.headDim))
+	}
+	return &eagleState{invFreq: inv}
+}
+
+// Fuse computes the fused feature [hidden] from the 3 concatenated target hidden
+// states h3 [3*hidden] (the ForwardCapture seam output): feature = fc · h3.
+func (h *EagleHead) Fuse(be Backend, h3 []float32) []float32 {
+	feat := make([]float32, h.hidden)
+	matmul(be, &h.fc, h3, feat, 1)
+	return feat
+}
+
+// Step runs one head forward at position pos: embedRow is the TARGET embedding of the
+// input token, feature is the fused target hidden. It appends this step's K/V to st
+// and returns draft-vocab logits. The decoder layer attends over concat(embed,
+// feature) (2*hidden in), with the residual taken over the hidden-dim feature.
+func (h *EagleHead) Step(be Backend, embedRow, feature []float32, pos int, st *eagleState) []float32 {
+	hid := h.hidden
+	e := append([]float32(nil), embedRow...)
+	rmsNorm(e, h.inputNorm, 1, hid, h.normEps, false)
+	f := append([]float32(nil), feature...)
+	rmsNorm(f, h.hiddenNorm, 1, hid, h.normEps, false)
+	x := make([]float32, 2*hid)
+	copy(x[:hid], e)
+	copy(x[hid:], f)
+
+	qDim, kvDim := h.nHeads*h.headDim, h.nKV*h.headDim
+	q := make([]float32, qDim)
+	k := make([]float32, kvDim)
+	v := make([]float32, kvDim)
+	matmul(be, &h.q, x, q, 1)
+	matmul(be, &h.k, x, k, 1)
+	matmul(be, &h.v, x, v, 1)
+	applyRoPE(q, h.nHeads, h.headDim, pos, st.invFreq, 1)
+	applyRoPE(k, h.nKV, h.headDim, pos, st.invFreq, 1)
+	st.k = append(st.k, k)
+	st.v = append(st.v, v)
+
+	ctx := make([]float32, qDim)
+	h.attend(q, st, ctx)
+	attnOut := make([]float32, hid)
+	matmul(be, &h.o, ctx, attnOut, 1)
+	resid := make([]float32, hid)
+	for i := range resid {
+		resid[i] = feature[i] + attnOut[i] // residual over the feature
+	}
+
+	x2 := append([]float32(nil), resid...)
+	rmsNorm(x2, h.postAttnNorm, 1, hid, h.normEps, false)
+	gate := make([]float32, h.inter)
+	up := make([]float32, h.inter)
+	matmul(be, &h.gate, x2, gate, 1)
+	matmul(be, &h.up, x2, up, 1)
+	mid := make([]float32, h.inter)
+	for i := range mid {
+		mid[i] = silu(gate[i]) * up[i]
+	}
+	down := make([]float32, hid)
+	matmul(be, &h.down, mid, down, 1)
+	for i := range resid {
+		resid[i] += down[i]
+	}
+
+	rmsNorm(resid, h.finalNorm, 1, hid, h.normEps, false)
+	logits := make([]float32, h.draftVocab)
+	matmul(be, &h.lmHead, resid, logits, 1)
+	return logits
+}
+
+// attend is the head's single-query GQA attention over its stored K/V (causal by
+// construction — the head only attends positions it has drafted so far).
+func (h *EagleHead) attend(q []float32, st *eagleState, ctx []float32) {
+	n := len(st.k)
+	group := h.nHeads / h.nKV
+	scale := 1.0 / math.Sqrt(float64(h.headDim))
+	scores := make([]float64, n)
+	for qh := 0; qh < h.nHeads; qh++ {
+		kvh := qh / group
+		qHead := q[qh*h.headDim : (qh+1)*h.headDim]
+		maxS := math.Inf(-1)
+		for s := 0; s < n; s++ {
+			kHead := st.k[s][kvh*h.headDim : (kvh+1)*h.headDim]
+			var dot float64
+			for d := range qHead {
+				dot += float64(qHead[d]) * float64(kHead[d])
+			}
+			dot *= scale
+			scores[s] = dot
+			if dot > maxS {
+				maxS = dot
+			}
+		}
+		var sum float64
+		for s := 0; s < n; s++ {
+			scores[s] = math.Exp(scores[s] - maxS)
+			sum += scores[s]
+		}
+		out := ctx[qh*h.headDim : (qh+1)*h.headDim]
+		for d := range out {
+			out[d] = 0
+		}
+		for s := 0; s < n; s++ {
+			w := float32(scores[s] / sum)
+			vHead := st.v[s][kvh*h.headDim : (kvh+1)*h.headDim]
+			for d := range out {
+				out[d] += w * vHead[d]
+			}
+		}
+	}
+}
+
+// TargetID maps a draft-vocab index to the target token id: target = i + d2t[i].
+func (h *EagleHead) TargetID(draftIdx int) int { return draftIdx + int(h.d2t[draftIdx]) }
+
+// Hidden reports the head's hidden size (must equal the target model's HiddenDim).
+func (h *EagleHead) Hidden() int { return h.hidden }
