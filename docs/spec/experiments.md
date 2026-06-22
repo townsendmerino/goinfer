@@ -52,9 +52,9 @@ Rows are (spoke × its home workload). `α̅` = mean per-position acceptance.
 
 | Model | Workload | Machine | Lossless | α̅ | tok/v | speedup | Status | Notes |
 |---|---|---|---|---|---|---|---|---|
-| qwen2.5-coder-1.5b | structured | mac | ⬜ | – | – | – | ⬜ | |
+| qwen2.5-coder-1.5b | structured | mac | ✅ `TestGrammarSpecParity` | – | 1.19 | – | ✅ | acc mean 0.41 (0.20–0.53 by schema); tok/round 1.09–1.45; forced runs fire (mac, M-series) |
 | qwen2.5-coder-0.5b | structured | lx | ✅ `TestGrammarSpecParity` | – | 1.13 | – | ✅ lossless (==constrained greedy); acc 0.40, forced runs fire |
-| gemma-4-E2B | structured | mac | ⬜ | – | – | – | ⬜ | |
+| gemma-4-E2B | structured | mac | ✅ `TestGrammarSpecParity` | – | 1.22 | – | ✅ | acc mean 0.47; tok/round 1.06–1.46 (mac) |
 
 ### 02 — Cache / n-gram ([doc](./02-cache-ngram.md)) · home: codeedit / rag / agent
 
@@ -102,8 +102,8 @@ Rows are (spoke × its home workload). `α̅` = mean per-position acceptance.
 
 | Model | Workload | Machine | Lossless | α̅ | tok/v | speedup | Status | Notes |
 |---|---|---|---|---|---|---|---|---|
-| qwen2.5-coder-1.5b | codeedit | mac | ⬜ | – | – | – | ⬜ | match-len curve |
-| qwen2.5-coder-1.5b | rag | mac | ⬜ | – | – | – | ⬜ | |
+| qwen2.5-coder-1.5b | codeedit | mac | ✅ `TestNgramSpeculativeGreedyParity` | 0.368 | 1.08 | 0.99× | ✅ | adaptive ≈ breakeven; averts the 0.69× fixed-K loss (fixed: α̅0.68 tok/v1.68). match-len curve |
+| qwen2.5-coder-1.5b | rag | mac | ✅ `TestNgramSpeculativeGreedyParity` | 0.443 | 1.15 | 1.09× | ✅ | adaptive 1.09× (fixed 0.66×); modest win on mac CPU |
 | qwen2.5-coder-1.5b | agent | lx | ⬜ | – | – | – | ⬜ | warm-KV reuse |
 
 ### 04 — Adaptive depth ([doc](./04-adaptive-depth.md)) · vs fixed K=8
@@ -153,7 +153,7 @@ Rows are (spoke × its home workload). `α̅` = mean per-position acceptance.
 |---|---|---|---|---|---|---|---|---|
 | qwen2.5-coder-0.5b | agent-loop (repeat tool-call) | lx | ✅ `TestGrammarRouterSpec` | – | 5.67 | – | confidence (inc 3) | ✅ confidence-router 5.67 (inc-1 priority 4.25, grammar-only 1.13), lossless |
 | qwen2.5-coder-0.5b | structured (prose→schema) | lx | ✅ | – | 1.13 | – | priority | ✅ router=grammar-only (n-gram can't echo prose context) |
-| qwen2.5-coder-1.5b | agent | mac | ⬜ | – | – | – | tree→α̂ | ⬜ |
+| qwen2.5-coder-1.5b | agent | mac | ⏸ | – | – | – | tree→α̂ | ⏸ needs EAGLE head (`~/models/qwen3-1.7b-eagle3`) — 05 head is an `lx` job per the division-of-labor; not runnable on `mac` without the head asset |
 
 ### 05 — EAGLE-3 head ([doc](./05-eagle3-head.md)) · home: chat / reasoning
 
@@ -192,7 +192,7 @@ safety: it prevents the fixed-K GPU slowdown on low-acceptance streams.
 | 02 | qwen2.5-coder-0.5b | agent-json | lx-cpu | adaptive | 6.74 | – | **1.59×** | ✅ |
 | 02 | qwen2.5-coder-0.5b | agent-json | lx-gpu | adaptive | 7.27 | 111.5 | 0.96× | 🔴 Stage-A wall |
 | 02 | qwen2.5-coder-0.5b | codeedit | lx-gpu | adaptive | 1.29 | 70.3 | 0.90× | adaptive averts 0.60× fixed |
-| 02 | qwen2.5-coder-1.5b | codeedit | mac | – | – | – | – | ⬜ |
+| 02 | qwen2.5-coder-1.5b | codeedit | mac | adaptive | 1.08 | – | 0.99× | ✅ adaptive averts fixed-K 0.69× |
 
 ---
 
@@ -248,3 +248,4 @@ Re-rank after each analysis pass; build the spoke with the most fixable acceptan
 | 2026-06-21 | (wip) | lx | 06 §9 — online correction built | ✅ `RouterDrafter` blends static α̂ with a running realized accept rate (EMA λ=0.85 + capped weight, Bayesian shrinkage `(w·rate+prior·α̂)/(w+prior)`), fed by new `OutcomeRecorder.RecordOutcome` from the verify loop. Cold-start = pure α̂ (byte-identical), then demotes a mis-ranked source in ~10 rounds (`TestRouterOnlineCorrection`: 0.70-static/0-accept falls below 0.20-static/always-accept). Fixes the prose cross-workload mis-rank. Scope: per-request (adapts within a long generation, resets per request); cross-request shared stats = follow-up |
 | 2026-06-21 | (wip) | lx | 06 §3 — cross-workload held-out validation | ✅ `TestNgramAlphaCrossWorkload`: scored shipped `ngramAlpha` (fit on copy-heavy) on 5 UNSEEN workloads via per-workload AUC+ECE. Mean held-out ECE=0.14 (generalizes on average). Spread: config 0.04/prose-rep 0.05 tight vs markdown 0.24/sql 0.23 drift; **sql AUC 0.32 — match_len→accept INVERTS** (longer copies accept less). Static table = good prior, mis-ranks on some workloads → exactly what §9 online correction absorbs. They compose: ship prior + correct online |
 | 2026-06-22 | model2 | lx | 06 — CROSS-MODEL validation (llama-3.2-1b, BPE ≠ qwen2) | 🔎 Downloaded Llama-3.2-1B-Instruct (different tokenizer family; spec-safe + batchable). Lossless gate GREEN (`TestNgramSpeculativeGreedyParity`/`TestSessionNgramSpecParity` token-identical). **α̂_grammar STABLE: 0.205 (qwen 0.20), same depth-0 0.24→d1 0.09 compounding — tokenization-fragility reproduces across tokenizers; `grammarConf=0.20` stands.** **α̂_ngram does NOT cross-calibrate: match_len→accept AUC 0.64 (qwen 0.82, weaker); held-out mean ECE 0.29 (qwen 0.14, > 0.25 bar); markdown ECE 0.70 breakdown. The qwen sql INVERSION did NOT reproduce (llama sql AUC 0.50, flat) — it was qwen-specific.** BUT every llama n-gram bucket (realized 0.71–0.98) still ≫ grammarConf 0.20, so the router ORDERING (n-gram copy ≻ grammar) holds — the table mis-CALIBRATES cross-model but does not mis-RANK. **Decision (C): lean on online correction.** Keep the shipped table as a serviceable routing PRIOR; do NOT ship a per-family static table (llama's own fit is noisy AUC 0.64, and precise calibration is workload- AND model-dependent — more static tables don't fix that). The per-source EMA correction (§9, built) absorbs the drift; its CROSS-REQUEST persistence is the lever to invest in. No code change (guardrail: data doesn't demand touching anchors/grammarConf — grammar reproduces, n-gram still ranks correctly). Caveat now: validated on {qwen2.5-coder-0.5b, llama-3.2-1b}. Trace: /tmp/spectrace/llama-3.2-1b.jsonl |
+| 2026-06-21 | (wip) | mac | mac speed re-measure (01 grammar + 02 n-gram) on Apple Silicon (Metal build green, NEON CPU) | ✅ Darwin builds green (root + `-tags gpu`/Metal); foundation lossless gates GREEN on mac for qwen2.5-coder-0.5b/1.5b + gemma-4-E2B (`TestGrammarSpecParity`, `TestNgramSpeculativeGreedyParity`, `TestSpeculativeGreedyParity`+`_draftTarget`, sampled-in-dist). **Speed re-measure (`TestNgramSpecHarness`/`TestGrammarSpecHarness`, adaptive):** 02 codeedit 0.99× (averts 0.69× fixed), rag 1.09×, agent-json 1.34× (qwen2.5-coder-1.5b); 01 grammar tok/round 1.19 (1.5b) / 1.22 (gemma-E2B), acc mean 0.41/0.47. Direction matches `lx` CPU (n-gram win concentrated on copy-heavy/agent; grammar ≈ breakeven) — confirms acceptance/correctness transfer, on-device speed is in the same regime. 05 tree/agent (`:156`) ⏸ — needs the EAGLE head asset (an `lx` job). Numbers are mac CPU (W4A8); no Metal-resident spec path on mac yet (Stage-B thin-M kernel deferred). |
