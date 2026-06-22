@@ -37,9 +37,14 @@ length:
 - extend (spend depth) where `α̂` is high (often grammar/n-gram runs);
 - stop a branch when `α̂^depth` drops below the marginal-cost threshold ([04](./04-adaptive-depth.md)).
 
-Tree shape is thus *derived from measured acceptance*, not hand-tuned. `B` is
-backend-specific (CPU SIMD vs WebGPU have different "free" batch widths), so the
-harness measures `B` and the router reads it.
+Tree shape is thus *derived from measured acceptance* — but acceptance is not the only
+input. The backend sets not just the *size* of `B` but the optimal *shape*: the GPU verify's
+amortization **decays with width** (70B-dim bench, [07](./07-stageb-gemm-verify.md): M=4 →
+1.58×, M=32 → 1.13×), so on GPU a **short linear** draft can beat a wide tree *regardless of
+acceptance*, while on the batched-CPU path wide trees raise `tok/verify`. The CPU and GPU
+optima are **opposed** ([00-core](./00-core.md) §2). So the router's shape policy must be
+backend-aware — measure `B` *and* the amortization-vs-width curve per backend (CPU SIMD vs
+WebGPU), not acceptance only.
 
 ## Why it suits goinfer
 

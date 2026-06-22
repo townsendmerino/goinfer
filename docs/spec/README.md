@@ -15,20 +15,31 @@ findings, honest:
 - **The CPU winner is n-gram (02), shipped and serve-wired (`--spec ngram`).** It wins on
   copy-heavy traffic (code edits / RAG / agent loops) because its draft is *free*. This is
   the one unambiguous production win.
-- **A model drafter cannot win on CPU.** EAGLE-3 (05) is built end-to-end and lossless
-  (greedy + tree drafting), but it's a wall-clock *loss* on CPU (~0.4×): every verify token
-  costs ~a full forward (no batched-verify amortization), and unlike n-gram the draft isn't
-  free. tok/verify gains are real (2.1 with trees) but don't translate without GPU.
+- **A model drafter cannot win on CPU — and the reason is acceptance, not the verify.**
+  EAGLE-3 (05) is built end-to-end and lossless (greedy + tree drafting), but it's a
+  wall-clock *loss* on CPU (~0.4×). The batched verify *is* amortized — `forwardN` streams
+  each weight once across the K rows, and a CPU verify node costs ~0.5 of a target step
+  (`AdaptiveDepth.Theta`); that amortization is exactly why n-gram wins. EAGLE loses because
+  acceptance is low (~1.6 tok/verify) and, unlike n-gram, its draft is **not free**: a head
+  forward per drafted token plus a per-round capture/correction forward — overhead that ~1.6
+  accepted tokens can't pay back. tok/verify gains are real (2.1 with trees), but the lever
+  is **α**, not verify batching (see 05's kill-gate); they translate only when the target
+  step is expensive enough (big model / GPU) to dwarf the draft cost.
 - **The GPU verify (07, "Stage B") is parked, not dead.** On small models the batched verify
   is ~break-even (compute-bound at M=8). A large-dim microbench found it *does* amortize on
   big models (70B-layer dims: 1.37× at M=8, 1.58× at M=4) — but only for **short linear**
   drafts (trees are the wrong shape: wide M kills amortization), and it needs a >8 GB GPU to
   host a real large model. Unpark trigger: big GPU + a large model worth serving fast.
 - **Acceptance is predictable and now calibrated (06).** α̂_ngram(match_len) is a tiny
-  monotone table (AUC 0.82, held-out mean ECE 0.14); α̂_grammar trace-fit to ~0.20 (forced
-  bytes are *tokenization-fragile*, not the ≈1 the intuition assumed — grammar is the
-  weakest source). The 03 router ranks sources by these calibrated α̂, shrunk online toward
-  each source's running accept rate to absorb cross-workload drift.
+  monotone table (AUC 0.82, held-out mean ECE 0.14); α̂_grammar trace-fit to ~0.20. Read that
+  0.20 precisely: it indicts *this* drafter, not grammar speculation in principle. Free
+  grammar drafting must *guess* the tokenization of the forced bytes, and the canonical
+  retokenization diverges from how the model splits them under the mask (the mismatch
+  compounds with depth). The fix — a tokenization-aware forced drafter — is described but
+  unbuilt (01/06); accurate grammar drafting fundamentally needs the model. So grammar ranks
+  weakest *as currently built*, and the router treats it as the floor. The 03 router ranks
+  sources by these calibrated α̂, shrunk online toward each source's running accept rate to
+  absorb cross-workload drift.
 - **Grammar-fused (01) is shipped + serve-wired** for constrained/tool requests, but modest
   (the tokenization fragility above caps it).
 - **Trees + the per-family rollback substrate are built and gated** (tree attention in

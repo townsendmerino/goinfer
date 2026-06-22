@@ -70,6 +70,17 @@ compute-bound, the verify cost stops being `1` and this formula over-promises. T
 ceiling is the budget `B` the harness measures per backend (§7); treat `S(γ)` as valid
 for `γ`-and-tree-width within `B`.
 
+**The optimal draft *shape* is backend-dependent — and the CPU and GPU optima are
+opposed.** The memory-bound `+1` above degrades differently on each backend. The
+2026-06-21 large-dim measurement ([07](./07-stageb-gemm-verify.md)) found the GPU verify's
+weight-stream amortization is **best at small M and decays with width** (70B-layer dims:
+M=4 → 1.58×, M=32 → 1.13×): a wide tree turns the verify compute-bound and throws the
+amortization away. On the batched-CPU path the pressure runs the other way — `tok/verify`
+rises with width because the *draft*, not the verify, is the scarce thing. So **short
+linear** drafts are GPU-optimal while **wide trees** are CPU-optimal; there is no single
+global draft shape. The controller (03) must choose shape per backend, not from acceptance
+alone — see [03](./03-router-tree.md) "cost model".
+
 (Leviathan et al. 2023). Maximizing `S` over `γ` gives the optimal draft depth
 `γ*(α, c)`: it grows as `α → 1` and as `c → 0`. The marginal reading — *extend the
 draft while the expected marginal accepted token is worth more than the marginal

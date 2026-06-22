@@ -1,7 +1,12 @@
 # 01 — Grammar-fused speculation
 
-> Status: **proposal**. Depends on [00-core](./00-core.md). Lowest effort, highest ROI
-> on goinfer's headline workloads (structured output / tool calls). Build first among the spokes.
+> Status: **SHIPPED + serve-wired, modest** (see Increments). Depends on [00-core](./00-core.md).
+> The headline finding: the win is real but tokenization-bounded (~1.05–1.45 tok/round;
+> α̂_grammar ≈ 0.20 in [06](./06-acceptance-analysis.md)). Read that 0.20 as a verdict on
+> *this* drafter — free grammar drafting must guess how the model tokenizes the forced bytes
+> under the mask — **not** on grammar speculation in principle. A tokenization-aware forced
+> drafter (proposing the model's *own* legal tokenization rather than the canonical one) is
+> the unbuilt headroom; accurate grammar drafting fundamentally needs the model.
 
 ## Idea
 

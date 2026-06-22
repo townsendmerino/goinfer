@@ -201,6 +201,19 @@ If miscalibrated, fit **isotonic regression** (or Platt / temperature scaling) o
 held-out fold — never on the training fold. Shipping bar into 04: monotone reliability
 and **ECE < ~0.03** (tune the target to how aggressively 04 extends depth).
 
+> **Which consumer this bar actually governs (2026-06-21).** As shipped, the calibrated
+> `ngramAlpha` table does **not** drive [04 adaptive depth](./04-adaptive-depth.md): the
+> `AdaptiveDepth` controller runs its own EMA of *realized* acceptance (`Observe`/`alpha`),
+> so depth self-calibrates online and the ECE-<0.03 bar above — which was written for depth —
+> does not gate the table. The table feeds `NgramDrafter.Confidence()` → the
+> [03 router](./03-router-tree.md) for source *ranking*, where **ordering** (AUC 0.82) matters
+> more than absolute ECE, so the shipped mean ECE 0.14 is acceptable for its real consumer.
+> The residual risk is therefore a *ranking* failure, not a depth one: on workloads where the
+> `match_len → accept` relation **inverts** (sql AUC 0.32, §3) the table actively mis-ranks,
+> and the online correction that catches it is **per-request** (it resets each request), so a
+> fresh sql-like request mis-ranks for ~10 rounds before the EMA demotes the source.
+> Cross-request persistence of those stats is the documented follow-up.
+
 ## 6. The predictability verdict (the original question, quantified)
 
 - **Headline:** held-out AUC + ECE of `α̂` per workload. High AUC + low ECE ⇒ success
