@@ -54,9 +54,20 @@ the doc's rule to *measure predictability before shipping anything heavier*:
   requests. True cross-session workload-drift adaptation needs shared, thread-safe per-model
   stats (the documented next step); the within-request form is the tested foundation.
 
+- **Cross-workload held-out validation (§3) — done.** `TestNgramAlphaCrossWorkload` scores
+  the shipped `ngramAlpha` table (fit on the copy-heavy `specWorkloads`) against five
+  workloads it was NOT fit on (csv/config/markdown/sql/prose-rep), via per-workload AUC +
+  ECE = Σ_bin (n/N)·|empirical − ngramAlpha(match_len)|. Result (qwen2.5-coder-0.5b): **mean
+  held-out ECE = 0.14** — it generalizes acceptably on average. But the per-workload spread
+  is real and instructive: config 0.04 / prose-rep 0.05 (tight) vs markdown 0.24 / sql 0.23
+  (drift), and **sql AUC = 0.32 — the match_len→accept relationship INVERTS there** (longer
+  copies accept less). So the static table is a good *prior* but genuinely mis-ranks on some
+  workloads — precisely the drift the §9 online correction is for. The two results compose:
+  ship the calibrated prior, correct it online per workload.
+
 Remaining §06 follow-ups (unfunded unless the win justifies): **cross-request** persistence
-of the online-correction stats (shared per-model, thread-safe); cross-workload held-out
-validation (§3 — the fits are one small model); a **byte-level forced drafter** that would
+of the online-correction stats (shared per-model, thread-safe); validation across more
+models/families (the fits are one small model); a **byte-level forced drafter** that would
 raise α̂_grammar past the tokenization wall (a separate build); and the offline GBM path (§4)
 only if a future source proves un-predictable from 1-D features.
 

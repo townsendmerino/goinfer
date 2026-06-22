@@ -346,3 +346,96 @@ func TestRouterOnlineCorrection(t *testing.T) {
 		t.Errorf("after correction, hi eff %.3f should be < lo eff %.3f", r.effective(0, hi.conf), r.effective(1, lo.conf))
 	}
 }
+
+// TestNgramAlphaCrossWorkload is the §06 §3 held-out validation: does the shipped
+// ngramAlpha table — fit on the copy-heavy specWorkloads (codeedit/rag/agent-json) —
+// generalize to workloads it was NOT fit on? For each held-out workload it generates
+// n-gram traces, then reports the AUC of match_len and the Expected Calibration Error
+// ECE = Σ_bin (n/N)·|empirical_accept − ngramAlpha(match_len)| of the table against that
+// workload's realized acceptance. Low ECE across held-out workloads ⇒ the static table
+// generalizes; a high-ECE workload quantifies the drift the §9 online correction absorbs.
+// Run: GINFER_PREQUANT_GGUF=... go test ./decoder -run CrossWorkload -v
+func TestNgramAlphaCrossWorkload(t *testing.T) {
+	m, err := loadBenchModel()
+	if err != nil {
+		t.Skipf("no model (%v); set GINFER_PREQUANT_GGUF", err)
+	}
+	tk, err := tokenizer.LoadGGUF(benchGGUFPath())
+	if err != nil {
+		t.Fatalf("tokenizer: %v", err)
+	}
+	ctx := context.Background()
+	greedy := SamplingParams{Temperature: 0}
+	const maxTok, K = 96, 8
+
+	// HELD-OUT workloads: distinct domains from the fit set, each with enough internal
+	// repetition that the n-gram drafter fires (so there are traces to score).
+	heldOut := []struct{ name, prompt string }{
+		{"csv", "id,name,score\n1,alice,10\n2,bob,20\n3,carol,30\n4,dave,40\n5,eve,"},
+		{"config", "[server]\nhost = localhost\nport = 8080\n[client]\nhost = localhost\nport = 9090\n[proxy]\nhost = localhost\nport = "},
+		{"markdown", "| key | value |\n| --- | --- |\n| alpha | 1 |\n| bravo | 2 |\n| charlie | 3 |\n| delta | "},
+		{"sql", "INSERT INTO t (a,b) VALUES (1,2);\nINSERT INTO t (a,b) VALUES (3,4);\nINSERT INTO t (a,b) VALUES (5,6);\nINSERT INTO t (a,b) VALUES ("},
+		{"prose-rep", "The cat sat on the mat. The dog sat on the mat. The bird sat on the mat. The fish sat on the "},
+	}
+
+	var sumW, sumECE float64
+	t.Logf("%-10s %5s %6s %8s", "heldout", "n", "AUC", "ECE")
+	for _, w := range heldOut {
+		col := NewTraceCollector(nil)
+		prompt, _ := tk.Encode(w.prompt, true)
+		ch, _, err := m.genNgram(ctx, prompt, maxTok, &NgramDrafter{}, K, greedy, col.Record, nil)
+		if err != nil {
+			t.Fatalf("genNgram %s: %v", w.name, err)
+		}
+		for range ch {
+		}
+		if len(col.Rows) < 20 {
+			t.Logf("%-10s %5d  (too few traces to score)", w.name, len(col.Rows))
+			continue
+		}
+		// ECE of the shipped table: bin by match_len, |empirical − ngramAlpha(ml)|, mass-weighted.
+		type b struct {
+			n   int
+			hit float64
+		}
+		bins := map[int]*b{}
+		for _, r := range col.Rows {
+			bb := bins[r.NgramMatch]
+			if bb == nil {
+				bb = &b{}
+				bins[r.NgramMatch] = bb
+			}
+			bb.n++
+			if r.Accepted {
+				bb.hit++
+			}
+		}
+		var ece float64
+		N := float64(len(col.Rows))
+		for ml, bb := range bins {
+			emp := bb.hit / float64(bb.n)
+			ece += float64(bb.n) / N * absf(emp-ngramAlpha(ml))
+		}
+		auc, _, _ := aucByFeature(col.Rows)
+		t.Logf("%-10s %5d %6.3f %8.3f", w.name, len(col.Rows), auc, ece)
+		sumW++
+		sumECE += ece
+	}
+	if sumW == 0 {
+		t.Skip("no held-out workload produced enough n-gram traces")
+	}
+	meanECE := sumECE / sumW
+	t.Logf("mean held-out ECE = %.3f over %d workloads (shipped ngramAlpha table)", meanECE, int(sumW))
+	// Verdict: the static table generalizes if its calibration error stays modest on
+	// unseen workloads. A loose bound — the §9 online correction absorbs residual drift.
+	if meanECE > 0.25 {
+		t.Errorf("mean held-out ECE %.3f > 0.25 — α̂_ngram does not generalize; rely on §9 online correction / re-fit", meanECE)
+	}
+}
+
+func absf(x float64) float64 {
+	if x < 0 {
+		return -x
+	}
+	return x
+}
