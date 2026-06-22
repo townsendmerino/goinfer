@@ -40,6 +40,13 @@ findings, honest:
   weakest *as currently built*, and the router treats it as the floor. The 03 router ranks
   sources by these calibrated α̂, shrunk online toward each source's running accept rate to
   absorb cross-workload drift.
+  **Cross-model check (added qwen2.5-coder-0.5b + llama-3.2-1b, different tokenizers):**
+  α̂_grammar is *stable* — 0.20 on both, the fragility above is not a qwen quirk. α̂_ngram does
+  *not* cross-calibrate (llama AUC 0.64, held-out ECE 0.29, and the qwen "sql inverts" finding
+  did not reproduce) — but it still *ranks* n-gram ≻ grammar correctly on both models, so the
+  table is a routing prior and the online correction (not per-family static tables) is the
+  lever for the drift. Every number here is {qwen2.5-coder-0.5b, llama-3.2-1b} on an RTX
+  2070S — two points, not a law.
 - **Grammar-fused (01) is shipped + serve-wired** for constrained/tool requests, but modest
   (the tokenization fragility above caps it).
 - **Trees + the per-family rollback substrate are built and gated** (tree attention in

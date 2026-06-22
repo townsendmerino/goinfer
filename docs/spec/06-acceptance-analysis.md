@@ -65,11 +65,31 @@ the doc's rule to *measure predictability before shipping anything heavier*:
   workloads — precisely the drift the §9 online correction is for. The two results compose:
   ship the calibrated prior, correct it online per workload.
 
+- **Cross-MODEL validation (2026-06-22) — done; it changed the framing.** Re-ran the α̂
+  measurements on **Llama-3.2-1B-Instruct** (BPE, a different tokenizer family than qwen2;
+  spec-safe + batchable; lossless gate green). Two clean results:
+  - **α̂_grammar is STABLE across tokenizers: 0.205 on llama vs 0.20 on qwen**, same within-run
+    compounding (depth-0 0.24 → depth-1 0.09). Grammar's tokenization-fragility is not a qwen
+    quirk — `grammarConf = 0.20` is a robust cross-model constant. It stands.
+  - **α̂_ngram does NOT cross-calibrate.** match_len → accept AUC drops to 0.64 (qwen 0.82),
+    held-out mean ECE rises to 0.29 (qwen 0.14, over the 0.25 bar), and markdown breaks down
+    (ECE 0.70). The qwen **sql inversion did not reproduce** (llama sql AUC 0.50, flat) — it
+    was workload×model-specific, not a law. **But** every llama n-gram bucket still accepts
+    0.71–0.98 ≫ grammarConf 0.20, so the table **mis-calibrates cross-model yet does not
+    mis-rank**: the router's ordering (n-gram copy ≻ grammar) holds on both models.
+  - **Verdict (C): lean on the online correction, not more static tables.** The shipped
+    `ngramAlpha` is kept as a serviceable routing *prior* (correct ordering on both models);
+    a per-family static table is rejected (llama's own fit is noisy AUC 0.64, and precise
+    calibration is workload- AND model-dependent — static tables can't track that). The
+    per-source EMA correction (§9, built) is what absorbs the drift. No anchor/grammarConf
+    change — the data doesn't demand one.
+
 Remaining §06 follow-ups (unfunded unless the win justifies): **cross-request** persistence
-of the online-correction stats (shared per-model, thread-safe); validation across more
-models/families (the fits are one small model); a **byte-level forced drafter** that would
-raise α̂_grammar past the tokenization wall (a separate build); and the offline GBM path (§4)
-only if a future source proves un-predictable from 1-D features.
+of the online-correction stats (shared per-model, thread-safe) — now the clearly-justified
+next step, since drift is both workload- AND model-dependent; a **byte-level forced drafter**
+that would raise α̂_grammar past the tokenization wall (a separate build); and the offline GBM
+path (§4) only if a future source proves un-predictable from 1-D features. Validated on
+{qwen2.5-coder-0.5b, llama-3.2-1b} — two points is a line, not a law; don't over-generalize.
 
 ## 0. The boundary (keep the runtime pure-Go)
 
