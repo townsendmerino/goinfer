@@ -17,6 +17,7 @@ type SpecTrace struct {
 	Step       int     `json:"step"`            // verify round index within the sequence
 	Pos        int     `json:"pos"`             // depth within the draft block (0-based)
 	Source     string  `json:"source"`          // grammar | ngram | model | head
+	Forced     bool    `json:"forced"`          // grammar pinned these bytes (the α̂_grammar support)
 	Token      int     `json:"token"`           // the drafted token
 	NgramMatch int     `json:"ngram_match_len"` // suffix-match length (n-gram source; 0 otherwise)
 	Streak     int     `json:"streak"`          // consecutive accepts so far this block

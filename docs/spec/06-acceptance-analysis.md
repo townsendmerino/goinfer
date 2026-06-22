@@ -20,22 +20,33 @@ the doc's rule to *measure predictability before shipping anything heavier*:
   (len2 → 0.70, len3 → 0.86, len11 → 0.92, len16-capped → 0.97). So acceptance IS
   predictable from the one cheap draft-time feature — the minimal 1-D predictor suffices;
   no tree ensemble, no Python needed (§4 ladder stops at step 1).
+- **α̂_grammar — trace-fit (the surprise):** `TestGrammarAlphaPredictor` runs a pure
+  `GrammarDrafter` over JSON-schema workloads (every drafted token grammar-FORCED) and
+  measures their acceptance. Result: **~0.20, not the ≈1 the "forced ⇒ certain" intuition
+  predicts** — the drafter's *canonical* retokenization of the forced bytes usually
+  differs from how the model tokenizes those same bytes under the mask, and the mismatch
+  compounds within a run (depth-0 ~0.24 → depth-1 ~0.08 → depth-2 ~0). So **grammar is the
+  WEAKEST source**, not the strongest: the original `0.90` guess was backwards, and only
+  measuring caught it.
 - **Artifact + wiring (§9):** `ngramAlpha(match_len)` — a tiny monotone interpolation
-  table fit from that curve (the "small coefficient table" the §0 boundary permits in
-  the pure-Go runtime). `NgramDrafter.Confidence` now returns this **calibrated accept
-  probability** instead of raw match-length, and `grammarConf` is set on the same
-  accept-prob scale (α̂_grammar ≈ 0.90), so the [03 router](./03-router-tree.md) compares
-  sources principally. This fixes the heuristic's bug — a `match_len`=2 copy (only ~0.70
-  accept) no longer outranks grammar, while a long verbatim copy (~0.97) still does.
-  Routing only affects speed (the verify is lossless either way); `TestGrammarRouterSpec`
-  holds at 5.67 tok/round on the agent loop, `TestNgramAlphaTable` gates monotonicity +
-  range.
+  table fit from the n-gram curve (the "small coefficient table" the §0 boundary permits
+  in the pure-Go runtime). `NgramDrafter.Confidence` returns this **calibrated accept
+  probability** (not raw match-length) and `grammarConf` is the trace-fit **0.20** on the
+  same scale, so the [03 router](./03-router-tree.md) compares sources principally: any
+  n-gram copy (≥0.70) outranks tokenization-fragile grammar, which drafts only when n-gram
+  has no copy (a 20% free-token shot still beats nothing, and a miss costs ~nothing).
+  Routing only affects speed — verify is lossless either way; `TestGrammarRouterSpec` holds
+  at 5.67 tok/round on the agent loop, `TestNgramAlphaTable` gates monotonicity + range +
+  the grammar<n-gram ordering.
 
-Remaining §06 follow-ups (unfunded unless the win justifies): a trace-fit **α̂_grammar**
-(needs a grammar-source tracer; 0.90 is a documented stand-in), the **online per-source
-rate** drift fallback (§9), cross-workload held-out validation (§3 — the fit above is on
-copy-heavy workloads with one small model), and the offline GBM path (§4) only if a
-future source's acceptance proves un-predictable from 1-D features.
+Remaining §06 follow-ups (unfunded unless the win justifies): the **online per-source rate**
+drift fallback (§9) — the one concrete need surfaced here, since a static α̂_ngram fit on
+copy-heavy workloads can mildly mis-rank a spurious short match vs grammar on prose-content
+(the router invariant is enforced only in the speculation-active regime for that reason);
+cross-workload held-out validation (§3 — the fits are one small model); a **byte-level
+forced drafter** that would raise α̂_grammar past the tokenization wall (a separate build);
+and the offline GBM path (§4) only if a future source proves un-predictable from 1-D
+features.
 
 ## 0. The boundary (keep the runtime pure-Go)
 

@@ -5,6 +5,7 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/townsendmerino/goinfer/constrain"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
@@ -108,14 +109,12 @@ func TestNgramAlphaTable(t *testing.T) {
 		}
 		prev = a
 	}
-	// A long verbatim copy must beat grammar's forced proposal; a short (len-2) one must
-	// not — the calibration's whole point (the old raw-match-len heuristic got len-2
-	// wrong by ranking it under a fixed grammar constant on an incomparable scale).
-	if ngramAlpha(16) <= grammarConf {
-		t.Errorf("α̂_ngram(16)=%.3f should exceed α̂_grammar=%.3f (long copy wins)", ngramAlpha(16), grammarConf)
-	}
-	if ngramAlpha(2) >= grammarConf {
-		t.Errorf("α̂_ngram(2)=%.3f should fall below α̂_grammar=%.3f (short copy yields)", ngramAlpha(2), grammarConf)
+	// Both sources are now calibrated accept-probs on a common scale. The trace-fit
+	// α̂_grammar (~0.20, tokenization-fragile) is the weakest source, so EVERY n-gram copy
+	// — even the shortest (len-2 ≈ 0.70) — must outrank grammar; grammar drafts only when
+	// n-gram has no copy. (This corrected the original guess that grammar was ~0.9.)
+	if ngramAlpha(2) <= grammarConf {
+		t.Errorf("α̂_ngram(2)=%.3f should exceed the tokenization-fragile α̂_grammar=%.3f", ngramAlpha(2), grammarConf)
 	}
 }
 
@@ -159,4 +158,134 @@ func aucByFeature(rows []SpecTrace) (auc float64, nPos, nNeg int) {
 	}
 	auc = (rPos - float64(nPos)*float64(nPos+1)/2) / (float64(nPos) * float64(nNeg))
 	return auc, nPos, nNeg
+}
+
+// TestGrammarAlphaPredictor is the §06 trace-fit of α̂_grammar: it runs grammar-fused
+// decode with a PURE GrammarDrafter over several JSON-schema constraints, so every
+// drafted token is a grammar-FORCED byte, and measures their empirical acceptance. The
+// §6 sanity is that forced tokens accept ≈1 — they're grammar-legal by construction, so
+// the only loss is a tokenization mismatch (the model preferring a different legal
+// tokenization of the same bytes). The mean is the calibrated α̂_grammar that replaces
+// the heuristic constant. Run: GINFER_PREQUANT_GGUF=... go test ./decoder -run GrammarAlpha -v
+func TestGrammarAlphaPredictor(t *testing.T) {
+	m, err := loadBenchModel()
+	if err != nil {
+		t.Skipf("no model (%v); set GINFER_PREQUANT_GGUF", err)
+	}
+	tk, err := tokenizer.LoadGGUF(benchGGUFPath())
+	if err != nil {
+		t.Fatalf("tokenizer: %v", err)
+	}
+	vocabBytes := constrain.TokenBytes(m.w.arch.VocabSize, tk.TokenText)
+	encode := func(s string) []int { ids, _ := tk.Encode(s, false); return ids }
+	ctx := context.Background()
+	greedy := SamplingParams{Temperature: 0}
+	const maxTok = 64
+
+	// Many required keys + enums per schema → many grammar-FORCED byte runs (key names,
+	// punctuation, enum values). Keeps the per-call forced count high enough for a stable
+	// α̂_grammar on a small model.
+	obj := func(props, req string) string {
+		return `{"type":"object","properties":{` + props + `},"required":[` + req + `],"additionalProperties":false}`
+	}
+	workloads := []struct{ schema, prompt string }{
+		{obj(`"location":{"type":"string"},"unit":{"enum":["celsius","fahrenheit"]},"humidity":{"type":"integer"}`, `"location","unit","humidity"`),
+			"Weather for Paris: celsius, humidity 60, as JSON matching the schema."},
+		{obj(`"name":{"type":"string"},"age":{"type":"integer"},"active":{"type":"boolean"},"role":{"enum":["admin","user","guest"]}`, `"name","age","active","role"`),
+			"A person named John Doe, age 30, active, role admin, as JSON."},
+		{obj(`"id":{"type":"integer"},"status":{"enum":["open","closed","pending"]},"title":{"type":"string"},"priority":{"enum":["low","high"]}`, `"id","status","title","priority"`),
+			"A ticket id 7, status open, title Fix bug, priority high, as JSON."},
+		{obj(`"street":{"type":"string"},"city":{"type":"string"},"zip":{"type":"string"},"country":{"enum":["US","UK","CA"]}`, `"street","city","zip","country"`),
+			"An address: 1 Main St, Springfield, 12345, US, as JSON."},
+		{obj(`"product":{"type":"string"},"price":{"type":"integer"},"currency":{"enum":["USD","EUR","GBP"]},"available":{"type":"boolean"}`, `"product","price","currency","available"`),
+			"A product Widget, price 20, currency USD, available, as JSON."},
+		{obj(`"method":{"enum":["GET","POST","PUT","DELETE"]},"path":{"type":"string"},"code":{"type":"integer"}`, `"method","path","code"`),
+			"An HTTP log: GET /index, code 200, as JSON."},
+		{obj(`"first":{"type":"string"},"last":{"type":"string"},"email":{"type":"string"},"verified":{"type":"boolean"}`, `"first","last","email","verified"`),
+			"User: first Jane, last Smith, email jane@x.com, verified, as JSON."},
+		{obj(`"language":{"enum":["go","rust","python","java"]},"version":{"type":"string"},"stable":{"type":"boolean"}`, `"language","version","stable"`),
+			"A release: language go, version 1.22, stable, as JSON."},
+		{obj(`"lat":{"type":"integer"},"lon":{"type":"integer"},"label":{"type":"string"},"kind":{"enum":["city","park","road"]}`, `"lat","lon","label","kind"`),
+			"A place: lat 40, lon 70, label Central, kind park, as JSON."},
+		{obj(`"event":{"type":"string"},"level":{"enum":["info","warn","error"]},"count":{"type":"integer"}`, `"event","level","count"`),
+			"A log: event login, level info, count 3, as JSON."},
+		{obj(`"sku":{"type":"string"},"qty":{"type":"integer"},"unit":{"enum":["box","kg","each"]},"taxable":{"type":"boolean"}`, `"sku","qty","unit","taxable"`),
+			"An item: sku A1, qty 5, unit box, taxable, as JSON."},
+		{obj(`"action":{"enum":["create","update","delete"]},"target":{"type":"string"},"ok":{"type":"boolean"}`, `"action","target","ok"`),
+			"An audit: action create, target user, ok, as JSON."},
+	}
+
+	col := NewTraceCollector(nil)
+	for _, w := range workloads {
+		g, gerr := constrain.JSONSchema([]byte(w.schema))
+		if gerr != nil {
+			t.Fatalf("JSONSchema: %v", gerr)
+		}
+		mask := constrain.NewMasker(g, vocabBytes, m.eosIDs).StopWhenComplete()
+		prompt, _ := tk.Encode("<|im_start|>user\n"+w.prompt+"<|im_end|>\n<|im_start|>assistant\n", true)
+		gd := &GrammarDrafter{Mask: mask, Encode: encode}
+		out := make(chan int)
+		gen := &Generation{Spec: &SpecStats{}}
+		go func() {
+			defer close(out)
+			m.genGrammarInto(ctx, out, gen, gen.Spec, mask, gd, prompt, 0, maxTok, 8, greedy, col.Record, nil, nil)
+		}()
+		for range out {
+		}
+	}
+
+	var forced []SpecTrace
+	for _, r := range col.Rows {
+		if r.Forced {
+			forced = append(forced, r)
+		}
+	}
+	if len(forced) < 20 {
+		t.Skipf("only %d forced positions — too few for a stable α̂_grammar", len(forced))
+	}
+	var sumAcc, hits float64
+	byDepth := map[int]*struct {
+		n   int
+		acc float64
+	}{}
+	for _, r := range forced {
+		sumAcc += r.AcceptProb
+		if r.Accepted {
+			hits++
+		}
+		b := byDepth[r.Pos]
+		if b == nil {
+			b = &struct {
+				n   int
+				acc float64
+			}{}
+			byDepth[r.Pos] = b
+		}
+		b.n++
+		b.acc += r.AcceptProb
+	}
+	meanAcc := sumAcc / float64(len(forced))
+	t.Logf("α̂_grammar over %d FORCED positions: mean accept_prob=%.3f, realized accept=%.3f",
+		len(forced), meanAcc, hits/float64(len(forced)))
+	depths := make([]int, 0, len(byDepth))
+	for d := range byDepth {
+		depths = append(depths, d)
+	}
+	sort.Ints(depths)
+	for _, d := range depths {
+		b := byDepth[d]
+		t.Logf("  forced-run depth %d: n=%d accept_prob=%.3f", d, b.n, b.acc/float64(b.n))
+	}
+	t.Logf("current grammarConf constant = %.3f", grammarConf)
+
+	// The measured value (~0.20) is the finding, not a bug: forced bytes are grammar-legal
+	// but the canonical retokenization mismatches the model's tokenization under the mask.
+	// Gate only that it's a valid probability and tracks grammarConf — a regression in the
+	// forced/mask machinery would push it toward 0 (nothing accepts).
+	if meanAcc < 0 || meanAcc > 1 {
+		t.Fatalf("α̂_grammar=%.3f not a probability", meanAcc)
+	}
+	if meanAcc < 0.05 {
+		t.Errorf("α̂_grammar=%.3f ~0 — the grammar source accepts almost nothing; check forced-bytes/mask alignment", meanAcc)
+	}
 }

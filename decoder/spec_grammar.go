@@ -65,14 +65,16 @@ type GrammarDrafter struct {
 
 // grammarConf is α̂_grammar: the calibrated acceptance probability of a forced grammar
 // proposal, on the SAME accept-prob scale as α̂_ngram (ngramAlpha) so the router (03)
-// compares sources principally (§06). On a constrained request the forced bytes are
-// grammar-legal by construction, so they verify unless their canonical tokenization
-// differs from the model's — generally high (~0.9), though a tokenization mismatch can
-// drop it (the 01 doc measured 2/5 on one enum). Crossover vs n-gram now lands near
-// match_len≈8 (ngramAlpha(8)≈0.90), so a short copy yields to grammar and a long
-// verbatim copy overrides it. Stand-in pending a trace-fit α̂_grammar (the §06 follow-up
-// needs a grammar-source tracer); 0.90 is a documented calibrated constant, not raw.
-const grammarConf = 0.90
+// compares sources principally (§06). TRACE-FIT (TestGrammarAlphaPredictor, qwen2.5-
+// coder-0.5b, JSON-schema workloads): forced tokens accept only ~0.20 — far below the
+// "forced ⇒ ≈1" intuition — because the drafter's CANONICAL retokenization of the
+// forced bytes usually differs from how the model tokenizes the same bytes under the
+// mask, and the mismatch compounds within a run (depth-0 ~0.24 → depth-1 ~0.08). So
+// grammar is the WEAKEST source: any n-gram copy (ngramAlpha ≥ 0.70) outranks it, and
+// grammar drafts only when n-gram has no copy (where a 20% free-token shot still beats
+// nothing, and a miss costs ~nothing). Re-fit per model/tokenizer (§06 §9); a
+// byte-level forced drafter would raise it but is a separate build.
+const grammarConf = 0.20
 
 // Confidence reports the calibrated acceptance probability α̂_grammar when the grammar
 // forced something this Draft, 0 when it abstained (the router skips empty proposals).
@@ -140,7 +142,7 @@ func (target *Model) GenerateGrammarSpeculative(ctx context.Context, prompt []in
 	g := &Generation{Spec: stats}
 	go func() {
 		defer close(out)
-		target.genGrammarInto(ctx, out, g, stats, mask, drafter, prompt, 0, maxTokens, K, sp, nil, nil)
+		target.genGrammarInto(ctx, out, g, stats, mask, drafter, prompt, 0, maxTokens, K, sp, nil, nil, nil)
 	}()
 	return out, g, nil
 }
@@ -151,9 +153,16 @@ func (target *Model) GenerateGrammarSpeculative(ctx context.Context, prompt []in
 // own; otherwise the caller's cache must already hold prompt[:prefillFrom], and commit
 // is invoked as each confirmed token lands in the cache (so a Session can keep its
 // token list mirroring the cache for the next call's prefix match).
-func (target *Model) genGrammarInto(ctx context.Context, out chan<- int, g *Generation, stats *SpecStats, mask *constrain.Masker, drafter Drafter, prompt []int, prefillFrom, maxTokens, K int, sp SamplingParams, cache *KVCache, commit func(int)) {
+func (target *Model) genGrammarInto(ctx context.Context, out chan<- int, g *Generation, stats *SpecStats, mask *constrain.Masker, drafter Drafter, prompt []int, prefillFrom, maxTokens, K int, sp SamplingParams, tr specTracer, cache *KVCache, commit func(int)) {
 	if K < 1 {
 		K = 8
+	}
+	// source label for §06 traces: a pure GrammarDrafter pins forced bytes (forced=true,
+	// the α̂_grammar support); other drafters ride the same masked verify but aren't
+	// grammar-forced. (Per-round source attribution inside a RouterDrafter is a follow-up.)
+	traceSource, traceForced := "router", false
+	if _, ok := drafter.(*GrammarDrafter); ok {
+		traceSource, traceForced = "grammar", true
 	}
 	tc := cache
 	if tc == nil {
@@ -216,9 +225,19 @@ func (target *Model) genGrammarInto(ctx context.Context, out chan<- int, g *Gene
 		allAccept := true
 		var nextTok int
 		for i := 0; i < kEff; i++ {
-			mask.MaskAt(gc, logitsN[i])
+			mask.MaskAt(gc, logitsN[i]) // illegal logits → -inf, so the dist is the masked one
 			ti := argmax(logitsN[i])
-			if draftTok[i] != ti {
+			acc := draftTok[i] == ti
+			if tr != nil {
+				// accept_prob = masked p(drafted token): for a grammar-forced token it's <1
+				// only when the model prefers a different LEGAL tokenization of the same bytes.
+				pTop1, pEnt, pTok := targetDist(logitsN[i], draftTok[i])
+				tr(SpecTrace{
+					Step: stats.Rounds, Pos: i, Source: traceSource, Forced: traceForced, Token: draftTok[i],
+					Streak: i, QTop1: 1, PTop1: pTop1, PEntropy: pEnt, TV: 1 - pTok, AcceptProb: pTok, Accepted: acc,
+				})
+			}
+			if !acc {
 				nextTok = ti
 				allAccept = false
 				break

@@ -144,7 +144,7 @@ func (s *Session) GenerateGrammarSpeculative(ctx context.Context, prompt []int, 
 
 	go func() {
 		defer close(out)
-		s.m.genGrammarInto(ctx, out, g, stats, mask, drafter, prompt, matched, maxTokens, K, sp, s.cache, commit)
+		s.m.genGrammarInto(ctx, out, g, stats, mask, drafter, prompt, matched, maxTokens, K, sp, nil, s.cache, commit)
 		s.tokens = seq
 		s.cache.TruncateTo(len(seq))
 	}()
