@@ -24,6 +24,7 @@ func TestLoadEagleHead(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadEagleHead: %v", err)
 	}
+	defer h.Close()
 	// Confirmed Qwen3-1.7B head geometry.
 	if h.hidden != 2048 || h.draftVocab != 32000 || h.vocab != 151936 {
 		t.Errorf("dims: hidden %d draftVocab %d vocab %d", h.hidden, h.draftVocab, h.vocab)

@@ -73,7 +73,7 @@ func TestEagleHeadForward(t *testing.T) {
 	embedRow := make([]float32, head.Hidden())
 	base.embedToken(ids[len(ids)-1], embedRow)
 	st := head.NewState()
-	draft := head.Step(base.be, embedRow, feature, len(ids)-1, st)
+	draft, _ := head.Step(base.be, embedRow, feature, len(ids)-1, st)
 
 	if len(draft) != head.draftVocab {
 		t.Fatalf("draft logits len %d, want %d", len(draft), head.draftVocab)
