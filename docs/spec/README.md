@@ -1,14 +1,46 @@
 # Speculative decoding in goinfer — design index
 
-> Status: **proposal / RFC**. Cut 2026-06-20. These are design docs for work not yet
-> built — **but not greenfield**: `decoder/speculative.go` already ships a
-> parity-gated *greedy, single-draft-model, fixed-K* speculator (`GenerateSpeculative`)
-> with batched `ForwardN` verify, softmax/GQA rollback via `TruncateTo`, GPU-resident
-> verify, and `SpecStats` telemetry. That is the substrate [00-core](./00-core.md)
-> extends; the new work is sampled-lossless rejection, the richer drafters (01/02/05),
-> trees (03), adaptive depth (04), instrumentation (`SpecTrace`), and per-family
-> rollback beyond softmax/GQA. Treat every page here as a dated public disclosure
-> (defensive publication): publish before discussing the approaches elsewhere.
+> Status: **largely BUILT** (was an RFC cut 2026-06-20; implemented over 2026-06-21 on
+> branch `spec-decode-ngram`). Every spoke below is implemented and lossless-gated except
+> where marked kill-gated/parked. See **[Where this landed](#where-this-landed-2026-06-21)**
+> for the honest scorecard and [experiments.md](./experiments.md) for the dated run log.
+> Treat every page here as a dated public disclosure (defensive publication).
+
+## Where this landed (2026-06-21)
+
+The whole program was built and measured. The lossless invariant held throughout — every
+scheme is parity-gated against non-speculative decode (greedy bit-exact). The headline
+findings, honest:
+
+- **The CPU winner is n-gram (02), shipped and serve-wired (`--spec ngram`).** It wins on
+  copy-heavy traffic (code edits / RAG / agent loops) because its draft is *free*. This is
+  the one unambiguous production win.
+- **A model drafter cannot win on CPU.** EAGLE-3 (05) is built end-to-end and lossless
+  (greedy + tree drafting), but it's a wall-clock *loss* on CPU (~0.4×): every verify token
+  costs ~a full forward (no batched-verify amortization), and unlike n-gram the draft isn't
+  free. tok/verify gains are real (2.1 with trees) but don't translate without GPU.
+- **The GPU verify (07, "Stage B") is parked, not dead.** On small models the batched verify
+  is ~break-even (compute-bound at M=8). A large-dim microbench found it *does* amortize on
+  big models (70B-layer dims: 1.37× at M=8, 1.58× at M=4) — but only for **short linear**
+  drafts (trees are the wrong shape: wide M kills amortization), and it needs a >8 GB GPU to
+  host a real large model. Unpark trigger: big GPU + a large model worth serving fast.
+- **Acceptance is predictable and now calibrated (06).** α̂_ngram(match_len) is a tiny
+  monotone table (AUC 0.82, held-out mean ECE 0.14); α̂_grammar trace-fit to ~0.20 (forced
+  bytes are *tokenization-fragile*, not the ≈1 the intuition assumed — grammar is the
+  weakest source). The 03 router ranks sources by these calibrated α̂, shrunk online toward
+  each source's running accept rate to absorb cross-workload drift.
+- **Grammar-fused (01) is shipped + serve-wired** for constrained/tool requests, but modest
+  (the tokenization fragility above caps it).
+- **Trees + the per-family rollback substrate are built and gated** (tree attention in
+  `forwardN` is bit-identical to causal; recurrent families guarded out of rollback).
+
+Net: the production win (n-gram) shipped; the SOTA drafter (EAGLE) is built, characterized,
+and correctly gated as GPU-blocked; the analysis layer (06) is calibrated and validated.
+
+> Original RFC context (still accurate as substrate): `decoder/speculative.go` shipped a
+> parity-gated greedy, single-draft-model, fixed-K speculator with batched `ForwardN`
+> verify, softmax/GQA rollback via `TruncateTo`, GPU-resident verify, and `SpecStats`
+> telemetry — the base [00-core](./00-core.md) extended.
 
 ## Thesis
 
@@ -48,14 +80,14 @@ Why this fits goinfer specifically:
 
 | # | Doc | What it adds | Effort | Expected ROI | Status |
 |---|-----|--------------|--------|--------------|--------|
-| 00 | [Core: math, instrumentation, verify/rollback](./00-core.md) | The shared substrate every spoke builds on. Acceptance theory, the measurement layer, the draft-tree/verify loop, per-family rollback, the benchmark harness. | High | Prerequisite | proposed |
-| 01 | [Grammar-fused speculation](./01-grammar-fused.md) | Grammar-forced tokens from the `constrain` DFA as a ~zero-cost drafter. | Low | High on structured/tool-call output | proposed |
-| 02 | [Cache / n-gram drafting](./02-cache-ngram.md) | Suffix-automaton over prompt + session history; copy verbatim runs for free. | Low | High on code-edit / RAG / agent loops | proposed |
-| 03 | [Router + draft trees](./03-router-tree.md) | Fuse grammar + cache + model/head into one verified tree, chosen by predicted acceptance. | Med | Compounds the others | proposed |
-| 04 | [Adaptive draft depth](./04-adaptive-depth.md) | Replace fixed K with optimal-γ / entropy-gated depth from the acceptance predictor. | Low–Med | Broad, cheap | proposed |
-| 05 | [EAGLE-3 feature head](./05-eagle3-head.md) | Feature-level autoregressive draft head over target hidden states; pure-Go. | High | Matches general-purpose SOTA | proposed |
-| 06 | [Acceptance analysis playbook](./06-acceptance-analysis.md) | The experimenter's runbook: trace schema → calibrated `α̂` → where to invest. Operationalizes 00-core §4. | Med | Powers 03/04, orders the backlog | proposed |
-| 07 | [Stage B: M=K GEMM verify](./07-stageb-gemm-verify.md) | Wire the existing (gated) tiled W8A8 GEMM into the resident verify so projection weights stream once across K rows — the only thing blocking a GPU speculative win. | High (runner surgery) | Unlocks GPU; CPU already ships | design |
+| 00 | [Core: math, instrumentation, verify/rollback](./00-core.md) | The shared substrate every spoke builds on. Acceptance theory, the measurement layer, the draft-tree/verify loop, per-family rollback, the benchmark harness. | High | Prerequisite | ✅ built |
+| 01 | [Grammar-fused speculation](./01-grammar-fused.md) | Grammar-forced tokens from the `constrain` DFA as a ~zero-cost drafter. | Low | High on structured/tool-call output | ✅ shipped + serve-wired (modest — tokenization-fragile) |
+| 02 | [Cache / n-gram drafting](./02-cache-ngram.md) | Suffix-automaton over prompt + session history; copy verbatim runs for free. | Low | High on code-edit / RAG / agent loops | ✅ **shipped, `--spec ngram` (the CPU win)** |
+| 03 | [Router + draft trees](./03-router-tree.md) | Fuse grammar + cache + model/head into one verified tree, chosen by predicted acceptance. | Med | Compounds the others | ✅ router shipped (calibrated α̂ + online correction); tree-verify built; full trees kill-gated for n-gram |
+| 04 | [Adaptive draft depth](./04-adaptive-depth.md) | Replace fixed K with optimal-γ / entropy-gated depth from the acceptance predictor. | Low–Med | Broad, cheap | ✅ shipped |
+| 05 | [EAGLE-3 feature head](./05-eagle3-head.md) | Feature-level autoregressive draft head over target hidden states; pure-Go. | High | Matches general-purpose SOTA | ✅ built end-to-end + lossless (greedy+trees); ⛔ CPU wall-clock loss → needs GPU (07) |
+| 06 | [Acceptance analysis playbook](./06-acceptance-analysis.md) | The experimenter's runbook: trace schema → calibrated `α̂` → where to invest. Operationalizes 00-core §4. | Med | Powers 03/04, orders the backlog | ✅ α̂_ngram + α̂_grammar trace-fit + online correction + held-out validation |
+| 07 | [Stage B: M=K GEMM verify](./07-stageb-gemm-verify.md) | Wire the existing (gated) tiled W8A8 GEMM into the resident verify so projection weights stream once across K rows — the only thing blocking a GPU speculative win. | High (runner surgery) | Unlocks GPU; CPU already ships | ⏸ NO-GO small models; **parked** conditional-GO for ~70B + short drafts (needs >8 GB GPU) |
 
 Build order: **00 first** (nothing is testable until verify + rollback +
 instrumentation exist), then 01 and 02 (cheapest wins, and they generate the
