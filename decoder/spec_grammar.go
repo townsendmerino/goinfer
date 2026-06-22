@@ -128,11 +128,16 @@ type GrammarDrafter struct {
 // coder-0.5b, JSON-schema workloads): forced tokens accept only ~0.20 — far below the
 // "forced ⇒ ≈1" intuition — because the drafter's CANONICAL retokenization of the
 // forced bytes usually differs from how the model tokenizes the same bytes under the
-// mask, and the mismatch compounds within a run (depth-0 ~0.24 → depth-1 ~0.08). So
-// grammar is the WEAKEST source: any n-gram copy (ngramAlpha ≥ 0.70) outranks it, and
-// grammar drafts only when n-gram has no copy (where a 20% free-token shot still beats
-// nothing, and a miss costs ~nothing). Re-fit per model/tokenizer (§06 §9); a
-// byte-level forced drafter would raise it but is a separate build.
+// mask, and the mismatch compounds within a run (depth-0 ~0.24 → depth-1 ~0.08). Read
+// 0.20 precisely: it indicts THIS drafter, not grammar speculation in principle — free
+// grammar drafting must GUESS the tokenization of the forced bytes (canonical
+// retokenization), and getting it right fundamentally needs the model; a tokenizer-
+// aligned forced drafter (unbuilt, §01/§06) is the headroom. So grammar ranks LAST *as
+// currently built*: any n-gram copy (ngramAlpha ≥ 0.70) outranks it and the router
+// treats it as the floor (it drafts only when n-gram has no copy — a 20% free-token
+// shot still beats nothing, and a miss costs ~nothing). Cross-model STABLE: 0.205 on
+// llama-3.2-1b (a different tokenizer), so the fragility is a property of canonical-
+// bytes drafting, not one model — grammarConf holds. Re-fit per model/tokenizer (§06 §9).
 const grammarConf = 0.20
 
 // Confidence reports the calibrated acceptance probability α̂_grammar when the grammar

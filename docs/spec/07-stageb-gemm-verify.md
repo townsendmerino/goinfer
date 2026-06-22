@@ -140,6 +140,16 @@ the draft ~free, (3) the high-risk multi-arch runner surgery still stands. So: n
 but it only pays in a regime this hardware can't host — park it behind "have a big GPU +
 a large model we want to serve fast", then it's worth the build.
 
+**Evidence honesty — this is the thinnest claim in the program.** The 1.4–1.6× is a
+*synthetic single-layer* microbench (`L` small to fit 8 GB), multiplied by an *assumed*
+chat acceptance (2–3 of 4) and an *assumed* ~free GPU-resident draft — nothing end-to-end,
+on no real large model. Crucially, the per-row attention / elementwise / quant-glue overhead
+that sank the small case to 0.98× is exactly what a single-layer projection bench omits, and
+it will not necessarily vanish at scale. So treat "conditional-GO" as "don't kill it," not
+"it works": **the funding gate before the high-risk multi-arch runner surgery is a real
+large-model END-TO-END run** (resident draft + Stage-B verify on an actual ≈70B checkpoint,
+measured against Stage-A), not another microbench. If that run misses ~1.3× broadly, stop.
+
 ## Risks
 
 - **Hot-path, multi-arch surgery** in the resident `DecodeRunner` (its fused `steps`
