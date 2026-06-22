@@ -17,36 +17,95 @@ type ConfidentDrafter interface {
 	Confidence() float64
 }
 
-// RouterDrafter fuses drafters (03 router): each round it polls every source and
-// returns the proposal of the most CONFIDENT one (inc 3). This captures the inc-2
-// "tree-recoverable" upside without a tree — the measurement showed the linear
-// grammar-first priority mis-picked where a long n-gram copy was the reliable choice
-// (n-gram 15/15 vs grammar 2/5 under tokenization), and confidence ordering prefers
-// the long copy. Sources without a Confidence() score rank at 0; ties keep source
-// order. On a constrained request all ride the same masked verify, so the choice
-// only affects speed, never correctness.
-type RouterDrafter struct {
-	Sources []Drafter
+// OutcomeRecorder is an optional Drafter capability: the verify loop reports how the
+// last Draft's proposal fared (accepted of drafted) so a router can maintain a running
+// per-source accept rate — the §06 §9 online correction that keeps a STATIC α̂ honest
+// when the live workload drifts from the mix it was calibrated on.
+type OutcomeRecorder interface {
+	RecordOutcome(accepted, drafted int)
 }
 
-// Draft returns the most-confident source's non-empty proposal this position.
+// RouterDrafter fuses drafters (03 router): each round it polls every source and returns
+// the proposal of the one with the highest EFFECTIVE confidence — the source's static α̂
+// (Confidence, the §06 per-source predictor) shrunk toward its running realized accept
+// rate as outcomes accumulate (§06 §9). The static α̂ is fit on a fixed workload mix, so
+// on a drifting workload it can mis-rank (e.g. α̂_ngram, fit on copy-heavy traffic,
+// over-trusts a spurious short match in prose); the running rate corrects that within a
+// few rounds. Sources without a Confidence() score rank at 0; ties keep source order. On
+// a constrained request all ride the same masked verify, so the choice only affects
+// speed, never correctness.
+type RouterDrafter struct {
+	Sources []Drafter
+	Prior   float64 // shrinkage strength: pseudo-rounds of the static α̂ (0 ⇒ routerPrior)
+
+	rate   []float64 // per-source EMA of the realized per-round accept fraction
+	weight []float64 // per-source observation weight (capped), ramps trust in `rate`
+	chosen int       // source index returned by the last Draft (-1 = none)
+}
+
+const (
+	routerPrior  = 4.0  // static α̂ counts as this many rounds before the running rate leads
+	routerLambda = 0.85 // accept-rate EMA decay (~7-round memory) → tracks recent drift
+	routerWMax   = 20.0 // cap on observation weight so the prior never fully washes out
+)
+
+func (r *RouterDrafter) ensure() {
+	if r.rate == nil {
+		r.rate = make([]float64, len(r.Sources))
+		r.weight = make([]float64, len(r.Sources))
+	}
+}
+
+// effective blends the source's static confidence with its running accept rate: a
+// Bayesian shrinkage toward α̂ that hands over to the observed rate as weight grows.
+func (r *RouterDrafter) effective(i int, static float64) float64 {
+	w := r.weight[i]
+	if w == 0 {
+		return static // no outcomes yet ⇒ pure static α̂ (byte-identical to the old router)
+	}
+	prior := r.Prior
+	if prior <= 0 {
+		prior = routerPrior
+	}
+	return (w*r.rate[i] + prior*static) / (w + prior)
+}
+
+// Draft returns the highest-effective-confidence source's non-empty proposal, recording
+// which source was chosen so RecordOutcome can attribute the round's outcome to it.
 func (r *RouterDrafter) Draft(ctx []int, k int) []int {
+	r.ensure()
 	var best []int
-	bestConf := -1.0
-	for _, s := range r.Sources {
+	bestEff := -1.0
+	r.chosen = -1
+	for i, s := range r.Sources {
 		d := s.Draft(ctx, k)
 		if len(d) == 0 {
 			continue
 		}
-		conf := 0.0
+		static := 0.0
 		if cd, ok := s.(ConfidentDrafter); ok {
-			conf = cd.Confidence()
+			static = cd.Confidence()
 		}
-		if conf > bestConf {
-			best, bestConf = d, conf
+		if eff := r.effective(i, static); eff > bestEff {
+			best, bestEff, r.chosen = d, eff, i
 		}
 	}
 	return best
+}
+
+// RecordOutcome folds the last round's realized acceptance (accepted of drafted, from
+// the chosen source's proposal) into that source's running rate (§06 §9 online correction).
+func (r *RouterDrafter) RecordOutcome(accepted, drafted int) {
+	if r.chosen < 0 || drafted == 0 {
+		return
+	}
+	r.ensure()
+	frac := float64(accepted) / float64(drafted)
+	i := r.chosen
+	r.rate[i] = routerLambda*r.rate[i] + (1-routerLambda)*frac // EMA: tracks recent acceptance
+	if r.weight[i] < routerWMax {                              // weight = capped observation count
+		r.weight[i]++
+	}
 }
 
 // GrammarDrafter proposes the grammar's FORCED byte-run as draft tokens (01
@@ -255,6 +314,11 @@ func (target *Model) genGrammarInto(ctx context.Context, out chan<- int, g *Gene
 			evaluated = accepted + 1
 		}
 		stats.Evaluated += evaluated
+		// §06 §9 online correction: tell the drafter how its proposal fared so a router
+		// can shrink each source's static α̂ toward its running realized accept rate.
+		if rec, ok := drafter.(OutcomeRecorder); ok && kEff > 0 {
+			rec.RecordOutcome(accepted, kEff)
+		}
 
 		// Roll the cache back to cur + accepted; commit the accepted drafts to the
 		// live grammar (cur was already committed above). nextTok stays pending.

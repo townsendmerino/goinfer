@@ -289,3 +289,60 @@ func TestGrammarAlphaPredictor(t *testing.T) {
 		t.Errorf("α̂_grammar=%.3f ~0 — the grammar source accepts almost nothing; check forced-bytes/mask alignment", meanAcc)
 	}
 }
+
+// fakeSource is a deterministic Drafter with a fixed static confidence and a fixed
+// realized accept fraction, for testing the router's online correction without a model.
+type fakeSource struct {
+	conf     float64 // static α̂ reported to the router
+	proposal []int   // what Draft returns (non-empty = participates)
+	accept   int     // accepted count the harness will report for this source's rounds
+}
+
+func (f *fakeSource) Draft(ctx []int, k int) []int { return f.proposal }
+func (f *fakeSource) Confidence() float64          { return f.conf }
+
+// TestRouterOnlineCorrection checks the §06 §9 mechanism: a source whose STATIC α̂ is high
+// but whose realized acceptance is poor must be demoted below a steadier source within a
+// few rounds, and the router must be byte-identical to the old static behavior until the
+// first outcome is recorded.
+func TestRouterOnlineCorrection(t *testing.T) {
+	// hi: static 0.70 but never accepts (the over-trusted spurious-match case);
+	// lo: static 0.20 but always accepts its 2-token proposal (the steady source).
+	hi := &fakeSource{conf: 0.70, proposal: []int{1, 2}, accept: 0}
+	lo := &fakeSource{conf: 0.20, proposal: []int{3, 4}, accept: 2}
+	r := &RouterDrafter{Sources: []Drafter{hi, lo}}
+
+	// Round 0: no outcomes yet ⇒ pure static α̂ ⇒ the higher static (hi) wins.
+	if d := r.Draft(nil, 4); d[0] != hi.proposal[0] {
+		t.Fatalf("cold start should pick the higher static-α̂ source (hi), got %v", d)
+	}
+	if r.chosen != 0 {
+		t.Fatalf("chosen=%d, want 0 (hi)", r.chosen)
+	}
+
+	// Feed realized outcomes for whichever source the router picks each round; hi keeps
+	// missing (0/2), lo always hits (2/2). The running rate should flip the ranking.
+	flipped := -1
+	for round := 0; round < 30; round++ {
+		r.Draft(nil, 4)
+		src := hi
+		if r.chosen == 1 {
+			src = lo
+		}
+		r.RecordOutcome(src.accept, len(src.proposal))
+		if r.chosen == 1 && flipped < 0 {
+			flipped = round
+		}
+	}
+	if flipped < 0 {
+		t.Fatalf("router never switched to the steady source lo despite hi accepting 0/2 every round")
+	}
+	if flipped > 12 {
+		t.Errorf("router took %d rounds to correct — too slow", flipped)
+	}
+	t.Logf("online correction flipped hi→lo after %d rounds (hi eff %.3f, lo eff %.3f)",
+		flipped, r.effective(0, hi.conf), r.effective(1, lo.conf))
+	if r.effective(0, hi.conf) >= r.effective(1, lo.conf) {
+		t.Errorf("after correction, hi eff %.3f should be < lo eff %.3f", r.effective(0, hi.conf), r.effective(1, lo.conf))
+	}
+}

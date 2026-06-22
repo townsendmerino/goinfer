@@ -39,14 +39,26 @@ the doc's rule to *measure predictability before shipping anything heavier*:
   at 5.67 tok/round on the agent loop, `TestNgramAlphaTable` gates monotonicity + range +
   the grammar<n-gram ordering.
 
-Remaining §06 follow-ups (unfunded unless the win justifies): the **online per-source rate**
-drift fallback (§9) — the one concrete need surfaced here, since a static α̂_ngram fit on
-copy-heavy workloads can mildly mis-rank a spurious short match vs grammar on prose-content
-(the router invariant is enforced only in the speculation-active regime for that reason);
-cross-workload held-out validation (§3 — the fits are one small model); a **byte-level
-forced drafter** that would raise α̂_grammar past the tokenization wall (a separate build);
-and the offline GBM path (§4) only if a future source proves un-predictable from 1-D
-features.
+- **Online correction (§9) — built.** `RouterDrafter` now blends each source's static α̂
+  with its **running realized accept rate**: `effective = (w·rate + prior·α̂)/(w + prior)`,
+  an EMA-tracked `rate` (λ=0.85, ~7-round memory) and a capped observation weight `w` that
+  ramps trust as outcomes accumulate. The verify loop feeds it via the new
+  `OutcomeRecorder` interface (`RecordOutcome(accepted, drafted)`). Cold-start (no outcomes)
+  returns pure α̂, so it's byte-identical to the prior router until evidence arrives; then a
+  source whose static α̂ is wrong for the live workload is demoted within ~10 rounds
+  (`TestRouterOnlineCorrection`: a 0.70-static / 0-accept source falls below a 0.20-static /
+  always-accept one). This is the fix for the cross-workload mis-rank the α̂_grammar work
+  surfaced (a spurious short n-gram match in prose).
+  **Scope:** the router is created per-request in `cmd/serve`, so the correction adapts
+  *within* a long generation but resets each request — it does not yet persist across
+  requests. True cross-session workload-drift adaptation needs shared, thread-safe per-model
+  stats (the documented next step); the within-request form is the tested foundation.
+
+Remaining §06 follow-ups (unfunded unless the win justifies): **cross-request** persistence
+of the online-correction stats (shared per-model, thread-safe); cross-workload held-out
+validation (§3 — the fits are one small model); a **byte-level forced drafter** that would
+raise α̂_grammar past the tokenization wall (a separate build); and the offline GBM path (§4)
+only if a future source proves un-predictable from 1-D features.
 
 ## 0. The boundary (keep the runtime pure-Go)
 
