@@ -237,3 +237,33 @@ W4A8/W8A8 packing + KV layout, `BuildResident` weight extraction + JIT, the argm
 the CUDA-event **decode tok/s** measurement vs the 145 bar. That is the number that decides GO/NO-GO
 and is not yet measured. Layer A being proven de-risks the "binding is the easy 20%" half; the
 kernel is the 80% and the open question.
+
+### Phase-2 update — hot-path quant GEMV hits 85% of peak (2026-07-14)
+
+The decisive-proxy experiment (`cuda/gemv_bw_test.go`), since decode is weight-streaming-
+bound and WebGPU sits below the bandwidth ceiling by its glue wall. A hand W8A8 GEMV
+(`__dp4a` int8 dot, warp-per-row, matching the W8A8 packing), qwen2.5-1.5b FFN shape
+[N=8960 × K=1536], NVRTC-compiled, launched via gocudrv, CUDA-event-timed:
+
+| | value |
+|---|---|
+| correctness (cosine vs exact CPU dp4 ref) | **1.000000** — packing matches |
+| kernel time | 36.3 µs (best of 8 × 50) |
+| achieved bandwidth | **379 GB/s = 85% of the ~448 GB/s peak** |
+| WebGPU decode, for contrast | ~37% of peak (111 tok/s ÷ ~300 tok/s bw-ceiling) |
+
+**Read this precisely.** 85% is a *single GEMV in isolation* — back-to-back on the stream,
+no inter-op dependencies, no attention/RoPE/norm glue, no per-dispatch launch tax. So it is
+an **upper bound** on the fused megakernel, not the decode number. But it settles the spike's
+sharpest risk — *"can a competent, not-world-class hand kernel beat the WGSL ceiling?"* — for
+the hot path: **yes, decisively (85% vs 37%).** The 2.3× per-op headroom is exactly the
+glue-serialization wall the megakernel exists to remove; the 1.3× GO bar (48% of peak) is
+comfortably inside the 37%→85% gap.
+
+**Signals so far (all GO-direction, none yet the verdict):** (1) cgo-free lane open — Layer A
+proven end-to-end; (2) compiler solved (NVRTC); (3) the hot-path quant kernel is competent
+(85% peak, correct). **What still gates GO:** the FUSED decode megakernel — GEMV + online-
+softmax GQA attention + RoPE + RMSNorm + SwiGLU, with the real inter-stage dependencies and
+the ~5 µs/dispatch tax — sustaining enough of that 85% ceiling across a full token to clear
+145 tok/s. That end-to-end decode measurement is the remaining build and the only thing that
+converts these signals into a measured GO.
