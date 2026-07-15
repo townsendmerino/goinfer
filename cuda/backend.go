@@ -3,19 +3,14 @@
 package cuda
 
 import (
-	_ "embed"
+	"fmt"
+	"os"
+	"runtime"
 
+	gc "github.com/eitamring/gocudrv/cuda"
+	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/decoder"
 )
-
-//go:generate nvcc -arch=sm_75 -ptx megakernel.cu -o megakernel.ptx
-
-// megakernelPTX is the fused decode-layer kernel, compiled by `go generate` (nvcc,
-// -arch=sm_75 = Turing / 2070 SUPER) and JIT'd at runtime. The committed file is a
-// placeholder; the box regenerates it once megakernel.cu is filled in.
-//
-//go:embed megakernel.ptx
-var megakernelPTX []byte
 
 func init() {
 	decoder.RegisterBackend("cuda", func() (decoder.Backend, error) {
@@ -32,37 +27,196 @@ var (
 
 // cudaBackend implements decoder.Backend + decoder.ResidencyBackend.
 type cudaBackend struct {
-	drv driver
+	drv      driver
+	resident *cudaResident // set by BuildResident; shut down in Close
 }
 
 func (b *cudaBackend) Name() string { return "cuda" }
 
-// MatmulBT is the staged (non-resident) fallback: dst[M,N] = a[M,K]·b[N,K]ᵀ. The
-// skeleton computes it on the CPU (correct, unaccelerated) so `--backend cuda`
-// yields correct output via fallback before the kernel is wired; the real backend
-// dispatches this to a device GEMV.
+// MatmulBT is the staged (non-resident) path: dst[M,N] = a[M,K]·b[N,K]ᵀ. CUDA residency
+// is decode-only and dense-only, so anything off that path (prefill matmuls, non-dense
+// families, or a no-driver fallback) lands here — dispatched to the shared SIMD linalg
+// kernels (same as the CPU backend), so `--backend cuda` is correct and reasonably fast
+// even when the resident GPU path declines.
 func (b *cudaBackend) MatmulBT(a, bmat, dst []float32, M, K, N int) {
-	for i := 0; i < M; i++ {
-		ar := a[i*K : i*K+K]
-		for n := 0; n < N; n++ {
-			br := bmat[n*K : n*K+K]
-			var acc float32
-			for k := 0; k < K; k++ {
-				acc += ar[k] * br[k]
-			}
-			dst[i*N+n] = acc
+	linalg.MatmulBT(a, bmat, dst, M, K, N)
+}
+
+// BuildResident builds a resident CUDA decoder from a loaded dense Model: host-packs the
+// mixed int4/int8/f32 projections, spawns a LockOSThread-pinned CUDA executor, and uploads
+// weights + KV scratch once, returning a *cudaResident whose Forward the decode loop drives.
+// Declines gracefully (ok=false, no crash) when the driver is absent, dlopen fails, or a
+// projection shape isn't residency-compatible — the decoder then uses the staged/CPU path.
+// Callers gate on DecodeRunnerEligible (dense Qwen2/Llama) before reaching here.
+func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForward, ok bool, err error) {
+	// Never crash the process on a missing/broken driver: recover → decline → fallback.
+	defer func() {
+		if p := recover(); p != nil {
+			rf, ok, err = nil, false, fmt.Errorf("cuda: BuildResident recovered from panic: %v", p)
 		}
+	}()
+
+	w := m.Weights()
+	if w == nil || len(w.Layers) == 0 {
+		return nil, false, nil
 	}
+	H, nLayers, nH, nKV, hd, I, vocab := m.Dims()
+
+	// ---- host pack all weights (CPU; any incompatible shape → decline) ----
+	type hlayer struct {
+		q, k, v, o, g, u, d hostW
+		qb, kb, vb          []float32
+		preNorm, postNorm   []float32
+		hasBias             bool
+	}
+	declined := func(e error) (decoder.ResidentForward, bool, error) {
+		if os.Getenv("GOINFER_RESIDENT_DEBUG") != "" {
+			fmt.Fprintf(os.Stderr, "[cuda] BuildResident declined: %v\n", e)
+		}
+		return nil, false, nil
+	}
+	hls := make([]hlayer, nLayers)
+	for l := 0; l < nLayers; l++ {
+		lw := &w.Layers[l]
+		var hl hlayer
+		for _, p := range []struct {
+			dst *hostW
+			src *linalg.WeightMat
+		}{
+			{&hl.q, &lw.QProj}, {&hl.k, &lw.KProj}, {&hl.v, &lw.VProj}, {&hl.o, &lw.OProj},
+			{&hl.g, &lw.GateProj}, {&hl.u, &lw.UpProj}, {&hl.d, &lw.DownProj},
+		} {
+			hw, e := packWeight(p.src)
+			if e != nil {
+				return declined(e)
+			}
+			*p.dst = hw
+		}
+		hl.preNorm, hl.postNorm = lw.PreAttnNorm, lw.PreMLPNorm
+		if len(hl.preNorm) == 0 || len(hl.postNorm) == 0 {
+			return declined(fmt.Errorf("layer %d missing pre/pre-MLP norm", l))
+		}
+		if lw.QBias != nil {
+			hl.qb, hl.kb, hl.vb, hl.hasBias = lw.QBias, lw.KBias, lw.VBias, true
+		}
+		hls[l] = hl
+	}
+	lmSrc := &w.LMHead
+	if w.LMHead.Rows() == 0 {
+		lmSrc = &w.Embed // tied embeddings
+	}
+	hlm, e := packWeight(lmSrc)
+	if e != nil {
+		return declined(e)
+	}
+
+	// ---- resident + pinned executor ----
+	r := &cudaResident{
+		hidden: H, nLayers: nLayers, nH: nH, nKV: nKV, hd: hd, inter: I, vocab: vocab,
+		qDim: nH * hd, kvDim: nKV * hd, half: hd / 2,
+		eps: m.NormEps(), attnScale: m.AttnScale(),
+		logitsHost: make([]float32, vocab),
+	}
+	kvDim := r.kvDim
+	invFreq := m.RopeInvFreq()
+	hFinal := w.FinalNorm
+	r.reqCh = make(chan func() error)
+	r.ackCh = make(chan error)
+	go func() {
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+		for j := range r.reqCh {
+			r.ackCh <- j()
+		}
+	}()
+
+	// setup job: create the context on the pinned thread, JIT kernels, upload everything.
+	setupErr := r.do(func() error {
+		if e := gc.Init(); e != nil {
+			return e
+		}
+		dev, e := gc.GetDevice(0)
+		if e != nil {
+			return e
+		}
+		if r.cx, e = dev.Primary(); e != nil {
+			return e
+		}
+		gmod, e := r.cx.LoadModule(gemvFwdPTX)
+		if e != nil {
+			return e
+		}
+		glmod, e := r.cx.LoadModule(gluePTX)
+		if e != nil {
+			return e
+		}
+		if r.gemvW4, e = gmod.Function("gemv_w4a8_fwd"); e != nil {
+			return e
+		}
+		if r.gemvW8, e = gmod.Function("gemv_w8a8_fwd"); e != nil {
+			return e
+		}
+		if r.kvStore, e = gmod.Function("kv_store"); e != nil {
+			return e
+		}
+		fns := []struct {
+			dst  **gc.Function
+			name string
+		}{
+			{&r.fRms, "rmsnorm_quant"}, {&r.fQ, "quant_vec"}, {&r.fRope, "rope"},
+			{&r.fAttn, "attention"}, {&r.fSw, "swiglu_quant"}, {&r.fRes, "residual"},
+		}
+		for _, f := range fns {
+			if *f.dst, e = glmod.Function(f.name); e != nil {
+				return e
+			}
+		}
+		if r.stream, e = r.cx.NewStream(); e != nil {
+			return e
+		}
+
+		r.layers = make([]cudaLayer, nLayers)
+		for l := 0; l < nLayers; l++ {
+			h := &hls[l]
+			L := cudaLayer{
+				q: r.upW(h.q), k: r.upW(h.k), v: r.upW(h.v), o: r.upW(h.o),
+				g: r.upW(h.g), u: r.upW(h.u), d: r.upW(h.d),
+				preNorm: r.up32(h.preNorm), postNorm: r.up32(h.postNorm),
+			}
+			if h.hasBias {
+				L.qb, L.kb, L.vb, L.hasBias = r.up32(h.qb), r.up32(h.kb), r.up32(h.vb), true
+			}
+			r.layers[l] = L
+		}
+		r.lmW = r.upW(hlm)
+		r.finalNorm = r.up32(hFinal)
+		r.invF = r.up32(invFreq)
+
+		r.x, r.aSc, r.aq = r.af(H), r.af(1), r.ai(H/4)
+		r.qB, r.kB, r.vB = r.af(r.qDim), r.af(kvDim), r.af(kvDim)
+		r.kc, r.vc = make([]*gc.Buffer[float32], nLayers), make([]*gc.Buffer[float32], nLayers)
+		for l := range r.kc {
+			r.kc[l], r.vc[l] = r.af(cudaCtxCap*kvDim), r.af(cudaCtxCap*kvDim)
+		}
+		r.cctx, r.cSc, r.cq = r.af(r.qDim), r.af(1), r.ai(r.qDim/4)
+		r.oO = r.af(H)
+		r.mSc, r.mq = r.af(1), r.ai(H/4)
+		r.gO, r.uO = r.af(I), r.af(I)
+		r.dSc, r.dScr, r.dq = r.af(1), r.af(I), r.ai(I/4)
+		r.dO, r.logits = r.af(H), r.af(vocab)
+		return r.setupErr
+	})
+	if setupErr != nil {
+		r.Close()
+		return declined(setupErr)
+	}
+	b.resident = r
+	return r, true, nil
 }
 
-// BuildResident builds a resident CUDA decoder from a loaded Model. The skeleton
-// declines (ok=false) so the decoder cleanly uses the staged/CPU path; the real
-// implementation uploads the quantized projections + KV caches once, JITs
-// megakernelPTX, and returns a *cudaResident (see cudaResident.Forward for the
-// per-token launch flow). Wired on the box — spec §8.
-func (b *cudaBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward, bool, error) {
-	_ = megakernelPTX // consumed by the real BuildResident (JIT the kernel)
-	return nil, false, nil
+func (b *cudaBackend) Close() error {
+	if b.resident != nil {
+		_ = b.resident.Close()
+	}
+	return b.drv.Close()
 }
-
-func (b *cudaBackend) Close() error { return b.drv.Close() }

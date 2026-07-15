@@ -115,7 +115,7 @@ func Load(dir string, opts Options) (*Model, error) {
 			return nil, lerr
 		}
 		if beErr != nil {
-			fmt.Println(beErr)
+			fmt.Fprintln(os.Stderr, beErr)
 		}
 		m := &Model{w: w, be: be, mmap: data, eosIDs: w.Cfg.EOSIDs(), kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8"}
 		if opts.StreamWeights {
@@ -165,7 +165,7 @@ func Load(dir string, opts Options) (*Model, error) {
 	}
 	if beErr != nil {
 		// webgpu requested but fell back — not fatal.
-		fmt.Println(beErr)
+		fmt.Fprintln(os.Stderr, beErr)
 	}
 	if opts.StreamWeights {
 		// Weight streaming pages weights out of the read-only mmap, which only the

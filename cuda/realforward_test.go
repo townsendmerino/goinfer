@@ -13,10 +13,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// gemvFwdPTX is the forward W4A8 GEMV (on-device aScale pointer + per-row bias) + kv_store.
-//
-//go:embed testdata/gemv_fwd.ptx
-var gemvFwdPTX []byte
+// gemvFwdPTX + gluePTX now live in kernels.go (shared with the production backend).
 
 // TestRealForwardParity is B's gate (steps 2-3): the full cgo-free CUDA per-token forward
 // on the REAL q4_k_m checkpoint must produce the same greedy argmax as goinfer's CPU decode

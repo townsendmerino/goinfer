@@ -8,6 +8,9 @@ require (
 	github.com/townsendmerino/goinfer v0.8.0
 )
 
-require golang.org/x/text v0.37.0 // indirect
+require (
+	golang.org/x/sys v0.45.0 // indirect
+	golang.org/x/text v0.37.0 // indirect
+)
 
 replace github.com/townsendmerino/goinfer => ../

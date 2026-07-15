@@ -26,27 +26,7 @@ var gemvW4A8Coal2PTX []byte
 //go:embed testdata/gemv_w4a8_coal3.ptx
 var gemvW4A8Coal3PTX []byte
 
-// nibblePosFast maps a weight's index within an 8-weight word (0..7) to its nibble slot,
-// so the kernel's even/odd byte split (word&0x0F0F0F0F / (word>>4)&0x0F0F0F0F) lands
-// weights 0..3 in `e`'s bytes and 4..7 in `o`'s bytes.
-func nibblePosFast(i int) int {
-	if i < 4 {
-		return 2 * i
-	}
-	return 2*(i-4) + 1
-}
-
-// permuteFast converts a natural-order packed word (element i at nibble i, the straight
-// byte copy of the decoder's int4) into the fast nibble-permuted layout the coalesced
-// forward GEMV expects (element i at nibble nibblePosFast(i)).
-func permuteFast(w uint32) uint32 {
-	var o uint32
-	for i := 0; i < 8; i++ {
-		nv := (w >> (4 * i)) & 0xf
-		o |= nv << (4 * nibblePosFast(i))
-	}
-	return o
-}
+// nibblePosFast + permuteFast now live in kernels.go (shared with the production backend).
 
 // runW4A8Variant packs real-shaped int4 weights in the fast nibble-permuted layout,
 // validates cosine 1.0 vs a logical CPU reference (packing-independent), and reports

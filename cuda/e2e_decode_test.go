@@ -11,8 +11,7 @@ import (
 	gc "github.com/eitamring/gocudrv/cuda"
 )
 
-//go:embed testdata/glue.ptx
-var gluePTX []byte
+// gluePTX + gemvFwdPTX now live in kernels.go (shared with the production backend).
 
 // TestE2EDecode is the real end-to-end cgo-free CUDA decode measurement
 // (docs/prompts/cuda-measure-e2e-decode.md): the full per-token work — GEMVs PLUS the

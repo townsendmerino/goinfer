@@ -4,6 +4,8 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"os"
+
 	"github.com/townsendmerino/aikit/linalg"
 	"hash/crc32"
 	"io"
@@ -266,7 +268,7 @@ func (w *Weights) quantLabel() string {
 func NewModel(w *Weights, backend string) (*Model, error) {
 	be, beErr := NewBackend(backend)
 	if beErr != nil {
-		fmt.Println(beErr) // webgpu requested but fell back — not fatal.
+		fmt.Fprintln(os.Stderr, beErr) // webgpu/cuda requested but fell back — not fatal.
 	}
 	return (&Model{w: w, be: be, eosIDs: w.Cfg.EOSIDs()}).withResidency(), nil
 }

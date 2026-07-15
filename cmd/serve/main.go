@@ -251,7 +251,7 @@ func main() {
 		"defaults below: `--model big=moe.giw,stream,weight-cache=16 --model fast=small.giw`\n"+
 		"streams only the big MoE. Keys: quant,lora,kv,kv-quant,stream,weight-cache,embed-int4.\n"+
 		"(Paths may not contain commas.)")
-	flag.StringVar(&cfg.backend, "backend", "cpu", "compute backend: cpu | webgpu (process-wide)")
+	flag.StringVar(&cfg.backend, "backend", "cpu", "compute backend: cpu | webgpu | cuda (process-wide; cuda: dense-only, cgo-free NVIDIA, -tags cuda)")
 	flag.StringVar(&cfg.quant, "quant", "int8int8", "default decoder weight quant: \"\" | int8 | int8int8 | int4 | int4mix (attn int8, FFN int4 — near-int8 quality below int8 RAM, GGUF only). Per-model: --model p,quant=…")
 	flag.StringVar(&cfg.kvPrec, "kv", "f32", "GPU residency KV cache precision: f32 (bit-exact, 16k ctx) | f16 (lossy, 32k ctx) | i8 (lossy, ~64k ctx) — webgpu backend only")
 	flag.StringVar(&cfg.kvQuant, "kv-quant", "f32", "CPU KV cache storage: f32 (default, bit-exact) | i8 (per-head int8, ~4× smaller, lossy — argmax ~90%+; excludes MoE/gemma4/qwen3.5)")

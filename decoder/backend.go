@@ -94,7 +94,10 @@ func NewBackend(name string) (Backend, error) {
 	if name == "webgpu" {
 		return &cpuBackend{}, fmt.Errorf("decoder: webgpu backend not registered; import github.com/townsendmerino/goinfer/gpu and build `-tags gpu`; using cpu")
 	}
-	return nil, fmt.Errorf("decoder: unknown backend %q (have: cpu, webgpu)", name)
+	if name == "cuda" {
+		return &cpuBackend{}, fmt.Errorf("decoder: cuda backend not registered; import github.com/townsendmerino/goinfer/cuda and build `-tags cuda`; using cpu")
+	}
+	return nil, fmt.Errorf("decoder: unknown backend %q (have: cpu, webgpu, cuda)", name)
 }
 
 // cpuBackend dispatches the hot matmul to the shared linalg package

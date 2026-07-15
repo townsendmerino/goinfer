@@ -74,7 +74,7 @@ func main() {
 	var (
 		model    = flag.String("model", "", "path to a .gguf file or HF checkpoint dir (omit in the -tags embed build to use the baked-in model)")
 		system   = flag.String("system", defaultSystem, "system prompt that steers the model")
-		backend  = flag.String("backend", "cpu", "compute backend: cpu | webgpu")
+		backend  = flag.String("backend", "cpu", "compute backend: cpu | webgpu | cuda (cuda: dense-only, cgo-free NVIDIA, -tags cuda)")
 		quant    = flag.String("quant", "int8int8", "weight quant: \"\" (native) | int8 | int8int8 | int4. int8int8 (W8A8) uses the native int8×int8 SDOT kernel — much faster than int4's per-token nibble unpack")
 		lora     = flag.String("lora", "", "optional PEFT LoRA adapter dir, merged into the safetensors base at load")
 		maxTok   = flag.Int("max", 512, "max tokens per reply")
