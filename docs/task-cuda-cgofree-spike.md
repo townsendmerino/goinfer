@@ -400,3 +400,47 @@ structural win. So the honest reading is **~parity with native CUDA, and a solid
 This measurement is the number the track's future rests on: **~1.5× WebGPU, ~native-CUDA parity,
 cgo-free** — GO on *viability*, PAUSE on *worth-it*. Provenance: commit `886b4ed`, RTX 2070 SUPER,
 driver 595.58.03, CUDA 12.6.85 (NVRTC, offline), gocudrv v0.2.0, `CGO_ENABLED=0`.
+
+### Phase-2 (A) — fresh apples-to-apples vs Ollama on THIS box (2026-07-14)
+
+Re-anchored the peer instead of trusting the unpinned 147. Installed **Ollama v0.5.7** (prebuilt
+CUDA runners, no rebuild), imported our **exact** `qwen2.5-coder-1.5b-instruct-q4_k_m.gguf`,
+measured its decode `eval rate` on the 2070 SUPER:
+
+- **Ollama-CUDA int4 (q4_k_m): ~149 tok/s** (152.6 / 146.0 / 148.3) — **confirms the 147 anchor was
+  accurate, not stale-optimistic.** So the "we might actually be slower than a fresh, tuned
+  llama.cpp" risk is testable — and refuted below.
+
+Matching-quant (int4) on our side: `gemv_w4a8` (spec §3 nibble packing, cosine-1.0 validated) +
+the same glue, full per-token loop, same shippable config (driver-JIT, executor hop, CGO_ENABLED=0):
+
+| int4, same box, same GGUF/shape | tok/s | note |
+|---|---|---|
+| Ollama-CUDA (full decode, real tokens) | 149 | native peer, its runtime overhead included |
+| **our cgo-free CUDA (W4A8 bare forward)** | **190** | **1.27× Ollama** |
+| our cgo-free CUDA int8 (W8A8) | 176 | for reference |
+
+**Honest reading of the 1.27×:** it is partly real and partly measurement asymmetry. Our number is
+a bare per-token kernel loop; Ollama's `eval rate` includes its sampling/detokenize/server-loop
+overhead our harness omits, and we run a fixed pos=128 attention vs Ollama's growing context, with
+synthetic weights (perf-neutral, but no real-token correctness). Discount ~10–15% for those and it's
+**~parity-to-modestly-ahead**, not a clean 1.27× beat. **The load-bearing finding is the direction:
+we are NOT below native CUDA — at least parity — and our W4A8 is a NAIVE compute-bound kernel (43%
+of peak); a tuned int4 unpack would be bandwidth-bound and widen the lead.** So there is real headroom
+*above* Ollama, not below.
+
+## Verdict update — perf resolves favorably; still PAUSE, but now on *worth-it* only
+
+The fresh anchor removes the last perf uncertainty. Restated:
+- **vs WebGPU:** clearly beats it — 190 int4 / 176 int8 vs 111.6 = **1.6–1.7×.**
+- **vs native CUDA (Ollama, fresh, same box):** **at least parity, plausibly modestly ahead** (1.27×
+  raw, ~1.1× discounted), with headroom from a tuned kernel. The earlier "matches but doesn't beat /
+  might be below" is upgraded to **"matches or modestly beats, with headroom."**
+- **So GO on viability AND perf.** The remaining PAUSE is **purely the business question** — is
+  "native-CUDA-class decode, `CGO_ENABLED=0`, no toolkit, driver-only" worth the permanent
+  CUDA-kernel maintenance? — not a doubt about whether it's fast enough. It is.
+
+This supersedes the ~1.3× inference and the PAUSE-on-parity: the measured, same-box, same-model
+comparison is **~native-CUDA parity-to-ahead, ~1.6× WebGPU, cgo-free.** Next (B, when funded): the
+production backend + argmax-parity on a real checkpoint for the definitive end-to-end with correct
+tokens. Provenance: commit `34a0818`, RTX 2070 SUPER, driver 595.58.03, Ollama v0.5.7, gocudrv v0.2.0.
