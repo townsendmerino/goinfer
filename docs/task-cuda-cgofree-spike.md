@@ -357,3 +357,46 @@ it if merely tied. So the sharper reading:
 This does not change gates 1–3 (cgo-free lane open, cold-start fine, kernel competent — all still
 measured and positive); it corrects gate 4's magnitude: decode clears 1.3× (real, Ollama-anchored),
 not 2.2× (projection-optimistic).
+
+### Phase-2 FINAL — real end-to-end decode measured; verdict PAUSE (2026-07-14)
+
+The GEMV projection (244) and the ~1.3× inference are now **superseded by a measured end-to-end
+number** (`cuda/e2e_decode_test.go`): the full per-token work — GEMVs PLUS the glue the projection
+dropped (RMSNorm+quant, RoPE, GQA online-softmax attention, SwiGLU+quant, residual, argmax), the
+non-trivial kernels cosine-validated vs CPU refs. Shippable config confirmed: **(1)** PTX compiled
+offline (NVRTC) + `go:embed`'d + **driver-JIT'd** — `ldd`/strings show **no libnvrtc/libcuda** in
+the binary (dlopen'd at runtime); **(2)** every launch goes through gocudrv's `LockOSThread`
+executor channel — its hop is in the number; **(3)** `CGO_ENABLED=0`. CUDA-event, warm, best-of-8.
+
+| | tok/s | % of ~293 ceiling |
+|---|---|---|
+| WebGPU (incumbent) | 111.6 | 38% |
+| Ollama-CUDA (native peer) | 147 | 50% |
+| **cgo-free CUDA E2E (this)** | **176** | **61%** |
+| — GEMV-only projection (for contrast) | 244 | 83% |
+
+**Breakdown:** GEMV 4.06 ms (72%) · glue+attention+argmax 1.61 ms (28%) · total 5.67 ms. The 28%
+glue is exactly the cost the 83%→61% drop represents — the projection's omission, now paid.
+
+**Anchored: 1.58× WebGPU, 1.20× Ollama.** Read the Ollama edge with discipline: it is within the
+**measurement's optimism** — this omits the per-token KV-store, uses pure int8 (fewer bytes than
+q8_0), is greedy with no sampler, runs a small pos=128 attention, and the Ollama 147 anchor is
+unpinned. Beating mature llama.cpp CUDA with simple hand kernels is more likely optimism than a
+structural win. So the honest reading is **~parity with native CUDA, and a solid ~1.5× over WebGPU.**
+
+## Verdict: **PAUSE** (measured, supersedes the earlier GO)
+
+- **NO-GO is refuted:** the glue + channel-hop did **not** eat the win — E2E is clearly above WebGPU
+  (1.58×) and above the 145 bar. The cgo-free CUDA lane genuinely beats the WGSL ceiling end-to-end.
+- **But it does not clearly beat native CUDA:** it *matches* Ollama (~parity after discounting). The
+  prize for the whole cgo-free-CUDA-megakernel track is therefore **parity with llama.cpp, cgo-free**
+  — a real capability (native-CUDA speed with `CGO_ENABLED=0`, no toolkit, driver-only), but **not**
+  outperforming it.
+- Whether "match native CUDA, cgo-free" is worth the **permanent CUDA-kernel maintenance burden** the
+  roadmap wanted to avoid is a **maintainer business/judgment call, not an engineering step.** Park it
+  as a **measured, documented option**: the lane is proven open and ~native-CUDA-fast; pull the trigger
+  only if a real adopter makes cgo-free NVIDIA-desktop speed a priority worth the ongoing kernel cost.
+
+This measurement is the number the track's future rests on: **~1.5× WebGPU, ~native-CUDA parity,
+cgo-free** — GO on *viability*, PAUSE on *worth-it*. Provenance: commit `886b4ed`, RTX 2070 SUPER,
+driver 595.58.03, CUDA 12.6.85 (NVRTC, offline), gocudrv v0.2.0, `CGO_ENABLED=0`.
