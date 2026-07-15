@@ -21,13 +21,13 @@ The optional WebGPU backend (./gpu submodule, built only under `-tags gpu`)
 additionally links:
 
     github.com/cogentcore/webgpu
-    Licensed under the BSD 3-Clause License.
+    Licensed under the Apache License, Version 2.0.
 
 The optional cgo-free CUDA backend (./cuda module, built only under `-tags cuda`)
 additionally links:
 
     github.com/eitamring/gocudrv   (cgo-free CUDA driver API binding)
-    Copyright (c) eitam ring.
+    Copyright (c) 2026 eitamring.
     Licensed under the MIT License.
     goinfer's CUDA backend is built on this work; see the release notes for
     the full credit and https://eitamring.github.io/posts/gocudrv-ten-weekends.html
