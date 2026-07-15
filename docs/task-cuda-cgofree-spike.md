@@ -319,3 +319,41 @@ Mamba / vision remain explicitly out of scope, each its own decision.
 
 Provenance: goinfer commit `7e427c0`, RTX 2070 SUPER, driver 595.58.03, CUDA 12.6.85 (NVRTC),
 gocudrv v0.2.0, `CGO_ENABLED=0`.
+
+### Reality check vs Ollama — the projection is optimistic; recalibrated verdict (2026-07-14)
+
+Comparing the 244 tok/s projection to the native-CUDA peer exposes projection optimism.
+On the SAME 1.5B int8, **Ollama-CUDA = 147 tok/s** (`benchmarks.md §B`). So the projection is
+1.66× Ollama — *not credible as a real result*: llama.cpp's CUDA kernels are mature, and a hand
+GEMV is not 1.66× better than them. Reading it as bandwidth-fraction of the ~293 tok/s ceiling
+(1.53 GB/token ÷ 448 GB/s) is clarifying:
+
+| | tok/s | % of bandwidth ceiling |
+|---|---|---|
+| goinfer WebGPU | 111.6 | 38% |
+| **Ollama-CUDA (real end-to-end native)** | **147** | **50%** |
+| my GEMV projection (ideal streaming) | 244 | 83% |
+
+Ollama — *real* native CUDA, end-to-end — sustains **50%** of the ceiling on this small model;
+the remaining 50% is the real per-token cost my GEMV-only projection OMITS (attention compute,
+the elementwise glue, activation requant, q8_0 dequant, sampling, sync). My 83% is the
+weight-streaming *ceiling*, not achievable end-to-end — a hand megakernel carries those same
+overheads and is **not** more optimized than llama.cpp, so its realistic landing is **near
+Ollama (~147), not 244.**
+
+**Recalibrated verdict — GO, but MARGINAL (not the 2.2× the projection implied).** The credible
+range for a cgo-free CUDA megakernel is **[~147 Ollama-parity, ~244 ideal] ⇒ ~1.3–1.6× WebGPU**,
+with the honest expected value near the low end (Ollama-parity ~1.3×). Even the floor clears the
+1.3× GO bar — but *only just*, and the bar was set at exactly the point the spike says isn't worth
+it if merely tied. So the sharper reading:
+
+- **The lane is real and native CUDA does beat WebGPU here — but by ~1.3× (Ollama proves it), not 2.2×.**
+- The prize for the whole cgo-free CUDA megakernel track is *matching native CUDA* (~1.3× WebGPU),
+  weighed against the CUDA-kernel maintenance burden the roadmap wanted to avoid. That is a genuine
+  GO on *viability* but a much closer call on *worth it* than the raw projection suggested.
+- The earlier "2.2×" headline is the ideal-streaming ceiling and should be read as such; the
+  Ollama-anchored ~1.3× is the number to plan against.
+
+This does not change gates 1–3 (cgo-free lane open, cold-start fine, kernel competent — all still
+measured and positive); it corrects gate 4's magnitude: decode clears 1.3× (real, Ollama-anchored),
+not 2.2× (projection-optimistic).
