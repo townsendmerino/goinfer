@@ -20,6 +20,12 @@ var gemvW4A8CoalPTX []byte
 //go:embed testdata/gemv_w4a8_v4.ptx
 var gemvW4A8V4PTX []byte
 
+//go:embed testdata/gemv_w4a8_coal2.ptx
+var gemvW4A8Coal2PTX []byte
+
+//go:embed testdata/gemv_w4a8_coal3.ptx
+var gemvW4A8Coal3PTX []byte
+
 // nibblePosFast maps a weight's index within an 8-weight word (0..7) to its nibble slot,
 // so the kernel's even/odd byte split (word&0x0F0F0F0F / (word>>4)&0x0F0F0F0F) lands
 // weights 0..3 in `e`'s bytes and 4..7 in `o`'s bytes.
@@ -181,3 +187,21 @@ func TestGemvW4A8Coal(t *testing.T) {
 
 // TestGemvW4A8V4 — uint4 group load (coalesced AND group-aligned, no segmented reduction).
 func TestGemvW4A8V4(t *testing.T) { runW4A8Variant(t, gemvW4A8V4PTX, "gemv_w4a8_v4", "W4A8-V4") }
+
+// TestGemvW4A8Coal2 — coalesced reads, scale-per-word float accumulate (drops the 2 shfl/word).
+func TestGemvW4A8Coal2(t *testing.T) {
+	runW4A8Variant(t, gemvW4A8Coal2PTX, "gemv_w4a8_coal2", "W4A8-COAL2")
+}
+
+// TestGemvW4A8Coal3 — COAL2 + 2x ILP unroll (two loads in flight per lane, 32-remainder).
+func TestGemvW4A8Coal3(t *testing.T) {
+	runW4A8Variant(t, gemvW4A8Coal3PTX, "gemv_w4a8_coal3", "W4A8-COAL3")
+}
+
+//go:embed testdata/gemv_w4a8_coal4.ptx
+var gemvW4A8Coal4PTX []byte
+
+// TestGemvW4A8Coal4 — 4x ILP unroll (four loads in flight per lane, 32-remainder).
+func TestGemvW4A8Coal4(t *testing.T) {
+	runW4A8Variant(t, gemvW4A8Coal4PTX, "gemv_w4a8_coal4", "W4A8-COAL4")
+}

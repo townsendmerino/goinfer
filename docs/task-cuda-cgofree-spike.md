@@ -552,3 +552,28 @@ kernel computes the same dot, just faster.
 **Remaining headroom:** 71% vs W8A8's 85% — the per-word segmented-reduction shuffles are
 the gap. Further levers (fusion, single-launch megakernel) are still untouched and were
 found modest/high-effort elsewhere. Claim stays dense-qualified.
+
+### The squeeze — ILP unroll: 71% → 80% peak, e2e 210.6 → 218.6 tok/s
+
+Pushed the coalesced kernel further. The segmented-reduction shuffles turned out NOT to be
+the gap (COAL2 dropped them via scale-per-word float-accumulate: 71% → 72%, a wash). The
+real limiter was **memory-level parallelism**: int4 reads half the bytes of int8, so it
+needs more loads in flight to saturate bandwidth. Extended ladder:
+
+| variant | µs | % peak | |
+|---|---|---|---|
+| COAL (coalesced + seg-reduce) | 24.2 | 71% | |
+| COAL2 (drop seg-reduce, scale-per-word) | 24.0 | 72% | shuffles weren't the cost |
+| **COAL3 (COAL2 + 2× ILP unroll)** | **21.6** | **80%** | **winner — near W8A8's 85%** |
+| COAL4 (4× unroll) | 23.8 | 73% | remainder penalty at K=1536 (192÷128 = 1 + big tail) |
+
+2× is the sweet spot: clean for K=1536 (192÷64=3 exact) and near-clean for K=8960; 4× sends
+half the K=1536 work through the slow 32-stride remainder. COAL3 wired into `gemv_w4a8_fwd`.
+
+Real q4_k_m e2e: 210.6 → **218.6 tok/s** = **1.47× Ollama / 1.96× WebGPU**. Parity re-run
+IMPROVED: **9/10 exact** (the 2×-unroll float order aligns better with CPU), worst near-tie
+0.087%, 0 hard fails.
+
+**Total W4A8 tuning: 43% → 80% peak (1.86× kernel), real e2e 183.5 → 218.6 tok/s (+19%),
+1.23× → 1.47× Ollama.** Remaining 80→85% would need occupancy/vectorized-activation work —
+diminishing returns. Fusion / single-launch megakernel still untouched. Dense-qualified.
