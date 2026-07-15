@@ -35,14 +35,14 @@ jobs:
 
       # Core promise: the cgo WebGPU dependency must never enter the runtime's
       # module graph. webgpu lives only in the opt-in ./gpu submodule.
-      - name: cleanliness guard (no webgpu in root)
+      - name: cleanliness guard (no webgpu / cuda deps in root)
         run: |
-          if go list -deps ./... | grep -Eiq 'cogentcore/webgpu'; then
-            echo "::error::webgpu leaked into the goinfer root module graph"
-            go list -deps ./... | grep -Ei 'cogentcore/webgpu'
+          if go list -deps ./... | grep -Eiq 'cogentcore/webgpu|eitamring/gocudrv|ebitengine/purego'; then
+            echo "::error::an opt-in backend dep leaked into the goinfer root module graph"
+            go list -deps ./... | grep -Ei 'cogentcore/webgpu|eitamring/gocudrv|ebitengine/purego'
             exit 1
           fi
-          echo "clean: no webgpu in goinfer root"
+          echo "clean: no webgpu/gocudrv/purego in goinfer root"
 
       # Model-asset parity tests skip themselves when their checkpoints /
       # goldens are absent (see testdata/README), so this is green on a fresh
@@ -87,6 +87,38 @@ jobs:
       # they compile and the resident-matmul path is exercised where possible.
       - name: test -tags gpu
         run: go test -short -tags gpu ./gpu/...
+
+  # CUDA submodule: the opt-in cgo-free NVIDIA backend, built under -tags cuda
+  # (CGO_ENABLED=0, dlopen libcuda, driver-JIT of embedded PTX). No CUDA toolkit
+  # or GPU needed to BUILD — only to run; the equivalence gate (TestBackendResident-
+  # Wired / TestRealForwardParity) runs on the box, and skips cleanly on the
+  # GPU-less CI runner. Mirrors the gpu job: ephemeral workspace stitches the
+  # unpublished goinfer root (cuda/go.mod already has `replace ... => ../`).
+  cuda:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: cuda/go.sum
+
+      - name: workspace (resolve unpublished goinfer locally)
+        run: go work init . ./cuda
+
+      - name: build -tags cuda (backend module)
+        run: CGO_ENABLED=0 go build -tags cuda ./cuda/...
+
+      # The wired binaries must compile with the cuda backend registered.
+      - name: build -tags cuda (wired serve + demo)
+        run: CGO_ENABLED=0 go build -tags cuda ./cmd/serve ./demo/chat
+
+      - name: vet -tags cuda
+        run: go vet -tags cuda ./cuda/...
+
+      # Compile + skip cleanly on the GPU-less runner (tests t.Skip without a device).
+      - name: test -tags cuda
+        run: CGO_ENABLED=0 go test -short -tags cuda ./cuda/...
 
   # Root module on darwin/arm64. The Linux jobs above can't catch
   # platform-specific build breaks — e.g. a syscall the darwin syscall package
