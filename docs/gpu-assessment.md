@@ -93,6 +93,17 @@ irreducible without W4A8)** + glue ~4.0 + attn 0.3. So:
   native-CUDA/Metal advantage and the honest cap on the pure-Go/WebGPU path;
   practical WebGPU decode tops out near **~90–100 tok/s token-level** on this
   card (the 4.3 + 4.0 split is the evidence — no grind needed to know it).
+  > **UPDATE (2026-07, projection — not yet measured e2e):** the megakernel WGSL
+  > can't express, native CUDA *can* — and it looks reachable **cgo-free**. A spike
+  > *projected* a dlopen-libcuda path (no cgo) at up to **~2.2× WebGPU** decode on
+  > this card from a **GEMV-only ideal-streaming bound** (83% of peak bandwidth
+  > across the 141 chained GEMV launches vs WebGPU's 37%). That is the GEMV ceiling,
+  > **not** end-to-end: Ollama-CUDA runs the same 1.5B int8 *end-to-end* at ~147
+  > (≈1.3× WebGPU), so the realistic landing is ~1.3× and the real e2e goinfer-CUDA
+  > decode is **not yet measured**. Verdict: **GO to build and measure**. So this
+  > "wall" is WebGPU's, not the GPU's; the cap on the *pure-Go/WebGPU* path stands,
+  > and a scoped dense-only cgo-free-CUDA residency track is open, pending the e2e
+  > number (`prompts/cuda-measure-e2e-decode.md`). See `task-cuda-cgofree-spike.md`.
 
 **Strategic verdict:** the bet is won. At 3.50× the prior hybrid, ~10.6× CPU,
 61% of Ollama-CUDA at equal quant on one import with zero install and the
