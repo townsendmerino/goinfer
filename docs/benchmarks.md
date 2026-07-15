@@ -140,8 +140,15 @@ gpu-assessment — cited there.
 
 | model · quant (same card, warm, greedy) | goinfer (WebGPU) | peer (native CUDA) | goinfer vs peer |
 |---|---|---|---|
-| Qwen2.5-Coder-1.5B · int8 vs q8_0 (~1.55 GB/tok) | **89.7 tok/s** | Ollama-CUDA **147** | **61%** (equal int8) |
-| Qwen2.5-7B · int4 vs q4 | **51.7 tok/s** | llama.cpp-CUDA **72.8** | **71%** (equal 4-bit) |
+| Qwen2.5-Coder-1.5B · int8 vs q8_0 (~1.55 GB/tok) | **111.6 tok/s** | Ollama-CUDA **147** | **76%** (equal int8) |
+| Qwen2.5-7B · int4 vs q4 | 51.7 tok/s *(pre-coalescing, stale)* | llama.cpp-CUDA **72.8** | 71% (equal 4-bit) |
+
+> **Fresh re-measure (2026-07-14, CUDA-spike step 0):** the 1.5B-int8 row is re-measured
+> on this 2070 SUPER after the buffer-coalescing win (`f8ef42b`/`5c3777f`) that postdated
+> the 89.7 figure — **89.7 → 111.6 tok/s** (best of 6 × 48-tok greedy, resident int8,
+> `TestDecodeRealModel_throughput`), closing the native-CUDA gap **61% → 76%**. This is
+> the number the CUDA-megakernel-spike GO bar keys off: **≥1.3× = 145 tok/s int8**. The
+> 7B-int4 row was not re-measured (also predates coalescing — treat as stale).
 
 - The 7B-int4 row is the *footprint* headline: it **fits and decodes pure-GPU on an
   8 GB card** — the model class that does not fit at int8.

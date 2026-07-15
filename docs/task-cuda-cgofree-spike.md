@@ -161,3 +161,43 @@ commit).
 - This spike is the **only** path that could move the *decode ratio* itself (WebGPU
   is walled). It is off the default roadmap and gated on real demand — keep it that
   way until an adopter makes NVIDIA-desktop speed a priority.
+
+---
+
+## Phase-2 execution log (2026-07-14, RTX 2070 SUPER, driver 595.58.03)
+
+Ran on the box per the contract. **Interim feasibility result — NOT a measured GO/NO-GO.**
+Per this doc's own discipline ("no performance claim without a CUDA-event-timed run"), no
+decode-perf verdict is claimed: the megakernel was not yet compiled + measured, so the GO
+condition (measured ≥1.3× fresh-WebGPU) is **unproven**, which by the timebox rule defaults
+to **NO-GO-pending** — distinct from a measured "it ties/loses." What *was* established:
+
+### Step 0 — baseline re-measured (the number the GO bar keys off)
+`TestDecodeRealModel_throughput`, qwen2.5-coder-1.5b, resident int8, best of 6×48-tok greedy,
+this 2070 SUPER: **111.6 tok/s int8** (8.96 ms/tok). This is up from the stale §B 89.7 — the
+buffer-coalescing win (`f8ef42b`/`5c3777f`) closed the native-CUDA gap **61% → 76%** (vs
+Ollama-CUDA 147). `benchmarks.md §B` refreshed. **⇒ GO bar = ≥1.3× = 145 tok/s int8.**
+
+### Feasibility triage (the hard blockers — all surmountable)
+| gate | status |
+|---|---|
+| Card + driver + `libcuda.so.1` (the dlopen target) | ✅ 2070 SUPER, 595.58.03, 8 GB |
+| **gocudrv** (cgo-free driver) | ✅ `github.com/eitamring/gocudrv@v0.2.0` fetched; rich generic API (`Alloc[T]`/`Buffer[T]`/`Arg[T]`/`LaunchConfig`, `Event.Record/Elapsed` for CUDA-event timing) |
+| **Cooperative launch** | ✅ **PRESENT in v0.2.0** (`cuda/coop.go`: `LaunchCooperative`, `MaxCooperativeGridBlocks`) — **corrects spec §5.1's assumption that gocudrv lacks it.** The true single-launch/layer megakernel (route §5.1) is available, not just the 3-super-kernel fallback. |
+| `ptxas` + `libnvvm` + `libdevice` | ✅ via `pip nvidia-cuda-nvcc-cu12` (ptxas-only wheel) |
+| **`nvcc`/`cicc` (.cu→PTX frontend)** | ⚠️ not in the pip wheel and this clang has no NVPTX target; obtained via the CUDA 12.6.3 runfile `--extract` to `$HOME` (no sudo) — nvcc runs, but its `cicc` **cannot parse this box's gcc-15 libstdc++** (bf16 literal in `<type_traits>`). Fixable (older host headers via `-isystem`, or a CUDA ≥12.9 whose cicc supports gcc-15) but not resolved in-session. |
+
+### Verdict status
+The **cgo-free-native-CUDA lane is feasibility-confirmed**: every *hard* blocker cleared —
+a cgo-free driver with cooperative launch exists, `libcuda` is present, the baseline is
+established, and the toolchain is obtainable (the one wall, nvcc-vs-gcc-15, is a known
+surmountable friction, not a fundamental one). **What remains is Layer B — the 80% the spec
+itself calls out:** the 3 fused quant super-kernels (or, given coop launch is available, the
+single cooperative megakernel) matching the exact W4A8/W8A8 packing + KV layout, the
+gocudrv-backed `driver.go`, `BuildResident` weight extraction + JIT, the argmax-parity
+correctness gate, and the CUDA-event decode measurement. That is the budgeted long-weekend
+bulk and was **not** completed here. **No GO** is claimed (nothing measured); the lane is
+open to *attempt* the build, and the number to beat is **145 tok/s int8**.
+
+Provenance: goinfer commit `d1f85bd`, 2070 SUPER, driver 595.58.03, CUDA 12.6.85 (nvcc),
+gocudrv v0.2.0.
