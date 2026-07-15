@@ -44,14 +44,14 @@ type driver interface {
 // declines (ok=false). The box replaces this with a gocudrv-backed driver.
 type stubDriver struct{}
 
-func (stubDriver) Init() error                                        { return errCUDANotWired }
-func (stubDriver) Alloc(int) (devPtr, error)                          { return 0, errCUDANotWired }
-func (stubDriver) Free(devPtr) error                                  { return errCUDANotWired }
-func (stubDriver) MemcpyHtoD(devPtr, []byte) error                    { return errCUDANotWired }
-func (stubDriver) MemcpyDtoH([]byte, devPtr) error                    { return errCUDANotWired }
-func (stubDriver) LoadPTX([]byte) (module, error)                     { return 0, errCUDANotWired }
-func (stubDriver) Func(module, string) (fn, error)                    { return 0, errCUDANotWired }
-func (stubDriver) Launch(fn, dim3, dim3, int, ...any) error           { return errCUDANotWired }
+func (stubDriver) Init() error                                         { return errCUDANotWired }
+func (stubDriver) Alloc(int) (devPtr, error)                           { return 0, errCUDANotWired }
+func (stubDriver) Free(devPtr) error                                   { return errCUDANotWired }
+func (stubDriver) MemcpyHtoD(devPtr, []byte) error                     { return errCUDANotWired }
+func (stubDriver) MemcpyDtoH([]byte, devPtr) error                     { return errCUDANotWired }
+func (stubDriver) LoadPTX([]byte) (module, error)                      { return 0, errCUDANotWired }
+func (stubDriver) Func(module, string) (fn, error)                     { return 0, errCUDANotWired }
+func (stubDriver) Launch(fn, dim3, dim3, int, ...any) error            { return errCUDANotWired }
 func (stubDriver) LaunchCooperative(fn, dim3, dim3, int, ...any) error { return errCUDANotWired }
-func (stubDriver) Synchronize() error                                 { return errCUDANotWired }
-func (stubDriver) Close() error                                       { return nil }
+func (stubDriver) Synchronize() error                                  { return errCUDANotWired }
+func (stubDriver) Close() error                                        { return nil }

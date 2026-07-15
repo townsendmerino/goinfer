@@ -16,10 +16,10 @@ type cudaResident struct {
 
 	// dims (from m.Dims()): hidden, layers, query/kv heads, head dim, ffn width, vocab.
 	hidden, nLayers, nH, nKV, hd, inter, vocab int
-	kvDim                                       int // nKV*hd
+	kvDim                                      int // nKV*hd
 
 	mod        module // JIT'd megakernelPTX
-	k1, k2, k3 fn      // the 3 fused super-kernels (spec §5.2): pre-attn | attn | ffn
+	k1, k2, k3 fn     // the 3 fused super-kernels (spec §5.2): pre-attn | attn | ffn
 
 	// Device buffers, allocated once (weights per layer, KV caches, scratch, the input
 	// embedding xd, logits). Elided in the skeleton.
