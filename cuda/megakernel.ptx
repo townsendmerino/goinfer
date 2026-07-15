@@ -1,0 +1,9 @@
+// PLACEHOLDER PTX — not functional.
+//
+// Regenerate on a machine with the CUDA toolkit once megakernel.cu is filled in:
+//     go generate ./cuda      (nvcc -arch=sm_75 -ptx megakernel.cu -o megakernel.ptx)
+//
+// The skeleton go:embeds this file so the package compiles without nvcc present;
+// BuildResident declines (ok=false) until the real kernel + a gocudrv-backed driver
+// are wired on the box, so this placeholder is never JIT'd. See
+// docs/cuda-megakernel-spec.md §8.
