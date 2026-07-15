@@ -1,5 +1,10 @@
 # goinfer spike (cont.): measure the real end-to-end cgo-free CUDA decode
 
+> **✅ SUPERSEDED — DONE.** This measurement was run: real q4_k_m e2e =
+> **218.6 tok/s = 1.96× WebGPU / 1.47× Ollama**, cgo-free (ldd-proven), verdict GO.
+> See `task-cuda-cgofree-spike.md` (final verdict) and `task-cuda-b-ship-checklist.md`.
+> Kept for provenance.
+
 ## Why this task (read first)
 
 The CUDA spike (`task-cuda-cgofree-spike.md`) reached **GO**, then a reality-check

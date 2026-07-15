@@ -70,7 +70,7 @@ battlegrounds now:
 |---|---|---|
 | **MTP speculative decoding** (models ship multi-token heads; no draft model; ~2x on dense) | llama.cpp (Qwen 3.6 MTP, PR #22673), Ollama 0.23.1 (Gemma 4 MTP via MLX, 2x on 31B), LM Studio 0.4.14 (stable), vLLM (Gemma 4 MTP; EAGLE 3.1 in v0.22) | Greedy draft-model spec exists, parked on CPU. **MTP doesn't change the math**: CPU decode is compute-bound, so an M=K verify pass costs ~K sequential decodes regardless of how cheap drafting is. Stays parked; revisit with a bandwidth-bound (GPU) backend. Caveat from the field: even llama.cpp sees *no* MoE single-stream win on consumer hardware. |
 | **Model freshness** | Qwen 3.6, DeepSeek (MLA), GLM-4.5/4.6, Granite 4.0, Nemotron-H, Gemma 3n, Llama 4, Phi | The race the descriptor design lets us run cheaply — now **axis-driven** (see "Positioning: attention-coverage axes" above): GLM-4.5/4.6 + Granite-4.0-H (Mamba-2) + Nemotron-H + DeepSeek-V2/V3 (MLA, latent-KV) shipped — all three efficient-attention axes covered — plus Phi-3/Phi-4 (momentum). Plan: `docs/completed/task-model-families-next.md`. Gemma 4 already in, incl. PLE (which llama.cpp struggled with). |
-| **Hardware acceleration depth** | CUDA kernel fusion (+24% on 4090), Vulkan now beating CUDA on some hardware, M5 Neural Accelerators (MLX-only, up to 4x TTFT) | Accepted trade *for WebGPU*: pure-Go CPU SIMD + opt-in WebGPU, counter-position is portability. **But "don't fight on kernels" may be superseded on NVIDIA — under measurement:** a cgo-free spike (dlopen libcuda, no cgo) *projects* native-CUDA decode at up to ~2.2× WebGPU on the 2070 SUPER from a GEMV-only ideal-streaming bound, with a realistic end-to-end landing ~1.3× (Ollama-CUDA does the same 1.5B int8 e2e at ~147); the real e2e number is **not yet measured**. Spike verdict: **GO to build and measure**, scoped **dense-only cgo-free-CUDA residency track** (still `CGO_ENABLED=0`); final GO/NO-GO pends the e2e measurement (`task-cuda-cgofree-spike.md`). Not a commitment to cuBLAS-class/MoE/MLA/vision kernels — each its own decision. |
+| **Hardware acceleration depth** | CUDA kernel fusion (+24% on 4090), Vulkan now beating CUDA on some hardware, M5 Neural Accelerators (MLX-only, up to 4x TTFT) | Accepted trade *for WebGPU*: pure-Go CPU SIMD + opt-in WebGPU, counter-position is portability. **But "don't fight on kernels" is now measured-superseded on NVIDIA:** a cgo-free spike (dlopen libcuda, no cgo) **measured** native-CUDA decode at **218.6 tok/s = 1.96× WebGPU / 1.47× Ollama** on the 2070 SUPER (real q4_k_m e2e, int4/W4A8, 80% peak; cgo-free ldd-proven, argmax-parity a committed hard gate). Spike verdict **GO**; scoped **dense-only cgo-free-CUDA residency backend (B)** in last-mile packaging (`task-cuda-b-ship-checklist.md`, `task-cuda-cgofree-spike.md`), still `CGO_ENABLED=0`. Not a commitment to cuBLAS-class/MoE/MLA/vision kernels — each its own decision. |
 | **Serving surface** | mistral.rs v0.7: dynamic model load/unload, **multi-model serving**, initial **OpenAI Responses API**, prefix caching; LM Studio: MCP host + OAuth; Ollama: `launch` app integrations | **Largely closed:** multi-model + dynamic admin load/unload and the OpenAI Responses API shipped v0.4.0; prefix caching at parity; the **Anthropic Messages API** (`/v1/messages`) adds a second chat surface in v0.5.0 (Claude Code points at goinfer). Remaining true gaps: MCP host / OAuth / `launch`-style app integrations. |
 | **Quantization frontier** | Native FP8/FP4 (DeepSeek V4 in llama.cpp), TurboQuant (4.9x vs f16, tracked in llama.cpp #20969), NVFP4 on Apple | int8/int4 runtime + broad K-quant dequant coverage. FP8/FP4 is GPU-hardware-driven — not our fight on CPU. Watch TurboQuant: a CPU-implementable 3–4 bit quant with near-paper MSE could matter for the embed-demo size/quality curve. |
 
@@ -314,14 +314,14 @@ v0.4.0 ships without them.** Grouped by theme; ordered within a group by leverag
   (whole layer in one dispatch), which WGSL cannot express.** So ~90–100 tok/s is
   roughly the WebGPU ceiling on this card; past it needs native CUDA/Metal.
   **Status: effectively at the practical *WebGPU* ceiling. Don't grind WebGPU.**
-  **UPDATE (2026-07, projection — not yet measured e2e): "past it needs native
-  CUDA" looks reachable cgo-free.** A GEMV-only ideal-streaming projection put a
-  dlopen-libcuda megakernel (`CGO_ENABLED=0`) at up to ~2.2× WebGPU — but that's the
-  GEMV ceiling, not end-to-end: Ollama-CUDA does the same 1.5B int8 *end-to-end* at
-  ~147 (≈1.3× WebGPU), so the realistic landing is ~1.3×, and the real end-to-end
-  goinfer-CUDA decode has **not been measured yet**. Spike verdict: **GO to build
-  and measure**; final GO/NO-GO pends the e2e number (`prompts/cuda-measure-e2e-decode.md`,
-  `task-cuda-cgofree-spike.md`).
+  **UPDATE (2026-07, MEASURED e2e): "past it needs native CUDA" is realized
+  cgo-free — spike is GO.** Real q4_k_m end-to-end decode measured at **218.6 tok/s
+  = 1.96× WebGPU / 1.47× Ollama** on the 2070 SUPER (int4/W4A8, 80% peak bandwidth;
+  executor-path number incl. the 0.34% channel-hop tax). cgo-free proven on the
+  actual binary (`ldd`: no libnvrtc/toolkit, `CGO_ENABLED=0`), argmax equivalence a
+  committed hard gate (`TestRealForwardParity`, mutation-proven to bite). Scoped
+  **dense-only cgo-free-CUDA residency backend (B)** now in last-mile packaging
+  (`task-cuda-b-ship-checklist.md`); final e2e write-up in `task-cuda-cgofree-spike.md`.
 - **`dot4I8Packed` (dp4a) — prefill compute boost, upstream-blocked.** The native
   int8-dot WGSL feature would speed the M>1 prefill GEMM (TU104 has DP4A
   hardware). Blocked on the `cogentcore/webgpu` binding exposing it. **Trigger:

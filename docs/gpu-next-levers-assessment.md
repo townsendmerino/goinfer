@@ -10,21 +10,18 @@
 
 ## TL;DR
 
-> **UPDATE (2026-07, projection — not yet measured e2e; tempers the "GPU is walled"
-> framing below):** the WGSL wall is **WebGPU's**, not the GPU's. A timeboxed spike
-> *projected* a cgo-free native-CUDA lane at up to **~2.2× WebGPU** decode on the
-> 2070 SUPER from a **GEMV-only ideal-streaming bound** (dense 1.5B, 141 GEMV/token;
-> 83% of peak bandwidth across chained launches vs WebGPU's 37% — glue-serialization
-> is the WebGPU wall, and native CUDA clears it structurally, cgo-free). **But that's
-> the GEMV ceiling, not end-to-end**: Ollama-CUDA does the same 1.5B int8 e2e at ~147
-> (≈1.3× WebGPU), so the realistic landing is ~1.3× and the real e2e number is **not
-> yet measured**. Verdict **GO to build and measure**; a scoped **dense-only**
-> "cgo-free CUDA residency backend" track is open, final GO/NO-GO pending the e2e
-> run (`prompts/cuda-measure-e2e-decode.md`). So "stop optimizing single-stream
-> decode" holds *for WebGPU* — the headroom is on the CUDA lane. Caveats (build-out,
-> not viability): confirm the production path is embedded-PTX + **driver** JIT (not
-> runtime libnvrtc) to keep "driver-only", and that the executor's per-call cost
-> doesn't erode the margin. Full write-up + GO/NO-GO: `task-cuda-cgofree-spike.md`.
+> **UPDATE (2026-07, MEASURED e2e — spike GO; supersedes the "GPU is walled" framing
+> below):** the WGSL wall is **WebGPU's**, not the GPU's. A timeboxed spike **measured**
+> a cgo-free native-CUDA lane at **218.6 tok/s = 1.96× WebGPU / 1.47× Ollama** real
+> q4_k_m end-to-end decode on the 2070 SUPER (int4/W4A8; W4A8 GEMV tuned 43%→80% of
+> peak bandwidth; executor-path number incl. the 0.34% channel-hop tax — glue-
+> serialization is the WebGPU wall, and native CUDA clears it structurally, cgo-free).
+> cgo-free proven on the actual binary (`ldd`, `CGO_ENABLED=0`, no libnvrtc/toolkit);
+> the embedded-PTX + **driver** JIT path holds the "driver-only" property; argmax
+> equivalence is a committed hard gate (`TestRealForwardParity`). Verdict **GO**; a
+> scoped **dense-only** "cgo-free CUDA residency backend" (B) is in last-mile packaging
+> (`task-cuda-b-ship-checklist.md`). So "stop optimizing single-stream decode" holds
+> *for WebGPU* — the headroom is on the CUDA lane. Full write-up: `task-cuda-cgofree-spike.md`.
 
 Decode is at the WGSL wall (~90 tok/s int8 on the 2070 SUPER, 61% of
 Ollama-CUDA at equal quant — `gpu-assessment.md` §0.0). That wall is structural
@@ -44,9 +41,8 @@ decode.** Three levers remain that are *not* walled, ranked by
 Everything else *WebGPU* (more decode fusion, K-quant-in-shader, MoE indirect
 routing) is either walled, deferred-with-reason, or off-strategy. Section 6 says
 why, so they don't get re-litigated. **The one exception — "native CUDA path,
-off-strategy (cgo)" — is now in play:** the cgo-free spike (above) projects it GO
-enough to build and measure, so it's a candidate track pending the e2e number — not
-a dead end.
+off-strategy (cgo)" — is now open:** the cgo-free spike (above) **measured** GO
+(218.6 tok/s = 1.96× WebGPU e2e, cgo-free), so it's a real track — not a dead end.
 
 ---
 
