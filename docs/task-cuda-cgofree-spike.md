@@ -1,0 +1,163 @@
+# Spike: cgo-free native CUDA — does a hand-authored megakernel clear the WGSL wall?
+
+> **Status: SPIKE, not a commitment. NOT SCHEDULED.** In the lineage of
+> `task-turboquant-spike.md` / `gpu-assessment.md` — a research-risk item with a
+> written go/no-go bar, executed on the box, findings appended here. Prompted by
+> `gocudrv` (eitamring, MIT): a cgo-free CUDA *driver* API binding for Go (dlopen
+> `libcuda.so.1` at runtime, `CGO_ENABLED=0`, embedded PTX + driver JIT, static
+> binary). It's the existence proof that the option goinfer's roadmap shelved —
+> native CUDA *without* cgo — is real.
+>
+> **Trigger (why not now):** the standing roadmap verdict is "don't fight on
+> kernels; the lane is CPU + portability." Fire this ONLY if, after the WebGPU
+> **buffer-coalescing** win (the queued 0.8.1 item), a **felt NVIDIA-desktop-speed
+> gap still matters to a real adopter** AND you decide that gap is worth CUDA
+> kernel R&D. Until both hold, this is a watch item.
+
+## The question (one sentence)
+
+Can a **cgo-free** native-CUDA path (gocudrv-style dlopen + embedded-PTX megakernel)
+decode a dense residency model **meaningfully faster than goinfer's WebGPU ceiling**,
+while keeping `CGO_ENABLED=0` and the single-static-binary property intact?
+
+## Why it's worth asking (and why it might fail)
+
+- **The wall is a kernel-expressiveness problem, not a binding problem.** WebGPU
+  tops out (~90–100 tok/s int8 on the 2070 SUPER; 61%/71% of CUDA at equal quant,
+  `gpu-assessment.md` §0.0) because **WGSL cannot express the single-dispatch
+  megakernel** that is CUDA/Metal's edge. Native CUDA *can*. So the ceiling that's
+  structural for WebGPU is not structural for CUDA.
+- **gocudrv dissolves the constraint that forced WebGPU.** "Native CUDA = cgo =
+  breaks the static-binary/no-toolkit identity" was the reason it was off-strategy.
+  A dlopen-at-runtime driver binding (the yzma/purego approach, but for `libcuda`)
+  keeps `CGO_ENABLED=0` and the 1.8 MB-static-binary story.
+- **Why it might fail anyway (the honest risks):**
+  1. **The binding is the easy 20%; the kernel is the 80%.** gocudrv gives you
+     `cuLaunchKernel` cgo-free — not cuBLAS/cuDNN. Beating WebGPU needs a *good*
+     hand-authored PTX GEMM/attention megakernel. Reaching cuBLAS-class by hand is
+     the "years-tuned CUDA" advantage the roadmap conceded. This spike tests whether
+     a *competent, not world-class* megakernel already beats the WGSL ceiling — a
+     much lower bar than beating cuBLAS, and the only bar that matters here.
+  2. **Per-call channel-hop tax.** gocudrv funnels every driver call through a
+     `LockOSThread` worker via a channel (its correct fix for the CUDA-context-is-
+     per-OS-thread footgun). That's a per-call cost in exactly the launch-heavy
+     regime that already bit WebGPU (glue-serialization). A **megakernel design
+     amortizes it** (one dispatch/layer/token) — which is the point — but the spike
+     must confirm it, not assume it.
+  3. **JIT cold-start** could hurt boot (the "instant one-file" story). Measure it.
+
+## Deliberately minimal scope (resist all sprawl)
+
+**One card (RTX 2070 SUPER), one family, one kernel.** Explicitly NOT:
+cuBLAS/cuDNN bindings, all ~380 driver functions, CUDA Graphs, multi-GPU, prefill,
+MoE/hybrid/MLA. The spike is dense **residency-eligible Qwen2/Llama decode only**
+(the same `DecodeRunnerEligible` shape the WebGPU 51.7/89.7 numbers come from — so
+it's an apples-to-apples swap of the backend, nothing else).
+
+Build it from:
+- **gocudrv (vendored, MIT)** or its approach — the surface needed is small and it
+  already has it: dlopen `libcuda`, `Alloc[T]`, memcpy H2D/D2H, module-from-embedded-
+  PTX + JIT, `cuLaunchKernel`, streams, **events** (the measurement — see below).
+- **One hand-authored fused decode-layer megakernel** in `.cu` → PTX (compiled once
+  by nvcc on the dev box via `go generate`), `go:embed`'d, JIT'd on the target. int4
+  (W4A8) and/or int8 weights — match the WebGPU residency quant so the comparison is
+  equal-quant. Correctness gate: greedy output **token-identical** to the CPU decode
+  (the existing residency-parity bar).
+
+## The GPU-op surface — what a CUDA backend must cover
+
+goinfer uses **zero CUDA today** — the GPU backend is WebGPU (`goinfer/gpu` →
+cogentcore/wgpu-native); aikit is CPU-only. So a CUDA path re-implements the
+WebGPU surface. It splits in two, and the split is the whole strategic point:
+
+**Layer A — driver / plumbing (gocudrv already covers this).** What
+`gpu/backend.go`/`device.go`/`gpu.go` do via wgpu, 1:1 with the CUDA driver API:
+device/context init (`cuCtxCreate`), VRAM alloc (`cuMemAlloc` — the weight upload
+`UploadW4A8Packed`/`CreateBufferInit`), H↔D copy (`cuMemcpy*`), module-from-PTX +
+JIT (`cuModuleLoadData`), launch (`cuLaunchKernel`), streams, **events** (the
+timing), and sync. **All of this is in gocudrv's 106 functions.** The plumbing is
+not the risk.
+
+**Layer B — the compute kernels (must be hand-authored `.cu`/PTX).** The WGSL
+kernels in `gpu/` that a CUDA backend would need to re-write:
+
+| Kernel group | goinfer files | notes |
+|---|---|---|
+| **Quantized matmul (the hot path)** | `gemv_w4a8`, `gemv_w8a16`, W8A8, `gemm`, `gemv`, `gemm_rows` | int4×int8 / int8×int8 with goinfer's packing |
+| Attention + QK-norm + RoPE | `attention.go`, `qknorm.go` | QKᵀ·softmax·V |
+| Norm / activation glue | RMSNorm, residual, SwiGLU/GeGLU, `relu2` | the elementwise/reduce glue |
+| quant / dequant | `quant.go` | |
+| Mamba-2 SSM | `mamba.go`, `mamba_f16.go` | conv1d + selective scan + gated norm |
+| MLA latent attention | `mla.go` | |
+| MoE routing + experts | `moe.go`, `moe_w4a8.go` | |
+| Vision (SigLIP/ViT) | `vision*.go` | separate path |
+| Fused decode | `decodefuse`, `decodelayer`, `decoderunner`, `decodetoken_fused` | partial glue-fusion — the megakernel is the CUDA-only next step |
+
+**cuBLAS/cuDNN would NOT save you here.** goinfer's hot path is *quantized integer*
+matmul (int4-nibble-packed W4A8, int8 W8A8); cuBLAS does f32/f16 GEMM, not goinfer's
+packing. So even *with* cuBLAS bindings you still hand-author the quant GEMV/GEMM +
+all the glue + Mamba/MLA/MoE. This is the concrete form of "the binding is the easy
+20%, the kernel is the 80%": Layer A is done, Layer B — and specifically the quant
+kernels that are the actual bottleneck — is the real work.
+
+**But the spike needs only a slice of Layer B.** Dense residency decode = one fused
+kernel of `gemv_w4a8` (or f32/int8 GEMV) + RMSNorm + RoPE + attention + SwiGLU.
+**Not** Mamba, MLA, MoE, or vision — those are out of the spike's dense-only scope.
+That single fused layer *is* the megakernel WGSL can't express, and the only kernel
+this spike writes.
+
+## Methodology (the measurement is the deliverable)
+
+Learn from gocudrv's own 18× lesson: **CPU clocks measure enqueue, not kernel.**
+Time with **CUDA events + a sync**, warm (drop first-run JIT + driver warmup),
+steady-state over ≥3 runs. Report:
+
+- decode tok/s (CUDA-event-timed), **equal quant, same 2070 SUPER**, vs:
+  - goinfer **WebGPU residency** (the incumbent to beat): 51.7 tok/s int4 / 89.7 int8
+    (`benchmarks.md §B`);
+  - **llama.cpp-CUDA** (the ceiling reference): 72.8 tok/s (7B int4).
+- cold-start: JIT + first-token wall (does it break the boot story?).
+- the channel-hop tax: per-dispatch overhead at the megakernel's dispatch count.
+- confirm end-to-end **`CGO_ENABLED=0`** and a single static binary that runs on a
+  driver-only box (the whole point).
+
+## Go / no-go bar
+
+- **GO** ⇒ the cgo-free CUDA megakernel is **clearly past the WGSL ceiling** — as a
+  starting bar, **≥1.3× goinfer's WebGPU number at equal quant** (i.e. it's doing
+  something WebGPU structurally can't), **AND** `CGO_ENABLED=0` + static-binary hold,
+  **AND** cold-start doesn't wreck boot. Bonus signal: within ~85% of llama.cpp-CUDA.
+  ⇒ promote to a scoped "cgo-free CUDA residency backend" track (still dense-only).
+- **NO-GO** ⇒ the hand-kernel + channel-hop land it **≤ WebGPU**, or it can't stay
+  cgo-free in practice, or JIT cold-start is unacceptable. ⇒ close the item; WebGPU +
+  buffer-coalescing remains the NVIDIA story, and the roadmap's "don't fight on
+  kernels" verdict stands, now *measured* rather than assumed.
+
+Timebox: a long weekend of kernel + integration + measurement. If it's not clearly
+GO by then, it's NO-GO — a competent megakernel that only ties WebGPU means the
+juice isn't worth the CUDA-kernel maintenance burden.
+
+## Non-goals / what a GO does NOT commit to
+
+A GO validates *one dense residency megakernel beats WebGPU cgo-free* — it does
+**not** commit to cuBLAS-class perf, MoE/hybrid/MLA CUDA kernels, multi-GPU, or a
+llama.cpp-beating engine. Those are separate, much larger, and each would be its own
+decision. The spike answers exactly one thing: is the *cgo-free-native-CUDA lane*
+open at all.
+
+## Execution + provenance
+
+Runs **on the box** (2070 SUPER) — it's a hardware measurement; it cannot be run on
+a GPU-less CI/dev machine. When triggered, a short prompt points the box agent at
+this doc. Findings (the tok/s table, the cold-start number, the channel-hop measure,
+GO/NO-GO) get **appended here**, same discipline as the naga-probe and v29 write-ups:
+no performance claim without a CUDA-event-timed run, versioned (driver + card +
+commit).
+
+## Relationship to the other GPU items
+
+- **Buffer-coalescing (0.8.1, WebGPU)** comes first and is unrelated — it's the
+  cheap in-lane win. Do it regardless; it also sharpens the "number to beat" here.
+- This spike is the **only** path that could move the *decode ratio* itself (WebGPU
+  is walled). It is off the default roadmap and gated on real demand — keep it that
+  way until an adopter makes NVIDIA-desktop speed a priority.
