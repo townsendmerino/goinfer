@@ -577,3 +577,20 @@ IMPROVED: **9/10 exact** (the 2×-unroll float order aligns better with CPU), wo
 **Total W4A8 tuning: 43% → 80% peak (1.86× kernel), real e2e 183.5 → 218.6 tok/s (+19%),
 1.23× → 1.47× Ollama.** Remaining 80→85% would need occupancy/vectorized-activation work —
 diminishing returns. Fusion / single-launch megakernel still untouched. Dense-qualified.
+
+### Reviewer verification — the three load-bearing facts, measured not asserted
+
+1. **cgo-free (ldd on the actual binary).** `go test -tags cuda -c` → `go version -m` shows
+   `CGO_ENABLED=0`; raw `ldd` = `linux-vdso / libdl / libpthread / libc / ld-linux` and
+   NOTHING else — no libnvrtc/cudart/cublas/cudnn. `strings` = `cuModuleLoadData(Ex)` present,
+   **0 nvrtc strings**, 19 embedded-PTX `.visible .entry`. Embedded PTX is driver-JIT'd; the
+   driver is dlopen'd at runtime, not linked. The "driver-only, no toolkit" headline is true.
+2. **218.6 is the executor-path number.** The timed loop routes every token through
+   `do()` = `reqCh<-j; <-ackCh` to a `runtime.LockOSThread()`-pinned worker (the multi-goroutine
+   path a real backend needs). Directly measured executor tax = **15.3 µs/token (0.34% of the
+   4.55 ms token)** via 20k empty round-trips — it's IN the headline, not on top; the number
+   does not shift when the channel is added because it was never absent.
+3. **Equivalence is a committed hard gate.** `TestRealForwardParity` (git-tracked, commits
+   73ae0c8/ba0085b) does `t.Fatalf` when any position flips > 3% of the logit range. Proved
+   live: forcing the threshold 3%→0% trips the gate (`B GATE FAILED`, FAIL); reverted → green.
+   It cannot silently regress — CI runs it.

@@ -320,8 +320,20 @@ func TestRealE2EDecode(t *testing.T) {
 		_ = startTok
 	}
 	tps := 1.0 / best
+
+	// Directly measure the executor tax that the headline carries: the per-token round-trip
+	// is exactly one empty do() (reqCh<-j; <-ackCh) to the pinned worker. Time many empty
+	// round-trips → the channel-hop cost included in every token above.
+	const hops = 20000
+	th := time.Now()
+	for i := 0; i < hops; i++ {
+		_ = do(func() error { return nil })
+	}
+	hopUs := time.Since(th).Seconds() / hops * 1e6
+
 	const ollama, webgpu = 149.0, 111.6
 	t.Logf("=== REAL e2e decode (parity-green path, real q4_k_m, pinned executor + channel/token, on-device argmax, real positions) ===")
-	t.Logf("  %.2f ms/token | %.1f tok/s", best*1000, tps)
+	t.Logf("  HEADLINE (LockOSThread worker + channel round-trip/token — the multi-goroutine backend path): %.2f ms/token | %.1f tok/s", best*1000, tps)
+	t.Logf("  measured executor tax = %.3f us/token (empty channel round-trip) = %.3f%% of the token — IN the headline, not on top of it", hopUs, hopUs/1e6/best*100)
 	t.Logf("  vs Ollama %.0f (%.2fx) | vs our WebGPU %.1f (%.2fx) | cgo-free driver-only", ollama, tps/ollama, webgpu, tps/webgpu)
 }
