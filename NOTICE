@@ -23,6 +23,19 @@ additionally links:
     github.com/cogentcore/webgpu
     Licensed under the BSD 3-Clause License.
 
+The optional cgo-free CUDA backend (./cuda module, built only under `-tags cuda`)
+additionally links:
+
+    github.com/eitamring/gocudrv   (cgo-free CUDA driver API binding)
+    Copyright (c) eitam ring.
+    Licensed under the MIT License.
+    goinfer's CUDA backend is built on this work; see the release notes for
+    the full credit and https://eitamring.github.io/posts/gocudrv-ten-weekends.html
+
+    github.com/ebitengine/purego   (dlopen/FFI without cgo; gocudrv dependency)
+    Copyright (c) The Ebitengine Authors.
+    Licensed under the Apache License, Version 2.0.
+
 ──────────────────────────────────────────────────────────────────────────────
 
 For a generated listing of Go-module dependencies and their licenses, see
