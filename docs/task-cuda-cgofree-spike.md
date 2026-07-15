@@ -514,3 +514,41 @@ checkpoint at **183.5 tok/s — 1.23× same-box Ollama, 1.64× our WebGPU** — 
 matches goinfer's CPU decode under its own correctness rule. Kernels are still naive
 (W4A8 nibble-unpack is compute-bound at 43% peak; no fusion) → headroom remains. Remaining
 PAUSE is business/maintenance (a second GPU backend to own), not viability or perf.
+
+---
+
+## (B) Perf tuning — coalesced W4A8 GEMV: 43% → 71% peak, e2e 183.5 → 210.6 tok/s
+
+Timeboxed kernel spike on the top lever identified post-B (the int4 GEMV was the slow one).
+The isolated `w4a8_*` bandwidth tests (cosine-checked, % of ~448 GB/s peak) walked it:
+
+| W4A8 GEMV variant | µs | % peak | note |
+|---|---|---|---|
+| naive (8-iter scalar nibble unpack) | 40.3 | 43% | baseline |
+| FAST (even/odd mask + `__vsub4` SIMD unpack, same access) | 40.1 | 43% | **ALU was never the bottleneck** |
+| V4 (uint4 group load, lane=group) | 35.1 | 49% | poor lane balance at K=1536 (48 groups/32 lanes) |
+| **COAL (consecutive-word coalesced reads + 4-lane segmented reduction)** | **24.2** | **71%** | **winner, 1.67×** |
+
+The real cap was the **strided read** (each lane read words at 16-byte stride → uncoalesced
+warp loads), not the unpack. Making consecutive lanes read consecutive words (single 128B
+transaction) and reducing each group's 4 words across a 4-lane segment took it to 71%. The
+even/odd + `__vsub4` unpack rides on a static nibble-permuted layout (`permuteFast` at pack
+time) so it pairs with the existing consecutive-activation packing.
+
+Wired into the forward (`gemv_w4a8_fwd` rewritten coalesced, f32 scales + aScale-ptr + bias
+kept). Re-measured on the real q4_k_m checkpoint:
+
+| | before | after |
+|---|---|---|
+| real e2e decode | 183.5 tok/s | **210.6 tok/s** (+15%) |
+| vs Ollama 149 | 1.23× | **1.41×** |
+| vs WebGPU 111.6 | 1.64× | **1.89×** |
+
+Parity gate re-run: still GREEN — 7/10 token-identical, **worst near-tie 0.194%** of logit
+range (was 1.008% — flips got *tighter*), 0 hard fails. The 8→7 exact wobble is f32
+summation-order in the segmented reduction, well within goinfer's 3% rule; the coalesced
+kernel computes the same dot, just faster.
+
+**Remaining headroom:** 71% vs W8A8's 85% — the per-word segmented-reduction shuffles are
+the gap. Further levers (fusion, single-launch megakernel) are still untouched and were
+found modest/high-effort elsewhere. Claim stays dense-qualified.

@@ -69,7 +69,7 @@ func TestRealE2EDecode(t *testing.T) {
 			p := make([]uint32, N*(K/8))
 			for i := range p {
 				b := q4[i*4 : i*4+4]
-				p[i] = uint32(b[0]) | uint32(b[1])<<8 | uint32(b[2])<<16 | uint32(b[3])<<24
+				p[i] = permuteFast(uint32(b[0]) | uint32(b[1])<<8 | uint32(b[2])<<16 | uint32(b[3])<<24)
 			}
 			return hw{"int4", p, sc, N, K}
 		case "int8":

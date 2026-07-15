@@ -123,7 +123,7 @@ func TestRealForwardParity(t *testing.T) {
 			wpk := make([]uint32, N*(K/8))
 			for i := range wpk {
 				b := q4[i*4 : i*4+4]
-				wpk[i] = uint32(b[0]) | uint32(b[1])<<8 | uint32(b[2])<<16 | uint32(b[3])<<24
+				wpk[i] = permuteFast(uint32(b[0]) | uint32(b[1])<<8 | uint32(b[2])<<16 | uint32(b[3])<<24)
 			}
 			return wq{kind: "int4", W: upu32(wpk), ws: up32(sc), N: N, K: K}
 		case "int8":
