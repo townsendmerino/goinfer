@@ -267,3 +267,55 @@ softmax GQA attention + RoPE + RMSNorm + SwiGLU, with the real inter-stage depen
 the ~5 µs/dispatch tax — sustaining enough of that 85% ceiling across a full token to clear
 145 tok/s. That end-to-end decode measurement is the remaining build and the only thing that
 converts these signals into a measured GO.
+
+### Phase-2 verdict — decode projection clears the GO bar 2.2× (2026-07-14)
+
+The decisive measurement (`cuda/decode_projection_test.go`): the REAL per-token quantized-GEMV
+workload of qwen2.5-1.5b (all 28 layers × {QKV, O, gate, up, down} + LM head = 141 GEMVs),
+run as actual CUDA launches on the 2070 SUPER with the per-dispatch tax included, using the
+cosine-1.0-validated W8A8 kernel. CUDA-event timed, best of 8×5:
+
+| metric | value |
+|---|---|
+| per-token (weight-streaming bound) | **4.10 ms** |
+| **decode tok/s** | **244** |
+| sustained bandwidth | **374 GB/s = 83% of peak** (did NOT drop toward WebGPU's 37%) |
+| vs WebGPU baseline | **2.2×** (112 tok/s) |
+| vs GO bar (1.3× = 145) | **clears it by 68% — even UNFUSED** |
+
+Why it holds at 83% across 141 chained launches: the 1.5B GEMVs (~13 MB each, ~36 µs GPU) are
+large relative to the ~5 µs launch tax, so the CPU stays ahead of the GPU on the stream and the
+tax overlaps — decode is GPU-bandwidth-bound, not launch-bound, at this model size. (The
+megakernel's dispatch-collapse matters more for *small* models where the tax isn't hidden; here
+plain CUDA quant GEMVs already win.) Honest caveats: this is the weight-streaming lower bound —
+it omits attention *compute* (QKᵀ·softmax·V; cheap — ~0.3 M MACs/token vs the GEMVs' billions)
+and the elementwise glue (RMSNorm/RoPE/SwiGLU/quant; cheap), and uses synthetic weights
+(bandwidth is value-independent, standard). Real decode is slightly slower but the 2.2× margin
+absorbs it comfortably.
+
+## GO / NO-GO: **GO** (strong, measured — build the production megakernel)
+
+Every gate the spike set came back positive, measured on the box:
+
+1. **cgo-free lane open** — Layer A proven end-to-end (`CGO_ENABLED=0`, dlopen libcuda + NVRTC
+   JIT + launch + CUDA-event + correct compute). Caveat: "cgo-free + driver-only," not fully
+   static (purego dynamic-imports dlopen).
+2. **cold-start fine** — JIT ~0.16 ms; does not wreck boot.
+3. **kernel competent** — hand W8A8 GEMV correct (cosine 1.0) at **85% of peak** vs WebGPU's 37%.
+4. **decode clears 1.3×** — the real-workload projection is **244 tok/s = 2.2× WebGPU**, past the
+   145 bar even unfused, bandwidth sustained at 83% across the chain.
+
+The spike's sharpest risk — *"a competent, not-world-class hand kernel can't beat the WGSL wall"*
+— is **refuted with measurements**: the wall is glue-serialization (WebGPU stuck at 37% of peak),
+and native CUDA quant GEMVs clear it structurally (83%). This flips the roadmap's "don't fight on
+kernels, unmeasured" to **"the cgo-free-native-CUDA lane is real and worth a scoped backend track."**
+
+**What a GO commits to (and does not):** promote to a scoped, dense-only "cgo-free CUDA residency
+backend" track. It does NOT yet ship — the remaining engineering is the production megakernel
+(the 3 super-kernels or the cooperative single-kernel, gocudrv v0.2.0 supports both), `BuildResident`
+real-weight extraction, and the **argmax-parity correctness gate on a real checkpoint** (the perf is
+proven; correctness of the full fused kernel is the build-out risk, not a viability risk). MoE / MLA /
+Mamba / vision remain explicitly out of scope, each its own decision.
+
+Provenance: goinfer commit `7e427c0`, RTX 2070 SUPER, driver 595.58.03, CUDA 12.6.85 (NVRTC),
+gocudrv v0.2.0, `CGO_ENABLED=0`.
