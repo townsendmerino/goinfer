@@ -201,3 +201,39 @@ open to *attempt* the build, and the number to beat is **145 tok/s int8**.
 
 Provenance: goinfer commit `d1f85bd`, 2070 SUPER, driver 595.58.03, CUDA 12.6.85 (nvcc),
 gocudrv v0.2.0.
+
+### Phase-2 update — compiler unblocked + Layer A PROVEN end-to-end (2026-07-14)
+
+**Compiler resolved (NVRTC, cgo-free).** The nvcc-vs-gcc-15 wall is real (CUDA 12.6's `cicc`
+can't parse this box's gcc-15 libstdc++ — bf16 literals, `__is_array` builtins) and undefining
+macros doesn't scale. The right tool is **NVRTC**: `libnvrtc.so` compiles CUDA C++→PTX with its
+*own* headers (no host libstdc++), dlopen'd — *more* cgo-free than nvcc. Driven via ctypes here;
+`megakernel.cu` scaffold and a verifiable `addone` kernel both compile to compute_75 PTX.
+
+**Layer A — the cgo-free plumbing — is proven working on the 2070 SUPER** (`cuda/gocudrv_proof_test.go`,
+`CGO_ENABLED=0 go test -tags cuda`): gocudrv v0.2.0 `Init` (dlopen `libcuda.so.1` + `cuInit`) →
+`LoadModule`(NVRTC PTX) → `Alloc[float32]`/`CopyHtoD` → event-timed `LaunchOn` → `CopyDtoH` →
+**correct GPU compute verified**. Measured (warm, best-of-8, CUDA-event):
+
+| metric | value | note |
+|---|---|---|
+| JIT cold-start (`LoadModule` of embedded PTX) | **~0.16 ms** | does not wreck boot |
+| per-dispatch CPU tax (gocudrv channel-hop + `cuLaunchKernel`, async burst = CPU-bound) | **~5 µs** (4.86–6.03) | the launch-heavy tax the megakernel amortizes |
+| one dependent synced launch (idle GPU, incl. wake-up) | ~7–10 µs | noisy; not steady-state compute |
+
+Both launch numbers are overhead-bound (trivial-kernel compute <1 µs) — the point. At ~13
+dispatches/layer × 28 layers ≈ 364 dispatches/token, a ~5 µs/dispatch tax is ~1.8 ms/token of
+*non-overlapped* CPU launch cost if serialized — exactly what collapsing to ~1–3 super-kernels/
+layer (or the single cooperative megakernel, now that gocudrv exposes it) is meant to cut.
+
+**Static-binary nuance (honest, matters for the GO criterion).** `CGO_ENABLED=0` **holds** — the
+build needs no C toolchain and cross-compiles. But the binary is **not fully static**: purego
+imports `dlopen` via dynamic linkage, so it links `libdl.so.2` + `libpthread.so.0` and dlopens
+`libcuda.so.1` at runtime. So the property is precisely **"cgo-free + driver-only,"** not the pure
+static-binary story — a real caveat against the spike's "1.8 MB static binary" framing.
+
+**Still remaining (the decode verdict):** Layer B — the fused quant super-kernels matching the exact
+W4A8/W8A8 packing + KV layout, `BuildResident` weight extraction + JIT, the argmax-parity gate, and
+the CUDA-event **decode tok/s** measurement vs the 145 bar. That is the number that decides GO/NO-GO
+and is not yet measured. Layer A being proven de-risks the "binding is the easy 20%" half; the
+kernel is the 80% and the open question.
