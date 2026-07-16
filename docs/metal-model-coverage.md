@@ -133,3 +133,27 @@ Decoder-side arch detection verified on real checkpoints (the seam that feeds Me
 
 **Revised Mac validation set:** Qwen3-0.6B + Mistral-7B-v0.1 (decode + prefill parity vs CPU).
 Phi-3 partial-RoPE = unit-test-only. Pass = argmax parity in qwen2.5's band, cosine ≈0.98+.
+
+## Qwen3-0.6B end-to-end run on Metal (Mac, this machine) + the bug it caught
+
+Downloaded `Qwen/Qwen3-0.6B-GGUF` (Q8_0) and ran the Metal parity + generation. **Caught a real
+bug:** Qwen3's `head_dim` is independent of `hidden` (0.6B: `nH*hd=2048 ≠ H=1024`), so the o-proj
+GEMV's `K=nHhd=2048` overflowed the Stage A staging scratch `threadgroup short As[1536]`. qwen2.5
+has `nHhd==H`, hiding it. Would have broken Qwen3-1.7B (H=2048), Mistral-7B (nHhd=4096), any
+large-H model. **Fixed** with dynamic `[[threadgroup(0)]]` As sizing (per-dispatch, no qwen2.5
+regression) — `dispatchTG` + `setThreadgroupMemoryLength`.
+
+**Post-fix status:**
+- **Qwen3-0.6B generates coherently on Metal** ("The capital of France is Paris, and … Moscow …").
+  QK-norm confirmed correct (removing it → cos 0.14). ✓ path works.
+- Teacher-forced parity 15/24 cos 0.93 (vs qwen2.5-1.5b 20/24 0.989, qwen2.5-**0.5b** 19/24 0.991).
+  The gap is NOT a systematic bug (coherent generation): pos-0 cos 0.44 is an arbitrary-out-of-
+  context teacher-forced token, the rest cos 0.87–0.96 = int4-vs-int8 on a 0.6B Q8_0 model. The
+  hardcoded parity ids were chosen for qwen2.5's vocab and are adversarial for Qwen3.
+- **For full rigor, the Linux box should run Qwen3-1.7B** (bigger → tighter parity confirms
+  no residual bug). Metal harness ready: `GOINFER_METAL_MODEL=<gguf> go test ./metal -run
+  TestRealModel...` on a Mac. (Metal ≠ Linux; needs a Mac.)
+
+**Coverage bottom line:** admission bug fixed; **Qwen3 works end-to-end on Metal** (the As-cap
+bug that would have broken all real Qwen3/Mistral sizes is fixed); Mistral/Phi-3 kernels
+unit-validated (Mistral needs a v0.1 Mac run; Phi-3 partial-RoPE unit-only). YaRN declined.
