@@ -22,7 +22,10 @@ import (
 // thread-safety executor cost is IN the number (guardrail #3). Wall-clock steady-state
 // (the number a user feels), vs same-box pinned Ollama 149 / WebGPU 111.6. cgo-free.
 func TestRealE2EDecode(t *testing.T) {
-	gguf := os.ExpandEnv("$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")
+	gguf := os.Getenv("GOINFER_CUDA_MODEL")
+	if gguf == "" {
+		gguf = os.ExpandEnv("$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")
+	}
 	if _, err := os.Stat(gguf); err != nil {
 		t.Skipf("no model")
 	}
@@ -107,6 +110,19 @@ func TestRealE2EDecode(t *testing.T) {
 	}
 	hlm := pack(lmSrc)
 	hFinal := w.FinalNorm
+
+	// Measured weight-byte stream per token: every resident projection is read exactly once
+	// per token (decode is weight-streaming). Splits the GPU time into GEMV-bytes vs glue.
+	var wBytes, lmBytes int64
+	bytesOf := func(h hw) int64 { return int64(len(h.wpk))*4 + int64(len(h.ws))*4 }
+	for l := 0; l < nLayers; l++ {
+		h := &hls[l]
+		for _, x := range []hw{h.q, h.k, h.v, h.o, h.g, h.u, h.d} {
+			wBytes += bytesOf(x)
+		}
+	}
+	lmBytes = bytesOf(hlm)
+	wBytes += lmBytes
 
 	// ---- pinned CUDA executor: one OS thread owns the context; jobs arrive by channel ----
 	reqCh := make(chan func() error)
@@ -244,7 +260,7 @@ func TestRealE2EDecode(t *testing.T) {
 			L(gemvW8, cfg, gc.Arg(wt.W), gc.Arg(a), gc.Arg(wt.ws), gc.Arg(as), bias, gc.ArgValue(int32(wt.N)), gc.ArgValue(int32(wt.K/4)), gc.Arg(dst))
 		}
 	}
-	step := func(emb []float32, pos int) int {
+	launchToken := func(emb []float32, pos int) {
 		_ = gc.CopyHtoD(bg, x, emb)
 		for l := 0; l < nLayers; l++ {
 			Ly := &layers[l]
@@ -276,6 +292,10 @@ func TestRealE2EDecode(t *testing.T) {
 		rms(x, finalNorm, aq, aSc)
 		doG(lmW, aq, aSc, nullBias, logits)
 		L(fArg, one(256, 256*4+256*4), gc.Arg(logits), gc.ArgValue(int32(vocab)), gc.Arg(argIdx), gc.Arg(argVal))
+	}
+	// step = launch the token, then sync + read back the argmax id.
+	step := func(emb []float32, pos int) int {
+		launchToken(emb, pos)
 		_ = stream.Synchronize(bg)
 		id := make([]int32, 1)
 		_ = gc.CopyDtoH(bg, id, argIdx)
@@ -331,9 +351,64 @@ func TestRealE2EDecode(t *testing.T) {
 	}
 	hopUs := time.Since(th).Seconds() / hops * 1e6
 
+	// ---- decomposition: CPU launch-issue cost vs GPU execution time ----
+	// Issue N tokens' launches WITHOUT a per-token sync (async burst) and bracket the same
+	// work with CUDA events. cpuIssue = what the CPU spends feeding the GPU (~launches ×
+	// per-dispatch tax); gpu = actual device execution. If cpuIssue >= gpu the token is
+	// LAUNCH-BOUND — the CPU can't feed the device fast enough and fusion/fewer launches is
+	// the only lever (bytes are already at the GEMV roofline).
+	var cpuIssueMs, gpuMs float64
+	launchesPerTok := nLayers*18 + 2
+	_ = do(func() error {
+		const N = 16
+		emb := m.EmbedResidentForTest(tok)
+		for i := 0; i < 4; i++ { // warm
+			launchToken(emb, pos+i)
+		}
+		_ = stream.Synchronize(bg)
+		evS, _ := cx.NewEvent()
+		evE, _ := cx.NewEvent()
+		t0 := time.Now()
+		_ = evS.Record(stream)
+		for i := 0; i < N; i++ {
+			launchToken(emb, pos+i) // launches only — no sync, no readback
+		}
+		_ = evE.Record(stream)
+		cpuIssueMs = time.Since(t0).Seconds() * 1000 / N // CPU-side issue cost (async)
+		_ = stream.Synchronize(bg)
+		el, _ := evS.Elapsed(evE)
+		gpuMs = float64(el.Microseconds()) / 1000 / N // device execution
+		return nil
+	})
+
 	const ollama, webgpu = 149.0, 111.6
 	t.Logf("=== REAL e2e decode (parity-green path, real q4_k_m, pinned executor + channel/token, on-device argmax, real positions) ===")
 	t.Logf("  HEADLINE (LockOSThread worker + channel round-trip/token — the multi-goroutine backend path): %.2f ms/token | %.1f tok/s", best*1000, tps)
 	t.Logf("  measured executor tax = %.3f us/token (empty channel round-trip) = %.3f%% of the token — IN the headline, not on top of it", hopUs, hopUs/1e6/best*100)
 	t.Logf("  vs Ollama %.0f (%.2fx) | vs our WebGPU %.1f (%.2fx) | cgo-free driver-only", ollama, tps/ollama, webgpu, tps/webgpu)
+	t.Logf("  DECOMPOSITION: %d launches/token | CPU issue %.2f ms | GPU exec %.2f ms | wall %.2f ms",
+		launchesPerTok, cpuIssueMs, gpuMs, best*1000)
+	t.Logf("    per-dispatch CPU tax = %.2f us | verdict: %s",
+		cpuIssueMs*1000/float64(launchesPerTok),
+		verdictOf(cpuIssueMs, gpuMs))
+	// GEMV-bytes vs glue: the chained-GEMV rate measured in-tree is ~374 GB/s.
+	const chainGBs = 374.0
+	gemvMs := float64(wBytes) / (chainGBs * 1e9) * 1000
+	t.Logf("    weight stream %.0f MB/token (LM head %.0f MB = %.0f%%) → GEMV %.2f ms @ %.0f GB/s | GLUE = %.2f ms (%.0f%% of GPU)",
+		float64(wBytes)/1e6, float64(lmBytes)/1e6, float64(lmBytes)/float64(wBytes)*100,
+		gemvMs, chainGBs, gpuMs-gemvMs, (gpuMs-gemvMs)/gpuMs*100)
+}
+
+// verdictOf classifies the CPU-issue vs GPU-exec relationship. A near-tie is the crossover:
+// the CPU launch stream exactly saturates the device, so the async-hiding margin is gone and
+// BOTH fewer launches and less glue pay (the 0.5B regime).
+func verdictOf(cpu, gpu float64) string {
+	switch {
+	case cpu > gpu*1.1:
+		return "LAUNCH-BOUND (CPU can't feed the GPU — fusion/fewer launches is the only lever)"
+	case cpu > gpu*0.9:
+		return "AT THE CROSSOVER (CPU issue ~= GPU exec; async-hiding margin gone — fusion cuts both)"
+	default:
+		return "GPU-bound (device is the limit; CPU issue hides under it)"
+	}
 }

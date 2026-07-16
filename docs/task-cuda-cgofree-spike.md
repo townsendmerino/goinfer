@@ -594,3 +594,69 @@ diminishing returns. Fusion / single-launch megakernel still untouched. Dense-qu
    73ae0c8/ba0085b) does `t.Fatalf` when any position flips > 3% of the logit range. Proved
    live: forcing the threshold 3%→0% trips the gate (`B GATE FAILED`, FAIL); reverted → green.
    It cannot silently regress — CI runs it.
+
+---
+
+## Headroom audit — the mandatory 0.5B baseline (MEASURED) + an OOB bug it surfaced
+
+Executing the Fable headroom audit's mandatory first step ("every 0.5B tok/s figure is
+speculative until the box runs"). RTX 2070 SUPER, driver 595.58.03, real
+qwen2.5-coder-**0.5b**-instruct-q4_k_m vs the 1.5b.
+
+### A latent correctness bug the 0.5B immediately exposed (fixed)
+The coalesced `gemv_w4a8_fwd` remainder loop assumed `Kwords % 32 == 0`. True for the 1.5B
+(H=1536→192, I=8960→1120) — **false for the 0.5B: H=896 → Kwords=112, 112%32=16**. Lanes
+16–31 read **past the row into the next one** on 5 of 7 projections/layer (qkv/o/gate/up);
+the last row could fault. `packWeight` guards only `K%32` (896 passes), so BuildResident
+would have accepted the model and emitted garbage. Fixed with a per-lane `wi < Kwords`
+guard (safe: the scale-per-word float accumulate has no cross-lane dependency, so
+out-of-range lanes contribute nothing). **0.5B parity after the fix: 10/10 exact, 0 hard
+fails** (cleaner than the 1.5B's 9/10); 1.5B unregressed (9/10, 0 hard fails).
+
+### Measured baseline (both models, same harness)
+
+| | 0.5B (24L) | 1.5B (28L) |
+|---|---|---|
+| tok/s | **321–390** (typ. ~325) | **218.5** |
+| wall / token | 2.57–3.07 ms | 4.58 ms |
+| launches / token | **434** (18/layer + 2) | **506** |
+| weight stream / token | **360 MB** (LM head 137 MB = **38%**) | **1053 MB** (LM head 22%) |
+| GEMV @ 374 GB/s | **0.96 ms** | **2.82 ms** |
+| CPU issue (async burst) | **2.56–2.62 ms** | **3.98 ms** |
+| GPU span (CUDA events) | **2.58–2.64 ms** | **4.58 ms** |
+| per-dispatch CPU tax | 4.7–5.9 µs | 7.9 µs |
+| verdict | **AT THE CROSSOVER** | **GPU-bound** (CPU hides under) |
+
+### What it confirms (audit was accurate to the point of eerie)
+Audit estimates vs measured: weight stream 330–385 MB → **360**; LM-head share 27–38% →
+**38%**; GEMV 0.9–1.0 ms → **0.96**; 0.5B tok/s 390–440 → **389 best / ~325 typical**;
+per-dispatch ~5 µs → **4.7–5.9**; launches 435 → **434**.
+
+**The thesis holds: fixed cost dominates the 0.5B.** It is only **~1.5–1.8× the 1.5B's
+tok/s despite 3× fewer parameters** — matching the in-repo WebGPU precedent (0.5B 166 vs
+1.5B ~87–111, "only ~2× faster despite 3× smaller"). Bytes alone predict ~1000 tok/s
+(360 MB @ 374 GB/s = 0.96 ms); we measure ~325–390. **The audit's sub-450 test is met.**
+
+### One refinement to the audit's model
+For the 0.5B, CPU issue and GPU span track within **0.02 ms across every run** (2.56/2.58,
+2.62/2.64, 2.56/2.58). That is not coincidence — it is the launch-starvation signature: when
+the CPU cannot get ahead, the device's event span **stretches to match the feed rate** and
+the GPU idles between kernels. So the 0.5B's "glue = 1.35 ms (58% of GPU)" is an **upper
+bound that includes idle**, not 1.35 ms of device work. The 1.5B's **glue = 1.77 ms (39% of
+GPU)** IS real device work (CPU 3.98 < GPU 4.58 → the queue genuinely backs up).
+Consequence: unchanged direction, stronger case — fusion cuts the launch count (CPU side)
+**and** the glue (GPU side), and the 0.5B needs both.
+
+Corollary: the 0.5B oscillates across the crossover run-to-run (321→390 tok/s), so it is
+**jitter-exposed** — which is the audit's argument for graphs/de-hop as jitter immunity,
+independent of mean throughput.
+
+### Claim 1 verified in-tree
+Production `cuda/resident.go` step() does `stream.Synchronize` + a full
+`CopyDtoH(logitsHost, logits)` = 151936×4 B = **608 KB every token** (resident.go:236/239),
+and **`argmax_reduce` is never loaded in the production path** (it is compiled into
+glue.ptx — 10 occurrences — but only the e2e harness loads it). The 218.6 headline uses
+on-device argmax; the shipped path pays the D2H. **Caveat the audit understates:** the
+`ResidentForward` contract returns logits because the decoder needs them for sampling,
+constrained decode, and logprobs — so the argmax kernel can only serve a *greedy fast path*,
+not replace the D2H generally. That is an interface addition, not a drop-in.
