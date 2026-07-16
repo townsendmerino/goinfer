@@ -90,6 +90,16 @@ func (a *metalResident) Forward(embedding []float32, pos int) ([]float32, error)
 	return a.r.ForwardEmbPipe(embedding, pos), nil // pipelined executor (encode-ahead)
 }
 
+// PrefillLast (decoder.Prefiller) ingests the whole prompt in one batched f16-MMA pass and
+// returns the last token's logits, populating the resident KV. Falls back (declines) for prompts
+// longer than the resident KV/attention cap, so the caller uses the sequential loop.
+func (a *metalResident) PrefillLast(embeddings [][]float32, startPos int) ([]float32, error) {
+	if len(embeddings) == 0 || startPos+len(embeddings) > metalCtxCap {
+		return nil, fmt.Errorf("metal: prompt %d exceeds resident cap %d", len(embeddings), metalCtxCap)
+	}
+	return a.r.PrefillLast(embeddings, startPos), nil
+}
+
 // ForwardN runs a batch of embeddings at consecutive positions (prefill). Each row is copied
 // off the reused host logits buffer so all survive.
 func (a *metalResident) ForwardN(embeddings [][]float32, startPos int) ([][]float32, error) {

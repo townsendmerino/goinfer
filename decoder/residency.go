@@ -58,6 +58,15 @@ type ResidentGreedy interface {
 	ForwardArgmax(embedding []float32, pos int) (int, error)
 }
 
+// Prefiller is an OPTIONAL ResidentForward extension: a backend that can ingest a whole prompt
+// in one batched pass (populating the resident KV for positions startPos..startPos+len-1) and
+// return the LAST token's logits, instead of the token-by-token Forward loop. Much faster TTFT
+// for long prompts when the backend has a real batched (e.g. MMA) forward. generateInto type-
+// asserts for this; backends without it fall back to the sequential prefill.
+type Prefiller interface {
+	PrefillLast(embeddings [][]float32, startPos int) (logits []float32, err error)
+}
+
 // ResidencyBackend is the optional capability a Backend advertises to build a
 // ResidentForward from a loaded Model. The webgpu backend implements it; ok is
 // false when the arch is not DecodeRunner-eligible.

@@ -631,13 +631,29 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	var logits []float32
 	var err error
 	if useGPU {
-		for i, id := range prompt {
-			if logits, err = m.resident.Forward(m.embedResident(id), i); err != nil {
-				g.err = err
-				return
+		prefilled := false
+		// Batched prefill (optional Prefiller): ingest the whole prompt in one pass — much
+		// faster TTFT for long prompts. Declines (falls back) for prompts past the backend's
+		// cap; absent for backends without a batched forward, and skipped for tiny prompts.
+		if pf, ok := m.resident.(Prefiller); ok && len(prompt) >= 8 {
+			embs := make([][]float32, len(prompt))
+			for i, id := range prompt {
+				embs[i] = m.embedResident(id)
+			}
+			if lg, perr := pf.PrefillLast(embs, 0); perr == nil {
+				logits, prefilled = lg, true
+				gpuPos = len(prompt)
 			}
 		}
-		gpuPos = len(prompt)
+		if !prefilled {
+			for i, id := range prompt {
+				if logits, err = m.resident.Forward(m.embedResident(id), i); err != nil {
+					g.err = err
+					return
+				}
+			}
+			gpuPos = len(prompt)
+		}
 	} else {
 		if logits, err = m.prefillLogits(prompt[prefillFrom:], cache); err != nil {
 			g.err = err
