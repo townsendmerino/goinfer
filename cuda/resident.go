@@ -63,8 +63,13 @@ type cudaResident struct {
 	argVal                                                                *gc.Buffer[float32]
 	kc, vc                                                                []*gc.Buffer[float32]
 
-	logitsHost []float32 // reused across Forward calls (decode consumes each before the next)
-	setupErr   error     // first alloc/upload error during BuildResident's setup job
+	// logitsPinned is PAGE-LOCKED host memory for the per-token logits readback. A pageable
+	// D2H of 594 KB measured only ~1.26 GB/s (it stages through a driver bounce buffer);
+	// pinned memory DMAs straight out. Slice() is a zero-copy view, so Forward still returns
+	// without an extra copy. Reused across calls (decode consumes each before the next).
+	logitsPinned *gc.HostBuffer[float32]
+	logitsHost   []float32 // zero-copy view of logitsPinned
+	setupErr     error     // first alloc/upload error during BuildResident's setup job
 }
 
 // alloc/upload helpers — called ONLY inside the setup job (r.cx current on the executor
@@ -174,6 +179,10 @@ func (r *cudaResident) Reset() {}
 // freed by primary-context teardown at process exit; a per-buffer free is unnecessary for
 // the single-model serve lifetime.
 func (r *cudaResident) Close() error {
+	if r.logitsPinned != nil {
+		_ = r.logitsPinned.Close() // page-locked host memory must be freed before the ctx
+		r.logitsPinned, r.logitsHost = nil, nil
+	}
 	if r.reqCh != nil {
 		close(r.reqCh)
 		r.reqCh = nil
@@ -269,7 +278,7 @@ func (r *cudaResident) step(emb []float32, pos int) ([]float32, error) {
 	if e := r.stream.Synchronize(bg); e != nil {
 		return nil, e
 	}
-	if e := gc.CopyDtoH(bg, r.logitsHost, r.logits); e != nil {
+	if e := r.logits.CopyToHost(bg, r.logitsPinned); e != nil {
 		return nil, e
 	}
 	return r.logitsHost, nil

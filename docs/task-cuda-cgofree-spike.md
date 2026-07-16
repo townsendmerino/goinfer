@@ -698,3 +698,44 @@ Graphs, "+15–25% standalone… removes the CPU wall") is **no longer indicated
 is already gone, with headroom to spare. The next lever is the 3-super-kernel fusion (§5.2)
 cutting the remaining **real** glue: 1.19 ms of the 0.5B's 2.15 ms GPU time (55%) and 1.60 ms
 of the 1.5B's 4.42 ms (36%) is still non-GEMV device work.
+
+### Smaller levers (audit §1 + §5): f16 scales, greedy argmax, and a find the audit missed
+
+**f16 int4 group scales.** Scales are exactly 20% of the int4 stream (K/8 scale bytes vs K/2
+weight bytes at group-32); f16 halves that. 1.5B **1053→971 MB/token (−7.8%), 227.4→236.2
+tok/s (+3.9%)** — the audit's byte math and +4–5% estimate both dead on. 0.5B 360→338 MB
+(−6.1%), +1.5% only, because its GEMV is just 43% of GPU time (byte cuts can't touch its 57%
+glue). Parity (the audit's lowest-confidence claim) **holds**: 1.5B 7/8 @ 0.087% unchanged;
+0.5B 7/8 @ 0.939% (one flip, was 8/8) — far under the 3% gate, 0 hard fails.
+
+**Greedy on-device argmax** (`decoder.ResidentGreedy`). Safety first, since it touches the
+shared decode loop: the "can I be replaced by a raw argmax?" decision lives in
+`Sampler.ArgmaxEquivalent()`, next to every logit-touching param, so a future param can't
+silently invalidate it; the loop also requires `LogitProcessor == nil`. Gated by
+`TestGreedyFastPathIdentical` — Generate's tokens must be identical with and without it
+(token-identical over 24 tokens, both models). `GOINFER_NO_GREEDY_FASTPATH` is the escape
+hatch.
+
+**The find the audit missed: the D2H was pageable, not byte-bound.** The 594 KB logits
+readback measured **0.47 ms = ~1.26 GB/s** — nowhere near PCIe. It was staging through a
+driver bounce buffer because `logitsHost` was ordinary Go memory. Switching to page-locked
+host memory (`gc.AllocHost` + `HostBuffer.Slice()`, a zero-copy view, so `Forward` still
+returns with no extra copy) fixes it at the source:
+
+| 0.5B | pageable | **pinned** |
+|---|---|---|
+| logits path (sampling) | 390.2 | **449.4 tok/s (+15.2%)** |
+| D2H | 0.47 ms (1.26 GB/s) | **~0.13 ms (~4.6 GB/s)** |
+| greedy fast path | 479.5 | 476.1 (unchanged — never paid the D2H) |
+| greedy's remaining edge | +22.9% | **+6.0%** |
+
+This matters more than the argmax lever it partly subsumes: **pinning speeds the general
+sampling path** (`serve` at temperature > 0, constrained decode, logprobs) where the greedy
+fast path cannot help by construction. The audit attributed the D2H cost to bytes; the real
+cause was the allocation. 1.5B: logits path 232.8→236.2, greedy edge 3.2%→2.2%.
+
+**Shipped-path scoreboard** (both levers + the launch diet, vs the pre-audit baseline):
+| | pre-audit shipped | now (sampling) | now (greedy) |
+|---|---|---|---|
+| 1.5B | 232.8 | **236.2** | **241.5** |
+| 0.5B | 390.2 | **449.4** | **476.1** |

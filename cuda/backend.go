@@ -115,7 +115,6 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		hidden: H, nLayers: nLayers, nH: nH, nKV: nKV, hd: hd, inter: I, vocab: vocab,
 		qDim: nH * hd, kvDim: nKV * hd, half: hd / 2,
 		eps: m.NormEps(), attnScale: m.AttnScale(),
-		logitsHost: make([]float32, vocab),
 	}
 	kvDim := r.kvDim
 	invFreq := m.RopeInvFreq()
@@ -209,6 +208,11 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		r.dSc, r.dScr, r.dq = r.af(1), r.af(I), r.ai(I/4)
 		r.dO, r.logits = r.af(H), r.af(vocab)
 		r.argIdx, r.argVal = r.ai(1), r.af(1) // greedy fast-path readback (4 B vs 594 KB)
+		if hb, e := gc.AllocHost[float32](r.cx, vocab); e != nil {
+			return e
+		} else {
+			r.logitsPinned, r.logitsHost = hb, hb.Slice()
+		}
 		return r.setupErr
 	})
 	if setupErr != nil {
