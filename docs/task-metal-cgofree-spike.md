@@ -535,3 +535,34 @@ spec.md` applied to Metal. That is a real architectural effort, not a tuning pas
 Given best-of-40 run-to-run noise is ±1.5 tok/s, decode is at the bar for practical purposes.
 Beating it decisively is a megakernel effort; the scaffolding (bindings, bit-exact kernels,
 fused decode, correctness gate, Stage A/B kernels, argmax fusion) is all committed.
+
+## Findings — megakernel tested and CLOSED on Metal (no grid-sync; redundant-recompute is net-negative)
+
+Followed the CUDA spec's §5 for Metal. Two sub-findings:
+
+1. **The true 1-launch/layer megakernel is not possible on Metal.** It needs grid-wide sync
+   *inside* the kernel (each GEMV stage spans many threadgroups; the next stage depends on all
+   of them). CUDA has `grid.sync()` via `cuLaunchCooperativeKernel`; **Metal has no
+   cooperative launch and no grid barrier.** The spec's option 1 is CUDA-only.
+
+2. **The sync-free alternative (redundant-recompute, spec option 2) is net-NEGATIVE here.**
+   Built fused `rmsnorm+quant+GEMV` kernels where each GEMV threadgroup recomputes the shared
+   activation locally (no grid barrier needed), folding 3 dispatches/layer away (12→9). Result:
+   **correct (21/24 argmax, cosine 0.989) but 70 → 52 tok/s.** Why: a gate/up threadgroup does
+   only ~8 GEMV rows but now redundantly recomputes the *entire* 1536-element rmsnorm+quant
+   (two full threadgroup reductions) first — and that recompute, done by all 2240 threadgroups
+   and sitting on the critical path, dwarfs each threadgroup's tiny GEMV slice. The redundant
+   work costs far more than the dispatch it removes (decode's per-threadgroup GEMV slice is too
+   thin to amortize a full-vector reduction). Reverted.
+
+The only sync-free fusions that add *no* redundant reduction are the element-wise ones
+(rope-q + rope-k + kv-store → 1), which save just 2 dispatches/layer and are fiddly (three
+different thread counts) — not worth it against the ~70/71 margin.
+
+**Megakernel verdict: closed for Metal single-stream decode.** The dispatch-count lever the
+earlier diagnosis pointed to cannot be pulled without grid-sync (absent) or redundant work
+(net-negative at these dims). **~70 tok/s (0.98× bar) stands as the practical ceiling** for
+this cgo-free native-Metal decode architecture. Beating it would need either a future Metal
+cooperative-launch primitive, or a fundamentally different work decomposition (e.g. batching /
+prefill, where threadgroup GEMV slices are fat enough to amortize fused reductions — Stage B's
+lane-per-row + a fused norm would pay off there, not in batch-1 decode).
