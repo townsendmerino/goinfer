@@ -28,10 +28,10 @@ func cpuLayer(x0, attnNorm, mlpNorm, Wq, Wk, Wv, Wo, Wg, Wu, Wd, invf, kcHist, v
 	}
 	gemvQ := func(aq []int8, aSc float32, w []float32, out, in int) []float32 {
 		o := make([]float32, out)
-		for n := 0; n < out; n++ {
+		for n := range out {
 			wq, wSc := q8row(w[n*in : (n+1)*in])
 			var acc int32
-			for k := 0; k < in; k++ {
+			for k := range in {
 				acc += int32(aq[k]) * int32(wq[k])
 			}
 			o[n] = float32(acc) * aSc * wSc
@@ -39,9 +39,9 @@ func cpuLayer(x0, attnNorm, mlpNorm, Wq, Wk, Wv, Wo, Wg, Wu, Wd, invf, kcHist, v
 		return o
 	}
 	rope := func(vec []float32, nHeads int) {
-		for hh := 0; hh < nHeads; hh++ {
+		for hh := range nHeads {
 			b := hh * hd
-			for dd := 0; dd < half; dd++ {
+			for dd := range half {
 				th := float64(pos) * float64(invf[dd])
 				c, s := float32(math.Cos(th)), float32(math.Sin(th))
 				x0, x1 := vec[b+dd], vec[b+half+dd]
@@ -62,13 +62,13 @@ func cpuLayer(x0, attnNorm, mlpNorm, Wq, Wk, Wv, Wo, Wg, Wu, Wd, invf, kcHist, v
 	vc := append(append([]float32(nil), vcHist...), v...)
 	nKeys := pos + 1
 	ctx := make([]float32, nH*hd)
-	for qh := 0; qh < nH; qh++ {
+	for qh := range nH {
 		kvh := qh / (nH / nKV)
 		sc := make([]float64, nKeys)
 		mx := math.Inf(-1)
-		for s := 0; s < nKeys; s++ {
+		for s := range nKeys {
 			var dot float64
-			for dd := 0; dd < hd; dd++ {
+			for dd := range hd {
 				dot += float64(q[qh*hd+dd]) * float64(kc[s*kvDim+kvh*hd+dd])
 			}
 			sc[s] = dot * float64(scale)
@@ -81,9 +81,9 @@ func cpuLayer(x0, attnNorm, mlpNorm, Wq, Wk, Wv, Wo, Wg, Wu, Wd, invf, kcHist, v
 			sc[s] = math.Exp(sc[s] - mx)
 			sum += sc[s]
 		}
-		for dd := 0; dd < hd; dd++ {
+		for dd := range hd {
 			var acc float64
-			for s := 0; s < nKeys; s++ {
+			for s := range nKeys {
 				acc += sc[s] * float64(vc[s*kvDim+kvh*hd+dd])
 			}
 			ctx[qh*hd+dd] = float32(acc / sum)
@@ -91,7 +91,7 @@ func cpuLayer(x0, attnNorm, mlpNorm, Wq, Wk, Wv, Wo, Wg, Wu, Wd, invf, kcHist, v
 	}
 	cq, cSc := q8row(ctx)
 	oproj := gemvQ(cq, cSc, Wo, H, nH*hd)
-	for h := 0; h < H; h++ {
+	for h := range H {
 		x[h] += oproj[h]
 	}
 
@@ -105,7 +105,7 @@ func cpuLayer(x0, attnNorm, mlpNorm, Wq, Wk, Wv, Wo, Wg, Wu, Wd, invf, kcHist, v
 	}
 	dq, dSc := q8row(sv)
 	down := gemvQ(dq, dSc, Wd, H, I)
-	for h := 0; h < H; h++ {
+	for h := range H {
 		x[h] += down[h]
 	}
 	return x

@@ -46,7 +46,7 @@ func TestRing_decodeBitExact(t *testing.T) {
 	fullC.scr = newDecodeScratch(arch)
 
 	rng := rand.New(rand.NewSource(11))
-	for pos := 0; pos < N; pos++ {
+	for pos := range N {
 		for l := range nLayers {
 			global := arch.isGlobalLayer(l)
 			k, v, q := randVec(rng, kvDim), randVec(rng, kvDim), randVec(rng, qDim)
@@ -147,7 +147,7 @@ func TestRing_moeDecodeBitExact(t *testing.T) {
 		return make([]float32, hd), make([]float32, nKeys*hd), make([]float32, nKeys*hd), make([]float32, nKeys), make([]float32, hd)
 	}
 	rng := rand.New(rand.NewSource(31))
-	for pos := 0; pos < N; pos++ {
+	for pos := range N {
 		k, v, q := randVec(rng, kvDim), randVec(rng, kvDim), randVec(rng, qDim)
 
 		// Ring: defer write, assemble [base,pos] window, attend, commit.

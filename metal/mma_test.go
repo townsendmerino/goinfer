@@ -105,10 +105,10 @@ kernel void mma_gemm_blk(device const half* A[[buffer(0)]], device const half* B
 			d.NewBufferU32(M), d.NewBufferU32(N), d.NewBufferU32(K))
 		got := out.Floats()
 		var maxErr float64
-		for m := 0; m < M; m++ {
-			for n := 0; n < N; n++ {
+		for m := range M {
+			for n := range N {
 				var ref float64
-				for k := 0; k < K; k++ {
+				for k := range K {
 					ref += float64(af16(af[m*K+k])) * float64(af16(bf[k*N+n])) // ref in f16-rounded inputs
 				}
 				if e := math.Abs(ref - float64(got[m*N+n])); e > maxErr {
@@ -127,11 +127,11 @@ kernel void mma_gemm_blk(device const half* A[[buffer(0)]], device const half* B
 	B := d.NewBufferU16s(make([]uint16, K*N))
 	q := d.NewCommandQueue()
 	prof := func(reps int, run func(int)) time.Duration {
-		for i := 0; i < 4; i++ {
+		for range 4 {
 			run(reps)
 		}
 		best := time.Hour
-		for i := 0; i < 15; i++ {
+		for range 15 {
 			t0 := time.Now()
 			run(reps)
 			if dt := time.Since(t0); dt < best {

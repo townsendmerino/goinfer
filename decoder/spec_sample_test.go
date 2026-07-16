@@ -43,7 +43,7 @@ func TestSpecStepLossless(t *testing.T) {
 			for _, x := range tc.xs {
 				s := NewSampler(tc.params)
 				counts := make([]float64, len(tc.logits))
-				for i := 0; i < N; i++ {
+				for range N {
 					tok, _ := s.specStep(p, x)
 					counts[tok]++
 				}
@@ -128,7 +128,7 @@ func TestDistVectorHistMatchesSampler(t *testing.T) {
 	p := NewSampler(sp).distVectorHist(logits, history)
 
 	counts := make([]float64, len(logits))
-	for i := 0; i < N; i++ {
+	for i := range N {
 		spi := sp
 		spi.Seed = int64(i) // vary only the RNG; the distribution is seed-independent
 		s := NewSampler(spi)

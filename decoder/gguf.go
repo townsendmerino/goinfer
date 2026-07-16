@@ -500,7 +500,7 @@ func ggufGraniteConfig(g *embed.GGUFFile) (*Config, error) {
 	kvArr, _ := g.Metadata["granitehybrid.attention.head_count_kv"].([]any)
 	layerTypes := make([]string, nLayers)
 	kvHeads := 0
-	for i := 0; i < nLayers; i++ {
+	for i := range nLayers {
 		kv := 0
 		if i < len(kvArr) {
 			switch v := kvArr[i].(type) {
@@ -590,7 +590,7 @@ func ggufNemotronConfig(g *embed.GGUFFile) (*Config, error) {
 	ffArr, _ := g.Metadata["nemotron_h.feed_forward_length"].([]any)
 	types := make([]string, nLayers)
 	kvHeads, ffLen := 0, 0
-	for i := 0; i < nLayers; i++ {
+	for i := range nLayers {
 		switch {
 		case intAt(kvArr, i) > 0:
 			types[i] = "attention"

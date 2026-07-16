@@ -398,7 +398,7 @@ func (h *EagleHead) DraftFrom(be Backend, st *eagleState, embedOf func(tok int, 
 	tok := firstTok
 	emb := make([]float32, h.hidden)
 	out := make([]int, 0, k)
-	for j := 0; j < k; j++ {
+	for j := range k {
 		embedOf(tok, emb)
 		logits, hiddenOut := h.Step(be, emb, feature, startPos+j, st)
 		d := h.TargetID(argmax(logits))
@@ -423,7 +423,7 @@ func (h *EagleHead) attend(q []float32, st *eagleState, ctx []float32) {
 		kvh := qh / group
 		qHead := q[qh*h.headDim : (qh+1)*h.headDim]
 		maxS := math.Inf(-1)
-		for s := 0; s < n; s++ {
+		for s := range n {
 			kHead := st.k[s][kvh*h.headDim : (kvh+1)*h.headDim]
 			var dot float64
 			for d := range qHead {
@@ -436,7 +436,7 @@ func (h *EagleHead) attend(q []float32, st *eagleState, ctx []float32) {
 			}
 		}
 		var sum float64
-		for s := 0; s < n; s++ {
+		for s := range n {
 			scores[s] = math.Exp(scores[s] - maxS)
 			sum += scores[s]
 		}
@@ -444,7 +444,7 @@ func (h *EagleHead) attend(q []float32, st *eagleState, ctx []float32) {
 		for d := range out {
 			out[d] = 0
 		}
-		for s := 0; s < n; s++ {
+		for s := range n {
 			w := float32(scores[s] / sum)
 			vHead := st.v[s][kvh*h.headDim : (kvh+1)*h.headDim]
 			for d := range out {

@@ -1633,19 +1633,19 @@ func buildLlama4Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFi
 			return derr
 		}
 		l.Experts = make([]expertWeights, nE)
-		for ex := 0; ex < nE; ex++ {
+		for ex := range nE {
 			guBase, dnBase := ex*hidden*2*expInter, ex*expInter*hidden
 			gate := make([]float32, expInter*hidden)
 			up := make([]float32, expInter*hidden)
 			down := make([]float32, hidden*expInter)
-			for r := 0; r < expInter; r++ {
-				for h := 0; h < hidden; h++ {
+			for r := range expInter {
+				for h := range hidden {
 					gate[r*hidden+h] = gu[guBase+h*2*expInter+r]
 					up[r*hidden+h] = gu[guBase+h*2*expInter+expInter+r]
 				}
 			}
-			for h := 0; h < hidden; h++ {
-				for ii := 0; ii < expInter; ii++ {
+			for h := range hidden {
+				for ii := range expInter {
 					down[h*expInter+ii] = dn[dnBase+ii*hidden+h]
 				}
 			}

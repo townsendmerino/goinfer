@@ -288,7 +288,7 @@ func (target *Model) genGrammarInto(ctx context.Context, out chan<- int, g *Gene
 		accepted := 0
 		allAccept := true
 		var nextTok int
-		for i := 0; i < kEff; i++ {
+		for i := range kEff {
 			mask.MaskAt(gc, logitsN[i]) // illegal logits → -inf, so the dist is the masked one
 			ti := argmax(logitsN[i])
 			acc := draftTok[i] == ti

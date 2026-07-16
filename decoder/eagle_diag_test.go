@@ -55,7 +55,7 @@ func TestEagleAgreementSweep(t *testing.T) {
 		}
 		cur := prompt[len(prompt)-1]
 		agree, total := 0, 0
-		for s := 0; s < steps; s++ {
+		for s := range steps {
 			logits, hs, err = base.ForwardCapture(cur, cache, cap)
 			if err != nil {
 				t.Fatalf("ForwardCapture: %v", err)

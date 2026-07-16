@@ -74,7 +74,7 @@ kernel void vadd(device const float* a [[buffer(0)]],
 	q.Run1D(pipe, n, 256, bufA, bufB, bufOut)
 
 	out := bufOut.Floats()
-	for i := 0; i < n; i++ {
+	for i := range n {
 		if want := a[i] + b[i]; out[i] != want {
 			t.Fatalf("out[%d] = %v, want %v (GPU compute wrong)", i, out[i], want)
 		}

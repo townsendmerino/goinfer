@@ -209,8 +209,8 @@ func q8RoundTrip(w []float32, N, K int) []float32 {
 func q8roundtrip(w []float32, N, K int) []float32 {
 	q, s := linalg.QuantizeRowsInt8(w, N, K)
 	out := make([]float32, N*K)
-	for r := 0; r < N; r++ {
-		for k := 0; k < K; k++ {
+	for r := range N {
+		for k := range K {
 			out[r*K+k] = float32(q[r*K+k]) * s[r]
 		}
 	}

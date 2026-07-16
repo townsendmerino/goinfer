@@ -83,7 +83,7 @@ func TestPrefillGemmW4(t *testing.T) {
 	words := make([]uint32, N*(K/8))
 	scalesH := make([]uint16, N*(K/32))
 	deq := make([][]float32, N) // CPU dequant reference (exactly what the kernel reconstructs)
-	for n := 0; n < N; n++ {
+	for n := range N {
 		row := make([]float32, K)
 		for k := range row {
 			row[k] = rng.Float32()*2 - 1
@@ -91,10 +91,10 @@ func TestPrefillGemmW4(t *testing.T) {
 		w, s := packW4A8Row(row)
 		copy(words[n*(K/8):(n+1)*(K/8)], w)
 		dr := make([]float32, K)
-		for g := 0; g < K/32; g++ {
+		for g := range K / 32 {
 			scalesH[n*(K/32)+g] = f32ToF16(s[g])
 			sc := f16ToF32(scalesH[n*(K/32)+g])
-			for e := 0; e < 32; e++ {
+			for e := range 32 {
 				k := g*32 + e
 				nib := int((w[k/8]>>(4*uint(k%8)))&0xF) - 8
 				dr[k] = af16(float32(nib) * sc) // kernel stores the dequant as f16 (scr is half)
@@ -109,10 +109,10 @@ func TestPrefillGemmW4(t *testing.T) {
 		A[i] = f32ToF16(Af[i])
 	}
 	ref := make([]float32, M*N)
-	for m := 0; m < M; m++ {
-		for n := 0; n < N; n++ {
+	for m := range M {
+		for n := range N {
 			var acc float64
-			for k := 0; k < K; k++ {
+			for k := range K {
 				acc += float64(Af[m*K+k]) * float64(deq[n][k])
 			}
 			ref[m*N+n] = float32(acc)
@@ -149,11 +149,11 @@ func TestPrefillGemmW4(t *testing.T) {
 	o1 := d.NewBufferLen(N2)
 	uK := d.NewBufferU32(K2)
 	prof := func(reps int, run func(int)) time.Duration {
-		for i := 0; i < 4; i++ {
+		for range 4 {
 			run(reps)
 		}
 		best := time.Hour
-		for i := 0; i < 15; i++ {
+		for range 15 {
 			t0 := time.Now()
 			run(reps)
 			if dt := time.Since(t0); dt < best {

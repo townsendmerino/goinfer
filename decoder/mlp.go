@@ -210,7 +210,7 @@ func groupLimit(sel []float32, nGroup, topkGroup int) []float32 {
 	negInf := float32(math.Inf(-1))
 	// Per-group score = sum of its two largest selection scores.
 	gscore := make([]float32, nGroup)
-	for g := 0; g < nGroup; g++ {
+	for g := range nGroup {
 		var top1, top2 float32 = negInf, negInf
 		for _, v := range sel[g*gsz : (g+1)*gsz] {
 			if v > top1 {
@@ -227,7 +227,7 @@ func groupLimit(sel []float32, nGroup, topkGroup int) []float32 {
 		keep[g] = true
 	}
 	out := make([]float32, len(sel))
-	for g := 0; g < nGroup; g++ {
+	for g := range nGroup {
 		for i := g * gsz; i < (g+1)*gsz; i++ {
 			if keep[g] {
 				out[i] = sel[i]

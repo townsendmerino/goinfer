@@ -39,7 +39,7 @@ func TestGPUStep0(t *testing.T) {
 
 	const warm, iters = 8, 60
 	tok, pos := 12095, 30
-	for i := 0; i < warm; i++ {
+	for i := range warm {
 		r.Forward(tok, pos+i)
 	}
 	base := pos + warm
@@ -48,7 +48,7 @@ func TestGPUStep0(t *testing.T) {
 	bestWall := time.Hour
 	var gpuAtBest, kernAtBest float64
 	minGPU := 1e9
-	for i := 0; i < iters; i++ {
+	for i := range iters {
 		t0 := time.Now()
 		r.Forward(tok, base+i)
 		wall := time.Since(t0)

@@ -97,8 +97,8 @@ func decodeDataURI(uri string) (imageRef, error) {
 		return imageRef{}, fmt.Errorf("data: URI must be base64-encoded")
 	}
 	media := header
-	if i := strings.IndexByte(header, ';'); i >= 0 {
-		media = header[:i]
+	if before, _, ok := strings.Cut(header, ";"); ok {
+		media = before
 	}
 	data, err := base64.StdEncoding.DecodeString(strings.TrimSpace(payload))
 	if err != nil {

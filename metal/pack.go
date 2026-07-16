@@ -26,10 +26,7 @@ func packW4A8Row(row []float32) (words []uint32, scales []float32) {
 			inv = 1 / sc
 		}
 		for k := g * 32; k < g*32+32; k++ {
-			q := int(math.Round(float64(row[k] * inv)))
-			if q > 7 {
-				q = 7
-			}
+			q := min(int(math.Round(float64(row[k]*inv))), 7)
 			if q < -7 {
 				q = -7
 			}
@@ -44,7 +41,7 @@ func packW4A8Row(row []float32) (words []uint32, scales []float32) {
 // multiple of 32 (W4A8 group) with zeros.
 func dequantInt8ToF32Row(q8 []int8, scale float32, K, Kpad int) []float32 {
 	f := make([]float32, Kpad)
-	for k := 0; k < K; k++ {
+	for k := range K {
 		f[k] = float32(q8[k]) * scale
 	}
 	return f

@@ -73,7 +73,7 @@ func TestEagleAcceptedLength(t *testing.T) {
 	for _, id := range prompt {
 		next = feed(id) // teacher-forced over the prompt
 	}
-	for s := 0; s < M; s++ {
+	for range M {
 		next = feed(next) // greedy continuation
 	}
 
@@ -88,7 +88,7 @@ func TestEagleAcceptedLength(t *testing.T) {
 		st := head.Prefill(base.be, embedOf, toks[:i], feats[:i], 0)
 		draft := head.DraftFrom(base.be, st, embedOf, toks[i], feats[i], i, K)
 		acc := 0
-		for j := 0; j < K; j++ {
+		for j := range K {
 			if draft[j] == toks[i+1+j] {
 				acc++
 			} else {
@@ -103,7 +103,7 @@ func TestEagleAcceptedLength(t *testing.T) {
 		// multi-step weak link (oracle≫self) vs attention/position (oracle≈self).
 		sto := head.Prefill(base.be, embedOf, toks[:i], feats[:i], 0)
 		oacc, tok := 0, toks[i]
-		for j := 0; j < K; j++ {
+		for j := range K {
 			base.embedToken(tok, emb)
 			lg, _ := head.Step(base.be, emb, feats[i+j], i+j, sto)
 			if head.TargetID(argmax(lg)) != toks[i+1+j] {

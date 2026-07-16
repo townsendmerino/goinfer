@@ -83,7 +83,7 @@ func TestSSMW8A16Ceiling(t *testing.T) {
 		cache := m.NewCache(len(ids) + 1)
 		dist := make([][]float64, N)
 		arg := make([]int, N)
-		for i := 0; i < N; i++ {
+		for i := range N {
 			lg, e := m.ForwardForTest(ids[i], cache)
 			if e != nil {
 				t.Fatal(e)
@@ -101,7 +101,7 @@ func TestSSMW8A16Ceiling(t *testing.T) {
 	}
 	r1Dist, r1Arg := run(r1)
 	r1NLL := 0.0
-	for i := 0; i < N; i++ {
+	for i := range N {
 		r1NLL += -math.Log(math.Max(r1Dist[i][ids[i+1]], 1e-12))
 	}
 	r1.Close()
@@ -109,7 +109,7 @@ func TestSSMW8A16Ceiling(t *testing.T) {
 
 	score := func(name string, dist [][]float64, arg []int) {
 		agree, kl, t5, nll := 0, 0.0, 0.0, 0.0
-		for i := 0; i < N; i++ {
+		for i := range N {
 			if arg[i] == r1Arg[i] {
 				agree++
 			}

@@ -46,7 +46,7 @@ func TestKVI8_decodeQuality(t *testing.T) {
 
 	rng := rand.New(rand.NewSource(7))
 	worst := map[int]float64{0: 1, 1: 1}
-	for pos := 0; pos < N; pos++ {
+	for pos := range N {
 		for l := range nLayers {
 			global := arch.isGlobalLayer(l)
 			k, v, q := randVec(rng, kvDim), randVec(rng, kvDim), randVec(rng, qDim)
@@ -106,26 +106,26 @@ func TestKVI8_truncateReappend(t *testing.T) {
 
 	// (1) append 0..5, draft 6..9 (garbage), truncate to 6, re-append 6..9 (final).
 	got := mk()
-	for p := 0; p < 6; p++ {
-		for l := 0; l < nLayers; l++ {
+	for p := range 6 {
+		for l := range nLayers {
 			got.Append(l, append([]float32(nil), final[p][0]...), append([]float32(nil), final[p][1]...))
 		}
 	}
 	for p := 6; p < 10; p++ { // rejected drafts
-		for l := 0; l < nLayers; l++ {
+		for l := range nLayers {
 			got.Append(l, vec(), vec())
 		}
 	}
 	got.TruncateTo(6)
 	for p := 6; p < 10; p++ { // re-append the accepted tokens
-		for l := 0; l < nLayers; l++ {
+		for l := range nLayers {
 			got.Append(l, append([]float32(nil), final[p][0]...), append([]float32(nil), final[p][1]...))
 		}
 	}
 	// (2) reference: only ever the final 10.
 	ref := mk()
-	for p := 0; p < 10; p++ {
-		for l := 0; l < nLayers; l++ {
+	for p := range 10 {
+		for l := range nLayers {
 			ref.Append(l, append([]float32(nil), final[p][0]...), append([]float32(nil), final[p][1]...))
 		}
 	}

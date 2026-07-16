@@ -105,7 +105,7 @@ func TestSSMPrecisionLocalize(t *testing.T) {
 		cache := m.NewCache(len(ids) + 1)
 		dist := make([][]float64, N)
 		arg := make([]int, N)
-		for i := 0; i < N; i++ {
+		for i := range N {
 			lg, e := m.ForwardForTest(ids[i], cache)
 			if e != nil {
 				t.Fatal(e)
@@ -124,14 +124,14 @@ func TestSSMPrecisionLocalize(t *testing.T) {
 	routeIdx, routeWts := moeSelTrace, moeWtsTrace
 	moeSelTrace, moeWtsTrace = nil, nil
 	r1NLL := 0.0
-	for i := 0; i < N; i++ {
+	for i := range N {
 		r1NLL += -math.Log(math.Max(r1Dist[i][ids[i+1]], 1e-12))
 	}
 	t.Logf("R1 (cpu f64 SSM): perplexity=%.3f; routing calls recorded=%d", math.Exp(r1NLL/float64(N)), len(routeIdx))
 
 	score := func(name string, dist [][]float64, arg []int) {
 		agree, kl, t5, nll := 0, 0.0, 0.0, 0.0
-		for i := 0; i < N; i++ {
+		for i := range N {
 			if arg[i] == r1Arg[i] {
 				agree++
 			}

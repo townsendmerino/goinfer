@@ -134,10 +134,7 @@ func TestMoEPagingSpike(t *testing.T) {
 	// Steady-state (drop the first ~20% as cache warmup) at a mid budget.
 	warm := len(access) / 5
 	if warm < len(access) {
-		C := activeSet * 3
-		if C > L*E {
-			C = L * E
-		}
+		C := min(activeSet*3, L*E)
 		h, mi := lruSim(access[warm:], C)
 		t.Logf("steady-state (post-warmup) @ %.1f GB: hit %.1f%%, miss/tok %.1f",
 			float64(C*expBytes)/1e9, 100*float64(h)/float64(h+mi), float64(mi)/float64(tokens))

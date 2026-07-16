@@ -84,7 +84,7 @@ kernel void gemv_w4a8(device const uint*  bq  [[buffer(0)]],   // [N*(K/8)] pack
 
 	words := make([]uint32, N*(K/8))
 	scales := make([]float32, N*(K/32))
-	for n := 0; n < N; n++ {
+	for n := range N {
 		row := make([]float32, K)
 		for k := range row {
 			row[k] = rng.Float32()*2 - 1
@@ -96,13 +96,13 @@ kernel void gemv_w4a8(device const uint*  bq  [[buffer(0)]],   // [N*(K/8)] pack
 
 	// CPU reference — identical unpack + math over the same packed bytes.
 	ref := make([]float32, N)
-	for n := 0; n < N; n++ {
+	for n := range N {
 		var acc float32
-		for g := 0; g < K/32; g++ {
+		for g := range K / 32 {
 			var gi int32
-			for w := 0; w < 4; w++ {
+			for w := range 4 {
 				word := words[n*(K/8)+g*4+w]
-				for e := 0; e < 8; e++ {
+				for e := range 8 {
 					nib := int32((word >> (4 * uint(e))) & 0xF)
 					k := g*32 + w*8 + e
 					gi += (nib - 8) * int32(aq[k])
@@ -127,7 +127,7 @@ kernel void gemv_w4a8(device const uint*  bq  [[buffer(0)]],   // [N*(K/8)] pack
 	got := out.Floats()
 
 	var dot, na, nb, maxrel float64
-	for n := 0; n < N; n++ {
+	for n := range N {
 		dot += float64(got[n]) * float64(ref[n])
 		na += float64(got[n]) * float64(got[n])
 		nb += float64(ref[n]) * float64(ref[n])

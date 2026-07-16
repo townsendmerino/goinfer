@@ -363,7 +363,7 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 						return j < K && cache.treeMask[i][j]
 					}
 					maxS := math.Inf(-1)
-					for s := 0; s < nKeys; s++ {
+					for s := range nKeys {
 						if allowed(s) {
 							sc := float64(rowS[s]) * scale
 							rowS[s] = float32(sc)
@@ -373,7 +373,7 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 						}
 					}
 					var sum float64
-					for s := 0; s < nKeys; s++ {
+					for s := range nKeys {
 						if allowed(s) {
 							e := math.Exp(float64(rowS[s]) - maxS)
 							rowS[s] = float32(e)
@@ -383,7 +383,7 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 						}
 					}
 					inv := 1.0 / sum
-					for s := 0; s < nKeys; s++ {
+					for s := range nKeys {
 						if rowS[s] != 0 {
 							rowS[s] = float32(float64(rowS[s]) * inv)
 						}

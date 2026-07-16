@@ -86,7 +86,7 @@ func TestLayerB_fullLayerForward(t *testing.T) {
 	packMat := func(w []float32, out, in int) (Buffer, Buffer) {
 		bq := make([]int8, out*in)
 		bs := make([]float32, out)
-		for n := 0; n < out; n++ {
+		for n := range out {
 			q, s := q8row(w[n*in : (n+1)*in])
 			copy(bq[n*in:(n+1)*in], q)
 			bs[n] = s
@@ -149,7 +149,7 @@ func TestLayerB_fullLayerForward(t *testing.T) {
 
 	got := x.Floats()
 	var dot, na, nb, maxabs float64
-	for i := 0; i < H; i++ {
+	for i := range H {
 		dot += float64(got[i]) * float64(ref[i])
 		na += float64(got[i]) * float64(got[i])
 		nb += float64(ref[i]) * float64(ref[i])

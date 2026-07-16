@@ -86,7 +86,7 @@ func TestLoRACompute_forwardParity(t *testing.T) {
 		"model.norm.weight":         {[]int{hidden}, fill(hidden, 2)},
 		"lm_head.weight":            {[]int{vocab, hidden}, fill(vocab*hidden, 3)},
 	}
-	for l := 0; l < layers; l++ {
+	for l := range layers {
 		p := func(s string) string { return "model.layers." + itoa(l) + s }
 		ts[p(".self_attn.q_proj.weight")] = stTensor{[]int{qDim, hidden}, fill(qDim*hidden, 10+l)}
 		ts[p(".self_attn.k_proj.weight")] = stTensor{[]int{qDim, hidden}, fill(qDim*hidden, 20+l)}
@@ -109,7 +109,7 @@ func TestLoRACompute_forwardParity(t *testing.T) {
 	}
 	at := map[string]stTensor{}
 	pfx := "base_model.model.model.layers."
-	for l := 0; l < layers; l++ {
+	for l := range layers {
 		add := func(mod string, inDim, outDim int) {
 			at[pfx+itoa(l)+mod+".lora_A.weight"] = stTensor{[]int{r, inDim}, fill(r*inDim, 100+l)}
 			at[pfx+itoa(l)+mod+".lora_B.weight"] = stTensor{[]int{outDim, r}, fill(outDim*r, 200+l)}

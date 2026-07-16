@@ -374,7 +374,7 @@ func (q Queue) Run1DBatch(p Pipeline, n, tg, reps int, bufs ...Buffer) {
 	}
 	total := mtlSize{w: uint64(n), h: 1, d: 1}
 	perTG := mtlSize{w: uint64(tg), h: 1, d: 1}
-	for r := 0; r < reps; r++ {
+	for range reps {
 		enc.Send(selDispatchThreads, unsafe.Pointer(&total), unsafe.Pointer(&perTG))
 	}
 	runtime.KeepAlive(&total)
@@ -399,7 +399,7 @@ func (q Queue) Run1DBatchTG(p Pipeline, n, tg, reps, tgBytes int, bufs ...Buffer
 	enc.Send(selSetTgMem, uintptr(tgBytes), uintptr(0))
 	total := mtlSize{w: uint64(n), h: 1, d: 1}
 	perTG := mtlSize{w: uint64(tg), h: 1, d: 1}
-	for r := 0; r < reps; r++ {
+	for range reps {
 		enc.Send(selDispatchThreads, unsafe.Pointer(&total), unsafe.Pointer(&perTG))
 	}
 	runtime.KeepAlive(&total)

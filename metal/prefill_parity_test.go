@@ -67,7 +67,7 @@ func TestPrefillParity(t *testing.T) {
 	best := func(f func()) time.Duration {
 		f()
 		b := time.Hour
-		for i := 0; i < 5; i++ {
+		for range 5 {
 			t0 := time.Now()
 			f()
 			if dt := time.Since(t0); dt < b {

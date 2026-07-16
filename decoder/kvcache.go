@@ -18,7 +18,7 @@ const (
 // per-kvDim-row) scales bound RoPE'd-key outlier channels — the cheap KIVI-style
 // win. headDim is 64/128, a clean multiple of the SDOT/AVX2 width.
 func quantizeHeads(src []float32, q []int8, scales []float32, nKV, headDim int) {
-	for h := 0; h < nKV; h++ {
+	for h := range nKV {
 		o := h * headDim
 		scales[h] = linalg.QuantizeRowInt8(src[o:o+headDim], q[o:o+headDim])
 	}
@@ -28,9 +28,9 @@ func quantizeHeads(src []float32, q []int8, scales []float32, nKV, headDim int) 
 // head) back to f32 in dst — the inverse of quantizeHeads, for the batched
 // prefill's dequant-into-scratch (the f32 matmul kernels stay unchanged).
 func dequantHeads(q []int8, scales []float32, nKV, headDim int, dst []float32) {
-	for h := 0; h < nKV; h++ {
+	for h := range nKV {
 		o, s := h*headDim, scales[h]
-		for c := 0; c < headDim; c++ {
+		for c := range headDim {
 			dst[o+c] = float32(q[o+c]) * s
 		}
 	}
@@ -414,7 +414,7 @@ func (c *KVCache) batchReadLocal(layer, startPos, K int, newK, newV, dstK, dstV 
 			dequantHeads(r.vq[o:o+stride], r.vsc[so:so+nKV], nKV, r.headDim, dstV[d:d+stride])
 		}
 		tq, tsc := make([]int8, stride), make([]float32, nKV)
-		for i := 0; i < K; i++ {
+		for i := range K {
 			d := (hist + i) * stride
 			quantizeHeads(newK[i*stride:(i+1)*stride], tq, tsc, nKV, r.headDim)
 			dequantHeads(tq, tsc, nKV, r.headDim, dstK[d:d+stride])
@@ -442,7 +442,7 @@ func (c *KVCache) batchReadLocal(layer, startPos, K int, newK, newV, dstK, dstV 
 func (c *KVCache) dequantGlobalLayer(layer, kvDim int, dstK, dstV []float32) int {
 	nKV := kvDim / c.headDim
 	n := len(c.keysQ[layer]) / kvDim
-	for p := 0; p < n; p++ {
+	for p := range n {
 		o, so := p*kvDim, p*nKV
 		dequantHeads(c.keysQ[layer][o:o+kvDim], c.keyScale[layer][so:so+nKV], nKV, c.headDim, dstK[o:o+kvDim])
 		dequantHeads(c.valsQ[layer][o:o+kvDim], c.valScale[layer][so:so+nKV], nKV, c.headDim, dstV[o:o+kvDim])

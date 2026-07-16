@@ -701,10 +701,7 @@ func (s *server) endpointSummary() string {
 // and takes each model's lock per sweep, so it stalls no in-flight generation and
 // skips a busy model until its lock is free. Returns when stop is closed.
 func demoteLoop(srv *server, idle time.Duration, stop <-chan struct{}) {
-	period := idle / 4
-	if period < 5*time.Second {
-		period = 5 * time.Second
-	}
+	period := max(idle/4, 5*time.Second)
 	if period > time.Minute {
 		period = time.Minute
 	}

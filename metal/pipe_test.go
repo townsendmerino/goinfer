@@ -55,11 +55,11 @@ func TestEncodeAhead(t *testing.T) {
 	r.embed.Row(12095, emb) // a fixed embedding is enough for a throughput measurement
 
 	best := func(n int, f func(i int)) time.Duration {
-		for i := 0; i < 8; i++ {
+		for i := range 8 {
 			f(i)
 		}
 		b := time.Hour
-		for i := 0; i < n; i++ {
+		for i := range n {
 			t0 := time.Now()
 			f(i)
 			if dt := time.Since(t0); dt < b {

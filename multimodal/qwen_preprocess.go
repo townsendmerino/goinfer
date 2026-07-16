@@ -113,18 +113,18 @@ func QwenPreprocess(data []byte, cfg QwenPreprocessConfig) ([]float32, [3]int, e
 	patchDim := 3 * tp * patch * patch
 	out := make([]float32, gridH*gridW*patchDim)
 	pi := 0
-	for bh := 0; bh < bH; bh++ {
-		for bw := 0; bw < bW; bw++ {
-			for mh := 0; mh < merge; mh++ {
-				for mw := 0; mw < merge; mw++ {
+	for bh := range bH {
+		for bw := range bW {
+			for mh := range merge {
+				for mw := range merge {
 					gh, gw := bh*merge+mh, bw*merge+mw
 					di := pi * patchDim
-					for c := 0; c < 3; c++ {
-						for t := 0; t < tp; t++ { // single image: every temporal frame identical
+					for c := range 3 {
+						for t := range tp { // single image: every temporal frame identical
 							_ = t
-							for ph := 0; ph < patch; ph++ {
+							for ph := range patch {
 								row := ((gh*patch + ph) * wb) * 3
-								for pw := 0; pw < patch; pw++ {
+								for pw := range patch {
 									out[di] = norm[row+(gw*patch+pw)*3+c]
 									di++
 								}
@@ -181,8 +181,8 @@ func qwenResizeNormalize(img image.Image, h, w, hb, wb int, cfg QwenPreprocessCo
 func qwenExtractRGB(img image.Image, h, w int) []float32 {
 	b := img.Bounds()
 	out := make([]float32, h*w*3)
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
+	for y := range h {
+		for x := range w {
 			cr, cg, cb, _ := img.At(b.Min.X+x, b.Min.Y+y).RGBA()
 			i := (y*w + x) * 3
 			out[i+0], out[i+1], out[i+2] = float32(cr>>8), float32(cg>>8), float32(cb>>8)
@@ -199,8 +199,8 @@ func qwenExtractRGB(img image.Image, h, w int) []float32 {
 func qwenBicubicU8(src []float32, h, w, hb, wb int) []float32 {
 	hxmin, hk := qwenCubicCoeffs(w, wb) // horizontal: w -> wb
 	tmp := make([]float32, h*wb*3)
-	for y := 0; y < h; y++ {
-		for xx := 0; xx < wb; xx++ {
+	for y := range h {
+		for xx := range wb {
 			k := hk[xx]
 			var s [3]float64
 			for x := range k {
@@ -215,9 +215,9 @@ func qwenBicubicU8(src []float32, h, w, hb, wb int) []float32 {
 	}
 	vymin, vk := qwenCubicCoeffs(h, hb) // vertical: h -> hb
 	dst := make([]float32, hb*wb*3)
-	for yy := 0; yy < hb; yy++ {
+	for yy := range hb {
 		k := vk[yy]
-		for x := 0; x < wb; x++ {
+		for x := range wb {
 			var s [3]float64
 			for y := range k {
 				si := ((vymin[yy]+y)*wb + x) * 3
@@ -254,21 +254,15 @@ func qwenCubicCoeffs(inSize, outSize int) (xmins []int, kk [][]float64) {
 	support := 2.0 * filterscale // cubic support = 2.0
 	xmins = make([]int, outSize)
 	kk = make([][]float64, outSize)
-	for xx := 0; xx < outSize; xx++ {
+	for xx := range outSize {
 		center := (float64(xx) + 0.5) * scale
 		ss := 1.0 / filterscale
-		xmin := int(center - support + 0.5)
-		if xmin < 0 {
-			xmin = 0
-		}
-		xmax := int(center + support + 0.5)
-		if xmax > inSize {
-			xmax = inSize
-		}
+		xmin := max(int(center-support+0.5), 0)
+		xmax := min(int(center+support+0.5), inSize)
 		n := xmax - xmin
 		k := make([]float64, n)
 		var ww float64
-		for x := 0; x < n; x++ {
+		for x := range n {
 			w := qwenCubicFilter((float64(x+xmin) - center + 0.5) * ss)
 			k[x] = w
 			ww += w

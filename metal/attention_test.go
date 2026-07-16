@@ -78,13 +78,13 @@ kernel void attention(device const float* q      [[buffer(0)]],  // [nH*hd] (pos
 
 	// CPU reference — plain (max-subtracted) softmax.
 	ref := make([]float32, nH*hd)
-	for qh := 0; qh < nH; qh++ {
+	for qh := range nH {
 		kvh := qh / (nH / nKV)
 		sc := make([]float64, nKeys)
 		mx := math.Inf(-1)
-		for s := 0; s < nKeys; s++ {
+		for s := range nKeys {
 			var dot float64
-			for dd := 0; dd < hd; dd++ {
+			for dd := range hd {
 				dot += float64(q[qh*hd+dd]) * float64(kc[s*kvDim+kvh*hd+dd])
 			}
 			sc[s] = dot * float64(scale)
@@ -97,9 +97,9 @@ kernel void attention(device const float* q      [[buffer(0)]],  // [nH*hd] (pos
 			sc[s] = math.Exp(sc[s] - mx)
 			sum += sc[s]
 		}
-		for dd := 0; dd < hd; dd++ {
+		for dd := range hd {
 			var acc float64
-			for s := 0; s < nKeys; s++ {
+			for s := range nKeys {
 				acc += sc[s] * float64(vc[s*kvDim+kvh*hd+dd])
 			}
 			ref[qh*hd+dd] = float32(acc / sum)

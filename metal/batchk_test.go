@@ -43,11 +43,11 @@ func TestBatchKAmortization(t *testing.T) {
 	q := d.NewCommandQueue()
 
 	prof := func(reps int, run func(int)) time.Duration {
-		for i := 0; i < 4; i++ {
+		for range 4 {
 			run(reps)
 		}
 		best := time.Hour
-		for i := 0; i < 20; i++ {
+		for range 20 {
 			t0 := time.Now()
 			run(reps)
 			if dt := time.Since(t0); dt < best {

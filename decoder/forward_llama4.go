@@ -126,7 +126,7 @@ func (m *Model) llama4MoE(h, out []float32, lw *LayerWeights, arch *Architecture
 // l2NormHeads applies Llama 4's parameter-free QK-norm — a per-head RMS over head_dim with
 // no learned weight: x ← x · rsqrt(mean(x²) + eps). vec is [heads, headDim] flattened.
 func l2NormHeads(vec []float32, heads, headDim int, eps float64) {
-	for hh := 0; hh < heads; hh++ {
+	for hh := range heads {
 		seg := vec[hh*headDim : (hh+1)*headDim]
 		var ss float64
 		for _, x := range seg {

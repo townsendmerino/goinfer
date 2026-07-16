@@ -255,8 +255,8 @@ func (r *Resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 
 	// f16 activation scratch (per call, sized to the padded prompt).
 	xh := make([]uint16, Mpad*H)
-	for m := 0; m < M; m++ {
-		for i := 0; i < H; i++ {
+	for m := range M {
+		for i := range H {
 			xh[m*H+i] = f32ToF16(embs[m][i])
 		}
 	}
@@ -267,7 +267,7 @@ func (r *Resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 	guF := d.NewBufferU16s(make([]uint16, Mpad*2*I))
 	dqF := d.NewBufferU16s(make([]uint16, Mpad*I))
 	posv := make([]uint32, Mpad)
-	for m := 0; m < M; m++ {
+	for m := range M {
 		posv[m] = uint32(startPos + m)
 	}
 	posB := d.NewBufferUint32s(posv)

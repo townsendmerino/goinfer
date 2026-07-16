@@ -35,11 +35,11 @@ kernel void nop(device float* out [[buffer(0)]], uint i [[thread_position_in_gri
 	buf := d.NewBufferLen(1)
 
 	best := func(reps int) time.Duration {
-		for w := 0; w < 5; w++ { // warm
+		for range 5 { // warm
 			q.Run1DBatch(pipe, 1, 1, reps, buf)
 		}
 		b := time.Hour
-		for it := 0; it < 50; it++ {
+		for range 50 {
 			t0 := time.Now()
 			q.Run1DBatch(pipe, 1, 1, reps, buf)
 			if dt := time.Since(t0); dt < b {

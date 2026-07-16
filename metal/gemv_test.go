@@ -81,7 +81,7 @@ kernel void gemv_w8a8(device const char*  aq  [[buffer(0)]],   // [K] int8 activ
 
 	bq := make([]int8, N*K)
 	bSc := make([]float32, N)
-	for n := 0; n < N; n++ {
+	for n := range N {
 		row := make([]float32, K)
 		for k := range row {
 			row[k] = rng.Float32()*2 - 1
@@ -93,9 +93,9 @@ kernel void gemv_w8a8(device const char*  aq  [[buffer(0)]],   // [K] int8 activ
 
 	// CPU reference — identical integer math + f32 finalize.
 	ref := make([]float32, N)
-	for n := 0; n < N; n++ {
+	for n := range N {
 		var acc int32
-		for k := 0; k < K; k++ {
+		for k := range K {
 			acc += int32(aq[k]) * int32(bq[n*K+k])
 		}
 		ref[n] = float32(acc) * aSc * bSc[n]
@@ -116,7 +116,7 @@ kernel void gemv_w8a8(device const char*  aq  [[buffer(0)]],   // [K] int8 activ
 
 	// Compare — cosine + max relative diff (the finalize mul may differ by an f32 ULP).
 	var dot, na, nb, maxrel float64
-	for n := 0; n < N; n++ {
+	for n := range N {
 		dot += float64(got[n]) * float64(ref[n])
 		na += float64(got[n]) * float64(got[n])
 		nb += float64(ref[n]) * float64(ref[n])

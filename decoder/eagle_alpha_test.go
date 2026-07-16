@@ -69,7 +69,7 @@ func TestEagleAlpha(t *testing.T) {
 		p         []float64   // target softmax
 	}
 	var steps []step
-	for s := 0; s < M; s++ {
+	for range M {
 		logits, hid, err := base.ForwardCapture(cur, cache, allLayers)
 		if err != nil {
 			t.Fatalf("ForwardCapture: %v", err)

@@ -323,7 +323,7 @@ func TestRouterOnlineCorrection(t *testing.T) {
 	// Feed realized outcomes for whichever source the router picks each round; hi keeps
 	// missing (0/2), lo always hits (2/2). The running rate should flip the ranking.
 	flipped := -1
-	for round := 0; round < 30; round++ {
+	for round := range 30 {
 		r.Draft(nil, 4)
 		src := hi
 		if r.chosen == 1 {

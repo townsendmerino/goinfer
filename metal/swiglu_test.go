@@ -80,10 +80,7 @@ kernel void swiglu_quant(device const float* g  [[buffer(0)]],  // [I] gate
 	}
 	refQ := make([]int8, I)
 	for i := range sv {
-		q := int(math.Round(float64(sv[i] / refSc)))
-		if q > 127 {
-			q = 127
-		}
+		q := min(int(math.Round(float64(sv[i]/refSc))), 127)
 		if q < -127 {
 			q = -127
 		}
@@ -99,7 +96,7 @@ kernel void swiglu_quant(device const float* g  [[buffer(0)]],  // [I] gate
 
 	mism := 0
 	var dot, na, nb float64
-	for i := 0; i < I; i++ {
+	for i := range I {
 		if gotQ[i] != refQ[i] {
 			mism++
 		}

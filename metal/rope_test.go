@@ -59,8 +59,8 @@ kernel void rope(device float*        x    [[buffer(0)]],  // [nH*hd] in place
 
 	ref := make([]float32, len(x))
 	copy(ref, x)
-	for head := 0; head < nH; head++ {
-		for dd := 0; dd < half; dd++ {
+	for head := range nH {
+		for dd := range half {
 			b := head * hd
 			th := float64(pos) * float64(invf[dd])
 			c, s := float32(math.Cos(th)), float32(math.Sin(th))

@@ -55,7 +55,7 @@ func TestRealModel_parityAndThroughput(t *testing.T) {
 	steps := 24
 	tok, pos, mism, amaxMism := ids[0], 0, 0, 0
 	var lastCos float64
-	for i := 0; i < steps; i++ {
+	for i := range steps {
 		cpu, err := m.ForwardForTest(tok, cache)
 		if err != nil {
 			t.Fatalf("cpu forward: %v", err)
@@ -89,12 +89,12 @@ func TestRealModel_parityAndThroughput(t *testing.T) {
 
 	// ---- (b) decode throughput (warm, best-of-N, wall = real per-token latency incl commit/wait) ----
 	// Production decode path: ForwardArgmax (fused block-argmax lm head, no 608KB readback).
-	for w := 0; w < 6; w++ {
+	for w := range 6 {
 		r.ForwardArgmax(tok, pos+w)
 	}
 	base := pos + 6
 	best := time.Hour
-	for it := 0; it < 40; it++ {
+	for it := range 40 {
 		t0 := time.Now()
 		r.ForwardArgmax(tok, base+it)
 		if dt := time.Since(t0); dt < best {

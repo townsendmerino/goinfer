@@ -236,7 +236,7 @@ func buildLoraRuntime(name string, a *loraAdapter, numLayers int, s *tensorSchem
 		dd := d // a fresh addressable copy per slot (loop-var capture is irrelevant — value semantics)
 		return &dd
 	}
-	for i := 0; i < numLayers; i++ {
+	for i := range numLayers {
 		rt.layers[i] = loraLayerDelta{
 			q: get(i, s.QProj), k: get(i, s.KProj), v: get(i, s.VProj), o: get(i, s.OProj),
 			gate: get(i, s.GateProj), up: get(i, s.UpProj), down: get(i, s.DownProj),

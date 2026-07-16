@@ -85,7 +85,7 @@ func int4Buf(d *Device, w *linalg.WeightMat) (Buffer, Buffer, error) {
 	N, K := w.Rows(), w.Cols()
 	words := make([]uint32, N*(K/8))
 	scales := make([]uint16, N*(K/32)) // f16 group scales (L1: −10% token traffic, parity-neutral)
-	for n := 0; n < N; n++ {
+	for n := range N {
 		wd, sd := packW4A8Row(dequantInt8ToF32Row(q8[n*K:(n+1)*K], sc[n], K, K))
 		copy(words[n*(K/8):(n+1)*(K/8)], wd)
 		for g, s := range sd {
@@ -106,7 +106,7 @@ func int4Concat(d *Device, wms ...*linalg.WeightMat) (Buffer, Buffer) {
 			panic(fmt.Sprintf("metal: int4Concat weight kind %q not int8", w.Kind()))
 		}
 		N, K := w.Rows(), w.Cols()
-		for n := 0; n < N; n++ {
+		for n := range N {
 			wd, sd := packW4A8Row(dequantInt8ToF32Row(q8[n*K:(n+1)*K], sc[n], K, K))
 			words = append(words, wd...)
 			for _, s := range sd {
@@ -157,7 +157,7 @@ func BuildResident(m *decoder.Model) (*Resident, error) {
 	}
 	r.layers = make([]residLayer, nL)
 	r.kc, r.vc = make([]Buffer, nL), make([]Buffer, nL)
-	for l := 0; l < nL; l++ {
+	for l := range nL {
 		lw := &w.Layers[l]
 		var L residLayer
 		L.qkvW, L.qkvS = int4Concat(d, &lw.QProj, &lw.KProj, &lw.VProj) // fused QKV

@@ -98,10 +98,7 @@ kernel void rmsnorm_quant(device const float* x  [[buffer(0)]],  // [H]
 	}
 	refQ := make([]int8, H)
 	for i := range y {
-		q := int(math.Round(float64(y[i] / refSc)))
-		if q > 127 {
-			q = 127
-		}
+		q := min(int(math.Round(float64(y[i]/refSc))), 127)
 		if q < -127 {
 			q = -127
 		}
@@ -129,7 +126,7 @@ kernel void rmsnorm_quant(device const float* x  [[buffer(0)]],  // [H]
 	}
 	mism := 0
 	var dot, na, nb float64
-	for i := 0; i < H; i++ {
+	for i := range H {
 		if gotQ[i] != refQ[i] {
 			mism++
 		}

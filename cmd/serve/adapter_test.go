@@ -166,7 +166,7 @@ func buildSyntheticBase(t *testing.T) string {
 		"model.norm.weight":         {hidden},
 		"lm_head.weight":            {vocab, hidden},
 	}
-	for l := 0; l < layers; l++ {
+	for l := range layers {
 		p := "model.layers." + strconv.Itoa(l)
 		add := func(name string, shape []int, seed int) {
 			ts[p+name] = fill(prod(shape), seed)
@@ -208,7 +208,7 @@ func buildSyntheticAdapter(t *testing.T, sign int) string {
 		return d
 	}
 	pfx := "base_model.model.model.layers."
-	for l := 0; l < layers; l++ {
+	for l := range layers {
 		add := func(mod string, inDim, outDim, seed int) {
 			an := pfx + strconv.Itoa(l) + mod + ".lora_A.weight"
 			bn := pfx + strconv.Itoa(l) + mod + ".lora_B.weight"

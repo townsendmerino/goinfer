@@ -81,10 +81,9 @@ func newLayerPager(w *Weights, mapping []byte, budget int64) *layerPager {
 		budget = mmap.AutoBudget()
 	}
 	const ahead = 1
-	window := int(budget / maxLayer)
-	if window < ahead+2 {
-		window = ahead + 2 // never evict a layer we just prefetched
-	}
+	window := max(int(budget/maxLayer),
+		// never evict a layer we just prefetched
+		ahead+2)
 	if window >= n {
 		return nil // the whole model fits the budget — no streaming needed
 	}

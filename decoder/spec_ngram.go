@@ -94,7 +94,7 @@ func ngramAlpha(matchLen int) float64 {
 	if matchLen >= a[last].matchLen {
 		return a[last].alpha
 	}
-	for i := 0; i < last; i++ {
+	for i := range last {
 		if matchLen <= a[i+1].matchLen {
 			lo, hi := a[i], a[i+1]
 			f := float64(matchLen-lo.matchLen) / float64(hi.matchLen-lo.matchLen)
@@ -118,10 +118,9 @@ func (d *NgramDrafter) Draft(ctx []int, k int) []int {
 	if n < minM+1 || k < 1 {
 		return nil
 	}
-	hi := maxM
-	if hi > n-1 { // need at least one earlier token to match against
-		hi = n - 1
-	}
+	hi := min(maxM,
+		// need at least one earlier token to match against
+		n-1)
 	for L := hi; L >= minM; L-- {
 		pat := ctx[n-L:]
 		// Most recent earlier occurrence: the latest start s with s+L <= n-1.
@@ -355,7 +354,7 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 			if needHist {
 				ph = append(slices.Clone(hist), cur)
 			}
-			for i := 0; i < kEff; i++ {
+			for i := range kEff {
 				var acc bool
 				if sampled {
 					p := dist(logitsN[i], ph)

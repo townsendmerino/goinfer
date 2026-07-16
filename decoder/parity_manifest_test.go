@@ -114,7 +114,7 @@ func TestParityManifest_merge(t *testing.T) {
 	}
 
 	applied := []string{}
-	for _, line := range strings.Split(string(rowsRaw), "\n") {
+	for line := range strings.SplitSeq(string(rowsRaw), "\n") {
 		line = strings.TrimSpace(line)
 		if !strings.HasPrefix(line, "PARITY_ROW ") {
 			continue

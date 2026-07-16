@@ -107,7 +107,7 @@ func (m *Model) mlaAttentionNaive(n []float32, lw *LayerWeights, arch *Architect
 
 	// 3. RoPE the query's rope dims (per head), gathered out of the [nope|rope] layout.
 	qRope := make([]float32, H*qkRope)
-	for hh := 0; hh < H; hh++ {
+	for hh := range H {
 		copy(qRope[hh*qkRope:(hh+1)*qkRope], q[hh*qkHead+qkNope:hh*qkHead+qkHead])
 	}
 	mlaRope(qRope, H, qkRope, pos, invFreq, ms, p.ropeInterleave)
@@ -119,22 +119,22 @@ func (m *Model) mlaAttentionNaive(n []float32, lw *LayerWeights, arch *Architect
 	scores := make([]float32, H*nKeys)      // [head, key]
 	vKeys := make([]float32, nKeys*H*vHead) // reconstructed V per (key, head)
 	krj := make([]float32, qkRope)
-	for j := 0; j < nKeys; j++ {
+	for j := range nKeys {
 		lat := cache.Latent(layer)[j*latDim : (j+1)*latDim]
 		cn := append([]float32(nil), lat[:rank]...)
 		rmsNorm(cn, w.kvALayernorm, 1, rank, eps, false)
 		kvUp := matvec(w.kvBProj, kvUpDim, rank, cn) // per head: [k_nope | v]
 		copy(krj, lat[rank:latDim])
 		mlaRope(krj, 1, qkRope, j, invFreq, ms, p.ropeInterleave) // key rope at its own position
-		for hh := 0; hh < H; hh++ {
+		for hh := range H {
 			base := hh * (qkNope + vHead)
 			kNope := kvUp[base : base+qkNope]
 			v := kvUp[base+qkNope : base+qkNope+vHead]
 			var s float32
-			for d := 0; d < qkNope; d++ {
+			for d := range qkNope {
 				s += q[hh*qkHead+d] * kNope[d]
 			}
-			for d := 0; d < qkRope; d++ {
+			for d := range qkRope {
 				s += qRope[hh*qkRope+d] * krj[d]
 			}
 			scores[hh*nKeys+j] = s * float32(arch.AttnScale)
@@ -144,7 +144,7 @@ func (m *Model) mlaAttentionNaive(n []float32, lw *LayerWeights, arch *Architect
 
 	// 5. Per-head softmax over keys, weighted sum of V → context [H, v_head_dim].
 	ctx := make([]float32, H*vHead)
-	for hh := 0; hh < H; hh++ {
+	for hh := range H {
 		row := scores[hh*nKeys : (hh+1)*nKeys]
 		mx := float32(math.Inf(-1))
 		for _, s := range row {
@@ -158,10 +158,10 @@ func (m *Model) mlaAttentionNaive(n []float32, lw *LayerWeights, arch *Architect
 			sum += row[j]
 		}
 		out := ctx[hh*vHead : (hh+1)*vHead]
-		for j := 0; j < nKeys; j++ {
+		for j := range nKeys {
 			wgt := row[j] / sum
 			v := vKeys[(j*H+hh)*vHead : (j*H+hh+1)*vHead]
-			for d := 0; d < vHead; d++ {
+			for d := range vHead {
 				out[d] += wgt * v[d]
 			}
 		}
@@ -215,7 +215,7 @@ func (m *Model) mlaAttentionAbsorb(n []float32, lw *LayerWeights, arch *Architec
 
 	// 3. RoPE the query's rope dims (per head), gathered from the [nope|rope] layout.
 	qRope := make([]float32, H*qkRope)
-	for hh := 0; hh < H; hh++ {
+	for hh := range H {
 		copy(qRope[hh*qkRope:(hh+1)*qkRope], q[hh*qkHead+qkNope:hh*qkHead+qkHead])
 	}
 	mlaRope(qRope, H, qkRope, pos, invFreq, ms, p.ropeInterleave)
@@ -223,13 +223,13 @@ func (m *Model) mlaAttentionAbsorb(n []float32, lw *LayerWeights, arch *Architec
 	// 4a. Absorb W_UK into the query: qNopeAbs[h] = W_UK_hᵀ · q_nope_h  ([rank] per head).
 	// W_UK_h is the k_nope rows of head h: kv_b_proj rows [h*hRow : h*hRow+qkNope].
 	qNopeAbs := make([]float32, H*rank)
-	for hh := 0; hh < H; hh++ {
+	for hh := range H {
 		dst := qNopeAbs[hh*rank : (hh+1)*rank]
 		qn := q[hh*qkHead : hh*qkHead+qkNope]
-		for d := 0; d < qkNope; d++ {
+		for d := range qkNope {
 			row := w.kvBProj[(hh*hRow+d)*rank : (hh*hRow+d)*rank+rank]
 			qd := qn[d]
-			for c := 0; c < rank; c++ {
+			for c := range rank {
 				dst[c] += qd * row[c]
 			}
 		}
@@ -241,21 +241,21 @@ func (m *Model) mlaAttentionAbsorb(n []float32, lw *LayerWeights, arch *Architec
 	scores := make([]float32, H*nKeys)
 	cnAll := make([]float32, nKeys*rank)
 	krj := make([]float32, qkRope)
-	for j := 0; j < nKeys; j++ {
+	for j := range nKeys {
 		lat := cache.Latent(layer)[j*latDim : (j+1)*latDim]
 		cn := cnAll[j*rank : (j+1)*rank]
 		copy(cn, lat[:rank])
 		rmsNorm(cn, w.kvALayernorm, 1, rank, eps, false)
 		copy(krj, lat[rank:latDim])
 		mlaRope(krj, 1, qkRope, j, invFreq, ms, p.ropeInterleave)
-		for hh := 0; hh < H; hh++ {
+		for hh := range H {
 			qa := qNopeAbs[hh*rank : (hh+1)*rank]
 			var s float32
-			for c := 0; c < rank; c++ {
+			for c := range rank {
 				s += qa[c] * cn[c]
 			}
 			qr := qRope[hh*qkRope : (hh+1)*qkRope]
-			for d := 0; d < qkRope; d++ {
+			for d := range qkRope {
 				s += qr[d] * krj[d]
 			}
 			scores[hh*nKeys+j] = s * float32(arch.AttnScale)
@@ -264,7 +264,7 @@ func (m *Model) mlaAttentionAbsorb(n []float32, lw *LayerWeights, arch *Architec
 
 	// 5. Per-head softmax, then collapse V to a rank-space weighted latent sum.
 	wsum := make([]float32, H*rank)
-	for hh := 0; hh < H; hh++ {
+	for hh := range H {
 		row := scores[hh*nKeys : (hh+1)*nKeys]
 		mx := float32(math.Inf(-1))
 		for _, s := range row {
@@ -278,10 +278,10 @@ func (m *Model) mlaAttentionAbsorb(n []float32, lw *LayerWeights, arch *Architec
 			sum += row[j]
 		}
 		acc := wsum[hh*rank : (hh+1)*rank]
-		for j := 0; j < nKeys; j++ {
+		for j := range nKeys {
 			wgt := row[j] / sum
 			cn := cnAll[j*rank : (j+1)*rank]
-			for c := 0; c < rank; c++ {
+			for c := range rank {
 				acc[c] += wgt * cn[c]
 			}
 		}
@@ -290,13 +290,13 @@ func (m *Model) mlaAttentionAbsorb(n []float32, lw *LayerWeights, arch *Architec
 	// 6. Absorb W_UV: ctx_h = W_UV_h · wsum_h. W_UV_h is the v rows of head h:
 	// kv_b_proj rows [h*hRow+qkNope : h*hRow+hRow].
 	ctx := make([]float32, H*vHead)
-	for hh := 0; hh < H; hh++ {
+	for hh := range H {
 		acc := wsum[hh*rank : (hh+1)*rank]
 		out := ctx[hh*vHead : (hh+1)*vHead]
-		for e := 0; e < vHead; e++ {
+		for e := range vHead {
 			row := w.kvBProj[(hh*hRow+qkNope+e)*rank : (hh*hRow+qkNope+e)*rank+rank]
 			var s float32
-			for c := 0; c < rank; c++ {
+			for c := range rank {
 				s += row[c] * acc[c]
 			}
 			out[e] = s
@@ -337,9 +337,9 @@ func mlaRope(vec []float32, heads, ropeDim, pos int, invFreq []float64, scale fl
 	if interleave {
 		half := ropeDim / 2
 		tmp := make([]float32, ropeDim)
-		for hh := 0; hh < heads; hh++ {
+		for hh := range heads {
 			src := vec[hh*ropeDim : (hh+1)*ropeDim]
-			for i := 0; i < half; i++ {
+			for i := range half {
 				tmp[i] = src[2*i]
 				tmp[half+i] = src[2*i+1]
 			}
