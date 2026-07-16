@@ -230,6 +230,47 @@ func (q Queue) Run1D(p Pipeline, n, tg int, bufs ...Buffer) {
 	cb.Send(selWaitCompleted)
 }
 
+// Encoder batches many DIFFERENT kernel dispatches into ONE command buffer — the
+// per-token shape the decode loop needs (whole layer stack → one commit/wait, per the
+// tax finding). The default serial compute encoder inserts barriers between dependent
+// dispatches (like WGSL's storage barriers), so chained kernels see prior writes.
+type Encoder struct {
+	pool objc.ID
+	cb   objc.ID
+	enc  objc.ID
+}
+
+func (q Queue) begin() *Encoder {
+	pool := objc.ID(objc.GetClass("NSAutoreleasePool")).Send(selAlloc).Send(selInit)
+	cb := q.id.Send(selCommandBuffer)
+	return &Encoder{pool: pool, cb: cb, enc: cb.Send(selComputeEncoder)}
+}
+
+// dispatch encodes one kernel over n threads (threadgroup width tg, clamped ≤ n), binding
+// bufs at indices 0..len-1. dispatchThreads launches EXACTLY n threads (non-uniform), so
+// no out-of-range writes.
+func (e *Encoder) dispatch(p Pipeline, n, tg int, bufs ...Buffer) {
+	if tg > n {
+		tg = n
+	}
+	e.enc.Send(selSetPipeline, p.id)
+	for i, b := range bufs {
+		e.enc.Send(selSetBuffer, b.id, uintptr(0), uintptr(i))
+	}
+	total := mtlSize{w: uint64(n), h: 1, d: 1}
+	perTG := mtlSize{w: uint64(tg), h: 1, d: 1}
+	e.enc.Send(selDispatchThreads, unsafe.Pointer(&total), unsafe.Pointer(&perTG))
+	runtime.KeepAlive(&total)
+	runtime.KeepAlive(&perTG)
+}
+
+func (e *Encoder) end() {
+	e.enc.Send(selEndEncoding)
+	e.cb.Send(selCommit)
+	e.cb.Send(selWaitCompleted)
+	e.pool.Send(selDrain)
+}
+
 // Run1DBatch encodes `reps` dispatches of the same kernel into ONE command buffer and
 // submits once — the shape a real token uses (a whole layer stack encoded into one
 // command buffer, one commit/wait). Isolates the per-commit round-trip tax (reps=1)

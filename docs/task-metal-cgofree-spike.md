@@ -349,10 +349,19 @@ Kernels are correct-first (naive one-row/one-head-per-thread); the CUDA lesson i
 tuning (coalescing/ILP to ~80% peak) follows parity and is all memory-access, not ALU.
 MSL gotcha banked: `half` is a reserved type (f16) — can't be a variable name.
 
-**Remaining Layer B (integration, no new kernel risk):** the two trivial copies
-(kv_store, residual — or fuse residual into the GEMV epilogue), then wire the six into a
-full dense decode layer encoded as **one command buffer per token** (the tax
-requirement), load + host-pack the real qwen2.5-coder-1.5b weights, stand up the
+**Full decode-layer assembly — bit-exact, one command buffer** (`TestLayerB_fullLayerForward`).
+All kernels (+ the two trivial ones, `kv_store` / `residual`) chained into a complete
+dense decode layer — rmsnorm+quant → q/k/v GEMV → rope(q,k) → kv_store → GQA attention →
+quant → o-proj → residual → rmsnorm+quant → gate/up GEMV → swiglu+quant → down → residual
+— encoded as **17 dispatches in ONE command buffer** (the tax requirement), validated vs a
+CPU reference that mirrors the exact quantized path: **cosine 1.0000000, maxAbs 0.00e+00**
+(literally identical). The serial compute encoder's automatic inter-dispatch barriers
+sequence the dependent kernels correctly (the WGSL storage-barrier analog). So the whole
+layer assembles and runs correctly, cgo-free, in the shape the decode loop needs.
+
+**Remaining — the final GO/NO-GO step (integration + measurement, no viability risk):**
+depend on the goinfer decoder to **load the real qwen2.5-coder-1.5b GGUF + host-pack its
+W4A8 weights**, run the full **28-layer stack per token** + sample, stand up the
 **argmax-parity gate vs CPU decode**, and measure device-timed decode **tok/s vs the ~71
-GO bar** (aspirational ~83, Ollama parity). Layer A retired + all kernels bit-exact ⇒
-what's left is assembly + measurement, not viability.
+GO bar** (aspirational ~83, Ollama parity). Everything upstream (binding, all kernels, the
+full-layer assembly) is proven bit-exact — this is real-weight plumbing + the number.
