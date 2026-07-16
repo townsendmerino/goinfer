@@ -228,24 +228,30 @@ greedy, warm, int8 runtime (`Quant: int8int8`). Device-timed harnesses:
 |---|---|---|---|
 | **WebGPU-on-Metal** (resident, `-tags gpu`) | **31.9** | 31.3 | viable (goes GPU-resident) but **degenerate** |
 | **CPU** (pure-Go SIMD) | **32.66** | 30.6 | the pure-Go floor |
-| Ollama-Metal (native peer) | — | — | **NOT measured** — `ollama` not installed on the rig; pending |
+| **Ollama-Metal** (native peer, q4_k_m/int4) | **83.3** | 1.5s/128tok | ollama 0.32.0, same GGUF, greedy, best-of-3 warm |
 | bandwidth ceiling (arith) | ~129 | — | 200 GB/s ÷ ~1.55 GB/tok; int4 ≈ 2× |
 
-**Result: WebGPU-on-Metal is a WASH with CPU on the M1 Pro (0.98×)** — the Mac GPU
-path buys **nothing** today. This is new information regardless of verdict: every
-prior §B GPU number was the 2070 SUPER; WebGPU-on-Metal had never been measured, and
-it turns out **not** to be "respectable."
+**Result: WebGPU-on-Metal is a WASH with CPU on the M1 Pro (0.98×), and both are
+2.6× slower than the native peer** — the Mac GPU path buys **nothing** today. New
+information regardless of verdict: every prior §B GPU number was the 2070 SUPER;
+WebGPU-on-Metal had never been measured, and it turns out **not** to be "respectable."
 
-**Implications for the spike:**
-- Per §Go/no-go, WebGPU-on-Metal degenerate ⇒ **the GO bar is ≥85% of Ollama-Metal**,
-  not "beat CPU." That bar can't be set until Ollama-Metal is measured on this rig.
-- The **31.9 → ~129 tok/s gap is the headroom** a cgo-free native-Metal backend
-  targets. Even landing in the bandwidth-class ~65–129 range would be a **2–4× win**
-  over the WebGPU/CPU wash — *plus* the identity win (first `CGO_ENABLED=0` GPU path
-  on the platform where pure-Go matters most; today Mac GPU = `-tags gpu` = cgo).
-- Net: Step 0 **strengthens** the case — the incumbent Mac GPU story is a dud, so the
-  native lane's potential delta is large.
+**Quant caveat (honest):** Ollama runs the GGUF at native **q4_k_m (int4)**; goinfer's
+WebGPU/CPU numbers are **int8** (the `BenchmarkDecode`/resident harnesses hardcode
+int8, and a separate goinfer-int4 CPU number wasn't taken — both goinfer paths sit at
+~32 regardless, so the 2.6× gap holds). The native-Metal spike targets q4_k_m/int4,
+matching the peer.
 
-**Next:** (1) install + version-pin Ollama-Metal, measure it → sets the exact GO bar;
-(2) Layer A — the purego-objc ~20-selector compute binding (the open risk); (3) Layer B
-MSL kernel ports (de-risked by the CUDA arc).
+**Implications — GO bar is now set:**
+- WebGPU-on-Metal degenerate (wash with CPU) ⇒ per §Go/no-go the bar is **≥85% of
+  Ollama-Metal = ≥85% × 83.3 ≈ 71 tok/s** (int4). Aspirational: Ollama parity (~83+),
+  which the CUDA arc showed a hand kernel can reach (it hit 1.47× same-box Ollama).
+- The **32 → 83 (peer) → ~129 (ceiling) gap is the headroom.** A native cgo-free Metal
+  backend at ~71–83+ is a **~2.2–2.6× win** over the WebGPU/CPU wash, *plus* the
+  identity win (first `CGO_ENABLED=0` GPU path on the platform where pure-Go matters
+  most; today Mac GPU = `-tags gpu` = cgo).
+- Net: Step 0 **strengthens** the case — the incumbent Mac GPU story is a dud and the
+  native peer proves ~83 tok/s is reachable on this rig, so the target is concrete.
+
+**Next:** Layer A — the purego-objc ~20-selector compute binding (the open risk),
+proven first by a single-MSL-kernel compile-and-run before the six kernel ports.
