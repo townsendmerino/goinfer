@@ -327,6 +327,24 @@ budget).
 **Binding-risk verdict: RETIRED — the cgo-free native-Metal *lane is open*.** The "80%
 this time" was *can compute go through purego-objc cgo-free at all, correctly, at a
 tolerable tax* — yes on all three, proven on the real rig. The binding does not force
-cgo (the NO-GO condition) — the opposite. **Next: Layer B — the six proven CUDA kernels
-ported to MSL** (de-risked by the CUDA arc), the argmax-parity gate on the real
-checkpoint, and decode tok/s vs the ~71 GO bar.
+cgo (the NO-GO condition) — the opposite.
+
+## Findings — Layer B, step 1: the hot GEMV ported to MSL, bit-exact
+
+`TestLayerB_gemvW8A8Parity`. The bandwidth-bound bottleneck — goinfer's **W8A8 GEMV**
+(int8×int8 → i32 accumulate → × activation-scale × per-row weight-scale) — ported to
+MSL and validated against a CPU reference on real per-row-int8-quantized data (256×1536,
+qwen-ish proj shape): **cosine = 1.0000000, max-rel = 0.00e+00 — bit-exact**, cgo-free.
+Mirrors the CUDA arc's "B step 1 (real-weight GEMV parity)": the packing + integer-GEMV
+math carry over exactly; MSL is the C++ dialect the doc promised. (This is the naive
+one-row-per-thread kernel — *correct first*; the CUDA lesson is that tuning, coalescing/
+ILP to ~80% peak, comes after parity, and was all memory-access, not ALU.)
+
+**Remaining Layer B (the bulk, per the doc's scope):** port the rest of the six proven
+kernels (rmsnorm+quant, rope, GQA online-softmax attention, swiglu+quant, residual, +
+the W4A8 GEMV and kv_store), assemble a full dense decode layer into **one command
+buffer per token** (the tax requirement above), stand up the **argmax-parity gate vs CPU
+decode on the real qwen2.5-coder-1.5b checkpoint**, and measure device-timed
+(`GPUStartTime`/`GPUEndTime`) decode **tok/s vs the ~71 GO bar** (aspirational ~83 Ollama
+parity). Layer A being retired means this is now the *mechanical* half — real work, but
+no open viability risk.

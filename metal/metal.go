@@ -176,9 +176,27 @@ func (d *Device) NewBufferLen(nFloats int) Buffer {
 	return Buffer{id: d.id.Send(selNewBufferLen, uintptr(nFloats*4), uintptr(0)), n: nFloats}
 }
 
-// Floats views the buffer's shared contents as a Go slice (zero-copy on UMA).
+// NewBufferInt8 uploads int8 data (n counts BYTES for this buffer). NewBufferU32
+// uploads a single uint32 (kernel scalar arg). Both are shared/UMA.
+func (d *Device) NewBufferInt8(data []int8) Buffer {
+	id := d.id.Send(selNewBufferBytes, unsafe.Pointer(&data[0]), uintptr(len(data)), uintptr(0))
+	runtime.KeepAlive(data)
+	return Buffer{id: id, n: len(data)}
+}
+
+func (d *Device) NewBufferU32(v uint32) Buffer {
+	id := d.id.Send(selNewBufferBytes, unsafe.Pointer(&v), uintptr(4), uintptr(0))
+	runtime.KeepAlive(&v)
+	return Buffer{id: id, n: 1}
+}
+
+// Floats / Int8s view the buffer's shared contents as a Go slice (zero-copy on UMA).
 func (b Buffer) Floats() []float32 {
 	return unsafe.Slice(objc.Send[*float32](b.id, selContents), b.n)
+}
+
+func (b Buffer) Int8s() []int8 {
+	return unsafe.Slice(objc.Send[*int8](b.id, selContents), b.n)
 }
 
 // Run1D encodes and runs a 1-D kernel over n threads (threadgroup width tg), binding
