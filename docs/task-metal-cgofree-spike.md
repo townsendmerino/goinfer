@@ -639,3 +639,19 @@ The one lever with guaranteed, MAC-independent value is **encode-ahead** (kills 
 0.9 ms host bubble, +~5 → ~77). Beating that decisively appears to need hardware goinfer can't
 reach on M1 (DP4A), i.e. **~71–77 tok/s is near the practical ceiling for cgo-free W4A8 decode
 on this GPU.** Experiment kept (`batchk_test.go`, `gemv_w4a8_sa_bk`) as the evidence.
+
+## Findings — encode-ahead: 70.5 → 73.6 tok/s, parity-exact (last pure-decode lever)
+
+The one MAC-independent lever. Step 0 measured a 0.9 ms host bubble (CPU encoding 337 dispatches
+while the GPU idles). Added a persistent OS-thread-pinned executor goroutine (CUDA-style) that
+pipelines: commit token t → pre-encode t+1 while the GPU runs t → wait. The encode is hidden
+behind GPU execution. Pool safety (the SIGSEGV risk): one long-lived pool, drained every 64
+tokens with a one-token non-overlapped hiccup so no un-committed command buffer is live across
+the drain (LIFO-safe); `encodeTrunkInto` records dispatches only (value-independent), uPos/r.x
+set at commit. Result: **73.6 tok/s (+3.1), parity EXACT (10/10 argmax vs sync), CLI coherent.**
+Recovered 0.61 of 0.9 ms; residual is embedding-copy + uPos-set + logits-readback + channel hop.
+
+**Pure-decode work is now DONE at ~73–74 tok/s (1.04× bar).** All remaining levers are either
+ruled out (speculation, Stage C underdelivers — MAC-bound) or unavailable (DP4A). Next: the
+"different work" that doesn't fight the int-MAC wall — prefill throughput, KV-f16 for long
+context, or broader model coverage.
