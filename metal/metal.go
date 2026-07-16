@@ -350,6 +350,32 @@ func (e *Encoder) dispatch(p Pipeline, n, tg int, bufs ...Buffer) {
 	runtime.KeepAlive(&perTG)
 }
 
+// dispatchTG is dispatch with dynamic threadgroup memory of tgBytes at index 0 — for the Stage A
+// GEMV kernels whose activation-staging scratch is sized to K per call (so a small-K model keeps
+// full occupancy while a large-K one, e.g. Qwen3 o-proj K=nHhd>1536, gets the room it needs).
+func (e *Encoder) dispatchTG(p Pipeline, n, tg, tgBytes int, bufs ...Buffer) {
+	if tg > n {
+		tg = n
+	}
+	if p.id != e.curPipe {
+		e.enc.Send(selSetPipeline, p.id)
+		e.curPipe = p.id
+	}
+	nb := len(bufs)
+	for i, b := range bufs {
+		e.idScr[i], e.offScr[i] = b.id, b.off
+	}
+	e.enc.Send(selSetBuffers, unsafe.Pointer(&e.idScr[0]), unsafe.Pointer(&e.offScr[0]), uintptr(0), uintptr(nb))
+	e.enc.Send(selSetTgMem, uintptr(tgBytes), uintptr(0))
+	runtime.KeepAlive(&e.idScr)
+	runtime.KeepAlive(&e.offScr)
+	total := mtlSize{w: uint64(n), h: 1, d: 1}
+	perTG := mtlSize{w: uint64(tg), h: 1, d: 1}
+	e.enc.Send(selDispatchThreads, unsafe.Pointer(&total), unsafe.Pointer(&perTG))
+	runtime.KeepAlive(&total)
+	runtime.KeepAlive(&perTG)
+}
+
 func (e *Encoder) end() {
 	e.enc.Send(selEndEncoding)
 	e.cb.Send(selCommit)

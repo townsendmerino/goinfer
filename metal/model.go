@@ -258,8 +258,8 @@ func (r *Resident) forwardLogits(pos int) []float32 {
 	r.uPos.SetU32(uint32(pos))
 	r.uNKeys.SetU32(uint32(pos + 1))
 	e := r.q.begin()
-	r.encodeTrunkInto(e)                                                        // 28 layers → final norm → r.aq/r.aSc
-	e.dispatch(r.pSA, (r.V)*32, 256, r.lmW, r.lmS, r.aq, r.aSc, r.logits, r.uH) // full lm head
+	r.encodeTrunkInto(e)                                                                 // 28 layers → final norm → r.aq/r.aSc
+	e.dispatchTG(r.pSA, (r.V)*32, 256, r.H*2, r.lmW, r.lmS, r.aq, r.aSc, r.logits, r.uH) // full lm head
 	e.end()
 	r.gpuStart, r.gpuEnd, r.kernStart, r.kernEnd = e.gpuStart, e.gpuEnd, e.kernStart, e.kernEnd
 	copy(r.logitsHost, r.logits.Floats())
@@ -285,7 +285,7 @@ func (r *Resident) ForwardEmbPipe(emb []float32, pos int) []float32 {
 func (r *Resident) encodeLogitsCB() *Encoder {
 	e := r.q.beginNP()
 	r.encodeTrunkInto(e)
-	e.dispatch(r.pSA, (r.V)*32, 256, r.lmW, r.lmS, r.aq, r.aSc, r.logits, r.uH)
+	e.dispatchTG(r.pSA, (r.V)*32, 256, r.H*2, r.lmW, r.lmS, r.aq, r.aSc, r.logits, r.uH)
 	e.finishEncoding()
 	return e
 }
@@ -358,8 +358,8 @@ func (r *Resident) ForwardArgmax(id, pos int) uint32 {
 	r.uNKeys.SetU32(uint32(pos + 1))
 	e := r.q.begin()
 	r.encodeTrunkInto(e)
-	e.dispatch(r.pSAAmax, (r.V)*32, 256, r.lmW, r.lmS, r.aq, r.aSc, r.part, r.uH) // tile partials
-	e.dispatch(r.pArgFinish, 256, 256, r.part, r.tok, r.uP)                       // reduce tiles → token
+	e.dispatchTG(r.pSAAmax, (r.V)*32, 256, r.H*2, r.lmW, r.lmS, r.aq, r.aSc, r.part, r.uH) // tile partials
+	e.dispatch(r.pArgFinish, 256, 256, r.part, r.tok, r.uP)                                // reduce tiles → token
 	e.end()
 	return r.tok.U32()
 }
@@ -377,7 +377,7 @@ func (r *Resident) encodeTrunkInto(e *Encoder) {
 		L := &r.layers[l]
 		// --- attention block (12 dispatches vs 19: QKV fused +bias, residual fused) ---
 		e.dispatch(r.pRms, 256, 256, r.x, L.preNorm, r.aq, r.aSc, r.uH, r.uEps)
-		e.dispatch(r.pSABias, qkvRows*32, 256, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv, L.qkvBias, r.uH)
+		e.dispatchTG(r.pSABias, qkvRows*32, 256, r.H*2, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv, L.qkvBias, r.uH)
 		if r.qkNorm { // Qwen3: per-head Q/K RMSNorm before RoPE
 			e.dispatch(r.pQKNorm, (r.nH+r.nKV)*128, 128, r.qkv, L.qNorm, L.kNorm, r.uNH, r.uNKV, r.uHd, r.uNHhd, r.uEps, r.uAddOne)
 		}
@@ -386,12 +386,12 @@ func (r *Resident) encodeTrunkInto(e *Encoder) {
 		e.dispatch(r.pKv, r.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[l], r.vc[l], r.uKvDim, r.uPos)
 		e.dispatch(r.pAttn, r.nH*128, 128, r.qkv, r.kc[l], r.vc[l], r.ctx, r.uNH, r.uNKV, r.uHd, r.uNKeys, r.uScale, r.uWindow)
 		e.dispatch(r.pQv, 256, 256, r.ctx, r.cq, r.cSc, r.uHH)
-		e.dispatch(r.pSAResid, r.H*32, 256, L.oW, L.oS, r.cq, r.cSc, r.x, r.uHH) // o-proj + residual
+		e.dispatchTG(r.pSAResid, r.H*32, 256, r.nH*r.hd*2, L.oW, L.oS, r.cq, r.cSc, r.x, r.uHH) // o-proj + residual
 		// --- ffn block ---
 		e.dispatch(r.pRms, 256, 256, r.x, L.postNorm, r.mq, r.mSc, r.uH, r.uEps)
-		e.dispatch(r.pSA, (2*r.I)*32, 256, L.guW, L.guS, r.mq, r.mSc, r.gu, r.uH) // fused gate|up
-		e.dispatch(r.pSw, 256, 256, r.gu, r.gu.At(r.I*4), r.dq, r.dSc, r.uI)      // gate @0, up @I
-		e.dispatch(r.pGemvResid, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.x, r.uI)  // down + residual
+		e.dispatchTG(r.pSA, (2*r.I)*32, 256, r.H*2, L.guW, L.guS, r.mq, r.mSc, r.gu, r.uH) // fused gate|up
+		e.dispatch(r.pSw, 256, 256, r.gu, r.gu.At(r.I*4), r.dq, r.dSc, r.uI)               // gate @0, up @I
+		e.dispatch(r.pGemvResid, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.x, r.uI)           // down + residual
 	}
 	e.dispatch(r.pRms, 256, 256, r.x, r.finalNorm, r.aq, r.aSc, r.uH, r.uEps)
 }

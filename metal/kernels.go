@@ -108,7 +108,6 @@ kernel void gemv_w4a8_resid(device const uint* bq[[buffer(0)]], device const hal
   + (int(((x)>>16)&0xF)-8)*int((a)[4]) + (int(((x)>>20)&0xF)-8)*int((a)[5]) \
   + (int(((x)>>24)&0xF)-8)*int((a)[6]) + (int(((x)>>28)&0xF)-8)*int((a)[7]) )
 #define SA_BODY \
-    threadgroup short As[1536]; \
     for (uint i=tid;i<K;i+=tgs) As[i]=short(aq[i]); \
     threadgroup_barrier(mem_flags::mem_threadgroup); \
     uint G = K>>5u; \
@@ -124,7 +123,7 @@ kernel void gemv_w4a8_resid(device const uint* bq[[buffer(0)]], device const hal
     acc = simd_sum(acc);
 kernel void gemv_w4a8_sa(device const uint4* wq[[buffer(0)]], device const half* sct[[buffer(1)]],
     device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
-    constant uint& K[[buffer(5)]], uint tgid[[threadgroup_position_in_grid]],
+    constant uint& K[[buffer(5)]], threadgroup short* As [[threadgroup(0)]], uint tgid[[threadgroup_position_in_grid]],
     uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]],
     uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
     SA_BODY
@@ -183,7 +182,7 @@ kernel void gemv_w4a8_sa_bk(device const uint4* wq[[buffer(0)]], device const ha
 }
 kernel void gemv_w4a8_sa_bias(device const uint4* wq[[buffer(0)]], device const half* sct[[buffer(1)]],
     device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
-    device const float* bias[[buffer(5)]], constant uint& K[[buffer(6)]], uint tgid[[threadgroup_position_in_grid]],
+    device const float* bias[[buffer(5)]], constant uint& K[[buffer(6)]], threadgroup short* As [[threadgroup(0)]], uint tgid[[threadgroup_position_in_grid]],
     uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]],
     uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
     SA_BODY
@@ -191,7 +190,7 @@ kernel void gemv_w4a8_sa_bias(device const uint4* wq[[buffer(0)]], device const 
 }
 kernel void gemv_w4a8_sa_resid(device const uint4* wq[[buffer(0)]], device const half* sct[[buffer(1)]],
     device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
-    constant uint& K[[buffer(5)]], uint tgid[[threadgroup_position_in_grid]],
+    constant uint& K[[buffer(5)]], threadgroup short* As [[threadgroup(0)]], uint tgid[[threadgroup_position_in_grid]],
     uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]],
     uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
     SA_BODY
@@ -206,7 +205,7 @@ kernel void gemv_w4a8_sa_resid(device const uint4* wq[[buffer(0)]], device const
 struct AmaxPart { float v; uint i; };
 kernel void gemv_w4a8_sa_amax(device const uint4* wq[[buffer(0)]], device const half* sct[[buffer(1)]],
     device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device AmaxPart* part[[buffer(4)]],
-    constant uint& K[[buffer(5)]], uint tgid[[threadgroup_position_in_grid]],
+    constant uint& K[[buffer(5)]], threadgroup short* As [[threadgroup(0)]], uint tgid[[threadgroup_position_in_grid]],
     uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]],
     uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
     SA_BODY                                       // acc = this row's dot; row = output index
