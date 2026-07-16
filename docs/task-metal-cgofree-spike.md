@@ -395,6 +395,37 @@ int8 measured here). Both are known and bounded from the CUDA precedent — but 
 **projections, not measurements**, so the honest verdict stands at **GO-on-viability,
 NO-GO-on-worth-it-as-measured**, exactly the CUDA arc's ending, one tuning-arc earlier.
 
-**If revisited:** switch the GEMV to W4A8 (kernel already bit-exact validated) + ILP-unroll
-+ multi-row-per-threadgroup, re-measure vs the ~71 bar. The scaffolding, the correctness
-gate, and the binding are all in place — it's a kernel-tuning session, not a rebuild.
+## Findings — W4A8 + ILP re-measure: the bottleneck is DISPATCH COUNT, not bandwidth
+
+Swapped the GEMV to **int4/W4A8** (the target quant, half the weight bytes — re-quantized
+via the validated packer) with a **coalesced + ILP-unrolled** kernel (`gemv_w4a8_coal`,
+simdgroup-per-row + `simd_sum`, 8-way-unrolled nibble inner). Re-measured on the M1 Pro:
+
+- Correct (int4 is lossier: **20/24 argmax** vs CPU, cosine 0.989 — still coherent).
+- **Perf: ~19.5 tok/s — NO improvement over int8** (~18–30). Halving the weight bytes did
+  nothing. **The decode is not weight-bandwidth-bound.**
+
+**Root cause, proven two ways:** (1) int4 (½ the bytes) gave zero speedup; (2) measured
+~28–51 ms/token is **7–13× the bandwidth floor** (int4 ≈3.75 ms, int8 ≈7.5 ms at 200 GB/s).
+A layer-count sweep nails it: **~1 ms/layer, near-linear** (nL=4→6.2 ms, 28→28.6 ms) =
+**~50 µs × the ~19 dispatches/layer of launch + inter-dispatch-barrier overhead** — not
+matmul compute. The decode is **DISPATCH-BOUND** (~530 tiny serialized dispatches/token),
+the Metal analog of the WebGPU glue-serialization wall.
+
+**So the lever is KERNEL FUSION, not quant or GEMV-ILP.** Collapsing the ~19 dispatches/
+layer into ~3–5 fused super-kernels (the megakernel lesson — on Metal via threadgroup-local
+fusion, no cooperative launch needed) would cut the ~50 µs × 19 overhead ~4–5×, projecting
+~6–7 ms/token ≈ **~140 tok/s**, comfortably past the ~71 bar. **But that is a projection —
+the fused kernels are not built or measured**, so the verdict is unchanged:
+
+**Final verdict — GO-on-viability, NO-GO-on-worth-it (as measured), now precisely diagnosed.**
+The cgo-free native-Metal lane is open and correct (all measured); the untuned per-kernel
+decode is ~20–35 tok/s, dispatch-bound, tying (not beating) WebGPU-on-Metal. Reaching GO is
+a **kernel-fusion** effort — well-scoped from this diagnosis, the CUDA arc's megakernel
+precedent, and the fully-in-place scaffolding (binding, all bit-exact kernels, the
+correctness gate) — but it is future work, not a measured result. The honest number today
+does not clear the bar.
+
+**If revisited:** fuse the layer's ~19 dispatches into ~3–5 threadgroup-fused super-kernels
+(pre-attn / attn / ffn), keeping each stage's already-bit-exact math; re-measure the
+dispatch-overhead reduction vs the ~71 bar. Not a rebuild — the kernels and gate exist.

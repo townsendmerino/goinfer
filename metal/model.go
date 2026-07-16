@@ -55,6 +55,25 @@ func int8Buf(d *Device, w *linalg.WeightMat) (Buffer, Buffer, error) {
 	return d.NewBufferInt8(q8), d.NewBufferFloats(sc), nil
 }
 
+// int4Buf re-quantizes an int8 WeightMat to W4A8 (int4, group=32) via the validated packer
+// and uploads packed nibbles + f32 group scales — half the weight bytes of int8 (the
+// target-quant bandwidth win). One-time at build.
+func int4Buf(d *Device, w *linalg.WeightMat) (Buffer, Buffer, error) {
+	q8, sc, _, ok := w.Int8()
+	if !ok {
+		return Buffer{}, Buffer{}, fmt.Errorf("metal: weight kind %q is not int8", w.Kind())
+	}
+	N, K := w.Rows(), w.Cols()
+	words := make([]uint32, N*(K/8))
+	scales := make([]float32, N*(K/32))
+	for n := 0; n < N; n++ {
+		wd, sd := packW4A8Row(dequantInt8ToF32Row(q8[n*K:(n+1)*K], sc[n], K, K))
+		copy(words[n*(K/8):(n+1)*(K/8)], wd)
+		copy(scales[n*(K/32):(n+1)*(K/32)], sd)
+	}
+	return d.NewBufferUint32s(words), d.NewBufferFloats(scales), nil
+}
+
 // BuildResident builds a Metal resident decoder from an int8-loaded dense Qwen2/Llama
 // Model. Handles Qwen2 q/k/v bias; assumes no QK-norm / sliding-window / embed-scale
 // (the DecodeRunnerEligible dense shape), full RoPE via the model's own inv-freq table.
@@ -76,7 +95,7 @@ func BuildResident(m *decoder.Model) (*Resident, error) {
 	}
 	H, nL, nH, nKV, hd, I, V := m.Dims()
 	r := &Resident{d: d, H: H, nL: nL, nH: nH, nKV: nKV, hd: hd, I: I, V: V, kvDim: nKV * hd, half: hd / 2}
-	r.pRms, r.pQv, r.pGemv = pipe("rmsnorm_quant"), pipe("quant_vec"), pipe("gemv_w8a8_coal")
+	r.pRms, r.pQv, r.pGemv = pipe("rmsnorm_quant"), pipe("quant_vec"), pipe("gemv_w4a8_coal")
 	r.pRope, r.pKv, r.pAttn = pipe("rope"), pipe("kv_store"), pipe("attention")
 	r.pSw, r.pRes = pipe("swiglu_quant"), pipe("residual")
 	r.q = d.NewCommandQueue()
@@ -84,7 +103,7 @@ func BuildResident(m *decoder.Model) (*Resident, error) {
 	w := m.Weights()
 	r.embed = &w.Embed
 	mk := func(wm *linalg.WeightMat) (Buffer, Buffer) {
-		q, s, e := int8Buf(d, wm)
+		q, s, e := int4Buf(d, wm)
 		if e != nil {
 			panic(e)
 		}
@@ -116,7 +135,7 @@ func BuildResident(m *decoder.Model) (*Resident, error) {
 	if lm.Rows() == 0 {
 		lm = &w.Embed // tied
 	}
-	if r.lmW, r.lmS, err = int8Buf(d, lm); err != nil {
+	if r.lmW, r.lmS, err = int4Buf(d, lm); err != nil {
 		return nil, err
 	}
 
@@ -156,9 +175,9 @@ func (r *Resident) Forward(id, pos int) []float32 {
 	for l := 0; l < r.nL; l++ {
 		L := &r.layers[l]
 		e.dispatch(r.pRms, 256, 256, r.x, L.preNorm, r.aq, r.aSc, r.uH, r.uEps)
-		e.dispatch(r.pGemv, (nHhd)*32, 32, r.aq, r.aSc, L.qW, L.qS, r.qB, r.uH)
-		e.dispatch(r.pGemv, (r.kvDim)*32, 32, r.aq, r.aSc, L.kW, L.kS, r.kB, r.uH)
-		e.dispatch(r.pGemv, (r.kvDim)*32, 32, r.aq, r.aSc, L.vW, L.vS, r.vB, r.uH)
+		e.dispatch(r.pGemv, (nHhd)*32, 32, L.qW, L.qS, r.aq, r.aSc, r.qB, r.uH)
+		e.dispatch(r.pGemv, (r.kvDim)*32, 32, L.kW, L.kS, r.aq, r.aSc, r.kB, r.uH)
+		e.dispatch(r.pGemv, (r.kvDim)*32, 32, L.vW, L.vS, r.aq, r.aSc, r.vB, r.uH)
 		if L.hasBias {
 			e.dispatch(r.pRes, nHhd, 64, r.qB, L.qb)
 			e.dispatch(r.pRes, r.kvDim, 64, r.kB, L.kb)
@@ -169,17 +188,17 @@ func (r *Resident) Forward(id, pos int) []float32 {
 		e.dispatch(r.pKv, r.kvDim, 64, r.kB, r.vB, r.kc[l], r.vc[l], r.uKvDim, r.uPos)
 		e.dispatch(r.pAttn, r.nH, r.nH, r.qB, r.kc[l], r.vc[l], r.ctx, r.uNH, r.uNKV, r.uHd, r.uNKeys, r.uScale)
 		e.dispatch(r.pQv, 256, 256, r.ctx, r.cq, r.cSc, r.uHH)
-		e.dispatch(r.pGemv, (r.H)*32, 32, r.cq, r.cSc, L.oW, L.oS, r.oO, r.uHH)
+		e.dispatch(r.pGemv, (r.H)*32, 32, L.oW, L.oS, r.cq, r.cSc, r.oO, r.uHH)
 		e.dispatch(r.pRes, r.H, 64, r.x, r.oO)
 		e.dispatch(r.pRms, 256, 256, r.x, L.postNorm, r.mq, r.mSc, r.uH, r.uEps)
-		e.dispatch(r.pGemv, (r.I)*32, 32, r.mq, r.mSc, L.gW, L.gS, r.gO, r.uH)
-		e.dispatch(r.pGemv, (r.I)*32, 32, r.mq, r.mSc, L.uW, L.uS, r.uO, r.uH)
+		e.dispatch(r.pGemv, (r.I)*32, 32, L.gW, L.gS, r.mq, r.mSc, r.gO, r.uH)
+		e.dispatch(r.pGemv, (r.I)*32, 32, L.uW, L.uS, r.mq, r.mSc, r.uO, r.uH)
 		e.dispatch(r.pSw, 256, 256, r.gO, r.uO, r.dq, r.dSc, r.uI)
-		e.dispatch(r.pGemv, (r.H)*32, 32, r.dq, r.dSc, L.dW, L.dS, r.dO, r.uI)
+		e.dispatch(r.pGemv, (r.H)*32, 32, L.dW, L.dS, r.dq, r.dSc, r.dO, r.uI)
 		e.dispatch(r.pRes, r.H, 64, r.x, r.dO)
 	}
 	e.dispatch(r.pRms, 256, 256, r.x, r.finalNorm, r.aq, r.aSc, r.uH, r.uEps)
-	e.dispatch(r.pGemv, (r.V)*32, 32, r.aq, r.aSc, r.lmW, r.lmS, r.logits, r.uH)
+	e.dispatch(r.pGemv, (r.V)*32, 32, r.lmW, r.lmS, r.aq, r.aSc, r.logits, r.uH)
 	e.end()
 
 	copy(r.logitsHost, r.logits.Floats())

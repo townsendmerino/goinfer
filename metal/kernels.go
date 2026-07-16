@@ -52,6 +52,34 @@ kernel void gemv_w8a8_coal(device const char* aq[[buffer(0)]], device const floa
     acc = simd_sum(acc);
     if (lid == 0) out[gid] = float(acc) * asc[0] * bsc[gid];
 }
+// Coalesced + ILP W4A8 GEMV: ONE simdgroup (32 lanes) per output row. int4 weights = half
+// the bytes of int8 (the target-quant bandwidth win). Each lane strides over the row's
+// 32-nibble groups; the 8-nibble inner loop is fully unrolled (ILP), f32 group scale
+// folded per group; simd_sum reduces the 32 lane partials. Launch total = N*32, tg = 32.
+kernel void gemv_w4a8_coal(device const uint* bq[[buffer(0)]], device const float* bsc[[buffer(1)]],
+    device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
+    constant uint& K[[buffer(5)]], uint gid[[threadgroup_position_in_grid]], uint lid[[thread_index_in_threadgroup]]) {
+    uint gpr = K/32u;                       // groups per row
+    device const uint*  brow = bq  + (uint)gid*(K/8u);
+    device const float* srow = bsc + (uint)gid*gpr;
+    float acc = 0.0f;
+    for (uint g = lid; g < gpr; g += 32u) {
+        device const uint* gw = brow + g*4u;  // 4 words = 32 nibbles
+        device const char* ga = aq + g*32u;
+        int gi = 0;
+        for (uint w = 0; w < 4u; w++) {
+            uint x = gw[w];
+            device const char* a = ga + w*8u;
+            gi += (int((x)      & 0xF)-8)*int(a[0]) + (int((x>>4)  & 0xF)-8)*int(a[1])
+                + (int((x>>8)   & 0xF)-8)*int(a[2]) + (int((x>>12) & 0xF)-8)*int(a[3])
+                + (int((x>>16)  & 0xF)-8)*int(a[4]) + (int((x>>20) & 0xF)-8)*int(a[5])
+                + (int((x>>24)  & 0xF)-8)*int(a[6]) + (int((x>>28) & 0xF)-8)*int(a[7]);
+        }
+        acc += float(gi) * srow[g];
+    }
+    acc = simd_sum(acc);
+    if (lid == 0) out[gid] = acc * asc[0];
+}
 kernel void rope(device float* x[[buffer(0)]], device const float* invf[[buffer(1)]],
     constant uint& hd[[buffer(2)]], constant uint& pos[[buffer(3)]], constant uint& total[[buffer(4)]],
     uint gid[[thread_position_in_grid]]) {
