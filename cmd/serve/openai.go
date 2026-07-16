@@ -522,11 +522,29 @@ func (lm *loadedModel) promptFor(system string, turns []chat.Turn) []int {
 func (lm *loadedModel) drive(parent context.Context, gr genRequest, onText func(string)) (string, int, []decoder.SampleInfo, string) {
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
+	var stream <-chan int
+	var gen *decoder.Generation
+
+	// GPU-resident models take the STATELESS path. decoder.Generate only engages the resident
+	// DecodeRunner when there is no session commit and no prefix reuse (model.go:
+	// useGPU = resident != nil && prefillFrom == 0 && commit == nil) — the resident's KV lives
+	// on the GPU, while a session's prefix-reuse cache is CPU-side, so the two cannot both be
+	// the source of truth. Going through a session therefore silently dropped every request to
+	// the staged/CPU path: measured 13 tok/s vs ~460 resident on a 0.5B (RTX 2070 SUPER).
+	//
+	// Trading prefix reuse for resident decode is a large net win and semantically safe: the
+	// OpenAI API is stateless (the client resends the whole conversation), so sessions here are
+	// purely a TTFT optimisation, not correctness. Spec-decode is session-only and does not mix
+	// with residency in any case (a CPU drafter against a GPU target measured 0.11x).
+	if lm.model.ResidentActive() {
+		stream, gen = lm.model.Generate(ctx, gr.promptIDs, gr.maxTokens, gr.sp)
+		finish, n, stopHit := lm.streamTokens(cancel, stream, gr, onText)
+		return finish, n, gen.Logprobs, stopHit
+	}
+
 	// Reuse the KV of whichever cached session already holds this prompt as a
 	// prefix (continuing chat / agent loop): only the new suffix is prefilled.
 	sess := lm.sessions.acquire(gr.promptIDs)
-	var stream <-chan int
-	var gen *decoder.Generation
 	switch {
 	case lm.spec && gr.masker != nil && gr.sp.Temperature == 0:
 		// Constrained request (response_format / tool grammar), greedy: grammar-fused
