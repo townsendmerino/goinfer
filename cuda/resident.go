@@ -44,9 +44,9 @@ type cudaResident struct {
 	eps, attnScale                             float32
 
 	// gocudrv state — touched ONLY on the executor thread.
-	cx                                                         *gc.Context
-	stream                                                     *gc.Stream
-	gemvW4, gemvW8, kvStore, fRms, fQ, fRope, fAttn, fSw, fRes *gc.Function
+	cx                                                                 *gc.Context
+	stream                                                             *gc.Stream
+	gemvW4, gemvW8, kvStore, ropeKV, fRms, fQ, fRope, fAttn, fSw, fRes *gc.Function
 
 	layers          []cudaLayer
 	lmW             cudaWQ
@@ -177,14 +177,19 @@ func (r *cudaResident) rms(src, nrm *gc.Buffer[float32], qOut *gc.Buffer[int32],
 		gc.Arg(src), gc.Arg(nrm), gc.ArgValue(int32(r.hidden)), gc.ArgValue(r.eps), gc.Arg(qOut), gc.Arg(sOut))
 }
 
-func (r *cudaResident) doG(wt cudaWQ, a *gc.Buffer[int32], as *gc.Buffer[float32], bias gc.KernelArg, dst *gc.Buffer[float32]) error {
+// doG launches the projection GEMV. accum=1 makes the epilogue do dst[n] += result, which
+// absorbs the separate `residual` launch (bit-identical: same operands, same rounding, just
+// no round-trip through a temp buffer). Only lane 0 of the row's warp touches dst[n], and the
+// GEMV's input activation is never x, so accumulating straight into the residual stream is
+// race-free.
+func (r *cudaResident) doG(wt cudaWQ, a *gc.Buffer[int32], as *gc.Buffer[float32], bias gc.KernelArg, dst *gc.Buffer[float32], accum int32) error {
 	cfg := gc.LaunchConfig{GridX: uint32((wt.N + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
 	if wt.kind == "int4" {
 		return r.launch(r.gemvW4, cfg, gc.Arg(wt.W), gc.Arg(a), gc.Arg(wt.ws), gc.Arg(as), bias,
-			gc.ArgValue(int32(wt.N)), gc.ArgValue(int32(wt.K/8)), gc.ArgValue(int32(wt.K/32)), gc.Arg(dst))
+			gc.ArgValue(int32(wt.N)), gc.ArgValue(int32(wt.K/8)), gc.ArgValue(int32(wt.K/32)), gc.Arg(dst), gc.ArgValue(accum))
 	}
 	return r.launch(r.gemvW8, cfg, gc.Arg(wt.W), gc.Arg(a), gc.Arg(wt.ws), gc.Arg(as), bias,
-		gc.ArgValue(int32(wt.N)), gc.ArgValue(int32(wt.K/4)), gc.Arg(dst))
+		gc.ArgValue(int32(wt.N)), gc.ArgValue(int32(wt.K/4)), gc.Arg(dst), gc.ArgValue(accum))
 }
 
 // step is one token's forward on the executor thread; returns logits (reused host buffer).
@@ -203,34 +208,33 @@ func (r *cudaResident) step(emb []float32, pos int) ([]float32, error) {
 		if Ly.hasBias {
 			qb, kb, vb = gc.Arg(Ly.qb), gc.Arg(Ly.kb), gc.Arg(Ly.vb)
 		}
-		if e := r.doG(Ly.q, r.aq, r.aSc, qb, r.qB); e != nil {
+		if e := r.doG(Ly.q, r.aq, r.aSc, qb, r.qB, 0); e != nil {
 			return nil, e
 		}
-		_ = r.doG(Ly.k, r.aq, r.aSc, kb, r.kB)
-		_ = r.doG(Ly.v, r.aq, r.aSc, vb, r.vB)
-		_ = r.launch(r.fRope, g1cfg(r.nH*r.half, 256), gc.Arg(r.qB), gc.Arg(r.invF), gc.ArgValue(int32(r.nH)), gc.ArgValue(int32(r.hd)), gc.ArgValue(int32(pos)))
-		_ = r.launch(r.fRope, g1cfg(r.nKV*r.half, 64), gc.Arg(r.kB), gc.Arg(r.invF), gc.ArgValue(int32(r.nKV)), gc.ArgValue(int32(r.hd)), gc.ArgValue(int32(pos)))
-		_ = r.launch(r.kvStore, g1cfg(r.kvDim, 128), gc.Arg(r.kB), gc.Arg(r.kc[l]), gc.ArgValue(int32(pos)), gc.ArgValue(int32(r.kvDim)))
-		_ = r.launch(r.kvStore, g1cfg(r.kvDim, 128), gc.Arg(r.vB), gc.Arg(r.vc[l]), gc.ArgValue(int32(pos)), gc.ArgValue(int32(r.kvDim)))
+		_ = r.doG(Ly.k, r.aq, r.aSc, kb, r.kB, 0)
+		_ = r.doG(Ly.v, r.aq, r.aSc, vb, r.vB, 0)
+		// fused rope(q)+rope(k)+kv_store(k)+kv_store(v): 4 launches → 1 (same math/order).
+		_ = r.launch(r.ropeKV, g1cfg(r.nH*r.half+r.nKV*r.half, 256),
+			gc.Arg(r.qB), gc.Arg(r.kB), gc.Arg(r.vB), gc.Arg(r.invF), gc.Arg(r.kc[l]), gc.Arg(r.vc[l]),
+			gc.ArgValue(int32(r.nH)), gc.ArgValue(int32(r.nKV)), gc.ArgValue(int32(r.hd)), gc.ArgValue(int32(pos)))
 		nKeys := pos + 1
 		_ = r.launch(r.fAttn, gc.LaunchConfig{GridX: uint32(r.nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nKeys + 128) * 4)},
 			gc.Arg(r.qB), gc.Arg(r.kc[l]), gc.Arg(r.vc[l]), gc.ArgValue(int32(r.nH)), gc.ArgValue(int32(r.nKV)), gc.ArgValue(int32(r.hd)), gc.ArgValue(int32(nKeys)), gc.ArgValue(r.attnScale), gc.Arg(r.cctx))
 		_ = r.launch(r.fQ, onecfg(256, 256*4), gc.Arg(r.cctx), gc.ArgValue(int32(r.qDim)), gc.Arg(r.cq), gc.Arg(r.cSc))
-		_ = r.doG(Ly.o, r.cq, r.cSc, nullBias, r.oO)
-		_ = r.launch(r.fRes, g1cfg(r.hidden, 256), gc.Arg(r.x), gc.Arg(r.oO), gc.ArgValue(int32(r.hidden)))
+		// accumulate straight into the residual stream — absorbs the `residual` launch.
+		_ = r.doG(Ly.o, r.cq, r.cSc, nullBias, r.x, 1)
 		_ = r.rms(r.x, Ly.postNorm, r.mq, r.mSc)
-		_ = r.doG(Ly.g, r.mq, r.mSc, nullBias, r.gO)
-		_ = r.doG(Ly.u, r.mq, r.mSc, nullBias, r.uO)
+		_ = r.doG(Ly.g, r.mq, r.mSc, nullBias, r.gO, 0)
+		_ = r.doG(Ly.u, r.mq, r.mSc, nullBias, r.uO, 0)
 		_ = r.launch(r.fSw, onecfg(256, 256*4), gc.Arg(r.gO), gc.Arg(r.uO), gc.ArgValue(int32(r.inter)), gc.Arg(r.dq), gc.Arg(r.dSc), gc.Arg(r.dScr))
-		_ = r.doG(Ly.d, r.dq, r.dSc, nullBias, r.dO)
-		if e := r.launch(r.fRes, g1cfg(r.hidden, 256), gc.Arg(r.x), gc.Arg(r.dO), gc.ArgValue(int32(r.hidden))); e != nil {
+		if e := r.doG(Ly.d, r.dq, r.dSc, nullBias, r.x, 1); e != nil {
 			return nil, e
 		}
 	}
 	if e := r.rms(r.x, r.finalNorm, r.aq, r.aSc); e != nil {
 		return nil, e
 	}
-	if e := r.doG(r.lmW, r.aq, r.aSc, nullBias, r.logits); e != nil {
+	if e := r.doG(r.lmW, r.aq, r.aSc, nullBias, r.logits, 0); e != nil {
 		return nil, e
 	}
 	if e := r.stream.Synchronize(bg); e != nil {

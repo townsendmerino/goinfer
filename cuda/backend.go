@@ -159,6 +159,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		if r.kvStore, e = gmod.Function("kv_store"); e != nil {
 			return e
 		}
+		if r.ropeKV, e = gmod.Function("rope_kv"); e != nil {
+			return e
+		}
 		fns := []struct {
 			dst  **gc.Function
 			name string

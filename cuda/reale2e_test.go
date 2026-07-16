@@ -140,7 +140,7 @@ func TestRealE2EDecode(t *testing.T) {
 	bg := context.Background()
 	var cx *gc.Context
 	var stream *gc.Stream
-	var gemvW4, gemvW8, kvStore, fRms, fQ, fRope, fAttn, fSw, fRes, fArg *gc.Function
+	var gemvW4, gemvW8, ropeKV, fRms, fQ, fAttn, fSw, fArg *gc.Function
 
 	type wq struct {
 		kind string
@@ -157,7 +157,7 @@ func TestRealE2EDecode(t *testing.T) {
 	var layers []layer
 	var lmW wq
 	var finalNorm, invF *gc.Buffer[float32]
-	var x, aSc, qB, kB, vB, cctx, cSc, oO, mSc, gO, uO, dSc, dScr, dO, logits, argVal *gc.Buffer[float32]
+	var x, aSc, qB, kB, vB, cctx, cSc, mSc, gO, uO, dSc, dScr, logits, argVal *gc.Buffer[float32]
 	var aq, cq, mq, dq *gc.Buffer[int32]
 	var argIdx *gc.Buffer[int32]
 	var kc, vc []*gc.Buffer[float32]
@@ -198,13 +198,11 @@ func TestRealE2EDecode(t *testing.T) {
 		glmod, _ := cx.LoadModule(gluePTX)
 		gemvW4, _ = gmod.Function("gemv_w4a8_fwd")
 		gemvW8, _ = gmod.Function("gemv_w8a8_fwd")
-		kvStore, _ = gmod.Function("kv_store")
+		ropeKV, _ = gmod.Function("rope_kv")
 		fRms, _ = glmod.Function("rmsnorm_quant")
 		fQ, _ = glmod.Function("quant_vec")
-		fRope, _ = glmod.Function("rope")
 		fAttn, _ = glmod.Function("attention")
 		fSw, _ = glmod.Function("swiglu_quant")
-		fRes, _ = glmod.Function("residual")
 		fArg, _ = glmod.Function("argmax_reduce")
 		stream, _ = cx.NewStream()
 
@@ -229,11 +227,10 @@ func TestRealE2EDecode(t *testing.T) {
 			kc[l], vc[l] = af(ctxCap*kvDim), af(ctxCap*kvDim)
 		}
 		cctx, cSc, cq = af(qDim), af(1), ai(qDim/4)
-		oO = af(H)
 		mSc, mq = af(1), ai(H/4)
 		gO, uO = af(I), af(I)
 		dSc, dScr, dq = af(1), af(I), ai(I/4)
-		dO, logits = af(H), af(vocab)
+		logits = af(vocab)
 		argIdx, argVal = ai(1), af(1)
 		return nil
 	}); e != nil {
@@ -252,12 +249,12 @@ func TestRealE2EDecode(t *testing.T) {
 		L(fRms, one(256, (H+256)*4), gc.Arg(src), gc.Arg(nrm), gc.ArgValue(int32(H)), gc.ArgValue(eps), gc.Arg(qOut), gc.Arg(sOut))
 	}
 	nullBias := gc.ArgDevicePtr(0)
-	doG := func(wt wq, a *gc.Buffer[int32], as *gc.Buffer[float32], bias gc.KernelArg, dst *gc.Buffer[float32]) {
+	doG := func(wt wq, a *gc.Buffer[int32], as *gc.Buffer[float32], bias gc.KernelArg, dst *gc.Buffer[float32], accum int32) {
 		cfg := gc.LaunchConfig{GridX: uint32((wt.N + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
 		if wt.kind == "int4" {
-			L(gemvW4, cfg, gc.Arg(wt.W), gc.Arg(a), gc.Arg(wt.ws), gc.Arg(as), bias, gc.ArgValue(int32(wt.N)), gc.ArgValue(int32(wt.K/8)), gc.ArgValue(int32(wt.K/32)), gc.Arg(dst))
+			L(gemvW4, cfg, gc.Arg(wt.W), gc.Arg(a), gc.Arg(wt.ws), gc.Arg(as), bias, gc.ArgValue(int32(wt.N)), gc.ArgValue(int32(wt.K/8)), gc.ArgValue(int32(wt.K/32)), gc.Arg(dst), gc.ArgValue(accum))
 		} else {
-			L(gemvW8, cfg, gc.Arg(wt.W), gc.Arg(a), gc.Arg(wt.ws), gc.Arg(as), bias, gc.ArgValue(int32(wt.N)), gc.ArgValue(int32(wt.K/4)), gc.Arg(dst))
+			L(gemvW8, cfg, gc.Arg(wt.W), gc.Arg(a), gc.Arg(wt.ws), gc.Arg(as), bias, gc.ArgValue(int32(wt.N)), gc.ArgValue(int32(wt.K/4)), gc.Arg(dst), gc.ArgValue(accum))
 		}
 	}
 	launchToken := func(emb []float32, pos int) {
@@ -269,28 +266,24 @@ func TestRealE2EDecode(t *testing.T) {
 			if Ly.hasBias {
 				qb, kb, vb = gc.Arg(Ly.qb), gc.Arg(Ly.kb), gc.Arg(Ly.vb)
 			}
-			doG(Ly.q, aq, aSc, qb, qB)
-			doG(Ly.k, aq, aSc, kb, kB)
-			doG(Ly.v, aq, aSc, vb, vB)
-			L(fRope, g1(nH*half, 256), gc.Arg(qB), gc.Arg(invF), gc.ArgValue(int32(nH)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(pos)))
-			L(fRope, g1(nKV*half, 64), gc.Arg(kB), gc.Arg(invF), gc.ArgValue(int32(nKV)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(pos)))
-			L(kvStore, g1(kvDim, 128), gc.Arg(kB), gc.Arg(kc[l]), gc.ArgValue(int32(pos)), gc.ArgValue(int32(kvDim)))
-			L(kvStore, g1(kvDim, 128), gc.Arg(vB), gc.Arg(vc[l]), gc.ArgValue(int32(pos)), gc.ArgValue(int32(kvDim)))
+			doG(Ly.q, aq, aSc, qb, qB, 0)
+			doG(Ly.k, aq, aSc, kb, kB, 0)
+			doG(Ly.v, aq, aSc, vb, vB, 0)
+			L(ropeKV, g1(nH*half+nKV*half, 256), gc.Arg(qB), gc.Arg(kB), gc.Arg(vB), gc.Arg(invF), gc.Arg(kc[l]), gc.Arg(vc[l]),
+				gc.ArgValue(int32(nH)), gc.ArgValue(int32(nKV)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(pos)))
 			nKeys := pos + 1
 			L(fAttn, gc.LaunchConfig{GridX: uint32(nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nKeys + 128) * 4)},
 				gc.Arg(qB), gc.Arg(kc[l]), gc.Arg(vc[l]), gc.ArgValue(int32(nH)), gc.ArgValue(int32(nKV)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(nKeys)), gc.ArgValue(attnScale), gc.Arg(cctx))
 			L(fQ, one(256, 256*4), gc.Arg(cctx), gc.ArgValue(int32(qDim)), gc.Arg(cq), gc.Arg(cSc))
-			doG(Ly.o, cq, cSc, nullBias, oO)
-			L(fRes, g1(H, 256), gc.Arg(x), gc.Arg(oO), gc.ArgValue(int32(H)))
+			doG(Ly.o, cq, cSc, nullBias, x, 1)
 			rms(x, Ly.postNorm, mq, mSc)
-			doG(Ly.g, mq, mSc, nullBias, gO)
-			doG(Ly.u, mq, mSc, nullBias, uO)
+			doG(Ly.g, mq, mSc, nullBias, gO, 0)
+			doG(Ly.u, mq, mSc, nullBias, uO, 0)
 			L(fSw, one(256, 256*4), gc.Arg(gO), gc.Arg(uO), gc.ArgValue(int32(I)), gc.Arg(dq), gc.Arg(dSc), gc.Arg(dScr))
-			doG(Ly.d, dq, dSc, nullBias, dO)
-			L(fRes, g1(H, 256), gc.Arg(x), gc.Arg(dO), gc.ArgValue(int32(H)))
+			doG(Ly.d, dq, dSc, nullBias, x, 1)
 		}
 		rms(x, finalNorm, aq, aSc)
-		doG(lmW, aq, aSc, nullBias, logits)
+		doG(lmW, aq, aSc, nullBias, logits, 0)
 		L(fArg, one(256, 256*4+256*4), gc.Arg(logits), gc.ArgValue(int32(vocab)), gc.Arg(argIdx), gc.Arg(argVal))
 	}
 	// step = launch the token, then sync + read back the argmax id.
@@ -358,7 +351,7 @@ func TestRealE2EDecode(t *testing.T) {
 	// LAUNCH-BOUND — the CPU can't feed the device fast enough and fusion/fewer launches is
 	// the only lever (bytes are already at the GEMV roofline).
 	var cpuIssueMs, gpuMs float64
-	launchesPerTok := nLayers*18 + 2
+	launchesPerTok := nLayers*13 + 2 // launch diet: fused rope_kv (-3) + accum epilogues (-2)
 	_ = do(func() error {
 		const N = 16
 		emb := m.EmbedResidentForTest(tok)

@@ -660,3 +660,41 @@ on-device argmax; the shipped path pays the D2H. **Caveat the audit understates:
 `ResidentForward` contract returns logits because the decoder needs them for sampling,
 constrained decode, and logprobs — so the argmax kernel can only serve a *greedy fast path*,
 not replace the D2H generally. That is an interface addition, not a drop-in.
+
+### Launch diet (audit lever #2): 18→13 launches/layer — BUILT, parity-safe
+
+Two same-math fusions, no new numerics:
+- **`rope_kv`**: fuse rope(q) + rope(k) + kv_store(k) + kv_store(v) → **1 launch (−3)**. Safe
+  because each thread rotates its own (d, d+half) pair and then stores exactly those
+  elements — there is no cross-thread dependency the launch barriers were providing.
+- **accumulate epilogue**: `accum` flag on both forward GEMVs (`dst[n] += result`) absorbs
+  the two `residual` launches (**−2**). Bit-identical (same operands/rounding, minus a
+  round-trip through a temp); race-free — only lane 0 of a row's warp touches `dst[n]`, and
+  the GEMV's input activation is never `x`. Drops the `oO`/`dO` temps entirely.
+
+**Parity: unchanged.** 1.5B 7/8 exact @ worst 0.087% (identical to pre-fusion), 0.5B **8/8
+exact @ 0.000%**, 0 hard fails, via the production `decoder.Load(cuda)→BuildResident→Forward`
+gate. Demo streams coherent code on the fused path.
+
+| | before | after | |
+|---|---|---|---|
+| **1.5B** tok/s | 218.5 | **227.4** | **+4.1%** (audit predicted +3–5% ✓) |
+| launches/token | 506 | **366** | 13/layer + 2 |
+| glue (real device work) | 1.77 ms | **1.60 ms** | |
+| **0.5B** tok/s | 321–390 (typ ~325) | **408–453 (typ ~410)** | **+26%** (audit predicted +10–15%) |
+| launches/token | 434 | **314** | |
+| CPU issue | 2.56 ms | **1.69–1.90 ms** | −30% |
+| GPU exec | 2.58 ms (CPU-gated) | **2.15–2.16 ms** (honest) | |
+| verdict | AT THE CROSSOVER (jittery) | **GPU-bound (stable)** | |
+
+**The headline result: the launch diet broke the 0.5B's CPU/GPU crossover.** CPU issue now
+sits 0.26–0.46 ms *under* GPU exec, so the device is the limit again — and the run-to-run
+jitter collapsed with it (GPU span is now rock-stable at 2.15–2.16 ms vs the CPU-gated
+2.58–2.64 spread). The 0.5B beat the audit's +10–15% estimate precisely because breaking the
+crossover compounds: it removes launches (CPU side) *and* real glue (GPU side) at once.
+
+**Consequence for the ranked plan:** the audit's 0.5B lever #2 (gocudrv de-hop / CUDA
+Graphs, "+15–25% standalone… removes the CPU wall") is **no longer indicated** — the CPU wall
+is already gone, with headroom to spare. The next lever is the 3-super-kernel fusion (§5.2)
+cutting the remaining **real** glue: 1.19 ms of the 0.5B's 2.15 ms GPU time (55%) and 1.60 ms
+of the 1.5B's 4.42 ms (36%) is still non-GEMV device work.
