@@ -57,13 +57,13 @@ func (b *metalBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwa
 		}
 	}()
 	// Admission check: DecodeRunnerEligible was scoped to the richer WebGPU/CUDA runner, which
-	// handles QK-norm / sliding-window / partial-rotary / embed-scale. The Metal kernel set is
-	// the plain dense subset, so DECLINE those (→ correct CPU fallback) rather than run them with
-	// the feature silently dropped. Each is lifted as the kernel support lands (docs/metal-model-
-	// coverage.md).
-	if why := metalUnsupported(m); why != "" {
+	// admits QK-norm / sliding-window / partial-rotary and more. The Metal kernel set implements
+	// only a subset (decoder.ResidentBackendFeatures["metal"]); anything it doesn't implement must
+	// DECLINE (→ correct CPU fallback) rather than run with the feature silently dropped. The
+	// subset check uses the shared taxonomy (one source of truth; a new arch classifies itself).
+	if missing := m.MissingResidentFeatures(decoder.ResidentBackendFeatures["metal"]); len(missing) > 0 {
 		if os.Getenv("GOINFER_RESIDENT_DEBUG") != "" {
-			fmt.Fprintf(os.Stderr, "[metal] declined (unsupported): %s\n", why)
+			fmt.Fprintf(os.Stderr, "[metal] declined — unimplemented features: %v\n", missing)
 		}
 		return nil, false, nil
 	}
@@ -76,20 +76,6 @@ func (b *metalBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwa
 	}
 	b.resident = &metalResident{r: res, hidden: res.H}
 	return b.resident, true, nil
-}
-
-// metalUnsupported returns a non-empty reason when the model uses an arch feature the Metal
-// resident decoder doesn't yet implement (so BuildResident must decline). Empty ⇒ the plain
-// dense Qwen2/Llama shape Metal supports. Kept next to the kernels so it's updated in lockstep
-// as features are added.
-func metalUnsupported(m *decoder.Model) string {
-	switch {
-	case m.EmbedScaleResident() > 1:
-		return "embedding scale (Gemma) — not applied"
-	case m.RopeMscaleLayer(0) != 1:
-		return "YaRN rope scaling (mscale != 1, e.g. Mellum/long-ctx) — rope applies no attention_factor"
-	}
-	return ""
 }
 
 func (b *metalBackend) Close() error {

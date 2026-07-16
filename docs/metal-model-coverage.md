@@ -172,3 +172,24 @@ thrash the machine, validated what a Mistral-7B run would actually stress:
 
 So Mistral-7B's Metal components are all validated; a full end-to-end 7B coherence run wants a
 Mac with >16 GB (or a smaller windowed model — none exists small). Deferred, not blocking.
+
+## Round-2 outcomes (Linux box) + Metal refit (2026-07-16)
+
+- **Admission taxonomy — shared** (`decoder/features.go`, Linux box): my backend-local
+  `metalUnsupported` is replaced by the registry-derived `ResidentFeature` subset check —
+  `MissingResidentFeatures(ResidentBackendFeatures["metal"])`, one source of truth across
+  backends. Metal's declared set = {qk-norm, sliding-window, partial-rotary}; everything else
+  (YaRN, embed-scale, softcaps, MoE, MLA, SSM, sandwich-norm, …) now declines automatically —
+  strictly more coverage than my hand-rolled switch. qwen2.5 + Qwen3 verified admit correctly.
+- **CUDA immune to the As-cap bug class** (audited): dynamic `extern __shared__` sized from
+  dims; o-proj/down take K from the weight (`wt.K = Cols()`), never a dim constant. Latent limit:
+  fused shared request crosses the 48 KB block cap at H≥~9216 (hard launch error, not corruption).
+- **Phi-3 SlidingWindow decoder bug FIXED** (Linux box, 40e2a38): `phi3Architecture` now wires
+  `cfg.SlidingWindow` + all-local `layerIsGlobal`. Since Metal reads `SlidingWindowResident()`,
+  **Phi-3 windowing works on Metal for free.** (GGUF conversions legitimately drop the window →
+  declare none.)
+- **Decoder Qwen3 correctness confirmed independently**: `decoder/qwen3_test.go:
+  TestQwen3_forwardParity` passes (QK-norm application, head_dim, weights on the CPU path). With
+  Metal's coherent generation, this makes the Metal 0.6B parity gap int4-on-tiny-Q8_0 + adversarial
+  ids, not a decoder/QK-norm bug. A CUDA-Qwen3-1.7B reference would fully close it, but needs CUDA
+  QK-norm implemented first (offered by the Linux box).
