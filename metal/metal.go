@@ -14,6 +14,7 @@ package metal
 
 import (
 	"fmt"
+	"runtime"
 	"unsafe"
 
 	"github.com/ebitengine/purego"
@@ -110,4 +111,96 @@ func (d *Device) CompileLibrary(src string, ver uint) (objc.ID, error) {
 		return 0, fmt.Errorf("metal: newLibraryWithSource failed: %s", goString(nsErr.Send(selLocalizedDesc)))
 	}
 	return lib, nil
+}
+
+// ---- compute dispatch (Layer A phase-1 completion: queue → buffers → encode → run) ----
+
+var (
+	selNewCommandQueue = objc.RegisterName("newCommandQueue")
+	selNewFunctionName = objc.RegisterName("newFunctionWithName:")
+	selNewPipelineFn   = objc.RegisterName("newComputePipelineStateWithFunction:error:")
+	selNewBufferBytes  = objc.RegisterName("newBufferWithBytes:length:options:")
+	selNewBufferLen    = objc.RegisterName("newBufferWithLength:options:")
+	selContents        = objc.RegisterName("contents")
+	selCommandBuffer   = objc.RegisterName("commandBuffer")
+	selComputeEncoder  = objc.RegisterName("computeCommandEncoder")
+	selSetPipeline     = objc.RegisterName("setComputePipelineState:")
+	selSetBuffer       = objc.RegisterName("setBuffer:offset:atIndex:")
+	selDispatchThreads = objc.RegisterName("dispatchThreads:threadsPerThreadgroup:")
+	selEndEncoding     = objc.RegisterName("endEncoding")
+	selCommit          = objc.RegisterName("commit")
+	selWaitCompleted   = objc.RegisterName("waitUntilCompleted")
+	selDrain           = objc.RegisterName("drain")
+)
+
+// mtlSize mirrors MTLSize {NSUInteger width,height,depth}. At 24 bytes (>16) it is
+// passed to objc_msgSend BY REFERENCE per AAPCS64 — so the call site passes
+// unsafe.Pointer(&sz), which lands the pointer in the arg register exactly as the ABI
+// wants. (Getting this wrong is the "MTLSize struct-by-value" hazard the doc flagged.)
+type mtlSize struct{ w, h, d uint64 }
+
+// Queue / Pipeline / Buffer are thin id wrappers.
+type Queue struct{ id objc.ID }
+type Pipeline struct{ id objc.ID }
+type Buffer struct {
+	id objc.ID
+	n  int // element count (float32)
+}
+
+// NewCommandQueue creates the command queue (built once, reused per token in the real backend).
+func (d *Device) NewCommandQueue() Queue { return Queue{id: d.id.Send(selNewCommandQueue)} }
+
+// NewComputePipeline looks a kernel up in a compiled library and builds its pipeline state.
+func (d *Device) NewComputePipeline(lib objc.ID, fn string) (Pipeline, error) {
+	f := lib.Send(selNewFunctionName, nsString(fn))
+	if f == 0 {
+		return Pipeline{}, fmt.Errorf("metal: no kernel %q in library", fn)
+	}
+	var nsErr objc.ID
+	p := d.id.Send(selNewPipelineFn, f, unsafe.Pointer(&nsErr))
+	if p == 0 {
+		return Pipeline{}, fmt.Errorf("metal: pipeline %q: %s", fn, goString(nsErr.Send(selLocalizedDesc)))
+	}
+	return Pipeline{id: p}, nil
+}
+
+// NewBufferFloats uploads data into a shared (UMA host-visible) MTLBuffer.
+func (d *Device) NewBufferFloats(data []float32) Buffer {
+	id := d.id.Send(selNewBufferBytes, unsafe.Pointer(&data[0]), uintptr(len(data)*4), uintptr(0))
+	runtime.KeepAlive(data)
+	return Buffer{id: id, n: len(data)}
+}
+
+// NewBufferLen allocates an uninitialized shared MTLBuffer of nFloats float32s.
+func (d *Device) NewBufferLen(nFloats int) Buffer {
+	return Buffer{id: d.id.Send(selNewBufferLen, uintptr(nFloats*4), uintptr(0)), n: nFloats}
+}
+
+// Floats views the buffer's shared contents as a Go slice (zero-copy on UMA).
+func (b Buffer) Floats() []float32 {
+	return unsafe.Slice(objc.Send[*float32](b.id, selContents), b.n)
+}
+
+// Run1D encodes and runs a 1-D kernel over n threads (threadgroup width tg), binding
+// bufs at indices 0..len-1, and blocks until the GPU finishes. Manual autoreleasepool
+// discipline (no ARC): the per-token commandBuffer/encoder are autoreleased into the
+// pool and drained here, so the decode loop won't leak (doc risk #2).
+func (q Queue) Run1D(p Pipeline, n, tg int, bufs ...Buffer) {
+	pool := objc.ID(objc.GetClass("NSAutoreleasePool")).Send(selAlloc).Send(selInit)
+	defer pool.Send(selDrain)
+
+	cb := q.id.Send(selCommandBuffer)
+	enc := cb.Send(selComputeEncoder)
+	enc.Send(selSetPipeline, p.id)
+	for i, b := range bufs {
+		enc.Send(selSetBuffer, b.id, uintptr(0), uintptr(i))
+	}
+	total := mtlSize{w: uint64(n), h: 1, d: 1}
+	perTG := mtlSize{w: uint64(tg), h: 1, d: 1}
+	enc.Send(selDispatchThreads, unsafe.Pointer(&total), unsafe.Pointer(&perTG))
+	runtime.KeepAlive(&total)
+	runtime.KeepAlive(&perTG)
+	enc.Send(selEndEncoding)
+	cb.Send(selCommit)
+	cb.Send(selWaitCompleted)
 }

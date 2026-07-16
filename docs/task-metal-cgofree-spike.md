@@ -298,10 +298,23 @@ resolved via runtime `dlopen`), only `/usr/lib/libSystem.B.dylib`. Honest caveat
 predicted: the property is **"cgo-free + OS-only," not fully static** (a pure-Go macOS
 binary links libSystem regardless).
 
-**Binding-risk verdict so far: the open risk is shrinking fast.** The "80% this time"
-was *can compute go through purego-objc cgo-free at all* — yes. **Remaining Layer-A
-increment:** the compute *dispatch* path (`newCommandQueue` → `newBufferWithBytesNoCopy`
-→ `commandBuffer` → `computeCommandEncoder` → `dispatchThreadgroups` → `commit`/
-`waitUntilCompleted`, incl. the `MTLSize` struct-by-value passing and the manual
-autoreleasepool/release discipline), a correct vector-add result, and the per-token
-tax measurement. Only then Layer B (the six kernel ports).
+3. **Full compute dispatch — correct result, cgo-free** (`TestLayerA_vectorAddDispatch`).
+   The complete path runs end to end: `newCommandQueue` → `newBufferWithBytes` (shared
+   UMA) → `commandBuffer` → `computeCommandEncoder` → `setComputePipelineState:` /
+   `setBuffer:offset:atIndex:` → `dispatchThreads:threadsPerThreadgroup:` → `endEncoding`
+   → `commit` → `waitUntilCompleted`, then read the shared buffer back. **Vector-add of
+   4096 floats on the GPU returns the correct result** (`out[4095]=12285`). Two hazards
+   the doc flagged, resolved: **`MTLSize` struct-by-value** — at 24 bytes (>16) it's
+   passed *by reference* per AAPCS64, so `unsafe.Pointer(&sz)` lands the pointer in the
+   arg register exactly as the ABI wants; and **manual autoreleasepool** (no ARC) — the
+   per-dispatch commandBuffer/encoder are drained via an `NSAutoreleasePool` so the
+   decode loop won't leak (risk #2).
+
+**Binding-risk verdict: RETIRED — the cgo-free native-Metal *lane is open*.** The "80%
+this time" was *can compute go through purego-objc cgo-free at all, correctly* — yes,
+proven on the real rig. The binding does not force cgo (the NO-GO condition) — the
+opposite. **Remaining before Layer B:** isolate the per-token binding tax (msgSend
+trampoline + commit/`waitUntilCompleted` overhead, the analog of the CUDA ~5 µs
+channel-hop). Then **Layer B — the six proven CUDA kernels ported to MSL** (de-risked
+by the CUDA arc), the argmax-parity gate on the real checkpoint, and the decode tok/s
+measurement vs the ~71 GO bar.
