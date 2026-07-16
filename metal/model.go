@@ -204,7 +204,7 @@ func (r *Resident) Forward(id, pos int) []float32 {
 		e.dispatch(r.pRope, nHhd/2, 64, r.qkv, r.invf, r.uHd, r.uPos, r.uQtotal)                 // q @ off 0
 		e.dispatch(r.pRope, r.kvDim/2, 64, r.qkv.At(kOff), r.invf, r.uHd, r.uPos, r.uKtotal)      // k
 		e.dispatch(r.pKv, r.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[l], r.vc[l], r.uKvDim, r.uPos)
-		e.dispatch(r.pAttn, r.nH, r.nH, r.qkv, r.kc[l], r.vc[l], r.ctx, r.uNH, r.uNKV, r.uHd, r.uNKeys, r.uScale)
+		e.dispatch(r.pAttn, r.nH*128, 128, r.qkv, r.kc[l], r.vc[l], r.ctx, r.uNH, r.uNKV, r.uHd, r.uNKeys, r.uScale)
 		e.dispatch(r.pQv, 256, 256, r.ctx, r.cq, r.cSc, r.uHH)
 		e.dispatch(r.pGemvResid, r.H*32, 32, L.oW, L.oS, r.cq, r.cSc, r.x, r.uHH) // o-proj + residual
 		// --- ffn block ---

@@ -56,53 +56,34 @@ kernel void gemv_w8a8_coal(device const char* aq[[buffer(0)]], device const floa
 // the bytes of int8 (the target-quant bandwidth win). Each lane strides over the row's
 // 32-nibble groups; the 8-nibble inner loop is fully unrolled (ILP), f32 group scale
 // folded per group; simd_sum reduces the 32 lane partials. Launch total = N*32, tg = 32.
-kernel void gemv_w4a8_coal(device const uint* bq[[buffer(0)]], device const float* bsc[[buffer(1)]],
-    device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
-    constant uint& K[[buffer(5)]], uint gid[[threadgroup_position_in_grid]], uint lid[[thread_index_in_threadgroup]]) {
-    uint gpr = K/32u;                       // groups per row
-    device const uint*  brow = bq  + (uint)gid*(K/8u);
-    device const float* srow = bsc + (uint)gid*gpr;
-    float acc = 0.0f;
-    for (uint g = lid; g < gpr; g += 32u) {
-        device const uint* gw = brow + g*4u;  // 4 words = 32 nibbles
-        device const char* ga = aq + g*32u;
-        int gi = 0;
-        for (uint w = 0; w < 4u; w++) {
-            uint x = gw[w];
-            device const char* a = ga + w*8u;
-            gi += (int((x)      & 0xF)-8)*int(a[0]) + (int((x>>4)  & 0xF)-8)*int(a[1])
-                + (int((x>>8)   & 0xF)-8)*int(a[2]) + (int((x>>12) & 0xF)-8)*int(a[3])
-                + (int((x>>16)  & 0xF)-8)*int(a[4]) + (int((x>>20) & 0xF)-8)*int(a[5])
-                + (int((x>>24)  & 0xF)-8)*int(a[6]) + (int((x>>28) & 0xF)-8)*int(a[7]);
-        }
-        acc += float(gi) * srow[g];
-    }
-    acc = simd_sum(acc);
-    if (lid == 0) out[gid] = acc * asc[0];
-}
-// W4A8 GEMV with epilogue fusions (fewer dispatches — the fix for the dispatch-bound wall).
-// _bias adds a per-row bias (fused QKV projection); _resid accumulates into the output
-// (fused residual add for o-proj / down-proj). Same coalesced+ILP core as gemv_w4a8_coal.
+// COALESCED W4A8 GEMV core (shared by _coal/_bias/_resid). ONE simdgroup (32 lanes) per
+// output row; lane l reads word l, l+32, l+64… so adjacent lanes hit adjacent memory (vs the
+// old stride-4 group-per-lane pattern). Per-word int8·nibble sum × the word's group scale
+// (4 words/group → scale index = word>>2; the group scale distributes over its words, so
+// per-word is exact). 8-nibble inner unroll = ILP; simd_sum reduces the 32 lane partials.
 #define W4A8_BODY \
-    uint gpr = K/32u; \
-    device const uint*  brow = bq  + (uint)gid*(K/8u); \
-    device const float* srow = bsc + (uint)gid*gpr; \
+    uint wpr = K/8u; \
+    device const uint*  brow = bq  + (uint)gid*wpr; \
+    device const float* srow = bsc + (uint)gid*(K/32u); \
     float acc = 0.0f; \
-    for (uint g = lid; g < gpr; g += 32u) { \
-        device const uint* gw = brow + g*4u; \
-        device const char* ga = aq + g*32u; \
-        int gi = 0; \
-        for (uint w = 0; w < 4u; w++) { \
-            uint x = gw[w]; device const char* a = ga + w*8u; \
-            gi += (int((x)&0xF)-8)*int(a[0]) + (int((x>>4)&0xF)-8)*int(a[1]) \
-                + (int((x>>8)&0xF)-8)*int(a[2]) + (int((x>>12)&0xF)-8)*int(a[3]) \
-                + (int((x>>16)&0xF)-8)*int(a[4]) + (int((x>>20)&0xF)-8)*int(a[5]) \
-                + (int((x>>24)&0xF)-8)*int(a[6]) + (int((x>>28)&0xF)-8)*int(a[7]); \
-        } \
-        acc += float(gi) * srow[g]; \
+    for (uint wi = lid; wi < wpr; wi += 32u) { \
+        uint x = brow[wi]; device const char* a = aq + wi*8u; \
+        int gi = (int((x)&0xF)-8)*int(a[0]) + (int((x>>4)&0xF)-8)*int(a[1]) \
+               + (int((x>>8)&0xF)-8)*int(a[2]) + (int((x>>12)&0xF)-8)*int(a[3]) \
+               + (int((x>>16)&0xF)-8)*int(a[4]) + (int((x>>20)&0xF)-8)*int(a[5]) \
+               + (int((x>>24)&0xF)-8)*int(a[6]) + (int((x>>28)&0xF)-8)*int(a[7]); \
+        acc += float(gi) * srow[wi>>2]; \
     } \
     acc = simd_sum(acc);
 
+// Launch total = N*32, tg = 32. int4 weights = half the bytes of int8 (the target-quant
+// bandwidth win). _coal is the plain projection; _bias/_resid fuse an epilogue.
+kernel void gemv_w4a8_coal(device const uint* bq[[buffer(0)]], device const float* bsc[[buffer(1)]],
+    device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
+    constant uint& K[[buffer(5)]], uint gid[[threadgroup_position_in_grid]], uint lid[[thread_index_in_threadgroup]]) {
+    W4A8_BODY
+    if (lid == 0) out[gid] = acc * asc[0];
+}
 kernel void gemv_w4a8_bias(device const uint* bq[[buffer(0)]], device const float* bsc[[buffer(1)]],
     device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
     device const float* bias[[buffer(5)]], constant uint& K[[buffer(6)]],
@@ -129,16 +110,35 @@ kernel void kv_store(device const float* k[[buffer(0)]], device const float* v[[
     constant uint& pos[[buffer(5)]], uint i[[thread_position_in_grid]]) {
     kc[pos*kvDim+i]=k[i]; vc[pos*kvDim+i]=v[i];
 }
+// One THREADGROUP (128 threads) per query head — vs the old 1-thread-per-head (12 threads
+// total = 68% of decode time from underutilization). Scores parallel over keys, softmax via
+// threadgroup reduction, output parallel over head dims. nKeys ≤ metalCtxCap (4096).
 kernel void attention(device const float* q[[buffer(0)]], device const float* kc[[buffer(1)]],
     device const float* vc[[buffer(2)]], device float* out[[buffer(3)]], constant uint& nH[[buffer(4)]],
     constant uint& nKV[[buffer(5)]], constant uint& hd[[buffer(6)]], constant uint& nKeys[[buffer(7)]],
-    constant float& scale[[buffer(8)]], uint qh[[thread_position_in_grid]]) {
-    if(qh>=nH) return; uint kvDim=nKV*hd; uint kvh=qh/(nH/nKV); uint qb=qh*hd; uint kb=kvh*hd;
-    float acc[128]; for(uint d=0;d<hd;d++) acc[d]=0; float m=-INFINITY,l=0;
-    for(uint s=0;s<nKeys;s++){ float sc=0; for(uint d=0;d<hd;d++) sc+=q[qb+d]*kc[s*kvDim+kb+d]; sc*=scale;
-        float mn=max(m,sc); float a=exp(m-mn),p=exp(sc-mn); l=l*a+p;
-        for(uint d=0;d<hd;d++) acc[d]=acc[d]*a+p*vc[s*kvDim+kb+d]; m=mn; }
-    for(uint d=0;d<hd;d++) out[qb+d]=acc[d]/l;
+    constant float& scale[[buffer(8)]], uint qh[[threadgroup_position_in_grid]],
+    uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]]) {
+    uint kvDim = nKV*hd; uint kvh = qh/(nH/nKV);
+    device const float* qr = q + qh*hd;
+    device const float* kb = kc + kvh*hd;
+    device const float* vb = vc + kvh*hd;
+    threadgroup float sc[4096];
+    threadgroup float red[128];
+    for (uint s=tid; s<nKeys; s+=tgs) {
+        float a=0; device const float* k=kb+s*kvDim;
+        for (uint d=0; d<hd; d++) a += qr[d]*k[d];
+        sc[s]=a*scale;
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    float m=-INFINITY; for (uint s=tid;s<nKeys;s+=tgs) m=max(m,sc[s]);
+    red[tid]=m; threadgroup_barrier(mem_flags::mem_threadgroup);
+    for (uint st=tgs/2; st>0; st>>=1){ if(tid<st) red[tid]=max(red[tid],red[tid+st]); threadgroup_barrier(mem_flags::mem_threadgroup); }
+    float mx=red[0]; threadgroup_barrier(mem_flags::mem_threadgroup);
+    float ls=0; for (uint s=tid;s<nKeys;s+=tgs){ float p=exp(sc[s]-mx); sc[s]=p; ls+=p; }
+    red[tid]=ls; threadgroup_barrier(mem_flags::mem_threadgroup);
+    for (uint st=tgs/2; st>0; st>>=1){ if(tid<st) red[tid]+=red[tid+st]; threadgroup_barrier(mem_flags::mem_threadgroup); }
+    float sum=red[0]; threadgroup_barrier(mem_flags::mem_threadgroup);
+    for (uint d=tid; d<hd; d+=tgs){ float a=0; for(uint s=0;s<nKeys;s++) a += sc[s]*vb[s*kvDim+d]; out[qh*hd+d]=a/sum; }
 }
 kernel void swiglu_quant(device const float* g[[buffer(0)]], device const float* u[[buffer(1)]],
     device char* dq[[buffer(2)]], device float* ds[[buffer(3)]], constant uint& I[[buffer(4)]],
