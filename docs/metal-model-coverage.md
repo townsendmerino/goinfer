@@ -157,3 +157,18 @@ regression) — `dispatchTG` + `setThreadgroupMemoryLength`.
 **Coverage bottom line:** admission bug fixed; **Qwen3 works end-to-end on Metal** (the As-cap
 bug that would have broken all real Qwen3/Mistral sizes is fixed); Mistral/Phi-3 kernels
 unit-validated (Mistral needs a v0.1 Mac run; Phi-3 partial-RoPE unit-only). YaRN declined.
+
+## Mistral / large-K note (2026-07-16)
+
+Mistral-7B-v0.1 downloaded, but a full int8int8 parity run doesn't fit comfortably in 16 GB
+(int8 weights ~7 GB + int4 resident ~3.5 GB + CPU-reference forwards → heavy swap). Rather than
+thrash the machine, validated what a Mistral-7B run would actually stress:
+- **As-cap fix at K=4096** (Mistral's nH·hd = 32·128 = 4096): `TestSAGemvLargeK` — the production
+  Stage-A GEMV with dynamic As at K=4096 is **bit-exact vs CPU (cos 1.0)**. Same mechanism as the
+  Qwen3 K=2048 case (validated by coherent generation), now confirmed at 4096.
+- **Sliding-window path**: `TestSlidingWindow` (windowed==full-over-last-W). Note the decode
+  parity test at ctx~30 wouldn't exercise the window anyway (winStart=0 until ctx>4096).
+- **Dense path**: identical to qwen2.5 (validated).
+
+So Mistral-7B's Metal components are all validated; a full end-to-end 7B coherence run wants a
+Mac with >16 GB (or a smaller windowed model — none exists small). Deferred, not blocking.
