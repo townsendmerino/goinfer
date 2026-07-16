@@ -132,6 +132,10 @@ var (
 	selCommit          = objc.RegisterName("commit")
 	selWaitCompleted   = objc.RegisterName("waitUntilCompleted")
 	selDrain           = objc.RegisterName("drain")
+	selGPUStartTime    = objc.RegisterName("GPUStartTime")    // CFTimeInterval (double), post-completion
+	selGPUEndTime      = objc.RegisterName("GPUEndTime")      // GPU busy window for this command buffer
+	selKernelStartTime = objc.RegisterName("kernelStartTime") // incl scheduling; > GPU window
+	selKernelEndTime   = objc.RegisterName("kernelEndTime")
 )
 
 // mtlSize mirrors MTLSize {NSUInteger width,height,depth}. At 24 bytes (>16) it is
@@ -257,6 +261,9 @@ type Encoder struct {
 	curPipe objc.ID
 	idScr   [16]objc.ID // reusable C-arrays for batched setBuffers:offsets:withRange:
 	offScr  [16]uintptr
+	// GPU timing of the last committed command buffer (seconds), captured in end() after
+	// waitUntilCompleted (valid post-completion) and before the pool drains the cb.
+	gpuStart, gpuEnd, kernStart, kernEnd float64
 }
 
 func (q Queue) begin() *Encoder {
@@ -297,6 +304,12 @@ func (e *Encoder) end() {
 	e.enc.Send(selEndEncoding)
 	e.cb.Send(selCommit)
 	e.cb.Send(selWaitCompleted)
+	// Timestamps are valid once completed; read before the pool releases the cb. On arm64
+	// objc_msgSend returns the double in d0 — objc.Send[float64] uses the fp-return path.
+	e.gpuStart = objc.Send[float64](e.cb, selGPUStartTime)
+	e.gpuEnd = objc.Send[float64](e.cb, selGPUEndTime)
+	e.kernStart = objc.Send[float64](e.cb, selKernelStartTime)
+	e.kernEnd = objc.Send[float64](e.cb, selKernelEndTime)
 	e.pool.Send(selDrain)
 }
 

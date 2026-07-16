@@ -44,6 +44,7 @@ type Resident struct {
 	uPos, uNKeys                                                                   Buffer
 	part, tok, uP                                                                  Buffer // fused-argmax: tile partials, token out, tile count
 	logitsHost                                                                    []float32
+	gpuStart, gpuEnd, kernStart, kernEnd                                          float64 // last-Forward GPU timing (Step 0)
 }
 
 func byteBuf(d *Device, n int) Buffer {
@@ -216,8 +217,16 @@ func (r *Resident) forwardLogits(pos int) []float32 {
 	e := r.encodeTrunk(pos)                                                     // 28 layers → final norm → r.aq/r.aSc
 	e.dispatch(r.pSA, (r.V)*32, 256, r.lmW, r.lmS, r.aq, r.aSc, r.logits, r.uH) // full lm head
 	e.end()
+	r.gpuStart, r.gpuEnd, r.kernStart, r.kernEnd = e.gpuStart, e.gpuEnd, e.kernStart, e.kernEnd
 	copy(r.logitsHost, r.logits.Floats())
 	return r.logitsHost
+}
+
+// LastGPUTimes returns, for the last Forward, the GPU-busy window and the kernel window
+// (incl scheduling) in seconds — GPUEnd-GPUStart and kernelEnd-kernelStart from the command
+// buffer. wall - gpuBusy is the per-token host bubble (Step 0 of the headroom decision tree).
+func (r *Resident) LastGPUTimes() (gpuBusy, kernTotal float64) {
+	return r.gpuEnd - r.gpuStart, r.kernEnd - r.kernStart
 }
 
 // ForwardArgmax runs the identical trunk but replaces the full lm head + 608KB readback with
