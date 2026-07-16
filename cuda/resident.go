@@ -36,6 +36,7 @@ type cudaWQ struct {
 type cudaLayer struct {
 	q, k, v, o, g, u, d cudaWQ
 	qb, kb, vb          *gc.Buffer[float32] // QKV bias (nil ⇒ none)
+	qNorm, kNorm        *gc.Buffer[float32] // per-head QK-norm weights (nil ⇒ arch has none)
 	preNorm, postNorm   *gc.Buffer[float32]
 	hasBias             bool
 }
@@ -47,11 +48,13 @@ type cudaResident struct {
 	hidden, nLayers, nH, nKV, hd, inter, vocab int
 	qDim, kvDim, half                          int
 	eps, attnScale                             float32
+	qkNorm                                     bool // arch needs per-head Q/K RMSNorm before RoPE
+	rmsAddOne                                  bool // (1+w) offset — false for Qwen3/Llama
 
 	// gocudrv state — touched ONLY on the executor thread.
-	cx                                                                                  *gc.Context
-	stream                                                                              *gc.Stream
-	gemvW4, gemvW8, kvStore, ropeKV, fRms, fQ, fRope, fAttn, fSw, fRes, fArg, fQKV, fGU *gc.Function
+	cx                                                                                        *gc.Context
+	stream                                                                                    *gc.Stream
+	gemvW4, gemvW8, kvStore, ropeKV, fRms, fQ, fRope, fAttn, fSw, fRes, fArg, fQKV, fGU, fQKN *gc.Function
 
 	fuseQKV         bool // all of Q/K/V int4 ⇒ K1 super-kernel is usable
 	layers          []cudaLayer
@@ -263,6 +266,22 @@ func (r *cudaResident) launchToken(emb []float32, pos int) error {
 			}
 			_ = r.doG(Ly.k, r.aq, r.aSc, kb, r.kB, 0)
 			_ = r.doG(Ly.v, r.aq, r.aSc, vb, r.vB, 0)
+		}
+		// QK-norm (Qwen3/GLM/Mellum): per-head RMSNorm of Q and K over head_dim, BEFORE RoPE
+		// (decoder/attention.go:94-96). One block per head; only dispatched for archs that
+		// need it, so plain-dense models pay nothing.
+		if r.qkNorm {
+			addOne := int32(0)
+			if r.rmsAddOne {
+				addOne = 1
+			}
+			if e := r.launch(r.fQKN, gc.LaunchConfig{GridX: uint32(r.nH + r.nKV), GridY: 1, GridZ: 1,
+				BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: 128 * 8}, // f64 reduction
+				gc.Arg(r.qB), gc.Arg(r.kB), gc.Arg(Ly.qNorm), gc.Arg(Ly.kNorm),
+				gc.ArgValue(int32(r.nH)), gc.ArgValue(int32(r.nKV)), gc.ArgValue(int32(r.hd)),
+				gc.ArgValue(r.eps), gc.ArgValue(addOne)); e != nil {
+				return e
+			}
 		}
 		// fused rope(q)+rope(k)+kv_store(k)+kv_store(v): 4 launches → 1 (same math/order).
 		_ = r.launch(r.ropeKV, g1cfg(r.nH*r.half+r.nKV*r.half, 256),

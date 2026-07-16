@@ -87,6 +87,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		q, k, v, o, g, u, d hostW
 		qb, kb, vb          []float32
 		preNorm, postNorm   []float32
+		qNorm, kNorm        []float32
 		hasBias             bool
 	}
 	hls := make([]hlayer, nLayers)
@@ -107,6 +108,10 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			*p.dst = hw
 		}
 		hl.preNorm, hl.postNorm = lw.PreAttnNorm, lw.PreMLPNorm
+		hl.qNorm, hl.kNorm = lw.QNorm, lw.KNorm
+		if m.HasQKNorm() && (len(hl.qNorm) != hd || len(hl.kNorm) != hd) {
+			return declined(fmt.Errorf("layer %d: arch claims QK-norm but QNorm/KNorm are not len==headDim(%d)", l, hd))
+		}
 		if len(hl.preNorm) == 0 || len(hl.postNorm) == 0 {
 			return declined(fmt.Errorf("layer %d missing pre/pre-MLP norm", l))
 		}
@@ -129,6 +134,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		hidden: H, nLayers: nLayers, nH: nH, nKV: nKV, hd: hd, inter: I, vocab: vocab,
 		qDim: nH * hd, kvDim: nKV * hd, half: hd / 2,
 		eps: m.NormEps(), attnScale: m.AttnScale(),
+		qkNorm: m.HasQKNorm(), rmsAddOne: m.RMSAddOne(),
 	}
 	kvDim := r.kvDim
 	invFreq := m.RopeInvFreq()
@@ -185,6 +191,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		if r.fGU, e = qmod.Function("fused_rms_gu"); e != nil {
 			return e
 		}
+		if r.fQKN, e = qmod.Function("qk_norm"); e != nil {
+			return e
+		}
 		fns := []struct {
 			dst  **gc.Function
 			name string
@@ -212,6 +221,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			}
 			if h.hasBias {
 				L.qb, L.kb, L.vb, L.hasBias = r.up32(h.qb), r.up32(h.kb), r.up32(h.vb), true
+			}
+			if r.qkNorm {
+				L.qNorm, L.kNorm = r.up32(h.qNorm), r.up32(h.kNorm)
 			}
 			r.layers[l] = L
 		}

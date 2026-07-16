@@ -130,10 +130,13 @@ func missingFeatures(required []ResidentFeature, implemented map[ResidentFeature
 // A backend adds an entry ONLY when it ships the kernel that implements it. Overclaiming here
 // is exactly the lie the gate exists to catch.
 var ResidentBackendFeatures = map[string]map[ResidentFeature]bool{
-	// cgo-free CUDA (cuda/): the plain dense Qwen2/Llama block and nothing more —
-	// rmsnorm_quant has no (1+w) offset, the rope kernel hardcodes half = hd/2, the attention
-	// kernel always starts at key 0, and nothing reads QNorm/KNorm. Empty is the honest set.
-	"cuda": {},
+	// cgo-free CUDA (cuda/): the plain dense Qwen2/Llama block, plus per-head QK-norm.
+	// Still NOT implemented: rmsnorm_quant has no (1+w) offset, the rope kernel hardcodes
+	// half = hd/2 (no partial rotary / per-layer table / YaRN factor), the attention kernel
+	// always starts at key 0 (no sliding window), and there is no MoE/MLA/SSM path.
+	"cuda": {
+		FeatQKNorm: true, // qk_norm kernel — per-head Q/K RMSNorm before RoPE (Qwen3)
+	},
 
 	// WebGPU (gpu/): the richest runner — the levers in docs/gpu-residency-coverage.md.
 	"webgpu": {
