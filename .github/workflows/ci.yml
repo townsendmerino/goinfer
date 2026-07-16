@@ -33,6 +33,11 @@ jobs:
       - name: vet
         run: go vet ./...
 
+      # staticcheck (incl. the unused/U1000 check) — mirrors the go vet tag matrix
+      # across the three module jobs (no-tag / gpu / cuda). Pinned like fin/ken.
+      - name: staticcheck
+        run: go run honnef.co/go/tools/cmd/staticcheck@2025.1.1 ./...
+
       # Core promise: the cgo WebGPU dependency must never enter the runtime's
       # module graph. webgpu lives only in the opt-in ./gpu submodule.
       - name: cleanliness guard (no webgpu / cuda deps in root)
@@ -83,6 +88,9 @@ jobs:
       - name: vet -tags gpu
         run: go vet -tags gpu ./gpu/...
 
+      - name: staticcheck -tags gpu
+        run: go run honnef.co/go/tools/cmd/staticcheck@2025.1.1 -tags gpu ./gpu/...
+
       # GPU tests skip cleanly with no adapter (headless runner); this confirms
       # they compile and the resident-matmul path is exercised where possible.
       - name: test -tags gpu
@@ -115,6 +123,9 @@ jobs:
 
       - name: vet -tags cuda
         run: go vet -tags cuda ./cuda/...
+
+      - name: staticcheck -tags cuda
+        run: CGO_ENABLED=0 go run honnef.co/go/tools/cmd/staticcheck@2025.1.1 -tags cuda ./cuda/...
 
       # Compile + skip cleanly on the GPU-less runner (tests t.Skip without a device).
       - name: test -tags cuda

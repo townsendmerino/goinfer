@@ -197,7 +197,10 @@ func loadFromPath(path string, opts decoder.Options) (*session, error) {
 }
 
 // loadFromBytes loads the tokenizer + model from an in-memory GGUF slice — the
-// no-filesystem path used by the embedded binary.
+// no-filesystem path used by the embedded binary. The default (download-a-path)
+// build never embeds a model, so this reads as unused there:
+//
+//lint:ignore U1000 called only from embed.go (//go:build embed && !prequant).
 func loadFromBytes(raw []byte, opts decoder.Options) (*session, error) {
 	t0 := time.Now()
 	tk, err := tokenizer.LoadGGUFBytes(raw)

@@ -26,6 +26,10 @@ import (
 // family, method (full-forward-oracle | real-model-oracle | weightDiff | layer-slice),
 // the oracle it validated against, and the measured metrics. validated_at/date/machine
 // are NOT stamped here — the sweep's merge stamps those so every row from one run agrees.
+// This emitter carries no build tag so the realckpt gates can call it, so it reads as
+// unused in the default (no-realckpt) build:
+//
+//lint:ignore U1000 called only by the //go:build realckpt gates (phi3/deepseek/qwen35_real_test.go).
 func emitParityRow(t *testing.T, family, method, reference string, argmaxPct, cosineMin, cosineMean float64) {
 	t.Helper()
 	if os.Getenv("GOINFER_MANIFEST_EMIT") == "" || t.Failed() {

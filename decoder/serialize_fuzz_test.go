@@ -69,7 +69,7 @@ func FuzzLoadSerializedWeights(f *testing.F) {
 			return
 		}
 		// A successful load must respect its own bounds.
-		if len(w.Layers) < 0 || len(w.Layers) > maxSerializedLayers {
+		if len(w.Layers) > maxSerializedLayers {
 			t.Fatalf("loaded implausible layer count %d", len(w.Layers))
 		}
 	})
