@@ -60,7 +60,7 @@ kernel void gemv_w8a8_coal(device const char* aq[[buffer(0)]], device const floa
 #define W4A8_BODY \
     uint wpr = K/8u; \
     device const uint*  brow = bq  + (uint)gid*wpr; \
-    device const float* srow = bsc + (uint)gid*(K/32u); \
+    device const half*  srow = bsc + (uint)gid*(K/32u); \
     float acc = 0.0f; \
     for (uint wi = lid; wi < wpr; wi += 32u) { \
         uint x = brow[wi]; device const char* a = aq + wi*8u; \
@@ -68,26 +68,26 @@ kernel void gemv_w8a8_coal(device const char* aq[[buffer(0)]], device const floa
                + (int((x>>8)&0xF)-8)*int(a[2]) + (int((x>>12)&0xF)-8)*int(a[3]) \
                + (int((x>>16)&0xF)-8)*int(a[4]) + (int((x>>20)&0xF)-8)*int(a[5]) \
                + (int((x>>24)&0xF)-8)*int(a[6]) + (int((x>>28)&0xF)-8)*int(a[7]); \
-        acc += float(gi) * srow[wi>>2]; \
+        acc += float(gi) * float(srow[wi>>2]); \
     } \
     acc = simd_sum(acc);
 
 // Launch total = N*32, tg = 32. int4 weights = half the bytes of int8 (the target-quant
 // bandwidth win). _coal is the plain projection; _bias/_resid fuse an epilogue.
-kernel void gemv_w4a8_coal(device const uint* bq[[buffer(0)]], device const float* bsc[[buffer(1)]],
+kernel void gemv_w4a8_coal(device const uint* bq[[buffer(0)]], device const half* bsc[[buffer(1)]],
     device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
     constant uint& K[[buffer(5)]], uint gid[[threadgroup_position_in_grid]], uint lid[[thread_index_in_threadgroup]]) {
     W4A8_BODY
     if (lid == 0) out[gid] = acc * asc[0];
 }
-kernel void gemv_w4a8_bias(device const uint* bq[[buffer(0)]], device const float* bsc[[buffer(1)]],
+kernel void gemv_w4a8_bias(device const uint* bq[[buffer(0)]], device const half* bsc[[buffer(1)]],
     device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
     device const float* bias[[buffer(5)]], constant uint& K[[buffer(6)]],
     uint gid[[threadgroup_position_in_grid]], uint lid[[thread_index_in_threadgroup]]) {
     W4A8_BODY
     if (lid == 0) out[gid] = acc*asc[0] + bias[gid];
 }
-kernel void gemv_w4a8_resid(device const uint* bq[[buffer(0)]], device const float* bsc[[buffer(1)]],
+kernel void gemv_w4a8_resid(device const uint* bq[[buffer(0)]], device const half* bsc[[buffer(1)]],
     device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
     constant uint& K[[buffer(5)]],
     uint gid[[threadgroup_position_in_grid]], uint lid[[thread_index_in_threadgroup]]) {
@@ -114,15 +114,15 @@ kernel void gemv_w4a8_resid(device const uint* bq[[buffer(0)]], device const flo
     uint G = K>>5u; \
     uint row = tgid*(tgs>>5u) + sgid; \
     device const uint4* wr = wq + (uint)row*G; \
-    device const float* sr = sct + (uint)row*G; \
+    device const half*  sr = sct + (uint)row*G; \
     float acc = 0.0f; \
     for (uint g=lane; g<G; g+=32u) { \
         uint4 w = wr[g]; threadgroup const short* a = As + g*32u; \
         int gi = UNP8(w.x,a) + UNP8(w.y,a+8) + UNP8(w.z,a+16) + UNP8(w.w,a+24); \
-        acc += float(gi) * sr[g]; \
+        acc += float(gi) * float(sr[g]); \
     } \
     acc = simd_sum(acc);
-kernel void gemv_w4a8_sa(device const uint4* wq[[buffer(0)]], device const float* sct[[buffer(1)]],
+kernel void gemv_w4a8_sa(device const uint4* wq[[buffer(0)]], device const half* sct[[buffer(1)]],
     device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
     constant uint& K[[buffer(5)]], uint tgid[[threadgroup_position_in_grid]],
     uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]],
@@ -130,7 +130,7 @@ kernel void gemv_w4a8_sa(device const uint4* wq[[buffer(0)]], device const float
     SA_BODY
     if (lane==0) out[row] = acc*asc[0];
 }
-kernel void gemv_w4a8_sa_bias(device const uint4* wq[[buffer(0)]], device const float* sct[[buffer(1)]],
+kernel void gemv_w4a8_sa_bias(device const uint4* wq[[buffer(0)]], device const half* sct[[buffer(1)]],
     device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
     device const float* bias[[buffer(5)]], constant uint& K[[buffer(6)]], uint tgid[[threadgroup_position_in_grid]],
     uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]],
@@ -138,7 +138,7 @@ kernel void gemv_w4a8_sa_bias(device const uint4* wq[[buffer(0)]], device const 
     SA_BODY
     if (lane==0) out[row] = acc*asc[0] + bias[row];
 }
-kernel void gemv_w4a8_sa_resid(device const uint4* wq[[buffer(0)]], device const float* sct[[buffer(1)]],
+kernel void gemv_w4a8_sa_resid(device const uint4* wq[[buffer(0)]], device const half* sct[[buffer(1)]],
     device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
     constant uint& K[[buffer(5)]], uint tgid[[threadgroup_position_in_grid]],
     uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]],
@@ -153,7 +153,7 @@ kernel void gemv_w4a8_sa_resid(device const uint4* wq[[buffer(0)]], device const
 // + CPU scan. Merge key (v, -idx) is a commutative monoid → order-independent, tie-broken
 // identically to a CPU first-max-wins scan (strict >, lower index wins).
 struct AmaxPart { float v; uint i; };
-kernel void gemv_w4a8_sa_amax(device const uint4* wq[[buffer(0)]], device const float* sct[[buffer(1)]],
+kernel void gemv_w4a8_sa_amax(device const uint4* wq[[buffer(0)]], device const half* sct[[buffer(1)]],
     device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device AmaxPart* part[[buffer(4)]],
     constant uint& K[[buffer(5)]], uint tgid[[threadgroup_position_in_grid]],
     uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]],

@@ -49,3 +49,35 @@ func dequantInt8ToF32Row(q8 []int8, scale float32, K, Kpad int) []float32 {
 	}
 	return f
 }
+
+// f32ToF16 converts to IEEE-754 half (round-to-nearest). W4A8 group scales are small positive
+// finite values, so the subnormal/overflow edges are for completeness. f16's ~2^-11 relative
+// precision is far below the 4-bit weight-quant noise, so this is parity-neutral (gated).
+func f32ToF16(f float32) uint16 {
+	b := math.Float32bits(f)
+	sign := uint16((b >> 16) & 0x8000)
+	e := int32((b>>23)&0xFF) - 112 // f16 biased exp = f32biasedexp - 127 + 15
+	m := b & 0x7FFFFF
+	switch {
+	case (b>>23)&0xFF == 0xFF: // inf / nan
+		if m != 0 {
+			return sign | 0x7E00
+		}
+		return sign | 0x7C00
+	case e >= 0x1F: // overflow -> inf
+		return sign | 0x7C00
+	case e <= 0: // subnormal / underflow
+		if e < -10 {
+			return sign
+		}
+		m |= 0x800000
+		sh := uint32(14 - e)
+		return sign | uint16((m+(1<<(sh-1)))>>sh)
+	default:
+		half := sign | uint16(e<<10) | uint16(m>>13)
+		if m&0x1000 != 0 { // round up; a mantissa carry propagates into the exp field
+			half++
+		}
+		return half
+	}
+}

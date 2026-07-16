@@ -33,7 +33,7 @@ func TestGPUStep0(t *testing.T) {
 	H, nL, nH, nKV, hd, I, V := m.Dims()
 	kvDim := nKV * hd
 	qkvRows := nH*hd + 2*kvDim
-	w4 := func(N, K int) float64 { return float64(N)*float64(K)/2 + float64(N)*float64(K)/32*4 } // nibbles + f32 scales
+	w4 := func(N, K int) float64 { return float64(N)*float64(K)/2 + float64(N)*float64(K)/32*2 } // nibbles + f16 scales (L1)
 	perLayer := w4(qkvRows, H) + w4(2*I, H) + w4(H, nH*hd) + w4(H, I)
 	bytesTok := float64(nL)*perLayer + w4(V, H)
 
@@ -70,7 +70,7 @@ func TestGPUStep0(t *testing.T) {
 	t.Logf("  kernel win  = %.2f ms  (kernelEnd-kernelStart, incl scheduling)", kernAtBest*1000)
 	t.Logf("  host bubble = %.2f ms  (wall - GPU-busy)  => %s",
 		bubbleMs, bubbleVerdict(bubbleMs))
-	t.Logf("weight traffic = %.1f MB/token (nibbles + f32 scales)", bytesTok/1e6)
+	t.Logf("weight traffic = %.1f MB/token (nibbles + f16 scales)", bytesTok/1e6)
 	t.Logf("  effective BW over GPU-busy = %.1f GB/s  (min-GPU %.1f GB/s; M1 Pro GPU-reachable ~150-170)",
 		bytesTok/1e9/gpuAtBest, bytesTok/1e9/minGPU)
 	t.Logf("  effective BW over wall     = %.1f GB/s", bytesTok/1e9/bestWall.Seconds())

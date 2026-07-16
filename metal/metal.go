@@ -207,6 +207,16 @@ func (d *Device) NewBufferUint32s(data []uint32) Buffer {
 	return Buffer{id: id, n: len(data)}
 }
 
+// NewBufferU16s uploads u16 data (e.g. f16 group scales; n counts u16s). Shared/UMA.
+func (d *Device) NewBufferU16s(data []uint16) Buffer {
+	if len(data) == 0 {
+		return d.NewBufferLen(1)
+	}
+	id := d.id.Send(selNewBufferBytes, unsafe.Pointer(&data[0]), uintptr(len(data)*2), uintptr(0))
+	runtime.KeepAlive(data)
+	return Buffer{id: id, n: len(data)}
+}
+
 // Floats / Int8s view the buffer's shared contents as a Go slice (zero-copy on UMA).
 func (b Buffer) Floats() []float32 {
 	return unsafe.Slice(objc.Send[*float32](b.id, selContents), b.n)

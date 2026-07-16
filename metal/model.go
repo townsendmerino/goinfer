@@ -69,20 +69,22 @@ func int4Buf(d *Device, w *linalg.WeightMat) (Buffer, Buffer, error) {
 	}
 	N, K := w.Rows(), w.Cols()
 	words := make([]uint32, N*(K/8))
-	scales := make([]float32, N*(K/32))
+	scales := make([]uint16, N*(K/32)) // f16 group scales (L1: −10% token traffic, parity-neutral)
 	for n := 0; n < N; n++ {
 		wd, sd := packW4A8Row(dequantInt8ToF32Row(q8[n*K:(n+1)*K], sc[n], K, K))
 		copy(words[n*(K/8):(n+1)*(K/8)], wd)
-		copy(scales[n*(K/32):(n+1)*(K/32)], sd)
+		for g, s := range sd {
+			scales[n*(K/32)+g] = f32ToF16(s)
+		}
 	}
-	return d.NewBufferUint32s(words), d.NewBufferFloats(scales), nil
+	return d.NewBufferUint32s(words), d.NewBufferU16s(scales), nil
 }
 
 // int4Concat re-quantizes and row-concatenates several same-K WeightMats into ONE W4A8
 // buffer — the fusion enabler (combined QKV → one GEMV, combined gate/up → one GEMV).
 func int4Concat(d *Device, wms ...*linalg.WeightMat) (Buffer, Buffer) {
 	var words []uint32
-	var scales []float32
+	var scales []uint16 // f16 group scales (L1)
 	for _, w := range wms {
 		q8, sc, _, ok := w.Int8()
 		if !ok {
@@ -92,10 +94,12 @@ func int4Concat(d *Device, wms ...*linalg.WeightMat) (Buffer, Buffer) {
 		for n := 0; n < N; n++ {
 			wd, sd := packW4A8Row(dequantInt8ToF32Row(q8[n*K:(n+1)*K], sc[n], K, K))
 			words = append(words, wd...)
-			scales = append(scales, sd...)
+			for _, s := range sd {
+				scales = append(scales, f32ToF16(s))
+			}
 		}
 	}
-	return d.NewBufferUint32s(words), d.NewBufferFloats(scales)
+	return d.NewBufferUint32s(words), d.NewBufferU16s(scales)
 }
 
 // BuildResident builds a Metal resident decoder from an int8-loaded dense Qwen2/Llama
