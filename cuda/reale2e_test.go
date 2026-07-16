@@ -48,6 +48,7 @@ func TestRealE2EDecode(t *testing.T) {
 		kind string
 		wpk  []uint32
 		ws   []float32
+		ws16 []uint16
 		N, K int
 	}
 	packI8 := func(q8 []int8, N, K int) []uint32 {
@@ -74,14 +75,18 @@ func TestRealE2EDecode(t *testing.T) {
 				b := q4[i*4 : i*4+4]
 				p[i] = permuteFast(uint32(b[0]) | uint32(b[1])<<8 | uint32(b[2])<<16 | uint32(b[3])<<24)
 			}
-			return hw{"int4", p, sc, N, K}
+			gs := make([]uint16, len(sc))
+			for i, v := range sc {
+				gs[i] = f32tof16(v)
+			}
+			return hw{kind: "int4", wpk: p, ws16: gs, N: N, K: K}
 		case "int8":
 			q8, sc, _, _ := pw.Int8()
-			return hw{"int8", packI8(q8, N, K), sc, N, K}
+			return hw{kind: "int8", wpk: packI8(q8, N, K), ws: sc, N: N, K: K}
 		case "f32":
 			f32, _ := pw.F32()
 			q8, sc := linalg.QuantizeRowsInt8(f32, N, K)
-			return hw{"int8", packI8(q8, N, K), sc, N, K}
+			return hw{kind: "int8", wpk: packI8(q8, N, K), ws: sc, N: N, K: K}
 		}
 		t.Fatalf("kind %q", pw.Kind())
 		return hw{}
@@ -114,7 +119,7 @@ func TestRealE2EDecode(t *testing.T) {
 	// Measured weight-byte stream per token: every resident projection is read exactly once
 	// per token (decode is weight-streaming). Splits the GPU time into GEMV-bytes vs glue.
 	var wBytes, lmBytes int64
-	bytesOf := func(h hw) int64 { return int64(len(h.wpk))*4 + int64(len(h.ws))*4 }
+	bytesOf := func(h hw) int64 { return int64(len(h.wpk))*4 + int64(len(h.ws))*4 + int64(len(h.ws16))*2 }
 	for l := 0; l < nLayers; l++ {
 		h := &hls[l]
 		for _, x := range []hw{h.q, h.k, h.v, h.o, h.g, h.u, h.d} {
@@ -146,6 +151,7 @@ func TestRealE2EDecode(t *testing.T) {
 		kind string
 		W    *gc.Buffer[uint32]
 		ws   *gc.Buffer[float32]
+		ws16 *gc.Buffer[uint16]
 		N, K int
 	}
 	type layer struct {
@@ -174,9 +180,22 @@ func TestRealE2EDecode(t *testing.T) {
 		_ = gc.CopyHtoD(bg, b, v)
 		return b
 	}
+	upu16 := func(v []uint16) *gc.Buffer[uint16] {
+		b, _ := gc.Alloc[uint16](cx, len(v))
+		_ = gc.CopyHtoD(bg, b, v)
+		return b
+	}
 	af := func(n int) *gc.Buffer[float32] { b, _ := gc.Alloc[float32](cx, n); return b }
 	ai := func(n int) *gc.Buffer[int32] { b, _ := gc.Alloc[int32](cx, n); return b }
-	upW := func(h hw) wq { return wq{h.kind, upu32(h.wpk), up32(h.ws), h.N, h.K} }
+	upW := func(h hw) wq {
+		w := wq{kind: h.kind, W: upu32(h.wpk), N: h.N, K: h.K}
+		if h.kind == "int4" {
+			w.ws16 = upu16(h.ws16)
+		} else {
+			w.ws = up32(h.ws)
+		}
+		return w
+	}
 
 	// ---- setup job: create context on the pinned thread, upload everything ----
 	if e := do(func() error {
@@ -252,7 +271,7 @@ func TestRealE2EDecode(t *testing.T) {
 	doG := func(wt wq, a *gc.Buffer[int32], as *gc.Buffer[float32], bias gc.KernelArg, dst *gc.Buffer[float32], accum int32) {
 		cfg := gc.LaunchConfig{GridX: uint32((wt.N + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
 		if wt.kind == "int4" {
-			L(gemvW4, cfg, gc.Arg(wt.W), gc.Arg(a), gc.Arg(wt.ws), gc.Arg(as), bias, gc.ArgValue(int32(wt.N)), gc.ArgValue(int32(wt.K/8)), gc.ArgValue(int32(wt.K/32)), gc.Arg(dst), gc.ArgValue(accum))
+			L(gemvW4, cfg, gc.Arg(wt.W), gc.Arg(a), gc.Arg(wt.ws16), gc.Arg(as), bias, gc.ArgValue(int32(wt.N)), gc.ArgValue(int32(wt.K/8)), gc.ArgValue(int32(wt.K/32)), gc.Arg(dst), gc.ArgValue(accum))
 		} else {
 			L(gemvW8, cfg, gc.Arg(wt.W), gc.Arg(a), gc.Arg(wt.ws), gc.Arg(as), bias, gc.ArgValue(int32(wt.N)), gc.ArgValue(int32(wt.K/4)), gc.Arg(dst), gc.ArgValue(accum))
 		}

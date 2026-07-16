@@ -644,6 +644,17 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 			return
 		}
 	}
+	// Greedy fast path: when the resident can pick the argmax on-device AND the sampler's
+	// choice is exactly argmax(raw logits) with nothing else reading them, skip the
+	// full-logits readback (594 KB/token at a 151936 vocab). Emitted tokens are identical;
+	// GOINFER_NO_GREEDY_FASTPATH forces the logits path (escape hatch / A-B check).
+	// fastNext >= 0 means "the resident already picked the next token"; the first token
+	// still comes from the prefill logits through the sampler.
+	fastNext := -1
+	greedyRF, hasGreedy := m.resident.(ResidentGreedy)
+	fastGreedy := useGPU && hasGreedy && sp.LogitProcessor == nil &&
+		sampler.ArgmaxEquivalent() && os.Getenv("GOINFER_NO_GREEDY_FASTPATH") == ""
+
 	// Decode loop.
 	var generated []int
 	var tProc, tSample, tEmbed, tFwd time.Duration
@@ -659,27 +670,38 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		if decodeTiming {
 			t0 = time.Now()
 		}
-		// Constrained decoding: let the processor mask this step's logits
-		// (based on what's been generated) before sampling and the stop check.
-		if sp.LogitProcessor != nil {
-			sp.LogitProcessor(generated, logits)
+		var next int
+		var info SampleInfo
+		if fastNext >= 0 {
+			// The resident already picked this token's argmax on-device (greedy fast
+			// path): nothing reads logits this step, so there is nothing to process or
+			// sample. Identical to the logits path — guarded by ArgmaxEquivalent.
+			next = fastNext
+		} else {
+			// Constrained decoding: let the processor mask this step's logits
+			// (based on what's been generated) before sampling and the stop check.
+			if sp.LogitProcessor != nil {
+				sp.LogitProcessor(generated, logits)
+			}
+			if decodeTiming {
+				tProc += time.Since(t0)
+				t0 = time.Now()
+			}
+			var serr error
+			info, serr = sampler.SampleWithInfo(logits)
+			if serr != nil {
+				g.err = serr
+				return
+			}
+			if decodeTiming {
+				tSample += time.Since(t0)
+			}
+			next = info.ID
 		}
-		if decodeTiming {
-			tProc += time.Since(t0)
-			t0 = time.Now()
-		}
-		info, err := sampler.SampleWithInfo(logits)
-		if err != nil {
-			g.err = err
-			return
-		}
-		if decodeTiming {
-			tSample += time.Since(t0)
-		}
-		next := info.ID
 		if m.isStop(next, sp) {
 			break
 		}
+		// ArgmaxEquivalent excludes Logprobs, so the fast path never reaches this.
 		if sp.Logprobs {
 			g.Logprobs = append(g.Logprobs, info)
 		}
@@ -695,7 +717,13 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 			} else {
 				emb = m.embedResident(next)
 			}
-			logits, err = m.resident.Forward(emb, gpuPos)
+			if fastGreedy {
+				// Greedy fast path: the resident picks the argmax on-device and returns
+				// just the id, skipping the full-logits readback.
+				fastNext, err = greedyRF.ForwardArgmax(emb, gpuPos)
+			} else {
+				logits, err = m.resident.Forward(emb, gpuPos)
+			}
 			gpuPos++
 		} else {
 			logits, err = m.forward(next, cache)

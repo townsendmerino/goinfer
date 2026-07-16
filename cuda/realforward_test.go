@@ -63,6 +63,14 @@ func TestRealForwardParity(t *testing.T) {
 		_ = gc.CopyHtoD(bg, b, v)
 		return b
 	}
+	upu16 := func(v []uint16) *gc.Buffer[uint16] {
+		b, e := gc.Alloc[uint16](cx, len(v))
+		if e != nil {
+			t.Fatalf("alloc u16 %d: %v", len(v), e)
+		}
+		_ = gc.CopyHtoD(bg, b, v)
+		return b
+	}
 	upu32 := func(v []uint32) *gc.Buffer[uint32] {
 		b, e := gc.Alloc[uint32](cx, len(v))
 		if e != nil {
@@ -91,8 +99,9 @@ func TestRealForwardParity(t *testing.T) {
 	// int32 dp4a accumulation is bit-faithful to goinfer's CPU quantized matmul.
 	type wq struct {
 		kind string
-		W    *gc.Buffer[uint32]  // packed weights (int4 nibbles, or int8x4)
-		ws   *gc.Buffer[float32] // scales: int4 group (N*K/32) / int8 row (N)
+		W    *gc.Buffer[uint32]
+		ws   *gc.Buffer[float32] // int8 row scales
+		ws16 *gc.Buffer[uint16]  // int4 group scales (f16)
 		N, K int
 	}
 	packI8 := func(q8 []int8, N, K int) *gc.Buffer[uint32] {
@@ -125,7 +134,11 @@ func TestRealForwardParity(t *testing.T) {
 				b := q4[i*4 : i*4+4]
 				wpk[i] = permuteFast(uint32(b[0]) | uint32(b[1])<<8 | uint32(b[2])<<16 | uint32(b[3])<<24)
 			}
-			return wq{kind: "int4", W: upu32(wpk), ws: up32(sc), N: N, K: K}
+			gs := make([]uint16, len(sc))
+			for i, v := range sc {
+				gs[i] = f32tof16(v)
+			}
+			return wq{kind: "int4", W: upu32(wpk), ws16: upu16(gs), N: N, K: K}
 		case "int8":
 			q8, sc, _, _ := pw.Int8()
 			return wq{kind: "int8", W: packI8(q8, N, K), ws: up32(sc), N: N, K: K}
@@ -227,7 +240,7 @@ func TestRealForwardParity(t *testing.T) {
 	doG := func(wt wq, a *gc.Buffer[int32], as *gc.Buffer[float32], bias gc.KernelArg, dst *gc.Buffer[float32]) {
 		cfg := gc.LaunchConfig{GridX: uint32((wt.N + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
 		if wt.kind == "int4" {
-			L(gemvW4, cfg, gc.Arg(wt.W), gc.Arg(a), gc.Arg(wt.ws), gc.Arg(as), bias, gc.ArgValue(int32(wt.N)), gc.ArgValue(int32(wt.K/8)), gc.ArgValue(int32(wt.K/32)), gc.Arg(dst), gc.ArgValue(int32(0)))
+			L(gemvW4, cfg, gc.Arg(wt.W), gc.Arg(a), gc.Arg(wt.ws16), gc.Arg(as), bias, gc.ArgValue(int32(wt.N)), gc.ArgValue(int32(wt.K/8)), gc.ArgValue(int32(wt.K/32)), gc.Arg(dst), gc.ArgValue(int32(0)))
 		} else {
 			L(gemvW8, cfg, gc.Arg(wt.W), gc.Arg(a), gc.Arg(wt.ws), gc.Arg(as), bias, gc.ArgValue(int32(wt.N)), gc.ArgValue(int32(wt.K/4)), gc.Arg(dst), gc.ArgValue(int32(0)))
 		}

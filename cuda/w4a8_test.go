@@ -14,20 +14,8 @@ import (
 //go:embed testdata/gemv_w4a8.ptx
 var gemvW4A8PTX []byte
 
-// f32tof16 encodes an IEEE float32 into a float16 bit pattern (round-to-nearest-even, simple).
-func f32tof16(f float32) uint16 {
-	b := math.Float32bits(f)
-	s := uint16((b >> 16) & 0x8000)
-	e := int32((b>>23)&0xff) - 127 + 15
-	m := b & 0x7fffff
-	if e <= 0 {
-		return s
-	}
-	if e >= 0x1f {
-		return s | 0x7c00
-	}
-	return s | uint16(e<<10) | uint16(m>>13)
-}
+// f32tof16 now lives in kernels.go (shared with the production packer).
+
 func f16tof32(h uint16) float32 {
 	s := uint32(h&0x8000) << 16
 	e := uint32((h >> 10) & 0x1f)

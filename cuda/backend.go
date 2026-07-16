@@ -168,6 +168,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		}{
 			{&r.fRms, "rmsnorm_quant"}, {&r.fQ, "quant_vec"}, {&r.fRope, "rope"},
 			{&r.fAttn, "attention"}, {&r.fSw, "swiglu_quant"}, {&r.fRes, "residual"},
+			{&r.fArg, "argmax_reduce"},
 		}
 		for _, f := range fns {
 			if *f.dst, e = glmod.Function(f.name); e != nil {
@@ -207,6 +208,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		r.gO, r.uO = r.af(I), r.af(I)
 		r.dSc, r.dScr, r.dq = r.af(1), r.af(I), r.ai(I/4)
 		r.dO, r.logits = r.af(H), r.af(vocab)
+		r.argIdx, r.argVal = r.ai(1), r.af(1) // greedy fast-path readback (4 B vs 594 KB)
 		return r.setupErr
 	})
 	if setupErr != nil {

@@ -98,6 +98,17 @@ func (s *Sampler) Sample(logits []float32) (int, error) {
 // SampleWithInfo is Sample plus log-probability reporting (when
 // SamplingParams.Logprobs is set): the chosen token's logprob and, if
 // TopLogprobs > 0, that many highest-probability alternatives.
+// ArgmaxEquivalent reports whether this sampler's pick is exactly argmax(raw logits): no
+// logit bias, no penalties, no temperature/filtering, and no logprob reporting that would
+// need the distribution. When true (and SamplingParams.LogitProcessor is nil), a backend that
+// can compute the argmax on-device may return just the id and skip the full-logits readback —
+// the emitted tokens are identical. This lives next to every logit-touching parameter on
+// purpose: adding a new one that mutates or reads logits must be reflected here, so a fast
+// path can never silently diverge.
+func (s *Sampler) ArgmaxEquivalent() bool {
+	return s.p.Temperature <= 0 && len(s.p.LogitBias) == 0 && !s.penaltiesActive() && !s.p.Logprobs
+}
+
 func (s *Sampler) SampleWithInfo(logits []float32) (SampleInfo, error) {
 	if len(logits) == 0 {
 		return SampleInfo{}, fmt.Errorf("decoder.Sample: empty logits")

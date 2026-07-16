@@ -2,7 +2,10 @@
 
 package cuda
 
-import _ "embed"
+import (
+	_ "embed"
+	"math"
+)
 
 // The production decode kernels (NVRTC→PTX→go:embed→driver-JIT via cuModuleLoadDataEx).
 // These embeds live in a non-test file so the real backend (BuildResident/cudaResident)
@@ -40,4 +43,19 @@ func permuteFast(w uint32) uint32 {
 		o |= nv << (4 * nibblePosFast(i))
 	}
 	return o
+}
+
+// f32tof16 encodes an IEEE float32 into a float16 bit pattern (round-to-nearest-even, simple).
+func f32tof16(f float32) uint16 {
+	b := math.Float32bits(f)
+	s := uint16((b >> 16) & 0x8000)
+	e := int32((b>>23)&0xff) - 127 + 15
+	m := b & 0x7fffff
+	if e <= 0 {
+		return s
+	}
+	if e >= 0x1f {
+		return s | 0x7c00
+	}
+	return s | uint16(e<<10) | uint16(m>>13)
 }

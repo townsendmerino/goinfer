@@ -16,7 +16,10 @@ import (
 // single LockOSThread-pinned executor goroutine (guardrail #3); Forward routes one channel
 // round-trip per token. Dense residency only (Qwen2/Llama, DecodeRunnerEligible), mixed
 // int4/int8/f32 weights as the real q4_k_m checkpoint stores them.
-var _ decoder.ResidentForward = (*cudaResident)(nil)
+var (
+	_ decoder.ResidentForward = (*cudaResident)(nil)
+	_ decoder.ResidentGreedy  = (*cudaResident)(nil)
+)
 
 const cudaCtxCap = 4096 // resident KV capacity (positions); staged path handles longer.
 
@@ -24,7 +27,9 @@ const cudaCtxCap = 4096 // resident KV capacity (positions); staged path handles
 type cudaWQ struct {
 	kind string
 	W    *gc.Buffer[uint32]  // packed weights (int4 fast-layout nibbles, or int8x4)
-	ws   *gc.Buffer[float32] // scales: int4 group (N*K/32) / int8 row (N)
+	ws   *gc.Buffer[float32] // int8 row scales (N)
+	ws16 *gc.Buffer[uint16]  // int4 group scales as f16 (N*K/32) — f32 would be 20% of the
+	//                          int4 byte stream; f16 halves that (decode is byte-bound).
 	N, K int
 }
 
@@ -44,9 +49,9 @@ type cudaResident struct {
 	eps, attnScale                             float32
 
 	// gocudrv state — touched ONLY on the executor thread.
-	cx                                                                 *gc.Context
-	stream                                                             *gc.Stream
-	gemvW4, gemvW8, kvStore, ropeKV, fRms, fQ, fRope, fAttn, fSw, fRes *gc.Function
+	cx                                                                       *gc.Context
+	stream                                                                   *gc.Stream
+	gemvW4, gemvW8, kvStore, ropeKV, fRms, fQ, fRope, fAttn, fSw, fRes, fArg *gc.Function
 
 	layers          []cudaLayer
 	lmW             cudaWQ
@@ -54,7 +59,8 @@ type cudaResident struct {
 
 	// per-token scratch + KV caches (device).
 	x, aSc, qB, kB, vB, cctx, cSc, oO, mSc, gO, uO, dSc, dScr, dO, logits *gc.Buffer[float32]
-	aq, cq, mq, dq                                                        *gc.Buffer[int32]
+	aq, cq, mq, dq, argIdx                                                *gc.Buffer[int32]
+	argVal                                                                *gc.Buffer[float32]
 	kc, vc                                                                []*gc.Buffer[float32]
 
 	logitsHost []float32 // reused across Forward calls (decode consumes each before the next)
@@ -95,8 +101,24 @@ func (r *cudaResident) upu32(v []uint32) *gc.Buffer[uint32] {
 	}
 	return b
 }
+func (r *cudaResident) upu16(v []uint16) *gc.Buffer[uint16] {
+	b, e := gc.Alloc[uint16](r.cx, len(v))
+	if e != nil && r.setupErr == nil {
+		r.setupErr = e
+	}
+	if b != nil {
+		_ = gc.CopyHtoD(context.Background(), b, v)
+	}
+	return b
+}
 func (r *cudaResident) upW(h hostW) cudaWQ {
-	return cudaWQ{h.kind, r.upu32(h.wpk), r.up32(h.ws), h.N, h.K}
+	w := cudaWQ{kind: h.kind, W: r.upu32(h.wpk), N: h.N, K: h.K}
+	if h.kind == "int4" {
+		w.ws16 = r.upu16(h.ws16)
+	} else {
+		w.ws = r.up32(h.ws)
+	}
+	return w
 }
 
 func (r *cudaResident) do(j func() error) error { r.reqCh <- j; return <-r.ackCh }
@@ -185,31 +207,31 @@ func (r *cudaResident) rms(src, nrm *gc.Buffer[float32], qOut *gc.Buffer[int32],
 func (r *cudaResident) doG(wt cudaWQ, a *gc.Buffer[int32], as *gc.Buffer[float32], bias gc.KernelArg, dst *gc.Buffer[float32], accum int32) error {
 	cfg := gc.LaunchConfig{GridX: uint32((wt.N + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
 	if wt.kind == "int4" {
-		return r.launch(r.gemvW4, cfg, gc.Arg(wt.W), gc.Arg(a), gc.Arg(wt.ws), gc.Arg(as), bias,
+		return r.launch(r.gemvW4, cfg, gc.Arg(wt.W), gc.Arg(a), gc.Arg(wt.ws16), gc.Arg(as), bias,
 			gc.ArgValue(int32(wt.N)), gc.ArgValue(int32(wt.K/8)), gc.ArgValue(int32(wt.K/32)), gc.Arg(dst), gc.ArgValue(accum))
 	}
 	return r.launch(r.gemvW8, cfg, gc.Arg(wt.W), gc.Arg(a), gc.Arg(wt.ws), gc.Arg(as), bias,
 		gc.ArgValue(int32(wt.N)), gc.ArgValue(int32(wt.K/4)), gc.Arg(dst), gc.ArgValue(accum))
 }
 
-// step is one token's forward on the executor thread; returns logits (reused host buffer).
-func (r *cudaResident) step(emb []float32, pos int) ([]float32, error) {
+// launchToken issues one token's whole kernel chain, leaving logits[vocab] on the device.
+func (r *cudaResident) launchToken(emb []float32, pos int) error {
 	bg := context.Background()
 	nullBias := gc.ArgDevicePtr(0)
 	if e := gc.CopyHtoD(bg, r.x, emb); e != nil {
-		return nil, e
+		return e
 	}
 	for l := 0; l < r.nLayers; l++ {
 		Ly := &r.layers[l]
 		if e := r.rms(r.x, Ly.preNorm, r.aq, r.aSc); e != nil {
-			return nil, e
+			return e
 		}
 		qb, kb, vb := nullBias, nullBias, nullBias
 		if Ly.hasBias {
 			qb, kb, vb = gc.Arg(Ly.qb), gc.Arg(Ly.kb), gc.Arg(Ly.vb)
 		}
 		if e := r.doG(Ly.q, r.aq, r.aSc, qb, r.qB, 0); e != nil {
-			return nil, e
+			return e
 		}
 		_ = r.doG(Ly.k, r.aq, r.aSc, kb, r.kB, 0)
 		_ = r.doG(Ly.v, r.aq, r.aSc, vb, r.vB, 0)
@@ -228,13 +250,20 @@ func (r *cudaResident) step(emb []float32, pos int) ([]float32, error) {
 		_ = r.doG(Ly.u, r.mq, r.mSc, nullBias, r.uO, 0)
 		_ = r.launch(r.fSw, onecfg(256, 256*4), gc.Arg(r.gO), gc.Arg(r.uO), gc.ArgValue(int32(r.inter)), gc.Arg(r.dq), gc.Arg(r.dSc), gc.Arg(r.dScr))
 		if e := r.doG(Ly.d, r.dq, r.dSc, nullBias, r.x, 1); e != nil {
-			return nil, e
+			return e
 		}
 	}
 	if e := r.rms(r.x, r.finalNorm, r.aq, r.aSc); e != nil {
-		return nil, e
+		return e
 	}
-	if e := r.doG(r.lmW, r.aq, r.aSc, nullBias, r.logits, 0); e != nil {
+	return r.doG(r.lmW, r.aq, r.aSc, nullBias, r.logits, 0)
+}
+
+// step returns full logits — the general contract (sampler / constrained decode / logprobs).
+// Costs a vocab*4 B D2H every token (594 KB at a 151936 vocab).
+func (r *cudaResident) step(emb []float32, pos int) ([]float32, error) {
+	bg := context.Background()
+	if e := r.launchToken(emb, pos); e != nil {
 		return nil, e
 	}
 	if e := r.stream.Synchronize(bg); e != nil {
@@ -246,12 +275,40 @@ func (r *cudaResident) step(emb []float32, pos int) ([]float32, error) {
 	return r.logitsHost, nil
 }
 
+// ForwardArgmax is the greedy fast path (decoder.ResidentGreedy): reduce the argmax on-device
+// and read back 4 B instead of the whole logits vector. Same kernel chain, same numerics —
+// only the readback differs, so the id equals argmax(Forward(...)) exactly.
+func (r *cudaResident) ForwardArgmax(embedding []float32, pos int) (int, error) {
+	var id int
+	err := r.do(func() error {
+		bg := context.Background()
+		if e := r.launchToken(embedding, pos); e != nil {
+			return e
+		}
+		if e := r.launch(r.fArg, onecfg(256, 256*4+256*4), gc.Arg(r.logits),
+			gc.ArgValue(int32(r.vocab)), gc.Arg(r.argIdx), gc.Arg(r.argVal)); e != nil {
+			return e
+		}
+		if e := r.stream.Synchronize(bg); e != nil {
+			return e
+		}
+		out := make([]int32, 1)
+		if e := gc.CopyDtoH(bg, out, r.argIdx); e != nil {
+			return e
+		}
+		id = int(out[0])
+		return nil
+	})
+	return id, err
+}
+
 // --- host-side weight packing (CPU; runs before any CUDA) ---
 
 type hostW struct {
 	kind string
 	wpk  []uint32
-	ws   []float32
+	ws   []float32 // int8 row scales
+	ws16 []uint16  // int4 group scales (f16)
 	N, K int
 }
 
@@ -281,14 +338,18 @@ func packWeight(w *linalg.WeightMat) (hostW, error) {
 			b := q4[i*4 : i*4+4]
 			wpk[i] = permuteFast(uint32(b[0]) | uint32(b[1])<<8 | uint32(b[2])<<16 | uint32(b[3])<<24)
 		}
-		return hostW{"int4", wpk, sc, N, K}, nil
+		gs := make([]uint16, len(sc))
+		for i, v := range sc {
+			gs[i] = f32tof16(v)
+		}
+		return hostW{kind: "int4", wpk: wpk, ws16: gs, N: N, K: K}, nil
 	case "int8":
 		q8, sc, _, _ := w.Int8()
-		return hostW{"int8", packI8(q8, N, K), sc, N, K}, nil
+		return hostW{kind: "int8", wpk: packI8(q8, N, K), ws: sc, N: N, K: K}, nil
 	case "f32":
 		f32, _ := w.F32()
 		q8, sc := linalg.QuantizeRowsInt8(f32, N, K)
-		return hostW{"int8", packI8(q8, N, K), sc, N, K}, nil
+		return hostW{kind: "int8", wpk: packI8(q8, N, K), ws: sc, N: N, K: K}, nil
 	default:
 		return hostW{}, fmt.Errorf("cuda: unsupported projection kind %q", w.Kind())
 	}
