@@ -94,6 +94,58 @@ kernel void gemv_w4a8_resid(device const uint* bq[[buffer(0)]], device const flo
     W4A8_BODY
     if (lid == 0) out[gid] += acc*asc[0];
 }
+
+// Stage A (Fable): simdgroup-per-row like _coal, but three ALU/LSU wins, NO repack:
+//  (1) uint4 loads — one 128-bit load = one full 32-element scale group (4 words), so the
+//      load width IS the parity structure (1 int group-sum, 1 f32 MAC per group).
+//  (2) int8 activation staged once into threadgroup short (pre-widened) — replaces the
+//      per-row device byte-gather (17920× re-reads) that dominates LSU issue.
+//  (3) 8 simdgroups/threadgroup (tg=256) so all cores stay fed; each simdgroup = one row.
+// UNP8 = 8 (nibble-8)*int8 terms, bit-identical to _coal's per-word math. K<=1536 (As sized).
+#define UNP8(x, a) ( \
+    (int((x)&0xF)-8)*int((a)[0]) + (int(((x)>>4)&0xF)-8)*int((a)[1]) \
+  + (int(((x)>>8)&0xF)-8)*int((a)[2]) + (int(((x)>>12)&0xF)-8)*int((a)[3]) \
+  + (int(((x)>>16)&0xF)-8)*int((a)[4]) + (int(((x)>>20)&0xF)-8)*int((a)[5]) \
+  + (int(((x)>>24)&0xF)-8)*int((a)[6]) + (int(((x)>>28)&0xF)-8)*int((a)[7]) )
+#define SA_BODY \
+    threadgroup short As[1536]; \
+    for (uint i=tid;i<K;i+=tgs) As[i]=short(aq[i]); \
+    threadgroup_barrier(mem_flags::mem_threadgroup); \
+    uint G = K>>5u; \
+    uint row = tgid*(tgs>>5u) + sgid; \
+    device const uint4* wr = wq + (uint)row*G; \
+    device const float* sr = sct + (uint)row*G; \
+    float acc = 0.0f; \
+    for (uint g=lane; g<G; g+=32u) { \
+        uint4 w = wr[g]; threadgroup const short* a = As + g*32u; \
+        int gi = UNP8(w.x,a) + UNP8(w.y,a+8) + UNP8(w.z,a+16) + UNP8(w.w,a+24); \
+        acc += float(gi) * sr[g]; \
+    } \
+    acc = simd_sum(acc);
+kernel void gemv_w4a8_sa(device const uint4* wq[[buffer(0)]], device const float* sct[[buffer(1)]],
+    device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
+    constant uint& K[[buffer(5)]], uint tgid[[threadgroup_position_in_grid]],
+    uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]],
+    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
+    SA_BODY
+    if (lane==0) out[row] = acc*asc[0];
+}
+kernel void gemv_w4a8_sa_bias(device const uint4* wq[[buffer(0)]], device const float* sct[[buffer(1)]],
+    device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
+    device const float* bias[[buffer(5)]], constant uint& K[[buffer(6)]], uint tgid[[threadgroup_position_in_grid]],
+    uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]],
+    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
+    SA_BODY
+    if (lane==0) out[row] = acc*asc[0] + bias[row];
+}
+kernel void gemv_w4a8_sa_resid(device const uint4* wq[[buffer(0)]], device const float* sct[[buffer(1)]],
+    device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
+    constant uint& K[[buffer(5)]], uint tgid[[threadgroup_position_in_grid]],
+    uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]],
+    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
+    SA_BODY
+    if (lane==0) out[row] += acc*asc[0];
+}
 kernel void rope(device float* x[[buffer(0)]], device const float* invf[[buffer(1)]],
     constant uint& hd[[buffer(2)]], constant uint& pos[[buffer(3)]], constant uint& total[[buffer(4)]],
     uint gid[[thread_position_in_grid]]) {

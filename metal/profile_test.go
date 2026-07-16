@@ -69,9 +69,12 @@ func TestProfileKernels(t *testing.T) {
 	}
 	pGemvBias, pGemvC, pGemvR := pipe("gemv_w4a8_bias"), pipe("gemv_w4a8_coal"), pipe("gemv_w4a8_resid")
 	pRms, pSw, pAttn := pipe("rmsnorm_quant"), pipe("swiglu_quant"), pipe("attention")
+	pGemvSA := pipe("gemv_w4a8_sa")
 
 	qkv := prof("qkv gemv (2048xK1536)", 200, func(r int) { q.Run1DBatch(pGemvBias, 2048*32, 32, r, w, sc, aqI, aScB, outBig, bias, uHb) })
 	gu := prof("gate/up gemv (17920xK1536)", 200, func(r int) { q.Run1DBatch(pGemvC, (2*I)*32, 32, r, wI, scI, aqI, aScB, outBig, uHb) })
+	guSA := prof("gate/up SA (17920xK1536)", 200, func(r int) { q.Run1DBatch(pGemvSA, (2*I)*32, 256, r, wI, scI, aqI, aScB, outBig, uHb) })
+	_ = guSA
 	down := prof("down gemv (1536xK8960)", 200, func(r int) { q.Run1DBatch(pGemvR, H*32, 32, r, wD, scD, aqI, aScB, fH, uIb) })
 	oproj := prof("o gemv (1536xK1536)", 200, func(r int) { q.Run1DBatch(pGemvR, H*32, 32, r, w, sc, aqI, aScB, fH, uHb) })
 	lm := prof("lm head gemv (151936xK1536)", 60, func(r int) { q.Run1DBatch(pGemvC, V*32, 32, r, w, sc, aqI, aScB, outBig, uHb) })

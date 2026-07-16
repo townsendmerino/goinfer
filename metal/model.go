@@ -27,6 +27,7 @@ type Resident struct {
 	d                                             *Device
 	q                                             Queue
 	pRms, pQv, pGemv, pGemvBias, pGemvResid, pRope, pKv, pAttn, pSw, pRes Pipeline
+	pSA, pSABias, pSAResid                                               Pipeline // Stage A gemv (K<=1536)
 	qkv, gu                                                              Buffer // fused QKV out, fused gate/up out
 
 	H, nL, nH, nKV, hd, I, V, kvDim, half int
@@ -117,6 +118,7 @@ func BuildResident(m *decoder.Model) (*Resident, error) {
 	r := &Resident{d: d, H: H, nL: nL, nH: nH, nKV: nKV, hd: hd, I: I, V: V, kvDim: nKV * hd, half: hd / 2}
 	r.pRms, r.pQv, r.pGemv = pipe("rmsnorm_quant"), pipe("quant_vec"), pipe("gemv_w4a8_coal")
 	r.pGemvBias, r.pGemvResid = pipe("gemv_w4a8_bias"), pipe("gemv_w4a8_resid")
+	r.pSA, r.pSABias, r.pSAResid = pipe("gemv_w4a8_sa"), pipe("gemv_w4a8_sa_bias"), pipe("gemv_w4a8_sa_resid")
 	r.pRope, r.pKv, r.pAttn = pipe("rope"), pipe("kv_store"), pipe("attention")
 	r.pSw, r.pRes = pipe("swiglu_quant"), pipe("residual")
 	r.q = d.NewCommandQueue()
@@ -200,21 +202,21 @@ func (r *Resident) Forward(id, pos int) []float32 {
 		L := &r.layers[l]
 		// --- attention block (12 dispatches vs 19: QKV fused +bias, residual fused) ---
 		e.dispatch(r.pRms, 256, 256, r.x, L.preNorm, r.aq, r.aSc, r.uH, r.uEps)
-		e.dispatch(r.pGemvBias, qkvRows*32, 32, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv, L.qkvBias, r.uH)
+		e.dispatch(r.pSABias, qkvRows*32, 256, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv, L.qkvBias, r.uH)
 		e.dispatch(r.pRope, nHhd/2, 64, r.qkv, r.invf, r.uHd, r.uPos, r.uQtotal)                 // q @ off 0
 		e.dispatch(r.pRope, r.kvDim/2, 64, r.qkv.At(kOff), r.invf, r.uHd, r.uPos, r.uKtotal)      // k
 		e.dispatch(r.pKv, r.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[l], r.vc[l], r.uKvDim, r.uPos)
 		e.dispatch(r.pAttn, r.nH*128, 128, r.qkv, r.kc[l], r.vc[l], r.ctx, r.uNH, r.uNKV, r.uHd, r.uNKeys, r.uScale)
 		e.dispatch(r.pQv, 256, 256, r.ctx, r.cq, r.cSc, r.uHH)
-		e.dispatch(r.pGemvResid, r.H*32, 32, L.oW, L.oS, r.cq, r.cSc, r.x, r.uHH) // o-proj + residual
+		e.dispatch(r.pSAResid, r.H*32, 256, L.oW, L.oS, r.cq, r.cSc, r.x, r.uHH) // o-proj + residual
 		// --- ffn block ---
 		e.dispatch(r.pRms, 256, 256, r.x, L.postNorm, r.mq, r.mSc, r.uH, r.uEps)
-		e.dispatch(r.pGemv, (2*r.I)*32, 32, L.guW, L.guS, r.mq, r.mSc, r.gu, r.uH) // fused gate|up
+		e.dispatch(r.pSA, (2*r.I)*32, 256, L.guW, L.guS, r.mq, r.mSc, r.gu, r.uH) // fused gate|up
 		e.dispatch(r.pSw, 256, 256, r.gu, r.gu.At(r.I*4), r.dq, r.dSc, r.uI)        // gate @0, up @I
 		e.dispatch(r.pGemvResid, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.x, r.uI) // down + residual
 	}
 	e.dispatch(r.pRms, 256, 256, r.x, r.finalNorm, r.aq, r.aSc, r.uH, r.uEps)
-	e.dispatch(r.pGemv, (r.V)*32, 32, r.lmW, r.lmS, r.aq, r.aSc, r.logits, r.uH)
+	e.dispatch(r.pSA, (r.V)*32, 256, r.lmW, r.lmS, r.aq, r.aSc, r.logits, r.uH)
 	e.end()
 
 	copy(r.logitsHost, r.logits.Floats())
