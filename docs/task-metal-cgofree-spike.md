@@ -329,22 +329,26 @@ this time" was *can compute go through purego-objc cgo-free at all, correctly, a
 tolerable tax* — yes on all three, proven on the real rig. The binding does not force
 cgo (the NO-GO condition) — the opposite.
 
-## Findings — Layer B, step 1: the hot GEMV ported to MSL, bit-exact
+## Findings — Layer B, steps 1–3: the GEMVs + norm ported to MSL, all bit-exact
 
-`TestLayerB_gemvW8A8Parity`. The bandwidth-bound bottleneck — goinfer's **W8A8 GEMV**
-(int8×int8 → i32 accumulate → × activation-scale × per-row weight-scale) — ported to
-MSL and validated against a CPU reference on real per-row-int8-quantized data (256×1536,
-qwen-ish proj shape): **cosine = 1.0000000, max-rel = 0.00e+00 — bit-exact**, cgo-free.
-Mirrors the CUDA arc's "B step 1 (real-weight GEMV parity)": the packing + integer-GEMV
-math carry over exactly; MSL is the C++ dialect the doc promised. (This is the naive
-one-row-per-thread kernel — *correct first*; the CUDA lesson is that tuning, coalescing/
-ILP to ~80% peak, comes after parity, and was all memory-access, not ALU.)
+Each ported kernel validated vs a CPU reference on qwen-shaped data (256×1536 / H=1536),
+cgo-free — **all bit-exact** (the CUDA lesson holds: packing + math carry over exactly;
+MSL is the C++ dialect the doc promised):
 
-**Remaining Layer B (the bulk, per the doc's scope):** port the rest of the six proven
-kernels (rmsnorm+quant, rope, GQA online-softmax attention, swiglu+quant, residual, +
-the W4A8 GEMV and kv_store), assemble a full dense decode layer into **one command
-buffer per token** (the tax requirement above), stand up the **argmax-parity gate vs CPU
-decode on the real qwen2.5-coder-1.5b checkpoint**, and measure device-timed
-(`GPUStartTime`/`GPUEndTime`) decode **tok/s vs the ~71 GO bar** (aspirational ~83 Ollama
-parity). Layer A being retired means this is now the *mechanical* half — real work, but
-no open viability risk.
+- **W8A8 GEMV** (`TestLayerB_gemvW8A8Parity`) — int8×int8 → i32 → ×aScale ×per-row
+  bScale. **cosine 1.0000000, max-rel 0.00e+00.**
+- **W4A8 GEMV** (`TestLayerB_gemvW4A8Parity`) — the **target quant** (int4/q4_k_m):
+  goinfer's exact packing (group=32, nibble=q+8, element k → word k/8 @ bit 4·(k%8)),
+  f32 group scales (the correctness lesson), Σ(nibble−8)·int8act per group. **cosine
+  1.0000000, max-rel 0.00e+00.**
+- **RMSNorm+quant** (`TestLayerB_rmsnormQuantParity`) — the fused norm→int8 producer that
+  feeds the GEMVs; single-threadgroup with two threadgroup reductions (sum-of-squares,
+  maxabs). **cosine 1.0000000, int8 exact 1536/1536** — the reduction/`rsqrt` pattern the
+  attention & norm kernels all need ports cleanly. (Naive/correct-first; tuning follows.)
+
+This is the **norm→matmul core** of a dense decode layer, done. **Remaining Layer B:**
+rope, GQA online-softmax attention, swiglu+quant, residual, kv_store; then assemble a
+full layer into **one command buffer per token** (the tax requirement), the
+**argmax-parity gate vs CPU decode on real qwen2.5-coder-1.5b**, and device-timed decode
+**tok/s vs the ~71 GO bar** (aspirational ~83 Ollama parity). Layer A retired ⇒ this is
+the *mechanical* half — real work, no open viability risk.

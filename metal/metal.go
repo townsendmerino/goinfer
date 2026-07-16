@@ -190,6 +190,13 @@ func (d *Device) NewBufferU32(v uint32) Buffer {
 	return Buffer{id: id, n: 1}
 }
 
+// NewBufferUint32s uploads packed u32 data (n counts u32 words). Shared/UMA.
+func (d *Device) NewBufferUint32s(data []uint32) Buffer {
+	id := d.id.Send(selNewBufferBytes, unsafe.Pointer(&data[0]), uintptr(len(data)*4), uintptr(0))
+	runtime.KeepAlive(data)
+	return Buffer{id: id, n: len(data)}
+}
+
 // Floats / Int8s view the buffer's shared contents as a Go slice (zero-copy on UMA).
 func (b Buffer) Floats() []float32 {
 	return unsafe.Slice(objc.Send[*float32](b.id, selContents), b.n)
