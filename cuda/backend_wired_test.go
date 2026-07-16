@@ -42,6 +42,26 @@ func TestBackendResidentWired(t *testing.T) {
 	if rf == nil {
 		t.Fatal("BuildResident did not engage — resident is nil; the wired --backend cuda path fell back to staged (wiring/driver regression)")
 	}
+	// Sliding-window WIRING check. The kernel semantics are proven bit-exact separately
+	// (TestSlidingWindowAttention), but a window only engages past `window` keys — so if the
+	// per-layer value were silently 0, the short-prompt parity below could not tell. Assert the
+	// resident carries the arch's window on exactly the layers the decoder marks local.
+	if w := mc.SlidingWindowResident(); w > 0 {
+		cr, ok := rf.(*cudaResident)
+		if !ok {
+			t.Fatalf("resident is %T, want *cudaResident", rf)
+		}
+		for l := range cr.layers {
+			want := int32(0)
+			if mc.LayerIsLocalResident(l) {
+				want = int32(w)
+			}
+			if got := cr.layers[l].window; got != want {
+				t.Fatalf("layer %d: resident window = %d, want %d — the window is not reaching the kernel", l, got, want)
+			}
+		}
+		t.Logf("sliding window %d wired on all %d layers (local per LayerIsLocalResident)", w, len(cr.layers))
+	}
 
 	mcpu, err := decoder.Load(gguf, decoder.Options{Quant: "int4"})
 	if err != nil {

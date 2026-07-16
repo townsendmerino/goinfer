@@ -99,10 +99,9 @@ func TestResidentAdmission_matrix(t *testing.T) {
 // to catch, so widening a set must be a deliberate, reviewed edit — not a drive-by.
 func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 	want := map[string][]ResidentFeature{
-		// cgo-free CUDA: plain dense + per-head QK-norm (qk_norm kernel, validated against the
-		// CPU on real Qwen3). Still no (1+w) RMS, no partial/per-layer/YaRN rope, no sliding
-		// window, no MoE/MLA/SSM.
-		"cuda": {FeatQKNorm},
+		// cgo-free CUDA: plain dense + per-head QK-norm + sliding window (both validated on real
+		// checkpoints). Still no (1+w) RMS, no partial/per-layer/YaRN rope, no MoE/MLA/SSM.
+		"cuda": {FeatQKNorm, FeatSlidingWindow},
 		"webgpu": {
 			FeatQKNorm, FeatPartialRotary, FeatSlidingWindow, FeatPerLayerRoPE, FeatRopeMscale,
 			FeatMoE, FeatMLA, FeatSSM, FeatNonGatedMLP, FeatLogitScale, FeatRMSAddOne,

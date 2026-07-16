@@ -76,37 +76,45 @@ __global__ void rope(float* __restrict__ vec, const float* __restrict__ invFreq,
 
 // attention: decode single-query GQA. q[nH*hd], kc/vc are [nKeys*kvDim] (kvDim=nKV*hd),
 // layout [key*kvDim + head*hd + d], k post-RoPE. One block per q-head. ctx[nH*hd].
+// window: 0 = full causal (a global layer, or an arch with no window). Otherwise attend only
+// over the last `window` keys, matching decoder/kvcache.go WindowStart:
+//   start = max(pos - window + 1, 0)  and with nKeys = pos+1  ⇒  max(nKeys - window, 0).
+// Scores are indexed from winStart, so shared memory is bounded by min(nKeys, window) rather
+// than nKeys — which also lifts the ~12k-key ceiling the old (nKeys+blockDim)*4 request hit
+// against the 48 KB per-block limit.
 __global__ void attention(const float* __restrict__ q, const float* __restrict__ kc,
                           const float* __restrict__ vc, int nH, int nKV, int hd, int nKeys,
-                          float scale, float* __restrict__ ctx) {
-    extern __shared__ float sm[];       // [nKeys] scores/weights + [blockDim] reduce
+                          float scale, int window, float* __restrict__ ctx) {
+    extern __shared__ float sm[];       // [nWin] scores/weights + [blockDim] reduce
+    int winStart = (window > 0 && nKeys > window) ? nKeys - window : 0;
+    int nWin = nKeys - winStart;
     float* sc = sm;
-    float* red = sm + nKeys;
+    float* red = sm + nWin;
     int h = blockIdx.x; if (h >= nH) return;
     int kvDim = nKV * hd, group = nH / nKV, kvh = h / group;
     const float* qh = q + h * hd;
     int t = threadIdx.x, nt = blockDim.x;
     // scores + local max
     float lm = -1e30f;
-    for (int s = t; s < nKeys; s += nt) {
+    for (int s = winStart + t; s < nKeys; s += nt) {
         const float* ks = kc + s * kvDim + kvh * hd;
         float dot = 0.f;
         for (int d = 0; d < hd; d++) dot += qh[d] * ks[d];
-        dot *= scale; sc[s] = dot; lm = fmaxf(lm, dot);
+        dot *= scale; sc[s - winStart] = dot; lm = fmaxf(lm, dot);
     }
     red[t] = lm; __syncthreads();
     for (int o = nt >> 1; o > 0; o >>= 1) { if (t < o) red[t] = fmaxf(red[t], red[t + o]); __syncthreads(); }
     float mx = red[0]; __syncthreads();
     // exp + sum
     float ls = 0.f;
-    for (int s = t; s < nKeys; s += nt) { float e = __expf(sc[s] - mx); sc[s] = e; ls += e; }
+    for (int s = winStart + t; s < nKeys; s += nt) { float e = __expf(sc[s - winStart] - mx); sc[s - winStart] = e; ls += e; }
     red[t] = ls; __syncthreads();
     for (int o = nt >> 1; o > 0; o >>= 1) { if (t < o) red[t] += red[t + o]; __syncthreads(); }
     float inv = 1.f / red[0]; __syncthreads();
-    // ctx[d] = sum_s (sc[s]*inv) * V[s,d]
+    // ctx[d] = sum_s (sc[s]*inv) * V[s,d]  over the window only
     for (int d = t; d < hd; d += nt) {
         float acc = 0.f;
-        for (int s = 0; s < nKeys; s++) acc += sc[s] * vc[s * kvDim + kvh * hd + d];
+        for (int s = winStart; s < nKeys; s++) acc += sc[s - winStart] * vc[s * kvDim + kvh * hd + d];
         ctx[h * hd + d] = acc * inv;
     }
 }

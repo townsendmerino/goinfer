@@ -88,6 +88,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		qb, kb, vb          []float32
 		preNorm, postNorm   []float32
 		qNorm, kNorm        []float32
+		window              int32
 		hasBias             bool
 	}
 	hls := make([]hlayer, nLayers)
@@ -109,6 +110,10 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		}
 		hl.preNorm, hl.postNorm = lw.PreAttnNorm, lw.PreMLPNorm
 		hl.qNorm, hl.kNorm = lw.QNorm, lw.KNorm
+		// Per-layer window: only LOCAL layers are windowed; global layers stay full causal.
+		if m.LayerIsLocalResident(l) {
+			hl.window = int32(m.SlidingWindowResident())
+		}
 		if m.HasQKNorm() && (len(hl.qNorm) != hd || len(hl.kNorm) != hd) {
 			return declined(fmt.Errorf("layer %d: arch claims QK-norm but QNorm/KNorm are not len==headDim(%d)", l, hd))
 		}
@@ -225,6 +230,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			if r.qkNorm {
 				L.qNorm, L.kNorm = r.up32(h.qNorm), r.up32(h.kNorm)
 			}
+			L.window = h.window
 			r.layers[l] = L
 		}
 		r.lmW = r.upW(hlm)

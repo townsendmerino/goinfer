@@ -134,7 +134,7 @@ func TestE2EDecode(t *testing.T) {
 			L(fRope, cfg1D(nH*half, 256), gc.Arg(qkv), gc.Arg(invF), gc.ArgValue(int32(nH)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(pos)))
 			L(fRope, cfg1D(nKV*half, 64), gc.Arg(qkv), gc.Arg(invF), gc.ArgValue(int32(nKV)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(pos))) // (offset into k slice handled below in real backend; here just work)
 			L(fAttn, gc.LaunchConfig{GridX: uint32(nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nKeys + 128) * 4)},
-				gc.Arg(qkv), gc.Arg(kc), gc.Arg(vc), gc.ArgValue(int32(nH)), gc.ArgValue(int32(nKV)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(nKeys)), gc.ArgValue(scale), gc.Arg(cctx))
+				gc.Arg(qkv), gc.Arg(kc), gc.Arg(vc), gc.ArgValue(int32(nH)), gc.ArgValue(int32(nKV)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(nKeys)), gc.ArgValue(scale), gc.ArgValue(int32(0)), gc.Arg(cctx))
 			L(fQuant, one(256, 256*4), gc.Arg(cctx), gc.ArgValue(int32(qDim)), gc.Arg(cq), gc.Arg(cSc))
 			doGemv(Wo, cq, sO, H, qDim, oOut)
 			L(fResid, cfg1D(H, 256), gc.Arg(x), gc.Arg(oOut), gc.ArgValue(int32(H)))
@@ -333,7 +333,7 @@ func validateGlue(t *testing.T, ctx *gc.Context, stream *gc.Stream, bg context.C
 		_ = gc.CopyHtoD(bg, dk, kh)
 		_ = gc.CopyHtoD(bg, dv, vh)
 		_ = fAttn.LaunchOn(bg, stream, gc.LaunchConfig{GridX: uint32(nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nKeys + 128) * 4)},
-			gc.Arg(dq), gc.Arg(dk), gc.Arg(dv), gc.ArgValue(int32(nH)), gc.ArgValue(int32(nKV)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(nKeys)), gc.ArgValue(scale), gc.Arg(dc))
+			gc.Arg(dq), gc.Arg(dk), gc.Arg(dv), gc.ArgValue(int32(nH)), gc.ArgValue(int32(nKV)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(nKeys)), gc.ArgValue(scale), gc.ArgValue(int32(0)), gc.Arg(dc))
 		_ = stream.Synchronize(bg)
 		got := make([]float32, nH*hd)
 		_ = gc.CopyDtoH(bg, got, dc)

@@ -37,6 +37,7 @@ type cudaLayer struct {
 	q, k, v, o, g, u, d cudaWQ
 	qb, kb, vb          *gc.Buffer[float32] // QKV bias (nil ⇒ none)
 	qNorm, kNorm        *gc.Buffer[float32] // per-head QK-norm weights (nil ⇒ arch has none)
+	window              int32               // sliding-window span for THIS layer; 0 = full causal
 	preNorm, postNorm   *gc.Buffer[float32]
 	hasBias             bool
 }
@@ -288,8 +289,14 @@ func (r *cudaResident) launchToken(emb []float32, pos int) error {
 			gc.Arg(r.qB), gc.Arg(r.kB), gc.Arg(r.vB), gc.Arg(r.invF), gc.Arg(r.kc[l]), gc.Arg(r.vc[l]),
 			gc.ArgValue(int32(r.nH)), gc.ArgValue(int32(r.nKV)), gc.ArgValue(int32(r.hd)), gc.ArgValue(int32(pos)))
 		nKeys := pos + 1
-		_ = r.launch(r.fAttn, gc.LaunchConfig{GridX: uint32(r.nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nKeys + 128) * 4)},
-			gc.Arg(r.qB), gc.Arg(r.kc[l]), gc.Arg(r.vc[l]), gc.ArgValue(int32(r.nH)), gc.ArgValue(int32(r.nKV)), gc.ArgValue(int32(r.hd)), gc.ArgValue(int32(nKeys)), gc.ArgValue(r.attnScale), gc.Arg(r.cctx))
+		// Sliding window (per layer: Mistral is all-local, Mellum interleaves). Shared is sized
+		// to the ATTENDED span, so a windowed layer's request stays bounded as context grows.
+		nWin := nKeys
+		if Ly.window > 0 && nKeys > int(Ly.window) {
+			nWin = int(Ly.window)
+		}
+		_ = r.launch(r.fAttn, gc.LaunchConfig{GridX: uint32(r.nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nWin + 128) * 4)},
+			gc.Arg(r.qB), gc.Arg(r.kc[l]), gc.Arg(r.vc[l]), gc.ArgValue(int32(r.nH)), gc.ArgValue(int32(r.nKV)), gc.ArgValue(int32(r.hd)), gc.ArgValue(int32(nKeys)), gc.ArgValue(r.attnScale), gc.ArgValue(Ly.window), gc.Arg(r.cctx))
 		_ = r.launch(r.fQ, onecfg(256, 256*4), gc.Arg(r.cctx), gc.ArgValue(int32(r.qDim)), gc.Arg(r.cq), gc.Arg(r.cSc))
 		// accumulate straight into the residual stream — absorbs the `residual` launch.
 		_ = r.doG(Ly.o, r.cq, r.cSc, nullBias, r.x, 1)
