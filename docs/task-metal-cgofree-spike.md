@@ -329,26 +329,30 @@ this time" was *can compute go through purego-objc cgo-free at all, correctly, a
 tolerable tax* — yes on all three, proven on the real rig. The binding does not force
 cgo (the NO-GO condition) — the opposite.
 
-## Findings — Layer B, steps 1–3: the GEMVs + norm ported to MSL, all bit-exact
+## Findings — Layer B: the full decode-layer kernel set ported to MSL, all bit-exact
 
-Each ported kernel validated vs a CPU reference on qwen-shaped data (256×1536 / H=1536),
-cgo-free — **all bit-exact** (the CUDA lesson holds: packing + math carry over exactly;
-MSL is the C++ dialect the doc promised):
+Every kernel a dense Qwen2/Llama decode layer needs is ported and validated vs a CPU
+reference on qwen-shaped data, cgo-free — **all bit-exact / near-exact** (the CUDA arc's
+"MSL is the semi-mechanical C++ dialect" promise held completely; packing + math carry
+over):
 
-- **W8A8 GEMV** (`TestLayerB_gemvW8A8Parity`) — int8×int8 → i32 → ×aScale ×per-row
-  bScale. **cosine 1.0000000, max-rel 0.00e+00.**
-- **W4A8 GEMV** (`TestLayerB_gemvW4A8Parity`) — the **target quant** (int4/q4_k_m):
-  goinfer's exact packing (group=32, nibble=q+8, element k → word k/8 @ bit 4·(k%8)),
-  f32 group scales (the correctness lesson), Σ(nibble−8)·int8act per group. **cosine
-  1.0000000, max-rel 0.00e+00.**
-- **RMSNorm+quant** (`TestLayerB_rmsnormQuantParity`) — the fused norm→int8 producer that
-  feeds the GEMVs; single-threadgroup with two threadgroup reductions (sum-of-squares,
-  maxabs). **cosine 1.0000000, int8 exact 1536/1536** — the reduction/`rsqrt` pattern the
-  attention & norm kernels all need ports cleanly. (Naive/correct-first; tuning follows.)
+| Kernel (test) | Result |
+|---|---|
+| **W8A8 GEMV** (`gemvW8A8Parity`) | cosine 1.0000000, max-rel 0 |
+| **W4A8 GEMV** (`gemvW4A8Parity`) — the **target int4 quant** (q4_k_m); goinfer's exact packing (group=32, nibble=q+8, word k/8 @ bit 4·(k%8)), f32 group scales | cosine 1.0000000, max-rel 0 |
+| **RMSNorm+quant** (`rmsnormQuantParity`) — fused norm→int8; threadgroup reductions | cosine 1.0000000, int8 exact 1536/1536 |
+| **RoPE** (`ropeParity`) — NeoX half-split | cosine 1.000000000 |
+| **SwiGLU+quant** (`swigluQuantParity`) — silu(g)·u → int8 | cosine 1.0000000, int8 exact 8960/8960 |
+| **GQA online-softmax attention** (`attentionParity`) — causal, streamed softmax over the KV cache, GQA head mapping | cosine 1.0000000, maxAbs 8.9e-08 |
 
-This is the **norm→matmul core** of a dense decode layer, done. **Remaining Layer B:**
-rope, GQA online-softmax attention, swiglu+quant, residual, kv_store; then assemble a
-full layer into **one command buffer per token** (the tax requirement), the
-**argmax-parity gate vs CPU decode on real qwen2.5-coder-1.5b**, and device-timed decode
-**tok/s vs the ~71 GO bar** (aspirational ~83 Ollama parity). Layer A retired ⇒ this is
-the *mechanical* half — real work, no open viability risk.
+Kernels are correct-first (naive one-row/one-head-per-thread); the CUDA lesson is that
+tuning (coalescing/ILP to ~80% peak) follows parity and is all memory-access, not ALU.
+MSL gotcha banked: `half` is a reserved type (f16) — can't be a variable name.
+
+**Remaining Layer B (integration, no new kernel risk):** the two trivial copies
+(kv_store, residual — or fuse residual into the GEMV epilogue), then wire the six into a
+full dense decode layer encoded as **one command buffer per token** (the tax
+requirement), load + host-pack the real qwen2.5-coder-1.5b weights, stand up the
+**argmax-parity gate vs CPU decode**, and measure device-timed decode **tok/s vs the ~71
+GO bar** (aspirational ~83, Ollama parity). Layer A retired + all kernels bit-exact ⇒
+what's left is assembly + measurement, not viability.
