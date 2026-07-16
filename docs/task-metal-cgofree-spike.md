@@ -213,3 +213,39 @@ pinned Ollama).
 - If GO, the build-out shape is pre-decided by precedent: `metal/` submodule
   mirroring `cuda/` (opt-in build tag, own go.mod, backend-equivalence gate in the
   submodule, dense-qualified claims only, NOTICE discipline).
+
+---
+
+## Findings — Step 0 baselines (appended per the execution discipline)
+
+**Rig / provenance:** Apple **M1 Pro** (200 GB/s shared), macOS **26.5.2 (25F84)**,
+goinfer commit **`c51219c`**, purego v0.10.0. Model **qwen2.5-coder-1.5b-instruct-q4_k_m.gguf**,
+greedy, warm, int8 runtime (`Quant: int8int8`). Device-timed harnesses:
+`gpu.TestDecodeRealModel_throughput` (WebGPU/Metal, best-of-6 × 48-tok) and
+`decoder.BenchmarkDecode` (CPU, 48×).
+
+| Baseline (1.5B, int8) | tok/s | ms/token | note |
+|---|---|---|---|
+| **WebGPU-on-Metal** (resident, `-tags gpu`) | **31.9** | 31.3 | viable (goes GPU-resident) but **degenerate** |
+| **CPU** (pure-Go SIMD) | **32.66** | 30.6 | the pure-Go floor |
+| Ollama-Metal (native peer) | — | — | **NOT measured** — `ollama` not installed on the rig; pending |
+| bandwidth ceiling (arith) | ~129 | — | 200 GB/s ÷ ~1.55 GB/tok; int4 ≈ 2× |
+
+**Result: WebGPU-on-Metal is a WASH with CPU on the M1 Pro (0.98×)** — the Mac GPU
+path buys **nothing** today. This is new information regardless of verdict: every
+prior §B GPU number was the 2070 SUPER; WebGPU-on-Metal had never been measured, and
+it turns out **not** to be "respectable."
+
+**Implications for the spike:**
+- Per §Go/no-go, WebGPU-on-Metal degenerate ⇒ **the GO bar is ≥85% of Ollama-Metal**,
+  not "beat CPU." That bar can't be set until Ollama-Metal is measured on this rig.
+- The **31.9 → ~129 tok/s gap is the headroom** a cgo-free native-Metal backend
+  targets. Even landing in the bandwidth-class ~65–129 range would be a **2–4× win**
+  over the WebGPU/CPU wash — *plus* the identity win (first `CGO_ENABLED=0` GPU path
+  on the platform where pure-Go matters most; today Mac GPU = `-tags gpu` = cgo).
+- Net: Step 0 **strengthens** the case — the incumbent Mac GPU story is a dud, so the
+  native lane's potential delta is large.
+
+**Next:** (1) install + version-pin Ollama-Metal, measure it → sets the exact GO bar;
+(2) Layer A — the purego-objc ~20-selector compute binding (the open risk); (3) Layer B
+MSL kernel ports (de-risked by the CUDA arc).
