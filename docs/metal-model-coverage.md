@@ -193,3 +193,25 @@ Mac with >16 GB (or a smaller windowed model — none exists small). Deferred, n
   Metal's coherent generation, this makes the Metal 0.6B parity gap int4-on-tiny-Q8_0 + adversarial
   ids, not a decoder/QK-norm bug. A CUDA-Qwen3-1.7B reference would fully close it, but needs CUDA
   QK-norm implemented first (offered by the Linux box).
+
+## Qwen3 gap RESOLVED — not a Metal bug (CUDA cross-check, 420906d)
+
+The Linux box implemented CUDA QK-norm and ran Qwen3-1.7B on CUDA, which answers the Metal
+0.6B parity question conclusively — three independent lines:
+1. **Ratio match across unrelated backends**: CUDA Qwen3-1.7B 5/8 = 62.5% (pre-f64-fix) ==
+   Metal Qwen3-0.6B 15/24 = 62.5%. Two different kernels landing on the identical ratio points
+   UPSTREAM of both — methodology/model, not the GPU kernels.
+2. **Quantization ruled out**: CUDA's gate compares CUDA-int4 vs CPU-int4 (same weights), and
+   still showed the looseness — so it's backend-vs-CPU numerics + adversarial teacher-forced ids
+   (out-of-distribution → flat logits → near-tie argmax flips), NOT int4-vs-int8.
+3. **Coherent generation** on both backends (Metal + CUDA), including Qwen3's `<think>` block.
+
+**f64 note (not portable to Metal):** the CPU accumulates QK-norm's sum-of-squares in float64
+(decoder/rmsnorm.go); on CUDA, matching that (f64 accumulate, f32 cast) recovered one near-tie
+position (5/8→6/8). **Metal GPUs have no `double`** — MSL can't do f64 — so this doesn't port.
+Metal's qk_norm already reduces in f32 (not f16) with a pairwise tree, which is the best
+available; the residual near-tie gap is a hardware precision limit, not a bug.
+
+**Coverage conclusion:** Qwen3 confirmed correct on Metal (+ CUDA). Admission unified on the
+shared `decoder/features.go` taxonomy (refit done, 10a32f9). Qwen3/Mistral/Phi-3 coverage
+complete for the dense path; Gemma/MoE/MLA/YaRN correctly decline.
