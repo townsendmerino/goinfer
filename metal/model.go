@@ -20,6 +20,7 @@ const metalCtxCap = 4096 // resident KV positions (spike)
 type residLayer struct {
 	qkvW, qkvS, guW, guS, oW, oS, dW, dS Buffer // fused QKV + fused gate/up + o + down
 	qkvBias, preNorm, postNorm           Buffer
+	qNorm, kNorm                         Buffer // per-head QK-RMSNorm weights (Qwen3; zero if !qkNorm)
 }
 
 // Resident is a Metal-resident dense decoder. Weights uploaded once in BuildResident;
@@ -30,6 +31,9 @@ type Resident struct {
 	pRms, pQv, pGemv, pGemvBias, pGemvResid, pRope, pKv, pAttn, pSw, pRes Pipeline
 	pSA, pSABias, pSAResid                                                Pipeline // Stage A gemv (K<=1536)
 	pSAAmax, pArgFinish                                                   Pipeline // fused block-argmax lm head
+	pQKNorm                                                               Pipeline // per-head QK-RMSNorm (Qwen3)
+	qkNorm                                                                bool     // arch has QK-norm
+	uNHhd, uAddOne                                                        Buffer   // qk_norm uniforms
 	qkv, gu                                                               Buffer   // fused QKV out, fused gate/up out
 
 	H, nL, nH, nKV, hd, I, V, kvDim, half int
@@ -144,6 +148,13 @@ func BuildResident(m *decoder.Model) (*Resident, error) {
 	r.pSAAmax, r.pArgFinish = pipe("gemv_w4a8_sa_amax"), pipe("argmax_finish")
 	r.pRope, r.pKv, r.pAttn = pipe("rope"), pipe("kv_store"), pipe("attention")
 	r.pSw, r.pRes = pipe("swiglu_quant"), pipe("residual")
+	r.pQKNorm = pipe("qk_norm")
+	r.qkNorm = m.HasQKNorm()
+	addOne := uint32(0)
+	if m.RMSAddOne() {
+		addOne = 1
+	}
+	r.uNHhd, r.uAddOne = d.NewBufferU32(uint32(nH*hd)), d.NewBufferU32(addOne)
 	r.q = d.NewCommandQueue()
 
 	w := m.Weights()
@@ -166,6 +177,9 @@ func BuildResident(m *decoder.Model) (*Resident, error) {
 		L.dW, L.dS = mk(&lw.DownProj)
 		L.preNorm = d.NewBufferFloats(lw.PreAttnNorm)
 		L.postNorm = d.NewBufferFloats(lw.PreMLPNorm)
+		if r.qkNorm { // Qwen3 per-head Q/K norm weights [hd]
+			L.qNorm, L.kNorm = d.NewBufferFloats(lw.QNorm), d.NewBufferFloats(lw.KNorm)
+		}
 		// combined qkv bias (zeros where absent) so the fused GEMV epilogue is uniform.
 		qb, kb, vb := lw.QBias, lw.KBias, lw.VBias
 		if qb == nil {
@@ -356,6 +370,9 @@ func (r *Resident) encodeTrunkInto(e *Encoder) {
 		// --- attention block (12 dispatches vs 19: QKV fused +bias, residual fused) ---
 		e.dispatch(r.pRms, 256, 256, r.x, L.preNorm, r.aq, r.aSc, r.uH, r.uEps)
 		e.dispatch(r.pSABias, qkvRows*32, 256, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv, L.qkvBias, r.uH)
+		if r.qkNorm { // Qwen3: per-head Q/K RMSNorm before RoPE
+			e.dispatch(r.pQKNorm, (r.nH+r.nKV)*128, 128, r.qkv, L.qNorm, L.kNorm, r.uNH, r.uNKV, r.uHd, r.uNHhd, r.uEps, r.uAddOne)
+		}
 		e.dispatch(r.pRope, nHhd/2, 64, r.qkv, r.invf, r.uHd, r.uPos, r.uQtotal)             // q @ off 0
 		e.dispatch(r.pRope, r.kvDim/2, 64, r.qkv.At(kOff), r.invf, r.uHd, r.uPos, r.uKtotal) // k
 		e.dispatch(r.pKv, r.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[l], r.vc[l], r.uKvDim, r.uPos)

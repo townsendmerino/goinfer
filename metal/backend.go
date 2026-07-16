@@ -84,8 +84,6 @@ func (b *metalBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwa
 // as features are added.
 func metalUnsupported(m *decoder.Model) string {
 	switch {
-	case m.HasQKNorm():
-		return "QK-norm (Qwen3/Gemma3) — no per-head QK-RMSNorm kernel yet"
 	case m.SlidingWindowResident() != 0:
 		return "sliding-window attention (Mistral/Mellum) — attention is full-causal"
 	case m.PartialRotary():

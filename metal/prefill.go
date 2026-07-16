@@ -158,6 +158,28 @@ kernel void rope_f16(device half* x[[buffer(0)]], device const float* invf[[buff
     x[base+dd]=half(x0*c-x1*s); x[base+hlf+dd]=half(x0*s+x1*c);
 }
 
+// qk_norm_f16: per-head Q/K RMSNorm (Qwen3) on the f16 fused qkv[M×stride], before RoPE. One
+// threadgroup per (row m, head): head<nH is Q (weight qn), else K (kn, head-nH). Norm over hd.
+kernel void qk_norm_f16(device half* qkv[[buffer(0)]], device const float* qn[[buffer(1)]],
+    device const float* kn[[buffer(2)]], constant uint& nH[[buffer(3)]], constant uint& nKV[[buffer(4)]],
+    constant uint& hd[[buffer(5)]], constant uint& nHhd[[buffer(6)]], constant uint& stride[[buffer(7)]],
+    constant float& eps[[buffer(8)]], constant uint& addOne[[buffer(9)]],
+    uint gid[[threadgroup_position_in_grid]], uint tid[[thread_index_in_threadgroup]],
+    uint tgs[[threads_per_threadgroup]]) {
+    uint nHeads = nH + nKV;
+    uint m = gid / nHeads, head = gid % nHeads;
+    threadgroup float red[128];
+    bool isQ = head < nH;
+    device const float* w = isQ ? qn : kn;
+    uint base = m*stride + (isQ ? head*hd : nHhd + (head-nH)*hd);
+    device half* x = qkv + base;
+    float ss=0; for(uint i=tid;i<hd;i+=tgs){ float v=float(x[i]); ss+=v*v; }
+    red[tid]=ss; threadgroup_barrier(mem_flags::mem_threadgroup);
+    for(uint s=tgs/2u;s>0u;s>>=1u){ if(tid<s) red[tid]+=red[tid+s]; threadgroup_barrier(mem_flags::mem_threadgroup); }
+    float rms=rsqrt(red[0]/float(hd)+eps);
+    for(uint i=tid;i<hd;i+=tgs){ float wt = addOne!=0u ? (1.0f+w[i]) : w[i]; x[i]=half(float(x[i])*rms*wt); }
+}
+
 // attention_prefill: one threadgroup per (row m, query head qh). Row m attends CAUSALLY to
 // keys[0..startPos+m] over the shared f16 KV cache (GQA via kvh). q read from the fused qkv
 // buffer (row stride qStride, q section at offset 0). Reuses the decode attention math (dot →
@@ -211,7 +233,7 @@ kernel void kv_store_f16(device const half* qkv[[buffer(0)]], device half* kc[[b
 
 // prefillState holds the lazily-compiled prefill pipelines (opt-in; decode-only builds skip it).
 type prefillState struct {
-	pGemm, pGemmStore, pRms, pRes, pSw, pRope, pKv, pAttn Pipeline
+	pGemm, pGemmStore, pRms, pRes, pSw, pRope, pKv, pAttn, pQK Pipeline
 }
 
 func (r *Resident) ensurePrefill() {
@@ -232,7 +254,7 @@ func (r *Resident) ensurePrefill() {
 	r.pf = &prefillState{
 		pGemm: p("gemm_w4f16"), pGemmStore: p("gemm_w4f16_store"), pRms: p("rmsnorm_f16"),
 		pRes: p("residual_f16"), pSw: p("swiglu_f16"), pRope: p("rope_f16"),
-		pKv: p("kv_store_f16"), pAttn: p("attention_prefill"),
+		pKv: p("kv_store_f16"), pAttn: p("attention_prefill"), pQK: p("qk_norm_f16"),
 	}
 }
 
@@ -309,6 +331,9 @@ func (r *Resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 		// fused QKV (+bias)
 		t, tg := gg(qkvDim)
 		e.dispatch(pf.pGemmStore, t, tg, normF, L.qkvW, L.qkvS, qkvF, uM, uQkv, uH, L.qkvBias, m1)
+		if r.qkNorm { // Qwen3: per-head Q/K RMSNorm before RoPE
+			e.dispatch(pf.pQK, M*(r.nH+r.nKV)*128, 128, qkvF, L.qNorm, L.kNorm, r.uNH, r.uNKV, uHd, r.uNHhd, uStride, r.uEps, r.uAddOne)
+		}
 		// rope q, k (per-row positions)
 		e.dispatch(pf.pRope, M*(nHhd/2), 128, qkvF, r.invf, uHd, posB, uTotalQ, uStride, uBase0)
 		e.dispatch(pf.pRope, M*(kvDim/2), 128, qkvF, r.invf, uHd, posB, uTotalK, uStride, uBaseK)
