@@ -458,3 +458,54 @@ bar, and closing it is real GPU-kernel engineering — bigger than this spike sc
 
 The scaffolding (binding, all bit-exact kernels, the fused decode, the correctness gate)
 is committed and in place for whoever takes that on.
+
+## Findings — profile-driven arc to 68 tok/s (0.96× bar): attention → Stage A → the real wall is dispatch overhead
+
+The "NO-GO as measured" verdict above was written before we **profiled**. Profiling
+(`metal/profile_test.go`, per-kernel µs at real dims, cache-resident) overturned the
+"GEMV-efficiency-bound" diagnosis and drove a 3.4× decode gain. The honest arc:
+
+1. **Attention was the hidden 68%.** Per-kernel profile showed the one-thread-per-head
+   attention kernel at **1139 µs/dispatch** — not the GEMVs. Rewrote it threadgroup-per-head
+   (128 threads: staged scores + parallel softmax + parallel value-accum): **1139 → 23 µs**.
+   Decode 20 → 56 tok/s. *The earlier "GEMV-bound" call was wrong because it never profiled —
+   the profile-first instinct was correct.*
+
+2. **Coalesced the W4A8 GEMV** (stride-4 → word-per-lane, adjacent lane → adjacent word):
+   gate/up 254 → 220 µs. 56 → 58.8 tok/s.
+
+3. **Fable Stage A (no repack):** `uint4` loads (one 128-bit load = one 32-element scale
+   group) + int8 activation **staged once into threadgroup `short`** (kills the per-row
+   device byte-gather — the activation was re-read 17920× cold) + 8 simdgroups/tg. gate/up
+   211 → 164 µs isolated; **decode 58.8 → 68.9 tok/s (0.97× bar), parity 21/24.** The win
+   was real because staging removed redundant *activation* DRAM traffic.
+
+4. **Fused block-argmax lm head** (Fable): per-tile (maxLogit,rowIdx) → `argmax_finish` →
+   4-byte token, never materializing 151936 logits. **Bit-exact (24/24 vs argmax(logits))**,
+   but **throughput-NEUTRAL on UMA** — Fable priced the 608 KB readback at 0.2–0.4 ms
+   assuming a discrete-GPU copy, but `logits.Floats()` is a zero-copy shared view (~30 µs
+   memcpy). Kept as the correct production decode API (`ForwardArgmax → token`).
+
+5. **Fable Stage B (tile-repack, lane-per-row, broadcast reads):** genuinely faster in
+   isolation — gate/up **164 → 118 µs** (in Fable's 95–115 range). But **decode stayed flat
+   (~68 tok/s) and cost a parity point (21 → 20).** Reverted. This is the pivotal negative
+   result:
+
+**The wall is no longer the GEMV.** Aggregate weight traffic is ~772 MB/token; at ~14.8
+ms that is **~52 GB/s ≈ 26% of the M1's ~200 GB/s** — decode is neither compute- nor
+bandwidth-bound. A 46 µs/kernel isolated win (Stage B) buying **zero** end-to-end proves it:
+decode is **dispatch/encode-overhead-bound** — ~337 serial dispatches/token, each with
+Go→`objc_msgSend` encode + Metal per-dispatch scheduling latency. Summing the (cache-resident)
+profile gives ~12.4 ms of kernel; measured is ~14.8 ms → **~2.4 ms (~16%) is per-token
+command-buffer overhead**, matching Fable's independent estimate.
+
+**Updated verdict — GO on viability, near-bar on perf, honestly bottlenecked.** cgo-free
+native-Metal decode is **68 tok/s (0.96× the ~71 bar, 2.1× WebGPU-on-Metal, 3.4× the
+untuned spike), correct (21/24 argmax, cosine 0.989)**. Kernel optimization has run its
+course for single-stream decode; the remaining lever is **cutting per-token dispatch
+overhead** — Indirect Command Buffers (encode the static 337-dispatch schedule ONCE, replay
+per token; only pos/embedding change in-place) is the identified next swing (Fable's #4,
++6–9 tok/s est., medium confidence, ~a day of purego-objc binding). Stage B's repack +
+lane-per-row kernels are the right structure for a future **prefill/batch** path (compute/
+bandwidth-bound, where the isolated 118 µs *would* show up) and are preserved in git history
+(reverted from the decode path only).
