@@ -670,3 +670,28 @@ context, or broader model coverage.
   path amortizes across the prompt dim (unlike the scalar-int4 decode path). Prefill is viable:
   ~13.7s TTFT (1000-tok prompt) → ~4s. Full build (blocked MMA + in-kernel int4→f16 dequant +
   f16 activation path + causal prefill attention + PrefillN wiring + parity) is ~1–2 weeks.
+
+## Findings — FULL PREFILL BUILD complete: 3.7× faster TTFT, correct, wired (P1–P5)
+
+Built the whole f16-MMA prefill path end-to-end (`metal/prefill.go`, opt-in, separate library):
+- **P1 — `gemm_w4f16`**: blocked int4→f16 MMA GEMM. Each simdgroup owns RPS=4 row-tiles × one
+  8-col tile; dequants each 8×8 weight tile ONCE (transposed to Wᵀ, in-kernel, reusing the
+  resident int4 weights — no extra RAM) and reuses it across the 4 activation tiles via
+  simdgroup_matrix. Correct vs CPU (cos=1.0), 2.5× the int4 GEMV, flat with M.
+- **P2 — f16 activation path**: `rmsnorm_f16`, `residual_f16`, `swiglu_f16`, `rope_f16` (per-row
+  positions), `kv_store_f16` (scatter to the f16 KV cache). Plus `gemm_w4f16_store` with fused
+  bias/residual epilogues.
+- **P3 — `attention_prefill`**: per-(row,head) causal attention over the shared f16 KV, reusing
+  the decode softmax math (O(M²), inherent; MMA/flash is a later throughput lever).
+- **P4 — `PrefillLast`**: assembles all layers + lm-head-on-the-last-tile into ONE command
+  buffer; returns the last token's logits, populates the KV. **Parity vs the sequential Forward
+  loop: last-token argmax MATCHES, cosine 0.9987** (f16-prefill vs int8-decode = same model).
+  **TTFT (140-tok prompt): 2034 ms → 543 ms = 3.7×** (beats the raw GEMM 2.5× because the
+  sequential loop also pays the per-token bubble ×140, folded into one command buffer here).
+- **P5 — wiring**: optional `decoder.Prefiller` interface; `generateInto` uses it for GPU prefill
+  (prompt ≥ 8, ≤ cap), falls back to the sequential loop otherwise. Non-metal backends unchanged.
+  End-to-end CLI verified (coherent output on a real prompt via the batched path).
+
+Bring-up bug caught + fixed: `rmsnorm_f16` is threadgroup-per-row → needs M*256 threads, not M
+(dispatch clamps M to one 14-thread group → only row 0 normed). Later prefill levers (not done):
+dequant uses 8/32 lanes; flash-attention MMA; 2D register tiling. **Prefill: DONE and shipping.**
