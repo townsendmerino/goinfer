@@ -95,6 +95,24 @@ Metal.framework — `purego.Dlopen` + `RegisterFunc`, same as `cuInit`.)
 6. **ANE stays out of reach regardless.** Apple's matrix/neural units are
    MLX/CoreML-only (`gpu-assessment.md`); hand MSL buys bandwidth-class wins, not
    ANE-class. Nobody should oversell a GO as "MLX-class on Mac."
+7. **⚠️ `CGO_ENABLED=0` silently downgrades the MSL compiler — the landmine.** Go
+   binaries built `CGO_ENABLED=0` on macOS omit the **`LC_BUILD_VERSION`** Mach-O
+   load command (upstream **golang/go#77917**). Without that deployment-target
+   metadata, Metal's runtime compiler (`newLibraryWithSource:options:error:`)
+   **defaults `MTLCompileOptions.languageVersion` to MSL 2.4**, which **silently
+   strips modern types (e.g. `bfloat16`)** — kernels "compile" and run but produce
+   wrong/degenerate output. This spike's exact config (`CGO_ENABLED=0` + runtime MSL)
+   **will** hit it. **Fix (bake in before the first real kernel):** explicitly
+   allocate an `MTLCompileOptions`, set `.languageVersion` to **MSL 3.1+** (rig is
+   macOS 26 — match it to the features used), pass it to `newLibraryWithSource:`;
+   **never rely on the default**. Add a startup assertion that the compiled library
+   reports the version set, so a regression is **loud, not silent**. (A linker-side
+   deployment-target `-ldflags` mitigation may also help other macOS runtime checks —
+   secondary; the in-code `languageVersion` set is the primary fix.) Corroboration
+   the lane is real: `hybridgroup/yzma` (pure-Go, purego, `CGO_ENABLED=0`, llama.cpp
+   Metal on macOS) hit the same `LC_BUILD_VERSION` issue — it binds llama.cpp's *C
+   API* so it's trap-confirmation, **not** a source for compute-encoder selectors
+   (get those from ebiten #3411 / `gogpu/wgpu/hal/metal`).
 
 ## Deliberately minimal scope (resist all sprawl)
 
@@ -255,3 +273,35 @@ matching the peer.
 
 **Next:** Layer A — the purego-objc ~20-selector compute binding (the open risk),
 proven first by a single-MSL-kernel compile-and-run before the six kernel ports.
+
+## Findings — Layer A, Phase 1: the binding reaches Metal + the compiler, cgo-free
+
+**Rig / provenance:** Apple M1 Pro, macOS 26.5.2 (25F84), commit `0a3541e`, purego
+v0.10.0. Module `metal/` (`//go:build darwin`, own go.mod on purego), test
+`TestLayerA_deviceAndCompiler`.
+
+The two riskiest binding pieces are **retired, cgo-free, on the real rig:**
+
+1. **Reach Metal cgo-free.** `purego.Dlopen(Metal.framework)` +
+   `MTLCreateSystemDefaultDevice` via `RegisterLibFunc`, then `objc.Send` for the
+   rest → device name reads **`"Apple M1 Pro"`**. The purego-objc msgSend dance works
+   for the Metal compute surface, not just Ebitengine's render side.
+2. **Drive the runtime MSL compiler past the landmine (risk #7).** `CompileLibrary`
+   allocates an explicit `MTLCompileOptions`, sets `languageVersion` = MSL 3.1, and
+   **asserts the read-back**. The gate kernel uses **`bfloat`** — an MSL-≥3.1-only
+   type — so it compiling is *positive proof* the fix works: had the LC_BUILD_VERSION
+   landmine pinned us to the default 2.4, `bfloat` would fail to compile. It compiles.
+
+**cgo-free VERIFIED (not assumed):** `go version -m` → `CGO_ENABLED=0`; `otool -L` on
+the test binary shows **no Metal / libobjc / Foundation** in the link table (all
+resolved via runtime `dlopen`), only `/usr/lib/libSystem.B.dylib`. Honest caveat as
+predicted: the property is **"cgo-free + OS-only," not fully static** (a pure-Go macOS
+binary links libSystem regardless).
+
+**Binding-risk verdict so far: the open risk is shrinking fast.** The "80% this time"
+was *can compute go through purego-objc cgo-free at all* — yes. **Remaining Layer-A
+increment:** the compute *dispatch* path (`newCommandQueue` → `newBufferWithBytesNoCopy`
+→ `commandBuffer` → `computeCommandEncoder` → `dispatchThreadgroups` → `commit`/
+`waitUntilCompleted`, incl. the `MTLSize` struct-by-value passing and the manual
+autoreleasepool/release discipline), a correct vector-add result, and the per-token
+tax measurement. Only then Layer B (the six kernel ports).
