@@ -566,3 +566,40 @@ this cgo-free native-Metal decode architecture. Beating it would need either a f
 cooperative-launch primitive, or a fundamentally different work decomposition (e.g. batching /
 prefill, where threadgroup GEMV slices are fat enough to amortize fused reductions — Stage B's
 lane-per-row + a fused norm would pay off there, not in batch-1 decode).
+
+## Findings — Step 0 (GPU timestamps) + L1 (f16 scales): issue-bound CONFIRMED, at the bar
+
+Executed the headroom sequence (Step 0 → L1) from `metal-decode-headroom-fable.md`:
+
+- **Step 0 — cgo-free GPU-timestamp capture** (`MTLCommandBuffer.GPUStartTime/GPUEndTime` via
+  `objc.Send[float64]`, arm64 fp-return): per-token **wall 14.0 ms = GPU-busy 13.0 ms + host
+  bubble 0.9 ms (~7%)**; traffic **964.7 MB/token** (matches Fable's corrected budget — my
+  review's 772 undercounted the f32 scales 25%); GPU-busy effective BW **73.6 GB/s** (in the
+  incumbent Ollama's 75–83 band → near the GPU-bound ceiling).
+- **L1 — f16 group scales** (all GEMV kernels + packers; new `f32ToF16`/`NewBufferU16s`):
+  **parity-neutral** (cosine 0.9887, fused-argmax still 24/24 exact), **71.4 tok/s — crosses
+  the ~71 bar (1.01×)**. **KEY: traffic −10% (965→868 MB) but GPU-busy stayed FLAT (13.0 ms).**
+  Bandwidth-bound would have dropped GPU time with the bytes; it didn't → **issue-bound
+  CONFIRMED** (Fable's diagnosis). So the traffic diet barely helps GPU-time (scale loads are
+  ~1/4 of weight-load issue, dwarfed by the nibble-unpack ALU with no DP4A on Apple).
+- **L2 cheap variant** (`commandBufferWithUnretainedReferences`): **no measurable change**
+  (bubble is the raw encode `msgSend`s, not resource retain/release). Reverted.
+
+**Where the remaining decode headroom is, now that issue-bound is confirmed:**
+- The **0.9 ms host bubble** is CPU encode of 337 dispatches while the GPU idles. Recoverable
+  only by **encode-ahead** (double-buffered cmd-buffers/uniforms, encode t+1 during GPU(t)) or
+  **ICB** — both ~+5 tok/s (→~77) but ~a day of NSAutoreleasePool-lifetime-risky work.
+- The **13.0 ms GPU-busy** is the real cost, and it's **issue-bound** → the only lever is
+  **"Stage C"**: an issue-optimised GEMV (fold −8·Sg once/group, uniform L1-broadcast
+  activations, 2-deep pipelined independent loads to hide latency, f16 scales) that cuts
+  ops/weight from ~10–12 to ~3. Fable's estimate if issue-bound (now confirmed): GEMV
+  9.3→7.4–8.2 ms → **~88–97 tok/s**. Days of kernel work + a repack.
+- Bigger prize: **self-speculative / prompt-lookup decode** (goinfer ships `--spec ngram`) on
+  a **Metal batch-k verify forward** — verifying k drafted tokens per weight pass amortises the
+  issue-bound stream k×, the only way to convert unused bandwidth into single-stream tokens
+  without grid-sync. Plausibly **1.5–2.5×** for a coder model, and it's the same batch-k kernel
+  prefill needs.
+
+**Verdict at this checkpoint: 71.4 tok/s, past the bar (1.01×), issue-bound confirmed.** Pure-
+decode headroom is either small (encode-ahead, +5, risky) or large-but-days (Stage C, →~90);
+the multiplier is speculation. Diagnosis is now measurement-grounded, not inferred.
