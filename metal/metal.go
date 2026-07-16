@@ -126,6 +126,7 @@ var (
 	selComputeEncoder  = objc.RegisterName("computeCommandEncoder")
 	selSetPipeline     = objc.RegisterName("setComputePipelineState:")
 	selSetBuffer       = objc.RegisterName("setBuffer:offset:atIndex:")
+	selSetBuffers      = objc.RegisterName("setBuffers:offsets:withRange:")
 	selDispatchThreads = objc.RegisterName("dispatchThreads:threadsPerThreadgroup:")
 	selEndEncoding     = objc.RegisterName("endEncoding")
 	selCommit          = objc.RegisterName("commit")
@@ -250,6 +251,12 @@ type Encoder struct {
 	pool objc.ID
 	cb   objc.ID
 	enc  objc.ID
+	// Encode-tax trims (measured: together only ~0.5ms of the ~2.4ms/token overhead — the
+	// rest is GPU-side per-dispatch latency, not Go-side msgSend): skip setComputePipelineState
+	// when the pipeline is unchanged, and batch all buffer binds into ONE setBuffers call.
+	curPipe objc.ID
+	idScr   [16]objc.ID // reusable C-arrays for batched setBuffers:offsets:withRange:
+	offScr  [16]uintptr
 }
 
 func (q Queue) begin() *Encoder {
@@ -265,10 +272,20 @@ func (e *Encoder) dispatch(p Pipeline, n, tg int, bufs ...Buffer) {
 	if tg > n {
 		tg = n
 	}
-	e.enc.Send(selSetPipeline, p.id)
-	for i, b := range bufs {
-		e.enc.Send(selSetBuffer, b.id, b.off, uintptr(i))
+	if p.id != e.curPipe {
+		e.enc.Send(selSetPipeline, p.id)
+		e.curPipe = p.id
 	}
+	// Batch ALL buffer binds into one setBuffers:offsets:withRange: msgSend (vs one per
+	// buffer) — the aggressive Go-side-encode-cost probe. NSRange{location,length} lowers to
+	// two trailing word args.
+	nb := len(bufs)
+	for i, b := range bufs {
+		e.idScr[i], e.offScr[i] = b.id, b.off
+	}
+	e.enc.Send(selSetBuffers, unsafe.Pointer(&e.idScr[0]), unsafe.Pointer(&e.offScr[0]), uintptr(0), uintptr(nb))
+	runtime.KeepAlive(&e.idScr)
+	runtime.KeepAlive(&e.offScr)
 	total := mtlSize{w: uint64(n), h: 1, d: 1}
 	perTG := mtlSize{w: uint64(tg), h: 1, d: 1}
 	e.enc.Send(selDispatchThreads, unsafe.Pointer(&total), unsafe.Pointer(&perTG))
