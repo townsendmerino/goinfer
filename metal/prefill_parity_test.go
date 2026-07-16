@@ -16,7 +16,10 @@ import (
 // path is f16 activations vs the decode path's int8 — so expect a high-but-not-exact cosine and
 // a matching argmax. A prefill bug would show garbage (cosine ~0 / wrong argmax).
 func TestPrefillParity(t *testing.T) {
-	path := os.ExpandEnv("$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")
+	path := os.Getenv("GOINFER_METAL_MODEL") // override to validate other families
+	if path == "" {
+		path = os.ExpandEnv("$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")
+	}
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("model not present: %v", path)
 	}
