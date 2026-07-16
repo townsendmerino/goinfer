@@ -80,9 +80,10 @@ Package `metal/` (all `//go:build darwin`, its own Go module, ~2.4k LoC, 17 MSL 
   `gemv_w4a8_sa`/`_bias`/`_resid` (**Stage A** — the shipping GEMV: simdgroup-per-row, `uint4`
   loads = one 32-elem scale group, threadgroup-staged `short` activation), `gemv_w4a8_sa_amax`
   + `argmax_finish` (fused on-GPU greedy argmax), `rope` (NeoX half-split), `kv_store`,
-  `attention` (threadgroup-per-head), `swiglu_quant`, `residual`. Also present but **NOT on the
-  decode path**: `gemv_w4a8_t32`/`_bias`/`_resid` (**Stage B**, kept for a future prefill/batch
-  path) and the older `_coal` family.
+  `attention` (threadgroup-per-head), `swiglu_quant`, `residual`. The older `_coal` W4A8 family
+  is still in the tree and **down-proj still uses it at tg=32** (K=8960 > Stage A's `As[1536]`
+  activation-staging cap). The Stage B `gemv_w4a8_t32` kernels + repacker are **NOT in the tree**
+  — they were reverted (§5) and live only in git history + `metal-gemv-fable-response.md`.
 - **`model.go`** — `Resident`: uploads W4A8 weights once (fused QKV, fused gate/up), runs the
   whole layer stack + LM head in ONE command buffer/token. `Forward(id,pos)→logits`,
   `ForwardEmb(emb,pos)→logits` (the decoder-interface shape), `ForwardArgmax(id,pos)→token`
