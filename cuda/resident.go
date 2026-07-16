@@ -49,9 +49,9 @@ type cudaResident struct {
 	eps, attnScale                             float32
 
 	// gocudrv state — touched ONLY on the executor thread.
-	cx                                                                             *gc.Context
-	stream                                                                         *gc.Stream
-	gemvW4, gemvW8, kvStore, ropeKV, fRms, fQ, fRope, fAttn, fSw, fRes, fArg, fQKV *gc.Function
+	cx                                                                                  *gc.Context
+	stream                                                                              *gc.Stream
+	gemvW4, gemvW8, kvStore, ropeKV, fRms, fQ, fRope, fAttn, fSw, fRes, fArg, fQKV, fGU *gc.Function
 
 	fuseQKV         bool // all of Q/K/V int4 ⇒ K1 super-kernel is usable
 	layers          []cudaLayer
@@ -274,9 +274,25 @@ func (r *cudaResident) launchToken(emb []float32, pos int) error {
 		_ = r.launch(r.fQ, onecfg(256, 256*4), gc.Arg(r.cctx), gc.ArgValue(int32(r.qDim)), gc.Arg(r.cq), gc.Arg(r.cSc))
 		// accumulate straight into the residual stream — absorbs the `residual` launch.
 		_ = r.doG(Ly.o, r.cq, r.cSc, nullBias, r.x, 1)
-		_ = r.rms(r.x, Ly.postNorm, r.mq, r.mSc)
-		_ = r.doG(Ly.g, r.mq, r.mSc, nullBias, r.gO, 0)
-		_ = r.doG(Ly.u, r.mq, r.mSc, nullBias, r.uO, 0)
+		if r.fuseQKV { // same guard: all layer projections int4
+			// K3a: pre-MLP rmsnorm+quant redundantly per block + this block's gate/up rows —
+			// one launch instead of three; the layer's second GridX:1 rmsnorm disappears.
+			cfg := gc.LaunchConfig{GridX: uint32((2*r.inter + 63) / 64), GridY: 1, GridZ: 1, // 64 rows/block
+				BlockX: 256, BlockY: 1, BlockZ: 1,
+				SharedMemBytes: uint32((r.hidden + 256 + r.hidden/4) * 4)}
+			if e := r.launch(r.fGU, cfg,
+				gc.Arg(r.x), gc.Arg(Ly.postNorm), gc.ArgValue(int32(r.hidden)), gc.ArgValue(r.eps),
+				gc.Arg(Ly.g.W), gc.Arg(Ly.g.ws16),
+				gc.Arg(Ly.u.W), gc.Arg(Ly.u.ws16),
+				gc.ArgValue(int32(r.inter)), gc.ArgValue(int32(r.hidden/8)), gc.ArgValue(int32(r.hidden/32)),
+				gc.Arg(r.gO), gc.Arg(r.uO)); e != nil {
+				return e
+			}
+		} else {
+			_ = r.rms(r.x, Ly.postNorm, r.mq, r.mSc)
+			_ = r.doG(Ly.g, r.mq, r.mSc, nullBias, r.gO, 0)
+			_ = r.doG(Ly.u, r.mq, r.mSc, nullBias, r.uO, 0)
+		}
 		_ = r.launch(r.fSw, onecfg(256, 256*4), gc.Arg(r.gO), gc.Arg(r.uO), gc.ArgValue(int32(r.inter)), gc.Arg(r.dq), gc.Arg(r.dSc), gc.Arg(r.dScr))
 		if e := r.doG(Ly.d, r.dq, r.dSc, nullBias, r.x, 1); e != nil {
 			return e

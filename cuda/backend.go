@@ -168,6 +168,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		if r.fQKV, e = qmod.Function("fused_rms_qkv"); e != nil {
 			return e
 		}
+		if r.fGU, e = qmod.Function("fused_rms_gu"); e != nil {
+			return e
+		}
 		fns := []struct {
 			dst  **gc.Function
 			name string
