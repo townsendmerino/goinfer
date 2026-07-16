@@ -1076,6 +1076,16 @@ func phi3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if base <= 0 {
 		return nil, nil, fmt.Errorf("decoder(phi3): rope_theta must be >0, got %v", base)
 	}
+	// Sliding-window attention. Phi-3-mini-4k's config.json declares sliding_window: 2047
+	// (Phi-4 omits it, and the released GGUF conversions drop the key entirely ⇒ 0 = full
+	// attention, which is what that file honestly declares). All layers are local when a
+	// window is set, mirroring mistralArchitecture. layerIsGlobal MUST be set alongside
+	// SlidingWindow: isGlobalLayer defaults to TRUE (global) when the hook is nil, which
+	// would leave the window silently inert.
+	var layerIsGlobal func(int) bool
+	if cfg.SlidingWindow > 0 {
+		layerIsGlobal = func(int) bool { return false }
+	}
 	return &Architecture{
 		Name:            "phi3",
 		HiddenDim:       cfg.HiddenDim,
@@ -1095,7 +1105,9 @@ func phi3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		AttnScale:       math.Pow(float64(hd), -0.5),
 		RoPELocalBase:   base,
 		RoPEGlobalBase:  base,
-		RotaryDim:       rotaryDim, // partial_rotary_factor · head_dim; 0 = full
+		RotaryDim:       rotaryDim,         // partial_rotary_factor · head_dim; 0 = full
+		SlidingWindow:   cfg.SlidingWindow, // 0 ⇒ full attention (Phi-4, and the GGUFs)
+		layerIsGlobal:   layerIsGlobal,     // all-local when windowed
 		ropeScaling:     scaling,
 		EmbedScale:      0,
 		TiedLMHead:      false, // finalized from lm_head.weight presence at load
