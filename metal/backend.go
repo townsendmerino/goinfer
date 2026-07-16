@@ -84,10 +84,6 @@ func (b *metalBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwa
 // as features are added.
 func metalUnsupported(m *decoder.Model) string {
 	switch {
-	case m.SlidingWindowResident() != 0:
-		return "sliding-window attention (Mistral/Mellum) — attention is full-causal"
-	case m.PartialRotary():
-		return "partial RoPE (Phi) — rope rotates the full head dim"
 	case m.EmbedScaleResident() > 1:
 		return "embedding scale (Gemma) — not applied"
 	}

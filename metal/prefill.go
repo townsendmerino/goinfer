@@ -148,14 +148,15 @@ kernel void swiglu_f16(device const half* gu[[buffer(0)]], device half* out[[buf
 kernel void rope_f16(device half* x[[buffer(0)]], device const float* invf[[buffer(1)]],
     constant uint& hd[[buffer(2)]], device const uint* positions[[buffer(3)]],
     constant uint& total[[buffer(4)]], constant uint& stride[[buffer(5)]],
-    constant uint& base0[[buffer(6)]], uint gid[[thread_position_in_grid]]) {
-    uint pairsPerRow = total/2u;
+    constant uint& base0[[buffer(6)]], constant uint& rhalf[[buffer(7)]],
+    uint gid[[thread_position_in_grid]]) {
+    uint pairsPerRow = (total/hd) * rhalf;   // nHeads*half; half=rotaryDim/2 (<hd/2 = partial rotary)
     uint m = gid / pairsPerRow, p = gid % pairsPerRow;
-    uint hlf = hd/2u; uint head = p/hlf, dd = p%hlf;
+    uint head = p/rhalf, dd = p%rhalf;
     uint base = m*stride + base0 + head*hd;
     float th = float(positions[m]) * invf[dd]; float c=cos(th), s=sin(th);
-    float x0=float(x[base+dd]), x1=float(x[base+hlf+dd]);
-    x[base+dd]=half(x0*c-x1*s); x[base+hlf+dd]=half(x0*s+x1*c);
+    float x0=float(x[base+dd]), x1=float(x[base+rhalf+dd]);
+    x[base+dd]=half(x0*c-x1*s); x[base+rhalf+dd]=half(x0*s+x1*c);
 }
 
 // qk_norm_f16: per-head Q/K RMSNorm (Qwen3) on the f16 fused qkv[M×stride], before RoPE. One
@@ -188,33 +189,34 @@ kernel void qk_norm_f16(device half* qkv[[buffer(0)]], device const float* qn[[b
 kernel void attention_prefill(device const half* qkv[[buffer(0)]], device const half* kc[[buffer(1)]],
     device const half* vc[[buffer(2)]], device half* out[[buffer(3)]], constant uint& nH[[buffer(4)]],
     constant uint& nKV[[buffer(5)]], constant uint& hd[[buffer(6)]], constant uint& startPos[[buffer(7)]],
-    constant float& scale[[buffer(8)]], constant uint& qStride[[buffer(9)]],
+    constant float& scale[[buffer(8)]], constant uint& qStride[[buffer(9)]], constant uint& window[[buffer(10)]],
     uint gid[[threadgroup_position_in_grid]], uint tid[[thread_index_in_threadgroup]],
     uint tgs[[threads_per_threadgroup]]) {
     uint m = gid / nH, qh = gid % nH;
     uint kvDim = nKV*hd, kvh = qh/(nH/nKV);
     uint nKeys = startPos + m + 1u;
+    uint winStart = (window>0u && nKeys>window) ? nKeys-window : 0u;
     uint qDim = nH*hd;
     device const half* qr = qkv + m*qStride + qh*hd;
     device const half* kb = kc + kvh*hd;
     device const half* vb = vc + kvh*hd;
     threadgroup float sc[4096];
     threadgroup float red[128];
-    for (uint s=tid; s<nKeys; s+=tgs) {
+    for (uint s=winStart+tid; s<nKeys; s+=tgs) {
         float a=0; device const half* k=kb+s*kvDim;
         for (uint d=0; d<hd; d++) a += float(qr[d])*float(k[d]);
         sc[s]=a*scale;
     }
     threadgroup_barrier(mem_flags::mem_threadgroup);
-    float mmax=-INFINITY; for (uint s=tid;s<nKeys;s+=tgs) mmax=max(mmax,sc[s]);
+    float mmax=-INFINITY; for (uint s=winStart+tid;s<nKeys;s+=tgs) mmax=max(mmax,sc[s]);
     red[tid]=mmax; threadgroup_barrier(mem_flags::mem_threadgroup);
     for (uint st=tgs/2u; st>0u; st>>=1u){ if(tid<st) red[tid]=max(red[tid],red[tid+st]); threadgroup_barrier(mem_flags::mem_threadgroup); }
     float mx=red[0]; threadgroup_barrier(mem_flags::mem_threadgroup);
-    float ls=0; for (uint s=tid;s<nKeys;s+=tgs){ float p=exp(sc[s]-mx); sc[s]=p; ls+=p; }
+    float ls=0; for (uint s=winStart+tid;s<nKeys;s+=tgs){ float p=exp(sc[s]-mx); sc[s]=p; ls+=p; }
     red[tid]=ls; threadgroup_barrier(mem_flags::mem_threadgroup);
     for (uint st=tgs/2u; st>0u; st>>=1u){ if(tid<st) red[tid]+=red[tid+st]; threadgroup_barrier(mem_flags::mem_threadgroup); }
     float sum=red[0]; threadgroup_barrier(mem_flags::mem_threadgroup);
-    for (uint d=tid; d<hd; d+=tgs){ float a=0; for(uint s=0;s<nKeys;s++) a += sc[s]*float(vb[s*kvDim+d]); out[m*qDim + qh*hd + d]=half(a/sum); }
+    for (uint d=tid; d<hd; d+=tgs){ float a=0; for(uint s=winStart;s<nKeys;s++) a += sc[s]*float(vb[s*kvDim+d]); out[m*qDim + qh*hd + d]=half(a/sum); }
 }
 
 // kv_store_f16: scatter M rows' K,V (slices of the fused qkv[M×stride]) into the f16 KV cache
@@ -335,12 +337,12 @@ func (r *Resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 			e.dispatch(pf.pQK, M*(r.nH+r.nKV)*128, 128, qkvF, L.qNorm, L.kNorm, r.uNH, r.uNKV, uHd, r.uNHhd, uStride, r.uEps, r.uAddOne)
 		}
 		// rope q, k (per-row positions)
-		e.dispatch(pf.pRope, M*(nHhd/2), 128, qkvF, r.invf, uHd, posB, uTotalQ, uStride, uBase0)
-		e.dispatch(pf.pRope, M*(kvDim/2), 128, qkvF, r.invf, uHd, posB, uTotalK, uStride, uBaseK)
+		e.dispatch(pf.pRope, M*r.nH*r.half, 128, qkvF, r.invf, uHd, posB, uTotalQ, uStride, uBase0, r.uHalf)
+		e.dispatch(pf.pRope, M*r.nKV*r.half, 128, qkvF, r.invf, uHd, posB, uTotalK, uStride, uBaseK, r.uHalf)
 		// scatter K,V to cache
 		e.dispatch(pf.pKv, M*kvDim, 128, qkvF, r.kc[l], r.vc[l], posB, uKvDim, uStride, uKOff, uVOff)
 		// causal attention → ctx
-		e.dispatch(pf.pAttn, M*r.nH*128, 128, qkvF, r.kc[l], r.vc[l], ctxF, r.uNH, r.uNKV, uHd, uStartPos, r.uScale, uStride)
+		e.dispatch(pf.pAttn, M*r.nH*128, 128, qkvF, r.kc[l], r.vc[l], ctxF, r.uNH, r.uNKV, uHd, uStartPos, r.uScale, uStride, r.uWindow)
 		// o-proj + residual into x
 		t, tg = gg(H)
 		e.dispatch(pf.pGemmStore, t, tg, ctxF, L.oW, L.oS, xF, uM, uH, uQDim, dummyBias, m2)

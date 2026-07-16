@@ -230,12 +230,15 @@ kernel void argmax_finish(device const AmaxPart* part[[buffer(0)]], device uint*
     threadgroup_barrier(mem_flags::mem_threadgroup);
     if (tid==0u){ float bv=tv[0];uint bi=ti[0]; for(uint s=1u;s<8u;s++) if(tv[s]>bv||(tv[s]==bv&&ti[s]<bi)){bv=tv[s];bi=ti[s];} tok[0]=bi; }
 }
+// rope: NeoX half-split. Rotates pairs (d, half+d) for d in [0,half) within each head (stride
+// hd), where half = rotaryDim/2 = len(invf). half<hd/2 is PARTIAL rotary (Phi): dims
+// [2*half, hd) pass through unrotated. total = nHeads*half (the rotate-pair count).
 kernel void rope(device float* x[[buffer(0)]], device const float* invf[[buffer(1)]],
     constant uint& hd[[buffer(2)]], constant uint& pos[[buffer(3)]], constant uint& total[[buffer(4)]],
-    uint gid[[thread_position_in_grid]]) {
-    if(gid>=total) return; uint hlf=hd/2; uint head=gid/hlf; uint dd=gid%hlf; uint base=head*hd;
+    constant uint& rhalf[[buffer(5)]], uint gid[[thread_position_in_grid]]) {
+    if(gid>=total) return; uint head=gid/rhalf; uint dd=gid%rhalf; uint base=head*hd;
     float th=float(pos)*invf[dd]; float c=cos(th),s=sin(th);
-    float x0=x[base+dd],x1=x[base+hlf+dd]; x[base+dd]=x0*c-x1*s; x[base+hlf+dd]=x0*s+x1*c;
+    float x0=x[base+dd],x1=x[base+rhalf+dd]; x[base+dd]=x0*c-x1*s; x[base+rhalf+dd]=x0*s+x1*c;
 }
 kernel void kv_store(device const float* k[[buffer(0)]], device const float* v[[buffer(1)]],
     device half* kc[[buffer(2)]], device half* vc[[buffer(3)]], constant uint& kvDim[[buffer(4)]],
@@ -245,32 +248,37 @@ kernel void kv_store(device const float* k[[buffer(0)]], device const float* v[[
 // One THREADGROUP (128 threads) per query head — vs the old 1-thread-per-head (12 threads
 // total = 68% of decode time from underutilization). Scores parallel over keys, softmax via
 // threadgroup reduction, output parallel over head dims. nKeys ≤ metalCtxCap (4096).
+// window>0 (Mistral) restricts the query to the last window keys: keys[winStart..nKeys),
+// winStart = max(0, nKeys-window). window==0 is full causal. Derived from nKeys in-kernel, so
+// no per-token uniform. (Mistral is all-local; a hypothetical global layer binds window=0.)
 kernel void attention(device const float* q[[buffer(0)]], device const half* kc[[buffer(1)]],
     device const half* vc[[buffer(2)]], device float* out[[buffer(3)]], constant uint& nH[[buffer(4)]],
     constant uint& nKV[[buffer(5)]], constant uint& hd[[buffer(6)]], constant uint& nKeys[[buffer(7)]],
-    constant float& scale[[buffer(8)]], uint qh[[threadgroup_position_in_grid]],
+    constant float& scale[[buffer(8)]], constant uint& window[[buffer(9)]],
+    uint qh[[threadgroup_position_in_grid]],
     uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]]) {
     uint kvDim = nKV*hd; uint kvh = qh/(nH/nKV);
+    uint winStart = (window>0u && nKeys>window) ? nKeys-window : 0u;
     device const float* qr = q + qh*hd;
     device const half*  kb = kc + kvh*hd;   // f16 KV; dot/accum stay in f32 -> parity-neutral
     device const half*  vb = vc + kvh*hd;
     threadgroup float sc[4096];
     threadgroup float red[128];
-    for (uint s=tid; s<nKeys; s+=tgs) {
+    for (uint s=winStart+tid; s<nKeys; s+=tgs) {
         float a=0; device const half* k=kb+s*kvDim;
         for (uint d=0; d<hd; d++) a += qr[d]*float(k[d]);
         sc[s]=a*scale;
     }
     threadgroup_barrier(mem_flags::mem_threadgroup);
-    float m=-INFINITY; for (uint s=tid;s<nKeys;s+=tgs) m=max(m,sc[s]);
+    float m=-INFINITY; for (uint s=winStart+tid;s<nKeys;s+=tgs) m=max(m,sc[s]);
     red[tid]=m; threadgroup_barrier(mem_flags::mem_threadgroup);
     for (uint st=tgs/2; st>0; st>>=1){ if(tid<st) red[tid]=max(red[tid],red[tid+st]); threadgroup_barrier(mem_flags::mem_threadgroup); }
     float mx=red[0]; threadgroup_barrier(mem_flags::mem_threadgroup);
-    float ls=0; for (uint s=tid;s<nKeys;s+=tgs){ float p=exp(sc[s]-mx); sc[s]=p; ls+=p; }
+    float ls=0; for (uint s=winStart+tid;s<nKeys;s+=tgs){ float p=exp(sc[s]-mx); sc[s]=p; ls+=p; }
     red[tid]=ls; threadgroup_barrier(mem_flags::mem_threadgroup);
     for (uint st=tgs/2; st>0; st>>=1){ if(tid<st) red[tid]+=red[tid+st]; threadgroup_barrier(mem_flags::mem_threadgroup); }
     float sum=red[0]; threadgroup_barrier(mem_flags::mem_threadgroup);
-    for (uint d=tid; d<hd; d+=tgs){ float a=0; for(uint s=0;s<nKeys;s++) a += sc[s]*float(vb[s*kvDim+d]); out[qh*hd+d]=a/sum; }
+    for (uint d=tid; d<hd; d+=tgs){ float a=0; for(uint s=winStart;s<nKeys;s++) a += sc[s]*float(vb[s*kvDim+d]); out[qh*hd+d]=a/sum; }
 }
 kernel void swiglu_quant(device const float* g[[buffer(0)]], device const float* u[[buffer(1)]],
     device char* dq[[buffer(2)]], device float* ds[[buffer(3)]], constant uint& I[[buffer(4)]],

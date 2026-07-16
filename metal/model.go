@@ -33,7 +33,7 @@ type Resident struct {
 	pSAAmax, pArgFinish                                                   Pipeline // fused block-argmax lm head
 	pQKNorm                                                               Pipeline // per-head QK-RMSNorm (Qwen3)
 	qkNorm                                                                bool     // arch has QK-norm
-	uNHhd, uAddOne                                                        Buffer   // qk_norm uniforms
+	uNHhd, uAddOne, uHalf, uWindow                                        Buffer   // qk_norm + rope + sliding-window uniforms
 	qkv, gu                                                               Buffer   // fused QKV out, fused gate/up out
 
 	H, nL, nH, nKV, hd, I, V, kvDim, half int
@@ -155,6 +155,11 @@ func BuildResident(m *decoder.Model) (*Resident, error) {
 		addOne = 1
 	}
 	r.uNHhd, r.uAddOne = d.NewBufferU32(uint32(nH*hd)), d.NewBufferU32(addOne)
+	win := m.SlidingWindowResident() // 0 = full causal; Mistral is all-local with this window
+	if win < 0 {
+		win = 0
+	}
+	r.uWindow = d.NewBufferU32(uint32(win))
 	r.q = d.NewCommandQueue()
 
 	w := m.Weights()
@@ -209,7 +214,10 @@ func BuildResident(m *decoder.Model) (*Resident, error) {
 	r.logits = d.NewBufferLen(V)
 	nTiles := V / 8 // one (maxLogit,rowIdx) partial per threadgroup (8 rows) — V divisible by 8
 	r.part, r.tok, r.uP = d.NewBufferLen(nTiles*2), d.NewBufferLen(1), d.NewBufferU32(uint32(nTiles))
-	r.invf = d.NewBufferFloats(m.RopeInvFreq())
+	invf := m.RopeInvFreq()
+	r.half = len(invf) // rotaryDim/2 (= hd/2 for full rotary; < for Phi partial rotary)
+	r.invf = d.NewBufferFloats(invf)
+	r.uHalf = d.NewBufferU32(uint32(r.half))
 	r.uHd, r.uKvDim = d.NewBufferU32(uint32(hd)), d.NewBufferU32(uint32(r.kvDim))
 	r.uH, r.uI, r.uHH = d.NewBufferU32(uint32(H)), d.NewBufferU32(uint32(I)), d.NewBufferU32(uint32(nH*hd))
 	r.uNH, r.uNKV = d.NewBufferU32(uint32(nH)), d.NewBufferU32(uint32(nKV))
@@ -373,10 +381,10 @@ func (r *Resident) encodeTrunkInto(e *Encoder) {
 		if r.qkNorm { // Qwen3: per-head Q/K RMSNorm before RoPE
 			e.dispatch(r.pQKNorm, (r.nH+r.nKV)*128, 128, r.qkv, L.qNorm, L.kNorm, r.uNH, r.uNKV, r.uHd, r.uNHhd, r.uEps, r.uAddOne)
 		}
-		e.dispatch(r.pRope, nHhd/2, 64, r.qkv, r.invf, r.uHd, r.uPos, r.uQtotal)             // q @ off 0
-		e.dispatch(r.pRope, r.kvDim/2, 64, r.qkv.At(kOff), r.invf, r.uHd, r.uPos, r.uKtotal) // k
+		e.dispatch(r.pRope, r.nH*r.half, 64, r.qkv, r.invf, r.uHd, r.uPos, r.uQtotal, r.uHalf)           // q @ off 0
+		e.dispatch(r.pRope, r.nKV*r.half, 64, r.qkv.At(kOff), r.invf, r.uHd, r.uPos, r.uKtotal, r.uHalf) // k
 		e.dispatch(r.pKv, r.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[l], r.vc[l], r.uKvDim, r.uPos)
-		e.dispatch(r.pAttn, r.nH*128, 128, r.qkv, r.kc[l], r.vc[l], r.ctx, r.uNH, r.uNKV, r.uHd, r.uNKeys, r.uScale)
+		e.dispatch(r.pAttn, r.nH*128, 128, r.qkv, r.kc[l], r.vc[l], r.ctx, r.uNH, r.uNKV, r.uHd, r.uNKeys, r.uScale, r.uWindow)
 		e.dispatch(r.pQv, 256, 256, r.ctx, r.cq, r.cSc, r.uHH)
 		e.dispatch(r.pSAResid, r.H*32, 256, L.oW, L.oS, r.cq, r.cSc, r.x, r.uHH) // o-proj + residual
 		// --- ffn block ---
