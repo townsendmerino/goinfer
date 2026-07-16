@@ -655,3 +655,18 @@ Recovered 0.61 of 0.9 ms; residual is embedding-copy + uPos-set + logits-readbac
 ruled out (speculation, Stage C underdelivers — MAC-bound) or unavailable (DP4A). Next: the
 "different work" that doesn't fight the int-MAC wall — prefill throughput, KV-f16 for long
 context, or broader model coverage.
+
+## Findings — KV-f16 (memory) + prefill make-or-break (MMA GO, 3.5x)
+
+- **KV-f16** (`kv_store`/`attention` kernels → `half` K/V, dot/accum stay f32): **memory win,
+  not speed.** Halves the KV cache (235→117MB across 28 layers → more context in 16GB); flat
+  tok/s (attention is MAC-bound like the GEMVs, so halving the KV *load* width doesn't cut the
+  dot MAC count). Parity 20/24 (cosine unchanged — one near-tie nudge, inside the gate).
+- **Prefill make-or-break (`mma_test.go`) — GO.** simdgroup_matrix (8×8 f16 MMA) **compiles +
+  runs cgo-free at MSL 3.1** (the key unknown), correctness maxErr 0.0. A naive MMA GEMM is ~2×
+  the int4 GEMV but doesn't amortize (per-row rises with M — weights re-read per tile). A
+  **blocked GEMM (RPS=4 row-tiles/simdgroup, weight tile reused across rows) amortizes**: per-row
+  ~47µs FLAT with M vs the GEMV's 164µs = **3.5× over the per-token prefill loop**. The f16 MMA
+  path amortizes across the prompt dim (unlike the scalar-int4 decode path). Prefill is viable:
+  ~13.7s TTFT (1000-tok prompt) → ~4s. Full build (blocked MMA + in-kernel int4→f16 dequant +
+  f16 activation path + causal prefill attention + PrefillN wiring + parity) is ~1–2 weeks.
