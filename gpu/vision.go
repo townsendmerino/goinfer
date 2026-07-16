@@ -10,7 +10,7 @@ import (
 )
 
 // Resident SigLIP vision encoder — the path to a GPU-fast image prefill
-// (docs/task-gpu-vision-tower.md). Per-call matmul offload was a measured dead
+// (docs/completed/task-gpu-vision-tower.md). Per-call matmul offload was a measured dead
 // end (WebGPU's ~1s submit+readback overhead × ~162 matmuls/forward ≈ the whole
 // runtime). The fix is residency: keep the [np, hidden] activation in device
 // buffers through all layers, chaining each op as a Submit with NO Poll (queue

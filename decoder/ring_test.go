@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// Increment 1 gate for ring-buffer KV storage (docs/task-kv-ring-eviction.md):
+// Increment 1 gate for ring-buffer KV storage (docs/completed/task-kv-ring-eviction.md):
 // model-free, bit-exact. A ring (sliding-window) cache must produce attention
 // output byte-identical to the append-forever cache it replaces — the ring only
 // drops keys provably outside every future query's window, so outputs can't

@@ -280,7 +280,7 @@ func (m *Model) NewCache(capHint int) *KVCache {
 	// uniform-stride families whose forward uses attendQuery/attendBatchedHeads;
 	// gemma4 (per-layer widths + KV-sharing) and qwen3_5_moe (linear attention)
 	// have their own forward and keep append-forever for now (a later increment).
-	// See docs/task-kv-ring-eviction.md.
+	// See docs/completed/task-kv-ring-eviction.md.
 	if a.gemma4 == nil && a.qwen35 == nil && a.granite == nil && a.nemotron == nil {
 		c.enableRings(a.SlidingWindow, a.isGlobalLayer)
 	}

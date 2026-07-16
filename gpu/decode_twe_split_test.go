@@ -130,7 +130,7 @@ func TestDecodeTWE_split(t *testing.T) {
 		t.Logf("  device-timestamp GPU portion: %.2f ms = %.0f µs (of TSync %.0f µs → CPU poll/submit %.0f µs)",
 			gpuMs, gpuMs*1000, pct(ts, 0.5), pct(ts, 0.5)-gpuMs*1000)
 	} else {
-		t.Logf("  device-timestamp: unavailable on the resident device (feature not requested); TSync is GPU-blocked wall, poll overhead ~0.4 ms measured separately (docs/perf-dot4-report.md)")
+		t.Logf("  device-timestamp: unavailable on the resident device (feature not requested); TSync is GPU-blocked wall, poll overhead ~0.4 ms measured separately")
 	}
 	t.Logf("  Run() vs RunN (all best/min): single %.0f µs/tok | ForwardN K=8 %.0f µs/tok | K=16 %.0f µs/tok",
 		bestTot, runNPerTok(8), runNPerTok(16))
@@ -182,5 +182,5 @@ func gpuTimePlanTWE(c *Context, steps []runStep) float64 {
 	if bestTicks == math.MaxFloat64 {
 		return -1
 	}
-	return bestTicks / 1e6 // period ~1.0 ns/tick on this RTX 2070 (measured, docs/perf-dot4-report.md)
+	return bestTicks / 1e6 // period ~1.0 ns/tick on this RTX 2070 (measured)
 }

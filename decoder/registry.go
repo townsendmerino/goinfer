@@ -721,7 +721,7 @@ func qwen2MoeArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 // the top are plain dense MLPs (no router) — the only family with mixed dense/MoE
 // layers, handled by the loader populating Experts only on i ≥ FirstKDense. The
 // num_nextn_predict_layers MTP head is dropped (only num_hidden_layers load). The
-// tensor schema is glm4moeTensorSchema. See docs/task-model-families-glm-granite.md.
+// tensor schema is glm4moeTensorSchema. See docs/completed/task-model-families-glm-granite.md.
 func glm4moeArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err := cfg.validateGlm4Moe(); err != nil {
 		return nil, nil, err

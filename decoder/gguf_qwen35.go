@@ -15,7 +15,7 @@ import (
 // (negExpAFromLog), and the (1+w) norm bake on the standard norms (the vnorm
 // closure in buildWeightsFromGGUF; ssm_norm is exempt). The tensor loading itself
 // lives in buildWeightsFromGGUF's qwen35 branch; this file holds the config map
-// and the reorder primitive. See docs/internal/recon-qwen35-gguf.md.
+// and the reorder primitive.
 
 // ggufQwen35Config synthesizes a qwen3_5_moe Config from the qwen35moe.* GGUF
 // metadata. It sets ModelType "qwen3_5_moe" so resolveArchitecture reuses the

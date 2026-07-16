@@ -5,7 +5,7 @@ import "github.com/townsendmerino/aikit/linalg"
 // kvQuant selects the CPU KV-cache storage precision. kvF32 (default) is
 // bit-exact; kvI8 stores K and V as per-(position,KV-head) symmetric int8 + a
 // f32 scale each — 4× smaller, and decode reads them with the SDOT integer dot
-// (DotI8) instead of scalar f64. Opt-in (lossy); see docs/task-cpu-kv-quant.md.
+// (DotI8) instead of scalar f64. Opt-in (lossy); see docs/completed/task-cpu-kv-quant.md.
 type kvQuant uint8
 
 const (
@@ -65,7 +65,7 @@ type KVCache struct {
 	// attendBatchedHeads paths — full-attention families (no local layers),
 	// gemma4, and qwen3_5_moe keep append-forever (rings all nil). A local layer
 	// stores only the W most recent positions (the only ones any future query can
-	// read), so its KV is O(W) not O(context). See docs/task-kv-ring-eviction.md.
+	// read), so its KV is O(W) not O(context). See docs/completed/task-kv-ring-eviction.md.
 	rings    []*ring
 	localAny bool // any ring layer present (gates prefill's assembly scratch)
 

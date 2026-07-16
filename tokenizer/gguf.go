@@ -23,7 +23,7 @@ import (
 // (digit-run cap, NFC) come from tokenizer.ggml.pre and want a committed
 // byte-level GGUF to parity-gate, which testdata doesn't have yet.
 //
-// Metadata reference: https://github.com/ggml-org/ggml/blob/master/docs/gguf.md
+// Metadata reference: the GGUF spec (ggml-org/ggml).
 
 // GGUF tokenizer metadata keys (the llama.cpp convention).
 const (
