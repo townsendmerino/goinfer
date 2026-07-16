@@ -509,3 +509,29 @@ per token; only pos/embedding change in-place) is the identified next swing (Fab
 lane-per-row kernels are the right structure for a future **prefill/batch** path (compute/
 bandwidth-bound, where the isolated 118 µs *would* show up) and are preserved in git history
 (reverted from the decode path only).
+
+## Findings — the cheap encode-tax probe RULES OUT ICB; the lever is dispatch-count
+
+Before investing ~a day in Indirect Command Buffers, measured how much of the ~2.4 ms/token
+overhead is **Go-side msgSend encode** (which ICB removes) vs **GPU-side per-dispatch
+latency** (which it doesn't). Two free trims: skip `setComputePipelineState` when unchanged,
+and batch the per-dispatch buffer binds (8–11 `setBuffer` calls) into ONE
+`setBuffers:offsets:withRange:` — cutting ~2600 → ~337 buffer-bind msgSends/token.
+
+**Result: 14.83 → 14.30 ms/token (~68 → ~70 tok/s, 0.98× bar).** Only **~0.5 ms of the
+~2.4 ms** was Go-side. **The rest is GPU-side per-dispatch launch latency across 337 serial
+dispatches.** So **ICB would not pay off** — it eliminates the Go-side encode we just captured
+for free, but the GPU still serially executes 337 commands. Fable's +6–9 tok/s ICB estimate
+assumed the gap was encode-side; this falsifies that assumption cheaply (the user's
+"measure Go-side vs GPU-side first" instinct was exactly right — it saved a day).
+
+**The only lever left to clear the bar is reducing the dispatch COUNT** — megakernel-style
+fusion (multiple ops per dispatch, fewer GPU command launches), i.e. `docs/cuda-megakernel-
+spec.md` applied to Metal. That is a real architectural effort, not a tuning pass.
+
+**Final spike verdict — GO, effectively at the bar.** cgo-free native-Metal decode:
+**~70 tok/s (0.98× the ~71 GO bar, 2.2× WebGPU-on-Metal, 3.5× the untuned spike), correct
+(21/24 argmax, cosine 0.989)**, with the fused-argmax production decode path (`ForwardArgmax`).
+Given best-of-40 run-to-run noise is ±1.5 tok/s, decode is at the bar for practical purposes.
+Beating it decisively is a megakernel effort; the scaffolding (bindings, bit-exact kernels,
+fused decode, correctness gate, Stage A/B kernels, argmax fusion) is all committed.
