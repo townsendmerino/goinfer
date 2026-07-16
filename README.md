@@ -35,10 +35,13 @@ registry; do not hand-edit).
 **The lane:** goinfer runs the weights *in-process in pure Go* — the single-file,
 zero-install, HF-parity-gated lane no other maintained runtime occupies (the Go
 llama.cpp bindings still ship a native `.so`; the pure-Go ports are archived toys).
-On a GPU it decodes at **~60–70% of llama.cpp/Ollama-CUDA at equal 4-bit quant** — a
-portable WebGPU backend vs years-tuned CUDA — in a static binary that boots in ~0.5 s.
-Full capability matrix + measured numbers, every cell with provenance:
-[docs/benchmarks.md](docs/benchmarks.md).
+On a GPU the **cgo-free native backends** decode at native-runtime-class speed at equal
+4-bit quant, measured server-to-server: **CUDA runs ~1.3–1.8× Ollama-CUDA** (1.5B→0.5B),
+and **Metal holds parity with Ollama-Metal** (0.77–1.03×; issue-bound on Apple GPUs) —
+both with **no CUDA toolkit, no Xcode, no cgo**. The portable WebGPU backend trades
+throughput (~60–70%) for running on *any* GPU (Metal / Vulkan / DX12) and streaming
+bigger-than-VRAM MoE weights. Full capability matrix + measured numbers, every cell with
+provenance: [docs/benchmarks.md](docs/benchmarks.md).
 
 ![Mellum2 — a 12B coding MoE running GPU-resident on an 8 GB card, in pure Go](docs/assets/mellum2-gpu.gif)
 
@@ -229,9 +232,79 @@ go get github.com/townsendmerino/goinfer
 | `constrain` | constrained / structured decoding — a logit mask that forces output to satisfy a grammar; streaming JSON grammar + JSON Schema (and Go-struct) compiler | — |
 | `chat` | chat-template detection + byte-exact native renderers (Gemma 3/4, ChatML/Qwen, Llama-3, Mistral) and per-family tool calling (render + parse) | — |
 | `gpu` (opt-in, `-tags gpu`) | WebGPU compute backend for matmul (Metal / Vulkan / DX12) | `cogentcore/webgpu` (cgo), `aikit/encoder`, `goinfer/decoder` |
+| `cuda` (opt-in, `-tags cuda`) | cgo-free native CUDA decode backend — dlopen libcuda + NVRTC, dense residency, `CGO_ENABLED=0` | `eitamring/gocudrv`, `goinfer/decoder` |
+| `metal` (opt-in, `-tags metal`) | cgo-free native Metal decode backend — purego / Obj-C, MSL compiled at runtime, dense residency, darwin, `CGO_ENABLED=0` | `ebitengine/purego`, `goinfer/decoder` |
 
-The cgo WebGPU dependency is confined to the `gpu` submodule; the default build is
-pure Go, no cgo.
+The cgo WebGPU dependency is confined to the `gpu` submodule; the two native GPU
+backends (`cuda`, `metal`) are **cgo-free**. Either way the default build is pure Go,
+no cgo — a backend is compiled only when you pass its build tag.
+
+## Running on a GPU
+
+The default build is pure-Go CPU. Three **opt-in** GPU backends accelerate decode —
+each a separate build tag that never affects the default build:
+
+| Backend | Build tag | Platform | cgo |
+|---|---|---|---|
+| WebGPU | `-tags gpu` | any GPU (Metal / Vulkan / DX12) | yes (confined to the `gpu` submodule) |
+| CUDA | `-tags cuda` | NVIDIA — Linux / Windows x86-64 | **no** — `CGO_ENABLED=0`, dlopens the driver |
+| Metal | `-tags metal` | Apple Silicon | **no** — `CGO_ENABLED=0`, purego / Obj-C |
+
+The native **CUDA** and **Metal** backends need only the platform's GPU driver —
+**no CUDA toolkit, no Xcode, no Python, no cgo** — and are selected at runtime with
+`--backend` (the same flag works in `demo/chat` and the `cmd/serve` OpenAI-compatible
+server):
+
+```bash
+# NVIDIA — cgo-free native CUDA
+CGO_ENABLED=0 go run -tags cuda ./demo/chat --backend cuda \
+    --model ~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+
+# Apple Silicon — cgo-free native Metal
+CGO_ENABLED=0 go run -tags metal ./demo/chat --backend metal --quant int8int8 \
+    --model ~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+```
+
+### Measured throughput (server-to-server, q4_k_m 4-bit)
+
+Both goinfer and the reference are driven through their own HTTP server — sampling,
+detokenize, and JSON all included — so there's no methodology gap to discount:
+
+| Model | goinfer CUDA | Ollama-CUDA | goinfer Metal | Ollama-Metal |
+|---|---|---|---|---|
+| Qwen2.5-Coder-0.5B | ~392 tok/s (**1.78×**) | ~220 | ~128 tok/s (**1.03×**) | ~124 |
+| Qwen2.5-Coder-1.5B | ~196 tok/s (**1.32×**) | ~149 | ~61 tok/s (**0.77×**) | ~79 |
+
+CUDA outruns tuned native CUDA; Metal is at parity on small models and issue-bound (no
+DP4A on Apple GPUs) on larger ones. Full provenance — hardware, versions, method — in
+[docs/benchmarks.md](docs/benchmarks.md).
+
+### What runs on the GPU
+
+GPU-resident decode covers a subset of architectures. **Everything else runs on the
+pure-Go CPU path automatically — never with wrong output.** A shared feature taxonomy
+checks each model's required features against what the backend implements; an
+unsupported architecture is *declined at load and falls back to CPU* rather than
+producing incorrect results.
+
+| Family | CUDA | Metal |
+|---|---|---|
+| Qwen2 · Qwen3 · Llama | ✅ resident | ✅ resident |
+| Mistral · Phi-3-mini-4k | ✅ resident | ✅ resident¹ |
+| Gemma · MoE · MLA · YaRN | CPU fallback | CPU fallback |
+
+¹ Metal Mistral-7B needs > 16 GB unified memory (int8 + int4). Both backends implement
+qk-norm + sliding-window; Metal also does partial rotary, so a partial-rotary Phi
+variant is resident on Metal but falls back on CUDA.
+
+An unlisted or unsupported model still runs — in pure Go on the CPU. The portable
+WebGPU backend (`-tags gpu`) covers a broader resident set (MoE, MLA, SSM, YaRN); see
+[docs/capability-matrix.md](docs/capability-matrix.md) for the full map.
+
+> **Note:** in `cmd/serve`, a GPU-resident model skips prompt-prefix KV reuse and
+> speculative decoding — the resident decode path is fast enough that the per-request
+> session optimization isn't worth it. The OpenAI API is stateless (clients resend the
+> whole conversation), so this is a throughput trade, not a correctness change.
 
 ## Quick start
 
