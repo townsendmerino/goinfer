@@ -107,3 +107,29 @@ unit-validated** on this machine. **END-TO-END family parity is UNVALIDATED** (n
 Phi-3 checkpoints here) — hand off to the Linux box (see the validation prompt). Remaining
 declines: MoE (graceful), MLA (graceful), Gemma (structural — sandwich norms/softcaps/GeGLU/
 embed-scale, deferred), embed-scale.
+
+## Validation results (Linux box, c1c29b6) + follow-ups (2026-07-16)
+
+Decoder-side arch detection verified on real checkpoints (the seam that feeds Metal):
+- **Qwen3-1.7B — CLEAN, safe to validate on Metal.** `HasQKNorm=true`, QNorm/KNorm len==headDim
+  on all layers, `RMSAddOne=false`, no window, full rotary, `DecodeRunnerEligible=true`. GGUF and
+  safetensors load paths agree exactly. Mac checkpoint: `Qwen/Qwen3-0.6B` (cheapest) or the 1.7B.
+- **Phi-3-mini-4k — does NOT exercise partial RoPE** (no `partial_rotary_factor` → full rotary;
+  `PartialRotary=false`). **Drop Phi-3 from real-model validation; rely on the bit-exact
+  `TestRopePartial` unit test.** Real partial-rotary dense families don't exist small (GLM-4.5/4.6
+  are MoE; gemma4 is per-layer RoPE).
+- **Phi-3 decoder BUG (below Metal, all backends):** `phi3Architecture` (registry.go:1043-)
+  never sets `Architecture.SlidingWindow` from `cfg.SlidingWindow` (2047) — cf. mistral:327.
+  goinfer runs Phi-3 full-attention everywhere; correct ≤2047 tokens, diverges from HF beyond.
+  **Fix belongs in the decoder (phi3Architecture); Linux box owns it (has Phi-3 + can re-bless).**
+  Once fixed, Metal windowing applies for free (it reads `SlidingWindowResident()`).
+- **Mistral — validate with v0.1 (sliding_window=4096), NOT v0.3 (null → window never runs →
+  false pass).** Mac checkpoint: `TheBloke/Mistral-7B-Instruct-v0.1-GGUF` q4_k_m (~4.1 GB).
+- **Accessors: clean** (HasQKNorm/PartialRotary/EmbedScaleResident/SlidingWindow/LayerIsLocal).
+
+**Follow-up done:** closed the **YaRN gap** — `metalUnsupported` now declines `RopeMscaleLayer(0)
+!= 1` (Metal's rope applies no attention_factor; Mellum/long-ctx would run wrong). qwen2.5
+(mscale=1) still admitted, parity green.
+
+**Revised Mac validation set:** Qwen3-0.6B + Mistral-7B-v0.1 (decode + prefill parity vs CPU).
+Phi-3 partial-RoPE = unit-test-only. Pass = argmax parity in qwen2.5's band, cosine ≈0.98+.

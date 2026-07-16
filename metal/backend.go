@@ -86,6 +86,8 @@ func metalUnsupported(m *decoder.Model) string {
 	switch {
 	case m.EmbedScaleResident() > 1:
 		return "embedding scale (Gemma) — not applied"
+	case m.RopeMscaleLayer(0) != 1:
+		return "YaRN rope scaling (mscale != 1, e.g. Mellum/long-ctx) — rope applies no attention_factor"
 	}
 	return ""
 }
