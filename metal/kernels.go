@@ -130,6 +130,57 @@ kernel void gemv_w4a8_sa(device const uint4* wq[[buffer(0)]], device const half*
     SA_BODY
     if (lane==0) out[row] = acc*asc[0];
 }
+
+// BATCH-K W4A8 GEMM (the speculation lever): one weight matrix × KK token activations in ONE
+// pass. Each simdgroup owns one output row; it unpacks each weight group's 32 nibbles ONCE and
+// MACs them against ALL kk staged activation vectors (kk accumulators). The issue-bound nibble
+// unpack (extract+widen, no DP4A on Apple) is thus amortized across kk tokens — the mechanism
+// that converts the unused bandwidth into throughput when a speculator drafts kk candidates.
+// Activations staged [kk][K] int8→short in threadgroup memory; out is row-major [kk][N].
+#define KK_MAX 10
+kernel void gemv_w4a8_sa_bk(device const uint4* wq[[buffer(0)]], device const half* sct[[buffer(1)]],
+    device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
+    constant uint& K[[buffer(5)]], constant uint& N[[buffer(6)]], constant uint& kk[[buffer(7)]],
+    threadgroup short* As [[threadgroup(0)]],        // kk*K shorts, host-sized (occupancy: only what k needs)
+    uint tgid[[threadgroup_position_in_grid]], uint tid[[thread_index_in_threadgroup]],
+    uint tgs[[threads_per_threadgroup]], uint sgid[[simdgroup_index_in_threadgroup]],
+    uint lane[[thread_index_in_simdgroup]]) {
+    for (uint i=tid; i<kk*K; i+=tgs) As[i] = short(aq[i]);
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    uint G = K>>5u;
+    uint row = tgid*(tgs>>5u) + sgid;
+    if (row >= N) return;
+    device const uint4* wr = wq  + (uint)row*G;
+    device const half*  sr = sct + (uint)row*G;
+    float acc[KK_MAX];
+    for (uint j=0;j<kk;j++) acc[j]=0.0f;
+    for (uint g=lane; g<G; g+=32u) {
+        uint4 w = wr[g];
+        // Unpack each word's 8 nibbles ONCE into scalars (compiler keeps them in registers),
+        // then reuse across all kk activations via the unrolled 8-term dot (UNP8 form).
+        int x0=int(w.x&0xF)-8, x1=int((w.x>>4)&0xF)-8, x2=int((w.x>>8)&0xF)-8, x3=int((w.x>>12)&0xF)-8,
+            x4=int((w.x>>16)&0xF)-8, x5=int((w.x>>20)&0xF)-8, x6=int((w.x>>24)&0xF)-8, x7=int((w.x>>28)&0xF)-8;
+        int y0=int(w.y&0xF)-8, y1=int((w.y>>4)&0xF)-8, y2=int((w.y>>8)&0xF)-8, y3=int((w.y>>12)&0xF)-8,
+            y4=int((w.y>>16)&0xF)-8, y5=int((w.y>>20)&0xF)-8, y6=int((w.y>>24)&0xF)-8, y7=int((w.y>>28)&0xF)-8;
+        int z0=int(w.z&0xF)-8, z1=int((w.z>>4)&0xF)-8, z2=int((w.z>>8)&0xF)-8, z3=int((w.z>>12)&0xF)-8,
+            z4=int((w.z>>16)&0xF)-8, z5=int((w.z>>20)&0xF)-8, z6=int((w.z>>24)&0xF)-8, z7=int((w.z>>28)&0xF)-8;
+        int u0=int(w.w&0xF)-8, u1=int((w.w>>4)&0xF)-8, u2=int((w.w>>8)&0xF)-8, u3=int((w.w>>12)&0xF)-8,
+            u4=int((w.w>>16)&0xF)-8, u5=int((w.w>>20)&0xF)-8, u6=int((w.w>>24)&0xF)-8, u7=int((w.w>>28)&0xF)-8;
+        float sc = float(sr[g]);
+        for (uint j=0;j<kk;j++) {
+            threadgroup const short* a = As + j*K + g*32u;
+            int gi = x0*int(a[0])+x1*int(a[1])+x2*int(a[2])+x3*int(a[3])+x4*int(a[4])+x5*int(a[5])+x6*int(a[6])+x7*int(a[7])
+                   + y0*int(a[8])+y1*int(a[9])+y2*int(a[10])+y3*int(a[11])+y4*int(a[12])+y5*int(a[13])+y6*int(a[14])+y7*int(a[15])
+                   + z0*int(a[16])+z1*int(a[17])+z2*int(a[18])+z3*int(a[19])+z4*int(a[20])+z5*int(a[21])+z6*int(a[22])+z7*int(a[23])
+                   + u0*int(a[24])+u1*int(a[25])+u2*int(a[26])+u3*int(a[27])+u4*int(a[28])+u5*int(a[29])+u6*int(a[30])+u7*int(a[31]);
+            acc[j] = fma(float(gi), sc, acc[j]);
+        }
+    }
+    for (uint j=0;j<kk;j++) {
+        float s = simd_sum(acc[j]);
+        if (lane==0) out[j*N + row] = s * asc[j];
+    }
+}
 kernel void gemv_w4a8_sa_bias(device const uint4* wq[[buffer(0)]], device const half* sct[[buffer(1)]],
     device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
     device const float* bias[[buffer(5)]], constant uint& K[[buffer(6)]], uint tgid[[threadgroup_position_in_grid]],

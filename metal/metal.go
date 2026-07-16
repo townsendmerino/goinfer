@@ -127,6 +127,7 @@ var (
 	selSetPipeline     = objc.RegisterName("setComputePipelineState:")
 	selSetBuffer       = objc.RegisterName("setBuffer:offset:atIndex:")
 	selSetBuffers      = objc.RegisterName("setBuffers:offsets:withRange:")
+	selSetTgMem        = objc.RegisterName("setThreadgroupMemoryLength:atIndex:")
 	selDispatchThreads = objc.RegisterName("dispatchThreads:threadsPerThreadgroup:")
 	selEndEncoding     = objc.RegisterName("endEncoding")
 	selCommit          = objc.RegisterName("commit")
@@ -337,6 +338,31 @@ func (q Queue) Run1DBatch(p Pipeline, n, tg, reps int, bufs ...Buffer) {
 	for i, b := range bufs {
 		enc.Send(selSetBuffer, b.id, b.off, uintptr(i))
 	}
+	total := mtlSize{w: uint64(n), h: 1, d: 1}
+	perTG := mtlSize{w: uint64(tg), h: 1, d: 1}
+	for r := 0; r < reps; r++ {
+		enc.Send(selDispatchThreads, unsafe.Pointer(&total), unsafe.Pointer(&perTG))
+	}
+	runtime.KeepAlive(&total)
+	runtime.KeepAlive(&perTG)
+	enc.Send(selEndEncoding)
+	cb.Send(selCommit)
+	cb.Send(selWaitCompleted)
+}
+
+// Run1DBatchTG is Run1DBatch with dynamic threadgroup memory of tgBytes at index 0 (for kernels
+// with a `threadgroup T* x [[threadgroup(0)]]` param sized per-dispatch — batch-k stages only
+// what k needs, preserving occupancy).
+func (q Queue) Run1DBatchTG(p Pipeline, n, tg, reps, tgBytes int, bufs ...Buffer) {
+	pool := objc.ID(objc.GetClass("NSAutoreleasePool")).Send(selAlloc).Send(selInit)
+	defer pool.Send(selDrain)
+	cb := q.id.Send(selCommandBuffer)
+	enc := cb.Send(selComputeEncoder)
+	enc.Send(selSetPipeline, p.id)
+	for i, b := range bufs {
+		enc.Send(selSetBuffer, b.id, b.off, uintptr(i))
+	}
+	enc.Send(selSetTgMem, uintptr(tgBytes), uintptr(0))
 	total := mtlSize{w: uint64(n), h: 1, d: 1}
 	perTG := mtlSize{w: uint64(tg), h: 1, d: 1}
 	for r := 0; r < reps; r++ {

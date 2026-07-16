@@ -603,3 +603,39 @@ Executed the headroom sequence (Step 0 → L1) from `metal-decode-headroom-fable
 **Verdict at this checkpoint: 71.4 tok/s, past the bar (1.01×), issue-bound confirmed.** Pure-
 decode headroom is either small (encode-ahead, +5, risky) or large-but-days (Stage C, →~90);
 the multiplier is speculation. Diagnosis is now measurement-grounded, not inferred.
+
+## Findings — speculation pivot: make-or-break batch-k experiment came back NEGATIVE
+
+Before building the full Metal batch-k verify forward, tested the load-bearing assumption:
+does a single-weight-pass **batch-k W4A8 GEMM** amortize the issue-bound unpack, so a verify of
+k drafted tokens costs ≪ k× a single forward? Built `gemv_w4a8_sa_bk` (one weight matrix ×
+kk staged activations, unpack each weight group ONCE, MAC against all kk) + dynamic threadgroup
+memory (`Run1DBatchTG` / `setThreadgroupMemoryLength`, so k activations don't blow occupancy).
+
+**Result (gate/up 17920×1536, per-token µs, best-of-20 hot):**
+```
+single-token Stage A: 161 µs
+k=1 batch: 226  k=2: 186  k=4: 166 (102.8% of single)  k=8: 194
+```
+**T_k ≈ k·T_1 — essentially NO amortization** (k=4 best case ties the single-token loop; k=8
+regresses on occupancy). Only ~10% at k=2 with a hand-sized static array; the unpack is only
+~20% of the per-weight cost, the int MACs ~80%, and batching amortizes only the unpack.
+
+**Why this kills speculation (airtight economics):** speedup = a·T_1/T_verify (a = accepted
+tokens/round). Win requires T_verify < a·T_1. Measured T_verify ≈ k·T_1 ⇒ win requires **a > k**,
+impossible (a ≤ k+1, averages far less). Speculation gives ≤1× here.
+
+**Root cause = the SAME issue-bound property confirmed by L1 (f16 scales flat GPU-time):** no
+DP4A/int8-dot on Apple ⇒ the int4 GEMV is scalar-int-MAC-bound, so the MAC work scales with k
+and a batched verify is NOT cheap. **Speculation only pays when the forward is memory-bandwidth-
+bound (batched verify ≈ free); this kernel is compute/issue-bound.** The property that caps
+single-token decode also kills speculation — they're the same wall (Fable's 1.5–2.5× spec
+estimate assumed a memory-bound weight pass, the same assumption L1 already disproved).
+
+**Corollary caution for the remaining levers:** since the bottleneck is int-MAC throughput (not
+unpack or bandwidth), **Stage C** (which optimises the unpack via −8·Sg folding + uniform
+activations) likely also underdelivers — f16 scales (unpack-side) already showed flat GPU-time.
+The one lever with guaranteed, MAC-independent value is **encode-ahead** (kills the measured
+0.9 ms host bubble, +~5 → ~77). Beating that decisively appears to need hardware goinfer can't
+reach on M1 (DP4A), i.e. **~71–77 tok/s is near the practical ceiling for cgo-free W4A8 decode
+on this GPU.** Experiment kept (`batchk_test.go`, `gemv_w4a8_sa_bk`) as the evidence.
