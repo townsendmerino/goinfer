@@ -53,6 +53,8 @@ type Resident struct {
 	execOnce sync.Once
 	execReq  chan execJob
 	execAck  chan []float32
+
+	pf *prefillState // lazily-compiled f16 MMA prefill pipelines (opt-in)
 }
 
 type execJob struct {
