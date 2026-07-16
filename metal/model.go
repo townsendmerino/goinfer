@@ -195,7 +195,25 @@ func (r *Resident) Forward(id, pos int) []float32 {
 	// the CUDA backend's LockOSThread executor uses.
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	e := r.encodeTrunk(id, pos)                                          // 28 layers → final norm → r.aq/r.aSc
+	r.embed.Row(id, r.x.Floats()) // CPU dequant embedding into the shared buffer
+	return r.forwardLogits(pos)
+}
+
+// ForwardEmb is Forward given a precomputed embedding[H] (the decoder.ResidentForward shape)
+// instead of a token id — it copies the embedding into the shared input buffer and skips the
+// internal embedding lookup. Numerically identical to Forward(id,pos) when emb = Embed.Row(id)
+// (the eligible dense archs have no embed scale).
+func (r *Resident) ForwardEmb(emb []float32, pos int) []float32 {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	copy(r.x.Floats(), emb)
+	return r.forwardLogits(pos)
+}
+
+// forwardLogits encodes the trunk + full lm head and reads back logits[V]. Caller must hold
+// the OS thread and have filled r.x with the input embedding.
+func (r *Resident) forwardLogits(pos int) []float32 {
+	e := r.encodeTrunk(pos)                                                     // 28 layers → final norm → r.aq/r.aSc
 	e.dispatch(r.pSA, (r.V)*32, 256, r.lmW, r.lmS, r.aq, r.aSc, r.logits, r.uH) // full lm head
 	e.end()
 	copy(r.logitsHost, r.logits.Floats())
@@ -205,21 +223,22 @@ func (r *Resident) Forward(id, pos int) []float32 {
 // ForwardArgmax runs the identical trunk but replaces the full lm head + 608KB readback with
 // Fable's fused block-argmax (per-tile (maxLogit,rowIdx) → argmax_finish → 4-byte token). It
 // returns argmax(Forward's logits) — same values, tie-broken first-max-wins — without ever
-// materializing the logit vector. This is the production decode path.
+// materializing the logit vector. This is the fastest greedy decode path.
 func (r *Resident) ForwardArgmax(id, pos int) uint32 {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	e := r.encodeTrunk(id, pos)
+	r.embed.Row(id, r.x.Floats())
+	e := r.encodeTrunk(pos)
 	e.dispatch(r.pSAAmax, (r.V)*32, 256, r.lmW, r.lmS, r.aq, r.aSc, r.part, r.uH) // tile partials
 	e.dispatch(r.pArgFinish, 256, 256, r.part, r.tok, r.uP)                       // reduce tiles → token
 	e.end()
 	return r.tok.U32()
 }
 
-// encodeTrunk begins a command buffer and encodes the embedding + all decoder layers + the
-// final norm, leaving the quantized final hidden state in r.aq/r.aSc ready for an lm head.
-func (r *Resident) encodeTrunk(id, pos int) *Encoder {
-	r.embed.Row(id, r.x.Floats()) // CPU dequant embedding into the shared buffer
+// encodeTrunk begins a command buffer and encodes all decoder layers + the final norm,
+// leaving the quantized final hidden state in r.aq/r.aSc ready for an lm head. The caller
+// must have already filled r.x with the input embedding (Forward/ForwardEmb/ForwardArgmax).
+func (r *Resident) encodeTrunk(pos int) *Encoder {
 	r.uPos.SetU32(uint32(pos))
 	r.uNKeys.SetU32(uint32(pos + 1))
 

@@ -44,7 +44,7 @@ func main() {
 		topK     = flag.Int("top-k", 0, "top-k filter (0 = off)")
 		topP     = flag.Float64("top-p", 0.0, "top-p / nucleus (0 = off)")
 		seed     = flag.Int64("seed", 0, "sampling RNG seed")
-		backend  = flag.String("backend", "cpu", "compute backend: cpu | webgpu")
+		backend  = flag.String("backend", "cpu", "compute backend: cpu | webgpu | metal (metal needs -tags metal + --quant int8int8, darwin)")
 		quant    = flag.String("quant", "", "weight quantization: \"\" (f32) | int8 | int8int8 | int4")
 		jsonMode = flag.Bool("json", false, "constrain output to valid JSON (logit masking via constrain.JSON)")
 	)
