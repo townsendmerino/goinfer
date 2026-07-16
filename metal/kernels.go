@@ -52,10 +52,6 @@ kernel void gemv_w8a8_coal(device const char* aq[[buffer(0)]], device const floa
     acc = simd_sum(acc);
     if (lid == 0) out[gid] = float(acc) * asc[0] * bsc[gid];
 }
-// Coalesced + ILP W4A8 GEMV: ONE simdgroup (32 lanes) per output row. int4 weights = half
-// the bytes of int8 (the target-quant bandwidth win). Each lane strides over the row's
-// 32-nibble groups; the 8-nibble inner loop is fully unrolled (ILP), f32 group scale
-// folded per group; simd_sum reduces the 32 lane partials. Launch total = N*32, tg = 32.
 // COALESCED W4A8 GEMV core (shared by _coal/_bias/_resid). ONE simdgroup (32 lanes) per
 // output row; lane l reads word l, l+32, l+64… so adjacent lanes hit adjacent memory (vs the
 // old stride-4 group-per-lane pattern). Per-word int8·nibble sum × the word's group scale
