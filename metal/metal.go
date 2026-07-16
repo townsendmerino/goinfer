@@ -206,6 +206,10 @@ func (b Buffer) Int8s() []int8 {
 	return unsafe.Slice(objc.Send[*int8](b.id, selContents), b.n)
 }
 
+// SetU32 overwrites a 1-word uniform buffer's contents in place (per-token: rope pos,
+// nKeys). Zero-copy on UMA.
+func (b Buffer) SetU32(v uint32) { *objc.Send[*uint32](b.id, selContents) = v }
+
 // Run1D encodes and runs a 1-D kernel over n threads (threadgroup width tg), binding
 // bufs at indices 0..len-1, and blocks until the GPU finishes. Manual autoreleasepool
 // discipline (no ARC): the per-token commandBuffer/encoder are autoreleased into the

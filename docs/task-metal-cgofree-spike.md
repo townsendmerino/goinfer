@@ -359,9 +359,42 @@ CPU reference that mirrors the exact quantized path: **cosine 1.0000000, maxAbs 
 sequence the dependent kernels correctly (the WGSL storage-barrier analog). So the whole
 layer assembles and runs correctly, cgo-free, in the shape the decode loop needs.
 
-**Remaining — the final GO/NO-GO step (integration + measurement, no viability risk):**
-depend on the goinfer decoder to **load the real qwen2.5-coder-1.5b GGUF + host-pack its
-W4A8 weights**, run the full **28-layer stack per token** + sample, stand up the
-**argmax-parity gate vs CPU decode**, and measure device-timed decode **tok/s vs the ~71
-GO bar** (aspirational ~83, Ollama parity). Everything upstream (binding, all kernels, the
-full-layer assembly) is proven bit-exact — this is real-weight plumbing + the number.
+## Findings — real-model decode: CORRECT + cgo-free, but untuned perf ties WebGPU (NO-GO as measured)
+
+`metal/model.go` (`BuildResident` + `Forward`) loads the real **qwen2.5-coder-1.5b** int8
+weights out of the goinfer decoder (`w.Int8()`, direct — no repack), handles Qwen2 q/k/v
+bias, and runs the full **28-layer stack + LM head per token in ONE command buffer**,
+cgo-free. `TestRealModel_parityAndThroughput`, on the M1 Pro:
+
+- **Correctness — PROVEN.** Token-by-token argmax vs the decoder's own CPU forward
+  (`m.ForwardForTest`, same int8 weights): **23/24 match**, logit cosine **0.998** (the 1
+  miss a near-tie). A real 1.5B model decodes correctly through cgo-free native Metal —
+  the first `CGO_ENABLED=0` GPU decode of a real model on Mac.
+- **Stability bug found + fixed.** Intermittent SIGSEGV in `waitUntilCompleted` was the
+  **NSAutoreleasePool thread-migration hazard** (doc risk #2): Go migrates the goroutine
+  between `begin()` (pool push) and `end()` (pool drain), but an autorelease pool is
+  per-OS-thread → draining on a different thread is UB. Fix: `runtime.LockOSThread` around
+  `Forward` (the CUDA backend's LockOSThread-executor discipline). Crash gone.
+- **Perf — the honest number.** Naive one-thread-per-row GEMV was **4 tok/s** (250 ms/tok)
+  — pathologically *uncoalesced* (adjacent threads read far-apart memory, ~6 GB/s of the
+  chip's 200). One coalescing pass (simdgroup-per-row + `simd_sum`, `gemv_w8a8_coal`) →
+  **~30 tok/s (int8), 7.5×** — but with real measurement variance (**~18–30 tok/s** warm,
+  worse under concurrent CPU load). That's **~0.6–0.9× WebGPU-on-Metal (31.9, int8)** and
+  **~0.3–0.4× the ~71 GO bar** (int4-anchored).
+
+**Verdict — NO-GO as measured; viability + correctness GREEN; a real but *projected* path
+to GO.** Per the spike's discipline (no perf claim without a measured run, "not clearly GO
+= NO-GO"): the current coalesced-but-untuned int8 kernel **ties WebGPU-on-Metal, it does
+not clear it** — nowhere near the ≥1.3× that would justify a second native backend, let
+alone the ≥71 bar. What the spike *did* prove, all measured: the **cgo-free native-Metal
+lane is open and correct** (binding retired, every kernel bit-exact, full real-model decode
+matches CPU). What it did **not** prove: that it's *worth it* — reaching the bar needs (a)
+the rest of the CUDA tuning arc (coalescing done → ILP/multi-row/register-tuning, the
+43%→80%-of-peak work) and (b) **int4/W4A8** (the target quant, ~2× less bandwidth than the
+int8 measured here). Both are known and bounded from the CUDA precedent — but they are
+**projections, not measurements**, so the honest verdict stands at **GO-on-viability,
+NO-GO-on-worth-it-as-measured**, exactly the CUDA arc's ending, one tuning-arc earlier.
+
+**If revisited:** switch the GEMV to W4A8 (kernel already bit-exact validated) + ILP-unroll
++ multi-row-per-threadgroup, re-measure vs the ~71 bar. The scaffolding, the correctness
+gate, and the binding are all in place — it's a kernel-tuning session, not a rebuild.
