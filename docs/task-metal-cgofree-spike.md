@@ -429,3 +429,32 @@ does not clear the bar.
 **If revisited:** fuse the layer's ~19 dispatches into ~3–5 threadgroup-fused super-kernels
 (pre-attn / attn / ffn), keeping each stage's already-bit-exact math; re-measure the
 dispatch-overhead reduction vs the ~71 bar. Not a rebuild — the kernels and gate exist.
+
+## Findings — the fusion FALSIFIED the dispatch-bound hypothesis (claim-discipline correction)
+
+Built the fusion (`metal/model.go`): QKV combined into one GEMV (+bias fused), gate/up
+combined into one, residual folded into the o-proj/down epilogues (`gemv_w4a8_bias` /
+`gemv_w4a8_resid`, offset-bound sub-views) — **19 → 12 dispatches/layer**. Still correct
+(21/24 argmax vs CPU, cosine 0.989). **Perf: ~20 tok/s — unchanged.**
+
+**That disproves the "dispatch-bound" call above.** Cutting a third of the dispatches did
+nothing, and int4 (½ the weight bytes) did nothing — so it is **neither dispatch- nor
+bandwidth-bound**. Measured ~50 ms/token is ~15× *both* the compute floor (~1 ms, 1.5 G
+int8-MACs/token) and the int8 bandwidth floor (~3 ms). The real bottleneck is **GEMV kernel
+efficiency — memory-latency / low-occupancy bound at ~22% of peak**: the coalesced kernel
+uses one 32-lane simdgroup per output row with a stride-4 read pattern (adjacent lanes hit
+different cache lines) and too few concurrent memory requests to hide latency.
+
+**Corrected verdict — GO-on-viability, NO-GO-on-worth-it (as measured), honestly diagnosed
+after three falsified levers.** Viability + correctness are proven and measured; the
+tuning sequence — coalesce (4→30 tok/s ✓), **int4 (no gain ✗), dispatch-fusion (no gain
+✗)** — lands at ~20–30 tok/s, ~22% of peak, tying not beating WebGPU-on-Metal. The gap to
+the ~71 bar (~53% of peak) is **an expert GEMV-kernel-optimization effort** — truly
+coalesced (adjacent-lane→adjacent-word) loads, `uint4`-vectorized reads, register/thread
+blocking for occupancy: the CUDA arc's 43%→80% grind, which took that arc many commits and
+is a multi-session job, not a weekend. **The honest measured answer: the cgo-free
+native-Metal lane is open and correct, but a competent-non-expert kernel does not clear the
+bar, and closing it is real GPU-kernel engineering — bigger than this spike scoped.**
+
+The scaffolding (binding, all bit-exact kernels, the fused decode, the correctness gate)
+is committed and in place for whoever takes that on.

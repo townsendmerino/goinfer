@@ -17,9 +17,8 @@ import (
 const metalCtxCap = 4096 // resident KV positions (spike)
 
 type residLayer struct {
-	qW, qS, kW, kS, vW, vS, oW, oS, gW, gS, uW, uS, dW, dS Buffer
-	qb, kb, vb, preNorm, postNorm                         Buffer
-	hasBias                                               bool
+	qkvW, qkvS, guW, guS, oW, oS, dW, dS Buffer // fused QKV + fused gate/up + o + down
+	qkvBias, preNorm, postNorm          Buffer
 }
 
 // Resident is a Metal-resident dense decoder. Weights uploaded once in BuildResident;
@@ -27,7 +26,8 @@ type residLayer struct {
 type Resident struct {
 	d                                             *Device
 	q                                             Queue
-	pRms, pQv, pGemv, pRope, pKv, pAttn, pSw, pRes Pipeline
+	pRms, pQv, pGemv, pGemvBias, pGemvResid, pRope, pKv, pAttn, pSw, pRes Pipeline
+	qkv, gu                                                              Buffer // fused QKV out, fused gate/up out
 
 	H, nL, nH, nKV, hd, I, V, kvDim, half int
 	embed                                 *linalg.WeightMat
@@ -37,7 +37,7 @@ type Resident struct {
 	lmW, lmS  Buffer
 	kc, vc    []Buffer
 
-	x, aq, aSc, qB, kB, vB, ctx, cq, cSc, oO, mq, mSc, gO, uO, dq, dSc, dO, logits Buffer
+	x, aq, aSc, ctx, cq, cSc, oO, mq, mSc, dq, dSc, dO, logits Buffer
 	invf, uHd, uKvDim, uH, uI, uHH, uNH, uNKV, uScale, uEps, uQtotal, uKtotal      Buffer
 	uPos, uNKeys                                                                   Buffer
 	logitsHost                                                                    []float32
@@ -74,6 +74,26 @@ func int4Buf(d *Device, w *linalg.WeightMat) (Buffer, Buffer, error) {
 	return d.NewBufferUint32s(words), d.NewBufferFloats(scales), nil
 }
 
+// int4Concat re-quantizes and row-concatenates several same-K WeightMats into ONE W4A8
+// buffer — the fusion enabler (combined QKV → one GEMV, combined gate/up → one GEMV).
+func int4Concat(d *Device, wms ...*linalg.WeightMat) (Buffer, Buffer) {
+	var words []uint32
+	var scales []float32
+	for _, w := range wms {
+		q8, sc, _, ok := w.Int8()
+		if !ok {
+			panic(fmt.Sprintf("metal: int4Concat weight kind %q not int8", w.Kind()))
+		}
+		N, K := w.Rows(), w.Cols()
+		for n := 0; n < N; n++ {
+			wd, sd := packW4A8Row(dequantInt8ToF32Row(q8[n*K:(n+1)*K], sc[n], K, K))
+			words = append(words, wd...)
+			scales = append(scales, sd...)
+		}
+	}
+	return d.NewBufferUint32s(words), d.NewBufferFloats(scales)
+}
+
 // BuildResident builds a Metal resident decoder from an int8-loaded dense Qwen2/Llama
 // Model. Handles Qwen2 q/k/v bias; assumes no QK-norm / sliding-window / embed-scale
 // (the DecodeRunnerEligible dense shape), full RoPE via the model's own inv-freq table.
@@ -96,6 +116,7 @@ func BuildResident(m *decoder.Model) (*Resident, error) {
 	H, nL, nH, nKV, hd, I, V := m.Dims()
 	r := &Resident{d: d, H: H, nL: nL, nH: nH, nKV: nKV, hd: hd, I: I, V: V, kvDim: nKV * hd, half: hd / 2}
 	r.pRms, r.pQv, r.pGemv = pipe("rmsnorm_quant"), pipe("quant_vec"), pipe("gemv_w4a8_coal")
+	r.pGemvBias, r.pGemvResid = pipe("gemv_w4a8_bias"), pipe("gemv_w4a8_resid")
 	r.pRope, r.pKv, r.pAttn = pipe("rope"), pipe("kv_store"), pipe("attention")
 	r.pSw, r.pRes = pipe("swiglu_quant"), pipe("residual")
 	r.q = d.NewCommandQueue()
@@ -114,18 +135,18 @@ func BuildResident(m *decoder.Model) (*Resident, error) {
 	for l := 0; l < nL; l++ {
 		lw := &w.Layers[l]
 		var L residLayer
-		L.qW, L.qS = mk(&lw.QProj)
-		L.kW, L.kS = mk(&lw.KProj)
-		L.vW, L.vS = mk(&lw.VProj)
+		L.qkvW, L.qkvS = int4Concat(d, &lw.QProj, &lw.KProj, &lw.VProj) // fused QKV
+		L.guW, L.guS = int4Concat(d, &lw.GateProj, &lw.UpProj)          // fused gate/up
 		L.oW, L.oS = mk(&lw.OProj)
-		L.gW, L.gS = mk(&lw.GateProj)
-		L.uW, L.uS = mk(&lw.UpProj)
 		L.dW, L.dS = mk(&lw.DownProj)
 		L.preNorm = d.NewBufferFloats(lw.PreAttnNorm)
 		L.postNorm = d.NewBufferFloats(lw.PreMLPNorm)
-		if lw.QBias != nil {
-			L.qb, L.kb, L.vb, L.hasBias = d.NewBufferFloats(lw.QBias), d.NewBufferFloats(lw.KBias), d.NewBufferFloats(lw.VBias), true
+		// combined qkv bias (zeros where absent) so the fused GEMV epilogue is uniform.
+		qb, kb, vb := lw.QBias, lw.KBias, lw.VBias
+		if qb == nil {
+			qb, kb, vb = make([]float32, nH*hd), make([]float32, r.kvDim), make([]float32, r.kvDim)
 		}
+		L.qkvBias = d.NewBufferFloats(append(append(append([]float32{}, qb...), kb...), vb...))
 		r.layers[l] = L
 		r.kc[l] = d.NewBufferLen(metalCtxCap * r.kvDim)
 		r.vc[l] = d.NewBufferLen(metalCtxCap * r.kvDim)
@@ -141,10 +162,11 @@ func BuildResident(m *decoder.Model) (*Resident, error) {
 
 	r.x = d.NewBufferLen(H)
 	r.aq, r.aSc = byteBuf(d, H), d.NewBufferLen(1)
-	r.qB, r.kB, r.vB = d.NewBufferLen(nH*hd), d.NewBufferLen(r.kvDim), d.NewBufferLen(r.kvDim)
+	r.qkv = d.NewBufferLen(nH*hd + 2*r.kvDim) // fused [q | k | v]
+	r.gu = d.NewBufferLen(2 * I)              // fused [gate | up]
 	r.ctx, r.cq, r.cSc = d.NewBufferLen(nH*hd), byteBuf(d, nH*hd), d.NewBufferLen(1)
 	r.oO, r.mq, r.mSc = d.NewBufferLen(H), byteBuf(d, H), d.NewBufferLen(1)
-	r.gO, r.uO, r.dq, r.dSc, r.dO = d.NewBufferLen(I), d.NewBufferLen(I), byteBuf(d, I), d.NewBufferLen(1), d.NewBufferLen(H)
+	r.dq, r.dSc, r.dO = byteBuf(d, I), d.NewBufferLen(1), d.NewBufferLen(H)
 	r.logits = d.NewBufferLen(V)
 	r.invf = d.NewBufferFloats(m.RopeInvFreq())
 	r.uHd, r.uKvDim = d.NewBufferU32(uint32(hd)), d.NewBufferU32(uint32(r.kvDim))
@@ -171,31 +193,25 @@ func (r *Resident) Forward(id, pos int) []float32 {
 	r.uNKeys.SetU32(uint32(pos + 1))
 
 	nHhd := r.nH * r.hd
+	qkvRows := nHhd + 2*r.kvDim
+	kOff, vOff := nHhd*4, (nHhd+r.kvDim)*4 // byte offsets of k, v within the fused qkv buffer
 	e := r.q.begin()
 	for l := 0; l < r.nL; l++ {
 		L := &r.layers[l]
+		// --- attention block (12 dispatches vs 19: QKV fused +bias, residual fused) ---
 		e.dispatch(r.pRms, 256, 256, r.x, L.preNorm, r.aq, r.aSc, r.uH, r.uEps)
-		e.dispatch(r.pGemv, (nHhd)*32, 32, L.qW, L.qS, r.aq, r.aSc, r.qB, r.uH)
-		e.dispatch(r.pGemv, (r.kvDim)*32, 32, L.kW, L.kS, r.aq, r.aSc, r.kB, r.uH)
-		e.dispatch(r.pGemv, (r.kvDim)*32, 32, L.vW, L.vS, r.aq, r.aSc, r.vB, r.uH)
-		if L.hasBias {
-			e.dispatch(r.pRes, nHhd, 64, r.qB, L.qb)
-			e.dispatch(r.pRes, r.kvDim, 64, r.kB, L.kb)
-			e.dispatch(r.pRes, r.kvDim, 64, r.vB, L.vb)
-		}
-		e.dispatch(r.pRope, nHhd/2, 64, r.qB, r.invf, r.uHd, r.uPos, r.uQtotal)
-		e.dispatch(r.pRope, r.kvDim/2, 64, r.kB, r.invf, r.uHd, r.uPos, r.uKtotal)
-		e.dispatch(r.pKv, r.kvDim, 64, r.kB, r.vB, r.kc[l], r.vc[l], r.uKvDim, r.uPos)
-		e.dispatch(r.pAttn, r.nH, r.nH, r.qB, r.kc[l], r.vc[l], r.ctx, r.uNH, r.uNKV, r.uHd, r.uNKeys, r.uScale)
+		e.dispatch(r.pGemvBias, qkvRows*32, 32, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv, L.qkvBias, r.uH)
+		e.dispatch(r.pRope, nHhd/2, 64, r.qkv, r.invf, r.uHd, r.uPos, r.uQtotal)                 // q @ off 0
+		e.dispatch(r.pRope, r.kvDim/2, 64, r.qkv.At(kOff), r.invf, r.uHd, r.uPos, r.uKtotal)      // k
+		e.dispatch(r.pKv, r.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[l], r.vc[l], r.uKvDim, r.uPos)
+		e.dispatch(r.pAttn, r.nH, r.nH, r.qkv, r.kc[l], r.vc[l], r.ctx, r.uNH, r.uNKV, r.uHd, r.uNKeys, r.uScale)
 		e.dispatch(r.pQv, 256, 256, r.ctx, r.cq, r.cSc, r.uHH)
-		e.dispatch(r.pGemv, (r.H)*32, 32, L.oW, L.oS, r.cq, r.cSc, r.oO, r.uHH)
-		e.dispatch(r.pRes, r.H, 64, r.x, r.oO)
+		e.dispatch(r.pGemvResid, r.H*32, 32, L.oW, L.oS, r.cq, r.cSc, r.x, r.uHH) // o-proj + residual
+		// --- ffn block ---
 		e.dispatch(r.pRms, 256, 256, r.x, L.postNorm, r.mq, r.mSc, r.uH, r.uEps)
-		e.dispatch(r.pGemv, (r.I)*32, 32, L.gW, L.gS, r.mq, r.mSc, r.gO, r.uH)
-		e.dispatch(r.pGemv, (r.I)*32, 32, L.uW, L.uS, r.mq, r.mSc, r.uO, r.uH)
-		e.dispatch(r.pSw, 256, 256, r.gO, r.uO, r.dq, r.dSc, r.uI)
-		e.dispatch(r.pGemv, (r.H)*32, 32, L.dW, L.dS, r.dq, r.dSc, r.dO, r.uI)
-		e.dispatch(r.pRes, r.H, 64, r.x, r.dO)
+		e.dispatch(r.pGemv, (2*r.I)*32, 32, L.guW, L.guS, r.mq, r.mSc, r.gu, r.uH) // fused gate|up
+		e.dispatch(r.pSw, 256, 256, r.gu, r.gu.At(r.I*4), r.dq, r.dSc, r.uI)        // gate @0, up @I
+		e.dispatch(r.pGemvResid, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.x, r.uI) // down + residual
 	}
 	e.dispatch(r.pRms, 256, 256, r.x, r.finalNorm, r.aq, r.aSc, r.uH, r.uEps)
 	e.dispatch(r.pGemv, (r.V)*32, 32, r.lmW, r.lmS, r.aq, r.aSc, r.logits, r.uH)

@@ -80,6 +80,43 @@ kernel void gemv_w4a8_coal(device const uint* bq[[buffer(0)]], device const floa
     acc = simd_sum(acc);
     if (lid == 0) out[gid] = acc * asc[0];
 }
+// W4A8 GEMV with epilogue fusions (fewer dispatches — the fix for the dispatch-bound wall).
+// _bias adds a per-row bias (fused QKV projection); _resid accumulates into the output
+// (fused residual add for o-proj / down-proj). Same coalesced+ILP core as gemv_w4a8_coal.
+#define W4A8_BODY \
+    uint gpr = K/32u; \
+    device const uint*  brow = bq  + (uint)gid*(K/8u); \
+    device const float* srow = bsc + (uint)gid*gpr; \
+    float acc = 0.0f; \
+    for (uint g = lid; g < gpr; g += 32u) { \
+        device const uint* gw = brow + g*4u; \
+        device const char* ga = aq + g*32u; \
+        int gi = 0; \
+        for (uint w = 0; w < 4u; w++) { \
+            uint x = gw[w]; device const char* a = ga + w*8u; \
+            gi += (int((x)&0xF)-8)*int(a[0]) + (int((x>>4)&0xF)-8)*int(a[1]) \
+                + (int((x>>8)&0xF)-8)*int(a[2]) + (int((x>>12)&0xF)-8)*int(a[3]) \
+                + (int((x>>16)&0xF)-8)*int(a[4]) + (int((x>>20)&0xF)-8)*int(a[5]) \
+                + (int((x>>24)&0xF)-8)*int(a[6]) + (int((x>>28)&0xF)-8)*int(a[7]); \
+        } \
+        acc += float(gi) * srow[g]; \
+    } \
+    acc = simd_sum(acc);
+
+kernel void gemv_w4a8_bias(device const uint* bq[[buffer(0)]], device const float* bsc[[buffer(1)]],
+    device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
+    device const float* bias[[buffer(5)]], constant uint& K[[buffer(6)]],
+    uint gid[[threadgroup_position_in_grid]], uint lid[[thread_index_in_threadgroup]]) {
+    W4A8_BODY
+    if (lid == 0) out[gid] = acc*asc[0] + bias[gid];
+}
+kernel void gemv_w4a8_resid(device const uint* bq[[buffer(0)]], device const float* bsc[[buffer(1)]],
+    device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
+    constant uint& K[[buffer(5)]],
+    uint gid[[threadgroup_position_in_grid]], uint lid[[thread_index_in_threadgroup]]) {
+    W4A8_BODY
+    if (lid == 0) out[gid] += acc*asc[0];
+}
 kernel void rope(device float* x[[buffer(0)]], device const float* invf[[buffer(1)]],
     constant uint& hd[[buffer(2)]], constant uint& pos[[buffer(3)]], constant uint& total[[buffer(4)]],
     uint gid[[thread_position_in_grid]]) {

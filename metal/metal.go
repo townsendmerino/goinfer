@@ -143,9 +143,14 @@ type mtlSize struct{ w, h, d uint64 }
 type Queue struct{ id objc.ID }
 type Pipeline struct{ id objc.ID }
 type Buffer struct {
-	id objc.ID
-	n  int // element count (float32)
+	id  objc.ID
+	n   int     // element count (float32)
+	off uintptr // byte offset for binding (a sub-view into a larger buffer; 0 = whole)
 }
+
+// At returns a view of the buffer bound at byteOff — for reading a slice of a combined
+// buffer (e.g. q/k/v out of a fused QKV output). Zero-copy; only the bind offset changes.
+func (b Buffer) At(byteOff int) Buffer { b.off = uintptr(byteOff); return b }
 
 // NewCommandQueue creates the command queue (built once, reused per token in the real backend).
 func (d *Device) NewCommandQueue() Queue { return Queue{id: d.id.Send(selNewCommandQueue)} }
@@ -222,7 +227,7 @@ func (q Queue) Run1D(p Pipeline, n, tg int, bufs ...Buffer) {
 	enc := cb.Send(selComputeEncoder)
 	enc.Send(selSetPipeline, p.id)
 	for i, b := range bufs {
-		enc.Send(selSetBuffer, b.id, uintptr(0), uintptr(i))
+		enc.Send(selSetBuffer, b.id, b.off, uintptr(i))
 	}
 	total := mtlSize{w: uint64(n), h: 1, d: 1}
 	perTG := mtlSize{w: uint64(tg), h: 1, d: 1}
@@ -259,7 +264,7 @@ func (e *Encoder) dispatch(p Pipeline, n, tg int, bufs ...Buffer) {
 	}
 	e.enc.Send(selSetPipeline, p.id)
 	for i, b := range bufs {
-		e.enc.Send(selSetBuffer, b.id, uintptr(0), uintptr(i))
+		e.enc.Send(selSetBuffer, b.id, b.off, uintptr(i))
 	}
 	total := mtlSize{w: uint64(n), h: 1, d: 1}
 	perTG := mtlSize{w: uint64(tg), h: 1, d: 1}
@@ -287,7 +292,7 @@ func (q Queue) Run1DBatch(p Pipeline, n, tg, reps int, bufs ...Buffer) {
 	enc := cb.Send(selComputeEncoder)
 	enc.Send(selSetPipeline, p.id)
 	for i, b := range bufs {
-		enc.Send(selSetBuffer, b.id, uintptr(0), uintptr(i))
+		enc.Send(selSetBuffer, b.id, b.off, uintptr(i))
 	}
 	total := mtlSize{w: uint64(n), h: 1, d: 1}
 	perTG := mtlSize{w: uint64(tg), h: 1, d: 1}
