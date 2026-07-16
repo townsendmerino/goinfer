@@ -132,20 +132,27 @@ func TestProdThroughput(t *testing.T) {
 		t.Fatal("resident nil — cuda path declined")
 	}
 	_, _, _, _, _, _, vocab := m.Dims()
-	emb := m.EmbedResidentForTest(785)
-	for i := 0; i < 8; i++ { // warm
-		if _, err := rf.Forward(emb, i); err != nil {
-			t.Fatalf("warm: %v", err)
+	// AUTOREGRESSIVE with real advancing positions (growing KV) — feed each step's argmax back
+	// in, as decode actually runs. A fixed embedding at fixed positions would flatter the
+	// number by keeping the KV tiny and the embedding hot.
+	tok := 785
+	pos := 0
+	step := func() {
+		l, err := rf.Forward(m.EmbedResidentForTest(tok), pos)
+		if err != nil {
+			t.Fatalf("fwd pos %d: %v", pos, err)
 		}
+		tok, pos = argmaxF(l), pos+1
+	}
+	for i := 0; i < 8; i++ { // warm
+		step()
 	}
 	best := 1e18
 	for b := 0; b < 6; b++ {
 		const N = 16
 		t0 := time.Now()
 		for i := 0; i < N; i++ {
-			if _, err := rf.Forward(emb, 8+i); err != nil {
-				t.Fatalf("fwd: %v", err)
-			}
+			step()
 		}
 		if dt := time.Since(t0).Seconds() / N; dt < best {
 			best = dt
@@ -155,16 +162,21 @@ func TestProdThroughput(t *testing.T) {
 	rg, ok := rf.(decoder.ResidentGreedy)
 	bestG := 1e18
 	if ok {
+		stepG := func() {
+			id, err := rg.ForwardArgmax(m.EmbedResidentForTest(tok), pos)
+			if err != nil {
+				t.Fatalf("argmax fwd pos %d: %v", pos, err)
+			}
+			tok, pos = id, pos+1
+		}
 		for i := 0; i < 8; i++ {
-			_, _ = rg.ForwardArgmax(emb, i)
+			stepG()
 		}
 		for b := 0; b < 6; b++ {
 			const N = 16
 			t0 := time.Now()
 			for i := 0; i < N; i++ {
-				if _, err := rg.ForwardArgmax(emb, 8+i); err != nil {
-					t.Fatalf("argmax fwd: %v", err)
-				}
+				stepG()
 			}
 			if dt := time.Since(t0).Seconds() / N; dt < bestG {
 				bestG = dt

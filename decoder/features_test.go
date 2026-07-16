@@ -39,10 +39,13 @@ var archFeatureProfile = map[string][]ResidentFeature{
 	"nemotron_h":       {FeatNonGatedMLP, FeatSSM},
 	"granitemoehybrid": {FeatLogitScale, FeatMoE, FeatSSM},
 	"qwen3_5_moe_text": {FeatMoE, FeatQKNorm},
-	// Gemma: embed-scale + (1+w) + sandwich norms (+ softcap on 2/3). Refused upstream.
-	"gemma3":      {FeatEmbedScale, FeatRMSAddOne, FeatSandwichNorm},
-	"gemma3_text": {FeatEmbedScale, FeatRMSAddOne, FeatSandwichNorm},
-	"gemma4":      {FeatEmbedScale, FeatRMSAddOne, FeatSandwichNorm},
+	// Gemma — VERIFIED against the real checkpoints via RequiredResidentFeatures (an earlier
+	// hand-written guess here was wrong on three counts: it missed per-layer-rope / qk-norm /
+	// sliding-window, and claimed rms-add-one for gemma4, which has RMSAddOne=false). All are
+	// refused upstream by decodeRunnerEligible today (sandwich norms / softcap / own forward).
+	"gemma3":      {FeatEmbedScale, FeatPerLayerRoPE, FeatQKNorm, FeatRMSAddOne, FeatSandwichNorm, FeatSlidingWindow},
+	"gemma3_text": {FeatEmbedScale, FeatPerLayerRoPE, FeatQKNorm, FeatRMSAddOne, FeatSandwichNorm, FeatSlidingWindow},
+	"gemma4":      {FeatEmbedScale, FeatLogitSoftcap, FeatPerLayerRoPE, FeatQKNorm, FeatSandwichNorm, FeatSlidingWindow},
 }
 
 // TestResidentAdmission_registryCovered is THE recurrence guard. Every architecture in the

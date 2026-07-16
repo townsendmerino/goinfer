@@ -188,9 +188,14 @@ func (o Options) Validate() error {
 		return err
 	}
 	switch o.Backend {
-	case "", "cpu", "webgpu":
+	case "", "cpu", "webgpu", "cuda", "metal":
+		// Accepting the NAME is not a claim that the backend is built in: an unregistered
+		// one falls back to CPU with a note (NewBackend). Rejecting it here instead meant
+		// `serve --backend cuda|metal` failed at flag-validation even when the module WAS
+		// compiled in (-tags cuda / -tags metal), because Validate runs before registration
+		// is ever consulted.
 	default:
-		return fmt.Errorf("decoder: invalid backend %q (cpu | webgpu)", o.Backend)
+		return fmt.Errorf("decoder: invalid backend %q (cpu | webgpu | cuda | metal)", o.Backend)
 	}
 	switch o.KVPrecision {
 	case "", "f32", "f16", "i8":
