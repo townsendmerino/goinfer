@@ -238,27 +238,27 @@ kernel void rope(device float* x[[buffer(0)]], device const float* invf[[buffer(
     float x0=x[base+dd],x1=x[base+hlf+dd]; x[base+dd]=x0*c-x1*s; x[base+hlf+dd]=x0*s+x1*c;
 }
 kernel void kv_store(device const float* k[[buffer(0)]], device const float* v[[buffer(1)]],
-    device float* kc[[buffer(2)]], device float* vc[[buffer(3)]], constant uint& kvDim[[buffer(4)]],
+    device half* kc[[buffer(2)]], device half* vc[[buffer(3)]], constant uint& kvDim[[buffer(4)]],
     constant uint& pos[[buffer(5)]], uint i[[thread_position_in_grid]]) {
-    kc[pos*kvDim+i]=k[i]; vc[pos*kvDim+i]=v[i];
+    kc[pos*kvDim+i]=half(k[i]); vc[pos*kvDim+i]=half(v[i]); // f16 KV: half the cache bytes + read BW
 }
 // One THREADGROUP (128 threads) per query head — vs the old 1-thread-per-head (12 threads
 // total = 68% of decode time from underutilization). Scores parallel over keys, softmax via
 // threadgroup reduction, output parallel over head dims. nKeys ≤ metalCtxCap (4096).
-kernel void attention(device const float* q[[buffer(0)]], device const float* kc[[buffer(1)]],
-    device const float* vc[[buffer(2)]], device float* out[[buffer(3)]], constant uint& nH[[buffer(4)]],
+kernel void attention(device const float* q[[buffer(0)]], device const half* kc[[buffer(1)]],
+    device const half* vc[[buffer(2)]], device float* out[[buffer(3)]], constant uint& nH[[buffer(4)]],
     constant uint& nKV[[buffer(5)]], constant uint& hd[[buffer(6)]], constant uint& nKeys[[buffer(7)]],
     constant float& scale[[buffer(8)]], uint qh[[threadgroup_position_in_grid]],
     uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]]) {
     uint kvDim = nKV*hd; uint kvh = qh/(nH/nKV);
     device const float* qr = q + qh*hd;
-    device const float* kb = kc + kvh*hd;
-    device const float* vb = vc + kvh*hd;
+    device const half*  kb = kc + kvh*hd;   // f16 KV; dot/accum stay in f32 -> parity-neutral
+    device const half*  vb = vc + kvh*hd;
     threadgroup float sc[4096];
     threadgroup float red[128];
     for (uint s=tid; s<nKeys; s+=tgs) {
-        float a=0; device const float* k=kb+s*kvDim;
-        for (uint d=0; d<hd; d++) a += qr[d]*k[d];
+        float a=0; device const half* k=kb+s*kvDim;
+        for (uint d=0; d<hd; d++) a += qr[d]*float(k[d]);
         sc[s]=a*scale;
     }
     threadgroup_barrier(mem_flags::mem_threadgroup);
@@ -270,7 +270,7 @@ kernel void attention(device const float* q[[buffer(0)]], device const float* kc
     red[tid]=ls; threadgroup_barrier(mem_flags::mem_threadgroup);
     for (uint st=tgs/2; st>0; st>>=1){ if(tid<st) red[tid]+=red[tid+st]; threadgroup_barrier(mem_flags::mem_threadgroup); }
     float sum=red[0]; threadgroup_barrier(mem_flags::mem_threadgroup);
-    for (uint d=tid; d<hd; d+=tgs){ float a=0; for(uint s=0;s<nKeys;s++) a += sc[s]*vb[s*kvDim+d]; out[qh*hd+d]=a/sum; }
+    for (uint d=tid; d<hd; d+=tgs){ float a=0; for(uint s=0;s<nKeys;s++) a += sc[s]*float(vb[s*kvDim+d]); out[qh*hd+d]=a/sum; }
 }
 kernel void swiglu_quant(device const float* g[[buffer(0)]], device const float* u[[buffer(1)]],
     device char* dq[[buffer(2)]], device float* ds[[buffer(3)]], constant uint& I[[buffer(4)]],

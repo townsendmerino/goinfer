@@ -106,9 +106,12 @@ func TestLayerB_fullLayerForward(t *testing.T) {
 	x := d.NewBufferFloats(x0)
 	aq, aSc := byteBuf(H), d.NewBufferLen(1)
 	qB, kB, vB := d.NewBufferLen(nH*hd), d.NewBufferLen(kvDim), d.NewBufferLen(kvDim)
-	kc, vc := d.NewBufferLen((pos+1)*kvDim), d.NewBufferLen((pos+1)*kvDim)
-	copy(kc.Floats()[:pos*kvDim], kcHist)
-	copy(vc.Floats()[:pos*kvDim], vcHist)
+	// f16 KV cache: history uploaded as half, room for the new position (kv_store writes it).
+	kh, vh := make([]uint16, (pos+1)*kvDim), make([]uint16, (pos+1)*kvDim)
+	for i := 0; i < pos*kvDim; i++ {
+		kh[i], vh[i] = f32ToF16(kcHist[i]), f32ToF16(vcHist[i])
+	}
+	kc, vc := d.NewBufferU16s(kh), d.NewBufferU16s(vh)
 	ctx := d.NewBufferLen(nH * hd)
 	cq, cSc := byteBuf(nH*hd), d.NewBufferLen(1)
 	oO := d.NewBufferLen(H)

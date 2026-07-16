@@ -171,8 +171,8 @@ func BuildResident(m *decoder.Model) (*Resident, error) {
 		}
 		L.qkvBias = d.NewBufferFloats(append(append(append([]float32{}, qb...), kb...), vb...))
 		r.layers[l] = L
-		r.kc[l] = d.NewBufferLen(metalCtxCap * r.kvDim)
-		r.vc[l] = d.NewBufferLen(metalCtxCap * r.kvDim)
+		r.kc[l] = byteBuf(d, metalCtxCap*r.kvDim*2) // f16 KV: 2 bytes/elem (halves the cache)
+		r.vc[l] = byteBuf(d, metalCtxCap*r.kvDim*2)
 	}
 	r.finalNorm = d.NewBufferFloats(w.FinalNorm)
 	lm := &w.LMHead
