@@ -19,18 +19,18 @@ const metalCtxCap = 4096 // resident KV positions (spike)
 
 type residLayer struct {
 	qkvW, qkvS, guW, guS, oW, oS, dW, dS Buffer // fused QKV + fused gate/up + o + down
-	qkvBias, preNorm, postNorm          Buffer
+	qkvBias, preNorm, postNorm           Buffer
 }
 
 // Resident is a Metal-resident dense decoder. Weights uploaded once in BuildResident;
 // per token only the embedding + pos uniforms change.
 type Resident struct {
-	d                                             *Device
-	q                                             Queue
+	d                                                                     *Device
+	q                                                                     Queue
 	pRms, pQv, pGemv, pGemvBias, pGemvResid, pRope, pKv, pAttn, pSw, pRes Pipeline
-	pSA, pSABias, pSAResid                                               Pipeline // Stage A gemv (K<=1536)
-	pSAAmax, pArgFinish                                                  Pipeline // fused block-argmax lm head
-	qkv, gu                                                              Buffer // fused QKV out, fused gate/up out
+	pSA, pSABias, pSAResid                                                Pipeline // Stage A gemv (K<=1536)
+	pSAAmax, pArgFinish                                                   Pipeline // fused block-argmax lm head
+	qkv, gu                                                               Buffer   // fused QKV out, fused gate/up out
 
 	H, nL, nH, nKV, hd, I, V, kvDim, half int
 	embed                                 *linalg.WeightMat
@@ -40,12 +40,12 @@ type Resident struct {
 	lmW, lmS  Buffer
 	kc, vc    []Buffer
 
-	x, aq, aSc, ctx, cq, cSc, oO, mq, mSc, dq, dSc, dO, logits Buffer
-	invf, uHd, uKvDim, uH, uI, uHH, uNH, uNKV, uScale, uEps, uQtotal, uKtotal      Buffer
-	uPos, uNKeys                                                                   Buffer
-	part, tok, uP                                                                  Buffer // fused-argmax: tile partials, token out, tile count
-	logitsHost                                                                    []float32
-	gpuStart, gpuEnd, kernStart, kernEnd                                          float64 // last-Forward GPU timing (Step 0)
+	x, aq, aSc, ctx, cq, cSc, oO, mq, mSc, dq, dSc, dO, logits                Buffer
+	invf, uHd, uKvDim, uH, uI, uHH, uNH, uNKV, uScale, uEps, uQtotal, uKtotal Buffer
+	uPos, uNKeys                                                              Buffer
+	part, tok, uP                                                             Buffer // fused-argmax: tile partials, token out, tile count
+	logitsHost                                                                []float32
+	gpuStart, gpuEnd, kernStart, kernEnd                                      float64 // last-Forward GPU timing (Step 0)
 
 	// pipelined logits executor (encode-ahead): a persistent OS-thread-pinned goroutine that
 	// commits token t, pre-encodes t+1 while the GPU runs t, then waits — hiding the ~0.9ms
@@ -354,8 +354,8 @@ func (r *Resident) encodeTrunkInto(e *Encoder) {
 		// --- attention block (12 dispatches vs 19: QKV fused +bias, residual fused) ---
 		e.dispatch(r.pRms, 256, 256, r.x, L.preNorm, r.aq, r.aSc, r.uH, r.uEps)
 		e.dispatch(r.pSABias, qkvRows*32, 256, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv, L.qkvBias, r.uH)
-		e.dispatch(r.pRope, nHhd/2, 64, r.qkv, r.invf, r.uHd, r.uPos, r.uQtotal)                 // q @ off 0
-		e.dispatch(r.pRope, r.kvDim/2, 64, r.qkv.At(kOff), r.invf, r.uHd, r.uPos, r.uKtotal)      // k
+		e.dispatch(r.pRope, nHhd/2, 64, r.qkv, r.invf, r.uHd, r.uPos, r.uQtotal)             // q @ off 0
+		e.dispatch(r.pRope, r.kvDim/2, 64, r.qkv.At(kOff), r.invf, r.uHd, r.uPos, r.uKtotal) // k
 		e.dispatch(r.pKv, r.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[l], r.vc[l], r.uKvDim, r.uPos)
 		e.dispatch(r.pAttn, r.nH*128, 128, r.qkv, r.kc[l], r.vc[l], r.ctx, r.uNH, r.uNKV, r.uHd, r.uNKeys, r.uScale)
 		e.dispatch(r.pQv, 256, 256, r.ctx, r.cq, r.cSc, r.uHH)
@@ -363,8 +363,8 @@ func (r *Resident) encodeTrunkInto(e *Encoder) {
 		// --- ffn block ---
 		e.dispatch(r.pRms, 256, 256, r.x, L.postNorm, r.mq, r.mSc, r.uH, r.uEps)
 		e.dispatch(r.pSA, (2*r.I)*32, 256, L.guW, L.guS, r.mq, r.mSc, r.gu, r.uH) // fused gate|up
-		e.dispatch(r.pSw, 256, 256, r.gu, r.gu.At(r.I*4), r.dq, r.dSc, r.uI)        // gate @0, up @I
-		e.dispatch(r.pGemvResid, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.x, r.uI) // down + residual
+		e.dispatch(r.pSw, 256, 256, r.gu, r.gu.At(r.I*4), r.dq, r.dSc, r.uI)      // gate @0, up @I
+		e.dispatch(r.pGemvResid, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.x, r.uI)  // down + residual
 	}
 	e.dispatch(r.pRms, 256, 256, r.x, r.finalNorm, r.aq, r.aSc, r.uH, r.uEps)
 }

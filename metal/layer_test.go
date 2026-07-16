@@ -8,7 +8,6 @@ import (
 	"testing"
 )
 
-
 // q8row quantizes a f32 row to per-row symmetric int8 (goinfer W8A8).
 func q8row(row []float32) ([]int8, float32) {
 	var mx float32

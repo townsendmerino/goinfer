@@ -12,6 +12,7 @@ import (
 //   - the per-command-buffer round-trip (commit + waitUntilCompleted), paid ONCE per
 //     token if a token's whole layer stack is encoded into one command buffer;
 //   - the marginal per-encoded-dispatch cost (msgSend to encode one more dispatch).
+//
 // The doc's warning: "Metal's encoder/commit overheads are different animals — measure."
 func TestLayerA_bindingTax(t *testing.T) {
 	d, err := CreateSystemDefaultDevice()
