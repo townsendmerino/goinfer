@@ -204,3 +204,29 @@ func (q Queue) Run1D(p Pipeline, n, tg int, bufs ...Buffer) {
 	cb.Send(selCommit)
 	cb.Send(selWaitCompleted)
 }
+
+// Run1DBatch encodes `reps` dispatches of the same kernel into ONE command buffer and
+// submits once — the shape a real token uses (a whole layer stack encoded into one
+// command buffer, one commit/wait). Isolates the per-commit round-trip tax (reps=1)
+// from the marginal per-encoded-dispatch msgSend cost (the slope over reps).
+func (q Queue) Run1DBatch(p Pipeline, n, tg, reps int, bufs ...Buffer) {
+	pool := objc.ID(objc.GetClass("NSAutoreleasePool")).Send(selAlloc).Send(selInit)
+	defer pool.Send(selDrain)
+
+	cb := q.id.Send(selCommandBuffer)
+	enc := cb.Send(selComputeEncoder)
+	enc.Send(selSetPipeline, p.id)
+	for i, b := range bufs {
+		enc.Send(selSetBuffer, b.id, uintptr(0), uintptr(i))
+	}
+	total := mtlSize{w: uint64(n), h: 1, d: 1}
+	perTG := mtlSize{w: uint64(tg), h: 1, d: 1}
+	for r := 0; r < reps; r++ {
+		enc.Send(selDispatchThreads, unsafe.Pointer(&total), unsafe.Pointer(&perTG))
+	}
+	runtime.KeepAlive(&total)
+	runtime.KeepAlive(&perTG)
+	enc.Send(selEndEncoding)
+	cb.Send(selCommit)
+	cb.Send(selWaitCompleted)
+}

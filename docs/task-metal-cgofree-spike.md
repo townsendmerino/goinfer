@@ -310,11 +310,23 @@ binary links libSystem regardless).
    per-dispatch commandBuffer/encoder are drained via an `NSAutoreleasePool` so the
    decode loop won't leak (risk #2).
 
+**Per-token binding tax** (`TestLayerA_bindingTax`, best-of-50 warm, wall):
+- per-command-buffer round-trip (1 dispatch, commit + `waitUntilCompleted`): **~161 µs**
+- marginal per-encoded-dispatch (msgSend to encode one more): **~3.8 µs**
+
+This is the "different animal" the doc predicted: Metal's commit/`waitUntilCompleted`
+round-trip (~161 µs) dwarfs CUDA's ~5 µs channel-hop — **but it's a per-COMMAND-BUFFER
+cost, not per-dispatch.** Encode a whole token's layer stack into ONE command buffer and
+commit once, and at the ~71 tok/s target (~14 ms/token) the 161 µs is **~1%**. The
+marginal encode (~3.8 µs, CUDA-channel-hop-class) × dispatches/token is the real budget
+line — modest, and fusion (fewer dispatches/layer, the CUDA megakernel lesson) shrinks
+it. **Architectural requirement banked: one command buffer per token, one commit/wait —
+never per layer** (per-layer commit would multiply 161 µs by layer count and blow the
+budget).
+
 **Binding-risk verdict: RETIRED — the cgo-free native-Metal *lane is open*.** The "80%
-this time" was *can compute go through purego-objc cgo-free at all, correctly* — yes,
-proven on the real rig. The binding does not force cgo (the NO-GO condition) — the
-opposite. **Remaining before Layer B:** isolate the per-token binding tax (msgSend
-trampoline + commit/`waitUntilCompleted` overhead, the analog of the CUDA ~5 µs
-channel-hop). Then **Layer B — the six proven CUDA kernels ported to MSL** (de-risked
-by the CUDA arc), the argmax-parity gate on the real checkpoint, and the decode tok/s
-measurement vs the ~71 GO bar.
+this time" was *can compute go through purego-objc cgo-free at all, correctly, at a
+tolerable tax* — yes on all three, proven on the real rig. The binding does not force
+cgo (the NO-GO condition) — the opposite. **Next: Layer B — the six proven CUDA kernels
+ported to MSL** (de-risked by the CUDA arc), the argmax-parity gate on the real
+checkpoint, and decode tok/s vs the ~71 GO bar.
