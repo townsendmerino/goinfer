@@ -215,6 +215,9 @@ func (b Buffer) Int8s() []int8 {
 // nKeys). Zero-copy on UMA.
 func (b Buffer) SetU32(v uint32) { *objc.Send[*uint32](b.id, selContents) = v }
 
+// U32 reads a 1-word buffer's first uint32 (per-token: the fused-argmax token id). Zero-copy.
+func (b Buffer) U32() uint32 { return *objc.Send[*uint32](b.id, selContents) }
+
 // Run1D encodes and runs a 1-D kernel over n threads (threadgroup width tg), binding
 // bufs at indices 0..len-1, and blocks until the GPU finishes. Manual autoreleasepool
 // discipline (no ARC): the per-token commandBuffer/encoder are autoreleased into the

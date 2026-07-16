@@ -28,6 +28,7 @@ type Resident struct {
 	q                                             Queue
 	pRms, pQv, pGemv, pGemvBias, pGemvResid, pRope, pKv, pAttn, pSw, pRes Pipeline
 	pSA, pSABias, pSAResid                                               Pipeline // Stage A gemv (K<=1536)
+	pSAAmax, pArgFinish                                                  Pipeline // fused block-argmax lm head
 	qkv, gu                                                              Buffer // fused QKV out, fused gate/up out
 
 	H, nL, nH, nKV, hd, I, V, kvDim, half int
@@ -41,6 +42,7 @@ type Resident struct {
 	x, aq, aSc, ctx, cq, cSc, oO, mq, mSc, dq, dSc, dO, logits Buffer
 	invf, uHd, uKvDim, uH, uI, uHH, uNH, uNKV, uScale, uEps, uQtotal, uKtotal      Buffer
 	uPos, uNKeys                                                                   Buffer
+	part, tok, uP                                                                  Buffer // fused-argmax: tile partials, token out, tile count
 	logitsHost                                                                    []float32
 }
 
@@ -119,6 +121,7 @@ func BuildResident(m *decoder.Model) (*Resident, error) {
 	r.pRms, r.pQv, r.pGemv = pipe("rmsnorm_quant"), pipe("quant_vec"), pipe("gemv_w4a8_coal")
 	r.pGemvBias, r.pGemvResid = pipe("gemv_w4a8_bias"), pipe("gemv_w4a8_resid")
 	r.pSA, r.pSABias, r.pSAResid = pipe("gemv_w4a8_sa"), pipe("gemv_w4a8_sa_bias"), pipe("gemv_w4a8_sa_resid")
+	r.pSAAmax, r.pArgFinish = pipe("gemv_w4a8_sa_amax"), pipe("argmax_finish")
 	r.pRope, r.pKv, r.pAttn = pipe("rope"), pipe("kv_store"), pipe("attention")
 	r.pSw, r.pRes = pipe("swiglu_quant"), pipe("residual")
 	r.q = d.NewCommandQueue()
@@ -170,6 +173,8 @@ func BuildResident(m *decoder.Model) (*Resident, error) {
 	r.oO, r.mq, r.mSc = d.NewBufferLen(H), byteBuf(d, H), d.NewBufferLen(1)
 	r.dq, r.dSc, r.dO = byteBuf(d, I), d.NewBufferLen(1), d.NewBufferLen(H)
 	r.logits = d.NewBufferLen(V)
+	nTiles := V / 8 // one (maxLogit,rowIdx) partial per threadgroup (8 rows) — V divisible by 8
+	r.part, r.tok, r.uP = d.NewBufferLen(nTiles*2), d.NewBufferLen(1), d.NewBufferU32(uint32(nTiles))
 	r.invf = d.NewBufferFloats(m.RopeInvFreq())
 	r.uHd, r.uKvDim = d.NewBufferU32(uint32(hd)), d.NewBufferU32(uint32(r.kvDim))
 	r.uH, r.uI, r.uHH = d.NewBufferU32(uint32(H)), d.NewBufferU32(uint32(I)), d.NewBufferU32(uint32(nH*hd))
@@ -190,6 +195,30 @@ func (r *Resident) Forward(id, pos int) []float32 {
 	// the CUDA backend's LockOSThread executor uses.
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
+	e := r.encodeTrunk(id, pos)                                          // 28 layers → final norm → r.aq/r.aSc
+	e.dispatch(r.pSA, (r.V)*32, 256, r.lmW, r.lmS, r.aq, r.aSc, r.logits, r.uH) // full lm head
+	e.end()
+	copy(r.logitsHost, r.logits.Floats())
+	return r.logitsHost
+}
+
+// ForwardArgmax runs the identical trunk but replaces the full lm head + 608KB readback with
+// Fable's fused block-argmax (per-tile (maxLogit,rowIdx) → argmax_finish → 4-byte token). It
+// returns argmax(Forward's logits) — same values, tie-broken first-max-wins — without ever
+// materializing the logit vector. This is the production decode path.
+func (r *Resident) ForwardArgmax(id, pos int) uint32 {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	e := r.encodeTrunk(id, pos)
+	e.dispatch(r.pSAAmax, (r.V)*32, 256, r.lmW, r.lmS, r.aq, r.aSc, r.part, r.uH) // tile partials
+	e.dispatch(r.pArgFinish, 256, 256, r.part, r.tok, r.uP)                       // reduce tiles → token
+	e.end()
+	return r.tok.U32()
+}
+
+// encodeTrunk begins a command buffer and encodes the embedding + all decoder layers + the
+// final norm, leaving the quantized final hidden state in r.aq/r.aSc ready for an lm head.
+func (r *Resident) encodeTrunk(id, pos int) *Encoder {
 	r.embed.Row(id, r.x.Floats()) // CPU dequant embedding into the shared buffer
 	r.uPos.SetU32(uint32(pos))
 	r.uNKeys.SetU32(uint32(pos + 1))
@@ -216,9 +245,5 @@ func (r *Resident) Forward(id, pos int) []float32 {
 		e.dispatch(r.pGemvResid, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.x, r.uI) // down + residual
 	}
 	e.dispatch(r.pRms, 256, 256, r.x, r.finalNorm, r.aq, r.aSc, r.uH, r.uEps)
-	e.dispatch(r.pSA, (r.V)*32, 256, r.lmW, r.lmS, r.aq, r.aSc, r.logits, r.uH)
-	e.end()
-
-	copy(r.logitsHost, r.logits.Floats())
-	return r.logitsHost
+	return e
 }

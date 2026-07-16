@@ -53,7 +53,7 @@ func TestRealModel_parityAndThroughput(t *testing.T) {
 	// ---- (a) argmax parity vs CPU decode, in lockstep ----
 	ids := []int{785, 12095, 8948, 264, 6236, 1140, 13, 358, 3003, 264} // arbitrary valid ids
 	steps := 24
-	tok, pos, mism := ids[0], 0, 0
+	tok, pos, mism, amaxMism := ids[0], 0, 0, 0
 	var lastCos float64
 	for i := 0; i < steps; i++ {
 		cpu, err := m.ForwardForTest(tok, cache)
@@ -63,6 +63,10 @@ func TestRealModel_parityAndThroughput(t *testing.T) {
 		gpu := r.Forward(tok, pos)
 		ca, ga := argmaxF(cpu), argmaxF(gpu)
 		lastCos = cosF(cpu, gpu)
+		if fa := r.ForwardArgmax(tok, pos); fa != uint32(ga) { // fused argmax must equal argmax(full logits)
+			amaxMism++
+			t.Logf("pos %d: fused-argmax=%d != argmax(logits)=%d", pos, fa, ga)
+		}
 		if ca != ga {
 			mism++
 			t.Logf("pos %d: CPU argmax=%d GPU=%d (logit cos %.5f)", pos, ca, ga, lastCos)
@@ -78,16 +82,21 @@ func TestRealModel_parityAndThroughput(t *testing.T) {
 	if mism > steps/5 {
 		t.Fatalf("argmax parity FAIL: %d/%d mismatches", mism, steps)
 	}
+	if amaxMism > 0 {
+		t.Fatalf("fused-argmax lm head disagrees with argmax(logits) in %d/%d steps", amaxMism, steps)
+	}
+	t.Logf("fused-argmax lm head: %d/%d exact vs argmax(full logits)", steps, steps)
 
 	// ---- (b) decode throughput (warm, best-of-N, wall = real per-token latency incl commit/wait) ----
+	// Production decode path: ForwardArgmax (fused block-argmax lm head, no 608KB readback).
 	for w := 0; w < 6; w++ {
-		r.Forward(tok, pos+w)
+		r.ForwardArgmax(tok, pos+w)
 	}
 	base := pos + 6
 	best := time.Hour
 	for it := 0; it < 40; it++ {
 		t0 := time.Now()
-		r.Forward(tok, base+it)
+		r.ForwardArgmax(tok, base+it)
 		if dt := time.Since(t0); dt < best {
 			best = dt
 		}

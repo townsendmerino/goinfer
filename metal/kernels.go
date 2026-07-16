@@ -146,6 +146,39 @@ kernel void gemv_w4a8_sa_resid(device const uint4* wq[[buffer(0)]], device const
     SA_BODY
     if (lane==0) out[row] += acc*asc[0];
 }
+
+// Fused block-argmax lm-head (Fable): computes the SAME logits as gemv_w4a8_sa but never
+// materializes them — each threadgroup emits (maxLogit, rowIndex) over its 8 rows; a tiny
+// second pass (argmax_finish) reduces the tiles to one token. Kills the 608KB logit readback
+// + CPU scan. Merge key (v, -idx) is a commutative monoid → order-independent, tie-broken
+// identically to a CPU first-max-wins scan (strict >, lower index wins).
+struct AmaxPart { float v; uint i; };
+kernel void gemv_w4a8_sa_amax(device const uint4* wq[[buffer(0)]], device const float* sct[[buffer(1)]],
+    device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device AmaxPart* part[[buffer(4)]],
+    constant uint& K[[buffer(5)]], uint tgid[[threadgroup_position_in_grid]],
+    uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]],
+    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
+    SA_BODY                                       // acc = this row's dot; row = output index
+    threadgroup float tv[8]; threadgroup uint ti[8];
+    if (lane==0) { tv[sgid] = acc*asc[0]; ti[sgid] = row; }   // the logit, exactly as the store variant
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    if (tid==0) {
+        uint nsg = tgs>>5u; float bv = tv[0]; uint bi = ti[0];
+        for (uint s=1u; s<nsg; s++) if (tv[s]>bv || (tv[s]==bv && ti[s]<bi)) { bv=tv[s]; bi=ti[s]; }
+        part[tgid].v = bv; part[tgid].i = bi;
+    }
+}
+kernel void argmax_finish(device const AmaxPart* part[[buffer(0)]], device uint* tok[[buffer(1)]],
+    constant uint& P[[buffer(2)]], uint tid[[thread_index_in_threadgroup]],
+    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
+    float v=-INFINITY; uint idx=0xFFFFFFFFu;
+    for (uint p=tid; p<P; p+=256u) { float cv=part[p].v; uint ci=part[p].i; if (cv>v||(cv==v&&ci<idx)){v=cv;idx=ci;} }
+    for (uint off=16u; off>0u; off>>=1u) { float ov=simd_shuffle_down(v,off); uint oi=simd_shuffle_down(idx,off); if(ov>v||(ov==v&&oi<idx)){v=ov;idx=oi;} }
+    threadgroup float tv[8]; threadgroup uint ti[8];
+    if (lane==0u){tv[sgid]=v;ti[sgid]=idx;}
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    if (tid==0u){ float bv=tv[0];uint bi=ti[0]; for(uint s=1u;s<8u;s++) if(tv[s]>bv||(tv[s]==bv&&ti[s]<bi)){bv=tv[s];bi=ti[s];} tok[0]=bi; }
+}
 kernel void rope(device float* x[[buffer(0)]], device const float* invf[[buffer(1)]],
     constant uint& hd[[buffer(2)]], constant uint& pos[[buffer(3)]], constant uint& total[[buffer(4)]],
     uint gid[[thread_position_in_grid]]) {
