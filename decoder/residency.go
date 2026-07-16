@@ -214,6 +214,19 @@ func (m *Model) MLALayerWeights(l int) (qA, qANorm, qB, qProj, kvA, kvANorm, kvB
 // positions; the runner computes the per-token window start (Lever C6).
 func (m *Model) SlidingWindowResident() int { return m.w.arch.SlidingWindow }
 
+// HasQKNorm reports per-head RMSNorm on Q/K before RoPE (Qwen3, Gemma3). The WebGPU/CUDA
+// runner handles it (Lever C1); a backend that doesn't must decline such models.
+func (m *Model) HasQKNorm() bool { return m.w.arch.QKNorm }
+
+// PartialRotary reports RoPE that rotates only the first RotaryDim (<HeadDim) dims (Phi's
+// partial_rotary_factor). A full-rotary backend must decline these.
+func (m *Model) PartialRotary() bool {
+	return m.w.arch.RotaryDim != 0 && m.w.arch.RotaryDim < m.w.arch.HeadDim
+}
+
+// EmbedScaleResident is the token-embedding multiplier (Gemma = √hidden; 0/1 = none).
+func (m *Model) EmbedScaleResident() float64 { return m.w.arch.EmbedScale }
+
 // LayerIsLocalResident reports whether layer i is a sliding-window (local) layer — i.e. a
 // window is set AND the arch marks the layer non-global. Mistral is all-local; Mellum
 // interleaves (3:1 sliding/full).

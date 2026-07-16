@@ -56,6 +56,17 @@ func (b *metalBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwa
 			rf, ok, err = nil, false, nil
 		}
 	}()
+	// Admission check: DecodeRunnerEligible was scoped to the richer WebGPU/CUDA runner, which
+	// handles QK-norm / sliding-window / partial-rotary / embed-scale. The Metal kernel set is
+	// the plain dense subset, so DECLINE those (→ correct CPU fallback) rather than run them with
+	// the feature silently dropped. Each is lifted as the kernel support lands (docs/metal-model-
+	// coverage.md).
+	if why := metalUnsupported(m); why != "" {
+		if os.Getenv("GOINFER_RESIDENT_DEBUG") != "" {
+			fmt.Fprintf(os.Stderr, "[metal] declined (unsupported): %s\n", why)
+		}
+		return nil, false, nil
+	}
 	res, e := BuildResident(m)
 	if e != nil {
 		if os.Getenv("GOINFER_RESIDENT_DEBUG") != "" {
@@ -65,6 +76,24 @@ func (b *metalBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwa
 	}
 	b.resident = &metalResident{r: res, hidden: res.H}
 	return b.resident, true, nil
+}
+
+// metalUnsupported returns a non-empty reason when the model uses an arch feature the Metal
+// resident decoder doesn't yet implement (so BuildResident must decline). Empty ⇒ the plain
+// dense Qwen2/Llama shape Metal supports. Kept next to the kernels so it's updated in lockstep
+// as features are added.
+func metalUnsupported(m *decoder.Model) string {
+	switch {
+	case m.HasQKNorm():
+		return "QK-norm (Qwen3/Gemma3) — no per-head QK-RMSNorm kernel yet"
+	case m.SlidingWindowResident() != 0:
+		return "sliding-window attention (Mistral/Mellum) — attention is full-causal"
+	case m.PartialRotary():
+		return "partial RoPE (Phi) — rope rotates the full head dim"
+	case m.EmbedScaleResident() > 1:
+		return "embedding scale (Gemma) — not applied"
+	}
+	return ""
 }
 
 func (b *metalBackend) Close() error {
