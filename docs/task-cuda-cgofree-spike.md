@@ -783,3 +783,40 @@ d[I] with a global maxabs for the down GEMV).
 
 Note: `TestRealE2EDecode`'s inline harness does NOT carry K1 — `TestProdThroughput` is now the
 authoritative shipped number.
+
+### Fusion result: K1 + K3a shipped, K2 measured and REJECTED (null)
+
+Final A/B on the shipped greedy path, 3 runs each (`GOINFER_CUDA_NO_FUSE` toggles it):
+
+| 0.5B greedy | runs | typical |
+|---|---|---|
+| fusion OFF | 416.7 / 415.4 / 414.4 | **415.5** |
+| **K1 + K3a** | 508.4 / 501.8 / 503.2 | **~504** → **+21.3%** |
+
+1.5B: 241 → **244.7 (+1.5%)**. Launches **13 → 8/layer**. Parity unchanged at every step and
+the greedy path emits the exact same token sequences as pre-fusion (bit-identical by
+construction, confirmed).
+
+**K2 (quant_vec ⊕ O-GEMV) was built, measured at ~0%, and reverted.** K1+K3a alone measured
+507.5; adding K2 gave 501.8–508.4 — inside the noise band, possibly slightly negative. The
+reason is visible in what each kernel actually removes:
+- K1: a GridX:1 rmsnorm (**three** passes over x[H]) **+ 3 launches** → +19.4%
+- K3a: a GridX:1 rmsnorm (three passes) **+ 2 launches** → +1.6%
+- K2: a GridX:1 quant_vec (**one** pass over ctx[qDim]) **+ 1 launch** → **~0%**
+
+quant_vec is simply too small a kernel to matter. Shipping ~60 lines of kernel + wiring for a
+measured 0% is complexity that can only ever break, so it is reverted (recoverable from
+history if the balance ever shifts).
+
+**Honest scorecard vs the audit.** It projected the 3-super-kernel fusion at **0.5B +60–90%
+(≈650–800 tok/s)**; measured is **+21.3% (≈504)**. Two reasons, both now measured:
+1. **Redundant recompute is not uniformly cheap** — its cost scales with the fan-out of the
+   projection it fuses into (2240 blocks for gate/up ⇒ an 18% regression until amortized to
+   64 rows/block). The audit treated it as free.
+2. **The glue was never all foldable.** What remains of the 0.5B's ~1.96 ms token: ~0.90 ms
+   is irreducible GEMV bytes, and the rest is attention + rope_kv + swiglu_quant. Folding
+   swiglu hits an L2 wall: the down-GEMV blocks would redundantly read gO+uO (or d[I]) as
+   f32 — ~6.9 MB/layer on the 1.5B against a 4 MB L2, i.e. new DRAM traffic on a
+   bandwidth-bound kernel. That is lever #1 (bytes) fighting lever #4 (glue).
+
+The direction was right and the 0.5B hero gained a real +21%; the magnitude was optimistic.
