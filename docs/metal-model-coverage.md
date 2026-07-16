@@ -90,3 +90,20 @@ block shape:
 - **Next**: Mistral sliding-window (attention kernel window-start), Phi-3 partial RoPE. Both are
   contained kernel tweaks but likewise need their checkpoints to validate — recommend validating
   Qwen3 end-to-end first (proves the pattern) before piling on more unvalidated families.
+
+## Update — Phi-3 + Mistral added (2026-07-16)
+
+- **Phi-3 partial RoPE — DONE (unit-validated)**: `rope`/`rope_f16` split parameterized by
+  `rhalf = rotaryDim/2 = len(invf)` (was hardcoded `hd/2`); rotates `(d, rhalf+d)` for `d<rhalf`,
+  dims `[rotaryDim, hd)` pass through. `r.half = len(RopeInvFreq)` (= `hd/2` for full rotary →
+  qwen2.5 unchanged). `TestRopePartial`: rotated dims match CPU, tail untouched.
+- **Mistral sliding-window — DONE (unit-validated)**: `attention`/`attention_prefill` take a
+  `window` uniform; derive `winStart = max(0, nKeys-window)` in-kernel (window=0 = full causal).
+  `TestSlidingWindow`: windowed-over-N == full-over-last-W (maxAbs 0.0).
+- Both removed from the admission decline list. qwen2.5 decode+prefill parity UNCHANGED.
+
+**Coverage status:** admission bug fixed; **Qwen3 / Mistral / Phi-3 all code-complete + kernel-
+unit-validated** on this machine. **END-TO-END family parity is UNVALIDATED** (no Qwen3/Mistral/
+Phi-3 checkpoints here) — hand off to the Linux box (see the validation prompt). Remaining
+declines: MoE (graceful), MLA (graceful), Gemma (structural — sandwich norms/softcaps/GeGLU/
+embed-scale, deferred), embed-scale.
