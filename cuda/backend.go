@@ -56,10 +56,30 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		}
 	}()
 
+	declined := func(e error) (decoder.ResidentForward, bool, error) {
+		if os.Getenv("GOINFER_RESIDENT_DEBUG") != "" {
+			fmt.Fprintf(os.Stderr, "[cuda] BuildResident declined: %v\n", e)
+		}
+		return nil, false, nil
+	}
+
 	w := m.Weights()
 	if w == nil || len(w.Layers) == 0 {
 		return nil, false, nil
 	}
+
+	// Admission: DecodeRunnerEligible was scoped to the RICHER WebGPU runner (QK-norm,
+	// partial/scaled RoPE, sliding window, per-layer RoPE, MoE, MLA, SSM), so it is far too
+	// permissive for this backend, which implements the plain dense Qwen2/Llama block ONLY.
+	// Without this check the failure is silent — the feature is dropped and the logits are
+	// wrong (e.g. Qwen3's QK-norm ignored; Mistral run full-attention past its window; a
+	// partial-rotary model reading invFreq out of bounds because the rope kernel hardcodes
+	// half = hd/2). Same bug class the Metal backend hit; the taxonomy lives in
+	// decoder/features.go so all three backends share one source of truth.
+	if missing := m.MissingResidentFeatures(decoder.ResidentBackendFeatures["cuda"]); len(missing) > 0 {
+		return declined(fmt.Errorf("arch needs unimplemented feature(s) %v", missing))
+	}
+
 	H, nLayers, nH, nKV, hd, I, vocab := m.Dims()
 
 	// ---- host pack all weights (CPU; any incompatible shape → decline) ----
@@ -68,12 +88,6 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		qb, kb, vb          []float32
 		preNorm, postNorm   []float32
 		hasBias             bool
-	}
-	declined := func(e error) (decoder.ResidentForward, bool, error) {
-		if os.Getenv("GOINFER_RESIDENT_DEBUG") != "" {
-			fmt.Fprintf(os.Stderr, "[cuda] BuildResident declined: %v\n", e)
-		}
-		return nil, false, nil
 	}
 	hls := make([]hlayer, nLayers)
 	for l := 0; l < nLayers; l++ {

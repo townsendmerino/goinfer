@@ -105,6 +105,19 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	if !m.DecodeRunnerEligible() && !granOK && !nemoOK {
 		return nil, false, nil
 	}
+	// Admission: refuse any arch needing a feature this runner does not implement, rather
+	// than dropping it silently and emitting wrong logits (the bug class documented in
+	// docs/metal-model-coverage.md). The taxonomy is shared (decoder/features.go) so CUDA,
+	// WebGPU and Metal cannot drift apart. This runner is the richest of the three, so today
+	// the check is expected to be a no-op for everything DecodeRunnerEligible admits — its
+	// job is future arches: one that lands with a feature nobody implemented declines here
+	// instead of mis-running.
+	if missing := m.MissingResidentFeatures(decoder.ResidentBackendFeatures["webgpu"]); len(missing) > 0 {
+		if os.Getenv("GOINFER_RESIDENT_DEBUG") != "" {
+			fmt.Fprintf(os.Stderr, "[gpu] BuildResident declined: arch needs unimplemented feature(s) %v\n", missing)
+		}
+		return nil, false, nil
+	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	c := b.ctx
