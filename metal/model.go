@@ -9,6 +9,7 @@ package metal
 import (
 	"fmt"
 	"runtime"
+	"sync"
 
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/decoder"
@@ -45,6 +46,18 @@ type Resident struct {
 	part, tok, uP                                                                  Buffer // fused-argmax: tile partials, token out, tile count
 	logitsHost                                                                    []float32
 	gpuStart, gpuEnd, kernStart, kernEnd                                          float64 // last-Forward GPU timing (Step 0)
+
+	// pipelined logits executor (encode-ahead): a persistent OS-thread-pinned goroutine that
+	// commits token t, pre-encodes t+1 while the GPU runs t, then waits — hiding the ~0.9ms
+	// host encode bubble. Lazily started on first ForwardEmbPipe; stopped in Close.
+	execOnce sync.Once
+	execReq  chan execJob
+	execAck  chan []float32
+}
+
+type execJob struct {
+	emb []float32
+	pos int
 }
 
 func byteBuf(d *Device, n int) Buffer {
@@ -218,12 +231,88 @@ func (r *Resident) ForwardEmb(emb []float32, pos int) []float32 {
 // forwardLogits encodes the trunk + full lm head and reads back logits[V]. Caller must hold
 // the OS thread and have filled r.x with the input embedding.
 func (r *Resident) forwardLogits(pos int) []float32 {
-	e := r.encodeTrunk(pos)                                                     // 28 layers → final norm → r.aq/r.aSc
+	r.uPos.SetU32(uint32(pos))
+	r.uNKeys.SetU32(uint32(pos + 1))
+	e := r.q.begin()
+	r.encodeTrunkInto(e)                                                        // 28 layers → final norm → r.aq/r.aSc
 	e.dispatch(r.pSA, (r.V)*32, 256, r.lmW, r.lmS, r.aq, r.aSc, r.logits, r.uH) // full lm head
 	e.end()
 	r.gpuStart, r.gpuEnd, r.kernStart, r.kernEnd = e.gpuStart, e.gpuEnd, e.kernStart, e.kernEnd
 	copy(r.logitsHost, r.logits.Floats())
 	return r.logitsHost
+}
+
+// ForwardEmbPipe is ForwardEmb through the pipelined executor (encode-ahead) — the production
+// decode path. Returns logits[V] (reused buffer; consume before the next call). Synchronous to
+// the caller (one job in, one logits out), but the executor overlaps the next token's encode
+// with this token's GPU execution.
+func (r *Resident) ForwardEmbPipe(emb []float32, pos int) []float32 {
+	r.execOnce.Do(func() {
+		r.execReq = make(chan execJob)
+		r.execAck = make(chan []float32)
+		go r.execLoop()
+	})
+	r.execReq <- execJob{emb: emb, pos: pos}
+	return <-r.execAck
+}
+
+// encodeLogitsCB builds a complete, un-committed command buffer (trunk + full lm head) with no
+// per-call pool — it autoreleases into the executor's long-lived pool.
+func (r *Resident) encodeLogitsCB() *Encoder {
+	e := r.q.beginNP()
+	r.encodeTrunkInto(e)
+	e.dispatch(r.pSA, (r.V)*32, 256, r.lmW, r.lmS, r.aq, r.aSc, r.logits, r.uH)
+	e.finishEncoding()
+	return e
+}
+
+// execLoop is the pinned executor: pipeline commit(t) → pre-encode(t+1) → wait(t). One shared
+// autorelease pool, drained every drainEvery tokens (with a one-token non-overlapped hiccup so
+// no un-committed command buffer is live across the drain — keeps the pool LIFO-safe).
+func (r *Resident) execLoop() {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	const drainEvery = 64
+	pool := newARPool()
+	var cur *Encoder
+	count := 0
+	for job := range r.execReq {
+		if cur == nil {
+			cur = r.encodeLogitsCB()
+		}
+		copy(r.x.Floats(), job.emb) // this token's embedding + pos (set at commit time, not encode)
+		r.uPos.SetU32(uint32(job.pos))
+		r.uNKeys.SetU32(uint32(job.pos + 1))
+		cur.commit()
+
+		count++
+		drain := count%drainEvery == 0
+		var next *Encoder
+		if !drain {
+			next = r.encodeLogitsCB() // overlaps cur's GPU execution — the encode-ahead win
+		}
+		cur.waitDone()
+		r.gpuStart, r.gpuEnd, r.kernStart, r.kernEnd = cur.gpuStart, cur.gpuEnd, cur.kernStart, cur.kernEnd
+		copy(r.logitsHost, r.logits.Floats())
+
+		if drain { // no un-committed cb live now → safe to drain the shared pool
+			pool.drain()
+			pool = newARPool()
+			cur = nil
+		} else {
+			cur = next
+		}
+		r.execAck <- r.logitsHost
+	}
+	pool.drain()
+}
+
+// stopExec shuts down the executor goroutine (if started).
+func (r *Resident) stopExec() {
+	if r.execReq != nil {
+		close(r.execReq)
+		r.execReq = nil
+	}
 }
 
 // LastGPUTimes returns, for the last Forward, the GPU-busy window and the kernel window
@@ -241,24 +330,25 @@ func (r *Resident) ForwardArgmax(id, pos int) uint32 {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	r.embed.Row(id, r.x.Floats())
-	e := r.encodeTrunk(pos)
+	r.uPos.SetU32(uint32(pos))
+	r.uNKeys.SetU32(uint32(pos + 1))
+	e := r.q.begin()
+	r.encodeTrunkInto(e)
 	e.dispatch(r.pSAAmax, (r.V)*32, 256, r.lmW, r.lmS, r.aq, r.aSc, r.part, r.uH) // tile partials
 	e.dispatch(r.pArgFinish, 256, 256, r.part, r.tok, r.uP)                       // reduce tiles → token
 	e.end()
 	return r.tok.U32()
 }
 
-// encodeTrunk begins a command buffer and encodes all decoder layers + the final norm,
-// leaving the quantized final hidden state in r.aq/r.aSc ready for an lm head. The caller
-// must have already filled r.x with the input embedding (Forward/ForwardEmb/ForwardArgmax).
-func (r *Resident) encodeTrunk(pos int) *Encoder {
-	r.uPos.SetU32(uint32(pos))
-	r.uNKeys.SetU32(uint32(pos + 1))
-
+// encodeTrunkInto encodes all decoder layers + the final norm into e, leaving the quantized
+// final hidden state in r.aq/r.aSc ready for an lm head. It ONLY records dispatches (referencing
+// the shared buffers) — it does NOT set uPos/uNKeys or fill r.x; the caller sets those before
+// commit. This value-independence is what lets the executor pre-encode token t+1 while token t
+// runs (encode-ahead).
+func (r *Resident) encodeTrunkInto(e *Encoder) {
 	nHhd := r.nH * r.hd
 	qkvRows := nHhd + 2*r.kvDim
 	kOff, vOff := nHhd*4, (nHhd+r.kvDim)*4 // byte offsets of k, v within the fused qkv buffer
-	e := r.q.begin()
 	for l := 0; l < r.nL; l++ {
 		L := &r.layers[l]
 		// --- attention block (12 dispatches vs 19: QKV fused +bias, residual fused) ---
@@ -277,5 +367,4 @@ func (r *Resident) encodeTrunk(pos int) *Encoder {
 		e.dispatch(r.pGemvResid, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.x, r.uI) // down + residual
 	}
 	e.dispatch(r.pRms, 256, 256, r.x, r.finalNorm, r.aq, r.aSc, r.uH, r.uEps)
-	return e
 }

@@ -87,7 +87,7 @@ func (a *metalResident) Forward(embedding []float32, pos int) ([]float32, error)
 	if len(embedding) != a.hidden {
 		return nil, fmt.Errorf("metal: embedding len %d != hidden %d", len(embedding), a.hidden)
 	}
-	return a.r.ForwardEmb(embedding, pos), nil
+	return a.r.ForwardEmbPipe(embedding, pos), nil // pipelined executor (encode-ahead)
 }
 
 // ForwardN runs a batch of embeddings at consecutive positions (prefill). Each row is copied
@@ -115,6 +115,6 @@ func (a *metalResident) UploadKV(layer int, keys, vals []float32) error {
 func (a *metalResident) TruncateTo(pos int) {}
 func (a *metalResident) Reset()             {}
 
-// Close releases the resident decoder. Metal buffers are freed at process exit (single-model
-// lifetime), so this is a no-op today.
-func (a *metalResident) Close() error { return nil }
+// Close stops the pipelined executor goroutine (if started). Metal buffers are freed at process
+// exit (single-model lifetime).
+func (a *metalResident) Close() error { a.r.stopExec(); return nil }

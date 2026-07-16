@@ -283,6 +283,45 @@ func (q Queue) begin() *Encoder {
 	return &Encoder{pool: pool, cb: cb, enc: cb.Send(selComputeEncoder)}
 }
 
+// arPool is an NSAutoreleasePool handle — the pipelined executor owns one long-lived pool
+// (drained periodically) so encode-ahead can hold an un-committed command buffer across the
+// loop without per-call pool nesting.
+type arPool struct{ id objc.ID }
+
+func newARPool() arPool {
+	return arPool{id: objc.ID(objc.GetClass("NSAutoreleasePool")).Send(selAlloc).Send(selInit)}
+}
+func (p arPool) drain() { p.id.Send(selDrain) }
+
+// beginNP creates a command buffer + encoder with NO per-call pool — the cb/encoder autorelease
+// into whatever pool is active on the calling thread. Used by the pipelined executor, which
+// owns one long-lived pool drained periodically (so encode-ahead can hold an un-committed next
+// command buffer without the LIFO pool-nesting a per-call pool would cause).
+func (q Queue) beginNP() *Encoder {
+	cb := q.id.Send(selCommandBuffer)
+	return &Encoder{cb: cb, enc: cb.Send(selComputeEncoder)}
+}
+
+// finishEncoding closes the encoder (ready to commit) without committing — the split that lets
+// the executor encode token t+1 while token t's command buffer runs.
+func (e *Encoder) finishEncoding() { e.enc.Send(selEndEncoding) }
+func (e *Encoder) commit()         { e.cb.Send(selCommit) }
+
+// waitDone blocks until the committed command buffer completes, then reads its GPU timestamps.
+func (e *Encoder) waitDone() {
+	e.cb.Send(selWaitCompleted)
+	e.readTimes()
+}
+
+// readTimes reads the command buffer's GPU/kernel timestamps (valid post-completion).
+func (e *Encoder) readTimes() {
+	// On arm64 objc_msgSend returns the double in d0 — objc.Send[float64] uses the fp-return path.
+	e.gpuStart = objc.Send[float64](e.cb, selGPUStartTime)
+	e.gpuEnd = objc.Send[float64](e.cb, selGPUEndTime)
+	e.kernStart = objc.Send[float64](e.cb, selKernelStartTime)
+	e.kernEnd = objc.Send[float64](e.cb, selKernelEndTime)
+}
+
 // dispatch encodes one kernel over n threads (threadgroup width tg, clamped ≤ n), binding
 // bufs at indices 0..len-1. dispatchThreads launches EXACTLY n threads (non-uniform), so
 // no out-of-range writes.
@@ -315,12 +354,7 @@ func (e *Encoder) end() {
 	e.enc.Send(selEndEncoding)
 	e.cb.Send(selCommit)
 	e.cb.Send(selWaitCompleted)
-	// Timestamps are valid once completed; read before the pool releases the cb. On arm64
-	// objc_msgSend returns the double in d0 — objc.Send[float64] uses the fp-return path.
-	e.gpuStart = objc.Send[float64](e.cb, selGPUStartTime)
-	e.gpuEnd = objc.Send[float64](e.cb, selGPUEndTime)
-	e.kernStart = objc.Send[float64](e.cb, selKernelStartTime)
-	e.kernEnd = objc.Send[float64](e.cb, selKernelEndTime)
+	e.readTimes()
 	e.pool.Send(selDrain)
 }
 
