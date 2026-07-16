@@ -76,3 +76,17 @@ block shape:
 | **Gemma 2/3** | sandwich norms + `(1+w)` RMS + softcaps + GeGLU + embed-scale | **structural** (5 features + loosen the gate). Defer. |
 
 **Order:** admission fix → Qwen3 QK-norm → Mistral window → Phi-3 partial RoPE → small MoE → Gemma.
+
+## Progress (2026-07-16)
+
+- **Admission fix — DONE** (`metalUnsupported`): metal now declines QK-norm (until Qwen3
+  below) / active sliding-window / partial-rotary / embed-scale models → correct CPU fallback
+  instead of silent-wrong output. `HasQKNorm`/`PartialRotary`/`EmbedScaleResident` accessors added.
+- **Qwen3 QK-norm — DONE (unit-validated; end-to-end pending)**: `qk_norm`/`qk_norm_f16` kernels
+  (per-head Q/K RMSNorm, decode f32 + prefill f16), wired between QKV and RoPE, conditional on
+  `m.HasQKNorm()`. Kernel bit-exact vs CPU rmsNorm (`TestQKNorm`, both `addOne` modes). qwen2.5
+  parity unchanged. **No Qwen3 checkpoint on this machine (only qwen2.5 + gemma-4) → the Linux
+  box should confirm end-to-end family parity.** Removed from the decline list.
+- **Next**: Mistral sliding-window (attention kernel window-start), Phi-3 partial RoPE. Both are
+  contained kernel tweaks but likewise need their checkpoints to validate — recommend validating
+  Qwen3 end-to-end first (proves the pattern) before piling on more unvalidated families.
