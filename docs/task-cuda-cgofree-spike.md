@@ -472,10 +472,16 @@ goinfer's own **3%-near-tie correctness rule** (gpu/kv_i8_parity_test.go), **0 h
 Same standard goinfer's WebGPU + int8-KV backends are gated by.
 
 Real-checkpoint realities the synthetic benches hid, and the fixes:
-- **Mixed precision.** q4_k_m stores tensors at different widths — layer-0 QProj came back
-  **int8**, not int4. Added a forward W8A8 GEMV + per-weight kind dispatch, mirroring
-  `gpu/residency.go:uploadProj` (int4/int8/f32). The activation layout (int8, 4/word) is
-  identical across both; only the weight decode differs.
+- **Mixed precision.** q4_k_m stores tensors at different widths, so a W8A8 forward GEMV +
+  per-weight kind dispatch was needed, mirroring `gpu/residency.go:uploadProj`
+  (int4/int8/f32). The activation layout (int8, 4/word) is identical across both; only the
+  weight decode differs. **[CORRECTED 2026-07-16]** This section originally said "layer-0
+  QProj came back int8". That was wrong — measured across both checkpoints, **all 168/196
+  layer projections are int4 with zero mixed kinds; the int8 tensor is the LM head**
+  (151936×H, and untied: `LMHead.Rows()=151936`, so the tied-embed path never fires). The
+  early failure hit `extract(lmSrc)` *after* every layer projection passed, and was
+  misattributed. Consequence: the per-layer fused kernels need only the int4 path — the
+  int8 GEMV is used by exactly one launch per token (the LM head).
 - **f32 group scales, not f16.** With exact int32 dp4a accumulation the per-group sums
   become bit-faithful to the CPU quantized matmul → moved 7/10 → 8/10 exact and shrank the
   residual flips to sub-1% near-ties. (f16 was a bandwidth trick; correctness wants f32.)
