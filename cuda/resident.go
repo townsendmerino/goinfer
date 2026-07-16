@@ -49,10 +49,11 @@ type cudaResident struct {
 	eps, attnScale                             float32
 
 	// gocudrv state — touched ONLY on the executor thread.
-	cx                                                                       *gc.Context
-	stream                                                                   *gc.Stream
-	gemvW4, gemvW8, kvStore, ropeKV, fRms, fQ, fRope, fAttn, fSw, fRes, fArg *gc.Function
+	cx                                                                             *gc.Context
+	stream                                                                         *gc.Stream
+	gemvW4, gemvW8, kvStore, ropeKV, fRms, fQ, fRope, fAttn, fSw, fRes, fArg, fQKV *gc.Function
 
+	fuseQKV         bool // all of Q/K/V int4 ⇒ K1 super-kernel is usable
 	layers          []cudaLayer
 	lmW             cudaWQ
 	finalNorm, invF *gc.Buffer[float32]
@@ -232,18 +233,37 @@ func (r *cudaResident) launchToken(emb []float32, pos int) error {
 	}
 	for l := 0; l < r.nLayers; l++ {
 		Ly := &r.layers[l]
-		if e := r.rms(r.x, Ly.preNorm, r.aq, r.aSc); e != nil {
-			return e
-		}
 		qb, kb, vb := nullBias, nullBias, nullBias
 		if Ly.hasBias {
 			qb, kb, vb = gc.Arg(Ly.qb), gc.Arg(Ly.kb), gc.Arg(Ly.vb)
 		}
-		if e := r.doG(Ly.q, r.aq, r.aSc, qb, r.qB, 0); e != nil {
-			return e
+		if r.fuseQKV {
+			// K1: rmsnorm+quant redundantly per block + this block's Q/K/V rows — one
+			// launch instead of four, and the GridX:1 rmsnorm disappears.
+			nrows := r.qDim + 2*r.kvDim
+			cfg := gc.LaunchConfig{GridX: uint32((nrows + 7) / 8), GridY: 1, GridZ: 1,
+				BlockX: 256, BlockY: 1, BlockZ: 1,
+				SharedMemBytes: uint32((r.hidden + 256 + r.hidden/4) * 4)}
+			if e := r.launch(r.fQKV, cfg,
+				gc.Arg(r.x), gc.Arg(Ly.preNorm), gc.ArgValue(int32(r.hidden)), gc.ArgValue(r.eps),
+				gc.Arg(Ly.q.W), gc.Arg(Ly.q.ws16), qb,
+				gc.Arg(Ly.k.W), gc.Arg(Ly.k.ws16), kb,
+				gc.Arg(Ly.v.W), gc.Arg(Ly.v.ws16), vb,
+				gc.ArgValue(int32(r.qDim)), gc.ArgValue(int32(r.kvDim)),
+				gc.ArgValue(int32(r.hidden/8)), gc.ArgValue(int32(r.hidden/32)),
+				gc.Arg(r.qB), gc.Arg(r.kB), gc.Arg(r.vB)); e != nil {
+				return e
+			}
+		} else {
+			if e := r.rms(r.x, Ly.preNorm, r.aq, r.aSc); e != nil {
+				return e
+			}
+			if e := r.doG(Ly.q, r.aq, r.aSc, qb, r.qB, 0); e != nil {
+				return e
+			}
+			_ = r.doG(Ly.k, r.aq, r.aSc, kb, r.kB, 0)
+			_ = r.doG(Ly.v, r.aq, r.aSc, vb, r.vB, 0)
 		}
-		_ = r.doG(Ly.k, r.aq, r.aSc, kb, r.kB, 0)
-		_ = r.doG(Ly.v, r.aq, r.aSc, vb, r.vB, 0)
 		// fused rope(q)+rope(k)+kv_store(k)+kv_store(v): 4 launches → 1 (same math/order).
 		_ = r.launch(r.ropeKV, g1cfg(r.nH*r.half+r.nKV*r.half, 256),
 			gc.Arg(r.qB), gc.Arg(r.kB), gc.Arg(r.vB), gc.Arg(r.invF), gc.Arg(r.kc[l]), gc.Arg(r.vc[l]),

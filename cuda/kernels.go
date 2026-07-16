@@ -23,6 +23,12 @@ var gemvFwdPTX []byte
 //go:embed testdata/glue.ptx
 var gluePTX []byte
 
+// fusedQKVPTX: K1 super-kernel — rmsnorm+quant folded into the Q/K/V GEMV via redundant
+// per-block recompute, killing a GridX:1 glue kernel and 3 launches (spec §5.2).
+//
+//go:embed testdata/fused_qkv.ptx
+var fusedQKVPTX []byte
+
 // nibblePosFast maps a weight's index within an 8-weight word (0..7) to its nibble slot,
 // so the coalesced GEMV's even/odd byte split (word&0x0F0F0F0F / (word>>4)&0x0F0F0F0F)
 // lands weights 0..3 in the low-nibble bytes and 4..7 in the high-nibble bytes.

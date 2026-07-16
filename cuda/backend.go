@@ -161,6 +161,13 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		if r.ropeKV, e = gmod.Function("rope_kv"); e != nil {
 			return e
 		}
+		qmod, e2 := r.cx.LoadModule(fusedQKVPTX)
+		if e2 != nil {
+			return e2
+		}
+		if r.fQKV, e = qmod.Function("fused_rms_qkv"); e != nil {
+			return e
+		}
 		fns := []struct {
 			dst  **gc.Function
 			name string
@@ -218,6 +225,19 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	if setupErr != nil {
 		r.Close()
 		return declined(setupErr)
+	}
+	// K1 needs every layer's Q/K/V to be int4 (the measured reality for q4_k_m: all layer
+	// projections are int4, only the LM head is int8). Anything else falls back to the
+	// unfused chain, so a mixed checkpoint stays correct.
+	r.fuseQKV = true
+	for l := range hls {
+		if hls[l].q.kind != "int4" || hls[l].k.kind != "int4" || hls[l].v.kind != "int4" {
+			r.fuseQKV = false
+			break
+		}
+	}
+	if os.Getenv("GOINFER_CUDA_NO_FUSE") != "" {
+		r.fuseQKV = false
 	}
 	b.resident = r
 	return r, true, nil

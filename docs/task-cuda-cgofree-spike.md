@@ -745,3 +745,41 @@ cause was the allocation. 1.5B: logits path 232.8→236.2, greedy edge 3.2%→2.
 |---|---|---|---|
 | 1.5B | 232.8 | **236.2** | **241.5** |
 | 0.5B | 390.2 | **449.4** | **476.1** |
+
+### The 3-super-kernel fusion (spec §5.2) — K1 built: rmsnorm folded into the QKV GEMV
+
+A measured precondition first: **all layer projections are int4** (168/196 and 196/196 across
+the two checkpoints, zero mixed kinds) — only the LM head is int8. So the per-layer
+super-kernels need a single weight path, no per-projection kind branching. (This also
+corrected the doc's earlier "layer-0 QProj is int8" — see the correction above.)
+
+**K1 = rmsnorm+quant(x) ⊕ Q/K/V GEMV.** `rmsnorm_quant` runs at **GridX:1 — one block, ~1/40th
+of the GPU** — and sits serially in the chain because its int8 scale is a reduction over all
+of x[H]. It cannot be multi-blocked (that reduction is why it's one block). The fix is the
+audit's redundant recompute: every QKV block recomputes rmsnorm+quant into shared memory,
+then does its own rows. x[H] is a few KB and L2-resident, so the redundant read is a
+broadcast hit and the redundant reduction is trivial beside the block's GEMV work — and the
+activation then lives in *shared*, replacing an L2 round-trip. 4 launches → 1; **13 → 10
+launches/layer**.
+
+Bit-identical by construction (same block size, same reduction order, same expression ⇒ every
+block derives exactly the scale `rmsnorm_quant` produced) — and confirmed: parity unchanged
+(1.5B 7/8 @ 0.087%, 0.5B 7/8 @ 0.939%, 0 hard fails) and the greedy fast path emits the
+*exact same token sequence* as before the fusion. Guarded (`fuseQKV` requires all Q/K/V int4;
+mixed checkpoints fall back to the unfused chain) with `GOINFER_CUDA_NO_FUSE` as the A/B.
+
+| greedy path | K1 off | K1 on | |
+|---|---|---|---|
+| **0.5B** | 418.1 | **499.4 tok/s** | **+19.4%** |
+| **1.5B** | 240.9 | **245.0 tok/s** | +1.7% |
+| logits path 0.5B | 405.3 | **432.6** | +6.7% |
+| logits path 1.5B | 236.9 | **239.4** | +1.1% |
+
+Exactly the predicted shape: the glue-dominated 0.5B gains hugely; the GEMV-dominated 1.5B
+(2.6 ms of its 4.2 ms is weight streaming) barely moves. Remaining single-block glue to fold:
+the post-attention `quant_vec` (→ K2, with O-GEMV blocks redundantly quantizing ctx) and the
+pre-MLP `rmsnorm` + `swiglu_quant` (→ K3, gate/up blocks recomputing the norm and emitting
+d[I] with a global maxabs for the down GEMV).
+
+Note: `TestRealE2EDecode`'s inline harness does NOT carry K1 — `TestProdThroughput` is now the
+authoritative shipped number.
