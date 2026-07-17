@@ -189,12 +189,37 @@ func (r *cudaResident) Reset() {}
 // Close shuts down the executor goroutine (and unpins its OS thread). Device buffers are
 // freed by primary-context teardown at process exit; a per-buffer free is unnecessary for
 // the single-model serve lifetime.
+// Close releases the model's GPU memory and tears down the pinned executor.
+//
+// Freeing the DEVICE memory is the whole job here: a resident model owns the weight buffers
+// and the per-layer KV cache, which for a real checkpoint is gigabytes. This used to free only
+// the page-locked HOST buffer and close the channel, so every Load(cuda)+Close leaked the
+// entire model's VRAM until the process exited — invisible in a one-model run, fatal for a
+// model zoo, an /admin/models/unload, or a test binary that loads several models in sequence
+// (it saturated an 8 GB card mid-suite, after which every Alloc silently returned nil).
+//
+// Closing the context is what reclaims it: the primary context owns every allocation made in
+// it, so releasing our reference frees the lot without tracking each buffer. All of it must
+// happen ON the executor thread — that thread made the context current — and therefore before
+// reqCh closes. Page-locked host memory is freed first: it must go before the context does.
 func (r *cudaResident) Close() error {
-	if r.logitsPinned != nil {
-		_ = r.logitsPinned.Close() // page-locked host memory must be freed before the ctx
-		r.logitsPinned, r.logitsHost = nil, nil
-	}
 	if r.reqCh != nil {
+		r.reqCh <- func() error {
+			if r.logitsPinned != nil {
+				_ = r.logitsPinned.Close() // page-locked host memory must be freed before the ctx
+				r.logitsPinned, r.logitsHost = nil, nil
+			}
+			if r.stream != nil {
+				_ = r.stream.Close()
+				r.stream = nil
+			}
+			if r.cx != nil {
+				_ = r.cx.Close() // releases the primary-context ref → frees weights + KV cache
+				r.cx = nil
+			}
+			return nil
+		}
+		<-r.ackCh
 		close(r.reqCh)
 		r.reqCh = nil
 	}

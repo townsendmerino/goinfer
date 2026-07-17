@@ -147,6 +147,21 @@ func TestRealE2EDecode(t *testing.T) {
 	var stream *gc.Stream
 	var gemvW4, gemvW8, ropeKV, fRms, fQ, fAttn, fSw, fArg *gc.Function
 
+	// Release the primary context when the test ends. dev.Primary() RETAINS a refcounted,
+	// per-device singleton: leaving it retained pins the shared context alive for the whole
+	// test binary, so no OTHER test's Close can ever drop the count to zero — and nothing
+	// anyone allocated is reclaimed until the process exits. That leak saturated the 8 GB card
+	// mid-suite, after which every Alloc/NewStream returned nil and the resulting zero-filled
+	// buffers surfaced as bogus "cosine 0.000000 — layout/unpack mismatch" parity failures.
+	//
+	// Registered AFTER `defer close(reqCh)` so LIFO runs it FIRST: the close has to execute on
+	// the pinned executor thread that made the context current, while the channel is still live.
+	defer func() {
+		if cx != nil {
+			_ = do(func() error { return cx.Close() })
+		}
+	}()
+
 	type wq struct {
 		kind string
 		W    *gc.Buffer[uint32]
