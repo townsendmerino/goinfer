@@ -112,6 +112,16 @@ type KVCache struct {
 	captureLayers []int
 	captured      [][]float32
 
+	// subCapture, when true, records the per-SUBLAYER contribution added to the residual —
+	// scr.sub after attention (post sandwich-norm) and after the MLP — for every layer, into
+	// subAttn[l]/subMLP[l]. This is finer than captureLayers (which sees only the layer output
+	// residual): it separates the attention contribution from the MLP contribution, which is
+	// what localizing a channel's sign flip to a specific sublayer needs. Diagnostic seam, same
+	// contract as captureLayers: copies never feed back, so the token output is byte-identical.
+	subCapture bool
+	subAttn    [][]float32 // [layer][hidden] attention contribution (o-proj out, post sandwich-norm)
+	subMLP     [][]float32 // [layer][hidden] MLP contribution (down out, post sandwich-norm)
+
 	// treeRowPos / treeMask, when non-nil, switch the batched verify (forwardN) from a
 	// linear causal chain to TREE attention (05 EAGLE tree drafting): row i takes its
 	// RoPE position from treeRowPos[i] (its depth) instead of startPos+i, and among the

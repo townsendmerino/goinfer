@@ -445,6 +445,9 @@ func (m *Model) runLayersFromEmbed(h []float32, cache *KVCache) ([]float32, erro
 		if sandwich {
 			normalize(arch, scr.sub, lw.PostAttnNorm, nil, hidden)
 		}
+		if cache.subCapture { // scr.sub is now the attention contribution about to hit the residual
+			cache.subAttn[l] = append(cache.subAttn[l][:0], scr.sub...)
+		}
 		for i := range h {
 			h[i] += scr.sub[i]
 		}
@@ -455,6 +458,9 @@ func (m *Model) runLayersFromEmbed(h []float32, cache *KVCache) ([]float32, erro
 		}
 		if sandwich {
 			normalize(arch, scr.sub, lw.PostMLPNorm, nil, hidden)
+		}
+		if cache.subCapture { // scr.sub is now the MLP contribution about to hit the residual
+			cache.subMLP[l] = append(cache.subMLP[l][:0], scr.sub...)
 		}
 		for i := range h {
 			h[i] += scr.sub[i]
@@ -541,6 +547,28 @@ func (m *Model) ForwardCapture(id int, cache *KVCache, layers []int) (logits []f
 		return nil, nil, ferr
 	}
 	return lg, cache.captured, nil
+}
+
+// ForwardSubCapture runs one token and returns, per layer, the attention contribution and the
+// MLP contribution to the residual (scr.sub after each sublayer's sandwich-norm, before the add).
+// This is the finer seam ForwardCapture doesn't give: it separates the two sublayers, which is
+// what localizing a channel's sign flip to attention-vs-MLP at a specific layer requires.
+// Diagnostic — same byte-identical-output contract as ForwardCapture. Not wired for own-forward
+// families (they don't route through runLayersFromEmbed's uniform block).
+func (m *Model) ForwardSubCapture(id int, cache *KVCache) (attn, mlp [][]float32, err error) {
+	a := m.w.arch
+	if a.gemma4 != nil || a.qwen35 != nil || a.granite != nil || a.nemotron != nil || a.mla != nil || a.llama4 != nil {
+		return nil, nil, fmt.Errorf("decoder.ForwardSubCapture: not wired for arch %q (own runLayers)", a.Name)
+	}
+	nL := a.NumLayers
+	cache.subCapture = true
+	cache.subAttn = make([][]float32, nL)
+	cache.subMLP = make([][]float32, nL)
+	defer func() { cache.subCapture, cache.subAttn, cache.subMLP = false, nil, nil }()
+	if _, ferr := m.forward(id, cache); ferr != nil {
+		return nil, nil, ferr
+	}
+	return cache.subAttn, cache.subMLP, nil
 }
 
 // forwardFromEmbed is forward for a position whose residual-stream embedding is
