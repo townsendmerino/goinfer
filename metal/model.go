@@ -83,6 +83,7 @@ type Resident struct {
 	execOnce sync.Once
 	execReq  chan execJob
 	execAck  chan []float32
+	execDone chan struct{} // closed when execLoop returns — Close must WAIT on this before freeing
 
 	pf *prefillState // lazily-compiled f16 MMA prefill pipelines (opt-in)
 }
@@ -93,7 +94,7 @@ type execJob struct {
 }
 
 func byteBuf(d *Device, n int) Buffer {
-	return Buffer{id: d.id.Send(selNewBufferLen, uintptr(n), uintptr(0)), n: n}
+	return d.mustBuf(d.id.Send(selNewBufferLen, uintptr(n), uintptr(0)), n, "bytes")
 }
 
 func int8Buf(d *Device, w *linalg.WeightMat) (Buffer, Buffer, error) {
@@ -340,6 +341,7 @@ func (r *Resident) ForwardEmbPipe(emb []float32, pos int) []float32 {
 	r.execOnce.Do(func() {
 		r.execReq = make(chan execJob)
 		r.execAck = make(chan []float32)
+		r.execDone = make(chan struct{})
 		go r.execLoop()
 	})
 	r.execReq <- execJob{emb: emb, pos: pos}
@@ -362,6 +364,7 @@ func (r *Resident) encodeLogitsCB() *Encoder {
 func (r *Resident) execLoop() {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
+	defer close(r.execDone) // Close waits here: no command buffer is live once this returns
 	const drainEvery = 64
 	pool := newARPool()
 	var cur *Encoder
@@ -397,11 +400,31 @@ func (r *Resident) execLoop() {
 	pool.drain()
 }
 
-// stopExec shuts down the executor goroutine (if started).
+// stopExec shuts down the executor goroutine (if started) and BLOCKS until it has returned —
+// which is what makes freeing safe. Closing the channel only signals; the loop may still be
+// waiting on an in-flight command buffer, and releasing a buffer it references is a
+// use-after-free. (CUDA hit the mirror-image ordering constraint in d8e81cb.)
 func (r *Resident) stopExec() {
 	if r.execReq != nil {
 		close(r.execReq)
 		r.execReq = nil
+		<-r.execDone
+	}
+}
+
+// Close stops the executor, waits for it, then releases every MTLBuffer this resident allocated.
+//
+// It used to do only the first of those, with the comment "Metal buffers are freed at process
+// exit (single-model lifetime)". That assumption was false and had teeth: cmd/serve is
+// multi-model (--model name=path is repeatable) with /admin/models/{load,unload}, so every
+// load+unload leaked the whole model — weights + per-layer KV + the MoE stacked experts, i.e.
+// GIGABYTES of unified (system) memory, until the process exited. purego has no ARC and Metal
+// has no context-destroy to reclaim in bulk, so each buffer must be released explicitly.
+// Idempotent: ReleaseAll empties the ledger, so a second Close is a no-op.
+func (r *Resident) Close() {
+	r.stopExec()
+	if r.d != nil {
+		r.d.ReleaseAll()
 	}
 }
 

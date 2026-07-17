@@ -143,6 +143,7 @@ func (a *metalResident) UploadKV(layer int, keys, vals []float32) error {
 func (a *metalResident) TruncateTo(pos int) {}
 func (a *metalResident) Reset()             {}
 
-// Close stops the pipelined executor goroutine (if started). Metal buffers are freed at process
-// exit (single-model lifetime).
-func (a *metalResident) Close() error { a.r.stopExec(); return nil }
+// Close stops the pipelined executor (waiting for it) and frees every MTLBuffer this resident
+// allocated. Metal buffers are unified/system memory and purego has no ARC, so without this a
+// multi-model serve (or /admin/models/unload) leaks the whole model per load.
+func (a *metalResident) Close() error { a.r.Close(); return nil }

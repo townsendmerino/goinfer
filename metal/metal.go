@@ -15,6 +15,7 @@ package metal
 import (
 	"fmt"
 	"runtime"
+	"sync"
 	"unsafe"
 
 	"github.com/ebitengine/purego"
@@ -78,8 +79,17 @@ func goString(id objc.ID) string {
 	return string(out)
 }
 
-// Device wraps an MTLDevice.
-type Device struct{ id objc.ID }
+// Device wraps an MTLDevice and OWNS every MTLBuffer allocated through it.
+//
+// purego means no ARC: an MTLBuffer that is never sent -release leaks by construction. There is
+// no Metal equivalent of CUDA's "destroy the context and reclaim everything", so the only way to
+// free a resident model is to release each buffer — hence this ledger. Every allocation goes
+// through mustBuf, which records the id; ReleaseAll frees them (see Resident.Close).
+type Device struct {
+	id     objc.ID
+	mu     sync.Mutex
+	allocs []objc.ID // every MTLBuffer handed out by this Device, for ReleaseAll
+}
 
 // CreateSystemDefaultDevice reaches Metal cgo-free (MTLCreateSystemDefaultDevice is a
 // plain C export in Metal.framework).
@@ -176,15 +186,43 @@ func (d *Device) NewComputePipeline(lib objc.ID, fn string) (Pipeline, error) {
 }
 
 // NewBufferFloats uploads data into a shared (UMA host-visible) MTLBuffer.
+// mustBuf turns a FAILED MTLBuffer allocation into a loud panic instead of a silently
+// zero-filled Buffer, and records the id so ReleaseAll can free it. objc returns nil on OOM and
+// every constructor here used to keep it, so an out-of-memory condition surfaced as garbage
+// numerics — an OOM wearing a parity bug's clothes. BuildResident recovers panics and declines
+// to the CPU path, which is the right answer for OOM.
+func (d *Device) mustBuf(id objc.ID, n int, what string) Buffer {
+	if id == 0 {
+		panic(fmt.Sprintf("metal: MTLBuffer allocation failed (%s, %d bytes) — out of memory", what, n))
+	}
+	d.mu.Lock()
+	d.allocs = append(d.allocs, id)
+	d.mu.Unlock()
+	return Buffer{id: id, n: n}
+}
+
+// ReleaseAll releases every MTLBuffer this Device handed out and empties the ledger. Callers MUST
+// ensure no GPU work is still in flight against them (Resident.Close stops the executor and waits
+// first) — releasing a buffer a live command buffer references is a use-after-free.
+func (d *Device) ReleaseAll() {
+	d.mu.Lock()
+	ids := d.allocs
+	d.allocs = nil
+	d.mu.Unlock()
+	for _, id := range ids {
+		id.Send(selRelease)
+	}
+}
+
 func (d *Device) NewBufferFloats(data []float32) Buffer {
 	id := d.id.Send(selNewBufferBytes, unsafe.Pointer(&data[0]), uintptr(len(data)*4), uintptr(0))
 	runtime.KeepAlive(data)
-	return Buffer{id: id, n: len(data)}
+	return d.mustBuf(id, len(data), "floats")
 }
 
 // NewBufferLen allocates an uninitialized shared MTLBuffer of nFloats float32s.
 func (d *Device) NewBufferLen(nFloats int) Buffer {
-	return Buffer{id: d.id.Send(selNewBufferLen, uintptr(nFloats*4), uintptr(0)), n: nFloats}
+	return d.mustBuf(d.id.Send(selNewBufferLen, uintptr(nFloats*4), uintptr(0)), nFloats, "len")
 }
 
 // NewBufferInt8 uploads int8 data (n counts BYTES for this buffer). NewBufferU32
@@ -192,20 +230,20 @@ func (d *Device) NewBufferLen(nFloats int) Buffer {
 func (d *Device) NewBufferInt8(data []int8) Buffer {
 	id := d.id.Send(selNewBufferBytes, unsafe.Pointer(&data[0]), uintptr(len(data)), uintptr(0))
 	runtime.KeepAlive(data)
-	return Buffer{id: id, n: len(data)}
+	return d.mustBuf(id, len(data), "int8")
 }
 
 func (d *Device) NewBufferU32(v uint32) Buffer {
 	id := d.id.Send(selNewBufferBytes, unsafe.Pointer(&v), uintptr(4), uintptr(0))
 	runtime.KeepAlive(&v)
-	return Buffer{id: id, n: 1}
+	return d.mustBuf(id, 1, "u32")
 }
 
 // NewBufferUint32s uploads packed u32 data (n counts u32 words). Shared/UMA.
 func (d *Device) NewBufferUint32s(data []uint32) Buffer {
 	id := d.id.Send(selNewBufferBytes, unsafe.Pointer(&data[0]), uintptr(len(data)*4), uintptr(0))
 	runtime.KeepAlive(data)
-	return Buffer{id: id, n: len(data)}
+	return d.mustBuf(id, len(data), "uint32s")
 }
 
 // NewBufferU16s uploads u16 data (e.g. f16 group scales; n counts u16s). Shared/UMA.
@@ -215,7 +253,7 @@ func (d *Device) NewBufferU16s(data []uint16) Buffer {
 	}
 	id := d.id.Send(selNewBufferBytes, unsafe.Pointer(&data[0]), uintptr(len(data)*2), uintptr(0))
 	runtime.KeepAlive(data)
-	return Buffer{id: id, n: len(data)}
+	return d.mustBuf(id, len(data), "u16s")
 }
 
 // Floats / Int8s view the buffer's shared contents as a Go slice (zero-copy on UMA).
