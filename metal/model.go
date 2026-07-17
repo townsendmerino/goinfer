@@ -17,11 +17,25 @@ import (
 
 const metalCtxCap = 4096 // resident KV positions (spike)
 
+// prefillFeatures is what the f16 MMA prefill kernels (prefill.go) actually implement: a dense
+// SiLU FFN, per-head QK-norm, a MODEL-LEVEL rope table and a MODEL-LEVEL window. Anything else
+// — MoE (which never packs the dense FFN buffers at all), or Gemma's sandwich norms / (1+w) RMS
+// / GeGLU / per-layer rope — must decline prefill (see Resident.prefillOK). Deriving the
+// predicate from the shared taxonomy keeps it honest as features land.
+var prefillFeatures = map[decoder.ResidentFeature]bool{
+	decoder.FeatQKNorm:        true,
+	decoder.FeatSlidingWindow: true,
+	decoder.FeatPartialRotary: true,
+}
+
 type residLayer struct {
 	qkvW, qkvS, guW, guS, oW, oS, dW, dS Buffer // fused QKV + fused gate/up + o + down
 	qkvBias, preNorm, postNorm           Buffer
 	qNorm, kNorm                         Buffer    // per-head QK-RMSNorm weights (Qwen3; zero if !qkNorm)
 	moe                                  *moeLayer // non-nil ⇒ this layer's FFN is MoE (dense guW/dW unused)
+	postAttnNorm, postMLPNorm            Buffer    // Gemma sandwich norms on each sublayer OUTPUT (zero if !sandwich)
+	invf                                 Buffer    // per-layer RoPE inv-freq (Gemma local 10k vs global 1M base)
+	uWindow                              Buffer    // per-layer attention window (0 = full causal; Gemma mixes local/global)
 }
 
 // Resident is a Metal-resident dense decoder. Weights uploaded once in BuildResident;
@@ -33,7 +47,10 @@ type Resident struct {
 	pSA, pSABias, pSAResid                                                Pipeline // Stage A gemv (K<=1536)
 	pSAAmax, pArgFinish                                                   Pipeline // fused block-argmax lm head
 	pQKNorm                                                               Pipeline // per-head QK-RMSNorm (Qwen3)
+	pRmsF32                                                               Pipeline // Gemma sandwich: in-place RMSNorm of a sublayer output
 	qkNorm                                                                bool     // arch has QK-norm
+	sandwich                                                              bool     // Gemma NormSandwich4: norm each sublayer output before the residual add
+	uAct                                                                  Buffer   // gated-MLP activation ordinal (decoder.ActKind: 0=GELU-tanh, 1=SiLU)
 	uNHhd, uAddOne, uHalf, uWindow                                        Buffer   // qk_norm + rope + sliding-window uniforms
 	qkv, gu                                                               Buffer   // fused QKV out, fused gate/up out
 
@@ -157,8 +174,12 @@ func BuildResident(m *decoder.Model) (*Resident, error) {
 	r.pSAAmax, r.pArgFinish = pipe("gemv_w4a8_sa_amax"), pipe("argmax_finish")
 	r.pRope, r.pKv, r.pAttn = pipe("rope"), pipe("kv_store"), pipe("attention")
 	r.pSw, r.pRes = pipe("swiglu_quant"), pipe("residual")
-	r.pQKNorm = pipe("qk_norm")
+	r.pQKNorm, r.pRmsF32 = pipe("qk_norm"), pipe("rmsnorm_f32")
 	r.qkNorm = m.HasQKNorm()
+	r.sandwich = m.SandwichNormResident()
+	// Gated-MLP activation: ordinals ARE decoder.ActKind's iota (0=GELU-tanh, 1=SiLU), so this
+	// passes straight through to glu_act. Gemma is GeGLU; everything else admitted is SwiGLU.
+	r.uAct = d.NewBufferU32(uint32(m.GatedActResident()))
 	addOne := uint32(0)
 	if m.RMSAddOne() {
 		addOne = 1
@@ -172,8 +193,10 @@ func BuildResident(m *decoder.Model) (*Resident, error) {
 	if r.moe, err = buildMoE(d, m, pipe, H); err != nil { // nil for a dense model; error ⇒ decline
 		return nil, err
 	}
-	// Only the plain dense shape is what the prefill kernels implement (see prefillOK).
-	r.prefillOK = r.moe == nil
+	// prefillOK, derived rather than hand-listed: the f16 prefill kernels implement exactly the
+	// features below, so ANY model needing more (MoE, Gemma's sandwich/(1+w)/GeGLU/per-layer
+	// rope) declines prefill and falls back to the sequential Forward loop.
+	r.prefillOK = len(m.MissingResidentFeatures(prefillFeatures)) == 0
 	r.q = d.NewCommandQueue()
 
 	w := m.Weights()
@@ -203,6 +226,25 @@ func BuildResident(m *decoder.Model) (*Resident, error) {
 		if r.qkNorm { // Qwen3 per-head Q/K norm weights [hd]
 			L.qNorm, L.kNorm = d.NewBufferFloats(lw.QNorm), d.NewBufferFloats(lw.KNorm)
 		}
+		// Gemma sandwich norms on each sublayer OUTPUT. Required to be present when the arch
+		// declares them — a silently-missing one would DROP the norm rather than error.
+		if r.sandwich {
+			if len(lw.PostAttnNorm) != H || len(lw.PostMLPNorm) != H {
+				return nil, fmt.Errorf("metal: layer %d declares sandwich norms but PostAttnNorm/PostMLPNorm are not len==hidden(%d) (got %d/%d)",
+					l, H, len(lw.PostAttnNorm), len(lw.PostMLPNorm))
+			}
+			L.postAttnNorm = d.NewBufferFloats(lw.PostAttnNorm)
+			L.postMLPNorm = d.NewBufferFloats(lw.PostMLPNorm)
+		}
+		// Per-layer RoPE table (Gemma local 10k vs global 1M base) and per-layer window. The rope
+		// KERNEL is unchanged — all per-layer variation rides in the table contents, and the width
+		// (r.half) stays model-level. Uniform-rope families hand back identical tables per layer.
+		L.invf = d.NewBufferFloats(m.RopeInvFreqLayer(l))
+		lw2 := uint32(0) // 0 = full causal; only local layers carry the window
+		if m.LayerIsLocalResident(l) {
+			lw2 = uint32(win)
+		}
+		L.uWindow = d.NewBufferU32(lw2)
 		// combined qkv bias (zeros where absent) so the fused GEMV epilogue is uniform.
 		qb, kb, vb := lw.QBias, lw.KBias, lw.VBias
 		if qb == nil {
@@ -400,26 +442,41 @@ func (r *Resident) encodeTrunkInto(e *Encoder) {
 	for l := 0; l < r.nL; l++ {
 		L := &r.layers[l]
 		// --- attention block (12 dispatches vs 19: QKV fused +bias, residual fused) ---
-		e.dispatch(r.pRms, 256, 256, r.x, L.preNorm, r.aq, r.aSc, r.uH, r.uEps)
+		e.dispatch(r.pRms, 256, 256, r.x, L.preNorm, r.aq, r.aSc, r.uH, r.uEps, r.uAddOne)
 		e.dispatchTG(r.pSABias, qkvRows*32, 256, r.H*2, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv, L.qkvBias, r.uH)
 		if r.qkNorm { // Qwen3: per-head Q/K RMSNorm before RoPE
 			e.dispatch(r.pQKNorm, (r.nH+r.nKV)*128, 128, r.qkv, L.qNorm, L.kNorm, r.uNH, r.uNKV, r.uHd, r.uNHhd, r.uEps, r.uAddOne)
 		}
-		e.dispatch(r.pRope, r.nH*r.half, 64, r.qkv, r.invf, r.uHd, r.uPos, r.uQtotal, r.uHalf)           // q @ off 0
-		e.dispatch(r.pRope, r.nKV*r.half, 64, r.qkv.At(kOff), r.invf, r.uHd, r.uPos, r.uKtotal, r.uHalf) // k
+		e.dispatch(r.pRope, r.nH*r.half, 64, r.qkv, L.invf, r.uHd, r.uPos, r.uQtotal, r.uHalf)           // q @ off 0
+		e.dispatch(r.pRope, r.nKV*r.half, 64, r.qkv.At(kOff), L.invf, r.uHd, r.uPos, r.uKtotal, r.uHalf) // k
 		e.dispatch(r.pKv, r.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[l], r.vc[l], r.uKvDim, r.uPos)
-		e.dispatch(r.pAttn, r.nH*128, 128, r.qkv, r.kc[l], r.vc[l], r.ctx, r.uNH, r.uNKV, r.uHd, r.uNKeys, r.uScale, r.uWindow)
+		e.dispatch(r.pAttn, r.nH*128, 128, r.qkv, r.kc[l], r.vc[l], r.ctx, r.uNH, r.uNKV, r.uHd, r.uNKeys, r.uScale, L.uWindow)
 		e.dispatch(r.pQv, 256, 256, r.ctx, r.cq, r.cSc, r.uHH)
-		e.dispatchTG(r.pSAResid, r.H*32, 256, r.nH*r.hd*2, L.oW, L.oS, r.cq, r.cSc, r.x, r.uHH) // o-proj + residual
-		// --- ffn block (dense SwiGLU, or MoE router + experts + shared) ---
+		if r.sandwich {
+			// Gemma: the sublayer OUTPUT is normed BEFORE the residual add, which the fused
+			// _resid epilogue can't express — project into the (otherwise dead) oO scratch,
+			// norm it, then add. Three dispatches instead of one.
+			e.dispatchTG(r.pSA, r.H*32, 256, r.nH*r.hd*2, L.oW, L.oS, r.cq, r.cSc, r.oO, r.uHH)
+			e.dispatch(r.pRmsF32, 256, 256, r.oO, L.postAttnNorm, r.uH, r.uEps, r.uAddOne)
+			e.dispatch(r.pRes, r.H, 256, r.x, r.oO)
+		} else {
+			e.dispatchTG(r.pSAResid, r.H*32, 256, r.nH*r.hd*2, L.oW, L.oS, r.cq, r.cSc, r.x, r.uHH) // o-proj + residual
+		}
+		// --- ffn block (dense SwiGLU/GeGLU, or MoE router + experts + shared) ---
 		if L.moe != nil {
 			r.encodeMoEFFN(e, L)
 		} else {
-			e.dispatch(r.pRms, 256, 256, r.x, L.postNorm, r.mq, r.mSc, r.uH, r.uEps)
+			e.dispatch(r.pRms, 256, 256, r.x, L.postNorm, r.mq, r.mSc, r.uH, r.uEps, r.uAddOne)
 			e.dispatchTG(r.pSA, (2*r.I)*32, 256, r.H*2, L.guW, L.guS, r.mq, r.mSc, r.gu, r.uH) // fused gate|up
-			e.dispatch(r.pSw, 256, 256, r.gu, r.gu.At(r.I*4), r.dq, r.dSc, r.uI)               // gate @0, up @I
-			e.dispatch(r.pGemvResid, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.x, r.uI)           // down + residual
+			e.dispatch(r.pSw, 256, 256, r.gu, r.gu.At(r.I*4), r.dq, r.dSc, r.uI, r.uAct)       // gate @0, up @I
+			if r.sandwich {
+				e.dispatch(r.pGemv, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.dO, r.uI) // down → scratch
+				e.dispatch(r.pRmsF32, 256, 256, r.dO, L.postMLPNorm, r.uH, r.uEps, r.uAddOne)
+				e.dispatch(r.pRes, r.H, 256, r.x, r.dO)
+			} else {
+				e.dispatch(r.pGemvResid, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.x, r.uI) // down + residual
+			}
 		}
 	}
-	e.dispatch(r.pRms, 256, 256, r.x, r.finalNorm, r.aq, r.aSc, r.uH, r.uEps)
+	e.dispatch(r.pRms, 256, 256, r.x, r.finalNorm, r.aq, r.aSc, r.uH, r.uEps, r.uAddOne)
 }

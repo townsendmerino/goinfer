@@ -279,7 +279,7 @@ func (r *Resident) encodeMoEFFN(e *Encoder, L *residLayer) {
 	mo := r.moe
 	ml := L.moe
 	// post-attn RMSNorm → quantized activation mq/mSc (same as the dense FFN entry).
-	e.dispatch(r.pRms, 256, 256, r.x, L.postNorm, r.mq, r.mSc, r.uH, r.uEps)
+	e.dispatch(r.pRms, 256, 256, r.x, L.postNorm, r.mq, r.mSc, r.uH, r.uEps, r.uAddOne)
 	// router logits: routerW[nE,H] × mq → rLogits[nE]
 	e.dispatch(mo.pRouter, mo.nE*32, 32, ml.routerW, r.mq, r.mSc, mo.rLogits, r.uH)
 	// on-GPU top-k → rIdx[k], rWgt[k]
@@ -288,13 +288,13 @@ func (r *Resident) encodeMoEFFN(e *Encoder, L *residLayer) {
 	// k selected experts: fused gate|up (overwrite) → swiglu → down (weighted-accumulate into x).
 	for j := 0; j < mo.k; j++ {
 		e.dispatchTG(mo.pGU, (2*mo.inter)*32, 256, r.H*2, ml.expGuW, ml.expGuS, r.mq, r.mSc, r.gu, r.uH, mo.rIdx, mo.uSlot[j], mo.uInter2)
-		e.dispatch(r.pSw, 256, 256, r.gu, r.gu.At(mo.inter*4), r.dq, r.dSc, mo.uInter)
+		e.dispatch(r.pSw, 256, 256, r.gu, r.gu.At(mo.inter*4), r.dq, r.dSc, mo.uInter, r.uAct)
 		e.dispatchTG(mo.pDownWacc, r.H*32, 256, mo.inter*2, ml.expDW, ml.expDS, r.dq, r.dSc, r.x, mo.uInter, mo.rIdx, mo.rWgt, mo.uSlot[j], r.uH)
 	}
 	// shared always-on expert (Qwen2-MoE gated / GLM ungated).
 	if mo.sharedInter > 0 {
 		e.dispatchTG(r.pSA, (2*mo.sharedInter)*32, 256, r.H*2, ml.shGuW, ml.shGuS, r.mq, r.mSc, r.gu, r.uH)
-		e.dispatch(r.pSw, 256, 256, r.gu, r.gu.At(mo.sharedInter*4), r.dq, r.dSc, mo.uSharedInter)
+		e.dispatch(r.pSw, 256, 256, r.gu, r.gu.At(mo.sharedInter*4), r.dq, r.dSc, mo.uSharedInter, r.uAct)
 		if mo.sharedUngated {
 			e.dispatch(r.pGemvResid, r.H*32, 32, ml.shDW, ml.shDS, r.dq, r.dSc, r.x, mo.uSharedInter) // x += down
 		} else {

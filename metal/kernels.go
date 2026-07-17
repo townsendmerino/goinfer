@@ -8,19 +8,36 @@ const allKernels = `
 #include <metal_stdlib>
 using namespace metal;
 
+// addOne selects Gemma's (1+w) RMS offset vs plain w — mirrors decoder/rmsnorm.go, which
+// applies the weight AFTER the normalize: (v*inv) * (1+w[i]).
 kernel void rmsnorm_quant(device const float* x[[buffer(0)]], device const float* w[[buffer(1)]],
     device char* aq[[buffer(2)]], device float* asc[[buffer(3)]], constant uint& H[[buffer(4)]],
-    constant float& eps[[buffer(5)]], uint tid[[thread_position_in_threadgroup]], uint tgs[[threads_per_threadgroup]]) {
+    constant float& eps[[buffer(5)]], constant uint& addOne[[buffer(6)]],
+    uint tid[[thread_position_in_threadgroup]], uint tgs[[threads_per_threadgroup]]) {
     threadgroup float red[256]; float ss=0;
     for(uint i=tid;i<H;i+=tgs) ss+=x[i]*x[i];
     red[tid]=ss; threadgroup_barrier(mem_flags::mem_threadgroup);
     for(uint s=tgs/2;s>0;s>>=1){ if(tid<s) red[tid]+=red[tid+s]; threadgroup_barrier(mem_flags::mem_threadgroup);}
     float rms=rsqrt(red[0]/float(H)+eps); threadgroup_barrier(mem_flags::mem_threadgroup);
-    float mx=0; for(uint i=tid;i<H;i+=tgs) mx=max(mx,fabs(x[i]*rms*w[i]));
+    float mx=0; for(uint i=tid;i<H;i+=tgs){ float g=addOne!=0u?(1.0f+w[i]):w[i]; mx=max(mx,fabs(x[i]*rms*g)); }
     red[tid]=mx; threadgroup_barrier(mem_flags::mem_threadgroup);
     for(uint s=tgs/2;s>0;s>>=1){ if(tid<s) red[tid]=max(red[tid],red[tid+s]); threadgroup_barrier(mem_flags::mem_threadgroup);}
     float sc=red[0]/127.0f; if(sc==0)sc=1; if(tid==0)asc[0]=sc; float inv=1/sc;
-    for(uint i=tid;i<H;i+=tgs) aq[i]=char(clamp(int(round(x[i]*rms*w[i]*inv)),-127,127));
+    for(uint i=tid;i<H;i+=tgs){ float g=addOne!=0u?(1.0f+w[i]):w[i]; aq[i]=char(clamp(int(round(x[i]*rms*g*inv)),-127,127)); }
+}
+// rmsnorm_f32: plain IN-PLACE RMSNorm of a [H] vector — no fused quant, because it norms a
+// SUBLAYER OUTPUT into the f32 residual stream rather than a GEMV input. This is Gemma's
+// sandwich norm (NormSandwich4): y = proj(...); y = rms(y)*(1+w_post); x += y — which is why
+// the fused _resid GEMV epilogue can't be used on that path.
+kernel void rmsnorm_f32(device float* x[[buffer(0)]], device const float* w[[buffer(1)]],
+    constant uint& H[[buffer(2)]], constant float& eps[[buffer(3)]], constant uint& addOne[[buffer(4)]],
+    uint tid[[thread_position_in_threadgroup]], uint tgs[[threads_per_threadgroup]]) {
+    threadgroup float red[256]; float ss=0;
+    for(uint i=tid;i<H;i+=tgs) ss+=x[i]*x[i];
+    red[tid]=ss; threadgroup_barrier(mem_flags::mem_threadgroup);
+    for(uint s=tgs/2;s>0;s>>=1){ if(tid<s) red[tid]+=red[tid+s]; threadgroup_barrier(mem_flags::mem_threadgroup);}
+    float rms=rsqrt(red[0]/float(H)+eps); threadgroup_barrier(mem_flags::mem_threadgroup);
+    for(uint i=tid;i<H;i+=tgs){ float g=addOne!=0u?(1.0f+w[i]):w[i]; x[i]=x[i]*rms*g; }
 }
 kernel void quant_vec(device const float* x[[buffer(0)]], device char* aq[[buffer(1)]],
     device float* asc[[buffer(2)]], constant uint& H[[buffer(3)]],
@@ -279,15 +296,26 @@ kernel void attention(device const float* q[[buffer(0)]], device const half* kc[
     float sum=red[0]; threadgroup_barrier(mem_flags::mem_threadgroup);
     for (uint d=tid; d<hd; d+=tgs){ float a=0; for(uint s=winStart;s<nKeys;s++) a += sc[s]*float(vb[s*kvDim+d]); out[qh*hd+d]=a/sum; }
 }
+// glu_act selects the gated MLP's activation. The ordinals are deliberately decoder.ActKind's
+// iota (ActGeluTanh=0, ActSiLU=1) so the host passes int(m.GatedActResident()) straight through.
+// GELU-tanh matches decoder/rmsnorm.go geluTanh; both compute in f32 where the CPU reference
+// uses f64 — the same trade the SwiGLU path already shipped, and it clears the 3% near-tie bar.
+#define ACT_GELU_TANH 0u
+#define ACT_SILU      1u
+inline float glu_act(float x, uint act) {
+    if (act == ACT_SILU) return x/(1.0f+exp(-x));
+    return 0.5f*x*(1.0f+tanh(0.7978845608028654f*(x+0.044715f*x*x*x))); // sqrt(2/pi)
+}
 kernel void swiglu_quant(device const float* g[[buffer(0)]], device const float* u[[buffer(1)]],
     device char* dq[[buffer(2)]], device float* ds[[buffer(3)]], constant uint& I[[buffer(4)]],
+    constant uint& act[[buffer(5)]],
     uint tid[[thread_position_in_threadgroup]], uint tgs[[threads_per_threadgroup]]) {
     threadgroup float red[256]; float mx=0;
-    for(uint i=tid;i<I;i+=tgs){ float s=(g[i]/(1+exp(-g[i])))*u[i]; mx=max(mx,fabs(s)); }
+    for(uint i=tid;i<I;i+=tgs){ float s=glu_act(g[i],act)*u[i]; mx=max(mx,fabs(s)); }
     red[tid]=mx; threadgroup_barrier(mem_flags::mem_threadgroup);
     for(uint s=tgs/2;s>0;s>>=1){ if(tid<s) red[tid]=max(red[tid],red[tid+s]); threadgroup_barrier(mem_flags::mem_threadgroup);}
     float sc=red[0]/127.0f; if(sc==0)sc=1; if(tid==0)ds[0]=sc; float inv=1/sc;
-    for(uint i=tid;i<I;i+=tgs){ float s=(g[i]/(1+exp(-g[i])))*u[i]; dq[i]=char(clamp(int(round(s*inv)),-127,127)); }
+    for(uint i=tid;i<I;i+=tgs){ float s=glu_act(g[i],act)*u[i]; dq[i]=char(clamp(int(round(s*inv)),-127,127)); }
 }
 kernel void residual(device float* x[[buffer(0)]], device const float* y[[buffer(1)]], uint i[[thread_position_in_grid]]) { x[i]+=y[i]; }
 
