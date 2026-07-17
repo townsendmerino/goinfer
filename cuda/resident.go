@@ -63,10 +63,10 @@ type cudaResident struct {
 	stream                                                                                             *gc.Stream
 	gemvW4, gemvW8, kvStore, ropeKV, fRms, fRmsF32, fQ, fRope, fAttn, fSw, fRes, fArg, fQKV, fGU, fQKN *gc.Function
 
-	fuseQKV         bool // all of Q/K/V int4 ⇒ K1 super-kernel is usable
-	layers          []cudaLayer
-	lmW             cudaWQ
-	finalNorm, invF *gc.Buffer[float32]
+	fuseQKV   bool // all of Q/K/V int4 ⇒ K1 super-kernel is usable
+	layers    []cudaLayer
+	lmW       cudaWQ
+	finalNorm *gc.Buffer[float32]
 
 	// per-token scratch + KV caches (device).
 	x, aSc, qB, kB, vB, cctx, cSc, oO, mSc, gO, uO, dSc, dScr, dO, logits *gc.Buffer[float32]
