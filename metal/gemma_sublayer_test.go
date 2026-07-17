@@ -55,10 +55,41 @@ func TestGemmaSublayer_MetalContribution(t *testing.T) {
 	for i := 0; i < pos; i++ {
 		r.forwardTrunkForTest(m8.EmbedResidentForTest(seed[i]), i, r.nL)
 	}
-	attn, mlp := r.forwardSubCaptureForTest(m8.EmbedResidentForTest(seed[pos]), pos)
+	attn, mlp, ctx, cqDeq := r.forwardSubCaptureForTest(m8.EmbedResidentForTest(seed[pos]), pos)
 	if attn == nil {
 		t.Fatal("forwardSubCaptureForTest returned nil (not sandwich?)")
 	}
+
+	// Candidate 1 — is Metal's context int8-quant (quant_vec/pQv) faithful? Quantize Metal's OWN
+	// f32 context with the CPU's absmax-int8 (aikit's QuantizeRowInt8 math) and compare to Metal's
+	// dequantized int8 context. Match ⇒ quant_vec is correct; combined with the exonerated o-proj
+	// GEMV, the o-proj output is then a correct function of Metal's context, so the divergence is
+	// the CONTEXT ITSELF (candidate 2) — a precise cross-box handoff. Checked per layer over 27-33.
+	var worstQuant float64
+	worstQL := -1
+	for l := 27; l < r.nL; l++ {
+		c := ctx[l]
+		var amax float32
+		for _, v := range c {
+			if a := float32(math.Abs(float64(v))); a > amax {
+				amax = a
+			}
+		}
+		sc := amax / 127
+		for i := range c {
+			q := math.Round(float64(c[i] / sc))
+			if q > 127 {
+				q = 127
+			} else if q < -127 {
+				q = -127
+			}
+			cpuDeq := float32(q) * sc
+			if d := math.Abs(float64(cpuDeq - cqDeq[l][i])); d > worstQuant {
+				worstQuant, worstQL = d, l
+			}
+		}
+	}
+	t.Logf("quant_vec fidelity: worst |Metal-int8-ctx − CPU-int8-ctx| = %.4g (layer %d) — ~0 means pQv is faithful, bug is the CONTEXT", worstQuant, worstQL)
 
 	// Self-check the seam: emb + Σ_l (attn[l] + mlp[l]) must equal the full-trunk residual, or the
 	// captured contributions don't mean what the label says (the CUDA box self-checked theirs too).

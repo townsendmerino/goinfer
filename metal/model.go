@@ -491,9 +491,9 @@ func (r *Resident) forwardTrunkForTest(emb []float32, pos, nLayers int) []float3
 // exactly the two sublayer contributions the CUDA box traced against f32 truth. It mirrors
 // encodeTrunkInto's sandwich path dispatch-for-dispatch, but flushes after each sublayer norm to
 // read r.oO / r.dO before the add consumes them. Sandwich (Gemma) only; nil otherwise.
-func (r *Resident) forwardSubCaptureForTest(emb []float32, pos int) (attn, mlp [][]float32) {
+func (r *Resident) forwardSubCaptureForTest(emb []float32, pos int) (attn, mlp, ctx, cqDeq [][]float32) {
 	if !r.sandwich {
-		return nil, nil
+		return nil, nil, nil, nil
 	}
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -522,6 +522,17 @@ func (r *Resident) forwardSubCaptureForTest(emb []float32, pos int) (attn, mlp [
 		e.dispatch(r.pRmsF32, 256, 256, r.oO, L.postAttnNorm, r.uH, r.uEps, r.uAddOne)
 		e.end()
 		attn = append(attn, grab()) // oO now = attention contribution (post-norm, pre-add)
+		// ctx (f32 attention output) and cq (its int8 quant) are still valid here — o-proj READ
+		// them but never wrote them. Capture both to isolate quant_vec (context int8-quant) vs the
+		// context itself as the o-proj INPUT under test.
+		ctx = append(ctx, append([]float32(nil), r.ctx.Floats()[:r.nH*r.hd]...))
+		csc := r.cSc.Floats()[0]
+		cq8 := r.cq.Int8s()
+		deq := make([]float32, r.nH*r.hd)
+		for i := range deq {
+			deq[i] = float32(cq8[i]) * csc
+		}
+		cqDeq = append(cqDeq, deq)
 
 		e = r.q.begin()
 		e.dispatch(r.pRes, r.H, 256, r.x, r.oO)
@@ -537,7 +548,7 @@ func (r *Resident) forwardSubCaptureForTest(emb []float32, pos int) (attn, mlp [
 		e.dispatch(r.pRes, r.H, 256, r.x, r.dO)
 		e.end()
 	}
-	return attn, mlp
+	return attn, mlp, ctx, cqDeq
 }
 
 // forwardHeadForTest runs the FULL trunk (final norm included) then the LM head, and returns
