@@ -143,25 +143,31 @@ func missingFeatures(required []ResidentFeature, implemented map[ResidentFeature
 // is exactly the lie the gate exists to catch.
 var ResidentBackendFeatures = map[string]map[ResidentFeature]bool{
 	// cgo-free CUDA (cuda/): the dense Qwen2/Llama block, plus QK-norm, sliding window, the
-	// Gemma set ((1+w) RMS, sandwich norms, GeGLU, embed scale, per-layer RoPE base), and MoE.
-	// Still NOT implemented: the rope kernel hardcodes half = hd/2, so no partial rotary and no
-	// per-layer rotary WIDTH (only per-layer base); no YaRN mscale; no logit softcap; no MLA/SSM.
+	// Gemma set ((1+w) RMS, sandwich norms, GeGLU, embed scale, per-layer RoPE base), partial
+	// rotary, and MoE (routed + ungated shared expert). Still NOT implemented: per-layer rotary
+	// WIDTH (only per-layer base); no YaRN mscale; no logit softcap; no MLA/SSM.
 	//
-	// FeatMoE here means the ROUTED block (router + stacked experts + every routing flavour the
-	// route kernel covers). The always-on SHARED expert is not built yet, so BuildResident
-	// declines shared-expert archs (Qwen-MoE/GLM/DeepSeek) at load and they take the staged
-	// path — correct, just not resident. That sub-shape cannot be expressed here: FeatMoE is one
-	// flag, and a build-time decline is the honest way to say "admitted, but this variant is not
-	// wired" without overclaiming in a table whose whole job is to not lie.
+	// FeatMoE covers the ROUTED block (router + stacked experts + every routing flavour the
+	// route kernel handles) AND the always-on UNGATED shared expert (GLM/DeepSeek). The GATED
+	// shared expert (Qwen-MoE's sigmoid(SharedGate·h) scaling) is NOT wired — BuildResident
+	// declines it at load, since no committed fixture gates it end to end and FeatMoE is one flag
+	// that cannot express the sub-shape. That decline is the honest "admitted, but this variant
+	// is not wired" in a table whose whole job is to not lie.
+	//
+	// FeatPartialRotary and the shared expert land together on purpose: every partial-rotary arch
+	// (glm4_moe) also has a shared expert, so neither is independently reachable — glm-tiny is the
+	// joint end-to-end gate (TestGLMResidentParity), and declaring partial rotary before the
+	// shared expert existed would have admitted glm onto a path no model could exercise.
 	"cuda": {
 		FeatQKNorm:        true, // qk_norm kernel — per-head Q/K RMSNorm before RoPE (Qwen3)
 		FeatSlidingWindow: true, // attention `window` uniform, per-layer via LayerIsLocalResident
+		FeatPartialRotary: true, // rope_kv rhalf = rotaryDim/2 + un-rotated tail cached (GLM/Phi)
 		FeatRMSAddOne:     true, // (1+w) offset, threaded through rmsnorm_quant/fused_rms_*/qk_norm
 		FeatSandwichNorm:  true, // rmsnorm_f32 on each sublayer output (breaks the accum epilogue)
 		FeatGatedGELU:     true, // glu_quant `act` — GeGLU as well as SwiGLU
 		FeatEmbedScale:    true, // √hidden applied host-side in embedResident
 		FeatPerLayerRoPE:  true, // per-layer invFreq buffer (Gemma local 10k vs global 1M base)
-		FeatMoE:           true, // moe_route + indexed stacked-expert W4A8 GEMVs (routed only)
+		FeatMoE:           true, // moe_route + indexed stacked experts + ungated shared expert
 	},
 
 	// WebGPU (gpu/): the richest runner — the levers in docs/gpu-residency-coverage.md.

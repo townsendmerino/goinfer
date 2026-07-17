@@ -32,6 +32,7 @@ import (
 // thing to check is that they are in range, which is asserted below.
 func TestMoEResidentParity(t *testing.T) {
 	const path = "../testdata/mixtral-tiny"
+	requireDeviceAndFixture(t, path)
 
 	mc, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "int4"})
 	if err != nil {

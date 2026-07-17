@@ -83,14 +83,19 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	H, nLayers, nH, nKV, hd, I, vocab := m.Dims()
 
 	// ---- MoE knobs (ok=false for a dense model; every field then stays zero) ----
-	nE, topK, moeInter, sharedInter, moeSig, moeNorm, _, moeScale, nGroup, topkGroup, isMoE := m.MoEResidentParams()
+	nE, topK, moeInter, sharedInter, moeSig, moeNorm, sharedUngated, moeScale, nGroup, topkGroup, isMoE := m.MoEResidentParams()
 	if isMoE {
 		// Decline anything the dispatch does not implement, LOUDLY rather than by dropping it.
 		// Each of these would otherwise be silent-wrong, which is the whole point of the
 		// admission gate — and FeatMoE is one flag, so it cannot express these sub-shapes.
 		switch {
-		case sharedInter > 0:
-			return declined(fmt.Errorf("MoE shared always-on expert not implemented (shared_intermediate_size=%d)", sharedInter))
+		case sharedInter > 0 && !sharedUngated:
+			// The GATED shared expert (Qwen-MoE: sigmoid(SharedGate·h) scaling) is built into
+			// neither the dispatch nor a committed fixture, so it stays declined until one exists
+			// to gate it — the ungated GLM/DeepSeek path below is what glm-tiny proves. Shipping
+			// the extra gate-scalar GEMV untested is the exact untested-integration this backend
+			// keeps refusing to do.
+			return declined(fmt.Errorf("MoE gated shared expert (Qwen-MoE) not implemented; ungated (GLM/DeepSeek) is (shared_intermediate_size=%d)", sharedInter))
 		case nE > 256:
 			return declined(fmt.Errorf("MoE nE=%d exceeds moe_route's MOE_MAX_E=256", nE))
 		case nGroup > 64:
@@ -102,6 +107,8 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				"the residual, so there is no seam to normalize the block output at"))
 		case moeInter%32 != 0 || H%32 != 0:
 			return declined(fmt.Errorf("MoE int4 needs moeInter(%d) and hidden(%d) both multiples of 32", moeInter, H))
+		case sharedInter > 0 && sharedInter%32 != 0:
+			return declined(fmt.Errorf("MoE int4 shared expert needs sharedInter(%d) a multiple of 32", sharedInter))
 		}
 	}
 
@@ -122,6 +129,8 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		isMoE            bool
 		expGU, expDown   hostW
 		router, routerBs []float32
+		hasShared        bool
+		shGU, shDown     hostW
 	}
 	sandwich := m.SandwichNormResident()
 	hls := make([]hlayer, nLayers)
@@ -210,6 +219,26 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 					"rowsPerExpert stride would land on the wrong expert",
 					l, hl.expGU.N, hl.expDown.N, nE*2*moeInter, nE*H))
 			}
+			// Always-on shared expert (ungated). gate‖up concatenated the same way as a routed
+			// expert, so one dense GEMV + the glu_quant offset split covers it.
+			if sharedInter > 0 {
+				se := &lw.SharedExpert
+				if se.Gate.Rows() != sharedInter || se.Down.Cols() != sharedInter {
+					return declined(fmt.Errorf("layer %d: shared expert shape gate %dx%d down %dx%d disagrees with sharedInter=%d",
+						l, se.Gate.Rows(), se.Gate.Cols(), se.Down.Rows(), se.Down.Cols(), sharedInter))
+				}
+				var e error
+				if hl.shGU, e = packWeightStack(&se.Gate, &se.Up); e != nil {
+					return declined(fmt.Errorf("layer %d shared gate/up: %w", l, e))
+				}
+				if hl.shDown, e = packWeight(&se.Down); e != nil {
+					return declined(fmt.Errorf("layer %d shared down: %w", l, e))
+				}
+				if hl.shGU.kind != "int4" || hl.shDown.kind != "int4" {
+					return declined(fmt.Errorf("layer %d: shared expert is %q/%q — int4-only", l, hl.shGU.kind, hl.shDown.kind))
+				}
+				hl.hasShared = true
+			}
 		}
 		hl.preNorm, hl.postNorm = lw.PreAttnNorm, lw.PreMLPNorm
 		hl.qNorm, hl.kNorm = lw.QNorm, lw.KNorm
@@ -258,6 +287,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		act: int32(m.GatedActResident()), sandwich: m.SandwichNormResident(),
 		moe: isMoE, nE: nE, topK: topK, moeInter: moeInter,
 		moeScale: float32(moeScale), nGroup: nGroup, topkGroup: topkGroup,
+		sharedInter: sharedInter,
 	}
 	if moeSig {
 		r.moeSigmoid = 1
@@ -347,6 +377,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			}{
 				{&r.fRoute, "moe_route"}, {&r.fRouterGemv, "gemv_f32_a8"},
 				{&r.fMoEGemv, "gemv_w4a8_moe"}, {&r.fMoEWacc, "gemv_w4a8_moe_wacc"},
+				{&r.fSharedCombine, "shared_gate_combine"},
 			} {
 				if *f.dst, e = mmod.Function(f.name); e != nil {
 					return e
@@ -383,6 +414,10 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				L.isMoE = true
 				L.routerW, L.routerB = r.up32(h.router), r.up32(h.routerBs)
 				L.expGU, L.expDown = r.upW(h.expGU), r.upW(h.expDown)
+				if h.hasShared {
+					L.hasShared = true
+					L.shGU, L.shDown = r.upW(h.shGU), r.upW(h.shDown)
+				}
 			}
 			L.window = h.window
 			r.layers[l] = L
@@ -407,6 +442,11 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			r.rLogits, r.rIdx, r.rWgt = r.af(nE), r.au32(topK), r.af(topK)
 			r.moeGU = r.af(2 * moeInter)
 			r.moeSc, r.moeScr, r.moeQ = r.af(1), r.af(moeInter), r.ai(moeInter/4)
+			if sharedInter > 0 {
+				r.shGUout = r.af(2 * sharedInter)
+				r.shSc, r.shScr, r.shQ = r.af(1), r.af(sharedInter), r.ai(sharedInter/4)
+				r.shDownOut = r.af(H)
+			}
 		}
 		r.dO, r.logits = r.af(H), r.af(vocab)
 		r.argIdx, r.argVal = r.ai(1), r.af(1) // greedy fast-path readback (4 B vs 594 KB)

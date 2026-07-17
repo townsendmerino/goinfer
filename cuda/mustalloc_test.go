@@ -3,10 +3,33 @@
 package cuda
 
 import (
+	"os"
 	"testing"
 
 	gc "github.com/eitamring/gocudrv/cuda"
 )
+
+// requireDeviceAndFixture skips a GPU parity test when it cannot run, so it never Fatals in an
+// environment that is not a bug. It exists because the CI `cuda` job runs `-tags cuda` with NO
+// device and the tiny fixtures are NOT committed (blanket *.safetensors gitignore), and
+// crucially decoder.Load(Backend:"cuda") SUCCEEDS with no GPU — it declines residency
+// gracefully — so a parity test that just loads and asserts would blow up on the missing
+// fixture or the nil resident instead of skipping. The device check must come FIRST: it is the
+// one that catches CI (no GPU), before the load can fail on an absent fixture.
+func requireDeviceAndFixture(t *testing.T, dir string) {
+	t.Helper()
+	if err := gc.Init(); err != nil {
+		t.Skipf("cuInit: %v", err)
+	}
+	if _, err := gc.GetDevice(0); err != nil {
+		t.Skipf("no device: %v", err)
+	}
+	// A GPU box that lacks the (uncommitted) fixture should also skip, not Fatal. config.json is
+	// the one file present whenever the fixture is; the weights sit beside it.
+	if _, err := os.Stat(dir + "/config.json"); err != nil {
+		t.Skipf("no fixture at %s (uncommitted; regenerate with the matching scripts/pin_*.py)", dir)
+	}
+}
 
 // mustAlloc allocates device memory and FAILS THE TEST on error, instead of the
 // `buf, _ := gc.Alloc[T](...)` that used to be the norm here.

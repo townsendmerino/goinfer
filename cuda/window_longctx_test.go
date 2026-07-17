@@ -4,7 +4,6 @@ package cuda
 
 import (
 	"math"
-	"os"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -36,9 +35,10 @@ import (
 // so a GGUF loads full-attention and proves nothing.)
 func TestSlidingWindowLongContext(t *testing.T) {
 	const path = "../testdata/mistral-tiny-window"
-	if _, err := os.Stat(path); err != nil {
-		t.Skipf("no tiny windowed fixture at %s (regenerate: scripts/pin_mistral_tiny_window.py)", path)
-	}
+	// Device check FIRST: the CI cuda job has no GPU and this fixture's config.json IS committed
+	// (only its *.safetensors is gitignored), so an os.Stat(dir) would pass and then the load
+	// would Fatal on the absent weights. requireDeviceAndFixture skips on no-GPU before that.
+	requireDeviceAndFixture(t, path)
 	mc, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "int4"})
 	if err != nil {
 		t.Fatalf("load (cuda): %v", err)

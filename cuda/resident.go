@@ -54,6 +54,13 @@ type cudaLayer struct {
 	routerB *gc.Buffer[float32] // [nE] selection bias; ALWAYS allocated (zeros when the arch has none)
 	expGU   cudaWQ              // stacked [nE * 2*moeInter, hidden]: expert e's gate at e*2*moeInter, up at +moeInter
 	expDown cudaWQ              // stacked [nE * hidden, moeInter]
+
+	// Always-on shared expert (GLM/DeepSeek): an ungated SwiGLU MLP at sharedInter, added to the
+	// routed output. hasShared is false for a plain MoE (Mixtral). gate‖up is concatenated the
+	// same way the routed experts are, so one dense GEMV + the glu_quant offset split covers it.
+	hasShared bool
+	shGU      cudaWQ // [2*sharedInter, hidden]
+	shDown    cudaWQ // [hidden, sharedInter]
 }
 
 type cudaResident struct {
@@ -83,12 +90,13 @@ type cudaResident struct {
 	moeSigmoid, moeNormTopK int32
 	moeScale                float32
 	nGroup, topkGroup       int
+	sharedInter             int // width of the always-on shared expert (0 ⇒ none)
 
 	// gocudrv state — touched ONLY on the executor thread.
 	cx                                                                                                 *gc.Context
 	stream                                                                                             *gc.Stream
 	gemvW4, gemvW8, kvStore, ropeKV, fRms, fRmsF32, fQ, fRope, fAttn, fSw, fRes, fArg, fQKV, fGU, fQKN *gc.Function
-	fRoute, fRouterGemv, fMoEGemv, fMoEWacc                                                            *gc.Function
+	fRoute, fRouterGemv, fMoEGemv, fMoEWacc, fSharedCombine                                            *gc.Function
 
 	fuseQKV   bool // all of Q/K/V int4 ⇒ K1 super-kernel is usable
 	layers    []cudaLayer
@@ -107,6 +115,11 @@ type cudaResident struct {
 	rLogits, rWgt, moeGU, moeSc, moeScr *gc.Buffer[float32]
 	rIdx                                *gc.Buffer[uint32]
 	moeQ                                *gc.Buffer[int32]
+
+	// Shared-expert scratch (allocated only when any layer hasShared). Sized to sharedInter,
+	// which is its own width — distinct from both the dense inter and the routed moeInter.
+	shGUout, shSc, shScr, shDownOut *gc.Buffer[float32]
+	shQ                             *gc.Buffer[int32]
 
 	// logitsPinned is PAGE-LOCKED host memory for the per-token logits readback. A pageable
 	// D2H of 594 KB measured only ~1.26 GB/s (it stages through a driver bounce buffer);
@@ -287,7 +300,7 @@ func (r *cudaResident) Close() error {
 		}
 		for i := range r.layers {
 			L := &r.layers[i]
-			for _, w := range []*cudaWQ{&L.q, &L.k, &L.v, &L.o, &L.g, &L.u, &L.d, &L.expGU, &L.expDown} {
+			for _, w := range []*cudaWQ{&L.q, &L.k, &L.v, &L.o, &L.g, &L.u, &L.d, &L.expGU, &L.expDown, &L.shGU, &L.shDown} {
 				freeW(w)
 			}
 			for _, b := range []**gc.Buffer[float32]{&L.qb, &L.kb, &L.vb, &L.qNorm, &L.kNorm,
@@ -305,10 +318,11 @@ func (r *cudaResident) Close() error {
 		r.kc, r.vc = nil, nil
 		for _, b := range []**gc.Buffer[float32]{&r.finalNorm, &r.x, &r.aSc, &r.qB, &r.kB, &r.vB,
 			&r.cctx, &r.cSc, &r.oO, &r.mSc, &r.gO, &r.uO, &r.dSc, &r.dScr, &r.dO, &r.logits, &r.argVal,
-			&r.rLogits, &r.rWgt, &r.moeGU, &r.moeSc, &r.moeScr} {
+			&r.rLogits, &r.rWgt, &r.moeGU, &r.moeSc, &r.moeScr,
+			&r.shGUout, &r.shSc, &r.shScr, &r.shDownOut} {
 			freeF(b)
 		}
-		for _, b := range []**gc.Buffer[int32]{&r.aq, &r.cq, &r.mq, &r.dq, &r.argIdx, &r.moeQ} {
+		for _, b := range []**gc.Buffer[int32]{&r.aq, &r.cq, &r.mq, &r.dq, &r.argIdx, &r.moeQ, &r.shQ} {
 			freeI(b)
 		}
 		if r.rIdx != nil { // the only uint32 device buffer; no freeI/freeF shape fits it
@@ -451,6 +465,32 @@ func (r *cudaResident) moeMLP(Ly *cudaLayer) error {
 			gc.Arg(r.rIdx), gc.Arg(r.rWgt), gc.ArgValue(int32(j)), gc.ArgValue(int32(r.hidden)),
 			gc.ArgValue(int32(r.hidden)), gc.ArgValue(int32(r.moeInter/8)), gc.ArgValue(int32(r.moeInter/32)),
 			gc.Arg(r.x)); e != nil {
+			return e
+		}
+	}
+	// Always-on shared expert (GLM/DeepSeek): an ungated SwiGLU MLP over the SAME normed
+	// activation, added to the residual. Structurally a routed expert with no routing — a dense
+	// gate‖up GEMV, the same glu_quant offset split, a dense down-proj, then the combine adds
+	// it in ungated (dst += shDown). decoder/mlp.go does exactly this after the routed sum.
+	if Ly.hasShared {
+		nullBias := gc.ArgDevicePtr(0)
+		if e := r.doG(Ly.shGU, r.mq, r.mSc, nullBias, r.shGUout, 0); e != nil {
+			return e
+		}
+		if e := r.launch(r.fSw, onecfg(256, 256*4),
+			gc.Arg(r.shGUout), gc.Arg(r.shGUout), gc.ArgValue(int32(0)), gc.ArgValue(int32(r.sharedInter)),
+			gc.ArgValue(int32(r.sharedInter)), gc.ArgValue(r.act),
+			gc.Arg(r.shQ), gc.Arg(r.shSc), gc.Arg(r.shScr)); e != nil {
+			return e
+		}
+		if e := r.doG(Ly.shDown, r.shQ, r.shSc, nullBias, r.shDownOut, 0); e != nil {
+			return e
+		}
+		// ungated=1: dst[i] += shDown[i]. The gl pointer is unread when ungated, but the kernel
+		// still takes it, so pass a valid buffer (shSc, spare) rather than a null.
+		if e := r.launch(r.fSharedCombine, g1cfg(r.hidden, 256),
+			gc.Arg(r.x), gc.Arg(r.shDownOut), gc.Arg(r.shSc), gc.ArgValue(int32(r.hidden)),
+			gc.ArgValue(int32(1))); e != nil {
 			return e
 		}
 	}
