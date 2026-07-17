@@ -10,6 +10,13 @@ import (
 // The production decode kernels (NVRTC→PTX→go:embed→driver-JIT via cuModuleLoadDataEx).
 // These embeds live in a non-test file so the real backend (BuildResident/cudaResident)
 // can load them; the standalone bandwidth/parity tests reference the same vars.
+//
+// EVERY .ptx below is a build artifact of the .cu of the same name in this directory, and
+// is byte-for-byte reproducible by running ./build_ptx.sh (which explains why the build
+// uses NVRTC rather than nvcc). Regenerate — never hand-edit — the PTX; a .ptx whose .cu
+// is missing is a kernel nobody can review or change.
+//
+//go:generate ./build_ptx.sh
 
 // gemvFwdPTX: forward GEMVs — gemv_w4a8_fwd (coalesced + 2× ILP unroll, f32 group scales,
 // on-device aScale ptr, per-row bias) / gemv_w8a8_fwd / kv_store.
