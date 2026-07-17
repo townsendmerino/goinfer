@@ -34,6 +34,7 @@ const (
 	FeatEmbedScale    ResidentFeature = "embed-scale"    // √hidden embedding multiplier (Gemma)
 	FeatLogitSoftcap  ResidentFeature = "logit-softcap"  // attention / final logit softcap (Gemma 2/3)
 	FeatSandwichNorm  ResidentFeature = "sandwich-norm"  // post-attn / post-MLP norms (Gemma)
+	FeatGatedGELU     ResidentFeature = "gated-gelu"     // gated MLP whose activation is GELU-tanh, not SiLU (Gemma)
 	FeatNonGatedMLP   ResidentFeature = "non-gated-mlp"  // up→act→down, no gate (GPT-2, Nemotron relu²)
 	FeatLearnedPos    ResidentFeature = "learned-pos"    // learned position embeddings, no RoPE (GPT-2)
 	FeatOutBias       ResidentFeature = "out-bias"       // additive bias on the attn output proj (GPT-2)
@@ -60,6 +61,17 @@ func (a *Architecture) residentFeatures() []ResidentFeature {
 	add(a.EmbedScale > 1, FeatEmbedScale)
 	add(a.FinalLogitSoftcap != 0 || a.AttnLogitSoftcap != 0, FeatLogitSoftcap)
 	add(a.NormPlacement != NormPre2, FeatSandwichNorm)
+	// The MLP ACTIVATION, not just the gate's presence. A backend whose glue kernel hardcodes
+	// SwiGLU would run Gemma's gated GELU-tanh block silently wrong — the exact failure this
+	// taxonomy exists to catch, and the one it missed until CUDA went looking at Gemma. Scoped to
+	// GATED archs on purpose: a non-gated arch's activation (GPT-2 gelu, Nemotron relu²) is
+	// already implied by FeatNonGatedMLP, whose kernel is written for that family's activation.
+	//
+	// Tested against SiLU rather than for GeluTanh deliberately: ActGeluTanh is ActKind's ZERO
+	// value, so an arch that forgets to set Act reads as GELU and lands here — declined, CPU
+	// fallback, correct-but-slow. That is the safe direction; matching on GeluTanh would instead
+	// let a forgotten Act sail through onto a SwiGLU kernel.
+	add(!a.NonGatedMLP && a.Act != ActSiLU, FeatGatedGELU)
 	add(a.NonGatedMLP, FeatNonGatedMLP)
 	add(a.LearnedPosEmbed, FeatLearnedPos)
 	add(a.OutBias, FeatOutBias)

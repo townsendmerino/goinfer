@@ -43,9 +43,9 @@ var archFeatureProfile = map[string][]ResidentFeature{
 	// hand-written guess here was wrong on three counts: it missed per-layer-rope / qk-norm /
 	// sliding-window, and claimed rms-add-one for gemma4, which has RMSAddOne=false). All are
 	// refused upstream by decodeRunnerEligible today (sandwich norms / softcap / own forward).
-	"gemma3":      {FeatEmbedScale, FeatPerLayerRoPE, FeatQKNorm, FeatRMSAddOne, FeatSandwichNorm, FeatSlidingWindow},
-	"gemma3_text": {FeatEmbedScale, FeatPerLayerRoPE, FeatQKNorm, FeatRMSAddOne, FeatSandwichNorm, FeatSlidingWindow},
-	"gemma4":      {FeatEmbedScale, FeatLogitSoftcap, FeatPerLayerRoPE, FeatQKNorm, FeatSandwichNorm, FeatSlidingWindow},
+	"gemma3":      {FeatEmbedScale, FeatGatedGELU, FeatPerLayerRoPE, FeatQKNorm, FeatRMSAddOne, FeatSandwichNorm, FeatSlidingWindow},
+	"gemma3_text": {FeatEmbedScale, FeatGatedGELU, FeatPerLayerRoPE, FeatQKNorm, FeatRMSAddOne, FeatSandwichNorm, FeatSlidingWindow},
+	"gemma4":      {FeatEmbedScale, FeatGatedGELU, FeatLogitSoftcap, FeatPerLayerRoPE, FeatQKNorm, FeatSandwichNorm, FeatSlidingWindow},
 }
 
 // TestResidentAdmission_registryCovered is THE recurrence guard. Every architecture in the
@@ -127,8 +127,8 @@ func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 	known := map[ResidentFeature]bool{
 		FeatQKNorm: true, FeatSlidingWindow: true, FeatPartialRotary: true, FeatPerLayerRoPE: true,
 		FeatRopeMscale: true, FeatRMSAddOne: true, FeatEmbedScale: true, FeatLogitSoftcap: true,
-		FeatSandwichNorm: true, FeatNonGatedMLP: true, FeatLearnedPos: true, FeatOutBias: true,
-		FeatLogitScale: true, FeatMoE: true, FeatMLA: true, FeatSSM: true,
+		FeatSandwichNorm: true, FeatGatedGELU: true, FeatNonGatedMLP: true, FeatLearnedPos: true,
+		FeatOutBias: true, FeatLogitScale: true, FeatMoE: true, FeatMLA: true, FeatSSM: true,
 	}
 	for be, set := range ResidentBackendFeatures {
 		for f := range set {
@@ -142,8 +142,10 @@ func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 // TestResidentFeatures_derivation checks the arch→feature derivation directly: set one flag,
 // expect one feature. If a future Architecture field changes the math, it needs a case here.
 func TestResidentFeatures_derivation(t *testing.T) {
+	// A plain dense Llama/Qwen2 block. Act is set EXPLICITLY: ActGeluTanh is ActKind's zero
+	// value (iota), so a default-constructed Architecture reads as GELU, not SiLU.
 	base := func() *Architecture {
-		return &Architecture{NumLayers: 1, HeadDim: 128, NormPlacement: NormPre2}
+		return &Architecture{NumLayers: 1, HeadDim: 128, NormPlacement: NormPre2, Act: ActSiLU}
 	}
 	cases := []struct {
 		name string
@@ -157,6 +159,7 @@ func TestResidentFeatures_derivation(t *testing.T) {
 		{"embed-scale", func(a *Architecture) { a.EmbedScale = 32 }, FeatEmbedScale},
 		{"softcap", func(a *Architecture) { a.FinalLogitSoftcap = 30 }, FeatLogitSoftcap},
 		{"sandwich", func(a *Architecture) { a.NormPlacement = NormSandwich4 }, FeatSandwichNorm},
+		{"gated-gelu", func(a *Architecture) { a.Act = ActGeluTanh }, FeatGatedGELU},
 		{"non-gated", func(a *Architecture) { a.NonGatedMLP = true }, FeatNonGatedMLP},
 		{"learned-pos", func(a *Architecture) { a.LearnedPosEmbed = true }, FeatLearnedPos},
 		{"out-bias", func(a *Architecture) { a.OutBias = true }, FeatOutBias},
