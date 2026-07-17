@@ -8,7 +8,8 @@
 >
 > **The lane.** goinfer runs open-weight model weights *in-process, in pure Go* — the
 > single-file, zero-install, HF-parity-gated lane. The native engines (llama.cpp,
-> Ollama, vLLM, mistral.rs) are faster and far broader; the Go *bindings*
+> Ollama, vLLM, mistral.rs) are far broader, and faster everywhere except the one lane
+> the cgo-free CUDA backend now wins outright (dense 4-bit decode — §B2); the Go *bindings*
 > (gollama.cpp, yzma) reach llama.cpp's speed but still ship its native `.so`; the
 > pure-Go *ports* (llama2.go lineage) are archived toys. Among the peers surveyed,
 > goinfer is the only maintained runtime that executes production-scope weights in
@@ -56,7 +57,7 @@ at each goinfer tag.
 | Constrained / structured decode | ✓ **struct-derived** grammar ᶠ | ✓ GBNF + JSON-schema | ✓ JSON schema | ✓ grammar + strict schema | ✓ xgrammar / `guided_json` | — | ✗ |
 | OpenAI-compatible server | ✓ pure stdlib ᵍ | ✓ `llama-server` | ✓ | ✓ (+ Anthropic) | ✓ (heavy deps) | ✗ (library only) | ✗ |
 | LoRA adapters | ✓ PEFT, merged at load ʰ | ✓ | ✓ | ✓ | ✓ | — | ✗ |
-| GPU | ~ WebGPU, dense-only residency ⁱ | ✓ CUDA/Metal/Vulkan | ✓ CUDA/ROCm/Vulkan/Metal | ✓ CUDA/Metal | ✓ CUDA/TPU/+ | ✓ inherits llama.cpp | ✗ CPU only |
+| GPU | ~ WebGPU (broad residency) + **cgo-free CUDA & Metal** (dense-only) ⁱ | ✓ CUDA/Metal/Vulkan | ✓ CUDA/ROCm/Vulkan/Metal | ✓ CUDA/Metal | ✓ CUDA/TPU/+ | ✓ inherits llama.cpp | ✗ CPU only |
 | Continuous batching | ✗ | ✓ | ~ parallel slots via llama-server ᵇ | ✓ | ✓ PagedAttention | — | ✗ |
 | Multimodal (vision/audio) | ~ **vision in** (Gemma 3 VL, pure-Go SigLIP → serve + agent; ~171 s/image CPU or **18.8 s on `-tags gpu`**, no audio) | ✓ | ✓ | ✓ | ✓ | ~ (yzma VLMs; gollama —) | ✗ |
 | Model coverage | ~ **11 architectures** ʲ | ✓ dozens | ✓ broad | ✓ broad | ✓ 200+ | ✓ inherits llama.cpp | ✗ Llama-2 toy |
@@ -82,7 +83,9 @@ weights mapped from the binary's read-only image) · ᵉ `README.md` + `CHANGELO
 ᶠ `README.md` (`GrammarFromStruct` — grammar derived from a Go struct) · ᵍ `README.md` /
 `cmd/serve` (OpenAI-compatible server in pure stdlib) · ʰ `README.md` (LoRA PEFT,
 merged at load) · ⁱ `ARCHITECTURE.md` §2 + `docs/gpu-assessment.md` (WebGPU full
-residency, dense Qwen2/Llama only; cgo quarantined behind `-tags gpu`) ·
+residency; cgo quarantined behind `-tags gpu`) + §B2/§B3 below (`cuda/`, `metal/`:
+driver-JIT / MSL, **CGO_ENABLED=0**, dense-only, admission-gated by
+`decoder/features.go`) ·
 ʲ `decoder/registry.go` — **13 registered `model_type` keys, 11 distinct architectures**
 (`gemma3_text`/`qwen3_5_moe_text` are text-decoder aliases of `gemma3`/`qwen3_5_moe`).
 
@@ -142,6 +145,80 @@ gpu-assessment — cited there.
 |---|---|---|---|
 | Qwen2.5-Coder-1.5B · int8 vs q8_0 (~1.55 GB/tok) | **111.6 tok/s** | Ollama-CUDA **147** | **76%** (equal int8) |
 | Qwen2.5-7B · int4 vs q4 | 51.7 tok/s *(pre-coalescing, stale)* | llama.cpp-CUDA **72.8** | 71% (equal 4-bit) |
+
+> **These WebGPU rows are int8/q8_0 and are NOT comparable to the cgo-free CUDA rows
+> below**, which are 4-bit on both sides. Two different backends, two different quants,
+> two different peer measurements — read them as separate experiments, never as a
+> before/after of the same thing.
+
+### B2. cgo-free CUDA (`-tags cuda`) vs Ollama-CUDA — 4-bit both sides
+
+The `cuda/` backend is a **driver-JIT, CGO_ENABLED=0** path (dlopen `libcuda` via
+purego; PTX embedded, no toolkit at build or run time — re-verified by `ldd` at the
+commit below showing no `libcuda`/`libnvrtc` linked). **Dense-only**: it declines to
+the staged/CPU path for any arch needing features it hasn't implemented
+(`decoder/features.go`).
+
+Provenance, all rows: **RTX 2070 SUPER**, driver **595.58.03** / Ryzen 7 3700X ·
+goinfer commit **`7557723`**, **2026-07-16** · peer **Ollama 0.5.7** · both sides
+q4_K_M, warm (`/api/ps` shows `size_vram == size`, 100% GPU), greedy (`temperature:0`),
+256-token completions (both hit the cap), **best of 3 warm runs** (the first run after
+load is discarded as a warmup outlier on both sides).
+
+**Method — server-to-server, identical on both sides.** Each engine is driven through
+its *own* HTTP server (goinfer `cmd/serve` `/v1/chat/completions`; Ollama
+`/api/generate`) and timed by **client wall clock**, so prefill, sampling, detokenize,
+JSON, and HTTP are inside *both* numbers. This is the only methodology-symmetric
+comparison on this page.
+
+| model · q4_K_M (same card, warm, greedy, wall-clock) | goinfer (`-tags cuda`) | Ollama-CUDA 0.5.7 | goinfer vs peer |
+|---|---|---|---|
+| Qwen2.5-Coder-0.5B | **429.8 tok/s** | **211.1** | **2.04×** |
+| Qwen2.5-Coder-1.5B | **210.0 tok/s** | **149.3** | **1.41×** |
+
+- **Conservative cross-check.** Ollama also self-reports a *decode-only* rate
+  (`eval_count / eval_duration`, excluding prefill): **216.8** / **153.4** tok/s. Scoring
+  goinfer's all-in wall clock against Ollama's prefill-free figure — a bar tilted
+  *against* goinfer — still gives **1.98×** / **1.37×**. The ratio is not a
+  measurement artifact. (Ollama's wall and decode-only agree within ~3% here, so its
+  server overhead is negligible and the two framings barely differ.)
+- **Correctness is gated, not assumed.** CUDA decode is held to the repo's own 3%
+  near-tie parity rule against the CPU path on a real q4_k_m checkpoint (9/10 exact
+  argmax, 0 hard fails) — the speed is only meaningful because the tokens match.
+- **Why the 0.5B ratio is bigger:** small-model decode is launch/issue-bound, and the
+  cgo-free path's per-token dispatch is cheap (measured executor tax **15.3 µs**/token).
+  The advantage narrows as the model grows and work becomes bandwidth-bound — expect
+  the trend to continue past 1.5B. **Do not extrapolate these ratios to 7B**; that row
+  is unmeasured.
+- **Scope, stated plainly:** dense architectures only. No MoE / MLA / SSM, no partial
+  rotary. This is a real-speed claim about the dense lane, not about coverage.
+
+### B3. cgo-free Metal (darwin, `--backend metal`) vs Ollama-Metal — 4-bit both sides
+
+Provenance: **Apple M1 Pro, 16 GB**, macOS **26.5.2** · peer **Ollama 0.32.0** · both
+sides q4_K_M, warm, greedy, 256-token completions (both hit the cap), server-to-server
+wall clock — the same method as §B2. Measured on the Mac, **2026-07-16**. The `metal/`
+package is `//go:build darwin` (no extra tag) and is selected at runtime with
+`--backend metal`; it registers via `decoder.RegisterBackend` and must be blank-imported
+by the binary.
+
+| model · q4_K_M (M1 Pro, warm, greedy, wall-clock) | goinfer (Metal) | Ollama-Metal 0.32.0 | goinfer vs peer |
+|---|---|---|---|
+| Qwen2.5-Coder-0.5B | **~128 tok/s** | **~124** | **1.03×** |
+| Qwen2.5-Coder-1.5B | **~61 tok/s** | **~79** | **0.77×** |
+
+- **Metal's story is not raw speed — it's cgo-free / no-Xcode.** goinfer is at parity on
+  0.5B and **loses** on 1.5B. Apple GPUs have no DP4A, so integer decode is issue-bound;
+  the CUDA ratio does **not** carry over. An earlier "~85% of Ollama-Metal" estimate is
+  **superseded** — the real figure is size-dependent (1.03× → 0.77×).
+- Do not quote a Metal speed *multiple* as a headline. The defensible Metal claims are
+  portability (no Xcode, no toolchain, static binary) and correctness parity.
+
+> **serve caveat (both GPU backends).** GPU-resident models bypass the session cache in
+> `cmd/serve` (`7557723`), so they skip prompt-prefix reuse and speculative decode. That
+> is a deliberate trade — resident decode is worth far more than the TTFT optimization —
+> but it means a resident server re-prefills each request. The numbers above include
+> that re-prefill on goinfer's side.
 
 > **Fresh re-measure (2026-07-14, CUDA-spike step 0):** the 1.5B-int8 row is re-measured
 > on this 2070 SUPER after the buffer-coalescing win (`f8ef42b`/`5c3777f`) that postdated
@@ -204,7 +281,13 @@ vs `.giw`) · `docs/completed/perf-campaign.md` (M1 Pro CPU decode, measurement 
 `CHANGELOG.md` v0.4.0/v0.5.0 (prefill 3.4× / 1.7×; MoE prefill `08acc11`) ·
 `decoder/registry.go` (13 `model_type` keys, 11 distinct architectures) · `CHANGELOG.md`
 v0.5.0 (the 7B int4 row: **51.7 vs llama.cpp-CUDA 72.8 tok/s = ~71%** — this peer
-figure lives in CHANGELOG, not gpu-assessment) · `README.md` (capabilities).
+figure lives in CHANGELOG, not gpu-assessment) · `README.md` (capabilities) ·
+**§B2 (cgo-free CUDA)** — measured 2026-07-16 on this repo at commit `7557723`, RTX 2070
+SUPER / driver 595.58.03, peer Ollama 0.5.7 via `/api/generate`; goinfer via `cmd/serve`
+`/v1/chat/completions`; both wall-clock, best of 3 warm; lab notes in
+`docs/task-cuda-cgofree-spike.md` · **§B3 (cgo-free Metal)** — measured 2026-07-16 on
+Apple M1 Pro 16 GB / macOS 26.5.2, peer Ollama 0.32.0, same server-to-server method;
+notes in `docs/metal-model-coverage.md`.
 
 **Peers (verified 2026-06-10, against each project's repo/docs):**
 llama.cpp — github.com/ggml-org/llama.cpp (README; `tools/server/README.md`;
