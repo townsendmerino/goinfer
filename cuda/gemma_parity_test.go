@@ -5,9 +5,11 @@ package cuda
 import (
 	"math"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
 // TestGemma3ResidentParity is the real-checkpoint gate for Gemma 3 on CUDA: the CUDA resident
@@ -16,7 +18,7 @@ import (
 // admitted family does: (1+w) RMS, sandwich norms, GeGLU, embed scale, per-layer RoPE base.
 func TestGemma3ResidentParity(t *testing.T) {
 	residentCosineParity(t, os.ExpandEnv("$HOME/models/gemma-3-4b-it"),
-		[]int{2, 651, 6037, 529, 6081, 603, 12545, 235265, 714, 6398})
+		"The capital of France is Paris. The city is")
 }
 
 // TestDenseResidentParity is the CONTROL for the Gemma gate: the same harness on the
@@ -24,10 +26,23 @@ func TestGemma3ResidentParity(t *testing.T) {
 // than assumed. Without it, a Gemma cosine cannot be judged.
 func TestDenseResidentParity(t *testing.T) {
 	residentCosineParity(t, os.ExpandEnv("$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"),
-		[]int{785, 3840, 315, 6137, 448, 264, 1467, 315, 264, 3070})
+		"The capital of France is Paris. The city is")
 }
 
-func residentCosineParity(t *testing.T, path string, prompt []int) {
+// residentCosineParity drives BOTH paths from the SAME text, tokenized by the model's OWN
+// tokenizer.
+//
+// It used to take hardcoded token ids, and the Gemma gate's were ones I invented and never
+// decoded: they were not valid Gemma tokens at all, so every Gemma parity number reported from
+// here (and inherited by the Metal port) was measured on gibberish. The parity CLAIM survived
+// that — both paths got identical input, and agreement is agreement — but the ANALYSIS did not:
+// the control ran on real Qwen ids while Gemma ran on nonsense, and nonsense flattens the
+// logits, which inflates near-ties and depresses exact-argmax. I read that signature as
+// "Gemma is noisier, probably the 262k vocab" instead of as a confound I had created.
+//
+// Encoding real text makes a wrong id impossible BY CONSTRUCTION rather than by eyeballing, and
+// makes the two models comparable: same sentence, each in its own vocabulary.
+func residentCosineParity(t *testing.T, path, text string) {
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no checkpoint at %s", path)
 	}
@@ -50,6 +65,30 @@ func residentCosineParity(t *testing.T, path string, prompt []int) {
 
 	_, _, _, _, _, _, vocab := mc.Dims()
 	minCos := 1.0
+	tk, err := loadTok(path)
+	if err != nil {
+		t.Skipf("no tokenizer for %s: %v", path, err)
+	}
+	prompt, err := tk.Encode(text, true)
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	if len(prompt) < 4 {
+		t.Fatalf("encode(%q) gave only %d ids — too short to gate anything", text, len(prompt))
+	}
+	// Prove the ids ROUND-TRIP before trusting a single number measured on them. This is the
+	// check whose absence made the whole exercise worthless.
+	back, err := tk.Decode(prompt)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !strings.Contains(strings.ReplaceAll(back, " ", ""), "capitalofFrance") {
+		t.Fatalf("prompt ids do not round-trip: encode(%q) -> %v -> %q. The gate would be measuring "+
+			"gibberish, which is exactly how a Gemma parity number got reported on ids that decoded "+
+			"to \"<bos>ath হই of carry\".", text, prompt, back)
+	}
+	t.Logf("prompt: %d ids, round-trips to %q", len(prompt), back)
+
 	cache := mcpu.NewCache(len(prompt) + 2)
 	exact, hard := 0, 0
 	worst := 0.0
@@ -109,4 +148,13 @@ func residentCosineParity(t *testing.T, path string, prompt []int) {
 	if minCos < 0.95 {
 		t.Errorf("logit cosine %.6f < 0.95 — far below the dense control (~0.99); that is gross breakage, not int4 noise", minCos)
 	}
+}
+
+// loadTok mirrors cmd/serve's loader: a .gguf carries its tokenizer in its own metadata, an HF
+// dir has tokenizer.json/SentencePiece alongside the weights.
+func loadTok(path string) (*tokenizer.Tokenizer, error) {
+	if strings.HasSuffix(path, ".gguf") {
+		return tokenizer.LoadGGUF(path)
+	}
+	return tokenizer.Load(path)
 }
