@@ -235,6 +235,29 @@ kernel void gemv_w4a8_sa_amax(device const uint4* wq[[buffer(0)]], device const 
         part[tgid].v = bv; part[tgid].i = bi;
     }
 }
+// int8 twin of gemv_w4a8_sa_amax — the LM head is logit-critical and pinned at int8, so the
+// fused block-argmax must read it as int8 too or the greedy fast path disagrees with
+// argmax(full logits). Same launch shape (8 simdgroups/threadgroup, one AmaxPart per group over
+// its 8 rows), so the tile count and argmax_finish are unchanged.
+kernel void gemv_w8a8_amax(device const char* aq[[buffer(0)]], device const float* asc[[buffer(1)]],
+    device const char* bq[[buffer(2)]], device const float* bsc[[buffer(3)]], device AmaxPart* part[[buffer(4)]],
+    constant uint& K[[buffer(5)]], uint tgid[[threadgroup_position_in_grid]],
+    uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]],
+    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
+    uint row = tgid*(tgs>>5u) + sgid;
+    device const char* brow = bq + (uint)row*K;
+    int acc = 0;
+    for (uint k=lane; k<K; k+=32u) acc += int(aq[k])*int(brow[k]);
+    acc = simd_sum(acc);
+    threadgroup float tv[8]; threadgroup uint ti[8];
+    if (lane==0) { tv[sgid] = float(acc)*asc[0]*bsc[row]; ti[sgid] = row; }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    if (tid==0) {
+        uint nsg = tgs>>5u; float bv = tv[0]; uint bi = ti[0];
+        for (uint s=1u; s<nsg; s++) if (tv[s]>bv || (tv[s]==bv && ti[s]<bi)) { bv=tv[s]; bi=ti[s]; }
+        part[tgid].v = bv; part[tgid].i = bi;
+    }
+}
 kernel void argmax_finish(device const AmaxPart* part[[buffer(0)]], device uint* tok[[buffer(1)]],
     constant uint& P[[buffer(2)]], uint tid[[thread_index_in_threadgroup]],
     uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {

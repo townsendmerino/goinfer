@@ -48,6 +48,7 @@ type Resident struct {
 	pSAAmax, pArgFinish                                                   Pipeline // fused block-argmax lm head
 	pQKNorm                                                               Pipeline // per-head QK-RMSNorm (Qwen3)
 	pRmsF32                                                               Pipeline // Gemma sandwich: in-place RMSNorm of a sublayer output
+	pGemvW8, pGemvW8Amax                                                  Pipeline // int8 GEMV + fused block-argmax — the logit-critical LM head (see lmW)
 	qkNorm                                                                bool     // arch has QK-norm
 	sandwich                                                              bool     // Gemma NormSandwich4: norm each sublayer output before the residual add
 	uAct                                                                  Buffer   // gated-MLP activation ordinal (decoder.ActKind: 0=GELU-tanh, 1=SiLU)
@@ -175,6 +176,7 @@ func BuildResident(m *decoder.Model) (*Resident, error) {
 	r.pSAAmax, r.pArgFinish = pipe("gemv_w4a8_sa_amax"), pipe("argmax_finish")
 	r.pRope, r.pKv, r.pAttn = pipe("rope"), pipe("kv_store"), pipe("attention")
 	r.pSw, r.pRes = pipe("swiglu_quant"), pipe("residual")
+	r.pGemvW8, r.pGemvW8Amax = pipe("gemv_w8a8_coal"), pipe("gemv_w8a8_amax")
 	r.pQKNorm, r.pRmsF32 = pipe("qk_norm"), pipe("rmsnorm_f32")
 	r.qkNorm = m.HasQKNorm()
 	r.sandwich = m.SandwichNormResident()
@@ -261,7 +263,12 @@ func BuildResident(m *decoder.Model) (*Resident, error) {
 	if lm.Rows() == 0 {
 		lm = &w.Embed // tied
 	}
-	if r.lmW, r.lmS, err = int4Buf(d, lm); err != nil {
+	// The LM head is LOGIT-CRITICAL and must stay int8. decoder/weightmat.go: "at int4 they flip
+	// the argmax and tank the cosine (the tied head dots every logit against them)" — which is
+	// why the decoder PINS the embedding/LM-head at int8 even in int4 mode. Metal was
+	// int4-quantizing it anyway, violating that pin. Worst for Gemma: a TIED head, 262k x 2560,
+	// so every one of 262k logits is dotted against int4-mangled embedding rows.
+	if r.lmW, r.lmS, err = int8Buf(d, lm); err != nil {
 		return nil, err
 	}
 
@@ -325,8 +332,8 @@ func (r *Resident) forwardLogits(pos int) []float32 {
 	r.uPos.SetU32(uint32(pos))
 	r.uNKeys.SetU32(uint32(pos + 1))
 	e := r.q.begin()
-	r.encodeTrunkInto(e)                                                                 // 28 layers → final norm → r.aq/r.aSc
-	e.dispatchTG(r.pSA, (r.V)*32, 256, r.H*2, r.lmW, r.lmS, r.aq, r.aSc, r.logits, r.uH) // full lm head
+	r.encodeTrunkInto(e)                                                           // 28 layers → final norm → r.aq/r.aSc
+	e.dispatch(r.pGemvW8, (r.V)*32, 32, r.aq, r.aSc, r.lmW, r.lmS, r.logits, r.uH) // full lm head (int8 — logit-critical)
 	e.end()
 	r.gpuStart, r.gpuEnd, r.kernStart, r.kernEnd = e.gpuStart, e.gpuEnd, e.kernStart, e.kernEnd
 	copy(r.logitsHost, r.logits.Floats())
@@ -353,7 +360,7 @@ func (r *Resident) ForwardEmbPipe(emb []float32, pos int) []float32 {
 func (r *Resident) encodeLogitsCB() *Encoder {
 	e := r.q.beginNP()
 	r.encodeTrunkInto(e)
-	e.dispatchTG(r.pSA, (r.V)*32, 256, r.H*2, r.lmW, r.lmS, r.aq, r.aSc, r.logits, r.uH)
+	e.dispatch(r.pGemvW8, (r.V)*32, 32, r.aq, r.aSc, r.lmW, r.lmS, r.logits, r.uH)
 	e.finishEncoding()
 	return e
 }
@@ -447,8 +454,8 @@ func (r *Resident) ForwardArgmax(id, pos int) uint32 {
 	r.uNKeys.SetU32(uint32(pos + 1))
 	e := r.q.begin()
 	r.encodeTrunkInto(e)
-	e.dispatchTG(r.pSAAmax, (r.V)*32, 256, r.H*2, r.lmW, r.lmS, r.aq, r.aSc, r.part, r.uH) // tile partials
-	e.dispatch(r.pArgFinish, 256, 256, r.part, r.tok, r.uP)                                // reduce tiles → token
+	e.dispatch(r.pGemvW8Amax, (r.V)*32, 256, r.aq, r.aSc, r.lmW, r.lmS, r.part, r.uH) // tile partials (int8 head)
+	e.dispatch(r.pArgFinish, 256, 256, r.part, r.tok, r.uP)                           // reduce tiles → token
 	e.end()
 	return r.tok.U32()
 }
