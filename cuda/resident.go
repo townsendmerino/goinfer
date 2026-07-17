@@ -90,7 +90,15 @@ type cudaResident struct {
 	moeSigmoid, moeNormTopK int32
 	moeScale                float32
 	nGroup, topkGroup       int
-	sharedInter             int // width of the always-on shared expert (0 ⇒ none)
+
+	// Per-sublayer contribution capture (diagnostic; off in production, zero cost). When subCap
+	// is set, launchToken copies the sandwich-normed o-proj output (attention contribution) and
+	// down output (MLP contribution) per layer — the exact dp4a-path analogue of the decoder's
+	// ForwardSubCapture, so a cross-backend per-sublayer diff is possible.
+	subCap            bool
+	subAttnC, subMLPC [][]float32
+
+	sharedInter int // width of the always-on shared expert (0 ⇒ none)
 
 	// gocudrv state — touched ONLY on the executor thread.
 	cx                                                                                                 *gc.Context
@@ -358,6 +366,16 @@ func (r *cudaResident) launch(f *gc.Function, cfg gc.LaunchConfig, args ...gc.Ke
 	return f.LaunchOn(context.Background(), r.stream, cfg, args...)
 }
 
+// capVec copies a device [hidden] vector to host into dst[l] (diagnostic sublayer capture).
+// Runs on the executor thread inside launchToken, so it syncs the stream before the readback.
+func (r *cudaResident) capVec(src *gc.Buffer[float32], dst [][]float32, l int) {
+	bg := context.Background()
+	_ = r.stream.Synchronize(bg)
+	h := make([]float32, r.hidden)
+	_ = gc.CopyDtoH(bg, h, src)
+	dst[l] = h
+}
+
 // addOneArg is the (1+w) RMS selector as the kernels take it (Architecture.RMSAddOne).
 // Gemma stores norm weights as deviations from 1.0; Llama/Qwen scale by w directly.
 func (r *cudaResident) addOneArg() int32 {
@@ -583,6 +601,9 @@ func (r *cudaResident) launchToken(emb []float32, pos int) error {
 			// them back.
 			_ = r.doG(Ly.o, r.cq, r.cSc, nullBias, r.oO, 0)
 			_ = r.normF32(r.oO, Ly.postAttnNorm)
+			if r.subCap { // attention contribution about to hit the residual
+				r.capVec(r.oO, r.subAttnC, l)
+			}
 			_ = r.launch(r.fRes, g1cfg(r.hidden, 256), gc.Arg(r.x), gc.Arg(r.oO), gc.ArgValue(int32(r.hidden)))
 		} else {
 			_ = r.doG(Ly.o, r.cq, r.cSc, nullBias, r.x, 1)
@@ -620,6 +641,9 @@ func (r *cudaResident) launchToken(emb []float32, pos int) error {
 				return e
 			}
 			_ = r.normF32(r.dO, Ly.postMLPNorm)
+			if r.subCap { // MLP contribution about to hit the residual
+				r.capVec(r.dO, r.subMLPC, l)
+			}
 			_ = r.launch(r.fRes, g1cfg(r.hidden, 256), gc.Arg(r.x), gc.Arg(r.dO), gc.ArgValue(int32(r.hidden)))
 		} else if e := r.doG(Ly.d, r.dq, r.dSc, nullBias, r.x, 1); e != nil {
 			return e
