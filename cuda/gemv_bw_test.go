@@ -80,10 +80,10 @@ func TestGemvW8A8Bandwidth(t *testing.T) {
 	}
 
 	// device buffers
-	dW, _ := gc.Alloc[int32](ctx, len(W))
-	dA, _ := gc.Alloc[int32](ctx, len(a))
-	dS, _ := gc.Alloc[float32](ctx, N)
-	dOut, _ := gc.Alloc[float32](ctx, N)
+	dW := mustAlloc[int32](t, ctx, len(W))
+	dA := mustAlloc[int32](t, ctx, len(a))
+	dS := mustAlloc[float32](t, ctx, N)
+	dOut := mustAlloc[float32](t, ctx, N)
 	defer dW.Close()
 	defer dA.Close()
 	defer dS.Close()
@@ -102,7 +102,7 @@ func TestGemvW8A8Bandwidth(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Function: %v", err)
 	}
-	stream, _ := ctx.NewStream()
+	stream := mustStream(t, ctx)
 
 	// 8 warps/block → 8 output rows/block; grid covers N rows.
 	const warpsPerBlock = 8

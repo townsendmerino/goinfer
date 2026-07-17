@@ -88,16 +88,16 @@ func TestRealWeightGemvParity(t *testing.T) {
 		b := q4[i*4 : i*4+4]
 		wpk[i] = uint32(b[0]) | uint32(b[1])<<8 | uint32(b[2])<<16 | uint32(b[3])<<24
 	}
-	dW, _ := gc.Alloc[uint32](ctx, len(wpk))
-	dGs, _ := gc.Alloc[uint16](ctx, len(gs))
-	dA, _ := gc.Alloc[int32](ctx, len(a))
-	dOut, _ := gc.Alloc[float32](ctx, N)
+	dW := mustAlloc[uint32](t, ctx, len(wpk))
+	dGs := mustAlloc[uint16](t, ctx, len(gs))
+	dA := mustAlloc[int32](t, ctx, len(a))
+	dOut := mustAlloc[float32](t, ctx, N)
 	_ = gc.CopyHtoD(bg, dW, wpk)
 	_ = gc.CopyHtoD(bg, dGs, gs)
 	_ = gc.CopyHtoD(bg, dA, a)
 	mod, _ := ctx.LoadModule(gemvW4A8PTX)
 	fn, _ := mod.Function("gemv_w4a8")
-	stream, _ := ctx.NewStream()
+	stream := mustStream(t, ctx)
 	_ = fn.LaunchOn(bg, stream, gc.LaunchConfig{GridX: uint32((N + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
 		gc.Arg(dW), gc.Arg(dA), gc.Arg(dGs), gc.ArgValue(aS), gc.ArgValue(int32(N)), gc.ArgValue(int32(K/8)), gc.ArgValue(int32(K/32)), gc.Arg(dOut))
 	_ = stream.Synchronize(bg)

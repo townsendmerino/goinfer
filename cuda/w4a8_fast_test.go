@@ -95,10 +95,10 @@ func runW4A8Variant(t *testing.T, ptx []byte, fnName, label string) {
 		ref[n] = float32(facc) * aScale
 	}
 
-	dW, _ := gc.Alloc[uint32](ctx, len(Wp))
-	dGs, _ := gc.Alloc[uint16](ctx, len(gs))
-	dA, _ := gc.Alloc[int32](ctx, len(a))
-	dOut, _ := gc.Alloc[float32](ctx, N)
+	dW := mustAlloc[uint32](t, ctx, len(Wp))
+	dGs := mustAlloc[uint16](t, ctx, len(gs))
+	dA := mustAlloc[int32](t, ctx, len(a))
+	dOut := mustAlloc[float32](t, ctx, N)
 	_ = gc.CopyHtoD(bg, dW, Wp)
 	_ = gc.CopyHtoD(bg, dGs, gs)
 	_ = gc.CopyHtoD(bg, dA, a)
@@ -107,7 +107,7 @@ func runW4A8Variant(t *testing.T, ptx []byte, fnName, label string) {
 	if err != nil {
 		t.Fatalf("Function %s: %v", fnName, err)
 	}
-	stream, _ := ctx.NewStream()
+	stream := mustStream(t, ctx)
 	const wpb = 8
 	cfg := gc.LaunchConfig{GridX: uint32((N + wpb - 1) / wpb), GridY: 1, GridZ: 1, BlockX: wpb * 32, BlockY: 1, BlockZ: 1}
 	launch := func() {

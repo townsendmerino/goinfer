@@ -45,7 +45,7 @@ func TestDecodeTokProjection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Function: %v", err)
 	}
-	stream, _ := ctx.NewStream()
+	stream := mustStream(t, ctx)
 
 	// one weight buffer + scale per distinct projection (values irrelevant to bandwidth).
 	type proj struct {

@@ -46,7 +46,7 @@ func TestSlidingWindowAttention(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Function: %v", err)
 	}
-	stream, _ := cx.NewStream()
+	stream := mustStream(t, cx)
 
 	var seed uint32 = 12345
 	rnd := func() float32 { seed = seed*1664525 + 1013904223; return float32(int32(seed>>8)%2000-1000) / 1000 }
@@ -66,10 +66,10 @@ func TestSlidingWindowAttention(t *testing.T) {
 	vTail := append([]float32(nil), vFull[start*kvDim:]...)
 
 	run := func(k, v []float32, nk, win int) []float32 {
-		dq, _ := gc.Alloc[float32](cx, len(q))
-		dk, _ := gc.Alloc[float32](cx, len(k))
-		dv, _ := gc.Alloc[float32](cx, len(v))
-		dc, _ := gc.Alloc[float32](cx, qDim)
+		dq := mustAlloc[float32](t, cx, len(q))
+		dk := mustAlloc[float32](t, cx, len(k))
+		dv := mustAlloc[float32](t, cx, len(v))
+		dc := mustAlloc[float32](t, cx, qDim)
 		defer dq.Close()
 		defer dk.Close()
 		defer dv.Close()

@@ -201,7 +201,7 @@ func TestRealForwardParity(t *testing.T) {
 	fAttn, _ := glmod.Function("attention")
 	fSw, _ := glmod.Function("glu_quant")
 	fRes, _ := glmod.Function("residual")
-	stream, _ := cx.NewStream()
+	stream := mustStream(t, cx)
 
 	// ---- scratch ----
 	const ctxCap = 2048

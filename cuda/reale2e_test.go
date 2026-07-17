@@ -186,22 +186,22 @@ func TestRealE2EDecode(t *testing.T) {
 
 	// upload helpers (run only inside jobs, ctx current on the pinned thread)
 	up32 := func(v []float32) *gc.Buffer[float32] {
-		b, _ := gc.Alloc[float32](cx, len(v))
+		b := mustAlloc[float32](t, cx, len(v))
 		_ = gc.CopyHtoD(bg, b, v)
 		return b
 	}
 	upu32 := func(v []uint32) *gc.Buffer[uint32] {
-		b, _ := gc.Alloc[uint32](cx, len(v))
+		b := mustAlloc[uint32](t, cx, len(v))
 		_ = gc.CopyHtoD(bg, b, v)
 		return b
 	}
 	upu16 := func(v []uint16) *gc.Buffer[uint16] {
-		b, _ := gc.Alloc[uint16](cx, len(v))
+		b := mustAlloc[uint16](t, cx, len(v))
 		_ = gc.CopyHtoD(bg, b, v)
 		return b
 	}
-	af := func(n int) *gc.Buffer[float32] { b, _ := gc.Alloc[float32](cx, n); return b }
-	ai := func(n int) *gc.Buffer[int32] { b, _ := gc.Alloc[int32](cx, n); return b }
+	af := func(n int) *gc.Buffer[float32] { b := mustAlloc[float32](t, cx, n); return b }
+	ai := func(n int) *gc.Buffer[int32] { b := mustAlloc[int32](t, cx, n); return b }
 	upW := func(h hw) wq {
 		w := wq{kind: h.kind, W: upu32(h.wpk), N: h.N, K: h.K}
 		if h.kind == "int4" {

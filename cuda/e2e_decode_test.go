@@ -53,7 +53,7 @@ func TestE2EDecode(t *testing.T) {
 	fSwiglu, _ := glmod.Function("glu_quant")
 	fResid, _ := glmod.Function("residual")
 	fArgmax, _ := glmod.Function("argmax_reduce")
-	stream, _ := ctx.NewStream()
+	stream := mustStream(t, ctx)
 
 	// qwen2.5-coder-1.5b geometry, realistic decode position.
 	const H, I, nH, nKV, hd, vocab, nLayers = 1536, 8960, 12, 2, 128, 151936, 28
@@ -64,7 +64,7 @@ func TestE2EDecode(t *testing.T) {
 	const scale = float32(1.0 / 11.313708) // 1/sqrt(128)
 
 	af32 := func(n int, fill float32) *gc.Buffer[float32] {
-		b, _ := gc.Alloc[float32](ctx, n)
+		b := mustAlloc[float32](t, ctx, n)
 		h := make([]float32, n)
 		for i := range h {
 			h[i] = fill
@@ -72,7 +72,7 @@ func TestE2EDecode(t *testing.T) {
 		_ = gc.CopyHtoD(bg, b, h)
 		return b
 	}
-	ai32 := func(n int) *gc.Buffer[int32] { b, _ := gc.Alloc[int32](ctx, n); return b }
+	ai32 := func(n int) *gc.Buffer[int32] { b := mustAlloc[int32](t, ctx, n); return b }
 
 	// weights (synthetic int8 packed) + scales
 	Wqkv, sQkv := ai32(qkvR*(H/4)), af32(qkvR, 1)
@@ -87,7 +87,7 @@ func TestE2EDecode(t *testing.T) {
 	for d := range inv {
 		inv[d] = float32(1.0 / math.Pow(1e6, float64(2*d)/float64(hd)))
 	}
-	invF, _ := gc.Alloc[float32](ctx, half)
+	invF := mustAlloc[float32](t, ctx, half)
 	_ = gc.CopyHtoD(bg, invF, inv)
 	// KV caches (pre-filled synthetic; per-token k/v store is a negligible 256-float copy, omitted)
 	kc, vc := af32(nKeys*kvDim, 0.01), af32(nKeys*kvDim, 0.01)
@@ -266,10 +266,10 @@ func validateGlue(t *testing.T, ctx *gc.Context, stream *gc.Stream, bg context.C
 				refq[i] = -127
 			}
 		}
-		dx, _ := gc.Alloc[float32](ctx, H)
-		dw, _ := gc.Alloc[float32](ctx, H)
-		dq, _ := gc.Alloc[int32](ctx, H/4)
-		ds, _ := gc.Alloc[float32](ctx, 1)
+		dx := mustAlloc[float32](t, ctx, H)
+		dw := mustAlloc[float32](t, ctx, H)
+		dq := mustAlloc[int32](t, ctx, H/4)
+		ds := mustAlloc[float32](t, ctx, 1)
 		_ = gc.CopyHtoD(bg, dx, xh)
 		_ = gc.CopyHtoD(bg, dw, wh)
 		_ = fRms.LaunchOn(bg, stream, gc.LaunchConfig{GridX: 1, GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((H + 256) * 4)},
@@ -325,10 +325,10 @@ func validateGlue(t *testing.T, ctx *gc.Context, stream *gc.Stream, bg context.C
 				ref[h*hd+d] = float32(acc / sum)
 			}
 		}
-		dq, _ := gc.Alloc[float32](ctx, nH*hd)
-		dk, _ := gc.Alloc[float32](ctx, nKeys*kvDim)
-		dv, _ := gc.Alloc[float32](ctx, nKeys*kvDim)
-		dc, _ := gc.Alloc[float32](ctx, nH*hd)
+		dq := mustAlloc[float32](t, ctx, nH*hd)
+		dk := mustAlloc[float32](t, ctx, nKeys*kvDim)
+		dv := mustAlloc[float32](t, ctx, nKeys*kvDim)
+		dc := mustAlloc[float32](t, ctx, nH*hd)
 		_ = gc.CopyHtoD(bg, dq, qh)
 		_ = gc.CopyHtoD(bg, dk, kh)
 		_ = gc.CopyHtoD(bg, dv, vh)

@@ -40,7 +40,7 @@ func TestE2EDecodeInt4(t *testing.T) {
 	fSwiglu, _ := glmod.Function("glu_quant")
 	fResid, _ := glmod.Function("residual")
 	fArgmax, _ := glmod.Function("argmax_reduce")
-	stream, _ := ctx.NewStream()
+	stream := mustStream(t, ctx)
 
 	const H, I, nH, nKV, hd, vocab, nLayers = 1536, 8960, 12, 2, 128, 151936, 28
 	const qDim, kvDim, qkvR = nH * hd, nKV * hd, nH*hd + 2*nKV*hd
@@ -48,11 +48,11 @@ func TestE2EDecodeInt4(t *testing.T) {
 	const nKeys = pos + 1
 	const scale = float32(1.0 / 11.313708)
 
-	ai32 := func(n int) *gc.Buffer[int32] { b, _ := gc.Alloc[int32](ctx, n); return b }
-	au32 := func(n int) *gc.Buffer[uint32] { b, _ := gc.Alloc[uint32](ctx, n); return b }
-	au16 := func(n int) *gc.Buffer[uint16] { b, _ := gc.Alloc[uint16](ctx, n); return b }
+	ai32 := func(n int) *gc.Buffer[int32] { b := mustAlloc[int32](t, ctx, n); return b }
+	au32 := func(n int) *gc.Buffer[uint32] { b := mustAlloc[uint32](t, ctx, n); return b }
+	au16 := func(n int) *gc.Buffer[uint16] { b := mustAlloc[uint16](t, ctx, n); return b }
 	af := func(n int, v float32) *gc.Buffer[float32] {
-		b, _ := gc.Alloc[float32](ctx, n)
+		b := mustAlloc[float32](t, ctx, n)
 		h := make([]float32, n)
 		for i := range h {
 			h[i] = v
@@ -72,7 +72,7 @@ func TestE2EDecodeInt4(t *testing.T) {
 	for d := range inv {
 		inv[d] = float32(1.0 / math.Pow(1e6, float64(2*d)/float64(hd)))
 	}
-	invF, _ := gc.Alloc[float32](ctx, half)
+	invF := mustAlloc[float32](t, ctx, half)
 	_ = gc.CopyHtoD(bg, invF, inv)
 	kc, vc := af(nKeys*kvDim, 0.01), af(nKeys*kvDim, 0.01)
 	x := af(H, 0.1)
