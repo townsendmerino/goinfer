@@ -62,11 +62,15 @@ type cudaResident struct {
 
 	hidden, nLayers, nH, nKV, hd, inter, vocab int
 	qDim, kvDim, half                          int
-	eps, attnScale                             float32
-	qkNorm                                     bool  // arch needs per-head Q/K RMSNorm before RoPE
-	rmsAddOne                                  bool  // (1+w) offset — false for Qwen3/Llama
-	act                                        int32 // gated MLP activation, decoder.ActKind (0=gelu-tanh, 1=silu)
-	sandwich                                   bool  // Gemma 4-norm sandwich: extra post-attn / post-MLP norms
+	// rhalf is rotaryDim/2 — the number of rotated PAIRS per head. Equals half (hd/2) for the
+	// full-rotary families; smaller for partial rotary (GLM/Phi), where hd-2*rhalf trailing
+	// elements per head pass through unrotated but must still reach the KV cache.
+	rhalf          int
+	eps, attnScale float32
+	qkNorm         bool  // arch needs per-head Q/K RMSNorm before RoPE
+	rmsAddOne      bool  // (1+w) offset — false for Qwen3/Llama
+	act            int32 // gated MLP activation, decoder.ActKind (0=gelu-tanh, 1=silu)
+	sandwich       bool  // Gemma 4-norm sandwich: extra post-attn / post-MLP norms
 
 	// Sparse MoE. The router projection stays f32 (gemv_f32_a8) while the experts are int4:
 	// the router's output steers a DISCRETE choice, so a quantization error near a tie does not
@@ -511,9 +515,13 @@ func (r *cudaResident) launchToken(emb []float32, pos int) error {
 			}
 		}
 		// fused rope(q)+rope(k)+kv_store(k)+kv_store(v): 4 launches → 1 (same math/order).
-		_ = r.launch(r.ropeKV, g1cfg(r.nH*r.half+r.nKV*r.half, 256),
+		// rhalf == hd/2 for full rotary (tail group empty, bit-identical to the pre-partial
+		// kernel); rotaryDim/2 for partial rotary, where the tail threads carry the un-rotated
+		// remainder into the KV cache.
+		_ = r.launch(r.ropeKV, g1cfg(r.nH*r.rhalf+r.nKV*r.rhalf+r.nKV*(r.hd-2*r.rhalf), 256),
 			gc.Arg(r.qB), gc.Arg(r.kB), gc.Arg(r.vB), gc.Arg(Ly.invF), gc.Arg(r.kc[l]), gc.Arg(r.vc[l]),
-			gc.ArgValue(int32(r.nH)), gc.ArgValue(int32(r.nKV)), gc.ArgValue(int32(r.hd)), gc.ArgValue(int32(pos)))
+			gc.ArgValue(int32(r.nH)), gc.ArgValue(int32(r.nKV)), gc.ArgValue(int32(r.hd)),
+			gc.ArgValue(int32(pos)), gc.ArgValue(int32(r.rhalf)))
 		nKeys := pos + 1
 		// Sliding window (per layer: Mistral is all-local, Mellum interleaves). Shared is sized
 		// to the ATTENDED span, so a windowed layer's request stays bounded as context grows.

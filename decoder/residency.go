@@ -227,6 +227,17 @@ func (m *Model) PartialRotary() bool {
 	return m.w.arch.RotaryDim != 0 && m.w.arch.RotaryDim < m.w.arch.HeadDim
 }
 
+// RotaryDimResident is the number of head dims RoPE actually rotates, resolved: HeadDim for
+// the full-rotary families, RotaryDim (< HeadDim) for partial rotary. Backends need the WIDTH,
+// not just PartialRotary()'s yes/no — the un-rotated tail still has to reach the KV cache, so a
+// backend that knows only "this is partial" cannot dispatch it.
+func (m *Model) RotaryDimResident() int {
+	if m.w.arch.RotaryDim != 0 && m.w.arch.RotaryDim < m.w.arch.HeadDim {
+		return m.w.arch.RotaryDim
+	}
+	return m.w.arch.HeadDim
+}
+
 // EmbedScaleResident is the token-embedding multiplier (Gemma = √hidden; 0/1 = none).
 func (m *Model) EmbedScaleResident() float64 { return m.w.arch.EmbedScale }
 
