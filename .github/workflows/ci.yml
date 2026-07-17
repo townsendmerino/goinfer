@@ -202,15 +202,19 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: metal/go.sum
 
-      # metal/go.mod carries `replace github.com/townsendmerino/goinfer => ../`, so it resolves the
-      # unpublished root itself — no go.work stitch needed (unlike gpu). -C runs in the submodule.
+      # metal/go.mod `replace`s the unpublished root but does not `require` it, so a standalone
+      # build cannot resolve the root's own deps (aikit). The workspace supplies the root module —
+      # same ephemeral stitch as gpu-darwin (go.work is gitignored).
+      - name: workspace (resolve unpublished goinfer locally)
+        run: go work init . ./metal
+
       - name: build (metal module)
-        run: go build -C metal ./...
+        run: go build ./metal/...
 
       - name: vet (metal module)
-        run: go vet -C metal ./...
+        run: go vet ./metal/...
 
       # -short skips the real-model loaders (no checkpoints on the runner anyway). GPU kernel gates
       # self-skip without a usable Metal adapter; the NaN-falsifiability gate runs with neither.
       - name: test (device gates skip without an adapter; falsifiability runs)
-        run: go test -C metal -short ./...
+        run: go test -short ./metal/...
