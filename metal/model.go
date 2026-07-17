@@ -485,6 +485,61 @@ func (r *Resident) forwardTrunkForTest(emb []float32, pos, nLayers int) []float3
 	return append([]float32(nil), r.x.Floats()...)
 }
 
+// forwardSubCaptureForTest is the Metal twin of decoder.ForwardSubCapture: it returns, per layer,
+// the attention contribution (o-proj output AFTER the post-attn sandwich norm, BEFORE the residual
+// add) and the MLP contribution (down output after the post-MLP sandwich norm, before the add) —
+// exactly the two sublayer contributions the CUDA box traced against f32 truth. It mirrors
+// encodeTrunkInto's sandwich path dispatch-for-dispatch, but flushes after each sublayer norm to
+// read r.oO / r.dO before the add consumes them. Sandwich (Gemma) only; nil otherwise.
+func (r *Resident) forwardSubCaptureForTest(emb []float32, pos int) (attn, mlp [][]float32) {
+	if !r.sandwich {
+		return nil, nil
+	}
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	nHhd := r.nH * r.hd
+	qkvRows := nHhd + 2*r.kvDim
+	kOff, vOff := nHhd*4, (nHhd+r.kvDim)*4
+	copy(r.x.Floats(), emb)
+	r.uPos.SetU32(uint32(pos))
+	r.uNKeys.SetU32(uint32(pos + 1))
+	grab := func() []float32 { return append([]float32(nil), r.oO.Floats()...) }
+	grabD := func() []float32 { return append([]float32(nil), r.dO.Floats()...) }
+	for l := 0; l < r.nL; l++ {
+		L := &r.layers[l]
+		e := r.q.begin()
+		e.dispatch(r.pRms, 256, 256, r.x, L.preNorm, r.aq, r.aSc, r.uH, r.uEps, r.uAddOne)
+		e.dispatchTG(r.pSABias, qkvRows*32, 256, r.H*2, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv, L.qkvBias, r.uH)
+		if r.qkNorm {
+			e.dispatch(r.pQKNorm, (r.nH+r.nKV)*128, 128, r.qkv, L.qNorm, L.kNorm, r.uNH, r.uNKV, r.uHd, r.uNHhd, r.uEps, r.uAddOne)
+		}
+		e.dispatch(r.pRope, r.nH*r.half, 64, r.qkv, L.invf, r.uHd, r.uPos, r.uQtotal, r.uHalf)
+		e.dispatch(r.pRope, r.nKV*r.half, 64, r.qkv.At(kOff), L.invf, r.uHd, r.uPos, r.uKtotal, r.uHalf)
+		e.dispatch(r.pKv, r.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[l], r.vc[l], r.uKvDim, r.uPos)
+		e.dispatch(r.pAttn, r.nH*128, 128, r.qkv, r.kc[l], r.vc[l], r.ctx, r.uNH, r.uNKV, r.uHd, r.uNKeys, r.uScale, L.uWindow)
+		e.dispatch(r.pQv, 256, 256, r.ctx, r.cq, r.cSc, r.uHH)
+		e.dispatchTG(r.pSA, r.H*32, 256, r.nH*r.hd*2, L.oW, L.oS, r.cq, r.cSc, r.oO, r.uHH)
+		e.dispatch(r.pRmsF32, 256, 256, r.oO, L.postAttnNorm, r.uH, r.uEps, r.uAddOne)
+		e.end()
+		attn = append(attn, grab()) // oO now = attention contribution (post-norm, pre-add)
+
+		e = r.q.begin()
+		e.dispatch(r.pRes, r.H, 256, r.x, r.oO)
+		e.dispatch(r.pRms, 256, 256, r.x, L.postNorm, r.mq, r.mSc, r.uH, r.uEps, r.uAddOne)
+		e.dispatchTG(r.pSA, (2*r.I)*32, 256, r.H*2, L.guW, L.guS, r.mq, r.mSc, r.gu, r.uH)
+		e.dispatch(r.pSw, 256, 256, r.gu, r.gu.At(r.I*4), r.dq, r.dSc, r.uI, r.uAct)
+		e.dispatch(r.pGemv, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.dO, r.uI)
+		e.dispatch(r.pRmsF32, 256, 256, r.dO, L.postMLPNorm, r.uH, r.uEps, r.uAddOne)
+		e.end()
+		mlp = append(mlp, grabD()) // dO now = MLP contribution (post-norm, pre-add)
+
+		e = r.q.begin()
+		e.dispatch(r.pRes, r.H, 256, r.x, r.dO)
+		e.end()
+	}
+	return attn, mlp
+}
+
 // forwardHeadForTest runs the FULL trunk (final norm included) then the LM head, and returns
 // both the head's INPUT activation as it actually sees it — r.aq dequantized by r.aSc, i.e. the
 // int8-quantized final-norm output — and the logits. It splits the one step the per-layer bisect
