@@ -182,3 +182,35 @@ jobs:
 
       - name: test -tags gpu
         run: go test -short -tags gpu ./gpu/...
+
+  # cgo-free Metal module (metal/) on darwin/arm64 — the purego-objc resident decode + f16-MMA
+  # prefill kernels. It is its OWN module (metal/go.mod, `replace ../`), so NEITHER the root nor
+  # the gpu jobs compile it: before this job the entire Metal backend had ZERO CI coverage. That
+  # is precisely why a shipped-path prefill NaN and three stale kernel bindings (rope's rhalf,
+  # swiglu's act, attention's window — all buffer-index drift after a kernel gained a param) were
+  # invisible until a hand-run. build + vet are the point: they compile-check every dispatch
+  # against the current kernel signatures, the exact class that was silent. The device parity
+  # gates need a real adapter and skip without one (real-checkpoint gates also need models); the
+  # device-INDEPENDENT falsifiability test (TestParity_NaNCosineFailsTheGate) runs here. The full
+  # correctness gate remains scripts/gpu_gate.sh, hand-run on a Metal box.
+  metal-darwin:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: metal/go.sum
+
+      # metal/go.mod carries `replace github.com/townsendmerino/goinfer => ../`, so it resolves the
+      # unpublished root itself — no go.work stitch needed (unlike gpu). -C runs in the submodule.
+      - name: build (metal module)
+        run: go build -C metal ./...
+
+      - name: vet (metal module)
+        run: go vet -C metal ./...
+
+      # -short skips the real-model loaders (no checkpoints on the runner anyway). GPU kernel gates
+      # self-skip without a usable Metal adapter; the NaN-falsifiability gate runs with neither.
+      - name: test (device gates skip without an adapter; falsifiability runs)
+        run: go test -C metal -short ./...
