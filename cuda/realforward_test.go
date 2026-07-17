@@ -271,7 +271,7 @@ func TestRealForwardParity(t *testing.T) {
 			rms(x, Ly.postNorm, mq, mSc)
 			doG(Ly.g, mq, mSc, nullBias, gO)
 			doG(Ly.u, mq, mSc, nullBias, uO)
-			L(fSw, one(256, 256*4), gc.Arg(gO), gc.Arg(uO), gc.ArgValue(int32(I)), gc.ArgValue(int32(1)), gc.Arg(dq), gc.Arg(dSc), gc.Arg(dScr))
+			L(fSw, one(256, 256*4), gc.Arg(gO), gc.Arg(uO), gc.ArgValue(int32(0)), gc.ArgValue(int32(0)), gc.ArgValue(int32(I)), gc.ArgValue(int32(1)), gc.Arg(dq), gc.Arg(dSc), gc.Arg(dScr))
 			doG(Ly.d, dq, dSc, nullBias, dO)
 			L(fRes, g1(H, 256), gc.Arg(x), gc.Arg(dO), gc.ArgValue(int32(H)))
 		}

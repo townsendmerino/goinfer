@@ -444,7 +444,7 @@ func (r *cudaResident) launchToken(emb []float32, pos int) error {
 			_ = r.doG(Ly.g, r.mq, r.mSc, nullBias, r.gO, 0)
 			_ = r.doG(Ly.u, r.mq, r.mSc, nullBias, r.uO, 0)
 		}
-		_ = r.launch(r.fSw, onecfg(256, 256*4), gc.Arg(r.gO), gc.Arg(r.uO), gc.ArgValue(int32(r.inter)),
+		_ = r.launch(r.fSw, onecfg(256, 256*4), gc.Arg(r.gO), gc.Arg(r.uO), gc.ArgValue(int32(0)), gc.ArgValue(int32(0)), gc.ArgValue(int32(r.inter)),
 			gc.ArgValue(r.act), gc.Arg(r.dq), gc.Arg(r.dSc), gc.Arg(r.dScr))
 		if r.sandwich {
 			if e := r.doG(Ly.d, r.dq, r.dSc, nullBias, r.dO, 0); e != nil {

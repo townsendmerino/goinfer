@@ -111,7 +111,7 @@ func TestE2EDecodeInt4(t *testing.T) {
 			L(fRms, one(256, rms), gc.Arg(x), gc.Arg(x), gc.ArgValue(int32(H)), gc.ArgValue(float32(1e-6)), gc.ArgValue(int32(0)), gc.Arg(mq), gc.Arg(sc1))
 			gemvW4(Wg, mq, I, H, gO)
 			gemvW4(Wu, mq, I, H, uO)
-			L(fSwiglu, one(256, 256*4), gc.Arg(gO), gc.Arg(uO), gc.ArgValue(int32(I)), gc.ArgValue(int32(1)), gc.Arg(dq), gc.Arg(sc1), gc.Arg(dScr))
+			L(fSwiglu, one(256, 256*4), gc.Arg(gO), gc.Arg(uO), gc.ArgValue(int32(0)), gc.ArgValue(int32(0)), gc.ArgValue(int32(I)), gc.ArgValue(int32(1)), gc.Arg(dq), gc.Arg(sc1), gc.Arg(dScr))
 			gemvW4(Wd, dq, H, I, dOut)
 			L(fResid, cfg1D(H, 256), gc.Arg(x), gc.Arg(dOut), gc.ArgValue(int32(H)))
 		}

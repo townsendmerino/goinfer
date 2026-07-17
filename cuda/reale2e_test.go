@@ -313,7 +313,7 @@ func TestRealE2EDecode(t *testing.T) {
 			rms(x, Ly.postNorm, mq, mSc)
 			doG(Ly.g, mq, mSc, nullBias, gO, 0)
 			doG(Ly.u, mq, mSc, nullBias, uO, 0)
-			L(fSw, one(256, 256*4), gc.Arg(gO), gc.Arg(uO), gc.ArgValue(int32(I)), gc.ArgValue(int32(1)), gc.Arg(dq), gc.Arg(dSc), gc.Arg(dScr))
+			L(fSw, one(256, 256*4), gc.Arg(gO), gc.Arg(uO), gc.ArgValue(int32(0)), gc.ArgValue(int32(0)), gc.ArgValue(int32(I)), gc.ArgValue(int32(1)), gc.Arg(dq), gc.Arg(dSc), gc.Arg(dScr))
 			doG(Ly.d, dq, dSc, nullBias, x, 1)
 		}
 		rms(x, finalNorm, aq, aSc)

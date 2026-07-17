@@ -157,19 +157,24 @@ __global__ void attention(const float* __restrict__ q, const float* __restrict__
 // f64 is 1/32 rate on this card.
 #define ACT_GELU_TANH 0
 #define ACT_SILU      1
-__global__ void glu_quant(const float* __restrict__ g, const float* __restrict__ u, int I, int act,
+// gOff/uOff index into g/u. The dense path keeps two separate buffers and passes 0/0; MoE's
+// stacked-expert GEMV produces gate and up CONCATENATED in one buffer (one launch over
+// N=2*inter), so it passes the same pointer twice with uOff=inter. gocudrv exposes no buffer
+// view, so the offset has to be an argument rather than pointer arithmetic on the Go side.
+__global__ void glu_quant(const float* __restrict__ g, const float* __restrict__ u,
+                          int gOff, int uOff, int I, int act,
                           int* __restrict__ q, float* __restrict__ scale, float* __restrict__ dscratch) {
     extern __shared__ float red[];
     int t = threadIdx.x, nt = blockDim.x;
     float ma = 0.f;
     for (int k = t; k < I; k += nt) {
-        float x = g[k], a;
+        float x = g[gOff + k], a;
         if (act == ACT_SILU) {
             a = x / (1.f + __expf(-x));
         } else { // ACT_GELU_TANH — 0.7978845608028654 = sqrt(2/pi), matching decoder/rmsnorm.go geluTanh
             a = 0.5f * x * (1.f + tanhf(0.7978845608028654f * (x + 0.044715f * x * x * x)));
         }
-        float d = a * u[k]; dscratch[k] = d; ma = fmaxf(ma, fabsf(d));
+        float d = a * u[uOff + k]; dscratch[k] = d; ma = fmaxf(ma, fabsf(d));
     }
     red[t] = ma; __syncthreads();
     for (int o = nt >> 1; o > 0; o >>= 1) { if (t < o) red[t] = fmaxf(red[t], red[t + o]); __syncthreads(); }

@@ -141,7 +141,7 @@ func TestE2EDecode(t *testing.T) {
 			L(fRms, one(256, rmsShared), gc.Arg(x), gc.Arg(rmsF), gc.ArgValue(int32(H)), gc.ArgValue(float32(1e-6)), gc.ArgValue(int32(0)), gc.Arg(mq), gc.Arg(mSc))
 			doGemv(Wg, mq, sG, I, H, gO)
 			doGemv(Wu, mq, sU, I, H, uO)
-			L(fSwiglu, one(256, 256*4), gc.Arg(gO), gc.Arg(uO), gc.ArgValue(int32(I)), gc.ArgValue(int32(1)), gc.Arg(dq), gc.Arg(dSc), gc.Arg(dScr))
+			L(fSwiglu, one(256, 256*4), gc.Arg(gO), gc.Arg(uO), gc.ArgValue(int32(0)), gc.ArgValue(int32(0)), gc.ArgValue(int32(I)), gc.ArgValue(int32(1)), gc.Arg(dq), gc.Arg(dSc), gc.Arg(dScr))
 			doGemv(Wd, dq, sD, H, I, dOut)
 			L(fResid, cfg1D(H, 256), gc.Arg(x), gc.Arg(dOut), gc.ArgValue(int32(H)))
 		}
