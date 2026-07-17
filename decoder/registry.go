@@ -217,6 +217,9 @@ func gemma4Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 // RoPE, no embedding scale, and a separate lm_head (untied). No QKV bias
 // (Qwen3 dropped Qwen2's). The tensor schema is qwen3TensorSchema.
 func qwen3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+	if err := backfillFlatRope(cfg, "qwen3"); err != nil {
+		return nil, nil, err
+	}
 	if err := cfg.validateQwen3(); err != nil {
 		return nil, nil, err
 	}
@@ -245,6 +248,35 @@ func qwen3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	}, &qwen3TensorSchema, nil
 }
 
+// backfillFlatRope fills the flat rope_theta / rope_scaling fields from transformers >=5.10's
+// rope_parameters object, for the SINGLE-BASE architectures (llama, mistral, qwen3).
+//
+// transformers moved RoPE config out of top-level rope_theta/rope_scaling and into
+// rope_parameters — {"rope_theta": 1e4, "rope_type": "default"}, with linear/yarn/llama3
+// scaling carried inside the same object. Archs that only read the flat fields therefore
+// REJECT any checkpoint saved by a current transformers, with "rope_theta must be >0" — a
+// hard load failure on freshly re-saved upstream weights, not a niche path. phi3 already
+// handled this via parseRopeFlat and gemma3/mellum handle the per-layer-type nesting
+// (full_attention/sliding_attention); llama and mistral did not, and each has its own
+// architecture func, which is exactly how one got fixed and the other did not. Hence one
+// helper rather than a third copy.
+func backfillFlatRope(cfg *Config, arch string) error {
+	if cfg.RoPEGlobalBase != 0 || len(cfg.RopeParameters) == 0 {
+		return nil // already flat (older config, or a GGUF) — nothing to backfill
+	}
+	spec, _, err := parseRopeFlat(cfg.RopeParameters)
+	if err != nil {
+		return fmt.Errorf("decoder(%s): rope_parameters: %w", arch, err)
+	}
+	cfg.RoPEGlobalBase = spec.base
+	// Scaling may now live inside rope_parameters; hand it to the flat field the caller's
+	// parseRopeScaling already understands. Never clobber an explicit rope_scaling.
+	if spec.scaling != nil && len(cfg.RopeScaling) == 0 {
+		cfg.RopeScaling = cfg.RopeParameters
+	}
+	return nil
+}
+
 // llamaArchitecture expresses Llama-2/3 dense: like Qwen3 (RMSNorm no-offset,
 // Pre2 placement, SwiGLU, 1/√head_dim scale, single-base RoPE, no embed scale)
 // but WITHOUT QK-norm — Llama's attention applies RoPE to raw q/k. head_dim is
@@ -253,6 +285,9 @@ func qwen3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 // lm_head.weight presence at load. validateLlama rejects scaled RoPE (G4) and
 // attention bias (a later add), so reaching here implies a plain checkpoint.
 func llamaArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+	if err := backfillFlatRope(cfg, "llama"); err != nil {
+		return nil, nil, err
+	}
 	if err := cfg.validateLlama(); err != nil {
 		return nil, nil, err
 	}
@@ -295,6 +330,9 @@ func llamaArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 // null/0 (Mistral-v0.2+) falls back to full attention. The tensor schema is
 // llamaTensorSchema (Mistral and Llama share tensor names).
 func mistralArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+	if err := backfillFlatRope(cfg, "mistral"); err != nil {
+		return nil, nil, err
+	}
 	if err := cfg.validateLlama(); err != nil {
 		return nil, nil, err
 	}
@@ -565,6 +603,9 @@ func qwen35Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 // on the q/k/v projections (o_proj stays biasless). The tensor schema is
 // qwen2TensorSchema.
 func qwen2Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+	if err := backfillFlatRope(cfg, "qwen2"); err != nil {
+		return nil, nil, err
+	}
 	if err := cfg.validateQwen2(); err != nil {
 		return nil, nil, err
 	}
