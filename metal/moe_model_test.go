@@ -268,3 +268,40 @@ func writeSTF32(t *testing.T, path string, tensors map[string]stf32) {
 		t.Fatal(err)
 	}
 }
+
+// TestMoE_declinesPrefill is a regression guard: the f16 MMA prefill kernels run a DENSE FFN
+// out of L.guW/L.dW, which a MoE layer never packs (buildMoELayer replaces them). The decoder
+// calls Prefiller for ANY prompt >= 8 tokens (decoder/model.go), so without this decline a real
+// MoE prompt would bind zero-value buffers. Declining makes the caller fall back to the
+// sequential Forward loop — correct, just a slower TTFT. The dense twin must still accept.
+func TestMoE_declinesPrefill(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	w := genTinyWeights(rand.New(rand.NewSource(1234)))
+	moeDir, denseDir := t.TempDir(), t.TempDir()
+	writeMoEIdentical(t, moeDir, w)
+	writeDense(t, denseDir, w)
+
+	embs := make([][]float32, 8) // >= 8 → the decoder would take the Prefiller path
+	for i := range embs {
+		embs[i] = make([]float32, tmHidden)
+	}
+	load := func(dir string) *metalResident {
+		m, err := decoder.Load(dir, decoder.Options{Quant: "int8int8"})
+		if err != nil {
+			t.Fatalf("load %s: %v", dir, err)
+		}
+		r, err := BuildResident(m)
+		if err != nil {
+			t.Fatalf("build %s: %v", dir, err)
+		}
+		return &metalResident{r: r, hidden: r.H}
+	}
+	if _, err := load(moeDir).PrefillLast(embs, 0); err == nil {
+		t.Fatal("MoE resident ACCEPTED prefill — it would bind unset dense-FFN buffers")
+	}
+	if _, err := load(denseDir).PrefillLast(embs, 0); err != nil {
+		t.Fatalf("dense resident wrongly declined prefill: %v", err)
+	}
+}

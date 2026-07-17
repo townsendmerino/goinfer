@@ -105,6 +105,13 @@ func (a *metalResident) Forward(embedding []float32, pos int) ([]float32, error)
 // returns the last token's logits, populating the resident KV. Falls back (declines) for prompts
 // longer than the resident KV/attention cap, so the caller uses the sequential loop.
 func (a *metalResident) PrefillLast(embeddings [][]float32, startPos int) ([]float32, error) {
+	// The f16 MMA prefill kernels implement only the plain dense shape (a dense FFN out of
+	// L.guW/L.dW, model-level rope/window, SiLU-only swiglu). A MoE model never packs those
+	// dense FFN buffers at all, so prefilling it would bind zero buffers — decline instead,
+	// and the caller re-runs the prompt through the (correct) sequential Forward loop.
+	if !a.r.prefillOK {
+		return nil, fmt.Errorf("metal: prefill not implemented for this arch's FFN shape (use the sequential path)")
+	}
 	if len(embeddings) == 0 || startPos+len(embeddings) > metalCtxCap {
 		return nil, fmt.Errorf("metal: prompt %d exceeds resident cap %d", len(embeddings), metalCtxCap)
 	}

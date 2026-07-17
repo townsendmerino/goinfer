@@ -46,6 +46,13 @@ type Resident struct {
 	kc, vc    []Buffer
 	moe       *moeResident // non-nil ⇒ MoE model (router + stacked experts); see moe.go
 
+	// prefillOK reports whether the f16 MMA prefill kernels (prefill.go) actually implement
+	// this model's shape. They run a DENSE FFN out of L.guW/L.dW with a model-level rope +
+	// window and a SiLU-only swiglu — so a model whose decode path diverges (MoE leaves the
+	// dense FFN buffers unset entirely) MUST decline prefill and let the caller fall back to
+	// the sequential Forward loop: correct, just a slower TTFT.
+	prefillOK bool
+
 	x, aq, aSc, ctx, cq, cSc, oO, mq, mSc, dq, dSc, dO, logits                Buffer
 	invf, uHd, uKvDim, uH, uI, uHH, uNH, uNKV, uScale, uEps, uQtotal, uKtotal Buffer
 	uPos, uNKeys                                                              Buffer
@@ -165,6 +172,8 @@ func BuildResident(m *decoder.Model) (*Resident, error) {
 	if r.moe, err = buildMoE(d, m, pipe, H); err != nil { // nil for a dense model; error ⇒ decline
 		return nil, err
 	}
+	// Only the plain dense shape is what the prefill kernels implement (see prefillOK).
+	r.prefillOK = r.moe == nil
 	r.q = d.NewCommandQueue()
 
 	w := m.Weights()
