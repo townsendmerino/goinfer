@@ -245,6 +245,18 @@ func topDivergentDims(t *testing.T, what string, metal, cpu []float32, norm func
 		t.Logf("  dim %4d: metalPre=%10.2f cpuPre=%10.2f  Δ=%9.3f  (1+w)=%7.2f  ampErr=%9.2f",
 			d.i, d.m, d.c, d.m-d.c, d.amp, ampErr(d))
 	}
+	// ALSO rank by raw MAGNITUDE of the pre-final-norm residual — a model property that must be
+	// identical across backends at the SAME tap point. This is the cross-check the CUDA box asked
+	// for: top-magnitude channels (and their scale) reveal whether two backends tap the same place.
+	// (Distinct from the amplified-error ranking above, which is where Metal DIVERGES, not where
+	// the activation is largest — the two lists legitimately differ.)
+	byMag := append([]dim(nil), dims...)
+	sort.Slice(byMag, func(a, b int) bool { return math.Abs(byMag[a].c) > math.Abs(byMag[b].c) })
+	t.Logf("%s top-MAGNITUDE dims (|cpu-int4 pre-final-norm residual|, model property):", what)
+	for k := 0; k < 6 && k < len(byMag); k++ {
+		d := byMag[k]
+		t.Logf("  dim %4d: |cpuPre|=%10.2f  cpuPre=%10.2f  metalPre=%10.2f", d.i, math.Abs(d.c), d.c, d.m)
+	}
 }
 
 // quantDequantI8 round-trips x through symmetric per-vector int8 (scale=absmax/127), exactly as
