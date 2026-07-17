@@ -265,6 +265,11 @@ func (b Buffer) Int8s() []int8 {
 	return unsafe.Slice(objc.Send[*int8](b.id, selContents), b.n)
 }
 
+// U16s views the buffer's shared contents as []uint16 (f16 bits) — zero-copy on UMA.
+func (b Buffer) U16s() []uint16 {
+	return unsafe.Slice(objc.Send[*uint16](b.id, selContents), b.n)
+}
+
 // U32s views the buffer's shared contents as a []uint32 (zero-copy on UMA) — e.g. the MoE
 // router's idx[k] output.
 func (b Buffer) U32s() []uint32 {

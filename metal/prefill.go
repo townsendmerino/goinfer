@@ -117,6 +117,27 @@ kernel void gemm_w4f16_store(device const half* A[[buffer(0)]], device const uin
     }
 }
 
+// rmsnorm_quant_f16: RMSNorm a single f16 row and fused-quantize it to int8 + f32 scale — the
+// f16-input twin of the decode path's rmsnorm_quant. Prefill's LM head is the SAME int8-pinned,
+// logit-critical head the decode path uses (weights int8, not int4), so the last token's
+// final-normed activation must arrive as int8 for gemv_w8a8 — feeding f16/int4 assumptions into
+// it is what produced NaN. addOne selects Gemma's (1+w). x already points at the target row.
+kernel void rmsnorm_quant_f16(device const half* x[[buffer(0)]], device const float* w[[buffer(1)]],
+    device char* aq[[buffer(2)]], device float* asc[[buffer(3)]], constant uint& H[[buffer(4)]],
+    constant float& eps[[buffer(5)]], constant uint& addOne[[buffer(6)]],
+    uint tid[[thread_position_in_threadgroup]], uint tgs[[threads_per_threadgroup]]) {
+    threadgroup float red[256]; float ss=0;
+    for(uint i=tid;i<H;i+=tgs){ float v=float(x[i]); ss+=v*v; }
+    red[tid]=ss; threadgroup_barrier(mem_flags::mem_threadgroup);
+    for(uint s=tgs/2u;s>0u;s>>=1u){ if(tid<s) red[tid]+=red[tid+s]; threadgroup_barrier(mem_flags::mem_threadgroup);}
+    float rms=rsqrt(red[0]/float(H)+eps); threadgroup_barrier(mem_flags::mem_threadgroup);
+    float mx=0; for(uint i=tid;i<H;i+=tgs){ float g=addOne!=0u?(1.0f+w[i]):w[i]; mx=max(mx,fabs(float(x[i])*rms*g)); }
+    red[tid]=mx; threadgroup_barrier(mem_flags::mem_threadgroup);
+    for(uint s=tgs/2u;s>0u;s>>=1u){ if(tid<s) red[tid]=max(red[tid],red[tid+s]); threadgroup_barrier(mem_flags::mem_threadgroup);}
+    float sc=red[0]/127.0f; if(sc==0)sc=1; if(tid==0)asc[0]=sc; float inv=1/sc;
+    for(uint i=tid;i<H;i+=tgs){ float g=addOne!=0u?(1.0f+w[i]):w[i]; aq[i]=char(clamp(int(round(float(x[i])*rms*g*inv)),-127,127)); }
+}
+
 // rmsnorm_f16: one threadgroup per row. out[m] = x[m]*rsqrt(mean(x[m]²)+eps)*w (w f32).
 kernel void rmsnorm_f16(device const half* x[[buffer(0)]], device const float* w[[buffer(1)]],
     device half* out[[buffer(2)]], constant uint& H[[buffer(3)]], constant float& eps[[buffer(4)]],
@@ -235,7 +256,7 @@ kernel void kv_store_f16(device const half* qkv[[buffer(0)]], device half* kc[[b
 
 // prefillState holds the lazily-compiled prefill pipelines (opt-in; decode-only builds skip it).
 type prefillState struct {
-	pGemm, pGemmStore, pRms, pRes, pSw, pRope, pKv, pAttn, pQK Pipeline
+	pGemm, pGemmStore, pRms, pRes, pSw, pRope, pKv, pAttn, pQK, pRmsQ Pipeline
 }
 
 func (r *Resident) ensurePrefill() {
@@ -257,6 +278,7 @@ func (r *Resident) ensurePrefill() {
 		pGemm: p("gemm_w4f16"), pGemmStore: p("gemm_w4f16_store"), pRms: p("rmsnorm_f16"),
 		pRes: p("residual_f16"), pSw: p("swiglu_f16"), pRope: p("rope_f16"),
 		pKv: p("kv_store_f16"), pAttn: p("attention_prefill"), pQK: p("qk_norm_f16"),
+		pRmsQ: p("rmsnorm_quant_f16"),
 	}
 }
 
@@ -300,7 +322,6 @@ func (r *Resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 	uM := d.NewBufferU32(uint32(Mpad))
 	uH := r.uH
 	uI := d.NewBufferU32(uint32(I))
-	uV := d.NewBufferU32(uint32(V))
 	u2I := d.NewBufferU32(uint32(2 * I))
 	uQkv := d.NewBufferU32(uint32(qkvDim))
 	uQDim := d.NewBufferU32(uint32(qDim))
@@ -357,19 +378,15 @@ func (r *Resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 		t, tg = gg(H)
 		e.dispatch(pf.pGemmStore, t, tg, dqF, L.dW, L.dS, xF, uM, uH, uI, dummyBias, m2)
 	}
-	// final norm
-	e.dispatch(pf.pRms, M*256, 256, xF, r.finalNorm, normF, uH, r.uEps)
-	// lm head on the last-token tile only (8 rows containing M-1) → [8×V]; take the right row.
-	tileStart := (M - 1) / 8 * 8
-	lmC := d.NewBufferLen(8 * V)
-	u8 := d.NewBufferU32(8)
-	tLm := (V / 8) * 32
-	tLm = (tLm + 255) / 256 * 256
-	e.dispatch(pf.pGemm, tLm, 256, normF.At(tileStart*H*2), r.lmW, r.lmS, lmC, u8, uV, uH)
+	// final norm + LM head for the LAST token only, through the SAME int8-pinned head the decode
+	// path runs (rmsnorm→int8, then gemv_w8a8). The head weights are int8 (logit-critical); the
+	// int4 gemm_w4f16 used here previously misread them as packed nibbles + f16 scales, producing
+	// NaN logits. Norm-quant the last token's f16 residual row to int8, then run the decode head.
+	e.dispatch(pf.pRmsQ, 256, 256, xF.At((M-1)*H*2), r.finalNorm, r.aq, r.aSc, uH, r.uEps, r.uAddOne)
+	e.dispatch(r.pGemvW8, V*32, 32, r.aq, r.aSc, r.lmW, r.lmS, r.logits, r.uH)
 	e.end()
 
-	localRow := (M - 1) - tileStart
 	out := make([]float32, V)
-	copy(out, lmC.Floats()[localRow*V:localRow*V+V])
+	copy(out, r.logits.Floats()[:V])
 	return out
 }
