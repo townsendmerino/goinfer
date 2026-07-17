@@ -30,6 +30,12 @@ var gemvFwdPTX []byte
 //go:embed testdata/glue.ptx
 var gluePTX []byte
 
+// moePTX: sparse mixture-of-experts — moe_route (on-GPU router), gemv_f32_a8 (the f32 router
+// projection), gemv_w4a8_moe / _wacc (indexed stacked-expert GEMVs), shared_gate_combine.
+//
+//go:embed testdata/moe.ptx
+var moePTX []byte
+
 // fusedQKVPTX: K1 super-kernel — rmsnorm+quant folded into the Q/K/V GEMV via redundant
 // per-block recompute, killing a GridX:1 glue kernel and 3 launches (spec §5.2).
 //
