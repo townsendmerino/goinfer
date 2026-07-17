@@ -192,6 +192,30 @@ metal)
 	else
 		skip "Close() lifecycle gate needs ~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"
 	fi
+
+	hdr "4b. prefill (f16-MMA TTFT — a shipped path, and it shipped NaN)"
+	# The newest bug that maps to this doctrine. PrefillLast — the f16 simdgroup_matrix TTFT
+	# path — emitted NaN logits at EVERY prompt length (incl. the minimal single-tile M=8) after
+	# the LM head was pinned to int8: prefill still ran the int8 head weights through the int4
+	# gemm_w4f16, misreading them as packed nibbles (19ef47d). It hit the DENSE control, a
+	# model Metal ships. Nothing exercised it against a real checkpoint until a hand-run, so it
+	# was invisible on push. These run WITHOUT -short (they load a real model) and cover both the
+	# value (last-token logits match the sequential decode path) and the failure mode (finite
+	# logits across single-tile / multi-tile / padded lengths). Reuses the 0.5B the lifecycle
+	# gate already needs, via GOINFER_METAL_MODEL, so the gate's asset footprint stays one file.
+	if [ -f "$HOME/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf" ]; then
+		if out="$(GOINFER_METAL_MODEL="$HOME/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf" \
+			go test -count=1 -run 'TestPrefillParity|TestPrefillNoNaN' ./metal/ -v 2>&1)"; then
+			RAN=$((RAN + 1))
+			pass "prefill matches sequential decode and emits finite logits (no NaN)"
+			echo "$out" | grep -E "argmax matches|faster TTFT" | sed 's/^/      /'
+		else
+			fail "prefill parity/NaN gate — the f16-MMA TTFT path is wrong on a shipped model"
+			echo "$out" | grep -E "^--- FAIL|parity FAIL|contain NaN|\.go:[0-9]+:" | head -8 | sed 's/^/      /'
+		fi
+	else
+		skip "prefill gate needs ~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"
+	fi
 	;;
 
 *)

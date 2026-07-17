@@ -17,6 +17,13 @@ import (
 // "is it actually broken" metric that argmax (trajectory-sensitive: the same known-good path
 // scores 15/24 vs 20/24 on different id sets) cannot give.
 func TestGemma3_GeneratesCoherently(t *testing.T) {
+	// Dormant until the Gemma kernels are validated and DECLARED for metal (features.go). Until
+	// then gemma3 declines to CPU by design, so rf is nil — a skip, not a failure, exactly as the
+	// sibling TestGemma3ResidentParity guards. The moment the declaration lands this goes live
+	// (the rf==nil below then t.Fatals, catching a silent CPU fallback). See docs/task-metal-gemma.md.
+	if !decoder.ResidentBackendFeatures["metal"][decoder.FeatSandwichNorm] {
+		t.Skip("metal does not declare the Gemma features yet (kernels dormant)")
+	}
 	path := os.ExpandEnv("$HOME/models/gemma-3-4b-it-Q4_K_M.gguf")
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no checkpoint")

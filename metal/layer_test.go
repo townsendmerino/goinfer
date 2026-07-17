@@ -126,9 +126,11 @@ func TestLayerB_fullLayerForward(t *testing.T) {
 	uPos, uH, uI := d.NewBufferU32(pos), d.NewBufferU32(H), d.NewBufferU32(I)
 	uHH := d.NewBufferU32(uint32(nH * hd))
 	uNH, uNKV, uNKeys := d.NewBufferU32(nH), d.NewBufferU32(nKV), d.NewBufferU32(pos+1)
+	uWindow0 := d.NewBufferU32(0) // full causal — the attention kernel's window arg (buffer 9)
 	uScale, uEps := d.NewBufferFloats([]float32{scale}), d.NewBufferFloats([]float32{eps})
 	uInvf := d.NewBufferFloats(invf)
 	uQtotal, uKtotal := d.NewBufferU32(uint32(nH*half)), d.NewBufferU32(uint32(nKV*half))
+	uHalf := d.NewBufferU32(uint32(half)) // rope rhalf (buffer 5): rotaryDim/2, full rotary here
 
 	q := d.NewCommandQueue()
 	enc := q.begin()
@@ -136,10 +138,10 @@ func TestLayerB_fullLayerForward(t *testing.T) {
 	enc.dispatch(pGemv, nH*hd, 64, aq, aSc, qqW, qqS, qB, uH)
 	enc.dispatch(pGemv, kvDim, 64, aq, aSc, kqW, kqS, kB, uH)
 	enc.dispatch(pGemv, kvDim, 64, aq, aSc, vqW, vqS, vB, uH)
-	enc.dispatch(pRope, nH*half, 64, qB, uInvf, uHd, uPos, uQtotal)
-	enc.dispatch(pRope, nKV*half, 64, kB, uInvf, uHd, uPos, uKtotal)
+	enc.dispatch(pRope, nH*half, 64, qB, uInvf, uHd, uPos, uQtotal, uHalf)
+	enc.dispatch(pRope, nKV*half, 64, kB, uInvf, uHd, uPos, uKtotal, uHalf)
 	enc.dispatch(pKv, kvDim, 64, kB, vB, kc, vc, uKvDim, uPos)
-	enc.dispatch(pAttn, nH*128, 128, qB, kc, vc, ctx, uNH, uNKV, uHd, uNKeys, uScale) // threadgroup-per-head
+	enc.dispatch(pAttn, nH*128, 128, qB, kc, vc, ctx, uNH, uNKV, uHd, uNKeys, uScale, uWindow0) // threadgroup-per-head
 	enc.dispatch(pQv, 256, 256, ctx, cq, cSc, uHH)
 	enc.dispatch(pGemv, H, 64, cq, cSc, oqW, oqS, oO, uHH)
 	enc.dispatch(pRes, H, 64, x, oO)
