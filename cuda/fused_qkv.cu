@@ -15,7 +15,7 @@
 // grid: (qDim+2*kvDim + 7)/8 blocks × 256 threads (8 warps, one output row per warp).
 // A block never straddles a projection boundary (qDim/kvDim are multiples of 8).
 extern "C" __global__ void fused_rms_qkv(
-    const float* __restrict__ x, const float* __restrict__ nrm, int H, float eps,
+    const float* __restrict__ x, const float* __restrict__ nrm, int H, float eps, int addOne,
     const unsigned int* __restrict__ Wq, const __half* __restrict__ gsq, const float* __restrict__ bq,
     const unsigned int* __restrict__ Wk, const __half* __restrict__ gsk, const float* __restrict__ bk,
     const unsigned int* __restrict__ Wv, const __half* __restrict__ gsv, const float* __restrict__ bv,
@@ -35,7 +35,7 @@ extern "C" __global__ void fused_rms_qkv(
     for (int o = nt >> 1; o > 0; o >>= 1) { if (t < o) red[t] += red[t + o]; __syncthreads(); }
     float rnorm = rsqrtf(red[0] / H + eps); __syncthreads();
     float ma = 0.f;
-    for (int k = t; k < H; k += nt) { float v = x[k] * nrm[k] * rnorm; normed[k] = v; ma = fmaxf(ma, fabsf(v)); }
+    for (int k = t; k < H; k += nt) { float g = addOne ? (1.f + nrm[k]) : nrm[k]; float v = x[k] * g * rnorm; normed[k] = v; ma = fmaxf(ma, fabsf(v)); }
     red[t] = ma; __syncthreads();
     for (int o = nt >> 1; o > 0; o >>= 1) { if (t < o) red[t] = fmaxf(red[t], red[t + o]); __syncthreads(); }
     float aScale = red[0] / 127.f;
@@ -102,7 +102,7 @@ extern "C" __global__ void fused_rms_qkv(
 // (0.5B) — still well above the 40 SMs, but 8× less redundancy.
 #define ROWS_PER_WARP 8
 extern "C" __global__ void fused_rms_gu(
-    const float* __restrict__ x, const float* __restrict__ nrm, int H, float eps,
+    const float* __restrict__ x, const float* __restrict__ nrm, int H, float eps, int addOne,
     const unsigned int* __restrict__ Wg, const __half* __restrict__ gsg,
     const unsigned int* __restrict__ Wu, const __half* __restrict__ gsu,
     int I, int Kwords, int Kgroups,
@@ -120,7 +120,7 @@ extern "C" __global__ void fused_rms_gu(
     for (int o = nt >> 1; o > 0; o >>= 1) { if (t < o) red[t] += red[t + o]; __syncthreads(); }
     float rnorm = rsqrtf(red[0] / H + eps); __syncthreads();
     float ma = 0.f;
-    for (int k = t; k < H; k += nt) { float v = x[k] * nrm[k] * rnorm; normed[k] = v; ma = fmaxf(ma, fabsf(v)); }
+    for (int k = t; k < H; k += nt) { float g = addOne ? (1.f + nrm[k]) : nrm[k]; float v = x[k] * g * rnorm; normed[k] = v; ma = fmaxf(ma, fabsf(v)); }
     red[t] = ma; __syncthreads();
     for (int o = nt >> 1; o > 0; o >>= 1) { if (t < o) red[t] = fmaxf(red[t], red[t + o]); __syncthreads(); }
     float aScale = red[0] / 127.f;

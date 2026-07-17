@@ -135,9 +135,12 @@ func (a *Architecture) decodeRunnerEligible() bool {
 	if a.MoE != nil && !a.moeResidentEligible() {
 		return false
 	}
-	// FFN / norm / head constraints common to both attention paths.
+	// FFN / norm / head constraints common to both attention paths. Sandwich norms (Gemma's
+	// 4-norm block) are representable now — a backend that hasn't implemented them declines via
+	// the feature gate (FeatSandwichNorm), not here, so this stays an ARCH-shape predicate and
+	// the per-backend answer lives in one place (decoder/features.go).
 	if a.NonGatedMLP || a.LearnedPosEmbed || a.OutBias ||
-		a.NormPlacement != NormPre2 || a.FinalLogitSoftcap != 0 || a.AttnLogitSoftcap != 0 {
+		a.FinalLogitSoftcap != 0 || a.AttnLogitSoftcap != 0 {
 		return false
 	}
 	// MLA (DeepSeek/Kimi) runs its own latent-attention path on the resident runner
@@ -384,11 +387,19 @@ func (m *Model) ForwardForTest(id int, cache *KVCache) ([]float32, error) {
 }
 func (m *Model) EmbedResidentForTest(id int) []float32 { return m.embedResident(id) }
 
-// embedResident returns the raw input embedding [hidden] for token id — the CPU
-// half of the residency forward (eligible archs have no embedding scale).
+// embedResident returns the input embedding [hidden] for token id — the CPU half of the
+// residency forward, including any embedding scale the arch applies before layer 0.
 func (m *Model) embedResident(id int) []float32 {
 	h := make([]float32, m.w.arch.HiddenDim)
 	m.w.Embed.Row(id, h)
+	// Gemma's √hidden embedding multiplier (Architecture.EmbedScale), mirroring runLayers.
+	// Applied here rather than on the GPU so the resident stream starts where the CPU's does.
+	if sc := m.w.arch.EmbedScale; sc != 0 && sc != 1 {
+		f := float32(sc)
+		for i := range h {
+			h[i] *= f
+		}
+	}
 	// Granite embedding_multiplier — the resident residual stream starts at emb·EmbMul
 	// (P5b; the only Granite scalar applied outside the resident runner / weight folds).
 	if g := m.w.arch.granite; g != nil && g.EmbMul != 0 && g.EmbMul != 1 {
@@ -398,3 +409,14 @@ func (m *Model) embedResident(id int) []float32 {
 	}
 	return h
 }
+
+// SandwichNormResident reports whether the arch uses Gemma's 4-norm sandwich — extra norms
+// applied to each SUBLAYER OUTPUT before the residual add (NormPlacement == NormSandwich4).
+// A backend that admits such a model must dispatch PostAttnNorm/PostMLPNorm; note this also
+// rules out folding the residual add into a projection's accumulate epilogue, since the norm
+// has to happen between the projection and the add.
+func (m *Model) SandwichNormResident() bool { return m.w.arch.NormPlacement == NormSandwich4 }
+
+// GatedActResident returns the gated-MLP activation as its ActKind ordinal, for backends that
+// pass it straight to a kernel (0 = GELU-tanh, 1 = SiLU). Meaningless for non-gated archs.
+func (m *Model) GatedActResident() int { return int(m.w.arch.Act) }

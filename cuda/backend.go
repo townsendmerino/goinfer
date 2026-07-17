@@ -84,13 +84,16 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 
 	// ---- host pack all weights (CPU; any incompatible shape → decline) ----
 	type hlayer struct {
-		q, k, v, o, g, u, d hostW
-		qb, kb, vb          []float32
-		preNorm, postNorm   []float32
-		qNorm, kNorm        []float32
-		window              int32
-		hasBias             bool
+		q, k, v, o, g, u, d       hostW
+		qb, kb, vb                []float32
+		preNorm, postNorm         []float32
+		qNorm, kNorm              []float32
+		postAttnNorm, postMLPNorm []float32 // Gemma sandwich (nil unless the arch declares it)
+		invFreq                   []float32 // per-layer RoPE table
+		window                    int32
+		hasBias                   bool
 	}
+	sandwich := m.SandwichNormResident()
 	hls := make([]hlayer, nLayers)
 	for l := 0; l < nLayers; l++ {
 		lw := &w.Layers[l]
@@ -110,6 +113,18 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		}
 		hl.preNorm, hl.postNorm = lw.PreAttnNorm, lw.PreMLPNorm
 		hl.qNorm, hl.kNorm = lw.QNorm, lw.KNorm
+		// Gemma sandwich: the extra post-attn / post-MLP norms. Required to be present when
+		// the arch declares them — a silently-missing one would drop the norm, not error.
+		if sandwich {
+			hl.postAttnNorm, hl.postMLPNorm = lw.PostAttnNorm, lw.PostMLPNorm
+			if len(hl.postAttnNorm) != H || len(hl.postMLPNorm) != H {
+				return declined(fmt.Errorf("layer %d: arch declares sandwich norms but PostAttnNorm/PostMLPNorm are not len==hidden(%d) (got %d/%d)",
+					l, H, len(hl.postAttnNorm), len(hl.postMLPNorm)))
+			}
+		}
+		// Per-layer RoPE table (Gemma's local 10k vs global 1M base; Mellum's YaRN-on-global).
+		// Uniform-rope families hand back the same slice for every layer.
+		hl.invFreq = m.RopeInvFreqLayer(l)
 		// Per-layer window: only LOCAL layers are windowed; global layers stay full causal.
 		if m.LayerIsLocalResident(l) {
 			hl.window = int32(m.SlidingWindowResident())
@@ -140,9 +155,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		qDim: nH * hd, kvDim: nKV * hd, half: hd / 2,
 		eps: m.NormEps(), attnScale: m.AttnScale(),
 		qkNorm: m.HasQKNorm(), rmsAddOne: m.RMSAddOne(),
+		act: int32(m.GatedActResident()), sandwich: m.SandwichNormResident(),
 	}
 	kvDim := r.kvDim
-	invFreq := m.RopeInvFreq()
 	hFinal := w.FinalNorm
 	r.reqCh = make(chan func() error)
 	r.ackCh = make(chan error)
@@ -203,8 +218,8 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			dst  **gc.Function
 			name string
 		}{
-			{&r.fRms, "rmsnorm_quant"}, {&r.fQ, "quant_vec"}, {&r.fRope, "rope"},
-			{&r.fAttn, "attention"}, {&r.fSw, "swiglu_quant"}, {&r.fRes, "residual"},
+			{&r.fRms, "rmsnorm_quant"}, {&r.fRmsF32, "rmsnorm_f32"}, {&r.fQ, "quant_vec"}, {&r.fRope, "rope"},
+			{&r.fAttn, "attention"}, {&r.fSw, "glu_quant"}, {&r.fRes, "residual"},
 			{&r.fArg, "argmax_reduce"},
 		}
 		for _, f := range fns {
@@ -223,6 +238,10 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				q: r.upW(h.q), k: r.upW(h.k), v: r.upW(h.v), o: r.upW(h.o),
 				g: r.upW(h.g), u: r.upW(h.u), d: r.upW(h.d),
 				preNorm: r.up32(h.preNorm), postNorm: r.up32(h.postNorm),
+				invF: r.up32(h.invFreq),
+			}
+			if r.sandwich {
+				L.postAttnNorm, L.postMLPNorm = r.up32(h.postAttnNorm), r.up32(h.postMLPNorm)
 			}
 			if h.hasBias {
 				L.qb, L.kb, L.vb, L.hasBias = r.up32(h.qb), r.up32(h.kb), r.up32(h.vb), true
@@ -235,7 +254,6 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		}
 		r.lmW = r.upW(hlm)
 		r.finalNorm = r.up32(hFinal)
-		r.invF = r.up32(invFreq)
 
 		r.x, r.aSc, r.aq = r.af(H), r.af(1), r.ai(H/4)
 		r.qB, r.kB, r.vB = r.af(r.qDim), r.af(kvDim), r.af(kvDim)

@@ -199,7 +199,7 @@ func TestRealForwardParity(t *testing.T) {
 	fQ, _ := glmod.Function("quant_vec")
 	fRope, _ := glmod.Function("rope")
 	fAttn, _ := glmod.Function("attention")
-	fSw, _ := glmod.Function("swiglu_quant")
+	fSw, _ := glmod.Function("glu_quant")
 	fRes, _ := glmod.Function("residual")
 	stream, _ := cx.NewStream()
 
@@ -234,7 +234,7 @@ func TestRealForwardParity(t *testing.T) {
 		return gc.LaunchConfig{GridX: 1, GridY: 1, GridZ: 1, BlockX: uint32(b), BlockY: 1, BlockZ: 1, SharedMemBytes: uint32(sh)}
 	}
 	rms := func(src *gc.Buffer[float32], nrm *gc.Buffer[float32], qOut *gc.Buffer[int32], sOut *gc.Buffer[float32]) {
-		L(fRms, one(256, (H+256)*4), gc.Arg(src), gc.Arg(nrm), gc.ArgValue(int32(H)), gc.ArgValue(eps), gc.Arg(qOut), gc.Arg(sOut))
+		L(fRms, one(256, (H+256)*4), gc.Arg(src), gc.Arg(nrm), gc.ArgValue(int32(H)), gc.ArgValue(eps), gc.ArgValue(int32(0)), gc.Arg(qOut), gc.Arg(sOut))
 	}
 	nullBias := gc.ArgDevicePtr(0)
 	doG := func(wt wq, a *gc.Buffer[int32], as *gc.Buffer[float32], bias gc.KernelArg, dst *gc.Buffer[float32]) {
@@ -271,7 +271,7 @@ func TestRealForwardParity(t *testing.T) {
 			rms(x, Ly.postNorm, mq, mSc)
 			doG(Ly.g, mq, mSc, nullBias, gO)
 			doG(Ly.u, mq, mSc, nullBias, uO)
-			L(fSw, one(256, 256*4), gc.Arg(gO), gc.Arg(uO), gc.ArgValue(int32(I)), gc.Arg(dq), gc.Arg(dSc), gc.Arg(dScr))
+			L(fSw, one(256, 256*4), gc.Arg(gO), gc.Arg(uO), gc.ArgValue(int32(I)), gc.ArgValue(int32(1)), gc.Arg(dq), gc.Arg(dSc), gc.Arg(dScr))
 			doG(Ly.d, dq, dSc, nullBias, dO)
 			L(fRes, g1(H, 256), gc.Arg(x), gc.Arg(dO), gc.ArgValue(int32(H)))
 		}

@@ -7,8 +7,12 @@ extern "C" {
 
 // rmsnorm_quant: y = x * w * rsqrt(mean(x^2)+eps); then per-vector symmetric int8 quant
 // (scale = maxabs(y)/127), packed 4 int8 per int (the GEMV activation layout). One block.
+//
+// addOne selects the scale, mirroring decoder/rmsnorm.go: Gemma stores norm weights as
+// deviations from 1.0 and scales by (1+w); Llama/Qwen scale by w directly. Getting this
+// wrong silently shifts every layer — it is a per-family knob (Architecture.RMSAddOne).
 __global__ void rmsnorm_quant(const float* __restrict__ x, const float* __restrict__ w,
-                              int H, float eps, int* __restrict__ aq, float* __restrict__ aScale) {
+                              int H, float eps, int addOne, int* __restrict__ aq, float* __restrict__ aScale) {
     extern __shared__ float sh[];        // [H] normed values + reduction scratch
     float* normed = sh;
     float* red = sh + H;
@@ -21,7 +25,7 @@ __global__ void rmsnorm_quant(const float* __restrict__ x, const float* __restri
     float rnorm = rsqrtf(red[0] / H + eps); __syncthreads();
     // pass 2: normed + maxabs
     float ma = 0.f;
-    for (int k = t; k < H; k += nt) { float v = x[k] * w[k] * rnorm; normed[k] = v; ma = fmaxf(ma, fabsf(v)); }
+    for (int k = t; k < H; k += nt) { float g = addOne ? (1.f + w[k]) : w[k]; float v = x[k] * g * rnorm; normed[k] = v; ma = fmaxf(ma, fabsf(v)); }
     red[t] = ma; __syncthreads();
     for (int o = nt >> 1; o > 0; o >>= 1) { if (t < o) red[t] = fmaxf(red[t], red[t + o]); __syncthreads(); }
     float sc = red[0] / 127.f; float inv = sc > 0.f ? 1.f / sc : 0.f;
@@ -36,6 +40,25 @@ __global__ void rmsnorm_quant(const float* __restrict__ x, const float* __restri
         }
         aq[j] = packed;
     }
+}
+
+// rmsnorm_f32: plain in-place RMSNorm of a [H] vector — no quantization fused in.
+//
+// This is Gemma's SANDWICH norm (Architecture.NormPlacement == NormSandwich4). Unlike every
+// other norm in this file it normalizes a SUBLAYER OUTPUT rather than a GEMV input, so it
+// must NOT quantize: the result is added straight into the f32 residual stream
+// (decoder/model.go runLayersFromEmbed — `if sandwich { normalize(scr.sub, PostAttnNorm) }`
+// then `h += scr.sub`). One block; addOne as in rmsnorm_quant.
+__global__ void rmsnorm_f32(float* __restrict__ x, const float* __restrict__ w,
+                            int H, float eps, int addOne) {
+    extern __shared__ float red[];
+    int t = threadIdx.x, nt = blockDim.x;
+    float ss = 0.f;
+    for (int k = t; k < H; k += nt) ss += x[k] * x[k];
+    red[t] = ss; __syncthreads();
+    for (int o = nt >> 1; o > 0; o >>= 1) { if (t < o) red[t] += red[t + o]; __syncthreads(); }
+    float rnorm = rsqrtf(red[0] / H + eps); __syncthreads();
+    for (int k = t; k < H; k += nt) { float g = addOne ? (1.f + w[k]) : w[k]; x[k] = x[k] * rnorm * g; }
 }
 
 // quant_vec: symmetric int8 quant of a float vector (attention ctx / SwiGLU output), packed.
@@ -119,13 +142,35 @@ __global__ void attention(const float* __restrict__ q, const float* __restrict__
     }
 }
 
-// swiglu_quant: d = silu(g) * u = (g / (1+e^-g)) * u; then symmetric int8 quant (packed).
-__global__ void swiglu_quant(const float* __restrict__ g, const float* __restrict__ u, int I,
-                             int* __restrict__ q, float* __restrict__ scale, float* __restrict__ dscratch) {
+// glu_quant: d = act(g) * u; then symmetric int8 quant (packed). Mirrors decoder/mlp.go
+// gatedMLP: `gate[i] = act(gate[i]) * up[i]` for both activations.
+//
+// act selects the gated activation (Architecture.Act):
+//   ACT_SILU (1) — SwiGLU: silu(g) = g/(1+e^-g).                 Llama / Mistral / Qwen
+//   ACT_GELU_TANH (0) — GeGLU: 0.5g(1+tanh(√(2/π)(g+0.044715g³))). Gemma
+// The numbering matches decoder's ActKind iota so the Go side passes int32(arch.Act)
+// straight through; the constants below make the coupling explicit rather than magic.
+//
+// Both compute in f32 (__expf fast intrinsic / tanhf) where the CPU reference computes in
+// f64 — the same trade the SwiGLU path already shipped with, and it clears the 3% near-tie
+// parity bar. Do not "fix" this to f64 without re-measuring: it is elementwise over I and
+// f64 is 1/32 rate on this card.
+#define ACT_GELU_TANH 0
+#define ACT_SILU      1
+__global__ void glu_quant(const float* __restrict__ g, const float* __restrict__ u, int I, int act,
+                          int* __restrict__ q, float* __restrict__ scale, float* __restrict__ dscratch) {
     extern __shared__ float red[];
     int t = threadIdx.x, nt = blockDim.x;
     float ma = 0.f;
-    for (int k = t; k < I; k += nt) { float d = (g[k] / (1.f + __expf(-g[k]))) * u[k]; dscratch[k] = d; ma = fmaxf(ma, fabsf(d)); }
+    for (int k = t; k < I; k += nt) {
+        float x = g[k], a;
+        if (act == ACT_SILU) {
+            a = x / (1.f + __expf(-x));
+        } else { // ACT_GELU_TANH — 0.7978845608028654 = sqrt(2/pi), matching decoder/rmsnorm.go geluTanh
+            a = 0.5f * x * (1.f + tanhf(0.7978845608028654f * (x + 0.044715f * x * x * x)));
+        }
+        float d = a * u[k]; dscratch[k] = d; ma = fmaxf(ma, fabsf(d));
+    }
     red[t] = ma; __syncthreads();
     for (int o = nt >> 1; o > 0; o >>= 1) { if (t < o) red[t] = fmaxf(red[t], red[t + o]); __syncthreads(); }
     float sc = red[0] / 127.f; float inv = sc > 0.f ? 1.f / sc : 0.f;

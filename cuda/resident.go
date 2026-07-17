@@ -39,7 +39,11 @@ type cudaLayer struct {
 	qNorm, kNorm        *gc.Buffer[float32] // per-head QK-norm weights (nil ⇒ arch has none)
 	window              int32               // sliding-window span for THIS layer; 0 = full causal
 	preNorm, postNorm   *gc.Buffer[float32]
-	hasBias             bool
+	// Gemma sandwich norms (nil unless NormSandwich4): applied to the SUBLAYER OUTPUT before
+	// the residual add, not to a GEMV input.
+	postAttnNorm, postMLPNorm *gc.Buffer[float32]
+	invF                      *gc.Buffer[float32] // per-layer RoPE inv-freq (local vs global base)
+	hasBias                   bool
 }
 
 type cudaResident struct {
@@ -49,13 +53,15 @@ type cudaResident struct {
 	hidden, nLayers, nH, nKV, hd, inter, vocab int
 	qDim, kvDim, half                          int
 	eps, attnScale                             float32
-	qkNorm                                     bool // arch needs per-head Q/K RMSNorm before RoPE
-	rmsAddOne                                  bool // (1+w) offset — false for Qwen3/Llama
+	qkNorm                                     bool  // arch needs per-head Q/K RMSNorm before RoPE
+	rmsAddOne                                  bool  // (1+w) offset — false for Qwen3/Llama
+	act                                        int32 // gated MLP activation, decoder.ActKind (0=gelu-tanh, 1=silu)
+	sandwich                                   bool  // Gemma 4-norm sandwich: extra post-attn / post-MLP norms
 
 	// gocudrv state — touched ONLY on the executor thread.
-	cx                                                                                        *gc.Context
-	stream                                                                                    *gc.Stream
-	gemvW4, gemvW8, kvStore, ropeKV, fRms, fQ, fRope, fAttn, fSw, fRes, fArg, fQKV, fGU, fQKN *gc.Function
+	cx                                                                                                 *gc.Context
+	stream                                                                                             *gc.Stream
+	gemvW4, gemvW8, kvStore, ropeKV, fRms, fRmsF32, fQ, fRope, fAttn, fSw, fRes, fArg, fQKV, fGU, fQKN *gc.Function
 
 	fuseQKV         bool // all of Q/K/V int4 ⇒ K1 super-kernel is usable
 	layers          []cudaLayer
@@ -208,9 +214,30 @@ func (r *cudaResident) launch(f *gc.Function, cfg gc.LaunchConfig, args ...gc.Ke
 	return f.LaunchOn(context.Background(), r.stream, cfg, args...)
 }
 
+// addOneArg is the (1+w) RMS selector as the kernels take it (Architecture.RMSAddOne).
+// Gemma stores norm weights as deviations from 1.0; Llama/Qwen scale by w directly.
+func (r *cudaResident) addOneArg() int32 {
+	if r.rmsAddOne {
+		return 1
+	}
+	return 0
+}
+
 func (r *cudaResident) rms(src, nrm *gc.Buffer[float32], qOut *gc.Buffer[int32], sOut *gc.Buffer[float32]) error {
 	return r.launch(r.fRms, onecfg(256, (r.hidden+256)*4),
-		gc.Arg(src), gc.Arg(nrm), gc.ArgValue(int32(r.hidden)), gc.ArgValue(r.eps), gc.Arg(qOut), gc.Arg(sOut))
+		gc.Arg(src), gc.Arg(nrm), gc.ArgValue(int32(r.hidden)), gc.ArgValue(r.eps),
+		gc.ArgValue(r.addOneArg()), gc.Arg(qOut), gc.Arg(sOut))
+}
+
+// normF32 is Gemma's sandwich post-norm: a plain in-place RMSNorm of a SUBLAYER OUTPUT
+// (no quant — it lands straight in the f32 residual stream). No-op when the arch has no
+// sandwich norms, so non-Gemma families pay nothing.
+func (r *cudaResident) normF32(x, w *gc.Buffer[float32]) error {
+	if w == nil {
+		return nil
+	}
+	return r.launch(r.fRmsF32, onecfg(256, 256*4),
+		gc.Arg(x), gc.Arg(w), gc.ArgValue(int32(r.hidden)), gc.ArgValue(r.eps), gc.ArgValue(r.addOneArg()))
 }
 
 // doG launches the projection GEMV. accum=1 makes the epilogue do dst[n] += result, which
@@ -250,6 +277,7 @@ func (r *cudaResident) launchToken(emb []float32, pos int) error {
 				SharedMemBytes: uint32((r.hidden + 256 + r.hidden/4) * 4)}
 			if e := r.launch(r.fQKV, cfg,
 				gc.Arg(r.x), gc.Arg(Ly.preNorm), gc.ArgValue(int32(r.hidden)), gc.ArgValue(r.eps),
+				gc.ArgValue(r.addOneArg()),
 				gc.Arg(Ly.q.W), gc.Arg(Ly.q.ws16), qb,
 				gc.Arg(Ly.k.W), gc.Arg(Ly.k.ws16), kb,
 				gc.Arg(Ly.v.W), gc.Arg(Ly.v.ws16), vb,
@@ -286,7 +314,7 @@ func (r *cudaResident) launchToken(emb []float32, pos int) error {
 		}
 		// fused rope(q)+rope(k)+kv_store(k)+kv_store(v): 4 launches → 1 (same math/order).
 		_ = r.launch(r.ropeKV, g1cfg(r.nH*r.half+r.nKV*r.half, 256),
-			gc.Arg(r.qB), gc.Arg(r.kB), gc.Arg(r.vB), gc.Arg(r.invF), gc.Arg(r.kc[l]), gc.Arg(r.vc[l]),
+			gc.Arg(r.qB), gc.Arg(r.kB), gc.Arg(r.vB), gc.Arg(Ly.invF), gc.Arg(r.kc[l]), gc.Arg(r.vc[l]),
 			gc.ArgValue(int32(r.nH)), gc.ArgValue(int32(r.nKV)), gc.ArgValue(int32(r.hd)), gc.ArgValue(int32(pos)))
 		nKeys := pos + 1
 		// Sliding window (per layer: Mistral is all-local, Mellum interleaves). Shared is sized
@@ -298,8 +326,21 @@ func (r *cudaResident) launchToken(emb []float32, pos int) error {
 		_ = r.launch(r.fAttn, gc.LaunchConfig{GridX: uint32(r.nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nWin + 128) * 4)},
 			gc.Arg(r.qB), gc.Arg(r.kc[l]), gc.Arg(r.vc[l]), gc.ArgValue(int32(r.nH)), gc.ArgValue(int32(r.nKV)), gc.ArgValue(int32(r.hd)), gc.ArgValue(int32(nKeys)), gc.ArgValue(r.attnScale), gc.ArgValue(Ly.window), gc.Arg(r.cctx))
 		_ = r.launch(r.fQ, onecfg(256, 256*4), gc.Arg(r.cctx), gc.ArgValue(int32(r.qDim)), gc.Arg(r.cq), gc.Arg(r.cSc))
-		// accumulate straight into the residual stream — absorbs the `residual` launch.
-		_ = r.doG(Ly.o, r.cq, r.cSc, nullBias, r.x, 1)
+		// Normally the out-proj accumulates straight into the residual stream (accum=1),
+		// absorbing the `residual` launch. Gemma's sandwich norm CANNOT use that epilogue: it
+		// must normalize the sublayer output BETWEEN the projection and the residual add
+		// (decoder/model.go: `a = attn(...); if sandwich { a = rmsNorm(a, PostAttnNorm) }; h += a`).
+		// So the sandwich path projects into a scratch buffer, norms it, then adds.
+		if r.sandwich {
+			// oO/dO are the pre-existing [hidden] sublayer-output buffers, dead since the
+			// accum=1 epilogue absorbed the residual launch — the sandwich path needs exactly
+			// them back.
+			_ = r.doG(Ly.o, r.cq, r.cSc, nullBias, r.oO, 0)
+			_ = r.normF32(r.oO, Ly.postAttnNorm)
+			_ = r.launch(r.fRes, g1cfg(r.hidden, 256), gc.Arg(r.x), gc.Arg(r.oO), gc.ArgValue(int32(r.hidden)))
+		} else {
+			_ = r.doG(Ly.o, r.cq, r.cSc, nullBias, r.x, 1)
+		}
 		if r.fuseQKV { // same guard: all layer projections int4
 			// K3a: pre-MLP rmsnorm+quant redundantly per block + this block's gate/up rows —
 			// one launch instead of three; the layer's second GridX:1 rmsnorm disappears.
@@ -308,6 +349,7 @@ func (r *cudaResident) launchToken(emb []float32, pos int) error {
 				SharedMemBytes: uint32((r.hidden + 256 + r.hidden/4) * 4)}
 			if e := r.launch(r.fGU, cfg,
 				gc.Arg(r.x), gc.Arg(Ly.postNorm), gc.ArgValue(int32(r.hidden)), gc.ArgValue(r.eps),
+				gc.ArgValue(r.addOneArg()),
 				gc.Arg(Ly.g.W), gc.Arg(Ly.g.ws16),
 				gc.Arg(Ly.u.W), gc.Arg(Ly.u.ws16),
 				gc.ArgValue(int32(r.inter)), gc.ArgValue(int32(r.hidden/8)), gc.ArgValue(int32(r.hidden/32)),
@@ -319,8 +361,15 @@ func (r *cudaResident) launchToken(emb []float32, pos int) error {
 			_ = r.doG(Ly.g, r.mq, r.mSc, nullBias, r.gO, 0)
 			_ = r.doG(Ly.u, r.mq, r.mSc, nullBias, r.uO, 0)
 		}
-		_ = r.launch(r.fSw, onecfg(256, 256*4), gc.Arg(r.gO), gc.Arg(r.uO), gc.ArgValue(int32(r.inter)), gc.Arg(r.dq), gc.Arg(r.dSc), gc.Arg(r.dScr))
-		if e := r.doG(Ly.d, r.dq, r.dSc, nullBias, r.x, 1); e != nil {
+		_ = r.launch(r.fSw, onecfg(256, 256*4), gc.Arg(r.gO), gc.Arg(r.uO), gc.ArgValue(int32(r.inter)),
+			gc.ArgValue(r.act), gc.Arg(r.dq), gc.Arg(r.dSc), gc.Arg(r.dScr))
+		if r.sandwich {
+			if e := r.doG(Ly.d, r.dq, r.dSc, nullBias, r.dO, 0); e != nil {
+				return e
+			}
+			_ = r.normF32(r.dO, Ly.postMLPNorm)
+			_ = r.launch(r.fRes, g1cfg(r.hidden, 256), gc.Arg(r.x), gc.Arg(r.dO), gc.ArgValue(int32(r.hidden)))
+		} else if e := r.doG(Ly.d, r.dq, r.dSc, nullBias, r.x, 1); e != nil {
 			return e
 		}
 	}

@@ -41,8 +41,10 @@ var archFeatureProfile = map[string][]ResidentFeature{
 	"qwen3_5_moe_text": {FeatMoE, FeatQKNorm},
 	// Gemma — VERIFIED against the real checkpoints via RequiredResidentFeatures (an earlier
 	// hand-written guess here was wrong on three counts: it missed per-layer-rope / qk-norm /
-	// sliding-window, and claimed rms-add-one for gemma4, which has RMSAddOne=false). All are
-	// refused upstream by decodeRunnerEligible today (sandwich norms / softcap / own forward).
+	// sliding-window, and claimed rms-add-one for gemma4, which has RMSAddOne=false).
+	// gemma3/gemma3_text are resident on CUDA. gemma4 stays refused — it needs logit-softcap
+	// AND has its own forward (per-layer head_dim / KV-sharing / PLE), so it is out on two
+	// counts, not one.
 	"gemma3":      {FeatEmbedScale, FeatGatedGELU, FeatPerLayerRoPE, FeatQKNorm, FeatRMSAddOne, FeatSandwichNorm, FeatSlidingWindow},
 	"gemma3_text": {FeatEmbedScale, FeatGatedGELU, FeatPerLayerRoPE, FeatQKNorm, FeatRMSAddOne, FeatSandwichNorm, FeatSlidingWindow},
 	"gemma4":      {FeatEmbedScale, FeatGatedGELU, FeatLogitSoftcap, FeatPerLayerRoPE, FeatQKNorm, FeatSandwichNorm, FeatSlidingWindow},
@@ -102,9 +104,9 @@ func TestResidentAdmission_matrix(t *testing.T) {
 // to catch, so widening a set must be a deliberate, reviewed edit — not a drive-by.
 func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 	want := map[string][]ResidentFeature{
-		// cgo-free CUDA: plain dense + per-head QK-norm + sliding window (both validated on real
-		// checkpoints). Still no (1+w) RMS, no partial/per-layer/YaRN rope, no MoE/MLA/SSM.
-		"cuda": {FeatQKNorm, FeatSlidingWindow},
+		// cgo-free CUDA: dense + QK-norm + sliding window + the Gemma set. Still no partial
+		// rotary / per-layer rotary WIDTH, no YaRN mscale, no logit softcap, no MoE/MLA/SSM.
+		"cuda": {FeatQKNorm, FeatSlidingWindow, FeatRMSAddOne, FeatSandwichNorm, FeatGatedGELU, FeatEmbedScale, FeatPerLayerRoPE},
 		"webgpu": {
 			FeatQKNorm, FeatPartialRotary, FeatSlidingWindow, FeatPerLayerRoPE, FeatRopeMscale,
 			FeatMoE, FeatMLA, FeatSSM, FeatNonGatedMLP, FeatLogitScale, FeatRMSAddOne,

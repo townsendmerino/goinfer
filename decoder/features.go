@@ -142,14 +142,20 @@ func missingFeatures(required []ResidentFeature, implemented map[ResidentFeature
 // A backend adds an entry ONLY when it ships the kernel that implements it. Overclaiming here
 // is exactly the lie the gate exists to catch.
 var ResidentBackendFeatures = map[string]map[ResidentFeature]bool{
-	// cgo-free CUDA (cuda/): the plain dense Qwen2/Llama block, plus per-head QK-norm and
-	// sliding-window attention. Still NOT implemented: rmsnorm_quant has no (1+w) offset, the
-	// rope kernel hardcodes half = hd/2 (no partial rotary / per-layer table / YaRN factor),
-	// and there is no MoE/MLA/SSM path. Partial rotary is deliberately absent: its only arch
-	// (glm4_moe) also needs MoE, so implementing it today would unlock nothing.
+	// cgo-free CUDA (cuda/): the dense Qwen2/Llama block, plus QK-norm, sliding window, and the
+	// Gemma set ((1+w) RMS, sandwich norms, GeGLU, embed scale, per-layer RoPE base).
+	// Still NOT implemented: the rope kernel hardcodes half = hd/2, so no partial rotary and no
+	// per-layer rotary WIDTH (only per-layer base); no YaRN mscale; no logit softcap; no
+	// MoE/MLA/SSM. Partial rotary is deliberately absent: its only arch (glm4_moe) also needs
+	// MoE, so implementing it today would unlock nothing.
 	"cuda": {
 		FeatQKNorm:        true, // qk_norm kernel — per-head Q/K RMSNorm before RoPE (Qwen3)
 		FeatSlidingWindow: true, // attention `window` uniform, per-layer via LayerIsLocalResident
+		FeatRMSAddOne:     true, // (1+w) offset, threaded through rmsnorm_quant/fused_rms_*/qk_norm
+		FeatSandwichNorm:  true, // rmsnorm_f32 on each sublayer output (breaks the accum epilogue)
+		FeatGatedGELU:     true, // glu_quant `act` — GeGLU as well as SwiGLU
+		FeatEmbedScale:    true, // √hidden applied host-side in embedResident
+		FeatPerLayerRoPE:  true, // per-layer invFreq buffer (Gemma local 10k vs global 1M base)
 	},
 
 	// WebGPU (gpu/): the richest runner — the levers in docs/gpu-residency-coverage.md.

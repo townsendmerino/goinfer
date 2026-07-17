@@ -50,7 +50,7 @@ func TestE2EDecode(t *testing.T) {
 	fQuant, _ := glmod.Function("quant_vec")
 	fRope, _ := glmod.Function("rope")
 	fAttn, _ := glmod.Function("attention")
-	fSwiglu, _ := glmod.Function("swiglu_quant")
+	fSwiglu, _ := glmod.Function("glu_quant")
 	fResid, _ := glmod.Function("residual")
 	fArgmax, _ := glmod.Function("argmax_reduce")
 	stream, _ := ctx.NewStream()
@@ -129,7 +129,7 @@ func TestE2EDecode(t *testing.T) {
 	rmsShared := (H + 256) * 4
 	token := func() {
 		for l := 0; l < nLayers; l++ {
-			L(fRms, one(256, rmsShared), gc.Arg(x), gc.Arg(rmsA), gc.ArgValue(int32(H)), gc.ArgValue(float32(1e-6)), gc.Arg(aq), gc.Arg(aSc))
+			L(fRms, one(256, rmsShared), gc.Arg(x), gc.Arg(rmsA), gc.ArgValue(int32(H)), gc.ArgValue(float32(1e-6)), gc.ArgValue(int32(0)), gc.Arg(aq), gc.Arg(aSc))
 			doGemv(Wqkv, aq, sQkv, qkvR, H, qkv)
 			L(fRope, cfg1D(nH*half, 256), gc.Arg(qkv), gc.Arg(invF), gc.ArgValue(int32(nH)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(pos)))
 			L(fRope, cfg1D(nKV*half, 64), gc.Arg(qkv), gc.Arg(invF), gc.ArgValue(int32(nKV)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(pos))) // (offset into k slice handled below in real backend; here just work)
@@ -138,14 +138,14 @@ func TestE2EDecode(t *testing.T) {
 			L(fQuant, one(256, 256*4), gc.Arg(cctx), gc.ArgValue(int32(qDim)), gc.Arg(cq), gc.Arg(cSc))
 			doGemv(Wo, cq, sO, H, qDim, oOut)
 			L(fResid, cfg1D(H, 256), gc.Arg(x), gc.Arg(oOut), gc.ArgValue(int32(H)))
-			L(fRms, one(256, rmsShared), gc.Arg(x), gc.Arg(rmsF), gc.ArgValue(int32(H)), gc.ArgValue(float32(1e-6)), gc.Arg(mq), gc.Arg(mSc))
+			L(fRms, one(256, rmsShared), gc.Arg(x), gc.Arg(rmsF), gc.ArgValue(int32(H)), gc.ArgValue(float32(1e-6)), gc.ArgValue(int32(0)), gc.Arg(mq), gc.Arg(mSc))
 			doGemv(Wg, mq, sG, I, H, gO)
 			doGemv(Wu, mq, sU, I, H, uO)
-			L(fSwiglu, one(256, 256*4), gc.Arg(gO), gc.Arg(uO), gc.ArgValue(int32(I)), gc.Arg(dq), gc.Arg(dSc), gc.Arg(dScr))
+			L(fSwiglu, one(256, 256*4), gc.Arg(gO), gc.Arg(uO), gc.ArgValue(int32(I)), gc.ArgValue(int32(1)), gc.Arg(dq), gc.Arg(dSc), gc.Arg(dScr))
 			doGemv(Wd, dq, sD, H, I, dOut)
 			L(fResid, cfg1D(H, 256), gc.Arg(x), gc.Arg(dOut), gc.ArgValue(int32(H)))
 		}
-		L(fRms, one(256, rmsShared), gc.Arg(x), gc.Arg(rmsE), gc.ArgValue(int32(H)), gc.ArgValue(float32(1e-6)), gc.Arg(aq), gc.Arg(aSc))
+		L(fRms, one(256, rmsShared), gc.Arg(x), gc.Arg(rmsE), gc.ArgValue(int32(H)), gc.ArgValue(float32(1e-6)), gc.ArgValue(int32(0)), gc.Arg(aq), gc.Arg(aSc))
 		doGemv(Wlm, aq, sLm, vocab, H, logits)
 		L(fArgmax, one(1024, 1024*8), gc.Arg(logits), gc.ArgValue(int32(vocab)), gc.Arg(outIdx), gc.Arg(outVal))
 	}
@@ -273,7 +273,7 @@ func validateGlue(t *testing.T, ctx *gc.Context, stream *gc.Stream, bg context.C
 		_ = gc.CopyHtoD(bg, dx, xh)
 		_ = gc.CopyHtoD(bg, dw, wh)
 		_ = fRms.LaunchOn(bg, stream, gc.LaunchConfig{GridX: 1, GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((H + 256) * 4)},
-			gc.Arg(dx), gc.Arg(dw), gc.ArgValue(int32(H)), gc.ArgValue(float32(1e-6)), gc.Arg(dq), gc.Arg(ds))
+			gc.Arg(dx), gc.Arg(dw), gc.ArgValue(int32(H)), gc.ArgValue(float32(1e-6)), gc.ArgValue(int32(0)), gc.Arg(dq), gc.Arg(ds))
 		_ = stream.Synchronize(bg)
 		gq := make([]int32, H/4)
 		_ = gc.CopyDtoH(bg, gq, dq)

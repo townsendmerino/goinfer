@@ -221,7 +221,7 @@ func TestRealE2EDecode(t *testing.T) {
 		fRms, _ = glmod.Function("rmsnorm_quant")
 		fQ, _ = glmod.Function("quant_vec")
 		fAttn, _ = glmod.Function("attention")
-		fSw, _ = glmod.Function("swiglu_quant")
+		fSw, _ = glmod.Function("glu_quant")
 		fArg, _ = glmod.Function("argmax_reduce")
 		stream, _ = cx.NewStream()
 
@@ -265,7 +265,7 @@ func TestRealE2EDecode(t *testing.T) {
 		return gc.LaunchConfig{GridX: 1, GridY: 1, GridZ: 1, BlockX: uint32(b), BlockY: 1, BlockZ: 1, SharedMemBytes: uint32(sh)}
 	}
 	rms := func(src, nrm *gc.Buffer[float32], qOut *gc.Buffer[int32], sOut *gc.Buffer[float32]) {
-		L(fRms, one(256, (H+256)*4), gc.Arg(src), gc.Arg(nrm), gc.ArgValue(int32(H)), gc.ArgValue(eps), gc.Arg(qOut), gc.Arg(sOut))
+		L(fRms, one(256, (H+256)*4), gc.Arg(src), gc.Arg(nrm), gc.ArgValue(int32(H)), gc.ArgValue(eps), gc.ArgValue(int32(0)), gc.Arg(qOut), gc.Arg(sOut))
 	}
 	nullBias := gc.ArgDevicePtr(0)
 	doG := func(wt wq, a *gc.Buffer[int32], as *gc.Buffer[float32], bias gc.KernelArg, dst *gc.Buffer[float32], accum int32) {
@@ -298,7 +298,7 @@ func TestRealE2EDecode(t *testing.T) {
 			rms(x, Ly.postNorm, mq, mSc)
 			doG(Ly.g, mq, mSc, nullBias, gO, 0)
 			doG(Ly.u, mq, mSc, nullBias, uO, 0)
-			L(fSw, one(256, 256*4), gc.Arg(gO), gc.Arg(uO), gc.ArgValue(int32(I)), gc.Arg(dq), gc.Arg(dSc), gc.Arg(dScr))
+			L(fSw, one(256, 256*4), gc.Arg(gO), gc.Arg(uO), gc.ArgValue(int32(I)), gc.ArgValue(int32(1)), gc.Arg(dq), gc.Arg(dSc), gc.Arg(dScr))
 			doG(Ly.d, dq, dSc, nullBias, x, 1)
 		}
 		rms(x, finalNorm, aq, aSc)

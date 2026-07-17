@@ -37,7 +37,7 @@ func TestE2EDecodeInt4(t *testing.T) {
 	fQuant, _ := glmod.Function("quant_vec")
 	fRope, _ := glmod.Function("rope")
 	fAttn, _ := glmod.Function("attention")
-	fSwiglu, _ := glmod.Function("swiglu_quant")
+	fSwiglu, _ := glmod.Function("glu_quant")
 	fResid, _ := glmod.Function("residual")
 	fArgmax, _ := glmod.Function("argmax_reduce")
 	stream, _ := ctx.NewStream()
@@ -100,7 +100,7 @@ func TestE2EDecodeInt4(t *testing.T) {
 	rms := (H + 256) * 4
 	token := func() {
 		for l := 0; l < nLayers; l++ {
-			L(fRms, one(256, rms), gc.Arg(x), gc.Arg(x), gc.ArgValue(int32(H)), gc.ArgValue(float32(1e-6)), gc.Arg(aq), gc.Arg(sc1))
+			L(fRms, one(256, rms), gc.Arg(x), gc.Arg(x), gc.ArgValue(int32(H)), gc.ArgValue(float32(1e-6)), gc.ArgValue(int32(0)), gc.Arg(aq), gc.Arg(sc1))
 			gemvW4(Wqkv, aq, qkvR, H, qkv)
 			L(fRope, cfg1D(nH*half, 256), gc.Arg(qkv), gc.Arg(invF), gc.ArgValue(int32(nH)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(pos)))
 			L(fAttn, gc.LaunchConfig{GridX: uint32(nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nKeys + 128) * 4)},
@@ -108,14 +108,14 @@ func TestE2EDecodeInt4(t *testing.T) {
 			L(fQuant, one(256, 256*4), gc.Arg(cctx), gc.ArgValue(int32(qDim)), gc.Arg(cq), gc.Arg(sc1))
 			gemvW4(Wo, cq, H, qDim, oOut)
 			L(fResid, cfg1D(H, 256), gc.Arg(x), gc.Arg(oOut), gc.ArgValue(int32(H)))
-			L(fRms, one(256, rms), gc.Arg(x), gc.Arg(x), gc.ArgValue(int32(H)), gc.ArgValue(float32(1e-6)), gc.Arg(mq), gc.Arg(sc1))
+			L(fRms, one(256, rms), gc.Arg(x), gc.Arg(x), gc.ArgValue(int32(H)), gc.ArgValue(float32(1e-6)), gc.ArgValue(int32(0)), gc.Arg(mq), gc.Arg(sc1))
 			gemvW4(Wg, mq, I, H, gO)
 			gemvW4(Wu, mq, I, H, uO)
-			L(fSwiglu, one(256, 256*4), gc.Arg(gO), gc.Arg(uO), gc.ArgValue(int32(I)), gc.Arg(dq), gc.Arg(sc1), gc.Arg(dScr))
+			L(fSwiglu, one(256, 256*4), gc.Arg(gO), gc.Arg(uO), gc.ArgValue(int32(I)), gc.ArgValue(int32(1)), gc.Arg(dq), gc.Arg(sc1), gc.Arg(dScr))
 			gemvW4(Wd, dq, H, I, dOut)
 			L(fResid, cfg1D(H, 256), gc.Arg(x), gc.Arg(dOut), gc.ArgValue(int32(H)))
 		}
-		L(fRms, one(256, rms), gc.Arg(x), gc.Arg(x), gc.ArgValue(int32(H)), gc.ArgValue(float32(1e-6)), gc.Arg(aq), gc.Arg(sc1))
+		L(fRms, one(256, rms), gc.Arg(x), gc.Arg(x), gc.ArgValue(int32(H)), gc.ArgValue(float32(1e-6)), gc.ArgValue(int32(0)), gc.Arg(aq), gc.Arg(sc1))
 		gemvW4(Wlm, aq, vocab, H, logits)
 		L(fArgmax, one(1024, 1024*8), gc.Arg(logits), gc.ArgValue(int32(vocab)), gc.Arg(outIdx), gc.Arg(sc1))
 	}

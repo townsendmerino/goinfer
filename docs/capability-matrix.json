@@ -138,7 +138,7 @@
     "tied_lm_head": true,
     "loaders": "safetensors, GGUF",
     "modality": "text (+ vision via VL text_config)",
-    "gpu_residency_eligible": false,
+    "gpu_residency_eligible": true,
     "parity": "pending"
   },
   {
