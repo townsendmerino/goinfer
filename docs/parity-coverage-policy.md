@@ -69,6 +69,55 @@ forward path changes, *both* families go stale together, so the proxy can never
 silently drift from its source. (If an alias family ever gains its own forward
 file or a distinct `deps_hash`, it loses proxy status and needs its own T3.)
 
+## A gate must be able to run, and able to fail
+
+The tiers above say *what* to test; this says when a gate actually counts. Two ways a
+gate reads green while proving nothing — both hit this repo inside one session (the CUDA
+MoE bring-up; the Metal Gemma hunt found the mirror image from the other side), so they
+are policy, not folklore.
+
+### Runnable: a committed golden over an uncommitted checkpoint is not T1
+
+T1's contract is *no external asset*. A test that reads a committed golden but `os.Stat`s
+a `.gitignore`d `model.safetensors` is a T1 in name and a T3 in practice: it `t.Skip`s in
+CI and runs only where someone regenerated the fixture. The Mixtral MoE gate was exactly
+this — `mixtral_forward_golden.json` committed, its checkpoint gitignored — so **neither the
+CPU nor the CUDA MoE parity ever executed in CI**, and the skip was invisible.
+
+Rule: a family's T1 checkpoint is **committed**. These are KB–few-MB deterministic
+random-weight models (no license, and no size argument outweighs a family's correctness
+gate running on every push — `mixtral-tiny` is 3.6 MB). If a fixture genuinely cannot be
+committed, the row is T2/T3, not T1, and the family is **not** "CI-covered" — label it so.
+
+One distinction the fixture-commit does *not* erase: a **GPU-kernel** gate still needs a
+real device. Committing its fixture makes it *runnable on a GPU runner*, not run in CI.
+The CPU path and the device path are **separate coverage**; only the CPU one runs without
+hardware. "The fixture is committed now" must never be read as "the kernel is tested in
+CI" — that conflation is how a device-only bug (the Metal MMA NaN) hides behind a green
+CPU gate. A device gate is CI-covered only when a GPU runner executes it.
+
+### Falsifiable: prove the gate red before trusting it green
+
+A parity gate is **vacuous until seen to fail on a real defect**. Before a new gate counts:
+
+1. **Break-it-first.** Perturb the thing under test (route to the wrong expert, swap
+   gate/up, mis-stride the stacked experts) and confirm the gate goes red. Three gates in
+   one session were vacuous on first write and only a deliberate break-table exposed it. A
+   gate never seen red is an assumption, not a test.
+2. **The metric must be able to fail.** `if c < minCos` never updates on a NaN (`NaN < x`
+   is false), so a NaN cosine — the signature of the *worst* bugs, degenerate output —
+   sails through the floor untouched. Guard NaN explicitly. Any reduction tracking a
+   min/max/threshold has this hole; a mis-strided-stack control measured "min cosine
+   1.000000" next to a 79% argmax gap because of it.
+3. **Calibrate the floor to a measured break-table, not to taste.** On tiny random-weight
+   fixtures, argmax + the 3% near-tie rule is *necessary but not sufficient*: experts are
+   near-interchangeable, so a wrong one contributes a similar-magnitude vector argmax
+   cannot see (measured: two real dispatch bugs passed the 3% rule at cosine 0.9887 and
+   0.9977). Set the cosine floor from the gap between the correct run and the *tightest
+   surviving* broken control, and record that table in the test. An invented floor is its
+   own bug — an early CUDA gate asserted cosine ≥ 0.999 and failed the *shipped* dense path
+   at 0.9936.
+
 ## The validation manifest is the source of truth
 
 `testdata/parity_manifest.json` records, per family: the commit it was last

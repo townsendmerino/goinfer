@@ -11,6 +11,13 @@ demo/chat/dist/
 *.safetensors
 *.gguf
 *.bin
+# EXCEPTION: mixtral-tiny is a 3.6 MB deterministic random-weight MoE checkpoint
+# (scripts/pin_mixtral_tiny.py). Committed on purpose so the MoE parity gate is a
+# real T1 — runnable in CI without a per-machine asset — rather than a golden that
+# skips because its checkpoint is gitignored. See docs/parity-coverage-policy.md,
+# "A gate must be able to run, and able to fail".
+!testdata/mixtral-tiny/
+!testdata/mixtral-tiny/model.safetensors
 testdata/model
 testdata/models
 testdata/*-gguf
@@ -74,4 +81,5 @@ testdata/deepseek-tiny/
 testdata/phi3-tiny/
 testdata/kimi-tiny/
 testdata/llama4-tiny/
-testdata/mixtral-tiny/
+# testdata/mixtral-tiny/ is intentionally committed — see the exception near the top
+# of this file and docs/parity-coverage-policy.md (the MoE parity gate must be a real T1).
