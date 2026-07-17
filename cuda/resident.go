@@ -191,38 +191,96 @@ func (r *cudaResident) Reset() {}
 // the single-model serve lifetime.
 // Close releases the model's GPU memory and tears down the pinned executor.
 //
-// Freeing the DEVICE memory is the whole job here: a resident model owns the weight buffers
-// and the per-layer KV cache, which for a real checkpoint is gigabytes. This used to free only
-// the page-locked HOST buffer and close the channel, so every Load(cuda)+Close leaked the
-// entire model's VRAM until the process exited — invisible in a one-model run, fatal for a
-// model zoo, an /admin/models/unload, or a test binary that loads several models in sequence
-// (it saturated an 8 GB card mid-suite, after which every Alloc silently returned nil).
+// Freeing the DEVICE memory is the whole job: a resident model owns the weight buffers and the
+// per-layer KV cache — gigabytes for a real checkpoint. This once freed only the page-locked
+// HOST buffer and closed the channel, so every Load(cuda)+Close leaked the entire model until
+// the process exited: invisible in a one-model run, fatal for a model zoo, an
+// /admin/models/unload, or a test binary loading models in sequence (it saturated an 8 GB card
+// mid-suite, after which every Alloc silently returned nil and the zero-filled buffers looked
+// like a parity bug rather than an OOM).
 //
-// Closing the context is what reclaims it: the primary context owns every allocation made in
-// it, so releasing our reference frees the lot without tracking each buffer. All of it must
-// happen ON the executor thread — that thread made the context current — and therefore before
-// reqCh closes. Page-locked host memory is freed first: it must go before the context does.
+// Every buffer is freed EXPLICITLY rather than by leaning on context destruction. Releasing our
+// primary-context reference only reclaims memory if the refcount reaches ZERO — and
+// dev.Primary() hands out a refcounted per-device singleton, so any other holder (a second
+// model in a zoo, another subsystem, a test's own probe context) keeps the context alive and
+// the "freed" model's VRAM never comes back. That is precisely the multi-model case unloading
+// exists for, so the release-the-context shortcut was wrong exactly where it mattered most;
+// TestResidentCloseFreesVRAM pins it.
+//
+// All of it runs ON the executor thread — that thread made the context current — and therefore
+// before reqCh closes. Page-locked host memory goes first: it must be freed before the context.
 func (r *cudaResident) Close() error {
-	if r.reqCh != nil {
-		r.reqCh <- func() error {
-			if r.logitsPinned != nil {
-				_ = r.logitsPinned.Close() // page-locked host memory must be freed before the ctx
-				r.logitsPinned, r.logitsHost = nil, nil
-			}
-			if r.stream != nil {
-				_ = r.stream.Close()
-				r.stream = nil
-			}
-			if r.cx != nil {
-				_ = r.cx.Close() // releases the primary-context ref → frees weights + KV cache
-				r.cx = nil
-			}
-			return nil
-		}
-		<-r.ackCh
-		close(r.reqCh)
-		r.reqCh = nil
+	if r.reqCh == nil {
+		return nil
 	}
+	r.reqCh <- func() error {
+		if r.logitsPinned != nil {
+			_ = r.logitsPinned.Close() // page-locked host memory must go before the ctx
+			r.logitsPinned, r.logitsHost = nil, nil
+		}
+		freeW := func(w *cudaWQ) {
+			if w.W != nil {
+				_ = w.W.Close()
+				w.W = nil
+			}
+			if w.ws != nil {
+				_ = w.ws.Close()
+				w.ws = nil
+			}
+			if w.ws16 != nil {
+				_ = w.ws16.Close()
+				w.ws16 = nil
+			}
+		}
+		freeF := func(b **gc.Buffer[float32]) {
+			if *b != nil {
+				_ = (*b).Close()
+				*b = nil
+			}
+		}
+		freeI := func(b **gc.Buffer[int32]) {
+			if *b != nil {
+				_ = (*b).Close()
+				*b = nil
+			}
+		}
+		for i := range r.layers {
+			L := &r.layers[i]
+			for _, w := range []*cudaWQ{&L.q, &L.k, &L.v, &L.o, &L.g, &L.u, &L.d} {
+				freeW(w)
+			}
+			for _, b := range []**gc.Buffer[float32]{&L.qb, &L.kb, &L.vb, &L.qNorm, &L.kNorm,
+				&L.preNorm, &L.postNorm, &L.postAttnNorm, &L.postMLPNorm, &L.invF} {
+				freeF(b)
+			}
+		}
+		r.layers = nil
+		freeW(&r.lmW)
+		for i := range r.kc {
+			freeF(&r.kc[i])
+			freeF(&r.vc[i])
+		}
+		r.kc, r.vc = nil, nil
+		for _, b := range []**gc.Buffer[float32]{&r.finalNorm, &r.x, &r.aSc, &r.qB, &r.kB, &r.vB,
+			&r.cctx, &r.cSc, &r.oO, &r.mSc, &r.gO, &r.uO, &r.dSc, &r.dScr, &r.dO, &r.logits, &r.argVal} {
+			freeF(b)
+		}
+		for _, b := range []**gc.Buffer[int32]{&r.aq, &r.cq, &r.mq, &r.dq, &r.argIdx} {
+			freeI(b)
+		}
+		if r.stream != nil {
+			_ = r.stream.Close()
+			r.stream = nil
+		}
+		if r.cx != nil {
+			_ = r.cx.Close() // release OUR primary-context ref; buffers are already freed above
+			r.cx = nil
+		}
+		return nil
+	}
+	<-r.ackCh
+	close(r.reqCh)
+	r.reqCh = nil
 	return nil
 }
 
