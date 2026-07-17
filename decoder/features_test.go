@@ -109,7 +109,7 @@ func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 			FeatQKNorm, FeatPartialRotary, FeatSlidingWindow, FeatPerLayerRoPE, FeatRopeMscale,
 			FeatMoE, FeatMLA, FeatSSM, FeatNonGatedMLP, FeatLogitScale, FeatRMSAddOne,
 		},
-		"metal": {FeatQKNorm, FeatSlidingWindow, FeatPartialRotary},
+		"metal": {FeatQKNorm, FeatSlidingWindow, FeatPartialRotary, FeatMoE},
 	}
 	for be, exp := range want {
 		got := ResidentBackendFeatures[be]

@@ -167,11 +167,13 @@ var ResidentBackendFeatures = map[string]map[ResidentFeature]bool{
 		FeatRMSAddOne:     true, // (1+w) RMS offset
 	},
 
-	// cgo-free Metal (metal/): dense Qwen2/Llama plus the three coverage levers it shipped
-	// (docs/metal-model-coverage.md). Declines embed-scale and YaRN mscale.
+	// cgo-free Metal (metal/): dense Qwen2/Llama plus qk-norm, sliding-window, partial-rotary,
+	// and MoE (router + stacked experts + shared expert; metal/moe.go, docs/task-metal-moe.md).
+	// Still declines embed-scale, YaRN mscale, per-layer RoPE, MLA and SSM.
 	"metal": {
 		FeatQKNorm:        true, // qk_norm kernels
 		FeatSlidingWindow: true, // attention window uniform
 		FeatPartialRotary: true, // rope rhalf = rotaryDim/2
+		FeatMoE:           true, // moe_route + indexed stacked-expert W4A8 GEMVs + shared expert (metal/moe.go)
 	},
 }

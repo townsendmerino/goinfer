@@ -27,6 +27,85 @@ func TestMoE_libraryCompiles(t *testing.T) {
 	}
 }
 
+// TestMoE_routerGEMV validates gemv_wf32_a8 (f32 weight × int8 activation) — the router /
+// shared-gate GEMV — against a CPU dot. out[r] = (Σ_k w[r,k]·aq[k])·asc.
+func TestMoE_routerGEMV(t *testing.T) {
+	d, err := CreateSystemDefaultDevice()
+	if err != nil {
+		t.Fatalf("device: %v", err)
+	}
+	lib, err := d.CompileLibrary(allKernels, MSL3_1)
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	pipe, err := d.NewComputePipeline(lib, "gemv_wf32_a8")
+	if err != nil {
+		t.Fatalf("pipeline: %v", err)
+	}
+	const rows, K = 8, 64
+	rng := rand.New(rand.NewSource(99))
+	wf := make([]float32, rows*K)
+	for i := range wf {
+		wf[i] = rng.Float32()*2 - 1
+	}
+	aq := make([]int8, K)
+	for i := range aq {
+		aq[i] = int8(clampI(int(rng.Int31n(255))-127, -127, 127))
+	}
+	const aSc = 0.017
+	out := d.NewBufferLen(rows)
+	q := d.NewCommandQueue()
+	q.Run1D(pipe, rows*32, 32, d.NewBufferFloats(wf), d.NewBufferInt8(aq),
+		d.NewBufferFloats([]float32{aSc}), out, d.NewBufferU32(uint32(K)))
+	got := out.Floats()
+	for r := 0; r < rows; r++ {
+		var acc float64
+		for k := 0; k < K; k++ {
+			acc += float64(wf[r*K+k]) * float64(aq[k])
+		}
+		want := float32(acc) * aSc
+		if d := math.Abs(float64(got[r] - want)); d > 1e-4 {
+			t.Fatalf("row %d: got %.6f want %.6f (Δ=%.2e)", r, got[r], want, d)
+		}
+	}
+}
+
+// TestMoE_sharedGateCombine validates shared_gate_combine: x[i] += sigmoid(gl[0])·src[i].
+func TestMoE_sharedGateCombine(t *testing.T) {
+	d, err := CreateSystemDefaultDevice()
+	if err != nil {
+		t.Fatalf("device: %v", err)
+	}
+	lib, err := d.CompileLibrary(allKernels, MSL3_1)
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	pipe, err := d.NewComputePipeline(lib, "shared_gate_combine")
+	if err != nil {
+		t.Fatalf("pipeline: %v", err)
+	}
+	const H = 64
+	rng := rand.New(rand.NewSource(5))
+	x0 := make([]float32, H)
+	src := make([]float32, H)
+	for i := range x0 {
+		x0[i] = rng.Float32()*2 - 1
+		src[i] = rng.Float32()*2 - 1
+	}
+	const gl = 0.7
+	xBuf := d.NewBufferFloats(x0)
+	q := d.NewCommandQueue()
+	q.Run1D(pipe, H, 256, xBuf, d.NewBufferFloats(src), d.NewBufferFloats([]float32{gl}))
+	g := float32(1.0 / (1.0 + math.Exp(-gl)))
+	got := xBuf.Floats()
+	for i := range x0 {
+		want := x0[i] + g*src[i]
+		if d := math.Abs(float64(got[i] - want)); d > 1e-5 {
+			t.Fatalf("[%d]=%.6f want %.6f", i, got[i], want)
+		}
+	}
+}
+
 // refRoute is the CPU reference for moe_route — a verbatim port of decoder.routeExperts
 // (softmax/sigmoid scoring, +bias selection, group-limiting, top-k, norm_topk_prob, scale).
 func refRoute(logits, bias []float32, k int, sigmoid, norm bool, scale float64, nGroup, topkGroup int) ([]int, []float32) {
