@@ -91,3 +91,76 @@ func TestMetal_CloseFreesMemory(t *testing.T) {
 			"(a staircase, not a sawtooth)", grow, cycles)
 	}
 }
+
+// TestMetal_CloseWithSecondModelAlive is the condition the Linux box warned about: their first
+// CUDA fix looked correct under a single load/close cycle and was NOT — the bug only showed with
+// a second context/model alive. Two hazards it covers that a sequential test cannot:
+//
+//  1. USE-AFTER-FREE: Close(A) must not free anything B is still using. Metal has no context to
+//     destroy, so we free per-Device — and BuildResident makes a fresh Device per model, which is
+//     what should keep the ledgers disjoint. This asserts that rather than trusting it: B's
+//     logits must be IDENTICAL before and after A is closed.
+//  2. The free must still actually happen with another model resident.
+func TestMetal_CloseWithSecondModelAlive(t *testing.T) {
+	if testing.Short() {
+		t.Skip("loads real models")
+	}
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	path := os.ExpandEnv("$HOME/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf")
+	if _, err := os.Stat(path); err != nil {
+		t.Skipf("no checkpoint at %s", path)
+	}
+	load := func() *Resident {
+		m, err := decoder.Load(path, decoder.Options{Quant: "int8int8"})
+		if err != nil {
+			t.Fatalf("load: %v", err)
+		}
+		r, err := BuildResident(m)
+		if err != nil {
+			t.Fatalf("BuildResident: %v", err)
+		}
+		return r
+	}
+	a, b := load(), load() // BOTH alive
+	runtime.GC()
+	before := rssMB(t)
+
+	want := append([]float32(nil), b.Forward(7, 0)...) // B's output while A is alive
+
+	a.Close() // free A only
+	runtime.GC()
+	after := rssMB(t)
+
+	// 1. B must be untouched — a shared/over-broad free shows up as changed logits or a crash.
+	got := b.Forward(7, 0)
+	if len(got) != len(want) {
+		t.Fatalf("B logits length changed after closing A: %d vs %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("USE-AFTER-FREE: closing A changed B's logits at %d (%v vs %v) — the free is not per-model",
+				i, got[i], want[i])
+		}
+	}
+	// 2. A's memory must be REUSABLE while B stays resident.
+	//
+	// Note RSS alone cannot answer this: releasing an MTLBuffer returns pages to the allocator,
+	// which does not hand them back to the OS unless something reallocates — so "RSS did not
+	// drop" is NOT evidence of a leak (measuring that was the first version of this test, and it
+	// read as a failure when nothing was wrong). The sequential test's flat trajectory is the
+	// NEXT cycle reusing freed pages. So probe reuse directly: load C after closing A. If A's
+	// memory really came back, C fits in it and RSS stays flat; if A leaked, RSS grows by C.
+	c := load()
+	runtime.GC()
+	withC := rssMB(t)
+	t.Logf("A+B alive %d MB → closed A → %d MB → loaded C → %d MB (C grew %+d MB); B bit-identical",
+		before, after, withC, withC-before)
+	if withC-before > 250 {
+		t.Errorf("closing A with B alive did NOT free: loading C grew rss %+d MB instead of reusing A's "+
+			"footprint — the free is not happening when another model is resident", withC-before)
+	}
+	c.Close()
+	b.Close()
+}
