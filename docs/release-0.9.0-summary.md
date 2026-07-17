@@ -51,7 +51,8 @@ on Metal with dynamic threadgroup memory (validated bit-exact 1536→4096); the 
 | **Mistral** | ✅ components¹ | ❌ declines | sliding-window (Metal); CUDA has no window yet |
 | **Phi-3** | ✅ | (n/a) | windowing free via decoder fix; partial-rotary unit-validated |
 | Gemma 2/3 | ❌ declines | ❌ declines | structural (softcaps, sandwich norm, GeGLU, embed-scale) |
-| MoE / MLA / YaRN | ❌ declines | ❌ declines | correctly declined by the shared taxonomy |
+| **MoE** (Mixtral/Qwen2-MoE/Qwen3-MoE/GLM-MoE) | ❌ declines | ✅ resident | Metal: router + stacked experts + shared; assembly-validated (≡ dense, cosine 1.0). CUDA mirror pending |
+| MLA / DeltaNet / YaRN | ❌ declines | ❌ declines | correctly declined by the shared taxonomy + DecodeRunnerEligible |
 
 ¹ Metal Mistral: As-cap@4096 bit-exact + sliding-window unit-tested; full **7B coherence run needs
 a >16 GB Mac** (int8+int4 doesn't fit 16 GB comfortably).
@@ -87,7 +88,10 @@ decoder bug it surfaced: `phi3Architecture` silently dropped `sliding_window` on
 3. **Mistral-7B full e2e on Metal** — needs a >16 GB Mac (only the coherence run is unverified;
    components are). CUDA Mistral needs a sliding-window kernel (contained, like the CUDA QK-norm).
 4. **Gemma** — the biggest remaining family; structural (5+ features). Correctly declines today.
-5. **MoE** — high-value, isolated (router + top-k + per-expert MLP). Declines gracefully today.
+5. **MoE** — **landed on Metal** (router + stacked int4 experts + gated/ungated shared expert +
+   group-limited routing; assembly-validated ≡ dense, cosine 1.0; docs/task-metal-moe.md). Real
+   16 GB-fitting MoE checkpoint doesn't exist, so the real-model e2e cross-check goes to the CUDA
+   box (which also needs the MoE kernels mirrored — the next CUDA lever).
 6. **Metal decode ceiling** — ~73–77 tok/s is issue-bound; a "Stage C" GEMV or long-context KV
    work are the only levers, both modest. Prefill (3.7×) is the bigger realized win.
 

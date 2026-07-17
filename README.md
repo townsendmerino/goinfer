@@ -295,11 +295,18 @@ producing incorrect results.
 |---|---|---|
 | Qwen2 · Qwen3 · Llama | ✅ resident | ✅ resident |
 | Mistral · Phi-3-mini-4k | ✅ resident | ✅ resident¹ |
-| Gemma · MoE · MLA · YaRN | CPU fallback | CPU fallback |
+| MoE — Mixtral · Qwen2-MoE · Qwen3-MoE · GLM-MoE | CPU fallback | ✅ resident² |
+| Gemma · MLA · DeltaNet/YaRN | CPU fallback | CPU fallback |
 
 ¹ Metal Mistral-7B needs > 16 GB unified memory (int8 + int4). Both backends implement
 qk-norm + sliding-window; Metal also does partial rotary, so a partial-rotary Phi
 variant is resident on Metal but falls back on CUDA.
+
+² Metal MoE (router + stacked experts + shared expert) is validated by assembly
+equivalence (identical experts ≡ the dense FFN, cosine 1.0) + per-kernel parity vs CPU;
+a real MoE checkpoint needs a Mac with enough unified memory (Qwen1.5-MoE-A2.7B is 14.3B
+≈ 14 GB at int8 load), so the real-model e2e cross-check runs on the CUDA box. The
+DeltaNet/Llama-4/Gemma hybrids stay on CPU (declined before residency).
 
 An unlisted or unsupported model still runs — in pure Go on the CPU. The portable
 WebGPU backend (`-tags gpu`) covers a broader resident set (MoE, MLA, SSM, YaRN); see
