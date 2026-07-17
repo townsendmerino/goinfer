@@ -227,6 +227,12 @@ func (b Buffer) Int8s() []int8 {
 	return unsafe.Slice(objc.Send[*int8](b.id, selContents), b.n)
 }
 
+// U32s views the buffer's shared contents as a []uint32 (zero-copy on UMA) — e.g. the MoE
+// router's idx[k] output.
+func (b Buffer) U32s() []uint32 {
+	return unsafe.Slice(objc.Send[*uint32](b.id, selContents), b.n)
+}
+
 // SetU32 overwrites a 1-word uniform buffer's contents in place (per-token: rope pos,
 // nKeys). Zero-copy on UMA.
 func (b Buffer) SetU32(v uint32) { *objc.Send[*uint32](b.id, selContents) = v }

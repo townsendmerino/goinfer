@@ -20,7 +20,8 @@ const metalCtxCap = 4096 // resident KV positions (spike)
 type residLayer struct {
 	qkvW, qkvS, guW, guS, oW, oS, dW, dS Buffer // fused QKV + fused gate/up + o + down
 	qkvBias, preNorm, postNorm           Buffer
-	qNorm, kNorm                         Buffer // per-head QK-RMSNorm weights (Qwen3; zero if !qkNorm)
+	qNorm, kNorm                         Buffer    // per-head QK-RMSNorm weights (Qwen3; zero if !qkNorm)
+	moe                                  *moeLayer // non-nil ⇒ this layer's FFN is MoE (dense guW/dW unused)
 }
 
 // Resident is a Metal-resident dense decoder. Weights uploaded once in BuildResident;
@@ -43,6 +44,7 @@ type Resident struct {
 	finalNorm Buffer
 	lmW, lmS  Buffer
 	kc, vc    []Buffer
+	moe       *moeResident // non-nil ⇒ MoE model (router + stacked experts); see moe.go
 
 	x, aq, aSc, ctx, cq, cSc, oO, mq, mSc, dq, dSc, dO, logits                Buffer
 	invf, uHd, uKvDim, uH, uI, uHH, uNH, uNKV, uScale, uEps, uQtotal, uKtotal Buffer
@@ -160,6 +162,9 @@ func BuildResident(m *decoder.Model) (*Resident, error) {
 		win = 0
 	}
 	r.uWindow = d.NewBufferU32(uint32(win))
+	if r.moe, err = buildMoE(d, m, pipe, H); err != nil { // nil for a dense model; error ⇒ decline
+		return nil, err
+	}
 	r.q = d.NewCommandQueue()
 
 	w := m.Weights()
@@ -177,9 +182,13 @@ func BuildResident(m *decoder.Model) (*Resident, error) {
 		lw := &w.Layers[l]
 		var L residLayer
 		L.qkvW, L.qkvS = int4Concat(d, &lw.QProj, &lw.KProj, &lw.VProj) // fused QKV
-		L.guW, L.guS = int4Concat(d, &lw.GateProj, &lw.UpProj)          // fused gate/up
 		L.oW, L.oS = mk(&lw.OProj)
-		L.dW, L.dS = mk(&lw.DownProj)
+		if r.moe != nil && len(lw.Experts) > 0 { // MoE layer: stacked experts instead of a dense FFN
+			L.moe = buildMoELayer(d, lw, r.moe)
+		} else { // dense FFN (also GLM/DeepSeek's FirstKDense prefix layers)
+			L.guW, L.guS = int4Concat(d, &lw.GateProj, &lw.UpProj) // fused gate/up
+			L.dW, L.dS = mk(&lw.DownProj)
+		}
 		L.preNorm = d.NewBufferFloats(lw.PreAttnNorm)
 		L.postNorm = d.NewBufferFloats(lw.PreMLPNorm)
 		if r.qkNorm { // Qwen3 per-head Q/K norm weights [hd]
@@ -204,13 +213,19 @@ func BuildResident(m *decoder.Model) (*Resident, error) {
 		return nil, err
 	}
 
+	// The gate|up and down scratch must fit the widest FFN width: the dense I, or (for MoE) the
+	// larger of the expert and shared-expert intermediate dims.
+	guDim := I
+	if r.moe != nil {
+		guDim = max(I, max(r.moe.inter, r.moe.sharedInter))
+	}
 	r.x = d.NewBufferLen(H)
 	r.aq, r.aSc = byteBuf(d, H), d.NewBufferLen(1)
 	r.qkv = d.NewBufferLen(nH*hd + 2*r.kvDim) // fused [q | k | v]
-	r.gu = d.NewBufferLen(2 * I)              // fused [gate | up]
+	r.gu = d.NewBufferLen(2 * guDim)          // fused [gate | up]
 	r.ctx, r.cq, r.cSc = d.NewBufferLen(nH*hd), byteBuf(d, nH*hd), d.NewBufferLen(1)
 	r.oO, r.mq, r.mSc = d.NewBufferLen(H), byteBuf(d, H), d.NewBufferLen(1)
-	r.dq, r.dSc, r.dO = byteBuf(d, I), d.NewBufferLen(1), d.NewBufferLen(H)
+	r.dq, r.dSc, r.dO = byteBuf(d, guDim), d.NewBufferLen(1), d.NewBufferLen(H)
 	r.logits = d.NewBufferLen(V)
 	nTiles := V / 8 // one (maxLogit,rowIdx) partial per threadgroup (8 rows) — V divisible by 8
 	r.part, r.tok, r.uP = d.NewBufferLen(nTiles*2), d.NewBufferLen(1), d.NewBufferU32(uint32(nTiles))
@@ -387,11 +402,15 @@ func (r *Resident) encodeTrunkInto(e *Encoder) {
 		e.dispatch(r.pAttn, r.nH*128, 128, r.qkv, r.kc[l], r.vc[l], r.ctx, r.uNH, r.uNKV, r.uHd, r.uNKeys, r.uScale, r.uWindow)
 		e.dispatch(r.pQv, 256, 256, r.ctx, r.cq, r.cSc, r.uHH)
 		e.dispatchTG(r.pSAResid, r.H*32, 256, r.nH*r.hd*2, L.oW, L.oS, r.cq, r.cSc, r.x, r.uHH) // o-proj + residual
-		// --- ffn block ---
-		e.dispatch(r.pRms, 256, 256, r.x, L.postNorm, r.mq, r.mSc, r.uH, r.uEps)
-		e.dispatchTG(r.pSA, (2*r.I)*32, 256, r.H*2, L.guW, L.guS, r.mq, r.mSc, r.gu, r.uH) // fused gate|up
-		e.dispatch(r.pSw, 256, 256, r.gu, r.gu.At(r.I*4), r.dq, r.dSc, r.uI)               // gate @0, up @I
-		e.dispatch(r.pGemvResid, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.x, r.uI)           // down + residual
+		// --- ffn block (dense SwiGLU, or MoE router + experts + shared) ---
+		if L.moe != nil {
+			r.encodeMoEFFN(e, L)
+		} else {
+			e.dispatch(r.pRms, 256, 256, r.x, L.postNorm, r.mq, r.mSc, r.uH, r.uEps)
+			e.dispatchTG(r.pSA, (2*r.I)*32, 256, r.H*2, L.guW, L.guS, r.mq, r.mSc, r.gu, r.uH) // fused gate|up
+			e.dispatch(r.pSw, 256, 256, r.gu, r.gu.At(r.I*4), r.dq, r.dSc, r.uI)               // gate @0, up @I
+			e.dispatch(r.pGemvResid, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.x, r.uI)           // down + residual
+		}
 	}
 	e.dispatch(r.pRms, 256, 256, r.x, r.finalNorm, r.aq, r.aSc, r.uH, r.uEps)
 }
