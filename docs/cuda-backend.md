@@ -29,15 +29,26 @@ driver (`libcuda.so.1`) is dlopen'd at runtime. Verify with `ldd` (no `libnvrtc`
 ## Scope (dense residency only)
 
 The resident GPU decode path covers **dense Qwen2/Llama** decode (the `DecodeRunnerEligible`
-archs), mixed int4/int8/f32 weights as the checkpoint stores them. It is **decode-only and
-dense-only** by design.
+archs) plus **routed sparse MoE** (Mixtral-class), mixed int4/int8/f32 weights as the
+checkpoint stores them. It is **decode-only** by design.
+
+Which features it implements is not prose — it is
+`decoder.ResidentBackendFeatures["cuda"]`, and admission is a subset check against the
+features each arch derives from its own flags. A backend that has not shipped a kernel
+declines rather than dropping the feature silently (`decoder/features.go`).
+
+MoE specifics: the router runs on-GPU and stays **f32** while the experts are int4. That is
+deliberate — the router's output steers a *discrete* choice, so a quantization error near a
+tie does not perturb the result slightly, it runs a different expert. The experts are
+row-stacked into one buffer per projection and selected by indexing, which keeps the launch
+geometry fixed no matter what the routing picks. The always-on **shared expert** (Qwen-MoE /
+GLM / DeepSeek) is **not** built yet and declines at load.
 
 Everything off that path routes to the existing staged/CPU path automatically — never a
 crash:
 
 - **No NVIDIA driver / dlopen fails** → declines, falls back to CPU, one-line stderr note.
-- **Non-dense family** (MoE / MLA / Mamba / hybrid / vision) → not residency-eligible on
-  CUDA (same as WebGPU); runs staged.
+- **MLA / Mamba / hybrid / vision, or a MoE with a shared expert** → declines; runs staged.
 - **Backend not built in** (`--backend cuda` on a binary without `-tags cuda`) → falls back
   to CPU with a note telling you to rebuild with `-tags cuda`.
 
@@ -48,6 +59,17 @@ under goinfer's 3%-near-tie rule (`TestRealForwardParity`, `TestBackendResidentW
 latter drives the exact production `decoder.Load(cuda) → BuildResident → Forward` path). The
 gate hard-fails on any position that diverges by more than 3% of the logit range, so the
 shipped backend cannot silently regress.
+
+MoE is gated separately by `TestMoEResidentParity` against `testdata/mixtral-tiny`, whose
+required feature set is exactly `[moe]` — so a failure there is the MoE block and not some
+other axis leaking in. That gate carries a **measured** control table (six deliberately
+broken dispatch states) because the 3% rule alone proved **insufficient** on it: with random
+fixture weights the experts are near-interchangeable, so a wrong expert contributes a
+similar-magnitude random vector and argmax cannot see it. Two real bugs — the wrong expert's
+down-proj, and `silu(up)*gate` instead of `silu(gate)*up` — sail past the argmax rule and are
+caught only by the logit-cosine floor, which is calibrated to sit between the correct run
+(0.999906) and the tightest surviving control (0.997687). Read the table before touching
+either threshold.
 
 See [`task-cuda-cgofree-spike.md`](task-cuda-cgofree-spike.md) for the full evidence
 (ldd/driver-only proof, the measured executor tax, the kernel tuning), and

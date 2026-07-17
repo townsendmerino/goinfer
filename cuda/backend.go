@@ -82,6 +82,29 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 
 	H, nLayers, nH, nKV, hd, I, vocab := m.Dims()
 
+	// ---- MoE knobs (ok=false for a dense model; every field then stays zero) ----
+	nE, topK, moeInter, sharedInter, moeSig, moeNorm, _, moeScale, nGroup, topkGroup, isMoE := m.MoEResidentParams()
+	if isMoE {
+		// Decline anything the dispatch does not implement, LOUDLY rather than by dropping it.
+		// Each of these would otherwise be silent-wrong, which is the whole point of the
+		// admission gate — and FeatMoE is one flag, so it cannot express these sub-shapes.
+		switch {
+		case sharedInter > 0:
+			return declined(fmt.Errorf("MoE shared always-on expert not implemented (shared_intermediate_size=%d)", sharedInter))
+		case nE > 256:
+			return declined(fmt.Errorf("MoE nE=%d exceeds moe_route's MOE_MAX_E=256", nE))
+		case nGroup > 64:
+			return declined(fmt.Errorf("MoE nGroup=%d exceeds moe_route's MOE_MAX_G=64", nGroup))
+		case m.GatedActResident() != 1: // decoder.ActSiLU — decoder/mlp.go errors on any other
+			return declined(fmt.Errorf("MoE experts are SwiGLU-only, arch act=%d", m.GatedActResident()))
+		case m.SandwichNormResident():
+			return declined(fmt.Errorf("MoE + sandwich norms: the combine accumulates straight into " +
+				"the residual, so there is no seam to normalize the block output at"))
+		case moeInter%32 != 0 || H%32 != 0:
+			return declined(fmt.Errorf("MoE int4 needs moeInter(%d) and hidden(%d) both multiples of 32", moeInter, H))
+		}
+	}
+
 	// ---- host pack all weights (CPU; any incompatible shape → decline) ----
 	type hlayer struct {
 		q, k, v, o, g, u, d       hostW
@@ -92,24 +115,101 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		invFreq                   []float32 // per-layer RoPE table
 		window                    int32
 		hasBias                   bool
+
+		// MoE, per layer: GLM/DeepSeek run dense for the first FirstKDense layers and route
+		// after, so this is keyed off the layer's own Experts (as decoder/mlp.go does), not
+		// off the arch.
+		isMoE            bool
+		expGU, expDown   hostW
+		router, routerBs []float32
 	}
 	sandwich := m.SandwichNormResident()
 	hls := make([]hlayer, nLayers)
 	for l := 0; l < nLayers; l++ {
 		lw := &w.Layers[l]
 		var hl hlayer
-		for _, p := range []struct {
+		hl.isMoE = isMoE && lw.Experts != nil // same key as decoder/mlp.go; false on dense prefix layers
+		proj := []struct {
 			dst *hostW
 			src *linalg.WeightMat
 		}{
 			{&hl.q, &lw.QProj}, {&hl.k, &lw.KProj}, {&hl.v, &lw.VProj}, {&hl.o, &lw.OProj},
-			{&hl.g, &lw.GateProj}, {&hl.u, &lw.UpProj}, {&hl.d, &lw.DownProj},
-		} {
+		}
+		if !hl.isMoE {
+			// A routed layer carries no dense FFN — GateProj/UpProj/DownProj are empty, and
+			// packing them would fail on a zero shape rather than mean anything.
+			proj = append(proj,
+				struct {
+					dst *hostW
+					src *linalg.WeightMat
+				}{&hl.g, &lw.GateProj},
+				struct {
+					dst *hostW
+					src *linalg.WeightMat
+				}{&hl.u, &lw.UpProj},
+				struct {
+					dst *hostW
+					src *linalg.WeightMat
+				}{&hl.d, &lw.DownProj})
+		}
+		for _, p := range proj {
 			hw, e := packWeight(p.src)
 			if e != nil {
 				return declined(e)
 			}
 			*p.dst = hw
+		}
+		if hl.isMoE {
+			if len(lw.Experts) != nE {
+				return declined(fmt.Errorf("layer %d: %d experts, arch says %d", l, len(lw.Experts), nE))
+			}
+			// The router stays f32 — see cudaResident.moe. It is loaded unquantized (weights.go
+			// uses loadMat, not loadMatQ) precisely so this holds; if that ever changes, decline
+			// rather than quietly quantize the one matrix that must not be.
+			rf, ok := lw.Router.F32()
+			if !ok {
+				return declined(fmt.Errorf("layer %d: router is %q, not f32 — quantizing it would flip "+
+					"experts near a tie, which is a cliff and not a small error", l, lw.Router.Kind()))
+			}
+			if lw.Router.Rows() != nE || lw.Router.Cols() != H {
+				return declined(fmt.Errorf("layer %d: router is %dx%d, want %dx%d", l, lw.Router.Rows(), lw.Router.Cols(), nE, H))
+			}
+			hl.router = rf
+			// bias is read unconditionally by moe_route; zeros when the arch has none.
+			hl.routerBs = lw.RouterBias
+			if hl.routerBs == nil {
+				hl.routerBs = make([]float32, nE)
+			} else if len(hl.routerBs) != nE {
+				return declined(fmt.Errorf("layer %d: router bias len %d != nE %d", l, len(hl.routerBs), nE))
+			}
+			// gate‖up INTERLEAVED per expert (g0,u0,g1,u1,...): one row range of width
+			// 2*moeInter is then exactly expert e's pair, which is what the indexed GEMV +
+			// glu_quant(gOff=0, uOff=moeInter) pair expects.
+			gu := make([]*linalg.WeightMat, 0, 2*nE)
+			dn := make([]*linalg.WeightMat, 0, nE)
+			for e := range lw.Experts {
+				ex := &lw.Experts[e]
+				gu = append(gu, &ex.Gate, &ex.Up)
+				dn = append(dn, &ex.Down)
+			}
+			var e error
+			if hl.expGU, e = packWeightStack(gu...); e != nil {
+				return declined(fmt.Errorf("layer %d gate/up stack: %w", l, e))
+			}
+			if hl.expDown, e = packWeightStack(dn...); e != nil {
+				return declined(fmt.Errorf("layer %d down stack: %w", l, e))
+			}
+			// The MoE GEMVs are w4a8 only: they read f16 group scales and unpack nibbles, so an
+			// int8 stack would be read as int4 and return garbage rather than error.
+			if hl.expGU.kind != "int4" || hl.expDown.kind != "int4" {
+				return declined(fmt.Errorf("layer %d: MoE experts are %q/%q — the resident MoE GEMVs are "+
+					"int4-only (load with Quant: \"int4\")", l, hl.expGU.kind, hl.expDown.kind))
+			}
+			if hl.expGU.N != nE*2*moeInter || hl.expDown.N != nE*H {
+				return declined(fmt.Errorf("layer %d: stacked rows %d/%d, want %d/%d — the kernel's "+
+					"rowsPerExpert stride would land on the wrong expert",
+					l, hl.expGU.N, hl.expDown.N, nE*2*moeInter, nE*H))
+			}
 		}
 		hl.preNorm, hl.postNorm = lw.PreAttnNorm, lw.PreMLPNorm
 		hl.qNorm, hl.kNorm = lw.QNorm, lw.KNorm
@@ -156,6 +256,14 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		eps: m.NormEps(), attnScale: m.AttnScale(),
 		qkNorm: m.HasQKNorm(), rmsAddOne: m.RMSAddOne(),
 		act: int32(m.GatedActResident()), sandwich: m.SandwichNormResident(),
+		moe: isMoE, nE: nE, topK: topK, moeInter: moeInter,
+		moeScale: float32(moeScale), nGroup: nGroup, topkGroup: topkGroup,
+	}
+	if moeSig {
+		r.moeSigmoid = 1
+	}
+	if moeNorm {
+		r.moeNormTopK = 1
 	}
 	kvDim := r.kvDim
 	hFinal := w.FinalNorm
@@ -227,6 +335,24 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				return e
 			}
 		}
+		// MoE module: loaded only for a routed model, so a dense one JITs nothing extra.
+		if r.moe {
+			mmod, e2 := r.cx.LoadModule(moePTX)
+			if e2 != nil {
+				return e2
+			}
+			for _, f := range []struct {
+				dst  **gc.Function
+				name string
+			}{
+				{&r.fRoute, "moe_route"}, {&r.fRouterGemv, "gemv_f32_a8"},
+				{&r.fMoEGemv, "gemv_w4a8_moe"}, {&r.fMoEWacc, "gemv_w4a8_moe_wacc"},
+			} {
+				if *f.dst, e = mmod.Function(f.name); e != nil {
+					return e
+				}
+			}
+		}
 		if r.stream, e = r.cx.NewStream(); e != nil {
 			return e
 		}
@@ -236,9 +362,13 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			h := &hls[l]
 			L := cudaLayer{
 				q: r.upW(h.q), k: r.upW(h.k), v: r.upW(h.v), o: r.upW(h.o),
-				g: r.upW(h.g), u: r.upW(h.u), d: r.upW(h.d),
 				preNorm: r.up32(h.preNorm), postNorm: r.up32(h.postNorm),
 				invF: r.up32(h.invFreq),
+			}
+			if !h.isMoE {
+				// A routed layer has no dense FFN to upload: its hostW's are empty, and
+				// Alloc(0) is an error rather than a harmless no-op.
+				L.g, L.u, L.d = r.upW(h.g), r.upW(h.u), r.upW(h.d)
 			}
 			if r.sandwich {
 				L.postAttnNorm, L.postMLPNorm = r.up32(h.postAttnNorm), r.up32(h.postMLPNorm)
@@ -248,6 +378,11 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			}
 			if r.qkNorm {
 				L.qNorm, L.kNorm = r.up32(h.qNorm), r.up32(h.kNorm)
+			}
+			if h.isMoE {
+				L.isMoE = true
+				L.routerW, L.routerB = r.up32(h.router), r.up32(h.routerBs)
+				L.expGU, L.expDown = r.upW(h.expGU), r.upW(h.expDown)
 			}
 			L.window = h.window
 			r.layers[l] = L
@@ -266,6 +401,13 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		r.mSc, r.mq = r.af(1), r.ai(H/4)
 		r.gO, r.uO = r.af(I), r.af(I)
 		r.dSc, r.dScr, r.dq = r.af(1), r.af(I), r.ai(I/4)
+		if r.moe {
+			// Sized to the MoE expert width, not the dense one (Mellum's moe_intermediate_size
+			// differs from intermediate_size).
+			r.rLogits, r.rIdx, r.rWgt = r.af(nE), r.au32(topK), r.af(topK)
+			r.moeGU = r.af(2 * moeInter)
+			r.moeSc, r.moeScr, r.moeQ = r.af(1), r.af(moeInter), r.ai(moeInter/4)
+		}
 		r.dO, r.logits = r.af(H), r.af(vocab)
 		r.argIdx, r.argVal = r.ai(1), r.af(1) // greedy fast-path readback (4 B vs 594 KB)
 		if hb, e := gc.AllocHost[float32](r.cx, vocab); e != nil {

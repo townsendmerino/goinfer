@@ -104,9 +104,12 @@ func TestResidentAdmission_matrix(t *testing.T) {
 // to catch, so widening a set must be a deliberate, reviewed edit — not a drive-by.
 func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 	want := map[string][]ResidentFeature{
-		// cgo-free CUDA: dense + QK-norm + sliding window + the Gemma set. Still no partial
-		// rotary / per-layer rotary WIDTH, no YaRN mscale, no logit softcap, no MoE/MLA/SSM.
-		"cuda": {FeatQKNorm, FeatSlidingWindow, FeatRMSAddOne, FeatSandwichNorm, FeatGatedGELU, FeatEmbedScale, FeatPerLayerRoPE},
+		// cgo-free CUDA: dense + QK-norm + sliding window + the Gemma set + routed MoE
+		// (cuda/moe.cu; gated by TestMoEResidentParity on testdata/mixtral-tiny). Still no
+		// partial rotary / per-layer rotary WIDTH, no YaRN mscale, no logit softcap, no MLA/SSM,
+		// and no always-on SHARED expert — that last one BuildResident declines at load, since
+		// FeatMoE is a single flag and cannot express the sub-shape.
+		"cuda": {FeatQKNorm, FeatSlidingWindow, FeatRMSAddOne, FeatSandwichNorm, FeatGatedGELU, FeatEmbedScale, FeatPerLayerRoPE, FeatMoE},
 		"webgpu": {
 			FeatQKNorm, FeatPartialRotary, FeatSlidingWindow, FeatPerLayerRoPE, FeatRopeMscale,
 			FeatMoE, FeatMLA, FeatSSM, FeatNonGatedMLP, FeatLogitScale, FeatRMSAddOne,

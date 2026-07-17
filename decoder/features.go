@@ -142,12 +142,17 @@ func missingFeatures(required []ResidentFeature, implemented map[ResidentFeature
 // A backend adds an entry ONLY when it ships the kernel that implements it. Overclaiming here
 // is exactly the lie the gate exists to catch.
 var ResidentBackendFeatures = map[string]map[ResidentFeature]bool{
-	// cgo-free CUDA (cuda/): the dense Qwen2/Llama block, plus QK-norm, sliding window, and the
-	// Gemma set ((1+w) RMS, sandwich norms, GeGLU, embed scale, per-layer RoPE base).
+	// cgo-free CUDA (cuda/): the dense Qwen2/Llama block, plus QK-norm, sliding window, the
+	// Gemma set ((1+w) RMS, sandwich norms, GeGLU, embed scale, per-layer RoPE base), and MoE.
 	// Still NOT implemented: the rope kernel hardcodes half = hd/2, so no partial rotary and no
-	// per-layer rotary WIDTH (only per-layer base); no YaRN mscale; no logit softcap; no
-	// MoE/MLA/SSM. Partial rotary is deliberately absent: its only arch (glm4_moe) also needs
-	// MoE, so implementing it today would unlock nothing.
+	// per-layer rotary WIDTH (only per-layer base); no YaRN mscale; no logit softcap; no MLA/SSM.
+	//
+	// FeatMoE here means the ROUTED block (router + stacked experts + every routing flavour the
+	// route kernel covers). The always-on SHARED expert is not built yet, so BuildResident
+	// declines shared-expert archs (Qwen-MoE/GLM/DeepSeek) at load and they take the staged
+	// path — correct, just not resident. That sub-shape cannot be expressed here: FeatMoE is one
+	// flag, and a build-time decline is the honest way to say "admitted, but this variant is not
+	// wired" without overclaiming in a table whose whole job is to not lie.
 	"cuda": {
 		FeatQKNorm:        true, // qk_norm kernel — per-head Q/K RMSNorm before RoPE (Qwen3)
 		FeatSlidingWindow: true, // attention `window` uniform, per-layer via LayerIsLocalResident
@@ -156,6 +161,7 @@ var ResidentBackendFeatures = map[string]map[ResidentFeature]bool{
 		FeatGatedGELU:     true, // glu_quant `act` — GeGLU as well as SwiGLU
 		FeatEmbedScale:    true, // √hidden applied host-side in embedResident
 		FeatPerLayerRoPE:  true, // per-layer invFreq buffer (Gemma local 10k vs global 1M base)
+		FeatMoE:           true, // moe_route + indexed stacked-expert W4A8 GEMVs (routed only)
 	},
 
 	// WebGPU (gpu/): the richest runner — the levers in docs/gpu-residency-coverage.md.

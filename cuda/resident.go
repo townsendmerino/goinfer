@@ -44,6 +44,16 @@ type cudaLayer struct {
 	postAttnNorm, postMLPNorm *gc.Buffer[float32]
 	invF                      *gc.Buffer[float32] // per-layer RoPE inv-freq (local vs global base)
 	hasBias                   bool
+
+	// Sparse MoE FFN. Per LAYER, not per model: GLM/DeepSeek's first_k_dense_replace makes the
+	// first FirstKDense layers plain dense MLPs while the rest route, so the two blocks coexist
+	// in one model and the dispatch picks per layer (the decoder keys off the same thing —
+	// mlp.go: `arch.MoE != nil && lw.Experts != nil`).
+	isMoE   bool
+	routerW *gc.Buffer[float32] // [nE, hidden] f32 — see cudaResident.moe on why it is not quantized
+	routerB *gc.Buffer[float32] // [nE] selection bias; ALWAYS allocated (zeros when the arch has none)
+	expGU   cudaWQ              // stacked [nE * 2*moeInter, hidden]: expert e's gate at e*2*moeInter, up at +moeInter
+	expDown cudaWQ              // stacked [nE * hidden, moeInter]
 }
 
 type cudaResident struct {
@@ -58,10 +68,23 @@ type cudaResident struct {
 	act                                        int32 // gated MLP activation, decoder.ActKind (0=gelu-tanh, 1=silu)
 	sandwich                                   bool  // Gemma 4-norm sandwich: extra post-attn / post-MLP norms
 
+	// Sparse MoE. The router projection stays f32 (gemv_f32_a8) while the experts are int4:
+	// the router's output steers a DISCRETE choice, so a quantization error near a tie does not
+	// perturb the result slightly — it runs a DIFFERENT expert and the output is unrelated.
+	// goinfer has already paid for that class once (the Granite SSM work traced a 66%-agreement
+	// wall to discrete expert flips and proved no precision knob recovered it), so the router is
+	// the one place in this backend where the cheap thing is not worth it.
+	moe                     bool
+	nE, topK, moeInter      int
+	moeSigmoid, moeNormTopK int32
+	moeScale                float32
+	nGroup, topkGroup       int
+
 	// gocudrv state — touched ONLY on the executor thread.
 	cx                                                                                                 *gc.Context
 	stream                                                                                             *gc.Stream
 	gemvW4, gemvW8, kvStore, ropeKV, fRms, fRmsF32, fQ, fRope, fAttn, fSw, fRes, fArg, fQKV, fGU, fQKN *gc.Function
+	fRoute, fRouterGemv, fMoEGemv, fMoEWacc                                                            *gc.Function
 
 	fuseQKV   bool // all of Q/K/V int4 ⇒ K1 super-kernel is usable
 	layers    []cudaLayer
@@ -73,6 +96,13 @@ type cudaResident struct {
 	aq, cq, mq, dq, argIdx                                                *gc.Buffer[int32]
 	argVal                                                                *gc.Buffer[float32]
 	kc, vc                                                                []*gc.Buffer[float32]
+
+	// MoE per-token scratch (allocated only when moe). Sized to the MoE expert width, which is
+	// NOT the dense one — Mellum's moe_intermediate_size differs from intermediate_size, so
+	// reusing gO/uO/dq here would overrun on some archs and silently under-read on others.
+	rLogits, rWgt, moeGU, moeSc, moeScr *gc.Buffer[float32]
+	rIdx                                *gc.Buffer[uint32]
+	moeQ                                *gc.Buffer[int32]
 
 	// logitsPinned is PAGE-LOCKED host memory for the per-token logits readback. A pageable
 	// D2H of 594 KB measured only ~1.26 GB/s (it stages through a driver bounce buffer);
@@ -95,6 +125,13 @@ func (r *cudaResident) af(n int) *gc.Buffer[float32] {
 }
 func (r *cudaResident) ai(n int) *gc.Buffer[int32] {
 	b, e := gc.Alloc[int32](r.cx, n)
+	if e != nil && r.setupErr == nil {
+		r.setupErr = e
+	}
+	return b
+}
+func (r *cudaResident) au32(n int) *gc.Buffer[uint32] {
+	b, e := gc.Alloc[uint32](r.cx, n)
 	if e != nil && r.setupErr == nil {
 		r.setupErr = e
 	}
@@ -246,11 +283,12 @@ func (r *cudaResident) Close() error {
 		}
 		for i := range r.layers {
 			L := &r.layers[i]
-			for _, w := range []*cudaWQ{&L.q, &L.k, &L.v, &L.o, &L.g, &L.u, &L.d} {
+			for _, w := range []*cudaWQ{&L.q, &L.k, &L.v, &L.o, &L.g, &L.u, &L.d, &L.expGU, &L.expDown} {
 				freeW(w)
 			}
 			for _, b := range []**gc.Buffer[float32]{&L.qb, &L.kb, &L.vb, &L.qNorm, &L.kNorm,
-				&L.preNorm, &L.postNorm, &L.postAttnNorm, &L.postMLPNorm, &L.invF} {
+				&L.preNorm, &L.postNorm, &L.postAttnNorm, &L.postMLPNorm, &L.invF,
+				&L.routerW, &L.routerB} {
 				freeF(b)
 			}
 		}
@@ -262,11 +300,16 @@ func (r *cudaResident) Close() error {
 		}
 		r.kc, r.vc = nil, nil
 		for _, b := range []**gc.Buffer[float32]{&r.finalNorm, &r.x, &r.aSc, &r.qB, &r.kB, &r.vB,
-			&r.cctx, &r.cSc, &r.oO, &r.mSc, &r.gO, &r.uO, &r.dSc, &r.dScr, &r.dO, &r.logits, &r.argVal} {
+			&r.cctx, &r.cSc, &r.oO, &r.mSc, &r.gO, &r.uO, &r.dSc, &r.dScr, &r.dO, &r.logits, &r.argVal,
+			&r.rLogits, &r.rWgt, &r.moeGU, &r.moeSc, &r.moeScr} {
 			freeF(b)
 		}
-		for _, b := range []**gc.Buffer[int32]{&r.aq, &r.cq, &r.mq, &r.dq, &r.argIdx} {
+		for _, b := range []**gc.Buffer[int32]{&r.aq, &r.cq, &r.mq, &r.dq, &r.argIdx, &r.moeQ} {
 			freeI(b)
+		}
+		if r.rIdx != nil { // the only uint32 device buffer; no freeI/freeF shape fits it
+			_ = r.rIdx.Close()
+			r.rIdx = nil
 		}
 		if r.stream != nil {
 			_ = r.stream.Close()
@@ -336,6 +379,78 @@ func (r *cudaResident) doG(wt cudaWQ, a *gc.Buffer[int32], as *gc.Buffer[float32
 	}
 	return r.launch(r.gemvW8, cfg, gc.Arg(wt.W), gc.Arg(a), gc.Arg(wt.ws), gc.Arg(as), bias,
 		gc.ArgValue(int32(wt.N)), gc.ArgValue(int32(wt.K/4)), gc.Arg(dst), gc.ArgValue(accum))
+}
+
+// moeMLP issues one MoE FFN block for layer Ly, accumulating straight into the residual
+// stream r.x. Mirrors decoder/mlp.go's moeMLP exactly:
+//
+//	h        = rmsNorm(x, PreMLPNorm)          — the SAME normed activation feeds router AND experts
+//	logits   = Router · h                       (f32; see cudaResident.moe)
+//	idx, wgt = route(logits, bias, ...)
+//	x       += Σ_j wgt[j] · Down_e(silu(Gate_e·h) * Up_e·h)     where e = idx[j]
+//
+// The k experts are dispatched SEQUENTIALLY, one slot at a time, but every launch has the same
+// geometry regardless of which experts the router picked — the expert is chosen by ARITHMETIC on
+// the weight-row index inside the kernel, not by binding a different buffer. That is what lets a
+// resident runner keep a static dispatch chain: the routing changes per token, the launches do
+// not.
+//
+// The final GEMV weight-accumulates into r.x, so the per-expert combine and the residual add are
+// the same instruction — no scratch, no separate combine pass. This is why the block `continue`s
+// the layer loop rather than falling through to the dense epilogue.
+func (r *cudaResident) moeMLP(Ly *cudaLayer) error {
+	// Explicit rmsnorm, NOT the fused fGU path: the fused kernel folds the norm into the dense
+	// gate/up GEMV and never writes r.mq, but the router needs that quantized activation too.
+	if e := r.rms(r.x, Ly.postNorm, r.mq, r.mSc); e != nil {
+		return e
+	}
+	// Router logits (one block per expert row) → top-k idx/wgt, both left on the device. The
+	// selection never round-trips to the host: a D2H here would serialize the whole token.
+	if e := r.launch(r.fRouterGemv, gc.LaunchConfig{GridX: uint32(r.nE), GridY: 1, GridZ: 1,
+		BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
+		gc.Arg(Ly.routerW), gc.Arg(r.mq), gc.Arg(r.mSc), gc.ArgValue(int32(r.nE)),
+		gc.ArgValue(int32(r.hidden)), gc.Arg(r.rLogits)); e != nil {
+		return e
+	}
+	if e := r.launch(r.fRoute, onecfg(1, 0),
+		gc.Arg(r.rLogits), gc.Arg(Ly.routerB), gc.Arg(r.rIdx), gc.Arg(r.rWgt),
+		gc.ArgValue(int32(r.nE)), gc.ArgValue(int32(r.topK)), gc.ArgValue(r.moeSigmoid),
+		gc.ArgValue(r.moeNormTopK), gc.ArgValue(r.moeScale),
+		gc.ArgValue(int32(r.nGroup)), gc.ArgValue(int32(r.topkGroup))); e != nil {
+		return e
+	}
+	gu := 2 * r.moeInter
+	for j := 0; j < r.topK; j++ {
+		// gate‖up for the routed expert, in ONE indexed GEMV: the stack interleaves each
+		// expert's gate and up rows (packWeightStack(g0,u0,g1,u1,...)), so one row range of
+		// width 2*moeInter is exactly this expert's pair.
+		if e := r.launch(r.fMoEGemv, gc.LaunchConfig{GridX: uint32((gu + 7) / 8), GridY: 1, GridZ: 1,
+			BlockX: 256, BlockY: 1, BlockZ: 1},
+			gc.Arg(Ly.expGU.W), gc.Arg(r.mq), gc.Arg(Ly.expGU.ws16), gc.Arg(r.mSc),
+			gc.Arg(r.rIdx), gc.ArgValue(int32(j)), gc.ArgValue(int32(gu)),
+			gc.ArgValue(int32(gu)), gc.ArgValue(int32(r.hidden/8)), gc.ArgValue(int32(r.hidden/32)),
+			gc.Arg(r.moeGU)); e != nil {
+			return e
+		}
+		// SwiGLU over the halves of that one buffer. gocudrv exposes no buffer view/offset, so
+		// the split is the kernel's gOff/uOff rather than Go-side pointer arithmetic.
+		if e := r.launch(r.fSw, onecfg(256, 256*4),
+			gc.Arg(r.moeGU), gc.Arg(r.moeGU), gc.ArgValue(int32(0)), gc.ArgValue(int32(r.moeInter)),
+			gc.ArgValue(int32(r.moeInter)), gc.ArgValue(r.act),
+			gc.Arg(r.moeQ), gc.Arg(r.moeSc), gc.Arg(r.moeScr)); e != nil {
+			return e
+		}
+		// down-proj, weight-accumulating into the residual: x += wgt[j] * (Down_e · act).
+		if e := r.launch(r.fMoEWacc, gc.LaunchConfig{GridX: uint32((r.hidden + 7) / 8), GridY: 1, GridZ: 1,
+			BlockX: 256, BlockY: 1, BlockZ: 1},
+			gc.Arg(Ly.expDown.W), gc.Arg(r.moeQ), gc.Arg(Ly.expDown.ws16), gc.Arg(r.moeSc),
+			gc.Arg(r.rIdx), gc.Arg(r.rWgt), gc.ArgValue(int32(j)), gc.ArgValue(int32(r.hidden)),
+			gc.ArgValue(int32(r.hidden)), gc.ArgValue(int32(r.moeInter/8)), gc.ArgValue(int32(r.moeInter/32)),
+			gc.Arg(r.x)); e != nil {
+			return e
+		}
+	}
+	return nil
 }
 
 // launchToken issues one token's whole kernel chain, leaving logits[vocab] on the device.
@@ -423,6 +538,12 @@ func (r *cudaResident) launchToken(emb []float32, pos int) error {
 			_ = r.launch(r.fRes, g1cfg(r.hidden, 256), gc.Arg(r.x), gc.Arg(r.oO), gc.ArgValue(int32(r.hidden)))
 		} else {
 			_ = r.doG(Ly.o, r.cq, r.cSc, nullBias, r.x, 1)
+		}
+		if Ly.isMoE {
+			if e := r.moeMLP(Ly); e != nil {
+				return e
+			}
+			continue // the MoE block ends the layer: its combine already hit the residual stream
 		}
 		if r.fuseQKV { // same guard: all layer projections int4
 			// K3a: pre-MLP rmsnorm+quant redundantly per block + this block's gate/up rows —
