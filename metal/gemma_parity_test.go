@@ -3,6 +3,7 @@
 package metal
 
 import (
+	"math"
 	"os"
 	"strings"
 	"testing"
@@ -57,7 +58,21 @@ func seedPrompt(t *testing.T, path, text string) []int {
 // kernel on a near-tie-free trajectory, and a cosine has no absolute meaning at int4.
 type parityStats struct {
 	steps, exact, hard int
+	nan                int // positions whose cosine came back NaN/Inf — see the guard in assertParity
 	worstTie, minCos   float64
+}
+
+// observeCos folds one position's logit cosine into the running min. NaN/Inf is COUNTED, never
+// fed to the `< minCos` reduction: `NaN < x` is false in Go, so a degenerate (NaN) cosine — the
+// signature of the worst bugs — would otherwise never update minCos and would sail through the
+// floor as if parity held. This is the exact vacuity parity-coverage-policy.md § Falsifiable
+// names, and TestParity_NaNCosineFailsTheGate breaks it on purpose to prove this guard fires.
+func (st *parityStats) observeCos(c float64) {
+	if math.IsNaN(c) || math.IsInf(c, 0) {
+		st.nan++
+	} else if c < st.minCos {
+		st.minCos = c
+	}
 }
 
 // residentParity drives Metal resident decode against the CPU forward in greedy LOCKSTEP — the
@@ -113,9 +128,7 @@ func residentParity(t *testing.T, path string, seed []int, steps int) parityStat
 		// nats as real keys accumulate, and it generates " Paris." correctly. Gating on min-cosine
 		// over these positions reported the two places the metric is meaningless.
 		if i >= 2 {
-			if c := cosF(cpuL, gpuL); c < st.minCos {
-				st.minCos = c
-			}
+			st.observeCos(cosF(cpuL, gpuL))
 		}
 		ca, ga := argmaxF(cpuL), argmaxF(gpuL)
 		if ca == ga {
@@ -186,6 +199,13 @@ func TestGemma3ResidentParity(t *testing.T) {
 // collapses cosine far below 0.95; int4-vs-int8 noise does not come close.
 func assertParity(t *testing.T, what string, st parityStats) {
 	t.Helper()
+	// A NaN/Inf cosine is the loudest possible failure (degenerate GPU output) and must fail
+	// LOUDLY — it cannot reach the `< 0.95` floor because `NaN < 0.95` is false, so it is checked
+	// first and explicitly. Without this a kernel emitting NaN reads as perfect parity.
+	if st.nan > 0 {
+		t.Errorf("%s: %d/%d positions had a NaN/Inf logit cosine — degenerate GPU output, the worst "+
+			"kind of failure, which the min-cosine floor cannot catch (NaN < x is false)", what, st.nan, st.steps)
+	}
 	if st.minCos < 0.95 { // control: 0.962 → 0.95 with margin
 		t.Errorf("%s: min logit cosine %.6f < 0.95 — gross breakage, not int4 noise (control measures ~0.96)", what, st.minCos)
 	}

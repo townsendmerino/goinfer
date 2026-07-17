@@ -125,6 +125,7 @@ kernel void attention(device const float* q      [[buffer(0)]],  // [nH*hd] (pos
 		}
 	}
 	cos := dot / (math.Sqrt(na) * math.Sqrt(nb))
+	mustFinite(t, "attention cosine", cos)
 	if cos < 0.999999 || maxabs > 1e-4 {
 		t.Fatalf("attention parity FAIL: cosine=%.7f maxAbs=%.2e", cos, maxabs)
 	}

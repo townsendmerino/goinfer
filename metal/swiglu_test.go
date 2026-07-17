@@ -107,6 +107,7 @@ kernel void swiglu_quant(device const float* g  [[buffer(0)]],  // [I] gate
 		nb += rr * rr
 	}
 	cos := dot / (math.Sqrt(na) * math.Sqrt(nb))
+	mustFinite(t, "swiglu+quant cosine", cos)
 	if cos < 0.99999 || mism > I/100 {
 		t.Fatalf("swiglu+quant parity FAIL: cosine=%.7f int8-mismatch=%d/%d", cos, mism, I)
 	}

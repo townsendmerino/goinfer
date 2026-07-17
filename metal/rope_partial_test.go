@@ -59,14 +59,15 @@ func TestRopePartial(t *testing.T) {
 	for h := 0; h < nH; h++ {
 		for i := 0; i < hd; i++ {
 			gi := h*hd + i
-			if dd := math.Abs(float64(got[gi] - ref[gi])); dd > maxAbs {
-				maxAbs = dd
+			if dd := math.Abs(float64(got[gi] - ref[gi])); math.IsNaN(dd) || dd > maxAbs {
+				maxAbs = dd // propagate NaN so mustFinite can catch degenerate output
 			}
 			if i >= rotaryDim && got[gi] != x[gi] { // tail must be identical
 				tailChanged = true
 			}
 		}
 	}
+	mustFinite(t, "partial rope maxAbs", maxAbs)
 	if maxAbs > 1e-5 || tailChanged {
 		t.Fatalf("partial rope FAIL: maxAbs=%.2e tailChanged=%v", maxAbs, tailChanged)
 	}

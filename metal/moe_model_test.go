@@ -69,13 +69,17 @@ func TestMoE_assemblyVsDense(t *testing.T) {
 
 	ids := []int{1, 5, 9, 13, 17, 21, 25, 29, 33, 37}
 	const steps = 16
-	tok, pos, mism := ids[0], 0, 0
+	tok, pos, mism, nan := ids[0], 0, 0, 0
 	var cosMin float64 = 1
 	for i := 0; i < steps; i++ {
 		gMoE := append([]float32(nil), moeR.Forward(tok, pos)...)
 		gDense := denseR.Forward(tok, pos)
 		c := cosF(gMoE, gDense)
-		if c < cosMin {
+		// Count NaN, don't reduce it: `NaN < cosMin` is false, so a degenerate MoE dispatch would
+		// leave cosMin at 1.0 and pass the floor (parity-coverage-policy.md § Falsifiable).
+		if math.IsNaN(c) || math.IsInf(c, 0) {
+			nan++
+		} else if c < cosMin {
 			cosMin = c
 		}
 		if argmaxF(gMoE) != argmaxF(gDense) {
@@ -89,6 +93,10 @@ func TestMoE_assemblyVsDense(t *testing.T) {
 		pos++
 	}
 	t.Logf("MoE-vs-dense (identical experts, same GPU int4 quant): cosine min=%.6f, argmax %d/%d match", cosMin, steps-mism, steps)
+	if nan > 0 {
+		t.Fatalf("MoE assembly FAIL: %d/%d positions had NaN/Inf cosine — degenerate dispatch, which "+
+			"the min-cosine floor cannot catch (NaN < x is false)", nan, steps)
+	}
 	if cosMin < 0.9999 {
 		t.Fatalf("MoE assembly FAIL: min cosine %.6f < 0.9999 vs the equivalent dense FFN — wiring bug", cosMin)
 	}

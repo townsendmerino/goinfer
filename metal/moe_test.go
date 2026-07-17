@@ -408,7 +408,9 @@ func checkClose(t *testing.T, name string, got, want []float32, tol float64) {
 		na += float64(got[i]) * float64(got[i])
 		nb += float64(want[i]) * float64(want[i])
 	}
-	if cos := dot / (math.Sqrt(na*nb) + 1e-12); cos < 0.9999 {
+	cos := dot / (math.Sqrt(na*nb) + 1e-12)
+	mustFinite(t, name+" cosine", cos)
+	if cos < 0.9999 {
 		t.Fatalf("%s: cosine %.6f < 0.9999", name, cos)
 	}
 }

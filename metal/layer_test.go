@@ -164,6 +164,7 @@ func TestLayerB_fullLayerForward(t *testing.T) {
 		}
 	}
 	cos := dot / (math.Sqrt(na) * math.Sqrt(nb))
+	mustFinite(t, "full-layer cosine", cos)
 	if cos < 0.9999 || maxabs > 1e-2 {
 		t.Fatalf("full-layer parity FAIL: cosine=%.7f maxAbs=%.2e (got[0]=%v ref[0]=%v)", cos, maxabs, got[0], ref[0])
 	}

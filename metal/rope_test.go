@@ -85,6 +85,7 @@ kernel void rope(device float*        x    [[buffer(0)]],  // [nH*hd] in place
 		nb += float64(ref[i]) * float64(ref[i])
 	}
 	cos := dot / (math.Sqrt(na) * math.Sqrt(nb))
+	mustFinite(t, "RoPE cosine", cos)
 	if cos < 0.9999999 {
 		t.Fatalf("RoPE parity FAIL: cosine=%.9f", cos)
 	}

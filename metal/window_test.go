@@ -57,10 +57,11 @@ func TestSlidingWindow(t *testing.T) {
 
 	var maxAbs float64
 	for i := range outA {
-		if dd := math.Abs(float64(outA[i] - outB[i])); dd > maxAbs {
-			maxAbs = dd
+		if dd := math.Abs(float64(outA[i] - outB[i])); math.IsNaN(dd) || dd > maxAbs {
+			maxAbs = dd // propagate NaN so mustFinite can catch degenerate output
 		}
 	}
+	mustFinite(t, "sliding-window maxAbs", maxAbs)
 	if maxAbs > 1e-4 {
 		t.Fatalf("sliding-window FAIL: windowed(N=%d,W=%d) != full(last %d): maxAbs=%.2e", N, W, W, maxAbs)
 	}

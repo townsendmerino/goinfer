@@ -133,6 +133,7 @@ func TestPrefillGemmW4(t *testing.T) {
 		}
 	}
 	cos := dot / (math.Sqrt(na) * math.Sqrt(nb))
+	mustFinite(t, "prefill GEMM cosine", cos)
 	if cos < 0.99999 || maxAbs > 0.05 {
 		t.Fatalf("prefill GEMM parity FAIL: cos=%.7f maxAbs=%.4f (got[0]=%v ref[0]=%v)", cos, maxAbs, got[0], ref[0])
 	}

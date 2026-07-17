@@ -3,6 +3,7 @@
 package metal
 
 import (
+	"math"
 	"os"
 	"testing"
 	"time"
@@ -58,6 +59,12 @@ func TestPrefillParity(t *testing.T) {
 
 	cos := cosF(seq, pre)
 	t.Logf("prefill vs sequential last-token: argmax pre=%d seq=%d, cosine=%.5f", preArg, seqArg, cos)
+	// NaN guard FIRST: this is the path that shipped NaN, and `NaN < 0.95` is false — the cosine
+	// floor below cannot catch a degenerate prefill (parity-coverage-policy.md § Falsifiable).
+	// TestPrefillNoNaN is the primary NaN gate; this keeps the parity gate itself non-vacuous.
+	if math.IsNaN(float64(cos)) || math.IsInf(float64(cos), 0) {
+		t.Fatalf("prefill parity FAIL: cosine is %v — degenerate (NaN/Inf) logits", cos)
+	}
 	if preArg != seqArg {
 		t.Fatalf("prefill parity FAIL: last-token argmax %d != sequential %d (cosine %.4f)", preArg, seqArg, cos)
 	}

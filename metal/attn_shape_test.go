@@ -64,6 +64,7 @@ func TestAttention_ShippedKernelShapes(t *testing.T) {
 			// cosine that was meaningless because the vector under it was near-zero. Never again
 			// read one without the other.
 			t.Logf("%s: cosine=%.7f maxAbs=%.2e |gpu|=%.4f |cpu|=%.4f", tc.what, cos, maxabs, gn, rn)
+			mustFinite(t, tc.what+" cosine", cos)
 			if cos < 0.9999 || maxabs > 1e-2 {
 				t.Errorf("%s: attention parity FAIL cosine=%.7f maxAbs=%.2e", tc.what, cos, maxabs)
 			}

@@ -137,6 +137,7 @@ kernel void rmsnorm_quant(device const float* x  [[buffer(0)]],  // [H]
 		nb += r * r
 	}
 	cos := dot / (math.Sqrt(na) * math.Sqrt(nb))
+	mustFinite(t, "rmsnorm+quant cosine", cos)
 	if cos < 0.99999 || mism > H/100 {
 		t.Fatalf("rmsnorm+quant parity FAIL: cosine=%.7f int8-mismatch=%d/%d scale gpu=%v cpu=%v", cos, mism, H, gotSc, refSc)
 	}

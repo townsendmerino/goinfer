@@ -73,10 +73,11 @@ func TestQKNorm(t *testing.T) {
 		got := buf.Floats()
 		var maxAbs float64
 		for i := range ref {
-			if dd := math.Abs(float64(got[i] - ref[i])); dd > maxAbs {
-				maxAbs = dd
+			if dd := math.Abs(float64(got[i] - ref[i])); math.IsNaN(dd) || dd > maxAbs {
+				maxAbs = dd // propagate NaN so mustFinite can catch degenerate output
 			}
 		}
+		mustFinite(t, "qk_norm maxAbs", maxAbs)
 		if maxAbs > 1e-4 {
 			t.Fatalf("qk_norm(addOne=%v) FAIL: maxAbs=%.2e", addOne, maxAbs)
 		}

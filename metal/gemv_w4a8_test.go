@@ -138,6 +138,7 @@ kernel void gemv_w4a8(device const uint*  bq  [[buffer(0)]],   // [N*(K/8)] pack
 		}
 	}
 	cos := dot / (math.Sqrt(na) * math.Sqrt(nb))
+	mustFinite(t, "W4A8 GEMV cosine", cos)
 	if cos < 0.99999 || maxrel > 1e-4 {
 		t.Fatalf("W4A8 GEMV parity FAIL: cosine=%.7f maxrel=%.2e (got[0]=%v ref[0]=%v)", cos, maxrel, got[0], ref[0])
 	}

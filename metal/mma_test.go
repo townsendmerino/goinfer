@@ -111,11 +111,12 @@ kernel void mma_gemm_blk(device const half* A[[buffer(0)]], device const half* B
 				for k := range K {
 					ref += float64(af16(af[m*K+k])) * float64(af16(bf[k*N+n])) // ref in f16-rounded inputs
 				}
-				if e := math.Abs(ref - float64(got[m*N+n])); e > maxErr {
-					maxErr = e
+				if e := math.Abs(ref - float64(got[m*N+n])); math.IsNaN(e) || e > maxErr {
+					maxErr = e // propagate NaN so mustFinite below can see a degenerate output
 				}
 			}
 		}
+		mustFinite(t, "MMA maxErr", maxErr)
 		if maxErr > 0.05 {
 			t.Fatalf("MMA correctness FAIL: maxErr=%.4f", maxErr)
 		}

@@ -87,6 +87,7 @@ func TestSAGemvLargeK(t *testing.T) {
 		}
 	}
 	cos := dot / (math.Sqrt(na) * math.Sqrt(nb))
+	mustFinite(t, "Stage A GEMV cosine", cos)
 	if cos < 0.9999 || maxRel > 5e-3 {
 		t.Fatalf("Stage A GEMV K=%d parity FAIL: cos=%.7f maxRel=%.4f", K, cos, maxRel)
 	}
