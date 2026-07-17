@@ -124,9 +124,14 @@ func fromGGUF(g *embed.GGUFFile) (*Tokenizer, error) {
 	// "Ġ Ġ" for byte-level); a piece never contains a literal space (it is the
 	// ▁/Ġ marker), so the first space splits the pair unambiguously. Position in
 	// the list is the priority.
+	// Merges are ENCODE-only: the sole consumer is the BPE merge loop in Encode. Decode needs
+	// nothing but idToPiece, which is already populated above. Some SPM exports ship scores
+	// instead of merges (gemma-3 GGUFs do), and hard-failing the whole load on a missing array
+	// blocked decode-only uses — including reading a model's own output back. So treat merges as
+	// optional; Encode refuses loudly rather than silently mis-tokenizing without them.
 	merges, err := ggufStringArray(g, ggufTokMerges)
 	if err != nil {
-		return nil, err
+		merges = nil // decode-only vocab
 	}
 	for i, m := range merges {
 		l, r, ok := strings.Cut(m, " ")

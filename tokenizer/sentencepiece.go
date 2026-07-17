@@ -369,6 +369,11 @@ func (t *Tokenizer) initGemma(tj *tokenizerJSON) error {
 // ignore the flag). Added/special tokens written literally in the text are
 // recognized and emitted as their own ids.
 func (t *Tokenizer) Encode(text string, addBOS bool) ([]int, error) {
+	// A vocab loaded without merges can DECODE but not encode — refuse rather than return a
+	// silently unmerged (wrong) tokenization. See the merges note in gguf.go.
+	if len(t.pairRank) == 0 {
+		return nil, fmt.Errorf("tokenizer: this vocab was loaded without merge ranks (decode-only); cannot Encode")
+	}
 	if t.vocab == nil {
 		return nil, fmt.Errorf("tokenizer.Encode: %w", errors.New("tokenizer not loaded"))
 	}
