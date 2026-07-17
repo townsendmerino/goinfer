@@ -3,6 +3,7 @@
 package metal
 
 import (
+	"fmt"
 	"math"
 	"os"
 	"sort"
@@ -103,6 +104,11 @@ func bisectModel(t *testing.T, path string) {
 	pos := len(seed) - 1
 	t.Logf("probe: pos=%d (last seed token), %d layers", pos, nL)
 
+	// Fork 1 setup: the target sign-flipped channels (bisect prompt). Track, per layer depth,
+	// Metal's signed value vs CPU-int4's on each — the first layer where a target flips sign names
+	// where the bug ENTERS, and that layer is where the attention-vs-MLP split then runs.
+	targets := []int{1698, 1723, 227}
+	flippedAt := map[int]int{}
 	// Re-run the probe position at each truncation depth. Metal's KV for pos already holds this
 	// token's K/V from the walk above, so re-encoding it is idempotent.
 	for l := 1; l <= nL; l++ {
@@ -113,9 +119,75 @@ func bisectModel(t *testing.T, path string) {
 		if m4.LayerIsLocalResident(l - 1) {
 			tag = "local "
 		}
-		t.Logf("layer %2d [%s]: cosine=%.6f |metal|=%9.3f |cpu-int4|=%9.3f  ratio=%.4f",
-			l-1, tag, cos, gn, rn, gn/(rn+1e-30))
+		flips := ""
+		for _, ch := range targets {
+			g, c := got[ch], ref[ch]
+			flip := (g < 0) != (c < 0) && absf(g) > 1 && absf(c) > 1
+			mark := " "
+			if flip {
+				mark = "✗"
+				if _, seen := flippedAt[ch]; !seen {
+					flippedAt[ch] = l - 1
+				}
+			}
+			flips += fmt.Sprintf("  d%d[m=%+8.1f c=%+8.1f]%s", ch, g, c, mark)
+		}
+		t.Logf("layer %2d [%s]: cosine=%.6f |metal|=%9.3f |cpu-int4|=%9.3f%s",
+			l-1, tag, cos, gn, rn, flips)
 	}
+	for _, ch := range targets {
+		if l, ok := flippedAt[ch]; ok {
+			t.Logf("channel %d FIRST sign-flips at layer %d (Fork 1 splits attention vs MLP there)", ch, l)
+		} else {
+			t.Logf("channel %d never sign-flips across the trunk — the flip is in final-norm/head only", ch)
+		}
+	}
+
+	// Cross-backend reconciliation with the CUDA box. Three references at each target channel +
+	// neighbors, at the pre-final-norm tap (pos 5):
+	//   metal      — Metal resident (int4 weight × int8 activation, W4A8)
+	//   cpu-int4   — decoder Quant:int4 == MatmulBTW4A8, ALSO int8 activation → shares the crush
+	//   cpu-int8w  — decoder Quant:int8 (weight-only) == MatmulBTQ8, int8 weight × f32 ACTIVATION
+	//                → NO activation crush, so its SIGN is the ground truth on crushed channels.
+	// The crux the CUDA box surfaced: our two "int4" references disagreed because BOTH quantize
+	// activations to int8 and round the near-zero crushed channels differently. cpu-int8w removes
+	// the activation quant, so whichever of metal/cpu-int4 disagrees with cpu-int8w's SIGN is the
+	// one that flipped. (Off-by-one is ruled out: the 443 spike sits at index 443 on both boxes.)
+	m8w, e8w := decoder.Load(path, decoder.Options{Quant: "int8"})
+	if e8w != nil {
+		t.Fatalf("load int8-weight-only reference: %v", e8w)
+	}
+	c8w := decoder.NewKVCache(nL, nKV, hd, 0, 1024)
+	var trueHidden []float32
+	for i := 0; i < len(seed); i++ {
+		_, h, cerr := m8w.ForwardCapture(seed[i], c8w, []int{nL - 1})
+		if cerr != nil {
+			t.Skipf("ForwardCapture (int8w): %v", cerr)
+		}
+		trueHidden = h[0]
+	}
+	full := r.forwardTrunkForTest(m8.EmbedResidentForTest(seed[pos]), pos, nL)
+	cpuFull := hidden[nL-1]
+	t.Logf("NEIGHBOR DUMP (pre-final-norm, pos %d): cpu-int8w = f32-activation ground truth", pos)
+	for _, center := range []int{443, 1698, 1723, 227} {
+		for ch := center - 2; ch <= center+2; ch++ {
+			if ch >= 0 && ch < len(full) {
+				flag := ""
+				if (full[ch] < 0) != (trueHidden[ch] < 0) && absf(trueHidden[ch]) > 1 {
+					flag = "  METAL flips vs truth"
+				}
+				t.Logf("  ch %4d: metal=%+10.2f  cpu-int4=%+10.2f  cpu-int8w(TRUTH)=%+10.2f%s",
+					ch, full[ch], cpuFull[ch], trueHidden[ch], flag)
+			}
+		}
+	}
+}
+
+func absf(x float32) float32 {
+	if x < 0 {
+		return -x
+	}
+	return x
 }
 
 // TestGemmaBisect_Head splits the ONE step the per-layer bisect leaves whole: final-norm → LM
