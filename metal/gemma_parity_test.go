@@ -4,10 +4,53 @@ package metal
 
 import (
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/tokenizer"
 )
+
+// seedPrompt derives the probe from the MODEL'S OWN tokenizer and VERIFIES it by decoding —
+// never a hardcoded id literal.
+//
+// This gate used to carry invented ids that nobody had ever decoded. Gemma's read
+// "<bos>ath হই of carry Bত্ব忽视ardRep" — not Gemma tokens at all — so every Gemma parity number
+// on either backend was measured on gibberish, and the resulting "Gemma is noisier than the
+// control" was a rationalization of a confound in the test data. The control's were no better
+// ("The history of_init with a text of a **"): real tokens, near-nonsense text. Flat logits from
+// nonsense produce exactly the extra near-ties that got blamed on architecture.
+//
+// Both models now probe the SAME sentence, so they are actually comparable. Encode is used where
+// the vocab has merge ranks; Gemma's GGUF ships scores instead, so its pieces are looked up
+// directly — either way the result is decoded back and logged, so a bad prompt cannot hide again.
+func seedPrompt(t *testing.T, path, text string) []int {
+	t.Helper()
+	tk, err := tokenizer.LoadGGUF(path)
+	if err != nil {
+		t.Skipf("tokenizer: %v", err)
+	}
+	ids, err := tk.Encode(text, true)
+	if err != nil { // decode-only vocab (no merges): resolve pieces via the vocab itself
+		ids = nil
+		if bos, ok := tk.TokenID("<bos>"); ok {
+			ids = append(ids, bos)
+		}
+		for _, word := range strings.Fields(text) {
+			id, ok := tk.TokenID("▁" + word) // SPM marks a leading space with ▁
+			if !ok {
+				t.Skipf("vocab lookup failed for %q — cannot build a verified prompt", word)
+			}
+			ids = append(ids, id)
+		}
+	}
+	got, derr := tk.Decode(ids)
+	if derr != nil {
+		t.Fatalf("decode-back: %v", derr)
+	}
+	t.Logf("prompt %q → %v → decodes to %q", text, ids, got)
+	return ids
+}
 
 // parityStats is what a resident-vs-CPU lockstep run measures. Reported by BOTH the subject and
 // the control, because neither metric alone is trustworthy: argmax alone can pass a broken
@@ -106,18 +149,15 @@ func residentParity(t *testing.T, path string, seed []int, steps int) parityStat
 	return st
 }
 
-// Seed ids. gemma3IDs is "<bos> The capital of France is" — VERIFIED by decoding it, not
-// inherited. The ids this gate used to carry (2, 651, 6037, ...) decode to
-// "<bos>ath হই of carry Bত্ব忽视ardRep": not valid Gemma tokens, so every number measured with
-// them was measured on nonsense input.
-var denseControlIDs = []int{785, 3840, 315, 6137, 448, 264, 1467, 315, 264, 3070}
-var gemma3IDs = []int{2, 669, 5279, 529, 7001, 563}
+// The one sentence both models probe, so the subject and the control are comparable.
+const probeText = "The capital of France is"
 
 // TestDenseResidentParity is the CONTROL: the same harness on the known-good SHIPPED dense Qwen
 // path, so "is this cosine / this many near-ties good?" has an answer measured on THIS box
 // rather than assumed. Without it a Gemma number cannot be judged.
 func TestDenseResidentParity(t *testing.T) {
-	st := residentParity(t, os.ExpandEnv("$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"), denseControlIDs, 24)
+	path := os.ExpandEnv("$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")
+	st := residentParity(t, path, seedPrompt(t, path, probeText), 24)
 	assertParity(t, "dense control", st)
 }
 
@@ -131,7 +171,8 @@ func TestGemma3ResidentParity(t *testing.T) {
 	if !decoder.ResidentBackendFeatures["metal"][decoder.FeatSandwichNorm] {
 		t.Skip("metal does not declare the Gemma features yet (kernels dormant) — see docs/task-metal-gemma.md")
 	}
-	st := residentParity(t, os.ExpandEnv("$HOME/models/gemma-3-4b-it-Q4_K_M.gguf"), gemma3IDs, 24)
+	path := os.ExpandEnv("$HOME/models/gemma-3-4b-it-Q4_K_M.gguf")
+	st := residentParity(t, path, seedPrompt(t, path, probeText), 24)
 	assertParity(t, "gemma3", st)
 }
 
