@@ -150,3 +150,79 @@ func TestGemma_gluAct(t *testing.T) {
 		})
 	}
 }
+
+// TestGemma_rmsnormQuantAddOne validates the (1+w) offset in rmsnorm_quant — the pre-attn,
+// pre-MLP and FINAL norms all go through it, so a bug here breaks every layer from pos 0.
+// The fused quant makes it easy to miss: the offset must apply to BOTH the maxabs scan and
+// the quantize pass, or the scale and the values disagree.
+func TestGemma_rmsnormQuantAddOne(t *testing.T) {
+	d, err := CreateSystemDefaultDevice()
+	if err != nil {
+		t.Fatalf("device: %v", err)
+	}
+	lib, err := d.CompileLibrary(allKernels, MSL3_1)
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	pipe, err := d.NewComputePipeline(lib, "rmsnorm_quant")
+	if err != nil {
+		t.Fatalf("pipeline: %v", err)
+	}
+	const H = 256
+	const eps = 1e-6
+	for _, addOne := range []bool{false, true} {
+		name := "plain_w"
+		if addOne {
+			name = "add_one"
+		}
+		t.Run(name, func(t *testing.T) {
+			rng := rand.New(rand.NewSource(41))
+			x := make([]float32, H)
+			w := make([]float32, H)
+			for i := range x {
+				x[i] = rng.Float32()*2 - 1
+				w[i] = rng.Float32()*0.5 - 0.25
+			}
+			var ss float64
+			for _, v := range x {
+				ss += float64(v) * float64(v)
+			}
+			inv := float32(1 / math.Sqrt(ss/float64(H)+eps))
+			y := make([]float32, H)
+			var mx float32
+			for i := range x {
+				g := w[i]
+				if addOne {
+					g = 1 + w[i]
+				}
+				y[i] = x[i] * inv * g
+				if a := float32(math.Abs(float64(y[i]))); a > mx {
+					mx = a
+				}
+			}
+			refSc := mx / 127
+			if refSc == 0 {
+				refSc = 1
+			}
+			a := uint32(0)
+			if addOne {
+				a = 1
+			}
+			aq := byteBuf(d, H)
+			asc := d.NewBufferLen(1)
+			q := d.NewCommandQueue()
+			q.Run1D(pipe, 256, 256, d.NewBufferFloats(x), d.NewBufferFloats(w), aq, asc,
+				d.NewBufferU32(H), d.NewBufferFloats([]float32{eps}), d.NewBufferU32(a))
+			if got := asc.Floats()[0]; math.Abs(float64(got-refSc)) > 1e-5 {
+				t.Fatalf("scale %.7f want %.7f", got, refSc)
+			}
+			gotQ := aq.Int8s()
+			for i := range y {
+				want := clampI(int(math.Round(float64(y[i]/refSc))), -127, 127)
+				if dd := gotQ[i] - int8(want); dd > 1 || dd < -1 {
+					t.Fatalf("[%d] q=%d want %d", i, gotQ[i], want)
+				}
+			}
+		})
+	}
+}
