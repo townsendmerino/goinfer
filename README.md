@@ -36,7 +36,7 @@ registry; do not hand-edit).
 zero-install, HF-parity-gated lane no other maintained runtime occupies (the Go
 llama.cpp bindings still ship a native `.so`; the pure-Go ports are archived toys).
 On a GPU the **cgo-free native backends** decode at native-runtime-class speed at equal
-4-bit quant, measured server-to-server: **CUDA runs ~1.3–1.8× Ollama-CUDA** (1.5B→0.5B),
+4-bit quant, measured server-to-server: **CUDA runs ~1.4–2.0× Ollama-CUDA** (1.5B→0.5B),
 and **Metal holds parity with Ollama-Metal** (0.77–1.03×; issue-bound on Apple GPUs) —
 both with **no CUDA toolkit, no Xcode, no cgo**. The portable WebGPU backend trades
 throughput (~60–70%) for running on *any* GPU (Metal / Vulkan / DX12) and streaming
@@ -272,11 +272,15 @@ detokenize, and JSON all included — so there's no methodology gap to discount:
 
 | Model | goinfer CUDA | Ollama-CUDA | goinfer Metal | Ollama-Metal |
 |---|---|---|---|---|
-| Qwen2.5-Coder-0.5B | ~392 tok/s (**1.78×**) | ~220 | ~128 tok/s (**1.03×**) | ~124 |
-| Qwen2.5-Coder-1.5B | ~196 tok/s (**1.32×**) | ~149 | ~61 tok/s (**0.77×**) | ~79 |
+| Qwen2.5-Coder-0.5B | ~430 tok/s (**2.04×**) | ~211 | ~128 tok/s (**1.03×**) | ~124 |
+| Qwen2.5-Coder-1.5B | ~210 tok/s (**1.41×**) | ~149 | ~61 tok/s (**0.77×**) | ~79 |
 
 CUDA outruns tuned native CUDA; Metal is at parity on small models and issue-bound (no
-DP4A on Apple GPUs) on larger ones. Full provenance — hardware, versions, method — in
+DP4A on Apple GPUs) on larger ones. Each engine is compared **only against its peer on
+the same machine** — CUDA on an RTX 2070 SUPER, Metal on an M1 Pro — so the ratios are
+meaningful but the absolute tok/s do *not* compare across the CUDA and Metal columns
+(that would be a comparison of two graphics cards, not two engines). Best of 3 warm
+runs; full provenance — hardware, driver, peer versions, method — in
 [docs/benchmarks.md](docs/benchmarks.md).
 
 ### What runs on the GPU
