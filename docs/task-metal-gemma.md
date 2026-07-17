@@ -91,3 +91,54 @@ Add to `ResidentBackendFeatures["metal"]`: `FeatRMSAddOne`, `FeatSandwichNorm`,
 - `FeatGatedGELU` is `!NonGatedMLP && Act != ActSiLU` — so claiming it also claims an
   `ActReLU2`-gated arch, which the kernel's `else` branch would mis-run as GELU. Safe only
   because nothing else is admitted today.
+
+## STATUS: kernels land dormant — one bug outstanding, localized
+
+The five features are implemented and the kernels are unit-tested green, but Metal does **not
+yet declare** them: on a real gemma-3-4b-it the resident output diverges from CPU, so declaring
+would be an overclaim. `TestGemma3ResidentParity` skips until the declaration lands.
+
+### What is measured, not assumed
+
+| | result |
+|---|---|
+| dense control (shipped path, same harness) | 15/24 argmax, **min cosine 0.962** → PASS |
+| gemma-3-4b-it | 14/24 argmax, **min cosine 0.699** → FAIL (gross breakage) |
+
+Note argmax alone *passed* Gemma (14/24) while cosine showed 0.699 — the same trap CUDA hit
+from the other side. Neither metric alone is trustworthy; both are in the test.
+
+### Ruled OUT (don't re-pay for these)
+
+- **Not an OOM.** The Linux box's trap #4 (an OOM wearing a parity bug's clothes) was tested
+  directly: with allocations checked (`mustBuf` panics on a nil id) **no allocation failed** and
+  the cosine was bit-identical. It is a real compute bug.
+- **Not rope / qk-norm / window / attn-scale.** The divergence is present **at pos 0**, where
+  θ=0 makes RoPE the identity and attention output is exactly `v0` (softmax over one key) —
+  q, k, rope, qk-norm and the scale provably cannot affect the output.
+- **Not the kernels individually.** `rmsnorm_f32` (both addOne modes), `rmsnorm_quant` (both
+  addOne modes), and the `glu_act` selector (GELU-tanh *and* SiLU) all match CPU references.
+- **Not the uniforms.** Verified against the live model: `uAddOne=1`, `uAct=0` (GELU),
+  `sandwich=true`, 5:1 local/global pattern, embedScale=50.596=√2560, `prefillOK=false`.
+- **Not the dispatch order.** Checked line-for-line against the CPU forward (model.go:440-461)
+  and against `normalize`/`rmsNorm`.
+
+### LOCALIZED — where to look next
+
+A layer-by-layer KV bisect (compare `cache.Keys/Vals(l)` against Metal's f16 `kc/vc[l]` at
+pos 0) pins it precisely:
+
+```
+layer  0: K cos 0.999515   V cos 0.998092     <- inputs to layer 0 are CORRECT
+layer  1: K cos 0.403001   V cos -0.046768    <- catastrophic
+```
+
+Layer 0's KV is right, so preNorm + QKV are fine. Layer 1's KV is fed by layer 0's **output**,
+so the bug is in **layer 0's post-attention path** — precisely the sublayer this task rewrote:
+`o-proj → rmsnorm_f32(postAttnNorm) → residual → rmsnorm_quant(preMLPNorm) → gate|up → GeGLU →
+down → rmsnorm_f32(postMLPNorm) → residual`. V cos of −0.047 is orthogonal, i.e. x after layer 0
+is unrelated — a structural break, not drift.
+
+Next step: bisect *within* that sublayer (a test hook that encodes only N layers and reads
+`r.x`, or a tiny synthetic gemma3 for a fast iterate loop). Suspicion order: the sandwich
+split's buffer/hazard handling (`oO`/`dO` reuse across dispatches), then the GeGLU wiring.
