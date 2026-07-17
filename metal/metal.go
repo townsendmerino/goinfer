@@ -68,15 +68,15 @@ func goString(id objc.ID) string {
 	if p == nil {
 		return ""
 	}
-	var out []byte
-	for ptr := uintptr(unsafe.Pointer(p)); ; ptr++ {
-		c := *(*byte)(unsafe.Pointer(ptr))
-		if c == 0 {
-			break
-		}
-		out = append(out, c)
+	// Walk the NUL terminator with unsafe.Add (pointer arithmetic that stays *unsafe.Pointer),
+	// then materialize with unsafe.Slice — avoids the uintptr→unsafe.Pointer round-trip that
+	// `go vet` flags as "possible misuse" (and that CI's vet rejects). The bytes are C-managed
+	// (objc UTF8String), so GC movement is not a concern; this is purely the vet-clean idiom.
+	n := 0
+	for *(*byte)(unsafe.Add(unsafe.Pointer(p), n)) != 0 {
+		n++
 	}
-	return string(out)
+	return string(unsafe.Slice(p, n))
 }
 
 // Device wraps an MTLDevice and OWNS every MTLBuffer allocated through it.
