@@ -295,12 +295,18 @@ producing incorrect results.
 |---|---|---|
 | Qwen2 · Qwen3 · Llama | ✅ resident | ✅ resident |
 | Mistral · Phi-3-mini-4k | ✅ resident | ✅ resident¹ |
+| Gemma 3 | ✅ resident³ | CPU fallback |
 | MoE — Mixtral · Qwen2-MoE · Qwen3-MoE · GLM-MoE | CPU fallback | ✅ resident² |
-| Gemma · MLA · DeltaNet/YaRN | CPU fallback | CPU fallback |
+| Gemma 4 · MLA · DeltaNet/YaRN | CPU fallback | CPU fallback |
 
 ¹ Metal Mistral-7B needs > 16 GB unified memory (int8 + int4). Both backends implement
 qk-norm + sliding-window; Metal also does partial rotary, so a partial-rotary Phi
 variant is resident on Metal but falls back on CUDA.
+
+³ CUDA Gemma 3 covers the sandwich-norm block, GeGLU, the (1+w) RMS offset, the √hidden
+embedding scale, and Gemma's dual RoPE base — validated on a real gemma-3-4b-it against the
+CPU path. Gemma 4 stays on CPU: it needs logit-softcap and has its own forward (per-layer
+head_dim, KV-sharing, PLE).
 
 ² Metal MoE (router + stacked experts + shared expert) is validated by assembly
 equivalence (identical experts ≡ the dense FFN, cosine 1.0) + per-kernel parity vs CPU;
