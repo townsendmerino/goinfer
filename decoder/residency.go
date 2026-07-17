@@ -387,6 +387,15 @@ func (m *Model) ForwardForTest(id int, cache *KVCache) ([]float32, error) {
 }
 func (m *Model) EmbedResidentForTest(id int) []float32 { return m.embedResident(id) }
 
+// FinalNormForTest applies the model's final normalization to a copy of h — the CPU reference
+// for the last step of a resident bisect (the seam between the trunk and the LM head, where the
+// hidden state is normed then projected). Does NOT project to logits; that is the head.
+func (m *Model) FinalNormForTest(h []float32) []float32 {
+	out := append([]float32(nil), h...)
+	normalize(m.w.arch, out, m.w.FinalNorm, m.w.FinalNormBias, m.w.arch.HiddenDim)
+	return out
+}
+
 // embedResident returns the input embedding [hidden] for token id — the CPU half of the
 // residency forward, including any embedding scale the arch applies before layer 0.
 func (m *Model) embedResident(id int) []float32 {

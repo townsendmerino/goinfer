@@ -460,6 +460,55 @@ func (r *Resident) ForwardArgmax(id, pos int) uint32 {
 	return r.tok.U32()
 }
 
+// forwardTrunkForTest runs the trunk over the first nLayers layers ONLY and returns the residual
+// stream (r.x) at that depth — the GPU half of a per-layer bisect against decoder.ForwardCapture.
+//
+// It is the seam for locating WHERE a parity gap enters rather than only that it exists: a
+// whole-model cosine says a backend is wrong, never which op. Truncation is exact because
+// encodeTrunkInto reads r.nL at ENCODE time and re-encodes every call, so lowering it drops the
+// tail layers with no other effect; the final norm still runs but writes r.aq, never r.x.
+//
+// Side effect worth knowing: the layers that DO run write their K/V for pos as usual, so calling
+// this repeatedly at one position is idempotent but calling it out of order is not.
+func (r *Resident) forwardTrunkForTest(emb []float32, pos, nLayers int) []float32 {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	saved := r.nL
+	r.nL = nLayers
+	defer func() { r.nL = saved }()
+	copy(r.x.Floats(), emb)
+	r.uPos.SetU32(uint32(pos))
+	r.uNKeys.SetU32(uint32(pos + 1))
+	e := r.q.begin()
+	r.encodeTrunkInto(e)
+	e.end()
+	return append([]float32(nil), r.x.Floats()...)
+}
+
+// forwardHeadForTest runs the FULL trunk (final norm included) then the LM head, and returns
+// both the head's INPUT activation as it actually sees it — r.aq dequantized by r.aSc, i.e. the
+// int8-quantized final-norm output — and the logits. It splits the one step the per-layer bisect
+// cannot: final-norm-quant vs the head matmul. Comparing the returned activation to the CPU's
+// f32 final-norm output isolates the quantization of the head's input; comparing the logits
+// isolates the matmul on top of it.
+func (r *Resident) forwardHeadForTest(emb []float32, pos int) (act, logits []float32) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	copy(r.x.Floats(), emb)
+	r.uPos.SetU32(uint32(pos))
+	r.uNKeys.SetU32(uint32(pos + 1))
+	e := r.q.begin()
+	r.encodeTrunkInto(e)
+	e.dispatch(r.pGemvW8, (r.V)*32, 32, r.aq, r.aSc, r.lmW, r.lmS, r.logits, r.uH)
+	e.end()
+	q, sc := r.aq.Int8s(), r.aSc.Floats()[0]
+	act = make([]float32, r.H)
+	for i := range act {
+		act[i] = float32(q[i]) * sc
+	}
+	return act, append([]float32(nil), r.logits.Floats()...)
+}
+
 // encodeTrunkInto encodes all decoder layers + the final norm into e, leaving the quantized
 // final hidden state in r.aq/r.aSc ready for an lm head. It ONLY records dispatches (referencing
 // the shared buffers) — it does NOT set uPos/uNKeys or fill r.x; the caller sets those before
