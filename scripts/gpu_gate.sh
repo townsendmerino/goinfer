@@ -175,10 +175,23 @@ metal)
 	fi
 
 	hdr "4. lifecycle"
-	skip "Close()-frees-memory gate — Metal has no equivalent of TestResidentCloseFreesVRAM yet.
-        CUDA's Close() leaked the ENTIRE model per Load+Close (d8e81cb), and the first fix
-        still leaked whenever ANOTHER context holder existed. metal/backend.go's Close is a
-        one-liner (stopExec) that frees no buffers. See docs/prompts/metal-close-leak-check.md."
+	# Was a SKIP pointing at this work; the gate landed, so it is now a real check. Metal HAD the
+	# same hole CUDA did — Close() froze a channel and freed nothing, leaking ~267 MB per
+	# Load+Close on a 0.5B (aacec89). These run WITHOUT -short (the suite above uses it) because
+	# they load real models, and they cover BOTH conditions: the sequential sawtooth, and a
+	# second model alive — the case that made CUDA's first fix look correct when it was not.
+	if [ -f "$HOME/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf" ]; then
+		if out="$(go test -count=1 -run 'TestMetal_CloseFreesMemory|TestMetal_CloseWithSecondModelAlive' ./metal/ 2>&1)"; then
+			RAN=$((RAN + 1))
+			pass "Close() frees — sawtooth not staircase, and frees with a second model resident"
+			echo "$out" | grep -E "trajectory|A\+B alive" | sed 's/^/      /'
+		else
+			fail "Close() leaks memory"
+			echo "$out" | grep -E "^--- FAIL|LEAK|did NOT free|USE-AFTER-FREE|\.go:[0-9]+:" | head -8 | sed 's/^/      /'
+		fi
+	else
+		skip "Close() lifecycle gate needs ~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"
+	fi
 	;;
 
 *)

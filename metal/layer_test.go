@@ -51,6 +51,10 @@ func TestLayerB_fullLayerForward(t *testing.T) {
 	pRms, pQv, pGemv := pipe("rmsnorm_quant"), pipe("quant_vec"), pipe("gemv_w8a8")
 	pRope, pKv, pAttn := pipe("rope"), pipe("kv_store"), pipe("attention")
 	pSw, pRes := pipe("swiglu_quant"), pipe("residual")
+	// rmsnorm_quant/swiglu_quant are parameterized for Gemma: addOne selects the (1+w) RMS offset
+	// and act selects SiLU vs GELU-tanh. This layer is a Llama/Qwen block — plain w, SwiGLU. These
+	// MUST be bound: an unbound uniform reads garbage, and a nonzero act silently runs GeGLU.
+	uAddOne0, uActSiLU := d.NewBufferU32(0), d.NewBufferU32(1)
 
 	const H, nH, nKV, hd, I, pos = 256, 4, 2, 64, 512, 5
 	const eps = 1e-6
@@ -128,7 +132,7 @@ func TestLayerB_fullLayerForward(t *testing.T) {
 
 	q := d.NewCommandQueue()
 	enc := q.begin()
-	enc.dispatch(pRms, 256, 256, x, d.NewBufferFloats(attnNorm), aq, aSc, uH, uEps)
+	enc.dispatch(pRms, 256, 256, x, d.NewBufferFloats(attnNorm), aq, aSc, uH, uEps, uAddOne0)
 	enc.dispatch(pGemv, nH*hd, 64, aq, aSc, qqW, qqS, qB, uH)
 	enc.dispatch(pGemv, kvDim, 64, aq, aSc, kqW, kqS, kB, uH)
 	enc.dispatch(pGemv, kvDim, 64, aq, aSc, vqW, vqS, vB, uH)
@@ -139,10 +143,10 @@ func TestLayerB_fullLayerForward(t *testing.T) {
 	enc.dispatch(pQv, 256, 256, ctx, cq, cSc, uHH)
 	enc.dispatch(pGemv, H, 64, cq, cSc, oqW, oqS, oO, uHH)
 	enc.dispatch(pRes, H, 64, x, oO)
-	enc.dispatch(pRms, 256, 256, x, d.NewBufferFloats(mlpNorm), mq, mSc, uH, uEps)
+	enc.dispatch(pRms, 256, 256, x, d.NewBufferFloats(mlpNorm), mq, mSc, uH, uEps, uAddOne0)
 	enc.dispatch(pGemv, I, 64, mq, mSc, gqW, gqS, gO, uH)
 	enc.dispatch(pGemv, I, 64, mq, mSc, uqW, uqS, uO, uH)
-	enc.dispatch(pSw, 256, 256, gO, uO, dq, dSc, uI)
+	enc.dispatch(pSw, 256, 256, gO, uO, dq, dSc, uI, uActSiLU)
 	enc.dispatch(pGemv, H, 64, dq, dSc, dqW, dqS, dO, uI)
 	enc.dispatch(pRes, H, 64, x, dO)
 	enc.end()

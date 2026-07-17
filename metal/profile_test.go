@@ -78,8 +78,10 @@ func TestProfileKernels(t *testing.T) {
 	down := prof("down gemv (1536xK8960)", 200, func(r int) { q.Run1DBatch(pGemvR, H*32, 32, r, wD, scD, aqI, aScB, fH, uIb) })
 	oproj := prof("o gemv (1536xK1536)", 200, func(r int) { q.Run1DBatch(pGemvR, H*32, 32, r, w, sc, aqI, aScB, fH, uHb) })
 	lm := prof("lm head gemv (151936xK1536)", 60, func(r int) { q.Run1DBatch(pGemvC, V*32, 32, r, w, sc, aqI, aScB, outBig, uHb) })
-	rms := prof("rmsnorm_quant (H1536)", 400, func(r int) { q.Run1DBatch(pRms, 256, 256, r, fH, fH2, aqI, aScB, uHb, uEps) })
-	sw := prof("swiglu_quant (I8960)", 400, func(r int) { q.Run1DBatch(pSw, 256, 256, r, fI, fI2, aqI, aScB, uIb) })
+	// Gemma parameterization: plain w + SwiGLU for this dense profile (see layer_test).
+	uAddOne0, uActSiLU := d.NewBufferU32(0), d.NewBufferU32(1)
+	rms := prof("rmsnorm_quant (H1536)", 400, func(r int) { q.Run1DBatch(pRms, 256, 256, r, fH, fH2, aqI, aScB, uHb, uEps, uAddOne0) })
+	sw := prof("swiglu_quant (I8960)", 400, func(r int) { q.Run1DBatch(pSw, 256, 256, r, fI, fI2, aqI, aScB, uIb, uActSiLU) })
 	at := prof("attention (nH12,nKeys32)", 400, func(r int) { q.Run1DBatch(pAttn, nH*128, 128, r, fH, kc, kc, fH2, uNH, uNKV, uHd, uNK, uSc) })
 
 	// per-token budget: 28 layers × (qkv + gate/up + down + o + 2×rms + swiglu + attn) + lm head
