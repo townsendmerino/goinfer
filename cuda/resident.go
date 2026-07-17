@@ -557,3 +557,45 @@ func packWeight(w *linalg.WeightMat) (hostW, error) {
 		return hostW{}, fmt.Errorf("cuda: unsupported projection kind %q", w.Kind())
 	}
 }
+
+// packWeightStack row-stacks several same-K weights into ONE packed buffer, so a routed expert
+// is selected by INDEXING a row range rather than by binding a different buffer per token
+// (gemv_w4a8_moe: wrow = idx[slot]*rowsPerExpert + row). Fixed launch geometry is what lets the
+// resident runner keep a static dispatch chain regardless of which experts a token picks.
+//
+// It composes packWeight rather than re-implementing the layout, so a stacked expert's bytes
+// are IDENTICAL to the same weight packed alone — the nibble permutation, group-scale f16
+// rounding and row order all come from the one packer. A second copy of that layout is how the
+// indexed reads would silently land on garbage: the GEMV cannot tell a mis-packed row from a
+// real one, it just returns a plausible wrong number.
+//
+// Every input must share kind and K: the kernel derives its stride from one Kwords/Kgroups, so
+// a ragged stack would read across row boundaries.
+func packWeightStack(ws ...*linalg.WeightMat) (hostW, error) {
+	if len(ws) == 0 {
+		return hostW{}, fmt.Errorf("cuda: packWeightStack needs at least one weight")
+	}
+	var out hostW
+	for i, w := range ws {
+		h, err := packWeight(w)
+		if err != nil {
+			return hostW{}, fmt.Errorf("cuda: packWeightStack[%d]: %w", i, err)
+		}
+		if i == 0 {
+			out.kind, out.K = h.kind, h.K
+		}
+		if h.kind != out.kind {
+			return hostW{}, fmt.Errorf("cuda: packWeightStack[%d]: kind %q != %q — a mixed-precision "+
+				"stack cannot share one kernel's unpack path", i, h.kind, out.kind)
+		}
+		if h.K != out.K {
+			return hostW{}, fmt.Errorf("cuda: packWeightStack[%d]: K=%d != %d — the kernel strides by a "+
+				"single Kwords, so a ragged stack reads across row boundaries", i, h.K, out.K)
+		}
+		out.wpk = append(out.wpk, h.wpk...)
+		out.ws = append(out.ws, h.ws...)
+		out.ws16 = append(out.ws16, h.ws16...)
+		out.N += h.N
+	}
+	return out, nil
+}
