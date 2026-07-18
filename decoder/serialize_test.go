@@ -3,7 +3,9 @@ package decoder
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
+	"hash/crc32"
 	"os"
 	"path/filepath"
 	"slices"
@@ -419,5 +421,38 @@ func TestLoadSerialized_finalizesTiedLMHead(t *testing.T) {
 	}
 	if !w2.arch.TiedLMHead {
 		t.Fatal("round-tripped tied checkpoint has TiedLMHead=false — the forward would emit all-zero logits")
+	}
+}
+
+// TestLoadSerialized_neverPanicsOnValidCRC is the M17 gate: CRC is integrity, not authenticity —
+// a determined blob can flip any field and recompute the trailing CRC, so LoadSerializedWeights
+// must NEVER panic on such input (linalg.WrapInt8/Int4 panic on a length/group mismatch and a
+// wrong-length WrapF32 defers the panic to first use). It flips each body byte, re-CRCs, and
+// asserts the loader returns cleanly. Model-free (constructed int8 bundle), so it runs in CI.
+func TestLoadSerialized_neverPanicsOnValidCRC(t *testing.T) {
+	cfg := representativeConfig("qwen2")
+	arch, _, err := resolveArchitecture(cfg)
+	if err != nil {
+		t.Fatalf("resolveArchitecture: %v", err)
+	}
+	emb := linalg.QuantizeInt8(make([]float32, cfg.VocabSize*cfg.HiddenDim), cfg.VocabSize, cfg.HiddenDim, false)
+	blob, err := SerializeWeights(&Weights{Cfg: *cfg, arch: arch, Embed: emb}, "m17")
+	if err != nil {
+		t.Fatalf("serialize: %v", err)
+	}
+	for i := 0; i < len(blob)-4; i++ {
+		b := append([]byte(nil), blob...)
+		b[i] ^= 0xFF
+		binary.LittleEndian.PutUint32(b[len(b)-4:], crc32.ChecksumIEEE(b[:len(b)-4])) // make CRC "valid"
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Fatalf("byte %d flip panicked (M17 violated): %v", i, r)
+				}
+			}()
+			if w, err := LoadSerializedWeights(b); err == nil {
+				_ = w // a plausible-but-different bundle may load; the contract is only "no panic"
+			}
+		}()
 	}
 }

@@ -190,6 +190,18 @@ func (m *Model) LoadSession(data []byte, wantID string) (*Session, error) {
 		return nil, &SnapshotError{fmt.Sprintf("model identity mismatch: snapshot %q, want %q", gotID, wantID)}
 	}
 
+	// M17: numLayers/kvDim/pos are blob-controlled and feed m.NewCache(pos), which allocates pos ×
+	// the model's KV footprint — an inflated pos (up to 4B) would makeslice TBs BEFORE the geometry
+	// guard below. Reject implausible header dims, and bound pos by what the body can hold (each of
+	// the pos positions stores ≥1 byte across the numLayers·kvDim KV; division avoids overflow).
+	if numLayers < 0 || numLayers > maxSerializedLayers || kvDim < 0 || kvDim > 1<<24 ||
+		headDim < 0 || window < 0 || pos < 0 {
+		return nil, &SnapshotError{"implausible header dims"}
+	}
+	if perPos := numLayers * kvDim; perPos > 0 && int64(pos) > int64(len(data))/int64(perPos) {
+		return nil, &SnapshotError{"pos exceeds snapshot body capacity — corrupt or malicious"}
+	}
+
 	// Geometry guard: the snapshot's cache layout must match this model's, or its
 	// KV is meaningless here. NewCache derives the same values from the arch.
 	ref := m.NewCache(pos)
@@ -211,12 +223,23 @@ func (m *Model) LoadSession(data []byte, wantID string) (*Session, error) {
 			if st == 0 || nLive == 0 {
 				continue // never-written ring
 			}
+			// M17: st/nLive/count are blob-controlled and drive make([]…, rr.w·st) + the slice
+			// copies below. A ring stores exactly kvDim per position; reject a mismatched stride,
+			// nLive past the window, or a count/nLive the payload can't back — else the make OOMs
+			// or the copies slice-panic. rr.headDim is model-derived (>0), so nKV is safe.
+			if st != kvDim || rr.count < 0 || nLive > rr.w || rr.count < nLive {
+				return nil, &SnapshotError{"inconsistent ring geometry"}
+			}
 			lo := max(0, rr.count-rr.w)
+			nRows := rr.count - lo // copy iterations = payload rows the writer emitted
 			if quant == kvI8 {
 				nKV := st / rr.headDim
 				rr.kq, rr.vq = make([]int8, rr.w*st), make([]int8, rr.w*st)
 				rr.ksc, rr.vsc = make([]float32, rr.w*nKV), make([]float32, rr.w*nKV)
 				kb, vb, ks, vs := r.i8(), r.i8(), r.f32(), r.f32()
+				if len(kb) < nRows*st || len(vb) < nRows*st || len(ks) < nRows*nKV || len(vs) < nRows*nKV {
+					return nil, &SnapshotError{"truncated ring payload"}
+				}
 				for i, p := 0, lo; p < rr.count; i, p = i+1, p+1 {
 					so, do := (p%rr.w)*st, i*st
 					copy(rr.kq[so:so+st], kb[do:do+st])
@@ -228,6 +251,9 @@ func (m *Model) LoadSession(data []byte, wantID string) (*Session, error) {
 			} else {
 				rr.k, rr.v = make([]float32, rr.w*st), make([]float32, rr.w*st)
 				kb, vb := r.f32(), r.f32()
+				if len(kb) < nRows*st || len(vb) < nRows*st {
+					return nil, &SnapshotError{"truncated ring payload"}
+				}
 				for i, p := 0, lo; p < rr.count; i, p = i+1, p+1 {
 					so, do := (p%rr.w)*st, i*st
 					copy(rr.k[so:so+st], kb[do:do+st])

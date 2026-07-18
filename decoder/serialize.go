@@ -616,16 +616,44 @@ func (r *giwReader) weightMat() linalg.WeightMat {
 	}
 	w8a8 := r.data[r.off] == 1
 	r.off++
+	// M17: rows/cols/group are blob-controlled. linalg.Wrap{Int8,Int4} PANIC on a length
+	// mismatch or group<=0, and a wrong-length WrapF32 defers the panic to first use — a one-byte
+	// flip with a recomputed CRC would crash the loader. Validate dims + array lengths here (the
+	// arrays were already bounded by r.need); a mismatch is a *SerializeError via r.fail, not a
+	// panic. The maxWeightDim cap keeps rows*cols from overflowing int before the equality check.
+	const maxWeightDim = 1 << 26
+	if rows <= 0 || cols <= 0 || rows > maxWeightDim || cols > maxWeightDim {
+		r.fail(fmt.Sprintf("weightMat implausible dims %d×%d", rows, cols))
+		return linalg.WeightMat{}
+	}
 	switch kind {
 	case 1:
-		return linalg.WrapF32(r.f32(), rows, cols)
+		f := r.f32()
+		if len(f) != rows*cols {
+			r.fail(fmt.Sprintf("f32 weightMat %d×%d has %d values", rows, cols, len(f)))
+			return linalg.WeightMat{}
+		}
+		return linalg.WrapF32(f, rows, cols)
 	case 2:
 		scales := r.f32() // read order matches the writer (scales, then codes)
 		q8 := r.i8()
+		if len(q8) != rows*cols || len(scales) != rows {
+			r.fail(fmt.Sprintf("int8 weightMat %d×%d: q8=%d (want %d) scales=%d (want %d)", rows, cols, len(q8), rows*cols, len(scales), rows))
+			return linalg.WeightMat{}
+		}
 		return linalg.WrapInt8(q8, scales, rows, cols, w8a8)
 	case 3:
 		q4s := r.f32()
 		q4 := r.rawAlias() // zero-copy alias into the mmap'd blob (WrapInt4 keeps it)
+		if group <= 0 {
+			r.fail(fmt.Sprintf("int4 weightMat group %d ≤ 0", group))
+			return linalg.WeightMat{}
+		}
+		wantQ4, wantScales := rows*((cols+1)/2), rows*((cols+group-1)/group)
+		if len(q4) != wantQ4 || len(q4s) != wantScales {
+			r.fail(fmt.Sprintf("int4 weightMat %d×%d group=%d: q4=%d (want %d) q4s=%d (want %d)", rows, cols, group, len(q4), wantQ4, len(q4s), wantScales))
+			return linalg.WeightMat{}
+		}
 		return linalg.WrapInt4(q4, q4s, rows, cols, group)
 	default:
 		r.fail(fmt.Sprintf("unknown weightMat kind %d", kind))
