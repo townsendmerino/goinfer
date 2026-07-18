@@ -202,7 +202,17 @@ func TestGemmaContextCUDA(t *testing.T) {
 	cpuI4Ctx := cpuCtx(gguf, "int4")
 
 	qDim := len(f32Ctx[0])
+	nL := len(f32Ctx)
 	t.Logf("pre-o-proj attention context, qDim=%d, pos %d", qDim, probe)
+
+	// The TARGET CURVE for the Metal f32-KV fix: cosine(int4 ctx, f32) per layer, full depth.
+	// Metal's f32-KV context should land ON this curve (goinfer f32-KV, int4-weight), not merely
+	// "up" from its f16-KV crater. CUDA and CPU int4 agree — either is the reference.
+	t.Logf("TARGET CURVE — cosine(int4 ctx, f32-truth) per layer [Metal f32-KV should reproduce this]:")
+	for l := 0; l < nL; l++ {
+		t.Logf("  L%-2d  CUDA-int4=%.6f  CPU-int4=%.6f", l, cosine(cudaCtx[l], f32Ctx[l]), cosine(cpuI4Ctx[l], f32Ctx[l]))
+	}
+
 	for _, l := range []int{31, 32, 33} {
 		cCos := cosine(cudaCtx[l], f32Ctx[l])
 		pCos := cosine(cpuI4Ctx[l], f32Ctx[l])
