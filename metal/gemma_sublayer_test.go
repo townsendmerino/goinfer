@@ -127,7 +127,7 @@ func TestGemmaSublayer_MetalContribution(t *testing.T) {
 			t.Fatalf("cpu walk: %v", err)
 		}
 	}
-	tAttn, tMLP, tCtx, serr := m8w.ForwardSubCapture(seed[pos], cache)
+	tAttn, tMLP, tCtx, _, serr := m8w.ForwardSubCapture(seed[pos], cache)
 	if serr != nil {
 		t.Skipf("ForwardSubCapture: %v", serr)
 	}
@@ -148,7 +148,7 @@ func TestGemmaSublayer_MetalContribution(t *testing.T) {
 			t.Fatalf("int4 walk: %v", err)
 		}
 	}
-	_, _, i4Ctx, e4c := m4.ForwardSubCapture(seed[pos], c4)
+	_, _, i4Ctx, _, e4c := m4.ForwardSubCapture(seed[pos], c4)
 	if e4c != nil {
 		t.Skipf("int4 ForwardSubCapture: %v", e4c)
 	}

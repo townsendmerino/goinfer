@@ -76,11 +76,11 @@ func TestGemma_Int4DirectContext(t *testing.T) {
 			t.Fatalf("truth walk: %v", err)
 		}
 	}
-	_, _, rctx, er := ref.ForwardSubCapture(seed[pos], cr)
+	_, _, rctx, _, er := ref.ForwardSubCapture(seed[pos], cr)
 	if er != nil {
 		t.Skipf("ref ForwardSubCapture: %v", er)
 	}
-	_, _, tctx, et := truth.ForwardSubCapture(seed[pos], ct)
+	_, _, tctx, _, et := truth.ForwardSubCapture(seed[pos], ct)
 	if et != nil {
 		t.Skipf("truth ForwardSubCapture: %v", et)
 	}

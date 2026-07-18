@@ -367,7 +367,14 @@ kernel void attention_f32(device const float* q[[buffer(0)]], device const float
 #define ACT_SILU      1u
 inline float glu_act(float x, uint act) {
     if (act == ACT_SILU) return x/(1.0f+exp(-x));
-    return 0.5f*x*(1.0f+tanh(0.7978845608028654f*(x+0.044715f*x*x*x))); // sqrt(2/pi)
+    // GELU-tanh. CLAMP the tanh argument: for a massive-activation gate (Gemma's <bos> hits
+    // x~12 → arg~73), MSL's tanh overflows its internal exp() to NaN, which quantizes to 0 and
+    // silently drops the channel that BUILDS the massive activation (the entire dormant-Gemma
+    // residual traced to exactly this). tanh saturates to ±1 by |arg|~9, so clamping to ±15 is
+    // numerically exact for every real input and merely defuses the overflow. SiLU is unaffected
+    // (no tanh), which is why SwiGLU models never hit this.
+    float a = 0.7978845608028654f*(x+0.044715f*x*x*x); // sqrt(2/pi)
+    return 0.5f*x*(1.0f+tanh(clamp(a, -15.0f, 15.0f)));
 }
 kernel void swiglu_quant(device const float* g[[buffer(0)]], device const float* u[[buffer(1)]],
     device char* dq[[buffer(2)]], device float* ds[[buffer(3)]], constant uint& I[[buffer(4)]],
