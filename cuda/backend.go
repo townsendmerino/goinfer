@@ -83,19 +83,21 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	H, nLayers, nH, nKV, hd, I, vocab := m.Dims()
 
 	// ---- MoE knobs (ok=false for a dense model; every field then stays zero) ----
-	nE, topK, moeInter, sharedInter, moeSig, moeNorm, sharedUngated, moeScale, nGroup, topkGroup, isMoE := m.MoEResidentParams()
+	// sharedUngated is intentionally dropped (_): CUDA admits only the UNGATED shared expert
+	// (the gated one is declined upstream by the FeatMoEGatedShared admission check), so the
+	// build never needs to branch on it.
+	nE, topK, moeInter, sharedInter, moeSig, moeNorm, _, moeScale, nGroup, topkGroup, isMoE := m.MoEResidentParams()
 	if isMoE {
 		// Decline anything the dispatch does not implement, LOUDLY rather than by dropping it.
 		// Each of these would otherwise be silent-wrong, which is the whole point of the
 		// admission gate — and FeatMoE is one flag, so it cannot express these sub-shapes.
+		//
+		// The GATED shared expert (Qwen-MoE) is NOT declined here anymore: it is a derived
+		// feature (FeatMoEGatedShared, decoder/features.go) that CUDA does not declare, so the
+		// admission check above already declines it before this switch runs. Duplicating that
+		// decline here would be a hand-coded copy that could drift from the taxonomy (the exact
+		// class the hardware-matrix generator caught) — single source of truth instead.
 		switch {
-		case sharedInter > 0 && !sharedUngated:
-			// The GATED shared expert (Qwen-MoE: sigmoid(SharedGate·h) scaling) is built into
-			// neither the dispatch nor a committed fixture, so it stays declined until one exists
-			// to gate it — the ungated GLM/DeepSeek path below is what glm-tiny proves. Shipping
-			// the extra gate-scalar GEMV untested is the exact untested-integration this backend
-			// keeps refusing to do.
-			return declined(fmt.Errorf("MoE gated shared expert (Qwen-MoE) not implemented; ungated (GLM/DeepSeek) is (shared_intermediate_size=%d)", sharedInter))
 		case nE > 256:
 			return declined(fmt.Errorf("MoE nE=%d exceeds moe_route's MOE_MAX_E=256", nE))
 		case nGroup > 64:
