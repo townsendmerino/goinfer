@@ -92,11 +92,36 @@ type metalResident struct {
 	hidden int
 }
 
+// checkCap guards the resident KV allocation (C3). Every layer's cache is r.kc[l]/r.vc[l], sized
+// metalCtxCap*kvDim, so kv_store writes absolute position p at kc[p*kvDim ...]; valid positions
+// are [0, metalCtxCap). Writing past it is an out-of-bounds device write — on Metal's UNIFIED
+// memory that silently corrupts adjacent MTLBuffers (other models' resident weights), and once
+// nKeys > 4096 the attention kernel's `threadgroup float sc[4096]` overflows too. The decode loop
+// increments pos unbounded (a ≤cap prompt + a large max_tokens is enough), so refuse here; the
+// decode loop surfaces the error (model.go) and the caller can fall back to the staged path.
+func (a *metalResident) checkCap(pos, n int) error {
+	if pos < 0 || pos+n > metalCtxCap {
+		return fmt.Errorf("metal: KV position %d(+%d) exceeds resident context cap %d — use the staged path for longer contexts", pos, n, metalCtxCap)
+	}
+	return nil
+}
+
+// ContextCap is the resident KV capacity in positions. Implementing it makes metalResident satisfy
+// decoder.ResidentCapped, so generateInto clamps maxTokens to the cap UP FRONT (stops cleanly at
+// the cap instead of erroring mid-decode). Queryable so callers clamp rather than discover mid-run.
+func (a *metalResident) ContextCap() int { return metalCtxCap }
+
 // Forward runs one token given its embedding[H] at absolute position pos, returning logits[V].
 // The returned slice is reused across calls (the decode loop consumes it before the next call).
 func (a *metalResident) Forward(embedding []float32, pos int) ([]float32, error) {
 	if len(embedding) != a.hidden {
 		return nil, fmt.Errorf("metal: embedding len %d != hidden %d", len(embedding), a.hidden)
+	}
+	// Guard before the pipelined executor enqueues the job: the KV write happens at commit with
+	// r.uPos=pos, so refusing here (pre-enqueue) prevents any OOB device write. This path also
+	// covers PrefillLast's >cap decline, which falls back to sequential Forward(emb, i).
+	if e := a.checkCap(pos, 1); e != nil {
+		return nil, e
 	}
 	return a.r.ForwardEmbPipe(embedding, pos), nil // pipelined executor (encode-ahead)
 }
@@ -121,6 +146,11 @@ func (a *metalResident) PrefillLast(embeddings [][]float32, startPos int) ([]flo
 // ForwardN runs a batch of embeddings at consecutive positions (prefill). Each row is copied
 // off the reused host logits buffer so all survive.
 func (a *metalResident) ForwardN(embeddings [][]float32, startPos int) ([][]float32, error) {
+	// Fail-fast before any write: the loop's Forward calls each guard their own pos, but checking
+	// the whole batch up front refuses an over-cap run without partial KV writes.
+	if e := a.checkCap(startPos, len(embeddings)); e != nil {
+		return nil, e
+	}
 	out := make([][]float32, len(embeddings))
 	for i, emb := range embeddings {
 		l, err := a.Forward(emb, startPos+i)
