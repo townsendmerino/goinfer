@@ -53,15 +53,40 @@ func TestGemmaConfirmer_MatchedInput(t *testing.T) {
 
 	// Reference bundle from goinfer CPU-int4 (same assembly as TestGemmaConfirmerReference).
 	capCache := m.NewCache(len(prompt) + 1)
-	var residIntoL1 []float32
+	var residIntoL1, residIntoL1P0 []float32
 	for i, tok := range prompt {
 		_, hid, err := m.ForwardCapture(tok, capCache, []int{injectLayer - 1})
 		if err != nil {
 			t.Fatalf("ForwardCapture pos %d: %v", i, err)
 		}
+		if i == 0 {
+			residIntoL1P0 = append([]float32(nil), hid[0]...)
+		}
 		if i == probe {
 			residIntoL1 = append([]float32(nil), hid[0]...)
 		}
+	}
+	// Is Metal's L0 OUTPUT for the BOS (residual entering L1 at pos 0) already wrong? If so the
+	// bug is L0's BOS processing; if it matches, the pos-0 K-compute itself is the culprit (but
+	// positions 1..4 share those kernels and are faithful).
+	emb0 := m.EmbedResidentForTest(prompt[0])
+	{
+		var s float64
+		for _, x := range emb0 {
+			s += float64(x) * float64(x)
+		}
+		t.Logf("BOS input embedding: |emb|=%.2f (if ~12491 the massive activation is in the embedding and L0 keeps it; if ~1461 L0 must build it)", math.Sqrt(s))
+	}
+	mResid0 := r.forwardTrunkForTest(emb0, 0, 1)
+	{
+		var dot, na, nb float64
+		for i := range residIntoL1P0 {
+			dot += float64(mResid0[i]) * float64(residIntoL1P0[i])
+			na += float64(mResid0[i]) * float64(mResid0[i])
+			nb += float64(residIntoL1P0[i]) * float64(residIntoL1P0[i])
+		}
+		t.Logf("BOS residual entering L1 (pos 0): cos(Metal, goinfer)=%.5f |Metal|=%.2f |goinfer|=%.2f",
+			dot/(math.Sqrt(na)*math.Sqrt(nb)+1e-30), math.Sqrt(na), math.Sqrt(nb))
 	}
 	kL1, vL1, kvBase := capCache.LayerKVForTest(injectLayer)
 
