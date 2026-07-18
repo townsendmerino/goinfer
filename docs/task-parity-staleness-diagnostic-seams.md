@@ -84,9 +84,11 @@ the gate cannot lose. The whole-file hash stays the mechanism — conservative o
 ## Phased plan
 
 - **Phase 0 — done.** The `deps_hash` refresh landed (goldens green, numerics unchanged).
-- **Phase 1 — D, small (do next time it trips, or now).** Write
-  `scripts/refresh_parity_hashes.sh`: goldens-green gate → `go test ./decoder -run
-  ParityManifest -update` → record the proof. One script; no code-path change.
+- **Phase 1 — D, DONE (`scripts/refresh_parity_hashes.sh`).** Goldens-green gate → refresh
+  `deps_hash` only → assert nothing but `deps_hash` moved → print an auditable proof block.
+  Refuses (exit 1) on any failed golden OR a vacuous all-skip. Break-it-first verified: a
+  corrupted `argmax` golden → RED standalone → script refuses exit 1; happy path here runs 14
+  goldens green (dense/MoE/MLA/SSM/Gemma) and refreshes cleanly. No code-path change.
 - **Phase 2 — C, the real fix (trigger: recurrence).** Design the `TapID` set from this
   session's seams; add the single generic `tap` dispatch + field to `core` once; move all
   capture logic to excluded files (`*_capture_test.go` / an excluded `capture` file);
