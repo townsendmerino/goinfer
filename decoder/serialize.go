@@ -70,6 +70,36 @@ type SerializeError struct{ Reason string }
 
 func (e *SerializeError) Error() string { return "decoder: serialized weights: " + e.Reason }
 
+// canSerialize reports why a model's per-layer state cannot round-trip through the .giw format,
+// or nil if it can. The writer expresses the standard attention+MLP(+MoE) block plus
+// qwen3_5_moe's DeltaNet/gated-softmax extras; it does NOT write MLA latent projections
+// (DeepSeek/Kimi), Mamba-2 SSM weights (Granite/Nemotron), or the Gemma-4 per-layer-embedding
+// stack — so serializing those yields a CRC-valid bundle that nil-derefs at the first forward.
+// Refuse those families up front rather than emit silent garbage (C2).
+func canSerialize(a *Architecture) *SerializeError {
+	switch {
+	case a == nil:
+		return nil
+	case a.mla != nil:
+		return &SerializeError{"MLA latent attention (DeepSeek/Kimi) is not representable in .giw"}
+	case a.granite != nil || a.nemotron != nil:
+		return &SerializeError{"Mamba-2 SSM state (Granite/Nemotron) is not representable in .giw"}
+	case a.gemma4 != nil:
+		return &SerializeError{"Gemma-4 per-layer-embedding stack is not representable in .giw"}
+	case a.llama4 != nil:
+		return &SerializeError{"Llama-4 is not yet supported by .giw serialization"}
+	}
+	return nil
+}
+
+// fail records the first serialization refusal (the writer's belt-and-suspenders to canSerialize:
+// a per-layer field the arch-level check missed still stops the bundle rather than dropping state).
+func (w *giwWriter) fail(reason string) {
+	if w.err == nil {
+		w.err = &SerializeError{reason}
+	}
+}
+
 // SerializeWeights writes the resident weight bundle (already quantized to its
 // current precision) to a flat little-endian blob suitable for embedding. id is
 // an opaque model-identity string (e.g. the source filename) stored for tooling.
@@ -105,6 +135,9 @@ func SerializeWeightsTo(out io.Writer, w *Weights, id string) (int64, error) {
 // writer's current sink (buffer or stream). Shared by SerializeWeights and
 // SerializeWeightsTo so the field order can't drift between them or from the reader.
 func (wr *giwWriter) writeBundle(w *Weights, id string) error {
+	if err := canSerialize(w.arch); err != nil {
+		return err
+	}
 	if err := wr.writeHeadGlobals(w, id); err != nil {
 		return err
 	}
@@ -184,6 +217,11 @@ func LoadSerializedWeights(data []byte) (*Weights, error) {
 	w := &Weights{Cfg: cfg, arch: arch, backing: data}
 	w.Embed = r.weightMat()
 	w.LMHead = r.weightMat()
+	// A tied checkpoint (Qwen3/Qwen2.5-0.5B/Llama-3.2 with no output.weight) round-trips with an
+	// empty LMHead; every other loader sets TiedLMHead from lm_head presence, so mirror that here.
+	// Without it the head reads as untied+empty and the forward emits ALL-ZERO logits — greedy
+	// loops on token 0, sampling is uniform noise, with no error (C2).
+	arch.TiedLMHead = w.LMHead.Rows() == 0
 	w.PosEmbed = r.weightMat()
 	w.FinalNorm = r.f32()
 	w.FinalNormBias = r.f32()
@@ -394,6 +432,12 @@ func (w *giwWriter) weightMat(m *linalg.WeightMat) {
 }
 
 func (w *giwWriter) layer(l *LayerWeights) {
+	// Gemma-4 per-layer-embedding / KV-sharing state has no slot in this format — refuse rather
+	// than drop it (the stream path reaches here without the arch-level canSerialize gate). C2.
+	if l.PLEGate.Rows() > 0 || l.KVShared || l.VFromK {
+		w.fail("Gemma-4 per-layer-embedding / KV-sharing layer is not representable in .giw")
+		return
+	}
 	w.weightMat(&l.QProj)
 	w.weightMat(&l.KProj)
 	w.weightMat(&l.VProj)
@@ -457,6 +501,10 @@ func (w *giwWriter) hybridLayer(l *LayerWeights) {
 		w.f32(q.qNorm)
 		w.f32(q.kNorm)
 	default:
+		if l.mla != nil || l.mamba != nil {
+			w.fail("layer has MLA / Mamba-2 state not representable in .giw")
+			return
+		}
 		w.raw([]byte{0})
 	}
 }

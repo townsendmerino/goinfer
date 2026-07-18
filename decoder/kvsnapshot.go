@@ -59,11 +59,12 @@ func (e *SnapshotError) Error() string { return "decoder: kv snapshot: " + e.Rea
 // with Model.LoadSession on a model of the same architecture.
 func (s *Session) Snapshot(id string) []byte {
 	c := s.cache
-	// qwen3_5_moe's hybrid cache carries a recurrent DeltaNet state (c.delta) that
-	// this format does not persist; snapshotting it would restore wrong. Refuse
-	// (caller skips → cold prefill). All other families serialize fully below,
-	// including ring (windowed) and int8 layers.
-	if c.delta != nil {
+	// Some families carry recurrent / latent state this format does not persist:
+	// qwen3_5_moe's DeltaNet (c.delta), Granite/Nemotron's Mamba-2 state (c.mamba), and
+	// DeepSeek/Kimi's MLA compressed-KV latent (c.mlaLatent). Snapshotting any of them would
+	// restore from zeroed/empty state and continue silently wrong — refuse (caller skips →
+	// cold prefill). All other families serialize fully below, incl. ring (windowed) + int8 (C2).
+	if c.delta != nil || len(c.mamba) > 0 || len(c.mlaLatent) > 0 {
 		return nil
 	}
 	wr := &giwWriter{}

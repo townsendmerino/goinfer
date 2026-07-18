@@ -933,8 +933,15 @@ func StreamTranscodeGGUF(path string, out io.Writer, quant string, embedInt4 boo
 	if err != nil {
 		return 0, err
 	}
-	// Dedicated-loader families (qwen35/gemma4) can't stream; they fit resident.
-	if arch.qwen35 != nil || arch.gemma4 != nil {
+	// Refuse families whose per-layer state the .giw writer can't express (MLA / Mamba-2 / Gemma-4
+	// PLE / Llama-4) BEFORE the load — otherwise the granite/nemotron/llama4 branches stream a
+	// header declaring N layers followed by zero layers, or gemma4 loads fully then drops its PLE
+	// stack, producing a CRC-valid bundle that nil-derefs at the first forward (C2).
+	if serr := canSerialize(arch); serr != nil {
+		return 0, serr
+	}
+	// Dedicated-loader families (qwen35) can't stream; they fit resident.
+	if arch.qwen35 != nil {
 		w, berr := buildWeightsFromGGUF(cfg, arch, g, q, embedInt4, nil, "")
 		if berr != nil {
 			return 0, berr

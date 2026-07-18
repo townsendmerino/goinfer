@@ -10,6 +10,7 @@ import (
 	"testing"
 	"unsafe"
 
+	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/internal/giw"
 )
 
@@ -361,4 +362,62 @@ func aliasesF32(s []float32, blob []byte) bool {
 	sp := uintptr(unsafe.Pointer(&s[0]))
 	bp := uintptr(unsafe.Pointer(&blob[0]))
 	return sp >= bp && sp < bp+uintptr(len(blob))
+}
+
+// TestCanSerialize_refusesUnrepresentable is the C2 gate: the .giw writer only expresses the
+// standard block + qwen3_5_moe's extras, so families whose per-layer state it silently drops
+// (MLA / Mamba-2 / Gemma-4 PLE / Llama-4) must be REFUSED — else they produce a CRC-valid bundle
+// that nil-derefs at the first forward. Table-driven per registered arch; hardware-free.
+func TestCanSerialize_refusesUnrepresentable(t *testing.T) {
+	refused := map[string]string{
+		"deepseek_v2": "MLA", "deepseek_v3": "MLA", "kimi_k2": "MLA",
+		"granitemoehybrid": "Mamba-2", "nemotron_h": "Mamba-2",
+		"gemma4":      "PLE",
+		"llama4_text": "unsupported",
+	}
+	for name := range archFeatureProfile {
+		cfg := representativeConfig(name)
+		if cfg == nil {
+			continue
+		}
+		arch, _, err := resolveArchitecture(cfg)
+		if err != nil {
+			t.Errorf("%s: resolveArchitecture: %v", name, err)
+			continue
+		}
+		got := canSerialize(arch)
+		if _, mustRefuse := refused[name]; mustRefuse && got == nil {
+			t.Errorf("%s: canSerialize returned nil, but the .giw writer drops its per-layer state (%s) — it must be refused", name, refused[name])
+		}
+		if _, mustRefuse := refused[name]; !mustRefuse && got != nil {
+			t.Errorf("%s: canSerialize refused a representable family: %v", name, got)
+		}
+	}
+}
+
+// TestLoadSerialized_finalizesTiedLMHead gates the tied-head half of C2: a tied checkpoint
+// round-trips with an empty LMHead, and the loader must set TiedLMHead from that — otherwise the
+// head reads untied+empty and the forward emits all-zero logits (greedy loops on token 0).
+func TestLoadSerialized_finalizesTiedLMHead(t *testing.T) {
+	cfg := representativeConfig("qwen2")
+	arch, _, err := resolveArchitecture(cfg)
+	if err != nil {
+		t.Fatalf("resolveArchitecture: %v", err)
+	}
+	emb := linalg.WrapF32(make([]float32, cfg.VocabSize*cfg.HiddenDim), cfg.VocabSize, cfg.HiddenDim)
+	w := &Weights{Cfg: *cfg, arch: arch, Embed: emb} // LMHead zero-value ⇒ tied; no layers needed
+	blob, err := SerializeWeights(w, "tied-head-test")
+	if err != nil {
+		t.Fatalf("serialize: %v", err)
+	}
+	w2, err := LoadSerializedWeights(blob)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if w2.LMHead.Rows() != 0 {
+		t.Fatalf("expected empty LMHead on round-trip, got %d rows", w2.LMHead.Rows())
+	}
+	if !w2.arch.TiedLMHead {
+		t.Fatal("round-tripped tied checkpoint has TiedLMHead=false — the forward would emit all-zero logits")
+	}
 }
