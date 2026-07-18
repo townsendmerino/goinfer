@@ -214,4 +214,42 @@ available; the residual near-tie gap is a hardware precision limit, not a bug.
 
 **Coverage conclusion:** Qwen3 confirmed correct on Metal (+ CUDA). Admission unified on the
 shared `decoder/features.go` taxonomy (refit done, 10a32f9). Qwen3/Mistral/Phi-3 coverage
-complete for the dense path; Gemma/MoE/MLA/YaRN correctly decline.
+complete for the dense path; Gemma/MoE/MLA/YaRN correctly decline. *(Superseded below: MoE and
+Gemma 3 have since landed resident on Metal — see 2026-07-17.)*
+
+## Resolved — MoE + Gemma 3 now resident on Metal (2026-07-17)
+
+The two "structural, defer" rows above are done. `decoder/features.go["metal"]` now declares
+nine features; `TestResidentBackendFeatures_noOverclaim` pins them.
+
+- **MoE — resident** (`metal/moe.go`): on-GPU router + row-stacked indexed-expert W4A8 GEMVs +
+  shared expert. Mixtral / Qwen2-MoE / GLM-4-MoE run resident; only YaRN-mscale (Mellum) and MLA
+  (DeepSeek/Kimi) still decline.
+- **Gemma 3 — resident** (`FeatSandwichNorm, FeatGatedGELU, FeatRMSAddOne, FeatEmbedScale,
+  FeatPerLayerRoPE`; commits 38a2b7c + 471a418). `TestGemma3ResidentParity` live and passing
+  (logit cosine 0.9117 vs CPU-int4, int4-hostile 0.88 bar), generates " Paris." coherently.
+
+  **Root cause of the dormant residual (worth remembering for any GeGLU family):** Metal's
+  `glu_act` evaluated GELU-tanh as `tanh(0.7978·(x + 0.044715·x³))` UNCLAMPED. Gemma's `<bos>`
+  builds a massive-activation gate `x≈12` → the tanh argument reaches ≈73 → MSL's `tanh`
+  overflows its internal `exp(2·73)` to **NaN** → `swiglu_quant` quantizes NaN to int8 0 → the
+  single channel that builds the sink's massive activation is silently dropped, collapsing the
+  int8 scale 32× and cratering every downstream context. SiLU has no `tanh`, so only GeGLU broke
+  while SwiGLU (Qwen) shipped clean. Fix: clamp the tanh argument to ±15 (tanh saturates by
+  |arg|≈9, so exact for every real input). One line.
+
+  **Note the mechanism is precision-independent:** the NaN comes from the tanh argument
+  overflowing a naive internal `exp`, which overflows in f32 too — not an f16 issue. CUDA never
+  hit it because its `tanhf` intrinsic saturates large arguments correctly; a manual
+  `(exp(2x)-1)/(exp(2x)+1)` on any backend would reproduce it.
+
+  **How it was found:** a multi-turn cross-box hunt (Metal ⇄ CUDA-as-f32-oracle) that refuted
+  six hypotheses — weights, o-proj chain, attention block, KV precision, sandwich norm, MLP
+  down-proj — via a matched-input attention confirmer, per-sublayer/per-channel capture
+  (`ForwardSubCapture`, `LayerKVForTest`, the CUDA `subCap` seam), and a shipped-kernel isolation
+  test, before pinning it to the one activation call. The discipline that mattered: every CUDA
+  fork checked against f32 truth, which caught two wrong verdicts (weight double-quant, then f16
+  KV) before they shipped.
+
+Remaining Metal declines: YaRN-mscale (Mellum), MLA (DeepSeek/Kimi), SSM, logit-softcap
+(Gemma 2, Gemma 4 — the latter also has its own forward).
