@@ -284,6 +284,15 @@ kernel void kv_store(device const float* k[[buffer(0)]], device const float* v[[
     constant uint& pos[[buffer(5)]], uint i[[thread_position_in_grid]]) {
     kc[pos*kvDim+i]=half(k[i]); vc[pos*kvDim+i]=half(v[i]); // f16 KV: half the cache bytes + read BW
 }
+// kv_store_f32 / attention_f32 — the FULL-PRECISION KV twins, used on Gemma's sandwich path only
+// (Resident.kvF32). Gemma's low-magnitude attention contexts amplify f16-KV rounding into a
+// catastrophic per-layer context error (0.64 vs f32's 0.92 cosine; matched-input confirmer
+// isolated it to the KV cache). Qwen is insensitive and keeps the f16 path (half the cache BW).
+kernel void kv_store_f32(device const float* k[[buffer(0)]], device const float* v[[buffer(1)]],
+    device float* kc[[buffer(2)]], device float* vc[[buffer(3)]], constant uint& kvDim[[buffer(4)]],
+    constant uint& pos[[buffer(5)]], uint i[[thread_position_in_grid]]) {
+    kc[pos*kvDim+i]=k[i]; vc[pos*kvDim+i]=v[i];
+}
 // One THREADGROUP (128 threads) per query head — vs the old 1-thread-per-head (12 threads
 // total = 68% of decode time from underutilization). Scores parallel over keys, softmax via
 // threadgroup reduction, output parallel over head dims. nKeys ≤ metalCtxCap (4096).
@@ -318,6 +327,37 @@ kernel void attention(device const float* q[[buffer(0)]], device const half* kc[
     for (uint st=tgs/2; st>0; st>>=1){ if(tid<st) red[tid]+=red[tid+st]; threadgroup_barrier(mem_flags::mem_threadgroup); }
     float sum=red[0]; threadgroup_barrier(mem_flags::mem_threadgroup);
     for (uint d=tid; d<hd; d+=tgs){ float a=0; for(uint s=winStart;s<nKeys;s++) a += sc[s]*float(vb[s*kvDim+d]); out[qh*hd+d]=a/sum; }
+}
+// attention_f32 — identical to attention but reads an f32 KV cache (Gemma sandwich path). Same
+// math (the f16 version already accumulated in f32); only the cache element type changes.
+kernel void attention_f32(device const float* q[[buffer(0)]], device const float* kc[[buffer(1)]],
+    device const float* vc[[buffer(2)]], device float* out[[buffer(3)]], constant uint& nH[[buffer(4)]],
+    constant uint& nKV[[buffer(5)]], constant uint& hd[[buffer(6)]], constant uint& nKeys[[buffer(7)]],
+    constant float& scale[[buffer(8)]], constant uint& window[[buffer(9)]],
+    uint qh[[threadgroup_position_in_grid]],
+    uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]]) {
+    uint kvDim = nKV*hd; uint kvh = qh/(nH/nKV);
+    uint winStart = (window>0u && nKeys>window) ? nKeys-window : 0u;
+    device const float* qr = q + qh*hd;
+    device const float* kb = kc + kvh*hd;
+    device const float* vb = vc + kvh*hd;
+    threadgroup float sc[4096];
+    threadgroup float red[128];
+    for (uint s=winStart+tid; s<nKeys; s+=tgs) {
+        float a=0; device const float* k=kb+s*kvDim;
+        for (uint d=0; d<hd; d++) a += qr[d]*k[d];
+        sc[s]=a*scale;
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    float m=-INFINITY; for (uint s=winStart+tid;s<nKeys;s+=tgs) m=max(m,sc[s]);
+    red[tid]=m; threadgroup_barrier(mem_flags::mem_threadgroup);
+    for (uint st=tgs/2; st>0; st>>=1){ if(tid<st) red[tid]=max(red[tid],red[tid+st]); threadgroup_barrier(mem_flags::mem_threadgroup); }
+    float mx=red[0]; threadgroup_barrier(mem_flags::mem_threadgroup);
+    float ls=0; for (uint s=winStart+tid;s<nKeys;s+=tgs){ float p=exp(sc[s]-mx); sc[s]=p; ls+=p; }
+    red[tid]=ls; threadgroup_barrier(mem_flags::mem_threadgroup);
+    for (uint st=tgs/2; st>0; st>>=1){ if(tid<st) red[tid]+=red[tid+st]; threadgroup_barrier(mem_flags::mem_threadgroup); }
+    float sum=red[0]; threadgroup_barrier(mem_flags::mem_threadgroup);
+    for (uint d=tid; d<hd; d+=tgs){ float a=0; for(uint s=winStart;s<nKeys;s++) a += sc[s]*vb[s*kvDim+d]; out[qh*hd+d]=a/sum; }
 }
 // glu_act selects the gated MLP's activation. The ordinals are deliberately decoder.ActKind's
 // iota (ActGeluTanh=0, ActSiLU=1) so the host passes int(m.GatedActResident()) straight through.

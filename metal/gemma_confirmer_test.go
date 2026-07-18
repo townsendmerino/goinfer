@@ -108,8 +108,55 @@ func TestGemmaConfirmer_MatchedInput(t *testing.T) {
 	for i := 0; i < probe; i++ {
 		r.forwardTrunkForTest(m.EmbedResidentForTest(prompt[i]), i, r.nL)
 	}
+	// Diagnostic: is Metal's WALKED K (now f32) close to goinfer's K, or does the KV VALUE drift?
+	// If they match, the crater is NOT the KV storage/compute — it's the residual. If they differ,
+	// Metal computes different K/V during the walk (from drifted residuals), which f32 storage
+	// cannot fix. Compare the walked positions (0..probe-1) that LayerKVForTest returns.
+	{
+		kvDim := r.kvDim
+		mk := make([]float32, probe*kvDim)
+		if r.kvF32 {
+			copy(mk, r.kc[injectLayer].Floats()[:probe*kvDim])
+		} else {
+			for i := range mk {
+				mk[i] = f16ToF32(r.kc[injectLayer].U16s()[i])
+			}
+		}
+		// Per-position: pos 0's input is the IDENTICAL embedding, so a faithful K-compute MUST
+		// match goinfer there. If pos 0 drifts too, the K-compute itself is wrong; if only later
+		// positions drift, it's residual drift feeding a faithful K-compute.
+		for p := 0; p < probe; p++ {
+			var dot, na, nb float64
+			for j := 0; j < kvDim; j++ {
+				i := p*kvDim + j
+				dot += float64(mk[i]) * float64(kL1[i])
+				na += float64(mk[i]) * float64(mk[i])
+				nb += float64(kL1[i]) * float64(kL1[i])
+			}
+			t.Logf("  walked K pos %d: cos=%.5f |metal|=%.2f |goinfer|=%.2f", p, dot/(math.Sqrt(na)*math.Sqrt(nb)+1e-30), math.Sqrt(na), math.Sqrt(nb))
+		}
+		t.Logf("  (kvF32=%v)", r.kvF32)
+	}
 	cB, nB := cosTo(r.attnConfirmForTest(residIntoL1, nil, nil, injectLayer, probe, false))
-	t.Logf("(B) matched resid + Metal WALKED f16 KV: cos=%.4f |Metal|=%.2f |target|=%.2f", cB, nB, l2(ctxL1))
+	t.Logf("(B) matched resid + Metal WALKED KV: cos=%.4f |Metal|=%.2f |target|=%.2f", cB, nB, l2(ctxL1))
+
+	// (C) Same as (B) but OVERWRITE just position 0's K/V with goinfer's (the BOS, cos 0.40). If
+	// (C) recovers, the whole crater is Metal's position-0/BOS K being wrong.
+	for i := 0; i < probe; i++ {
+		r.forwardTrunkForTest(m.EmbedResidentForTest(prompt[i]), i, r.nL)
+	}
+	kvDim := r.kvDim
+	if r.kvF32 {
+		copy(r.kc[injectLayer].Floats()[:kvDim], kL1[:kvDim])
+		copy(r.vc[injectLayer].Floats()[:kvDim], vL1[:kvDim])
+	} else {
+		kc, vc := r.kc[injectLayer].U16s(), r.vc[injectLayer].U16s()
+		for j := 0; j < kvDim; j++ {
+			kc[j], vc[j] = f32ToF16(kL1[j]), f32ToF16(vL1[j])
+		}
+	}
+	cC, nC := cosTo(r.attnConfirmForTest(residIntoL1, nil, nil, injectLayer, probe, false))
+	t.Logf("(C) (B) but with goinfer's BOS K/V at pos 0: cos=%.4f |Metal|=%.2f |target|=%.2f", cC, nC, l2(ctxL1))
 
 	if cA > 0.99 {
 		t.Logf("VERDICT: attention BLOCK is FAITHFUL (A=%.4f). The full-forward crater is INPUT drift.", cA)

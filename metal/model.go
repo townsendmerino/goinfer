@@ -51,6 +51,7 @@ type Resident struct {
 	pGemvW8, pGemvW8Amax                                                  Pipeline // int8 GEMV + fused block-argmax — the logit-critical LM head (see lmW)
 	qkNorm                                                                bool     // arch has QK-norm
 	sandwich                                                              bool     // Gemma NormSandwich4: norm each sublayer output before the residual add
+	kvF32                                                                 bool     // f32 KV cache (Gemma sandwich path) — f16 rounding craters Gemma's sensitive contexts
 	uAct                                                                  Buffer   // gated-MLP activation ordinal (decoder.ActKind: 0=GELU-tanh, 1=SiLU)
 	uNHhd, uAddOne, uHalf, uWindow                                        Buffer   // qk_norm + rope + sliding-window uniforms
 	qkv, gu                                                               Buffer   // fused QKV out, fused gate/up out
@@ -221,6 +222,15 @@ func BuildResident(m *decoder.Model) (*Resident, error) {
 	r.pQKNorm, r.pRmsF32 = pipe("qk_norm"), pipe("rmsnorm_f32")
 	r.qkNorm = m.HasQKNorm()
 	r.sandwich = m.SandwichNormResident()
+	// f32 KV path (kv_store_f32/attention_f32) exists but is DISABLED: the matched-input confirmer
+	// proved f16-vs-f32 KV storage is NOT the Gemma crater. The whole crater is Metal's BOS
+	// (position-0) K/V being computed wrong (cos 0.40 vs goinfer); overwriting just that recovers
+	// the context to 0.999. So precision was a red herring (mine and the CUDA box's) — the real
+	// bug is the position-0/attention-sink K/V compute. Kept off until that's fixed.
+	r.kvF32 = false
+	if r.kvF32 {
+		r.pKv, r.pAttn = pipe("kv_store_f32"), pipe("attention_f32")
+	}
 	// Gated-MLP activation: ordinals ARE decoder.ActKind's iota (0=GELU-tanh, 1=SiLU), so this
 	// passes straight through to glu_act. Gemma is GeGLU; everything else admitted is SwiGLU.
 	r.uAct = d.NewBufferU32(uint32(m.GatedActResident()))
@@ -296,8 +306,12 @@ func BuildResident(m *decoder.Model) (*Resident, error) {
 		}
 		L.qkvBias = d.NewBufferFloats(append(append(append([]float32{}, qb...), kb...), vb...))
 		r.layers[l] = L
-		r.kc[l] = byteBuf(d, metalCtxCap*r.kvDim*2) // f16 KV: 2 bytes/elem (halves the cache)
-		r.vc[l] = byteBuf(d, metalCtxCap*r.kvDim*2)
+		kvBytes := metalCtxCap * r.kvDim * 2 // f16 KV: 2 bytes/elem (halves the cache)
+		if r.kvF32 {
+			kvBytes = metalCtxCap * r.kvDim * 4 // Gemma: f32 KV — see r.kvF32
+		}
+		r.kc[l] = byteBuf(d, kvBytes)
+		r.vc[l] = byteBuf(d, kvBytes)
 	}
 	r.finalNorm = d.NewBufferFloats(w.FinalNorm)
 	lm := &w.LMHead
@@ -611,13 +625,21 @@ func (r *Resident) attnConfirmForTest(resid, kHist, vHist []float32, layer, pos 
 	r.uPos.SetU32(uint32(pos))
 	r.uNKeys.SetU32(uint32(pos + 1))
 	if injectKV {
-		// Inject goinfer's post-RoPE K and raw V (f32 -> f16) — matched KV history.
-		kc, vc := r.kc[layer].U16s(), r.vc[layer].U16s()
-		for i := range kHist {
-			kc[i] = f32ToF16(kHist[i])
-		}
-		for i := range vHist {
-			vc[i] = f32ToF16(vHist[i])
+		// Inject goinfer's post-RoPE K and raw V — matched KV history. f32 cache (Gemma) takes the
+		// values verbatim; the f16 cache narrows them (still cos 1.0 for the CORRECT values — the
+		// crater is walked-value drift, not storage of the right ones).
+		if r.kvF32 {
+			kc, vc := r.kc[layer].Floats(), r.vc[layer].Floats()
+			copy(kc[:len(kHist)], kHist)
+			copy(vc[:len(vHist)], vHist)
+		} else {
+			kc, vc := r.kc[layer].U16s(), r.vc[layer].U16s()
+			for i := range kHist {
+				kc[i] = f32ToF16(kHist[i])
+			}
+			for i := range vHist {
+				vc[i] = f32ToF16(vHist[i])
+			}
 		}
 	}
 	L := &r.layers[layer]
