@@ -51,7 +51,7 @@ func TestGemmaSublayerTrace(t *testing.T) {
 		var scaledEmbed []float32
 		for i, tok := range prompt {
 			if i == probe {
-				a, mm, err := m.ForwardSubCapture(tok, cache)
+				a, mm, _, err := m.ForwardSubCapture(tok, cache)
 				if err != nil {
 					t.Fatalf("ForwardSubCapture: %v", err)
 				}

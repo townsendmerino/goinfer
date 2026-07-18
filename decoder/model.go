@@ -442,6 +442,9 @@ func (m *Model) runLayersFromEmbed(h []float32, cache *KVCache) ([]float32, erro
 		if err := causalAttention(l, scr.norm, scr.sub, lw, arch, cache, m.be, ld); err != nil {
 			return nil, err
 		}
+		if cache.subCapture { // scr.ctx is the pre-o-proj context; scr.sub is not yet overwritten
+			cache.subCtx[l] = append(cache.subCtx[l][:0], scr.ctx...)
+		}
 		if sandwich {
 			normalize(arch, scr.sub, lw.PostAttnNorm, nil, hidden)
 		}
@@ -555,20 +558,23 @@ func (m *Model) ForwardCapture(id int, cache *KVCache, layers []int) (logits []f
 // what localizing a channel's sign flip to attention-vs-MLP at a specific layer requires.
 // Diagnostic — same byte-identical-output contract as ForwardCapture. Not wired for own-forward
 // families (they don't route through runLayersFromEmbed's uniform block).
-func (m *Model) ForwardSubCapture(id int, cache *KVCache) (attn, mlp [][]float32, err error) {
+func (m *Model) ForwardSubCapture(id int, cache *KVCache) (attn, mlp, ctx [][]float32, err error) {
 	a := m.w.arch
 	if a.gemma4 != nil || a.qwen35 != nil || a.granite != nil || a.nemotron != nil || a.mla != nil || a.llama4 != nil {
-		return nil, nil, fmt.Errorf("decoder.ForwardSubCapture: not wired for arch %q (own runLayers)", a.Name)
+		return nil, nil, nil, fmt.Errorf("decoder.ForwardSubCapture: not wired for arch %q (own runLayers)", a.Name)
 	}
 	nL := a.NumLayers
 	cache.subCapture = true
 	cache.subAttn = make([][]float32, nL)
 	cache.subMLP = make([][]float32, nL)
-	defer func() { cache.subCapture, cache.subAttn, cache.subMLP = false, nil, nil }()
+	cache.subCtx = make([][]float32, nL)
+	defer func() {
+		cache.subCapture, cache.subAttn, cache.subMLP, cache.subCtx = false, nil, nil, nil
+	}()
 	if _, ferr := m.forward(id, cache); ferr != nil {
-		return nil, nil, ferr
+		return nil, nil, nil, ferr
 	}
-	return cache.subAttn, cache.subMLP, nil
+	return cache.subAttn, cache.subMLP, cache.subCtx, nil
 }
 
 // forwardFromEmbed is forward for a position whose residual-stream embedding is

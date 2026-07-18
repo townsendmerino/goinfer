@@ -95,8 +95,8 @@ type cudaResident struct {
 	// is set, launchToken copies the sandwich-normed o-proj output (attention contribution) and
 	// down output (MLP contribution) per layer — the exact dp4a-path analogue of the decoder's
 	// ForwardSubCapture, so a cross-backend per-sublayer diff is possible.
-	subCap            bool
-	subAttnC, subMLPC [][]float32
+	subCap                     bool
+	subAttnC, subMLPC, subCtxC [][]float32
 
 	sharedInter int // width of the always-on shared expert (0 ⇒ none)
 
@@ -366,12 +366,13 @@ func (r *cudaResident) launch(f *gc.Function, cfg gc.LaunchConfig, args ...gc.Ke
 	return f.LaunchOn(context.Background(), r.stream, cfg, args...)
 }
 
-// capVec copies a device [hidden] vector to host into dst[l] (diagnostic sublayer capture).
-// Runs on the executor thread inside launchToken, so it syncs the stream before the readback.
-func (r *cudaResident) capVec(src *gc.Buffer[float32], dst [][]float32, l int) {
+// capVec copies the first n elements of a device vector to host into dst[l] (diagnostic
+// sublayer capture — n is hidden for the o-proj/down contributions, qDim for the pre-o-proj
+// context). Runs on the executor thread inside launchToken, so it syncs before the readback.
+func (r *cudaResident) capVec(src *gc.Buffer[float32], dst [][]float32, l, n int) {
 	bg := context.Background()
 	_ = r.stream.Synchronize(bg)
-	h := make([]float32, r.hidden)
+	h := make([]float32, n)
 	_ = gc.CopyDtoH(bg, h, src)
 	dst[l] = h
 }
@@ -589,6 +590,9 @@ func (r *cudaResident) launchToken(emb []float32, pos int) error {
 		}
 		_ = r.launch(r.fAttn, gc.LaunchConfig{GridX: uint32(r.nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nWin + 128) * 4)},
 			gc.Arg(r.qB), gc.Arg(r.kc[l]), gc.Arg(r.vc[l]), gc.ArgValue(int32(r.nH)), gc.ArgValue(int32(r.nKV)), gc.ArgValue(int32(r.hd)), gc.ArgValue(int32(nKeys)), gc.ArgValue(r.attnScale), gc.ArgValue(Ly.window), gc.Arg(r.cctx))
+		if r.subCap { // pre-o-proj attention context (qDim), before quant — the cross-box discriminator
+			r.capVec(r.cctx, r.subCtxC, l, r.qDim)
+		}
 		_ = r.launch(r.fQ, onecfg(256, 256*4), gc.Arg(r.cctx), gc.ArgValue(int32(r.qDim)), gc.Arg(r.cq), gc.Arg(r.cSc))
 		// Normally the out-proj accumulates straight into the residual stream (accum=1),
 		// absorbing the `residual` launch. Gemma's sandwich norm CANNOT use that epilogue: it
@@ -602,7 +606,7 @@ func (r *cudaResident) launchToken(emb []float32, pos int) error {
 			_ = r.doG(Ly.o, r.cq, r.cSc, nullBias, r.oO, 0)
 			_ = r.normF32(r.oO, Ly.postAttnNorm)
 			if r.subCap { // attention contribution about to hit the residual
-				r.capVec(r.oO, r.subAttnC, l)
+				r.capVec(r.oO, r.subAttnC, l, r.hidden)
 			}
 			_ = r.launch(r.fRes, g1cfg(r.hidden, 256), gc.Arg(r.x), gc.Arg(r.oO), gc.ArgValue(int32(r.hidden)))
 		} else {
@@ -642,7 +646,7 @@ func (r *cudaResident) launchToken(emb []float32, pos int) error {
 			}
 			_ = r.normF32(r.dO, Ly.postMLPNorm)
 			if r.subCap { // MLP contribution about to hit the residual
-				r.capVec(r.dO, r.subMLPC, l)
+				r.capVec(r.dO, r.subMLPC, l, r.hidden)
 			}
 			_ = r.launch(r.fRes, g1cfg(r.hidden, 256), gc.Arg(r.x), gc.Arg(r.dO), gc.ArgValue(int32(r.hidden)))
 		} else if e := r.doG(Ly.d, r.dq, r.dSc, nullBias, r.x, 1); e != nil {

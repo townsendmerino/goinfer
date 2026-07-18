@@ -121,6 +121,7 @@ type KVCache struct {
 	subCapture bool
 	subAttn    [][]float32 // [layer][hidden] attention contribution (o-proj out, post sandwich-norm)
 	subMLP     [][]float32 // [layer][hidden] MLP contribution (down out, post sandwich-norm)
+	subCtx     [][]float32 // [layer][qDim] attention CONTEXT, pre-o-proj (attendBatchedHeads out)
 
 	// treeRowPos / treeMask, when non-nil, switch the batched verify (forwardN) from a
 	// linear causal chain to TREE attention (05 EAGLE tree drafting): row i takes its
