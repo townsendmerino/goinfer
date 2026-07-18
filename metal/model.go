@@ -601,21 +601,24 @@ func (r *Resident) forwardSubCaptureForTest(emb []float32, pos int) (attn, mlp, 
 //	still inflates          -> Metal's per-layer attention block (norm/QKV/RoPE/softmax) has a bug
 //
 // K is injected post-RoPE (kv_store stores post-RoPE K), so only Q gets RoPE here.
-func (r *Resident) attnConfirmForTest(resid, kHist, vHist []float32, layer, pos int) []float32 {
+func (r *Resident) attnConfirmForTest(resid, kHist, vHist []float32, layer, pos int, injectKV bool) []float32 {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	nHhd := r.nH * r.hd
 	qkvRows := nHhd + 2*r.kvDim
+	kOff, vOff := nHhd*4, (nHhd+r.kvDim)*4
 	copy(r.x.Floats(), resid)
 	r.uPos.SetU32(uint32(pos))
 	r.uNKeys.SetU32(uint32(pos + 1))
-	// Inject goinfer's post-RoPE K and raw V (f32 -> f16) into the cache, absolute position order.
-	kc, vc := r.kc[layer].U16s(), r.vc[layer].U16s()
-	for i := range kHist {
-		kc[i] = f32ToF16(kHist[i])
-	}
-	for i := range vHist {
-		vc[i] = f32ToF16(vHist[i])
+	if injectKV {
+		// Inject goinfer's post-RoPE K and raw V (f32 -> f16) — matched KV history.
+		kc, vc := r.kc[layer].U16s(), r.vc[layer].U16s()
+		for i := range kHist {
+			kc[i] = f32ToF16(kHist[i])
+		}
+		for i := range vHist {
+			vc[i] = f32ToF16(vHist[i])
+		}
 	}
 	L := &r.layers[layer]
 	e := r.q.begin()
@@ -624,8 +627,13 @@ func (r *Resident) attnConfirmForTest(resid, kHist, vHist []float32, layer, pos 
 	if r.qkNorm { // Gemma3/Qwen3: per-head Q/K RMSNorm before RoPE — the injected K is post-QK-norm
 		e.dispatch(r.pQKNorm, (r.nH+r.nKV)*128, 128, r.qkv, L.qNorm, L.kNorm, r.uNH, r.uNKV, r.uHd, r.uNHhd, r.uEps, r.uAddOne)
 	}
-	e.dispatch(r.pRope, r.nH*r.half, 64, r.qkv, L.invf, r.uHd, r.uPos, r.uQtotal, r.uHalf) // Q only; K injected
-	// NO kv_store — K/V are injected.
+	e.dispatch(r.pRope, r.nH*r.half, 64, r.qkv, L.invf, r.uHd, r.uPos, r.uQtotal, r.uHalf) // Q
+	if !injectKV {
+		// Use Metal's OWN walked KV history: RoPE K and store pos into the cache (isolates the
+		// f16-KV drift of positions 0..pos-1 from Metal's walk, with a matched residual).
+		e.dispatch(r.pRope, r.nKV*r.half, 64, r.qkv.At(kOff), L.invf, r.uHd, r.uPos, r.uKtotal, r.uHalf)
+		e.dispatch(r.pKv, r.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[layer], r.vc[layer], r.uKvDim, r.uPos)
+	}
 	e.dispatch(r.pAttn, r.nH*128, 128, r.qkv, r.kc[layer], r.vc[layer], r.ctx, r.uNH, r.uNKV, r.uHd, r.uNKeys, r.uScale, L.uWindow)
 	e.end()
 	return append([]float32(nil), r.ctx.Floats()[:nHhd]...)

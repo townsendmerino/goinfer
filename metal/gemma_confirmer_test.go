@@ -88,22 +88,38 @@ func TestGemmaConfirmer_MatchedInput(t *testing.T) {
 	t.Logf("reference: resid L2=%.2f | K L2=%.2f (base %d) | V L2=%.2f | target ctx L2=%.2f",
 		l2(residIntoL1), l2(kL1), kvBase, l2(vL1), l2(ctxL1))
 
-	// Inject into Metal and run L1 attention over the matched residual + K/V.
-	got := r.attnConfirmForTest(residIntoL1, kL1, vL1, injectLayer, probe)
-
-	var dot, na, nb float64
-	for i := range ctxL1 {
-		dot += float64(got[i]) * float64(ctxL1[i])
-		na += float64(got[i]) * float64(got[i])
-		nb += float64(ctxL1[i]) * float64(ctxL1[i])
+	cosTo := func(got []float32) (float64, float64) {
+		var dot, na, nb float64
+		for i := range ctxL1 {
+			dot += float64(got[i]) * float64(ctxL1[i])
+			na += float64(got[i]) * float64(got[i])
+			nb += float64(ctxL1[i]) * float64(ctxL1[i])
+		}
+		return dot / (math.Sqrt(na)*math.Sqrt(nb) + 1e-30), math.Sqrt(na)
 	}
-	cos := dot / (math.Sqrt(na)*math.Sqrt(nb) + 1e-30)
-	t.Logf("MATCHED-INPUT L%d context: cos(Metal, target)=%.4f  |Metal|=%.2f |target|=%.2f", injectLayer, cos, math.Sqrt(na), math.Sqrt(nb))
-	if cos > 0.99 && math.Sqrt(na) < 1.3*math.Sqrt(nb) {
-		t.Logf("VERDICT: MATCH on injected input — Metal's L1 attention block is FAITHFUL. The crater is " +
-			"accumulated f16/precision DRIFT in the residual+KV feeding attention (fix: f32 KV / f32 attn-accumulate).")
+
+	// (A) Matched residual + matched K/V — isolates the attention BLOCK itself.
+	cA, nA := cosTo(r.attnConfirmForTest(residIntoL1, kL1, vL1, injectLayer, probe, true))
+	t.Logf("(A) matched resid + matched KV: cos=%.4f |Metal|=%.2f |target|=%.2f", cA, nA, l2(ctxL1))
+
+	// (B) Matched residual + Metal's OWN walked f16 KV history — isolates the KV drift. A Metal
+	// walk populates r.kc[1] with Metal's drifted f16 KV for positions 0..4; the confirmer then
+	// computes pos-5 K/V from the matched residual and attends over that mixed history.
+	for i := 0; i < probe; i++ {
+		r.forwardTrunkForTest(m.EmbedResidentForTest(prompt[i]), i, r.nL)
+	}
+	cB, nB := cosTo(r.attnConfirmForTest(residIntoL1, nil, nil, injectLayer, probe, false))
+	t.Logf("(B) matched resid + Metal WALKED f16 KV: cos=%.4f |Metal|=%.2f |target|=%.2f", cB, nB, l2(ctxL1))
+
+	if cA > 0.99 {
+		t.Logf("VERDICT: attention BLOCK is FAITHFUL (A=%.4f). The full-forward crater is INPUT drift.", cA)
+		if cB < 0.95 {
+			t.Logf("  -> and it's the KV: matched residual + Metal's walked f16 KV alone craters (B=%.4f). "+
+				"The f16 KV cache is the drift source — fix is f32 KV for Gemma.", cB)
+		} else {
+			t.Logf("  -> KV history is NOT the dominant source (B=%.4f); the residual entering L1 is.", cB)
+		}
 	} else {
-		t.Logf("VERDICT: STILL DIVERGES on matched input (cos %.4f, |Metal|/|target|=%.2f) — Metal's per-layer "+
-			"attention BLOCK has a real bug (norm/QKV/RoPE/softmax), independent of drift.", cos, math.Sqrt(na)/math.Sqrt(nb))
+		t.Errorf("attention block diverges on matched input (A=%.4f) — unexpected after the QK-norm fix", cA)
 	}
 }
