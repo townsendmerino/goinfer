@@ -106,14 +106,15 @@ func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 	want := map[string][]ResidentFeature{
 		// cgo-free CUDA: dense + QK-norm + sliding window + the Gemma set + partial rotary + MoE
 		// (routed via mixtral-tiny, ungated shared expert via glm-tiny). Still no per-layer rotary
-		// WIDTH, no YaRN mscale, no logit softcap, no MLA/SSM, and no GATED shared expert — that
-		// last one BuildResident declines at load, since FeatMoE is one flag and cannot express it.
+		// WIDTH, no YaRN mscale, no logit softcap, no MLA/SSM, and no GATED shared expert (Qwen2-MoE)
+		// — now expressed as FeatMoEGatedShared (which CUDA does NOT declare), so the Qwen2-MoE
+		// decline is in the shared taxonomy, not a hand-coded backend load check.
 		"cuda": {FeatQKNorm, FeatSlidingWindow, FeatPartialRotary, FeatRMSAddOne, FeatSandwichNorm, FeatGatedGELU, FeatEmbedScale, FeatPerLayerRoPE, FeatMoE},
 		"webgpu": {
 			FeatQKNorm, FeatPartialRotary, FeatSlidingWindow, FeatPerLayerRoPE, FeatRopeMscale,
-			FeatMoE, FeatMLA, FeatSSM, FeatNonGatedMLP, FeatLogitScale, FeatRMSAddOne,
+			FeatMoE, FeatMoEGatedShared, FeatMLA, FeatSSM, FeatNonGatedMLP, FeatLogitScale, FeatRMSAddOne,
 		},
-		"metal": {FeatQKNorm, FeatSlidingWindow, FeatPartialRotary, FeatMoE, FeatSandwichNorm, FeatGatedGELU, FeatRMSAddOne, FeatEmbedScale, FeatPerLayerRoPE},
+		"metal": {FeatQKNorm, FeatSlidingWindow, FeatPartialRotary, FeatMoE, FeatMoEGatedShared, FeatSandwichNorm, FeatGatedGELU, FeatRMSAddOne, FeatEmbedScale, FeatPerLayerRoPE},
 	}
 	for be, exp := range want {
 		got := ResidentBackendFeatures[be]
@@ -132,7 +133,8 @@ func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 		FeatQKNorm: true, FeatSlidingWindow: true, FeatPartialRotary: true, FeatPerLayerRoPE: true,
 		FeatRopeMscale: true, FeatRMSAddOne: true, FeatEmbedScale: true, FeatLogitSoftcap: true,
 		FeatSandwichNorm: true, FeatGatedGELU: true, FeatNonGatedMLP: true, FeatLearnedPos: true,
-		FeatOutBias: true, FeatLogitScale: true, FeatMoE: true, FeatMLA: true, FeatSSM: true,
+		FeatOutBias: true, FeatLogitScale: true, FeatMoE: true, FeatMoEGatedShared: true,
+		FeatMLA: true, FeatSSM: true,
 	}
 	for be, set := range ResidentBackendFeatures {
 		for f := range set {

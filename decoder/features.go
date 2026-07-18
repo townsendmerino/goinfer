@@ -25,23 +25,24 @@ import "sort"
 type ResidentFeature string
 
 const (
-	FeatQKNorm        ResidentFeature = "qk-norm"        // per-head Q/K RMSNorm before RoPE (Qwen3, GLM, Mellum)
-	FeatSlidingWindow ResidentFeature = "sliding-window" // windowed attention (Mistral, Mellum, Phi-3-mini)
-	FeatPartialRotary ResidentFeature = "partial-rotary" // RotaryDim < HeadDim (GLM-dense, some Phi)
-	FeatPerLayerRoPE  ResidentFeature = "per-layer-rope" // inv-freq/mscale differ per layer type (Mellum)
-	FeatRopeMscale    ResidentFeature = "yarn-mscale"    // YaRN attention_factor != 1 (Mellum, long-ctx)
-	FeatRMSAddOne     ResidentFeature = "rms-add-one"    // Gemma's (1+w) RMSNorm offset
-	FeatEmbedScale    ResidentFeature = "embed-scale"    // √hidden embedding multiplier (Gemma)
-	FeatLogitSoftcap  ResidentFeature = "logit-softcap"  // attention / final logit softcap (Gemma 2/3)
-	FeatSandwichNorm  ResidentFeature = "sandwich-norm"  // post-attn / post-MLP norms (Gemma)
-	FeatGatedGELU     ResidentFeature = "gated-gelu"     // gated MLP whose activation is GELU-tanh, not SiLU (Gemma)
-	FeatNonGatedMLP   ResidentFeature = "non-gated-mlp"  // up→act→down, no gate (GPT-2, Nemotron relu²)
-	FeatLearnedPos    ResidentFeature = "learned-pos"    // learned position embeddings, no RoPE (GPT-2)
-	FeatOutBias       ResidentFeature = "out-bias"       // additive bias on the attn output proj (GPT-2)
-	FeatLogitScale    ResidentFeature = "logit-scale"    // logits_scaling divisor (Granite)
-	FeatMoE           ResidentFeature = "moe"            // sparse mixture-of-experts FFN
-	FeatMLA           ResidentFeature = "mla"            // latent-KV attention (DeepSeek, Kimi)
-	FeatSSM           ResidentFeature = "ssm"            // Mamba-2 mixer (Granite-4.0-H, Nemotron-H)
+	FeatQKNorm         ResidentFeature = "qk-norm"          // per-head Q/K RMSNorm before RoPE (Qwen3, GLM, Mellum)
+	FeatSlidingWindow  ResidentFeature = "sliding-window"   // windowed attention (Mistral, Mellum, Phi-3-mini)
+	FeatPartialRotary  ResidentFeature = "partial-rotary"   // RotaryDim < HeadDim (GLM-dense, some Phi)
+	FeatPerLayerRoPE   ResidentFeature = "per-layer-rope"   // inv-freq/mscale differ per layer type (Mellum)
+	FeatRopeMscale     ResidentFeature = "yarn-mscale"      // YaRN attention_factor != 1 (Mellum, long-ctx)
+	FeatRMSAddOne      ResidentFeature = "rms-add-one"      // Gemma's (1+w) RMSNorm offset
+	FeatEmbedScale     ResidentFeature = "embed-scale"      // √hidden embedding multiplier (Gemma)
+	FeatLogitSoftcap   ResidentFeature = "logit-softcap"    // attention / final logit softcap (Gemma 2/3)
+	FeatSandwichNorm   ResidentFeature = "sandwich-norm"    // post-attn / post-MLP norms (Gemma)
+	FeatGatedGELU      ResidentFeature = "gated-gelu"       // gated MLP whose activation is GELU-tanh, not SiLU (Gemma)
+	FeatNonGatedMLP    ResidentFeature = "non-gated-mlp"    // up→act→down, no gate (GPT-2, Nemotron relu²)
+	FeatLearnedPos     ResidentFeature = "learned-pos"      // learned position embeddings, no RoPE (GPT-2)
+	FeatOutBias        ResidentFeature = "out-bias"         // additive bias on the attn output proj (GPT-2)
+	FeatLogitScale     ResidentFeature = "logit-scale"      // logits_scaling divisor (Granite)
+	FeatMoE            ResidentFeature = "moe"              // sparse mixture-of-experts FFN
+	FeatMoEGatedShared ResidentFeature = "moe-gated-shared" // sigmoid-GATED always-on shared expert (Qwen2-MoE); ungated (GLM/DeepSeek) needs only FeatMoE
+	FeatMLA            ResidentFeature = "mla"              // latent-KV attention (DeepSeek, Kimi)
+	FeatSSM            ResidentFeature = "ssm"              // Mamba-2 mixer (Granite-4.0-H, Nemotron-H)
 )
 
 // residentFeatures derives the features this architecture actually needs from its own flags.
@@ -77,6 +78,12 @@ func (a *Architecture) residentFeatures() []ResidentFeature {
 	add(a.OutBias, FeatOutBias)
 	add(a.LogitScale != 0 && a.LogitScale != 1, FeatLogitScale)
 	add(a.MoE != nil, FeatMoE)
+	// A sigmoid-GATED always-on shared expert (Qwen2-MoE: out += sigmoid(SharedGate·h)·shared(h))
+	// is a distinct kernel from the ungated add (GLM/DeepSeek: out += shared(h)). CUDA implements
+	// only the ungated combine and DECLINES the gated one (cuda/backend.go); Metal and WebGPU
+	// implement both. Splitting it out moves that decline from a hand-coded backend check into the
+	// shared taxonomy, so the hardware matrix matches admission.
+	add(a.MoE != nil && a.MoE.SharedIntermediateDim > 0 && !a.MoE.SharedUngated, FeatMoEGatedShared)
 	add(a.mla != nil, FeatMLA)
 	add(a.granite != nil || a.nemotron != nil, FeatSSM)
 	sort.Slice(f, func(i, j int) bool { return f[i] < f[j] })
@@ -130,6 +137,26 @@ func missingFeatures(required []ResidentFeature, implemented map[ResidentFeature
 	return missing
 }
 
+// ResidentEligible reports whether `backend` can run architecture `a` on its resident (GPU)
+// decode path — the CAPABILITY predicate, model-free (arch flags only). It is exactly the two
+// gates every resident admission already applies, composed in one place: the arch is a shape the
+// runner supports (decodeRunnerEligible) AND the backend implements every feature the arch needs
+// (the shared taxonomy). The runtime and the hardware-matrix generator both derive from these
+// same pieces, so the published table can never disagree with what a backend can run.
+//
+// Scope note (deliberate, matches capability_matrix's GPUResident = decodeRunnerEligible): this is
+// arch-level CAPABILITY, not a runtime admission. The runtime additionally applies load-time
+// POLICY that a model-free predicate cannot know — the Nemotron int4-only / GOINFER_SSM_RESIDENT
+// precision gate (Model.DecodeRunnerEligible). Those are precision choices, not "can this backend
+// run this family", so the matrix shows capability and footnotes the policy.
+func ResidentEligible(a *Architecture, backend string) bool {
+	impl, ok := ResidentBackendFeatures[backend]
+	if !ok {
+		return false
+	}
+	return a.decodeRunnerEligible() && len(missingFeatures(a.residentFeatures(), impl)) == 0
+}
+
 // ResidentBackendFeatures declares what each resident backend's decode path implements.
 //
 // These live HERE, not in the backends, for two reasons. First, one source of truth: three
@@ -172,17 +199,18 @@ var ResidentBackendFeatures = map[string]map[ResidentFeature]bool{
 
 	// WebGPU (gpu/): the richest runner — the levers in docs/gpu-residency-coverage.md.
 	"webgpu": {
-		FeatQKNorm:        true, // C1  per-head QK-norm before RoPE
-		FeatPartialRotary: true, // C5  rotary_dim < head_dim
-		FeatSlidingWindow: true, // C6  per-layer windowed start
-		FeatPerLayerRoPE:  true, // C7  differing invFreq per layer type
-		FeatRopeMscale:    true, // C7  YaRN attention_factor
-		FeatMoE:           true, // C3a-d router / stacked experts / shared expert
-		FeatMLA:           true, // C4a-d latent-KV attention
-		FeatSSM:           true, // Mamba-2 engine (Granite-4.0-H, Nemotron-H)
-		FeatNonGatedMLP:   true, // relu2Quant (Nemotron-H squared-ReLU)
-		FeatLogitScale:    true, // Granite logits_scaling
-		FeatRMSAddOne:     true, // (1+w) RMS offset
+		FeatQKNorm:         true, // C1  per-head QK-norm before RoPE
+		FeatPartialRotary:  true, // C5  rotary_dim < head_dim
+		FeatSlidingWindow:  true, // C6  per-layer windowed start
+		FeatPerLayerRoPE:   true, // C7  differing invFreq per layer type
+		FeatRopeMscale:     true, // C7  YaRN attention_factor
+		FeatMoE:            true, // C3a-d router / stacked experts / shared expert
+		FeatMoEGatedShared: true, // sharedGatedCombine — sigmoid-gated shared expert (gpu/moe.go)
+		FeatMLA:            true, // C4a-d latent-KV attention
+		FeatSSM:            true, // Mamba-2 engine (Granite-4.0-H, Nemotron-H)
+		FeatNonGatedMLP:    true, // relu2Quant (Nemotron-H squared-ReLU)
+		FeatLogitScale:     true, // Granite logits_scaling
+		FeatRMSAddOne:      true, // (1+w) RMS offset
 	},
 
 	// cgo-free Metal (metal/): dense Qwen2/Llama plus qk-norm, sliding-window, partial-rotary,
@@ -191,14 +219,15 @@ var ResidentBackendFeatures = map[string]map[ResidentFeature]bool{
 	// was gated on the GELU-tanh overflow fix (glu_act clamp, 38a2b7c): logit cosine 0.818→0.994.
 	// Still declines YaRN mscale, MLA and SSM.
 	"metal": {
-		FeatQKNorm:        true, // qk_norm kernels
-		FeatSlidingWindow: true, // attention window uniform
-		FeatPartialRotary: true, // rope rhalf = rotaryDim/2
-		FeatMoE:           true, // moe_route + indexed stacked-expert W4A8 GEMVs + shared expert (metal/moe.go)
-		FeatSandwichNorm:  true, // rmsnorm_f32 on each sublayer output (Gemma)
-		FeatGatedGELU:     true, // GeGLU — clamped-tanh geglu (glu_act, 38a2b7c)
-		FeatRMSAddOne:     true, // (1+w) RMS offset
-		FeatEmbedScale:    true, // √hidden embedding multiplier (embedResident)
-		FeatPerLayerRoPE:  true, // per-layer invFreq (Gemma local 10k vs global 1M base)
+		FeatQKNorm:         true, // qk_norm kernels
+		FeatSlidingWindow:  true, // attention window uniform
+		FeatPartialRotary:  true, // rope rhalf = rotaryDim/2
+		FeatMoE:            true, // moe_route + indexed stacked-expert W4A8 GEMVs + shared expert (metal/moe.go)
+		FeatMoEGatedShared: true, // shared_gate_combine — sigmoid-gated shared expert (metal/moe.go)
+		FeatSandwichNorm:   true, // rmsnorm_f32 on each sublayer output (Gemma)
+		FeatGatedGELU:      true, // GeGLU — clamped-tanh geglu (glu_act, 38a2b7c)
+		FeatRMSAddOne:      true, // (1+w) RMS offset
+		FeatEmbedScale:     true, // √hidden embedding multiplier (embedResident)
+		FeatPerLayerRoPE:   true, // per-layer invFreq (Gemma local 10k vs global 1M base)
 	},
 }

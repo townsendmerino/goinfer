@@ -4,22 +4,34 @@
 
 *An entire 1.5B LLM in one file — instant boot (~0.4s), <100 MB heap, runs offline. Writes correct generic Go and **cannot** emit invalid JSON. No cgo, no Python, no model download.*
 
-**Run open-weight LLMs in pure Go.** No cgo, no Python, no llama.cpp — one
-cross-compiled static binary, with HuggingFace logit parity.
+**Run open-weight LLMs in pure Go — one cgo-free static binary, portable by default and
+native-GPU-fast when you want it.** Every modern model, HuggingFace-parity-gated, and a
+model that *cannot* emit invalid JSON. No Python, no llama.cpp, no CUDA toolkit.
 
-goinfer is a pure-Go, no-cgo decoder-only LLM runtime. It loads open-weight
-models — Gemma 3/4, Qwen 2.5/3, Llama 2/3, Mistral, Mixtral, Qwen-MoE,
-GLM-4.5/4.6, Granite-4.0-H, Nemotron-H, DeepSeek-V2/V3 + Kimi K2 (incl. K2.7-Code) (MLA), Phi-3/Phi-4, GPT-2, Mellum2 —
-directly from safetensors (single or
-sharded), GGUF, GPTQ, or AWQ checkpoints and runs them in-process: f32/bf16/f16 plus
-int8 and int4 quantization, KV-cache, all standard samplers, LoRA adapters (PEFT,
-merged at load), and constrained/structured decoding (a model that *cannot* emit
-malformed JSON). It runs the major modern attention/sequence-mixing families in one
-binary — softmax/GQA, **gated-linear** (Gated DeltaNet), **state-space**
-(Mamba-2), and **latent-KV** (DeepSeek MLA). Forward-pass numerics are parity-gated against HuggingFace;
-matmul is SIMD-accelerated (NEON on arm64, AVX2/FMA on amd64). Because it's pure
-Go with no cgo, it cross-compiles to a single static binary — no Python, no native
-runtime, no provider API.
+goinfer is a pure-Go, no-cgo decoder-only LLM runtime that loads open-weight checkpoints
+and runs them **in-process**. What makes it different — you don't have to choose:
+
+- **One cgo-free static binary.** Pure Go, no cgo → cross-compiles to a single file
+  (macOS / Linux / Windows, Intel + ARM). No Python, no llama.cpp `.so`, no CUDA toolkit,
+  no provider API. The runtime *and*, if you want, the model in one file you `scp` and run
+  offline.
+- **Fast when you want it — still cgo-free.** The default build is pure-Go CPU
+  (SIMD-accelerated, NEON / AVX2). Opt into a GPU backend and it *stays* `CGO_ENABLED=0`:
+  **native CUDA** (dense decode at **~1.4–2.0× Ollama-CUDA**, server-to-server, driver-only
+  — no toolkit), **native Metal** on Apple Silicon (**at parity** with Ollama-Metal), and a
+  portable **WebGPU** backend (~60–70% of native, but runs on *any* GPU and streams
+  bigger-than-VRAM MoE weights). Going fast never costs you the single binary.
+- **Every modern model, one binary.** All four attention / sequence-mixing families —
+  softmax·GQA, gated-linear (DeltaNet), state-space (Mamba-2), latent-KV (MLA) — plus dense
+  and sparse-MoE, across ~20 architectures (Gemma 3/4, Qwen 2.5/3, Llama, Mistral, Mixtral,
+  Qwen-MoE, GLM-4.5/4.6, DeepSeek-V2/V3 + Kimi, Phi-3/4, Granite-4.0-H, Nemotron-H, GPT-2,
+  Mellum2). From safetensors, GGUF, GPTQ, or AWQ; f32 / bf16 / f16 + int8 / int4.
+- **Correctness a wrapper can't give you.** Every forward pass is parity-gated against the
+  HuggingFace reference (argmax-exact + logit cosine). A shared feature taxonomy makes
+  silent-wrong output **structurally impossible** — an architecture a GPU backend doesn't
+  fully implement is *declined at load and run on the CPU path*, never mis-run. And
+  constrained decoding gives you a model that *physically cannot* emit invalid JSON
+  (structured output straight into a Go struct).
 
 > Not to be confused with provider-orchestration libraries (e.g. teilomillet/gollm)
 > that call remote LLM APIs. goinfer runs the weights itself, locally, in-process.
@@ -32,16 +44,12 @@ configured — coverage axis, MoE, RoPE, norm, loaders, modality):
 [docs/capability-matrix.md](docs/capability-matrix.md) (generated from the
 registry; do not hand-edit).
 
-**The lane:** goinfer runs the weights *in-process in pure Go* — the single-file,
-zero-install, HF-parity-gated lane no other maintained runtime occupies (the Go
-llama.cpp bindings still ship a native `.so`; the pure-Go ports are archived toys).
-On a GPU the **cgo-free native backends** decode at native-runtime-class speed at equal
-4-bit quant, measured server-to-server: **CUDA runs ~1.4–2.0× Ollama-CUDA** (1.5B→0.5B),
-and **Metal holds parity with Ollama-Metal** (0.77–1.03×; issue-bound on Apple GPUs) —
-both with **no CUDA toolkit, no Xcode, no cgo**. The portable WebGPU backend trades
-throughput (~60–70%) for running on *any* GPU (Metal / Vulkan / DX12) and streaming
-bigger-than-VRAM MoE weights. Full capability matrix + measured numbers, every cell with
-provenance: [docs/benchmarks.md](docs/benchmarks.md).
+**The lane.** goinfer runs the weights *in-process in pure Go* — the single-file,
+zero-install, HF-parity-gated lane no other maintained runtime occupies. The Go llama.cpp
+bindings still ship a native `.so`; the pure-Go ports are archived toys. goinfer is the one
+you'd actually ship — and it now matches **native-CUDA-class speed, cgo-free**. Full
+capability matrix + measured numbers, every cell with provenance:
+[docs/benchmarks.md](docs/benchmarks.md).
 
 ![Mellum2 — a 12B coding MoE running GPU-resident on an 8 GB card, in pure Go](docs/assets/mellum2-gpu.gif)
 
@@ -298,6 +306,10 @@ producing incorrect results.
 | Gemma 3 | ✅ resident³ | ✅ resident³ |
 | MoE — Mixtral · Qwen2-MoE · Qwen3-MoE · GLM-MoE | ✅ resident⁴ | ✅ resident² |
 | Gemma 4 · MLA · DeltaNet/YaRN | CPU fallback | CPU fallback |
+
+The full per-family × 4-backend (CPU · WebGPU · CUDA · Metal) table is **generated** from the
+residency predicate (`decoder.ResidentEligible`) and freshness-gated in CI, so it can never drift
+from what a backend actually admits: [docs/hardware-matrix.md](docs/hardware-matrix.md).
 
 ¹ Metal Mistral-7B needs > 16 GB unified memory (int8 + int4). Both backends implement
 qk-norm + sliding-window; Metal also does partial rotary, so a partial-rotary Phi
