@@ -107,7 +107,15 @@ func TestGemma_Int4DirectContext(t *testing.T) {
 			l1 = vr
 		}
 		if l == 0 || l == 1 || l >= nL-3 {
-			t.Logf("  L%2d: cos(Metal-int4direct, int4-ref)=%.4f   cos(Metal, f32-truth)=%.4f", l, vr, vt)
+			nrm := func(v []float32) float64 {
+				var s float64
+				for _, x := range v {
+					s += float64(x) * float64(x)
+				}
+				return math.Sqrt(s)
+			}
+			t.Logf("  L%2d: cos(Metal,int4-ref)=%.4f cos(Metal,f32)=%.4f  |metal|=%.2f |int4-ref|=%.2f",
+				l, vr, vt, nrm(mctx[l]), nrm(rctx[l]))
 		}
 	}
 	// L0 (identical embedding input, now identical weights) MUST be ~1.0 — this asserts int4-direct
