@@ -459,6 +459,9 @@ func (m *Model) runLayersFromEmbed(h []float32, cache *KVCache) ([]float32, erro
 		if err := mlp(scr.norm, scr.sub, lw, arch, m.be, scr, m.pager, ld); err != nil {
 			return nil, err
 		}
+		if cache.subCapture { // scr.sub is the down output BEFORE the post-MLP sandwich norm
+			cache.subMLPpre[l] = append(cache.subMLPpre[l][:0], scr.sub...)
+		}
 		if sandwich {
 			normalize(arch, scr.sub, lw.PostMLPNorm, nil, hidden)
 		}
@@ -558,23 +561,25 @@ func (m *Model) ForwardCapture(id int, cache *KVCache, layers []int) (logits []f
 // what localizing a channel's sign flip to attention-vs-MLP at a specific layer requires.
 // Diagnostic — same byte-identical-output contract as ForwardCapture. Not wired for own-forward
 // families (they don't route through runLayersFromEmbed's uniform block).
-func (m *Model) ForwardSubCapture(id int, cache *KVCache) (attn, mlp, ctx [][]float32, err error) {
+func (m *Model) ForwardSubCapture(id int, cache *KVCache) (attn, mlp, ctx, mlpPre [][]float32, err error) {
 	a := m.w.arch
 	if a.gemma4 != nil || a.qwen35 != nil || a.granite != nil || a.nemotron != nil || a.mla != nil || a.llama4 != nil {
-		return nil, nil, nil, fmt.Errorf("decoder.ForwardSubCapture: not wired for arch %q (own runLayers)", a.Name)
+		return nil, nil, nil, nil, fmt.Errorf("decoder.ForwardSubCapture: not wired for arch %q (own runLayers)", a.Name)
 	}
 	nL := a.NumLayers
 	cache.subCapture = true
 	cache.subAttn = make([][]float32, nL)
 	cache.subMLP = make([][]float32, nL)
+	cache.subMLPpre = make([][]float32, nL)
 	cache.subCtx = make([][]float32, nL)
 	defer func() {
-		cache.subCapture, cache.subAttn, cache.subMLP, cache.subCtx = false, nil, nil, nil
+		cache.subCapture = false
+		cache.subAttn, cache.subMLP, cache.subMLPpre, cache.subCtx = nil, nil, nil, nil
 	}()
 	if _, ferr := m.forward(id, cache); ferr != nil {
-		return nil, nil, nil, ferr
+		return nil, nil, nil, nil, ferr
 	}
-	return cache.subAttn, cache.subMLP, cache.subCtx, nil
+	return cache.subAttn, cache.subMLP, cache.subCtx, cache.subMLPpre, nil
 }
 
 // forwardFromEmbed is forward for a position whose residual-stream embedding is

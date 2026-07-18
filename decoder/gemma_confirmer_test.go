@@ -60,7 +60,7 @@ func TestGemmaConfirmerReference(t *testing.T) {
 	var ctxL1 []float32
 	for i, tok := range prompt {
 		if i == probe {
-			_, _, ctx, err := m.ForwardSubCapture(tok, subCache)
+			_, _, ctx, _, err := m.ForwardSubCapture(tok, subCache)
 			if err != nil {
 				t.Fatalf("ForwardSubCapture: %v", err)
 			}

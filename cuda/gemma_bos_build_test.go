@@ -56,7 +56,7 @@ func TestGemmaBOSBuild(t *testing.T) {
 		t.Fatal("gguf gemma-3 not resident on CUDA")
 	}
 	cudaEmb := append([]float32(nil), mc.EmbedResidentForTest(bos)...)
-	cAttn, cMLP, _, err := rf.captureSublayersForTest(cudaEmb, 0)
+	cAttn, cMLP, _, cMLPpre, err := rf.captureSublayersForTest(cudaEmb, 0)
 	if err != nil {
 		mc.Close()
 		t.Fatalf("cuda capture: %v", err)
@@ -70,7 +70,7 @@ func TestGemmaBOSBuild(t *testing.T) {
 	}
 	fEmb := append([]float32(nil), mf.EmbedResidentForTest(bos)...)
 	fcache := mf.NewCache(2)
-	fAttn, fMLP, _, err := mf.ForwardSubCapture(bos, fcache)
+	fAttn, fMLP, _, fMLPpre, err := mf.ForwardSubCapture(bos, fcache)
 	mf.Close()
 	if err != nil {
 		t.Fatalf("f32 ForwardSubCapture: %v", err)
@@ -88,4 +88,12 @@ func TestGemmaBOSBuild(t *testing.T) {
 	t.Logf("=== BOS (id %d) massive-activation build at L0 ===", bos)
 	report("f32 ", fEmb, fAttn[0], fMLP[0])
 	report("cuda", cudaEmb, cAttn[0], cMLP[0])
+
+	// The compute-vs-norm split: the down output BEFORE the post-MLP sandwich norm. The norm
+	// divides by this vector's near-zero RMS, so its DIRECTION at ch443 is what the norm amplifies
+	// into the massive activation. Metal's is 0.4 (whole |down|=7.1); if CUDA's is ~5.9 the bug is
+	// the MLP compute/int8-crush under-weighting ch443; if CUDA's is also ~0.4 the norm reopens.
+	t.Logf("--- pre-post-MLP-norm DOWN output at BOS L0 (the norm's input direction) ---")
+	t.Logf("f32   down: |=%.3f  ch%d=%.4f", l2(fMLPpre[0]), massiveCh, fMLPpre[0][massiveCh])
+	t.Logf("cuda  down: |=%.3f  ch%d=%.4f", l2(cMLPpre[0]), massiveCh, cMLPpre[0][massiveCh])
 }

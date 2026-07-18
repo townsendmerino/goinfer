@@ -14,15 +14,16 @@ import (
 // captureSublayersForTest runs one resident token with per-sublayer capture on, returning the
 // dp4a-path attention contribution (o-proj out, post sandwich-norm) and MLP contribution (down
 // out) per layer — the CUDA analogue of decoder.ForwardSubCapture.
-func (r *cudaResident) captureSublayersForTest(emb []float32, pos int) (attn, mlp, ctx [][]float32, err error) {
+func (r *cudaResident) captureSublayersForTest(emb []float32, pos int) (attn, mlp, ctx, mlpPre [][]float32, err error) {
 	err = r.do(func() error {
 		r.subCap = true
 		r.subAttnC = make([][]float32, r.nLayers)
 		r.subMLPC = make([][]float32, r.nLayers)
 		r.subCtxC = make([][]float32, r.nLayers)
+		r.subMLPpreC = make([][]float32, r.nLayers)
 		defer func() { r.subCap = false }()
 		e := r.launchToken(emb, pos)
-		attn, mlp, ctx = r.subAttnC, r.subMLPC, r.subCtxC
+		attn, mlp, ctx, mlpPre = r.subAttnC, r.subMLPC, r.subCtxC, r.subMLPpreC
 		return e
 	})
 	return
@@ -65,7 +66,7 @@ func TestGemmaSublayerCUDA(t *testing.T) {
 	for i, tok := range prompt {
 		emb := mc.EmbedResidentForTest(tok)
 		if i == probe {
-			a, m, _, err := rf.captureSublayersForTest(emb, i)
+			a, m, _, _, err := rf.captureSublayersForTest(emb, i)
 			if err != nil {
 				mc.Close()
 				t.Fatalf("cuda capture: %v", err)
@@ -88,7 +89,7 @@ func TestGemmaSublayerCUDA(t *testing.T) {
 	var fAttn, fMLP [][]float32
 	for i, tok := range prompt {
 		if i == probe {
-			a, m, _, err := mf.ForwardSubCapture(tok, cache)
+			a, m, _, _, err := mf.ForwardSubCapture(tok, cache)
 			if err != nil {
 				t.Fatalf("f32 ForwardSubCapture: %v", err)
 			}
@@ -163,7 +164,7 @@ func TestGemmaContextCUDA(t *testing.T) {
 	for i, tok := range prompt {
 		emb := mc.EmbedResidentForTest(tok)
 		if i == probe {
-			_, _, ctx, err := rf.captureSublayersForTest(emb, i)
+			_, _, ctx, _, err := rf.captureSublayersForTest(emb, i)
 			if err != nil {
 				mc.Close()
 				t.Fatalf("cuda ctx capture: %v", err)
@@ -187,7 +188,7 @@ func TestGemmaContextCUDA(t *testing.T) {
 		var ctx [][]float32
 		for i, tok := range prompt {
 			if i == probe {
-				_, _, c, err := m.ForwardSubCapture(tok, cache)
+				_, _, c, _, err := m.ForwardSubCapture(tok, cache)
 				if err != nil {
 					t.Fatalf("ForwardSubCapture: %v", err)
 				}

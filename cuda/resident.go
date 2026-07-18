@@ -95,8 +95,8 @@ type cudaResident struct {
 	// is set, launchToken copies the sandwich-normed o-proj output (attention contribution) and
 	// down output (MLP contribution) per layer — the exact dp4a-path analogue of the decoder's
 	// ForwardSubCapture, so a cross-backend per-sublayer diff is possible.
-	subCap                     bool
-	subAttnC, subMLPC, subCtxC [][]float32
+	subCap                                 bool
+	subAttnC, subMLPC, subCtxC, subMLPpreC [][]float32
 
 	sharedInter int // width of the always-on shared expert (0 ⇒ none)
 
@@ -643,6 +643,9 @@ func (r *cudaResident) launchToken(emb []float32, pos int) error {
 		if r.sandwich {
 			if e := r.doG(Ly.d, r.dq, r.dSc, nullBias, r.dO, 0); e != nil {
 				return e
+			}
+			if r.subCap { // down output BEFORE the post-MLP sandwich norm
+				r.capVec(r.dO, r.subMLPpreC, l, r.hidden)
 			}
 			_ = r.normF32(r.dO, Ly.postMLPNorm)
 			if r.subCap { // MLP contribution about to hit the residual
