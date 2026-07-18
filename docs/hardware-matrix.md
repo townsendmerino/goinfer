@@ -21,7 +21,7 @@ Regenerate with `go test ./decoder -run HardwareMatrix -update`.
 | Kimi K2 | ✅ | ✅ resident | CPU | CPU |
 | Llama | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Llama 4 | ✅ | CPU | CPU | CPU |
-| Mellum2 | ✅ | ✅ resident | ✅ resident | ✅ resident |
+| Mellum2 | ✅ | ✅ resident | CPU | CPU |
 | Mistral | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Mixtral | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Nemotron-H | ✅ | ✅ resident | CPU | CPU |

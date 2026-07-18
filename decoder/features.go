@@ -55,9 +55,23 @@ func (a *Architecture) residentFeatures() []ResidentFeature {
 	}
 	add(a.QKNorm, FeatQKNorm)
 	add(a.SlidingWindow > 0, FeatSlidingWindow)
-	add(a.RotaryDim != 0 && a.RotaryDim < a.HeadDim, FeatPartialRotary)
+	// MLA (DeepSeek/Kimi) carries rope on a decoupled qk_rope slice handled INSIDE the MLA kernel
+	// (FeatMLA), so its RotaryDim<HeadDim is not the generic partial-rope path — don't double-count
+	// it as FeatPartialRotary (C6: the hand table lists MLA archs as [mla moe]).
+	add(a.mla == nil && a.RotaryDim != 0 && a.RotaryDim < a.HeadDim, FeatPartialRotary)
 	add(!a.ropeUniform(), FeatPerLayerRoPE)
-	add(a.ropeMscale(0) != 1, FeatRopeMscale)
+	// YaRN attention_factor on ANY layer, not just layer 0 (C6). Mellum interleaves 3:1 and puts
+	// YaRN only on its full_attention layers — layer 0 is a sliding/default layer (mscale 1), so a
+	// layer-0 sample missed it and over-admitted Mellum2 as resident on backends that don't apply
+	// the full-layer scaling. Mirrors ropeUniform's all-layer loop just above.
+	yarnMscale := false
+	for i := 0; i < a.NumLayers; i++ {
+		if a.ropeMscale(i) != 1 {
+			yarnMscale = true
+			break
+		}
+	}
+	add(yarnMscale, FeatRopeMscale)
 	add(a.RMSAddOne, FeatRMSAddOne)
 	add(a.EmbedScale > 1, FeatEmbedScale)
 	add(a.FinalLogitSoftcap != 0 || a.AttnLogitSoftcap != 0, FeatLogitSoftcap)

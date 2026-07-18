@@ -29,16 +29,16 @@ var archFeatureProfile = map[string][]ResidentFeature{
 	"qwen3":            {FeatQKNorm},
 	"mellum":           {FeatMoE, FeatPerLayerRoPE, FeatQKNorm, FeatRopeMscale, FeatSlidingWindow},
 	"mixtral":          {FeatMoE},
-	"qwen2_moe":        {FeatMoE},
+	"qwen2_moe":        {FeatMoE, FeatMoEGatedShared}, // sigmoid-gated always-on shared expert (CUDA declines it)
 	"glm4_moe":         {FeatMoE, FeatPartialRotary, FeatQKNorm},
 	"deepseek_v2":      {FeatMLA, FeatMoE},
 	"deepseek_v3":      {FeatMLA, FeatMoE},
 	"kimi_k2":          {FeatMLA, FeatMoE},
-	"qwen3_5_moe":      {FeatMoE, FeatQKNorm},
+	"qwen3_5_moe":      {FeatMoE, FeatMoEGatedShared, FeatPartialRotary, FeatQKNorm, FeatRMSAddOne},
 	"llama4_text":      {FeatMoE},
 	"nemotron_h":       {FeatNonGatedMLP, FeatSSM},
 	"granitemoehybrid": {FeatLogitScale, FeatMoE, FeatSSM},
-	"qwen3_5_moe_text": {FeatMoE, FeatQKNorm},
+	"qwen3_5_moe_text": {FeatMoE, FeatMoEGatedShared, FeatPartialRotary, FeatQKNorm, FeatRMSAddOne},
 	// Gemma — VERIFIED against the real checkpoints via RequiredResidentFeatures (an earlier
 	// hand-written guess here was wrong on three counts: it missed per-layer-rope / qk-norm /
 	// sliding-window, and claimed rms-add-one for gemma4, which has RMSAddOne=false).
@@ -194,6 +194,33 @@ func mapKeys[K comparable, V any](m map[K]V) func(func(K) bool) {
 			if !yield(k) {
 				return
 			}
+		}
+	}
+}
+
+// TestResidentFeatures_derivationMatchesProfile ties the two sources of truth together (C6):
+// the hand-written archFeatureProfile (the classification forcing-function) and residentFeatures()
+// (the derivation that drives the generated hardware matrix AND the runtime RequiredResidentFeatures).
+// They must agree for every registered arch — otherwise they silently disagree, as they did on
+// Mellum (a layer-0-only yarn-mscale sample missed its full-layer YaRN) and qwen2_moe (the gated
+// shared expert). Hardware-free — reads declared sets, runs in CI with no GPU.
+func TestResidentFeatures_derivationMatchesProfile(t *testing.T) {
+	for name := range archFeatureProfile {
+		cfg := representativeConfig(name)
+		if cfg == nil {
+			t.Errorf("%q: has a feature profile but no representativeConfig — add one so the derivation is cross-checked", name)
+			continue
+		}
+		arch, _, err := resolveArchitecture(cfg)
+		if err != nil {
+			t.Errorf("%q: resolveArchitecture: %v", name, err)
+			continue
+		}
+		got := arch.residentFeatures()
+		want := slices.Clone(archFeatureProfile[name])
+		slices.Sort(want)
+		if !slices.Equal(got, want) {
+			t.Errorf("%q: residentFeatures()=%v but archFeatureProfile=%v — derivation and hand table DISAGREE (fix whichever is wrong)", name, got, want)
 		}
 	}
 }
