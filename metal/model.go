@@ -592,6 +592,42 @@ func (r *Resident) forwardSubCaptureForTest(emb []float32, pos int) (attn, mlp, 
 	return attn, mlp, ctx, cqDeq
 }
 
+// attnConfirmForTest is the Metal half of the matched-input confirmer (CUDA box's
+// TestGemmaConfirmerReference). It runs ONE layer's attention block over an INJECTED residual and
+// INJECTED post-RoPE K / raw V (goinfer's exact CPU-int4 state), skipping kv_store, and returns the
+// resulting context. Comparing to the reference target context isolates the L1 crater:
+//
+//	match on matched input  -> the crater is accumulated f16/precision drift in the residual+KV
+//	still inflates          -> Metal's per-layer attention block (norm/QKV/RoPE/softmax) has a bug
+//
+// K is injected post-RoPE (kv_store stores post-RoPE K), so only Q gets RoPE here.
+func (r *Resident) attnConfirmForTest(resid, kHist, vHist []float32, layer, pos int) []float32 {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	nHhd := r.nH * r.hd
+	qkvRows := nHhd + 2*r.kvDim
+	copy(r.x.Floats(), resid)
+	r.uPos.SetU32(uint32(pos))
+	r.uNKeys.SetU32(uint32(pos + 1))
+	// Inject goinfer's post-RoPE K and raw V (f32 -> f16) into the cache, absolute position order.
+	kc, vc := r.kc[layer].U16s(), r.vc[layer].U16s()
+	for i := range kHist {
+		kc[i] = f32ToF16(kHist[i])
+	}
+	for i := range vHist {
+		vc[i] = f32ToF16(vHist[i])
+	}
+	L := &r.layers[layer]
+	e := r.q.begin()
+	e.dispatch(r.pRms, 256, 256, r.x, L.preNorm, r.aq, r.aSc, r.uH, r.uEps, r.uAddOne)
+	e.dispatchTG(r.pSABias, qkvRows*32, 256, r.H*2, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv, L.qkvBias, r.uH)
+	e.dispatch(r.pRope, r.nH*r.half, 64, r.qkv, L.invf, r.uHd, r.uPos, r.uQtotal, r.uHalf) // Q only; K injected
+	// NO kv_store — K/V are injected.
+	e.dispatch(r.pAttn, r.nH*128, 128, r.qkv, r.kc[layer], r.vc[layer], r.ctx, r.uNH, r.uNKV, r.uHd, r.uNKeys, r.uScale, L.uWindow)
+	e.end()
+	return append([]float32(nil), r.ctx.Floats()[:nHhd]...)
+}
+
 // forwardHeadForTest runs the FULL trunk (final norm included) then the LM head, and returns
 // both the head's INPUT activation as it actually sees it — r.aq dequantized by r.aSc, i.e. the
 // int8-quantized final-norm output — and the logits. It splits the one step the per-layer bisect
