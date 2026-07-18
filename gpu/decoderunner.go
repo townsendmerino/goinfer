@@ -214,25 +214,55 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		}
 	}
 	r := &DecodeRunner{c: c, vocab: m.lmHead.nRows(), kvDim: nKV * hd}
-	keepBuf := func(b *wgpu.Buffer) *wgpu.Buffer { r.keep = append(r.keep, b.Release); return b }
+	// buildErr accumulates the FIRST device-allocation/bind failure (M21): the storF/uni/
+	// storFZ/bind helpers short-circuit once it's set and the constructor returns it, so VRAM
+	// exhaustion is an error the caller can fall back on — never a panic in library code.
+	var buildErr error
+	keepBuf := func(b *wgpu.Buffer) *wgpu.Buffer {
+		if b != nil {
+			r.keep = append(r.keep, b.Release)
+		}
+		return b
+	}
 	keepBG := func(b *wgpu.BindGroup) *wgpu.BindGroup { r.keep = append(r.keep, b.Release); return b }
 	storF := func(n int) *wgpu.Buffer {
-		b, _ := c.device.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(n * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
+		if buildErr != nil {
+			return nil
+		}
+		b, e := c.device.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(n * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
+		if e != nil {
+			buildErr = e
+			return nil
+		}
 		return keepBuf(b)
 	}
 	uni := func(v []uint32) *wgpu.Buffer {
-		b, _ := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(v), Usage: wgpu.BufferUsageUniform | wgpu.BufferUsageCopyDst})
+		if buildErr != nil {
+			return nil
+		}
+		b, e := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(v), Usage: wgpu.BufferUsageUniform | wgpu.BufferUsageCopyDst})
+		if e != nil {
+			buildErr = e
+			return nil
+		}
 		return keepBuf(b)
 	}
 	bind := func(layout *wgpu.BindGroupLayout, bufs ...*wgpu.Buffer) *wgpu.BindGroup {
+		if buildErr != nil {
+			return nil
+		}
 		es := make([]wgpu.BindGroupEntry, len(bufs))
 		for i, b := range bufs {
+			if b == nil { // an upstream storF/uni failed and short-circuited to nil
+				buildErr = fmt.Errorf("gpu: newDecodeRunner: nil buffer for binding %d (allocation failed)", i)
+				return nil
+			}
 			es[i] = wgpu.BindGroupEntry{Binding: uint32(i), Buffer: b, Size: b.GetSize()}
 		}
 		bg, e := c.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: layout, Entries: es})
 		if e != nil {
-			r.release()
-			panic(e)
+			buildErr = e
+			return nil
 		}
 		return keepBG(bg)
 	}
@@ -247,7 +277,14 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 	// tail must be 0 (the int8 weight is zero-padded to kp, so 0·act keeps the dot exact; a NaN
 	// in an uninit pad would poison it). Zeroed once at build; producers only write [0,K).
 	storFZ := func(n int) *wgpu.Buffer {
-		b, _ := c.device.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(n * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc | wgpu.BufferUsageCopyDst})
+		if buildErr != nil {
+			return nil
+		}
+		b, e := c.device.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(n * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc | wgpu.BufferUsageCopyDst})
+		if e != nil {
+			buildErr = e
+			return nil
+		}
 		c.queue.WriteBuffer(b, 0, make([]byte, n*4))
 		return keepBuf(b)
 	}
@@ -342,18 +379,25 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		off, size uint64
 	}
 	bindOff := func(layout *wgpu.BindGroupLayout, es []bgEnt) *wgpu.BindGroup {
+		if buildErr != nil {
+			return nil
+		}
 		en := make([]wgpu.BindGroupEntry, len(es))
 		for i, e := range es {
+			if e.b == nil { // an upstream allocation failed and short-circuited to nil
+				buildErr = fmt.Errorf("gpu: newDecodeRunner: nil buffer for binding %d (allocation failed)", i)
+				return nil
+			}
 			sz := e.size
 			if sz == 0 {
 				sz = e.b.GetSize()
 			}
 			en[i] = wgpu.BindGroupEntry{Binding: uint32(i), Buffer: e.b, Offset: e.off, Size: sz}
 		}
-		bg, err := c.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: layout, Entries: en})
-		if err != nil {
-			r.release()
-			panic(err)
+		bg, e := c.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: layout, Entries: en})
+		if e != nil {
+			buildErr = e
+			return nil
 		}
 		return keepBG(bg)
 	}
@@ -646,10 +690,17 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		}
 	}
 
-	r.xd = keepBuf(func() *wgpu.Buffer {
-		b, _ := c.device.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(hidden * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst | wgpu.BufferUsageCopySrc})
-		return b
-	}())
+	r.xd = func() *wgpu.Buffer {
+		if buildErr != nil {
+			return nil
+		}
+		b, e := c.device.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(hidden * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst | wgpu.BufferUsageCopySrc})
+		if e != nil {
+			buildErr = e
+			return nil
+		}
+		return keepBuf(b)
+	}()
 
 	// A bound (all-zero) bias buffer for MoE layers without a selection bias
 	// (Mixtral softmax routing): the route kernel binds it but hasBias=0 keeps it
@@ -824,8 +875,20 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 	fq, fs := rmsQuant(r.xd, m.finalNorm, hidden)
 	logits := gemv(fq, fs, m.lmHead)
 	r.lastLogits = logits
-	stag, _ := c.device.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(r.vocab * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
-	r.stag = keepBuf(stag)
+	if buildErr == nil {
+		stag, e := c.device.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(r.vocab * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
+		if e != nil {
+			buildErr = e
+		} else {
+			r.stag = keepBuf(stag)
+		}
+	}
+	// M21: any device-allocation/bind failure during construction (VRAM exhaustion is the
+	// common one) is returned so the caller falls back to the staged/CPU path — never a panic.
+	if buildErr != nil {
+		r.release()
+		return nil, fmt.Errorf("gpu: newDecodeRunner: device allocation failed (VRAM exhausted?): %w", buildErr)
+	}
 	return r, nil
 }
 
