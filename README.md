@@ -295,18 +295,23 @@ producing incorrect results.
 |---|---|---|
 | Qwen2 · Qwen3 · Llama | ✅ resident | ✅ resident |
 | Mistral · Phi-3-mini-4k | ✅ resident | ✅ resident¹ |
-| Gemma 3 | ✅ resident³ | CPU fallback |
-| MoE — Mixtral · Qwen2-MoE · Qwen3-MoE · GLM-MoE | CPU fallback | ✅ resident² |
+| Gemma 3 | ✅ resident³ | ✅ resident³ |
+| MoE — Mixtral · Qwen2-MoE · Qwen3-MoE · GLM-MoE | ✅ resident⁴ | ✅ resident² |
 | Gemma 4 · MLA · DeltaNet/YaRN | CPU fallback | CPU fallback |
 
 ¹ Metal Mistral-7B needs > 16 GB unified memory (int8 + int4). Both backends implement
 qk-norm + sliding-window; Metal also does partial rotary, so a partial-rotary Phi
 variant is resident on Metal but falls back on CUDA.
 
-³ CUDA Gemma 3 covers the sandwich-norm block, GeGLU, the (1+w) RMS offset, the √hidden
-embedding scale, and Gemma's dual RoPE base — validated on a real gemma-3-4b-it against the
-CPU path. Gemma 4 stays on CPU: it needs logit-softcap and has its own forward (per-layer
-head_dim, KV-sharing, PLE).
+³ Gemma 3 (both backends) covers the sandwich-norm block, GeGLU, the (1+w) RMS offset, the
+√hidden embedding scale, and Gemma's dual RoPE base — validated on a real gemma-3-4b-it against
+the CPU path. Metal parity was gated on a GELU-tanh overflow fix (the `<bos>` massive-activation
+gate drove `tanh`'s argument past its internal `exp` range → NaN; clamped). Gemma 4 stays on
+CPU: it needs logit-softcap and has its own forward (per-layer head_dim, KV-sharing, PLE).
+
+⁴ CUDA MoE runs Mixtral and GLM-MoE resident (on-GPU router, row-stacked int4 experts, ungated
+shared expert). Qwen2-MoE / Qwen3-MoE decline to CPU on CUDA — their gated shared expert
+(sigmoid-scaled) isn't built yet.
 
 ² Metal MoE (router + stacked experts + shared expert) is validated by assembly
 equivalence (identical experts ≡ the dense FFN, cosine 1.0) + per-kernel parity vs CPU;
