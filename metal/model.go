@@ -610,6 +610,47 @@ func (r *Resident) forwardSubCaptureForTest(emb []float32, pos int) (attn, mlp, 
 	return attn, mlp, mlpPre, ctx, cqDeq
 }
 
+// l0GegluForTest captures L0's MLP intermediates at the BOS for the geglu-vs-down cut: the f32
+// gate|up activation (r.gu) and the int8 round-trip geglu (r.dq * r.dSc) that the down-proj
+// consumes. Runs L0's attention + MLP-to-swiglu in one buffer, then reads. Sandwich only.
+func (r *Resident) l0GegluForTest(emb []float32, pos int) (gateUp, geglu8 []float32, gSc float32) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	nHhd := r.nH * r.hd
+	qkvRows := nHhd + 2*r.kvDim
+	kOff, vOff := nHhd*4, (nHhd+r.kvDim)*4
+	copy(r.x.Floats(), emb)
+	r.uPos.SetU32(uint32(pos))
+	r.uNKeys.SetU32(uint32(pos + 1))
+	L := &r.layers[0]
+	e := r.q.begin()
+	e.dispatch(r.pRms, 256, 256, r.x, L.preNorm, r.aq, r.aSc, r.uH, r.uEps, r.uAddOne)
+	e.dispatchTG(r.pSABias, qkvRows*32, 256, r.H*2, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv, L.qkvBias, r.uH)
+	if r.qkNorm {
+		e.dispatch(r.pQKNorm, (r.nH+r.nKV)*128, 128, r.qkv, L.qNorm, L.kNorm, r.uNH, r.uNKV, r.uHd, r.uNHhd, r.uEps, r.uAddOne)
+	}
+	e.dispatch(r.pRope, r.nH*r.half, 64, r.qkv, L.invf, r.uHd, r.uPos, r.uQtotal, r.uHalf)
+	e.dispatch(r.pRope, r.nKV*r.half, 64, r.qkv.At(kOff), L.invf, r.uHd, r.uPos, r.uKtotal, r.uHalf)
+	e.dispatch(r.pKv, r.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[0], r.vc[0], r.uKvDim, r.uPos)
+	e.dispatch(r.pAttn, r.nH*128, 128, r.qkv, r.kc[0], r.vc[0], r.ctx, r.uNH, r.uNKV, r.uHd, r.uNKeys, r.uScale, L.uWindow)
+	e.dispatch(r.pQv, 256, 256, r.ctx, r.cq, r.cSc, r.uHH)
+	e.dispatchTG(r.pSA, r.H*32, 256, r.nH*r.hd*2, L.oW, L.oS, r.cq, r.cSc, r.oO, r.uHH)
+	e.dispatch(r.pRmsF32, 256, 256, r.oO, L.postAttnNorm, r.uH, r.uEps, r.uAddOne)
+	e.dispatch(r.pRes, r.H, 256, r.x, r.oO)
+	e.dispatch(r.pRms, 256, 256, r.x, L.postNorm, r.mq, r.mSc, r.uH, r.uEps, r.uAddOne)
+	e.dispatchTG(r.pSA, (2*r.I)*32, 256, r.H*2, L.guW, L.guS, r.mq, r.mSc, r.gu, r.uH)
+	e.dispatch(r.pSw, 256, 256, r.gu, r.gu.At(r.I*4), r.dq, r.dSc, r.uI, r.uAct)
+	e.end()
+	gateUp = append([]float32(nil), r.gu.Floats()[:2*r.I]...)
+	gSc = r.dSc.Floats()[0]
+	dq8 := r.dq.Int8s()
+	geglu8 = make([]float32, r.I)
+	for i := range geglu8 {
+		geglu8[i] = float32(dq8[i]) * gSc
+	}
+	return gateUp, geglu8, gSc
+}
+
 // attnConfirmForTest is the Metal half of the matched-input confirmer (CUDA box's
 // TestGemmaConfirmerReference). It runs ONE layer's attention block over an INJECTED residual and
 // INJECTED post-RoPE K / raw V (goinfer's exact CPU-int4 state), skipping kv_store, and returns the

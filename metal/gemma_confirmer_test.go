@@ -93,6 +93,35 @@ func TestGemmaConfirmer_MatchedInput(t *testing.T) {
 		t.Logf("  compute-vs-norm: if PRE-norm down out is already large -> MLP compute bug; if near-zero & post-norm blows it up -> sandwich-norm RMS (|mlpPre|=%.1f |mlp|=%.1f)",
 			l2(smPre[0]), l2(sm[0]))
 	}
+	// geglu-vs-down cut: Metal's L0 BOS gate|up (f32) -> f32 geglu vs the int8 round-trip the
+	// down-proj consumes. If Metal's f32 geglu matches CUDA's but the int8 round-trip diverges,
+	// it's the crush (absmax scale dominated by an outlier crushing the sink's tiny channels).
+	{
+		gateUp, geglu8, gSc := r.l0GegluForTest(emb0, 0)
+		I := len(geglu8)
+		gelu := func(x float32) float32 {
+			xf := float64(x)
+			return float32(0.5 * xf * (1 + math.Tanh(0.7978845608028654*(xf+0.044715*xf*xf*xf))))
+		}
+		var f32n, i8n, amax float64
+		var crushed, amaxCh int
+		for i := 0; i < I; i++ {
+			s := gelu(gateUp[i]) * gateUp[I+i] // f32 geglu
+			f32n += float64(s) * float64(s)
+			if a := math.Abs(float64(s)); a > amax {
+				amax, amaxCh = a, i
+			}
+			i8n += float64(geglu8[i]) * float64(geglu8[i])
+			if geglu8[i] == 0 {
+				crushed++
+			}
+		}
+		t.Logf("L0 BOS geglu: |f32|=%.3f |int8-rt|=%.3f  int8 scale=%.4g (kernel absmax=%.3f, my-f32 absmax=%.3f) crushed=%d/%d",
+			math.Sqrt(f32n), math.Sqrt(i8n), gSc, gSc*127, amax, crushed, I)
+		g, u := gateUp[amaxCh], gateUp[I+amaxCh]
+		t.Logf("  max-geglu ch %d: gate=%.4g up=%.4g my-gelu(gate)=%.4g geglu=%.4g int8-rt=%.4g",
+			amaxCh, g, u, gelu(g), gelu(g)*u, geglu8[amaxCh])
+	}
 	mResid0 := r.forwardTrunkForTest(emb0, 0, 1)
 	{
 		var dot, na, nb float64
