@@ -112,17 +112,28 @@ struct P { heads: u32, headDim: u32, half: u32, pos: u32, scale: f32, base: u32,
 @compute @workgroup_size(64)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let idx = gid.x;
-    if (idx >= p.heads * p.half) { return; }
-    let h = idx / p.half;
-    let d = idx % p.half;
-    let theta = f32(p.pos) * invFreq[d];
-    let c = cos(theta) * p.scale;
-    let s = sin(theta) * p.scale;
-    let off = h * p.headDim;
-    let x1 = src[off + d];
-    let x2 = src[off + p.half + d];
-    dst[p.base + off + d]          = x1 * c - x2 * s;
-    dst[p.base + off + p.half + d] = x2 * c + x1 * s;
+    let tail = p.headDim - 2u * p.half; // pass-through width (0 for full rotary)
+    if (idx >= p.heads * (p.half + tail)) { return; } // heads*(headDim-half)
+    if (idx < p.heads * p.half) {
+        let h = idx / p.half;
+        let d = idx % p.half;
+        let theta = f32(p.pos) * invFreq[d];
+        let c = cos(theta) * p.scale;
+        let s = sin(theta) * p.scale;
+        let off = h * p.headDim;
+        let x1 = src[off + d];
+        let x2 = src[off + p.half + d];
+        dst[p.base + off + d]          = x1 * c - x2 * s;
+        dst[p.base + off + p.half + d] = x2 * c + x1 * s;
+    } else {
+        // partial rotary: store the un-rotated tail [2*half, headDim) — the CPU ref stores the
+        // full k, and attention reads zeros for these dims otherwise (C4).
+        let t = idx - p.heads * p.half;
+        let h = t / tail;
+        let e = t % tail;
+        let off = h * p.headDim + 2u * p.half + e;
+        dst[p.base + off] = src[off];
+    }
 }
 `
 
@@ -181,6 +192,17 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         let x1 = k[off + d]; let x2 = k[off + p.half + d];
         kCache[p.base + off + d]          = x1 * c - x2 * s;
         kCache[p.base + off + p.half + d] = x2 * c + x1 * s;
+    }
+    // k pass-through tail [2*half, hd): partial rotary (2*half < hd — GLM, some Phi) leaves these
+    // key dims un-rotated, and the CPU reference stores the FULL k. Store them here or attention
+    // reads zeros for the tail at every cached position — plausible-looking, silently wrong logits
+    // (C4). ktail=0 for full rotary ⇒ no-op. These threads are within the kvDim range the v-store
+    // already dispatches (nKV*(hd-2*half) < nKV*hd = kvDim), so no extra dispatch is needed.
+    let ktail = p.hd - 2u * p.half;
+    if (i < p.nKV * ktail) {
+        let h = i / ktail; let t = i % ktail;
+        let off = h * p.hd + 2u * p.half + t;
+        kCache[p.base + off] = k[off];
     }
     // v store (kvDim elements) into VCache at base.
     if (i < p.kvDim) {
@@ -274,18 +296,20 @@ fn rotated(e: u32) -> f32 {
         let c = cos(theta) * p.scale;
         let s = sin(theta) * p.scale;
         return src[off + dd] * c - src[off + p.half + dd] * s;
-    } else {
+    }
+    if (dd < 2u * p.half) {
         let d = dd - p.half;
         let theta = f32(p.pos) * invFreq[d];
         let c = cos(theta) * p.scale;
         let s = sin(theta) * p.scale;
         return src[off + p.half + d] * c + src[off + d] * s;
     }
+    return src[off + dd]; // pass-through tail [2*half, headDim): partial rotary, un-rotated (C4)
 }
 @compute @workgroup_size(64)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let idx = gid.x;                       // word within the token
-    if (idx >= p.heads * p.half) { return; } // heads*half = kvDim/2 words
+    let idx = gid.x;                              // word within the token
+    if (idx >= p.heads * (p.headDim / 2u)) { return; } // kvDim/2 words (covers rotated + tail, C4)
     let e0 = 2u * idx;
     dst[(p.base >> 1u) + idx] = pack2x16float(vec2<f32>(rotated(e0), rotated(e0 + 1u)));
 }
@@ -389,9 +413,12 @@ fn rot(off: u32, dd: u32) -> f32 {
         let theta = f32(p.pos) * invFreq[dd];
         return src[off + dd] * cos(theta) * p.scale - src[off + p.half + dd] * sin(theta) * p.scale;
     }
-    let d = dd - p.half;
-    let theta = f32(p.pos) * invFreq[d];
-    return src[off + p.half + d] * cos(theta) * p.scale + src[off + d] * sin(theta) * p.scale;
+    if (dd < 2u * p.half) {
+        let d = dd - p.half;
+        let theta = f32(p.pos) * invFreq[d];
+        return src[off + p.half + d] * cos(theta) * p.scale + src[off + d] * sin(theta) * p.scale;
+    }
+    return src[off + dd]; // pass-through tail [2*half, headDim): partial rotary, un-rotated (C4)
 }
 fn qb(x: f32, inv: f32) -> u32 { return u32(i32(clamp(round(x * inv), -127.0, 127.0))) & 0xffu; }
 @compute @workgroup_size(64)

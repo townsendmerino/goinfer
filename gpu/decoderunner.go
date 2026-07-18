@@ -555,11 +555,14 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			add(c.ropeStoreI8Pipeline, bind(c.ropeStoreI8Layout, src, invFreq, cache, scale, ku), uint32(nKV+63)/64, 1)
 			return
 		}
-		pl, ly := c.ropeStorePipeline, c.ropeStoreLayout
 		if m.kvF16 {
-			pl, ly = c.ropeStoreF16Pipeline, c.ropeStoreF16Layout
+			// word-based (2 f16/word): kvDim/2 = nKV·hd/2 words, covering the rotated span AND the
+			// partial-rotary pass-through tail (C4).
+			add(c.ropeStoreF16Pipeline, bind(c.ropeStoreF16Layout, src, invFreq, cache, ku), uint32(nKV*hd/2+63)/64, 1)
+		} else {
+			// element-based: nKV·half rotation pairs + nKV·(hd-2·half) pass-through tail = nKV·(hd-half).
+			add(c.ropeStorePipeline, bind(c.ropeStoreLayout, src, invFreq, cache, ku), uint32(nKV*(hd-half)+63)/64, 1)
 		}
-		add(pl, bind(ly, src, invFreq, cache, ku), uint32(nKV*half+63)/64, 1)
 	}
 	// vStore copies src (the V projection) into the V cache at pos*kvDim. The f16
 	// variant packs 2 elems/word, so it dispatches half as many threads (one/word);
