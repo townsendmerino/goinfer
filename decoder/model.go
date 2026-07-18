@@ -720,6 +720,19 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	fastGreedy := useGPU && hasGreedy && sp.LogitProcessor == nil &&
 		sampler.ArgmaxEquivalent() && os.Getenv("GOINFER_NO_GREEDY_FASTPATH") == ""
 
+	// Clamp the decode length to the resident KV cap up front (C3/M20). A Forward past
+	// the cap is refused mid-generation (the silent-corruption guard), but a resident
+	// backend that exposes its cap lets us stop cleanly AT it instead of erroring after
+	// N tokens. gpuPos is the next decode position; the last valid one is ctxCap-1, and
+	// the prefill loop already guarantees gpuPos <= ctxCap.
+	if useGPU {
+		if capper, ok := m.resident.(ResidentCapped); ok {
+			if ctxCap := capper.ContextCap(); ctxCap > 0 && gpuPos+maxTokens > ctxCap {
+				maxTokens = ctxCap - gpuPos // may be 0 (prompt used the whole context)
+			}
+		}
+	}
+
 	// Decode loop.
 	var generated []int
 	var tProc, tSample, tEmbed, tFwd time.Duration

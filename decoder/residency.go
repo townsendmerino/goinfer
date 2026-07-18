@@ -67,6 +67,16 @@ type Prefiller interface {
 	PrefillLast(embeddings [][]float32, startPos int) (logits []float32, err error)
 }
 
+// ResidentCapped is an OPTIONAL ResidentForward extension exposing the backend's fixed
+// KV context capacity (in positions). A write past it is an out-of-bounds device write
+// (silent KV corruption); the backends refuse it mid-generation, but generateInto also
+// type-asserts for this to clamp/refuse UP FRONT — so a request that would overrun stops
+// cleanly at the cap (or falls back) instead of erroring after N tokens. Backends may
+// skip implementing it (they still enforce the cap in Forward/ForwardN/UploadKV). C3/M20.
+type ResidentCapped interface {
+	ContextCap() int
+}
+
 // ResidencyBackend is the optional capability a Backend advertises to build a
 // ResidentForward from a loaded Model. The webgpu backend implements it; ok is
 // false when the arch is not DecodeRunner-eligible.

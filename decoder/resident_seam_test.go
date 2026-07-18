@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -33,16 +34,27 @@ import (
 // call count, not the values.
 type fakeResident struct {
 	vocab    int
+	capPos   int // resident KV cap in positions (0 = unbounded); ContextCap exposes it
 	forwards int
 	closed   bool
 }
 
 func (f *fakeResident) Forward(embedding []float32, pos int) ([]float32, error) {
+	if f.capPos > 0 && pos >= f.capPos {
+		// A real backend's write here is out-of-bounds device memory (silent KV
+		// corruption); it must refuse, not proceed. The up-front clamp should prevent
+		// the decode loop from ever reaching this.
+		return nil, fmt.Errorf("fakeResident: pos %d >= context cap %d (would corrupt KV)", pos, f.capPos)
+	}
 	f.forwards++
 	out := make([]float32, f.vocab)
 	out[pos%f.vocab] = 1 // deterministic, and distinct per position
 	return out, nil
 }
+
+// ContextCap makes fakeResident a ResidentCapped so generateInto clamps decode length
+// to it up front (0 ⇒ unbounded, the default for the other seam tests).
+func (f *fakeResident) ContextCap() int { return f.capPos }
 
 func (f *fakeResident) ForwardN(embeddings [][]float32, startPos int) ([][]float32, error) {
 	rows := make([][]float32, 0, len(embeddings))
@@ -198,5 +210,32 @@ func TestSeam_ValidateAcceptsEveryBackendName(t *testing.T) {
 	}
 	if err := (Options{Backend: "definitely-not-a-backend"}).Validate(); err == nil {
 		t.Error("Validate accepted a nonsense backend name — the allowlist has stopped allowlisting")
+	}
+}
+
+// TestResidentContextCap_clampsAndNeverOverruns gates C3/M20: a resident backend that
+// exposes ContextCap has its decode length clamped to the cap UP FRONT, so a request for
+// more tokens than the resident KV holds stops cleanly at the cap instead of driving a
+// Forward past it (silent KV corruption on a real backend). Asserts no error, exactly
+// (cap − promptLen) tokens, and exactly `cap` resident forwards (prefill + decode) — a
+// broken clamp would run maxTokens=100 into the pos==cap Forward, which errors.
+func TestResidentContextCap_clampsAndNeverOverruns(t *testing.T) {
+	m, be := loadWithFakeResident(t)
+	be.rf.capPos = 6
+	prompt := []int{1, 2} // 2 prefill positions → 4 decode tokens fit before the cap
+	stream, gen := m.Generate(context.Background(), prompt, 100, SamplingParams{Temperature: 0})
+	n := 0
+	for range stream { //nolint:revive // draining is the point
+		n++
+	}
+	if err := gen.Err(); err != nil {
+		t.Fatalf("resident overran the cap instead of clamping: %v", err)
+	}
+	if want := be.rf.capPos - len(prompt); n != want {
+		t.Fatalf("generated %d tokens, want %d (cap %d − prompt %d)", n, want, be.rf.capPos, len(prompt))
+	}
+	if be.rf.forwards != be.rf.capPos {
+		t.Fatalf("resident forwards = %d, want %d (prefill %d + decode %d)",
+			be.rf.forwards, be.rf.capPos, len(prompt), be.rf.capPos-len(prompt))
 	}
 }

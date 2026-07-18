@@ -85,6 +85,7 @@ type residentDecoder struct {
 	runner  *DecodeRunner
 	rm      runModel
 	nKV, hd int      // KV grouping — UploadKV needs it to per-head quantize int8
+	ctxCap  int      // resident KV capacity in positions; writes past it corrupt (M20)
 	keep    []func() // release the resident buffers (norms, biases, KV, projections)
 
 	// Batched verify (ForwardN): extra DecodeRunner instances sharing rm (the same
@@ -137,7 +138,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	}
 	kvDim := nKV * hd
 
-	rd := &residentDecoder{c: c, nKV: nKV, hd: hd}
+	rd := &residentDecoder{c: c, nKV: nKV, hd: hd, ctxCap: ctxCap}
 	keepF := func(f func()) { rd.keep = append(rd.keep, f) }
 	up32 := func(v []float32) (*wgpu.Buffer, error) {
 		d, err := c.UploadF32(v)
@@ -746,7 +747,26 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	return rd, true, nil
 }
 
+// ContextCap is the resident KV capacity in positions (queryable so the decode loop
+// can clamp/refuse up front instead of hitting the mid-generation cap error — M20/C3).
+func (rd *residentDecoder) ContextCap() int { return rd.ctxCap }
+
+// checkCap refuses a write that would land at/past the resident cap. Every KV buffer is
+// sized ctxCap positions; a write for absolute position p lands at [p*kvDim…], so p ≥
+// ctxCap is an out-of-bounds device write — WGSL robust-access silently clamps it and
+// attention then reads garbage. Return an error instead; the decode loop stops (model.go)
+// and the caller can fall back to the staged path, which handles longer contexts.
+func (rd *residentDecoder) checkCap(pos, n int) error {
+	if pos < 0 || pos+n > rd.ctxCap {
+		return fmt.Errorf("gpu: KV position %d(+%d) exceeds resident context cap %d — use the staged path for longer contexts", pos, n, rd.ctxCap)
+	}
+	return nil
+}
+
 func (rd *residentDecoder) Forward(embedding []float32, pos int) ([]float32, error) {
+	if err := rd.checkCap(pos, 1); err != nil {
+		return nil, err
+	}
 	return rd.runner.Run(embedding, pos)
 }
 
@@ -758,6 +778,9 @@ func (rd *residentDecoder) ForwardN(embeddings [][]float32, startPos int) ([][]f
 	n := len(embeddings)
 	if n == 0 {
 		return nil, nil
+	}
+	if err := rd.checkCap(startPos, n); err != nil {
+		return nil, err
 	}
 	if len(rd.batch) == 0 {
 		rd.batch = append(rd.batch, rd.runner) // batch[0] aliases the M=1 runner
@@ -785,6 +808,11 @@ func (rd *residentDecoder) TruncateTo(pos int) {}
 func (rd *residentDecoder) UploadKV(layer int, keys, vals []float32) error {
 	if layer < 0 || layer >= len(rd.rm.layers) {
 		return fmt.Errorf("gpu: UploadKV layer %d out of range", layer)
+	}
+	if kvDim := rd.nKV * rd.hd; kvDim > 0 {
+		if err := rd.checkCap(0, len(keys)/kvDim); err != nil {
+			return err
+		}
 	}
 	l := rd.rm.layers[layer]
 	switch {

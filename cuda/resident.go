@@ -201,8 +201,28 @@ func (r *cudaResident) upW(h hostW) cudaWQ {
 
 func (r *cudaResident) do(j func() error) error { r.reqCh <- j; return <-r.ackCh }
 
+// checkCap guards the resident KV allocation. Every layer's cache is sized cudaCtxCap*kvDim, so
+// a write for absolute position p lands at kc[p*kvDim ...]; valid positions are [0, cudaCtxCap).
+// Writing past it (rope_kv/kv_store) is an out-of-bounds DEVICE write — silent memory corruption,
+// UB, and the attention launch's shared-mem request eventually exceeds the block limit. Nothing
+// upstream clamps prompt+max_tokens to the cap, so return an error here; the decode loop stops on
+// it (model.go) and the caller can fall back to the staged path, which handles longer contexts.
+func (r *cudaResident) checkCap(pos, n int) error {
+	if pos < 0 || pos+n > cudaCtxCap {
+		return fmt.Errorf("cuda: KV position %d(+%d) exceeds resident context cap %d — use the staged path for longer contexts", pos, n, cudaCtxCap)
+	}
+	return nil
+}
+
+// ContextCap is the resident KV capacity in positions (queryable so callers can clamp max_tokens
+// up front rather than discover the limit mid-generation).
+func (r *cudaResident) ContextCap() int { return cudaCtxCap }
+
 // Forward runs one token at absolute position pos and returns logits[vocab].
 func (r *cudaResident) Forward(embedding []float32, pos int) ([]float32, error) {
+	if e := r.checkCap(pos, 1); e != nil {
+		return nil, e
+	}
 	var out []float32
 	err := r.do(func() error {
 		o, e := r.step(embedding, pos)
@@ -215,6 +235,9 @@ func (r *cudaResident) Forward(embedding []float32, pos int) ([]float32, error) 
 // ForwardN runs K tokens at consecutive positions. Correctness-first: sequential steps in a
 // single executor round-trip (bit-identical to K Forward calls; amortizes the channel hop).
 func (r *cudaResident) ForwardN(embeddings [][]float32, startPos int) ([][]float32, error) {
+	if e := r.checkCap(startPos, len(embeddings)); e != nil {
+		return nil, e
+	}
 	out := make([][]float32, len(embeddings))
 	err := r.do(func() error {
 		for i, emb := range embeddings {
@@ -232,6 +255,11 @@ func (r *cudaResident) ForwardN(embeddings [][]float32, startPos int) ([][]float
 // UploadKV writes a layer's post-RoPE K and raw V into the resident caches from position 0
 // (prefill bridge, same packed layout the kernels read: [pos*kvDim + head*hd + d]).
 func (r *cudaResident) UploadKV(layer int, keys, vals []float32) error {
+	if r.kvDim > 0 {
+		if e := r.checkCap(0, len(keys)/r.kvDim); e != nil {
+			return e
+		}
+	}
 	return r.do(func() error {
 		bg := context.Background()
 		if e := r.kc[layer].CopyFromAt(bg, 0, keys); e != nil {
@@ -682,6 +710,9 @@ func (r *cudaResident) step(emb []float32, pos int) ([]float32, error) {
 // and read back 4 B instead of the whole logits vector. Same kernel chain, same numerics —
 // only the readback differs, so the id equals argmax(Forward(...)) exactly.
 func (r *cudaResident) ForwardArgmax(embedding []float32, pos int) (int, error) {
+	if e := r.checkCap(pos, 1); e != nil {
+		return 0, e
+	}
 	var id int
 	err := r.do(func() error {
 		bg := context.Background()

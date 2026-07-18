@@ -67,6 +67,8 @@ A prompt of ≤4096 plus `max_tokens` large enough to cross the cap is all it ta
 
 **Fix:** `Forward`/`ForwardN`/`ForwardArgmax` must return an error when `pos+K > ctxCap` (both backends), and the decoder loop must stop with that error (or fall back to the staged path). Make the cap a queryable property of the resident interface so `generateInto`/serve can clamp `max_tokens` up front. The same check belongs in `gpu/` (16384/32768/65536 caps in `gpu/residency.go:131` — same gap, see M20).
 
+> **Status (OOA #1, Linux/RTX2070 box, no Mac):** DONE for **CUDA + WebGPU (M20) + the decoder side**. `checkCap` guards in `cuda/resident.go` + `gpu/residency.go` (Forward/ForwardN/UploadKV, +ForwardArgmax on CUDA); a queryable `ContextCap()` via the new optional `ResidentCapped` interface; and an up-front `maxTokens` clamp in `generateInto` so an over-long request stops cleanly at the cap instead of erroring mid-decode. Gated: `TestResidentContextCap_clampsAndNeverOverruns` (decoder), `TestResidentDecoderCheckCap` (gpu), `TestCudaResidentCheckCap` (cuda). **Metal half DEFERRED to a Mac session** — the `metal/backend.go` Forward/ForwardN guard + `ContextCap()` are the same shape as the CUDA change but must be verified on the device, not shipped blind.
+
 ### C4. WebGPU partial-RoPE: the un-rotated K tail is never written to the KV cache — silently wrong logits for GLM-family resident models
 `gpu/attention.go:176` (`qkvFinalize`), plus `ropeStore` (~:106), `ropeStoreF16` (~:288), `ropeStoreI8` (~:393)
 
