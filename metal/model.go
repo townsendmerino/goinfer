@@ -106,13 +106,49 @@ func int8Buf(d *Device, w *linalg.WeightMat) (Buffer, Buffer, error) {
 	return d.NewBufferInt8(q8), d.NewBufferFloats(sc), nil
 }
 
-// int4Buf re-quantizes an int8 WeightMat to W4A8 (int4, group=32) via the validated packer
-// and uploads packed nibbles + f32 group scales — half the weight bytes of int8 (the
-// target-quant bandwidth win). One-time at build.
+// int4DirectWords converts a decoder int4 WeightMat's packed nibbles + f32 group scales straight
+// into Metal's W4A8 buffers (uint32 words + f16 scales) — NO int8 intermediate. aikit's group=32
+// packing (nib = q+8, byte k/2 low/high) and Metal's packW4A8Row (element k → word k/8, bit
+// 4·(k%8)) are the SAME bytes on little-endian, so the nibbles copy verbatim; only the group
+// scales narrow f32→f16. Returns ok=false if the weight is not group-32 int4.
+//
+// This is the fix for Gemma's dormant residual: BuildResident's default path double-quantizes
+// (f32→int8→int4), and Gemma's low-magnitude attention contexts amplify that int8-intermediate
+// drift into a catastrophic context error (metal/gemma_sublayer_test.go: L1 cosine craters to
+// 0.649 vs the direct-int4 reference's ~0.93). Consuming the decoder's int4 directly — exactly
+// what CUDA/WebGPU do — removes the int8 step. Qwen is insensitive to it (ships clean either way).
+func int4DirectWords(w *linalg.WeightMat) (words []uint32, scales []uint16, ok bool) {
+	q4, q4s, group, ok := w.Int4()
+	if !ok || group != 32 {
+		return nil, nil, false
+	}
+	words = bytesToU32(q4)
+	scales = make([]uint16, len(q4s))
+	for i, s := range q4s {
+		scales[i] = f32ToF16(s)
+	}
+	return words, scales, true
+}
+
+// bytesToU32 reinterprets a little-endian byte slice as uint32 words (len must be a multiple of 4).
+func bytesToU32(b []byte) []uint32 {
+	w := make([]uint32, len(b)/4)
+	for i := range w {
+		w[i] = uint32(b[4*i]) | uint32(b[4*i+1])<<8 | uint32(b[4*i+2])<<16 | uint32(b[4*i+3])<<24
+	}
+	return w
+}
+
+// int4Buf uploads a WeightMat as W4A8 (int4, group=32) + f16 group scales. If the weight is
+// ALREADY int4 (a Quant:"int4" load), it consumes the nibbles directly (int4-direct, no int8
+// step); otherwise it re-quantizes the int8 weight through the validated packer. One-time at build.
 func int4Buf(d *Device, w *linalg.WeightMat) (Buffer, Buffer, error) {
+	if words, scales, ok := int4DirectWords(w); ok {
+		return d.NewBufferUint32s(words), d.NewBufferU16s(scales), nil
+	}
 	q8, sc, _, ok := w.Int8()
 	if !ok {
-		return Buffer{}, Buffer{}, fmt.Errorf("metal: weight kind %q is not int8", w.Kind())
+		return Buffer{}, Buffer{}, fmt.Errorf("metal: weight kind %q is not int8 or int4", w.Kind())
 	}
 	N, K := w.Rows(), w.Cols()
 	words := make([]uint32, N*(K/8))
@@ -133,9 +169,14 @@ func int4Concat(d *Device, wms ...*linalg.WeightMat) (Buffer, Buffer) {
 	var words []uint32
 	var scales []uint16 // f16 group scales (L1)
 	for _, w := range wms {
+		if dw, ds, ok := int4DirectWords(w); ok { // int4-direct: consume nibbles verbatim
+			words = append(words, dw...)
+			scales = append(scales, ds...)
+			continue
+		}
 		q8, sc, _, ok := w.Int8()
 		if !ok {
-			panic(fmt.Sprintf("metal: int4Concat weight kind %q not int8", w.Kind()))
+			panic(fmt.Sprintf("metal: int4Concat weight kind %q not int8 or int4", w.Kind()))
 		}
 		N, K := w.Rows(), w.Cols()
 		for n := range N {
