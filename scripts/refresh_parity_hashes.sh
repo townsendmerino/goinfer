@@ -88,6 +88,23 @@ echo "    staleness gate green; ${changed:-0} deps_hash line(s) refreshed, nothi
 
 head=$(git rev-parse --short HEAD)
 echo
-echo "==> PROOF (paste into the commit body — makes the exception auditable):"
+echo "==> PROOF (paste into the commit body — makes the exception auditable, and the trailer"
+echo "    keeps the recurrence counter below accurate):"
 echo "    non-numeric core refresh; validated_at preserved."
 echo "    forward goldens green at ${head}: ${pass} passed / ${skip} skipped / 0 failed."
+echo
+echo "    Parity-Deps-Refresh: ${head} goldens=${pass}"
+
+# Self-announcing Phase-2 trigger. This script running IS the "recurring toil" signal, so the
+# reminder to do the durable fix belongs here — not in anyone's memory. Count is stateless and
+# PRECISE: only real script-driven refreshes carry the Parity-Deps-Refresh trailer above.
+prior=$(git log --grep='^Parity-Deps-Refresh:' --format='%H' 2>/dev/null | wc -l | tr -d ' ')
+echo
+if [ "${prior:-0}" -ge 2 ]; then
+	echo "==> ⚠ RECURRING (~${prior} past deps_hash refreshes). This is the Phase-2 trigger."
+	echo "    Stop refreshing and do the DURABLE fix: one generic tap surface so diagnostic seams"
+	echo "    stop churning core — docs/task-parity-staleness-diagnostic-seams.md, Phase 2 / option C."
+else
+	echo "==> If this recurs, the durable fix is Phase 2 / C (one generic tap surface, seams out of"
+	echo "    core): docs/task-parity-staleness-diagnostic-seams.md — don't just keep refreshing."
+fi
