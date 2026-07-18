@@ -169,7 +169,7 @@ func validateNgramSpec(m *Model, drafter Drafter, sp SamplingParams) error {
 		return fmt.Errorf("decoder.GenerateNgramSpeculative: LogitProcessor (constrained/tool decoding) not supported yet; use Generate")
 	}
 	if !m.specRollbackSafe() {
-		return fmt.Errorf("decoder.GenerateNgramSpeculative: this model's family has recurrent state (Mamba-2 / Gated DeltaNet) that speculative rollback cannot restore yet; use Generate")
+		return fmt.Errorf("decoder.GenerateNgramSpeculative: this model has recurrent state (Mamba-2 / Gated DeltaNet) or a staged sliding-window ring cache that speculative rollback cannot losslessly restore; use Generate")
 	}
 	return nil
 }

@@ -179,7 +179,7 @@ func validateGrammarSpec(target *Model, mask *constrain.Masker, drafter Drafter,
 		return fmt.Errorf("decoder.GenerateGrammarSpeculative: greedy only for now (Temperature must be 0)")
 	}
 	if !target.specRollbackSafe() {
-		return fmt.Errorf("decoder.GenerateGrammarSpeculative: recurrent family (rollback unsupported); use Generate")
+		return fmt.Errorf("decoder.GenerateGrammarSpeculative: recurrent family or staged sliding-window (rollback unsupported); use Generate")
 	}
 	return nil
 }

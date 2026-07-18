@@ -47,3 +47,35 @@ func TestTruncateTo_raggedLayerUsesRecordedStride(t *testing.T) {
 		t.Errorf("ragged layer truncated to %d elems, want %d (2 positions × stride %d) — len/pos mis-sliced it (M11)", got, want, kvDim)
 	}
 }
+
+// TestSpecRollbackSafe_stagedSlidingWindow gates the speculative half of C1: on the STAGED path a
+// sliding-window model's ring cache can't losslessly roll back a wrapped rewind, so speculative
+// decode must refuse it (and the caller falls back to plain Generate). Full-attention models stay
+// safe; the resident path (positional) is checked separately by construction (resident != nil).
+func TestSpecRollbackSafe_stagedSlidingWindow(t *testing.T) {
+	cases := map[string]bool{ // arch → expected safe when STAGED (resident nil)
+		"qwen2":            true, // full attention, no rings
+		"llama":            true,
+		"mixtral":          true,
+		"mistral":          false, // sliding window ⇒ staged rings ⇒ unsafe (C1)
+		"gemma3_text":      false, // sliding window
+		"granitemoehybrid": false, // recurrent (Mamba-2)
+		"nemotron_h":       false, // recurrent (Mamba-2)
+		"qwen3_5_moe":      false, // recurrent (DeltaNet)
+	}
+	for name, wantSafe := range cases {
+		cfg := representativeConfig(name)
+		if cfg == nil {
+			continue
+		}
+		arch, _, err := resolveArchitecture(cfg)
+		if err != nil {
+			t.Errorf("%s: resolveArchitecture: %v", name, err)
+			continue
+		}
+		m := &Model{w: &Weights{arch: arch}} // resident nil ⇒ staged path
+		if got := m.specRollbackSafe(); got != wantSafe {
+			t.Errorf("%s: specRollbackSafe (staged) = %v, want %v", name, got, wantSafe)
+		}
+	}
+}

@@ -35,7 +35,18 @@ func (m *Model) canBatchN(K int) bool {
 // speculative entry points refuse them and the caller falls back to plain decode.
 func (m *Model) specRollbackSafe() bool {
 	a := m.w.arch
-	return a.granite == nil && a.nemotron == nil && a.qwen35 == nil
+	if a.granite != nil || a.nemotron != nil || a.qwen35 != nil {
+		return false
+	}
+	// C1: a STAGED sliding-window cache stores local layers in physical rings. Once a ring wraps
+	// (context > window), a rollback of >1 position can't restore the positions it evicted, so the
+	// verify would read stale history and diverge — the "lossless" guarantee broken for exactly the
+	// families rings serve (Gemma-3 local / Mistral / Phi-3). The RESIDENT path is positional (its
+	// TruncateTo is a no-op re-forward, no eviction), so it stays safe; refuse only staged rings.
+	if m.resident == nil && a.SlidingWindow > 0 {
+		return false
+	}
+	return true
 }
 
 // forwardLayersN runs the embedding + all transformer layers + final norm over

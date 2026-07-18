@@ -20,7 +20,7 @@ func (m *Model) GenerateEagleSpeculativeTree(ctx context.Context, prompt []int, 
 		return nil, nil, fmt.Errorf("decoder.GenerateEagleSpeculativeTree: greedy only")
 	}
 	if !m.specRollbackSafe() {
-		return nil, nil, fmt.Errorf("decoder.GenerateEagleSpeculativeTree: recurrent family unsupported")
+		return nil, nil, fmt.Errorf("decoder.GenerateEagleSpeculativeTree: recurrent family or staged sliding-window unsupported (rollback cannot restore)")
 	}
 	if head.Hidden() != m.w.arch.HiddenDim {
 		return nil, nil, fmt.Errorf("decoder.GenerateEagleSpeculativeTree: head hidden %d != target %d", head.Hidden(), m.w.arch.HiddenDim)
@@ -180,7 +180,7 @@ func (m *Model) GenerateEagleSpeculative(ctx context.Context, prompt []int, maxT
 		return nil, nil, fmt.Errorf("decoder.GenerateEagleSpeculative: greedy only (no temperature/LogitProcessor)")
 	}
 	if !m.specRollbackSafe() {
-		return nil, nil, fmt.Errorf("decoder.GenerateEagleSpeculative: recurrent family unsupported")
+		return nil, nil, fmt.Errorf("decoder.GenerateEagleSpeculative: recurrent family or staged sliding-window unsupported (rollback cannot restore)")
 	}
 	if head.Hidden() != m.w.arch.HiddenDim {
 		return nil, nil, fmt.Errorf("decoder.GenerateEagleSpeculative: head hidden %d != target %d", head.Hidden(), m.w.arch.HiddenDim)
