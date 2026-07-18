@@ -86,8 +86,13 @@ type Options struct {
 // backend is the default and the only one wired (webgpu falls back to CPU).
 func Load(dir string, opts Options) (*Model, error) {
 	be, beErr := NewBackend(opts.Backend)
-	// beErr is non-nil for the not-yet-implemented webgpu fallback; keep the
-	// (cpu) backend and surface the note rather than abort.
+	// A nil backend means the name was genuinely unknown (not a registered/fallback backend) —
+	// abort rather than proceed and panic at the first matmul (M14). A non-nil be with a
+	// non-nil beErr is the CPU-fallback note (webgpu/cuda/metal not built in); keep the (cpu)
+	// backend and surface the note rather than abort.
+	if be == nil {
+		return nil, beErr
+	}
 
 	// Prequant bundle (.giw): the weights are already quantized and serialized, so
 	// they alias straight out of the file — no GGUF/safetensors load, no requant

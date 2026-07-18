@@ -297,7 +297,7 @@ func main() {
 		os.Exit(1)
 	}
 	if cfg.sessionDir != "" && cfg.kvSessions > 0 {
-		for _, lm := range srv.models {
+		for _, lm := range srv.modelList() {
 			sub := sessionSubdir(cfg.sessionDir, lm.fp)
 			lm.sessions.load(sub)
 			if cfg.kvIdleDemote > 0 {
@@ -346,7 +346,7 @@ func main() {
 		defer cancel()
 		_ = httpSrv.Shutdown(ctx)
 		if cfg.sessionDir != "" && cfg.kvSessions > 0 {
-			for _, lm := range srv.models {
+			for _, lm := range srv.modelList() {
 				lm.mu.Lock()
 				_ = lm.sessions.save(sessionSubdir(cfg.sessionDir, lm.fp))
 				lm.sessions.removeColdFiles() // the cold tier is in-process; clear its scratch
@@ -700,6 +700,21 @@ func (s *server) endpointSummary() string {
 // (tiered KV). It polls at a fraction of the idle threshold (clamped to [5s, 1m])
 // and takes each model's lock per sweep, so it stalls no in-flight generation and
 // skips a busy model until its lock is free. Returns when stop is closed.
+// modelList snapshots the registry under regMu. Background sweeps (demote, shutdown
+// checkpoint) must iterate this, not range s.models directly: admin load/unload mutate the
+// map under regMu (admin.go), and a concurrent map iteration+write is a runtime-fatal panic,
+// not just a race (M4). The returned slice is a copy of the pointers; each loadedModel is
+// still locked via its own lm.mu by the caller.
+func (s *server) modelList() []*loadedModel {
+	s.regMu.RLock()
+	defer s.regMu.RUnlock()
+	out := make([]*loadedModel, 0, len(s.models))
+	for _, lm := range s.models {
+		out = append(out, lm)
+	}
+	return out
+}
+
 func demoteLoop(srv *server, idle time.Duration, stop <-chan struct{}) {
 	period := max(idle/4, 5*time.Second)
 	if period > time.Minute {
@@ -712,7 +727,7 @@ func demoteLoop(srv *server, idle time.Duration, stop <-chan struct{}) {
 		case <-stop:
 			return
 		case <-t.C:
-			for _, lm := range srv.models {
+			for _, lm := range srv.modelList() {
 				lm.mu.Lock()
 				if n := lm.sessions.demoteIdle(); n > 0 {
 					fmt.Fprintf(os.Stderr, "tiered-kv: demoted %d idle session(s) for %q\n", n, lm.name)

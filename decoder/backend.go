@@ -97,7 +97,12 @@ func NewBackend(name string) (Backend, error) {
 	if name == "cuda" {
 		return &cpuBackend{}, fmt.Errorf("decoder: cuda backend not registered; import github.com/townsendmerino/goinfer/cuda and build `-tags cuda`; using cpu")
 	}
-	return nil, fmt.Errorf("decoder: unknown backend %q (have: cpu, webgpu, cuda)", name)
+	if name == "metal" {
+		// Same CPU-fallback+note treatment as webgpu/cuda: Options.Validate accepts "metal",
+		// so an untagged build reaching here must fall back, not return a nil backend (M14).
+		return &cpuBackend{}, fmt.Errorf("decoder: metal backend not registered; import github.com/townsendmerino/goinfer/metal and build `-tags metal` (darwin); using cpu")
+	}
+	return nil, fmt.Errorf("decoder: unknown backend %q (have: cpu, webgpu, cuda, metal)", name)
 }
 
 // cpuBackend dispatches the hot matmul to the shared linalg package
