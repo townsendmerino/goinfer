@@ -1,0 +1,85 @@
+# Implement the model × hardware matrix generator (+ freshness gate + README fix)
+
+> Design + rationale: `docs/task-hardware-matrix.md`. This is the build order. The point is
+> to make the "on what hardware" table **generated from the taxonomy and freshness-gated**,
+> so it stops drifting (two cells are stale right now). Everything here is model-free (arch
+> flags only) so it runs in CI. Keep every existing gate green — this is additive.
+
+## 1. Single admission predicate (source of truth)
+
+Add to `decoder/features.go`:
+
+```go
+// ResidentEligible reports whether `backend` runs `a` on its resident (GPU) decode path.
+// The ONE place this is decided — the runtime's residency check and the matrix generator
+// both call it, so the table can never disagree with behavior.
+func ResidentEligible(a *Architecture, backend string) bool {
+    impl, ok := ResidentBackendFeatures[backend]
+    if !ok {
+        return false
+    }
+    return decodeRunnerEligible(a) &&
+        len(missingFeatures(a.residentFeatures(), impl)) == 0
+}
+```
+
+Then **route the runtime's actual residency decision through `ResidentEligible`** (wherever
+`decodeRunnerEligible` + the taxonomy check are currently applied to admit a resident
+backend). This retires the "load-bearing hand-list" risk from the `FeatMoE` flip: the
+own-forward exclusion is now inside one derived predicate. **Verify no behavior change** —
+the full `-tags gpu` / `-tags cuda` / (darwin) `-tags metal` gate suites stay bit-identical
+green. If any resident model changes admission, the refactor changed behavior — stop.
+
+## 2. The generator
+
+Mirror the existing capability-matrix generator (`decoder/capability_matrix_test.go`) —
+reuse its registry walk and its "build a descriptor per family without weights" seam. For
+each registered family × backend in `{cpu, webgpu, cuda, metal}`:
+
+- `cpu` → always `✅` (the reference path; every family runs on CPU).
+- `webgpu` / `cuda` / `metal` → `ResidentEligible(arch, backend)` ? `✅ resident` : `CPU`.
+
+Emit a markdown table (sorted by family, columns CPU · WebGPU · CUDA · Metal) to
+**`docs/hardware-matrix.md`** (or a new section of `capability-matrix.md` if you'd rather
+share the walk). Body is 100% generated. **Curated footnotes** (hand-authored, keyed to
+cells) carry the fit caveats the taxonomy can't know — Metal Mistral-7B > 16 GB unified
+memory; MoE unified-memory-bound. Header line: "every family runs on the pure-Go CPU path;
+GPU columns show resident acceleration with automatic, correctness-guaranteed CPU fallback."
+
+## 3. Freshness gate
+
+`TestHardwareMatrix_fresh` (mirror `TestParityManifest_fresh` / `TestCapabilityMatrix`):
+regenerate in memory, diff vs the committed `docs/hardware-matrix.md`, `t.Fatalf` on drift
+with the "run with -update" hint. `go test ./decoder -run HardwareMatrix -update` rewrites
+it. **Model-free → wire it into CI so a backend-feature change either updates the table or
+turns the build red.** This is the whole point — no more stale cells.
+
+## 4. Break-it-first (prove the gate isn't vacuous)
+
+A test that flips one entry in `ResidentBackendFeatures` (e.g. drop `FeatSlidingWindow` from
+`cuda`), asserts the corresponding generated cell flips `✅ → CPU`, AND asserts
+`TestHardwareMatrix_fresh` would go RED; revert. Same discipline as the parity/NaN gates.
+
+## 5. Fix the README FROM the generator output (not by hand)
+
+The current README coverage table (the "What runs on the GPU" section) has **stale cells**:
+Gemma-3-Metal and MoE-CUDA landed resident this cycle but show `CPU fallback`. Do NOT
+hand-edit them — run the generator and take the authoritative cells from it:
+
+- Replace the hand table with the generated compact slice (popular families × 4 backends),
+  linking to the full `hardware-matrix.md`. Ideally tag registry entries `popular` so the
+  generator emits this slice too (then it's freshness-tested); minimum, add a test that the
+  README slice's cells equal the generated table's for those rows.
+- **Resolve the Gemma-3-Metal ambiguity explicitly and report it:** is Gemma declared in
+  `ResidentBackendFeatures["metal"]` (⇒ `ResidentEligible` true ⇒ `✅ resident`), or is it
+  still *dormant* (features not declared ⇒ `CPU`)? Whatever the predicate says is the truth;
+  if it's dormant pending the ship-gate decision, the cell stays `CPU` and that's a separate
+  call — say which it is in the report back.
+
+## Deliverable
+
+`ResidentEligible` + the runtime routed through it (no behavior change, gates green) → the
+generator → `docs/hardware-matrix.md` → `TestHardwareMatrix_fresh` in CI → the break-it-first
+mutation test → the README slice set from generator output, with the Gemma-3-Metal
+enabled-vs-dormant question answered by the predicate, not by hand. Report the two
+previously-stale cells' now-authoritative values.
