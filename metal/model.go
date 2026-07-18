@@ -621,6 +621,9 @@ func (r *Resident) attnConfirmForTest(resid, kHist, vHist []float32, layer, pos 
 	e := r.q.begin()
 	e.dispatch(r.pRms, 256, 256, r.x, L.preNorm, r.aq, r.aSc, r.uH, r.uEps, r.uAddOne)
 	e.dispatchTG(r.pSABias, qkvRows*32, 256, r.H*2, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv, L.qkvBias, r.uH)
+	if r.qkNorm { // Gemma3/Qwen3: per-head Q/K RMSNorm before RoPE — the injected K is post-QK-norm
+		e.dispatch(r.pQKNorm, (r.nH+r.nKV)*128, 128, r.qkv, L.qNorm, L.kNorm, r.uNH, r.uNKV, r.uHd, r.uNHhd, r.uEps, r.uAddOne)
+	}
 	e.dispatch(r.pRope, r.nH*r.half, 64, r.qkv, L.invf, r.uHd, r.uPos, r.uQtotal, r.uHalf) // Q only; K injected
 	// NO kv_store — K/V are injected.
 	e.dispatch(r.pAttn, r.nH*128, 128, r.qkv, r.kc[layer], r.vc[layer], r.ctx, r.uNH, r.uNKV, r.uHd, r.uNKeys, r.uScale, L.uWindow)
