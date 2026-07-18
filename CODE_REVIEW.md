@@ -90,6 +90,19 @@ Every `PrefillLast` call allocates fresh f16 scratch (`xF`, `normF`, `qkvF`, `ct
 
 **Fix:** preallocate max-size prefill scratch once on the `Resident` (the decode path already does exactly this), or give `Device` a per-buffer release API and free at the end of the call. Extend `close_leak_test` with an N-request RSS gate. Related: `BuildResident`'s error/decline paths also return without `ReleaseAll` (M24).
 
+### C6. `FeatRopeMscale` is derived from layer 0 only — Mellum's YaRN is missed, over-admitting it as resident; and the hand profile vs. the derivation are never cross-checked *(verify)*
+`decoder/features.go:60`; hand profile `decoder/features_test.go:30`; generated matrix `docs/hardware-matrix.md` / `decoder/hardware_matrix_test.go`
+
+`residentFeatures()` derives `FeatRopeMscale` from `a.ropeMscale(0) != 1` — **layer 0 only**. Mellum interleaves sliding/full attention with YaRN on the `full_attention` layers only; its layer 0 is a `sliding_attention`/`default` layer (mscale 1), so the check samples the wrong layer and Mellum's required set omits `yarn-mscale`. Verified: `residentFeatures(representativeConfig("mellum"))` = `[moe per-layer-rope qk-norm sliding-window]`, and `ResidentEligible(mellum, cuda)` / `(mellum, metal)` both return `true`. (`ropeUniform` at `:100` loops all layers to detect that mscale *varies* → `FeatPerLayerRoPE`; the yarn check right beside it does not.)
+
+Two consequences:
+- **Generated matrix over-reports.** `docs/hardware-matrix.md` shows Mellum2 resident on CUDA and Metal — neither declares `FeatRopeMscale`. The feature's own comment says *"(Mellum, long-ctx)"* and `archFeatureProfile["mellum"]` lists `yarn-mscale`, so author intent + hand profile both contradict the derivation. This is why the README's compact table cannot be safely synced to the generated slice yet — one of its cells is wrong.
+- **Potential silent-wrong (the reason for the tag).** If the CUDA/Metal resident path does not apply Mellum's full-layer YaRN `attention_factor` (CUDA's docs note "no yarn-mscale"), a real Mellum2 is admitted resident and runs with the scaling dropped on the full layers — the exact class this taxonomy prevents. Confirm against a real Mellum2 CUDA-vs-CPU run whether it's live or masked by the per-layer-RoPE (`ropeScale`) handling.
+
+**Root gap:** `archFeatureProfile` (hand table, drives `TestResidentAdmission_matrix`) and `residentFeatures()` (derivation, drives the generator + `TestHardwareMatrix_fresh`) are two sources of truth that are **never cross-checked**, so they silently disagree on Mellum and nothing goes red.
+
+**Fix:** derive `FeatRopeMscale` from *any* layer's mscale (`for i … if a.ropeMscale(i) != 1`), not just layer 0; add a test asserting `archFeatureProfile[name] == residentFeatures(representativeConfig(name))` for every registered arch (ties the two sources together — would have caught this, and confirms the qwen2_moe `FeatMoEGatedShared` addition); regenerate `hardware-matrix.md`. The real-Mellum2 check decides *which* artifact was wrong, but the derivation fix + cross-check test is the same either way.
+
 ---
 
 ## 3. Major
@@ -305,6 +318,7 @@ Grouped by area. Each entry: location — issue → fix.
 | Order | Items | Rationale |
 |---|---|---|
 | 1 | C3 + M20 (cap enforcement), M4, M14, M21 | Small diffs, crash/corruption class, no design work |
+| 1b | C6 (yarn-mscale all-layer derive + profile↔derivation cross-check test) | Small taxonomy fix; closes a source-of-truth gap + a silent-wrong-admission risk. Independent of the rest; (verify) the Mellum decline direction against a real checkpoint |
 | 2 | C2 (canSerialize + TiedLMHead), M17 | Closes every silent-garbage `.giw` path; mostly guards |
 | 3 | C1, M10, M11 | One coherent "rewind correctness" change in kvcache/session |
 | 4 | C4, C5, M23, M24 | GPU backend correctness + lifecycle; CUDA tail port is a template for C4 |
