@@ -57,7 +57,12 @@ type KVCache struct {
 
 	keys [][]float32 // per layer, appended [pos*kvDim] (global / append-forever layers)
 	vals [][]float32
-	pos  int // number of positions stored (the next position index)
+	// stride is each global layer's KV width, learned on its first append — the authoritative
+	// per-layer row width. TruncateTo uses it instead of len/pos, which mis-derives the width when
+	// a mid-sweep forward error leaves earlier layers with one extra (ragged) row (M11). 0 for a
+	// KV-shared layer that never appends.
+	stride []int
+	pos    int // number of positions stored (the next position index)
 
 	// rings holds a fixed-W ring buffer for each sliding-window (local) layer;
 	// nil entry = a global layer that append-forevers into keys/vals above. Set by
@@ -152,6 +157,7 @@ func NewKVCache(numLayers, numKVHeads, headDim, window, capHint int) *KVCache {
 		window:    window,
 		keys:      make([][]float32, numLayers),
 		vals:      make([][]float32, numLayers),
+		stride:    make([]int, numLayers),
 	}
 	for l := range numLayers {
 		c.keys[l] = make([]float32, 0, capHint*kvDim)
@@ -273,11 +279,16 @@ func (c *KVCache) Append(layer int, k, v []float32) int {
 	// read (commitBatch), since writing all K first would evict in-batch history.
 	if r := c.rings[layer]; r != nil {
 		r.write(c.pos, k, v) // ring quantizes internally when kvI8
-	} else if c.quant == kvI8 {
-		c.appendQuant(layer, k, v)
 	} else {
-		c.keys[layer] = append(c.keys[layer], k...)
-		c.vals[layer] = append(c.vals[layer], v...)
+		if c.stride[layer] == 0 {
+			c.stride[layer] = len(k) // per-layer KV width, learned on first append (M11)
+		}
+		if c.quant == kvI8 {
+			c.appendQuant(layer, k, v)
+		} else {
+			c.keys[layer] = append(c.keys[layer], k...)
+			c.vals[layer] = append(c.vals[layer], v...)
+		}
 	}
 	// pos advances once per last-layer append so all layers stay in lockstep —
 	// unless manualPos (gemma4), where the caller calls Advance() after the sweep.
@@ -400,42 +411,48 @@ func (c *KVCache) Pos() int { return c.pos }
 // uniform stride: per-layer head_dim / KV-head counts make widths differ between
 // layers, and KV-shared tail layers Append nothing (length 0). Deriving the
 // stride handles both — a shared layer's stride is simply 0, so it stays empty.
-func (c *KVCache) TruncateTo(pos int) {
+// TruncateTo rewinds the cache to hold exactly pos positions and returns whether the rewind was
+// EXACT. A wrapped sliding-window ring (count>w) rewound by more than one position cannot restore
+// the dropped positions — its window slots still physically hold them, and attention reads them as
+// history — so it returns exact=false. Callers reusing a rewound prefix (Session prefix reuse,
+// speculative rollback) MUST cold-prefill on an inexact rewind or produce silently wrong output
+// (C1). Global/int8/MLA layers store every position, so they always rewind exactly.
+func (c *KVCache) TruncateTo(pos int) (exact bool) {
+	exact = true
 	if pos < 0 || pos > c.pos {
-		return
+		return exact // out-of-range no-op is exact
 	}
 	for l := range c.numLayers {
 		if c.mlaLatent != nil { // DeepSeek MLA: reslice the per-layer latent store
-			c.mlaLatent[l] = c.mlaLatent[l][:pos*c.latentDim]
+			c.mlaLatent[l] = c.mlaLatent[l][:min(pos*c.latentDim, len(c.mlaLatent[l]))]
 			continue
 		}
 		if r := c.rings[l]; r != nil {
-			r.truncate(pos) // exactness flag consumed by the rewind rule (Inc 2)
-			continue
-		}
-		if c.quant == kvI8 {
-			// int8 global: reslice the int8 rows + the per-(position,head) scales,
-			// each strided per-layer (len/pos), so per-layer widths stay correct.
-			perPos, perScale := 0, 0
-			if c.pos > 0 {
-				perPos = len(c.keysQ[l]) / c.pos
-				perScale = len(c.keyScale[l]) / c.pos
+			if !r.truncate(pos) {
+				exact = false // wrapped ring rewound >1 position: window holds dropped K/V (C1)
 			}
-			c.keysQ[l] = c.keysQ[l][:pos*perPos]
-			c.valsQ[l] = c.valsQ[l][:pos*perPos]
-			c.keyScale[l] = c.keyScale[l][:pos*perScale]
-			c.valScale[l] = c.valScale[l][:pos*perScale]
 			continue
 		}
-		perPos := 0
-		if c.pos > 0 {
-			perPos = len(c.keys[l]) / c.pos // == this layer's width (0 for KV-shared)
+		// Global layers: truncate by the per-layer width recorded at first append (M11 — not
+		// len/pos, which mis-slices a ragged layer left by a mid-sweep forward error). min guards
+		// a KV-shared (stride 0) or shorter-than-pos layer.
+		st := c.stride[l]
+		if c.quant == kvI8 {
+			nKV := 0
+			if c.headDim > 0 {
+				nKV = st / c.headDim
+			}
+			c.keysQ[l] = c.keysQ[l][:min(pos*st, len(c.keysQ[l]))]
+			c.valsQ[l] = c.valsQ[l][:min(pos*st, len(c.valsQ[l]))]
+			c.keyScale[l] = c.keyScale[l][:min(pos*nKV, len(c.keyScale[l]))]
+			c.valScale[l] = c.valScale[l][:min(pos*nKV, len(c.valScale[l]))]
+			continue
 		}
-		n := pos * perPos
-		c.keys[l] = c.keys[l][:n]
-		c.vals[l] = c.vals[l][:n]
+		c.keys[l] = c.keys[l][:min(pos*st, len(c.keys[l]))]
+		c.vals[l] = c.vals[l][:min(pos*st, len(c.vals[l]))]
 	}
 	c.pos = pos
+	return exact
 }
 
 // advanceTo sets the stored-position count directly — the batched prefill's

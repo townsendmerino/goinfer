@@ -65,6 +65,32 @@ func (s *Session) Reset() {
 	s.tokens = s.tokens[:0]
 }
 
+// rewindForReuse rewinds the cache to the longest reusable prefix shared with prompt and returns
+// how many tokens to reuse. On an INEXACT rewind — a wrapped sliding-window ring can't restore the
+// positions it dropped (C1) — it Resets and returns 0 (cold prefill), so prefix reuse never reads
+// stale history. Callers must skip it (and reconcile) for an empty prompt, so a rejected call
+// leaves a warm session untouched.
+func (s *Session) rewindForReuse(prompt []int) int {
+	matched := max(min(commonPrefixLen(s.tokens, prompt), len(prompt)-1), 0)
+	if !s.cache.TruncateTo(matched) {
+		s.cache.TruncateTo(0) // drop everything; a full cold prefill re-populates the ring slots
+		return 0
+	}
+	return matched
+}
+
+// reconcile sets s.tokens to EXACTLY what the cache holds after a generation. seq mirrors the cache
+// (prompt + each committed token); on a prefill/forward error the cache may hold fewer positions
+// than seq claims, so clamp — otherwise the next call "reuses" KV that was never written and
+// prefills at the wrong position (M10).
+func (s *Session) reconcile(seq []int) {
+	if p := s.cache.Pos(); p < len(seq) {
+		seq = seq[:p]
+	}
+	s.tokens = seq
+	s.cache.TruncateTo(len(seq))
+}
+
 // Generate is Model.Generate with cross-call KV reuse. It rewinds the cache to
 // the longest token prefix shared with the session's current state, prefills
 // only the divergent suffix of prompt, decodes, and leaves the cache holding
@@ -74,27 +100,29 @@ func (s *Session) Generate(ctx context.Context, prompt []int, maxTokens int, sp 
 	out := make(chan int)
 	g := &Generation{}
 
-	// Longest shared token prefix → reuse its KV. Keep at least one token to
-	// prefill (the seed logits come from re-running the last prompt token), so
-	// cap reuse at len(prompt)-1 even on an exact-prompt repeat. matched falls to
-	// 0 on an empty prompt; generateInto then reports the empty-prompt error.
-	matched := max(min(commonPrefixLen(s.tokens, prompt), len(prompt)-1), 0)
-	s.cache.TruncateTo(matched)
+	// Longest shared token prefix → reuse its KV (cold-prefill on an inexact rewind). An empty
+	// prompt is a generateInto error: don't touch the cache (rewind/reconcile), so a warm session
+	// survives a rejected call.
+	matched := 0
+	if len(prompt) > 0 {
+		matched = s.rewindForReuse(prompt)
+	}
 
-	// After prefill the cache holds the whole prompt; commit appends each
-	// generated token as its forward lands it in the cache, so seq mirrors the
-	// cache exactly — including a clean rollback if a forward errors mid-stream.
+	// After prefill the cache holds the whole prompt; commit appends each generated token as its
+	// forward lands it in the cache, so seq mirrors the cache exactly — including a clean rollback
+	// if a forward errors mid-stream.
 	seq := append([]int(nil), prompt...)
 	commit := func(id int) { seq = append(seq, id) }
 
 	go func() {
 		defer close(out)
 		s.m.generateInto(ctx, out, g, s.cache, prompt, matched, maxTokens, sp, commit)
-		// Bookkeeping runs before the deferred close, so a consumer that observes
-		// the channel close (and then starts the next request) always sees a
-		// reconciled session: tokens == what the cache holds, no partial position.
-		s.tokens = seq
-		s.cache.TruncateTo(len(seq))
+		// Bookkeeping runs before the deferred close, so a consumer that observes the channel close
+		// (and then starts the next request) always sees a reconciled session: tokens == what the
+		// cache holds, no partial position.
+		if len(prompt) > 0 {
+			s.reconcile(seq)
+		}
 	}()
 	return out, g
 }
@@ -137,16 +165,14 @@ func (s *Session) GenerateGrammarSpeculative(ctx context.Context, prompt []int, 
 	stats := &SpecStats{}
 	g := &Generation{Spec: stats}
 
-	matched := max(min(commonPrefixLen(s.tokens, prompt), len(prompt)-1), 0)
-	s.cache.TruncateTo(matched)
+	matched := s.rewindForReuse(prompt) // cold-prefill on an inexact rewind (C1)
 	seq := append([]int(nil), prompt...)
 	commit := func(id int) { seq = append(seq, id) }
 
 	go func() {
 		defer close(out)
 		s.m.genGrammarInto(ctx, out, g, stats, mask, drafter, prompt, matched, maxTokens, K, sp, nil, s.cache, commit)
-		s.tokens = seq
-		s.cache.TruncateTo(len(seq))
+		s.reconcile(seq)
 	}()
 	return out, g, nil
 }
@@ -159,20 +185,18 @@ func (s *Session) genSpec(ctx context.Context, prompt []int, maxTokens int, draf
 	stats := &SpecStats{}
 	g := &Generation{Spec: stats}
 
-	matched := max(min(commonPrefixLen(s.tokens, prompt), len(prompt)-1), 0)
-	s.cache.TruncateTo(matched)
+	matched := s.rewindForReuse(prompt) // cold-prefill on an inexact rewind (C1)
 	seq := append([]int(nil), prompt...)
 	commit := func(id int) { seq = append(seq, id) }
 
 	go func() {
 		defer close(out)
 		s.m.genNgramInto(ctx, out, g, stats, drafter, prompt, matched, maxTokens, K, sp, nil, ad, s.cache, commit)
-		// Reconcile: seq == prompt + every token committed to the cache, so the
-		// session's token list mirrors the cache exactly for the next call's prefix
-		// match (the final pending token was emitted but not committed — one behind,
-		// same as a fresh prefill would leave it).
-		s.tokens = seq
-		s.cache.TruncateTo(len(seq))
+		// Reconcile: seq == prompt + every token committed to the cache, so the session's token
+		// list mirrors the cache exactly for the next call's prefix match — clamped to what the
+		// cache actually holds if a forward errored (the final pending token was emitted but not
+		// committed — one behind, same as a fresh prefill would leave it).
+		s.reconcile(seq)
 	}()
 	return out, g, nil
 }
