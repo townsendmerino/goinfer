@@ -40,7 +40,7 @@ func TestParity_NaNCosineFailsTheGate(t *testing.T) {
 	//    (minCos 1.0, full argmax parity) — proving the NaN check is what fails it, nothing else.
 	rec := &testing.T{}
 	perfectButNaN := parityStats{steps: 24, exact: 24, minCos: 1.0, nan: 1}
-	assertParity(rec, "forced-nan", perfectButNaN)
+	assertParity(rec, "forced-nan", perfectButNaN, 0.95)
 	if !rec.Failed() {
 		t.Error("assertParity PASSED a run with a NaN cosine and otherwise-perfect stats — the gate is vacuous")
 	}
@@ -48,7 +48,7 @@ func TestParity_NaNCosineFailsTheGate(t *testing.T) {
 	// 4. Control: the same perfect record WITHOUT the NaN must pass, so the failure above is the
 	//    NaN and not some unrelated assertion.
 	recOK := &testing.T{}
-	assertParity(recOK, "clean", parityStats{steps: 24, exact: 24, minCos: 1.0})
+	assertParity(recOK, "clean", parityStats{steps: 24, exact: 24, minCos: 1.0}, 0.95)
 	if recOK.Failed() {
 		t.Error("assertParity failed a clean perfect record — the NaN guard has a false positive")
 	}
