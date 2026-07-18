@@ -127,9 +127,65 @@ func TestGemmaSublayer_MetalContribution(t *testing.T) {
 			t.Fatalf("cpu walk: %v", err)
 		}
 	}
-	tAttn, tMLP, serr := m8w.ForwardSubCapture(seed[pos], cache)
+	tAttn, tMLP, tCtx, serr := m8w.ForwardSubCapture(seed[pos], cache)
 	if serr != nil {
 		t.Skipf("ForwardSubCapture: %v", serr)
+	}
+
+	// Backend-independent int4 context reference (== CUDA-int4 per the CUDA box: their CUDA-int4
+	// and CPU-int4 contexts agree to ~3 decimals). This is THE discriminator for candidate 2 vs 3:
+	// Metal's r.ctx (attn output, pre-o-proj) overlaid on goinfer's int4 context.
+	//   Metal ≈ CPU-int4 ctx ⇒ Metal's attention matches goinfer ⇒ the o-proj divergence is WEIGHTS
+	//     (candidate 3, resurrect the f32-source weight compare).
+	//   Metal diverges from CPU-int4 ctx ⇒ Metal has its own ATTENTION-path bug (candidate 2).
+	m4, e4 := decoder.Load(path, decoder.Options{Quant: "int4"})
+	if e4 != nil {
+		t.Fatalf("load int4 ctx reference: %v", e4)
+	}
+	c4 := decoder.NewKVCache(nL, nKV, hd, 0, 1024)
+	for i := 0; i < pos; i++ {
+		if _, err := m4.ForwardForTest(seed[i], c4); err != nil {
+			t.Fatalf("int4 walk: %v", err)
+		}
+	}
+	_, _, i4Ctx, e4c := m4.ForwardSubCapture(seed[pos], c4)
+	if e4c != nil {
+		t.Skipf("int4 ForwardSubCapture: %v", e4c)
+	}
+
+	// The CUDA box's top-magnitude qDim indices (f32 → CUDA-int4) at L31-33, to overlay Metal's.
+	cudaIdx := map[int][]int{31: {1287, 824, 568, 1031}, 32: {770, 814, 794, 952}, 33: {1903, 1647, 1910, 1884}}
+	cosCtx := func(a, b []float32) float64 {
+		var dot, na, nb float64
+		for i := range a {
+			dot += float64(a[i]) * float64(b[i])
+			na += float64(a[i]) * float64(a[i])
+			nb += float64(b[i]) * float64(b[i])
+		}
+		return dot / (math.Sqrt(na)*math.Sqrt(nb) + 1e-30)
+	}
+	// WHERE does Metal's context first break? Per-layer cos(Metal, int4-ref) across the whole
+	// trunk: a break from layer 0 = a per-layer attention-op bug (RoPE base / window / QKV); a
+	// clean early trunk that degrades late = accumulated drift feeding attention.
+	t.Logf("=== per-layer cos(Metal ctx, int4-ref ctx) — where the attention context first breaks ===")
+	for l := 0; l < nL; l++ {
+		tag := "global"
+		if m4.LayerIsLocalResident(l) {
+			tag = "local "
+		}
+		t.Logf("  L%2d [%s]: cos(Metal,int4-ref)=%.4f", l, tag, cosCtx(ctx[l], i4Ctx[l]))
+	}
+
+	t.Logf("=== PRE-O-PROJ CONTEXT: Metal vs int4-ref (==CUDA-int4) vs f32-truth ===")
+	for l := 31; l < nL; l++ {
+		mc, i4c, fc := ctx[l], i4Ctx[l], tCtx[l]
+		t.Logf("L%2d | cos(Metal,f32)=%.4f  cos(int4-ref,f32)=%.4f  cos(Metal,int4-ref)=%.4f",
+			l, cosCtx(mc, fc), cosCtx(i4c, fc), cosCtx(mc, i4c))
+		for _, idx := range cudaIdx[l] {
+			if idx < len(mc) {
+				t.Logf("     qDim %4d: metal=%+8.3f  int4-ref=%+8.3f  f32-truth=%+8.3f", idx, mc[idx], i4c[idx], fc[idx])
+			}
+		}
 	}
 
 	for _, ch := range []int{1723, 227} {
