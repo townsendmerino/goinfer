@@ -77,6 +77,22 @@ func TestGemmaConfirmer_MatchedInput(t *testing.T) {
 		}
 		t.Logf("BOS input embedding: |emb|=%.2f (if ~12491 the massive activation is in the embedding and L0 keeps it; if ~1461 L0 must build it)", math.Sqrt(s))
 	}
+	// L0 attn-vs-mlp contribution at the BOS (CUDA box: attn grows it to ~642, MLP builds ~12583 at
+	// ch 443 = 96% of the massive activation). Confirm Metal's MLP contribution is ~10x too small.
+	{
+		sa, sm, smPre, _, _ := r.forwardSubCaptureForTest(emb0, 0)
+		l2 := func(v []float32) float64 {
+			var s float64
+			for _, x := range v {
+				s += float64(x) * float64(x)
+			}
+			return math.Sqrt(s)
+		}
+		t.Logf("L0 BOS: attn ch443=%.1f | mlp POST-norm ch443=%.1f | mlp PRE-norm(down out) ch443=%.1f (CUDA f32 post~12583)",
+			sa[0][443], sm[0][443], smPre[0][443])
+		t.Logf("  compute-vs-norm: if PRE-norm down out is already large -> MLP compute bug; if near-zero & post-norm blows it up -> sandwich-norm RMS (|mlpPre|=%.1f |mlp|=%.1f)",
+			l2(smPre[0]), l2(sm[0]))
+	}
 	mResid0 := r.forwardTrunkForTest(emb0, 0, 1)
 	{
 		var dot, na, nb float64

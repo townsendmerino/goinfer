@@ -546,9 +546,9 @@ func (r *Resident) forwardTrunkForTest(emb []float32, pos, nLayers int) []float3
 // exactly the two sublayer contributions the CUDA box traced against f32 truth. It mirrors
 // encodeTrunkInto's sandwich path dispatch-for-dispatch, but flushes after each sublayer norm to
 // read r.oO / r.dO before the add consumes them. Sandwich (Gemma) only; nil otherwise.
-func (r *Resident) forwardSubCaptureForTest(emb []float32, pos int) (attn, mlp, ctx, cqDeq [][]float32) {
+func (r *Resident) forwardSubCaptureForTest(emb []float32, pos int) (attn, mlp, mlpPre, ctx, cqDeq [][]float32) {
 	if !r.sandwich {
-		return nil, nil, nil, nil
+		return nil, nil, nil, nil, nil
 	}
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -595,6 +595,10 @@ func (r *Resident) forwardSubCaptureForTest(emb []float32, pos int) (attn, mlp, 
 		e.dispatchTG(r.pSA, (2*r.I)*32, 256, r.H*2, L.guW, L.guS, r.mq, r.mSc, r.gu, r.uH)
 		e.dispatch(r.pSw, 256, 256, r.gu, r.gu.At(r.I*4), r.dq, r.dSc, r.uI, r.uAct)
 		e.dispatch(r.pGemv, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.dO, r.uI)
+		e.end()
+		mlpPre = append(mlpPre, grabD()) // dO = down output BEFORE post-MLP sandwich norm (compute)
+
+		e = r.q.begin()
 		e.dispatch(r.pRmsF32, 256, 256, r.dO, L.postMLPNorm, r.uH, r.uEps, r.uAddOne)
 		e.end()
 		mlp = append(mlp, grabD()) // dO now = MLP contribution (post-norm, pre-add)
@@ -603,7 +607,7 @@ func (r *Resident) forwardSubCaptureForTest(emb []float32, pos int) (attn, mlp, 
 		e.dispatch(r.pRes, r.H, 256, r.x, r.dO)
 		e.end()
 	}
-	return attn, mlp, ctx, cqDeq
+	return attn, mlp, mlpPre, ctx, cqDeq
 }
 
 // attnConfirmForTest is the Metal half of the matched-input confirmer (CUDA box's

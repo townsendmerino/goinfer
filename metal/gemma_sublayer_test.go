@@ -55,7 +55,7 @@ func TestGemmaSublayer_MetalContribution(t *testing.T) {
 	for i := 0; i < pos; i++ {
 		r.forwardTrunkForTest(m8.EmbedResidentForTest(seed[i]), i, r.nL)
 	}
-	attn, mlp, ctx, cqDeq := r.forwardSubCaptureForTest(m8.EmbedResidentForTest(seed[pos]), pos)
+	attn, mlp, _, ctx, cqDeq := r.forwardSubCaptureForTest(m8.EmbedResidentForTest(seed[pos]), pos)
 	if attn == nil {
 		t.Fatal("forwardSubCaptureForTest returned nil (not sandwich?)")
 	}

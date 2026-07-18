@@ -51,7 +51,7 @@ func TestGemma_Int4DirectContext(t *testing.T) {
 	for i := 0; i < pos; i++ {
 		r.forwardTrunkForTest(m4.EmbedResidentForTest(seed[i]), i, r.nL)
 	}
-	_, _, mctx, _ := r.forwardSubCaptureForTest(m4.EmbedResidentForTest(seed[pos]), pos)
+	_, _, _, mctx, _ := r.forwardSubCaptureForTest(m4.EmbedResidentForTest(seed[pos]), pos)
 	if mctx == nil {
 		t.Fatal("forwardSubCaptureForTest nil")
 	}
