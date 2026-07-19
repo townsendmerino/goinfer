@@ -92,6 +92,75 @@ func TestMetal_CloseFreesMemory(t *testing.T) {
 	}
 }
 
+// TestMetal_PrefillScratchDoesNotLeak is the C5 gate: PrefillLast used to allocate ~24 per-call
+// scratch/uniform buffers onto the device ledger and free NONE until Close, so every request
+// leaked ~100–150 MB (7B) of unified memory — a ratchet, since cmd/serve calls PrefillLast once
+// per request. The mustBuf OOM panic that eventually followed is recovered only on BuildResident's
+// path, not prefill's, so it killed serve. The existing close_leak tests pin load/Forward/Close
+// cycles, not per-REQUEST prefill growth — which is why this class was invisible.
+//
+// Signal (same as the sibling gates): run many PrefillLast calls against ONE resident model and
+// watch the trajectory. Per-call release → flat; the old leak → a staircase of ~24 buffers/call.
+func TestMetal_PrefillScratchDoesNotLeak(t *testing.T) {
+	if testing.Short() {
+		t.Skip("loads a real model and runs many prefills")
+	}
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	path := os.ExpandEnv("$HOME/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf")
+	if _, err := os.Stat(path); err != nil {
+		t.Skipf("no checkpoint at %s", path)
+	}
+	m, err := decoder.Load(path, decoder.Options{Quant: "int8int8"})
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	r, err := BuildResident(m)
+	if err != nil {
+		t.Fatalf("BuildResident: %v", err)
+	}
+	defer r.Close()
+	if !r.prefillOK {
+		t.Skip("model has no dense-prefill shape (nothing to leak here)")
+	}
+
+	// A 128-token prompt: big enough that a leaked call's scratch (guF alone is Mpad*2I*2) is a
+	// clear multi-MB step, so 30 calls would leak >100 MB if the release regressed.
+	const M = 128
+	embs := make([][]float32, M)
+	for i := range embs {
+		e := make([]float32, r.H)
+		for j := range e {
+			e[j] = 0.02 * float32((j%7)-3) // small non-zero; output is not checked, only memory
+		}
+		embs[i] = e
+	}
+
+	r.PrefillLast(embs, 0) // warm: pays library compile + first scratch alloc
+	runtime.GC()
+	base := rssMB(t)
+	const iters = 30
+	peak := base
+	for i := 0; i < iters; i++ {
+		r.PrefillLast(embs, 0)
+		if got := rssMB(t); got > peak {
+			peak = got
+		}
+	}
+	runtime.GC()
+	end := rssMB(t)
+	t.Logf("prefill trajectory: base %d MB → peak %d MB → end %d MB (growth %+d MB over %d prefills)",
+		base, peak, end, end-base, iters)
+
+	// Fixed: flat (each call frees its own scratch). Old: ~24 buffers × ~4.7 MB/call × 30 ≈ 140 MB.
+	// 60 MB threshold sits well above UMA/allocator jitter and well below the pre-fix ratchet.
+	if grow := end - base; grow > 60 {
+		t.Errorf("PREFILL LEAK: rss grew %+d MB over %d PrefillLast calls — per-call scratch is not "+
+			"being released (a staircase, not flat)", grow, iters)
+	}
+}
+
 // TestMetal_CloseWithSecondModelAlive is the condition the Linux box warned about: their first
 // CUDA fix looked correct under a single load/close cycle and was NOT — the bug only showed with
 // a second context/model alive. Two hazards it covers that a sequential test cannot:

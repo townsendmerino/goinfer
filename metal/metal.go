@@ -214,6 +214,27 @@ func (d *Device) ReleaseAll() {
 	}
 }
 
+// releaseBuf releases ONE MTLBuffer and removes it from the ledger, so a later ReleaseAll won't
+// double-free it (C5). For per-call scratch that must not accumulate on the ledger until Close —
+// the caller MUST ensure no in-flight GPU work references it (PrefillLast commits+waits before its
+// deferred releases run). O(n) swap-remove scan of the ledger: fine for coarse per-request scratch,
+// never a per-token path. A zero id (empty Buffer) is a no-op.
+func (d *Device) releaseBuf(b Buffer) {
+	if b.id == 0 {
+		return
+	}
+	d.mu.Lock()
+	for i, id := range d.allocs {
+		if id == b.id {
+			d.allocs[i] = d.allocs[len(d.allocs)-1]
+			d.allocs = d.allocs[:len(d.allocs)-1]
+			break
+		}
+	}
+	d.mu.Unlock()
+	b.id.Send(selRelease)
+}
+
 func (d *Device) NewBufferFloats(data []float32) Buffer {
 	id := d.id.Send(selNewBufferBytes, unsafe.Pointer(&data[0]), uintptr(len(data)*4), uintptr(0))
 	runtime.KeepAlive(data)

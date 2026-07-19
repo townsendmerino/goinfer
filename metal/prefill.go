@@ -338,6 +338,24 @@ func (r *Resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 	m0, m1, m2 := d.NewBufferU32(0), d.NewBufferU32(1), d.NewBufferU32(2)
 	dummyBias := d.NewBufferFloats(make([]float32, 1))
 
+	// C5: every buffer above is per-call scratch/uniform allocated onto the device ledger, which
+	// ReleaseAll frees only at Close — so before this fix each PrefillLast leaked ~24 buffers
+	// (~100–150 MB for a 7B; guF alone is Mpad*2I*2), ratcheting until the mustBuf OOM panic killed
+	// serve (that panic is recovered only on the BuildResident path, not here). e.end() below
+	// commits AND waits, so the GPU is finished with them by the time this returns — release each
+	// at end of call. (r.uH / r.uKvDim / r.uHd are Resident-owned and reused — deliberately NOT in
+	// this list; releasing them would corrupt the decode path.)
+	scratch := []Buffer{
+		xF, normF, qkvF, ctxF, guF, dqF, posB,
+		uM, uI, u2I, uQkv, uQDim, uStride, uKOff, uVOff, uStartPos,
+		uTotalQ, uTotalK, uBase0, uBaseK, m0, m1, m2, dummyBias,
+	}
+	defer func() {
+		for _, b := range scratch {
+			d.releaseBuf(b)
+		}
+	}()
+
 	// gemm grid helper: numRblk×(N/8) simdgroups, rounded up to a full tg (256 threads).
 	gg := func(N int) (int, int) {
 		numRblk := (Mpad/8 + 3) / 4 // RPS=4

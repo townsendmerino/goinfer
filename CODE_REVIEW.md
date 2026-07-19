@@ -92,6 +92,8 @@ Every `PrefillLast` call allocates fresh f16 scratch (`xF`, `normF`, `qkvF`, `ct
 
 **Fix:** preallocate max-size prefill scratch once on the `Resident` (the decode path already does exactly this), or give `Device` a per-buffer release API and free at the end of the call. Extend `close_leak_test` with an N-request RSS gate. Related: `BuildResident`'s error/decline paths also return without `ReleaseAll` (M24).
 
+> **Status (OOA #1, Mac, verified on-device): DONE.** Took the per-buffer-release option: `Device.releaseBuf` (release + swap-remove from the ledger so `ReleaseAll` can't double-free), and `PrefillLast` now collects its ~24 per-call scratch/uniform buffers and `defer`-releases them (the Resident-owned `uH`/`uKvDim`/`uHd` are excluded). Safe because `e.end()` commits AND waits, so the GPU is finished with the scratch before the deferred releases run — GPU work is byte-identical, only buffer lifetime changed (all prefill parity gates stay green). Gated by `TestMetal_PrefillScratchDoesNotLeak` (30 prefills, flat RSS); break-it-first confirmed it catches the leak (+136 MB when the release is disabled).
+
 ### C6. `FeatRopeMscale` is derived from layer 0 only — Mellum's YaRN is missed, over-admitting it as resident; and the hand profile vs. the derivation are never cross-checked *(verify)*
 `decoder/features.go:60`; hand profile `decoder/features_test.go:30`; generated matrix `docs/hardware-matrix.md` / `decoder/hardware_matrix_test.go`
 
