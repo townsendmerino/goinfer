@@ -68,7 +68,10 @@ func (lm *loadedModel) visionPrompt(system string, turns []chat.Turn, img imageR
 	}
 	n := lm.vproj.MMTokens()
 	turns[idx].Content = multimodal.Gemma3ImageBlock(n) + "\n" + turns[idx].Content
-	ids := lm.encode(lm.tmpl.Render(system, turns))
+	ids, err := lm.encode(lm.tmpl.Render(system, turns))
+	if err != nil {
+		return visionInput{}, fmt.Errorf("encode: %w", err)
+	}
 	imgPos, imgLen := multimodal.FindImageRun(ids, lm.vimgTok)
 	if imgLen != n {
 		return visionInput{}, fmt.Errorf("image placeholder run = %d soft tokens, want %d (tokenizer/template mismatch)", imgLen, n)
@@ -93,7 +96,10 @@ func (lm *loadedModel) qwenVisionPrompt(system string, turns []chat.Turn, idx in
 	}
 	n := multimodal.QwenMergedTokens(grid, lm.qwenMerge)
 	turns[idx].Content = multimodal.QwenImageBlock(n) + "\n" + turns[idx].Content
-	ids := lm.encode(lm.tmpl.Render(system, turns))
+	ids, err := lm.encode(lm.tmpl.Render(system, turns))
+	if err != nil {
+		return visionInput{}, fmt.Errorf("encode: %w", err)
+	}
 	imgPos, imgLen := multimodal.FindImageRun(ids, lm.qwenImgTok)
 	if imgLen != n {
 		return visionInput{}, fmt.Errorf("image placeholder run = %d pads, want %d (template mismatch)", imgLen, n)
@@ -147,15 +153,24 @@ func (s *server) serveVisionChat(w http.ResponseWriter, r *http.Request, req cha
 			return
 		}
 		sseSend(w, f, chatChunk(id, created, lm.name, delta{Role: "assistant"}, nil))
-		finish, _, _ := lm.driveVL(r.Context(), gr, vi, func(t string) {
+		finish, _, _, gerr := lm.driveVL(r.Context(), gr, vi, func(t string) {
 			sseSend(w, f, chatChunk(id, created, lm.name, delta{Content: t}, nil))
 		})
+		if gerr != nil {
+			sseErr(w, f, "generation failed: "+gerr.Error())
+			sseDone(w, f)
+			return
+		}
 		sseSend(w, f, chatChunk(id, created, lm.name, delta{}, &finish))
 		sseDone(w, f)
 		return
 	}
 	var sb strings.Builder
-	finish, nComp, _ := lm.driveVL(r.Context(), gr, vi, func(t string) { sb.WriteString(t) })
+	finish, nComp, _, gerr := lm.driveVL(r.Context(), gr, vi, func(t string) { sb.WriteString(t) })
+	if gerr != nil {
+		writeServerErr(w, "generation failed: "+gerr.Error())
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"id": id, "object": "chat.completion", "created": created, "model": lm.name,
 		"choices": []any{map[string]any{
@@ -221,19 +236,28 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 			"type": "content_block_start", "index": 0,
 			"content_block": map[string]any{"type": "text", "text": ""},
 		})
-		finish, nComp, stopSeq := lm.driveVL(r.Context(), gr, vi, func(t string) {
+		finish, nComp, stopSeq, gerr := lm.driveVL(r.Context(), gr, vi, func(t string) {
 			anthropicEvent(w, f, "content_block_delta", map[string]any{
 				"type": "content_block_delta", "index": 0,
 				"delta": map[string]any{"type": "text_delta", "text": t},
 			})
 		})
+		if gerr != nil {
+			anthropicEvent(w, f, "content_block_stop", map[string]any{"type": "content_block_stop", "index": 0})
+			anthropicStreamErr(w, f, "generation failed: "+gerr.Error())
+			return
+		}
 		anthropicEvent(w, f, "content_block_stop", map[string]any{"type": "content_block_stop", "index": 0})
 		reason, seq := anthropicStopReason(finish, stopSeq)
 		anthropicMessageEnd(w, f, reason, seq, nComp)
 		return
 	}
 	var sb strings.Builder
-	finish, nComp, stopSeq := lm.driveVL(r.Context(), gr, vi, func(t string) { sb.WriteString(t) })
+	finish, nComp, stopSeq, gerr := lm.driveVL(r.Context(), gr, vi, func(t string) { sb.WriteString(t) })
+	if gerr != nil {
+		writeAnthropicErr(w, http.StatusInternalServerError, "api_error", "generation failed: "+gerr.Error())
+		return
+	}
 	reason, seq := anthropicStopReason(finish, stopSeq)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"id": id, "type": "message", "role": "assistant", "model": lm.name,

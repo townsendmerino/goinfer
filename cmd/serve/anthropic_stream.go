@@ -31,6 +31,15 @@ func anthropicEvent(w http.ResponseWriter, f http.Flusher, event string, v any) 
 	f.Flush()
 }
 
+// anthropicStreamErr emits an Anthropic `error` event mid-stream, when a
+// generation fails after message_start has already been sent (200, headers
+// flushed — no status code left to set). M1.
+func anthropicStreamErr(w http.ResponseWriter, f http.Flusher, msg string) {
+	anthropicEvent(w, f, "error", map[string]any{
+		"type": "error", "error": map[string]any{"type": "api_error", "message": msg},
+	})
+}
+
 // streamMessages runs the Anthropic SSE state machine: message_start, a ping,
 // the content block(s), message_delta (stop reason + final usage), message_stop.
 // Text streams live (reusing drive's completeUTF8 holdback); a tool call is
@@ -63,12 +72,17 @@ func (s *server) streamMessages(w http.ResponseWriter, r *http.Request, lm *load
 		"type": "content_block_start", "index": 0,
 		"content_block": map[string]any{"type": "text", "text": ""},
 	})
-	finish, nComp, _, stopSeq := lm.drive(r.Context(), gr, func(t string) {
+	finish, nComp, _, stopSeq, gerr := lm.drive(r.Context(), gr, func(t string) {
 		anthropicEvent(w, f, "content_block_delta", map[string]any{
 			"type": "content_block_delta", "index": 0,
 			"delta": map[string]any{"type": "text_delta", "text": t},
 		})
 	})
+	if gerr != nil {
+		anthropicEvent(w, f, "content_block_stop", map[string]any{"type": "content_block_stop", "index": 0})
+		anthropicStreamErr(w, f, "generation failed: "+gerr.Error())
+		return
+	}
 	anthropicEvent(w, f, "content_block_stop", map[string]any{"type": "content_block_stop", "index": 0})
 	reason, seq := anthropicStopReason(finish, stopSeq)
 	anthropicMessageEnd(w, f, reason, seq, nComp)
@@ -79,7 +93,11 @@ func (s *server) streamMessages(w http.ResponseWriter, r *http.Request, lm *load
 // call. When no call is parsed it degrades to a single text block.
 func (s *server) streamMessagesTools(w http.ResponseWriter, r *http.Request, f http.Flusher, lm *loadedModel, gr genRequest) {
 	var sb strings.Builder
-	finish, nComp, _, stopSeq := lm.drive(r.Context(), gr, func(t string) { sb.WriteString(t) })
+	finish, nComp, _, stopSeq, gerr := lm.drive(r.Context(), gr, func(t string) { sb.WriteString(t) })
+	if gerr != nil {
+		anthropicStreamErr(w, f, "generation failed: "+gerr.Error())
+		return
+	}
 	calls, lead := lm.tmpl.ParseToolCalls(sb.String())
 
 	if len(calls) == 0 { // model declined to call: one text block with the output

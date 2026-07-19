@@ -29,7 +29,12 @@ func (s *server) handleChatTools(w http.ResponseWriter, r *http.Request, req cha
 		tools[i] = chat.Tool{Name: t.Function.Name, Description: t.Function.Description, Parameters: t.Function.Parameters}
 	}
 	system, turns := messagesToTurns(req.Messages)
-	gr, err := lm.prepare(req.sampling, lm.encode(lm.tmpl.RenderTools(system, turns, tools)))
+	ids, err := lm.encode(lm.tmpl.RenderTools(system, turns, tools))
+	if err != nil {
+		writeServerErr(w, "encode: "+err.Error())
+		return
+	}
+	gr, err := lm.prepare(req.sampling, ids)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
@@ -57,7 +62,11 @@ func (s *server) handleChatTools(w http.ResponseWriter, r *http.Request, req cha
 
 	// Tool decisions need the whole output, so buffer (even when streaming).
 	var sb strings.Builder
-	finish, nComp, _, _ := lm.drive(r.Context(), gr, func(t string) { sb.WriteString(t) })
+	finish, nComp, _, _, gerr := lm.drive(r.Context(), gr, func(t string) { sb.WriteString(t) })
+	if gerr != nil { // headers not yet sent (SSE starts below), so a 500 is still valid for both modes
+		writeServerErr(w, "generation failed: "+gerr.Error())
+		return
+	}
 	calls, lead := lm.tmpl.ParseToolCalls(sb.String())
 
 	msg := map[string]any{"role": "assistant"}

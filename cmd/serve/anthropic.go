@@ -408,6 +408,7 @@ func (s *server) handleMessages(w http.ResponseWriter, r *http.Request) {
 	toolsActive := len(req.Tools) > 0 && mode != "none"
 	var tools []chat.Tool
 	var gr genRequest
+	var ids []int
 	var err error
 	if toolsActive {
 		if lm.tmpl == nil || !lm.tmpl.SupportsTools() {
@@ -415,11 +416,15 @@ func (s *server) handleMessages(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		tools = anthropicTools(req.Tools)
-		gr, err = lm.prepare(req.toSampling(), lm.encode(lm.tmpl.RenderTools(system, turns, tools)))
+		ids, err = lm.encode(lm.tmpl.RenderTools(system, turns, tools))
 	} else {
-		gr, err = lm.prepare(req.toSampling(), lm.promptFor(system, turns))
+		ids, err = lm.promptFor(system, turns)
 	}
 	if err != nil {
+		writeAnthropicErr(w, http.StatusInternalServerError, "api_error", "encode: "+err.Error())
+		return
+	}
+	if gr, err = lm.prepare(req.toSampling(), ids); err != nil {
 		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return
 	}
@@ -442,7 +447,11 @@ func (s *server) handleMessages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var sb strings.Builder
-	finish, nComp, _, stopSeq := lm.drive(r.Context(), gr, func(t string) { sb.WriteString(t) })
+	finish, nComp, _, stopSeq, gerr := lm.drive(r.Context(), gr, func(t string) { sb.WriteString(t) })
+	if gerr != nil {
+		writeAnthropicErr(w, http.StatusInternalServerError, "api_error", "generation failed: "+gerr.Error())
+		return
+	}
 
 	var content []map[string]any
 	reason := ""
@@ -496,10 +505,15 @@ func (s *server) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var ids []int
+	var err error
 	if mode, _ := anthropicToolMode(req.ToolChoice); len(req.Tools) > 0 && mode != "none" && lm.tmpl != nil && lm.tmpl.SupportsTools() {
-		ids = lm.encode(lm.tmpl.RenderTools(system, turns, anthropicTools(req.Tools)))
+		ids, err = lm.encode(lm.tmpl.RenderTools(system, turns, anthropicTools(req.Tools)))
 	} else {
-		ids = lm.promptFor(system, turns)
+		ids, err = lm.promptFor(system, turns)
+	}
+	if err != nil {
+		writeAnthropicErr(w, http.StatusInternalServerError, "api_error", "encode: "+err.Error())
+		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"input_tokens": len(ids)})
 }

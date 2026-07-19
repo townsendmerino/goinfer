@@ -131,7 +131,12 @@ func (s *server) handleResponses(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	gr, err := lm.prepare(sm, lm.chatPrompt(messages))
+	ids, err := lm.chatPrompt(messages)
+	if err != nil {
+		writeServerErr(w, "encode: "+err.Error())
+		return
+	}
+	gr, err := lm.prepare(sm, ids)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
@@ -151,12 +156,17 @@ func (s *server) handleResponses(w http.ResponseWriter, r *http.Request) {
 			"type": "response.created", "response": responseObject(id, lm.name, created, "in_progress", []any{}, inTok, 0),
 		})
 		var sb strings.Builder
-		_, nComp, _, _ := lm.drive(r.Context(), gr, func(t string) {
+		_, nComp, _, _, gerr := lm.drive(r.Context(), gr, func(t string) {
 			sb.WriteString(t)
 			sseEvent(w, f, "response.output_text.delta", map[string]any{
 				"type": "response.output_text.delta", "item_id": id + "-msg", "output_index": 0, "content_index": 0, "delta": t,
 			})
 		})
+		if gerr != nil {
+			sseEvent(w, f, "error", map[string]any{"type": "error", "message": "generation failed: " + gerr.Error()})
+			sseDone(w, f)
+			return
+		}
 		out := []any{outputMessage(id+"-msg", sb.String())}
 		sseEvent(w, f, "response.completed", map[string]any{
 			"type": "response.completed", "response": responseObject(id, lm.name, created, "completed", out, inTok, nComp),
@@ -167,7 +177,11 @@ func (s *server) handleResponses(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var sb strings.Builder
-	_, nComp, _, _ := lm.drive(r.Context(), gr, func(t string) { sb.WriteString(t) })
+	_, nComp, _, _, gerr := lm.drive(r.Context(), gr, func(t string) { sb.WriteString(t) })
+	if gerr != nil {
+		writeServerErr(w, "generation failed: "+gerr.Error())
+		return
+	}
 	out := []any{outputMessage(id+"-msg", sb.String())}
 	writeJSON(w, http.StatusOK, responseObject(id, lm.name, created, "completed", out, inTok, nComp))
 	s.maybeStore(store, id, lm.name, messages, sb.String())
@@ -181,7 +195,12 @@ func (s *server) respondTools(w http.ResponseWriter, lm *loadedModel, req respon
 		tools[i] = chat.Tool{Name: t.Function.Name, Description: t.Function.Description, Parameters: t.Function.Parameters}
 	}
 	system, turns := messagesToTurns(messages)
-	gr, err := lm.prepare(sm, lm.encode(lm.tmpl.RenderTools(system, turns, tools)))
+	ids, err := lm.encode(lm.tmpl.RenderTools(system, turns, tools))
+	if err != nil {
+		writeServerErr(w, "encode: "+err.Error())
+		return
+	}
+	gr, err := lm.prepare(sm, ids)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
@@ -202,7 +221,11 @@ func (s *server) respondTools(w http.ResponseWriter, lm *loadedModel, req respon
 	defer lm.exit()
 	inTok := len(gr.promptIDs)
 	var sb strings.Builder
-	_, nComp, _, _ := lm.drive(context.Background(), gr, func(t string) { sb.WriteString(t) })
+	_, nComp, _, _, gerr := lm.drive(context.Background(), gr, func(t string) { sb.WriteString(t) })
+	if gerr != nil {
+		writeServerErr(w, "generation failed: "+gerr.Error())
+		return
+	}
 	calls, lead := lm.tmpl.ParseToolCalls(sb.String())
 
 	var out []any

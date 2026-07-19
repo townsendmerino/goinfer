@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -288,7 +289,12 @@ func (s *server) handleChat(w http.ResponseWriter, r *http.Request) {
 		s.modelNotFound(w, req.Model)
 		return
 	}
-	gr, err := lm.prepare(req.sampling, lm.chatPrompt(req.Messages))
+	ids, err := lm.chatPrompt(req.Messages)
+	if err != nil {
+		writeServerErr(w, "encode: "+err.Error())
+		return
+	}
+	gr, err := lm.prepare(req.sampling, ids)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
@@ -307,16 +313,25 @@ func (s *server) handleChat(w http.ResponseWriter, r *http.Request) {
 		}
 		role := chatChunk(id, created, lm.name, delta{Role: "assistant"}, nil)
 		sseSend(w, f, role)
-		finish, _, _, _ := lm.drive(r.Context(), gr, func(t string) {
+		finish, _, _, _, gerr := lm.drive(r.Context(), gr, func(t string) {
 			sseSend(w, f, chatChunk(id, created, lm.name, delta{Content: t}, nil))
 		})
+		if gerr != nil {
+			sseErr(w, f, "generation failed: "+gerr.Error())
+			sseDone(w, f)
+			return
+		}
 		sseSend(w, f, chatChunk(id, created, lm.name, delta{}, &finish))
 		sseDone(w, f)
 		return
 	}
 
 	var sb strings.Builder
-	finish, nComp, lps, _ := lm.drive(r.Context(), gr, func(t string) { sb.WriteString(t) })
+	finish, nComp, lps, _, gerr := lm.drive(r.Context(), gr, func(t string) { sb.WriteString(t) })
+	if gerr != nil {
+		writeServerErr(w, "generation failed: "+gerr.Error())
+		return
+	}
 	choice := map[string]any{
 		"index":         0,
 		"message":       map[string]any{"role": "assistant", "content": sb.String()},
@@ -366,15 +381,24 @@ func (s *server) handleCompletions(w http.ResponseWriter, r *http.Request) {
 		if !ok {
 			return
 		}
-		finish, _, _, _ := lm.drive(r.Context(), gr, func(t string) {
+		finish, _, _, _, gerr := lm.drive(r.Context(), gr, func(t string) {
 			sseSend(w, f, completionChunk(id, created, lm.name, t, nil))
 		})
+		if gerr != nil {
+			sseErr(w, f, "generation failed: "+gerr.Error())
+			sseDone(w, f)
+			return
+		}
 		sseSend(w, f, completionChunk(id, created, lm.name, "", &finish))
 		sseDone(w, f)
 		return
 	}
 	var sb strings.Builder
-	finish, nComp, _, _ := lm.drive(r.Context(), gr, func(t string) { sb.WriteString(t) })
+	finish, nComp, _, _, gerr := lm.drive(r.Context(), gr, func(t string) { sb.WriteString(t) })
+	if gerr != nil {
+		writeServerErr(w, "generation failed: "+gerr.Error())
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"id": id, "object": "text_completion", "created": created, "model": lm.name,
 		"choices": []any{map[string]any{"index": 0, "text": sb.String(), "finish_reason": finish}},
@@ -492,13 +516,15 @@ func rawPrompt(system string, turns []chat.Turn) string {
 
 // encode tokenizes a rendered prompt; rendered templates already include the
 // family BOS marker, so only the raw fallback asks the tokenizer to add one.
-func (lm *loadedModel) encode(prompt string) []int {
-	ids, _ := lm.tk.Encode(prompt, lm.tmpl == nil)
-	return ids
+// encode tokenizes prompt. The error is a server-side condition (a decode-only
+// vocab, or a tokenizer that failed to load) — it was silently dropped before
+// (M1), yielding an empty prompt and a generation from BOS alone.
+func (lm *loadedModel) encode(prompt string) ([]int, error) {
+	return lm.tk.Encode(prompt, lm.tmpl == nil)
 }
 
 // chatPrompt renders system + messages into the model's chat template (no tools).
-func (lm *loadedModel) chatPrompt(msgs []chatMessage) []int {
+func (lm *loadedModel) chatPrompt(msgs []chatMessage) ([]int, error) {
 	system, turns := messagesToTurns(msgs)
 	return lm.promptFor(system, turns)
 }
@@ -506,20 +532,31 @@ func (lm *loadedModel) chatPrompt(msgs []chatMessage) []int {
 // promptFor renders system + turns into token ids via the model's chat template
 // (raw-conversation fallback when the family is unrecognized). Shared by the
 // OpenAI and Anthropic chat paths so both encode prompts identically.
-func (lm *loadedModel) promptFor(system string, turns []chat.Turn) []int {
+func (lm *loadedModel) promptFor(system string, turns []chat.Turn) ([]int, error) {
 	if lm.tmpl != nil {
 		return lm.encode(lm.tmpl.Render(system, turns))
 	}
 	return lm.encode(rawPrompt(system, turns))
 }
 
+// genErr filters a generation's terminal error (gen.Err()) down to what's worth
+// surfacing to the client: context.Canceled — our own stop-string cancel, or a
+// client disconnect — is a clean end, not a failure. A non-nil result becomes a
+// 500 (or an error SSE event mid-stream). M1.
+func genErr(err error) error {
+	if err != nil && !errors.Is(err, context.Canceled) {
+		return err
+	}
+	return nil
+}
+
 // drive runs the generation, applying stop strings and UTF-8 holdback, calling
 // onText with each newly-completed text fragment. Returns the finish reason
 // ("stop" | "length"), the completion token count, (non-stream) per-token
-// logprobs, and the stop string that was hit (empty unless a stop sequence
-// ended the turn). The context is cancelled on a stop-string hit to end
-// generation.
-func (lm *loadedModel) drive(parent context.Context, gr genRequest, onText func(string)) (string, int, []decoder.SampleInfo, string) {
+// logprobs, the stop string that was hit (empty unless a stop sequence ended the
+// turn), and any terminal generation error (nil on a clean end — see genErr). The
+// context is cancelled on a stop-string hit to end generation.
+func (lm *loadedModel) drive(parent context.Context, gr genRequest, onText func(string)) (string, int, []decoder.SampleInfo, string, error) {
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	var stream <-chan int
@@ -539,7 +576,7 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, onText func(
 	if lm.model.ResidentActive() {
 		stream, gen = lm.model.Generate(ctx, gr.promptIDs, gr.maxTokens, gr.sp)
 		finish, n, stopHit := lm.streamTokens(cancel, stream, gr, onText)
-		return finish, n, gen.Logprobs, stopHit
+		return finish, n, gen.Logprobs, stopHit, genErr(gen.Err())
 	}
 
 	// Reuse the KV of whichever cached session already holds this prompt as a
@@ -579,24 +616,27 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, onText func(
 		stream, gen = sess.Generate(ctx, gr.promptIDs, gr.maxTokens, gr.sp)
 	}
 	finish, n, stopHit := lm.streamTokens(cancel, stream, gr, onText)
-	return finish, n, gen.Logprobs, stopHit
+	return finish, n, gen.Logprobs, stopHit, genErr(gen.Err())
 }
 
 // driveVL is drive for a multimodal turn: it prefills gr.promptIDs with the
 // projected vision `feats` spliced in at the [imgPos, imgPos+imgLen) placeholder
 // run (GenerateVL), then streams the continuation through the same stop/UTF-8
 // machinery as drive. Stateless — no warm-KV session (multimodal opts out of
-// prefix reuse). Returns finish reason, completion token count, and stop string.
-func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionInput, onText func(string)) (string, int, string) {
+// prefix reuse). Returns finish reason, completion token count, stop string, and
+// any terminal generation error (nil on a clean end — see genErr).
+func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionInput, onText func(string)) (string, int, string, error) {
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	var stream <-chan int
+	var gen *decoder.Generation
 	if vi.qwen {
-		stream, _ = lm.model.GenerateQwenVL(ctx, gr.promptIDs, vi.feats, vi.imgPos, vi.imgLen, [][3]int{vi.grid}, lm.qwenMerge, lm.qwenImgTok, gr.maxTokens, gr.sp)
+		stream, gen = lm.model.GenerateQwenVL(ctx, gr.promptIDs, vi.feats, vi.imgPos, vi.imgLen, [][3]int{vi.grid}, lm.qwenMerge, lm.qwenImgTok, gr.maxTokens, gr.sp)
 	} else {
-		stream, _ = lm.model.GenerateVL(ctx, gr.promptIDs, vi.feats, vi.imgPos, vi.imgLen, gr.maxTokens, gr.sp)
+		stream, gen = lm.model.GenerateVL(ctx, gr.promptIDs, vi.feats, vi.imgPos, vi.imgLen, gr.maxTokens, gr.sp)
 	}
-	return lm.streamTokens(cancel, stream, gr, onText)
+	finish, n, stopHit := lm.streamTokens(cancel, stream, gr, onText)
+	return finish, n, stopHit, genErr(gen.Err())
 }
 
 // streamTokens consumes a token-id channel, applying stop strings and UTF-8

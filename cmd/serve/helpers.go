@@ -35,6 +35,13 @@ func sseDone(w http.ResponseWriter, f http.Flusher) {
 	f.Flush()
 }
 
+// sseErr emits an OpenAI-style error object mid-stream (the response is already
+// 200 with headers flushed, so a status code is no longer available). Callers
+// send this in place of the normal finish chunk when a generation fails. M1.
+func sseErr(w http.ResponseWriter, f http.Flusher, msg string) {
+	sseSend(w, f, map[string]any{"error": map[string]any{"message": msg, "type": "api_error"}})
+}
+
 type delta struct {
 	Role    string `json:"role,omitempty"`
 	Content string `json:"content,omitempty"`
@@ -64,6 +71,13 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 
 func writeErr(w http.ResponseWriter, code int, msg string) {
 	writeJSON(w, code, map[string]any{"error": map[string]any{"message": msg, "type": "invalid_request_error"}})
+}
+
+// writeServerErr reports a generation/encode failure as a 500 with type
+// "api_error" (distinct from the 4xx "invalid_request_error" of a bad request);
+// used before any body is written, on the non-streaming paths. M1.
+func writeServerErr(w http.ResponseWriter, msg string) {
+	writeJSON(w, http.StatusInternalServerError, map[string]any{"error": map[string]any{"message": msg, "type": "api_error"}})
 }
 
 // --- request helpers ---
