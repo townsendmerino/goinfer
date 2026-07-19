@@ -42,6 +42,15 @@ func (b *cudaBackend) MatmulBT(a, bmat, dst []float32, M, K, N int) {
 	linalg.MatmulBT(a, bmat, dst, M, K, N)
 }
 
+// layerFusable reports whether one layer permits the fused super-kernels (M23). fQKV always reads
+// Q/K/V, so those must be int4. fGU additionally reads gate/up/down as int4+f16-scales, but it runs
+// only on dense-FFN layers — MoE layers take moeMLP and leave g/u/d unpacked (kind==""), so gate/up
+// are exempt there. Requiring g/u/d on a MoE layer would wrongly strip fQKV from every MoE model;
+// omitting them on a dense int8-gate/up layer would pass fGU a nil ws16 and crash the executor.
+func layerFusable(qkvInt4, moe, guInt4 bool) bool {
+	return qkvInt4 && (moe || guInt4)
+}
+
 // BuildResident builds a resident CUDA decoder from a loaded dense Model: host-packs the
 // mixed int4/int8/f32 projections, spawns a LockOSThread-pinned CUDA executor, and uploads
 // weights + KV scratch once, returning a *cudaResident whose Forward the decode loop drives.
@@ -463,12 +472,21 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		r.Close()
 		return declined(setupErr)
 	}
-	// K1 needs every layer's Q/K/V to be int4 (the measured reality for q4_k_m: all layer
-	// projections are int4, only the LM head is int8). Anything else falls back to the
-	// unfused chain, so a mixed checkpoint stays correct.
+	// The fused path needs every projection it reads as int4: fQKV reads Q/K/V, and fGU reads
+	// gate/up as int4 + f16-scales (ws16). fuseQKV gated on Q/K/V ALONE, but it also switches on
+	// fGU — so an int4-QKV + int8-gate/up checkpoint passed fGU a nil ws16 and crashed the executor
+	// goroutine (no recover → process dies). Require Q/K/V int4 always, plus gate/up/down int4 on
+	// dense-FFN layers — the only layers fGU runs on. MoE layers take moeMLP and never pack g/u/d
+	// (kind==""), so requiring them there would wrongly strip fQKV from every MoE model. This is the
+	// measured q4_k_m reality (all layer projections int4, only the LM head int8); anything else
+	// falls back to the unfused chain, which handles mixed quant correctly (M23).
 	r.fuseQKV = true
 	for l := range hls {
-		if hls[l].q.kind != "int4" || hls[l].k.kind != "int4" || hls[l].v.kind != "int4" {
+		h := &hls[l]
+		if !layerFusable(
+			h.q.kind == "int4" && h.k.kind == "int4" && h.v.kind == "int4",
+			h.isMoE,
+			h.g.kind == "int4" && h.u.kind == "int4" && h.d.kind == "int4") {
 			r.fuseQKV = false
 			break
 		}

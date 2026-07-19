@@ -106,7 +106,8 @@ type cudaResident struct {
 	gemvW4, gemvW8, kvStore, ropeKV, fRms, fRmsF32, fQ, fRope, fAttn, fSw, fRes, fArg, fQKV, fGU, fQKN *gc.Function
 	fRoute, fRouterGemv, fMoEGemv, fMoEWacc, fSharedCombine                                            *gc.Function
 
-	fuseQKV   bool // all of Q/K/V int4 ⇒ K1 super-kernel is usable
+	fuseQKV   bool  // all of Q/K/V/gate/up int4 ⇒ the fused K1 (fQKV) + fGU super-kernels are usable
+	launchErr error // sticky first launch error within a launchToken call (reset per token) — M23
 	layers    []cudaLayer
 	lmW       cudaWQ
 	finalNorm *gc.Buffer[float32]
@@ -391,7 +392,15 @@ func onecfg(b, sh int) gc.LaunchConfig {
 }
 
 func (r *cudaResident) launch(f *gc.Function, cfg gc.LaunchConfig, args ...gc.KernelArg) error {
-	return f.LaunchOn(context.Background(), r.stream, cfg, args...)
+	e := f.LaunchOn(context.Background(), r.stream, cfg, args...)
+	if e != nil && r.launchErr == nil {
+		// Sticky: launchToken's dense hot chain discards many launch errors (`_ = r.launch(...)`),
+		// so a config error (bad shared-mem size, bad args) would let the token "succeed" with
+		// stale buffers. Record the first here; launchToken returns it (M23). doG/rms funnel through
+		// launch too, so this covers the whole chain without touching every call site.
+		r.launchErr = e
+	}
+	return e
 }
 
 // capVec copies the first n elements of a device vector to host into dst[l] (diagnostic
@@ -546,6 +555,7 @@ func (r *cudaResident) moeMLP(Ly *cudaLayer) error {
 
 // launchToken issues one token's whole kernel chain, leaving logits[vocab] on the device.
 func (r *cudaResident) launchToken(emb []float32, pos int) error {
+	r.launchErr = nil // reset the sticky launch-error accumulator for this token (M23)
 	bg := context.Background()
 	nullBias := gc.ArgDevicePtr(0)
 	if e := gc.CopyHtoD(bg, r.x, emb); e != nil {
@@ -687,7 +697,10 @@ func (r *cudaResident) launchToken(emb []float32, pos int) error {
 	if e := r.rms(r.x, r.finalNorm, r.aq, r.aSc); e != nil {
 		return e
 	}
-	return r.doG(r.lmW, r.aq, r.aSc, nullBias, r.logits, 0)
+	if e := r.doG(r.lmW, r.aq, r.aSc, nullBias, r.logits, 0); e != nil {
+		return e
+	}
+	return r.launchErr // surface any launch error discarded in the dense chain above (M23)
 }
 
 // step returns full logits — the general contract (sampler / constrained decode / logprobs).
