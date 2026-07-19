@@ -138,6 +138,29 @@ func firstStop(text string, stops []string) (int, string, bool) {
 	return cut, which, true
 }
 
+// stopTailHold returns the length of the longest suffix of text that is a proper
+// (non-empty, shorter-than-whole) prefix of some stop string — bytes the streamer
+// must hold back, because the next token could extend them into a full stop
+// sequence, which must be removed *entirely* (prefix included). Without this, a
+// stop of "END" arriving as "E"+"ND" leaks the "E" before the stop is recognized.
+// A full match is a real stop, handled by firstStop, not here. M2.
+func stopTailHold(text string, stops []string) int {
+	hold := 0
+	for _, st := range stops {
+		k := len(st) - 1 // proper prefixes st[:k], 1 <= k < len(st)
+		if k > len(text) {
+			k = len(text)
+		}
+		for ; k > hold; k-- {
+			if strings.HasSuffix(text, st[:k]) {
+				hold = k
+				break
+			}
+		}
+	}
+	return hold
+}
+
 // completeUTF8 returns the length of the longest prefix of s ending on a rune
 // boundary, holding back a trailing incomplete multi-byte sequence (a
 // byte-fallback token can split a rune).

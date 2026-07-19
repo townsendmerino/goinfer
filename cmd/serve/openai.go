@@ -639,8 +639,9 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 	return finish, n, stopHit, genErr(gen.Err())
 }
 
-// streamTokens consumes a token-id channel, applying stop strings and UTF-8
-// holdback and calling onText with each newly-completed fragment. It is the
+// streamTokens consumes a token-id channel, applying stop strings (including
+// holdback of a trailing partial stop match), UTF-8 holdback, and calling onText
+// with each newly-completed fragment. It is the
 // shared tail of every generation path (text via Session.Generate, multimodal
 // via driveVL) — the token *source* is orthogonal to this stop/stream logic.
 // cancel ends the producing generation on a stop-string hit. Returns the finish
@@ -666,7 +667,13 @@ func (lm *loadedModel) streamTokens(cancel context.CancelFunc, stream <-chan int
 			cancel()
 			continue
 		}
-		if end := completeUTF8(text); end > printed {
+		// Emit up to the UTF-8 boundary, but never past a trailing partial stop
+		// match — those bytes wait until the next token proves them stop or not (M2).
+		end := completeUTF8(text)
+		if safe := len(text) - stopTailHold(text, gr.stopStrings); safe < end {
+			end = safe
+		}
+		if end > printed {
 			onText(text[printed:end])
 			printed = end
 		}
