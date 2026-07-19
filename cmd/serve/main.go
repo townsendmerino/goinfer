@@ -306,22 +306,32 @@ func main() {
 		}
 	}
 
+	// Every POST body is size-bounded (M3): the chat/messages endpoints carry
+	// base64 image_url data, so they get the larger vision cap; the rest a few MB.
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/models", srv.handleModels)
 	if len(srv.models) > 0 {
-		mux.HandleFunc("POST /v1/chat/completions", srv.handleChat)
-		mux.HandleFunc("POST /v1/completions", srv.handleCompletions)
-		mux.HandleFunc("POST /v1/responses", srv.handleResponses)
-		mux.HandleFunc("POST /v1/messages", srv.handleMessages)
-		mux.HandleFunc("POST /v1/messages/count_tokens", srv.handleCountTokens)
+		mux.HandleFunc("POST /v1/chat/completions", maxBytes(maxVisionBodyBytes, srv.handleChat))
+		mux.HandleFunc("POST /v1/completions", maxBytes(maxBodyBytes, srv.handleCompletions))
+		mux.HandleFunc("POST /v1/responses", maxBytes(maxBodyBytes, srv.handleResponses))
+		mux.HandleFunc("POST /v1/messages", maxBytes(maxVisionBodyBytes, srv.handleMessages))
+		mux.HandleFunc("POST /v1/messages/count_tokens", maxBytes(maxBodyBytes, srv.handleCountTokens))
 	}
 	if srv.embed != nil {
-		mux.HandleFunc("POST /v1/embeddings", srv.handleEmbeddings)
+		mux.HandleFunc("POST /v1/embeddings", maxBytes(maxBodyBytes, srv.handleEmbeddings))
 	}
-	mux.HandleFunc("POST /admin/models/load", srv.handleAdminLoad)
-	mux.HandleFunc("POST /admin/models/unload", srv.handleAdminUnload)
+	mux.HandleFunc("POST /admin/models/load", maxBytes(maxBodyBytes, srv.handleAdminLoad))
+	mux.HandleFunc("POST /admin/models/unload", maxBytes(maxBodyBytes, srv.handleAdminUnload))
 
-	httpSrv := &http.Server{Addr: *addr, Handler: mux}
+	// ReadHeaderTimeout + IdleTimeout bound slow-header (slowloris) and idle
+	// keep-alive connections. WriteTimeout stays 0: SSE responses are long-lived
+	// and a write deadline would truncate a legitimate stream (M3).
+	httpSrv := &http.Server{
+		Addr:              *addr,
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
 
 	// Tiered KV: a background ticker demotes idle sessions to disk. It takes the
 	// same per-model lock the request path holds, so it never races a generation;

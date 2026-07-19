@@ -266,8 +266,7 @@ func (s *server) handleModels(w http.ResponseWriter, _ *http.Request) {
 
 func (s *server) handleChat(w http.ResponseWriter, r *http.Request) {
 	var req chatReq
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 	// Multimodal: a message carrying an image_url part routes to the vision path.
@@ -349,8 +348,7 @@ func (s *server) handleChat(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) handleCompletions(w http.ResponseWriter, r *http.Request) {
 	var req completionReq
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 	lm := s.pick(req.Model)

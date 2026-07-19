@@ -29,8 +29,7 @@ type embedReq struct {
 // "base64" returns little-endian float32 bytes, else a JSON number array.
 func (s *server) handleEmbeddings(w http.ResponseWriter, r *http.Request) {
 	var req embedReq
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 	inputs, err := parseEmbedInput(req.Input)

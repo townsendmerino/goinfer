@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -9,6 +10,41 @@ import (
 	"time"
 	"unicode/utf8"
 )
+
+// Request-body size ceilings (M3). Bodies are buffered before validation, so an
+// unbounded body is a memory-exhaustion DoS. Text prompts/tools/embeddings/admin
+// fit comfortably in a few MB; the vision endpoints carry base64 image_url data
+// (≈1.33× the raw image), so they get a larger cap.
+const (
+	maxBodyBytes       = 4 << 20  // 4 MiB
+	maxVisionBodyBytes = 32 << 20 // 32 MiB
+)
+
+// maxBytes wraps a handler so its request body is bounded to n bytes: a larger
+// body fails the read with *http.MaxBytesError, which the decode helpers render
+// as 413. It also caps non-JSON reads on the same body. M3.
+func maxBytes(n int64, h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, n)
+		h(w, r)
+	}
+}
+
+// decodeJSON reads the (size-bounded, see maxBytes) request body into v, writing
+// an OpenAI-shaped error on failure: 413 when the body exceeded the limit, else
+// 400. Returns false iff it wrote an error. M3.
+func decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
+	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
+		var mbe *http.MaxBytesError
+		if errors.As(err, &mbe) {
+			writeErr(w, http.StatusRequestEntityTooLarge, "request body too large")
+			return false
+		}
+		writeErr(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return false
+	}
+	return true
+}
 
 // --- SSE ---
 

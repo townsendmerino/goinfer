@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"path/filepath"
@@ -40,8 +39,7 @@ func (s *server) handleAdminLoad(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req adminLoadReq
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 	if req.Path == "" {
@@ -93,8 +91,7 @@ func (s *server) handleAdminUnload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req adminUnloadReq
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 	s.regMu.Lock()

@@ -82,8 +82,7 @@ func (s *responseStore) put(id string, e *responseEntry) {
 
 func (s *server) handleResponses(w http.ResponseWriter, r *http.Request) {
 	var req responseReq
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 	lm := s.pick(req.Model)

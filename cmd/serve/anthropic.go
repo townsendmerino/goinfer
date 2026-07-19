@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -114,6 +115,21 @@ func writeAnthropicErr(w http.ResponseWriter, code int, kind, msg string) {
 		"type":  "error",
 		"error": map[string]any{"type": kind, "message": msg},
 	})
+}
+
+// decodeAnthropicJSON is decodeJSON for the Anthropic dialect: 413 when the
+// (size-bounded, see maxBytes) body exceeded the limit, else 400. M3.
+func decodeAnthropicJSON(w http.ResponseWriter, r *http.Request, v any) bool {
+	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
+		var mbe *http.MaxBytesError
+		if errors.As(err, &mbe) {
+			writeAnthropicErr(w, http.StatusRequestEntityTooLarge, "invalid_request_error", "request body too large")
+			return false
+		}
+		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", "invalid request body: "+err.Error())
+		return false
+	}
+	return true
 }
 
 func (s *server) anthropicModelNotFound(w http.ResponseWriter, name string) {
@@ -375,8 +391,7 @@ func anthropicStopReason(finish, stopSeq string) (string, any) {
 
 func (s *server) handleMessages(w http.ResponseWriter, r *http.Request) {
 	var req anthropicReq
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", "invalid request body: "+err.Error())
+	if !decodeAnthropicJSON(w, r, &req) {
 		return
 	}
 	if req.MaxTokens == nil || *req.MaxTokens <= 0 {
@@ -490,8 +505,7 @@ func (s *server) handleMessages(w http.ResponseWriter, r *http.Request) {
 // count — no generation, no decode mutex (encoding is independent of the decoder).
 func (s *server) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 	var req anthropicReq
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", "invalid request body: "+err.Error())
+	if !decodeAnthropicJSON(w, r, &req) {
 		return
 	}
 	lm := s.pick(req.Model)
