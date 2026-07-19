@@ -263,6 +263,13 @@ func (r *Resident) ensurePrefill() {
 	if r.pf != nil {
 		return
 	}
+	// M24(c): compile + pipeline creation here runs pool-less on an unpinned thread (PrefillLast
+	// calls this BEFORE its own LockOSThread). Pin + hold a pool so the autoreleased temporaries
+	// drain; the +1-owned library/pipelines are tracked on the Device and freed at Close.
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	pool := newARPool()
+	defer pool.drain()
 	lib, err := r.d.CompileLibrary(prefillKernels, MSL3_1)
 	if err != nil {
 		panic(fmt.Sprintf("metal prefill compile: %v", err))

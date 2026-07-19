@@ -195,10 +195,28 @@ func int4Concat(d *Device, wms ...*linalg.WeightMat) (Buffer, Buffer) {
 // Model. Handles Qwen2 q/k/v bias; assumes no QK-norm / sliding-window / embed-scale
 // (the DecodeRunnerEligible dense shape), full RoPE via the model's own inv-freq table.
 func BuildResident(m *decoder.Model) (*Resident, error) {
+	// M24(c): pin the thread and hold ONE autorelease pool for the whole build — CompileLibrary,
+	// NewComputePipeline, and every NewBuffer*/nsString create autoreleased temporaries that would
+	// otherwise leak on this unpinned, pool-less thread.
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	pool := newARPool()
+	defer pool.drain()
 	d, err := CreateSystemDefaultDevice()
 	if err != nil {
 		return nil, err
 	}
+	// M24(a): every buffer + objc object below lands on d's ledgers. On ANY early return or panic
+	// (a sandwich shape-check error, a buildMoE/int4/int8-kind error, or a mustBuf/pipe OOM panic
+	// that backend.go recovers into a clean CPU decline), release it all — otherwise a declined
+	// build leaks gigabytes while serve continues on CPU. Cleared once construction completes.
+	ok := false
+	defer func() {
+		if !ok {
+			d.ReleaseAll()
+			d.releaseObjects()
+		}
+	}()
 	lib, err := d.CompileLibrary(allKernels, MSL3_1)
 	if err != nil {
 		return nil, err
@@ -354,6 +372,7 @@ func BuildResident(m *decoder.Model) (*Resident, error) {
 	r.uQtotal, r.uKtotal = d.NewBufferU32(uint32(nH*r.half)), d.NewBufferU32(uint32(nKV*r.half))
 	r.uPos, r.uNKeys = d.NewBufferU32(0), d.NewBufferU32(1)
 	r.logitsHost = make([]float32, V)
+	ok = true // construction complete — the Resident owns everything; Close (not the defer) frees it
 	return r, nil
 }
 
@@ -486,7 +505,8 @@ func (r *Resident) stopExec() {
 func (r *Resident) Close() {
 	r.stopExec()
 	if r.d != nil {
-		r.d.ReleaseAll()
+		r.d.ReleaseAll()     // every MTLBuffer
+		r.d.releaseObjects() // command queue, ~40 pipelines, 1-2 libraries, and the MTLDevice (M24b)
 	}
 }
 

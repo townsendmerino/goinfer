@@ -89,6 +89,41 @@ type Device struct {
 	id     objc.ID
 	mu     sync.Mutex
 	allocs []objc.ID // every MTLBuffer handed out by this Device, for ReleaseAll
+	objs   []objc.ID // non-buffer +1-owned objc objects (command queue, pipelines, libraries) — M24
+}
+
+// trackObj records a +1-owned objc object (command queue / pipeline / library) so releaseObjects
+// frees it at Close. MTLFunctions are NOT tracked — they are released immediately once their
+// pipeline state exists (a pipeline does not retain its function). See M24(b).
+func (d *Device) trackObj(id objc.ID) {
+	if id == 0 {
+		return
+	}
+	d.mu.Lock()
+	d.objs = append(d.objs, id)
+	d.mu.Unlock()
+}
+
+// releaseObjects releases the non-buffer objc objects (command queue, pipelines, libraries) this
+// Device tracked, then the MTLDevice itself, and empties the ledgers. purego has no ARC, so these
+// leak per load/unload otherwise (M24(b): ReleaseAll freed buffers only). Idempotent: it nils the
+// device id, so a second call (or a double Close) is a no-op. Caller MUST ensure no GPU work is in
+// flight (Resident.Close stops+waits the executor first). MTLCreateSystemDefaultDevice hands back a
+// +1 retain PER CALL on the (shared) system device, so releasing here balances THIS Device's retain
+// and leaves any other resident model's device retain intact.
+func (d *Device) releaseObjects() {
+	d.mu.Lock()
+	objs := d.objs
+	d.objs = nil
+	id := d.id
+	d.id = 0
+	d.mu.Unlock()
+	for _, o := range objs {
+		o.Send(selRelease)
+	}
+	if id != 0 {
+		id.Send(selRelease)
+	}
 }
 
 // CreateSystemDefaultDevice reaches Metal cgo-free (MTLCreateSystemDefaultDevice is a
@@ -120,6 +155,7 @@ func (d *Device) CompileLibrary(src string, ver uint) (objc.ID, error) {
 	if lib == 0 {
 		return 0, fmt.Errorf("metal: newLibraryWithSource failed: %s", goString(nsErr.Send(selLocalizedDesc)))
 	}
+	d.trackObj(lib) // +1-owned; released at Close (M24)
 	return lib, nil
 }
 
@@ -169,7 +205,11 @@ type Buffer struct {
 func (b Buffer) At(byteOff int) Buffer { b.off = uintptr(byteOff); return b }
 
 // NewCommandQueue creates the command queue (built once, reused per token in the real backend).
-func (d *Device) NewCommandQueue() Queue { return Queue{id: d.id.Send(selNewCommandQueue)} }
+func (d *Device) NewCommandQueue() Queue {
+	q := d.id.Send(selNewCommandQueue)
+	d.trackObj(q) // +1-owned; released at Close (M24)
+	return Queue{id: q}
+}
 
 // NewComputePipeline looks a kernel up in a compiled library and builds its pipeline state.
 func (d *Device) NewComputePipeline(lib objc.ID, fn string) (Pipeline, error) {
@@ -179,9 +219,11 @@ func (d *Device) NewComputePipeline(lib objc.ID, fn string) (Pipeline, error) {
 	}
 	var nsErr objc.ID
 	p := d.id.Send(selNewPipelineFn, f, unsafe.Pointer(&nsErr))
+	f.Send(selRelease) // the pipeline state does not retain its MTLFunction — release it now (M24b)
 	if p == 0 {
 		return Pipeline{}, fmt.Errorf("metal: pipeline %q: %s", fn, goString(nsErr.Send(selLocalizedDesc)))
 	}
+	d.trackObj(p) // +1-owned; released at Close (M24)
 	return Pipeline{id: p}, nil
 }
 
