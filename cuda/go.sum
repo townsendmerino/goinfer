@@ -4,9 +4,13 @@ github.com/eitamring/gocudrv v0.2.0 h1:r3hmasqtIXXuRV7iOMlFh1f1TG+PeDN6z/TUuWcgQ
 github.com/eitamring/gocudrv v0.2.0/go.mod h1:d4Fwpncjg5m1V1m5jr9bBIO8TuwWws/kUwM9gubpwfo=
 github.com/townsendmerino/aikit v1.9.0 h1:lEQ2u47O3/tzgspuzrQuPLL0GpGjk3YMZxgon9xTB6E=
 github.com/townsendmerino/aikit v1.9.0/go.mod h1:PfnzClABLj5S4lpHH+9SZWHEftijJSH3+Udh1RLrtUw=
+github.com/townsendmerino/aikit v1.10.0 h1:PtzBJ0Mm9jEyWlNWVbSUqBTQMlZLrxczfrD9vNQsZVY=
+github.com/townsendmerino/aikit v1.10.0/go.mod h1:v3jliknZOOxCFxqas2MBWfQr4SPXH4JwOefZ0wgpnZE=
 go.uber.org/goleak v1.3.0 h1:2K3zAYmnTNqV73imy9J1T3WC+gmCePx2hEGkimedGto=
 go.uber.org/goleak v1.3.0/go.mod h1:CoHD4mav9JJNrW/WLlf7HGZPjdw8EucARQHekz1X6bE=
 golang.org/x/sys v0.45.0 h1:dO4czNzziLiiXplLQgBCEpCvXQ3dnkn0SdaZSYdQ+FY=
 golang.org/x/sys v0.45.0/go.mod h1:4GL1E5IUh+htKOUEOaiffhrAeqysfVGipDYzABqnCmw=
+golang.org/x/sys v0.47.0/go.mod h1:4GL1E5IUh+htKOUEOaiffhrAeqysfVGipDYzABqnCmw=
 golang.org/x/text v0.37.0 h1:Cqjiwd9eSg8e0QAkyCaQTNHFIIzWtidPahFWR83rTrc=
 golang.org/x/text v0.37.0/go.mod h1:a5sjxXGs9hsn/AJVwuElvCAo9v8QYLzvavO5z2PiM38=
+golang.org/x/text v0.40.0/go.mod h1:hpnzDAfGV753zIKo+wk3u1bVKCGPbrnF7+7LBF/UHVY=
