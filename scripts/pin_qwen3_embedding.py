@@ -61,7 +61,11 @@ DOCUMENTS = [
 
 
 def main() -> None:
-    model = SentenceTransformer(MODEL_ID)
+    # Force float32. sentence-transformers loads this model in BFLOAT16 by default, and pinning that
+    # bakes bf16 rounding into the "reference" — enough to hold cosine at ~0.99986 against an exact
+    # f32 implementation and make a correct port look broken at a 0.9999 bar. The reference should be
+    # the mathematically correct vector; precision choices belong to inference, not to the oracle.
+    model = SentenceTransformer(MODEL_ID, model_kwargs={"torch_dtype": torch.float32})
     tok = model.tokenizer
     hidden = model.get_sentence_embedding_dimension()
 
@@ -79,8 +83,14 @@ def main() -> None:
         return [float(x) for x in vec]
 
     def ids_for(text: str, is_query: bool):
+        # Ask sentence-transformers what it ACTUALLY feeds the model. Reconstructing this with a
+        # bare tokenizer call is how the first version of this script went wrong: ST appends
+        # <|endoftext|> (151643) to every input, which no config file or model-card example
+        # mentions, and which last-token pooling then pools. Reconstructing also makes the Go
+        # tokenizer-agreement gate circular — it would compare our guess against our own guess.
         prefix = query_prompt if is_query else doc_prompt
-        return tok(prefix + text, add_special_tokens=False)["input_ids"]
+        feats = model.tokenize([prefix + text])
+        return [int(i) for i in feats["input_ids"][0]]
 
     cases = []
     for text, is_query in CASES:

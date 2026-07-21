@@ -420,13 +420,27 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 	if have["language_model.model.embed_tokens.weight"] {
 		topPrefix = "language_model."
 	}
+	// A decoder-as-embedder checkpoint (Qwen3-Embedding, and the same shape for embeddinggemma)
+	// ships the BASE model — Qwen3Model, no LM head — whose tensors carry NO "model." prefix at
+	// all: embed_tokens.weight, norm.weight, layers.N.*. (The config still says
+	// architectures: ["Qwen3ForCausalLM"], so the naming is the only tell.) Detect it from the
+	// index and strip the prefix off the canonical names. tie_word_embeddings is true on these, so
+	// the absent lm_head is expected — the embedding doubles as the head, which an embedder never
+	// runs anyway. See docs/task-decoder-as-embedder.md.
+	stripModel := !have["model.embed_tokens.weight"] && have["embed_tokens.weight"]
 	mp := func(n string) string { // inject the prefix after the leading "model."
 		if modelPrefix != "" && strings.HasPrefix(n, "model.") {
 			n = "model." + modelPrefix + n[len("model."):]
 		}
+		if stripModel {
+			n = strings.TrimPrefix(n, "model.")
+		}
 		return topPrefix + n
 	}
 	tn := func(i int, suf string) string {
+		if stripModel {
+			return topPrefix + fmt.Sprintf("%slayers.%d.%s", modelPrefix, i, suf)
+		}
 		return topPrefix + fmt.Sprintf("model.%slayers.%d.%s", modelPrefix, i, suf)
 	}
 	fusedExperts := arch.MoE != nil && have[tn(0, "mlp.experts.gate_up_proj")]

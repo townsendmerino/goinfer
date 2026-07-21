@@ -101,11 +101,11 @@ Same bar the encoder work held; see `docs/parity-hunt-playbook.md` and
 
 - [x] Decoder-backed `encoder.Encoder` implementation + wiring so a qwen3-embedding model can
       be served on `/v1/embeddings`.
-- [ ] Qwen3-Embedding-0.6B: vector + retrieval gates green, with break-it-first.
-      **Scaffolded, not certified** — needs the checkpoint + a pinned golden (see §7).
+- [x] Qwen3-Embedding-0.6B: vector + retrieval gates green, with break-it-first.
+      **CERTIFIED — cosine 1.0000000 on all 5 cases** (§7).
 - [x] `usage.prompt_tokens` correct (trap 2) and concurrency safe under parallel requests (trap 1).
 - [~] embeddinggemma: configs read and recorded; certify, or record why it's deferred.
-      **Deferred, reason recorded** (§7) — still gated.
+      **Deferred, reason recorded** (§7) — still gated (HTTP 401).
 - [x] No regression to the existing encoder-backed `/v1/embeddings` path.
 
 ---
@@ -132,6 +132,51 @@ Same bar the encoder work held; see `docs/parity-hunt-playbook.md` and
     `s.embedTok` (which is nil for this embedder and silently reported `prompt_tokens: 0`).
   - Selected by `-embed-model` pointing at a **`.gguf` file**; an HF **directory** still takes the
     aikit encoder path. No new flag.
+
+### CERTIFIED (2026-07-20)
+
+`go test ./cmd/serve -run TestQwen3Embedding -v` — all green against the real
+Qwen3-Embedding-0.6B:
+
+| gate | result |
+|---|---|
+| vector parity (vs HF sentence-transformers) | **cosine 1.0000000** on all 5 cases |
+| retrieval top-1 | matches the reference for both queries |
+| tokenizer agreement | exact id match, appended EOD included |
+| break-it-first (wrong pooled position) | 0.375–0.844 → RED, as required |
+| break-it-first (query prefix dropped) | 0.757 / 0.952 → RED, as required |
+
+Two findings the gates forced out, both of which reading configs alone would have shipped wrong:
+
+1. **sentence-transformers appends `<|endoftext|>` (151643) to every input** — and last-token
+   pooling pools *that* token. **Nothing says so**: `tokenizer_config.json` has `add_bos_token:
+   false` and no `add_eos_token`, and neither model-card example appends anything. Only
+   `model.tokenize()` reveals it. Note it is **not** the configured `eos_token`
+   (`<|im_end|>`, 151645) — reading that field would have been wrong too. Omitting it pools the last
+   *content* token and produces a plausible, correctly-*ranked*, but wrong vector: **cosine
+   0.376–0.843 while the retrieval gate still passed**. That is exactly why §5 demands both gates —
+   retrieval alone would have certified a broken embedder.
+2. **The reference must be pinned in f32.** sentence-transformers loads this model in **bfloat16**
+   by default, and pinning that bakes bf16 rounding into the oracle — it held cosine at ~0.99986
+   against an exact implementation, i.e. it would have failed a correct port at the 0.9999 bar. The
+   pin script now forces `torch_dtype=float32`.
+
+A third, caught by the tokenizer-agreement gate: the pin script originally **reconstructed**
+`input_ids` with a bare tokenizer call instead of asking ST what it actually feeds the model, which
+made that gate circular (our guess vs our guess). It now captures `model.tokenize()` output.
+
+### Loader change this required
+
+The official checkpoint ships the **base** `Qwen3Model` — no LM head, and tensors carrying **no
+`model.` prefix** (`embed_tokens.weight`, `norm.weight`, `layers.N.*`), even though `config.json`
+still says `architectures: ["Qwen3ForCausalLM"]`. `decoder/weights.go` grew a `stripModel` case
+alongside the existing VL prefix negotiation. `tie_word_embeddings: true`, so the absent `lm_head`
+is expected — and an embedder never runs the head anyway.
+
+This also **validates the safetensors → generic-forward path for Qwen3**, which the v1.7.3 sweep
+recorded as an accepted coverage gap (all 7 HF safetensors forward-parity gates skip for want of
+checkpoints). A per-layer bisect against HF confirmed `HiddenLast` matches
+`last_hidden_state` at **cosine 1.000000** for n=1/2/5 tokens.
 
 ### Config facts verified this session (adds to §3)
 
@@ -168,16 +213,20 @@ Scaffolded, skipping until certified:
   `TestQwen3Embedding_gatesAreWired` fails loudly if the golden is pinned but the checkpoint is
   missing, so these can never silently no-op.
 
-### Blocked on
+### Still open
 
-1. **Qwen3-Embedding-0.6B checkpoint** — not present locally (only base Qwen3-0.6B). The base model
-   cannot satisfy the vector gate: same architecture, different weights.
-2. **HF reference env** — no `torch` / `sentence_transformers` installed, so the golden cannot be
-   pinned here. No metrics were invented in their absence.
-3. **embeddinggemma** — still **gated**: `1_Pooling/config.json` returns **HTTP 401** (verified
-   2026-07-20). Its pooling mode therefore remains *unknown* and, per §3, must not be assumed to be
-   mean. Deferred until the license is accepted / HF auth is available; the `pool` choice is the
-   one design question its certification will settle.
+- **embeddinggemma** — still **gated**: `1_Pooling/config.json` returns **HTTP 401** (verified
+  2026-07-20). Its pooling mode therefore remains *unknown* and, per §3, must not be assumed to be
+  mean. Deferred until the license is accepted / HF auth is available. Its certification is what
+  should settle whether the embedder needs a `pool` mode (last vs mean) and whether it appends its
+  own terminator — and given finding 1 above, that must be read off `model.tokenize()`, not configs.
 
-To certify: place the checkpoint in `$HOME/models/`, `pip install sentence-transformers`, run
-`scripts/pin_qwen3_embedding.py`, then `go test ./cmd/serve -run TestQwen3Embedding -v`.
+### Reproducing
+
+The checkpoint lives in the HF cache the pin script populated (no second copy on disk); the gates
+find it there automatically.
+
+```
+~/tmcode/aikit/.venv/bin/python scripts/pin_qwen3_embedding.py   # torch + sentence-transformers
+go test ./cmd/serve -run TestQwen3Embedding -v
+```

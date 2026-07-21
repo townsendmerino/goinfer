@@ -70,19 +70,31 @@ func loadEmbedGolden(t *testing.T) *embedGolden {
 // qwen3EmbeddingCheckpoint finds the embedding-tuned checkpoint. This is NOT the base Qwen3-0.6B
 // the mechanical tests use: same architecture, different weights, and only these weights reproduce
 // the reference vectors.
+//
+// Prefers the HF safetensors directory the reference itself was pinned from — identical f32 weights
+// on both sides, so any cosine shortfall is a real forward/pooling difference rather than
+// quantization error, which at a 0.9999 bar a GGUF quant could plausibly account for on its own.
 func qwen3EmbeddingCheckpoint(t *testing.T) string {
 	t.Helper()
-	for _, pat := range []string{
-		"$HOME/models/Qwen3-Embedding-0.6B*.gguf",
-		"$HOME/models/qwen3-embedding-0.6b*.gguf",
-	} {
+	for _, pat := range findEmbedCheckpointPatterns() {
 		matches, _ := filepath.Glob(os.ExpandEnv(pat))
 		if len(matches) > 0 {
 			return matches[0]
 		}
 	}
-	t.Skip("no Qwen3-Embedding-0.6B GGUF in $HOME/models — the base Qwen3 decoder cannot satisfy this gate")
+	t.Skip("no Qwen3-Embedding-0.6B checkpoint (HF dir or GGUF) — the base Qwen3 decoder cannot satisfy this gate")
 	return ""
+}
+
+// findEmbedCheckpointPatterns lists where the checkpoint may live, safetensors first. The HF cache
+// entry is the snapshot the pin script downloaded, so certifying needs no second copy on disk.
+func findEmbedCheckpointPatterns() []string {
+	return []string{
+		"$HOME/models/Qwen3-Embedding-0.6B",
+		"$HOME/.cache/huggingface/hub/models--Qwen--Qwen3-Embedding-0.6B/snapshots/*",
+		"$HOME/models/Qwen3-Embedding-0.6B*.gguf",
+		"$HOME/models/qwen3-embedding-0.6b*.gguf",
+	}
 }
 
 func newQwen3Embedder(t *testing.T, g *embedGolden) *decoderEmbedder {
@@ -96,10 +108,7 @@ func newQwen3Embedder(t *testing.T, g *embedGolden) *decoderEmbedder {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	return &decoderEmbedder{
-		m: m, tk: tk, dim: m.Config().HiddenDim,
-		queryPrompt: g.QueryPrompt, docPrompt: g.DocPrompt,
-	}
+	return newDecoderEmbedder(m, tk, g.QueryPrompt, g.DocPrompt)
 }
 
 // pooledFromIDs runs the golden's own input_ids through the pooling seam and L2-normalizes, so this
@@ -223,7 +232,7 @@ func TestQwen3Embedding_breakItFirst(t *testing.T) {
 	}
 
 	// (b) dropped query prefix — only meaningful on the query cases.
-	bare := &decoderEmbedder{m: e.m, tk: e.tk, dim: e.dim, queryPrompt: "", docPrompt: g.DocPrompt}
+	bare := newDecoderEmbedder(e.m, e.tk, "", g.DocPrompt)
 	ran := false
 	for i, c := range g.Cases {
 		if !c.IsQuery {
@@ -253,7 +262,7 @@ func TestQwen3Embedding_gatesAreWired(t *testing.T) {
 	if _, err := os.Stat(qwen3EmbedGolden); err != nil {
 		t.Skip("golden not pinned yet — parity gates are scaffolded but not certified")
 	}
-	for _, pat := range []string{"$HOME/models/Qwen3-Embedding-0.6B*.gguf", "$HOME/models/qwen3-embedding-0.6b*.gguf"} {
+	for _, pat := range findEmbedCheckpointPatterns() {
 		if m, _ := filepath.Glob(os.ExpandEnv(pat)); len(m) > 0 {
 			return
 		}

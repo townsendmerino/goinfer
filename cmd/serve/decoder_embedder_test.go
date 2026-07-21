@@ -37,10 +37,7 @@ func newTestDecoderEmbedder(t *testing.T) *decoderEmbedder {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	return &decoderEmbedder{
-		m: m, tk: tk, dim: m.Config().HiddenDim,
-		queryPrompt: qwen3EmbedQueryPrompt, docPrompt: qwen3EmbedDocPrompt,
-	}
+	return newDecoderEmbedder(m, tk, qwen3EmbedQueryPrompt, qwen3EmbedDocPrompt)
 }
 
 // TestDecoderEmbedder_queryPrefix pins the query/document asymmetry: a query is embedded with the
@@ -63,21 +60,34 @@ func TestDecoderEmbedder_queryPrefix(t *testing.T) {
 		t.Fatalf("query (%d ids) must be longer than document (%d) — the Instruct prefix is not being prepended",
 			len(queryIDs), len(docIDs))
 	}
-	// The document form must be the bare text (Qwen3-Embedding's document prompt is "").
+	// Every sequence ends with the appended EOD — that is the position last-token pooling reads,
+	// and sentence-transformers appends it even though no config file mentions it.
+	if e.appendID < 0 {
+		t.Fatal("no EOD token resolved — pooling would land on the final content token")
+	}
+	for _, c := range []struct {
+		name string
+		ids  []int
+	}{{"document", docIDs}, {"query", queryIDs}} {
+		if got := c.ids[len(c.ids)-1]; got != e.appendID {
+			t.Errorf("%s form ends with id %d, want the appended EOD %d", c.name, got, e.appendID)
+		}
+	}
+	// The document form is the bare text + EOD (Qwen3-Embedding's document prompt is "").
 	bare, err := e.tk.Encode(text, false)
 	if err != nil {
 		t.Fatalf("encode bare: %v", err)
 	}
-	if len(bare) != len(docIDs) {
-		t.Errorf("document form is not the bare text: %d ids vs %d", len(docIDs), len(bare))
+	if len(bare)+1 != len(docIDs) {
+		t.Errorf("document form is not bare text + EOD: %d ids vs %d+1", len(docIDs), len(bare))
 	}
-	// And the query form must be exactly prefix+text.
+	// And the query form is exactly prefix+text + EOD.
 	want, err := e.tk.Encode(qwen3EmbedQueryPrompt+text, false)
 	if err != nil {
 		t.Fatalf("encode prefixed: %v", err)
 	}
-	if len(want) != len(queryIDs) {
-		t.Fatalf("query form is not prefix+text: %d ids vs %d", len(queryIDs), len(want))
+	if len(want)+1 != len(queryIDs) {
+		t.Fatalf("query form is not prefix+text + EOD: %d ids vs %d+1", len(queryIDs), len(want))
 	}
 	// Different prompts must produce different vectors — proof the prefix reaches the model.
 	qv, err := e.Encode(text, true)

@@ -24,17 +24,24 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// Qwen3-Embedding conventions, verified against the model's own config files (not by reputation —
-// see the task doc's warning about that):
+// Qwen3-Embedding conventions. Read from the model's own config files AND — the part config-reading
+// alone gets wrong — from what sentence-transformers actually feeds the model:
 //   - config_sentence_transformers.json prompts: query carries the Instruct preamble, document "".
 //   - 1_Pooling/config.json: pooling_mode_lasttoken=true, include_prompt=true — so the query prompt
 //     is part of the pooled input and is NOT stripped before pooling.
-//   - tokenizer_config.json: add_bos_token=false and add_eos_token absent; the model card appends no
-//     EOS/EOD in either the sentence-transformers or raw-transformers example. So the sequence fed to
-//     the model is exactly the (prompt+text) tokens — no special tokens on either end.
+//   - tokenizer_config.json: add_bos_token=false, add_eos_token ABSENT -> no BOS, and the plain
+//     tokenizer call appends nothing.
+//   - BUT sentence-transformers appends <|endoftext|> (151643) to EVERY input. Nothing in the
+//     configs or the model card says so — `model.tokenize()` had to be inspected to see it. This is
+//     not cosmetic: last-token pooling pools THAT token, so omitting it pools the final content
+//     token instead and yields a plausible, semantically-ordered, but WRONG vector (cosine ~0.4-0.8
+//     vs the reference, while retrieval still looks fine). Note it is <|endoftext|>, NOT the
+//     configured eos_token <|im_end|> (151645) — reading eos_token would also have been wrong.
 const (
 	qwen3EmbedQueryPrompt = "Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery:"
 	qwen3EmbedDocPrompt   = ""
+	// qwen3EmbedEOD is appended to every sequence and is the position last-token pooling reads.
+	qwen3EmbedEOD = "<|endoftext|>"
 )
 
 // decoderEmbedder adapts a loaded goinfer decoder into the embedder seam.
@@ -51,7 +58,31 @@ type decoderEmbedder struct {
 
 	queryPrompt string // prepended when isQuery (pooled with the text — include_prompt: true)
 	docPrompt   string // prepended otherwise ("" for Qwen3-Embedding)
+	appendID    int    // token appended to every sequence (<0 = none); THIS is what gets pooled
 	maxTokens   int    // truncate to this many tokens (0 = no limit), mirroring HF truncation=True
+}
+
+// newDecoderEmbedder builds the embedder and resolves the appended EOD token id.
+//
+// Construct through this, never as a struct literal: appendID's ZERO value is 0, which is a real
+// token id, so a literal silently appends token 0 and pools it. (That is exactly what a first cut
+// of the tests did — the tokenizer-agreement gate caught it.)
+func newDecoderEmbedder(m *decoder.Model, tk *tokenizer.Tokenizer, queryPrompt, docPrompt string) *decoderEmbedder {
+	appendID := -1
+	if id, ok := tk.TokenID(qwen3EmbedEOD); ok {
+		appendID = id
+	}
+	return &decoderEmbedder{
+		m:           m,
+		tk:          tk,
+		dim:         m.Config().HiddenDim,
+		queryPrompt: queryPrompt,
+		docPrompt:   docPrompt,
+		appendID:    appendID,
+		// No truncation by default: Qwen3-Embedding ships no sentence_bert_config.json, so the
+		// reference imposes nothing shorter than the tokenizer's model_max_length (131072).
+		maxTokens: 0,
+	}
 }
 
 // loadDecoderEmbedder wires a causal decoder (.gguf) in as the embedder. Selected by -embed-model
@@ -73,15 +104,10 @@ func (s *server) loadDecoderEmbedder(cfg config) error {
 	if name == "" {
 		name = strings.TrimSuffix(filepath.Base(cfg.embedPath), ".gguf")
 	}
-	e := &decoderEmbedder{
-		m:           m,
-		tk:          tk,
-		dim:         m.Config().HiddenDim,
-		queryPrompt: qwen3EmbedQueryPrompt,
-		docPrompt:   qwen3EmbedDocPrompt,
-		// No truncation by default: Qwen3-Embedding ships no sentence_bert_config.json, so the
-		// reference imposes nothing shorter than the tokenizer's model_max_length (131072).
-		maxTokens: 0,
+	e := newDecoderEmbedder(m, tk, qwen3EmbedQueryPrompt, qwen3EmbedDocPrompt)
+	if e.appendID < 0 {
+		fmt.Fprintf(os.Stderr, "warning: embedding model %q has no %s token — last-token pooling will pool the final content token, which will NOT match the reference\n",
+			cfg.embedPath, qwen3EmbedEOD)
 	}
 	s.embed, s.embedTok, s.embedID, s.embedDim = e, nil, name, e.HiddenDim()
 	fmt.Fprintf(os.Stderr, "loaded decoder-backed embedding model %q (dim %d, last-token pooling) in %s\n",
@@ -161,8 +187,19 @@ func (e *decoderEmbedder) tokenize(text string, isQuery bool) ([]int, error) {
 		// would look like a legitimate embedding.
 		return nil, fmt.Errorf("decoder embedder: input tokenized to zero tokens (empty input?)")
 	}
-	if e.maxTokens > 0 && len(ids) > e.maxTokens {
-		ids = ids[:e.maxTokens]
+	// Truncate BEFORE appending, reserving the slot, so the appended token is never the thing
+	// truncation drops — it must stay last, because it is the pooled position.
+	if e.maxTokens > 0 {
+		room := e.maxTokens
+		if e.appendID >= 0 {
+			room--
+		}
+		if room > 0 && len(ids) > room {
+			ids = ids[:room]
+		}
+	}
+	if e.appendID >= 0 {
+		ids = append(ids, e.appendID)
 	}
 	return ids, nil
 }
