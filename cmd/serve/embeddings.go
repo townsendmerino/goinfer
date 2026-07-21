@@ -179,10 +179,25 @@ func float32sToBase64(v []float32) string {
 	return base64.StdEncoding.EncodeToString(buf)
 }
 
+// embedTokenCounter is implemented by embedders that carry their OWN tokenizer instead of an aikit
+// embed.Tokenizer — the decoder-backed embedder (docs/task-decoder-as-embedder.md). s.embedTok is
+// nil for those, so without this the count below would silently report prompt_tokens: 0 on every
+// response. Preferring this interface keeps usage honest for both embedder kinds.
+type embedTokenCounter interface {
+	CountTokens(text string, isQuery bool) int
+}
+
 // countEmbedTokens sums the wrapped token counts the encoder actually sees
 // ([CLS]+prefix+text+[SEP], truncated to the model's max length), reusing the
 // encoder's own tokenizer + query/doc rule. Tokenize-only, no forward pass.
 func (s *server) countEmbedTokens(inputs []string, isQuery bool) int {
+	if c, ok := s.embed.(embedTokenCounter); ok {
+		total := 0
+		for _, text := range inputs {
+			total += c.CountTokens(text, isQuery)
+		}
+		return total
+	}
 	if s.embedTok == nil {
 		return 0 // no tokenizer (e.g. a stub encoder in tests): skip the count
 	}

@@ -656,6 +656,12 @@ func loadDecoderTokenizer(path string) (*tokenizer.Tokenizer, error) {
 // so it is cheaper than running EncodeTokensWithIDs, and works for both
 // precisions, whereas that method is f32-only).
 func (s *server) loadEncoder(cfg config) error {
+	// A causal decoder used as an embedder (qwen3-embedding / embeddinggemma) arrives as a .gguf
+	// FILE; the aikit encoder path takes an HF directory. Dispatch on that rather than adding
+	// another flag — see docs/task-decoder-as-embedder.md.
+	if fi, statErr := os.Stat(cfg.embedPath); statErr == nil && !fi.IsDir() {
+		return s.loadDecoderEmbedder(cfg)
+	}
 	t0 := time.Now()
 	var (
 		enc  encoder.Encoder
