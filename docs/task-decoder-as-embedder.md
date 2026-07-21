@@ -213,6 +213,39 @@ Scaffolded, skipping until certified:
   `TestQwen3Embedding_gatesAreWired` fails loudly if the golden is pinned but the checkpoint is
   missing, so these can never silently no-op.
 
+### `dimensions` is refused for this embedder — and certifying a floor is not a small follow-up
+
+`cmd/serve` sets `embedMRLMin = 0` for the decoder-backed embedder, so `/v1/embeddings` returns 400
+for any `dimensions` request against Qwen3-Embedding (goinfer `335b009`). Qwen3-Embedding *documents*
+MRL support, but nothing here has **measured** a floor, and an unmeasured floor is exactly the guess
+that guard exists to refuse. Refusing costs Qwen3 clients the `dimensions` parameter; the alternative
+costs someone a silently worse-retrieving vector.
+
+**Decision: leave it refusing** until someone actually asks for truncated Qwen3 embeddings. The
+capability is speculative and the alternatives all cost something real. Recorded here so the
+structural blocker below isn't rediscovered from scratch.
+
+**Why it isn't a one-liner.** aikit's `MatryoshkaFloor` registry is guarded by
+`TestMatryoshkaFloors_matchCoverage`, which requires every exported floor to correspond to a
+certified `covRow`; a `covRow` carries a `Dir` + `loaderKind` that
+`TestEmbedderCoverage_propertiesMatchCheckpoints` loads via `LoadBERT`/`Load`. Qwen3-Embedding is a
+causal decoder **goinfer** runs — aikit's encoder cannot load it. So adding it to `matryoshkaFloors`
+fails the guard, and adding it as a coverage row asserts a loader that cannot load it.
+
+Note the failure would be *quiet*: that properties check is checkpoint-gated (`os.Stat(Dir +
+"/model.safetensors")` → skip), so a dishonest row would **skip**, not fail, wherever the checkpoint
+is absent. That makes the first option below more dangerous than it appears.
+
+| option | cost |
+|---|---|
+| Extend `covRow` with a "certified elsewhere" kind that skips the loader check | keeps one registry, but punches a hole in the guard that made exporting from aikit worth choosing — and the hole is silent (see above) |
+| goinfer owns decoder-embedder floors in its own small registry, with its own measurement | no hole in aikit's guard, but reintroduces exactly the drift risk for that class |
+| Leave it refusing | Qwen3 clients lose `dimensions`; nobody gets a degraded vector |
+
+Whichever is chosen, the floor must be **measured**, not read off a model card — aikit's method is
+paraphrase-pair recall over a fixed corpus at each candidate width
+(`TestEmbedderCoverage_matryoshka`), which is what caught multilingual-e5-base degrading 1.00 → 0.80.
+
 ### Still open
 
 - **embeddinggemma** — still **gated**: `1_Pooling/config.json` returns **HTTP 401** (verified
