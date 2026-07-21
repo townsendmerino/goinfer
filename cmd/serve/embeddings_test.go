@@ -9,7 +9,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
+
+	"github.com/townsendmerino/aikit/encoder"
 )
 
 func TestParseEmbedInput(t *testing.T) {
@@ -57,26 +60,50 @@ func TestParseInputType(t *testing.T) {
 	}
 }
 
+// TestResolveDimensions covers both model kinds, because whether a `dimensions` request is valid
+// depends entirely on whether the model was trained with Matryoshka Representation Learning.
+// Truncating one that wasn't yields a unit-length, plausible, worse-retrieving vector, so it is
+// refused; see resolveDimensions. mrlMin mirrors aikit's Truncatable column (0 = not truncatable).
 func TestResolveDimensions(t *testing.T) {
-	s := &server{embedDim: 768}
 	d := func(n int) *int { return &n }
 	cases := []struct {
-		in   *int
-		want int
-		err  bool
+		name   string
+		mrlMin int
+		in     *int
+		want   int
+		err    bool
 	}{
-		{nil, 768, false},
-		{d(0), 768, false},
-		{d(256), 256, false},
-		{d(768), 768, false},
-		{d(769), 0, true},
-		{d(-1), 0, true},
+		// Pass-through is identical for both kinds: nothing is being truncated.
+		{"non-MRL unset", 0, nil, 768, false},
+		{"non-MRL zero", 0, d(0), 768, false},
+		{"non-MRL native width", 0, d(768), 768, false},
+		{"MRL unset", 256, nil, 768, false},
+		{"MRL native width", 256, d(768), 768, false},
+
+		// The fix: a non-MRL model refuses ANY real truncation.
+		{"non-MRL truncation refused", 0, d(256), 0, true},
+		{"non-MRL truncation refused (1 dim)", 0, d(1), 0, true},
+
+		// An MRL model truncates down to its documented floor, and no further.
+		{"MRL at floor", 256, d(256), 256, false},
+		{"MRL above floor", 256, d(512), 512, false},
+		{"MRL below floor refused", 256, d(255), 0, true},
+		{"MRL far below floor refused", 256, d(64), 0, true},
+
+		// Range checks still apply regardless of MRL.
+		{"over native width", 256, d(769), 0, true},
+		{"negative", 256, d(-1), 0, true},
+		{"over native width, non-MRL", 0, d(769), 0, true},
 	}
 	for _, c := range cases {
-		got, err := s.resolveDimensions(c.in)
-		if (err != nil) != c.err || (!c.err && got != c.want) {
-			t.Errorf("resolveDimensions(%v) = (%d,%v), want (%d,err=%v)", c.in, got, err, c.want, c.err)
-		}
+		t.Run(c.name, func(t *testing.T) {
+			s := &server{embedDim: 768, embedMRLMin: c.mrlMin, embedID: "m"}
+			got, err := s.resolveDimensions(c.in)
+			if (err != nil) != c.err || (!c.err && got != c.want) {
+				t.Errorf("resolveDimensions(mrlMin=%d, %v) = (%d,%v), want (%d,err=%v)",
+					c.mrlMin, c.in, got, err, c.want, c.err)
+			}
+		})
 	}
 }
 
@@ -169,8 +196,16 @@ func (e stubEncoder) EncodeBatch(texts []string, _ []bool, _ int) ([][]float32, 
 	return out, nil
 }
 
+// newEmbedTestServer is a MATRYOSHKA-capable stub (floor 2 of 4), so the existing dimensions
+// tests keep exercising real truncation. Non-MRL behavior is covered by newNonMRLEmbedTestServer.
 func newEmbedTestServer() *server {
-	return &server{embed: stubEncoder{dim: 4}, embedDim: 4, embedID: "stub-embed"}
+	return &server{embed: stubEncoder{dim: 4}, embedDim: 4, embedID: "stub-embed", embedMRLMin: 2}
+}
+
+// newNonMRLEmbedTestServer is the default shape: an embedder never certified for truncation, so
+// embedMRLMin is 0 and any dimensions request must be refused.
+func newNonMRLEmbedTestServer() *server {
+	return &server{embed: stubEncoder{dim: 4}, embedDim: 4, embedID: "stub-nonmrl"}
 }
 
 func postEmbed(t *testing.T, s *server, body string) *httptest.ResponseRecorder {
@@ -330,4 +365,92 @@ func equalStrs(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+// TestHandleEmbeddings_dimensionsRequiresMatryoshka is the guard against a silent-wrong: honoring
+// `dimensions` for a model not trained with Matryoshka Representation Learning returns a
+// unit-length, entirely plausible vector that simply RETRIEVES WORSE. That is measured, not
+// theoretical — aikit's TestEmbedderCoverage_matryoshka shows multilingual-e5-base sliced to a
+// quarter width dropping paraphrase-pair recall 1.00 → 0.80, while genuine MRL models hold their
+// documented floor. Only two of aikit's eight certified embedders qualify.
+//
+// Both directions are asserted, because a guard that only rejects is as broken as one that only
+// accepts: it would refuse the legitimate MRL truncation the parameter exists for.
+func TestHandleEmbeddings_dimensionsRequiresMatryoshka(t *testing.T) {
+	t.Run("non-MRL model rejects any truncation", func(t *testing.T) {
+		s := newNonMRLEmbedTestServer()
+		rr := postEmbed(t, s, `{"input":"x","dimensions":2}`)
+		if rr.Code != http.StatusBadRequest {
+			t.Fatalf("status %d, want 400 — truncating a non-MRL model must be refused, not silently degraded: %s",
+				rr.Code, rr.Body.String())
+		}
+		// The message has to say WHY, or the caller just retries with another width.
+		if body := rr.Body.String(); !strings.Contains(body, "Matryoshka") {
+			t.Errorf("error does not explain the refusal: %s", body)
+		}
+	})
+
+	t.Run("non-MRL model still allows native width", func(t *testing.T) {
+		s := newNonMRLEmbedTestServer()
+		for _, body := range []string{
+			`{"input":"x"}`,                // unset
+			`{"input":"x","dimensions":0}`, // explicit zero
+			`{"input":"x","dimensions":4}`, // exactly the native width — no truncation happens
+		} {
+			rr := postEmbed(t, s, body)
+			if rr.Code != http.StatusOK {
+				t.Errorf("body %s → status %d, want 200 (nothing is being truncated): %s", body, rr.Code, rr.Body.String())
+			}
+		}
+	})
+
+	t.Run("MRL model accepts down to its floor and no further", func(t *testing.T) {
+		s := newEmbedTestServer() // floor 2 of 4
+		rr := postEmbed(t, s, `{"input":"x","dimensions":2}`)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("status %d at the documented floor, want 200: %s", rr.Code, rr.Body.String())
+		}
+		var resp struct {
+			Data []struct {
+				Embedding []float32 `json:"embedding"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if got := len(resp.Data[0].Embedding); got != 2 {
+			t.Errorf("returned %d dims, want 2", got)
+		}
+		// Below the floor is refused: the model was never certified that short.
+		rr = postEmbed(t, s, `{"input":"x","dimensions":1}`)
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("status %d below the floor, want 400: %s", rr.Code, rr.Body.String())
+		}
+	})
+}
+
+// TestMatryoshkaFloor_contract pins the shape of the aikit lookup loadEncoder depends on. Without
+// it, a change to aikit's key format would make every MRL model resolve to 0 and the server would
+// silently start REFUSING legitimate truncation — a quiet capability regression, the mirror of the
+// bug this guard was added for. Both call shapes matter: loadEncoder passes a filesystem path,
+// while the registry is keyed by HF id.
+func TestMatryoshkaFloor_contract(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		want int
+		ok   bool
+	}{
+		{"nomic-ai/nomic-embed-text-v1.5", 64, true},         // HF id
+		{"/home/me/models/nomic-embed-text-v1.5", 64, true},  // path, as loadEncoder passes it
+		{"/home/me/models/nomic-embed-text-v1.5/", 64, true}, // trailing slash
+		{"nomic-ai/nomic-embed-text-v2-moe", 256, true},      //
+		{"BAAI/bge-m3", 0, false},                            // certified, but NOT truncatable
+		{"/home/me/models/multilingual-e5-base", 0, false},   // the one measured to degrade
+		{"some-org/never-heard-of-it", 0, false},             // unknown ⇒ refuse, never guess
+	} {
+		got, ok := encoder.MatryoshkaFloor(c.name)
+		if got != c.want || ok != c.ok {
+			t.Errorf("MatryoshkaFloor(%q) = (%d, %v), want (%d, %v)", c.name, got, ok, c.want, c.ok)
+		}
+	}
 }

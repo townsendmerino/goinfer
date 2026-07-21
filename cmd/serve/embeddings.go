@@ -121,12 +121,31 @@ func parseInputType(t string) (isQuery bool, err error) {
 
 // resolveDimensions validates the optional output-dimension override against the
 // model's native width. nil/0 means full width.
+//
+// Truncation is only legitimate for models trained with Matryoshka Representation Learning.
+// Slicing any other embedder returns a unit-length, entirely plausible vector that simply
+// RETRIEVES WORSE — a silent-wrong, and measured rather than theoretical: aikit's
+// TestEmbedderCoverage_matryoshka shows multilingual-e5-base sliced to a quarter width dropping
+// paraphrase-pair recall 1.00 → 0.80, while genuine MRL models hold their documented floor. So a
+// dimensions request below the model's floor, or ANY dimensions for a non-MRL model, is a 400
+// rather than a quietly degraded vector. s.embedMRLMin carries that floor (0 = not truncatable),
+// resolved at load from aikit's exported registry — the same source of truth that generates its
+// published Truncatable column.
 func (s *server) resolveDimensions(d *int) (int, error) {
-	if d == nil || *d == 0 {
-		return s.embedDim, nil
+	if d == nil || *d == 0 || *d == s.embedDim {
+		return s.embedDim, nil // unset, or explicitly the native width: nothing to truncate
 	}
 	if *d < 1 || *d > s.embedDim {
 		return 0, fmt.Errorf("dimensions must be between 1 and %d", s.embedDim)
+	}
+	if s.embedMRLMin <= 0 {
+		return 0, fmt.Errorf("model %q does not support the dimensions parameter: it was not trained "+
+			"with Matryoshka Representation Learning, so a shortened vector would look valid but retrieve "+
+			"worse. Omit dimensions, or pass %d", s.embedID, s.embedDim)
+	}
+	if *d < s.embedMRLMin {
+		return 0, fmt.Errorf("dimensions %d is below the smallest supported width for %q: dimensions "+
+			"must be between %d and %d", *d, s.embedID, s.embedMRLMin, s.embedDim)
 	}
 	return *d, nil
 }

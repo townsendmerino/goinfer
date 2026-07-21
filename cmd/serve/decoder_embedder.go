@@ -110,6 +110,11 @@ func (s *server) loadDecoderEmbedder(cfg config) error {
 			cfg.embedPath, qwen3EmbedEOD)
 	}
 	s.embed, s.embedTok, s.embedID, s.embedDim = e, nil, name, e.HiddenDim()
+	// Not truncatable, explicitly. Qwen3-Embedding documents MRL support, but nothing here has
+	// MEASURED it the way aikit's coverage gate measures its own rows, and an unmeasured floor is
+	// exactly the guess resolveDimensions exists to refuse. Refusing `dimensions` is the safe
+	// direction; certifying a floor (aikit's paraphrase-pair-recall method) is what would change it.
+	s.embedMRLMin = 0
 	fmt.Fprintf(os.Stderr, "loaded decoder-backed embedding model %q (dim %d, last-token pooling) in %s\n",
 		name, s.embedDim, time.Since(t0).Round(time.Millisecond))
 	return nil

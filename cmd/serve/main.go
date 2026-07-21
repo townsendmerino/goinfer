@@ -690,8 +690,18 @@ func (s *server) loadEncoder(cfg config) error {
 		name = filepath.Base(strings.TrimRight(cfg.embedPath, "/"))
 	}
 	s.embed, s.embedTok, s.embedID, s.embedDim = enc, tok, name, enc.HiddenDim()
-	fmt.Fprintf(os.Stderr, "loaded embedding model %q (dim %d, %s) in %s\n",
-		name, s.embedDim, prec, time.Since(t0).Round(time.Millisecond))
+	// Matryoshka floor from aikit's exported registry — the same source of truth behind its
+	// published Truncatable column. Unknown/non-MRL models get 0, i.e. `dimensions` is refused
+	// rather than honored into a silently worse-retrieving vector. Keyed off the model PATH (the
+	// directory name is the HF model name); embedName is an operator-chosen alias, so it must not
+	// decide this.
+	s.embedMRLMin, _ = encoder.MatryoshkaFloor(cfg.embedPath)
+	trunc := "not truncatable"
+	if s.embedMRLMin > 0 {
+		trunc = fmt.Sprintf("truncatable to %d", s.embedMRLMin)
+	}
+	fmt.Fprintf(os.Stderr, "loaded embedding model %q (dim %d, %s, %s) in %s\n",
+		name, s.embedDim, prec, trunc, time.Since(t0).Round(time.Millisecond))
 	return nil
 }
 

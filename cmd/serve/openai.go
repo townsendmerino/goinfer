@@ -120,6 +120,9 @@ type server struct {
 	embedTok *embed.Tokenizer // counts tokens for usage.prompt_tokens
 	embedID  string
 	embedDim int
+	// embedMRLMin is the smallest width this embedder may be truncated to (0 = NOT truncatable,
+	// the safe default). Only Matryoshka-trained models may be sliced; see resolveDimensions.
+	embedMRLMin int
 
 	// Responses API (/v1/responses) state store for store/previous_response_id.
 	responses *responseStore
