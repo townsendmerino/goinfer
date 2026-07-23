@@ -106,7 +106,16 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 }
 
 func writeErr(w http.ResponseWriter, code int, msg string) {
-	writeJSON(w, code, map[string]any{"error": map[string]any{"message": msg, "type": "invalid_request_error"}})
+	// Type mirrors the status so typed OpenAI-SDK client retry logic keys off it
+	// (429 → back off, 5xx → retry, 4xx → don't).
+	typ := "invalid_request_error"
+	switch {
+	case code == http.StatusTooManyRequests:
+		typ = "rate_limit_error"
+	case code >= 500:
+		typ = "api_error"
+	}
+	writeJSON(w, code, map[string]any{"error": map[string]any{"message": msg, "type": typ}})
 }
 
 // writeServerErr reports a generation/encode failure as a 500 with type
@@ -142,17 +151,26 @@ func parseStop(raw json.RawMessage) []string {
 	return many
 }
 
-// firstString reads a "prompt" that is a string (or the first of an array).
-func firstString(raw json.RawMessage) string {
+// singlePromptString accepts the /v1/completions prompt shapes goinfer supports: a
+// string, or a single-element []string. A multi-element batch, a []int / [][]int
+// token-id prompt, or anything else is a 400 rather than silently decoding to "" (a
+// BOS-only generation returned as an unrelated 200).
+func singlePromptString(raw json.RawMessage) (string, error) {
+	if len(raw) == 0 {
+		return "", nil
+	}
 	var one string
 	if json.Unmarshal(raw, &one) == nil {
-		return one
+		return one, nil
 	}
 	var many []string
-	if json.Unmarshal(raw, &many) == nil && len(many) > 0 {
-		return many[0]
+	if json.Unmarshal(raw, &many) == nil {
+		if len(many) == 1 {
+			return many[0], nil
+		}
+		return "", fmt.Errorf("prompt: batch prompts are not supported (%d entries); send a single string", len(many))
 	}
-	return ""
+	return "", fmt.Errorf("prompt: unsupported shape — send a string; token-id arrays and batches are not supported")
 }
 
 // firstStop returns the byte index of the earliest stop string in text (and the

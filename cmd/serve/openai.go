@@ -169,17 +169,18 @@ func (s *server) servedNames() []string {
 // --- OpenAI request shapes (the subset we honor) ---
 
 type sampling struct {
-	Temperature      *float64        `json:"temperature"`
-	TopP             *float64        `json:"top_p"`
-	TopK             *int            `json:"top_k"` // extension (not in the OpenAI API)
-	MaxTokens        *int            `json:"max_tokens"`
-	Seed             *int64          `json:"seed"`
-	FrequencyPenalty *float64        `json:"frequency_penalty"`
-	PresencePenalty  *float64        `json:"presence_penalty"`
-	Stop             json.RawMessage `json:"stop"` // string | []string
-	Logprobs         bool            `json:"logprobs"`
-	TopLogprobs      *int            `json:"top_logprobs"`
-	ResponseFormat   *respFormat     `json:"response_format"`
+	Temperature         *float64        `json:"temperature"`
+	TopP                *float64        `json:"top_p"`
+	TopK                *int            `json:"top_k"` // extension (not in the OpenAI API)
+	MaxTokens           *int            `json:"max_tokens"`
+	MaxCompletionTokens *int            `json:"max_completion_tokens"` // current OpenAI SDKs send this instead of max_tokens; preferred when set
+	Seed                *int64          `json:"seed"`
+	FrequencyPenalty    *float64        `json:"frequency_penalty"`
+	PresencePenalty     *float64        `json:"presence_penalty"`
+	Stop                json.RawMessage `json:"stop"` // string | []string
+	Logprobs            bool            `json:"logprobs"`
+	TopLogprobs         *int            `json:"top_logprobs"`
+	ResponseFormat      *respFormat     `json:"response_format"`
 }
 
 type respFormat struct {
@@ -301,6 +302,10 @@ func (s *server) handleChat(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if req.Stream && req.Logprobs { // the stream path has no logprobs field — reject rather than silently drop
+		writeErr(w, http.StatusBadRequest, "logprobs is not supported together with stream:true")
+		return
+	}
 	if !lm.enter(w) {
 		return
 	}
@@ -359,7 +364,11 @@ func (s *server) handleCompletions(w http.ResponseWriter, r *http.Request) {
 		s.modelNotFound(w, req.Model)
 		return
 	}
-	prompt := firstString(req.Prompt)
+	prompt, perr := singlePromptString(req.Prompt)
+	if perr != nil { // a []int token-id prompt or a batch array used to decode to "" → BOS-only 200
+		writeErr(w, http.StatusBadRequest, perr.Error())
+		return
+	}
 	ids, err := lm.tk.Encode(prompt, true) // raw completion: tokenizer adds BOS
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "encode: "+err.Error())
@@ -439,10 +448,14 @@ func (lm *loadedModel) prepare(sm sampling, promptIDs []int) (genRequest, error)
 	if sm.PresencePenalty != nil {
 		sp.PresencePenalty = *sm.PresencePenalty
 	}
+	maxTok := sm.MaxTokens
+	if sm.MaxCompletionTokens != nil { // OpenAI's newer field wins over the legacy max_tokens
+		maxTok = sm.MaxCompletionTokens
+	}
 	gr := genRequest{
 		promptIDs:   promptIDs,
 		sp:          sp,
-		maxTokens:   deref(sm.MaxTokens, defaultMaxTokens),
+		maxTokens:   deref(maxTok, defaultMaxTokens),
 		stopStrings: parseStop(sm.Stop),
 	}
 	g, err := grammarFor(sm.ResponseFormat)

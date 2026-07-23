@@ -231,9 +231,13 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 		out = append(out, outputMessage(id+"-msg", lead))
 	}
 	for i, c := range calls {
+		callID := c.ID
+		if callID == "" { // model didn't emit an id; synthesize one so function_call_output can correlate (as toAPICalls/toolUseBlock do)
+			callID = "call_" + reqID()
+		}
 		out = append(out, map[string]any{
 			"type": "function_call", "id": fmt.Sprintf("%s-fc%d", id, i),
-			"call_id": c.ID, "name": c.Name, "arguments": string(c.Arguments), "status": "completed",
+			"call_id": callID, "name": c.Name, "arguments": string(c.Arguments), "status": "completed",
 		})
 	}
 	if len(out) == 0 { // model produced nothing parseable → empty message
