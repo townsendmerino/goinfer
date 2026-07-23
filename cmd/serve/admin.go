@@ -80,7 +80,13 @@ func (s *server) handleAdminLoad(w http.ResponseWriter, r *http.Request) {
 	s.models[lm.name] = lm
 	s.regMu.Unlock()
 	if s.cfg.sessionDir != "" && s.cfg.kvSessions > 0 {
+		// The model is now published, so a request can already acquire it. lm.mu is the
+		// sessionLRU's guard (every handler holds it via enter across sessions.acquire), and
+		// load doesn't take it — so hold it here to serialize this not-goroutine-safe restore
+		// against a handler that reaches the LRU first, instead of racing the map (M5).
+		lm.mu.Lock()
 		lm.sessions.load(sessionSubdir(s.cfg.sessionDir, lm.fp))
+		lm.mu.Unlock()
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"id": lm.name, "object": "model", "status": "loaded"})
 }

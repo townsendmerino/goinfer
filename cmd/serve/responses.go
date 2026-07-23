@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -126,7 +125,7 @@ func (s *server) handleResponses(w http.ResponseWriter, r *http.Request) {
 	// Tool path: render declarations, constrain when unambiguous, buffer the full
 	// output, parse into function_call items (buffered, like the chat tools path).
 	if len(req.Tools) > 0 && toolChoiceMode(req.ToolChoice) != "none" && lm.tmpl != nil && lm.tmpl.SupportsTools() {
-		s.respondTools(w, lm, req, messages, sm, id, created, store)
+		s.respondTools(w, r, lm, req, messages, sm, id, created, store)
 		return
 	}
 
@@ -188,7 +187,7 @@ func (s *server) handleResponses(w http.ResponseWriter, r *http.Request) {
 
 // respondTools generates a (buffered) tool-calling response and emits
 // function_call output items (or a message when the model answered normally).
-func (s *server) respondTools(w http.ResponseWriter, lm *loadedModel, req responseReq, messages []chatMessage, sm sampling, id string, created int64, store bool) {
+func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loadedModel, req responseReq, messages []chatMessage, sm sampling, id string, created int64, store bool) {
 	tools := make([]chat.Tool, len(req.Tools))
 	for i, t := range req.Tools {
 		tools[i] = chat.Tool{Name: t.Function.Name, Description: t.Function.Description, Parameters: t.Function.Parameters}
@@ -220,7 +219,7 @@ func (s *server) respondTools(w http.ResponseWriter, lm *loadedModel, req respon
 	defer lm.exit()
 	inTok := len(gr.promptIDs)
 	var sb strings.Builder
-	_, nComp, _, _, gerr := lm.drive(context.Background(), gr, func(t string) { sb.WriteString(t) })
+	_, nComp, _, _, gerr := lm.drive(r.Context(), gr, func(t string) { sb.WriteString(t) })
 	if gerr != nil {
 		writeServerErr(w, "generation failed: "+gerr.Error())
 		return
