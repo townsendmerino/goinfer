@@ -597,7 +597,11 @@ func TestCapabilityMatrix(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read %s: %v (capability matrix stale — regenerate: go test ./decoder -run CapabilityMatrix -update)", path, err)
 		}
-		if !bytes.Equal(got, want) {
+		// stripCR so the comparison is EOL-agnostic — a Windows checkout stores the committed doc
+		// as CRLF while `want` is always LF-generated. Applies to the .json as much as the .md: it
+		// is generated text under the same gate, so it has the same exposure. (See stripCR in
+		// hardware_matrix_test.go; .gitattributes pins both docs to eol=lf as the other half.)
+		if !bytes.Equal(stripCR(got), want) {
 			t.Fatalf("%s out of date — capability matrix stale — regenerate: go test ./decoder -run CapabilityMatrix -update", path)
 		}
 	}

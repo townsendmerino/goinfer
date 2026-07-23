@@ -1,0 +1,8 @@
+# Generated docs are byte/line compared against LF-generated content by freshness
+# gates (decoder/hardware_matrix_test.go, decoder/capability_matrix_test.go). Pin
+# them to LF so a Windows checkout — or a Windows `-update` regeneration — stays LF
+# instead of fighting git's autocrlf smudge filter. The gates also strip CR before
+# comparing (stripCR), so this is defense in depth, not the sole guard.
+docs/hardware-matrix.md      text eol=lf
+docs/capability-matrix.md    text eol=lf
+docs/capability-matrix.json  text eol=lf

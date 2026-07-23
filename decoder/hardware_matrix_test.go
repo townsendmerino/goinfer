@@ -128,10 +128,19 @@ func TestHardwareMatrix_fresh(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read %s: %v (hardware matrix stale — regenerate: go test ./decoder -run HardwareMatrix -update)", hwMatrixPath, err)
 	}
-	if !bytes.Equal(got, md) {
+	// stripCR before comparing: the generated md is always LF (Go "\n" literals), but a Windows
+	// checkout with no eol pin stores the committed doc as CRLF, so a bare bytes.Equal would report
+	// it "stale" on line endings alone. .gitattributes pins these docs to eol=lf; this is the
+	// other half, so the gate passes under any git autocrlf setting. (Windows CI would trip it —
+	// goinfer's is ubuntu+macos only, so this is a latent bug, not an active one.)
+	if !bytes.Equal(stripCR(got), md) {
 		t.Fatalf("%s out of date — hardware matrix stale — regenerate: go test ./decoder -run HardwareMatrix -update", hwMatrixPath)
 	}
 }
+
+// stripCR removes carriage returns so a generated-doc freshness comparison is line-ending agnostic
+// (mirrors aikit cfda968). Shared by the hardware- and capability-matrix gates.
+func stripCR(b []byte) []byte { return bytes.ReplaceAll(b, []byte{'\r'}, nil) }
 
 // TestHardwareMatrix_breakItFirst proves the freshness gate is not vacuous: drop a feature a
 // declared family needs, and confirm (a) ResidentEligible flips that cell ✅→CPU and (b) the
