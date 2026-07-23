@@ -9,6 +9,9 @@ package decoder
 // See docs/qwen3_5_moe.md.
 func (m *Model) runLayersQwen35(id int, cache *KVCache) ([]float32, error) {
 	arch := m.w.arch
+	if cache.scr == nil { // a cache built via NewKVCache directly (tests) skips runLayers' setup
+		cache.scr = newDecodeScratch(arch)
+	}
 	g := arch.qwen35
 	hidden := arch.HiddenDim
 	eps := arch.NormEps

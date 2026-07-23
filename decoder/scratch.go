@@ -87,9 +87,10 @@ func (s *decodeScratch) attnBatchBufs(nKeys, hd int) (qh, kh, vt, scores, ch []f
 		s.aqh = make([]float32, hd)
 		s.ach = make([]float32, hd)
 	}
-	if cap(s.akh) < nKeys*hd {
-		s.akh = make([]float32, nKeys*hd)
-		s.avt = make([]float32, nKeys*hd)
+	if n := nKeys * hd; cap(s.akh) < n {
+		g := max(2*cap(s.akh), n) // headroom: nKeys grows by 1 each decode step, so exact-fit reallocs+zeroes this multi-KB buffer every token
+		s.akh = make([]float32, g)
+		s.avt = make([]float32, g)
 	}
 	return s.aqh[:hd], s.akh[:nKeys*hd], s.avt[:nKeys*hd], s.scoresBuf(nKeys), s.ach[:hd]
 }
@@ -98,8 +99,9 @@ func (s *decodeScratch) attnBatchBufs(nKeys, hd int) (qh, kh, vt, scores, ch []f
 // assembling a local layer's contiguous read window in the K=1 MoE decode path.
 func (s *decodeScratch) localBufs(n int) (lk, lv []float32) {
 	if cap(s.localK) < n {
-		s.localK = make([]float32, n)
-		s.localV = make([]float32, n)
+		g := max(2*cap(s.localK), n) // headroom: window grows each step; avoid a per-token realloc+zero
+		s.localK = make([]float32, g)
+		s.localV = make([]float32, g)
 	}
 	return s.localK[:n], s.localV[:n]
 }

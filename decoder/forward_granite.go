@@ -5,6 +5,23 @@ import (
 	"strconv"
 )
 
+// SSM forward test/isolation seams, read once at init (the package convention) rather
+// than per layer/token inside the decode loop.
+var (
+	ssmNoMul     = os.Getenv("GOINFER_SSM_NOMUL") != ""
+	ssmSkipFFN   = os.Getenv("GOINFER_SSM_SKIPFFN") != ""
+	ssmStopLayer = ssmStopLayerEnv()
+)
+
+func ssmStopLayerEnv() int {
+	if v := os.Getenv("GOINFER_SSM_STOP_LAYER"); v != "" {
+		if n, e := strconv.Atoi(v); e == nil {
+			return n
+		}
+	}
+	return -1
+}
+
 // Granite-4.0-H (granitemoehybrid) forward path — the hybrid: each layer is either a
 // Mamba-2 selective-scan mixer (recurrent state in the cache) or GQA softmax
 // attention (KV cache), every layer a routed+shared MoE. Four Granite scalars apply:
@@ -15,6 +32,9 @@ import (
 // Mamba-2 recurrence sees every token), mirroring runLayersQwen35.
 func (m *Model) runLayersGranite(id int, cache *KVCache) ([]float32, error) {
 	arch := m.w.arch
+	if cache.scr == nil { // a cache built via NewKVCache directly (tests) skips runLayers' setup
+		cache.scr = newDecodeScratch(arch)
+	}
 	g := arch.granite
 	hidden := arch.HiddenDim
 	eps := arch.NormEps
@@ -25,7 +45,7 @@ func (m *Model) runLayersGranite(id int, cache *KVCache) ([]float32, error) {
 	}
 
 	embMul, residMul := g.EmbMul, g.ResidMul
-	if os.Getenv("GOINFER_SSM_NOMUL") != "" { // isolation seam (matches GraniteResidentParams)
+	if ssmNoMul { // isolation seam (matches GraniteResidentParams)
 		embMul, residMul = 1, 1
 	}
 	h := make([]float32, hidden)
@@ -34,12 +54,7 @@ func (m *Model) runLayersGranite(id int, cache *KVCache) ([]float32, error) {
 		h[i] *= embMul // embedding_multiplier
 	}
 
-	stopLayer := -1 // GOINFER_SSM_STOP_LAYER debug: truncate to localize the resident SSM bug
-	if v := os.Getenv("GOINFER_SSM_STOP_LAYER"); v != "" {
-		if n, e := strconv.Atoi(v); e == nil {
-			stopLayer = n
-		}
-	}
+	stopLayer := ssmStopLayer // GOINFER_SSM_STOP_LAYER debug: truncate to localize the resident SSM bug
 	for l := 0; l < arch.NumLayers; l++ {
 		if stopLayer >= 0 && l > stopLayer {
 			break
@@ -60,7 +75,7 @@ func (m *Model) runLayersGranite(id int, cache *KVCache) ([]float32, error) {
 		}
 
 		// MoE FFN sub-block (Pre2). post_attention_layernorm is the pre-MLP norm.
-		if os.Getenv("GOINFER_SSM_SKIPFFN") == "" {
+		if !ssmSkipFFN {
 			n2 := append([]float32(nil), h...)
 			rmsNorm(n2, lw.PreMLPNorm, 1, hidden, eps, arch.RMSAddOne)
 			ffn, err := moeMLP(n2, lw, arch, m.be, m.pager)

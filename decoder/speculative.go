@@ -262,6 +262,10 @@ func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxT
 				allAccept = false
 				break
 			}
+			stats.Evaluated += accepted // positions actually verified: the accepts...
+			if !allAccept {
+				stats.Evaluated++ // ...plus the one rejection this round (EvalAcceptanceRate)
+			}
 			if allAccept {
 				nextTok = argmax(logitsN[K]) // bonus token
 			}

@@ -471,6 +471,12 @@ func (m *Model) forwardN(ids []int, cache *KVCache) ([][]float32, error) {
 	if K == 0 {
 		return nil, nil
 	}
+	// Tree verify needs the batched path: the sequential fallback ignores treeRowPos/
+	// treeMask, so tree nodes would be attended as a linear chain (wrong parents) —
+	// error rather than silently mis-verify.
+	if cache.treeMask != nil && !m.canBatchN(K) {
+		return nil, fmt.Errorf("decoder.forwardN: tree verify unsupported on this arch (not batchable)")
+	}
 	// Compute-time LoRA (#7) is wired only into the sequential forward, so an active
 	// adapter must take the M=1 path (as prefillLogits does): the batched verify would
 	// project every position with the base model and commit base K/V, silently

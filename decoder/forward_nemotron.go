@@ -10,6 +10,9 @@ package decoder
 // token), mirroring runLayersGranite.
 func (m *Model) runLayersNemotron(id int, cache *KVCache) ([]float32, error) {
 	arch := m.w.arch
+	if cache.scr == nil { // a cache built via NewKVCache directly (tests) skips runLayers' setup
+		cache.scr = newDecodeScratch(arch)
+	}
 	np := arch.nemotron
 	hidden := arch.HiddenDim
 	eps := arch.NormEps

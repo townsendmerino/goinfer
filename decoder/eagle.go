@@ -82,7 +82,15 @@ func LoadEagleHead(dir string) (*EagleHead, error) {
 	if err != nil {
 		return nil, fmt.Errorf("eagle: open safetensors: %w", err)
 	}
-	// st is retained on the head (the WeightMats alias its mmap); freed by Close.
+	// st is retained on the head (the WeightMats alias its mmap); freed by Close. Every
+	// error path below returned without closing it — leak one mmap per bad head. Close
+	// it unless we reach the successful return.
+	loaded := false
+	defer func() {
+		if !loaded {
+			st.Close()
+		}
+	}()
 
 	h := c.HiddenSize
 	qDim := c.NumAttentionHeads * c.HeadDim
@@ -155,6 +163,7 @@ func LoadEagleHead(dir string) (*EagleHead, error) {
 		head.d2t[i] = int32(v)
 	}
 	head.st = st
+	loaded = true
 	return head, nil
 }
 

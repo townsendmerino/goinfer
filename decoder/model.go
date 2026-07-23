@@ -262,6 +262,10 @@ func (m *Model) Close() error {
 		_ = mmap.Unmap(m.mmap)
 		m.mmap = nil
 	}
+	if m.w != nil && m.w.st != nil { // release the safetensors mmap + per-shard fds; serve load/unload cycles otherwise retain them until GC
+		_ = m.w.st.Close()
+		m.w.st = nil
+	}
 	for _, rt := range m.adapters { // release each compute-time adapter's mmap (#7)
 		rt.close()
 	}
