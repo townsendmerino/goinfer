@@ -76,7 +76,36 @@ func JSONSchema(schema []byte) (Grammar, error) {
 }
 
 // compile turns one JSON Schema object into a node.
+// schemaKeywords are the keywords compile enforces plus the annotation-only
+// keywords it may safely ignore. Any other keyword is an assertion we do NOT enforce
+// (pattern, minimum, maxLength, oneOf, $ref, uniqueItems, …) — the package contract
+// is that these are a compile error, not a silent no-op, so a caller can't believe a
+// constraint is in force that isn't (M27). `format` is annotation-only by JSON Schema
+// 2020-12 default, so it's allowed and ignored rather than rejected.
+var schemaKeywords = map[string]bool{
+	// enforced
+	"type": true, "enum": true, "const": true,
+	"properties": true, "required": true, "additionalProperties": true, "items": true,
+	"minItems": true, "maxItems": true,
+	// annotation-only — allowed, not enforced
+	"title": true, "description": true, "default": true, "examples": true, "format": true,
+	"$schema": true, "$id": true, "$comment": true,
+	"deprecated": true, "readOnly": true, "writeOnly": true,
+}
+
+func checkSchemaKeys(s map[string]any) error {
+	for k := range s {
+		if !schemaKeywords[k] {
+			return fmt.Errorf("constrain: unsupported schema keyword %q — it would be silently ignored, so the constraint the caller expects is not enforced; remove it or use a supported keyword", k)
+		}
+	}
+	return nil
+}
+
 func compile(s map[string]any) (*node, error) {
+	if err := checkSchemaKeys(s); err != nil {
+		return nil, err
+	}
 	// enum / const first — they pin a fixed set of literals regardless of type.
 	if c, ok := s["const"]; ok {
 		enc, err := encodeLiteral(c)
@@ -131,20 +160,47 @@ func compile(s map[string]any) (*node, error) {
 	}
 }
 
+// validPropertyName rejects property names the key grammar can't match byte-for-byte:
+// keyStep treats an unescaped '"' as the key terminator and does not accept a JSON
+// escape ('\'), and control bytes never appear literally in a JSON string. Such a
+// name compiles but is unsatisfiable — mid-generation every logit goes to −∞, the
+// exact wedged state the fuzzer flags as a bug. Reject at compile instead (M27).
+func validPropertyName(name string) error {
+	for i := 0; i < len(name); i++ {
+		if c := name[i]; c == '"' || c == '\\' || c < 0x20 || c == 0x7f {
+			return fmt.Errorf("constrain: property name %q contains a byte (0x%02x) the key grammar cannot match (\", \\, or a control character)", name, c)
+		}
+	}
+	return nil
+}
+
 func compileObject(s map[string]any) (*node, error) {
 	// Closed objects only: the grammar can't enforce an open additionalProperties
 	// (that would need a free-JSON sub-grammar). Reject an explicit `true`.
+	apClosed := false
 	if ap, ok := s["additionalProperties"]; ok {
 		if b, isBool := ap.(bool); !isBool || b {
 			return nil, fmt.Errorf("constrain: only additionalProperties:false is supported")
 		}
+		apClosed = true // ok && the value is literal false
 	}
 	propsRaw, _ := s["properties"].(map[string]any)
 	if len(propsRaw) > 64 {
 		return nil, fmt.Errorf("constrain: object with >64 properties unsupported")
 	}
+	// An object with no declared properties and no `additionalProperties:false` is the
+	// freeform "any object" shape (the standard freeform tool-arguments schema). The
+	// grammar can only build a CLOSED object, so it would compile to "{} only" — far
+	// tighter than the schema means. Reject it loudly; an explicit closed empty object
+	// (additionalProperties:false, no properties) legitimately matches just "{}" (M27).
+	if len(propsRaw) == 0 && !apClosed {
+		return nil, fmt.Errorf("constrain: object with no properties is unconstrainable (a freeform object needs a free-JSON sub-grammar); declare properties or set additionalProperties:false for an empty object")
+	}
 	names := make([]string, 0, len(propsRaw))
 	for name := range propsRaw {
+		if err := validPropertyName(name); err != nil {
+			return nil, err
+		}
 		names = append(names, name)
 	}
 	sort.Strings(names) // deterministic index→bit assignment

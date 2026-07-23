@@ -40,15 +40,24 @@ func SchemaFromStruct(v any) ([]byte, error) {
 	if t == nil || t.Kind() != reflect.Struct {
 		return nil, fmt.Errorf("constrain: GrammarFromStruct needs a struct, got %v", t)
 	}
-	m, err := structSchema(t)
+	m, err := structSchema(t, map[reflect.Type]bool{})
 	if err != nil {
 		return nil, err
 	}
 	return json.Marshal(m)
 }
 
-// structSchema builds the object schema for a struct type.
-func structSchema(t reflect.Type) (map[string]any, error) {
+// structSchema builds the object schema for a struct type. visited holds the struct
+// types on the current recursion path so a self-referential type (e.g.
+// `type Node struct{ Children []Node }`) is a clean error, not a stack overflow — it
+// can never be expressed as a finite closed-object grammar (M27). It's removed on the
+// way back up, so the same type reused across sibling fields is still fine.
+func structSchema(t reflect.Type, visited map[reflect.Type]bool) (map[string]any, error) {
+	if visited[t] {
+		return nil, fmt.Errorf("constrain: recursive type %v is unsupported", t)
+	}
+	visited[t] = true
+	defer delete(visited, t)
 	props := map[string]any{}
 	var required []string
 	for f := range t.Fields() {
@@ -64,7 +73,7 @@ func structSchema(t reflect.Type) (map[string]any, error) {
 			optional = true
 			ft = ft.Elem()
 		}
-		ps, err := typeSchema(ft)
+		ps, err := typeSchema(ft, visited)
 		if err != nil {
 			return nil, fmt.Errorf("field %s: %w", f.Name, err)
 		}
@@ -80,8 +89,9 @@ func structSchema(t reflect.Type) (map[string]any, error) {
 	return m, nil
 }
 
-// typeSchema maps a Go type to its JSON Schema node.
-func typeSchema(t reflect.Type) (map[string]any, error) {
+// typeSchema maps a Go type to its JSON Schema node. visited threads through to
+// structSchema to break recursive-type cycles (M27).
+func typeSchema(t reflect.Type, visited map[reflect.Type]bool) (map[string]any, error) {
 	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
@@ -96,9 +106,9 @@ func typeSchema(t reflect.Type) (map[string]any, error) {
 	case reflect.Float32, reflect.Float64:
 		return map[string]any{"type": "number"}, nil
 	case reflect.Struct:
-		return structSchema(t)
+		return structSchema(t, visited)
 	case reflect.Slice, reflect.Array:
-		items, err := typeSchema(t.Elem())
+		items, err := typeSchema(t.Elem(), visited)
 		if err != nil {
 			return nil, err
 		}

@@ -1,6 +1,7 @@
 package tokenizer
 
 import (
+	"container/heap"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -381,7 +382,7 @@ func (t *Tokenizer) Encode(text string, addBOS bool) ([]int, error) {
 		return t.encodeByteLevel(text, addBOS)
 	}
 	var out []int32
-	if addBOS {
+	if addBOS && t.special.BOS >= 0 { // a GGUF llama-family model may carry no BOS key ⇒ BOS == -1; don't emit a garbage id (M28)
 		out = append(out, int32(t.special.BOS))
 	}
 
@@ -501,24 +502,94 @@ func (t *Tokenizer) bpe(gap string) []int32 {
 // Both families call it; only the initial symbol construction (per-rune +
 // byte-fallback vs byte-level) and the id mapping around it differ. The merge
 // table itself is identical HF data, so the merge loop is too.
+// mergeSymbols applies BPE merges to syms in ascending rank order, leftmost first
+// on a tie. Behaviorally identical to the naive "rescan for the globally best pair
+// each step" (the golden-parity tests gate this), but O(n log n) via a min-heap over
+// a doubly-linked list instead of O(n²): Gemma has no pretokenizer, so a whole
+// inter-added-token gap arrives here as ONE unit, and the old rescan turned a few
+// hundred KB of client text into minutes of CPU (M28).
 func (t *Tokenizer) mergeSymbols(syms []string) []string {
-	for len(syms) >= 2 {
-		const maxRank = int32(1<<31 - 1)
-		bestRank := maxRank
-		bestI := -1
-		for i := 0; i+1 < len(syms); i++ {
-			if r, ok := t.pairRank[bigram{syms[i], syms[i+1]}]; ok && r < bestRank {
-				bestRank = r
-				bestI = i
-			}
-		}
-		if bestI < 0 {
-			break
-		}
-		syms[bestI] += syms[bestI+1]
-		syms = append(syms[:bestI+1], syms[bestI+2:]...)
+	n := len(syms)
+	if n < 2 {
+		return syms
 	}
-	return syms
+	text := make([]string, n) // node text (grows as pairs merge into the left node)
+	prev := make([]int32, n)
+	next := make([]int32, n)
+	alive := make([]bool, n)
+	copy(text, syms)
+	for i := range text {
+		prev[i] = int32(i - 1)
+		next[i] = int32(i + 1)
+		alive[i] = true
+	}
+	next[n-1] = -1
+
+	// A candidate's key packs (rank, leftNodeIndex) so the heap pops the lowest rank
+	// and, on a tie, the leftmost node — the same choice the rescan made. Node indices
+	// never change, and surviving nodes keep left-to-right order, so leftmost-by-index
+	// == leftmost-in-the-old-array.
+	h := &mergeHeap{}
+	pushPair := func(left int32) {
+		if left < 0 {
+			return
+		}
+		r := next[left]
+		if r < 0 {
+			return
+		}
+		if rank, ok := t.pairRank[bigram{text[left], text[r]}]; ok {
+			heap.Push(h, mergeCand{key: int64(rank)<<32 | int64(left), left: left, right: r})
+		}
+	}
+	for i := int32(0); i+1 < int32(n); i++ {
+		pushPair(i)
+	}
+	for h.Len() > 0 {
+		c := heap.Pop(h).(mergeCand)
+		if !alive[c.left] || !alive[c.right] || next[c.left] != c.right {
+			continue // one endpoint was already merged away
+		}
+		// The left node's text may have grown since this candidate was queued (a fresh
+		// candidate with the correct rank was pushed then); re-derive the rank and drop
+		// this one if it no longer matches.
+		if rank, ok := t.pairRank[bigram{text[c.left], text[c.right]}]; !ok || int64(rank)<<32|int64(c.left) != c.key {
+			continue
+		}
+		text[c.left] += text[c.right]
+		alive[c.right] = false
+		next[c.left] = next[c.right]
+		if nr := next[c.right]; nr >= 0 {
+			prev[nr] = c.left
+		}
+		pushPair(prev[c.left]) // the pair to the left now has a new right text
+		pushPair(c.left)       // and this node has a new right neighbor
+	}
+	out := syms[:0] // node 0 is never a right child, so it stays the live head
+	for i := int32(0); i >= 0; i = next[i] {
+		out = append(out, text[i])
+	}
+	return out
+}
+
+// mergeCand is one candidate BPE merge on the heap; key = rank<<32 | leftIndex.
+type mergeCand struct {
+	key         int64
+	left, right int32
+}
+
+type mergeHeap []mergeCand
+
+func (h mergeHeap) Len() int           { return len(h) }
+func (h mergeHeap) Less(i, j int) bool { return h[i].key < h[j].key }
+func (h mergeHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+func (h *mergeHeap) Push(x any)        { *h = append(*h, x.(mergeCand)) }
+func (h *mergeHeap) Pop() any {
+	old := *h
+	n := len(old)
+	c := old[n-1]
+	*h = old[:n-1]
+	return c
 }
 
 // Decode turns token ids back into text: render each piece (with ▁ → space),

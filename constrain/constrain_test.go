@@ -16,6 +16,47 @@ func bytesVocab(toks ...string) [][]byte {
 	return out
 }
 
+// TestMasker_emptySurfaceAndPaddedVocab gates M26: a non-EOS id with no surface
+// bytes must be masked (TryBytes(nil) is vacuously true, so leaving it legal
+// livelocks decoding), and a logits slice sized to the model's padded vocab (longer
+// than the tokenizer table, as on Qwen/Gemma) must not panic and must mask every
+// id past the table — across Process, MaskAt, and Commit.
+func TestMasker_emptySurfaceAndPaddedVocab(t *testing.T) {
+	// id 3 is a non-EOS control token with empty surface; id 5 is EOS (also empty).
+	vocab := bytesVocab("{", "}", `"a"`, "", ":", "")
+	const eos = 5
+	m := NewMasker(JSON(), vocab, []int{eos})
+	neg := func(l []float32, id int) bool { return math.IsInf(float64(l[id]), -1) }
+
+	// Padded model vocab: logits longer than the tokenizer table.
+	logits := make([]float32, len(vocab)+4)
+	m.Process(nil, logits) // must not panic on out-of-table ids
+	if !neg(logits, 3) {
+		t.Error("empty-surface non-EOS token 3 must be masked (else livelock)")
+	}
+	for id := len(vocab); id < len(logits); id++ {
+		if !neg(logits, id) {
+			t.Errorf("padded id %d (past the tokenizer table) must be masked", id)
+		}
+	}
+
+	// MaskAt over the same padded width: same guarantees, no panic.
+	l2 := make([]float32, len(vocab)+4)
+	m.MaskAt(m.GrammarClone(), l2)
+	if !neg(l2, 3) {
+		t.Error("MaskAt: empty-surface token 3 must be masked")
+	}
+	if !neg(l2, len(vocab)+2) {
+		t.Error("MaskAt: padded id past the table must be masked")
+	}
+
+	// Commit / TokenBytes on an out-of-range id must not panic.
+	m.Commit(len(vocab) + 2)
+	if b := m.TokenBytes(len(vocab) + 2); b != nil {
+		t.Errorf("TokenBytes past the table = %v, want nil", b)
+	}
+}
+
 // TestMasker_masksToGrammar: at the start of a JSON document only value-starting
 // tokens (and whitespace) survive the mask; structural tokens that can't begin a
 // value, and the EOS token (document not complete), are −∞.

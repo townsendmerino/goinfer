@@ -98,7 +98,7 @@ func (m *Masker) ForcedRun(max int) []int {
 			break
 		}
 		run = append(run, forced)
-		g.Commit(m.tokens[forced])
+		g.Commit(m.tokenBytes(forced))
 	}
 	return run
 }
@@ -111,11 +111,11 @@ func (m *Masker) GrammarClone() Grammar { return m.g.Clone() }
 // Commit advances the masker's LIVE grammar over a committed token (its surface
 // bytes), keeping it in sync as the speculative loop emits tokens — the
 // out-of-order analogue of Process's fold-in step.
-func (m *Masker) Commit(id int) { m.g.Commit(m.tokens[id]) }
+func (m *Masker) Commit(id int) { m.g.Commit(m.tokenBytes(id)) }
 
 // TokenBytes returns the surface bytes of token id (for advancing a grammar clone
 // over an accepted draft token in the speculative verifier).
-func (m *Masker) TokenBytes(id int) []byte { return m.tokens[id] }
+func (m *Masker) TokenBytes(id int) []byte { return m.tokenBytes(id) }
 
 // MaskAt masks logits to the tokens grammar state g permits — the same rule as
 // Process (EOS only when g.CanEnd; StopWhenComplete forces EOS at a completion
@@ -136,7 +136,10 @@ func (m *Masker) MaskAt(g Grammar, logits []float32) {
 			logits[id] = neg
 			continue
 		}
-		if !g.TryBytes(m.tokens[id]) {
+		// Same empty-surface guard as Process, and tokenBytes bounds-checks id against
+		// the table so a model-vocab-length logits slice (padded past the tokenizer)
+		// can't index m.tokens out of range — M26.
+		if b := m.tokenBytes(id); len(b) == 0 || !g.TryBytes(b) {
 			logits[id] = neg
 		}
 	}
@@ -210,7 +213,12 @@ func (m *Masker) Process(generated []int, logits []float32) {
 			logits[id] = neg
 			continue
 		}
-		if !m.g.TryBytes(m.tokenBytes(id)) {
+		// An id with no surface bytes (a control token, or a padded-vocab id past the
+		// tokenizer table — tokenBytes returns nil for both) can never advance the
+		// grammar: TryBytes(nil) is vacuously true, so leaving it legal lets the sampler
+		// pick an id that never progresses, livelocking to maxTokens and then failing to
+		// Decode. Mask it (EOS was already handled above) — M26.
+		if b := m.tokenBytes(id); len(b) == 0 || !m.g.TryBytes(b) {
 			logits[id] = neg
 		}
 	}

@@ -145,9 +145,9 @@ func fromGGUF(g *embed.GGUFFile) (*Tokenizer, error) {
 	// model: <s>/</s>/<unk> for Llama-2). Chat-turn markers, if any, are
 	// resolved by surface form below; chat.Detect reads the chat template.
 	t.special = SpecialTokens{
-		BOS:         ggufTokenID(g, ggufTokBOS),
-		EOS:         ggufTokenID(g, ggufTokEOS),
-		Pad:         ggufTokenID(g, ggufTokPad),
+		BOS:         ggufTokenID(g, ggufTokBOS, len(tokens)),
+		EOS:         ggufTokenID(g, ggufTokEOS, len(tokens)),
+		Pad:         ggufTokenID(g, ggufTokPad, len(tokens)),
 		StartOfTurn: -1,
 		EndOfTurn:   -1,
 	}
@@ -215,7 +215,7 @@ func setupGGUFSPM(t *Tokenizer, g *embed.GGUFFile, tokens []string) {
 	// Unknown token: id from metadata (its surface is whatever tokens[unk] is),
 	// falling back to the conventional "<unk>".
 	t.unkPiece, t.unkID = "<unk>", 0
-	if unk := ggufTokenID(g, ggufTokUnk); unk >= 0 && unk < len(tokens) {
+	if unk := ggufTokenID(g, ggufTokUnk, len(tokens)); unk >= 0 && unk < len(tokens) {
 		t.unkID, t.unkPiece = int32(unk), tokens[unk]
 	} else if id, ok := t.vocab["<unk>"]; ok {
 		t.unkID = id
@@ -311,10 +311,16 @@ func ggufIntArray(g *embed.GGUFFile, key string) []int {
 	return out
 }
 
-// ggufTokenID reads an integer special-token-id metadata value, or -1 ("none").
-func ggufTokenID(g *embed.GGUFFile, key string) int {
+// ggufTokenID reads an integer special-token-id metadata value, clamped to a real
+// id in [0, nTokens) or -1 ("none"). The common 0xFFFFFFFF "none" sentinel — and any
+// hostile value — would otherwise flow into Encode as a garbage id that then
+// out-of-range indexes the embedding downstream (M28). int(v) also wraps negative on
+// a huge uint; the >= 0 bound catches that too.
+func ggufTokenID(g *embed.GGUFFile, key string, nTokens int) int {
 	if v, ok := g.Uint(key); ok {
-		return int(v)
+		if id := int(v); id >= 0 && id < nTokens {
+			return id
+		}
 	}
 	return -1
 }
