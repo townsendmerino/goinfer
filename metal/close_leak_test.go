@@ -137,7 +137,8 @@ func TestMetal_PrefillScratchDoesNotLeak(t *testing.T) {
 		embs[i] = e
 	}
 
-	r.PrefillLast(embs, 0) // warm: pays library compile + first scratch alloc
+	r.PrefillLast(embs, 0)         // warm: pays library compile + first scratch alloc
+	ledgerBase, _ := ledgerLens(r) // buffers on the device ledger after warm-up
 	runtime.GC()
 	base := rssMB(t)
 	const iters = 30
@@ -148,16 +149,21 @@ func TestMetal_PrefillScratchDoesNotLeak(t *testing.T) {
 			peak = got
 		}
 	}
+	ledgerEnd, _ := ledgerLens(r)
 	runtime.GC()
 	end := rssMB(t)
-	t.Logf("prefill trajectory: base %d MB → peak %d MB → end %d MB (growth %+d MB over %d prefills)",
-		base, peak, end, end-base, iters)
+	t.Logf("prefill: device ledger %d → %d buffers over %d prefills; RSS base %d → peak %d → end %d MB (informational)",
+		ledgerBase, ledgerEnd, iters, base, peak, end)
 
-	// Fixed: flat (each call frees its own scratch). Old: ~24 buffers × ~4.7 MB/call × 30 ≈ 140 MB.
-	// 60 MB threshold sits well above UMA/allocator jitter and well below the pre-fix ratchet.
-	if grow := end - base; grow > 60 {
-		t.Errorf("PREFILL LEAK: rss grew %+d MB over %d PrefillLast calls — per-call scratch is not "+
-			"being released (a staircase, not flat)", grow, iters)
+	// The GATE is the ledger, not RSS: with the C5 fix each PrefillLast releaseBuf's every scratch
+	// buffer it allocated, so the device ledger returns to its warm-up length after each call and is
+	// INVARIANT across the loop. The pre-fix leak appended ~24 buffers/call → +720 over 30. This is
+	// deterministic and compression-immune; on a loaded macOS box RSS is not (leaked pages get
+	// compressed straight out, so an RSS-only gate can read a real leak as flat — see
+	// TestMetal_CloseWithSecondModelAlive).
+	if ledgerEnd != ledgerBase {
+		t.Errorf("PREFILL LEAK: device ledger grew %d → %d buffers over %d PrefillLast calls (%+d) — per-call "+
+			"scratch is not being released", ledgerBase, ledgerEnd, iters, ledgerEnd-ledgerBase)
 	}
 }
 
@@ -193,14 +199,12 @@ func TestMetal_CloseWithSecondModelAlive(t *testing.T) {
 		return r
 	}
 	a, b := load(), load() // BOTH alive
-	runtime.GC()
-	before := rssMB(t)
 
+	// Snapshot B's device ledgers so we can prove closing A leaves them untouched.
+	bBufs0, bObjs0 := ledgerLens(b)
 	want := append([]float32(nil), b.Forward(7, 0)...) // B's output while A is alive
 
 	a.Close() // free A only
-	runtime.GC()
-	after := rssMB(t)
 
 	// 1. B must be untouched — a shared/over-broad free shows up as changed logits or a crash.
 	got := b.Forward(7, 0)
@@ -213,23 +217,41 @@ func TestMetal_CloseWithSecondModelAlive(t *testing.T) {
 				i, got[i], want[i])
 		}
 	}
-	// 2. A's memory must be REUSABLE while B stays resident.
+
+	// 2. The free must actually HAPPEN with B resident — asserted on the device LEDGERS, not RSS.
 	//
-	// Note RSS alone cannot answer this: releasing an MTLBuffer returns pages to the allocator,
-	// which does not hand them back to the OS unless something reallocates — so "RSS did not
-	// drop" is NOT evidence of a leak (measuring that was the first version of this test, and it
-	// read as a failure when nothing was wrong). The sequential test's flat trajectory is the
-	// NEXT cycle reusing freed pages. So probe reuse directly: load C after closing A. If A's
-	// memory really came back, C fits in it and RSS stays flat; if A leaked, RSS grows by C.
-	c := load()
-	runtime.GC()
-	withC := rssMB(t)
-	t.Logf("A+B alive %d MB → closed A → %d MB → loaded C → %d MB (C grew %+d MB); B bit-identical",
-		before, after, withC, withC-before)
-	if withC-before > 250 {
-		t.Errorf("closing A with B alive did NOT free: loading C grew rss %+d MB instead of reusing A's "+
-			"footprint — the free is not happening when another model is resident", withC-before)
+	// RSS cannot answer this on a loaded machine: an earlier version loaded a C after closing A and
+	// checked RSS stayed flat, but macOS returns freed MTLBuffer pages to the allocator (not the OS)
+	// and COMPRESSES inactive pages under memory pressure — so the reuse probe read a clean free as a
+	// leak when the box was busy (swinging +2 MB idle to +560 MB loaded on identical, correct code),
+	// and, worse, a real leak (ReleaseAll neutered) DID NOT ratchet RSS because the leaked pages were
+	// compressed straight back out. RSS is unreliable in both directions here.
+	//
+	// The ledger is the ground truth: every MTLBuffer/pipeline/library goes on the owning Device's
+	// allocs/objs list, and Close must empty A's while leaving B's exactly as they were. This is
+	// deterministic, compression-immune, and is precisely M24's contract (release every tracked
+	// handle, per model). (RSS is logged for a human, but not asserted.)
+	aBufs, aObjs := ledgerLens(a)
+	if aBufs != 0 || aObjs != 0 || a.d.id != 0 {
+		t.Errorf("closing A left resources on its ledger: %d buffers, %d objc objects, device id %#x — Close did not free with B resident",
+			aBufs, aObjs, uintptr(a.d.id))
 	}
-	c.Close()
+	bBufs1, bObjs1 := ledgerLens(b)
+	if bBufs1 != bBufs0 || bObjs1 != bObjs0 {
+		t.Errorf("closing A changed B's ledger (%d→%d buffers, %d→%d objc) — the free is not per-model",
+			bBufs0, bBufs1, bObjs0, bObjs1)
+	}
+	runtime.GC()
+	t.Logf("A+B alive → closed A: A ledger now %d buf/%d obj (want 0/0), B ledger %d buf/%d obj (unchanged from %d/%d); B bit-identical. RSS %d MB (informational)",
+		aBufs, aObjs, bBufs1, bObjs1, bBufs0, bObjs0, rssMB(t))
 	b.Close()
+}
+
+// ledgerLens reports how many MTLBuffers and non-buffer objc objects a resident's Device still owns
+// — the compression-immune ground truth for "did Close free it". Test-only; reaches into the
+// private ledgers (same package).
+func ledgerLens(r *Resident) (bufs, objs int) {
+	r.d.mu.Lock()
+	defer r.d.mu.Unlock()
+	return len(r.d.allocs), len(r.d.objs)
 }
