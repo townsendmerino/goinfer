@@ -177,6 +177,18 @@ func (s *Sampler) penaltiesConfigured() bool {
 		s.p.PresencePenalty != 0 || s.p.FrequencyPenalty != 0
 }
 
+// HistoryDependent reports whether any history-dependent logit transform is
+// configured: repetition/presence/frequency penalties or LogitBias. Greedy
+// speculative decoding verifies with argmax over the target's raw logits, so it
+// cannot honor these — its validators reject them to keep "token-identical to plain
+// greedy" true (M13). The sampled speculative path threads them per-position
+// instead (see needsHistory, which mirrors this check).
+func (p SamplingParams) HistoryDependent() bool {
+	return len(p.LogitBias) > 0 ||
+		(p.RepeatPenalty > 0 && p.RepeatPenalty != 1) ||
+		p.PresencePenalty != 0 || p.FrequencyPenalty != 0
+}
+
 // penaltyWindowOf returns the last n tokens of history (the whole history when
 // n ≤ 0), the window the penalties consider — for an explicit history rather than
 // the sampler's own.

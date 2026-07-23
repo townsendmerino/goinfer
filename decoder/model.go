@@ -7,6 +7,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/townsendmerino/aikit/mmap"
@@ -27,6 +28,7 @@ type Model struct {
 	be         Backend
 	eosIDs     []int           // end-of-sequence ids from config (generation stops on these)
 	resident   ResidentForward // GPU full-residency decode path (webgpu + eligible arch); nil ⇒ staged/CPU
+	resBusy    int32           // atomic: claims the single shared resident KV for one in-flight generation (M9). Raw int32 (not atomic.Bool) so Model stays copyable for the value-copy test seam.
 	kvF16      bool            // residency KV cache precision request (Options.KVPrecision == "f16")
 	kvPrecI8   bool            // residency KV cache int8 request (Options.KVPrecision == "i8") — GPU
 	kvI8       bool            // CPU KV cache int8 storage request (Options.KVQuant == "i8") — CPU staged path
@@ -676,6 +678,18 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	// bridge stays for future prefix-reuse; batched on-device prefill, the
 	// long-prompt fix, is deferred).
 	useGPU := m.resident != nil && prefillFrom == 0 && commit == nil
+	if useGPU {
+		// The resident path drives the model's ONE shared positional KV; two concurrent
+		// generations would interleave writes at overlapping positions and corrupt it.
+		// Claim it non-blockingly — a loser falls back to the staged CPU path, which uses
+		// this call's own cache, so both still complete correctly (M9). The doc's
+		// "distinct sequences can run concurrently" holds; only resident speed is lost.
+		if atomic.CompareAndSwapInt32(&m.resBusy, 0, 1) {
+			defer atomic.StoreInt32(&m.resBusy, 0)
+		} else {
+			useGPU = false
+		}
+	}
 	gpuPos := 0
 	var logits []float32
 	var err error
@@ -783,7 +797,16 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		if sp.Logprobs {
 			g.Logprobs = append(g.Logprobs, info)
 		}
-		out <- next
+		// A bare send wedges this goroutine forever if the consumer stops ranging
+		// (even to cancel ctx, the documented stop) — it holds the KV cache and, for
+		// Session.Generate, blocks the post-loop reconciliation, poisoning the session.
+		// Select on ctx.Done like every speculative path (M8).
+		select {
+		case <-ctx.Done():
+			g.err = ctx.Err()
+			return
+		case out <- next:
+		}
 		generated = append(generated, next)
 		if useGPU {
 			var emb []float32

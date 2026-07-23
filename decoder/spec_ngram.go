@@ -151,10 +151,11 @@ func (d *NgramDrafter) Draft(ctx []int, k int) []int {
 // to one plain decode step. The win is amortizing the target's weight stream over
 // (accepted+1) tokens whenever the context repeats.
 //
-// Sampled mode supports temperature + top-k/top-p/min-p; it rejects the
-// history-dependent transforms (repetition/presence/frequency penalties, LogitBias,
-// LogitProcessor), which the per-position verify does not yet thread. The returned
-// Generation's Spec field carries acceptance telemetry.
+// Sampled mode supports temperature + top-k/top-p/min-p and threads the
+// history-dependent transforms (repetition/presence/frequency penalties, LogitBias)
+// per position via distVectorHist; greedy mode rejects them (argmax can't apply them
+// losslessly — M13). LogitProcessor (constrained/tool decoding) is unsupported in
+// either mode. The returned Generation's Spec field carries acceptance telemetry.
 func (target *Model) GenerateNgramSpeculative(ctx context.Context, prompt []int, maxTokens int, drafter Drafter, K int, sp SamplingParams) (<-chan int, *Generation, error) {
 	return target.genNgram(ctx, prompt, maxTokens, drafter, K, sp, nil, nil)
 }
@@ -167,6 +168,12 @@ func validateNgramSpec(m *Model, drafter Drafter, sp SamplingParams) error {
 	}
 	if sp.LogitProcessor != nil {
 		return fmt.Errorf("decoder.GenerateNgramSpeculative: LogitProcessor (constrained/tool decoding) not supported yet; use Generate")
+	}
+	// Greedy verify is argmax over raw target logits; it cannot apply penalties or
+	// logit bias, so honoring them would silently diverge from plain greedy (M13).
+	// Sampled mode (Temperature>0) threads them per-position and is fine.
+	if sp.Temperature <= 0 && sp.HistoryDependent() {
+		return fmt.Errorf("decoder.GenerateNgramSpeculative: repetition penalties / logit bias are not supported in greedy speculative decoding; use Generate")
 	}
 	if !m.specRollbackSafe() {
 		return fmt.Errorf("decoder.GenerateNgramSpeculative: this model has recurrent state (Mamba-2 / Gated DeltaNet) or a staged sliding-window ring cache that speculative rollback cannot losslessly restore; use Generate")

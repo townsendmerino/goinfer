@@ -66,6 +66,11 @@ func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxT
 	if sp.LogitProcessor != nil {
 		return nil, nil, fmt.Errorf("decoder.GenerateSpeculative: LogitProcessor (constrained decoding) not supported yet; use Generate")
 	}
+	// Greedy verify argmaxes raw target logits; penalties / logit bias would be
+	// silently dropped, diverging from plain greedy (M13).
+	if sp.HistoryDependent() {
+		return nil, nil, fmt.Errorf("decoder.GenerateSpeculative: repetition penalties / logit bias are not supported in greedy speculative decoding; use Generate")
+	}
 	if dv, tv := draft.w.arch.VocabSize, target.w.arch.VocabSize; dv != tv {
 		return nil, nil, fmt.Errorf("decoder.GenerateSpeculative: draft/target vocab mismatch (%d vs %d) — they must share a tokenizer", dv, tv)
 	}

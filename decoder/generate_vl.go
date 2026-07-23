@@ -54,7 +54,14 @@ func (m *Model) GenerateVL(ctx context.Context, ids []int, features []float32, i
 			if sp.Logprobs {
 				g.Logprobs = append(g.Logprobs, info)
 			}
-			out <- next
+			// Select on ctx.Done so a consumer that stops ranging can't wedge this
+			// goroutine forever on a bare send (holding the KV cache) — M8.
+			select {
+			case <-ctx.Done():
+				g.err = ctx.Err()
+				return
+			case out <- next:
+			}
 			generated = append(generated, next)
 			// Decode steps after the image block are ordinary causal forwards (the
 			// image-block mask only governs the image positions, which are now in KV).
@@ -116,7 +123,14 @@ func (m *Model) GenerateQwenVL(ctx context.Context, ids []int, features []float3
 			if sp.Logprobs {
 				g.Logprobs = append(g.Logprobs, info)
 			}
-			out <- next
+			// Select on ctx.Done so a consumer that stops ranging can't wedge this
+			// goroutine forever on a bare send (holding the KV cache) — M8.
+			select {
+			case <-ctx.Done():
+				g.err = ctx.Err()
+				return
+			case out <- next:
+			}
 			generated = append(generated, next)
 			if logits, err = m.forward(next, cache); err != nil { // decode m-RoPE via cache.mropeDelta
 				g.err = err

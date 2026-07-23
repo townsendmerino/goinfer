@@ -471,7 +471,11 @@ func (m *Model) forwardN(ids []int, cache *KVCache) ([][]float32, error) {
 	if K == 0 {
 		return nil, nil
 	}
-	if !m.canBatchN(K) {
+	// Compute-time LoRA (#7) is wired only into the sequential forward, so an active
+	// adapter must take the M=1 path (as prefillLogits does): the batched verify would
+	// project every position with the base model and commit base K/V, silently
+	// verifying speculative drafts against the wrong model (M12).
+	if cache.lora != nil || !m.canBatchN(K) {
 		out := make([][]float32, K)
 		for i, id := range ids {
 			l, err := m.forward(id, cache)

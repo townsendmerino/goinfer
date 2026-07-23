@@ -237,10 +237,24 @@ func topKDraftIdx(logits []float32, k int) []int {
 	return idx[:k]
 }
 
-// DraftTree builds a root-branched tree from a pre-built head state (KV over the
-// context). firstTok/seedFeature/startPos are the root (last confirmed token); b is the
-// branch factor at the first draft position, d the chain depth. C is the absolute
-// position of the first draft node (startPos+1).
+// eagleTreeNodes returns the node count of a full b-ary draft tree of depth d
+// (depths 1..d; the root/confirmed token is not a node): Σ_{i=1}^{d} b^i. This is
+// exactly what DraftTree emits and what one verify round transiently writes into the
+// cache before rolling back the rejected path — so it, not b*d, sizes the cache (M15).
+func eagleTreeNodes(b, d int) int {
+	n, pow := 0, 1
+	for range d {
+		pow *= b
+		n += pow
+	}
+	return n
+}
+
+// DraftTree builds a full b-ary tree from a pre-built head state (KV over the
+// context): every frontier node expands its top-b children at each of the d depths,
+// so the tree has eagleTreeNodes(b, d) = Σ_{i=1}^{d} b^i nodes (NOT b chains — b is the
+// branch factor at EVERY depth). firstTok/seedFeature/startPos are the root (last
+// confirmed token). The first draft node is at absolute position startPos+1.
 func (h *EagleHead) DraftTree(be Backend, st *eagleState, embedOf func(tok int, dst []float32), firstTok int, seedFeature []float32, startPos, b, d int) TreeDraft {
 	emb := make([]float32, h.hidden)
 	// expandable carries the per-node head state + feature needed to expand its children.

@@ -7,17 +7,22 @@ import (
 )
 
 // GenerateEagleSpeculativeTree is the tree-drafting variant of GenerateEagleSpeculative
-// (05): the head drafts a root-branched tree (top-B first tokens, each a depth-D chain),
-// the target verifies all B*D nodes in ONE batched pass under tree attention, and the
-// longest base-greedy-matching path is committed. Still lossless (the base's argmax
+// (05): the head drafts a full B-ary tree — every node expands its top-B children at each
+// of the D depths, so a round has Σ_{i=1}^{D} B^i nodes (e.g. B=2,D=4 ⇒ 30, not B*D=8) —
+// the target verifies them all in ONE batched pass under tree attention, and the longest
+// base-greedy-matching root-to-leaf path is committed. Still lossless (the base's argmax
 // decides every token); the win over the linear chain is recovering positions where the
 // correct token is in the head's top-B but not top-1, and continuing from the TRUE token.
+// Wider/deeper trees cover more but cost B^D-ish verify work — tune B, D to the workload.
 func (m *Model) GenerateEagleSpeculativeTree(ctx context.Context, prompt []int, maxTokens int, head *EagleHead, capLayers []int, B, D int, sp SamplingParams) (<-chan int, *Generation, error) {
 	if head == nil {
 		return nil, nil, fmt.Errorf("decoder.GenerateEagleSpeculativeTree: nil head")
 	}
 	if sp.Temperature != 0 || sp.LogitProcessor != nil {
 		return nil, nil, fmt.Errorf("decoder.GenerateEagleSpeculativeTree: greedy only")
+	}
+	if sp.HistoryDependent() { // argmax verify can't apply penalties / logit bias (M13)
+		return nil, nil, fmt.Errorf("decoder.GenerateEagleSpeculativeTree: repetition penalties / logit bias not supported in greedy speculative decoding; use Generate")
 	}
 	if !m.specRollbackSafe() {
 		return nil, nil, fmt.Errorf("decoder.GenerateEagleSpeculativeTree: recurrent family or staged sliding-window unsupported (rollback cannot restore)")
@@ -42,7 +47,7 @@ func (m *Model) GenerateEagleSpeculativeTree(ctx context.Context, prompt []int, 
 	g := &Generation{Spec: stats}
 	go func() {
 		defer close(out)
-		tc := m.NewCache(len(prompt) + maxTokens + B*D + 8)
+		tc := m.NewCache(len(prompt) + maxTokens + eagleTreeNodes(B, D) + 8) // a round writes the whole tree before rollback (M15)
 		fuseAt := func(i int) []float32 {
 			h3 := make([]float32, 0, 3*hidden)
 			for ci := range capLayers {
@@ -103,7 +108,7 @@ func (m *Model) GenerateEagleSpeculativeTree(ctx context.Context, prompt []int, 
 				return
 			}
 			stats.Rounds++
-			stats.Drafted += td.B * td.D
+			stats.Drafted += len(td.Tokens) // full b-ary tree, not B*D — M15
 
 			// Best-path accept: walk the tree from the root, at each level following the
 			// child whose token is the base's greedy argmax, as far as it keeps matching.
@@ -178,6 +183,9 @@ func (m *Model) GenerateEagleSpeculative(ctx context.Context, prompt []int, maxT
 	}
 	if sp.Temperature != 0 || sp.LogitProcessor != nil {
 		return nil, nil, fmt.Errorf("decoder.GenerateEagleSpeculative: greedy only (no temperature/LogitProcessor)")
+	}
+	if sp.HistoryDependent() { // argmax verify can't apply penalties / logit bias (M13)
+		return nil, nil, fmt.Errorf("decoder.GenerateEagleSpeculative: repetition penalties / logit bias not supported in greedy speculative decoding; use Generate")
 	}
 	if !m.specRollbackSafe() {
 		return nil, nil, fmt.Errorf("decoder.GenerateEagleSpeculative: recurrent family or staged sliding-window unsupported (rollback cannot restore)")

@@ -178,6 +178,11 @@ func validateGrammarSpec(target *Model, mask *constrain.Masker, drafter Drafter,
 	if sp.Temperature != 0 {
 		return fmt.Errorf("decoder.GenerateGrammarSpeculative: greedy only for now (Temperature must be 0)")
 	}
+	// The masked verify argmaxes; penalties / logit bias can't be applied losslessly
+	// there, so reject them rather than silently drop them (M13).
+	if sp.HistoryDependent() {
+		return fmt.Errorf("decoder.GenerateGrammarSpeculative: repetition penalties / logit bias not supported in greedy speculative decoding; use Generate")
+	}
 	if !target.specRollbackSafe() {
 		return fmt.Errorf("decoder.GenerateGrammarSpeculative: recurrent family or staged sliding-window (rollback unsupported); use Generate")
 	}
