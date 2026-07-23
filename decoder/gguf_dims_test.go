@@ -145,6 +145,62 @@ func TestGGUF_hostileDims_typedError(t *testing.T) {
 	}
 }
 
+// TestGGUFConfig_hostileMetadata_M16 covers the family builders the old corpus
+// never reached: a huge block_count must be a typed error (not a multi-TB makeslice)
+// before the per-layer allocation, and a missing head_count that drives hidden/0 must
+// be a typed error (not an integer divide panic). ggufConfig is the fuzz contract's
+// entry point, so it must honor "never panic" for every architecture.
+func TestGGUFConfig_hostileMetadata_M16(t *testing.T) {
+	emb := []ggufTensorDecl{embedTensor(8, 32)}
+	cases := []struct {
+		name string
+		kvs  []ggufKV
+	}{
+		{"granite huge block_count", []ggufKV{
+			kvStr("general.architecture", "granitehybrid"),
+			kvU32("granitehybrid.embedding_length", 8),
+			kvU64("granitehybrid.block_count", 1<<40),
+			kvU32("granitehybrid.attention.head_count", 4),
+		}},
+		{"nemotron huge block_count", []ggufKV{
+			kvStr("general.architecture", "nemotron_h"),
+			kvU32("nemotron_h.embedding_length", 8),
+			kvU64("nemotron_h.block_count", 1<<40),
+			kvU32("nemotron_h.attention.head_count", 4),
+		}},
+		{"llama4 huge block_count", []ggufKV{
+			kvStr("general.architecture", "llama4"),
+			kvU32("llama4.embedding_length", 8),
+			kvU64("llama4.block_count", 1<<40),
+			kvU32("llama4.attention.head_count", 4),
+		}},
+		{"phi3 zero head_count divides hidden", []ggufKV{
+			kvStr("general.architecture", "phi3"),
+			kvU32("phi3.embedding_length", 8),
+			kvU32("phi3.block_count", 2),
+			kvU32("phi3.attention.head_count", 0),
+			kvU32("phi3.feed_forward_length", 16),
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			g, err := embed.OpenGGUFBytes(buildGGUF(tc.kvs, emb))
+			if err != nil {
+				t.Fatalf("parse: %v", err)
+			}
+			defer g.Close()
+			defer func() {
+				if r := recover(); r != nil {
+					t.Fatalf("ggufConfig panicked on hostile metadata: %v", r)
+				}
+			}()
+			if _, err := ggufConfig(g); err == nil {
+				t.Fatalf("expected a typed error, got nil")
+			}
+		})
+	}
+}
+
 // ggufSeeds builds one tiny, valid GGUF per supported architecture so the mutator
 // starts from headers that reach each family config builder.
 func ggufSeeds() [][]byte {
@@ -197,7 +253,15 @@ func ggufSeeds() [][]byte {
 	}, []ggufTensorDecl{emb})
 
 	var seeds [][]byte
-	for _, a := range []string{"llama", "qwen2", "qwen3", "gemma3"} {
+	// Every dispatchable architecture gets a seed so the fuzzer exercises its family
+	// builder — the div-by-zero / makeslice sites M16 hardened live inside these, and
+	// the previous corpus reached none of the last seven (granite/nemotron/deepseek/
+	// glm4moe/qwen35moe/phi3/llama4). A generic dense seed is enough to drive each
+	// builder's entry; the fuzzer mutates from there.
+	for _, a := range []string{
+		"llama", "qwen2", "qwen3", "gemma3", "phi3",
+		"deepseek2", "glm4moe", "granitehybrid", "nemotron_h", "qwen35moe", "llama4",
+	} {
 		seeds = append(seeds, dense(a))
 	}
 	seeds = append(seeds, gemma4, mellum)

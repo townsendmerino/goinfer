@@ -28,8 +28,19 @@ import (
 // ggufConfig synthesizes a Config from GGUF metadata, dispatching on
 // general.architecture. The resolved Config feeds resolveArchitecture, so a
 // GGUF reuses the same per-family adapter as the safetensors path.
-func ggufConfig(g *embed.GGUFFile) (*Config, error) {
+func ggufConfig(g *embed.GGUFFile) (cfg *Config, err error) {
 	arch, _ := g.Str("general.architecture")
+	// Hostile metadata can drive a family builder into an integer divide-by-zero
+	// (e.g. a missing head_count ⇒ hidden/0) or a similar panic before
+	// validateGGUFDims ever runs. Convert any such panic into a typed error so the
+	// loader honors its never-panic contract for every architecture, current and
+	// future (M16). Unbounded per-layer allocations are guarded explicitly by
+	// ggufLayerCount below — a huge makeslice is a fatal OOM that recover can't catch.
+	defer func() {
+		if r := recover(); r != nil {
+			cfg, err = nil, fmt.Errorf("decoder(gguf): malformed metadata for architecture %q: %v", arch, r)
+		}
+	}()
 	switch arch {
 	case "llama":
 		return ggufLlamaConfig(g)
@@ -494,7 +505,10 @@ func ggufGraniteConfig(g *embed.GGUFFile) (*Config, error) {
 		v, _ := g.Uint("granitehybrid." + k)
 		return float64(v)
 	}
-	nLayers := u("block_count")
+	nLayers, err := ggufLayerCount(u("block_count"))
+	if err != nil {
+		return nil, err
+	}
 	// Per-layer kind + the (uniform) attention KV-head count from the head_count_kv
 	// array: nonzero entries are the attention layers.
 	kvArr, _ := g.Metadata["granitehybrid.attention.head_count_kv"].([]any)
@@ -585,7 +599,10 @@ func ggufNemotronConfig(g *embed.GGUFFile) (*Config, error) {
 		}
 		return 0
 	}
-	nLayers := u("block_count")
+	nLayers, err := ggufLayerCount(u("block_count"))
+	if err != nil {
+		return nil, err
+	}
 	kvArr, _ := g.Metadata["nemotron_h.attention.head_count_kv"].([]any)
 	ffArr, _ := g.Metadata["nemotron_h.feed_forward_length"].([]any)
 	types := make([]string, nLayers)
@@ -772,7 +789,10 @@ func ggufLlama4Config(g *embed.GGUFFile) (*Config, error) {
 		v, _ := g.Uint("llama4." + k)
 		return float64(v)
 	}
-	nLayers := u("block_count")
+	nLayers, err := ggufLayerCount(u("block_count"))
+	if err != nil {
+		return nil, err
+	}
 	cfg := &Config{
 		ModelType:              "llama4_text",
 		HiddenDim:              u("embedding_length"),
@@ -979,6 +999,18 @@ const (
 // merely-huge positive value would OOM. Both are caught here. Only the dims
 // every family sets from metadata are checked (HeadDim is derived per family;
 // IntermediateDim is vestigial/zero for some MoE checkpoints).
+// ggufLayerCount bounds a block_count before any per-layer slice is allocated or
+// iterated. validateGGUFDims catches an out-of-range count too, but only after the
+// family builder has already run — a hostile count would makeslice a multi-TB array
+// (a fatal OOM, unrecoverable) or, wrapped negative, panic, before that. Call this
+// right after reading block_count in any builder that allocates from it (M16).
+func ggufLayerCount(n int) (int, error) {
+	if n <= 0 || n > maxGGUFLayers {
+		return 0, fmt.Errorf("decoder(gguf): block_count %d out of range (1..%d)", n, maxGGUFLayers)
+	}
+	return n, nil
+}
+
 func validateGGUFDims(cfg *Config) error {
 	switch {
 	case cfg.NumLayers <= 0 || cfg.NumLayers > maxGGUFLayers:
@@ -1110,6 +1142,12 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 	// pulls from GGUF source row (h*hd + 2*j + s) — and quantize in place. See
 	// ggufInvPermute for the index derivation.
 	permMat := func(name string, out, in, nHead int) (linalg.WeightMat, error) {
+		// nHead is a validated head count (>0), but a hostile head_dim can still make
+		// out/nHead == 1 (half == 0 ⇒ divide-by-zero in the row map below) or odd (the
+		// RoPE row permutation is only defined for an even head_dim) — M16.
+		if nHead <= 0 || out%nHead != 0 || (out/nHead)%2 != 0 {
+			return linalg.WeightMat{}, fmt.Errorf("decoder(gguf): %q needs an even head_dim (out=%d, heads=%d)", name, out, nHead)
+		}
 		hd := out / nHead
 		half := hd / 2
 		return streamMat(name, out, in, matmulQuant(quant, name), func(hfRow int) int {

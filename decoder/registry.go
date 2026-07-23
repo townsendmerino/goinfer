@@ -838,6 +838,9 @@ func graniteArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("decoder(granite): %w", err)
 	}
+	if cfg.NumHeads <= 0 { // hd = hidden/heads below — a hostile config.json has no validateGGUFDims gate (M16)
+		return nil, nil, fmt.Errorf("decoder(granite): num_attention_heads must be > 0, got %d", cfg.NumHeads)
+	}
 	hd := cfg.HiddenDim / cfg.NumHeads
 	types := cfg.LayerTypes
 	one := func(v float64) float32 {
@@ -1189,6 +1192,9 @@ func llama4Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	}
 	hd := cfg.HeadDim
 	if hd == 0 {
+		if cfg.NumHeads <= 0 { // avoid a divide-by-zero on a hostile config (M16)
+			return nil, nil, fmt.Errorf("decoder(llama4): num_attention_heads must be > 0 when head_dim is unset, got %d", cfg.NumHeads)
+		}
 		hd = cfg.HiddenDim / cfg.NumHeads
 	}
 	denseInter := cfg.IntermediateSizeMLP

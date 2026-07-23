@@ -31,7 +31,10 @@ func ggufQwen35Config(g *embed.GGUFFile) (*Config, error) {
 	}
 	blocks := u("block_count")
 	numLayers := blocks - u("nextn_predict_layers") // drop the NextN/MTP block(s)
-	if numLayers <= 0 {
+	// Bound before the per-layer append loop below: a hostile block_count would grow
+	// LayerTypes unboundedly (a fatal OOM recover can't catch) before validateGGUFDims
+	// runs (M16).
+	if numLayers <= 0 || numLayers > maxGGUFLayers {
 		return nil, fmt.Errorf("decoder(gguf-qwen35): bad block_count=%d (nextn=%d)", blocks, u("nextn_predict_layers"))
 	}
 	headDim := u("attention.key_length")
