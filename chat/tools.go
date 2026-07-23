@@ -47,6 +47,19 @@ func (t *Template) RenderTools(system string, turns []Turn, tools []Tool) string
 	return t.Render(system, turns) // gemma3 etc.: no native tool template
 }
 
+// RenderToolsSegments is RenderTools for the EncodeSegments path (M25). With no
+// tools it delegates to RenderSegments, so ordinary chat (including tool RESULTS fed
+// back with no new tool declarations) gets injection hardening. With tools declared
+// it returns the tool-rendered prompt as a single Special segment — identical to the
+// whole-string Encode path (no regression); segmenting the per-family tool templates
+// so their content spans are hardened too is a follow-up.
+func (t *Template) RenderToolsSegments(system string, turns []Turn, tools []Tool) []Segment {
+	if len(tools) == 0 {
+		return t.RenderSegments(system, turns)
+	}
+	return []Segment{{Text: t.RenderTools(system, turns, tools), Special: true}}
+}
+
 // SupportsTools reports whether this family has a tool-calling template.
 func (t *Template) SupportsTools() bool {
 	switch t.name {

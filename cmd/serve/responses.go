@@ -193,7 +193,7 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 		tools[i] = chat.Tool{Name: t.Function.Name, Description: t.Function.Description, Parameters: t.Function.Parameters}
 	}
 	system, turns := messagesToTurns(messages)
-	ids, err := lm.encode(lm.tmpl.RenderTools(system, turns, tools))
+	ids, err := lm.tk.EncodeSegments(lm.tmpl.RenderToolsSegments(system, turns, tools), false) // M25
 	if err != nil {
 		writeServerErr(w, "encode: "+err.Error())
 		return

@@ -431,7 +431,7 @@ func (s *server) handleMessages(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		tools = anthropicTools(req.Tools)
-		ids, err = lm.encode(lm.tmpl.RenderTools(system, turns, tools))
+		ids, err = lm.tk.EncodeSegments(lm.tmpl.RenderToolsSegments(system, turns, tools), false) // M25
 	} else {
 		ids, err = lm.promptFor(system, turns)
 	}
@@ -521,7 +521,7 @@ func (s *server) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 	var ids []int
 	var err error
 	if mode, _ := anthropicToolMode(req.ToolChoice); len(req.Tools) > 0 && mode != "none" && lm.tmpl != nil && lm.tmpl.SupportsTools() {
-		ids, err = lm.encode(lm.tmpl.RenderTools(system, turns, anthropicTools(req.Tools)))
+		ids, err = lm.tk.EncodeSegments(lm.tmpl.RenderToolsSegments(system, turns, anthropicTools(req.Tools)), false) // M25
 	} else {
 		ids, err = lm.promptFor(system, turns)
 	}

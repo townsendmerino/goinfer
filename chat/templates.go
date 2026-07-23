@@ -4,14 +4,40 @@ import "strings"
 
 // Each constructor returns the family's renderer. The render funcs are written
 // to match HuggingFace apply_chat_template byte-for-byte (testdata/chat_goldens).
+//
+// Renderers emit []Segment, not a raw string (Render concatenates them). A Special
+// segment is a genuine single special token of the family (its control markers); a
+// non-special segment is a whole gap BETWEEN two special tokens — trusted structure
+// (role names, newlines, date preambles) and untrusted content together. Because the
+// non-special segments are exactly the gaps the whole-string encoder would form,
+// EncodeSegments reproduces Encode(Render(...)) on legitimate input while refusing to
+// promote a marker string a user typed into a real control token (M25). The rule when
+// editing a renderer: sp() ONLY genuine special tokens; everything else via ct().
+
+// segBuf accumulates render segments.
+type segBuf struct{ segs []Segment }
+
+// sp appends a structural special-token span (tokenized WITH the trie). It must be a
+// single genuine special token of the family, so the segment boundary lands on a real
+// token break and no cross-boundary BPE merge is lost.
+func (b *segBuf) sp(text string) { b.segs = append(b.segs, Segment{Text: text, Special: true}) }
+
+// ct appends a content span (tokenized WITHOUT the trie) — a whole inter-special gap,
+// trusted structure and untrusted content alike, so any marker string inside stays
+// literal text.
+func (b *segBuf) ct(text string) {
+	if text != "" {
+		b.segs = append(b.segs, Segment{Text: text, Special: false})
+	}
+}
 
 // Gemma3 — "<bos>" then per turn "<start_of_turn>{role}\n{content}<end_of_turn>\n"
 // (assistant→model); no system role, so the system is folded into the first user
 // turn ("{system}\n\n{content}"). Generation prompt: "<start_of_turn>model\n".
 func Gemma3() *Template {
-	return &Template{name: "gemma3", stops: []string{"<end_of_turn>"}, render: func(system string, turns []Turn) string {
-		var b strings.Builder
-		b.WriteString("<bos>")
+	return &Template{name: "gemma3", stops: []string{"<end_of_turn>"}, render: func(system string, turns []Turn) []Segment {
+		var b segBuf
+		b.sp("<bos>")
 		firstUser := true
 		for _, t := range turns {
 			role, content := "user", t.Content
@@ -23,10 +49,14 @@ func Gemma3() *Template {
 					content = system + "\n\n" + content
 				}
 			}
-			b.WriteString("<start_of_turn>" + role + "\n" + content + "<end_of_turn>\n")
+			b.sp("<start_of_turn>")
+			b.ct(role + "\n" + content)
+			b.sp("<end_of_turn>")
+			b.ct("\n")
 		}
-		b.WriteString("<start_of_turn>model\n")
-		return b.String()
+		b.sp("<start_of_turn>")
+		b.ct("model\n")
+		return b.segs
 	}}
 }
 
@@ -35,21 +65,31 @@ func Gemma3() *Template {
 // (assistant→model), ending with the generation prompt plus Gemma 4's thinking
 // scaffold: "<|turn>model\n<|channel>thought\n<channel|>".
 func Gemma4() *Template {
-	return &Template{name: "gemma4", stops: []string{"<turn|>"}, render: func(system string, turns []Turn) string {
-		var b strings.Builder
-		b.WriteString("<bos>")
+	return &Template{name: "gemma4", stops: []string{"<turn|>"}, render: func(system string, turns []Turn) []Segment {
+		var b segBuf
+		b.sp("<bos>")
 		if system != "" {
-			b.WriteString("<|turn>system\n" + system + "<turn|>\n")
+			b.sp("<|turn>")
+			b.ct("system\n" + system)
+			b.sp("<turn|>")
+			b.ct("\n")
 		}
 		for _, t := range turns {
 			role := "user"
 			if t.Role == "assistant" {
 				role = "model"
 			}
-			b.WriteString("<|turn>" + role + "\n" + t.Content + "<turn|>\n")
+			b.sp("<|turn>")
+			b.ct(role + "\n" + t.Content)
+			b.sp("<turn|>")
+			b.ct("\n")
 		}
-		b.WriteString("<|turn>model\n<|channel>thought\n<channel|>")
-		return b.String()
+		b.sp("<|turn>")
+		b.ct("model\n")
+		b.sp("<|channel>")
+		b.ct("thought\n")
+		b.sp("<channel|>")
+		return b.segs
 	}}
 }
 
@@ -57,16 +97,23 @@ func Gemma4() *Template {
 // "<|im_start|>{role}\n{content}<|im_end|>\n", a leading system turn when given,
 // generation prompt "<|im_start|>assistant\n". No BOS in the template.
 func ChatML() *Template {
-	return &Template{name: "chatml", stops: []string{"<|im_end|>"}, render: func(system string, turns []Turn) string {
-		var b strings.Builder
+	return &Template{name: "chatml", stops: []string{"<|im_end|>"}, render: func(system string, turns []Turn) []Segment {
+		var b segBuf
 		if system != "" {
-			b.WriteString("<|im_start|>system\n" + system + "<|im_end|>\n")
+			b.sp("<|im_start|>")
+			b.ct("system\n" + system)
+			b.sp("<|im_end|>")
+			b.ct("\n")
 		}
 		for _, t := range turns {
-			b.WriteString("<|im_start|>" + t.Role + "\n" + t.Content + "<|im_end|>\n")
+			b.sp("<|im_start|>")
+			b.ct(t.Role + "\n" + t.Content)
+			b.sp("<|im_end|>")
+			b.ct("\n")
 		}
-		b.WriteString("<|im_start|>assistant\n")
-		return b.String()
+		b.sp("<|im_start|>")
+		b.ct("assistant\n")
+		return b.segs
 	}}
 }
 
@@ -88,45 +135,63 @@ func Mellum2() *Template {
 // "<|start_header_id|>{role}<|end_header_id|>\n\n{content}<|eot_id|>", and the
 // assistant generation header. The "Today Date" is the current date.
 func Llama3() *Template {
-	return &Template{name: "llama3", stops: []string{"<|eot_id|>"}, render: func(system string, turns []Turn) string {
-		var b strings.Builder
+	return &Template{name: "llama3", stops: []string{"<|eot_id|>"}, render: func(system string, turns []Turn) []Segment {
+		var b segBuf
 		date := timeNow().Format("02 Jan 2006")
-		b.WriteString("<|begin_of_text|>")
-		b.WriteString("<|start_header_id|>system<|end_header_id|>\n\n")
-		b.WriteString("Cutting Knowledge Date: December 2023\nToday Date: " + date + "\n\n")
-		b.WriteString(system + "<|eot_id|>")
+		b.sp("<|begin_of_text|>")
+		b.sp("<|start_header_id|>")
+		b.ct("system")
+		b.sp("<|end_header_id|>")
+		b.ct("\n\nCutting Knowledge Date: December 2023\nToday Date: " + date + "\n\n" + system)
+		b.sp("<|eot_id|>")
 		for _, t := range turns {
-			b.WriteString("<|start_header_id|>" + t.Role + "<|end_header_id|>\n\n" + t.Content + "<|eot_id|>")
+			b.sp("<|start_header_id|>")
+			b.ct(t.Role)
+			b.sp("<|end_header_id|>")
+			b.ct("\n\n" + t.Content)
+			b.sp("<|eot_id|>")
 		}
-		b.WriteString("<|start_header_id|>assistant<|end_header_id|>\n\n")
-		return b.String()
+		b.sp("<|start_header_id|>")
+		b.ct("assistant")
+		b.sp("<|end_header_id|>")
+		b.ct("\n\n")
+		return b.segs
 	}}
 }
 
 // Mistral — "<s>" once, each user turn "[INST] {content}[/INST]", each assistant
 // turn " {content}</s>". No system role: the system is folded into the LAST user
 // turn ("{system}\n\n{content}").
+//
+// NOTE: unlike the families above, Mistral's structural markers are version-
+// dependent — [INST]/[/INST] are plain text in v0.1 but real special tokens in
+// v0.3+, and <s>/</s> placement interleaves with content inside a single encoder
+// gap. Statically deciding the special/content split would risk changing the
+// tokenization of legitimate prompts, so this renderer emits ONE Special segment
+// (identical to whole-string Encode — no regression) and forgoes the injection
+// hardening the others get. Splitting it safely needs the loaded tokenizer's
+// added-vocabulary, a follow-up.
 func Mistral() *Template {
-	return &Template{name: "mistral", stops: []string{"</s>"}, render: func(system string, turns []Turn) string {
+	return &Template{name: "mistral", stops: []string{"</s>"}, render: func(system string, turns []Turn) []Segment {
 		lastUser := -1
 		for i, t := range turns {
 			if t.Role != "assistant" {
 				lastUser = i
 			}
 		}
-		var b strings.Builder
-		b.WriteString("<s>")
+		var sb strings.Builder
+		sb.WriteString("<s>")
 		for i, t := range turns {
 			if t.Role == "assistant" {
-				b.WriteString(" " + t.Content + "</s>")
+				sb.WriteString(" " + t.Content + "</s>")
 				continue
 			}
 			content := t.Content
 			if i == lastUser && system != "" {
 				content = system + "\n\n" + content
 			}
-			b.WriteString("[INST] " + content + "[/INST]")
+			sb.WriteString("[INST] " + content + "[/INST]")
 		}
-		return b.String()
+		return []Segment{{Text: sb.String(), Special: true}}
 	}}
 }

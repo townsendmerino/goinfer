@@ -535,7 +535,10 @@ func (lm *loadedModel) chatPrompt(msgs []chatMessage) ([]int, error) {
 // OpenAI and Anthropic chat paths so both encode prompts identically.
 func (lm *loadedModel) promptFor(system string, turns []chat.Turn) ([]int, error) {
 	if lm.tmpl != nil {
-		return lm.encode(lm.tmpl.Render(system, turns))
+		// EncodeSegments keeps a special-token surface form typed into a user/tool
+		// message from becoming a real control token that forges a turn boundary (M25);
+		// addBOS=false because the template emits its own BOS marker.
+		return lm.tk.EncodeSegments(lm.tmpl.RenderSegments(system, turns), false)
 	}
 	return lm.encode(rawPrompt(system, turns))
 }

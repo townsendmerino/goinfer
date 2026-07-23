@@ -77,7 +77,7 @@ func buildByteLevelTables() ([256]rune, map[rune]byte) {
 // encodeByteLevel is the byte-level analogue of Encode: split out added/special
 // tokens on the raw text (longest match), NFC-normalize each gap, pretokenize
 // with the GPT-2 regex, then byte-level-BPE each pretoken.
-func (t *Tokenizer) encodeByteLevel(text string, addBOS bool) ([]int, error) {
+func (t *Tokenizer) encodeByteLevel(text string, addBOS, parseSpecial bool) ([]int, error) {
 	var out []int32
 	if addBOS && t.special.BOS >= 0 {
 		out = append(out, int32(t.special.BOS))
@@ -110,7 +110,7 @@ func (t *Tokenizer) encodeByteLevel(text string, addBOS bool) ([]int, error) {
 	}
 
 	i := 0
-	for i < len(text) {
+	for parseSpecial && i < len(text) {
 		if id, n := t.added.match(text, i); n > 0 {
 			if err := emitGap(i); err != nil {
 				return nil, err

@@ -14,7 +14,15 @@ import (
 	"errors"
 	"strings"
 	"time"
+
+	"github.com/townsendmerino/goinfer/tokenizer"
 )
+
+// Segment is a span of the rendered prompt tagged special (structural markers —
+// tokenize WITH the added-token trie) or not (untrusted content — tokenize WITHOUT
+// it). RenderSegments emits these so EncodeSegments can keep a marker string typed
+// by a user from becoming a real control token (M25).
+type Segment = tokenizer.Segment
 
 // Turn is one conversation message. Role is "user", "assistant", or "tool" (a
 // tool result); the system prompt is passed separately to Render. For tool
@@ -39,7 +47,7 @@ type Stops struct {
 // turn-stop markers.
 type Template struct {
 	name   string
-	render func(system string, turns []Turn) string
+	render func(system string, turns []Turn) []Segment
 	stops  []string
 }
 
@@ -48,8 +56,24 @@ func (t *Template) Name() string { return t.name }
 
 // Render builds the complete prompt string (including any leading BOS marker the
 // family's template emits — encode with addBOS=false) for the system prompt and
-// turns, ending with the generation prompt for the model to continue.
-func (t *Template) Render(system string, turns []Turn) string { return t.render(system, turns) }
+// turns, ending with the generation prompt for the model to continue. It is the
+// concatenation of RenderSegments; for tokenization prefer RenderSegments +
+// EncodeSegments so untrusted content can't forge control tokens (M25).
+func (t *Template) Render(system string, turns []Turn) string {
+	var b strings.Builder
+	for _, s := range t.render(system, turns) {
+		b.WriteString(s.Text)
+	}
+	return b.String()
+}
+
+// RenderSegments builds the prompt as tagged spans: the family's structural markers
+// as Special segments (tokenized with the added-token trie), untrusted message/tool
+// content as non-special ones (tokenized without it). Feed to Tokenizer.
+// EncodeSegments. On legitimate input the token stream equals Encode(Render(...)).
+func (t *Template) RenderSegments(system string, turns []Turn) []Segment {
+	return t.render(system, turns)
+}
 
 // Stops returns the turn-stop marker strings for this family.
 func (t *Template) Stops() Stops { return Stops{Strings: append([]string(nil), t.stops...)} }

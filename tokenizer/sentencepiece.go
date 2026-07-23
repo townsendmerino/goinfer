@@ -365,11 +365,33 @@ func (t *Tokenizer) initGemma(tj *tokenizerJSON) error {
 	return nil
 }
 
+// Segment is a span of a rendered chat prompt tagged with whether the tokenizer
+// may recognize special/added-token surface forms inside it. Chat templates emit
+// their structural markers as Special segments and untrusted message/tool content
+// as non-special ones, so EncodeSegments can refuse to promote a "<|im_end|>" typed
+// by a user into a real turn-boundary control token (M25 — the parse_special
+// distinction). See EncodeSegments.
+type Segment struct {
+	Text    string
+	Special bool
+}
+
 // Encode turns text into token ids. If addBOS, prepend the BOS token (the
 // generation prefill expects it for Gemma; byte-level families with no BOS
 // ignore the flag). Added/special tokens written literally in the text are
-// recognized and emitted as their own ids.
+// recognized and emitted as their own ids — do NOT use this on untrusted content
+// (a user message, a tool result); use EncodeSegments so injected marker strings
+// stay literal (M25).
 func (t *Tokenizer) Encode(text string, addBOS bool) ([]int, error) {
+	return t.encode(text, addBOS, true)
+}
+
+// encode is Encode with an explicit parseSpecial: when false the added-token trie
+// is not consulted, so the whole text BPEs as a single gap and any special surface
+// form in it stays ordinary text. The result is otherwise identical to Encode —
+// trusted gap text never contains a special form, so on legitimate input the two
+// modes agree (the byte-identity property EncodeSegments relies on).
+func (t *Tokenizer) encode(text string, addBOS, parseSpecial bool) ([]int, error) {
 	// A vocab loaded without merges can DECODE but not encode — refuse rather than return a
 	// silently unmerged (wrong) tokenization. See the merges note in gguf.go.
 	if len(t.pairRank) == 0 {
@@ -379,7 +401,7 @@ func (t *Tokenizer) Encode(text string, addBOS bool) ([]int, error) {
 		return nil, fmt.Errorf("tokenizer.Encode: %w", errors.New("tokenizer not loaded"))
 	}
 	if t.mode == modeByteLevel {
-		return t.encodeByteLevel(text, addBOS)
+		return t.encodeByteLevel(text, addBOS, parseSpecial)
 	}
 	var out []int32
 	if addBOS && t.special.BOS >= 0 { // a GGUF llama-family model may carry no BOS key ⇒ BOS == -1; don't emit a garbage id (M28)
@@ -393,7 +415,7 @@ func (t *Tokenizer) Encode(text string, addBOS bool) ([]int, error) {
 			out = append(out, t.bpe(t.normalizeGap(text[gapStart:end]))...)
 		}
 	}
-	for i < len(text) {
+	for parseSpecial && i < len(text) {
 		if id, n := t.added.match(text, i); n > 0 {
 			flushGap(i)
 			out = append(out, id)
@@ -414,6 +436,30 @@ func (t *Tokenizer) Encode(text string, addBOS bool) ([]int, error) {
 		res[k] = int(v)
 	}
 	return res, nil
+}
+
+// EncodeSegments tokenizes a rendered chat prompt from its Render segments: a
+// Special segment is parsed WITH the added-token trie (its structural markers
+// become control ids), a content segment WITHOUT it (a user/tool "<|im_end|>" stays
+// literal text) — the standard parse_special split that stops prompt injection
+// from forging turn boundaries (M25). addBOS prepends BOS once up front; templates
+// that emit their own BOS marker pass addBOS=false. On legitimate input the id
+// stream is identical to Encode(Render(...)): every content segment is exactly one
+// gap between the template's genuine special tokens, so no cross-boundary merge is
+// lost.
+func (t *Tokenizer) EncodeSegments(segs []Segment, addBOS bool) ([]int, error) {
+	var out []int
+	if addBOS && t.special.BOS >= 0 {
+		out = append(out, int(t.special.BOS))
+	}
+	for _, s := range segs {
+		ids, err := t.encode(s.Text, false, s.Special)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, ids...)
+	}
+	return out, nil
 }
 
 // normalize applies the SentencePiece space normalizer: replace every ASCII
