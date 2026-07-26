@@ -119,6 +119,18 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 		}
 		return nil, false, nil
 	}
+	// Router-kernel capacity (gpu/moe.go): score/sel are array<f32,256> with nE clamped to
+	// min(nE,256), and the group-limited path uses array<f32,32>/array<bool,32> indexed by
+	// nGroup. A model with more experts would route on only the first 256 (Kimi K2 has 384 —
+	// experts 256+ silently never considered); more than 32 groups indexes out of bounds. Either
+	// is plausible-looking wrong output, so decline to the staged path — matching cuda/backend.go's
+	// nE>256 build check (M22). Checked here, before any allocation, so the decline is clean.
+	if nE, _, _, _, _, _, _, _, nGroup, _, moeOK := m.MoEResidentParams(); moeOK && (nE > 256 || nGroup > 32) {
+		if os.Getenv("GOINFER_RESIDENT_DEBUG") != "" {
+			fmt.Fprintf(os.Stderr, "[gpu] BuildResident declined: MoE nE=%d/nGroup=%d exceeds router-kernel cap (256 experts / 32 groups)\n", nE, nGroup)
+		}
+		return nil, false, nil
+	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	c := b.ctx
