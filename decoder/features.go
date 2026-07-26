@@ -168,7 +168,41 @@ func ResidentEligible(a *Architecture, backend string) bool {
 	if !ok {
 		return false
 	}
-	return a.decodeRunnerEligible() && len(missingFeatures(a.residentFeatures(), impl)) == 0
+	return a.decodeRunnerEligible() &&
+		len(missingFeatures(a.residentFeatures(), impl)) == 0 &&
+		residentMoECapacityOK(a, backend)
+}
+
+// residentBackendMoECap is the router-kernel capacity of each backend whose MoE scoreboard is a
+// FIXED-SIZE array — the numeric twin of ResidentBackendFeatures (a feature is "implemented at
+// all"; a cap is "implemented up to N"). gpu/moe.go scores into array<f32,256> and its group-limited
+// path into array<f32,32>/array<bool,32>; cuda/backend.go rejects >256 identically. A model past the
+// cap would route on only the first N experts (or index groups out of bounds) — plausible-looking
+// WRONG output, no error — so it must decline to the staged/CPU path. This is exactly the runtime
+// guard M22 added in gpu/backend.go BuildResident; declared here too so the hardware-matrix
+// generator derives the same answer the runtime gives (the C6 one-source-of-truth discipline — a
+// feature-only predicate silently over-admitted Kimi K2's 384 experts as WebGPU-resident). Absent
+// entry = no fixed-size router cap (a backend that declines these archs on features never reaches
+// this — Metal/CUDA decline Kimi on FeatMLA).
+var residentBackendMoECap = map[string]struct{ experts, groups int }{
+	"webgpu": {experts: 256, groups: 32},
+	"cuda":   {experts: 256, groups: 32},
+}
+
+// residentMoECapacityOK reports whether backend's router kernel can route arch's MoE (M22). True for
+// a dense arch or a backend without a fixed-size router.
+func residentMoECapacityOK(a *Architecture, backend string) bool {
+	cap, ok := residentBackendMoECap[backend]
+	if !ok || a.MoE == nil {
+		return true
+	}
+	if cap.experts > 0 && a.MoE.NumExperts > cap.experts {
+		return false
+	}
+	if cap.groups > 0 && a.MoE.NGroup > cap.groups {
+		return false
+	}
+	return true
 }
 
 // ResidentBackendFeatures declares what each resident backend's decode path implements.

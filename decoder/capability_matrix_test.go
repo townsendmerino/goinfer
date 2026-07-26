@@ -187,7 +187,12 @@ func representativeConfig(modelType string) *Config {
 			ModelType: "kimi_k2", HiddenDim: 64, NumLayers: 4, NumHeads: 8, NumKVHeads: 8,
 			VocabSize: 128, IntermediateDim: 128, MoeIntermediateSize: 32, RMSNormEps: 1e-6,
 			QLoRARank: 24, KVLoRARank: 16, QKNopeHeadDim: 16, QKRopeHeadDim: 8, VHeadDim: 16,
-			NRoutedExperts: 16, NSharedExperts: 1, NumExpertsPerTok: 4, NGroup: 1, TopkGroup: 1,
+			// Real Kimi K2 has 384 routed experts (registry.go:39). The representative must carry the
+			// real count, not a tiny 16, or the generated hardware matrix shows Kimi WebGPU-resident
+			// even though the real model exceeds the router-kernel cap and declines (M22, the
+			// residentBackendMoECap check in features.go). Same representativeConfig-accuracy class as
+			// C6's Mellum yarn.
+			NRoutedExperts: 384, NSharedExperts: 1, NumExpertsPerTok: 4, NGroup: 1, TopkGroup: 1,
 			FirstKDenseReplace: 1, RoutedScalingFactor: 2.827, ScoringFunc: "sigmoid",
 			RopeParameters: json.RawMessage(`{"rope_theta":50000.0,"rope_type":"default"}`),
 		}

@@ -224,3 +224,55 @@ func TestResidentFeatures_derivationMatchesProfile(t *testing.T) {
 		}
 	}
 }
+
+// TestResidentMoECapacity_routerCap is the M22 taxonomy gate (kimi_k2 doc-drift). WebGPU/CUDA score
+// experts into a fixed-size array (256) and groups into 32; a model past that routes on only the
+// first N — plausible-looking wrong output — so ResidentEligible must decline it even though every
+// FEATURE it needs is implemented. This is what keeps the generated hardware matrix honest: before
+// residentBackendMoECap, the feature-only predicate showed Kimi K2 (384 experts) WebGPU-resident
+// while the runtime (gpu/backend.go, M22) declined it.
+func TestResidentMoECapacity_routerCap(t *testing.T) {
+	arch, _, err := resolveArchitecture(representativeConfig("kimi_k2"))
+	if err != nil {
+		t.Fatalf("resolve kimi_k2: %v", err)
+	}
+	if arch.MoE == nil {
+		t.Fatal("kimi_k2 arch has no MoE — representativeConfig regressed")
+	}
+	if arch.MoE.NumExperts <= 256 {
+		t.Fatalf("representativeConfig(kimi_k2) has %d experts; must carry the real >256 count or this "+
+			"gate is vacuous (see the C6/Mellum representativeConfig-accuracy lesson)", arch.MoE.NumExperts)
+	}
+
+	// The decline must be the CAP, not a missing feature: WebGPU implements everything kimi needs.
+	if miss := missingFeatures(arch.residentFeatures(), ResidentBackendFeatures["webgpu"]); len(miss) != 0 {
+		t.Fatalf("kimi_k2 is missing WebGPU features %v — this test can no longer isolate the router cap", miss)
+	}
+	if ResidentEligible(arch, "webgpu") {
+		t.Error("kimi_k2 (384 experts) must NOT be WebGPU-resident-eligible — the router kernel caps at 256 (M22)")
+	}
+	if residentMoECapacityOK(arch, "webgpu") {
+		t.Error("residentMoECapacityOK(kimi, webgpu) = true; 384 > 256 must fail")
+	}
+
+	// Boundary: at/under the cap the same arch is admitted (proves it's the count, not the family).
+	atCap := *arch.MoE
+	atCap.NumExperts = 256
+	capped := *arch
+	capped.MoE = &atCap
+	if !residentMoECapacityOK(&capped, "webgpu") {
+		t.Error("256 experts is at the cap and must be admitted (off-by-one in the router-cap check)")
+	}
+	over := atCap
+	over.NumExperts = 257
+	capped.MoE = &over
+	if residentMoECapacityOK(&capped, "webgpu") {
+		t.Error("257 experts must decline (cap is 256)")
+	}
+
+	// A backend with no fixed-size router cap is unaffected (dense archs and cap-less backends pass).
+	dense, _, _ := resolveArchitecture(representativeConfig("qwen3"))
+	if !residentMoECapacityOK(dense, "webgpu") {
+		t.Error("a dense (non-MoE) arch must never be declined by the router cap")
+	}
+}
