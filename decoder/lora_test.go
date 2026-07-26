@@ -69,14 +69,37 @@ func TestLoRAValidateTargets(t *testing.T) {
 	a := &loraAdapter{deltas: map[string]loraDelta{
 		"model.layers.0.self_attn.q_proj.weight": {},
 	}}
-	if err := a.validateTargets(1, &llamaTensorSchema); err != nil {
+	if err := a.validateTargets(1, &llamaTensorSchema, tensorName); err != nil {
 		t.Errorf("q_proj should be a valid target: %v", err)
 	}
 	bad := &loraAdapter{deltas: map[string]loraDelta{
 		"model.embed_tokens.weight": {},
 	}}
-	if err := bad.validateTargets(1, &llamaTensorSchema); err == nil {
+	if err := bad.validateTargets(1, &llamaTensorSchema, tensorName); err == nil {
 		t.Error("embed_tokens is not a supported merge target — want error")
+	}
+}
+
+// TestLoRAValidateTargets_prefixMismatch is the M18 regression: an adapter's deltas are unprefixed
+// (loraBaseName strips base_model.model. → model.layers.N.*), but on a VL checkpoint the merge-at-load
+// path looks each delta up by a PREFIXED name (language_model.model.layers.N.* etc.). validateTargets
+// must be handed that same prefixed builder so it FAILS LOUDLY, instead of validating clean against
+// bare names while merge silently no-ops every tensor.
+func TestLoRAValidateTargets_prefixMismatch(t *testing.T) {
+	a := &loraAdapter{deltas: map[string]loraDelta{
+		"model.layers.0.self_attn.q_proj.weight": {}, // as loraBaseName produces (unprefixed)
+	}}
+	// Plain base: merge looks up bare names → validation passes (and merge would find the delta).
+	if err := a.validateTargets(1, &llamaTensorSchema, tensorName); err != nil {
+		t.Errorf("unprefixed base should validate: %v", err)
+	}
+	// VL-prefixed base: merge looks up language_model.model.layers.N.* — the unprefixed delta will
+	// never match, so validation must reject rather than pass-then-silently-ignore.
+	prefixed := func(i int, suf string) string {
+		return "language_model." + tensorName(i, suf)
+	}
+	if err := a.validateTargets(1, &llamaTensorSchema, prefixed); err == nil {
+		t.Error("a prefixed (VL) base with an unprefixed adapter must fail validation, not silently no-op (M18)")
 	}
 }
 
@@ -193,6 +216,63 @@ func TestLoRA_mergeAtLoad(t *testing.T) {
 		if tF32(&w0.Layers[0].KProj)[i] != tF32(&w1.Layers[0].KProj)[i] {
 			t.Fatalf("k_proj changed at %d (should be untouched)", i)
 		}
+	}
+}
+
+// TestLoRA_mergeAtLoad_prefixedBaseRejects is the M18 end-to-end gate: a VL text-decoder ships its
+// tensors under a language_model.* prefix, so the merge-at-load path looks each delta up by that
+// prefixed name. A normal (unprefixed) adapter can never match, and before M18 loadWeights validated
+// clean and then silently merged nothing. Now it must return an error.
+func TestLoRA_mergeAtLoad_prefixedBaseRejects(t *testing.T) {
+	const hidden, heads, headDim, inter, vocab = 8, 2, 4, 16, 16
+	qDim := heads * headDim
+	base := t.TempDir()
+	cfg := `{"model_type":"llama","vocab_size":16,"hidden_size":8,"num_hidden_layers":1,
+		"num_attention_heads":2,"num_key_value_heads":2,"head_dim":4,"intermediate_size":16,
+		"max_position_embeddings":128,"rms_norm_eps":1e-6,"rope_theta":10000}`
+	if err := os.WriteFile(filepath.Join(base, "config.json"), []byte(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fill := func(n int) []float32 { return make([]float32, n) }
+	// Every tensor under language_model.model.* — the Gemma-3-VL / qwen2_5_vl text-decoder layout
+	// that makes loadWeights set topPrefix="language_model." and merge via prefixed names.
+	p := func(s string) string { return "language_model." + s }
+	ts := map[string]stTensor{
+		p("model.embed_tokens.weight"):                      {[]int{vocab, hidden}, fill(vocab * hidden)},
+		p("model.norm.weight"):                              {[]int{hidden}, fill(hidden)},
+		"lm_head.weight":                                    {[]int{vocab, hidden}, fill(vocab * hidden)},
+		p("model.layers.0.self_attn.q_proj.weight"):         {[]int{qDim, hidden}, fill(qDim * hidden)},
+		p("model.layers.0.self_attn.k_proj.weight"):         {[]int{qDim, hidden}, fill(qDim * hidden)},
+		p("model.layers.0.self_attn.v_proj.weight"):         {[]int{qDim, hidden}, fill(qDim * hidden)},
+		p("model.layers.0.self_attn.o_proj.weight"):         {[]int{hidden, qDim}, fill(hidden * qDim)},
+		p("model.layers.0.mlp.gate_proj.weight"):            {[]int{inter, hidden}, fill(inter * hidden)},
+		p("model.layers.0.mlp.up_proj.weight"):              {[]int{inter, hidden}, fill(inter * hidden)},
+		p("model.layers.0.mlp.down_proj.weight"):            {[]int{hidden, inter}, fill(hidden * inter)},
+		p("model.layers.0.input_layernorm.weight"):          {[]int{hidden}, fill(hidden)},
+		p("model.layers.0.post_attention_layernorm.weight"): {[]int{hidden}, fill(hidden)},
+	}
+	writeSafetensors(t, filepath.Join(base, "model.safetensors"), ts)
+
+	adapter := t.TempDir()
+	if err := os.WriteFile(filepath.Join(adapter, "adapter_config.json"), []byte(`{"r":2,"lora_alpha":4}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeSafetensors(t, filepath.Join(adapter, "adapter_model.safetensors"), map[string]stTensor{
+		"base_model.model.model.layers.0.self_attn.q_proj.lora_A.weight": {[]int{2, hidden}, fill(2 * hidden)},
+		"base_model.model.model.layers.0.self_attn.q_proj.lora_B.weight": {[]int{qDim, 2}, fill(qDim * 2)},
+	})
+
+	// Sanity: the base loads fine without an adapter (the prefix layout is valid).
+	if _, err := loadWeights(base, quantNone, false, nil); err != nil {
+		t.Fatalf("prefixed base should load without an adapter: %v", err)
+	}
+	lo, err := loadLoRA(adapter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lo.close()
+	if _, err := loadWeights(base, quantNone, false, lo); err == nil {
+		t.Error("merging an unprefixed adapter into a language_model.*-prefixed base must fail loudly, not silently no-op (M18)")
 	}
 }
 

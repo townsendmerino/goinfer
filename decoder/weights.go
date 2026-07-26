@@ -384,11 +384,8 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 		}
 		return buildLlama4Weights(cfg, arch, st, quant) // per-layer dense/MoE + transposed fused experts
 	}
-	if lora != nil {
-		if err := lora.validateTargets(cfg.NumLayers, s); err != nil {
-			return nil, err
-		}
-	}
+	// LoRA merge-at-load validation is deferred until after tn is defined (below) so it validates
+	// against the SAME prefixed names merge actually looks up (M18).
 	hd := cfg.HiddenDim
 	headDim := arch.HeadDim           // resolved (Llama configs may omit head_dim; arch derives it)
 	qDim := cfg.NumHeads * headDim    // query projection rows
@@ -444,6 +441,22 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 		return topPrefix + fmt.Sprintf("model.%slayers.%d.%s", modelPrefix, i, suf)
 	}
 	fusedExperts := arch.MoE != nil && have[tn(0, "mlp.experts.gate_up_proj")]
+
+	// LoRA merge-at-load validation (M18). Deferred to here so it sees tn — the SAME prefixed name
+	// (language_model.* / model.language_model.* on VL checkpoints, or model.-stripped) that loadProj
+	// looks the delta up by. Two silent-no-op classes this closes:
+	//   - a VL-prefixed base validated clean against bare names, then merge no-op'd every prefixed
+	//     tensor (deltas are unprefixed) — now it fails loudly instead;
+	//   - qwen35/mla load attention via loadQwen35Attn/loadDeepseekAttn, OUTSIDE loadProj, so merge
+	//     never touches their attention deltas — reject rather than half-merge.
+	if lora != nil {
+		if arch.qwen35 != nil || arch.mla != nil {
+			return nil, fmt.Errorf("decoder: LoRA merge unsupported for %s (attention projections load outside the generic merge path)", arch.Name)
+		}
+		if err := lora.validateTargets(cfg.NumLayers, s, tn); err != nil {
+			return nil, err
+		}
+	}
 
 	// GPTQ/AWQ checkpoints ship their projections as packed int4 (qweight/…);
 	// resolve the params once. nil ⇒ a normal f32/bf16 checkpoint.

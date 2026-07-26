@@ -128,19 +128,25 @@ func loraTensor(st *embed.SafetensorsFile, name string) ([]float32, []int, error
 // validateTargets checks every adapter delta maps to a per-layer projection the
 // loader will merge into — so an adapter targeting an unsupported module (e.g.
 // embed_tokens) fails loudly rather than silently no-op'ing.
-func (a *loraAdapter) validateTargets(numLayers int, s *tensorSchema) error {
+//
+// name MUST build the SAME tensor names the corresponding merge path actually looks the delta up
+// by, or the check lies (M18): the merge-at-load path in weights.go looks up prefixed names (tn,
+// which adds language_model.* / model.language_model.* on VL checkpoints), while the compute-time
+// path (buildLoraRuntime) uses the bare tensorName. Passing the wrong builder is exactly how a
+// VL-prefixed base validated clean and then silently ignored the whole adapter.
+func (a *loraAdapter) validateTargets(numLayers int, s *tensorSchema, name func(layer int, suffix string) string) error {
 	known := map[string]bool{}
 	for i := range numLayers {
 		for _, suf := range []string{s.QProj, s.KProj, s.VProj, s.OProj, s.GateProj, s.UpProj, s.DownProj} {
 			if suf != "" {
-				known[tensorName(i, suf)] = true
+				known[name(i, suf)] = true
 			}
 		}
 	}
 	for base := range a.deltas {
 		if !known[base] {
 			return fmt.Errorf("decoder(lora): adapter targets %q, which merge does not support "+
-				"(only the per-layer attention/MLP projections)", base)
+				"(only the per-layer attention/MLP projections; a prefixed base needs a prefix-matching adapter)", base)
 		}
 	}
 	return nil
@@ -267,7 +273,9 @@ func (m *Model) LoadAdapter(name, dir string) error {
 	if err != nil {
 		return err
 	}
-	if err := a.validateTargets(arch.NumLayers, m.w.schema); err != nil {
+	// Compute-time application (buildLoraRuntime) indexes deltas by the bare tensorName, so validate
+	// against that — this path is prefix-agnostic (it applies by layer/projection, not physical name).
+	if err := a.validateTargets(arch.NumLayers, m.w.schema, tensorName); err != nil {
 		a.close()
 		return err
 	}
