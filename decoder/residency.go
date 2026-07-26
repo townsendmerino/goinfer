@@ -288,8 +288,17 @@ func (m *Model) RopeInvFreq() []float32 {
 	return out
 }
 
-// AttnScale is the attention softmax scale (1/√headDim for eligible archs).
+// AttnScale is the attention softmax q·k multiplier the resident backends (CUDA/Metal/WebGPU)
+// apply. It returns the registry-RESOLVED arch.AttnScale, which is 1/√headDim for the common case
+// but deliberately not for several archs: Gemma-3 uses query_pre_attn_scalar^-0.5 (== headDim for
+// 1B/4B/12B but hidden/heads for 27B), Granite uses attention_multiplier, and MLA uses the qk
+// head-dim. Hardcoding 1/√headDim here (the old behaviour) silently mis-scaled every attention
+// logit on those — invisible on the small parity fixtures (where the scalar == headDim) but wrong
+// on 27B/Granite. Falls back to 1/√headDim only if an arch left AttnScale unset (M19).
 func (m *Model) AttnScale() float32 {
+	if s := m.w.arch.AttnScale; s != 0 {
+		return float32(s)
+	}
 	return float32(1.0 / math.Sqrt(float64(m.w.arch.HeadDim)))
 }
 
