@@ -149,8 +149,10 @@ func qwenSmartResize(h, w, factor, minPixels, maxPixels int) (int, int) {
 	wb := max(factor, roundF(w))
 	if hb*wb > maxPixels {
 		beta := math.Sqrt(float64(h*w) / float64(maxPixels))
-		hb = int(math.Floor(float64(h)/beta/float64(factor))) * factor
-		wb = int(math.Floor(float64(w)/beta/float64(factor))) * factor
+		// max(factor, …): an extreme aspect ratio floors a dimension to 0 → empty
+		// pixel_values with no error (HF raises past ratio 200). Keep at least one cell.
+		hb = max(factor, int(math.Floor(float64(h)/beta/float64(factor)))*factor)
+		wb = max(factor, int(math.Floor(float64(w)/beta/float64(factor)))*factor)
 	} else if hb*wb < minPixels {
 		beta := math.Sqrt(float64(minPixels) / float64(h*w))
 		hb = int(math.Ceil(float64(h)*beta/float64(factor))) * factor

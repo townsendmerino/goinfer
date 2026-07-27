@@ -54,6 +54,12 @@ func LoadProjector(dir string) (*Projector, error) {
 	if eps == 0 {
 		eps = 1e-6
 	}
+	// A hostile/truncated VL config would otherwise divide by zero (patch_size) or
+	// build a nonsense grid; validate before use (the tokenizer loaders do the same).
+	if c.VisionConfig.PatchSize <= 0 || c.VisionConfig.ImageSize <= 0 || c.MMTokensPerImage <= 0 {
+		return nil, fmt.Errorf("multimodal: invalid VL config (image_size=%d patch_size=%d mm_tokens_per_image=%d)",
+			c.VisionConfig.ImageSize, c.VisionConfig.PatchSize, c.MMTokensPerImage)
+	}
 	p := &Projector{
 		visionHidden:    c.VisionConfig.HiddenSize,
 		textHidden:      c.TextConfig.HiddenSize,
@@ -74,6 +80,9 @@ func LoadProjector(dir string) (*Projector, error) {
 	p.normW = append([]float32(nil), normW...)
 	// Transpose [visionHidden, textHidden] → [textHidden, visionHidden] for MatmulBT.
 	vh, th := p.visionHidden, p.textHidden
+	if vh <= 0 || th <= 0 || len(projW) != vh*th { // guard the transpose indexing against a truncated tensor
+		return nil, fmt.Errorf("multimodal: projection weight length %d, want %d (vision_hidden %d × text_hidden %d)", len(projW), vh*th, vh, th)
+	}
 	p.projWt = make([]float32, th*vh)
 	for i := range vh {
 		for o := range th {

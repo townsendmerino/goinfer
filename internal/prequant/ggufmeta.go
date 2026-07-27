@@ -70,7 +70,7 @@ func (c *ggufCur) need(n int) bool {
 	if c.err != nil {
 		return false
 	}
-	if n < 0 || c.off+n > len(c.b) {
+	if n < 0 || n > len(c.b)-c.off { // overflow-safe form (a crafted u64 length can wrap c.off+n); see internal/giw/bundle.go
 		c.err = fmt.Errorf("gguf header: unexpected EOF")
 		return false
 	}
