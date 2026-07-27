@@ -232,9 +232,11 @@ func TestMetal_CloseWithSecondModelAlive(t *testing.T) {
 	// deterministic, compression-immune, and is precisely M24's contract (release every tracked
 	// handle, per model). (RSS is logged for a human, but not asserted.)
 	aBufs, aObjs := ledgerLens(a)
-	if aBufs != 0 || aObjs != 0 || a.d.id != 0 {
-		t.Errorf("closing A left resources on its ledger: %d buffers, %d objc objects, device id %#x — Close did not free with B resident",
-			aBufs, aObjs, uintptr(a.d.id))
+	if aBufs != 0 || aObjs != 0 {
+		// The device-id-nilled half of M24's contract is asserted in aikit/gpu's own pure-device
+		// leak test (it needs Device's private id field); here the 0/0 ledger is the leak signal.
+		t.Errorf("closing A left resources on its ledger: %d buffers, %d objc objects — Close did not free with B resident",
+			aBufs, aObjs)
 	}
 	bBufs1, bObjs1 := ledgerLens(b)
 	if bBufs1 != bBufs0 || bObjs1 != bObjs0 {
@@ -248,10 +250,8 @@ func TestMetal_CloseWithSecondModelAlive(t *testing.T) {
 }
 
 // ledgerLens reports how many MTLBuffers and non-buffer objc objects a resident's Device still owns
-// — the compression-immune ground truth for "did Close free it". Test-only; reaches into the
-// private ledgers (same package).
+// — the compression-immune ground truth for "did Close free it". Via aikit/gpu's exported
+// LedgerLen accessor (the device layer now lives there; Device's ledgers are private to it).
 func ledgerLens(r *Resident) (bufs, objs int) {
-	r.d.mu.Lock()
-	defer r.d.mu.Unlock()
-	return len(r.d.allocs), len(r.d.objs)
+	return r.d.LedgerLen()
 }

@@ -105,7 +105,7 @@ func TestLayerB_fullLayerForward(t *testing.T) {
 	uqW, uqS := packMat(Wu, I, H)
 	dqW, dqS := packMat(Wd, H, I)
 
-	byteBuf := func(n int) Buffer { return Buffer{id: d.id.Send(selNewBufferLen, uintptr(n), uintptr(0)), n: n} }
+	byteBuf := func(n int) Buffer { return d.NewBufferBytes(n) }
 	x := d.NewBufferFloats(x0)
 	aq, aSc := byteBuf(H), d.NewBufferLen(1)
 	qB, kB, vB := d.NewBufferLen(nH*hd), d.NewBufferLen(kvDim), d.NewBufferLen(kvDim)
@@ -133,25 +133,25 @@ func TestLayerB_fullLayerForward(t *testing.T) {
 	uHalf := d.NewBufferU32(uint32(half)) // rope rhalf (buffer 5): rotaryDim/2, full rotary here
 
 	q := d.NewCommandQueue()
-	enc := q.begin()
-	enc.dispatch(pRms, 256, 256, x, d.NewBufferFloats(attnNorm), aq, aSc, uH, uEps, uAddOne0)
-	enc.dispatch(pGemv, nH*hd, 64, aq, aSc, qqW, qqS, qB, uH)
-	enc.dispatch(pGemv, kvDim, 64, aq, aSc, kqW, kqS, kB, uH)
-	enc.dispatch(pGemv, kvDim, 64, aq, aSc, vqW, vqS, vB, uH)
-	enc.dispatch(pRope, nH*half, 64, qB, uInvf, uHd, uPos, uQtotal, uHalf)
-	enc.dispatch(pRope, nKV*half, 64, kB, uInvf, uHd, uPos, uKtotal, uHalf)
-	enc.dispatch(pKv, kvDim, 64, kB, vB, kc, vc, uKvDim, uPos)
-	enc.dispatch(pAttn, nH*128, 128, qB, kc, vc, ctx, uNH, uNKV, uHd, uNKeys, uScale, uWindow0) // threadgroup-per-head
-	enc.dispatch(pQv, 256, 256, ctx, cq, cSc, uHH)
-	enc.dispatch(pGemv, H, 64, cq, cSc, oqW, oqS, oO, uHH)
-	enc.dispatch(pRes, H, 64, x, oO)
-	enc.dispatch(pRms, 256, 256, x, d.NewBufferFloats(mlpNorm), mq, mSc, uH, uEps, uAddOne0)
-	enc.dispatch(pGemv, I, 64, mq, mSc, gqW, gqS, gO, uH)
-	enc.dispatch(pGemv, I, 64, mq, mSc, uqW, uqS, uO, uH)
-	enc.dispatch(pSw, 256, 256, gO, uO, dq, dSc, uI, uActSiLU)
-	enc.dispatch(pGemv, H, 64, dq, dSc, dqW, dqS, dO, uI)
-	enc.dispatch(pRes, H, 64, x, dO)
-	enc.end()
+	enc := q.Begin()
+	enc.Dispatch(pRms, 256, 256, x, d.NewBufferFloats(attnNorm), aq, aSc, uH, uEps, uAddOne0)
+	enc.Dispatch(pGemv, nH*hd, 64, aq, aSc, qqW, qqS, qB, uH)
+	enc.Dispatch(pGemv, kvDim, 64, aq, aSc, kqW, kqS, kB, uH)
+	enc.Dispatch(pGemv, kvDim, 64, aq, aSc, vqW, vqS, vB, uH)
+	enc.Dispatch(pRope, nH*half, 64, qB, uInvf, uHd, uPos, uQtotal, uHalf)
+	enc.Dispatch(pRope, nKV*half, 64, kB, uInvf, uHd, uPos, uKtotal, uHalf)
+	enc.Dispatch(pKv, kvDim, 64, kB, vB, kc, vc, uKvDim, uPos)
+	enc.Dispatch(pAttn, nH*128, 128, qB, kc, vc, ctx, uNH, uNKV, uHd, uNKeys, uScale, uWindow0) // threadgroup-per-head
+	enc.Dispatch(pQv, 256, 256, ctx, cq, cSc, uHH)
+	enc.Dispatch(pGemv, H, 64, cq, cSc, oqW, oqS, oO, uHH)
+	enc.Dispatch(pRes, H, 64, x, oO)
+	enc.Dispatch(pRms, 256, 256, x, d.NewBufferFloats(mlpNorm), mq, mSc, uH, uEps, uAddOne0)
+	enc.Dispatch(pGemv, I, 64, mq, mSc, gqW, gqS, gO, uH)
+	enc.Dispatch(pGemv, I, 64, mq, mSc, uqW, uqS, uO, uH)
+	enc.Dispatch(pSw, 256, 256, gO, uO, dq, dSc, uI, uActSiLU)
+	enc.Dispatch(pGemv, H, 64, dq, dSc, dqW, dqS, dO, uI)
+	enc.Dispatch(pRes, H, 64, x, dO)
+	enc.End()
 
 	got := x.Floats()
 	var dot, na, nb, maxabs float64

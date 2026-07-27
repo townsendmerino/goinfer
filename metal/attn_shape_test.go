@@ -127,9 +127,9 @@ func runAttnCase(t *testing.T, d *Device, pAttn Pipeline, nH, nKV, hd, nKeys int
 	uWin := d.NewBufferU32(window)
 
 	cq := d.NewCommandQueue()
-	enc := cq.begin()
-	enc.dispatch(pAttn, nH*128, 128, qB, kc, vc, out, uNH, uNKV, uHd, uNKeys, uScale, uWin)
-	enc.end()
+	enc := cq.Begin()
+	enc.Dispatch(pAttn, nH*128, 128, qB, kc, vc, out, uNH, uNKV, uHd, uNKeys, uScale, uWin)
+	enc.End()
 
 	got := out.Floats()
 	var dot, na, nb float64

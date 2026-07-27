@@ -6,14 +6,12 @@ import (
 	"math"
 	"os"
 	"testing"
-	"unsafe"
 
-	"github.com/ebitengine/purego/objc"
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
 func hN(b Buffer, n int) []float32 {
-	raw := unsafe.Slice(objc.Send[*uint16](b.id, selContents), n)
+	raw := b.U16s()[:n]
 	out := make([]float32, n)
 	for i, h := range raw {
 		out[i] = f16ToF32(h)

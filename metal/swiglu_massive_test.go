@@ -46,9 +46,9 @@ func TestSwigluQuant_MassiveChannel(t *testing.T) {
 	}{{"GELU_TANH", 0}, {"SILU", 1}} {
 		uAct := d.NewBufferU32(act.v)
 		q := d.NewCommandQueue()
-		e := q.begin()
-		e.dispatch(pSw, 256, 256, guB, guB.At(I*4), dq, dSc, uI, uAct)
-		e.end()
+		e := q.Begin()
+		e.Dispatch(pSw, 256, 256, guB, guB.At(I*4), dq, dSc, uI, uAct)
+		e.End()
 		sc := dSc.Floats()[0]
 		got := float32(dq.Int8s()[ch]) * sc
 		// reference geglu at ch, using the same activation

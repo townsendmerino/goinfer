@@ -268,8 +268,8 @@ func (r *Resident) ensurePrefill() {
 	// drain; the +1-owned library/pipelines are tracked on the Device and freed at Close.
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	pool := newARPool()
-	defer pool.drain()
+	pool := NewARPool()
+	defer pool.Drain()
 	lib, err := r.d.CompileLibrary(prefillKernels, MSL3_1)
 	if err != nil {
 		panic(fmt.Sprintf("metal prefill compile: %v", err))
@@ -348,7 +348,7 @@ func (r *Resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 	// C5: every buffer above is per-call scratch/uniform allocated onto the device ledger, which
 	// ReleaseAll frees only at Close — so before this fix each PrefillLast leaked ~24 buffers
 	// (~100–150 MB for a 7B; guF alone is Mpad*2I*2), ratcheting until the mustBuf OOM panic killed
-	// serve (that panic is recovered only on the BuildResident path, not here). e.end() below
+	// serve (that panic is recovered only on the BuildResident path, not here). e.End() below
 	// commits AND waits, so the GPU is finished with them by the time this returns — release each
 	// at end of call. (r.uH / r.uKvDim / r.uHd are Resident-owned and reused — deliberately NOT in
 	// this list; releasing them would corrupt the decode path.)
@@ -359,7 +359,7 @@ func (r *Resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 	}
 	defer func() {
 		for _, b := range scratch {
-			d.releaseBuf(b)
+			d.ReleaseBuf(b)
 		}
 	}()
 
@@ -371,45 +371,45 @@ func (r *Resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 		return total, 256
 	}
 
-	e := r.q.begin()
+	e := r.q.Begin()
 	for l := 0; l < r.nL; l++ {
 		L := &r.layers[l]
 		// pre-attn norm
-		e.dispatch(pf.pRms, M*256, 256, xF, L.preNorm, normF, uH, r.uEps)
+		e.Dispatch(pf.pRms, M*256, 256, xF, L.preNorm, normF, uH, r.uEps)
 		// fused QKV (+bias)
 		t, tg := gg(qkvDim)
-		e.dispatch(pf.pGemmStore, t, tg, normF, L.qkvW, L.qkvS, qkvF, uM, uQkv, uH, L.qkvBias, m1)
+		e.Dispatch(pf.pGemmStore, t, tg, normF, L.qkvW, L.qkvS, qkvF, uM, uQkv, uH, L.qkvBias, m1)
 		if r.qkNorm { // Qwen3: per-head Q/K RMSNorm before RoPE
-			e.dispatch(pf.pQK, M*(r.nH+r.nKV)*128, 128, qkvF, L.qNorm, L.kNorm, r.uNH, r.uNKV, uHd, r.uNHhd, uStride, r.uEps, r.uAddOne)
+			e.Dispatch(pf.pQK, M*(r.nH+r.nKV)*128, 128, qkvF, L.qNorm, L.kNorm, r.uNH, r.uNKV, uHd, r.uNHhd, uStride, r.uEps, r.uAddOne)
 		}
 		// rope q, k (per-row positions)
-		e.dispatch(pf.pRope, M*r.nH*r.half, 128, qkvF, r.invf, uHd, posB, uTotalQ, uStride, uBase0, r.uHalf)
-		e.dispatch(pf.pRope, M*r.nKV*r.half, 128, qkvF, r.invf, uHd, posB, uTotalK, uStride, uBaseK, r.uHalf)
+		e.Dispatch(pf.pRope, M*r.nH*r.half, 128, qkvF, r.invf, uHd, posB, uTotalQ, uStride, uBase0, r.uHalf)
+		e.Dispatch(pf.pRope, M*r.nKV*r.half, 128, qkvF, r.invf, uHd, posB, uTotalK, uStride, uBaseK, r.uHalf)
 		// scatter K,V to cache
-		e.dispatch(pf.pKv, M*kvDim, 128, qkvF, r.kc[l], r.vc[l], posB, uKvDim, uStride, uKOff, uVOff)
+		e.Dispatch(pf.pKv, M*kvDim, 128, qkvF, r.kc[l], r.vc[l], posB, uKvDim, uStride, uKOff, uVOff)
 		// causal attention → ctx
-		e.dispatch(pf.pAttn, M*r.nH*128, 128, qkvF, r.kc[l], r.vc[l], ctxF, r.uNH, r.uNKV, uHd, uStartPos, r.uScale, uStride, r.uWindow)
+		e.Dispatch(pf.pAttn, M*r.nH*128, 128, qkvF, r.kc[l], r.vc[l], ctxF, r.uNH, r.uNKV, uHd, uStartPos, r.uScale, uStride, r.uWindow)
 		// o-proj + residual into x
 		t, tg = gg(H)
-		e.dispatch(pf.pGemmStore, t, tg, ctxF, L.oW, L.oS, xF, uM, uH, uQDim, dummyBias, m2)
+		e.Dispatch(pf.pGemmStore, t, tg, ctxF, L.oW, L.oS, xF, uM, uH, uQDim, dummyBias, m2)
 		// post-attn norm
-		e.dispatch(pf.pRms, M*256, 256, xF, L.postNorm, normF, uH, r.uEps)
+		e.Dispatch(pf.pRms, M*256, 256, xF, L.postNorm, normF, uH, r.uEps)
 		// gate/up
 		t, tg = gg(2 * I)
-		e.dispatch(pf.pGemmStore, t, tg, normF, L.guW, L.guS, guF, uM, u2I, uH, dummyBias, m0)
+		e.Dispatch(pf.pGemmStore, t, tg, normF, L.guW, L.guS, guF, uM, u2I, uH, dummyBias, m0)
 		// swiglu
-		e.dispatch(pf.pSw, M*I, 256, guF, dqF, uI)
+		e.Dispatch(pf.pSw, M*I, 256, guF, dqF, uI)
 		// down + residual into x
 		t, tg = gg(H)
-		e.dispatch(pf.pGemmStore, t, tg, dqF, L.dW, L.dS, xF, uM, uH, uI, dummyBias, m2)
+		e.Dispatch(pf.pGemmStore, t, tg, dqF, L.dW, L.dS, xF, uM, uH, uI, dummyBias, m2)
 	}
 	// final norm + LM head for the LAST token only, through the SAME int8-pinned head the decode
 	// path runs (rmsnorm→int8, then gemv_w8a8). The head weights are int8 (logit-critical); the
 	// int4 gemm_w4f16 used here previously misread them as packed nibbles + f16 scales, producing
 	// NaN logits. Norm-quant the last token's f16 residual row to int8, then run the decode head.
-	e.dispatch(pf.pRmsQ, 256, 256, xF.At((M-1)*H*2), r.finalNorm, r.aq, r.aSc, uH, r.uEps, r.uAddOne)
-	e.dispatch(r.pGemvW8, V*32, 32, r.aq, r.aSc, r.lmW, r.lmS, r.logits, r.uH)
-	e.end()
+	e.Dispatch(pf.pRmsQ, 256, 256, xF.At((M-1)*H*2), r.finalNorm, r.aq, r.aSc, uH, r.uEps, r.uAddOne)
+	e.Dispatch(r.pGemvW8, V*32, 32, r.aq, r.aSc, r.lmW, r.lmS, r.logits, r.uH)
+	e.End()
 
 	out := make([]float32, V)
 	copy(out, r.logits.Floats()[:V])

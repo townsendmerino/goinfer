@@ -107,7 +107,7 @@ kernel void rmsnorm_quant(device const float* x  [[buffer(0)]],  // [H]
 
 	// GPU (single threadgroup of 256).
 	q := d.NewCommandQueue()
-	aqBuf := Buffer{id: d.id.Send(selNewBufferLen, uintptr(H), uintptr(0)), n: H} // H int8 bytes
+	aqBuf := d.NewBufferBytes(H) // H int8 bytes
 	ascBuf := d.NewBufferLen(1)
 	q.Run1D(pipe, 256, 256,
 		d.NewBufferFloats(x),

@@ -96,7 +96,7 @@ type execJob struct {
 }
 
 func byteBuf(d *Device, n int) Buffer {
-	return d.mustBuf(d.id.Send(selNewBufferLen, uintptr(n), uintptr(0)), n, "bytes")
+	return d.NewBufferBytes(n)
 }
 
 func int8Buf(d *Device, w *linalg.WeightMat) (Buffer, Buffer, error) {
@@ -200,8 +200,8 @@ func BuildResident(m *decoder.Model) (*Resident, error) {
 	// otherwise leak on this unpinned, pool-less thread.
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	pool := newARPool()
-	defer pool.drain()
+	pool := NewARPool()
+	defer pool.Drain()
 	d, err := CreateSystemDefaultDevice()
 	if err != nil {
 		return nil, err
@@ -214,7 +214,7 @@ func BuildResident(m *decoder.Model) (*Resident, error) {
 	defer func() {
 		if !ok {
 			d.ReleaseAll()
-			d.releaseObjects()
+			d.ReleaseObjects()
 		}
 	}()
 	lib, err := d.CompileLibrary(allKernels, MSL3_1)
@@ -405,11 +405,11 @@ func (r *Resident) ForwardEmb(emb []float32, pos int) []float32 {
 func (r *Resident) forwardLogits(pos int) []float32 {
 	r.uPos.SetU32(uint32(pos))
 	r.uNKeys.SetU32(uint32(pos + 1))
-	e := r.q.begin()
+	e := r.q.Begin()
 	r.encodeTrunkInto(e)                                                           // 28 layers → final norm → r.aq/r.aSc
-	e.dispatch(r.pGemvW8, (r.V)*32, 32, r.aq, r.aSc, r.lmW, r.lmS, r.logits, r.uH) // full lm head (int8 — logit-critical)
-	e.end()
-	r.gpuStart, r.gpuEnd, r.kernStart, r.kernEnd = e.gpuStart, e.gpuEnd, e.kernStart, e.kernEnd
+	e.Dispatch(r.pGemvW8, (r.V)*32, 32, r.aq, r.aSc, r.lmW, r.lmS, r.logits, r.uH) // full lm head (int8 — logit-critical)
+	e.End()
+	r.gpuStart, r.gpuEnd, r.kernStart, r.kernEnd = e.GPUStart(), e.GPUEnd(), e.KernStart(), e.KernEnd()
 	copy(r.logitsHost, r.logits.Floats())
 	return r.logitsHost
 }
@@ -432,10 +432,10 @@ func (r *Resident) ForwardEmbPipe(emb []float32, pos int) []float32 {
 // encodeLogitsCB builds a complete, un-committed command buffer (trunk + full lm head) with no
 // per-call pool — it autoreleases into the executor's long-lived pool.
 func (r *Resident) encodeLogitsCB() *Encoder {
-	e := r.q.beginNP()
+	e := r.q.BeginNP()
 	r.encodeTrunkInto(e)
-	e.dispatch(r.pGemvW8, (r.V)*32, 32, r.aq, r.aSc, r.lmW, r.lmS, r.logits, r.uH)
-	e.finishEncoding()
+	e.Dispatch(r.pGemvW8, (r.V)*32, 32, r.aq, r.aSc, r.lmW, r.lmS, r.logits, r.uH)
+	e.FinishEncoding()
 	return e
 }
 
@@ -447,7 +447,7 @@ func (r *Resident) execLoop() {
 	defer runtime.UnlockOSThread()
 	defer close(r.execDone) // Close waits here: no command buffer is live once this returns
 	const drainEvery = 64
-	pool := newARPool()
+	pool := NewARPool()
 	var cur *Encoder
 	count := 0
 	for job := range r.execReq {
@@ -457,7 +457,7 @@ func (r *Resident) execLoop() {
 		copy(r.x.Floats(), job.emb) // this token's embedding + pos (set at commit time, not encode)
 		r.uPos.SetU32(uint32(job.pos))
 		r.uNKeys.SetU32(uint32(job.pos + 1))
-		cur.commit()
+		cur.Commit()
 
 		count++
 		drain := count%drainEvery == 0
@@ -465,20 +465,20 @@ func (r *Resident) execLoop() {
 		if !drain {
 			next = r.encodeLogitsCB() // overlaps cur's GPU execution — the encode-ahead win
 		}
-		cur.waitDone()
-		r.gpuStart, r.gpuEnd, r.kernStart, r.kernEnd = cur.gpuStart, cur.gpuEnd, cur.kernStart, cur.kernEnd
+		cur.WaitDone()
+		r.gpuStart, r.gpuEnd, r.kernStart, r.kernEnd = cur.GPUStart(), cur.GPUEnd(), cur.KernStart(), cur.KernEnd()
 		copy(r.logitsHost, r.logits.Floats())
 
 		if drain { // no un-committed cb live now → safe to drain the shared pool
-			pool.drain()
-			pool = newARPool()
+			pool.Drain()
+			pool = NewARPool()
 			cur = nil
 		} else {
 			cur = next
 		}
 		r.execAck <- r.logitsHost
 	}
-	pool.drain()
+	pool.Drain()
 }
 
 // stopExec shuts down the executor goroutine (if started) and BLOCKS until it has returned —
@@ -506,7 +506,7 @@ func (r *Resident) Close() {
 	r.stopExec()
 	if r.d != nil {
 		r.d.ReleaseAll()     // every MTLBuffer
-		r.d.releaseObjects() // command queue, ~40 pipelines, 1-2 libraries, and the MTLDevice (M24b)
+		r.d.ReleaseObjects() // command queue, ~40 pipelines, 1-2 libraries, and the MTLDevice (M24b)
 	}
 }
 
@@ -527,11 +527,11 @@ func (r *Resident) ForwardArgmax(id, pos int) uint32 {
 	r.embed.Row(id, r.x.Floats())
 	r.uPos.SetU32(uint32(pos))
 	r.uNKeys.SetU32(uint32(pos + 1))
-	e := r.q.begin()
+	e := r.q.Begin()
 	r.encodeTrunkInto(e)
-	e.dispatch(r.pGemvW8Amax, (r.V)*32, 256, r.aq, r.aSc, r.lmW, r.lmS, r.part, r.uH) // tile partials (int8 head)
-	e.dispatch(r.pArgFinish, 256, 256, r.part, r.tok, r.uP)                           // reduce tiles → token
-	e.end()
+	e.Dispatch(r.pGemvW8Amax, (r.V)*32, 256, r.aq, r.aSc, r.lmW, r.lmS, r.part, r.uH) // tile partials (int8 head)
+	e.Dispatch(r.pArgFinish, 256, 256, r.part, r.tok, r.uP)                           // reduce tiles → token
+	e.End()
 	return r.tok.U32()
 }
 
@@ -554,9 +554,9 @@ func (r *Resident) forwardTrunkForTest(emb []float32, pos, nLayers int) []float3
 	copy(r.x.Floats(), emb)
 	r.uPos.SetU32(uint32(pos))
 	r.uNKeys.SetU32(uint32(pos + 1))
-	e := r.q.begin()
+	e := r.q.Begin()
 	r.encodeTrunkInto(e)
-	e.end()
+	e.End()
 	return append([]float32(nil), r.x.Floats()...)
 }
 
@@ -582,20 +582,20 @@ func (r *Resident) forwardSubCaptureForTest(emb []float32, pos int) (attn, mlp, 
 	grabD := func() []float32 { return append([]float32(nil), r.dO.Floats()...) }
 	for l := 0; l < r.nL; l++ {
 		L := &r.layers[l]
-		e := r.q.begin()
-		e.dispatch(r.pRms, 256, 256, r.x, L.preNorm, r.aq, r.aSc, r.uH, r.uEps, r.uAddOne)
-		e.dispatchTG(r.pSABias, qkvRows*32, 256, r.H*2, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv, L.qkvBias, r.uH)
+		e := r.q.Begin()
+		e.Dispatch(r.pRms, 256, 256, r.x, L.preNorm, r.aq, r.aSc, r.uH, r.uEps, r.uAddOne)
+		e.DispatchTG(r.pSABias, qkvRows*32, 256, r.H*2, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv, L.qkvBias, r.uH)
 		if r.qkNorm {
-			e.dispatch(r.pQKNorm, (r.nH+r.nKV)*128, 128, r.qkv, L.qNorm, L.kNorm, r.uNH, r.uNKV, r.uHd, r.uNHhd, r.uEps, r.uAddOne)
+			e.Dispatch(r.pQKNorm, (r.nH+r.nKV)*128, 128, r.qkv, L.qNorm, L.kNorm, r.uNH, r.uNKV, r.uHd, r.uNHhd, r.uEps, r.uAddOne)
 		}
-		e.dispatch(r.pRope, r.nH*r.half, 64, r.qkv, L.invf, r.uHd, r.uPos, r.uQtotal, r.uHalf)
-		e.dispatch(r.pRope, r.nKV*r.half, 64, r.qkv.At(kOff), L.invf, r.uHd, r.uPos, r.uKtotal, r.uHalf)
-		e.dispatch(r.pKv, r.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[l], r.vc[l], r.uKvDim, r.uPos)
-		e.dispatch(r.pAttn, r.nH*128, 128, r.qkv, r.kc[l], r.vc[l], r.ctx, r.uNH, r.uNKV, r.uHd, r.uNKeys, r.uScale, L.uWindow)
-		e.dispatch(r.pQv, 256, 256, r.ctx, r.cq, r.cSc, r.uHH)
-		e.dispatchTG(r.pSA, r.H*32, 256, r.nH*r.hd*2, L.oW, L.oS, r.cq, r.cSc, r.oO, r.uHH)
-		e.dispatch(r.pRmsF32, 256, 256, r.oO, L.postAttnNorm, r.uH, r.uEps, r.uAddOne)
-		e.end()
+		e.Dispatch(r.pRope, r.nH*r.half, 64, r.qkv, L.invf, r.uHd, r.uPos, r.uQtotal, r.uHalf)
+		e.Dispatch(r.pRope, r.nKV*r.half, 64, r.qkv.At(kOff), L.invf, r.uHd, r.uPos, r.uKtotal, r.uHalf)
+		e.Dispatch(r.pKv, r.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[l], r.vc[l], r.uKvDim, r.uPos)
+		e.Dispatch(r.pAttn, r.nH*128, 128, r.qkv, r.kc[l], r.vc[l], r.ctx, r.uNH, r.uNKV, r.uHd, r.uNKeys, r.uScale, L.uWindow)
+		e.Dispatch(r.pQv, 256, 256, r.ctx, r.cq, r.cSc, r.uHH)
+		e.DispatchTG(r.pSA, r.H*32, 256, r.nH*r.hd*2, L.oW, L.oS, r.cq, r.cSc, r.oO, r.uHH)
+		e.Dispatch(r.pRmsF32, 256, 256, r.oO, L.postAttnNorm, r.uH, r.uEps, r.uAddOne)
+		e.End()
 		attn = append(attn, grab()) // oO now = attention contribution (post-norm, pre-add)
 		// ctx (f32 attention output) and cq (its int8 quant) are still valid here — o-proj READ
 		// them but never wrote them. Capture both to isolate quant_vec (context int8-quant) vs the
@@ -609,23 +609,23 @@ func (r *Resident) forwardSubCaptureForTest(emb []float32, pos int) (attn, mlp, 
 		}
 		cqDeq = append(cqDeq, deq)
 
-		e = r.q.begin()
-		e.dispatch(r.pRes, r.H, 256, r.x, r.oO)
-		e.dispatch(r.pRms, 256, 256, r.x, L.postNorm, r.mq, r.mSc, r.uH, r.uEps, r.uAddOne)
-		e.dispatchTG(r.pSA, (2*r.I)*32, 256, r.H*2, L.guW, L.guS, r.mq, r.mSc, r.gu, r.uH)
-		e.dispatch(r.pSw, 256, 256, r.gu, r.gu.At(r.I*4), r.dq, r.dSc, r.uI, r.uAct)
-		e.dispatch(r.pGemv, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.dO, r.uI)
-		e.end()
+		e = r.q.Begin()
+		e.Dispatch(r.pRes, r.H, 256, r.x, r.oO)
+		e.Dispatch(r.pRms, 256, 256, r.x, L.postNorm, r.mq, r.mSc, r.uH, r.uEps, r.uAddOne)
+		e.DispatchTG(r.pSA, (2*r.I)*32, 256, r.H*2, L.guW, L.guS, r.mq, r.mSc, r.gu, r.uH)
+		e.Dispatch(r.pSw, 256, 256, r.gu, r.gu.At(r.I*4), r.dq, r.dSc, r.uI, r.uAct)
+		e.Dispatch(r.pGemv, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.dO, r.uI)
+		e.End()
 		mlpPre = append(mlpPre, grabD()) // dO = down output BEFORE post-MLP sandwich norm (compute)
 
-		e = r.q.begin()
-		e.dispatch(r.pRmsF32, 256, 256, r.dO, L.postMLPNorm, r.uH, r.uEps, r.uAddOne)
-		e.end()
+		e = r.q.Begin()
+		e.Dispatch(r.pRmsF32, 256, 256, r.dO, L.postMLPNorm, r.uH, r.uEps, r.uAddOne)
+		e.End()
 		mlp = append(mlp, grabD()) // dO now = MLP contribution (post-norm, pre-add)
 
-		e = r.q.begin()
-		e.dispatch(r.pRes, r.H, 256, r.x, r.dO)
-		e.end()
+		e = r.q.Begin()
+		e.Dispatch(r.pRes, r.H, 256, r.x, r.dO)
+		e.End()
 	}
 	return attn, mlp, mlpPre, ctx, cqDeq
 }
@@ -643,24 +643,24 @@ func (r *Resident) l0GegluForTest(emb []float32, pos int) (gateUp, geglu8 []floa
 	r.uPos.SetU32(uint32(pos))
 	r.uNKeys.SetU32(uint32(pos + 1))
 	L := &r.layers[0]
-	e := r.q.begin()
-	e.dispatch(r.pRms, 256, 256, r.x, L.preNorm, r.aq, r.aSc, r.uH, r.uEps, r.uAddOne)
-	e.dispatchTG(r.pSABias, qkvRows*32, 256, r.H*2, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv, L.qkvBias, r.uH)
+	e := r.q.Begin()
+	e.Dispatch(r.pRms, 256, 256, r.x, L.preNorm, r.aq, r.aSc, r.uH, r.uEps, r.uAddOne)
+	e.DispatchTG(r.pSABias, qkvRows*32, 256, r.H*2, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv, L.qkvBias, r.uH)
 	if r.qkNorm {
-		e.dispatch(r.pQKNorm, (r.nH+r.nKV)*128, 128, r.qkv, L.qNorm, L.kNorm, r.uNH, r.uNKV, r.uHd, r.uNHhd, r.uEps, r.uAddOne)
+		e.Dispatch(r.pQKNorm, (r.nH+r.nKV)*128, 128, r.qkv, L.qNorm, L.kNorm, r.uNH, r.uNKV, r.uHd, r.uNHhd, r.uEps, r.uAddOne)
 	}
-	e.dispatch(r.pRope, r.nH*r.half, 64, r.qkv, L.invf, r.uHd, r.uPos, r.uQtotal, r.uHalf)
-	e.dispatch(r.pRope, r.nKV*r.half, 64, r.qkv.At(kOff), L.invf, r.uHd, r.uPos, r.uKtotal, r.uHalf)
-	e.dispatch(r.pKv, r.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[0], r.vc[0], r.uKvDim, r.uPos)
-	e.dispatch(r.pAttn, r.nH*128, 128, r.qkv, r.kc[0], r.vc[0], r.ctx, r.uNH, r.uNKV, r.uHd, r.uNKeys, r.uScale, L.uWindow)
-	e.dispatch(r.pQv, 256, 256, r.ctx, r.cq, r.cSc, r.uHH)
-	e.dispatchTG(r.pSA, r.H*32, 256, r.nH*r.hd*2, L.oW, L.oS, r.cq, r.cSc, r.oO, r.uHH)
-	e.dispatch(r.pRmsF32, 256, 256, r.oO, L.postAttnNorm, r.uH, r.uEps, r.uAddOne)
-	e.dispatch(r.pRes, r.H, 256, r.x, r.oO)
-	e.dispatch(r.pRms, 256, 256, r.x, L.postNorm, r.mq, r.mSc, r.uH, r.uEps, r.uAddOne)
-	e.dispatchTG(r.pSA, (2*r.I)*32, 256, r.H*2, L.guW, L.guS, r.mq, r.mSc, r.gu, r.uH)
-	e.dispatch(r.pSw, 256, 256, r.gu, r.gu.At(r.I*4), r.dq, r.dSc, r.uI, r.uAct)
-	e.end()
+	e.Dispatch(r.pRope, r.nH*r.half, 64, r.qkv, L.invf, r.uHd, r.uPos, r.uQtotal, r.uHalf)
+	e.Dispatch(r.pRope, r.nKV*r.half, 64, r.qkv.At(kOff), L.invf, r.uHd, r.uPos, r.uKtotal, r.uHalf)
+	e.Dispatch(r.pKv, r.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[0], r.vc[0], r.uKvDim, r.uPos)
+	e.Dispatch(r.pAttn, r.nH*128, 128, r.qkv, r.kc[0], r.vc[0], r.ctx, r.uNH, r.uNKV, r.uHd, r.uNKeys, r.uScale, L.uWindow)
+	e.Dispatch(r.pQv, 256, 256, r.ctx, r.cq, r.cSc, r.uHH)
+	e.DispatchTG(r.pSA, r.H*32, 256, r.nH*r.hd*2, L.oW, L.oS, r.cq, r.cSc, r.oO, r.uHH)
+	e.Dispatch(r.pRmsF32, 256, 256, r.oO, L.postAttnNorm, r.uH, r.uEps, r.uAddOne)
+	e.Dispatch(r.pRes, r.H, 256, r.x, r.oO)
+	e.Dispatch(r.pRms, 256, 256, r.x, L.postNorm, r.mq, r.mSc, r.uH, r.uEps, r.uAddOne)
+	e.DispatchTG(r.pSA, (2*r.I)*32, 256, r.H*2, L.guW, L.guS, r.mq, r.mSc, r.gu, r.uH)
+	e.Dispatch(r.pSw, 256, 256, r.gu, r.gu.At(r.I*4), r.dq, r.dSc, r.uI, r.uAct)
+	e.End()
 	gateUp = append([]float32(nil), r.gu.Floats()[:2*r.I]...)
 	gSc = r.dSc.Floats()[0]
 	dq8 := r.dq.Int8s()
@@ -708,21 +708,21 @@ func (r *Resident) attnConfirmForTest(resid, kHist, vHist []float32, layer, pos 
 		}
 	}
 	L := &r.layers[layer]
-	e := r.q.begin()
-	e.dispatch(r.pRms, 256, 256, r.x, L.preNorm, r.aq, r.aSc, r.uH, r.uEps, r.uAddOne)
-	e.dispatchTG(r.pSABias, qkvRows*32, 256, r.H*2, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv, L.qkvBias, r.uH)
+	e := r.q.Begin()
+	e.Dispatch(r.pRms, 256, 256, r.x, L.preNorm, r.aq, r.aSc, r.uH, r.uEps, r.uAddOne)
+	e.DispatchTG(r.pSABias, qkvRows*32, 256, r.H*2, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv, L.qkvBias, r.uH)
 	if r.qkNorm { // Gemma3/Qwen3: per-head Q/K RMSNorm before RoPE — the injected K is post-QK-norm
-		e.dispatch(r.pQKNorm, (r.nH+r.nKV)*128, 128, r.qkv, L.qNorm, L.kNorm, r.uNH, r.uNKV, r.uHd, r.uNHhd, r.uEps, r.uAddOne)
+		e.Dispatch(r.pQKNorm, (r.nH+r.nKV)*128, 128, r.qkv, L.qNorm, L.kNorm, r.uNH, r.uNKV, r.uHd, r.uNHhd, r.uEps, r.uAddOne)
 	}
-	e.dispatch(r.pRope, r.nH*r.half, 64, r.qkv, L.invf, r.uHd, r.uPos, r.uQtotal, r.uHalf) // Q
+	e.Dispatch(r.pRope, r.nH*r.half, 64, r.qkv, L.invf, r.uHd, r.uPos, r.uQtotal, r.uHalf) // Q
 	if !injectKV {
 		// Use Metal's OWN walked KV history: RoPE K and store pos into the cache (isolates the
 		// f16-KV drift of positions 0..pos-1 from Metal's walk, with a matched residual).
-		e.dispatch(r.pRope, r.nKV*r.half, 64, r.qkv.At(kOff), L.invf, r.uHd, r.uPos, r.uKtotal, r.uHalf)
-		e.dispatch(r.pKv, r.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[layer], r.vc[layer], r.uKvDim, r.uPos)
+		e.Dispatch(r.pRope, r.nKV*r.half, 64, r.qkv.At(kOff), L.invf, r.uHd, r.uPos, r.uKtotal, r.uHalf)
+		e.Dispatch(r.pKv, r.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[layer], r.vc[layer], r.uKvDim, r.uPos)
 	}
-	e.dispatch(r.pAttn, r.nH*128, 128, r.qkv, r.kc[layer], r.vc[layer], r.ctx, r.uNH, r.uNKV, r.uHd, r.uNKeys, r.uScale, L.uWindow)
-	e.end()
+	e.Dispatch(r.pAttn, r.nH*128, 128, r.qkv, r.kc[layer], r.vc[layer], r.ctx, r.uNH, r.uNKV, r.uHd, r.uNKeys, r.uScale, L.uWindow)
+	e.End()
 	return append([]float32(nil), r.ctx.Floats()[:nHhd]...)
 }
 
@@ -738,10 +738,10 @@ func (r *Resident) forwardHeadForTest(emb []float32, pos int) (act, logits []flo
 	copy(r.x.Floats(), emb)
 	r.uPos.SetU32(uint32(pos))
 	r.uNKeys.SetU32(uint32(pos + 1))
-	e := r.q.begin()
+	e := r.q.Begin()
 	r.encodeTrunkInto(e)
-	e.dispatch(r.pGemvW8, (r.V)*32, 32, r.aq, r.aSc, r.lmW, r.lmS, r.logits, r.uH)
-	e.end()
+	e.Dispatch(r.pGemvW8, (r.V)*32, 32, r.aq, r.aSc, r.lmW, r.lmS, r.logits, r.uH)
+	e.End()
 	q, sc := r.aq.Int8s(), r.aSc.Floats()[0]
 	act = make([]float32, r.H)
 	for i := range act {
@@ -762,41 +762,41 @@ func (r *Resident) encodeTrunkInto(e *Encoder) {
 	for l := 0; l < r.nL; l++ {
 		L := &r.layers[l]
 		// --- attention block (12 dispatches vs 19: QKV fused +bias, residual fused) ---
-		e.dispatch(r.pRms, 256, 256, r.x, L.preNorm, r.aq, r.aSc, r.uH, r.uEps, r.uAddOne)
-		e.dispatchTG(r.pSABias, qkvRows*32, 256, r.H*2, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv, L.qkvBias, r.uH)
+		e.Dispatch(r.pRms, 256, 256, r.x, L.preNorm, r.aq, r.aSc, r.uH, r.uEps, r.uAddOne)
+		e.DispatchTG(r.pSABias, qkvRows*32, 256, r.H*2, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv, L.qkvBias, r.uH)
 		if r.qkNorm { // Qwen3: per-head Q/K RMSNorm before RoPE
-			e.dispatch(r.pQKNorm, (r.nH+r.nKV)*128, 128, r.qkv, L.qNorm, L.kNorm, r.uNH, r.uNKV, r.uHd, r.uNHhd, r.uEps, r.uAddOne)
+			e.Dispatch(r.pQKNorm, (r.nH+r.nKV)*128, 128, r.qkv, L.qNorm, L.kNorm, r.uNH, r.uNKV, r.uHd, r.uNHhd, r.uEps, r.uAddOne)
 		}
-		e.dispatch(r.pRope, r.nH*r.half, 64, r.qkv, L.invf, r.uHd, r.uPos, r.uQtotal, r.uHalf)           // q @ off 0
-		e.dispatch(r.pRope, r.nKV*r.half, 64, r.qkv.At(kOff), L.invf, r.uHd, r.uPos, r.uKtotal, r.uHalf) // k
-		e.dispatch(r.pKv, r.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[l], r.vc[l], r.uKvDim, r.uPos)
-		e.dispatch(r.pAttn, r.nH*128, 128, r.qkv, r.kc[l], r.vc[l], r.ctx, r.uNH, r.uNKV, r.uHd, r.uNKeys, r.uScale, L.uWindow)
-		e.dispatch(r.pQv, 256, 256, r.ctx, r.cq, r.cSc, r.uHH)
+		e.Dispatch(r.pRope, r.nH*r.half, 64, r.qkv, L.invf, r.uHd, r.uPos, r.uQtotal, r.uHalf)           // q @ off 0
+		e.Dispatch(r.pRope, r.nKV*r.half, 64, r.qkv.At(kOff), L.invf, r.uHd, r.uPos, r.uKtotal, r.uHalf) // k
+		e.Dispatch(r.pKv, r.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[l], r.vc[l], r.uKvDim, r.uPos)
+		e.Dispatch(r.pAttn, r.nH*128, 128, r.qkv, r.kc[l], r.vc[l], r.ctx, r.uNH, r.uNKV, r.uHd, r.uNKeys, r.uScale, L.uWindow)
+		e.Dispatch(r.pQv, 256, 256, r.ctx, r.cq, r.cSc, r.uHH)
 		if r.sandwich {
 			// Gemma: the sublayer OUTPUT is normed BEFORE the residual add, which the fused
 			// _resid epilogue can't express — project into the (otherwise dead) oO scratch,
 			// norm it, then add. Three dispatches instead of one.
-			e.dispatchTG(r.pSA, r.H*32, 256, r.nH*r.hd*2, L.oW, L.oS, r.cq, r.cSc, r.oO, r.uHH)
-			e.dispatch(r.pRmsF32, 256, 256, r.oO, L.postAttnNorm, r.uH, r.uEps, r.uAddOne)
-			e.dispatch(r.pRes, r.H, 256, r.x, r.oO)
+			e.DispatchTG(r.pSA, r.H*32, 256, r.nH*r.hd*2, L.oW, L.oS, r.cq, r.cSc, r.oO, r.uHH)
+			e.Dispatch(r.pRmsF32, 256, 256, r.oO, L.postAttnNorm, r.uH, r.uEps, r.uAddOne)
+			e.Dispatch(r.pRes, r.H, 256, r.x, r.oO)
 		} else {
-			e.dispatchTG(r.pSAResid, r.H*32, 256, r.nH*r.hd*2, L.oW, L.oS, r.cq, r.cSc, r.x, r.uHH) // o-proj + residual
+			e.DispatchTG(r.pSAResid, r.H*32, 256, r.nH*r.hd*2, L.oW, L.oS, r.cq, r.cSc, r.x, r.uHH) // o-proj + residual
 		}
 		// --- ffn block (dense SwiGLU/GeGLU, or MoE router + experts + shared) ---
 		if L.moe != nil {
 			r.encodeMoEFFN(e, L)
 		} else {
-			e.dispatch(r.pRms, 256, 256, r.x, L.postNorm, r.mq, r.mSc, r.uH, r.uEps, r.uAddOne)
-			e.dispatchTG(r.pSA, (2*r.I)*32, 256, r.H*2, L.guW, L.guS, r.mq, r.mSc, r.gu, r.uH) // fused gate|up
-			e.dispatch(r.pSw, 256, 256, r.gu, r.gu.At(r.I*4), r.dq, r.dSc, r.uI, r.uAct)       // gate @0, up @I
+			e.Dispatch(r.pRms, 256, 256, r.x, L.postNorm, r.mq, r.mSc, r.uH, r.uEps, r.uAddOne)
+			e.DispatchTG(r.pSA, (2*r.I)*32, 256, r.H*2, L.guW, L.guS, r.mq, r.mSc, r.gu, r.uH) // fused gate|up
+			e.Dispatch(r.pSw, 256, 256, r.gu, r.gu.At(r.I*4), r.dq, r.dSc, r.uI, r.uAct)       // gate @0, up @I
 			if r.sandwich {
-				e.dispatch(r.pGemv, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.dO, r.uI) // down → scratch
-				e.dispatch(r.pRmsF32, 256, 256, r.dO, L.postMLPNorm, r.uH, r.uEps, r.uAddOne)
-				e.dispatch(r.pRes, r.H, 256, r.x, r.dO)
+				e.Dispatch(r.pGemv, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.dO, r.uI) // down → scratch
+				e.Dispatch(r.pRmsF32, 256, 256, r.dO, L.postMLPNorm, r.uH, r.uEps, r.uAddOne)
+				e.Dispatch(r.pRes, r.H, 256, r.x, r.dO)
 			} else {
-				e.dispatch(r.pGemvResid, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.x, r.uI) // down + residual
+				e.Dispatch(r.pGemvResid, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.x, r.uI) // down + residual
 			}
 		}
 	}
-	e.dispatch(r.pRms, 256, 256, r.x, r.finalNorm, r.aq, r.aSc, r.uH, r.uEps, r.uAddOne)
+	e.Dispatch(r.pRms, 256, 256, r.x, r.finalNorm, r.aq, r.aSc, r.uH, r.uEps, r.uAddOne)
 }
