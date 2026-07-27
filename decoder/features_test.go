@@ -36,6 +36,7 @@ var archFeatureProfile = map[string][]ResidentFeature{
 	"kimi_k2":          {FeatMLA, FeatMoE},
 	"qwen3_5_moe":      {FeatMoE, FeatMoEGatedShared, FeatPartialRotary, FeatQKNorm, FeatRMSAddOne},
 	"llama4_text":      {FeatMoE},
+	"gpt_oss":          {FeatAttnSink, FeatMoE, FeatOutBias, FeatRopeMscale, FeatSlidingWindow},
 	"nemotron_h":       {FeatNonGatedMLP, FeatSSM},
 	"granitemoehybrid": {FeatLogitScale, FeatMoE, FeatSSM},
 	"qwen3_5_moe_text": {FeatMoE, FeatMoEGatedShared, FeatPartialRotary, FeatQKNorm, FeatRMSAddOne},

@@ -39,6 +39,7 @@ var registry = map[string]archAdapter{
 	"kimi_k2":          deepseekArchitecture,   // Kimi K2/K2.x (architectures=DeepseekV3ForCausalLM): MLA + DeepSeekMoE, "basically V3" — 64 heads / 384 experts, config scalars only
 	"phi3":             phi3Architecture,       // Phi-3 / Phi-4 dense: llama skeleton + fused qkv_proj / gate_up_proj (split at load) + partial rotary
 	"llama4_text":      llama4Architecture,     // Llama 4 (Scout/Maverick) text decoder: iRoPE (RoPE/NoPE interleave) + L2 QK-norm + attn-temp + dense/MoE interleave (top-1 sigmoid + shared)
+	"gpt_oss":          gptOssArchitecture,     // gpt-oss (20b/120b): sparse MoE + per-head attention sinks + clamped interleaved-SwiGLU + alternating sliding/full + YaRN (MXFP4 experts; CPU-only)
 }
 
 // resolveArchitecture picks the adapter for cfg.ModelType and builds the
@@ -1168,6 +1169,69 @@ func phi3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 // fusion, no bias). Interleaved (complex) RoPE over the full head_dim. The vision tower
 // (early-fusion multimodal) and any MTP heads are dropped — text decoder only. Dedicated
 // loader (buildLlama4Weights) + forward (runLayersLlama4).
+// gptOssArchitecture expresses the gpt-oss sparse-MoE family (model_type gpt_oss,
+// GGUF arch gpt-oss). It marks the family with a gptoss escape hatch — its forward
+// (forward_gptoss.go) adds a learned per-head attention SINK to each softmax and
+// uses a clamped interleaved-SwiGLU expert with per-expert biases — while the layer
+// skeleton stays the shared pre-norm path. Attention alternates sliding (even
+// layers, window sliding_window) and full (odd), q/k/v/o all carry biases, no
+// QK-norm, YaRN RoPE (one table for both attention types). The router carries a
+// per-expert logit bias (LayerWeights.RouterBias). MXFP4 experts are CPU-only; CUDA
+// and Metal decline via FeatAttnSink (features.go).
+func gptOssArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+	if err := cfg.validateGptOss(); err != nil {
+		return nil, nil, err
+	}
+	scaling, err := parseRopeScaling(cfg.RopeScaling)
+	if err != nil {
+		return nil, nil, fmt.Errorf("decoder(gpt-oss): %w", err)
+	}
+	hd := cfg.headDim()
+	nExperts := cfg.NumLocalExperts
+	if nExperts == 0 {
+		nExperts = cfg.NumExperts
+	}
+	expInter := cfg.MoeIntermediateSize
+	if expInter == 0 {
+		expInter = cfg.IntermediateDim
+	}
+	return &Architecture{
+		Name:             "gpt-oss",
+		HiddenDim:        cfg.HiddenDim,
+		NumLayers:        cfg.NumLayers,
+		NumHeads:         cfg.NumHeads,
+		NumKVHeads:       cfg.NumKVHeads,
+		HeadDim:          hd,
+		IntermediateDim:  expInter, // gpt-oss has no dense layers; experts use this width
+		VocabSize:        cfg.VocabSize,
+		Norm:             NormRMS,
+		RMSAddOne:        false,
+		NormEps:          cfg.RMSNormEps,
+		NormPlacement:    NormPre2,
+		Act:              ActSiLU, // the gpt-oss forward uses its own clamped activation; this is only for the matrix/logs
+		QKVBias:          true,    // q/k/v projection biases
+		OutBias:          true,    // attn_output bias
+		QKNorm:           false,
+		AttnScale:        math.Pow(float64(hd), -0.5),
+		SlidingWindow:    cfg.SlidingWindow,
+		layerIsGlobal:    func(i int) bool { return i%2 == 1 }, // even = sliding, odd = full
+		RoPEGlobalBase:   cfg.RoPEGlobalBase,
+		RoPELocalBase:    cfg.RoPEGlobalBase, // one RoPE for both attention types
+		ropeScaling:      scaling,
+		ropeScalingLocal: scaling, // same YaRN table on sliding + full layers
+		RotaryDim:        cfg.rotaryDim(),
+		MoE: &MoEConfig{
+			NumExperts:      nExperts,
+			TopK:            cfg.NumExpertsPerTok,
+			NormTopKProb:    true, // softmax over the top-k logits == softmax-all + renormalize
+			IntermediateDim: expInter,
+		},
+		gptoss:     &gptOssParams{SwigluAlpha: 1.702, SwigluLimit: 7.0}, // gpt-oss constants (not in metadata)
+		EmbedScale: 0,
+		TiedLMHead: false, // finalized from output.weight presence at load
+	}, nil, nil
+}
+
 func llama4Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if cfg.NumLocalExperts <= 0 || cfg.NumExpertsPerTok <= 0 {
 		return nil, nil, fmt.Errorf("decoder(llama4): bad MoE (num_local_experts=%d num_experts_per_tok=%d)", cfg.NumLocalExperts, cfg.NumExpertsPerTok)

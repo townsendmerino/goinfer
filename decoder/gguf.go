@@ -68,8 +68,10 @@ func ggufConfig(g *embed.GGUFFile) (cfg *Config, err error) {
 		return ggufPhi3Config(g)
 	case "llama4":
 		return ggufLlama4Config(g)
+	case "gpt-oss":
+		return ggufGptOssConfig(g)
 	default:
-		return nil, fmt.Errorf("decoder(gguf): architecture %q unsupported (have: llama, qwen2, qwen3, gemma3, gemma4 [wip], mellum, qwen35moe, glm4moe, granitehybrid, nemotron_h, deepseek2, phi3)", arch)
+		return nil, fmt.Errorf("decoder(gguf): architecture %q unsupported (have: llama, qwen2, qwen3, gemma3, gemma4 [wip], mellum, qwen35moe, glm4moe, granitehybrid, nemotron_h, deepseek2, phi3, gpt-oss)", arch)
 	}
 }
 
@@ -483,6 +485,54 @@ func ggufGlm4MoeConfig(g *embed.GGUFFile) (*Config, error) {
 	cfg.RopeParameters = json.RawMessage(fmt.Sprintf(
 		`{"rope_type":"default","rope_theta":%g,"partial_rotary_factor":%g}`,
 		gf("rope.freq_base"), partial))
+	ggufEOS(g, cfg)
+	return cfg, nil
+}
+
+// ggufGptOssConfig builds a gpt-oss Config from the gpt-oss.* metadata. The SwiGLU
+// alpha/limit are gpt-oss constants (not in the GGUF), set by gptOssArchitecture.
+// YaRN is synthesized from the rope.scaling.* keys with truncate=false (gpt-oss's
+// setting — floor/ceiling the correction range would shift inv_freq by ~2e-4).
+func ggufGptOssConfig(g *embed.GGUFFile) (*Config, error) {
+	u := func(k string) int {
+		v, _ := g.Uint("gpt-oss." + k)
+		return int(v)
+	}
+	gf := func(k string) float64 {
+		if v, ok := g.Float("gpt-oss." + k); ok {
+			return v
+		}
+		v, _ := g.Uint("gpt-oss." + k)
+		return float64(v)
+	}
+	cfg := &Config{
+		ModelType:           "gpt_oss",
+		HiddenDim:           u("embedding_length"),
+		NumLayers:           u("block_count"),
+		NumHeads:            u("attention.head_count"),
+		NumKVHeads:          u("attention.head_count_kv"),
+		HeadDim:             u("attention.key_length"),
+		MoeIntermediateSize: u("expert_feed_forward_length"),
+		NumLocalExperts:     u("expert_count"),
+		NumExpertsPerTok:    u("expert_used_count"),
+		SlidingWindow:       u("attention.sliding_window"),
+		HiddenAct:           "silu",
+		VocabSize:           ggufVocabSize(g),
+		RMSNormEps:          gf("attention.layer_norm_rms_epsilon"),
+		RoPEGlobalBase:      gf("rope.freq_base"),
+	}
+	factor := gf("rope.scaling.factor")
+	if factor == 0 {
+		factor = 1
+	}
+	origCtx := gf("rope.scaling.original_context_length")
+	betaFast := gf("rope.scaling.yarn_beta_fast")
+	betaSlow := gf("rope.scaling.yarn_beta_slow")
+	if scaleType, _ := g.Str("gpt-oss.rope.scaling.type"); scaleType == "yarn" {
+		cfg.RopeScaling = json.RawMessage(fmt.Sprintf(
+			`{"rope_type":"yarn","factor":%g,"beta_fast":%g,"beta_slow":%g,"original_max_position_embeddings":%g,"truncate":false}`,
+			factor, betaFast, betaSlow, origCtx))
+	}
 	ggufEOS(g, cfg)
 	return cfg, nil
 }
@@ -1382,6 +1432,106 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			return nil
 		}
 		if err := parallelLayers(arch.NumLayers, loadQ35); err != nil {
+			return nil, err
+		}
+		return w, nil
+	}
+
+	// gpt-oss: sparse MoE on every layer with per-head attention sinks + per-expert
+	// biases + a router-logit bias. q/k/v/o all carry biases; no QK-norm. Attention/
+	// embeddings/router quantize per policy; the (F32) sinks + biases load raw. The
+	// expert weights are MXFP4 in the real checkpoint — stackedExperts routes them
+	// through aikit's RowDequantizer, so this loads once aikit dequants ggml type 39
+	// (until then a Q8_0/F32 tiny model exercises the same path).
+	if arch.gptoss != nil {
+		nH, nKV := arch.NumHeads, arch.NumKVHeads
+		qDim, kvDim := nH*hd, nKV*hd
+		nExp := arch.MoE.NumExperts
+		expInter := arch.MoE.IntermediateDim
+		// stackedExpertBias slices a 2-D [out, nExpert] (fastest-first) f32 bias
+		// tensor into one [out] slice per expert (expert e occupies [e*out, e*out+out)).
+		stackedExpertBias := func(name string, out int) ([][]float32, error) {
+			dims, data, derr := g.Tensor(name)
+			if derr != nil {
+				return nil, derr
+			}
+			if len(dims) != 2 || dims[0] != out || dims[1] != nExp {
+				return nil, fmt.Errorf("decoder(gguf-gptoss): %q dims %v, want [out=%d, experts=%d]", name, dims, out, nExp)
+			}
+			res := make([][]float32, nExp)
+			for e := range nExp {
+				res[e] = append([]float32(nil), data[e*out:(e+1)*out]...)
+			}
+			return res, nil
+		}
+		loadGptOss := func(i int) error {
+			l := &w.Layers[i]
+			p := fmt.Sprintf("blk.%d.", i)
+			var e error
+			if l.PreAttnNorm, e = vnorm(p+"attn_norm.weight", hidden); e != nil {
+				return e
+			}
+			if l.PreMLPNorm, e = vnorm(p+"post_attention_norm.weight", hidden); e != nil {
+				return e
+			}
+			// Attention: q/k/v/o projections + biases. gpt-oss GGUF stores q/k in HF
+			// order (no undo_permute), so a plain mat load — no permMat.
+			if l.QProj, e = mat(p+"attn_q.weight", qDim, hidden); e != nil {
+				return e
+			}
+			if l.KProj, e = mat(p+"attn_k.weight", kvDim, hidden); e != nil {
+				return e
+			}
+			if l.VProj, e = mat(p+"attn_v.weight", kvDim, hidden); e != nil {
+				return e
+			}
+			if l.OProj, e = mat(p+"attn_output.weight", hidden, qDim); e != nil {
+				return e
+			}
+			if l.QBias, e = vec(p+"attn_q.bias", qDim); e != nil {
+				return e
+			}
+			if l.KBias, e = vec(p+"attn_k.bias", kvDim); e != nil {
+				return e
+			}
+			if l.VBias, e = vec(p+"attn_v.bias", kvDim); e != nil {
+				return e
+			}
+			if l.OBias, e = vec(p+"attn_output.bias", hidden); e != nil {
+				return e
+			}
+			if l.AttnSinks, e = vec(p+"attn_sinks.weight", nH); e != nil {
+				return e
+			}
+			// MoE: router (+ logit bias) + stacked routed experts (+ per-expert biases).
+			if l.Router, e = mat(p+"ffn_gate_inp.weight", nExp, hidden); e != nil {
+				return e
+			}
+			if l.RouterBias, e = vec(p+"ffn_gate_inp.bias", nExp); e != nil {
+				return e
+			}
+			gate, ge := stackedExperts(p+"ffn_gate_exps.weight", expInter, hidden, nExp)
+			up, ue := stackedExperts(p+"ffn_up_exps.weight", expInter, hidden, nExp)
+			down, de := stackedExperts(p+"ffn_down_exps.weight", hidden, expInter, nExp)
+			if ge != nil || ue != nil || de != nil {
+				return fmt.Errorf("decoder(gguf-gptoss): experts layer %d: %v / %v / %v", i, ge, ue, de)
+			}
+			gb, gbe := stackedExpertBias(p+"ffn_gate_exps.bias", expInter)
+			ub, ube := stackedExpertBias(p+"ffn_up_exps.bias", expInter)
+			db, dbe := stackedExpertBias(p+"ffn_down_exps.bias", hidden)
+			if gbe != nil || ube != nil || dbe != nil {
+				return fmt.Errorf("decoder(gguf-gptoss): expert biases layer %d: %v / %v / %v", i, gbe, ube, dbe)
+			}
+			l.Experts = make([]expertWeights, nExp)
+			for ei := range nExp {
+				l.Experts[ei] = expertWeights{
+					Gate: gate[ei], Up: up[ei], Down: down[ei],
+					GateBias: gb[ei], UpBias: ub[ei], DownBias: db[ei],
+				}
+			}
+			return nil
+		}
+		if err := parallelLayers(arch.NumLayers, loadGptOss); err != nil {
 			return nil, err
 		}
 		return w, nil

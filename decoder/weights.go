@@ -56,8 +56,13 @@ type LayerWeights struct {
 	// scores experts; each expert is a gated (SwiGLU) MLP. The dense GateProj/
 	// UpProj/DownProj above are unused in that case.
 	Router     linalg.WeightMat // [NumExperts, HiddenDim] router/gate logits
-	RouterBias []float32        // [NumExperts] DeepSeek/GLM e_score_correction_bias added to scores for top-k SELECTION (nil = none)
+	RouterBias []float32        // [NumExperts] DeepSeek/GLM e_score_correction_bias added to scores for top-k SELECTION (nil = none). gpt-oss reuses this as a plain router-LOGIT bias (added before top-k, its own forward).
 	Experts    []expertWeights  // [NumExperts] gated MLPs
+
+	// AttnSinks is gpt-oss's per-head learned attention-sink logit ([NumHeads]):
+	// an extra term in each head's softmax denominator (exp(sink_h)) with no value,
+	// bleeding attention mass. nil for every other family. Consumed by gptOssAttention.
+	AttnSinks []float32
 
 	// Shared expert (Qwen-MoE / Qwen2-MoE; set when arch.MoE.SharedIntermediateDim
 	// > 0). An always-on gated MLP scaled by sigmoid(SharedGate·h).
@@ -119,12 +124,18 @@ type mlaWeights struct {
 	oProj        []float32 // [hidden, numHeads*v_head_dim]
 }
 
-// expertWeights is one MoE expert: a gated (SwiGLU) MLP with no biases.
-// Mixtral names these w1=gate, w3=up, w2=down.
+// expertWeights is one MoE expert: a gated (SwiGLU) MLP. Mixtral names these
+// w1=gate, w3=up, w2=down and has no biases; gpt-oss adds a per-expert bias on
+// each projection (the *Bias slices, nil for every other family).
 type expertWeights struct {
 	Gate linalg.WeightMat // [IntermediateDim, HiddenDim] (w1)
 	Up   linalg.WeightMat // [IntermediateDim, HiddenDim] (w3)
 	Down linalg.WeightMat // [HiddenDim, IntermediateDim] (w2)
+
+	// gpt-oss per-expert biases (nil elsewhere).
+	GateBias []float32 // [IntermediateDim]
+	UpBias   []float32 // [IntermediateDim]
+	DownBias []float32 // [HiddenDim]
 }
 
 // Weights is the immutable per-checkpoint bundle. Embeddings are TIED:

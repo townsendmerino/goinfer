@@ -209,6 +209,13 @@ func representativeConfig(modelType string) *Config {
 			UseQKNorm: true, AttnTemperatureTuning: true, FloorScale: 4, AttnScaleL4: 0.1,
 			RopeParameters: json.RawMessage(`{"rope_theta":10000.0,"rope_type":"default"}`),
 		}
+	case "gpt_oss":
+		return &Config{
+			ModelType: "gpt_oss", HiddenDim: 64, NumLayers: 4, NumHeads: 8, NumKVHeads: 2, HeadDim: 8,
+			VocabSize: 128, MoeIntermediateSize: 32, NumLocalExperts: 4, NumExpertsPerTok: 2,
+			SlidingWindow: 4, RMSNormEps: 1e-5, RoPEGlobalBase: 150000,
+			RopeScaling: json.RawMessage(`{"rope_type":"yarn","factor":32,"beta_fast":32,"beta_slow":1,"original_max_position_embeddings":4096,"truncate":false}`),
+		}
 	}
 	return nil
 }
@@ -265,6 +272,7 @@ var familyDocs = map[string]familyDoc{
 	"kimi_k2":          {"Kimi K2", "Moonshot Kimi K2 / K2.5 / K2.6 / K2.7-Code (DeepseekV3 arch: MLA + DeepSeekMoE — same arch across the K2.x line)", "safetensors, GGUF", "text"},
 	"phi3":             {"Phi-3 / Phi-4", "Microsoft Phi-3/Phi-4 dense (fused qkv/gate-up, partial rotary)", "safetensors, GGUF", "text"},
 	"llama4_text":      {"Llama 4", "Meta Llama 4 (Scout/Maverick) text decoder: iRoPE (RoPE/NoPE interleave) + L2 QK-norm + attn-temp + dense/MoE interleave (top-1 sigmoid + shared)", "safetensors, GGUF", "text"},
+	"gpt_oss":          {"gpt-oss", "OpenAI gpt-oss 20b/120b sparse MoE: per-head attention sinks + clamped interleaved-SwiGLU + alternating sliding/full + YaRN (MXFP4 experts, CPU-only)", "GGUF", "text"},
 }
 
 // capabilityRow is one family's row in the matrix (alias group → one row). All

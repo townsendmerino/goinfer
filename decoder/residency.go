@@ -127,7 +127,7 @@ func (m *Model) residentProjsInt4() bool {
 func (a *Architecture) decodeRunnerEligible() bool {
 	// Families with their own non-uniform forward (hybrid mixers, Gemma-4, Llama-4,
 	// qwen3.5) keep the staged path regardless.
-	if a.gemma4 != nil || a.qwen35 != nil || a.llama4 != nil {
+	if a.gemma4 != nil || a.qwen35 != nil || a.llama4 != nil || a.gptoss != nil {
 		return false
 	}
 	// Granite-4.0-H resident SSM hybrid (P5b): its own mixer-kind path (Mamba-2 ⊕

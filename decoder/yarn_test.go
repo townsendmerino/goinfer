@@ -40,7 +40,7 @@ func TestYarn_matchesHF(t *testing.T) {
 	base := gg.Params["base"]
 	dim := int(gg.Params["dim"])
 
-	yarn, err := newYarnScaling(gg.Params["factor"], gg.Params["original_max_position_embeddings"], nil, nil, &gg.Full.AttentionFactor)
+	yarn, err := newYarnScaling(gg.Params["factor"], gg.Params["original_max_position_embeddings"], nil, nil, &gg.Full.AttentionFactor, nil)
 	if err != nil {
 		t.Fatalf("newYarnScaling: %v", err)
 	}

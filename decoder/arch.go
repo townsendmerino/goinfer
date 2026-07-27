@@ -110,6 +110,22 @@ type Architecture struct {
 	// interleave (top-1 sigmoid routing + an ungated shared expert). Own forward
 	// (forward_llama4.go). nil for every other family.
 	llama4 *llama4Params
+
+	// gptoss, when non-nil, marks a gpt-oss sparse-MoE family: GQA with a learned
+	// per-head attention SINK in the softmax denominator, alternating sliding/full
+	// attention (even layers sliding, window SlidingWindow), YaRN RoPE, and a
+	// clamped interleaved-SwiGLU expert (gate·sigmoid(α·gate) · (up+1), clamped, with
+	// per-expert biases) + a router-logit bias. Own forward (forward_gptoss.go),
+	// CPU-only (CUDA/Metal decline via FeatAttnSink). nil for every other family.
+	gptoss *gptOssParams
+}
+
+// gptOssParams carries gpt-oss's expert-activation knobs. The sink weights and
+// per-expert biases are per-layer (LayerWeights.AttnSinks / expertWeights.*Bias);
+// the sliding-window pattern is Architecture.SlidingWindow + layerIsGlobal. forward_gptoss.go reads this.
+type gptOssParams struct {
+	SwigluAlpha float64 // sigmoid gain in gate·sigmoid(α·gate) (1.702)
+	SwigluLimit float64 // clamp bound: gate ≤ limit, up ∈ [-limit, limit] (7.0)
 }
 
 // llama4Params carries Llama 4's per-layer iRoPE deltas. useRope[i]/isMoE[i] select layer

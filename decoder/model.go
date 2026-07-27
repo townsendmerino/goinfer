@@ -292,7 +292,7 @@ func (m *Model) NewCache(capHint int) *KVCache {
 	// gemma4 (per-layer widths + KV-sharing) and qwen3_5_moe (linear attention)
 	// have their own forward and keep append-forever for now (a later increment).
 	// See docs/completed/task-kv-ring-eviction.md.
-	if a.gemma4 == nil && a.qwen35 == nil && a.granite == nil && a.nemotron == nil {
+	if a.gemma4 == nil && a.qwen35 == nil && a.granite == nil && a.nemotron == nil && a.gptoss == nil {
 		c.enableRings(a.SlidingWindow, a.isGlobalLayer)
 	}
 	if a.gemma4 != nil {
@@ -385,6 +385,9 @@ func (m *Model) runLayers(id int, cache *KVCache) ([]float32, error) {
 	}
 	if arch.llama4 != nil { // llama4_text: iRoPE (per-layer RoPE/NoPE + L2 QK-norm + attn-temp) — own path.
 		return m.runLayersLlama4(id, cache)
+	}
+	if arch.gptoss != nil { // gpt-oss: per-head attention sinks + clamped-SwiGLU MoE — own path.
+		return m.runLayersGptOss(id, cache)
 	}
 	if cache.scr == nil { // caches from NewKVCache directly (tests); Generate uses NewCache
 		cache.scr = newDecodeScratch(arch)
@@ -548,7 +551,7 @@ func (m *Model) forward(id int, cache *KVCache) ([]float32, error) {
 // rather than silently producing nothing).
 func (m *Model) ForwardCapture(id int, cache *KVCache, layers []int) (logits []float32, hidden [][]float32, err error) {
 	a := m.w.arch
-	if a.gemma4 != nil || a.qwen35 != nil || a.granite != nil || a.nemotron != nil || a.mla != nil || a.llama4 != nil {
+	if a.gemma4 != nil || a.qwen35 != nil || a.granite != nil || a.nemotron != nil || a.mla != nil || a.llama4 != nil || a.gptoss != nil {
 		return nil, nil, fmt.Errorf("decoder.ForwardCapture: hidden-state seam not wired for arch %q (own runLayers)", a.Name)
 	}
 	for _, l := range layers {
@@ -574,7 +577,7 @@ func (m *Model) ForwardCapture(id int, cache *KVCache, layers []int) (logits []f
 // families (they don't route through runLayersFromEmbed's uniform block).
 func (m *Model) ForwardSubCapture(id int, cache *KVCache) (attn, mlp, ctx, mlpPre [][]float32, err error) {
 	a := m.w.arch
-	if a.gemma4 != nil || a.qwen35 != nil || a.granite != nil || a.nemotron != nil || a.mla != nil || a.llama4 != nil {
+	if a.gemma4 != nil || a.qwen35 != nil || a.granite != nil || a.nemotron != nil || a.mla != nil || a.llama4 != nil || a.gptoss != nil {
 		return nil, nil, nil, nil, fmt.Errorf("decoder.ForwardSubCapture: not wired for arch %q (own runLayers)", a.Name)
 	}
 	nL := a.NumLayers

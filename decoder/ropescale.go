@@ -39,6 +39,7 @@ type ropeScaling struct {
 	betaFast float64
 	betaSlow float64
 	mscale   float64 // attention_factor applied to cos/sin (1.0 for non-yarn)
+	truncate bool    // floor/ceil the correction range (HF default true); gpt-oss sets false (exact — truncating shifts inv_freq by ~2e-4)
 }
 
 // parseRopeScaling reads config.json's rope_scaling object. A null/empty object
@@ -60,6 +61,7 @@ func parseRopeScaling(raw json.RawMessage) (*ropeScaling, error) {
 		BetaFast        *float64 `json:"beta_fast"`
 		BetaSlow        *float64 `json:"beta_slow"`
 		AttentionFactor *float64 `json:"attention_factor"`
+		Truncate        *bool    `json:"truncate"`
 	}
 	if err := json.Unmarshal(raw, &obj); err != nil {
 		return nil, fmt.Errorf("rope_scaling: %w", err)
@@ -85,7 +87,7 @@ func parseRopeScaling(raw json.RawMessage) (*ropeScaling, error) {
 			origMaxPosition: obj.OrigMaxPosition,
 		}, nil
 	case "yarn":
-		return newYarnScaling(obj.Factor, obj.OrigMaxPosition, obj.BetaFast, obj.BetaSlow, obj.AttentionFactor)
+		return newYarnScaling(obj.Factor, obj.OrigMaxPosition, obj.BetaFast, obj.BetaSlow, obj.AttentionFactor, obj.Truncate)
 	default:
 		return nil, fmt.Errorf("rope_scaling rope_type=%q unsupported (have: linear, llama3, yarn; longrope/dynamic are a follow-up)", kind)
 	}
@@ -173,7 +175,7 @@ func parseRopeFlat(raw json.RawMessage) (spec *ropeLayerSpec, partialRotary floa
 // newYarnScaling builds a YaRN ropeScaling, mirroring HF
 // _compute_yarn_parameters' defaults: beta_fast 32, beta_slow 1, and an
 // attention_factor of get_mscale(factor) = 0.1·ln(factor)+1 when not given.
-func newYarnScaling(factor, origMax float64, betaFast, betaSlow, attnFactor *float64) (*ropeScaling, error) {
+func newYarnScaling(factor, origMax float64, betaFast, betaSlow, attnFactor *float64, truncate *bool) (*ropeScaling, error) {
 	if factor <= 0 || origMax <= 0 {
 		return nil, fmt.Errorf("rope_scaling(yarn): bad params factor=%v origMax=%v", factor, origMax)
 	}
@@ -190,9 +192,13 @@ func newYarnScaling(factor, origMax float64, betaFast, betaSlow, attnFactor *flo
 	} else if factor > 1 {
 		ms = 0.1*math.Log(factor) + 1.0
 	}
+	trunc := true // HF's _compute_yarn_parameters default
+	if truncate != nil {
+		trunc = *truncate
+	}
 	return &ropeScaling{
 		kind: ropeScaleYarn, factor: factor, origMaxPosition: origMax,
-		betaFast: bf, betaSlow: bs, mscale: ms,
+		betaFast: bf, betaSlow: bs, mscale: ms, truncate: trunc,
 	}, nil
 }
 
@@ -244,8 +250,15 @@ func applyYarnScaling(inv []float64, base float64, rotaryDim int, sc *ropeScalin
 	corr := func(numRot float64) float64 {
 		return (dim * math.Log(sc.origMaxPosition/(numRot*2*math.Pi))) / (2 * math.Log(base))
 	}
-	low := math.Max(math.Floor(corr(sc.betaFast)), 0)
-	high := math.Min(math.Ceil(corr(sc.betaSlow)), dim-1)
+	// truncate=true (HF default) floors/ceils the range to integer dims; gpt-oss
+	// uses truncate=false (the raw fractional range), which matches HF to ~1e-8
+	// where truncating is ~2e-4 off.
+	low, high := corr(sc.betaFast), corr(sc.betaSlow)
+	if sc.truncate {
+		low, high = math.Floor(low), math.Ceil(high)
+	}
+	low = math.Max(low, 0)
+	high = math.Min(high, dim-1)
 	if low == high {
 		high += 0.001 // prevent singularity (matches HF linear_ramp_factor)
 	}

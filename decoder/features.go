@@ -43,6 +43,7 @@ const (
 	FeatMoEGatedShared ResidentFeature = "moe-gated-shared" // sigmoid-GATED always-on shared expert (Qwen2-MoE); ungated (GLM/DeepSeek) needs only FeatMoE
 	FeatMLA            ResidentFeature = "mla"              // latent-KV attention (DeepSeek, Kimi)
 	FeatSSM            ResidentFeature = "ssm"              // Mamba-2 mixer (Granite-4.0-H, Nemotron-H)
+	FeatAttnSink       ResidentFeature = "attn-sink"        // learned per-head attention sink in the softmax denominator + clamped interleaved-SwiGLU experts (gpt-oss). CPU-only — no resident backend implements it, so CUDA/Metal/WebGPU all decline.
 )
 
 // residentFeatures derives the features this architecture actually needs from its own flags.
@@ -100,6 +101,7 @@ func (a *Architecture) residentFeatures() []ResidentFeature {
 	add(a.MoE != nil && a.MoE.SharedIntermediateDim > 0 && !a.MoE.SharedUngated, FeatMoEGatedShared)
 	add(a.mla != nil, FeatMLA)
 	add(a.granite != nil || a.nemotron != nil, FeatSSM)
+	add(a.gptoss != nil, FeatAttnSink)
 	sort.Slice(f, func(i, j int) bool { return f[i] < f[j] })
 	return f
 }
