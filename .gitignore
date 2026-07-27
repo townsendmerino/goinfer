@@ -83,3 +83,6 @@ testdata/kimi-tiny/
 testdata/llama4-tiny/
 # testdata/mixtral-tiny/ is intentionally committed — see the exception near the top
 # of this file and docs/parity-coverage-policy.md (the MoE parity gate must be a real T1).
+
+# gpt-oss real-model HF logit golden (2 MB; regenerate via scripts/gptoss_hf_oracle.py)
+decoder/testdata/gptoss_20b_golden.json

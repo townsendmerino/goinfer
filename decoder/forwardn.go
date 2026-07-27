@@ -19,7 +19,7 @@ func (m *Model) canBatchN(K int) bool {
 	// granitemoehybrid + nemotron_h (Mamba-2), and deepseek_v2/v3 (MLA latent cache)
 	// each have their own sequential forward — the recurrent / latent-reconstruction
 	// layers can't be batched across positions; exclude them all.
-	return K > 1 && m.w.Embed.Rows() != 0 && !a.NonGatedMLP && !a.LearnedPosEmbed && a.gemma4 == nil && a.qwen35 == nil && a.granite == nil && a.nemotron == nil && a.mla == nil && a.llama4 == nil
+	return K > 1 && m.w.Embed.Rows() != 0 && !a.NonGatedMLP && !a.LearnedPosEmbed && a.gemma4 == nil && a.qwen35 == nil && a.granite == nil && a.nemotron == nil && a.mla == nil && a.llama4 == nil && a.gptoss == nil
 }
 
 // specRollbackSafe reports whether speculative decode's rollback — KVCache.TruncateTo
