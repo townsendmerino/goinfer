@@ -7,14 +7,14 @@ import (
 	"os"
 	"runtime"
 
-	gc "github.com/eitamring/gocudrv/cuda"
+	gpu "github.com/townsendmerino/aikit/gpu"
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
 func init() {
 	decoder.RegisterBackend("cuda", func() (decoder.Backend, error) {
-		return &cudaBackend{drv: stubDriver{}}, nil
+		return &cudaBackend{}, nil
 	})
 }
 
@@ -27,7 +27,6 @@ var (
 
 // cudaBackend implements decoder.Backend + decoder.ResidencyBackend.
 type cudaBackend struct {
-	drv      driver
 	resident *cudaResident // set by BuildResident; shut down in Close
 }
 
@@ -320,51 +319,45 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 
 	// setup job: create the context on the pinned thread, JIT kernels, upload everything.
 	setupErr := r.do(func() error {
-		if e := gc.Init(); e != nil {
+		var e error
+		if r.dev, e = CreateSystemDefaultDevice(); e != nil {
 			return e
 		}
-		dev, e := gc.GetDevice(0)
+		gmod, e := r.dev.CompileLibrary(gemvFwdPTX)
 		if e != nil {
 			return e
 		}
-		if r.cx, e = dev.Primary(); e != nil {
-			return e
-		}
-		gmod, e := r.cx.LoadModule(gemvFwdPTX)
+		glmod, e := r.dev.CompileLibrary(gluePTX)
 		if e != nil {
 			return e
 		}
-		glmod, e := r.cx.LoadModule(gluePTX)
-		if e != nil {
+		if r.gemvW4, e = r.dev.NewComputePipeline(gmod, "gemv_w4a8_fwd"); e != nil {
 			return e
 		}
-		if r.gemvW4, e = gmod.Function("gemv_w4a8_fwd"); e != nil {
+		if r.gemvW8, e = r.dev.NewComputePipeline(gmod, "gemv_w8a8_fwd"); e != nil {
 			return e
 		}
-		if r.gemvW8, e = gmod.Function("gemv_w8a8_fwd"); e != nil {
+		if r.kvStore, e = r.dev.NewComputePipeline(gmod, "kv_store"); e != nil {
 			return e
 		}
-		if r.kvStore, e = gmod.Function("kv_store"); e != nil {
+		if r.ropeKV, e = r.dev.NewComputePipeline(gmod, "rope_kv"); e != nil {
 			return e
 		}
-		if r.ropeKV, e = gmod.Function("rope_kv"); e != nil {
-			return e
-		}
-		qmod, e2 := r.cx.LoadModule(fusedQKVPTX)
+		qmod, e2 := r.dev.CompileLibrary(fusedQKVPTX)
 		if e2 != nil {
 			return e2
 		}
-		if r.fQKV, e = qmod.Function("fused_rms_qkv"); e != nil {
+		if r.fQKV, e = r.dev.NewComputePipeline(qmod, "fused_rms_qkv"); e != nil {
 			return e
 		}
-		if r.fGU, e = qmod.Function("fused_rms_gu"); e != nil {
+		if r.fGU, e = r.dev.NewComputePipeline(qmod, "fused_rms_gu"); e != nil {
 			return e
 		}
-		if r.fQKN, e = qmod.Function("qk_norm"); e != nil {
+		if r.fQKN, e = r.dev.NewComputePipeline(qmod, "qk_norm"); e != nil {
 			return e
 		}
 		fns := []struct {
-			dst  **gc.Function
+			dst  *Pipeline
 			name string
 		}{
 			{&r.fRms, "rmsnorm_quant"}, {&r.fRmsF32, "rmsnorm_f32"}, {&r.fQ, "quant_vec"}, {&r.fRope, "rope"},
@@ -372,32 +365,30 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			{&r.fArg, "argmax_reduce"},
 		}
 		for _, f := range fns {
-			if *f.dst, e = glmod.Function(f.name); e != nil {
+			if *f.dst, e = r.dev.NewComputePipeline(glmod, f.name); e != nil {
 				return e
 			}
 		}
 		// MoE module: loaded only for a routed model, so a dense one JITs nothing extra.
 		if r.moe {
-			mmod, e2 := r.cx.LoadModule(moePTX)
+			mmod, e2 := r.dev.CompileLibrary(moePTX)
 			if e2 != nil {
 				return e2
 			}
 			for _, f := range []struct {
-				dst  **gc.Function
+				dst  *Pipeline
 				name string
 			}{
 				{&r.fRoute, "moe_route"}, {&r.fRouterGemv, "gemv_f32_a8"},
 				{&r.fMoEGemv, "gemv_w4a8_moe"}, {&r.fMoEWacc, "gemv_w4a8_moe_wacc"},
 				{&r.fSharedCombine, "shared_gate_combine"},
 			} {
-				if *f.dst, e = mmod.Function(f.name); e != nil {
+				if *f.dst, e = r.dev.NewComputePipeline(mmod, f.name); e != nil {
 					return e
 				}
 			}
 		}
-		if r.stream, e = r.cx.NewStream(); e != nil {
-			return e
-		}
+		r.stream = r.dev.NewCommandQueue()
 
 		r.layers = make([]cudaLayer, nLayers)
 		for l := 0; l < nLayers; l++ {
@@ -438,7 +429,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 
 		r.x, r.aSc, r.aq = r.af(H), r.af(1), r.ai(H/4)
 		r.qB, r.kB, r.vB = r.af(r.qDim), r.af(kvDim), r.af(kvDim)
-		r.kc, r.vc = make([]*gc.Buffer[float32], nLayers), make([]*gc.Buffer[float32], nLayers)
+		r.kc, r.vc = make([]Buffer, nLayers), make([]Buffer, nLayers)
 		for l := range r.kc {
 			r.kc[l], r.vc[l] = r.af(cudaCtxCap*kvDim), r.af(cudaCtxCap*kvDim)
 		}
@@ -461,7 +452,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		}
 		r.dO, r.logits = r.af(H), r.af(vocab)
 		r.argIdx, r.argVal = r.ai(1), r.af(1) // greedy fast-path readback (4 B vs 594 KB)
-		if hb, e := gc.AllocHost[float32](r.cx, vocab); e != nil {
+		if hb, e := gpu.NewHostBuffer[float32](r.dev, vocab); e != nil {
 			return e
 		} else {
 			r.logitsPinned, r.logitsHost = hb, hb.Slice()
@@ -502,5 +493,5 @@ func (b *cudaBackend) Close() error {
 	if b.resident != nil {
 		_ = b.resident.Close()
 	}
-	return b.drv.Close()
+	return nil
 }

@@ -3,13 +3,12 @@
 package cuda
 
 import (
-	"context"
 	"math"
 	"os"
 	"sort"
 	"testing"
 
-	gc "github.com/eitamring/gocudrv/cuda"
+	gpu "github.com/townsendmerino/aikit/gpu"
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
@@ -24,12 +23,11 @@ func (r *cudaResident) captureResidualForTest(emb []float32, pos int) ([]float32
 		if e := r.launchToken(emb, pos); e != nil {
 			return e
 		}
-		bg := context.Background()
-		if e := r.stream.Synchronize(bg); e != nil {
+		if e := r.stream.Sync(); e != nil {
 			return e
 		}
 		h := make([]float32, r.hidden)
-		if e := gc.CopyDtoH(bg, h, r.x); e != nil {
+		if e := gpu.Download(r.x, h); e != nil {
 			return e
 		}
 		out = h

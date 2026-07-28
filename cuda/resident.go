@@ -3,10 +3,9 @@
 package cuda
 
 import (
-	"context"
 	"fmt"
 
-	gc "github.com/eitamring/gocudrv/cuda"
+	gpu "github.com/townsendmerino/aikit/gpu"
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/decoder"
 )
@@ -26,23 +25,23 @@ const cudaCtxCap = 4096 // resident KV capacity (positions); staged path handles
 // cudaWQ is a device projection weight in whatever precision the checkpoint stored it.
 type cudaWQ struct {
 	kind string
-	W    *gc.Buffer[uint32]  // packed weights (int4 fast-layout nibbles, or int8x4)
-	ws   *gc.Buffer[float32] // int8 row scales (N)
-	ws16 *gc.Buffer[uint16]  // int4 group scales as f16 (N*K/32) — f32 would be 20% of the
-	//                          int4 byte stream; f16 halves that (decode is byte-bound).
+	W    Buffer // packed weights (int4 fast-layout nibbles, or int8x4)
+	ws   Buffer // int8 row scales (N)
+	ws16 Buffer // int4 group scales as f16 (N*K/32) — f32 would be 20% of the
+	//              int4 byte stream; f16 halves that (decode is byte-bound).
 	N, K int
 }
 
 type cudaLayer struct {
 	q, k, v, o, g, u, d cudaWQ
-	qb, kb, vb          *gc.Buffer[float32] // QKV bias (nil ⇒ none)
-	qNorm, kNorm        *gc.Buffer[float32] // per-head QK-norm weights (nil ⇒ arch has none)
-	window              int32               // sliding-window span for THIS layer; 0 = full causal
-	preNorm, postNorm   *gc.Buffer[float32]
-	// Gemma sandwich norms (nil unless NormSandwich4): applied to the SUBLAYER OUTPUT before
+	qb, kb, vb          Buffer // QKV bias (absent ⇒ none)
+	qNorm, kNorm        Buffer // per-head QK-norm weights (absent ⇒ arch has none)
+	window              int32  // sliding-window span for THIS layer; 0 = full causal
+	preNorm, postNorm   Buffer
+	// Gemma sandwich norms (absent unless NormSandwich4): applied to the SUBLAYER OUTPUT before
 	// the residual add, not to a GEMV input.
-	postAttnNorm, postMLPNorm *gc.Buffer[float32]
-	invF                      *gc.Buffer[float32] // per-layer RoPE inv-freq (local vs global base)
+	postAttnNorm, postMLPNorm Buffer
+	invF                      Buffer // per-layer RoPE inv-freq (local vs global base)
 	hasBias                   bool
 
 	// Sparse MoE FFN. Per LAYER, not per model: GLM/DeepSeek's first_k_dense_replace makes the
@@ -50,10 +49,10 @@ type cudaLayer struct {
 	// in one model and the dispatch picks per layer (the decoder keys off the same thing —
 	// mlp.go: `arch.MoE != nil && lw.Experts != nil`).
 	isMoE   bool
-	routerW *gc.Buffer[float32] // [nE, hidden] f32 — see cudaResident.moe on why it is not quantized
-	routerB *gc.Buffer[float32] // [nE] selection bias; ALWAYS allocated (zeros when the arch has none)
-	expGU   cudaWQ              // stacked [nE * 2*moeInter, hidden]: expert e's gate at e*2*moeInter, up at +moeInter
-	expDown cudaWQ              // stacked [nE * hidden, moeInter]
+	routerW Buffer // [nE, hidden] f32 — see cudaResident.moe on why it is not quantized
+	routerB Buffer // [nE] selection bias; ALWAYS allocated (zeros when the arch has none)
+	expGU   cudaWQ // stacked [nE * 2*moeInter, hidden]: expert e's gate at e*2*moeInter, up at +moeInter
+	expDown cudaWQ // stacked [nE * hidden, moeInter]
 
 	// Always-on shared expert (GLM/DeepSeek): an ungated SwiGLU MLP at sharedInter, added to the
 	// routed output. hasShared is false for a plain MoE (Mixtral). gate‖up is concatenated the
@@ -100,94 +99,72 @@ type cudaResident struct {
 
 	sharedInter int // width of the always-on shared expert (0 ⇒ none)
 
-	// gocudrv state — touched ONLY on the executor thread.
-	cx                                                                                                 *gc.Context
-	stream                                                                                             *gc.Stream
-	gemvW4, gemvW8, kvStore, ropeKV, fRms, fRmsF32, fQ, fRope, fAttn, fSw, fRes, fArg, fQKV, fGU, fQKN *gc.Function
-	fRoute, fRouterGemv, fMoEGemv, fMoEWacc, fSharedCombine                                            *gc.Function
+	// device state — touched ONLY on the executor thread.
+	dev                                                                                                *Device
+	stream                                                                                             Queue
+	gemvW4, gemvW8, kvStore, ropeKV, fRms, fRmsF32, fQ, fRope, fAttn, fSw, fRes, fArg, fQKV, fGU, fQKN Pipeline
+	fRoute, fRouterGemv, fMoEGemv, fMoEWacc, fSharedCombine                                            Pipeline
 
 	fuseQKV   bool  // all of Q/K/V/gate/up int4 ⇒ the fused K1 (fQKV) + fGU super-kernels are usable
 	launchErr error // sticky first launch error within a launchToken call (reset per token) — M23
 	layers    []cudaLayer
 	lmW       cudaWQ
-	finalNorm *gc.Buffer[float32]
+	finalNorm Buffer
 
 	// per-token scratch + KV caches (device).
-	x, aSc, qB, kB, vB, cctx, cSc, oO, mSc, gO, uO, dSc, dScr, dO, logits *gc.Buffer[float32]
-	aq, cq, mq, dq, argIdx                                                *gc.Buffer[int32]
-	argVal                                                                *gc.Buffer[float32]
-	kc, vc                                                                []*gc.Buffer[float32]
+	x, aSc, qB, kB, vB, cctx, cSc, oO, mSc, gO, uO, dSc, dScr, dO, logits Buffer
+	aq, cq, mq, dq, argIdx                                                Buffer
+	argVal                                                                Buffer
+	kc, vc                                                                []Buffer
 
 	// MoE per-token scratch (allocated only when moe). Sized to the MoE expert width, which is
 	// NOT the dense one — Mellum's moe_intermediate_size differs from intermediate_size, so
 	// reusing gO/uO/dq here would overrun on some archs and silently under-read on others.
-	rLogits, rWgt, moeGU, moeSc, moeScr *gc.Buffer[float32]
-	rIdx                                *gc.Buffer[uint32]
-	moeQ                                *gc.Buffer[int32]
+	rLogits, rWgt, moeGU, moeSc, moeScr Buffer
+	rIdx                                Buffer
+	moeQ                                Buffer
 
 	// Shared-expert scratch (allocated only when any layer hasShared). Sized to sharedInter,
 	// which is its own width — distinct from both the dense inter and the routed moeInter.
-	shGUout, shSc, shScr, shDownOut *gc.Buffer[float32]
-	shQ                             *gc.Buffer[int32]
+	shGUout, shSc, shScr, shDownOut Buffer
+	shQ                             Buffer
 
 	// logitsPinned is PAGE-LOCKED host memory for the per-token logits readback. A pageable
 	// D2H of 594 KB measured only ~1.26 GB/s (it stages through a driver bounce buffer);
 	// pinned memory DMAs straight out. Slice() is a zero-copy view, so Forward still returns
 	// without an extra copy. Reused across calls (decode consumes each before the next).
-	logitsPinned *gc.HostBuffer[float32]
+	logitsPinned *HostBuffer[float32]
 	logitsHost   []float32 // zero-copy view of logitsPinned
 	setupErr     error     // first alloc/upload error during BuildResident's setup job
+
 }
 
-// alloc/upload helpers — called ONLY inside the setup job (r.cx current on the executor
-// thread). They record the first failure into setupErr so BuildResident can decline
-// gracefully (→ staged fallback) instead of proceeding with nil buffers.
-func (r *cudaResident) af(n int) *gc.Buffer[float32] {
-	b, e := gc.Alloc[float32](r.cx, n)
-	if e != nil && r.setupErr == nil {
-		r.setupErr = e
-	}
-	return b
+// alloc/upload helpers — called ONLY inside the setup job (r.dev's context current on the
+// executor thread). gpu.NewBufferLenOf PANICS on OOM (recorded into the Device ledger);
+// BuildResident's defer recovers that panic and declines gracefully (→ staged fallback)
+// instead of proceeding with unusable buffers.
+func (r *cudaResident) af(n int) Buffer {
+	return gpu.NewBufferLenOf[float32](r.dev, n)
 }
-func (r *cudaResident) ai(n int) *gc.Buffer[int32] {
-	b, e := gc.Alloc[int32](r.cx, n)
-	if e != nil && r.setupErr == nil {
-		r.setupErr = e
-	}
-	return b
+func (r *cudaResident) ai(n int) Buffer {
+	return gpu.NewBufferLenOf[int32](r.dev, n)
 }
-func (r *cudaResident) au32(n int) *gc.Buffer[uint32] {
-	b, e := gc.Alloc[uint32](r.cx, n)
-	if e != nil && r.setupErr == nil {
-		r.setupErr = e
-	}
-	return b
+func (r *cudaResident) au32(n int) Buffer {
+	return gpu.NewBufferLenOf[uint32](r.dev, n)
 }
-func (r *cudaResident) up32(v []float32) *gc.Buffer[float32] {
+func (r *cudaResident) up32(v []float32) Buffer {
 	b := r.af(len(v))
-	if b != nil {
-		_ = gc.CopyHtoD(context.Background(), b, v)
-	}
+	_ = gpu.Upload(b, v)
 	return b
 }
-func (r *cudaResident) upu32(v []uint32) *gc.Buffer[uint32] {
-	b, e := gc.Alloc[uint32](r.cx, len(v))
-	if e != nil && r.setupErr == nil {
-		r.setupErr = e
-	}
-	if b != nil {
-		_ = gc.CopyHtoD(context.Background(), b, v)
-	}
+func (r *cudaResident) upu32(v []uint32) Buffer {
+	b := r.au32(len(v))
+	_ = gpu.Upload(b, v)
 	return b
 }
-func (r *cudaResident) upu16(v []uint16) *gc.Buffer[uint16] {
-	b, e := gc.Alloc[uint16](r.cx, len(v))
-	if e != nil && r.setupErr == nil {
-		r.setupErr = e
-	}
-	if b != nil {
-		_ = gc.CopyHtoD(context.Background(), b, v)
-	}
+func (r *cudaResident) upu16(v []uint16) Buffer {
+	b := gpu.NewBufferLenOf[uint16](r.dev, len(v))
+	_ = gpu.Upload(b, v)
 	return b
 }
 func (r *cudaResident) upW(h hostW) cudaWQ {
@@ -262,11 +239,10 @@ func (r *cudaResident) UploadKV(layer int, keys, vals []float32) error {
 		}
 	}
 	return r.do(func() error {
-		bg := context.Background()
-		if e := r.kc[layer].CopyFromAt(bg, 0, keys); e != nil {
+		if e := gpu.Upload(r.kc[layer], keys); e != nil {
 			return e
 		}
-		return r.vc[layer].CopyFromAt(bg, 0, vals)
+		return gpu.Upload(r.vc[layer], vals)
 	})
 }
 
@@ -305,75 +281,21 @@ func (r *cudaResident) Close() error {
 		return nil
 	}
 	r.reqCh <- func() error {
+		// Page-locked host memory must be freed before the context (its free reaches the
+		// context's executor), so it goes first and out of the device ledger.
 		if r.logitsPinned != nil {
-			_ = r.logitsPinned.Close() // page-locked host memory must go before the ctx
+			_ = r.logitsPinned.Close()
 			r.logitsPinned, r.logitsHost = nil, nil
 		}
-		freeW := func(w *cudaWQ) {
-			if w.W != nil {
-				_ = w.W.Close()
-				w.W = nil
-			}
-			if w.ws != nil {
-				_ = w.ws.Close()
-				w.ws = nil
-			}
-			if w.ws16 != nil {
-				_ = w.ws16.Close()
-				w.ws16 = nil
-			}
-		}
-		freeF := func(b **gc.Buffer[float32]) {
-			if *b != nil {
-				_ = (*b).Close()
-				*b = nil
-			}
-		}
-		freeI := func(b **gc.Buffer[int32]) {
-			if *b != nil {
-				_ = (*b).Close()
-				*b = nil
-			}
-		}
-		for i := range r.layers {
-			L := &r.layers[i]
-			for _, w := range []*cudaWQ{&L.q, &L.k, &L.v, &L.o, &L.g, &L.u, &L.d, &L.expGU, &L.expDown, &L.shGU, &L.shDown} {
-				freeW(w)
-			}
-			for _, b := range []**gc.Buffer[float32]{&L.qb, &L.kb, &L.vb, &L.qNorm, &L.kNorm,
-				&L.preNorm, &L.postNorm, &L.postAttnNorm, &L.postMLPNorm, &L.invF,
-				&L.routerW, &L.routerB} {
-				freeF(b)
-			}
+		// The Device OWNS every device allocation (weights, KV caches, scratch) in its ledger;
+		// ReleaseObjects frees all of them in the correct order, then the modules + stream, then
+		// releases our primary-context ref. One call replaces the old per-field free loops.
+		if r.dev != nil {
+			r.dev.ReleaseObjects()
+			r.dev = nil
 		}
 		r.layers = nil
-		freeW(&r.lmW)
-		for i := range r.kc {
-			freeF(&r.kc[i])
-			freeF(&r.vc[i])
-		}
 		r.kc, r.vc = nil, nil
-		for _, b := range []**gc.Buffer[float32]{&r.finalNorm, &r.x, &r.aSc, &r.qB, &r.kB, &r.vB,
-			&r.cctx, &r.cSc, &r.oO, &r.mSc, &r.gO, &r.uO, &r.dSc, &r.dScr, &r.dO, &r.logits, &r.argVal,
-			&r.rLogits, &r.rWgt, &r.moeGU, &r.moeSc, &r.moeScr,
-			&r.shGUout, &r.shSc, &r.shScr, &r.shDownOut} {
-			freeF(b)
-		}
-		for _, b := range []**gc.Buffer[int32]{&r.aq, &r.cq, &r.mq, &r.dq, &r.argIdx, &r.moeQ, &r.shQ} {
-			freeI(b)
-		}
-		if r.rIdx != nil { // the only uint32 device buffer; no freeI/freeF shape fits it
-			_ = r.rIdx.Close()
-			r.rIdx = nil
-		}
-		if r.stream != nil {
-			_ = r.stream.Close()
-			r.stream = nil
-		}
-		if r.cx != nil {
-			_ = r.cx.Close() // release OUR primary-context ref; buffers are already freed above
-			r.cx = nil
-		}
 		return nil
 	}
 	<-r.ackCh
@@ -384,15 +306,15 @@ func (r *cudaResident) Close() error {
 
 // --- launch helpers (executor-thread only) ---
 
-func g1cfg(n, b int) gc.LaunchConfig {
-	return gc.LaunchConfig{GridX: uint32((n + b - 1) / b), GridY: 1, GridZ: 1, BlockX: uint32(b), BlockY: 1, BlockZ: 1}
+func g1cfg(n, b int) LaunchConfig {
+	return LaunchConfig{GridX: uint32((n + b - 1) / b), GridY: 1, GridZ: 1, BlockX: uint32(b), BlockY: 1, BlockZ: 1}
 }
-func onecfg(b, sh int) gc.LaunchConfig {
-	return gc.LaunchConfig{GridX: 1, GridY: 1, GridZ: 1, BlockX: uint32(b), BlockY: 1, BlockZ: 1, SharedMemBytes: uint32(sh)}
+func onecfg(b, sh int) LaunchConfig {
+	return LaunchConfig{GridX: 1, GridY: 1, GridZ: 1, BlockX: uint32(b), BlockY: 1, BlockZ: 1, SharedMemBytes: uint32(sh)}
 }
 
-func (r *cudaResident) launch(f *gc.Function, cfg gc.LaunchConfig, args ...gc.KernelArg) error {
-	e := f.LaunchOn(context.Background(), r.stream, cfg, args...)
+func (r *cudaResident) launch(f Pipeline, cfg LaunchConfig, args ...KernelArg) error {
+	e := r.stream.Launch(f, cfg, args...)
 	if e != nil && r.launchErr == nil {
 		// Sticky: launchToken's dense hot chain discards many launch errors (`_ = r.launch(...)`),
 		// so a config error (bad shared-mem size, bad args) would let the token "succeed" with
@@ -406,11 +328,10 @@ func (r *cudaResident) launch(f *gc.Function, cfg gc.LaunchConfig, args ...gc.Ke
 // capVec copies the first n elements of a device vector to host into dst[l] (diagnostic
 // sublayer capture — n is hidden for the o-proj/down contributions, qDim for the pre-o-proj
 // context). Runs on the executor thread inside launchToken, so it syncs before the readback.
-func (r *cudaResident) capVec(src *gc.Buffer[float32], dst [][]float32, l, n int) {
-	bg := context.Background()
-	_ = r.stream.Synchronize(bg)
+func (r *cudaResident) capVec(src Buffer, dst [][]float32, l, n int) {
+	_ = r.stream.Sync()
 	h := make([]float32, n)
-	_ = gc.CopyDtoH(bg, h, src)
+	_ = gpu.Download(src, h)
 	dst[l] = h
 }
 
@@ -423,21 +344,21 @@ func (r *cudaResident) addOneArg() int32 {
 	return 0
 }
 
-func (r *cudaResident) rms(src, nrm *gc.Buffer[float32], qOut *gc.Buffer[int32], sOut *gc.Buffer[float32]) error {
+func (r *cudaResident) rms(src, nrm Buffer, qOut Buffer, sOut Buffer) error {
 	return r.launch(r.fRms, onecfg(256, (r.hidden+256)*4),
-		gc.Arg(src), gc.Arg(nrm), gc.ArgValue(int32(r.hidden)), gc.ArgValue(r.eps),
-		gc.ArgValue(r.addOneArg()), gc.Arg(qOut), gc.Arg(sOut))
+		Arg(src), Arg(nrm), gpu.ArgValue(int32(r.hidden)), gpu.ArgValue(r.eps),
+		gpu.ArgValue(r.addOneArg()), Arg(qOut), Arg(sOut))
 }
 
 // normF32 is Gemma's sandwich post-norm: a plain in-place RMSNorm of a SUBLAYER OUTPUT
 // (no quant — it lands straight in the f32 residual stream). No-op when the arch has no
 // sandwich norms, so non-Gemma families pay nothing.
-func (r *cudaResident) normF32(x, w *gc.Buffer[float32]) error {
-	if w == nil {
+func (r *cudaResident) normF32(x, w Buffer) error {
+	if w.Len() == 0 {
 		return nil
 	}
 	return r.launch(r.fRmsF32, onecfg(256, 256*4),
-		gc.Arg(x), gc.Arg(w), gc.ArgValue(int32(r.hidden)), gc.ArgValue(r.eps), gc.ArgValue(r.addOneArg()))
+		Arg(x), Arg(w), gpu.ArgValue(int32(r.hidden)), gpu.ArgValue(r.eps), gpu.ArgValue(r.addOneArg()))
 }
 
 // doG launches the projection GEMV. accum=1 makes the epilogue do dst[n] += result, which
@@ -445,14 +366,14 @@ func (r *cudaResident) normF32(x, w *gc.Buffer[float32]) error {
 // no round-trip through a temp buffer). Only lane 0 of the row's warp touches dst[n], and the
 // GEMV's input activation is never x, so accumulating straight into the residual stream is
 // race-free.
-func (r *cudaResident) doG(wt cudaWQ, a *gc.Buffer[int32], as *gc.Buffer[float32], bias gc.KernelArg, dst *gc.Buffer[float32], accum int32) error {
-	cfg := gc.LaunchConfig{GridX: uint32((wt.N + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
+func (r *cudaResident) doG(wt cudaWQ, a Buffer, as Buffer, bias KernelArg, dst Buffer, accum int32) error {
+	cfg := LaunchConfig{GridX: uint32((wt.N + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
 	if wt.kind == "int4" {
-		return r.launch(r.gemvW4, cfg, gc.Arg(wt.W), gc.Arg(a), gc.Arg(wt.ws16), gc.Arg(as), bias,
-			gc.ArgValue(int32(wt.N)), gc.ArgValue(int32(wt.K/8)), gc.ArgValue(int32(wt.K/32)), gc.Arg(dst), gc.ArgValue(accum))
+		return r.launch(r.gemvW4, cfg, Arg(wt.W), Arg(a), Arg(wt.ws16), Arg(as), bias,
+			gpu.ArgValue(int32(wt.N)), gpu.ArgValue(int32(wt.K/8)), gpu.ArgValue(int32(wt.K/32)), Arg(dst), gpu.ArgValue(accum))
 	}
-	return r.launch(r.gemvW8, cfg, gc.Arg(wt.W), gc.Arg(a), gc.Arg(wt.ws), gc.Arg(as), bias,
-		gc.ArgValue(int32(wt.N)), gc.ArgValue(int32(wt.K/4)), gc.Arg(dst), gc.ArgValue(accum))
+	return r.launch(r.gemvW8, cfg, Arg(wt.W), Arg(a), Arg(wt.ws), Arg(as), bias,
+		gpu.ArgValue(int32(wt.N)), gpu.ArgValue(int32(wt.K/4)), Arg(dst), gpu.ArgValue(accum))
 }
 
 // moeMLP issues one MoE FFN block for layer Ly, accumulating straight into the residual
@@ -480,17 +401,17 @@ func (r *cudaResident) moeMLP(Ly *cudaLayer) error {
 	}
 	// Router logits (one block per expert row) → top-k idx/wgt, both left on the device. The
 	// selection never round-trips to the host: a D2H here would serialize the whole token.
-	if e := r.launch(r.fRouterGemv, gc.LaunchConfig{GridX: uint32(r.nE), GridY: 1, GridZ: 1,
+	if e := r.launch(r.fRouterGemv, LaunchConfig{GridX: uint32(r.nE), GridY: 1, GridZ: 1,
 		BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
-		gc.Arg(Ly.routerW), gc.Arg(r.mq), gc.Arg(r.mSc), gc.ArgValue(int32(r.nE)),
-		gc.ArgValue(int32(r.hidden)), gc.Arg(r.rLogits)); e != nil {
+		Arg(Ly.routerW), Arg(r.mq), Arg(r.mSc), gpu.ArgValue(int32(r.nE)),
+		gpu.ArgValue(int32(r.hidden)), Arg(r.rLogits)); e != nil {
 		return e
 	}
 	if e := r.launch(r.fRoute, onecfg(1, 0),
-		gc.Arg(r.rLogits), gc.Arg(Ly.routerB), gc.Arg(r.rIdx), gc.Arg(r.rWgt),
-		gc.ArgValue(int32(r.nE)), gc.ArgValue(int32(r.topK)), gc.ArgValue(r.moeSigmoid),
-		gc.ArgValue(r.moeNormTopK), gc.ArgValue(r.moeScale),
-		gc.ArgValue(int32(r.nGroup)), gc.ArgValue(int32(r.topkGroup))); e != nil {
+		Arg(r.rLogits), Arg(Ly.routerB), Arg(r.rIdx), Arg(r.rWgt),
+		gpu.ArgValue(int32(r.nE)), gpu.ArgValue(int32(r.topK)), gpu.ArgValue(r.moeSigmoid),
+		gpu.ArgValue(r.moeNormTopK), gpu.ArgValue(r.moeScale),
+		gpu.ArgValue(int32(r.nGroup)), gpu.ArgValue(int32(r.topkGroup))); e != nil {
 		return e
 	}
 	gu := 2 * r.moeInter
@@ -498,29 +419,29 @@ func (r *cudaResident) moeMLP(Ly *cudaLayer) error {
 		// gate‖up for the routed expert, in ONE indexed GEMV: the stack interleaves each
 		// expert's gate and up rows (packWeightStack(g0,u0,g1,u1,...)), so one row range of
 		// width 2*moeInter is exactly this expert's pair.
-		if e := r.launch(r.fMoEGemv, gc.LaunchConfig{GridX: uint32((gu + 7) / 8), GridY: 1, GridZ: 1,
+		if e := r.launch(r.fMoEGemv, LaunchConfig{GridX: uint32((gu + 7) / 8), GridY: 1, GridZ: 1,
 			BlockX: 256, BlockY: 1, BlockZ: 1},
-			gc.Arg(Ly.expGU.W), gc.Arg(r.mq), gc.Arg(Ly.expGU.ws16), gc.Arg(r.mSc),
-			gc.Arg(r.rIdx), gc.ArgValue(int32(j)), gc.ArgValue(int32(gu)),
-			gc.ArgValue(int32(gu)), gc.ArgValue(int32(r.hidden/8)), gc.ArgValue(int32(r.hidden/32)),
-			gc.Arg(r.moeGU)); e != nil {
+			Arg(Ly.expGU.W), Arg(r.mq), Arg(Ly.expGU.ws16), Arg(r.mSc),
+			Arg(r.rIdx), gpu.ArgValue(int32(j)), gpu.ArgValue(int32(gu)),
+			gpu.ArgValue(int32(gu)), gpu.ArgValue(int32(r.hidden/8)), gpu.ArgValue(int32(r.hidden/32)),
+			Arg(r.moeGU)); e != nil {
 			return e
 		}
 		// SwiGLU over the halves of that one buffer. gocudrv exposes no buffer view/offset, so
 		// the split is the kernel's gOff/uOff rather than Go-side pointer arithmetic.
 		if e := r.launch(r.fSw, onecfg(256, 256*4),
-			gc.Arg(r.moeGU), gc.Arg(r.moeGU), gc.ArgValue(int32(0)), gc.ArgValue(int32(r.moeInter)),
-			gc.ArgValue(int32(r.moeInter)), gc.ArgValue(r.act),
-			gc.Arg(r.moeQ), gc.Arg(r.moeSc), gc.Arg(r.moeScr)); e != nil {
+			Arg(r.moeGU), Arg(r.moeGU), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(r.moeInter)),
+			gpu.ArgValue(int32(r.moeInter)), gpu.ArgValue(r.act),
+			Arg(r.moeQ), Arg(r.moeSc), Arg(r.moeScr)); e != nil {
 			return e
 		}
 		// down-proj, weight-accumulating into the residual: x += wgt[j] * (Down_e · act).
-		if e := r.launch(r.fMoEWacc, gc.LaunchConfig{GridX: uint32((r.hidden + 7) / 8), GridY: 1, GridZ: 1,
+		if e := r.launch(r.fMoEWacc, LaunchConfig{GridX: uint32((r.hidden + 7) / 8), GridY: 1, GridZ: 1,
 			BlockX: 256, BlockY: 1, BlockZ: 1},
-			gc.Arg(Ly.expDown.W), gc.Arg(r.moeQ), gc.Arg(Ly.expDown.ws16), gc.Arg(r.moeSc),
-			gc.Arg(r.rIdx), gc.Arg(r.rWgt), gc.ArgValue(int32(j)), gc.ArgValue(int32(r.hidden)),
-			gc.ArgValue(int32(r.hidden)), gc.ArgValue(int32(r.moeInter/8)), gc.ArgValue(int32(r.moeInter/32)),
-			gc.Arg(r.x)); e != nil {
+			Arg(Ly.expDown.W), Arg(r.moeQ), Arg(Ly.expDown.ws16), Arg(r.moeSc),
+			Arg(r.rIdx), Arg(r.rWgt), gpu.ArgValue(int32(j)), gpu.ArgValue(int32(r.hidden)),
+			gpu.ArgValue(int32(r.hidden)), gpu.ArgValue(int32(r.moeInter/8)), gpu.ArgValue(int32(r.moeInter/32)),
+			Arg(r.x)); e != nil {
 			return e
 		}
 	}
@@ -529,14 +450,14 @@ func (r *cudaResident) moeMLP(Ly *cudaLayer) error {
 	// gate‖up GEMV, the same glu_quant offset split, a dense down-proj, then the combine adds
 	// it in ungated (dst += shDown). decoder/mlp.go does exactly this after the routed sum.
 	if Ly.hasShared {
-		nullBias := gc.ArgDevicePtr(0)
+		nullBias := ArgNull()
 		if e := r.doG(Ly.shGU, r.mq, r.mSc, nullBias, r.shGUout, 0); e != nil {
 			return e
 		}
 		if e := r.launch(r.fSw, onecfg(256, 256*4),
-			gc.Arg(r.shGUout), gc.Arg(r.shGUout), gc.ArgValue(int32(0)), gc.ArgValue(int32(r.sharedInter)),
-			gc.ArgValue(int32(r.sharedInter)), gc.ArgValue(r.act),
-			gc.Arg(r.shQ), gc.Arg(r.shSc), gc.Arg(r.shScr)); e != nil {
+			Arg(r.shGUout), Arg(r.shGUout), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(r.sharedInter)),
+			gpu.ArgValue(int32(r.sharedInter)), gpu.ArgValue(r.act),
+			Arg(r.shQ), Arg(r.shSc), Arg(r.shScr)); e != nil {
 			return e
 		}
 		if e := r.doG(Ly.shDown, r.shQ, r.shSc, nullBias, r.shDownOut, 0); e != nil {
@@ -545,8 +466,8 @@ func (r *cudaResident) moeMLP(Ly *cudaLayer) error {
 		// ungated=1: dst[i] += shDown[i]. The gl pointer is unread when ungated, but the kernel
 		// still takes it, so pass a valid buffer (shSc, spare) rather than a null.
 		if e := r.launch(r.fSharedCombine, g1cfg(r.hidden, 256),
-			gc.Arg(r.x), gc.Arg(r.shDownOut), gc.Arg(r.shSc), gc.ArgValue(int32(r.hidden)),
-			gc.ArgValue(int32(1))); e != nil {
+			Arg(r.x), Arg(r.shDownOut), Arg(r.shSc), gpu.ArgValue(int32(r.hidden)),
+			gpu.ArgValue(int32(1))); e != nil {
 			return e
 		}
 	}
@@ -556,33 +477,32 @@ func (r *cudaResident) moeMLP(Ly *cudaLayer) error {
 // launchToken issues one token's whole kernel chain, leaving logits[vocab] on the device.
 func (r *cudaResident) launchToken(emb []float32, pos int) error {
 	r.launchErr = nil // reset the sticky launch-error accumulator for this token (M23)
-	bg := context.Background()
-	nullBias := gc.ArgDevicePtr(0)
-	if e := gc.CopyHtoD(bg, r.x, emb); e != nil {
+	nullBias := ArgNull()
+	if e := gpu.Upload(r.x, emb); e != nil {
 		return e
 	}
 	for l := 0; l < r.nLayers; l++ {
 		Ly := &r.layers[l]
 		qb, kb, vb := nullBias, nullBias, nullBias
 		if Ly.hasBias {
-			qb, kb, vb = gc.Arg(Ly.qb), gc.Arg(Ly.kb), gc.Arg(Ly.vb)
+			qb, kb, vb = Arg(Ly.qb), Arg(Ly.kb), Arg(Ly.vb)
 		}
 		if r.fuseQKV {
 			// K1: rmsnorm+quant redundantly per block + this block's Q/K/V rows — one
 			// launch instead of four, and the GridX:1 rmsnorm disappears.
 			nrows := r.qDim + 2*r.kvDim
-			cfg := gc.LaunchConfig{GridX: uint32((nrows + 7) / 8), GridY: 1, GridZ: 1,
+			cfg := LaunchConfig{GridX: uint32((nrows + 7) / 8), GridY: 1, GridZ: 1,
 				BlockX: 256, BlockY: 1, BlockZ: 1,
 				SharedMemBytes: uint32((r.hidden + 256 + r.hidden/4) * 4)}
 			if e := r.launch(r.fQKV, cfg,
-				gc.Arg(r.x), gc.Arg(Ly.preNorm), gc.ArgValue(int32(r.hidden)), gc.ArgValue(r.eps),
-				gc.ArgValue(r.addOneArg()),
-				gc.Arg(Ly.q.W), gc.Arg(Ly.q.ws16), qb,
-				gc.Arg(Ly.k.W), gc.Arg(Ly.k.ws16), kb,
-				gc.Arg(Ly.v.W), gc.Arg(Ly.v.ws16), vb,
-				gc.ArgValue(int32(r.qDim)), gc.ArgValue(int32(r.kvDim)),
-				gc.ArgValue(int32(r.hidden/8)), gc.ArgValue(int32(r.hidden/32)),
-				gc.Arg(r.qB), gc.Arg(r.kB), gc.Arg(r.vB)); e != nil {
+				Arg(r.x), Arg(Ly.preNorm), gpu.ArgValue(int32(r.hidden)), gpu.ArgValue(r.eps),
+				gpu.ArgValue(r.addOneArg()),
+				Arg(Ly.q.W), Arg(Ly.q.ws16), qb,
+				Arg(Ly.k.W), Arg(Ly.k.ws16), kb,
+				Arg(Ly.v.W), Arg(Ly.v.ws16), vb,
+				gpu.ArgValue(int32(r.qDim)), gpu.ArgValue(int32(r.kvDim)),
+				gpu.ArgValue(int32(r.hidden/8)), gpu.ArgValue(int32(r.hidden/32)),
+				Arg(r.qB), Arg(r.kB), Arg(r.vB)); e != nil {
 				return e
 			}
 		} else {
@@ -603,11 +523,11 @@ func (r *cudaResident) launchToken(emb []float32, pos int) error {
 			if r.rmsAddOne {
 				addOne = 1
 			}
-			if e := r.launch(r.fQKN, gc.LaunchConfig{GridX: uint32(r.nH + r.nKV), GridY: 1, GridZ: 1,
+			if e := r.launch(r.fQKN, LaunchConfig{GridX: uint32(r.nH + r.nKV), GridY: 1, GridZ: 1,
 				BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: 128 * 8}, // f64 reduction
-				gc.Arg(r.qB), gc.Arg(r.kB), gc.Arg(Ly.qNorm), gc.Arg(Ly.kNorm),
-				gc.ArgValue(int32(r.nH)), gc.ArgValue(int32(r.nKV)), gc.ArgValue(int32(r.hd)),
-				gc.ArgValue(r.eps), gc.ArgValue(addOne)); e != nil {
+				Arg(r.qB), Arg(r.kB), Arg(Ly.qNorm), Arg(Ly.kNorm),
+				gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(r.nKV)), gpu.ArgValue(int32(r.hd)),
+				gpu.ArgValue(r.eps), gpu.ArgValue(addOne)); e != nil {
 				return e
 			}
 		}
@@ -616,9 +536,9 @@ func (r *cudaResident) launchToken(emb []float32, pos int) error {
 		// kernel); rotaryDim/2 for partial rotary, where the tail threads carry the un-rotated
 		// remainder into the KV cache.
 		_ = r.launch(r.ropeKV, g1cfg(r.nH*r.rhalf+r.nKV*r.rhalf+r.nKV*(r.hd-2*r.rhalf), 256),
-			gc.Arg(r.qB), gc.Arg(r.kB), gc.Arg(r.vB), gc.Arg(Ly.invF), gc.Arg(r.kc[l]), gc.Arg(r.vc[l]),
-			gc.ArgValue(int32(r.nH)), gc.ArgValue(int32(r.nKV)), gc.ArgValue(int32(r.hd)),
-			gc.ArgValue(int32(pos)), gc.ArgValue(int32(r.rhalf)))
+			Arg(r.qB), Arg(r.kB), Arg(r.vB), Arg(Ly.invF), Arg(r.kc[l]), Arg(r.vc[l]),
+			gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(r.nKV)), gpu.ArgValue(int32(r.hd)),
+			gpu.ArgValue(int32(pos)), gpu.ArgValue(int32(r.rhalf)))
 		nKeys := pos + 1
 		// Sliding window (per layer: Mistral is all-local, Mellum interleaves). Shared is sized
 		// to the ATTENDED span, so a windowed layer's request stays bounded as context grows.
@@ -626,12 +546,12 @@ func (r *cudaResident) launchToken(emb []float32, pos int) error {
 		if Ly.window > 0 && nKeys > int(Ly.window) {
 			nWin = int(Ly.window)
 		}
-		_ = r.launch(r.fAttn, gc.LaunchConfig{GridX: uint32(r.nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nWin + 128) * 4)},
-			gc.Arg(r.qB), gc.Arg(r.kc[l]), gc.Arg(r.vc[l]), gc.ArgValue(int32(r.nH)), gc.ArgValue(int32(r.nKV)), gc.ArgValue(int32(r.hd)), gc.ArgValue(int32(nKeys)), gc.ArgValue(r.attnScale), gc.ArgValue(Ly.window), gc.Arg(r.cctx))
+		_ = r.launch(r.fAttn, LaunchConfig{GridX: uint32(r.nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nWin + 128) * 4)},
+			Arg(r.qB), Arg(r.kc[l]), Arg(r.vc[l]), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(r.nKV)), gpu.ArgValue(int32(r.hd)), gpu.ArgValue(int32(nKeys)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window), Arg(r.cctx))
 		if r.subCap { // pre-o-proj attention context (qDim), before quant — the cross-box discriminator
 			r.capVec(r.cctx, r.subCtxC, l, r.qDim)
 		}
-		_ = r.launch(r.fQ, onecfg(256, 256*4), gc.Arg(r.cctx), gc.ArgValue(int32(r.qDim)), gc.Arg(r.cq), gc.Arg(r.cSc))
+		_ = r.launch(r.fQ, onecfg(256, 256*4), Arg(r.cctx), gpu.ArgValue(int32(r.qDim)), Arg(r.cq), Arg(r.cSc))
 		// Normally the out-proj accumulates straight into the residual stream (accum=1),
 		// absorbing the `residual` launch. Gemma's sandwich norm CANNOT use that epilogue: it
 		// must normalize the sublayer output BETWEEN the projection and the residual add
@@ -646,7 +566,7 @@ func (r *cudaResident) launchToken(emb []float32, pos int) error {
 			if r.subCap { // attention contribution about to hit the residual
 				r.capVec(r.oO, r.subAttnC, l, r.hidden)
 			}
-			_ = r.launch(r.fRes, g1cfg(r.hidden, 256), gc.Arg(r.x), gc.Arg(r.oO), gc.ArgValue(int32(r.hidden)))
+			_ = r.launch(r.fRes, g1cfg(r.hidden, 256), Arg(r.x), Arg(r.oO), gpu.ArgValue(int32(r.hidden)))
 		} else {
 			_ = r.doG(Ly.o, r.cq, r.cSc, nullBias, r.x, 1)
 		}
@@ -659,16 +579,16 @@ func (r *cudaResident) launchToken(emb []float32, pos int) error {
 		if r.fuseQKV { // same guard: all layer projections int4
 			// K3a: pre-MLP rmsnorm+quant redundantly per block + this block's gate/up rows —
 			// one launch instead of three; the layer's second GridX:1 rmsnorm disappears.
-			cfg := gc.LaunchConfig{GridX: uint32((2*r.inter + 63) / 64), GridY: 1, GridZ: 1, // 64 rows/block
+			cfg := LaunchConfig{GridX: uint32((2*r.inter + 63) / 64), GridY: 1, GridZ: 1, // 64 rows/block
 				BlockX: 256, BlockY: 1, BlockZ: 1,
 				SharedMemBytes: uint32((r.hidden + 256 + r.hidden/4) * 4)}
 			if e := r.launch(r.fGU, cfg,
-				gc.Arg(r.x), gc.Arg(Ly.postNorm), gc.ArgValue(int32(r.hidden)), gc.ArgValue(r.eps),
-				gc.ArgValue(r.addOneArg()),
-				gc.Arg(Ly.g.W), gc.Arg(Ly.g.ws16),
-				gc.Arg(Ly.u.W), gc.Arg(Ly.u.ws16),
-				gc.ArgValue(int32(r.inter)), gc.ArgValue(int32(r.hidden/8)), gc.ArgValue(int32(r.hidden/32)),
-				gc.Arg(r.gO), gc.Arg(r.uO)); e != nil {
+				Arg(r.x), Arg(Ly.postNorm), gpu.ArgValue(int32(r.hidden)), gpu.ArgValue(r.eps),
+				gpu.ArgValue(r.addOneArg()),
+				Arg(Ly.g.W), Arg(Ly.g.ws16),
+				Arg(Ly.u.W), Arg(Ly.u.ws16),
+				gpu.ArgValue(int32(r.inter)), gpu.ArgValue(int32(r.hidden/8)), gpu.ArgValue(int32(r.hidden/32)),
+				Arg(r.gO), Arg(r.uO)); e != nil {
 				return e
 			}
 		} else {
@@ -676,8 +596,8 @@ func (r *cudaResident) launchToken(emb []float32, pos int) error {
 			_ = r.doG(Ly.g, r.mq, r.mSc, nullBias, r.gO, 0)
 			_ = r.doG(Ly.u, r.mq, r.mSc, nullBias, r.uO, 0)
 		}
-		_ = r.launch(r.fSw, onecfg(256, 256*4), gc.Arg(r.gO), gc.Arg(r.uO), gc.ArgValue(int32(0)), gc.ArgValue(int32(0)), gc.ArgValue(int32(r.inter)),
-			gc.ArgValue(r.act), gc.Arg(r.dq), gc.Arg(r.dSc), gc.Arg(r.dScr))
+		_ = r.launch(r.fSw, onecfg(256, 256*4), Arg(r.gO), Arg(r.uO), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(r.inter)),
+			gpu.ArgValue(r.act), Arg(r.dq), Arg(r.dSc), Arg(r.dScr))
 		if r.sandwich {
 			if e := r.doG(Ly.d, r.dq, r.dSc, nullBias, r.dO, 0); e != nil {
 				return e
@@ -689,7 +609,7 @@ func (r *cudaResident) launchToken(emb []float32, pos int) error {
 			if r.subCap { // MLP contribution about to hit the residual
 				r.capVec(r.dO, r.subMLPC, l, r.hidden)
 			}
-			_ = r.launch(r.fRes, g1cfg(r.hidden, 256), gc.Arg(r.x), gc.Arg(r.dO), gc.ArgValue(int32(r.hidden)))
+			_ = r.launch(r.fRes, g1cfg(r.hidden, 256), Arg(r.x), Arg(r.dO), gpu.ArgValue(int32(r.hidden)))
 		} else if e := r.doG(Ly.d, r.dq, r.dSc, nullBias, r.x, 1); e != nil {
 			return e
 		}
@@ -706,14 +626,13 @@ func (r *cudaResident) launchToken(emb []float32, pos int) error {
 // step returns full logits — the general contract (sampler / constrained decode / logprobs).
 // Costs a vocab*4 B D2H every token (594 KB at a 151936 vocab).
 func (r *cudaResident) step(emb []float32, pos int) ([]float32, error) {
-	bg := context.Background()
 	if e := r.launchToken(emb, pos); e != nil {
 		return nil, e
 	}
-	if e := r.stream.Synchronize(bg); e != nil {
+	if e := r.stream.Sync(); e != nil {
 		return nil, e
 	}
-	if e := r.logits.CopyToHost(bg, r.logitsPinned); e != nil {
+	if e := gpu.ReadToHost(r.logits, r.logitsPinned); e != nil {
 		return nil, e
 	}
 	return r.logitsHost, nil
@@ -728,19 +647,18 @@ func (r *cudaResident) ForwardArgmax(embedding []float32, pos int) (int, error) 
 	}
 	var id int
 	err := r.do(func() error {
-		bg := context.Background()
 		if e := r.launchToken(embedding, pos); e != nil {
 			return e
 		}
-		if e := r.launch(r.fArg, onecfg(256, 256*4+256*4), gc.Arg(r.logits),
-			gc.ArgValue(int32(r.vocab)), gc.Arg(r.argIdx), gc.Arg(r.argVal)); e != nil {
+		if e := r.launch(r.fArg, onecfg(256, 256*4+256*4), Arg(r.logits),
+			gpu.ArgValue(int32(r.vocab)), Arg(r.argIdx), Arg(r.argVal)); e != nil {
 			return e
 		}
-		if e := r.stream.Synchronize(bg); e != nil {
+		if e := r.stream.Sync(); e != nil {
 			return e
 		}
 		out := make([]int32, 1)
-		if e := gc.CopyDtoH(bg, out, r.argIdx); e != nil {
+		if e := gpu.Download(r.argIdx, out); e != nil {
 			return e
 		}
 		id = int(out[0])

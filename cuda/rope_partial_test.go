@@ -150,7 +150,7 @@ func TestRopePartial(t *testing.T) {
 
 			tail := c.hd - 2*rhalf
 			n := c.nH*rhalf + c.nKV*rhalf + c.nKV*tail
-			if e := fn.LaunchOn(bg, stream, g1cfg(n, 256),
+			if e := fn.LaunchOn(bg, stream, gc.LaunchConfig1D(n, 256),
 				gc.Arg(dq), gc.Arg(dk), gc.Arg(dv), gc.Arg(dinv), gc.Arg(dkc), gc.Arg(dvc),
 				gc.ArgValue(int32(c.nH)), gc.ArgValue(int32(c.nKV)), gc.ArgValue(int32(c.hd)),
 				gc.ArgValue(int32(c.pos)), gc.ArgValue(int32(rhalf))); e != nil {
