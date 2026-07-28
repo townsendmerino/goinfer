@@ -50,6 +50,16 @@ def main():
 
     layer.chunk_gated_delta_rule = _recurrent
 
+    # Strengthen the golden: HF's default init leaves norm.weight=1 and dt_bias=1 — both
+    # identity/no-op, so a bug applying the gated-RMSNorm weight or the Δt bias would not
+    # move the reference output and this parity test would pass regardless. Override with
+    # seeded, non-trivial values via a SEPARATE generator, so the input h and every OTHER
+    # weight stay bit-identical to the prior fixture — only these two params + the
+    # reference-recomputed output change. torch_recurrent_gated_delta_rule stays the oracle.
+    g = torch.Generator().manual_seed(1234)
+    layer.norm.weight.data.normal_(1.0, 0.1, generator=g)  # gated RMSNorm weight (was 1)
+    layer.dt_bias.data.normal_(0.0, 0.2, generator=g)      # Δt bias, pre-softplus (was 1)
+
     torch.manual_seed(1)
     h = torch.randn(1, SEQ, HIDDEN, dtype=torch.float32)
     with torch.no_grad():

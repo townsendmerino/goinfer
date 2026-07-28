@@ -33,6 +33,19 @@ def main():
     model = GraniteMoeHybridForCausalLM(cfg).eval().to(torch.float32)
     mixer = model.model.layers[0].mamba  # the Mamba-2 mixer module
 
+    # Strengthen the golden: HF's default init leaves D=1, dt_bias=1, norm.weight=1 and
+    # conv1d.bias=0 — all identity/no-op, so a bug in how goinfer *applies* these (× 1 or
+    # + 0) would not move the reference output and the parity test would pass anyway.
+    # Override them with seeded, non-trivial values using a SEPARATE generator, so the
+    # global RNG stream (and thus the input x and every OTHER weight) stays bit-identical
+    # to the prior fixture — only these four scaling params + the reference-recomputed
+    # output change. The HF mixer forward below remains the independent oracle.
+    g = torch.Generator().manual_seed(1234)
+    mixer.D.data.uniform_(0.5, 2.0, generator=g)          # skip-connection scale (was 1)
+    mixer.dt_bias.data.normal_(0.0, 0.2, generator=g)     # Δt bias, pre-softplus (was 1)
+    mixer.norm.weight.data.normal_(1.0, 0.1, generator=g)  # gated RMSNorm weight (was 1)
+    mixer.conv1d.bias.data.normal_(0.0, 0.1, generator=g)  # depthwise-conv bias (was 0)
+
     x = torch.randn(1, SEQ, cfg.hidden_size, dtype=torch.float32)
     with torch.no_grad():
         y = mixer(x)  # [1, seq, hidden]
