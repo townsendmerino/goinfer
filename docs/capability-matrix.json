@@ -379,7 +379,7 @@
     "loaders": "GGUF",
     "modality": "text",
     "gpu_residency_eligible": false,
-    "parity": "pending"
+    "parity": "real-oracle 100.0%/0.99843"
   },
   {
     "name": "granitemoehybrid",

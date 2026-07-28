@@ -151,13 +151,16 @@
         "decoder/forward_gptoss.go"
       ],
       "deps_hash": "sha256:7c006d69c94e660e81e3b8f1ca38b91ec7961d99a4cb21b841c0c4d1ba58922b",
-      "status": "pending",
-      "validated_at": null,
-      "date": null,
-      "reference": "tiny HF f32 gpt-oss golden (attention sinks + clamped-SwiGLU MoE + sliding/full + YaRN): argmax-exact, logit cosine 1.0. Real gpt-oss:20b MXFP4 (int8 resident) vs HF bf16: argmax-exact (\" Paris\"), logit cosine 0.99843, coherent generation — validated locally; needs aikit \u003e= v1.12.0 (ggml type-39 dequant) which main will pin once published, so status stays pending until then.",
+      "status": "validated",
+      "validated_at": "25a4711",
+      "date": "2026-07-27",
+      "reference": "tiny HF f32 gpt-oss golden (attention sinks + clamped-SwiGLU MoE + sliding/full + YaRN): argmax-exact, logit cosine 1.0. Real gpt-oss:20b MXFP4 (int8 resident, ~20 GB) vs HF bf16 (scripts/gptoss_hf_oracle.py): argmax-exact (\" Paris\") and coherent generation. Reproduced on main once the root go.mod pinned aikit v1.12.0, whose ggml type-39 dequant the MXFP4 experts need.",
       "machine": "linux-62gb",
-      "method": "tiny-golden + real-model-oracle (local)",
-      "metrics": null
+      "method": "real-model-oracle",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 0.99843
+      }
     },
     "gpt2": {
       "uses": [
