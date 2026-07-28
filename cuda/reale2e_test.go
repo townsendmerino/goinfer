@@ -10,6 +10,7 @@ import (
 	"time"
 
 	gc "github.com/eitamring/gocudrv/cuda"
+	gpu "github.com/townsendmerino/aikit/gpu"
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/decoder"
 )
@@ -230,8 +231,10 @@ func TestRealE2EDecode(t *testing.T) {
 			return err
 		}
 		glmod, _ := cx.LoadModule(gluePTX)
-		gemvW4, _ = gmod.Function("gemv_w4a8_fwd")
-		gemvW8, _ = gmod.Function("gemv_w8a8_fwd")
+		// Generic quantized GEMVs: aikit/gpu, since the Phase-1b blob-split.
+		qmod, _ := cx.LoadModule(gpu.QuantGEMVPTX)
+		gemvW4, _ = qmod.Function("gemv_w4a8_fwd")
+		gemvW8, _ = qmod.Function("gemv_w8a8_fwd")
 		ropeKV, _ = gmod.Function("rope_kv")
 		fRms, _ = glmod.Function("rmsnorm_quant")
 		fQ, _ = glmod.Function("quant_vec")

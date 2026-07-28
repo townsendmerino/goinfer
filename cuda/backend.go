@@ -331,12 +331,16 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		if e != nil {
 			return e
 		}
-		if r.gemvW4, e = r.dev.NewComputePipeline(gmod, "gemv_w4a8_fwd"); e != nil {
+		// The generic quantized GEMVs come from aikit (gpu.QuantGEMVPTX), not from
+		// gemv_fwd.ptx — the Phase-1b blob-split. aikit owns the quantized matmul on
+		// the GPU exactly as linalg owns it on the CPU; gemv_fwd.cu keeps only the
+		// LLM-specific kv_store / rope_kv. The kernels are the same instructions this
+		// file shipped before the split, so decode stays bit-identical.
+		qgemv, e := r.dev.NewQuantGEMV()
+		if e != nil {
 			return e
 		}
-		if r.gemvW8, e = r.dev.NewComputePipeline(gmod, "gemv_w8a8_fwd"); e != nil {
-			return e
-		}
+		r.gemvW4, r.gemvW8 = qgemv.W4A8, qgemv.W8A8
 		if r.kvStore, e = r.dev.NewComputePipeline(gmod, "kv_store"); e != nil {
 			return e
 		}

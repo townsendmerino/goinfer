@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	gc "github.com/eitamring/gocudrv/cuda"
+	gpu "github.com/townsendmerino/aikit/gpu"
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/decoder"
 )
@@ -189,11 +190,14 @@ func TestRealForwardParity(t *testing.T) {
 	// ---- kernels ----
 	gmod, _ := cx.LoadModule(gemvFwdPTX)
 	glmod, _ := cx.LoadModule(gluePTX)
-	gemvW4, err := gmod.Function("gemv_w4a8_fwd")
+	// The generic quantized GEMVs live in aikit/gpu since the Phase-1b blob-split;
+	// gemvFwdPTX now carries only the LLM-specific kv_store / rope_kv.
+	qmod, _ := cx.LoadModule(gpu.QuantGEMVPTX)
+	gemvW4, err := qmod.Function("gemv_w4a8_fwd")
 	if err != nil {
 		t.Fatalf("gemv_fwd: %v", err)
 	}
-	gemvW8, _ := gmod.Function("gemv_w8a8_fwd")
+	gemvW8, _ := qmod.Function("gemv_w8a8_fwd")
 	kvStore, _ := gmod.Function("kv_store")
 	fRms, _ := glmod.Function("rmsnorm_quant")
 	fQ, _ := glmod.Function("quant_vec")

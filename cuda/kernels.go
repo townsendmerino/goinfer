@@ -18,8 +18,12 @@ import (
 //
 //go:generate ./build_ptx.sh
 
-// gemvFwdPTX: forward GEMVs — gemv_w4a8_fwd (coalesced + 2× ILP unroll, f32 group scales,
-// on-device aScale ptr, per-row bias) / gemv_w8a8_fwd / kv_store.
+// gemvFwdPTX: the LLM-specific forward kernels — kv_store / rope_kv.
+//
+// The generic quantized GEMVs it used to carry (gemv_w4a8_fwd, gemv_w8a8_fwd) moved to
+// aikit/gpu >= v0.4.0 in the Phase-1b blob-split and are loaded via
+// gpu.QuantGEMVPTX / Device.NewQuantGEMV (backend.go). The name is kept for continuity
+// with the .cu it is built from.
 //
 //go:embed testdata/gemv_fwd.ptx
 var gemvFwdPTX []byte

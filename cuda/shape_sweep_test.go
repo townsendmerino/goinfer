@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	gc "github.com/eitamring/gocudrv/cuda"
+	gpu "github.com/townsendmerino/aikit/gpu"
 )
 
 // TestGemvShapeSweep sweeps the PRODUCTION forward GEMVs across the geometries the real model
@@ -51,7 +52,8 @@ func TestGemvShapeSweep(t *testing.T) {
 	defer cx.Close()
 	bg := context.Background()
 
-	mod, err := cx.LoadModule(gemvFwdPTX)
+	// gemv_w4a8_fwd lives in aikit/gpu since the Phase-1b blob-split.
+	mod, err := cx.LoadModule(gpu.QuantGEMVPTX)
 	if err != nil {
 		t.Fatalf("LoadModule: %v", err)
 	}
