@@ -460,6 +460,54 @@ pagers only manage weights that alias the mapping.
 
 Parity-first, matching the Gemma 4 dense and `qwen3_5_moe` bring-ups.
 
+## Status (2026-07-31)
+
+Phases 1a–2b landed and pushed; the whole-model forward matches the HF oracle
+bit-for-bit on the tiny checkpoint (cosine 1.0, byte-identical greedy continuation).
+K=V global layers and expert quantize-at-load followed. **The real 26B-A4B has NOT
+been loaded end-to-end** (the Phase 4 headline gate) — the checkpoint is a ~50 GB
+download, infeasible on the dev box; the cached dense gemma-4-12B config was used to
+confirm the real structural facts instead.
+
+| Phase | State | Where |
+|---|---|---|
+| 1a pin the math | ✅ | `cac4616` |
+| 1b descriptor + config | ✅ | `6eea5fa` (dense E2B/E4B/12B bit-identical) |
+| 1c tiny-random HF golden | ✅ | `d1b2189` |
+| 2a FFN sub-block op-golden | ✅ | `f7515eb` (cosine 1.0, maxAbs 8e-7) |
+| 2b wire into `runLayersGemma4` | ✅ | `51ea350` (whole-model cosine 1.0) |
+| 3 loader + schema — **TINY ONLY** | ◐ | `51ea350` + `9c04ea3`; tiny checkpoint validated (per-layer attn widths, `layer_scalar`, streamed+quantized experts). **Real 26B not loaded**; the `model.language_model.*` prefix + vision skip are unwritten. |
+| 4a K=V global layers | ✅ | `9e83043` (`attention_k_eq_v`/VFromK + `num_global_key_value_heads`, cosine 1.0) |
+| 4 real-checkpoint parity | ☐ | blocked on the ~50 GB download |
+| 5–8 (bench, streaming I/O, overlap, expert-major) | ☐ | not started |
+
+**Follow-up review (post-`51ea350`), one commit each:**
+- RMSAddOne consistency in `gemma4MoEFFN` — `97d2a2c`
+- capability matrix reports the MoE variant honestly (`dense ‖ sparse`) — `a84fb76`
+- experts quantize AT LOAD, streamed per-expert via aikit v1.15.0 `embed.Tensor.SubF32` (91 GB f32 → ~23 GB int4, no whole-tensor transient) — `9c04ea3`
+- zero-alloc FFN — **DECLINED**: `runLayersGemma4` is parity-first / allocating by design (its own forward, not the generic `decodeScratch` zero-alloc path), so optimizing only the FFN sub-block is inconsistent and near-zero benefit; a whole-forward scratch pass is a separate perf task.
+
+**Two findings the pin corrected — record them for the next Gemma variant:**
+
+1. **Norm wiring (Phase 1a).** The MoE branch AND the router each read the RAW
+   post-attention residual `h` through their OWN normalization — the router via its
+   weightless norm, the experts via `pre_feedforward_layernorm_2` — NOT the dense
+   branch's `pre_feedforward_layernorm`. Dense and MoE run in parallel on `h`, then
+   the sum is joint-normed (`post_feedforward_layernorm`), residual-added, × `layer_scalar`.
+
+2. **Global-layer proportional RoPE (found in Phase 2b, confirmed against the real
+   12B config).** Gemma 4's global (full-attention) layers use `"proportional"` RoPE
+   whose `partial_rotary_factor` (0.25) lives NESTED in
+   `rope_parameters.full_attention` — NOT the top-level `partial_rotary_factor` (Phi's
+   spelling, absent here). Reading the top-level value gave `GlobalRotaryDim=0` → the
+   global layer ran as NoPE → a large mid-stack divergence the final RMSNorm nearly
+   masked at the logits (whole-model cosine still ~0.99 while a per-layer trace showed
+   the global layer's norm at 13.7 vs 8.3). `gemma4PartialRotary()` prefers the
+   top-level value (GGUF injects it there, so the dense GGUF path stays byte-identical)
+   and falls back to the nested one.
+
+---
+
 **Phase 0 — aikit bump hazard (B0).** Independent of the rest; do it now. Replay the spike
 trace under both eviction policies, fix the policy split in aikit if it regresses, clear the
 three stale doc references. Gate: expert-pager hit rate ≥ v1.12.0's before the bump lands.
@@ -494,7 +542,14 @@ end-of-stack drift.
 **Phase 3 — loader + schema (A3).** `gemma4TensorSchema` (the `model.language_model.layers.`
 prefix, fused `experts.*`, no `v_proj` on global layers, vision skipped), reusing
 `loadFusedExperts`. Gate: load the real 26B-A4B, assert shapes and tensor coverage (nothing
-silently unconsumed).
+silently unconsumed). **PARTIAL (tiny-model only, `51ea350`+`9c04ea3`):** the gemma4
+safetensors branch loads the tiny checkpoint — per-layer attention widths (global
+`global_head_dim`), `layer_scalar`, K=V globals (`4a`), and experts streamed one at a time
+via `embed.Tensor.SubF32` + quantized at load (int8/int4). Still unwritten for the real 26B:
+the `model.language_model.*` prefix and vision-tower skip, plus the real-checkpoint gate
+itself (Phase 4). The `experts.gate_up` split is contiguous `chunk(2)` per Phase 1a, so no
+transpose is needed; `streamExperts` is the fused-expert reader (the `loadFusedExperts`
+analogue that avoids the whole-tensor f32 materialization).
 
 **Phase 4 — real-checkpoint parity.** Full-model int8/int4 parity vs the HF bf16 oracle on
 the real checkpoint, per `docs/parity-coverage-policy.md`. Mellum2-style: argmax-exact on
