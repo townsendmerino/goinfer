@@ -475,12 +475,11 @@ Parity-first, matching the Gemma 4 dense and `qwen3_5_moe` bring-ups.
 
 ## Status (2026-07-31)
 
-Phases 1a–2b landed and pushed; the whole-model forward matches the HF oracle
-bit-for-bit on the tiny checkpoint (cosine 1.0, byte-identical greedy continuation).
-K=V global layers and expert quantize-at-load followed. **The real 26B-A4B has NOT
-been loaded end-to-end** (the Phase 4 headline gate) — the checkpoint is a ~50 GB
-download, infeasible on the dev box; the cached dense gemma-4-12B config was used to
-confirm the real structural facts instead.
+Phases 1a–4 landed. The whole-model forward matches the HF oracle bit-for-bit on the
+tiny checkpoint (cosine 1.0), and **the real gemma-4-26b-a4b-it now loads and generates
+coherent English at int8** — the loader needed no changes (the unified
+`model.language_model.*` prefix auto-detects, `text_config` flattens, vision skipped),
+plus a nested-RoPE-base fix.
 
 | Phase | State | Where |
 |---|---|---|
@@ -489,10 +488,35 @@ confirm the real structural facts instead.
 | 1c tiny-random HF golden | ✅ | `d1b2189` |
 | 2a FFN sub-block op-golden | ✅ | `f7515eb` (cosine 1.0, maxAbs 8e-7) |
 | 2b wire into `runLayersGemma4` | ✅ | `51ea350` (whole-model cosine 1.0) |
-| 3 loader + schema — **TINY ONLY** | ◐ | `51ea350` + `9c04ea3`; tiny checkpoint validated (per-layer attn widths, `layer_scalar`, streamed+quantized experts). **Real 26B not loaded**; the `model.language_model.*` prefix + vision skip are unwritten. |
+| 3 loader + schema | ✅ | `51ea350`+`9c04ea3`+`54d3096`; unified prefix auto-detect + `text_config` flatten + vision skip, proven on a synthetic unified checkpoint — real 26B loads with no loader change |
 | 4a K=V global layers | ✅ | `9e83043` (`attention_k_eq_v`/VFromK + `num_global_key_value_heads`, cosine 1.0) |
-| 4 real-checkpoint parity | ☐ | blocked on the ~50 GB download |
-| 5–8 (bench, streaming I/O, overlap, expert-major) | ☐ | not started |
+| 4 real-checkpoint | ✅ | `681db0c`+`625303e`: real 26B loads (30 layers, 128 experts top-8, K=V globals) + coherent English **at int8** (`TestGemma4_26B_gate`). |
+| 5 benchmark | ⛔ | BLOCKED on quality: **no coherent config ≤16 GB yet** — see the int4 finding below. |
+| 6–8 (streaming I/O, overlap, expert-major) | ☐ | not started |
+
+**int4 quality finding (Phase 5 blocker) — scripts/gemma4_quant_recon.py + realckpt diagnostics.**
+int8 (~26 GB) is coherent but doesn't fit the M1 Pro 16 GB target; **int4 is incoherent**,
+so Phase 5 is blocked on output quality, not throughput. Measured:
+- The deficit is the **int4 WEIGHTS**, not activation quant: both W4A8 (int8 activations,
+  the default) and W4A16 (f32 activations, `int4A16Diag` diagnostic) generate garbage,
+  while int8 is coherent. (An earlier note claiming W4A16 fixed it was an error — that run
+  had the gate at int8.)
+- Per-tensor int4 reconstruction is **uniform** (~0.995 cosine across experts / dense MLP /
+  attention / tied head) and near-symmetric (per-group skew ~0.06), so it's not a single
+  bad tensor class and not primarily a zero-point problem.
+- **Symmetric vs affine**: goinfer's sym-group-32 (cosine 0.99514, rel-RMS 9.9%) is *just
+  below* turbo-fieldfare's MLX affine-group-64 (0.99586), which runs this exact checkpoint
+  coherently at ~14.3 GB — a narrow but real threshold. Affine group-32 would be 0.99690 /
+  rel-RMS 7.9% (~20% lower error), well above it. goinfer already keeps the router f32 and
+  the embed/head int8 (both *better* than fieldfare's 8-bit router / 4-bit tables), so the
+  gap is purely the 4-bit expert weight quantizer: symmetric-15-level vs affine-16-level.
+
+**Recommendation:** implement **affine int4** (aikit, behind a new mode; existing sym int4
+stays bit-identical) — the config MLX proves coherent on this checkpoint, expected ~13 GB.
+Mixed precision can't substitute: the experts are ~22.8 B of 25.2 B params, so anything that
+keeps them ≥int8 exceeds 16 GB, and int4-uniform-error means keeping the *non*-expert tensors
+int8 (they're already the accurate part) won't move the needle. This is the multi-day Step 4
+(quantizer + W4A8/dequant paths + a `.giw` v5 for per-group zero-points); land it deliberately.
 
 **Follow-up review (post-`51ea350`), one commit each:**
 - RMSAddOne consistency in `gemma4MoEFFN` — `97d2a2c`
