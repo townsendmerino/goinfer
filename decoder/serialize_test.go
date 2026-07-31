@@ -375,6 +375,7 @@ func TestCanSerialize_refusesUnrepresentable(t *testing.T) {
 		"deepseek_v2": "MLA", "deepseek_v3": "MLA", "kimi_k2": "MLA",
 		"granitemoehybrid": "Mamba-2", "nemotron_h": "Mamba-2",
 		"gemma4":      "PLE",
+		"gemma4_text": "PLE", // gemma4 MoE variant: own forward (PLE/per-layer) + gemma4moe experts, both undropped by .giw
 		"llama4_text": "unsupported",
 	}
 	for name := range archFeatureProfile {

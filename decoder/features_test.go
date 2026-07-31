@@ -49,6 +49,10 @@ var archFeatureProfile = map[string][]ResidentFeature{
 	"gemma3":      {FeatEmbedScale, FeatGatedGELU, FeatPerLayerRoPE, FeatQKNorm, FeatRMSAddOne, FeatSandwichNorm, FeatSlidingWindow},
 	"gemma3_text": {FeatEmbedScale, FeatGatedGELU, FeatPerLayerRoPE, FeatQKNorm, FeatRMSAddOne, FeatSandwichNorm, FeatSlidingWindow},
 	"gemma4":      {FeatEmbedScale, FeatGatedGELU, FeatLogitSoftcap, FeatPerLayerRoPE, FeatQKNorm, FeatSandwichNorm, FeatSlidingWindow},
+	// gemma4_text is the 26B-A4B MoE variant: gemma4's feature set + FeatMoE (the
+	// parallel dense+MoE FFN). Refused on CUDA/Metal like gemma4 (own forward +
+	// logit-softcap); the added MoE only widens the gap.
+	"gemma4_text": {FeatEmbedScale, FeatGatedGELU, FeatLogitSoftcap, FeatMoE, FeatPerLayerRoPE, FeatQKNorm, FeatSandwichNorm, FeatSlidingWindow},
 }
 
 // TestResidentAdmission_registryCovered is THE recurrence guard. Every architecture in the
