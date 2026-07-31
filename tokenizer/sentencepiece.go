@@ -354,13 +354,32 @@ func (t *Tokenizer) initGemma(tj *tokenizerJSON) error {
 		dst   *int
 	}{
 		{"<bos>", &t.special.BOS}, {"<eos>", &t.special.EOS}, {"<pad>", &t.special.Pad},
-		{"<start_of_turn>", &t.special.StartOfTurn}, {"<end_of_turn>", &t.special.EndOfTurn},
 	} {
 		id, err := mustID(r.piece)
 		if err != nil {
 			return err
 		}
 		*r.dst = int(id)
+	}
+	// Chat turn markers are OPTIONAL and family-specific — Gemma 3 uses
+	// <start_of_turn>/<end_of_turn>, Gemma 4 renamed them to <|turn>/<turn|>, Qwen uses
+	// <|im_start|>/<|im_end|>. A plain-text/base checkpoint may have none. -1 = absent
+	// (only chat-template rendering needs them; tokenization/generation doesn't). Mirrors
+	// the gguf/bytelevel tokenizers, which already default these to -1.
+	t.special.StartOfTurn, t.special.EndOfTurn = -1, -1
+	for _, r := range []struct {
+		pieces []string
+		dst    *int
+	}{
+		{[]string{"<start_of_turn>", "<|turn>", "<|im_start|>"}, &t.special.StartOfTurn},
+		{[]string{"<end_of_turn>", "<turn|>", "<|im_end|>"}, &t.special.EndOfTurn},
+	} {
+		for _, p := range r.pieces {
+			if id, ok := t.vocab[p]; ok {
+				*r.dst = int(id)
+				break
+			}
+		}
 	}
 	return nil
 }
