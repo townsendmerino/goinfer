@@ -151,7 +151,7 @@
     "display_name": "Gemma 4",
     "description": "Google Gemma 4 dense + E-models (per-layer attention deltas, PLE)",
     "coverage_axis": "softmax-GQA",
-    "moe": "dense",
+    "moe": "dense ‖ sparse, no-shared",
     "sliding_window": "interleave",
     "qk_norm": true,
     "rope_style": "dual-base",

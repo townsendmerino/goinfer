@@ -385,6 +385,19 @@ func loadParityManifest() (*parityManifest, error) {
 
 // moeColumn renders the MoE column from the resolved descriptor. Expert/top-k
 // counts vary by checkpoint, so only the family-constant structure is printed.
+// mergeColumn unions a derived column value into a group's cell when a family's
+// aliases differ on it, joining distinct values with " ‖ " in first-seen
+// (sorted-key) order. Used for the MoE column of a family that ships both a dense
+// and a sparse variant under one Architecture.Name.
+func mergeColumn(existing, add string) string {
+	for _, p := range strings.Split(existing, " ‖ ") {
+		if p == add {
+			return existing
+		}
+	}
+	return existing + " ‖ " + add
+}
+
 func moeColumn(a *Architecture) string {
 	if a.MoE == nil {
 		return "dense"
@@ -514,6 +527,14 @@ func buildMatrix(t *testing.T) ([]capabilityRow, error) {
 				Parity:        parity,
 			}
 			rows[arch.Name] = r
+		} else {
+			// A family whose aliases resolve to one Architecture.Name but differ in a
+			// derived column (Gemma 4: the dense E-models + the 26B-A4B sparse MoE, both
+			// arch.Name "gemma4") must report the union, not just the first alias's value
+			// — else the row reads plain "dense" and hides the MoE variant. MoE is the
+			// only column that varies within such a group (attention/norm/rope/residency
+			// are identical dense vs MoE); merge it.
+			r.MoE = mergeColumn(r.MoE, moeColumn(arch))
 		}
 		r.Aliases = append(r.Aliases, mt)
 	}
