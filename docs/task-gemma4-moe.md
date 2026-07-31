@@ -23,6 +23,58 @@ from a pinned `transformers` version.
 
 ---
 
+# Phase 1a — RESOLVED (pinned against `transformers` 5.12.0)
+
+Read `transformers/models/gemma4/modeling_gemma4.py` (identical in 5.10.2 ±1 line) and
+`configuration_gemma4.py`. The MoE branch is fully present (the earlier fetched copy was the
+one elided). Every ⚠️ above is resolved; line refs are into 5.12.0's `modeling_gemma4.py`.
+
+**Decoder-layer FFN wiring — the inferred pseudocode in §A1 is CORRECT** (`Gemma4TextDecoderLayer.forward`, L1398–1455). Confirmed, with one subtlety that matters:
+
+```
+residual = h                                   # L1424 (post-attention hidden)
+x1 = post_feedforward_layernorm_1( mlp( pre_feedforward_layernorm(h) ) )   # L1425–1429
+# MoE branch reads the RAW residual h, NOT pre_feedforward_layernorm(h):
+_, w, idx = router( h.reshape(-1, D) )         # L1432–1433  (router has its OWN norm — see below)
+x2 = post_feedforward_layernorm_2( experts( pre_feedforward_layernorm_2(h), idx, w ) )  # L1434–1437
+h  = residual + post_feedforward_layernorm( x1 + x2 )    # L1440–1443  (single joint post-norm on the SUM)
+# … PLE block skipped (hidden_size_per_layer_input=0) …
+h *= layer_scalar                              # L1454  (VERY END, after the residual add)
+```
+
+- **⚠️ Three independent normalizations of the same `h`.** The dense branch consumes
+  `pre_feedforward_layernorm(h)`; the expert branch consumes `pre_feedforward_layernorm_2(h)`
+  (its **own** learned-weight RMSNorm, on the raw residual, **not** the dense pre-norm); the
+  router consumes `h` through its **own weightless** RMSNorm + learned scale. **Do not share
+  the dense pre-norm output with the MoE branch** — that's the exact subtle drift a
+  cosine-only gate hides. `post_feedforward_layernorm` is applied **once** to `x1+x2`, then
+  the residual is added.
+- **⚠️ `layer_scalar` placement: END, after the residual add** (`h *= layer_scalar`, L1454) —
+  a whole-layer multiply, NOT inside a sublayer. It's a `register_buffer("layer_scalar",
+  torch.ones(1))` (L1381) — a **scalar buffer** (shape [1]), not a per-channel vector.
+  `LayerWeights.LayerScalar` already exists; wire it into `runLayersGemma4`'s tail.
+  (Dense E2B/E4B/12B run the same tail with `layer_scalar` — it's 1.0 in those checkpoints, so
+  the existing dense parity is unaffected; the MoE checkpoint trains it away from 1.)
+
+**Router (`Gemma4TextRouter`, L1333–1366) — all three §A2 deltas confirmed:**
+- **`router.norm` is WEIGHTLESS.** `Gemma4RMSNorm(hidden, with_scale=False)` (L1341); `with_scale=False` ⇒ no weight parameter (L194/197/199/209). **No `router.norm.weight` tensor; no LayerWeights slot for it** — it's a pure RMS normalize.
+- **`scalar_root_size = hidden_size**-0.5`** (L1338) — a constant (1/√2816 ≈ 0.018842 for 26B-A4B), not learned.
+- **`router.scale` IS a learned `[hidden]` parameter** (`nn.Parameter(ones(hidden))`, L1343). Applied element-wise **before** the projection: `norm(h) * scale * scalar_root_size` (L1347–1348). This **is** a tensor to load (index name `router.scale`). So the router pre-projection input = `rmsnorm(h) ⊙ router.scale · (1/√hidden)` — distinct from `pre_feedforward_layernorm_2`.
+- **`NormTopKProb` is UNCONDITIONALLY true.** `top_k_weights /= top_k_weights.sum(-1)` (L1361) with no config gate — set it `true` regardless of `config.json`.
+- **Selection = softmax-over-ALL then top-k by probability then renorm** (L1350–1361): `softmax(proj(x))` over all 128 → `topk(probs, k)` → renorm. Mathematically the same shape `routeExperts(logits, sigmoid=false, norm=true)` already produces (the gpt-oss equivalence). So `routeExperts` is reusable; the router pre-norm/scale is caller-side, and `per_expert_scale` is a post-step.
+- **`per_expert_scale` is a learned `[num_experts]` vector**, applied to the **renormalized** top-k weights, indexed by the selected experts: `w *= per_expert_scale[idx]` (L1364). New `MoEConfig`/`LayerWeights` field + an extra return-path arg to `routeExperts`. (`register`/`proj.weight` is f32 — keep full precision.)
+
+**Experts (`Gemma4TextExperts`, L1293–1330) — §A3 split + activation confirmed:**
+- **`gate_up` split is CONTIGUOUS.** `linear(x, gate_up_proj[e]).chunk(2, dim=-1)` (L1324) ⇒ `gate = out[:704]`, `up = out[704:]`. Not interleaved. `loadFusedExperts` (contiguous halves) is reusable.
+- Shapes: `gate_up_proj` `[E, 2·inter, hidden]` = `[128, 1408, 2816]` (L1302, `linear` computes `x @ Wᵀ`, so it's `[out, in]`); `down_proj` `[E, hidden, inter]` = `[128, 2816, 704]` (L1303).
+- **Expert activation is gelu-tanh GeGLU**: `act_fn(gate) * up` (L1325) with `act_fn = ACT2FN[hidden_activation]` (L1304); **`hidden_activation = "gelu_pytorch_tanh"`** (config L164). So the experts use goinfer's `ActGeluTanh`, **not SiLU** — `swiGLUExpert`/`moeMLP` (which hardcode/require SiLU) can't be reused as-is; gemma4's own forward must run a gelu-tanh expert. The **dense branch** (`Gemma4TextMLP`, gelu-tanh GeGLU, `down(act(gate(x))·up(x))`) uses `intermediate_size 2112` (`use_double_wide_mlp=false` ⇒ no doubling); experts use `moe_intermediate_size 704`.
+
+**Residual naming caveat resolved:** the `experts.gate_up_proj` linear output dim is `2·704`; `top_k_weights` multiply happens INSIDE the expert loop (L1327), before `index_add_`, so the per-token weight (already `× per_expert_scale`) scales the expert's contribution — matches `moeMLP`'s weighted sum.
+
+Nothing above needs a `transformers` newer than what's installed; the ⚠️ markers below are now settled by these refs.
+
+---
+
 # Part A — MoE bring-up
 
 ## Config (Gemma 4 26B-A4B, from `text_config`)
