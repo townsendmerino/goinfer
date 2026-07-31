@@ -41,6 +41,7 @@ EMIT_GATES=(
   "TestDeepseekMoonlightReal_gate|deepseek_v3"
   "TestQwen35Real_gate2FullModel|qwen3_5_moe"
   "TestCohereAyaReal_gate|cohere"
+  "TestCohere2R7bReal_gate|cohere2"
 )
 if [ "$EMIT_MANIFEST" = "1" ]; then
   export GOINFER_MANIFEST_EMIT=1
