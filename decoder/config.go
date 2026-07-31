@@ -724,6 +724,33 @@ func (c *Config) gemma4PartialRotary() float64 {
 	return rp["full_attention"].PartialRotaryFactor
 }
 
+// gemma4RopeBases returns the (local, global) RoPE base wavelengths. Gemma 4's real
+// unified checkpoints keep these NESTED in rope_parameters — sliding_attention.rope_theta
+// (local, 10000) and full_attention.rope_theta (global, 1e6) — with NO top-level
+// rope_theta / rope_local_base_freq, whereas the tiny/text goldens and the GGUF path
+// carry the flat fields. Prefer the flat values, fall back to the nested ones. Base 0
+// (both absent) makes every RoPE frequency 0/NaN and the model emits garbage, so the
+// nested fallback is load-bearing, not cosmetic.
+func (c *Config) gemma4RopeBases() (local, global float64) {
+	local, global = c.RoPELocalBase, c.RoPEGlobalBase
+	if (local > 0 && global > 0) || len(c.RopeParameters) == 0 {
+		return
+	}
+	var rp map[string]struct {
+		RopeTheta float64 `json:"rope_theta"`
+	}
+	if err := json.Unmarshal(c.RopeParameters, &rp); err != nil {
+		return
+	}
+	if local == 0 {
+		local = rp["sliding_attention"].RopeTheta
+	}
+	if global == 0 {
+		global = rp["full_attention"].RopeTheta
+	}
+	return
+}
+
 // EOSIDs returns the configured end-of-sequence token ids, handling both the
 // scalar (eos_token_id: 1) and list (eos_token_id: [1, 106]) JSON shapes HF
 // emits. Empty when the field is absent.

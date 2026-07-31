@@ -171,6 +171,9 @@ func gemma4Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if prf := cfg.gemma4PartialRotary(); prf > 0 && cfg.GlobalHeadDim > 0 {
 		globalRotary = int(prf * float64(cfg.GlobalHeadDim))
 	}
+	// The real unified 26B keeps the RoPE bases nested in rope_parameters (no top-level
+	// rope_theta / rope_local_base_freq); resolve them so the frequencies aren't 0/NaN.
+	localBase, globalBase := cfg.gemma4RopeBases()
 	// Gemma 4 26B-A4B: enable_moe_block turns on the parallel dense+MoE FFN sub-block.
 	// The dense E2B/E4B/12B variants leave it false ⇒ MoE stays nil and their forward
 	// is byte-unchanged. The router semantics (softmax-all → top-k → UNCONDITIONAL
@@ -216,8 +219,8 @@ func gemma4Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		AttnScale:      1.0,
 		SlidingWindow:  cfg.SlidingWindow,
 		layerIsGlobal:  cfg.IsGlobalLayer,
-		RoPELocalBase:  cfg.RoPELocalBase,
-		RoPEGlobalBase: cfg.RoPEGlobalBase,
+		RoPELocalBase:  localBase,
+		RoPEGlobalBase: globalBase,
 		EmbedScale:     math.Sqrt(float64(cfg.HiddenDim)),
 		TiedLMHead:     true,
 		// Gemma 4 re-added Gemma 2's final-logit softcap (30 in the GGUF); Gemma 3
