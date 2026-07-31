@@ -17,30 +17,31 @@ type archAdapter func(*Config) (*Architecture, *tensorSchema, error)
 // is a new entry here plus its tensor schema — the
 // forward pass itself doesn't change.
 var registry = map[string]archAdapter{
-	"gemma3":           gemma3Architecture,
-	"gemma3_text":      gemma3Architecture,     // the 270M/1B text checkpoints
-	"gemma4":           gemma4Architecture,     // Gemma 4 (E2B/E4B + 12B dense; parity-gated)
-	"gemma4_text":      gemma4Architecture,     // Gemma 4 text checkpoints (incl. the 26B-A4B MoE tiny/real: model_type gemma4_text)
-	"qwen3":            qwen3Architecture,      // Qwen3 dense (0.6B/1.7B/4B/8B/…)
-	"qwen2":            qwen2Architecture,      // Qwen2/Qwen2.5 dense (llama + q/k/v bias)
-	"qwen2_5_vl":       qwen2_5_vlArchitecture, // Qwen2.5-VL text decoder (qwen2 + m-RoPE; nested rope_parameters)
-	"qwen2_moe":        qwen2MoeArchitecture,   // Qwen-MoE/Qwen2-MoE (qwen2 + sparse MoE + shared expert)
-	"llama":            llamaArchitecture,      // Llama-2/3 dense (single-base RoPE, no QK-norm)
-	"mistral":          mistralArchitecture,    // Llama + all-layer sliding-window attention
-	"gpt2":             gpt2Architecture,       // GPT-2: LayerNorm, learned pos, non-gated GELU MLP, fused QKV
-	"mixtral":          mixtralArchitecture,    // Llama + sparse MoE FFN (router + top-k experts)
-	"mellum":           mellumArchitecture,     // JetBrains Mellum2: MoE + sliding/full interleave + YaRN
-	"qwen3_5_moe":      qwen35Architecture,     // Qwen3.5/3.6-MoE: Gated DeltaNet (linear) + softmax hybrid + MoE
-	"qwen3_5_moe_text": qwen35Architecture,     // the text-only checkpoint's model_type
-	"glm4_moe":         glm4moeArchitecture,    // GLM-4.5/4.6: DeepSeek-style MoE (sigmoid routing + bias) + dense prefix + QK-norm + partial RoPE
-	"granitemoehybrid": graniteArchitecture,    // Granite-4.0-H: Mamba-2 + attention hybrid + MoE-on-every-layer + Granite multipliers
-	"nemotron_h":       nemotronhArchitecture,  // Nemotron-H: single-op-per-block hybrid (mamba | NoPE-attention | relu² MLP)
-	"deepseek_v2":      deepseekArchitecture,   // DeepSeek-V2 (MLA + DeepSeekMoE; softmax routing, V2-Lite has no q-LoRA)
-	"deepseek_v3":      deepseekArchitecture,   // DeepSeek-V3 (MLA + DeepSeekMoE; sigmoid + e_score_correction_bias group-limited routing)
-	"kimi_k2":          deepseekArchitecture,   // Kimi K2/K2.x (architectures=DeepseekV3ForCausalLM): MLA + DeepSeekMoE, "basically V3" — 64 heads / 384 experts, config scalars only
-	"phi3":             phi3Architecture,       // Phi-3 / Phi-4 dense: llama skeleton + fused qkv_proj / gate_up_proj (split at load) + partial rotary
-	"llama4_text":      llama4Architecture,     // Llama 4 (Scout/Maverick) text decoder: iRoPE (RoPE/NoPE interleave) + L2 QK-norm + attn-temp + dense/MoE interleave (top-1 sigmoid + shared)
-	"gpt_oss":          gptOssArchitecture,     // gpt-oss (20b/120b): sparse MoE + per-head attention sinks + clamped interleaved-SwiGLU + alternating sliding/full + YaRN (MXFP4 experts; CPU-only)
+	"gemma3":              gemma3Architecture,
+	"gemma3_text":         gemma3Architecture,     // the 270M/1B text checkpoints
+	"gemma4":              gemma4Architecture,     // Gemma 4 (E2B/E4B + 12B dense; parity-gated)
+	"gemma4_text":         gemma4Architecture,     // Gemma 4 text checkpoints (the 26B-A4B MoE tiny golden: model_type gemma4_text)
+	"gemma4_unified_text": gemma4Architecture,     // real Gemma 4 unified checkpoints' text_config model_type (E2B/E4B/12B dense + 26B-A4B MoE; K=V globals, model.language_model.* prefix)
+	"qwen3":               qwen3Architecture,      // Qwen3 dense (0.6B/1.7B/4B/8B/…)
+	"qwen2":               qwen2Architecture,      // Qwen2/Qwen2.5 dense (llama + q/k/v bias)
+	"qwen2_5_vl":          qwen2_5_vlArchitecture, // Qwen2.5-VL text decoder (qwen2 + m-RoPE; nested rope_parameters)
+	"qwen2_moe":           qwen2MoeArchitecture,   // Qwen-MoE/Qwen2-MoE (qwen2 + sparse MoE + shared expert)
+	"llama":               llamaArchitecture,      // Llama-2/3 dense (single-base RoPE, no QK-norm)
+	"mistral":             mistralArchitecture,    // Llama + all-layer sliding-window attention
+	"gpt2":                gpt2Architecture,       // GPT-2: LayerNorm, learned pos, non-gated GELU MLP, fused QKV
+	"mixtral":             mixtralArchitecture,    // Llama + sparse MoE FFN (router + top-k experts)
+	"mellum":              mellumArchitecture,     // JetBrains Mellum2: MoE + sliding/full interleave + YaRN
+	"qwen3_5_moe":         qwen35Architecture,     // Qwen3.5/3.6-MoE: Gated DeltaNet (linear) + softmax hybrid + MoE
+	"qwen3_5_moe_text":    qwen35Architecture,     // the text-only checkpoint's model_type
+	"glm4_moe":            glm4moeArchitecture,    // GLM-4.5/4.6: DeepSeek-style MoE (sigmoid routing + bias) + dense prefix + QK-norm + partial RoPE
+	"granitemoehybrid":    graniteArchitecture,    // Granite-4.0-H: Mamba-2 + attention hybrid + MoE-on-every-layer + Granite multipliers
+	"nemotron_h":          nemotronhArchitecture,  // Nemotron-H: single-op-per-block hybrid (mamba | NoPE-attention | relu² MLP)
+	"deepseek_v2":         deepseekArchitecture,   // DeepSeek-V2 (MLA + DeepSeekMoE; softmax routing, V2-Lite has no q-LoRA)
+	"deepseek_v3":         deepseekArchitecture,   // DeepSeek-V3 (MLA + DeepSeekMoE; sigmoid + e_score_correction_bias group-limited routing)
+	"kimi_k2":             deepseekArchitecture,   // Kimi K2/K2.x (architectures=DeepseekV3ForCausalLM): MLA + DeepSeekMoE, "basically V3" — 64 heads / 384 experts, config scalars only
+	"phi3":                phi3Architecture,       // Phi-3 / Phi-4 dense: llama skeleton + fused qkv_proj / gate_up_proj (split at load) + partial rotary
+	"llama4_text":         llama4Architecture,     // Llama 4 (Scout/Maverick) text decoder: iRoPE (RoPE/NoPE interleave) + L2 QK-norm + attn-temp + dense/MoE interleave (top-1 sigmoid + shared)
+	"gpt_oss":             gptOssArchitecture,     // gpt-oss (20b/120b): sparse MoE + per-head attention sinks + clamped interleaved-SwiGLU + alternating sliding/full + YaRN (MXFP4 experts; CPU-only)
 }
 
 // resolveArchitecture picks the adapter for cfg.ModelType and builds the

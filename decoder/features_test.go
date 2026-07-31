@@ -53,6 +53,10 @@ var archFeatureProfile = map[string][]ResidentFeature{
 	// parallel dense+MoE FFN). Refused on CUDA/Metal like gemma4 (own forward +
 	// logit-softcap); the added MoE only widens the gap.
 	"gemma4_text": {FeatEmbedScale, FeatGatedGELU, FeatLogitSoftcap, FeatMoE, FeatPerLayerRoPE, FeatQKNorm, FeatSandwichNorm, FeatSlidingWindow},
+	// gemma4_unified_text — the real unified checkpoints' text_config model_type;
+	// same feature set as gemma4_text (K=V globals are a loader detail, not a
+	// resident feature).
+	"gemma4_unified_text": {FeatEmbedScale, FeatGatedGELU, FeatLogitSoftcap, FeatMoE, FeatPerLayerRoPE, FeatQKNorm, FeatSandwichNorm, FeatSlidingWindow},
 }
 
 // TestResidentAdmission_registryCovered is THE recurrence guard. Every architecture in the

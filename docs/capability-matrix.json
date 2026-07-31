@@ -145,7 +145,8 @@
     "name": "gemma4",
     "model_types": [
       "gemma4",
-      "gemma4_text"
+      "gemma4_text",
+      "gemma4_unified_text"
     ],
     "display_name": "Gemma 4",
     "description": "Google Gemma 4 dense + E-models (per-layer attention deltas, PLE)",

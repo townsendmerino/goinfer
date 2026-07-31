@@ -9,19 +9,20 @@ import (
 	"testing"
 )
 
-// TestGemma4MoE_forwardParity is the Phase-2b end-to-end gate: goinfer's whole
-// gemma4 forward — Load of the tiny enable_moe_block checkpoint (the safetensors
-// loader's gemma4 branch: dense MLP + layer_scalar + the parallel MoE sub-block)
-// driving runLayersGemma4 with gemma4MoEFFN wired in — against the HF oracle in
-// scripts/pin_gemma4_moe_forward.py. f32 weights, so this is a TIGHT gate: the
-// last-token argmax must match, the full-vocab logits must match by cosine, and
-// the greedy continuation must be byte-identical. The scaling params (norms /
-// router.scale / per_expert_scale / layer_scalar) are strengthened in the
-// generator, so an identity/no-op bug in how goinfer applies them can't hide.
-func TestGemma4MoE_forwardParity(t *testing.T) {
-	raw, err := os.ReadFile("../testdata/gemma4_moe_forward_golden.json")
+// gemma4MoEForwardParity is the whole-model gemma4 forward gate shared by the
+// plain-MoE and K=V-global variants: Load of a tiny enable_moe_block checkpoint
+// (the safetensors loader's gemma4 branch — per-layer attention widths, dense MLP
+// + layer_scalar + the parallel MoE sub-block) driving runLayersGemma4 with
+// gemma4MoEFFN wired in, against the HF oracle in scripts/pin_gemma4_moe*.py. f32
+// weights, so this is TIGHT: the last-token argmax must match, the full-vocab
+// logits must match by cosine, and the greedy continuation must be byte-identical.
+// The scaling params (norms / router.scale / per_expert_scale / layer_scalar) are
+// strengthened in the generator, so an identity/no-op bug can't hide.
+func gemma4MoEForwardParity(t *testing.T, goldenPath, ckpt, pinner string) {
+	t.Helper()
+	raw, err := os.ReadFile(goldenPath)
 	if errors.Is(err, fs.ErrNotExist) {
-		t.Skip("no golden — run scripts/pin_gemma4_moe_forward.py")
+		t.Skipf("no golden — run %s", pinner)
 	}
 	if err != nil {
 		t.Fatalf("read golden: %v", err)
@@ -36,9 +37,8 @@ func TestGemma4MoE_forwardParity(t *testing.T) {
 	if err := json.Unmarshal(raw, &g); err != nil {
 		t.Fatalf("parse golden: %v", err)
 	}
-	const ckpt = "../testdata/gemma4-moe-tiny"
 	if _, err := os.Stat(ckpt); errors.Is(err, fs.ErrNotExist) {
-		t.Skipf("no tiny checkpoint (%s) — run scripts/pin_gemma4_moe_forward.py", ckpt)
+		t.Skipf("no tiny checkpoint (%s) — run %s", ckpt, pinner)
 	}
 	m, err := Load(ckpt, Options{Quant: "f32"})
 	if err != nil {
@@ -113,4 +113,25 @@ func TestGemma4MoE_forwardParity(t *testing.T) {
 			break
 		}
 	}
+}
+
+// TestGemma4MoE_forwardParity is the Phase-2b gate: the tiny enable_moe_block
+// checkpoint (v_proj on every layer) end-to-end vs the HF oracle.
+func TestGemma4MoE_forwardParity(t *testing.T) {
+	gemma4MoEForwardParity(t,
+		"../testdata/gemma4_moe_forward_golden.json",
+		"../testdata/gemma4-moe-tiny",
+		"scripts/pin_gemma4_moe_forward.py")
+}
+
+// TestGemma4MoEKV_forwardParity is the Phase-4 gate for the K=V global layers the
+// real 26B-A4B uses (attention_k_eq_v, num_global_key_value_heads=1): the global
+// layer carries NO v_proj — V is v_norm(k_proj output) — exercising the loader's
+// VFromK path and the forward's copy-K-into-V branch, which the plain-MoE golden
+// (v_proj everywhere) never touches.
+func TestGemma4MoEKV_forwardParity(t *testing.T) {
+	gemma4MoEForwardParity(t,
+		"../testdata/gemma4_moe_kv_forward_golden.json",
+		"../testdata/gemma4-moe-kv-tiny",
+		"scripts/pin_gemma4_moe_kv_forward.py")
 }

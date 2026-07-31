@@ -78,6 +78,21 @@ func representativeConfig(modelType string) *Config {
 			HiddenActivation: "gelu_pytorch_tanh",
 			LayerTypes:       []string{"sliding_attention", "full_attention"},
 		}
+	case "gemma4_unified_text":
+		// The real unified checkpoints' text_config model_type (E2B/E4B/12B dense +
+		// 26B-A4B MoE). Same as gemma4_text but with the K=V global layers the real
+		// models use: attention_k_eq_v + num_global_key_value_heads=1 (global layers
+		// drop v_proj; V = v_norm(k)). Canned as the MoE variant (widest feature set).
+		return &Config{
+			ModelType: "gemma4_unified_text", HiddenDim: 64, NumLayers: 2, NumHeads: 4, NumKVHeads: 2,
+			HeadDim: 16, IntermediateDim: 48, VocabSize: 256, RMSNormEps: 1e-6,
+			RoPELocalBase: 10000, RoPEGlobalBase: 1000000, SlidingWindow: 4,
+			GlobalHeadDim: 512, NumGlobalKVHeads: 1, AttentionKEqV: true, FinalLogitSoftcap: 30,
+			EnableMoeBlock: true, NumExperts: 8, TopKExperts: 2, MoeIntermediateSize: 16,
+			RopeParameters:   json.RawMessage(`{"full_attention":{"rope_type":"proportional","partial_rotary_factor":0.25,"rope_theta":1000000.0},"sliding_attention":{"rope_type":"default","rope_theta":10000.0}}`),
+			HiddenActivation: "gelu_pytorch_tanh",
+			LayerTypes:       []string{"sliding_attention", "full_attention"},
+		}
 	case "qwen3":
 		return &Config{
 			ModelType: "qwen3", VocabSize: 128, HiddenDim: 16, NumLayers: 2, NumHeads: 4,
@@ -266,30 +281,31 @@ type familyDoc struct {
 }
 
 var familyDocs = map[string]familyDoc{
-	"gemma3":           {"Gemma 3", "Google Gemma 3 dense (270M/1B/4B/12B/27B)", "safetensors, GGUF", "text (+ vision via VL text_config)"},
-	"gemma3_text":      {"Gemma 3", "Google Gemma 3 dense (270M/1B/4B/12B/27B)", "safetensors, GGUF", "text (+ vision via VL text_config)"},
-	"gemma4":           {"Gemma 4", "Google Gemma 4 dense + E-models (per-layer attention deltas, PLE)", "safetensors, GGUF", "text"},
-	"gemma4_text":      {"Gemma 4", "Google Gemma 4 text (incl. 26B-A4B parallel dense+MoE FFN, enable_moe_block)", "safetensors, GGUF", "text"},
-	"qwen3":            {"Qwen3", "Alibaba Qwen3 dense (QK-norm, no bias)", "safetensors, GGUF", "text"},
-	"qwen2":            {"Qwen2 / Qwen2.5", "Alibaba Qwen2/2.5 dense (q/k/v bias)", "safetensors, GGUF", "text"},
-	"qwen2_5_vl":       {"Qwen2.5-VL", "Qwen2.5-VL text decoder (qwen2 + m-RoPE)", "safetensors", "text (+ vision tower)"},
-	"qwen2_moe":        {"Qwen2-MoE", "Qwen1.5/2 MoE (sparse + always-on shared expert)", "safetensors, GGUF", "text"},
-	"llama":            {"Llama", "Meta Llama 2/3 dense (single-base RoPE)", "safetensors, GGUF, GPTQ, AWQ", "text"},
-	"mistral":          {"Mistral", "Mistral dense (all-layer sliding window)", "safetensors, GGUF", "text"},
-	"gpt2":             {"GPT-2", "GPT-2/NeoX (LayerNorm, learned positions, non-gated GELU)", "safetensors, GGUF", "text"},
-	"mixtral":          {"Mixtral", "Mistral + sparse MoE FFN (router + top-k experts)", "safetensors, GGUF", "text"},
-	"mellum":           {"Mellum2", "JetBrains Mellum2 code model (MoE + sliding/full interleave + YaRN)", "safetensors, GGUF", "text"},
-	"qwen3_5_moe":      {"Qwen3.5-MoE", "Qwen3.5/3.6 hybrid: Gated DeltaNet + softmax + MoE", "safetensors, GGUF", "text"},
-	"qwen3_5_moe_text": {"Qwen3.5-MoE", "Qwen3.5/3.6 hybrid: Gated DeltaNet + softmax + MoE", "safetensors, GGUF", "text"},
-	"glm4_moe":         {"GLM-4.5/4.6", "Zhipu GLM-4.5/4.6 DeepSeek-style MoE (sigmoid routing + dense prefix)", "safetensors, GGUF", "text"},
-	"granitemoehybrid": {"Granite-4.0-H", "IBM Granite-4.0-H: Mamba-2 + attention hybrid + MoE-on-every-layer", "safetensors, GGUF", "text"},
-	"nemotron_h":       {"Nemotron-H", "NVIDIA Nemotron-H single-op-per-block hybrid (mamba | attention | relu² MLP)", "safetensors, GGUF", "text"},
-	"deepseek_v2":      {"DeepSeek-V2", "DeepSeek-V2/V2-Lite: MLA + DeepSeekMoE (softmax routing)", "safetensors, GGUF", "text"},
-	"deepseek_v3":      {"DeepSeek-V3", "DeepSeek-V3: MLA + DeepSeekMoE (sigmoid + group-limited routing)", "safetensors, GGUF", "text"},
-	"kimi_k2":          {"Kimi K2", "Moonshot Kimi K2 / K2.5 / K2.6 / K2.7-Code (DeepseekV3 arch: MLA + DeepSeekMoE — same arch across the K2.x line)", "safetensors, GGUF", "text"},
-	"phi3":             {"Phi-3 / Phi-4", "Microsoft Phi-3/Phi-4 dense (fused qkv/gate-up, partial rotary)", "safetensors, GGUF", "text"},
-	"llama4_text":      {"Llama 4", "Meta Llama 4 (Scout/Maverick) text decoder: iRoPE (RoPE/NoPE interleave) + L2 QK-norm + attn-temp + dense/MoE interleave (top-1 sigmoid + shared)", "safetensors, GGUF", "text"},
-	"gpt_oss":          {"gpt-oss", "OpenAI gpt-oss 20b/120b sparse MoE: per-head attention sinks + clamped interleaved-SwiGLU + alternating sliding/full + YaRN (MXFP4 experts, CPU-only)", "GGUF", "text"},
+	"gemma3":              {"Gemma 3", "Google Gemma 3 dense (270M/1B/4B/12B/27B)", "safetensors, GGUF", "text (+ vision via VL text_config)"},
+	"gemma3_text":         {"Gemma 3", "Google Gemma 3 dense (270M/1B/4B/12B/27B)", "safetensors, GGUF", "text (+ vision via VL text_config)"},
+	"gemma4":              {"Gemma 4", "Google Gemma 4 dense + E-models (per-layer attention deltas, PLE)", "safetensors, GGUF", "text"},
+	"gemma4_text":         {"Gemma 4", "Google Gemma 4 text (incl. 26B-A4B parallel dense+MoE FFN, enable_moe_block)", "safetensors, GGUF", "text"},
+	"gemma4_unified_text": {"Gemma 4", "Google Gemma 4 unified checkpoints' text decoder (K=V globals, model.language_model.* prefix)", "safetensors, GGUF", "text"},
+	"qwen3":               {"Qwen3", "Alibaba Qwen3 dense (QK-norm, no bias)", "safetensors, GGUF", "text"},
+	"qwen2":               {"Qwen2 / Qwen2.5", "Alibaba Qwen2/2.5 dense (q/k/v bias)", "safetensors, GGUF", "text"},
+	"qwen2_5_vl":          {"Qwen2.5-VL", "Qwen2.5-VL text decoder (qwen2 + m-RoPE)", "safetensors", "text (+ vision tower)"},
+	"qwen2_moe":           {"Qwen2-MoE", "Qwen1.5/2 MoE (sparse + always-on shared expert)", "safetensors, GGUF", "text"},
+	"llama":               {"Llama", "Meta Llama 2/3 dense (single-base RoPE)", "safetensors, GGUF, GPTQ, AWQ", "text"},
+	"mistral":             {"Mistral", "Mistral dense (all-layer sliding window)", "safetensors, GGUF", "text"},
+	"gpt2":                {"GPT-2", "GPT-2/NeoX (LayerNorm, learned positions, non-gated GELU)", "safetensors, GGUF", "text"},
+	"mixtral":             {"Mixtral", "Mistral + sparse MoE FFN (router + top-k experts)", "safetensors, GGUF", "text"},
+	"mellum":              {"Mellum2", "JetBrains Mellum2 code model (MoE + sliding/full interleave + YaRN)", "safetensors, GGUF", "text"},
+	"qwen3_5_moe":         {"Qwen3.5-MoE", "Qwen3.5/3.6 hybrid: Gated DeltaNet + softmax + MoE", "safetensors, GGUF", "text"},
+	"qwen3_5_moe_text":    {"Qwen3.5-MoE", "Qwen3.5/3.6 hybrid: Gated DeltaNet + softmax + MoE", "safetensors, GGUF", "text"},
+	"glm4_moe":            {"GLM-4.5/4.6", "Zhipu GLM-4.5/4.6 DeepSeek-style MoE (sigmoid routing + dense prefix)", "safetensors, GGUF", "text"},
+	"granitemoehybrid":    {"Granite-4.0-H", "IBM Granite-4.0-H: Mamba-2 + attention hybrid + MoE-on-every-layer", "safetensors, GGUF", "text"},
+	"nemotron_h":          {"Nemotron-H", "NVIDIA Nemotron-H single-op-per-block hybrid (mamba | attention | relu² MLP)", "safetensors, GGUF", "text"},
+	"deepseek_v2":         {"DeepSeek-V2", "DeepSeek-V2/V2-Lite: MLA + DeepSeekMoE (softmax routing)", "safetensors, GGUF", "text"},
+	"deepseek_v3":         {"DeepSeek-V3", "DeepSeek-V3: MLA + DeepSeekMoE (sigmoid + group-limited routing)", "safetensors, GGUF", "text"},
+	"kimi_k2":             {"Kimi K2", "Moonshot Kimi K2 / K2.5 / K2.6 / K2.7-Code (DeepseekV3 arch: MLA + DeepSeekMoE — same arch across the K2.x line)", "safetensors, GGUF", "text"},
+	"phi3":                {"Phi-3 / Phi-4", "Microsoft Phi-3/Phi-4 dense (fused qkv/gate-up, partial rotary)", "safetensors, GGUF", "text"},
+	"llama4_text":         {"Llama 4", "Meta Llama 4 (Scout/Maverick) text decoder: iRoPE (RoPE/NoPE interleave) + L2 QK-norm + attn-temp + dense/MoE interleave (top-1 sigmoid + shared)", "safetensors, GGUF", "text"},
+	"gpt_oss":             {"gpt-oss", "OpenAI gpt-oss 20b/120b sparse MoE: per-head attention sinks + clamped interleaved-SwiGLU + alternating sliding/full + YaRN (MXFP4 experts, CPU-only)", "GGUF", "text"},
 }
 
 // capabilityRow is one family's row in the matrix (alias group → one row). All
