@@ -90,3 +90,4 @@ decoder/testdata/gptoss_20b_golden.json
 # generated tiny gemma4-MoE parity checkpoints (scripts/pin_gemma4_moe*.py); golden JSON stays tracked
 testdata/gemma4-moe-tiny/
 testdata/gemma4-moe-kv-tiny/
+testdata/gemma4-moe-unified-tiny/

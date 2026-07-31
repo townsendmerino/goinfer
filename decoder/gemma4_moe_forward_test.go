@@ -124,6 +124,20 @@ func TestGemma4MoE_forwardParity(t *testing.T) {
 		"scripts/pin_gemma4_moe_forward.py")
 }
 
+// TestGemma4MoEUnified_forwardParity is the Phase-4 loader gate: the real 26B-A4B
+// ships as a Gemma4ForConditionalGeneration — the text decoder under
+// model.language_model.*, the arch nested in text_config, and a vision tower to
+// ignore. This loads a synthetic unified re-keying of the tiny MoE checkpoint
+// (scripts/make_gemma4_moe_unified.py — byte-identical weights, +1 dummy vision
+// tensor) and asserts it reproduces the SAME golden, proving the prefix
+// auto-detection + text_config flatten + vision-skip path without the 51 GB download.
+func TestGemma4MoEUnified_forwardParity(t *testing.T) {
+	gemma4MoEForwardParity(t,
+		"../testdata/gemma4_moe_forward_golden.json",
+		"../testdata/gemma4-moe-unified-tiny",
+		"scripts/make_gemma4_moe_unified.py")
+}
+
 // TestGemma4MoEKV_forwardParity is the Phase-4 gate for the K=V global layers the
 // real 26B-A4B uses (attention_k_eq_v, num_global_key_value_heads=1): the global
 // layer carries NO v_proj — V is v_norm(k_proj output) — exercising the loader's
