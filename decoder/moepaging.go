@@ -12,8 +12,9 @@ import (
 // them on demand out of the read-only .giw mapping (idea #2,
 // docs/ideas-weight-memory.md). A 35B-A3B holds ~32 GB of experts but activates
 // only K·L per token; the router's top-k selection is the demand signal. The
-// generic span-residency LRU (touch → fault-in WILLNEED, release the budget tail
-// DONTNEED) now lives in aikit/mmap.SpanCache; this type holds only the
+// generic span-residency pager (touch → fault-in WILLNEED, evict over budget
+// DONTNEED) now lives in aikit/mmap.SpanCache; this pager runs it with the
+// frequency-aware EvictLeastRecent policy (newExpertPager). This type holds only the
 // MoE-specific half: which experts alias the mapping and the touch hook the
 // router calls (moeMLP, mlp.go). Releasing is lossless — the mapping is read-only
 // and file-backed, so an evicted expert merely re-faults from disk (output stays
@@ -84,7 +85,13 @@ func newExpertPager(w *Weights, mapping []byte, budget int64) *expertPager {
 	if budget < maxExpert {
 		budget = maxExpert // must hold at least one expert
 	}
-	cache := mmap.NewSpanCache[*expertWeights](budget)
+	// Frequency-aware (classic LRU tail) eviction: the router's demand signal is
+	// skewed FREQUENCY, not a scan — the hottest ~10% of experts absorb ~72% of the
+	// top-k picks — so the hot set must stay resident. SpanCache's default is
+	// scan-resistant (evict-most-recent), which is right for the ANN cyclic scan but
+	// evicts exactly the hot experts here (measured −51 pp hit rate at a 4 GB budget on
+	// a real 35B-A3B). EvictLeastRecent restores it. See aikit mmap.EvictPolicy.
+	cache := mmap.NewSpanCacheWithPolicy[*expertWeights](budget, mmap.EvictLeastRecent)
 	for _, m := range members {
 		cache.Add(m.ex, m.spans)
 	}

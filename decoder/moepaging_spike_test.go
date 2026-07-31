@@ -109,8 +109,9 @@ func TestMoEPagingSpike(t *testing.T) {
 	// per-token accesses = K·L (the active working set is at least this many pages).
 	activeSet := K * L
 	t.Logf("active set (min resident) = K·L = %d experts ≈ %.1f GB", activeSet, float64(activeSet*expBytes)/1e9)
-	t.Logf("=== LRU hit rate vs RAM budget (whole-expert pages) ===")
-	t.Logf("  %-10s %-9s %-10s %-9s %-14s", "cacheGB", "pages", "hit%", "miss/tok", "+ms/tok@NVMe")
+	t.Logf("=== hit rate vs RAM budget (whole-expert pages): B0 two-policy comparison ===")
+	t.Logf("  LRU-tail = aikit ≤v1.14 (evict LEAST-recent); MRU = v1.15 6c0483f scan-resistant (evict MOST-recent OTHER)")
+	t.Logf("  %-10s %-9s %-12s %-12s %-10s", "cacheGB", "pages", "LRU-tail hit%", "MRU hit%", "Δ (MRU-LRU)")
 	// NVMe random-read model: ~20µs seek + bytes/3GBps. Conservative for a consumer SSD.
 	const nvmeBps = 3.0e9
 	const seekS = 20e-6
@@ -118,18 +119,22 @@ func TestMoEPagingSpike(t *testing.T) {
 	sizes := []int{activeSet, activeSet * 2, activeSet * 3, activeSet * 4, activeSet * 6,
 		int(0.25 * float64(L*E)), int(0.5 * float64(L*E)), distinct}
 	seen := map[int]bool{}
+	var worstDelta float64 = 1
 	for _, C := range sizes {
 		if C <= 0 || C > L*E || seen[C] {
 			continue
 		}
 		seen[C] = true
-		hits, misses := lruSim(access, C)
-		hitRate := float64(hits) / float64(hits+misses)
-		missPerTok := float64(misses) / float64(tokens)
-		addedMs := missPerTok * perMissS * 1e3
-		t.Logf("  %-10.1f %-9d %-10.1f %-9.1f %-14.1f",
-			float64(C*expBytes)/1e9, C, 100*hitRate, missPerTok, addedMs)
+		lh, lm := lruSim(access, C)
+		mh, mm := mruSim(access, C)
+		lrate := float64(lh) / float64(lh+lm)
+		mrate := float64(mh) / float64(mh+mm)
+		worstDelta = min(worstDelta, mrate-lrate)
+		t.Logf("  %-10.1f %-9d %-12.1f %-12.1f %+-10.1f",
+			float64(C*expBytes)/1e9, C, 100*lrate, 100*mrate, 100*(mrate-lrate))
+		_ = perMissS
 	}
+	t.Logf("worst MRU−LRU hit-rate delta across budgets: %+.1f pp (negative ⇒ the v1.15 policy REGRESSES the expert pager — B0)", 100*worstDelta)
 
 	// Steady-state (drop the first ~20% as cache warmup) at a mid budget.
 	warm := len(access) / 5
@@ -159,6 +164,33 @@ func lruSim(access []int, C int) (hits, misses int) {
 			ll.Remove(back)
 		}
 		pos[key] = ll.PushFront(key)
+	}
+	return
+}
+
+// mruSim mirrors aikit v1.15's scan-resistant SpanCache eviction (6c0483f): on a
+// miss over budget it releases the MOST-recently-touched OTHER member (Front().Next()
+// after pushing the new key to Front), not the LRU tail. For a frequency-skewed
+// demand signal — which the MoE router is — this evicts the hot set and keeps the
+// cold prefix, the opposite of what the expert pager wants (task doc B0).
+func mruSim(access []int, C int) (hits, misses int) {
+	ll := list.New()
+	pos := make(map[int]*list.Element, C)
+	for _, key := range access {
+		if el, ok := pos[key]; ok {
+			ll.MoveToFront(el)
+			hits++
+			continue
+		}
+		misses++
+		el := ll.PushFront(key)
+		pos[key] = el
+		if ll.Len() > C { // evict the most-recent OTHER member (Front().Next())
+			if victim := el.Next(); victim != nil {
+				delete(pos, victim.Value.(int))
+				ll.Remove(victim)
+			}
+		}
 	}
 	return
 }

@@ -297,6 +297,19 @@ engineering, not insight.
 
 ## B0. The aikit bump hazard (independent of everything else — do it first)
 
+**RESOLVED (2026-07-31).** The hazard was real and, briefly, shipped: the aikit
+v1.12→v1.15 bump (needed for `embed.Tensor.SubF32`) carried `6c0483f`, so the expert
+pager silently ran the scan-resistant evict-most-recent policy. Measured on the real
+35B-A3B router trace (`moepaging_spike_test.go`, now a two-policy comparison), it lost
+up to **51 pp** of hit rate vs the LRU tail at interactive budgets (4 GB: 71.9% →
+20.9%); the production gate at a 512 MB budget dropped from 45.9% to 11.1%.
+Fix = the policy knob below (`mmap.NewSpanCacheWithPolicy` / `EvictPolicy`, aikit
+v1.16.0): the ANN paths keep the scan-resistant default, `expertPager` passes
+`EvictLeastRecent`, restoring the v1.12 baseline (production gate back to 45.9%,
+`hits=4696` ≈ the doc's recorded `4706`). Correctness was never affected (paged decode
+byte-identical throughout). The three stale doc references below are fixed. What
+follows is the original problem statement.
+
 goinfer pins `github.com/townsendmerino/aikit v1.12.0` (`go.mod:6`). aikit `main` is past
 v1.14.0 and contains **`6c0483f` "mmap: scan-resistant SpanCache eviction"**, which changes
 `SpanCache.Touch` to evict `c.lru.Front()` — the **most**-recently-touched other member —

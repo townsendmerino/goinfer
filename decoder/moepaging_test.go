@@ -6,10 +6,11 @@ import (
 	"testing"
 )
 
-// The pager's generic span-residency LRU (eviction over budget, WILLNEED/DONTNEED,
-// stats) now lives in aikit/mmap.SpanCache and is gated there
-// (TestSpanCache_evictsLRUTailOverBudget et al.); the page-granular re-fault safety
-// the whole pager rests on is gated by aikit's TestMadvise_dontneedRefaultsIntact.
+// The pager's generic span-residency cache (eviction over budget, WILLNEED/DONTNEED,
+// stats) now lives in aikit/mmap.SpanCache and is gated there; the expert pager runs
+// it with the frequency-aware policy (TestSpanCache_evictsLeastRecentWithPolicy),
+// distinct from the ANN paths' scan-resistant default. The page-granular re-fault
+// safety the whole pager rests on is gated by aikit's TestMadvise_dontneedRefaultsIntact.
 // This file keeps only the goinfer-specific end-to-end gate.
 
 // TestExpertPaging_bitExact is the end-to-end correctness gate for idea #2: paging
