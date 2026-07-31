@@ -94,6 +94,14 @@ type LayerWeights struct {
 	// other family. Stored f32 (parity-first). The FFN side (dense prefix / MoE /
 	// shared expert) reuses the generic Router/Experts/SharedExpert fields above.
 	mla *mlaWeights
+
+	// Gemma 4 26B-A4B parallel dense+MoE FFN sub-block (enable_moe_block). Set only
+	// on gemma4 layers when arch.MoE != nil; nil for the dense E2B/E4B/12B variants
+	// and every other family. The router/experts do NOT fit the generic Router/
+	// Experts fields (weightless-norm + learned-scale router, per-expert scale,
+	// gelu-tanh fused-gate_up experts, three parallel-branch norms), so gemma4
+	// carries its own struct consumed by gemma4MoEFFN. Stored f32 (parity-first).
+	gemma4moe *gemma4MoEWeights
 }
 
 // qwenAttnWeights holds a qwen3_5_moe softmax layer's gated attention, f32.
@@ -565,6 +573,35 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 			if err = loadDeepseekAttn(st, i, l, arch, hd, tn); err != nil {
 				return err
 			}
+		} else if arch.gemma4 != nil {
+			// Gemma 4 attention has PER-LAYER widths: the global (full-attention) layers
+			// use a wider head (global_head_dim, e.g. 512 vs 16 local) and their own KV
+			// head count, so qDim/kvDim/head_dim differ by layer. attention_k_eq_v makes
+			// the 12B global layers reuse K as V (no v_proj → VFromK); the E-models and
+			// the MoE tiny carry v_proj on every layer.
+			ahd := arch.headDimAt(i)
+			aKV := arch.kvHeadsAt(i)
+			aqDim, akvDim := arch.NumHeads*ahd, aKV*ahd
+			if l.QProj, err = loadProj(tn(i, s.QProj), aqDim, hd); err != nil {
+				return err
+			}
+			if l.KProj, err = loadProj(tn(i, s.KProj), akvDim, hd); err != nil {
+				return err
+			}
+			if arch.gemma4.KVShared && arch.isGlobalLayer(i) {
+				l.VFromK = true // V = v_norm(k_proj output); no v_proj tensor
+			} else if l.VProj, err = loadProj(tn(i, s.VProj), akvDim, hd); err != nil {
+				return err
+			}
+			if l.OProj, err = loadProj(tn(i, s.OProj), hd, aqDim); err != nil {
+				return err
+			}
+			if l.QNorm, err = st.TensorF32(tn(i, s.QNorm), ahd); err != nil {
+				return err
+			}
+			if l.KNorm, err = st.TensorF32(tn(i, s.KNorm), ahd); err != nil {
+				return err
+			}
 		} else {
 			// Attention projections ([out, in] row-major).
 			if l.QProj, err = loadProj(tn(i, s.QProj), qDim, hd); err != nil {
@@ -617,6 +654,36 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 		}
 		if l.PostMLPNorm, err = optNorm(i, s.PostMLPNorm); err != nil {
 			return err
+		}
+		// Gemma 4 FFN: the dense gated MLP is always present (the parallel dense
+		// branch), plus — when enable_moe_block — the MoE sub-block (own router/
+		// experts/norms). layer_scalar is a per-layer output multiplier. This owns
+		// gemma4's FFN load because its MoE shape doesn't fit the generic Router/
+		// Experts path below. (PLE is loaded by the shared code above via the
+		// model-level PerLayer tensors; the per-layer inp_gate/proj come from the
+		// GGUF path — the safetensors E-models with PLE are Phase 4.)
+		if arch.gemma4 != nil {
+			if l.GateProj, err = loadProj(tn(i, s.GateProj), cfg.IntermediateDim, hd); err != nil {
+				return err
+			}
+			if l.UpProj, err = loadProj(tn(i, s.UpProj), cfg.IntermediateDim, hd); err != nil {
+				return err
+			}
+			if l.DownProj, err = loadProj(tn(i, s.DownProj), hd, cfg.IntermediateDim); err != nil {
+				return err
+			}
+			// layer_scalar (a [1] buffer). Absent ⇒ 1.0 (no scaling).
+			if ls, lerr := st.TensorF32(tn(i, "layer_scalar"), 1); lerr == nil {
+				l.LayerScalar = ls[0]
+			} else {
+				l.LayerScalar = 1
+			}
+			if arch.MoE != nil {
+				if l.gemma4moe, err = loadGemma4MoE(st, i, cfg, arch, hd, l, tn); err != nil {
+					return err
+				}
+			}
+			return nil
 		}
 		// FFN: sparse MoE (Mixtral) or dense gated MLP. The schema's MoE name
 		// templates carry a %d for the expert index. GLM's first_k_dense_replace
@@ -842,6 +909,70 @@ func loadFusedExperts(st *embed.SafetensorsFile, gateUpName, downName string, nE
 		experts[e] = expertWeights{Gate: gate, Up: up, Down: dn}
 	}
 	return experts, nil
+}
+
+// loadGemma4MoE loads one gemma4 layer's parallel dense+MoE FFN sub-block
+// (enable_moe_block) into a gemma4MoEWeights, consumed by gemma4MoEFFN. The dense
+// branch MLP (l.GateProj/UpProj/DownProj) and its sandwich norms (l.PreMLPNorm =
+// pre_feedforward_layernorm, l.PostMLPNorm = the JOINT post_feedforward_layernorm)
+// are already loaded by the caller — this aliases them and loads the MoE-specific
+// tensors: the three parallel-branch norms, the weightless-norm/learned-scale
+// router + per-expert scale, and the fused gelu-tanh experts (gate_up ‖ down).
+// Router weights stay f32 (loadMat, no quant); expert weights are wrapped f32
+// (gemma4-moe quantization/residency is a later phase — the parity path is CPU f32).
+func loadGemma4MoE(st *embed.SafetensorsFile, i int, cfg *Config, arch *Architecture, hidden int, l *LayerWeights, tn func(int, string) string) (*gemma4MoEWeights, error) {
+	m := arch.MoE
+	nm := func(s string) string { return tn(i, s) }
+	w := &gemma4MoEWeights{
+		preFFNNorm:  l.PreMLPNorm,  // pre_feedforward_layernorm   (dense pre-norm)
+		postFFNNorm: l.PostMLPNorm, // post_feedforward_layernorm  (joint post-norm on x1+x2)
+		mlpGate:     l.GateProj,
+		mlpUp:       l.UpProj,
+		mlpDown:     l.DownProj,
+		layerScalar: l.LayerScalar,
+		denseInter:  cfg.IntermediateDim,
+		moeInter:    m.IntermediateDim,
+		nE:          m.NumExperts,
+		topK:        m.TopK,
+	}
+	var err error
+	if w.postFFNNorm1, err = st.TensorF32(nm("post_feedforward_layernorm_1.weight"), hidden); err != nil {
+		return nil, err
+	}
+	if w.preFFNNorm2, err = st.TensorF32(nm("pre_feedforward_layernorm_2.weight"), hidden); err != nil {
+		return nil, err
+	}
+	if w.postFFNNorm2, err = st.TensorF32(nm("post_feedforward_layernorm_2.weight"), hidden); err != nil {
+		return nil, err
+	}
+	if w.routerProj, err = loadMat(st, nm("router.proj.weight"), m.NumExperts, hidden); err != nil {
+		return nil, err
+	}
+	if w.routerScale, err = st.TensorF32(nm("router.scale"), hidden); err != nil {
+		return nil, err
+	}
+	if w.perExpertScale, err = st.TensorF32(nm("router.per_expert_scale"), m.NumExperts); err != nil {
+		return nil, err
+	}
+	// Fused experts: gate_up [E, 2*moeInter, hidden] (gate ‖ up on the row axis),
+	// down [E, hidden, moeInter]. Copy each expert's slice so the two big 3-D reads
+	// are released rather than aliased for the model's life.
+	gu, err := st.TensorF32(nm("experts.gate_up_proj"), m.NumExperts, 2*m.IntermediateDim, hidden)
+	if err != nil {
+		return nil, err
+	}
+	dn, err := st.TensorF32(nm("experts.down_proj"), m.NumExperts, hidden, m.IntermediateDim)
+	if err != nil {
+		return nil, err
+	}
+	guStride, dnStride := 2*m.IntermediateDim*hidden, hidden*m.IntermediateDim
+	w.expertsGateUp = make([]linalg.WeightMat, m.NumExperts)
+	w.expertsDown = make([]linalg.WeightMat, m.NumExperts)
+	for e := 0; e < m.NumExperts; e++ {
+		w.expertsGateUp[e] = linalg.WrapF32(append([]float32(nil), gu[e*guStride:(e+1)*guStride]...), 2*m.IntermediateDim, hidden)
+		w.expertsDown[e] = linalg.WrapF32(append([]float32(nil), dn[e*dnStride:(e+1)*dnStride]...), hidden, m.IntermediateDim)
+	}
+	return w, nil
 }
 
 // loadMat loads + shape-validates a [rows, cols] matrix (via the aikit

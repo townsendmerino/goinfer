@@ -20,6 +20,7 @@ var registry = map[string]archAdapter{
 	"gemma3":           gemma3Architecture,
 	"gemma3_text":      gemma3Architecture,     // the 270M/1B text checkpoints
 	"gemma4":           gemma4Architecture,     // Gemma 4 (E2B/E4B + 12B dense; parity-gated)
+	"gemma4_text":      gemma4Architecture,     // Gemma 4 text checkpoints (incl. the 26B-A4B MoE tiny/real: model_type gemma4_text)
 	"qwen3":            qwen3Architecture,      // Qwen3 dense (0.6B/1.7B/4B/8B/…)
 	"qwen2":            qwen2Architecture,      // Qwen2/Qwen2.5 dense (llama + q/k/v bias)
 	"qwen2_5_vl":       qwen2_5_vlArchitecture, // Qwen2.5-VL text decoder (qwen2 + m-RoPE; nested rope_parameters)
@@ -164,8 +165,8 @@ func gemma3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 // the 12B dense (K=V) variants are parity-gated against the HF bf16 oracle.
 func gemma4Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	globalRotary := 0
-	if cfg.PartialRotaryFactor > 0 && cfg.GlobalHeadDim > 0 {
-		globalRotary = int(cfg.PartialRotaryFactor * float64(cfg.GlobalHeadDim))
+	if prf := cfg.gemma4PartialRotary(); prf > 0 && cfg.GlobalHeadDim > 0 {
+		globalRotary = int(prf * float64(cfg.GlobalHeadDim))
 	}
 	// Gemma 4 26B-A4B: enable_moe_block turns on the parallel dense+MoE FFN sub-block.
 	// The dense E2B/E4B/12B variants leave it false ⇒ MoE stays nil and their forward

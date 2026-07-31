@@ -171,43 +171,52 @@ func (m *Model) runLayersGemma4(id int, cache *KVCache) ([]float32, error) {
 			h[i] += attnOut[i]
 		}
 
-		// --- MLP sub-block (sandwich), GeGLU at the per-layer width ---
-		copy(normd, h)
-		normalize(arch, normd, lw.PreMLPNorm, nil, hidden)
-		gate := make([]float32, ffn)
-		up := make([]float32, ffn)
-		matmul(be, &lw.GateProj, normd, gate, 1)
-		matmul(be, &lw.UpProj, normd, up, 1)
-		for i := range gate {
-			gate[i] = geluTanh(gate[i]) * up[i]
-		}
-		mlpOut := make([]float32, hidden)
-		matmul(be, &lw.DownProj, gate, mlpOut, 1)
-		normalize(arch, mlpOut, lw.PostMLPNorm, nil, hidden) // post-FFN (sandwich)
-		for i := range h {
-			h[i] += mlpOut[i]
-		}
-
-		// --- PLE branch: gate→gelu→×per-layer-embedding→proj→norm→+residual ---
-		if pleDim > 0 {
-			pl := perLayer[l*pleDim : (l+1)*pleDim]
-			px := make([]float32, pleDim)
-			matmul(be, &lw.PLEGate, h, px, 1)
-			for i := range px {
-				px[i] = geluTanh(px[i]) * pl[i]
+		// --- FFN sub-block ---
+		if lw.gemma4moe != nil {
+			// Gemma 4 26B-A4B: parallel dense+MoE FFN (enable_moe_block). gemma4MoEFFN
+			// returns the FULL layer output — post-attention residual h + the joint-normed
+			// (dense ‖ MoE) branches, × layer_scalar — so it replaces the dense MLP + PLE +
+			// separate scalar tail below. (The MoE variant is PLE-free.)
+			h = gemma4MoEFFN(be, arch, h, lw.gemma4moe)
+		} else {
+			// dense variant: MLP sub-block (sandwich), GeGLU at the per-layer width.
+			copy(normd, h)
+			normalize(arch, normd, lw.PreMLPNorm, nil, hidden)
+			gate := make([]float32, ffn)
+			up := make([]float32, ffn)
+			matmul(be, &lw.GateProj, normd, gate, 1)
+			matmul(be, &lw.UpProj, normd, up, 1)
+			for i := range gate {
+				gate[i] = geluTanh(gate[i]) * up[i]
 			}
-			pout := make([]float32, hidden)
-			matmul(be, &lw.PLEProj, px, pout, 1)
-			normalize(arch, pout, lw.PostPLENorm, nil, hidden)
+			mlpOut := make([]float32, hidden)
+			matmul(be, &lw.DownProj, gate, mlpOut, 1)
+			normalize(arch, mlpOut, lw.PostMLPNorm, nil, hidden) // post-FFN (sandwich)
 			for i := range h {
-				h[i] += pout[i]
+				h[i] += mlpOut[i]
 			}
-		}
 
-		// --- per-layer output scalar ---
-		if lw.LayerScalar != 0 {
-			for i := range h {
-				h[i] *= lw.LayerScalar
+			// --- PLE branch: gate→gelu→×per-layer-embedding→proj→norm→+residual ---
+			if pleDim > 0 {
+				pl := perLayer[l*pleDim : (l+1)*pleDim]
+				px := make([]float32, pleDim)
+				matmul(be, &lw.PLEGate, h, px, 1)
+				for i := range px {
+					px[i] = geluTanh(px[i]) * pl[i]
+				}
+				pout := make([]float32, hidden)
+				matmul(be, &lw.PLEProj, px, pout, 1)
+				normalize(arch, pout, lw.PostPLENorm, nil, hidden)
+				for i := range h {
+					h[i] += pout[i]
+				}
+			}
+
+			// --- per-layer output scalar ---
+			if lw.LayerScalar != 0 {
+				for i := range h {
+					h[i] *= lw.LayerScalar
+				}
 			}
 		}
 		if g4debug {

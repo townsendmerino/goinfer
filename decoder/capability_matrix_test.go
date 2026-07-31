@@ -62,6 +62,22 @@ func representativeConfig(modelType string) *Config {
 			FinalLogitSoftcap: 30, // real Gemma-4 softcaps (gemma4_load_test); needed for FeatLogitSoftcap
 			LayerTypes:        []string{"sliding_attention", "full_attention"},
 		}
+	case "gemma4_text":
+		// The 26B-A4B MoE variant (enable_moe_block): the parallel dense+MoE FFN on
+		// every layer, proportional global RoPE via the nested rope_parameters
+		// (partial_rotary_factor 0.25 lives there, NOT top-level). Matches the tiny
+		// checkpoint (testdata/gemma4-moe-tiny): v_proj on every layer (no K=V),
+		// global_head_dim 512, PLE-free.
+		return &Config{
+			ModelType: "gemma4_text", HiddenDim: 64, NumLayers: 2, NumHeads: 4, NumKVHeads: 2,
+			HeadDim: 16, IntermediateDim: 48, VocabSize: 256, RMSNormEps: 1e-6,
+			RoPELocalBase: 10000, RoPEGlobalBase: 1000000, SlidingWindow: 4,
+			GlobalHeadDim: 512, FinalLogitSoftcap: 30,
+			EnableMoeBlock: true, NumExperts: 8, TopKExperts: 2, MoeIntermediateSize: 16,
+			RopeParameters:   json.RawMessage(`{"full_attention":{"rope_type":"proportional","partial_rotary_factor":0.25,"rope_theta":1000000.0},"sliding_attention":{"rope_type":"default","rope_theta":10000.0}}`),
+			HiddenActivation: "gelu_pytorch_tanh",
+			LayerTypes:       []string{"sliding_attention", "full_attention"},
+		}
 	case "qwen3":
 		return &Config{
 			ModelType: "qwen3", VocabSize: 128, HiddenDim: 16, NumLayers: 2, NumHeads: 4,
@@ -253,6 +269,7 @@ var familyDocs = map[string]familyDoc{
 	"gemma3":           {"Gemma 3", "Google Gemma 3 dense (270M/1B/4B/12B/27B)", "safetensors, GGUF", "text (+ vision via VL text_config)"},
 	"gemma3_text":      {"Gemma 3", "Google Gemma 3 dense (270M/1B/4B/12B/27B)", "safetensors, GGUF", "text (+ vision via VL text_config)"},
 	"gemma4":           {"Gemma 4", "Google Gemma 4 dense + E-models (per-layer attention deltas, PLE)", "safetensors, GGUF", "text"},
+	"gemma4_text":      {"Gemma 4", "Google Gemma 4 text (incl. 26B-A4B parallel dense+MoE FFN, enable_moe_block)", "safetensors, GGUF", "text"},
 	"qwen3":            {"Qwen3", "Alibaba Qwen3 dense (QK-norm, no bias)", "safetensors, GGUF", "text"},
 	"qwen2":            {"Qwen2 / Qwen2.5", "Alibaba Qwen2/2.5 dense (q/k/v bias)", "safetensors, GGUF", "text"},
 	"qwen2_5_vl":       {"Qwen2.5-VL", "Qwen2.5-VL text decoder (qwen2 + m-RoPE)", "safetensors", "text (+ vision tower)"},

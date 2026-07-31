@@ -622,6 +622,28 @@ func (c *Config) rotaryDim() int {
 	return 0
 }
 
+// gemma4PartialRotary returns the fraction of the global (full-attention) head
+// RoPE rotates. Gemma 4's "proportional" RoPE keeps this in the per-attention-type
+// rope_parameters.full_attention.partial_rotary_factor (0.25), NOT the top-level
+// partial_rotary_factor (which is Phi's spelling and absent here). Prefers the
+// top-level value when present (GGUF injects it there); else reads the nested one.
+// 0 ⇒ the global layer is NoPE.
+func (c *Config) gemma4PartialRotary() float64 {
+	if c.PartialRotaryFactor > 0 {
+		return c.PartialRotaryFactor
+	}
+	if len(c.RopeParameters) == 0 {
+		return 0
+	}
+	var rp map[string]struct {
+		PartialRotaryFactor float64 `json:"partial_rotary_factor"`
+	}
+	if err := json.Unmarshal(c.RopeParameters, &rp); err != nil {
+		return 0
+	}
+	return rp["full_attention"].PartialRotaryFactor
+}
+
 // EOSIDs returns the configured end-of-sequence token ids, handling both the
 // scalar (eos_token_id: 1) and list (eos_token_id: [1, 106]) JSON shapes HF
 // emits. Empty when the field is absent.
