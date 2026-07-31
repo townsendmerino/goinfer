@@ -16,6 +16,7 @@ type decodeScratch struct {
 	h      []float32 // [hidden] residual stream (overwritten by the embedding each step)
 	norm   []float32 // [hidden] normalized layer input (pre-attn, then pre-mlp)
 	sub    []float32 // [hidden] attention output, then MLP output (added to h)
+	sub2   []float32 // [hidden] parallel-block (Cohere) MLP output, held while attn output lives in sub
 	q      []float32 // [qDim]
 	k, v   []float32 // [kvDim]
 	ctx    []float32 // [qDim] attention context before the O-projection
@@ -59,6 +60,7 @@ func newDecodeScratch(a *Architecture) *decodeScratch {
 		h:      make([]float32, a.HiddenDim),
 		norm:   make([]float32, a.HiddenDim),
 		sub:    make([]float32, a.HiddenDim),
+		sub2:   make([]float32, a.HiddenDim),
 		q:      make([]float32, qDim),
 		k:      make([]float32, kvDim),
 		v:      make([]float32, kvDim),

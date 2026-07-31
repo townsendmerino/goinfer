@@ -1114,6 +1114,29 @@ var llamaTensorSchema = tensorSchema{
 	PostMLPNorm:  "",                                // Pre2: no post-MLP norm
 }
 
+// cohereTensorSchema: Cohere / Command-R — llama attention/MLP tensor names, but
+// the parallel block has ONE norm per layer (input_layernorm, shared by attn and
+// MLP), so PreMLPNorm/PostAttnNorm/PostMLPNorm are all empty. No biases anywhere;
+// no QK-norm (cohere1 Phase 1). Embeddings are tied (LMHead empty ⇒ use Embed).
+var cohereTensorSchema = tensorSchema{
+	Embed:        "model.embed_tokens.weight",
+	LMHead:       "", // tied
+	FinalNorm:    "model.norm.weight",
+	QProj:        "self_attn.q_proj.weight",
+	KProj:        "self_attn.k_proj.weight",
+	VProj:        "self_attn.v_proj.weight",
+	OProj:        "self_attn.o_proj.weight",
+	QNorm:        "", // no QK-norm (Phase 1)
+	KNorm:        "",
+	PreAttnNorm:  "input_layernorm.weight", // the single shared parallel-block norm
+	PostAttnNorm: "",                       // parallel: no post-attn norm
+	GateProj:     "mlp.gate_proj.weight",
+	UpProj:       "mlp.up_proj.weight",
+	DownProj:     "mlp.down_proj.weight",
+	PreMLPNorm:   "", // parallel: MLP reads the shared input norm, no separate pre-MLP norm
+	PostMLPNorm:  "",
+}
+
 // mixtralTensorSchema: Mixtral — the llama attention/norm names with a sparse
 // MoE FFN in place of the dense gate/up/down. Router + 8 experts (w1=gate,
 // w3=up, w2=down) per layer. No QK-norm, no bias, untied head.

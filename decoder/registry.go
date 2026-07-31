@@ -29,6 +29,8 @@ var registry = map[string]archAdapter{
 	"llama":               llamaArchitecture,      // Llama-2/3 dense (single-base RoPE, no QK-norm)
 	"mistral":             mistralArchitecture,    // Llama + all-layer sliding-window attention
 	"gpt2":                gpt2Architecture,       // GPT-2: LayerNorm, learned pos, non-gated GELU MLP, fused QKV
+	"cohere":              cohereArchitecture,     // Cohere / Command-R (+ Aya): bias-free LayerNorm + parallel attn/MLP block + logit_scale + GPT-J interleaved RoPE
+	"cohere2":             cohere2Architecture,    // Cohere2 / Command-R7B (+ Command-A): cohere1 stack + interleaved sliding-window + NoPE on the global layers, no QK-norm
 	"mixtral":             mixtralArchitecture,    // Llama + sparse MoE FFN (router + top-k experts)
 	"mellum":              mellumArchitecture,     // JetBrains Mellum2: MoE + sliding/full interleave + YaRN
 	"qwen3_5_moe":         qwen35Architecture,     // Qwen3.5/3.6-MoE: Gated DeltaNet (linear) + softmax hybrid + MoE
@@ -345,6 +347,122 @@ func llamaArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		EmbedScale:      0,               // none
 		TiedLMHead:      false,           // finalized from lm_head.weight presence at load
 	}, &llamaTensorSchema, nil
+}
+
+// cohereArchitecture expresses Cohere / Command-R (model_type "cohere":
+// Command-R, Command-R+, Aya, Aya-Expanse). Two things break the Llama mold:
+//
+//   - Norm is bias-free LayerNorm (mean-subtract + variance), NOT RMSNorm —
+//     NormLayer with a nil bias (the generic loader leaves PreAttnNormBias nil).
+//   - The block is PARALLEL: one shared input_layernorm feeds both attention and
+//     the MLP, whose outputs sum into a single residual add (NormParallel). There
+//     is no post_attention_layernorm — the schema's PreMLPNorm is empty.
+//
+// Everything else rides shipped features: gated SiLU MLP, GQA (Command-R v01 is
+// MHA, kv==heads), tied 256k embeddings, full-dim RoPE. RoPE is GPT-J interleaved
+// (ropeInterleave). logit_scale MULTIPLIES the logits in HF; goinfer's LogitScale
+// divides, so we store its reciprocal and reuse the Granite logit-scale kernel.
+// use_qk_norm (Command-R+) and sliding_window (that's cohere2) are rejected in
+// validateCohere, so reaching here implies a plain cohere1 checkpoint.
+func cohereArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+	// Older CohereLabs configs carry rope_theta top-level; transformers ≥5 nests it
+	// under rope_parameters. Backfill the flat field so both load identically.
+	if err := backfillFlatRope(cfg, "cohere"); err != nil {
+		return nil, nil, err
+	}
+	if err := cfg.validateCohere(); err != nil {
+		return nil, nil, err
+	}
+	hd := cfg.headDim()
+	return &Architecture{
+		Name:            "cohere",
+		HiddenDim:       cfg.HiddenDim,
+		NumLayers:       cfg.NumLayers,
+		NumHeads:        cfg.NumHeads,
+		NumKVHeads:      cfg.NumKVHeads,
+		HeadDim:         hd,
+		IntermediateDim: cfg.IntermediateDim,
+		VocabSize:       cfg.VocabSize,
+		Norm:            NormLayer, // bias-free LayerNorm (mean-subtract), NOT RMSNorm
+		NormEps:         cfg.LayerNormEps,
+		NormPlacement:   NormParallel, // one input norm → attn + mlp → single residual add
+		Act:             ActSiLU,
+		QKNorm:          false, // cohere1 use_qk_norm rejected in validateCohere (Phase 1)
+		AttnScale:       math.Pow(float64(hd), -0.5),
+		SlidingWindow:   0, // cohere1: full attention (sliding_window ⇒ cohere2, rejected)
+		layerIsGlobal:   nil,
+		RoPELocalBase:   cfg.RoPEGlobalBase, // single base (rope_theta)
+		RoPEGlobalBase:  cfg.RoPEGlobalBase,
+		RotaryDim:       cfg.rotaryDim(), // 0 = full head_dim
+		ropeInterleave:  true,            // GPT-J pairwise rotation (rope_gptj), not NeoX
+		EmbedScale:      0,
+		LogitScale:      1.0 / cfg.LogitScale, // reciprocal: HF multiplies, goinfer divides
+		TiedLMHead:      true,                 // Cohere always ties (no lm_head.weight in checkpoint)
+	}, &cohereTensorSchema, nil
+}
+
+// cohere2Architecture expresses Cohere2 / Command-R7B (model_type "cohere2":
+// Command-R7B, Command-A, R7B-arabic). It is cohere1's stack (bias-free LayerNorm,
+// parallel block, gated SiLU, tied embeddings, GPT-J interleaved RoPE, reciprocal
+// logit_scale) with two additions and one subtraction:
+//
+//   - Interleaved SLIDING-WINDOW / full attention: every sliding_window_pattern-th
+//     layer is global (full attention), the rest are windowed at sliding_window.
+//   - The GLOBAL layers are NoPE (no positional encoding); only the sliding layers
+//     carry RoPE. layerNoPE == the global predicate, so isNoPELayer skips RoPE on
+//     exactly the full-attention layers (the per-layer NoPE primitive Llama 4 wants).
+//   - NO QK-norm at all (cohere2 dropped cohere1's config-gated q/k norm).
+//
+// Reuses cohereTensorSchema (identical tensor names — one shared input_layernorm
+// per layer, no biases, tied head).
+func cohere2Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+	if err := backfillFlatRope(cfg, "cohere2"); err != nil {
+		return nil, nil, err
+	}
+	if err := cfg.validateCohere2(); err != nil {
+		return nil, nil, err
+	}
+	hd := cfg.headDim()
+	// Snapshot the classifier inputs so the closure doesn't retain cfg. Global =
+	// full-attention layer = NoPE; local = sliding + RoPE (Config.IsGlobalLayer is
+	// the authoritative layer_types-then-pattern rule).
+	pattern := cfg.SlidingWindowPattern
+	layerTypes := append([]string(nil), cfg.LayerTypes...)
+	isGlobal := func(i int) bool {
+		if i >= 0 && i < len(layerTypes) {
+			return layerTypes[i] == "full_attention"
+		}
+		if pattern <= 0 {
+			return true
+		}
+		return (i+1)%pattern == 0
+	}
+	return &Architecture{
+		Name:            "cohere2",
+		HiddenDim:       cfg.HiddenDim,
+		NumLayers:       cfg.NumLayers,
+		NumHeads:        cfg.NumHeads,
+		NumKVHeads:      cfg.NumKVHeads,
+		HeadDim:         hd,
+		IntermediateDim: cfg.IntermediateDim,
+		VocabSize:       cfg.VocabSize,
+		Norm:            NormLayer,
+		NormEps:         cfg.LayerNormEps,
+		NormPlacement:   NormParallel,
+		Act:             ActSiLU,
+		QKNorm:          false, // cohere2 has no QK-norm
+		AttnScale:       math.Pow(float64(hd), -0.5),
+		SlidingWindow:   cfg.SlidingWindow, // sliding layers window; global layers full
+		layerIsGlobal:   isGlobal,
+		layerNoPE:       isGlobal, // global (full) layers are NoPE; sliding layers keep RoPE
+		RoPELocalBase:   cfg.RoPEGlobalBase,
+		RoPEGlobalBase:  cfg.RoPEGlobalBase,
+		RotaryDim:       cfg.rotaryDim(),
+		ropeInterleave:  true, // GPT-J pairwise on the sliding (RoPE) layers
+		EmbedScale:      0,
+		LogitScale:      1.0 / cfg.LogitScale,
+		TiedLMHead:      true,
+	}, &cohereTensorSchema, nil
 }
 
 // mistralArchitecture expresses Mistral dense: the llama descriptor (RMS

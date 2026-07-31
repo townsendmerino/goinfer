@@ -36,14 +36,16 @@ func rmsNorm(x, weight []float32, rows, dim int, eps float64, addOne bool) {
 }
 
 // layerNorm applies LayerNorm in place over each row of x ([rows, dim]) — the
-// GPT-2/NeoX normalization. Unlike RMSNorm it subtracts
-// the mean and adds a bias:
+// GPT-2/NeoX/Cohere normalization. Unlike RMSNorm it subtracts the mean, and
+// adds a bias when present:
 //
 //	mean = mean(x)
 //	var  = mean((x-mean)²)
-//	x[i] = (x[i]-mean)/sqrt(var+eps) * weight[i] + bias[i]
+//	x[i] = (x[i]-mean)/sqrt(var+eps) * weight[i] (+ bias[i])
 //
-// Mean and variance accumulate in float64, matching rmsNorm's parity discipline.
+// bias is nil for bias-free LayerNorm families (Cohere/Command-R); GPT-2 passes
+// its ln_1/ln_2 bias. Mean and variance accumulate in float64, matching
+// rmsNorm's parity discipline.
 func layerNorm(x, weight, bias []float32, rows, dim int, eps float64) {
 	for r := range rows {
 		row := x[r*dim : r*dim+dim]
@@ -59,8 +61,14 @@ func layerNorm(x, weight, bias []float32, rows, dim int, eps float64) {
 		}
 		variance /= float64(dim)
 		inv := 1.0 / math.Sqrt(variance+eps)
-		for i, v := range row {
-			row[i] = float32((float64(v)-mean)*inv)*weight[i] + bias[i]
+		if bias != nil {
+			for i, v := range row {
+				row[i] = float32((float64(v)-mean)*inv)*weight[i] + bias[i]
+			}
+		} else {
+			for i, v := range row {
+				row[i] = float32((float64(v) - mean) * inv * float64(weight[i]))
+			}
 		}
 	}
 }

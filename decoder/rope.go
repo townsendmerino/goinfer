@@ -42,6 +42,30 @@ func applyRoPE(vec []float32, heads, headDim, pos int, invFreq []float64, scale 
 	}
 }
 
+// applyRoPEInterleaved is the GPT-J / rope_gptj rotation: consecutive dims form
+// the rotated pairs (2d, 2d+1) — Cohere/Command-R, Falcon, GPT-J, StableLM. HF's
+// CohereRotaryEmbedding does exactly this (rotate_half over x[..., ::2] / x[...,
+// 1::2] with repeat_interleave'd cos/sin), which is DIFFERENT from Llama's NeoX
+// split-half applyRoPE above. Same θ_d = pos·invFreq[d]; only the pairing differs.
+// Partial rotary (rotaryDim < headDim) rotates the first rotaryDim dims and passes
+// the tail through, matching applyRoPE.
+func applyRoPEInterleaved(vec []float32, heads, headDim, pos int, invFreq []float64, scale float64) {
+	half := len(invFreq) // == rotaryDim/2
+	posF := float64(pos)
+	for d := range half {
+		theta := posF * invFreq[d]
+		c := math.Cos(theta) * scale
+		s := math.Sin(theta) * scale
+		for h := range heads {
+			off := h * headDim
+			x1 := float64(vec[off+2*d])
+			x2 := float64(vec[off+2*d+1])
+			vec[off+2*d] = float32(x1*c - x2*s)
+			vec[off+2*d+1] = float32(x2*c + x1*s)
+		}
+	}
+}
+
 // ropeAt rotates the token at absolute sequence position seqPos, choosing m-RoPE
 // vs plain scalar RoPE. The single seam both the batched (forwardN) and sequential
 // (causalAttention) RoPE sites call, so adding m-RoPE didn't fork them.
@@ -51,14 +75,22 @@ func applyRoPE(vec []float32, heads, headDim, pos int, invFreq []float64, scale 
 //   - VL decode (seqPos past the prefill): text positions resume at the block max +
 //     1, i.e. scalar RoPE at seqPos+mropeDelta (the image-token grid compressed the
 //     position count, so mropeDelta is typically negative).
-func ropeAt(vec []float32, heads, headDim, seqPos int, invFreq []float64, scale float64, section []int, mropePos [][3]int, mropeDelta int) {
+//
+// interleave selects GPT-J pairwise rotation (adjacent dims 2d,2d+1) over the
+// NeoX rotate_half layout (dims d, d+half) — Cohere/Falcon/GPT-J vs Llama/Qwen.
+// m-RoPE (Qwen2.5-VL) is NeoX-only, so interleave applies to the scalar path.
+func ropeAt(vec []float32, heads, headDim, seqPos int, invFreq []float64, scale float64, section []int, mropePos [][3]int, mropeDelta int, interleave bool) {
+	rope := applyRoPE
+	if interleave {
+		rope = applyRoPEInterleaved
+	}
 	switch {
 	case mropePos == nil:
-		applyRoPE(vec, heads, headDim, seqPos, invFreq, scale)
+		rope(vec, heads, headDim, seqPos, invFreq, scale)
 	case seqPos < len(mropePos):
 		applyMRoPE(vec, heads, headDim, mropePos[seqPos], section, invFreq, scale)
 	default:
-		applyRoPE(vec, heads, headDim, seqPos+mropeDelta, invFreq, scale)
+		rope(vec, heads, headDim, seqPos+mropeDelta, invFreq, scale)
 	}
 }
 

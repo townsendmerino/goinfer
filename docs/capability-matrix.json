@@ -81,6 +81,46 @@
     "parity": "pending"
   },
   {
+    "name": "cohere",
+    "model_types": [
+      "cohere"
+    ],
+    "display_name": "Command-R",
+    "description": "Cohere Command-R / Aya (bias-free LayerNorm + parallel attn/MLP block + logit-scale + GPT-J RoPE)",
+    "coverage_axis": "softmax-GQA",
+    "moe": "dense",
+    "sliding_window": "none",
+    "qk_norm": false,
+    "rope_style": "full",
+    "norm": "LayerNorm, parallel",
+    "activation": "SwiGLU",
+    "tied_lm_head": true,
+    "loaders": "safetensors",
+    "modality": "text",
+    "gpu_residency_eligible": true,
+    "parity": "pending"
+  },
+  {
+    "name": "cohere2",
+    "model_types": [
+      "cohere2"
+    ],
+    "display_name": "Command-R7B",
+    "description": "Cohere2 Command-R7B / Command-A (cohere1 stack + interleaved sliding-window + NoPE on the global layers, no QK-norm)",
+    "coverage_axis": "softmax-GQA",
+    "moe": "dense",
+    "sliding_window": "interleave",
+    "qk_norm": false,
+    "rope_style": "full",
+    "norm": "LayerNorm, parallel",
+    "activation": "SwiGLU",
+    "tied_lm_head": true,
+    "loaders": "safetensors",
+    "modality": "text",
+    "gpu_residency_eligible": true,
+    "parity": "pending"
+  },
+  {
     "name": "glm4_moe",
     "model_types": [
       "glm4_moe"

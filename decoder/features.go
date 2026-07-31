@@ -34,6 +34,9 @@ const (
 	FeatEmbedScale     ResidentFeature = "embed-scale"      // √hidden embedding multiplier (Gemma)
 	FeatLogitSoftcap   ResidentFeature = "logit-softcap"    // attention / final logit softcap (Gemma 2/3)
 	FeatSandwichNorm   ResidentFeature = "sandwich-norm"    // post-attn / post-MLP norms (Gemma)
+	FeatLayerNorm      ResidentFeature = "layer-norm"       // mean-subtracting LayerNorm instead of RMSNorm (Cohere, GPT-2)
+	FeatParallelBlock  ResidentFeature = "parallel-block"   // one shared input norm; attn+MLP sum into a single residual add (Cohere, GPT-J)
+	FeatNoPE           ResidentFeature = "nope"             // per-layer NoPE: some layers skip RoPE entirely (Cohere2 global layers, Llama-4 iRoPE)
 	FeatGatedGELU      ResidentFeature = "gated-gelu"       // gated MLP whose activation is GELU-tanh, not SiLU (Gemma)
 	FeatNonGatedMLP    ResidentFeature = "non-gated-mlp"    // up→act→down, no gate (GPT-2, Nemotron relu²)
 	FeatLearnedPos     ResidentFeature = "learned-pos"      // learned position embeddings, no RoPE (GPT-2)
@@ -76,7 +79,19 @@ func (a *Architecture) residentFeatures() []ResidentFeature {
 	add(a.RMSAddOne, FeatRMSAddOne)
 	add(a.EmbedScale > 1, FeatEmbedScale)
 	add(a.FinalLogitSoftcap != 0 || a.AttnLogitSoftcap != 0, FeatLogitSoftcap)
-	add(a.NormPlacement != NormPre2, FeatSandwichNorm)
+	// Gate on the SPECIFIC placement, not "anything but Pre2" — NormParallel is a
+	// third placement whose kernel is FeatParallelBlock, not sandwich norms.
+	add(a.NormPlacement == NormSandwich4, FeatSandwichNorm)
+	add(a.NormPlacement == NormParallel, FeatParallelBlock)
+	// Per-layer NoPE (Cohere2 global layers skip RoPE). A backend that ropes every
+	// layer would corrupt the NoPE layers, so it is a distinct implemented-or-decline
+	// capability. (Not the same as FeatPerLayerRoPE, which is differing rope TABLES.)
+	add(a.layerNoPE != nil, FeatNoPE)
+	// Mean-subtracting LayerNorm (Cohere/GPT-2) is a distinct kernel from RMSNorm;
+	// no resident backend implements it, so carriers decline to CPU. GPT-2 already
+	// carried the other GPT-2 declines (learned-pos, non-gated, out-bias); this
+	// just makes the norm itself explicit.
+	add(a.Norm != NormRMS, FeatLayerNorm)
 	// The MLP ACTIVATION, not just the gate's presence. A backend whose glue kernel hardcodes
 	// SwiGLU would run Gemma's gated GELU-tanh block silently wrong — the exact failure this
 	// taxonomy exists to catch, and the one it missed until CUDA went looking at Gemma. Scoped to

@@ -90,8 +90,8 @@ func (m *Model) gptOssAttention(layer int, h, out []float32, lw *LayerWeights, c
 	// folded into cos/sin. gpt-oss has no QK-norm.
 	invFreq := arch.ropeInvFreq(layer)
 	ms := arch.ropeMscale(layer)
-	ropeAt(q, nH, hd, pos, invFreq, ms, nil, nil, 0)
-	ropeAt(k, nKV, hd, pos, invFreq, ms, nil, nil, 0)
+	ropeAt(q, nH, hd, pos, invFreq, ms, nil, nil, 0, arch.ropeInterleave)
+	ropeAt(k, nKV, hd, pos, invFreq, ms, nil, nil, 0, arch.ropeInterleave)
 
 	// Append this position's K/V, then read the (windowed) history.
 	cache.Append(layer, k, v)

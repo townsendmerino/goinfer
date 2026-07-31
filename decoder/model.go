@@ -439,6 +439,7 @@ func (m *Model) runLayersFromEmbed(h []float32, cache *KVCache) ([]float32, erro
 	scr := cache.scr
 	hidden := arch.HiddenDim
 	sandwich := arch.NormPlacement == NormSandwich4
+	parallel := arch.NormPlacement == NormParallel
 	if m.layerPager != nil {
 		defer m.layerPager.finishLayers()
 	}
@@ -451,39 +452,66 @@ func (m *Model) runLayersFromEmbed(h []float32, cache *KVCache) ([]float32, erro
 		if cache.lora != nil {
 			ld = &cache.lora.layers[l]
 		}
-		copy(scr.norm, h)
-		normalize(arch, scr.norm, lw.PreAttnNorm, lw.PreAttnNormBias, hidden)
-		if err := causalAttention(l, scr.norm, scr.sub, lw, arch, cache, m.be, ld); err != nil {
-			return nil, err
-		}
-		if cache.subCapture { // scr.ctx is the pre-o-proj context; scr.sub is not yet overwritten
-			cache.subCtx[l] = append(cache.subCtx[l][:0], scr.ctx...)
-		}
-		if sandwich {
-			normalize(arch, scr.sub, lw.PostAttnNorm, nil, hidden)
-		}
-		if cache.subCapture { // scr.sub is now the attention contribution about to hit the residual
-			cache.subAttn[l] = append(cache.subAttn[l][:0], scr.sub...)
-		}
-		for i := range h {
-			h[i] += scr.sub[i]
-		}
-		copy(scr.norm, h)
-		normalize(arch, scr.norm, lw.PreMLPNorm, lw.PreMLPNormBias, hidden)
-		if err := mlp(scr.norm, scr.sub, lw, arch, m.be, scr, m.pager, ld); err != nil {
-			return nil, err
-		}
-		if cache.subCapture { // scr.sub is the down output BEFORE the post-MLP sandwich norm
-			cache.subMLPpre[l] = append(cache.subMLPpre[l][:0], scr.sub...)
-		}
-		if sandwich {
-			normalize(arch, scr.sub, lw.PostMLPNorm, nil, hidden)
-		}
-		if cache.subCapture { // scr.sub is now the MLP contribution about to hit the residual
-			cache.subMLP[l] = append(cache.subMLP[l][:0], scr.sub...)
-		}
-		for i := range h {
-			h[i] += scr.sub[i]
+		if parallel {
+			// Cohere/GPT-J parallel block: ONE shared input norm feeds both
+			// sublayers, whose outputs sum into a SINGLE residual add —
+			// h += attn(n) + mlp(n), where n = norm(h). Both read the same n
+			// (attention leaves scr.norm intact), so MLP takes scr.norm, NOT the
+			// post-attention residual. No pre-MLP norm, no post-sublayer norms.
+			copy(scr.norm, h)
+			normalize(arch, scr.norm, lw.PreAttnNorm, lw.PreAttnNormBias, hidden)
+			if err := causalAttention(l, scr.norm, scr.sub, lw, arch, cache, m.be, ld); err != nil {
+				return nil, err
+			}
+			if cache.subCapture { // scr.ctx is the pre-o-proj context; scr.sub is not yet overwritten
+				cache.subCtx[l] = append(cache.subCtx[l][:0], scr.ctx...)
+				cache.subAttn[l] = append(cache.subAttn[l][:0], scr.sub...)
+			}
+			if err := mlp(scr.norm, scr.sub2, lw, arch, m.be, scr, m.pager, ld); err != nil {
+				return nil, err
+			}
+			if cache.subCapture { // no post-norm ⇒ the pre and final MLP contributions are identical
+				cache.subMLPpre[l] = append(cache.subMLPpre[l][:0], scr.sub2...)
+				cache.subMLP[l] = append(cache.subMLP[l][:0], scr.sub2...)
+			}
+			for i := range h {
+				h[i] += scr.sub[i] + scr.sub2[i]
+			}
+		} else {
+			copy(scr.norm, h)
+			normalize(arch, scr.norm, lw.PreAttnNorm, lw.PreAttnNormBias, hidden)
+			if err := causalAttention(l, scr.norm, scr.sub, lw, arch, cache, m.be, ld); err != nil {
+				return nil, err
+			}
+			if cache.subCapture { // scr.ctx is the pre-o-proj context; scr.sub is not yet overwritten
+				cache.subCtx[l] = append(cache.subCtx[l][:0], scr.ctx...)
+			}
+			if sandwich {
+				normalize(arch, scr.sub, lw.PostAttnNorm, nil, hidden)
+			}
+			if cache.subCapture { // scr.sub is now the attention contribution about to hit the residual
+				cache.subAttn[l] = append(cache.subAttn[l][:0], scr.sub...)
+			}
+			for i := range h {
+				h[i] += scr.sub[i]
+			}
+			copy(scr.norm, h)
+			normalize(arch, scr.norm, lw.PreMLPNorm, lw.PreMLPNormBias, hidden)
+			if err := mlp(scr.norm, scr.sub, lw, arch, m.be, scr, m.pager, ld); err != nil {
+				return nil, err
+			}
+			if cache.subCapture { // scr.sub is the down output BEFORE the post-MLP sandwich norm
+				cache.subMLPpre[l] = append(cache.subMLPpre[l][:0], scr.sub...)
+			}
+			if sandwich {
+				normalize(arch, scr.sub, lw.PostMLPNorm, nil, hidden)
+			}
+			if cache.subCapture { // scr.sub is now the MLP contribution about to hit the residual
+				cache.subMLP[l] = append(cache.subMLP[l][:0], scr.sub...)
+			}
+			for i := range h {
+				h[i] += scr.sub[i]
+			}
 		}
 		// Read-only hidden-state seam (05): copy this layer's output residual stream
 		// when requested. A copy (not a reference) — h is mutated by later layers.

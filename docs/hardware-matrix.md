@@ -11,6 +11,8 @@ Regenerate with `go test ./decoder -run HardwareMatrix -update`.
 
 | Family | CPU | WebGPU | CUDA | Metal |
 |---|---|---|---|---|
+| Command-R | ✅ | CPU | CPU | CPU |
+| Command-R7B | ✅ | CPU | CPU | CPU |
 | DeepSeek-V2 | ✅ | ✅ resident | CPU | CPU |
 | DeepSeek-V3 | ✅ | ✅ resident | CPU | CPU |
 | GLM-4.5/4.6 | ✅ | ✅ resident | ✅ resident | ✅ resident |

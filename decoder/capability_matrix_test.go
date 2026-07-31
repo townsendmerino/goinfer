@@ -137,6 +137,24 @@ func representativeConfig(modelType string) *Config {
 			ModelType: "gpt2", VocabSize: 64, NEmbd: 16, NHead: 4, NLayer: 2,
 			NPositions: 32, LayerNormEpsilon: 1e-5, ActivationFunction: "gelu_new",
 		}
+	case "cohere":
+		// Command-R / Aya: bias-free LayerNorm, parallel attn+MLP block, gated SiLU,
+		// GPT-J interleaved RoPE, tied embeddings, logit_scale. head_dim*heads == hidden.
+		return &Config{
+			ModelType: "cohere", VocabSize: 256, HiddenDim: 64, NumLayers: 2, NumHeads: 4,
+			NumKVHeads: 2, HeadDim: 16, IntermediateDim: 128, LayerNormEps: 1e-5,
+			RoPEGlobalBase: 10000, LogitScale: 0.125, HiddenAct: "silu",
+		}
+	case "cohere2":
+		// Command-R7B: cohere1 stack + interleaved sliding/global attention where the
+		// global layers are NoPE. pattern=4 over 4 layers → layers 0-2 sliding+RoPE,
+		// layer 3 global+NoPE. head_dim*heads == hidden.
+		return &Config{
+			ModelType: "cohere2", VocabSize: 256, HiddenDim: 64, NumLayers: 4, NumHeads: 4,
+			NumKVHeads: 2, HeadDim: 16, IntermediateDim: 128, LayerNormEps: 1e-5,
+			RoPEGlobalBase: 10000, LogitScale: 0.25, HiddenAct: "silu",
+			SlidingWindow: 8, SlidingWindowPattern: 4,
+		}
 	case "mixtral":
 		return &Config{
 			ModelType: "mixtral", VocabSize: 128, HiddenDim: 16, NumLayers: 2, NumHeads: 4,
@@ -293,6 +311,8 @@ var familyDocs = map[string]familyDoc{
 	"llama":               {"Llama", "Meta Llama 2/3 dense (single-base RoPE)", "safetensors, GGUF, GPTQ, AWQ", "text"},
 	"mistral":             {"Mistral", "Mistral dense (all-layer sliding window)", "safetensors, GGUF", "text"},
 	"gpt2":                {"GPT-2", "GPT-2/NeoX (LayerNorm, learned positions, non-gated GELU)", "safetensors, GGUF", "text"},
+	"cohere":              {"Command-R", "Cohere Command-R / Aya (bias-free LayerNorm + parallel attn/MLP block + logit-scale + GPT-J RoPE)", "safetensors", "text"},
+	"cohere2":             {"Command-R7B", "Cohere2 Command-R7B / Command-A (cohere1 stack + interleaved sliding-window + NoPE on the global layers, no QK-norm)", "safetensors", "text"},
 	"mixtral":             {"Mixtral", "Mistral + sparse MoE FFN (router + top-k experts)", "safetensors, GGUF", "text"},
 	"mellum":              {"Mellum2", "JetBrains Mellum2 code model (MoE + sliding/full interleave + YaRN)", "safetensors, GGUF", "text"},
 	"qwen3_5_moe":         {"Qwen3.5-MoE", "Qwen3.5/3.6 hybrid: Gated DeltaNet + softmax + MoE", "safetensors, GGUF", "text"},

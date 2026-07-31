@@ -93,6 +93,7 @@ func (m *Model) runLayersFromEmbedN(h []float32, cache *KVCache) ([]float32, err
 	K := len(h) / hidden
 	startPos := cache.Pos()
 	sandwich := arch.NormPlacement == NormSandwich4
+	parallel := arch.NormPlacement == NormParallel
 
 	norm := make([]float32, K*hidden)
 	q := make([]float32, K*qDim)
@@ -161,6 +162,7 @@ func (m *Model) runLayersFromEmbedN(h []float32, cache *KVCache) ([]float32, err
 		invFreq := arch.ropeInvFreq(l)
 		ms := arch.ropeMscale(l)
 		isLocal := cache.isLocal(l)
+		noPE := arch.isNoPELayer(l) // Cohere2 global layers: no positional encoding
 		for i := range K {
 			pos := startPos + i
 			if cache.treeRowPos != nil {
@@ -171,8 +173,10 @@ func (m *Model) runLayersFromEmbedN(h []float32, cache *KVCache) ([]float32, err
 				rmsNorm(qi, lw.QNorm, nH, hd, arch.NormEps, arch.RMSAddOne)
 				rmsNorm(ki, lw.KNorm, nKV, hd, arch.NormEps, arch.RMSAddOne)
 			}
-			ropeAt(qi, nH, hd, pos, invFreq, ms, arch.MRopeSection, cache.mropePos, cache.mropeDelta)
-			ropeAt(ki, nKV, hd, pos, invFreq, ms, arch.MRopeSection, cache.mropePos, cache.mropeDelta)
+			if !noPE {
+				ropeAt(qi, nH, hd, pos, invFreq, ms, arch.MRopeSection, cache.mropePos, cache.mropeDelta, arch.ropeInterleave)
+				ropeAt(ki, nKV, hd, pos, invFreq, ms, arch.MRopeSection, cache.mropePos, cache.mropeDelta, arch.ropeInterleave)
+			}
 			if !isLocal {
 				cache.Append(l, ki, vi) // global: append now; local: deferred to commitBatch below
 			}
@@ -210,15 +214,25 @@ func (m *Model) runLayersFromEmbedN(h []float32, cache *KVCache) ([]float32, err
 				normalize(arch, row(att, i, hidden), lw.PostAttnNorm, nil, hidden)
 			}
 		}
-		for j := range h {
-			h[j] += att[j]
+		if !parallel {
+			// Sequential: add the attention residual, then re-norm the updated stream for the MLP.
+			for j := range h {
+				h[j] += att[j]
+			}
+			copy(norm, h)
+			for i := range K {
+				normalize(arch, row(norm, i, hidden), lw.PreMLPNorm, lw.PreMLPNormBias, hidden)
+			}
 		}
-
-		copy(norm, h)
-		for i := range K {
-			normalize(arch, row(norm, i, hidden), lw.PreMLPNorm, lw.PreMLPNormBias, hidden)
-		}
+		// Parallel (Cohere/GPT-J): `norm` still holds the single shared input norm and
+		// `att` is held back — both fold into ONE residual add after the MLP below.
 		if arch.MoE != nil && lw.Experts != nil {
+			if parallel {
+				// No parallel-block MoE family exists yet; the batched MoE branch below
+				// adds only its own contribution and `continue`s, which would silently
+				// drop `att`. Fail loud until a parallel+MoE family needs the joint add.
+				return nil, errNotImplemented
+			}
 			// Sparse MoE (Mellum / Mixtral): the router selects different experts per
 			// token, so the FFN isn't batchable across K — run the existing per-token
 			// moeMLP for each row (bit-identical to the sequential path). The prefill
@@ -265,8 +279,15 @@ func (m *Model) runLayersFromEmbedN(h []float32, cache *KVCache) ([]float32, err
 				normalize(arch, row(mlpOut, i, hidden), lw.PostMLPNorm, nil, hidden)
 			}
 		}
-		for j := range h {
-			h[j] += mlpOut[j]
+		if parallel {
+			// Single residual add: attention + MLP, both from the shared input norm.
+			for j := range h {
+				h[j] += att[j] + mlpOut[j]
+			}
+		} else {
+			for j := range h {
+				h[j] += mlpOut[j]
+			}
 		}
 		// Read-only hidden-state seam (05), batched: copy all K rows of this layer's
 		// output when requested. captured[ci] holds [K*hidden]. nil ⇒ zero overhead.
@@ -458,6 +479,17 @@ func (m *Model) lmHeadN(h []float32, M int) []float32 {
 		sc := float32(arch.FinalLogitSoftcap)
 		for j, val := range logits {
 			logits[j] = sc * float32(math.Tanh(float64(val/sc)))
+		}
+	}
+	// logit_scale (Cohere multiplier stored as goinfer's reciprocal; Granite
+	// logits_scaling divisor). Mirror logitsFromHidden's tail — the sequential
+	// path applies this, so the batched prefill/verify must too, else forwardN
+	// diverges for any LogitScale family. Cohere is the first forwardN-eligible
+	// one (Granite runs its own forward), which is why this was latent.
+	if arch.LogitScale != 0 && arch.LogitScale != 1 {
+		inv := float32(1 / arch.LogitScale)
+		for j := range logits {
+			logits[j] *= inv
 		}
 	}
 	return logits

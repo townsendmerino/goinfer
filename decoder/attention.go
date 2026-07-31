@@ -101,11 +101,11 @@ func causalAttention(
 	// layers, plain on sliding; Phi: partial rotary). The mscale folds YaRN's
 	// attention_factor into the rotation (1.0 elsewhere). GPT-2 uses learned
 	// absolute positions instead, so it skips RoPE.
-	if !arch.LearnedPosEmbed {
+	if !arch.LearnedPosEmbed && !arch.isNoPELayer(layer) {
 		invFreq := arch.ropeInvFreq(layer)
 		ms := arch.ropeMscale(layer)
-		ropeAt(q, nH, hd, pos, invFreq, ms, arch.MRopeSection, cache.mropePos, cache.mropeDelta)
-		ropeAt(k, nKV, hd, pos, invFreq, ms, arch.MRopeSection, cache.mropePos, cache.mropeDelta)
+		ropeAt(q, nH, hd, pos, invFreq, ms, arch.MRopeSection, cache.mropePos, cache.mropeDelta, arch.ropeInterleave)
+		ropeAt(k, nKV, hd, pos, invFreq, ms, arch.MRopeSection, cache.mropePos, cache.mropeDelta, arch.ropeInterleave)
 	}
 
 	// 4. Append this position's K/V, then attend over the stored history. Route

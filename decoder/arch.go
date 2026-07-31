@@ -37,6 +37,7 @@ type Architecture struct {
 	AttnScale       float64          // explicit q·k multiplier (resolved: query_pre_attn_scalar^-0.5 or 1/sqrt(headDim))
 	SlidingWindow   int              // 0 = none
 	layerIsGlobal   func(i int) bool // per-layer global(full) vs local(sliding) attention
+	layerNoPE       func(i int) bool // per-layer NoPE: true ⇒ skip RoPE entirely on this layer (Cohere2 global layers; Llama-4 iRoPE style). nil ⇒ every layer ropes.
 
 	// RoPE (dual base for Gemma's local/global layers; equal bases = single-base).
 	RoPELocalBase, RoPEGlobalBase float64
@@ -56,6 +57,11 @@ type Architecture struct {
 	// adapter, consumed when the tables are built.
 	ropeScaling      *ropeScaling
 	ropeScalingLocal *ropeScaling
+	// ropeInterleave selects GPT-J pairwise rotation (dims 2d,2d+1) over the NeoX
+	// split-half layout (dims d,d+half) in the generic scalar RoPE path. Cohere/
+	// Command-R, Falcon, GPT-J, StableLM set it; Llama/Qwen/Gemma leave it false.
+	// (DeepSeek's MLA carries its own ropeInterleave on mlaParams.)
+	ropeInterleave bool
 
 	// Precomputed inverse-frequency tables (base + scaling baked in), built by
 	// finalizeRoPE at resolve time so the forward pass never recomputes pow/scaling
@@ -303,12 +309,18 @@ func (n NormKind) String() string {
 
 // NormPlacement selects where norms sit relative to the residual adds. Pre2 is
 // the Llama/Mistral/Qwen norm-before-each-sublayer; Sandwich4 is Gemma's
-// pre+post norm on both attention and MLP.
+// pre+post norm on both attention and MLP; Parallel is Cohere/GPT-J's single
+// shared input norm feeding BOTH sublayers into one residual add.
 type NormPlacement int
 
 const (
 	NormPre2 NormPlacement = iota
 	NormSandwich4
+	// NormParallel: one input norm per layer; attention and MLP both read that
+	// same normed input and their outputs sum into a single residual add
+	// (residual = x + attn(norm(x)) + mlp(norm(x))). Cohere/Command-R, GPT-J,
+	// Falcon. No pre-MLP norm, no post-sublayer norms.
+	NormParallel
 )
 
 // String renders the norm placement for the capability matrix / logs.
@@ -318,6 +330,8 @@ func (p NormPlacement) String() string {
 		return "pre-norm"
 	case NormSandwich4:
 		return "sandwich"
+	case NormParallel:
+		return "parallel"
 	default:
 		return "unknown"
 	}
@@ -355,6 +369,13 @@ func (a *Architecture) isGlobalLayer(i int) bool {
 		return a.layerIsGlobal(i)
 	}
 	return true
+}
+
+// isNoPELayer reports whether layer i skips RoPE entirely (NoPE — no positional
+// encoding). Cohere2's every-Nth global-attention layer is NoPE while its sliding
+// layers carry RoPE. False when no per-layer function is set (every layer ropes).
+func (a *Architecture) isNoPELayer(i int) bool {
+	return a.layerNoPE != nil && a.layerNoPE(i)
 }
 
 // isLinearLayer reports whether layer i is a Gated DeltaNet (linear-attention)

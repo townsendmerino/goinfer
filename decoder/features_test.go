@@ -24,7 +24,9 @@ var archFeatureProfile = map[string][]ResidentFeature{
 	// derived per-model at load (RequiredResidentFeatures), which is what admission uses. The
 	// table's job is to force a new arch to be classified, not to be the runtime check.
 	"phi3":             {},
-	"gpt2":             {FeatLearnedPos, FeatNonGatedMLP, FeatOutBias},
+	"gpt2":             {FeatLayerNorm, FeatLearnedPos, FeatNonGatedMLP, FeatOutBias},
+	"cohere":           {FeatLayerNorm, FeatLogitScale, FeatParallelBlock},
+	"cohere2":          {FeatLayerNorm, FeatLogitScale, FeatNoPE, FeatParallelBlock, FeatSlidingWindow},
 	"mistral":          {FeatSlidingWindow},
 	"qwen3":            {FeatQKNorm},
 	"mellum":           {FeatMoE, FeatPerLayerRoPE, FeatQKNorm, FeatRopeMscale, FeatSlidingWindow},
@@ -143,7 +145,7 @@ func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 		FeatRopeMscale: true, FeatRMSAddOne: true, FeatEmbedScale: true, FeatLogitSoftcap: true,
 		FeatSandwichNorm: true, FeatGatedGELU: true, FeatNonGatedMLP: true, FeatLearnedPos: true,
 		FeatOutBias: true, FeatLogitScale: true, FeatMoE: true, FeatMoEGatedShared: true,
-		FeatMLA: true, FeatSSM: true,
+		FeatMLA: true, FeatSSM: true, FeatLayerNorm: true, FeatParallelBlock: true, FeatNoPE: true,
 	}
 	for be, set := range ResidentBackendFeatures {
 		for f := range set {
@@ -174,6 +176,9 @@ func TestResidentFeatures_derivation(t *testing.T) {
 		{"embed-scale", func(a *Architecture) { a.EmbedScale = 32 }, FeatEmbedScale},
 		{"softcap", func(a *Architecture) { a.FinalLogitSoftcap = 30 }, FeatLogitSoftcap},
 		{"sandwich", func(a *Architecture) { a.NormPlacement = NormSandwich4 }, FeatSandwichNorm},
+		{"layer-norm", func(a *Architecture) { a.Norm = NormLayer }, FeatLayerNorm},
+		{"parallel-block", func(a *Architecture) { a.NormPlacement = NormParallel }, FeatParallelBlock},
+		{"nope", func(a *Architecture) { a.layerNoPE = func(int) bool { return true } }, FeatNoPE},
 		{"gated-gelu", func(a *Architecture) { a.Act = ActGeluTanh }, FeatGatedGELU},
 		{"non-gated", func(a *Architecture) { a.NonGatedMLP = true }, FeatNonGatedMLP},
 		{"learned-pos", func(a *Architecture) { a.LearnedPosEmbed = true }, FeatLearnedPos},
