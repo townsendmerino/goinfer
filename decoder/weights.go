@@ -679,7 +679,7 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 				l.LayerScalar = 1
 			}
 			if arch.MoE != nil {
-				if l.gemma4moe, err = loadGemma4MoE(st, i, cfg, arch, hd, l, tn); err != nil {
+				if l.gemma4moe, err = loadGemma4MoE(st, i, cfg, arch, hd, l, quant, tn); err != nil {
 					return err
 				}
 			}
@@ -918,9 +918,14 @@ func loadFusedExperts(st *embed.SafetensorsFile, gateUpName, downName string, nE
 // are already loaded by the caller — this aliases them and loads the MoE-specific
 // tensors: the three parallel-branch norms, the weightless-norm/learned-scale
 // router + per-expert scale, and the fused gelu-tanh experts (gate_up ‖ down).
-// Router weights stay f32 (loadMat, no quant); expert weights are wrapped f32
-// (gemma4-moe quantization/residency is a later phase — the parity path is CPU f32).
-func loadGemma4MoE(st *embed.SafetensorsFile, i int, cfg *Config, arch *Architecture, hidden int, l *LayerWeights, tn func(int, string) string) (*gemma4MoEWeights, error) {
+//
+// Router weights stay f32 (loadMat, no quant — the router is logit-critical); the
+// experts quantize at load through the layer's quant mode like every other family
+// (router-f32 / experts-int4). The experts stream one at a time via Tensor.SubF32
+// (§4): each expert's slice is widened/quantized on its own, so a bf16 26B-A4B never
+// materializes the whole [128, 2*inter, hidden] gate_up (a ~2 GB/layer transient) —
+// only one expert's f32 at a time.
+func loadGemma4MoE(st *embed.SafetensorsFile, i int, cfg *Config, arch *Architecture, hidden int, l *LayerWeights, quant quantMode, tn func(int, string) string) (*gemma4MoEWeights, error) {
 	m := arch.MoE
 	nm := func(s string) string { return tn(i, s) }
 	w := &gemma4MoEWeights{
@@ -955,24 +960,44 @@ func loadGemma4MoE(st *embed.SafetensorsFile, i int, cfg *Config, arch *Architec
 		return nil, err
 	}
 	// Fused experts: gate_up [E, 2*moeInter, hidden] (gate ‖ up on the row axis),
-	// down [E, hidden, moeInter]. Copy each expert's slice so the two big 3-D reads
-	// are released rather than aliased for the model's life.
-	gu, err := st.TensorF32(nm("experts.gate_up_proj"), m.NumExperts, 2*m.IntermediateDim, hidden)
+	// down [E, hidden, moeInter]. Streamed + quantized per expert.
+	guT, err := st.Tensor(nm("experts.gate_up_proj"))
 	if err != nil {
 		return nil, err
 	}
-	dn, err := st.TensorF32(nm("experts.down_proj"), m.NumExperts, hidden, m.IntermediateDim)
+	dnT, err := st.Tensor(nm("experts.down_proj"))
 	if err != nil {
 		return nil, err
 	}
-	guStride, dnStride := 2*m.IntermediateDim*hidden, hidden*m.IntermediateDim
-	w.expertsGateUp = make([]linalg.WeightMat, m.NumExperts)
-	w.expertsDown = make([]linalg.WeightMat, m.NumExperts)
-	for e := 0; e < m.NumExperts; e++ {
-		w.expertsGateUp[e] = linalg.WrapF32(append([]float32(nil), gu[e*guStride:(e+1)*guStride]...), 2*m.IntermediateDim, hidden)
-		w.expertsDown[e] = linalg.WrapF32(append([]float32(nil), dn[e*dnStride:(e+1)*dnStride]...), hidden, m.IntermediateDim)
+	if w.expertsGateUp, err = streamExperts(guT, m.NumExperts, 2*m.IntermediateDim, hidden, quant); err != nil {
+		return nil, err
+	}
+	if w.expertsDown, err = streamExperts(dnT, m.NumExperts, hidden, m.IntermediateDim, quant); err != nil {
+		return nil, err
 	}
 	return w, nil
+}
+
+// streamExperts slices a fused [nExpert, rows, cols] safetensors tensor into per-
+// expert WeightMats, widening + quantizing ONE expert at a time via Tensor.SubF32
+// so the whole 3-D f32 is never materialized (the bf16-26B transient win). Each
+// expert passes through quantizeWM: int8/int4 produces owned quantized data and the
+// f32 slice is dropped; f32/quantNone leaves an f32 WeightMat aliasing the mapping
+// (pageable, valid while w.st is retained) — no heap copy.
+func streamExperts(t embed.Tensor, nExpert, rows, cols int, quant quantMode) ([]linalg.WeightMat, error) {
+	stride := rows * cols
+	if t.Elements() != nExpert*stride {
+		return nil, fmt.Errorf("experts %q: %d elements, want %d (=%d×%d×%d)", t.Name, t.Elements(), nExpert*stride, nExpert, rows, cols)
+	}
+	out := make([]linalg.WeightMat, nExpert)
+	for e := range nExpert {
+		f32, err := t.SubF32(e*stride, stride)
+		if err != nil {
+			return nil, err
+		}
+		out[e] = quantizeWM(linalg.WrapF32(f32, rows, cols), quant)
+	}
+	return out, nil
 }
 
 // loadMat loads + shape-validates a [rows, cols] matrix (via the aikit
