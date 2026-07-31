@@ -67,13 +67,17 @@
       ],
       "own": [],
       "deps_hash": "sha256:21748988f898ca2b9b75b9c6f3bb8247340b92fa1c0609f1c84492f977f3a3cc",
-      "status": "pending",
-      "validated_at": null,
-      "date": null,
-      "reference": null,
-      "machine": null,
-      "method": null,
-      "metrics": null
+      "status": "validated",
+      "validated_at": "625303e",
+      "date": "2026-07-31",
+      "reference": "HF f32 (Command-R7B, Cohere2ForCausalLM)",
+      "machine": "linux-62gb",
+      "method": "full-forward-oracle",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 1.00000,
+        "cosine_mean": 1.00000
+      }
     },
     "deepseek_v2": {
       "uses": [

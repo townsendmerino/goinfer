@@ -118,7 +118,7 @@
     "loaders": "safetensors",
     "modality": "text",
     "gpu_residency_eligible": true,
-    "parity": "pending"
+    "parity": "full-oracle 100.0%/1.00000"
   },
   {
     "name": "glm4_moe",
