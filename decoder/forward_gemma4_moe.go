@@ -46,8 +46,13 @@ func gemma4MoEFFN(be Backend, arch *Architecture, h []float32, w *gemma4MoEWeigh
 	eps := arch.NormEps
 
 	// dense branch: x1 = post_ffn_norm_1( mlp( pre_ffn_norm(h) ) ), gelu-tanh GeGLU.
+	// The weighted norms follow arch.RMSAddOne (the (1+w) offset) exactly like the
+	// dense forward's normalize(arch, …), so if that flag is ever flipped for gemma4
+	// these five track it rather than silently diverging. false today (Gemma4RMSNorm
+	// is plain x*w); the router's norm at rmsNormNoWeight below is genuinely weightless.
+	addOne := arch.RMSAddOne
 	xd := append([]float32(nil), h...)
-	rmsNorm(xd, w.preFFNNorm, 1, hidden, eps, false)
+	rmsNorm(xd, w.preFFNNorm, 1, hidden, eps, addOne)
 	gate := make([]float32, w.denseInter)
 	up := make([]float32, w.denseInter)
 	matmul(be, &w.mlpGate, xd, gate, 1)
@@ -57,7 +62,7 @@ func gemma4MoEFFN(be Backend, arch *Architecture, h []float32, w *gemma4MoEWeigh
 	}
 	x1 := make([]float32, hidden)
 	matmul(be, &w.mlpDown, gate, x1, 1)
-	rmsNorm(x1, w.postFFNNorm1, 1, hidden, eps, false)
+	rmsNorm(x1, w.postFFNNorm1, 1, hidden, eps, addOne)
 
 	// moe branch — router on the RAW residual h (its own weightless RMSNorm + learned
 	// scale + hidden^-0.5), softmax over all experts → top-k → UNCONDITIONAL renorm →
@@ -83,7 +88,7 @@ func gemma4MoEFFN(be Backend, arch *Architecture, h []float32, w *gemma4MoEWeigh
 
 	// experts on pre_ffn_norm_2(h): gelu-tanh GeGLU, gate/up = contiguous halves.
 	xe := append([]float32(nil), h...)
-	rmsNorm(xe, w.preFFNNorm2, 1, hidden, eps, false)
+	rmsNorm(xe, w.preFFNNorm2, 1, hidden, eps, addOne)
 	x2 := make([]float32, hidden)
 	gu := make([]float32, 2*w.moeInter)
 	mid := make([]float32, w.moeInter)
@@ -99,14 +104,14 @@ func gemma4MoEFFN(be Backend, arch *Architecture, h []float32, w *gemma4MoEWeigh
 			x2[i] += wj * edown[i]
 		}
 	}
-	rmsNorm(x2, w.postFFNNorm2, 1, hidden, eps, false)
+	rmsNorm(x2, w.postFFNNorm2, 1, hidden, eps, addOne)
 
 	// join: out = (h + post_ffn_norm(x1 + x2)) * layer_scalar.
 	comb := make([]float32, hidden)
 	for i := range comb {
 		comb[i] = x1[i] + x2[i]
 	}
-	rmsNorm(comb, w.postFFNNorm, 1, hidden, eps, false)
+	rmsNorm(comb, w.postFFNNorm, 1, hidden, eps, addOne)
 	out := make([]float32, hidden)
 	for i := range out {
 		out[i] = (h[i] + comb[i]) * w.layerScalar
