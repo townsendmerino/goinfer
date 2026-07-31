@@ -288,6 +288,134 @@ func TestSerializeQwen35_roundTrip(t *testing.T) {
 	t.Logf("qwen3_5_moe round-trips: %d delta + %d qattn layers, decode byte-identical", nDelta, nQattn)
 }
 
+// TestSerializeGemma4MoE_roundTrip gates the v4 format extension: the gemma4
+// parallel dense+MoE stack must survive a .giw round-trip. Before v4 canSerialize
+// refused all of Gemma 4; now the gemma4 tail carries layer_scalar, the KV-share
+// flags, the PLE branch, and the gemma4moe sub-block (router + per-expert scale +
+// the three branch norms + the quantized fused experts). The reload must restore
+// gemma4moe on every layer and reproduce the greedy decode byte-identically.
+func TestSerializeGemma4MoE_roundTrip(t *testing.T) {
+	const ckpt = "../testdata/gemma4-moe-tiny"
+	if _, err := os.Stat(ckpt); err != nil {
+		t.Skipf("no gemma4-moe checkpoint at %s — run scripts/pin_gemma4_moe_forward.py", ckpt)
+	}
+	m1, err := Load(ckpt, Options{Quant: "int8int8"})
+	if err != nil {
+		t.Fatalf("load checkpoint: %v", err)
+	}
+	defer m1.Close()
+
+	blob, err := SerializeWeights(m1.w, "gemma4moe-rt")
+	if err != nil {
+		t.Fatalf("serialize: %v", err)
+	}
+	w2, err := LoadSerializedWeights(blob)
+	if err != nil {
+		t.Fatalf("deserialize: %v", err)
+	}
+
+	// gemma4moe (with all experts) + layer_scalar must be restored on every layer.
+	nMoE := 0
+	for i := range w2.Layers {
+		mo, orig := w2.Layers[i].gemma4moe, m1.w.Layers[i].gemma4moe
+		if mo == nil {
+			t.Fatalf("layer %d: gemma4moe dropped on round-trip", i)
+		}
+		nMoE++
+		if len(mo.expertsGateUp) != len(orig.expertsGateUp) || len(mo.expertsDown) != len(orig.expertsDown) {
+			t.Fatalf("layer %d: expert count changed (%d/%d vs %d/%d)", i,
+				len(mo.expertsGateUp), len(mo.expertsDown), len(orig.expertsGateUp), len(orig.expertsDown))
+		}
+		if _, isF32 := mo.expertsGateUp[0].F32(); isF32 {
+			t.Errorf("layer %d: round-tripped experts are f32, not quantized", i)
+		}
+		if w2.Layers[i].LayerScalar != m1.w.Layers[i].LayerScalar {
+			t.Errorf("layer %d: layer_scalar %v != %v", i, w2.Layers[i].LayerScalar, m1.w.Layers[i].LayerScalar)
+		}
+	}
+	if nMoE == 0 {
+		t.Fatal("no gemma4moe layers after round-trip")
+	}
+
+	m2, err := NewModel(w2, "cpu")
+	if err != nil {
+		t.Fatalf("new model: %v", err)
+	}
+	prompt := []int{1, 7, 42, 100, 5, 200, 13, 88}
+	a, b := greedyN(t, m1, prompt, 8), greedyN(t, m2, prompt, 8)
+	if !slicesEqualInt(a, b) {
+		t.Fatalf("gemma4-moe .giw round-trip changed the decode:\n direct:     %v\n round-trip: %v", a, b)
+	}
+	t.Logf("gemma4-moe round-trips: %d MoE layers, decode byte-identical", nMoE)
+}
+
+// TestSerializeGemma4E2B_roundTrip exercises the v4 gemma4 tail's DENSE side that
+// the PLE-free tiny MoE golden can't: the real E2B has a Per-Layer-Embedding stack
+// (model-level PerLayerTokenEmbed/ModelProj/ProjNorm + the per-layer PLEGate/PLEProj/
+// PostPLENorm branch), KV-sharing (KVShared), and per-layer layer_scalar — all of
+// which .giw v4 must carry. Reload must reproduce the greedy decode byte-identically.
+// Skips without the local E2B GGUF.
+func TestSerializeGemma4E2B_roundTrip(t *testing.T) {
+	path := os.Getenv("HOME") + "/models/gemma-4-E2B_q4_0-it.gguf"
+	if _, err := os.Stat(path); err != nil {
+		t.Skipf("no E2B gguf (%v)", err)
+	}
+	m1, err := Load(path, Options{Quant: "int8int8"})
+	if err != nil {
+		t.Fatalf("load E2B: %v", err)
+	}
+	defer m1.Close()
+	if m1.w.PerLayerTokenEmbed.Rows() == 0 {
+		t.Skip("E2B build has no PLE stack — nothing to gate here")
+	}
+
+	blob, err := SerializeWeights(m1.w, "gemma4-e2b-rt")
+	if err != nil {
+		t.Fatalf("serialize: %v", err)
+	}
+	w2, err := LoadSerializedWeights(blob)
+	if err != nil {
+		t.Fatalf("deserialize: %v", err)
+	}
+
+	// Model-level PLE inputs restored.
+	if w2.PerLayerTokenEmbed.Rows() != m1.w.PerLayerTokenEmbed.Rows() ||
+		w2.PerLayerModelProj.Rows() != m1.w.PerLayerModelProj.Rows() ||
+		len(w2.PerLayerProjNorm) != len(m1.w.PerLayerProjNorm) {
+		t.Fatalf("PLE model-level inputs lost on round-trip")
+	}
+	// Per-layer PLE branch + KV-share + layer_scalar restored.
+	var nPLE, nKVShared int
+	for i := range w2.Layers {
+		if w2.Layers[i].PLEGate.Rows() != m1.w.Layers[i].PLEGate.Rows() {
+			t.Fatalf("layer %d: PLEGate lost (%d vs %d)", i, w2.Layers[i].PLEGate.Rows(), m1.w.Layers[i].PLEGate.Rows())
+		}
+		if w2.Layers[i].PLEGate.Rows() > 0 {
+			nPLE++
+		}
+		if w2.Layers[i].KVShared != m1.w.Layers[i].KVShared || w2.Layers[i].VFromK != m1.w.Layers[i].VFromK {
+			t.Fatalf("layer %d: KV-share flags changed", i)
+		}
+		if w2.Layers[i].KVShared {
+			nKVShared++
+		}
+		if w2.Layers[i].LayerScalar != m1.w.Layers[i].LayerScalar {
+			t.Fatalf("layer %d: layer_scalar %v != %v", i, w2.Layers[i].LayerScalar, m1.w.Layers[i].LayerScalar)
+		}
+	}
+
+	m2, err := NewModel(w2, "cpu")
+	if err != nil {
+		t.Fatalf("new model: %v", err)
+	}
+	prompt := []int{2, 106, 1596, 476, 573} // arbitrary in-vocab ids
+	a, b := greedyN(t, m1, prompt, 6), greedyN(t, m2, prompt, 6)
+	if !slicesEqualInt(a, b) {
+		t.Fatalf("gemma4-E2B .giw round-trip changed the decode:\n direct:     %v\n round-trip: %v", a, b)
+	}
+	t.Logf("gemma4-E2B round-trips: %d PLE layers, %d KV-shared, decode byte-identical", nPLE, nKVShared)
+}
+
 // TestSerializeWeightsTo_matchesBuffer gates the streaming serializer: writing the
 // bundle to an io.Writer must produce bytes byte-for-byte identical to the in-memory
 // SerializeWeights (same CRC, same length). Streaming is how a 35B is prequantized
@@ -374,10 +502,9 @@ func TestCanSerialize_refusesUnrepresentable(t *testing.T) {
 	refused := map[string]string{
 		"deepseek_v2": "MLA", "deepseek_v3": "MLA", "kimi_k2": "MLA",
 		"granitemoehybrid": "Mamba-2", "nemotron_h": "Mamba-2",
-		"gemma4":              "PLE",
-		"gemma4_text":         "PLE", // gemma4 MoE variant: own forward (PLE/per-layer) + gemma4moe experts, both undropped by .giw
-		"gemma4_unified_text": "PLE", // real unified text_config model_type: same gemma4 forward + gemma4moe experts
-		"llama4_text":         "unsupported",
+		"llama4_text": "unsupported",
+		// gemma4 / gemma4_text / gemma4_unified_text ARE representable as of .giw v4
+		// (the gemma4 tail: PLE + layer_scalar + KV-share flags + the gemma4moe sub-block).
 	}
 	for name := range archFeatureProfile {
 		cfg := representativeConfig(name)

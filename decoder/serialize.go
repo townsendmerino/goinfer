@@ -52,8 +52,11 @@ import (
 // guard and rebuilt from the source GGUF.
 
 const (
-	giwMagic   = "GINFW"
-	giwVersion = 3 // v3: per-layer RouterBias (DeepSeek/GLM e_score_correction_bias); v2: qwen3_5_moe hybrid tail
+	giwMagic    = "GINFW"
+	giwVersion  = 4 // v4: gemma4 tail (PLE + layer_scalar + KV-share flags + the gemma4moe sub-block)
+	giwMinReadV = 3 // read v3 too (v4 only ADDS the gemma4-gated tail; non-gemma4 v3 bundles stay valid)
+	giwV4Gemma4 = 4 // the version at/after which the gemma4 tail is present
+	// v3: per-layer RouterBias (DeepSeek/GLM e_score_correction_bias); v2: qwen3_5_moe hybrid tail
 	// Sanity ceilings on the count fields, generous vs any real checkpoint
 	// (largest models: ~120 layers, a few hundred experts) but low enough that a
 	// corrupt/hostile blob can't drive a multi-GB make() before the body reader
@@ -72,10 +75,11 @@ func (e *SerializeError) Error() string { return "decoder: serialized weights: "
 
 // canSerialize reports why a model's per-layer state cannot round-trip through the .giw format,
 // or nil if it can. The writer expresses the standard attention+MLP(+MoE) block plus
-// qwen3_5_moe's DeltaNet/gated-softmax extras; it does NOT write MLA latent projections
-// (DeepSeek/Kimi), Mamba-2 SSM weights (Granite/Nemotron), or the Gemma-4 per-layer-embedding
-// stack — so serializing those yields a CRC-valid bundle that nil-derefs at the first forward.
-// Refuse those families up front rather than emit silent garbage (C2).
+// qwen3_5_moe's DeltaNet/gated-softmax extras and (v4) the gemma4 PLE / layer_scalar /
+// KV-share / MoE tail; it does NOT write MLA latent projections (DeepSeek/Kimi) or Mamba-2
+// SSM weights (Granite/Nemotron) — so serializing those yields a CRC-valid bundle that
+// nil-derefs at the first forward. Refuse those families up front rather than emit silent
+// garbage (C2).
 func canSerialize(a *Architecture) *SerializeError {
 	switch {
 	case a == nil:
@@ -84,8 +88,6 @@ func canSerialize(a *Architecture) *SerializeError {
 		return &SerializeError{"MLA latent attention (DeepSeek/Kimi) is not representable in .giw"}
 	case a.granite != nil || a.nemotron != nil:
 		return &SerializeError{"Mamba-2 SSM state (Granite/Nemotron) is not representable in .giw"}
-	case a.gemma4 != nil:
-		return &SerializeError{"Gemma-4 per-layer-embedding stack is not representable in .giw"}
 	case a.llama4 != nil:
 		return &SerializeError{"Llama-4 is not yet supported by .giw serialization"}
 	}
@@ -138,6 +140,7 @@ func (wr *giwWriter) writeBundle(w *Weights, id string) error {
 	if err := canSerialize(w.arch); err != nil {
 		return err
 	}
+	wr.arch = w.arch // gates the gemma4 model-level PLE + per-layer tail
 	if err := wr.writeHeadGlobals(w, id); err != nil {
 		return err
 	}
@@ -170,6 +173,23 @@ func (wr *giwWriter) writeHeadGlobals(w *Weights, id string) error {
 	wr.f32(w.FinalNorm)
 	wr.f32(w.FinalNormBias)
 
+	// v4: Gemma 4 model-level Per-Layer-Embedding inputs (empty on the PLE-free
+	// E-model/26B variants, but present as empty WeightMats so the layout is stable).
+	// Gated on gemma4 so every other family's bundle is byte-identical to v3.
+	if wr.arch != nil && wr.arch.gemma4 != nil {
+		wr.weightMat(&w.PerLayerTokenEmbed)
+		wr.weightMat(&w.PerLayerModelProj)
+		wr.f32(w.PerLayerProjNorm)
+		// FFNPerLayer (the E-models' variable per-layer FFN widths) is json:"-" on
+		// Config, so it does NOT survive the config-JSON round-trip — without it ffnAt()
+		// falls back to IntermediateDim and mis-sizes the MLP matmuls. Carry it here.
+		ffn := wr.arch.gemma4.FFNPerLayer
+		wr.u32(uint32(len(ffn)))
+		for _, v := range ffn {
+			wr.u32(uint32(v))
+		}
+	}
+
 	wr.u32(uint32(len(w.Layers)))
 	return wr.err
 }
@@ -185,9 +205,11 @@ func LoadSerializedWeights(data []byte) (*Weights, error) {
 	if got := r.rawN(len(giwMagic)); string(got) != giwMagic {
 		return nil, &SerializeError{fmt.Sprintf("bad magic %q (want %q)", got, giwMagic)}
 	}
-	if v := r.u32(); v != giwVersion {
-		return nil, &SerializeError{fmt.Sprintf("format version %d, this build reads %d", v, giwVersion)}
+	v := r.u32()
+	if v < giwMinReadV || v > giwVersion {
+		return nil, &SerializeError{fmt.Sprintf("format version %d, this build reads %d..%d", v, giwMinReadV, giwVersion)}
 	}
+	r.version = v
 	quant := quantMode(r.u32())
 	_ = r.str() // id — stored for tooling, not validated here
 	cfgJSON := r.bytesField()
@@ -213,6 +235,7 @@ func LoadSerializedWeights(data []byte) (*Weights, error) {
 	if err != nil {
 		return nil, &SerializeError{"arch: " + err.Error()}
 	}
+	r.arch = arch // gates the v4 gemma4 model-level + per-layer tail
 
 	w := &Weights{Cfg: cfg, arch: arch, backing: data}
 	w.Embed = r.weightMat()
@@ -225,6 +248,22 @@ func LoadSerializedWeights(data []byte) (*Weights, error) {
 	w.PosEmbed = r.weightMat()
 	w.FinalNorm = r.f32()
 	w.FinalNormBias = r.f32()
+	if r.version >= giwV4Gemma4 && arch.gemma4 != nil { // v4 gemma4 model-level PLE inputs
+		w.PerLayerTokenEmbed = r.weightMat()
+		w.PerLayerModelProj = r.weightMat()
+		w.PerLayerProjNorm = r.f32()
+		nf := int(r.u32())
+		if nf < 0 || nf > maxSerializedLayers {
+			return nil, &SerializeError{"implausible ffn-per-layer count"}
+		}
+		if nf > 0 {
+			ffn := make([]int, nf)
+			for i := range ffn {
+				ffn[i] = int(r.u32())
+			}
+			arch.gemma4.FFNPerLayer = ffn
+		}
+	}
 	n := int(r.u32())
 	if n < 0 || n > maxSerializedLayers {
 		return nil, &SerializeError{"implausible layer count"}
@@ -342,11 +381,12 @@ func (w *Weights) quantMode() quantMode {
 // memory (SerializeWeightsTo). Both modes route every byte through raw, so the two
 // produce identical bytes.
 type giwWriter struct {
-	buf  []byte    // buffer mode
-	sink io.Writer // stream mode (nil ⇒ buffer mode)
-	crc  uint32    // running CRC32-IEEE over bytes written (stream mode)
-	n    int64     // bytes written (stream mode)
-	err  error     // first sink error (stream mode)
+	buf  []byte        // buffer mode
+	sink io.Writer     // stream mode (nil ⇒ buffer mode)
+	crc  uint32        // running CRC32-IEEE over bytes written (stream mode)
+	n    int64         // bytes written (stream mode)
+	err  error         // first sink error (stream mode)
+	arch *Architecture // set in writeBundle; gates the v4 gemma4 model-level + per-layer tail
 }
 
 func (w *giwWriter) raw(b []byte) {
@@ -432,12 +472,6 @@ func (w *giwWriter) weightMat(m *linalg.WeightMat) {
 }
 
 func (w *giwWriter) layer(l *LayerWeights) {
-	// Gemma-4 per-layer-embedding / KV-sharing state has no slot in this format — refuse rather
-	// than drop it (the stream path reaches here without the arch-level canSerialize gate). C2.
-	if l.PLEGate.Rows() > 0 || l.KVShared || l.VFromK {
-		w.fail("Gemma-4 per-layer-embedding / KV-sharing layer is not representable in .giw")
-		return
-	}
 	w.weightMat(&l.QProj)
 	w.weightMat(&l.KProj)
 	w.weightMat(&l.VProj)
@@ -472,6 +506,48 @@ func (w *giwWriter) layer(l *LayerWeights) {
 	w.weightMat(&l.SharedExpert.Down)
 	w.weightMat(&l.SharedGate)
 	w.hybridLayer(l)
+	if w.arch != nil && w.arch.gemma4 != nil { // v4 gemma4 per-layer tail
+		w.gemma4Layer(l)
+	}
+}
+
+// gemma4Layer writes the v4 Gemma 4 per-layer tail: the PLE branch, the per-layer
+// output scalar, the KV-share flags, and (when enable_moe_block) the gemma4moe
+// sub-block's OWN tensors — the ones NOT already covered by the standard block. The
+// dense-branch MLP + its pre/post norms are l.GateProj/UpProj/DownProj +
+// l.PreMLPNorm/PostMLPNorm (already written), which the reader re-aliases into
+// gemma4moe; only the three parallel-branch norms, the router (l.Router is empty for
+// gemma4), the per-expert scale, and the fused experts are new here.
+func (w *giwWriter) gemma4Layer(l *LayerWeights) {
+	w.weightMat(&l.PLEGate)
+	w.weightMat(&l.PLEProj)
+	w.f32(l.PostPLENorm)
+	w.u32(math.Float32bits(l.LayerScalar))
+	w.raw([]byte{b2u8(l.KVShared), b2u8(l.VFromK)})
+	if l.gemma4moe == nil {
+		w.raw([]byte{0})
+		return
+	}
+	w.raw([]byte{1})
+	mo := l.gemma4moe
+	w.f32(mo.postFFNNorm1)
+	w.f32(mo.preFFNNorm2)
+	w.f32(mo.postFFNNorm2)
+	w.weightMat(&mo.routerProj)
+	w.f32(mo.routerScale)
+	w.f32(mo.perExpertScale)
+	w.u32(uint32(len(mo.expertsGateUp)))
+	for e := range mo.expertsGateUp {
+		w.weightMat(&mo.expertsGateUp[e])
+		w.weightMat(&mo.expertsDown[e])
+	}
+}
+
+func b2u8(b bool) byte {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 // hybridLayer writes the qwen3_5_moe per-layer extras (v2): a kind byte then the
@@ -512,9 +588,11 @@ func (w *giwWriter) hybridLayer(l *LayerWeights) {
 // --- reader (cursor over data; big arrays aliased, floats copied) ---
 
 type giwReader struct {
-	data []byte
-	off  int
-	err  error
+	data    []byte
+	off     int
+	err     error
+	version uint32        // parsed file version; gemma4 v4 fields are read only when ≥4
+	arch    *Architecture // resolved from the serialized config; gates the gemma4 tail
 }
 
 func (r *giwReader) fail(msg string) {
@@ -703,6 +781,55 @@ func (r *giwReader) layer(l *LayerWeights) {
 	l.SharedExpert.Down = r.weightMat()
 	l.SharedGate = r.weightMat()
 	r.hybridLayer(l)
+	if r.version >= giwV4Gemma4 && r.arch != nil && r.arch.gemma4 != nil { // v4 gemma4 tail
+		r.gemma4Layer(l)
+	}
+}
+
+// gemma4Layer reads the v4 Gemma 4 per-layer tail and, when the MoE sub-block is
+// present, reconstructs gemma4moe — re-aliasing the dense-branch MLP + pre/post norms
+// already read into the standard block, and taking the fixed dims from the resolved
+// arch (denseInter = IntermediateDim, moe/experts/topK from arch.MoE).
+func (r *giwReader) gemma4Layer(l *LayerWeights) {
+	l.PLEGate = r.weightMat()
+	l.PLEProj = r.weightMat()
+	l.PostPLENorm = r.f32()
+	l.LayerScalar = math.Float32frombits(r.u32())
+	l.KVShared = r.u8() != 0
+	l.VFromK = r.u8() != 0
+	if r.u8() == 0 { // no gemma4moe sub-block (dense E-model layer)
+		return
+	}
+	mo := &gemma4MoEWeights{
+		preFFNNorm:  l.PreMLPNorm,  // dense pre-norm (already read)
+		postFFNNorm: l.PostMLPNorm, // joint post-norm (already read)
+		mlpGate:     l.GateProj,
+		mlpUp:       l.UpProj,
+		mlpDown:     l.DownProj,
+		layerScalar: l.LayerScalar,
+		denseInter:  r.arch.IntermediateDim,
+	}
+	if m := r.arch.MoE; m != nil {
+		mo.moeInter, mo.nE, mo.topK = m.IntermediateDim, m.NumExperts, m.TopK
+	}
+	mo.postFFNNorm1 = r.f32()
+	mo.preFFNNorm2 = r.f32()
+	mo.postFFNNorm2 = r.f32()
+	mo.routerProj = r.weightMat()
+	mo.routerScale = r.f32()
+	mo.perExpertScale = r.f32()
+	ne := int(r.u32())
+	if ne < 0 || ne > maxSerializedExperts {
+		r.fail("implausible gemma4moe expert count")
+		return
+	}
+	mo.expertsGateUp = make([]linalg.WeightMat, ne)
+	mo.expertsDown = make([]linalg.WeightMat, ne)
+	for e := 0; e < ne; e++ {
+		mo.expertsGateUp[e] = r.weightMat()
+		mo.expertsDown[e] = r.weightMat()
+	}
+	l.gemma4moe = mo
 }
 
 // hybridLayer reconstructs the qwen3_5_moe per-layer extras written by
