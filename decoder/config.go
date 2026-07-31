@@ -46,6 +46,12 @@ type Config struct {
 	NumExpertsPerTok    int   `json:"num_experts_per_tok"`
 	NormTopKProb        *bool `json:"norm_topk_prob"`
 	MoeIntermediateSize int   `json:"moe_intermediate_size"`
+	// Gemma 4 26B-A4B MoE (model_type gemma4, text_config.enable_moe_block=true). It
+	// spells the per-token expert count top_k_experts (not num_experts_per_tok), and
+	// gates the whole parallel dense+MoE FFN sub-block on enable_moe_block — the dense
+	// E2B/E4B/12B variants leave both zero/false. See docs/task-gemma4-moe.md §A4.
+	EnableMoeBlock bool `json:"enable_moe_block"`
+	TopKExperts    int  `json:"top_k_experts"`
 	// SharedExpertIntermediateSize is the always-on shared expert's FFN width
 	// (Qwen-MoE/Qwen2-MoE). 0/absent ⇒ no shared expert.
 	SharedExpertIntermediateSize int `json:"shared_expert_intermediate_size"`
@@ -362,6 +368,23 @@ func (c *Config) validateQwen2Moe() error {
 		return fmt.Errorf("decoder(qwen2_moe): moe_intermediate_size must be >0, got %d", c.MoeIntermediateSize)
 	case c.SharedExpertIntermediateSize <= 0:
 		return fmt.Errorf("decoder(qwen2_moe): shared_expert_intermediate_size must be >0, got %d", c.SharedExpertIntermediateSize)
+	}
+	return nil
+}
+
+// validateGemma4MoE pins the Gemma 4 26B-A4B MoE config, checked only when
+// enable_moe_block is set (the dense E2B/E4B/12B variants leave it false and never
+// reach here). A valid sparse MoE parallel to the dense mlp: num_experts > 0,
+// 1 ≤ top_k_experts ≤ num_experts, moe_intermediate_size > 0. The router.scale /
+// per_expert_scale tensors are checked at load. See docs/task-gemma4-moe.md §A4.
+func (c *Config) validateGemma4MoE() error {
+	switch {
+	case c.NumExperts <= 0:
+		return fmt.Errorf("decoder(gemma4-moe): num_experts must be >0, got %d", c.NumExperts)
+	case c.TopKExperts <= 0 || c.TopKExperts > c.NumExperts:
+		return fmt.Errorf("decoder(gemma4-moe): top_k_experts %d out of range (1..%d)", c.TopKExperts, c.NumExperts)
+	case c.MoeIntermediateSize <= 0:
+		return fmt.Errorf("decoder(gemma4-moe): moe_intermediate_size must be >0, got %d", c.MoeIntermediateSize)
 	}
 	return nil
 }

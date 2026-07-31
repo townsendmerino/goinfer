@@ -167,6 +167,26 @@ func gemma4Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if cfg.PartialRotaryFactor > 0 && cfg.GlobalHeadDim > 0 {
 		globalRotary = int(cfg.PartialRotaryFactor * float64(cfg.GlobalHeadDim))
 	}
+	// Gemma 4 26B-A4B: enable_moe_block turns on the parallel dense+MoE FFN sub-block.
+	// The dense E2B/E4B/12B variants leave it false ⇒ MoE stays nil and their forward
+	// is byte-unchanged. The router semantics (softmax-all → top-k → UNCONDITIONAL
+	// renorm, + a weightless-norm/learned-scale pre-projection, + a per-expert scale)
+	// are pinned in docs/task-gemma4-moe.md Phase 1a. The gemma4 forward (Phase 2) reads
+	// these; the generic moeMLP/swiGLUExpert are NOT reused (experts are gelu-tanh, not SiLU).
+	var moe *MoEConfig
+	if cfg.EnableMoeBlock {
+		if err := cfg.validateGemma4MoE(); err != nil {
+			return nil, nil, err
+		}
+		moe = &MoEConfig{
+			NumExperts:      cfg.NumExperts,
+			TopK:            cfg.TopKExperts,
+			NormTopKProb:    true,
+			IntermediateDim: cfg.MoeIntermediateSize,
+			RouterPreNorm:   true,
+			PerExpertScale:  true,
+		}
+	}
 	return &Architecture{
 		Name:            "gemma4",
 		HiddenDim:       cfg.HiddenDim,
@@ -199,6 +219,7 @@ func gemma4Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		// Gemma 4 re-added Gemma 2's final-logit softcap (30 in the GGUF); Gemma 3
 		// had dropped it. Attn softcap stays 0.
 		FinalLogitSoftcap: cfg.FinalLogitSoftcap,
+		MoE:               moe, // nil for the dense E2B/E4B/12B variants (byte-unchanged)
 		gemma4: &gemma4Params{
 			GlobalHeadDim:           cfg.GlobalHeadDim,
 			NumGlobalKVHeads:        cfg.NumGlobalKVHeads,

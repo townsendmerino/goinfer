@@ -271,6 +271,13 @@ type MoEConfig struct {
 	// the plain global top-k.
 	NGroup    int
 	TopkGroup int
+
+	// Gemma 4 26B-A4B router extras (Gemma4TextRouter; false for every other MoE
+	// family). Its selection is still softmax-over-all → top-k → renorm (NormTopKProb
+	// is UNCONDITIONALLY true), so the base routeExperts path applies — these two flags
+	// add the parts it doesn't have. See docs/task-gemma4-moe.md §A2 (Phase 1a refs).
+	RouterPreNorm  bool // before the router projection, the hidden state passes a WEIGHTLESS RMSNorm, a learned [hidden] scale (LayerWeights.RouterScale), and a hidden^-0.5 constant — not a bare Linear on the raw hidden state.
+	PerExpertScale bool // the renormalized top-k weights are multiplied by a learned per-expert scale (LayerWeights.PerExpertScale), indexed by the chosen experts.
 }
 
 // NormKind selects the normalization: RMSNorm (Llama/Gemma/Qwen/…) or

@@ -112,3 +112,69 @@ func TestGemma4Architecture(t *testing.T) {
 		t.Error("layer 47 should be global")
 	}
 }
+
+// TestGemma4MoEDescriptor pins Phase 1b: enable_moe_block turns on the parallel
+// dense+MoE sub-block (Gemma 4 26B-A4B) while the dense E2B/E4B/12B variants leave
+// MoE nil and are byte-unchanged. Descriptor-only — the forward is Phase 2.
+func TestGemma4MoEDescriptor(t *testing.T) {
+	base := func() *Config {
+		return &Config{
+			ModelType: "gemma4", HiddenDim: 2816, NumLayers: 30, NumHeads: 16, NumKVHeads: 8,
+			HeadDim: 256, IntermediateDim: 2112, VocabSize: 262144, RMSNormEps: 1e-6,
+			RoPELocalBase: 10000, RoPEGlobalBase: 1000000, SlidingWindow: 1024,
+			SlidingWindowPattern: 6, GlobalHeadDim: 512, NumGlobalKVHeads: 2,
+			AttentionKEqV: true, PartialRotaryFactor: 0.25, FinalLogitSoftcap: 30,
+		}
+	}
+
+	// MoE variant: enable_moe_block=true + the 26B-A4B counts.
+	moeCfg := base()
+	moeCfg.EnableMoeBlock = true
+	moeCfg.NumExperts = 128
+	moeCfg.TopKExperts = 8
+	moeCfg.MoeIntermediateSize = 704
+	arch, _, err := gemma4Architecture(moeCfg)
+	if err != nil {
+		t.Fatalf("gemma4Architecture(moe): %v", err)
+	}
+	if arch.MoE == nil {
+		t.Fatal("enable_moe_block=true but arch.MoE is nil")
+	}
+	for _, c := range []struct {
+		name string
+		got  any
+		want any
+	}{
+		{"NumExperts", arch.MoE.NumExperts, 128},
+		{"TopK (from top_k_experts)", arch.MoE.TopK, 8},
+		{"IntermediateDim (moe width)", arch.MoE.IntermediateDim, 704},
+		{"NormTopKProb (unconditional)", arch.MoE.NormTopKProb, true},
+		{"RouterPreNorm", arch.MoE.RouterPreNorm, true},
+		{"PerExpertScale", arch.MoE.PerExpertScale, true},
+		{"IntermediateDim (dense mlp still 2112)", arch.IntermediateDim, 2112},
+		{"gemma4 params still set", arch.gemma4 != nil, true},
+	} {
+		if c.got != c.want {
+			t.Errorf("%s = %v, want %v", c.name, c.got, c.want)
+		}
+	}
+
+	// Dense variant: enable_moe_block unset ⇒ MoE nil (byte-unchanged descriptor).
+	if a, _, err := gemma4Architecture(base()); err != nil || a.MoE != nil {
+		t.Fatalf("dense gemma4: MoE=%v err=%v — want nil MoE", a.MoE, err)
+	}
+
+	// Validator rejects an out-of-range top_k and a zero expert count.
+	bad := base()
+	bad.EnableMoeBlock = true
+	bad.NumExperts = 4
+	bad.TopKExperts = 9 // > num_experts
+	bad.MoeIntermediateSize = 704
+	if _, _, err := gemma4Architecture(bad); err == nil {
+		t.Error("top_k_experts > num_experts should be rejected")
+	}
+	bad.TopKExperts, bad.NumExperts = 2, 0
+	if _, _, err := gemma4Architecture(bad); err == nil {
+		t.Error("num_experts=0 should be rejected")
+	}
+}
