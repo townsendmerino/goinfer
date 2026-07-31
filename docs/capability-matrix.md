@@ -70,7 +70,7 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 
 | Family | model_type(s) | MoE | Sliding window | QK-norm | RoPE | Norm | Activation | Tied head | Loaders | Modality | GPU-resident | Parity |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Command-R | `cohere` | dense | none | no | full | LayerNorm, parallel | SwiGLU | yes | safetensors | text | yes | pending |
+| Command-R | `cohere` | dense | none | no | full | LayerNorm, parallel | SwiGLU | yes | safetensors | text | yes | full-oracle 100.0%/1.00000 |
 | Command-R7B | `cohere2` | dense | interleave | no | full | LayerNorm, parallel | SwiGLU | yes | safetensors | text | yes | pending |
 | GLM-4.5/4.6 | `glm4_moe` | sparse +shared | none | yes | partial | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | pending |
 | GPT-2 | `gpt2` | dense | none | no | learned/none | LayerNorm, pre-norm | GELU-tanh (non-gated) | yes | safetensors, GGUF | text | no | pending |

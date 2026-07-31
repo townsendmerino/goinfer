@@ -47,13 +47,17 @@
       ],
       "own": [],
       "deps_hash": "sha256:910daa8dd749707b1637a068e6167bb0d862e3e1b8ec28883fa0672773ed3a62",
-      "status": "pending",
-      "validated_at": null,
-      "date": null,
-      "reference": null,
-      "machine": null,
-      "method": null,
-      "metrics": null
+      "status": "validated",
+      "validated_at": "681db0c",
+      "date": "2026-07-31",
+      "reference": "HF f32 (Aya-Expanse-8B, CohereForCausalLM)",
+      "machine": "linux-62gb",
+      "method": "full-forward-oracle",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 1.00000,
+        "cosine_mean": 1.00000
+      }
     },
     "cohere2": {
       "uses": [
