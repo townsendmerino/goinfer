@@ -37,6 +37,16 @@ matmul — evaluated, NOT shipped"). The file states the revisit condition expli
 
 # The convergence: A1's Q4_K door and the Gemma 4 quant blocker are one task
 
+> **UPDATE (2026-08-01, `da5a6ec`): the "convergence" premise is void — the Gemma 4 quant blocker
+> was a PROMPTING artifact, not a quantizer deficit.** Real int4 (sym W4A8) is fully coherent under
+> the chat template (`TestGemma4_26B_gate`, distinct-trigram 0.841); the "garbage at int4" below was
+> a raw completion prompt on an instruction-tuned model, and int8 is equally garbage there. So
+> **MXFP4/Q4_K are NO LONGER NEEDED for Gemma 4 coherence**, and the "Action" reconstruction-table
+> work below is moot *for coherence*. **But A1's Q4_K THROUGHPUT door stays OPEN — do not file it as
+> resolved.** The bandwidth-bound Q4_K variant (measured byte-ratio ceiling **1.78×** vs the int8
+> W8A8 path) is untouched by this result; it is a throughput lever independent of the coherence
+> question, and the shared 4-bit encoder work should be scoped to that, not to unblocking Gemma 4.
+
 `docs/task-gemma4-moe.md` is stuck at Phase 5. The real 26B-A4B is coherent at int8
 (~26 GB, needs the 64 GB box) and **garbage at int4** (~13 GB) — which is the size that has
 to work, because the fieldfare-comparable rig is an M1 Pro 16 GB. Measured reconstruction

@@ -490,8 +490,8 @@ plus a nested-RoPE-base fix.
 | 2b wire into `runLayersGemma4` | ✅ | `51ea350` (whole-model cosine 1.0) |
 | 3 loader + schema | ✅ | `51ea350`+`9c04ea3`+`54d3096`; unified prefix auto-detect + `text_config` flatten + vision skip, proven on a synthetic unified checkpoint — real 26B loads with no loader change |
 | 4a K=V global layers | ✅ | `9e83043` (`attention_k_eq_v`/VFromK + `num_global_key_value_heads`, cosine 1.0) |
-| 4 real-checkpoint | ✅ | `681db0c`+`625303e`: real 26B loads (30 layers, 128 experts top-8, K=V globals) + coherent English **at int8** (`TestGemma4_26B_gate`). |
-| 5 benchmark | 🟢 | **UNBLOCKED** — the "int4 incoherence" was a PROMPTING artifact, not a quantizer deficit. Real int4 (sym W4A8, ~13 GB) is fully coherent under the Gemma-4 chat template, greedy. See the RESOLUTION at the top of the int4 finding. |
+| 4 real-checkpoint | ✅ | `681db0c`+`625303e`+`78478a8`: real 26B loads (30 layers, 128 experts top-8, K=V globals) + coherent English **at int4 AND int8** under the chat template (`TestGemma4_26B_gate`, both precisions, distinct-trigram 0.841/0.833). 625303e's "gate runs int8 because int4 is too aggressive" rationale is RETRACTED — see below. |
+| 5 benchmark | 🟢 | **UNBLOCKED** — the "int4 incoherence" was a PROMPTING artifact, not a quantizer deficit. Real int4 (sym W4A8, ~13 GB) is fully coherent under the Gemma-4 chat template, greedy. **Caveat for the benchmark row:** ~13 GB on a 16 GB M1 Pro is still paging-bound (UBC-dependent), so the number is not a clean resident comparison against the peer's resident figures — say so explicitly, per `docs/benchmarks.md`. See the RESOLUTION at the top of the int4 finding. |
 | 6–8 (streaming I/O, overlap, expert-major) | ☐ | not started |
 
 > **RESOLUTION (2026-08-01) — it was the PROMPT, not the quantizer. Phase 5 unblocked.**
@@ -512,10 +512,18 @@ plus a nested-RoPE-base fix.
 >   signal. No affine build, no `.giw` v5, no numerics hunt, no Mac trip needed. int4 at ~13 GB fits
 >   the 16 GB target and is coherent for real (templated) use. **Lesson: judge quantization COHERENCE
 >   only through the model's real chat template; the greedy+raw gate is for bit-exact NUMERICS.**
-> - **Follow-ups:** (a) fix `TestGemma4_26B_gate` to render the chat template and assert int4
->   coherence (stronger than printable-ASCII); (b) run Phase 5 on templated prompts; (c) the probe
->   findings still stand as corroboration — routing healthy (probe 1), peer naive-affine (probe 3),
->   precision not the variable (probe 2) — all consistent with "not a quantization problem."
+> - **RETRACTION of `625303e`.** That commit asserted, as a finding: *"int4 is too aggressive for
+>   this model … the 128-expert top-8 MoE compounds int4's per-expert error (cosine ~0.988 on the
+>   tiny) across 30 layers into garbage … so the real-model gate runs int8."* **This is false and is
+>   the origin of the entire arc.** The "garbage" was the raw prompt, not int4; real int4 is fully
+>   coherent templated (0.841 distinct-trigram, `78478a8`), and int8 is *equally* garbage on the raw
+>   prompt. The per-expert-error-compounding mechanism never applied. (Same treatment `bcadd44`
+>   received when its "deficit is the weights" note was corrected.)
+> - **Follow-ups:** (a) ✅ DONE (`78478a8`) — `TestGemma4_26B_gate` now renders the chat template and
+>   asserts int4 coherence via distinct-trigram, with a raw-prompt mutation control. (b) run Phase 5
+>   on templated prompts; (c) the probe findings still stand as corroboration — routing healthy
+>   (probe 1), peer naive-affine (probe 3), precision not the variable (probe 2) — all consistent with
+>   "not a quantization problem."
 
 **int4 quality finding — HISTORICAL (superseded by the RESOLUTION above; kept as the investigation
 record). `scripts/gemma4_quant_recon.py` + `decoder/fakequant.go`.**
