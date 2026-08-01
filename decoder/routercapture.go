@@ -18,8 +18,6 @@ var routerCapture = os.Getenv("GOINFER_ROUTER_CAPTURE") != ""
 
 // routerCaptureBuf accumulates the selected expert-index sets when routerCapture is on.
 // Order is deterministic: for token t and layer l (0-based, 30 gemma4 layers), the entry is
-// at index t*nLayers + l. The test resets it before a pass and snapshots it after.
+// at index t*nLayers + l. The realckpt capture test clears it (routerCaptureBuf = nil) before
+// a pass and reads it after — no helper accessors, so nothing here is unused off-tag.
 var routerCaptureBuf [][]int
-
-func routerCaptureReset()            { routerCaptureBuf = nil }
-func routerCaptureSnapshot() [][]int { return routerCaptureBuf }
