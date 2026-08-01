@@ -552,9 +552,21 @@ prequant exposed no flag) — now lifted: `embedInt4` threads through `buildWeig
 0.900, "Paris" survives, coherent prose** — the int4 head does NOT break coherence on this big-vocab
 model. Decode +6 % here (4.84→5.13 tok/s; modest because after the threshold fix the head is a smaller
 slice) but it **halves the head's 738 MB/token traffic**, the win that matters on the paging-bound
-16 GB target. Default stays int8-pinned (opt-in). **Remaining: Step 2 (batch int4 experts)** — a
-further win below this that needs a W4A8 batch kernel in aikit; batching clears the fan-out threshold
-naturally. Step 1 (A3 barrier) is not the cause (deferred); Step 3 (zero-alloc) is dead (no GC).
+16 GB target. Default stays int8-pinned (opt-in). Step 1 (A3 barrier) is not the cause (deferred);
+Step 3 (zero-alloc) is dead (no GC).
+
+**Step 2 (batch int4 experts) — GO, justified.** Post-threshold-fix GOMAXPROCS sweep on the real
+gemma4-26b-int4 .giw: 1/2/4/8 → 1.49 / 2.40 / 4.23 / 4.71 tok/s = **3.17× on 8 cores** (up from the
+pre-fix 1.61×) — still clearly **sub-linear** (~40 % parallel efficiency), and the 4→8 step flattens
+to +11 %. That flattening is the signature of the ~600 tiny int4 decode matmuls (each 2–12M MACs,
+M=1) not filling 8 cores individually — spawn/join per matmul dominates past ~4 workers. Effective
+bandwidth at 8 cores ≈ 10.5 GB/s, still ~⅓ of the ~34 GB/s this CPU path reaches on dense streams
+(`perf-campaign.md`), so it is NOT approaching a memory ceiling. Batching the 8 experts' `gateUp`
+(they share the activation `xe`) into one N=11264 op — and the dense `gate`+`up` (share `xd`) —
+makes matmuls big enough to scale to 8 cores where the tiny ones don't. **Scope: a batched W4A8
+kernel in aikit (`gemma4MoEFFN` + `moeMLP` expert loops are the call sites), with its own
+bit-exactness gate; the `expertsDown` calls take distinct `mid` so they don't batch under a
+shared-activation API — confirm rather than assume.**
 
 **int4 quality finding — HISTORICAL (superseded by the RESOLUTION above; kept as the investigation
 record). `scripts/gemma4_quant_recon.py` + `decoder/fakequant.go`.**
