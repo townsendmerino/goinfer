@@ -87,6 +87,15 @@ const int4GroupSize = 32
 // output columns in 8-wide groups — the width-invariant contract), measured ~2.3× decode
 // (2.3→5.3 tok/s) + TTFT 7.3→3.2s. Only widens fan-out (never narrows it), so prefill's
 // already-parallel large-M matmuls are unaffected. See docs/task-gemma4-moe.md.
+//
+// PROVENANCE: 1<<20 is **Ryzen 7 3700X (8-core) measured**, not swept on Apple silicon. It
+// does not regress the small end — a 0.5B int4 decodes 1.9× faster than serial at this value
+// (26.8 vs 13.9 tok/s, 4 cores) because it parallelizes the ~4M-MAC matmuls while leaving
+// truly tiny (<1M) ops serial (thr=0, which fans out everything, is *slower* — over-parallelizes).
+// But the crossover is hardware-specific (core count, memory latency): the M1 Pro — Phase 5's
+// rig — has different characteristics, so its optimum may differ. RE-SWEEP on the next Mac
+// session before trusting this as a universal default; compare against `DefaultDecodeParallelThreshold`
+// (300K, the int8 knob, M1-Pro-tuned) which parallelizes a wider range.
 const int4ParThreshold = 1 << 20
 
 // streamQuantized builds a [rows, cols] linalg.WeightMat in the target precision
