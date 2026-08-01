@@ -284,8 +284,6 @@ func loadWeights(dir string, quant quantMode, embedInt4 bool, lora *loraAdapter)
 	if quant == quantInt4Mix {
 		return nil, fmt.Errorf("decoder: int4mix is GGUF-only (got safetensors %s)", dir)
 	}
-	// embedInt4 is wired only through the GGUF path for now (its target is big-vocab
-	// small .gguf models); a safetensors load keeps the int8 pin.
 	cfg, err := loadConfig(os.DirFS(dir), "config.json")
 	if err != nil {
 		return nil, err
@@ -298,7 +296,7 @@ func loadWeights(dir string, quant quantMode, embedInt4 bool, lora *loraAdapter)
 	if err != nil {
 		return nil, err
 	}
-	return buildWeightsFromSafetensors(cfg, arch, schema, st, quant, lora)
+	return buildWeightsFromSafetensors(cfg, arch, schema, st, quant, embedInt4, lora)
 }
 
 const shardIndexFile = "model.safetensors.index.json"
@@ -346,7 +344,7 @@ func loadWeightsFromFS(fsys fs.FS, dir string, quant quantMode) (*Weights, error
 	if err != nil {
 		return nil, err
 	}
-	return buildWeightsFromSafetensors(cfg, arch, schema, st, quant, nil)
+	return buildWeightsFromSafetensors(cfg, arch, schema, st, quant, false, nil)
 }
 
 // openCheckpointFromFS is the fs.FS counterpart of openCheckpointMmap (heap):
@@ -372,7 +370,7 @@ func openCheckpointFromFS(fsys fs.FS, dir string) (*embed.SafetensorsFile, error
 // against Cfg. Factored out so the heap (fs.FS) and mmap paths share one
 // tensor-name + shape contract — a schema change is one edit, not two.
 // Mirrors encoder.buildWeightsFromSafetensors.
-func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchema, st *embed.SafetensorsFile, quant quantMode, lora *loraAdapter) (*Weights, error) {
+func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchema, st *embed.SafetensorsFile, quant quantMode, embedInt4 bool, lora *loraAdapter) (*Weights, error) {
 	if arch.Name == "gpt2" {
 		if lora != nil {
 			return nil, fmt.Errorf("decoder: LoRA merge unsupported for the gpt2 (Conv1D/fused-QKV) layout")
@@ -532,7 +530,7 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 	if w.Embed, err = loadMat(st, mp(s.Embed), cfg.VocabSize, hd); err != nil {
 		return nil, err
 	}
-	w.Embed = quantizeWM(w.Embed, quant.embedding())
+	w.Embed = quantizeWM(w.Embed, quant.embeddingWith(embedInt4))
 	if w.FinalNorm, err = st.TensorF32(mp(s.FinalNorm), hd); err != nil {
 		return nil, err
 	}
@@ -542,7 +540,7 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 	arch.TiedLMHead = true
 	if s.LMHead != "" {
 		if head, herr := loadMat(st, s.LMHead, cfg.VocabSize, hd); herr == nil {
-			head = quantizeWM(head, quant.embedding())
+			head = quantizeWM(head, quant.embeddingWith(embedInt4))
 			w.LMHead = head
 			arch.TiedLMHead = false
 		}

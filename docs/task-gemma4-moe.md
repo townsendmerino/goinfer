@@ -544,14 +544,17 @@ a per-call `Workspace` with `SetThreshold(int4ParThreshold = 1<<20 ≈ 1.05M)`, 
 smallest decode matmul. **Measured 2.30 → 5.53 tok/s (2.4×), TTFT 7.3 → 2.66 s**, byte-identical
 (same token ids serial vs parallel; `TestGemma4MoEFFN_parity` + `TestExpertPaging_bitExact` green).
 
-**Next lever = the int8 head (Step 4).** It is 49 % of compute and slow because Q8 (int8-weight ×
-f32-activation) is ~3–4× slower per element than W4A8. `-embed-int4` moves it to W4A8 (half the bytes
-+ the faster kernel, still parallel at N=262144). The restriction is **incidental** — `weights.go:287`
-"embedInt4 is wired only through the GGUF path for now"; the safetensors loaders use `.embedding()`
-(hard int8 pin) not `.embeddingWith(embedInt4)`, and `cmd/prequant` exposes no such flag. Lifting it
-= thread `embedInt4` through the safetensors loaders + prequant; quality is now a one-run gate check
-(hardened `TestGemma4_26B_gate` at `-embed-int4`). **Step 2 (batch int4 experts)** is a further win
-below this — batching clears the fan-out threshold naturally — and needs a W4A8 batch kernel in aikit.
+**Step 4 (int4 head) — DONE, quality-safe.** The int8 LM head was 49 % of the *pre-threshold-fix*
+compute (Q8 int8-weight × f32-activation is ~3–4× slower per element than W4A8). The `-embed-int4`
+restriction was **incidental** (safetensors loaders used `.embedding()` not `.embeddingWith(embedInt4)`;
+prequant exposed no flag) — now lifted: `embedInt4` threads through `buildWeightsFromSafetensors` and
+`cmd/prequant -embed-int4`. **Verified on the real 26B (int4 head vs int8-pinned): trigram 0.911 vs
+0.900, "Paris" survives, coherent prose** — the int4 head does NOT break coherence on this big-vocab
+model. Decode +6 % here (4.84→5.13 tok/s; modest because after the threshold fix the head is a smaller
+slice) but it **halves the head's 738 MB/token traffic**, the win that matters on the paging-bound
+16 GB target. Default stays int8-pinned (opt-in). **Remaining: Step 2 (batch int4 experts)** — a
+further win below this that needs a W4A8 batch kernel in aikit; batching clears the fan-out threshold
+naturally. Step 1 (A3 barrier) is not the cause (deferred); Step 3 (zero-alloc) is dead (no GC).
 
 **int4 quality finding — HISTORICAL (superseded by the RESOLUTION above; kept as the investigation
 record). `scripts/gemma4_quant_recon.py` + `decoder/fakequant.go`.**

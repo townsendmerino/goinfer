@@ -70,7 +70,7 @@ func loadQwen35Slice(t *testing.T, dir string, nLayer int) (*Model, func()) {
 	if err != nil {
 		t.Fatalf("openCheckpointMmap: %v", err)
 	}
-	w, err := buildWeightsFromSafetensors(cfg, arch, schema, st, quantNone, nil)
+	w, err := buildWeightsFromSafetensors(cfg, arch, schema, st, quantNone, false, nil)
 	if err != nil {
 		_ = st.Close()
 		t.Fatalf("buildWeightsFromSafetensors (loader on real tensors): %v", err)

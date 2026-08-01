@@ -32,9 +32,9 @@ const metaPrefixCap = 64 << 20
 // model DIRECTORY (loaded whole then serialized, peak RAM ≈ the resident weight size —
 // the path for safetensors-only models like Mellum2). A failed write removes the partial
 // output.
-func Transcode(in, out, quant string) error {
+func Transcode(in, out, quant string, embedInt4 bool) error {
 	if fi, err := os.Stat(in); err == nil && fi.IsDir() {
-		return transcodeDir(in, out, quant)
+		return transcodeDir(in, out, quant, embedInt4)
 	}
 	// 1) Tokenizer half: the source GGUF truncated at the tensor-data boundary —
 	// metadata + tensor infos, no weight bytes. Only the file's head is read.
@@ -87,7 +87,7 @@ func Transcode(in, out, quant string) error {
 // verbatim as the tok half (the serve side loads it via tokenizer.LoadJSONBytes when the
 // blob isn't GGUF metadata). Peak RAM ≈ the resident weight size, since the whole model
 // is loaded rather than layer-streamed — acceptable for the models this targets.
-func transcodeDir(dir, out, quant string) error {
+func transcodeDir(dir, out, quant string, embedInt4 bool) error {
 	// Tokenizer half is best-effort: the resident/decode path never reads it (the Model
 	// is built from the serialized weights alone), so a missing or non-goinfer-loadable
 	// tokenizer.json must NOT block the weights bundle — it only affects serve. Carry the
@@ -101,7 +101,7 @@ func transcodeDir(dir, out, quant string) error {
 	} else {
 		fmt.Fprintf(os.Stderr, "prequant: note: no tokenizer.json in %s — weights-only bundle (serve needs a separate tokenizer)\n", dir)
 	}
-	m, err := decoder.Load(dir, decoder.Options{Quant: quant})
+	m, err := decoder.Load(dir, decoder.Options{Quant: quant, EmbedInt4: embedInt4})
 	if err != nil {
 		return fmt.Errorf("load %s (%s): %w", dir, quant, err)
 	}
@@ -142,7 +142,7 @@ func EnsureCachedGIW(ggufPath, quant string) (string, error) {
 	fmt.Fprintf(os.Stderr, "stream-weights: transcoding %s → %s (%s, one-time — minutes + ~model-size on disk)…\n",
 		filepath.Base(ggufPath), filepath.Base(cache), quantLabel(quant))
 	t0 := time.Now()
-	if err := Transcode(ggufPath, cache, quant); err != nil {
+	if err := Transcode(ggufPath, cache, quant, false); err != nil {
 		return "", err
 	}
 	if fi, e := os.Stat(cache); e == nil {

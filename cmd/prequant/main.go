@@ -24,6 +24,7 @@ import (
 func main() {
 	out := flag.String("o", "", "output .giw bundle path (required)")
 	quant := flag.String("quant", "int8int8", "weight quant baked into the bundle: int8int8 | int8 | int4")
+	embedInt4 := flag.Bool("embed-int4", false, "in int4 mode, quantize the token-embedding/LM-head to int4 too (else int8-pinned); ~½ the head's per-token traffic, coherence-safe on big-vocab models (verified on gemma4-26b: trigram 0.911, Paris survives)")
 	flag.Parse()
 	in := flag.Arg(0)
 	if in == "" || *out == "" {
@@ -31,7 +32,7 @@ func main() {
 		flag.Usage()
 		os.Exit(2)
 	}
-	if err := prequant.Transcode(in, *out, *quant); err != nil {
+	if err := prequant.Transcode(in, *out, *quant, *embedInt4); err != nil {
 		fmt.Fprintf(os.Stderr, "prequant: %v\n", err)
 		os.Exit(1)
 	}
