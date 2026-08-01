@@ -76,6 +76,19 @@ func (q quantMode) embeddingWith(embedInt4 bool) quantMode {
 // stays ~0.125 byte/element.
 const int4GroupSize = 32
 
+// int4ParThreshold lowers the fan-out threshold for the int4 (W4A8) matmul below aikit's
+// default (parThreshold = 1<<24 = 16.78M MACs) so the small int4 DECODE matmuls parallelize.
+// At decode (M=1) every Gemma-4 int4 matmul is small — expert gate‖up 3.96M, down 1.98M,
+// dense ~5.9M, attention ~11.5M MACs — so ALL of them fell under aikit's default and ran
+// SERIAL, while only the int8 LM head (738M) parallelized. That serial fast-path (NOT a
+// barrier) capped 8-core scaling at 1.61× and decode at ~2.3 tok/s (profiled on the real
+// gemma4-26b int4 .giw). 1<<20 ≈ 1.05M sits below the 1.98M smallest decode matmul, so all of
+// them fan out, while truly tiny ops (<1M) stay serial. Byte-identical (aikit partitions
+// output columns in 8-wide groups — the width-invariant contract), measured ~2.3× decode
+// (2.3→5.3 tok/s) + TTFT 7.3→3.2s. Only widens fan-out (never narrows it), so prefill's
+// already-parallel large-M matmuls are unaffected. See docs/task-gemma4-moe.md.
+const int4ParThreshold = 1 << 20
+
 // streamQuantized builds a [rows, cols] linalg.WeightMat in the target precision
 // by dequantizing each row through rowInto (into a reused cols-wide scratch) and
 // quantizing it straight into the resident arrays — never materializing the whole
@@ -168,7 +181,14 @@ func matmul(be Backend, w *linalg.WeightMat, a, dst []float32, M int) {
 		// AND prefill): it stays integer (int4 weight × int8 activation) and benchmarks
 		// faster than the dequant-to-f32 Q4 path at every M, and its per-output result
 		// is M-independent so batched prefill is bit-identical to sequential decode.
-		linalg.MatmulBTW4A8(a, q4, q4s, dst, M, w.Cols(), w.Rows(), group)
+		//
+		// The local Workspace lowers the fan-out threshold below aikit's default so the
+		// small int4 DECODE matmuls parallelize instead of running serial — see
+		// int4ParThreshold. Same cost as MatmulBTW4A8 (which also fresh-Workspaces), just
+		// with the threshold set; per-call ws so it's race-free across decode streams.
+		var ws linalg.Workspace
+		ws.SetThreshold(int4ParThreshold)
+		linalg.MatmulBTW4A8Into(&ws, a, q4, q4s, dst, M, w.Cols(), w.Rows(), group)
 		return
 	}
 	if q8, scales, w8a8, ok := w.Int8(); ok {
