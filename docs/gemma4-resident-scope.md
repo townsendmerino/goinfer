@@ -36,19 +36,17 @@ branch bypassing the uniform-GQA gates), both `✅ resident`. This is the same s
   730/758/784), with the differing geometry carried per-layer and the uniform-across-those-layers
   bits in a model-level param block. The Gemma-4 bridge extends that pattern from *mixer*-kind to
   *attention-geometry*-variant.
-- **The one kernel unknown is `head_dim = 512`, and it is CUDA-specific — not the WebGPU ceiling.**
-  On the **CUDA target (9b)**, `hd = 256` is **already proven**: Gemma 3 uses 256-dim heads and is
-  `✅ resident` on CUDA (`docs/hardware-matrix.md:20`; Gemma 3 is *not* own-forward — only
-  gemma4/qwen35/llama4/gptoss decline at residency.go:130). The CUDA attention kernel `attention`
-  launches `GridX=nH, BlockX=128 (fixed), SharedMem=(nWin+128)·4` (cuda/resident.go:549) with `hd`
-  passed as an arg and shared memory sized by *keys*, not head_dim — i.e. it **decomposes hd across
-  the 128 threads** (2 elements/thread at 256), which is why 256 works. The genuinely new width is
-  Gemma 4's **512-dim global head** (4 elements/thread), untested anywhere. Low-risk (the
-  decomposition is hd-parametric and shared-mem is hd-independent), but **the P0 gate is a focused
-  `attention` parity run at hd=512** before the plan claims "bridge + 0 attention kernels" for CUDA.
-  (WebGPU's kernel *does* hard-cap `hd ≤ 128` at gpu/attention.go:52 — a real kernel rewrite, and an
-  extra reason it is 9d. Metal handles 256 already, table in metal/attn_shape_test.go, but that
-  table tops out at 256 — a Mac-side P0 item is to add the 512 row and run it.)
+- **The attention kernel needs NO change on CUDA — measured, not assumed.** The one open kernel
+  question was Gemma 4's 512-dim global head. **Resolved (`TestAttention_HeadDimWidths`, `933201c`):**
+  the shipped CUDA `attention` kernel passes cosine ≈ 1.0 vs the CPU GQA reference at hd 128 / 256 /
+  512 — the fixed-128-thread block decomposes 512-dim heads (4 elements/thread) correctly. `hd=256`
+  was already proven independently (Gemma 3 is `✅ resident` on CUDA, `hardware-matrix.md:20`; Gemma 3
+  is *not* own-forward). The kernel launches `GridX=nH, BlockX=128 (fixed), SharedMem=(nWin+128)·4`
+  (cuda/resident.go:549), `hd` as an arg, shared-mem sized by *keys* — hd-parametric, as the probe
+  confirms. So **CUDA is "bridge + 0 attention kernels."** (WebGPU's kernel *does* hard-cap
+  `hd ≤ 128` at gpu/attention.go:52 — a real kernel rewrite, another reason it is 9d. Metal handles
+  256 already, `metal/attn_shape_test.go`, but that table tops at 256 — a Mac-side item is to add the
+  512 row and run it; the CUDA result makes it likely to pass, not guaranteed on a different kernel.)
 - **Prize collectability on THIS box, stated plainly (the Llama-4 caveat from the SSM doc).**
   `gemma-4-E2B` dense (~2 GB q4) and the tiny MoE fixtures (`testdata/gemma4-moe-tiny`,
   `gemma4-moe-unified-tiny`) **fit the 8 GB 2070** and gate the bridge here. The **26B-A4B at int4
@@ -59,18 +57,21 @@ branch bypassing the uniform-GQA gates), both `✅ resident`. This is the same s
   fit *and pass parity* while never exercising the feature under test — `metal/attn_shape_test.go`
   says exactly this of its hd=128 control vs an hd=256 fault. The real 26B has **256-dim local /
   512-dim global** heads; `gemma4-moe-unified-tiny` config has `global_head_dim=512` but `head_dim=16`
-  local, so it exercises *neither* the real 256-local geometry *nor* (unverified) whether its weights
-  actually shape 512-dim global attention. Gemma-3-resident covers 256; **nothing on this box is
-  confirmed to exercise the 512-wide global head or the K=V-global path end-to-end.** The spec's
-  parity plan must name the *properties* to cover — 256 local, 512 global, K=V (no v_proj), the 5:1
-  interleave, per-layer KV switch — and confirm (or purpose-build) a fixture that hits each, rather
-  than assuming a model that loads is a model that tests the seam.
+  local. That **16 / 512 split is partly a STRENGTH, not just an unrealism**: it is a *harsher*
+  geometry contrast than the real 256 / 512, so no buffer size, stride, or dispatch dim can
+  accidentally coincide between the two variants — it stresses the per-layer seam harder than the real
+  model would. Its weakness is orthogonal: a 16-dim local head does not exercise the real 256-local
+  path (the CUDA kernel proof covers 256, but the resident *plumbing* at 256 is untested), and it must
+  be verified that its global layer actually shapes 512-dim attention weights end-to-end. So the parity
+  plan must name the *properties* to cover — 256 local, 512 global, K=V (no v_proj), the 5:1
+  interleave, per-layer KV switch — and confirm (or purpose-build) a fixture hitting each: the tiny
+  fixture is the seam-stressor, a 256-local one is still needed for realistic-width plumbing.
 - **Do not let the abstraction come out Gemma-4-shaped.** `qwen35` (3 linear : 1 full attention)
   and `llama4` (per-layer `isMoE[]`, per-layer NoPE) are the **same per-layer-variant class**.
   Implement **only** Gemma 4 and build nothing speculatively — but the per-layer variant index +
   per-layer geometry on `runLayer` is the general seam, so name it generically, not `gemma4*`.
 - **Go/No-Go: GO.** The seam is a bounded extension of an existing pattern (per-layer geometry,
-  following per-layer constants + the mixer-kind branch), plus one kernel-width question and the
+  following per-layer constants + the mixer-kind branch); the one kernel unknown (hd=512) is already retired (933201c), leaving the
   Gemma-4 MoE delta. Effort **M–L**, comparable to the SSM bridge. Parity-gated on fitting fixtures.
 
 ---
@@ -79,14 +80,11 @@ branch bypassing the uniform-GQA gates), both `✅ resident`. This is the same s
 
 Before designing, resolve the unknowns a paper analysis can't:
 
-1. **The `hd=512` attention question on CUDA (the gate).** `hd=256` is already proven (gemma3
-   resident); the CUDA `attention` kernel decomposes hd over 128 fixed threads (resident.go:549). The
-   open question is the 512-dim global head. **Near-free empirical check on the 2070:** drive the
-   shipped `attention` kernel at hd=512 (single head, hand-crafted q/k where the correct softmax
-   weight depends on dims ≥256) against a CPU reference — if the kernel ignores the tail, the weights
-   diverge. This is the one result the plan's cost model depends on: pass ⇒ "bridge + 0 attention
-   kernels"; fail ⇒ a bounded kernel-width change (its own parity gate). (Metal equivalent, Mac-side:
-   add the 512 row to `metal/attn_shape_test.go` and run.)
+1. **The `hd=512` attention question on CUDA — DONE.** Resolved by mutating the known-good
+   `validateGlue` oracle (which cosine-checks `attention` vs a CPU GQA reference, parametric in hd)
+   to hd 128/256/512 — single variable, so a red is the head dim not the contract. All pass cosine
+   ≈ 1.0 (`TestAttention_HeadDimWidths`, `933201c`). CUDA needs **no attention-kernel change** for
+   Gemma 4. (Metal equivalent, Mac-side, still open: add the 512 row to `metal/attn_shape_test.go`.)
 2. **The prize (a fitting model).** Measure `gemma-4-E2B_q4_0-it.gguf` CPU decode ms/token (the
    own-forward `runLayersGemma4` on CPU) as the resident target-to-beat. E2B fits 8 GB and is the
    collectable prize; the SSM precedent landed 10× (300 ms → 30 ms) moving own-forward CPU → resident.
@@ -132,9 +130,8 @@ and the **final-logit softcap 30** (host-side, `logitsFromHidden` model.go:655).
    global/local head-dim split — is not handled."
 2. **Per-layer KV-cache sizing.** Local layers need `8·256` KV, global `2·512` — different `kvDim`
    per layer. `NewKVCacheI8(nKV, hd)` takes one geometry today (residency.go:640).
-3. **The attention kernel at `hd=512`** (Phase-0 item 1) — CUDA proven at 256, 512 unverified;
-   potentially a bounded kernel-width change (only if the P0 probe fails). NOT the WebGPU `hd≤128`
-   ceiling, which is a separate, bigger 9d problem.
+3. ~~The attention kernel at `hd=512`~~ — **not a gap on CUDA** (Phase-0 item 1, resolved: cosine
+   ≈ 1.0 at hd=512, `933201c`). Left here only to note it *is* a gap on WebGPU (`hd≤128`, 9d).
 4. **The Gemma-4 MoE delta** (the resident MoE path is single-branch SwiGLU): parallel dense‖MoE
    with seven norms + `layer_scalar`; a router with a **weightless** pre-norm + learned `[hidden]`
    scale + `hidden^-0.5`, unconditional renorm, learned `per_expert_scale[nE]`; **gelu-tanh** GeGLU
@@ -167,12 +164,10 @@ or per-*variant* uniform → bound in the plan loop.** Extend it from constants 
    are deduplicated by `float32` scale today (decoderunner.go:467-504).
 2. **Per-layer KV-cache sizing.** Size each layer's KV by its own `nKV·hd`; K=V global layers store
    K and derive V (no v_proj upload, `v_norm(k)` at attention time). This is bounded — two sizes.
-3. **The attention dispatch/kernel** (depends on Phase-0 item 1): gemma3 proves CUDA handles `hd=256`,
-   so the local layers need only the per-layer uniform + `group=nH/nKV` to vary. The 512-global head
-   is the P0 question: if the fixed-128-thread decomposition already covers it (likely — hd-parametric,
-   hd-independent shared mem), it too is just per-layer dispatch; if not, a bounded reduction/workgroup
-   widen to the max head_dim (an isolatable kernel change with its own parity gate — the one place
-   this is more than plumbing). On WebGPU (9d) the `hd≤128` cap makes even 256 a kernel change.
+3. **The attention dispatch** (kernel confirmed sufficient, Phase-0 item 1): on CUDA this is pure
+   per-layer plumbing — the kernel handles hd 256 and 512 already, so each layer just binds its own
+   `hd`/`nKV`/`group=nH/nKV`/`rotaryDim` uniform instead of the shared `attnUni`. No kernel change.
+   (On WebGPU (9d) the `hd≤128` cap would make even 256 a kernel change — one more reason it is last.)
 4. **The Gemma-4 MoE delta**, on top of the existing resident MoE: the parallel dense-MLP branch +
    joint norm + `layer_scalar`; the router pre-norm (weightless) + learned scale + root-size; the
    `per_expert_scale` post-step. Reuse GeGLU experts (CUDA `FeatGatedGELU`) and the routed kernel.
@@ -204,16 +199,16 @@ switches every layer, so a single-position sample is insufficient — mirror the
 
 **Effort: M–L.** Per-layer geometry plumbing + per-variant uniforms + per-layer KV sizing (bounded),
 the MoE delta (parallel branch + router + per-expert scale on top of existing MoE), the host-side
-softcap + taxonomy split, and — conditionally — one attention-kernel width change. Bigger than a
+softcap + taxonomy split. No attention-kernel change (hd=512 confirmed, 933201c). Bigger than a
 single C-lever; comparable to the SSM bridge.
 
 **Phase sketch (the eventual build, parity-gated — matches the SSM P0→P7 discipline):**
-- **P0** measure: the CUDA `attention` hd=512 probe (the gate — 256 already proven by gemma3); E2B CPU
-  ms/token; a property-covering fixture (256-local + 512-global + K=V) logit oracle.
+- **P0** ✅ CUDA `attention` hd=512 confirmed (`933201c`, cosine ≈ 1.0). Remaining P0: E2B CPU
+  ms/token (the prize baseline); a property-covering fixture (256-local + 512-global + K=V) logit oracle.
 - **P1** per-layer geometry on `runLayer` (variant index + hd/nKV/rotaryDim/kEqV), per-variant
   uniforms; **non-Gemma models byte-identical** (guard the new path).
 - **P2** per-layer KV-cache sizing + K=V global layers (derive V, no v_proj).
-- **P3** attention dispatch per variant (+ kernel width change iff P0 requires it) → single-layer
+- **P3** attention dispatch per variant (per-layer hd/nKV uniform; no kernel change — hd=512 proven) → single-layer
   attention parity vs CPU, both variants.
 - **P4** the Gemma-4 MoE delta (parallel dense‖MoE + router pre-norm/scales + per-expert-scale +
   gelu-tanh) → FFN-sub-block parity.
@@ -246,9 +241,11 @@ quant (int8/int4), not silently promoted.
   the Metal attention kernel's threadgroup `float sc[4096]` overflows above 4096 attended keys. Same
   global-layer growth reaches it on a long prompt on 9c. A known-limit for the Metal port, flagged
   here so it is a design input, not a 9c surprise.
-- **The 512-global head is unproven end-to-end** (see Phase 0). Until the P0 probe + a
-  property-covering fixture confirm it, "CUDA is bridge + 0 attention kernels" is a hypothesis, not a
-  measured fact.
+- **The 512-global head: kernel PROVEN (`933201c`), whole-model still to gate.** The CUDA
+  `attention` kernel is confirmed correct at hd=512, so "bridge + 0 attention kernels" is now
+  measured. What remains is *end-to-end* parity — the resident path running Gemma-4's per-layer
+  512-global geometry through a property-covering fixture (P5), which is bridge-plumbing correctness,
+  not a kernel question.
 
 ## Boundary (explicit — what this spec does NOT do)
 
