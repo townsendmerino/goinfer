@@ -525,6 +525,34 @@ plus a nested-RoPE-base fix.
 >   (probe 1), peer naive-affine (probe 3), precision not the variable (probe 2) — all consistent with
 >   "not a quantization problem."
 
+**Decode perf — Step 0 profile (int4, real gemma4-26b .giw, Ryzen 7 3700X, GOMAXPROCS=8).** The
+initial ~2.3 tok/s was NOT bandwidth-, GC-, or barrier-bound. Three instruments:
+- **GOMAXPROCS sweep** 1/2/4/8 → 1.48 / 2.03 / 2.12 / 2.39 tok/s = **1.61× on 8 cores**, flat after 2.
+- **pprof**: 87 % of samples in two dot kernels — `q8Span` **49 %** (the int8 LM head, the only int8
+  matmul in an int4 model) + `dotW4A8FoldAVX2` **42 %** (all int4 matmuls) — but only **187 % CPU on
+  8 cores** (threads asleep; barrier waits burn no CPU samples).
+- **gctrace**: **1 GC cycle / 24 tokens** → zero-alloc revisit is moot (Step 3 dead).
+
+**Root cause:** `linalg.MatmulBTW4A8Into` has a serial fast-path `if M*N*K < ws.thr()`, and aikit's
+default `parThreshold = 1<<24 = 16.78M` MACs. At decode (M=1) every int4 matmul is smaller —
+expert gate‖up 3.96M, down 1.98M, dense ~5.9M, attention ~11.5M — so **all ~600/token ran SERIAL**;
+only the int8 head (738M) parallelized. The 1.61× is pure Amdahl (42 % serial int4 + 49 % parallel
+head), **not a barrier** (no significant sync/futex frames — so A3, Step 1, is not the cause; defer).
+
+**Fix (`199d4da`, surgical goinfer-side, NOT a global aikit change):** `matmul()`'s int4 branch runs
+a per-call `Workspace` with `SetThreshold(int4ParThreshold = 1<<20 ≈ 1.05M)`, below the 1.98M
+smallest decode matmul. **Measured 2.30 → 5.53 tok/s (2.4×), TTFT 7.3 → 2.66 s**, byte-identical
+(same token ids serial vs parallel; `TestGemma4MoEFFN_parity` + `TestExpertPaging_bitExact` green).
+
+**Next lever = the int8 head (Step 4).** It is 49 % of compute and slow because Q8 (int8-weight ×
+f32-activation) is ~3–4× slower per element than W4A8. `-embed-int4` moves it to W4A8 (half the bytes
++ the faster kernel, still parallel at N=262144). The restriction is **incidental** — `weights.go:287`
+"embedInt4 is wired only through the GGUF path for now"; the safetensors loaders use `.embedding()`
+(hard int8 pin) not `.embeddingWith(embedInt4)`, and `cmd/prequant` exposes no such flag. Lifting it
+= thread `embedInt4` through the safetensors loaders + prequant; quality is now a one-run gate check
+(hardened `TestGemma4_26B_gate` at `-embed-int4`). **Step 2 (batch int4 experts)** is a further win
+below this — batching clears the fan-out threshold naturally — and needs a W4A8 batch kernel in aikit.
+
 **int4 quality finding — HISTORICAL (superseded by the RESOLUTION above; kept as the investigation
 record). `scripts/gemma4_quant_recon.py` + `decoder/fakequant.go`.**
 int8 (~26 GB) is coherent but doesn't fit the M1 Pro 16 GB target; **every 4-bit config tried is
