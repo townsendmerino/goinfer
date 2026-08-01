@@ -84,6 +84,14 @@ func TestGlm4MoeAir_gate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadGGUF tokenizer: %v", err)
 	}
+	// AUDIT NOTE (da5a6ec): raw completion prompt on an instruction-tuned checkpoint
+	// (GLM-4.5-Air), gated only by the distinct<3 floor below — which measures "did the
+	// forward avoid TOTAL collapse", not coherence. On gemma-4-26b-a4b-it a raw prompt
+	// manufactured a false "int4 is broken" signal that survived a week, and distinct<3
+	// would not have caught it (repetition has >3 distinct tokens). This gate currently
+	// passes, so the completion is in-distribution ENOUGH for this checkpoint — but when
+	// it is next revalidated, adopt TestGemma4_26B_gate's pattern (render the family chat
+	// template + distinctTrigramRatio floor) instead of trusting distinct<3.
 	prompt := "The capital of France is"
 	ids, err := tk.Encode(prompt, true)
 	if err != nil {
