@@ -3,6 +3,7 @@ package decoder
 import (
 	"fmt"
 	"math"
+	"unsafe"
 
 	"github.com/townsendmerino/aikit/linalg"
 )
@@ -107,7 +108,7 @@ func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend, pager
 	// experts re-fault from the read-only mapping.
 	if pager != nil {
 		for _, e := range idx {
-			pager.touch(&lw.Experts[e])
+			pager.touch(unsafe.Pointer(&lw.Experts[e]))
 		}
 	}
 

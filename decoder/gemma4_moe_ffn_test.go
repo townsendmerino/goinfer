@@ -82,7 +82,7 @@ func TestGemma4MoEFFN_parity(t *testing.T) {
 	var maxAbs, dot, na, nb float64
 	for s := 0; s < d.Seq; s++ {
 		h := g.Input[s*d.Hidden : (s+1)*d.Hidden]
-		got := gemma4MoEFFN(be, arch, h, w)
+		got := gemma4MoEFFN(be, arch, h, w, nil)
 		want := g.Output[s*d.Hidden : (s+1)*d.Hidden]
 		for i := range got {
 			if ad := math.Abs(float64(got[i] - want[i])); ad > maxAbs {

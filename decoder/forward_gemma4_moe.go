@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"math"
+	"unsafe"
 
 	"github.com/townsendmerino/aikit/linalg"
 )
@@ -41,7 +42,7 @@ type gemma4MoEWeights struct {
 // gemma4MoEFFN applies the sub-block to one token's post-attention residual h
 // ([hidden]) and returns the layer output ([hidden]). Position-independent, so the
 // decode loop calls it per token.
-func gemma4MoEFFN(be Backend, arch *Architecture, h []float32, w *gemma4MoEWeights) []float32 {
+func gemma4MoEFFN(be Backend, arch *Architecture, h []float32, w *gemma4MoEWeights, pager *expertPager) []float32 {
 	hidden := arch.HiddenDim
 	eps := arch.NormEps
 
@@ -79,6 +80,15 @@ func gemma4MoEFFN(be Backend, arch *Architecture, h []float32, w *gemma4MoEWeigh
 	idx, topv := topK(probs, w.topK)
 	if routerCapture { // DIAGNOSTIC (default-off, observe-only): record the selected experts; see routercapture.go
 		routerCaptureBuf = append(routerCaptureBuf, append([]int(nil), idx...))
+	}
+	// Weight residency (idea #2): the router selection is the demand signal. Touch each
+	// chosen expert before its matmuls so the pager faults it in and evicts the LRU tail
+	// to stay within budget. Keyed by the gateUp element address (newExpertPager's key).
+	// Bit-exact — released experts re-fault from the read-only mapping.
+	if pager != nil {
+		for _, e := range idx {
+			pager.touch(unsafe.Pointer(&w.expertsGateUp[e]))
+		}
 	}
 	var sum float32
 	for _, v := range topv {

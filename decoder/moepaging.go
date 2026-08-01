@@ -16,7 +16,8 @@ import (
 // DONTNEED) now lives in aikit/mmap.SpanCache; this pager runs it with the
 // frequency-aware EvictLeastRecent policy (newExpertPager). This type holds only the
 // MoE-specific half: which experts alias the mapping and the touch hook the
-// router calls (moeMLP, mlp.go). Releasing is lossless — the mapping is read-only
+// router calls: moeMLP (mlp.go) for [NumExperts]expertWeights families, and gemma4MoEFFN
+// (forward_gemma4_moe.go) for gemma4's fused gate‖up + down experts. Releasing is lossless — the mapping is read-only
 // and file-backed, so an evicted expert merely re-faults from disk (output stays
 // bit-identical; the only cost is the cold-miss fault, ~+24 ms/token at a 16 GB
 // budget on the measured 35B-A3B — moepaging_spike_test.go).
@@ -25,7 +26,7 @@ import (
 // heap-backed weights (a GGUF load) and the always-on shared expert are left alone.
 // Not goroutine-safe — one decode stream touches it at a time, like the KV cache.
 type expertPager struct {
-	cache    *mmap.SpanCache[*expertWeights]
+	cache    *mmap.SpanCache[unsafe.Pointer]
 	nExperts int   // mapping-backed experts under management (for the banner)
 	total    int64 // total mapped expert bytes (for the banner)
 }
@@ -42,34 +43,47 @@ func newExpertPager(w *Weights, mapping []byte, budget int64) *expertPager {
 	end := base + uintptr(len(mapping))
 
 	type member struct {
-		ex    *expertWeights
+		key   unsafe.Pointer
 		spans [][]byte
 	}
 	var members []member
 	var total, maxExpert int64
+	// addExpert registers one expert under a stable identity (the address of its primary
+	// weight struct — the same value the forward touches), collecting only the projections
+	// that actually alias the mapping. MappedSpan returns nil for heap-backed (GGUF)
+	// weights and the always-on shared expert, so those are silently skipped.
+	addExpert := func(key unsafe.Pointer, wms ...*linalg.WeightMat) {
+		var spans [][]byte
+		var n int64
+		for _, wm := range wms {
+			s := wm.MappedSpan(base, end)
+			if len(s) == 0 {
+				continue
+			}
+			spans = append(spans, s)
+			n += int64(len(s))
+		}
+		if n == 0 {
+			return // heap-backed — nothing to page
+		}
+		members = append(members, member{key, spans})
+		total += n
+		if n > maxExpert {
+			maxExpert = n
+		}
+	}
 	for li := range w.Layers {
+		// Mixtral-style experts: [NumExperts]expertWeights, gate/up/down separate.
 		exps := w.Layers[li].Experts
 		for ei := range exps {
 			ex := &exps[ei]
-			var spans [][]byte
-			var n int64
-			// Only the quantized projections alias the mapping; MappedSpan returns
-			// nil for heap-backed (GGUF) weights and the always-on shared expert.
-			for _, wm := range [...]*linalg.WeightMat{&ex.Gate, &ex.Up, &ex.Down} {
-				s := wm.MappedSpan(base, end)
-				if len(s) == 0 {
-					continue
-				}
-				spans = append(spans, s)
-				n += int64(len(s))
-			}
-			if n == 0 {
-				continue // heap-backed — nothing to page
-			}
-			members = append(members, member{ex, spans})
-			total += n
-			if n > maxExpert {
-				maxExpert = n
+			addExpert(unsafe.Pointer(ex), &ex.Gate, &ex.Up, &ex.Down)
+		}
+		// Gemma 4 experts: fused gate‖up + down, held in the gemma4moe sub-block. Keyed by
+		// the gateUp element address — the same identity gemma4MoEFFN touches.
+		if gm := w.Layers[li].gemma4moe; gm != nil {
+			for ei := range gm.expertsGateUp {
+				addExpert(unsafe.Pointer(&gm.expertsGateUp[ei]), &gm.expertsGateUp[ei], &gm.expertsDown[ei])
 			}
 		}
 	}
@@ -91,9 +105,9 @@ func newExpertPager(w *Weights, mapping []byte, budget int64) *expertPager {
 	// scan-resistant (evict-most-recent), which is right for the ANN cyclic scan but
 	// evicts exactly the hot experts here (measured −51 pp hit rate at a 4 GB budget on
 	// a real 35B-A3B). EvictLeastRecent restores it. See aikit mmap.EvictPolicy.
-	cache := mmap.NewSpanCacheWithPolicy[*expertWeights](budget, mmap.EvictLeastRecent)
+	cache := mmap.NewSpanCacheWithPolicy[unsafe.Pointer](budget, mmap.EvictLeastRecent)
 	for _, m := range members {
-		cache.Add(m.ex, m.spans)
+		cache.Add(m.key, m.spans)
 	}
 	return &expertPager{cache: cache, nExperts: len(members), total: total}
 }
@@ -101,7 +115,7 @@ func newExpertPager(w *Weights, mapping []byte, budget int64) *expertPager {
 // touch records that ex is needed now: it becomes most-recently-used and, if it
 // wasn't resident, is faulted in (and the LRU tail released to stay within budget).
 // A no-op for experts the pager doesn't manage.
-func (p *expertPager) touch(ex *expertWeights) { p.cache.Touch(ex) }
+func (p *expertPager) touch(key unsafe.Pointer) { p.cache.Touch(key) }
 
 // stats returns cumulative (hits, misses, evictions) over all touch calls. A
 // non-zero eviction count means the budget was actually enforced (the LRU tail was

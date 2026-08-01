@@ -177,7 +177,7 @@ func (m *Model) runLayersGemma4(id int, cache *KVCache) ([]float32, error) {
 			// returns the FULL layer output — post-attention residual h + the joint-normed
 			// (dense ‖ MoE) branches, × layer_scalar — so it replaces the dense MLP + PLE +
 			// separate scalar tail below. (The MoE variant is PLE-free.)
-			h = gemma4MoEFFN(be, arch, h, lw.gemma4moe)
+			h = gemma4MoEFFN(be, arch, h, lw.gemma4moe, m.pager)
 		} else {
 			// dense variant: MLP sub-block (sandwich), GeGLU at the per-layer width.
 			copy(normd, h)
