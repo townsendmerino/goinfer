@@ -491,12 +491,37 @@ plus a nested-RoPE-base fix.
 | 3 loader + schema | ✅ | `51ea350`+`9c04ea3`+`54d3096`; unified prefix auto-detect + `text_config` flatten + vision skip, proven on a synthetic unified checkpoint — real 26B loads with no loader change |
 | 4a K=V global layers | ✅ | `9e83043` (`attention_k_eq_v`/VFromK + `num_global_key_value_heads`, cosine 1.0) |
 | 4 real-checkpoint | ✅ | `681db0c`+`625303e`: real 26B loads (30 layers, 128 experts top-8, K=V globals) + coherent English **at int8** (`TestGemma4_26B_gate`). |
-| 5 benchmark | ⛔ | BLOCKED on quality: **no coherent config ≤16 GB yet** — see the int4 finding below. |
+| 5 benchmark | 🟢 | **UNBLOCKED** — the "int4 incoherence" was a PROMPTING artifact, not a quantizer deficit. Real int4 (sym W4A8, ~13 GB) is fully coherent under the Gemma-4 chat template, greedy. See the RESOLUTION at the top of the int4 finding. |
 | 6–8 (streaming I/O, overlap, expert-major) | ☐ | not started |
 
-**int4 quality finding (Phase 5 blocker) — `scripts/gemma4_quant_recon.py` + `decoder/fakequant.go`.**
+> **RESOLUTION (2026-08-01) — it was the PROMPT, not the quantizer. Phase 5 unblocked.**
+> `TestGemma4CoherenceProbe` (realckpt) ran {raw, templated} × {greedy, sampled} on the real 26B:
+> - **Real shipping int4 (sym W4A8), raw prompt** → garbage (`"than than … 얓숌면"`), greedy AND
+>   sampled. **Same int4, proper Gemma-4 chat template** (`chat.Gemma4().RenderSegments` +
+>   `tk.EncodeSegments`) → **fully coherent, greedy**: *"The capital of France is **Paris**. …the
+>   **Eiffel Tower**, the **Louvre Museum**, the **Notre-Dame Cathedral**, and the **Arc de
+>   Triomphe**…"*. Sampling did NOT fix the raw prompt; the template did.
+> - **int8 is ALSO degraded on the raw prompt** — `"water-water-water is 100°C … Earth-related crops
+>   are Earth-related crops"` — repetitive English nonsense. It only ever *looked* coherent because
+>   `TestGemma4_26B_gate`'s coherence check is printable-ASCII-majority: int8's off-distribution
+>   garbage is English-ish (passes), int4's is CJK (fails). **Neither precision is coherent on the
+>   raw completion prompt; both are fully coherent templated.**
+> - **Consequence:** the entire matrix/probe arc below was diagnosing a non-problem. A raw completion
+>   prompt on an **instruction-tuned** model is off-distribution; int8 had marginally more headroom to
+>   emit ASCII, int4 fell to CJK — and a weak coherence gate turned that into a false "int4 is broken"
+>   signal. No affine build, no `.giw` v5, no numerics hunt, no Mac trip needed. int4 at ~13 GB fits
+>   the 16 GB target and is coherent for real (templated) use. **Lesson: judge quantization COHERENCE
+>   only through the model's real chat template; the greedy+raw gate is for bit-exact NUMERICS.**
+> - **Follow-ups:** (a) fix `TestGemma4_26B_gate` to render the chat template and assert int4
+>   coherence (stronger than printable-ASCII); (b) run Phase 5 on templated prompts; (c) the probe
+>   findings still stand as corroboration — routing healthy (probe 1), peer naive-affine (probe 3),
+>   precision not the variable (probe 2) — all consistent with "not a quantization problem."
+
+**int4 quality finding — HISTORICAL (superseded by the RESOLUTION above; kept as the investigation
+record). `scripts/gemma4_quant_recon.py` + `decoder/fakequant.go`.**
 int8 (~26 GB) is coherent but doesn't fit the M1 Pro 16 GB target; **every 4-bit config tried is
-incoherent**, so Phase 5 is blocked on output quality, not throughput. This SUPERSEDES the earlier
+incoherent** *[on the raw prompt — see RESOLUTION]*, so Phase 5 is blocked on output quality, not
+throughput. This SUPERSEDES the earlier
 "the deficit is the int4 WEIGHTS → implement affine int4" note (`bcadd44`), which reasoned from the
 offline cosine table and never ran affine × f32-activations end-to-end.
 
