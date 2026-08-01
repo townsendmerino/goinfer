@@ -559,6 +559,32 @@ NOT start it until these rule out that it's the wrong target:
    mixed-bit, then "MLX affine 4-bit group 64" in its README is the **format, not the method**, and
    we've been comparing naive min/max against something calibrated — a residual gap **no format
    engineering closes**, and the concrete reason those peer figures needed pinning.
+   **→ DONE — fieldfare is NAIVE affine, not calibrated. The comparison is fair; the target is reachable.**
+   fieldfare (Swift/Metal) does NOT quantize — it repacks the pre-quantized HF checkpoint
+   **`mlx-community/gemma-4-26b-a4b-it-4bit`** (found in its `THIRD_PARTY_NOTICES.md` /
+   `docs/SYSTEM_DESIGN.md`) into its `.gturbo` format. That checkpoint's `config.json` quantization
+   block: `mode: "affine"`, `bits: 4`, `group_size: 64` — MLX's **data-free min/max affine, NOT
+   calibrated** (no AWQ/GPTQ/DWQ). Its *only* mixed-bit exception is **all 30 `layers.*.router.proj`
+   at 8-bit**; experts, attention, shared expert, and **embeddings/LM-head are 4-bit** affine g64.
+     - So the calibration worry is refuted — naive affine g64 + fp16 activations + 8-bit routers is
+       *sufficient* for full coherence. goinfer already keeps the **router at f32** (better than
+       fieldfare's int8) and **embed/head at int8** (better than fieldfare's 4-bit), so goinfer's
+       target config strictly dominates fieldfare's on the tensors that matter most.
+     - The remaining delta between goinfer's best measured cell (affine+f32act = *semi*-coherent) and
+       fieldfare (fully coherent) is therefore NOT the weight scheme, activations, router, or
+       calibration — the most probable culprit is **the harness's method caveat**: `fakeInt4WM` stores
+       the affine reconstruction at **per-row int8**, which re-quantizes away the per-group-64 affine
+       zero-points before the matmul. A **real** per-group affine Q4 kernel (weights genuinely 4-bit,
+       f32/f16 activations via `MatmulBTQ4`, router f32) should recover the rest. Group size is g64 in
+       fieldfare vs the g32 I fake-quanted — g32 is *finer*, so it isn't the deficit.
+
+   **Net of the three probes:** routing is healthy (probe 1), the peer is naive-affine not calibrated
+   (probe 3), and goinfer already exceeds the peer on router+embed precision. The one unproven step is
+   whether a **real** affine-4bit-g64 + f32/f16-act expert kernel closes the fake-quant's semi→full
+   gap. That real spike (experts only, ~14.5 GB — probe 2's mix, which under affine+f32act already
+   measured semi-coherent this session at `GOINFER_FAKEQUANT=affine GOINFER_FAKEQUANT_EXPERTS=1
+   GOINFER_FAKEQUANT_ACT=f32 ZZBASE=int8int8`) is the go/no-go for funding the full `.giw` v5 build —
+   it isolates the one remaining unknown without any format/serialization work.
 
 **Free reconstruction-table columns (per `docs/plan-cpubrrr-steal-and-bindings.md`).** goinfer already
 has parity-verified **MXFP4** dequant (`decoder/mxfp4.go`, bit-verified vs `gguf/quants.py`; non-uniform
