@@ -57,7 +57,7 @@ at each goinfer tag.
 | Constrained / structured decode | ✓ **struct-derived** grammar ᶠ | ✓ GBNF + JSON-schema | ✓ JSON schema | ✓ grammar + strict schema | ✓ xgrammar / `guided_json` | — | ✗ |
 | OpenAI-compatible server | ✓ pure stdlib ᵍ | ✓ `llama-server` | ✓ | ✓ (+ Anthropic) | ✓ (heavy deps) | ✗ (library only) | ✗ |
 | LoRA adapters | ✓ PEFT, merged at load ʰ | ✓ | ✓ | ✓ | ✓ | — | ✗ |
-| GPU | ~ WebGPU (broad residency) + **cgo-free CUDA & Metal** (dense-only) ⁱ | ✓ CUDA/Metal/Vulkan | ✓ CUDA/ROCm/Vulkan/Metal | ✓ CUDA/Metal | ✓ CUDA/TPU/+ | ✓ inherits llama.cpp | ✗ CPU only |
+| GPU | ~ WebGPU (broad residency) + **cgo-free CUDA & Metal** (dense + MoE; `features.go`-gated) ⁱ | ✓ CUDA/Metal/Vulkan | ✓ CUDA/ROCm/Vulkan/Metal | ✓ CUDA/Metal | ✓ CUDA/TPU/+ | ✓ inherits llama.cpp | ✗ CPU only |
 | Continuous batching | ✗ | ✓ | ~ parallel slots via llama-server ᵇ | ✓ | ✓ PagedAttention | — | ✗ |
 | Multimodal (vision/audio) | ~ **vision in** (Gemma 3 VL, pure-Go SigLIP → serve + agent; ~171 s/image CPU or **18.8 s on `-tags gpu`**, no audio) | ✓ | ✓ | ✓ | ✓ | ~ (yzma VLMs; gollama —) | ✗ |
 | Model coverage | ~ **11 architectures** ʲ | ✓ dozens | ✓ broad | ✓ broad | ✓ 200+ | ✓ inherits llama.cpp | ✗ Llama-2 toy |
@@ -84,7 +84,7 @@ weights mapped from the binary's read-only image) · ᵉ `README.md` + `CHANGELO
 `cmd/serve` (OpenAI-compatible server in pure stdlib) · ʰ `README.md` (LoRA PEFT,
 merged at load) · ⁱ `ARCHITECTURE.md` §2 + `docs/gpu-assessment.md` (WebGPU full
 residency; cgo quarantined behind `-tags gpu`) + §B2/§B3 below (`cuda/`, `metal/`:
-driver-JIT / MSL, **CGO_ENABLED=0**, dense-only, admission-gated by
+driver-JIT / MSL, **CGO_ENABLED=0**, admission-gated by
 `decoder/features.go`) ·
 ʲ `decoder/registry.go` — **13 registered `model_type` keys, 11 distinct architectures**
 (`gemma3_text`/`qwen3_5_moe_text` are text-decoder aliases of `gemma3`/`qwen3_5_moe`).
@@ -155,9 +155,14 @@ gpu-assessment — cited there.
 
 The `cuda/` backend is a **driver-JIT, CGO_ENABLED=0** path (dlopen `libcuda` via
 purego; PTX embedded, no toolkit at build or run time — re-verified by `ldd` at the
-commit below showing no `libcuda`/`libnvrtc` linked). **Dense-only**: it declines to
-the staged/CPU path for any arch needing features it hasn't implemented
-(`decoder/features.go`).
+commit below showing no `libcuda`/`libnvrtc` linked). It admits an arch only when it
+implements every feature that arch needs, else declines to the staged/CPU path
+(`decoder/features.go`, the authoritative set). **The numbers below are the dense lane.**
+At this commit (`7557723`, 2026-07-16) the backend was dense-only, but MoE (routed +
+ungated shared expert) and partial rotary landed the next day (2026-07-17) — `features.go`
+now carries `cuda`'s `FeatMoE`/`FeatPartialRotary` plus the full Gemma norm/GeGLU/embed set —
+so those lanes are real but **unmeasured here** (still declined: MLA, SSM, the gated shared
+expert, YaRN mscale, logit softcap).
 
 Provenance, all rows: **RTX 2070 SUPER**, driver **595.58.03** / Ryzen 7 3700X ·
 goinfer commit **`7557723`**, **2026-07-16** · peer **Ollama 0.5.7** · both sides
@@ -190,8 +195,11 @@ comparison on this page.
   The advantage narrows as the model grows and work becomes bandwidth-bound — expect
   the trend to continue past 1.5B. **Do not extrapolate these ratios to 7B**; that row
   is unmeasured.
-- **Scope, stated plainly:** dense architectures only. No MoE / MLA / SSM, no partial
-  rotary. This is a real-speed claim about the dense lane, not about coverage.
+- **Scope, stated plainly:** these are dense-lane numbers (0.5B/1.5B dense) — a real-speed
+  claim about the dense lane, **not** a coverage claim. Coverage is `decoder/features.go`,
+  which since 2026-07-17 grants `cuda` MoE (routed + ungated shared) + partial rotary + the
+  Gemma set; MoE-resident speed is unmeasured. (Earlier drafts of this bullet said "dense
+  architectures only / No MoE" — stale as of 2026-07-17.)
 
 ### B3. cgo-free Metal (darwin, `--backend metal`) vs Ollama-Metal — 4-bit both sides
 
