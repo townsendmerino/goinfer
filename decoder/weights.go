@@ -995,6 +995,10 @@ func streamExperts(t embed.Tensor, nExpert, rows, cols int, quant quantMode) ([]
 		if err != nil {
 			return nil, err
 		}
+		if fakeQuantScheme != "" && fakeQuantExpertsOnly { // DIAGNOSTIC (default-off): fake-4-bit the EXPERTS only; see fakequant.go
+			out[e] = fakeInt4WM(f32, rows, cols, fakeQuantScheme)
+			continue
+		}
 		out[e] = quantizeWM(linalg.WrapF32(f32, rows, cols), quant)
 	}
 	return out, nil

@@ -494,29 +494,78 @@ plus a nested-RoPE-base fix.
 | 5 benchmark | ⛔ | BLOCKED on quality: **no coherent config ≤16 GB yet** — see the int4 finding below. |
 | 6–8 (streaming I/O, overlap, expert-major) | ☐ | not started |
 
-**int4 quality finding (Phase 5 blocker) — scripts/gemma4_quant_recon.py + realckpt diagnostics.**
-int8 (~26 GB) is coherent but doesn't fit the M1 Pro 16 GB target; **int4 is incoherent**,
-so Phase 5 is blocked on output quality, not throughput. Measured:
-- The deficit is the **int4 WEIGHTS**, not activation quant: both W4A8 (int8 activations,
-  the default) and W4A16 (f32 activations, `int4A16Diag` diagnostic) generate garbage,
-  while int8 is coherent. (An earlier note claiming W4A16 fixed it was an error — that run
-  had the gate at int8.)
-- Per-tensor int4 reconstruction is **uniform** (~0.995 cosine across experts / dense MLP /
-  attention / tied head) and near-symmetric (per-group skew ~0.06), so it's not a single
-  bad tensor class and not primarily a zero-point problem.
-- **Symmetric vs affine**: goinfer's sym-group-32 (cosine 0.99514, rel-RMS 9.9%) is *just
-  below* turbo-fieldfare's MLX affine-group-64 (0.99586), which runs this exact checkpoint
-  coherently at ~14.3 GB — a narrow but real threshold. Affine group-32 would be 0.99690 /
-  rel-RMS 7.9% (~20% lower error), well above it. goinfer already keeps the router f32 and
-  the embed/head int8 (both *better* than fieldfare's 8-bit router / 4-bit tables), so the
-  gap is purely the 4-bit expert weight quantizer: symmetric-15-level vs affine-16-level.
+**int4 quality finding (Phase 5 blocker) — `scripts/gemma4_quant_recon.py` + `decoder/fakequant.go`.**
+int8 (~26 GB) is coherent but doesn't fit the M1 Pro 16 GB target; **every 4-bit config tried is
+incoherent**, so Phase 5 is blocked on output quality, not throughput. This SUPERSEDES the earlier
+"the deficit is the int4 WEIGHTS → implement affine int4" note (`bcadd44`), which reasoned from the
+offline cosine table and never ran affine × f32-activations end-to-end.
 
-**Recommendation:** implement **affine int4** (aikit, behind a new mode; existing sym int4
-stays bit-identical) — the config MLX proves coherent on this checkpoint, expected ~13 GB.
-Mixed precision can't substitute: the experts are ~22.8 B of 25.2 B params, so anything that
-keeps them ≥int8 exceeds 16 GB, and int4-uniform-error means keeping the *non*-expert tensors
-int8 (they're already the accurate part) won't move the needle. This is the multi-day Step 4
-(quantizer + W4A8/dequant paths + a `.giw` v5 for per-group zero-points); land it deliberately.
+**End-to-end matrix** (`fakeInt4WM`: reconstruct each 4-bit scheme, store int8, generate greedily
+from "The capital of France is"; gemma-4-26b-a4b-it):
+
+| weights ↓ / act → | **int8 act** (W4A8 — goinfer default) | **f32 act** (W4A16 — `MatmulBTQ4`) |
+|---|---|---|
+| **symmetric** (goinfer's int4) | garbage (`"than than … usual. usual."`) | garbage (CJK `"스트라이크 … 의심심한의"`) |
+| **affine** (MLX's scheme) | garbage (`"de- fact- de- fact-"`) | **semi-coherent** (`"… the questioner questioner?"`) |
+
+int8-everywhere is fully coherent (reference). **The fidelity gate:** the `sym` cell must reproduce
+the real-int4 garbage, or the whole matrix is untrustworthy — asserted, not eyeballed, by
+`TestFakeQuantSymMatchesRuntimeInt4` (`decoder/fakequant_test.go`), which proves the harness's `sym`
+scheme is element-wise identical to aikit's runtime `QuantizeInt4`→dequant. Only then are the other
+cells worth reading.
+
+**Corrected conclusions:**
+- **Neither lever alone recovers coherence** — it needs **affine weights AND f32 activations
+  together**. sym+f32-act is CJK garbage; affine+int8-act is garbage. bcadd44 tested f32-act only
+  with *sym* weights, so it missed the interaction.
+- **Dropping affine int4 into the existing W4A8 (int8-activation) path would still be garbage.** The
+  int4 dispatch must also move to the f32-activation `MatmulBTQ4` kernel — **but note `MatmulBTQ4` is
+  documented as the *prefill* kernel (quantized weights × f32 activations); repurposing it for decode
+  is correct but not its intended path, and the throughput cost lands squarely in Phase 5.**
+- Even affine+f32-act (MLX's exact scheme) reaches only **semi-coherence** in goinfer (repetitive
+  English: `"true or true or … or vice versa"`), **not** MLX's full coherence. A residual gap remains.
+
+**Three probes before funding the affine + `.giw` v5 build — cheapest first.** The affine build is
+multi-day (aikit affine quantizer + `.giw` v5 per-group zero-points + int4→Q4-f32act dispatch); do
+NOT start it until these rule out that it's the wrong target:
+
+1. **Expert-selection agreement** (hours, purely diagnostic — no new format). Per layer, measure
+   top-8 overlap and selection entropy of the 4-bit run vs the int8 run. **Repetitive-English output
+   is the signature of routing collapse, not of uniform weight noise.** If routing has degenerated,
+   the residual gap is about router-*input* cleanliness, and more bits on the expert weights won't
+   close it — which redirects the whole plan.
+2. **Re-test the mix under affine.** "int4mix won't help" was measured in the *symmetric* era and is
+   **not transitive** — experts-4bit + everything-else-int8 under **affine + f32-act** is unmeasured.
+   That config is ~14.5 GB (fits 16 GB), needs **no new format work**, and if all-4-bit affine+f32act
+   is already semi-coherent the mix should be strictly better. This is the config that could actually
+   unblock Phase 5.
+3. **Check what fieldfare actually runs** (an afternoon; may explain everything). Does it quantize
+   from bf16 itself with naive min/max affine g64, or consume a *pre-quantized* MLX checkpoint?
+   mlx-lm supports mixed-bit recipes and per-module exclusions (it commonly skips modules whose dims
+   aren't group-divisible and keeps some tensors higher). If fieldfare's weights are calibrated or
+   mixed-bit, then "MLX affine 4-bit group 64" in its README is the **format, not the method**, and
+   we've been comparing naive min/max against something calibrated — a residual gap **no format
+   engineering closes**, and the concrete reason those peer figures needed pinning.
+
+**Free reconstruction-table columns (per `docs/plan-cpubrrr-steal-and-bindings.md`).** goinfer already
+has parity-verified **MXFP4** dequant (`decoder/mxfp4.go`, bit-verified vs `gguf/quants.py`; non-uniform
+ladder `{0,1,2,3,4,6,8,12}`×E8M0, 32-elem blocks) and **Q4_K** dequant + a validated Q4_K×Q8_K matmul
+(`linalg/kquant.go`). Add both as columns to the Step-3 reconstruction table. **Shape caveat:** Q4_K
+needs `K % 256 == 0` (`QuantizeActQ8K` panics; `qkK=256`), and Gemma 4's `down_proj` has `K =
+moe_intermediate_size = 704 = 2.75` superblocks — it **does not tile**, absent padding. MXFP4's 32-elem
+blocks give `704/32 = 22` ✓ (same divisibility as today's group-32 int4). A **non-uniform ladder
+(MXFP4) handles outliers differently from affine** and may behave differently at this coherence
+threshold — worth a cell before committing to affine.
+
+Mixed precision still can't substitute the experts away: they are ~22.8 B of 25.2 B params, so keeping
+them ≥int8 exceeds 16 GB.
+
+*Method caveat:* the harness stores each 4-bit reconstruction at int8 (near-lossless, 0.99995) and runs
+it through the int8/Q8 matmul, so "f32-act" here is int8-weight × f32-act over the 4-bit-reconstructed
+values — a faithful proxy for W4A16-affine, not a bit-exact stand-in for a real per-group affine Q4
+kernel. Repro: `GOINFER_FAKEQUANT={sym,affine} [GOINFER_FAKEQUANT_ACT=f32] [GOINFER_FAKEQUANT_EXPERTS=1]
+ZZBASE={int4,int8int8}` via `TestGemma4FakeQuant` (build tag `realckpt`). The env is read **once at
+load**, default-off = bit-identical (`TestFakeQuantOffBitIdentical`).
 
 **Follow-up review (post-`51ea350`), one commit each:**
 - RMSAddOne consistency in `gemma4MoEFFN` — `97d2a2c`

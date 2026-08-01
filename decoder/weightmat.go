@@ -136,6 +136,9 @@ func quantizeWM(w linalg.WeightMat, mode quantMode) linalg.WeightMat {
 	case quantInt8I8:
 		return linalg.QuantizeInt8(f32, w.Rows(), w.Cols(), true)
 	case quantInt4:
+		if fakeQuantScheme != "" { // DIAGNOSTIC (default-off, single load-time env read): see fakequant.go
+			return fakeInt4WM(f32, w.Rows(), w.Cols(), fakeQuantScheme)
+		}
 		return linalg.QuantizeInt4(f32, w.Rows(), w.Cols(), int4GroupSize)
 	default:
 		return w
