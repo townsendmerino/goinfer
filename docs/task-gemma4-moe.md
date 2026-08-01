@@ -792,111 +792,122 @@ doing fully-resident too, so it can be justified on its own.
 
 ---
 
-## Phases 9–10 — GPU residency (both backends wanted; order matters)
+## Phases 9a–9d — GPU residency (ordering corrected 2026-08-01 by the feature audit)
 
 Everything above is the pure-Go CPU path. Gemma 4 is `CPU` in every backend column of
-`docs/hardware-matrix.md` because `decoder/residency.go:130` declines residency for
-`a.gemma4 != nil` **unconditionally** — its own non-uniform forward. Both ports are wanted;
-the sequencing below is not a preference between them, it follows from what each backend
-already has.
+`docs/hardware-matrix.md` because `decodeRunnerEligible` declines `a.gemma4 != nil`
+**unconditionally** (`decoder/residency.go:130`) — its own non-uniform forward. That
+predicate is **arch-only and backend-agnostic**, so the bridge that lifts it is shared work
+every backend inherits.
 
-### Phase 9a — the shared prerequisite (most of the cost of both)
+> **An earlier draft of this section ordered Metal → CUDA on the premise that Metal already
+> had MoE and `cuda/` was dense-only, and proposed WebGPU as the local proving ground
+> because it is "the richest runner." The feature audit (`93a32c0`) overturned both. The
+> ordering below supersedes it.**
+
+### The feature audit (`93a32c0`) — what each backend is actually missing
+
+Arch-derived, from `ResidentBackendFeatures` in `decoder/features.go`. Gemma 4 26B-A4B needs
+8 features:
+
+| backend | missing for Gemma 4 | count |
+|---|---|---|
+| `decodeRunnerEligible` | own-forward gate — **blocks every backend** | — |
+| **webgpu** | embed-scale, gated-gelu, logit-softcap, sandwich-norm | **4** |
+| **cuda** | logit-softcap | **1** |
+| **metal** | logit-softcap | **1** |
+
+**The strategic finding:** WebGPU is the *worst*-equipped backend for this family despite
+being the richest runner overall. It has the deep MoE / MLA / SSM set but lacks the Gemma
+norm/activation/embed kernels CUDA and Metal already ship — and **none of those four
+transfer** to another backend. Proving 9a on WebGPU costs the bridge plus four
+WebGPU-only kernels; proving it on CUDA or Metal costs the bridge plus one.
+
+### Phase 9a — the own-forward residency bridge (shared; the real prize)
 
 Lift the `a.gemma4 != nil` decline so Gemma 4 is admissible to a resident runner at all.
 `docs/c8-softcap-residency.md` is the analysis: Gemma-4-E2B trips **≥3 blockers**, and the
-dominant one is not the final-logit softcap — it is `runLayersGemma4`'s own forward
+dominant one is *not* the softcap — it is `runLayersGemma4`'s own forward
 (`forward_gemma4.go`), which the resident runners' uniform-layer assumption cannot express.
 That doc's own conclusion: *"softcap is one of ≥3 blockers, and the dominant one is
-Gemma-4's own forward"* — so fund the **own-forward residency bridge**, not a softcap
-patch.
+Gemma-4's own forward."*
 
-This is paid once and both backends inherit it. It is the expensive part; Phases 9b/10 are
-comparatively cheap afterwards.
+So fund the **own-forward residency bridge**, not a softcap patch. Spec it against the CPU
+`runLayersGemma4` first — it is backend-agnostic, it is where the risk lives, and it is paid
+once. Phases 9b–9d are comparatively cheap afterwards.
 
-**Feature audit (2026-08-01, Ryzen box, no kernels written) — WebGPU is the WORST-equipped
-backend for Gemma; STOP-and-report per the funding rule.** Computed the real 26B-A4B
-`residentFeatures()` and the per-backend gap from `ResidentBackendFeatures` (arch-derived, no GPU):
+### Phase 9b — prove it on CUDA (local hardware, cheapest gap)
 
-    gemma4-26B-A4B needs: [embed-scale gated-gelu logit-softcap moe per-layer-rope qk-norm sandwich-norm sliding-window]
-    decodeRunnerEligible = false   ← own-forward arch-shape gate; blocks ALL backends regardless of features
-    webgpu  missing: [embed-scale gated-gelu logit-softcap sandwich-norm]   (4)
-    cuda    missing: [logit-softcap]                                        (1)
-    metal   missing: [logit-softcap]                                        (1)
+The RTX 2070 SUPER is the same card §B2's CUDA numbers were measured on, so CUDA is *also*
+locally gateable — the earlier "WebGPU because it's the box's GPU" reasoning was simply
+wrong. Bridge + 1 beats bridge + 4 on identical hardware.
 
-Two independent structural blockers, both must be cleared:
-1. **The arch-shape gate** (`decodeRunnerEligible=false`, residency.go:130) — the shared own-forward
-   bridge above. Blocks every backend; the dominant, transferable cost.
-2. **Per-backend feature kernels.** CUDA and Metal already ship the Gemma norm/activation/embed set
-   and need only **logit-softcap**. **WebGPU is missing FOUR** — `embed-scale` (host-side √hidden
-   multiply), `sandwich-norm` (post-attn/post-MLP norm dispatches), `gated-gelu` (GeGLU vs its
-   hardcoded SwiGLU glue), and `logit-softcap` (tanh cap). None transfer to CUDA/Metal (they have
-   3 of 4). So "develop 9a on WebGPU" costs the shared bridge PLUS 4 WebGPU-only kernels, where the
-   same bridge on CUDA/Metal would cost the bridge + 1 (softcap). WebGPU can still *gate* the shared
-   bridge, but it is the most kernel-work-first path, not the least.
+**Resolve two things before writing a kernel:**
 
-**Gemma-4 MoE delta** the resident single-branch SwiGLU-MoE path cannot express (from
-`forward_gemma4_moe.go`), enumerated before any plan:
-- **Parallel dense-MLP ‖ MoE**: both branches run on the same post-attention residual through
-  DIFFERENT norms, outputs joint-normed (`post_ffn_norm(x1+x2)`) then residual-added. Resident MoE
-  is single-branch.
-- **gelu-tanh experts** (contiguous gate‖up halves, `geluTanh(gate)·up`) — not SwiGLU; needs
-  `FeatGatedGELU` on the EXPERT path, not just the dense MLP.
-- **Router pre-processing**: a WEIGHTLESS RMSNorm + a learned `[hidden]` scale + `hidden^-0.5`
-  before the projection — the resident router assumes `logits = Router·h`.
-- **`per_expert_scale[nE]`** post-step on the renormalized top-k weights.
-- **Seven norms + `layer_scalar`**: sandwich (input + post-attn) + the four branch/joint FFN norms
-  + the router's weightless norm, and a whole-layer scalar multiply at the tail.
+1. **A doc/code contradiction.** `docs/benchmarks.md` §B2 states the `cuda/` scope as
+   *"dense architectures only. No MoE / MLA / SSM, no partial rotary"* (written 2026-07-16),
+   but `features.go`'s `cuda` entry carries `FeatMoE: true` and `FeatPartialRotary: true` —
+   which is what makes the audit read "1 missing." The features table is authoritative by
+   its own charter (*"a backend adds an entry ONLY when it ships the kernel that implements
+   it"*), so §B2's prose is probably stale. Confirm which, and fix the loser — the whole
+   4-vs-1 asymmetry rests on it.
+2. **`FeatLogitSoftcap` is probably over-broad, and the gap may be nearly free.** The flag
+   is documented as *"attention / final logit softcap (Gemma 2/3)"* — one bit covering two
+   different things. Attention softcap is per-layer and needs a real kernel. Final-logit
+   softcap is `softcap · tanh(logits/softcap)`, applied **once** to the logit vector after
+   the LM head. Gemma 4 needs only the second: `registry.go` says plainly *"Gemma 4 re-added
+   Gemma 2's final-logit softcap (30 in the GGUF)… Attn softcap stays 0."*
 
-**Recommendation:** do NOT start kernels here. The honest ordering the audit implies: (a) the shared
-own-forward residency bridge is the real prize and is backend-agnostic — spec it against the CPU
-`runLayersGemma4` first; (b) if a GPU is to *prove* it, CUDA/Metal are 1 kernel from Gemma-ready and
-WebGPU is 4 — so WebGPU is a poor first target despite being the only local GPU. Re-decide the target
-with that cost asymmetry explicit, rather than defaulting to WebGPU because it's here.
+   So Gemma 4 is being declined for a capability it does not use. If the resident path
+   returns logits host-side anyway — as `FeatEmbedScale` already does (*"√hidden applied
+   host-side in `embedResident`"*) — then **splitting the flag** into attention-softcap and
+   final-logit-softcap reduces CUDA and Metal from "bridge + 1 kernel" to "bridge + a
+   taxonomy split + a few host-side lines." Precedent for splitting rather than
+   overclaiming: the `cuda` block already documents the gated-vs-ungated shared expert as
+   *"one flag that cannot express the sub-shape."*
 
-### Phase 9b — Metal residency (do this one first)
+The CUDA payoff on its own terms is the strongest performance claim goinfer has —
+**1.4–2.0× Ollama-CUDA at equal 4-bit quant, cgo-free, driver-only** (§B2, `7557723`).
+Extending that lane to a 26B MoE is a product result. It is **not** the fieldfare
+comparison and must not be written up as one.
 
-Two independent reasons, pointing the same way:
+### Phase 9c — Metal (the only backend that makes the peer row legal)
 
-1. **It is the shorter path.** Metal already runs MoE resident — `hardware-matrix.md` shows
-   Qwen2-MoE `✅ resident` on Metal, and `docs/task-metal-moe.md` scopes the on-GPU router +
-   indexed stacked experts. The CUDA backend has **no MoE at all** (§10 below).
-2. **It is the only backend that makes the peer comparison legal.** turbo-fieldfare is
-   Swift + Metal on Apple silicon. A CUDA number cannot be the head-to-head no matter how
-   fast it is. If Phase 5's purpose is still that comparison, Metal is the port that serves
-   it.
+Unaffected by the audit's reordering: turbo-fieldfare is Swift + Metal on Apple silicon, so
+a CUDA number can never be the head-to-head no matter how fast it is. If Phase 5's purpose
+is still that comparison, Metal is the port that serves it. It inherits 9a and shares 9b's
+softcap resolution as *design* work even though the kernel code does not transfer.
 
-Gemma-4-specific kernel work **on top of** `task-metal-moe.md`, which scopes Mixtral /
-Qwen2-MoE / Qwen3-MoE / GLM-MoE and explicitly excludes families with their own forwards:
+Gemma-4-specific work sits **on top of** `docs/task-metal-moe.md`, which scopes Mixtral /
+Qwen2-MoE / Qwen3-MoE / GLM-MoE and explicitly excludes families with their own forwards —
+easy to under-scope as "Metal already does MoE." See the delta below.
 
-- the **parallel dense-MLP ‖ MoE** FFN sub-block with its seven norms and `layer_scalar`
-  (§A1) — not the single-branch MoE the Metal task assumes;
-- the **Gemma-4 router**: weightless pre-norm + learned `[hidden]` scale + `hidden^-0.5`,
-  unconditional renorm, learned per-expert scale (§A2). `task-metal-moe.md`'s `moe_route`
-  kernel covers softmax/sigmoid top-k but none of these;
-- **gelu-tanh GeGLU experts**, not SwiGLU — the Metal task's `gemv_w4a8_moe` epilogue
+**Memory note:** `hardware-matrix.md` records that *"MoE residency is unified-memory-bound"*
+on Metal. 26B-A4B at int4 is ~13 GB (~11 GB with the int4 head from `96269ca`) against a
+16 GB M1 Pro — resident is plausible but tight, and it is the same paging-bound regime
+Phase 5's row has to caveat. Resident does not imply comfortable.
+
+### Phase 9d — WebGPU: deprioritized for this family
+
+Four missing kernels, none of which transfer. Worth building only if WebGPU-Gemma is a goal
+in its own right — not as a proving ground for the bridge.
+
+### The Gemma-4 MoE delta (applies to whichever backend lands)
+
+The resident MoE path assumes a single-branch MoE FFN. Gemma 4 does not fit it:
+
+- **parallel dense-MLP ‖ MoE** sub-block with seven norms and `layer_scalar` (§A1) — the
+  single-branch path cannot express it;
+- **gelu-tanh GeGLU experts**, not SwiGLU — `task-metal-moe.md`'s `gemv_w4a8_moe` epilogue
   assumes SiLU;
-- **final-logit softcap 30**, **K=V global layers** (`global_head_dim` 512, 2 KV heads,
-  `attention_k_eq_v`), **proportional/partial rotary** on the global layers, and the
-  **5:1 sliding:full** interleave.
+- the **Gemma-4 router**: weightless pre-norm + learned `[hidden]` scale + `hidden^-0.5`,
+  unconditional renorm, learned `per_expert_scale[nE]` (§A2). The `moe_route` kernel covers
+  softmax/sigmoid top-k and none of these;
+- **K=V global layers** (`global_head_dim` 512, 2 KV heads, `attention_k_eq_v`),
+  **proportional/partial rotary** on the global layers, the **5:1 sliding:full** interleave,
+  and **final-logit softcap 30**.
 
-**Memory note:** `hardware-matrix.md` already records that *"MoE residency is
-unified-memory-bound"* on Metal. 26B-A4B at int4 is ~13 GB (~11 GB with the int4 head from
-`96269ca`) against a 16 GB M1 Pro — resident is plausible but tight, and it is the same
-paging-bound regime Phase 5's row has to caveat. Do not assume resident implies comfortable.
-
-### Phase 10 — CUDA residency
-
-Bigger lift, bigger product claim. `docs/benchmarks.md` §B2 states the `cuda/` backend's
-scope plainly: **dense-only** — *"No MoE / MLA / SSM, no partial rotary."* So CUDA needs
-**MoE support at all**, plus partial rotary, before any Gemma-4-specific work begins. That
-is why it follows Metal rather than running beside it.
-
-The payoff is the strongest performance claim goinfer has: **1.4–2.0× Ollama-CUDA at equal
-4-bit quant, cgo-free, driver-only** (§B2, `7557723`). Extending that lane to a 26B MoE is a
-product result in its own right — it is simply not the fieldfare comparison, and should not
-be written up as though it were.
-
-### Gates for both
+### Gates (every phase above)
 
 - Resident decode held to the repo's **3% near-tie parity rule** against the CPU path on the
   real q4 checkpoint, the same bar §B2's CUDA numbers passed (9/10 exact argmax, 0 hard
@@ -904,6 +915,10 @@ be written up as though it were.
 - Regenerate `docs/hardware-matrix.md` (`go test ./decoder -run HardwareMatrix -update`) and
   `docs/capability-matrix.md`. The Gemma 4 row moves off `CPU` **only** for the backend that
   actually landed — no inheriting a `✅ resident` from the MoE feature flag.
+- **If `FeatLogitSoftcap` is split (9b.2), every backend's entry must be re-derived from
+  what it actually ships**, not mechanically copied. `features_test.go`'s registry-driven
+  admission gate exists precisely to catch an overclaim here; a split that quietly grants
+  three backends a capability none of them implemented is the failure mode.
 - Per `docs/benchmarks.md` methodology: same machine, same checkpoint, same quant, greedy,
   pinned peer version, date + commit + thermal note inline.
 
