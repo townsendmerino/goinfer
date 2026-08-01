@@ -4,6 +4,20 @@
 > parity-identical); each phase below is resolved/parked inline. Prefill got its
 > own ~3.4× win later (see CHANGELOG / `docs/benchmarks.md`).
 >
+> **Linux-box recheck (2026-08-01, Ryzen 7 3700X) — the scaling ceiling is REAL, and it
+> exposed a serve gap.** After the Gemma-4 int4 threshold work (199d4da) I re-ran
+> `BenchmarkDecode` on the 0.5B and 1.5B int8 to test whether the campaign's ~1.3× scaling
+> ceiling was itself threshold-suppressed. It is not — at the shipping `DefaultDecodeParallelThreshold
+> = 300K`, decode **peaks at ~4 cores and regresses at 8** (0.5B: 1/2/4/8 = 25.9/34.2/40.3/32.1
+> tok/s; 1.5B: 9.4/…/15.7/15.0), and `threshold=0` (parallelize everything) is *worse* than 300K.
+> So 300K is the genuine optimum, the ceiling is the tiny-matmul-doesn't-fill-8-cores wall (same
+> shape as Gemma-4's 4→8 flattening), and **the published 0.5B numbers stand — no doc corrections
+> needed.** BUT the recheck found `SetDecodeParallelThreshold(300K)` was called only in demo/chat +
+> demo/agent, **never in `cmd/serve`** — so serve ran int8 decode SERIAL at aikit's 16.78M default:
+> **0.5B 22→36 tok/s (1.64×), 1.5B 10.5→15.1 (1.44×) left on the table.** Fixed: serve now sets the
+> decode threshold at model load like the demos (the int4 path already self-parallelizes per-call
+> since 199d4da, so this closes the int8 half for the production server).
+>
 > Opportunistic, profile-driven. The goal is to recover the tok/s goinfer is
 > leaving on the table **without** changing what it competes on (portability /
 > embeddability, not raw throughput) and **without** touching numerics.
