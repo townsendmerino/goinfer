@@ -77,6 +77,9 @@ func gemma4MoEFFN(be Backend, arch *Architecture, h []float32, w *gemma4MoEWeigh
 	matmul(be, &w.routerProj, rn, scores, 1)
 	probs := softmaxF32(scores)
 	idx, topv := topK(probs, w.topK)
+	if routerCapture { // DIAGNOSTIC (default-off, observe-only): record the selected experts; see routercapture.go
+		routerCaptureBuf = append(routerCaptureBuf, append([]int(nil), idx...))
+	}
 	var sum float32
 	for _, v := range topv {
 		sum += v

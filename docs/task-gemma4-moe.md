@@ -534,6 +534,19 @@ NOT start it until these rule out that it's the wrong target:
    is the signature of routing collapse, not of uniform weight noise.** If routing has degenerated,
    the residual gap is about router-*input* cleanliness, and more bits on the expert weights won't
    close it — which redirects the whole plan.
+   **→ DONE — routing does NOT collapse; direction validated, not redirected.** Captured per-token/
+   per-layer top-8 selections (`GOINFER_ROUTER_CAPTURE=1`, `TestGemma4RouterCapture`, 27-token fixed
+   passage) for int8, real-int4 (shipping garbage), and affine+f32act (semi-coherent), vs int8:
+     - **Selection entropy is preserved** — meanΔH(int8−q) ≈ **0.00 bits**; per-layer distinct-expert
+       counts within ±2 (L0 53 vs 52–53, L29 58 vs 56–57). **No collapse to a few experts, any config.**
+       So the repetition is NOT routing collapse — the "repetition ⇒ collapse" heuristic fails here.
+     - Routing **drifts with depth but doesn't degenerate**: top-8 overlap with int8 falls 0.96 (L0) →
+       ~0.68 (L29), mean **0.879 real-int4 / 0.894 affine+f32act** — uniform weight-noise nudging
+       borderline picks, not collapse.
+     - **Routing is not the discriminator**: garbage (0.879) and semi-coherent (0.894) route almost
+       identically yet differ wildly in coherence. So the residual gap is in **expert *computation*
+       fidelity (weight scheme × activation precision), not router-input cleanliness** — which
+       **validates** the affine + f32-act lever rather than redirecting to a router fix.
 2. **Re-test the mix under affine.** "int4mix won't help" was measured in the *symmetric* era and is
    **not transitive** — experts-4bit + everything-else-int8 under **affine + f32-act** is unmeasured.
    That config is ~14.5 GB (fits 16 GB), needs **no new format work**, and if all-4-bit affine+f32act
