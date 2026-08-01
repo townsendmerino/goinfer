@@ -573,18 +573,32 @@ NOT start it until these rule out that it's the wrong target:
      - The remaining delta between goinfer's best measured cell (affine+f32act = *semi*-coherent) and
        fieldfare (fully coherent) is therefore NOT the weight scheme, activations, router, or
        calibration — the most probable culprit is **the harness's method caveat**: `fakeInt4WM` stores
-       the affine reconstruction at **per-row int8**, which re-quantizes away the per-group-64 affine
-       zero-points before the matmul. A **real** per-group affine Q4 kernel (weights genuinely 4-bit,
-       f32/f16 activations via `MatmulBTQ4`, router f32) should recover the rest. Group size is g64 in
-       fieldfare vs the g32 I fake-quanted — g32 is *finer*, so it isn't the deficit.
+       the affine reconstruction at **per-row int8**, which *might* re-quantize away the per-group-64
+       affine zero-points before the matmul.
+       **→ TESTED offline (`scripts/gemma4_int8_restore_probe.py`) and REFUTED.** On real expert
+       tensors (down_proj / gate_up, layers 0/15/29), `cos(int8-restore, affine-recon) = 0.99996`
+       (min 0.9997) at both g64 and g32 — the int8-per-row storage is **essentially lossless** vs the
+       affine reconstruction. So the harness's affine+f32act cell **faithfully represents genuine
+       affine-4bit weights**, and a real per-group affine Q4 kernel would land at the **same
+       semi-coherence** — the semi-coherence is REAL, not a method artifact.
 
-   **Net of the three probes:** routing is healthy (probe 1), the peer is naive-affine not calibrated
-   (probe 3), and goinfer already exceeds the peer on router+embed precision. The one unproven step is
-   whether a **real** affine-4bit-g64 + f32/f16-act expert kernel closes the fake-quant's semi→full
-   gap. That real spike (experts only, ~14.5 GB — probe 2's mix, which under affine+f32act already
-   measured semi-coherent this session at `GOINFER_FAKEQUANT=affine GOINFER_FAKEQUANT_EXPERTS=1
-   GOINFER_FAKEQUANT_ACT=f32 ZZBASE=int8int8`) is the go/no-go for funding the full `.giw` v5 build —
-   it isolates the one remaining unknown without any format/serialization work.
+   **Net of the three probes — the affine build is NOT a confirmed path to coherence; precision does
+   not explain the gap.** Routing is healthy (probe 1); the peer is naive-affine, not calibrated
+   (probe 3); the int8-restorage is lossless (probe 2 offline). Yet goinfer's tested config already
+   **strictly dominates fieldfare on precision** — f32 router (vs its int8), int8 embed/head (vs its
+   4-bit), affine experts at g32 (finer than its g64), f32 activations — and still lands only
+   *semi*-coherent, while the peer is reported fully coherent. Since a faithful affine representation
+   is only semi-coherent, **building the real affine + `.giw` v5 quantizer would most likely also land
+   semi-coherent** → do NOT fund it as a coherence fix on this evidence. The unexplained residual is a
+   **goinfer-vs-MLX *execution* difference** (candidates: accumulation order / dtype across the 30-layer
+   stack, softcap or per-layer-scalar application under 4-bit perturbation, RoPE/norm numerics), OR the
+   peer's "coherent" figure is throughput-oriented and its 4-bit output is itself degraded — which this
+   Linux+CUDA box **cannot** verify (MLX is Apple-silicon only). Cheapest genuine next steps: (a) run
+   the `mlx-community/gemma-4-26b-a4b-it-4bit` checkpoint on a Mac and read its actual output quality
+   before spending any more here; (b) if it *is* coherent, diff goinfer's gemma4 forward numerics
+   against MLX under 4-bit weights (per-layer activation capture) to find the sensitive op — that, not
+   a new quantizer, is where the gap lives. Absent (a), the honest status is: **int8 is the only
+   coherent config, and it does not fit 16 GB — Phase 5 stays blocked.**
 
 **Free reconstruction-table columns (per `docs/plan-cpubrrr-steal-and-bindings.md`).** goinfer already
 has parity-verified **MXFP4** dequant (`decoder/mxfp4.go`, bit-verified vs `gguf/quants.py`; non-uniform
