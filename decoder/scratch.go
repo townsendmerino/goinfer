@@ -56,6 +56,14 @@ func newDecodeScratch(a *Architecture) *decodeScratch {
 	// Note: aikit's opt-in worker pool (Workspace.SetWorkers) is intentionally NOT
 	// used — goinfer's end-to-end sweep showed it neutral-to-slightly-slower than
 	// the spawn path (the batch=1 fork/join cost is a floor, not pool-fixable).
+	//
+	// The W8A8 (int8) decode matmuls run through this Workspace (matmulInto), so its
+	// PER-WORKSPACE threshold is what makes int8 decode parallelize — NOT the process
+	// global. Setting it here means every decode stream (library Load, serve, tests)
+	// gets it automatically and race-free, the same way the int4 path self-configures
+	// per-call (weightmat.go int4ParThreshold). See tune.go DefaultDecodeParallelThreshold.
+	ws := &linalg.Workspace{}
+	ws.SetThreshold(DefaultDecodeParallelThreshold)
 	return &decodeScratch{
 		h:      make([]float32, a.HiddenDim),
 		norm:   make([]float32, a.HiddenDim),
@@ -68,7 +76,7 @@ func newDecodeScratch(a *Architecture) *decodeScratch {
 		gate:   make([]float32, a.IntermediateDim),
 		up:     make([]float32, a.IntermediateDim),
 		logits: make([]float32, a.VocabSize),
-		ws:     &linalg.Workspace{},
+		ws:     ws,
 	}
 }
 

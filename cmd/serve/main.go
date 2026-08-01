@@ -589,13 +589,6 @@ func loadDecoder(spec modelSpec, cfg config) (*loadedModel, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load tokenizer (%s): %w", loadPath, err)
 	}
-	// Batch=1 decode is serve's workload: parallelize the per-token weight matmuls. The
-	// int8/W8A8 decode path relies on this process-global crossover (the int4 path
-	// self-parallelizes per-call since 199d4da); without it serve ran int8 decode SERIAL
-	// at aikit's conservative 16.78M-MAC default — measured 1.4–1.6× slower on small int8
-	// models (0.5B 22→36, 1.5B 10.5→15.1 tok/s). demo/chat + demo/agent already set this;
-	// serve had missed it. (See docs/completed/perf-campaign.md — Linux-box recheck.)
-	decoder.SetDecodeParallelThreshold(decoder.DefaultDecodeParallelThreshold)
 	t0 := time.Now()
 	model, err := decoder.Load(loadPath, opts)
 	if err != nil {

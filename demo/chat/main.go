@@ -97,9 +97,8 @@ func main() {
 	opts := decoder.Options{Backend: *backend, Quant: *quant, LoRA: *lora}
 	useTmp := *modelTmp || os.Getenv("GOINFER_MODEL_TMP") != ""
 
-	// Tune matmul parallelism for batch=1 decode (parallelize the per-token
-	// weight matmuls); ~40% faster than the conservative library default.
-	decoder.SetDecodeParallelThreshold(decoder.DefaultDecodeParallelThreshold)
+	// (Decode-parallelism tuning is now automatic per-Workspace inside decoder — the
+	// old SetDecodeParallelThreshold call here is redundant and was removed.)
 
 	var s *session
 	var err error

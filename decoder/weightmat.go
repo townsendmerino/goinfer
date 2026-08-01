@@ -205,7 +205,16 @@ func matmul(be Backend, w *linalg.WeightMat, a, dst []float32, M int) {
 			if qb, ok := be.(QuantBackend); ok && qb.MatmulW8A8(a, q8, scales, dst, M, w.Cols(), w.Rows()) {
 				return
 			}
-			linalg.MatmulBTW8A8(a, q8, scales, dst, M, w.Cols(), w.Rows())
+			// Per-call Workspace with the int8 decode threshold — the free-matmul path
+			// (e.g. gemma4's own forward) has no scratch Workspace, so without this its
+			// W8A8 decode matmuls would run at aikit's conservative 16.78M default. Same
+			// mechanism as the int4 branch above; race-free (local ws). matmulInto() gets
+			// this via the decodeScratch Workspace instead. Threshold differs from int4's
+			// (300K vs 1<<20) — the crossover is kernel- and model-specific, measured
+			// separately; see DefaultDecodeParallelThreshold + int4ParThreshold.
+			var ws linalg.Workspace
+			ws.SetThreshold(DefaultDecodeParallelThreshold)
+			linalg.MatmulBTW8A8Into(&ws, a, q8, scales, dst, M, w.Cols(), w.Rows())
 			return
 		}
 		linalg.MatmulBTQ8(a, q8, scales, dst, M, w.Cols(), w.Rows())

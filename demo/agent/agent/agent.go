@@ -156,8 +156,7 @@ func New(ctx context.Context, o Options) (*Session, error) {
 		o.MaxTokens = 512
 	}
 	dopts := decoder.Options{Backend: "cpu", Quant: o.Quant}
-	// Tune matmul parallelism for batch=1 decode — same call as demo/chat.
-	decoder.SetDecodeParallelThreshold(decoder.DefaultDecodeParallelThreshold)
+	// (Decode-parallelism tuning is now automatic per-Workspace inside decoder.)
 
 	var s *Session
 	var err error

@@ -14,9 +14,16 @@
 > shape as Gemma-4's 4→8 flattening), and **the published 0.5B numbers stand — no doc corrections
 > needed.** BUT the recheck found `SetDecodeParallelThreshold(300K)` was called only in demo/chat +
 > demo/agent, **never in `cmd/serve`** — so serve ran int8 decode SERIAL at aikit's 16.78M default:
-> **0.5B 22→36 tok/s (1.64×), 1.5B 10.5→15.1 (1.44×) left on the table.** Fixed: serve now sets the
-> decode threshold at model load like the demos (the int4 path already self-parallelizes per-call
-> since 199d4da, so this closes the int8 half for the production server).
+> **0.5B 22→36 tok/s (1.64×), 1.5B 10.5→15.1 (1.44×) left on the table.** The first fix set the
+> threshold in `cmd/serve`, but that only patched one caller and left the LIBRARY contract broken —
+> any program importing `decoder` (the flagship in-process use case, and the coming sidecar +
+> c-archive FFI) still ran int8 decode serial. Real fix: **the int8 (W8A8) decode path now sets the
+> threshold PER-WORKSPACE** (newDecodeScratch's Workspace + `matmul()`'s free W8A8 branch), the same
+> automatic, race-free mechanism the int4 path already used (`int4ParThreshold`). So `Load()` gets it
+> with no startup call; the three redundant global `SetDecodeParallelThreshold` calls (serve + two
+> demos) were removed, and that setter is now only an optional escape hatch for non-decode aikit
+> paths. Proof: `BenchmarkDecode` with the global forced to 16.78M (serial) now decodes parallel
+> (0.5B 22→31 tok/s) purely via the Workspace override.
 >
 > Opportunistic, profile-driven. The goal is to recover the tok/s goinfer is
 > leaving on the table **without** changing what it competes on (portability /
