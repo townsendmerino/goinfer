@@ -775,6 +775,83 @@ join. Measure p99 token latency at a budget that forces real misses.
 **Phase 8 — expert-major prefill (B4).** Group rows by expert within a prefill chunk. Worth
 doing fully-resident too, so it can be justified on its own.
 
+---
+
+## Phases 9–10 — GPU residency (both backends wanted; order matters)
+
+Everything above is the pure-Go CPU path. Gemma 4 is `CPU` in every backend column of
+`docs/hardware-matrix.md` because `decoder/residency.go:130` declines residency for
+`a.gemma4 != nil` **unconditionally** — its own non-uniform forward. Both ports are wanted;
+the sequencing below is not a preference between them, it follows from what each backend
+already has.
+
+### Phase 9a — the shared prerequisite (most of the cost of both)
+
+Lift the `a.gemma4 != nil` decline so Gemma 4 is admissible to a resident runner at all.
+`docs/c8-softcap-residency.md` is the analysis: Gemma-4-E2B trips **≥3 blockers**, and the
+dominant one is not the final-logit softcap — it is `runLayersGemma4`'s own forward
+(`forward_gemma4.go`), which the resident runners' uniform-layer assumption cannot express.
+That doc's own conclusion: *"softcap is one of ≥3 blockers, and the dominant one is
+Gemma-4's own forward"* — so fund the **own-forward residency bridge**, not a softcap
+patch.
+
+This is paid once and both backends inherit it. It is the expensive part; Phases 9b/10 are
+comparatively cheap afterwards.
+
+### Phase 9b — Metal residency (do this one first)
+
+Two independent reasons, pointing the same way:
+
+1. **It is the shorter path.** Metal already runs MoE resident — `hardware-matrix.md` shows
+   Qwen2-MoE `✅ resident` on Metal, and `docs/task-metal-moe.md` scopes the on-GPU router +
+   indexed stacked experts. The CUDA backend has **no MoE at all** (§10 below).
+2. **It is the only backend that makes the peer comparison legal.** turbo-fieldfare is
+   Swift + Metal on Apple silicon. A CUDA number cannot be the head-to-head no matter how
+   fast it is. If Phase 5's purpose is still that comparison, Metal is the port that serves
+   it.
+
+Gemma-4-specific kernel work **on top of** `task-metal-moe.md`, which scopes Mixtral /
+Qwen2-MoE / Qwen3-MoE / GLM-MoE and explicitly excludes families with their own forwards:
+
+- the **parallel dense-MLP ‖ MoE** FFN sub-block with its seven norms and `layer_scalar`
+  (§A1) — not the single-branch MoE the Metal task assumes;
+- the **Gemma-4 router**: weightless pre-norm + learned `[hidden]` scale + `hidden^-0.5`,
+  unconditional renorm, learned per-expert scale (§A2). `task-metal-moe.md`'s `moe_route`
+  kernel covers softmax/sigmoid top-k but none of these;
+- **gelu-tanh GeGLU experts**, not SwiGLU — the Metal task's `gemv_w4a8_moe` epilogue
+  assumes SiLU;
+- **final-logit softcap 30**, **K=V global layers** (`global_head_dim` 512, 2 KV heads,
+  `attention_k_eq_v`), **proportional/partial rotary** on the global layers, and the
+  **5:1 sliding:full** interleave.
+
+**Memory note:** `hardware-matrix.md` already records that *"MoE residency is
+unified-memory-bound"* on Metal. 26B-A4B at int4 is ~13 GB (~11 GB with the int4 head from
+`96269ca`) against a 16 GB M1 Pro — resident is plausible but tight, and it is the same
+paging-bound regime Phase 5's row has to caveat. Do not assume resident implies comfortable.
+
+### Phase 10 — CUDA residency
+
+Bigger lift, bigger product claim. `docs/benchmarks.md` §B2 states the `cuda/` backend's
+scope plainly: **dense-only** — *"No MoE / MLA / SSM, no partial rotary."* So CUDA needs
+**MoE support at all**, plus partial rotary, before any Gemma-4-specific work begins. That
+is why it follows Metal rather than running beside it.
+
+The payoff is the strongest performance claim goinfer has: **1.4–2.0× Ollama-CUDA at equal
+4-bit quant, cgo-free, driver-only** (§B2, `7557723`). Extending that lane to a 26B MoE is a
+product result in its own right — it is simply not the fieldfare comparison, and should not
+be written up as though it were.
+
+### Gates for both
+
+- Resident decode held to the repo's **3% near-tie parity rule** against the CPU path on the
+  real q4 checkpoint, the same bar §B2's CUDA numbers passed (9/10 exact argmax, 0 hard
+  fails). Speed claims are only meaningful because the tokens match.
+- Regenerate `docs/hardware-matrix.md` (`go test ./decoder -run HardwareMatrix -update`) and
+  `docs/capability-matrix.md`. The Gemma 4 row moves off `CPU` **only** for the backend that
+  actually landed — no inheriting a `✅ resident` from the MoE feature flag.
+- Per `docs/benchmarks.md` methodology: same machine, same checkpoint, same quant, greedy,
+  pinned peer version, date + commit + thermal note inline.
+
 ## Measurement and gates (both parts)
 
 - **Rigs:** M1 Pro 16 GB (darwin, no firm cap — the fieldfare-comparable rig) *and* the
