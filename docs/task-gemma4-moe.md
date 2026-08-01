@@ -813,6 +813,46 @@ patch.
 This is paid once and both backends inherit it. It is the expensive part; Phases 9b/10 are
 comparatively cheap afterwards.
 
+**Feature audit (2026-08-01, Ryzen box, no kernels written) — WebGPU is the WORST-equipped
+backend for Gemma; STOP-and-report per the funding rule.** Computed the real 26B-A4B
+`residentFeatures()` and the per-backend gap from `ResidentBackendFeatures` (arch-derived, no GPU):
+
+    gemma4-26B-A4B needs: [embed-scale gated-gelu logit-softcap moe per-layer-rope qk-norm sandwich-norm sliding-window]
+    decodeRunnerEligible = false   ← own-forward arch-shape gate; blocks ALL backends regardless of features
+    webgpu  missing: [embed-scale gated-gelu logit-softcap sandwich-norm]   (4)
+    cuda    missing: [logit-softcap]                                        (1)
+    metal   missing: [logit-softcap]                                        (1)
+
+Two independent structural blockers, both must be cleared:
+1. **The arch-shape gate** (`decodeRunnerEligible=false`, residency.go:130) — the shared own-forward
+   bridge above. Blocks every backend; the dominant, transferable cost.
+2. **Per-backend feature kernels.** CUDA and Metal already ship the Gemma norm/activation/embed set
+   and need only **logit-softcap**. **WebGPU is missing FOUR** — `embed-scale` (host-side √hidden
+   multiply), `sandwich-norm` (post-attn/post-MLP norm dispatches), `gated-gelu` (GeGLU vs its
+   hardcoded SwiGLU glue), and `logit-softcap` (tanh cap). None transfer to CUDA/Metal (they have
+   3 of 4). So "develop 9a on WebGPU" costs the shared bridge PLUS 4 WebGPU-only kernels, where the
+   same bridge on CUDA/Metal would cost the bridge + 1 (softcap). WebGPU can still *gate* the shared
+   bridge, but it is the most kernel-work-first path, not the least.
+
+**Gemma-4 MoE delta** the resident single-branch SwiGLU-MoE path cannot express (from
+`forward_gemma4_moe.go`), enumerated before any plan:
+- **Parallel dense-MLP ‖ MoE**: both branches run on the same post-attention residual through
+  DIFFERENT norms, outputs joint-normed (`post_ffn_norm(x1+x2)`) then residual-added. Resident MoE
+  is single-branch.
+- **gelu-tanh experts** (contiguous gate‖up halves, `geluTanh(gate)·up`) — not SwiGLU; needs
+  `FeatGatedGELU` on the EXPERT path, not just the dense MLP.
+- **Router pre-processing**: a WEIGHTLESS RMSNorm + a learned `[hidden]` scale + `hidden^-0.5`
+  before the projection — the resident router assumes `logits = Router·h`.
+- **`per_expert_scale[nE]`** post-step on the renormalized top-k weights.
+- **Seven norms + `layer_scalar`**: sandwich (input + post-attn) + the four branch/joint FFN norms
+  + the router's weightless norm, and a whole-layer scalar multiply at the tail.
+
+**Recommendation:** do NOT start kernels here. The honest ordering the audit implies: (a) the shared
+own-forward residency bridge is the real prize and is backend-agnostic — spec it against the CPU
+`runLayersGemma4` first; (b) if a GPU is to *prove* it, CUDA/Metal are 1 kernel from Gemma-ready and
+WebGPU is 4 — so WebGPU is a poor first target despite being the only local GPU. Re-decide the target
+with that cost asymmetry explicit, rather than defaulting to WebGPU because it's here.
+
 ### Phase 9b — Metal residency (do this one first)
 
 Two independent reasons, pointing the same way:
