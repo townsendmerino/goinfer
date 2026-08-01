@@ -558,7 +558,10 @@ Step 3 (zero-alloc) is dead (no GC).
 **Step 2 (batch int4 experts) — GO, justified.** Post-threshold-fix GOMAXPROCS sweep on the real
 gemma4-26b-int4 .giw: 1/2/4/8 → 1.49 / 2.40 / 4.23 / 4.71 tok/s = **3.17× on 8 cores** (up from the
 pre-fix 1.61×) — still clearly **sub-linear** (~40 % parallel efficiency), and the 4→8 step flattens
-to +11 %. That flattening is the signature of the ~600 tiny int4 decode matmuls (each 2–12M MACs,
+to +11 %. (Variance pin: the 8-core absolute jitters **±7 % back-to-back** — 4.8/5.1/5.4/4.8 over 4
+reps of one load, so the earlier 5.53 and this 4.71 are both edges of one band, thermal/scheduler,
+NOT a config difference — while 1-core is rock-stable at 1.51. Scaling stays **3.2–3.6× across the
+whole band**, so the sub-linear verdict does not depend on the noisy absolute.) That flattening is the signature of the ~600 tiny int4 decode matmuls (each 2–12M MACs,
 M=1) not filling 8 cores individually — spawn/join per matmul dominates past ~4 workers. Effective
 bandwidth at 8 cores ≈ 10.5 GB/s, still ~⅓ of the ~34 GB/s this CPU path reaches on dense streams
 (`perf-campaign.md`), so it is NOT approaching a memory ceiling. Batching the 8 experts' `gateUp`
