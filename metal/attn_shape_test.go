@@ -57,6 +57,17 @@ func TestAttention_ShippedKernelShapes(t *testing.T) {
 		{"gemma3-4b local (hd=256, win=1024)", 8, 4, 256, 24, 1024},
 		{"gemma3-4b global, long ctx", 8, 4, 256, 600, 0},
 		{"gemma3-4b local, window ENGAGED", 8, 4, 256, 600, 512},
+		// Gemma 4's global layers run at hd=512 (g4.GlobalHeadDim), and NOTHING on Metal has ever
+		// driven the attention kernel there — this is 9c's single biggest kernel unknown, retired
+		// here before the port. The kernel decomposes each head over a fixed 128-thread block, so
+		// hd=512 = 4 elems/thread stresses the wide end the same way CUDA's hd 128/256/512 sweep did
+		// (933201c, cosine ≈ 1.0). The first row is the pure single-variable mutation off the green
+		// gemma3-4b global row above (only hd 256→512 changes), so a red is attributable to head
+		// width, not the contract. The next two are Gemma 4's REAL global geometry (nKV=2, K=V, no
+		// window) at short and long ctx — the shape 9c will actually dispatch.
+		{"gemma4 global (hd=512), hd-only mutation off gemma3", 8, 4, 512, 24, 0},
+		{"gemma4 global (hd=512, nKV=2), real geom", 8, 2, 512, 24, 0},
+		{"gemma4 global (hd=512, nKV=2), long ctx", 8, 2, 512, 600, 0},
 	} {
 		t.Run(tc.what, func(t *testing.T) {
 			cos, maxabs, gn, rn := runAttnCase(t, d, pAttn, tc.nH, tc.nKV, tc.hd, tc.nKeys, tc.window)
