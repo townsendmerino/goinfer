@@ -30,8 +30,9 @@ import (
 // per-platform (GOOS/arch or GOMAXPROCS-derived), not a universal default.
 
 // gemma4-26b-a4b decode matmul shapes at M=1 (K=cols/in, N=rows/out), MACs = K*N:
-//   down 1.98M is the SMALLEST — the one int4ParThreshold (1.05M) must let through;
-//   attn 11.5M the largest. hidden=2816, moe_inter=704, dense_inter=2112, nH*hd(global)=4096.
+//
+//	down 1.98M is the SMALLEST — the one int4ParThreshold (1.05M) must let through;
+//	attn 11.5M the largest. hidden=2816, moe_inter=704, dense_inter=2112, nH*hd(global)=4096.
 var decodeShapes = []struct {
 	name string
 	K, N int // K = input dim (dot length), N = output rows (partitioned in 8-wide groups)
