@@ -53,7 +53,8 @@ func TestGemma4Admission_envGated(t *testing.T) {
 	// FFN on its own cuda path (gemma4MoeMLP, routed around the generic MoE checks via
 	// HasGemma4MoEResident), so it falls through the arch predicate like the dense variant. CUDA
 	// ships every required feature; WebGPU still lacks the Gemma kernels, so the feature gate
-	// refuses it — same no-overclaim shape as dense.
+	// refuses it — same no-overclaim shape as dense. It is the PLE-free 26B-A4B shape, so no
+	// FeatGemma4EModel.
 	moe, _, err := resolveArchitecture(representativeConfig("gemma4_text"))
 	if err != nil {
 		t.Fatalf("resolve gemma4_text (MoE): %v", err)
@@ -69,6 +70,18 @@ func TestGemma4Admission_envGated(t *testing.T) {
 	}
 	if ResidentEligible(moe, "webgpu") {
 		t.Error("webgpu admits gemma4_text (enable_moe_block) but lacks its Gemma kernels — the feature gate must refuse it")
+	}
+
+	// A Gemma-4 E-MODEL (E2B/E4B: per-layer embeddings / shared-KV / variable FFN) is DECLINED on
+	// every resident backend EVEN with the bring-up gate ON — none implements the PLE branch, and
+	// admitting it would silently skip PLE and mis-run (FeatGemma4EModel, declared by no backend).
+	// The arch predicate can pass (a gemma4 with env on); the per-backend feature gate is what refuses.
+	e := denseArch()
+	e.gemma4.HiddenSizePerLayerInput = 256 // turn the dense arch into an E-model shape
+	for _, be := range []string{"cuda", "metal", "webgpu"} {
+		if ResidentEligible(e, be) {
+			t.Errorf("%s: admits a Gemma-4 E-model (PLE hidden_size_per_layer_input>0) — the bridge skips the PLE branch and would mis-run", be)
+		}
 	}
 
 	// env OFF: the MoE variant must decline everywhere too — the env gate is the arch predicate's,

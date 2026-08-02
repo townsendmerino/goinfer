@@ -191,6 +191,9 @@ func TestResidentFeatures_derivation(t *testing.T) {
 		{"out-bias", func(a *Architecture) { a.OutBias = true }, FeatOutBias},
 		{"logit-scale", func(a *Architecture) { a.LogitScale = 8 }, FeatLogitScale},
 		{"moe", func(a *Architecture) { a.MoE = &MoEConfig{} }, FeatMoE},
+		{"gemma4-e-model-ple", func(a *Architecture) { a.gemma4 = &gemma4Params{HiddenSizePerLayerInput: 256} }, FeatGemma4EModel},
+		{"gemma4-e-model-sharedkv", func(a *Architecture) { a.gemma4 = &gemma4Params{SharedKVLayers: 2} }, FeatGemma4EModel},
+		{"gemma4-e-model-ffnperlayer", func(a *Architecture) { a.gemma4 = &gemma4Params{FFNPerLayer: []int{1, 2}} }, FeatGemma4EModel},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

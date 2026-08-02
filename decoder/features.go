@@ -48,6 +48,7 @@ const (
 	FeatMLA               ResidentFeature = "mla"                 // latent-KV attention (DeepSeek, Kimi)
 	FeatSSM               ResidentFeature = "ssm"                 // Mamba-2 mixer (Granite-4.0-H, Nemotron-H)
 	FeatAttnSink          ResidentFeature = "attn-sink"           // learned per-head attention sink in the softmax denominator + clamped interleaved-SwiGLU experts (gpt-oss). CPU-only — no resident backend implements it, so CUDA/Metal/WebGPU all decline.
+	FeatGemma4EModel      ResidentFeature = "gemma4-e-model"      // Gemma-4 E2B/E4B shape: per-layer embeddings (PLE, hidden_size_per_layer_input>0) + cross-layer shared-KV + variable per-layer FFN. runLayersGemma4 injects PLE per layer; the resident bridges (built for the PLE-free dense 12B/26B) implement NONE of it, so a resident runner would SKIP the PLE branch and silently mis-run. No resident backend declares it ⇒ all decline (CPU-only) until an E-model bridge lands.
 )
 
 // residentFeatures derives the features this architecture actually needs from its own flags.
@@ -125,6 +126,12 @@ func (a *Architecture) residentFeatures() []ResidentFeature {
 	add(a.mla != nil, FeatMLA)
 	add(a.granite != nil || a.nemotron != nil, FeatSSM)
 	add(a.gptoss != nil, FeatAttnSink)
+	// Gemma-4 E-model (E2B/E4B) shape: PLE, cross-layer shared-KV, variable per-layer FFN — all
+	// co-present and NONE ported to the resident bridges (built/validated on the PLE-free dense 12B and
+	// 26B-A4B). Without this, an E-model needs no feature CUDA lacks ⇒ admitted-but-mis-run (the PLE
+	// branch silently skipped). PLE alone catches every real E-model; the shared-KV/FFN disjuncts make
+	// the decline complete against a hypothetical PLE-less E-variant.
+	add(a.gemma4 != nil && (a.gemma4.HiddenSizePerLayerInput > 0 || a.gemma4.SharedKVLayers > 0 || len(a.gemma4.FFNPerLayer) > 0), FeatGemma4EModel)
 	sort.Slice(f, func(i, j int) bool { return f[i] < f[j] })
 	return f
 }
