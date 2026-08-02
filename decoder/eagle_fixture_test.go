@@ -81,7 +81,10 @@ func closeEagleFixtures() {
 }
 
 func TestMain(m *testing.M) {
+	stop := startMemTicker() // GOINFER_MEM_PROBE: per-2s RSS/heap ticks (interleave with -v to name the accumulator)
 	code := m.Run()
+	stop()
+	memProbeSuite() // heap-vs-RSS discriminator over the whole suite (fixtures still mapped here)
 	closeEagleFixtures()
 	os.Exit(code)
 }
