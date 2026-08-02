@@ -663,6 +663,15 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 			if e1 != nil || e2 != nil {
 				return fail(fmt.Errorf("gpu: residency KV alloc (layer %d): %v %v", i, e1, e2))
 			}
+			// Cross-file invariant guard: the decode runner indexes this cache with strides
+			// of g.kvDim = gnKV·ghd (v-store / rope-store: base = pos·kvDim) up to ctxCap
+			// positions. The alloc above derives lkvDim from the same tuple, so this holds by
+			// construction today — but a future builder that sets the tuple and sizes the
+			// cache from independent sources would otherwise index off the end into garbage
+			// output, not a panic. Assert it so that failure is loud at plan time instead.
+			if want := ctxCap * lkvDim; kc.n < want || vc.n < want {
+				return fail(fmt.Errorf("gpu: layer %d KV cache too small for its geometry: have k=%d v=%d elems, need ctxCap·nKV·hd = %d·%d·%d = %d", i, kc.n, vc.n, ctxCap, lnKV, lhd, want))
+			}
 			keepF(kc.Release)
 			keepF(vc.Release)
 			rl.kCache, rl.vCache = kc.buf, vc.buf

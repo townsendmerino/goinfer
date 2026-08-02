@@ -63,17 +63,30 @@ type posUni struct {
 }
 
 // attnGeom is one distinct per-layer attention shape: head_dim (hd), KV-head count
-// (nKV), and rotary half-width (half = rotaryDim/2). Gemma 4 interleaves two shapes
-// (local hd=256/nKV=8; global hd=512/nKV=2, K=V); every other family has exactly one.
-// The per-token uniforms that carry these dims (v-store, attn, the windowed-attn
-// variant, and — keyed additionally by rope scale — q-rope / k-rope-store / the fused
-// qkv-finalize) are deduplicated by value: geomFor caches one attnGeom per distinct
-// {hd, nKV, half} tuple, so a uniform-geometry model collapses to a single entry with
-// the same buffers, bind groups, and dispatch it had before this seam existed. Thus
-// byte-identity for non-Gemma models is structural (a shared *attnGeom), not asserted.
-// (attention_k_eq_v — the K=V aliasing — lands in a follow-up commit, not this key.)
+// (nKV), rotary half-width (half = rotaryDim/2), and the attention_k_eq_v flag (kEqV).
+// Gemma 4 interleaves two shapes (local hd=256/nKV=8; global hd=512/nKV=2, K=V); every
+// other family has exactly one. The per-token uniforms that carry these dims (v-store,
+// attn, the windowed-attn variant, and — keyed additionally by rope scale — q-rope /
+// k-rope-store / the fused qkv-finalize) are deduplicated by value: geomFor caches one
+// attnGeom per distinct {hd, nKV, half, kEqV} tuple, so a uniform-geometry model
+// collapses to a single entry with the same buffers, bind groups, and dispatch it had
+// before this seam existed. Byte-identity for non-Gemma models is thus structural (a
+// shared *attnGeom), not asserted.
+//
+// kEqV is in the key because the geom OWNS the v-store uniforms (vStoreUni/vStoreI8Uni):
+// two layers with equal {hd, nKV, half} but different attention_k_eq_v want different
+// v-store behaviour — a K=V layer derives V from K instead of storing a projected V — so
+// they must not share a geom. The K=V forward itself (V = v_norm(k), no v_proj, the
+// attention V binding aliasing the K cache) lands with Gemma-4 admission, where v_norm
+// exists and it is testable; keying on it now keeps that future branch sound.
+//
+// nH (query-head count) is deliberately NOT in the key: it is a model-level constant, and
+// GQA still tracks per-layer nKV because the group ratio is recomputed as nH/nKV per geom
+// (see geomFor's attnUni). A family with per-layer QUERY-head counts would have to add nH
+// to the key too; none on this seam has that (Gemma 4 is 16 query heads in both variants).
 type attnGeom struct {
 	hd, nKV, half, kvDim             int
+	kEqV                             bool
 	ropeQUnis, ropeKUnis, qkvFinUnis map[float32]*wgpu.Buffer
 	vStoreUni, vStoreI8Uni           *wgpu.Buffer
 	attnUni, attnUniLocal            *wgpu.Buffer
@@ -93,10 +106,12 @@ type runLayer struct {
 	ropeScale                                  float32      // per-layer RoPE cos/sin scale = mscale (Lever C7); 0 ⇒ 1.0
 
 	// Per-layer attention geometry (P1, own-forward residency bridge): this layer's
-	// head_dim / KV-heads / rotaryDim-half. Zero ghd ⇒ use the model-level nH-relative
-	// shape (every non-Gemma family leaves these unset). The plan loop resolves them via
-	// geomFor into the shared `geom` below; kvDim for this layer is gnKV*ghd.
+	// head_dim / KV-heads / rotaryDim-half + attention_k_eq_v. Zero ghd ⇒ use the
+	// model-level nH-relative shape (every non-Gemma family leaves these unset); gKEqV is
+	// read independently (a K=V layer always sets its full tuple). The plan loop resolves
+	// them via geomFor into the shared `geom` below; kvDim for this layer is gnKV*ghd.
 	ghd, gnKV, ghalf int
+	gKEqV            bool
 	geom             *attnGeom // resolved shared geometry (set in the plan loop; nil for MLA/mamba layers)
 
 	// MoE (Lever C3c, Mixtral-class): when isMoE, this layer's FFN is a sparse
@@ -498,14 +513,18 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 	// exactly one entry (same buffers/dispatch as before this seam), Gemma 4 two. Each
 	// geom owns the per-token uniforms that carry its dims: the v-store, the attn, and the
 	// windowed-attn variant here; the rope uniforms below hang off it keyed by rope scale.
-	geomCache := map[[3]int]*attnGeom{}
-	geomFor := func(ghd, gnKV, ghalf int) *attnGeom {
-		key := [3]int{ghd, gnKV, ghalf}
+	geomCache := map[[4]int]*attnGeom{}
+	geomFor := func(ghd, gnKV, ghalf int, kEqV bool) *attnGeom {
+		kb := 0
+		if kEqV {
+			kb = 1
+		}
+		key := [4]int{ghd, gnKV, ghalf, kb}
 		if g, ok := geomCache[key]; ok {
 			return g
 		}
 		g := &attnGeom{
-			hd: ghd, nKV: gnKV, half: ghalf, kvDim: gnKV * ghd,
+			hd: ghd, nKV: gnKV, half: ghalf, kvDim: gnKV * ghd, kEqV: kEqV,
 			ropeQUnis:  map[float32]*wgpu.Buffer{},
 			ropeKUnis:  map[float32]*wgpu.Buffer{},
 			qkvFinUnis: map[float32]*wgpu.Buffer{},
@@ -837,7 +856,7 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			if lw.ghd != 0 {
 				ghd, gnKV, ghalf = lw.ghd, lw.gnKV, lw.ghalf
 			}
-			g := geomFor(ghd, gnKV, ghalf)
+			g := geomFor(ghd, gnKV, ghalf, lw.gKEqV)
 			var q, k, v *wgpu.Buffer
 			_, w8 := lw.q.(*ResidentW8A8)
 			if lw.qBias != nil && w8 { // Qwen2 q/k/v bias folded into the GEMV epilogue (W8A8)

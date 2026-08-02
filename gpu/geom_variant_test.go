@@ -69,13 +69,15 @@ func TestGeomVariants_dedup(t *testing.T) {
 		return mw
 	}
 
-	// count builds a runner from a fresh model with layer 1's geometry tuple set to
-	// (ghd, gnKV, ghalf) and reports how many distinct geometries the plan dedups to.
-	count := func(t *testing.T, ghd, gnKV, ghalf int) int {
+	// count builds a runner from a fresh model with layer 1's geometry set to
+	// (ghd, gnKV, ghalf) + kEqV and reports how many distinct geometries the plan dedups
+	// to. ghd==0 leaves the dims at the model default (used to vary kEqV in isolation).
+	count := func(t *testing.T, ghd, gnKV, ghalf int, kEqV bool) int {
 		rm := w8Model(buildMW())
 		if ghd != 0 {
 			rm.layers[1].ghd, rm.layers[1].gnKV, rm.layers[1].ghalf = ghd, gnKV, ghalf
 		}
+		rm.layers[1].gKEqV = kEqV
 		runner, err := ctx.newDecodeRunner(rm, hidden, nH, nKV, hd, inter, 0, eps, scale, false)
 		if err != nil {
 			t.Fatalf("newDecodeRunner: %v", err)
@@ -85,22 +87,26 @@ func TestGeomVariants_dedup(t *testing.T) {
 	}
 
 	// Baseline: both layers fall back to the model geometry ⇒ one variant.
-	if gv := count(t, 0, 0, 0); gv != 1 {
+	if gv := count(t, 0, 0, 0, false); gv != 1 {
 		t.Errorf("uniform 2-layer: GeomVariantCount = %d, want 1", gv)
 	}
 
 	// Differ in exactly one field ⇒ two variants. Each case would collapse to 1 if the
-	// key omitted that field. Layer 0 keeps the model tuple (hd=64, nKV=2, half=32).
+	// key omitted that field. Layer 0 keeps the model tuple (hd=64, nKV=2, half=32,
+	// kEqV=false). The kEqV case keeps the dims at default and flips only the flag, so it
+	// fails if attention_k_eq_v is absent from the key — the soundness bug it guards.
 	for _, tc := range []struct {
 		name             string
 		ghd, gnKV, ghalf int
+		kEqV             bool
 	}{
-		{"hd", 128, nKV, half}, // wider head (global-like)
-		{"nKV", hd, 1, half},   // fewer KV heads
-		{"half", hd, nKV, 16},  // narrower rotary
+		{"hd", 128, nKV, half, false}, // wider head (global-like)
+		{"nKV", hd, 1, half, false},   // fewer KV heads
+		{"half", hd, nKV, 16, false},  // narrower rotary
+		{"kEqV", 0, 0, 0, true},       // same dims, K=V flag only
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if gv := count(t, tc.ghd, tc.gnKV, tc.ghalf); gv != 2 {
+			if gv := count(t, tc.ghd, tc.gnKV, tc.ghalf, tc.kEqV); gv != 2 {
 				t.Errorf("layer 1 differs in %s: GeomVariantCount = %d, want 2", tc.name, gv)
 			}
 		})
