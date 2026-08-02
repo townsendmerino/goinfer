@@ -326,6 +326,14 @@ and the sync probe proved race-free.
   slots; at the measured skew that collapses 714 MB/token toward the ~50 MB estimate — what makes B′
   *practical* rather than merely fittable. Plus the gocudrv v0.3.0 async-H2D overlap (its own bump +
   aikit-wide sweep). This is where the hit-rate work pays; step 1 does none of it.
+- **B′ ACHIEVED (the milestone).** The real gemma4 26B-A4B (~11.4 GB int4 experts, does NOT fit the
+  8 GB 2070) decodes RESIDENT via C′ staging: `cuda/gemma4_26b_cache_test.go`. Load 4m49s (the
+  11.4 GB pinned alloc + copy — the cost is the load, not the decode; swap-thrashed but no OOM on
+  62 GB). Routing CLEAN at 128/top-8 (2730 decisions through the gen, all 128 experts exercised, in
+  range — `gemv_f32_f32` confirmed, not discovered). Coherent through the real chat template:
+  distinct-trigram 0.818 (floor 0.70), "…**Paris**… the Eiffel Tower, the Louvre Museum… **Gastronomy:**".
+  Latency 201 ms/tok (4.98 tok/s) WITH the G4_CAPTURE readback — informative, NOT a benchmark
+  (staging floor ~714 MB/tok PCIe + ~30 D2H/tok; step 2 is where that collapses).
 - **ARCHITECTURAL COST, recorded up front:** the host must know `idx` to decide what to DMA, and
   `idx` is written on-device by the router. So C′ inherently pays a **device→host `idx` readback per
   MoE layer per token** — ~30 round-trips/token for the 26B, each draining the stream. This is
