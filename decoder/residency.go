@@ -272,6 +272,61 @@ func (m *Model) Gemma4MoEExpertForTest(layer, e int, xe []float32) (edown []floa
 	return out, &gm.expertsGateUp[e], &gm.expertsDown[e], gm.moeInter, m.w.arch.HiddenDim, true
 }
 
+// Gemma4MoEResidentBundle is everything the CUDA resident build needs to construct one gemma4
+// enable_moe_block layer (the parallel dense‖MoE FFN). RouterProjScaled has the learned routerScale
+// and the hidden^-0.5 factor FOLDED into its columns, so the resident router is
+// rmsnorm_nw(h) → gemv_f32_f32(RouterProjScaled) → moe_route — bit-identical scores to the CPU
+// rn = weightlessNorm(h)·routerScale·hidden^-0.5 ; scores = routerProj·rn (fold is exact in f32:
+// Σ_i proj[e,i]·(scale_i·norm_i) = Σ_i (proj[e,i]·scale_i)·norm_i). Weight-matrix pointers alias the
+// model's tensors (read-only, for packing).
+type Gemma4MoEResidentBundle struct {
+	PreFFNNorm, PostFFNNorm1, PreFFNNorm2, PostFFNNorm2, PostFFNNorm []float32           // the 5 RMSNorm weights
+	MlpGate, MlpUp, MlpDown                                          *linalg.WeightMat   // parallel dense branch
+	RouterProjScaled                                                 []float32           // [nE*hidden] row-major, scale folded
+	PerExpertScale                                                   []float32           // [nE]
+	ExpertsGateUp, ExpertsDown                                       []*linalg.WeightMat // per expert (gate‖up fused; down)
+	LayerScalar                                                      float32
+	DenseInter, MoeInter, NE, TopK                                   int
+}
+
+// Gemma4MoEResidentLayer returns the build bundle for gemma4 MoE layer l, or ok=false for a
+// non-gemma4 model / dense layer. Used by the CUDA backend's resident build (task 2c).
+func (m *Model) Gemma4MoEResidentLayer(l int) (b Gemma4MoEResidentBundle, ok bool) {
+	if m.w.arch.gemma4 == nil || l < 0 || l >= len(m.w.Layers) {
+		return b, false
+	}
+	gm := m.w.Layers[l].gemma4moe
+	if gm == nil {
+		return b, false
+	}
+	proj, has := gm.routerProj.F32()
+	if !has || len(gm.routerScale) != m.w.arch.HiddenDim {
+		return b, false
+	}
+	H := m.w.arch.HiddenDim
+	root := float32(math.Pow(float64(H), -0.5))
+	scaled := make([]float32, len(proj))
+	for e := 0; e < gm.nE; e++ {
+		for i := 0; i < H; i++ {
+			scaled[e*H+i] = proj[e*H+i] * gm.routerScale[i] * root
+		}
+	}
+	gu := make([]*linalg.WeightMat, gm.nE)
+	dn := make([]*linalg.WeightMat, gm.nE)
+	for e := 0; e < gm.nE; e++ {
+		gu[e], dn[e] = &gm.expertsGateUp[e], &gm.expertsDown[e]
+	}
+	return Gemma4MoEResidentBundle{
+		PreFFNNorm: gm.preFFNNorm, PostFFNNorm1: gm.postFFNNorm1, PreFFNNorm2: gm.preFFNNorm2,
+		PostFFNNorm2: gm.postFFNNorm2, PostFFNNorm: gm.postFFNNorm,
+		MlpGate: &gm.mlpGate, MlpUp: &gm.mlpUp, MlpDown: &gm.mlpDown,
+		RouterProjScaled: scaled, PerExpertScale: gm.perExpertScale,
+		ExpertsGateUp: gu, ExpertsDown: dn,
+		LayerScalar: gm.layerScalar, DenseInter: gm.denseInter, MoeInter: gm.moeInter,
+		NE: gm.nE, TopK: gm.topK,
+	}, true
+}
+
 // MLAResidentParams returns the DeepSeek/Kimi MLA geometry the GPU resident runner
 // needs (ok=false when the arch is not MLA). attnScale is the resolved q·k softmax
 // multiplier (qk_head_dim^-0.5, with any YaRN mscale²); ropeScale is the YaRN
