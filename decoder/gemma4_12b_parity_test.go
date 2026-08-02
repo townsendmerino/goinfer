@@ -16,6 +16,7 @@ import (
 // argmax is the first answer token, so this also gates coherence) + sample-256
 // cosine over the quant floor. Skips without the golden or the GGUF asset.
 func TestGemma4_12B_logitParity(t *testing.T) {
+	requireHeavyModel(t)
 	raw, err := os.ReadFile("../testdata/gemma4_12b_forward_golden.json")
 	if errors.Is(err, fs.ErrNotExist) {
 		t.Skip("no 12B golden; run scripts/pin_gemma4_12b.py")

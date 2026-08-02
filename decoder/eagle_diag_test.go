@@ -25,16 +25,8 @@ func TestEagleAgreementSweep(t *testing.T) {
 			t.Skipf("missing %s: %v", p, err)
 		}
 	}
-	head, err := LoadEagleHead(headDir)
-	if err != nil {
-		t.Fatalf("LoadEagleHead: %v", err)
-	}
-	defer head.Close()
-	base, err := Load(basePath, Options{Quant: "int8int8"})
-	if err != nil {
-		t.Fatalf("Load base: %v", err)
-	}
-	defer base.Close()
+	head := sharedEagleHead(t, headDir)
+	base := sharedEagleBase(t, basePath, "int8int8")
 	tk, _ := tokenizer.LoadGGUF(basePath)
 	hid := base.w.arch.HiddenDim
 
@@ -50,6 +42,7 @@ func TestEagleAgreementSweep(t *testing.T) {
 		cache := base.NewCache(len(prompt) + steps + 4)
 		var logits []float32
 		var hs [][]float32
+		var err error
 		// prefill all but last
 		for i := 0; i < len(prompt)-1; i++ {
 			base.forward(prompt[i], cache)

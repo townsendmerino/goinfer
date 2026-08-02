@@ -26,11 +26,7 @@ func TestEagleAlpha(t *testing.T) {
 			t.Skipf("missing %s: %v", p, err)
 		}
 	}
-	head, err := LoadEagleHead(headDir)
-	if err != nil {
-		t.Fatalf("LoadEagleHead: %v", err)
-	}
-	defer head.Close()
+	head := sharedEagleHead(t, headDir)
 	loadPath, quant := basePath, "int8int8"
 	if b := os.Getenv("GINFER_EAGLE_BASE"); b != "" {
 		loadPath = b
@@ -38,11 +34,7 @@ func TestEagleAlpha(t *testing.T) {
 			quant = ""
 		}
 	}
-	base, err := Load(loadPath, Options{Quant: quant})
-	if err != nil {
-		t.Fatalf("Load %s: %v", loadPath, err)
-	}
-	defer base.Close()
+	base := sharedEagleBase(t, loadPath, quant)
 	tk, _ := tokenizer.LoadGGUF(basePath)
 	L := base.w.arch.NumLayers
 	// CHAT-formatted prompt: the head is trained on the target's hidden states over

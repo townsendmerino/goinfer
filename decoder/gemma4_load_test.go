@@ -14,6 +14,7 @@ import (
 // (the next increment), so this stops at the descriptor. Skips without the asset
 // (set the file at ~/models/gemma-4-E2B_q4_0-it.gguf).
 func TestGemma4Config_realGGUF(t *testing.T) {
+	requireHeavyModel(t)
 	path := os.Getenv("HOME") + "/models/gemma-4-E2B_q4_0-it.gguf"
 	g, err := embed.OpenGGUFMmap(path)
 	if err != nil {
@@ -91,6 +92,7 @@ func TestGemma4Config_realGGUF(t *testing.T) {
 // (layers ≥ 15 carry no k/v), and the PLE tensors. int4 keeps it light on 16 GB.
 // (Forward pass is Increment 3, so this checks the bundle, not generation.)
 func TestGemma4Load(t *testing.T) {
+	requireHeavyModel(t)
 	path := os.Getenv("HOME") + "/models/gemma-4-E2B_q4_0-it.gguf"
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no E2B gguf (%v)", err)

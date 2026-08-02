@@ -14,6 +14,7 @@ import (
 // oracle. Skips cleanly without the golden or the ~24 GB checkpoint.
 func runMellum2Golden(t *testing.T, goldenPath string, cosFloor float64) {
 	t.Helper()
+	requireHeavyModel(t)
 	if testing.Short() {
 		t.Skip("slow: 12B forward on the naive backend")
 	}

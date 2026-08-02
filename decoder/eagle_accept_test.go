@@ -25,11 +25,7 @@ func TestEagleAcceptedLength(t *testing.T) {
 			t.Skipf("missing %s: %v", p, err)
 		}
 	}
-	head, err := LoadEagleHead(headDir)
-	if err != nil {
-		t.Fatalf("LoadEagleHead: %v", err)
-	}
-	defer head.Close()
+	head := sharedEagleHead(t, headDir)
 	// GINFER_EAGLE_BASE overrides the base (e.g. a bf16 safetensors dir — the head was
 	// trained on bf16 hidden states, so q8 likely depresses acceptance). f32 for a dir.
 	loadPath, quant := basePath, "int8int8"
@@ -39,11 +35,7 @@ func TestEagleAcceptedLength(t *testing.T) {
 			quant = "" // safetensors dir → f32 (max fidelity to the head's training)
 		}
 	}
-	base, err := Load(loadPath, Options{Quant: quant})
-	if err != nil {
-		t.Fatalf("Load base %s: %v", loadPath, err)
-	}
-	defer base.Close()
+	base := sharedEagleBase(t, loadPath, quant)
 	tk, _ := tokenizer.LoadGGUF(basePath) // tokenizer (same vocab) from the local gguf
 	L := base.w.arch.NumLayers
 	capLayers := []int{2, L / 2, L - 3}

@@ -147,6 +147,7 @@ func TestKVI8_truncateReappend(t *testing.T) {
 // never snapshotted. gemma-3-4b-it int8 covers both layer kinds (int8 rings on the
 // sliding-window layers + int8 global layers). Skips without the checkpoint.
 func TestKVI8_snapshotRoundtrip(t *testing.T) {
+	requireHeavyModel(t)
 	dir := os.Getenv("GINFER_TEST_MODEL")
 	if dir == "" {
 		dir = os.Getenv("HOME") + "/models/gemma-3-4b-it"
@@ -211,6 +212,7 @@ func TestKVI8_snapshotRoundtrip(t *testing.T) {
 // garbage input where argmax is a coin-flip (the bug that faked an earlier
 // "int8 fails" result).
 func TestKVI8_genParity(t *testing.T) {
+	requireHeavyModel(t)
 	dir := os.Getenv("GINFER_TEST_MODEL")
 	if dir == "" {
 		dir = os.Getenv("HOME") + "/models/gemma-3-4b-it"

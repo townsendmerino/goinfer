@@ -25,16 +25,8 @@ func TestEagleSpecThroughput(t *testing.T) {
 			t.Skipf("missing %s", p)
 		}
 	}
-	head, err := LoadEagleHead(headDir)
-	if err != nil {
-		t.Fatalf("LoadEagleHead: %v", err)
-	}
-	defer head.Close()
-	base, err := Load(basePath, Options{Quant: "int8int8"})
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	defer base.Close()
+	head := sharedEagleHead(t, headDir)
+	base := sharedEagleBase(t, basePath, "int8int8")
 	tk, _ := tokenizer.LoadGGUF(basePath)
 	L := base.w.arch.NumLayers
 	capLayers := []int{2, L / 2, L - 3}

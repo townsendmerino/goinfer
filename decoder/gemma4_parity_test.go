@@ -14,6 +14,7 @@ import (
 // gate); cosine over the sampled-256 logits must clear the quant-vs-bf16 bar.
 // Skips without the golden or the GGUF asset.
 func TestGemma4_logitParity(t *testing.T) {
+	requireHeavyModel(t)
 	raw, err := os.ReadFile("../testdata/gemma4_forward_golden.json")
 	if errors.Is(err, fs.ErrNotExist) {
 		t.Skip("no gemma4 golden; run scripts/pin_gemma4_forward.py")

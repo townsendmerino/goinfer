@@ -22,6 +22,7 @@ import (
 //	loads." Run: GOINFER_MOE35=~/models/qwen3.6-35b-a3b-Q8_0.gguf go test ./decoder/ \
 //	  -run TestMoEPagingSpike -v -timeout 3600s
 func TestMoEPagingSpike(t *testing.T) {
+	requireHeavyModel(t)
 	path := os.Getenv("GOINFER_MOE35")
 	if path == "" {
 		path = os.Getenv("HOME") + "/models/qwen3.6-35b-a3b-Q8_0.gguf"
