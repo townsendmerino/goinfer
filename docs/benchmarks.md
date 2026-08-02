@@ -233,6 +233,31 @@ by the binary.
 - Do not quote a Metal speed *multiple* as a headline. The defensible Metal claims are
   portability (no Xcode, no toolchain, static binary) and correctness parity.
 
+### B4. Host↔VRAM MoE streaming — a 26B that does not fit the card (cgo-free CUDA)
+
+This is a **capability** row, not a speed row: it has **no peer number** because the peers do
+not produce one. **Gemma 4 26B-A4B** (128 experts, top-8, ~11.4 GB of int4 experts) does not fit
+an 8 GB card; **llama.cpp and Ollama fail to load it**, they do not run it slower. goinfer decodes
+it GPU-resident by keeping the ~1.3 GB non-expert core in VRAM and streaming the experts from
+pinned host memory into a VRAM slot cache (host↔VRAM "C′" path, `docs/task-moe-streaming.md`).
+
+| RTX 2070 SUPER · 8 GB · driver 595.58.03 · 2026-08-02 | value |
+| --- | --- |
+| model | Gemma 4 **26B-A4B**, int4 (128 experts, top-8, 30 layers) — experts ~11.4 GB, **does not fit 8 GB** |
+| decode | **16.98 tok/s** (64-tok greedy, capture-free, synchronous H2D) |
+| expert cache | 38 slots/layer (auto-capped from 48 to measured free VRAM), **81.6% hit rate** (17816 / 4024) |
+| resident VRAM | ~1.3 GB core + ~3.8 GB slots + KV — the 11.4 GB of experts live in host RAM |
+| coherence | greedy through the real chat template: distinct-trigram 0.818, *"…**Paris**… the Eiffel Tower, the Louvre Museum… **Gastronomy:**"* |
+| peers | **llama.cpp / Ollama: fail to load** (model exceeds VRAM) |
+| commit | `cuda/gemma4_26b_cache_test.go` (`GOINFER_HEAVY_TESTS=1`), host↔VRAM track through `2f51449` |
+
+- The number is a **floor**: synchronous H2D with no async overlap yet, and it still clears
+  fieldfare's 5.1–6.3 tok/s on its own 8 GB M2 Air (the closest analogue either project has —
+  *different silicon, so a floor in the peer's constrained regime, not a comparison row*).
+- The 81.6%-hit-rate-at-30%-residency is the empirical basis of the design: trained MoE routing
+  is a stationary skew, so an LRU cache over a small resident fraction captures most reads
+  (`turbo-fieldfare` reaches the same conclusion via 16-slot LFU — two mechanisms, one property).
+
 > **serve caveat (both GPU backends).** GPU-resident models bypass the session cache in
 > `cmd/serve` (`7557723`), so they skip prompt-prefix reuse and speculative decode. That
 > is a deliberate trade — resident decode is worth far more than the TTFT optimization —

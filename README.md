@@ -60,6 +60,11 @@ int8 runs **fully resident** at int4, ~13–21 tok/s. It writes idiomatic Go and
 emit invalid JSON. Prequant the weights once to a `.giw` bundle and it reloads in ~13 s
 ([docs/mellum2-resident.md](docs/mellum2-resident.md)).*
 
+*And bigger still — **Gemma 4 26B-A4B** (a 26B MoE whose ~11.4 GB of int4 experts **do not
+fit 8 GB even at 4-bit**) decodes coherently on the same card at **~17 tok/s**, streaming its
+experts from host RAM into a VRAM cache (81% hit rate) over the cgo-free CUDA backend — a model
+llama.cpp and Ollama **cannot load at all** ([docs/task-moe-streaming.md](docs/task-moe-streaming.md)).*
+
 ## Try it: an LLM in one file
 
 [`demo/chat`](demo/chat) is a local coding assistant that's a **single static
