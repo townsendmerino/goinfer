@@ -105,6 +105,14 @@ plugged in. Source: `docs/ARCHITECTURE.md` §2 + `docs/completed/perf-campaign.m
 v0.5.0 perf work." goinfer commit for these: the v0.5.0-era CPU campaign (see
 completed/perf-campaign.md). Peers were **not** run on this rig → `—` (use the script).
 
+**Re-confirmed 2026-08-02 (`14dfc47`)** — `BenchmarkDecode` still lands at **~68 (best
+69.8) tok/s** for 0.5B and **~34 (best 34.5) tok/s** for 1.5B (best-of-8 × 2 s,
+`qwen2.5-coder-{0.5b,1.5b}-instruct-q4_k_m.gguf` loaded `int8int8`). Measured while the IDE
+held ~4 cores (load avg 3.8), so these are a mild *lower* bound — they confirm the ~70/~36
+baseline held across both decode-parallelism-threshold fixes (the M1-Pro int8 crossover was
+already optimal, so unlike the Ryzen path it had no room to move; see `tune.go` sweep note).
+The end-to-end demo row (~57/~26) was **not** re-measured this pass.
+
 | metric (M1 Pro · `.giw` int8 · greedy/fixed seed) | goinfer 0.5B | goinfer 1.5B | peers |
 |---|---|---|---|
 | decode tok/s — `BenchmarkDecode` (pure forward+sample) | ~70 | ~36 | — |
