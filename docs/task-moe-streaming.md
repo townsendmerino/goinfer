@@ -56,12 +56,21 @@ engineering, not insight.
 
 ---
 
-## Phase 0 — the aikit bump hazard (do this first, it is nearly free)
+## Phase 0 — the aikit bump hazard (**DONE** — verified 2026-08-02)
 
-goinfer pins `github.com/townsendmerino/aikit v1.12.0` (`go.mod:6`). aikit `main` is past
-v1.14.0 and contains **`6c0483f` "mmap: scan-resistant SpanCache eviction"**, which changes
-`SpanCache.Touch` to evict `c.lru.Front()` — the **most**-recently-touched other member —
-instead of `c.lru.Back()`.
+**Status: complete.** goinfer is now on `aikit v1.16.0` (`go.mod:6`), past the `6c0483f`
+scan-resistant-eviction change. aikit shipped the fix as an `EvictPolicy` API
+(`mmap/spancache.go`: `EvictMostRecent` default + `EvictLeastRecent`), and
+`decoder/moepaging.go` selects `mmap.NewSpanCacheWithPolicy(budget, mmap.EvictLeastRecent)` —
+so the ANN scan keeps scan-resistance and the expert pager keeps its frequency-aware LRU. The
+regression is reproduced in `moepaging_spike_test.go`'s B0 comparison: on the real 35B-A3B trace
+the scan-resistant (MRU) policy is **−51 pp** vs LRU at a 4 GB budget. All three stale artifacts
+are fixed (spancache doc, `moepaging.go`, `moepaging_test.go` cite `EvictLeastRecent`). The bump
+gate held: the pager's hit rate is unchanged from v1.12.0 (it uses the LRU policy).
+
+*(Original hazard, kept for the record:)* aikit `main` past v1.14.0 contains **`6c0483f`
+"mmap: scan-resistant SpanCache eviction"**, which changed `SpanCache.Touch` to evict
+`c.lru.Front()` — the **most**-recently-touched other member — instead of `c.lru.Back()`.
 
 That change is correct for the workload it was measured on: aikit's own demand signal is
 `FlatI8`'s paged query walking blocks 0,1,2,… every call, the textbook cyclic-scan
@@ -124,22 +133,36 @@ Bit-exactness stays trivially provable either way (the bytes are the same file b
 **Deliverable:** a tok/s-and-p99-latency-vs-budget curve on both darwin and linux, for
 QD1-mmap / parallel-mmap / parallel-pread. The darwin column is the one that decides 1b.
 
-## Lever 2 — eviction policy matched to the demand signal
+## Lever 2 — eviction policy matched to the demand signal — **REPLAYED; verdict: keep LRU**
 
-Phase 0 forces this question; this is where it gets answered properly. fieldfare picked
-**LFU**; goinfer has LRU (soon MRU-ish). The spike's own skew numbers — 10% of experts
-absorbing 72% of accesses, stable across tokens — are an LFU distribution, not an LRU one.
+The hypothesis was that fieldfare's **LFU** should beat goinfer's LRU because the skew (10% of
+experts absorb 72%) "is an LFU distribution." The offline replay (`moepaging_spike_test.go`,
+LRU/MRU/LFU/LFU-aging over the real 35B-A3B trace, 2026-08-02) **falsifies it — do not build a
+frequency-aware policy.** The table:
 
-The whole experiment is offline: `moepaging_spike_test.go` already records the access
-trace, so LRU / scan-resistant / LFU / LFU-with-aging can be replayed over it and scored on
-hit rate at 3, 8 and 16 GB budgets without touching a disk or loading a model. Do that
-before writing any policy code, and publish the table the way the spike published its
-original one.
+| cacheGB | LRU | MRU | LFU | LFU-aging |
+|--:|--:|--:|--:|--:|
+| 1.0 | 12.7 | 6.5 | 1.3 | 3.3 |
+| 2.0 | 39.2 | 11.8 | 14.0 | 40.5 |
+| 3.0 | 51.3 | 15.7 | 35.9 | **60.7** |
+| 4.0 | 71.9 | 20.9 | 51.2 | **73.5** |
+| 6.0 | 84.3 | 38.7 | 73.9 | 85.3 |
+| 8.1 | 89.6 | 57.0 | 86.5 | 89.6 |
+| 16.1 | 92.9 | 92.9 | 92.9 | 92.9 |
 
-Note the interaction with Lever 1: on darwin today the policy barely matters, because the
-real replacement decision belongs to the UBC. Policy work only fully pays off once there is
-a firm cap (1b) — but the replay is cheap enough to do first regardless, and it is what
-tells you whether 1b is worth it.
+Two findings. **(1) Plain LFU is strictly WORSE than LRU** (−3 to −25 pp) — the classic LFU
+establishment pathology: an evicted-then-re-faulted hot expert restarts at count 1 and is
+re-evicted before it re-accumulates, so LFU keeps a stale cold set. **(2) LFU-aging fixes that
+and does beat LRU — but only at 3–4 GB budgets** (+9 pp at 3 GB), and at the realistic ≥8 GB
+range all three converge to LRU because on a **stationary** skewed signal frequency ⇒ recency:
+the hot experts are touched every few tokens, so LRU already keeps them warm. The +9 pp lives in
+a budget regime (3–4 GB against 16 GB of experts) nobody runs interactively.
+
+**So LRU (the current `EvictLeastRecent`) is the right policy; Lever 2 is closed with no code.**
+This is exactly what "do the replay before writing any policy code" buys — the policy work is
+saved. The interaction with Lever 1 stands: on darwin the *replacement decision* belongs to the
+UBC anyway (no firm cap), so even a better policy wouldn't bind there; and the replay's verdict
+means Lever 1b's motivation is the darwin firm cap alone, not a policy win.
 
 ## Lever 3 — overlap routed reads with the resident branch
 

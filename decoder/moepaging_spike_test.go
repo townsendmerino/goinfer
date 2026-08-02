@@ -110,9 +110,10 @@ func TestMoEPagingSpike(t *testing.T) {
 	// per-token accesses = K·L (the active working set is at least this many pages).
 	activeSet := K * L
 	t.Logf("active set (min resident) = K·L = %d experts ≈ %.1f GB", activeSet, float64(activeSet*expBytes)/1e9)
-	t.Logf("=== hit rate vs RAM budget (whole-expert pages): B0 two-policy comparison ===")
-	t.Logf("  LRU-tail = aikit ≤v1.14 (evict LEAST-recent); MRU = v1.15 6c0483f scan-resistant (evict MOST-recent OTHER)")
-	t.Logf("  %-10s %-9s %-12s %-12s %-10s", "cacheGB", "pages", "LRU-tail hit%", "MRU hit%", "Δ (MRU-LRU)")
+	t.Logf("=== hit rate vs RAM budget (whole-expert pages): B0 policy comparison + Lever-2 LFU replay ===")
+	t.Logf("  LRU-tail = the pager's current EvictLeastRecent; MRU = aikit default scan-resistant (evict MOST-recent OTHER,")
+	t.Logf("  6c0483f — WRONG for this signal, B0); LFU = classic (evict least-FREQUENT); LFU-age = LFU + periodic halving.")
+	t.Logf("  %-9s %-8s %-10s %-9s %-9s %-10s %-11s", "cacheGB", "pages", "LRU hit%", "MRU hit%", "LFU hit%", "LFUage hit%", "Δ (LFU-LRU)")
 	// NVMe random-read model: ~20µs seek + bytes/3GBps. Conservative for a consumer SSD.
 	const nvmeBps = 3.0e9
 	const seekS = 20e-6
@@ -120,7 +121,9 @@ func TestMoEPagingSpike(t *testing.T) {
 	sizes := []int{activeSet, activeSet * 2, activeSet * 3, activeSet * 4, activeSet * 6,
 		int(0.25 * float64(L*E)), int(0.5 * float64(L*E)), distinct}
 	seen := map[int]bool{}
-	var worstDelta float64 = 1
+	var worstMruDelta float64 = 1    // MRU regression vs LRU (B0)
+	var bestLfuDelta float64 = -1    // plain-LFU improvement over LRU (Lever 2)
+	var bestLfuAgeDelta float64 = -1 // LFU-aging improvement over LRU (Lever 2)
 	for _, C := range sizes {
 		if C <= 0 || C > L*E || seen[C] {
 			continue
@@ -128,14 +131,27 @@ func TestMoEPagingSpike(t *testing.T) {
 		seen[C] = true
 		lh, lm := lruSim(access, C)
 		mh, mm := mruSim(access, C)
+		fh, fm := lfuSim(access, C)
+		ah, am := lfuAgingSim(access, C)
 		lrate := float64(lh) / float64(lh+lm)
 		mrate := float64(mh) / float64(mh+mm)
-		worstDelta = min(worstDelta, mrate-lrate)
-		t.Logf("  %-10.1f %-9d %-12.1f %-12.1f %+-10.1f",
-			float64(C*expBytes)/1e9, C, 100*lrate, 100*mrate, 100*(mrate-lrate))
+		frate := float64(fh) / float64(fh+fm)
+		arate := float64(ah) / float64(ah+am)
+		worstMruDelta = min(worstMruDelta, mrate-lrate)
+		bestLfuDelta = max(bestLfuDelta, frate-lrate)
+		bestLfuAgeDelta = max(bestLfuAgeDelta, arate-lrate)
+		t.Logf("  %-9.1f %-8d %-10.1f %-9.1f %-9.1f %-10.1f %+-11.1f",
+			float64(C*expBytes)/1e9, C, 100*lrate, 100*mrate, 100*frate, 100*arate, 100*(frate-lrate))
 		_ = perMissS
 	}
-	t.Logf("worst MRU−LRU hit-rate delta across budgets: %+.1f pp (negative ⇒ the v1.15 policy REGRESSES the expert pager — B0)", 100*worstDelta)
+	t.Logf("B0: worst MRU−LRU delta = %+.1f pp (negative ⇒ aikit's default scan-resistant policy REGRESSES the pager — fixed by EvictLeastRecent)", 100*worstMruDelta)
+	// Lever-2 verdict: plain LFU is WORSE than LRU (classic establishment pathology — a re-faulted hot
+	// expert restarts at freq=1 and is re-evicted before it accumulates count). LFU-aging fixes that
+	// and beats LRU, but ONLY at impractically-tight budgets (3–4 GB); at the realistic ≥8 GB range all
+	// three converge because LRU already keeps the hot set warm on this stationary-skewed signal
+	// (frequency ⇒ recency). So a frequency-aware policy is NOT worth building — keep EvictLeastRecent.
+	t.Logf("Lever 2: best plain-LFU−LRU delta = %+.1f pp (≤0 ⇒ LFU never beats LRU at a real budget); best LFU-aging−LRU delta = %+.1f pp (only at 3–4 GB; ≈0 at ≥8 GB). Verdict: keep LRU.",
+		100*bestLfuDelta, 100*bestLfuAgeDelta)
 
 	// Steady-state (drop the first ~20% as cache warmup) at a mid budget.
 	warm := len(access) / 5
@@ -192,6 +208,81 @@ func mruSim(access []int, C int) (hits, misses int) {
 				ll.Remove(victim)
 			}
 		}
+	}
+	return
+}
+
+// lfuSim runs classic LFU of capacity C over the access stream: on a miss over budget it evicts the
+// resident page with the LOWEST access count SINCE it became resident (ties broken by LRU — the
+// oldest among the coldest). The MoE router's demand is a skewed-FREQUENCY signal (the spike above:
+// the hottest 10% of experts absorb ~72% of accesses, stable across tokens), which is LFU's sweet
+// spot — once the hot set is warm it is never the victim. This is Lever 2's candidate vs the pager's
+// current EvictLeastRecent (LRU). Eviction scans the resident set (O(C)); the trace is small.
+func lfuSim(access []int, C int) (hits, misses int) {
+	type ent struct{ freq, last int }
+	res := make(map[int]*ent, C)
+	for t, key := range access {
+		if e, ok := res[key]; ok {
+			e.freq++
+			e.last = t
+			hits++
+			continue
+		}
+		misses++
+		if len(res) >= C {
+			var vk, vf, vl int
+			first := true
+			for k, e := range res {
+				if first || e.freq < vf || (e.freq == vf && e.last < vl) {
+					vk, vf, vl, first = k, e.freq, e.last, false
+				}
+			}
+			delete(res, vk)
+		}
+		res[key] = &ent{freq: 1, last: t}
+	}
+	return
+}
+
+// lfuAgingSim is LFU with dynamic aging: every ~1/8 of the trace, all resident counts are halved
+// (min 1). Pure LFU's failure mode is cache pollution — a page that was hot early stays immortal
+// even after its traffic dies (a real risk if routing drifts across a long generation). Aging decays
+// stale frequency so a formerly-hot-now-cold expert can finally be evicted, at the cost of some
+// hot-set churn. Whether the MoE signal needs it — i.e. whether routing frequency is stationary
+// enough that plain LFU suffices — is exactly what this column answers.
+func lfuAgingSim(access []int, C int) (hits, misses int) {
+	type ent struct{ freq, last int }
+	res := make(map[int]*ent, C)
+	window := len(access) / 8
+	if window < 1 {
+		window = 1
+	}
+	for t, key := range access {
+		if t > 0 && t%window == 0 { // age: halve all resident counts
+			for _, e := range res {
+				if e.freq > 1 {
+					e.freq /= 2
+				}
+			}
+		}
+		if e, ok := res[key]; ok {
+			e.freq++
+			e.last = t
+			hits++
+			continue
+		}
+		misses++
+		if len(res) >= C {
+			var vk, vf, vl int
+			first := true
+			for k, e := range res {
+				if first || e.freq < vf || (e.freq == vf && e.last < vl) {
+					vk, vf, vl, first = k, e.freq, e.last, false
+				}
+			}
+			delete(res, vk)
+		}
+		res[key] = &ent{freq: 1, last: t}
 	}
 	return
 }
