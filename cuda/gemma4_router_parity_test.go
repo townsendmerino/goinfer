@@ -151,6 +151,66 @@ func TestGemma4Router_residentIdxParity(t *testing.T) {
 	}
 }
 
+// TestGemma4_perExpertScaleFold isolates the on-GPU per-expert-scale fold (scale_wgt_by_expert,
+// cuda/router_f32.cu) before it is wired into the resident MoE combine. Gemma-4 multiplies each
+// routed weight by a learned per-EXPERT scale indexed by the selected expert id:
+// wts[k] = (topv[k]/sum) * perExpertScale[idx[k]]. The generic moe_route has only a single scalar
+// routed_scaling_factor, so this is a new op. It must run on-device (idx is a moe_route output; a
+// host fold would sync per token), so verify the kernel's indexed multiply against a CPU oracle.
+func TestGemma4_perExpertScaleFold(t *testing.T) {
+	if err := gc.Init(); err != nil {
+		t.Skipf("cuInit: %v", err)
+	}
+	dev, err := gc.GetDevice(0)
+	if err != nil {
+		t.Skipf("no device: %v", err)
+	}
+	ctx, err := dev.Primary()
+	if err != nil {
+		t.Skipf("no context: %v", err)
+	}
+	defer ctx.Close()
+	bg := context.Background()
+	rmod, err := ctx.LoadModule(routerF32PTX)
+	if err != nil {
+		t.Fatalf("router_f32 module: %v", err)
+	}
+	fScale, err := rmod.Function("scale_wgt_by_expert")
+	if err != nil {
+		t.Fatalf("scale_wgt_by_expert: %v", err)
+	}
+	stream := mustStream(t, ctx)
+
+	// top-2 of 4: weights from moe_route, selected expert ids, learned per-expert scale.
+	wgt := []float32{0.6, 0.4}
+	idx := []uint32{2, 0}
+	perExpertScale := []float32{1.5, 0.5, 2.0, 1.0}
+	nE, K := len(perExpertScale), len(wgt)
+	want := make([]float32, K)
+	for k := 0; k < K; k++ {
+		want[k] = wgt[k] * perExpertScale[idx[k]] // 0.6*2.0=1.2 ; 0.4*1.5=0.6
+	}
+
+	dWgt := mustAlloc[float32](t, ctx, K)
+	dIdx := mustAlloc[uint32](t, ctx, K)
+	dScale := mustAlloc[float32](t, ctx, nE)
+	_ = gc.CopyHtoD(bg, dWgt, wgt)
+	_ = gc.CopyHtoD(bg, dIdx, idx)
+	_ = gc.CopyHtoD(bg, dScale, perExpertScale)
+	_ = fScale.LaunchOn(bg, stream, gc.LaunchConfig{GridX: 1, GridY: 1, GridZ: 1, BlockX: uint32(K), BlockY: 1, BlockZ: 1},
+		gc.Arg(dWgt), gc.Arg(dIdx), gc.Arg(dScale), gc.ArgValue(int32(K)))
+	_ = stream.Synchronize(bg)
+	got := make([]float32, K)
+	_ = gc.CopyDtoH(bg, got, dWgt)
+
+	for k := 0; k < K; k++ {
+		if d := got[k] - want[k]; d > 1e-6 || d < -1e-6 {
+			t.Errorf("wgt[%d]: got %.6f want %.6f (idx=%d scale=%.3f)", k, got[k], want[k], idx[k], perExpertScale[idx[k]])
+		}
+	}
+	t.Logf("per-expert-scale fold: %v * scale[%v] = %v (matches CPU)", wgt, idx, got)
+}
+
 // sameExpertSet compares a CPU selection ([]int) and a resident selection ([]uint32) as SETS.
 func sameExpertSet(a []int, b []uint32) bool {
 	if len(a) != len(b) {

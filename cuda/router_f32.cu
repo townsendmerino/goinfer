@@ -33,4 +33,17 @@ __global__ void gemv_f32_f32(const float* __restrict__ W, const float* __restric
     }
     if (t == 0) dst[n] = red[0];
 }
+
+// scale_wgt_by_expert: fold Gemma-4's learned per-expert scale into the routed weights, AFTER
+// moe_route's top-k + renormalize (CPU: wts[j] = (topv[j]/sum) * perExpertScale[idx[j]]). idx lives
+// in a device buffer (moe_route's output), so this must run ON-GPU: a host fold would read idx/wgt
+// back per token, reintroducing exactly the per-token sync the on-device router exists to avoid.
+// K lanes (K = top_k, tiny), one dispatch. In router_f32's module so it stays off the audited
+// moe.ptx — same reason as gemv_f32_f32.
+__global__ void scale_wgt_by_expert(float* __restrict__ wgt, const unsigned int* __restrict__ idx,
+                                    const float* __restrict__ perExpertScale, int K) {
+    int k = blockIdx.x * blockDim.x + threadIdx.x;
+    if (k >= K) return;
+    wgt[k] *= perExpertScale[idx[k]];
+}
 }

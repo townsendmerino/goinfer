@@ -157,4 +157,47 @@ $L__BB0_14:
 	ret;
 
 }
+	// .globl	scale_wgt_by_expert
+.visible .entry scale_wgt_by_expert(
+	.param .u64 scale_wgt_by_expert_param_0,
+	.param .u64 scale_wgt_by_expert_param_1,
+	.param .u64 scale_wgt_by_expert_param_2,
+	.param .u32 scale_wgt_by_expert_param_3
+)
+{
+	.reg .pred 	%p<2>;
+	.reg .f32 	%f<4>;
+	.reg .b32 	%r<7>;
+	.reg .b64 	%rd<12>;
+
+
+	ld.param.u64 	%rd1, [scale_wgt_by_expert_param_0];
+	ld.param.u64 	%rd2, [scale_wgt_by_expert_param_1];
+	ld.param.u64 	%rd3, [scale_wgt_by_expert_param_2];
+	ld.param.u32 	%r2, [scale_wgt_by_expert_param_3];
+	mov.u32 	%r3, %ctaid.x;
+	mov.u32 	%r4, %ntid.x;
+	mov.u32 	%r5, %tid.x;
+	mad.lo.s32 	%r1, %r3, %r4, %r5;
+	setp.ge.s32 	%p1, %r1, %r2;
+	@%p1 bra 	$L__BB1_2;
+
+	cvta.to.global.u64 	%rd4, %rd2;
+	mul.wide.s32 	%rd5, %r1, 4;
+	add.s64 	%rd6, %rd4, %rd5;
+	ld.global.nc.u32 	%r6, [%rd6];
+	cvta.to.global.u64 	%rd7, %rd3;
+	mul.wide.u32 	%rd8, %r6, 4;
+	add.s64 	%rd9, %rd7, %rd8;
+	cvta.to.global.u64 	%rd10, %rd1;
+	add.s64 	%rd11, %rd10, %rd5;
+	ld.global.f32 	%f1, [%rd11];
+	ld.global.nc.f32 	%f2, [%rd9];
+	mul.f32 	%f3, %f2, %f1;
+	st.global.f32 	[%rd11], %f3;
+
+$L__BB1_2:
+	ret;
+
+}
 
