@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"strconv"
 
 	gpu "github.com/townsendmerino/aikit/gpu"
 	"github.com/townsendmerino/aikit/linalg"
@@ -381,6 +382,20 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	if moeNorm {
 		r.moeNormTopK = 1
 	}
+	// C′ step 2: device slots per layer. Default topK (step-1 fresh-load, no cross-token reuse,
+	// byte-identical); GOINFER_MOE_CACHE_SLOTS=N gives an LRU cache of N slots (clamped [topK, nE]).
+	// VRAM for slots is nLayers·nSlots·perExpert, so a bigger N trades VRAM for fewer per-token DMAs.
+	// CAUTION: too large OOMs at BuildResident (the alloc runs in the executor goroutine, so it
+	// crashes rather than declining) — keep N within the free-VRAM budget (~40 for the 26B on 8 GB).
+	r.cacheSlots = topK
+	if r.cacheExperts {
+		if v, err := strconv.Atoi(os.Getenv("GOINFER_MOE_CACHE_SLOTS")); err == nil && v > topK {
+			r.cacheSlots = v
+			if nE > 0 && r.cacheSlots > nE {
+				r.cacheSlots = nE
+			}
+		}
+	}
 	hFinal := w.FinalNorm
 	r.reqCh = make(chan func() error)
 	r.ackCh = make(chan error)
@@ -519,6 +534,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				L.isMoE = true
 				L.routerW, L.routerB = r.up32(h.router), r.up32(h.routerBs)
 				L.expGU, L.expDown = r.upExperts(h.expGU), r.upExperts(h.expDown)
+				if r.cacheExperts {
+					L.expCache = newExpertCache(nE, r.cacheSlots)
+				}
 				if h.hasShared {
 					L.hasShared = true
 					L.shGU, L.shDown = r.upW(h.shGU), r.upW(h.shDown)
@@ -530,6 +548,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				L.g4moe = true
 				L.routerW, L.routerB = r.up32(h.router), r.up32(h.routerBs)
 				L.expGU, L.expDown = r.upExperts(h.expGU), r.upExperts(h.expDown)
+				if r.cacheExperts {
+					L.expCache = newExpertCache(nE, r.cacheSlots)
+				}
 				L.g4preFFN, L.g4postFFN1 = r.up32(h.g4preFFN), r.up32(h.g4postFFN1)
 				L.g4preFFN2, L.g4postFFN2, L.g4postFFN = r.up32(h.g4preFFN2), r.up32(h.g4postFFN2), r.up32(h.g4post)
 				L.perExpertScaleB = r.up32(h.perExpertScale)
@@ -620,16 +641,10 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			// Sized to the MoE expert width, not the dense one (Mellum's moe_intermediate_size
 			// differs from intermediate_size).
 			r.rLogits, r.rIdx, r.rWgt = r.af(nE), r.au32(topK), r.af(topK)
-			if r.cacheExperts { // C′: constant slot ids [0..topK-1] (slot j ← routed expert j) + readback scratch
-				slots := make([]uint32, topK)
-				for j := range slots {
-					slots[j] = uint32(j)
-				}
+			if r.cacheExperts { // C′: per-token slot-id buffer (uploaded per layer) + readback scratch
 				r.slotIdx = r.au32(topK)
-				if e := gpu.Upload(r.slotIdx, slots); e != nil {
-					return e
-				}
 				r.hostIdx = make([]uint32, topK)
+				r.hostSlot = make([]uint32, topK)
 			}
 			r.moeGU = r.af(2 * moeInter)
 			r.moeSc, r.moeScr, r.moeQ = r.af(1), r.af(moeInter), r.ai(moeInter/4)

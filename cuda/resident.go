@@ -66,11 +66,12 @@ type cudaLayer struct {
 	// first FirstKDense layers plain dense MLPs while the rest route, so the two blocks coexist
 	// in one model and the dispatch picks per layer (the decoder keys off the same thing —
 	// mlp.go: `arch.MoE != nil && lw.Experts != nil`).
-	isMoE   bool
-	routerW Buffer // [nE, hidden] f32 — see cudaResident.moe on why it is not quantized
-	routerB Buffer // [nE] selection bias; ALWAYS allocated (zeros when the arch has none)
-	expGU   cudaWQ // stacked [nE * 2*moeInter, hidden]: expert e's gate at e*2*moeInter, up at +moeInter
-	expDown cudaWQ // stacked [nE * hidden, moeInter]
+	isMoE    bool
+	routerW  Buffer       // [nE, hidden] f32 — see cudaResident.moe on why it is not quantized
+	routerB  Buffer       // [nE] selection bias; ALWAYS allocated (zeros when the arch has none)
+	expGU    cudaWQ       // stacked [nE * 2*moeInter, hidden]: expert e's gate at e*2*moeInter, up at +moeInter
+	expDown  cudaWQ       // stacked [nE * hidden, moeInter]
+	expCache *expertCache // C′ step 2: per-layer LRU slot residency (nil unless cacheExperts)
 
 	// Always-on shared expert (GLM/DeepSeek): an ungated SwiGLU MLP at sharedInter, added to the
 	// routed output. hasShared is false for a plain MoE (Mixtral). gate‖up is concatenated the
@@ -109,8 +110,10 @@ type cudaResident struct {
 	act            int32    // gated MLP activation, decoder.ActKind (0=gelu-tanh, 1=silu)
 	sandwich       bool     // Gemma 4-norm sandwich: extra post-attn / post-MLP norms
 	cacheExperts   bool     // C′: routed experts DMA'd host→VRAM slots per token (device read; correct)
-	slotIdx        Buffer   // C′: [0,1,…,topK-1], bound as the GEMV's idx so slot j holds routed expert j
+	cacheSlots     int      // C′ step 2: device slots per layer (≥ topK; = topK ⇒ step-1 fresh-load, no reuse)
+	slotIdx        Buffer   // C′: per-token slot ids for the routed experts, bound as the GEMV's idx
 	hostIdx        []uint32 // C′: scratch for the per-layer rIdx device→host readback
+	hostSlot       []uint32 // C′: scratch for the per-token slot ids uploaded to slotIdx
 
 	// Sparse MoE. The router projection stays f32 (gemv_f32_a8) while the experts are int4:
 	// the router's output steers a DISCRETE choice, so a quantization error near a tie does not
@@ -242,9 +245,10 @@ func (r *cudaResident) upExperts(h hostW) cudaWQ {
 // cacheWQ (C′) keeps the FULL expert stack in pinned host memory (srcW/srcS, the DMA source) and
 // allocates a small nSlots-deep DEVICE slot buffer (W/ws16) that the GEMV actually reads. Per token
 // the routed experts are DMA'd from the host source into the slots (loadWQ); the kernel indexes by
-// SLOT id, so it runs unmodified against the smaller stack (no moe.ptx change). nSlots = topK for
-// the correctness cut — every routed expert is loaded fresh, no cross-token reuse (that is the LRU
-// optimization on top). rowsPerExpert = N/nE (the stack has nE experts, N total rows).
+// SLOT id, so it runs unmodified against the smaller stack (no moe.ptx change). The device stack is
+// r.cacheSlots deep (≥ topK); loadRoutedExperts fills it via the per-layer LRU expertCache — at
+// nSlots=topK it degenerates to step-1 fresh-load, above that it reuses across tokens.
+// rowsPerExpert = N/nE (the stack has nE experts, N total rows).
 func (r *cudaResident) cacheWQ(h hostW) cudaWQ {
 	w := cudaWQ{kind: h.kind, N: h.N, K: h.K}
 	rowsPerExpert := h.N / r.nE
@@ -252,43 +256,118 @@ func (r *cudaResident) cacheWQ(h hostW) cudaWQ {
 	w.perExpertS = rowsPerExpert * (h.K / 32) // uint16 group scales per expert (Kgroups = K/32)
 	w.srcW = r.mapBytes(u32bytes(h.wpk))
 	w.srcS = r.mapBytes(u16bytes(h.ws16))
-	nSlots := r.topK
-	w.W = r.au32(nSlots * w.perExpertW)
-	w.ws16 = gpu.NewBufferLenOf[uint16](r.dev, nSlots*w.perExpertS)
+	w.W = r.au32(r.cacheSlots * w.perExpertW)
+	w.ws16 = gpu.NewBufferLenOf[uint16](r.dev, r.cacheSlots*w.perExpertS)
 	return w
 }
 
-// loadWQ (C′) DMAs the topK routed experts from the pinned host source into device slots: slot j
-// gets routed expert hostIdx[j]. Synchronous H2D (gocudrv v0.2.0) — async overlap is a later bump.
-func (r *cudaResident) loadWQ(w *cudaWQ, hostIdx []uint32) error {
-	srcW, srcS := w.srcW.Bytes(), w.srcS.Bytes()
-	for j := 0; j < r.topK; j++ {
-		e := int(hostIdx[j])
-		wOff, wLen := e*w.perExpertW*4, w.perExpertW*4
-		sOff, sLen := e*w.perExpertS*2, w.perExpertS*2
-		if err := gpu.Upload(w.W.At(j*w.perExpertW*4), srcW[wOff:wOff+wLen]); err != nil {
-			return err
-		}
-		if err := gpu.Upload(w.ws16.At(j*w.perExpertS*2), srcS[sOff:sOff+sLen]); err != nil {
-			return err
-		}
-	}
-	return nil
+// expertCache is C′ step 2's per-layer LRU slot residency: which cached expert occupies which of the
+// nSlots device slots, so a routed expert already resident skips its H2D DMA. nSlots = topK is the
+// step-1 staging degenerate case (every token evicts, no reuse); nSlots > topK gives cross-token
+// reuse — LRU because the router signal is a stationary skew where recency is a sufficient statistic
+// for frequency (the Lever-2 verdict; see docs/task-moe-streaming.md). expGU and expDown share the
+// slot index (loaded together), so the cache is per-LAYER, not per-projection.
+type expertCache struct {
+	nSlots       int
+	slotOf       []int32  // [nE]     expert → slot, -1 = not resident
+	inSlot       []int32  // [nSlots] slot → expert, -1 = empty
+	used         []uint64 // [nSlots] last-touch clock (LRU)
+	clock        uint64
+	hits, misses uint64 // reuse accounting (a miss is one expert's H2D DMA)
 }
 
-// loadRoutedExperts reads back the router's idx (device→host — C′'s acknowledged per-layer sync)
-// and stages the routed experts into VRAM slots for both expert projections.
-func (r *cudaResident) loadRoutedExperts(gu, down *cudaWQ) error {
+func newExpertCache(nE, nSlots int) *expertCache {
+	c := &expertCache{nSlots: nSlots, slotOf: make([]int32, nE), inSlot: make([]int32, nSlots), used: make([]uint64, nSlots)}
+	for i := range c.slotOf {
+		c.slotOf[i] = -1
+	}
+	for i := range c.inSlot {
+		c.inSlot[i] = -1
+	}
+	return c
+}
+
+// admit returns the slot holding expert e, evicting the LRU slot on a miss. hit=false means the
+// caller must DMA e's weights into `slot` before the GEMV reads it. An expert admitted earlier in
+// the SAME token is the newest, so it is never the victim (nSlots ≥ topK guarantees room).
+func (c *expertCache) admit(e uint32) (slot int, hit bool) {
+	c.clock++
+	if s := c.slotOf[e]; s >= 0 {
+		c.used[s] = c.clock
+		c.hits++
+		return int(s), true
+	}
+	c.misses++
+	victim, oldest := 0, ^uint64(0)
+	for s := 0; s < c.nSlots; s++ {
+		if c.inSlot[s] < 0 { // an empty slot always wins
+			victim = s
+			break
+		}
+		if c.used[s] < oldest {
+			oldest = c.used[s]
+			victim = s
+		}
+	}
+	if old := c.inSlot[victim]; old >= 0 {
+		c.slotOf[old] = -1
+	}
+	c.inSlot[victim] = int32(e)
+	c.slotOf[e] = int32(victim)
+	c.used[victim] = c.clock
+	return victim, false
+}
+
+// loadExpertSlot DMAs one expert's weight+scales from the pinned host source into device slot `slot`.
+// Synchronous H2D (gocudrv v0.2.0); the async-overlap bump rides C′ step 2's perf work, not this.
+func (r *cudaResident) loadExpertSlot(w *cudaWQ, e, slot int) error {
+	srcW, srcS := w.srcW.Bytes(), w.srcS.Bytes()
+	wOff, wLen := e*w.perExpertW*4, w.perExpertW*4
+	sOff, sLen := e*w.perExpertS*2, w.perExpertS*2
+	if err := gpu.Upload(w.W.At(slot*w.perExpertW*4), srcW[wOff:wOff+wLen]); err != nil {
+		return err
+	}
+	return gpu.Upload(w.ws16.At(slot*w.perExpertS*2), srcS[sOff:sOff+sLen])
+}
+
+// loadRoutedExperts reads back the router's idx (device→host — C′'s acknowledged per-layer sync),
+// admits each routed expert into the layer's slot cache (DMAing only cache misses), and uploads the
+// per-token slot ids the GEMV binds as `idx` (slot j ← the slot now holding routed expert j).
+func (r *cudaResident) loadRoutedExperts(L *cudaLayer) error {
 	if e := r.stream.Sync(); e != nil {
 		return e
 	}
 	if e := gpu.Download(r.rIdx, r.hostIdx[:r.topK]); e != nil {
 		return e
 	}
-	if e := r.loadWQ(gu, r.hostIdx); e != nil {
-		return e
+	c := L.expCache
+	for j := 0; j < r.topK; j++ {
+		e := r.hostIdx[j]
+		slot, hit := c.admit(e)
+		r.hostSlot[j] = uint32(slot)
+		if !hit {
+			if err := r.loadExpertSlot(&L.expGU, int(e), slot); err != nil {
+				return err
+			}
+			if err := r.loadExpertSlot(&L.expDown, int(e), slot); err != nil {
+				return err
+			}
+		}
 	}
-	return r.loadWQ(down, r.hostIdx)
+	return gpu.Upload(r.slotIdx, r.hostSlot[:r.topK])
+}
+
+// CacheStatsForTest sums the LRU cache hits/misses across all layers (C′ step 2 measurement). A
+// miss is one expert's H2D DMA; hit rate = hits/(hits+misses) is the fraction of per-token expert
+// bytes reuse saves.
+func (r *cudaResident) CacheStatsForTest() (hits, misses uint64) {
+	for i := range r.layers {
+		if c := r.layers[i].expCache; c != nil {
+			hits += c.hits
+			misses += c.misses
+		}
+	}
+	return hits, misses
 }
 
 // expIdx is the idx argument the expert GEMVs bind: the constant slot ids [0..topK-1] when caching
@@ -575,7 +654,7 @@ func (r *cudaResident) moeMLP(Ly *cudaLayer) error {
 	}
 	gu := 2 * r.moeInter
 	if r.cacheExperts { // C′: readback idx, DMA routed experts into VRAM slots (slot j ← expert rIdx[j])
-		if e := r.loadRoutedExperts(&Ly.expGU, &Ly.expDown); e != nil {
+		if e := r.loadRoutedExperts(Ly); e != nil {
 			return e
 		}
 	}
@@ -703,7 +782,7 @@ func (r *cudaResident) gemma4MoeMLP(Ly *cudaLayer, l int) error {
 		return e
 	}
 	if r.cacheExperts { // C′: readback idx, DMA routed experts into VRAM slots (slot j ← expert rIdx[j])
-		if e := r.loadRoutedExperts(&Ly.expGU, &Ly.expDown); e != nil {
+		if e := r.loadRoutedExperts(Ly); e != nil {
 			return e
 		}
 	}

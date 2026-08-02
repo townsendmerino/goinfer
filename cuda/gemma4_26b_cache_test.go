@@ -131,6 +131,14 @@ func TestGemma4_26B_cache_B(t *testing.T) {
 		t.Errorf("continuation is degenerate (distinct-trigram %.3f < 0.70): %q", tr, text)
 	}
 	mspt := genDur.Seconds() * 1e3 / float64(len(gen))
-	t.Logf("B′ OK — 26B resident via C′ staging: %d tok, distinct-trigram %.3f, %.0f ms/tok (%.2f tok/s — STAGING + "+
-		"capture readback; ~714 MB/tok PCIe; informative, NOT a benchmark)\n  cont: %q", len(gen), tr, mspt, 1000/mspt, text)
+	hits, misses := r.CacheStatsForTest()
+	hitRate := 0.0
+	if hits+misses > 0 {
+		hitRate = float64(hits) / float64(hits+misses)
+	}
+	t.Logf("B′ OK — 26B resident via C′ (%d slots/layer): %d tok, distinct-trigram %.3f, %.0f ms/tok (%.2f tok/s — "+
+		"capture readback inflates this; ~714 MB/tok PCIe at nSlots=topK; informative, NOT a benchmark)\n  cont: %q",
+		r.cacheSlots, len(gen), tr, mspt, 1000/mspt, text)
+	t.Logf("C′ cache: %d hits / %d misses = %.1f%% hit rate (each hit is one skipped expert DMA; nSlots=%d, "+
+		"topK=%d, nE=128) — set GOINFER_MOE_CACHE_SLOTS>topK for cross-token reuse", hits, misses, hitRate*100, r.cacheSlots, r.topK)
 }

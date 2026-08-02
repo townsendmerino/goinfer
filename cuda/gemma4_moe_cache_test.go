@@ -74,6 +74,15 @@ func TestGemma4MoE_cacheExpertsBitExact_tiny(t *testing.T) {
 	cacheBitExact(t, "../testdata/gemma4-moe-tiny")
 }
 
+// TestGemma4MoE_cacheReuse_tiny is the C′ step-2 gate: with nSlots BETWEEN topK and nE, the LRU
+// cache reuses cached experts across tokens AND evicts — and the result must still be BIT-IDENTICAL
+// to fully-resident. A reuse that returned a stale slot, or an eviction that freed a slot still
+// needed this token, would diverge here. tiny is topK=2 of nE=4, so 3 slots exercises both paths.
+func TestGemma4MoE_cacheReuse_tiny(t *testing.T) {
+	t.Setenv("GOINFER_MOE_CACHE_SLOTS", "3")
+	cacheBitExact(t, "../testdata/gemma4-moe-tiny")
+}
+
 // TestGemma4MoE_cacheExpertsBitExact_scaled runs the same gate at the WIDTH that broke A′ zero-copy
 // (bigk/scaled): the correctness proof that matters for B′. Gated on a scaled fixture + heavy tests.
 func TestGemma4MoE_cacheExpertsBitExact_scaled(t *testing.T) {

@@ -320,12 +320,18 @@ and the sync probe proved race-free.
   Correct and the right first cut; the "cache" name describes step 2's ambition, not step 1's
   behaviour. Bit-identical to fully-resident at tiny + bigk + full-scaled width (the exact widths
   A′ zero-copy was 255/256), unmodified kernel.
-- **Step 2 = the actual cache (the win).** nSlots > topK with cross-token reuse and LRU eviction
-  (`EvictLeastRecent`, the Lever-2 stationary-skew verdict finally used). Budget on the 8 GB 2070:
-  core ~1.3 GB + KV ~0.5 GB + slots leaves **~5 GB ≈ ~45% of the full expert set** as real LRU
-  slots; at the measured skew that collapses 714 MB/token toward the ~50 MB estimate — what makes B′
-  *practical* rather than merely fittable. Plus the gocudrv v0.3.0 async-H2D overlap (its own bump +
-  aikit-wide sweep). This is where the hit-rate work pays; step 1 does none of it.
+- **Step 2 = the actual cache (BUILT + MEASURED — the win).** `GOINFER_MOE_CACHE_SLOTS=N` gives an
+  N-slot per-layer LRU cache (`expertCache`, `EvictLeastRecent` in spirit — the Lever-2 stationary-
+  skew verdict finally used); a routed expert already resident skips its DMA. Bit-identical to
+  fully-resident at tiny + scaled with reuse+eviction both active (`TestGemma4MoE_cacheReuse_*`).
+  **On the real 26B at 32 slots (25% of 128 experts): 77.5% hit rate** (16935 hits / 4905 misses over
+  a 64-tok gen), **15.83 tok/s vs 4.98 at nSlots=topK — 3.2×** (both with the capture readback;
+  apples-to-apples). Per-token expert bytes 714 MB → ~161 MB. This VALIDATES the Lever-2 premise on
+  the real model: recency is a sufficient statistic for the router's frequency, so a small resident
+  fraction captures most reads. VRAM ceiling on the 8 GB 2070 is ~40 slots (~31%; slots=48 OOMs at
+  build — the executor-goroutine alloc crashes rather than declining, so keep N within budget). Next
+  lever: gocudrv v0.3.0 async-H2D overlap of the miss DMAs with compute (its own bump + aikit-wide
+  sweep) — collapses the remaining ~161 MB/token toward the ~50 MB estimate.
 - **B′ ACHIEVED (the milestone).** The real gemma4 26B-A4B (~11.4 GB int4 experts, does NOT fit the
   8 GB 2070) decodes RESIDENT via C′ staging: `cuda/gemma4_26b_cache_test.go`. Load 4m49s (the
   11.4 GB pinned alloc + copy — the cost is the load, not the decode; swap-thrashed but no OOM on
