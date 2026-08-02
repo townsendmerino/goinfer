@@ -17,6 +17,15 @@ import (
 
 const metalCtxCap = 4096 // resident KV positions (spike)
 
+// attnScoreKeyBound is the attention kernel's static score-buffer capacity: the
+// `threadgroup float sc[4096]` in kernels.go holds one score per key, so the kernel
+// is only correct for nKeys ≤ this. metalCtxCap MUST NOT exceed it (checkCap refuses
+// nKeys > metalCtxCap, so the cap is what keeps the kernel in-bounds) — TestMetalCtxCapWithinKernelBound
+// asserts the invariant, and TestAttention_ShippedKernelShapes measures correctness at the exact
+// boundary (nKeys=4096). Bumping metalCtxCap past this without resizing sc[] is a silent OOB
+// threadgroup write; on Metal's unified memory that corrupts adjacent buffers.
+const attnScoreKeyBound = 4096
+
 // prefillFeatures is what the f16 MMA prefill kernels (prefill.go) actually implement: a dense
 // SiLU FFN, per-head QK-norm, a MODEL-LEVEL rope table and a MODEL-LEVEL window. Anything else
 // — MoE (which never packs the dense FFN buffers at all), or Gemma's sandwich norms / (1+w) RMS

@@ -25,3 +25,19 @@ func TestMetalResidentCheckCap(t *testing.T) {
 		}
 	}
 }
+
+// TestMetalCtxCapWithinKernelBound pins the invariant that keeps the resident context ceiling a
+// FACT rather than an assertion: checkCap only bounds nKeys to metalCtxCap, so the attention
+// kernel's static `threadgroup float sc[4096]` (attnScoreKeyBound) is what actually caps a correct
+// run — the guard is only safe because metalCtxCap ≤ that array. Gemma 4 advertises 256K context
+// and its five global layers grow with position, so nKeys past the ceiling IS reachable; this test
+// fails the moment someone bumps metalCtxCap past the kernel's score buffer without resizing sc[],
+// turning a silent OOB threadgroup write (unified-memory corruption) into a compile-then-test stop.
+// The matching correctness measurement at the exact boundary (nKeys=4096) lives in
+// TestAttention_ShippedKernelShapes. Pure logic — no Metal device needed.
+func TestMetalCtxCapWithinKernelBound(t *testing.T) {
+	if metalCtxCap > attnScoreKeyBound {
+		t.Fatalf("metalCtxCap=%d exceeds the attention kernel's sc[%d] score buffer — a run at nKeys in (%d,%d] is an out-of-bounds threadgroup write; resize `threadgroup float sc[...]` in kernels.go before raising the cap",
+			metalCtxCap, attnScoreKeyBound, attnScoreKeyBound, metalCtxCap)
+	}
+}
