@@ -34,9 +34,10 @@ func TestGemma4Admission_envGated(t *testing.T) {
 		}
 	}
 
-	// env ON: the arch predicate admits dense Gemma 4; CUDA ships every feature it needs
-	// (including the new FeatFinalLogitSoftcap), so CUDA admits; WebGPU still lacks the four
-	// Gemma kernels, so the feature gate refuses it — no overclaim.
+	// env ON: the arch predicate admits dense Gemma 4; CUDA and Metal ship every feature it needs
+	// (including FeatFinalLogitSoftcap — Metal declares it as of 9c Step 2, applied host-side in
+	// metal/model.go finalizeLogits), so both admit; WebGPU still lacks the four Gemma kernels, so
+	// the feature gate refuses it — no overclaim.
 	t.Setenv("GOINFER_GEMMA4_RESIDENT", "1")
 	a = denseArch()
 	if !a.decodeRunnerEligible() {
@@ -44,6 +45,9 @@ func TestGemma4Admission_envGated(t *testing.T) {
 	}
 	if !ResidentEligible(a, "cuda") {
 		t.Error("cuda declines dense Gemma 4 with env on despite shipping every required feature (incl. FeatFinalLogitSoftcap)")
+	}
+	if !ResidentEligible(a, "metal") {
+		t.Error("metal declines dense Gemma 4 with env on despite shipping every required feature (incl. FeatFinalLogitSoftcap since 9c Step 2)")
 	}
 	if ResidentEligible(a, "webgpu") {
 		t.Error("webgpu admits dense Gemma 4 but lacks its Gemma kernels — the feature gate must refuse it")

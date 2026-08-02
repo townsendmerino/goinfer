@@ -8,6 +8,7 @@ package metal
 
 import (
 	"fmt"
+	"math"
 	"runtime"
 	"sync"
 
@@ -71,6 +72,7 @@ type Resident struct {
 	// hd/nKV/kvDim/half and their uniform buffers — lives on residLayer.geom (see geom.go);
 	// it was REMOVED from here so a launch site cannot bind the uniform shape by mistake.
 	H, nL, nH, I, V int
+	finalSoftcap    float32 // Gemma final-logit softcap (30); 0 ⇒ none. Applied host-side in finalizeLogits (FeatFinalLogitSoftcap).
 	embed           *linalg.WeightMat
 
 	layers    []residLayer
@@ -399,6 +401,7 @@ func BuildResident(m *decoder.Model) (*Resident, error) {
 	r.uNH = d.NewBufferU32(uint32(nH)) // query heads: constant across a family, so model-level
 	r.uScale, r.uEps = d.NewBufferFloats([]float32{m.AttnScale()}), d.NewBufferFloats([]float32{m.NormEps()})
 	r.uPos, r.uNKeys = d.NewBufferU32(0), d.NewBufferU32(1)
+	r.finalSoftcap = m.FinalLogitSoftcapResident() // Gemma 4: 30 (host-side softcap); 0 for every other family
 	r.logitsHost = make([]float32, V)
 	ok = true // construction complete — the Resident owns everything; Close (not the defer) frees it
 	return r, nil
@@ -438,8 +441,24 @@ func (r *Resident) forwardLogits(pos int) []float32 {
 	e.Dispatch(r.pGemvW8, (r.V)*32, 32, r.aq, r.aSc, r.lmW, r.lmS, r.logits, r.uH) // full lm head (int8 — logit-critical)
 	e.End()
 	r.gpuStart, r.gpuEnd, r.kernStart, r.kernEnd = e.GPUStart(), e.GPUEnd(), e.KernStart(), e.KernEnd()
-	copy(r.logitsHost, r.logits.Floats())
+	r.finalizeLogits()
 	return r.logitsHost
+}
+
+// finalizeLogits copies the device logits into the host buffer and applies Gemma's final-logit
+// softcap host-side (softcap·tanh(logits/softcap)) — the single site FeatFinalLogitSoftcap
+// declares on this backend, exactly as the CPU path (logitsFromHidden) and CUDA (resident.go)
+// do it. finalSoftcap is 0 for every non-softcapped family (no-op). The softcap is MONOTONIC, so
+// ForwardArgmax's on-device argmax needs it not — only the full-logits paths (sampling,
+// temperature, parity) do, and both readback sites (forwardLogits, execLoop) route through here.
+func (r *Resident) finalizeLogits() {
+	copy(r.logitsHost, r.logits.Floats())
+	if r.finalSoftcap > 0 {
+		sc := r.finalSoftcap
+		for j, v := range r.logitsHost {
+			r.logitsHost[j] = sc * float32(math.Tanh(float64(v/sc)))
+		}
+	}
 }
 
 // ForwardEmbPipe is ForwardEmb through the pipelined executor (encode-ahead) — the production
@@ -495,7 +514,7 @@ func (r *Resident) execLoop() {
 		}
 		cur.WaitDone()
 		r.gpuStart, r.gpuEnd, r.kernStart, r.kernEnd = cur.GPUStart(), cur.GPUEnd(), cur.KernStart(), cur.KernEnd()
-		copy(r.logitsHost, r.logits.Floats())
+		r.finalizeLogits()
 
 		if drain { // no un-committed cb live now → safe to drain the shared pool
 			pool.Drain()

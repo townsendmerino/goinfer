@@ -188,6 +188,17 @@ func buildMoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H int) (*
 	if !ok {
 		return nil, nil // dense model — no MoE
 	}
+	// Gemma 4's enable_moe_block (gemma4_text, 26B-A4B) sets arch.MoE, so MoEResidentParams reports
+	// ok — but it is NOT the generic Mixtral/Qwen shape this path implements. It is a parallel
+	// dense‖MoE FFN with gelu-tanh experts (gemv_w4a8_moe's epilogue is SiLU), a weightless router
+	// pre-norm + learned [hidden] scale + per_expert_scale, and seven norms. Building it here would
+	// run a wrong (SiLU, plain-router) MoE. Decline until the Metal gemma4MoeMLP path lands (9c
+	// Step 5) so gemma4_text falls back to CPU rather than mis-running — same discipline as CUDA's
+	// isG4MoE split (cuda/backend.go). Dense Gemma 4 has no MoE, so it returns nil,nil above and
+	// admits normally; this only gates the MoE variant.
+	if m.HasGemma4MoEResident() {
+		return nil, fmt.Errorf("metal MoE: gemma4 parallel dense‖MoE not yet implemented (9c Step 5) — declining to CPU")
+	}
 	if nE > 256 {
 		return nil, fmt.Errorf("metal MoE: nE=%d exceeds router cap 256", nE)
 	}

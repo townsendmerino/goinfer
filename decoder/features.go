@@ -300,15 +300,16 @@ var ResidentBackendFeatures = map[string]map[ResidentFeature]bool{
 	// was gated on the GELU-tanh overflow fix (glu_act clamp, 38a2b7c): logit cosine 0.818→0.994.
 	// Still declines YaRN mscale, MLA and SSM.
 	"metal": {
-		FeatQKNorm:         true, // qk_norm kernels
-		FeatSlidingWindow:  true, // attention window uniform
-		FeatPartialRotary:  true, // rope rhalf = rotaryDim/2
-		FeatMoE:            true, // moe_route + indexed stacked-expert W4A8 GEMVs + shared expert (metal/moe.go)
-		FeatMoEGatedShared: true, // shared_gate_combine — sigmoid-gated shared expert (metal/moe.go)
-		FeatSandwichNorm:   true, // rmsnorm_f32 on each sublayer output (Gemma)
-		FeatGatedGELU:      true, // GeGLU — clamped-tanh geglu (glu_act, 38a2b7c)
-		FeatRMSAddOne:      true, // (1+w) RMS offset
-		FeatEmbedScale:     true, // √hidden embedding multiplier (embedResident)
-		FeatPerLayerRoPE:   true, // per-layer invFreq (Gemma local 10k vs global 1M base)
+		FeatQKNorm:            true, // qk_norm kernels
+		FeatSlidingWindow:     true, // attention window uniform
+		FeatPartialRotary:     true, // rope rhalf = rotaryDim/2
+		FeatMoE:               true, // moe_route + indexed stacked-expert W4A8 GEMVs + shared expert (metal/moe.go)
+		FeatMoEGatedShared:    true, // shared_gate_combine — sigmoid-gated shared expert (metal/moe.go)
+		FeatSandwichNorm:      true, // rmsnorm_f32 on each sublayer output (Gemma)
+		FeatGatedGELU:         true, // GeGLU — clamped-tanh geglu (glu_act, 38a2b7c)
+		FeatRMSAddOne:         true, // (1+w) RMS offset
+		FeatEmbedScale:        true, // √hidden embedding multiplier (embedResident)
+		FeatPerLayerRoPE:      true, // per-layer invFreq (Gemma local 10k vs global 1M base)
+		FeatFinalLogitSoftcap: true, // softcap·tanh(logits/softcap) host-side after readback (metal/model.go finalizeLogits)
 	},
 }
