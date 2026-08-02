@@ -45,6 +45,7 @@ type residLayer struct {
 	postAttnNorm, postMLPNorm            Buffer    // Gemma sandwich norms on each sublayer OUTPUT (zero if !sandwich)
 	invf                                 Buffer    // per-layer RoPE inv-freq (Gemma local 10k vs global 1M base)
 	uWindow                              Buffer    // per-layer attention window (0 = full causal; Gemma mixes local/global)
+	geom                                 *attnGeom // per-layer attention geometry (hd/nKV/half/kEqV + uniforms); see geom.go
 }
 
 // Resident is a Metal-resident dense decoder. Weights uploaded once in BuildResident;
@@ -62,11 +63,15 @@ type Resident struct {
 	sandwich                                                              bool     // Gemma NormSandwich4: norm each sublayer output before the residual add
 	kvF32                                                                 bool     // f32 KV cache (Gemma sandwich path) — f16 rounding craters Gemma's sensitive contexts
 	uAct                                                                  Buffer   // gated-MLP activation ordinal (decoder.ActKind: 0=GELU-tanh, 1=SiLU)
-	uNHhd, uAddOne, uHalf, uWindow                                        Buffer   // qk_norm + rope + sliding-window uniforms
-	qkv, gu                                                               Buffer   // fused QKV out, fused gate/up out
+	uAddOne, uWindow                                                      Buffer   // qk_norm + sliding-window uniforms
 
-	H, nL, nH, nKV, hd, I, V, kvDim, half int
-	embed                                 *linalg.WeightMat
+	qkv, gu Buffer // fused QKV out, fused gate/up out
+
+	// Model-level (constant across a family's layers). Per-layer attention geometry —
+	// hd/nKV/kvDim/half and their uniform buffers — lives on residLayer.geom (see geom.go);
+	// it was REMOVED from here so a launch site cannot bind the uniform shape by mistake.
+	H, nL, nH, I, V int
+	embed           *linalg.WeightMat
 
 	layers    []residLayer
 	finalNorm Buffer
@@ -81,12 +86,12 @@ type Resident struct {
 	// the sequential Forward loop: correct, just a slower TTFT.
 	prefillOK bool
 
-	x, aq, aSc, ctx, cq, cSc, oO, mq, mSc, dq, dSc, dO, logits                Buffer
-	invf, uHd, uKvDim, uH, uI, uHH, uNH, uNKV, uScale, uEps, uQtotal, uKtotal Buffer
-	uPos, uNKeys                                                              Buffer
-	part, tok, uP                                                             Buffer // fused-argmax: tile partials, token out, tile count
-	logitsHost                                                                []float32
-	gpuStart, gpuEnd, kernStart, kernEnd                                      float64 // last-Forward GPU timing (Step 0)
+	x, aq, aSc, ctx, cq, cSc, oO, mq, mSc, dq, dSc, dO, logits Buffer
+	invf, uH, uI, uNH, uScale, uEps                            Buffer // invf = model-level rope (prefill only); geometry uniforms live on residLayer.geom
+	uPos, uNKeys                                               Buffer
+	part, tok, uP                                              Buffer // fused-argmax: tile partials, token out, tile count
+	logitsHost                                                 []float32
+	gpuStart, gpuEnd, kernStart, kernEnd                       float64 // last-Forward GPU timing (Step 0)
 
 	// pipelined logits executor (encode-ahead): a persistent OS-thread-pinned goroutine that
 	// commits token t, pre-encodes t+1 while the GPU runs t, then waits — hiding the ~0.9ms
@@ -237,8 +242,8 @@ func BuildResident(m *decoder.Model) (*Resident, error) {
 		}
 		return p
 	}
-	H, nL, nH, nKV, hd, I, V := m.Dims()
-	r := &Resident{d: d, H: H, nL: nL, nH: nH, nKV: nKV, hd: hd, I: I, V: V, kvDim: nKV * hd, half: hd / 2}
+	H, nL, nH, _, _, I, V := m.Dims() // model-level hd/nKV dropped — geometry is per-layer (geom.go)
+	r := &Resident{d: d, H: H, nL: nL, nH: nH, I: I, V: V}
 	r.pRms, r.pQv, r.pGemv = pipe("rmsnorm_quant"), pipe("quant_vec"), pipe("gemv_w4a8_coal")
 	r.pGemvBias, r.pGemvResid = pipe("gemv_w4a8_bias"), pipe("gemv_w4a8_resid")
 	r.pSA, r.pSABias, r.pSAResid = pipe("gemv_w4a8_sa"), pipe("gemv_w4a8_sa_bias"), pipe("gemv_w4a8_sa_resid")
@@ -265,7 +270,7 @@ func BuildResident(m *decoder.Model) (*Resident, error) {
 	if m.RMSAddOne() {
 		addOne = 1
 	}
-	r.uNHhd, r.uAddOne = d.NewBufferU32(uint32(nH*hd)), d.NewBufferU32(addOne)
+	r.uAddOne = d.NewBufferU32(addOne)
 	win := m.SlidingWindowResident() // 0 = full causal; Mistral is all-local with this window
 	if win < 0 {
 		win = 0
@@ -291,6 +296,11 @@ func BuildResident(m *decoder.Model) (*Resident, error) {
 	}
 	r.layers = make([]residLayer, nL)
 	r.kc, r.vc = make([]Buffer, nL), make([]Buffer, nL)
+	// Per-layer attention geometry, deduped by value (geom.go). Uniform families resolve every
+	// layer to one geom; Gemma 4's local/global interleave resolves to two. maxNHhd/maxKvDim size
+	// the shared per-token scratch to the widest layer (== the model shape for a uniform family).
+	geomCache := map[[4]int]*attnGeom{}
+	var maxNHhd, maxKvDim int
 	for l := range nL {
 		lw := &w.Layers[l]
 		var L residLayer
@@ -318,9 +328,22 @@ func BuildResident(m *decoder.Model) (*Resident, error) {
 			L.postMLPNorm = d.NewBufferFloats(lw.PostMLPNorm)
 		}
 		// Per-layer RoPE table (Gemma local 10k vs global 1M base) and per-layer window. The rope
-		// KERNEL is unchanged — all per-layer variation rides in the table contents, and the width
-		// (r.half) stays model-level. Uniform-rope families hand back identical tables per layer.
-		L.invf = d.NewBufferFloats(m.RopeInvFreqLayer(l))
+		// KERNEL is unchanged — all per-layer variation rides in the table contents AND the width
+		// (geom.half). RopeInvFreqLayerResident is the resident per-layer table (== the generic
+		// RopeInvFreqLayer for every uniform family; Gemma 4's global proportional-rotary tail is
+		// what makes it differ). Its length is this layer's rhalf (rotated pairs/head).
+		invf := m.RopeInvFreqLayerResident(l)
+		L.invf = d.NewBufferFloats(invf)
+		// Per-layer attention geometry — the whole point of the 9c seam. Uniform families resolve
+		// every layer to the same {hd, nKV, half, kEqV}; Gemma 4 varies hd/nKV/kEqV between its
+		// local and global layers. geomFor dedups by value so a uniform model shares one geom.
+		L.geom = r.geomFor(geomCache, m.HeadDimAtResident(l), m.KVHeadsAtResident(l), len(invf), m.VFromKResident(l))
+		if L.geom.kvDim > maxKvDim {
+			maxKvDim = L.geom.kvDim
+		}
+		if r.nH*L.geom.hd > maxNHhd {
+			maxNHhd = r.nH * L.geom.hd
+		}
 		lw2 := uint32(0) // 0 = full causal; only local layers carry the window
 		if m.LayerIsLocalResident(l) {
 			lw2 = uint32(win)
@@ -329,13 +352,13 @@ func BuildResident(m *decoder.Model) (*Resident, error) {
 		// combined qkv bias (zeros where absent) so the fused GEMV epilogue is uniform.
 		qb, kb, vb := lw.QBias, lw.KBias, lw.VBias
 		if qb == nil {
-			qb, kb, vb = make([]float32, nH*hd), make([]float32, r.kvDim), make([]float32, r.kvDim)
+			qb, kb, vb = make([]float32, r.nH*L.geom.hd), make([]float32, L.geom.kvDim), make([]float32, L.geom.kvDim)
 		}
 		L.qkvBias = d.NewBufferFloats(append(append(append([]float32{}, qb...), kb...), vb...))
 		r.layers[l] = L
-		kvBytes := metalCtxCap * r.kvDim * 2 // f16 KV: 2 bytes/elem (halves the cache)
+		kvBytes := metalCtxCap * L.geom.kvDim * 2 // f16 KV: 2 bytes/elem (halves the cache)
 		if r.kvF32 {
-			kvBytes = metalCtxCap * r.kvDim * 4 // Gemma: f32 KV — see r.kvF32
+			kvBytes = metalCtxCap * L.geom.kvDim * 4 // Gemma: f32 KV — see r.kvF32
 		}
 		r.kc[l] = byteBuf(d, kvBytes)
 		r.vc[l] = byteBuf(d, kvBytes)
@@ -362,23 +385,19 @@ func BuildResident(m *decoder.Model) (*Resident, error) {
 	}
 	r.x = d.NewBufferLen(H)
 	r.aq, r.aSc = byteBuf(d, H), d.NewBufferLen(1)
-	r.qkv = d.NewBufferLen(nH*hd + 2*r.kvDim) // fused [q | k | v]
-	r.gu = d.NewBufferLen(2 * guDim)          // fused [gate | up]
-	r.ctx, r.cq, r.cSc = d.NewBufferLen(nH*hd), byteBuf(d, nH*hd), d.NewBufferLen(1)
+	r.qkv = d.NewBufferLen(maxNHhd + 2*maxKvDim) // fused [q | k | v], sized to the widest layer
+	r.gu = d.NewBufferLen(2 * guDim)             // fused [gate | up]
+	r.ctx, r.cq, r.cSc = d.NewBufferLen(maxNHhd), byteBuf(d, maxNHhd), d.NewBufferLen(1)
 	r.oO, r.mq, r.mSc = d.NewBufferLen(H), byteBuf(d, H), d.NewBufferLen(1)
 	r.dq, r.dSc, r.dO = byteBuf(d, guDim), d.NewBufferLen(1), d.NewBufferLen(H)
 	r.logits = d.NewBufferLen(V)
 	nTiles := V / 8 // one (maxLogit,rowIdx) partial per threadgroup (8 rows) — V divisible by 8
 	r.part, r.tok, r.uP = d.NewBufferLen(nTiles*2), d.NewBufferLen(1), d.NewBufferU32(uint32(nTiles))
-	invf := m.RopeInvFreq()
-	r.half = len(invf) // rotaryDim/2 (= hd/2 for full rotary; < for Phi partial rotary)
-	r.invf = d.NewBufferFloats(invf)
-	r.uHalf = d.NewBufferU32(uint32(r.half))
-	r.uHd, r.uKvDim = d.NewBufferU32(uint32(hd)), d.NewBufferU32(uint32(r.kvDim))
-	r.uH, r.uI, r.uHH = d.NewBufferU32(uint32(H)), d.NewBufferU32(uint32(I)), d.NewBufferU32(uint32(nH*hd))
-	r.uNH, r.uNKV = d.NewBufferU32(uint32(nH)), d.NewBufferU32(uint32(nKV))
+	// Model-level rope table for the (uniform-only) prefill path; decode uses each layer's L.invf.
+	r.invf = d.NewBufferFloats(m.RopeInvFreq())
+	r.uH, r.uI = d.NewBufferU32(uint32(H)), d.NewBufferU32(uint32(I))
+	r.uNH = d.NewBufferU32(uint32(nH)) // query heads: constant across a family, so model-level
 	r.uScale, r.uEps = d.NewBufferFloats([]float32{m.AttnScale()}), d.NewBufferFloats([]float32{m.NormEps()})
-	r.uQtotal, r.uKtotal = d.NewBufferU32(uint32(nH*r.half)), d.NewBufferU32(uint32(nKV*r.half))
 	r.uPos, r.uNKeys = d.NewBufferU32(0), d.NewBufferU32(1)
 	r.logitsHost = make([]float32, V)
 	ok = true // construction complete — the Resident owns everything; Close (not the defer) frees it
@@ -581,9 +600,6 @@ func (r *Resident) forwardSubCaptureForTest(emb []float32, pos int) (attn, mlp, 
 	}
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	nHhd := r.nH * r.hd
-	qkvRows := nHhd + 2*r.kvDim
-	kOff, vOff := nHhd*4, (nHhd+r.kvDim)*4
 	copy(r.x.Floats(), emb)
 	r.uPos.SetU32(uint32(pos))
 	r.uNKeys.SetU32(uint32(pos + 1))
@@ -591,28 +607,32 @@ func (r *Resident) forwardSubCaptureForTest(emb []float32, pos int) (attn, mlp, 
 	grabD := func() []float32 { return append([]float32(nil), r.dO.Floats()...) }
 	for l := 0; l < r.nL; l++ {
 		L := &r.layers[l]
+		g := L.geom
+		nHhd := r.nH * g.hd
+		qkvRows := nHhd + 2*g.kvDim
+		kOff, vOff := nHhd*4, (nHhd+g.kvDim)*4
 		e := r.q.Begin()
 		e.Dispatch(r.pRms, 256, 256, r.x, L.preNorm, r.aq, r.aSc, r.uH, r.uEps, r.uAddOne)
 		e.DispatchTG(r.pSABias, qkvRows*32, 256, r.H*2, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv, L.qkvBias, r.uH)
 		if r.qkNorm {
-			e.Dispatch(r.pQKNorm, (r.nH+r.nKV)*128, 128, r.qkv, L.qNorm, L.kNorm, r.uNH, r.uNKV, r.uHd, r.uNHhd, r.uEps, r.uAddOne)
+			e.Dispatch(r.pQKNorm, (r.nH+g.nKV)*128, 128, r.qkv, L.qNorm, L.kNorm, r.uNH, g.uNKV, g.uHd, g.uNHhd, r.uEps, r.uAddOne)
 		}
-		e.Dispatch(r.pRope, r.nH*r.half, 64, r.qkv, L.invf, r.uHd, r.uPos, r.uQtotal, r.uHalf)
-		e.Dispatch(r.pRope, r.nKV*r.half, 64, r.qkv.At(kOff), L.invf, r.uHd, r.uPos, r.uKtotal, r.uHalf)
-		e.Dispatch(r.pKv, r.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[l], r.vc[l], r.uKvDim, r.uPos)
-		e.Dispatch(r.pAttn, r.nH*128, 128, r.qkv, r.kc[l], r.vc[l], r.ctx, r.uNH, r.uNKV, r.uHd, r.uNKeys, r.uScale, L.uWindow)
-		e.Dispatch(r.pQv, 256, 256, r.ctx, r.cq, r.cSc, r.uHH)
-		e.DispatchTG(r.pSA, r.H*32, 256, r.nH*r.hd*2, L.oW, L.oS, r.cq, r.cSc, r.oO, r.uHH)
+		e.Dispatch(r.pRope, r.nH*g.half, 64, r.qkv, L.invf, g.uHd, r.uPos, g.uQtotal, g.uHalf)
+		e.Dispatch(r.pRope, g.nKV*g.half, 64, r.qkv.At(kOff), L.invf, g.uHd, r.uPos, g.uKtotal, g.uHalf)
+		e.Dispatch(r.pKv, g.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[l], r.vc[l], g.uKvDim, r.uPos)
+		e.Dispatch(r.pAttn, r.nH*128, 128, r.qkv, r.kc[l], r.vc[l], r.ctx, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow)
+		e.Dispatch(r.pQv, 256, 256, r.ctx, r.cq, r.cSc, g.uNHhd)
+		e.DispatchTG(r.pSA, r.H*32, 256, r.nH*g.hd*2, L.oW, L.oS, r.cq, r.cSc, r.oO, g.uNHhd)
 		e.Dispatch(r.pRmsF32, 256, 256, r.oO, L.postAttnNorm, r.uH, r.uEps, r.uAddOne)
 		e.End()
 		attn = append(attn, grab()) // oO now = attention contribution (post-norm, pre-add)
 		// ctx (f32 attention output) and cq (its int8 quant) are still valid here — o-proj READ
 		// them but never wrote them. Capture both to isolate quant_vec (context int8-quant) vs the
 		// context itself as the o-proj INPUT under test.
-		ctx = append(ctx, append([]float32(nil), r.ctx.Floats()[:r.nH*r.hd]...))
+		ctx = append(ctx, append([]float32(nil), r.ctx.Floats()[:r.nH*g.hd]...))
 		csc := r.cSc.Floats()[0]
 		cq8 := r.cq.Int8s()
-		deq := make([]float32, r.nH*r.hd)
+		deq := make([]float32, r.nH*g.hd)
 		for i := range deq {
 			deq[i] = float32(cq8[i]) * csc
 		}
@@ -645,25 +665,26 @@ func (r *Resident) forwardSubCaptureForTest(emb []float32, pos int) (attn, mlp, 
 func (r *Resident) l0GegluForTest(emb []float32, pos int) (gateUp, geglu8 []float32, gSc float32) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	nHhd := r.nH * r.hd
-	qkvRows := nHhd + 2*r.kvDim
-	kOff, vOff := nHhd*4, (nHhd+r.kvDim)*4
 	copy(r.x.Floats(), emb)
 	r.uPos.SetU32(uint32(pos))
 	r.uNKeys.SetU32(uint32(pos + 1))
 	L := &r.layers[0]
+	g := L.geom
+	nHhd := r.nH * g.hd
+	qkvRows := nHhd + 2*g.kvDim
+	kOff, vOff := nHhd*4, (nHhd+g.kvDim)*4
 	e := r.q.Begin()
 	e.Dispatch(r.pRms, 256, 256, r.x, L.preNorm, r.aq, r.aSc, r.uH, r.uEps, r.uAddOne)
 	e.DispatchTG(r.pSABias, qkvRows*32, 256, r.H*2, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv, L.qkvBias, r.uH)
 	if r.qkNorm {
-		e.Dispatch(r.pQKNorm, (r.nH+r.nKV)*128, 128, r.qkv, L.qNorm, L.kNorm, r.uNH, r.uNKV, r.uHd, r.uNHhd, r.uEps, r.uAddOne)
+		e.Dispatch(r.pQKNorm, (r.nH+g.nKV)*128, 128, r.qkv, L.qNorm, L.kNorm, r.uNH, g.uNKV, g.uHd, g.uNHhd, r.uEps, r.uAddOne)
 	}
-	e.Dispatch(r.pRope, r.nH*r.half, 64, r.qkv, L.invf, r.uHd, r.uPos, r.uQtotal, r.uHalf)
-	e.Dispatch(r.pRope, r.nKV*r.half, 64, r.qkv.At(kOff), L.invf, r.uHd, r.uPos, r.uKtotal, r.uHalf)
-	e.Dispatch(r.pKv, r.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[0], r.vc[0], r.uKvDim, r.uPos)
-	e.Dispatch(r.pAttn, r.nH*128, 128, r.qkv, r.kc[0], r.vc[0], r.ctx, r.uNH, r.uNKV, r.uHd, r.uNKeys, r.uScale, L.uWindow)
-	e.Dispatch(r.pQv, 256, 256, r.ctx, r.cq, r.cSc, r.uHH)
-	e.DispatchTG(r.pSA, r.H*32, 256, r.nH*r.hd*2, L.oW, L.oS, r.cq, r.cSc, r.oO, r.uHH)
+	e.Dispatch(r.pRope, r.nH*g.half, 64, r.qkv, L.invf, g.uHd, r.uPos, g.uQtotal, g.uHalf)
+	e.Dispatch(r.pRope, g.nKV*g.half, 64, r.qkv.At(kOff), L.invf, g.uHd, r.uPos, g.uKtotal, g.uHalf)
+	e.Dispatch(r.pKv, g.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[0], r.vc[0], g.uKvDim, r.uPos)
+	e.Dispatch(r.pAttn, r.nH*128, 128, r.qkv, r.kc[0], r.vc[0], r.ctx, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow)
+	e.Dispatch(r.pQv, 256, 256, r.ctx, r.cq, r.cSc, g.uNHhd)
+	e.DispatchTG(r.pSA, r.H*32, 256, r.nH*g.hd*2, L.oW, L.oS, r.cq, r.cSc, r.oO, g.uNHhd)
 	e.Dispatch(r.pRmsF32, 256, 256, r.oO, L.postAttnNorm, r.uH, r.uEps, r.uAddOne)
 	e.Dispatch(r.pRes, r.H, 256, r.x, r.oO)
 	e.Dispatch(r.pRms, 256, 256, r.x, L.postNorm, r.mq, r.mSc, r.uH, r.uEps, r.uAddOne)
@@ -692,9 +713,10 @@ func (r *Resident) l0GegluForTest(emb []float32, pos int) (gateUp, geglu8 []floa
 func (r *Resident) attnConfirmForTest(resid, kHist, vHist []float32, layer, pos int, injectKV bool) []float32 {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	nHhd := r.nH * r.hd
-	qkvRows := nHhd + 2*r.kvDim
-	kOff, vOff := nHhd*4, (nHhd+r.kvDim)*4
+	g := r.layers[layer].geom
+	nHhd := r.nH * g.hd
+	qkvRows := nHhd + 2*g.kvDim
+	kOff, vOff := nHhd*4, (nHhd+g.kvDim)*4
 	copy(r.x.Floats(), resid)
 	r.uPos.SetU32(uint32(pos))
 	r.uNKeys.SetU32(uint32(pos + 1))
@@ -721,16 +743,16 @@ func (r *Resident) attnConfirmForTest(resid, kHist, vHist []float32, layer, pos 
 	e.Dispatch(r.pRms, 256, 256, r.x, L.preNorm, r.aq, r.aSc, r.uH, r.uEps, r.uAddOne)
 	e.DispatchTG(r.pSABias, qkvRows*32, 256, r.H*2, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv, L.qkvBias, r.uH)
 	if r.qkNorm { // Gemma3/Qwen3: per-head Q/K RMSNorm before RoPE — the injected K is post-QK-norm
-		e.Dispatch(r.pQKNorm, (r.nH+r.nKV)*128, 128, r.qkv, L.qNorm, L.kNorm, r.uNH, r.uNKV, r.uHd, r.uNHhd, r.uEps, r.uAddOne)
+		e.Dispatch(r.pQKNorm, (r.nH+g.nKV)*128, 128, r.qkv, L.qNorm, L.kNorm, r.uNH, g.uNKV, g.uHd, g.uNHhd, r.uEps, r.uAddOne)
 	}
-	e.Dispatch(r.pRope, r.nH*r.half, 64, r.qkv, L.invf, r.uHd, r.uPos, r.uQtotal, r.uHalf) // Q
+	e.Dispatch(r.pRope, r.nH*g.half, 64, r.qkv, L.invf, g.uHd, r.uPos, g.uQtotal, g.uHalf) // Q
 	if !injectKV {
 		// Use Metal's OWN walked KV history: RoPE K and store pos into the cache (isolates the
 		// f16-KV drift of positions 0..pos-1 from Metal's walk, with a matched residual).
-		e.Dispatch(r.pRope, r.nKV*r.half, 64, r.qkv.At(kOff), L.invf, r.uHd, r.uPos, r.uKtotal, r.uHalf)
-		e.Dispatch(r.pKv, r.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[layer], r.vc[layer], r.uKvDim, r.uPos)
+		e.Dispatch(r.pRope, g.nKV*g.half, 64, r.qkv.At(kOff), L.invf, g.uHd, r.uPos, g.uKtotal, g.uHalf)
+		e.Dispatch(r.pKv, g.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[layer], r.vc[layer], g.uKvDim, r.uPos)
 	}
-	e.Dispatch(r.pAttn, r.nH*128, 128, r.qkv, r.kc[layer], r.vc[layer], r.ctx, r.uNH, r.uNKV, r.uHd, r.uNKeys, r.uScale, L.uWindow)
+	e.Dispatch(r.pAttn, r.nH*128, 128, r.qkv, r.kc[layer], r.vc[layer], r.ctx, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow)
 	e.End()
 	return append([]float32(nil), r.ctx.Floats()[:nHhd]...)
 }
@@ -765,31 +787,32 @@ func (r *Resident) forwardHeadForTest(emb []float32, pos int) (act, logits []flo
 // commit. This value-independence is what lets the executor pre-encode token t+1 while token t
 // runs (encode-ahead).
 func (r *Resident) encodeTrunkInto(e *Encoder) {
-	nHhd := r.nH * r.hd
-	qkvRows := nHhd + 2*r.kvDim
-	kOff, vOff := nHhd*4, (nHhd+r.kvDim)*4 // byte offsets of k, v within the fused qkv buffer
 	for l := 0; l < r.nL; l++ {
 		L := &r.layers[l]
+		g := L.geom
+		nHhd := r.nH * g.hd
+		qkvRows := nHhd + 2*g.kvDim
+		kOff, vOff := nHhd*4, (nHhd+g.kvDim)*4 // byte offsets of k, v within the fused qkv buffer
 		// --- attention block (12 dispatches vs 19: QKV fused +bias, residual fused) ---
 		e.Dispatch(r.pRms, 256, 256, r.x, L.preNorm, r.aq, r.aSc, r.uH, r.uEps, r.uAddOne)
 		e.DispatchTG(r.pSABias, qkvRows*32, 256, r.H*2, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv, L.qkvBias, r.uH)
 		if r.qkNorm { // Qwen3: per-head Q/K RMSNorm before RoPE
-			e.Dispatch(r.pQKNorm, (r.nH+r.nKV)*128, 128, r.qkv, L.qNorm, L.kNorm, r.uNH, r.uNKV, r.uHd, r.uNHhd, r.uEps, r.uAddOne)
+			e.Dispatch(r.pQKNorm, (r.nH+g.nKV)*128, 128, r.qkv, L.qNorm, L.kNorm, r.uNH, g.uNKV, g.uHd, g.uNHhd, r.uEps, r.uAddOne)
 		}
-		e.Dispatch(r.pRope, r.nH*r.half, 64, r.qkv, L.invf, r.uHd, r.uPos, r.uQtotal, r.uHalf)           // q @ off 0
-		e.Dispatch(r.pRope, r.nKV*r.half, 64, r.qkv.At(kOff), L.invf, r.uHd, r.uPos, r.uKtotal, r.uHalf) // k
-		e.Dispatch(r.pKv, r.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[l], r.vc[l], r.uKvDim, r.uPos)
-		e.Dispatch(r.pAttn, r.nH*128, 128, r.qkv, r.kc[l], r.vc[l], r.ctx, r.uNH, r.uNKV, r.uHd, r.uNKeys, r.uScale, L.uWindow)
-		e.Dispatch(r.pQv, 256, 256, r.ctx, r.cq, r.cSc, r.uHH)
+		e.Dispatch(r.pRope, r.nH*g.half, 64, r.qkv, L.invf, g.uHd, r.uPos, g.uQtotal, g.uHalf)           // q @ off 0
+		e.Dispatch(r.pRope, g.nKV*g.half, 64, r.qkv.At(kOff), L.invf, g.uHd, r.uPos, g.uKtotal, g.uHalf) // k
+		e.Dispatch(r.pKv, g.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[l], r.vc[l], g.uKvDim, r.uPos)
+		e.Dispatch(r.pAttn, r.nH*128, 128, r.qkv, r.kc[l], r.vc[l], r.ctx, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow)
+		e.Dispatch(r.pQv, 256, 256, r.ctx, r.cq, r.cSc, g.uNHhd)
 		if r.sandwich {
 			// Gemma: the sublayer OUTPUT is normed BEFORE the residual add, which the fused
 			// _resid epilogue can't express — project into the (otherwise dead) oO scratch,
 			// norm it, then add. Three dispatches instead of one.
-			e.DispatchTG(r.pSA, r.H*32, 256, r.nH*r.hd*2, L.oW, L.oS, r.cq, r.cSc, r.oO, r.uHH)
+			e.DispatchTG(r.pSA, r.H*32, 256, r.nH*g.hd*2, L.oW, L.oS, r.cq, r.cSc, r.oO, g.uNHhd)
 			e.Dispatch(r.pRmsF32, 256, 256, r.oO, L.postAttnNorm, r.uH, r.uEps, r.uAddOne)
 			e.Dispatch(r.pRes, r.H, 256, r.x, r.oO)
 		} else {
-			e.DispatchTG(r.pSAResid, r.H*32, 256, r.nH*r.hd*2, L.oW, L.oS, r.cq, r.cSc, r.x, r.uHH) // o-proj + residual
+			e.DispatchTG(r.pSAResid, r.H*32, 256, r.nH*g.hd*2, L.oW, L.oS, r.cq, r.cSc, r.x, g.uNHhd) // o-proj + residual
 		}
 		// --- ffn block (dense SwiGLU/GeGLU, or MoE router + experts + shared) ---
 		if L.moe != nil {

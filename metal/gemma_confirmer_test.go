@@ -183,7 +183,7 @@ func TestGemmaConfirmer_MatchedInput(t *testing.T) {
 	// Metal computes different K/V during the walk (from drifted residuals), which f32 storage
 	// cannot fix. Compare the walked positions (0..probe-1) that LayerKVForTest returns.
 	{
-		kvDim := r.kvDim
+		kvDim := r.layers[injectLayer].geom.kvDim
 		mk := make([]float32, probe*kvDim)
 		if r.kvF32 {
 			copy(mk, r.kc[injectLayer].Floats()[:probe*kvDim])
@@ -215,7 +215,7 @@ func TestGemmaConfirmer_MatchedInput(t *testing.T) {
 	for i := 0; i < probe; i++ {
 		r.forwardTrunkForTest(m.EmbedResidentForTest(prompt[i]), i, r.nL)
 	}
-	kvDim := r.kvDim
+	kvDim := r.layers[injectLayer].geom.kvDim
 	if r.kvF32 {
 		copy(r.kc[injectLayer].Floats()[:kvDim], kL1[:kvDim])
 		copy(r.vc[injectLayer].Floats()[:kvDim], vL1[:kvDim])

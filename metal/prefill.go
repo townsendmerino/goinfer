@@ -301,8 +301,11 @@ func (r *Resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 	M := len(embs)
 	Mpad := (M + 7) / 8 * 8
 	H, I, V := r.H, r.I, r.V
-	nHhd := r.nH * r.hd
-	kvDim := r.kvDim
+	// Prefill runs only for uniform families (prefillOK declines Gemma's per-layer geometry), so
+	// every layer shares one geometry — read it from layer 0.
+	g0 := r.layers[0].geom
+	nHhd := r.nH * g0.hd
+	kvDim := g0.kvDim
 	qkvDim := nHhd + 2*kvDim
 	qDim := nHhd
 
@@ -332,8 +335,8 @@ func (r *Resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 	u2I := d.NewBufferU32(uint32(2 * I))
 	uQkv := d.NewBufferU32(uint32(qkvDim))
 	uQDim := d.NewBufferU32(uint32(qDim))
-	uKvDim := r.uKvDim
-	uHd := r.uHd
+	uKvDim := g0.uKvDim
+	uHd := g0.uHd
 	uStride := d.NewBufferU32(uint32(qkvDim))
 	uKOff := d.NewBufferU32(uint32(nHhd))
 	uVOff := d.NewBufferU32(uint32(nHhd + kvDim))
@@ -380,15 +383,15 @@ func (r *Resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 		t, tg := gg(qkvDim)
 		e.Dispatch(pf.pGemmStore, t, tg, normF, L.qkvW, L.qkvS, qkvF, uM, uQkv, uH, L.qkvBias, m1)
 		if r.qkNorm { // Qwen3: per-head Q/K RMSNorm before RoPE
-			e.Dispatch(pf.pQK, M*(r.nH+r.nKV)*128, 128, qkvF, L.qNorm, L.kNorm, r.uNH, r.uNKV, uHd, r.uNHhd, uStride, r.uEps, r.uAddOne)
+			e.Dispatch(pf.pQK, M*(r.nH+g0.nKV)*128, 128, qkvF, L.qNorm, L.kNorm, r.uNH, g0.uNKV, uHd, g0.uNHhd, uStride, r.uEps, r.uAddOne)
 		}
 		// rope q, k (per-row positions)
-		e.Dispatch(pf.pRope, M*r.nH*r.half, 128, qkvF, r.invf, uHd, posB, uTotalQ, uStride, uBase0, r.uHalf)
-		e.Dispatch(pf.pRope, M*r.nKV*r.half, 128, qkvF, r.invf, uHd, posB, uTotalK, uStride, uBaseK, r.uHalf)
+		e.Dispatch(pf.pRope, M*r.nH*g0.half, 128, qkvF, r.invf, uHd, posB, uTotalQ, uStride, uBase0, g0.uHalf)
+		e.Dispatch(pf.pRope, M*g0.nKV*g0.half, 128, qkvF, r.invf, uHd, posB, uTotalK, uStride, uBaseK, g0.uHalf)
 		// scatter K,V to cache
 		e.Dispatch(pf.pKv, M*kvDim, 128, qkvF, r.kc[l], r.vc[l], posB, uKvDim, uStride, uKOff, uVOff)
 		// causal attention → ctx
-		e.Dispatch(pf.pAttn, M*r.nH*128, 128, qkvF, r.kc[l], r.vc[l], ctxF, r.uNH, r.uNKV, uHd, uStartPos, r.uScale, uStride, r.uWindow)
+		e.Dispatch(pf.pAttn, M*r.nH*128, 128, qkvF, r.kc[l], r.vc[l], ctxF, r.uNH, g0.uNKV, uHd, uStartPos, r.uScale, uStride, r.uWindow)
 		// o-proj + residual into x
 		t, tg = gg(H)
 		e.Dispatch(pf.pGemmStore, t, tg, ctxF, L.oW, L.oS, xF, uM, uH, uQDim, dummyBias, m2)
