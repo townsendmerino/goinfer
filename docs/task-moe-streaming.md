@@ -234,8 +234,16 @@ modest prompts." This is the alternative to that cap.
 - **Publish the curve, not a point.** tok/s and p99 token latency vs `--weight-cache`, per
   lever, per platform — the shape the spike's original table had. Per `docs/benchmarks.md`
   rules: commit + date + machine + thermal note inline.
-- **Peer figures are unpinned.** turbo-fieldfare's 5.1–6.3 / 31–35 tok/s come from its
-  README with no version pinned. Re-read and pin before any published comparison row.
+- **Peer figures PINNED (2026-08-02).** turbo-fieldfare's 5.1–6.3 / 31–35 tok/s are from
+  its README at **release `0.4` (commit `8648274`, tagged 2026-08-02)**, read 2026-08-02.
+  Checkpoint: **Gemma 4 26B-A4B instruction-tuned, 4-bit MLX affine + 8-bit router**. The
+  two figures are on **different rigs — 5.1–6.3 on an 8 GB M2 Air, 31–35 on a 24 GB M5
+  Pro** — and NEITHER is goinfer's M1 Pro 16 GB, so per `benchmarks.md`'s same-machine rule
+  these stay *reference* figures, not a comparison row, until fieldfare is run on the M1 Pro
+  (or goinfer on one of those rigs). The README gives no per-figure measurement date and
+  notes decode prefill sped up at `0.3` (2026-07-29), so re-pin if the numbers move in a
+  later tag. The 4-bit output-quality look on `mlx-community/gemma-4-26b-a4b-it-4bit`
+  (~14.3 GB) is still TODO — a large download on the 16 GB rig, run it deliberately.
 
 ## Out of scope
 
@@ -258,7 +266,9 @@ tables; the "unhideable" claim) and §4 (dense layer streaming), `decoder/moepag
 aikit: `mmap/spancache.go`, `mmap/madvise_darwin.go` (the darwin no-op eviction),
 `mmap/madvise_linux.go`, commit `6c0483f` + `docs/internal/perf-campaign-2026-07-28.md`
 item 9 (the scan-resistance measurement), tags through v1.14.0.
-Peer: `github.com/drumih/turbo-fieldfare` README — 1.35 GB resident core, 14.3 GB
-`.gturbo` on disk, 16-slot LFU per layer, bounded parallel `pread` into Metal-visible
-buffers, shared-branch/read overlap, ≤128-token prefill chunks, 5.1–6.3 tok/s on an 8 GB
-M2 Air and 31–35 tok/s on a 24 GB M5 Pro. **Version not pinned.**
+Peer: `github.com/drumih/turbo-fieldfare` README **@ release `0.4` (commit `8648274`,
+2026-08-02), read 2026-08-02** — 1.35 GB resident core (~2 GB with 4K KV cache), 14.3 GB
+`.gturbo` on disk, Gemma-4-26B-A4B-it at 4-bit MLX affine + 8-bit router, 16-slot LFU per
+layer, bounded parallel `pread` into Metal-visible buffers, shared-branch/read overlap,
+≤128-token prefill chunks, 5.1–6.3 tok/s on an **8 GB M2 Air** and 31–35 tok/s on a **24 GB
+M5 Pro** (different rigs — reference figures, not an M1-Pro same-machine comparison row).
