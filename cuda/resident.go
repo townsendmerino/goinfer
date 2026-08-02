@@ -37,7 +37,14 @@ type cudaLayer struct {
 	qb, kb, vb          Buffer // QKV bias (absent ⇒ none)
 	qNorm, kNorm        Buffer // per-head QK-norm weights (absent ⇒ arch has none)
 	window              int32  // sliding-window span for THIS layer; 0 = full causal
-	preNorm, postNorm   Buffer
+	// Per-layer attention geometry (9a-P2, own-forward residency bridge). Uniform families
+	// set these to the model values on every layer; Gemma 4 varies them (local head_dim=16 /
+	// global head_dim=512, K=V). launchToken reads ONLY these — the model-level hd/nKV/qDim/
+	// kvDim/rhalf were removed from cudaResident so a launch site physically cannot bind the
+	// wrong (uniform) source; nH stays model-level (constant across a family's layers).
+	// qDim = nH*hd, kvDim = nKV*hd, rhalf = rotaryDim/2 (rotated pairs per head).
+	hd, nKV, qDim, kvDim, rhalf int
+	preNorm, postNorm           Buffer
 	// Gemma sandwich norms (absent unless NormSandwich4): applied to the SUBLAYER OUTPUT before
 	// the residual add, not to a GEMV input.
 	postAttnNorm, postMLPNorm Buffer
@@ -66,12 +73,14 @@ type cudaResident struct {
 	reqCh chan func() error
 	ackCh chan error
 
-	hidden, nLayers, nH, nKV, hd, inter, vocab int
-	qDim, kvDim, half                          int
-	// rhalf is rotaryDim/2 — the number of rotated PAIRS per head. Equals half (hd/2) for the
-	// full-rotary families; smaller for partial rotary (GLM/Phi), where hd-2*rhalf trailing
-	// elements per head pass through unrotated but must still reach the KV cache.
-	rhalf          int
+	hidden, nLayers, inter, vocab int
+	// nH (query-head count) is the ONE model-level attention dimension — constant across a
+	// family's layers (Gemma 4 is 16 query heads in both variants), so GQA still tracks
+	// per-layer nKV via nH/Ly.nKV. hd/nKV/qDim/kvDim/rhalf are DELIBERATELY per-layer only
+	// (cudaLayer): removing them here makes a uniform-source threading bug a compile error,
+	// not a silent byte-identical pass on uniform models. Allocation-time maxima live as
+	// backend.go locals; the per-layer KV cache and UploadKV read r.layers[l].kvDim.
+	nH             int
 	eps, attnScale float32
 	qkNorm         bool  // arch needs per-head Q/K RMSNorm before RoPE
 	rmsAddOne      bool  // (1+w) offset — false for Qwen3/Llama
@@ -233,8 +242,8 @@ func (r *cudaResident) ForwardN(embeddings [][]float32, startPos int) ([][]float
 // UploadKV writes a layer's post-RoPE K and raw V into the resident caches from position 0
 // (prefill bridge, same packed layout the kernels read: [pos*kvDim + head*hd + d]).
 func (r *cudaResident) UploadKV(layer int, keys, vals []float32) error {
-	if r.kvDim > 0 {
-		if e := r.checkCap(0, len(keys)/r.kvDim); e != nil {
+	if kvDim := r.layers[layer].kvDim; kvDim > 0 {
+		if e := r.checkCap(0, len(keys)/kvDim); e != nil {
 			return e
 		}
 	}
@@ -490,7 +499,7 @@ func (r *cudaResident) launchToken(emb []float32, pos int) error {
 		if r.fuseQKV {
 			// K1: rmsnorm+quant redundantly per block + this block's Q/K/V rows — one
 			// launch instead of four, and the GridX:1 rmsnorm disappears.
-			nrows := r.qDim + 2*r.kvDim
+			nrows := Ly.qDim + 2*Ly.kvDim
 			cfg := LaunchConfig{GridX: uint32((nrows + 7) / 8), GridY: 1, GridZ: 1,
 				BlockX: 256, BlockY: 1, BlockZ: 1,
 				SharedMemBytes: uint32((r.hidden + 256 + r.hidden/4) * 4)}
@@ -500,7 +509,7 @@ func (r *cudaResident) launchToken(emb []float32, pos int) error {
 				Arg(Ly.q.W), Arg(Ly.q.ws16), qb,
 				Arg(Ly.k.W), Arg(Ly.k.ws16), kb,
 				Arg(Ly.v.W), Arg(Ly.v.ws16), vb,
-				gpu.ArgValue(int32(r.qDim)), gpu.ArgValue(int32(r.kvDim)),
+				gpu.ArgValue(int32(Ly.qDim)), gpu.ArgValue(int32(Ly.kvDim)),
 				gpu.ArgValue(int32(r.hidden/8)), gpu.ArgValue(int32(r.hidden/32)),
 				Arg(r.qB), Arg(r.kB), Arg(r.vB)); e != nil {
 				return e
@@ -523,10 +532,10 @@ func (r *cudaResident) launchToken(emb []float32, pos int) error {
 			if r.rmsAddOne {
 				addOne = 1
 			}
-			if e := r.launch(r.fQKN, LaunchConfig{GridX: uint32(r.nH + r.nKV), GridY: 1, GridZ: 1,
+			if e := r.launch(r.fQKN, LaunchConfig{GridX: uint32(r.nH + Ly.nKV), GridY: 1, GridZ: 1,
 				BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: 128 * 8}, // f64 reduction
 				Arg(r.qB), Arg(r.kB), Arg(Ly.qNorm), Arg(Ly.kNorm),
-				gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(r.nKV)), gpu.ArgValue(int32(r.hd)),
+				gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)),
 				gpu.ArgValue(r.eps), gpu.ArgValue(addOne)); e != nil {
 				return e
 			}
@@ -535,10 +544,10 @@ func (r *cudaResident) launchToken(emb []float32, pos int) error {
 		// rhalf == hd/2 for full rotary (tail group empty, bit-identical to the pre-partial
 		// kernel); rotaryDim/2 for partial rotary, where the tail threads carry the un-rotated
 		// remainder into the KV cache.
-		_ = r.launch(r.ropeKV, g1cfg(r.nH*r.rhalf+r.nKV*r.rhalf+r.nKV*(r.hd-2*r.rhalf), 256),
+		_ = r.launch(r.ropeKV, g1cfg(r.nH*Ly.rhalf+Ly.nKV*Ly.rhalf+Ly.nKV*(Ly.hd-2*Ly.rhalf), 256),
 			Arg(r.qB), Arg(r.kB), Arg(r.vB), Arg(Ly.invF), Arg(r.kc[l]), Arg(r.vc[l]),
-			gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(r.nKV)), gpu.ArgValue(int32(r.hd)),
-			gpu.ArgValue(int32(pos)), gpu.ArgValue(int32(r.rhalf)))
+			gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)),
+			gpu.ArgValue(int32(pos)), gpu.ArgValue(int32(Ly.rhalf)))
 		nKeys := pos + 1
 		// Sliding window (per layer: Mistral is all-local, Mellum interleaves). Shared is sized
 		// to the ATTENDED span, so a windowed layer's request stays bounded as context grows.
@@ -547,11 +556,11 @@ func (r *cudaResident) launchToken(emb []float32, pos int) error {
 			nWin = int(Ly.window)
 		}
 		_ = r.launch(r.fAttn, LaunchConfig{GridX: uint32(r.nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nWin + 128) * 4)},
-			Arg(r.qB), Arg(r.kc[l]), Arg(r.vc[l]), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(r.nKV)), gpu.ArgValue(int32(r.hd)), gpu.ArgValue(int32(nKeys)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window), Arg(r.cctx))
+			Arg(r.qB), Arg(r.kc[l]), Arg(r.vc[l]), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)), gpu.ArgValue(int32(nKeys)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window), Arg(r.cctx))
 		if r.subCap { // pre-o-proj attention context (qDim), before quant — the cross-box discriminator
-			r.capVec(r.cctx, r.subCtxC, l, r.qDim)
+			r.capVec(r.cctx, r.subCtxC, l, Ly.qDim)
 		}
-		_ = r.launch(r.fQ, onecfg(256, 256*4), Arg(r.cctx), gpu.ArgValue(int32(r.qDim)), Arg(r.cq), Arg(r.cSc))
+		_ = r.launch(r.fQ, onecfg(256, 256*4), Arg(r.cctx), gpu.ArgValue(int32(Ly.qDim)), Arg(r.cq), Arg(r.cSc))
 		// Normally the out-proj accumulates straight into the residual stream (accum=1),
 		// absorbing the `residual` launch. Gemma's sandwich norm CANNOT use that epilogue: it
 		// must normalize the sublayer output BETWEEN the projection and the residual add

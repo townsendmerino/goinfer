@@ -290,8 +290,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 
 	// ---- resident + pinned executor ----
 	r := &cudaResident{
-		hidden: H, nLayers: nLayers, nH: nH, nKV: nKV, hd: hd, inter: I, vocab: vocab,
-		qDim: nH * hd, kvDim: nKV * hd, half: hd / 2, rhalf: m.RotaryDimResident() / 2,
+		hidden: H, nLayers: nLayers, nH: nH, inter: I, vocab: vocab,
 		eps: m.NormEps(), attnScale: m.AttnScale(),
 		qkNorm: m.HasQKNorm(), rmsAddOne: m.RMSAddOne(),
 		act: int32(m.GatedActResident()), sandwich: m.SandwichNormResident(),
@@ -305,7 +304,10 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	if moeNorm {
 		r.moeNormTopK = 1
 	}
-	kvDim := r.kvDim
+	// Per-layer attention geometry (9a-P2). Uniform families set every layer to the model
+	// values here; Gemma-4 admission (a later commit) varies hd/nKV/rhalf per layer from the
+	// host descriptor. qDim/kvDim derive from nH (model-constant) and the layer's hd/nKV.
+	lyHd, lyNKV, lyRhalf := hd, nKV, m.RotaryDimResident()/2
 	hFinal := w.FinalNorm
 	r.reqCh = make(chan func() error)
 	r.ackCh = make(chan error)
@@ -426,18 +428,34 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				}
 			}
 			L.window = h.window
+			L.hd, L.nKV, L.rhalf = lyHd, lyNKV, lyRhalf
+			L.qDim, L.kvDim = nH*lyHd, lyNKV*lyHd
 			r.layers[l] = L
 		}
 		r.lmW = r.upW(hlm)
 		r.finalNorm = r.up32(hFinal)
 
+		// Scratch (Q/K/V projections, attention context) is allocated ONCE and shared across
+		// layers, so it must fit the WIDEST per-layer geometry — Gemma 4's 512-global head, not
+		// a model-level value. maxQDim/maxKVDim reduce to nH*hd / nKV*hd for uniform families.
+		maxQDim, maxKVDim := 0, 0
+		for l := range r.layers {
+			if q := r.layers[l].qDim; q > maxQDim {
+				maxQDim = q
+			}
+			if k := r.layers[l].kvDim; k > maxKVDim {
+				maxKVDim = k
+			}
+		}
 		r.x, r.aSc, r.aq = r.af(H), r.af(1), r.ai(H/4)
-		r.qB, r.kB, r.vB = r.af(r.qDim), r.af(kvDim), r.af(kvDim)
+		r.qB, r.kB, r.vB = r.af(maxQDim), r.af(maxKVDim), r.af(maxKVDim)
 		r.kc, r.vc = make([]Buffer, nLayers), make([]Buffer, nLayers)
 		for l := range r.kc {
-			r.kc[l], r.vc[l] = r.af(cudaCtxCap*kvDim), r.af(cudaCtxCap*kvDim)
+			// Each layer's KV cache is sized by ITS OWN kvDim (Gemma 4's local 2048 vs global
+			// 1024), matching the pos*Ly.kvDim stride launchToken indexes it with.
+			r.kc[l], r.vc[l] = r.af(cudaCtxCap*r.layers[l].kvDim), r.af(cudaCtxCap*r.layers[l].kvDim)
 		}
-		r.cctx, r.cSc, r.cq = r.af(r.qDim), r.af(1), r.ai(r.qDim/4)
+		r.cctx, r.cSc, r.cq = r.af(maxQDim), r.af(1), r.ai(maxQDim/4)
 		r.oO = r.af(H)
 		r.mSc, r.mq = r.af(1), r.ai(H/4)
 		r.gO, r.uO = r.af(I), r.af(I)
