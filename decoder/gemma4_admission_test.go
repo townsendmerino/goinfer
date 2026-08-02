@@ -49,8 +49,11 @@ func TestGemma4Admission_envGated(t *testing.T) {
 		t.Error("webgpu admits dense Gemma 4 but lacks its Gemma kernels — the feature gate must refuse it")
 	}
 
-	// enable_moe_block declined even with env on — Gemma 4's parallel dense‖MoE is not the
-	// generic FeatMoE shape; deferred to Split B.
+	// enable_moe_block now admits with env on — Split B (splitB.2c) landed the parallel dense‖MoE
+	// FFN on its own cuda path (gemma4MoeMLP, routed around the generic MoE checks via
+	// HasGemma4MoEResident), so it falls through the arch predicate like the dense variant. CUDA
+	// ships every required feature; WebGPU still lacks the Gemma kernels, so the feature gate
+	// refuses it — same no-overclaim shape as dense.
 	moe, _, err := resolveArchitecture(representativeConfig("gemma4_text"))
 	if err != nil {
 		t.Fatalf("resolve gemma4_text (MoE): %v", err)
@@ -58,7 +61,29 @@ func TestGemma4Admission_envGated(t *testing.T) {
 	if moe.MoE == nil {
 		t.Fatal("representativeConfig(gemma4_text) is not the enable_moe_block variant")
 	}
-	if moe.decodeRunnerEligible() {
-		t.Error("gemma4_text (enable_moe_block) admitted with env on — MoE is deferred to Split B, must decline")
+	if !moe.decodeRunnerEligible() {
+		t.Error("gemma4_text (enable_moe_block) NOT admitted with env on — Split B landed the resident MoE path, the gate should open")
+	}
+	if !ResidentEligible(moe, "cuda") {
+		t.Error("cuda declines gemma4_text (enable_moe_block) with env on despite shipping the gemma4MoeMLP resident path")
+	}
+	if ResidentEligible(moe, "webgpu") {
+		t.Error("webgpu admits gemma4_text (enable_moe_block) but lacks its Gemma kernels — the feature gate must refuse it")
+	}
+
+	// env OFF: the MoE variant must decline everywhere too — the env gate is the arch predicate's,
+	// so a regenerated matrix cannot claim gemma4_text residency users can't reach.
+	t.Setenv("GOINFER_GEMMA4_RESIDENT", "")
+	moeOff, _, err := resolveArchitecture(representativeConfig("gemma4_text"))
+	if err != nil {
+		t.Fatalf("resolve gemma4_text (MoE, env off): %v", err)
+	}
+	if moeOff.decodeRunnerEligible() {
+		t.Error("gemma4_text (enable_moe_block) admitted with GOINFER_GEMMA4_RESIDENT off — must stay CPU (unreachable-by-default)")
+	}
+	for _, be := range []string{"cuda", "metal", "webgpu"} {
+		if ResidentEligible(moeOff, be) {
+			t.Errorf("%s: ResidentEligible(gemma4_text MoE)=true with env off — the matrix must not claim residency users can't reach", be)
+		}
 	}
 }
