@@ -65,6 +65,8 @@ type Resident struct {
 	kvF32                                                                 bool     // f32 KV cache (Gemma sandwich path) — f16 rounding craters Gemma's sensitive contexts
 	uAct                                                                  Buffer   // gated-MLP activation ordinal (decoder.ActKind: 0=GELU-tanh, 1=SiLU)
 	uAddOne, uWindow                                                      Buffer   // qk_norm + sliding-window uniforms
+	uZero                                                                 Buffer   // constant 0 (nH=0 / nHhd=0 / addOne=0 for the scale-less v_norm dispatch)
+	vNormUnit                                                             Buffer   // [maxHd] of 1.0 — unit weight so qk_norm (x·rms·w, addOne=0) = scale-less v_norm for K=V layers
 
 	qkv, gu Buffer // fused QKV out, fused gate/up out
 
@@ -302,11 +304,21 @@ func BuildResident(m *decoder.Model) (*Resident, error) {
 	// layer to one geom; Gemma 4's local/global interleave resolves to two. maxNHhd/maxKvDim size
 	// the shared per-token scratch to the widest layer (== the model shape for a uniform family).
 	geomCache := map[[4]int]*attnGeom{}
-	var maxNHhd, maxKvDim int
+	var maxNHhd, maxKvDim, maxHd int
 	for l := range nL {
 		lw := &w.Layers[l]
 		var L residLayer
-		L.qkvW, L.qkvS = int4Concat(d, &lw.QProj, &lw.KProj, &lw.VProj) // fused QKV
+		// K=V (attention_k_eq_v, Gemma 4 global layers): NO v_proj — V = v_norm(the RAW k_proj
+		// output). Fuse the V slot with k_proj (so the fused proj yields qkv=[Q|K_raw|K_raw]); the
+		// V slot is then scale-less-v_norm'd and left un-roped at encode time (encodeTrunkInto),
+		// while the K slot gets k_norm+RoPE. This is a BUILD-TIME weight-layout difference, so the
+		// value-independent ForwardEmbPipe pre-encode stays correct — see geom.kEqV.
+		kEqV := m.VFromKResident(l)
+		if kEqV {
+			L.qkvW, L.qkvS = int4Concat(d, &lw.QProj, &lw.KProj, &lw.KProj) // V slot = raw k_proj
+		} else {
+			L.qkvW, L.qkvS = int4Concat(d, &lw.QProj, &lw.KProj, &lw.VProj) // fused QKV
+		}
 		L.oW, L.oS = mk(&lw.OProj)
 		if r.moe != nil && len(lw.Experts) > 0 { // MoE layer: stacked experts instead of a dense FFN
 			L.moe = buildMoELayer(d, lw, r.moe)
@@ -339,7 +351,10 @@ func BuildResident(m *decoder.Model) (*Resident, error) {
 		// Per-layer attention geometry — the whole point of the 9c seam. Uniform families resolve
 		// every layer to the same {hd, nKV, half, kEqV}; Gemma 4 varies hd/nKV/kEqV between its
 		// local and global layers. geomFor dedups by value so a uniform model shares one geom.
-		L.geom = r.geomFor(geomCache, m.HeadDimAtResident(l), m.KVHeadsAtResident(l), len(invf), m.VFromKResident(l))
+		L.geom = r.geomFor(geomCache, m.HeadDimAtResident(l), m.KVHeadsAtResident(l), len(invf), kEqV)
+		if L.geom.hd > maxHd {
+			maxHd = L.geom.hd
+		}
 		if L.geom.kvDim > maxKvDim {
 			maxKvDim = L.geom.kvDim
 		}
@@ -401,6 +416,15 @@ func BuildResident(m *decoder.Model) (*Resident, error) {
 	r.uNH = d.NewBufferU32(uint32(nH)) // query heads: constant across a family, so model-level
 	r.uScale, r.uEps = d.NewBufferFloats([]float32{m.AttnScale()}), d.NewBufferFloats([]float32{m.NormEps()})
 	r.uPos, r.uNKeys = d.NewBufferU32(0), d.NewBufferU32(1)
+	// Scale-less v_norm plumbing for K=V layers (Gemma 4 globals): a unit-1.0 weight and a shared
+	// zero (nH=0 / nHhd=0 / addOne=0) so qk_norm reduces to x·rms·1 on the V slot. Sized to the
+	// widest head; harmless (a few KB) for models with no K=V layer.
+	r.uZero = d.NewBufferU32(0)
+	ones := make([]float32, maxHd)
+	for i := range ones {
+		ones[i] = 1
+	}
+	r.vNormUnit = d.NewBufferFloats(ones)
 	r.finalSoftcap = m.FinalLogitSoftcapResident() // Gemma 4: 30 (host-side softcap); 0 for every other family
 	r.logitsHost = make([]float32, V)
 	ok = true // construction complete — the Resident owns everything; Close (not the defer) frees it
@@ -818,8 +842,17 @@ func (r *Resident) encodeTrunkInto(e *Encoder) {
 		if r.qkNorm { // Qwen3: per-head Q/K RMSNorm before RoPE
 			e.Dispatch(r.pQKNorm, (r.nH+g.nKV)*128, 128, r.qkv, L.qNorm, L.kNorm, r.uNH, g.uNKV, g.uHd, g.uNHhd, r.uEps, r.uAddOne)
 		}
+		if g.kEqV {
+			// K=V (Gemma 4 globals): the V slot holds the RAW k_proj output ([Q|K|K] fusion). Apply
+			// scale-less v_norm to it — qk_norm over the V slot (qkv.At(vOff)) with nH=0 so every
+			// head takes the K branch at base 0+head*hd, a UNIT weight, and addOne=0 → x·rms·1. Runs
+			// AFTER qk_norm (which touched the K slot, not V) and BEFORE RoPE (which never touches V),
+			// so V = v_norm(raw k), un-rotated — exactly the CPU path (copy(v,k) pre-k_norm; then
+			// rmsNormNoWeight(v)). See TestVNorm_scaleless.
+			e.Dispatch(r.pQKNorm, g.nKV*128, 128, r.qkv.At(vOff), r.vNormUnit, r.vNormUnit, r.uZero, g.uNKV, g.uHd, r.uZero, r.uEps, r.uZero)
+		}
 		e.Dispatch(r.pRope, r.nH*g.half, 64, r.qkv, L.invf, g.uHd, r.uPos, g.uQtotal, g.uHalf)           // q @ off 0
-		e.Dispatch(r.pRope, g.nKV*g.half, 64, r.qkv.At(kOff), L.invf, g.uHd, r.uPos, g.uKtotal, g.uHalf) // k
+		e.Dispatch(r.pRope, g.nKV*g.half, 64, r.qkv.At(kOff), L.invf, g.uHd, r.uPos, g.uKtotal, g.uHalf) // k (V slot at vOff is NOT roped)
 		e.Dispatch(r.pKv, g.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[l], r.vc[l], g.uKvDim, r.uPos)
 		e.Dispatch(r.pAttn, r.nH*128, 128, r.qkv, r.kc[l], r.vc[l], r.ctx, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow)
 		e.Dispatch(r.pQv, 256, 256, r.ctx, r.cq, r.cSc, g.uNHhd)
