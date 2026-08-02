@@ -329,3 +329,43 @@ giving every decision the SAME wide margin with zero cross-token contamination �
 matters is the selected *pair* towering over the rejected pair, not the winner over the 2nd, so keep
 the two selected logits close and both far above the zeros. gemma4-moe-tiny now: 100% agreement, min
 int4 margin **0.12** ≫ 0.02. See `construct_router_margins` in `scripts/pin_gemma4_moe_forward.py`.
+
+## Split B task 2 — resident gemma4 MoE kernel delta (EXECUTION PLAN, router-first)
+
+Recon done (cuda/resident.go `moeMLP` :412, `launchToken` :493; cuda/moe.cu `moe_route`/`gemv_f32_a8`/
+`gemv_w4a8_moe`(_wacc); cuda/glue.cu `glu_quant` — ACT_GELU_TANH=0 ALREADY EXISTS :174; cuda/backend.go
+MoE build :145-254; admission decoder/residency.go:135-143 + cuda/backend.go:113-121). The gemma4 MoE
+FFN is a SEPARATE orchestration, NOT the generic `moeMLP`: parallel dense‖MoE, weightless-norm router
+on RAW h, per-expert scale, 5 norms + layerScalar (gemma4MoEWeights, decoder/forward_gemma4_moe.go:23).
+
+**Reuse as-is:** `gemv_w4a8_moe`(_wacc) indexed stacked-expert GEMVs, `packWeightStack`, `gemv_f32_a8`
+router GEMV, `glu_quant` gelu-tanh branch. **Genuinely new = host orchestration + a per-expert-scale
+fold**; no new GEMV kernels.
+
+Build order = fail-discretely-first (the user's steer):
+
+- **2a — router, gated by `idx[]` BINARY EQUALITY (do first, in isolation).** The router is the only
+  part with a discrete failure; everything else degrades gracefully. Isolate it as a cuda kernel unit
+  test (Split-A pattern: TestVNorm_scaleless/TestQKNorm_widths drive one kernel vs a CPU oracle):
+  feed the FIXTURE's real router inputs `rn` (add a host-side `rn` capture to gemma4MoEFFN, sibling to
+  routerCaptureBuf) through the resident selection (`gemv_f32_a8` + `moe_route` sigmoid=0/norm=1) and
+  assert resident `idx[]` == CPU `idx[]`, binary. KEY DECISION this test settles: `gemv_f32_a8` takes
+  an **int8** activation, but CPU's router is pure **f32×f32** — so the resident router quantizes `rn`
+  and CPU does not. If int8-on-rn flips any `idx` vs CPU, add a pure-f32 router GEMV for gemma4 (small:
+  nE×hidden) so the discrete part is bit-exact; if the 0.12 margin absorbs it (likely), reuse
+  gemv_f32_a8. Needs: exported per-layer accessor for the f32 routerProj/routerBias, and rn capture.
+- **2b — gelu-tanh experts, checked against ONE CPU expert.** Route the experts through `glu_quant`
+  with `act=ACT_GELU_TANH` (r.act already carries GatedActResident()=0 for gemma4). Isolated check: a
+  single expert's gate‖up→gelu-tanh→down output vs the CPU expert, before any join.
+- **2c — parallel dense‖MoE join + 5 norms + layerScalar, gated by WHOLE-FORWARD cosine** (cuda-int4
+  vs cpu-int4 ≥ 0.97, like Split A's 0.979 — NOT the f32-floor). New `gemma4MoeMLP`: run dense branch
+  (reuse Ly.g/u/d — free on MoE layers — + glu_quant) into scratch x1 w/ postFFNNorm1; experts wacc
+  into a SEPARATE zeroed scratch x2 (not r.x) w/ postFFNNorm2; per-expert scale folded into rWgt
+  (tiny kernel after moe_route, or extend moe_route); joint postFFNNorm(x1+x2); `x = (h+comb)*layerScalar`.
+  New cudaLayer fields: routerScale[H], perExpertScale[nE], layerScalar, the 5 norm buffers.
+- **Admission** (last): flip residency.go:141 gemma4 `a.MoE != nil` decline to a fall-through admit
+  under GOINFER_GEMMA4_RESIDENT; relax cuda/backend.go:113 (SiLU-only) + :115 (sandwich-norm) for the
+  gemma4-MoE case only. Env-gated; every other family byte-identical.
+
+Standing gate policy (from task 1): the resident MoE gate is int4-vs-int4 (cuda vs cpu); the f32-floor
+(0.79) is a REPORTED warning, not a bar — if 2c comes back marginal, it's the first suspect.
