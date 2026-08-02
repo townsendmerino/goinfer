@@ -299,12 +299,17 @@ with f32. This caught two *representativeness* traps:
 - **Too small (false positive):** a hidden=64 fixture manufactured a phantom 0.82 "bug" that was
   pure W4A8 int8-activation sensitivity. hidden≥256 clears it.
 
-**The correction (Split B): the f32-floor is NOT the resident-gate predictor.** The resident gate
-compares int4-to-int4 (cuda-Q vs cpu-Q), not int4-to-f32. Measured control: the Split-A dense
-two-geometry fixture PASSES its resident gate at cosine **0.979** while its own int4-vs-f32 floor is
-only **0.880** (`NOISE_FLOOR_CKPT=../testdata/gemma4-dense-twogeom-tiny`). So a 0.97 bar on the
-f32-floor is miscalibrated — even the known-good fixture fails it. The f32-floor stays REPORTED as a
-chaos sniff-test (catastrophic ≈0.67 → the int4 regime is chaotic; modest ≈0.85 → fine), not a gate.
+**The correction (Split B): the f32-floor's 0.97 bar is UNCALIBRATED — a warning signal, not a hard
+gate (and NOT irrelevant).** The resident gate compares int4-to-int4 (cuda-Q vs cpu-Q). Measured
+control: the Split-A dense two-geometry fixture PASSES its resident gate at cosine **0.979** while its
+own int4-vs-f32 floor is only **0.880** (`NOISE_FLOOR_CKPT=../testdata/gemma4-dense-twogeom-tiny`). So
+0.97 is miscalibrated — even the known-good fixture fails it. But the floor is not decoupled: it's a
+CONDITIONING proxy, CORRELATED with resident parity (hidden=64 → floor bad AND gate 0.82; hidden=256 →
+floor 0.88 AND gate 0.979 — both moved together). CUDA-vs-CPU-int4 is only PARTLY common-mode: same
+quantized weights, but each side rounds/groups activations its own way, and how much that difference
+amplifies is exactly the conditioning the floor measures. One control point fixes 0.88-was-fine *for
+that fixture*, not a general threshold. So keep the floor REPORTED and demoted to a warning — if the
+resident MoE gate comes back marginal, a low floor (gemma4-moe-tiny sits at 0.79) is the first suspect.
 
 **What actually gates a resident MoE fixture: routing.** MoE has a discrete failure mode dense
 doesn't — quant noise near a router tie flips the top-k, a *different computation* not a small
