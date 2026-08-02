@@ -284,28 +284,43 @@ quant (int8/int4), not silently promoted.
 - **Implement only Gemma-4.** `qwen35`/`llama4` are the same class and the seam is named for them,
   but no speculative code — the generality is in the *shape* of the abstraction, not in unbuilt paths.
 
-## Fixture noise-floor pre-flight (a RULE, learned the hard way — Split A)
+## Fixture resident-gate pre-flight (a RULE, learned across Split A → Split B)
 
-Before a fixture is used to gate a resident backend at quant Q, establish its **quantization
-noise floor**: run CPU-at-Q vs CPU-f32 on the same tokens. A resident backend can only agree with
-the CPU-Q path as well as Q agrees with f32 — so if the floor is already below the resident
-tolerance, **the fixture cannot gate that quant, no matter how correct the kernel is.** It costs
-two CPU forwards and zero GPU. `decoder/TestQuantNoiseFloor_gemma4MoE` is the reference.
+Before a fixture is used to gate a resident backend at quant Q, run a CPU-only pre-flight —
+two CPU forwards, zero GPU. `decoder/TestQuantNoiseFloor_gemma4MoE` is the reference. What the
+pre-flight should assert changed once Split B measured a control, so the history matters:
 
-This bit Split A in BOTH directions — same underlying property, *representativeness*:
-- **Too degenerate (false negative):** HF's identity init left every scaling param at 1.0, so a
-  bug applying them (×1) wouldn't move the golden. `strengthen()` (seeded non-trivial norms/scales)
-  fixed it — and three phases later is what made the K=V `v_norm(raw k)` ordering observable at all.
+**First cut (Split A instinct): the int4-vs-f32 "noise floor."** CPU-at-Q vs CPU-f32 on the same
+tokens, on the theory that a resident backend can only agree with the CPU-Q path as well as Q agrees
+with f32. This caught two *representativeness* traps:
+- **Too degenerate (false negative):** HF's identity init left every scaling param at 1.0, so a bug
+  applying them (×1) wouldn't move the golden. `strengthen()` (seeded non-trivial norms/scales)
+  fixed it — and is what made the K=V `v_norm(raw k)` ordering observable three phases later.
 - **Too small (false positive):** a hidden=64 fixture manufactured a phantom 0.82 "bug" that was
-  pure W4A8 int8-activation sensitivity. hidden≥256 clears it. The floor check would have said so
-  on day one; instead it cost a debug hunt.
+  pure W4A8 int8-activation sensitivity. hidden≥256 clears it.
 
-**For MoE, also measure ROUTING agreement** (expert-set match CPU-f32 vs CPU-Q), because MoE has a
-discrete failure mode dense doesn't: quant noise near a router tie flips the top-k, and a flipped
-expert is a *different computation*, not a small numeric error. If routing already disagrees
-CPU-vs-CPU, no resident kernel can match — you'd chase a kernel bug that is a fixture property.
-gemma4-moe-tiny at hidden=256 still only agrees 68.8% (near-tie random routing), so **Split B's
-first task is a routing-robust MoE fixture** (fewer/structured experts or larger hidden that gives
-confident margins) clearing BOTH the logit floor and 100% routing agreement — THEN kernel work.
-Note: scaling the router projection does NOT help — the int-quant perturbation scales with it too,
-leaving gap-vs-noise unchanged. Confident routing has to come from the model, like a trained one.
+**The correction (Split B): the f32-floor is NOT the resident-gate predictor.** The resident gate
+compares int4-to-int4 (cuda-Q vs cpu-Q), not int4-to-f32. Measured control: the Split-A dense
+two-geometry fixture PASSES its resident gate at cosine **0.979** while its own int4-vs-f32 floor is
+only **0.880** (`NOISE_FLOOR_CKPT=../testdata/gemma4-dense-twogeom-tiny`). So a 0.97 bar on the
+f32-floor is miscalibrated — even the known-good fixture fails it. The f32-floor stays REPORTED as a
+chaos sniff-test (catastrophic ≈0.67 → the int4 regime is chaotic; modest ≈0.85 → fine), not a gate.
+
+**What actually gates a resident MoE fixture: routing.** MoE has a discrete failure mode dense
+doesn't — quant noise near a router tie flips the top-k, a *different computation* not a small
+numeric error. The pre-flight gates on two things:
+1. **Routing agreement 100%** (expert-set match CPU-f32 vs CPU-Q), and
+2. **Min routing MARGIN** (top-k boundary gap = min selected prob − max rejected prob) comfortably
+   above the observed quant perturbation, so the tighter cpu-Q-vs-gpu-Q gap can't flip it either.
+   Gate on the margin, not on one agreement observation — agreement can be luck, a wide margin is
+   robustness. `routerMarginBuf` captures it; the gate is `min int4 margin ≥ 0.02` (~2 pts of prob).
+
+**Constructing the margin (don't amplify random ties).** A random router gives near-tied logits int4
+flips ~30% of the time (gemma4-moe-tiny started at 68.8% agreement). Scaling `router.proj` does NOT
+help — the perturbation scales with it too, gap-vs-noise unchanged. Because hidden ≫ tokens, the
+router inputs are linearly independent, so a **least-squares fit** of `router.proj` to the fixture's
+own captured router inputs reproduces ANY target logit per token exactly (winner 7 / 2nd 6 / rest 0),
+giving every decision the SAME wide margin with zero cross-token contamination — the boundary that
+matters is the selected *pair* towering over the rejected pair, not the winner over the 2nd, so keep
+the two selected logits close and both far above the zeros. gemma4-moe-tiny now: 100% agreement, min
+int4 margin **0.12** ≫ 0.02. See `construct_router_margins` in `scripts/pin_gemma4_moe_forward.py`.

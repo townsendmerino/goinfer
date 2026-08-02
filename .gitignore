@@ -87,7 +87,8 @@ testdata/llama4-tiny/
 # gpt-oss real-model HF logit golden (2 MB; regenerate via scripts/gptoss_hf_oracle.py)
 decoder/testdata/gptoss_20b_golden.json
 
-# generated tiny gemma4-MoE parity checkpoints (scripts/pin_gemma4_moe*.py); golden JSON stays tracked
+# generated tiny gemma4 parity checkpoints (scripts/pin_gemma4_*.py); golden JSON stays tracked
 testdata/gemma4-moe-tiny/
 testdata/gemma4-moe-kv-tiny/
 testdata/gemma4-moe-unified-tiny/
+testdata/gemma4-dense-twogeom-tiny/

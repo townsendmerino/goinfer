@@ -80,6 +80,22 @@ func gemma4MoEFFN(be Backend, arch *Architecture, h []float32, w *gemma4MoEWeigh
 	idx, topv := topK(probs, w.topK)
 	if routerCapture { // DIAGNOSTIC (default-off, observe-only): record the selected experts; see routercapture.go
 		routerCaptureBuf = append(routerCaptureBuf, append([]int(nil), idx...))
+		// top-k boundary margin: min selected prob − max rejected prob (the gap a quant flip must cross).
+		sel := map[int]bool{}
+		for _, e := range idx {
+			sel[e] = true
+		}
+		minSel, maxRej := float32(1), float32(0)
+		for e, p := range probs {
+			if sel[e] {
+				if p < minSel {
+					minSel = p
+				}
+			} else if p > maxRej {
+				maxRej = p
+			}
+		}
+		routerMarginBuf = append(routerMarginBuf, minSel-maxRej)
 	}
 	// Weight residency (idea #2): the router selection is the demand signal. Touch each
 	// chosen expert before its matmuls so the pager faults it in and evicts the LRU tail

@@ -29,8 +29,9 @@ func TestGemma4MoE_quantizedLoad(t *testing.T) {
 	if _, err := os.Stat(ckpt); errors.Is(err, fs.ErrNotExist) {
 		t.Skipf("no tiny checkpoint (%s) — run scripts/pin_gemma4_moe_forward.py", ckpt)
 	}
-	// tiny-checkpoint dims (scripts/pin_gemma4_moe_forward.py).
-	const nExpert, moeInter, hidden, denseInter = 8, 16, 64, 48
+	// tiny-checkpoint dims (scripts/pin_gemma4_moe_forward.py defaults: num_experts=4, top-2-of-4,
+	// moe_intermediate_size=64, hidden_size=intermediate_size=256).
+	const nExpert, moeInter, hidden, denseInter = 4, 64, 256, 256
 	prompt := []int{1, 7, 42, 100, 5, 200, 13, 88}
 
 	f32, err := Load(ckpt, Options{Quant: "f32"})

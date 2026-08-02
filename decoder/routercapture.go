@@ -21,3 +21,12 @@ var routerCapture = os.Getenv("GOINFER_ROUTER_CAPTURE") != ""
 // at index t*nLayers + l. The realckpt capture test clears it (routerCaptureBuf = nil) before
 // a pass and reads it after — no helper accessors, so nothing here is unused off-tag.
 var routerCaptureBuf [][]int
+
+// routerMarginBuf records, per MoE decision (same order/index as routerCaptureBuf), the top-k
+// BOUNDARY MARGIN: the smallest selected expert's softmax prob minus the largest REJECTED
+// expert's prob. This is the quantity that decides whether a small quant perturbation flips the
+// top-k — the MoE-specific failure mode. A resident-gate-ready fixture wants this margin to stay
+// well above the per-decision quant perturbation on every decision, not merely to AGREE on one
+// int4-vs-f32 pair (agreement can be luck; a wide margin is robustness). Captured only when
+// routerCapture is on; observe-only, so the forward stays byte-identical with the env unset.
+var routerMarginBuf []float32

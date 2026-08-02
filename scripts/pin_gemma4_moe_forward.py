@@ -4,9 +4,15 @@ forward + greedy decode as a goinfer parity golden — the independent HF oracle
 the Phase-2 forward (docs/task-gemma4-moe.md).
 
 Builds a SMALL random text model (Gemma4ForCausalLM on a Gemma4TextConfig) with the
-parallel dense-MLP + 8-expert MoE FFN sub-block, one sliding + one full layer,
+parallel dense-MLP + top-2-of-4-expert MoE FFN sub-block, one sliding + one full layer,
 gelu-tanh GeGLU everywhere, final-logit softcap — CPU fp32, which goinfer must
 reproduce. Dumps the resolved arch config so goinfer's loader reads identical values.
+
+The router is CONSTRUCTED (construct_router_margins), not random: a random router gives
+near-tied top-k logits that int4 quant flips 30% of the time, and no resident kernel can
+match a fixture whose routing is itself a coin flip. Since hidden ≫ tokens, a least-squares
+fit of router.proj to the fixture's own router inputs reproduces any target logit per token
+exactly, giving every top-k decision a wide, quant-robust margin (the real resident-MoE gate).
 
 Degeneracy guard (same lesson as testdata/*_mamba/deltanet_golden): HF's default
 init leaves EVERY gemma4-MoE scaling param at identity — norm weights = 1,
@@ -32,12 +38,17 @@ OUT = os.path.join(HERE, "..", "testdata", "gemma4_moe_forward_golden.json")
 CKPT = os.path.join(HERE, "..", "testdata", "gemma4-moe-tiny")
 
 CFG = dict(
-    # hidden/intermediate/moe_intermediate are multiples of 32 (int4 group size) AND large enough
-    # that W4A8 int8-activation rounding is not degenerate: at hidden=64 the int4-vs-f32 CPU noise
-    # floor is ~0.67 (TestQuantNoiseFloor_gemma4MoE), too low for ANY resident gate; 256 clears it.
-    vocab_size=256, hidden_size=256, num_hidden_layers=2,
-    num_attention_heads=4, num_key_value_heads=2, head_dim=16,
-    intermediate_size=256, rms_norm_eps=1e-6, tie_word_embeddings=True,
+    # hidden/intermediate/moe_intermediate are multiples of 32 (int4 group size). hidden=256 (not 64)
+    # keeps W4A8 int8-activation rounding out of the degenerate regime, but note the RESIDENT gate is
+    # int4-vs-int4, NOT int4-vs-f32 — the int4-vs-f32 "floor" here is only ~0.79 yet the analogous
+    # Split-A dense fixture gates resident parity at 0.979 with an f32-floor of 0.88. What actually
+    # gates a resident MoE kernel is 100% routing agreement + a wide routing MARGIN (see
+    # construct_router_margins + TestQuantNoiseFloor_gemma4MoE), which hidden does not set — the
+    # least-squares router does. The env knobs (PIN_HIDDEN/PIN_MOE_INTER/PIN_HEAD_DIM/PIN_MOE) exist
+    # only to reproduce the sizing sweep; the defaults ARE the committed golden's config.
+    vocab_size=256, hidden_size=int(os.getenv("PIN_HIDDEN", "256")), num_hidden_layers=2,
+    num_attention_heads=4, num_key_value_heads=2, head_dim=int(os.getenv("PIN_HEAD_DIM", "16")),
+    intermediate_size=int(os.getenv("PIN_HIDDEN", "256")), rms_norm_eps=1e-6, tie_word_embeddings=True,
     max_position_embeddings=128, sliding_window=4,
     layer_types=["sliding_attention", "full_attention"],
     hidden_activation="gelu_pytorch_tanh", final_logit_softcapping=30.0,
@@ -46,7 +57,9 @@ CFG = dict(
     # uniform attention (no global-wide head / K=V) — that path is covered by the
     # dense gemma4 goldens; this golden isolates the NEW FFN sub-block.
     # the parallel dense + MoE FFN:
-    enable_moe_block=True, num_experts=8, top_k_experts=2, moe_intermediate_size=64,
+    # top-2-of-4, not top-2-of-8: the identical code path (router + indexed expert GEMV + weighted
+    # combine) with HALF the near-tie boundaries. No kernel coverage is lost by having fewer experts.
+    enable_moe_block=(os.getenv("PIN_MOE", "1") == "1"), num_experts=4, top_k_experts=2, moe_intermediate_size=int(os.getenv("PIN_MOE_INTER", "64")),
 )
 PROMPT = [1, 7, 42, 100, 5, 200, 13, 88]  # len 8 > sliding_window 4 (sliding layer clips)
 N_NEW = 6
@@ -75,11 +88,59 @@ def strengthen(model):
     return dict(norm=n_norm, router_scale=n_router, per_expert_scale=n_pes, layer_scalar=n_ls)
 
 
+def construct_router_margins(model, prompt):
+    """CONSTRUCT confident routing, don't amplify random ties. A random router gives near-tied
+    logits whose top-k boundary is a coin flip quantization noise decides — and scaling can't fix it
+    (gap and noise scale together). So fit router.proj to the fixture's OWN inputs (cheating in a
+    model, correct in a kernel-gating fixture): make each token's intended top-2 experts win by a
+    wide margin on the captured router input. Done SEQUENTIALLY per layer — each layer's router input
+    depends on the previous layer's now-constructed router — so the margins hold at inference."""
+    router_names = [n for n, m in model.named_modules() if n.endswith("router.proj")]
+    g = torch.Generator().manual_seed(4321)
+    for name in router_names:  # layer order: each capture sees the earlier layers already constructed
+        mod = dict(model.named_modules())[name]
+        cap = {}
+
+        def hook(m, inp, cap=cap):
+            x = inp[0].detach()
+            cap["rn"] = x.reshape(-1, x.shape[-1])  # [tokens, hidden] (MoE flattens batch×seq)
+
+        h = mod.register_forward_pre_hook(hook)
+        with torch.no_grad():
+            model(torch.tensor([prompt], dtype=torch.long), use_cache=False)
+        h.remove()
+        rn = cap["rn"]                                 # [tokens, hidden]
+        seq, hidden = rn.shape
+        nE = mod.weight.shape[0]
+        # SOLVE for the router logits instead of accumulating directions. Accumulating (proj[e] += c·v_t)
+        # cross-contaminates: an expert row shared by several tokens carries every one of their directions,
+        # and a competing token's contribution eats into another token's 2nd-vs-3rd margin — cranking the
+        # coefficient amplifies the pollution equally, so it never converges. Because hidden(256) ≫ tokens,
+        # the rn_t are linearly independent, so the min-norm least-squares solution proj[e] = pinv(rn) @ tgt_e
+        # reproduces ANY target logit per token EXACTLY (rn @ proj[e] == tgt_e), with zero cross-talk. Set a
+        # clean, identical target per token — winner 8, second 5, losers 0 — so every one of the 16 decisions
+        # has the SAME wide softmax margin, far past the 0.02 gate and independent of how the tokens overlap.
+        pinv = torch.linalg.pinv(rn)                   # [hidden, tokens]
+        tgt = torch.zeros(seq, nE)
+        for t in range(seq):
+            # The gate margin is prob(2nd_selected) − prob(1st_rejected). Both selected logits sit near 7
+            # and both rejected sit at 0, so the boundary is huge (prob(2nd)≈0.27 vs prob(3rd)≈2e-4). A
+            # dominating winner (e.g. 8 vs 5) would STEAL softmax mass from the 2nd and shrink that boundary
+            # — what matters is the selected pair BOTH towering over the rejected pair, not the winner over
+            # the 2nd. int4 quant erodes the f32 margin by ~0.03, so ~0.27 leaves wide headroom past 0.02.
+            tgt[t, t % nE] = 7.0                        # winner logit
+            tgt[t, (t + 1) % nE] = 6.0                  # 2nd logit — close to winner, far above the zeros
+        proj = (pinv @ tgt).T                           # [nE, hidden]: rn @ proj.T == tgt
+        with torch.no_grad():
+            mod.weight.copy_(proj)
+
+
 def main():
     torch.manual_seed(0)
     config = Gemma4TextConfig(**CFG)
     model = Gemma4ForCausalLM(config).eval().to(torch.float32)
     counts = strengthen(model)
+    construct_router_margins(model, PROMPT)
 
     with torch.no_grad():
         ids = torch.tensor([PROMPT], dtype=torch.long)
