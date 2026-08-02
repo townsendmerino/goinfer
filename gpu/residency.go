@@ -632,24 +632,33 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 				return fail(e)
 			}
 		} else {
+			// Per-layer KV geometry (P1 seam): each layer's cache is sized by its own
+			// nKV·hd, not a single model-level kvDim. Every non-Gemma family leaves the
+			// runLayer tuple unset, so lnKV/lhd/lkvDim fall back to the model values and the
+			// allocation is byte-identical. Gemma 4's builder will set rl.gnKV/rl.ghd (local
+			// 8·256=2048, global 2·512=1024) and this picks up the differing widths per layer.
+			lnKV, lhd, lkvDim := nKV, hd, kvDim
+			if rl.ghd != 0 {
+				lnKV, lhd, lkvDim = rl.gnKV, rl.ghd, rl.gnKV*rl.ghd
+			}
 			var kc, vc *DeviceBuffer
 			var e1, e2 error
 			switch {
 			case kvI8:
 				var ks, vs *DeviceBuffer
-				kc, ks, e1 = c.NewKVCacheI8(nil, ctxCap*kvDim, nKV, hd)
-				vc, vs, e2 = c.NewKVCacheI8(nil, ctxCap*kvDim, nKV, hd)
+				kc, ks, e1 = c.NewKVCacheI8(nil, ctxCap*lkvDim, lnKV, lhd)
+				vc, vs, e2 = c.NewKVCacheI8(nil, ctxCap*lkvDim, lnKV, lhd)
 				if e1 == nil && e2 == nil {
 					keepF(ks.Release)
 					keepF(vs.Release)
 					rl.kScale, rl.vScale = ks.buf, vs.buf
 				}
 			case kvF16:
-				kc, e1 = c.NewKVCacheF16(nil, ctxCap*kvDim)
-				vc, e2 = c.NewKVCacheF16(nil, ctxCap*kvDim)
+				kc, e1 = c.NewKVCacheF16(nil, ctxCap*lkvDim)
+				vc, e2 = c.NewKVCacheF16(nil, ctxCap*lkvDim)
 			default:
-				kc, e1 = c.NewKVCache(nil, ctxCap*kvDim)
-				vc, e2 = c.NewKVCache(nil, ctxCap*kvDim)
+				kc, e1 = c.NewKVCache(nil, ctxCap*lkvDim)
+				vc, e2 = c.NewKVCache(nil, ctxCap*lkvDim)
 			}
 			if e1 != nil || e2 != nil {
 				return fail(fmt.Errorf("gpu: residency KV alloc (layer %d): %v %v", i, e1, e2))

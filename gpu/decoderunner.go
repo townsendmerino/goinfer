@@ -23,8 +23,13 @@ type DecodeRunner struct {
 	posUnis              []posUni
 	xd, stag, lastLogits *wgpu.Buffer
 	vocab                int
-	kvDim                int
-	keep                 []func()
+	// geomVariants is the number of distinct attention geometries in the resident plan
+	// (len of geomFor's cache): 1 for every uniform-geometry family, 2 for Gemma 4's
+	// local/global interleave. A refactor that allocated one uniform per layer instead of
+	// per distinct tuple would leave logits byte-identical while quietly multiplying this
+	// by the layer count — the GeomVariantCount test asserts it stays 1 for uniform models.
+	geomVariants int
+	keep         []func()
 
 	// §5 instrumentation: wall time of each Run phase, overwritten per call.
 	// Zero overhead when ignored; the decomposition test reads them.
@@ -57,6 +62,23 @@ type posUni struct {
 	gen func(pos int) []uint32 // uniform contents for this pos
 }
 
+// attnGeom is one distinct per-layer attention shape: head_dim (hd), KV-head count
+// (nKV), and rotary half-width (half = rotaryDim/2). Gemma 4 interleaves two shapes
+// (local hd=256/nKV=8; global hd=512/nKV=2, K=V); every other family has exactly one.
+// The per-token uniforms that carry these dims (v-store, attn, the windowed-attn
+// variant, and — keyed additionally by rope scale — q-rope / k-rope-store / the fused
+// qkv-finalize) are deduplicated by value: geomFor caches one attnGeom per distinct
+// {hd, nKV, half} tuple, so a uniform-geometry model collapses to a single entry with
+// the same buffers, bind groups, and dispatch it had before this seam existed. Thus
+// byte-identity for non-Gemma models is structural (a shared *attnGeom), not asserted.
+// (attention_k_eq_v — the K=V aliasing — lands in a follow-up commit, not this key.)
+type attnGeom struct {
+	hd, nKV, half, kvDim             int
+	ropeQUnis, ropeKUnis, qkvFinUnis map[float32]*wgpu.Buffer
+	vStoreUni, vStoreI8Uni           *wgpu.Buffer
+	attnUni, attnUniLocal            *wgpu.Buffer
+}
+
 // runLayer / runModel are the DecodeRunner's precision-agnostic view of a resident
 // model: the f32 buffers (norms, RoPE freqs, KV caches) plus the projection
 // weights as decodeWeight (W8A8 or W4A8). The public constructors adapt a concrete
@@ -69,6 +91,13 @@ type runLayer struct {
 	qNorm, kNorm                               *wgpu.Buffer // optional per-head QK-norm weights [hd] (Qwen3/GLM); nil ⇒ none
 	isLocal                                    bool         // sliding-window (local) attention layer (Lever C6); false ⇒ full
 	ropeScale                                  float32      // per-layer RoPE cos/sin scale = mscale (Lever C7); 0 ⇒ 1.0
+
+	// Per-layer attention geometry (P1, own-forward residency bridge): this layer's
+	// head_dim / KV-heads / rotaryDim-half. Zero ghd ⇒ use the model-level nH-relative
+	// shape (every non-Gemma family leaves these unset). The plan loop resolves them via
+	// geomFor into the shared `geom` below; kvDim for this layer is gnKV*ghd.
+	ghd, gnKV, ghalf int
+	geom             *attnGeom // resolved shared geometry (set in the plan loop; nil for MLA/mamba layers)
 
 	// MoE (Lever C3c, Mixtral-class): when isMoE, this layer's FFN is a sparse
 	// mixture of experts instead of the dense gate/up/down above. router scores all
@@ -213,7 +242,7 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			return nil, err
 		}
 	}
-	r := &DecodeRunner{c: c, vocab: m.lmHead.nRows(), kvDim: nKV * hd}
+	r := &DecodeRunner{c: c, vocab: m.lmHead.nRows()}
 	// buildErr accumulates the FIRST device-allocation/bind failure (M21): the storF/uni/
 	// storFZ/bind helpers short-circuit once it's set and the constructor returns it, so VRAM
 	// exhaustion is an error the caller can fall back on — never a panic in library code.
@@ -464,132 +493,150 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 	// sliding ones) use two. Build one shared rope uniform per distinct scale, keyed by value.
 	// slot 6 of the K uniform carries nKV for the int8 ropeStore (it indexes
 	// scales[pos*nKV+head]); the f32/f16 ropeStore ignore it (their unused _b pad).
-	ropeQUnis := map[float32]*wgpu.Buffer{}
-	ropeQUniFor := func(rs float32) *wgpu.Buffer {
-		if b, ok := ropeQUnis[rs]; ok {
+	// §4.5 per-layer attention geometry. geomFor builds one attnGeom per distinct
+	// {hd, nKV, half} tuple and caches it by value — a uniform-geometry model yields
+	// exactly one entry (same buffers/dispatch as before this seam), Gemma 4 two. Each
+	// geom owns the per-token uniforms that carry its dims: the v-store, the attn, and the
+	// windowed-attn variant here; the rope uniforms below hang off it keyed by rope scale.
+	geomCache := map[[3]int]*attnGeom{}
+	geomFor := func(ghd, gnKV, ghalf int) *attnGeom {
+		key := [3]int{ghd, gnKV, ghalf}
+		if g, ok := geomCache[key]; ok {
+			return g
+		}
+		g := &attnGeom{
+			hd: ghd, nKV: gnKV, half: ghalf, kvDim: gnKV * ghd,
+			ropeQUnis:  map[float32]*wgpu.Buffer{},
+			ropeKUnis:  map[float32]*wgpu.Buffer{},
+			qkvFinUnis: map[float32]*wgpu.Buffer{},
+		}
+		g.vStoreUni = uni([]uint32{uint32(g.kvDim), 0, 0, 0})
+		r.posUnis = append(r.posUnis, posUni{buf: g.vStoreUni, gen: func(pos int) []uint32 {
+			return []uint32{uint32(g.kvDim), uint32(pos * g.kvDim), 0, 0}
+		}})
+		// int8 V store needs its own (differently-laid-out) per-token uniform:
+		// {heads=nKV, headDim=hd, base=pos*kvDim, pos, nKV}. Only allocated for kvI8.
+		if m.kvI8 {
+			g.vStoreI8Uni = uni([]uint32{uint32(g.nKV), uint32(g.hd), 0, 0, uint32(g.nKV), 0, 0, 0})
+			r.posUnis = append(r.posUnis, posUni{buf: g.vStoreI8Uni, gen: func(pos int) []uint32 {
+				return []uint32{uint32(g.nKV), uint32(g.hd), uint32(pos * g.kvDim), uint32(pos), uint32(g.nKV), 0, 0, 0}
+			}})
+		}
+		g.attnUni = uni([]uint32{uint32(nH), uint32(g.nKV), uint32(g.hd), 0, uint32(start), uint32(nH / g.nKV), f32bits(scale), 0})
+		r.posUnis = append(r.posUnis, posUni{buf: g.attnUni, gen: func(pos int) []uint32 {
+			return []uint32{uint32(nH), uint32(g.nKV), uint32(g.hd), uint32(pos + 1), uint32(start), uint32(nH / g.nKV), f32bits(scale), 0}
+		}})
+		// Sliding-window (local) layers attend only the last `slidingWindow` positions: the
+		// attention start advances to max(0, pos+1-W) once pos reaches the window (Lever C6),
+		// matching decoder.KVCache.WindowStart. Full layers keep attnUni (start fixed). Only
+		// built when the model windows; local layers bind this instead of attnUni.
+		g.attnUniLocal = g.attnUni
+		if m.slidingWindow > 0 {
+			w := m.slidingWindow
+			g.attnUniLocal = uni([]uint32{uint32(nH), uint32(g.nKV), uint32(g.hd), 0, uint32(start), uint32(nH / g.nKV), f32bits(scale), 0})
+			r.posUnis = append(r.posUnis, posUni{buf: g.attnUniLocal, gen: func(pos int) []uint32 {
+				ws := start
+				if lo := pos + 1 - w; lo > ws {
+					ws = lo
+				}
+				return []uint32{uint32(nH), uint32(g.nKV), uint32(g.hd), uint32(pos + 1), uint32(ws), uint32(nH / g.nKV), f32bits(scale), 0}
+			}})
+		}
+		geomCache[key] = g
+		return g
+	}
+	// Per-(geom, rope-scale) rope uniforms. slot 6 of the K uniform carries nKV for the
+	// int8 ropeStore (it indexes scales[pos*nKV+head]); the f32/f16 ropeStore ignore it.
+	ropeQUniFor := func(g *attnGeom, rs float32) *wgpu.Buffer {
+		if b, ok := g.ropeQUnis[rs]; ok {
 			return b
 		}
-		b := uni([]uint32{uint32(nH), uint32(hd), uint32(half), 0, f32bits(rs), 0, 0, 0})
+		b := uni([]uint32{uint32(nH), uint32(g.hd), uint32(g.half), 0, f32bits(rs), 0, 0, 0})
 		r.posUnis = append(r.posUnis, posUni{buf: b, gen: func(pos int) []uint32 {
-			return []uint32{uint32(nH), uint32(hd), uint32(half), uint32(pos), f32bits(rs), 0, 0, 0}
+			return []uint32{uint32(nH), uint32(g.hd), uint32(g.half), uint32(pos), f32bits(rs), 0, 0, 0}
 		}})
-		ropeQUnis[rs] = b
+		g.ropeQUnis[rs] = b
 		return b
 	}
-	ropeKUnis := map[float32]*wgpu.Buffer{}
-	ropeKUniFor := func(rs float32) *wgpu.Buffer {
-		if b, ok := ropeKUnis[rs]; ok {
+	ropeKUniFor := func(g *attnGeom, rs float32) *wgpu.Buffer {
+		if b, ok := g.ropeKUnis[rs]; ok {
 			return b
 		}
-		b := uni([]uint32{uint32(nKV), uint32(hd), uint32(half), 0, f32bits(rs), 0, uint32(nKV), 0})
+		b := uni([]uint32{uint32(g.nKV), uint32(g.hd), uint32(g.half), 0, f32bits(rs), 0, uint32(g.nKV), 0})
 		r.posUnis = append(r.posUnis, posUni{buf: b, gen: func(pos int) []uint32 {
-			return []uint32{uint32(nKV), uint32(hd), uint32(half), uint32(pos), f32bits(rs), uint32(pos * r.kvDim), uint32(nKV), 0}
+			return []uint32{uint32(g.nKV), uint32(g.hd), uint32(g.half), uint32(pos), f32bits(rs), uint32(pos * g.kvDim), uint32(g.nKV), 0}
 		}})
-		ropeKUnis[rs] = b
+		g.ropeKUnis[rs] = b
 		return b
 	}
-	// Fused q-rope + k-rope-store + v-store uniform (decode fusion, f32 KV), per rope
-	// scale: {nH, nKV, hd, half, pos, base=pos*kvDim, scale, kvDim}.
-	qkvFinUnis := map[float32]*wgpu.Buffer{}
-	qkvFinUniFor := func(rs float32) *wgpu.Buffer {
-		if b, ok := qkvFinUnis[rs]; ok {
+	// Fused q-rope + k-rope-store + v-store uniform (decode fusion, f32 KV), per (geom,
+	// scale): {nH, nKV, hd, half, pos, base=pos*kvDim, scale, kvDim}.
+	qkvFinUniFor := func(g *attnGeom, rs float32) *wgpu.Buffer {
+		if b, ok := g.qkvFinUnis[rs]; ok {
 			return b
 		}
-		b := uni([]uint32{uint32(nH), uint32(nKV), uint32(hd), uint32(half), 0, 0, f32bits(rs), uint32(r.kvDim)})
+		b := uni([]uint32{uint32(nH), uint32(g.nKV), uint32(g.hd), uint32(g.half), 0, 0, f32bits(rs), uint32(g.kvDim)})
 		r.posUnis = append(r.posUnis, posUni{buf: b, gen: func(pos int) []uint32 {
-			return []uint32{uint32(nH), uint32(nKV), uint32(hd), uint32(half), uint32(pos), uint32(pos * r.kvDim), f32bits(rs), uint32(r.kvDim)}
+			return []uint32{uint32(nH), uint32(g.nKV), uint32(g.hd), uint32(g.half), uint32(pos), uint32(pos * g.kvDim), f32bits(rs), uint32(g.kvDim)}
 		}})
-		qkvFinUnis[rs] = b
+		g.qkvFinUnis[rs] = b
 		return b
 	}
-	vStoreUni := uni([]uint32{uint32(r.kvDim), 0, 0, 0})
-	r.posUnis = append(r.posUnis, posUni{buf: vStoreUni, gen: func(pos int) []uint32 {
-		return []uint32{uint32(r.kvDim), uint32(pos * r.kvDim), 0, 0}
-	}})
-	// int8 V store needs its own (differently-laid-out) per-token uniform:
-	// {heads=nKV, headDim=hd, base=pos*kvDim, pos, nKV}. Only allocated for kvI8.
-	var vStoreI8Uni *wgpu.Buffer
-	if m.kvI8 {
-		vStoreI8Uni = uni([]uint32{uint32(nKV), uint32(hd), 0, 0, uint32(nKV), 0, 0, 0})
-		r.posUnis = append(r.posUnis, posUni{buf: vStoreI8Uni, gen: func(pos int) []uint32 {
-			return []uint32{uint32(nKV), uint32(hd), uint32(pos * r.kvDim), uint32(pos), uint32(nKV), 0, 0, 0}
-		}})
-	}
-	attnUni := uni([]uint32{uint32(nH), uint32(nKV), uint32(hd), 0, uint32(start), uint32(nH / nKV), f32bits(scale), 0})
-	r.posUnis = append(r.posUnis, posUni{buf: attnUni, gen: func(pos int) []uint32 {
-		return []uint32{uint32(nH), uint32(nKV), uint32(hd), uint32(pos + 1), uint32(start), uint32(nH / nKV), f32bits(scale), 0}
-	}})
-	// Sliding-window (local) layers attend only the last `slidingWindow` positions: the
-	// attention start advances to max(0, pos+1-W) once pos reaches the window (Lever C6),
-	// matching decoder.KVCache.WindowStart. Full layers keep attnUni (start fixed). Only
-	// built when the model windows; local layers bind this instead of attnUni.
-	attnUniLocal := attnUni
-	if m.slidingWindow > 0 {
-		w := m.slidingWindow
-		attnUniLocal = uni([]uint32{uint32(nH), uint32(nKV), uint32(hd), 0, uint32(start), uint32(nH / nKV), f32bits(scale), 0})
-		r.posUnis = append(r.posUnis, posUni{buf: attnUniLocal, gen: func(pos int) []uint32 {
-			ws := start
-			if lo := pos + 1 - w; lo > ws {
-				ws = lo
-			}
-			return []uint32{uint32(nH), uint32(nKV), uint32(hd), uint32(pos + 1), uint32(ws), uint32(nH / nKV), f32bits(scale), 0}
-		}})
-	}
-	rope := func(vec, invFreq *wgpu.Buffer, ropeScale float32) {
+	rope := func(g *attnGeom, vec, invFreq *wgpu.Buffer, ropeScale float32) {
 		if ropeScale == 0 {
 			ropeScale = 1
 		}
-		add(c.ropePipeline, bind(c.ropeLayout, vec, invFreq, ropeQUniFor(ropeScale)), uint32(nH*half+63)/64, 1)
+		add(c.ropePipeline, bind(c.ropeLayout, vec, invFreq, ropeQUniFor(g, ropeScale)), uint32(nH*g.half+63)/64, 1)
 	}
 	// ropeStore rotates src (the K projection) and writes it straight into the KV
 	// cache at pos*kvDim — replacing the K CopyBufferToBuffer append so the token
-	// stays one compute pass. base rides the per-scale ropeKUni. The f16 variant packs
-	// 2 rotated elems/word (one thread per word = nKV*half, same dispatch count).
-	ropeStore := func(src, invFreq, cache, scale *wgpu.Buffer, ropeScale float32) {
+	// stays one compute pass. base rides the per-(geom,scale) ropeKUni. The f16 variant
+	// packs 2 rotated elems/word (one thread per word = nKV*half, same dispatch count).
+	ropeStore := func(g *attnGeom, src, invFreq, cache, scale *wgpu.Buffer, ropeScale float32) {
 		if ropeScale == 0 {
 			ropeScale = 1
 		}
-		ku := ropeKUniFor(ropeScale)
+		ku := ropeKUniFor(g, ropeScale)
 		if m.kvI8 {
 			// one thread per KV head: per-head absmax → scale → quantize + pack 4/word.
-			add(c.ropeStoreI8Pipeline, bind(c.ropeStoreI8Layout, src, invFreq, cache, scale, ku), uint32(nKV+63)/64, 1)
+			add(c.ropeStoreI8Pipeline, bind(c.ropeStoreI8Layout, src, invFreq, cache, scale, ku), uint32(g.nKV+63)/64, 1)
 			return
 		}
 		if m.kvF16 {
 			// word-based (2 f16/word): kvDim/2 = nKV·hd/2 words, covering the rotated span AND the
 			// partial-rotary pass-through tail (C4).
-			add(c.ropeStoreF16Pipeline, bind(c.ropeStoreF16Layout, src, invFreq, cache, ku), uint32(nKV*hd/2+63)/64, 1)
+			add(c.ropeStoreF16Pipeline, bind(c.ropeStoreF16Layout, src, invFreq, cache, ku), uint32(g.nKV*g.hd/2+63)/64, 1)
 		} else {
 			// element-based: nKV·half rotation pairs + nKV·(hd-2·half) pass-through tail = nKV·(hd-half).
-			add(c.ropeStorePipeline, bind(c.ropeStoreLayout, src, invFreq, cache, ku), uint32(nKV*(hd-half)+63)/64, 1)
+			add(c.ropeStorePipeline, bind(c.ropeStoreLayout, src, invFreq, cache, ku), uint32(g.nKV*(g.hd-g.half)+63)/64, 1)
 		}
 	}
 	// vStore copies src (the V projection) into the V cache at pos*kvDim. The f16
 	// variant packs 2 elems/word, so it dispatches half as many threads (one/word);
 	// the int8 variant is one thread per KV head (per-head absmax → scale → pack).
-	vStore := func(src, cache, scale *wgpu.Buffer) {
+	vStore := func(g *attnGeom, src, cache, scale *wgpu.Buffer) {
 		if m.kvI8 {
-			add(c.kvStoreI8Pipeline, bind(c.kvStoreI8Layout, src, cache, scale, vStoreI8Uni), uint32(nKV+63)/64, 1)
+			add(c.kvStoreI8Pipeline, bind(c.kvStoreI8Layout, src, cache, scale, g.vStoreI8Uni), uint32(g.nKV+63)/64, 1)
 			return
 		}
 		if m.kvF16 {
-			words := r.kvDim / 2
-			add(c.kvStoreF16Pipeline, bind(c.kvStoreF16Layout, src, cache, vStoreUni), uint32(words+63)/64, 1)
+			words := g.kvDim / 2
+			add(c.kvStoreF16Pipeline, bind(c.kvStoreF16Layout, src, cache, g.vStoreUni), uint32(words+63)/64, 1)
 			return
 		}
-		add(c.kvStorePipeline, bind(c.kvStoreLayout, src, cache, vStoreUni), uint32(r.kvDim+63)/64, 1)
+		add(c.kvStorePipeline, bind(c.kvStoreLayout, src, cache, g.vStoreUni), uint32(g.kvDim+63)/64, 1)
 	}
 	// qkvFinalize fuses rope(q) + rope-store(k) + store(v) into one dispatch (f32 KV
 	// only). Threads = max(nH·half, kvDim); each does whichever of the three apply.
-	qkvFinalize := func(q, k, v, invFreq, kCache, vCache *wgpu.Buffer, ropeScale float32) {
+	qkvFinalize := func(g *attnGeom, q, k, v, invFreq, kCache, vCache *wgpu.Buffer, ropeScale float32) {
 		if ropeScale == 0 {
 			ropeScale = 1
 		}
-		n := nH * half
-		if r.kvDim > n {
-			n = r.kvDim
+		n := nH * g.half
+		if g.kvDim > n {
+			n = g.kvDim
 		}
-		add(c.qkvFinPipeline, bind(c.qkvFinLayout, q, k, v, invFreq, kCache, vCache, qkvFinUniFor(ropeScale)), uint32(n+63)/64, 1)
+		add(c.qkvFinPipeline, bind(c.qkvFinLayout, q, k, v, invFreq, kCache, vCache, qkvFinUniFor(g, ropeScale)), uint32(n+63)/64, 1)
 	}
 	// biasAdd adds a per-output bias into a projection result (Qwen2 q/k/v bias),
 	// reusing the residual kernel (vec[i] += bias[i]); n is the projection width.
@@ -783,6 +830,14 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			gemvAdd(cq, cs, lw.mlaO, r.xd) // o-proj + residual into xd; FFN below is shared
 		} else {
 			aq, as := rmsQuant(r.xd, lw.attnNorm, hidden)
+			// Resolve this layer's attention geometry (P1): its own head_dim/KV-heads/
+			// rotaryDim, or the model-level shape when the layer carries no override (every
+			// non-Gemma family). geomFor dedups by value, so uniform models reuse one geom.
+			ghd, gnKV, ghalf := hd, nKV, half
+			if lw.ghd != 0 {
+				ghd, gnKV, ghalf = lw.ghd, lw.gnKV, lw.ghalf
+			}
+			g := geomFor(ghd, gnKV, ghalf)
 			var q, k, v *wgpu.Buffer
 			_, w8 := lw.q.(*ResidentW8A8)
 			if lw.qBias != nil && w8 { // Qwen2 q/k/v bias folded into the GEMV epilogue (W8A8)
@@ -792,27 +847,27 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			} else {
 				q, k, v = gemv(aq, as, lw.q), gemv(aq, as, lw.k), gemv(aq, as, lw.v)
 				if lw.qBias != nil { // bias on a non-W8A8 weight: standalone add (matches CPU)
-					biasAdd(q, lw.qBias, nH*hd)
-					biasAdd(k, lw.kBias, r.kvDim)
-					biasAdd(v, lw.vBias, r.kvDim)
+					biasAdd(q, lw.qBias, nH*g.hd)
+					biasAdd(k, lw.kBias, g.kvDim)
+					biasAdd(v, lw.vBias, g.kvDim)
 				}
 			}
 			if lw.qNorm != nil { // Qwen3/GLM per-head QK-norm, after bias, before RoPE (matches CPU)
 				qkNorm(q, lw.qNorm, nH)
-				qkNorm(k, lw.kNorm, nKV)
+				qkNorm(k, lw.kNorm, g.nKV)
 			}
 			if m.kvF16 || m.kvI8 {
-				rope(q, lw.invFreq, lw.ropeScale)
-				ropeStore(k, lw.invFreq, lw.kCache, lw.kScale, lw.ropeScale) // rotate K + append into cache
-				vStore(v, lw.vCache, lw.vScale)                              // append V into cache
+				rope(g, q, lw.invFreq, lw.ropeScale)
+				ropeStore(g, k, lw.invFreq, lw.kCache, lw.kScale, lw.ropeScale) // rotate K + append into cache
+				vStore(g, v, lw.vCache, lw.vScale)                              // append V into cache
 			} else {
 				// f32 KV: one fused dispatch for rope(q) + rope-store(k) + store(v).
-				qkvFinalize(q, k, v, lw.invFreq, lw.kCache, lw.vCache, lw.ropeScale)
+				qkvFinalize(g, q, k, v, lw.invFreq, lw.kCache, lw.vCache, lw.ropeScale)
 			}
-			ctxv := storF(nH * hd)
-			aUni := attnUni // local (sliding-window) layers use the windowed start (Lever C6)
+			ctxv := storF(nH * g.hd)
+			aUni := g.attnUni // local (sliding-window) layers use the windowed start (Lever C6)
 			if lw.isLocal {
-				aUni = attnUniLocal
+				aUni = g.attnUniLocal
 			}
 			if m.kvI8 {
 				// attnI8 reads packed int8 K/V + the per-(pos,head) scale side buffers.
@@ -824,7 +879,7 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 				}
 				add(attnPl, bind(attnLy, q, lw.kCache, lw.vCache, ctxv, aUni), uint32(nH), 1)
 			}
-			cq, cs := quant(ctxv, nH*hd)
+			cq, cs := quant(ctxv, nH*g.hd)
 			gemvAdd(cq, cs, lw.o, r.xd) // o-proj + residual into xd
 		}
 		if lw.nemoKind == nemoKMamba || lw.nemoKind == nemoKAttn {
@@ -875,6 +930,10 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			gemvAdd(dq, ds, lw.down, r.xd) // down-proj + residual into xd
 		}
 	}
+	// Distinct attention geometries the plan actually built (1 for uniform families, 2 for
+	// Gemma 4). The GeomVariantCount test asserts this stays 1 for uniform models — a
+	// regression that allocated per-layer instead of per-tuple would silently inflate it.
+	r.geomVariants = len(geomCache)
 	fq, fs := rmsQuant(r.xd, m.finalNorm, hidden)
 	logits := gemv(fq, fs, m.lmHead)
 	r.lastLogits = logits
@@ -894,6 +953,12 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 	}
 	return r, nil
 }
+
+// GeomVariantCount reports how many distinct attention geometries (hd, nKV, rotaryDim)
+// the resident plan built: 1 for every uniform-geometry family, 2 for Gemma 4's
+// local/global interleave. Tests assert it is 1 for uniform models — the value-keyed
+// dedup collapsing to a single entry is what makes non-Gemma byte-identity structural.
+func (r *DecodeRunner) GeomVariantCount() int { return r.geomVariants }
 
 // writeInputs uploads the per-token input embedding + pos-dependent uniforms (the
 // only buffers that vary per call; the fixed dispatch plan reads them). Split out so

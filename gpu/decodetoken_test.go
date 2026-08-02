@@ -147,6 +147,13 @@ func TestDecodeToken_parity(t *testing.T) {
 		t.Fatalf("NewDecodeRunner: %v", err)
 	}
 	defer runner.Release()
+	// P1 (own-forward residency bridge): both layers share one attention geometry, so the
+	// value-keyed geomFor must dedup them to a single attnGeom. A regression that allocated
+	// one uniform per layer would leave these logits byte-identical while inflating this to
+	// the layer count — the assertion catches what the parity check cannot see.
+	if gv := runner.GeomVariantCount(); gv != 1 {
+		t.Errorf("GeomVariantCount = %d, want 1 (uniform %d-layer model must dedup to one geometry)", gv, L)
+	}
 	gotR, err := runner.Run(x0, pos)
 	if err != nil {
 		t.Fatalf("DecodeRunner.Run: %v", err)
