@@ -88,7 +88,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		return declined(fmt.Errorf("arch needs unimplemented feature(s) %v", missing))
 	}
 
-	H, nLayers, nH, _, hd, I, vocab := m.Dims() // nKV is per-layer now (KVHeadsAtResident); model-level unused
+	H, nLayers, nH, _, _, I, vocab := m.Dims() // nKV, hd are per-layer now (KVHeadsAtResident/HeadDimAtResident); model-level unused
 
 	// ---- MoE knobs (ok=false for a dense model; every field then stays zero) ----
 	// sharedUngated is intentionally dropped (_): CUDA admits only the UNGATED shared expert
@@ -274,8 +274,10 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		if m.LayerIsLocalResident(l) {
 			hl.window = int32(m.SlidingWindowResident())
 		}
-		if m.HasQKNorm() && (len(hl.qNorm) != hd || len(hl.kNorm) != hd) {
-			return declined(fmt.Errorf("layer %d: arch claims QK-norm but QNorm/KNorm are not len==headDim(%d)", l, hd))
+		if hdL := m.HeadDimAtResident(l); m.HasQKNorm() && (len(hl.qNorm) != hdL || len(hl.kNorm) != hdL) {
+			// Per-layer head_dim: Gemma 4's global layers have q_norm/k_norm of GlobalHeadDim (512),
+			// not the model HeadDim (16 local) — validate against the layer's own width.
+			return declined(fmt.Errorf("layer %d: arch claims QK-norm but QNorm/KNorm are not len==headDim(%d)", l, hdL))
 		}
 		if len(hl.preNorm) == 0 || len(hl.postNorm) == 0 {
 			return declined(fmt.Errorf("layer %d missing pre/pre-MLP norm", l))
