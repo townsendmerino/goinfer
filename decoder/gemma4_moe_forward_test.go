@@ -151,6 +151,18 @@ func TestGemma4DenseTwoGeom_forwardParity(t *testing.T) {
 		"scripts/pin_gemma4_dense_twogeom.py")
 }
 
+// TestGemma4DenseScaled_forwardParity is the SCALED dense oracle (hidden 1024, 12 layers, 5:1
+// sliding/full, REAL head dims local 256 / global 512, K=V globals). It is goinfer's CPU forward's
+// FIRST exercise of a 256-local head_dim — the tiny Split-A fixture's local layer is hd=16, a
+// documented coverage gap (docs/gemma4-resident-scope.md). The CPU forward must reproduce the HF
+// golden here before the resident kernel is asked to carry it (cuda/TestGemma4DenseScaled_residentParity).
+func TestGemma4DenseScaled_forwardParity(t *testing.T) {
+	gemma4MoEForwardParity(t,
+		"../testdata/gemma4_dense_scaled_golden.json",
+		"../testdata/gemma4-dense-scaled",
+		"scripts/pin_gemma4_dense_scaled.py")
+}
+
 // TestGemma4MoEKV_forwardParity is the Phase-4 gate for the K=V global layers the
 // real 26B-A4B uses (attention_k_eq_v, num_global_key_value_heads=1): the global
 // layer carries NO v_proj — V is v_norm(k_proj output) — exercising the loader's

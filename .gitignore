@@ -92,3 +92,4 @@ testdata/gemma4-moe-tiny/
 testdata/gemma4-moe-kv-tiny/
 testdata/gemma4-moe-unified-tiny/
 testdata/gemma4-dense-twogeom-tiny/
+testdata/gemma4-dense-scaled/
