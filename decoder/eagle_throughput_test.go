@@ -16,6 +16,7 @@ import (
 // draft+verify work costs more wall-clock than it saves — this measures the real win
 // (or loss). Run with -v; uses the q8 base (the realistic serving config).
 func TestEagleSpecThroughput(t *testing.T) {
+	requireHeavyModel(t)
 	home, _ := os.UserHomeDir()
 	headDir := filepath.Join(home, "models", "qwen3-1.7b-eagle3")
 	basePath := filepath.Join(home, "models", "qwen3-1.7b-q8_0.gguf")

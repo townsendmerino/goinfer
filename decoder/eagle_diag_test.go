@@ -16,6 +16,7 @@ import (
 // indices); ~0 across all configs means a structural bug (concat order / d2t / capture
 // point), not just layer tuning. Run -v.
 func TestEagleAgreementSweep(t *testing.T) {
+	requireHeavyModel(t)
 	home, _ := os.UserHomeDir()
 	headDir := filepath.Join(home, "models", "qwen3-1.7b-eagle3")
 	basePath := filepath.Join(home, "models", "qwen3-1.7b-q8_0.gguf")

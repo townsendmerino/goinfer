@@ -17,6 +17,7 @@ import (
 // trained to predict, so agreement is strong evidence the forward is wired right
 // (full acceptance numbers come in inc 5). Skips without both models.
 func TestEagleHeadForward(t *testing.T) {
+	requireHeavyModel(t)
 	home, _ := os.UserHomeDir()
 	headDir := filepath.Join(home, "models", "qwen3-1.7b-eagle3")
 	basePath := filepath.Join(home, "models", "qwen3-1.7b-q8_0.gguf")

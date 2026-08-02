@@ -12,6 +12,7 @@ import (
 // back to the target vocab. Skips unless the converted head is present at
 // ~/models/qwen3-1.7b-eagle3 (GINFER_EAGLE_DIR overrides).
 func TestLoadEagleHead(t *testing.T) {
+	requireHeavyModel(t)
 	dir := os.Getenv("GINFER_EAGLE_DIR")
 	if dir == "" {
 		home, _ := os.UserHomeDir()

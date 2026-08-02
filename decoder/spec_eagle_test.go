@@ -14,6 +14,7 @@ import (
 // be token-identical to plain greedy on the same base (lossless) — the head only
 // proposes, the target's argmax decides. Also reports the realized tokens/verify.
 func TestEagleSpecParity(t *testing.T) {
+	requireHeavyModel(t)
 	home, _ := os.UserHomeDir()
 	headDir := filepath.Join(home, "models", "qwen3-1.7b-eagle3")
 	basePath := filepath.Join(home, "models", "qwen3-1.7b-q8_0.gguf")

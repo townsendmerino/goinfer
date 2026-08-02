@@ -16,6 +16,7 @@ import (
 // ≈ (tokens committed per verify) − 1 — the EAGLE acceptance signal. (Greedy proxy;
 // the lossless verify integration is inc 4b.) Run -v.
 func TestEagleAcceptedLength(t *testing.T) {
+	requireHeavyModel(t)
 	home, _ := os.UserHomeDir()
 	headDir := filepath.Join(home, "models", "qwen3-1.7b-eagle3")
 	basePath := filepath.Join(home, "models", "qwen3-1.7b-q8_0.gguf")

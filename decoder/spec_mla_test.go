@@ -20,6 +20,7 @@ import (
 //
 // Gated on the local DeepSeek-V2-Lite GGUF (GOINFER_DEEPSEEK_GGUF); skips without it.
 func TestNgramSpecMLA_parity(t *testing.T) {
+	requireHeavyModel(t)
 	home, _ := os.UserHomeDir()
 	gguf := os.Getenv("GOINFER_DEEPSEEK_GGUF")
 	if gguf == "" {

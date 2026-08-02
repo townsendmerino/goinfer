@@ -17,6 +17,7 @@ import (
 // greedy top-1 match (~0.4). If α is high, SAMPLED rejection (not greedy exact-match)
 // is the lever; if it's also ~0.4, the head/protocol is mis-calibrated. Run -v.
 func TestEagleAlpha(t *testing.T) {
+	requireHeavyModel(t)
 	home, _ := os.UserHomeDir()
 	headDir := filepath.Join(home, "models", "qwen3-1.7b-eagle3")
 	basePath := filepath.Join(home, "models", "qwen3-1.7b-q8_0.gguf")
