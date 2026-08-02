@@ -164,6 +164,23 @@ saved. The interaction with Lever 1 stands: on darwin the *replacement decision*
 UBC anyway (no firm cap), so even a better policy wouldn't bind there; and the replay's verdict
 means Lever 1b's motivation is the darwin firm cap alone, not a policy win.
 
+**The principle, so the next person doesn't re-derive it wrong:** *on a stationary skewed signal,
+recency is a sufficient statistic for frequency.* "Hottest 10% absorb 72%" looks like an LFU
+distribution, but if a hot expert is touched every few tokens then LRU never evicts it, so the
+recency ordering already encodes the frequency ordering. LFU only wins when the cache is far
+smaller than the hot set — and naive LFU's establishment pathology (a re-faulted hot item
+restarting at count 1) means it can also *lose*, which is what the table shows.
+
+**Reconciling with fieldfare (or the record misreads).** This is NOT "fieldfare chose LFU and
+LFU is worse." fieldfare runs a **16-slot cache per layer against 128 experts** — a cache-to-
+working-set ratio far smaller than goinfer's 8–16 GB budgets, and precisely the tight regime
+where this replay shows LFU-aging beating LRU (the 3–4 GB rows). Both results are correct at
+their own operating points; **the policy choice is a function of that ratio, not an absolute.**
+goinfer streams at generous budgets where LRU is optimal; fieldfare caches at a tight per-layer
+budget where a frequency-aware policy pays. If goinfer ever runs at a fieldfare-like ratio (a
+firm-capped darwin build under real pressure, Lever 1b), revisit LFU-aging then — the replay
+already says where its +9 pp lives.
+
 ## Lever 3 — overlap routed reads with the resident branch
 
 `docs/ideas-weight-memory.md` states the cold-miss cost is "bandwidth-bound and
