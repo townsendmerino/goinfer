@@ -88,7 +88,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		return declined(fmt.Errorf("arch needs unimplemented feature(s) %v", missing))
 	}
 
-	H, nLayers, nH, nKV, hd, I, vocab := m.Dims()
+	H, nLayers, nH, _, hd, I, vocab := m.Dims() // nKV is per-layer now (KVHeadsAtResident); model-level unused
 
 	// ---- MoE knobs (ok=false for a dense model; every field then stays zero) ----
 	// sharedUngated is intentionally dropped (_): CUDA admits only the UNGATED shared expert
@@ -304,10 +304,6 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	if moeNorm {
 		r.moeNormTopK = 1
 	}
-	// Per-layer attention geometry (9a-P2). Uniform families set every layer to the model
-	// values here; Gemma-4 admission (a later commit) varies hd/nKV/rhalf per layer from the
-	// host descriptor. qDim/kvDim derive from nH (model-constant) and the layer's hd/nKV.
-	lyHd, lyNKV, lyRhalf := hd, nKV, m.RotaryDimResident()/2
 	hFinal := w.FinalNorm
 	r.reqCh = make(chan func() error)
 	r.ackCh = make(chan error)
@@ -428,8 +424,13 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				}
 			}
 			L.window = h.window
-			L.hd, L.nKV, L.rhalf = lyHd, lyNKV, lyRhalf
-			L.qDim, L.kvDim = nH*lyHd, lyNKV*lyHd
+			// Per-layer attention geometry (9a-P2), read from the SAME accessors the CPU forward
+			// uses (headDimAt/kvHeadsAt/isGlobalLayer via the *Resident wrappers) — never a
+			// recomputed interleave, so the runner can't drift from runLayersGemma4. Uniform
+			// families collapse to the model-level fields; Gemma 4's global layers report the wide
+			// head / fewer KV heads / partial rotary.
+			L.hd, L.nKV, L.rhalf = m.HeadDimAtResident(l), m.KVHeadsAtResident(l), m.RotaryDimAtResident(l)/2
+			L.qDim, L.kvDim = nH*L.hd, L.nKV*L.hd
 			r.layers[l] = L
 		}
 		r.lmW = r.upW(hlm)
@@ -438,7 +439,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		// Scratch (Q/K/V projections, attention context) is allocated ONCE and shared across
 		// layers, so it must fit the WIDEST per-layer geometry — Gemma 4's 512-global head, not
 		// a model-level value. maxQDim/maxKVDim reduce to nH*hd / nKV*hd for uniform families.
-		maxQDim, maxKVDim := 0, 0
+		maxQDim, maxKVDim, maxHd := 0, 0, 0
 		for l := range r.layers {
 			if q := r.layers[l].qDim; q > maxQDim {
 				maxQDim = q
@@ -446,13 +447,32 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			if k := r.layers[l].kvDim; k > maxKVDim {
 				maxKVDim = k
 			}
+			if d := m.HeadDimAtResident(l); d > maxHd {
+				maxHd = d
+			}
+		}
+		// The scratch MUST size to the widest head over LAYERS, not m.Dims() — which reports the
+		// LOCAL head_dim (256 for the real 26B), not the 512 the global layers need. Cross-check
+		// maxQDim (from per-layer qDim) against nH*maxHd (from the accessors independently): a
+		// mismatch means the per-layer geometry drifted from its source. GPU OOB writes don't
+		// reliably fault, so assert at plan time rather than wait for a parity red.
+		if maxQDim != nH*maxHd {
+			return fmt.Errorf("cuda: scratch maxQDim=%d != nH*maxHd=%d*%d=%d — per-layer geometry inconsistent with the accessors", maxQDim, nH, maxHd, nH*maxHd)
 		}
 		r.x, r.aSc, r.aq = r.af(H), r.af(1), r.ai(H/4)
 		r.qB, r.kB, r.vB = r.af(maxQDim), r.af(maxKVDim), r.af(maxKVDim)
 		r.kc, r.vc = make([]Buffer, nLayers), make([]Buffer, nLayers)
 		for l := range r.kc {
 			// Each layer's KV cache is sized by ITS OWN kvDim (Gemma 4's local 2048 vs global
-			// 1024), matching the pos*Ly.kvDim stride launchToken indexes it with.
+			// 1024), matching the pos*Ly.kvDim stride launchToken indexes it with. Cross-file
+			// invariant guard (the CUDA twin of the webgpu one — now non-tautological, since two
+			// layers genuinely differ): the kvDim the cache is SIZED with must equal the one the
+			// accessors derive and launchToken INDEXES with. A future edit that sized from a stale
+			// model-level kvDim while the launch indexed per-layer would index off the end into
+			// garbage output, not a panic — so fail loudly at plan time.
+			if want := m.KVHeadsAtResident(l) * m.HeadDimAtResident(l); r.layers[l].kvDim != want {
+				return fmt.Errorf("cuda: layer %d KV cache kvDim=%d != nKV*hd=%d (accessor-derived) — geometry/cache-size mismatch", l, r.layers[l].kvDim, want)
+			}
 			r.kc[l], r.vc[l] = r.af(cudaCtxCap*r.layers[l].kvDim), r.af(cudaCtxCap*r.layers[l].kvDim)
 		}
 		r.cctx, r.cSc, r.cq = r.af(maxQDim), r.af(1), r.ai(maxQDim/4)

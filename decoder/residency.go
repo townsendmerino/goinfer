@@ -180,17 +180,22 @@ func (a *Architecture) decodeRunnerEligible() bool {
 	// RMSNorm before RoPE), q/k/v bias (Qwen2) and the (1+w) RMS offset too. Partial RoPE
 	// (GLM/Phi rotary_dim < HeadDim) is handled (Lever C5), sliding window (Lever C6), and
 	// per-layer-type RoPE (Mellum YaRN-on-global vs default-local invFreq + mscale, Lever
-	// C7). The remaining gate: the local/global rope tables must be the SAME LENGTH so the
-	// runner's single rotaryDim/2 dispatch covers both (a per-layer rotary width — Gemma's
-	// global/local head-dim split — is not handled; Gemma is also softcapped out anyway).
+	// C7). The last gate is ropeResidentCompatible below.
 	return a.ropeResidentCompatible()
 }
 
-// ropeResidentCompatible reports whether the resident runner's per-layer RoPE binding can
-// represent this arch. It binds a per-layer invFreq buffer + per-layer cos/sin scale, so
-// local/global layers MAY differ in RoPE base or YaRN scaling (Mellum) — but the two
-// inverse-freq tables must share a length, since the rope dispatch's rotaryDim/2 is one
-// model-level value. Single-rope families and uniform sliding-window Mistral pass trivially.
+// ropeResidentCompatible guards families whose GENERIC (finalizeRoPE) local/global inv-freq
+// tables differ in length — a shape the pre-9a runner's single model-level rotaryDim/2
+// dispatch could not cover. It checks the generic tables only.
+//
+// NOTE (9a-P2): this is NO LONGER the Gemma blocker its history suggests. The resident
+// runners now plumb a PER-LAYER rotary width (rhalf) and a per-layer invFreq buffer, so
+// differing local/global rotary widths ARE handled — Gemma 4's global partial-rotary lands
+// via RotaryDimAtResident / the resident invFreq wiring, not the generic table. And Gemma
+// passes THIS check trivially anyway: finalizeRoPE builds both generic tables from one `rd`,
+// so they are always equal-length (the check reads the generic tables, not Gemma's real
+// per-layer ones). So this stays a conservative proxy for the legacy case; it is not the
+// per-layer-head-dim decline the old comment claimed, and it does not invent work for Gemma.
 func (a *Architecture) ropeResidentCompatible() bool {
 	return len(a.ropeInvFreqLocal) == len(a.ropeInvFreqGlobal)
 }
@@ -273,6 +278,29 @@ func (m *Model) EmbedScaleResident() float64 { return m.w.arch.EmbedScale }
 // interleaves (3:1 sliding/full).
 func (m *Model) LayerIsLocalResident(i int) bool {
 	return m.w.arch.SlidingWindow > 0 && !m.w.arch.isGlobalLayer(i)
+}
+
+// HeadDimAtResident / KVHeadsAtResident / RotaryDimAtResident expose layer i's attention
+// geometry to a resident runner that plumbs per-layer widths (9a-P2). They delegate to the
+// SAME arch methods the CPU forward uses (headDimAt/kvHeadsAt/isGlobalLayer), so the runner's
+// interleave can never drift from runLayersGemma4's — Gemma 4's global layers report the
+// wider head_dim / fewer KV heads / partial rotary; every uniform family collapses to the
+// model-level Architecture fields.
+func (m *Model) HeadDimAtResident(i int) int { return m.w.arch.headDimAt(i) }
+func (m *Model) KVHeadsAtResident(i int) int { return m.w.arch.kvHeadsAt(i) }
+
+// RotaryDimAtResident is layer i's rotated width. Gemma 4's global layers rotate only the
+// first GlobalRotaryDim of the wide head (partial/proportional rotary); its local layers use
+// full rotary over the local head_dim; every other family uses the model-level rotary dim.
+func (m *Model) RotaryDimAtResident(i int) int {
+	a := m.w.arch
+	if a.gemma4 != nil {
+		if a.gemma4.GlobalRotaryDim > 0 && a.isGlobalLayer(i) {
+			return a.gemma4.GlobalRotaryDim
+		}
+		return a.headDimAt(i) // local: full rotary over the local head_dim
+	}
+	return m.RotaryDimResident()
 }
 
 // LayerRopeGlobal reports whether layer i uses the global RoPE table (vs the local one) —
