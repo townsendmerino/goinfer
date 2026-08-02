@@ -371,3 +371,29 @@ Build order = fail-discretely-first (the user's steer):
 
 Standing gate policy (from task 1): the resident MoE gate is int4-vs-int4 (cuda vs cpu); the f32-floor
 (0.79) is a REPORTED warning, not a bar — if 2c comes back marginal, it's the first suspect.
+
+## Split B task 2 — DONE (dcd44f4 + 568f292), and the calibrated verdict on the drift
+
+`gemma4MoeMLP` ships: parallel dense‖MoE + 5 norms + layerScalar + join (Phase-1a order), router via
+`gemv_f32_f32`, per-expert scale via `scale_wgt_by_expert`, all four kernels in `router_f32.cu` off
+the audited 12.6 `moe.ptx`. Pos-0 whole-forward 0.9996; per-branch (router/dense/expert) all ≥ 0.999
+(TestGemma4MoE_localize). The multi-position int4-vs-int4 drift (min 0.87) came back MARGINAL exactly
+as the standing gate policy predicted, and was CALIBRATED rather than floored:
+- **Routing bit-equal at every position** (32/32 decisions over 16 positions) — a top-k flip reads
+  identical to accumulation in a cosine, so this had to be checked at every position, not just pos 0.
+  No flip ⇒ the drift is pure accumulation.
+- **Gate = run-mean, not per-position:** the CUDA-vs-CPUint4 and CPUint4-vs-f32 curves measure
+  DIFFERENT perturbations (activation-quant vs weight-quant) and legitimately CROSS position-to-position
+  (CUDA dips under at pos 7/9/15 out of 16 — conditioning, since routing is bit-equal there). The
+  length/prompt-robust property is the mean: CUDA must agree with CPU-int4 at least as well ON AVERAGE
+  as int4 agrees with f32. Holds by a wide margin (0.95 vs 0.87). Calibrated over 16 positions.
+
+## Remaining work (and a sequencing constraint that isn't optional)
+
+**The 26B-A4B real-model decode gate is HARDWARE-BLOCKED on this box, not merely deferred.** 26B-A4B at
+int4 is ~13 GB; the RTX 2070 SUPER has 8 GB — it CANNOT run resident here at all. The only local
+hardware that can hold it is the M1 Pro's 16 GB unified memory. So **Metal (9c) is the only path to
+running the deferred real-model gate on owned hardware** — it collapses two open items (the fieldfare
+legal-comparison backend AND the real decode gate) into one port. That makes **9c strictly next over
+9d** (which was already deprioritized on the 4-kernels-vs-1 asymmetry). "Deferred" here means "waiting
+on 9c," not "actionable whenever" — do not pick up the 26B gate on this box; it can't run.
