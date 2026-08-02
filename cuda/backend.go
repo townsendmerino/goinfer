@@ -371,6 +371,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		moeScale: float32(moeScale), nGroup: nGroup, topkGroup: topkGroup,
 		sharedInter: sharedInter,
 		gemma4Moe:   isG4MoE, g4cap: os.Getenv("GOINFER_G4_CAPTURE") != "",
+		// C′: DMA the routed int4 experts host→VRAM slots per token (device read, correct). The
+		// path to running a model whose experts exceed VRAM. Off by default; byte-identical when off.
+		cacheExperts: os.Getenv("GOINFER_MOE_CACHE_EXPERTS") != "",
 	}
 	if moeSig {
 		r.moeSigmoid = 1
@@ -515,7 +518,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			if h.isMoE {
 				L.isMoE = true
 				L.routerW, L.routerB = r.up32(h.router), r.up32(h.routerBs)
-				L.expGU, L.expDown = r.upW(h.expGU), r.upW(h.expDown)
+				L.expGU, L.expDown = r.upExperts(h.expGU), r.upExperts(h.expDown)
 				if h.hasShared {
 					L.hasShared = true
 					L.shGU, L.shDown = r.upW(h.shGU), r.upW(h.shDown)
@@ -526,7 +529,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				// per-expert scale + layerScalar. Dense g/u/d were uploaded via the !h.isMoE branch.
 				L.g4moe = true
 				L.routerW, L.routerB = r.up32(h.router), r.up32(h.routerBs)
-				L.expGU, L.expDown = r.upW(h.expGU), r.upW(h.expDown)
+				L.expGU, L.expDown = r.upExperts(h.expGU), r.upExperts(h.expDown)
 				L.g4preFFN, L.g4postFFN1 = r.up32(h.g4preFFN), r.up32(h.g4postFFN1)
 				L.g4preFFN2, L.g4postFFN2, L.g4postFFN = r.up32(h.g4preFFN2), r.up32(h.g4postFFN2), r.up32(h.g4post)
 				L.perExpertScaleB = r.up32(h.perExpertScale)
@@ -617,6 +620,17 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			// Sized to the MoE expert width, not the dense one (Mellum's moe_intermediate_size
 			// differs from intermediate_size).
 			r.rLogits, r.rIdx, r.rWgt = r.af(nE), r.au32(topK), r.af(topK)
+			if r.cacheExperts { // C′: constant slot ids [0..topK-1] (slot j ← routed expert j) + readback scratch
+				slots := make([]uint32, topK)
+				for j := range slots {
+					slots[j] = uint32(j)
+				}
+				r.slotIdx = r.au32(topK)
+				if e := gpu.Upload(r.slotIdx, slots); e != nil {
+					return e
+				}
+				r.hostIdx = make([]uint32, topK)
+			}
 			r.moeGU = r.af(2 * moeInter)
 			r.moeSc, r.moeScr, r.moeQ = r.af(1), r.af(moeInter), r.ai(moeInter/4)
 			if sharedInter > 0 {

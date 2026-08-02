@@ -34,8 +34,13 @@ from transformers import Gemma4TextConfig
 from transformers.models.gemma4.modeling_gemma4 import Gemma4ForCausalLM
 
 HERE = os.path.dirname(__file__)
-OUT = os.path.join(HERE, "..", "testdata", "gemma4_moe_forward_golden.json")
-CKPT = os.path.join(HERE, "..", "testdata", "gemma4-moe-tiny")
+# PIN_OUT redirects the checkpoint dir (default = the committed golden fixture). A scaled
+# fixture for the A′ latency characterization sets PIN_OUT + PIN_HIDDEN/PIN_MOE_INTER/
+# PIN_NUM_EXPERTS/PIN_TOPK to get realistic per-expert GEMV sizes; the golden JSON it writes
+# alongside is scratch (uncommitted) and not consumed by the latency test.
+CKPT = os.getenv("PIN_OUT", os.path.join(HERE, "..", "testdata", "gemma4-moe-tiny"))
+OUT = os.path.join(os.path.dirname(CKPT), "gemma4_moe_forward_golden.json") if os.getenv("PIN_OUT") else \
+    os.path.join(HERE, "..", "testdata", "gemma4_moe_forward_golden.json")
 
 CFG = dict(
     # hidden/intermediate/moe_intermediate are multiples of 32 (int4 group size). hidden=256 (not 64)
@@ -59,7 +64,8 @@ CFG = dict(
     # the parallel dense + MoE FFN:
     # top-2-of-4, not top-2-of-8: the identical code path (router + indexed expert GEMV + weighted
     # combine) with HALF the near-tie boundaries. No kernel coverage is lost by having fewer experts.
-    enable_moe_block=(os.getenv("PIN_MOE", "1") == "1"), num_experts=4, top_k_experts=2, moe_intermediate_size=int(os.getenv("PIN_MOE_INTER", "64")),
+    enable_moe_block=(os.getenv("PIN_MOE", "1") == "1"), num_experts=int(os.getenv("PIN_NUM_EXPERTS", "4")),
+    top_k_experts=int(os.getenv("PIN_TOPK", "2")), moe_intermediate_size=int(os.getenv("PIN_MOE_INTER", "64")),
 )
 PROMPT = [1, 7, 42, 100, 5, 200, 13, 88]  # len 8 > sliding_window 4 (sliding layer clips)
 N_NEW = 6

@@ -5,6 +5,7 @@ package cuda
 import (
 	"fmt"
 	"math"
+	"unsafe"
 
 	gpu "github.com/townsendmerino/aikit/gpu"
 	"github.com/townsendmerino/aikit/linalg"
@@ -31,6 +32,11 @@ type cudaWQ struct {
 	ws16 Buffer // int4 group scales as f16 (N*K/32) — f32 would be 20% of the
 	//              int4 byte stream; f16 halves that (decode is byte-bound).
 	N, K int
+	// C′ VRAM expert cache: srcW/srcS are the FULL expert stack in pinned host memory (the DMA
+	// source); W/ws16 are then small nSlots-deep DEVICE slot buffers the GEMV reads. perExpertW /
+	// perExpertS are the per-expert strides (uint32 words / uint16 scales) for the H2D fill.
+	srcW, srcS             *gpu.MappedHostBuffer
+	perExpertW, perExpertS int
 }
 
 type cudaLayer struct {
@@ -96,12 +102,15 @@ type cudaResident struct {
 	// backend.go locals; the per-layer KV cache and UploadKV read r.layers[l].kvDim.
 	nH             int
 	eps, attnScale float32
-	finalSoftcap   float32 // Gemma final-logit softcap (30); 0 ⇒ none. Applied host-side in step().
-	vNormUnit      Buffer  // [maxHd] of 1.0 — unit weight so qk_norm (x*inv*w, addOne=0) computes scale-less v_norm for K=V layers. nil unless any layer is kEqV.
-	qkNorm         bool    // arch needs per-head Q/K RMSNorm before RoPE
-	rmsAddOne      bool    // (1+w) offset — false for Qwen3/Llama
-	act            int32   // gated MLP activation, decoder.ActKind (0=gelu-tanh, 1=silu)
-	sandwich       bool    // Gemma 4-norm sandwich: extra post-attn / post-MLP norms
+	finalSoftcap   float32  // Gemma final-logit softcap (30); 0 ⇒ none. Applied host-side in step().
+	vNormUnit      Buffer   // [maxHd] of 1.0 — unit weight so qk_norm (x*inv*w, addOne=0) computes scale-less v_norm for K=V layers. nil unless any layer is kEqV.
+	qkNorm         bool     // arch needs per-head Q/K RMSNorm before RoPE
+	rmsAddOne      bool     // (1+w) offset — false for Qwen3/Llama
+	act            int32    // gated MLP activation, decoder.ActKind (0=gelu-tanh, 1=silu)
+	sandwich       bool     // Gemma 4-norm sandwich: extra post-attn / post-MLP norms
+	cacheExperts   bool     // C′: routed experts DMA'd host→VRAM slots per token (device read; correct)
+	slotIdx        Buffer   // C′: [0,1,…,topK-1], bound as the GEMV's idx so slot j holds routed expert j
+	hostIdx        []uint32 // C′: scratch for the per-layer rIdx device→host readback
 
 	// Sparse MoE. The router projection stays f32 (gemv_f32_a8) while the experts are int4:
 	// the router's output steers a DISCRETE choice, so a quantization error near a tie does not
@@ -219,6 +228,104 @@ func (r *cudaResident) upW(h hostW) cudaWQ {
 	return w
 }
 
+// upExperts uploads an expert stack, VRAM-slot-cached (C′) when cacheExperts is set and the weight
+// is int4 (the only kind the resident MoE GEMVs accept), else fully VRAM-resident. (The A′ zero-copy
+// direct-read path was removed: correct in isolation but mis-read by gemv_w4a8_moe at width — see
+// docs/task-moe-streaming.md and NewMappedHostBuffer's doc; C′ reads device memory and is bit-exact.)
+func (r *cudaResident) upExperts(h hostW) cudaWQ {
+	if r.cacheExperts && h.kind == "int4" {
+		return r.cacheWQ(h)
+	}
+	return r.upW(h)
+}
+
+// cacheWQ (C′) keeps the FULL expert stack in pinned host memory (srcW/srcS, the DMA source) and
+// allocates a small nSlots-deep DEVICE slot buffer (W/ws16) that the GEMV actually reads. Per token
+// the routed experts are DMA'd from the host source into the slots (loadWQ); the kernel indexes by
+// SLOT id, so it runs unmodified against the smaller stack (no moe.ptx change). nSlots = topK for
+// the correctness cut — every routed expert is loaded fresh, no cross-token reuse (that is the LRU
+// optimization on top). rowsPerExpert = N/nE (the stack has nE experts, N total rows).
+func (r *cudaResident) cacheWQ(h hostW) cudaWQ {
+	w := cudaWQ{kind: h.kind, N: h.N, K: h.K}
+	rowsPerExpert := h.N / r.nE
+	w.perExpertW = rowsPerExpert * (h.K / 8)  // uint32 words per expert weight (Kwords = K/8)
+	w.perExpertS = rowsPerExpert * (h.K / 32) // uint16 group scales per expert (Kgroups = K/32)
+	w.srcW = r.mapBytes(u32bytes(h.wpk))
+	w.srcS = r.mapBytes(u16bytes(h.ws16))
+	nSlots := r.topK
+	w.W = r.au32(nSlots * w.perExpertW)
+	w.ws16 = gpu.NewBufferLenOf[uint16](r.dev, nSlots*w.perExpertS)
+	return w
+}
+
+// loadWQ (C′) DMAs the topK routed experts from the pinned host source into device slots: slot j
+// gets routed expert hostIdx[j]. Synchronous H2D (gocudrv v0.2.0) — async overlap is a later bump.
+func (r *cudaResident) loadWQ(w *cudaWQ, hostIdx []uint32) error {
+	srcW, srcS := w.srcW.Bytes(), w.srcS.Bytes()
+	for j := 0; j < r.topK; j++ {
+		e := int(hostIdx[j])
+		wOff, wLen := e*w.perExpertW*4, w.perExpertW*4
+		sOff, sLen := e*w.perExpertS*2, w.perExpertS*2
+		if err := gpu.Upload(w.W.At(j*w.perExpertW*4), srcW[wOff:wOff+wLen]); err != nil {
+			return err
+		}
+		if err := gpu.Upload(w.ws16.At(j*w.perExpertS*2), srcS[sOff:sOff+sLen]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// loadRoutedExperts reads back the router's idx (device→host — C′'s acknowledged per-layer sync)
+// and stages the routed experts into VRAM slots for both expert projections.
+func (r *cudaResident) loadRoutedExperts(gu, down *cudaWQ) error {
+	if e := r.stream.Sync(); e != nil {
+		return e
+	}
+	if e := gpu.Download(r.rIdx, r.hostIdx[:r.topK]); e != nil {
+		return e
+	}
+	if e := r.loadWQ(gu, r.hostIdx); e != nil {
+		return e
+	}
+	return r.loadWQ(down, r.hostIdx)
+}
+
+// expIdx is the idx argument the expert GEMVs bind: the constant slot ids [0..topK-1] when caching
+// (slot j holds routed expert j), else the router's real rIdx (fully-resident path).
+func (r *cudaResident) expIdx() Buffer {
+	if r.cacheExperts {
+		return r.slotIdx
+	}
+	return r.rIdx
+}
+
+func u32bytes(v []uint32) []byte {
+	if len(v) == 0 {
+		return nil
+	}
+	return unsafe.Slice((*byte)(unsafe.Pointer(&v[0])), len(v)*4)
+}
+
+func u16bytes(v []uint16) []byte {
+	if len(v) == 0 {
+		return nil
+	}
+	return unsafe.Slice((*byte)(unsafe.Pointer(&v[0])), len(v)*2)
+}
+
+// mapBytes allocates pinned (device-mapped) host memory and copies src into it — the C′ DMA source.
+// Panics on the UVA guard failing (NewMappedHostBuffer): eligibility already asserted a UVA device,
+// so a failure here is a broken invariant, not a runtime condition.
+func (r *cudaResident) mapBytes(src []byte) *gpu.MappedHostBuffer {
+	mb, err := r.dev.NewMappedHostBuffer(len(src))
+	if err != nil {
+		panic(fmt.Sprintf("cacheWQ: NewMappedHostBuffer(%d): %v", len(src), err))
+	}
+	copy(mb.Bytes(), src)
+	return mb
+}
+
 func (r *cudaResident) do(j func() error) error { r.reqCh <- j; return <-r.ackCh }
 
 // checkCap guards the resident KV allocation. Every layer's cache is sized cudaCtxCap*kvDim, so
@@ -328,6 +435,16 @@ func (r *cudaResident) Close() error {
 		if r.logitsPinned != nil {
 			_ = r.logitsPinned.Close()
 			r.logitsPinned, r.logitsHost = nil, nil
+		}
+		// A′: host-mapped expert stacks are page-locked host memory too (not in the device
+		// ledger), so free them here alongside logitsPinned, before ReleaseObjects.
+		for i := range r.layers {
+			for _, m := range []*gpu.MappedHostBuffer{
+				r.layers[i].expGU.srcW, r.layers[i].expGU.srcS, r.layers[i].expDown.srcW, r.layers[i].expDown.srcS} {
+				if m != nil {
+					_ = m.Close()
+				}
+			}
 		}
 		// The Device OWNS every device allocation (weights, KV caches, scratch) in its ledger;
 		// ReleaseObjects frees all of them in the correct order, then the modules + stream, then
@@ -457,6 +574,11 @@ func (r *cudaResident) moeMLP(Ly *cudaLayer) error {
 		return e
 	}
 	gu := 2 * r.moeInter
+	if r.cacheExperts { // C′: readback idx, DMA routed experts into VRAM slots (slot j ← expert rIdx[j])
+		if e := r.loadRoutedExperts(&Ly.expGU, &Ly.expDown); e != nil {
+			return e
+		}
+	}
 	for j := 0; j < r.topK; j++ {
 		// gate‖up for the routed expert, in ONE indexed GEMV: the stack interleaves each
 		// expert's gate and up rows (packWeightStack(g0,u0,g1,u1,...)), so one row range of
@@ -464,7 +586,7 @@ func (r *cudaResident) moeMLP(Ly *cudaLayer) error {
 		if e := r.launch(r.fMoEGemv, LaunchConfig{GridX: uint32((gu + 7) / 8), GridY: 1, GridZ: 1,
 			BlockX: 256, BlockY: 1, BlockZ: 1},
 			Arg(Ly.expGU.W), Arg(r.mq), Arg(Ly.expGU.ws16), Arg(r.mSc),
-			Arg(r.rIdx), gpu.ArgValue(int32(j)), gpu.ArgValue(int32(gu)),
+			Arg(r.expIdx()), gpu.ArgValue(int32(j)), gpu.ArgValue(int32(gu)),
 			gpu.ArgValue(int32(gu)), gpu.ArgValue(int32(r.hidden/8)), gpu.ArgValue(int32(r.hidden/32)),
 			Arg(r.moeGU)); e != nil {
 			return e
@@ -481,7 +603,7 @@ func (r *cudaResident) moeMLP(Ly *cudaLayer) error {
 		if e := r.launch(r.fMoEWacc, LaunchConfig{GridX: uint32((r.hidden + 7) / 8), GridY: 1, GridZ: 1,
 			BlockX: 256, BlockY: 1, BlockZ: 1},
 			Arg(Ly.expDown.W), Arg(r.moeQ), Arg(Ly.expDown.ws16), Arg(r.moeSc),
-			Arg(r.rIdx), Arg(r.rWgt), gpu.ArgValue(int32(j)), gpu.ArgValue(int32(r.hidden)),
+			Arg(r.expIdx()), Arg(r.rWgt), gpu.ArgValue(int32(j)), gpu.ArgValue(int32(r.hidden)),
 			gpu.ArgValue(int32(r.hidden)), gpu.ArgValue(int32(r.moeInter/8)), gpu.ArgValue(int32(r.moeInter/32)),
 			Arg(r.x)); e != nil {
 			return e
@@ -580,9 +702,14 @@ func (r *cudaResident) gemma4MoeMLP(Ly *cudaLayer, l int) error {
 	if e := gpu.Upload(r.g4x2, r.g4zero); e != nil { // clear the accumulator (no D2D helper; g4zero is a cached host slice)
 		return e
 	}
+	if r.cacheExperts { // C′: readback idx, DMA routed experts into VRAM slots (slot j ← expert rIdx[j])
+		if e := r.loadRoutedExperts(&Ly.expGU, &Ly.expDown); e != nil {
+			return e
+		}
+	}
 	for j := 0; j < r.topK; j++ {
 		if e := r.launch(r.fMoEGemv, LaunchConfig{GridX: uint32((gu + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
-			Arg(Ly.expGU.W), Arg(r.mq), Arg(Ly.expGU.ws16), Arg(r.mSc), Arg(r.rIdx),
+			Arg(Ly.expGU.W), Arg(r.mq), Arg(Ly.expGU.ws16), Arg(r.mSc), Arg(r.expIdx()),
 			gpu.ArgValue(int32(j)), gpu.ArgValue(int32(gu)), gpu.ArgValue(int32(gu)),
 			gpu.ArgValue(int32(r.hidden/8)), gpu.ArgValue(int32(r.hidden/32)), Arg(r.moeGU)); e != nil {
 			return e
@@ -592,7 +719,7 @@ func (r *cudaResident) gemma4MoeMLP(Ly *cudaLayer, l int) error {
 			return e
 		}
 		if e := r.launch(r.fMoEWacc, LaunchConfig{GridX: uint32((r.hidden + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
-			Arg(Ly.expDown.W), Arg(r.moeQ), Arg(Ly.expDown.ws16), Arg(r.moeSc), Arg(r.rIdx), Arg(r.rWgt),
+			Arg(Ly.expDown.W), Arg(r.moeQ), Arg(Ly.expDown.ws16), Arg(r.moeSc), Arg(r.expIdx()), Arg(r.rWgt),
 			gpu.ArgValue(int32(j)), gpu.ArgValue(int32(r.hidden)), gpu.ArgValue(int32(r.hidden)),
 			gpu.ArgValue(int32(r.moeInter/8)), gpu.ArgValue(int32(r.moeInter/32)), Arg(r.g4x2)); e != nil {
 			return e

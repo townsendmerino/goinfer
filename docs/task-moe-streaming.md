@@ -223,6 +223,118 @@ modest prompts." This is the alternative to that cap.
 
 ---
 
+## Residency-track pivot: host↔VRAM expert streaming (A′), and why zero-copy stalled at the kernel
+
+The streaming levers above move bytes disk↔host. They do not unblock the stated goal — running
+the real 26B-A4B on the 8 GB 2070 — because Gemma 4 declines residency-with-experts-in-VRAM: the
+~11.4 GB of int4 experts do not fit. The goal-aligned move is host↔VRAM: keep the ~1.3 GB
+non-expert core resident in device memory, read the experts from pinned host memory over PCIe.
+This is the "revisit with the residency track" note in Out-of-scope, now taken up.
+
+**A′ = zero-copy expert stacks.** aikit `gpu.NewMappedHostBuffer` (tag `gpu/v0.18.0`): pinned host
+memory (`cuMemAllocHost`) whose host pointer IS the device pointer under UVA — no
+`cuMemHostGetDevicePointer`, no gocudrv change. The goinfer wiring (experts host-mapped, GEMV reads
+them over PCIe) was prototyped, proven wrong at width, and then **removed from shipped code** — a
+path that yields wrong logits does not ship even env-gated. The finding below is the record; the
+primitive stays (C′'s DMA source), and its exported doc now carries the mis-read caveat.
+
+**The premise — "one allocation change, kernels unchanged, bit-identical" — is FALSE at scale.**
+Layered evidence (all on the RTX 2070 SUPER, deterministic):
+
+- The mapped-read PRIMITIVE is correct in isolation, far past anything the model needs: the plain
+  W4A8 GEMV reads mapped host memory bit-identically to a device buffer at K up to 4096 words
+  (1 MB rows), byte offsets up to 64 MB, and N up to 4096 rows (occupancy). aikit `gpu`
+  `TestMappedHost_*` (large-K / offset / bigN) — all 0-diff.
+- The goinfer resident MoE forward is BIT-IDENTICAL streamed==resident at toy scale
+  (`TestGemma4MoE_streamExpertsBitExact`, gemma4-moe-tiny) and on a many-expert/small-K fixture
+  (32 experts, top-8, hidden 256 — 0/256), but DIVERGES at realistic width (hidden 2048, moe_inter
+  768 — 255/256 logits differ). One wrong layer-0 expert read cascades through routing.
+- The divergence is **not** offset, K, occupancy, expert count, or the allocation/VRAM-layout
+  change: the **holdalive control** — allocate the experts host-mapped (identical device-footprint
+  relief) but have the kernel READ device copies — is 0/256, bit-exact. Only when the kernel READS
+  mapped memory does it diverge.
+- Locus: `gemv_w4a8_moe`'s indexed read from mapped host memory, in-context at width. The plain
+  W4A8 GEMV reads mapped memory fine in isolation, so the MoE kernel's mapped read is the open
+  mechanism — a KERNEL problem, not an allocation one. `moe.ptx` is audited/frozen, not a cheap edit.
+- **NOT a stream-ordering / idx race.** Hypothesis: `moe_route` writes `idx[]` and `gemv_w4a8_moe`
+  reads it to compute the expert base; maybe the ordering was only *usually* satisfied and the
+  slower zero-copy reads changed the interleaving enough to expose a latent race — which C′ would
+  then INHERIT. Probe: insert an explicit `r.stream.Sync()` between the route and the expert GEMV,
+  streamed path only. Result: **still 255/256** — forcing the ordering changed nothing. So the
+  single-stream ordering was already holding (all kernels are on the one `r.stream`; CUDA
+  serializes same-stream launches), **there is no latent idx race in shipped code, and C′ does not
+  inherit one.** The 5.51× was not the mechanism; the mapped read itself is.
+
+**Recurring lesson (record it next to the fixture-representativeness rule): isolation proves the
+primitive, never the composition.** A′'s premise — "one allocation change, kernels unchanged,
+therefore bit-identical" — was wrong, and the reason generalizes. The mapped read is correct in
+isolation (1 MB rows / 64 MB offsets / 4096 warps) and wrong in the composed forward at width. This
+is the third instance on this track: attention was "hd-parametric so 512 should work" (tested
+anyway); gelu-tanh was "proven by the cross-product of two shipping paths" (kept the isolated
+check); this one had NO composition test until the scaled fixture caught it. A passing isolation
+test is necessary, not sufficient — every new primitive needs a composition gate at realistic width
+before it is trusted in the full forward.
+
+**Consequence for phasing.** A′-as-one-allocation-change does not reach B′ (the real 26B). The
+robust path is **C′ — stage experts into device VRAM slots** (LRU cache, budget-bounded): the
+kernel then reads DEVICE memory, which the holdalive control just proved is bit-exact at width. C′
+is therefore correctness-required, not merely a latency optimization. Either (a) root-cause why
+`gemv_w4a8_moe` specifically mis-reads mapped memory in the full forward (fastest route to the 26B
+IF fixable), or (b) build C′ on the proven-correct device-read path. The `NewMappedHostBuffer`
+primitive stays valid and useful (correct in isolation; the host-side staging buffer for C′'s DMA).
+
+Reproduce: `scripts/pin_gemma4_moe_forward.py` now takes `PIN_OUT`/`PIN_NUM_EXPERTS`/`PIN_TOPK`
+(defaults unchanged → committed golden). Build bigk `PIN_OUT=… PIN_HIDDEN=2048 PIN_MOE_INTER=768
+PIN_NUM_EXPERTS=4 PIN_TOPK=2`; the harness is `cuda/gemma4_moe_stream_test.go`
+(`GOINFER_HEAVY_TESTS=1 GOINFER_MOE_SCALED_FIXTURE=<dir>`).
+
+**KNOWN CONDITION (left open, not closed): `gemv_w4a8_moe` returns wrong data when its weight
+argument is host-mapped (zero-copy) memory at width, while `gemv_w4a8_fwd` reads the same memory
+correctly.** Moot for C′ (which reads device memory) and not a shipped-code defect (the shipped
+resident path always uploads to device), but it is a real state in which a shipped kernel is
+wrong: point that kernel at anything other than device memory and it will be rediscovered the hard
+way. The mechanism is unexplained (not offset/K/occupancy/ordering — all ruled out above).
+
+## C′ — VRAM expert cache (the path to B′)
+
+The correct and now-chosen path: experts live in **pinned host memory** (the `NewMappedHostBuffer`
+primitive, reused here as a DMA *source*, not a zero-copy target); each token, the routed experts
+are **DMA'd into device slots** that the GEMV reads — the device read `holdalive` proved bit-exact
+and the sync probe proved race-free.
+
+- **No kernel change (confirmed as the first gate).** `gemv_w4a8_moe` computes
+  `weightRow = idx[slot]*rowsPerExpert + n` against a stacked buffer and has no notion of how many
+  experts the stack holds. So the host DMAs the routed experts into a small slot-stacked device
+  buffer and writes **slot ids** into the buffer the kernel reads as `idx`; the kernel runs
+  unmodified against a smaller stack. `moe.ptx` (audited/frozen) is untouched. "Does C′ touch
+  moe.ptx" is the cost-deciding question, so it is gate #1, not an afterthought.
+- **Build on gocudrv v0.2.0 with SYNCHRONOUS H2D.** The bump to v0.3.0 (async H2D for overlap) is a
+  later *optimization* of the fill with its own aikit-wide CUDA sweep (anncuda/enccuda/qwencuda/
+  visioncuda), not a prerequisite — sync H2D is a correct first cut. Landing v0.3.1's breaking
+  `PinnedHost` signature change under a new architecture is two moving variables; correctness first
+  on known-good deps, then bump + measure.
+- **Step 1 = STAGING, not yet a cache (shipped, `GOINFER_MOE_CACHE_EXPERTS`).** nSlots = topK, load
+  the routed experts fresh every token, slot id = j, NO cross-token reuse. This already fits VRAM
+  (only topK experts resident) and reaches B′ — but with topK slots every token re-DMAs all routed
+  experts: ~8×30 = 240 experts ≈ **714 MB/token** over PCIe, a ~60 ms/token floor before compute.
+  Correct and the right first cut; the "cache" name describes step 2's ambition, not step 1's
+  behaviour. Bit-identical to fully-resident at tiny + bigk + full-scaled width (the exact widths
+  A′ zero-copy was 255/256), unmodified kernel.
+- **Step 2 = the actual cache (the win).** nSlots > topK with cross-token reuse and LRU eviction
+  (`EvictLeastRecent`, the Lever-2 stationary-skew verdict finally used). Budget on the 8 GB 2070:
+  core ~1.3 GB + KV ~0.5 GB + slots leaves **~5 GB ≈ ~45% of the full expert set** as real LRU
+  slots; at the measured skew that collapses 714 MB/token toward the ~50 MB estimate — what makes B′
+  *practical* rather than merely fittable. Plus the gocudrv v0.3.0 async-H2D overlap (its own bump +
+  aikit-wide sweep). This is where the hit-rate work pays; step 1 does none of it.
+- **ARCHITECTURAL COST, recorded up front:** the host must know `idx` to decide what to DMA, and
+  `idx` is written on-device by the router. So C′ inherently pays a **device→host `idx` readback per
+  MoE layer per token** — ~30 round-trips/token for the 26B, each draining the stream. This is
+  *exactly* what `task-metal-moe.md` says the on-GPU router exists to avoid ("a host-side top-k
+  readback between router and experts would force a per-token sync and destroy that pipeline"). C′
+  knowingly pays it as a correctness vehicle and to reach B′; its tok/s must NOT be read as a
+  production streaming number. The production design manages the cache on-device (no readback) and
+  is a separate effort.
+
 ## Measurement and gates
 
 - **Rigs:** M1 Pro 16 GB (darwin, no firm cap — the fieldfare-comparable rig) *and* the
