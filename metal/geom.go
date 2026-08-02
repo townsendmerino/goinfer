@@ -11,8 +11,11 @@ package metal
 // catch. On a uniform family every layer resolves to the SAME geometry, so geomFor dedups by
 // value and the whole model shares one attnGeom — byte-identical to the old model-level path.
 //
-// nH (query heads) is NOT part of the key: it is constant across a family's layers (Gemma 4
-// varies head_dim and kv_heads, not the query-head count), so it stays model-level on *Resident.
+// nH (query heads) is LOAD-BEARING as a model-level field: it is NOT part of the geom key
+// because it is constant across a family's layers (Gemma 4 varies head_dim and kv_heads, not the
+// query-head count — 16 in both the 12B and 26B variants), so it stays on *Resident. A future
+// family with PER-LAYER query-head counts would break this: it would have to move nH onto attnGeom
+// and add it to the key. This comment is the marker that stops the next person bisecting for it.
 // nHhd = nH*hd DOES vary with hd, so uNHhd is derived per-geometry here. kEqV joins the key
 // because a K=V layer's V-store behaviour differs from a v_proj layer's even at identical dims
 // (9c Step 3: V = v_norm(raw k), its own cache) — two such layers must not share a geom.
