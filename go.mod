@@ -12,8 +12,8 @@ require (
 
 require (
 	github.com/cogentcore/webgpu v0.23.0 // indirect
-	github.com/ebitengine/purego v0.10.0 // indirect
-	github.com/eitamring/gocudrv v0.2.0 // indirect
-	github.com/townsendmerino/aikit/gpu v0.18.0 // indirect
+	github.com/ebitengine/purego v0.10.1 // indirect
+	github.com/eitamring/gocudrv v0.3.2 // indirect
+	github.com/townsendmerino/aikit/gpu v0.19.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 )
