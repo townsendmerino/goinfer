@@ -18,6 +18,7 @@ import (
 //	hf download CodeFault/Mellum2-12B-A2.5B-Instruct-GGUF \
 //	  Mellum2-12B-A2.5B-Instruct-Q4_K_M.gguf --local-dir testdata/mellum-gguf
 func TestMellumGGUF_runs(t *testing.T) {
+	requireHeavyModel(t) // loads a 12B Mellum GGUF (local, multi-GB)
 	if testing.Short() {
 		t.Skip("slow: loads an ~8 GB Mellum2 GGUF")
 	}

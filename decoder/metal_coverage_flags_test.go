@@ -15,6 +15,7 @@ import (
 // knows what "correct" looks like before it runs. Skips per-family when the checkpoint is
 // absent (CI has none of these).
 func TestMetalCoverageFlags(t *testing.T) {
+	requireHeavyModel(t) // loads real ~/models checkpoints (qwen3-1.7b, phi3-mini-4k, ...)
 	cases := []struct {
 		family string
 		path   string

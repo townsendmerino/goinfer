@@ -57,6 +57,7 @@ func TestConfig_giwRoundTrip_nilRawMessage(t *testing.T) {
 // .gguf via GINFER_PREQUANT_GGUF to run locally.
 func prequantGGUF(t *testing.T) string {
 	t.Helper()
+	requireHeavyModel(t) // loads a real GGUF (qwen2.5-coder-0.5b, or GINFER_PREQUANT_GGUF) — auto-fired on the box
 	path := os.Getenv("GINFER_PREQUANT_GGUF")
 	if path == "" {
 		path = "../testdata/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"
@@ -356,6 +357,7 @@ func TestSerializeGemma4MoE_roundTrip(t *testing.T) {
 // which .giw v4 must carry. Reload must reproduce the greedy decode byte-identically.
 // Skips without the local E2B GGUF.
 func TestSerializeGemma4E2B_roundTrip(t *testing.T) {
+	requireHeavyModel(t) // loads ~/models gemma-4-E2B (real, multi-GB)
 	path := os.Getenv("HOME") + "/models/gemma-4-E2B_q4_0-it.gguf"
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no E2B gguf (%v)", err)
