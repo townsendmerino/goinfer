@@ -288,6 +288,14 @@ func (m *Model) LayerIsLocalResident(i int) bool {
 func (m *Model) HeadDimAtResident(i int) int { return m.w.arch.headDimAt(i) }
 func (m *Model) KVHeadsAtResident(i int) int { return m.w.arch.kvHeadsAt(i) }
 
+// VFromKResident reports whether layer i is a K=V layer (attention_k_eq_v): it carries NO
+// v_proj — V is v_norm(the raw k_proj output). Gemma 4 sets this on its GLOBAL layers (12B/26B;
+// off for E2B). This is arch.KVShared (the per-layer attention_k_eq_v), deliberately distinct
+// from SharedKVLayers (the unrelated cross-layer KV reuse the E-models use).
+func (m *Model) VFromKResident(i int) bool {
+	return m.w.arch.gemma4 != nil && m.w.arch.gemma4.KVShared && m.w.arch.isGlobalLayer(i)
+}
+
 // RotaryDimAtResident is the rotary width the resident rope_kv kernel pairs over for layer i,
 // i.e. 2×rhalf. Gemma 4 rotates the FULL head width on every layer (rhalf = headDim/2, pairing
 // d with d+headDim/2 — the "split at headDim/2" convention of applyRoPE and gemma4InvFreq): its

@@ -45,7 +45,11 @@ type cudaLayer struct {
 	// wrong (uniform) source; nH stays model-level (constant across a family's layers).
 	// qDim = nH*hd, kvDim = nKV*hd, rhalf = rotaryDim/2 (rotated pairs per head).
 	hd, nKV, qDim, kvDim, rhalf int
-	preNorm, postNorm           Buffer
+	// kEqV (attention_k_eq_v, Gemma 4 global layers): this layer has NO v_proj — V is
+	// v_norm(the raw pre-RoPE k_proj output), stored un-rotated in its OWN vCache (NOT aliased
+	// to kCache; kvDim is NOT halved). launchToken derives V from k before rope_kv mutates it.
+	kEqV              bool
+	preNorm, postNorm Buffer
 	// Gemma sandwich norms (absent unless NormSandwich4): applied to the SUBLAYER OUTPUT before
 	// the residual add, not to a GEMV input.
 	postAttnNorm, postMLPNorm Buffer
@@ -84,6 +88,7 @@ type cudaResident struct {
 	nH             int
 	eps, attnScale float32
 	finalSoftcap   float32 // Gemma final-logit softcap (30); 0 ⇒ none. Applied host-side in step().
+	vNormUnit      Buffer  // [maxHd] of 1.0 — unit weight so qk_norm (x*inv*w, addOne=0) computes scale-less v_norm for K=V layers. nil unless any layer is kEqV.
 	qkNorm         bool    // arch needs per-head Q/K RMSNorm before RoPE
 	rmsAddOne      bool    // (1+w) offset — false for Qwen3/Llama
 	act            int32   // gated MLP activation, decoder.ActKind (0=gelu-tanh, 1=silu)
@@ -524,7 +529,15 @@ func (r *cudaResident) launchToken(emb []float32, pos int) error {
 				return e
 			}
 			_ = r.doG(Ly.k, r.aq, r.aSc, kb, r.kB, 0)
-			_ = r.doG(Ly.v, r.aq, r.aSc, vb, r.vB, 0)
+			if Ly.kEqV {
+				// K=V (attention_k_eq_v): no v_proj. V = v_norm(RAW k_proj output), so recompute
+				// the k projection into vB (bit-identical to kB before k-norm/RoPE touch it) — a
+				// second GEMV rather than a device copy (no D2D helper), the raw-k source v_norm
+				// needs. v-norm is applied below, after qk-norm, before rope_kv rotates k.
+				_ = r.doG(Ly.k, r.aq, r.aSc, kb, r.vB, 0)
+			} else {
+				_ = r.doG(Ly.v, r.aq, r.aSc, vb, r.vB, 0)
+			}
 		}
 		// QK-norm (Qwen3/GLM/Mellum): per-head RMSNorm of Q and K over head_dim, BEFORE RoPE
 		// (decoder/attention.go:94-96). One block per head; only dispatched for archs that
@@ -541,6 +554,18 @@ func (r *cudaResident) launchToken(emb []float32, pos int) error {
 				gpu.ArgValue(r.eps), gpu.ArgValue(addOne)); e != nil {
 				return e
 			}
+		}
+		if Ly.kEqV {
+			// K=V: scale-less v_norm(vB) = qk_norm reused with nH=0 (skip the Q pass), k=vB, UNIT
+			// weight, addOne=0 → x*inv*1. One block per V head (GridX=nKV). Runs AFTER qk-norm
+			// (which touched kB, not vB) and BEFORE rope_kv (which stores vB un-rotated) — vB still
+			// holds the RAW k here, so this is v_norm(raw k), not v_norm(k_norm(k)). Proven
+			// bit-identical to the CPU oracle by TestVNorm_scaleless.
+			_ = r.launch(r.fQKN, LaunchConfig{GridX: uint32(Ly.nKV), GridY: 1, GridZ: 1,
+				BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: 128 * 8},
+				Arg(r.vB), Arg(r.vB), Arg(r.vNormUnit), Arg(r.vNormUnit),
+				gpu.ArgValue(int32(0)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)),
+				gpu.ArgValue(r.eps), gpu.ArgValue(int32(0)))
 		}
 		// fused rope(q)+rope(k)+kv_store(k)+kv_store(v): 4 launches → 1 (same math/order).
 		// rhalf == hd/2 for full rotary (tail group empty, bit-identical to the pre-partial

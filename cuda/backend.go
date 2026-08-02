@@ -152,7 +152,13 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			dst *hostW
 			src *linalg.WeightMat
 		}{
-			{&hl.q, &lw.QProj}, {&hl.k, &lw.KProj}, {&hl.v, &lw.VProj}, {&hl.o, &lw.OProj},
+			{&hl.q, &lw.QProj}, {&hl.k, &lw.KProj}, {&hl.o, &lw.OProj},
+		}
+		if !m.VFromKResident(l) { // K=V (attention_k_eq_v) global layers carry NO v_proj — V=v_norm(k)
+			proj = append(proj, struct {
+				dst *hostW
+				src *linalg.WeightMat
+			}{&hl.v, &lw.VProj})
 		}
 		if !hl.isMoE {
 			// A routed layer carries no dense FFN — GateProj/UpProj/DownProj are empty, and
@@ -396,7 +402,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		for l := 0; l < nLayers; l++ {
 			h := &hls[l]
 			L := cudaLayer{
-				q: r.upW(h.q), k: r.upW(h.k), v: r.upW(h.v), o: r.upW(h.o),
+				q: r.upW(h.q), k: r.upW(h.k), o: r.upW(h.o), // v uploaded below only for non-K=V layers
 				preNorm: r.up32(h.preNorm), postNorm: r.up32(h.postNorm),
 				invF: r.up32(h.invFreq),
 			}
@@ -431,6 +437,10 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			// head / fewer KV heads / partial rotary.
 			L.hd, L.nKV, L.rhalf = m.HeadDimAtResident(l), m.KVHeadsAtResident(l), m.RotaryDimAtResident(l)/2
 			L.qDim, L.kvDim = nH*L.hd, L.nKV*L.hd
+			L.kEqV = m.VFromKResident(l)
+			if !L.kEqV {
+				L.v = r.upW(h.v) // non-K=V layers have a real v_proj weight; K=V derives V from k
+			}
 			// Per-layer rope-table invariant (9a-P2, the live version of ropeResidentCompatible):
 			// rope_kv rotates L.rhalf pairs per head reading invFreq[0..rhalf), so the bound
 			// per-layer table MUST have exactly rhalf entries. Gemma 4's global (rhalf=headDim/2,
@@ -484,6 +494,18 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			r.kc[l], r.vc[l] = r.af(cudaCtxCap*r.layers[l].kvDim), r.af(cudaCtxCap*r.layers[l].kvDim)
 		}
 		r.cctx, r.cSc, r.cq = r.af(maxQDim), r.af(1), r.ai(maxQDim/4)
+		// K=V (attention_k_eq_v) layers derive V = v_norm(k) by reusing qk_norm with a UNIT weight
+		// [maxHd] (so x*inv*w = x*inv, scale-less; addOne=0). Allocate it only when needed.
+		for l := range r.layers {
+			if r.layers[l].kEqV {
+				ones := make([]float32, maxHd)
+				for i := range ones {
+					ones[i] = 1.0
+				}
+				r.vNormUnit = r.up32(ones)
+				break
+			}
+		}
 		r.oO = r.af(H)
 		r.mSc, r.mq = r.af(1), r.ai(H/4)
 		r.gO, r.uO = r.af(I), r.af(I)
