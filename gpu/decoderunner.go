@@ -109,10 +109,10 @@ type runLayer struct {
 	// head_dim / KV-heads / rotaryDim-half + attention_k_eq_v. Zero ghd ⇒ use the
 	// model-level nH-relative shape (every non-Gemma family leaves these unset); gKEqV is
 	// read independently (a K=V layer always sets its full tuple). The plan loop resolves
-	// them via geomFor into the shared `geom` below; kvDim for this layer is gnKV*ghd.
+	// these into a shared *attnGeom via geomFor (per-layer local, deduped by value); kvDim
+	// for this layer is gnKV*ghd.
 	ghd, gnKV, ghalf int
 	gKEqV            bool
-	geom             *attnGeom // resolved shared geometry (set in the plan loop; nil for MLA/mamba layers)
 
 	// MoE (Lever C3c, Mixtral-class): when isMoE, this layer's FFN is a sparse
 	// mixture of experts instead of the dense gate/up/down above. router scores all
