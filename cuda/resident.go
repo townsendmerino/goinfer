@@ -122,6 +122,7 @@ type cudaResident struct {
 	gemma4Moe                           bool
 	g4cap                               bool
 	g4capRn, g4capWgt, g4capX1, g4capX2 [][]float32
+	g4capIdx                            [][]uint32 // APPEND order (token-outer, layer-inner), matching the CPU routerCaptureBuf — for the per-POSITION routing-agreement check (a top-k flip at pos N reads like accumulation in a cosine)
 
 	// Per-sublayer contribution capture (diagnostic; off in production, zero cost). When subCap
 	// is set, launchToken copies the sandwich-normed o-proj output (attention contribution) and
@@ -608,6 +609,10 @@ func (r *cudaResident) gemma4MoeMLP(Ly *cudaLayer, l int) error {
 		r.capVec(r.rWgt, r.g4capWgt, l, r.topK)
 		r.capVec(r.g4x1, r.g4capX1, l, r.hidden)
 		r.capVec(r.g4x2, r.g4capX2, l, r.hidden)
+		_ = r.stream.Sync()
+		idx := make([]uint32, r.topK)
+		_ = gpu.Download(r.rIdx, idx)
+		r.g4capIdx = append(r.g4capIdx, idx) // append order = CPU routerCaptureBuf order (per-position routing check)
 	}
 
 	// --- JOIN (Phase-1a ordering, get it EXACT): sum x1+x2 BEFORE the joint norm; add the residual h
