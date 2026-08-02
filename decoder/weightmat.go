@@ -88,14 +88,18 @@ const int4GroupSize = 32
 // (2.3→5.3 tok/s) + TTFT 7.3→3.2s. Only widens fan-out (never narrows it), so prefill's
 // already-parallel large-M matmuls are unaffected. See docs/task-gemma4-moe.md.
 //
-// PROVENANCE: 1<<20 is **Ryzen 7 3700X (8-core) measured**, not swept on Apple silicon. It
-// does not regress the small end — a 0.5B int4 decodes 1.9× faster than serial at this value
-// (26.8 vs 13.9 tok/s, 4 cores) because it parallelizes the ~4M-MAC matmuls while leaving
-// truly tiny (<1M) ops serial (thr=0, which fans out everything, is *slower* — over-parallelizes).
-// But the crossover is hardware-specific (core count, memory latency): the M1 Pro — Phase 5's
-// rig — has different characteristics, so its optimum may differ. RE-SWEEP on the next Mac
-// session before trusting this as a universal default; compare against `DefaultDecodeParallelThreshold`
-// (300K, the int8 knob, M1-Pro-tuned) which parallelizes a wider range.
+// PROVENANCE: 1<<20 was **Ryzen 7 3700X (8-core) measured**. On that rig it does not regress
+// the small end — a 0.5B int4 decodes 1.9× faster than serial at this value (26.8 vs 13.9
+// tok/s, 4 cores) because it parallelizes the ~4M-MAC matmuls while leaving truly tiny (<1M)
+// ops serial (thr=0, which fans out everything, was *slower* there — over-parallelizes).
+//
+// M1 PRO SWEEP (6P+2E, BenchmarkInt4ParThresholdSweep): the value TRANSFERS — it sits in the
+// flat-optimal region. All four gemma4-26b decode shapes are ≥1.98M, so 1<<20 (1.05M)
+// parallelizes every one, capturing 1.46× (down 1.98M), 1.84× (gate_up 3.96M), 1.9× (dense
+// 5.9M), 2.56× (attn 11.5M) vs serial. And UNLIKE the Ryzen, thr=0 shows NO over-parallelize
+// penalty on M1 Pro (thr=0 ties the low thresholds), so the Ryzen value is if anything slightly
+// conservative here but lands squarely in the optimum for every real decode op. No per-platform
+// split warranted. Re-run the benchmark if the core topology or aikit's kernel changes.
 const int4ParThreshold = 1 << 20
 
 // streamQuantized builds a [rows, cols] linalg.WeightMat in the target precision

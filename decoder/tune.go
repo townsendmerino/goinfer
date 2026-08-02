@@ -17,6 +17,10 @@ import "github.com/townsendmerino/aikit/linalg"
 // different kernels/models, and a same-context sweep confirmed 300K is slightly better for
 // small int8 while 1<<20 is the int4/gemma4 optimum. Unify only after a proper joint sweep.
 // Hardware-specific (shifts with core count / memory latency); the M1 Pro is Phase 5's rig.
+//
+// RE-CONFIRMED on M1 Pro against the gemma4-26b decode shapes (BenchmarkInt8ParThresholdSweep):
+// 300K is below all four (down 1.98M … attn 11.5M), so it parallelizes every one — 1.36×–2.18×
+// vs serial — and thr=0 shows no over-parallelize penalty, so it stays comfortably optimal.
 const DefaultDecodeParallelThreshold = 300_000
 
 // SetDecodeParallelThreshold sets aikit/linalg's PROCESS-GLOBAL matmul crossover. It is NO
