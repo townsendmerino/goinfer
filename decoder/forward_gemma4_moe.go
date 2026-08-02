@@ -64,6 +64,9 @@ func gemma4MoEFFN(be Backend, arch *Architecture, h []float32, w *gemma4MoEWeigh
 	x1 := make([]float32, hidden)
 	matmul(be, &w.mlpDown, gate, x1, 1)
 	rmsNorm(x1, w.postFFNNorm1, 1, hidden, eps, addOne)
+	if routerCapture {
+		routerX1Buf = append(routerX1Buf, append([]float32(nil), x1...))
+	}
 
 	// moe branch — router on the RAW residual h (its own weightless RMSNorm + learned
 	// scale + hidden^-0.5), softmax over all experts → top-k → UNCONDITIONAL renorm →
@@ -119,6 +122,9 @@ func gemma4MoEFFN(be Backend, arch *Architecture, h []float32, w *gemma4MoEWeigh
 	for j, e := range idx {
 		wts[j] = (topv[j] / sum) * w.perExpertScale[e]
 	}
+	if routerCapture {
+		routerWtsBuf = append(routerWtsBuf, append([]float32(nil), wts...))
+	}
 
 	// experts on pre_ffn_norm_2(h): gelu-tanh GeGLU, gate/up = contiguous halves.
 	xe := append([]float32(nil), h...)
@@ -139,6 +145,9 @@ func gemma4MoEFFN(be Backend, arch *Architecture, h []float32, w *gemma4MoEWeigh
 		}
 	}
 	rmsNorm(x2, w.postFFNNorm2, 1, hidden, eps, addOne)
+	if routerCapture {
+		routerX2Buf = append(routerX2Buf, append([]float32(nil), x2...))
+	}
 
 	// join: out = (h + post_ffn_norm(x1 + x2)) * layer_scalar.
 	comb := make([]float32, hidden)

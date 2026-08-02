@@ -136,11 +136,12 @@ func (a *Architecture) decodeRunnerEligible() bool {
 	// bridged case as a fall-through makes that mistake un-writable (cf. the geometry port).
 	switch {
 	case a.gemma4 != nil:
-		// Dense Gemma 4 under GOINFER_GEMMA4_RESIDENT (Split-A bring-up, like granite's
-		// GOINFER_SSM_RESIDENT through P5b). The enable_moe_block sub-block is the parallel
-		// dense‖MoE shape the generic MoE path can't express — declined until Split B. Admissible
-		// ⇒ fall through to the common checks (softcap now handled by the feature gate).
-		if a.MoE != nil || os.Getenv("GOINFER_GEMMA4_RESIDENT") == "" {
+		// Gemma 4 under GOINFER_GEMMA4_RESIDENT (Split-A bring-up, like granite's
+		// GOINFER_SSM_RESIDENT through P5b). Split B lands the enable_moe_block parallel dense‖MoE
+		// FFN (arch.MoE != nil) on its OWN cuda path (gemma4MoeMLP), so it is no longer declined here
+		// — the CUDA build routes it around the generic MoE checks via HasGemma4MoEResident. Both the
+		// dense and MoE variants fall through to the common checks (softcap handled by the feature gate).
+		if os.Getenv("GOINFER_GEMMA4_RESIDENT") == "" {
 			return false
 		}
 	case a.qwen35 != nil || a.llama4 != nil || a.gptoss != nil:
@@ -325,6 +326,21 @@ func (m *Model) Gemma4MoEResidentLayer(l int) (b Gemma4MoEResidentBundle, ok boo
 		LayerScalar: gm.layerScalar, DenseInter: gm.denseInter, MoeInter: gm.moeInter,
 		NE: gm.nE, TopK: gm.topK,
 	}, true
+}
+
+// HasGemma4MoEResident reports whether this is a gemma4 model with any enable_moe_block layer — the
+// signal the CUDA backend uses to route around the generic MoE build (which can't express the
+// parallel dense‖MoE join) into gemma4MoeMLP.
+func (m *Model) HasGemma4MoEResident() bool {
+	if m.w.arch.gemma4 == nil {
+		return false
+	}
+	for l := range m.w.Layers {
+		if m.w.Layers[l].gemma4moe != nil {
+			return true
+		}
+	}
+	return false
 }
 
 // MLAResidentParams returns the DeepSeek/Kimi MLA geometry the GPU resident runner

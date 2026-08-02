@@ -72,6 +72,15 @@ type cudaLayer struct {
 	hasShared bool
 	shGU      cudaWQ // [2*sharedInter, hidden]
 	shDown    cudaWQ // [hidden, sharedInter]
+
+	// Gemma-4 enable_moe_block layer (parallel dense‖MoE FFN — its own gemma4MoeMLP, NOT the generic
+	// moeMLP). The dense branch reuses g/u/d; the router reuses routerW (the f32 proj with
+	// routerScale·hidden^-0.5 folded into its columns at build) + routerB; the experts reuse
+	// expGU/expDown. g4moe selects the path; these are its extra params.
+	g4moe                                                  bool
+	g4preFFN, g4postFFN1, g4preFFN2, g4postFFN2, g4postFFN Buffer  // the 5 gemma4 RMSNorm weights
+	perExpertScaleB                                        Buffer  // [nE] learned scale on the renormalized top-k weights
+	layerScalar                                            float32 // per-layer output scalar (out = (h+combined)*layerScalar)
 }
 
 type cudaResident struct {
@@ -106,6 +115,14 @@ type cudaResident struct {
 	moeScale                float32
 	nGroup, topkGroup       int
 
+	// Gemma-4 parallel dense‖MoE (any layer g4moe ⇒ JIT router_f32, alloc g4 scratch, take
+	// gemma4MoeMLP). g4cap (GOINFER_G4_CAPTURE) is a DEBUG readback of the four MoE-layer buffers
+	// (rn / wgt / x1 / x2) so a whole-forward miss localizes to router vs dense vs expert vs join in
+	// ONE run — the observation wired BEFORE the gate, not bolted on after it reds.
+	gemma4Moe                           bool
+	g4cap                               bool
+	g4capRn, g4capWgt, g4capX1, g4capX2 [][]float32
+
 	// Per-sublayer contribution capture (diagnostic; off in production, zero cost). When subCap
 	// is set, launchToken copies the sandwich-normed o-proj output (attention contribution) and
 	// down output (MLP contribution) per layer — the exact dp4a-path analogue of the decoder's
@@ -120,6 +137,7 @@ type cudaResident struct {
 	stream                                                                                             Queue
 	gemvW4, gemvW8, kvStore, ropeKV, fRms, fRmsF32, fQ, fRope, fAttn, fSw, fRes, fArg, fQKV, fGU, fQKN Pipeline
 	fRoute, fRouterGemv, fMoEGemv, fMoEWacc, fSharedCombine                                            Pipeline
+	fRouterF32, fScaleWgt, fRmsNW, fScaleVec                                                           Pipeline // gemma4 MoE (router_f32 module)
 
 	fuseQKV   bool  // all of Q/K/V/gate/up int4 ⇒ the fused K1 (fQKV) + fGU super-kernels are usable
 	launchErr error // sticky first launch error within a launchToken call (reset per token) — M23
@@ -139,6 +157,13 @@ type cudaResident struct {
 	rLogits, rWgt, moeGU, moeSc, moeScr Buffer
 	rIdx                                Buffer
 	moeQ                                Buffer
+
+	// Gemma-4 MoE branch scratch [hidden] (allocated only when gemma4Moe). x1 = dense branch, x2 =
+	// expert-sum branch, rn = the router's weightless-normed raw-h input. Kept SEPARATE from r.x
+	// because the join norms (x1+x2) BEFORE adding the residual h — the experts can't wacc into the
+	// residual stream the way the generic moeMLP does.
+	g4x1, g4x2, g4rn Buffer
+	g4zero           []float32 // host [hidden] zeros to clear x2 before the wacc loop (no D2D helper)
 
 	// Shared-expert scratch (allocated only when any layer hasShared). Sized to sharedInter,
 	// which is its own width — distinct from both the dense inter and the routed moeInter.
@@ -490,6 +515,116 @@ func (r *cudaResident) moeMLP(Ly *cudaLayer) error {
 	return nil
 }
 
+// gemma4MoeMLP issues Gemma-4's parallel dense‖MoE FFN for layer Ly (enable_moe_block). Unlike the
+// generic moeMLP (one branch, wacc straight into the residual), Gemma-4 runs TWO branches off the
+// SAME residual h and joins them under a shared post-norm, so h is read three times and written only
+// at the end. Mirrors decoder/forward_gemma4_moe.go exactly:
+//
+//	x1 = postFFNNorm1( mlpDown( geluTanh(mlpGate·xd)·(mlpUp·xd) ) )      xd = preFFNNorm(h)   [dense]
+//	rn = rmsnorm_nw(h);  logits = RouterProjScaled·rn;  idx,wgt = route  wgt *= perExpertScale[idx]
+//	x2 = postFFNNorm2( Σ_j wgt[j]·expertDown_j(geluTanh(gu_j)·up_j) )    xe = preFFNNorm2(h)  [MoE]
+//	h  = (h + postFFNNorm(x1 + x2)) · layerScalar                                             [join]
+//
+// The router GEMV is PURE f32 (gemv_f32_f32) with routerScale·hidden^-0.5 folded into RouterProjScaled
+// at build; rn is the weightless OUT-OF-PLACE norm (rmsnorm_nw) so h stays intact for the other two
+// branches and the residual add.
+func (r *cudaResident) gemma4MoeMLP(Ly *cudaLayer, l int) error {
+	nullBias := ArgNull()
+	gu := 2 * r.moeInter
+
+	// --- dense branch → g4x1 ---
+	if e := r.rms(r.x, Ly.g4preFFN, r.mq, r.mSc); e != nil { // xd = preFFNNorm(h), int8
+		return e
+	}
+	if e := r.doG(Ly.g, r.mq, r.mSc, nullBias, r.gO, 0); e != nil {
+		return e
+	}
+	if e := r.doG(Ly.u, r.mq, r.mSc, nullBias, r.uO, 0); e != nil {
+		return e
+	}
+	if e := r.launch(r.fSw, onecfg(256, 256*4), Arg(r.gO), Arg(r.uO), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(0)),
+		gpu.ArgValue(int32(r.inter)), gpu.ArgValue(r.act), Arg(r.dq), Arg(r.dSc), Arg(r.dScr)); e != nil {
+		return e
+	}
+	if e := r.doG(Ly.d, r.dq, r.dSc, nullBias, r.g4x1, 0); e != nil {
+		return e
+	}
+	if e := r.normF32(r.g4x1, Ly.g4postFFN1); e != nil {
+		return e
+	}
+
+	// --- router (on RAW h): rmsnorm_nw → gemv_f32_f32(folded proj) → moe_route → per-expert-scale fold ---
+	if e := r.launch(r.fRmsNW, onecfg(256, 256*4), Arg(r.x), Arg(r.g4rn), gpu.ArgValue(int32(r.hidden)), gpu.ArgValue(r.eps)); e != nil {
+		return e
+	}
+	if e := r.launch(r.fRouterF32, LaunchConfig{GridX: uint32(r.nE), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
+		Arg(Ly.routerW), Arg(r.g4rn), gpu.ArgValue(int32(r.nE)), gpu.ArgValue(int32(r.hidden)), Arg(r.rLogits)); e != nil {
+		return e
+	}
+	// softmax (sigmoid=0), UNCONDITIONAL renorm (norm=1), scale=1, no group routing.
+	if e := r.launch(r.fRoute, onecfg(1, 0), Arg(r.rLogits), Arg(Ly.routerB), Arg(r.rIdx), Arg(r.rWgt),
+		gpu.ArgValue(int32(r.nE)), gpu.ArgValue(int32(r.topK)), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(1)),
+		gpu.ArgValue(float32(1)), gpu.ArgValue(int32(1)), gpu.ArgValue(int32(1))); e != nil {
+		return e
+	}
+	if e := r.launch(r.fScaleWgt, LaunchConfig{GridX: 1, GridY: 1, GridZ: 1, BlockX: uint32(r.topK), BlockY: 1, BlockZ: 1},
+		Arg(r.rWgt), Arg(r.rIdx), Arg(Ly.perExpertScaleB), gpu.ArgValue(int32(r.topK))); e != nil {
+		return e
+	}
+
+	// --- expert branch → g4x2 (zeroed, then wacc Σ_j wgt[j]·expert_j) ---
+	if e := r.rms(r.x, Ly.g4preFFN2, r.mq, r.mSc); e != nil { // xe = preFFNNorm2(h); reuse mq/mSc (dense branch done with them)
+		return e
+	}
+	if e := gpu.Upload(r.g4x2, r.g4zero); e != nil { // clear the accumulator (no D2D helper; g4zero is a cached host slice)
+		return e
+	}
+	for j := 0; j < r.topK; j++ {
+		if e := r.launch(r.fMoEGemv, LaunchConfig{GridX: uint32((gu + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
+			Arg(Ly.expGU.W), Arg(r.mq), Arg(Ly.expGU.ws16), Arg(r.mSc), Arg(r.rIdx),
+			gpu.ArgValue(int32(j)), gpu.ArgValue(int32(gu)), gpu.ArgValue(int32(gu)),
+			gpu.ArgValue(int32(r.hidden/8)), gpu.ArgValue(int32(r.hidden/32)), Arg(r.moeGU)); e != nil {
+			return e
+		}
+		if e := r.launch(r.fSw, onecfg(256, 256*4), Arg(r.moeGU), Arg(r.moeGU), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(r.moeInter)),
+			gpu.ArgValue(int32(r.moeInter)), gpu.ArgValue(r.act), Arg(r.moeQ), Arg(r.moeSc), Arg(r.moeScr)); e != nil {
+			return e
+		}
+		if e := r.launch(r.fMoEWacc, LaunchConfig{GridX: uint32((r.hidden + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
+			Arg(Ly.expDown.W), Arg(r.moeQ), Arg(Ly.expDown.ws16), Arg(r.moeSc), Arg(r.rIdx), Arg(r.rWgt),
+			gpu.ArgValue(int32(j)), gpu.ArgValue(int32(r.hidden)), gpu.ArgValue(int32(r.hidden)),
+			gpu.ArgValue(int32(r.moeInter/8)), gpu.ArgValue(int32(r.moeInter/32)), Arg(r.g4x2)); e != nil {
+			return e
+		}
+	}
+	if e := r.normF32(r.g4x2, Ly.g4postFFN2); e != nil {
+		return e
+	}
+
+	// DEBUG capture BEFORE the join — the four buffers that localize a whole-forward miss to router
+	// (rn/wgt) vs dense (x1) vs expert (x2) vs join (logits). Off unless GOINFER_G4_CAPTURE.
+	if r.g4cap {
+		r.capVec(r.g4rn, r.g4capRn, l, r.hidden)
+		r.capVec(r.rWgt, r.g4capWgt, l, r.topK)
+		r.capVec(r.g4x1, r.g4capX1, l, r.hidden)
+		r.capVec(r.g4x2, r.g4capX2, l, r.hidden)
+	}
+
+	// --- JOIN (Phase-1a ordering, get it EXACT): sum x1+x2 BEFORE the joint norm; add the residual h
+	// AFTER it; then the per-layer scalar. A mis-order is plausible-but-wrong that cosine shows but
+	// won't localize. ---
+	if e := r.launch(r.fRes, g1cfg(r.hidden, 256), Arg(r.g4x1), Arg(r.g4x2), gpu.ArgValue(int32(r.hidden))); e != nil { // x1 += x2
+		return e
+	}
+	if e := r.normF32(r.g4x1, Ly.g4postFFN); e != nil { // x1 = postFFNNorm(x1 + x2)
+		return e
+	}
+	if e := r.launch(r.fRes, g1cfg(r.hidden, 256), Arg(r.x), Arg(r.g4x1), gpu.ArgValue(int32(r.hidden))); e != nil { // r.x = h + comb
+		return e
+	}
+	return r.launch(r.fScaleVec, g1cfg(r.hidden, 256), Arg(r.x), gpu.ArgValue(Ly.layerScalar), gpu.ArgValue(int32(r.hidden))) // r.x *= layerScalar
+}
+
 // launchToken issues one token's whole kernel chain, leaving logits[vocab] on the device.
 func (r *cudaResident) launchToken(emb []float32, pos int) error {
 	r.launchErr = nil // reset the sticky launch-error accumulator for this token (M23)
@@ -605,6 +740,12 @@ func (r *cudaResident) launchToken(emb []float32, pos int) error {
 			_ = r.launch(r.fRes, g1cfg(r.hidden, 256), Arg(r.x), Arg(r.oO), gpu.ArgValue(int32(r.hidden)))
 		} else {
 			_ = r.doG(Ly.o, r.cq, r.cSc, nullBias, r.x, 1)
+		}
+		if Ly.g4moe { // Gemma-4 parallel dense‖MoE — its own join+scalar, not the generic wacc-into-residual
+			if e := r.gemma4MoeMLP(Ly, l); e != nil {
+				return e
+			}
+			continue
 		}
 		if Ly.isMoE {
 			if e := r.moeMLP(Ly); e != nil {

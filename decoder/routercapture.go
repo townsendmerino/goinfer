@@ -47,9 +47,26 @@ func SetRouterCaptureForTest(on bool) {
 	routerCapture = on
 	if on {
 		routerCaptureBuf, routerRnBuf, routerMarginBuf = nil, nil, nil
+		routerWtsBuf, routerX1Buf, routerX2Buf = nil, nil, nil
 	}
 }
 
 // RouterCaptureForTest returns the captured per-decision selected experts and router inputs (same
 // order/index). Sibling to SetRouterCaptureForTest for the cross-package (cuda) router-first gate.
 func RouterCaptureForTest() (idx [][]int, rn [][]float32) { return routerCaptureBuf, routerRnBuf }
+
+// routerWtsBuf / routerX1Buf / routerX2Buf capture the other three gemma4-MoE-layer intermediates
+// (same append order as routerRnBuf): the renormalized+scaled top-k weights, the dense-branch output
+// x1 (post postFFNNorm1), and the expert-branch output x2 (post postFFNNorm2). With routerRnBuf they
+// are the four buffers a resident-vs-CPU whole-forward miss diffs against to localize router vs dense
+// vs expert vs join. Observe-only under routerCapture.
+var (
+	routerWtsBuf [][]float32
+	routerX1Buf  [][]float32
+	routerX2Buf  [][]float32
+)
+
+// Gemma4MoECaptureForTest returns the CPU per-decision wts / x1 / x2 (same order as RouterCaptureForTest).
+func Gemma4MoECaptureForTest() (wts, x1, x2 [][]float32) {
+	return routerWtsBuf, routerX1Buf, routerX2Buf
+}

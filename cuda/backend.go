@@ -95,7 +95,12 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	// (the gated one is declined upstream by the FeatMoEGatedShared admission check), so the
 	// build never needs to branch on it.
 	nE, topK, moeInter, sharedInter, moeSig, moeNorm, _, moeScale, nGroup, topkGroup, isMoE := m.MoEResidentParams()
-	if isMoE {
+	// Gemma-4 enable_moe_block sets arch.MoE (so isMoE is true) but is NOT the generic MoE: it runs
+	// gemma4MoeMLP (parallel dense‖MoE + join), so it bypasses the generic-MoE admission checks below
+	// (gelu-tanh act, the attention sandwich norm) and gets its own int4-shape checks. Its nE/topK/
+	// moeInter still come from arch.MoE (MoEResidentParams), matching the bundle.
+	isG4MoE := m.HasGemma4MoEResident()
+	if isMoE && !isG4MoE {
 		// Decline anything the dispatch does not implement, LOUDLY rather than by dropping it.
 		// Each of these would otherwise be silent-wrong, which is the whole point of the
 		// admission gate — and FeatMoE is one flag, so it cannot express these sub-shapes.
@@ -121,6 +126,16 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			return declined(fmt.Errorf("MoE int4 shared expert needs sharedInter(%d) a multiple of 32", sharedInter))
 		}
 	}
+	if isG4MoE {
+		// gemma4MoeMLP's indexed-expert + dense GEMVs are int4/W4A8: the widths the kernels stride by
+		// must be multiples of the group size (hidden) / 8-nibble word (moeInter, denseInter).
+		if moeInter%32 != 0 || H%32 != 0 {
+			return declined(fmt.Errorf("gemma4 MoE int4 needs moeInter(%d) and hidden(%d) both multiples of 32", moeInter, H))
+		}
+		if nE > 256 {
+			return declined(fmt.Errorf("gemma4 MoE nE=%d exceeds moe_route's MOE_MAX_E=256", nE))
+		}
+	}
 
 	// ---- host pack all weights (CPU; any incompatible shape → decline) ----
 	type hlayer struct {
@@ -141,6 +156,14 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		router, routerBs []float32
 		hasShared        bool
 		shGU, shDown     hostW
+
+		// Gemma-4 enable_moe_block (parallel dense‖MoE). g4moe routes the upload to gemma4MoeMLP's
+		// fields: the dense branch reuses g/u/d (packed from mlpGate/up/down), the router reuses
+		// router (RouterProjScaled, f32) + routerBs (zeros), the experts reuse expGU/expDown.
+		g4moe                                               bool
+		g4preFFN, g4postFFN1, g4preFFN2, g4postFFN2, g4post []float32
+		perExpertScale                                      []float32
+		layerScalar                                         float32
 	}
 	sandwich := m.SandwichNormResident()
 	hls := make([]hlayer, nLayers)
@@ -148,6 +171,8 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		lw := &w.Layers[l]
 		var hl hlayer
 		hl.isMoE = isMoE && lw.Experts != nil // same key as decoder/mlp.go; false on dense prefix layers
+		g4b, isG4 := m.Gemma4MoEResidentLayer(l)
+		hl.g4moe = isG4
 		proj := []struct {
 			dst *hostW
 			src *linalg.WeightMat
@@ -160,7 +185,23 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				src *linalg.WeightMat
 			}{&hl.v, &lw.VProj})
 		}
-		if !hl.isMoE {
+		if hl.g4moe {
+			// Gemma-4 MoE dense branch: lw.GateProj/UpProj/DownProj are EMPTY (the dense MLP lives in
+			// the gemma4moe sub-block), so pack from the bundle instead.
+			proj = append(proj,
+				struct {
+					dst *hostW
+					src *linalg.WeightMat
+				}{&hl.g, g4b.MlpGate},
+				struct {
+					dst *hostW
+					src *linalg.WeightMat
+				}{&hl.u, g4b.MlpUp},
+				struct {
+					dst *hostW
+					src *linalg.WeightMat
+				}{&hl.d, g4b.MlpDown})
+		} else if !hl.isMoE {
 			// A routed layer carries no dense FFN — GateProj/UpProj/DownProj are empty, and
 			// packing them would fail on a zero shape rather than mean anything.
 			proj = append(proj,
@@ -183,6 +224,30 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				return declined(e)
 			}
 			*p.dst = hw
+		}
+		if hl.g4moe {
+			// Gemma-4 MoE: stack the experts (each ExpertsGateUp is the fused [2*moeInter,hidden]
+			// gate‖up), the f32 router (RouterProjScaled, scale folded), the 5 norms + per-expert
+			// scale + layerScalar. The dense g/u/d were packed above via the proj list.
+			var e error
+			if hl.expGU, e = packWeightStack(g4b.ExpertsGateUp...); e != nil {
+				return declined(fmt.Errorf("layer %d gemma4 expert gate‖up stack: %w", l, e))
+			}
+			if hl.expDown, e = packWeightStack(g4b.ExpertsDown...); e != nil {
+				return declined(fmt.Errorf("layer %d gemma4 expert down stack: %w", l, e))
+			}
+			if hl.expGU.kind != "int4" || hl.expDown.kind != "int4" {
+				return declined(fmt.Errorf("layer %d: gemma4 experts are %q/%q — the resident MoE GEMVs are int4-only (load with Quant: \"int4\")", l, hl.expGU.kind, hl.expDown.kind))
+			}
+			if hl.expGU.N != nE*2*moeInter || hl.expDown.N != nE*H {
+				return declined(fmt.Errorf("layer %d: gemma4 stacked rows %d/%d, want %d/%d", l, hl.expGU.N, hl.expDown.N, nE*2*moeInter, nE*H))
+			}
+			hl.router = g4b.RouterProjScaled  // [nE*hidden] f32, routerScale·hidden^-0.5 folded in
+			hl.routerBs = make([]float32, nE) // gemma4 has no router bias (moe_route reads it unconditionally)
+			hl.perExpertScale = g4b.PerExpertScale
+			hl.g4preFFN, hl.g4postFFN1, hl.g4preFFN2, hl.g4postFFN2, hl.g4post =
+				g4b.PreFFNNorm, g4b.PostFFNNorm1, g4b.PreFFNNorm2, g4b.PostFFNNorm2, g4b.PostFFNNorm
+			hl.layerScalar = g4b.LayerScalar
 		}
 		if hl.isMoE {
 			if len(lw.Experts) != nE {
@@ -305,6 +370,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		moe: isMoE, nE: nE, topK: topK, moeInter: moeInter,
 		moeScale: float32(moeScale), nGroup: nGroup, topkGroup: topkGroup,
 		sharedInter: sharedInter,
+		gemma4Moe:   isG4MoE, g4cap: os.Getenv("GOINFER_G4_CAPTURE") != "",
 	}
 	if moeSig {
 		r.moeSigmoid = 1
@@ -398,6 +464,30 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				}
 			}
 		}
+		// router_f32 module: Gemma-4 MoE's own kernels, kept off the audited moe.ptx (this box's
+		// 12.9 NVRTC would rewrite every moe.ptx kernel). Pure-f32 router GEMV + per-expert-scale
+		// fold + weightless out-of-place norm + scalar-scale.
+		if r.gemma4Moe {
+			rmod, e2 := r.dev.CompileLibrary(routerF32PTX)
+			if e2 != nil {
+				return e2
+			}
+			for _, f := range []struct {
+				dst  *Pipeline
+				name string
+			}{
+				{&r.fRouterF32, "gemv_f32_f32"}, {&r.fScaleWgt, "scale_wgt_by_expert"},
+				{&r.fRmsNW, "rmsnorm_nw"}, {&r.fScaleVec, "scale_vec"},
+			} {
+				if *f.dst, e = r.dev.NewComputePipeline(rmod, f.name); e != nil {
+					return e
+				}
+			}
+			if r.g4cap {
+				r.g4capRn, r.g4capWgt = make([][]float32, nLayers), make([][]float32, nLayers)
+				r.g4capX1, r.g4capX2 = make([][]float32, nLayers), make([][]float32, nLayers)
+			}
+		}
 		r.stream = r.dev.NewCommandQueue()
 
 		r.layers = make([]cudaLayer, nLayers)
@@ -430,6 +520,17 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 					L.hasShared = true
 					L.shGU, L.shDown = r.upW(h.shGU), r.upW(h.shDown)
 				}
+			}
+			if h.g4moe {
+				// Gemma-4 parallel dense‖MoE: router (folded f32 proj) + experts + the 5 norms +
+				// per-expert scale + layerScalar. Dense g/u/d were uploaded via the !h.isMoE branch.
+				L.g4moe = true
+				L.routerW, L.routerB = r.up32(h.router), r.up32(h.routerBs)
+				L.expGU, L.expDown = r.upW(h.expGU), r.upW(h.expDown)
+				L.g4preFFN, L.g4postFFN1 = r.up32(h.g4preFFN), r.up32(h.g4postFFN1)
+				L.g4preFFN2, L.g4postFFN2, L.g4postFFN = r.up32(h.g4preFFN2), r.up32(h.g4postFFN2), r.up32(h.g4post)
+				L.perExpertScaleB = r.up32(h.perExpertScale)
+				L.layerScalar = h.layerScalar
 			}
 			L.window = h.window
 			// Per-layer attention geometry (9a-P2), read from the SAME accessors the CPU forward
@@ -523,6 +624,10 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				r.shSc, r.shScr, r.shQ = r.af(1), r.af(sharedInter), r.ai(sharedInter/4)
 				r.shDownOut = r.af(H)
 			}
+		}
+		if r.gemma4Moe { // parallel dense‖MoE branch scratch + the host zero slice to clear x2
+			r.g4x1, r.g4x2, r.g4rn = r.af(H), r.af(H), r.af(H)
+			r.g4zero = make([]float32, H)
 		}
 		r.dO, r.logits = r.af(H), r.af(vocab)
 		r.argIdx, r.argVal = r.ai(1), r.af(1) // greedy fast-path readback (4 B vs 594 KB)
