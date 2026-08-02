@@ -119,11 +119,12 @@ func TestResidentAdmission_matrix(t *testing.T) {
 func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 	want := map[string][]ResidentFeature{
 		// cgo-free CUDA: dense + QK-norm + sliding window + the Gemma set + partial rotary + MoE
-		// (routed via mixtral-tiny, ungated shared expert via glm-tiny). Still no per-layer rotary
-		// WIDTH, no YaRN mscale, no logit softcap, no MLA/SSM, and no GATED shared expert (Qwen2-MoE)
-		// — now expressed as FeatMoEGatedShared (which CUDA does NOT declare), so the Qwen2-MoE
-		// decline is in the shared taxonomy, not a hand-coded backend load check.
-		"cuda": {FeatQKNorm, FeatSlidingWindow, FeatPartialRotary, FeatRMSAddOne, FeatSandwichNorm, FeatGatedGELU, FeatEmbedScale, FeatPerLayerRoPE, FeatMoE},
+		// (routed via mixtral-tiny, ungated shared expert via glm-tiny) + the FINAL-logit softcap
+		// (host-side tanh in step(), 9a-P2 — Gemma 4). Still no per-layer rotary WIDTH, no YaRN
+		// mscale, no ATTENTION softcap (FeatAttnLogitSoftcap — a per-layer kernel), no MLA/SSM, and
+		// no GATED shared expert (Qwen2-MoE) — now expressed as FeatMoEGatedShared (which CUDA does
+		// NOT declare), so the Qwen2-MoE decline is in the shared taxonomy, not a hand-coded check.
+		"cuda": {FeatQKNorm, FeatSlidingWindow, FeatPartialRotary, FeatRMSAddOne, FeatSandwichNorm, FeatGatedGELU, FeatEmbedScale, FeatPerLayerRoPE, FeatMoE, FeatFinalLogitSoftcap},
 		"webgpu": {
 			FeatQKNorm, FeatPartialRotary, FeatSlidingWindow, FeatPerLayerRoPE, FeatRopeMscale,
 			FeatMoE, FeatMoEGatedShared, FeatMLA, FeatSSM, FeatNonGatedMLP, FeatLogitScale, FeatRMSAddOne,
