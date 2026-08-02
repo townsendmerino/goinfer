@@ -203,10 +203,36 @@ softcap + taxonomy split. No attention-kernel change (hd=512 confirmed, 933201c)
 single C-lever; comparable to the SSM bridge.
 
 **Phase sketch (the eventual build, parity-gated — matches the SSM P0→P7 discipline):**
-- **P0** ✅ CUDA `attention` hd=512 confirmed (`933201c`, cosine ≈ 1.0). Remaining P0: E2B CPU
-  ms/token (the prize baseline); a property-covering fixture (256-local + 512-global + K=V) logit oracle.
-- **P1** per-layer geometry on `runLayer` (variant index + hd/nKV/rotaryDim/kEqV), per-variant
-  uniforms; **non-Gemma models byte-identical** (guard the new path).
+
+> **Superseded 2026-08-01 by the Split A/B decision + the CUDA-target build (P1 landed).**
+> The P-items below were drafted backend-agnostic and webgpu-flavored, before four things were
+> settled; corrected here rather than rewritten:
+> - **P1 is DONE.** Per-layer geometry + the `{hd, nKV, half, kEqV}` value-keyed dedup shipped
+>   (`b909c86` three dims + `9ec363f` kEqV key + cache guard); `TestGeomVariants_dedup` (uniform→1,
+>   each of hd/nKV/half/kEqV→2) + the byte-identical resident suite green.
+> - **Split into A and B.** Split A = geometry + K=V, **no MoE** (P1–P3 + the parity gate on a dense
+>   two-geometry K=V fixture, `1d6172d` / `TestGemma4DenseTwoGeom_forwardParity`, CPU oracle cosine
+>   1.0); Split B = the Gemma-4 MoE delta (the old P4). Landing admission + geometry + K=V + MoE in
+>   one step, on the first run that carries two live variants, would make a red un-attributable.
+> - **The env gate lands FIRST, not P7.** `GOINFER_GEMMA4_RESIDENT` ships with the *first* admission
+>   change, so every intermediate commit is unreachable-by-default by construction (granite's
+>   `GOINFER_SSM_RESIDENT` through P5b.3/P5b.4). A last-landing gate would ship a live half-path.
+> - **The `FeatLogitSoftcap` split is on Split A's critical path, not P6.** The arch-predicate
+>   philosophy (residency.go:148-151 — a capability a backend hasn't shipped declines via the
+>   *feature gate*, not in `decodeRunnerEligible`) forces it: you cannot narrow the `gemma4` admission
+>   while the `FinalLogitSoftcap != 0` decline (residency.go:152-154) still blocks it there. So the
+>   taxonomy split + host-side softcap move up beside the decline-narrowing — the entanglement is
+>   structural, not a scheduling choice.
+> - **On CUDA, P5's features are mostly free.** `features.go`'s `cuda` entry already ships
+>   `FeatSandwichNorm` / `FeatGatedGELU` / `FeatEmbedScale` / `FeatPerLayerRoPE`, so P5 is wiring
+>   existing kernels, not building them — the webgpu-flavored "build the norm/activation set" reading
+>   does not apply to the 9b target (that cost is webgpu's alone, 9d).
+
+- **P0** ✅ CUDA `attention` hd **16/64/128/256/512** confirmed (`933201c` + `cf341a3`, cosine ≈ 1.0
+  — the small end covers the fixture's hd=16 local layer). Remaining P0: E2B CPU ms/token (the prize
+  baseline); the property-covering fixture (local + 512-global + K=V) logit oracle — **done** (`1d6172d`).
+- **P1** ✅ per-layer geometry on `runLayer` (value-keyed `{hd,nKV,half,kEqV}` dedup), per-variant
+  uniforms; **non-Gemma models byte-identical** (structural via shared `*attnGeom`).
 - **P2** per-layer KV-cache sizing + K=V global layers (derive V, no v_proj).
 - **P3** attention dispatch per variant (per-layer hd/nKV uniform; no kernel change — hd=512 proven) → single-layer
   attention parity vs CPU, both variants.
