@@ -368,6 +368,83 @@ func firstMoELayer(t *testing.T, m *decoder.Model) int {
 	return -1
 }
 
+// TestGemma4_rmsnormNW_scaleVec isolates the two elementwise kernels the gemma4 MoE orchestration
+// adds (cuda/router_f32.cu): rmsnorm_nw (weightless OUT-OF-PLACE RMSNorm — the router norms raw h
+// without mutating it) and scale_vec (the per-layer output scalar). rmsnorm_nw is a reduction, the
+// same class as the qk_norm reduction that the hd=512 sweep exercised, so verify it vs a CPU oracle.
+func TestGemma4_rmsnormNW_scaleVec(t *testing.T) {
+	if err := gc.Init(); err != nil {
+		t.Skipf("cuInit: %v", err)
+	}
+	dev, err := gc.GetDevice(0)
+	if err != nil {
+		t.Skipf("no device: %v", err)
+	}
+	ctx, err := dev.Primary()
+	if err != nil {
+		t.Skipf("no context: %v", err)
+	}
+	defer ctx.Close()
+	bg := context.Background()
+	rmod, err := ctx.LoadModule(routerF32PTX)
+	if err != nil {
+		t.Fatalf("router_f32 module: %v", err)
+	}
+	fNW := mustFn(t, rmod, "rmsnorm_nw")
+	fSc := mustFn(t, rmod, "scale_vec")
+	stream := mustStream(t, ctx)
+
+	const H = 256
+	const eps = float32(1e-6)
+	src := make([]float32, H)
+	for i := range src {
+		src[i] = float32(math.Sin(float64(i)*0.17)) * 1.7
+	}
+	// CPU rmsNormNoWeight: x * rsqrt(mean(x^2)+eps).
+	var ss float64
+	for _, v := range src {
+		ss += float64(v) * float64(v)
+	}
+	inv := float32(1.0 / math.Sqrt(ss/float64(H)+float64(eps)))
+	want := make([]float32, H)
+	for i := range src {
+		want[i] = src[i] * inv
+	}
+
+	dSrc := mustAlloc[float32](t, ctx, H)
+	dDst := mustAlloc[float32](t, ctx, H)
+	_ = gc.CopyHtoD(bg, dSrc, src)
+	if e := fNW.LaunchOn(bg, stream, gc.LaunchConfig{GridX: 1, GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
+		gc.Arg(dSrc), gc.Arg(dDst), gc.ArgValue(int32(H)), gc.ArgValue(eps)); e != nil {
+		t.Fatalf("rmsnorm_nw: %v", e)
+	}
+	// scale by 0.75 in place, and confirm src (the input) is UNTOUCHED (out-of-place).
+	if e := fSc.LaunchOn(bg, stream, gc.LaunchConfig{GridX: 1, GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
+		gc.Arg(dDst), gc.ArgValue(float32(0.75)), gc.ArgValue(int32(H))); e != nil {
+		t.Fatalf("scale_vec: %v", e)
+	}
+	_ = stream.Synchronize(bg)
+	got := make([]float32, H)
+	gotSrc := make([]float32, H)
+	_ = gc.CopyDtoH(bg, got, dDst)
+	_ = gc.CopyDtoH(bg, gotSrc, dSrc)
+
+	var maxRel float64
+	for i := range got {
+		ref := want[i] * 0.75
+		if r := math.Abs(float64(got[i]-ref)) / (math.Abs(float64(ref)) + 1e-6); r > maxRel {
+			maxRel = r
+		}
+		if gotSrc[i] != src[i] {
+			t.Fatalf("rmsnorm_nw mutated its INPUT at %d (%.6f != %.6f) — not out-of-place", i, gotSrc[i], src[i])
+		}
+	}
+	t.Logf("rmsnorm_nw + scale_vec vs CPU: maxRelErr=%.2e, input preserved", maxRel)
+	if maxRel > 1e-3 {
+		t.Errorf("rmsnorm_nw*0.75 maxRelErr %.3e > 1e-3", maxRel)
+	}
+}
+
 // sameExpertSet compares a CPU selection ([]int) and a resident selection ([]uint32) as SETS.
 func sameExpertSet(a []int, b []uint32) bool {
 	if len(a) != len(b) {

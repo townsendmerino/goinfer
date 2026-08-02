@@ -46,4 +46,31 @@ __global__ void scale_wgt_by_expert(float* __restrict__ wgt, const unsigned int*
     if (k >= K) return;
     wgt[k] *= perExpertScale[idx[k]];
 }
+
+// rmsnorm_nw: weightless RMSNorm, OUT-OF-PLACE (src → dst). The Gemma-4 MoE router norms the RAW
+// residual h WITHOUT mutating it — h still feeds the parallel dense branch, the expert branch, and
+// the final residual add, so the in-place rmsnorm_f32 can't be used here. dst[i] = src[i] *
+// rsqrt(mean(src^2)+eps). The learned routerScale and hidden^-0.5 are folded into the router weight
+// columns at build time, so nothing else is applied here. One block.
+__global__ void rmsnorm_nw(const float* __restrict__ src, float* __restrict__ dst, int H, float eps) {
+    extern __shared__ float red[];
+    int t = threadIdx.x, nt = blockDim.x;
+    float ss = 0.f;
+    for (int k = t; k < H; k += nt) ss += src[k] * src[k];
+    red[t] = ss;
+    __syncthreads();
+    for (int o = nt >> 1; o > 0; o >>= 1) {
+        if (t < o) red[t] += red[t + o];
+        __syncthreads();
+    }
+    float rnorm = rsqrtf(red[0] / H + eps);
+    for (int k = t; k < H; k += nt) dst[k] = src[k] * rnorm;
+}
+
+// scale_vec: x[i] *= s. Gemma-4's per-layer output scalar (out = (h + combined) * layerScalar) —
+// applied to the residual after the joint post-norm. One dispatch over hidden.
+__global__ void scale_vec(float* __restrict__ x, float s, int N) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < N) x[i] *= s;
+}
 }
