@@ -283,3 +283,29 @@ quant (int8/int4), not silently promoted.
   P-gate; ms/token is a P8 follow-on, reported separately per rig.
 - **Implement only Gemma-4.** `qwen35`/`llama4` are the same class and the seam is named for them,
   but no speculative code — the generality is in the *shape* of the abstraction, not in unbuilt paths.
+
+## Fixture noise-floor pre-flight (a RULE, learned the hard way — Split A)
+
+Before a fixture is used to gate a resident backend at quant Q, establish its **quantization
+noise floor**: run CPU-at-Q vs CPU-f32 on the same tokens. A resident backend can only agree with
+the CPU-Q path as well as Q agrees with f32 — so if the floor is already below the resident
+tolerance, **the fixture cannot gate that quant, no matter how correct the kernel is.** It costs
+two CPU forwards and zero GPU. `decoder/TestQuantNoiseFloor_gemma4MoE` is the reference.
+
+This bit Split A in BOTH directions — same underlying property, *representativeness*:
+- **Too degenerate (false negative):** HF's identity init left every scaling param at 1.0, so a
+  bug applying them (×1) wouldn't move the golden. `strengthen()` (seeded non-trivial norms/scales)
+  fixed it — and three phases later is what made the K=V `v_norm(raw k)` ordering observable at all.
+- **Too small (false positive):** a hidden=64 fixture manufactured a phantom 0.82 "bug" that was
+  pure W4A8 int8-activation sensitivity. hidden≥256 clears it. The floor check would have said so
+  on day one; instead it cost a debug hunt.
+
+**For MoE, also measure ROUTING agreement** (expert-set match CPU-f32 vs CPU-Q), because MoE has a
+discrete failure mode dense doesn't: quant noise near a router tie flips the top-k, and a flipped
+expert is a *different computation*, not a small numeric error. If routing already disagrees
+CPU-vs-CPU, no resident kernel can match — you'd chase a kernel bug that is a fixture property.
+gemma4-moe-tiny at hidden=256 still only agrees 68.8% (near-tie random routing), so **Split B's
+first task is a routing-robust MoE fixture** (fewer/structured experts or larger hidden that gives
+confident margins) clearing BOTH the logit floor and 100% routing agreement — THEN kernel work.
+Note: scaling the router projection does NOT help — the int-quant perturbation scales with it too,
+leaving gap-vs-noise unchanged. Confident routing has to come from the model, like a trained one.

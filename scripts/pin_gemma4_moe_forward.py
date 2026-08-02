@@ -32,9 +32,12 @@ OUT = os.path.join(HERE, "..", "testdata", "gemma4_moe_forward_golden.json")
 CKPT = os.path.join(HERE, "..", "testdata", "gemma4-moe-tiny")
 
 CFG = dict(
-    vocab_size=256, hidden_size=64, num_hidden_layers=2,
+    # hidden/intermediate/moe_intermediate are multiples of 32 (int4 group size) AND large enough
+    # that W4A8 int8-activation rounding is not degenerate: at hidden=64 the int4-vs-f32 CPU noise
+    # floor is ~0.67 (TestQuantNoiseFloor_gemma4MoE), too low for ANY resident gate; 256 clears it.
+    vocab_size=256, hidden_size=256, num_hidden_layers=2,
     num_attention_heads=4, num_key_value_heads=2, head_dim=16,
-    intermediate_size=48, rms_norm_eps=1e-6, tie_word_embeddings=True,
+    intermediate_size=256, rms_norm_eps=1e-6, tie_word_embeddings=True,
     max_position_embeddings=128, sliding_window=4,
     layer_types=["sliding_attention", "full_attention"],
     hidden_activation="gelu_pytorch_tanh", final_logit_softcapping=30.0,
@@ -43,7 +46,7 @@ CFG = dict(
     # uniform attention (no global-wide head / K=V) — that path is covered by the
     # dense gemma4 goldens; this golden isolates the NEW FFN sub-block.
     # the parallel dense + MoE FFN:
-    enable_moe_block=True, num_experts=8, top_k_experts=2, moe_intermediate_size=16,
+    enable_moe_block=True, num_experts=8, top_k_experts=2, moe_intermediate_size=64,
 )
 PROMPT = [1, 7, 42, 100, 5, 200, 13, 88]  # len 8 > sliding_window 4 (sliding layer clips)
 N_NEW = 6
