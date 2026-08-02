@@ -223,6 +223,27 @@ modest prompts." This is the alternative to that cap.
 
 ---
 
+## Framing (for the writeup): a capability result, and the premise now empirically grounded
+
+Two things this track establishes, worth stating plainly:
+
+- **The 77.5%-hit-rate-at-25%-residency number is the empirical basis of the design, not a
+  performance footnote.** The whole architecture rests on "the router signal is a stationary skew,
+  so recency is a sufficient statistic for frequency, so LRU + a small resident fraction captures
+  most reads." Until B′ that argument came only from the 35B-A3B trace replay — an extrapolation
+  across a *different* expert count and a *different* trained router. The 26B run confirms it on
+  Gemma 4's own routing: 32 of 128 experts resident, 77.5% of reads served from cache. `fieldfare`
+  reaches the same conclusion from the other direction (16-slot-per-layer LFU) — two different
+  eviction mechanisms, one underlying property of trained MoE routers.
+- **This is a CAPABILITY result, not a speed comparison.** A 26B MoE decodes coherently, cgo-free,
+  on an 8 GB card that cannot hold it — a configuration where llama.cpp and Ollama simply fail to
+  load. `docs/benchmarks.md` has no row of that shape; it is where goinfer's positioning is
+  strongest, and it needs no peer to be true ("runs at all, at N tok/s, on 8 GB" invites no
+  same-machine-methodology fight). The **16.98 tok/s** (capture-free, 38 slots auto-capped to fit,
+  81.6% hit rate, sync H2D) sits against fieldfare's 5.1–6.3 on its own 8 GB M2 Air — the closest
+  analogue either project has — but on entirely different silicon, so it is a floor in the peer's
+  constrained regime, NOT a comparison row.
+
 ## Residency-track pivot: host↔VRAM expert streaming (A′), and why zero-copy stalled at the kernel
 
 The streaming levers above move bytes disk↔host. They do not unblock the stated goal — running
@@ -328,10 +349,13 @@ and the sync probe proved race-free.
   a 64-tok gen), **15.83 tok/s vs 4.98 at nSlots=topK — 3.2×** (both with the capture readback;
   apples-to-apples). Per-token expert bytes 714 MB → ~161 MB. This VALIDATES the Lever-2 premise on
   the real model: recency is a sufficient statistic for the router's frequency, so a small resident
-  fraction captures most reads. VRAM ceiling on the 8 GB 2070 is ~40 slots (~31%; slots=48 OOMs at
-  build — the executor-goroutine alloc crashes rather than declining, so keep N within budget). Next
-  lever: gocudrv v0.3.0 async-H2D overlap of the miss DMAs with compute (its own bump + aikit-wide
-  sweep) — collapses the remaining ~161 MB/token toward the ~50 MB estimate.
+  fraction captures most reads. The slot count is **auto-capped to measured free VRAM at build**
+  (`allocSlots` defers the slot allocation until after the core + KV are up, queries
+  `Context().MemInfo()`, and caps-and-logs — the repo's "adjust honestly at load, never OOM"
+  discipline; e.g. `48 slots would need 4.8 GB but only 4.2 GB free — capping to 38`). At the
+  resulting 38 slots (30% of 128): **81.6% hit rate, 16.98 tok/s capture-free**. Next lever: gocudrv
+  v0.3.0 async-H2D overlap of the miss DMAs with compute (its own task) — collapses the remaining
+  per-token bytes toward the ~50 MB estimate.
 - **B′ ACHIEVED (the milestone).** The real gemma4 26B-A4B (~11.4 GB int4 experts, does NOT fit the
   8 GB 2070) decodes RESIDENT via C′ staging: `cuda/gemma4_26b_cache_test.go`. Load 4m49s (the
   11.4 GB pinned alloc + copy — the cost is the load, not the decode; swap-thrashed but no OOM on

@@ -5,6 +5,7 @@ package cuda
 import (
 	"fmt"
 	"math"
+	"os"
 	"unsafe"
 
 	gpu "github.com/townsendmerino/aikit/gpu"
@@ -256,9 +257,59 @@ func (r *cudaResident) cacheWQ(h hostW) cudaWQ {
 	w.perExpertS = rowsPerExpert * (h.K / 32) // uint16 group scales per expert (Kgroups = K/32)
 	w.srcW = r.mapBytes(u32bytes(h.wpk))
 	w.srcS = r.mapBytes(u16bytes(h.ws16))
-	w.W = r.au32(r.cacheSlots * w.perExpertW)
-	w.ws16 = gpu.NewBufferLenOf[uint16](r.dev, r.cacheSlots*w.perExpertS)
+	// Device slot buffers (W/ws16) are NOT allocated here — allocSlots does it after the core +
+	// KV are up, so it can size r.cacheSlots to the MEASURED free VRAM and never OOM.
 	return w
+}
+
+// slotBytesPerLayer is the device VRAM one slot's worth of BOTH expert projections costs (int4
+// weight + f16 scales), used to size the cache to free VRAM.
+func (r *cudaResident) slotBytesPerLayer() int {
+	gu, dn := &r.layers[0].expGU, &r.layers[0].expDown
+	return (gu.perExpertW+dn.perExpertW)*4 + (gu.perExpertS+dn.perExpertS)*2
+}
+
+// allocSlots caps r.cacheSlots to the MEASURED free device VRAM (with a safety margin) and then
+// allocates each MoE layer's slot buffers + its LRU cache. Called after the resident core + KV +
+// scratch are up, so the cap reflects what is actually left — an over-large GOINFER_MOE_CACHE_SLOTS
+// is capped-and-logged (the repo's "decline honestly at load" discipline), never OOM'd mid-build.
+func (r *cudaResident) allocSlots() error {
+	var moeLayers []int
+	for i := range r.layers {
+		if r.layers[i].expGU.srcW != nil {
+			moeLayers = append(moeLayers, i)
+		}
+	}
+	if len(moeLayers) == 0 {
+		return nil
+	}
+	perLayer := r.slotBytesPerLayer()
+	const marginBytes = 384 << 20 // headroom for the greedy-argmax readback + driver overhead
+	if free, _, err := r.dev.Context().MemInfo(); err == nil {
+		budget := int64(free) - marginBytes
+		if fit := int(budget / int64(len(moeLayers)) / int64(perLayer)); fit < r.cacheSlots {
+			capped := fit
+			if capped < r.topK {
+				capped = r.topK // topK always fits — one token's routed set must be resident
+			}
+			if capped < r.cacheSlots {
+				fmt.Fprintf(os.Stderr, "[cuda] C′ cache: %d slots/layer would need %.1f GB VRAM but only %.1f GB free — "+
+					"capping to %d (%.1f GB)\n", r.cacheSlots,
+					float64(len(moeLayers))*float64(r.cacheSlots)*float64(perLayer)/1e9, float64(free)/1e9,
+					capped, float64(len(moeLayers))*float64(capped)*float64(perLayer)/1e9)
+				r.cacheSlots = capped
+			}
+		}
+	}
+	for _, i := range moeLayers {
+		L := &r.layers[i]
+		for _, w := range []*cudaWQ{&L.expGU, &L.expDown} {
+			w.W = r.au32(r.cacheSlots * w.perExpertW)
+			w.ws16 = gpu.NewBufferLenOf[uint16](r.dev, r.cacheSlots*w.perExpertS)
+		}
+		L.expCache = newExpertCache(r.nE, r.cacheSlots)
+	}
+	return nil
 }
 
 // expertCache is C′ step 2's per-layer LRU slot residency: which cached expert occupies which of the

@@ -534,9 +534,6 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				L.isMoE = true
 				L.routerW, L.routerB = r.up32(h.router), r.up32(h.routerBs)
 				L.expGU, L.expDown = r.upExperts(h.expGU), r.upExperts(h.expDown)
-				if r.cacheExperts {
-					L.expCache = newExpertCache(nE, r.cacheSlots)
-				}
 				if h.hasShared {
 					L.hasShared = true
 					L.shGU, L.shDown = r.upW(h.shGU), r.upW(h.shDown)
@@ -548,9 +545,6 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				L.g4moe = true
 				L.routerW, L.routerB = r.up32(h.router), r.up32(h.routerBs)
 				L.expGU, L.expDown = r.upExperts(h.expGU), r.upExperts(h.expDown)
-				if r.cacheExperts {
-					L.expCache = newExpertCache(nE, r.cacheSlots)
-				}
 				L.g4preFFN, L.g4postFFN1 = r.up32(h.g4preFFN), r.up32(h.g4postFFN1)
 				L.g4preFFN2, L.g4postFFN2, L.g4postFFN = r.up32(h.g4preFFN2), r.up32(h.g4postFFN2), r.up32(h.g4post)
 				L.perExpertScaleB = r.up32(h.perExpertScale)
@@ -664,6 +658,11 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			return e
 		} else {
 			r.logitsPinned, r.logitsHost = hb, hb.Slice()
+		}
+		// C′: the core + KV + scratch are now up, so free VRAM reflects them — size the expert slot
+		// cache to what actually fits (cap-and-log, never OOM) and allocate it.
+		if e := r.allocSlots(); e != nil {
+			return e
 		}
 		return r.setupErr
 	})

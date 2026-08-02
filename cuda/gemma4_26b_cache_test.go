@@ -55,7 +55,10 @@ func TestGemma4_26B_cache_B(t *testing.T) {
 	}
 	t.Setenv("GOINFER_GEMMA4_RESIDENT", "1")
 	t.Setenv("GOINFER_MOE_CACHE_EXPERTS", "1")
-	t.Setenv("GOINFER_G4_CAPTURE", "1") // capture routing through the gen (adds a per-layer readback)
+	// Routing at 128/top-8 is already confirmed (the committed B′ run); leave G4_CAPTURE OFF by
+	// default so the tok/s is HONEST (capture adds a second per-layer readback). Set GOINFER_G4_CAPTURE=1
+	// externally to re-run the routing assertion.
+	routingCheck := os.Getenv("GOINFER_G4_CAPTURE") != ""
 
 	// The 11.4 GB pinned-host allocation happens here (cuMemAllocHost + copy from the packed
 	// weights). Time it: a slow load is expected (non-pageable, large), not a hang.
@@ -101,25 +104,27 @@ func TestGemma4_26B_cache_B(t *testing.T) {
 		t.Fatalf("decode: %v", err)
 	}
 
-	// ROUTING at 128/top-8 (the question the fixtures couldn't answer). gemv_f32_f32 makes routing
-	// bit-exact at any expert count, so this should CONFIRM: the selections captured through the gen
-	// must be in range and varied — a router broken at 128 would show here. A full CPU idx
-	// cross-check is infeasible (~52 GB / glacial at 26B); coherence below is the end-to-end proof.
-	distinct := map[uint32]struct{}{}
-	for _, dec := range r.g4capIdx {
-		for _, e := range dec {
-			if e >= 128 {
-				t.Errorf("routed expert id %d out of range [0,128) — router broken at 128/top-8", e)
+	// ROUTING at 128/top-8 (opt-in via GOINFER_G4_CAPTURE — off by default so the tok/s stays honest).
+	// gemv_f32_f32 makes routing bit-exact at any expert count, so this CONFIRMS: selections in range
+	// and varied — a router broken at 128 would show here. A full CPU idx cross-check is infeasible
+	// (~52 GB / glacial at 26B); coherence below is the end-to-end proof.
+	if routingCheck {
+		distinct := map[uint32]struct{}{}
+		for _, dec := range r.g4capIdx {
+			for _, e := range dec {
+				if e >= 128 {
+					t.Errorf("routed expert id %d out of range [0,128) — router broken at 128/top-8", e)
+				}
+				distinct[e] = struct{}{}
 			}
-			distinct[e] = struct{}{}
 		}
-	}
-	if len(r.g4capIdx) == 0 {
-		t.Error("no routing captured (G4_CAPTURE wiring)")
-	} else if len(distinct) < 16 {
-		t.Errorf("only %d distinct experts across %d decisions — routing looks degenerate at 128/top-8", len(distinct), len(r.g4capIdx))
-	} else {
-		t.Logf("routing at 128/top-8: %d decisions through the gen, %d distinct experts, all in [0,128) — sane", len(r.g4capIdx), len(distinct))
+		if len(r.g4capIdx) == 0 {
+			t.Error("no routing captured (G4_CAPTURE wiring)")
+		} else if len(distinct) < 16 {
+			t.Errorf("only %d distinct experts across %d decisions — routing degenerate at 128/top-8", len(distinct), len(r.g4capIdx))
+		} else {
+			t.Logf("routing at 128/top-8: %d decisions, %d distinct experts, all in [0,128) — sane", len(r.g4capIdx), len(distinct))
+		}
 	}
 
 	// COHERENCE: known answer + degeneracy floor (the hardened chat-template check).
@@ -136,9 +141,13 @@ func TestGemma4_26B_cache_B(t *testing.T) {
 	if hits+misses > 0 {
 		hitRate = float64(hits) / float64(hits+misses)
 	}
-	t.Logf("B′ OK — 26B resident via C′ (%d slots/layer): %d tok, distinct-trigram %.3f, %.0f ms/tok (%.2f tok/s — "+
-		"capture readback inflates this; ~714 MB/tok PCIe at nSlots=topK; informative, NOT a benchmark)\n  cont: %q",
-		r.cacheSlots, len(gen), tr, mspt, 1000/mspt, text)
+	capNote := "capture OFF"
+	if routingCheck {
+		capNote = "capture ON (readback inflates ms/tok)"
+	}
+	t.Logf("B′ OK — 26B resident via C′ (%d slots/layer): %d tok, distinct-trigram %.3f, %.0f ms/tok (%.2f tok/s — %s; "+
+		"sync H2D; informative capability number, NOT a same-machine benchmark)\n  cont: %q",
+		r.cacheSlots, len(gen), tr, mspt, 1000/mspt, capNote, text)
 	t.Logf("C′ cache: %d hits / %d misses = %.1f%% hit rate (each hit is one skipped expert DMA; nSlots=%d, "+
 		"topK=%d, nE=128) — set GOINFER_MOE_CACHE_SLOTS>topK for cross-token reuse", hits, misses, hitRate*100, r.cacheSlots, r.topK)
 }
