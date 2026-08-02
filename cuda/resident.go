@@ -111,6 +111,7 @@ type cudaResident struct {
 	act            int32    // gated MLP activation, decoder.ActKind (0=gelu-tanh, 1=silu)
 	sandwich       bool     // Gemma 4-norm sandwich: extra post-attn / post-MLP norms
 	cacheExperts   bool     // C′: routed experts DMA'd host→VRAM slots per token (device read; correct)
+	launchN        int      // diagnostic: per-forward dispatch count (graph-capturable-fraction bound)
 	cacheSlots     int      // C′ step 2: device slots per layer (≥ topK; = topK ⇒ step-1 fresh-load, no reuse)
 	slotIdx        Buffer   // C′: per-token slot ids for the routed experts, bound as the GEMV's idx
 	hostIdx        []uint32 // C′: scratch for the per-layer rIdx device→host readback
@@ -603,6 +604,7 @@ func onecfg(b, sh int) LaunchConfig {
 }
 
 func (r *cudaResident) launch(f Pipeline, cfg LaunchConfig, args ...KernelArg) error {
+	r.launchN++ // per-token dispatch count (diagnostic: graph-capturable-fraction bound)
 	e := r.stream.Launch(f, cfg, args...)
 	if e != nil && r.launchErr == nil {
 		// Sticky: launchToken's dense hot chain discards many launch errors (`_ = r.launch(...)`),

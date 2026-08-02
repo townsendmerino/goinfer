@@ -25,6 +25,21 @@ func TestCUDA_launchCost(t *testing.T) {
 	defer mc.Close()
 	r := rf.(*cudaResident)
 
+	// Check 3 (graph-capturable fraction): count dispatches for one forward, divide by layers →
+	// per-layer count. Only rope_kv + attention are per-token DYNAMIC (pos/nKeys), so they stay out
+	// of graphs; the static fraction bounds the lever. Run at a filled window so attention's shared-mem
+	// geometry has stabilized (pos ≥ window) — representative of steady-state decode.
+	nLayers := len(r.layers)
+	r.launchN = 0
+	if _, err := r.Forward(mc.EmbedResidentForTest(1), 0); err != nil {
+		t.Fatalf("forward: %v", err)
+	}
+	perLayer := float64(r.launchN) / float64(nLayers)
+	const dynamicPerLayer = 2.0 // rope_kv + attention
+	staticFrac := (perLayer - dynamicPerLayer) / perLayer
+	t.Logf("dispatch count: %d launches / %d layers = %.0f/layer; static (graph-capturable) = %.0f/layer = %.0f%%",
+		r.launchN, nLayers, perLayer, perLayer-dynamicPerLayer, staticFrac*100)
+
 	const N = 20000
 	// scale_vec (fScaleVec) is a trivial elementwise kernel: dst[i] *= s. Launch it N times with one
 	// sync and divide → per-launch host cost (arg packing + purego call + driver dispatch + a tiny
@@ -61,9 +76,10 @@ func TestCUDA_launchCost(t *testing.T) {
 	switch {
 	case minimal > 2*nativeUs && bigGrid/minimal < 1.5:
 		t.Logf("  VERDICT: FFI/LAUNCH-BOUND — per-launch is %.1f× native and ~grid-independent, so it's the purego "+
-			"crossing + arg packing, NOT GPU dispatch. CUDA GRAPHS are the tool (capture per-layer segments, replay "+
-			"in one call — collapses the crossings; needs new gocudrv graph bindings). Batching cuts dispatch COUNT "+
-			"only (~20→13/layer; expertsDown don't share activation) — the smaller win.", minimal/nativeUs)
+			"crossing + arg packing, NOT GPU dispatch. CUDA GRAPHS are the tool (capture the ~96%%-static per-layer "+
+			"segments, replay in one call). No gocudrv fork: cudasys already exposes StreamBeginCapture/EndCapture/"+
+			"GraphInstantiate/GraphLaunch. Batching cuts dispatch COUNT only (~20→13/layer; expertsDown don't share "+
+			"activation) — the smaller win.", minimal/nativeUs)
 	case bigGrid/minimal >= 1.5:
 		t.Logf("  VERDICT: grid scaling %.1f× — GPU-side dispatch is a real share; batching helps meaningfully too.", bigGrid/minimal)
 	default:
