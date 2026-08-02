@@ -138,6 +138,19 @@ func TestGemma4MoEUnified_forwardParity(t *testing.T) {
 		"scripts/make_gemma4_moe_unified.py")
 }
 
+// TestGemma4DenseTwoGeom_forwardParity is the Split-A (9a-P2) CPU oracle for the
+// GPU-resident bring-up: a DENSE gemma4 (no enable_moe_block) with TWO attention
+// geometries — local head_dim=16 / global head_dim=512 — and attention_k_eq_v on the
+// global layer (no v_proj; V = v_norm(k)). The CPU forward must reproduce the HF golden
+// before the resident geometry seam is asked to carry two live variants. Shares the
+// generic Load+forward helper; the "MoE" name is historical (the helper is arch-generic).
+func TestGemma4DenseTwoGeom_forwardParity(t *testing.T) {
+	gemma4MoEForwardParity(t,
+		"../testdata/gemma4_dense_twogeom_golden.json",
+		"../testdata/gemma4-dense-twogeom-tiny",
+		"scripts/pin_gemma4_dense_twogeom.py")
+}
+
 // TestGemma4MoEKV_forwardParity is the Phase-4 gate for the K=V global layers the
 // real 26B-A4B uses (attention_k_eq_v, num_global_key_value_heads=1): the global
 // layer carries NO v_proj — V is v_norm(k_proj output) — exercising the loader's
