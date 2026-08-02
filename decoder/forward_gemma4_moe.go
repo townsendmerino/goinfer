@@ -80,6 +80,11 @@ func gemma4MoEFFN(be Backend, arch *Architecture, h []float32, w *gemma4MoEWeigh
 	idx, topv := topK(probs, w.topK)
 	if routerCapture { // DIAGNOSTIC (default-off, observe-only): record the selected experts; see routercapture.go
 		routerCaptureBuf = append(routerCaptureBuf, append([]int(nil), idx...))
+		// rn is the FINALIZED router input (weightless-norm · routerScale · hidden^-0.5) that feeds
+		// routerProj — captured so a resident-router unit test can replay the SAME input through the
+		// CUDA selection kernels and gate its idx against these (routerCaptureBuf), isolating a routing
+		// flip from any expert-GEMV numeric difference. Copy: rn is mutated/reused after this.
+		routerRnBuf = append(routerRnBuf, append([]float32(nil), rn...))
 		// top-k boundary margin: min selected prob − max rejected prob (the gap a quant flip must cross).
 		sel := map[int]bool{}
 		for _, e := range idx {

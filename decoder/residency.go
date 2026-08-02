@@ -221,6 +221,27 @@ func (m *Model) MoEResidentParams() (nE, k, inter, sharedInter int, sigmoid, nor
 		mo.RouterSigmoid, mo.NormTopKProb, mo.SharedUngated, mo.RoutedScale, mo.NGroup, mo.TopkGroup, true
 }
 
+// Gemma4MoERouterForTest exposes a gemma4 MoE layer's f32 router projection (row-major [nE, hidden])
+// and its selection bias (zeros — gemma4 has no router bias) for the resident-router idx-equality
+// unit test (cuda/). That test replays captured router inputs (routerRnBuf) through the CUDA
+// selection kernels and gates resident idx[] against the CPU idx[], isolating a routing FLIP from
+// any expert-GEMV numeric difference — the "router first" discipline. ok=false for a non-gemma4
+// model or a dense (non-MoE) layer.
+func (m *Model) Gemma4MoERouterForTest(layer int) (proj, bias []float32, nE, topK, hidden int, ok bool) {
+	if m.w.arch.gemma4 == nil || layer < 0 || layer >= len(m.w.Layers) {
+		return nil, nil, 0, 0, 0, false
+	}
+	gm := m.w.Layers[layer].gemma4moe
+	if gm == nil {
+		return nil, nil, 0, 0, 0, false
+	}
+	f, has := gm.routerProj.F32()
+	if !has {
+		return nil, nil, 0, 0, 0, false
+	}
+	return f, make([]float32, gm.nE), gm.nE, gm.topK, m.w.arch.HiddenDim, true
+}
+
 // MLAResidentParams returns the DeepSeek/Kimi MLA geometry the GPU resident runner
 // needs (ok=false when the arch is not MLA). attnScale is the resolved q·k softmax
 // multiplier (qk_head_dim^-0.5, with any YaRN mscale²); ropeScale is the YaRN

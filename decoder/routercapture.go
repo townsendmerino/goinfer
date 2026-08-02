@@ -22,6 +22,15 @@ var routerCapture = os.Getenv("GOINFER_ROUTER_CAPTURE") != ""
 // a pass and reads it after — no helper accessors, so nothing here is unused off-tag.
 var routerCaptureBuf [][]int
 
+// routerRnBuf records, per MoE decision (same order/index as routerCaptureBuf), a COPY of the
+// finalized router input rn = (weightless-norm(h) · routerScale · hidden^-0.5) — the exact f32
+// vector that feeds routerProj. It exists so a CUDA resident-router unit test can replay identical
+// inputs through the device selection kernels and gate resident idx[] against the CPU idx[]
+// (routerCaptureBuf), isolating a ROUTING FLIP from any expert-GEMV numeric difference — the
+// "router first" discipline. Captured only when routerCapture is on; observe-only, byte-identical
+// with the env unset.
+var routerRnBuf [][]float32
+
 // routerMarginBuf records, per MoE decision (same order/index as routerCaptureBuf), the top-k
 // BOUNDARY MARGIN: the smallest selected expert's softmax prob minus the largest REJECTED
 // expert's prob. This is the quantity that decides whether a small quant perturbation flips the
@@ -30,3 +39,17 @@ var routerCaptureBuf [][]int
 // int4-vs-f32 pair (agreement can be luck; a wide margin is robustness). Captured only when
 // routerCapture is on; observe-only, so the forward stays byte-identical with the env unset.
 var routerMarginBuf []float32
+
+// SetRouterCaptureForTest toggles router capture and (when enabling) clears the buffers. Exported so
+// the CUDA resident-router unit test (package cuda) can drive a CPU forward, capture idx/rn, and
+// replay rn through the device kernels — it cannot touch these unexported vars directly.
+func SetRouterCaptureForTest(on bool) {
+	routerCapture = on
+	if on {
+		routerCaptureBuf, routerRnBuf, routerMarginBuf = nil, nil, nil
+	}
+}
+
+// RouterCaptureForTest returns the captured per-decision selected experts and router inputs (same
+// order/index). Sibling to SetRouterCaptureForTest for the cross-package (cuda) router-first gate.
+func RouterCaptureForTest() (idx [][]int, rn [][]float32) { return routerCaptureBuf, routerRnBuf }
