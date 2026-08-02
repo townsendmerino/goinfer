@@ -263,7 +263,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		}
 		// Per-layer RoPE table (Gemma's local 10k vs global 1M base; Mellum's YaRN-on-global).
 		// Uniform-rope families hand back the same slice for every layer.
-		hl.invFreq = m.RopeInvFreqLayer(l)
+		hl.invFreq = m.RopeInvFreqLayerResident(l) // Gemma 4: real per-layer table (gemma4InvFreq), not the generic one
 		// Per-layer window: only LOCAL layers are windowed; global layers stay full causal.
 		if m.LayerIsLocalResident(l) {
 			hl.window = int32(m.SlidingWindowResident())
@@ -431,6 +431,14 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			// head / fewer KV heads / partial rotary.
 			L.hd, L.nKV, L.rhalf = m.HeadDimAtResident(l), m.KVHeadsAtResident(l), m.RotaryDimAtResident(l)/2
 			L.qDim, L.kvDim = nH*L.hd, L.nKV*L.hd
+			// Per-layer rope-table invariant (9a-P2, the live version of ropeResidentCompatible):
+			// rope_kv rotates L.rhalf pairs per head reading invFreq[0..rhalf), so the bound
+			// per-layer table MUST have exactly rhalf entries. Gemma 4's global (rhalf=headDim/2,
+			// tail zero-freq) and local (full) tables genuinely differ in length now — the generic
+			// finalizeRoPE check can't see this, so assert it per layer, loudly, at build.
+			if len(h.invFreq) != L.rhalf {
+				return fmt.Errorf("cuda: layer %d rope table len=%d != rhalf=%d — per-layer invFreq must match the rotated-pair count the kernel indexes", l, len(h.invFreq), L.rhalf)
+			}
 			r.layers[l] = L
 		}
 		r.lmW = r.upW(hlm)

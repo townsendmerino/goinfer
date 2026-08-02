@@ -184,18 +184,17 @@ func (a *Architecture) decodeRunnerEligible() bool {
 	return a.ropeResidentCompatible()
 }
 
-// ropeResidentCompatible guards families whose GENERIC (finalizeRoPE) local/global inv-freq
-// tables differ in length — a shape the pre-9a runner's single model-level rotaryDim/2
-// dispatch could not cover. It checks the generic tables only.
+// ropeResidentCompatible is an ARCH-level coarse gate on the GENERIC (finalizeRoPE) local/global
+// inv-freq tables: they must share a length. Gemma passes it trivially — finalizeRoPE builds both
+// from one model-level `rd`, so they are always equal-length — but that is NOT proof the runner
+// can rope Gemma correctly. Gemma's REAL per-layer tables (RopeInvFreqLayerResident: local full,
+// global proportional) genuinely differ in length, which is exactly the inequality this check
+// was written to catch; it just never sees them (it reads the generic tables).
 //
-// NOTE (9a-P2): this is NO LONGER the Gemma blocker its history suggests. The resident
-// runners now plumb a PER-LAYER rotary width (rhalf) and a per-layer invFreq buffer, so
-// differing local/global rotary widths ARE handled — Gemma 4's global partial-rotary lands
-// via RotaryDimAtResident / the resident invFreq wiring, not the generic table. And Gemma
-// passes THIS check trivially anyway: finalizeRoPE builds both generic tables from one `rd`,
-// so they are always equal-length (the check reads the generic tables, not Gemma's real
-// per-layer ones). So this stays a conservative proxy for the legacy case; it is not the
-// per-layer-head-dim decline the old comment claimed, and it does not invent work for Gemma.
+// So the real per-layer invariant — that each bound invFreq buffer has exactly rhalf entries,
+// the count rope_kv indexes — lives PER LAYER, asserted where the buffer meets the geometry
+// (cuda/backend.go: len(invFreq_l) == rhalf_l), the same shape as the KV-cache guard. This
+// arch gate stays as the cheap legacy screen for families whose generic tables would mismatch.
 func (a *Architecture) ropeResidentCompatible() bool {
 	return len(a.ropeInvFreqLocal) == len(a.ropeInvFreqGlobal)
 }
@@ -289,18 +288,42 @@ func (m *Model) LayerIsLocalResident(i int) bool {
 func (m *Model) HeadDimAtResident(i int) int { return m.w.arch.headDimAt(i) }
 func (m *Model) KVHeadsAtResident(i int) int { return m.w.arch.kvHeadsAt(i) }
 
-// RotaryDimAtResident is layer i's rotated width. Gemma 4's global layers rotate only the
-// first GlobalRotaryDim of the wide head (partial/proportional rotary); its local layers use
-// full rotary over the local head_dim; every other family uses the model-level rotary dim.
+// RotaryDimAtResident is the rotary width the resident rope_kv kernel pairs over for layer i,
+// i.e. 2×rhalf. Gemma 4 rotates the FULL head width on every layer (rhalf = headDim/2, pairing
+// d with d+headDim/2 — the "split at headDim/2" convention of applyRoPE and gemma4InvFreq): its
+// GLOBAL layers are proportional/partial, but that is carried by ZERO frequencies in the tail
+// of RopeInvFreqLayerResident, NOT by a shorter rhalf. So this returns headDimAt(i) for gemma4,
+// full width. (rope_kv pairs base[d]/base[d+rhalf] — with rhalf=headDim/2 and the zero-freq tail
+// giving identity rotations, that reproduces gemma4InvFreq exactly.) Uniform families with a
+// genuine contiguous partial-rotary block (GLM/Phi) use the model-level rotary dim.
 func (m *Model) RotaryDimAtResident(i int) int {
-	a := m.w.arch
-	if a.gemma4 != nil {
-		if a.gemma4.GlobalRotaryDim > 0 && a.isGlobalLayer(i) {
-			return a.gemma4.GlobalRotaryDim
-		}
-		return a.headDimAt(i) // local: full rotary over the local head_dim
+	if m.w.arch.gemma4 != nil {
+		return m.w.arch.headDimAt(i) // full-width pairing; partial-ness lives in the invFreq zeros
 	}
 	return m.RotaryDimResident()
+}
+
+// RopeInvFreqLayerResident is layer i's inverse-frequency table for the resident runner. For
+// Gemma 4 the generic finalizeRoPE table is WRONG (single model-level rotary dim; can't express
+// the global layer's proportional rotary over the wide head), so build the real per-layer table
+// with gemma4InvFreq — headDim/2 entries, base-local full-rotary for local layers, base-global
+// proportional (first GlobalRotaryDim/2 real, rest zero) for global. len == headDim/2 == rhalf,
+// which the cuda builder asserts. Every other family returns the generic per-layer table.
+func (m *Model) RopeInvFreqLayerResident(i int) []float32 {
+	a := m.w.arch
+	if a.gemma4 != nil {
+		hd, rot, base := a.HeadDim, a.HeadDim, a.RoPELocalBase
+		if a.isGlobalLayer(i) {
+			hd, rot, base = a.gemma4.GlobalHeadDim, a.gemma4.GlobalRotaryDim, a.RoPEGlobalBase
+		}
+		f := gemma4InvFreq(hd, rot, base)
+		out := make([]float32, len(f))
+		for j, v := range f {
+			out[j] = float32(v)
+		}
+		return out
+	}
+	return m.RopeInvFreqLayer(i)
 }
 
 // LayerRopeGlobal reports whether layer i uses the global RoPE table (vs the local one) —
