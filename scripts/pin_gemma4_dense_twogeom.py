@@ -36,11 +36,13 @@ OUT = os.path.join(HERE, "..", "testdata", "gemma4_dense_twogeom_golden.json")
 CKPT = os.path.join(HERE, "..", "testdata", "gemma4-dense-twogeom-tiny")
 
 CFG = dict(
-    # All GEMM input dims (hidden, intermediate) are multiples of 32 so the checkpoint is
-    # int4-quantizable for the CUDA resident gate (int4 K must be a multiple of the group size).
-    vocab_size=256, hidden_size=64, num_hidden_layers=2,
+    # hidden/intermediate are multiples of 32 (int4 K must be a multiple of the group size) AND
+    # large enough that W4A8 int8-activation rounding is not degenerate: at hidden=64 the CUDA
+    # resident vs CPU cosine drifts to ~0.82 (pure int8-activation sensitivity, NOT a bug — a
+    # bigger head at 256 converges to 0.98/8-of-8-argmax); 256 keeps the gate meaningful.
+    vocab_size=256, hidden_size=256, num_hidden_layers=2,
     num_attention_heads=4, num_key_value_heads=2, head_dim=16,
-    intermediate_size=64, rms_norm_eps=1e-6, tie_word_embeddings=True,
+    intermediate_size=256, rms_norm_eps=1e-6, tie_word_embeddings=True,
     max_position_embeddings=128, sliding_window=4,
     layer_types=["sliding_attention", "full_attention"],
     hidden_activation="gelu_pytorch_tanh", final_logit_softcapping=30.0,
