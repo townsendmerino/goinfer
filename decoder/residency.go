@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math"
 	"os"
+
+	"github.com/townsendmerino/aikit/linalg"
 )
 
 // GPU full-residency decode support. When the backend is webgpu AND the arch is
@@ -240,6 +242,34 @@ func (m *Model) Gemma4MoERouterForTest(layer int) (proj, bias []float32, nE, top
 		return nil, nil, 0, 0, 0, false
 	}
 	return f, make([]float32, gm.nE), gm.nE, gm.topK, m.w.arch.HiddenDim, true
+}
+
+// Gemma4MoEExpertForTest computes ONE gemma4 MoE expert's output on a caller-supplied input xe
+// ([hidden]) — the gelu-tanh GeGLU expert function edown = Down · (geluTanh(gate)·up), gate‖up =
+// GateUp·xe — and returns it alongside the expert's fused gate‖up and down weight matrices. The
+// cuda single-expert gate (task 2c) packs those weights, runs the resident chain
+// (gemv_w4a8_moe → glu_quant act=GELU_TANH → down) on the same xe, and compares: the gelu-tanh MoE
+// epilogue × the indexed-expert GEMV is a combination that ships in neither Gemma-3 (dense, not
+// indexed) nor Mixtral/GLM (indexed, but SiLU), so it is verified directly, not argued by
+// composition. ok=false for a non-gemma4 model, a dense layer, or e out of range.
+func (m *Model) Gemma4MoEExpertForTest(layer, e int, xe []float32) (edown []float32, gateUp, down *linalg.WeightMat, moeInter, hidden int, ok bool) {
+	if m.w.arch.gemma4 == nil || layer < 0 || layer >= len(m.w.Layers) {
+		return nil, nil, nil, 0, 0, false
+	}
+	gm := m.w.Layers[layer].gemma4moe
+	if gm == nil || e < 0 || e >= len(gm.expertsGateUp) || len(xe) != m.w.arch.HiddenDim {
+		return nil, nil, nil, 0, 0, false
+	}
+	be := &cpuBackend{}
+	gu := make([]float32, 2*gm.moeInter)
+	matmul(be, &gm.expertsGateUp[e], xe, gu, 1)
+	mid := make([]float32, gm.moeInter)
+	for i := 0; i < gm.moeInter; i++ {
+		mid[i] = geluTanh(gu[i]) * gu[gm.moeInter+i]
+	}
+	out := make([]float32, m.w.arch.HiddenDim)
+	matmul(be, &gm.expertsDown[e], mid, out, 1)
+	return out, &gm.expertsGateUp[e], &gm.expertsDown[e], gm.moeInter, m.w.arch.HiddenDim, true
 }
 
 // MLAResidentParams returns the DeepSeek/Kimi MLA geometry the GPU resident runner

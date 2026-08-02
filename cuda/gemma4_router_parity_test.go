@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"io/fs"
+	"math"
 	"os"
 	"testing"
 
@@ -209,6 +210,162 @@ func TestGemma4_perExpertScaleFold(t *testing.T) {
 		}
 	}
 	t.Logf("per-expert-scale fold: %v * scale[%v] = %v (matches CPU)", wgt, idx, got)
+}
+
+// TestGemma4Expert_geluTanhChain isolates the gemma4 MoE EXPERT function on the resident path:
+// gemv_w4a8_moe (indexed stacked gate‖up) → glu_quant(act=GELU_TANH) → gemv_w4a8_moe (down), for
+// ONE expert, vs the CPU expert on the same input. This combination — the gelu-tanh glu_quant
+// epilogue between two INDEXED-expert GEMVs — ships in neither Gemma-3 (dense, so glu_quant but not
+// indexed) nor Mixtral/GLM (indexed, but SiLU), so it has never actually run. Rather than argue it
+// safe by composition (the same reasoning that said hd=512 "should" work, which we tested anyway),
+// run it. A NEGATIVE CONTROL proves the check isn't vacuous: the same chain with act=SILU must
+// diverge — if a SiLU misdispatch scored as well as gelu-tanh, the gate would be blind to exactly
+// the failure it exists to catch.
+func TestGemma4Expert_geluTanhChain(t *testing.T) {
+	const ckpt = "../testdata/gemma4-moe-tiny"
+	if _, err := os.Stat(ckpt); errors.Is(err, fs.ErrNotExist) {
+		t.Skipf("no fixture (%s) — run scripts/pin_gemma4_moe_forward.py", ckpt)
+	}
+	if err := gc.Init(); err != nil {
+		t.Skipf("cuInit: %v", err)
+	}
+	dev, err := gc.GetDevice(0)
+	if err != nil {
+		t.Skipf("no device: %v", err)
+	}
+	ctx, err := dev.Primary()
+	if err != nil {
+		t.Skipf("no context: %v", err)
+	}
+	defer ctx.Close()
+	bg := context.Background()
+	gmod, err := ctx.LoadModule(gluePTX)
+	if err != nil {
+		t.Fatalf("glue module: %v", err)
+	}
+	mmod, err := ctx.LoadModule(moePTX)
+	if err != nil {
+		t.Fatalf("moe module: %v", err)
+	}
+	fQuant := mustFn(t, gmod, "quant_vec")
+	fGlu := mustFn(t, gmod, "glu_quant")
+	fMoE := mustFn(t, mmod, "gemv_w4a8_moe")
+	stream := mustStream(t, ctx)
+
+	m, err := decoder.Load(ckpt, decoder.Options{Quant: "int4"})
+	if err != nil {
+		t.Fatalf("load int4: %v", err)
+	}
+	defer m.Close()
+
+	layer, expert := firstMoELayer(t, m), 0
+	_, _, _, _, hidden, ok := m.Gemma4MoERouterForTest(layer)
+	if !ok {
+		t.Fatalf("router accessor failed for layer %d", layer)
+	}
+	xe := make([]float32, hidden)
+	for i := range xe {
+		xe[i] = float32(math.Sin(float64(i)*0.13)) * 0.8 // normed-hidden scale
+	}
+	edownRef, gateUp, down, moeInter, _, ok := m.Gemma4MoEExpertForTest(layer, expert, xe)
+	if !ok {
+		t.Fatalf("expert accessor failed (layer %d expert %d)", layer, expert)
+	}
+	guHost, err := packWeightStack(gateUp)
+	if err != nil {
+		t.Fatalf("pack gate‖up: %v", err)
+	}
+	dnHost, err := packWeightStack(down)
+	if err != nil {
+		t.Fatalf("pack down: %v", err)
+	}
+	if guHost.kind != "int4" || dnHost.kind != "int4" {
+		t.Fatalf("expert weights are %q/%q, not int4 — the resident MoE GEMV is int4-only", guHost.kind, dnHost.kind)
+	}
+
+	// upload int4 weights (packed uint32 + f16 group scales) — the moe_gemv_test pattern.
+	upW := func(h hostW) (*gc.Buffer[uint32], *gc.Buffer[uint16]) {
+		w := mustAlloc[uint32](t, ctx, len(h.wpk))
+		g := mustAlloc[uint16](t, ctx, len(h.ws16))
+		_ = gc.CopyHtoD(bg, w, h.wpk)
+		_ = gc.CopyHtoD(bg, g, h.ws16)
+		return w, g
+	}
+	guW, guGs := upW(guHost)
+	dnW, dnGs := upW(dnHost)
+
+	guN := 2 * moeInter
+	dXe := mustAlloc[float32](t, ctx, hidden)
+	dMq := mustAlloc[int32](t, ctx, hidden/4)
+	dMSc := mustAlloc[float32](t, ctx, 1)
+	dIdx := mustAlloc[uint32](t, ctx, 1)
+	dMoeGU := mustAlloc[float32](t, ctx, guN)
+	dMoeQ := mustAlloc[int32](t, ctx, moeInter/4)
+	dMoeSc := mustAlloc[float32](t, ctx, 1)
+	dMoeScr := mustAlloc[float32](t, ctx, moeInter)
+	dEdown := mustAlloc[float32](t, ctx, hidden)
+	_ = gc.CopyHtoD(bg, dXe, xe)
+	_ = gc.CopyHtoD(bg, dIdx, []uint32{0})
+
+	// The full resident expert chain, activation selectable so the negative control can flip it.
+	ck := func(what string, e error) {
+		if e != nil {
+			t.Fatalf("%s: %v", what, e)
+		}
+	}
+	runChain := func(act int32) []float32 {
+		ck("quant_vec", fQuant.LaunchOn(bg, stream, gc.LaunchConfig{GridX: 1, GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
+			gc.Arg(dXe), gc.ArgValue(int32(hidden)), gc.Arg(dMq), gc.Arg(dMSc)))
+		ck("gemv gate‖up", fMoE.LaunchOn(bg, stream, gc.LaunchConfig{GridX: uint32((guN + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
+			gc.Arg(guW), gc.Arg(dMq), gc.Arg(guGs), gc.Arg(dMSc), gc.Arg(dIdx),
+			gc.ArgValue(int32(0)), gc.ArgValue(int32(guN)), gc.ArgValue(int32(guN)),
+			gc.ArgValue(int32(hidden/8)), gc.ArgValue(int32(hidden/32)), gc.Arg(dMoeGU)))
+		ck("glu_quant", fGlu.LaunchOn(bg, stream, gc.LaunchConfig{GridX: 1, GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
+			gc.Arg(dMoeGU), gc.Arg(dMoeGU), gc.ArgValue(int32(0)), gc.ArgValue(int32(moeInter)),
+			gc.ArgValue(int32(moeInter)), gc.ArgValue(act), gc.Arg(dMoeQ), gc.Arg(dMoeSc), gc.Arg(dMoeScr)))
+		ck("gemv down", fMoE.LaunchOn(bg, stream, gc.LaunchConfig{GridX: uint32((hidden + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
+			gc.Arg(dnW), gc.Arg(dMoeQ), gc.Arg(dnGs), gc.Arg(dMoeSc), gc.Arg(dIdx),
+			gc.ArgValue(int32(0)), gc.ArgValue(int32(hidden)), gc.ArgValue(int32(hidden)),
+			gc.ArgValue(int32(moeInter/8)), gc.ArgValue(int32(moeInter/32)), gc.Arg(dEdown)))
+		ck("sync", stream.Synchronize(bg))
+		out := make([]float32, hidden)
+		ck("D2H", gc.CopyDtoH(bg, out, dEdown))
+		return out
+	}
+
+	gelu := runChain(0) // ACT_GELU_TANH — what gemma4 ships
+	silu := runChain(1) // ACT_SILU — negative control
+	cosGelu := cosine(edownRef, gelu)
+	cosSilu := cosine(edownRef, silu)
+	t.Logf("single-expert gelu-tanh chain vs CPU: cosine=%.6f | SiLU control=%.6f", cosGelu, cosSilu)
+	if cosGelu < 0.97 {
+		t.Errorf("gelu-tanh expert chain cosine %.6f < 0.97 — the indexed-GEMV × gelu-tanh combination diverges from CPU", cosGelu)
+	}
+	if cosSilu >= cosGelu {
+		t.Errorf("negative control failed: SiLU cosine %.6f ≥ gelu-tanh %.6f — the gate can't tell the activations apart", cosSilu, cosGelu)
+	}
+}
+
+// mustFn resolves a kernel or fails loudly (a missing symbol is a build/embed error, not a bug).
+func mustFn(t *testing.T, mod *gc.Module, name string) *gc.Function {
+	t.Helper()
+	f, err := mod.Function(name)
+	if err != nil {
+		t.Fatalf("%s: %v", name, err)
+	}
+	return f
+}
+
+// firstMoELayer returns the lowest gemma4 MoE layer index (fails if none).
+func firstMoELayer(t *testing.T, m *decoder.Model) int {
+	t.Helper()
+	for l := 0; l < 64; l++ {
+		if _, _, _, _, _, ok := m.Gemma4MoERouterForTest(l); ok {
+			return l
+		}
+	}
+	t.Fatal("no gemma4 MoE layer found")
+	return -1
 }
 
 // sameExpertSet compares a CPU selection ([]int) and a resident selection ([]uint32) as SETS.
