@@ -390,10 +390,67 @@ as the standing gate policy predicted, and was CALIBRATED rather than floored:
 
 ## Remaining work (and a sequencing constraint that isn't optional)
 
-**The 26B-A4B real-model decode gate is HARDWARE-BLOCKED on this box, not merely deferred.** 26B-A4B at
-int4 is ~13 GB; the RTX 2070 SUPER has 8 GB — it CANNOT run resident here at all. The only local
-hardware that can hold it is the M1 Pro's 16 GB unified memory. So **Metal (9c) is the only path to
-running the deferred real-model gate on owned hardware** — it collapses two open items (the fieldfare
-legal-comparison backend AND the real decode gate) into one port. That makes **9c strictly next over
-9d** (which was already deprioritized on the 4-kernels-vs-1 asymmetry). "Deferred" here means "waiting
-on 9c," not "actionable whenever" — do not pick up the 26B gate on this box; it can't run.
+**~~The 26B-A4B real-model decode gate is HARDWARE-BLOCKED on this box.~~ SUPERSEDED (2026-08-02):
+the 26B DID run on the 8 GB 2070** — not resident, but via the **host↔VRAM MoE streaming track**
+(`docs/task-moe-streaming.md`): the ~1.3 GB core stays in VRAM, the ~12.85 GB of int4 experts live in
+pinned host RAM, and the routed experts are DMA'd into a per-layer LRU VRAM slot cache each token. B′
+decoded gemma4 26B-A4B coherently at **16.98 tok/s** (38 auto-capped slots, 81.6% hit rate), and it is
+published (`benchmarks.md` §B4). So the real-model gate is **collected**, and Metal (9c) is no longer
+"the only path to run it" — 9c's value is now the **fieldfare legal-comparison backend** (the peer
+lives on Apple silicon) and moving the hardware matrix, NOT unblocking the 26B, which is done.
+
+## Phase 9c — Metal port: Step-0 capacity gate (the M1 Pro 16 GB memory question)
+
+**Do Step 0 FIRST, before any port work — it decides whether 9c reaches the 26B at all.** Computed
+on the Linux box 2026-08-02 from the real config (the arithmetic is platform-independent):
+
+| component (int4) | GB |
+| --- | --- |
+| experts (30 × 128 × [2·704·2816 + 2816·704], +f16 group scales) | **12.85** |
+| dense FFN + attention + router/norms | 0.92 |
+| tied embed/head (int8 default / `--embed-int4`) | 0.74 / 0.37 |
+| **weights total (int4 embed)** | **14.13** |
+| + KV (int8, 4 K ctx, sliding-window-capped) + scratch | ~0.3 |
+| **RESIDENT** | **~14.3** |
+
+**~14.3 GB does NOT fit a 16 GB M1 Pro naively.** Unified memory shared with macOS leaves **~12.5 GB
+practically usable**, and Metal's own `recommendedMaxWorkingSetSize` ≈ **10.6 GB** — 14.3 GB is over
+both. Unified memory removes the host→device *copy*, **not the capacity**; addressable ≠ fits.
+`--embed-int4` saves only 0.37 GB (the problem is the 12.85 GB of experts, not the 0.74 GB head), so
+it does not rescue a naive resident load. **A fully-resident 26B on this Mac is a NO.**
+
+### The path if you want the 26B on Metal anyway: no-copy, file-backed paging (NOT swap)
+
+The current Metal weight loader is `metal/model.go:108` `d.NewBufferBytes(n)`, which **copies** into a
+fresh MTLBuffer = anonymous memory. Allocate 14.3 GB that way and the cold experts go to **swap** —
+dirty pages, write amplification, the pathological failure mode. **Do not do that.** Instead hand Metal
+**no-copy buffers over the mmap'd `.giw`** (`newBufferWithBytesNoCopy` over the page-aligned expert
+span). Then the expert weights are **file-backed and clean**: macOS evicts them by dropping the page
+and re-faults from disk — no swap write. This is the property the CPU pager work already proved
+model-free (`TestMadvise_dontneedRefaultsIntact`: clean read-only file-backed pages re-fault identical
+bytes), and the `.giw` spans are already page-aligned for those pagers, so the alignment requirement is
+met. **Same experiment as naive resident, completely different failure mode: page-cache re-reads, not
+swap thrash.**
+
+### The probe, with its expected outcome written down BEFORE the run
+
+The CUDA data predicts this, so it is not a coin flip. At the measured 81.6% hit / ~30% residency the
+working set is ~3.9 GB hot experts + 0.92 dense/attn + 0.37 head + ~0.3 KV ≈ **5.6 GB**, comfortably
+inside 12.5 GB. Expectation: macOS keeps the ~5.6 GB hot set resident and pages the cold ~8.7 GB, with
+~131 MB/token re-faulting from disk (NVMe → tens of ms/token) — **plausibly 15–25 tok/s, in the same
+band as the 2070**, on the platform where the peer comparison lives. If it holds, the Apple-silicon
+26B number lands **without building a Metal expert cache**. If it doesn't, one run has scoped the
+streaming design instead of surprising you mid-port.
+
+### 9c decision (the clean handoff)
+
+1. **9c dense Gemma 4 resident = the solid deliverable** (fits, moves the matrix, hosts the peer
+   comparison). Carry-over vs Metal-specific scope is in Phases 1–2 above; the decoder-side seams are
+   done and backend-agnostic. Declare `FeatFinalLogitSoftcap` on Metal only once it demonstrably
+   applies (the no-overclaim charter).
+2. **26B on Metal = the cheap probe, built with the no-copy detail above** (`newBufferWithBytesNoCopy`
+   over the mmap'd `.giw`, NOT `NewBufferBytes`). Expected 15–25 tok/s via page-cache paging; one run
+   settles it either way.
+
+Mac-side Phase-0 leftover still open: add the `hd=512` row to `metal/attn_shape_test.go` (the CUDA
+kernel proof at 256/512 makes it likely-to-pass, not guaranteed on a different kernel).
