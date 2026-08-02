@@ -344,16 +344,18 @@ fold**; no new GEMV kernels.
 
 Build order = fail-discretely-first (the user's steer):
 
-- **2a — router, gated by `idx[]` BINARY EQUALITY (do first, in isolation).** The router is the only
-  part with a discrete failure; everything else degrades gracefully. Isolate it as a cuda kernel unit
-  test (Split-A pattern: TestVNorm_scaleless/TestQKNorm_widths drive one kernel vs a CPU oracle):
-  feed the FIXTURE's real router inputs `rn` (add a host-side `rn` capture to gemma4MoEFFN, sibling to
-  routerCaptureBuf) through the resident selection (`gemv_f32_a8` + `moe_route` sigmoid=0/norm=1) and
-  assert resident `idx[]` == CPU `idx[]`, binary. KEY DECISION this test settles: `gemv_f32_a8` takes
-  an **int8** activation, but CPU's router is pure **f32×f32** — so the resident router quantizes `rn`
-  and CPU does not. If int8-on-rn flips any `idx` vs CPU, add a pure-f32 router GEMV for gemma4 (small:
-  nE×hidden) so the discrete part is bit-exact; if the 0.12 margin absorbs it (likely), reuse
-  gemv_f32_a8. Needs: exported per-layer accessor for the f32 routerProj/routerBias, and rn capture.
+- **2a — router, gated by `idx[]` BINARY EQUALITY (DONE, `1cce044` + f32-GEMV follow-up).** The router
+  is the only part with a discrete failure; everything else degrades gracefully. Isolated as a cuda
+  kernel unit test (Split-A pattern): feed the fixture's real router inputs `rn` (host-side `rn`
+  capture, sibling to routerCaptureBuf) through the resident selection + `moe_route` and assert
+  resident `idx[]` == CPU `idx[]`, binary. 16/16 bit-equal.
+  **The kernel decision — resolved to a PURE-f32 router GEMV, not reuse of gemv_f32_a8.** gemv_f32_a8
+  takes an int8 activation; the first cut ran it and found no flip — but that was CIRCULAR: the
+  fixture's 0.12 routing margin was CONSTRUCTED by least-squares to be wide, so "no flip there" says
+  nothing about a trained 128-expert/top-8 router whose 8th-vs-9th boundary is far tighter. So a new
+  `gemv_f32_f32` (cuda/router_f32.cu, its OWN module so it did not force regenerating the audited 12.6
+  moe.ptx at this box's 12.9 NVRTC) quantizes NOTHING — bit-exact to CPU modulo f32 reduction order
+  (~1e-6) — retiring routing from the suspect list at ANY expert count. 2c uses gemv_f32_f32.
 - **2b — gelu-tanh experts, checked against ONE CPU expert.** Route the experts through `glu_quant`
   with `act=ACT_GELU_TANH` (r.act already carries GatedActResident()=0 for gemma4). Isolated check: a
   single expert's gate‖up→gelu-tanh→down output vs the CPU expert, before any join.

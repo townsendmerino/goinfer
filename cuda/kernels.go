@@ -40,6 +40,13 @@ var gluePTX []byte
 //go:embed testdata/moe.ptx
 var moePTX []byte
 
+// routerF32PTX: gemv_f32_f32 — pure-f32 router projection (NO activation quant) for Gemma-4's
+// router, the discrete-failure path. Kept in its own module so adding it did not force a
+// regeneration of the audited 12.6 moe.ptx at this box's 12.9 NVRTC. See cuda/router_f32.cu.
+//
+//go:embed testdata/router_f32.ptx
+var routerF32PTX []byte
+
 // fusedQKVPTX: K1 super-kernel — rmsnorm+quant folded into the Q/K/V GEMV via redundant
 // per-block recompute, killing a GridX:1 glue kernel and 3 launches (spec §5.2).
 //

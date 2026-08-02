@@ -18,14 +18,16 @@ import (
 // a binary idx[] equality check, the one MoE failure a whole-forward cosine can't localize (a
 // flipped expert is a different computation, not a small error).
 //
-// It also settles a concrete kernel decision. The CPU gemma4 router is pure f32×f32 (routerProj
-// f32, rn f32); the resident selection kernel gemv_f32_a8 takes an INT8-quantized activation, so a
-// resident router would quantize rn and CPU does not. This test replays the CPU forward's captured
-// router inputs (routerRnBuf) through the exact resident chain — quant_vec (int8, maxabs/127) →
-// gemv_f32_a8 → moe_route (softmax, no bias, unconditional renorm) — and asserts idx[] matches the
-// CPU selection. If int8-on-rn flips any decision, task 2c must add a pure-f32 router GEMV; if it
-// holds (the fixture's constructed min routing margin is 0.12, » the sub-1% int8 perturbation),
-// gemv_f32_a8 is safe to reuse for gemma4's router.
+// The resident router uses gemv_f32_f32 (cuda/router_f32.cu) — a PURE-f32 projection, NOT the
+// shared int8-activation gemv_f32_a8. That is a deliberate choice, not a reuse: gemv_f32_a8 would
+// quantize the router input rn to int8 (~1e-2), which can flip a top-k decision near a tie. An
+// earlier version of this test ran that int8 path and found no flip — but the gemma4-moe-tiny
+// fixture's 0.12 routing margin was CONSTRUCTED by least-squares to be wide, so that result is
+// CIRCULAR for a trained 128-expert/top-8 router whose 8th-vs-9th boundary is far tighter. f32xf32
+// quantizes NOTHING, so the only residual is f32 reduction order (~1e-6) — routing cannot flip from
+// activation quant at ANY expert count. This test therefore verifies the kernel we actually ship;
+// the 128/top-8 re-run is no longer a correctness precondition (there is no quant perturbation to
+// re-check), only a nice-to-have when a real router is available.
 func TestGemma4Router_residentIdxParity(t *testing.T) {
 	const ckpt = "../testdata/gemma4-moe-tiny"
 	if _, err := os.Stat(ckpt); errors.Is(err, fs.ErrNotExist) {
@@ -45,22 +47,18 @@ func TestGemma4Router_residentIdxParity(t *testing.T) {
 	defer ctx.Close()
 	bg := context.Background()
 
-	// Kernels: quant_vec (gluePTX) for the int8 activation, gemv_f32_a8 + moe_route (moePTX).
-	gmod, err := ctx.LoadModule(gluePTX)
+	// Kernels: gemv_f32_f32 (routerF32PTX, pure-f32 router projection) + moe_route (moePTX).
+	rmod, err := ctx.LoadModule(routerF32PTX)
 	if err != nil {
-		t.Fatalf("glue module: %v", err)
+		t.Fatalf("router_f32 module: %v", err)
 	}
 	mmod, err := ctx.LoadModule(moePTX)
 	if err != nil {
 		t.Fatalf("moe module: %v", err)
 	}
-	fQuant, err := gmod.Function("quant_vec")
+	fGemv, err := rmod.Function("gemv_f32_f32")
 	if err != nil {
-		t.Fatalf("quant_vec: %v", err)
-	}
-	fGemv, err := mmod.Function("gemv_f32_a8")
-	if err != nil {
-		t.Fatalf("gemv_f32_a8: %v", err)
+		t.Fatalf("gemv_f32_f32: %v", err)
 	}
 	fRoute, err := mmod.Function("moe_route")
 	if err != nil {
@@ -116,10 +114,8 @@ func TestGemma4Router_residentIdxParity(t *testing.T) {
 			t.Fatalf("decision %d: rn len %d != hidden %d", d, len(rn), hidden)
 		}
 
-		// Device: rn → int8 (quant_vec) → gemv_f32_a8 → moe_route. Exactly the resident chain.
+		// Device: rn (f32, NO quant) → gemv_f32_f32 → moe_route. Exactly the resident chain.
 		dRn := mustAlloc[float32](t, ctx, hidden)
-		dQ := mustAlloc[int32](t, ctx, hidden/4)
-		dScale := mustAlloc[float32](t, ctx, 1)
 		dProj := mustAlloc[float32](t, ctx, nE*hidden)
 		dBias := mustAlloc[float32](t, ctx, nE)
 		dLogits := mustAlloc[float32](t, ctx, nE)
@@ -129,10 +125,8 @@ func TestGemma4Router_residentIdxParity(t *testing.T) {
 		_ = gc.CopyHtoD(bg, dProj, proj)
 		_ = gc.CopyHtoD(bg, dBias, bias)
 
-		_ = fQuant.LaunchOn(bg, stream, gc.LaunchConfig{GridX: 1, GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
-			gc.Arg(dRn), gc.ArgValue(int32(hidden)), gc.Arg(dQ), gc.Arg(dScale))
 		_ = fGemv.LaunchOn(bg, stream, gc.LaunchConfig{GridX: uint32(nE), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
-			gc.Arg(dProj), gc.Arg(dQ), gc.Arg(dScale), gc.ArgValue(int32(nE)), gc.ArgValue(int32(hidden)), gc.Arg(dLogits))
+			gc.Arg(dProj), gc.Arg(dRn), gc.ArgValue(int32(nE)), gc.ArgValue(int32(hidden)), gc.Arg(dLogits))
 		// moe_route: sigmoid=0 (softmax), norm=1 (unconditional renorm), scale=1, nGroup=1, topkGroup=1.
 		// Per-expert scale is applied OUTSIDE the router and does not affect selection.
 		_ = fRoute.LaunchOn(bg, stream, gc.LaunchConfig{GridX: 1, GridY: 1, GridZ: 1, BlockX: 1, BlockY: 1, BlockZ: 1},
@@ -147,13 +141,13 @@ func TestGemma4Router_residentIdxParity(t *testing.T) {
 		cpu := idxAll[d]
 		if !sameExpertSet(cpu, gpuIdx) {
 			mismatches++
-			t.Errorf("decision %d (layer %d): resident idx %v != CPU idx %v — int8-on-rn FLIPPED the router",
-				d, layer, gpuIdx, cpu)
+			t.Errorf("decision %d (layer %d): resident idx %v != CPU idx %v — pure-f32 router diverges from CPU "+
+				"(f32 reduction order should never flip a real margin — check the kernel)", d, layer, gpuIdx, cpu)
 		}
 	}
 	if mismatches == 0 {
-		t.Logf("router idx parity: %d/%d decisions bit-equal (CPU f32 router vs resident int8-rn gemv_f32_a8) — "+
-			"gemv_f32_a8 is safe for gemma4's router; no pure-f32 router GEMV needed", len(idxAll), len(idxAll))
+		t.Logf("router idx parity: %d/%d decisions bit-equal (CPU f32 router vs resident gemv_f32_f32, pure f32, "+
+			"no activation quant) — routing retired from the resident suspect list at any expert count", len(idxAll), len(idxAll))
 	}
 }
 
