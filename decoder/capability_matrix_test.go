@@ -59,7 +59,7 @@ func representativeConfig(modelType string) *Config {
 			RoPELocalBase: 10000, RoPEGlobalBase: 1000000, SlidingWindow: 1024,
 			SlidingWindowPattern: 6, QueryPreAttnScalar: 16, GlobalHeadDim: 32,
 			NumGlobalKVHeads: 1, AttentionKEqV: true, PartialRotaryFactor: 0.25,
-			FinalLogitSoftcap: 30, // real Gemma-4 softcaps (gemma4_load_test); needed for FeatLogitSoftcap
+			FinalLogitSoftcap: 30, // real Gemma-4 softcaps (gemma4_load_test); derives FeatFinalLogitSoftcap
 			LayerTypes:        []string{"sliding_attention", "full_attention"},
 		}
 	case "gemma4_text":

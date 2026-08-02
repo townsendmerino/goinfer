@@ -125,10 +125,24 @@ func (m *Model) residentProjsInt4() bool {
 // usable directly from a resolved Architecture (e.g. the capability matrix)
 // without a loaded Model.
 func (a *Architecture) decodeRunnerEligible() bool {
-	// Families with their own non-uniform forward (hybrid mixers, Gemma-4, Llama-4,
-	// qwen3.5) keep the staged path regardless.
-	if a.gemma4 != nil || a.qwen35 != nil || a.llama4 != nil || a.gptoss != nil {
-		return false
+	// Own-forward families (their non-uniform forward the uniform-layer runners can't express).
+	// Only Gemma 4 (dense, env-gated) is bridged so far; the rest keep the staged path. A
+	// bridged family does NOT early-return true — it FALLS THROUGH to the common feature/shape
+	// checks below, so a later decline COMPOSES instead of being short-circuited past. That is
+	// the trap the old blanket `return false` set for whoever narrows the next family here: move
+	// one line to a conditional admit and it silently skips every check below it. Structuring the
+	// bridged case as a fall-through makes that mistake un-writable (cf. the geometry port).
+	switch {
+	case a.gemma4 != nil:
+		// Dense Gemma 4 under GOINFER_GEMMA4_RESIDENT (Split-A bring-up, like granite's
+		// GOINFER_SSM_RESIDENT through P5b). The enable_moe_block sub-block is the parallel
+		// dense‖MoE shape the generic MoE path can't express — declined until Split B. Admissible
+		// ⇒ fall through to the common checks (softcap now handled by the feature gate).
+		if a.MoE != nil || os.Getenv("GOINFER_GEMMA4_RESIDENT") == "" {
+			return false
+		}
+	case a.qwen35 != nil || a.llama4 != nil || a.gptoss != nil:
+		return false // own forward, not yet bridged
 	}
 	// Granite-4.0-H resident SSM hybrid (P5b): its own mixer-kind path (Mamba-2 ⊕
 	// attention), so it bypasses the standard GQA gates below. Guarded during the
@@ -146,11 +160,14 @@ func (a *Architecture) decodeRunnerEligible() bool {
 		return false
 	}
 	// FFN / norm / head constraints common to both attention paths. Sandwich norms (Gemma's
-	// 4-norm block) are representable now — a backend that hasn't implemented them declines via
-	// the feature gate (FeatSandwichNorm), not here, so this stays an ARCH-shape predicate and
-	// the per-backend answer lives in one place (decoder/features.go).
-	if a.NonGatedMLP || a.LearnedPosEmbed || a.OutBias ||
-		a.FinalLogitSoftcap != 0 || a.AttnLogitSoftcap != 0 {
+	// 4-norm block) AND logit softcap are representable now — a backend that hasn't implemented
+	// them declines via the feature gate (FeatSandwichNorm / FeatAttnLogitSoftcap /
+	// FeatFinalLogitSoftcap), not here, so this stays an ARCH-shape predicate and the per-backend
+	// answer lives in one place (decoder/features.go). Softcap was moved OUT of this decline in
+	// 9a-P2: it is a per-backend capability (CUDA ships the host-side final tanh), not an arch
+	// shape — leaving it here would have blocked Gemma 4 for a feature it uses and a backend
+	// implements.
+	if a.NonGatedMLP || a.LearnedPosEmbed || a.OutBias {
 		return false
 	}
 	// MLA (DeepSeek/Kimi) runs its own latent-attention path on the resident runner
@@ -320,6 +337,11 @@ func (m *Model) NormEps() float32 {
 	}
 	return 1e-6
 }
+
+// FinalLogitSoftcapResident is the Gemma final-logit softcap (30 for Gemma 4; 0 for every
+// non-softcapped family). A resident backend declaring FeatFinalLogitSoftcap applies
+// softcap·tanh(logits/softcap) host-side after readback, mirroring logitsFromHidden.
+func (m *Model) FinalLogitSoftcapResident() float32 { return float32(m.w.arch.FinalLogitSoftcap) }
 
 // withResidency builds the GPU resident decoder if the backend supports it and
 // the arch is eligible, then returns m. A no-op for the CPU backend / ineligible

@@ -291,7 +291,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	// ---- resident + pinned executor ----
 	r := &cudaResident{
 		hidden: H, nLayers: nLayers, nH: nH, inter: I, vocab: vocab,
-		eps: m.NormEps(), attnScale: m.AttnScale(),
+		eps: m.NormEps(), attnScale: m.AttnScale(), finalSoftcap: m.FinalLogitSoftcapResident(),
 		qkNorm: m.HasQKNorm(), rmsAddOne: m.RMSAddOne(),
 		act: int32(m.GatedActResident()), sandwich: m.SandwichNormResident(),
 		moe: isMoE, nE: nE, topK: topK, moeInter: moeInter,

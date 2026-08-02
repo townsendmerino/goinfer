@@ -4,6 +4,7 @@ package cuda
 
 import (
 	"fmt"
+	"math"
 
 	gpu "github.com/townsendmerino/aikit/gpu"
 	"github.com/townsendmerino/aikit/linalg"
@@ -82,10 +83,11 @@ type cudaResident struct {
 	// backend.go locals; the per-layer KV cache and UploadKV read r.layers[l].kvDim.
 	nH             int
 	eps, attnScale float32
-	qkNorm         bool  // arch needs per-head Q/K RMSNorm before RoPE
-	rmsAddOne      bool  // (1+w) offset — false for Qwen3/Llama
-	act            int32 // gated MLP activation, decoder.ActKind (0=gelu-tanh, 1=silu)
-	sandwich       bool  // Gemma 4-norm sandwich: extra post-attn / post-MLP norms
+	finalSoftcap   float32 // Gemma final-logit softcap (30); 0 ⇒ none. Applied host-side in step().
+	qkNorm         bool    // arch needs per-head Q/K RMSNorm before RoPE
+	rmsAddOne      bool    // (1+w) offset — false for Qwen3/Llama
+	act            int32   // gated MLP activation, decoder.ActKind (0=gelu-tanh, 1=silu)
+	sandwich       bool    // Gemma 4-norm sandwich: extra post-attn / post-MLP norms
 
 	// Sparse MoE. The router projection stays f32 (gemv_f32_a8) while the experts are int4:
 	// the router's output steers a DISCRETE choice, so a quantization error near a tie does not
@@ -643,6 +645,17 @@ func (r *cudaResident) step(emb []float32, pos int) ([]float32, error) {
 	}
 	if e := gpu.ReadToHost(r.logits, r.logitsPinned); e != nil {
 		return nil, e
+	}
+	// Final-logit softcap (Gemma 2/4): softcap·tanh(logits/softcap), applied ONCE to the logit
+	// vector after the LM head — host-side, exactly as the CPU path (forwardn.go / logitsFromHidden)
+	// and as FeatEmbedScale's √hidden is host-side. This is what FeatFinalLogitSoftcap declares on
+	// this backend; 0 for every non-softcapped family (no-op). Covers Forward and ForwardN (both
+	// route through step).
+	if r.finalSoftcap > 0 {
+		sc := r.finalSoftcap
+		for j, v := range r.logitsHost {
+			r.logitsHost[j] = sc * float32(math.Tanh(float64(v/sc)))
+		}
 	}
 	return r.logitsHost, nil
 }

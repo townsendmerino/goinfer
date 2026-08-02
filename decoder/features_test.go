@@ -45,20 +45,23 @@ var archFeatureProfile = map[string][]ResidentFeature{
 	// Gemma — VERIFIED against the real checkpoints via RequiredResidentFeatures (an earlier
 	// hand-written guess here was wrong on three counts: it missed per-layer-rope / qk-norm /
 	// sliding-window, and claimed rms-add-one for gemma4, which has RMSAddOne=false).
-	// gemma3/gemma3_text are resident on CUDA. gemma4 stays refused — it needs logit-softcap
-	// AND has its own forward (per-layer head_dim / KV-sharing / PLE), so it is out on two
-	// counts, not one.
+	// gemma3/gemma3_text are resident on CUDA. gemma4 needs the FINAL-logit softcap (30) — one
+	// host-side tanh, which CUDA now ships (FeatFinalLogitSoftcap, 9a-P2) — not the attention
+	// softcap. So it is feature-compatible with CUDA; its OWN forward (per-layer head_dim / K=V)
+	// is what the resident geometry bridge addresses, and dense admission is env-gated
+	// (GOINFER_GEMMA4_RESIDENT) in decodeRunnerEligible — a separate gate from this feature set.
 	"gemma3":      {FeatEmbedScale, FeatGatedGELU, FeatPerLayerRoPE, FeatQKNorm, FeatRMSAddOne, FeatSandwichNorm, FeatSlidingWindow},
 	"gemma3_text": {FeatEmbedScale, FeatGatedGELU, FeatPerLayerRoPE, FeatQKNorm, FeatRMSAddOne, FeatSandwichNorm, FeatSlidingWindow},
-	"gemma4":      {FeatEmbedScale, FeatGatedGELU, FeatLogitSoftcap, FeatPerLayerRoPE, FeatQKNorm, FeatSandwichNorm, FeatSlidingWindow},
-	// gemma4_text is the 26B-A4B MoE variant: gemma4's feature set + FeatMoE (the
-	// parallel dense+MoE FFN). Refused on CUDA/Metal like gemma4 (own forward +
-	// logit-softcap); the added MoE only widens the gap.
-	"gemma4_text": {FeatEmbedScale, FeatGatedGELU, FeatLogitSoftcap, FeatMoE, FeatPerLayerRoPE, FeatQKNorm, FeatSandwichNorm, FeatSlidingWindow},
+	"gemma4":      {FeatEmbedScale, FeatFinalLogitSoftcap, FeatGatedGELU, FeatPerLayerRoPE, FeatQKNorm, FeatSandwichNorm, FeatSlidingWindow},
+	// gemma4_text is the 26B-A4B MoE variant: gemma4's feature set + FeatMoE. It is
+	// FEATURE-compatible with CUDA, but Gemma 4's MoE is the parallel dense‖MoE shape the
+	// generic FeatMoE kernel cannot express, so decodeRunnerEligible declines a.MoE != nil
+	// until Split B lands the delta — the feature set is necessary, not sufficient.
+	"gemma4_text": {FeatEmbedScale, FeatFinalLogitSoftcap, FeatGatedGELU, FeatMoE, FeatPerLayerRoPE, FeatQKNorm, FeatSandwichNorm, FeatSlidingWindow},
 	// gemma4_unified_text — the real unified checkpoints' text_config model_type;
 	// same feature set as gemma4_text (K=V globals are a loader detail, not a
 	// resident feature).
-	"gemma4_unified_text": {FeatEmbedScale, FeatGatedGELU, FeatLogitSoftcap, FeatMoE, FeatPerLayerRoPE, FeatQKNorm, FeatSandwichNorm, FeatSlidingWindow},
+	"gemma4_unified_text": {FeatEmbedScale, FeatFinalLogitSoftcap, FeatGatedGELU, FeatMoE, FeatPerLayerRoPE, FeatQKNorm, FeatSandwichNorm, FeatSlidingWindow},
 }
 
 // TestResidentAdmission_registryCovered is THE recurrence guard. Every architecture in the
@@ -142,7 +145,8 @@ func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 	// Every declared feature must exist in the taxonomy (catches a typo'd string constant).
 	known := map[ResidentFeature]bool{
 		FeatQKNorm: true, FeatSlidingWindow: true, FeatPartialRotary: true, FeatPerLayerRoPE: true,
-		FeatRopeMscale: true, FeatRMSAddOne: true, FeatEmbedScale: true, FeatLogitSoftcap: true,
+		FeatRopeMscale: true, FeatRMSAddOne: true, FeatEmbedScale: true,
+		FeatAttnLogitSoftcap: true, FeatFinalLogitSoftcap: true,
 		FeatSandwichNorm: true, FeatGatedGELU: true, FeatNonGatedMLP: true, FeatLearnedPos: true,
 		FeatOutBias: true, FeatLogitScale: true, FeatMoE: true, FeatMoEGatedShared: true,
 		FeatMLA: true, FeatSSM: true, FeatLayerNorm: true, FeatParallelBlock: true, FeatNoPE: true,
@@ -174,7 +178,8 @@ func TestResidentFeatures_derivation(t *testing.T) {
 		{"partial-rotary", func(a *Architecture) { a.RotaryDim = 64 }, FeatPartialRotary},
 		{"rms-add-one", func(a *Architecture) { a.RMSAddOne = true }, FeatRMSAddOne},
 		{"embed-scale", func(a *Architecture) { a.EmbedScale = 32 }, FeatEmbedScale},
-		{"softcap", func(a *Architecture) { a.FinalLogitSoftcap = 30 }, FeatLogitSoftcap},
+		{"final-softcap", func(a *Architecture) { a.FinalLogitSoftcap = 30 }, FeatFinalLogitSoftcap},
+		{"attn-softcap", func(a *Architecture) { a.AttnLogitSoftcap = 30 }, FeatAttnLogitSoftcap},
 		{"sandwich", func(a *Architecture) { a.NormPlacement = NormSandwich4 }, FeatSandwichNorm},
 		{"layer-norm", func(a *Architecture) { a.Norm = NormLayer }, FeatLayerNorm},
 		{"parallel-block", func(a *Architecture) { a.NormPlacement = NormParallel }, FeatParallelBlock},

@@ -25,28 +25,29 @@ import "sort"
 type ResidentFeature string
 
 const (
-	FeatQKNorm         ResidentFeature = "qk-norm"          // per-head Q/K RMSNorm before RoPE (Qwen3, GLM, Mellum)
-	FeatSlidingWindow  ResidentFeature = "sliding-window"   // windowed attention (Mistral, Mellum, Phi-3-mini)
-	FeatPartialRotary  ResidentFeature = "partial-rotary"   // RotaryDim < HeadDim (GLM-dense, some Phi)
-	FeatPerLayerRoPE   ResidentFeature = "per-layer-rope"   // inv-freq/mscale differ per layer type (Mellum)
-	FeatRopeMscale     ResidentFeature = "yarn-mscale"      // YaRN attention_factor != 1 (Mellum, long-ctx)
-	FeatRMSAddOne      ResidentFeature = "rms-add-one"      // Gemma's (1+w) RMSNorm offset
-	FeatEmbedScale     ResidentFeature = "embed-scale"      // √hidden embedding multiplier (Gemma)
-	FeatLogitSoftcap   ResidentFeature = "logit-softcap"    // attention / final logit softcap (Gemma 2/3)
-	FeatSandwichNorm   ResidentFeature = "sandwich-norm"    // post-attn / post-MLP norms (Gemma)
-	FeatLayerNorm      ResidentFeature = "layer-norm"       // mean-subtracting LayerNorm instead of RMSNorm (Cohere, GPT-2)
-	FeatParallelBlock  ResidentFeature = "parallel-block"   // one shared input norm; attn+MLP sum into a single residual add (Cohere, GPT-J)
-	FeatNoPE           ResidentFeature = "nope"             // per-layer NoPE: some layers skip RoPE entirely (Cohere2 global layers, Llama-4 iRoPE)
-	FeatGatedGELU      ResidentFeature = "gated-gelu"       // gated MLP whose activation is GELU-tanh, not SiLU (Gemma)
-	FeatNonGatedMLP    ResidentFeature = "non-gated-mlp"    // up→act→down, no gate (GPT-2, Nemotron relu²)
-	FeatLearnedPos     ResidentFeature = "learned-pos"      // learned position embeddings, no RoPE (GPT-2)
-	FeatOutBias        ResidentFeature = "out-bias"         // additive bias on the attn output proj (GPT-2)
-	FeatLogitScale     ResidentFeature = "logit-scale"      // logits_scaling divisor (Granite)
-	FeatMoE            ResidentFeature = "moe"              // sparse mixture-of-experts FFN
-	FeatMoEGatedShared ResidentFeature = "moe-gated-shared" // sigmoid-GATED always-on shared expert (Qwen2-MoE); ungated (GLM/DeepSeek) needs only FeatMoE
-	FeatMLA            ResidentFeature = "mla"              // latent-KV attention (DeepSeek, Kimi)
-	FeatSSM            ResidentFeature = "ssm"              // Mamba-2 mixer (Granite-4.0-H, Nemotron-H)
-	FeatAttnSink       ResidentFeature = "attn-sink"        // learned per-head attention sink in the softmax denominator + clamped interleaved-SwiGLU experts (gpt-oss). CPU-only — no resident backend implements it, so CUDA/Metal/WebGPU all decline.
+	FeatQKNorm            ResidentFeature = "qk-norm"             // per-head Q/K RMSNorm before RoPE (Qwen3, GLM, Mellum)
+	FeatSlidingWindow     ResidentFeature = "sliding-window"      // windowed attention (Mistral, Mellum, Phi-3-mini)
+	FeatPartialRotary     ResidentFeature = "partial-rotary"      // RotaryDim < HeadDim (GLM-dense, some Phi)
+	FeatPerLayerRoPE      ResidentFeature = "per-layer-rope"      // inv-freq/mscale differ per layer type (Mellum)
+	FeatRopeMscale        ResidentFeature = "yarn-mscale"         // YaRN attention_factor != 1 (Mellum, long-ctx)
+	FeatRMSAddOne         ResidentFeature = "rms-add-one"         // Gemma's (1+w) RMSNorm offset
+	FeatEmbedScale        ResidentFeature = "embed-scale"         // √hidden embedding multiplier (Gemma)
+	FeatAttnLogitSoftcap  ResidentFeature = "attn-logit-softcap"  // per-layer attention-score softcap (Gemma 2) — a real attention kernel
+	FeatFinalLogitSoftcap ResidentFeature = "final-logit-softcap" // softcap·tanh(logits/softcap) applied ONCE after the LM head, host-side (Gemma 2/4)
+	FeatSandwichNorm      ResidentFeature = "sandwich-norm"       // post-attn / post-MLP norms (Gemma)
+	FeatLayerNorm         ResidentFeature = "layer-norm"          // mean-subtracting LayerNorm instead of RMSNorm (Cohere, GPT-2)
+	FeatParallelBlock     ResidentFeature = "parallel-block"      // one shared input norm; attn+MLP sum into a single residual add (Cohere, GPT-J)
+	FeatNoPE              ResidentFeature = "nope"                // per-layer NoPE: some layers skip RoPE entirely (Cohere2 global layers, Llama-4 iRoPE)
+	FeatGatedGELU         ResidentFeature = "gated-gelu"          // gated MLP whose activation is GELU-tanh, not SiLU (Gemma)
+	FeatNonGatedMLP       ResidentFeature = "non-gated-mlp"       // up→act→down, no gate (GPT-2, Nemotron relu²)
+	FeatLearnedPos        ResidentFeature = "learned-pos"         // learned position embeddings, no RoPE (GPT-2)
+	FeatOutBias           ResidentFeature = "out-bias"            // additive bias on the attn output proj (GPT-2)
+	FeatLogitScale        ResidentFeature = "logit-scale"         // logits_scaling divisor (Granite)
+	FeatMoE               ResidentFeature = "moe"                 // sparse mixture-of-experts FFN
+	FeatMoEGatedShared    ResidentFeature = "moe-gated-shared"    // sigmoid-GATED always-on shared expert (Qwen2-MoE); ungated (GLM/DeepSeek) needs only FeatMoE
+	FeatMLA               ResidentFeature = "mla"                 // latent-KV attention (DeepSeek, Kimi)
+	FeatSSM               ResidentFeature = "ssm"                 // Mamba-2 mixer (Granite-4.0-H, Nemotron-H)
+	FeatAttnSink          ResidentFeature = "attn-sink"           // learned per-head attention sink in the softmax denominator + clamped interleaved-SwiGLU experts (gpt-oss). CPU-only — no resident backend implements it, so CUDA/Metal/WebGPU all decline.
 )
 
 // residentFeatures derives the features this architecture actually needs from its own flags.
@@ -78,7 +79,14 @@ func (a *Architecture) residentFeatures() []ResidentFeature {
 	add(yarnMscale, FeatRopeMscale)
 	add(a.RMSAddOne, FeatRMSAddOne)
 	add(a.EmbedScale > 1, FeatEmbedScale)
-	add(a.FinalLogitSoftcap != 0 || a.AttnLogitSoftcap != 0, FeatLogitSoftcap)
+	// Split (9a-P2): the old single FeatLogitSoftcap conflated two different capabilities. The
+	// attention-score softcap is a per-layer KERNEL; the final-logit softcap is one host-side
+	// tanh after the LM head (like FeatEmbedScale's √hidden). Gemma 4 needs ONLY the latter, so
+	// declining it for the former it does not use was over-broad. Backends declare each
+	// separately — a backend that ships the host tanh but no attention-softcap kernel gets
+	// FeatFinalLogitSoftcap alone.
+	add(a.AttnLogitSoftcap != 0, FeatAttnLogitSoftcap)
+	add(a.FinalLogitSoftcap != 0, FeatFinalLogitSoftcap)
 	// Gate on the SPECIFIC placement, not "anything but Pre2" — NormParallel is a
 	// third placement whose kernel is FeatParallelBlock, not sandwich norms.
 	add(a.NormPlacement == NormSandwich4, FeatSandwichNorm)
@@ -251,15 +259,16 @@ var ResidentBackendFeatures = map[string]map[ResidentFeature]bool{
 	// joint end-to-end gate (TestGLMResidentParity), and declaring partial rotary before the
 	// shared expert existed would have admitted glm onto a path no model could exercise.
 	"cuda": {
-		FeatQKNorm:        true, // qk_norm kernel — per-head Q/K RMSNorm before RoPE (Qwen3)
-		FeatSlidingWindow: true, // attention `window` uniform, per-layer via LayerIsLocalResident
-		FeatPartialRotary: true, // rope_kv rhalf = rotaryDim/2 + un-rotated tail cached (GLM/Phi)
-		FeatRMSAddOne:     true, // (1+w) offset, threaded through rmsnorm_quant/fused_rms_*/qk_norm
-		FeatSandwichNorm:  true, // rmsnorm_f32 on each sublayer output (breaks the accum epilogue)
-		FeatGatedGELU:     true, // glu_quant `act` — GeGLU as well as SwiGLU
-		FeatEmbedScale:    true, // √hidden applied host-side in embedResident
-		FeatPerLayerRoPE:  true, // per-layer invFreq buffer (Gemma local 10k vs global 1M base)
-		FeatMoE:           true, // moe_route + indexed stacked experts + ungated shared expert
+		FeatQKNorm:            true, // qk_norm kernel — per-head Q/K RMSNorm before RoPE (Qwen3)
+		FeatSlidingWindow:     true, // attention `window` uniform, per-layer via LayerIsLocalResident
+		FeatPartialRotary:     true, // rope_kv rhalf = rotaryDim/2 + un-rotated tail cached (GLM/Phi)
+		FeatRMSAddOne:         true, // (1+w) offset, threaded through rmsnorm_quant/fused_rms_*/qk_norm
+		FeatSandwichNorm:      true, // rmsnorm_f32 on each sublayer output (breaks the accum epilogue)
+		FeatGatedGELU:         true, // glu_quant `act` — GeGLU as well as SwiGLU
+		FeatEmbedScale:        true, // √hidden applied host-side in embedResident
+		FeatFinalLogitSoftcap: true, // softcap·tanh(logits/softcap) host-side after readback (finalSoftcap)
+		FeatPerLayerRoPE:      true, // per-layer invFreq buffer (Gemma local 10k vs global 1M base)
+		FeatMoE:               true, // moe_route + indexed stacked experts + ungated shared expert
 	},
 
 	// WebGPU (gpu/): the richest runner — the levers in docs/gpu-residency-coverage.md.
