@@ -106,13 +106,15 @@ bottleneck on the critical path, the correct action is to leave both docs alone.
 
 The remaining wins are on the **decode** lane goinfer actually wins (the basis of every §B2 claim):
 
-1. **CUDA graphs, safe-gated — the largest measured decode lever left.** ~19 ms of dispatch in a
-   ~29 ms forward. Mechanism confirmed on hardware (MPS A/B, bit-exact ×10); failure mode
-   characterized (time-sliced multi-context corrupts baked replay). Shippable design already
-   specified: admit **only** driver-enforced conditions (`CU_COMPUTE_MODE_EXCLUSIVE_PROCESS` or active
-   MPS), a **startup bit-exactness self-test**, **decline under DEFAULT compute mode even on an idle
-   box**, opt-in on top. The one remaining lever with a real projection (~1.2–1.4×) and **no new
-   attribution risk**. (Parked report: `docs/cuda-graphs-investigation.md`.)
+1. **CUDA graphs, safe-gated — DONE (`102b902`), and MEASURED to not be the win.** The safe-gate
+   shipped (`cuda/graphs_safe.go` `admitGraphs`: admit only `CU_COMPUTEMODE_EXCLUSIVE_PROCESS` or
+   active MPS, startup bit-exactness self-test, decline under DEFAULT — "byte-identical or decline").
+   But the measured decode speedup on a **fitting** model is **1.01×** (real 1.5B, 220.9 → 223.3
+   tok/s): the ~1.4–1.7× was a *tiny-model* number that did not transfer — at real model size CPU
+   dispatch **overlaps** GPU compute, off the critical path. The ~19 ms-of-~29 ms dispatch figure was
+   the **26B** (MoE launch explosion), the hardware-mismatch model. So graphs are **safe now but not a
+   speed win for the models that fit** — another "measure, don't assume" catch. Do not flip the
+   default. (`docs/cuda-graphs-investigation.md`.)
 2. **Async miss-DMA (~4.3 ms)** after it — small, unconditional; the concurrency-evidence filter
    applies (a trailing Sync / per-iteration drain would serialize the very thing being measured).
 3. **Then step back from the 26B.** Point the now-much-better prefill at models that **fit** the
