@@ -304,16 +304,34 @@ comparison on this page.
     sequential 128 5.27× / 512 4.43× / 2048 3.33×** (was 3.46/3.25/2.79); total request time (prefill +
     64 decode) 128 **399 ms**, 256 **527**, 320 **600**; **Ollama crossover ~230 → ~320 tokens**
     (~128 before any of this work). goinfer now wins total time up to ~320-token prompts.
+  - **Attention lever (float4 coalescing) — the long-context win.** `attn_batched` was profiled
+    (ncu, 1.5B, M=2048) as **L1TEX-throughput-saturated (98.86%)**, DRAM idle, Compute 11.5%, with global
+    K/V loads at **21.96% bytes/sector** (the QK pass splits threads over keys → stride-`kvDim`
+    uncoalesced) — genuinely traffic-bound, *not* the A-staging trap. `float4`-ing the K/Q read (four
+    adds kept separate → bit-identical, the GEMV `int2` lesson) → bytes/sector 66.32%, **isolated
+    attn_batched 92 → 29.9 ms (3.1×)**, Compute 11.5 → 23%. End-to-end (`TestPrefillDecomp`): attention
+    128 11.4 → **4.2 ms**, 512 164 → **53 ms**, 2048 2605 → **820 ms** (~3.2×); attention's share of
+    prefill at 2048 dropped **66.9% → 38.9%**. **TTFT vs sequential jumped at long context: 128 5.78× /
+    512 5.80× / 2048 6.17×** (was 5.27/4.43/3.33 with the GEMV stack alone). Total prefill at 2048
+    3.9 → 2.1 s. The **crossover stays ~320** — it lives at short prompts where attention is ~5% and the
+    GEMV dominates, so this lever doesn't move it (it is a long-context lever). Gates green (attn
+    bit-identical + e2e byte-identical decode).
+  - **Attention residual (the next build, not yet done): L1TEX still 99.51% saturated after float4** —
+    coalescing fixed the *waste per read*, but the **O(M²) redundant re-reads** remain (each K/V read ~M
+    times, L1-served — DRAM idle). Only **query-tiling** (share a staged K/V tile across a query block)
+    removes it, the bit-identical query-tiled + 2-pass-recompute design in `task-prefill-attention.md`.
+    Design constraint surfaced by the profile: attention()'s exact float-sum order fixes the blockDim=128
+    reduction tree and thread→key map, forcing Bk=128 key tiles that strain the 64 KB shared budget at
+    hd=128/256 — the 2-pass-recompute (no materialized scores) is how it fits.
   - **The ceiling, stated plainly: kernel tuning will not close the gap at 2048-token prompts.** Two
-    reasons, both structural. (a) At 2048 the prefill is **66.9% attention** (`TestPrefillDecomp`),
-    naive O(M²) `attn_batched` — a separate lever (`docs/task-prefill-attention.md`), and even a perfect
-    one leaves the GEMV. (b) The GEMV residual is the **tensor-core gap**: Compute is 54% of the *dp4a*
-    peak, and dp4a is ~1/3 of Turing IMMA — perfect latency hiding buys ~another 1.85× to the dp4a
-    ceiling, but the ceiling itself is dp4a, not IMMA. Closing that needs the tensor-core GEMM in
-    `docs/task-rotation-perrow-imma.md`, which reorders the group-scaled cross-group float sum and so
-    cannot be bit-identical — it remains **scoped and unfunded**. That is an architectural consequence
-    of the cgo-free, bit-identical thesis: a **stated trade, not a deficiency**. goinfer wins short/
-    medium prompts on total time and stays behind Ollama on raw prefill throughput at long context.
+    reasons, both structural. (a) Attention is still ~39% of prefill at 2048 and the query-tiling lever
+    above is bounded by L1TEX/shared, not free. (b) The GEMV residual is the **tensor-core gap**: Compute
+    is 54% of the *dp4a* peak, and dp4a is ~1/3 of Turing IMMA — perfect latency hiding buys ~another
+    1.85× to the dp4a ceiling, but the ceiling itself is dp4a, not IMMA. Closing that needs the
+    tensor-core GEMM in `docs/task-rotation-perrow-imma.md`, which reorders the group-scaled cross-group
+    float sum and so cannot be bit-identical — **scoped and unfunded**. An architectural consequence of
+    the cgo-free, bit-identical thesis: a **stated trade, not a deficiency**. goinfer wins short/medium
+    prompts on total time and stays behind Ollama on raw prefill throughput at long context.
   - Gates: `cuda/prefill_e2e_test.go` (KV bit-identical all layers×rows + logits + 64-token
     byte-identical decode, real windowed Mistral); `TestPrefillTTFT` / `TestPrefillCrossover` /
     `TestPrefillDecomp` (heavy) reproduce the numbers above. The rows in the §B2 table are
