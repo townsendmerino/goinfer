@@ -108,6 +108,10 @@ type gemma4MoeResident struct {
 	paged    bool
 	slots    int
 	idxZeros Buffer
+
+	// giwFile is the re-opened .giw for pread-staging (GOINFER_MOE_PREAD=1); nil ⇒ the mmap byte-copy
+	// path. Shared read-only fd across every layer's pool; closed by Resident.Close.
+	giwFile *os.File
 }
 
 // gemma4MoeLayer holds one enable_moe_block layer's device weights: the parallel dense MLP
@@ -187,6 +191,19 @@ func buildGemma4MoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H, 
 			g.idxZeros = d.NewBufferUint32s(make([]uint32, b.TopK))
 		}
 	}
+	// GOINFER_MOE_PREAD=1: stage experts by pread'ing their nibbles straight into the slot buffers
+	// instead of a byte-copy off the mmap (cold pread 3687 MB/s vs mmap demand-fault 375 MB/s, 9.8×).
+	// Needs a .giw-mmap'd model (the offsets are into that file); re-open it once, shared across layers.
+	// If the open fails or the model isn't .giw-backed, buildGemma4MoELayer falls back to the byte-copy.
+	if g.paged && os.Getenv("GOINFER_MOE_PREAD") == "1" {
+		if p := m.GiwPath(); p != "" {
+			if f, err := os.Open(p); err == nil {
+				g.giwFile = f
+			} else {
+				fmt.Fprintf(os.Stderr, "metal gemma4 MoE: GOINFER_MOE_PREAD set but open(%s) failed (%v) — using mmap byte-copy\n", p, err)
+			}
+		}
+	}
 	return g, nil
 }
 
@@ -195,7 +212,7 @@ func buildGemma4MoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H, 
 // gate@0/up@inter split); the router (RouterProjScaled, f32) has routerScale·hidden^-0.5 folded into
 // its columns at build (decoder Gemma4MoEResidentLayer), so the resident router is rmsnorm_nw(h) →
 // gemv_f32_f32(RouterProjScaled) — the algebraic dual of the CPU's scaled-rn · raw-proj.
-func buildGemma4MoELayer(d *Device, b *decoder.Gemma4MoEResidentBundle, g *gemma4MoeResident) *gemma4MoeLayer {
+func buildGemma4MoELayer(d *Device, m *decoder.Model, b *decoder.Gemma4MoEResidentBundle, g *gemma4MoeResident) *gemma4MoeLayer {
 	ml := &gemma4MoeLayer{}
 	ml.routerW = d.NewBufferFloats(b.RouterProjScaled)
 	ml.routerBias = d.NewBufferFloats(make([]float32, b.NE)) // zeros → sel = score (no e_score_correction_bias)
@@ -243,6 +260,47 @@ func buildGemma4MoELayer(d *Device, b *decoder.Gemma4MoEResidentBundle, g *gemma
 				}
 				if q4, _, _, ok := down[ei].Int4(); ok {
 					_ = mmap.Advise(mmap.PageAlignedInterior(q4), true)
+				}
+			}
+		}
+		// pread staging (GOINFER_MOE_PREAD=1): resolve each expert's nibble file offset within the .giw
+		// mmap (pure pointer arithmetic, no page touch), then stage by pread'ing straight into the slot's
+		// UMA words — zero mmap faults, one big sequential read per expert. Scales stay f32→f16 from the
+		// heap-resident q4s (giwReader.f32 COPIES them, so they never fault the mmap). Falls back to the
+		// byte-copy path if the fd is absent or ANY expert's nibbles aren't .giw-mmap-backed (e.g. a
+		// requantized HF load) — the offsets must all resolve for pread to be correct.
+		if g.giwFile != nil {
+			guOff := make([]int64, len(experts))
+			dOff := make([]int64, len(down))
+			resolved := true
+			for ei := range experts {
+				gq, _, _, ok1 := experts[ei].Int4()
+				dq, _, _, ok2 := down[ei].Int4()
+				if !ok1 || !ok2 {
+					resolved = false
+					break
+				}
+				go1, okg := m.MmapByteOffset(gq)
+				do1, okd := m.MmapByteOffset(dq)
+				if !okg || !okd {
+					resolved = false
+					break
+				}
+				guOff[ei], dOff[ei] = go1, do1
+			}
+			if resolved {
+				fd := int(g.giwFile.Fd())
+				ml.pool.stagePread = func(ei int, s expertSlot) {
+					if err := preadIntoU32Buf(fd, s.guW, guOff[ei]); err != nil {
+						panic(fmt.Sprintf("metal gemma4 MoE pread gate|up expert %d: %v", ei, err))
+					}
+					if err := preadIntoU32Buf(fd, s.dW, dOff[ei]); err != nil {
+						panic(fmt.Sprintf("metal gemma4 MoE pread down expert %d: %v", ei, err))
+					}
+					_, gs, _ := int4DirectBytes(experts[ei]) // f16 scales from heap q4s (no mmap fault)
+					_, ds, _ := int4DirectBytes(down[ei])
+					copy(s.guS.U16s(), gs)
+					copy(s.dS.U16s(), ds)
 				}
 			}
 		}

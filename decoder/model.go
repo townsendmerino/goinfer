@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+	"unsafe"
 
 	"github.com/townsendmerino/aikit/mmap"
 	"github.com/townsendmerino/goinfer/internal/giw"
@@ -33,6 +34,7 @@ type Model struct {
 	kvPrecI8   bool            // residency KV cache int8 request (Options.KVPrecision == "i8") — GPU
 	kvI8       bool            // CPU KV cache int8 storage request (Options.KVQuant == "i8") — CPU staged path
 	mmap       []byte          // .giw mmap region the int8/int4 weights alias; munmap'd by Close (nil off the .giw mmap path)
+	srcPath    string          // the .giw path this model mmap-loaded from ("" off the .giw path) — for pread-staging over the same file
 	pager      *expertPager    // MoE expert demand-paging over the mapping (Options.StreamWeights); nil = all-resident
 	layerPager *layerPager     // dense per-layer streaming over the mapping (Options.StreamWeights); nil = all-resident
 	quant      string          // the requested Options.Quant for a direct load ("" for a prequant .giw → Quant() derives from kinds)
@@ -41,6 +43,27 @@ type Model struct {
 	// keyed by name. Each costs only its low-rank A/B bytes; they share the one
 	// resident base. A stream activates one via Session.UseAdapter / cache.lora.
 	adapters map[string]*loraRuntime
+}
+
+// GiwPath returns the .giw file path this model was mmap-loaded from, or "" if it was not loaded
+// from a .giw (safetensors/GGUF have no single mmap-backed weight file to pread from). The metal
+// expert-paging path re-opens this for pread-staging (the mmap closes its own fd after mapping).
+func (m *Model) GiwPath() string { return m.srcPath }
+
+// MmapByteOffset returns the byte offset of slice b within this model's .giw mmap region, or
+// ok=false if b does not alias that region (a heap-backed weight, or no .giw mapping). MapReadOnly
+// maps the whole file from offset 0, so this offset is exactly where to pread b's bytes from the
+// .giw. Pure pointer arithmetic — does NOT touch b's pages (no fault).
+func (m *Model) MmapByteOffset(b []byte) (int64, bool) {
+	if len(m.mmap) == 0 || len(b) == 0 {
+		return 0, false
+	}
+	base := uintptr(unsafe.Pointer(&m.mmap[0]))
+	p := uintptr(unsafe.Pointer(&b[0]))
+	if p < base || p+uintptr(len(b)) > base+uintptr(len(m.mmap)) {
+		return 0, false
+	}
+	return int64(p - base), true
 }
 
 // KVCacheF16 reports whether the GPU residency path should use an f16 KV cache
@@ -124,7 +147,7 @@ func Load(dir string, opts Options) (*Model, error) {
 		if beErr != nil {
 			fmt.Fprintln(os.Stderr, beErr)
 		}
-		m := &Model{w: w, be: be, mmap: data, eosIDs: w.Cfg.EOSIDs(), kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8"}
+		m := &Model{w: w, be: be, mmap: data, srcPath: dir, eosIDs: w.Cfg.EOSIDs(), kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8"}
 		if opts.StreamWeights {
 			// MoE → expert demand-paging (#2); dense → per-layer streaming (#4).
 			if w.arch.MoE != nil {

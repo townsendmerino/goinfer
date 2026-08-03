@@ -3,6 +3,8 @@
 package metal
 
 import (
+	"io"
+	"syscall"
 	"time"
 	"unsafe"
 )
@@ -63,7 +65,38 @@ type expertPool struct {
 	// The synchronous paged forward calls prefetchAll for the whole routed top-k BEFORE touching any
 	// of them, converting each expert's ~200 serial 16 KB demand faults into one large sequential read
 	// (and giving the SSD queue depth across the k experts instead of k serial stalls). nil = off.
+	// MEASURED AND DECLINED (see gemma4_moe.go) — kept only so the env flag stays wired.
 	prefetch func(e int)
+
+	// stagePread, when set (GOINFER_MOE_PREAD=1 on a .giw-mmap'd model), REPLACES the mmap byte-copy:
+	// it preads expert e's nibbles straight into slot s's unified-memory buffers — one syscall, one
+	// large sequential read, zero page faults (cold pread measured 3687 MB/s vs the mmap demand-fault's
+	// 375 MB/s, 9.8×). Fetch and copy collapse into the single read. nil ⇒ the mmap byte-copy path.
+	stagePread func(e int, s expertSlot)
+}
+
+// preadIntoU32Buf preads the destination's worth of nibbles from file offset off DIRECTLY into the
+// slot buffer's unified-memory contents (host-writable UMA — the read lands where the GPU reads it,
+// no intermediate copy). The []byte view of the []uint32 destination is always page-aligned; buffered
+// pread has no source-offset alignment requirement, so the 73%-unaligned expert spans are a non-issue
+// here. Loops on short reads.
+func preadIntoU32Buf(fd int, dst Buffer, off int64) error {
+	d := dst.U32s()
+	if len(d) == 0 {
+		return nil
+	}
+	db := unsafe.Slice((*byte)(unsafe.Pointer(&d[0])), len(d)*4)
+	for done := 0; done < len(db); {
+		n, err := syscall.Pread(fd, db[done:], off+int64(done))
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return io.ErrUnexpectedEOF
+		}
+		done += n
+	}
+	return nil
 }
 
 // prefetchAll issues the WILLNEED readahead for every routed expert at once, before staging. No-op
@@ -117,16 +150,22 @@ func (p *expertPool) ensureResident(e int) expertSlot {
 		p.coldStarts++
 	}
 	t0 := time.Now()
-	guW, guS, dW, dS := p.stage(e) // mmap-aliased nibble bytes + f16 scales (no reconstruction/alloc)
-	t1 := time.Now()
-	copyBytesToU32Buf(p.slots[s].guW, guW)
-	copy(p.slots[s].guS.U16s(), guS)
-	copyBytesToU32Buf(p.slots[s].dW, dW)
-	copy(p.slots[s].dS.U16s(), dS)
-	t2 := time.Now()
-	p.fetchNanos += t1.Sub(t0).Nanoseconds()
-	p.copyNanos += t2.Sub(t1).Nanoseconds()
-	p.stageNanos += t2.Sub(t0).Nanoseconds() // total paging-traffic cost (penalty decomposition)
+	if p.stagePread != nil {
+		// pread path: one syscall reads nibbles straight into the slot's UMA words (fetch+copy fused).
+		p.stagePread(e, p.slots[s])
+		p.fetchNanos += time.Since(t0).Nanoseconds()
+	} else {
+		guW, guS, dW, dS := p.stage(e) // mmap-aliased nibble bytes + f16 scales (no reconstruction/alloc)
+		t1 := time.Now()
+		copyBytesToU32Buf(p.slots[s].guW, guW)
+		copy(p.slots[s].guS.U16s(), guS)
+		copyBytesToU32Buf(p.slots[s].dW, dW)
+		copy(p.slots[s].dS.U16s(), dS)
+		t2 := time.Now()
+		p.fetchNanos += t1.Sub(t0).Nanoseconds()
+		p.copyNanos += t2.Sub(t1).Nanoseconds()
+	}
+	p.stageNanos += time.Since(t0).Nanoseconds() // total paging-traffic cost (penalty decomposition)
 	p.slotExpert[s] = e
 	p.where[e] = s
 	p.touch(s)

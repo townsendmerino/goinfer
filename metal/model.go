@@ -351,7 +351,7 @@ func BuildResident(m *decoder.Model) (*Resident, error) {
 		}
 		switch {
 		case isG4MoE: // Gemma-4 enable_moe_block: parallel dense‖MoE FFN (its own norms/router/experts)
-			L.g4moe = buildGemma4MoELayer(d, &g4b, r.g4moe)
+			L.g4moe = buildGemma4MoELayer(d, m, &g4b, r.g4moe)
 		case r.moe != nil && len(lw.Experts) > 0: // generic MoE layer: stacked experts instead of a dense FFN
 			L.moe = buildMoELayer(d, lw, r.moe)
 		default: // dense FFN (also GLM/DeepSeek's FirstKDense prefix layers, and gemma4 dense layers)
@@ -631,6 +631,10 @@ func (r *Resident) stopExec() {
 // Idempotent: ReleaseAll empties the ledger, so a second Close is a no-op.
 func (r *Resident) Close() {
 	r.stopExec()
+	if r.g4moe != nil && r.g4moe.giwFile != nil {
+		_ = r.g4moe.giwFile.Close() // the pread-staging fd (GOINFER_MOE_PREAD)
+		r.g4moe.giwFile = nil
+	}
 	if r.d != nil {
 		r.d.ReleaseAll()     // every MTLBuffer
 		r.d.ReleaseObjects() // command queue, ~40 pipelines, 1-2 libraries, and the MTLDevice (M24b)
