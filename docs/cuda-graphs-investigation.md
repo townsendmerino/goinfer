@@ -1,11 +1,14 @@
 # CUDA Graphs for the resident CUDA decode — built, bounded, PARKED
 
 **Status: parked dormant.** The code is committed, off by default, and the graphs-off path is
-byte-identical to before. Graph replay is **~1.5× faster but NOT bit-exact under concurrent
-multi-context GPU load** on this Turing box (RTX 2070 SUPER, no MPS). It is bit-exact only when
-goinfer owns the GPU. Because a goinfer inference backend must be "byte-identical or decline, never
-silently mis-run," it is not shipped as a feature — it is parked pending validation on an Ampere+ GPU
-or under MPS, either of which is expected to remove the hazard.
+byte-identical to before. Graph replay is **~1.5× faster, and bit-exact under EXCLUSIVE GPU tenancy or
+under CUDA MPS — but NOT bit-exact under time-sliced multi-context sharing** (two separate CUDA
+contexts, no MPS) on this Turing box (RTX 2070 SUPER). The capture is proven topologically correct (a
+DAG dump, §5); the divergence is an inter-context time-slicing effect, **confirmed on this hardware by
+an MPS A/B** (§5.1): same churn, MPS-off diverges, MPS-on bit-exact ×10. Because a goinfer inference
+backend must be "byte-identical or decline, never silently mis-run" and an operator cannot always
+guarantee exclusive/MPS tenancy, it is not shipped — but the safe operating condition is now concrete
+and testable, not "revisit on Ampere."
 
 This document is the complete record so the investigation can be resumed cold.
 
@@ -181,30 +184,74 @@ that can run concurrently. The "missing edge" class is refuted by direct inspect
 A **topologically-correct, fully-serialized** graph, replayed, diverges from the equivalent serial live
 launches **only** under concurrent multi-context GPU load. With the capture proven correct, the
 difference is in *execution*: `cuGraphLaunch` of a baked graph vs a stream of individual
-`cuLaunchKernel`s, under context contention on this Turing card (RTX 2070, no MPS). The leading
-mechanism is **context time-slicing**: an individual launch re-establishes its state each call and
-survives a context switch; a baked graph replay spanning a switch window does not. This fits every
-observation (concurrent-context-only, graph-specific, sync-maskable, needs the long forward,
-deterministic-ish). It predicts the hazard **vanishes** on an Ampere+ GPU or under MPS — the resume
-test (§8). This is no longer a thin-evidence claim: the fixable in-our-code causes are refuted by the
-DAG dump and the no-sync ordering test, so what remains is the execution boundary.
+`cuLaunchKernel`s, under context contention on this Turing card (RTX 2070, no MPS). The mechanism is
+**inter-context time-slicing**: without MPS, two separate CUDA contexts (churn + decode) time-slice via
+context switch; an individual launch re-establishes its state each call and survives a switch, a baked
+graph replay spanning a switch window does not. This fits every observation (concurrent-context-only,
+graph-specific, sync-maskable, needs the long forward, deterministic-ish), and — unlike a bare
+hypothesis — it is now **confirmed on this hardware** (§5.1).
+
+### 5.1 MPS A/B — the mechanism, confirmed on the 2070
+CUDA MPS supports Volta+ (the 2070 is compute 7.5). Under MPS, clients share **one** server context, so
+GPU work runs concurrently (spatial) with **no inter-context switching** — exactly the condition the
+hypothesis says the replay needs. Run on this box, same leak-proof churn, same `sameModelUnderLoad`
+discriminator, back to back in one session, with MPS confirmed active (`get_server_list` returns a
+server PID; `nvidia-smi` shows `nvidia-cuda-mps-server`):
+
+```
+[MPS OFF]  graphs-ON same-model ×10 under churn  → FAIL (pos 0: graphs 1.031 != live 0.8337)
+[MPS ON]   graphs-ON same-model ×10 under churn  → PASS (bit-exact ×10)
+```
+
+Only variable = MPS. MPS **removes** the divergence → the cause is inter-context time-slicing, not
+concurrency per se and not our capture. Reproduce:
+```
+export CUDA_MPS_PIPE_DIRECTORY=/tmp/nvidia-mps CUDA_MPS_LOG_DIRECTORY=/tmp/nvidia-mps-log
+mkdir -p "$CUDA_MPS_LOG_DIRECTORY"; nvidia-cuda-mps-control -d      # start
+echo get_server_list | nvidia-cuda-mps-control                     # verify a server PID prints
+# ... run churn + TestGemma4Graphs_sameModelUnderLoad (both inherit the pipe dir) ...
+echo quit | nvidia-cuda-mps-control                                # stop
+```
+So the parked result is not "driver boundary, revisit on Ampere" — it is **"graphs are bit-exact under
+exclusive tenancy OR MPS; unsafe only under time-sliced multi-context sharing,"** verified here.
 
 ## 6. Decision: park dormant
 
-The perf win (~1.5×) is real and the code is bit-exact when goinfer owns the GPU (arms 1+2). But the
-hazard is **invisible** (wrong tokens, no error) and **operator-uncontrollable** (another GPU tenant),
-which violates the repo's "byte-identical or decline, never mis-run" discipline. So:
+The perf win (~1.5×) is real, and the code is bit-exact under **exclusive tenancy or MPS** (§5.1). The
+hazard is confined to **time-sliced multi-context sharing** — but there it is **invisible** (wrong
+tokens, no error) and an operator cannot always guarantee exclusive/MPS tenancy, which violates the
+repo's "byte-identical or decline, never mis-run" discipline. So:
 
 - Committed, **off by default**, graphs-off path **byte-identical** (verified: cacheExperts,
   cacheReuse, `TestRealForwardParity` real dense checkpoint all pass graphs-off).
 - **Not advertised** as a feature; no README/benchmarks claim.
 - Tests + this doc are the boundary markers.
 
-Not shipped opt-in because a shared-GPU operator could enable it and get silently-wrong tokens; not
-reverted because the `segA/B/C` refactor and the primitive are reusable and the ~1.5× is worth
-reviving on the right hardware.
+Not shipped opt-in because a time-sliced-shared-GPU operator could enable it and get silently-wrong
+tokens; not reverted because the `segA/B/C` refactor and the primitive are reusable and the ~1.5× is
+now shippable behind a **runtime tenancy/MPS gate** (§8) rather than blocked on new hardware.
 
-## 7. Lesson: reap background processes
+## 7. Lessons
+
+### 7.0 The instrument that verifies a concurrency property often destroys it
+The durable, generalizable finding — the concurrency analogue of "isolation proves the primitive,
+never the composition." **The tools you naturally reach for to check a concurrent result are the ones
+that serialize it, so they report "correct" precisely by removing the concurrency under test.** Two
+errors in this one investigation, same shape:
+- **`CUDA_LAUNCH_BLOCKING=1`** serializes every launch. Its PASS is not evidence of correctness — it is
+  the definition of hiding a race. It is a *one-way* test: only disagreement is informative.
+- **Syncing every iteration** of a micro-test to read the buffer is the obvious way to verify each
+  step — and it serializes the exact inter-op interleaving whose concurrency you are testing. My first
+  "clean under churn" volume tests (segA ×6000, live→graph ×9000) were invalid for this reason.
+
+The tell here was that a per-layer *drain* probe made the real divergence vanish — a result being
+sync-*maskable* means every synced test is blind to it. Valid concurrency evidence must **not** contain
+a serializing sync inside the window under test: the off-vs-off control, the no-sync non-commutative
+ordering test, the DAG dump, and the MPS A/B all satisfy this; the blocking arm and the synced volume
+tests did not. When testing a concurrency change, list every `Sync`/barrier/blocking flag in the test
+and ask which one you are hiding behind.
+
+### 7.1 Reap background processes
 
 During the investigation, two backgrounded churn processes (`go test … -count=100 &`) survived
 `kill $CHURN; wait` and kept hammering the GPU. They then contaminated a *default-path* regression run
@@ -212,21 +259,24 @@ During the investigation, two backgrounded churn processes (`go test … -count=
 corruption, not compute divergence), which momentarily looked like the refactor had broken the
 graphs-off path. It had not. **Always bound churn with `timeout`, and verify
 `nvidia-smi --query-compute-apps=pid` shows zero leftovers before trusting a GPU test result.** The
-controlled re-run (§4) uses `timeout`-bounded churn for exactly this reason.
+controlled re-run (§4) uses `timeout`-bounded churn for exactly this reason. Also note that a
+`go test … &` parent, when `kill`ed, can leave its compiled test binary child running — kill the child
+PID too. And **never** `pkill -f mps` (or any short pattern): the bare substring matches unrelated
+processes and can destabilize the session — use exact PIDs or a specific pattern like
+`nvidia-cuda-mps`.
 
 ## 8. How to resume
 
-1. **Re-validate the hypothesis on better hardware.** On an Ampere+ GPU (or on the 2070 with the CUDA
-   MPS daemon running), re-run the gate under churn:
-   ```
-   # terminal A (churn):
-   timeout 70 bash -c 'while true; do go test -tags cuda -run TestCUDA_launchCost -count=1 ./cuda/ >/dev/null 2>&1; done'
-   # terminal B (gate ×15):
-   go test -tags cuda -run TestGemma4Graphs_sameModelUnderLoad -count=15 ./cuda/
-   ```
-   If it stays bit-exact under churn there, the Turing/no-MPS hypothesis is confirmed and graphs can be
-   promoted (see step 3).
-   The DAG-dump tooling is ready for this: `AIKIT_GRAPH_DUMP=1` (+ optional `AIKIT_GRAPH_DUMP_DIR`)
+0. **Already done — the mechanism is confirmed (§5.1).** MPS on the 2070 removes the divergence
+   (MPS-off fails, MPS-on bit-exact ×10, same churn). The safe operating condition is exclusive tenancy
+   OR MPS. Ampere+ re-validation is now optional confirmation, not the gating unknown.
+1. **The shippable path is a runtime tenancy/MPS gate, not new hardware.** To promote graphs from
+   parked to opt-in-safe, add a load-time check that enables `GOINFER_CUDA_GRAPHS` only when the
+   process has exclusive use of the device OR MPS is active (`CUDA_MPS_PIPE_DIRECTORY` set + a live
+   `get_server_list`, or a probe). Then a shared-GPU deployment without MPS declines graphs (staged/
+   non-graph path) instead of silently mis-running — restoring "byte-identical or decline." Measure the
+   real 26B tok/s (step 3) before flipping any default.
+   The DAG-dump tooling remains available: `AIKIT_GRAPH_DUMP=1` (+ optional `AIKIT_GRAPH_DUMP_DIR`)
    logs each captured graph's node/edge counts and writes Graphviz DOT. It needs the gocudrv
    introspection bindings, which live UNCOMMITTED in `/home/francis/mycode/gocudrv-fork`
    (`cuGraphGetNodes`/`GetEdges`/`DebugDotPrint` + a `Graph.Topology()`/`DebugDotPrint()` method) and
