@@ -116,3 +116,78 @@ a silent hole would hide:
 Keep the hash conservative (whole-file, never misses a numeric change); attack the
 friction **operationally** (a sound goldens-gated refresh) and by **moving the churn out
 of `core`** (one stable tap surface) — never by making the gate less able to fail.
+
+---
+
+## Phase-2 trigger fired at ~27 — classification and verdict: **DON'T build C**
+
+The self-announcing trigger fired. Before designing option C, the ~27 past refreshes were
+classified. The verdict revises the Phase-2 plan above: **do not build C.** The evidence:
+
+### 1. The counter is defective — fix this first
+The trigger counts `git log --grep='^Parity-Deps-Refresh:'` = **28**. But only **17 actually
+changed `deps_hash`.** The other 11 carry the trailer for **dependency bumps** (`1b90b5c`,
+`50eaa89`), cuda/MoE feature work (`6f3b084`, `4b63ed4`, `2f51449`, `424645c`, `2b7e78a`),
+docs (`6c995fe`, `c77e952`, `f93bda1`), and the script's own creation commit (`7c2c74a`). The
+trailer is **overloaded**: "Deps" reads as both `deps_hash` and *dependency*. So the trigger
+fired on **~65% inflation** (28 vs 17).
+
+Fix: split the trailer (`Deps-Hash-Refresh:` vs `Dependency-Bump:`), or count the real diff
+(`git show $h -- testdata/parity_manifest.json | grep -c '^+.*deps_hash'`).
+
+**Re-run with correct counting:** 17 real refreshes — and of those, only **2** are the
+inert-diagnostic-seam churn C exists to remove (bucket (a) below). The trigger's threshold
+(`prior >= 2`) is itself miscalibrated: it should count *seam* refreshes against a real
+recurrence bar, not all trailers ≥ 2. Two seam-refreshes across the whole project history is
+not recurrence. **Under corrected counting + the correct metric, the track does not fire on
+its own premise** — fix the counter and it may close on its own.
+
+### 2. Classification of the 17 real refreshes
+
+- **(a) inert diagnostic seam** (guarded, default-off no-op — the `f340d4e` archetype; pure
+  tax, the only thing C removes): **2** — `e58ac8a` (f340d4e int4-f16-scale seam),
+  `ecc5af2` (default-off diagnostic hooks).
+- **(b) real numeric change** (the alarm working): **1** clear — `625303e` (gemma4 RoPE base
+  fix) — plus 6 *planned family additions* (`9c04ea3`/`9e83043`/`51ea350`/`6eea5fa` gemma4-moe,
+  `93eb7d4`/`9a03293` gpt-oss) that are legitimate new-family validations, not the alarm
+  catching a regression.
+- **(c) non-numeric shared-file edit / hash-scope** (a real edit to a hashed file that did not
+  change validated numerics but restaled everyone): **8** — `1f6dbe0` (comments), `63c5d88`
+  (docs/provenance), `b9b215d` + `199d4da` (decode *parallelism thresholds*), `2e91607`
+  (drift), `9624dd9` (aikit *version string* in the hash), `96269ca` (int4-head capability;
+  default stays int8 for validated safetensors families), `7b01208` (pager `unsafe.Pointer`
+  type change inside `mlp.go`).
+
+(a) is **~12%**; (c) **dominates**. Per the standing decision rule, a high-(c) fraction points
+at hash *scope*, not seams.
+
+### 3. Verdict: don't build C
+C addresses **2 of 17** while *adding* the hazard the design section itself names: a tap
+surface exists so changes "here" don't re-stale families, which makes it by construction a
+channel through which a genuine numeric change could enter **without re-staling** — the same
+failure as refreshing a hash without goldens, but automated and invisible. Constraint #4
+(provably-free hot-path indirection) is a real, permanent cost weighed against a **12% lever**.
+Not worth it.
+
+### 4. Scope narrowing is **not** the obviously-safe alternative
+The high-(c) fraction tempts "narrow the hashed file set / hash a declared numeric surface."
+Recorded reasons it is *not* obviously safe — it inherits the **same four constraints as C**:
+- **Parallelism thresholds can change numerics.** `199d4da` was byte-identical only because
+  those kernels reduce **order-stably** — a *kernel* property, not a *threshold* property. A
+  hash that excluded thresholds would silently miss a threshold change that reorders a
+  non-stable reduction. The whole-file hash catches it today precisely because it's coarse.
+- **The aikit version string is a coarse proxy** for dependency numerics. Removing it from the
+  hash loses that detection entirely unless replaced by a real content hash of the aikit
+  surface — which is strictly more work, not less.
+- **`7b01208` is plumbing inside a numerically-relevant file** (`mlp.go`). File-granularity
+  narrowing cannot reach it; you'd need sub-file (symbol/AST) granularity, and then the
+  symbol-selection *is* a declared surface — a channel for silent under-staling, same hazard
+  class as C.
+
+"Hash a declared numeric surface" makes the **declaration** the channel. Same four constraints.
+
+### 5. Close
+**Keep paying the (small, ~2-seam) tax.** Fix the counter (split/rescope the trailer + count
+the real diff). Treat scope narrowing as **scoped but unfunded**, pending the corrected
+trigger. Reassess only if the corrected *seam* count crosses a real recurrence bar — not the
+inflated trailer count that fired this one.
