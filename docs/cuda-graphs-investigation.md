@@ -7,9 +7,20 @@ startup bit-exactness self-test (live vs replay, one forward); a DEFAULT-compute
 the live path with a logged reason — "byte-identical or decline, never silently mis-run" restored.
 `GOINFER_CUDA_GRAPHS_UNSAFE=1` force-enables for on-box benchmarking (loud warning, self-test still
 runs). Gated by `TestGraphsSafeGate` (this box is DEFAULT → declines; unsafe-override enables + the
-self-test passes bit-exact, confirming the capture is correct and the divergence is churn-only). Still
-to do before flipping any default: measure the real 26B tok/s under a genuinely EXCLUSIVE_PROCESS or
-MPS box against the ~1.4–1.7× prediction (§8 step 3).
+self-test passes bit-exact, confirming the capture is correct and the divergence is churn-only).
+
+**MEASURED, and it changes the value case: graphs give ~1.01× on the real 1.5B decode** (220.9 →
+223.3 tok/s, `TestGraphsDecodeSpeedup`, greedy). The **~1.4–1.7× did NOT transfer from the tiny
+model** — that number was dispatch-dominated because each tiny launch does almost no work; at real
+model size the CPU dispatch **overlaps** GPU compute, so eliminating it is off the critical path.
+The lever therefore only pays where dispatch actually dominates: the **26B** (30 layers × MoE's
+per-token per-expert launch explosion → the ~19 ms-of-~29 ms figure that motivated this), which is
+exactly the **hardware-mismatch model** (8 GB paging 13 GB) that stays disclosed-with-caveats
+regardless. So: the safe-gate is correct and worth having (graphs are now safe if a dispatch-bound
+deployment ever wants them), but **graphs are not the decode win for the dense flagships that fit and
+that goinfer actually wins with.** Do NOT flip any default. Measuring the 26B specifically (heavy
+streaming load) would confirm the MoE case but does not change the decision, since that model's
+ceiling is set by memory, not dispatch.
 
 **Original parked status (historical).** The code is committed, off by default, and the graphs-off
 path is byte-identical to before. Graph replay is **~1.5× faster, and bit-exact under EXCLUSIVE GPU tenancy or
