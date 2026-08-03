@@ -9,6 +9,7 @@ import (
 
 	"github.com/townsendmerino/aikit/mmap"
 	"github.com/townsendmerino/goinfer/decoder"
+	"golang.org/x/sys/unix"
 )
 
 // Gemma-4 enable_moe_block (26B-A4B) MSL kernels — the parallel dense‖MoE FFN that the generic
@@ -201,6 +202,19 @@ func buildGemma4MoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H, 
 		if p := m.GiwPath(); p != "" {
 			if f, err := os.Open(p); err == nil {
 				g.giwFile = f
+				// GOINFER_MOE_NOCACHE=1: F_NOCACHE on the pread fd — reads bypass the unified buffer
+				// cache. HYPOTHESIS: the pread win's +365 ms compute+coord displacement is page-cache
+				// PRESSURE (staged experts are read once + copied into UMA slots, so retaining them in
+				// cache buys nothing but squeezes the working set on a 16 GB box holding a 13 GB mmap +
+				// Metal's wired set — RSS-after-build rose +2 GB with faults zero). If so, F_NOCACHE
+				// should drop RSS back and recover compute+coord. Off by default (own A/B). Darwin
+				// F_NOCACHE prefers aligned offset/size; 73% of expert spans are unaligned, so the
+				// effect may be reduced — measured, not assumed.
+				if os.Getenv("GOINFER_MOE_NOCACHE") == "1" {
+					if _, err := unix.FcntlInt(f.Fd(), unix.F_NOCACHE, 1); err != nil {
+						fmt.Fprintf(os.Stderr, "metal gemma4 MoE: F_NOCACHE failed (%v) — pread stays buffered\n", err)
+					}
+				}
 			} else {
 				fmt.Fprintf(os.Stderr, "metal gemma4 MoE: open(%s) failed (%v) — using mmap byte-copy\n", p, err)
 			}

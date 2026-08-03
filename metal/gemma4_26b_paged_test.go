@@ -123,10 +123,11 @@ func TestGemma4_26B_pagedRuns(t *testing.T) {
 	// Fault attribution: MAJOR faults are disk reads (cold page-in); collapsing them is the WILLNEED
 	// mechanism's signature. If ms improves but major/stage doesn't fall, the win is not readahead.
 	willneed := os.Getenv("GOINFER_MOE_WILLNEED") == "1"
-	pread := os.Getenv("GOINFER_MOE_PREAD") == "1"
+	pread := os.Getenv("GOINFER_MOE_PREAD") != "0" // default-on; =0 opts out
+	nocache := os.Getenv("GOINFER_MOE_NOCACHE") == "1"
 	effMBs := float64(stages) * 3.19 * 1000 / (float64(fetchNanos) / 1e6)
-	t.Logf("  FAULTS over timed decode (WILLNEED=%v PREAD=%v): major %d (%.1f/stage) minor %d | fetch effective %.0f MB/s",
-		willneed, pread, majFlt, float64(majFlt)/float64(stages), minFlt, effMBs)
+	t.Logf("  FAULTS over timed decode (WILLNEED=%v PREAD=%v NOCACHE=%v): major %d (%.1f/stage) minor %d | fetch effective %.0f MB/s",
+		willneed, pread, nocache, majFlt, float64(majFlt)/float64(stages), minFlt, effMBs)
 
 	t.Logf("26B PAGED DECODE: %.1f ms/tok  (%.2f tok/s)  N=%d  RSS %d MB", msTok, 1000/msTok, N, rssMB())
 	t.Logf("  staging (paging traffic): %.1f ms/tok  (%d expert stages over %d tokens, %.2f MB each)",
