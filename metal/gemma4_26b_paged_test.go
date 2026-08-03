@@ -27,7 +27,10 @@ func TestGemma4_26B_pagedRuns(t *testing.T) {
 	if _, err := os.Stat(giw); err != nil {
 		t.Skipf("no .giw (%s)", giw)
 	}
-	const N = 32 // slots/layer — safe headroom on 16 GB (budget probe: N=64 affordable); tune up later
+	N := 32 // slots/layer; override with GOINFER_PAGED_N for the N-sweep decomposition
+	if v := os.Getenv("GOINFER_PAGED_N"); v != "" {
+		N, _ = strconv.Atoi(v)
+	}
 	t.Setenv("GOINFER_GEMMA4_RESIDENT", "1")
 	t.Setenv("GOINFER_METAL_MOE_SLOTS", strconv.Itoa(N))
 
@@ -91,14 +94,20 @@ func TestGemma4_26B_pagedRuns(t *testing.T) {
 	msTok := float64(metalNanos) / 1e6 / float64(nTimed)
 
 	// penalty decomposition: staging (paging traffic, measured) vs the rest (compute + coordination).
-	var stageNanos int64
-	var stages int
+	// Staging split into fetch (mmap read + int4DirectWords) vs copy (into the slot buffers).
+	var stageNanos, fetchNanos, copyNanos int64
+	var stages, evict int
 	for _, l := range moeLayerIdx(r) {
 		p := r.layers[l].g4moe.pool
 		stageNanos += p.stageNanos
+		fetchNanos += p.fetchNanos
+		copyNanos += p.copyNanos
 		stages += p.stages
+		evict += p.evictions
 	}
 	stageMsTok := float64(stageNanos) / 1e6 / float64(nTimed)
+	t.Logf("  staging split/tok: fetch(mmap+int4DirectWords) %.1f ms | copy-into-slot %.1f ms | %d stages (%d evictions) at N=%d",
+		float64(fetchNanos)/1e6/float64(nTimed), float64(copyNanos)/1e6/float64(nTimed), stages, evict, N)
 
 	t.Logf("26B PAGED DECODE: %.1f ms/tok  (%.2f tok/s)  N=%d  RSS %d MB", msTok, 1000/msTok, N, rssMB())
 	t.Logf("  staging (paging traffic): %.1f ms/tok  (%d expert stages over %d tokens, %.2f MB each)",

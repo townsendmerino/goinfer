@@ -36,6 +36,8 @@ type expertPool struct {
 	coldStarts int   // stages into a previously-free slot (pool not yet full)
 	evictions  int   // stages that evicted an occupied slot (pool under pressure)
 	stageNanos int64 // total host time spent staging (fetch + copy) — the paging-traffic penalty term
+	fetchNanos int64 // time in stage() — mmap read + int4DirectWords (bytesToU32 + f32→f16 scales)
+	copyNanos  int64 // time copying the fetched bytes into the slot's shared Metal buffers
 }
 
 // newExpertPool allocates N slots sized to one expert's W4A8 buffers (nGuW/nGuS gate|up words/scales,
@@ -78,12 +80,16 @@ func (p *expertPool) ensureResident(e int) expertSlot {
 		p.coldStarts++
 	}
 	t0 := time.Now()
-	guW, guS, dW, dS := p.stage(e)
+	guW, guS, dW, dS := p.stage(e) // mmap read + int4DirectWords (bytesToU32 + f32→f16 scales)
+	t1 := time.Now()
 	copy(p.slots[s].guW.U32s(), guW)
 	copy(p.slots[s].guS.U16s(), guS)
 	copy(p.slots[s].dW.U32s(), dW)
 	copy(p.slots[s].dS.U16s(), dS)
-	p.stageNanos += time.Since(t0).Nanoseconds() // paging-traffic cost, for the penalty decomposition
+	t2 := time.Now()
+	p.fetchNanos += t1.Sub(t0).Nanoseconds()
+	p.copyNanos += t2.Sub(t1).Nanoseconds()
+	p.stageNanos += t2.Sub(t0).Nanoseconds() // total paging-traffic cost (penalty decomposition)
 	p.slotExpert[s] = e
 	p.where[e] = s
 	p.touch(s)
