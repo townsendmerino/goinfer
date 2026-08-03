@@ -22,14 +22,25 @@ to justify starting** — but the *mechanism* below is a hypothesis to confirm b
 begins (the same `TestGemvBatchedBandwidth`-style isolation), not a conclusion to build on. This lane
 has recorded three plausible-mechanism-as-conclusion attributions already; profile first.
 
-## Expected mechanism (to confirm, not assume)
+## Profiled bound (ncu, 1.5B shape, M=2048) — CONFIRMED traffic, not latency
 
-Likely the same shape as the GEMV: **memory re-reads.** Each key/value at cache position `s` is read by
-every query `m ≥ s` (causal), so the K/V cache is re-read O(M) times from L2/DRAM. The cache is **f32**
-(4× the bytes of a quantized one), and per layer it is `nKeys × kvDim × 4` bytes re-read ~M times. If a
-profile shows K/V read bandwidth near the L2 ceiling with the FLOP rate far below peak, that confirms
-it, and the fix is to stage K/V tiles in shared memory so each is read once per query-block, not once
-per query. Confirm before committing to that fix.
+Measured `attn_batched` in isolation (nH=12, hd=128, M=2048, full attention): 92 ms, **1.6% of
+compute peak**. ncu:
+
+- **L1/TEX Cache Throughput 98.86% — saturated.** DRAM 0.45% (idle), L2 32.8%, Compute 11.5%.
+- No Eligible 95.83%, 0.11 eligible warps/scheduler, **145.7 cyc/instr stalled on the L1 instruction
+  queue (MIO throttle)** — this is *throughput* saturation of the memory pipe, NOT the scoreboard
+  latency stall the GEMV had. Occupancy fine (86.8% achieved).
+- Breakdown: **global K/V loads dominate — 305M load instructions, 3.7 B sectors, 21.96% bytes/sector**
+  (4.5× wasted). The QK score pass splits threads over KEYS, so at a given `d` the 32 lanes read 32
+  different keys at stride `kvDim` → fully uncoalesced. Shared score traffic (104M) is secondary.
+
+**This is the opposite of the A-staging trap.** The GEMV was L1TEX-*latency*-bound with already-efficient
+loads, so shared staging (a traffic fix) bought only 1.2×. Attention is L1TEX-*throughput*-saturated with
+4.5× wasted sectors AND O(M) redundant re-reads (DRAM idle → the re-reads are L1-served transactions, not
+DRAM bandwidth). Both are traffic the tiling fix removes: a coalesced load into shared cuts the 21.96%,
+and sharing a staged K/V tile across a query block cuts the O(M) redundancy. The design below is
+confirmed against the hardware, not assumed.
 
 ## Bit-identity — the constraint, stated up front
 
@@ -47,13 +58,21 @@ layer** — it would fail both the all-layers×all-rows KV gate and the 64-token
 
 So there are two paths, and the choice must be explicit:
 
-1. **Bit-identical (preferred, matches the rest of this lane).** Keep the exact three-pass, per-query
-   reduction order; only change *where K/V are read from*. Tile queries: a block handles `Bq` queries ×
-   one head and streams K/V tiles through shared memory, each query reducing over its own causal window
-   in the same order as M=1. This shares each K/V load across `Bq` queries → up to `Bq×` less K/V
-   traffic, while every query's arithmetic is unchanged. Shared-memory budget is the tension (K+V tile =
-   `Bktile × hd × 2 × 4` bytes; hd up to 128 → keep `Bktile` modest, e.g. 32–64). This is the GEMV's own
-   "read once, not N times" move, applied to K/V, and it keeps all three gates green.
+1. **Bit-identical (preferred, matches the rest of this lane).** Keep each query's exact reduction
+   ORDER over keys; only change where K/V are read from and stream them once. A block handles `Bq`
+   queries × one head and iterates key tiles `[k0, k0+Bk)`, loading each K/V tile into shared memory
+   ONCE (coalesced — the load fixes the profiled 21.96% bytes/sector) and reusing it across all `Bq`
+   queries (this removes the O(M) redundancy). The tension the profile forces: the current kernel
+   materializes `sc[nWin]` scores per query between its passes, and `Bq × nWin` scores do not fit
+   shared (nWin up to 2048). Resolution that stays bit-identical: **do not materialize scores — use
+   two streaming passes over the key tiles.** Pass 1 streams all tiles and computes each query's `max`
+   (reduction over keys, in order). Pass 2 streams the tiles again and RECOMPUTES each score `Q·K`
+   (identical value — same Q, same K, same dot order), does `exp(score−max)`, accumulates the
+   denominator and the `Σ weight·V`, all over keys in the same order as M=1. Re-dotting Q·K is compute
+   (the kernel is at 11.5% compute — nearly free) and avoids the score buffer. This is flash-STYLE
+   (tiled, streaming) but **without online rescaling** — the max is global before any `exp`, so the
+   float order is byte-identical to `attention()`. Shared budget = one K+V tile (`Bk × hd × 2 × 4`;
+   Bk=32–64) + small per-query reductions; independent of nWin. Keeps all three gates green.
 
 2. **Tolerance-gated flash (only if path 1 is insufficient).** A real online-rescaling flash, which
    abandons bit-identity for prefill attention. Then the e2e gate must move from byte-identical decode +
