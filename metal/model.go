@@ -858,58 +858,68 @@ func (r *Resident) forwardHeadForTest(emb []float32, pos int) (act, logits []flo
 // runs (encode-ahead).
 func (r *Resident) encodeTrunkInto(e *Encoder) {
 	for l := 0; l < r.nL; l++ {
-		L := &r.layers[l]
-		g := L.geom
-		nHhd := r.nH * g.hd
-		qkvRows := nHhd + 2*g.kvDim
-		kOff, vOff := nHhd*4, (nHhd+g.kvDim)*4 // byte offsets of k, v within the fused qkv buffer
-		// --- attention block (12 dispatches vs 19: QKV fused +bias, residual fused) ---
-		e.Dispatch(r.pRms, 256, 256, r.x, L.preNorm, r.aq, r.aSc, r.uH, r.uEps, r.uAddOne)
-		e.DispatchTG(r.pSABias, qkvRows*32, 256, r.H*2, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv, L.qkvBias, r.uH)
-		if r.qkNorm { // Qwen3: per-head Q/K RMSNorm before RoPE
-			e.Dispatch(r.pQKNorm, (r.nH+g.nKV)*128, 128, r.qkv, L.qNorm, L.kNorm, r.uNH, g.uNKV, g.uHd, g.uNHhd, r.uEps, r.uAddOne)
-		}
-		if g.kEqV {
-			// K=V (Gemma 4 globals): the V slot holds the RAW k_proj output ([Q|K|K] fusion). Apply
-			// scale-less v_norm to it — qk_norm over the V slot (qkv.At(vOff)) with nH=0 so every
-			// head takes the K branch at base 0+head*hd, a UNIT weight, and addOne=0 → x·rms·1. Runs
-			// AFTER qk_norm (which touched the K slot, not V) and BEFORE RoPE (which never touches V),
-			// so V = v_norm(raw k), un-rotated — exactly the CPU path (copy(v,k) pre-k_norm; then
-			// rmsNormNoWeight(v)). See TestVNorm_scaleless.
-			e.Dispatch(r.pQKNorm, g.nKV*128, 128, r.qkv.At(vOff), r.vNormUnit, r.vNormUnit, r.uZero, g.uNKV, g.uHd, r.uZero, r.uEps, r.uZero)
-		}
-		e.Dispatch(r.pRope, r.nH*g.half, 64, r.qkv, L.invf, g.uHd, r.uPos, g.uQtotal, g.uHalf)           // q @ off 0
-		e.Dispatch(r.pRope, g.nKV*g.half, 64, r.qkv.At(kOff), L.invf, g.uHd, r.uPos, g.uKtotal, g.uHalf) // k (V slot at vOff is NOT roped)
-		e.Dispatch(r.pKv, g.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[l], r.vc[l], g.uKvDim, r.uPos)
-		e.Dispatch(r.pAttn, r.nH*128, 128, r.qkv, r.kc[l], r.vc[l], r.ctx, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow)
-		e.Dispatch(r.pQv, 256, 256, r.ctx, r.cq, r.cSc, g.uNHhd)
-		if r.sandwich {
-			// Gemma: the sublayer OUTPUT is normed BEFORE the residual add, which the fused
-			// _resid epilogue can't express — project into the (otherwise dead) oO scratch,
-			// norm it, then add. Three dispatches instead of one.
-			e.DispatchTG(r.pSA, r.H*32, 256, r.nH*g.hd*2, L.oW, L.oS, r.cq, r.cSc, r.oO, g.uNHhd)
-			e.Dispatch(r.pRmsF32, 256, 256, r.oO, L.postAttnNorm, r.uH, r.uEps, r.uAddOne)
-			e.Dispatch(r.pRes, r.H, 256, r.x, r.oO)
-		} else {
-			e.DispatchTG(r.pSAResid, r.H*32, 256, r.nH*g.hd*2, L.oW, L.oS, r.cq, r.cSc, r.x, g.uNHhd) // o-proj + residual
-		}
-		// --- ffn block (dense SwiGLU/GeGLU, generic MoE, or Gemma-4 parallel dense‖MoE) ---
-		if L.g4moe != nil {
-			r.encodeGemma4MoEFFN(e, L)
-		} else if L.moe != nil {
-			r.encodeMoEFFN(e, L)
-		} else {
-			e.Dispatch(r.pRms, 256, 256, r.x, L.postNorm, r.mq, r.mSc, r.uH, r.uEps, r.uAddOne)
-			e.DispatchTG(r.pSA, (2*r.I)*32, 256, r.H*2, L.guW, L.guS, r.mq, r.mSc, r.gu, r.uH) // fused gate|up
-			e.Dispatch(r.pSw, 256, 256, r.gu, r.gu.At(r.I*4), r.dq, r.dSc, r.uI, r.uAct)       // gate @0, up @I
-			if r.sandwich {
-				e.Dispatch(r.pGemv, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.dO, r.uI) // down → scratch
-				e.Dispatch(r.pRmsF32, 256, 256, r.dO, L.postMLPNorm, r.uH, r.uEps, r.uAddOne)
-				e.Dispatch(r.pRes, r.H, 256, r.x, r.dO)
-			} else {
-				e.Dispatch(r.pGemvResid, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.x, r.uI) // down + residual
-			}
-		}
+		r.encodeLayer(e, l)
 	}
 	e.Dispatch(r.pRms, 256, 256, r.x, r.finalNorm, r.aq, r.aSc, r.uH, r.uEps, r.uAddOne)
+}
+
+// encodeLayer encodes one decoder layer (attention block + FFN block) into e. Factored out of
+// encodeTrunkInto so Step 6's expert-paging work has a per-layer SEAM: the pre-encode-cost
+// measurement wraps each call in its own command buffer (the per-layer submit+wait regime), and the
+// eventual paging path hangs its router-readback / expert-stage handshake here. Byte-identical to the
+// old inline loop body (same dispatches, same order), so encodeTrunkInto stays the single-command-
+// buffer, value-independent trunk it was.
+func (r *Resident) encodeLayer(e *Encoder, l int) {
+	L := &r.layers[l]
+	g := L.geom
+	nHhd := r.nH * g.hd
+	qkvRows := nHhd + 2*g.kvDim
+	kOff, vOff := nHhd*4, (nHhd+g.kvDim)*4 // byte offsets of k, v within the fused qkv buffer
+	// --- attention block (12 dispatches vs 19: QKV fused +bias, residual fused) ---
+	e.Dispatch(r.pRms, 256, 256, r.x, L.preNorm, r.aq, r.aSc, r.uH, r.uEps, r.uAddOne)
+	e.DispatchTG(r.pSABias, qkvRows*32, 256, r.H*2, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv, L.qkvBias, r.uH)
+	if r.qkNorm { // Qwen3: per-head Q/K RMSNorm before RoPE
+		e.Dispatch(r.pQKNorm, (r.nH+g.nKV)*128, 128, r.qkv, L.qNorm, L.kNorm, r.uNH, g.uNKV, g.uHd, g.uNHhd, r.uEps, r.uAddOne)
+	}
+	if g.kEqV {
+		// K=V (Gemma 4 globals): the V slot holds the RAW k_proj output ([Q|K|K] fusion). Apply
+		// scale-less v_norm to it — qk_norm over the V slot (qkv.At(vOff)) with nH=0 so every
+		// head takes the K branch at base 0+head*hd, a UNIT weight, and addOne=0 → x·rms·1. Runs
+		// AFTER qk_norm (which touched the K slot, not V) and BEFORE RoPE (which never touches V),
+		// so V = v_norm(raw k), un-rotated — exactly the CPU path (copy(v,k) pre-k_norm; then
+		// rmsNormNoWeight(v)). See TestVNorm_scaleless.
+		e.Dispatch(r.pQKNorm, g.nKV*128, 128, r.qkv.At(vOff), r.vNormUnit, r.vNormUnit, r.uZero, g.uNKV, g.uHd, r.uZero, r.uEps, r.uZero)
+	}
+	e.Dispatch(r.pRope, r.nH*g.half, 64, r.qkv, L.invf, g.uHd, r.uPos, g.uQtotal, g.uHalf)           // q @ off 0
+	e.Dispatch(r.pRope, g.nKV*g.half, 64, r.qkv.At(kOff), L.invf, g.uHd, r.uPos, g.uKtotal, g.uHalf) // k (V slot at vOff is NOT roped)
+	e.Dispatch(r.pKv, g.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[l], r.vc[l], g.uKvDim, r.uPos)
+	e.Dispatch(r.pAttn, r.nH*128, 128, r.qkv, r.kc[l], r.vc[l], r.ctx, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow)
+	e.Dispatch(r.pQv, 256, 256, r.ctx, r.cq, r.cSc, g.uNHhd)
+	if r.sandwich {
+		// Gemma: the sublayer OUTPUT is normed BEFORE the residual add, which the fused
+		// _resid epilogue can't express — project into the (otherwise dead) oO scratch,
+		// norm it, then add. Three dispatches instead of one.
+		e.DispatchTG(r.pSA, r.H*32, 256, r.nH*g.hd*2, L.oW, L.oS, r.cq, r.cSc, r.oO, g.uNHhd)
+		e.Dispatch(r.pRmsF32, 256, 256, r.oO, L.postAttnNorm, r.uH, r.uEps, r.uAddOne)
+		e.Dispatch(r.pRes, r.H, 256, r.x, r.oO)
+	} else {
+		e.DispatchTG(r.pSAResid, r.H*32, 256, r.nH*g.hd*2, L.oW, L.oS, r.cq, r.cSc, r.x, g.uNHhd) // o-proj + residual
+	}
+	// --- ffn block (dense SwiGLU/GeGLU, generic MoE, or Gemma-4 parallel dense‖MoE) ---
+	if L.g4moe != nil {
+		r.encodeGemma4MoEFFN(e, L)
+	} else if L.moe != nil {
+		r.encodeMoEFFN(e, L)
+	} else {
+		e.Dispatch(r.pRms, 256, 256, r.x, L.postNorm, r.mq, r.mSc, r.uH, r.uEps, r.uAddOne)
+		e.DispatchTG(r.pSA, (2*r.I)*32, 256, r.H*2, L.guW, L.guS, r.mq, r.mSc, r.gu, r.uH) // fused gate|up
+		e.Dispatch(r.pSw, 256, 256, r.gu, r.gu.At(r.I*4), r.dq, r.dSc, r.uI, r.uAct)       // gate @0, up @I
+		if r.sandwich {
+			e.Dispatch(r.pGemv, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.dO, r.uI) // down → scratch
+			e.Dispatch(r.pRmsF32, 256, 256, r.dO, L.postMLPNorm, r.uH, r.uEps, r.uAddOne)
+			e.Dispatch(r.pRes, r.H, 256, r.x, r.dO)
+		} else {
+			e.Dispatch(r.pGemvResid, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.x, r.uI) // down + residual
+		}
+	}
 }
