@@ -10,12 +10,13 @@ package metal
 import gpu "github.com/townsendmerino/aikit/gpu"
 
 type (
-	Device   = gpu.Device
-	Buffer   = gpu.Buffer
-	Queue    = gpu.Queue
-	Pipeline = gpu.Pipeline
-	Encoder  = gpu.Encoder
-	ARPool   = gpu.ARPool
+	Device       = gpu.Device
+	Buffer       = gpu.Buffer
+	Queue        = gpu.Queue
+	Pipeline     = gpu.Pipeline
+	Encoder      = gpu.Encoder
+	ARPool       = gpu.ARPool
+	ResidencySet = gpu.ResidencySet
 )
 
 const MSL3_1 = gpu.MSL3_1
@@ -23,4 +24,5 @@ const MSL3_1 = gpu.MSL3_1
 var (
 	CreateSystemDefaultDevice = gpu.CreateSystemDefaultDevice
 	NewARPool                 = gpu.NewARPool
+	ResidencySetsSupported    = gpu.ResidencySetsSupported
 )

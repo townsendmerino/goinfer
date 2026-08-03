@@ -9,6 +9,7 @@ package metal
 import (
 	"fmt"
 	"math"
+	"os"
 	"runtime"
 	"sync"
 
@@ -99,6 +100,8 @@ type Resident struct {
 	logitsHost                                                 []float32
 	gpuStart, gpuEnd, kernStart, kernEnd                       float64      // last-Forward GPU timing (Step 0)
 	prof                                                       pagedProfile // per-phase paging decomposition (accumulates; snapshot+diff over a timed window)
+	residency                                                  ResidencySet // pinned working set (GOINFER_MOE_RESIDENCY, paged path); zero value if unused
+	residencyBufs                                              []Buffer     // exactly the buffers added to `residency` (for the teardown-consistency gate)
 
 	// pipelined logits executor (encode-ahead): a persistent OS-thread-pinned goroutine that
 	// commits token t, pre-encodes t+1 while the GPU runs t, then waits — hiding the ~0.9ms
@@ -475,6 +478,59 @@ func BuildResident(m *decoder.Model) (*Resident, error) {
 	r.vNormUnit = d.NewBufferFloats(ones)
 	r.finalSoftcap = m.FinalLogitSoftcapResident() // Gemma 4: 30 (host-side softcap); 0 for every other family
 	r.logitsHost = make([]float32, V)
+
+	// Residency set (default ON when supported + paged; GOINFER_MOE_RESIDENCY=0 opts out). The paged
+	// path submits per-layer, and the pread stage CPU-writes the slot buffers each token — dirtying
+	// their residency so the driver re-validates them every phase-2 commit (~9 ms/CB of GPU-idle-in-
+	// wait). Pinning the SLOT POOL resident holds it across those writes → ~0.44 ms/CB (measured
+	// −11%: 0.61→0.68 tok/s at N=32 on an idle 16 GB box). SLOTS ONLY: a five-arm bisect showed
+	// pinning anything more (weights/KV/scratch) regresses phase 1 in proportion to pin-set size,
+	// read/write-agnostic — pinning helps only the pread-INVALIDATED buffers. FOOTPRINT: the slot pool
+	// is N × MoE-layers × per-expert-bytes (≈3 GB at N=32), PERMANENTLY requested resident; re-measure
+	// the win if N grows or the box is under other load. Capability-gated (macOS 15+); older OSes keep
+	// the correct, slower per-submit path.
+	if r.g4moe != nil && r.g4moe.paged && os.Getenv("GOINFER_MOE_RESIDENCY") != "0" && ResidencySetsSupported() {
+		rs, rerr := d.NewResidencySet()
+		if rerr != nil {
+			fmt.Fprintf(os.Stderr, "metal: residency set unavailable (%v) — per-submit validation stands\n", rerr)
+		} else {
+			slots := r.slotBuffers()      // GPU-read-only (CPU-written by pread)
+			written := r.writtenBuffers() // GPU-WRITTEN per token: KV cache + intermediates/scratch
+			kv := r.kvBuffers()
+			scratch := r.scratchBuffers()
+			addAll := func(bs []Buffer) {
+				for _, b := range bs {
+					rs.Add(b)
+				}
+			}
+			switch os.Getenv("GOINFER_MOE_RESIDENCY_SCOPE") {
+			case "slots":
+				addAll(slots)
+			case "slots+kv": // bisect: does the KV cache cause the phase-1 regression?
+				addAll(slots)
+				addAll(kv)
+			case "slots+scratch": // bisect: do the intermediates cause it?
+				addAll(slots)
+				addAll(scratch)
+			case "readonly", "slots+weights": // diagnostic: pin all buffers EXCEPT the written set
+				rs.AddAllDeviceBuffersExcept(d, written)
+			case "all": // diagnostic: pin every device buffer (regresses phase 1 — set-size overhead)
+				rs.AddAllDeviceBuffers(d)
+			default: // SHIP DEFAULT: slots only. The five-arm bisect showed pinning anything BEYOND the
+				// pread-invalidated slot buffers regresses phase 1 in proportion to the pinned set size
+				// (read/write-agnostic), so slots-only is the sole net win (phase 2 idle 9→0.44 ms/CB).
+				addAll(slots)
+				r.residencyBufs = slots
+				_ = kv
+				_ = scratch
+			}
+			rs.Commit()
+			rs.RequestResidency()
+			r.q.AddResidencySet(rs)
+			r.residency = rs
+		}
+	}
+
 	ok = true // construction complete — the Resident owns everything; Close (not the defer) frees it
 	return r, nil
 }
@@ -630,6 +686,47 @@ func (r *Resident) stopExec() {
 // GIGABYTES of unified (system) memory, until the process exited. purego has no ARC and Metal
 // has no context-destroy to reclaim in bulk, so each buffer must be released explicitly.
 // Idempotent: ReleaseAll empties the ledger, so a second Close is a no-op.
+// slotBuffers returns the paged MoE slot-pool buffers — GPU-READ-ONLY (phase 2 reads them; the pread
+// stage CPU-writes their contents). Safe to pin resident.
+func (r *Resident) slotBuffers() []Buffer {
+	var out []Buffer
+	for l := range r.layers {
+		if p := r.layers[l].g4moe; p != nil && p.pool != nil {
+			for s := range p.pool.slots {
+				out = append(out, p.pool.slots[s].guW, p.pool.slots[s].guS, p.pool.slots[s].dW, p.pool.slots[s].dS)
+			}
+		}
+	}
+	return out
+}
+
+// kvBuffers returns the per-layer KV cache buffers — GPU-WRITTEN by attention every token.
+func (r *Resident) kvBuffers() []Buffer {
+	out := make([]Buffer, 0, len(r.kc)+len(r.vc))
+	out = append(out, r.kc...)
+	out = append(out, r.vc...)
+	return out
+}
+
+// scratchBuffers returns the per-token GPU-WRITTEN intermediates (attention/MLP staging, MoE scratch,
+// logits, and the per-token uniform buffers). NOT the KV cache (see kvBuffers).
+func (r *Resident) scratchBuffers() []Buffer {
+	out := []Buffer{
+		r.x, r.aq, r.aSc, r.ctx, r.cq, r.cSc, r.oO, r.mq, r.mSc, r.dq, r.dSc, r.dO,
+		r.logits, r.qkv, r.gu, r.part, r.tok, r.uPos, r.uNKeys,
+	}
+	if g := r.g4moe; g != nil {
+		out = append(out, g.rLogits, g.rIdx, g.rWgt, g.g4x1, g.g4x2, g.g4rn)
+	}
+	return out
+}
+
+// writtenBuffers is every GPU-written buffer (KV cache + scratch) — the set that MUST be excluded when
+// pinning "all read-only" buffers (pinning a written member regresses the writing phase).
+func (r *Resident) writtenBuffers() []Buffer {
+	return append(r.kvBuffers(), r.scratchBuffers()...)
+}
+
 func (r *Resident) Close() {
 	r.stopExec()
 	if r.g4moe != nil && r.g4moe.giwFile != nil {
