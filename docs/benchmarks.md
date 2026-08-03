@@ -39,6 +39,17 @@ same-quant, same-machine is the whole discipline.
 Reproduce goinfer's side end-to-end (and get the verbatim peer commands) with
 [`scripts/bench_compare.sh`](../scripts/bench_compare.sh).
 
+**Forward vs serve split (new — future rows may state both).** Every published row here is a
+**serve-path, client-wall-clock** number (prefill, sampling, detok, HTTP all inside it) — the
+methodology-symmetric bar, and it stays. But a direct decomposition now exists
+(`GOINFER_DECODE_TIMING=1`, `docs/task-moe-streaming.md`): on the 26B the greedy **forward** is
+~36 ms/tok while the **serve** number is ~57 ms/tok, the gap being **prefill amortization** (sequential
+full-logits prefill, no batched `PrefillLast`) plus context-depth growth — *not* a per-token serve tail
+(greedy `sample`/`embed` ≈ 0). So future rows may state both a forward rate and a wall-clock rate, the
+way §B2 already prints Ollama's decode-only rate alongside its wall clock — with the wall-clock number
+remaining the one that counts for a peer comparison. Existing rows (incl. §B4's 16.98 tok/s, re-confirmed)
+are correctly measured and unchanged.
+
 ---
 
 ## Table 1 — Capability matrix

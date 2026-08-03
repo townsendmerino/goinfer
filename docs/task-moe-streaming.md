@@ -392,31 +392,74 @@ Two of the three levers were mis-budgeted by an order of magnitude: the per-laye
 is retired as an independent lever); and at 38 slots the miss-DMA is **4.28 ms, not ~11** — the LRU
 cache already did the heavy lifting (89% hit), so async-DMA overlap can hide ≤4.3 ms.
 
-### Reconciliation against §B4's 16.98 tok/s (58.9 ms/tok)
-The direct-drive forward is 34 tok/s, but §B4 publishes 16.98. **Same process, the serve path
-(`m.Generate`, `SamplingParams{}`) measured 17.62 tok/s (56.75 ms) — reproducing §B4 within noise.**
-So:
-- **§B4 is NOT stale or wrong** — it is the serve-path number, validated. No benchmark edit.
-- The **27.46 ms/tok gap** between direct-drive (`ForwardArgmax`, 4-byte argmax readback) and serve
-  (`step()` → **full-logits D2H, ~1 MB at the 256k vocab** + host sampling over 256k + detokenization +
-  deeper context) is a **large, previously un-named cost** — ~47% of the serve budget, bigger than any
-  of the three CUDA-forward levers. The prior "~59 ms forward decomposition" **conflated the forward
-  (29 ms) with the serve/sampling path (27 ms)**; the levers live only in the forward half.
+### Reconciliation against §B4's 16.98 tok/s (58.9 ms/tok) — §B4 confirmed
+Same process, the serve path (`m.Generate`, `SamplingParams{}`) measured 17.62 tok/s (56.75 ms) —
+**reproducing §B4 within noise. §B4 is validated, not stale. No edit.**
 
-### Consequence for the levers (all three re-valued against the real budget)
-- **Task 1 (idx readback): retired** — 0.81 ms.
-- **Task 2 (async miss-DMA): 4.28 ms at 38 slots** — small; LRU already captured most of the 51 ms
-  no-reuse cost. Overlap upside ≤ 4.3 ms.
-- **Task 3 (CUDA graphs): targets the 24 ms compute/dispatch** (~19 ms of it dispatch) — the largest
-  *forward* lever, but parked behind the tenancy/MPS gate, and it only touches the forward half.
-- **The biggest single lever is the un-costed ~27 ms serve path** (full-logits readback + 256k-vocab
-  host sampling + detok). Even a zero-cost forward caps the serve number at ~27 ms (~37 tok/s). This
-  is unstudied and should be decomposed before any forward lever is funded.
+### CORRECTION: the "27 ms serve path" above was a measurement artifact
+That earlier reconciliation attributed the 34→17.6 tok/s gap to a "27 ms serve path (full-logits D2H +
+sampling + detok)." **Direct per-phase measurement (`GOINFER_DECODE_TIMING`, already in `generateInto`)
+refutes that.** Per **decode** token (excludes prefill), 26B @ 38 slots:
 
-**Verdict:** Tasks 2 and 3 stay **unfunded** until the serve path is decomposed — they are fractions
-of the forward half, and the serve half is both larger and un-studied. Task 1 stays retired as an
-independent lever (re-enters only as part of on-device cache management, if the 4.3 ms DMA residual
-justifies it). Measurement scaffolding was reverted; numbers are the deliverable.
+| path | forward | sample | logitProc | embed |
+|---|---|---|---|---|
+| **greedy** (`SamplingParams{}`) | 36.4 ms | **0.00** | 0.00 | 0.02 |
+| non-greedy (`GOINFER_NO_GREEDY_FASTPATH=1`) | 41.2 ms | 0.23 | 0.00 | 0.02 |
+
+The greedy per-token serve overhead is **~zero** — the forward is everything. So the 27 ms gap was
+**not** per-token serve cost; it was **(a) prefill amortization** — the 26B has no batched `PrefillLast`,
+so `generateInto` prefills the 27-token prompt as **27 sequential full-logits `Forward` calls**, and the
+harness's `genDur/64` amortized those into the per-token figure (~15 ms/tok here; it shrinks as output
+length grows — a per-*request* cost, not per-token) — plus **(b) context-depth forward growth** (36.4 ms
+decoding at pos 27–91 vs 29 ms at the direct-drive's pos 12–60; attention is O(context)).
+
+### Structural answers
+- **Q1 — does temperature 0 short-circuit to argmax?** **Yes, by construction.** `SamplingParams{}` →
+  `Sampler.ArgmaxEquivalent()` true → the `fastGreedy` path: `next = fastNext` (no sampler call) and
+  `ForwardArgmax` (on-device argmax, 4-byte readback). No full-logits readback, no 262144-float sort,
+  and softcap is skipped (monotone → argmax-invariant). Confirmed empirically: greedy `sample = 0.00`.
+  The greedy sampling path is already optimal; there is nothing to fix there.
+- **Q2 — vocab-scaled vs fixed** (phi3 **32064** vocab vs gemma4 **262144**, 8.2×; non-greedy):
+
+  | | forward | sample | notes |
+  |---|---|---|---|
+  | gemma4 262k | 41.2 ms | 0.23 ms | non-greedy adds **4.8 ms** vs greedy |
+  | phi3 32k | 7.8 ms | 0.05 ms | non-greedy adds **~0 ms** vs greedy |
+
+  The non-greedy add-on is **vocab-scaled AND dominated by softcap**: gemma4's 4.8 ms is mostly the
+  host `262144 × math.Tanh(f64)` **final-logit softcap loop** — which is **Gemma-family-specific**
+  (`finalSoftcap>0`; llama/mistral/qwen/phi3 skip it, hence phi3's ~0). Full-logits D2H (1 MB vs 128 KB)
+  and host argmax (0.23 vs 0.05 ms) are vocab-scaled but sub-ms. So "the 262144 vocab amplifies an
+  existing cost 8×" is true of the **softcap**, and its blast radius is the Gemma family, temperature>0
+  only.
+- **Allocation (Step 2): NOT material.** `GODEBUG=gctrace=1` over a fixed 64-token generation: decode-phase
+  GC is negligible (GCs are dominated by model *load*). No 1 MB/token garbage — `step()` returns the
+  reused `logitsPinned` view and the greedy/no-penalty sampler does **not** clone logits (`work = logits`);
+  the only per-token alloc is the ~12 KB embed slice. The 1 MB/token hypothesis is refuted (it would occur
+  only with penalties/bias via `slices.Clone`).
+
+### Host-side (backend-independent) items — transfer to the Metal track
+- **Softcap** (host `math.Tanh` over vocab) and **host argmax**: pure host, backend-independent —
+  Metal's Step-6 paging penalty is being measured against a serve budget carrying this same host cost.
+- **Prefill sequential-forward waste** (below): a host-side *algorithm* issue, backend-independent.
+- Full-logits D2H is backend-specific (Metal's unified memory makes it ~free).
+
+### Re-ranked levers (both halves, against the corrected budget)
+1. **Prefill full-logits waste — NEW, cheap, backend-independent, biggest cheap win (TTFT).** Prefill runs
+   `resident.Forward` (full logits + D2H + softcap) for **every** prompt token but uses only the **last**.
+   ~26 of 27 full-logits readbacks+softcap are wasted ≈ **~130 ms wasted TTFT** for this prompt at 262k,
+   scaling with prompt length. Fix: a no-logits forward (`ForwardArgmax`/KV-only) for `prompt[:-1]`; a
+   batched `PrefillLast` on cudaResident is the larger version.
+2. **Task 3 (CUDA graphs):** the 24–30 ms compute/dispatch forward floor (~19 ms dispatch) — the largest
+   *decode* lever, parked behind the tenancy/MPS gate.
+3. **Softcap** (temperature>0, Gemma only): ~4.5 ms/tok host loop — parallelize/SIMD the tanh. Small, gated.
+4. **Task 2 (async miss-DMA):** 4.28 ms at 38 slots.
+5. **Task 1 (idx readback):** 0.81 ms — retired (re-enters only within on-device cache mgmt).
+6. **Allocation:** not material, no lever.
+
+**Verdict:** the greedy decode budget is **the forward** — there is no large serve tail to fund. The
+biggest cheap win is the prefill waste (TTFT, backend-independent); the biggest decode lever remains
+Task 3 (parked). Measurement scaffolding reverted; numbers are the deliverable.
 
 ## Measurement and gates
 
