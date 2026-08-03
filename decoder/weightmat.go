@@ -135,7 +135,7 @@ func streamQuantized(rows, cols int, mode quantMode, rowInto func(r int, dst []f
 			}
 			linalg.QuantizeGroupInt4Row(scratch, cols, group, q4[r*bpr:(r+1)*bpr], q4s[r*nGroups:(r+1)*nGroups])
 		}
-		return linalg.WrapInt4(q4, q4s, rows, cols, group), nil
+		return maybeF16RoundInt4Scales(linalg.WrapInt4(q4, q4s, rows, cols, group)), nil
 	default: // quantNone — no quant target, keep the full f32
 		f32 := make([]float32, rows*cols)
 		for r := range rows {
@@ -165,7 +165,7 @@ func quantizeWM(w linalg.WeightMat, mode quantMode) linalg.WeightMat {
 		if fakeQuantScheme != "" { // DIAGNOSTIC (default-off, single load-time env read): see fakequant.go
 			return fakeInt4WM(f32, w.Rows(), w.Cols(), fakeQuantScheme)
 		}
-		return linalg.QuantizeInt4(f32, w.Rows(), w.Cols(), int4GroupSize)
+		return maybeF16RoundInt4Scales(linalg.QuantizeInt4(f32, w.Rows(), w.Cols(), int4GroupSize)) // GOINFER_INT4_F16_SCALES diagnostic
 	default:
 		return w
 	}
