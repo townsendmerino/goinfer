@@ -2,6 +2,8 @@
 
 package metal
 
+import "time"
+
 // expertPool is a bounded per-layer LRU pool of N expert slots for SYNCHRONOUS Metal MoE paging.
 // The gemma4-26b full expert set is 11.96 GB (per-expert W4A8 ≈ 3.19 MB × 128 × 30 layers) — it does
 // not fit resident, so each MoE layer keeps only N experts on the GPU and stages the routed top-k in
@@ -29,10 +31,11 @@ type expertPool struct {
 	lru        []int       // slot indices, most-recently-used at front
 	stage      stageFn
 
-	stages     int // miss-stages performed (telemetry + isolation-test oracle)
-	hits       int // ensureResident calls that found the expert already resident (same-expert-reuse)
-	coldStarts int // stages into a previously-free slot (pool not yet full)
-	evictions  int // stages that evicted an occupied slot (pool under pressure)
+	stages     int   // miss-stages performed (telemetry + isolation-test oracle)
+	hits       int   // ensureResident calls that found the expert already resident (same-expert-reuse)
+	coldStarts int   // stages into a previously-free slot (pool not yet full)
+	evictions  int   // stages that evicted an occupied slot (pool under pressure)
+	stageNanos int64 // total host time spent staging (fetch + copy) — the paging-traffic penalty term
 }
 
 // newExpertPool allocates N slots sized to one expert's W4A8 buffers (nGuW/nGuS gate|up words/scales,
@@ -74,11 +77,13 @@ func (p *expertPool) ensureResident(e int) expertSlot {
 	} else {
 		p.coldStarts++
 	}
+	t0 := time.Now()
 	guW, guS, dW, dS := p.stage(e)
 	copy(p.slots[s].guW.U32s(), guW)
 	copy(p.slots[s].guS.U16s(), guS)
 	copy(p.slots[s].dW.U32s(), dW)
 	copy(p.slots[s].dS.U16s(), dS)
+	p.stageNanos += time.Since(t0).Nanoseconds() // paging-traffic cost, for the penalty decomposition
 	p.slotExpert[s] = e
 	p.where[e] = s
 	p.touch(s)
