@@ -1,5 +1,105 @@
 # Prefill optimization campaign
 
+---
+
+## CAMPAIGN OUTCOME — CUDA resident batched prefill (2026-08-03, DONE & BANKED)
+
+> This section is the retrospective; the plan that follows it (from 2026-07) is kept as history.
+> Lever 1 ("batched CUDA prefill") was executed on the `cuda/` resident path. It is **done and
+> deliberately stopped** — see "Why it stopped" and "Do not re-propose IMMA" below. All commits
+> pushed to `main` through `1d90394`.
+
+**The product question is answered.** A 2048-token prompt's TTFT went from **13.1 s (sequential
+M=1) to 2.1 s (batched)** on real qwen2.5-coder-1.5b — the unusable long-context regime is gone;
+RAG / code-context / long-chat are no longer blocked. The **Ollama crossover moved ~128 → ~320
+tokens**: goinfer wins total request time (prefill + decode) up to ~320-token prompts. Beyond that
+it stays behind Ollama on raw prefill throughput — a competitiveness gap, not a usability one, and
+structural (see the ceiling).
+
+### The five landed levers (each bit-identical to the sequential M=1 GEMV; decode byte-identical)
+
+| # | lever | what | result |
+|---|---|---|---|
+| 0 | **Batched mixed-M forward** (`PrefillLast`, `0b289b1`) | whole prompt in one weight-stationary pass; causal + per-row sliding-window masks; experts still sequential | the plumbing; e2e KV bit-identical all-layers×rows + 64-tok decode byte-identical |
+| 1 | **MT tile sweep** (`a41eb74`) | activation-columns-per-weight-load 8→32 | ~6% (the weight-amortization lever, and *only* ~6% — see below) |
+| 2 | **Coalesced GEMV load** (`int2`, `9070c2e`) | activation pair as one 64-bit load | bytes/sector 49.99→98%, GEMV 4.98→4.41 ms |
+| 3 | **Register-blocked GEMV** (RN=2 rows/warp, `7c6d935`) | reuse each load across RN output rows → RN× fewer L1TEX loads | GEMV 4.41→3.38 ms; scoreboard stall 17.8→7.5 cyc |
+| 4 | **Coalesced attention** (`float4` QK, `55c850a`) | vectorize the K/Q read, adds kept separate | attn (M=2048) 92→29.9 ms (3.1×); 2048 TTFT 3.33→**6.17×** |
+
+Cumulative GEMV: MT ~6% + coalesce ~13% + RN ~30% ≈ **1.5×** (gate/up 4.98→3.38 ms). TTFT vs
+sequential: **128 5.78× / 512 5.80× / 2048 6.17×**. Attention's share of prefill at 2048 fell
+66.9% → 38.9%; the GEMV is now ~61% at 2048.
+
+### The attribution record — the most transferable output
+
+The GEMV gap was attributed **five times; four were wrong**, and the discipline that caught them is
+the point. Each wrong attribution read like a measurement:
+
+1. *"~23× weight-amortization ceiling"* — refuted by the MT sweep (~6%). **This is the number the
+   `task-rotation-perrow-imma.md` candidate still cites; it is stale.**
+2. *"needs IMMA / fundamental to bit-identity"* — refuted: 7.9% of dp4a peak, the compute ceiling
+   was 92% unused.
+3. *"activation-L2-bandwidth-bound"* — this one **became code**: the shared-staging kernel
+   (`gemv_w4a8_staged`) cut global traffic 8× and moved wall time **1.2×**. It is kept, gated
+   bit-identical, **unwired**, as the reproducible refutation. The specific error: a *demanded* read
+   rate exceeding DRAM proves the reads are cache-served, **not** that the cache is saturated.
+4. *"issue-bound on a fat SASS instruction mix"* — refuted by ncu (22.78% issue slots). The distinct
+   lesson: an instruction-mix histogram bounds throughput **from above**; it cannot establish you are
+   *at* that bound — only stall/eligibility data can.
+5. **L1TEX latency from uncoalesced loads** — the hardware stated it directly, once `ncu` was
+   installed. That is what levers 2 and 3 fixed.
+
+The operational lesson, now standing: **profile the unit before designing the fix, now that the
+profiler exists.** The attention lever (lever 4) followed it — `attn_batched` was profiled *first*
+(L1TEX-throughput-saturated, 21.96% bytes/sector, genuinely traffic-bound — the opposite of the
+GEMV), which is why a one-line `float4` change bought 3.1×.
+
+### Why it stopped (and why query-tiling is not next)
+
+The obvious next lever — query-tiled attention with shared-K/V staging, to kill the O(M²) K/V
+re-reads that still leave L1TEX at 99.5% — was **declined on the arithmetic**. It optimizes a number
+past the threshold that mattered: attention 820 → maybe 250–350 ms takes total prefill 2.1 → ~1.6 s,
+against Ollama's ~0.22 s at 2048 — i.e. 9.4× behind becomes 7.2× behind. A days-level delicate
+kernel (its exact-float-sum order forces a blockDim=128 reduction tree and Bk=128 tiles that strain
+the 64 KB shared budget → a 2-pass-recompute design), to move a number already past usability and
+still nowhere near the peer. Scoped, ready, **not funded**: `docs/task-prefill-attention.md`.
+
+### The ceiling — DO NOT RE-PROPOSE IMMA without reading this
+
+At 2048 the GEMV is ~61% of prefill and **at its bit-identical knee** (RN=2, 100% occupancy,
+Compute 54% of the *dp4a* peak). The residual is the **tensor-core gap**: dp4a is ~1/3 of Turing
+IMMA, and closing it needs an IMMA GEMM — which reorders the group-scaled cross-group **float** sum
+and therefore **cannot be bit-identical** to the decode GEMV. That is an architectural consequence
+of the cgo-free, bit-identical thesis: a **stated trade, not a deficiency**.
+
+IMMA is the recurring "obvious" proposal and it is **scoped-not-funded on purpose**
+(`docs/task-rotation-perrow-imma.md`): it requires coarsening int4 scale granularity (per-row, via
+rotation) to permit int32 accumulation, which is a full parity refresh across every validated family
+for a model with **no demonstrated int4 quality problem** (the "blame int4" record is 0-for-2). Note
+that that doc's motivation still cites the stale *~23×* number from lever 1 above; the real dp4a-path
+GEMV is L1TEX-bound, not weight-amortization-bound, so the IMMA payoff estimate there should be
+re-derived from the profile before the candidate is ever opened. Absent a *measured* quantization
+bottleneck on the critical path, the correct action is to leave both docs alone.
+
+### Deferred, bounds recorded (cheap to resume, do not re-derive)
+
+- **26B non-expert half** — batch the gemma4moe dense/attention branch, experts sequential.
+  Bounded at **786 MB batchable / 714 MB sequential → ~1.43× at 2048, shrinking with M** — plumbing,
+  not a TTFT fix. `docs/task-26b-prefill-bound.md`.
+- **Query-tiled attention** — the O(M²) redundancy fix above. `docs/task-prefill-attention.md`.
+
+### Higher-value than another prefill kernel, when the box is next worked
+
+Two things outrank it, both on the **decode** lane goinfer actually wins (the basis of the §B2
+claims): (1) the 26B decode levers frozen pending a production budget — async miss-DMA (~4.3 ms) and
+CUDA graphs against the ~19 ms dispatch floor (safe-gated: enforced EXCLUSIVE_PROCESS/MPS + startup
+bit-exactness self-test, decline under DEFAULT compute mode) — ~1.2–1.4× on decode; (2) this
+write-up. Neither is a prefill kernel.
+
+---
+
+## Original plan (2026-07, historical)
+
 > **BLUF.** Prefill **correctness is solved** — the non-deterministic NaN that blocked v0.9.0 was
 > root-fixed (`59804f3`, the LM head was on the int4 GEMM path instead of its int8-pinned path) and
 > is regression-gated (`TestPrefillNoNaN`, `mustFinite` across the Metal parity gates). What remains
