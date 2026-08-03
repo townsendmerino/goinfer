@@ -6,10 +6,8 @@ github.com/eitamring/gocudrv v0.3.2 h1:zjRj3gRSfmbxbQkt1jXSTdGKHPwL1R912qovXnOPU
 github.com/eitamring/gocudrv v0.3.2/go.mod h1:nA+ytiB8A1YvVSHzBQbn+Be+BGR4gAGVIP+7chLn+O4=
 github.com/townsendmerino/aikit v1.16.0 h1:zEmupyxnqNfkesIIyQ1e3Dva2iYd0flCAfwn9+iklpc=
 github.com/townsendmerino/aikit v1.16.0/go.mod h1:v3jliknZOOxCFxqas2MBWfQr4SPXH4JwOefZ0wgpnZE=
-github.com/townsendmerino/aikit/gpu v0.19.0 h1:l7OjprgZRxlgm1W5m7Gv96nsB3yzubTscY5SSSj4Oac=
-github.com/townsendmerino/aikit/gpu v0.19.0/go.mod h1:FgsA/EvrtR8jcGAtWLzKRHgSdpbB5q4PHmMReEfFBPA=
-github.com/townsendmerino/aikit/gpu v0.21.0 h1:/Q7yxhqwPd7OLi00vENdeV8yztrCYpsIZJn9lOr4cjM=
-github.com/townsendmerino/aikit/gpu v0.21.0/go.mod h1:FgsA/EvrtR8jcGAtWLzKRHgSdpbB5q4PHmMReEfFBPA=
+github.com/townsendmerino/aikit/gpu v0.22.0 h1:wp0+X5/IeX6l79cwER8AkHrkYYJbP89H1ZAq4Vx5BW0=
+github.com/townsendmerino/aikit/gpu v0.22.0/go.mod h1:FgsA/EvrtR8jcGAtWLzKRHgSdpbB5q4PHmMReEfFBPA=
 github.com/townsendmerino/goinfer/cuda v0.0.0-20260802175847-6c995fe3b22e h1:WnUp3Yh1pR3LFSjFztODsmQFrvqFVFwQMu9rNAJY7Rk=
 github.com/townsendmerino/goinfer/cuda v0.0.0-20260802175847-6c995fe3b22e/go.mod h1:pijs0ng6B7fR0o0tcXtu075ARILuaAgPDrH4Hcif60M=
 github.com/townsendmerino/goinfer/gpu v0.8.0 h1:rmog2L4TWMreWpFQHKJC/70kw3IaKW6k+vxDhMgKifw=
