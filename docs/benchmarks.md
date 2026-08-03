@@ -216,18 +216,35 @@ comparison on this page.
   *against* goinfer — still gives **1.98×** / **1.37×**. The ratio is not a
   measurement artifact. (Ollama's wall and decode-only agree within ~3% here, so its
   server overhead is negligible and the two framings barely differ.)
-- **⚠ These rows hold only for SHORT prompts — the advantage is prefill-length-bounded and
-  inverts by ~128 tokens.** §B2 uses short prompts + 256-token completions, so prefill
-  amortizes away. goinfer's resident CUDA prefill is **sequential M=1** (one full forward per
-  prompt token, ~6 ms/token on the 1.5B); Ollama **batches** prompt processing
-  (~0.01–0.09 ms/token). Measured on the same rig/quant, Ollama 0.5.7, 256-token completion,
-  all-in tok/s: at a **128**-token prompt goinfer **151** vs Ollama **148** (already parity);
-  at **512**, goinfer **70** vs Ollama **142** (**Ollama ~2×**); TTFT at 512 is **2151 ms vs
-  37 ms** (~58×). So the §B2 headline (1.4–2.0×) is a **short-prompt** result; for any real
-  long-context use (RAG, code, long chats) goinfer is currently *behind* on both TTFT and
-  all-in. The rows are correctly measured under their stated method (short prompt) and are
-  **not edited**; this states the bound. Fix = batched prefill (`PrefillLast`) on the resident
-  CUDA lane — a known lever (`docs/task-moe-streaming.md`), not yet built for CUDA.
+- **⚠ These rows hold only for SHORT prompts — the advantage is prefill-length-bounded.**
+  §B2 uses short prompts + 256-token completions, so prefill amortizes away. Ollama **batches**
+  prompt processing (measured ~0.17 ms/token, batched cuBLAS), so its total request time is
+  nearly flat with prompt length (decode-dominated: ~120–140 tok/s → ~560–600 ms for
+  prompt+64). goinfer's resident CUDA **decode** is actually *faster* (~200 tok/s at short
+  context), which is the §B2 win — but its prefill cost is what erodes that lead as the prompt
+  grows, so there is a crossover length past which goinfer's total time exceeds Ollama's.
+- **Batched prefill (`PrefillLast`, `cuda/prefill.go`, 2026-08-03) moved the crossover
+  ~128 → ~230 tokens (~1.8×).** The weight-stationary batched W4A8 GEMV replaces the
+  sequential **M=1** prefill (one full forward per prompt token) with an M=len pass that reads
+  each int4 weight row once per 8-token tile. Measured (real qwen2.5-coder-1.5b, same rig/quant,
+  Ollama 0.5.7 `q15`):
+  - **TTFT (prefill only), batched vs the old sequential path:** 128 tok **3.46×**, 512 **3.25×**,
+    2048 **2.79×** (best at short prompts; the ratio falls as O(M²) attention — paid by both
+    paths — dilutes the GEMV win, whose ceiling is the MT=8 weight-read reduction).
+  - **Total request time (batched prefill + 64 greedy decode):** goinfer 128 tok **450 ms**,
+    192 **530 ms**, 256 **623 ms**, 512 **1037 ms**, 2048 **5311 ms**; Ollama ~**560–600 ms**
+    flat across 128–628 tok. So goinfer now **wins up to ~230-token prompts** (192: 530 vs ~595;
+    256: 623 vs ~600 — the crossover) and loses beyond, vs ~128 before.
+  - **The remaining gap is fundamental to bit-identity.** goinfer's batched prefill is ~1–2.3
+    ms/token vs Ollama's ~0.17; closing it needs the tensor-core (IMMA/MMA) GEMM that reorders
+    the group-scaled cross-group **float** accumulation and so cannot be bit-identical to the M=1
+    GEMV. The dp4a weight-stationary kernel is the fastest primitive that keeps decode
+    byte-identical (the parked int32-per-group candidate in `docs/task-moe-streaming.md` trades
+    that for a tolerance gate). goinfer stays *behind* Ollama on raw prefill throughput at long
+    context; it wins on total time only while its faster decode covers the prefill (≤~230 tok).
+  - Gates: `cuda/prefill_e2e_test.go` (KV bit-identical all layers×rows + logits + 64-token
+    byte-identical decode, real windowed Mistral); `TestPrefillTTFT` / `TestPrefillCrossover`
+    (heavy) reproduce the numbers above. The rows in the §B2 table are **not edited**.
 - **Correctness is gated, not assumed.** CUDA decode is held to the repo's own 3%
   near-tie parity rule against the CPU path on a real q4_k_m checkpoint (9/10 exact
   argmax, 0 hard fails) — the speed is only meaningful because the tokens match.
