@@ -239,21 +239,26 @@ comparison on this page.
     **88%** (attn 8%, glue 4%); at 512, GEMV **73%** / attn 25%; at 2048, attn **56%** / GEMV 43%.
     So GEMV dominates *around the crossover*, and attention (naive O(M²) `attn_batched`) only takes
     over past ~1–2k tokens.
-  - **The residual is currently ~1–2.3 ms/prompt-token vs Ollama's ~0.17; attribution:** an MT
-    sweep of the batched GEMV (8/16/32/64 — MT = activation columns per weight-row load, *not* a
-    bit-identity constraint: the M=1-reproduces-the-GEMV gate passes at every width) moves prefill
-    GEMV only **~6%** (MT=32 best, adopted; 64 spills). So the GEMV is **not** weight-fetch-bound —
-    the fixed `__dp4a` count is the floor, and `__dp4a` is ~1/3 of Turing IMMA int8 throughput,
-    which is the gap against cuBLAS's tensor cores near the crossover. Closing *that* would need an
-    IMMA GEMM (reorders the group-scaled cross-group **float** sum → not bit-identical; the parked
-    `docs/task-rotation-perrow-imma.md` / int32-per-group candidate trades bit-identity for a
-    tolerance gate, and is **not funded**). At long context the lever is instead a flash-style
-    attention. This is a measurement, not a proof that IMMA is the only path.
-  - **Note on this report's own hygiene:** the first draft of this bullet recorded the gap as
-    *fundamental to bit-identity* and claimed a *~23× GEMV ceiling* — both were the plausible
-    weight-amortization mechanism written up as a conclusion, and both were wrong (the sweep put the
-    GEMV lever at ~6%, and the ceiling at the dp4a compute floor). A believable mechanism is not a
-    measurement; decompose first.
+  - **The residual is currently ~1–2.3 ms/prompt-token vs Ollama's ~0.17; attribution (profiled,
+    `TestGemvBatchedBandwidth` + `ptxas`, no `ncu` on this box): the GEMV is activation-L2-read-bound,
+    NOT compute-bound.** One gate/up GEMV (N=8960, K=1536, M=512) = 4.98 ms = **7.9% of Turing dp4a
+    peak**; weight read a trivial **1.4 GB/s**; but activation read runs at **~1.41 TB/s effective**
+    (3× the card's 448 GB/s DRAM → saturating L2). Cause: weight-stationary means each of the N
+    output-row warps re-reads the whole [M,K] activation — **N×M×K vs the M×K minimum, a factor of
+    N (8960×)**. `ptxas` rules out occupancy (43 regs @MT=8 / 61 @MT=32 → 100% on sm_75; MT=64 = 108
+    regs → 50%, its regression, **no spill**) and the MT sweep rules out weight-fetch (MT changes
+    weight reuse, not the activation re-read → ~6%). **IMMA is refuted: it raises a compute ceiling
+    that is 92% unused.** The lever is standard GEMM tiling — stage the [MT,K] activation tile in
+    shared memory so it is read once per tile-group, not N times. That is **bit-identical by
+    construction** (changes where operands are read, not their accumulation order) — no tolerance
+    gate, no IMMA. At long context the separate lever is flash-style attention.
+  - **Note on this report's own hygiene — third correction in this lane.** This gap has now been
+    attributed three times to a *plausible mechanism written up as a conclusion*, each refuted by the
+    next measurement: (1) a *~23× GEMV ceiling* (weight-amortization model → MT sweep says ~6%),
+    (2) *fundamental to bit-identity / needs IMMA* (→ profile says 7.9% of dp4a peak, compute ceiling
+    unused), before (3) the profiled answer: activation-L2 traffic, fixable inside bit-identity. The
+    pattern to watch is the **speed of attribution**, not any one claim — a believable mechanism is
+    not a measurement; profile before recording.
   - Gates: `cuda/prefill_e2e_test.go` (KV bit-identical all layers×rows + logits + 64-token
     byte-identical decode, real windowed Mistral); `TestPrefillTTFT` / `TestPrefillCrossover` /
     `TestPrefillDecomp` (heavy) reproduce the numbers above. The rows in the §B2 table are

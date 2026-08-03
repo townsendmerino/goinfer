@@ -19,17 +19,23 @@
 // equals its sequential-GEMV value to the bit. This is WHY there is no IMMA/MMA path: tensor-core
 // accumulation reorders the cross-group float sum and would break the byte-identical gate.
 //
-// PERFORMANCE, MEASURED — NOT the weight-amortization the tiling suggests. MT is how many activation
-// columns one weight-row load serves, so it looks like the lever: MT=8 re-reads each weight row
-// ceil(M/8) times, MT=32 only ceil(M/32). But an MT sweep (8/16/32/64, real qwen2.5-coder-1.5b) moves
-// prefill GEMV time only ~6% total (MT=32 best; MT=64 REGRESSES — register spill), so the kernel is
-// NOT weight-fetch-bound — the fixed __dp4a count (N*Kwords*M dp4a-pairs) is the floor, and __dp4a is
-// ~1/3 of Turing IMMA int8 throughput. MT=32 is kept as the free ~6%; shared-memory weight staging to
-// push MT higher would not help (the fetch it saves is already ≤6%). The larger cost near the Ollama
-// crossover is this dp4a throughput vs cuBLAS's tensor cores — closing THAT needs IMMA, which reorders
-// the cross-group float sum and breaks bit-identity (the parked "int32-per-group GEMV" candidate in
-// docs trades bit-identity for a tolerance gate). An earlier version of this comment claimed "~23x at
-// M=512" from the weight-amortization model — the sweep disproved it; this records the measurement.
+// PERFORMANCE, MEASURED — this kernel is ACTIVATION-READ-BOUND, not compute-bound. Profiled in
+// isolation at the gate/up shape (N=8960, K=1536, M=512, TestGemvBatchedBandwidth): 4.98 ms/launch =
+// 7.9% of Turing dp4a peak (so IMMA, a compute-ceiling lever, would NOT help), weight read a trivial
+// 1.4 GB/s, but activation read runs at ~1.41 TB/s effective — 3x the card's 448 GB/s DRAM, i.e.
+// saturating L2. The cause is structural: this is weight-STATIONARY, so each of the N output-row warps
+// re-reads the WHOLE [M,K] activation, N*M*K bytes against an M*K read-once minimum — a factor of N
+// (8960x here). ptxas confirms it is not occupancy (43 regs @MT=8 / 61 @MT=32 → 100% occupancy on
+// sm_75; MT=64 = 108 regs → 50%, hence its regression, NO spill). And it is not weight-fetch-bound:
+// MT is the activation-columns-per-weight-load tile, so an MT sweep (8/16/32/64) changes weight reuse
+// but NOT the activation re-read, and indeed moved prefill GEMV only ~6% (MT=32 kept as the free win).
+//
+// THE FIX (not built here) is standard GEMM tiling: stage the [MT,K] activation tile in shared memory
+// so it is read from L2/DRAM once per tile-group instead of once per output row. That is BIT-IDENTICAL
+// by construction — it changes where operands are read from, not the order they accumulate in — so it
+// needs no tolerance gate and no IMMA. Two earlier versions of this comment attributed the gap to the
+// weight-amortization model ("~23x ceiling") and then to dp4a-vs-tensor-cores ("needs IMMA"); the
+// profile refuted both. The lever is activation-traffic, and it is reachable without leaving bit-identity.
 //
 // Args mirror gemv_w4a8_fwd, plus M and the per-row activation arrays:
 //   W  [N, Kwords] u32 (8 int4/word, nibble-permuted at pack time, permuteFast)
