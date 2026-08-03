@@ -5,6 +5,7 @@ package cuda
 import (
 	"errors"
 	"io/fs"
+	"math"
 	"os"
 	"testing"
 
@@ -71,7 +72,8 @@ func TestGemma4MoE_residentParity(t *testing.T) {
 		cpu4[i] = append([]float32(nil), l...)
 	}
 	idxCpu4, _ := decoder.RouterCaptureForTest()
-	idxCpu4 = append([][]int(nil), idxCpu4...) // snapshot before the f32 run appends more
+	idxCpu4 = append([][]int(nil), idxCpu4...)                             // snapshot before the f32 run appends more
+	marginCpu4 := append([]float32(nil), decoder.RouterMarginForTest()...) // per-decision top-k boundary margin, same order
 
 	// CPU f32 over the prompt (the conditioning reference; idx not needed).
 	cpuF := make([][]float32, len(prompt))
@@ -108,22 +110,62 @@ func TestGemma4MoE_residentParity(t *testing.T) {
 			i, cVs4[i], c4VsF[i], argmaxF(cuda[i]), argmaxF(cpu4[i]))
 	}
 
-	// ---- per-position routing agreement (resident idx vs CPU-int4 idx) ----
+	// ---- MARGIN-GATED routing agreement (the reusable cross-backend MoE instrument) ----
+	//
+	// Unconditional resident-idx == CPU-idx is an INVALID gate for MoE, and the 26B established why:
+	// a top-k router is a DISCRETE function of a continuously-drifting input, so where two selected
+	// experts are near-tied in router probability, the tiny W4A8-activation delta between resident and
+	// CPU legitimately FLIPS the selection — a different-but-correct expert, not a bug (the resident
+	// and CPU routers are each bit-exact given their own input; only the input differs by rounding).
+	// Past such a flip the two backends compute different experts, so a hidden-state cosine CLIFFS and
+	// per-position argmax vs CPU goes to noise; neither is a defect. But at WIDE margin a flip is NOT
+	// explainable by rounding — it means the dispatch fed the wrong activation, or the router itself
+	// diverged — a real bug. So gate on the margin: assert index agreement only where the top-k
+	// boundary margin (smallest-selected minus largest-rejected softmax prob) exceeds a threshold;
+	// below it, record the disagreement as expected sensitivity rather than failing.
+	//
+	// THRESHOLD (marginGate = 0.01), chosen from the MEASURED margin distribution, which is bimodal by
+	// ~2 orders of magnitude (metal/gemma4_moe_noisefloor_test.go + metal/gemma4_26b_routing_test.go):
+	//   - THIS fixture, gemma4-moe-tiny (nE=4, top-2): min margin 0.2679 — every decision well-separated
+	//   - real width, 26B (nE=128, top-8): flips sit at 0.00115, matched at 0.00218 — the near-tie band
+	//   - the degenerate control, gemma4-moe-kv-tiny: 0.0001 — routing is a coin-flip, non-gating
+	// 0.01 sits 5x above the near-tie band (0.002) and 27x below this fixture's min (0.268) — an order
+	// of magnitude clear of both regimes, so it is robust to per-arch softmax-scale drift. On moe-tiny
+	// every margin is >> 0.01, so this gate stays FULLY STRICT here (a real nE=4 dispatch bug still
+	// fails); the sensitivity exemption only ever fires at real width, where unconditional agreement is
+	// the wrong bar. To reuse on another MoE family, confirm its well-separated band still clears 0.01
+	// (wider nE compresses margins) and re-pick from that family's distribution if it does not.
+	const marginGate = 0.01
 	nMoE := len(idxCpu4) / len(prompt)
-	routeAgree := true
 	if len(r.g4capIdx) != len(idxCpu4) {
 		t.Fatalf("decision-count mismatch: resident %d vs cpu %d", len(r.g4capIdx), len(idxCpu4))
 	}
+	routeAgree, sensitivityFlips := true, 0
 	for k := range idxCpu4 {
-		if !sameExpertSet(idxCpu4[k], r.g4capIdx[k]) {
+		if sameExpertSet(idxCpu4[k], r.g4capIdx[k]) {
+			continue
+		}
+		mg := float32(math.Inf(1)) // no margin captured ⇒ treat as wide ⇒ assert (fail-closed)
+		if k < len(marginCpu4) {
+			mg = marginCpu4[k]
+		}
+		if float64(mg) > marginGate {
 			routeAgree = false
-			t.Errorf("ROUTING FLIP at decision %d (pos %d, moe-layer %d): cpu idx %v vs resident %v — the 0.87 "+
-				"has a DISCRETE component, not pure accumulation", k, k/nMoE, k%nMoE, idxCpu4[k], r.g4capIdx[k])
+			t.Errorf("ROUTING FLIP at decision %d (pos %d, moe-layer %d), margin %.4f > %.4f — a WELL-SEPARATED "+
+				"expert disagrees, NOT int4 sensitivity: cpu idx %v vs resident %v (wrong activation dispatched, or "+
+				"the router diverged)", k, k/nMoE, k%nMoE, mg, marginGate, idxCpu4[k], r.g4capIdx[k])
+		} else {
+			sensitivityFlips++
+			t.Logf("near-tie flip at decision %d (pos %d, moe-layer %d), margin %.4f ≤ %.4f — expected int4/int8 "+
+				"input-drift sensitivity, NOT gated (per-position cosine/argmax vs CPU is invalid past here)",
+				k, k/nMoE, k%nMoE, mg, marginGate)
 		}
 	}
-	if routeAgree {
-		t.Logf("routing agreement: resident idx == CPU-int4 idx at ALL %d decisions — the multi-position drift is "+
-			"pure accumulation, no expert flip", len(idxCpu4))
+	if routeAgree && sensitivityFlips == 0 {
+		t.Logf("routing agreement: resident idx == CPU-int4 idx at ALL %d decisions — pure accumulation, no flip", len(idxCpu4))
+	} else if routeAgree {
+		t.Logf("routing agreement: %d/%d decisions matched; %d near-tie flips (margin ≤ %.2f) exempted as sensitivity — "+
+			"NO well-separated flip, so no dispatch/router bug", len(idxCpu4)-sensitivityFlips, len(idxCpu4), sensitivityFlips, marginGate)
 	}
 
 	mean := func(v []float64) float64 {
