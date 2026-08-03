@@ -209,6 +209,18 @@ comparison on this page.
   *against* goinfer — still gives **1.98×** / **1.37×**. The ratio is not a
   measurement artifact. (Ollama's wall and decode-only agree within ~3% here, so its
   server overhead is negligible and the two framings barely differ.)
+- **⚠ These rows hold only for SHORT prompts — the advantage is prefill-length-bounded and
+  inverts by ~128 tokens.** §B2 uses short prompts + 256-token completions, so prefill
+  amortizes away. goinfer's resident CUDA prefill is **sequential M=1** (one full forward per
+  prompt token, ~6 ms/token on the 1.5B); Ollama **batches** prompt processing
+  (~0.01–0.09 ms/token). Measured on the same rig/quant, Ollama 0.5.7, 256-token completion,
+  all-in tok/s: at a **128**-token prompt goinfer **151** vs Ollama **148** (already parity);
+  at **512**, goinfer **70** vs Ollama **142** (**Ollama ~2×**); TTFT at 512 is **2151 ms vs
+  37 ms** (~58×). So the §B2 headline (1.4–2.0×) is a **short-prompt** result; for any real
+  long-context use (RAG, code, long chats) goinfer is currently *behind* on both TTFT and
+  all-in. The rows are correctly measured under their stated method (short prompt) and are
+  **not edited**; this states the bound. Fix = batched prefill (`PrefillLast`) on the resident
+  CUDA lane — a known lever (`docs/task-moe-streaming.md`), not yet built for CUDA.
 - **Correctness is gated, not assumed.** CUDA decode is held to the repo's own 3%
   near-tie parity rule against the CPU path on a real q4_k_m checkpoint (9/10 exact
   argmax, 0 hard fails) — the speed is only meaningful because the tokens match.
