@@ -252,13 +252,29 @@ comparison on this page.
     shared memory so it is read once per tile-group, not N times. That is **bit-identical by
     construction** (changes where operands are read, not their accumulation order) — no tolerance
     gate, no IMMA. At long context the separate lever is flash-style attention.
-  - **Note on this report's own hygiene — third correction in this lane.** This gap has now been
-    attributed three times to a *plausible mechanism written up as a conclusion*, each refuted by the
-    next measurement: (1) a *~23× GEMV ceiling* (weight-amortization model → MT sweep says ~6%),
-    (2) *fundamental to bit-identity / needs IMMA* (→ profile says 7.9% of dp4a peak, compute ceiling
-    unused), before (3) the profiled answer: activation-L2 traffic, fixable inside bit-identity. The
-    pattern to watch is the **speed of attribution**, not any one claim — a believable mechanism is
-    not a measurement; profile before recording.
+  - **UPDATE — the "activation-L2 traffic" attribution was ALSO wrong; the staging fix refuted it
+    (this time the experiment ran before the claim shipped).** Built `gemv_w4a8_staged` (own file,
+    bit-identical: `facc` live in registers across all K-chunks, single warp-reduce; staged tile
+    padded `[2·KC][MT+1]` to avoid bank conflicts) and measured it. It cut global activation reads
+    **8× (7.05 GB → 0.88 GB, gate/up shape)** — exactly as the "N× re-read" model predicted — yet wall
+    time moved only **4.98 → 4.2 ms (1.2×)**, 7.9% → 9.3% of dp4a peak. An 8× traffic cut buying ~0
+    means the kernel was **not** activation-bandwidth-bound: the 1.41 TB/s figure was the read *rate*
+    the compute loop demanded (served fine by L2), not a saturated ceiling. The staged kernel spends
+    its 4.2 ms in the compute loop (0.88 GB of global load would be ~0.6 ms alone), so the real bound
+    is **the dp4a + one-shared-read-per-MAC compute loop itself — LSU / issue throughput at low
+    arithmetic intensity (~4 MACs per activation read)**, not memory. The lever for THAT is arithmetic
+    intensity: register-block RN output rows per warp so each activation read feeds RN× the MACs (still
+    bit-identical — per-row `facc`, one reduce each). Staging is not wired into the prefill path; the
+    kernel + `TestGemvStagedBandwidth` are kept as the reproducible refutation.
+  - **Note on this report's own hygiene — this gap has now been mis-attributed FOUR times, each
+    refuted by the next measurement:** (1) *~23× GEMV ceiling* (weight-amortization → MT sweep: ~6%),
+    (2) *fundamental to bit-identity / needs IMMA* (→ 7.9% of dp4a peak, compute ceiling unused),
+    (3) *activation-L2-bandwidth-bound* (→ 8× traffic cut, 1.2× time: not bandwidth), before (4) the
+    current best-supported answer: compute-loop / LSU-issue-bound, fix = register-blocking for
+    intensity. The **fourth** was caught only because the fix was built and measured before being
+    recorded as done — which is the discipline. The pattern to watch is the *speed of attribution*: a
+    believable mechanism, even a profiled-looking number, is not a measurement of the bound until the
+    lever it implies is pulled and the time moves.
   - Gates: `cuda/prefill_e2e_test.go` (KV bit-identical all layers×rows + logits + 64-token
     byte-identical decode, real windowed Mistral); `TestPrefillTTFT` / `TestPrefillCrossover` /
     `TestPrefillDecomp` (heavy) reproduce the numbers above. The rows in the §B2 table are

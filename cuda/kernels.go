@@ -45,6 +45,14 @@ var gemvBatchedPTX []byte
 //go:embed testdata/prefill_batched.ptx
 var prefillBatchedPTX []byte
 
+// gemvStagedPTX: gemv_w4a8_staged — the activation-staged batched GEMV. Bit-identical to
+// gemv_w4a8_fwd (facc live in registers across all K-chunks, single warp-reduce), but stages the
+// [MT,KC] activation tile in shared memory so it is read once per block instead of once per output
+// row — the fix for the profiled activation-L2-read bound. Own file (gemv_w4a8_staged.cu).
+//
+//go:embed testdata/gemv_w4a8_staged.ptx
+var gemvStagedPTX []byte
+
 // gluePTX: the per-token elementwise/attention glue — rmsnorm_quant, quant_vec, rope,
 // attention (GQA online softmax), swiglu_quant, residual, argmax_reduce.
 //
