@@ -147,6 +147,22 @@ func TestGemma4_26B_pagedRuns(t *testing.T) {
 	t.Logf("  DECOMP/tok totals: GPU-busy %.1f ms | phase-wall %.1f ms | encode %.1f ms | submit+wait %.1f ms | host-coord(wall−gpu) %.1f ms | stage %.1f ms",
 		gpuTot, wallTot, encTot, subTot, wallTot-gpuTot, ms(pf.stageWallNanos, prof0.stageWallNanos))
 	t.Logf("  DECOMP note: 60 layer command buffers/token (30 layers × 2 phases); submit+wait − GPU-busy = %.1f ms is the per-CB round-trip overhead", subTot-gpuTot)
+	if os.Getenv("GOINFER_MOE_PROF_SPLIT") == "1" {
+		commitTot := ms(pf.p1CommitNanos, prof0.p1CommitNanos) + ms(pf.p2CommitNanos, prof0.p2CommitNanos)
+		waitTot := ms(pf.p1WaitNanos, prof0.p1WaitNanos) + ms(pf.p2WaitNanos, prof0.p2WaitNanos)
+		t.Logf("  DECOMP split (BeginNP+long pool): commit %.1f ms | waitUntilCompleted %.1f ms | GPU-idle-in-wait(wait−gpu) %.1f ms | per-CB commit %.3f ms wait %.3f ms",
+			commitTot, waitTot, waitTot-gpuTot, commitTot/60, waitTot/60)
+		// per-phase wait/CB + GPU-idle/CB — mechanism-3 discriminator: phase 1 references ALL layer
+		// weights, phase 2 only 8 slot buffers + norms. If wait/CB scales with referenced-buffer count,
+		// p1 >> p2 → per-submit residency validation (→ MTLHeap/residency set); if ≈ equal → a fixed
+		// per-submit latency (→ fewer submits).
+		p1w := ms(pf.p1WaitNanos, prof0.p1WaitNanos)
+		p2w := ms(pf.p2WaitNanos, prof0.p2WaitNanos)
+		p1g := ms(pf.p1GpuNanos, prof0.p1GpuNanos)
+		p2g := ms(pf.p2GpuNanos, prof0.p2GpuNanos)
+		t.Logf("  DECOMP wait/CB by phase: p1 wait %.3f ms (gpu %.3f, idle %.3f) [all layer weights] | p2 wait %.3f ms (gpu %.3f, idle %.3f) [8 slots+norms]",
+			p1w/30, p1g/30, (p1w-p1g)/30, p2w/30, p2g/30, (p2w-p2g)/30)
+	}
 
 	t.Logf("26B PAGED DECODE: %.1f ms/tok  (%.2f tok/s)  N=%d  RSS %d MB", msTok, 1000/msTok, N, rssMB())
 	t.Logf("  staging (paging traffic): %.1f ms/tok  (%d expert stages over %d tokens, %.2f MB each)",

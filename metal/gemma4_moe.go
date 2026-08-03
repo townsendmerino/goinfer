@@ -21,10 +21,12 @@ import (
 type pagedProfile struct {
 	p1WallNanos, p1GpuNanos       int64 // phase 1 (attention + dense branch + router): wall incl submit+wait, GPU-busy
 	p1EncNanos, p1SubNanos        int64 // phase 1 wall split: encode (Begin→dispatches) vs submit+wait (End)
+	p1CommitNanos, p1WaitNanos    int64 // phase 1 submit+wait split (GOINFER_MOE_PROF_SPLIT): commit() vs waitUntilCompleted()
 	stageWallNanos                int64 // ensureResident (pread into slots) — cross-check vs pool.stageNanos
 	idxCoordNanos                 int64 // router idx readback + prefetch + id unpack (pure host coordination)
 	p2WallNanos, p2GpuNanos       int64 // phase 2 (expert GEMVs from slots + join): wall, GPU-busy
 	p2EncNanos, p2SubNanos        int64 // phase 2 wall split: encode vs submit+wait
+	p2CommitNanos, p2WaitNanos    int64 // phase 2 submit+wait split: commit() vs waitUntilCompleted()
 	denseWallNanos, denseGpuNanos int64 // non-MoE dense layers (whole layer in one command buffer)
 }
 
@@ -437,15 +439,44 @@ func (r *Resident) forwardLogitsPaged(pos int) []float32 {
 	r.uNKeys.SetU32(uint32(pos + 1))
 	g := r.g4moe
 	p := &r.prof
+	// GOINFER_MOE_PROF_SPLIT: split each End() into commit() vs waitUntilCompleted() to locate the
+	// ~15 ms/boundary overhead (vs Step-0's 0.213 ms). Needs BeginNP (no per-call autorelease pool) +
+	// one long-lived pool drained per token, so the sub-steps can be called individually and the drain
+	// isn't per-boundary — which ALSO discriminates mechanism 2 (per-CB autorelease churn): if this
+	// path's per-boundary cost is much lower than the default End() path, the per-CB pool was the cost.
+	split := os.Getenv("GOINFER_MOE_PROF_SPLIT") == "1"
+	var arp ARPool
+	if split {
+		arp = NewARPool()
+	}
+	end := func(e *Encoder, commitAcc, waitAcc *int64) {
+		if !split {
+			e.End()
+			return
+		}
+		e.FinishEncoding()
+		tc := time.Now()
+		e.Commit()
+		*commitAcc += time.Since(tc).Nanoseconds()
+		tw := time.Now()
+		e.WaitDone() // waitUntilCompleted + ReadTimes
+		*waitAcc += time.Since(tw).Nanoseconds()
+	}
+	begin := func() *Encoder {
+		if split {
+			return r.q.BeginNP()
+		}
+		return r.q.Begin()
+	}
 	for l := 0; l < r.nL; l++ {
 		L := &r.layers[l]
 		if L.g4moe != nil && L.g4moe.pool != nil {
 			w1 := time.Now()
-			e := r.q.Begin() // phase 1: attention + dense + router → rIdx/rWgt
+			e := begin() // phase 1: attention + dense + router → rIdx/rWgt
 			r.encodeAttention(e, l)
 			r.encodeG4Phase1(e, L)
 			encDone := time.Now()
-			e.End() // commit + wait: rIdx/rWgt now readable
+			end(e, &p.p1CommitNanos, &p.p1WaitNanos) // commit + wait: rIdx/rWgt now readable
 			p.p1EncNanos += encDone.Sub(w1).Nanoseconds()
 			p.p1SubNanos += time.Since(encDone).Nanoseconds()
 			p.p1WallNanos += time.Since(w1).Nanoseconds()
@@ -465,11 +496,11 @@ func (r *Resident) forwardLogitsPaged(pos int) []float32 {
 			}
 			p.stageWallNanos += time.Since(s0).Nanoseconds() // cross-check vs pool.stageNanos (same body)
 			w2 := time.Now()
-			e2 := r.q.Begin() // phase 2: experts from slots + join
+			e2 := begin() // phase 2: experts from slots + join
 			r.encodeG4Phase2Paged(e2, slots)
 			r.encodeG4Join(e2, L)
 			enc2 := time.Now()
-			e2.End()
+			end(e2, &p.p2CommitNanos, &p.p2WaitNanos)
 			p.p2EncNanos += enc2.Sub(w2).Nanoseconds()
 			p.p2SubNanos += time.Since(enc2).Nanoseconds()
 			p.p2WallNanos += time.Since(w2).Nanoseconds()
@@ -477,11 +508,15 @@ func (r *Resident) forwardLogitsPaged(pos int) []float32 {
 			continue
 		}
 		w0 := time.Now()
-		e := r.q.Begin()
+		e := begin()
 		r.encodeLayer(e, l)
-		e.End()
+		var d0, d1 int64
+		end(e, &d0, &d1)
 		p.denseWallNanos += time.Since(w0).Nanoseconds()
 		p.denseGpuNanos += int64((e.GPUEnd() - e.GPUStart()) * 1e9)
+	}
+	if split {
+		arp.Drain()
 	}
 	e := r.q.Begin()
 	e.Dispatch(r.pRms, 256, 256, r.x, r.finalNorm, r.aq, r.aSc, r.uH, r.uEps, r.uAddOne)
