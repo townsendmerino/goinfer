@@ -97,15 +97,21 @@ func TestPageCost_submissionStructure(t *testing.T) {
 	}
 
 	// Correctness cross-check: per-layer-submit is a different ENCODING of the same compute, so at the
-	// same position it must pick the same argmax as the pipelined path. If it doesn't, the regime
+	// same position it must pick the same argmax as the single-submit path. If it doesn't, the regime
 	// number is measuring a broken forward, not the cost — fail loudly rather than report noise.
-	base0 := append([]float32(nil), r.ForwardEmbPipe(emb[0], 0)...)
+	base0 := append([]float32(nil), r.ForwardEmb(emb[0], 0)...)
 	perlayer0 := r.forwardLogitsPerLayerSubmit(0) // pos 0 already has its KV from the line above
 	if a, b := argmaxF(base0), argmaxF(perlayer0); a != b {
-		t.Fatalf("per-layer-submit argmax %d != pipelined %d at pos 0 — the instrumented forward diverges; number would be meaningless", b, a)
+		t.Fatalf("per-layer-submit argmax %d != single-submit %d at pos 0 — the instrumented forward diverges; number would be meaningless", b, a)
 	}
 
-	baseMs := bestMsPerTok(func(pos int) []float32 { return r.ForwardEmbPipe(emb[pos], pos) })
+	// Baseline is ForwardEmb (INLINE single command buffer/token), NOT ForwardEmbPipe: the pipelined
+	// path runs a persistent executor GOROUTINE, and measuring the inline per-layer regime while that
+	// goroutine is alive contends the single Metal GPU and inflates per-layer (an earlier revision
+	// read +106% that way; clean it is ~+43%). Both regimes measured inline, same conditions. The
+	// encode-ahead OVERLAP that Pipe adds is small here anyway (~1-2%) — decode is GPU-bound, so the
+	// dominant cost is the SUBMISSION STRUCTURE (1 command buffer/token vs ~nL), which this isolates.
+	baseMs := bestMsPerTok(func(pos int) []float32 { return r.ForwardEmb(emb[pos], pos) })
 	perLayerMs := bestMsPerTok(func(pos int) []float32 {
 		copy(r.x.Floats(), emb[pos])
 		return r.forwardLogitsPerLayerSubmit(pos)
@@ -113,11 +119,12 @@ func TestPageCost_submissionStructure(t *testing.T) {
 
 	baseTps, perLayerTps := 1000.0/baseMs, 1000.0/perLayerMs
 	overhead := (perLayerMs - baseMs) / baseMs * 100
-	t.Logf("model=qwen2.5-1.5b (dense, %d layers) nTok=%d best-of-3-warm", r.nL, nTok)
-	t.Logf("  (1) baseline pre-encode pipeline : %6.2f ms/tok  %6.1f tok/s", baseMs, baseTps)
-	t.Logf("  (2) per-layer submit+wait (~%d CB): %6.2f ms/tok  %6.1f tok/s", r.nL, perLayerMs, perLayerTps)
-	t.Logf("  submission-structure overhead    : %+.1f%% (per-layer vs baseline)", overhead)
-	t.Logf("  per-extra-submit cost            : ~%.3f ms  (over %d extra submits/token)", (perLayerMs-baseMs)/float64(r.nL), r.nL)
-	t.Logf("VERDICT INPUT: (2) within ~10%% of (1) => synchronous paging viable, no speculation. " +
-		"Expensive => build the MTLSharedEvent handshake (option 3) next; if that also fails, speculative prefetch is mandatory.")
+	t.Logf("model=qwen2.5-1.5b (dense, %d layers) nTok=%d best-of-3-warm, both regimes INLINE", r.nL, nTok)
+	t.Logf("  (1) baseline single command buffer: %6.2f ms/tok  %6.1f tok/s", baseMs, baseTps)
+	t.Logf("  (2) per-layer submit+wait (~%d CB) : %6.2f ms/tok  %6.1f tok/s", r.nL, perLayerMs, perLayerTps)
+	t.Logf("  submission-structure overhead     : %+.1f%% (per-layer vs baseline)", overhead)
+	t.Logf("  per-extra-submit cost             : ~%.3f ms  (over %d extra submits/token)", (perLayerMs-baseMs)/float64(r.nL), r.nL)
+	t.Logf("FINDING: expensive. Option (3), the MTLSharedEvent handshake, was measured on this same forward " +
+		"(aikit gpu/metal_sharedevent_test.go + a temp goinfer harness) and recovered ~0%% — handshake ≈ submit " +
+		"per boundary. Both synchronous regimes cost ~+45%%, so speculative prefetch (option b) is the path.")
 }
