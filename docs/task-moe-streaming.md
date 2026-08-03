@@ -461,6 +461,40 @@ decoding at pos 27–91 vs 29 ms at the direct-drive's pos 12–60; attention is
 biggest cheap win is the prefill waste (TTFT, backend-independent); the biggest decode lever remains
 Task 3 (parked). Measurement scaffolding reverted; numbers are the deliverable.
 
+## TTFT is prompt-length-bounded on the resident CUDA path — a PRODUCT finding (2026-08-03)
+
+Two follow-ons: the LM-head prefill waste was **fixed** (KV-only prefill for `prompt[:-1]`, commit
+`05f0d8c` — `ResidentPrefillKV.ForwardNoLogits`; 26B saved 4.39 ms/prompt-token, byte-identical), and
+then TTFT was measured vs prompt length. With that fix ON, on the 26B (one load, KV-only prefill on):
+
+| prompt tokens | TTFT | ms/prompt-token |
+|---|---|---|
+| 32 | 1.30 s | 40.6 |
+| 128 | 3.37 s | 26.4 |
+| 512 | 12.63 s | 24.7 |
+| 2048 | **60.71 s** | 29.6 |
+
+**Linear at ~25–30 ms/prompt-token** (the 32-token point is higher from fixed/cold-cache overhead).
+**A 2048-token prompt is ~61 s to first token.** This is a **product-level bound, not a perf note:**
+goinfer's usable prompt length on the resident CUDA path is currently capped by **sequential M=1
+prefill** — each prompt token runs the full 30-layer forward one at a time. §B2's published rows never
+exposed it (short prompts, 256-token completions → prefill amortizes away), but any real long-context
+use (RAG, code, long chats) hits a minute-plus TTFT. (Absolute numbers are inflated by this box's swap
+pressure under the 11.4 GB pinned load; the *shape* — linear, minute-scale at 2k — is the finding.)
+
+The KV-only fix (Task 1) removes the LM head (~4.4 ms/token) but **not** the layer forward, which
+dominates prefill. The real fix is **batched prefill**: a `PrefillLast` that ingests the whole prompt
+in one M=len pass (each weight streamed once). 
+
+**Backend shape — one gap, not architecture-wide.** Only the two GPU-resident-via-`generateInto`
+backends did the sequential M=1 prefill: **cudaResident** (now KV-only, still M=1 layers — needs
+`PrefillLast`) and **webgpu `residentDecoder`** (still full-logits M=1 — the Task-1 `ForwardNoLogits`
+is a one-method drop-in it doesn't yet have). The **CPU path never had the waste** (`prefillLogits`
+batches with the LM head on the last row only, or the sequential fallback runs `runLayers` = KV-only
+for `prompt[:-1]`), and **Metal already has batched `PrefillLast`** (`metal/prefill.go`). So batched
+CUDA prefill is the outstanding lever, and it is the single biggest TTFT win — bigger than any decode
+lever for long prompts.
+
 ## Measurement and gates
 
 - **Rigs:** M1 Pro 16 GB (darwin, no firm cap — the fieldfare-comparable rig) *and* the
