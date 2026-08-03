@@ -24,6 +24,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -273,6 +274,7 @@ func TestParityManifest_fresh(t *testing.T) {
 	}
 	sort.Strings(famKeys)
 
+	var stale []string
 	for _, fam := range famKeys {
 		f := m.Families[fam]
 		fresh, err := freshDepsHash(&m, f)
@@ -291,8 +293,23 @@ func TestParityManifest_fresh(t *testing.T) {
 		if fresh != f.DepsHash {
 			var validatedAt string
 			_ = json.Unmarshal(f.ValidatedAt, &validatedAt)
-			t.Fatalf("parity stale for %s: numerics changed since %s — re-run T3 (scripts/parity_sweep.sh) and update parity_manifest.json", fam, validatedAt)
+			scope := strings.Join(f.Uses, "+")
+			if len(f.Own) > 0 {
+				scope += "+own(" + strings.Join(f.Own, ",") + ")"
+			}
+			stale = append(stale, fmt.Sprintf("  %-16s stale since %s  [covers: %s]", fam, validatedAt, scope))
 		}
+	}
+	// Collect EVERY mismatch and fail once with the full blast radius. A staleness is
+	// systemic when a shared file changes (every family that `uses` that set restales at
+	// once); a per-family t.Fatalf in sorted order would surface a 9-family staleness as
+	// "cohere is RED" and hide its own scope. The scope tag (which shared sets / own files
+	// each stale hash covers) makes the cause — the one changed shared file — a glance away.
+	if len(stale) > 0 {
+		t.Fatalf("parity stale for %d validated family(ies) — numerics changed since the noted commit:\n%s\n"+
+			"Fix: re-run T3 (scripts/parity_sweep.sh) then -update; or, for a provably non-numeric core edit "+
+			"(a guarded diagnostic seam, comment, rename), scripts/refresh_parity_hashes.sh.",
+			len(stale), strings.Join(stale, "\n"))
 	}
 
 	if *updateMatrix {
