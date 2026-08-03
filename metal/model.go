@@ -871,6 +871,32 @@ func (r *Resident) encodeTrunkInto(e *Encoder) {
 // buffer, value-independent trunk it was.
 func (r *Resident) encodeLayer(e *Encoder, l int) {
 	L := &r.layers[l]
+	r.encodeAttention(e, l)
+	// --- ffn block (dense SwiGLU/GeGLU, generic MoE, or Gemma-4 parallel dense‖MoE) ---
+	if L.g4moe != nil {
+		r.encodeGemma4MoEFFN(e, L)
+	} else if L.moe != nil {
+		r.encodeMoEFFN(e, L)
+	} else {
+		e.Dispatch(r.pRms, 256, 256, r.x, L.postNorm, r.mq, r.mSc, r.uH, r.uEps, r.uAddOne)
+		e.DispatchTG(r.pSA, (2*r.I)*32, 256, r.H*2, L.guW, L.guS, r.mq, r.mSc, r.gu, r.uH) // fused gate|up
+		e.Dispatch(r.pSw, 256, 256, r.gu, r.gu.At(r.I*4), r.dq, r.dSc, r.uI, r.uAct)       // gate @0, up @I
+		if r.sandwich {
+			e.Dispatch(r.pGemv, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.dO, r.uI) // down → scratch
+			e.Dispatch(r.pRmsF32, 256, 256, r.dO, L.postMLPNorm, r.uH, r.uEps, r.uAddOne)
+			e.Dispatch(r.pRes, r.H, 256, r.x, r.dO)
+		} else {
+			e.Dispatch(r.pGemvResid, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.x, r.uI) // down + residual
+		}
+	}
+}
+
+// encodeAttention records one layer's attention block (through the o-proj + residual/sandwich norm).
+// Split from encodeLayer so the paged Gemma-4 MoE forward can put [attention + dense + router] in one
+// command buffer, submit+wait, read the router idx, stage experts, then encode [experts + join] in a
+// second — the value-dependent seam paging forces. Byte-identical to the old inline attention block.
+func (r *Resident) encodeAttention(e *Encoder, l int) {
+	L := &r.layers[l]
 	g := L.geom
 	nHhd := r.nH * g.hd
 	qkvRows := nHhd + 2*g.kvDim
@@ -904,22 +930,5 @@ func (r *Resident) encodeLayer(e *Encoder, l int) {
 		e.Dispatch(r.pRes, r.H, 256, r.x, r.oO)
 	} else {
 		e.DispatchTG(r.pSAResid, r.H*32, 256, r.nH*g.hd*2, L.oW, L.oS, r.cq, r.cSc, r.x, g.uNHhd) // o-proj + residual
-	}
-	// --- ffn block (dense SwiGLU/GeGLU, generic MoE, or Gemma-4 parallel dense‖MoE) ---
-	if L.g4moe != nil {
-		r.encodeGemma4MoEFFN(e, L)
-	} else if L.moe != nil {
-		r.encodeMoEFFN(e, L)
-	} else {
-		e.Dispatch(r.pRms, 256, 256, r.x, L.postNorm, r.mq, r.mSc, r.uH, r.uEps, r.uAddOne)
-		e.DispatchTG(r.pSA, (2*r.I)*32, 256, r.H*2, L.guW, L.guS, r.mq, r.mSc, r.gu, r.uH) // fused gate|up
-		e.Dispatch(r.pSw, 256, 256, r.gu, r.gu.At(r.I*4), r.dq, r.dSc, r.uI, r.uAct)       // gate @0, up @I
-		if r.sandwich {
-			e.Dispatch(r.pGemv, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.dO, r.uI) // down → scratch
-			e.Dispatch(r.pRmsF32, 256, 256, r.dO, L.postMLPNorm, r.uH, r.uEps, r.uAddOne)
-			e.Dispatch(r.pRes, r.H, 256, r.x, r.dO)
-		} else {
-			e.Dispatch(r.pGemvResid, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.x, r.uI) // down + residual
-		}
 	}
 }

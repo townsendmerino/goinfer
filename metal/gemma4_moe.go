@@ -203,34 +203,53 @@ func buildGemma4MoELayer(d *Device, b *decoder.Gemma4MoEResidentBundle) *gemma4M
 // own rIdx slot at execution time), so the command buffer is static every token and the encode-
 // ahead executor still pre-encodes token t+1 while t runs (task-metal-moe.md).
 func (r *Resident) encodeGemma4MoEFFN(e *Encoder, L *residLayer) {
+	r.encodeG4Phase1(e, L)         // dense branch + router + preFFN2 quant
+	r.encodeG4Phase2NonPaged(e, L) // experts from the stacked all-E buffer
+	r.encodeG4Join(e, L)           // postFFN2 + join
+}
+
+// encodeG4Phase1 is the value-INDEPENDENT head of the FFN: the dense branch (→g4x1) and the router
+// (→rIdx/rWgt device buffers), ending with the expert-branch input quant (preFFN2(h) → mq/mSc). In
+// the paged forward this is the first command buffer; the host then reads rIdx and stages the routed
+// experts before phase 2. Byte-identical to the old inline head (same dispatches, same order).
+func (r *Resident) encodeG4Phase1(e *Encoder, L *residLayer) {
 	g := r.g4moe
 	ml := L.g4moe
-
-	// --- dense branch → g4x1 (xd = preFFN(h), gelu-tanh GeGLU, own post-norm) ---
+	// dense branch → g4x1 (xd = preFFN(h), gelu-tanh GeGLU, own post-norm)
 	e.Dispatch(r.pRms, 256, 256, r.x, ml.preFFN, r.mq, r.mSc, r.uH, r.uEps, r.uAddOne)
 	e.DispatchTG(r.pSA, (2*g.denseInter)*32, 256, r.H*2, ml.denseGuW, ml.denseGuS, r.mq, r.mSc, r.gu, r.uH)
 	e.Dispatch(r.pSw, 256, 256, r.gu, r.gu.At(g.denseInter*4), r.dq, r.dSc, g.uDenseInter, r.uAct)
-	e.Dispatch(r.pGemv, r.H*32, 32, ml.denseDW, ml.denseDS, r.dq, r.dSc, g.g4x1, g.uDenseInter) // down → g4x1 (overwrite)
+	e.Dispatch(r.pGemv, r.H*32, 32, ml.denseDW, ml.denseDS, r.dq, r.dSc, g.g4x1, g.uDenseInter)
 	e.Dispatch(r.pRmsF32, 256, 256, g.g4x1, ml.postFFN1, r.uH, r.uEps, r.uAddOne)
-
-	// --- router on RAW h: weightless out-of-place norm → pure-f32 proj → top-k → per-expert-scale ---
+	// router on RAW h: weightless out-of-place norm → pure-f32 proj → top-k → per-expert-scale
 	e.Dispatch(g.pRmsNW, 256, 256, r.x, g.g4rn, r.uH, r.uEps)
 	e.Dispatch(g.pRouterF32, g.nE*32, 32, ml.routerW, g.g4rn, g.rLogits, r.uH)
 	e.Dispatch(g.pRoute, 1, 1, g.rLogits, ml.routerBias, g.rIdx, g.rWgt,
 		g.uNE, g.uK, g.uSig0, g.uNorm1, g.uScale1, g.uOne, g.uOne)
 	e.Dispatch(g.pScaleWgt, g.topK, g.topK, g.rWgt, g.rIdx, ml.perExpertScale, g.uK)
-
-	// --- expert branch → g4x2 (xe = preFFN2(h); zero, then fixed-k weighted-accumulate; own post-norm) ---
+	// expert-branch input: xe = preFFN2(h) → mq/mSc (consumed by phase 2)
 	e.Dispatch(r.pRms, 256, 256, r.x, ml.preFFN2, r.mq, r.mSc, r.uH, r.uEps, r.uAddOne)
+}
+
+// encodeG4Phase2NonPaged runs the k selected experts out of the STACKED all-E buffers (rIdx read at
+// kernel-execution time — value-independent dispatch), accumulating into g4x2. The all-resident path.
+func (r *Resident) encodeG4Phase2NonPaged(e *Encoder, L *residLayer) {
+	g := r.g4moe
+	ml := L.g4moe
 	e.Dispatch(g.pZero, r.H, 256, g.g4x2)
 	for j := 0; j < g.topK; j++ {
 		e.DispatchTG(g.pGU, (2*g.moeInter)*32, 256, r.H*2, ml.expGuW, ml.expGuS, r.mq, r.mSc, r.gu, r.uH, g.rIdx, g.uSlot[j], g.uMoeGU)
 		e.Dispatch(r.pSw, 256, 256, r.gu, r.gu.At(g.moeInter*4), r.dq, r.dSc, g.uMoeInter, r.uAct)
 		e.DispatchTG(g.pDownWacc, r.H*32, 256, g.moeInter*2, ml.expDW, ml.expDS, r.dq, r.dSc, g.g4x2, g.uMoeInter, g.rIdx, g.rWgt, g.uSlot[j], r.uH)
 	}
-	e.Dispatch(r.pRmsF32, 256, 256, g.g4x2, ml.postFFN2, r.uH, r.uEps, r.uAddOne)
+}
 
-	// --- join: sum BEFORE the joint norm, add the residual AFTER it, scalar at the very end ---
+// encodeG4Join is the shared tail: postFFN2 on the expert accumulator, then the join —
+// h = (h + postFFN(x1 + x2)) · layerScalar (sum before the joint norm, residual after it, scalar last).
+func (r *Resident) encodeG4Join(e *Encoder, L *residLayer) {
+	g := r.g4moe
+	ml := L.g4moe
+	e.Dispatch(r.pRmsF32, 256, 256, g.g4x2, ml.postFFN2, r.uH, r.uEps, r.uAddOne)
 	e.Dispatch(r.pRes, r.H, 256, g.g4x1, g.g4x2)                                 // g4x1 += g4x2
 	e.Dispatch(r.pRmsF32, 256, 256, g.g4x1, ml.postFFN, r.uH, r.uEps, r.uAddOne) // g4x1 = postFFN(x1+x2)
 	e.Dispatch(r.pRes, r.H, 256, r.x, g.g4x1)                                    // r.x = h + comb
