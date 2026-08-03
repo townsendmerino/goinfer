@@ -341,9 +341,16 @@ comparison on this page.
   argmax, 0 hard fails) — the speed is only meaningful because the tokens match.
 - **Why the 0.5B ratio is bigger:** small-model decode is launch/issue-bound, and the
   cgo-free path's per-token dispatch is cheap (measured executor tax **15.3 µs**/token).
-  The advantage narrows as the model grows and work becomes bandwidth-bound — expect
-  the trend to continue past 1.5B. **Do not extrapolate these ratios to 7B**; that row
-  is unmeasured.
+  The advantage narrows as the model grows and work becomes bandwidth-bound.
+- **7B — now MEASURED (`TestB2DenseFlagship`, qwen2.5-7B int4 resident, best-of-3 vs pinned
+  Ollama 0.5.7), and the narrowing is confirmed.** Decode tok/s goinfer **70 / 62 / 43** vs
+  Ollama **64 / 56 / 38** at 128/512/2048 — still faster, but only **~10%** (both bandwidth-bound
+  near peak, so goinfer's dispatch edge no longer dominates). And goinfer **loses all-in at every
+  length**: its prefill is ~2.6–3.5 ms/token vs Ollama's ~0.5 (batched cuBLAS), a 5–7× per-token
+  penalty the ~10% decode edge cannot cover, so the **crossover for the 7B is below 128 tokens**.
+  So the honest headline: goinfer's total-time advantage is a **small-model** phenomenon (real and
+  large at 0.5–1.5B, crossover ~320 at 1.5B; decode-only and small by 7B). Publish the 0.5B/1.5B
+  rows as the win; publish the 7B as the size-trend, not as a headline.
 - **Scope, stated plainly:** these are dense-lane numbers (0.5B/1.5B dense) — a real-speed
   claim about the dense lane, **not** a coverage claim. Coverage is `decoder/features.go`,
   which since 2026-07-17 grants `cuda` MoE (routed + ungated shared) + partial rotary + the
