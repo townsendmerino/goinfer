@@ -191,16 +191,18 @@ func buildGemma4MoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H, 
 			g.idxZeros = d.NewBufferUint32s(make([]uint32, b.TopK))
 		}
 	}
-	// GOINFER_MOE_PREAD=1: stage experts by pread'ing their nibbles straight into the slot buffers
-	// instead of a byte-copy off the mmap (cold pread 3687 MB/s vs mmap demand-fault 375 MB/s, 9.8×).
-	// Needs a .giw-mmap'd model (the offsets are into that file); re-open it once, shared across layers.
-	// If the open fails or the model isn't .giw-backed, buildGemma4MoELayer falls back to the byte-copy.
-	if g.paged && os.Getenv("GOINFER_MOE_PREAD") == "1" {
+	// Stage experts by pread'ing their nibbles straight into the slot buffers instead of a byte-copy
+	// off the mmap. DEFAULT ON (cold A/B verdict: total 1892→1488 ms/tok, 0.53→0.67 tok/s, 1.26×;
+	// major faults 92.8→0.0/stage — the mmap demand-fault page-in is gone). Needs a .giw-mmap'd model
+	// (offsets are into that file); re-open it once, shared across layers. GOINFER_MOE_PREAD=0 opts out
+	// (the mmap byte-copy baseline, kept for the A/B). If open fails or the model isn't .giw-backed,
+	// buildGemma4MoELayer falls back to the byte-copy.
+	if g.paged && os.Getenv("GOINFER_MOE_PREAD") != "0" {
 		if p := m.GiwPath(); p != "" {
 			if f, err := os.Open(p); err == nil {
 				g.giwFile = f
 			} else {
-				fmt.Fprintf(os.Stderr, "metal gemma4 MoE: GOINFER_MOE_PREAD set but open(%s) failed (%v) — using mmap byte-copy\n", p, err)
+				fmt.Fprintf(os.Stderr, "metal gemma4 MoE: open(%s) failed (%v) — using mmap byte-copy\n", p, err)
 			}
 		}
 	}
