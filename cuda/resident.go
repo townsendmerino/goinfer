@@ -505,6 +505,22 @@ func (r *cudaResident) Forward(embedding []float32, pos int) ([]float32, error) 
 	return out, err
 }
 
+// ForwardNoLogits (ResidentPrefillKV) runs the token's forward to build ONLY its resident K/V —
+// skipping the final norm + LM head matmul + logits readback + softcap. Used for prompt[:-1] during
+// prefill; the layer chain (hence the K/V written at pos) is identical to Forward, so decode from the
+// last prompt token is byte-identical. No readback, so nothing is returned but the error.
+func (r *cudaResident) ForwardNoLogits(embedding []float32, pos int) error {
+	if e := r.checkCap(pos, 1); e != nil {
+		return e
+	}
+	return r.do(func() error {
+		if e := r.launchToken(embedding, pos, false); e != nil {
+			return e
+		}
+		return r.stream.Sync() // step()'s trailing sync is skipped here; drain so the KV write completes
+	})
+}
+
 // ForwardN runs K tokens at consecutive positions. Correctness-first: sequential steps in a
 // single executor round-trip (bit-identical to K Forward calls; amortizes the channel hop).
 func (r *cudaResident) ForwardN(embeddings [][]float32, startPos int) ([][]float32, error) {
@@ -1087,7 +1103,7 @@ func (r *cudaResident) captureGraphs() error {
 }
 
 // launchToken issues one token's whole kernel chain, leaving logits[vocab] on the device.
-func (r *cudaResident) launchToken(emb []float32, pos int) error {
+func (r *cudaResident) launchToken(emb []float32, pos int, head bool) error {
 	r.launchErr = nil // reset the sticky launch-error accumulator for this token (M23)
 	nullBias := ArgNull()
 	if e := gpu.Upload(r.x, emb); e != nil {
@@ -1175,11 +1191,16 @@ func (r *cudaResident) launchToken(emb []float32, pos int) error {
 			r.layerCapBuf = append(r.layerCapBuf, h)
 		}
 	}
-	if e := r.rms(r.x, r.finalNorm, r.aq, r.aSc); e != nil {
-		return e
-	}
-	if e := r.doG(r.lmW, r.aq, r.aSc, nullBias, r.logits, 0); e != nil {
-		return e
+	// Final norm + LM head — skipped for KV-only prefill (head=false): prompt[:-1] tokens need only
+	// their K/V in the cache, and the head is a big-vocab matmul + ~1 MB readback + softcap. The layer
+	// loop above already wrote this position's K/V identically, so decode stays byte-identical.
+	if head {
+		if e := r.rms(r.x, r.finalNorm, r.aq, r.aSc); e != nil {
+			return e
+		}
+		if e := r.doG(r.lmW, r.aq, r.aSc, nullBias, r.logits, 0); e != nil {
+			return e
+		}
 	}
 	return r.launchErr // surface any launch error discarded in the dense chain above (M23)
 }
@@ -1187,7 +1208,7 @@ func (r *cudaResident) launchToken(emb []float32, pos int) error {
 // step returns full logits — the general contract (sampler / constrained decode / logprobs).
 // Costs a vocab*4 B D2H every token (594 KB at a 151936 vocab).
 func (r *cudaResident) step(emb []float32, pos int) ([]float32, error) {
-	if e := r.launchToken(emb, pos); e != nil {
+	if e := r.launchToken(emb, pos, true); e != nil {
 		return nil, e
 	}
 	if e := r.stream.Sync(); e != nil {
@@ -1219,7 +1240,7 @@ func (r *cudaResident) ForwardArgmax(embedding []float32, pos int) (int, error) 
 	}
 	var id int
 	err := r.do(func() error {
-		if e := r.launchToken(embedding, pos); e != nil {
+		if e := r.launchToken(embedding, pos, true); e != nil {
 			return e
 		}
 		if e := r.launch(r.fArg, onecfg(256, 256*4+256*4), Arg(r.logits),

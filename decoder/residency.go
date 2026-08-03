@@ -60,6 +60,17 @@ type ResidentGreedy interface {
 	ForwardArgmax(embedding []float32, pos int) (int, error)
 }
 
+// ResidentPrefillKV is an OPTIONAL ResidentForward extension: run a token's forward to build ONLY its
+// resident KV, skipping the final norm + LM head matmul + full-logits readback (+ any host-side
+// softcap). generateInto uses it for prompt[:-1] — every prefill token except the last needs only its
+// K/V in the cache; only the LAST prompt token's logits seed decode. The layer chain (hence the KV
+// written) is identical to Forward, so decode is byte-identical; the LM head on a big-vocab model is
+// a large share of a forward (262144×hidden MACs + a ~1 MB D2H + softcap), so skipping it on every
+// prompt token but the last cuts prefill/TTFT materially. Backends without it keep full-logits prefill.
+type ResidentPrefillKV interface {
+	ForwardNoLogits(embedding []float32, pos int) error
+}
+
 // Prefiller is an OPTIONAL ResidentForward extension: a backend that can ingest a whole prompt
 // in one batched pass (populating the resident KV for positions startPos..startPos+len-1) and
 // return the LAST token's logits, instead of the token-by-token Forward loop. Much faster TTFT

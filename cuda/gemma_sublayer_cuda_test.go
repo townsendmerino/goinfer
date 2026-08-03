@@ -22,7 +22,7 @@ func (r *cudaResident) captureSublayersForTest(emb []float32, pos int) (attn, ml
 		r.subCtxC = make([][]float32, r.nLayers)
 		r.subMLPpreC = make([][]float32, r.nLayers)
 		defer func() { r.subCap = false }()
-		e := r.launchToken(emb, pos)
+		e := r.launchToken(emb, pos, true)
 		attn, mlp, ctx, mlpPre = r.subAttnC, r.subMLPC, r.subCtxC, r.subMLPpreC
 		return e
 	})

@@ -20,7 +20,7 @@ import (
 func (r *cudaResident) captureResidualForTest(emb []float32, pos int) ([]float32, error) {
 	var out []float32
 	err := r.do(func() error {
-		if e := r.launchToken(emb, pos); e != nil {
+		if e := r.launchToken(emb, pos, true); e != nil {
 			return e
 		}
 		if e := r.stream.Sync(); e != nil {

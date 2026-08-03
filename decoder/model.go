@@ -744,8 +744,22 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 			}
 		}
 		if !prefilled {
+			// KV-only prefill: prompt[:-1] tokens need only their K/V in the cache — skip the LM head
+			// (a big-vocab matmul + ~1 MB readback + softcap) on every prefill token but the last, whose
+			// logits seed decode. Byte-identical (same layer chain → same KV → same last-token logits);
+			// GOINFER_NO_KVONLY_PREFILL forces the full-logits prefill (A/B / escape hatch).
+			kvOnly, hasKV := m.resident.(ResidentPrefillKV)
+			useKV := hasKV && os.Getenv("GOINFER_NO_KVONLY_PREFILL") == ""
 			for i, id := range prompt {
-				if logits, err = m.resident.Forward(m.embedResident(id), i); err != nil {
+				emb := m.embedResident(id)
+				if useKV && i < len(prompt)-1 {
+					if err = kvOnly.ForwardNoLogits(emb, i); err != nil {
+						g.err = err
+						return
+					}
+					continue
+				}
+				if logits, err = m.resident.Forward(emb, i); err != nil {
 					g.err = err
 					return
 				}
