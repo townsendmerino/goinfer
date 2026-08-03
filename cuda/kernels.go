@@ -53,6 +53,13 @@ var prefillBatchedPTX []byte
 //go:embed testdata/gemv_w4a8_staged.ptx
 var gemvStagedPTX []byte
 
+// gemvRNPTX: gemv_w4a8_rn — register-blocked batched GEMV (RN output rows per warp), so each coalesced
+// activation load is reused across RN rows: RN× fewer L1TEX loads, the profile-justified latency fix.
+// Bit-identical (per-row facc, one reduce each). Own file (gemv_w4a8_rn.cu).
+//
+//go:embed testdata/gemv_w4a8_rn.ptx
+var gemvRNPTX []byte
+
 // gluePTX: the per-token elementwise/attention glue — rmsnorm_quant, quant_vec, rope,
 // attention (GQA online softmax), swiglu_quant, residual, argmax_reduce.
 //

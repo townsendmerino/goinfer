@@ -475,6 +475,11 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 						ok = false
 					}
 				}
+				if rnmod, e4 := r.dev.CompileLibrary(gemvRNPTX); e4 == nil {
+					load(&r.bRN, rnmod, "gemv_w4a8_rn")
+				} else {
+					ok = false
+				}
 				load(&r.bGemv, bgmod, "gemv_w4a8_batched")
 				load(&r.bRms, pbmod, "rmsnorm_quant_batched")
 				load(&r.bRopeKV, pbmod, "rope_kv_batched")

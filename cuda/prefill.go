@@ -263,14 +263,21 @@ func (r *cudaResident) bRmsB(x, w Buffer, N int, qOut, sOut Buffer, M int) error
 		Arg(qOut), Arg(sOut))
 }
 
-// bGemvB launches gemv_w4a8_batched — same GridX/BlockX as the M=1 doG (the M loop is inside the
-// kernel), so the per-output float accumulation order matches the sequential GEMV bit-for-bit.
+// rnBlockRows must equal RN in gemv_w4a8_rn.cu — each warp computes this many output rows, so the grid
+// covers ceil(N/rnBlockRows) warps. Bit-identical for any RN; 2 is the profiled knee (halves the L1TEX
+// load count → halves the scoreboard stall, 4.41→3.38 ms, at the 64-reg / 100%-occupancy limit).
+const rnBlockRows = 2
+
+// bGemvB launches the register-blocked gemv_w4a8_rn (RN rows/warp). Bit-identical to the M=1 GEMV
+// (each row keeps its own facc across all K, one warp-reduce), just with each activation load reused
+// across RN rows. Grid = ceil(N/RN) warps → ceil(that/8) blocks of 256 threads.
 func (r *cudaResident) bGemvB(wt cudaWQ, a, as Buffer, bias KernelArg, dst Buffer, M int, accum int32) error {
 	if wt.kind != "int4" {
 		return fmt.Errorf("cuda prefill: batched GEMV is int4-only, got %q", wt.kind)
 	}
-	cfg := LaunchConfig{GridX: uint32((wt.N + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
-	return r.launch(r.bGemv, cfg, Arg(wt.W), Arg(a), Arg(wt.ws16), Arg(as), bias,
+	warps := (wt.N + rnBlockRows - 1) / rnBlockRows
+	cfg := LaunchConfig{GridX: uint32((warps + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
+	return r.launch(r.bRN, cfg, Arg(wt.W), Arg(a), Arg(wt.ws16), Arg(as), bias,
 		gpu.ArgValue(int32(wt.N)), gpu.ArgValue(int32(wt.K/8)), gpu.ArgValue(int32(wt.K/32)),
 		gpu.ArgValue(int32(M)), Arg(dst), gpu.ArgValue(accum))
 }

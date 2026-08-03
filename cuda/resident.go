@@ -169,7 +169,7 @@ type cudaResident struct {
 	// Batched (M=len) prefill pipelines (prefill_batched.ptx) — the weight-stationary path that fixes
 	// the ~128-token Ollama crossover. bGemv is the batched W4A8 GEMV; the rest are the M=1 glue
 	// kernels with an M dimension, each bit-identical per row. Loaded once at build (small module).
-	bGemv, bRms, bRopeKV, bAttn, bQuant, bSw, bRes          Pipeline
+	bGemv, bRN, bRms, bRopeKV, bAttn, bQuant, bSw, bRes     Pipeline
 	prefillReady                                            bool         // batched kernels loaded; PrefillLast usable
 	prof                                                    *prefillProf // non-nil ⇒ PrefillLast times each kernel category (test-only; adds stream syncs)
 	fRoute, fRouterGemv, fMoEGemv, fMoEWacc, fSharedCombine Pipeline
