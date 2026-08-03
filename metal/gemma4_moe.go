@@ -203,13 +203,13 @@ func buildGemma4MoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H, 
 			if f, err := os.Open(p); err == nil {
 				g.giwFile = f
 				// GOINFER_MOE_NOCACHE=1: F_NOCACHE on the pread fd — reads bypass the unified buffer
-				// cache. HYPOTHESIS: the pread win's +365 ms compute+coord displacement is page-cache
-				// PRESSURE (staged experts are read once + copied into UMA slots, so retaining them in
-				// cache buys nothing but squeezes the working set on a 16 GB box holding a 13 GB mmap +
-				// Metal's wired set — RSS-after-build rose +2 GB with faults zero). If so, F_NOCACHE
-				// should drop RSS back and recover compute+coord. Off by default (own A/B). Darwin
-				// F_NOCACHE prefers aligned offset/size; 73% of expert spans are unaligned, so the
-				// effect may be reduced — measured, not assumed.
+				// cache. MEASURED AND DECLINED (cold A/B): NO effect — total 1535.3→1514.0 ms/tok
+				// (−1.4%, noise), and RSS-after-build (3306→5095) and compute+coord (1032→1056) both
+				// moved the WRONG way. The motivating cache-pressure hypothesis is refuted, AND its
+				// evidence was a CONFOUND: the ~+2 GB RSS-after-build growth lands on whichever arm runs
+				// SECOND, and RSS-after-build is sampled BEFORE the timed decode, so the pread cache flag
+				// cannot cause it (ordering artifact). The pread win's +365 ms compute+coord displacement
+				// remains UNEXPLAINED. Kept off by default, wired, so it isn't re-proposed.
 				if os.Getenv("GOINFER_MOE_NOCACHE") == "1" {
 					if _, err := unix.FcntlInt(f.Fd(), unix.F_NOCACHE, 1); err != nil {
 						fmt.Fprintf(os.Stderr, "metal gemma4 MoE: F_NOCACHE failed (%v) — pread stays buffered\n", err)
