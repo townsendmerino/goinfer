@@ -114,7 +114,22 @@ __global__ void attn_batched(const float* __restrict__ q, const float* __restric
     for (int s = winStart + t; s < nKeys; s += nt) {
         const float* ks = kc + (long)s * kvDim + kvh * hd;
         float dot = 0.f;
-        for (int d = 0; d < hd; d++) dot += qh[d] * ks[d];
+        // float4 the K read: threads split over KEYS, so a scalar ks[d] read is stride-kvDim across the
+        // warp → only ~22% of each 32-byte L1TEX sector used (ncu), and this kernel is L1TEX-throughput-
+        // saturated. The float4 loads 16 contiguous bytes/lane → fills the sector, ~4.5× fewer sectors.
+        // The four adds stay SEPARATE (dot += each), preserving attention()'s exact d-order — bit-identical
+        // (only the load width changes, like the GEMV int2). Scalar remainder for hd not a multiple of 4.
+        int d4 = hd >> 2;
+        const float4* q4 = (const float4*)qh;
+        const float4* k4 = (const float4*)ks;
+        for (int i = 0; i < d4; i++) {
+            float4 qq = q4[i], kk = k4[i];
+            dot += qq.x * kk.x;
+            dot += qq.y * kk.y;
+            dot += qq.z * kk.z;
+            dot += qq.w * kk.w;
+        }
+        for (int d = d4 << 2; d < hd; d++) dot += qh[d] * ks[d];
         dot *= scale; sc[s - winStart] = dot; lm = fmaxf(lm, dot);
     }
     red[t] = lm; __syncthreads();
