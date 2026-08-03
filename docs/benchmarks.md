@@ -266,15 +266,28 @@ comparison on this page.
     intensity: register-block RN output rows per warp so each activation read feeds RN× the MACs (still
     bit-identical — per-row `facc`, one reduce each). Staging is not wired into the prefill path; the
     kernel + `TestGemvStagedBandwidth` are kept as the reproducible refutation.
-  - **Note on this report's own hygiene — this gap has now been mis-attributed FOUR times, each
-    refuted by the next measurement:** (1) *~23× GEMV ceiling* (weight-amortization → MT sweep: ~6%),
-    (2) *fundamental to bit-identity / needs IMMA* (→ 7.9% of dp4a peak, compute ceiling unused),
-    (3) *activation-L2-bandwidth-bound* (→ 8× traffic cut, 1.2× time: not bandwidth), before (4) the
-    current best-supported answer: compute-loop / LSU-issue-bound, fix = register-blocking for
-    intensity. The **fourth** was caught only because the fix was built and measured before being
-    recorded as done — which is the discipline. The pattern to watch is the *speed of attribution*: a
-    believable mechanism, even a profiled-looking number, is not a measurement of the bound until the
-    lever it implies is pulled and the time moves.
+  - **RESOLVED by ncu (once the profiler was installed) — L1TEX-latency-bound, and a coalescing fix
+    landed.** The profile on the real 4.4 ms kernel: DRAM 1.7%, L2 6%, Compute 46%, but No Eligible 71%,
+    IPC 1.07/4, ~11 cyc/instr stalled on an L1TEX scoreboard dependency — latency-bound on L1TEX, not
+    compute/DRAM/issue. Root cause named directly: **49.99% bytes-per-sector on global loads** — the
+    activation pair `a[2·wi], a[2·wi+1]` was two stride-2 loads, so adjacent lanes read words 2 apart and
+    only 16 of 32 sector bytes were used. **Fix (bit-identical, shipped): load the pair as one `int2`** →
+    98% bytes/sector, L1TEX 93% → 65%, **4.98 → 4.41 ms (~13%)**. Modest because the bound only *moved*:
+    L1TEX latency is now *exposed* rather than throughput-saturated (17.8 cyc/instr, no unit maxed) — too
+    few eligible warps to hide the now-efficient loads. The next lever the profile justifies is
+    arithmetic intensity: register-block RN output rows per warp (a latency fix, still bit-identical),
+    *not* activation-staging (built, refuted) and *not* IMMA (compute ceiling 92% unused).
+  - **Note on this report's own hygiene — the gap was mis-attributed FIVE times, each refuted by the
+    next measurement, four of them by me before the profiler existed:** (1) *~23× weight-amortization
+    ceiling* (MT sweep: ~6%), (2) *needs IMMA* (7.9% of dp4a peak), (3) *activation-L2-bandwidth-bound*
+    (staging kernel: 8× traffic cut, 1.2× time), (4) *issue-bound on a fat SASS mix* (ncu: 22.78% issue
+    slots — not issue-bound), before (5) the hardware-stated answer: L1TEX latency from uncoalesced
+    loads. Every inferred mechanism — including a profiled-looking 1.41 TB/s and an 8-instruction SASS
+    count — read as a measurement and was wrong; only `ncu`'s Scheduler/Warp-State sections settled it.
+    The specific error in (3) is worth keeping: a *demanded* read rate exceeding DRAM proves the reads
+    are cache-served, **not** that the cache is saturated — that inference was mine and it looked like
+    data. The pattern to watch is the *speed of attribution*: pull the lever and move the time, or
+    profile the unit directly; do not record a mechanism as a bound.
   - Gates: `cuda/prefill_e2e_test.go` (KV bit-identical all layers×rows + logits + 64-token
     byte-identical decode, real windowed Mistral); `TestPrefillTTFT` / `TestPrefillCrossover` /
     `TestPrefillDecomp` (heavy) reproduce the numbers above. The rows in the §B2 table are

@@ -19,23 +19,27 @@
 // equals its sequential-GEMV value to the bit. This is WHY there is no IMMA/MMA path: tensor-core
 // accumulation reorders the cross-group float sum and would break the byte-identical gate.
 //
-// PERFORMANCE, MEASURED — this kernel is ACTIVATION-READ-BOUND, not compute-bound. Profiled in
-// isolation at the gate/up shape (N=8960, K=1536, M=512, TestGemvBatchedBandwidth): 4.98 ms/launch =
-// 7.9% of Turing dp4a peak (so IMMA, a compute-ceiling lever, would NOT help), weight read a trivial
-// 1.4 GB/s, but activation read runs at ~1.41 TB/s effective — 3x the card's 448 GB/s DRAM, i.e.
-// saturating L2. The cause is structural: this is weight-STATIONARY, so each of the N output-row warps
-// re-reads the WHOLE [M,K] activation, N*M*K bytes against an M*K read-once minimum — a factor of N
-// (8960x here). ptxas confirms it is not occupancy (43 regs @MT=8 / 61 @MT=32 → 100% occupancy on
-// sm_75; MT=64 = 108 regs → 50%, hence its regression, NO spill). And it is not weight-fetch-bound:
-// MT is the activation-columns-per-weight-load tile, so an MT sweep (8/16/32/64) changes weight reuse
-// but NOT the activation re-read, and indeed moved prefill GEMV only ~6% (MT=32 kept as the free win).
+// PERFORMANCE, PROFILED (ncu on sm_75, the gate/up shape N=8960 K=1536 M=512). This kernel is
+// L1TEX-LATENCY-BOUND, not compute / DRAM / issue bound: DRAM 1.7%, L2 6%, Compute 46%, but the
+// schedulers sit idle (No Eligible 71%, IPC 1.07/4) with ~7.8 active warps stalling ~11 cycles each on
+// an L1TEX scoreboard dependency. It took FIVE attributions to get here — each of the first four was a
+// plausible mechanism recorded as a conclusion and refuted by the next measurement: (1) "~23x
+// weight-amortization ceiling" (MT sweep: ~6%); (2) "needs IMMA" (7.9% of dp4a peak — compute ceiling
+// unused); (3) "activation-L2-bandwidth-bound" (built the shared-staging kernel, cut global reads 8x,
+// time moved 1.2x — NOT bandwidth; the 1.41 TB/s was the rate the loop DEMANDED, L2-served, not a
+// ceiling); (4) "issue-bound on a fat instruction mix" (ncu: 22.78% issue slots — not issue-bound). The
+// hardware stated (5) directly.
 //
-// THE FIX (not built here) is standard GEMM tiling: stage the [MT,K] activation tile in shared memory
-// so it is read from L2/DRAM once per tile-group instead of once per output row. That is BIT-IDENTICAL
-// by construction — it changes where operands are read from, not the order they accumulate in — so it
-// needs no tolerance gate and no IMMA. Two earlier versions of this comment attributed the gap to the
-// weight-amortization model ("~23x ceiling") and then to dp4a-vs-tensor-cores ("needs IMMA"); the
-// profile refuted both. The lever is activation-traffic, and it is reachable without leaving bit-identity.
+// THE APPLIED FIX — coalesced activation load (the int2 in the inner loop). The activation pair was two
+// separate stride-2 loads → adjacent lanes read words 2 apart → only 16 of 32 bytes per L1TEX sector
+// used (ncu: 49.99% bytes/sector, L1TEX 93%). Loading the pair as one int2 → 98% bytes/sector, L1TEX
+// 93%->65%, ~4.98->4.4 ms. Bit-identical (same int32 values, same dp4a order). MODEST because the bound
+// only MOVED: L1TEX latency is still exposed (17.8 cyc/instr scoreboard stall, no unit saturated) — too
+// few eligible warps to hide the now-efficient loads. The NEXT lever, and the first the profile
+// actually justifies, is arithmetic intensity: register-block RN output rows per warp so each activation
+// load feeds RN* the MACs (a LATENCY fix, still bit-identical — per-row facc, one reduce each). NOT
+// activation-staging (built, refuted) and NOT IMMA (compute ceiling unused). ptxas: 61 regs @MT=32,
+// 100% theoretical / 83% achieved occupancy — occupancy is not the lever.
 //
 // Args mirror gemv_w4a8_fwd, plus M and the per-row activation arrays:
 //   W  [N, Kwords] u32 (8 int4/word, nibble-permuted at pack time, permuteFast)
@@ -81,11 +85,19 @@ extern "C" __global__ void gemv_w4a8_batched(
             float s1 = __half2float(sr[wi1 >> 2]);
             for (int t = 0; t < mcnt; t++) {
                 const int* a = A + (long)(m0 + t) * (2 * Kwords);
+                // Load each activation pair (a[2*wi], a[2*wi+1]) as ONE 64-bit int2. The two used to be
+                // separate stride-2 loads: adjacent lanes read words 2 apart → only even (or odd) words
+                // per 32-byte sector → 50% of every L1TEX sector wasted (ncu: 49.99% bytes/sector, 7.31
+                // sectors/req; the kernel was L1TEX-latency-bound at 93% L1TEX with DRAM idle). The int2
+                // is 8 contiguous bytes/lane, adjacent lanes 8 apart → the warp reads 256 contiguous
+                // bytes, fully coalesced. Bit-identical: same int32 values, same dp4a order, same facc.
+                int2 av0 = *(const int2*)(a + 2 * wi0);
+                int2 av1 = *(const int2*)(a + 2 * wi1);
                 int p0 = 0, p1 = 0;
-                p0 = __dp4a(lo0, a[2 * wi0], p0);
-                p0 = __dp4a(hi0, a[2 * wi0 + 1], p0);
-                p1 = __dp4a(lo1, a[2 * wi1], p1);
-                p1 = __dp4a(hi1, a[2 * wi1 + 1], p1);
+                p0 = __dp4a(lo0, av0.x, p0);
+                p0 = __dp4a(hi0, av0.y, p0);
+                p1 = __dp4a(lo1, av1.x, p1);
+                p1 = __dp4a(hi1, av1.y, p1);
                 facc[t] += (float)p0 * s0;
                 facc[t] += (float)p1 * s1;
             }
@@ -99,9 +111,10 @@ extern "C" __global__ void gemv_w4a8_batched(
                 float s = __half2float(sr[wi >> 2]);
                 for (int t = 0; t < mcnt; t++) {
                     const int* a = A + (long)(m0 + t) * (2 * Kwords);
+                    int2 av = *(const int2*)(a + 2 * wi);   // coalesced pair load (see main loop)
                     int p = 0;
-                    p = __dp4a(lo, a[2 * wi], p);
-                    p = __dp4a(hi, a[2 * wi + 1], p);
+                    p = __dp4a(lo, av.x, p);
+                    p = __dp4a(hi, av.y, p);
                     facc[t] += (float)p * s;
                 }
             }
