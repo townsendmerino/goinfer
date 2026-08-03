@@ -373,6 +373,51 @@ and the sync probe proved race-free.
   production streaming number. The production design manages the cache on-device (no readback) and
   is a separate effort.
 
+## Production-config decomposition — measured, and it corrects the lever budget (2026-08-03)
+
+The CUDA-perf levers (structural readback ~12 ms, async miss-DMA ~11 ms, CUDA graphs for dispatch)
+were sized against a ~59 ms/token "forward decomposition." Measured **directly at production config**
+(`GOINFER_MOE_CACHE_SLOTS=38`, real 26B, N=48 steady-state, direct-drive `ForwardArgmax`; readback and
+miss-DMA timed in place, compute/dispatch the residual):
+
+| component | measured | prior estimate |
+|---|---|---|
+| idx readback (Sync+Download) | **0.81 ms/tok** (30 round-trips × 0.027 ms) | ~12 ms |
+| miss-DMA (loadExpertSlot) | **4.28 ms/tok** (12.2 loads/tok, 89.1% LRU hit) | ~11 ms |
+| compute/dispatch (residual) | **24.20 ms/tok** | ~17 + ~19 |
+| **forward total** | **29.29 ms/tok (34.15 tok/s)** | — |
+
+Two of the three levers were mis-budgeted by an order of magnitude: the per-layer idx readback the
+"architectural cost" bullet above worried about is **0.81 ms, not ~12 ms** (Task-1 readback elimination
+is retired as an independent lever); and at 38 slots the miss-DMA is **4.28 ms, not ~11** — the LRU
+cache already did the heavy lifting (89% hit), so async-DMA overlap can hide ≤4.3 ms.
+
+### Reconciliation against §B4's 16.98 tok/s (58.9 ms/tok)
+The direct-drive forward is 34 tok/s, but §B4 publishes 16.98. **Same process, the serve path
+(`m.Generate`, `SamplingParams{}`) measured 17.62 tok/s (56.75 ms) — reproducing §B4 within noise.**
+So:
+- **§B4 is NOT stale or wrong** — it is the serve-path number, validated. No benchmark edit.
+- The **27.46 ms/tok gap** between direct-drive (`ForwardArgmax`, 4-byte argmax readback) and serve
+  (`step()` → **full-logits D2H, ~1 MB at the 256k vocab** + host sampling over 256k + detokenization +
+  deeper context) is a **large, previously un-named cost** — ~47% of the serve budget, bigger than any
+  of the three CUDA-forward levers. The prior "~59 ms forward decomposition" **conflated the forward
+  (29 ms) with the serve/sampling path (27 ms)**; the levers live only in the forward half.
+
+### Consequence for the levers (all three re-valued against the real budget)
+- **Task 1 (idx readback): retired** — 0.81 ms.
+- **Task 2 (async miss-DMA): 4.28 ms at 38 slots** — small; LRU already captured most of the 51 ms
+  no-reuse cost. Overlap upside ≤ 4.3 ms.
+- **Task 3 (CUDA graphs): targets the 24 ms compute/dispatch** (~19 ms of it dispatch) — the largest
+  *forward* lever, but parked behind the tenancy/MPS gate, and it only touches the forward half.
+- **The biggest single lever is the un-costed ~27 ms serve path** (full-logits readback + 256k-vocab
+  host sampling + detok). Even a zero-cost forward caps the serve number at ~27 ms (~37 tok/s). This
+  is unstudied and should be decomposed before any forward lever is funded.
+
+**Verdict:** Tasks 2 and 3 stay **unfunded** until the serve path is decomposed — they are fractions
+of the forward half, and the serve half is both larger and un-studied. Task 1 stays retired as an
+independent lever (re-enters only as part of on-device cache management, if the 4.3 ms DMA residual
+justifies it). Measurement scaffolding was reverted; numbers are the deliverable.
+
 ## Measurement and gates
 
 - **Rigs:** M1 Pro 16 GB (darwin, no firm cap — the fieldfare-comparable rig) *and* the
