@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"strings"
 	"unsafe"
 
 	gpu "github.com/townsendmerino/aikit/gpu"
@@ -89,6 +90,15 @@ type cudaLayer struct {
 	g4preFFN, g4postFFN1, g4preFFN2, g4postFFN2, g4postFFN Buffer  // the 5 gemma4 RMSNorm weights
 	perExpertScaleB                                        Buffer  // [nE] learned scale on the renormalized top-k weights
 	layerScalar                                            float32 // per-layer output scalar (out = (h+combined)*layerScalar)
+
+	// CUDA-graph capture of this layer's three STATIC launch segments (r.graphs). segA = QKV proj +
+	// qk/v-norm (pre-RoPE); segB = ctx-quant + o-proj + the MLP up to the router readback; segC =
+	// the expert loop + join (nil for a dense layer — no readback gap). rope_kv, attention, the g4x2
+	// zero-upload and the loadRoutedExperts D2H stay LIVE in the gaps (per-token pos/nKeys, or a host
+	// round-trip — neither is graph-capturable). Captured once at build, replayed per token; each
+	// replay reads the CURRENT buffer contents (TestCUDA_graphReplay), so the routing that changes
+	// per token flows through unchanged. nil unless r.graphs.
+	gSegA, gSegB, gSegC *gpu.Graph
 }
 
 type cudaResident struct {
@@ -104,13 +114,18 @@ type cudaResident struct {
 	// backend.go locals; the per-layer KV cache and UploadKV read r.layers[l].kvDim.
 	nH             int
 	eps, attnScale float32
-	finalSoftcap   float32  // Gemma final-logit softcap (30); 0 ⇒ none. Applied host-side in step().
-	vNormUnit      Buffer   // [maxHd] of 1.0 — unit weight so qk_norm (x*inv*w, addOne=0) computes scale-less v_norm for K=V layers. nil unless any layer is kEqV.
-	qkNorm         bool     // arch needs per-head Q/K RMSNorm before RoPE
-	rmsAddOne      bool     // (1+w) offset — false for Qwen3/Llama
-	act            int32    // gated MLP activation, decoder.ActKind (0=gelu-tanh, 1=silu)
-	sandwich       bool     // Gemma 4-norm sandwich: extra post-attn / post-MLP norms
-	cacheExperts   bool     // C′: routed experts DMA'd host→VRAM slots per token (device read; correct)
+	finalSoftcap   float32 // Gemma final-logit softcap (30); 0 ⇒ none. Applied host-side in step().
+	vNormUnit      Buffer  // [maxHd] of 1.0 — unit weight so qk_norm (x*inv*w, addOne=0) computes scale-less v_norm for K=V layers. nil unless any layer is kEqV.
+	qkNorm         bool    // arch needs per-head Q/K RMSNorm before RoPE
+	rmsAddOne      bool    // (1+w) offset — false for Qwen3/Llama
+	act            int32   // gated MLP activation, decoder.ActKind (0=gelu-tanh, 1=silu)
+	sandwich       bool    // Gemma 4-norm sandwich: extra post-attn / post-MLP norms
+	cacheExperts   bool    // C′: routed experts DMA'd host→VRAM slots per token (device read; correct)
+	graphs         bool    // CUDA graphs: replay each layer's static segments instead of re-issuing launches (off ⇒ byte-identical)
+	graphsSync     bool    // DEBUG probe: r.stream.Sync() after each segment replay (bisects inter- vs intra-segment ordering hazards)
+	graphMask      string  // DEBUG probe: if non-empty, replay ONLY the named segments (e.g. "A","B","C","AB") and issue the rest live — localizes a replay hazard to a segment
+	layerCap       bool    // DEBUG probe: snapshot the residual r.x after every layer (localizes where a full-forward divergence first appears)
+	layerCapBuf    [][]float32
 	launchN        int      // diagnostic: per-forward dispatch count (graph-capturable-fraction bound)
 	cacheSlots     int      // C′ step 2: device slots per layer (≥ topK; = topK ⇒ step-1 fresh-load, no reuse)
 	slotIdx        Buffer   // C′: per-token slot ids for the routed experts, bound as the GEMV's idx
@@ -576,6 +591,12 @@ func (r *cudaResident) Close() error {
 					_ = m.Close()
 				}
 			}
+			// CUDA graphs own a driver graphExec each; destroy them before the context teardown.
+			for _, g := range []*gpu.Graph{r.layers[i].gSegA, r.layers[i].gSegB, r.layers[i].gSegC} {
+				if g != nil {
+					_ = g.Close()
+				}
+			}
 		}
 		// The Device OWNS every device allocation (weights, KV caches, scratch) in its ledger;
 		// ReleaseObjects frees all of them in the correct order, then the modules + stream, then
@@ -684,7 +705,11 @@ func (r *cudaResident) doG(wt cudaWQ, a Buffer, as Buffer, bias KernelArg, dst B
 // The final GEMV weight-accumulates into r.x, so the per-expert combine and the residual add are
 // the same instruction — no scratch, no separate combine pass. This is why the block `continue`s
 // the layer loop rather than falling through to the dense epilogue.
-func (r *cudaResident) moeMLP(Ly *cudaLayer) error {
+// moeMLPPre issues the pre-readback half of the MoE FFN: the shared normed activation (mq/mSc) and
+// the router (logits → top-k idx/wgt, left on the device). It ends exactly at the point where the
+// cacheExperts path must read rIdx back to the host — so this half is graph-static (segB), and the
+// loadRoutedExperts D2H stays live in the gap between segB and segC.
+func (r *cudaResident) moeMLPPre(Ly *cudaLayer) error {
 	// Explicit rmsnorm, NOT the fused fGU path: the fused kernel folds the norm into the dense
 	// gate/up GEMV and never writes r.mq, but the router needs that quantized activation too.
 	if e := r.rms(r.x, Ly.postNorm, r.mq, r.mSc); e != nil {
@@ -698,19 +723,19 @@ func (r *cudaResident) moeMLP(Ly *cudaLayer) error {
 		gpu.ArgValue(int32(r.hidden)), Arg(r.rLogits)); e != nil {
 		return e
 	}
-	if e := r.launch(r.fRoute, onecfg(1, 0),
+	return r.launch(r.fRoute, onecfg(1, 0),
 		Arg(r.rLogits), Arg(Ly.routerB), Arg(r.rIdx), Arg(r.rWgt),
 		gpu.ArgValue(int32(r.nE)), gpu.ArgValue(int32(r.topK)), gpu.ArgValue(r.moeSigmoid),
 		gpu.ArgValue(r.moeNormTopK), gpu.ArgValue(r.moeScale),
-		gpu.ArgValue(int32(r.nGroup)), gpu.ArgValue(int32(r.topkGroup))); e != nil {
-		return e
-	}
+		gpu.ArgValue(int32(r.nGroup)), gpu.ArgValue(int32(r.topkGroup)))
+}
+
+// moeMLPPost issues the post-readback half: the sequential expert loop (each expert selected by
+// ARITHMETIC on r.expIdx(), so the launch geometry is identical regardless of routing — the property
+// that makes this graph-static) weight-accumulating into the residual r.x, then the always-on shared
+// expert. The cacheExperts readback (if any) has already filled the slots when this runs.
+func (r *cudaResident) moeMLPPost(Ly *cudaLayer) error {
 	gu := 2 * r.moeInter
-	if r.cacheExperts { // C′: readback idx, DMA routed experts into VRAM slots (slot j ← expert rIdx[j])
-		if e := r.loadRoutedExperts(Ly); e != nil {
-			return e
-		}
-	}
 	for j := 0; j < r.topK; j++ {
 		// gate‖up for the routed expert, in ONE indexed GEMV: the stack interleaves each
 		// expert's gate and up rows (packWeightStack(g0,u0,g1,u1,...)), so one row range of
@@ -783,9 +808,12 @@ func (r *cudaResident) moeMLP(Ly *cudaLayer) error {
 // The router GEMV is PURE f32 (gemv_f32_f32) with routerScale·hidden^-0.5 folded into RouterProjScaled
 // at build; rn is the weightless OUT-OF-PLACE norm (rmsnorm_nw) so h stays intact for the other two
 // branches and the residual add.
-func (r *cudaResident) gemma4MoeMLP(Ly *cudaLayer, l int) error {
+// gemma4MoeMLPPre issues the pre-readback half of Gemma-4's parallel dense‖MoE FFN: the dense branch
+// (→ g4x1), the router (on RAW h → idx/wgt with the per-expert scale folded in), and the expert-branch
+// input norm (xe → mq/mSc). It ends before the g4x2 accumulator clear + the cacheExperts readback,
+// both of which stay live in the segB→segC gap (an H2D and, optionally, a D2H — neither capturable).
+func (r *cudaResident) gemma4MoeMLPPre(Ly *cudaLayer, l int) error {
 	nullBias := ArgNull()
-	gu := 2 * r.moeInter
 
 	// --- dense branch → g4x1 ---
 	if e := r.rms(r.x, Ly.g4preFFN, r.mq, r.mSc); e != nil { // xd = preFFNNorm(h), int8
@@ -827,18 +855,16 @@ func (r *cudaResident) gemma4MoeMLP(Ly *cudaLayer, l int) error {
 		return e
 	}
 
-	// --- expert branch → g4x2 (zeroed, then wacc Σ_j wgt[j]·expert_j) ---
-	if e := r.rms(r.x, Ly.g4preFFN2, r.mq, r.mSc); e != nil { // xe = preFFNNorm2(h); reuse mq/mSc (dense branch done with them)
-		return e
-	}
-	if e := gpu.Upload(r.g4x2, r.g4zero); e != nil { // clear the accumulator (no D2D helper; g4zero is a cached host slice)
-		return e
-	}
-	if r.cacheExperts { // C′: readback idx, DMA routed experts into VRAM slots (slot j ← expert rIdx[j])
-		if e := r.loadRoutedExperts(Ly); e != nil {
-			return e
-		}
-	}
+	// xe = preFFNNorm2(h); reuse mq/mSc (dense branch done with them). This is the last static op
+	// before the gap: launchToken clears g4x2 (H2D) and, if caching, reads back the routing (D2H).
+	return r.rms(r.x, Ly.g4preFFN2, r.mq, r.mSc)
+}
+
+// gemma4MoeMLPPost issues the post-readback half: the expert loop accumulating into the (already
+// cleared) g4x2, its post-norm, and the join — sum x1+x2, joint post-norm, add the residual h, then
+// the per-layer scalar. g4x2 was zeroed and the expert slots filled in the gap before this runs.
+func (r *cudaResident) gemma4MoeMLPPost(Ly *cudaLayer, l int) error {
+	gu := 2 * r.moeInter
 	for j := 0; j < r.topK; j++ {
 		if e := r.launch(r.fMoEGemv, LaunchConfig{GridX: uint32((gu + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
 			Arg(Ly.expGU.W), Arg(r.mq), Arg(Ly.expGU.ws16), Arg(r.mSc), Arg(r.expIdx()),
@@ -889,6 +915,177 @@ func (r *cudaResident) gemma4MoeMLP(Ly *cudaLayer, l int) error {
 	return r.launch(r.fScaleVec, g1cfg(r.hidden, 256), Arg(r.x), gpu.ArgValue(Ly.layerScalar), gpu.ArgValue(int32(r.hidden))) // r.x *= layerScalar
 }
 
+// segA / segB / segC are the three graph-STATIC launch runs of one layer, factored out of
+// launchToken so a SINGLE source of truth serves both the live path (call them in sequence — byte-
+// identical to the pre-graph launchToken) and the graph path (replay Ly.gSegA/B/C). Every launch here
+// binds only fixed buffers and per-layer constants; the per-token dynamics (rope_kv/attention bind
+// pos/nKeys; the g4x2 clear and the routing readback are host copies) stay live in the gaps between
+// them. See cudaLayer.gSegA and captureGraphs.
+
+// segA: QKV projection (fused K1 super-kernel when every projection is int4, else rmsnorm+quant +
+// three GEMVs) + per-head QK-norm + scale-less K=V v-norm. Ends before rope_kv.
+func (r *cudaResident) segA(Ly *cudaLayer, l int) error {
+	nullBias := ArgNull()
+	qb, kb, vb := nullBias, nullBias, nullBias
+	if Ly.hasBias {
+		qb, kb, vb = Arg(Ly.qb), Arg(Ly.kb), Arg(Ly.vb)
+	}
+	if r.fuseQKV {
+		// K1: rmsnorm+quant redundantly per block + this block's Q/K/V rows — one launch instead of four.
+		nrows := Ly.qDim + 2*Ly.kvDim
+		cfg := LaunchConfig{GridX: uint32((nrows + 7) / 8), GridY: 1, GridZ: 1,
+			BlockX: 256, BlockY: 1, BlockZ: 1,
+			SharedMemBytes: uint32((r.hidden + 256 + r.hidden/4) * 4)}
+		if e := r.launch(r.fQKV, cfg,
+			Arg(r.x), Arg(Ly.preNorm), gpu.ArgValue(int32(r.hidden)), gpu.ArgValue(r.eps),
+			gpu.ArgValue(r.addOneArg()),
+			Arg(Ly.q.W), Arg(Ly.q.ws16), qb,
+			Arg(Ly.k.W), Arg(Ly.k.ws16), kb,
+			Arg(Ly.v.W), Arg(Ly.v.ws16), vb,
+			gpu.ArgValue(int32(Ly.qDim)), gpu.ArgValue(int32(Ly.kvDim)),
+			gpu.ArgValue(int32(r.hidden/8)), gpu.ArgValue(int32(r.hidden/32)),
+			Arg(r.qB), Arg(r.kB), Arg(r.vB)); e != nil {
+			return e
+		}
+	} else {
+		if e := r.rms(r.x, Ly.preNorm, r.aq, r.aSc); e != nil {
+			return e
+		}
+		if e := r.doG(Ly.q, r.aq, r.aSc, qb, r.qB, 0); e != nil {
+			return e
+		}
+		_ = r.doG(Ly.k, r.aq, r.aSc, kb, r.kB, 0)
+		if Ly.kEqV {
+			// K=V: recompute the k projection into vB (raw pre-norm k), which v_norm consumes below.
+			_ = r.doG(Ly.k, r.aq, r.aSc, kb, r.vB, 0)
+		} else {
+			_ = r.doG(Ly.v, r.aq, r.aSc, vb, r.vB, 0)
+		}
+	}
+	if r.qkNorm { // per-head Q/K RMSNorm before RoPE (Qwen3/GLM/Mellum)
+		addOne := int32(0)
+		if r.rmsAddOne {
+			addOne = 1
+		}
+		if e := r.launch(r.fQKN, LaunchConfig{GridX: uint32(r.nH + Ly.nKV), GridY: 1, GridZ: 1,
+			BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: 128 * 8},
+			Arg(r.qB), Arg(r.kB), Arg(Ly.qNorm), Arg(Ly.kNorm),
+			gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)),
+			gpu.ArgValue(r.eps), gpu.ArgValue(addOne)); e != nil {
+			return e
+		}
+	}
+	if Ly.kEqV { // scale-less v_norm(raw k in vB), BEFORE rope_kv rotates k
+		_ = r.launch(r.fQKN, LaunchConfig{GridX: uint32(Ly.nKV), GridY: 1, GridZ: 1,
+			BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: 128 * 8},
+			Arg(r.vB), Arg(r.vB), Arg(r.vNormUnit), Arg(r.vNormUnit),
+			gpu.ArgValue(int32(0)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)),
+			gpu.ArgValue(r.eps), gpu.ArgValue(int32(0)))
+	}
+	return nil
+}
+
+// segB: context-quant + o-proj (accum into the residual, or sandwich-norm then add) + the MLP up to
+// the router readback — the whole dense MLP for a dense layer (no readback gap, segC is nil), or the
+// MoE pre-readback half (moeMLPPre / gemma4MoeMLPPre) for a routed layer.
+func (r *cudaResident) segB(Ly *cudaLayer, l int) error {
+	nullBias := ArgNull()
+	_ = r.launch(r.fQ, onecfg(256, 256*4), Arg(r.cctx), gpu.ArgValue(int32(Ly.qDim)), Arg(r.cq), Arg(r.cSc))
+	if r.sandwich {
+		_ = r.doG(Ly.o, r.cq, r.cSc, nullBias, r.oO, 0)
+		_ = r.normF32(r.oO, Ly.postAttnNorm)
+		if r.subCap {
+			r.capVec(r.oO, r.subAttnC, l, r.hidden)
+		}
+		_ = r.launch(r.fRes, g1cfg(r.hidden, 256), Arg(r.x), Arg(r.oO), gpu.ArgValue(int32(r.hidden)))
+	} else {
+		_ = r.doG(Ly.o, r.cq, r.cSc, nullBias, r.x, 1)
+	}
+	if Ly.g4moe {
+		return r.gemma4MoeMLPPre(Ly, l)
+	}
+	if Ly.isMoE {
+		return r.moeMLPPre(Ly)
+	}
+	// Dense MLP (whole): no readback gap, so segC is nil for this layer.
+	if r.fuseQKV {
+		cfg := LaunchConfig{GridX: uint32((2*r.inter + 63) / 64), GridY: 1, GridZ: 1,
+			BlockX: 256, BlockY: 1, BlockZ: 1,
+			SharedMemBytes: uint32((r.hidden + 256 + r.hidden/4) * 4)}
+		if e := r.launch(r.fGU, cfg,
+			Arg(r.x), Arg(Ly.postNorm), gpu.ArgValue(int32(r.hidden)), gpu.ArgValue(r.eps),
+			gpu.ArgValue(r.addOneArg()),
+			Arg(Ly.g.W), Arg(Ly.g.ws16),
+			Arg(Ly.u.W), Arg(Ly.u.ws16),
+			gpu.ArgValue(int32(r.inter)), gpu.ArgValue(int32(r.hidden/8)), gpu.ArgValue(int32(r.hidden/32)),
+			Arg(r.gO), Arg(r.uO)); e != nil {
+			return e
+		}
+	} else {
+		_ = r.rms(r.x, Ly.postNorm, r.mq, r.mSc)
+		_ = r.doG(Ly.g, r.mq, r.mSc, nullBias, r.gO, 0)
+		_ = r.doG(Ly.u, r.mq, r.mSc, nullBias, r.uO, 0)
+	}
+	_ = r.launch(r.fSw, onecfg(256, 256*4), Arg(r.gO), Arg(r.uO), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(r.inter)),
+		gpu.ArgValue(r.act), Arg(r.dq), Arg(r.dSc), Arg(r.dScr))
+	if r.sandwich {
+		if e := r.doG(Ly.d, r.dq, r.dSc, nullBias, r.dO, 0); e != nil {
+			return e
+		}
+		if r.subCap {
+			r.capVec(r.dO, r.subMLPpreC, l, r.hidden)
+		}
+		_ = r.normF32(r.dO, Ly.postMLPNorm)
+		if r.subCap {
+			r.capVec(r.dO, r.subMLPC, l, r.hidden)
+		}
+		_ = r.launch(r.fRes, g1cfg(r.hidden, 256), Arg(r.x), Arg(r.dO), gpu.ArgValue(int32(r.hidden)))
+	} else if e := r.doG(Ly.d, r.dq, r.dSc, nullBias, r.x, 1); e != nil {
+		return e
+	}
+	return nil
+}
+
+// segC: the post-readback MoE half (expert loop + combine/join). nil for a dense layer.
+func (r *cudaResident) segC(Ly *cudaLayer, l int) error {
+	if Ly.g4moe {
+		return r.gemma4MoeMLPPost(Ly, l)
+	}
+	if Ly.isMoE {
+		return r.moeMLPPost(Ly)
+	}
+	return nil
+}
+
+// captureGraphs records each layer's three static segments once (on the executor thread, so the
+// thread-local capture matches the replay thread). Off unless r.graphs; incompatible with the subCap/
+// g4cap diagnostics (they sync inside a segment, which stream capture forbids) — the caller gates on
+// !g4cap and launchToken's useGraphs gates on !subCap. A capture failure is a build error → the
+// resident declines to the staged path, never runs a half-captured chain.
+func (r *cudaResident) captureGraphs() error {
+	for l := range r.layers {
+		Ly, ll := &r.layers[l], l
+		gA, e := r.stream.Capture(func() error { return r.segA(Ly, ll) })
+		if e != nil {
+			return fmt.Errorf("layer %d segA: %w", l, e)
+		}
+		gB, e := r.stream.Capture(func() error { return r.segB(Ly, ll) })
+		if e != nil {
+			return fmt.Errorf("layer %d segB: %w", l, e)
+		}
+		r.layers[l].gSegA, r.layers[l].gSegB = gA, gB
+		if Ly.g4moe || Ly.isMoE {
+			gC, e := r.stream.Capture(func() error { return r.segC(Ly, ll) })
+			if e != nil {
+				return fmt.Errorf("layer %d segC: %w", l, e)
+			}
+			r.layers[l].gSegC = gC
+		}
+	}
+	r.launchErr = nil // capture invoked launch() to RECORD (not execute); clear the sticky accumulator
+	return nil
+}
+
 // launchToken issues one token's whole kernel chain, leaving logits[vocab] on the device.
 func (r *cudaResident) launchToken(emb []float32, pos int) error {
 	r.launchErr = nil // reset the sticky launch-error accumulator for this token (M23)
@@ -896,163 +1093,86 @@ func (r *cudaResident) launchToken(emb []float32, pos int) error {
 	if e := gpu.Upload(r.x, emb); e != nil {
 		return e
 	}
+	// useGraphs replays the captured static segments instead of re-issuing their launches. Gated on
+	// !subCap: the sublayer-capture diagnostic syncs mid-segment, which a captured graph cannot do
+	// (and which a test may enable on a graphs-built runner) — so it falls back to the live seg calls.
+	useGraphs := r.graphs && !r.subCap
+	gA := useGraphs && (r.graphMask == "" || strings.Contains(r.graphMask, "A"))
+	gB := useGraphs && (r.graphMask == "" || strings.Contains(r.graphMask, "B"))
+	gC := useGraphs && (r.graphMask == "" || strings.Contains(r.graphMask, "C"))
 	for l := 0; l < r.nLayers; l++ {
 		Ly := &r.layers[l]
-		qb, kb, vb := nullBias, nullBias, nullBias
-		if Ly.hasBias {
-			qb, kb, vb = Arg(Ly.qb), Arg(Ly.kb), Arg(Ly.vb)
-		}
-		if r.fuseQKV {
-			// K1: rmsnorm+quant redundantly per block + this block's Q/K/V rows — one
-			// launch instead of four, and the GridX:1 rmsnorm disappears.
-			nrows := Ly.qDim + 2*Ly.kvDim
-			cfg := LaunchConfig{GridX: uint32((nrows + 7) / 8), GridY: 1, GridZ: 1,
-				BlockX: 256, BlockY: 1, BlockZ: 1,
-				SharedMemBytes: uint32((r.hidden + 256 + r.hidden/4) * 4)}
-			if e := r.launch(r.fQKV, cfg,
-				Arg(r.x), Arg(Ly.preNorm), gpu.ArgValue(int32(r.hidden)), gpu.ArgValue(r.eps),
-				gpu.ArgValue(r.addOneArg()),
-				Arg(Ly.q.W), Arg(Ly.q.ws16), qb,
-				Arg(Ly.k.W), Arg(Ly.k.ws16), kb,
-				Arg(Ly.v.W), Arg(Ly.v.ws16), vb,
-				gpu.ArgValue(int32(Ly.qDim)), gpu.ArgValue(int32(Ly.kvDim)),
-				gpu.ArgValue(int32(r.hidden/8)), gpu.ArgValue(int32(r.hidden/32)),
-				Arg(r.qB), Arg(r.kB), Arg(r.vB)); e != nil {
+		// segA: QKV proj + qk/v-norm (pre-RoPE, static).
+		if gA {
+			if e := Ly.gSegA.Replay(); e != nil {
 				return e
 			}
-		} else {
-			if e := r.rms(r.x, Ly.preNorm, r.aq, r.aSc); e != nil {
-				return e
+			if r.graphsSync {
+				_ = r.stream.Sync()
 			}
-			if e := r.doG(Ly.q, r.aq, r.aSc, qb, r.qB, 0); e != nil {
-				return e
-			}
-			_ = r.doG(Ly.k, r.aq, r.aSc, kb, r.kB, 0)
-			if Ly.kEqV {
-				// K=V (attention_k_eq_v): no v_proj. V = v_norm(RAW k_proj output), so recompute
-				// the k projection into vB (bit-identical to kB before k-norm/RoPE touch it) — a
-				// second GEMV rather than a device copy (no D2D helper), the raw-k source v_norm
-				// needs. v-norm is applied below, after qk-norm, before rope_kv rotates k.
-				_ = r.doG(Ly.k, r.aq, r.aSc, kb, r.vB, 0)
-			} else {
-				_ = r.doG(Ly.v, r.aq, r.aSc, vb, r.vB, 0)
-			}
+		} else if e := r.segA(Ly, l); e != nil {
+			return e
 		}
-		// QK-norm (Qwen3/GLM/Mellum): per-head RMSNorm of Q and K over head_dim, BEFORE RoPE
-		// (decoder/attention.go:94-96). One block per head; only dispatched for archs that
-		// need it, so plain-dense models pay nothing.
-		if r.qkNorm {
-			addOne := int32(0)
-			if r.rmsAddOne {
-				addOne = 1
-			}
-			if e := r.launch(r.fQKN, LaunchConfig{GridX: uint32(r.nH + Ly.nKV), GridY: 1, GridZ: 1,
-				BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: 128 * 8}, // f64 reduction
-				Arg(r.qB), Arg(r.kB), Arg(Ly.qNorm), Arg(Ly.kNorm),
-				gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)),
-				gpu.ArgValue(r.eps), gpu.ArgValue(addOne)); e != nil {
-				return e
-			}
-		}
-		if Ly.kEqV {
-			// K=V: scale-less v_norm(vB) = qk_norm reused with nH=0 (skip the Q pass), k=vB, UNIT
-			// weight, addOne=0 → x*inv*1. One block per V head (GridX=nKV). Runs AFTER qk-norm
-			// (which touched kB, not vB) and BEFORE rope_kv (which stores vB un-rotated) — vB still
-			// holds the RAW k here, so this is v_norm(raw k), not v_norm(k_norm(k)). Proven
-			// bit-identical to the CPU oracle by TestVNorm_scaleless.
-			_ = r.launch(r.fQKN, LaunchConfig{GridX: uint32(Ly.nKV), GridY: 1, GridZ: 1,
-				BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: 128 * 8},
-				Arg(r.vB), Arg(r.vB), Arg(r.vNormUnit), Arg(r.vNormUnit),
-				gpu.ArgValue(int32(0)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)),
-				gpu.ArgValue(r.eps), gpu.ArgValue(int32(0)))
-		}
-		// fused rope(q)+rope(k)+kv_store(k)+kv_store(v): 4 launches → 1 (same math/order).
-		// rhalf == hd/2 for full rotary (tail group empty, bit-identical to the pre-partial
-		// kernel); rotaryDim/2 for partial rotary, where the tail threads carry the un-rotated
-		// remainder into the KV cache.
+		// --- dynamic gap: rope_kv + attention (bind pos/nKeys; attention's shared-mem grows with the
+		// attended span — never graph-static). Same stream as the segments, so ordering is preserved.
+		// fused rope(q)+rope(k)+kv_store(k)+kv_store(v): rhalf == hd/2 for full rotary, rotaryDim/2 for partial.
 		_ = r.launch(r.ropeKV, g1cfg(r.nH*Ly.rhalf+Ly.nKV*Ly.rhalf+Ly.nKV*(Ly.hd-2*Ly.rhalf), 256),
 			Arg(r.qB), Arg(r.kB), Arg(r.vB), Arg(Ly.invF), Arg(r.kc[l]), Arg(r.vc[l]),
 			gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)),
 			gpu.ArgValue(int32(pos)), gpu.ArgValue(int32(Ly.rhalf)))
 		nKeys := pos + 1
-		// Sliding window (per layer: Mistral is all-local, Mellum interleaves). Shared is sized
-		// to the ATTENDED span, so a windowed layer's request stays bounded as context grows.
+		// Sliding window (per layer: Mistral all-local, Mellum interleaves); shared sized to the attended span.
 		nWin := nKeys
 		if Ly.window > 0 && nKeys > int(Ly.window) {
 			nWin = int(Ly.window)
 		}
 		_ = r.launch(r.fAttn, LaunchConfig{GridX: uint32(r.nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nWin + 128) * 4)},
 			Arg(r.qB), Arg(r.kc[l]), Arg(r.vc[l]), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)), gpu.ArgValue(int32(nKeys)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window), Arg(r.cctx))
-		if r.subCap { // pre-o-proj attention context (qDim), before quant — the cross-box discriminator
+		if r.subCap { // pre-o-proj attention context (qDim), before quant — the cross-box discriminator (live path only)
 			r.capVec(r.cctx, r.subCtxC, l, Ly.qDim)
 		}
-		_ = r.launch(r.fQ, onecfg(256, 256*4), Arg(r.cctx), gpu.ArgValue(int32(Ly.qDim)), Arg(r.cq), Arg(r.cSc))
-		// Normally the out-proj accumulates straight into the residual stream (accum=1),
-		// absorbing the `residual` launch. Gemma's sandwich norm CANNOT use that epilogue: it
-		// must normalize the sublayer output BETWEEN the projection and the residual add
-		// (decoder/model.go: `a = attn(...); if sandwich { a = rmsNorm(a, PostAttnNorm) }; h += a`).
-		// So the sandwich path projects into a scratch buffer, norms it, then adds.
-		if r.sandwich {
-			// oO/dO are the pre-existing [hidden] sublayer-output buffers, dead since the
-			// accum=1 epilogue absorbed the residual launch — the sandwich path needs exactly
-			// them back.
-			_ = r.doG(Ly.o, r.cq, r.cSc, nullBias, r.oO, 0)
-			_ = r.normF32(r.oO, Ly.postAttnNorm)
-			if r.subCap { // attention contribution about to hit the residual
-				r.capVec(r.oO, r.subAttnC, l, r.hidden)
-			}
-			_ = r.launch(r.fRes, g1cfg(r.hidden, 256), Arg(r.x), Arg(r.oO), gpu.ArgValue(int32(r.hidden)))
-		} else {
-			_ = r.doG(Ly.o, r.cq, r.cSc, nullBias, r.x, 1)
-		}
-		if Ly.g4moe { // Gemma-4 parallel dense‖MoE — its own join+scalar, not the generic wacc-into-residual
-			if e := r.gemma4MoeMLP(Ly, l); e != nil {
+		// segB: ctx-quant + o-proj + MLP up to the router readback (whole dense MLP for a dense layer).
+		if gB {
+			if e := Ly.gSegB.Replay(); e != nil {
 				return e
 			}
-			continue
-		}
-		if Ly.isMoE {
-			if e := r.moeMLP(Ly); e != nil {
-				return e
+			if r.graphsSync {
+				_ = r.stream.Sync()
 			}
-			continue // the MoE block ends the layer: its combine already hit the residual stream
-		}
-		if r.fuseQKV { // same guard: all layer projections int4
-			// K3a: pre-MLP rmsnorm+quant redundantly per block + this block's gate/up rows —
-			// one launch instead of three; the layer's second GridX:1 rmsnorm disappears.
-			cfg := LaunchConfig{GridX: uint32((2*r.inter + 63) / 64), GridY: 1, GridZ: 1, // 64 rows/block
-				BlockX: 256, BlockY: 1, BlockZ: 1,
-				SharedMemBytes: uint32((r.hidden + 256 + r.hidden/4) * 4)}
-			if e := r.launch(r.fGU, cfg,
-				Arg(r.x), Arg(Ly.postNorm), gpu.ArgValue(int32(r.hidden)), gpu.ArgValue(r.eps),
-				gpu.ArgValue(r.addOneArg()),
-				Arg(Ly.g.W), Arg(Ly.g.ws16),
-				Arg(Ly.u.W), Arg(Ly.u.ws16),
-				gpu.ArgValue(int32(r.inter)), gpu.ArgValue(int32(r.hidden/8)), gpu.ArgValue(int32(r.hidden/32)),
-				Arg(r.gO), Arg(r.uO)); e != nil {
-				return e
-			}
-		} else {
-			_ = r.rms(r.x, Ly.postNorm, r.mq, r.mSc)
-			_ = r.doG(Ly.g, r.mq, r.mSc, nullBias, r.gO, 0)
-			_ = r.doG(Ly.u, r.mq, r.mSc, nullBias, r.uO, 0)
-		}
-		_ = r.launch(r.fSw, onecfg(256, 256*4), Arg(r.gO), Arg(r.uO), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(r.inter)),
-			gpu.ArgValue(r.act), Arg(r.dq), Arg(r.dSc), Arg(r.dScr))
-		if r.sandwich {
-			if e := r.doG(Ly.d, r.dq, r.dSc, nullBias, r.dO, 0); e != nil {
-				return e
-			}
-			if r.subCap { // down output BEFORE the post-MLP sandwich norm
-				r.capVec(r.dO, r.subMLPpreC, l, r.hidden)
-			}
-			_ = r.normF32(r.dO, Ly.postMLPNorm)
-			if r.subCap { // MLP contribution about to hit the residual
-				r.capVec(r.dO, r.subMLPC, l, r.hidden)
-			}
-			_ = r.launch(r.fRes, g1cfg(r.hidden, 256), Arg(r.x), Arg(r.dO), gpu.ArgValue(int32(r.hidden)))
-		} else if e := r.doG(Ly.d, r.dq, r.dSc, nullBias, r.x, 1); e != nil {
+		} else if e := r.segB(Ly, l); e != nil {
 			return e
+		}
+		// --- dynamic gap: clear the g4moe accumulator (H2D), then, if caching, read the routing back
+		// to the host and DMA the routed experts into their VRAM slots (D2H+H2D). Host copies, not
+		// graph-capturable; synchronous, so the slots are filled before segC replays.
+		if Ly.g4moe {
+			if e := gpu.Upload(r.g4x2, r.g4zero); e != nil {
+				return e
+			}
+		}
+		if (Ly.g4moe || Ly.isMoE) && r.cacheExperts {
+			if e := r.loadRoutedExperts(Ly); e != nil {
+				return e
+			}
+		}
+		// segC: the post-readback MoE half (expert loop + join). Dense layers have none.
+		if Ly.g4moe || Ly.isMoE {
+			if gC {
+				if e := Ly.gSegC.Replay(); e != nil {
+					return e
+				}
+				if r.graphsSync {
+					_ = r.stream.Sync()
+				}
+			} else if e := r.segC(Ly, l); e != nil {
+				return e
+			}
+		}
+		if r.layerCap { // DEBUG: snapshot the residual after this layer (divergence-localization probe)
+			_ = r.stream.Sync()
+			h := make([]float32, r.hidden)
+			_ = gpu.Download(r.x, h)
+			r.layerCapBuf = append(r.layerCapBuf, h)
 		}
 	}
 	if e := r.rms(r.x, r.finalNorm, r.aq, r.aSc); e != nil {

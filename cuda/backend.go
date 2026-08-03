@@ -692,6 +692,19 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	if os.Getenv("GOINFER_CUDA_NO_FUSE") != "" {
 		r.fuseQKV = false
 	}
+	// CUDA graphs (GOINFER_CUDA_GRAPHS): capture each layer's static launch segments now that fuseQKV
+	// is final (segA/segB branch on it), so decode replays them instead of re-issuing the launches.
+	// Incompatible with the g4cap diagnostic (it syncs inside a segment). A capture failure declines
+	// to the staged path — never a half-captured chain. Off ⇒ launchToken is byte-identical to before.
+	r.graphs = os.Getenv("GOINFER_CUDA_GRAPHS") != "" && !r.g4cap
+	r.graphsSync = os.Getenv("GOINFER_CUDA_GRAPHS_SYNC") != "" // debug: serialize replays (bisect ordering hazards)
+	r.graphMask = os.Getenv("GOINFER_CUDA_GRAPHS_ONLY")        // debug: replay only these segments (A/B/C), rest live
+	if r.graphs {
+		if e := r.do(func() error { return r.captureGraphs() }); e != nil {
+			r.Close()
+			return declined(fmt.Errorf("cuda: graph capture: %w", e))
+		}
+	}
 	b.resident = r
 	return r, true, nil
 }
