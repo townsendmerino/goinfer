@@ -197,7 +197,11 @@ func buildMoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H int) (*
 	// isG4MoE split (cuda/backend.go). Dense Gemma 4 has no MoE, so it returns nil,nil above and
 	// admits normally; this only gates the MoE variant.
 	if m.HasGemma4MoEResident() {
-		return nil, fmt.Errorf("metal MoE: gemma4 parallel dense‖MoE not yet implemented (9c Step 5) — declining to CPU")
+		// Gemma 4's parallel dense‖MoE is NOT this generic path — it runs encodeGemma4MoEFFN
+		// (its own router/experts/join, gemma4_moe.go), routed around here via HasGemma4MoEResident
+		// exactly like CUDA's isG4MoE split. Return nil (not MoE for THIS builder) so r.moe stays
+		// nil and BuildResident builds r.g4moe instead; the per-layer loop routes on the bundle.
+		return nil, nil
 	}
 	if nE > 256 {
 		return nil, fmt.Errorf("metal MoE: nE=%d exceeds router cap 256", nE)

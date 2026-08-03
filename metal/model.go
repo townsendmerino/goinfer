@@ -41,12 +41,13 @@ var prefillFeatures = map[decoder.ResidentFeature]bool{
 type residLayer struct {
 	qkvW, qkvS, guW, guS, oW, oS, dW, dS Buffer // fused QKV + fused gate/up + o + down
 	qkvBias, preNorm, postNorm           Buffer
-	qNorm, kNorm                         Buffer    // per-head QK-RMSNorm weights (Qwen3; zero if !qkNorm)
-	moe                                  *moeLayer // non-nil ⇒ this layer's FFN is MoE (dense guW/dW unused)
-	postAttnNorm, postMLPNorm            Buffer    // Gemma sandwich norms on each sublayer OUTPUT (zero if !sandwich)
-	invf                                 Buffer    // per-layer RoPE inv-freq (Gemma local 10k vs global 1M base)
-	uWindow                              Buffer    // per-layer attention window (0 = full causal; Gemma mixes local/global)
-	geom                                 *attnGeom // per-layer attention geometry (hd/nKV/half/kEqV + uniforms); see geom.go
+	qNorm, kNorm                         Buffer          // per-head QK-RMSNorm weights (Qwen3; zero if !qkNorm)
+	moe                                  *moeLayer       // non-nil ⇒ this layer's FFN is MoE (dense guW/dW unused)
+	g4moe                                *gemma4MoeLayer // non-nil ⇒ Gemma-4 parallel dense‖MoE FFN (gemma4_moe.go)
+	postAttnNorm, postMLPNorm            Buffer          // Gemma sandwich norms on each sublayer OUTPUT (zero if !sandwich)
+	invf                                 Buffer          // per-layer RoPE inv-freq (Gemma local 10k vs global 1M base)
+	uWindow                              Buffer          // per-layer attention window (0 = full causal; Gemma mixes local/global)
+	geom                                 *attnGeom       // per-layer attention geometry (hd/nKV/half/kEqV + uniforms); see geom.go
 }
 
 // Resident is a Metal-resident dense decoder. Weights uploaded once in BuildResident;
@@ -81,7 +82,8 @@ type Resident struct {
 	finalNorm Buffer
 	lmW, lmS  Buffer
 	kc, vc    []Buffer
-	moe       *moeResident // non-nil ⇒ MoE model (router + stacked experts); see moe.go
+	moe       *moeResident       // non-nil ⇒ MoE model (router + stacked experts); see moe.go
+	g4moe     *gemma4MoeResident // non-nil ⇒ Gemma-4 enable_moe_block (parallel dense‖MoE); see gemma4_moe.go
 
 	// prefillOK reports whether the f16 MMA prefill kernels (prefill.go) actually implement
 	// this model's shape. They run a DENSE FFN out of L.guW/L.dW with a model-level rope +
@@ -280,7 +282,10 @@ func BuildResident(m *decoder.Model) (*Resident, error) {
 		win = 0
 	}
 	r.uWindow = d.NewBufferU32(uint32(win))
-	if r.moe, err = buildMoE(d, m, pipe, H); err != nil { // nil for a dense model; error ⇒ decline
+	if r.moe, err = buildMoE(d, m, pipe, H); err != nil { // nil for a dense (or gemma4-MoE) model; error ⇒ decline
+		return nil, err
+	}
+	if r.g4moe, err = buildGemma4MoE(d, m, pipe, H, nL); err != nil { // Gemma-4 enable_moe_block; nil otherwise; error ⇒ decline
 		return nil, err
 	}
 	// prefillOK, derived rather than hand-listed: the f16 prefill kernels implement exactly the
@@ -320,26 +325,45 @@ func BuildResident(m *decoder.Model) (*Resident, error) {
 			L.qkvW, L.qkvS = int4Concat(d, &lw.QProj, &lw.KProj, &lw.VProj) // fused QKV
 		}
 		L.oW, L.oS = mk(&lw.OProj)
-		if r.moe != nil && len(lw.Experts) > 0 { // MoE layer: stacked experts instead of a dense FFN
+		g4b, isG4MoE := decoder.Gemma4MoEResidentBundle{}, false
+		if r.g4moe != nil {
+			g4b, isG4MoE = m.Gemma4MoEResidentLayer(l)
+		}
+		switch {
+		case isG4MoE: // Gemma-4 enable_moe_block: parallel dense‖MoE FFN (its own norms/router/experts)
+			L.g4moe = buildGemma4MoELayer(d, &g4b)
+		case r.moe != nil && len(lw.Experts) > 0: // generic MoE layer: stacked experts instead of a dense FFN
 			L.moe = buildMoELayer(d, lw, r.moe)
-		} else { // dense FFN (also GLM/DeepSeek's FirstKDense prefix layers)
+		default: // dense FFN (also GLM/DeepSeek's FirstKDense prefix layers, and gemma4 dense layers)
 			L.guW, L.guS = int4Concat(d, &lw.GateProj, &lw.UpProj) // fused gate/up
 			L.dW, L.dS = mk(&lw.DownProj)
 		}
 		L.preNorm = d.NewBufferFloats(lw.PreAttnNorm)
-		L.postNorm = d.NewBufferFloats(lw.PreMLPNorm)
+		if L.g4moe == nil { // dense/generic FFN entry norm (PreMLPNorm); g4moe carries its five norms in the bundle
+			L.postNorm = d.NewBufferFloats(lw.PreMLPNorm)
+		}
 		if r.qkNorm { // Qwen3 per-head Q/K norm weights [hd]
 			L.qNorm, L.kNorm = d.NewBufferFloats(lw.QNorm), d.NewBufferFloats(lw.KNorm)
 		}
 		// Gemma sandwich norms on each sublayer OUTPUT. Required to be present when the arch
-		// declares them — a silently-missing one would DROP the norm rather than error.
+		// declares them — a silently-missing one would DROP the norm rather than error. A g4moe
+		// layer still runs the ATTENTION sandwich (postAttnNorm) but its FFN block is the parallel
+		// dense‖MoE, which carries its own post-norms (postFFN1/postFFN2/postFFN) in the bundle and
+		// never touches postMLPNorm — exactly as decoder/forward_gemma4.go skips PostMLPNorm for
+		// enable_moe_block layers. So require/build postMLPNorm only for the non-g4moe FFN path.
 		if r.sandwich {
-			if len(lw.PostAttnNorm) != H || len(lw.PostMLPNorm) != H {
-				return nil, fmt.Errorf("metal: layer %d declares sandwich norms but PostAttnNorm/PostMLPNorm are not len==hidden(%d) (got %d/%d)",
-					l, H, len(lw.PostAttnNorm), len(lw.PostMLPNorm))
+			if len(lw.PostAttnNorm) != H {
+				return nil, fmt.Errorf("metal: layer %d declares sandwich norms but PostAttnNorm is not len==hidden(%d) (got %d)",
+					l, H, len(lw.PostAttnNorm))
 			}
 			L.postAttnNorm = d.NewBufferFloats(lw.PostAttnNorm)
-			L.postMLPNorm = d.NewBufferFloats(lw.PostMLPNorm)
+			if L.g4moe == nil {
+				if len(lw.PostMLPNorm) != H {
+					return nil, fmt.Errorf("metal: layer %d declares sandwich norms but PostMLPNorm is not len==hidden(%d) (got %d)",
+						l, H, len(lw.PostMLPNorm))
+				}
+				L.postMLPNorm = d.NewBufferFloats(lw.PostMLPNorm)
+			}
 		}
 		// Per-layer RoPE table (Gemma local 10k vs global 1M base) and per-layer window. The rope
 		// KERNEL is unchanged — all per-layer variation rides in the table contents AND the width
@@ -399,6 +423,9 @@ func BuildResident(m *decoder.Model) (*Resident, error) {
 	guDim := I
 	if r.moe != nil {
 		guDim = max(I, max(r.moe.inter, r.moe.sharedInter))
+	}
+	if r.g4moe != nil { // Gemma-4 dense‖MoE: the gate|up/down scratch must fit BOTH the dense branch and the experts
+		guDim = max(guDim, max(r.g4moe.denseInter, r.g4moe.moeInter))
 	}
 	r.x = d.NewBufferLen(H)
 	r.aq, r.aSc = byteBuf(d, H), d.NewBufferLen(1)
@@ -866,8 +893,10 @@ func (r *Resident) encodeTrunkInto(e *Encoder) {
 		} else {
 			e.DispatchTG(r.pSAResid, r.H*32, 256, r.nH*g.hd*2, L.oW, L.oS, r.cq, r.cSc, r.x, g.uNHhd) // o-proj + residual
 		}
-		// --- ffn block (dense SwiGLU/GeGLU, or MoE router + experts + shared) ---
-		if L.moe != nil {
+		// --- ffn block (dense SwiGLU/GeGLU, generic MoE, or Gemma-4 parallel dense‖MoE) ---
+		if L.g4moe != nil {
+			r.encodeGemma4MoEFFN(e, L)
+		} else if L.moe != nil {
 			r.encodeMoEFFN(e, L)
 		} else {
 			e.Dispatch(r.pRms, 256, 256, r.x, L.postNorm, r.mq, r.mSc, r.uH, r.uEps, r.uAddOne)
