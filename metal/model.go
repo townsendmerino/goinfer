@@ -526,6 +526,12 @@ func BuildResident(m *decoder.Model) (*Resident, error) {
 			}
 			rs.Commit()
 			rs.RequestResidency()
+			// KNOWN COST (cold A/B): attaching the set at the QUEUE rides it on EVERY command buffer,
+			// so phase 1 now carries the ~3 GB of pinned slots in its referenced set even though it
+			// never touches them — +2.07 ms/CB → +62 ms/tok (p1 idle scales with pin-set size; see the
+			// bisect). Net is still −189 ms (p2 −248), so it ships. FIX (fold into the next aikit
+			// release, not worth a release alone): a PHASE-SCOPED residency set attached only to
+			// phase-2's command buffers (per-encoder useResidencySet) recovers the 62 ms.
 			r.q.AddResidencySet(rs)
 			r.residency = rs
 		}
