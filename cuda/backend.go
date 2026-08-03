@@ -463,6 +463,28 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				return e
 			}
 		}
+		// Batched prefill kernels (weight-stationary M=len path). Own module; the audited PTX is
+		// untouched. bGemv comes from gemv_w4a8_batched.ptx, the rest from prefill_batched.ptx.
+		if bgmod, e2 := r.dev.CompileLibrary(gemvBatchedPTX); e2 == nil {
+			if pbmod, e3 := r.dev.CompileLibrary(prefillBatchedPTX); e3 == nil {
+				ok := true
+				load := func(dst *Pipeline, mod gpu.Library, name string) {
+					if p, le := r.dev.NewComputePipeline(mod, name); le == nil {
+						*dst = p
+					} else {
+						ok = false
+					}
+				}
+				load(&r.bGemv, bgmod, "gemv_w4a8_batched")
+				load(&r.bRms, pbmod, "rmsnorm_quant_batched")
+				load(&r.bRopeKV, pbmod, "rope_kv_batched")
+				load(&r.bAttn, pbmod, "attn_batched")
+				load(&r.bQuant, pbmod, "quant_vec_batched")
+				load(&r.bSw, pbmod, "glu_quant_batched")
+				load(&r.bRes, pbmod, "residual_batched")
+				r.prefillReady = ok
+			}
+		}
 		// MoE module: loaded only for a routed model, so a dense one JITs nothing extra.
 		if r.moe {
 			mmod, e2 := r.dev.CompileLibrary(moePTX)

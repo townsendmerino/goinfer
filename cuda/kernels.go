@@ -36,6 +36,15 @@ var gemvFwdPTX []byte
 //go:embed testdata/gemv_w4a8_batched.ptx
 var gemvBatchedPTX []byte
 
+// prefillBatchedPTX: the batched (M=len) glue kernels for the weight-stationary prefill path —
+// rmsnorm_quant_batched, rope_kv_batched, attn_batched (causal + per-row sliding window),
+// glu_quant_batched, residual_batched. Each is the corresponding M=1 kernel (glue/gemv_fwd) with an
+// M dimension added and the per-row math copied verbatim, so each row is bit-identical to its
+// sequential counterpart. Its own file (prefill_batched.cu); the audited PTX is untouched.
+//
+//go:embed testdata/prefill_batched.ptx
+var prefillBatchedPTX []byte
+
 // gluePTX: the per-token elementwise/attention glue — rmsnorm_quant, quant_vec, rope,
 // attention (GQA online softmax), swiglu_quant, residual, argmax_reduce.
 //

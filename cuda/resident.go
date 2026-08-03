@@ -166,8 +166,13 @@ type cudaResident struct {
 	dev                                                                                                *Device
 	stream                                                                                             Queue
 	gemvW4, gemvW8, kvStore, ropeKV, fRms, fRmsF32, fQ, fRope, fAttn, fSw, fRes, fArg, fQKV, fGU, fQKN Pipeline
-	fRoute, fRouterGemv, fMoEGemv, fMoEWacc, fSharedCombine                                            Pipeline
-	fRouterF32, fScaleWgt, fRmsNW, fScaleVec                                                           Pipeline // gemma4 MoE (router_f32 module)
+	// Batched (M=len) prefill pipelines (prefill_batched.ptx) — the weight-stationary path that fixes
+	// the ~128-token Ollama crossover. bGemv is the batched W4A8 GEMV; the rest are the M=1 glue
+	// kernels with an M dimension, each bit-identical per row. Loaded once at build (small module).
+	bGemv, bRms, bRopeKV, bAttn, bQuant, bSw, bRes          Pipeline
+	prefillReady                                            bool // batched kernels loaded; PrefillLast usable
+	fRoute, fRouterGemv, fMoEGemv, fMoEWacc, fSharedCombine Pipeline
+	fRouterF32, fScaleWgt, fRmsNW, fScaleVec                Pipeline // gemma4 MoE (router_f32 module)
 
 	fuseQKV   bool  // all of Q/K/V/gate/up int4 ⇒ the fused K1 (fQKV) + fGU super-kernels are usable
 	launchErr error // sticky first launch error within a launchToken call (reset per token) — M23
