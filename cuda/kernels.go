@@ -28,6 +28,14 @@ import (
 //go:embed testdata/gemv_fwd.ptx
 var gemvFwdPTX []byte
 
+// gemvBatchedPTX: gemv_w4a8_batched — the weight-stationary batched GEMV for M=len prefill.
+// Bit-identical to aikit's gemv_w4a8_fwd per output element (same per-word float scale-accumulate
+// order), evaluated for M activation columns per weight-row load. Its own file (gemv_w4a8_batched.cu);
+// the audited PTX (moe.ptx, gemv_fwd/glue) is untouched.
+//
+//go:embed testdata/gemv_w4a8_batched.ptx
+var gemvBatchedPTX []byte
+
 // gluePTX: the per-token elementwise/attention glue — rmsnorm_quant, quant_vec, rope,
 // attention (GQA online softmax), swiglu_quant, residual, argmax_reduce.
 //

@@ -203,6 +203,25 @@ DeepSeek), where the shared expert plays the dense branch's role.
 not mean tok/s at a budget where everything hits anyway. Run it at a budget that forces a
 real miss rate.
 
+## Parked candidate — int32-per-group GEMV (opens IMMA, at a parity-refresh price)
+
+The batched prefill GEMV (`cuda/gemv_w4a8_batched.cu`, milestone 1) is a **weight-stationary
+dp4a batched GEMV**, deliberately not IMMA: goinfer's int4 weights are **group-scaled** (one f16
+scale per 32-element group along K), so the cross-group sum must be in **float**, and float add is
+non-associative — a K-tiled IMMA/MMA reorder would not be bit-identical to the M=1
+`gemv_w4a8_fwd`. dp4a is ~1/3 of Turing IMMA int8 throughput, so the kernel is compute-bound above
+M≈45 and reaches ~23× on TTFT at M=512 rather than the ~72× an IMMA path could theoretically hit —
+a ceiling **chosen, not missed** (recorded in the kernel's own doc comment).
+
+**The unlock, and why it is parked:** change the GEMV to accumulate int32 across a group's four
+words and apply the f16 scale **once per group** (int32 associative → K-tileable → IMMA-eligible).
+That would match the numeric contract to the quantization structure and open the ~3× IMMA compute
+headroom. **Price: it changes decode BITS for every int4 model** (the accumulation reorders), i.e. a
+full parity refresh with the goldens re-run across all families, and a `validated_at` bump — the T3
+ritual, not a hash refresh. So it is its **own candidate**; it must NOT ride in on a prefill kernel.
+Fund it only if the prefill compute ceiling (not the bandwidth win, which dp4a already captures)
+becomes the binding constraint after the batched GEMV lands.
+
 ## Lever 4 — expert-major prefill batching
 
 `decoder/forwardn.go:14` states it plainly: batched prefill vectorizes attention but "the
