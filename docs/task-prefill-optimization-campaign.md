@@ -44,6 +44,16 @@ Cumulative GEMV: MT ~6% + coalesce ~13% + RN ~30% ≈ **1.5×** (gate/up 4.98→
 sequential: **128 5.78× / 512 5.80× / 2048 6.17×**. Attention's share of prefill at 2048 fell
 66.9% → 38.9%; the GEMV is now ~61% at 2048.
 
+**Coverage (`TestPrefillCoverageAudit`, all 23 validated families).** Batched prefill runs for the
+**5 dense-lane families that are cuda-resident: llama, mistral, phi3, qwen2, qwen2_5_vl** — complete
+for the lane it targets. The other 18 fall back to the sequential loop: 4 are cuda-resident but
+declined by a `PrefillLast` guard (MoE — mixtral, glm4_moe; sandwich — gemma3; qk-norm — qwen3), and
+14 are not cuda-resident at all (mla, ssm, yarn-mscale, gated-shared, layer-norm, or family-class),
+so they never reach `PrefillLast`. Extending the guard reaches at most 4 more; the single cheapest is
+**qwen3 (qk-norm** — the decode `qk_norm` kernel already exists), which would add a current flagship.
+The 14 need residency features first — a separate, larger effort. So batched prefill covers exactly
+{cuda-resident} ∩ {dense}, which is the intended scope.
+
 ### The attribution record — the most transferable output
 
 The GEMV gap was attributed **five times; four were wrong**, and the discipline that caught them is
@@ -62,6 +72,15 @@ the point. Each wrong attribution read like a measurement:
    *at* that bound — only stall/eligibility data can.
 5. **L1TEX latency from uncoalesced loads** — the hardware stated it directly, once `ncu` was
    installed. That is what levers 2 and 3 fixed.
+
+**A second standing lesson — the cross-context transfer error.** Both decode "levers" that were
+queued after this campaign (CUDA graphs ~1.4–1.7×, async miss-DMA ~4.3 ms) turned out to be **26B
+numbers applied to the dense lane**: graphs help only dispatch-bound models (measured 1.01× on the
+1.5B), and the miss-DMA is a paged-expert-cache cost a fitting model does not have. Same class as
+"a tiny-fixture cosine cannot detect a per-layer floor" and "the 81.6% locality figure did not
+transfer across hardware" — a measurement taken in one context (the 26B, hardware-mismatched) read
+as a property of another (the dense lane goinfer wins). The lesson is more durable than either
+lever: **name the model and the regime a number was measured in, before you carry it.**
 
 The operational lesson, now standing: **profile the unit before designing the fix, now that the
 profiler exists.** The attention lever (lever 4) followed it — `attn_batched` was profiled *first*
@@ -115,8 +134,9 @@ The remaining wins are on the **decode** lane goinfer actually wins (the basis o
    the **26B** (MoE launch explosion), the hardware-mismatch model. So graphs are **safe now but not a
    speed win for the models that fit** — another "measure, don't assume" catch. Do not flip the
    default. (`docs/cuda-graphs-investigation.md`.)
-2. **Async miss-DMA (~4.3 ms)** after it — small, unconditional; the concurrency-evidence filter
-   applies (a trailing Sync / per-iteration drain would serialize the very thing being measured).
+2. **Async miss-DMA (~4.3 ms) — RETIRED, no measurement needed.** That ~4.3 ms was the 26B's PAGED
+   expert-cache miss (host→VRAM DMA per token); a dense flagship that fits VRAM has no paged expert
+   cache and no miss to hide. Like graphs, it was a 26B number that does not apply to the dense lane.
 3. **Then step back from the 26B.** Point the now-much-better prefill at models that **fit** the
    hardware — a resident dense flagship on the 2070 SUPER — for publishable §B2 rows with honest
    provenance. A **release consolidating the prefill campaign** would surface the work; the §B2 rows
