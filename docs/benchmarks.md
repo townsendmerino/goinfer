@@ -286,8 +286,34 @@ comparison on this page.
     count — read as a measurement and was wrong; only `ncu`'s Scheduler/Warp-State sections settled it.
     The specific error in (3) is worth keeping: a *demanded* read rate exceeding DRAM proves the reads
     are cache-served, **not** that the cache is saturated — that inference was mine and it looked like
-    data. The pattern to watch is the *speed of attribution*: pull the lever and move the time, or
-    profile the unit directly; do not record a mechanism as a bound.
+    data. And the precise form of the (4) failure, different from the earlier three: an instruction-mix
+    histogram bounds throughput **from above** — it cannot establish that you are *at* that bound. Only
+    stall and eligibility data can. The pattern to watch is the *speed of attribution*: pull the lever
+    and move the time, or profile the unit directly; do not record a mechanism as a bound.
+  - **RN-blocking landed (the second profile-justified lever).** With the load coalesced, the kernel was
+    still L1TEX-latency-bound (17.8 cyc/instr, 100% occupancy — more warps can't help), so the lever is
+    fewer loads per MAC. `gemv_w4a8_rn` (own file) computes RN output rows per warp, reusing each `int2`
+    load across all RN rows → RN× fewer L1TEX loads; bit-identical (per-row `facc`, one reduce each).
+    The unroll-depth proxy first was inconclusive — forcing unroll on the runtime loop wrecks the
+    compiler's already-optimal schedule — so RN was tested directly. Sweep knee **RN=2/MT=16, 64 regs,
+    100% occupancy, 4.41 → 3.38 ms (1.30×)**; RN·MT>64 spills occupancy and regresses. ncu confirms the
+    bound moved: scoreboard stall **17.8 → 7.5 cyc/instr**, Compute 46 → 54%, L1TEX 93 → 67%. Wired into
+    `PrefillLast`; gates green (GEMV bit-identical, KV all layers×rows, 64-token decode byte-identical).
+  - **Cumulative GEMV lever stack and the moved crossover.** MT (~6%) + coalescing (~13%) + RN (~30%) ≈
+    **1.5×** on the gate/up GEMV (4.98 → 3.38 ms). End-to-end on real qwen2.5-coder-1.5b: **TTFT vs
+    sequential 128 5.27× / 512 4.43× / 2048 3.33×** (was 3.46/3.25/2.79); total request time (prefill +
+    64 decode) 128 **399 ms**, 256 **527**, 320 **600**; **Ollama crossover ~230 → ~320 tokens**
+    (~128 before any of this work). goinfer now wins total time up to ~320-token prompts.
+  - **The ceiling, stated plainly: kernel tuning will not close the gap at 2048-token prompts.** Two
+    reasons, both structural. (a) At 2048 the prefill is **66.9% attention** (`TestPrefillDecomp`),
+    naive O(M²) `attn_batched` — a separate lever (`docs/task-prefill-attention.md`), and even a perfect
+    one leaves the GEMV. (b) The GEMV residual is the **tensor-core gap**: Compute is 54% of the *dp4a*
+    peak, and dp4a is ~1/3 of Turing IMMA — perfect latency hiding buys ~another 1.85× to the dp4a
+    ceiling, but the ceiling itself is dp4a, not IMMA. Closing that needs the tensor-core GEMM in
+    `docs/task-rotation-perrow-imma.md`, which reorders the group-scaled cross-group float sum and so
+    cannot be bit-identical — it remains **scoped and unfunded**. That is an architectural consequence
+    of the cgo-free, bit-identical thesis: a **stated trade, not a deficiency**. goinfer wins short/
+    medium prompts on total time and stays behind Ollama on raw prefill throughput at long context.
   - Gates: `cuda/prefill_e2e_test.go` (KV bit-identical all layers×rows + logits + 64-token
     byte-identical decode, real windowed Mistral); `TestPrefillTTFT` / `TestPrefillCrossover` /
     `TestPrefillDecomp` (heavy) reproduce the numbers above. The rows in the §B2 table are
