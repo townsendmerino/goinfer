@@ -6,11 +6,31 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/townsendmerino/aikit/mmap"
 	"github.com/townsendmerino/goinfer/decoder"
 	"golang.org/x/sys/unix"
 )
+
+// pagedProfile decomposes the paged forward's per-token cost into ACTUAL GPU-busy time (per phase,
+// from the command buffer's GPU timestamps) vs wall time (GPU + submit/wait/encode coordination) vs
+// staging (the ensureResident pread body). It accumulates across calls; snapshot with PagedProfile()
+// and diff over a timed window. This is the DIRECT decomposition of "compute+coord" — not
+// total-minus-staging — so the ~70%-of-budget bucket is split into GPU execution vs host coordination.
+type pagedProfile struct {
+	p1WallNanos, p1GpuNanos       int64 // phase 1 (attention + dense branch + router): wall incl submit+wait, GPU-busy
+	p1EncNanos, p1SubNanos        int64 // phase 1 wall split: encode (Begin→dispatches) vs submit+wait (End)
+	stageWallNanos                int64 // ensureResident (pread into slots) — cross-check vs pool.stageNanos
+	idxCoordNanos                 int64 // router idx readback + prefetch + id unpack (pure host coordination)
+	p2WallNanos, p2GpuNanos       int64 // phase 2 (expert GEMVs from slots + join): wall, GPU-busy
+	p2EncNanos, p2SubNanos        int64 // phase 2 wall split: encode vs submit+wait
+	denseWallNanos, denseGpuNanos int64 // non-MoE dense layers (whole layer in one command buffer)
+}
+
+// PagedProfile returns the accumulated per-phase paging profile (see pagedProfile). Snapshot before
+// and after a timed decode window and subtract for the window's breakdown.
+func (r *Resident) PagedProfile() pagedProfile { return r.prof }
 
 // Gemma-4 enable_moe_block (26B-A4B) MSL kernels — the parallel dense‖MoE FFN that the generic
 // moe.go path (Mixtral/Qwen/GLM shape) cannot express. Kept in their OWN file/const, concatenated
@@ -416,32 +436,52 @@ func (r *Resident) forwardLogitsPaged(pos int) []float32 {
 	r.uPos.SetU32(uint32(pos))
 	r.uNKeys.SetU32(uint32(pos + 1))
 	g := r.g4moe
+	p := &r.prof
 	for l := 0; l < r.nL; l++ {
 		L := &r.layers[l]
 		if L.g4moe != nil && L.g4moe.pool != nil {
+			w1 := time.Now()
 			e := r.q.Begin() // phase 1: attention + dense + router → rIdx/rWgt
 			r.encodeAttention(e, l)
 			r.encodeG4Phase1(e, L)
+			encDone := time.Now()
 			e.End() // commit + wait: rIdx/rWgt now readable
+			p.p1EncNanos += encDone.Sub(w1).Nanoseconds()
+			p.p1SubNanos += time.Since(encDone).Nanoseconds()
+			p.p1WallNanos += time.Since(w1).Nanoseconds()
+			p.p1GpuNanos += int64((e.GPUEnd() - e.GPUStart()) * 1e9)
+			c0 := time.Now()
 			idx := g.rIdx.U32s()
 			ids := make([]int, g.topK)
 			for j := 0; j < g.topK; j++ {
 				ids[j] = int(idx[j])
 			}
 			L.g4moe.pool.prefetchAll(ids) // WILLNEED all routed experts at once (no-op when disabled)
+			p.idxCoordNanos += time.Since(c0).Nanoseconds()
+			s0 := time.Now()
 			slots := make([]expertSlot, g.topK)
 			for j := 0; j < g.topK; j++ {
 				slots[j] = L.g4moe.pool.ensureResident(ids[j]) // stage on miss, evict LRU
 			}
+			p.stageWallNanos += time.Since(s0).Nanoseconds() // cross-check vs pool.stageNanos (same body)
+			w2 := time.Now()
 			e2 := r.q.Begin() // phase 2: experts from slots + join
 			r.encodeG4Phase2Paged(e2, slots)
 			r.encodeG4Join(e2, L)
+			enc2 := time.Now()
 			e2.End()
+			p.p2EncNanos += enc2.Sub(w2).Nanoseconds()
+			p.p2SubNanos += time.Since(enc2).Nanoseconds()
+			p.p2WallNanos += time.Since(w2).Nanoseconds()
+			p.p2GpuNanos += int64((e2.GPUEnd() - e2.GPUStart()) * 1e9)
 			continue
 		}
+		w0 := time.Now()
 		e := r.q.Begin()
 		r.encodeLayer(e, l)
 		e.End()
+		p.denseWallNanos += time.Since(w0).Nanoseconds()
+		p.denseGpuNanos += int64((e.GPUEnd() - e.GPUStart()) * 1e9)
 	}
 	e := r.q.Begin()
 	e.Dispatch(r.pRms, 256, 256, r.x, r.finalNorm, r.aq, r.aSc, r.uH, r.uEps, r.uAddOne)

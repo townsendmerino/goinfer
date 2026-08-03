@@ -97,7 +97,8 @@ type Resident struct {
 	uPos, uNKeys                                               Buffer
 	part, tok, uP                                              Buffer // fused-argmax: tile partials, token out, tile count
 	logitsHost                                                 []float32
-	gpuStart, gpuEnd, kernStart, kernEnd                       float64 // last-Forward GPU timing (Step 0)
+	gpuStart, gpuEnd, kernStart, kernEnd                       float64      // last-Forward GPU timing (Step 0)
+	prof                                                       pagedProfile // per-phase paging decomposition (accumulates; snapshot+diff over a timed window)
 
 	// pipelined logits executor (encode-ahead): a persistent OS-thread-pinned goroutine that
 	// commits token t, pre-encodes t+1 while the GPU runs t, then waits — hiding the ~0.9ms

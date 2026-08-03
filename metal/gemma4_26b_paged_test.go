@@ -74,6 +74,7 @@ func TestGemma4_26B_pagedRuns(t *testing.T) {
 		_ = syscall.Getrusage(syscall.RUSAGE_SELF, &ru)
 		return int64(ru.Majflt), int64(ru.Minflt)
 	}
+	prof0 := r.PagedProfile() // snapshot before the timed window (see Task 1/2: direct compute+coord split)
 	for i := 1; i < len(toks); i++ {
 		// Faults around the METAL forward only (it runs before the CPU forward each token, so it
 		// faults the shared .giw expert pages cold): major = pages read from disk = the staging page-in.
@@ -128,6 +129,24 @@ func TestGemma4_26B_pagedRuns(t *testing.T) {
 	effMBs := float64(stages) * 3.19 * 1000 / (float64(fetchNanos) / 1e6)
 	t.Logf("  FAULTS over timed decode (WILLNEED=%v PREAD=%v NOCACHE=%v): major %d (%.1f/stage) minor %d | fetch effective %.0f MB/s",
 		willneed, pread, nocache, majFlt, float64(majFlt)/float64(stages), minFlt, effMBs)
+
+	// DIRECT compute+coord decomposition (Task 2) — GPU-busy per phase vs wall (wall−GPU = host
+	// submit/wait/encode coordination), plus staging cross-check (Task 1: stageWall must ≈ pool
+	// stageNanos and be SEPARATE from phase-1 wall, i.e. the phase-1 GPU wait is NOT booked as staging).
+	pf := r.PagedProfile()
+	ms := func(a, b int64) float64 { return float64(a-b) / 1e6 / float64(nTimed) }
+	t.Logf("  DECOMP/tok: p1[attn+dense+router] wall %.1f (gpu %.1f) | stage(pread) wall %.1f | idx-coord %.1f | p2[experts+join] wall %.1f (gpu %.1f) | dense-layers wall %.1f (gpu %.1f)",
+		ms(pf.p1WallNanos, prof0.p1WallNanos), ms(pf.p1GpuNanos, prof0.p1GpuNanos),
+		ms(pf.stageWallNanos, prof0.stageWallNanos), ms(pf.idxCoordNanos, prof0.idxCoordNanos),
+		ms(pf.p2WallNanos, prof0.p2WallNanos), ms(pf.p2GpuNanos, prof0.p2GpuNanos),
+		ms(pf.denseWallNanos, prof0.denseWallNanos), ms(pf.denseGpuNanos, prof0.denseGpuNanos))
+	gpuTot := ms(pf.p1GpuNanos, prof0.p1GpuNanos) + ms(pf.p2GpuNanos, prof0.p2GpuNanos) + ms(pf.denseGpuNanos, prof0.denseGpuNanos)
+	wallTot := ms(pf.p1WallNanos, prof0.p1WallNanos) + ms(pf.p2WallNanos, prof0.p2WallNanos) + ms(pf.denseWallNanos, prof0.denseWallNanos)
+	encTot := ms(pf.p1EncNanos, prof0.p1EncNanos) + ms(pf.p2EncNanos, prof0.p2EncNanos)
+	subTot := ms(pf.p1SubNanos, prof0.p1SubNanos) + ms(pf.p2SubNanos, prof0.p2SubNanos)
+	t.Logf("  DECOMP/tok totals: GPU-busy %.1f ms | phase-wall %.1f ms | encode %.1f ms | submit+wait %.1f ms | host-coord(wall−gpu) %.1f ms | stage %.1f ms",
+		gpuTot, wallTot, encTot, subTot, wallTot-gpuTot, ms(pf.stageWallNanos, prof0.stageWallNanos))
+	t.Logf("  DECOMP note: 60 layer command buffers/token (30 layers × 2 phases); submit+wait − GPU-busy = %.1f ms is the per-CB round-trip overhead", subTot-gpuTot)
 
 	t.Logf("26B PAGED DECODE: %.1f ms/tok  (%.2f tok/s)  N=%d  RSS %d MB", msTok, 1000/msTok, N, rssMB())
 	t.Logf("  staging (paging traffic): %.1f ms/tok  (%d expert stages over %d tokens, %.2f MB each)",
