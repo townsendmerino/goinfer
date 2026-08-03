@@ -331,7 +331,7 @@ func BuildResident(m *decoder.Model) (*Resident, error) {
 		}
 		switch {
 		case isG4MoE: // Gemma-4 enable_moe_block: parallel dense‖MoE FFN (its own norms/router/experts)
-			L.g4moe = buildGemma4MoELayer(d, &g4b)
+			L.g4moe = buildGemma4MoELayer(d, &g4b, r.g4moe)
 		case r.moe != nil && len(lw.Experts) > 0: // generic MoE layer: stacked experts instead of a dense FFN
 			L.moe = buildMoELayer(d, lw, r.moe)
 		default: // dense FFN (also GLM/DeepSeek's FirstKDense prefix layers, and gemma4 dense layers)
@@ -479,6 +479,9 @@ func (r *Resident) ForwardEmb(emb []float32, pos int) []float32 {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	copy(r.x.Floats(), emb)
+	if r.g4moe != nil && r.g4moe.paged { // synchronous expert paging: per-layer submit+wait, staged experts
+		return r.forwardLogitsPaged(pos)
+	}
 	return r.forwardLogits(pos)
 }
 
@@ -517,6 +520,12 @@ func (r *Resident) finalizeLogits() {
 // the caller (one job in, one logits out), but the executor overlaps the next token's encode
 // with this token's GPU execution.
 func (r *Resident) ForwardEmbPipe(emb []float32, pos int) []float32 {
+	if r.g4moe != nil && r.g4moe.paged {
+		// Paging tears each MoE layer into two submits with a host readback between — the encode-ahead
+		// executor (one static command buffer/token) cannot express it. Fall back to the synchronous
+		// paged path; there is no pipelining to lose (Step-0: paging is submit-bound, not encode-bound).
+		return r.ForwardEmb(emb, pos)
+	}
 	r.execOnce.Do(func() {
 		r.execReq = make(chan execJob)
 		r.execAck = make(chan []float32)

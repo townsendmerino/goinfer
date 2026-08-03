@@ -29,7 +29,10 @@ type expertPool struct {
 	lru        []int       // slot indices, most-recently-used at front
 	stage      stageFn
 
-	stages int // count of miss-stages performed (telemetry + the isolation-test oracle)
+	stages     int // miss-stages performed (telemetry + isolation-test oracle)
+	hits       int // ensureResident calls that found the expert already resident (same-expert-reuse)
+	coldStarts int // stages into a previously-free slot (pool not yet full)
+	evictions  int // stages that evicted an occupied slot (pool under pressure)
 }
 
 // newExpertPool allocates N slots sized to one expert's W4A8 buffers (nGuW/nGuS gate|up words/scales,
@@ -60,12 +63,16 @@ func newExpertPool(d *Device, N, nGuW, nGuS, nDW, nDS int, stage stageFn) *exper
 // the paged forward must submit+wait at each layer before calling this — it cannot be pre-encoded.
 func (p *expertPool) ensureResident(e int) expertSlot {
 	if s, ok := p.where[e]; ok {
+		p.hits++
 		p.touch(s)
 		return p.slots[s]
 	}
 	s := p.pickSlot()
 	if old := p.slotExpert[s]; old >= 0 {
 		delete(p.where, old)
+		p.evictions++
+	} else {
+		p.coldStarts++
 	}
 	guW, guS, dW, dS := p.stage(e)
 	copy(p.slots[s].guW.U32s(), guW)

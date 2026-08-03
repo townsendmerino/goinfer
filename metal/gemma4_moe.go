@@ -4,6 +4,8 @@ package metal
 
 import (
 	"fmt"
+	"os"
+	"strconv"
 
 	"github.com/townsendmerino/goinfer/decoder"
 )
@@ -96,6 +98,15 @@ type gemma4MoeResident struct {
 
 	rLogits, rIdx, rWgt Buffer // router scratch: logits[nE], idx[k] (u32), wgt[k]
 	g4x1, g4x2, g4rn    Buffer // dense-branch out, expert-branch accumulator, router-norm input — all [hidden]
+
+	// Synchronous paging (GOINFER_METAL_MOE_SLOTS=N>0): the full expert set doesn't fit resident, so
+	// each layer keeps N experts in a slot pool and stages the routed top-k in per token. Off (all
+	// experts resident) when slots==0. idxZeros is a [topK] all-zero index buffer so the reused
+	// gemv_w4a8_moe(_wacc) kernels read row 0 of a single-expert SLOT buffer while still indexing
+	// rWgt by the selection slot — makes paged dispatch byte-identical to the stacked path.
+	paged    bool
+	slots    int
+	idxZeros Buffer
 }
 
 // gemma4MoeLayer holds one enable_moe_block layer's device weights: the parallel dense MLP
@@ -105,9 +116,10 @@ type gemma4MoeResident struct {
 type gemma4MoeLayer struct {
 	routerW, routerBias, perExpertScale          Buffer
 	denseGuW, denseGuS, denseDW, denseDS         Buffer
-	expGuW, expGuS, expDW, expDS                 Buffer
+	expGuW, expGuS, expDW, expDS                 Buffer // stacked all-E (non-paged); zero when paged
 	preFFN, postFFN1, preFFN2, postFFN2, postFFN Buffer
 	uLayerScalar                                 Buffer
+	pool                                         *expertPool // non-nil when paged: LRU slot pool + on-demand staging
 }
 
 // buildGemma4MoE builds the Resident-level Gemma-4 MoE state (pipelines, config, uniforms, scratch)
@@ -158,6 +170,22 @@ func buildGemma4MoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H, 
 	g.rIdx = d.NewBufferUint32s(make([]uint32, b.TopK))
 	g.rWgt = d.NewBufferLen(b.TopK)
 	g.g4x1, g.g4x2, g.g4rn = d.NewBufferLen(H), d.NewBufferLen(H), d.NewBufferLen(H)
+
+	// Synchronous paging: GOINFER_METAL_MOE_SLOTS=N keeps only N experts/layer resident and stages the
+	// routed top-k in per token (the only way the 26B's 11.96 GB expert set runs on a 16 GB Mac). N
+	// must be >= topK (a token's own top-k must fit). N==0 / unset ⇒ all experts resident (the fitting
+	// path + the paged≡non-paged parity reference). idxZeros lets the paged expert GEMVs read row 0 of
+	// a single-expert slot buffer while rWgt is still indexed by the selection slot (byte-identical).
+	if s := os.Getenv("GOINFER_METAL_MOE_SLOTS"); s != "" {
+		n, err := strconv.Atoi(s)
+		if err != nil || n < b.TopK {
+			return nil, fmt.Errorf("GOINFER_METAL_MOE_SLOTS=%q invalid (need integer >= topK=%d)", s, b.TopK)
+		}
+		if n < b.NE { // n>=nE would hold every expert — no paging, just build the stacked path
+			g.paged, g.slots = true, n
+			g.idxZeros = d.NewBufferUint32s(make([]uint32, b.TopK))
+		}
+	}
 	return g, nil
 }
 
@@ -166,7 +194,7 @@ func buildGemma4MoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H, 
 // gate@0/up@inter split); the router (RouterProjScaled, f32) has routerScale·hidden^-0.5 folded into
 // its columns at build (decoder Gemma4MoEResidentLayer), so the resident router is rmsnorm_nw(h) →
 // gemv_f32_f32(RouterProjScaled) — the algebraic dual of the CPU's scaled-rn · raw-proj.
-func buildGemma4MoELayer(d *Device, b *decoder.Gemma4MoEResidentBundle) *gemma4MoeLayer {
+func buildGemma4MoELayer(d *Device, b *decoder.Gemma4MoEResidentBundle, g *gemma4MoeResident) *gemma4MoeLayer {
 	ml := &gemma4MoeLayer{}
 	ml.routerW = d.NewBufferFloats(b.RouterProjScaled)
 	ml.routerBias = d.NewBufferFloats(make([]float32, b.NE)) // zeros → sel = score (no e_score_correction_bias)
@@ -176,8 +204,28 @@ func buildGemma4MoELayer(d *Device, b *decoder.Gemma4MoEResidentBundle) *gemma4M
 	if ml.denseDW, ml.denseDS, e = int4Buf(d, b.MlpDown); e != nil {
 		panic(e)
 	}
-	ml.expGuW, ml.expGuS = int4Concat(d, b.ExpertsGateUp...) // per expert already fused [2*moeInter, hidden]
-	ml.expDW, ml.expDS = int4Concat(d, b.ExpertsDown...)
+	if g.paged {
+		// Paged: DON'T stack the experts (that is the 11.96 GB we can't afford). Build a bounded LRU
+		// slot pool + a stage fn that reads expert e's W4A8 bytes straight from the bundle's mmap-backed
+		// WeightMats on demand (int4DirectWords aliases the .giw). Per-expert buffer sizes come from
+		// expert 0. The .giw expert weights MUST be int4-direct (group-32) for this zero-intermediate path.
+		gw0, gs0, ok1 := int4DirectWords(b.ExpertsGateUp[0])
+		dw0, ds0, ok2 := int4DirectWords(b.ExpertsDown[0])
+		if !ok1 || !ok2 {
+			panic("metal gemma4 MoE paging: experts are not int4-direct (group-32) — cannot stage without a re-quant")
+		}
+		experts := b.ExpertsGateUp // capture (aliases the model mmap; kept alive by the Model)
+		down := b.ExpertsDown
+		stage := func(ei int) ([]uint32, []uint16, []uint32, []uint16) {
+			gw, gs, _ := int4DirectWords(experts[ei])
+			dw, ds, _ := int4DirectWords(down[ei])
+			return gw, gs, dw, ds
+		}
+		ml.pool = newExpertPool(d, g.slots, len(gw0), len(gs0), len(dw0), len(ds0), stage)
+	} else {
+		ml.expGuW, ml.expGuS = int4Concat(d, b.ExpertsGateUp...) // per expert already fused [2*moeInter, hidden]
+		ml.expDW, ml.expDS = int4Concat(d, b.ExpertsDown...)
+	}
 	ml.preFFN = d.NewBufferFloats(b.PreFFNNorm)
 	ml.postFFN1 = d.NewBufferFloats(b.PostFFNNorm1)
 	ml.preFFN2 = d.NewBufferFloats(b.PreFFNNorm2)
@@ -242,6 +290,62 @@ func (r *Resident) encodeG4Phase2NonPaged(e *Encoder, L *residLayer) {
 		e.Dispatch(r.pSw, 256, 256, r.gu, r.gu.At(g.moeInter*4), r.dq, r.dSc, g.uMoeInter, r.uAct)
 		e.DispatchTG(g.pDownWacc, r.H*32, 256, g.moeInter*2, ml.expDW, ml.expDS, r.dq, r.dSc, g.g4x2, g.uMoeInter, g.rIdx, g.rWgt, g.uSlot[j], r.uH)
 	}
+}
+
+// encodeG4Phase2Paged runs the k selected experts out of their staged SLOT buffers (one expert per
+// slot), accumulating into g4x2 — the paged twin of encodeG4Phase2NonPaged. idxZeros makes each GEMV
+// read row 0 of its single-expert slot (idxZeros[j]==0) while rWgt is still indexed by the selection
+// slot uSlot[j], so the reused gemv_w4a8_moe(_wacc) kernels compute byte-identically to the stacked
+// path (slot bytes == the stacked buffer's rows for that expert).
+func (r *Resident) encodeG4Phase2Paged(e *Encoder, slots []expertSlot) {
+	g := r.g4moe
+	e.Dispatch(g.pZero, r.H, 256, g.g4x2)
+	for j := 0; j < g.topK; j++ {
+		s := slots[j]
+		e.DispatchTG(g.pGU, (2*g.moeInter)*32, 256, r.H*2, s.guW, s.guS, r.mq, r.mSc, r.gu, r.uH, g.idxZeros, g.uSlot[j], g.uMoeGU)
+		e.Dispatch(r.pSw, 256, 256, r.gu, r.gu.At(g.moeInter*4), r.dq, r.dSc, g.uMoeInter, r.uAct)
+		e.DispatchTG(g.pDownWacc, r.H*32, 256, g.moeInter*2, s.dW, s.dS, r.dq, r.dSc, g.g4x2, g.uMoeInter, g.idxZeros, g.rWgt, g.uSlot[j], r.uH)
+	}
+}
+
+// forwardLogitsPaged is the SYNCHRONOUS expert-paging decode: the reference implementation that lets
+// the 26B (11.96 GB experts) run on a 16 GB Mac. Per layer, dense layers encode in one command
+// buffer; a paged Gemma-4 MoE layer is torn at the router (the value-dependent seam Step-0 priced at
+// +43%): [attention + dense + router] → submit+wait → read rIdx → stage the routed top-k into the
+// layer's LRU slot pool → [experts-from-slots + join] → submit+wait. Assumes the caller filled r.x
+// with the embedding and holds the OS thread (ForwardEmb does both).
+func (r *Resident) forwardLogitsPaged(pos int) []float32 {
+	r.uPos.SetU32(uint32(pos))
+	r.uNKeys.SetU32(uint32(pos + 1))
+	g := r.g4moe
+	for l := 0; l < r.nL; l++ {
+		L := &r.layers[l]
+		if L.g4moe != nil && L.g4moe.pool != nil {
+			e := r.q.Begin() // phase 1: attention + dense + router → rIdx/rWgt
+			r.encodeAttention(e, l)
+			r.encodeG4Phase1(e, L)
+			e.End() // commit + wait: rIdx/rWgt now readable
+			idx := g.rIdx.U32s()
+			slots := make([]expertSlot, g.topK)
+			for j := 0; j < g.topK; j++ {
+				slots[j] = L.g4moe.pool.ensureResident(int(idx[j])) // stage on miss, evict LRU
+			}
+			e2 := r.q.Begin() // phase 2: experts from slots + join
+			r.encodeG4Phase2Paged(e2, slots)
+			r.encodeG4Join(e2, L)
+			e2.End()
+			continue
+		}
+		e := r.q.Begin()
+		r.encodeLayer(e, l)
+		e.End()
+	}
+	e := r.q.Begin()
+	e.Dispatch(r.pRms, 256, 256, r.x, r.finalNorm, r.aq, r.aSc, r.uH, r.uEps, r.uAddOne)
+	e.Dispatch(r.pGemvW8, (r.V)*32, 32, r.aq, r.aSc, r.lmW, r.lmS, r.logits, r.uH)
+	e.End()
+	r.finalizeLogits()
+	return r.logitsHost
 }
 
 // encodeG4Join is the shared tail: postFFN2 on the expert accumulator, then the join —
