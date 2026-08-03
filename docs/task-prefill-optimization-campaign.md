@@ -9,12 +9,26 @@
 > deliberately stopped** — see "Why it stopped" and "Do not re-propose IMMA" below. All commits
 > pushed to `main` through `1d90394`.
 
-**The product question is answered.** A 2048-token prompt's TTFT went from **13.1 s (sequential
-M=1) to 2.1 s (batched)** on real qwen2.5-coder-1.5b — the unusable long-context regime is gone;
-RAG / code-context / long-chat are no longer blocked. The **Ollama crossover moved ~128 → ~320
-tokens**: goinfer wins total request time (prefill + decode) up to ~320-token prompts. Beyond that
-it stays behind Ollama on raw prefill throughput — a competitiveness gap, not a usability one, and
-structural (see the ceiling).
+**The product question is answered for the DENSE lane.** A 2048-token prompt's TTFT went from
+**13.1 s (sequential M=1) to 2.1 s (batched)** on real qwen2.5-coder-1.5b — the unusable
+long-context regime is gone; RAG / code-context / long-chat are no longer blocked *on dense models*.
+The **Ollama crossover moved ~128 → ~320 tokens**: goinfer wins total request time (prefill +
+decode) up to ~320-token prompts. Beyond that it stays behind Ollama on raw prefill throughput — a
+competitiveness gap, not a usability one, and structural (see the ceiling).
+
+> **SCOPE CAVEAT — this does NOT cover the 26B (or any gemma4moe/MoE that declines to sequential).**
+> `PrefillLast` guards out gemma4moe, so gemma-4-26b-a4b still falls back to the per-token loop and
+> remains at **~61 s TTFT at 2048** (measured, KV-only prefill already on) — squarely in the unusable
+> regime. And it **cannot be rescued by the levers on this campaign's list**: the batched dense/attn
+> plumbing is bounded at ~1.43× (61 → ~43 s, `docs/task-26b-prefill-bound.md`), and even a full
+> expert-major batching (Lever 3) on top might reach 3–4× → ~15–20 s. The real cause is a **hardware
+> mismatch** — an 8 GB card paging a 13 GB model (and, on Metal, a 16 GB laptop holding a 13 GB mmap
+> at 0.73 tok/s with phase-1 immovable). No amount of kernel quality closes that. The engineering
+> here is durable and the lessons transfer; the 26B numbers were never going to be good on this
+> hardware, and it stays **disclosed-with-caveats** whatever is done to it. The strategically higher
+> move is to point the now-much-better prefill at models that **fit** the hardware (a resident dense
+> flagship on the 2070 SUPER), where the decode advantage is real — publishable rows with honest
+> provenance, not another factor on a model that will remain caveated regardless.
 
 ### The five landed levers (each bit-identical to the sequential M=1 GEMV; decode byte-identical)
 
@@ -88,13 +102,28 @@ bottleneck on the critical path, the correct action is to leave both docs alone.
   not a TTFT fix. `docs/task-26b-prefill-bound.md`.
 - **Query-tiled attention** — the O(M²) redundancy fix above. `docs/task-prefill-attention.md`.
 
-### Higher-value than another prefill kernel, when the box is next worked
+### Next, in order, when the box is next worked (NOT another prefill kernel)
 
-Two things outrank it, both on the **decode** lane goinfer actually wins (the basis of the §B2
-claims): (1) the 26B decode levers frozen pending a production budget — async miss-DMA (~4.3 ms) and
-CUDA graphs against the ~19 ms dispatch floor (safe-gated: enforced EXCLUSIVE_PROCESS/MPS + startup
-bit-exactness self-test, decline under DEFAULT compute mode) — ~1.2–1.4× on decode; (2) this
-write-up. Neither is a prefill kernel.
+The remaining wins are on the **decode** lane goinfer actually wins (the basis of every §B2 claim):
+
+1. **CUDA graphs, safe-gated — the largest measured decode lever left.** ~19 ms of dispatch in a
+   ~29 ms forward. Mechanism confirmed on hardware (MPS A/B, bit-exact ×10); failure mode
+   characterized (time-sliced multi-context corrupts baked replay). Shippable design already
+   specified: admit **only** driver-enforced conditions (`CU_COMPUTE_MODE_EXCLUSIVE_PROCESS` or active
+   MPS), a **startup bit-exactness self-test**, **decline under DEFAULT compute mode even on an idle
+   box**, opt-in on top. The one remaining lever with a real projection (~1.2–1.4×) and **no new
+   attribution risk**. (Parked report: `docs/cuda-graphs-investigation.md`.)
+2. **Async miss-DMA (~4.3 ms)** after it — small, unconditional; the concurrency-evidence filter
+   applies (a trailing Sync / per-iteration drain would serialize the very thing being measured).
+3. **Then step back from the 26B.** Point the now-much-better prefill at models that **fit** the
+   hardware — a resident dense flagship on the 2070 SUPER — for publishable §B2 rows with honest
+   provenance. A **release consolidating the prefill campaign** would surface the work; the §B2 rows
+   are stronger now than when they were written. This beats another factor on a model that stays
+   caveated regardless.
+
+The Mac track continues independently on the staging gap; the **destination-memory hypothesis** there
+(is *pinning the slots* what makes the writes slow?) is worth running regardless of the 26B's low
+ceiling — if true, it is a real tension inside a shipped default and worth knowing.
 
 ---
 
