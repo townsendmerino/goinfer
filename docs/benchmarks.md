@@ -229,22 +229,35 @@ comparison on this page.
   each int4 weight row once per 8-token tile. Measured (real qwen2.5-coder-1.5b, same rig/quant,
   Ollama 0.5.7 `q15`):
   - **TTFT (prefill only), batched vs the old sequential path:** 128 tok **3.46×**, 512 **3.25×**,
-    2048 **2.79×** (best at short prompts; the ratio falls as O(M²) attention — paid by both
-    paths — dilutes the GEMV win, whose ceiling is the MT=8 weight-read reduction).
+    2048 **2.79×** (best at short prompts; the ratio falls as O(M²) attention — paid by both paths
+    — grows to dominate).
   - **Total request time (batched prefill + 64 greedy decode):** goinfer 128 tok **450 ms**,
     192 **530 ms**, 256 **623 ms**, 512 **1037 ms**, 2048 **5311 ms**; Ollama ~**560–600 ms**
     flat across 128–628 tok. So goinfer now **wins up to ~230-token prompts** (192: 530 vs ~595;
     256: 623 vs ~600 — the crossover) and loses beyond, vs ~128 before.
-  - **The remaining gap is fundamental to bit-identity.** goinfer's batched prefill is ~1–2.3
-    ms/token vs Ollama's ~0.17; closing it needs the tensor-core (IMMA/MMA) GEMM that reorders
-    the group-scaled cross-group **float** accumulation and so cannot be bit-identical to the M=1
-    GEMV. The dp4a weight-stationary kernel is the fastest primitive that keeps decode
-    byte-identical (the parked int32-per-group candidate in `docs/task-moe-streaming.md` trades
-    that for a tolerance gate). goinfer stays *behind* Ollama on raw prefill throughput at long
-    context; it wins on total time only while its faster decode covers the prefill (≤~230 tok).
+  - **Where batched-prefill time goes (`TestPrefillDecomp`, category timers):** at 128 tok GEMV is
+    **88%** (attn 8%, glue 4%); at 512, GEMV **73%** / attn 25%; at 2048, attn **56%** / GEMV 43%.
+    So GEMV dominates *around the crossover*, and attention (naive O(M²) `attn_batched`) only takes
+    over past ~1–2k tokens.
+  - **The residual is currently ~1–2.3 ms/prompt-token vs Ollama's ~0.17; attribution:** an MT
+    sweep of the batched GEMV (8/16/32/64 — MT = activation columns per weight-row load, *not* a
+    bit-identity constraint: the M=1-reproduces-the-GEMV gate passes at every width) moves prefill
+    GEMV only **~6%** (MT=32 best, adopted; 64 spills). So the GEMV is **not** weight-fetch-bound —
+    the fixed `__dp4a` count is the floor, and `__dp4a` is ~1/3 of Turing IMMA int8 throughput,
+    which is the gap against cuBLAS's tensor cores near the crossover. Closing *that* would need an
+    IMMA GEMM (reorders the group-scaled cross-group **float** sum → not bit-identical; the parked
+    `docs/task-rotation-perrow-imma.md` / int32-per-group candidate trades bit-identity for a
+    tolerance gate, and is **not funded**). At long context the lever is instead a flash-style
+    attention. This is a measurement, not a proof that IMMA is the only path.
+  - **Note on this report's own hygiene:** the first draft of this bullet recorded the gap as
+    *fundamental to bit-identity* and claimed a *~23× GEMV ceiling* — both were the plausible
+    weight-amortization mechanism written up as a conclusion, and both were wrong (the sweep put the
+    GEMV lever at ~6%, and the ceiling at the dp4a compute floor). A believable mechanism is not a
+    measurement; decompose first.
   - Gates: `cuda/prefill_e2e_test.go` (KV bit-identical all layers×rows + logits + 64-token
-    byte-identical decode, real windowed Mistral); `TestPrefillTTFT` / `TestPrefillCrossover`
-    (heavy) reproduce the numbers above. The rows in the §B2 table are **not edited**.
+    byte-identical decode, real windowed Mistral); `TestPrefillTTFT` / `TestPrefillCrossover` /
+    `TestPrefillDecomp` (heavy) reproduce the numbers above. The rows in the §B2 table are
+    **not edited**.
 - **Correctness is gated, not assumed.** CUDA decode is held to the repo's own 3%
   near-tie parity rule against the CPU path on a real q4_k_m checkpoint (9/10 exact
   argmax, 0 hard fails) — the speed is only meaningful because the tokens match.

@@ -5,9 +5,51 @@ package cuda
 import (
 	"fmt"
 	"math"
+	"time"
 
 	gpu "github.com/townsendmerino/aikit/gpu"
 )
+
+// prefillProf accumulates PrefillLast's per-category GPU time (test-only). The boundaries are stream
+// syncs, so the category sum slightly exceeds the pipelined wall time (lost launch overlap) — it
+// attributes where the time goes, not the fully-overlapped total.
+type prefillProf struct {
+	gemv, attn, glue time.Duration
+}
+
+type profCat int
+
+const (
+	gemvCat profCat = iota
+	attnCat
+	glueCat
+)
+
+// profTic syncs the stream and returns a start time when profiling is on; a no-op zero Time otherwise.
+func (r *cudaResident) profTic() time.Time {
+	if r.prof == nil {
+		return time.Time{}
+	}
+	_ = r.stream.Sync()
+	return time.Now()
+}
+
+// profToc syncs the stream and adds the elapsed time to the named category (no-op when profiling off).
+func (r *cudaResident) profToc(cat profCat, t0 time.Time) {
+	if r.prof == nil {
+		return
+	}
+	_ = r.stream.Sync()
+	d := time.Since(t0)
+	switch cat {
+	case gemvCat:
+		r.prof.gemv += d
+	case attnCat:
+		r.prof.attn += d
+	case glueCat:
+		r.prof.glue += d
+	}
+}
 
 // PrefillLast (decoder.Prefiller) ingests a whole prompt in ONE weight-stationary pass and returns the
 // logits for the last token — the batched (M=len) counterpart of the sequential ForwardNoLogits loop.
@@ -84,16 +126,21 @@ func (r *cudaResident) PrefillLast(embeddings [][]float32, startPos int) ([]floa
 			return e
 		}
 
+		ropeN := r.nH*rhalf + nKV*rhalf + nKV*(hd-2*rhalf)
 		for l := 0; l < r.nLayers; l++ {
 			Ly := &r.layers[l]
 			qb, kb, vb := ArgNull(), ArgNull(), ArgNull()
 			if Ly.hasBias {
 				qb, kb, vb = Arg(Ly.qb), Arg(Ly.kb), Arg(Ly.vb)
 			}
-			// segA: rmsnorm+quant, then Q/K/V GEMVs (weight-stationary batched).
+			// segA: rmsnorm+quant (glue), then Q/K/V GEMVs. Category timers (r.prof) sync r.stream at
+			// each group boundary; nil in production, so the launch sequence is otherwise unchanged.
+			t := r.profTic()
 			if e := r.bRmsB(xB, Ly.preNorm, hidden, aqB, aScB, M); e != nil {
 				return e
 			}
+			r.profToc(glueCat, t)
+			t = r.profTic()
 			if e := r.bGemvB(Ly.q, aqB, aScB, qb, qBb, M, 0); e != nil {
 				return e
 			}
@@ -103,19 +150,22 @@ func (r *cudaResident) PrefillLast(embeddings [][]float32, startPos int) ([]floa
 			if e := r.bGemvB(Ly.v, aqB, aScB, vb, vBb, M, 0); e != nil {
 				return e
 			}
-			// rope + kv-store: token m at absolute position startPos+m; rotates q/k, writes K/V.
-			ropeN := r.nH*rhalf + nKV*rhalf + nKV*(hd-2*rhalf)
+			r.profToc(gemvCat, t)
+			// rope + kv-store (glue): token m at absolute position startPos+m; rotates q/k, writes K/V.
+			t = r.profTic()
 			if e := r.launch(r.bRopeKV, LaunchConfig{GridX: uint32((ropeN + 255) / 256), GridY: uint32(M), GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
 				Arg(qBb), Arg(kBb), Arg(vBb), Arg(Ly.invF), Arg(r.kc[l]), Arg(r.vc[l]),
 				gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(nKV)), gpu.ArgValue(int32(hd)),
 				gpu.ArgValue(int32(startPos)), gpu.ArgValue(int32(rhalf)), gpu.ArgValue(int32(M))); e != nil {
 				return e
 			}
+			r.profToc(glueCat, t)
 			// causal + per-row sliding-window attention; block 128 matches the M=1 attention reduce.
 			maxNWin := startPos + M
 			if Ly.window > 0 && int(Ly.window) < maxNWin {
 				maxNWin = int(Ly.window)
 			}
+			t = r.profTic()
 			if e := r.launch(r.bAttn, LaunchConfig{GridX: uint32(r.nH), GridY: uint32(M), GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1,
 				SharedMemBytes: uint32((maxNWin + 128) * 4)},
 				Arg(qBb), Arg(r.kc[l]), Arg(r.vc[l]), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(nKV)),
@@ -123,31 +173,44 @@ func (r *cudaResident) PrefillLast(embeddings [][]float32, startPos int) ([]floa
 				gpu.ArgValue(Ly.window), gpu.ArgValue(int32(M)), Arg(cctxB)); e != nil {
 				return e
 			}
-			// segB: ctx-quant, o-proj (accum into residual), MLP.
+			r.profToc(attnCat, t)
+			// segB: ctx-quant (glue), o-proj (gemv, accum into residual), MLP.
+			t = r.profTic()
 			if e := r.launch(r.bQuant, LaunchConfig{GridX: uint32(M), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
 				Arg(cctxB), gpu.ArgValue(int32(qDim)), Arg(cqB), Arg(cScB), gpu.ArgValue(int32(M))); e != nil {
 				return e
 			}
+			r.profToc(glueCat, t)
+			t = r.profTic()
 			if e := r.bGemvB(Ly.o, cqB, cScB, ArgNull(), xB, M, 1); e != nil {
 				return e
 			}
+			r.profToc(gemvCat, t)
+			t = r.profTic()
 			if e := r.bRmsB(xB, Ly.postNorm, hidden, mqB, mScB, M); e != nil {
 				return e
 			}
+			r.profToc(glueCat, t)
+			t = r.profTic()
 			if e := r.bGemvB(Ly.g, mqB, mScB, ArgNull(), gOb, M, 0); e != nil {
 				return e
 			}
 			if e := r.bGemvB(Ly.u, mqB, mScB, ArgNull(), uOb, M, 0); e != nil {
 				return e
 			}
+			r.profToc(gemvCat, t)
+			t = r.profTic()
 			if e := r.launch(r.bSw, LaunchConfig{GridX: uint32(M), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
 				Arg(gOb), Arg(uOb), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(inter)),
 				gpu.ArgValue(r.act), Arg(dqB), Arg(dScB), Arg(dScrB), gpu.ArgValue(int32(M))); e != nil {
 				return e
 			}
+			r.profToc(glueCat, t)
+			t = r.profTic()
 			if e := r.bGemvB(Ly.d, dqB, dScB, ArgNull(), xB, M, 1); e != nil {
 				return e
 			}
+			r.profToc(gemvCat, t)
 		}
 
 		// Final norm + LM head on the LAST row only — copy xB[M-1] into the M=1 scratch and reuse the

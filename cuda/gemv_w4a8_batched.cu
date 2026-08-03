@@ -19,11 +19,17 @@
 // equals its sequential-GEMV value to the bit. This is WHY there is no IMMA/MMA path: tensor-core
 // accumulation reorders the cross-group float sum and would break the byte-identical gate.
 //
-// PERFORMANCE CEILING, CHOSEN NOT MISSED: __dp4a is ~1/3 of Turing IMMA int8 throughput. The op is
-// weight-bandwidth-bound up to M~=45 and compute-bound above it, so at M=512 expect ~23x on TTFT
-// rather than the ~72x an IMMA path could theoretically reach. IMMA is unavailable here without moving
-// to a tolerance gate (see the parked "int32-per-group GEMV" candidate in docs) — bit-identity was the
-// explicit constraint, so dp4a is the right primitive.
+// PERFORMANCE, MEASURED — NOT the weight-amortization the tiling suggests. MT is how many activation
+// columns one weight-row load serves, so it looks like the lever: MT=8 re-reads each weight row
+// ceil(M/8) times, MT=32 only ceil(M/32). But an MT sweep (8/16/32/64, real qwen2.5-coder-1.5b) moves
+// prefill GEMV time only ~6% total (MT=32 best; MT=64 REGRESSES — register spill), so the kernel is
+// NOT weight-fetch-bound — the fixed __dp4a count (N*Kwords*M dp4a-pairs) is the floor, and __dp4a is
+// ~1/3 of Turing IMMA int8 throughput. MT=32 is kept as the free ~6%; shared-memory weight staging to
+// push MT higher would not help (the fetch it saves is already ≤6%). The larger cost near the Ollama
+// crossover is this dp4a throughput vs cuBLAS's tensor cores — closing THAT needs IMMA, which reorders
+// the cross-group float sum and breaks bit-identity (the parked "int32-per-group GEMV" candidate in
+// docs trades bit-identity for a tolerance gate). An earlier version of this comment claimed "~23x at
+// M=512" from the weight-amortization model — the sweep disproved it; this records the measurement.
 //
 // Args mirror gemv_w4a8_fwd, plus M and the per-row activation arrays:
 //   W  [N, Kwords] u32 (8 int4/word, nibble-permuted at pack time, permuteFast)
@@ -32,8 +38,10 @@
 //   aScale [M] f32 — per-row activation scale (A[m] used aScale[m])
 //   bias [N] f32 or null
 //   dst [M, N] f32 (row m = token m's output vector); accum selects dst += val.
-// MT = activation columns handled per weight-row load (register-bound; 8 is a safe default).
-#define MT 8
+// MT = activation columns handled per weight-row load. 32 is the measured sweet spot (see above): the
+// bit-identity gate passes at every MT (tiling never touches an element's accumulation order), 32 gives
+// the best prefill, 64 spills registers and regresses.
+#define MT 32
 
 extern "C" __global__ void gemv_w4a8_batched(
     const unsigned int* __restrict__ W, const int* __restrict__ A, const __half* __restrict__ gs,
