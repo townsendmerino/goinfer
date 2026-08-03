@@ -178,10 +178,44 @@ func int4DirectBytes(w *linalg.WeightMat) (q4 []byte, scales []uint16, ok bool) 
 		return nil, nil, false
 	}
 	scales = make([]uint16, len(q4s))
-	for i, s := range q4s {
-		scales[i] = f32ToF16(s)
-	}
+	parallelF32ToF16(scales, q4s)
 	return b, scales, true
+}
+
+// parallelF32ToF16 converts src (f32 group scales) to dst (f16 bits) across up to 8 workers. In the
+// gemma4-26b expert-paging path this f32→f16 conversion runs once per expert PER STAGE (~600 stages/
+// token × ~186K scales) and was ~228 ms/token of staging, arithmetic-dominated (alloc ~27 ms, copy
+// ~5 ms) — but every element is independent and f32ToF16 is deterministic, so splitting it across
+// cores is a free (no-memory) staging win that is BYTE-IDENTICAL to the serial loop. Serial for small
+// inputs (the non-paged one-time build, where goroutine spawn would not pay).
+func parallelF32ToF16(dst []uint16, src []float32) {
+	n := len(src)
+	workers := runtime.GOMAXPROCS(0)
+	if workers > 8 {
+		workers = 8
+	}
+	if n < 8192 || workers <= 1 {
+		for i, s := range src {
+			dst[i] = f32ToF16(s)
+		}
+		return
+	}
+	chunk := (n + workers - 1) / workers
+	var wg sync.WaitGroup
+	for lo := 0; lo < n; lo += chunk {
+		hi := lo + chunk
+		if hi > n {
+			hi = n
+		}
+		wg.Add(1)
+		go func(lo, hi int) {
+			defer wg.Done()
+			for i := lo; i < hi; i++ {
+				dst[i] = f32ToF16(src[i])
+			}
+		}(lo, hi)
+	}
+	wg.Wait()
 }
 
 // int4Buf uploads a WeightMat as W4A8 (int4, group=32) + f16 group scales. If the weight is
