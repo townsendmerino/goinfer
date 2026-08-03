@@ -224,9 +224,18 @@ func buildGemma4MoELayer(d *Device, b *decoder.Gemma4MoEResidentBundle, g *gemma
 		}
 		ml.pool = newExpertPool(d, g.slots, len(gw0), len(gs0), len(dw0), len(ds0), stage)
 		// GOINFER_MOE_WILLNEED=1 issues MADV_WILLNEED over the routed experts' nibble spans before
-		// staging — readahead over the .giw-aliased q4 bytes, the lever against the ~270 MB/s
-		// demand-fault page-in. Off by default (demand-fault baseline). Advise on the (large) q4 span
-		// only; the f16 scales are tiny. PageAlignedInterior because MADV wants page-aligned bounds.
+		// staging. MEASURED AND DECLINED (cold A/B, sudo purge between arms, 2026-08-03): it does NOT
+		// help. major faults/stage ROSE 92.5→147.1 (readahead read MORE from disk, did not batch the
+		// serial faults), and the staging-line drop (−775 ms) was an ATTRIBUTION SHIFT into the residual
+		// compute+coord bucket (+700 ms), for a total move of 1851.8→1776.6 ms/tok (~4%, noise band).
+		// WILLNEED targets fault LATENCY/overlap, but the bound here is fault COUNT, and darwin
+		// MADV_WILLNEED on a span you touch immediately pays the read synchronously in the Advise call —
+		// the synchronous per-layer Advise→copy path has no lead time to hide it behind (the routed
+		// experts aren't known until phase-1 completes: the value-dependent seam). The extra faults are
+		// consistent with prefetched pages being evicted under memory pressure before use (RSS fell
+		// 3369→2870 MB). Kept OFF by default and wired so nobody re-proposes it without re-reading this.
+		// Lesson: when you optimize a measured sub-bucket, the TOTAL is the gate — a residual bucket
+		// absorbs displaced cost silently. See [[optimize-sub-bucket-total-is-the-gate]].
 		if os.Getenv("GOINFER_MOE_WILLNEED") == "1" {
 			ml.pool.prefetch = func(ei int) {
 				if q4, _, _, ok := experts[ei].Int4(); ok {
