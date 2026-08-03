@@ -39,6 +39,13 @@ same-quant, same-machine is the whole discipline.
 Reproduce goinfer's side end-to-end (and get the verbatim peer commands) with
 [`scripts/bench_compare.sh`](../scripts/bench_compare.sh).
 
+**Pinned peer, kept in place.** The §B2 comparison's legitimacy rests on the *exact* peer
+version; reinstalling later risks silent version drift (a newer Ollama changes prefill/decode
+behavior). Ollama **0.5.7** is therefore kept as a user-space standalone binary at
+`~/ollama-587/bin/ollama` on the RTX 2070 SUPER box (run `OLLAMA_HOST=127.0.0.1:11435
+OLLAMA_MODELS=~/ollama-587/models ~/ollama-587/bin/ollama serve`; the 1.5B is imported as
+`q15`). Do not delete it; re-measure crossovers against this binary, not a fresh install.
+
 **Forward vs serve split (new — future rows may state both).** Every published row here is a
 **serve-path, client-wall-clock** number (prefill, sampling, detok, HTTP all inside it) — the
 methodology-symmetric bar, and it stays. But a direct decomposition now exists
