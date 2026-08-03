@@ -2,7 +2,10 @@
 
 package metal
 
-import "testing"
+import (
+	"encoding/binary"
+	"testing"
+)
 
 // TestExpertPool_lruAndStaging isolates the paging primitive (expertpool.go) against a synthetic
 // stage function — the pool's correctness (LRU eviction, cold start, same-expert-twice, staged
@@ -15,17 +18,19 @@ func TestExpertPool_lruAndStaging(t *testing.T) {
 		t.Skipf("device: %v", err)
 	}
 	const nGuW, nGuS, nDW, nDS = 8, 4, 4, 2
-	stage := func(e int) ([]uint32, []uint16, []uint32, []uint16) {
-		guW := make([]uint32, nGuW)
-		dW := make([]uint32, nDW)
+	// stage now returns nibble BYTES for the word buffers (mirrors production int4DirectBytes). Fill
+	// each 4-byte word with LE(e) so a byte-copy into the u32 slot reproduces expert id e on LE.
+	stage := func(e int) ([]byte, []uint16, []byte, []uint16) {
+		guW := make([]byte, nGuW*4)
+		dW := make([]byte, nDW*4)
+		for i := 0; i < nGuW; i++ {
+			binary.LittleEndian.PutUint32(guW[i*4:], uint32(e))
+		}
+		for i := 0; i < nDW; i++ {
+			binary.LittleEndian.PutUint32(dW[i*4:], uint32(e))
+		}
 		guS := make([]uint16, nGuS)
 		dS := make([]uint16, nDS)
-		for i := range guW {
-			guW[i] = uint32(e)
-		}
-		for i := range dW {
-			dW[i] = uint32(e)
-		}
 		for i := range guS {
 			guS[i] = uint16(e)
 		}

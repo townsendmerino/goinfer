@@ -217,9 +217,9 @@ func buildGemma4MoELayer(d *Device, b *decoder.Gemma4MoEResidentBundle, g *gemma
 		}
 		experts := b.ExpertsGateUp // capture (aliases the model mmap; kept alive by the Model)
 		down := b.ExpertsDown
-		stage := func(ei int) ([]uint32, []uint16, []uint32, []uint16) {
-			gw, gs, _ := int4DirectWords(experts[ei])
-			dw, ds, _ := int4DirectWords(down[ei])
+		stage := func(ei int) ([]byte, []uint16, []byte, []uint16) {
+			gw, gs, _ := int4DirectBytes(experts[ei]) // nibble bytes aliased from mmap; no reconstruction/alloc
+			dw, ds, _ := int4DirectBytes(down[ei])
 			return gw, gs, dw, ds
 		}
 		ml.pool = newExpertPool(d, g.slots, len(gw0), len(gs0), len(dw0), len(ds0), stage)

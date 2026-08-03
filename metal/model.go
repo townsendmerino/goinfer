@@ -160,6 +160,26 @@ func bytesToU32(b []byte) []uint32 {
 	return w
 }
 
+// int4DirectBytes is int4DirectWords' zero-copy sibling for the paging hot path: it returns the
+// packed nibble bytes ALIASED straight from the mmap (no bytesToU32 reconstruction, no per-stage
+// []uint32 allocation) plus the f16 group scales. The nibble bytes are byte-for-byte the words
+// int4DirectWords would build (little-endian), so a byte-copy into a uint32 slot buffer reproduces
+// them exactly on LE — the paged forward's copy does exactly that (expertpool.copyBytesToU32Buf).
+// Measured: bytesToU32 over the 26B's per-token staged nibbles is ~215 ms/1.9 GB of pure
+// reconstruction + a 1.9 GB/run allocation, both removed here; the words path (int4DirectWords)
+// stays for the one-time non-paged build where the []uint32 shape is wanted.
+func int4DirectBytes(w *linalg.WeightMat) (q4 []byte, scales []uint16, ok bool) {
+	b, q4s, group, ok := w.Int4()
+	if !ok || group != 32 {
+		return nil, nil, false
+	}
+	scales = make([]uint16, len(q4s))
+	for i, s := range q4s {
+		scales[i] = f32ToF16(s)
+	}
+	return b, scales, true
+}
+
 // int4Buf uploads a WeightMat as W4A8 (int4, group=32) + f16 group scales. If the weight is
 // ALREADY int4 (a Quant:"int4" load), it consumes the nibbles directly (int4-direct, no int8
 // step); otherwise it re-quantizes the int8 weight through the validated packer. One-time at build.

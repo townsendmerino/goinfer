@@ -2,7 +2,10 @@
 
 package metal
 
-import "time"
+import (
+	"time"
+	"unsafe"
+)
 
 // expertPool is a bounded per-layer LRU pool of N expert slots for SYNCHRONOUS Metal MoE paging.
 // The gemma4-26b full expert set is 11.96 GB (per-expert W4A8 ≈ 3.19 MB × 128 × 30 layers) — it does
@@ -18,11 +21,28 @@ import "time"
 // [[metal-moe-paging-needs-speculation]] and the Step-6 budget probe (paging_budget_test.go).
 type expertSlot struct{ guW, guS, dW, dS Buffer }
 
-// stageFn fetches expert e's W4A8 bytes (gate|up words+f16 scales, down words+f16 scales). In
-// production it is int4DirectWords over the layer bundle's expert WeightMats (mmap-backed, read on
-// demand); in isolation tests it returns synthetic per-expert data. Returned slices are copied into
-// the slot immediately, so the callee may reuse/alias its backing.
-type stageFn func(e int) (guW []uint32, guS []uint16, dW []uint32, dS []uint16)
+// stageFn fetches expert e's W4A8 data: gate|up packed nibble BYTES + f16 scales, down nibble bytes
+// + f16 scales. In production it is int4DirectBytes over the layer bundle's expert WeightMats — the
+// nibble bytes ALIAS the mmap (zero-copy, no reconstruction, no per-stage allocation); in isolation
+// tests it returns synthetic per-expert bytes. The word buffers are uint32 on the GPU but staged as
+// raw LE bytes (copyBytesToU32Buf) — the mmap span is byte-for-byte the uint32 words on LE, and a
+// byte copy needs no source alignment (the mmap offsets are not 4-aligned). Returned slices are
+// copied into the slot immediately, so the callee may reuse/alias its backing.
+type stageFn func(e int) (guW []byte, guS []uint16, dW []byte, dS []uint16)
+
+// copyBytesToU32Buf memcpys little-endian nibble bytes into a uint32 slot buffer's shared contents.
+// The buffer is UMA/page-aligned, so reinterpreting its []uint32 view as []byte is always safe; the
+// source is an unaligned mmap span, which a byte copy handles (a *uint32 alias of it would be
+// misaligned UB — measured 73% of expert spans are not 4-aligned). On LE this yields the exact words
+// bytesToU32 would build, so paged ≡ non-paged byte-identity is preserved.
+func copyBytesToU32Buf(dst Buffer, src []byte) {
+	d := dst.U32s()
+	if len(d) == 0 {
+		return
+	}
+	db := unsafe.Slice((*byte)(unsafe.Pointer(&d[0])), len(d)*4)
+	copy(db, src)
+}
 
 type expertPool struct {
 	slots      []expertSlot
@@ -36,8 +56,8 @@ type expertPool struct {
 	coldStarts int   // stages into a previously-free slot (pool not yet full)
 	evictions  int   // stages that evicted an occupied slot (pool under pressure)
 	stageNanos int64 // total host time spent staging (fetch + copy) — the paging-traffic penalty term
-	fetchNanos int64 // time in stage() — mmap read + int4DirectWords (bytesToU32 + f32→f16 scales)
-	copyNanos  int64 // time copying the fetched bytes into the slot's shared Metal buffers
+	fetchNanos int64 // time in stage() — mmap-aliased nibble bytes + f32→f16 scales (no reconstruction)
+	copyNanos  int64 // time byte-copying the fetched nibbles/scales into the slot's shared Metal buffers
 
 	// prefetch, when set, issues an MADV_WILLNEED readahead over expert e's mmap-backed nibble spans.
 	// The synchronous paged forward calls prefetchAll for the whole routed top-k BEFORE touching any
@@ -97,11 +117,11 @@ func (p *expertPool) ensureResident(e int) expertSlot {
 		p.coldStarts++
 	}
 	t0 := time.Now()
-	guW, guS, dW, dS := p.stage(e) // mmap read + int4DirectWords (bytesToU32 + f32→f16 scales)
+	guW, guS, dW, dS := p.stage(e) // mmap-aliased nibble bytes + f16 scales (no reconstruction/alloc)
 	t1 := time.Now()
-	copy(p.slots[s].guW.U32s(), guW)
+	copyBytesToU32Buf(p.slots[s].guW, guW)
 	copy(p.slots[s].guS.U16s(), guS)
-	copy(p.slots[s].dW.U32s(), dW)
+	copyBytesToU32Buf(p.slots[s].dW, dW)
 	copy(p.slots[s].dS.U16s(), dS)
 	t2 := time.Now()
 	p.fetchNanos += t1.Sub(t0).Nanoseconds()
