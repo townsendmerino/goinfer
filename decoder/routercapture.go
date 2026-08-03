@@ -70,3 +70,10 @@ var (
 func Gemma4MoECaptureForTest() (wts, x1, x2 [][]float32) {
 	return routerWtsBuf, routerX1Buf, routerX2Buf
 }
+
+// RouterMarginForTest returns the per-decision top-k boundary margin (smallest selected expert's
+// softmax prob minus the largest rejected expert's), same order/index as RouterCaptureForTest. It
+// is the MoE-specific robustness signal a noise-floor check reads: a fixture whose margin sits below
+// the int4-vs-f32 routing perturbation can flip top-k under quant and cannot gate a resident router,
+// however correct the port (the reason the CUDA MoE fixture was rebuilt at 9275f94).
+func RouterMarginForTest() []float32 { return routerMarginBuf }
