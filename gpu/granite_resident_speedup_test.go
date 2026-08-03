@@ -21,6 +21,7 @@ import (
 // computationally correct (matches an int8 reference at cosine ~0.99) and the int8 output is
 // coherent + factual. A tight f32 gate would need f16 weights (follow-up).
 func TestGraniteResidentSpeedup(t *testing.T) {
+	requireHeavyModel(t)
 	if testing.Short() {
 		t.Skip("granite resident speedup")
 	}

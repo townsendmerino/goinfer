@@ -18,6 +18,7 @@ import (
 )
 
 func TestPhi3MiniReal_gate(t *testing.T) {
+	requireHeavyModel(t)
 	home, _ := os.UserHomeDir()
 	ckpt := os.Getenv("GOINFER_PHI3_MINI")
 	if ckpt == "" {
@@ -102,6 +103,7 @@ func TestPhi3MiniReal_gate(t *testing.T) {
 // snapshot delta + Q4, not load error (f32-resident vs int8-resident agree to ~0.02, ruling
 // out goinfer quant). Fixture reuses scripts/pin_phi3_mini.py's golden.
 func TestPhi3GGUFReal_gate(t *testing.T) {
+	requireHeavyModel(t)
 	home, _ := os.UserHomeDir()
 	gguf := os.Getenv("GOINFER_PHI3_GGUF")
 	if gguf == "" {

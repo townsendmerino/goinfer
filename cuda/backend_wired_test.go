@@ -19,6 +19,7 @@ import (
 // backend-equivalence gate for the shipped path; it catches wiring regressions the
 // inline-forward parity test can't.
 func TestBackendResidentWired(t *testing.T) {
+	requireHeavyModel(t)
 	gguf := os.Getenv("GOINFER_CUDA_MODEL")
 	if gguf == "" {
 		gguf = os.ExpandEnv("$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")
@@ -115,6 +116,7 @@ func TestBackendResidentWired(t *testing.T) {
 // — measured here rather than assumed, since recovering it needs an interface addition
 // (a greedy-only fast path), not a drop-in.
 func TestProdThroughput(t *testing.T) {
+	requireHeavyModel(t)
 	gguf := os.Getenv("GOINFER_CUDA_MODEL")
 	if gguf == "" {
 		gguf = os.ExpandEnv("$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")
@@ -193,6 +195,7 @@ func TestProdThroughput(t *testing.T) {
 // exercises the decode-loop restructure (fastNext), not just the kernel — the real risk. If
 // the two ever diverge, the fast path is silently changing output and must not ship.
 func TestGreedyFastPathIdentical(t *testing.T) {
+	requireHeavyModel(t)
 	gguf := os.Getenv("GOINFER_CUDA_MODEL")
 	if gguf == "" {
 		gguf = os.ExpandEnv("$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")

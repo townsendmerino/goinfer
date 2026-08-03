@@ -99,6 +99,7 @@ func findEmbedCheckpointPatterns() []string {
 
 func newQwen3Embedder(t *testing.T, g *embedGolden) *decoderEmbedder {
 	t.Helper()
+	requireHeavyModel(t)
 	path := qwen3EmbeddingCheckpoint(t)
 	tk, err := loadDecoderTokenizer(path)
 	if err != nil {

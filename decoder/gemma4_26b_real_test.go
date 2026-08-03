@@ -65,6 +65,7 @@ const gemma4GateUserTurn = "What is the capital of France, and what is it famous
 const degeneracyFloor = 0.70
 
 func TestGemma4_26B_gate(t *testing.T) {
+	requireHeavyModel(t)
 	dir := os.Getenv("GOINFER_GEMMA4_26B")
 	if dir == "" {
 		home, _ := os.UserHomeDir()

@@ -169,6 +169,7 @@ const probeText = "The capital of France is"
 // path, so "is this cosine / this many near-ties good?" has an answer measured on THIS box
 // rather than assumed. Without it a Gemma number cannot be judged.
 func TestDenseResidentParity(t *testing.T) {
+	requireHeavyModel(t)
 	path := os.ExpandEnv("$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")
 	st := residentParity(t, path, seedPrompt(t, path, probeText), 24)
 	assertParity(t, "dense control", st, 0.95)
@@ -177,6 +178,7 @@ func TestDenseResidentParity(t *testing.T) {
 // TestGemma3ResidentParity is the Metal Gemma 3 gate — judged by the SAME bar the control meets.
 // Needs the checkpoint (~4 GB at int8, loaded twice → budget ~10 GB); skips without it.
 func TestGemma3ResidentParity(t *testing.T) {
+	requireHeavyModel(t)
 	// Dormant until the kernels are validated: metal ships the Gemma kernels but does not yet
 	// DECLARE the features, so gemma3 declines to CPU. Skip rather than fail — and the moment
 	// the declaration lands this becomes a live gate (residentParity t.Fatals on a decline,

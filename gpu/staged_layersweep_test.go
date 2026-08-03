@@ -15,6 +15,7 @@ import (
 // the two declines isolates whether the resident's larger per-forward error is the resident GEMV
 // path itself (staged decline gentler ⇒ yes) or shared int8 (declines match ⇒ cross-token).
 func TestStagedLayerSweep(t *testing.T) {
+	requireHeavyModel(t)
 	if os.Getenv("GOINFER_SSM_QUALITY") == "" {
 		t.Skip("staged layer sweep — needs granite model; set GOINFER_SSM_QUALITY=1")
 	}

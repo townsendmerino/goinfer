@@ -17,6 +17,7 @@ import (
 // "is it actually broken" metric that argmax (trajectory-sensitive: the same known-good path
 // scores 15/24 vs 20/24 on different id sets) cannot give.
 func TestGemma3_GeneratesCoherently(t *testing.T) {
+	requireHeavyModel(t)
 	// Dormant until the Gemma kernels are validated and DECLARED for metal (features.go). Until
 	// then gemma3 declines to CPU by design, so rf is nil — a skip, not a failure, exactly as the
 	// sibling TestGemma3ResidentParity guards. The moment the declaration lands this goes live

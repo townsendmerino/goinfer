@@ -30,6 +30,9 @@ import (
 //	GOINFER_SPEC_DRAFT=~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf \
 //	  go test -tags gpu ./gpu/ -run TestSpeculativeResident_e2eThroughput -v -timeout 30m
 func TestSpeculativeResident_e2eThroughput(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
+		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)")
+	}
 	if testing.Short() {
 		t.Skip("throughput measurement: skipped in -short")
 	}

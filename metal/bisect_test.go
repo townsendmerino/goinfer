@@ -42,6 +42,7 @@ import (
 // Each layer is tagged local/global (gemma's 5:1). If the jump tracks the global layers, the
 // carrier is attention/window/per-layer-RoPE; if it is uniform, it is a per-layer op.
 func TestGemmaBisect_PerLayer(t *testing.T) {
+	requireHeavyModel(t)
 	if testing.Short() {
 		t.Skip("loads real models")
 	}
@@ -204,6 +205,7 @@ func absf(x float32) float32 {
 // clean but logits collapse, the head matmul itself is wrong. Reported with norms, per the sink
 // lesson.
 func TestGemmaBisect_Head(t *testing.T) {
+	requireHeavyModel(t)
 	if testing.Short() {
 		t.Skip("loads real models")
 	}
@@ -374,6 +376,7 @@ func dynRange(x []float32) (mx, mean float64) {
 // (1698/1730/2482/1723/227) that Metal has zeroed or sign-flipped; an all-dims cosine can't see 6
 // bad channels in 2560, so this prints those channels explicitly at every layer, Metal vs CPU.
 func TestGemmaTraceDims(t *testing.T) {
+	requireHeavyModel(t)
 	if testing.Short() {
 		t.Skip("loads real models")
 	}

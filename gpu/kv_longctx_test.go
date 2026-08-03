@@ -22,6 +22,7 @@ import (
 //
 //	go test -tags gpu -run TestKVLongCtx -v -timeout 5400s
 func TestKVLongCtx(t *testing.T) {
+	requireHeavyModel(t)
 	path := os.Getenv("GOINFER_GPU_7B")
 	if path == "" {
 		home, _ := os.UserHomeDir()

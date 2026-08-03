@@ -21,6 +21,7 @@ import (
 //
 // Pure measurement; reports best (throttle-free) inter-token rate via decoder.Generate.
 func TestDecodeStaged_prize(t *testing.T) {
+	requireHeavyModel(t)
 	if testing.Short() {
 		t.Skip("staged prize")
 	}

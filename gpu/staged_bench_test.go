@@ -32,6 +32,9 @@ import (
 //
 //	go test -tags gpu ./gpu/ -run TestStagedGPU_nonDense -v -timeout 60m
 func TestStagedGPU_nonDense(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
+		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)")
+	}
 	if testing.Short() {
 		t.Skip("staged-path benchmark: skipped in -short")
 	}

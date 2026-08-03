@@ -22,6 +22,7 @@ import (
 )
 
 func TestGraniteReal_gate(t *testing.T) {
+	requireHeavyModel(t)
 	home, _ := os.UserHomeDir()
 	gguf := os.Getenv("GOINFER_GRANITE_GGUF")
 	if gguf == "" {

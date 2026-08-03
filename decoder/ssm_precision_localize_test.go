@@ -32,6 +32,7 @@ const ssmLocHeldOut = `The Eiffel Tower is a wrought-iron lattice tower on the C
 	`energy into chemical energy stored in glucose. Water boils at one hundred degrees Celsius at sea level pressure.`
 
 func TestSSMPrecisionLocalize(t *testing.T) {
+	requireHeavyModel(t)
 	if os.Getenv("GOINFER_SSM_QUALITY") == "" {
 		t.Skip("ssm precision-localization — slow (granite cpu load + 3 forwards); set GOINFER_SSM_QUALITY=1")
 	}

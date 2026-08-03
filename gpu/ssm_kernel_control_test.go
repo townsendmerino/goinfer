@@ -20,6 +20,7 @@ import (
 // If D3 ≈ 95% while the int8 GPU-resident is 66%, the only remaining variable is the GPU
 // mamba kernels (conv/ssm/gatedNorm) — i.e. the gap is a kernel discrepancy, not precision.
 func TestSSMKernelControlD3(t *testing.T) {
+	requireHeavyModel(t)
 	if os.Getenv("GOINFER_SSM_QUALITY") == "" {
 		t.Skip("ssm D3 kernel control — slow (cpu + staged granite load); set GOINFER_SSM_QUALITY=1")
 	}

@@ -19,6 +19,7 @@ import (
 // Feeding the true tokens (one linear pass, N×nLayers calls — NOT the O(N²) argmax rig)
 // gives both runs identical inputs, so selection differences are purely the quantization's.
 func TestGemma4RouterCapture(t *testing.T) {
+	requireHeavyModel(t)
 	dir := "/home/francis/models/gemma-4-26b-a4b-it"
 	if _, err := os.Stat(dir); err != nil {
 		t.Skip("real gemma-4-26b-a4b-it not present")

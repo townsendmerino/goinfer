@@ -99,6 +99,7 @@ func cosineFull(a, b []float32) float64 {
 // check (deliverable 2): matching argmax every step ⇒ the continuation reproduces
 // the golden's text.
 func TestQwen35Real_gate2FullModel(t *testing.T) {
+	requireHeavyModel(t)
 	dir := realQwen35Dir(t)
 	home, _ := os.UserHomeDir()
 	goldenDir := os.Getenv("GOINFER_QWEN35_GOLDEN")

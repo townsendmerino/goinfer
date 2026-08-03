@@ -14,6 +14,7 @@ import (
 //
 //	G4_ALLOW_KV=1 G4_TRACE=1 go test ./decoder/ -run TestGemma4_12B_trace -v
 func TestGemma4_12B_trace(t *testing.T) {
+	requireHeavyModel(t)
 	if os.Getenv("G4_TRACE") == "" {
 		t.Skip("set G4_TRACE=1 to run the 12B trace dump")
 	}

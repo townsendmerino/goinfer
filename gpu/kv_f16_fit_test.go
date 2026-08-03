@@ -25,6 +25,7 @@ import (
 // (nvidia-smi) and steady-state decode tok/s per precision. Asset-gated on a 7B
 // GGUF; skips if the model isn't residency-eligible in int4.
 func TestKVCacheF16_fit(t *testing.T) {
+	requireHeavyModel(t)
 	path := os.Getenv("GOINFER_GPU_7B")
 	if path == "" {
 		home, _ := os.UserHomeDir()

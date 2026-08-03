@@ -21,6 +21,7 @@ import (
 //   - resident DIVERGES                       → a PLAN/STATE bug (the kernels run differently in
 //     the full command buffer than in isolation — barrier/race/state corruption).
 func TestMambaResidentCapture(t *testing.T) {
+	requireHeavyModel(t)
 	if os.Getenv("GOINFER_SSM_QUALITY") == "" {
 		t.Skip("resident mamba capture — needs granite model; set GOINFER_SSM_QUALITY=1")
 	}

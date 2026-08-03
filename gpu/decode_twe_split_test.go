@@ -25,6 +25,7 @@ import (
 //
 //	GOINFER_DECODE_GGUF=~/models/qwen3-1.7b-q8_0.gguf go test -tags gpu -run TestDecodeTWE_split -v
 func TestDecodeTWE_split(t *testing.T) {
+	requireHeavyModel(t)
 	if testing.Short() {
 		t.Skip("twe split")
 	}

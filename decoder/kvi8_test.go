@@ -279,6 +279,7 @@ const kvi8GateText = "The history of computing began in the early nineteenth cen
 // argmax + cosine. Catches bugs in the int8 dequant/round-trip and confirms int8
 // no longer forces sequential prefill. Skips without a checkpoint + tokenizer.
 func TestKVI8_batchedPrefill(t *testing.T) {
+	requireHeavyModel(t)
 	dir := os.Getenv("GINFER_TEST_MODEL")
 	if dir == "" {
 		dir = os.Getenv("HOME") + "/models/gemma-3-4b-it"

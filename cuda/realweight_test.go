@@ -20,6 +20,7 @@ import (
 // correctness on REAL weights, the foundation for the argmax-parity gate. This proves
 // the extraction + packing + kernel math are right before wiring the full forward.
 func TestRealWeightGemvParity(t *testing.T) {
+	requireHeavyModel(t)
 	gguf := os.ExpandEnv("$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")
 	if _, err := os.Stat(gguf); err != nil {
 		t.Skipf("no model: %v", err)

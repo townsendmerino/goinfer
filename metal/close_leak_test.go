@@ -42,6 +42,7 @@ func rssMB(t *testing.T) int {
 // (weights + per-layer KV + MoE experts) per load. Invisible in a one-model run — which is
 // exactly why it survived.
 func TestMetal_CloseFreesMemory(t *testing.T) {
+	requireHeavyModel(t)
 	if testing.Short() {
 		t.Skip("loads a real model repeatedly")
 	}
@@ -102,6 +103,7 @@ func TestMetal_CloseFreesMemory(t *testing.T) {
 // Signal (same as the sibling gates): run many PrefillLast calls against ONE resident model and
 // watch the trajectory. Per-call release → flat; the old leak → a staircase of ~24 buffers/call.
 func TestMetal_PrefillScratchDoesNotLeak(t *testing.T) {
+	requireHeavyModel(t)
 	if testing.Short() {
 		t.Skip("loads a real model and runs many prefills")
 	}
@@ -177,6 +179,7 @@ func TestMetal_PrefillScratchDoesNotLeak(t *testing.T) {
 //     logits must be IDENTICAL before and after A is closed.
 //  2. The free must still actually happen with another model resident.
 func TestMetal_CloseWithSecondModelAlive(t *testing.T) {
+	requireHeavyModel(t)
 	if testing.Short() {
 		t.Skip("loads real models")
 	}

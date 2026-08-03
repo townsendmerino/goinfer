@@ -31,6 +31,7 @@ import (
 // and memory measured AFTER the process is worthless — it always looks clean, because the
 // process exited.
 func TestResidentCloseFreesVRAM(t *testing.T) {
+	requireHeavyModel(t)
 	gguf := os.ExpandEnv("$HOME/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf")
 	if _, err := os.Stat(gguf); err != nil {
 		t.Skipf("no 0.5B gguf at %s", gguf)

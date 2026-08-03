@@ -19,6 +19,7 @@ import (
 )
 
 func TestCohere2R7bReal_gate(t *testing.T) {
+	requireHeavyModel(t)
 	home, _ := os.UserHomeDir()
 	ckpt := os.Getenv("GOINFER_COHERE2_R7B")
 	if ckpt == "" {

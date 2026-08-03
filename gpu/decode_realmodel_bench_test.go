@@ -27,6 +27,7 @@ import (
 // compilation is excluded; reported as the BEST of several rounds (the steady-state
 // floor, least perturbed by scheduler/thermal noise).
 func TestDecodeRealModel_throughput(t *testing.T) {
+	requireHeavyModel(t)
 	if testing.Short() {
 		t.Skip("real-model decode bench")
 	}

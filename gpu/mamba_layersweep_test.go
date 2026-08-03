@@ -17,6 +17,7 @@ import (
 // first L where cosine drops names the buggy layer; a gradual drop from every layer ⇒ MoE
 // (every layer), a jump at 5/15/25/35 ⇒ attention.
 func TestMambaResidentLayerSweep(t *testing.T) {
+	requireHeavyModel(t)
 	if os.Getenv("GOINFER_SSM_QUALITY") == "" {
 		t.Skip("resident layer sweep — needs granite model; set GOINFER_SSM_QUALITY=1")
 	}

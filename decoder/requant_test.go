@@ -33,6 +33,7 @@ import (
 // If the double step is benign, they match. If metal >> direct on gemma and not on the control,
 // the parity gap has a mechanism and a fix, and it is not a kernel bug.
 func TestRequantBar_DoubleQuantCost(t *testing.T) {
+	requireHeavyModel(t)
 	if testing.Short() {
 		t.Skip("loads real models twice each")
 	}

@@ -25,6 +25,7 @@ import (
 )
 
 func TestQwen35GGUF_vsSafetensors(t *testing.T) {
+	requireHeavyModel(t)
 	home, _ := os.UserHomeDir()
 	gguf := os.Getenv("GOINFER_QWEN35_GGUF")
 	if gguf == "" {

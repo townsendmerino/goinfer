@@ -95,6 +95,7 @@ func tensorAgreement(got, ref []float32) (cos float64, maxAbs, relL2 float64) {
 }
 
 func TestQwen35GGUF_weightDiff(t *testing.T) {
+	requireHeavyModel(t)
 	home, _ := os.UserHomeDir()
 	dir := realQwen35Dir(t) // safetensors (skips if absent)
 	gguf := os.Getenv("GOINFER_QWEN35_GGUF")

@@ -20,6 +20,7 @@ import (
 // f32 CPU reference (R1), teacher-forced agreement/KL/top-5/perplexity, plus free-running coherence
 // and decode speed. The AGREEMENT NUMBER drives the default-vs-opt-in flip — no pre-set bar.
 func TestNemotronResidentQuality(t *testing.T) {
+	requireHeavyModel(t)
 	if os.Getenv("GOINFER_SSM_QUALITY") == "" {
 		t.Skip("nemotron resident quality (slow: 9B f32 + int4 loads); set GOINFER_SSM_QUALITY=1")
 	}

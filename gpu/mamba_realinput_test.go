@@ -20,6 +20,7 @@ import (
 // mamba2Step's. Diverge → kernel-math bug in the real-input regime; match → the bug is wiring
 // (the resident hands the kernels different inputs/state than mamba2Step gets).
 func TestMambaRealInputParity(t *testing.T) {
+	requireHeavyModel(t)
 	if os.Getenv("GOINFER_SSM_QUALITY") == "" {
 		t.Skip("real-input mamba parity — needs granite model; set GOINFER_SSM_QUALITY=1")
 	}

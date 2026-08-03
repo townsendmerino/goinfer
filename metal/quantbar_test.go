@@ -37,6 +37,7 @@ import (
 // Both models run so the control calibrates the subject, per the lesson that a bar must be
 // measured on this box rather than assumed.
 func TestQuantBar_CPUInt4VsInt8(t *testing.T) {
+	requireHeavyModel(t)
 	if testing.Short() {
 		t.Skip("loads real models twice each")
 	}

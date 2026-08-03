@@ -17,6 +17,7 @@ import (
 // NaN here is the specific shipped-path failure that a hand-run caught only because no CI ran
 // Metal against a checkpoint.
 func TestPrefillNoNaN(t *testing.T) {
+	requireHeavyModel(t)
 	path := os.Getenv("GOINFER_METAL_MODEL")
 	if path == "" {
 		path = os.ExpandEnv("$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")

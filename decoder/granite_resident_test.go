@@ -13,6 +13,7 @@ import (
 // kernels expect, so a wiring error surfaces here before any GPU dispatch. Additive — no
 // production routing change (eligibility flip is P6).
 func TestGraniteResidentBridge(t *testing.T) {
+	requireHeavyModel(t)
 	path := os.ExpandEnv("$HOME/models/granite/granite-4.0-h-tiny-Q8_0.gguf")
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no granite model: %v", err)

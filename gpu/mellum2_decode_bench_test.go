@@ -27,6 +27,7 @@ import (
 //	GOINFER_MELLUM_BENCH=1 [GOINFER_MELLUM_QUANT=int8int8] \
 //	  go test -tags gpu -run TestMellum2_decodeThroughput -v -timeout 40m
 func TestMellum2_decodeThroughput(t *testing.T) {
+	requireHeavyModel(t)
 	if os.Getenv("GOINFER_MELLUM_BENCH") == "" {
 		t.Skip("set GOINFER_MELLUM_BENCH=1 to run the Mellum2 decode bench")
 	}

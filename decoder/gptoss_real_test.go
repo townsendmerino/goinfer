@@ -27,6 +27,7 @@ import (
 )
 
 func TestGptOssReal_gate(t *testing.T) {
+	requireHeavyModel(t)
 	home, _ := os.UserHomeDir()
 	gguf := os.Getenv("GOINFER_GPTOSS_GGUF")
 	if gguf == "" {
@@ -93,6 +94,7 @@ func TestGptOssReal_gate(t *testing.T) {
 // the bar is argmax-exact + cosine ~0.99 (the deepseek/llama4 real-model bar), not
 // bit-exact.
 func TestGptOssReal_logitParity(t *testing.T) {
+	requireHeavyModel(t)
 	const golden = "testdata/gptoss_20b_golden.json"
 	raw, err := os.ReadFile(golden)
 	if errors.Is(err, fs.ErrNotExist) {

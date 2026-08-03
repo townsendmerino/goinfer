@@ -25,6 +25,7 @@ import (
 //
 // Where Metal's attn or mlp contribution goes POSITIVE against a negative truth is the culprit.
 func TestGemmaSublayer_MetalContribution(t *testing.T) {
+	requireHeavyModel(t)
 	if testing.Short() {
 		t.Skip("loads a real model")
 	}

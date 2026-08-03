@@ -17,6 +17,7 @@ import (
 // near-tie rule (gpu/kv_i8_parity_test.go). Gemma exercises five features no other CUDA-
 // admitted family does: (1+w) RMS, sandwich norms, GeGLU, embed scale, per-layer RoPE base.
 func TestGemma3ResidentParity(t *testing.T) {
+	requireHeavyModel(t)
 	residentCosineParity(t, os.ExpandEnv("$HOME/models/gemma-3-4b-it"),
 		"The capital of France is Paris. The city is")
 }
@@ -25,6 +26,7 @@ func TestGemma3ResidentParity(t *testing.T) {
 // known-good dense Qwen path, so "is 0.999 good?" has an answer measured on this box rather
 // than assumed. Without it, a Gemma cosine cannot be judged.
 func TestDenseResidentParity(t *testing.T) {
+	requireHeavyModel(t)
 	residentCosineParity(t, os.ExpandEnv("$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"),
 		"The capital of France is Paris. The city is")
 }

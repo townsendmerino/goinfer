@@ -20,6 +20,9 @@ import (
 // is slower per token than the target, speculation is a net loss independent of how
 // cheap the verify is — which Stage B (M=K verify) cannot fix.
 func TestSpeculativeResident_decomp(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
+		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)")
+	}
 	if testing.Short() {
 		t.Skip("decomposition: skipped in -short")
 	}

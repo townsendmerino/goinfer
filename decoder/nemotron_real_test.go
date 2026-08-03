@@ -22,6 +22,7 @@ import (
 )
 
 func TestNemotronReal_gate(t *testing.T) {
+	requireHeavyModel(t)
 	home, _ := os.UserHomeDir()
 	gguf := os.Getenv("GOINFER_NEMOTRON_GGUF")
 	if gguf == "" {

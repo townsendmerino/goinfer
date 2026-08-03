@@ -24,6 +24,9 @@ import (
 //	GOINFER_SPEC_DRAFT=~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf \
 //	  go test -tags gpu ./gpu/ -run TestSpeculativeResident_parity -v -timeout 30m
 func TestSpeculativeResident_parity(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
+		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)")
+	}
 	if _, err := gpu.New(); err != nil {
 		t.Skipf("no WebGPU adapter: %v", err)
 	}

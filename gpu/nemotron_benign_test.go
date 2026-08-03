@@ -19,6 +19,7 @@ import (
 // confident-token mistakes. The robust signal is the CORRELATION: benign ⇒ disagreements
 // concentrate at SMALL f32 top1–top2 margins; harmful ⇒ at LARGE margins (f32 confident, int4 wrong).
 func TestNemotronBenignHarmful(t *testing.T) {
+	requireHeavyModel(t)
 	if os.Getenv("GOINFER_SSM_QUALITY") == "" {
 		t.Skip("nemotron benign/harmful analysis (slow: 9B f32 + int4); set GOINFER_SSM_QUALITY=1")
 	}

@@ -94,6 +94,7 @@ func loadQwen35Slice(t *testing.T, dir string, nLayer int) (*Model, func()) {
 // layer, plus the softmax layer (3). The numeric parity compare vs HF is the
 // sibling test below (gated on a slice reference file).
 func TestQwen35Real_loaderSlice(t *testing.T) {
+	requireHeavyModel(t)
 	dir := realQwen35Dir(t)
 	m, free := loadQwen35Slice(t, dir, 4)
 	defer free()
@@ -182,6 +183,7 @@ func TestQwen35Real_loaderSlice(t *testing.T) {
 // the compare fail for the wrong reason.) Skipped until the file exists so the
 // loader probe above can run on its own.
 func TestQwen35Real_gate1SliceParity(t *testing.T) {
+	requireHeavyModel(t)
 	dir := realQwen35Dir(t)
 	ref := os.Getenv("GOINFER_QWEN35_SLICE_REF")
 	if ref == "" {

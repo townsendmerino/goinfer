@@ -31,6 +31,7 @@ import (
 )
 
 func TestGlm4MoeAir_gate(t *testing.T) {
+	requireHeavyModel(t)
 	home, _ := os.UserHomeDir()
 	gguf := os.Getenv("GOINFER_GLM_GGUF")
 	if gguf == "" {

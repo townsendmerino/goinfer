@@ -23,6 +23,7 @@ import (
 // thread-safety executor cost is IN the number (guardrail #3). Wall-clock steady-state
 // (the number a user feels), vs same-box pinned Ollama 149 / WebGPU 111.6. cgo-free.
 func TestRealE2EDecode(t *testing.T) {
+	requireHeavyModel(t)
 	gguf := os.Getenv("GOINFER_CUDA_MODEL")
 	if gguf == "" {
 		gguf = os.ExpandEnv("$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")

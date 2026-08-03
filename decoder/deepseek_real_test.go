@@ -112,6 +112,7 @@ func deepseekRealGate(t *testing.T, ckpt, golden, wantArch, reference string, wa
 
 // TestDeepseekV2LiteReal_gate — V2-Lite (deepseek_v2): direct-q + SOFTMAX routing + YaRN.
 func TestDeepseekV2LiteReal_gate(t *testing.T) {
+	requireHeavyModel(t)
 	home, _ := os.UserHomeDir()
 	ckpt := os.Getenv("GOINFER_DEEPSEEK_V2LITE")
 	if ckpt == "" {
@@ -127,6 +128,7 @@ func TestDeepseekV2LiteReal_gate(t *testing.T) {
 // the gap widens with context. Output is identical (TestMLAAbsorb_parity gates that);
 // this only reports tok/s + speedup.
 func TestMLAAbsorb_speed(t *testing.T) {
+	requireHeavyModel(t)
 	if testing.Short() {
 		t.Skip("perf measurement: skipped in -short")
 	}
@@ -182,6 +184,7 @@ func TestMLAAbsorb_speed(t *testing.T) {
 // TestDeepseekMoonlightReal_gate — Moonlight-16B (deepseek_v3): direct-q + SIGMOID
 // noaux_tc routing with a real e_score_correction_bias + routed_scaling_factor.
 func TestDeepseekMoonlightReal_gate(t *testing.T) {
+	requireHeavyModel(t)
 	home, _ := os.UserHomeDir()
 	ckpt := os.Getenv("GOINFER_DEEPSEEK_MOONLIGHT")
 	if ckpt == "" {
@@ -201,6 +204,7 @@ func TestDeepseekMoonlightReal_gate(t *testing.T) {
 //	GOINFER_DEEPSEEK_GGUF=~/models/.../DeepSeek-V2-Lite-Chat-Q4_K_M.gguf \
 //	  go test -tags realckpt ./decoder/ -run TestDeepseekGGUFReal -v -timeout 20m
 func TestDeepseekGGUFReal_gate(t *testing.T) {
+	requireHeavyModel(t)
 	home, _ := os.UserHomeDir()
 	gguf := os.Getenv("GOINFER_DEEPSEEK_GGUF")
 	if gguf == "" {

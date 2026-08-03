@@ -21,6 +21,7 @@ import (
 // at every prompt position (token-identical). Weights extracted via the BuildResident seam,
 // driver-JIT'd kernels, CGO_ENABLED=0. This is the line between "benchmarked" and "shipped".
 func TestRealForwardParity(t *testing.T) {
+	requireHeavyModel(t)
 	gguf := os.Getenv("GOINFER_CUDA_MODEL")
 	if gguf == "" {
 		gguf = os.ExpandEnv("$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")

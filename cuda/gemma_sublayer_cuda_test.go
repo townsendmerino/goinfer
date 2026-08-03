@@ -39,6 +39,7 @@ func (r *cudaResident) captureSublayersForTest(emb []float32, pos int) (attn, ml
 // numbers (from the relay): 1723 L32 attn +175 vs truth +27 (~6.5x); 227 L33 attn +63 (flipped)
 // vs truth -12.
 func TestGemmaSublayerCUDA(t *testing.T) {
+	requireHeavyModel(t)
 	gguf := os.ExpandEnv("$HOME/models/gemma-3-4b-it-Q4_K_M.gguf")
 	bf16 := os.ExpandEnv("$HOME/models/gemma-3-4b-it")
 	if _, e := os.Stat(gguf); e != nil {
@@ -139,6 +140,7 @@ func TestGemmaSublayerCUDA(t *testing.T) {
 // top-magnitude context elements, so the Metal box overlays its own r.ctx at the same qDim
 // indices. CPU-int4 (same gguf) is printed too as the parity cross-check on the resident path.
 func TestGemmaContextCUDA(t *testing.T) {
+	requireHeavyModel(t)
 	gguf := os.ExpandEnv("$HOME/models/gemma-3-4b-it-Q4_K_M.gguf")
 	bf16 := os.ExpandEnv("$HOME/models/gemma-3-4b-it")
 	if _, e := os.Stat(gguf); e != nil {

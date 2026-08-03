@@ -18,6 +18,7 @@ import (
 // only BuildResident + ForwardEmb + EmbedResidentForTest — API identical across the refactor —
 // so the same source compiles and runs on both commits. Skips unless the env var is set.
 func TestDumpLogitsForBisect(t *testing.T) {
+	requireHeavyModel(t)
 	out := os.Getenv("GOINFER_DUMP_LOGITS")
 	if out == "" {
 		t.Skip("set GOINFER_DUMP_LOGITS=/path to dump resident logits for a bitwise bisect")

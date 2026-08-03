@@ -56,6 +56,7 @@ func (r *cudaResident) captureResidualForTest(emb []float32, pos int) ([]float32
 // magnitude matches the Mac's {1698,1730,...}, the two harnesses agree on WHICH channels; if
 // not, one of us is tapping the wrong thing.
 func TestGemmaOutlierTrace(t *testing.T) {
+	requireHeavyModel(t)
 	path := os.ExpandEnv("$HOME/models/gemma-3-4b-it")
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no checkpoint at %s", path)

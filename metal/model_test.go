@@ -50,6 +50,7 @@ func mustFinite(t *testing.T, label string, metric float64) {
 // forward token-by-token (same int8 weights), and (b) device-timed decode tok/s vs the
 // ~71 GO bar. Skips without the checkpoint.
 func TestRealModel_parityAndThroughput(t *testing.T) {
+	requireHeavyModel(t)
 	// Default qwen2.5-coder; override to validate other families (Qwen3/Mistral/Phi-3):
 	//   GOINFER_METAL_MODEL=/path/to/qwen3-1.7b-q4_k_m.gguf go test -run TestRealModel...
 	path := os.Getenv("GOINFER_METAL_MODEL")

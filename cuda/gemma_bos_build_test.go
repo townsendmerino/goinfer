@@ -19,6 +19,7 @@ import (
 //
 // Probe is pos 0 (BOS, id 2) — the sink token, where the massive activation is constructed.
 func TestGemmaBOSBuild(t *testing.T) {
+	requireHeavyModel(t)
 	gguf := os.ExpandEnv("$HOME/models/gemma-3-4b-it-Q4_K_M.gguf")
 	bf16 := os.ExpandEnv("$HOME/models/gemma-3-4b-it")
 	if _, e := os.Stat(gguf); e != nil {

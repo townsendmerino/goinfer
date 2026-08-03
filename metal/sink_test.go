@@ -41,6 +41,7 @@ func cosv(a, b []float32) float64 {
 // layer 0 is orthogonal" a measurement artifact, not a bug. Every number in the debug report was
 // a cosine; nobody measured a NORM. So measure norms — and probe a NON-sink token too.
 func TestSink_NormsNotCosines(t *testing.T) {
+	requireHeavyModel(t)
 	path := os.ExpandEnv("$HOME/models/gemma-3-4b-it-Q4_K_M.gguf")
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no checkpoint")

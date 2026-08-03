@@ -20,6 +20,7 @@ import (
 )
 
 func TestCohereAyaReal_gate(t *testing.T) {
+	requireHeavyModel(t)
 	home, _ := os.UserHomeDir()
 	ckpt := os.Getenv("GOINFER_COHERE_AYA")
 	if ckpt == "" {

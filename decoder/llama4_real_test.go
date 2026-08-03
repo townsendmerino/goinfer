@@ -24,6 +24,7 @@ import (
 )
 
 func TestLlama4Real_gate(t *testing.T) {
+	requireHeavyModel(t)
 	home, _ := os.UserHomeDir()
 	gguf := os.Getenv("GOINFER_LLAMA4_GGUF")
 	if gguf == "" {

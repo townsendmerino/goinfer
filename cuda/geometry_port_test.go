@@ -23,6 +23,7 @@ import (
 // identity, so we prime past it). rhalf rides the same per-layer plumbing as hd/nKV/qDim/
 // kvDim — they are read at the same launch sites — so its liveness demonstrates the port's.
 func TestGeometryPortIsLive(t *testing.T) {
+	requireHeavyModel(t)
 	path := os.ExpandEnv("$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no checkpoint at %s", path)

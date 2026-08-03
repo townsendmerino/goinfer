@@ -22,6 +22,7 @@ import (
 // faithful kernels), and vs f32-truth ≈ 0.92/0.85/0.91 (the int4-quant bar CUDA also sits at) —
 // NOT the double-quant path's 0.39.
 func TestGemma_Int4DirectContext(t *testing.T) {
+	requireHeavyModel(t)
 	if testing.Short() {
 		t.Skip("loads real models")
 	}
