@@ -38,6 +38,23 @@ type expertPool struct {
 	stageNanos int64 // total host time spent staging (fetch + copy) — the paging-traffic penalty term
 	fetchNanos int64 // time in stage() — mmap read + int4DirectWords (bytesToU32 + f32→f16 scales)
 	copyNanos  int64 // time copying the fetched bytes into the slot's shared Metal buffers
+
+	// prefetch, when set, issues an MADV_WILLNEED readahead over expert e's mmap-backed nibble spans.
+	// The synchronous paged forward calls prefetchAll for the whole routed top-k BEFORE touching any
+	// of them, converting each expert's ~200 serial 16 KB demand faults into one large sequential read
+	// (and giving the SSD queue depth across the k experts instead of k serial stalls). nil = off.
+	prefetch func(e int)
+}
+
+// prefetchAll issues the WILLNEED readahead for every routed expert at once, before staging. No-op
+// when prefetch is nil (readahead disabled — the demand-fault baseline arm).
+func (p *expertPool) prefetchAll(experts []int) {
+	if p.prefetch == nil {
+		return
+	}
+	for _, e := range experts {
+		p.prefetch(e)
+	}
 }
 
 // newExpertPool allocates N slots sized to one expert's W4A8 buffers (nGuW/nGuS gate|up words/scales,

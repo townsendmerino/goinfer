@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -67,11 +68,22 @@ func TestGemma4_26B_pagedRuns(t *testing.T) {
 	// warm (first token, paths + page-in), then time the rest.
 	warm := append([]float32(nil), r.ForwardEmb(m.EmbedResidentForTest(toks[0]), 0)...)
 	_, _ = m.ForwardForTest(toks[0], cpuCache)
-	var metalNanos int64
+	var metalNanos, majFlt, minFlt int64
+	rusage := func() (int64, int64) {
+		var ru syscall.Rusage
+		_ = syscall.Getrusage(syscall.RUSAGE_SELF, &ru)
+		return int64(ru.Majflt), int64(ru.Minflt)
+	}
 	for i := 1; i < len(toks); i++ {
+		// Faults around the METAL forward only (it runs before the CPU forward each token, so it
+		// faults the shared .giw expert pages cold): major = pages read from disk = the staging page-in.
+		mj0, mn0 := rusage()
 		t0 := time.Now()
 		ml := append([]float32(nil), r.ForwardEmb(m.EmbedResidentForTest(toks[i]), i)...)
 		metalNanos += time.Since(t0).Nanoseconds()
+		mj1, mn1 := rusage()
+		majFlt += mj1 - mj0
+		minFlt += mn1 - mn0
 		cp, err := m.ForwardForTest(toks[i], cpuCache)
 		if err != nil {
 			t.Fatalf("cpu forward %d: %v", i, err)
@@ -108,6 +120,12 @@ func TestGemma4_26B_pagedRuns(t *testing.T) {
 	stageMsTok := float64(stageNanos) / 1e6 / float64(nTimed)
 	t.Logf("  staging split/tok: fetch(mmap+int4DirectWords) %.1f ms | copy-into-slot %.1f ms | %d stages (%d evictions) at N=%d",
 		float64(fetchNanos)/1e6/float64(nTimed), float64(copyNanos)/1e6/float64(nTimed), stages, evict, N)
+	// Fault attribution: MAJOR faults are disk reads (cold page-in); collapsing them is the WILLNEED
+	// mechanism's signature. If ms improves but major/stage doesn't fall, the win is not readahead.
+	willneed := os.Getenv("GOINFER_MOE_WILLNEED") == "1"
+	effMBs := float64(stages) * 3.19 * 1000 / (float64(fetchNanos) / 1e6)
+	t.Logf("  FAULTS over timed decode (WILLNEED=%v): major %d (%.1f/stage) minor %d | fetch effective %.0f MB/s",
+		willneed, majFlt, float64(majFlt)/float64(stages), minFlt, effMBs)
 
 	t.Logf("26B PAGED DECODE: %.1f ms/tok  (%.2f tok/s)  N=%d  RSS %d MB", msTok, 1000/msTok, N, rssMB())
 	t.Logf("  staging (paging traffic): %.1f ms/tok  (%d expert stages over %d tokens, %.2f MB each)",

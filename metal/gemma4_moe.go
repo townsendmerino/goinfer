@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 
+	"github.com/townsendmerino/aikit/mmap"
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
@@ -222,6 +223,20 @@ func buildGemma4MoELayer(d *Device, b *decoder.Gemma4MoEResidentBundle, g *gemma
 			return gw, gs, dw, ds
 		}
 		ml.pool = newExpertPool(d, g.slots, len(gw0), len(gs0), len(dw0), len(ds0), stage)
+		// GOINFER_MOE_WILLNEED=1 issues MADV_WILLNEED over the routed experts' nibble spans before
+		// staging — readahead over the .giw-aliased q4 bytes, the lever against the ~270 MB/s
+		// demand-fault page-in. Off by default (demand-fault baseline). Advise on the (large) q4 span
+		// only; the f16 scales are tiny. PageAlignedInterior because MADV wants page-aligned bounds.
+		if os.Getenv("GOINFER_MOE_WILLNEED") == "1" {
+			ml.pool.prefetch = func(ei int) {
+				if q4, _, _, ok := experts[ei].Int4(); ok {
+					_ = mmap.Advise(mmap.PageAlignedInterior(q4), true)
+				}
+				if q4, _, _, ok := down[ei].Int4(); ok {
+					_ = mmap.Advise(mmap.PageAlignedInterior(q4), true)
+				}
+			}
+		}
 	} else {
 		ml.expGuW, ml.expGuS = int4Concat(d, b.ExpertsGateUp...) // per expert already fused [2*moeInter, hidden]
 		ml.expDW, ml.expDS = int4Concat(d, b.ExpertsDown...)
@@ -326,9 +341,14 @@ func (r *Resident) forwardLogitsPaged(pos int) []float32 {
 			r.encodeG4Phase1(e, L)
 			e.End() // commit + wait: rIdx/rWgt now readable
 			idx := g.rIdx.U32s()
+			ids := make([]int, g.topK)
+			for j := 0; j < g.topK; j++ {
+				ids[j] = int(idx[j])
+			}
+			L.g4moe.pool.prefetchAll(ids) // WILLNEED all routed experts at once (no-op when disabled)
 			slots := make([]expertSlot, g.topK)
 			for j := 0; j < g.topK; j++ {
-				slots[j] = L.g4moe.pool.ensureResident(int(idx[j])) // stage on miss, evict LRU
+				slots[j] = L.g4moe.pool.ensureResident(ids[j]) // stage on miss, evict LRU
 			}
 			e2 := r.q.Begin() // phase 2: experts from slots + join
 			r.encodeG4Phase2Paged(e2, slots)
