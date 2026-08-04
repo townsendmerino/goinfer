@@ -327,6 +327,72 @@ versions on a given GPU, but not guaranteed across chip families — the golden 
 that generated it. It WILL go red on a legitimate improvement or a hardware change; regenerate (the same
 refresh discipline CUDA uses): `GOINFER_UPDATE_GOLDENS=1 go test -run TestMetalSnapshotGolden ./metal/`.
 
+### A2-Metal — the bit-identity contract, the exposure, and how divergence is prevented
+
+**What bit-identity means on Metal (stated explicitly — it never was).** Three axes move the bits:
+reduction width/order, fast-math compiler discretion, and the GPU chip + OS Metal toolchain that
+compiles the MSL. That splits the contract cleanly:
+- **Within-machine (same binary, same OS): DELIVERABLE and gated.** Run-to-run stable (the snapshot
+  golden proves it), `paged ≡ non-paged` byte-exact, decode byte-exact across code that doesn't touch
+  the math.
+- **Across-machine (any Mac, same bits): NOT deliverable, by construction.** MSL is compiled by the
+  user's OS Metal toolchain, which varies by macOS version, onto a chip whose ALUs vary by family — so
+  a different Mac *or a macOS update* can legally produce different bits. The snapshot golden is
+  therefore machine+OS-pinned; that is a property of Metal, not a defect of the gate.
+
+**The exposure audit (2026-08-04, report only).** goinfer's decode + prefill kernels compile via
+`CompileLibrary` = **default `MTLCompileOptions`, fast-math ON** — which licenses contraction (`a*b+c`
+→ fma), **reassociation**, reciprocal divides, and **low-precision transcendentals**, all at the
+compiler's discretion (and that discretion can shift across OS toolchain versions — the mechanism
+behind the across-OS fragility above). A `CompileLibraryPrecise` (fast-math OFF) already exists and the
+ViT path uses it, so the strict lever is one call-swap away. Where it bites, worst first:
+- **softmax `exp`** (`kernels.go` attention/attention_f32; `prefill.go` attention_prefill) — a
+  low-precision `exp` is many ULP off, *and* it sits inside the denominator sum whose order we pin by
+  hand; the approximation perturbs the very reduction §2 protects. Highest-value strict target.
+- **`a/sum`** attention normalize → `a*rcp(sum)`, off a ULP (same class as the ViT quant-scale bug).
+- **`rsqrt`** in every rmsnorm; **`exp`/`tanh`** in the SiLU/GELU activations.
+- **pervasive contraction** — every float MAC (`a+=q*k`, `a+=sc*v`, `ss+=x*x`) contracts to fma.
+- **reassociation of the per-thread accumulation loops** that feed the pinned reductions: the
+  cross-barrier *tree* is safe (barriers block reassociation), but the per-thread partial sums are
+  compiler-reorderable — so the "hand-preserved order" is only preserved *modulo whatever fast-math
+  already did*. The real invariant today is "deterministic for a fixed width **and math-mode**."
+
+**How divergence is prevented — for existing kernels and future ones.** Layered, because no single
+mechanism reaches "never," and one axis can't be reached at all:
+1. **Remove the invisible axis — compile precise** *(enforcer: build-time read-back assertion, not a
+   lint).* Fast-math OFF (`CompileLibraryPrecise`, or explicit `fma()` / `metal::precise::` only where a
+   hot spot needs speed) makes the *source* fully determine the bits instead of the compiler's mood —
+   robust to an OS toolchain update, which today it is not. Enforce it the way aikit already enforces
+   `languageVersion`: read the option back after compile and fail loudly if it didn't take. One choke
+   point (the compile call), so the gate is total — a fast-math library cannot ship. Gated on cost
+   (measure decode tok/s idle); costs no goldens refresh (Metal is tolerance-gated vs the CPU goldens)
+   but *will* move the snapshot golden, so re-baseline it *after* the math-mode call.
+2. **Source determines order** *(enforcer: convention + the behavioral golden below).* Cross-thread
+   float sums use the pinned `tgReduce*` widths (§2) and an explicit barrier-separated tree (never a
+   compiler-reassociable free reduction). A cheap grep-lint can forbid a bare width literal at a
+   reduction-kernel dispatch (must reference `tgReduce*`) — but that only polices the *known* shape.
+3. **Catch movement** *(enforcer: the snapshot golden — behavioral, the primary gate).* Trips on any
+   bit move in the paths it exercises, regardless of cause (width, order, a new fused kernel, a
+   compiler change). Stronger than any lint because it checks the *result*, not the source text. Its
+   coverage is the decode trunk of two architectures (dense-GQA + gemma4-sandwich); it does **not** yet
+   cover other families' unique kernels (MLA, Mamba, cohere norm-parallel, gpt-oss) or the prefill
+   path. Coverage-completeness is the gap.
+4. **Force future kernels into the net** *(enforcer: a coverage lint + the onboarding checklist).* This
+   is where linting earns its place — not policing math, but asserting **every compiled pipeline is
+   exercised by at least one golden**; it fails when a new kernel ships un-snapshotted. New family /
+   new kernel ⇒ add a tiny model + a golden entry past its reduction width, and (if it has a
+   cross-thread float sum) a pinned width. A line in the family-onboarding checklist next to the
+   parity_manifest step.
+
+The honest ceiling: (1)+(2) make the bits a deterministic function of the source; (3)+(4) detect any
+drift within the covered set; **across-chip identity remains out of reach** and the golden stays
+machine-pinned. "Never diverge" is therefore *within-machine, robust-across-OS, drift-detected* — not
+universal.
+
+*Technique transfers across backends.* CUDA has real goldens so it needs the snapshot less; **WebGPU has
+nothing — no absolute reference, no snapshot — and is the least-exercised backend**, so it carries the
+same blind spot Metal just closed. A wgpu snapshot golden is the same pattern when that track reopens.
+
 ### A3. KV cache quantization — **not bit-identical**
 
 Ollama supports q8/q4 KV caches. Halving or quartering KV bytes directly attacks the term
