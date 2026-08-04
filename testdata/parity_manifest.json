@@ -305,13 +305,17 @@
       ],
       "own": [],
       "deps_hash": "sha256:f8bd4af09dd897617a0ce1480d2a537614d0c56a22813a855632107ffd29ea88",
-      "status": "pending",
-      "validated_at": null,
-      "date": null,
-      "reference": null,
-      "machine": null,
-      "method": null,
-      "metrics": null
+      "status": "validated",
+      "validated_at": "f0e83ed",
+      "date": "2026-08-04",
+      "reference": "HF bf16 (Mellum2-12B-A2.5B-Instruct)",
+      "machine": "linux-62gb",
+      "method": "real-oracle",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 0.99969,
+        "cosine_mean": 0.99969
+      }
     },
     "mistral": {
       "uses": [

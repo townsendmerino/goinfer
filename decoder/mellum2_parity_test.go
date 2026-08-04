@@ -12,7 +12,7 @@ import (
 // runMellum2Golden loads the unquantized Mellum2 (int8int8, the serve default)
 // and gates one forwardGolden: argmax exact + sample-256 cosine vs the HF bf16
 // oracle. Skips cleanly without the golden or the ~24 GB checkpoint.
-func runMellum2Golden(t *testing.T, goldenPath string, cosFloor float64) {
+func runMellum2Golden(t *testing.T, goldenPath string, cosFloor float64, emit bool) {
 	t.Helper()
 	requireHeavyModel(t)
 	if testing.Short() {
@@ -73,6 +73,12 @@ func runMellum2Golden(t *testing.T, goldenPath string, cosFloor float64) {
 	if cos < cosFloor {
 		t.Errorf("sample cosine %.5f < %.2f", cos, cosFloor)
 	}
+	// Record the validated metrics (no-op unless GOINFER_MANIFEST_EMIT; skipped if any check
+	// above failed). int8int8 (serve default) vs HF bf16 → real-oracle; argmax exact when green.
+	// Emit only from the forward gate (not the window gate) to avoid a double row.
+	if emit {
+		emitParityRow(t, "mellum", "real-oracle", "HF bf16 (Mellum2-12B-A2.5B-Instruct)", 100.0, cos, cos)
+	}
 }
 
 // TestMellum2_logitParity gates the Mellum2 forward (MoE 64/top-8, 3:1
@@ -81,7 +87,7 @@ func runMellum2Golden(t *testing.T, goldenPath string, cosFloor float64) {
 // "Paris"), so this also gates coherence. int8int8 (the serve default) vs bf16:
 // measured sample-256 cosine 0.99955 (floor 0.98, the Gemma 4 12B reference).
 func TestMellum2_logitParity(t *testing.T) {
-	runMellum2Golden(t, "../testdata/mellum2_forward_golden.json", 0.98)
+	runMellum2Golden(t, "../testdata/mellum2_forward_golden.json", 0.98, true)
 }
 
 // TestMellum2_windowParity pins the sliding-window EVICTION path on the real
@@ -91,5 +97,5 @@ func TestMellum2_logitParity(t *testing.T) {
 // (Inc3 real-model proof; the synthetic unit-level proof is
 // TestMellum2_slidingWindowEviction.)
 func TestMellum2_windowParity(t *testing.T) {
-	runMellum2Golden(t, "../testdata/mellum2_window_golden.json", 0.98)
+	runMellum2Golden(t, "../testdata/mellum2_window_golden.json", 0.98, false)
 }

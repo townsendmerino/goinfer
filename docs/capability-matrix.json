@@ -261,7 +261,7 @@
     "loaders": "safetensors, GGUF",
     "modality": "text",
     "gpu_residency_eligible": true,
-    "parity": "pending"
+    "parity": "real-oracle 100.0%/0.99969"
   },
   {
     "name": "mistral",
