@@ -402,6 +402,19 @@ pinned host memory into a VRAM slot cache (host↔VRAM "C′" path, `docs/task-m
 - The 81.6%-hit-rate-at-30%-residency is the empirical basis of the design: trained MoE routing
   is a stationary skew, so an LRU cache over a small resident fraction captures most reads
   (`turbo-fieldfare` reaches the same conclusion via 16-slot LFU — two mechanisms, one property).
+- **The bottleneck is CAPACITY, not MoE and not the kernels — and MoE is what would make it fast.**
+  MoE is *cheap per token by design*: only top-8 of 128 experts activate, so ~4B of the 26B
+  parameters are touched per token. A 26B-A4B that FIT VRAM would therefore decode *faster* than a
+  dense 7B (fewer active weights/token). This one is at 16.98 tok/s only because it does not fit:
+  the ~714 MB/token of routed experts stream host→VRAM over **PCIe (~12 GB/s, ~30× slower than
+  VRAM's ~450 GB/s)**, and that DMA — not compute, router, or quantization — is the wall. Put the
+  same model on a card that holds it (16 GB+) and it should beat the dense 7B, not trail it. So the
+  26B's low rate is a **hardware-mismatch** result (`docs/task-26b-prefill-bound.md`), and "other
+  MoE models run faster" reduces to "other MoE models fit." Do not read this as an MoE or kernel
+  deficiency and do not point IMMA/kernel work at it — the fix is memory, or a model that fits.
+- **Which number to quote: 16.98 tok/s** (capture-free, the headline). The **4.98 tok/s** that also
+  appears in `docs/task-moe-streaming.md` is the `GOINFER_G4_CAPTURE` readback / fresh-load
+  (`nSlots=topK`, no reuse) FLOOR — informative, not the benchmark. Don't cite 4.98 as the rate.
 
 > **serve caveat (both GPU backends).** GPU-resident models bypass the session cache in
 > `cmd/serve` (`7557723`), so they skip prompt-prefix reuse and speculative decode. That

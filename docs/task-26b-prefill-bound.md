@@ -68,6 +68,17 @@ Attention is ~33× off its compute ceiling (1.5B M=2048: ~360 GMAC / 4.5 TMAC/s 
 same work for both prefill paths (so this 26B build does not touch it), and it benefits every
 family's long-context prefill. See `docs/task-prefill-attention.md`.
 
+## Decode, and why the 26B is slow (capacity, not MoE)
+
+The prefill bound above is only half the story; decode has the same root cause. The 26B-A4B decodes
+at **16.98 tok/s** (capture-free, `benchmarks.md` §B4) — slow *only* because ~11.4 GB of experts do
+not fit the 8 GB card, so the routed experts stream host→VRAM over **PCIe (~12 GB/s, ~30× slower than
+VRAM)** every token. MoE is cheap by design (only ~4B of 26B parameters activate per token), so a
+26B-A4B that FIT VRAM would decode *faster* than a dense 7B. The bottleneck is capacity, not the MoE
+architecture and not the kernels — put it on a 16 GB+ card and it beats the dense 7B. This is why
+"other MoE models run faster" reduces to "other MoE models fit," and why no kernel/IMMA work is
+pointed at the 26B: the fix is memory.
+
 ## Operational lesson carried forward
 
 Profile the unit before designing the fix, now that the profiler exists. The batched-prefill GEMV
