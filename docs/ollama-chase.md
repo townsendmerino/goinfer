@@ -241,6 +241,47 @@ whole regression. The Metal decode lever points the **opposite** way — *fewer*
 not more parallelism. **Reverted** (code removed; the throwaway A/B in the session transcript reproduces
 it). CUDA's win is genuine and stays; it simply does not generalise to Metal.
 
+### A2-Metal — profiled LOCALLY, then 4 dedup attempts, all lost (2026-08-04)
+
+Rather than carry another CUDA diagnosis over (the split-KV mis-transfer above), profiled the Metal
+decode attention **on this box** with cgo-free GPU timestamps + a collapse probe:
+
+- **DRAM-latency-bound, not occupancy-bound.** Attention's depth-term runs at a flat **~17 GB/s = 8.6%
+  of the M1's ~200 GB/s**, and its ALU is **~0.7% of peak** — so it's memory-latency-bound, ~98% GPU-side.
+- **Collapse probe** (pin every K/V read to key 0: same loop/ALU/threadgroup traffic, zero distinct
+  DRAM): all-28-layer attention **21.5 → 5.3 ms**, i.e. **75% of attention is the distinct per-key K/V
+  DRAM reads**. The prize is real (~16 ms/tok @2048) and it's the **6× GQA redundant read** (12 query
+  heads re-reading 2 KV heads).
+
+**K-dedup is capturable; V-dedup is not; and neither structure captures a net win.** A grouped kernel
+where one thread reads a key's K once and computes all G heads' dots got **scores 10 → 4.66 ms** — a real
+win. But the V-fold is the other ~half, and sharing the V read forces either (a) a `(kvHead,dim)` mapping
+→ 256 threads → **58 ms crater**, or (b) co-locating the group in one threadgroup. Every attempt:
+
+| attempt | structure | bit-exact | @2048 |
+|---|---|:--:|:--:|
+| split-KV (3 dispatch) | key-split, per-head reads | ✓ | 0.95× |
+| grouped 3-dispatch | K-dedup scores + parallel vsum | ✓ | 0.45×→0.92× |
+| grouped 2-dispatch | K-dedup scores + fused finish | ✓ | 0.92× |
+| **staged (1 dispatch)** | threadgroup-staged K/V, nKV tg | ✓ | **0.23×** |
+
+The single-dispatch **threadgroup-staged** kernel is the mechanism the others lacked (one global K/V read
+into threadgroup memory, G uses) — and it's the cleanest expression of the dedup. It cratered hardest
+(**0.23×**) for the predicted reason: sharing the read across the group requires **one threadgroup per KV
+head = 2 threadgroups on ~14 cores**, so the compute that shipped spreads over 12 cores runs on 2. Dedup
+and occupancy are in direct opposition on Metal; you cannot have both.
+
+(Bit-identity note: the staged kernel was only byte-identical once its softmax reduction ran at **128
+threads to match the shipped 128-wide tree** — a 256-wide reduction sums the denominator in a different
+order and diverged at nKeys>256. Reduction *width* is part of the bit-identity contract.)
+
+**Conclusion — four independent confirmations that Metal decode attention is structurally
+dispatch-/occupancy-bound.** The DRAM-dedup prize is real but uncapturable: any dedup needs group
+co-location (→ few threadgroups → occupancy death) or extra dispatches (→ tax death). This is the same
+wall as the whole decode path (`docs/task-metal-cgofree-spike.md`: megakernel closed, dispatch-count the
+ceiling). **A1-Metal (half4 coalescing, 1.37–1.40×) remains the one capturable decode-attention win on
+this box.** Stop proposing dedup layouts; the lever is elsewhere (KV-quant §A3, or accept the floor).
+
 ### A3. KV cache quantization — **not bit-identical**
 
 Ollama supports q8/q4 KV caches. Halving or quartering KV bytes directly attacks the term
