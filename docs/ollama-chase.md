@@ -485,24 +485,26 @@ completeness; ranked below A1/A2 because those are free of that cost.
 Deferred behind A. It improves a number already past its usability threshold (2048-token
 TTFT is 2.1 s, down from 13.1 s) and cannot reach parity.
 
-### B1. Prefill attention query-tiling — **bit-identical, scoped, unbuilt**
+### B1. Prefill attention query-tiling — **DESIGN-REVISED (2026-08-04); BANKED, not funded**
 
-Scoped in `task-prefill-attention.md`. Share a staged K/V tile across a query block to remove
-the O(M²) redundant re-reads that coalescing cannot reach.
+Design-first (before writing the kernel) found the clean ~1.3× is **not bit-identical-buildable on
+Turing**: bit-identity pins the denom to the 128-strided tree ⇒ Bk=128, but a Bk=128 K-tile at hd=128 =
+**64 KB maxes sm_75 shared alone** — K+V can't co-reside (128 KB). Three explicit paths now in
+`task-prefill-attention.md`: (1) **bit-identical 2D key+dim tiling, ~1.15×** — intricate, multi-session,
+byte-exact-critical (removes ~half the O(M²)); (2) **reduction-order re-baseline, ~1.3×** — one goldens
+refresh (deterministic per-query denom, Bk-free), but cascades to decode + `attn_batched`/`splitkv_*`;
+(3) **tolerance-gated flash, largest** — abandons bit-identity. **Banked:** prefill is past usability
+(2.1 s) and can't reach parity (§7), so none is a release lever — fund path 1 or 2 as a focused campaign
+only if prefill speed is wanted for its own sake.
 
-- **Worth:** attention 820 → perhaps 250–350 ms at 2048; total prefill 2.1 → ~1.6 s ≈ **1.3×**.
-- **Cost:** substantial, delicate. The exact float-sum order fixes the blockDim=128 reduction
-  tree and thread→key map, forcing Bk=128 key tiles that strain the 64 KB shared budget at
-  hd=128/256. Hence the 2-pass-recompute design (no materialised scores).
-- **Note:** may inherit machinery from Campaign A, since a tiled/coalesced KV read path is
-  the same primitive.
+### B2. The GEMV's remaining dp4a headroom — **PROFILED (2026-08-04); RETIRED**
 
-### B2. The GEMV's remaining dp4a headroom — **unattributed**
-
-The GEMV sits at 54% of dp4a peak *before* tensor cores enter the picture. That 46% has not
-been attributed since the RN fix. It is not blocked by bit-identity.
-
-**Measure before proposing anything.** This lane has a five-attribution record.
+ncu at the gate/up shape (N=8960/K=1536/M=512): occupancy **88.9%** (not starved), DRAM **2.2%** (not
+bandwidth-bound), compute+memory **~54%**, dominant stall **scoreboard-on-data 43%** / 59%
+no-eligible-warp. The 46% is **un-hidden dp4a→accumulate-chain latency at already-high occupancy** —
+RN×MT already gives 32-way ILP, and more accumulators reorder the fold (breaks bit-identity). This is
+§7's dp4a-vs-IMMA ceiling: perfect latency hiding buys ~1.85× *to the dp4a ceiling*, but the ceiling is
+dp4a; the real win is tensor cores (the per-row-scales fork, §7). **Not a bit-identical lever — retired.**
 
 ### B3. Tensor cores via per-row scales — see §7
 
@@ -836,14 +838,16 @@ current Ollama: 1.94× → **1.41×**.
    which A does not take. The tiling primitive is available to share with B1.
 2. ~~**C1** — coverage audit~~ **DONE** (5/23 dense; the release must say "dense lane," not
    "prefill").
-3. **D1** — speculative decoding: **GO signal measured** (verify ceiling 2.5–3.6× at k=4–8), scoped
-   (~1.5–2 days: batched all-position verify + n-gram drafter + loop + lossless gate). The largest
-   decode lever, token-identical — **the next decode campaign to build.**
-4. **D5** — scope the hybrid GPU/CPU layer split (ranked *alongside* D1). The right shape for the
-   26B-on-8GB case; gated on the CPU-kernel decision (`plan-cpubrrr-…`), above §5/prefill.
-5. **D4** — confirm Ollama's long-context decode mechanism. Hours, sharpens A.
-6. **B1** — prefill attention query-tiling, if A's primitive transfers.
-7. **§7 fork** — only when B2 has been attributed and Phase 0 of the rotation doc has been
-   run.
+3. ~~**D1** — speculative decoding~~ **BUILT + MEASURED** (lossless vs sequential; 1.21× @128 / 1.80×
+   @512 / 1.16× @2048, workload-dependent, `TestSpecDecodeCurve`). Unblocked by the contraction fix.
+   Nice-to-haves only (grammar-fused drafter, cross-request stats).
+4. **D5** — scope the hybrid GPU/CPU layer split. Right shape for the 26B-on-8GB case; gated on the
+   CPU-kernel decision (`plan-cpubrrr-…`), above §5/prefill.
+5. ~~**D4** — confirm Ollama's long-ctx mechanism~~ **DONE** (flash attention, §D4).
+6. ~~**B1** prefill query-tiling / **B2** GEMV 46%~~ **BANKED** — B2 profiled (dp4a latency frontier,
+   retired); B1 design-revised (64 KB wall → ~1.15× bit-identical or a re-baseline for ~1.3×; not a
+   release lever, prefill past usability + can't reach parity). See §B1/§B2.
+7. **§7 fork** (tensor cores via per-row scales) — the only path past the dp4a ceiling; Phase 0 (measure
+   per-row-scale quality cost) still the cheap gate before funding.
 
 Everything in §6 (C2–C5) is coverage work whose priority depends on C1's answer (now known: 5/23).

@@ -16,6 +16,24 @@ Status: **DESIGN REVISED (2026-08-04) — the clean ~1.3× is NOT bit-identical-
 > campaign for its own sake, not a release lever.** The larger win needs Path 2 (tolerance-gated flash),
 > which abandons bit-identity — a stated, separate decision.
 
+**The three ways forward, if funded later (pick explicitly):**
+1. **Bit-identical 2D-tiled kernel (~1.15×) — multi-session.** Keep the exact 128-strided denom and
+   per-dim V-fold; work within 64 KB by tiling BOTH keys and dims, with separate thread-mapping
+   sub-passes (denom wants thread=key, V-sum wants thread=dim) and per-tile score scratch. Removes ~half
+   the O(M²) redundancy (the staged tensor's). Intricate, byte-exact-critical (the split-KV class + two
+   more constraints). Gates unchanged (`TestAttnBatched_bitIdentical` + `TestPrefillLast_e2e`).
+2. **Reduction-order re-baseline (~1.3×) — one goldens refresh.** Change attention's denom from the
+   128-strided tree to a **deterministic per-query sequential sum** (tiling-friendly, Bk-independent).
+   Then Bk can be < 128 and K+V co-reside in shared → the full tiling. Still bit-*deterministic* (not
+   online-rescaling flash), just a different fixed order — so it's ONE goldens refresh via
+   `refresh_parity_hashes.sh`, exactly like the FMA fix. **Cascade:** it changes DECODE attention
+   numerics too (decode uses the same `attention()`), and `attn_batched` / `splitkv_*` must adopt the
+   same order to stay a bit-identical set — so it's a coordinated multi-kernel change + refresh, not a
+   local one. This is the honest route to the larger win while keeping determinism.
+3. **Tolerance-gated flash (largest) — abandons bit-identity.** Real online-rescaling flash; the e2e
+   gate moves from byte-identical to a calibrated cosine floor (the MoE/GLM 3%-rule discipline). Decode
+   still uses exact `attention()`; only the prompt's cache is approximate. A stated, separate price.
+
 Same gates and bit-identity discipline as the GEMV work. Audited PTX untouched; new kernel in its own
 file. (Original scope preserved below.)
 
