@@ -35,12 +35,12 @@ extern "C" __global__ void splitkv_scores(
     const float4* k4 = (const float4*)ks;
     for (int j = 0; j < d4; j++) {
         float4 qq = q4[j], kk = k4[j];
-        dot += qq.x * kk.x;
-        dot += qq.y * kk.y;
-        dot += qq.z * kk.z;
-        dot += qq.w * kk.w;
+        dot = __fmaf_rn(qq.x, kk.x, dot);
+        dot = __fmaf_rn(qq.y, kk.y, dot);
+        dot = __fmaf_rn(qq.z, kk.z, dot);
+        dot = __fmaf_rn(qq.w, kk.w, dot);
     }
-    for (int d = d4 << 2; d < hd; d++) dot += qh[d] * ks[d];
+    for (int d = d4 << 2; d < hd; d++) dot = __fmaf_rn(qh[d], ks[d], dot);
     scStore[(long)h * nWin + i] = dot * scale;
 }
 
@@ -85,6 +85,6 @@ extern "C" __global__ void splitkv_vsum(
     const float* sc = scStore + (long)h * nWin;
     float acc = 0.f;
     for (int s = winStart; s < nKeys; s++)
-        acc += sc[s - winStart] * vc[(long)s * kvDim + (long)kvh * hd + d];
+        acc = __fmaf_rn(sc[s - winStart], vc[(long)s * kvDim + (long)kvh * hd + d], acc);
     ctx[(long)h * hd + d] = acc * invStore[h];
 }

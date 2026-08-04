@@ -757,16 +757,15 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		// TTFT for long prompts. Declines (falls back) for prompts past the backend's cap; absent
 		// for backends without a batched forward, and skipped for tiny prompts.
 		//
-		// DEFAULT OFF (opt-in via GOINFER_BATCHED_PREFILL=1). The batched CUDA path is NOT bit-
-		// identical to the sequential decode path on real models: its kernels are compiled from
-		// separate .cu (gemv_w4a8_rn / rmsnorm_quant_batched) and diverge from the decode kernels by
-		// ~1 ULP data-dependently (fma-contraction / reduction regime), which compounds under greedy
-		// into an 84% token-stream divergence vs sequential-prefill-then-decode on the 1.5B (measured;
-		// docs/task-batched-prefill-bitidentity.md). The old gate (TestPrefillLast_e2e) missed it — it
-		// runs a tiny fixture whose uniform magnitudes round identically. Until the kernels are made
-		// order/contraction-identical to the decode path, default to the sequential prefill (which
-		// uses the decode kernels → bit-identical) and expose the batched TTFT win only as opt-in.
-		useBatchedPrefill := os.Getenv("GOINFER_BATCHED_PREFILL") == "1"
+		// DEFAULT ON — bit-identical to sequential decode again (restored 2026-08-04). It was briefly
+		// default-off after an 84% token-stream divergence traced to a compiler fma-vs-mul+add
+		// contraction difference between the separately-compiled batched and decode GEMV/RMS kernels.
+		// FIXED: every float MAC in both paths is now an explicit __fmaf_rn (no compiler discretion),
+		// enforced at build time by cuda.TestKernelFMALint. The decode-side half shipped in
+		// aikit/gpu@v0.25.0 (gemv_w4a8_fwd); with the dep bumped, TestPrefillDivergenceRate is 0/50 on
+		// the real 1.5B (was 42/50), gap byte-identical. GOINFER_BATCHED_PREFILL=0 force-disables.
+		// See docs/task-batched-prefill-bitidentity.md.
+		useBatchedPrefill := os.Getenv("GOINFER_BATCHED_PREFILL") != "0"
 		if pf, ok := m.resident.(Prefiller); ok && useBatchedPrefill && len(prompt) >= 8 {
 			embs := make([][]float32, len(prompt))
 			for i, id := range prompt {

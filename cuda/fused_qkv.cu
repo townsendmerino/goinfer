@@ -30,7 +30,7 @@ extern "C" __global__ void fused_rms_qkv(
 
     // ---- redundant rmsnorm + int8 quant of x (mirrors rmsnorm_quant exactly) ----
     float ss = 0.f;
-    for (int k = t; k < H; k += nt) ss += x[k] * x[k];
+    for (int k = t; k < H; k += nt) ss = __fmaf_rn(x[k], x[k], ss);
     red[t] = ss; __syncthreads();
     for (int o = nt >> 1; o > 0; o >>= 1) { if (t < o) red[t] += red[t + o]; __syncthreads(); }
     float rnorm = rsqrtf(red[0] / H + eps); __syncthreads();
@@ -73,8 +73,8 @@ extern "C" __global__ void fused_rms_qkv(
         p0 = __dp4a((int)__vsub4((w0 >> 4) & 0x0F0F0F0Fu, 0x08080808u), aq[2 * wi0 + 1], p0);
         p1 = __dp4a((int)__vsub4(w1 & 0x0F0F0F0Fu, 0x08080808u), aq[2 * wi1], p1);
         p1 = __dp4a((int)__vsub4((w1 >> 4) & 0x0F0F0F0Fu, 0x08080808u), aq[2 * wi1 + 1], p1);
-        facc += (float)p0 * __half2float(sr[wi0 >> 2]);
-        facc += (float)p1 * __half2float(sr[wi1 >> 2]);
+        facc = __fmaf_rn((float)p0, __half2float(sr[wi0 >> 2]), facc);
+        facc = __fmaf_rn((float)p1, __half2float(sr[wi1 >> 2]), facc);
     }
     for (; base < Kwords; base += 32) {
         int wi = base + lane;
@@ -83,12 +83,12 @@ extern "C" __global__ void fused_rms_qkv(
             int p = 0;
             p = __dp4a((int)__vsub4(word & 0x0F0F0F0Fu, 0x08080808u), aq[2 * wi], p);
             p = __dp4a((int)__vsub4((word >> 4) & 0x0F0F0F0Fu, 0x08080808u), aq[2 * wi + 1], p);
-            facc += (float)p * __half2float(sr[wi >> 2]);
+            facc = __fmaf_rn((float)p, __half2float(sr[wi >> 2]), facc);
         }
     }
     #pragma unroll
     for (int o = 16; o > 0; o >>= 1) facc += __shfl_down_sync(0xffffffffu, facc, o);
-    if (lane == 0) dst[row] = facc * aScale + (bias ? bias[row] : 0.f);
+    if (lane == 0) dst[row] = __fmaf_rn(facc, aScale, (bias ? bias[row] : 0.f));
 }
 
 // K3a (spec §5.2, super-kernel 3, first half): the pre-MLP rmsnorm+quant folded into the
@@ -115,7 +115,7 @@ extern "C" __global__ void fused_rms_gu(
     int t = threadIdx.x, nt = blockDim.x;
 
     float ss = 0.f;
-    for (int k = t; k < H; k += nt) ss += x[k] * x[k];
+    for (int k = t; k < H; k += nt) ss = __fmaf_rn(x[k], x[k], ss);
     red[t] = ss; __syncthreads();
     for (int o = nt >> 1; o > 0; o >>= 1) { if (t < o) red[t] += red[t + o]; __syncthreads(); }
     float rnorm = rsqrtf(red[0] / H + eps); __syncthreads();
@@ -157,8 +157,8 @@ extern "C" __global__ void fused_rms_gu(
             p0 = __dp4a((int)__vsub4((w0 >> 4) & 0x0F0F0F0Fu, 0x08080808u), aq[2 * wi0 + 1], p0);
             p1 = __dp4a((int)__vsub4(w1 & 0x0F0F0F0Fu, 0x08080808u), aq[2 * wi1], p1);
             p1 = __dp4a((int)__vsub4((w1 >> 4) & 0x0F0F0F0Fu, 0x08080808u), aq[2 * wi1 + 1], p1);
-            facc += (float)p0 * __half2float(sr[wi0 >> 2]);
-            facc += (float)p1 * __half2float(sr[wi1 >> 2]);
+            facc = __fmaf_rn((float)p0, __half2float(sr[wi0 >> 2]), facc);
+            facc = __fmaf_rn((float)p1, __half2float(sr[wi1 >> 2]), facc);
         }
         for (; base < Kwords; base += 32) {
             int wi = base + lane;
@@ -167,12 +167,12 @@ extern "C" __global__ void fused_rms_gu(
                 int p = 0;
                 p = __dp4a((int)__vsub4(word & 0x0F0F0F0Fu, 0x08080808u), aq[2 * wi], p);
                 p = __dp4a((int)__vsub4((word >> 4) & 0x0F0F0F0Fu, 0x08080808u), aq[2 * wi + 1], p);
-                facc += (float)p * __half2float(sr[wi >> 2]);
+                facc = __fmaf_rn((float)p, __half2float(sr[wi >> 2]), facc);
             }
         }
         #pragma unroll
         for (int o = 16; o > 0; o >>= 1) facc += __shfl_down_sync(0xffffffffu, facc, o);
-        if (lane == 0) dst[row] = facc * aScale;
+        if (lane == 0) dst[row] = __fmul_rn(facc, aScale);
     }
 }
 

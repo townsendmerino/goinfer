@@ -100,8 +100,8 @@ extern "C" __global__ void gemv_w4a8_staged(
                     p0 = __dp4a(hi0, a0[STRIDE + t], p0);
                     p1 = __dp4a(lo1, a1[t], p1);
                     p1 = __dp4a(hi1, a1[STRIDE + t], p1);
-                    facc[t] += (float)p0 * s0;
-                    facc[t] += (float)p1 * s1;
+                    facc[t] = __fmaf_rn((float)p0, s0, facc[t]);
+                    facc[t] = __fmaf_rn((float)p1, s1, facc[t]);
                 }
             }
             // 32-stride tail (only the final chunk, when Kwords%64!=0 — same as the un-chunked kernel).
@@ -117,7 +117,7 @@ extern "C" __global__ void gemv_w4a8_staged(
                         int p = 0;
                         p = __dp4a(lo, a[t], p);
                         p = __dp4a(hi, a[STRIDE + t], p);
-                        facc[t] += (float)p * s;
+                        facc[t] = __fmaf_rn((float)p, s, facc[t]);
                     }
                 }
             }
@@ -131,7 +131,7 @@ extern "C" __global__ void gemv_w4a8_staged(
             if (lane == 0) {
                 for (int t = 0; t < mcnt; t++) {
                     int m = m0 + t;
-                    float val = facc[t] * aScale[m] + (bias ? bias[n] : 0.f);
+                    float val = __fmaf_rn(facc[t], aScale[m], (bias ? bias[n] : 0.f));
                     dst[(long)m * N + n] = accum ? dst[(long)m * N + n] + val : val;
                 }
             }

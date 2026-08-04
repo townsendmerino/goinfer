@@ -66,6 +66,17 @@ Carried from the prefill campaign, where five attributions were made and four we
   was a structural blind spot — **now closed by a self-referential snapshot golden**
   (`TestMetalSnapshotGolden`: fixed inputs, tiny models, depths past the widths, byte-compared; machine-
   pinned, `GOINFER_UPDATE_GOLDENS=1` to refresh). See §A2-Metal.
+- **A float multiply-accumulate under a bit-identity contract MUST use an explicit intrinsic**
+  (`__fmaf_rn` on CUDA, `fma()` on Metal). A bare `a*b + c` leaves the fma-vs-mul+add contraction to
+  the compiler, and two kernels with identical source can compile to different numerics — ~1 ULP
+  apart, DATA-DEPENDENT, invisible on uniform random fixtures but an 84% token-stream divergence on
+  real weights (the batched-prefill-vs-decode split, `docs/task-batched-prefill-bitidentity.md`). The
+  gate is the PTX/AIR **instruction histogram**, not a numerical test — a data-driven test only catches
+  it when the fixture has the dynamic range to expose it, which random data does not. Enforced by
+  `cuda.TestKernelFMALint` (fails the build on any bare float MAC in a contracted kernel; extends to
+  future kernels automatically). Same family as the Metal reduction-width rule above: **a numerical
+  property silently coupled to a compiler or tuning decision.** aikit's `gemv_quant.cu` (the decode
+  GEMV) carries the same rule in its own repo — the pair must agree, so both must follow it.
 - **Thermal control on the Mac** (±700 ms drift): interleaved repeats, session-start run
   dropped. Single-run rankings are unreliable.
 - **Peer version is part of the measurement.** The whole §B2 correction happened because a
@@ -716,7 +727,7 @@ kernel.
 
 | lever | result | notes |
 |---|---|---|
-| Batched prefill (`PrefillLast`) | 2048 TTFT 13.1→2.1s; crossover 128→320 vs 0.5.7 | ⚠ **NOT bit-identical on real models** (84% stream divergence; fma-contraction vs decode kernels) — **now DEFAULT-OFF**, opt-in `GOINFER_BATCHED_PREFILL=1`; fix scoped (`task-batched-prefill-bitidentity.md`) |
+| Batched prefill (`PrefillLast`) | 2048 TTFT 13.1→2.1s; crossover 128→320 vs 0.5.7 | **bit-identical, default-on** (restored). Was briefly default-off after an 84% divergence from fma-contraction; FIXED by explicit `__fmaf_rn` everywhere + `TestKernelFMALint`; `TestPrefillDivergenceRate` 0/50 (`task-batched-prefill-bitidentity.md`) |
 | KV-only prefill for `prompt[:-1]` | −4.39 ms/prompt-token on 26B | skips LM head |
 | GEMV `MT=32` | ~6% | tile width, not an accumulation constraint |
 | GEMV `int2` coalescing | 13% | bytes/sector 49.99 → 98.01% |

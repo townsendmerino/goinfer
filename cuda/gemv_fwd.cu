@@ -51,8 +51,8 @@ extern "C" __global__ void rope_kv(
         float c = cosf(ang), s = sinf(ang);
         float* base = q + h * hd;
         float a = base[d], b = base[d + rhalf];
-        base[d] = a * c - b * s;
-        base[d + rhalf] = a * s + b * c;
+        base[d] = __fmaf_rn(a, c, -__fmul_rn(b, s));
+        base[d + rhalf] = __fmaf_rn(a, s, __fmul_rn(b, c));
     } else if (idx < qn + kn) {
         int j = idx - qn;
         int h = j / rhalf, d = j % rhalf;
@@ -60,7 +60,7 @@ extern "C" __global__ void rope_kv(
         float c = cosf(ang), s = sinf(ang);
         float* base = k + h * hd;
         float a = base[d], b = base[d + rhalf];
-        float r0 = a * c - b * s, r1 = a * s + b * c;
+        float r0 = __fmaf_rn(a, c, -__fmul_rn(b, s)), r1 = __fmaf_rn(a, s, __fmul_rn(b, c));
         base[d] = r0;
         base[d + rhalf] = r1;
         long o = (long)pos * kvDim + (long)h * hd;

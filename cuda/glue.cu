@@ -19,7 +19,7 @@ __global__ void rmsnorm_quant(const float* __restrict__ x, const float* __restri
     int t = threadIdx.x, nt = blockDim.x;
     // pass 1: sum of squares
     float ss = 0.f;
-    for (int k = t; k < H; k += nt) ss += x[k] * x[k];
+    for (int k = t; k < H; k += nt) ss = __fmaf_rn(x[k], x[k], ss);
     red[t] = ss; __syncthreads();
     for (int o = nt >> 1; o > 0; o >>= 1) { if (t < o) red[t] += red[t + o]; __syncthreads(); }
     float rnorm = rsqrtf(red[0] / H + eps); __syncthreads();
@@ -54,7 +54,7 @@ __global__ void rmsnorm_f32(float* __restrict__ x, const float* __restrict__ w,
     extern __shared__ float red[];
     int t = threadIdx.x, nt = blockDim.x;
     float ss = 0.f;
-    for (int k = t; k < H; k += nt) ss += x[k] * x[k];
+    for (int k = t; k < H; k += nt) ss = __fmaf_rn(x[k], x[k], ss);
     red[t] = ss; __syncthreads();
     for (int o = nt >> 1; o > 0; o >>= 1) { if (t < o) red[t] += red[t + o]; __syncthreads(); }
     float rnorm = rsqrtf(red[0] / H + eps); __syncthreads();
@@ -93,8 +93,8 @@ __global__ void rope(float* __restrict__ vec, const float* __restrict__ invFreq,
     float c = cosf(ang), s = sinf(ang);
     float* base = vec + h * hd;
     float a = base[d], b = base[d + half];
-    base[d] = a * c - b * s;
-    base[d + half] = a * s + b * c;
+    base[d] = __fmaf_rn(a, c, -__fmul_rn(b, s));
+    base[d + half] = __fmaf_rn(a, s, __fmul_rn(b, c));
 }
 
 // attention: decode single-query GQA. q[nH*hd], kc/vc are [nKeys*kvDim] (kvDim=nKV*hd),
@@ -122,7 +122,7 @@ __global__ void attention(const float* __restrict__ q, const float* __restrict__
     for (int s = winStart + t; s < nKeys; s += nt) {
         const float* ks = kc + s * kvDim + kvh * hd;
         float dot = 0.f;
-        for (int d = 0; d < hd; d++) dot += qh[d] * ks[d];
+        for (int d = 0; d < hd; d++) dot = __fmaf_rn(qh[d], ks[d], dot);
         dot *= scale; sc[s - winStart] = dot; lm = fmaxf(lm, dot);
     }
     red[t] = lm; __syncthreads();
@@ -137,7 +137,7 @@ __global__ void attention(const float* __restrict__ q, const float* __restrict__
     // ctx[d] = sum_s (sc[s]*inv) * V[s,d]  over the window only
     for (int d = t; d < hd; d += nt) {
         float acc = 0.f;
-        for (int s = winStart; s < nKeys; s++) acc += sc[s - winStart] * vc[s * kvDim + kvh * hd + d];
+        for (int s = winStart; s < nKeys; s++) acc = __fmaf_rn(sc[s - winStart], vc[s * kvDim + kvh * hd + d], acc);
         ctx[h * hd + d] = acc * inv;
     }
 }
@@ -172,7 +172,7 @@ __global__ void glu_quant(const float* __restrict__ g, const float* __restrict__
         if (act == ACT_SILU) {
             a = x / (1.f + __expf(-x));
         } else { // ACT_GELU_TANH — 0.7978845608028654 = sqrt(2/pi), matching decoder/rmsnorm.go geluTanh
-            a = 0.5f * x * (1.f + tanhf(0.7978845608028654f * (x + 0.044715f * x * x * x)));
+            a = 0.5f * x * (1.f + tanhf(0.7978845608028654f * (__fmaf_rn(0.044715f, __fmul_rn(__fmul_rn(x, x), x), x))));
         }
         float d = a * u[uOff + k]; dscratch[k] = d; ma = fmaxf(ma, fabsf(d));
     }

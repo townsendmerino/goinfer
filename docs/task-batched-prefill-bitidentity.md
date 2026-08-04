@@ -1,8 +1,9 @@
-# Batched prefill is NOT bit-identical to sequential decode on real models
+# Batched prefill vs sequential decode bit-identity — FOUND, FIXED
 
-> Found 2026-08-04 while building D1 (spec-decode). Status: **batched prefill defaulted OFF**
-> (opt-in `GOINFER_BATCHED_PREFILL=1`) until the batched kernels are made contraction-identical to
-> the decode kernels. The benchmark corrections that were already urgent are NOT blocked on this.
+> Found 2026-08-04 while building D1 (spec-decode); **FIXED same day** (explicit-FMA everywhere).
+> Status: **batched prefill default-ON again, bit-identical** — `TestPrefillDivergenceRate` 0/50
+> (was 42/50), enforced by `cuda.TestKernelFMALint`. The root cause was **compiler FMA contraction**,
+> not a reduction reorder; the fix and the durable gate are at the bottom of this doc.
 
 ## The claim that was false
 
@@ -59,14 +60,37 @@ fma count 192→96 yet **did not move the Q gap** (still 313/1536). So the loop 
 separately-compiled batched kernels that resists single-op localization in bounded time. This is why
 the fallback (default-off) is correct now, and the fix is a scoped follow-up.
 
-## The fix (deferred, scoped)
+## The fix — LANDED (explicit `__fmaf_rn` everywhere)
 
-Make the batched-path kernels **contraction/reduction-identical to the decode path**. Options, cheapest
-first: (1) match `gemv_w4a8_fwd`'s exact per-op contraction in `gemv_w4a8_rn` (and the batched RMS) —
-possibly `--fmad` alignment or targeted `__fmul_rn`/`__fadd_rn`; measure the speed cost. (2) If that is
-slow or fragile, route the batched path's projections through `gemv_w4a8_fwd` (or a provably
-contraction-identical batched variant). Then re-enable batched prefill by default and restore the
-bit-identity claim.
+The root cause is FMA CONTRACTION, confirmed at the PTX: `gemv_w4a8_fwd` compiled to 11 `fma` + 3
+`mul`, `gemv_w4a8_rn` to 192 `fma` + 0 `mul` — the scale-accumulate `facc += p*s` is mul+add in one and
+fma in the other. Not a reduction reorder (a targeted `__fmul_rn` on the rn loop did NOT move it — the
+divergence is a *composition* of contraction differences across separately-compiled kernels).
+
+**Fix: remove the compiler's freedom everywhere.** Every float multiply-accumulate under the bit-identity
+contract is now an explicit intrinsic (`__fmaf_rn` fused — fewer instructions AND one rounding, so both
+faster and more accurate than mul+add), across BOTH paths' kernels:
+- aikit `gemv_quant.cu` (`gemv_w4a8_fwd`, `gemv_w8a8_fwd`) — the decode GEMV, in its own repo.
+- goinfer `gemv_w4a8_rn` / `_batched` / `_staged`, `fused_qkv.cu` (fQKV/fGU), `glue.cu` +
+  `prefill_batched.cu` (rmsnorm/rope/attention/glu/V-sum), `decode_splitkv.cu`, `gemv_fwd.cu` (rope_kv).
+
+Verified against the exposing measurements: batched-vs-decode gap byte-identical (was 138275),
+`TestPrefillDivergenceRate` **0/50** (was 42/50), decode speed unchanged (fused = fewer instructions).
+Then re-enabled batched prefill by default and restored the bit-identity claim (§B2, §9).
+
+**Cross-repo note:** `gemv_w4a8_fwd` lives in `aikit/gpu` (external module). The decode-side fix shipped
+as **`aikit/gpu@v0.25.0`** (commit `be049df`), and goinfer's go.mod is bumped to it — no `replace`, CI
+uses the published version. Verified 0/50 against the real dependency. aikit's `gemv_quant.cu` header
+carries the same explicit-FMA rule so a future aikit kernel edit can't silently re-break the pair.
+
+## The durable gate — TestKernelFMALint
+
+`cuda.TestKernelFMALint` scans every contracted kernel and FAILS THE BUILD on any bare float MAC
+(`a*b + c`), before any numerical test and independent of the NVRTC version. New kernels inherit the
+rule automatically. The standing rule is recorded in `ollama-chase.md` §2 (next to Metal's
+reduction-width contract — same family) and in aikit's `gemv_quant.cu` header. Owed follow-ups: the
+same explicit-intrinsic audit on Metal/AIR (see task-6 finding), and a PTX instruction-histogram
+cross-check as a second backstop.
 
 ## Gate work owed (the durable deliverable)
 

@@ -26,7 +26,7 @@ __global__ void rmsnorm_quant_batched(const float* __restrict__ x, const float* 
     float* normed = sm + blockDim.x; // [N]
     int t = threadIdx.x, nt = blockDim.x;
     float ss = 0.f;
-    for (int i = t; i < N; i += nt) ss += xr[i] * xr[i];
+    for (int i = t; i < N; i += nt) ss = __fmaf_rn(xr[i], xr[i], ss);
     red[t] = ss; __syncthreads();
     for (int o = nt >> 1; o > 0; o >>= 1) { if (t < o) red[t] += red[t + o]; __syncthreads(); }
     float inv = rsqrtf(red[0] / N + eps); __syncthreads();
@@ -64,7 +64,7 @@ extern "C" __global__ void rmsnorm_f32_batched(float* __restrict__ x, const floa
     int t = threadIdx.x, nt = blockDim.x;
     float* xm = x + (long)m * H;
     float ss = 0.f;
-    for (int k = t; k < H; k += nt) ss += xm[k] * xm[k];
+    for (int k = t; k < H; k += nt) ss = __fmaf_rn(xm[k], xm[k], ss);
     rednf[t] = ss; __syncthreads();
     for (int o = nt >> 1; o > 0; o >>= 1) { if (t < o) rednf[t] += rednf[t + o]; __syncthreads(); }
     float rnorm = rsqrtf(rednf[0] / H + eps); __syncthreads();
@@ -121,13 +121,13 @@ __global__ void rope_kv_batched(
         float ang = pos * invFreq[d]; float c = cosf(ang), s = sinf(ang);
         float* base = qm + h * hd;
         float a = base[d], b = base[d + rhalf];
-        base[d] = a * c - b * s; base[d + rhalf] = a * s + b * c;
+        base[d] = __fmaf_rn(a, c, -__fmul_rn(b, s)); base[d + rhalf] = __fmaf_rn(a, s, __fmul_rn(b, c));
     } else if (idx < qn + kn) {
         int j = idx - qn; int h = j / rhalf, d = j % rhalf;
         float ang = pos * invFreq[d]; float c = cosf(ang), s = sinf(ang);
         float* base = km + h * hd;
         float a = base[d], b = base[d + rhalf];
-        float r0 = a * c - b * s, r1 = a * s + b * c;
+        float r0 = __fmaf_rn(a, c, -__fmul_rn(b, s)), r1 = __fmaf_rn(a, s, __fmul_rn(b, c));
         base[d] = r0; base[d + rhalf] = r1;
         long o = (long)pos * kvDim + (long)h * hd;
         kc[o + d] = r0; kc[o + d + rhalf] = r1;
@@ -171,12 +171,12 @@ __global__ void attn_batched(const float* __restrict__ q, const float* __restric
         const float4* k4 = (const float4*)ks;
         for (int i = 0; i < d4; i++) {
             float4 qq = q4[i], kk = k4[i];
-            dot += qq.x * kk.x;
-            dot += qq.y * kk.y;
-            dot += qq.z * kk.z;
-            dot += qq.w * kk.w;
+            dot = __fmaf_rn(qq.x, kk.x, dot);
+            dot = __fmaf_rn(qq.y, kk.y, dot);
+            dot = __fmaf_rn(qq.z, kk.z, dot);
+            dot = __fmaf_rn(qq.w, kk.w, dot);
         }
-        for (int d = d4 << 2; d < hd; d++) dot += qh[d] * ks[d];
+        for (int d = d4 << 2; d < hd; d++) dot = __fmaf_rn(qh[d], ks[d], dot);
         dot *= scale; sc[s - winStart] = dot; lm = fmaxf(lm, dot);
     }
     red[t] = lm; __syncthreads();
@@ -189,7 +189,7 @@ __global__ void attn_batched(const float* __restrict__ q, const float* __restric
     float inv = 1.f / red[0]; __syncthreads();
     for (int d = t; d < hd; d += nt) {
         float acc = 0.f;
-        for (int s = winStart; s < nKeys; s++) acc += sc[s - winStart] * vc[(long)s * kvDim + kvh * hd + d];
+        for (int s = winStart; s < nKeys; s++) acc = __fmaf_rn(sc[s - winStart], vc[(long)s * kvDim + kvh * hd + d], acc);
         ctx[(long)m * qDim + h * hd + d] = acc * inv;
     }
 }
@@ -211,7 +211,7 @@ __global__ void glu_quant_batched(const float* __restrict__ g, const float* __re
     for (int i = t; i < I; i += nt) {
         float x = gr[i], a;
         if (act == ACT_SILU) a = x / (1.f + __expf(-x));
-        else a = 0.5f * x * (1.f + tanhf(0.7978845608028654f * (x + 0.044715f * x * x * x)));
+        else a = 0.5f * x * (1.f + tanhf(0.7978845608028654f * (__fmaf_rn(0.044715f, __fmul_rn(__fmul_rn(x, x), x), x))));
         float d = a * ur[i]; dr[i] = d; amax = fmaxf(amax, fabsf(d));
     }
     red[t] = amax; __syncthreads();

@@ -74,8 +74,9 @@ extern "C" __global__ void gemv_w4a8_rn(
                     p0 = __dp4a(hi0[r], av0.y, p0);
                     p1 = __dp4a(lo1[r], av1.x, p1);
                     p1 = __dp4a(hi1[r], av1.y, p1);
-                    facc[r][t] += (float)p0 * s0[r];
-                    facc[r][t] += (float)p1 * s1[r];
+                    // explicit __fmaf_rn — match gemv_w4a8_fwd exactly, no compiler contraction discretion
+                    facc[r][t] = __fmaf_rn((float)p0, s0[r], facc[r][t]);
+                    facc[r][t] = __fmaf_rn((float)p1, s1[r], facc[r][t]);
                 }
             }
         }
@@ -99,7 +100,7 @@ extern "C" __global__ void gemv_w4a8_rn(
                         int p = 0;
                         p = __dp4a(lo[r], av.x, p);
                         p = __dp4a(hi[r], av.y, p);
-                        facc[r][t] += (float)p * s[r];
+                        facc[r][t] = __fmaf_rn((float)p, s[r], facc[r][t]); // explicit-FMA
                     }
                 }
             }
@@ -113,7 +114,7 @@ extern "C" __global__ void gemv_w4a8_rn(
                 for (int off = 16; off > 0; off >>= 1) v += __shfl_down_sync(0xffffffffu, v, off);
                 if (lane == 0 && n0 + r < N) {
                     int m = m0 + t, n = n0 + r;
-                    float val = v * aScale[m] + (bias ? bias[n] : 0.f);
+                    float val = __fmaf_rn(v, aScale[m], (bias ? bias[n] : 0.f)); // explicit-FMA
                     dst[(long)m * N + n] = accum ? dst[(long)m * N + n] + val : val;
                 }
             }
