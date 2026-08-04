@@ -340,11 +340,18 @@ kernel.
   ms/token** on its own. Even with a free GPU half and a zero-cost boundary, the split **tops out
   around ~9–10 tok/s — below Ollama's 24.5.** Ollama wins here because its GGML CPU kernels
   (AVX2/AVX-512, threaded) are **~4× goinfer's pure-Go path**, not because its split is cleverer.
-- **To beat 24.5, two independent knobs, both outside this item:** (a) a **faster CPU kernel** —
-  exactly the `cpubrrr` Q8_K integer-accumulation lane in `plan-cpubrrr-steal-and-bindings.md`
-  (measured to take cpubrrr from losing to winning on Q4_K); or (b) a **larger GPU fraction** (more
-  VRAM — a card the model nearly fits). The layer split is the *correct chassis*; the CPU-kernel
-  campaign is what makes it competitive.
+- **To close toward 24.5, two independent knobs, both outside this item:** (a) a **faster CPU
+  kernel** — exactly the `cpubrrr` Q8_K integer-accumulation lane in
+  `plan-cpubrrr-steal-and-bindings.md`. That work was **built, proved bit-exact, and declined** on a
+  **Q6_K byte-ratio ceiling of 1.22×**, with the **Q4_K variant (ceiling 1.78×) explicitly left
+  open** — declined at the time *because the CPU path did not matter*. **D5 is the reason it would
+  matter.** (b) A **larger GPU fraction** (more VRAM — a card the model nearly fits).
+- **But be honest about the ceiling: this revalidates the lever, it does not win the 26B.** Even at
+  Q4_K's full **1.78×** CPU speedup the split lands around **~16–18 tok/s against Ollama's 24.5** —
+  the CPU half is still the floor. So D5 is a *right-shape capability* item (single-stream on a card
+  too small, at a usable rate) and a *reason to revive cpubrrr Q4_K*, **not a path to beating Ollama
+  on this model.** Read it that way; do not let it read as a route to victory. (More VRAM is the only
+  knob that actually wins, and that is buying hardware, not writing a kernel.)
 - **Verdict:** right mechanism, real capability (single-stream on a card too small), but **not a
   throughput win until the CPU path closes to GGML-class.** Rank it **alongside D1** (both are
   decode-side, both reuse machinery goinfer already has) and **above anything remaining in

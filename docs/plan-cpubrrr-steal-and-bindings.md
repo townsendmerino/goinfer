@@ -33,6 +33,15 @@ matmul — evaluated, NOT shipped"). The file states the revisit condition expli
 
 **That revisit condition is now met — by a different task.** See below.
 
+> **↔ Cross-reference (2026-08-04): `docs/ollama-chase.md` §D5 is the campaign that gives this
+> declined lever a reason to exist.** A1 was declined *because the CPU path did not matter*. The
+> hybrid GPU/CPU **layer split** for oversized models (the 26B-on-8GB case) runs ~58% of layers on
+> the CPU, so its throughput is gated directly by CPU-kernel speed — that is exactly what A1's Q4_K
+> variant would buy. **Honest bound, so this reads straight:** even at the full **1.78×** Q4_K
+> speedup the split lands ~**16–18 tok/s** against Ollama's 24.5 — it *revalidates* A1's Q4_K door
+> (worth reviving) but does **not** make the 26B winnable; only more VRAM does. So revive A1-Q4_K
+> for the capability + the CPU-decode ceiling, not as a way to beat Ollama on this model.
+
 ---
 
 # The convergence: A1's Q4_K door and the Gemma 4 quant blocker are one task
