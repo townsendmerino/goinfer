@@ -213,26 +213,33 @@ they accumulate) — the same reason `int2` coalescing and A-staging were safe. 
 says the decode kernel is occupancy-bound, not read-throughput-bound, so a relayout is not the
 lever here. Revisit only if a future profile shows uncoalesced KV traffic.
 
-### A2-Metal — same OCCUPANCY bound confirmed on Metal (2026-08-04)
+### A2-Metal — split-KV BUILT + MEASURED: does NOT transfer to Metal (2026-08-04)
 
-The Metal end-to-end depth A/B (§A1-Metal) shows the identical shape to the CUDA reprofile: A1 bought
-**1.37–1.40× @depth**, but the Metal decode `attention` still dispatches **one threadgroup per query
-head** — only nH (12 for qwen) threadgroups on a ~16–20-core GPU, occupancy-starved exactly as the
-CUDA `attn_batched` reprofile found (12 blocks, Waves/SM 0.04). Not memory-throughput-bound; the K
-read is already half4-coalesced.
+CUDA's split-KV won 1.20× because its decode attention was occupancy-starved (ncu: 12 blocks / 40 SMs,
+11.9% occ). The Metal depth curve *looked* the same shape, so the split-KV was ported and measured. **It
+is bit-identical but a consistent regression — the occupancy diagnosis does not hold on Metal.**
 
-**A now-refuted Metal-only idea (kept so it isn't re-proposed):** *share the KV read across a GQA group*
-— one threadgroup per **KV** head processing all nH/nKV query heads, so each K/V row is read from device
-once (a bit-identical device-score variant exists that skirts the 96 KB ≫ 32 KB threadgroup limit). It
-targets the 6× GQA redundant read, which is real — **but it cuts threadgroups nH→nKV (12→2), the exact
-wrong direction for an occupancy-starved kernel.** The reprofile refutes it the same way it refuted the
-CUDA layout hypothesis: the bound is too-few-blocks, so any fix that *reduces* blocks loses.
+Built the exact CUDA 3-kernel structure (`splitkv_scores` / `splitkv_softmax` / `splitkv_vsum`), the
+order-dependent softmax fold kept whole, the two O(nKeys·hd) passes split along their independent axes.
+**Byte-identical: 0 / 151936 logit mismatches at depths 1 / 128 / 512 / 1024 / 2048** (the associativity
+argument holds on Metal too). Best-of-40 depth A/B (interleaved, qwen2.5-coder-1.5b, resident):
 
-**The Metal fix is the same split-KV / tiled attention as CUDA's §A2 + B1:** split each head's key
-reduction across N threadgroups (nH → nH·N), combined in fixed tile order (bit-identical two-pass). One
-tiled-attention primitive serves both backends and both regimes (M=1 split-KV for occupancy, M>1
-query-tiling for the redundant re-read). Build it once; measure occupancy recovery on Metal separately
-(fewer cores than the 40-SM card, so the optimal N differs).
+| depth | shipped | split-KV | verdict |
+|---:|---:|---:|:---:|
+| 128 | 64.2 | 63.1 | 0.98× |
+| 1024 | 40.5 | 38.1 | 0.94× |
+| 2048 | 28.7 | 28.1 | 0.98× |
+| 4000 | 18.5 | 17.9 | 0.97× |
+
+**Why it fails where CUDA won — and it's not fixable by tuning:** the scores pass got a **32× threadgroup
+increase (12 → 384)** and the vsum pass a **4× increase (12 → 48)**; *neither* moved the token time. So
+Metal decode attention is **not occupancy-bound** — that diagnosis was card-specific (40 SMs starved by
+12 blocks; the M1's ~16–20 cores are not). Meanwhile split-KV *structurally* needs the cross-threadgroup
+sync that only a kernel-launch barrier gives, so it costs **+2 dispatches/layer × 28 = +56 dispatches/
+token**, and Metal decode is **dispatch-count-bound** (the ~70 tok/s shallow floor). That tax is the
+whole regression. The Metal decode lever points the **opposite** way — *fewer* dispatches (megakernel),
+not more parallelism. **Reverted** (code removed; the throwaway A/B in the session transcript reproduces
+it). CUDA's win is genuine and stays; it simply does not generalise to Metal.
 
 ### A3. KV cache quantization — **not bit-identical**
 
