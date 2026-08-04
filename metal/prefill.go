@@ -224,8 +224,10 @@ kernel void attention_prefill(device const half* qkv[[buffer(0)]], device const 
     threadgroup float sc[4096];
     threadgroup float red[128];
     for (uint s=winStart+tid; s<nKeys; s+=tgs) {
-        float a=0; device const half* k=kb+s*kvDim;
-        for (uint d=0; d<hd; d++) a += float(qr[d])*float(k[d]);
+        float a=0; device const half* k=kb+s*kvDim; uint d=0;
+        // half4 vectorized K-read (coalescing fix, bit-identical; guarded on hd%4==0, scalar tail).
+        if ((hd&3u)==0u) for (; d<hd; d+=4u){ half4 k4=*((device const half4*)(k+d)); a+=float(qr[d])*float(k4.x); a+=float(qr[d+1u])*float(k4.y); a+=float(qr[d+2u])*float(k4.z); a+=float(qr[d+3u])*float(k4.w); }
+        for (; d<hd; d++) a += float(qr[d])*float(k[d]);
         sc[s]=a*scale;
     }
     threadgroup_barrier(mem_flags::mem_threadgroup);

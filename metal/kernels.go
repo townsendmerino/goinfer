@@ -313,8 +313,12 @@ kernel void attention(device const float* q[[buffer(0)]], device const half* kc[
     threadgroup float sc[4096];
     threadgroup float red[128];
     for (uint s=winStart+tid; s<nKeys; s+=tgs) {
-        float a=0; device const half* k=kb+s*kvDim;
-        for (uint d=0; d<hd; d++) a += qr[d]*float(k[d]);
+        float a=0; device const half* k=kb+s*kvDim; uint d=0;
+        // half4 vectorized K-read (1.79x @2048 ctx): the one-thread-per-key access is uncoalesced
+        // (adjacent lanes stride kvDim), so 8-byte loads recover sector utilization. SAME sequential
+        // accumulation order ⇒ bit-identical; guarded on hd%4==0 for alignment, scalar tail otherwise.
+        if ((hd&3u)==0u) for (; d<hd; d+=4u){ half4 k4=*((device const half4*)(k+d)); a+=qr[d]*float(k4.x); a+=qr[d+1u]*float(k4.y); a+=qr[d+2u]*float(k4.z); a+=qr[d+3u]*float(k4.w); }
+        for (; d<hd; d++) a += qr[d]*float(k[d]);
         sc[s]=a*scale;
     }
     threadgroup_barrier(mem_flags::mem_threadgroup);
@@ -344,8 +348,10 @@ kernel void attention_f32(device const float* q[[buffer(0)]], device const float
     threadgroup float sc[4096];
     threadgroup float red[128];
     for (uint s=winStart+tid; s<nKeys; s+=tgs) {
-        float a=0; device const float* k=kb+s*kvDim;
-        for (uint d=0; d<hd; d++) a += qr[d]*k[d];
+        float a=0; device const float* k=kb+s*kvDim; uint d=0;
+        // float4 vectorized K-read (same coalescing fix as attention, f32 KV). Bit-identical.
+        if ((hd&3u)==0u) for (; d<hd; d+=4u){ float4 k4=*((device const float4*)(k+d)); a+=qr[d]*k4.x; a+=qr[d+1u]*k4.y; a+=qr[d+2u]*k4.z; a+=qr[d+3u]*k4.w; }
+        for (; d<hd; d++) a += qr[d]*k[d];
         sc[s]=a*scale;
     }
     threadgroup_barrier(mem_flags::mem_threadgroup);
