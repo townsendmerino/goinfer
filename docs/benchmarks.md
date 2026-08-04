@@ -231,10 +231,17 @@ gpu-assessment — cited there.
 > - **cgo-free** (CGO_ENABLED=0, driver-only `ldd` — no libcuda/libnvrtc linked), **portable**,
 >   **bit-identical** decode.
 > - **The batched-prefill campaign as an absolute engineering result:** real qwen2.5-coder-1.5b
->   **2048-token TTFT 13.1 s → 2.1 s** (6.17× vs the old sequential path), every step bit-identical
->   (KV all-layers×rows + 64-token byte-identical decode) — a measured win with **no peer involved**.
->   The long-context regime went from unusable to usable. (The competitive *crossover* framing is
->   retired above; the *engineering* result stands.)
+>   **2048-token TTFT 13.1 s → 2.1 s** (6.17× vs the old sequential path) — a measured TTFT win with
+>   **no peer involved**. ⚠ **Correction (2026-08-04): the "bit-identical to sequential" claim was
+>   FALSE on real models** and is retracted. The batched CUDA kernels (`gemv_w4a8_rn` /
+>   `rmsnorm_quant_batched`) diverge from the decode kernels by ~1 ULP data-dependently (compiled from
+>   separate `.cu`; fma-contraction / reduction-regime), which compounds under greedy into an **84%
+>   token-stream divergence** vs sequential-prefill-then-decode. The old gate (`TestPrefillLast_e2e`)
+>   missed it — tiny-fixture, uniform-magnitude data rounds identically (`docs/task-batched-prefill-
+>   bitidentity.md`). **Batched prefill is now DEFAULT-OFF (opt-in `GOINFER_BATCHED_PREFILL=1`)** until
+>   the kernels are made contraction-identical; the default is the sequential prefill (bit-identical,
+>   v0.8.0 behavior). The TTFT number stands as an opt-in engineering result; the bit-identity claim
+>   does not.
 > - **§B4's 26B-A4B on an 8 GB card, fully GPU-resident** at 16.98 tok/s. *Re-verified (Task 2): the
 >   old "peers fail to load it" claim is FALSE for current Ollama — v0.32.5 loads and runs the same
 >   26B via a 42% GPU / 58% CPU-RAM split at ~24.5 tok/s, faster than goinfer here.* The honest,

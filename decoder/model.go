@@ -753,10 +753,21 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	var err error
 	if useGPU {
 		prefilled := false
-		// Batched prefill (optional Prefiller): ingest the whole prompt in one pass — much
-		// faster TTFT for long prompts. Declines (falls back) for prompts past the backend's
-		// cap; absent for backends without a batched forward, and skipped for tiny prompts.
-		if pf, ok := m.resident.(Prefiller); ok && len(prompt) >= 8 {
+		// Batched prefill (optional Prefiller): ingest the whole prompt in one pass — much faster
+		// TTFT for long prompts. Declines (falls back) for prompts past the backend's cap; absent
+		// for backends without a batched forward, and skipped for tiny prompts.
+		//
+		// DEFAULT OFF (opt-in via GOINFER_BATCHED_PREFILL=1). The batched CUDA path is NOT bit-
+		// identical to the sequential decode path on real models: its kernels are compiled from
+		// separate .cu (gemv_w4a8_rn / rmsnorm_quant_batched) and diverge from the decode kernels by
+		// ~1 ULP data-dependently (fma-contraction / reduction regime), which compounds under greedy
+		// into an 84% token-stream divergence vs sequential-prefill-then-decode on the 1.5B (measured;
+		// docs/task-batched-prefill-bitidentity.md). The old gate (TestPrefillLast_e2e) missed it — it
+		// runs a tiny fixture whose uniform magnitudes round identically. Until the kernels are made
+		// order/contraction-identical to the decode path, default to the sequential prefill (which
+		// uses the decode kernels → bit-identical) and expose the batched TTFT win only as opt-in.
+		useBatchedPrefill := os.Getenv("GOINFER_BATCHED_PREFILL") == "1"
+		if pf, ok := m.resident.(Prefiller); ok && useBatchedPrefill && len(prompt) >= 8 {
 			embs := make([][]float32, len(prompt))
 			for i, id := range prompt {
 				embs[i] = m.embedResident(id)

@@ -596,7 +596,7 @@ kernel.
 
 | lever | result | notes |
 |---|---|---|
-| Batched prefill (`PrefillLast`) | crossover 128 → 320 vs 0.5.7 | mixed-M, bit-identical |
+| Batched prefill (`PrefillLast`) | 2048 TTFT 13.1→2.1s; crossover 128→320 vs 0.5.7 | ⚠ **NOT bit-identical on real models** (84% stream divergence; fma-contraction vs decode kernels) — **now DEFAULT-OFF**, opt-in `GOINFER_BATCHED_PREFILL=1`; fix scoped (`task-batched-prefill-bitidentity.md`) |
 | KV-only prefill for `prompt[:-1]` | −4.39 ms/prompt-token on 26B | skips LM head |
 | GEMV `MT=32` | ~6% | tile width, not an accumulation constraint |
 | GEMV `int2` coalescing | 13% | bytes/sector 49.99 → 98.01% |
