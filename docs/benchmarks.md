@@ -202,7 +202,7 @@ gpu-assessment — cited there.
 > |---|---|---|---|
 > | 0.5B decode | ~476 tok/s | 211 | **268** |
 > | 1.5B decode, short ctx | ~221 tok/s | 149 | **186** |
-> | 1.5B decode, **2048 ctx** | **~97 tok/s** | — | **~188** |
+> | 1.5B decode, **2048 ctx** | ~97 → **~133 tok/s** (coalesced) | — | **~188** |
 > | 1.5B prefill | ~0.66 ms/tok | ~0.17 | **~0.14** |
 >
 > **The honest current claims:**
@@ -210,8 +210,15 @@ gpu-assessment — cited there.
 >   the cgo-free path's cheap per-token dispatch is a real, durable edge in that regime.
 > - **1.5B short context: PARITY** (~1.19×, not the 1.41× vs 0.5.7). goinfer is marginally ahead; do
 >   not call it a win.
-> - **1.5B long context (2048): goinfer is BEHIND ~1.9×** (97 vs 188) — its decode slows with KV
->   depth where current Ollama holds rate. The old §B2 never measured this.
+> - **1.5B long context (2048): goinfer is BEHIND ~1.41×** (133 vs 188) — its decode still slows with
+>   KV depth where current Ollama holds rate, but the deficit narrowed after the fix below. The old
+>   §B2 never measured this. *ncu traced the deep-context slowdown to the decode attention's K read
+>   (21.96% bytes/sector — uncoalesced, stride-`kvDim`). Wiring the decode M=1 attention to the
+>   already-float4-coalesced `attn_batched` kernel (bit-identical to the audited glue `attention` at
+>   M=1, `TestAttnBatched_bitIdentical`) recovered 2048-ctx decode **99.5 → 133.5 tok/s (1.34×)** on a
+>   same-box A/B (`TestDecodeDepthThroughput`, git-stash A/B), shallow decode unchanged. This shipped
+>   after the correction above — a measured improvement, not a rescue: goinfer is still behind the
+>   current peer at long context, just by less.*
 > - **Prefill: Ollama is ~4–5× faster/token.** The batched-prefill campaign (below) is real
 >   *engineering* — bit-identical, crossover 128→320 **against 0.5.7** — but it does **not** make
 >   goinfer competitive on prefill against the current peer.
@@ -367,6 +374,12 @@ comparison on this page.
     3.9 → 2.1 s. The **crossover stays ~320** — it lives at short prompts where attention is ~5% and the
     GEMV dominates, so this lever doesn't move it (it is a long-context lever). Gates green (attn
     bit-identical + e2e byte-identical decode).
+    - **Decode reuse (later, Task 3):** the same coalesced `attn_batched` at **M=1** is bit-identical
+      to the glue `attention` (`TestAttnBatched_bitIdentical`), so the *decode* attention was wired to
+      it too (`resident.go`, guarded by `prefillReady`, glue is the fallback). ncu had traced the
+      long-context *decode* slowdown to the same 21.96%-bytes/sector K read; the swap recovered
+      2048-ctx decode **99.5 → 133.5 tok/s (1.34×)** same-box A/B (`TestDecodeDepthThroughput`),
+      shallow decode unchanged, glue.ptx untouched. See the §B2 long-context bullet.
   - **Attention residual (the next build, not yet done): L1TEX still 99.51% saturated after float4** —
     coalescing fixed the *waste per read*, but the **O(M²) redundant re-reads** remain (each K/V read ~M
     times, L1-served — DRAM idle). Only **query-tiling** (share a staged K/V tile across a query block)
@@ -381,8 +394,9 @@ comparison on this page.
     1.85× to the dp4a ceiling, but the ceiling itself is dp4a, not IMMA. Closing that needs the
     tensor-core GEMM in `docs/task-rotation-perrow-imma.md`, which reorders the group-scaled cross-group
     float sum and so cannot be bit-identical — **scoped and unfunded**. An architectural consequence of
-    the cgo-free, bit-identical thesis: a **stated trade, not a deficiency**. goinfer wins short/medium
-    prompts on total time and stays behind Ollama on raw prefill throughput at long context.
+    the cgo-free, bit-identical thesis: a **stated trade, not a deficiency**. (Against the current peer
+    v0.32.5 the total-time crossover is short — see the re-anchor box at the top of §B2; goinfer stays
+    behind Ollama on raw prefill throughput at long context.)
   - Gates: `cuda/prefill_e2e_test.go` (KV bit-identical all layers×rows + logits + 64-token
     byte-identical decode, real windowed Mistral); `TestPrefillTTFT` / `TestPrefillCrossover` /
     `TestPrefillDecomp` (heavy) reproduce the numbers above. The rows in the §B2 table are
