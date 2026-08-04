@@ -13,7 +13,8 @@
 > **tiny-model** dense 4-bit decode (0.5B ~1.7×, launch-bound) and reaches **parity at 1.5B**, while
 > losing long-context decode and prefill (§B2, re-anchored to v0.32.5). Its durable wins are
 > peer-independent: pure-Go/no-native-dep, model-in-binary, bit-identical decode, and running a 26B
-> on an 8 GB card (§B4). The Go *bindings*
+> **fully GPU-resident** on an 8 GB card (§B4 — current Ollama also runs it on 8 GB, but via CPU
+> offload and faster; goinfer's distinction is all-experts-on-GPU, not that peers can't run it). The Go *bindings*
 > (gollama.cpp, yzma) reach llama.cpp's speed but still ship its native `.so`; the
 > pure-Go *ports* (llama2.go lineage) are archived toys. Among the peers surveyed,
 > goinfer is the only maintained runtime that executes production-scope weights in
@@ -234,8 +235,11 @@ gpu-assessment — cited there.
 >   (KV all-layers×rows + 64-token byte-identical decode) — a measured win with **no peer involved**.
 >   The long-context regime went from unusable to usable. (The competitive *crossover* framing is
 >   retired above; the *engineering* result stands.)
-> - **§B4's 26B-A4B at 16.98 tok/s on an 8 GB card** — a capability claim that needs no peer (subject
->   to the v0.32.5 re-verification noted in §B4: confirm the current peer still fails to load it).
+> - **§B4's 26B-A4B on an 8 GB card, fully GPU-resident** at 16.98 tok/s. *Re-verified (Task 2): the
+>   old "peers fail to load it" claim is FALSE for current Ollama — v0.32.5 loads and runs the same
+>   26B via a 42% GPU / 58% CPU-RAM split at ~24.5 tok/s, faster than goinfer here.* The honest,
+>   peer-independent claim is narrower: goinfer runs it **fully on the GPU** (experts streamed
+>   host→VRAM, not offloaded to CPU) — an architecture distinction, not a capability the peer lacks.
 >
 > Everything below this box is a **labeled historical record (vs Ollama 0.5.7, 2025-01-16)**, not a
 > current competitive claim.
@@ -445,11 +449,25 @@ by the binary.
 
 ### B4. Host↔VRAM MoE streaming — a 26B that does not fit the card (cgo-free CUDA)
 
-This is a **capability** row, not a speed row: it has **no peer number** because the peers do
-not produce one. **Gemma 4 26B-A4B** (128 experts, top-8, ~11.4 GB of int4 experts) does not fit
-an 8 GB card; **llama.cpp and Ollama fail to load it**, they do not run it slower. goinfer decodes
-it GPU-resident by keeping the ~1.3 GB non-expert core in VRAM and streaming the experts from
-pinned host memory into a VRAM slot cache (host↔VRAM "C′" path, `docs/task-moe-streaming.md`).
+> **⚠ RE-VERIFIED against current Ollama (v0.32.5) — the "peers fail to load it" claim was
+> false and has been retracted.** On the same RTX 2070 SUPER, Ollama **v0.32.5 loads and runs**
+> Gemma 4 26B-A4B (google QAT q4_0 GGUF) by **splitting it 42% GPU (6.35 GB VRAM) / 58% CPU-RAM**,
+> decoding at **~24.5 tok/s** — coherent (*"…the city of Paris."*, via `raw:true`; the bare
+> `FROM gguf` Modelfile's empty templated output was a chat-template gap, not a load failure).
+> That is **faster than goinfer's 16.98 tok/s** here. Current mainstream loaders offload
+> oversized models to CPU rather than refusing them, so "peers can't run it" is not true of the
+> 2026 peer. What remains true and specific to goinfer: it runs this model **fully GPU-resident**
+> (every expert executes on the GPU, streamed host→VRAM per token) instead of running the
+> oversized 58% on CPU — an *architecture* difference, not a capability the peer lacks. On **this**
+> 8 GB / 15 GB-model mismatch, CPU offload (Ollama) wins on rate; goinfer's GPU-resident bet only
+> pays off on a card the model nearly fits (see the capacity analysis below).
+
+This is a **capability/architecture** row. **Gemma 4 26B-A4B** (128 experts, top-8, ~11.4 GB of
+int4 experts) does not fit an 8 GB card. goinfer decodes it **fully GPU-resident** by keeping the
+~1.3 GB non-expert core in VRAM and streaming the experts from pinned host memory into a VRAM slot
+cache (host↔VRAM "C′" path, `docs/task-moe-streaming.md`) — the experts execute on the GPU, not
+CPU. Current Ollama runs the same model by CPU-offloading the part that doesn't fit (measured
+above); the two take opposite approaches to the same over-capacity problem.
 
 | RTX 2070 SUPER · 8 GB · driver 595.58.03 · 2026-08-02 | value |
 | --- | --- |
@@ -458,7 +476,7 @@ pinned host memory into a VRAM slot cache (host↔VRAM "C′" path, `docs/task-m
 | expert cache | 38 slots/layer (auto-capped from 48 to measured free VRAM), **81.6% hit rate** (17816 / 4024) |
 | resident VRAM | ~1.3 GB core + ~3.8 GB slots + KV — the 11.4 GB of experts live in host RAM |
 | coherence | greedy through the real chat template: distinct-trigram 0.818, *"…**Paris**… the Eiffel Tower, the Louvre Museum… **Gastronomy:**"* |
-| peers | **llama.cpp / Ollama: fail to load** (model exceeds VRAM) |
+| peers | **Ollama v0.32.5: loads + runs** via 42% GPU / 58% CPU-RAM split, **~24.5 tok/s** (faster than goinfer here) — the old "fail to load" claim was outdated and is retracted |
 | commit | `cuda/gemma4_26b_cache_test.go` (`GOINFER_HEAVY_TESTS=1`), host↔VRAM track through `2f51449` |
 
 - The number is a **floor**: synchronous H2D with no async overlap yet, and it still clears
