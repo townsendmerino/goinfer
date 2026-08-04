@@ -374,10 +374,24 @@ Improves throughput under concurrent load, not single-stream latency. Different 
 everything else in this doc, and not what the current comparison measures — but it is what a
 serving deployment actually cares about, and it is unexamined.
 
-### D4. Confirm what Ollama actually does at long-context decode
+### D4. Confirm what Ollama actually does at long-context decode — **DONE (2026-08-04): flash attention**
 
-We infer flash-attention-style KV handling from behaviour (it holds ~188 tok/s at 2048). It
-would be cheap to confirm, and knowing the mechanism would sharpen Campaign A's target.
+Confirmed at the source. v0.32.5's engine is **llama.cpp** (`llama-server` + `libggml-base`), launched
+with **`--flash-attn auto`**; the debug load log reports **`resolve_fused_ops: Flash Attention
+enabled`** for the qwen2 1.5B on CUDA (`OLLAMA_FLASH_ATTENTION` default is `false`, but `auto` lets
+llama.cpp turn it on per-model — and it does). KV is **f16 by default** (`K (f16) / V (f16)`).
+
+So Ollama holds ~188 tok/s at 2048 because it runs the fused **`flash_attn_ext`** kernel — tiled,
+parallel over the KV dimension, online-softmax (streaming max + rescale). **This is exactly the
+split-KV shape the A1-reprofile named** (§A2): FA fills the SMs by parallelizing over keys, which is
+why its rate stays flat where our 12-block-per-head kernel starves.
+
+**Two implications for the build:**
+1. Target validated — Campaign A's split-KV decode attention is chasing precisely what FA does.
+2. **FA's online rescaling is NOT bit-exact** vs a serial pass (it reorders the softmax sum), so
+   Ollama has no bit-exactness contract (confirms §7). To match FA's *parallelism* while keeping our
+   bit-identity contract, we take the **two-pass** route (materialize tile scores → one global-max
+   reduction → exp-weighted sum combined in fixed tile order), not FA's one-pass online rescale.
 
 ### D5. Hybrid GPU/CPU **layer split** — the right shape for an oversized model — **scoped, not built**
 
