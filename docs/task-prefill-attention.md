@@ -1,9 +1,23 @@
 # Task — batched-prefill attention (the long-context lever)
 
-Status: **SCOPED, NOT STARTED.** Do not begin until the GEMV activation-staging fix lands (the
-crossover — the product-urgent number — is a GEMV story; this is a separate, longer-context regime).
+Status: **DESIGN REVISED (2026-08-04) — the clean ~1.3× is NOT bit-identical-buildable on Turing.**
+
+> **The 64 KB wall (design-first finding, before writing the kernel).** Bit-identity pins the softmax
+> denominator to `attn_batched`'s exact 128-strided partition + tree reduce (`ls += e` over keys
+> {t, 128+t, …}). Preserving that order under tiling forces **Bk=128** (thread ↔ within-tile position ⇒
+> the identical partition). But a Bk=128 K-tile at hd=128 = 128·128·4 = **64 KB — it maxes sm_75 shared
+> alone**; no room for a V tile, and materializing `sc[Bq·nWin]` for the V-sum doesn't fit either. So
+> sharing BOTH K and V across the query block (the full ~1.3×) is impossible bit-identically on Turing
+> (Bk=128 K+V = 128 KB > 64 KB). **Achievable bit-identical:** stage K only for max/denom (shared across
+> Bq), stage V only for the V-sum (which re-reads K from global to recompute scores, no materialized
+> `sc`) — **~1.15–1.2×**, a big 3-pass, two-staging, causal-per-row, bit-identity-critical kernel. And
+> prefill is already past its usability threshold (2.1 s TTFT) and cannot reach Ollama-parity regardless
+> (§7 dp4a/IMMA ceiling), so ~1.15× does not change the competitive story. **Fund only as a focused
+> campaign for its own sake, not a release lever.** The larger win needs Path 2 (tolerance-gated flash),
+> which abandons bit-identity — a stated, separate decision.
+
 Same gates and bit-identity discipline as the GEMV work. Audited PTX untouched; new kernel in its own
-file.
+file. (Original scope preserved below.)
 
 ## Why (measured, not assumed)
 
