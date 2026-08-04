@@ -380,12 +380,12 @@ func (r *Resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 	for l := 0; l < r.nL; l++ {
 		L := &r.layers[l]
 		// pre-attn norm
-		e.Dispatch(pf.pRms, M*256, 256, xF, L.preNorm, normF, uH, r.uEps)
+		e.Dispatch(pf.pRms, M*tgReduceNorm, tgReduceNorm, xF, L.preNorm, normF, uH, r.uEps)
 		// fused QKV (+bias)
 		t, tg := gg(qkvDim)
 		e.Dispatch(pf.pGemmStore, t, tg, normF, L.qkvW, L.qkvS, qkvF, uM, uQkv, uH, L.qkvBias, m1)
 		if r.qkNorm { // Qwen3: per-head Q/K RMSNorm before RoPE
-			e.Dispatch(pf.pQK, M*(r.nH+g0.nKV)*128, 128, qkvF, L.qNorm, L.kNorm, r.uNH, g0.uNKV, uHd, g0.uNHhd, uStride, r.uEps, r.uAddOne)
+			e.Dispatch(pf.pQK, M*(r.nH+g0.nKV)*tgReduceAttn, tgReduceAttn, qkvF, L.qNorm, L.kNorm, r.uNH, g0.uNKV, uHd, g0.uNHhd, uStride, r.uEps, r.uAddOne)
 		}
 		// rope q, k (per-row positions)
 		e.Dispatch(pf.pRope, M*r.nH*g0.half, 128, qkvF, r.invf, uHd, posB, uTotalQ, uStride, uBase0, g0.uHalf)
@@ -393,12 +393,12 @@ func (r *Resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 		// scatter K,V to cache
 		e.Dispatch(pf.pKv, M*kvDim, 128, qkvF, r.kc[l], r.vc[l], posB, uKvDim, uStride, uKOff, uVOff)
 		// causal attention → ctx
-		e.Dispatch(pf.pAttn, M*r.nH*128, 128, qkvF, r.kc[l], r.vc[l], ctxF, r.uNH, g0.uNKV, uHd, uStartPos, r.uScale, uStride, r.uWindow)
+		e.Dispatch(pf.pAttn, M*r.nH*tgReduceAttn, tgReduceAttn, qkvF, r.kc[l], r.vc[l], ctxF, r.uNH, g0.uNKV, uHd, uStartPos, r.uScale, uStride, r.uWindow)
 		// o-proj + residual into x
 		t, tg = gg(H)
 		e.Dispatch(pf.pGemmStore, t, tg, ctxF, L.oW, L.oS, xF, uM, uH, uQDim, dummyBias, m2)
 		// post-attn norm
-		e.Dispatch(pf.pRms, M*256, 256, xF, L.postNorm, normF, uH, r.uEps)
+		e.Dispatch(pf.pRms, M*tgReduceNorm, tgReduceNorm, xF, L.postNorm, normF, uH, r.uEps)
 		// gate/up
 		t, tg = gg(2 * I)
 		e.Dispatch(pf.pGemmStore, t, tg, normF, L.guW, L.guS, guF, uM, u2I, uH, dummyBias, m0)
@@ -412,7 +412,7 @@ func (r *Resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 	// path runs (rmsnorm→int8, then gemv_w8a8). The head weights are int8 (logit-critical); the
 	// int4 gemm_w4f16 used here previously misread them as packed nibbles + f16 scales, producing
 	// NaN logits. Norm-quant the last token's f16 residual row to int8, then run the decode head.
-	e.Dispatch(pf.pRmsQ, 256, 256, xF.At((M-1)*H*2), r.finalNorm, r.aq, r.aSc, uH, r.uEps, r.uAddOne)
+	e.Dispatch(pf.pRmsQ, tgReduceNorm, tgReduceNorm, xF.At((M-1)*H*2), r.finalNorm, r.aq, r.aSc, uH, r.uEps, r.uAddOne)
 	e.Dispatch(r.pGemvW8, V*32, 32, r.aq, r.aSc, r.lmW, r.lmS, r.logits, r.uH)
 	e.End()
 

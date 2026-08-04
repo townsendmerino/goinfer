@@ -47,6 +47,17 @@ Carried from the prefill campaign, where five attributions were made and four we
   eviction, blocking, or scale.
 - **Bit-identity is designed in, never discovered.** Every kernel that shipped stated its
   identity constraint before the first line was written.
+- **On Metal, reduction WIDTH is part of the bit-identity contract, and it's the same number you
+  tune for speed.** Any cross-thread float *sum* (rmsnorm sum-of-squares, softmax denominator,
+  qk-norm) reduces N/T strided partials in a T-wide tree; float add is non-associative, so the result
+  is wired to T = the threadgroup width — the exact knob you'd sweep for a 5% win. CUDA is immune (warp
+  reduce is a fixed 32); Metal is not. **No existing gate catches a width change**: paged≡non-paged
+  compares the same kernel at the same width (self-consistent), and GPU-vs-CPU is tolerance. It only
+  bites when a *new* same-op kernel is gated byte-exact at a different width — and only past nKeys>width,
+  below a short fixture (this is exactly how the split/staged attention rewrites diverged: 256-wide denom
+  vs the shipped 128-wide tree). So pin the widths as named constants (`tgReduce*`, model.go), make any
+  alternate same-op kernel inherit the width, and give a byte-exact fixture for such an op context >
+  width. Max reductions and `simd_sum` (32, hardware-fixed) are exempt — associative, order-exact.
 - **Thermal control on the Mac** (±700 ms drift): interleaved repeats, session-start run
   dropped. Single-run rankings are unreliable.
 - **Peer version is part of the measurement.** The whole §B2 correction happened because a

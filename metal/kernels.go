@@ -17,6 +17,9 @@ kernel void rmsnorm_quant(device const float* x[[buffer(0)]], device const float
     threadgroup float red[256]; float ss=0;
     for(uint i=tid;i<H;i+=tgs) ss+=x[i]*x[i];
     red[tid]=ss; threadgroup_barrier(mem_flags::mem_threadgroup);
+    // SUM-OF-SQUARES reduction — width-coupled (non-associative float add). tgs pinned to tgReduceNorm
+    // (256, model.go); not a tuning knob. Representative of the norm-class kernels (rmsnorm_f32,
+    // rmsnorm_*_f16, qk_norm*) — all share this contract. See ollama-chase §A2-Metal.
     for(uint s=tgs/2;s>0;s>>=1){ if(tid<s) red[tid]+=red[tid+s]; threadgroup_barrier(mem_flags::mem_threadgroup);}
     float rms=rsqrt(red[0]/float(H)+eps); threadgroup_barrier(mem_flags::mem_threadgroup);
     float mx=0; for(uint i=tid;i<H;i+=tgs){ float g=addOne!=0u?(1.0f+w[i]):w[i]; mx=max(mx,fabs(x[i]*rms*g)); }
@@ -328,6 +331,10 @@ kernel void attention(device const float* q[[buffer(0)]], device const half* kc[
     float mx=red[0]; threadgroup_barrier(mem_flags::mem_threadgroup);
     float ls=0; for (uint s=winStart+tid;s<nKeys;s+=tgs){ float p=exp(sc[s]-mx); sc[s]=p; ls+=p; }
     red[tid]=ls; threadgroup_barrier(mem_flags::mem_threadgroup);
+    // DENOMINATOR SUM — float-add is non-associative, so this result is coupled to tgs (the reduction
+    // WIDTH). tgs is pinned to tgReduceAttn (128, model.go); do NOT parameterize/sweep it, and any
+    // alternate attention kernel MUST reduce at the same width or it diverges byte-exactly (past
+    // nKeys>width). No existing gate catches this. See ollama-chase §A2-Metal.
     for (uint st=tgs/2; st>0; st>>=1){ if(tid<st) red[tid]+=red[tid+st]; threadgroup_barrier(mem_flags::mem_threadgroup); }
     float sum=red[0]; threadgroup_barrier(mem_flags::mem_threadgroup);
     for (uint d=tid; d<hd; d+=tgs){ float a=0; for(uint s=winStart;s<nKeys;s++) a += sc[s]*float(vb[s*kvDim+d]); out[qh*hd+d]=a/sum; }

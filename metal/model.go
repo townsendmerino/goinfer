@@ -28,6 +28,29 @@ const metalCtxCap = 4096 // resident KV positions (spike)
 // threadgroup write; on Metal's unified memory that corrupts adjacent buffers.
 const attnScoreKeyBound = 4096
 
+// Threadgroup widths for the kernels that contain a CROSS-THREAD FLOAT SUM reduction (a
+// `red[tid]+=red[tid+st]` tree): rmsnorm sum-of-squares, softmax denominator, qk-norm.
+//
+// THESE ARE BIT-IDENTITY-LOAD-BEARING, NOT PERFORMANCE KNOBS. Float add is non-associative, so a
+// tree reduction's result depends on its WIDTH: T threads sum N/T strided partials, then a T-wide
+// tree — change T and the last bits of the sum move. On CUDA the warp reduce is a fixed 32, so the
+// coupling can't exist; on Metal the threadgroup width is exactly what you'd sweep for a 5% win, so
+// every such kernel's numerics are wired to its launch configuration.
+//
+// The existing gates will NOT catch a change here: paged≡non-paged compares the SAME kernel at the
+// SAME width (self-consistent — both move together), and GPU-vs-CPU parity is cosine/tolerance. The
+// coupling only surfaces when a NEW path computes the same reduction at a DIFFERENT width and is gated
+// byte-exact — which is exactly how the split/staged attention rewrites diverged (a 256-wide softmax
+// denom vs the shipped 128-wide tree; and it only appeared past nKeys>256, below a short fixture).
+// So: pin the width here, keep every dispatch of these kernels bound to it, and make any alternate
+// same-op kernel inherit it. A byte-exact fixture for such an op MUST use context > the width. Max
+// reductions and simd_sum (32, hardware-fixed) are exempt — associative+commutative, order-exact.
+// See docs/ollama-chase.md §2 (ground rules) and §A2-Metal.
+const (
+	tgReduceNorm = 256 // rmsnorm_quant / rmsnorm_f32 / rmsnorm_quant_f16 / rmsnorm_f16 sum-of-squares
+	tgReduceAttn = 128 // attention / attention_f32 / attention_prefill softmax denom; qk_norm / qk_norm_f16
+)
+
 // prefillFeatures is what the f16 MMA prefill kernels (prefill.go) actually implement: a dense
 // SiLU FFN, per-head QK-norm, a MODEL-LEVEL rope table and a MODEL-LEVEL window. Anything else
 // — MoE (which never packs the dense FFN buffers at all), or Gemma's sandwich norms / (1+w) RMS
@@ -853,18 +876,18 @@ func (r *Resident) forwardSubCaptureForTest(emb []float32, pos int) (attn, mlp, 
 		qkvRows := nHhd + 2*g.kvDim
 		kOff, vOff := nHhd*4, (nHhd+g.kvDim)*4
 		e := r.q.Begin()
-		e.Dispatch(r.pRms, 256, 256, r.x, L.preNorm, r.aq, r.aSc, r.uH, r.uEps, r.uAddOne)
+		e.Dispatch(r.pRms, tgReduceNorm, tgReduceNorm, r.x, L.preNorm, r.aq, r.aSc, r.uH, r.uEps, r.uAddOne)
 		e.DispatchTG(r.pSABias, qkvRows*32, 256, r.H*2, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv, L.qkvBias, r.uH)
 		if r.qkNorm {
-			e.Dispatch(r.pQKNorm, (r.nH+g.nKV)*128, 128, r.qkv, L.qNorm, L.kNorm, r.uNH, g.uNKV, g.uHd, g.uNHhd, r.uEps, r.uAddOne)
+			e.Dispatch(r.pQKNorm, (r.nH+g.nKV)*tgReduceAttn, tgReduceAttn, r.qkv, L.qNorm, L.kNorm, r.uNH, g.uNKV, g.uHd, g.uNHhd, r.uEps, r.uAddOne)
 		}
 		e.Dispatch(r.pRope, r.nH*g.half, 64, r.qkv, L.invf, g.uHd, r.uPos, g.uQtotal, g.uHalf)
 		e.Dispatch(r.pRope, g.nKV*g.half, 64, r.qkv.At(kOff), L.invf, g.uHd, r.uPos, g.uKtotal, g.uHalf)
 		e.Dispatch(r.pKv, g.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[l], r.vc[l], g.uKvDim, r.uPos)
-		e.Dispatch(r.pAttn, r.nH*128, 128, r.qkv, r.kc[l], r.vc[l], r.ctx, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow)
+		e.Dispatch(r.pAttn, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[l], r.vc[l], r.ctx, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow)
 		e.Dispatch(r.pQv, 256, 256, r.ctx, r.cq, r.cSc, g.uNHhd)
 		e.DispatchTG(r.pSA, r.H*32, 256, r.nH*g.hd*2, L.oW, L.oS, r.cq, r.cSc, r.oO, g.uNHhd)
-		e.Dispatch(r.pRmsF32, 256, 256, r.oO, L.postAttnNorm, r.uH, r.uEps, r.uAddOne)
+		e.Dispatch(r.pRmsF32, tgReduceNorm, tgReduceNorm, r.oO, L.postAttnNorm, r.uH, r.uEps, r.uAddOne)
 		e.End()
 		attn = append(attn, grab()) // oO now = attention contribution (post-norm, pre-add)
 		// ctx (f32 attention output) and cq (its int8 quant) are still valid here — o-proj READ
@@ -881,7 +904,7 @@ func (r *Resident) forwardSubCaptureForTest(emb []float32, pos int) (attn, mlp, 
 
 		e = r.q.Begin()
 		e.Dispatch(r.pRes, r.H, 256, r.x, r.oO)
-		e.Dispatch(r.pRms, 256, 256, r.x, L.postNorm, r.mq, r.mSc, r.uH, r.uEps, r.uAddOne)
+		e.Dispatch(r.pRms, tgReduceNorm, tgReduceNorm, r.x, L.postNorm, r.mq, r.mSc, r.uH, r.uEps, r.uAddOne)
 		e.DispatchTG(r.pSA, (2*r.I)*32, 256, r.H*2, L.guW, L.guS, r.mq, r.mSc, r.gu, r.uH)
 		e.Dispatch(r.pSw, 256, 256, r.gu, r.gu.At(r.I*4), r.dq, r.dSc, r.uI, r.uAct)
 		e.Dispatch(r.pGemv, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.dO, r.uI)
@@ -889,7 +912,7 @@ func (r *Resident) forwardSubCaptureForTest(emb []float32, pos int) (attn, mlp, 
 		mlpPre = append(mlpPre, grabD()) // dO = down output BEFORE post-MLP sandwich norm (compute)
 
 		e = r.q.Begin()
-		e.Dispatch(r.pRmsF32, 256, 256, r.dO, L.postMLPNorm, r.uH, r.uEps, r.uAddOne)
+		e.Dispatch(r.pRmsF32, tgReduceNorm, tgReduceNorm, r.dO, L.postMLPNorm, r.uH, r.uEps, r.uAddOne)
 		e.End()
 		mlp = append(mlp, grabD()) // dO now = MLP contribution (post-norm, pre-add)
 
@@ -915,20 +938,20 @@ func (r *Resident) l0GegluForTest(emb []float32, pos int) (gateUp, geglu8 []floa
 	qkvRows := nHhd + 2*g.kvDim
 	kOff, vOff := nHhd*4, (nHhd+g.kvDim)*4
 	e := r.q.Begin()
-	e.Dispatch(r.pRms, 256, 256, r.x, L.preNorm, r.aq, r.aSc, r.uH, r.uEps, r.uAddOne)
+	e.Dispatch(r.pRms, tgReduceNorm, tgReduceNorm, r.x, L.preNorm, r.aq, r.aSc, r.uH, r.uEps, r.uAddOne)
 	e.DispatchTG(r.pSABias, qkvRows*32, 256, r.H*2, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv, L.qkvBias, r.uH)
 	if r.qkNorm {
-		e.Dispatch(r.pQKNorm, (r.nH+g.nKV)*128, 128, r.qkv, L.qNorm, L.kNorm, r.uNH, g.uNKV, g.uHd, g.uNHhd, r.uEps, r.uAddOne)
+		e.Dispatch(r.pQKNorm, (r.nH+g.nKV)*tgReduceAttn, tgReduceAttn, r.qkv, L.qNorm, L.kNorm, r.uNH, g.uNKV, g.uHd, g.uNHhd, r.uEps, r.uAddOne)
 	}
 	e.Dispatch(r.pRope, r.nH*g.half, 64, r.qkv, L.invf, g.uHd, r.uPos, g.uQtotal, g.uHalf)
 	e.Dispatch(r.pRope, g.nKV*g.half, 64, r.qkv.At(kOff), L.invf, g.uHd, r.uPos, g.uKtotal, g.uHalf)
 	e.Dispatch(r.pKv, g.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[0], r.vc[0], g.uKvDim, r.uPos)
-	e.Dispatch(r.pAttn, r.nH*128, 128, r.qkv, r.kc[0], r.vc[0], r.ctx, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow)
+	e.Dispatch(r.pAttn, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[0], r.vc[0], r.ctx, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow)
 	e.Dispatch(r.pQv, 256, 256, r.ctx, r.cq, r.cSc, g.uNHhd)
 	e.DispatchTG(r.pSA, r.H*32, 256, r.nH*g.hd*2, L.oW, L.oS, r.cq, r.cSc, r.oO, g.uNHhd)
-	e.Dispatch(r.pRmsF32, 256, 256, r.oO, L.postAttnNorm, r.uH, r.uEps, r.uAddOne)
+	e.Dispatch(r.pRmsF32, tgReduceNorm, tgReduceNorm, r.oO, L.postAttnNorm, r.uH, r.uEps, r.uAddOne)
 	e.Dispatch(r.pRes, r.H, 256, r.x, r.oO)
-	e.Dispatch(r.pRms, 256, 256, r.x, L.postNorm, r.mq, r.mSc, r.uH, r.uEps, r.uAddOne)
+	e.Dispatch(r.pRms, tgReduceNorm, tgReduceNorm, r.x, L.postNorm, r.mq, r.mSc, r.uH, r.uEps, r.uAddOne)
 	e.DispatchTG(r.pSA, (2*r.I)*32, 256, r.H*2, L.guW, L.guS, r.mq, r.mSc, r.gu, r.uH)
 	e.Dispatch(r.pSw, 256, 256, r.gu, r.gu.At(r.I*4), r.dq, r.dSc, r.uI, r.uAct)
 	e.End()
@@ -981,10 +1004,10 @@ func (r *Resident) attnConfirmForTest(resid, kHist, vHist []float32, layer, pos 
 	}
 	L := &r.layers[layer]
 	e := r.q.Begin()
-	e.Dispatch(r.pRms, 256, 256, r.x, L.preNorm, r.aq, r.aSc, r.uH, r.uEps, r.uAddOne)
+	e.Dispatch(r.pRms, tgReduceNorm, tgReduceNorm, r.x, L.preNorm, r.aq, r.aSc, r.uH, r.uEps, r.uAddOne)
 	e.DispatchTG(r.pSABias, qkvRows*32, 256, r.H*2, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv, L.qkvBias, r.uH)
 	if r.qkNorm { // Gemma3/Qwen3: per-head Q/K RMSNorm before RoPE — the injected K is post-QK-norm
-		e.Dispatch(r.pQKNorm, (r.nH+g.nKV)*128, 128, r.qkv, L.qNorm, L.kNorm, r.uNH, g.uNKV, g.uHd, g.uNHhd, r.uEps, r.uAddOne)
+		e.Dispatch(r.pQKNorm, (r.nH+g.nKV)*tgReduceAttn, tgReduceAttn, r.qkv, L.qNorm, L.kNorm, r.uNH, g.uNKV, g.uHd, g.uNHhd, r.uEps, r.uAddOne)
 	}
 	e.Dispatch(r.pRope, r.nH*g.half, 64, r.qkv, L.invf, g.uHd, r.uPos, g.uQtotal, g.uHalf) // Q
 	if !injectKV {
@@ -993,7 +1016,7 @@ func (r *Resident) attnConfirmForTest(resid, kHist, vHist []float32, layer, pos 
 		e.Dispatch(r.pRope, g.nKV*g.half, 64, r.qkv.At(kOff), L.invf, g.uHd, r.uPos, g.uKtotal, g.uHalf)
 		e.Dispatch(r.pKv, g.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[layer], r.vc[layer], g.uKvDim, r.uPos)
 	}
-	e.Dispatch(r.pAttn, r.nH*128, 128, r.qkv, r.kc[layer], r.vc[layer], r.ctx, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow)
+	e.Dispatch(r.pAttn, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[layer], r.vc[layer], r.ctx, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow)
 	e.End()
 	return append([]float32(nil), r.ctx.Floats()[:nHhd]...)
 }
@@ -1031,7 +1054,7 @@ func (r *Resident) encodeTrunkInto(e *Encoder) {
 	for l := 0; l < r.nL; l++ {
 		r.encodeLayer(e, l)
 	}
-	e.Dispatch(r.pRms, 256, 256, r.x, r.finalNorm, r.aq, r.aSc, r.uH, r.uEps, r.uAddOne)
+	e.Dispatch(r.pRms, tgReduceNorm, tgReduceNorm, r.x, r.finalNorm, r.aq, r.aSc, r.uH, r.uEps, r.uAddOne)
 }
 
 // encodeLayer encodes one decoder layer (attention block + FFN block) into e. Factored out of
@@ -1049,12 +1072,12 @@ func (r *Resident) encodeLayer(e *Encoder, l int) {
 	} else if L.moe != nil {
 		r.encodeMoEFFN(e, L)
 	} else {
-		e.Dispatch(r.pRms, 256, 256, r.x, L.postNorm, r.mq, r.mSc, r.uH, r.uEps, r.uAddOne)
+		e.Dispatch(r.pRms, tgReduceNorm, tgReduceNorm, r.x, L.postNorm, r.mq, r.mSc, r.uH, r.uEps, r.uAddOne)
 		e.DispatchTG(r.pSA, (2*r.I)*32, 256, r.H*2, L.guW, L.guS, r.mq, r.mSc, r.gu, r.uH) // fused gate|up
 		e.Dispatch(r.pSw, 256, 256, r.gu, r.gu.At(r.I*4), r.dq, r.dSc, r.uI, r.uAct)       // gate @0, up @I
 		if r.sandwich {
 			e.Dispatch(r.pGemv, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.dO, r.uI) // down → scratch
-			e.Dispatch(r.pRmsF32, 256, 256, r.dO, L.postMLPNorm, r.uH, r.uEps, r.uAddOne)
+			e.Dispatch(r.pRmsF32, tgReduceNorm, tgReduceNorm, r.dO, L.postMLPNorm, r.uH, r.uEps, r.uAddOne)
 			e.Dispatch(r.pRes, r.H, 256, r.x, r.dO)
 		} else {
 			e.Dispatch(r.pGemvResid, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.x, r.uI) // down + residual
@@ -1073,10 +1096,10 @@ func (r *Resident) encodeAttention(e *Encoder, l int) {
 	qkvRows := nHhd + 2*g.kvDim
 	kOff, vOff := nHhd*4, (nHhd+g.kvDim)*4 // byte offsets of k, v within the fused qkv buffer
 	// --- attention block (12 dispatches vs 19: QKV fused +bias, residual fused) ---
-	e.Dispatch(r.pRms, 256, 256, r.x, L.preNorm, r.aq, r.aSc, r.uH, r.uEps, r.uAddOne)
+	e.Dispatch(r.pRms, tgReduceNorm, tgReduceNorm, r.x, L.preNorm, r.aq, r.aSc, r.uH, r.uEps, r.uAddOne)
 	e.DispatchTG(r.pSABias, qkvRows*32, 256, r.H*2, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv, L.qkvBias, r.uH)
 	if r.qkNorm { // Qwen3: per-head Q/K RMSNorm before RoPE
-		e.Dispatch(r.pQKNorm, (r.nH+g.nKV)*128, 128, r.qkv, L.qNorm, L.kNorm, r.uNH, g.uNKV, g.uHd, g.uNHhd, r.uEps, r.uAddOne)
+		e.Dispatch(r.pQKNorm, (r.nH+g.nKV)*tgReduceAttn, tgReduceAttn, r.qkv, L.qNorm, L.kNorm, r.uNH, g.uNKV, g.uHd, g.uNHhd, r.uEps, r.uAddOne)
 	}
 	if g.kEqV {
 		// K=V (Gemma 4 globals): the V slot holds the RAW k_proj output ([Q|K|K] fusion). Apply
@@ -1085,19 +1108,19 @@ func (r *Resident) encodeAttention(e *Encoder, l int) {
 		// AFTER qk_norm (which touched the K slot, not V) and BEFORE RoPE (which never touches V),
 		// so V = v_norm(raw k), un-rotated — exactly the CPU path (copy(v,k) pre-k_norm; then
 		// rmsNormNoWeight(v)). See TestVNorm_scaleless.
-		e.Dispatch(r.pQKNorm, g.nKV*128, 128, r.qkv.At(vOff), r.vNormUnit, r.vNormUnit, r.uZero, g.uNKV, g.uHd, r.uZero, r.uEps, r.uZero)
+		e.Dispatch(r.pQKNorm, g.nKV*tgReduceAttn, tgReduceAttn, r.qkv.At(vOff), r.vNormUnit, r.vNormUnit, r.uZero, g.uNKV, g.uHd, r.uZero, r.uEps, r.uZero)
 	}
 	e.Dispatch(r.pRope, r.nH*g.half, 64, r.qkv, L.invf, g.uHd, r.uPos, g.uQtotal, g.uHalf)           // q @ off 0
 	e.Dispatch(r.pRope, g.nKV*g.half, 64, r.qkv.At(kOff), L.invf, g.uHd, r.uPos, g.uKtotal, g.uHalf) // k (V slot at vOff is NOT roped)
 	e.Dispatch(r.pKv, g.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[l], r.vc[l], g.uKvDim, r.uPos)
-	e.Dispatch(r.pAttn, r.nH*128, 128, r.qkv, r.kc[l], r.vc[l], r.ctx, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow)
+	e.Dispatch(r.pAttn, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[l], r.vc[l], r.ctx, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow)
 	e.Dispatch(r.pQv, 256, 256, r.ctx, r.cq, r.cSc, g.uNHhd)
 	if r.sandwich {
 		// Gemma: the sublayer OUTPUT is normed BEFORE the residual add, which the fused
 		// _resid epilogue can't express — project into the (otherwise dead) oO scratch,
 		// norm it, then add. Three dispatches instead of one.
 		e.DispatchTG(r.pSA, r.H*32, 256, r.nH*g.hd*2, L.oW, L.oS, r.cq, r.cSc, r.oO, g.uNHhd)
-		e.Dispatch(r.pRmsF32, 256, 256, r.oO, L.postAttnNorm, r.uH, r.uEps, r.uAddOne)
+		e.Dispatch(r.pRmsF32, tgReduceNorm, tgReduceNorm, r.oO, L.postAttnNorm, r.uH, r.uEps, r.uAddOne)
 		e.Dispatch(r.pRes, r.H, 256, r.x, r.oO)
 	} else {
 		e.DispatchTG(r.pSAResid, r.H*32, 256, r.nH*g.hd*2, L.oW, L.oS, r.cq, r.cSc, r.x, g.uNHhd) // o-proj + residual
