@@ -19,7 +19,7 @@ competitive claim that did not survive re-measurement.
 | | goinfer | Ollama v0.32.5 | verdict |
 |---|---|---|---|
 | decode, short context | ~200 tok/s | ~187 tok/s | **parity** (+7%) |
-| decode, 2048 context | ~97 tok/s | ~188 tok/s | **1.94× behind** |
+| decode, 2048 context | ~97 → **~133 tok/s** (A1 coalescing, `1a1914b`) | ~188 tok/s | 1.94× → **1.41× behind** |
 | prefill | 0.66 ms/tok | 0.14 ms/tok | **4.7× behind** |
 | total-request crossover | — | — | ~50 prompt tokens |
 
@@ -60,7 +60,7 @@ Carried from the prefill campaign, where five attributions were made and four we
 
 ## 3. The two deficits, decomposed
 
-### 3a. Long-context decode — 1.94× behind
+### 3a. Long-context decode — 1.94× → **1.41× behind** (A1 coalescing landed)
 
 Decode costs ~**0.0028 ms per KV position** on a ~4.1 ms base (measured: 221 → 179 → 100 →
 66 tok/s at 128 / 512 / 2048 / 3900 context).
@@ -70,9 +70,13 @@ is about **0.00006 ms** at the card's bandwidth. That is **~40× off the memory 
 term that scales with context.
 
 It was previously read as "dead-linear O(context), correct behaviour, not a cliff." Correct
-in isolation, refuted comparatively: Ollama holds ~188 tok/s at 2048 where we fall to ~97.
+in isolation, refuted comparatively: Ollama holds ~188 tok/s at 2048 where we fell to ~97.
 
-**The decode attention kernel has never been profiled.**
+**Profiled and partially fixed (2026-08-04, Campaign A0/A1).** ncu named the decode attention's
+K read uncoalesced (21.96% bytes/sector); wiring decode to the float4-coalesced `attn_batched`
+at M=1 (bit-identical) took 2048-ctx decode **99.5 → 133.5 tok/s (1.34×)**. The remaining residual
+is the O(context) redundant re-read that coalescing cannot touch — Campaign A stays open (A2/query
+-tiled decode).
 
 ### 3b. Prefill — 4.7× behind
 
@@ -97,22 +101,30 @@ spend their time — rather than improving a magnitude.
 
 Prefill cannot reach parity (§3b, §7), so it cannot buy the same thing at any price.
 
-### A0. Profile the decode attention kernel — **prerequisite, unmeasured**
+### A0. Profile the decode attention kernel — **DONE (2026-08-04)**
 
-`ncu` at 128 / 512 / 2048 context: Scheduler Statistics, Warp State Statistics, Speed of
-Light, sector utilisation, occupancy.
+`ncu` on the M=1 glue `attention` kernel at 2048 context (`TestDecodeAttn2048Probe`): Duration
+**232.7 µs/launch** (~63% of the ~10.3 ms decode budget), **21.96% bytes/sector** on the K read
+(uncoalesced, stride-`kvDim`), L1TEX 71%, No-Eligible 94.5%. The profile named it: the *same*
+uncoalesced K-read signature the prefill attention had before its float4 fix — but this is a
+distinct kernel and got its own profile (the caution held; the diagnosis was confirmed at the
+hardware, not carried over).
 
-**Do not carry the prefill attention diagnosis across.** That kernel was L1TEX-saturated at
-21.96% bytes/sector; the GEMV, superficially similar, was latency-bound with efficient
-loads. This is a third kernel and gets its own profile.
+### A1. Fix — **PARTIAL, landed (`1a1914b`, 2026-08-04)**
 
-### A1. Fix, against whatever the profile names
+The float4-coalesced `attn_batched` at **M=1** is bit-identical to the audited glue `attention`
+(`TestAttnBatched_bitIdentical`), so the decode attention was wired to it (guarded by
+`prefillReady`; glue.ptx untouched, kept as fallback; `resident.go`). Same grid/block/shared/ctx
+layout, `startPos=pos` ⇒ `nKeys=pos+1` ⇒ **decode stays byte-identical.**
 
-Bit-identity is a design constraint: decode stays byte-identical, existing reduction order
-preserved exactly, no online rescaling, no tolerance gate.
+Same-box A/B (`TestDecodeDepthThroughput`, git-stash resident.go): 2048-ctx decode **99.5 → 133.5
+tok/s (1.34×)**, shallow unchanged. Narrows the gap to current Ollama from ~1.9× to **~1.41×**.
 
-Gates: decode byte-identical; parity manifest green; a context beyond the sliding window; a
-context that is not a multiple of any tile size.
+**Not yet parity.** The arithmetic above says a 10× on the per-position term reaches ~214 tok/s;
+coalescing bought 1.34×, so the redundant-re-read / latency residual remains — that is what **A2
+(KV layout)** and a query-tiled decode path would attack next. Campaign A is *open*, not closed.
+
+Gates that held: decode byte-identical; parity manifest green; `TestE2EDecode` / `TestRealE2EDecode`.
 
 ### A2. KV cache layout — *unmeasured, plausible*
 
@@ -159,15 +171,31 @@ been attributed since the RN fix. It is not blocked by bit-identity.
 
 ## 6. Campaign C — coverage (widens who benefits; makes nothing faster)
 
-### C1. Coverage audit — **cheap, unmeasured, gates the release narrative**
+### C1. Coverage audit — **DONE (2026-08-04, `TestPrefillCoverageAudit`)**
 
 `PrefillLast` declines: MoE, gemma4-moe, sandwich norms, qk-norm, K=V, int8, non-uniform,
 over-cap.
 
-Enumerate every family in the parity manifest against those guards and report **gets batched
-prefill / falls back to sequential, and which guard fires.** If coverage is narrow, extending
-the guard is worth more than any remaining kernel work — and it must be known before a
-release announces a prefill improvement.
+**Result: batched CUDA prefill covers exactly 5 of 23 validated families — all dense/uniform:
+`llama`, `mistral`, `phi3`, `qwen2`, `qwen2_5_vl`.** The other 18 fall back to sequential, by
+binding guard:
+
+| # | guard | families |
+|---|---|---|
+| 6 | not resident (family class) | gemma4, gpt-oss, gpt2, granitemoehybrid, llama4_text, qwen3_5_moe |
+| 3 | not resident (MLA) | deepseek_v2, deepseek_v3, kimi_k2 |
+| 2 | MoE | glm4_moe, mixtral |
+| 1 | qk-norm | qwen3 |
+| 1 | sandwich norms | gemma3 |
+| 1 | not resident (moe-gated-shared) | qwen2_moe |
+| 1 | not resident (yarn-mscale) | mellum |
+| 1 | not resident (non-gated-mlp + ssm) | nemotron_h |
+| 1+1 | not resident (cohere features) | cohere, cohere2 |
+
+**Release-narrative consequence:** the batched-prefill / TTFT improvement (§9) applies to the
+**dense mainstream lane only** — the release notes must say "dense families (llama/mistral/phi3/
+qwen2 + qwen2.5-VL)," not "prefill." Extending the guard (qk-norm → +qwen3; MoE → the C4/C5 work)
+is where coverage grows; that ranking is unchanged, now with numbers behind it.
 
 ### C2. WebGPU `ForwardNoLogits` — **small, scoped, unbuilt**
 
@@ -275,6 +303,55 @@ serving deployment actually cares about, and it is unexamined.
 We infer flash-attention-style KV handling from behaviour (it holds ~188 tok/s at 2048). It
 would be cheap to confirm, and knowing the mechanism would sharpen Campaign A's target.
 
+### D5. Hybrid GPU/CPU **layer split** — the right shape for an oversized model — **scoped, not built**
+
+Ollama runs Gemma-4 **26B-A4B** at **24.5 tok/s** on the same 8 GB card that goinfer's expert
+paging gets **16.98** (both measured, §B4). The difference is architectural, and it is worth
+stating as a mechanism, not a number:
+
+- **Layer split (Ollama):** partition *layers* between GPU and CPU. The only thing that crosses
+  the PCIe boundary is the **activation vector** at the split point — `hidden × dtype ≈ 10–16 KB`
+  per token, ~1–2 µs at ~12 GB/s. Negligible. The cost is that 58% of the layers run on **CPU
+  compute**.
+- **Expert paging (goinfer today):** keep every layer on the GPU, stream expert **weights**
+  host→VRAM per token — **~380 MB/token**, ~31 ms of pure DMA at ~12 GB/s → a hard ceiling near
+  **~31 tok/s** before any compute (measured 16.98 with overhead). Weights are ~10⁴× the size of
+  the activations a layer split moves.
+
+**So expert paging is very likely the wrong shape for an oversized model on a PCIe-attached GPU.**
+It moves the big thing (weights) across the slow link every token; the layer split moves the small
+thing (activations) once. This is consistent with the **Metal** track also hitting a floor on the
+same model class. The durable value of the whole host↔VRAM paging line (`task-moe-streaming.md`) is
+the **method record** — the LRU expert cache, the slot-id device-read trick, the mixed-M join, the
+isolation-proves-the-primitive-never-the-composition lesson — **not the throughput.**
+
+**goinfer already has both compute paths**: the pure-Go CPU decoder (**5.53 tok/s** full-model on
+this 26B) and the resident CUDA runner. What is missing is *the split and the boundary*, not a new
+kernel.
+
+**The bound (why this is not a quick win, and what it would take to beat 24.5):**
+
+- **Boundary:** fill VRAM with as many **contiguous** layers as fit (~42% here, the fraction
+  Ollama achieves), rest on CPU. Contiguous ⇒ one activation hand-off GPU→CPU and one CPU→GPU per
+  token. Transfer cost ≈ nil (see above). Bit-identical by construction — it moves *where* operands
+  live, not the order they accumulate (same argument as int2-coalescing / A-staging / A2).
+- **Ceiling is set by goinfer's CPU throughput, not by the mechanism.** Full-model pure-Go on this
+  26B is **5.53 tok/s ≈ 181 ms/token**; the 58% that would live on CPU therefore costs **~105
+  ms/token** on its own. Even with a free GPU half and a zero-cost boundary, the split **tops out
+  around ~9–10 tok/s — below Ollama's 24.5.** Ollama wins here because its GGML CPU kernels
+  (AVX2/AVX-512, threaded) are **~4× goinfer's pure-Go path**, not because its split is cleverer.
+- **To beat 24.5, two independent knobs, both outside this item:** (a) a **faster CPU kernel** —
+  exactly the `cpubrrr` Q8_K integer-accumulation lane in `plan-cpubrrr-steal-and-bindings.md`
+  (measured to take cpubrrr from losing to winning on Q4_K); or (b) a **larger GPU fraction** (more
+  VRAM — a card the model nearly fits). The layer split is the *correct chassis*; the CPU-kernel
+  campaign is what makes it competitive.
+- **Verdict:** right mechanism, real capability (single-stream on a card too small), but **not a
+  throughput win until the CPU path closes to GGML-class.** Rank it **alongside D1** (both are
+  decode-side, both reuse machinery goinfer already has) and **above anything remaining in
+  §5/prefill** — prefill improves a number already past its usability threshold and cannot reach
+  parity, whereas this changes what a small-VRAM box can run at a usable rate. Days-to-weeks build,
+  gated on the CPU-kernel decision.
+
 ---
 
 ## 9. Landed — do not redo
@@ -287,8 +364,10 @@ would be cheap to confirm, and knowing the mechanism would sharpen Campaign A's 
 | GEMV `int2` coalescing | 13% | bytes/sector 49.99 → 98.01% |
 | GEMV `RN=2` register blocking | ~30% | scoreboard stall 17.8 → 7.5 cyc |
 | Prefill attention `float4` | **3.1×**; 2048 TTFT 3.33 → 6.17× | bytes/sector 21.96 → 66.32% |
+| Decode attention `float4` (A1, M=1 reuse) | 2048 decode **99.5 → 133.5 tok/s (1.34×)** | bit-identical to glue `attention`; `1a1914b` |
 
-Cumulative on the GEMV ≈ **1.5×**. Total 2048 TTFT: **13.1 s → 2.1 s**.
+Cumulative on the GEMV ≈ **1.5×**. Total 2048 TTFT: **13.1 s → 2.1 s**. Long-ctx decode gap to
+current Ollama: 1.94× → **1.41×**.
 
 ---
 
@@ -333,13 +412,18 @@ Cumulative on the GEMV ≈ **1.5×**. Total 2048 TTFT: **13.1 s → 2.1 s**.
 
 ## 12. Suggested order
 
-1. **Campaign A** — profile decode attention, then fix. The only reachable parity.
-2. **C1** — coverage audit. Cheap, and it gates what a release can honestly claim.
+1. **Campaign A** — ~~profile decode attention~~ (A0 done), ~~first coalescing fix~~ (A1 done,
+   1.34×); **continue** with A2 (KV layout) / query-tiled decode for the residual toward parity.
+   Still the only reachable parity.
+2. ~~**C1** — coverage audit~~ **DONE** (5/23 dense; the release must say "dense lane," not
+   "prefill").
 3. **D1** — scope speculative decoding. Potentially the largest decode lever in the doc,
    token-identical, and it reuses the batched forward already built.
-4. **D4** — confirm Ollama's long-context decode mechanism. Hours, sharpens A.
-5. **B1** — prefill attention query-tiling, if A's primitive transfers.
-6. **§7 fork** — only when B2 has been attributed and Phase 0 of the rotation doc has been
+4. **D5** — scope the hybrid GPU/CPU layer split (ranked *alongside* D1). The right shape for the
+   26B-on-8GB case; gated on the CPU-kernel decision (`plan-cpubrrr-…`), above §5/prefill.
+5. **D4** — confirm Ollama's long-context decode mechanism. Hours, sharpens A.
+6. **B1** — prefill attention query-tiling, if A's primitive transfers.
+7. **§7 fork** — only when B2 has been attributed and Phase 0 of the rotation doc has been
    run.
 
-Everything in §6 (C2–C5) is coverage work whose priority depends on C1's answer.
+Everything in §6 (C2–C5) is coverage work whose priority depends on C1's answer (now known: 5/23).

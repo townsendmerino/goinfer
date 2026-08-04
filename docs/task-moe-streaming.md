@@ -254,13 +254,20 @@ Two things this track establishes, worth stating plainly:
   Gemma 4's own routing: 32 of 128 experts resident, 77.5% of reads served from cache. `fieldfare`
   reaches the same conclusion from the other direction (16-slot-per-layer LFU) — two different
   eviction mechanisms, one underlying property of trained MoE routers.
-- **This is a CAPABILITY result, not a speed comparison.** A 26B MoE decodes coherently, cgo-free,
-  on an 8 GB card that cannot hold it — a configuration where llama.cpp and Ollama simply fail to
-  load. `docs/benchmarks.md` has no row of that shape; it is where goinfer's positioning is
-  strongest, and it needs no peer to be true ("runs at all, at N tok/s, on 8 GB" invites no
-  same-machine-methodology fight). The **16.98 tok/s** (capture-free, 38 slots auto-capped to fit,
-  81.6% hit rate, sync H2D) sits against fieldfare's 5.1–6.3 on its own 8 GB M2 Air — the closest
-  analogue either project has — but on entirely different silicon, so it is a floor in the peer's
+- **This is a CAPABILITY result — but NOT one peers lack, and NOT the fast way to get it.** ⚠
+  *Corrected 2026-08-04:* the earlier claim that "llama.cpp and Ollama simply fail to load" this
+  26B on 8 GB is **FALSE for current Ollama** — v0.32.5 loads and runs it via a **42% GPU / 58%
+  CPU-RAM layer split at ~24.5 tok/s** (measured same-box, `docs/benchmarks.md` §B4), *faster* than
+  goinfer's **16.98**. goinfer's genuine distinction is running it **fully GPU-resident** (experts
+  streamed host→VRAM and executed on the GPU), not that the model can't otherwise run.
+  **And expert paging is very likely the wrong shape here:** a layer split moves an activation
+  vector (~10–16 KB) across PCIe per token; expert paging moves **~380 MB of weights** (~31 ms of
+  DMA — the wall). See `docs/ollama-chase.md` §D5 for the layer-split scoping and its bound
+  (goinfer's CPU path caps the split at ~9–10 tok/s until a GGML-class CPU kernel lands). **The
+  durable value of this whole paging line is the method record — the LRU expert cache, the slot-id
+  device-read trick, the mixed-M join, the isolation-proves-the-primitive lesson — not the tok/s.**
+  The **16.98** (capture-free, 38 slots auto-capped, 81.6% hit rate, sync H2D) sits against
+  fieldfare's 5.1–6.3 on its own 8 GB M2 Air — different silicon, so a floor in the peer's
   constrained regime, NOT a comparison row.
 
 ## Residency-track pivot: host↔VRAM expert streaming (A′), and why zero-copy stalled at the kernel

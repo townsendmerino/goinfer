@@ -1,5 +1,14 @@
 # 26B batched-prefill bound — DEFERRED, not cancelled (bound recorded so nobody re-derives it)
 
+> **⚠ Shape note (2026-08-04):** expert paging is **likely the wrong shape** for an oversized
+> model on a PCIe-attached GPU. Current Ollama v0.32.5 runs this same 26B at **24.5 tok/s** on the
+> 8 GB card by a **layer split** (42% GPU / 58% CPU-RAM), moving only an **activation vector**
+> (~10–16 KB) across PCIe per token; goinfer's expert paging gets **16.98** by streaming **~380 MB
+> of weights** per token (~31 ms of DMA — the wall). The layer split is the right chassis
+> (`docs/ollama-chase.md` §D5, with the bound: goinfer's CPU path caps it at ~9–10 tok/s until a
+> GGML-class CPU kernel lands). The durable value of the paging line is the **method record**, not
+> the throughput — consistent with the Metal track also flooring on this model class.
+
 Status: **deferred** in favour of the attention lever (2026-08-03). The build is cheap when
 funded — the bound and the mixed-M analysis below are the whole design. Deferred over the scoped
 correctness-proof option (C) specifically because the attention rewrite touches `attn_batched`,
