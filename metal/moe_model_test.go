@@ -306,6 +306,10 @@ func TestMoE_declinesPrefill(t *testing.T) {
 		}
 		return &metalResident{r: r, hidden: r.H}
 	}
+	// This test exercises the ARCH decline (MoE lacks dense-FFN buffers) vs dense-accepts — not the
+	// bit-identity decline that now gates the Metal backend by default (54% divergence, §A2-Metal).
+	// Opt past that outer gate so the arch logic is what's under test.
+	t.Setenv("GOINFER_METAL_BATCHED_PREFILL", "1")
 	if _, err := load(moeDir).PrefillLast(embs, 0); err == nil {
 		t.Fatal("MoE resident ACCEPTED prefill — it would bind unset dense-FFN buffers")
 	}

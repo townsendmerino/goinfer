@@ -451,9 +451,12 @@ first-divergence position 2.9** (i.e. it diverges almost immediately, as soon as
 to the differently-written prompt KV).
 
 Two corrections to the premise, both important:
-- **It does NOT run by default** — the gate is the *shared, backend-agnostic* `GOINFER_BATCHED_PREFILL`
-  flag (default off since the CUDA finding), so the same fix already protects Metal: the default path is
-  sequential (decode kernels → bit-identical). Only the **opt-in** is unsafe on Metal.
+- **Protected by a Metal-backend decline (not by the shared flag).** The shared `GOINFER_BATCHED_PREFILL`
+  gate was flipped back to **default-ON** once the CUDA path was made fma-bit-identical — and it has no
+  backend guard, so it *would* pull Metal's divergent path in by default. So `metal/backend.go`'s
+  `PrefillLast` now **declines by default** (→ caller falls back to sequential = decode kernels =
+  bit-identical); opt in only with `GOINFER_METAL_BATCHED_PREFILL=1`. This is the "default it off"
+  response to a non-zero divergence, scoped to the backend that has it.
 - **Metal's root cause is deeper than CUDA's, so the fix is harder.** CUDA's gap was fma-contraction
   (int-vs-int, ~1 ULP). Metal's `PrefillLast` runs **f16 activations** (for the MMA) while decode runs
   **int8 activations** — a fundamentally larger numerical gap — *plus* fast-math (contraction AND
@@ -772,7 +775,7 @@ kernel.
 | lever | result | notes |
 |---|---|---|
 | Batched prefill (`PrefillLast`), **CUDA** | 2048 TTFT 13.1→2.1s; crossover 128→320 vs 0.5.7 | **bit-identical, default-on** (restored). Was briefly default-off after an 84% divergence from fma-contraction; FIXED by explicit `__fmaf_rn` everywhere + `TestKernelFMALint`; `TestPrefillDivergenceRate` 0/50 (`task-batched-prefill-bitidentity.md`) |
-| Batched prefill (`PrefillLast`), **Metal** | — | ⚠ **NOT fixed — 54% divergent** (`TestMetalPrefillDivergenceRate` 27/50, first-div ~2.9; f16-activation-MMA vs int8-activation decode + fast-math, §A2-Metal). The CUDA fix does NOT cover it (deeper root than contraction). **Must NOT ride the shared default-on** — verify Metal stays gated off (see §A2-Metal); Metal fix needs the activation precision unified, deferred behind decode |
+| Batched prefill (`PrefillLast`), **Metal** | — | ⚠ **NOT fixed — 54% divergent** (`TestMetalPrefillDivergenceRate` 27/50, first-div ~2.9; f16-activation-MMA vs int8-activation decode + fast-math, §A2-Metal). The CUDA fix does NOT cover it (deeper root than contraction). The shared gate is now default-ON, which *would* have pulled this divergent path in by default — so the **Metal backend now DECLINES it by default** (`metal/backend.go`; falls back to sequential = bit-identical), opt-in `GOINFER_METAL_BATCHED_PREFILL=1`. Real fix needs the activation precision unified, deferred behind decode |
 | KV-only prefill for `prompt[:-1]` | −4.39 ms/prompt-token on 26B | skips LM head |
 | GEMV `MT=32` | ~6% | tile width, not an accumulation constraint |
 | GEMV `int2` coalescing | 13% | bytes/sector 49.99 → 98.01% |

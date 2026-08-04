@@ -130,6 +130,16 @@ func (a *metalResident) Forward(embedding []float32, pos int) ([]float32, error)
 // returns the last token's logits, populating the resident KV. Falls back (declines) for prompts
 // longer than the resident KV/attention cap, so the caller uses the sequential loop.
 func (a *metalResident) PrefillLast(embeddings [][]float32, startPos int) ([]float32, error) {
+	// DECLINE BY DEFAULT — Metal's batched prefill is NOT bit-identical to the sequential decode path.
+	// It runs f16-activation MMA vs decode's int8 activations (+ fast-math contraction/reassociation),
+	// which diverges the greedy stream on real weights (54% — TestMetalPrefillDivergenceRate; §A2-Metal).
+	// The decoder's shared batched-prefill gate is default-ON (correct for CUDA, which was made
+	// fma-bit-identical), so it would otherwise pull this divergent path in by default. Decline → the
+	// caller falls back to the sequential Forward loop (decode kernels ⇒ bit-identical). Opt in only for
+	// measurement/TTFT-at-the-cost-of-exactness: GOINFER_METAL_BATCHED_PREFILL=1.
+	if os.Getenv("GOINFER_METAL_BATCHED_PREFILL") != "1" {
+		return nil, fmt.Errorf("metal: batched prefill declined — not bit-identical to decode (54%% stream divergence, §A2-Metal); using sequential. Set GOINFER_METAL_BATCHED_PREFILL=1 to force")
+	}
 	// The f16 MMA prefill kernels implement only the plain dense shape (a dense FFN out of
 	// L.guW/L.dW, model-level rope/window, SiLU-only swiglu). A MoE model never packs those
 	// dense FFN buffers at all, so prefilling it would bind zero buffers — decline instead,
