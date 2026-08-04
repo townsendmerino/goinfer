@@ -72,11 +72,12 @@ term that scales with context.
 It was previously read as "dead-linear O(context), correct behaviour, not a cliff." Correct
 in isolation, refuted comparatively: Ollama holds ~188 tok/s at 2048 where we fell to ~97.
 
-**Profiled and partially fixed (2026-08-04, Campaign A0/A1).** ncu named the decode attention's
+**Profiled, fixed, and RE-profiled (2026-08-04, Campaign A0/A1).** ncu named the decode attention's
 K read uncoalesced (21.96% bytes/sector); wiring decode to the float4-coalesced `attn_batched`
-at M=1 (bit-identical) took 2048-ctx decode **99.5 → 133.5 tok/s (1.34×)**. The remaining residual
-is the O(context) redundant re-read that coalescing cannot touch — Campaign A stays open (A2/query
--tiled decode).
+at M=1 (bit-identical) took 2048-ctx decode **99.5 → 133.5 tok/s (1.34×)**. The A1-reprofile (§A2)
+then showed the bound **moved off memory-coalescing onto occupancy**: 12 blocks on 40 SMs, Waves/SM
+0.04, 11.9% occupancy — the fix is **split-KV parallelism**, not a KV relayout, and it converges with
+B1 (bit-identical tiled attention). Campaign A stays open on that build.
 
 ### 3b. Prefill — 4.7× behind
 
@@ -147,11 +148,54 @@ this kernel. Gates green: `TestAttention`, `TestPrefill`, dense/gemma3 resident 
 geometry, paging bit-exact, shipped-kernel-shapes. **First Metal *decode* speed win** — prior Metal
 work (26B paging) was at a hardware floor. Campaign A stays *open* on Metal too (same A2 residual).
 
-### A2. KV cache layout — *unmeasured, plausible*
+### A1-reprofile — **DONE (2026-08-04); the bound moved to OCCUPANCY, not layout**
 
-If the profile says uncoalesced KV reads, the fix may be a layout change rather than a kernel
-change. Layout changes are bit-identical by construction (they move where operands live, not
-the order they accumulate) — the same reason `int2` coalescing and A-staging were safe.
+Re-`ncu`'d the *coalesced* decode kernel (`attn_batched` at M=1, the launch A1 wired in) at 2048
+ctx, per the "profile the unit before designing the fix" rule — A1 changed the kernel, so the A0
+profile is stale. First decode launch (Grid 12 = nH, Block 128, nKeys≈2049):
+
+| metric | glue (A0) | coalesced (A1) |
+|---|---|---|
+| Duration | 232.7 µs | **134.2 µs** |
+| L1/TEX throughput | 71% | **38.6%** |
+| DRAM / L2 / Compute SoL | — | 9.5% / 12.3% / **5.4%** |
+| Grid / **Waves per SM** | — | 12 blocks / **0.04** |
+| Achieved occupancy | — | **11.9%** (theoretical 87.5%) |
+| No-Eligible-Warp | 94.5% | **93.0%** |
+
+**A1 killed the coalescing bound (L1TEX 71→38%); the new bound is OCCUPANCY STARVATION.** Decode
+attention launches **12 blocks** (one per query head) on a 40-SM card — Waves/SM **0.04**, ~28 SMs
+idle, and the 12 live blocks can't hide their own memory latency (scoreboard stalls = 78% of the
+14-cycle stall average). It is **not** register/shared-limited (block limits 7–16) — purely too few
+blocks. Nothing is throughput-saturated (DRAM 9.5%, Compute 5.4%).
+
+### A2. ~~KV cache layout~~ — **REFUTED by the A1-reprofile; the fix is split-KV parallelism**
+
+The layout hypothesis assumed uncoalesced KV reads. The reprofile shows the reads are already
+coalesced (L1TEX 38%, DRAM 9.5%) — the kernel is **not** memory-throughput-bound, so a relayout
+has nothing to fix. **The profile names parallelism over the key dimension**: split each head's
+2048-key reduction across N blocks (12 → 12·N), filling the SMs — the flash-attention / split-KV
+shape.
+
+**This lands on the bit-identity fork.** A naive split-KV combines partial softmaxes with online
+rescaling → changes the reduction order → **not bit-identical**. A bit-identical split needs the
+two-pass structure — materialize per-tile scores, one global-max reduction, then an exp-weighted
+sum combined in fixed tile order (reproducing the serial s-order) — which is **the same primitive
+as B1 (prefill query-tiling**, `task-prefill-attention.md`). So Campaign A's decode fix and B1
+**converge**: build the bit-identical tiled/split attention once, use it for both M=1 decode
+(split-KV for occupancy) and M>1 prefill (query-tiling for redundant-re-read). **D4** (confirm
+Ollama runs flash-attention split-KV at long ctx) would validate the target before building.
+
+*The arithmetic still says parity is reachable (§4): occupancy is a solvable bound, unlike the
+prefill tensor-core ceiling (§7). This stays Campaign A's next build — now correctly scoped as
+split-KV occupancy, not a KV relayout.*
+
+### A2-old. KV cache layout (kept for the record) — *not indicated*
+
+Layout changes are bit-identical by construction (they move where operands live, not the order
+they accumulate) — the same reason `int2` coalescing and A-staging were safe. But the reprofile
+says the decode kernel is occupancy-bound, not read-throughput-bound, so a relayout is not the
+lever here. Revisit only if a future profile shows uncoalesced KV traffic.
 
 ### A3. KV cache quantization — **not bit-identical**
 
@@ -451,9 +495,10 @@ current Ollama: 1.94× → **1.41×**.
 
 ## 12. Suggested order
 
-1. **Campaign A** — ~~profile decode attention~~ (A0 done), ~~first coalescing fix~~ (A1 done,
-   1.34×); **continue** with A2 (KV layout) / query-tiled decode for the residual toward parity.
-   Still the only reachable parity.
+1. **Campaign A** — ~~profile~~ (A0), ~~coalescing fix~~ (A1, 1.34×), ~~reprofile~~ (A1-reprofile:
+   bound moved to occupancy). **Next build: bit-identical split-KV decode attention** (12→12·N
+   blocks) — converges with B1's tiled primitive. NOT a KV relayout (A2 refuted). Still the only
+   reachable parity. Run **D4** first to confirm the target (hours).
 2. ~~**C1** — coverage audit~~ **DONE** (5/23 dense; the release must say "dense lane," not
    "prefill").
 3. **D1** — scope speculative decoding. Potentially the largest decode lever in the doc,
