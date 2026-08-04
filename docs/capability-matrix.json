@@ -179,7 +179,7 @@
     "loaders": "safetensors, GGUF",
     "modality": "text (+ vision via VL text_config)",
     "gpu_residency_eligible": true,
-    "parity": "pending"
+    "parity": "full-oracle 100.0%/0.99972"
   },
   {
     "name": "gemma4",

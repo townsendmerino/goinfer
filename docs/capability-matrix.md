@@ -74,7 +74,7 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 | Command-R7B | `cohere2` | dense | interleave | no | full | LayerNorm, parallel | SwiGLU | yes | safetensors | text | yes | full-oracle 100.0%/1.00000 |
 | GLM-4.5/4.6 | `glm4_moe` | sparse +shared | none | yes | partial | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | pending |
 | GPT-2 | `gpt2` | dense | none | no | learned/none | LayerNorm, pre-norm | GELU-tanh (non-gated) | yes | safetensors, GGUF | text | no | pending |
-| Gemma 3 | `gemma3`, `gemma3_text` | dense | interleave | yes | dual-base | RMSNorm, sandwich | GeGLU | yes | safetensors, GGUF | text (+ vision via VL text_config) | yes | pending |
+| Gemma 3 | `gemma3`, `gemma3_text` | dense | interleave | yes | dual-base | RMSNorm, sandwich | GeGLU | yes | safetensors, GGUF | text (+ vision via VL text_config) | yes | full-oracle 100.0%/0.99972 |
 | Gemma 4 | `gemma4`, `gemma4_text`, `gemma4_unified_text` | dense ‖ sparse, no-shared | interleave | yes | dual-base | RMSNorm, sandwich | GeGLU | yes | safetensors, GGUF | text | no | full-oracle 100.0%/0.99128 |
 | Llama | `llama` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF, GPTQ, AWQ | text | yes | pending |
 | Llama 4 | `llama4_text` | sparse +shared | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no | tiny-oracle 100.0%/1.00000 +coherent |

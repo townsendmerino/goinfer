@@ -133,13 +133,17 @@
       ],
       "own": [],
       "deps_hash": "sha256:f8bd4af09dd897617a0ce1480d2a537614d0c56a22813a855632107ffd29ea88",
-      "status": "pending",
-      "validated_at": null,
-      "date": null,
-      "reference": null,
-      "machine": null,
-      "method": null,
-      "metrics": null
+      "status": "validated",
+      "validated_at": "38b7b6a",
+      "date": "2026-08-04",
+      "reference": "HF f32 (gemma-3-4b-it, text)",
+      "machine": "linux-62gb",
+      "method": "full-forward-oracle",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 0.99972,
+        "cosine_mean": 0.99972
+      }
     },
     "gemma4": {
       "uses": [
