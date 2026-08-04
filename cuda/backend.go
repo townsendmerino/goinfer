@@ -482,6 +482,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				}
 				load(&r.bGemv, bgmod, "gemv_w4a8_batched")
 				load(&r.bRms, pbmod, "rmsnorm_quant_batched")
+				load(&r.bQKN, pbmod, "qk_norm_batched")
 				load(&r.bRopeKV, pbmod, "rope_kv_batched")
 				load(&r.bAttn, pbmod, "attn_batched")
 				load(&r.bQuant, pbmod, "quant_vec_batched")

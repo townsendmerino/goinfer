@@ -73,8 +73,11 @@ func (r *cudaResident) PrefillLast(embeddings [][]float32, startPos int) ([]floa
 	if !r.prefillReady {
 		return nil, fmt.Errorf("cuda prefill: batched kernels unavailable")
 	}
-	if r.moe || r.gemma4Moe || r.sandwich || r.qkNorm {
-		return nil, fmt.Errorf("cuda prefill: arch needs the sequential path (moe/gemma4moe/sandwich/qknorm)")
+	// qk-norm (per-head Q/K RMSNorm) is now batched (qk_norm_batched, wired below) — it no longer
+	// declines. backend.go asserts every layer's qNorm/kNorm length == headDim before residency, so
+	// r.qkNorm ⇒ the weights are present. sandwich/MoE/gemma4-MoE still take the sequential path.
+	if r.moe || r.gemma4Moe || r.sandwich {
+		return nil, fmt.Errorf("cuda prefill: arch needs the sequential path (moe/gemma4moe/sandwich)")
 	}
 	if e := r.checkCap(startPos, M); e != nil {
 		return nil, e
@@ -151,6 +154,22 @@ func (r *cudaResident) PrefillLast(embeddings [][]float32, startPos int) ([]floa
 				return e
 			}
 			r.profToc(gemvCat, t)
+			// per-head Q/K RMSNorm BEFORE rope (Qwen3): in place on qBb/kBb, one block per (head,token).
+			// Bit-identical to the decode qk_norm applied per token (same f64 reduction, same addOne).
+			if r.qkNorm {
+				t = r.profTic()
+				addOne := int32(0)
+				if r.rmsAddOne {
+					addOne = 1
+				}
+				if e := r.launch(r.bQKN, LaunchConfig{GridX: uint32(r.nH + nKV), GridY: uint32(M), GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: 128 * 8},
+					Arg(qBb), Arg(kBb), Arg(Ly.qNorm), Arg(Ly.kNorm),
+					gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(nKV)), gpu.ArgValue(int32(hd)),
+					gpu.ArgValue(r.eps), gpu.ArgValue(addOne), gpu.ArgValue(int32(M))); e != nil {
+					return e
+				}
+				r.profToc(glueCat, t)
+			}
 			// rope + kv-store (glue): token m at absolute position startPos+m; rotates q/k, writes K/V.
 			t = r.profTic()
 			if e := r.launch(r.bRopeKV, LaunchConfig{GridX: uint32((ropeN + 255) / 256), GridY: uint32(M), GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},

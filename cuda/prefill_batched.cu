@@ -53,6 +53,35 @@ __global__ void rmsnorm_quant_batched(const float* __restrict__ x, const float* 
     }
 }
 
+// qk_norm_batched: M tokens (grid.y = m, grid.x = head in [0, nH+nKV)). Per-head Q/K RMSNorm over
+// hd, in place, BEFORE rope_kv_batched — a per-token copy of qk_norm (fused_qkv.cu). The DOUBLE
+// sum-of-squares reduction and the (1+w) addOne path are byte-for-byte the M=1 kernel's, so batched
+// qk-norm is bit-identical to the sequential decode qk-norm applied token by token (Qwen3 parity).
+extern "C" __global__ void qk_norm_batched(
+    float* __restrict__ q, float* __restrict__ k,
+    const float* __restrict__ qNorm, const float* __restrict__ kNorm,
+    int nH, int nKV, int hd, float eps, int addOne, int M)
+{
+    int m = blockIdx.y; if (m >= M) return;
+    extern __shared__ double qkred[];
+    int h = blockIdx.x, t = threadIdx.x, nt = blockDim.x;
+    long qDim = (long)nH * hd, kvDim = (long)nKV * hd;
+    float* base;
+    const float* w;
+    if (h < nH) { base = q + (long)m * qDim + (long)h * hd;         w = qNorm; }
+    else        { base = k + (long)m * kvDim + (long)(h - nH) * hd; w = kNorm; }
+
+    double ss = 0.0;
+    for (int i = t; i < hd; i += nt) ss += (double)base[i] * (double)base[i];
+    qkred[t] = ss; __syncthreads();
+    for (int o = nt >> 1; o > 0; o >>= 1) { if (t < o) qkred[t] += qkred[t + o]; __syncthreads(); }
+    float inv = (float)(1.0 / sqrt(qkred[0] / (double)hd + (double)eps));
+    for (int i = t; i < hd; i += nt) {
+        float g = addOne ? (1.f + w[i]) : w[i];
+        base[i] = (base[i] * inv) * g;
+    }
+}
+
 // rope_kv_batched: M tokens (grid.y = m, grid.x*blockDim over the per-token index space). Rotates
 // q[m]/k[m] in place and stores K/V at absolute position startPos+m — copy of rope_kv per token.
 __global__ void rope_kv_batched(

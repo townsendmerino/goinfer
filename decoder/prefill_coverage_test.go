@@ -59,9 +59,10 @@ func TestPrefillCoverageAudit(t *testing.T) {
 			reason = "MoE"
 		case arch.NormPlacement == NormSandwich4:
 			reason = "sandwich norms"
-		case arch.QKNorm:
-			reason = "qk-norm"
 		}
+		// qk-norm is NO LONGER a guard: batched prefill applies it via qk_norm_batched (bit-identical
+		// per token; validated on real Qwen3-1.7B by cuda.TestPrefillLast_qwen3). So a qk-norm-only
+		// family (qwen3) now BATCHES; gemma3 still declines on sandwich, glm4_moe/qwen2_moe on MoE.
 		// (K=V is a Gemma-4-only property, nested in gemma4Params; Gemma-4 trips sandwich/gemma4-moe
 		// first, so K=V never surfaces as the binding guard — omitted.)
 		if reason == "" {

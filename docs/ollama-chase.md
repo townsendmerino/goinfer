@@ -173,29 +173,35 @@ been attributed since the RN fix. It is not blocked by bit-identity.
 
 ### C1. Coverage audit — **DONE (2026-08-04, `TestPrefillCoverageAudit`)**
 
-`PrefillLast` declines: MoE, gemma4-moe, sandwich norms, qk-norm, K=V, int8, non-uniform,
-over-cap.
+`PrefillLast` declines: MoE, gemma4-moe, sandwich norms, ~~qk-norm~~ (**lifted 2026-08-04**), K=V,
+int8, non-uniform, over-cap.
 
-**Result: batched CUDA prefill covers exactly 5 of 23 validated families — all dense/uniform:
-`llama`, `mistral`, `phi3`, `qwen2`, `qwen2_5_vl`.** The other 18 fall back to sequential, by
-binding guard:
+**Result: batched CUDA prefill now covers 6 of 23 validated families** — `llama`, `mistral`,
+`phi3`, `qwen2`, `qwen2_5_vl`, and **`qwen3`** (qk-norm guard extended, below). The other 17 fall
+back to sequential, by binding guard:
 
 | # | guard | families |
 |---|---|---|
 | 6 | not resident (family class) | gemma4, gpt-oss, gpt2, granitemoehybrid, llama4_text, qwen3_5_moe |
 | 3 | not resident (MLA) | deepseek_v2, deepseek_v3, kimi_k2 |
 | 2 | MoE | glm4_moe, mixtral |
-| 1 | qk-norm | qwen3 |
 | 1 | sandwich norms | gemma3 |
 | 1 | not resident (moe-gated-shared) | qwen2_moe |
 | 1 | not resident (yarn-mscale) | mellum |
 | 1 | not resident (non-gated-mlp + ssm) | nemotron_h |
 | 1+1 | not resident (cohere features) | cohere, cohere2 |
 
-**Release-narrative consequence:** the batched-prefill / TTFT improvement (§9) applies to the
-**dense mainstream lane only** — the release notes must say "dense families (llama/mistral/phi3/
-qwen2 + qwen2.5-VL)," not "prefill." Extending the guard (qk-norm → +qwen3; MoE → the C4/C5 work)
-is where coverage grows; that ranking is unchanged, now with numbers behind it.
+**Guard extension #1 — qk-norm (landed, `cuda.TestPrefillLast_qwen3`):** per-head Q/K RMSNorm was
+a decline; it is a per-row op (per token, per head, no cross-token reduction), so it batches exactly
+like the six existing glue kernels — `qk_norm_batched` = the M=1 `qk_norm` + an M dimension,
+**bit-identical per token**. Validated on the real Qwen3-1.7B at int4: KV bit-identical across all
+28 layers × 56 rows, last-token logits bit-identical, 64-token greedy decode byte-identical. The
+batched glu/attn kernels already covered GELU-tanh + sliding window, so no other delta surfaced.
+
+**Release-narrative consequence:** the batched-prefill / TTFT win (§9) is the **dense mainstream +
+qwen3 lane** ("llama/mistral/phi3/qwen2 **+ qwen3** + qwen2.5-VL") — still NOT "all prefill." Next
+cheapest: **sandwich norms → gemma3** (a batched post-norm kernel; gemma3's qk-norm/GELU/addOne are
+now all covered, so sandwich is likely its last binding guard — pending a K=V / query-scale check).
 
 ### C2. WebGPU `ForwardNoLogits` — **small, scoped, unbuilt**
 
