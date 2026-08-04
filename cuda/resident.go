@@ -171,6 +171,7 @@ type cudaResident struct {
 	// kernels with an M dimension, each bit-identical per row. Loaded once at build (small module).
 	bGemv, bRN, bRms, bRopeKV, bAttn, bQuant, bSw, bRes     Pipeline
 	bQKN                                                    Pipeline     // batched per-head Q/K RMSNorm (qwen3 etc.); loaded with the batched set
+	bNormF32                                                Pipeline     // batched plain f32 RMSNorm for Gemma sandwich post-norms; loaded with the batched set
 	prefillReady                                            bool         // batched kernels loaded; PrefillLast usable
 	prof                                                    *prefillProf // non-nil ⇒ PrefillLast times each kernel category (test-only; adds stream syncs)
 	fRoute, fRouterGemv, fMoEGemv, fMoEWacc, fSharedCombine Pipeline

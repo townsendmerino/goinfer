@@ -57,12 +57,12 @@ func TestPrefillCoverageAudit(t *testing.T) {
 			}
 		case arch.MoE != nil:
 			reason = "MoE"
-		case arch.NormPlacement == NormSandwich4:
-			reason = "sandwich norms"
 		}
-		// qk-norm is NO LONGER a guard: batched prefill applies it via qk_norm_batched (bit-identical
-		// per token; validated on real Qwen3-1.7B by cuda.TestPrefillLast_qwen3). So a qk-norm-only
-		// family (qwen3) now BATCHES; gemma3 still declines on sandwich, glm4_moe/qwen2_moe on MoE.
+		// qk-norm and sandwich norms are NO LONGER guards: batched prefill applies them via
+		// qk_norm_batched / rmsnorm_f32_batched (bit-identical per token; validated on real Qwen3-1.7B
+		// and Gemma-3-4B by cuda.TestPrefillLast_qwen3 / _gemma3). So qwen3 and gemma3 now BATCH; MoE
+		// (glm4_moe/qwen2_moe/mixtral) and the not-resident classes still decline. (gemma3 batches only
+		// when the gemma resident path is enabled — GOINFER_GEMMA4_RESIDENT; else it stays staged.)
 		// (K=V is a Gemma-4-only property, nested in gemma4Params; Gemma-4 trips sandwich/gemma4-moe
 		// first, so K=V never surfaces as the binding guard — omitted.)
 		if reason == "" {

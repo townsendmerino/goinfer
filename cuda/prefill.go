@@ -73,11 +73,13 @@ func (r *cudaResident) PrefillLast(embeddings [][]float32, startPos int) ([]floa
 	if !r.prefillReady {
 		return nil, fmt.Errorf("cuda prefill: batched kernels unavailable")
 	}
-	// qk-norm (per-head Q/K RMSNorm) is now batched (qk_norm_batched, wired below) — it no longer
-	// declines. backend.go asserts every layer's qNorm/kNorm length == headDim before residency, so
-	// r.qkNorm ⇒ the weights are present. sandwich/MoE/gemma4-MoE still take the sequential path.
-	if r.moe || r.gemma4Moe || r.sandwich {
-		return nil, fmt.Errorf("cuda prefill: arch needs the sequential path (moe/gemma4moe/sandwich)")
+	// qk-norm (per-head Q/K RMSNorm) and Gemma sandwich norms are now batched (qk_norm_batched /
+	// rmsnorm_f32_batched, wired below) — neither declines. backend.go asserts qNorm/kNorm length ==
+	// headDim before residency (⇒ present when r.qkNorm), and the per-layer K=V / non-uniform / int8
+	// checks below still catch a Gemma-4-class layer that this dense-batched path can't stride. MoE
+	// and the Gemma parallel dense‖MoE still take the sequential path.
+	if r.moe || r.gemma4Moe {
+		return nil, fmt.Errorf("cuda prefill: arch needs the sequential path (moe/gemma4moe)")
 	}
 	if e := r.checkCap(startPos, M); e != nil {
 		return nil, e
@@ -113,6 +115,15 @@ func (r *cudaResident) PrefillLast(embeddings [][]float32, startPos int) ([]floa
 		gOb, uOb := r.af(M*inter), r.af(M*inter)
 		dqB, dScB, dScrB := r.ai(M*inter/4), r.af(M), r.af(M*inter)
 		scratch := []Buffer{xB, aqB, aScB, qBb, kBb, vBb, cctxB, cqB, cScB, mqB, mScB, gOb, uOb, dqB, dScB, dScrB}
+		// Sandwich families (Gemma) norm the attention / MLP sublayer output BEFORE adding it to the
+		// residual, so the o-proj and down GEMVs write a temp instead of accumulating in place. One
+		// [M, hidden] buffer, reused for both (the two uses are sequential).
+		var sbB Buffer
+		if r.sandwich {
+			sbB = r.af(M * hidden)
+			scratch = append(scratch, sbB)
+		}
+		residMN := uint32((M*hidden + 255) / 256)
 		defer func() {
 			for _, b := range scratch {
 				r.dev.ReleaseBuf(b)
@@ -201,7 +212,20 @@ func (r *cudaResident) PrefillLast(embeddings [][]float32, startPos int) ([]floa
 			}
 			r.profToc(glueCat, t)
 			t = r.profTic()
-			if e := r.bGemvB(Ly.o, cqB, cScB, ArgNull(), xB, M, 1); e != nil {
+			if r.sandwich {
+				// o-proj → temp (accum=0), Gemma post-attn RMSNorm per row, then add to residual.
+				// Mirrors segB's decode sandwich path (o-proj → normF32 → residual) exactly, per row.
+				if e := r.bGemvB(Ly.o, cqB, cScB, ArgNull(), sbB, M, 0); e != nil {
+					return e
+				}
+				if e := r.bNormF32B(sbB, Ly.postAttnNorm, hidden, M); e != nil {
+					return e
+				}
+				if e := r.launch(r.bRes, LaunchConfig{GridX: residMN, GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
+					Arg(xB), Arg(sbB), gpu.ArgValue(int32(M*hidden))); e != nil {
+					return e
+				}
+			} else if e := r.bGemvB(Ly.o, cqB, cScB, ArgNull(), xB, M, 1); e != nil {
 				return e
 			}
 			r.profToc(gemvCat, t)
@@ -226,7 +250,19 @@ func (r *cudaResident) PrefillLast(embeddings [][]float32, startPos int) ([]floa
 			}
 			r.profToc(glueCat, t)
 			t = r.profTic()
-			if e := r.bGemvB(Ly.d, dqB, dScB, ArgNull(), xB, M, 1); e != nil {
+			if r.sandwich {
+				// down → temp (accum=0), Gemma post-MLP RMSNorm per row, then add to residual.
+				if e := r.bGemvB(Ly.d, dqB, dScB, ArgNull(), sbB, M, 0); e != nil {
+					return e
+				}
+				if e := r.bNormF32B(sbB, Ly.postMLPNorm, hidden, M); e != nil {
+					return e
+				}
+				if e := r.launch(r.bRes, LaunchConfig{GridX: residMN, GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
+					Arg(xB), Arg(sbB), gpu.ArgValue(int32(M*hidden))); e != nil {
+					return e
+				}
+			} else if e := r.bGemvB(Ly.d, dqB, dScB, ArgNull(), xB, M, 1); e != nil {
 				return e
 			}
 			r.profToc(gemvCat, t)
@@ -280,6 +316,17 @@ func (r *cudaResident) bRmsB(x, w Buffer, N int, qOut, sOut Buffer, M int) error
 		SharedMemBytes: uint32((256 + N) * 4)},
 		Arg(x), Arg(w), gpu.ArgValue(int32(N)), gpu.ArgValue(r.eps), gpu.ArgValue(r.addOneArg()),
 		Arg(qOut), Arg(sOut))
+}
+
+// bNormF32B is the batched counterpart of normF32 (Gemma sandwich post-norm): a plain in-place
+// f32 RMSNorm of an [M, H] sublayer output, one block per row (grid.y = m), blockDim 256 to match
+// the decode reduction tree. No-op when the arch declares no sandwich norms (empty weight buffer).
+func (r *cudaResident) bNormF32B(x, w Buffer, H, M int) error {
+	if w.Len() == 0 {
+		return nil
+	}
+	return r.launch(r.bNormF32, LaunchConfig{GridX: 1, GridY: uint32(M), GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
+		Arg(x), Arg(w), gpu.ArgValue(int32(H)), gpu.ArgValue(r.eps), gpu.ArgValue(r.addOneArg()), gpu.ArgValue(int32(M)))
 }
 
 // rnBlockRows must equal RN in gemv_w4a8_rn.cu — each warp computes this many output rows, so the grid

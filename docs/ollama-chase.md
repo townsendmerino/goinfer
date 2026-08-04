@@ -173,35 +173,40 @@ been attributed since the RN fix. It is not blocked by bit-identity.
 
 ### C1. Coverage audit — **DONE (2026-08-04, `TestPrefillCoverageAudit`)**
 
-`PrefillLast` declines: MoE, gemma4-moe, sandwich norms, ~~qk-norm~~ (**lifted 2026-08-04**), K=V,
-int8, non-uniform, over-cap.
+`PrefillLast` declines: MoE, gemma4-moe, ~~sandwich norms~~ (**lifted**), ~~qk-norm~~ (**lifted**),
+K=V, int8, non-uniform, over-cap.
 
-**Result: batched CUDA prefill now covers 6 of 23 validated families** — `llama`, `mistral`,
-`phi3`, `qwen2`, `qwen2_5_vl`, and **`qwen3`** (qk-norm guard extended, below). The other 17 fall
-back to sequential, by binding guard:
+**Result: batched CUDA prefill now covers 7 of 23 validated families** — `llama`, `mistral`,
+`phi3`, `qwen2`, `qwen2_5_vl`, **`qwen3`**, and **`gemma3`** (both guards extended 2026-08-04,
+below). The other 16 fall back to sequential, by binding guard:
 
 | # | guard | families |
 |---|---|---|
 | 6 | not resident (family class) | gemma4, gpt-oss, gpt2, granitemoehybrid, llama4_text, qwen3_5_moe |
 | 3 | not resident (MLA) | deepseek_v2, deepseek_v3, kimi_k2 |
 | 2 | MoE | glm4_moe, mixtral |
-| 1 | sandwich norms | gemma3 |
 | 1 | not resident (moe-gated-shared) | qwen2_moe |
 | 1 | not resident (yarn-mscale) | mellum |
 | 1 | not resident (non-gated-mlp + ssm) | nemotron_h |
 | 1+1 | not resident (cohere features) | cohere, cohere2 |
 
-**Guard extension #1 — qk-norm (landed, `cuda.TestPrefillLast_qwen3`):** per-head Q/K RMSNorm was
-a decline; it is a per-row op (per token, per head, no cross-token reduction), so it batches exactly
-like the six existing glue kernels — `qk_norm_batched` = the M=1 `qk_norm` + an M dimension,
-**bit-identical per token**. Validated on the real Qwen3-1.7B at int4: KV bit-identical across all
-28 layers × 56 rows, last-token logits bit-identical, 64-token greedy decode byte-identical. The
-batched glu/attn kernels already covered GELU-tanh + sliding window, so no other delta surfaced.
+**Guard extension #1 — qk-norm (`cuda.TestPrefillLast_qwen3`):** per-head Q/K RMSNorm is a per-row
+op, so `qk_norm_batched` = the M=1 `qk_norm` + an M dimension, **bit-identical per token**. Validated
+on real Qwen3-1.7B @int4 (KV bit-identical all 28 layers × 56 rows, logits bit-identical, 64-token
+decode byte-identical). The batched glu/attn already covered GELU-tanh + sliding window.
 
-**Release-narrative consequence:** the batched-prefill / TTFT win (§9) is the **dense mainstream +
-qwen3 lane** ("llama/mistral/phi3/qwen2 **+ qwen3** + qwen2.5-VL") — still NOT "all prefill." Next
-cheapest: **sandwich norms → gemma3** (a batched post-norm kernel; gemma3's qk-norm/GELU/addOne are
-now all covered, so sandwich is likely its last binding guard — pending a K=V / query-scale check).
+**Guard extension #2 — sandwich norms (`cuda.TestPrefillLast_gemma3`):** Gemma norms the attn/MLP
+sublayer output *before* the residual add. `rmsnorm_f32_batched` (per-row plain RMSNorm) + wiring the
+o-proj/down GEMVs to write a temp → norm → residual-add (mirrors the decode `segB` path). With qk-norm
+already batched and the batched pre-norm already applying `(1+w)` (addOne), sandwich was gemma3's LAST
+binding guard — profiled the real Gemma-3-4B: kEqV=0/34, finalSoftcap=0, uniform geometry, so nothing
+else surfaced. Validated @int4 (KV bit-identical all 34 layers × 56 rows, logits + 64-token decode).
+*Caveat: gemma3 batches only when the gemma resident path is enabled (`GOINFER_GEMMA4_RESIDENT`); else
+it stays on the staged sequential path.*
+
+**Release-narrative consequence:** the batched-prefill / TTFT win (§9) is now **llama/mistral/phi3/
+qwen2 + qwen3 + gemma3 + qwen2.5-VL** — the dense mainstream *plus the two most-used gated families*,
+not just "dense." Still NOT "all prefill" (MoE + MLA + the not-resident classes remain sequential).
 
 ### C2. WebGPU `ForwardNoLogits` — **small, scoped, unbuilt**
 

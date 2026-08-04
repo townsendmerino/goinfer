@@ -53,6 +53,24 @@ __global__ void rmsnorm_quant_batched(const float* __restrict__ x, const float* 
     }
 }
 
+// rmsnorm_f32_batched: M rows (grid.y = m), plain in-place RMSNorm of a [H] sublayer output — no
+// quant, lands straight in the f32 residual stream. A per-token copy of rmsnorm_f32 (glue.cu) for
+// Gemma's sandwich post-attn / post-MLP norms; float reduction + (1+w) addOne byte-for-byte the M=1
+// kernel's, so batched sandwich norm is bit-identical to the sequential normF32 applied per row.
+extern "C" __global__ void rmsnorm_f32_batched(float* __restrict__ x, const float* __restrict__ w,
+                                               int H, float eps, int addOne, int M) {
+    int m = blockIdx.y; if (m >= M) return;
+    extern __shared__ float rednf[];
+    int t = threadIdx.x, nt = blockDim.x;
+    float* xm = x + (long)m * H;
+    float ss = 0.f;
+    for (int k = t; k < H; k += nt) ss += xm[k] * xm[k];
+    rednf[t] = ss; __syncthreads();
+    for (int o = nt >> 1; o > 0; o >>= 1) { if (t < o) rednf[t] += rednf[t + o]; __syncthreads(); }
+    float rnorm = rsqrtf(rednf[0] / H + eps); __syncthreads();
+    for (int k = t; k < H; k += nt) { float g = addOne ? (1.f + w[k]) : w[k]; xm[k] = xm[k] * rnorm * g; }
+}
+
 // qk_norm_batched: M tokens (grid.y = m, grid.x = head in [0, nH+nKV)). Per-head Q/K RMSNorm over
 // hd, in place, BEFORE rope_kv_batched — a per-token copy of qk_norm (fused_qkv.cu). The DOUBLE
 // sum-of-squares reduction and the (1+w) addOne path are byte-for-byte the M=1 kernel's, so batched
