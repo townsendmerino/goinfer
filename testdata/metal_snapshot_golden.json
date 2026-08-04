@@ -1,0 +1,44 @@
+[
+  {
+    "model": "mixtral-tiny",
+    "quant": "int8int8",
+    "depth": 130,
+    "argmax": 361,
+    "sha256": "2dfa5a267af18ab1e2ca5f3e629ddcaf2e95728796260e007bae39e0e685b47f"
+  },
+  {
+    "model": "mixtral-tiny",
+    "quant": "int8int8",
+    "depth": 260,
+    "argmax": 13,
+    "sha256": "8bcbad394df59b1d59bcd185f2c0857443c03bd8fc9b4288648c610804454880"
+  },
+  {
+    "model": "mixtral-tiny",
+    "quant": "int8int8",
+    "depth": 320,
+    "argmax": 12,
+    "sha256": "3f2337eb3edba5a8296f17d35ff487d2e734b31d6943a87aa7a2fa8a8608d2af"
+  },
+  {
+    "model": "gemma4-dense-scaled",
+    "quant": "int4",
+    "depth": 130,
+    "argmax": 170,
+    "sha256": "77ebd3beda1518c2fc8aee25cd9f965ab828f69d006da01b9eb070dfa8a79c76"
+  },
+  {
+    "model": "gemma4-dense-scaled",
+    "quant": "int4",
+    "depth": 260,
+    "argmax": 123,
+    "sha256": "cbeb79a7e6e29ad9aa568fbd97e9503606482075960c0d4a72f6dd7374165ba9"
+  },
+  {
+    "model": "gemma4-dense-scaled",
+    "quant": "int4",
+    "depth": 320,
+    "argmax": 52,
+    "sha256": "bfd285fe804226edb44e69724c1a7ad698c6c5d337b43ad3935ab712e082c43f"
+  }
+]
