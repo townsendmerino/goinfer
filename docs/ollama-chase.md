@@ -126,6 +126,27 @@ coalescing bought 1.34×, so the redundant-re-read / latency residual remains �
 
 Gates that held: decode byte-identical; parity manifest green; `TestE2EDecode` / `TestRealE2EDecode`.
 
+### A1-Metal. Same fix on Metal — landed (`994539c`, 2026-08-04)
+
+The Metal decode `attention` (and `attention_f32`, `attention_prefill`) carried the **same**
+one-thread-per-key uncoalesced K-read. Profiled (A0-analogue microbench, `attention` @2048 ctx):
+**~13 GB/s effective, ~3–6% of M1 peak** — the same signature, **more severe** than CUDA's ~22%.
+
+**Path 1 (reuse the batched kernel, as CUDA did) was dead here:** Metal's `attention_prefill` is the
+*same* uncoalesced code (only f16 I/O differs), **not** a coalesced kernel like CUDA's `attn_batched`
+— nothing to borrow. So the fix is a **half4/float4 vectorized K-read** (8-byte loads, **same
+sequential f32 accumulation ⇒ bit-identical**, verified 0 mismatches at nKeys 1/128/999/2048; guarded
+on `hd%4==0` with a scalar tail). The AV read was already coalesced (adjacent lanes read adjacent `d`),
+so the QK read is the whole fix.
+
+Isolated-kernel A/B @2048: **1049 → 588 µs = 1.79×** (beats CUDA's 1.34×, consistent with the worse
+starting coalescing). End-to-end is Amdahl-bounded by attention's share (~60% → **~1.3–1.4× total**);
+the exact long-context decode tok/s is **not yet measured** (needs the real-model harness, the Metal
+analogue of `TestDecodeDepthThroughput`). Applies to **every dense/GQA family** that decodes through
+this kernel. Gates green: `TestAttention`, `TestPrefill`, dense/gemma3 resident parity, dense-scaled
+geometry, paging bit-exact, shipped-kernel-shapes. **First Metal *decode* speed win** — prior Metal
+work (26B paging) was at a hardware floor. Campaign A stays *open* on Metal too (same A2 residual).
+
 ### A2. KV cache layout — *unmeasured, plausible*
 
 If the profile says uncoalesced KV reads, the fix may be a layout change rather than a kernel
