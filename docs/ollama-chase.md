@@ -141,9 +141,20 @@ on `hd%4==0` with a scalar tail). The AV read was already coalesced (adjacent la
 so the QK read is the whole fix.
 
 Isolated-kernel A/B @2048: **1049 → 588 µs = 1.79×** (beats CUDA's 1.34×, consistent with the worse
-starting coalescing). End-to-end is Amdahl-bounded by attention's share (~60% → **~1.3–1.4× total**);
-the exact long-context decode tok/s is **not yet measured** (needs the real-model harness, the Metal
-analogue of `TestDecodeDepthThroughput`). Applies to **every dense/GQA family** that decodes through
+starting coalescing). **End-to-end now MEASURED** (2026-08-04, real-model depth A/B, qwen2.5-coder-1.5b
+int8, resident, best-of-40 warm; scalar `994539c^` vs coalesced HEAD):
+
+| KV depth | scalar tok/s | coalesced tok/s | end-to-end |
+|---:|---:|---:|:---:|
+| 128 | 62.7 | 63.8 | 1.02× |
+| 1024 | 37.5 | 39.8 | 1.06× |
+| 2048 | 20.7 | 28.4 | **1.37×** |
+| 4000 | 13.2 | 18.5 | **1.40×** |
+
+The **1.37–1.40× @depth** lands squarely on the Amdahl estimate (kernel 1.79× diluted by attention's
+~half share of the per-token cost). Shallow context is ~flat (1.02×) — attention is negligible against
+the ~70 tok/s dispatch-bound Metal decode floor there; the win is strictly a **long-context** win, which
+is the regime that matters. Applies to **every dense/GQA family** that decodes through
 this kernel. Gates green: `TestAttention`, `TestPrefill`, dense/gemma3 resident parity, dense-scaled
 geometry, paging bit-exact, shipped-kernel-shapes. **First Metal *decode* speed win** — prior Metal
 work (26B paging) was at a hardware floor. Campaign A stays *open* on Metal too (same A2 residual).
@@ -196,6 +207,27 @@ Layout changes are bit-identical by construction (they move where operands live,
 they accumulate) — the same reason `int2` coalescing and A-staging were safe. But the reprofile
 says the decode kernel is occupancy-bound, not read-throughput-bound, so a relayout is not the
 lever here. Revisit only if a future profile shows uncoalesced KV traffic.
+
+### A2-Metal — same OCCUPANCY bound confirmed on Metal (2026-08-04)
+
+The Metal end-to-end depth A/B (§A1-Metal) shows the identical shape to the CUDA reprofile: A1 bought
+**1.37–1.40× @depth**, but the Metal decode `attention` still dispatches **one threadgroup per query
+head** — only nH (12 for qwen) threadgroups on a ~16–20-core GPU, occupancy-starved exactly as the
+CUDA `attn_batched` reprofile found (12 blocks, Waves/SM 0.04). Not memory-throughput-bound; the K
+read is already half4-coalesced.
+
+**A now-refuted Metal-only idea (kept so it isn't re-proposed):** *share the KV read across a GQA group*
+— one threadgroup per **KV** head processing all nH/nKV query heads, so each K/V row is read from device
+once (a bit-identical device-score variant exists that skirts the 96 KB ≫ 32 KB threadgroup limit). It
+targets the 6× GQA redundant read, which is real — **but it cuts threadgroups nH→nKV (12→2), the exact
+wrong direction for an occupancy-starved kernel.** The reprofile refutes it the same way it refuted the
+CUDA layout hypothesis: the bound is too-few-blocks, so any fix that *reduces* blocks loses.
+
+**The Metal fix is the same split-KV / tiled attention as CUDA's §A2 + B1:** split each head's key
+reduction across N threadgroups (nH → nH·N), combined in fixed tile order (bit-identical two-pass). One
+tiled-attention primitive serves both backends and both regimes (M=1 split-KV for occupancy, M>1
+query-tiling for the redundant re-read). Build it once; measure occupancy recovery on Metal separately
+(fewer cores than the 40-SM card, so the optimal N differs).
 
 ### A3. KV cache quantization — **not bit-identical**
 
