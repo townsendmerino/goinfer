@@ -386,19 +386,38 @@ watching.
 
 ## 8. Campaign D — levers not yet considered anywhere
 
-### D1. Speculative decoding — **potentially large, token-identical**
+### D1. Speculative decoding — **GO signal measured (2026-08-04); token-identical; scoped, not built**
 
-A draft model proposes k tokens; the target model verifies them in one batched forward.
-Under greedy sampling the verification step accepts only tokens the target model would have
-produced anyway, so **the emitted token stream is identical by construction** — it is
-compatible with the determinism contract in a way KV quantisation is not.
+A drafter proposes k tokens; the target verifies them in one batched forward. Under greedy the
+verify accepts only tokens the target would have produced, so **the emitted stream is identical by
+construction** — compatible with the determinism contract in a way KV quant is not.
 
-- **Worth:** commonly 2–3× on decode; the win scales with draft acceptance rate.
-- **Why it fits here specifically:** verification is a **batched M=k forward** — exactly the
-  path the prefill campaign just built and optimised. The machinery largely exists.
-- **Cost:** a draft model per target, acceptance-rate tuning, and a correctness gate proving
-  the accepted stream equals the sequential stream.
-- **Status:** entirely unmeasured. Should be scoped before anything in §5.
+**Ceiling measured** (`TestSpecVerifyCeiling`, 1.5B @ depth 1024) — the whole win hinges on the
+batched M=k verify being cheaper than k sequential decodes (decode is BW-bound; batched reads weights
+once for k). It is:
+
+| k | batched(M=k) | k×sequential | verify cheaper by |
+|---|---|---|---|
+| 4 | 8.2 ms | 20.8 ms | **2.53×** |
+| 6 | 9.7 ms | 31.0 ms | **3.20×** |
+| 8 | 11.6 ms | 41.6 ms | **3.59×** |
+
+So D1 **can win**: real speedup ≈ (verify ceiling) × (accept rate). Free **n-gram** drafts on code
+(repetitive → high accept) ⇒ a realistic **~1.6–2.5× decode**. Largest decode lever in the doc, now
+measured not speculative. **Draft choice: n-gram (free), NOT a draft model** — the WebGPU draft-model
+spec was draft-dominated (0.42×, `gpu-spec-decode-lever2.md`); n-gram has zero draft cost.
+
+**Build scope (~1.5–2 days — over a one-day box, so funded-next, not now):**
+1. *Batched all-position-logits verify* (the long pole): `PrefillLast` runs the batched stack but
+   heads only the last row; verify needs logits at all M positions (LM head for all M rows +
+   readback). `ForwardN` exists but is **sequential** (= k decodes, no win) — this is genuinely new.
+2. *N-gram drafter*: reimplement minimal on main (the `spec-decode-ngram` branch is unmerged and
+   conflict-heavy post-kernel-work — reimplement the context-lookup, don't merge).
+3. *Speculative loop + lossless gate*: draft → batched verify → accept longest greedy-matching prefix
+   + 1 bonus token → repeat. KV mgmt ≈ free (positional, overwritten). Gate: accepted stream ==
+   sequential greedy, byte-identical.
+
+**Status: GO, scoped, unbuilt.** The ceiling de-risks it; the build is the next decode campaign.
 
 ### D2. Multi-token prediction / Medusa-style heads
 
@@ -553,8 +572,9 @@ current Ollama: 1.94× → **1.41×**.
    which A does not take. The tiling primitive is available to share with B1.
 2. ~~**C1** — coverage audit~~ **DONE** (5/23 dense; the release must say "dense lane," not
    "prefill").
-3. **D1** — scope speculative decoding. Potentially the largest decode lever in the doc,
-   token-identical, and it reuses the batched forward already built.
+3. **D1** — speculative decoding: **GO signal measured** (verify ceiling 2.5–3.6× at k=4–8), scoped
+   (~1.5–2 days: batched all-position verify + n-gram drafter + loop + lossless gate). The largest
+   decode lever, token-identical — **the next decode campaign to build.**
 4. **D5** — scope the hybrid GPU/CPU layer split (ranked *alongside* D1). The right shape for the
    26B-on-8GB case; gated on the CPU-kernel decision (`plan-cpubrrr-…`), above §5/prefill.
 5. **D4** — confirm Ollama's long-context decode mechanism. Hours, sharpens A.
