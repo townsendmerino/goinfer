@@ -16,19 +16,31 @@ Measured on the RTX 2070 SUPER box, qwen2.5-coder-1.5b, q4 both sides, against *
 v0.32.5** (current) — not the 0.5.7 pin, which was ~18 months stale and produced a
 competitive claim that did not survive re-measurement.
 
-| | goinfer | Ollama v0.32.5 | verdict |
+Decode tok/s by KV depth (best-of-3, interleaved, first run dropped; re-measured 2026-08-04 **after**
+the explicit-FMA contraction fix, which changes instruction counts everywhere):
+
+| decode @ depth | goinfer | Ollama v0.32.5 | verdict |
 |---|---|---|---|
-| decode, short context | ~200 tok/s | ~187 tok/s | **parity** (+7%) |
-| decode, 2048 context | ~97 → ~133 (A1) → **~160 tok/s** (split-KV, default ≥256 ctx) | ~188 tok/s | 1.94× → **1.17× behind** |
+| 128 | **226.6** | 197.5 | **goinfer 1.15×** |
+| 512 | **207.3** | 191.7 | **goinfer 1.08×** |
+| 2048 | 160.1 (was 97; A1 + split-KV) | 186.6 | Ollama 1.17× |
+| 3900 | 123.5 | 180.7 | Ollama 1.46× |
 | prefill | 0.66 ms/tok | 0.14 ms/tok | **4.7× behind** |
-| total-request crossover | — | — | ~50 prompt tokens |
+
+**Parity across context lengths is NOT real** — goinfer is ahead ≤ ~512 ctx and behind at 2048+, the
+gap widening with depth. Ollama's flash attention holds ~flat (197 → 181 over 128→3900) while goinfer
+degrades (227 → 124). The decode crossover is ~1000 tokens. A1 coalescing + split-KV lifted 2048 from
+97 → 160 (the old "1.94× behind" → 1.17×), but did not reach parity, and 3900 is 1.46× behind. The
+remaining long-context lever is a bit-identical flash-attention-style decode (the §A2 split-KV is the
+start; the arithmetic says parity is reachable but not yet built).
 
 **Peer-independent claims that stand regardless:** CGO_ENABLED=0 with driver-only linkage,
 portable, bit-identical decode with a goldens-gated parity discipline, and 2048-token TTFT
 improved 13.1 s → 2.1 s by our own prior work.
 
-**The honest one-line position:** at parity with llama.cpp on short-context decode; behind
-at real context lengths and on prefill.
+**The honest one-line position:** *ahead* of current Ollama on short/mid-context decode (≤~512,
+1.08–1.15×), behind at long context (2048+, widening to 1.46× at 3900) and on prefill; the decode
+crossover is ~1000 tokens.
 
 ---
 
