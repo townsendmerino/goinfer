@@ -51,6 +51,10 @@ const (
 	tgReduceAttn = 128 // attention / attention_f32 / attention_prefill softmax denom; qk_norm / qk_norm_f16
 )
 
+// preciseMathCompile toggles fast-math OFF for the resident kernel library (Task 3 measurement; see
+// the CompileLibrary call in BuildResident). Default false = current shipped behavior (fast-math on).
+var preciseMathCompile bool
+
 // prefillFeatures is what the f16 MMA prefill kernels (prefill.go) actually implement: a dense
 // SiLU FFN, per-head QK-norm, a MODEL-LEVEL rope table and a MODEL-LEVEL window. Anything else
 // — MoE (which never packs the dense FFN buffers at all), or Gemma's sandwich norms / (1+w) RMS
@@ -318,7 +322,18 @@ func BuildResident(m *decoder.Model) (*Resident, error) {
 			d.ReleaseObjects()
 		}
 	}()
-	lib, err := d.CompileLibrary(allKernels, MSL3_1)
+	// preciseMathCompile (test/measurement toggle, Task 3): fast-math OFF removes the compiler's
+	// contraction/reassociation/transcendental discretion — the axis that makes within-machine
+	// bit-identity fragile to an OS toolchain update. Measure its decode-tok/s cost before adopting.
+	// Default fast-math (measured 2026-08-04: precise costs ~4% @2048 / ~7% shallow and does NOT
+	// improve CPU parity — §A2-Metal). GOINFER_PRECISE_MATH is a documented opt-in for anyone who wants
+	// bits robust to an OS-toolchain update at that cost; the snapshot golden otherwise DETECTS such
+	// drift, which is the cheaper path we chose.
+	compile := d.CompileLibrary
+	if preciseMathCompile || os.Getenv("GOINFER_PRECISE_MATH") != "" {
+		compile = d.CompileLibraryPrecise
+	}
+	lib, err := compile(allKernels, MSL3_1)
 	if err != nil {
 		return nil, err
 	}

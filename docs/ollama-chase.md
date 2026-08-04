@@ -322,10 +322,27 @@ Union = every pinned-width reduction kernel. Runs on **every `go test`** (tiny m
 both ways: byte-identical across two consecutive runs (it also validates run-to-run determinism, which
 nothing else did), and it goes **red on a width change** (flipping `tgReduceNorm` 256→128 drifted the
 gemma4 checkpoints — the H=1024 sum reorders; mixtral's H=64 norm is width-invariant, so only the truly
-coupled arm fired). **Machine-pinned**: Metal float results are deterministic run-to-run and across code
-versions on a given GPU, but not guaranteed across chip families — the golden is bit-pinned to the Mac
-that generated it. It WILL go red on a legitimate improvement or a hardware change; regenerate (the same
-refresh discipline CUDA uses): `GOINFER_UPDATE_GOLDENS=1 go test -run TestMetalSnapshotGolden ./metal/`.
+coupled arm fired). **Machine-pinned, with a guard against the refresh reflex.** Metal float results are
+deterministic run-to-run and across code versions on a given GPU, but not across chip families or OS
+toolchain versions — so the golden records the **GPU name + macOS version it was baked on** (`Apple M1
+Pro / 26.5.2`), and a drift branches the failure message: *env differs* → "HARDWARE/OS DIFFERS,
+EXPECTED, do NOT refresh unless intentionally re-baselining here"; *env same* → "SAME hardware, the bits
+moved, INVESTIGATE before refreshing." Both branches proven (env-tamper + sha-tamper). This is what stops
+the trained `GOINFER_UPDATE_GOLDENS` reflex from silently destroying the reference on a new Mac / OS bump.
+Legitimate refresh (verified change, or re-baseline on this box): `GOINFER_UPDATE_GOLDENS=1 go test -run
+TestMetalSnapshotGolden ./metal/`.
+
+**Does aikit need the same enforcement? Mostly no — one real gap.** aikit already makes the strict choice
+where parity matters (its ViT uses `CompileLibraryPrecise`) and correctly offers both compile paths, so
+no default change is warranted upstream. But `CompileLibraryPrecise` sets `setFastMathEnabled:NO` and
+**never reads it back**, while the *same function* asserts `languageVersion` against exactly this landmine
+class — and `setFastMathEnabled:` is the API Apple is deprecating (→ `MTLMathMode`), so a future macOS can
+silently no-op it and turn "precise" back into fast-math with aikit's own ViT parity gate none the wiser.
+**High-leverage aikit fix: read the fast-math option back after set and fail loudly if it didn't take**
+(mirror the languageVersion assertion; ideally migrate to `setMathMode:`). Protects aikit + every
+consumer. Lower priority (aikit's call): its Metal ViT gate is tolerance-only and its layernorm reductions
+are `tgsz`-width-coupled — the snapshot-golden + width-pin transfer, but precise math already lowers the
+drift risk there.
 
 ### A2-Metal — the bit-identity contract, the exposure, and how divergence is prevented
 
@@ -359,14 +376,17 @@ ViT path uses it, so the strict lever is one call-swap away. Where it bites, wor
 
 **How divergence is prevented — for existing kernels and future ones.** Layered, because no single
 mechanism reaches "never," and one axis can't be reached at all:
-1. **Remove the invisible axis — compile precise** *(enforcer: build-time read-back assertion, not a
-   lint).* Fast-math OFF (`CompileLibraryPrecise`, or explicit `fma()` / `metal::precise::` only where a
-   hot spot needs speed) makes the *source* fully determine the bits instead of the compiler's mood —
-   robust to an OS toolchain update, which today it is not. Enforce it the way aikit already enforces
-   `languageVersion`: read the option back after compile and fail loudly if it didn't take. One choke
-   point (the compile call), so the gate is total — a fast-math library cannot ship. Gated on cost
-   (measure decode tok/s idle); costs no goldens refresh (Metal is tolerance-gated vs the CPU goldens)
-   but *will* move the snapshot golden, so re-baseline it *after* the math-mode call.
+1. **Remove the invisible axis — compile precise. MEASURED, and NOT adopted as default (2026-08-04).**
+   Fast-math OFF (`CompileLibraryPrecise`) makes the *source* fully determine the bits — robust to an OS
+   toolchain update, which fast-math is not. But the interleaved A/B (idle, cold-run dropped) put the
+   cost at **6.7% shallow / 3.7% @2048 decode tok/s, and it did NOT improve CPU parity** (21/24 vs
+   22/24 — the gap is int8→int4 requant, not fast-math). Above the "cheap → take regardless" bar, and
+   the argument that settles it: the snapshot golden already *detects* an OS-toolchain drift (and the
+   env-branch guides the refresh), so precise buys *prevention* over *detection* — not worth a perpetual
+   4–7% on the primary metric. **Decision: fast-math stays default; robustness is via golden-detection.**
+   Kept as a documented opt-in (`GOINFER_PRECISE_MATH=1`, wired at the `BuildResident` compile call) for
+   anyone who wants OS-robust bits at that cost. If ever adopted, enforce with a read-back assertion (see
+   the aikit note below) and re-baseline the snapshot golden.
 2. **Source determines order** *(enforcer: convention + the behavioral golden below).* Cross-thread
    float sums use the pinned `tgReduce*` widths (§2) and an explicit barrier-separated tree (never a
    compiler-reassociable free reduction). A cheap grep-lint can forbid a bare width literal at a

@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"math"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -46,7 +48,7 @@ func TestMetalSnapshotGolden(t *testing.T) {
 	const maxD = 320
 	ids := []int{1, 7, 42, 100, 5, 200, 13, 88, 3, 71, 9, 17, 60, 200, 33, 2} // fixed, arbitrary valid ids
 
-	var got []snapEntry
+	got := snapGolden{Env: snapEnv{OS: macOSVersion()}}
 	for _, mm := range models {
 		name := filepath.Base(mm.dir)
 		m, err := decoder.Load(mm.dir, decoder.Options{Quant: mm.quant})
@@ -58,12 +60,15 @@ func TestMetalSnapshotGolden(t *testing.T) {
 		if err != nil {
 			t.Fatalf("BuildResident %s: %v", mm.dir, err)
 		}
+		if got.Env.GPU == "" {
+			got.Env.GPU = r.d.Name()
+		}
 		tok := ids[0]
 		for pos := 0; pos <= maxD; pos++ {
 			if checkpoints[pos] {
 				lg := r.Forward(tok, pos)
 				h := sha256.Sum256(f32ToBytes(lg))
-				got = append(got, snapEntry{Model: name, Quant: mm.quant, Depth: pos, Argmax: argmaxF(lg), SHA256: hex.EncodeToString(h[:])})
+				got.Entries = append(got.Entries, snapEntry{Model: name, Quant: mm.quant, Depth: pos, Argmax: argmaxF(lg), SHA256: hex.EncodeToString(h[:])})
 				tok = argmaxF(lg)
 			} else if pos+1 < len(ids) {
 				r.ForwardArgmax(tok, pos)
@@ -82,7 +87,7 @@ func TestMetalSnapshotGolden(t *testing.T) {
 		if err := os.WriteFile(snapGoldenPath, append(b, '\n'), 0o644); err != nil {
 			t.Fatalf("write golden: %v", err)
 		}
-		t.Logf("WROTE %d snapshot entries → %s (regenerated; verify the change was intentional)", len(got), snapGoldenPath)
+		t.Logf("WROTE %d entries → %s  (baked on %s / macOS %s; verify the change was intentional)", len(got.Entries), snapGoldenPath, got.Env.GPU, got.Env.OS)
 		return
 	}
 
@@ -90,27 +95,51 @@ func TestMetalSnapshotGolden(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read golden (%v) — first-time generate with: GOINFER_UPDATE_GOLDENS=1 go test -run TestMetalSnapshotGolden ./metal/", err)
 	}
-	var want []snapEntry
+	var want snapGolden
 	if err := json.Unmarshal(wantB, &want); err != nil {
 		t.Fatalf("parse golden: %v", err)
 	}
-	if len(want) != len(got) {
-		t.Fatalf("golden has %d entries, run produced %d — schema changed; regenerate with GOINFER_UPDATE_GOLDENS=1", len(want), len(got))
+	sameEnv := want.Env == got.Env
+	if len(want.Entries) != len(got.Entries) {
+		t.Fatalf("golden has %d entries, run produced %d — schema changed; regenerate with GOINFER_UPDATE_GOLDENS=1", len(want.Entries), len(got.Entries))
 	}
 	mism := 0
-	for i := range got {
-		if got[i] != want[i] {
+	for i := range got.Entries {
+		if got.Entries[i] != want.Entries[i] {
 			mism++
 			t.Errorf("DRIFT %s q=%s depth=%d: argmax %d→%d  sha %s→%s",
-				got[i].Model, got[i].Quant, got[i].Depth, want[i].Argmax, got[i].Argmax, want[i].SHA256[:12], got[i].SHA256[:12])
+				got.Entries[i].Model, got.Entries[i].Quant, got.Entries[i].Depth, want.Entries[i].Argmax, got.Entries[i].Argmax, want.Entries[i].SHA256[:12], got.Entries[i].SHA256[:12])
 		}
 	}
 	if mism > 0 {
-		t.Fatalf("Metal snapshot DRIFT: %d/%d checkpoints moved. Something in the Metal decode path changed the bits "+
-			"(the gate the cosine/paged gates can't provide). If the change is intentional and verified, regenerate: "+
-			"GOINFER_UPDATE_GOLDENS=1 go test -run TestMetalSnapshotGolden ./metal/", mism, len(got))
+		// Branch the guidance on env — the difference between "expected on other hardware, do NOT
+		// refresh" and "same box, real regression, investigate". This is what stops the reflexive
+		// GOINFER_UPDATE_GOLDENS reflex from silently destroying the reference on a new Mac / OS update.
+		if !sameEnv {
+			t.Fatalf("Metal snapshot DRIFT — but HARDWARE/OS DIFFERS from the golden.\n"+
+				"  golden baked on: %s / macOS %s\n  this run:        %s / macOS %s\n"+
+				"Across-machine/OS bit-identity is NOT deliverable (MSL is recompiled by your OS Metal toolchain), so this red is EXPECTED on a different Mac or after an OS update — it is NOT a regression. "+
+				"Do NOT refresh unless you are intentionally re-baselining the reference ON THIS machine; if so: GOINFER_UPDATE_GOLDENS=1 go test -run TestMetalSnapshotGolden ./metal/",
+				want.Env.GPU, want.Env.OS, got.Env.GPU, got.Env.OS)
+		}
+		t.Fatalf("Metal snapshot DRIFT on the SAME hardware/OS the golden was baked on (%s / macOS %s): %d/%d checkpoints moved — the Metal decode bits changed (width sweep, kernel rewrite, math-mode, or a fast-math shift). "+
+			"This is a REAL change the cosine/paged gates can't see. INVESTIGATE before refreshing; regenerate only once verified intentional: GOINFER_UPDATE_GOLDENS=1 go test -run TestMetalSnapshotGolden ./metal/",
+			got.Env.GPU, got.Env.OS, mism, len(got.Entries))
 	}
-	t.Logf("Metal snapshot: %d checkpoints byte-identical to golden (mixtral-tiny + gemma4-dense-scaled, depths past 128/256)", len(got))
+	if !sameEnv {
+		t.Logf("NOTE: entries match but env metadata differs (golden %s/%s vs run %s/%s) — bits happened to coincide; consider refreshing metadata.", want.Env.GPU, want.Env.OS, got.Env.GPU, got.Env.OS)
+	}
+	t.Logf("Metal snapshot: %d checkpoints byte-identical to golden on %s / macOS %s (mixtral-tiny + gemma4-dense-scaled, depths past 128/256)", len(got.Entries), got.Env.GPU, got.Env.OS)
+}
+
+type snapGolden struct {
+	Env     snapEnv     `json:"env"`
+	Entries []snapEntry `json:"entries"`
+}
+
+type snapEnv struct {
+	GPU string `json:"gpu"`
+	OS  string `json:"os"`
 }
 
 type snapEntry struct {
@@ -122,6 +151,17 @@ type snapEntry struct {
 }
 
 const snapGoldenPath = "../testdata/metal_snapshot_golden.json"
+
+// macOSVersion is the OS toolchain identity that (with the GPU) fixes the Metal bits — a mismatch
+// against the golden explains an EXPECTED drift (different Mac / OS update) vs a real regression.
+func macOSVersion() string {
+	p, err := exec.Command("sw_vers", "-productVersion").Output()
+	if err != nil {
+		return "unknown"
+	}
+	b, _ := exec.Command("sw_vers", "-buildVersion").Output()
+	return strings.TrimSpace(string(p)) + " (" + strings.TrimSpace(string(b)) + ")"
+}
 
 func f32ToBytes(v []float32) []byte {
 	b := make([]byte, 4*len(v))
