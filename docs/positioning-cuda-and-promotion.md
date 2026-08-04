@@ -2,8 +2,12 @@
 
 > **Audience:** internal strategy — written after the same-box, pinned-Ollama
 > anchor (`task-cuda-cgofree-spike.md`, `0de55d3`) showed goinfer's **cgo-free**
-> CUDA decode at **parity-to-ahead of fresh Ollama-CUDA** (190 int4 vs ~149,
-> ~1.6× WebGPU), driver-only, `CGO_ENABLED=0`. The perf question is closed. This
+> CUDA decode ahead of the then-pinned peer (190 int4 vs ~149, ~1.6× WebGPU),
+> driver-only, `CGO_ENABLED=0`. ⚠ **That "~149" peer was Ollama 0.5.7 (2025-01),
+> ~18 months stale.** Re-anchored to current **Ollama v0.32.5 (2026-07)** the CUDA
+> decode edge is short-ctx **parity** and a long-ctx loss (`benchmarks.md` §B2) — so
+> the perf framing below should read "parity-with-nuance + cgo-free," not "ahead."
+> The *strategic* reading (sell the intersection, not raw speed) holds regardless. This
 > doc records the *strategic* reading so the excitement doesn't set direction by
 > default. Two decisions: **how much to build**, and **how to promote**.
 

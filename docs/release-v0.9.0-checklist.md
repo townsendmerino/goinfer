@@ -88,7 +88,9 @@ The Metal spike measured **NO-GO** on the untuned int8 kernel (~18–30 tok/s �
 
 - [ ] Swap the GEMV to the **already-bit-exact int4 / W4A8** kernel + ILP-unroll +
       multi-row-per-threadgroup; re-measure vs the **~71 tok/s** bar (85% of same-box
-      Ollama-Metal 83.3). Timebox it.
+      Ollama-Metal 83.3). Timebox it. *(The "85%/83.3" bar is superseded — the actual
+      same-box M1 Pro figure vs **Ollama-Metal 0.32.0 (2026-07-16)** is size-dependent:
+      0.5B 1.03×, 1.5B 0.77×, `benchmarks.md` §B3.)*
 - [ ] **Its own go/no-go:** **GO** (≥ 71) → append "measured GO" to
       `task-metal-cgofree-spike.md`; it becomes a documented **parked capability** (not
       a shipped backend) and an optional 0.9.0 talking point. **NO-GO** → Metal stays

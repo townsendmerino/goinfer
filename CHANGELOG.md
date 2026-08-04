@@ -425,7 +425,10 @@ untrusted-input fuzzing hardening._
   **~71% of llama.cpp-CUDA (q4) at equal 4-bit quant** (51.7 vs 72.8 tok/s; greedy
   output matches the CPU decode bit-for-bit on the first tokens). int8 residency
   peaks ~89.7 tok/s on the 1.5B (3.5× the staged hybrid; **61% of Ollama-q8** at
-  equal int8 quant, 89.7 vs 147). v1 limits: **stateless `Generate` only**
+  equal int8 quant, 89.7 vs 147). *(Peer figures as measured for v0.5.0, 2026-06,
+  on the WebGPU backend vs then-current llama.cpp / Ollama; these are not current —
+  the cgo-free CUDA backend + the Ollama v0.32.5 re-anchor in `docs/benchmarks.md`
+  §B2 supersede them.)* v1 limits: **stateless `Generate` only**
   (`Session`/prefix-reuse/`GenerateSpeculative` fall back to the staged path),
   **16k context cap** (f32 KV), **eligible archs only** (dense Qwen2/Llama;
   MoE/Gemma/hybrid → staged). See `docs/gpu-assessment.md` §0.0 + the §1 decision

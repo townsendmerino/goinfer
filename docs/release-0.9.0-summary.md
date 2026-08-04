@@ -10,7 +10,11 @@
 
 ### CUDA (Linux box) — `cuda/`, `-tags cuda`
 - cgo-free CUDA via **gocudrv** (dlopen libcuda) + **NVRTC**. Full resident decode + prefill.
-- **Perf (measured, real q4_k_m):** 1.5B **218.6 tok/s** (~1.23× Ollama at int4); 0.5B **507.5 tok/s**.
+- **Perf (measured, real q4_k_m):** 1.5B **218.6 tok/s**; 0.5B **507.5 tok/s** (goinfer absolute).
+  ⚠ *Peer ratio re-anchored:* the earlier "~1.23×/1.47× Ollama" was vs **Ollama 0.5.7 (2025-01)**,
+  ~18 months stale. Against **current Ollama v0.32.5 (2026-07)** on the same box (`benchmarks.md`
+  §B2): 0.5B ~1.7×, 1.5B short-ctx **parity (~1.19×)**, and goinfer **loses** long-context decode
+  and prefill. Lead with the absolute tok/s + cgo-free, not a peer multiple.
 - Optimization arc: coalesced W4A8 GEMV (43%→71%→80% of peak), ILP unroll, launch diet
   (18→13 dispatches/layer), f16 group scales, on-device greedy argmax, pinned logits readback,
   and **super-kernels K1/K3a** (fold rmsnorm into the QKV / gate-up GEMV) — K1+K3a shipped
@@ -22,8 +26,10 @@
 ### Metal (Mac) — `metal/`, `-tags metal`, darwin-only
 - cgo-free Metal via **purego-objc** (dlopen Metal.framework, `objc_msgSend`, MSL 3.1 compiled at
   runtime). Full resident decode + prefill. Defused the `LC_BUILD_VERSION`/MSL-2.4 landmine.
-- **Decode perf arc: ~20 → 73.6 tok/s** (0.98–1.04× the ~71 GO bar = 85% of Ollama-Metal; 2.2×
-  the WebGPU-on-Metal baseline). Levers: threadgroup-per-head attention (fixed a hidden 68%),
+- **Decode perf arc: ~20 → 73.6 tok/s** (2.2× the WebGPU-on-Metal baseline). ⚠ *The "85% of
+  Ollama-Metal" estimate is SUPERSEDED* — the same-box M1 Pro re-measurement vs **Ollama-Metal
+  0.32.0 (2026-07-16)** is size-dependent: 0.5B **1.03×**, 1.5B **0.77×** (`benchmarks.md` §B3).
+  Don't quote a Metal speed multiple as a headline. Levers: threadgroup-per-head attention (fixed a hidden 68%),
   coalesced + Fable "Stage A" W4A8 GEMV (uint4 + staged activation), encode-ahead executor.
 - **Diagnosis (measurement-grounded): int-MAC / issue-bound**, not bandwidth/dispatch. Confirmed
   via cgo-free GPU-timestamp capture + the f16-scales-flat-GPU-time test. **Speculation ruled out**

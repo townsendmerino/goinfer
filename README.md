@@ -17,9 +17,10 @@ and runs them **in-process**. What makes it different — you don't have to choo
   offline.
 - **Fast when you want it — still cgo-free.** The default build is pure-Go CPU
   (SIMD-accelerated, NEON / AVX2). Opt into a GPU backend and it *stays* `CGO_ENABLED=0`:
-  **native CUDA** (dense decode at **~1.4–2.0× Ollama-CUDA**, server-to-server, driver-only
-  — no toolkit), **native Metal** on Apple Silicon (**at parity** with Ollama-Metal), and a
-  portable **WebGPU** backend (~60–70% of native, but runs on *any* GPU and streams
+  **native CUDA** (cgo-free, driver-only — no toolkit; vs **current Ollama v0.32.5**: ~1.7× on
+  tiny 0.5B, **parity** on 1.5B short-context, and behind at long context + on prefill — see the
+  table below), **native Metal** on Apple Silicon (**at parity on small models**, behind on larger),
+  and a portable **WebGPU** backend (~60–70% of native, but runs on *any* GPU and streams
   bigger-than-VRAM MoE weights). Going fast never costs you the single binary.
 - **Every modern model, one binary.** All four attention / sequence-mixing families —
   softmax·GQA, gated-linear (DeltaNet), state-space (Mamba-2), latent-KV (MLA) — plus dense
@@ -61,9 +62,11 @@ emit invalid JSON. Prequant the weights once to a `.giw` bundle and it reloads i
 ([docs/mellum2-resident.md](docs/mellum2-resident.md)).*
 
 *And bigger still — **Gemma 4 26B-A4B** (a 26B MoE whose ~11.4 GB of int4 experts **do not
-fit 8 GB even at 4-bit**) decodes coherently on the same card at **~17 tok/s**, streaming its
-experts from host RAM into a VRAM cache (81% hit rate) over the cgo-free CUDA backend — a model
-llama.cpp and Ollama **cannot load at all** ([docs/task-moe-streaming.md](docs/task-moe-streaming.md)).*
+fit 8 GB even at 4-bit**) decodes coherently on the same card at **~17 tok/s**, running
+**fully GPU-resident** — every expert executes on the GPU, streamed from host RAM into a VRAM
+cache (81% hit rate) over the cgo-free CUDA backend. (Current Ollama also runs this 26B on 8 GB,
+but by offloading 58% to the CPU, at ~24.5 tok/s; goinfer's distinction is all-experts-on-GPU,
+not that peers can't run it — [docs/task-moe-streaming.md](docs/task-moe-streaming.md).)*
 
 ## Try it: an LLM in one file
 
@@ -283,17 +286,23 @@ CGO_ENABLED=0 go run -tags metal ./demo/chat --backend metal --quant int8int8 \
 Both goinfer and the reference are driven through their own HTTP server — sampling,
 detokenize, and JSON all included — so there's no methodology gap to discount:
 
-| Model | goinfer CUDA | Ollama-CUDA | goinfer Metal | Ollama-Metal |
-|---|---|---|---|---|
-| Qwen2.5-Coder-0.5B | ~430 tok/s (**2.04×**) | ~211 | ~128 tok/s (**1.03×**) | ~124 |
-| Qwen2.5-Coder-1.5B | ~210 tok/s (**1.41×**) | ~149 | ~61 tok/s (**0.77×**) | ~79 |
+Peers: **Ollama-CUDA v0.32.5** (2026-07) and **Ollama-Metal 0.32.0** (2026-07-16), each on
+the same machine as its goinfer column. *(Earlier revisions of this table quoted Ollama 0.5.7
+from 2025-01 — ~18 months stale — which inflated the CUDA ratios to ~2×; re-anchored below.)*
 
-CUDA outruns tuned native CUDA; Metal is at parity on small models and issue-bound (no
-DP4A on Apple GPUs) on larger ones. Each engine is compared **only against its peer on
-the same machine** — CUDA on an RTX 2070 SUPER, Metal on an M1 Pro — so the ratios are
-meaningful but the absolute tok/s do *not* compare across the CUDA and Metal columns
-(that would be a comparison of two graphics cards, not two engines). Best of 3 warm
-runs; full provenance — hardware, driver, peer versions, method — in
+| Model | goinfer CUDA | Ollama-CUDA v0.32.5 | goinfer Metal | Ollama-Metal |
+|---|---|---|---|---|
+| Qwen2.5-Coder-0.5B | ~476 tok/s (**1.78×**) | ~268 | ~128 tok/s (**1.03×**) | ~124 |
+| Qwen2.5-Coder-1.5B · short ctx | ~221 tok/s (**1.19×**) | ~186 | ~61 tok/s (**0.77×**) | ~79 |
+| Qwen2.5-Coder-1.5B · 2048 ctx | ~133 tok/s (**0.71×**) | ~188 | — | — |
+
+**The honest read:** goinfer's CUDA edge is real only on **tiny models** (0.5B, launch-bound)
+and **short-context 1.5B** (parity, ~1.19×); at **2048 context it loses ~1.4×** and on **prefill
+it is ~4–5× behind** current Ollama (`docs/benchmarks.md` §B2). Metal is at parity on 0.5B and
+behind on 1.5B (issue-bound — no DP4A on Apple GPUs). Each engine is compared **only against its
+peer on the same machine** — CUDA on an RTX 2070 SUPER, Metal on an M1 Pro — so the absolute
+tok/s do *not* compare across the CUDA and Metal columns (that would compare two graphics cards,
+not two engines). Best of 3 warm runs; full provenance — hardware, driver, peer versions, method — in
 [docs/benchmarks.md](docs/benchmarks.md).
 
 ### What runs on the GPU

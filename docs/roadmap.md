@@ -70,7 +70,7 @@ battlegrounds now:
 |---|---|---|
 | **MTP speculative decoding** (models ship multi-token heads; no draft model; ~2x on dense) | llama.cpp (Qwen 3.6 MTP, PR #22673), Ollama 0.23.1 (Gemma 4 MTP via MLX, 2x on 31B), LM Studio 0.4.14 (stable), vLLM (Gemma 4 MTP; EAGLE 3.1 in v0.22) | Greedy draft-model spec exists, parked on CPU. **MTP doesn't change the math**: CPU decode is compute-bound, so an M=K verify pass costs ~K sequential decodes regardless of how cheap drafting is. Stays parked; revisit with a bandwidth-bound (GPU) backend. Caveat from the field: even llama.cpp sees *no* MoE single-stream win on consumer hardware. |
 | **Model freshness** | Qwen 3.6, DeepSeek (MLA), GLM-4.5/4.6, Granite 4.0, Nemotron-H, Gemma 3n, Llama 4, Phi | The race the descriptor design lets us run cheaply — now **axis-driven** (see "Positioning: attention-coverage axes" above): GLM-4.5/4.6 + Granite-4.0-H (Mamba-2) + Nemotron-H + DeepSeek-V2/V3 (MLA, latent-KV) shipped — all three efficient-attention axes covered — plus Phi-3/Phi-4 (momentum). Plan: `docs/completed/task-model-families-next.md`. Gemma 4 already in, incl. PLE (which llama.cpp struggled with). |
-| **Hardware acceleration depth** | CUDA kernel fusion (+24% on 4090), Vulkan now beating CUDA on some hardware, M5 Neural Accelerators (MLX-only, up to 4x TTFT) | Accepted trade *for WebGPU*: pure-Go CPU SIMD + opt-in WebGPU, counter-position is portability. **But "don't fight on kernels" is now measured-superseded on NVIDIA:** a cgo-free spike (dlopen libcuda, no cgo) **measured** native-CUDA decode at **218.6 tok/s = 1.96× WebGPU / 1.47× Ollama** on the 2070 SUPER (real q4_k_m e2e, int4/W4A8, 80% peak; cgo-free ldd-proven, argmax-parity a committed hard gate). Spike verdict **GO**; scoped **dense-only cgo-free-CUDA residency backend (B)** in last-mile packaging (`task-cuda-b-ship-checklist.md`, `task-cuda-cgofree-spike.md`), still `CGO_ENABLED=0`. Not a commitment to cuBLAS-class/MoE/MLA/vision kernels — each its own decision. |
+| **Hardware acceleration depth** | CUDA kernel fusion (+24% on 4090), Vulkan now beating CUDA on some hardware, M5 Neural Accelerators (MLX-only, up to 4x TTFT) | Accepted trade *for WebGPU*: pure-Go CPU SIMD + opt-in WebGPU, counter-position is portability. **But "don't fight on kernels" is now measured-superseded on NVIDIA:** a cgo-free spike (dlopen libcuda, no cgo) **measured** native-CUDA decode at **218.6 tok/s = 1.96× WebGPU** on the 2070 SUPER (real q4_k_m e2e, int4/W4A8, 80% peak; cgo-free ldd-proven, argmax-parity a committed hard gate). *(An earlier "1.47× Ollama" here was vs stale Ollama 0.5.7; vs current v0.32.5 the 1.5B edge is short-ctx parity — `benchmarks.md` §B2.)* Spike verdict **GO**; scoped **dense-only cgo-free-CUDA residency backend (B)** in last-mile packaging (`task-cuda-b-ship-checklist.md`, `task-cuda-cgofree-spike.md`), still `CGO_ENABLED=0`. Not a commitment to cuBLAS-class/MoE/MLA/vision kernels — each its own decision. |
 | **Serving surface** | mistral.rs v0.7: dynamic model load/unload, **multi-model serving**, initial **OpenAI Responses API**, prefix caching; LM Studio: MCP host + OAuth; Ollama: `launch` app integrations | **Largely closed:** multi-model + dynamic admin load/unload and the OpenAI Responses API shipped v0.4.0; prefix caching at parity; the **Anthropic Messages API** (`/v1/messages`) adds a second chat surface in v0.5.0 (Claude Code points at goinfer). Remaining true gaps: MCP host / OAuth / `launch`-style app integrations. |
 | **Quantization frontier** | Native FP8/FP4 (DeepSeek V4 in llama.cpp), TurboQuant (4.9x vs f16, tracked in llama.cpp #20969), NVFP4 on Apple | int8/int4 runtime + broad K-quant dequant coverage. FP8/FP4 is GPU-hardware-driven — not our fight on CPU. Watch TurboQuant: a CPU-implementable 3–4 bit quant with near-paper MSE could matter for the embed-demo size/quality curve. |
 
@@ -173,11 +173,12 @@ place: a **full-token on-GPU residency forward** wins. Shipped:
   dense Qwen2/Llama). Real int4 `.giw` models now run **pure-GPU** end-to-end,
   not the per-matmul staged path. Greedy output matches the CPU decode.
 - **W4A8 (int4) is the capability unlock:** a **7B int4 fits and runs pure-GPU
-  on the 8 GB card at ~51 tok/s** — the model class that does NOT fit at int8 —
-  at **~71% of llama.cpp-CUDA** tok/s at equal 4-bit quant (1.5B: 102 tok/s,
-  ~55%). The engine gap *narrows* with model size; this is a footprint/capability
-  win, not a speed record (the WebGPU dispatch model still trails CUDA's
-  megakernel). int8 decode peaks ~89.7 tok/s on the 1.5B (3.5× the staged hybrid).
+  on the 8 GB card at ~51 tok/s** — the model class that does NOT fit at int8.
+  This is a footprint/capability win, not a speed record. *(The "~71% of
+  llama.cpp-CUDA" / "1.5B 102 tok/s ~55%" figures are WebGPU-backend numbers
+  measured for v0.5.0 (~2026-06) and are stale; the cgo-free CUDA backend and the
+  current Ollama v0.32.5 re-anchor supersede them — see `benchmarks.md` §B2.)*
+  int8 decode peaks ~89.7 tok/s on the 1.5B (3.5× the staged hybrid).
 
 Deferred follow-ons (named, **not scheduled** — pick up if a use case pulls):
 
@@ -316,8 +317,11 @@ v0.4.0 ships without them.** Grouped by theme; ordered within a group by leverag
   **Status: effectively at the practical *WebGPU* ceiling. Don't grind WebGPU.**
   **UPDATE (2026-07, MEASURED e2e): "past it needs native CUDA" is realized
   cgo-free — spike is GO.** Real q4_k_m end-to-end decode measured at **218.6 tok/s
-  = 1.96× WebGPU / 1.47× Ollama** on the 2070 SUPER (int4/W4A8, 80% peak bandwidth;
-  executor-path number incl. the 0.34% channel-hop tax). cgo-free proven on the
+  = 1.96× WebGPU** on the 2070 SUPER (int4/W4A8, 80% peak bandwidth; executor-path
+  number incl. the 0.34% channel-hop tax). *(The original "1.47× Ollama" here was vs
+  **Ollama 0.5.7 (2025-01)**, ~18 months stale; against current **v0.32.5 (2026-07)**
+  the 1.5B edge is short-ctx parity (~1.19×) and a long-ctx loss — see `benchmarks.md`
+  §B2. The 1.96× WebGPU ratio is peer-independent and stands.)* cgo-free proven on the
   actual binary (`ldd`: no libnvrtc/toolkit, `CGO_ENABLED=0`), argmax equivalence a
   committed hard gate (`TestRealForwardParity`, mutation-proven to bite). Scoped
   **dense-only cgo-free-CUDA residency backend (B)** now in last-mile packaging
