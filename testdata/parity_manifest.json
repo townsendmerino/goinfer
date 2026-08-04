@@ -269,13 +269,17 @@
       ],
       "own": [],
       "deps_hash": "sha256:f8bd4af09dd897617a0ce1480d2a537614d0c56a22813a855632107ffd29ea88",
-      "status": "pending",
-      "validated_at": null,
-      "date": null,
-      "reference": null,
-      "machine": null,
-      "method": null,
-      "metrics": null
+      "status": "validated",
+      "validated_at": "b6dfbb3",
+      "date": "2026-08-04",
+      "reference": "HF f32 (TinyLlama-1.1B-Chat)",
+      "machine": "linux-62gb",
+      "method": "full-forward-oracle",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 1.00000,
+        "cosine_mean": 1.00000
+      }
     },
     "llama4_text": {
       "uses": [
@@ -329,13 +333,17 @@
       ],
       "own": [],
       "deps_hash": "sha256:f8bd4af09dd897617a0ce1480d2a537614d0c56a22813a855632107ffd29ea88",
-      "status": "pending",
-      "validated_at": null,
-      "date": null,
-      "reference": null,
-      "machine": null,
-      "method": null,
-      "metrics": null
+      "status": "validated",
+      "validated_at": "b6dfbb3",
+      "date": "2026-08-04",
+      "reference": "HF f32 (TinyMistral-248M)",
+      "machine": "linux-62gb",
+      "method": "full-forward-oracle",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 1.00000,
+        "cosine_mean": 1.00000
+      }
     },
     "mixtral": {
       "uses": [
@@ -401,13 +409,17 @@
       ],
       "own": [],
       "deps_hash": "sha256:f8bd4af09dd897617a0ce1480d2a537614d0c56a22813a855632107ffd29ea88",
-      "status": "pending",
-      "validated_at": null,
-      "date": null,
-      "reference": null,
-      "machine": null,
-      "method": null,
-      "metrics": null
+      "status": "validated",
+      "validated_at": "b6dfbb3",
+      "date": "2026-08-04",
+      "reference": "HF f32 (Qwen2.5-0.5B)",
+      "machine": "linux-62gb",
+      "method": "full-forward-oracle",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 1.00000,
+        "cosine_mean": 1.00000
+      }
     },
     "qwen2_5_vl": {
       "uses": [
