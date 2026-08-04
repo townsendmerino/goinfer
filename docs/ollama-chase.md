@@ -424,7 +424,33 @@ spec was draft-dominated (0.42×, `gpu-spec-decode-lever2.md`); n-gram has zero 
    + 1 bonus token → repeat. KV mgmt ≈ free (positional, overwritten). Gate: accepted stream ==
    sequential greedy, byte-identical.
 
-**Status: GO, scoped, unbuilt.** The ceiling de-risks it; the build is the next decode campaign.
+**Status: BUILT & MEASURED — lossless + 1.53×; blocked on a bit-identity fork (2026-08-04).**
+
+Built the full mechanism: `ngramDraft` (prompt-lookup, free), `PrefillLastN` (batched all-position
+verify — `prefillCore` refactor of `PrefillLast`), the accept-longest-prefix + bonus loop, gates.
+`TestSpecDecode` (1.5B, greedy, self-similar workload): **LOSSLESS** (200 spec tokens byte-identical to
+the batched-forward greedy stream) and **1.53×** (158 → 242 tok/s; accept-rate 0.61, 2.04 tokens/round).
+So D1 delivers.
+
+**The fork (why it's not shipped yet):** the verify uses the **batched** forward at **startPos>0**
+(appending to context) — a regime production never exercised (`PrefillLast` is only ever called at
+startPos=0). There the batched forward diverges from the **decode-step `Forward`** by **~1e-6**
+(byte-identical at startPos=0, which is all `TestPrefillLast_e2e` gated). So spec-decode is lossless
+w.r.t. the *batched* forward but **not** bit-identical to the *decode* path — enabling it would change
+output at rare near-ties, breaking the "flip a flag, same tokens" contract. rope_kv ≡ rope_kv_batched
+(mathematically identical) and K-after-rope is byte-identical (KV gate), so the cause is in
+attention-over-primed-KV; **unpinned** (`TestBatchedVsDecodeGap` is the committed repro).
+
+**Three ways forward (a decision, not a default):**
+1. **Unify the two forward paths** — find/fix the startPos>0 batched-vs-decode ULP gap; then the batched
+   verify == decode and spec is a true bit-identical drop-in. Cleanest for the thesis; cause unpinned.
+2. **Route decode through the batched path** (Forward → PrefillLast M=1) so spec and non-spec share one
+   forward — consistent, but re-baselines the decode parity goldens.
+3. **Ship spec as a documented mode** whose output is the batched-forward greedy stream — fastest to
+   ship, but concedes the exact-match-with-non-spec property at rare ties.
+
+The mechanism (drafter + batched verify + loop) is done and gated; only the path-unification decision
+gates shipping.
 
 ### D2. Multi-token prediction / Medusa-style heads
 

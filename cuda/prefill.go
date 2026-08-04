@@ -65,7 +65,27 @@ func (r *cudaResident) profToc(cat profCat, t0 time.Time) {
 // per-layer geometry, or a prompt past the KV cap — returns an error so decoder/model.go falls back to
 // the sequential KV-only prefill (which is correct for every family). Uniform-only is enforced against
 // layer 0; a non-uniform family trips the guard and declines rather than reading a wrong stride.
+// PrefillLast ingests a whole prompt in one batched pass, returning the last token's logits.
 func (r *cudaResident) PrefillLast(embeddings [][]float32, startPos int) ([]float32, error) {
+	outs, err := r.prefillCore(embeddings, startPos, false)
+	if err != nil {
+		return nil, err
+	}
+	return outs[len(outs)-1], nil
+}
+
+// PrefillLastN is the D1 (speculative-decode) verify primitive: the SAME batched pass, but returns
+// the logits at ALL M positions (row m = the target's prediction for position startPos+m+1). The
+// batched layer stack is bit-identical to sequential per position (TestPrefillLast_e2e), and the
+// final norm + LM head is applied per row exactly as PrefillLast applies it to the last — so each
+// row's logits equal a sequential Forward's, which is what makes greedy accept lossless.
+func (r *cudaResident) PrefillLastN(embeddings [][]float32, startPos int) ([][]float32, error) {
+	return r.prefillCore(embeddings, startPos, true)
+}
+
+// prefillCore runs the batched (M=len) forward. allLogits=false heads only the last row (PrefillLast);
+// allLogits=true heads every row (PrefillLastN, spec-decode verify).
+func (r *cudaResident) prefillCore(embeddings [][]float32, startPos int, allLogits bool) ([][]float32, error) {
 	M := len(embeddings)
 	if M == 0 {
 		return nil, fmt.Errorf("cuda prefill: empty prompt")
@@ -102,7 +122,7 @@ func (r *cudaResident) PrefillLast(embeddings [][]float32, startPos int) ([]floa
 	}
 	hidden, inter := r.hidden, r.inter
 
-	var out []float32
+	var outs [][]float32
 	err := r.do(func() error {
 		// --- M-sized scratch (device), freed at the end. Allocation panics on OOM (recovered by the
 		// caller's guard → declines to the sequential path), so a too-long prompt never proceeds half-set.
@@ -268,32 +288,40 @@ func (r *cudaResident) PrefillLast(embeddings [][]float32, startPos int) ([]floa
 			r.profToc(gemvCat, t)
 		}
 
-		// Final norm + LM head on the LAST row only — copy xB[M-1] into the M=1 scratch and reuse the
-		// exact Forward tail, so the returned logits are bit-identical to a sequential Forward at the
-		// last position (given identical residual, which the KV/logits gate checks). Drain the layer
-		// launches first: they run on r.stream, and the DtoH below is not ordered after that stream.
+		// Final norm + LM head, per row — copy xB[m] into the M=1 scratch and reuse the exact Forward
+		// tail, so each row's logits are bit-identical to a sequential Forward at position startPos+m
+		// (given identical residual, which the KV/logits gate checks). allLogits=false heads only the
+		// last row (the crossover-fixing PrefillLast); allLogits=true heads every row (verify). Drain
+		// the layer launches first: they run on r.stream, and the DtoH below is not ordered after it.
 		if e := r.stream.Sync(); e != nil {
 			return e
 		}
 		if e := gpu.Download(xB, xhost); e != nil {
 			return e
 		}
-		if e := gpu.Upload(r.x, xhost[(M-1)*hidden:]); e != nil {
-			return e
+		first := M - 1
+		if allLogits {
+			first = 0
 		}
-		if e := r.rms(r.x, r.finalNorm, r.aq, r.aSc); e != nil {
-			return e
+		outs = make([][]float32, M)
+		for m := first; m < M; m++ {
+			if e := gpu.Upload(r.x, xhost[m*hidden:(m+1)*hidden]); e != nil {
+				return e
+			}
+			if e := r.rms(r.x, r.finalNorm, r.aq, r.aSc); e != nil {
+				return e
+			}
+			if e := r.doG(r.lmW, r.aq, r.aSc, ArgNull(), r.logits, 0); e != nil {
+				return e
+			}
+			if e := r.stream.Sync(); e != nil {
+				return e
+			}
+			if e := gpu.ReadToHost(r.logits, r.logitsPinned); e != nil {
+				return e
+			}
+			outs[m] = append([]float32(nil), r.logitsHost...)
 		}
-		if e := r.doG(r.lmW, r.aq, r.aSc, ArgNull(), r.logits, 0); e != nil {
-			return e
-		}
-		if e := r.stream.Sync(); e != nil {
-			return e
-		}
-		if e := gpu.ReadToHost(r.logits, r.logitsPinned); e != nil {
-			return e
-		}
-		out = append([]float32(nil), r.logitsHost...)
 		return r.launchErr
 	})
 	if err != nil {
@@ -303,11 +331,16 @@ func (r *cudaResident) PrefillLast(embeddings [][]float32, startPos int) ([]floa
 	// this path serves, but kept so the contract matches Forward if a softcapped dense arch appears.
 	if r.finalSoftcap > 0 {
 		sc := r.finalSoftcap
-		for j, v := range out {
-			out[j] = sc * float32(math.Tanh(float64(v/sc)))
+		for _, out := range outs {
+			if out == nil {
+				continue
+			}
+			for j, v := range out {
+				out[j] = sc * float32(math.Tanh(float64(v/sc)))
+			}
 		}
 	}
-	return out, nil
+	return outs, nil
 }
 
 // bRmsB launches rmsnorm_quant_batched over M rows (shared = [blockDim]+[hidden]).
