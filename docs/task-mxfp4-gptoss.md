@@ -22,7 +22,8 @@ architectures. It does **not** support MXFP4, and therefore cannot run **gpt-oss
 This is a missing model family, not a performance knob. It is also the family where
 cpubrrr measured its largest margin — **~77 tok/s vs llama.cpp's ~14 tok/s on an M4 Max
 CPU, ~5×** — which says llama.cpp's MXFP4 MoE CPU path is leaving most of the available
-memory bandwidth unused. That is an unusually large, unusually specific opening.
+memory bandwidth unused. *(Those are cpubrrr's own published figures on an M4 Max — an
+external CPU-vs-CPU citation, not a goinfer measurement; used only to size the opportunity.)* That is an unusually large, unusually specific opening.
 
 The capability matters more than the speed: "runs gpt-oss:20b and 120b, in pure Go, one
 binary" is a headline. "Runs it 5× faster than llama.cpp on CPU" is the second sentence.

@@ -1,5 +1,12 @@
 # Release qualification sweep — real models, every claimed cell, canonical timings
 
+> **⚠ Peer numbers below predate the Ollama v0.32.5 re-anchor (2026-08-04).** Competitive figures
+> in this doc (e.g. Ollama-CUDA ~149, Ollama-Metal 83.3, llama.cpp-CUDA 72.8, and any "×Ollama"
+> multiple) were measured against **Ollama 0.5.7 (2025-01) / Ollama-Metal 0.32.0 / llama.cpp as of
+> v0.5.0** — historical working records, not current claims. Current same-box numbers vs Ollama
+> **v0.32.5** are in `docs/benchmarks.md` §B2 (CUDA) / §B3 (Metal).
+
+
 > **When:** after the prefill-NaN fix (the actual v0.9.0 blocker) lands, before the tag.
 > **Why it's a gate, not a chore:** this whole cycle's bugs — `Kwords%32`, the As-cap, the
 > Gemma GELU-tanh — surfaced **only on real geometries**, never on tiny fixtures or

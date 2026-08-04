@@ -1,5 +1,12 @@
 # Ship checklist: dense CUDA-residency backend (B) → downloadable artifact
 
+> **⚠ Peer numbers below predate the Ollama v0.32.5 re-anchor (2026-08-04).** Competitive figures
+> in this doc (e.g. Ollama-CUDA ~149, Ollama-Metal 83.3, llama.cpp-CUDA 72.8, and any "×Ollama"
+> multiple) were measured against **Ollama 0.5.7 (2025-01) / Ollama-Metal 0.32.0 / llama.cpp as of
+> v0.5.0** — historical working records, not current claims. Current same-box numbers vs Ollama
+> **v0.32.5** are in `docs/benchmarks.md` §B2 (CUDA) / §B3 (Metal).
+
+
 > **Status:** (B) is a **verified capability** — kernel tuned (80% peak, 1.47×
 > raw / ~parity-to-modestly-ahead discounted vs same-box Ollama), cgo-free proven
 > (`ldd`: no libnvrtc/toolkit; `e804aa6`), executor-path number with the 0.34%

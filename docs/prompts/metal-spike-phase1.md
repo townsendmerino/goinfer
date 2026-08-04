@@ -1,5 +1,12 @@
 # goinfer Metal spike — Phase 1: set the GO bar, then Layer A (with the MSL-version landmine pre-armed)
 
+> **⚠ Peer numbers below predate the Ollama v0.32.5 re-anchor (2026-08-04).** Competitive figures
+> in this doc (e.g. Ollama-CUDA ~149, Ollama-Metal 83.3, llama.cpp-CUDA 72.8, and any "×Ollama"
+> multiple) were measured against **Ollama 0.5.7 (2025-01) / Ollama-Metal 0.32.0 / llama.cpp as of
+> v0.5.0** — historical working records, not current claims. Current same-box numbers vs Ollama
+> **v0.32.5** are in `docs/benchmarks.md` §B2 (CUDA) / §B3 (Metal).
+
+
 > Continues `task-metal-cgofree-spike.md`. **Step 0 (phase 0) is done** — commit
 > `4461ca5`, baselines on the M1 Pro rig. Read the spike doc's **Findings** and
 > **Go/no-go** sections before starting; this prompt sequences the next moves and

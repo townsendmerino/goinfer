@@ -1,5 +1,12 @@
 # Metal W4A8 GEMV — optimization ask (for a fresh pass, e.g. Fable)
 
+> **⚠ Peer numbers below predate the Ollama v0.32.5 re-anchor (2026-08-04).** Competitive figures
+> in this doc (e.g. Ollama-CUDA ~149, Ollama-Metal 83.3, llama.cpp-CUDA 72.8, and any "×Ollama"
+> multiple) were measured against **Ollama 0.5.7 (2025-01) / Ollama-Metal 0.32.0 / llama.cpp as of
+> v0.5.0** — historical working records, not current claims. Current same-box numbers vs Ollama
+> **v0.32.5** are in `docs/benchmarks.md` §B2 (CUDA) / §B3 (Metal).
+
+
 You are an expert Apple-Silicon Metal / MSL kernel engineer. I have a working, correct
 decode kernel set for pure-Go LLM inference and I've hit an efficiency wall on the two
 dominant GEMV kernels. I want your best structural rewrite of the W4A8 GEMV, plus any
