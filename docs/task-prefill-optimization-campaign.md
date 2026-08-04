@@ -12,9 +12,20 @@
 **The product question is answered for the DENSE lane.** A 2048-token prompt's TTFT went from
 **13.1 s (sequential M=1) to 2.1 s (batched)** on real qwen2.5-coder-1.5b — the unusable
 long-context regime is gone; RAG / code-context / long-chat are no longer blocked *on dense models*.
-The **Ollama crossover moved ~128 → ~320 tokens**: goinfer wins total request time (prefill +
-decode) up to ~320-token prompts. Beyond that it stays behind Ollama on raw prefill throughput — a
-competitiveness gap, not a usability one, and structural (see the ceiling).
+That absolute 6.17× is a **peer-independent engineering result** and it stands.
+
+> **⚠ The "crossover ~128 → ~320 tokens" below was measured against Ollama 0.5.7 (Jan 2025), which
+> was re-discovered on 2026-08-04 to be ~18 months stale. Against CURRENT Ollama (v0.32.5), the
+> crossover collapses to ~50 tokens — goinfer's decode edge is now ~1.19× at 1.5B short-context and
+> it is *behind* at long context and on prefill. Treat every "crossover"/"wins short prompts"
+> statement in this doc as an ENGINEERING result vs a fixed historical peer, NOT a current
+> competitive claim. The current-peer numbers and the honest framing are in `docs/benchmarks.md`
+> §B2's re-anchor box. This does not change the engineering (bit-identical, the levers, the
+> attribution lessons) — only the competitive framing.**
+
+The **Ollama crossover moved ~128 → ~320 tokens** *(vs 0.5.7 — historical; see the warning above)*:
+goinfer wins total request time up to ~320-token prompts against that peer. Beyond that it stays
+behind on raw prefill throughput — a competitiveness gap, not a usability one, and structural.
 
 > **SCOPE CAVEAT — this does NOT cover the 26B (or any gemma4moe/MoE that declines to sequential).**
 > `PrefillLast` guards out gemma4moe, so gemma-4-26b-a4b still falls back to the per-token loop and

@@ -8,8 +8,12 @@
 >
 > **The lane.** goinfer runs open-weight model weights *in-process, in pure Go* — the
 > single-file, zero-install, HF-parity-gated lane. The native engines (llama.cpp,
-> Ollama, vLLM, mistral.rs) are far broader, and faster everywhere except the one lane
-> the cgo-free CUDA backend now wins outright (dense 4-bit decode — §B2); the Go *bindings*
+> Ollama, vLLM, mistral.rs) are far broader, and — against **current** Ollama (v0.32.5, 2026-07) —
+> faster or at parity almost everywhere; the cgo-free CUDA backend holds a real edge only on
+> **tiny-model** dense 4-bit decode (0.5B ~1.7×, launch-bound) and reaches **parity at 1.5B**, while
+> losing long-context decode and prefill (§B2, re-anchored to v0.32.5). Its durable wins are
+> peer-independent: pure-Go/no-native-dep, model-in-binary, bit-identical decode, and running a 26B
+> on an 8 GB card (§B4). The Go *bindings*
 > (gollama.cpp, yzma) reach llama.cpp's speed but still ship its native `.so`; the
 > pure-Go *ports* (llama2.go lineage) are archived toys. Among the peers surveyed,
 > goinfer is the only maintained runtime that executes production-scope weights in
@@ -39,12 +43,17 @@ same-quant, same-machine is the whole discipline.
 Reproduce goinfer's side end-to-end (and get the verbatim peer commands) with
 [`scripts/bench_compare.sh`](../scripts/bench_compare.sh).
 
-**Pinned peer, kept in place.** The §B2 comparison's legitimacy rests on the *exact* peer
-version; reinstalling later risks silent version drift (a newer Ollama changes prefill/decode
-behavior). Ollama **0.5.7** is therefore kept as a user-space standalone binary at
-`~/ollama-587/bin/ollama` on the RTX 2070 SUPER box (run `OLLAMA_HOST=127.0.0.1:11435
-OLLAMA_MODELS=~/ollama-587/models ~/ollama-587/bin/ollama serve`; the 1.5B is imported as
-`q15`). Do not delete it; re-measure crossovers against this binary, not a fresh install.
+**Two pinned peers — a CURRENT one and a historical one.** A live competitive claim must be
+measured against the *current* peer; a *reproducible* historical row is kept beside it. As of
+2026-08-04:
+- **Current: Ollama v0.32.5** (2026-07-27) at `~/ollama-0325` (`OLLAMA_HOST=127.0.0.1:11436
+  OLLAMA_MODELS=~/ollama-0325/models LD_LIBRARY_PATH=~/ollama-0325/lib/ollama
+  ~/ollama-0325/bin/ollama serve`). **All current §B2 claims use this** (see the re-anchor box in §B2).
+- **Historical: Ollama 0.5.7** (2025-01-16) at `~/ollama-587/bin/ollama` (port 11435). Kept ONLY to
+  reproduce the labeled-historical rows — it is **~18 months stale** and must **never** back a current
+  claim. The original §B2 tables were measured against it; that was the bug corrected on 2026-08-04.
+
+Both import the 1.5B as `q15`. When re-measuring, use v0.32.5; keep 0.5.7 for the historical rows.
 
 **Forward vs serve split (new — future rows may state both).** Every published row here is a
 **serve-path, client-wall-clock** number (prefill, sampling, detok, HTTP all inside it) — the
@@ -182,6 +191,48 @@ gpu-assessment — cited there.
 
 ### B2. cgo-free CUDA (`-tags cuda`) vs Ollama-CUDA — 4-bit both sides
 
+> **⚠ RE-ANCHORED TO CURRENT OLLAMA (2026-08-04). Read this before the historical rows below.**
+> The tables further down were measured against **Ollama 0.5.7 (released 2025-01-16)**. Current
+> Ollama is **v0.32.5 (2026-07-27)** — ~18 months and a new inference engine + flash attention
+> newer. Benchmarking a live claim against an 18-month-old peer is not honest, so §B2 was
+> **re-measured against v0.32.5** on the same RTX 2070 SUPER (installed at `~/ollama-0325`, kept
+> beside the pinned 0.5.7). The competitive picture changed materially:
+>
+> | metric (q4_K_M, best of 3, decode-only server-reported) | goinfer | Ollama 0.5.7 | **Ollama v0.32.5** |
+> |---|---|---|---|
+> | 0.5B decode | ~476 tok/s | 211 | **268** |
+> | 1.5B decode, short ctx | ~221 tok/s | 149 | **186** |
+> | 1.5B decode, **2048 ctx** | **~97 tok/s** | — | **~188** |
+> | 1.5B prefill | ~0.66 ms/tok | ~0.17 | **~0.14** |
+>
+> **The honest current claims:**
+> - **0.5B: goinfer still ~1.7× ahead** (476 vs 268). Tiny-model decode is launch/issue-bound, and
+>   the cgo-free path's cheap per-token dispatch is a real, durable edge in that regime.
+> - **1.5B short context: PARITY** (~1.19×, not the 1.41× vs 0.5.7). goinfer is marginally ahead; do
+>   not call it a win.
+> - **1.5B long context (2048): goinfer is BEHIND ~1.9×** (97 vs 188) — its decode slows with KV
+>   depth where current Ollama holds rate. The old §B2 never measured this.
+> - **Prefill: Ollama is ~4–5× faster/token.** The batched-prefill campaign (below) is real
+>   *engineering* — bit-identical, crossover 128→320 **against 0.5.7** — but it does **not** make
+>   goinfer competitive on prefill against the current peer.
+> - **The Ollama crossover collapses ~320 → ~50 tokens** against v0.32.5: with a ~1.19× short-ctx
+>   decode edge and ~4–5× slower prefill, goinfer wins total request time only for trivially short
+>   prompts. The "wins short/medium prompts" framing was an artifact of the stale peer.
+>
+> **What is peer-independent and still true** (this is where the release should lead):
+> - **cgo-free** (CGO_ENABLED=0, driver-only `ldd` — no libcuda/libnvrtc linked), **portable**,
+>   **bit-identical** decode.
+> - **The batched-prefill campaign as an absolute engineering result:** real qwen2.5-coder-1.5b
+>   **2048-token TTFT 13.1 s → 2.1 s** (6.17× vs the old sequential path), every step bit-identical
+>   (KV all-layers×rows + 64-token byte-identical decode) — a measured win with **no peer involved**.
+>   The long-context regime went from unusable to usable. (The competitive *crossover* framing is
+>   retired above; the *engineering* result stands.)
+> - **§B4's 26B-A4B at 16.98 tok/s on an 8 GB card** — a capability claim that needs no peer (subject
+>   to the v0.32.5 re-verification noted in §B4: confirm the current peer still fails to load it).
+>
+> Everything below this box is a **labeled historical record (vs Ollama 0.5.7, 2025-01-16)**, not a
+> current competitive claim.
+
 The `cuda/` backend is a **driver-JIT, CGO_ENABLED=0** path (dlopen `libcuda` via
 purego; PTX embedded, no toolkit at build or run time — re-verified by `ldd` at the
 commit below showing no `libcuda`/`libnvrtc` linked). It admits an arch only when it
@@ -196,7 +247,7 @@ expert, YaRN mscale, logit softcap).
 Provenance, all rows: **RTX 2070 SUPER**, driver **595.58.03** / Ryzen 7 3700X ·
 goinfer commit **`7557723`**, **2026-07-16** · peer **Ollama 0.5.7** · both sides
 q4_K_M, warm (`/api/ps` shows `size_vram == size`, 100% GPU), greedy (`temperature:0`),
-256-token completions (both hit the cap), **best of 3 warm runs** (the first run after
+256-token completions (both hit the cap), **best of 3 warm runs**. **These rows are HISTORICAL (peer Ollama 0.5.7, 2025-01-16); the current-peer numbers are in the re-anchor box above.** (the first run after
 load is discarded as a warmup outlier on both sides).
 
 **Method — server-to-server, identical on both sides.** Each engine is driven through
@@ -205,7 +256,7 @@ its *own* HTTP server (goinfer `cmd/serve` `/v1/chat/completions`; Ollama
 JSON, and HTTP are inside *both* numbers. This is the only methodology-symmetric
 comparison on this page.
 
-| model · q4_K_M (same card, warm, greedy, wall-clock) | goinfer (`-tags cuda`) | Ollama-CUDA 0.5.7 | goinfer vs peer |
+| **HISTORICAL (vs Ollama 0.5.7, 2025-01-16 — see re-anchor box above)** · q4_K_M | goinfer (`-tags cuda`) | Ollama 0.5.7 | goinfer vs 0.5.7 |
 |---|---|---|---|
 | Qwen2.5-Coder-0.5B | **429.8 tok/s** | **211.1** | **2.04×** |
 | Qwen2.5-Coder-1.5B | **210.0 tok/s** | **149.3** | **1.41×** |
