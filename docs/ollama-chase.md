@@ -19,7 +19,7 @@ competitive claim that did not survive re-measurement.
 | | goinfer | Ollama v0.32.5 | verdict |
 |---|---|---|---|
 | decode, short context | ~200 tok/s | ~187 tok/s | **parity** (+7%) |
-| decode, 2048 context | ~97 → ~133 (A1) → **~160 tok/s** (split-KV, opt-in) | ~188 tok/s | 1.94× → **1.17× behind** |
+| decode, 2048 context | ~97 → ~133 (A1) → **~160 tok/s** (split-KV, default ≥256 ctx) | ~188 tok/s | 1.94× → **1.17× behind** |
 | prefill | 0.66 ms/tok | 0.14 ms/tok | **4.7× behind** |
 | total-request crossover | — | — | ~50 prompt tokens |
 
@@ -193,13 +193,18 @@ Built as a 3-kernel split (`decode_splitkv.cu`, own file): `splitkv_scores` (til
 (each thread the whole per-dim fold, tiled over dims). **Bit-identical** to attn_batched(M=1)
 (`TestSplitKV_bitIdentical`: stream + 151936 logits byte-identical at depth 2048). **2048-ctx decode
 133 → 160 tok/s (1.20×)**; long-ctx total now 99.5 → 160 = **1.61×** over glue, gap to Ollama
-**1.41× → 1.17×**. Opt-in via `GOINFER_SPLITKV_ATTN` (−3% at shallow ctx from 3 launches ⇒ needs a
-context threshold before default-on).
+**1.41× → 1.17×**. **Default-on**, gated at runtime on `nKeys ≥ 256` (measured crossover: break-even
+256, win from 384+, −3% only at 128 → shallow decode keeps `attn_batched`, byte-identical either
+way); `GOINFER_SPLITKV_ATTN=0` force-disables. Bit-identity gated on GQA/hd=128/no-window (qwen2.5)
+AND hd=256/windowed (gemma3, winStart>0).
 
-**Residual toward parity:** ncu shows `splitkv_vsum` is the new bottleneck (50 µs, 3.8% occupancy —
-its bit-identity ceiling is nH·hd parallelism). Next: **bit-identical V-sum ILP unroll** (independent
-`v[s][d]` loads hoisted, adds stay in ascending-s order) to hide latency at low occupancy — the lever
-from 160 toward ~188+. Shares its tiling primitive with **B1** (prefill query-tiling).
+**Campaign A closed at the bit-identity ceiling (~160, 1.17× behind — not full parity).** ncu showed
+`splitkv_vsum` the residual bottleneck (50 µs, 3.8% occupancy = the nH·hd parallelism ceiling). The
+one bit-identical lever left — a **V-sum ILP unroll** — was **tried and REFUTED**: nvcc already
+pipelines the scalar loop's independent loads, so a clean unroll landed 158 vs 160 (no gain) and a
+naive-indexed one regressed to 111. Pushing past ~160 needs a non-bit-identical reduction (the §7
+fork), which Campaign A does not take. The tiling primitive still stands to be shared with **B1**
+(prefill query-tiling). See `docs/task-decode-splitkv-attention.md`.
 
 ### A2-old. KV cache layout (kept for the record) — *not indicated*
 
@@ -541,10 +546,11 @@ current Ollama: 1.94× → **1.41×**.
 
 ## 12. Suggested order
 
-1. **Campaign A** — ~~profile~~ (A0), ~~coalescing fix~~ (A1, 1.34×), ~~reprofile~~ (A1-reprofile:
-   bound moved to occupancy). **Next build: bit-identical split-KV decode attention** (12→12·N
-   blocks) — converges with B1's tiled primitive. NOT a KV relayout (A2 refuted). Still the only
-   reachable parity. Run **D4** first to confirm the target (hours).
+1. ~~**Campaign A**~~ **CLOSED** — A0 profile, A1 coalescing (1.34×), A1-reprofile (→occupancy), D4
+   (Ollama=flash-attn, confirmed), split-KV decode attention (default-on, bit-identical, +1.20× @2048).
+   Long-ctx decode **99.5 → 160 tok/s = 1.61×**, gap to Ollama **1.94× → 1.17×**. Stopped at the
+   bit-identity ceiling (V-sum ILP unroll refuted); full parity needs the §7 non-bit-identical fork,
+   which A does not take. The tiling primitive is available to share with B1.
 2. ~~**C1** — coverage audit~~ **DONE** (5/23 dense; the release must say "dense lane," not
    "prefill").
 3. **D1** — scope speculative decoding. Potentially the largest decode lever in the doc,

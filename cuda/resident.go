@@ -26,6 +26,12 @@ var (
 
 const cudaCtxCap = 4096 // resident KV capacity (positions); staged path handles longer.
 
+// splitkvMinKeys: the decode attention uses the high-occupancy split-KV path only at/above this KV
+// depth. Below it the single-block attn_batched wins (the 3-launch overhead outweighs occupancy) —
+// measured crossover (TestSplitKVCrossover, 1.5B): break-even at 256, a clear win from 384+ (up to
+// 1.20× at 2048), a ~3% loss only at 128. 256 captures the win with no measured shallow regression.
+const splitkvMinKeys = 256
+
 // cudaWQ is a device projection weight in whatever precision the checkpoint stored it.
 type cudaWQ struct {
 	kind string
@@ -1184,9 +1190,10 @@ func (r *cudaResident) launchToken(emb []float32, pos int, head bool) error {
 		if Ly.window > 0 && nKeys > int(Ly.window) {
 			nWin = int(Ly.window)
 		}
-		if r.splitkvAttn {
-			// Campaign-A split-KV: high-occupancy, bit-identical to attn_batched(M=1). Opt-in
-			// (GOINFER_SPLITKV_ATTN); fills the SMs the single-block kernel leaves idle at long ctx.
+		if r.splitkvAttn && r.skScores != (Pipeline{}) && nKeys >= splitkvMinKeys {
+			// Campaign-A split-KV: high-occupancy, BIT-IDENTICAL to attn_batched(M=1) (proven by
+			// TestSplitKV_bitIdentical) — fills the SMs the single-block kernel leaves idle at long ctx.
+			// Gated on nKeys≥splitkvMinKeys so shallow decode keeps the cheaper single-block path.
 			_ = r.splitKVAttnDecode(l, pos)
 		} else if r.prefillReady {
 			// Coalesced M=1 decode attention: attn_batched with M=1 is BIT-IDENTICAL to the glue

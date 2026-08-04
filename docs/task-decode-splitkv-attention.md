@@ -123,14 +123,29 @@ Total kernel 83.7 µs vs attn_batched 134.2 µs. The scores parallelized as desi
 now the bottleneck** — its bit-identity ceiling is nH·hd parallelism (1536 threads = 48 warps),
 latency-starved at 3.8% occupancy.
 
-### Next increment (toward parity): bit-identical V-sum ILP unroll
+### V-sum ILP unroll — TRIED, **REFUTED** (2026-08-04)
 
-The V-sum's `for s: acc += sc[s]·v[s][d]` is a dependent chain on `acc`, but the **loads** of
-`v[s][d]` for different `s` are independent. **Unrolling the s-loop** (issue N loads, then N adds in
-ascending-s order) exposes memory-level parallelism per thread → hides latency at the unavoidable low
-occupancy, while the adds stay in the exact fold order ⇒ **still bit-identical.** This is the lever to
-push 160 → toward ~188+. (Also: gate split-KV behind a context threshold before default-on, so the
-−3% shallow case takes the attn_batched path.)
+The idea: the V-sum's `for s: acc += sc[s]·v[s][d]` chains on `acc`, but the `v[s][d]` loads for
+different `s` are independent, so unrolling (issue N loads, then N adds ascending-s) should add
+memory-level parallelism while staying bit-identical (single accumulator, in-order adds). Measured
+otherwise: a naive U=4 unroll with `(long)(s+k)*kvDim` indexing **regressed to 111** (extra 64-bit
+multiplies broke pointer strength-reduction); a clean advancing-pointer U=4 unroll landed **158 vs
+the scalar 160 — no gain.** nvcc already pipelines the scalar loop's independent loads; the manual
+unroll only adds register pressure. Multiple accumulators are forbidden (they reorder the fold).
+**Reverted to the scalar loop.** The V-sum is at its bit-identical latency floor; pushing past ~160
+would need a non-bit-identical reduction (the §7 fork), which Campaign A does not take. **Split-KV
+lands at 160 tok/s (1.61× over glue, 1.17× behind Ollama) — a solved-as-far-as-bit-identity-allows
+result, not full parity.**
+
+### Default-on with a context threshold — LANDED (2026-08-04)
+
+Crossover measured (`TestSplitKVCrossover`, 1.5B): split-KV **breaks even at nKeys=256** and wins
+from 384+ (1.02 → 1.20× at 2048); it loses ~3% only at 128. So split-KV is now **default-on**, gated
+at runtime on **`nKeys ≥ splitkvMinKeys (256)`** — long-context decode gets the win, shallow decode
+keeps the single-block `attn_batched` (byte-identical either way). `GOINFER_SPLITKV_ATTN=0`
+force-disables (A/B / rollback). A/B confirms: depth128 unchanged (225→227), depth2048 133→160.
+Bit-identity gated on both the GQA/hd=128/no-window path (qwen2.5, `TestSplitKV_bitIdentical`) and
+the hd=256/windowed path (gemma3, `TestSplitKV_bitIdentical_gemma3`, winStart>0).
 
 ## Why this one is worth it (recap from §4)
 

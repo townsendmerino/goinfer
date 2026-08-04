@@ -97,3 +97,80 @@ func TestSplitKV_bitIdentical(t *testing.T) {
 	t.Logf("SPLIT-KV BIT-IDENTICAL: 24-token decode stream + final logits (%d) match attn_batched(M=1) at depth %d",
 		len(baseLogits), D)
 }
+
+// TestSplitKV_bitIdentical_gemma3 broadens the gate to the paths qwen2.5 doesn't exercise: hd=256 AND
+// sliding-window layers (winStart>0). Same A/B on real Gemma-3-4B at a depth past the window, so the
+// split-KV per-layer winStart matches attn_batched's. Heavy; gated.
+//
+//	GOINFER_HEAVY_TESTS=1 go test -tags cuda -run TestSplitKV_bitIdentical_gemma3 -v
+func TestSplitKV_bitIdentical_gemma3(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
+		t.Skip("set GOINFER_HEAVY_TESTS=1 (loads Gemma-3-4B)")
+	}
+	t.Setenv("GOINFER_GEMMA4_RESIDENT", "1")
+	const path = "/home/francis/models/gemma-3-4b-it-Q4_K_M.gguf"
+	if err := gc.Init(); err != nil {
+		t.Skipf("cuInit: %v", err)
+	}
+	if _, err := gc.GetDevice(0); err != nil {
+		t.Skipf("no device: %v", err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Skipf("no fixture at %s", path)
+	}
+	mc, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "int4"})
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	defer mc.Close()
+	rf := mc.ResidentForwardForTest().(*cudaResident)
+	if rf.skScores == (Pipeline{}) {
+		t.Fatal("split-KV kernels did not load")
+	}
+	_, _, _, _, _, _, vocab := mc.Dims()
+
+	const D = 1536 // past a typical gemma3 sliding window (1024) so local layers have winStart>0, and >256
+	emb := func(i int) []float32 { return mc.EmbedResidentForTest((i*2654435761 + 1) % (vocab - 1)) }
+	prefill := make([][]float32, D)
+	var s uint32 = 424242
+	for i := range prefill {
+		s = s*1664525 + 1013904223
+		prefill[i] = append([]float32(nil), emb(int(s>>8)%vocab)...)
+	}
+	run := func(useSplitKV bool) ([]float32, []int) {
+		rf.splitkvAttn = useSplitKV
+		lg, e := rf.PrefillLast(prefill, 0)
+		if e != nil {
+			t.Fatalf("prefill (splitKV=%v): %v", useSplitKV, e)
+		}
+		cur := append([]float32(nil), lg...)
+		stream := make([]int, 0, 16)
+		for i := 0; i < 16; i++ {
+			tok := argmaxF(cur)
+			stream = append(stream, tok)
+			l, e := rf.Forward(emb(tok), D+i)
+			if e != nil {
+				t.Fatalf("decode (splitKV=%v) step %d: %v", useSplitKV, i, e)
+			}
+			cur = append([]float32(nil), l...)
+		}
+		return cur, stream
+	}
+	baseLogits, baseStream := run(false)
+	skLogits, skStream := run(true)
+	for i := range baseStream {
+		if baseStream[i] != skStream[i] {
+			t.Fatalf("decode diverged at step %d: attn_batched %d vs split-KV %d", i, baseStream[i], skStream[i])
+		}
+	}
+	mism := 0
+	for i := range baseLogits {
+		if baseLogits[i] != skLogits[i] {
+			mism++
+		}
+	}
+	if mism != 0 {
+		t.Fatalf("final logits differ in %d/%d — split-KV not bit-identical on gemma3 (hd=256/windowed)", mism, len(baseLogits))
+	}
+	t.Logf("SPLIT-KV BIT-IDENTICAL (gemma3, hd=256, windowed): stream + logits (%d) match at depth %d", len(baseLogits), D)
+}

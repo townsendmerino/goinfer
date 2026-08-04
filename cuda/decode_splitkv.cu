@@ -67,6 +67,13 @@ extern "C" __global__ void splitkv_softmax(
 
 // splitkv_vsum: each thread owns one output dim d and folds Σ_s sc[s]·v[s][d] in ascending s — the
 // WHOLE per-d reduction, identical to attn_batched. grid nH × ⌈hd/Dtile⌉ blocks fills the SMs.
+//
+// This is the bit-identity ceiling of the split (nH·hd threads, ncu: 3.8% occupancy — latency-bound).
+// A manual ILP unroll (U=4, hoisting the independent v[s][d] loads) was tried and REFUTED: with clean
+// advancing-pointer indexing it landed 158 vs the scalar 160 (no gain — nvcc already pipelines the
+// scalar loop's independent loads), and a naive `(long)(s+k)*kvDim` unroll REGRESSED to 111 (extra
+// 64-bit multiplies). Multiple accumulators are forbidden (they reorder the fold). So the scalar loop
+// stands; further vsum gains would need a non-bit-identical reduction. See task-decode-splitkv-attention.
 extern "C" __global__ void splitkv_vsum(
     const float* __restrict__ scStore, const float* __restrict__ vc,
     const float* __restrict__ invStore, int nH, int nKV, int hd, int winStart, int nKeys,

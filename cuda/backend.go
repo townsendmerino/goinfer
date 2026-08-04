@@ -511,7 +511,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				if skOK {
 					r.skScoreBuf = r.af(r.nH * cudaCtxCap)
 					r.skInvBuf = r.af(r.nH)
-					r.splitkvAttn = os.Getenv("GOINFER_SPLITKV_ATTN") != ""
+					// Default ON (bit-identical; gated at runtime on nKeys≥splitkvMinKeys so shallow
+					// decode is unaffected). GOINFER_SPLITKV_ATTN=0 force-disables it (A/B / rollback).
+					r.splitkvAttn = os.Getenv("GOINFER_SPLITKV_ATTN") != "0"
 				}
 			}
 		}
