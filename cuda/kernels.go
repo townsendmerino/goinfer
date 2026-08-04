@@ -45,6 +45,15 @@ var gemvBatchedPTX []byte
 //go:embed testdata/prefill_batched.ptx
 var prefillBatchedPTX []byte
 
+// decodeSplitKVPTX: the high-occupancy, bit-identical decode attention (Campaign A) — splitkv_scores,
+// splitkv_softmax, splitkv_vsum. The single-block attn_batched(M=1) is split along its INDEPENDENT
+// axes (scores over keys, V-sum over dims) so every order-dependent softmax fold stays whole and
+// in-order → byte-identical to attn_batched(M=1), but fills the SMs. Own file (decode_splitkv.cu);
+// audited glue.ptx / moe.ptx untouched. See docs/task-decode-splitkv-attention.md.
+//
+//go:embed testdata/decode_splitkv.ptx
+var decodeSplitKVPTX []byte
+
 // gemvStagedPTX: gemv_w4a8_staged — the activation-staged batched GEMV. Bit-identical to
 // gemv_w4a8_fwd (facc live in registers across all K-chunks, single warp-reduce), but stages the
 // [MT,KC] activation tile in shared memory so it is read once per block instead of once per output

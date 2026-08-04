@@ -19,7 +19,7 @@ competitive claim that did not survive re-measurement.
 | | goinfer | Ollama v0.32.5 | verdict |
 |---|---|---|---|
 | decode, short context | ~200 tok/s | ~187 tok/s | **parity** (+7%) |
-| decode, 2048 context | ~97 → **~133 tok/s** (A1 coalescing, `1a1914b`) | ~188 tok/s | 1.94× → **1.41× behind** |
+| decode, 2048 context | ~97 → ~133 (A1) → **~160 tok/s** (split-KV, opt-in) | ~188 tok/s | 1.94× → **1.17× behind** |
 | prefill | 0.66 ms/tok | 0.14 ms/tok | **4.7× behind** |
 | total-request crossover | — | — | ~50 prompt tokens |
 
@@ -180,26 +180,26 @@ idle, and the 12 live blocks can't hide their own memory latency (scoreboard sta
 14-cycle stall average). It is **not** register/shared-limited (block limits 7–16) — purely too few
 blocks. Nothing is throughput-saturated (DRAM 9.5%, Compute 5.4%).
 
-### A2. ~~KV cache layout~~ — **REFUTED by the A1-reprofile; the fix is split-KV parallelism**
+### A2. Split-KV decode attention — **LANDED, opt-in, bit-identical (2026-08-04)**
 
-The layout hypothesis assumed uncoalesced KV reads. The reprofile shows the reads are already
-coalesced (L1TEX 38%, DRAM 9.5%) — the kernel is **not** memory-throughput-bound, so a relayout
-has nothing to fix. **The profile names parallelism over the key dimension**: split each head's
-2048-key reduction across N blocks (12 → 12·N), filling the SMs — the flash-attention / split-KV
-shape.
+The A1-reprofile refuted the KV-layout hypothesis (reads already coalesced) and named **occupancy**:
+12 blocks on 40 SMs. The fix is parallelism over the *independent* axes, **not** a relayout and not
+FA's non-bit-exact online rescale. Full design + the associativity argument (why a contiguous
+key-split fails but a scores-over-keys / V-sum-over-dims split is byte-identical) in
+`docs/task-decode-splitkv-attention.md`. D4 confirmed Ollama does exactly this via flash attention.
 
-**This lands on the bit-identity fork.** A naive split-KV combines partial softmaxes with online
-rescaling → changes the reduction order → **not bit-identical**. A bit-identical split needs the
-two-pass structure — materialize per-tile scores, one global-max reduction, then an exp-weighted
-sum combined in fixed tile order (reproducing the serial s-order) — which is **the same primitive
-as B1 (prefill query-tiling**, `task-prefill-attention.md`). So Campaign A's decode fix and B1
-**converge**: build the bit-identical tiled/split attention once, use it for both M=1 decode
-(split-KV for occupancy) and M>1 prefill (query-tiling for redundant-re-read). **D4** (confirm
-Ollama runs flash-attention split-KV at long ctx) would validate the target before building.
+Built as a 3-kernel split (`decode_splitkv.cu`, own file): `splitkv_scores` (tile over keys),
+`splitkv_softmax` (exact 128-wide partition+tree → byte-identical max/denominator), `splitkv_vsum`
+(each thread the whole per-dim fold, tiled over dims). **Bit-identical** to attn_batched(M=1)
+(`TestSplitKV_bitIdentical`: stream + 151936 logits byte-identical at depth 2048). **2048-ctx decode
+133 → 160 tok/s (1.20×)**; long-ctx total now 99.5 → 160 = **1.61×** over glue, gap to Ollama
+**1.41× → 1.17×**. Opt-in via `GOINFER_SPLITKV_ATTN` (−3% at shallow ctx from 3 launches ⇒ needs a
+context threshold before default-on).
 
-*The arithmetic still says parity is reachable (§4): occupancy is a solvable bound, unlike the
-prefill tensor-core ceiling (§7). This stays Campaign A's next build — now correctly scoped as
-split-KV occupancy, not a KV relayout.*
+**Residual toward parity:** ncu shows `splitkv_vsum` is the new bottleneck (50 µs, 3.8% occupancy —
+its bit-identity ceiling is nH·hd parallelism). Next: **bit-identical V-sum ILP unroll** (independent
+`v[s][d]` loads hoisted, adds stay in ascending-s order) to hide latency at low occupancy — the lever
+from 160 toward ~188+. Shares its tiling primitive with **B1** (prefill query-tiling).
 
 ### A2-old. KV cache layout (kept for the record) — *not indicated*
 

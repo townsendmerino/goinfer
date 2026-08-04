@@ -492,6 +492,29 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				r.prefillReady = ok
 			}
 		}
+		// Campaign-A split-KV decode attention: a high-occupancy, bit-identical alternative to the A1
+		// attn_batched(M=1) decode launch (it replaces exactly that launch, so it needs prefillReady).
+		// Opt-in via GOINFER_SPLITKV_ATTN so it can be A/B'd and gated before default-on. Own module.
+		if r.prefillReady {
+			if skmod, e2 := r.dev.CompileLibrary(decodeSplitKVPTX); e2 == nil {
+				skOK := true
+				loadSK := func(dst *Pipeline, name string) {
+					if p, le := r.dev.NewComputePipeline(skmod, name); le == nil {
+						*dst = p
+					} else {
+						skOK = false
+					}
+				}
+				loadSK(&r.skScores, "splitkv_scores")
+				loadSK(&r.skSoftmax, "splitkv_softmax")
+				loadSK(&r.skVsum, "splitkv_vsum")
+				if skOK {
+					r.skScoreBuf = r.af(r.nH * cudaCtxCap)
+					r.skInvBuf = r.af(r.nH)
+					r.splitkvAttn = os.Getenv("GOINFER_SPLITKV_ATTN") != ""
+				}
+			}
+		}
 		// MoE module: loaded only for a routed model, so a dense one JITs nothing extra.
 		if r.moe {
 			mmod, e2 := r.dev.CompileLibrary(moePTX)

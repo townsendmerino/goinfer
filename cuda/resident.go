@@ -172,6 +172,9 @@ type cudaResident struct {
 	bGemv, bRN, bRms, bRopeKV, bAttn, bQuant, bSw, bRes     Pipeline
 	bQKN                                                    Pipeline     // batched per-head Q/K RMSNorm (qwen3 etc.); loaded with the batched set
 	bNormF32                                                Pipeline     // batched plain f32 RMSNorm for Gemma sandwich post-norms; loaded with the batched set
+	skScores, skSoftmax, skVsum                             Pipeline     // Campaign-A split-KV decode attention (high-occupancy, bit-identical)
+	skScoreBuf, skInvBuf                                    Buffer       // split-KV scratch: [nH·ctxCap] raw/exp scores, [nH] inverse denominators
+	splitkvAttn                                             bool         // GOINFER_SPLITKV_ATTN: use the split-KV decode attention (else the A1 attn_batched(M=1))
 	prefillReady                                            bool         // batched kernels loaded; PrefillLast usable
 	prof                                                    *prefillProf // non-nil ⇒ PrefillLast times each kernel category (test-only; adds stream syncs)
 	fRoute, fRouterGemv, fMoEGemv, fMoEWacc, fSharedCombine Pipeline
@@ -686,6 +689,37 @@ func (r *cudaResident) rms(src, nrm Buffer, qOut Buffer, sOut Buffer) error {
 		gpu.ArgValue(r.addOneArg()), Arg(qOut), Arg(sOut))
 }
 
+// splitKVAttnDecode runs the high-occupancy, bit-identical decode attention (Campaign A) for layer
+// l at position pos (M=1): three launches replacing the single attn_batched(M=1). scores tile over
+// keys (nH·⌈nWin/128⌉ blocks), softmax keeps the exact 128-wide partition+tree (byte-identical max +
+// denominator), vsum tiles over output dims (nH·⌈hd/32⌉ blocks, each thread the whole per-d fold).
+// Writes r.cctx exactly as attn_batched would. See docs/task-decode-splitkv-attention.md.
+func (r *cudaResident) splitKVAttnDecode(l, pos int) error {
+	Ly := &r.layers[l]
+	nKeys := pos + 1
+	winStart := 0
+	if Ly.window > 0 && nKeys > int(Ly.window) {
+		winStart = nKeys - int(Ly.window)
+	}
+	nWin := nKeys - winStart
+	const dTile = 32 // 1 warp/block; keeps the coalesced V-read, maximizes blocks without sub-warp waste
+	// 1. scores → r.skScoreBuf[h*nWin + i] (raw, ·scale). One thread per key; no reduction.
+	if e := r.launch(r.skScores, LaunchConfig{GridX: uint32(r.nH), GridY: uint32((nWin + 127) / 128), GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1},
+		Arg(r.qB), Arg(r.kc[l]), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)),
+		gpu.ArgValue(int32(winStart)), gpu.ArgValue(int32(nKeys)), gpu.ArgValue(r.attnScale), Arg(r.skScoreBuf), gpu.ArgValue(int32(nWin))); e != nil {
+		return e
+	}
+	// 2. softmax in place (block 128 — MUST match attn_batched for byte-identical max/denominator).
+	if e := r.launch(r.skSoftmax, LaunchConfig{GridX: uint32(r.nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: 128 * 4},
+		Arg(r.skScoreBuf), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(nWin)), Arg(r.skInvBuf)); e != nil {
+		return e
+	}
+	// 3. V-sum → r.cctx (each thread the whole ascending-s fold for one output dim).
+	return r.launch(r.skVsum, LaunchConfig{GridX: uint32(r.nH), GridY: uint32((Ly.hd + dTile - 1) / dTile), GridZ: 1, BlockX: dTile, BlockY: 1, BlockZ: 1},
+		Arg(r.skScoreBuf), Arg(r.vc[l]), Arg(r.skInvBuf), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)),
+		gpu.ArgValue(int32(winStart)), gpu.ArgValue(int32(nKeys)), gpu.ArgValue(int32(nWin)), Arg(r.cctx))
+}
+
 // normF32 is Gemma's sandwich post-norm: a plain in-place RMSNorm of a SUBLAYER OUTPUT
 // (no quant — it lands straight in the f32 residual stream). No-op when the arch has no
 // sandwich norms, so non-Gemma families pay nothing.
@@ -1150,7 +1184,11 @@ func (r *cudaResident) launchToken(emb []float32, pos int, head bool) error {
 		if Ly.window > 0 && nKeys > int(Ly.window) {
 			nWin = int(Ly.window)
 		}
-		if r.prefillReady {
+		if r.splitkvAttn {
+			// Campaign-A split-KV: high-occupancy, bit-identical to attn_batched(M=1). Opt-in
+			// (GOINFER_SPLITKV_ATTN); fills the SMs the single-block kernel leaves idle at long ctx.
+			_ = r.splitKVAttnDecode(l, pos)
+		} else if r.prefillReady {
 			// Coalesced M=1 decode attention: attn_batched with M=1 is BIT-IDENTICAL to the glue
 			// `attention` (TestAttnBatched_bitIdentical) but reads K via float4 — 21.96%→98% bytes/sector.
 			// ncu found the glue decode attention L1TEX-latency-bound at 2048 (~63% of the decode budget,
