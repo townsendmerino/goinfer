@@ -118,6 +118,10 @@ func TestGlm4Moe_biasParity(t *testing.T) {
 			break
 		}
 	}
+	// tiny-golden: goinfer vs the HF f32 forward of the seeded glm-tiny — exact numeric oracle for
+	// the sigmoid-routing + shared-expert + first_k_dense forward (real GLM-4.5-Air is 106B, bf16
+	// ~212 GB > 62 GB RAM, so a real-model forward is infeasible on this box).
+	emitParityRow(t, "glm4_moe", "tiny-golden", "HF f32 (glm-tiny seeded fixture)", 100.0, float64(cos), float64(cos))
 }
 
 // TestGlm4Moe_textParity loads the tiny-random Glm4MoeForCausalLM checkpoint and
@@ -186,4 +190,8 @@ func TestGlm4Moe_textParity(t *testing.T) {
 			break
 		}
 	}
+	// tiny-golden: goinfer vs the HF f32 forward of the seeded glm-tiny — exact numeric oracle for
+	// the sigmoid-routing + shared-expert + first_k_dense forward (real GLM-4.5-Air is 106B, bf16
+	// ~212 GB > 62 GB RAM, so a real-model forward is infeasible on this box).
+	emitParityRow(t, "glm4_moe", "tiny-golden", "HF f32 (glm-tiny seeded fixture)", 100.0, float64(cos), float64(cos))
 }

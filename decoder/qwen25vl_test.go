@@ -77,6 +77,9 @@ func TestQwen25VL_e2eChain(t *testing.T) {
 	if cos < 0.99 {
 		t.Errorf("e2e last-logit cosine %.6f < 0.99", cos)
 	}
+	// tiny-golden: goinfer's full vision-encoder→text-decoder pass vs the HF forward of the seeded
+	// qwen2.5-VL-tiny fixture. Floor 0.99 (the vision encoder path is looser than a text-only diff).
+	emitParityRow(t, "qwen2_5_vl", "tiny-golden", "HF (qwen2.5-VL-tiny seeded fixture, e2e encoder→decoder)", 100.0, float64(cos), float64(cos))
 }
 
 // TestMRoPEPositions gates the get_rope_index port against the pinned HF golden

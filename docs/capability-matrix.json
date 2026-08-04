@@ -138,7 +138,7 @@
     "loaders": "safetensors, GGUF",
     "modality": "text",
     "gpu_residency_eligible": true,
-    "parity": "pending"
+    "parity": "tiny-oracle 100.0%/1.00000"
   },
   {
     "name": "gpt2",
@@ -301,7 +301,7 @@
     "loaders": "safetensors, GGUF",
     "modality": "text",
     "gpu_residency_eligible": true,
-    "parity": "pending"
+    "parity": "tiny-oracle 100.0%/1.00000"
   },
   {
     "name": "phi3",
@@ -361,7 +361,7 @@
     "loaders": "safetensors, GGUF",
     "modality": "text",
     "gpu_residency_eligible": true,
-    "parity": "pending"
+    "parity": "tiny-oracle 100.0%/1.00000"
   },
   {
     "name": "qwen2_5_vl",
@@ -381,7 +381,7 @@
     "loaders": "safetensors",
     "modality": "text (+ vision tower)",
     "gpu_residency_eligible": true,
-    "parity": "pending"
+    "parity": "tiny-oracle 100.0%/0.99998"
   },
   {
     "name": "qwen3",

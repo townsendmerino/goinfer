@@ -176,13 +176,17 @@
       ],
       "own": [],
       "deps_hash": "sha256:f8bd4af09dd897617a0ce1480d2a537614d0c56a22813a855632107ffd29ea88",
-      "status": "pending",
-      "validated_at": null,
-      "date": null,
-      "reference": null,
-      "machine": null,
-      "method": null,
-      "metrics": null
+      "status": "validated",
+      "validated_at": "2f26643",
+      "date": "2026-08-04",
+      "reference": "HF f32 (glm-tiny seeded fixture)",
+      "machine": "linux-62gb",
+      "method": "tiny-golden",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 1.00000,
+        "cosine_mean": 1.00000
+      }
     },
     "gpt-oss": {
       "uses": [
@@ -354,13 +358,17 @@
       ],
       "own": [],
       "deps_hash": "sha256:f8bd4af09dd897617a0ce1480d2a537614d0c56a22813a855632107ffd29ea88",
-      "status": "pending",
-      "validated_at": null,
-      "date": null,
-      "reference": null,
-      "machine": null,
-      "method": null,
-      "metrics": null
+      "status": "validated",
+      "validated_at": "2f26643",
+      "date": "2026-08-04",
+      "reference": "HF f32 (mixtral-tiny seeded fixture, 8x top-2)",
+      "machine": "linux-62gb",
+      "method": "tiny-golden",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 1.00000,
+        "cosine_mean": 1.00000
+      }
     },
     "nemotron_h": {
       "uses": [
@@ -429,13 +437,17 @@
       ],
       "own": [],
       "deps_hash": "sha256:f8bd4af09dd897617a0ce1480d2a537614d0c56a22813a855632107ffd29ea88",
-      "status": "pending",
-      "validated_at": null,
-      "date": null,
-      "reference": null,
-      "machine": null,
-      "method": null,
-      "metrics": null
+      "status": "validated",
+      "validated_at": "2f26643",
+      "date": "2026-08-04",
+      "reference": "HF (qwen2.5-VL-tiny seeded fixture, e2e encoder→decoder)",
+      "machine": "linux-62gb",
+      "method": "tiny-golden",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 0.99998,
+        "cosine_mean": 0.99998
+      }
     },
     "qwen2_moe": {
       "uses": [
@@ -446,13 +458,17 @@
       ],
       "own": [],
       "deps_hash": "sha256:f8bd4af09dd897617a0ce1480d2a537614d0c56a22813a855632107ffd29ea88",
-      "status": "pending",
-      "validated_at": null,
-      "date": null,
-      "reference": null,
-      "machine": null,
-      "method": null,
-      "metrics": null
+      "status": "validated",
+      "validated_at": "2f26643",
+      "date": "2026-08-04",
+      "reference": "HF f32 (qwen2_moe seeded fixture)",
+      "machine": "linux-62gb",
+      "method": "tiny-golden",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 1.00000,
+        "cosine_mean": 1.00000
+      }
     },
     "qwen3": {
       "uses": [

@@ -90,4 +90,7 @@ func TestQwen2Moe_forwardParity(t *testing.T) {
 	}
 	cos := fullCosine(t, logits, qwen2moeForwardFullPath)
 	t.Logf("qwen2_moe: argmax=%d (want %d) | maxSampleΔ=%.5f | cosine=%v", argmax(logits), g.Argmax, maxΔ, cos)
+	// tiny-golden: goinfer vs the HF f32 forward of the seeded qwen2_moe-tiny — exact numeric oracle
+	// for the loader + gated-shared-expert routing (real Qwen1.5-MoE-A2.7B not on this box).
+	emitParityRow(t, "qwen2_moe", "tiny-golden", "HF f32 (qwen2_moe seeded fixture)", 100.0, cos, cos)
 }

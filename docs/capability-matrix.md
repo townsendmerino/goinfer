@@ -72,7 +72,7 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | Command-R | `cohere` | dense | none | no | full | LayerNorm, parallel | SwiGLU | yes | safetensors | text | yes | full-oracle 100.0%/1.00000 |
 | Command-R7B | `cohere2` | dense | interleave | no | full | LayerNorm, parallel | SwiGLU | yes | safetensors | text | yes | full-oracle 100.0%/1.00000 |
-| GLM-4.5/4.6 | `glm4_moe` | sparse +shared | none | yes | partial | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | pending |
+| GLM-4.5/4.6 | `glm4_moe` | sparse +shared | none | yes | partial | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | tiny-oracle 100.0%/1.00000 |
 | GPT-2 | `gpt2` | dense | none | no | learned/none | LayerNorm, pre-norm | GELU-tanh (non-gated) | yes | safetensors, GGUF | text | no | pending |
 | Gemma 3 | `gemma3`, `gemma3_text` | dense | interleave | yes | dual-base | RMSNorm, sandwich | GeGLU | yes | safetensors, GGUF | text (+ vision via VL text_config) | yes | full-oracle 100.0%/0.99972 |
 | Gemma 4 | `gemma4`, `gemma4_text`, `gemma4_unified_text` | dense ‖ sparse, no-shared | interleave | yes | dual-base | RMSNorm, sandwich | GeGLU | yes | safetensors, GGUF | text | no | full-oracle 100.0%/0.99128 |
@@ -80,11 +80,11 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 | Llama 4 | `llama4_text` | sparse +shared | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no | tiny-oracle 100.0%/1.00000 +coherent |
 | Mellum2 | `mellum` | sparse, no-shared | interleave | yes | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | real-oracle 100.0%/0.99969 |
 | Mistral | `mistral` | dense | all-layer | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | full-oracle 100.0%/1.00000 |
-| Mixtral | `mixtral` | sparse, no-shared | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | pending |
+| Mixtral | `mixtral` | sparse, no-shared | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | tiny-oracle 100.0%/1.00000 |
 | Phi-3 / Phi-4 | `phi3` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | full-oracle 100.0%/1.00000 |
 | Qwen2 / Qwen2.5 | `qwen2` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | full-oracle 100.0%/1.00000 |
-| Qwen2-MoE | `qwen2_moe` | sparse +shared | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | pending |
-| Qwen2.5-VL | `qwen2_5_vl` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors | text (+ vision tower) | yes | pending |
+| Qwen2-MoE | `qwen2_moe` | sparse +shared | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | tiny-oracle 100.0%/1.00000 |
+| Qwen2.5-VL | `qwen2_5_vl` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors | text (+ vision tower) | yes | tiny-oracle 100.0%/0.99998 |
 | Qwen3 | `qwen3` | dense | none | yes | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | full-oracle 100.0%/1.00000 |
 | gpt-oss | `gpt_oss` | sparse, no-shared | interleave | no | full | RMSNorm, pre-norm | SwiGLU | no | GGUF | text | no | real-oracle 100.0%/0.99843 |
 

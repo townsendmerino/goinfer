@@ -108,4 +108,10 @@ func TestMixtral_forwardParity(t *testing.T) {
 	cos := fullCosine(t, logits, mixtralForwardFullPath)
 	t.Logf("mixtral: %dx top-%d | argmax=%d (want %d) | maxSampleΔ=%.5f | cosine=%v",
 		m.w.arch.MoE.NumExperts, m.w.arch.MoE.TopK, argmax(logits), g.Argmax, maxSampleΔ, cos)
+	// Record the validated metrics (no-op unless GOINFER_MANIFEST_EMIT; skipped on any failure
+	// above). tiny-golden: goinfer's forward vs the HF f32 forward of the SEEDED mixtral-tiny — an
+	// exact numeric oracle for the loader + MoE routing arithmetic (the method used when the real
+	// model is too big to diff on this box; Mixtral-8x7B bf16 ≈ 93 GB > 62 GB RAM). Same class as
+	// llama4_text's tiny-golden row.
+	emitParityRow(t, "mixtral", "tiny-golden", "HF f32 (mixtral-tiny seeded fixture, 8x top-2)", 100.0, cos, cos)
 }
