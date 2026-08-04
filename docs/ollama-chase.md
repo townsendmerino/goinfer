@@ -58,6 +58,13 @@ Carried from the prefill campaign, where five attributions were made and four we
   vs the shipped 128-wide tree). So pin the widths as named constants (`tgReduce*`, model.go), make any
   alternate same-op kernel inherit the width, and give a byte-exact fixture for such an op context >
   width. Max reductions and `simd_sum` (32, hardware-fixed) are exempt — associative, order-exact.
+- **A self-consistent gate cannot detect a change that moves both arms together.** Width is one instance;
+  the class is larger — a fused-kernel rewrite, a different accumulation order, a moved scale-application
+  point all slip through `paged≡non-paged` (one kernel vs itself under different residency → both arms
+  move identically) and through `GPU-vs-CPU` (tolerance by construction). Only an **absolute stored
+  reference** catches them. CUDA has goldens; **Metal has no equivalent** (Metal-vs-CPU can only be
+  tolerance, given the f16 scale gap) — a structural blind spot, fixable with a self-referential Metal
+  snapshot golden. See §A2-Metal.
 - **Thermal control on the Mac** (±700 ms drift): interleaved repeats, session-start run
   dropped. Single-run rankings are unreliable.
 - **Peer version is part of the measurement.** The whole §B2 correction happened because a
@@ -292,6 +299,20 @@ co-location (→ few threadgroups → occupancy death) or extra dispatches (→ 
 wall as the whole decode path (`docs/task-metal-cgofree-spike.md`: megakernel closed, dispatch-count the
 ceiling). **A1-Metal (half4 coalescing, 1.37–1.40×) remains the one capturable decode-attention win on
 this box.** Stop proposing dedup layouts; the lever is elsewhere (KV-quant §A3, or accept the floor).
+
+**A gap in the Metal gate suite, for whoever reopens this.** The reduction-width finding (§2) is one
+instance of a general blind class: **a self-consistent gate cannot detect a change that moves both arms
+together.** `paged ≡ non-paged` compares one kernel against itself under different residency — anything
+that changes the *kernel* changes both arms identically and passes (width, a fused-kernel rewrite, a
+different accumulation order, a moved scale-application point — all slip through). `Metal-vs-CPU` is
+tolerance-based (unavoidable, given the f16 scale gap), so small movements pass by construction. The only
+gate type that catches this is an **absolute stored reference** — something that does not move when the
+code does. On CUDA the goldens play that role; **on Metal there is currently nothing equivalent.** Cheap
+fix when the Metal track next opens: a **Metal snapshot golden** — store Metal's own logits for fixed
+inputs at a context *past the reduction width*, compare every run. It is self-referential (it can't say
+which side is correct, only that something moved) and it will go red on legitimate improvements — but
+that's what the existing refresh-with-goldens discipline is for, and a gate that occasionally demands
+justification beats one that is structurally silent. Not funded now (Metal track closed); recorded here.
 
 ### A3. KV cache quantization — **not bit-identical**
 
