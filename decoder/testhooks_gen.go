@@ -81,6 +81,14 @@ func (m *Model) Gemma4MoERouterForTest(layer int) (proj, bias []float32, nE, top
 	return f, make([]float32, gm.nE), gm.nE, gm.topK, m.w.arch.HiddenDim, true
 }
 
+// gemma4HiddenBuf accumulates a COPY of the residual stream after each layer (index 0 =
+// post-embedding, from g4traceHidden's layer -1; index i+1 = after layer i) on every
+// runLayersGemma4 call, when capture is on. It backs the per-layer LOCALIZATION a resident-vs-CPU
+// gate uses (metal/cuda Step 4). Test-only: appended only by the SetGemma4HiddenCaptureForTest
+// closure below (production only sees the nil-by-default g4traceHidden seam), so it lives here under
+// goinfer_testhooks — off-tag it would be an unused package var (staticcheck U1000). B-08.
+var gemma4HiddenBuf [][]float32
+
 // Gemma4HiddenCaptureForTest returns the captured residual stream per layer, in call order:
 // index 0 = post-embedding, index i+1 = the stream after layer i (pre-final-norm, matching what a
 // resident runner's trunk-to-N-layers produces).
