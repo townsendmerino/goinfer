@@ -8,6 +8,169 @@ The forward-pass and quantization numerics are parity-gated against HuggingFace
 and are the stable contract. The loader and architecture-descriptor surface is
 pre-1.0 and may change as new model families and quant formats land.
 
+## [v0.9.0] — 2026-08-04
+
+Theme: **two cgo-free GPU decode backends land as opt-in — CUDA (Linux/NVIDIA) and Metal
+(macOS/Apple Silicon) — joined by speculative decoding, batched prefill, and long-context
+decode, all under a bit-identity contract that makes every GPU path byte-reproducible
+against the CPU reference.** Both backends are `CGO_ENABLED=0` (pure Go via purego/dlopen),
+behind build tags + `--backend`, with graceful CPU fallback — so the default pure-Go build
+is unchanged. **Pre-1.0:** the full per-family parity backfill remains the 1.0 gate;
+families without both a T1 committed golden and a current T3 manifest row ship
+*experimental* (`docs/parity-coverage-policy.md`). See `docs/task-cuda-cgofree-spike.md`,
+`docs/task-metal-cgofree-spike.md`, `docs/metal-verdict.md`, `docs/ollama-chase.md`, and
+`docs/spec/` for the full arcs, scorecards, and dead ends.
+
+> **Peer numbers re-anchored.** Every goinfer-vs-Ollama comparison in `docs/benchmarks.md`
+> was re-measured against **current Ollama v0.32.5** (the prior figures used 0.5.7 / 0.32.0,
+> 12–18 months stale). Lead with absolute tok/s + the cgo-free property, never a peer
+> multiple — the ratio is size-, depth-, and platform-dependent (below).
+
+### Added
+- **cgo-free CUDA backend** (`cuda/`, `-tags cuda`, `--backend cuda`) — resident decode +
+  prefill via **gocudrv** (dlopen `libcuda`) + **NVRTC** (PTX JIT), no cgo. Measured on an
+  RTX 2070 SUPER (real q4_K_M): **1.5B 218.6 tok/s, 0.5B 507.5 tok/s** (goinfer absolute).
+  Optimization arc: coalesced W4A8 GEMV + 2× ILP unroll (a dp4a-latency frontier, ~46% of
+  peak), launch diet (18→13 dispatches/layer), f16 group scales, on-device greedy argmax
+  (`ResidentGreedy`), pinned logits readback, and super-kernels **K1/K3a** (fold rmsnorm
+  into the QKV / gate-up GEMV, +21.3% on 0.5B; K2 measured null and reverted). Qwen3 runs
+  resident (QK-norm kernel). CI builds/vets/tests `-tags cuda`; the executor tax is 15.3
+  µs/token (0.34%); the forward is guarded by a mutation-proven parity gate
+  (`TestRealForwardParity`, `t.Fatalf` on any position past a 3% logit-range flip).
+- **cgo-free Metal backend** (`metal/`, `-tags metal`, darwin-only, `--backend metal`) —
+  resident decode + prefill via **purego-objc** (dlopen Metal.framework, `objc_msgSend`,
+  MSL 3.1 compiled at runtime). Defused the `LC_BUILD_VERSION`/MSL-2.4 landmine
+  (golang/go#77917; explicit MSL 3.1 + read-back assertion). Decode arc **~20 → 73.6 tok/s**
+  (W4A8, best-of-40 warm); the practical batch-1 ceiling on M1 without DP4A. Server-to-server
+  wall-clock vs Ollama-Metal v0.32.5 (`benchmarks.md` §B3): 0.5B **0.96×**, 1.5B **0.74×** —
+  Metal's story is cgo-free / no-Xcode, not raw speed.
+- **Speculative decoding** — opt-in, lossless. **CPU n-gram** (`--spec ngram`, prompt-lookup
+  drafter over batched verify+rollback) wins on copy-heavy traffic (rag-copy 1.55×, agent-json
+  1.59× on 0.5B; code-edit ~parity) — greedy bit-exact vs sequential (`TestNgramSpeculativeGreedyParity`,
+  `TestResidentSpecServe`). **Grammar-fused** drafting for constrained/tool requests (forced
+  DFA bytes drafted free, lossless, modest). **Resident CUDA (D1)** — batched M=k verify,
+  **1.23×@128 / 1.86×@512 / 1.18×@2048**, byte-identical to plain greedy
+  (`TestSpecDecodeCurve`). Recurrent families (Mamba-2 SSM, Gated DeltaNet) and the staged
+  sliding-window ring are **guarded out** → plain decode (`TestSpecRollbackSafetyGuard`).
+- **Batched prefill (CUDA), default-on, bit-identical** — weight-stationary batched W4A8
+  GEMV ingests the whole prompt in one M=len pass. TTFT vs sequential: 128 **5.78×**, 2048
+  **6.17×** (13.1 s → 2.1 s). Families joined bit-identically: llama, mistral, phi3, qwen2,
+  qwen2_5_vl, qwen3 (batched qk-norm), gemma3 (batched sandwich norms) — 7 of 23
+  (`TestPrefillCoverageAudit`). The Metal MMA prefill path (3.7× TTFT) exists but **declines
+  by default** (not bit-identical — 54% stream divergence; opt-in `GOINFER_METAL_BATCHED_PREFILL=1`).
+- **Split-KV long-context decode (CUDA), default-on ≥256 ctx, bit-identical** — splits the
+  independent key/value axes without touching the reduction (FA's online rescale is *not*
+  bit-exact, so it is deliberately not used). 2048 decode **133→160 tok/s (1.20×)**; with the
+  preceding attention coalescing, **99.5→160 = 1.61× over glue** (Campaign A, closed at the
+  bit-identity ceiling). Gates `TestSplitKV_bitIdentical{,_gemma3}`; `GOINFER_SPLITKV_ATTN=0`
+  disables.
+- **Attention coalescing** — half4/float4-coalesced decode+prefill attention K-read.
+  **Metal**: bit-identical, isolated kernel 1.79× @2048, end-to-end decode **1.37×@2048 /
+  1.40×@4000** (the first Metal decode speed win, long-context). **CUDA prefill**: float4 QK,
+  3.1× isolated, bit-identical.
+- **Model-family coverage expanded.** Resident on **both** backends: Qwen2/Llama, **Qwen3**
+  (QK-norm), **Gemma3** (sandwich norm / gated-GELU / embed-scale / per-layer RoPE), **MoE**
+  (router + stacked int4 experts + shared expert; Mixtral / Qwen2-MoE / Qwen3-MoE / GLM-4.5/4.6).
+  Metal-only: **Mistral** (sliding-window), **Phi-3** (partial rotary). **Cohere / Command-R
+  v1 + v2** land CPU-correct (cosine 1.0 vs HF; new NormParallel / interleaved-RoPE / bias-free
+  LayerNorm / per-layer-NoPE / reciprocal-LogitScale primitives; committed tiny fixtures —
+  below). Every GPU backend auto-declines what it cannot run.
+- **Shared feature taxonomy** (`decoder/features.go`) — admission is one subset check over
+  arch-flag-derived requirements vs each backend's declared implemented set; a registry-driven
+  gate (`TestResidentAdmission_registryCovered`) fails CI on any unclassified arch. Eliminates
+  the silent-wrong-output class (a family the backend can't fully run now declines to CPU
+  instead of running with a feature dropped). Metal + CUDA + WebGPU all use it.
+- **Gemma-4 26B-A4B fully GPU-resident via host↔VRAM expert paging (CUDA)** — decodes a
+  ~15 GB MoE on an 8 GB card at **16.98 tok/s** by streaming routed experts host→VRAM into
+  an LRU slot cache (81.6% hit at 30% residency; auto-caps slots to free VRAM, never OOMs).
+  The bottleneck is **capacity, not kernels** — a model that fits would decode *faster* than a
+  dense 7B. Metal MoE expert paging primitives (slot-pool LRU, pread staging default-on,
+  MTLResidencySet-pinned pool) land for the same path on Apple Silicon.
+- **Bit-identity gate suite** — the **Metal snapshot golden** (`TestMetalSnapshotGolden`):
+  a machine+OS-pinned sha256 of Metal's own logits at fixed inputs, decoded past both
+  reduction widths through two committed tiny models — the absolute stored reference that
+  catches changes a self-consistent gate (paged≡non-paged, GPU-vs-CPU tolerance) is blind to
+  (width sweeps, fused rewrites, accumulation-order moves). Reduction widths pinned as
+  bit-identity constants (`tgReduce*`). CUDA carries `TestKernelFMALint` (build fails on any
+  bare float MAC).
+- **Committed tiny parity fixtures** — `testdata/cohere-tiny/` + `cohere2-tiny/` (656 KB each,
+  deterministic random-weight, `scripts/pin_cohere*.py`) are committed via targeted `.gitignore`
+  exceptions so the Cohere/Command-R forward-parity gates run in CI on every push, not only
+  where someone regenerated the asset (same rationale as `mixtral-tiny`). The committed set is
+  now enumerated as chosen policy in `docs/parity-coverage-policy.md`.
+- **Test census tool** (`scripts/skip_census.py`) — the release ritual: runs `go test -json`,
+  reports PASS/SKIP/FAIL with every skip bucketed by *why* (missing-fixture / missing-golden /
+  no-gpu-device / heavy-model / integration-env), so a run that skipped 200 asset-gated tests
+  can't be mistaken for one that exercised them. `GOINFER_REQUIRE_FIXTURES=1` turns any
+  committed-fixture skip into a hard failure. It also flags native GPU-contention crashes
+  (`fault 0x10`) as spurious rather than real.
+- **MXFP4 / gpt-oss (CPU)** — bit-exact MXFP4 unpacker vs GGUF on real gpt-oss:20b, CPU
+  forward + loader + parity; CUDA/Metal decline gpt-oss at load → CPU (never mis-run).
+
+### Changed
+- **Ollama peer re-anchored to v0.32.5** across `benchmarks.md` §B2/§B3/§B4. §B2 (CUDA): 0.5B
+  still ~1.7× ahead, 1.5B short-ctx parity (~1.19×), goinfer behind at 2048 ctx and on prefill.
+  §B3 (Metal): 0.96× / 0.74× (0.5B / 1.5B). "Peer version is part of the measurement" is now a
+  standing method rule.
+- **§B4 retracted** — the "peers fail to load the 26B" claim was false and is withdrawn: Ollama
+  v0.32.5 loads and runs Gemma-4 26B-A4B via a 42%-GPU/58%-CPU split at ~24.5 tok/s (faster
+  than goinfer here). The honest, narrower claim: goinfer runs it *fully GPU-resident* — an
+  architecture difference, not a capability peers lack.
+- **Batched prefill default flipped to ON (CUDA)** after the contraction fix made it
+  bit-identical; **declined by default on Metal** (not bit-identical). Split-KV decode
+  attention default-on at ctx ≥ 256.
+- **Fast-math stays the Metal default**; `GOINFER_PRECISE_MATH=1` is an opt-in (measured 4–7%
+  slower, no CPU-parity gain — the int8→int4 requant is the parity gap, not fast-math). Robustness
+  against compiler/OS drift is carried by the snapshot golden, not by strict math.
+- **aikit `gpu` module bumped to v0.25.2** — `CompileLibraryPrecise` now self-verifies
+  (`setMathMode:MTLMathModeSafe` → `setFastMathEnabled:NO` fallback, reads state back and errors
+  if neither selector responds), ViT reduction width pinned.
+
+### Fixed
+- **Batched-prefill / spec-decode were not bit-identical to sequential decode (CUDA) — 84%
+  token-stream divergence on real weights** (invisible on uniform fixtures). Root cause:
+  compiler **FMA contraction** (`facc += p*s` = mul+add / 2 roundings in decode vs fma / 1
+  rounding in the batched kernel), ~1 ULP, data-dependent. Fix: explicit **`__fmaf_rn`** in
+  both paths → `TestPrefillDivergenceRate` 0/50, decode speed unchanged; this is what unblocked
+  lossless spec-decode. Durable guard: `TestKernelFMALint`.
+- **As-cap overflow (Qwen3/Mistral):** `head_dim` independent of `hidden` (`nH·hd ≠ H`)
+  overflowed a hardcoded activation-staging buffer, which would have silently broken every real
+  Qwen3/Mistral size. Fixed on Metal with dynamic threadgroup memory (bit-exact to K=4096);
+  CUDA audited immune.
+- **Phi-3 dropped `sliding_window` on every backend (CPU included)** — `phi3Architecture` never
+  set it, so Phi-3 ran full attention and diverged from HF past 2047 tokens. Now honored;
+  Metal windowing works as a result.
+- **`lmHeadN` dropped `LogitScale` on the batched-forward path** — surfaced by Cohere (the first
+  forwardN-eligible logit-scale family); also closed 3 gemma4_text merge gaps.
+- **Metal Gemma correctness:** GELU-tanh argument clamp (tanh overflow → NaN on the sink's large
+  gate); prefill LM head pinned to the int8 path (was NaN on the f16-MMA path).
+- **Security hardening (all shipped):** resident-KV context-cap DoS / OOB KV writes (C3, CUDA +
+  Metal), speculative-rollback sliding-window leak (C1), PrefillLast unified-memory leak (C5),
+  discarded CUDA launch errors + mixed-quant fuseQKV guard (M23), prompt-injection via
+  special-token surface forms (M25), GGUF/VL untrusted-input hardening.
+
+### Findings (no API change)
+- **Metal decode is dispatch-/issue-bound, and the long-context gap is structural.** The
+  short-context GEMV is already at the peer's effective-bandwidth band (no DP4A ⇒ integer decode
+  is issue-bound). The long-context deficit (~4.2×@4000 vs Ollama's flash attention) is priced
+  out by the bit-identity contract — four independent bit-identical dedup attempts (split-KV,
+  two grouped, staged) were built and lost. **Decision (M1 = M-A):** stay bit-identical, accept
+  the depth floor; an opt-in FA-style throughput mode (M-B) is scoped and deferred, not rejected
+  (`docs/metal-verdict.md`).
+- **CUDA graphs are a measured null on real models** (1.01×; the ~1.4–1.7× was a
+  tiny-model/dispatch-dominated artifact). Only a safe-gate shipped
+  (`GOINFER_CUDA_GRAPHS=1`, promotes to live under EXCLUSIVE_PROCESS/MPS + a startup
+  bit-exactness self-test); default declines.
+- **Rotation + per-row scales + IMMA (tensor cores) deferred** — the cheap path (per-row scale
+  search) is measured dead (per-row perplexity 108 vs per-group 28.5; the 1.24× weight-space
+  error compounds ~4× at the output), and the expensive path buys only a prefill-only ~3× on an
+  already-past-threshold TTFT. Format stays group-scaled int4 (`docs/task-rotation-perrow-imma.md`,
+  `ollama-chase.md` §7).
+- **EAGLE-3 and Stage-B GPU verify are built-and-parked** — EAGLE-3 is lossless but a CPU
+  wall-clock loss (needs GPU); Stage-B M=k GEMM verify is a NO-GO on small models, conditional-GO
+  only for ~70B-class + short linear drafts. Both wait on GPU throughput they don't yet have
+  (`docs/spec/`).
+
 ## [v0.8.0] — 2026-06-20
 
 Theme: **the GPU resident-decode path expands from "dense Qwen2/Llama only" to most

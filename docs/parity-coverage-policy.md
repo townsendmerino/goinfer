@@ -96,6 +96,37 @@ hardware. "The fixture is committed now" must never be read as "the kernel is te
 CI" — that conflation is how a device-only bug (the Metal MMA NaN) hides behind a green
 CPU gate. A device gate is CI-covered only when a GPU runner executes it.
 
+#### The committed set (chosen, not accidental)
+
+To keep the runnable/skipped split a deliberate policy rather than an artifact of which
+fixtures someone happened to regenerate, the committed set is enumerated here. **These
+tiny checkpoints are tracked** (via targeted `!` exceptions in `.gitignore`, each carrying
+this rationale), so their families' **CPU forward-parity is a real T1 that runs on every
+push**:
+
+| Committed fixture | Family gate | Size | Generator |
+|---|---|---|---|
+| `testdata/mixtral-tiny/` | Mixtral / MoE dispatch (`decoder`, CUDA) | 3.6 MB | `scripts/pin_mixtral_tiny.py` |
+| `testdata/cohere-tiny/` | Cohere / Command-R v1 (`cohere_test.go`) | 656 KB | `scripts/pin_cohere_tiny.py` |
+| `testdata/cohere2-tiny/` | Cohere2 / Command-R v2 (`cohere2_test.go`) | 656 KB | `scripts/pin_cohere2_tiny.py` |
+
+All three are deterministic random-weight models (no license, no real data), committed
+because each is the *only* CI-runnable proof of its family's numerics.
+
+**Everything else is generator-reproducible per-machine, and that is also a choice.** The
+other tiny/scaled fixtures (`gemma4-dense-scaled-*`, `tiny-qwen2-moe`, the `*-vl-tiny`
+vision checkpoints, `qwen35-tiny`, the `*-tiny` families listed in `.gitignore`) keep their
+**`*_golden.json` tracked** but their **checkpoint gitignored** — regenerated locally by the
+matching `scripts/pin_*.py`. Those families' CPU parity is therefore T3-in-practice (an
+asset-gated `t.Skip` in CI) until someone promotes the fixture into the committed set above.
+
+**The rule for promoting a fixture into the committed set:** it is a deterministic
+random-weight model of KB–few-MB, *and* we want that family's CPU forward-parity to fail CI
+on every push (not just when an asset is present). When both hold, commit it with a targeted
+`.gitignore` exception (never a blanket un-ignore — `38e5cd7` shows a broad sweep re-tracks
+stray metadata and breaks unrelated gates). Otherwise it stays generator-reproducible and
+its family is CI-covered only at the tiny-golden level its committed assets allow.
+
 ### Falsifiable: prove the gate red before trusting it green
 
 A parity gate is **vacuous until seen to fail on a real defect**. Before a new gate counts:

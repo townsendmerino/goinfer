@@ -1,5 +1,12 @@
 # goinfer — work summary for 0.9.0 planning (last 2 days, both backends)
 
+> **⚠ SUPERSEDED SNAPSHOT (2026-08-04).** This is an early planning brief (~95 commits); the
+> release then grew to ~520 commits. Several numbers below are pre-re-anchor and stale (Metal
+> §B3 vs Ollama 0.32.0 → now v0.32.5 0.96×/0.74×; CUDA spec-decode listed as not-serve-wired →
+> shipped serve-wired, `32dcc8f`; MoE "CUDA mirror pending" → landed). The **authoritative**
+> scope is `CHANGELOG.md [v0.9.0]`, `docs/releases/v0.9.0.md`, and
+> `docs/release-v0.9.0-checklist.md`. Kept for the planning-decision history only.
+
 > ~95 commits across two machines: **Metal** (Mac / Apple Silicon) and **CUDA** (Linux / NVIDIA),
 > plus shared decoder + admission infrastructure. This is the "what landed + what's left before we
 > tag 0.9.0" brief. Both new GPU backends are **cgo-free** (`CGO_ENABLED=0`, pure Go via
