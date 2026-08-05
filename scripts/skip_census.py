@@ -123,8 +123,10 @@ def main():
             if a == "fail":
                 print(f"    {k[0]}  {k[1]}")
 
-    # package-level fails with no per-test fail = build error or NATIVE CRASH (Metal GPU
-    # contention → fault 0x10 is spurious; re-run as sole GPU user before believing it).
+    # package-level fails with no per-test fail = build error or NATIVE CRASH. The Metal suite
+    # has a flaky single-process `fault 0x10` tail (purego-objc / no-ARC — reproduces even as
+    # sole GPU user; contention raises the odds). It is NOT a test failure: every test passes
+    # in isolation/shards. Shard the run (-run '^Test[A-L]' / '^Test[M-Z]') for a green pass.
     crashed = []
     for pkg in pkg_fail:
         blob = "".join(pkg_out.get(pkg, []))
@@ -133,7 +135,7 @@ def main():
     if pkg_fail:
         print("\n  PACKAGE-LEVEL FAILS (not counted above):")
         for pkg in pkg_fail:
-            tag = "  ⚠ NATIVE CRASH — likely GPU contention, re-run solo" if pkg in crashed else ""
+            tag = "  ⚠ NATIVE CRASH (flaky fault 0x10 — shard the run; tests pass in isolation)" if pkg in crashed else ""
             print(f"    {pkg}{tag}")
 
     if bucketed["other"]:

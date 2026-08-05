@@ -89,9 +89,15 @@ re-validated — the v0.8.0 §1 trap.
 - [ ] `go build ./...`, `-tags gpu`, `-tags metal` (darwin), **`-tags cuda`** (Linux) all clean.
 - [x] **Mac census captured (`scripts/skip_census.py`, 2026-08-04):** pure-Go **415 pass / 0
       fail / 167 skip**; Metal **59 pass / 0 fail / 30 skip** — every skip asset/GPU/heavy-gated,
-      no silent failures; the Metal snapshot golden (bit-identity) passes; the package-level
-      `fault 0x10` under concurrent GPU load is the known spurious contention crash (re-run as
-      sole GPU user), not a test failure.
+      no silent failures; the Metal snapshot golden (bit-identity) passes.
+- [ ] **Known Metal test-runner flakiness (not a product bug):** the full `-tags metal ./metal/`
+      suite in one process has a probabilistic native `fault 0x10` tail (purego-objc / no-ARC
+      single-process Metal instability — reproduces even as sole GPU user; contention raises the
+      odds). **Every test passes individually and in shards** (A–L, M–P, Q–T each green incl. the
+      heavy MMA/MoE/26B tests; the crash victim `TestZZ_residencyProbe` passes alone), and it is
+      **not** a numerics/correctness failure. For a green suite run, shard it (e.g.
+      `-run '^Test[A-L]'` then `'^Test[M-Z]'`, re-running a shard if it faults) or run per-test.
+      Worth a follow-up (0.9.1): audit device/queue/residency-set teardown between metal tests.
 - [ ] **Box census:** run `scripts/skip_census.py -- -tags cuda ./cuda/` on the Linux box;
       record pass/skip/fail + buckets in the release notes. Optionally
       `GOINFER_REQUIRE_FIXTURES=1` to make committed-fixture skips hard-fail.
