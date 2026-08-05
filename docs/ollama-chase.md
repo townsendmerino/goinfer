@@ -588,6 +588,16 @@ streaming that does not batch.
 
 ## 7. The bit-identity fork — the strategic decision
 
+> **DECISION (2026-08-04): DEFERRED — tensor cores are not pursued.** Both halves of the fork are now
+> measured, and neither justifies opening it: the CHEAP path (per-row scales via an MSE scale search,
+> no rotation) is dead — Phase 0b showed the 1.24× weight-space error blows perplexity up ~4× at the
+> output (108 vs 28.5); and the EXPENSIVE path (rotation + IMMA) buys a prefill-only tensor-core ~3× on
+> a TTFT already past its usability threshold plus a decode-stream win that's partial (~mid-single-digit,
+> not the naive 11%, capped by ~45% DRAM-bandwidth utilization). The format stays group-scaled int4;
+> everything in §5 remains available. **Reopen only if a decode-BW profile shows the ~11% is largely
+> realized AND someone funds the rotation campaign — both are now costed, neither assumed.** The Phase 0
+> / 0b measurements and the payoff accounting below are retained as the decision record.
+
 **Ollama has no bit-exactness contract at all.** Not between prefill and decode, not across
 backends, not across versions. Its batched prefill runs FP16-accumulate GEMMs on tensor cores
 while single-token decode runs a different path, so the KV cache prefill writes is not what
