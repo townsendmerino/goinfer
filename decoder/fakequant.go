@@ -23,6 +23,7 @@ var (
 	fakeQuantScheme      = os.Getenv("GOINFER_FAKEQUANT")
 	fakeQuantF32Act      = os.Getenv("GOINFER_FAKEQUANT_ACT") == "f32"
 	fakeQuantExpertsOnly = os.Getenv("GOINFER_FAKEQUANT_EXPERTS") == "1"
+	fakeQuantPerRow      = os.Getenv("GOINFER_FAKEQUANT_PERROW") == "1" // §7 Phase 0b: one scale per row (test sets this directly)
 )
 
 // fakeQuantF32Act (GOINFER_FAKEQUANT_ACT=f32) stores the fake-quant reconstruction at
@@ -40,8 +41,17 @@ var (
 // reconstruction at int8 — W8A8 (int8 activations) by default, or Q8 (f32 activations) under
 // GOINFER_FAKEQUANT_ACT=f32. The int8 re-quant is transparent (0.99995), so the 4-bit error
 // survives; the activation precision is the only other variable.
+//
+// fakeQuantPerRow (GOINFER_FAKEQUANT_PERROW=1, read fresh here so a test can set it around a load)
+// forces the group to the FULL row — one scale per output row, the §7 per-row/IMMA granularity — so
+// the probe can measure per-row vs per-group forward quality (Phase 0b) without a new kernel. Default
+// off ⇒ the shipped 32-elem grouping, so the fakequant-off invariant is untouched.
 func fakeInt4WM(f32 []float32, rows, cols int, scheme string) linalg.WeightMat {
-	fq := fakeQuantInt4(scheme, f32, rows, cols, int4GroupSize)
+	group := int4GroupSize
+	if fakeQuantPerRow {
+		group = cols
+	}
+	fq := fakeQuantInt4(scheme, f32, rows, cols, group)
 	return linalg.QuantizeInt8(fq, rows, cols, !fakeQuantF32Act)
 }
 

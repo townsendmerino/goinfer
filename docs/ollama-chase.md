@@ -625,17 +625,66 @@ now a number, not a guess. Real qwen3-1.7B weights (Q8→f32 proxy, real outlier
 | per-row `symmse` (MSE-optimal per-row scale, **no rotation**) | 0.125 | **1.24×** |
 
 **The finding refutes the doc's own framing in BOTH directions.** Not "almost nothing" (naive
-per-row is 1.73× — a real hit, down-proj worst at 1.95×), so per-row-as-a-free-swap is dead. But
-ALSO not "rotation is the price of admission": a per-row **scale search** alone — a cheap grid over
-the maxabs scale, no Hadamard/rotation machinery, no `task-rotation-perrow-imma.md` — recovers most
-of the gap to **1.24×**. The residual 1.24× is small enough it may be OUTPUT-benign (this repo has
-characterized benign int4 perturbations at that level — nemotron 92.5% greedy / KL 0.058). So the
-fork is gated on a much cheaper question than assumed: **Phase 0b = forward quality** (top-1
-agreement / KL / perplexity of a per-row-`symmse` model vs the shipped per-group model, real forward
-passes, still NO kernel). If 0b is benign, the tensor-core 3× needs a per-row-symmse requant + one
-parity refresh + the IMMA kernel — NOT the rotation campaign. **Rotation moves from prerequisite to
-last-resort (only if 0b shows 1.24× is not benign).** Phase 0b is the next §7 step; still not funded,
-but now cheap and de-risked.
+per-row is 1.73× — a real hit, down-proj worst at 1.95×), so per-row-as-a-free-swap is dead. A per-row
+**scale search** (a cheap grid over the maxabs scale, no rotation) recovers most of the *weight-space*
+gap to **1.24×** — which LOOKED like it might make the fork cheap. It does not.
+
+**Phase 0b — MEASURED (2026-08-04, `TestPerRowScalePhase0b`); the cheap path is a MIRAGE.** Teacher-
+forced forward quality on real qwen3-1.7B (bf16 safetensors — the GGUF loader row-quantizes directly
+and bypasses the fakequant seam, so the probe uses the safetensors path), 87 tokens, each build vs the
+f32 oracle:
+
+| build | top-1 agree | meanKL(f32‖x) | perplexity |
+|---|---|---|---|
+| f32 oracle | — | — | 26.75 |
+| per-group `sym` int4 (**shipped**) | 76.7% | 0.269 | 28.54 |
+| per-row `symmse` int4 (§7 fork, no rotation) | 68.6% | **1.393** | **107.97** |
+
+**The 1.24× weight-space error compounds CATASTROPHICALLY through the 28-layer stack: perplexity blows
+up ~4× (28.5→108), KL 5×, agreement −8 pts.** This is the repo's own recurring lesson — a small
+per-tensor weight error is not a small output error once it propagates (discrete argmax flips + residual
+compounding, the same class as the MoE routing-sensitivity finding). **The weight-space proxy was
+misleading; the forward gate caught it.** So per-row scales WITHOUT rotation are dead — the MSE scale
+search is not enough. **Rotation goes back to PREREQUISITE, not last-resort** (correcting the optimistic
+read from Phase 0 alone). Combined with the payoff analysis below (tensor-core 3× is prefill-only on a
+past-threshold number; decode-stream win is partial), §7's realistic shape is now: **an expensive
+rotation+IMMA campaign for a modest, mostly-prefill payoff — lean toward keeping it CLOSED.** The cheap
+version measured out; what remains is the campaign the doc always feared, now with both halves priced.
+
+### The PAYOFF half — per-row scales also shrink the decode weight stream (the axis that matters)
+
+The tensor-core 3× is the WEAKER half of §7's payoff, and prefill-only. Worked through: at 2048,
+prefill is ~2.1 s of which the GEMV is ~61% (~1.28 s); a full 3× on that lands total prefill at
+~1.25 s — a 1.68× on a number already past its usability threshold, still ~4× behind Ollama's ~0.29 s
+(not 7×). Decode is M=1 and gets nothing from tensor cores. On the prefill case alone, **close §7,
+don't advance it.**
+
+The stronger, previously-uncosted payoff is on the DECODE axis (where goinfer is at parity): **per-row
+scales delete the group scales from the weight byte-stream.** MEASURED against the actual layout
+(not assumed — the ~23×-estimate lesson): the resident GPU int4 carries an **f16** group scale per
+32-value group (`cuda/resident.go:41` — deliberately f16 because "f32 would be 20%"), so scale bytes
+are `2 / (16 + 2) = 11.1%` of the int4 weight stream. Per-row (one scale per row) deletes ~all of it
+(≈0.2%). Decode reads every weight once per token → fewer weight bytes is the decode lever the dp4a
+ceiling (B2) is NOT.
+
+**But the byte→speedup conversion is PARTIAL, not the "unconditional 11%" it looks like — and this is
+measured, not assumed.** Two data points: (1) B2 profiled the GEMV at **M=512** and found it
+*latency*-bound (DRAM 2.2%, scoreboard-on-data 43%), not bandwidth-bound — boundedness is M-dependent.
+(2) Decode is M=1 (no weight reuse, the textbook bandwidth-bound regime), but the measured decode rate
+puts it at only **~45% of peak DRAM bandwidth** (~1.0 GB resident weights / token ÷ ~4.83 ms/tok @207
+tok/s ≈ ~200 GB/s vs the 2070S's ~448 GB/s). Running at 45% of peak means decode is NOT
+bandwidth-saturated — latency/occupancy/dispatch caps it — so removing 11% of the weight bytes buys
+**less than 11%**, likely mid-single-digits. The honest figure is "**up to ~11% decode, realistically
+partial; size it with an M=1 GEMV ncu DRAM SpeedOfLight before funding.**"
+
+**Both sides of §7's ledger are now on the record, measured:** quality cost = per-row-symmse blows
+perplexity up ~4× in the forward (Phase 0b — NOT benign; needs rotation to fix, expensive); payoff =
+~11% smaller decode stream capped by ~45% bandwidth utilization (partial, ≈mid-single-digits realized;
+size with an M=1 DRAM% profile before funding) + a prefill-only tensor-core 3× that alone doesn't
+justify the fork. **Verdict: the cheap path (scale search, no rotation) is measured dead, and the
+expensive path (rotation + IMMA) buys a modest, mostly-prefill payoff. Lean CLOSED.** Reopen only if a
+decode-bandwidth profile shows the ~11% is largely realized AND someone funds the rotation campaign —
+both now costed, neither assumed.
 
 ### The tempting middle path, and why it is a trap
 
