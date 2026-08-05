@@ -442,19 +442,6 @@ func (r *cudaResident) loadRoutedExperts(L *cudaLayer) error {
 	return gpu.Upload(r.slotIdx, r.hostSlot[:r.topK])
 }
 
-// CacheStatsForTest sums the LRU cache hits/misses across all layers (C′ step 2 measurement). A
-// miss is one expert's H2D DMA; hit rate = hits/(hits+misses) is the fraction of per-token expert
-// bytes reuse saves.
-func (r *cudaResident) CacheStatsForTest() (hits, misses uint64) {
-	for i := range r.layers {
-		if c := r.layers[i].expCache; c != nil {
-			hits += c.hits
-			misses += c.misses
-		}
-	}
-	return hits, misses
-}
-
 // expIdx is the idx argument the expert GEMVs bind: the constant slot ids [0..topK-1] when caching
 // (slot j holds routed expert j), else the router's real rIdx (fully-resident path).
 func (r *cudaResident) expIdx() Buffer {

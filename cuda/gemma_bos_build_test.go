@@ -1,4 +1,4 @@
-//go:build cuda
+//go:build cuda && goinfer_testhooks
 
 package cuda
 
