@@ -2,7 +2,7 @@ module github.com/townsendmerino/goinfer/metal
 
 go 1.26.5
 
-require github.com/townsendmerino/goinfer v0.0.0-00010101000000-000000000000
+require github.com/townsendmerino/goinfer v0.9.0
 
 require (
 	github.com/ebitengine/purego v0.10.1 // indirect
@@ -10,8 +10,9 @@ require (
 )
 
 require (
+	github.com/townsendmerino/aikit v1.16.0
 	github.com/townsendmerino/aikit/gpu v0.25.2
-	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/sys v0.47.0
 	golang.org/x/text v0.40.0 // indirect
 )
 
