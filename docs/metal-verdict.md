@@ -49,8 +49,8 @@ Four measurement sets exist; they use different methods and must not be conflate
 
 | # | what | goinfer | Ollama-Metal | provenance | stale? |
 |---|---|---|---|---|---|
-| 1 | 1.5B q4_K_M, **server-to-server wall clock**, short prompts | ~61 tok/s | **~79** (0.32.0) | `benchmarks.md` §B3, 2026-07-16 | **yes — both sides** (predates f16 scales, encode-ahead, prefill-MMA; peer now v0.32.5) |
-| 2 | 0.5B q4_K_M, same method | ~128 | ~124 (0.32.0) | §B3, 2026-07-16 | yes (same) |
+| 1 | 1.5B q4_K_M, **server-to-server wall clock**, short prompts | **~54 tok/s** | **~73** (v0.32.5) | `benchmarks.md` §B3, **re-anchored 2026-08-04** | **no — both current** (goinfer `38e5cd7` W4A8, peer v0.32.5 FA-on) |
+| 2 | 0.5B q4_K_M, same method | **~116** | ~121 (v0.32.5) | §B3, **re-anchored 2026-08-04** | no — both current |
 | 3 | 1.5B **decode-only, best-of-40 warm**, W4A8 lane | **73.6** | 83.3 (0.32.0, best-of-3 warm, spike Step 0) | `task-metal-cgofree-spike.md` (f16 scales 71.4 → encode-ahead 73.6) | goinfer side current; **peer side stale** |
 | 4 | 1.5B decode **vs KV depth** (resident, depth-A/B harness, best-of-40, post-`994539c`) | 63.8 / 39.8 / **28.4** / 18.5 at 128/1024/2048/4000 | **85.2 / 79.1 / ~80 / 77.5** (M0, 2026-08-04, v0.32.5, FA-on) | goinfer `ollama-chase.md` §A1-Metal; peer = **M0** (§5) | both current |
 
@@ -214,8 +214,11 @@ FA. Consequences for M1: (a) **M-A concedes 4.2× at 4000**; (b) **M-B** — bre
 FA-style throughput mode — captures the depth term up to goinfer's *own* shallow floor (~50–64, §6.1's
 estimate stands; the residual peer 86-vs-goinfer-64 shallow is the §2a dense-decode ceiling, not
 fundable); (c) a purely *bit-identical* depth win is now doubly refuted — §4's four attempts plus the
-FA-off witness that even non-FA parallelization is beyond the contract's reach. §B3 wall-clock re-anchor
-still pending (needs goinfer's *server* re-measured — out of this decode-only scope).
+FA-off witness that even non-FA parallelization is beyond the contract's reach. **§B3 wall-clock re-anchor
+DONE (2026-08-04):** goinfer's server re-measured vs Ollama v0.32.5, both from the identical local q4_K_M
+GGUF — 0.5B **0.96×** (116 vs 121), 1.5B **0.74×** (54 vs 73); ratios held (was 1.03×/0.77× @0.32.0). The
+short-prompt method isolates decode+serving; goinfer's batched-prefill decline (bit-identity) widens the
+gap on long prompts (0.66× 1.5B @70-tok) — a serving trade, not a decode deficit. §B3 table refreshed.
 
 **M1 — the fork decision (§6). ✅ DECIDED (2026-08-04): M-A — stay bit-identical, defer M-B.** Keep
 the contract everywhere; accept the measured depth floor (4.2× @4000); make no competitive long-context

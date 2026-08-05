@@ -433,24 +433,47 @@ comparison on this page.
 
 ### B3. cgo-free Metal (darwin, `--backend metal`) vs Ollama-Metal — 4-bit both sides
 
-Provenance: **Apple M1 Pro, 16 GB**, macOS **26.5.2** · peer **Ollama 0.32.0** · both
-sides q4_K_M, warm, greedy, 256-token completions (both hit the cap), server-to-server
-wall clock — the same method as §B2. Measured on the Mac, **2026-07-16**. The `metal/`
-package is `//go:build darwin` (no extra tag) and is selected at runtime with
-`--backend metal`; it registers via `decoder.RegisterBackend` and must be blank-imported
-by the binary.
+> **✅ RE-ANCHORED 2026-08-04 against current peer (Ollama v0.32.5, FA-on) and current
+> goinfer (`38e5cd7`, post-Aug decode work: f16 scales, encode-ahead, half4 coalescing).**
+> The old 0.32.0 rows (`~128`/`~61`, 2026-07-16) are superseded by the table below; the
+> ratios barely moved (0.5B 1.03×→0.96×, 1.5B 0.77×→0.74×) — the peer got a bit faster on
+> this box, goinfer's server-path figure is a touch lower than the stale approximate. The
+> conclusion is unchanged: parity-ish on 0.5B, a real deficit on 1.5B, and **Metal's story
+> is cgo-free, not raw speed.**
 
-| model · q4_K_M (M1 Pro, warm, greedy, wall-clock) | goinfer (Metal) | Ollama-Metal 0.32.0 | goinfer vs peer |
+Provenance: **Apple M1 Pro, 16 GB**, macOS **26.5.2** · peer **Ollama v0.32.5** (FA `auto`,
+`Flash Attention enabled` in the load log — the M0 on-box confirmation) · both engines driven
+from the **identical local q4_K_M GGUF** (Ollama models `ollama create`d `FROM` the same file
+goinfer loads — same checkpoint, not a different quantizer's build), **goinfer W4A8** (int4
+weights / int8 activations — the 4-bit lane, speed-equivalent to int8int8 on this issue-bound
+chip, §metal-verdict §4), warm, greedy (`temperature:0`), **short prompt**, 256-token
+completions (both hit the cap), **client wall clock**, interleaved reps for thermal control,
+first (session-start) run dropped, best-of-3. Measured on the Mac, **2026-08-04**. The `metal/`
+package is `//go:build darwin && metal` and is selected at runtime with `--backend metal`; it
+registers via `decoder.RegisterBackend` and must be blank-imported by the binary.
+
+| model · q4_K_M (M1 Pro, warm, greedy, short prompt, wall-clock) | goinfer (Metal, W4A8) | Ollama-Metal v0.32.5 | goinfer vs peer |
 |---|---|---|---|
-| Qwen2.5-Coder-0.5B | **~128 tok/s** | **~124** | **1.03×** |
-| Qwen2.5-Coder-1.5B | **~61 tok/s** | **~79** | **0.77×** |
+| Qwen2.5-Coder-0.5B | **~116 tok/s** | **~121** | **0.96×** |
+| Qwen2.5-Coder-1.5B | **~54 tok/s** | **~73** | **0.74×** |
 
-- **Metal's story is not raw speed — it's cgo-free / no-Xcode.** goinfer is at parity on
-  0.5B and **loses** on 1.5B. Apple GPUs have no DP4A, so integer decode is issue-bound;
-  the CUDA ratio does **not** carry over. An earlier "~85% of Ollama-Metal" estimate is
-  **superseded** — the real figure is size-dependent (1.03× → 0.77×).
+- **Metal's story is not raw speed — it's cgo-free / no-Xcode.** goinfer is near parity on
+  0.5B and **loses ~1.35×** on 1.5B. Apple GPUs have no DP4A, so integer decode is issue-bound;
+  the CUDA ratio does **not** carry over. The figure is size-dependent (0.96× → 0.74×).
 - Do not quote a Metal speed *multiple* as a headline. The defensible Metal claims are
   portability (no Xcode, no toolchain, static binary) and correctness parity.
+- **This is a SHORT-prompt number, deliberately.** goinfer's Metal backend **declines batched
+  prefill by default** (it is not bit-identical to sequential decode — 54% stream divergence,
+  §A2-Metal / `metal-verdict` §2c), so it prefills the prompt sequentially through the decode
+  path. Ollama batches prefill (llama.cpp GEMM), so **on long prompts the wall-clock gap widens**
+  (measured: a ~70-token prompt drops 0.5B to 0.83× and 1.5B to 0.66×). The short-prompt rows
+  above isolate decode+serving, matching the §B2 method; the long-prompt penalty is a real
+  serving trade of the bit-identity default, not a decode-kernel deficit.
+- **Where the 1.5B wall-clock (~54) sits vs the decode-only spike (73.6, `task-metal-cgofree-spike`):**
+  the spike is best-of-40 at a *shallow fixed* depth with zero serving cost; the wall-clock
+  averages decode over depth ~10→266 (decode decays with KV depth — §A1-Metal 63.8@128→39.8@1024)
+  and adds prefill + HTTP/JSON + detokenize + sampling. The two are consistent; the served rate
+  asymptotes ~55–58 tok/s as fixed per-request overhead amortizes (16-tok req 30 tok/s → 512-tok 55).
 
 ### B4. Host↔VRAM MoE streaming — a 26B that does not fit the card (cgo-free CUDA)
 
@@ -575,9 +598,10 @@ figure lives in CHANGELOG, not gpu-assessment) · `README.md` (capabilities) ·
 **§B2 (cgo-free CUDA)** — measured 2026-07-16 on this repo at commit `7557723`, RTX 2070
 SUPER / driver 595.58.03, peer Ollama 0.5.7 via `/api/generate`; goinfer via `cmd/serve`
 `/v1/chat/completions`; both wall-clock, best of 3 warm; lab notes in
-`docs/task-cuda-cgofree-spike.md` · **§B3 (cgo-free Metal)** — measured 2026-07-16 on
-Apple M1 Pro 16 GB / macOS 26.5.2, peer Ollama 0.32.0, same server-to-server method;
-notes in `docs/metal-model-coverage.md`.
+`docs/task-cuda-cgofree-spike.md` · **§B3 (cgo-free Metal)** — **re-anchored 2026-08-04** on
+Apple M1 Pro 16 GB / macOS 26.5.2, goinfer `38e5cd7` (W4A8) via `cmd/serve` `/v1/chat/completions`,
+peer **Ollama v0.32.5** (FA-on) via `/api/chat`, both from the identical local q4_K_M GGUF, same
+server-to-server wall-clock method; notes in `docs/metal-model-coverage.md`.
 
 **Peers (verified 2026-06-10, against each project's repo/docs):**
 llama.cpp — github.com/ggml-org/llama.cpp (README; `tools/server/README.md`;
