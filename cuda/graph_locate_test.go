@@ -16,6 +16,11 @@ func TestGemma4Graphs_locateDivergence(t *testing.T) {
 	mc, rf := loadG4MoEGraphs(t, dir, true, false)
 	defer mc.Close()
 	r := rf.(*cudaResident)
+	if !r.graphs {
+		t.Skip("CUDA graphs not admitted on this box (DEFAULT compute mode, no MPS) — locating replay " +
+			"divergence needs a captured graph, only promoted under EXCLUSIVE_PROCESS/MPS tenancy; " +
+			"set GOINFER_CUDA_GRAPHS_UNSAFE=1 to force it (docs/cuda-graphs-investigation.md §5.1)")
+	}
 	r.layerCap = true
 
 	emb := mc.EmbedResidentForTest(42)
