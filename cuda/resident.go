@@ -607,6 +607,9 @@ func (r *cudaResident) Reset() {}
 //
 // All of it runs ON the executor thread — that thread made the context current — and therefore
 // before reqCh closes. Page-locked host memory goes first: it must be freed before the context.
+//
+// Returns error to satisfy io.Closer (audit B-12; see the assertion in backend.go); the native
+// releases are best-effort and can't meaningfully fail, so it always returns nil — like metal's.
 func (r *cudaResident) Close() error {
 	if r.reqCh == nil {
 		return nil

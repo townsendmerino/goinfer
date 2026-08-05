@@ -4,6 +4,7 @@ package cuda
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"runtime"
 	"strconv"
@@ -763,9 +764,21 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	return r, true, nil
 }
 
+// cudaBackend and cudaResident standardize teardown on Close() error and satisfy io.Closer, matching
+// gpu (webgpuBackend/Context/Resident* — Release() kept only as deprecated aliases) and metal (audit
+// B-12): one spelling of "free this GPU resource" across all three modules, so callers can write
+// generic cleanup. The assertions make the contract compiler-enforced (a signature drift back to a
+// no-error Close breaks the build, not a caller months later).
+var (
+	_ io.Closer = (*cudaBackend)(nil)
+	_ io.Closer = (*cudaResident)(nil)
+)
+
+// Close releases the resident backend's GPU resources. Propagates the resident's Close error (best-
+// effort teardown returns nil today, but the contract is honored so a future failing release surfaces).
 func (b *cudaBackend) Close() error {
 	if b.resident != nil {
-		_ = b.resident.Close()
+		return b.resident.Close()
 	}
 	return nil
 }
