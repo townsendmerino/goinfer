@@ -217,7 +217,11 @@ fundable); (c) a purely *bit-identical* depth win is now doubly refuted — §4'
 FA-off witness that even non-FA parallelization is beyond the contract's reach. §B3 wall-clock re-anchor
 still pending (needs goinfer's *server* re-measured — out of this decode-only scope).
 
-**M1 — the fork decision (§6).** A decision, not code.
+**M1 — the fork decision (§6). ✅ DECIDED (2026-08-04): M-A — stay bit-identical, defer M-B.** Keep
+the contract everywhere; accept the measured depth floor (4.2× @4000); make no competitive long-context
+claim. **M-B is deferred, not rejected** — the FA-style throughput-mode design in §6 stands scoped and
+available to fund if/when "usable at real context on a MacBook" becomes a goal; nothing about it is
+retracted, it is simply not built now.
 
 **M2 — inside the current contract, what little remains:** (a) the concurrent-dispatch encoder
 with hand-placed barriers (headroom L6) — bounded small because the layer graph is a chain;
@@ -236,6 +240,12 @@ the forward-looking encoder design per the headroom doc; unassessed. Does not ch
 ---
 
 ## 6. The fork, Metal edition (the decision this doc exists to force)
+
+> **✅ DECIDED 2026-08-04 (maintainer): Option M-A — stay bit-identical for now; M-B deferred, not
+> rejected.** The bit-identity contract holds across the whole Metal backend; the depth floor (4.2×
+> @4000, M0) is accepted; no competitive long-context claim is made. M-B below remains a scoped,
+> available lever — revisit it if long-context-on-a-MacBook becomes a goal. The rest of §6 is retained
+> as the record of what M-B would be and what it would cost, so the deferral is informed, not amnesiac.
 
 `ollama-chase.md` §7 states the CUDA fork (group scales vs tensor cores). The Metal fork is the
 same shape with different content: **on Metal the contract prices out the depth mechanism, and
@@ -322,10 +332,12 @@ so. Short of that reversal, the current backend is the right chassis.
 
 1. ~~**M0**~~ **✅ DONE (2026-08-04, §5)** — peer re-anchored v0.32.5, FA confirmed on-box, depth rows
    filled. Gap steeper than estimated (~1.34× @128 → ~4.2× @4000). Structural thesis holds.
-2. **M1 — now unblocked: take the §6 fork explicitly.** A written decision (M-A or M-B). The M0 data
-   sharpens it: M-A concedes 4.2× at 4000 (not ~3×); M-B is the only lever that touches it.
-3. **If M-B:** FA-style decode attention first (the whole depth prize), KV-q8 second
-   (family-gated). Token-level gate suite lands with the first kernel, default off.
+2. ~~**M1**~~ **✅ DECIDED (2026-08-04): M-A** — stay bit-identical, accept the 4.2×-@4000 depth floor,
+   make no competitive long-context claim. M-B deferred, not rejected (§6).
+3. **M-B — DEFERRED (available lever, not funded).** If revived: FA-style decode attention first (the
+   whole depth prize, ~28→45–55 tok/s bounded by the shallow floor), KV-q8 second (family-gated).
+   Token-level gate suite lands with the first kernel, default off. Trigger: long-context-on-a-MacBook
+   becomes a goal.
 4. **M3** — the 26B no-copy paging probe when the fieldfare comparison is wanted. One run.
 5. **M2/prefill** — lm-head tg=128, concurrent-encoder (counter-gated), MMA-prefill levers —
    only after the above; none of it moves the depth gap.
