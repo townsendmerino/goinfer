@@ -172,4 +172,3 @@ func TestGemma3ResidentParity(t *testing.T) {
 	st := residentParity(t, path, seedPrompt(t, path, probeText), 24)
 	assertParity(t, "gemma3", st, 0.88) // int4-hostile: floor 0.92 (quantbar), 0.88 with margin
 }
-

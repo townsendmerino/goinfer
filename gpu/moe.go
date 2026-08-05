@@ -290,4 +290,3 @@ func (c *Context) ensureMoERoute() error {
 	c.moeRouteShader, c.moeRoutePipeline, c.moeRouteLayout = sh, pl, pl.GetBindGroupLayout(0)
 	return nil
 }
-

@@ -172,4 +172,3 @@ func (c *Context) UploadStackedExpertsInt4Packed(q4 [][]byte, scales [][]float32
 	}
 	return &ResidentStackedW8A8{bq: bq, bScales: sc, nE: nE, rows: N, cols: K, kp: kp, w4: true}, nil
 }
-

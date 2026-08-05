@@ -173,7 +173,7 @@ func (c *KVCache) LayerKVForTest(layer int) (k, v []float32, base int) {
 	return c.keys[layer], c.vals[layer], 0
 }
 
-func SetSSMQ8CPU(v bool)    { ssmQ8CPU = v }
+func SetSSMQ8CPU(v bool) { ssmQ8CPU = v }
 
 // SetSSMForceF32 / SetSSMQ8CPU toggle the CPU-reference precision-localization seams
 // at runtime (gpu/ssm_kernel_control_test.go needs the staged webgpu backend, which

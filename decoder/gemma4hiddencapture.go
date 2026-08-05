@@ -8,4 +8,3 @@ package decoder
 // staring at a final-logit cosine that only says "something is wrong". Observe-only: with capture
 // off, g4traceHidden is nil and the forward is byte-identical.
 var gemma4HiddenBuf [][]float32
-

@@ -50,4 +50,3 @@ var (
 	routerX1Buf  [][]float32
 	routerX2Buf  [][]float32
 )
-
