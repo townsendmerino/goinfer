@@ -164,10 +164,6 @@ func mamba2Step(h []float32, w *mamba2Weights, p mamba2Params, eps float64, st *
 // reconciliation. nil in production.
 var mambaCapHook func(proj, gated []float32)
 
-// SetMambaCapHook installs/clears the capture hook (the gpu package can't import decoder-internal
-// state directly, so it drives this via the export, like SetSSMQ8CPU).
-func SetMambaCapHook(f func(proj, gated []float32)) { mambaCapHook = f }
-
 // ssmQ8CPU + q8RoundTrip are a confirmation seam (GOINFER_SSM_Q8CPU): round-trip the
 // Mamba projections through int8 so the CPU reference carries the SAME quantization error
 // as the resident W8A8 path — isolating kernel-correctness from int8 sensitivity.
@@ -181,12 +177,6 @@ var ssmQ8WeightsOnly bool
 // in mamba2Step to f32 — the exp(dt·A) argument and the gated-norm accumulation — to
 // reproduce the GPU's f32-only SSM on the CPU reference. Off in production.
 var ssmForceF32 bool
-
-// SetSSMForceF32 / SetSSMQ8CPU toggle the CPU-reference precision-localization seams
-// at runtime (gpu/ssm_kernel_control_test.go needs the staged webgpu backend, which
-// lives in a package the decoder can't import — so it drives these via the registry).
-func SetSSMForceF32(v bool) { ssmForceF32 = v }
-func SetSSMQ8CPU(v bool)    { ssmQ8CPU = v }
 
 // q8Memo caches the round-trip of the (stable) weight matrices so the confirmation
 // seam doesn't re-quantize 30M-element projections every token. Keyed by the slice's

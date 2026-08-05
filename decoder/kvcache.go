@@ -342,49 +342,6 @@ func (c *KVCache) Advance() { c.pos++ }
 func (c *KVCache) Keys(layer int) []float32 { return c.keys[layer] }
 func (c *KVCache) Vals(layer int) []float32 { return c.vals[layer] }
 
-// LayerKVForTest returns a layer's stored K and V as f32 in absolute position order — the live
-// sliding-window for a ring (local) layer, the full history for an append-forever global —
-// dequantized when the cache is int8. base is the absolute position of row 0. Keys/Vals above
-// only see the global append-forever store, so they read empty for a windowed layer (Gemma's
-// local layers); this is the ring-aware read the cross-backend attention confirmer needs to
-// inject goinfer's exact K/V into another engine.
-func (c *KVCache) LayerKVForTest(layer int) (k, v []float32, base int) {
-	if r := c.rings[layer]; r != nil {
-		lo := max(0, r.count-r.w)
-		nLive, st := r.count-lo, r.stride
-		if st == 0 || nLive == 0 {
-			return nil, nil, lo
-		}
-		k, v = make([]float32, nLive*st), make([]float32, nLive*st)
-		nKV := st / r.headDim
-		for i, p := 0, lo; p < r.count; i, p = i+1, p+1 {
-			so, do := (p%r.w)*st, i*st
-			if r.quant == kvI8 {
-				sso := (p % r.w) * nKV
-				dequantHeads(r.kq[so:so+st], r.ksc[sso:sso+nKV], nKV, r.headDim, k[do:do+st])
-				dequantHeads(r.vq[so:so+st], r.vsc[sso:sso+nKV], nKV, r.headDim, v[do:do+st])
-			} else {
-				copy(k[do:do+st], r.k[so:so+st])
-				copy(v[do:do+st], r.v[so:so+st])
-			}
-		}
-		return k, v, lo
-	}
-	if c.quant == kvI8 {
-		st := c.kvDim
-		nKV := st / c.headDim
-		n := len(c.keysQ[layer]) / st
-		k, v = make([]float32, n*st), make([]float32, n*st)
-		for p := 0; p < n; p++ {
-			o, so := p*st, p*nKV
-			dequantHeads(c.keysQ[layer][o:o+st], c.keyScale[layer][so:so+nKV], nKV, c.headDim, k[o:o+st])
-			dequantHeads(c.valsQ[layer][o:o+st], c.valScale[layer][so:so+nKV], nKV, c.headDim, v[o:o+st])
-		}
-		return k, v, 0
-	}
-	return c.keys[layer], c.vals[layer], 0
-}
-
 // AppendLatent stores one position's MLA latent (the compressed KV ‖ rope-key vector)
 // for a layer, growing the per-layer store. Append-forever (no ring/quant yet — the
 // latent is already the compressed state). The caller advances pos once per token via

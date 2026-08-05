@@ -1,49 +1,14 @@
-//go:build darwin
+//go:build darwin && goinfer_testhooks
 
 package metal
 
 import (
-	"math"
 	"os"
 	"testing"
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
 )
-
-func argmaxF(v []float32) int {
-	bi, bv := 0, float32(math.Inf(-1))
-	for i, x := range v {
-		if x > bv {
-			bv, bi = x, i
-		}
-	}
-	return bi
-}
-func cosF(a, b []float32) float64 {
-	var dot, na, nb float64
-	for i := range a {
-		dot += float64(a[i]) * float64(b[i])
-		na += float64(a[i]) * float64(a[i])
-		nb += float64(b[i]) * float64(b[i])
-	}
-	return dot / (math.Sqrt(na) * math.Sqrt(nb))
-}
-
-// mustFinite fails the test if a parity metric is NaN/Inf, BEFORE any `< floor` / `> ceil`
-// comparison sees it. Those comparisons are all false against NaN (`NaN < x`, `NaN > x`), so a
-// degenerate kernel output — the signature of the worst bugs — otherwise passes every floor as if
-// parity held (parity-coverage-policy.md § "The metric must be able to fail"). A NaN cosine also
-// arises when a kernel emits all-zeros (dot/0), so this catches silent-zero output too. Call it on
-// the cosine (and any max-error metric) right before the threshold check. Falsified by
-// TestParity_NaNCosineFailsTheGate.
-func mustFinite(t *testing.T, label string, metric float64) {
-	t.Helper()
-	if math.IsNaN(metric) || math.IsInf(metric, 0) {
-		t.Fatalf("%s is %v — degenerate (NaN/Inf) output; the threshold check below cannot catch this "+
-			"(NaN compares false to every bound)", label, metric)
-	}
-}
 
 // TestRealModel_parityAndThroughput — the spike's GO/NO-GO: the full real qwen2.5-coder-
 // 1.5b decode running on Metal (cgo-free), (a) argmax-parity vs the decoder's own CPU

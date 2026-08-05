@@ -9,24 +9,3 @@ package decoder
 // off, g4traceHidden is nil and the forward is byte-identical.
 var gemma4HiddenBuf [][]float32
 
-// SetGemma4HiddenCaptureForTest toggles per-layer hidden capture, clearing the buffer when enabled.
-// Exported so a resident test in another package (metal/cuda) can drive a CPU gemma4 forward and
-// read the per-layer residual stream — it cannot touch the unexported g4traceHidden directly.
-// Capture only a SINGLE token's forward (drive one ForwardForTest between on and off): the buffer
-// accumulates across calls, so a multi-token pass concatenates every token's per-layer trace.
-func SetGemma4HiddenCaptureForTest(on bool) {
-	if on {
-		gemma4HiddenBuf = nil
-		g4traceHidden = func(_ int, h []float32) {
-			gemma4HiddenBuf = append(gemma4HiddenBuf, append([]float32(nil), h...))
-		}
-	} else {
-		g4traceHidden = nil
-		gemma4HiddenBuf = nil
-	}
-}
-
-// Gemma4HiddenCaptureForTest returns the captured residual stream per layer, in call order:
-// index 0 = post-embedding, index i+1 = the stream after layer i (pre-final-norm, matching what a
-// resident runner's trunk-to-N-layers produces).
-func Gemma4HiddenCaptureForTest() [][]float32 { return gemma4HiddenBuf }

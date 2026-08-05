@@ -53,7 +53,10 @@ def stream_events(argv):
                     try: yield json.loads(line)
                     except json.JSONDecodeError: pass
         return
-    cmd = ["go", "test", "-json"] + (argv if argv else ["./..."])
+    # Default run carries -tags goinfer_testhooks so the relocated test hooks (audit B-08)
+    # are present and their tests execute rather than silently skipping. Explicit argv
+    # (e.g. `-- -tags cuda ./cuda/`) should include goinfer_testhooks too.
+    cmd = ["go", "test", "-json"] + (argv if argv else ["-tags", "goinfer_testhooks", "./..."])
     env = dict(os.environ, CGO_ENABLED=os.environ.get("CGO_ENABLED", "0"))
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE, text=True, env=env)
     for line in p.stdout:

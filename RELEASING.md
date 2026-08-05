@@ -93,6 +93,22 @@ path, gemma4_text merges) and the audit fixes touched hashed-core files. Before 
   parity) on real checkpoints, then `-update` the manifest (bump `validated_at` + metrics) at
   the freeze commit. That is the true validation; the Mac refresh is not a substitute.
 
+## Test hooks build tag (`goinfer_testhooks`)
+
+Cross-module test-only hooks (the `*ForTest` / `Set*ForTest` seams a backend's tests use to
+poke the decoder — audit B-08) live in `testhooks_gen.go` files under
+`//go:build goinfer_testhooks`, so they are **not** part of the public API. Any test file that
+calls one carries the tag too (`//go:build … && goinfer_testhooks`). Consequences:
+
+- **Every test invocation that must exercise those tests passes `-tags goinfer_testhooks`**
+  (combined with `gpu`/`cuda`/`metal` as needed). CI does this; `scripts/skip_census.py`
+  defaults to it. A plain `go test ./...` without the tag still compiles — it just *skips* the
+  tagged tests (they do not run, and are not a silent failure because CI runs them with the tag).
+- **Shared test helpers must NOT live in a tagged file** — put them in an untagged
+  `*_test.go` (e.g. `metal/testshared_test.go`), or an untagged sibling test can't see them.
+- Production `go build ./...` (no tag) must stay clean — the hooks are absent, proving they
+  are not referenced by non-test code.
+
 ## Freeze rule
 
 Once §C1 passes: **no edits** to `serialize.go` / `weights.go` / `gguf.go` / core (`model.go`,

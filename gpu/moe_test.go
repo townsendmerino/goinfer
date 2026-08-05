@@ -1,4 +1,4 @@
-//go:build gpu
+//go:build gpu && goinfer_testhooks
 
 package gpu_test
 

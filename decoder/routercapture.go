@@ -40,21 +40,6 @@ var routerRnBuf [][]float32
 // routerCapture is on; observe-only, so the forward stays byte-identical with the env unset.
 var routerMarginBuf []float32
 
-// SetRouterCaptureForTest toggles router capture and (when enabling) clears the buffers. Exported so
-// the CUDA resident-router unit test (package cuda) can drive a CPU forward, capture idx/rn, and
-// replay rn through the device kernels — it cannot touch these unexported vars directly.
-func SetRouterCaptureForTest(on bool) {
-	routerCapture = on
-	if on {
-		routerCaptureBuf, routerRnBuf, routerMarginBuf = nil, nil, nil
-		routerWtsBuf, routerX1Buf, routerX2Buf = nil, nil, nil
-	}
-}
-
-// RouterCaptureForTest returns the captured per-decision selected experts and router inputs (same
-// order/index). Sibling to SetRouterCaptureForTest for the cross-package (cuda) router-first gate.
-func RouterCaptureForTest() (idx [][]int, rn [][]float32) { return routerCaptureBuf, routerRnBuf }
-
 // routerWtsBuf / routerX1Buf / routerX2Buf capture the other three gemma4-MoE-layer intermediates
 // (same append order as routerRnBuf): the renormalized+scaled top-k weights, the dense-branch output
 // x1 (post postFFNNorm1), and the expert-branch output x2 (post postFFNNorm2). With routerRnBuf they
@@ -66,14 +51,3 @@ var (
 	routerX2Buf  [][]float32
 )
 
-// Gemma4MoECaptureForTest returns the CPU per-decision wts / x1 / x2 (same order as RouterCaptureForTest).
-func Gemma4MoECaptureForTest() (wts, x1, x2 [][]float32) {
-	return routerWtsBuf, routerX1Buf, routerX2Buf
-}
-
-// RouterMarginForTest returns the per-decision top-k boundary margin (smallest selected expert's
-// softmax prob minus the largest rejected expert's), same order/index as RouterCaptureForTest. It
-// is the MoE-specific robustness signal a noise-floor check reads: a fixture whose margin sits below
-// the int4-vs-f32 routing perturbation can flip top-k under quant and cannot gate a resident router,
-// however correct the port (the reason the CUDA MoE fixture was rebuilt at 9275f94).
-func RouterMarginForTest() []float32 { return routerMarginBuf }

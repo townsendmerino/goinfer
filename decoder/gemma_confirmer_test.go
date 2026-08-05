@@ -1,3 +1,5 @@
+//go:build goinfer_testhooks
+
 package decoder
 
 import (
