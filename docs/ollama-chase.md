@@ -625,7 +625,17 @@ watching.
 
 ## 8. Campaign D — levers not yet considered anywhere
 
-### D1. Speculative decoding — **GO signal measured (2026-08-04); token-identical; scoped, not built**
+### D1. Speculative decoding — **BUILT + MEASURED (2026-08-04); NOT YET SERVE-WIRED on resident CUDA**
+
+> **Status:** the CUDA-resident batched-verify spec-decode is built and measured lossless-vs-sequential
+> (`TestSpecDecodeCurve`: 1.21× @128, **1.80× @512**, 1.16× @2048; unblocked by the contraction fix,
+> since the batched verify `PrefillLastN` is now bit-identical to decode). **But it has no user path
+> yet:** (a) GPU-resident models skip speculative decode in `cmd/serve` (they bypass the session cache —
+> the standing serve caveat), and (b) the resident `ForwardN` is still sequential, not the batched
+> `PrefillLastN`. Shipping the win = serve integration (let resident models spec-decode + route the
+> verify through `PrefillLastN`). The decoder-level `--spec ngram` (openai.go) serves the STAGED/CPU
+> path via `forwardN` + f64 attention — a different implementation. **The D1 mechanism + measurement is
+> banked; the serve-wiring is the remaining ship step (its own focused piece, now unblocked).**
 
 A drafter proposes k tokens; the target verifies them in one batched forward. Under greedy the
 verify accepts only tokens the target would have produced, so **the emitted stream is identical by
