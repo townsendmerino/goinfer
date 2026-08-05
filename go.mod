@@ -4,9 +4,9 @@ go 1.26.5
 
 require (
 	github.com/townsendmerino/aikit v1.16.0
-	github.com/townsendmerino/goinfer/cuda v0.0.0-20260802175847-6c995fe3b22e
-	github.com/townsendmerino/goinfer/gpu v0.8.0
-	github.com/townsendmerino/goinfer/metal v0.0.0-20260802175847-6c995fe3b22e
+	github.com/townsendmerino/goinfer/cuda v0.9.0
+	github.com/townsendmerino/goinfer/gpu v0.9.0
+	github.com/townsendmerino/goinfer/metal v0.9.0
 	golang.org/x/text v0.40.0
 )
 
