@@ -3,6 +3,7 @@
 package cuda
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -543,6 +544,21 @@ func (r *cudaResident) ForwardNoLogits(embedding []float32, pos int) error {
 func (r *cudaResident) ForwardN(embeddings [][]float32, startPos int) ([][]float32, error) {
 	if e := r.checkCap(startPos, len(embeddings)); e != nil {
 		return nil, e
+	}
+	// Batched verify: the whole [cur, draft…] run in ONE weight-stationary pass (prefillCore,
+	// allLogits=true) instead of len(embeddings) sequential decode steps — the amortization that
+	// makes speculative decode a win on the resident CUDA path (each weight read once for all M
+	// positions, not once per token). Bit-identical to the sequential step loop below (every batched
+	// kernel is the M=1 kernel with an M dimension + explicit-FMA, gated by TestSpecDecodeCurve's
+	// lossless-vs-sequential check). Falls back to the per-token loop for archs the batched path
+	// doesn't cover (MoE / K=V / non-int4 / non-uniform geometry) — errPrefillDeclined only; a real
+	// compute error propagates. spec verify runs M≤9, so batched allocation is tiny (no OOM concern).
+	if r.prefillReady {
+		if outs, err := r.prefillCore(embeddings, startPos, true); err == nil {
+			return outs, nil
+		} else if !errors.Is(err, errPrefillDeclined) {
+			return nil, err
+		}
 	}
 	out := make([][]float32, len(embeddings))
 	err := r.do(func() error {

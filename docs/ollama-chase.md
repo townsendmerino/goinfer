@@ -634,17 +634,28 @@ watching.
 
 ## 8. Campaign D — levers not yet considered anywhere
 
-### D1. Speculative decoding — **BUILT + MEASURED (2026-08-04); NOT YET SERVE-WIRED on resident CUDA**
+### D1. Speculative decoding — **SHIPPED on resident CUDA (2026-08-04); serve-wired + lossless-gated**
 
-> **Status:** the CUDA-resident batched-verify spec-decode is built and measured lossless-vs-sequential
-> (`TestSpecDecodeCurve`: 1.21× @128, **1.80× @512**, 1.16× @2048; unblocked by the contraction fix,
-> since the batched verify `PrefillLastN` is now bit-identical to decode). **But it has no user path
-> yet:** (a) GPU-resident models skip speculative decode in `cmd/serve` (they bypass the session cache —
-> the standing serve caveat), and (b) the resident `ForwardN` is still sequential, not the batched
-> `PrefillLastN`. Shipping the win = serve integration (let resident models spec-decode + route the
-> verify through `PrefillLastN`). The decoder-level `--spec ngram` (openai.go) serves the STAGED/CPU
-> path via `forwardN` + f64 attention — a different implementation. **The D1 mechanism + measurement is
-> banked; the serve-wiring is the remaining ship step (its own focused piece, now unblocked).**
+> **Status:** the CUDA-resident batched-verify spec-decode is built, measured, AND serve-wired.
+> `serve --spec ngram` now engages it for GPU-resident models (the OpenAI handler routes a resident
+> model through `Model.GenerateNgramSpeculativeAdaptive` when `--spec ngram` and the request isn't
+> grammar-constrained; a validation error falls back to plain resident `Generate` before the KV is
+> touched, so the fallback is exact). Measured lossless-vs-sequential on the real 1.5B
+> (`TestSpecDecodeCurve`): **1.23× @128, 1.86× @512, 1.18× @2048** (compresses at long context — the
+> M=k verify re-reads KV for all k positions; the win is on copy-heavy traffic — code edits / RAG /
+> agent loops). All depths byte-identical to plain greedy.
+>
+> **Two changes made it ship-able** (both landed): (a) cuda `ForwardN` now routes the spec verify
+> through the batched `prefillCore` (`PrefillLastN`) instead of a sequential per-token `step` loop —
+> the amortization is the entire win; it falls back to the sequential loop for archs the batched path
+> doesn't cover (MoE / K=V / non-int4 / non-uniform), distinguished by `errPrefillDeclined`. Bit-identical
+> because the contraction fix made `prefillCore == decode`. (b) `genNgramInto`'s resident branch now
+> claims the shared resident KV (`resBusy`, like `generateInto`) so two concurrent requests can't
+> corrupt it — a loser falls back to the staged CPU path. Gates: `TestResidentSpecServe` (the serve
+> entry byte-identical to plain `Generate`), `TestSpecDecodeCurve` (speedup + lossless), unchanged
+> `TestPrefillDivergenceRate` 0/50. Grammar-constrained resident requests keep plain `Generate` (a
+> resident grammar-fused drafter is a later step). The decoder-level `--spec ngram` on the STAGED/CPU
+> path (via `forwardN` + f64 attention) is a separate, already-shipped implementation.
 
 A drafter proposes k tokens; the target verifies them in one batched forward. Under greedy the
 verify accepts only tokens the target would have produced, so **the emitted stream is identical by

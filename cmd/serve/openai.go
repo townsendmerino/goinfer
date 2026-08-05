@@ -588,10 +588,25 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, onText func(
 	//
 	// Trading prefix reuse for resident decode is a large net win and semantically safe: the
 	// OpenAI API is stateless (the client resends the whole conversation), so sessions here are
-	// purely a TTFT optimisation, not correctness. Spec-decode is session-only and does not mix
-	// with residency in any case (a CPU drafter against a GPU target measured 0.11x).
+	// purely a TTFT optimisation, not correctness.
+	//
+	// N-gram spec-decode DOES mix with residency: the drafter is pure-Go (prompt-lookup, no GPU
+	// memory, unlike the two-model draft that measured 0.11x against a GPU target), and the verify
+	// is the resident batched ForwardN (one weight stream for the whole [cur, draft…] run — the D1
+	// win, ~1.8x mid-context on copy-heavy traffic). genNgramInto claims the shared resident KV
+	// (resBusy) like Generate. Constrained/tool requests (grammar masker) keep plain resident
+	// Generate for now; a validation error (sampler not yet on the spec path) falls back to plain
+	// Generate before the KV is touched, so the fallback is exact.
 	if lm.model.ResidentActive() {
-		stream, gen = lm.model.Generate(ctx, gr.promptIDs, gr.maxTokens, gr.sp)
+		if lm.spec && gr.masker == nil {
+			if s, gn, err := lm.model.GenerateNgramSpeculativeAdaptive(ctx, gr.promptIDs, gr.maxTokens, &decoder.NgramDrafter{}, &decoder.AdaptiveDepth{MaxDraft: 8}, gr.sp); err == nil {
+				stream, gen = s, gn
+			} else {
+				stream, gen = lm.model.Generate(ctx, gr.promptIDs, gr.maxTokens, gr.sp)
+			}
+		} else {
+			stream, gen = lm.model.Generate(ctx, gr.promptIDs, gr.maxTokens, gr.sp)
+		}
 		finish, n, stopHit := lm.streamTokens(cancel, stream, gr, onText)
 		return finish, n, gen.Logprobs, stopHit, genErr(gen.Err())
 	}

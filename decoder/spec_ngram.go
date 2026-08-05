@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"sync/atomic"
 )
 
 // Drafter is the cheap half of speculative decoding: it proposes continuation
@@ -243,6 +244,17 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 	// the drafter is pure-Go — so this path adds no GPU memory. A session passes its
 	// CPU cache, which forces the staged path (as generateInto does).
 	resident := cache == nil && target.resident != nil && target.DecodeRunnerEligible()
+	// The resident path drives the model's ONE shared positional KV; two concurrent generations would
+	// interleave writes at overlapping positions and corrupt it. Claim it non-blockingly (mirroring
+	// generateInto's M9 guard) — a loser falls back to the staged CPU path with this call's own cache,
+	// so both still complete correctly, only the loser loses resident speed. Released on return.
+	if resident {
+		if atomic.CompareAndSwapInt32(&target.resBusy, 0, 1) {
+			defer atomic.StoreInt32(&target.resBusy, 0)
+		} else {
+			resident = false
+		}
+	}
 	{
 		tc := cache
 		if tc == nil && !resident {

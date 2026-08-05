@@ -3,12 +3,21 @@
 package cuda
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"time"
 
 	gpu "github.com/townsendmerino/aikit/gpu"
 )
+
+// errPrefillDeclined marks an ARCH/GEOMETRY decline from the batched path (MoE, K=V, non-int4,
+// non-uniform geometry, or missing batched kernels) — as opposed to a real compute/cap error. The
+// batched forward covers the plain dense unfused family only; callers that can fall back to the
+// sequential per-token path (ForwardN for spec verify, model.go for prefill) test errors.Is(err,
+// errPrefillDeclined) to distinguish "this arch can't batch, use the slow path" (recoverable) from
+// "the batched kernels failed" (propagate). Wrapped into each decline so the message stays specific.
+var errPrefillDeclined = errors.New("cuda prefill: batched path declined (arch/geometry)")
 
 // prefillProf accumulates PrefillLast's per-category GPU time (test-only). The boundaries are stream
 // syncs, so the category sum slightly exceeds the pipelined wall time (lost launch overlap) — it
@@ -91,7 +100,7 @@ func (r *cudaResident) prefillCore(embeddings [][]float32, startPos int, allLogi
 		return nil, fmt.Errorf("cuda prefill: empty prompt")
 	}
 	if !r.prefillReady {
-		return nil, fmt.Errorf("cuda prefill: batched kernels unavailable")
+		return nil, fmt.Errorf("cuda prefill: batched kernels unavailable: %w", errPrefillDeclined)
 	}
 	// qk-norm (per-head Q/K RMSNorm) and Gemma sandwich norms are now batched (qk_norm_batched /
 	// rmsnorm_f32_batched, wired below) — neither declines. backend.go asserts qNorm/kNorm length ==
@@ -99,7 +108,7 @@ func (r *cudaResident) prefillCore(embeddings [][]float32, startPos int, allLogi
 	// checks below still catch a Gemma-4-class layer that this dense-batched path can't stride. MoE
 	// and the Gemma parallel dense‖MoE still take the sequential path.
 	if r.moe || r.gemma4Moe {
-		return nil, fmt.Errorf("cuda prefill: arch needs the sequential path (moe/gemma4moe)")
+		return nil, fmt.Errorf("cuda prefill: arch needs the sequential path (moe/gemma4moe): %w", errPrefillDeclined)
 	}
 	if e := r.checkCap(startPos, M); e != nil {
 		return nil, e
@@ -110,14 +119,14 @@ func (r *cudaResident) prefillCore(embeddings [][]float32, startPos int, allLogi
 	for l := range r.layers {
 		Ly := &r.layers[l]
 		if Ly.hd != hd || Ly.nKV != nKV || Ly.qDim != qDim || Ly.kvDim != kvDim || Ly.rhalf != rhalf {
-			return nil, fmt.Errorf("cuda prefill: non-uniform layer geometry at %d", l)
+			return nil, fmt.Errorf("cuda prefill: non-uniform layer geometry at %d: %w", l, errPrefillDeclined)
 		}
 		if Ly.kEqV {
-			return nil, fmt.Errorf("cuda prefill: K=V layer at %d needs the sequential path", l)
+			return nil, fmt.Errorf("cuda prefill: K=V layer at %d needs the sequential path: %w", l, errPrefillDeclined)
 		}
 		if Ly.q.kind != "int4" || Ly.k.kind != "int4" || Ly.v.kind != "int4" ||
 			Ly.o.kind != "int4" || Ly.g.kind != "int4" || Ly.u.kind != "int4" || Ly.d.kind != "int4" {
-			return nil, fmt.Errorf("cuda prefill: non-int4 weight at layer %d needs the sequential path", l)
+			return nil, fmt.Errorf("cuda prefill: non-int4 weight at layer %d needs the sequential path: %w", l, errPrefillDeclined)
 		}
 	}
 	hidden, inter := r.hidden, r.inter
