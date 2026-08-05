@@ -38,12 +38,22 @@ func (m *Model) specRollbackSafe() bool {
 	if a.granite != nil || a.nemotron != nil || a.qwen35 != nil {
 		return false
 	}
-	// C1: a STAGED sliding-window cache stores local layers in physical rings. Once a ring wraps
-	// (context > window), a rollback of >1 position can't restore the positions it evicted, so the
-	// verify would read stale history and diverge — the "lossless" guarantee broken for exactly the
-	// families rings serve (Gemma-3 local / Mistral / Phi-3). The RESIDENT path is positional (its
-	// TruncateTo is a no-op re-forward, no eviction), so it stays safe; refuse only staged rings.
-	if m.resident == nil && a.SlidingWindow > 0 {
+	// C1/C-04: a STAGED sliding-window cache stores local layers in physical rings. Once a ring
+	// wraps (context > window), a rollback of >1 position can't restore the evicted positions, so
+	// the verify reads stale history and diverges — the "lossless" guarantee broken for the families
+	// rings serve (Gemma-3 local / Mistral / Phi-3). The earlier exemption keyed on m.resident==nil,
+	// assuming a resident backend means the positional resident path is taken — but three of four
+	// speculative loops (EAGLE, grammar always; n-gram whenever a Session drives the staged cache)
+	// use the staged ring EVEN when m.resident!=nil, and a resident CAS loss also falls back to
+	// staged mid-flight. That misjudged path made the predicate return "safe" for a cache that wraps.
+	// Refuse windowed models for speculation unconditionally: the resident positional path is itself
+	// safe, but it is not a shipping speculative combo (CUDA declines windowing; Metal has no
+	// speculation), so conservative refusal (→ plain decode) costs no real throughput and closes the
+	// hole at the source. With windowed models refused here, the staged rollback sites
+	// (KVCache.TruncateTo) only ever run on ring-free caches, where TruncateTo is always exact — so
+	// no inexact case reaches them; re-enabling windowed speculation later must consume that exact
+	// bool at each rollback site (audit C-04).
+	if a.SlidingWindow > 0 {
 		return false
 	}
 	return true
@@ -249,6 +259,17 @@ func (m *Model) runLayersFromEmbedN(h []float32, cache *KVCache) ([]float32, err
 				hi := row(h, i, hidden)
 				for j := range ff {
 					hi[j] += ff[j]
+				}
+			}
+			// Hidden-state seam (05), same as the dense path below: MoE layers must also
+			// record captured[ci], or GenerateEagleSpeculative against a sparse-MoE target
+			// (Mixtral/Mellum) leaves captured all-nil and fuseAt slices a nil slice → panic
+			// (audit C-07). The `continue` used to skip this.
+			if cache.captureLayers != nil {
+				for ci, cl := range cache.captureLayers {
+					if cl == l {
+						cache.captured[ci] = append(cache.captured[ci][:0], h...)
+					}
 				}
 			}
 			continue

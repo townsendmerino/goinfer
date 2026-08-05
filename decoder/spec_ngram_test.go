@@ -93,7 +93,33 @@ func TestSpecRollbackSafetyGuard(t *testing.T) {
 			t.Errorf("%s: GenerateNgramSpeculative must reject the recurrent family (silent-rollback-bug guard), got nil error", name)
 		}
 	}
+
+	// C-04: a sliding-window model must be refused EVEN when a resident backend exists.
+	// The old predicate keyed on m.resident==nil, so a windowed model with a resident
+	// backend wrongly read as safe — but EAGLE/grammar are staged-only and n-gram takes
+	// the staged ring under a Session, and a wrapped ring can't losslessly roll back.
+	windowedResident := &Model{w: &Weights{arch: &Architecture{SlidingWindow: 128}}, resident: stubResident{}}
+	if windowedResident.specRollbackSafe() {
+		t.Error("sliding-window model must NOT be spec-rollback-safe even with a resident backend (C-04)")
+	}
+	// C-02: GenerateSpeculative (the fourth entry point) must apply the same guard.
+	windowed := &Model{w: &Weights{arch: &Architecture{SlidingWindow: 128}}}
+	draft := &Model{w: &Weights{arch: &Architecture{}}}
+	if _, _, err := windowed.GenerateSpeculative(context.Background(), []int{1, 2, 3}, 4, draft, 8, SamplingParams{}); err == nil {
+		t.Error("GenerateSpeculative must reject a sliding-window model (C-02/C-04), got nil error")
+	}
 }
+
+// stubResident is a do-nothing ResidentForward so a test can set Model.resident != nil
+// without a GPU (only its presence matters to specRollbackSafe).
+type stubResident struct{}
+
+func (stubResident) Forward([]float32, int) ([]float32, error)      { return nil, nil }
+func (stubResident) ForwardN([][]float32, int) ([][]float32, error) { return nil, nil }
+func (stubResident) UploadKV(int, []float32, []float32) error       { return nil }
+func (stubResident) TruncateTo(int)                                 {}
+func (stubResident) Reset()                                         {}
+func (stubResident) Close() error                                   { return nil }
 
 // TestNgramAdaptiveGreedyParity gates the adaptive-depth path: varying per-round
 // depth (including the D=0 "don't speculate" and the periodic probe) must not

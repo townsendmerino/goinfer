@@ -279,7 +279,75 @@ func LoadSerializedWeights(data []byte) (*Weights, error) {
 		// the serialized quant tag must match what the tensors actually are
 		return nil, &SerializeError{fmt.Sprintf("quant tag %d disagrees with tensor kinds", quant)}
 	}
+	if err := validateShapes(w, arch); err != nil {
+		return nil, err
+	}
 	return w, nil
+}
+
+// validateShapes cross-checks the deserialized tensors against the architecture's
+// expected dims (audit C-06). The .giw reader validates only internal consistency
+// (array length vs the blob's own rows/cols), so a bundle whose Router declares
+// rows = NumExperts+K, or an Embed/LMHead with the wrong vocab, passes every reader
+// check and then writes past a config-sized scratch slice at decode
+// (moeMLP's `make([]float32, NumExperts)`, the qDim/kvDim/vocab decodeScratch
+// buffers) — a heap corruption from caller-supplied bytes (LoadSerializedWeights is
+// exported). The GGUF/safetensors loaders already do this cross-check; only .giw skipped.
+//
+// Universal invariants (vocab + expert count are uniform in every serializable
+// family) are always checked. The attention/FFN projection dims are checked only for
+// uniform-geometry families: gemma-4 carries per-layer geometry (FFNPerLayer / two-geom
+// head dims), so a model-level dim would false-reject it — its own descriptor + tiny
+// goldens cover that path.
+func validateShapes(w *Weights, arch *Architecture) *SerializeError {
+	eq := func(name string, got, want int) *SerializeError {
+		if got != want {
+			return &SerializeError{fmt.Sprintf("%s: %d rows, arch expects %d", name, got, want)}
+		}
+		return nil
+	}
+	if w.Embed.Rows() > 0 {
+		if e := eq("Embed", w.Embed.Rows(), arch.VocabSize); e != nil {
+			return e
+		}
+	}
+	if w.LMHead.Rows() > 0 { // 0 = tied (validated via Embed above)
+		if e := eq("LMHead", w.LMHead.Rows(), arch.VocabSize); e != nil {
+			return e
+		}
+	}
+	uniform := arch.gemma4 == nil // gemma-4 has per-layer geometry; skip the model-level dim checks
+	qDim, kvDim := arch.NumHeads*arch.HeadDim, arch.NumKVHeads*arch.HeadDim
+	for i := range w.Layers {
+		lw := &w.Layers[i]
+		// Router feeds moeMLP's make([]float32, NumExperts) — the exploit the audit names.
+		if arch.MoE != nil && lw.Router.Rows() > 0 {
+			if e := eq(fmt.Sprintf("layer %d Router", i), lw.Router.Rows(), arch.MoE.NumExperts); e != nil {
+				return e
+			}
+		}
+		if !uniform {
+			continue
+		}
+		for _, c := range []struct {
+			name string
+			got  int
+			cond bool
+			want int
+		}{
+			{"QProj", lw.QProj.Rows(), lw.QProj.Rows() > 0, qDim},
+			{"KProj", lw.KProj.Rows(), lw.KProj.Rows() > 0, kvDim},
+			{"VProj", lw.VProj.Rows(), lw.VProj.Rows() > 0, kvDim},
+			{"DownProj", lw.DownProj.Rows(), lw.DownProj.Rows() > 0, arch.HiddenDim},
+		} {
+			if c.cond {
+				if e := eq(fmt.Sprintf("layer %d %s", i, c.name), c.got, c.want); e != nil {
+					return e
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // Weights exposes the loaded weight bundle, e.g. so a build-time tool can

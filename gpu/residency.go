@@ -797,6 +797,9 @@ func (rd *residentDecoder) Forward(embedding []float32, pos int) ([]float32, err
 	if err := rd.checkCap(pos, 1); err != nil {
 		return nil, err
 	}
+	if pos == 0 {
+		rd.Reset() // fresh sequence: re-zero the compounding Mamba {win,ssm} state so it
+	} //          doesn't carry over from a prior Generate on this *Model (audit C-01).
 	return rd.runner.Run(embedding, pos)
 }
 
@@ -811,6 +814,9 @@ func (rd *residentDecoder) ForwardN(embeddings [][]float32, startPos int) ([][]f
 	}
 	if err := rd.checkCap(startPos, n); err != nil {
 		return nil, err
+	}
+	if startPos == 0 {
+		rd.Reset() // fresh sequence (prefill from 0): re-zero Mamba {win,ssm} (audit C-01)
 	}
 	if len(rd.batch) == 0 {
 		rd.batch = append(rd.batch, rd.runner) // batch[0] aliases the M=1 runner

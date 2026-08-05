@@ -3,6 +3,7 @@ package decoder
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 )
 
 // SpecStats accumulates speculative-decoding telemetry for one Generate run.
@@ -80,6 +81,13 @@ func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxT
 	if K < 1 {
 		K = 4
 	}
+	// Rollback safety (audit C-02): verify advances the target's KV by K per round and
+	// rolls back the rejected tail. A recurrent (Mamba-2 / Gated DeltaNet) or staged
+	// sliding-window cache cannot losslessly restore that — the other three speculative
+	// entry points guard this; GenerateSpeculative did not.
+	if !target.specRollbackSafe() {
+		return nil, nil, fmt.Errorf("decoder.GenerateSpeculative: this model has recurrent state (Mamba-2 / Gated DeltaNet) or a staged sliding-window ring cache that speculative rollback cannot losslessly restore; use Generate")
+	}
 
 	// When the target's GPU-resident decode path is built (webgpu + eligible arch),
 	// run its verify on the device: the prompt seeds the resident KV via per-token
@@ -103,6 +111,26 @@ func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxT
 	g := &Generation{Spec: stats}
 	go func() {
 		defer close(out)
+		// Claim the single shared resident KV before any device write (audit C-03): both
+		// generateInto and the n-gram path CAS this, GenerateSpeculative did not — so a
+		// second concurrent Generate on the same *Model would prefill into the same
+		// positional device KV, interleaving writes and corrupting both streams against a
+		// Model doc that promises concurrent distinct sequences. On loss, fall back to the
+		// staged CPU cache. Draft is a separate Model with its own claim.
+		if resident {
+			if atomic.CompareAndSwapInt32(&target.resBusy, 0, 1) {
+				defer atomic.StoreInt32(&target.resBusy, 0)
+			} else {
+				resident = false
+			}
+		}
+		if draftResident {
+			if atomic.CompareAndSwapInt32(&draft.resBusy, 0, 1) {
+				defer atomic.StoreInt32(&draft.resBusy, 0)
+			} else {
+				draftResident = false
+			}
+		}
 		room := len(prompt) + maxTokens + K + 8
 		var tc *KVCache // target CPU cache (nil on the resident path)
 		if !resident {

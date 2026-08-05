@@ -262,6 +262,9 @@ func (m *Model) LoadSession(data []byte, wantID string) (*Session, error) {
 			}
 		} else if quant == kvI8 {
 			ref.keysQ[l], ref.valsQ[l], ref.keyScale[l], ref.valScale[l] = r.i8(), r.i8(), r.f32(), r.f32()
+			if len(ref.keysQ[l]) > 0 {
+				ref.stride[l] = kvDim // restore the per-layer KV width (audit C-05)
+			}
 		} else {
 			// f32 returns nil for a len-0 field (KV-shared layers); keep the cache's
 			// empty-but-non-nil slice so Append/Keys stay well-formed.
@@ -270,6 +273,14 @@ func (m *Model) LoadSession(data []byte, wantID string) (*Session, error) {
 			}
 			if v := r.f32(); v != nil {
 				ref.vals[l] = v
+			}
+			// stride[] is set only by Append, which LoadSession bypasses — without this a
+			// restored global layer has stride 0, so the first TruncateTo slices it to [:0]
+			// (or panics in attendBatchedHeads) while pos stays non-zero (audit C-05). A
+			// global layer's width is the cache's uniform kvDim (geometry-guarded above);
+			// KV-shared layers keep stride 0, which TruncateTo's min() already guards.
+			if len(ref.keys[l]) > 0 {
+				ref.stride[l] = kvDim
 			}
 		}
 	}

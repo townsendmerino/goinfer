@@ -420,10 +420,44 @@ func (c *KVCache) Pos() int { return c.pos }
 // history — so it returns exact=false. Callers reusing a rewound prefix (Session prefix reuse,
 // speculative rollback) MUST cold-prefill on an inexact rewind or produce silently wrong output
 // (C1). Global/int8/MLA layers store every position, so they always rewind exactly.
+// resetRecurrent re-zeroes the Mamba-2 / Gated DeltaNet rolling state (conv window +
+// SSM/linear-attn state) so a reused cache doesn't leak the prior sequence's recurrence
+// into a fresh one (audit C-01). No-op on non-recurrent families (nil slices).
+func (c *KVCache) resetRecurrent() {
+	for _, st := range c.mamba {
+		if st != nil {
+			st.convWin = nil
+			for i := range st.ssm {
+				st.ssm[i] = 0
+			}
+		}
+	}
+	for _, st := range c.delta {
+		if st != nil {
+			st.convWin = nil
+			for i := range st.s {
+				st.s[i] = 0
+			}
+		}
+	}
+}
+
 func (c *KVCache) TruncateTo(pos int) (exact bool) {
 	exact = true
 	if pos < 0 || pos > c.pos {
 		return exact // out-of-range no-op is exact
+	}
+	// Recurrent state (Mamba-2 c.mamba / Gated DeltaNet c.delta) is a single rolling
+	// state with no per-position history, so it cannot be exactly rewound (audit C-01).
+	// Reset it on a full clear (Session.Reset → TruncateTo(0), and sessionLRU.fresh),
+	// and report inexact on any rewind so rewindForReuse cold-prefills rather than
+	// decoding a new sequence from the previous one's leaked state.
+	if c.mamba != nil || c.delta != nil {
+		if pos == 0 {
+			c.resetRecurrent()
+		} else if pos < c.pos {
+			exact = false
+		}
 	}
 	for l := range c.numLayers {
 		if c.mlaLatent != nil { // DeepSeek MLA: reslice the per-layer latent store
