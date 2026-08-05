@@ -8,6 +8,26 @@ The forward-pass and quantization numerics are parity-gated against HuggingFace
 and are the stable contract. The loader and architecture-descriptor surface is
 pre-1.0 and may change as new model families and quant formats land.
 
+## [v0.9.2] — 2026-08-05
+
+Docs only; no code, `go.mod`, or numerics change from v0.9.1.
+
+### Fixed
+- **README benchmark figures corrected.** The 1.5B 2048-context row was measured before
+  split-KV attention landed and understated the result (~133 tok/s / 0.71× → **160.1 tok/s
+  / 0.86×**); the table now carries the full four-depth curve (128 / 512 / 2048 / 3900) from
+  `46829cc` and states the decode crossover at roughly 1000 tokens of context.
+- **Two overstated claims corrected** — the feature taxonomy declines an architecture a
+  backend can't fully run rather than making wrong output "structurally impossible", and the
+  CUDA speed claim is stated against the measured curve. Docs only; no behaviour change.
+
+## [v0.9.1] — 2026-08-05
+
+Release plumbing only, no code or numerics change from v0.9.0: the final step of the
+tri-module tag — the root module now requires the tagged `gpu` / `cuda` / `metal` v0.9.0
+(previously Aug-2 pseudo-versions), closing the module requirement cycle so the opt-in GPU
+backends are `go get`-able at a real version.
+
 ## [v0.9.0] — 2026-08-04
 
 Theme: **two cgo-free GPU decode backends land as opt-in — CUDA (Linux/NVIDIA) and Metal
