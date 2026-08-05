@@ -20,6 +20,8 @@ github.com/townsendmerino/aikit/gpu v0.24.0 h1:fUW2jF+1a1vhEggTGSW/RWTuGQ2npk1WT
 github.com/townsendmerino/aikit/gpu v0.24.0/go.mod h1:FgsA/EvrtR8jcGAtWLzKRHgSdpbB5q4PHmMReEfFBPA=
 github.com/townsendmerino/aikit/gpu v0.25.1 h1:nk62gjGf4EWULr8K5gboCOocQtiRBMST1Djb4AEIMs4=
 github.com/townsendmerino/aikit/gpu v0.25.1/go.mod h1:FgsA/EvrtR8jcGAtWLzKRHgSdpbB5q4PHmMReEfFBPA=
+github.com/townsendmerino/aikit/gpu v0.25.2 h1:Qhv05Bnu4gi7h7fxq7TISwNa/jW9vNpptxWAbGPZGlQ=
+github.com/townsendmerino/aikit/gpu v0.25.2/go.mod h1:FgsA/EvrtR8jcGAtWLzKRHgSdpbB5q4PHmMReEfFBPA=
 golang.org/x/sys v0.47.0 h1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=
 golang.org/x/sys v0.47.0/go.mod h1:4GL1E5IUh+htKOUEOaiffhrAeqysfVGipDYzABqnCmw=
 golang.org/x/text v0.40.0 h1:Ub2Z6/xjgF1WrYQz2nuITOEegKFtiIy+rieRJ5lHZKs=

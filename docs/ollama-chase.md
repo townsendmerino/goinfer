@@ -355,18 +355,26 @@ the trained `GOINFER_UPDATE_GOLDENS` reflex from silently destroying the referen
 Legitimate refresh (verified change, or re-baseline on this box): `GOINFER_UPDATE_GOLDENS=1 go test -run
 TestMetalSnapshotGolden ./metal/`.
 
-**Does aikit need the same enforcement? One real gap — now CLOSED (aikit `gpu` v0.25.1).** aikit already
+**Does aikit need the same enforcement? All three gaps now CLOSED (aikit `gpu` v0.25.2).** aikit already
 makes the strict choice where parity matters (its ViT uses `CompileLibraryPrecise`) and correctly offers
 both compile paths, so no default change was warranted upstream. The gap was that `CompileLibraryPrecise`
 set `setFastMathEnabled:NO` but **never read it back** — while the *same function* asserts `languageVersion`
 against exactly this landmine class — and that setter is on Apple's deprecation path (→ `MTLMathMode`), so
 a future macOS could silently no-op it and hand back a fast-math library with aikit's own ViT parity gate
-none the wiser. **Fixed in v0.25.1:** `CompileLibraryPrecise` now prefers `setMathMode:MTLMathModeSafe`
-(runtime-probed via `respondsToSelector:`, falling back to `setFastMathEnabled:NO` on older OSes) and
-**reads the state back, erroring loudly if it didn't take** — verified on macOS 26.5.2 (mathMode=Safe,
-fastMathEnabled=0) with all 13 ViT parity gates unchanged. goinfer bumped its require to v0.25.1. Lower
-priority, still aikit's call: its Metal ViT gate is tolerance-only and its layernorm reductions are
-`tgsz`-width-coupled — goinfer's snapshot-golden + width-pin transfer directly, but precise math already
+none the wiser. **Fixed (v0.25.1, hardened v0.25.2):** `CompileLibraryPrecise` prefers
+`setMathMode:MTLMathModeSafe` (falling back to `setFastMathEnabled:NO` on older OSes) and **reads the state
+back, erroring if it didn't take**. v0.25.2 closed the subtler hole — the fallback previously *sent* the
+deprecated selectors without checking they respond, so a future OS dropping both APIs would send
+unrecognized selectors and, if the getter returned 0, report a **silent pass** (an unverified "precise"
+library — the exact failure the guard exists to prevent). Now a `respondsToSelector:`-gated switch
+requires both setter and getter of the chosen path before touching either, and errors naming both
+selectors it tried if neither responds. Also: a `RELEASING.md` ritual (the `gpu` module is separately
+versioned and root CI doesn't exercise it, so a removed guard turns nothing red — before a `gpu/vX.Y.Z`
+tag, run `gpu/` tests on a Mac+GPU and record machine+OS in the annotated tag), and aikit's ViT reduction
+width is now pinned as a documented bit-identity contract (the `ViTBlock`/`LNBLOCK`=256 constants, five
+f32-sum reductions tagged in-kernel). goinfer bumped its `aikit/gpu` require to **v0.25.2**. The remaining
+lower-priority item, still aikit's call: its Metal ViT gate is tolerance-only — goinfer's snapshot-golden
+technique transfers directly, but precise math already
 lowers the drift risk there, so treat those as an optional separate hardening pass.
 
 ### A2-Metal — the bit-identity contract, the exposure, and how divergence is prevented
@@ -410,11 +418,12 @@ mechanism reaches "never," and one axis can't be reached at all:
    env-branch guides the refresh), so precise buys *prevention* over *detection* — not worth a perpetual
    4–7% on the primary metric. **Decision: fast-math stays default; robustness is via golden-detection.**
    Kept as a documented opt-in (`GOINFER_PRECISE_MATH=1`, wired at the `BuildResident` compile call) for
-   anyone who wants OS-robust bits at that cost. **Now ENFORCED (aikit `gpu` v0.25.1):** the earlier
+   anyone who wants OS-robust bits at that cost. **Now ENFORCED (aikit `gpu` v0.25.2):** the earlier
    silent-no-op gap is closed — `CompileLibraryPrecise` prefers `setMathMode:MTLMathModeSafe` (falling
    back to `setFastMathEnabled:NO` on older OSes) and **reads the state back, erroring loudly if it didn't
-   take** (mirrors the languageVersion landmine guard). goinfer bumped its `aikit/gpu` require to v0.25.1,
-   so the opt-in is now a real guarantee, not a hope. If ever adopted as default, re-baseline the snapshot
+   take, or if neither API responds** (v0.25.2 hardened the fallback so an OS that drops both selectors
+   errors instead of silently passing). goinfer bumped its `aikit/gpu` require to v0.25.2, so the opt-in
+   is a real guarantee, not a hope. If ever adopted as default, re-baseline the snapshot
    golden.
 2. **Source determines order** *(enforcer: convention + the behavioral golden below).* Cross-thread
    float sums use the pinned `tgReduce*` widths (§2) and an explicit barrier-separated tree (never a
