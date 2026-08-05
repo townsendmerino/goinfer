@@ -62,7 +62,7 @@ func TestGemma4Paging_bitExact(t *testing.T) {
 		t.Fatalf("load paged: %v", err)
 	}
 	defer mg.Close()
-	r, err := BuildResident(mg)
+	r, err := buildResident(mg)
 	if err != nil {
 		t.Fatalf("BuildResident (paged): %v", err)
 	}
@@ -124,7 +124,7 @@ func runG4(t *testing.T, ckpt string) [][]float32 {
 		t.Fatalf("load: %v", err)
 	}
 	defer m.Close()
-	r, err := BuildResident(m)
+	r, err := buildResident(m)
 	if err != nil {
 		t.Fatalf("BuildResident: %v", err)
 	}

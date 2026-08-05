@@ -85,7 +85,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	// partial-rotary model reading invFreq out of bounds because the rope kernel hardcodes
 	// half = hd/2). Same bug class the Metal backend hit; the taxonomy lives in
 	// decoder/features.go so all three backends share one source of truth.
-	if missing := m.MissingResidentFeatures(decoder.ResidentBackendFeatures["cuda"]); len(missing) > 0 {
+	if missing := m.MissingResidentFeatures(decoder.ResidentBackendFeatures("cuda")); len(missing) > 0 {
 		return declined(fmt.Errorf("arch needs unimplemented feature(s) %v", missing))
 	}
 

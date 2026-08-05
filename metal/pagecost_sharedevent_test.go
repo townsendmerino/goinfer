@@ -18,7 +18,7 @@ import (
 // command buffers. TEST-ONLY (decode is byte-identical by default; production never calls it). Needs
 // runtime.LockOSThread on the caller: EventBoundary drives NSAutoreleasePool ops, which are
 // thread-local, and a migrating goroutine faults 0x10 on the 2nd token (banked in Step-0).
-func (r *Resident) forwardLogitsSharedEvent(pos int, ev gpu.SharedEvent, base uint64) []float32 {
+func (r *resident) forwardLogitsSharedEvent(pos int, ev gpu.SharedEvent, base uint64) []float32 {
 	r.uPos.SetU32(uint32(pos))
 	r.uNKeys.SetU32(uint32(pos + 1))
 	e := r.q.Begin()
@@ -69,7 +69,7 @@ func TestPageCost_sharedEventReal(t *testing.T) {
 		t.Fatalf("load: %v", err)
 	}
 	defer m.Close()
-	r, err := BuildResident(m)
+	r, err := buildResident(m)
 	if err != nil {
 		t.Fatalf("BuildResident: %v", err)
 	}

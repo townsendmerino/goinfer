@@ -58,7 +58,7 @@ var preciseMathCompile bool
 // prefillFeatures is what the f16 MMA prefill kernels (prefill.go) actually implement: a dense
 // SiLU FFN, per-head QK-norm, a MODEL-LEVEL rope table and a MODEL-LEVEL window. Anything else
 // — MoE (which never packs the dense FFN buffers at all), or Gemma's sandwich norms / (1+w) RMS
-// / GeGLU / per-layer rope — must decline prefill (see Resident.prefillOK). Deriving the
+// / GeGLU / per-layer rope — must decline prefill (see resident.prefillOK). Deriving the
 // predicate from the shared taxonomy keeps it honest as features land.
 var prefillFeatures = map[decoder.ResidentFeature]bool{
 	decoder.FeatQKNorm:        true,
@@ -78,9 +78,9 @@ type residLayer struct {
 	geom                                 *attnGeom       // per-layer attention geometry (hd/nKV/half/kEqV + uniforms); see geom.go
 }
 
-// Resident is a Metal-resident dense decoder. Weights uploaded once in BuildResident;
+// resident is a Metal-resident dense decoder. Weights uploaded once in BuildResident;
 // per token only the embedding + pos uniforms change.
-type Resident struct {
+type resident struct {
 	d                                                                     *Device
 	q                                                                     Queue
 	pRms, pQv, pGemv, pGemvBias, pGemvResid, pRope, pKv, pAttn, pSw, pRes Pipeline
@@ -299,7 +299,18 @@ func int4Concat(d *Device, wms ...*linalg.WeightMat) (Buffer, Buffer) {
 // BuildResident builds a Metal resident decoder from an int8-loaded dense Qwen2/Llama
 // Model. Handles Qwen2 q/k/v bias; assumes no QK-norm / sliding-window / embed-scale
 // (the DecodeRunnerEligible dense shape), full RoPE via the model's own inv-freq table.
-func BuildResident(m *decoder.Model) (*Resident, error) {
+func buildResident(m *decoder.Model) (res *resident, err error) {
+	// Exported entry point: convert the build-time panics (pipeline-compile failure, non-int4
+	// expert weights, buffer OOM — model.go/moe.go/gemma4_moe.go) into the error this signature
+	// promises, so a caller using the documented entry point directly gets a decline, not a
+	// process-killing panic (audit B-10). Registered first ⇒ runs last, after the !ok cleanup
+	// defer below has released the partial device state. The backend wrapper keeps its own
+	// recover() as defence in depth.
+	defer func() {
+		if p := recover(); p != nil {
+			res, err = nil, fmt.Errorf("metal: BuildResident panicked: %v", p)
+		}
+	}()
 	// M24(c): pin the thread and hold ONE autorelease pool for the whole build — CompileLibrary,
 	// NewComputePipeline, and every NewBuffer*/nsString create autoreleased temporaries that would
 	// otherwise leak on this unpinned, pool-less thread.
@@ -345,7 +356,7 @@ func BuildResident(m *decoder.Model) (*Resident, error) {
 		return p
 	}
 	H, nL, nH, _, _, I, V := m.Dims() // model-level hd/nKV dropped — geometry is per-layer (geom.go)
-	r := &Resident{d: d, H: H, nL: nL, nH: nH, I: I, V: V}
+	r := &resident{d: d, H: H, nL: nL, nH: nH, I: I, V: V}
 	r.pRms, r.pQv, r.pGemv = pipe("rmsnorm_quant"), pipe("quant_vec"), pipe("gemv_w4a8_coal")
 	r.pGemvBias, r.pGemvResid = pipe("gemv_w4a8_bias"), pipe("gemv_w4a8_resid")
 	r.pSA, r.pSABias, r.pSAResid = pipe("gemv_w4a8_sa"), pipe("gemv_w4a8_sa_bias"), pipe("gemv_w4a8_sa_resid")
@@ -609,13 +620,13 @@ func BuildResident(m *decoder.Model) (*Resident, error) {
 		}
 	}
 
-	ok = true // construction complete — the Resident owns everything; Close (not the defer) frees it
+	ok = true // construction complete — the resident owns everything; Close (not the defer) frees it
 	return r, nil
 }
 
 // Forward runs token `id` at absolute position `pos` and returns logits[V]. The whole
 // layer stack + LM head is encoded into ONE command buffer, one commit/wait.
-func (r *Resident) Forward(id, pos int) []float32 {
+func (r *resident) Forward(id, pos int) []float32 {
 	// Pin to one OS thread for the whole call: the NSAutoreleasePool (begin/end) is
 	// per-OS-thread, and Go can migrate goroutines mid-call — draining a pool on a
 	// different thread than it was pushed is UB (intermittent SIGSEGV). Same discipline
@@ -630,7 +641,7 @@ func (r *Resident) Forward(id, pos int) []float32 {
 // instead of a token id — it copies the embedding into the shared input buffer and skips the
 // internal embedding lookup. Numerically identical to Forward(id,pos) when emb = Embed.Row(id)
 // (the eligible dense archs have no embed scale).
-func (r *Resident) ForwardEmb(emb []float32, pos int) []float32 {
+func (r *resident) ForwardEmb(emb []float32, pos int) []float32 {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	copy(r.x.Floats(), emb)
@@ -642,7 +653,7 @@ func (r *Resident) ForwardEmb(emb []float32, pos int) []float32 {
 
 // forwardLogits encodes the trunk + full lm head and reads back logits[V]. Caller must hold
 // the OS thread and have filled r.x with the input embedding.
-func (r *Resident) forwardLogits(pos int) []float32 {
+func (r *resident) forwardLogits(pos int) []float32 {
 	r.uPos.SetU32(uint32(pos))
 	r.uNKeys.SetU32(uint32(pos + 1))
 	e := r.q.Begin()
@@ -660,7 +671,7 @@ func (r *Resident) forwardLogits(pos int) []float32 {
 // do it. finalSoftcap is 0 for every non-softcapped family (no-op). The softcap is MONOTONIC, so
 // ForwardArgmax's on-device argmax needs it not — only the full-logits paths (sampling,
 // temperature, parity) do, and both readback sites (forwardLogits, execLoop) route through here.
-func (r *Resident) finalizeLogits() {
+func (r *resident) finalizeLogits() {
 	copy(r.logitsHost, r.logits.Floats())
 	if r.finalSoftcap > 0 {
 		sc := r.finalSoftcap
@@ -674,7 +685,7 @@ func (r *Resident) finalizeLogits() {
 // decode path. Returns logits[V] (reused buffer; consume before the next call). Synchronous to
 // the caller (one job in, one logits out), but the executor overlaps the next token's encode
 // with this token's GPU execution.
-func (r *Resident) ForwardEmbPipe(emb []float32, pos int) []float32 {
+func (r *resident) ForwardEmbPipe(emb []float32, pos int) []float32 {
 	if r.g4moe != nil && r.g4moe.paged {
 		// Paging tears each MoE layer into two submits with a host readback between — the encode-ahead
 		// executor (one static command buffer/token) cannot express it. Fall back to the synchronous
@@ -693,7 +704,7 @@ func (r *Resident) ForwardEmbPipe(emb []float32, pos int) []float32 {
 
 // encodeLogitsCB builds a complete, un-committed command buffer (trunk + full lm head) with no
 // per-call pool — it autoreleases into the executor's long-lived pool.
-func (r *Resident) encodeLogitsCB() *Encoder {
+func (r *resident) encodeLogitsCB() *Encoder {
 	e := r.q.BeginNP()
 	r.encodeTrunkInto(e)
 	e.Dispatch(r.pGemvW8, (r.V)*32, 32, r.aq, r.aSc, r.lmW, r.lmS, r.logits, r.uH)
@@ -704,7 +715,7 @@ func (r *Resident) encodeLogitsCB() *Encoder {
 // execLoop is the pinned executor: pipeline commit(t) → pre-encode(t+1) → wait(t). One shared
 // autorelease pool, drained every drainEvery tokens (with a one-token non-overlapped hiccup so
 // no un-committed command buffer is live across the drain — keeps the pool LIFO-safe).
-func (r *Resident) execLoop() {
+func (r *resident) execLoop() {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	defer close(r.execDone) // Close waits here: no command buffer is live once this returns
@@ -747,7 +758,7 @@ func (r *Resident) execLoop() {
 // which is what makes freeing safe. Closing the channel only signals; the loop may still be
 // waiting on an in-flight command buffer, and releasing a buffer it references is a
 // use-after-free. (CUDA hit the mirror-image ordering constraint in d8e81cb.)
-func (r *Resident) stopExec() {
+func (r *resident) stopExec() {
 	if r.execReq != nil {
 		close(r.execReq)
 		r.execReq = nil
@@ -766,7 +777,7 @@ func (r *Resident) stopExec() {
 // Idempotent: ReleaseAll empties the ledger, so a second Close is a no-op.
 // slotBuffers returns the paged MoE slot-pool buffers — GPU-READ-ONLY (phase 2 reads them; the pread
 // stage CPU-writes their contents). Safe to pin resident.
-func (r *Resident) slotBuffers() []Buffer {
+func (r *resident) slotBuffers() []Buffer {
 	var out []Buffer
 	for l := range r.layers {
 		if p := r.layers[l].g4moe; p != nil && p.pool != nil {
@@ -779,7 +790,7 @@ func (r *Resident) slotBuffers() []Buffer {
 }
 
 // kvBuffers returns the per-layer KV cache buffers — GPU-WRITTEN by attention every token.
-func (r *Resident) kvBuffers() []Buffer {
+func (r *resident) kvBuffers() []Buffer {
 	out := make([]Buffer, 0, len(r.kc)+len(r.vc))
 	out = append(out, r.kc...)
 	out = append(out, r.vc...)
@@ -788,7 +799,7 @@ func (r *Resident) kvBuffers() []Buffer {
 
 // scratchBuffers returns the per-token GPU-WRITTEN intermediates (attention/MLP staging, MoE scratch,
 // logits, and the per-token uniform buffers). NOT the KV cache (see kvBuffers).
-func (r *Resident) scratchBuffers() []Buffer {
+func (r *resident) scratchBuffers() []Buffer {
 	out := []Buffer{
 		r.x, r.aq, r.aSc, r.ctx, r.cq, r.cSc, r.oO, r.mq, r.mSc, r.dq, r.dSc, r.dO,
 		r.logits, r.qkv, r.gu, r.part, r.tok, r.uPos, r.uNKeys,
@@ -801,11 +812,11 @@ func (r *Resident) scratchBuffers() []Buffer {
 
 // writtenBuffers is every GPU-written buffer (KV cache + scratch) — the set that MUST be excluded when
 // pinning "all read-only" buffers (pinning a written member regresses the writing phase).
-func (r *Resident) writtenBuffers() []Buffer {
+func (r *resident) writtenBuffers() []Buffer {
 	return append(r.kvBuffers(), r.scratchBuffers()...)
 }
 
-func (r *Resident) Close() {
+func (r *resident) Close() {
 	r.stopExec()
 	if r.g4moe != nil && r.g4moe.giwFile != nil {
 		_ = r.g4moe.giwFile.Close() // the pread-staging fd (GOINFER_MOE_PREAD)
@@ -820,7 +831,7 @@ func (r *Resident) Close() {
 // LastGPUTimes returns, for the last Forward, the GPU-busy window and the kernel window
 // (incl scheduling) in seconds — GPUEnd-GPUStart and kernelEnd-kernelStart from the command
 // buffer. wall - gpuBusy is the per-token host bubble (Step 0 of the headroom decision tree).
-func (r *Resident) LastGPUTimes() (gpuBusy, kernTotal float64) {
+func (r *resident) LastGPUTimes() (gpuBusy, kernTotal float64) {
 	return r.gpuEnd - r.gpuStart, r.kernEnd - r.kernStart
 }
 
@@ -828,7 +839,7 @@ func (r *Resident) LastGPUTimes() (gpuBusy, kernTotal float64) {
 // Fable's fused block-argmax (per-tile (maxLogit,rowIdx) → argmax_finish → 4-byte token). It
 // returns argmax(Forward's logits) — same values, tie-broken first-max-wins — without ever
 // materializing the logit vector. This is the fastest greedy decode path.
-func (r *Resident) ForwardArgmax(id, pos int) uint32 {
+func (r *resident) ForwardArgmax(id, pos int) uint32 {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	r.embed.Row(id, r.x.Floats())
@@ -852,7 +863,7 @@ func (r *Resident) ForwardArgmax(id, pos int) uint32 {
 //
 // Side effect worth knowing: the layers that DO run write their K/V for pos as usual, so calling
 // this repeatedly at one position is idempotent but calling it out of order is not.
-func (r *Resident) forwardTrunkForTest(emb []float32, pos, nLayers int) []float32 {
+func (r *resident) forwardTrunkForTest(emb []float32, pos, nLayers int) []float32 {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	saved := r.nL
@@ -873,7 +884,7 @@ func (r *Resident) forwardTrunkForTest(emb []float32, pos, nLayers int) []float3
 // exactly the two sublayer contributions the CUDA box traced against f32 truth. It mirrors
 // encodeTrunkInto's sandwich path dispatch-for-dispatch, but flushes after each sublayer norm to
 // read r.oO / r.dO before the add consumes them. Sandwich (Gemma) only; nil otherwise.
-func (r *Resident) forwardSubCaptureForTest(emb []float32, pos int) (attn, mlp, mlpPre, ctx, cqDeq [][]float32) {
+func (r *resident) forwardSubCaptureForTest(emb []float32, pos int) (attn, mlp, mlpPre, ctx, cqDeq [][]float32) {
 	if !r.sandwich {
 		return nil, nil, nil, nil, nil
 	}
@@ -941,7 +952,7 @@ func (r *Resident) forwardSubCaptureForTest(emb []float32, pos int) (attn, mlp, 
 // l0GegluForTest captures L0's MLP intermediates at the BOS for the geglu-vs-down cut: the f32
 // gate|up activation (r.gu) and the int8 round-trip geglu (r.dq * r.dSc) that the down-proj
 // consumes. Runs L0's attention + MLP-to-swiglu in one buffer, then reads. Sandwich only.
-func (r *Resident) l0GegluForTest(emb []float32, pos int) (gateUp, geglu8 []float32, gSc float32) {
+func (r *resident) l0GegluForTest(emb []float32, pos int) (gateUp, geglu8 []float32, gSc float32) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	copy(r.x.Floats(), emb)
@@ -989,7 +1000,7 @@ func (r *Resident) l0GegluForTest(emb []float32, pos int) (gateUp, geglu8 []floa
 //	still inflates          -> Metal's per-layer attention block (norm/QKV/RoPE/softmax) has a bug
 //
 // K is injected post-RoPE (kv_store stores post-RoPE K), so only Q gets RoPE here.
-func (r *Resident) attnConfirmForTest(resid, kHist, vHist []float32, layer, pos int, injectKV bool) []float32 {
+func (r *resident) attnConfirmForTest(resid, kHist, vHist []float32, layer, pos int, injectKV bool) []float32 {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	g := r.layers[layer].geom
@@ -1042,7 +1053,7 @@ func (r *Resident) attnConfirmForTest(resid, kHist, vHist []float32, layer, pos 
 // cannot: final-norm-quant vs the head matmul. Comparing the returned activation to the CPU's
 // f32 final-norm output isolates the quantization of the head's input; comparing the logits
 // isolates the matmul on top of it.
-func (r *Resident) forwardHeadForTest(emb []float32, pos int) (act, logits []float32) {
+func (r *resident) forwardHeadForTest(emb []float32, pos int) (act, logits []float32) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	copy(r.x.Floats(), emb)
@@ -1065,7 +1076,7 @@ func (r *Resident) forwardHeadForTest(emb []float32, pos int) (act, logits []flo
 // the shared buffers) — it does NOT set uPos/uNKeys or fill r.x; the caller sets those before
 // commit. This value-independence is what lets the executor pre-encode token t+1 while token t
 // runs (encode-ahead).
-func (r *Resident) encodeTrunkInto(e *Encoder) {
+func (r *resident) encodeTrunkInto(e *Encoder) {
 	for l := 0; l < r.nL; l++ {
 		r.encodeLayer(e, l)
 	}
@@ -1078,7 +1089,7 @@ func (r *Resident) encodeTrunkInto(e *Encoder) {
 // eventual paging path hangs its router-readback / expert-stage handshake here. Byte-identical to the
 // old inline loop body (same dispatches, same order), so encodeTrunkInto stays the single-command-
 // buffer, value-independent trunk it was.
-func (r *Resident) encodeLayer(e *Encoder, l int) {
+func (r *resident) encodeLayer(e *Encoder, l int) {
 	L := &r.layers[l]
 	r.encodeAttention(e, l)
 	// --- ffn block (dense SwiGLU/GeGLU, generic MoE, or Gemma-4 parallel dense‖MoE) ---
@@ -1104,7 +1115,7 @@ func (r *Resident) encodeLayer(e *Encoder, l int) {
 // Split from encodeLayer so the paged Gemma-4 MoE forward can put [attention + dense + router] in one
 // command buffer, submit+wait, read the router idx, stage experts, then encode [experts + join] in a
 // second — the value-dependent seam paging forces. Byte-identical to the old inline attention block.
-func (r *Resident) encodeAttention(e *Encoder, l int) {
+func (r *resident) encodeAttention(e *Encoder, l int) {
 	L := &r.layers[l]
 	g := L.geom
 	nHhd := r.nH * g.hd

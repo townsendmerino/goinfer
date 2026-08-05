@@ -58,16 +58,16 @@ func (b *metalBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwa
 	}()
 	// Admission check: DecodeRunnerEligible was scoped to the richer WebGPU/CUDA runner, which
 	// admits QK-norm / sliding-window / partial-rotary and more. The Metal kernel set implements
-	// only a subset (decoder.ResidentBackendFeatures["metal"]); anything it doesn't implement must
+	// only a subset (decoder.ResidentBackendFeatures("metal")); anything it doesn't implement must
 	// DECLINE (→ correct CPU fallback) rather than run with the feature silently dropped. The
 	// subset check uses the shared taxonomy (one source of truth; a new arch classifies itself).
-	if missing := m.MissingResidentFeatures(decoder.ResidentBackendFeatures["metal"]); len(missing) > 0 {
+	if missing := m.MissingResidentFeatures(decoder.ResidentBackendFeatures("metal")); len(missing) > 0 {
 		if os.Getenv("GOINFER_RESIDENT_DEBUG") != "" {
 			fmt.Fprintf(os.Stderr, "[metal] declined — unimplemented features: %v\n", missing)
 		}
 		return nil, false, nil
 	}
-	res, e := BuildResident(m)
+	res, e := buildResident(m)
 	if e != nil {
 		if os.Getenv("GOINFER_RESIDENT_DEBUG") != "" {
 			fmt.Fprintf(os.Stderr, "[metal] BuildResident declined: %v\n", e)
@@ -85,10 +85,10 @@ func (b *metalBackend) Close() error {
 	return nil
 }
 
-// metalResident adapts *Resident (whose Forward takes a token id and returns logits, no error)
+// metalResident adapts *resident (whose Forward takes a token id and returns logits, no error)
 // to decoder.ResidentForward (Forward takes a precomputed embedding and returns logits+error).
 type metalResident struct {
-	r      *Resident
+	r      *resident
 	hidden int
 }
 

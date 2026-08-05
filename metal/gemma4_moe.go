@@ -32,7 +32,7 @@ type pagedProfile struct {
 
 // PagedProfile returns the accumulated per-phase paging profile (see pagedProfile). Snapshot before
 // and after a timed decode window and subtract for the window's breakdown.
-func (r *Resident) PagedProfile() pagedProfile { return r.prof }
+func (r *resident) PagedProfile() pagedProfile { return r.prof }
 
 // Gemma-4 enable_moe_block (26B-A4B) MSL kernels — the parallel dense‖MoE FFN that the generic
 // moe.go path (Mixtral/Qwen/GLM shape) cannot express. Kept in their OWN file/const, concatenated
@@ -133,7 +133,7 @@ type gemma4MoeResident struct {
 	idxZeros Buffer
 
 	// giwFile is the re-opened .giw for pread-staging (GOINFER_MOE_PREAD=1); nil ⇒ the mmap byte-copy
-	// path. Shared read-only fd across every layer's pool; closed by Resident.Close.
+	// path. Shared read-only fd across every layer's pool; closed by resident.Close.
 	giwFile *os.File
 }
 
@@ -150,7 +150,7 @@ type gemma4MoeLayer struct {
 	pool                                         *expertPool // non-nil when paged: LRU slot pool + on-demand staging
 }
 
-// buildGemma4MoE builds the Resident-level Gemma-4 MoE state (pipelines, config, uniforms, scratch)
+// buildGemma4MoE builds the resident-level Gemma-4 MoE state (pipelines, config, uniforms, scratch)
 // from a model that declares enable_moe_block. Returns nil when the model has no gemma4 MoE layer,
 // and an error for a shape this path cannot express (so BuildResident declines → CPU fallback rather
 // than mis-running). Mirrors cuda/backend.go's isG4MoE build and its int4-width shape checks.
@@ -370,7 +370,7 @@ func buildGemma4MoELayer(d *Device, m *decoder.Model, b *decoder.Gemma4MoEReside
 // value-independent (the top-k loop count is the model constant topK; each expert GEMV reads its
 // own rIdx slot at execution time), so the command buffer is static every token and the encode-
 // ahead executor still pre-encodes token t+1 while t runs (task-metal-moe.md).
-func (r *Resident) encodeGemma4MoEFFN(e *Encoder, L *residLayer) {
+func (r *resident) encodeGemma4MoEFFN(e *Encoder, L *residLayer) {
 	r.encodeG4Phase1(e, L)         // dense branch + router + preFFN2 quant
 	r.encodeG4Phase2NonPaged(e, L) // experts from the stacked all-E buffer
 	r.encodeG4Join(e, L)           // postFFN2 + join
@@ -380,7 +380,7 @@ func (r *Resident) encodeGemma4MoEFFN(e *Encoder, L *residLayer) {
 // (→rIdx/rWgt device buffers), ending with the expert-branch input quant (preFFN2(h) → mq/mSc). In
 // the paged forward this is the first command buffer; the host then reads rIdx and stages the routed
 // experts before phase 2. Byte-identical to the old inline head (same dispatches, same order).
-func (r *Resident) encodeG4Phase1(e *Encoder, L *residLayer) {
+func (r *resident) encodeG4Phase1(e *Encoder, L *residLayer) {
 	g := r.g4moe
 	ml := L.g4moe
 	// dense branch → g4x1 (xd = preFFN(h), gelu-tanh GeGLU, own post-norm)
@@ -401,7 +401,7 @@ func (r *Resident) encodeG4Phase1(e *Encoder, L *residLayer) {
 
 // encodeG4Phase2NonPaged runs the k selected experts out of the STACKED all-E buffers (rIdx read at
 // kernel-execution time — value-independent dispatch), accumulating into g4x2. The all-resident path.
-func (r *Resident) encodeG4Phase2NonPaged(e *Encoder, L *residLayer) {
+func (r *resident) encodeG4Phase2NonPaged(e *Encoder, L *residLayer) {
 	g := r.g4moe
 	ml := L.g4moe
 	e.Dispatch(g.pZero, r.H, 256, g.g4x2)
@@ -417,7 +417,7 @@ func (r *Resident) encodeG4Phase2NonPaged(e *Encoder, L *residLayer) {
 // read row 0 of its single-expert slot (idxZeros[j]==0) while rWgt is still indexed by the selection
 // slot uSlot[j], so the reused gemv_w4a8_moe(_wacc) kernels compute byte-identically to the stacked
 // path (slot bytes == the stacked buffer's rows for that expert).
-func (r *Resident) encodeG4Phase2Paged(e *Encoder, slots []expertSlot) {
+func (r *resident) encodeG4Phase2Paged(e *Encoder, slots []expertSlot) {
 	g := r.g4moe
 	e.Dispatch(g.pZero, r.H, 256, g.g4x2)
 	for j := 0; j < g.topK; j++ {
@@ -434,7 +434,7 @@ func (r *Resident) encodeG4Phase2Paged(e *Encoder, slots []expertSlot) {
 // +43%): [attention + dense + router] → submit+wait → read rIdx → stage the routed top-k into the
 // layer's LRU slot pool → [experts-from-slots + join] → submit+wait. Assumes the caller filled r.x
 // with the embedding and holds the OS thread (ForwardEmb does both).
-func (r *Resident) forwardLogitsPaged(pos int) []float32 {
+func (r *resident) forwardLogitsPaged(pos int) []float32 {
 	r.uPos.SetU32(uint32(pos))
 	r.uNKeys.SetU32(uint32(pos + 1))
 	g := r.g4moe
@@ -528,7 +528,7 @@ func (r *Resident) forwardLogitsPaged(pos int) []float32 {
 
 // encodeG4Join is the shared tail: postFFN2 on the expert accumulator, then the join —
 // h = (h + postFFN(x1 + x2)) · layerScalar (sum before the joint norm, residual after it, scalar last).
-func (r *Resident) encodeG4Join(e *Encoder, L *residLayer) {
+func (r *resident) encodeG4Join(e *Encoder, L *residLayer) {
 	g := r.g4moe
 	ml := L.g4moe
 	e.Dispatch(r.pRmsF32, 256, 256, g.g4x2, ml.postFFN2, r.uH, r.uEps, r.uAddOne)

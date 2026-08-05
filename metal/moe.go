@@ -179,7 +179,7 @@ type moeResident struct {
 	shGl, shDown        Buffer // shared-expert scratch: gate logit[1], down out[H]
 }
 
-// buildMoE builds the Resident-level MoE state (pipelines, config, uniforms, scratch) from a
+// buildMoE builds the resident-level MoE state (pipelines, config, uniforms, scratch) from a
 // dense-shaped model that actually declares an MoE FFN. Returns nil when the model is not MoE,
 // and an error for an MoE variant this path does not implement (so BuildResident declines →
 // CPU fallback rather than running wrong).
@@ -290,7 +290,7 @@ func f32Mat(d *Device, w *linalg.WeightMat) Buffer {
 // dispatches. post-attn norm → router logits → on-GPU top-k → per-selected-expert
 // gate|up/swiglu/weighted-down → optional shared expert. Value-independent (idx/wgt read at
 // kernel-execution time), so the encode-ahead executor still pre-encodes it.
-func (r *Resident) encodeMoEFFN(e *Encoder, L *residLayer) {
+func (r *resident) encodeMoEFFN(e *Encoder, L *residLayer) {
 	mo := r.moe
 	ml := L.moe
 	// post-attn RMSNorm → quantized activation mq/mSc (same as the dense FFN entry).

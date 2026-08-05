@@ -22,7 +22,7 @@ func TestGemma3_GeneratesCoherently(t *testing.T) {
 	// then gemma3 declines to CPU by design, so rf is nil — a skip, not a failure, exactly as the
 	// sibling TestGemma3ResidentParity guards. The moment the declaration lands this goes live
 	// (the rf==nil below then t.Fatals, catching a silent CPU fallback). See docs/task-metal-gemma.md.
-	if !decoder.ResidentBackendFeatures["metal"][decoder.FeatSandwichNorm] {
+	if !decoder.ResidentBackendFeatures("metal")[decoder.FeatSandwichNorm] {
 		t.Skip("metal does not declare the Gemma features yet (kernels dormant)")
 	}
 	path := os.ExpandEnv("$HOME/models/gemma-3-4b-it-Q4_K_M.gguf")

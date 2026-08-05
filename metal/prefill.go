@@ -261,7 +261,7 @@ type prefillState struct {
 	pGemm, pGemmStore, pRms, pRes, pSw, pRope, pKv, pAttn, pQK, pRmsQ Pipeline
 }
 
-func (r *Resident) ensurePrefill() {
+func (r *resident) ensurePrefill() {
 	if r.pf != nil {
 		return
 	}
@@ -295,7 +295,7 @@ func (r *Resident) ensurePrefill() {
 // buffer via the f16 MMA path (weights read once, amortized across M — unlike the token-by-token
 // decode loop), populating the resident KV cache, and returns the LAST token's logits[V] (what a
 // generator needs to sample the first output token). Correctness-gated vs the sequential path.
-func (r *Resident) PrefillLast(embs [][]float32, startPos int) []float32 {
+func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 	r.ensurePrefill()
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -355,7 +355,7 @@ func (r *Resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 	// (~100–150 MB for a 7B; guF alone is Mpad*2I*2), ratcheting until the mustBuf OOM panic killed
 	// serve (that panic is recovered only on the BuildResident path, not here). e.End() below
 	// commits AND waits, so the GPU is finished with them by the time this returns — release each
-	// at end of call. (r.uH / r.uKvDim / r.uHd are Resident-owned and reused — deliberately NOT in
+	// at end of call. (r.uH / r.uKvDim / r.uHd are resident-owned and reused — deliberately NOT in
 	// this list; releasing them would corrupt the decode path.)
 	scratch := []Buffer{
 		xF, normF, qkvF, ctxF, guF, dqF, posB,

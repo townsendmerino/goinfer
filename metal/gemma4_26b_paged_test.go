@@ -50,7 +50,7 @@ func TestGemma4_26B_pagedRuns(t *testing.T) {
 		t.Fatalf("load: %v", err)
 	}
 	defer m.Close()
-	r, err := BuildResident(m)
+	r, err := buildResident(m)
 	if err != nil {
 		t.Fatalf("BuildResident (paged, N=%d): %v — the 26B did not fit/build", N, err)
 	}
@@ -186,7 +186,7 @@ func TestGemma4_26B_pagedRuns(t *testing.T) {
 }
 
 // moeLayerIdx returns the resident's paged MoE layer indices.
-func moeLayerIdx(r *Resident) []int {
+func moeLayerIdx(r *resident) []int {
 	var out []int
 	for l := range r.layers {
 		if p := r.layers[l].g4moe; p != nil && p.pool != nil {

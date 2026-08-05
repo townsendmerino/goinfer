@@ -5,7 +5,7 @@ package metal
 // attnGeom is one distinct per-layer attention geometry, shared by every layer that has it.
 // It exists because Gemma 4's own-forward residency (9c) interleaves two attention shapes in
 // one model — local (head_dim 256, kv_heads 8, full rotary) and global (head_dim 512, kv_heads
-// 2, partial rotary, K=V) — so geometry can no longer live model-level on *Resident. A launch
+// 2, partial rotary, K=V) — so geometry can no longer live model-level on *resident. A launch
 // site that read r.hd/r.nKV/... would silently run every layer at the model-level (uniform)
 // shape; those fields were REMOVED so binding the wrong source is a compile error, not a review
 // catch. On a uniform family every layer resolves to the SAME geometry, so geomFor dedups by
@@ -13,7 +13,7 @@ package metal
 //
 // nH (query heads) is LOAD-BEARING as a model-level field: it is NOT part of the geom key
 // because it is constant across a family's layers (Gemma 4 varies head_dim and kv_heads, not the
-// query-head count — 16 in both the 12B and 26B variants), so it stays on *Resident. A future
+// query-head count — 16 in both the 12B and 26B variants), so it stays on *resident. A future
 // family with PER-LAYER query-head counts would break this: it would have to move nH onto attnGeom
 // and add it to the key. This comment is the marker that stops the next person bisecting for it.
 // nHhd = nH*hd DOES vary with hd, so uNHhd is derived per-geometry here. kEqV joins the key
@@ -36,7 +36,7 @@ type attnGeom struct {
 // caching by value so repeated (uniform) geometries share a single object. r.nH must be set before
 // the first call (BuildResident sets it on the struct literal). The cache is caller-owned (a local
 // in BuildResident) — the geom's buffers are on the device ledger and freed by Close like any other.
-func (r *Resident) geomFor(cache map[[4]int]*attnGeom, hd, nKV, half int, kEqV bool) *attnGeom {
+func (r *resident) geomFor(cache map[[4]int]*attnGeom, hd, nKV, half int, kEqV bool) *attnGeom {
 	key := [4]int{hd, nKV, half, b2i(kEqV)}
 	if g := cache[key]; g != nil {
 		return g

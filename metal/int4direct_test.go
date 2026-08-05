@@ -39,7 +39,7 @@ func TestGemma_Int4DirectContext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load int4: %v", err)
 	}
-	r, err := BuildResident(m4)
+	r, err := buildResident(m4)
 	if err != nil {
 		t.Fatalf("BuildResident(int4): %v", err)
 	}

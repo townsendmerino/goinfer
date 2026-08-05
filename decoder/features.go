@@ -196,7 +196,7 @@ func missingFeatures(required []ResidentFeature, implemented map[ResidentFeature
 // precision gate (Model.DecodeRunnerEligible). Those are precision choices, not "can this backend
 // run this family", so the matrix shows capability and footnotes the policy.
 func ResidentEligible(a *Architecture, backend string) bool {
-	impl, ok := ResidentBackendFeatures[backend]
+	impl, ok := residentBackendFeatures[backend]
 	if !ok {
 		return false
 	}
@@ -237,7 +237,25 @@ func residentMoECapacityOK(a *Architecture, backend string) bool {
 	return true
 }
 
-// ResidentBackendFeatures declares what each resident backend's decode path implements.
+// ResidentBackendFeatures returns a COPY of the feature set a resident backend implements
+// (nil if the backend is unknown). Returning a copy keeps the source map read-only from
+// outside the package: an external caller or third-party init() cannot add a feature claim
+// its kernels don't implement — precisely the silent-wrong-output failure the registry exists
+// to prevent — nor trigger a fatal concurrent map write during a Load (audit B-09). Callers
+// look up one backend by name; the package's own admission path reads the unexported map.
+func ResidentBackendFeatures(backend string) map[ResidentFeature]bool {
+	src := residentBackendFeatures[backend]
+	if src == nil {
+		return nil
+	}
+	out := make(map[ResidentFeature]bool, len(src))
+	for k, v := range src {
+		out[k] = v
+	}
+	return out
+}
+
+// residentBackendFeatures declares what each resident backend's decode path implements.
 //
 // These live HERE, not in the backends, for two reasons. First, one source of truth: three
 // hand-maintained copies of this logic is precisely how the silent-wrong-output bug recurs
@@ -248,7 +266,7 @@ func residentMoECapacityOK(a *Architecture, backend string) bool {
 //
 // A backend adds an entry ONLY when it ships the kernel that implements it. Overclaiming here
 // is exactly the lie the gate exists to catch.
-var ResidentBackendFeatures = map[string]map[ResidentFeature]bool{
+var residentBackendFeatures = map[string]map[ResidentFeature]bool{
 	// cgo-free CUDA (cuda/): the dense Qwen2/Llama block, plus QK-norm, sliding window, the
 	// Gemma set ((1+w) RMS, sandwich norms, GeGLU, embed scale, per-layer RoPE base), partial
 	// rotary, and MoE (routed + ungated shared expert). Still NOT implemented: per-layer rotary

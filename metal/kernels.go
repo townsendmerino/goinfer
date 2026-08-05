@@ -288,7 +288,7 @@ kernel void kv_store(device const float* k[[buffer(0)]], device const float* v[[
     kc[pos*kvDim+i]=half(k[i]); vc[pos*kvDim+i]=half(v[i]); // f16 KV: half the cache bytes + read BW
 }
 // kv_store_f32 / attention_f32 — the FULL-PRECISION KV twins, used on Gemma's sandwich path only
-// (Resident.kvF32). Gemma's low-magnitude attention contexts amplify f16-KV rounding into a
+// (resident.kvF32). Gemma's low-magnitude attention contexts amplify f16-KV rounding into a
 // catastrophic per-layer context error (0.64 vs f32's 0.92 cosine; matched-input confirmer
 // isolated it to the KV cache). Qwen is insensitive and keeps the f16 path (half the cache BW).
 kernel void kv_store_f32(device const float* k[[buffer(0)]], device const float* v[[buffer(1)]],

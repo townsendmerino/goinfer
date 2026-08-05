@@ -113,7 +113,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	// the check is expected to be a no-op for everything DecodeRunnerEligible admits — its
 	// job is future arches: one that lands with a feature nobody implemented declines here
 	// instead of mis-running.
-	if missing := m.MissingResidentFeatures(decoder.ResidentBackendFeatures["webgpu"]); len(missing) > 0 {
+	if missing := m.MissingResidentFeatures(decoder.ResidentBackendFeatures("webgpu")); len(missing) > 0 {
 		if os.Getenv("GOINFER_RESIDENT_DEBUG") != "" {
 			fmt.Fprintf(os.Stderr, "[gpu] BuildResident declined: arch needs unimplemented feature(s) %v\n", missing)
 		}

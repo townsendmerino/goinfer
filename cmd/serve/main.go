@@ -238,11 +238,12 @@ type config struct {
 
 func main() {
 	var (
-		cfg  config
-		addr = flag.String("addr", ":8080", "listen address")
+		cfg    config
+		addr   = flag.String("addr", "127.0.0.1:8080", "listen address (defaults to loopback; use 0.0.0.0:8080 to expose, and set -api-key when you do)")
+		apiKey = flag.String("api-key", "", "optional shared secret; when set, every request must send it as `Authorization: Bearer <key>` or `x-api-key: <key>`. Falls back to $GOINFER_API_KEY. REQUIRED with -allow-admin.")
 	)
 	flag.StringVar(&cfg.sessionDir, "session-dir", "", "optional dir to persist/restore KV sessions across restarts (.giw-kv snapshots)")
-	flag.BoolVar(&cfg.allowAdmin, "allow-admin", false, "enable POST /admin/models/{load,unload} (loads attacker-named paths — deliberate opt-in)")
+	flag.BoolVar(&cfg.allowAdmin, "allow-admin", false, "enable POST /admin/models/{load,unload} (loads attacker-named paths — deliberate opt-in; requires -api-key)")
 	flag.StringVar(&cfg.visionPath, "vision", "", "vision tower dir (SigLIP encoder + projector) for a multimodal --model; enables image content parts. Defaults to the --model dir when it contains a vision tower")
 	flag.StringVar(&cfg.visionQuant, "vision-quant", "f32", "vision encoder weight quant: f32 (default, bit-exact) | int8 (W8A8, cosine ~0.999) — int8 only speeds the compute-bound ViT prefill on AVX512-VNNI; on AVX2 it's a wash, so f32 is the default")
 	flag.Var(&cfg.models, "model", "generative model: a .gguf/.giw file or HF dir (chat/completions). Repeatable\n"+
@@ -278,6 +279,16 @@ func main() {
 		flag.Usage()
 		os.Exit(2)
 	}
+	// Resolve the optional shared secret (flag wins over env). -allow-admin exposes an
+	// arbitrary-path model load + sidecar write, so it must not run unauthenticated (B-14).
+	authKey := *apiKey
+	if authKey == "" {
+		authKey = os.Getenv("GOINFER_API_KEY")
+	}
+	if cfg.allowAdmin && authKey == "" {
+		fmt.Fprintln(os.Stderr, "error: -allow-admin requires -api-key (or $GOINFER_API_KEY) — admin load/unload must be authenticated")
+		os.Exit(2)
+	}
 	if err := sessionDirOK(cfg.sessionDir); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(2)
@@ -308,20 +319,23 @@ func main() {
 
 	// Every POST body is size-bounded (M3): the chat/messages endpoints carry
 	// base64 image_url data, so they get the larger vision cap; the rest a few MB.
+	// auth wraps a handler with the optional shared-secret check (no-op when authKey
+	// is ""); every route below goes through it so a set key protects the whole surface.
+	auth := func(h http.HandlerFunc) http.HandlerFunc { return requireAuth(authKey, h) }
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /v1/models", srv.handleModels)
+	mux.HandleFunc("GET /v1/models", auth(srv.handleModels))
 	if len(srv.models) > 0 {
-		mux.HandleFunc("POST /v1/chat/completions", maxBytes(maxVisionBodyBytes, srv.handleChat))
-		mux.HandleFunc("POST /v1/completions", maxBytes(maxBodyBytes, srv.handleCompletions))
-		mux.HandleFunc("POST /v1/responses", maxBytes(maxBodyBytes, srv.handleResponses))
-		mux.HandleFunc("POST /v1/messages", maxBytes(maxVisionBodyBytes, srv.handleMessages))
-		mux.HandleFunc("POST /v1/messages/count_tokens", maxBytes(maxBodyBytes, srv.handleCountTokens))
+		mux.HandleFunc("POST /v1/chat/completions", auth(maxBytes(maxVisionBodyBytes, srv.handleChat)))
+		mux.HandleFunc("POST /v1/completions", auth(maxBytes(maxBodyBytes, srv.handleCompletions)))
+		mux.HandleFunc("POST /v1/responses", auth(maxBytes(maxBodyBytes, srv.handleResponses)))
+		mux.HandleFunc("POST /v1/messages", auth(maxBytes(maxVisionBodyBytes, srv.handleMessages)))
+		mux.HandleFunc("POST /v1/messages/count_tokens", auth(maxBytes(maxBodyBytes, srv.handleCountTokens)))
 	}
 	if srv.embed != nil {
-		mux.HandleFunc("POST /v1/embeddings", maxBytes(maxBodyBytes, srv.handleEmbeddings))
+		mux.HandleFunc("POST /v1/embeddings", auth(maxBytes(maxBodyBytes, srv.handleEmbeddings)))
 	}
-	mux.HandleFunc("POST /admin/models/load", maxBytes(maxBodyBytes, srv.handleAdminLoad))
-	mux.HandleFunc("POST /admin/models/unload", maxBytes(maxBodyBytes, srv.handleAdminUnload))
+	mux.HandleFunc("POST /admin/models/load", auth(maxBytes(maxBodyBytes, srv.handleAdminLoad)))
+	mux.HandleFunc("POST /admin/models/unload", auth(maxBytes(maxBodyBytes, srv.handleAdminUnload)))
 
 	// ReadHeaderTimeout + IdleTimeout bound slow-header (slowloris) and idle
 	// keep-alive connections. WriteTimeout stays 0: SSE responses are long-lived

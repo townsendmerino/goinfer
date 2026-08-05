@@ -38,7 +38,7 @@ func cosMaxAbs(a, b []float32) (cos, maxAbs float64) {
 // directly. env on so the arch is bridge-eligible; BuildResident itself does not gate on the env
 // (admission is covered by TestGemma4Admission_envGated), so a direct build is the forward-numerics
 // vehicle here. Returns the resident, the resident-embedding model, and the CPU model.
-func buildTwoGeom(t *testing.T) (*Resident, *decoder.Model, *decoder.Model) {
+func buildTwoGeom(t *testing.T) (*resident, *decoder.Model, *decoder.Model) {
 	t.Helper()
 	if _, err := os.Stat(twoGeomDir); err != nil {
 		t.Skipf("no fixture (%s) — scp testdata/gemma4-dense-twogeom-tiny from the box", twoGeomDir)
@@ -48,7 +48,7 @@ func buildTwoGeom(t *testing.T) (*Resident, *decoder.Model, *decoder.Model) {
 	if err != nil {
 		t.Fatalf("load (resident side): %v", err)
 	}
-	r, err := BuildResident(mg)
+	r, err := buildResident(mg)
 	if err != nil {
 		t.Fatalf("BuildResident: %v — metal declined the dense two-geometry fixture", err)
 	}
@@ -82,7 +82,7 @@ func TestGemma4TwoGeom_localize(t *testing.T) {
 		t.Fatalf("expected >=3 captured hidden states (post-embed + 2 layers), got %d", len(cpuHidden))
 	}
 	emb := mg.EmbedResidentForTest(tok)
-	// Resident residual stream after N layers (forwardTrunkForTest runs encodeTrunkInto with nL=N;
+	// resident residual stream after N layers (forwardTrunkForTest runs encodeTrunkInto with nL=N;
 	// r.x holds the pre-final-norm residual, matching the CPU capture).
 	metalL0 := r.forwardTrunkForTest(emb, 0, 1)
 	metalL1 := r.forwardTrunkForTest(emb, 0, 2)
@@ -136,7 +136,7 @@ func TestGemma4TwoGeom_f16ScaleConfound(t *testing.T) {
 		t.Fatalf("load (resident side): %v", err)
 	}
 	defer mg.Close()
-	r, err := BuildResident(mg)
+	r, err := buildResident(mg)
 	if err != nil {
 		t.Fatalf("BuildResident: %v", err)
 	}

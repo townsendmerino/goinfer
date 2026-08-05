@@ -149,6 +149,9 @@ type KVCache struct {
 // capHint pre-sizes the per-layer slices to avoid reallocation during a
 // known-length generation; 0 is fine (grow on demand).
 func NewKVCache(numLayers, numKVHeads, headDim, window, capHint int) *KVCache {
+	if capHint < 0 { // defensive: a negative hint (e.g. from a negative max_tokens) would
+		capHint = 0 // panic makeslice with "cap out of range"; the HTTP surface rejects it
+	} // upstream (audit C-19), this guards every other caller too.
 	kvDim := numKVHeads * headDim
 	c := &KVCache{
 		numLayers: numLayers,

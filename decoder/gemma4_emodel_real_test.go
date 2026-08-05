@@ -39,7 +39,7 @@ func TestGemma4EModel_realDeclinesResident(t *testing.T) {
 
 	// Every resident backend must report FeatGemma4EModel missing ⇒ decline.
 	for _, be := range []string{"cuda", "metal", "webgpu"} {
-		missing := m.MissingResidentFeatures(ResidentBackendFeatures[be])
+		missing := m.MissingResidentFeatures(residentBackendFeatures[be])
 		if !slices.Contains(missing, FeatGemma4EModel) {
 			t.Errorf("%s: real E2B is NOT declined for the E-model shape (missing=%v) — it would be admitted and mis-run", be, missing)
 		}

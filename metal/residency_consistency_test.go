@@ -30,7 +30,7 @@ func TestResidencySet_pinsExactlyTheLiveSlots(t *testing.T) {
 	t.Setenv("GOINFER_METAL_MOE_SLOTS", strconv.Itoa(3)) // < nE (4) → paged
 	t.Setenv("GOINFER_MOE_RESIDENCY", "1")               // default-on anyway; explicit for the gate
 
-	r, err := BuildResident(m)
+	r, err := buildResident(m)
 	if err != nil {
 		t.Fatalf("BuildResident: %v", err)
 	}

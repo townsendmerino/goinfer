@@ -16,7 +16,7 @@ const moeTinyDir = "../testdata/gemma4-moe-tiny"
 // env on so the arch is bridge-eligible; BuildResident is the forward-numerics vehicle (admission is
 // covered by TestGemma4Admission_envGated). A build error here means metal DECLINED the parallel
 // dense‖MoE — which, before Step 5d, it did on purpose (the buildMoE guard).
-func buildMoeTiny(t *testing.T) (*Resident, *decoder.Model, *decoder.Model) {
+func buildMoeTiny(t *testing.T) (*resident, *decoder.Model, *decoder.Model) {
 	t.Helper()
 	if _, err := os.Stat(moeTinyDir); err != nil {
 		t.Skipf("no fixture (%s) — scp testdata/gemma4-moe-tiny from the box", moeTinyDir)
@@ -26,7 +26,7 @@ func buildMoeTiny(t *testing.T) (*Resident, *decoder.Model, *decoder.Model) {
 	if err != nil {
 		t.Fatalf("load (resident side): %v", err)
 	}
-	r, err := BuildResident(mg)
+	r, err := buildResident(mg)
 	if err != nil {
 		mg.Close()
 		t.Fatalf("BuildResident: %v — metal declined the gemma4 parallel dense‖MoE fixture", err)

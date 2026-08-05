@@ -29,7 +29,7 @@ func TestPrefillNoNaN(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	r, err := BuildResident(m)
+	r, err := buildResident(m)
 	if err != nil {
 		t.Fatalf("resident: %v", err)
 	}

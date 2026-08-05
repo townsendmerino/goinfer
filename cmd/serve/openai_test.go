@@ -105,6 +105,33 @@ func TestPrepare_sampling(t *testing.T) {
 	}
 }
 
+// prepare rejects out-of-range max_tokens up front so a bad value never reaches
+// NewCache (negative → makeslice panic on the VL bare goroutine, C-19; huge → OOM
+// throw that kills the server, C-18).
+func TestPrepare_maxTokensBounds(t *testing.T) {
+	lm := &loadedModel{}
+	i := func(v int) *int { return &v }
+	for _, tc := range []struct {
+		name string
+		mt   int
+		ok   bool
+	}{
+		{"negative", -1000000, false},
+		{"zero", 0, false},
+		{"one", 1, true},
+		{"ceiling", maxOutputTokensCeiling, true},
+		{"over-ceiling", maxOutputTokensCeiling + 1, false},
+	} {
+		_, err := lm.prepare(sampling{MaxTokens: i(tc.mt)}, []int{1, 2, 3})
+		if tc.ok && err != nil {
+			t.Errorf("%s: max_tokens=%d unexpectedly rejected: %v", tc.name, tc.mt, err)
+		}
+		if !tc.ok && err == nil {
+			t.Errorf("%s: max_tokens=%d should have been rejected", tc.name, tc.mt)
+		}
+	}
+}
+
 func TestChatChunkShape(t *testing.T) {
 	fin := "stop"
 	b, _ := json.Marshal(chatChunk("id1", 123, "m", delta{Content: "hi"}, &fin))

@@ -59,7 +59,7 @@ func TestMetal_CloseFreesMemory(t *testing.T) {
 		if err != nil {
 			t.Fatalf("load: %v", err)
 		}
-		r, err := BuildResident(m)
+		r, err := buildResident(m)
 		if err != nil {
 			t.Fatalf("BuildResident: %v", err)
 		}
@@ -118,7 +118,7 @@ func TestMetal_PrefillScratchDoesNotLeak(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	r, err := BuildResident(m)
+	r, err := buildResident(m)
 	if err != nil {
 		t.Fatalf("BuildResident: %v", err)
 	}
@@ -190,12 +190,12 @@ func TestMetal_CloseWithSecondModelAlive(t *testing.T) {
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no checkpoint at %s", path)
 	}
-	load := func() *Resident {
+	load := func() *resident {
 		m, err := decoder.Load(path, decoder.Options{Quant: "int8int8"})
 		if err != nil {
 			t.Fatalf("load: %v", err)
 		}
-		r, err := BuildResident(m)
+		r, err := buildResident(m)
 		if err != nil {
 			t.Fatalf("BuildResident: %v", err)
 		}
@@ -255,6 +255,6 @@ func TestMetal_CloseWithSecondModelAlive(t *testing.T) {
 // ledgerLens reports how many MTLBuffers and non-buffer objc objects a resident's Device still owns
 // — the compression-immune ground truth for "did Close free it". Via aikit/gpu's exported
 // LedgerLen accessor (the device layer now lives there; Device's ledgers are private to it).
-func ledgerLens(r *Resident) (bufs, objs int) {
+func ledgerLens(r *resident) (bufs, objs int) {
 	return r.d.LedgerLen()
 }

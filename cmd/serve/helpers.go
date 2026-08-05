@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -26,6 +27,31 @@ const (
 func maxBytes(n int64, h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		r.Body = http.MaxBytesReader(w, r.Body, n)
+		h(w, r)
+	}
+}
+
+// requireAuth wraps a handler with an optional shared-secret check (audit B-14).
+// When key == "" it is a pass-through (auth disabled — the historical behaviour,
+// safe only because -addr now defaults to loopback). When key is set, the request
+// must present it as `Authorization: Bearer <key>` or `x-api-key: <key>`; a
+// constant-time compare avoids leaking the key length/prefix via timing. This is a
+// coarse gate (one shared secret, not per-user) — enough to keep an exposed port
+// from being open inference, and required whenever -allow-admin is on.
+func requireAuth(key string, h http.HandlerFunc) http.HandlerFunc {
+	if key == "" {
+		return h
+	}
+	want := []byte(key)
+	return func(w http.ResponseWriter, r *http.Request) {
+		got := r.Header.Get("x-api-key")
+		if got == "" {
+			got = strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		}
+		if subtle.ConstantTimeCompare([]byte(got), want) != 1 {
+			writeErr(w, http.StatusUnauthorized, "missing or invalid API key")
+			return
+		}
 		h(w, r)
 	}
 }

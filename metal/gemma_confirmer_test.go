@@ -43,7 +43,7 @@ func TestGemmaConfirmer_MatchedInput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load int4: %v", err)
 	}
-	r, err := BuildResident(m)
+	r, err := buildResident(m)
 	if err != nil {
 		t.Fatalf("BuildResident: %v", err)
 	}

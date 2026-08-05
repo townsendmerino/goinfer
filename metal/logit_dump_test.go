@@ -32,7 +32,7 @@ func TestDumpLogitsForBisect(t *testing.T) {
 		t.Fatalf("load: %v", err)
 	}
 	defer m.Close()
-	r, err := BuildResident(m)
+	r, err := buildResident(m)
 	if err != nil {
 		t.Fatalf("BuildResident: %v", err)
 	}

@@ -13,7 +13,7 @@ import (
 // Step 1). On a UNIFORM model every layer's geometry equals the model's, so byte-identical
 // parity (TestDenseResidentParity) CANNOT distinguish a correct port — one where every dispatch
 // reads residLayer.geom — from a decorative one that still bound a model-level source: the output
-// is identical either way. Removing the model-level geometry fields from *Resident made the wrong
+// is identical either way. Removing the model-level geometry fields from *resident made the wrong
 // source a COMPILE error; this is the runtime companion: it poisons ONE layer's geometry and
 // asserts the logits move, proving L.geom is actually consumed (not dead-stored) before K=V,
 // softcap, and Gemma-4 admission land on top of the seam. Mirrors cuda's TestGeometryPortIsLive.
@@ -36,7 +36,7 @@ func TestGeometryPortIsLive(t *testing.T) {
 		t.Fatalf("load: %v", err)
 	}
 	defer m.Close()
-	r, err := BuildResident(m)
+	r, err := buildResident(m)
 	if err != nil {
 		t.Fatalf("BuildResident: %v", err)
 	}

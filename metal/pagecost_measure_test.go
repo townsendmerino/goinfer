@@ -21,7 +21,7 @@ import (
 //
 // It reuses encodeLayer (the per-layer seam), so it drives dense / generic-MoE / gemma4-MoE layers
 // identically — the number it produces is the submission overhead, which is architecture-independent.
-func (r *Resident) forwardLogitsPerLayerSubmit(pos int) []float32 {
+func (r *resident) forwardLogitsPerLayerSubmit(pos int) []float32 {
 	r.uPos.SetU32(uint32(pos))
 	r.uNKeys.SetU32(uint32(pos + 1))
 	for l := 0; l < r.nL; l++ {
@@ -65,7 +65,7 @@ func TestPageCost_submissionStructure(t *testing.T) {
 		t.Fatalf("load: %v", err)
 	}
 	defer m.Close()
-	r, err := BuildResident(m)
+	r, err := buildResident(m)
 	if err != nil {
 		t.Fatalf("BuildResident: %v", err)
 	}

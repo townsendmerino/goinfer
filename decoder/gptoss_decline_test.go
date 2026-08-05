@@ -29,7 +29,7 @@ func TestGptOss_backendsDecline(t *testing.T) {
 
 	// No resident backend implements FeatAttnSink → every one must decline.
 	for _, be := range []string{"cuda", "metal", "webgpu"} {
-		if impl, ok := ResidentBackendFeatures[be]; ok && impl[FeatAttnSink] {
+		if impl, ok := residentBackendFeatures[be]; ok && impl[FeatAttnSink] {
 			t.Errorf("backend %q claims FeatAttnSink but gpt-oss is CPU-only — must not implement it", be)
 		}
 		if ResidentEligible(arch, be) {

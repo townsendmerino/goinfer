@@ -173,27 +173,27 @@ func LoadEagleHead(dir string) (*EagleHead, error) {
 // (the chain then comes only from the drafted-token embeddings + the head's KV).
 var eagleRecurFeature = true
 
-// eagleState is the head's own KV cache across the K autoregressive draft steps,
+// EagleState is the head's own KV cache across the K autoregressive draft steps,
 // plus the RoPE inverse-frequency table (built once from the head's rope_theta).
-type eagleState struct {
+type EagleState struct {
 	k, v    [][]float32 // per step: [nKV*headDim]
 	invFreq []float64   // [headDim/2]
 }
 
 // NewState returns a fresh per-draft-block head state.
-func (h *EagleHead) NewState() *eagleState {
+func (h *EagleHead) NewState() *EagleState {
 	half := h.headDim / 2
 	inv := make([]float64, half)
 	for d := range inv {
 		inv[d] = math.Pow(h.ropeTheta, -float64(2*d)/float64(h.headDim))
 	}
-	return &eagleState{invFreq: inv}
+	return &EagleState{invFreq: inv}
 }
 
 // clone returns a copy of the head state's KV (sharing the immutable invFreq) so a
 // drafted tree can branch: each branch continues from the shared prefix independently.
-func (st *eagleState) clone() *eagleState {
-	c := &eagleState{invFreq: st.invFreq, k: make([][]float32, len(st.k)), v: make([][]float32, len(st.v))}
+func (st *EagleState) clone() *EagleState {
+	c := &EagleState{invFreq: st.invFreq, k: make([][]float32, len(st.k)), v: make([][]float32, len(st.v))}
 	copy(c.k, st.k)
 	copy(c.v, st.v)
 	return c
@@ -264,11 +264,11 @@ func eagleTreeNodes(b, d int) int {
 // so the tree has eagleTreeNodes(b, d) = Σ_{i=1}^{d} b^i nodes (NOT b chains — b is the
 // branch factor at EVERY depth). firstTok/seedFeature/startPos are the root (last
 // confirmed token). The first draft node is at absolute position startPos+1.
-func (h *EagleHead) DraftTree(be Backend, st *eagleState, embedOf func(tok int, dst []float32), firstTok int, seedFeature []float32, startPos, b, d int) TreeDraft {
+func (h *EagleHead) DraftTree(be Backend, st *EagleState, embedOf func(tok int, dst []float32), firstTok int, seedFeature []float32, startPos, b, d int) TreeDraft {
 	emb := make([]float32, h.hidden)
 	// expandable carries the per-node head state + feature needed to expand its children.
 	type expandable struct {
-		st      *eagleState
+		st      *EagleState
 		feature []float32 // the feature this node's own Step consumes (its parent's hidden)
 		idx     int       // node index, -1 for the synthetic root
 	}
@@ -329,7 +329,7 @@ func (h *EagleHead) Fuse(be Backend, h3 []float32) []float32 {
 // returns the draft-vocab logits AND the head's hidden output (the pre-final-norm
 // residual) — which is the feature the NEXT autoregressive step consumes. The decoder
 // layer attends over concat(embed, feature) (2*hidden in), residual over the feature.
-func (h *EagleHead) Step(be Backend, embedRow, feature []float32, pos int, st *eagleState) (logits, hiddenOut []float32) {
+func (h *EagleHead) Step(be Backend, embedRow, feature []float32, pos int, st *EagleState) (logits, hiddenOut []float32) {
 	hid := h.hidden
 	e := append([]float32(nil), embedRow...)
 	rmsNorm(e, h.inputNorm, 1, hid, h.normEps, false)
@@ -397,7 +397,7 @@ func (h *EagleHead) Draft(be Backend, embedOf func(tok int, dst []float32), firs
 // sees the local draft chain). For each i it runs one head step over (token toks[i],
 // fused target feature feats[i]) at position startPos+i, keeping the KV and discarding
 // logits. Returns the populated state to DraftFrom.
-func (h *EagleHead) Prefill(be Backend, embedOf func(tok int, dst []float32), toks []int, feats [][]float32, startPos int) *eagleState {
+func (h *EagleHead) Prefill(be Backend, embedOf func(tok int, dst []float32), toks []int, feats [][]float32, startPos int) *EagleState {
 	st := h.NewState()
 	h.Extend(be, st, embedOf, toks, feats, startPos)
 	return st
@@ -406,7 +406,7 @@ func (h *EagleHead) Prefill(be Backend, embedOf func(tok int, dst []float32), to
 // Extend appends context steps (toks[i] at position startPos+i, with feature feats[i])
 // onto an existing head state, discarding logits — so a speculative loop can grow the
 // head's KV incrementally across rounds instead of rebuilding it (O(C) → O(1)/round).
-func (h *EagleHead) Extend(be Backend, st *eagleState, embedOf func(tok int, dst []float32), toks []int, feats [][]float32, startPos int) {
+func (h *EagleHead) Extend(be Backend, st *EagleState, embedOf func(tok int, dst []float32), toks []int, feats [][]float32, startPos int) {
 	emb := make([]float32, h.hidden)
 	for i, tok := range toks {
 		embedOf(tok, emb)
@@ -416,7 +416,7 @@ func (h *EagleHead) Extend(be Backend, st *eagleState, embedOf func(tok int, dst
 
 // DraftFrom is Draft continuing from a pre-built state (its KV already populated over
 // the context by Prefill). startPos is the absolute position of firstTok.
-func (h *EagleHead) DraftFrom(be Backend, st *eagleState, embedOf func(tok int, dst []float32), firstTok int, seedFeature []float32, startPos, k int) []int {
+func (h *EagleHead) DraftFrom(be Backend, st *EagleState, embedOf func(tok int, dst []float32), firstTok int, seedFeature []float32, startPos, k int) []int {
 	feature := seedFeature
 	tok := firstTok
 	emb := make([]float32, h.hidden)
@@ -437,7 +437,7 @@ func (h *EagleHead) DraftFrom(be Backend, st *eagleState, embedOf func(tok int, 
 
 // attend is the head's single-query GQA attention over its stored K/V (causal by
 // construction — the head only attends positions it has drafted so far).
-func (h *EagleHead) attend(q []float32, st *eagleState, ctx []float32) {
+func (h *EagleHead) attend(q []float32, st *EagleState, ctx []float32) {
 	n := len(st.k)
 	group := h.nHeads / h.nKV
 	scale := 1.0 / math.Sqrt(float64(h.headDim))

@@ -93,7 +93,7 @@ func TestResidentAdmission_matrix(t *testing.T) {
 		req := archFeatureProfile[name]
 		var admits []string
 		for _, be := range backends {
-			impl, ok := ResidentBackendFeatures[be]
+			impl, ok := residentBackendFeatures[be]
 			if !ok {
 				t.Fatalf("backend %q has no declared feature set", be)
 			}
@@ -132,7 +132,7 @@ func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 		"metal": {FeatQKNorm, FeatSlidingWindow, FeatPartialRotary, FeatMoE, FeatMoEGatedShared, FeatSandwichNorm, FeatGatedGELU, FeatRMSAddOne, FeatEmbedScale, FeatPerLayerRoPE, FeatFinalLogitSoftcap},
 	}
 	for be, exp := range want {
-		got := ResidentBackendFeatures[be]
+		got := residentBackendFeatures[be]
 		if len(got) != len(exp) {
 			t.Errorf("%s declares %d features, expected %d — if a kernel really landed, update this "+
 				"test deliberately; %v", be, len(got), len(exp), got)
@@ -152,7 +152,7 @@ func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 		FeatOutBias: true, FeatLogitScale: true, FeatMoE: true, FeatMoEGatedShared: true,
 		FeatMLA: true, FeatSSM: true, FeatLayerNorm: true, FeatParallelBlock: true, FeatNoPE: true,
 	}
-	for be, set := range ResidentBackendFeatures {
+	for be, set := range residentBackendFeatures {
 		for f := range set {
 			if !known[f] {
 				t.Errorf("%s declares unknown feature %q", be, f)
@@ -268,7 +268,7 @@ func TestResidentMoECapacity_routerCap(t *testing.T) {
 	}
 
 	// The decline must be the CAP, not a missing feature: WebGPU implements everything kimi needs.
-	if miss := missingFeatures(arch.residentFeatures(), ResidentBackendFeatures["webgpu"]); len(miss) != 0 {
+	if miss := missingFeatures(arch.residentFeatures(), residentBackendFeatures["webgpu"]); len(miss) != 0 {
 		t.Fatalf("kimi_k2 is missing WebGPU features %v — this test can no longer isolate the router cap", miss)
 	}
 	if ResidentEligible(arch, "webgpu") {

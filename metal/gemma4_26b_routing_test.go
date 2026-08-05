@@ -14,7 +14,7 @@ import (
 // forwardPagedCaptureIdxForTest runs the paged forward at position pos and returns the top-k expert
 // idx the Metal router SELECTED at each MoE layer (read off g.rIdx after each layer's router, before
 // staging). Test 1 of the routing-divergence probe.
-func (r *Resident) forwardPagedCaptureIdxForTest(pos int) [][]int {
+func (r *resident) forwardPagedCaptureIdxForTest(pos int) [][]int {
 	r.uPos.SetU32(uint32(pos))
 	r.uNKeys.SetU32(uint32(pos + 1))
 	g := r.g4moe
@@ -66,7 +66,7 @@ func TestGemma4_26B_routingAgreement(t *testing.T) {
 		t.Fatalf("load: %v", err)
 	}
 	defer m.Close()
-	r, err := BuildResident(m)
+	r, err := buildResident(m)
 	if err != nil {
 		t.Fatalf("BuildResident: %v", err)
 	}

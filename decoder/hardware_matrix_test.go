@@ -147,7 +147,7 @@ func stripCR(b []byte) []byte { return bytes.ReplaceAll(b, []byte{'\r'}, nil) }
 // regenerated table diverges from the committed one (so TestHardwareMatrix_fresh would go RED).
 // Same discipline as the parity/NaN gates. Reverts the mutation.
 func TestHardwareMatrix_breakItFirst(t *testing.T) {
-	impl := ResidentBackendFeatures["cuda"]
+	impl := residentBackendFeatures["cuda"]
 	if !impl[FeatSlidingWindow] {
 		t.Skip("cuda no longer declares FeatSlidingWindow — pick another feature")
 	}

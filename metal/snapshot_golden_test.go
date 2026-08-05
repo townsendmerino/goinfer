@@ -56,7 +56,7 @@ func TestMetalSnapshotGolden(t *testing.T) {
 			t.Fatalf("load %s: %v", mm.dir, err)
 		}
 		_, _, _, _, _, _, V := m.Dims()
-		r, err := BuildResident(m)
+		r, err := buildResident(m)
 		if err != nil {
 			t.Fatalf("BuildResident %s: %v", mm.dir, err)
 		}

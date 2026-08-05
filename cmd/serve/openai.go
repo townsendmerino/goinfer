@@ -23,6 +23,13 @@ import (
 
 const defaultMaxTokens = 512
 
+// maxOutputTokensCeiling is a hard upper bound on a request's max_tokens. KV is
+// preallocated as len(prompt)+max_tokens per layer, so an unbounded value (e.g.
+// {"max_tokens": 2000000000}) triggers a fatal, unrecoverable Go "out of memory"
+// throw that kills the server for every client (audit C-18). A request above this
+// is rejected 400 rather than clamped, so the caller learns its request was too big.
+const maxOutputTokensCeiling = 131072
+
 // loadedModel is one resident generative model and the per-model state a request
 // needs: its tokenizer, chat template, stop ids, vocab, warm-KV sessions, and the
 // mutex that serializes its generations (one model = one shared compute stream).
@@ -451,6 +458,19 @@ func (lm *loadedModel) prepare(sm sampling, promptIDs []int) (genRequest, error)
 	maxTok := sm.MaxTokens
 	if sm.MaxCompletionTokens != nil { // OpenAI's newer field wins over the legacy max_tokens
 		maxTok = sm.MaxCompletionTokens
+	}
+	if maxTok != nil {
+		// A negative/zero value reaches NewCache(len(prompt)+maxTokens) → makeslice with a
+		// negative cap → an unrecovered panic (fatal on the VL path's bare goroutine — audit
+		// C-19); a huge value OOM-kills the server (C-18). Reject both here so every endpoint
+		// that calls prepare (OpenAI/responses/tools/vision) gets a clean 400. The Anthropic
+		// endpoint already rejects <= 0 upstream.
+		if *maxTok < 1 {
+			return genRequest{}, fmt.Errorf("max_tokens must be >= 1 (got %d)", *maxTok)
+		}
+		if *maxTok > maxOutputTokensCeiling {
+			return genRequest{}, fmt.Errorf("max_tokens %d exceeds the server ceiling of %d", *maxTok, maxOutputTokensCeiling)
+		}
 	}
 	gr := genRequest{
 		promptIDs:   promptIDs,

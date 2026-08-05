@@ -14,7 +14,7 @@ import (
 // forwardPagedCaptureForTest replicates forwardLogitsPaged's per-layer walk but captures the residual
 // r.x AFTER each layer (readable post-submit+wait), so a paged-Metal-vs-CPU per-layer cosine trace can
 // localize the 26B divergence to a specific layer. Caller holds the OS thread + filled r.x.
-func (r *Resident) forwardPagedCaptureForTest(pos int) [][]float32 {
+func (r *resident) forwardPagedCaptureForTest(pos int) [][]float32 {
 	r.uPos.SetU32(uint32(pos))
 	r.uNKeys.SetU32(uint32(pos + 1))
 	g := r.g4moe
@@ -85,7 +85,7 @@ func TestGemma4_26B_localize(t *testing.T) {
 		t.Logf("  {hd=%d nKV=%d half=%d kEqV=%d} → layers %v", k.hd, k.nKV, k.half, k.kEqV, ls)
 	}
 
-	r, err := BuildResident(m)
+	r, err := buildResident(m)
 	if err != nil {
 		t.Fatalf("BuildResident: %v", err)
 	}

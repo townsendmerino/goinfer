@@ -36,7 +36,7 @@ func TestBackendResidentWired(t *testing.T) {
 	// A model needing features this backend does not implement SHOULD decline (that is the
 	// admission gate working, not a regression) — skip rather than fail. For anything CUDA
 	// does implement, a nil resident IS a regression.
-	if missing := mc.MissingResidentFeatures(decoder.ResidentBackendFeatures["cuda"]); len(missing) > 0 {
+	if missing := mc.MissingResidentFeatures(decoder.ResidentBackendFeatures("cuda")); len(missing) > 0 {
 		t.Skipf("model needs unimplemented feature(s) %v — CUDA correctly declines to the staged path", missing)
 	}
 	rf := mc.ResidentForwardForTest()
