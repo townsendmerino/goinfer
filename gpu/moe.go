@@ -209,13 +209,14 @@ type ResidentStackedW8A8 struct {
 }
 
 // Release frees the stacked buffers.
-func (s *ResidentStackedW8A8) Release() {
+func (s *ResidentStackedW8A8) Close() error {
 	if s.bq != nil {
 		s.bq.Release()
 	}
 	if s.bScales != nil {
 		s.bScales.Release()
 	}
+	return nil
 }
 
 // UploadStackedExperts packs nE experts' int8 weights [each N,K] + per-row scales [each N]

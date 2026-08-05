@@ -218,14 +218,14 @@ func (b *webgpuBackend) MatmulW8A8Batch(a []float32, M, K int, ops []linalg.W8A8
 func (b *webgpuBackend) Close() error {
 	b.mu.Lock()
 	for _, rm := range b.resident {
-		rm.Release()
+		rm.Close()
 	}
 	b.resident = nil
 	for _, qr := range b.qresident {
 		if qr.runner != nil {
-			qr.runner.Release()
+			qr.runner.Close()
 		}
-		qr.rm.Release()
+		qr.rm.Close()
 	}
 	b.qresident = nil
 	b.mu.Unlock()

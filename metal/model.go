@@ -816,7 +816,10 @@ func (r *resident) writtenBuffers() []Buffer {
 	return append(r.kvBuffers(), r.scratchBuffers()...)
 }
 
-func (r *resident) Close() {
+// Close releases every resource this resident allocated. Returns error to satisfy
+// io.Closer and match cuda/gpu's Close() error (audit B-12); teardown itself can't fail
+// (best-effort native releases), so it always returns nil.
+func (r *resident) Close() error {
 	r.stopExec()
 	if r.g4moe != nil && r.g4moe.giwFile != nil {
 		_ = r.g4moe.giwFile.Close() // the pread-staging fd (GOINFER_MOE_PREAD)
@@ -826,6 +829,7 @@ func (r *resident) Close() {
 		r.d.ReleaseAll()     // every MTLBuffer
 		r.d.ReleaseObjects() // command queue, ~40 pipelines, 1-2 libraries, and the MTLDevice (M24b)
 	}
+	return nil
 }
 
 // LastGPUTimes returns, for the last Forward, the GPU-busy window and the kernel window

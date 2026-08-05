@@ -97,7 +97,7 @@ type ResidentW8A8 struct {
 }
 
 // Release frees the resident GPU buffers.
-func (rm *ResidentW8A8) Release() {
+func (rm *ResidentW8A8) Close() error {
 	if rm.bq != nil {
 		rm.bq.Release()
 		rm.bq = nil
@@ -106,6 +106,7 @@ func (rm *ResidentW8A8) Release() {
 		rm.bScales.Release()
 		rm.bScales = nil
 	}
+	return nil
 }
 
 // padK rounds K up to a multiple of 16, so the packed word count (kp/4) is a

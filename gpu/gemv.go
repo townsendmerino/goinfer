@@ -413,13 +413,14 @@ func (r *GEMVRunner) Run(aq []int8, aScale float32) ([]float32, error) {
 }
 
 // Release frees the runner's buffers (not the resident weight).
-func (r *GEMVRunner) Release() {
+func (r *GEMVRunner) Close() error {
 	r.aBuf.Release()
 	r.asBuf.Release()
 	r.dstBuf.Release()
 	r.dimsBuf.Release()
 	r.stag.Release()
 	r.bg.Release()
+	return nil
 }
 
 // gemvGrid maps N output columns to a 2D workgroup grid (X capped at 32768 so

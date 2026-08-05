@@ -99,7 +99,7 @@ type ResidentW4A8 struct {
 }
 
 // Release frees the resident GPU buffers.
-func (rm *ResidentW4A8) Release() {
+func (rm *ResidentW4A8) Close() error {
 	if rm.bq != nil {
 		rm.bq.Release()
 		rm.bq = nil
@@ -108,6 +108,7 @@ func (rm *ResidentW4A8) Release() {
 		rm.bScales.Release()
 		rm.bScales = nil
 	}
+	return nil
 }
 
 func padK32(k int) int { return (k + 31) &^ 31 }

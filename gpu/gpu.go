@@ -340,7 +340,7 @@ func (c *Context) Backend() string {
 
 // Close releases all GPU resources. Safe to call once; the Context must
 // not be used afterward.
-func (c *Context) Close() {
+func (c *Context) Close() error {
 	if c.quantPipeline != nil {
 		c.quantPipeline.Release()
 		c.quantShader.Release()
@@ -403,6 +403,7 @@ func (c *Context) Close() {
 	c.device.Release()
 	c.adapter.Release()
 	c.instance.Release()
+	return nil
 }
 
 // ResidentMatrix is a weight matrix [rows, cols] uploaded to a GPU storage
@@ -417,11 +418,12 @@ type ResidentMatrix struct {
 }
 
 // Release frees the resident GPU buffer. Safe to call once.
-func (rm *ResidentMatrix) Release() {
+func (rm *ResidentMatrix) Close() error {
 	if rm.buf != nil {
 		rm.buf.Release()
 		rm.buf = nil
 	}
+	return nil
 }
 
 // UploadMatrix copies a [rows, cols] f32 matrix to a resident GPU storage

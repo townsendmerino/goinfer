@@ -74,11 +74,12 @@ type DeviceBuffer struct {
 	n   int
 }
 
-func (d *DeviceBuffer) Release() {
+func (d *DeviceBuffer) Close() error {
 	if d != nil && d.buf != nil {
 		d.buf.Release()
 		d.buf = nil
 	}
+	return nil
 }
 
 func (c *Context) ensureQuantize() error {
@@ -288,18 +289,18 @@ func (c *Context) ChainW8A8(act []float32, M int, weights []*ResidentW8A8) ([]fl
 	for _, rm := range weights {
 		qb, sb, err := c.quantizeDevice(cur, M, rm.cols)
 		if err != nil {
-			cur.Release()
+			cur.Close()
 			return nil, err
 		}
 		out, err := c.matmulW8A8Device(qb, sb, rm, M)
-		qb.Release()
-		sb.Release()
-		cur.Release()
+		qb.Close()
+		sb.Close()
+		cur.Close()
 		if err != nil {
 			return nil, err
 		}
 		cur = out
 	}
-	defer cur.Release()
+	defer cur.Close()
 	return c.Readback(cur)
 }

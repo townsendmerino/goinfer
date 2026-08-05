@@ -186,4 +186,4 @@ func (a *metalResident) Reset()             {}
 // Close stops the pipelined executor (waiting for it) and frees every MTLBuffer this resident
 // allocated. Metal buffers are unified/system memory and purego has no ARC, so without this a
 // multi-model serve (or /admin/models/unload) leaks the whole model per load.
-func (a *metalResident) Close() error { a.r.Close(); return nil }
+func (a *metalResident) Close() error { return a.r.Close() }

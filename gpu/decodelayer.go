@@ -168,7 +168,7 @@ func (c *Context) attnBlockInto(xd *DeviceBuffer, w AttnWeights, hidden, nH, nKV
 	if err != nil {
 		return nil, err
 	}
-	frees = append(frees, func() { qb.Release() }, func() { sb.Release() })
+	frees = append(frees, func() { qb.Close() }, func() { sb.Close() })
 	q, err := c.matmulW8A8Device(qb, sb, w.QProj, 1)
 	if err != nil {
 		return nil, err
@@ -181,7 +181,7 @@ func (c *Context) attnBlockInto(xd *DeviceBuffer, w AttnWeights, hidden, nH, nKV
 	if err != nil {
 		return nil, err
 	}
-	frees = append(frees, func() { q.Release() }, func() { k.Release() }, func() { v.Release() })
+	frees = append(frees, func() { q.Close() }, func() { k.Close() }, func() { v.Close() })
 
 	if err := keep(c.ropeInPlace(q, w.InvFreq, nH, hd, pos, 1)); err != nil {
 		return nil, err
@@ -204,12 +204,12 @@ func (c *Context) attnBlockInto(xd *DeviceBuffer, w AttnWeights, hidden, nH, nKV
 	if err != nil {
 		return nil, err
 	}
-	frees = append(frees, func() { cq.Release() }, func() { cs.Release() })
+	frees = append(frees, func() { cq.Close() }, func() { cs.Close() })
 	attnOut, err := c.matmulW8A8Device(cq, cs, w.OProj, 1)
 	if err != nil {
 		return nil, err
 	}
-	frees = append(frees, func() { attnOut.Release() })
+	frees = append(frees, func() { attnOut.Close() })
 	if err := keep(c.residualInPlace(xd, attnOut, hidden)); err != nil {
 		return nil, err
 	}
@@ -223,7 +223,7 @@ func (c *Context) AttnBlock(x []float32, w AttnWeights, hidden, nH, nKV, hd, pos
 	if err != nil {
 		return nil, err
 	}
-	defer xd.Release()
+	defer xd.Close()
 	frees, err := c.attnBlockInto(xd, w, hidden, nH, nKV, hd, pos, start, eps, scale, addOne)
 	if err != nil {
 		return nil, err
@@ -273,7 +273,7 @@ func (c *Context) mlpInto(xd, rmsW *DeviceBuffer, gate, up, down *ResidentW8A8, 
 	if err != nil {
 		return frees, err
 	}
-	frees = append(frees, func() { qb.Release() }, func() { sb.Release() })
+	frees = append(frees, func() { qb.Close() }, func() { sb.Close() })
 	gd, err := c.matmulW8A8Device(qb, sb, gate, 1)
 	if err != nil {
 		return frees, err
@@ -282,7 +282,7 @@ func (c *Context) mlpInto(xd, rmsW *DeviceBuffer, gate, up, down *ResidentW8A8, 
 	if err != nil {
 		return frees, err
 	}
-	frees = append(frees, func() { gd.Release() }, func() { ud.Release() })
+	frees = append(frees, func() { gd.Close() }, func() { ud.Close() })
 	mid, fs2, err := c.swigluDevice(gd, ud, inter)
 	if err := keep(fs2, err); err != nil {
 		return frees, err
@@ -291,12 +291,12 @@ func (c *Context) mlpInto(xd, rmsW *DeviceBuffer, gate, up, down *ResidentW8A8, 
 	if err != nil {
 		return frees, err
 	}
-	frees = append(frees, func() { qb2.Release() }, func() { sb2.Release() })
+	frees = append(frees, func() { qb2.Close() }, func() { sb2.Close() })
 	dd, err := c.matmulW8A8Device(qb2, sb2, down, 1)
 	if err != nil {
 		return frees, err
 	}
-	frees = append(frees, func() { dd.Release() })
+	frees = append(frees, func() { dd.Close() })
 	if err := keep(c.residualInPlace(xd, dd, hidden)); err != nil {
 		return frees, err
 	}
@@ -328,7 +328,7 @@ func (c *Context) DecodeToken(x []float32, m ModelW, hidden, nH, nKV, hd, inter,
 	}
 	var frees []func()
 	relAll := func() {
-		xd.Release()
+		xd.Close()
 		for _, f := range frees {
 			f()
 		}
@@ -359,13 +359,13 @@ func (c *Context) DecodeToken(x []float32, m ModelW, hidden, nH, nKV, hd, inter,
 		relAll()
 		return nil, err
 	}
-	frees = append(frees, func() { qb.Release() }, func() { sb.Release() })
+	frees = append(frees, func() { qb.Close() }, func() { sb.Close() })
 	logits, err := c.matmulW8A8Device(qb, sb, m.LMHead, 1)
 	if err != nil {
 		relAll()
 		return nil, err
 	}
-	frees = append(frees, func() { logits.Release() })
+	frees = append(frees, func() { logits.Close() })
 	out, err := c.Readback(logits) // the single fence for the whole token
 	relAll()
 	return out, err

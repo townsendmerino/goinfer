@@ -1149,4 +1149,4 @@ func (r *DecodeRunner) release() {
 }
 
 // Release frees the runner's scratch (not the resident model).
-func (r *DecodeRunner) Release() { r.release() }
+func (r *DecodeRunner) Close() error { r.release(); return nil }
