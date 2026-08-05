@@ -27,6 +27,10 @@ testdata/*-gptq
 testdata/*-awq
 # generated tiny qwen3_5_moe parity checkpoint (scripts/pin_qwen35_forward.py)
 testdata/qwen35-tiny/
+# generated tiny/scaled parity checkpoints — weights are *.safetensors (ignored above), but the
+# tokenizer/config JSONs are not, so ignore the whole dirs; the *_golden.json in testdata/ stay tracked.
+testdata/tiny-qwen2-moe/
+testdata/gemma4-dense-scaled-*/
 # generated tiny vision-language parity checkpoints (scripts/pin_siglip_vision.py,
 # scripts/pin_gemma3_vl_tiny.py) — regenerated locally; the *_golden.json stay tracked.
 testdata/siglip-tiny/

@@ -37,8 +37,11 @@ func TestQwen2Moe_forwardParity(t *testing.T) {
 	if err := json.Unmarshal(raw, &g); err != nil {
 		t.Fatalf("parse golden: %v", err)
 	}
-	if _, err := os.Stat(qwen2moeModelDir); errors.Is(err, fs.ErrNotExist) {
-		t.Skipf("no qwen2_moe checkpoint at %s", qwen2moeModelDir)
+	// Stat the WEIGHTS file, not just the dir: the tokenizer/config JSONs can end up present (e.g. a
+	// stray `git add`) while the large model.safetensors stays uncommitted, which would slip past a
+	// dir-only check and Fatalf in Load. Skip cleanly when the weights are absent, like the siblings.
+	if _, err := os.Stat(qwen2moeModelDir + "/model.safetensors"); errors.Is(err, fs.ErrNotExist) {
+		t.Skipf("no qwen2_moe checkpoint weights at %s — regenerate with scripts/pin_llama_forward.py", qwen2moeModelDir)
 	}
 
 	m, err := Load(qwen2moeModelDir, Options{})
