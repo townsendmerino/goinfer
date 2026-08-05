@@ -4,8 +4,8 @@ go 1.26.5
 
 require (
 	github.com/cogentcore/webgpu v0.23.0
-	github.com/townsendmerino/aikit v1.11.0
-	github.com/townsendmerino/goinfer v0.8.0
+	github.com/townsendmerino/aikit v1.16.0
+	github.com/townsendmerino/goinfer v0.9.0
 )
 
 require (
