@@ -614,9 +614,28 @@ quality-neutral. Scoped in `task-rotation-perrow-imma.md`, explicitly **not fund
 that doc's motivating estimate still cites the stale ~23× weight-amortisation figure and must
 be re-derived from the profile before anyone opens it.
 
-Its Phase 0 is the cheap test that could retire most of it: **measure how much per-row scales
-alone cost in quality, with no rotation.** If the answer is "almost nothing," the candidate
-collapses to a much cheaper change.
+**Phase 0 — MEASURED (2026-08-04, `TestPerRowScalePhase0`).** The cheap gate the doc called for is
+now a number, not a guess. Real qwen3-1.7B weights (Q8→f32 proxy, real outlier distribution),
+`sym` int4 reconstruction rel-error ‖W−Wq‖/‖W‖ across all 196 projections:
+
+| scale granularity | rel-error | vs per-group |
+|---|---|---|
+| per-group `sym` (**shipped**, 32-elem groups) | 0.100 | 1.00× |
+| per-row `sym` (naive maxabs, IMMA-associative) | 0.174 | **1.73×** |
+| per-row `symmse` (MSE-optimal per-row scale, **no rotation**) | 0.125 | **1.24×** |
+
+**The finding refutes the doc's own framing in BOTH directions.** Not "almost nothing" (naive
+per-row is 1.73× — a real hit, down-proj worst at 1.95×), so per-row-as-a-free-swap is dead. But
+ALSO not "rotation is the price of admission": a per-row **scale search** alone — a cheap grid over
+the maxabs scale, no Hadamard/rotation machinery, no `task-rotation-perrow-imma.md` — recovers most
+of the gap to **1.24×**. The residual 1.24× is small enough it may be OUTPUT-benign (this repo has
+characterized benign int4 perturbations at that level — nemotron 92.5% greedy / KL 0.058). So the
+fork is gated on a much cheaper question than assumed: **Phase 0b = forward quality** (top-1
+agreement / KL / perplexity of a per-row-`symmse` model vs the shipped per-group model, real forward
+passes, still NO kernel). If 0b is benign, the tensor-core 3× needs a per-row-symmse requant + one
+parity refresh + the IMMA kernel — NOT the rotation campaign. **Rotation moves from prerequisite to
+last-resort (only if 0b shows 1.24× is not benign).** Phase 0b is the next §7 step; still not funded,
+but now cheap and de-risked.
 
 ### The tempting middle path, and why it is a trap
 
