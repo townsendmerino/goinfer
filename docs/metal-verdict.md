@@ -197,12 +197,25 @@ prefix cache (the first cut mis-read depth until this was fixed).
   the shallow gap is 1.16–1.34× depending on goinfer harness (a ~15% goinfer harness discrepancy,
   row 3 vs row 4, worth its own note); the *depth* gap is unambiguous and larger than written.
 
-**Re-ranking:** the long-context deficit is bigger than the doc assumed — which *strengthens* M-B
-(§6): it is the only lever that touches a 4.2×-at-4000 gap, and M-A now means conceding 4.2× at 4000,
-not ~3×. FA-is-the-cause is strongly implied (peer flat with FA-confirmed-on; goinfer craters) but not
-yet isolated on-box — a peer-with-FA-*off* curve (llama-server `--flash-attn off` direct) would nail
-causation; optional M0+ follow-up. §B3 server-to-server wall-clock re-anchor still pending (needs
-goinfer's *server* re-measured too — out of this decode-only scope).
+**M0+ FA-off isolation (2026-08-04) — FA is causal, but only PART of the gap.** Re-ran with
+`OLLAMA_FLASH_ATTENTION=0` (→ llama-server `--flash-attn off`, `flash_attn = disabled` in the log):
+peer FA-off depth curve **82.4 / 85.5 / 69.3 / 56.2** (128/1024/1953/3663) vs FA-on **85.2 / 79.1 /
+80.7 / 77.5**. So FA is causally confirmed — it flattens the curve (86→77 with, 86→56 without, ≈1.4×
+at depth). **But the decomposition matters:** peer-FA-off (56 @3663) is still **~3× goinfer (18.5)**.
+The ~4.2× depth gap is therefore **~1.4× FA × ~3× the peer's contract-free *non-FA* attention
+parallelization** — and that second, larger factor is the contract itself: llama.cpp's plain (non-FA)
+attention already parallelizes far better than goinfer's contract-bound kernel, which is exactly why
+all four bit-identical attempts lost (§4). **The FA-off peer is the external witness that "the contract
+prices out the mechanism" is bigger than FA alone** — it prices out the whole attention parallelization,
+FA or not.
+
+**Re-ranking:** the deficit is bigger than the doc assumed (4.2× not 3× @4000) *and* it isn't purely
+FA. Consequences for M1: (a) **M-A concedes 4.2× at 4000**; (b) **M-B** — breaking the contract for an
+FA-style throughput mode — captures the depth term up to goinfer's *own* shallow floor (~50–64, §6.1's
+estimate stands; the residual peer 86-vs-goinfer-64 shallow is the §2a dense-decode ceiling, not
+fundable); (c) a purely *bit-identical* depth win is now doubly refuted — §4's four attempts plus the
+FA-off witness that even non-FA parallelization is beyond the contract's reach. §B3 wall-clock re-anchor
+still pending (needs goinfer's *server* re-measured — out of this decode-only scope).
 
 **M1 — the fork decision (§6).** A decision, not code.
 
