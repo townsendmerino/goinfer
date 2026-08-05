@@ -5,8 +5,8 @@
 *An entire 1.5B LLM in one file — instant boot (~0.4s), <100 MB heap, runs offline. Writes correct generic Go and **cannot** emit invalid JSON. No cgo, no Python, no model download.*
 
 **Run open-weight LLMs in pure Go — one cgo-free static binary, portable by default and
-native-GPU-fast when you want it.** Every modern model, HuggingFace-parity-gated, and a
-model that *cannot* emit invalid JSON. No Python, no llama.cpp, no CUDA toolkit.
+native-GPU-fast when you want it.** ~20 model architectures, HuggingFace-parity-gated, with
+schema-constrained structured output. No Python, no llama.cpp, no CUDA toolkit.
 
 goinfer is a pure-Go, no-cgo decoder-only LLM runtime that loads open-weight checkpoints
 and runs them **in-process**. What makes it different — you don't have to choose:
@@ -18,21 +18,21 @@ and runs them **in-process**. What makes it different — you don't have to choo
 - **Fast when you want it — still cgo-free.** The default build is pure-Go CPU
   (SIMD-accelerated, NEON / AVX2). Opt into a GPU backend and it *stays* `CGO_ENABLED=0`:
   **native CUDA** (cgo-free, driver-only — no toolkit; vs **current Ollama v0.32.5**: ~1.7× on
-  tiny 0.5B, **parity** on 1.5B short-context, and behind at long context + on prefill — see the
-  table below), **native Metal** on Apple Silicon (**at parity on small models**, behind on larger),
+  tiny 0.5B, modestly ahead on 1.5B up to ~1k tokens of context and behind beyond it, and behind
+  on prefill — see the table below), **native Metal** on Apple Silicon (**at parity on small models**, behind on larger),
   and a portable **WebGPU** backend (~60–70% of native, but runs on *any* GPU and streams
   bigger-than-VRAM MoE weights). Going fast never costs you the single binary.
-- **Every modern model, one binary.** All four attention / sequence-mixing families —
+- **~20 architectures, one binary.** All four attention / sequence-mixing families —
   softmax·GQA, gated-linear (DeltaNet), state-space (Mamba-2), latent-KV (MLA) — plus dense
   and sparse-MoE, across ~20 architectures (Gemma 3/4, Qwen 2.5/3, Llama, Mistral, Mixtral,
   Qwen-MoE, GLM-4.5/4.6, DeepSeek-V2/V3 + Kimi, Phi-3/4, Granite-4.0-H, Nemotron-H, GPT-2,
   Mellum2). From safetensors, GGUF, GPTQ, or AWQ; f32 / bf16 / f16 + int8 / int4.
-- **Correctness a wrapper can't give you.** Every forward pass is parity-gated against the
-  HuggingFace reference (argmax-exact + logit cosine). A shared feature taxonomy makes
-  silent-wrong output **structurally impossible** — an architecture a GPU backend doesn't
-  fully implement is *declined at load and run on the CPU path*, never mis-run. And
-  constrained decoding gives you a model that *physically cannot* emit invalid JSON
-  (structured output straight into a Go struct).
+- **Parity-gated against the reference implementation.** Every forward pass is parity-gated
+  against the HuggingFace reference (argmax-exact + logit cosine). A shared feature taxonomy
+  means a backend declares a feature only when it ships the kernel — so an architecture it
+  can't fully run is declined at load and served on the CPU path, rather than run with a
+  feature quietly dropped. And constrained decoding masks the logits so structured output
+  always fits your JSON schema (below).
 
 > Not to be confused with provider-orchestration libraries (e.g. teilomillet/gollm)
 > that call remote LLM APIs. goinfer runs the weights itself, locally, in-process.
@@ -45,11 +45,9 @@ configured — coverage axis, MoE, RoPE, norm, loaders, modality):
 [docs/capability-matrix.md](docs/capability-matrix.md) (generated from the
 registry; do not hand-edit).
 
-**The lane.** goinfer runs the weights *in-process in pure Go* — the single-file,
-zero-install, HF-parity-gated lane no other maintained runtime occupies. The Go llama.cpp
-bindings still ship a native `.so`; the pure-Go ports are archived toys. goinfer is the one
-you'd actually ship — and it now matches **native-CUDA-class speed, cgo-free**. Full
-capability matrix + measured numbers, every cell with provenance:
+The Go bindings for llama.cpp still ship a native library alongside the binary, and the
+pure-Go ports I know of are no longer maintained. goinfer aims to be a pure-Go option you can
+actually deploy. Measured numbers, every cell with provenance:
 [docs/benchmarks.md](docs/benchmarks.md).
 
 ![Mellum2 — a 12B coding MoE running GPU-resident on an 8 GB card, in pure Go](docs/assets/mellum2-gpu.gif)
@@ -57,8 +55,8 @@ capability matrix + measured numbers, every cell with provenance:
 *Bigger than your VRAM: JetBrains **Mellum2** — a 12B sparse-MoE coding model — decoding
 **GPU-resident on a consumer 8 GB card**. The int4 experts stream into VRAM through a
 pure-Go WebGPU backend (no CUDA, no Python, no llama.cpp); a 12B that won't fit 8 GB at
-int8 runs **fully resident** at int4, ~13–21 tok/s. It writes idiomatic Go and **cannot**
-emit invalid JSON. Prequant the weights once to a `.giw` bundle and it reloads in ~13 s
+int8 runs **fully resident** at int4, ~13–21 tok/s. It writes idiomatic Go. Prequant the
+weights once to a `.giw` bundle and it reloads in ~13 s
 ([docs/mellum2-resident.md](docs/mellum2-resident.md)).*
 
 *And bigger still — **Gemma 4 26B-A4B** (a 26B MoE whose ~11.4 GB of int4 experts **do not
@@ -293,14 +291,24 @@ from 2025-01 — ~18 months stale — which inflated the CUDA ratios to ~2×; re
 | Model | goinfer CUDA | Ollama-CUDA v0.32.5 | goinfer Metal | Ollama-Metal |
 |---|---|---|---|---|
 | Qwen2.5-Coder-0.5B | ~476 tok/s (**1.78×**) | ~268 | ~128 tok/s (**1.03×**) | ~124 |
-| Qwen2.5-Coder-1.5B · short ctx | ~221 tok/s (**1.19×**) | ~186 | ~61 tok/s (**0.77×**) | ~79 |
-| Qwen2.5-Coder-1.5B · 2048 ctx | ~133 tok/s (**0.71×**) | ~188 | — | — |
+| Qwen2.5-Coder-1.5B | *CUDA by KV depth ↓* | | ~61 tok/s (**0.77×**) | ~79 |
 
-**The honest read:** goinfer's CUDA edge is real only on **tiny models** (0.5B, launch-bound)
-and **short-context 1.5B** (parity, ~1.19×); at **2048 context it loses ~1.4×** and on **prefill
-it is ~4–5× behind** current Ollama (`docs/benchmarks.md` §B2). Metal is at parity on 0.5B and
-behind on 1.5B (issue-bound — no DP4A on Apple GPUs). Each engine is compared **only against its
-peer on the same machine** — CUDA on an RTX 2070 SUPER, Metal on an M1 Pro — so the absolute
+**Qwen2.5-Coder-1.5B, CUDA decode by KV depth** (same RTX 2070 SUPER, best-of-3):
+
+| context | goinfer CUDA | Ollama-CUDA v0.32.5 | |
+|---|---|---|---|
+| 128 | ~226.6 tok/s | ~197.5 | goinfer **1.15×** |
+| 512 | ~207.3 tok/s | ~191.7 | goinfer **1.08×** |
+| 2048 | ~160.1 tok/s | ~186.6 | Ollama **1.17×** |
+| 3900 | ~123.5 tok/s | ~180.7 | Ollama **1.46×** |
+
+**What the curve shows:** on CUDA goinfer is ahead on **tiny models** (0.5B, launch-bound) and
+on 1.5B up to **roughly 1000 tokens of context**; the 1.5B decode curve crosses over there —
+ahead below it, behind above it, and the gap widens with depth (1.15× ahead at 128, 1.46× behind
+at 3900), because Ollama's flash attention stays nearly flat as context grows. On **prefill**
+goinfer is **~4–5× behind** current Ollama (`docs/benchmarks.md` §B2). Metal is at parity on 0.5B
+and behind on 1.5B (issue-bound — no DP4A on Apple GPUs). Each engine is compared **only against
+its peer on the same machine** — CUDA on an RTX 2070 SUPER, Metal on an M1 Pro — so the absolute
 tok/s do *not* compare across the CUDA and Metal columns (that would compare two graphics cards,
 not two engines). Best of 3 warm runs; full provenance — hardware, driver, peer versions, method — in
 [docs/benchmarks.md](docs/benchmarks.md).
@@ -308,10 +316,9 @@ not two engines). Best of 3 warm runs; full provenance — hardware, driver, pee
 ### What runs on the GPU
 
 GPU-resident decode covers a subset of architectures. **Everything else runs on the
-pure-Go CPU path automatically — never with wrong output.** A shared feature taxonomy
-checks each model's required features against what the backend implements; an
-unsupported architecture is *declined at load and falls back to CPU* rather than
-producing incorrect results.
+pure-Go CPU path automatically.** A shared feature taxonomy checks each model's required
+features against what the backend implements; an unsupported architecture is *declined at
+load and falls back to CPU* rather than run with a feature quietly dropped.
 
 | Family | CUDA | Metal |
 |---|---|---|
