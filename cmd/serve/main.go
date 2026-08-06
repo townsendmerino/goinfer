@@ -27,6 +27,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -34,6 +35,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -345,11 +347,19 @@ func main() {
 	// ReadHeaderTimeout + IdleTimeout bound slow-header (slowloris) and idle
 	// keep-alive connections. WriteTimeout stays 0: SSE responses are long-lived
 	// and a write deadline would truncate a legitimate stream (M3).
+	// srvCtx is the server-lifetime context. BaseContext makes every request's r.Context() a child of
+	// it, so cancelling srvCtx at shutdown cancels every in-flight generation (drive derives its
+	// context from r.Context()). Without this, httpSrv.Shutdown waits for a long streaming generation
+	// but never cancels it, so it runs past the 30s timeout still holding lm.mu and the checkpoint loop
+	// below deadlocks on lm.mu.Lock() forever (audit C-22).
+	srvCtx, srvCancel := context.WithCancel(context.Background())
+	defer srvCancel()
 	httpSrv := &http.Server{
 		Addr:              *addr,
 		Handler:           mux,
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       120 * time.Second,
+		BaseContext:       func(net.Listener) context.Context { return srvCtx },
 	}
 
 	// Tiered KV: a background ticker demotes idle sessions to disk. It takes the
@@ -370,13 +380,28 @@ func main() {
 		defer close(done)
 		<-sig
 		fmt.Fprintln(os.Stderr, "\nshutting down…")
+		// A SECOND signal during the drain force-exits instead of being swallowed by the buffered
+		// channel — so Ctrl-C twice always kills the server, not only SIGKILL (audit C-22).
+		go func() {
+			<-sig
+			fmt.Fprintln(os.Stderr, "second signal — forcing exit")
+			os.Exit(1)
+		}()
 		close(stopDemote) // stop demoting before we checkpoint
+		srvCancel()       // cancel in-flight generations (via BaseContext) so they release lm.mu
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		_ = httpSrv.Shutdown(ctx)
 		if cfg.sessionDir != "" && cfg.kvSessions > 0 {
+			deadline := time.Now().Add(5 * time.Second)
 			for _, lm := range srv.modelList() {
-				lm.mu.Lock()
+				// TryLock with a deadline: srvCancel above should have freed lm.mu, but a generation
+				// mid-forward (not yet at a ctx check) could still hold it — skip its checkpoint rather
+				// than deadlock the whole shutdown (audit C-22).
+				if !tryLockUntil(&lm.mu, deadline) {
+					fmt.Fprintf(os.Stderr, "shutdown: model %q still busy — skipping its session checkpoint\n", lm.name)
+					continue
+				}
 				_ = lm.sessions.save(sessionSubdir(cfg.sessionDir, lm.fp))
 				lm.sessions.removeColdFiles() // the cold tier is in-process; clear its scratch
 				lm.mu.Unlock()
@@ -786,6 +811,21 @@ func (s *server) endpointSummary() string {
 // map under regMu (admin.go), and a concurrent map iteration+write is a runtime-fatal panic,
 // not just a race (M4). The returned slice is a copy of the pointers; each loadedModel is
 // still locked via its own lm.mu by the caller.
+// tryLockUntil acquires mu, giving up at deadline instead of blocking forever, so the shutdown
+// checkpoint can never deadlock on a generation that outlived the drain (audit C-22). Returns false
+// if the lock was not taken by the deadline.
+func tryLockUntil(mu *sync.Mutex, deadline time.Time) bool {
+	for {
+		if mu.TryLock() {
+			return true
+		}
+		if !time.Now().Before(deadline) {
+			return false
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 func (s *server) modelList() []*loadedModel {
 	s.regMu.RLock()
 	defer s.regMu.RUnlock()
