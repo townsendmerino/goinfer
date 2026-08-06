@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"fmt"
+	"sync"
 	"unsafe"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -31,12 +32,20 @@ import (
 //
 // Built only for mmap-backed dense .giw models; nil when the model is MoE (that's
 // idea #2's expertPager), heap-backed, or small enough to fit the budget whole.
-// Not goroutine-safe — one decode stream drives it, like the KV cache.
+// Guarded by an internal mutex (audit C-30): the pager lives on *Model and StreamWeights
+// supports concurrent decode streams, so its shared paging state is locked.
 type layerPager struct {
 	spans  [][][]byte // [layer][weight] page-aligned spans within the mapping
 	window int        // resident layer cap (the layer `window` behind is released)
 	ahead  int        // prefetch distance (layers ahead to Advise WILLNEED)
-	state  []bool     // per-layer: currently hinted resident
+
+	// mu guards the mutable paging state below (audit C-30). The pager lives on *Model, shared across
+	// every Generate; StreamWeights explicitly supports concurrent streams, and each drives the layer
+	// loop, so two streams race on state[]/counters without this. The mapping (and thus the WILLNEED/
+	// DONTNEED hints) is genuinely model-level, so one guarded view is correct — the madvise hints are
+	// advisory, so a stream re-faults a page another stream released; only the state writes need the lock.
+	mu    sync.Mutex
+	state []bool // per-layer: currently hinted resident
 
 	prefetches, evictions int64
 }
@@ -94,6 +103,8 @@ func newLayerPager(w *Weights, mapping []byte, budget int64) *layerPager {
 // prefetches l and the layer `ahead` of it (so the next fault overlaps this layer's
 // compute) and releases the layer `window` behind (keeping resident RAM bounded).
 func (p *layerPager) enterLayer(l int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	for _, t := range [2]int{l, l + p.ahead} {
 		if t >= 0 && t < len(p.spans) && !p.state[t] && len(p.spans[t]) > 0 {
 			for _, s := range p.spans[t] {
@@ -117,6 +128,8 @@ func (p *layerPager) enterLayer(l int) {
 // during the loop (the cross-token re-read of one window is negligible for a model
 // that doesn't fit anyway). Idempotent.
 func (p *layerPager) finishLayers() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	for l := range p.state {
 		if p.state[l] {
 			for _, s := range p.spans[l] {
@@ -131,6 +144,8 @@ func (p *layerPager) finishLayers() {
 // stats returns cumulative (prefetches, evictions) — both non-zero means streaming
 // actually ran (prefetched ahead and released behind).
 func (p *layerPager) stats() (prefetches, evictions int64) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	return p.prefetches, p.evictions
 }
 

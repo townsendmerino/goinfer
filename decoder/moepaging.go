@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"fmt"
+	"sync"
 	"unsafe"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -24,8 +25,13 @@ import (
 //
 // Only experts whose quantized weights actually alias the mapping are managed;
 // heap-backed weights (a GGUF load) and the always-on shared expert are left alone.
-// Not goroutine-safe — one decode stream touches it at a time, like the KV cache.
+// Guarded by an internal mutex (audit C-30): the pager lives on *Model and StreamWeights supports
+// concurrent decode streams, so its shared LRU cache is locked (SpanCache is not internally locked).
 type expertPager struct {
+	// mu guards cache, which mmap.SpanCache does NOT lock internally (audit C-30). The pager lives on
+	// *Model, shared across every Generate, and Touch mutates the LRU list — so two concurrent streams
+	// on a StreamWeights MoE model race without this. All cache mutation/read goes through touch/stats.
+	mu       sync.Mutex
 	cache    *mmap.SpanCache[unsafe.Pointer]
 	nExperts int   // mapping-backed experts under management (for the banner)
 	total    int64 // total mapped expert bytes (for the banner)
@@ -115,12 +121,20 @@ func newExpertPager(w *Weights, mapping []byte, budget int64) *expertPager {
 // touch records that ex is needed now: it becomes most-recently-used and, if it
 // wasn't resident, is faulted in (and the LRU tail released to stay within budget).
 // A no-op for experts the pager doesn't manage.
-func (p *expertPager) touch(key unsafe.Pointer) { p.cache.Touch(key) }
+func (p *expertPager) touch(key unsafe.Pointer) {
+	p.mu.Lock()
+	p.cache.Touch(key)
+	p.mu.Unlock()
+}
 
 // stats returns cumulative (hits, misses, evictions) over all touch calls. A
 // non-zero eviction count means the budget was actually enforced (the LRU tail was
 // released), as opposed to mere cold-start misses.
-func (p *expertPager) stats() (hits, misses, evictions int64) { return p.cache.Stats() }
+func (p *expertPager) stats() (hits, misses, evictions int64) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.cache.Stats()
+}
 
 // pagerSummary is a one-line description of a built pager for the load banner.
 func pagerSummary(p *expertPager) string {
