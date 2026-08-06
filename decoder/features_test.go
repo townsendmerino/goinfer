@@ -87,8 +87,47 @@ func TestResidentAdmission_registryCovered(t *testing.T) {
 // TestResidentAdmission_matrix asserts the (arch × backend) admission decision for every
 // registered arch: a backend is admitted ONLY when it implements every feature the arch needs.
 // Hardware-free — it reads the declared sets, so it runs in CI with no GPU.
+// admissionGolden is the INDEPENDENT, hand-reviewed (arch → backends that admit it as resident) matrix.
+// The old TestResidentAdmission_matrix was tautological — it re-derived admission from the same
+// missingFeatures/residentBackendFeatures it was checking, so its only assertion was unreachable and it
+// stayed green even if a backend's feature set were emptied (audit G-01). This golden is maintained by
+// hand against docs + intent, so a change to archFeatureProfile or residentBackendFeatures that alters
+// which family a backend runs resident fails the test and forces a deliberate golden edit + review.
+// Regenerate the CANDIDATE list with `go test -run TestResidentAdmission_matrix -v` (the T logs it),
+// then hand-verify each row before pasting — do NOT auto-write it, that would restore the tautology.
+var admissionGolden = map[string][]string{
+	"cohere":              {},
+	"cohere2":             {},
+	"deepseek_v2":         {"webgpu"},
+	"deepseek_v3":         {"webgpu"},
+	"gemma3":              {"cuda", "metal"},
+	"gemma3_text":         {"cuda", "metal"},
+	"gemma4":              {"cuda", "metal"},
+	"gemma4_text":         {"cuda", "metal"},
+	"gemma4_unified_text": {"cuda", "metal"},
+	"glm4_moe":            {"cuda", "metal", "webgpu"},
+	"gpt2":                {},
+	"gpt_oss":             {},
+	"granitemoehybrid":    {"webgpu"},
+	"kimi_k2":             {"webgpu"},
+	"llama":               {"cuda", "metal", "webgpu"},
+	"llama4_text":         {"cuda", "metal", "webgpu"},
+	"mellum":              {"webgpu"},
+	"mistral":             {"cuda", "metal", "webgpu"},
+	"mixtral":             {"cuda", "metal", "webgpu"},
+	"nemotron_h":          {"webgpu"},
+	"phi3":                {"cuda", "metal", "webgpu"},
+	"qwen2":               {"cuda", "metal", "webgpu"},
+	"qwen2_5_vl":          {"cuda", "metal", "webgpu"},
+	"qwen2_moe":           {"metal", "webgpu"},
+	"qwen3":               {"cuda", "metal", "webgpu"},
+	"qwen3_5_moe":         {"metal", "webgpu"},
+	"qwen3_5_moe_text":    {"metal", "webgpu"},
+}
+
 func TestResidentAdmission_matrix(t *testing.T) {
-	backends := []string{"cuda", "webgpu", "metal"}
+	backends := []string{"cuda", "metal", "webgpu"}
+	seen := map[string]bool{}
 	for _, name := range slices.Sorted(mapKeys(archFeatureProfile)) {
 		req := archFeatureProfile[name]
 		var admits []string
@@ -97,19 +136,30 @@ func TestResidentAdmission_matrix(t *testing.T) {
 			if !ok {
 				t.Fatalf("backend %q has no declared feature set", be)
 			}
-			missing := missingFeatures(req, impl)
-			admitted := len(missing) == 0
-			// The invariant: admission ⇔ every required feature is implemented.
-			for _, r := range req {
-				if admitted && !impl[r] {
-					t.Errorf("%s/%s: admitted but does NOT implement %q — this is the silent-wrong-output bug", be, name, r)
-				}
-			}
-			if admitted {
+			if len(missingFeatures(req, impl)) == 0 {
 				admits = append(admits, be)
 			}
 		}
-		t.Logf("%-12s needs %-58v → admitted by %v", name, req, admits)
+		slices.Sort(admits)
+		t.Logf("%-20s → admitted by %v", name, admits) // the candidate row, for regenerating the golden
+
+		want, ok := admissionGolden[name]
+		if !ok {
+			t.Errorf("%s: no admissionGolden row — a new family must be added to the reviewed golden", name)
+			continue
+		}
+		seen[name] = true
+		wantSorted := slices.Clone(want)
+		slices.Sort(wantSorted)
+		if !slices.Equal(admits, wantSorted) {
+			t.Errorf("%s: admitted by %v, golden says %v — a backend's feature set or the arch's needs changed; "+
+				"verify this is intended and update admissionGolden", name, admits, wantSorted)
+		}
+	}
+	for name := range admissionGolden {
+		if !seen[name] {
+			t.Errorf("admissionGolden has a stale row %q not in archFeatureProfile", name)
+		}
 	}
 }
 
