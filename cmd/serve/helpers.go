@@ -31,6 +31,31 @@ func maxBytes(n int64, h http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// limitInflight caps how many wrapped handlers run concurrently across the whole server, via a
+// shared semaphore. It bounds the PRE-QUEUE stage — JSON + base64-image decode, tokenization,
+// template render, the vision-tower Forward, constrain.TokenBytes over the full vocab — which
+// runs before a request reaches the per-model decode queue (lm.enter). Without it that stage has
+// unbounded concurrency: 200 parallel 32 MiB vision requests each allocate before any backpressure
+// applies (audit M-01). A full cap returns 503 + Retry-After (an orchestrator/back-off signal),
+// distinct from the per-model 429. sem == nil disables it (-max-inflight 0). The slot is held for
+// the whole handler including generation — a hard ceiling on total concurrent requests — which
+// composes with the finer per-model queue.
+func limitInflight(sem chan struct{}, h http.HandlerFunc) http.HandlerFunc {
+	if sem == nil {
+		return h
+	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case sem <- struct{}{}:
+			defer func() { <-sem }()
+			h(w, r)
+		default:
+			w.Header().Set("Retry-After", "1")
+			writeErr(w, http.StatusServiceUnavailable, "server at capacity (max in-flight requests reached); retry")
+		}
+	}
+}
+
 // requireAuth wraps a handler with an optional shared-secret check (audit B-14).
 // When key == "" it is a pass-through (auth disabled — the historical behaviour,
 // safe only because -addr now defaults to loopback). When key is set, the request

@@ -600,3 +600,52 @@ func TestEffectiveBudget_M04(t *testing.T) {
 		}
 	}
 }
+
+// TestLimitInflight_M01 gates M-01's global in-flight cap: once the shared semaphore is full,
+// a further request gets 503 + Retry-After without the wrapped handler running (so the expensive
+// pre-queue stage never allocates); a freed slot lets the next request through. A nil semaphore
+// (-max-inflight 0) is a pass-through.
+func TestLimitInflight_M01(t *testing.T) {
+	// nil sem → pass-through (unbounded).
+	ran := false
+	limitInflight(nil, func(http.ResponseWriter, *http.Request) { ran = true })(httptest.NewRecorder(), httptest.NewRequest("POST", "/x", nil))
+	if !ran {
+		t.Fatal("nil semaphore must be a pass-through")
+	}
+
+	sem := make(chan struct{}, 1)
+	release := make(chan struct{})
+	entered := make(chan struct{})
+	h := limitInflight(sem, func(w http.ResponseWriter, r *http.Request) {
+		close(entered)
+		<-release // hold the only slot until the test frees it
+	})
+	go h(httptest.NewRecorder(), httptest.NewRequest("POST", "/x", nil))
+	<-entered // slot now taken
+
+	// Second request with the cap full → 503 + Retry-After, handler NOT run.
+	rec := httptest.NewRecorder()
+	called := false
+	limitInflight(sem, func(http.ResponseWriter, *http.Request) { called = true })(rec, httptest.NewRequest("POST", "/x", nil))
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("full cap → status %d, want 503", rec.Code)
+	}
+	if rec.Header().Get("Retry-After") == "" {
+		t.Error("full cap must set Retry-After")
+	}
+	if called {
+		t.Error("wrapped handler ran despite a full cap (M-01: pre-queue work must be gated)")
+	}
+
+	// Free the slot; a new request now runs.
+	close(release)
+	// spin until the held handler releases its slot
+	for i := 0; i < 1000 && len(sem) > 0; i++ {
+		time.Sleep(time.Millisecond)
+	}
+	ok := false
+	limitInflight(sem, func(http.ResponseWriter, *http.Request) { ok = true })(httptest.NewRecorder(), httptest.NewRequest("POST", "/x", nil))
+	if !ok {
+		t.Error("freed slot must admit the next request")
+	}
+}
