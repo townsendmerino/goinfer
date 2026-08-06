@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
 	"unicode/utf8"
 
@@ -68,6 +69,14 @@ type Tokenizer struct {
 	idToPiece []string         // id → piece (len == vocab size)
 	pairRank  map[bigram]int32 // BPE merge rank
 	special   SpecialTokens
+
+	// scoreRank is the SentencePiece unigram fallback (non-nil ⇒ used instead of pairRank in the
+	// merge loop): id → merge priority, densely ranked by descending token score. Some SPM exports
+	// ship tokenizer.ggml.scores but NOT tokenizer.ggml.merges (gemma-3 GGUFs), so there is no BPE
+	// merge list. llama.cpp then encodes by greedily merging the adjacent pair whose CONCATENATION
+	// is the highest-scoring vocab token — this rank reproduces that order (score DESC, id ASC on a
+	// tie) so the shared min-heap merge core pops the same pair. See mergeRank / buildScoreRank.
+	scoreRank []int32
 
 	mode tokMode
 
@@ -411,10 +420,11 @@ func (t *Tokenizer) Encode(text string, addBOS bool) ([]int, error) {
 // trusted gap text never contains a special form, so on legitimate input the two
 // modes agree (the byte-identity property EncodeSegments relies on).
 func (t *Tokenizer) encode(text string, addBOS, parseSpecial bool) ([]int, error) {
-	// A vocab loaded without merges can DECODE but not encode — refuse rather than return a
-	// silently unmerged (wrong) tokenization. See the merges note in gguf.go.
-	if len(t.pairRank) == 0 {
-		return nil, fmt.Errorf("tokenizer: this vocab was loaded without merge ranks (decode-only); cannot Encode")
+	// A vocab loaded without merges AND without scores can DECODE but not encode — refuse rather than
+	// return a silently unmerged (wrong) tokenization. A SentencePiece vocab with scores but no merge
+	// list (gemma-3 GGUFs) encodes via the score-rank path (mergeRank), so it is allowed. See gguf.go.
+	if len(t.pairRank) == 0 && t.scoreRank == nil {
+		return nil, fmt.Errorf("tokenizer: this vocab was loaded without merge ranks or scores (decode-only); cannot Encode")
 	}
 	if t.vocab == nil {
 		return nil, fmt.Errorf("tokenizer.Encode: %w", errors.New("tokenizer not loaded"))
@@ -603,7 +613,7 @@ func (t *Tokenizer) mergeSymbols(syms []string) []string {
 		if r < 0 {
 			return
 		}
-		if rank, ok := t.pairRank[bigram{text[left], text[r]}]; ok {
+		if rank, ok := t.mergeRank(text[left], text[r]); ok {
 			heap.Push(h, mergeCand{key: int64(rank)<<32 | int64(left), left: left, right: r})
 		}
 	}
@@ -618,7 +628,7 @@ func (t *Tokenizer) mergeSymbols(syms []string) []string {
 		// The left node's text may have grown since this candidate was queued (a fresh
 		// candidate with the correct rank was pushed then); re-derive the rank and drop
 		// this one if it no longer matches.
-		if rank, ok := t.pairRank[bigram{text[c.left], text[c.right]}]; !ok || int64(rank)<<32|int64(c.left) != c.key {
+		if rank, ok := t.mergeRank(text[c.left], text[c.right]); !ok || int64(rank)<<32|int64(c.left) != c.key {
 			continue
 		}
 		text[c.left] += text[c.right]
@@ -635,6 +645,43 @@ func (t *Tokenizer) mergeSymbols(syms []string) []string {
 		out = append(out, text[i])
 	}
 	return out
+}
+
+// mergeRank returns the merge priority of the adjacent pair (left, right): lower rank merges first,
+// leftmost on a tie (the heap packs rank<<32|leftIndex). In BPE mode it is the pairRank of the two
+// source pieces; in SPM-scores mode (scoreRank != nil, no merge list) it is the score-rank of the
+// CONCATENATED token left+right, so the highest-scoring merge fires first — the SentencePiece order.
+func (t *Tokenizer) mergeRank(left, right string) (int32, bool) {
+	if t.scoreRank != nil {
+		if id, ok := t.vocab[left+right]; ok {
+			return t.scoreRank[id], true
+		}
+		return 0, false
+	}
+	r, ok := t.pairRank[bigram{left, right}]
+	return r, ok
+}
+
+// buildScoreRank turns per-id SentencePiece scores into a dense merge-priority rank: rank 0 is the
+// highest-scoring token, so a lower rank merges first (matching mergeSymbols' min-heap). Ties in
+// score break by lower id — deterministic, and the leftmost-position tie-break still lives in the
+// heap key, so two equal-score merges at different positions fire left-to-right as llama.cpp does.
+func buildScoreRank(scores []float32) []int32 {
+	order := make([]int32, len(scores))
+	for i := range order {
+		order[i] = int32(i)
+	}
+	sort.Slice(order, func(a, b int) bool {
+		if scores[order[a]] != scores[order[b]] {
+			return scores[order[a]] > scores[order[b]]
+		}
+		return order[a] < order[b]
+	})
+	rank := make([]int32, len(scores))
+	for r, id := range order {
+		rank[id] = int32(r)
+	}
+	return rank
 }
 
 // mergeCand is one candidate BPE merge on the heap; key = rank<<32 | leftIndex.

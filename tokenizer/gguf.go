@@ -30,6 +30,7 @@ const (
 	ggufTokModel    = "tokenizer.ggml.model"
 	ggufTokTokens   = "tokenizer.ggml.tokens"
 	ggufTokMerges   = "tokenizer.ggml.merges"
+	ggufTokScores   = "tokenizer.ggml.scores"
 	ggufTokTypes    = "tokenizer.ggml.token_type"
 	ggufTokPre      = "tokenizer.ggml.pre"
 	ggufTokChatTmpl = "tokenizer.chat_template"
@@ -131,7 +132,7 @@ func fromGGUF(g *embed.GGUFFile) (*Tokenizer, error) {
 	// optional; Encode refuses loudly rather than silently mis-tokenizing without them.
 	merges, err := ggufStringArray(g, ggufTokMerges)
 	if err != nil {
-		merges = nil // decode-only vocab
+		merges = nil // no BPE merge list — a SentencePiece export may ship scores instead (below)
 	}
 	for i, m := range merges {
 		l, r, ok := strings.Cut(m, " ")
@@ -139,6 +140,16 @@ func fromGGUF(g *embed.GGUFFile) (*Tokenizer, error) {
 			return nil, fmt.Errorf("%s[%d] %q has no space separator", ggufTokMerges, i, m)
 		}
 		t.pairRank[bigram{l, r}] = int32(i)
+	}
+
+	// SentencePiece unigram fallback (gemma-3 GGUFs): scores but no merge list. Encode via the
+	// score-rank path (mergeRank) instead of BPE merge ranks — the vocab is otherwise encode-capable.
+	// Requires one score per token; a length mismatch means we can't trust the alignment, so stay
+	// decode-only rather than mis-rank.
+	if len(merges) == 0 {
+		if scores := ggufFloatArray(g, ggufTokScores); len(scores) == len(tokens) {
+			t.scoreRank = buildScoreRank(scores)
+		}
 	}
 
 	// Special-token ids come straight from metadata (the surface forms vary by
@@ -306,6 +317,27 @@ func ggufIntArray(g *embed.GGUFFile, key string) []int {
 			out[i] = int(n)
 		case uint64:
 			out[i] = int(n)
+		}
+	}
+	return out
+}
+
+// ggufFloatArray reads a GGUF metadata array of float32 (the SentencePiece token scores), returning
+// nil if the key is absent or not an array. Non-float entries yield 0 for that slot — harmless, since
+// a well-formed scores array is uniformly f32; a wholesale type mismatch shows up as a length check
+// failing upstream, not silent corruption.
+func ggufFloatArray(g *embed.GGUFFile, key string) []float32 {
+	arr, ok := g.Metadata[key].([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]float32, len(arr))
+	for i, v := range arr {
+		switch n := v.(type) {
+		case float32:
+			out[i] = n
+		case float64:
+			out[i] = float32(n)
 		}
 	}
 	return out
