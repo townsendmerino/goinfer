@@ -279,6 +279,13 @@ type completionReq struct {
 	Model  string          `json:"model"`
 	Prompt json.RawMessage `json:"prompt"` // string | []string
 	Stream bool            `json:"stream"`
+	// Logprobs shadows sampling.Logprobs (embedded below) for the /v1/completions surface.
+	// The legacy Completions API types logprobs as an INTEGER (# of top alternatives), not the
+	// chat API's bool — the standard SDK sends `logprobs: 5`, which failed to decode into a bool
+	// and returned a 400 leaking Go struct/field names (audit M-06). The outer (shallower) field
+	// wins during JSON decode, so req.sampling.Logprobs stays false and the expensive per-token
+	// logprobs path never engages; the handler 400s explicitly when it is set (unimplemented here).
+	Logprobs *int `json:"logprobs"`
 	sampling
 }
 
@@ -406,6 +413,10 @@ func (s *server) handleCompletions(w http.ResponseWriter, r *http.Request) {
 	lm := s.pick(req.Model)
 	if lm == nil {
 		s.modelNotFound(w, req.Model)
+		return
+	}
+	if req.Logprobs != nil { // legacy Completions logprobs (integer) is unimplemented — reject cleanly (M-06)
+		writeErr(w, http.StatusBadRequest, "logprobs is not supported on /v1/completions; use /v1/chat/completions with logprobs:true")
 		return
 	}
 	prompt, perr := singlePromptString(req.Prompt)
@@ -727,7 +738,7 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, onText func(
 		} else {
 			stream, gen = lm.model.Generate(ctx, gr.promptIDs, gr.maxTokens, gr.sp)
 		}
-		finish, n, stopHit := lm.streamTokens(cancel, stream, gr, onText)
+		finish, n, stopHit := lm.streamTokens(cancel, stream, gr, gen, onText)
 		return finish, n, gen.Logprobs, stopHit, genErr(gen.Err())
 	}
 
@@ -767,7 +778,7 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, onText func(
 	default:
 		stream, gen = sess.Generate(ctx, gr.promptIDs, gr.maxTokens, gr.sp)
 	}
-	finish, n, stopHit := lm.streamTokens(cancel, stream, gr, onText)
+	finish, n, stopHit := lm.streamTokens(cancel, stream, gr, gen, onText)
 	return finish, n, gen.Logprobs, stopHit, genErr(gen.Err())
 }
 
@@ -787,7 +798,7 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 	} else {
 		stream, gen = lm.model.GenerateVL(ctx, gr.promptIDs, vi.feats, vi.imgPos, vi.imgLen, gr.maxTokens, gr.sp)
 	}
-	finish, n, stopHit := lm.streamTokens(cancel, stream, gr, onText)
+	finish, n, stopHit := lm.streamTokens(cancel, stream, gr, gen, onText)
 	return finish, n, stopHit, genErr(gen.Err())
 }
 
@@ -799,7 +810,7 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 // cancel ends the producing generation on a stop-string hit. Returns the finish
 // reason ("stop" | "length"), the completion token count, and the stop string
 // that was hit (empty unless a stop sequence ended the turn).
-func (lm *loadedModel) streamTokens(cancel context.CancelFunc, stream <-chan int, gr genRequest, onText func(string)) (string, int, string) {
+func (lm *loadedModel) streamTokens(cancel context.CancelFunc, stream <-chan int, gr genRequest, gen *decoder.Generation, onText func(string)) (string, int, string) {
 	var ids []int
 	printed := 0
 	finish := ""
@@ -834,13 +845,30 @@ func (lm *loadedModel) streamTokens(cancel context.CancelFunc, stream <-chan int
 		if text, _ := lm.tk.Decode(ids); len(text) > printed {
 			onText(text[printed:])
 		}
-		if len(ids) >= gr.maxTokens {
+		// Compare against the EFFECTIVE budget, not the requested max_tokens: a resident
+		// context-cap clamp ends the turn short of the request, and reporting that as a clean
+		// "stop" tells the client the model finished when it was truncated (audit M-04). gen is
+		// safe to read here — the stream has closed.
+		if len(ids) >= effectiveBudget(gen, gr.maxTokens) {
 			finish = "length"
 		} else {
 			finish = "stop" // EOS / turn-stop
 		}
 	}
 	return finish, len(ids), stopHit
+}
+
+// effectiveBudget returns the token budget a finish_reason must be judged against: the
+// resident context-cap-clamped budget when the decoder published one (gen.Budget > 0), else
+// the requested max_tokens. A generation the resident truncated at the KV cap emits fewer
+// tokens than requested; judging finish_reason against the request would report "stop"
+// (clean finish) instead of "length" (truncated), so the client never continues (audit M-04).
+// gen is nil / Budget 0 on paths that don't clamp (VL, speculative) → fall back to requested.
+func effectiveBudget(gen *decoder.Generation, requested int) int {
+	if gen != nil && gen.Budget > 0 {
+		return gen.Budget
+	}
+	return requested
 }
 
 // logprobs maps goinfer's per-token SampleInfo to the OpenAI chat logprobs shape.

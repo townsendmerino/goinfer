@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/chat"
-	"github.com/townsendmerino/goinfer/constrain"
 )
 
 // OpenAI Responses API (/v1/responses) — Track B Inc4. Phase A is stateless
@@ -203,15 +202,11 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if forced := forcedTool(req.ToolChoice, tools); forced != nil {
-		if prefix, suffix, argsKey, array, ok := lm.tmpl.ToolCallWrapper(); ok {
-			if g, gerr := constrain.ToolCallGrammar(prefix, suffix, argsKey, forced.Name, array, forced.Parameters); gerr == nil {
-				eos := append(append([]int(nil), lm.eosIDs...), lm.stopIDs...)
-				m := constrain.NewMasker(g, constrain.TokenBytes(lm.vocab, lm.tk.TokenText), eos).StopWhenComplete()
-				gr.sp.LogitProcessor = m.Process
-				gr.masker = m // enables grammar-fused speculative decode (drive)
-			}
-		}
+	forced := forcedTool(req.ToolChoice, tools)
+	namedForce := toolChoiceMode(req.ToolChoice) == "function"
+	if cerr := constrainForcedTool(lm, &gr, forced, namedForce); cerr != nil {
+		writeErr(w, http.StatusBadRequest, cerr.Error()) // named tool_choice unconstrainable → 400 (M-05)
+		return
 	}
 	if !lm.enter(w) {
 		return

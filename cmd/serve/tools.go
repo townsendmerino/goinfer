@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -41,16 +42,14 @@ func (s *server) handleChatTools(w http.ResponseWriter, r *http.Request, req cha
 	}
 
 	// Tight when unambiguous: a forced function or a lone tool ⇒ constrain the
-	// call to that tool's schema (when the family has a JSON call form).
-	if forced := forcedTool(req.ToolChoice, tools); forced != nil {
-		if prefix, suffix, argsKey, array, ok := lm.tmpl.ToolCallWrapper(); ok {
-			if g, gerr := constrain.ToolCallGrammar(prefix, suffix, argsKey, forced.Name, array, forced.Parameters); gerr == nil {
-				eos := append(append([]int(nil), lm.eosIDs...), lm.stopIDs...)
-				m := constrain.NewMasker(g, constrain.TokenBytes(lm.vocab, lm.tk.TokenText), eos).StopWhenComplete()
-				gr.sp.LogitProcessor = m.Process
-				gr.masker = m // enables grammar-fused speculative decode (drive)
-			}
-		}
+	// call to that tool's schema (when the family has a JSON call form). A NAMED
+	// tool_choice that cannot be constrained is a 400, not a silent unconstrained
+	// decode (audit M-05).
+	forced := forcedTool(req.ToolChoice, tools)
+	namedForce := toolChoiceMode(req.ToolChoice) == "function"
+	if cerr := constrainForcedTool(lm, &gr, forced, namedForce); cerr != nil {
+		writeErr(w, http.StatusBadRequest, cerr.Error())
+		return
 	}
 
 	if !lm.enter(w) {
@@ -108,6 +107,39 @@ func (s *server) handleChatTools(w http.ResponseWriter, r *http.Request, req cha
 		"id": id, "object": "chat.completion", "created": created, "model": lm.name,
 		"choices": []any{choice}, "usage": usagev,
 	})
+}
+
+// constrainForcedTool wires constrained decoding for a forced/lone tool call. When the
+// caller explicitly NAMED the function (namedForce), a family/schema that cannot be
+// constrained returns an error the handler renders as a 400: OpenAI and Anthropic both
+// guarantee a named tool_choice produces that call, so silently decoding unconstrained
+// (the model may emit prose, or a different tool) defeats the guarantee (audit M-05). The
+// lone-tool convenience (namedForce=false) never errors — it is only an optimization, and
+// the model is still free to answer in prose. Shared by /v1/chat/completions, /v1/responses,
+// and the Anthropic Messages surface so all three degrade identically.
+func constrainForcedTool(lm *loadedModel, gr *genRequest, forced *chat.Tool, namedForce bool) error {
+	if forced == nil {
+		return nil
+	}
+	prefix, suffix, argsKey, array, ok := lm.tmpl.ToolCallWrapper()
+	if !ok {
+		if namedForce {
+			return fmt.Errorf("tool_choice forces function %q but this model's chat template has no constrainable tool-call form", forced.Name)
+		}
+		return nil
+	}
+	g, gerr := constrain.ToolCallGrammar(prefix, suffix, argsKey, forced.Name, array, forced.Parameters)
+	if gerr != nil {
+		if namedForce {
+			return fmt.Errorf("tool_choice forces function %q but its schema cannot be constrained: %v", forced.Name, gerr)
+		}
+		return nil
+	}
+	eos := append(append([]int(nil), lm.eosIDs...), lm.stopIDs...)
+	m := constrain.NewMasker(g, constrain.TokenBytes(lm.vocab, lm.tk.TokenText), eos).StopWhenComplete()
+	gr.sp.LogitProcessor = m.Process
+	gr.masker = m // enables grammar-fused speculative decode (drive)
+	return nil
 }
 
 // toAPICalls renders parsed calls in the OpenAI response shape (arguments is a

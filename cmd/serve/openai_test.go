@@ -10,6 +10,10 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/townsendmerino/goinfer/chat"
+	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
 func TestParseStop(t *testing.T) {
@@ -521,5 +525,78 @@ func TestPrepare_topPAndSeed(t *testing.T) {
 	sd := int64(42)
 	if gr, _ := lm.prepare(sampling{Seed: &sd}, []int{1}); gr.sp.Seed != 42 {
 		t.Errorf("supplied seed 42 → %d", gr.sp.Seed)
+	}
+}
+
+// TestConstrainForcedTool_M05 gates M-05: a NAMED tool_choice whose family cannot be
+// constrained (gemma4 has a bespoke parse-only call form, ToolCallWrapper ok=false) must
+// return an error the handler renders as a 400 — not silently decode unconstrained. The
+// lone-tool convenience (namedForce=false) never errors. A constrainable family (chatml)
+// wires the masker and returns nil.
+func TestConstrainForcedTool_M05(t *testing.T) {
+	tool := &chat.Tool{Name: "get_weather", Parameters: []byte(`{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}`)}
+	// gemma4: SupportsTools true, ToolCallWrapper ok=false → unconstrainable.
+	lmG := &loadedModel{tmpl: chat.Gemma4(), vocab: 32, tk: nil}
+	// named force on an unconstrainable family → error (becomes 400).
+	if err := constrainForcedTool(lmG, &genRequest{}, tool, true); err == nil {
+		t.Error("named tool_choice on gemma4 (no constrainable form) should error, got nil (M-05)")
+	}
+	// lone-tool convenience on the same family → no error (optimization only).
+	if err := constrainForcedTool(lmG, &genRequest{}, tool, false); err != nil {
+		t.Errorf("lone-tool on gemma4 should not error, got %v", err)
+	}
+	// no forced tool at all → no error.
+	if err := constrainForcedTool(lmG, &genRequest{}, nil, true); err != nil {
+		t.Errorf("nil forced tool should not error, got %v", err)
+	}
+	// constrainable family (chatml): wires the masker, returns nil.
+	lmC := &loadedModel{tmpl: chat.ChatML(), vocab: 32, tk: &tokenizer.Tokenizer{}}
+	gr := &genRequest{}
+	if err := constrainForcedTool(lmC, gr, tool, true); err != nil {
+		t.Fatalf("chatml named force should succeed, got %v", err)
+	}
+	if gr.masker == nil || gr.sp.LogitProcessor == nil {
+		t.Error("chatml named force did not wire the masker/LogitProcessor")
+	}
+}
+
+// TestCompletionReqLogprobs_M06 gates M-06: /v1/completions must accept the legacy
+// integer logprobs field (the standard SDK sends `logprobs: 5`) instead of failing to
+// decode into a bool and 400ing with leaked Go struct/field names. The shadow *int field
+// wins, so the embedded chat bool stays false (the expensive logprobs path never engages).
+func TestCompletionReqLogprobs_M06(t *testing.T) {
+	var req completionReq
+	if err := json.Unmarshal([]byte(`{"model":"m","prompt":"hi","logprobs":5}`), &req); err != nil {
+		t.Fatalf("integer logprobs must decode, got %v (M-06)", err)
+	}
+	if req.Logprobs == nil || *req.Logprobs != 5 {
+		t.Errorf("req.Logprobs = %v, want *int 5", req.Logprobs)
+	}
+	if req.sampling.Logprobs {
+		t.Error("embedded chat-bool Logprobs must stay false (shadowed) so the logprobs path is off")
+	}
+}
+
+// TestEffectiveBudget_M04 gates M-04: finish_reason must be judged against the resident
+// context-cap-clamped budget, not the requested max_tokens. When the decoder publishes a
+// smaller Budget (prompt filled most of the KV cap), a generation that emits exactly Budget
+// tokens is a truncation ("length"), not a clean "stop" — so effectiveBudget must return the
+// clamped value. Paths that don't clamp (Budget 0, nil gen) fall back to the request.
+func TestEffectiveBudget_M04(t *testing.T) {
+	cases := []struct {
+		name      string
+		gen       *decoder.Generation
+		requested int
+		want      int
+	}{
+		{"clamped below request", &decoder.Generation{Budget: 96}, 512, 96},
+		{"unset budget → request", &decoder.Generation{Budget: 0}, 512, 512},
+		{"nil gen → request", nil, 512, 512},
+		{"budget equals request", &decoder.Generation{Budget: 512}, 512, 512},
+	}
+	for _, c := range cases {
+		if got := effectiveBudget(c.gen, c.requested); got != c.want {
+			t.Errorf("%s: effectiveBudget = %d, want %d", c.name, got, c.want)
+		}
 	}
 }

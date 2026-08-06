@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/townsendmerino/goinfer/chat"
-	"github.com/townsendmerino/goinfer/constrain"
 )
 
 // Anthropic Messages API (POST /v1/messages, POST /v1/messages/count_tokens) —
@@ -337,19 +336,12 @@ func anthropicForcedTool(mode, name string, tools []chat.Tool) *chat.Tool {
 
 // applyToolConstraint wires constrained decoding for an unambiguous tool call
 // (lone or forced tool with a family JSON call form), exactly as handleChatTools.
-func applyToolConstraint(lm *loadedModel, gr *genRequest, mode, name string, tools []chat.Tool) {
+// A tool_choice of type "tool" (a NAMED function) that cannot be constrained returns
+// an error the caller renders as a 400 — Anthropic guarantees a named tool_choice
+// produces that call, so silent unconstrained decoding is a violation (audit M-05).
+func applyToolConstraint(lm *loadedModel, gr *genRequest, mode, name string, tools []chat.Tool) error {
 	forced := anthropicForcedTool(mode, name, tools)
-	if forced == nil {
-		return
-	}
-	if prefix, suffix, argsKey, array, ok := lm.tmpl.ToolCallWrapper(); ok {
-		if g, gerr := constrain.ToolCallGrammar(prefix, suffix, argsKey, forced.Name, array, forced.Parameters); gerr == nil {
-			eos := append(append([]int(nil), lm.eosIDs...), lm.stopIDs...)
-			m := constrain.NewMasker(g, constrain.TokenBytes(lm.vocab, lm.tk.TokenText), eos).StopWhenComplete()
-			gr.sp.LogitProcessor = m.Process
-			gr.masker = m // enables grammar-fused speculative decode (drive)
-		}
-	}
+	return constrainForcedTool(lm, gr, forced, mode == "tool")
 }
 
 // --- response blocks + stop reason ---
@@ -444,7 +436,10 @@ func (s *server) handleMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if toolsActive {
-		applyToolConstraint(lm, &gr, mode, name, tools)
+		if cerr := applyToolConstraint(lm, &gr, mode, name, tools); cerr != nil {
+			writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", cerr.Error())
+			return
+		}
 	}
 
 	// A full queue is honest backpressure: 529 overloaded_error (the kind

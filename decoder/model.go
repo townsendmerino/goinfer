@@ -832,6 +832,9 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 			}
 		}
 	}
+	// Publish the effective budget so the caller reports finish_reason "length" when this
+	// clamp (not an EOS) ends the turn (audit M-04). Set before any send; read after close.
+	g.Budget = maxTokens
 
 	// Decode loop.
 	var generated []int
@@ -953,6 +956,15 @@ type Generation struct {
 	// SamplingParams.Logprobs was set — the chosen token's log-probability and
 	// any requested top alternatives. Complete once the stream has closed.
 	Logprobs []SampleInfo
+	// Budget is the effective max-token budget after the resident context-cap clamp
+	// (audit M-04). It equals the requested maxTokens unless prompt+maxTokens would
+	// exceed the resident KV cap, in which case it is the remaining room (may be 0).
+	// A caller that reports finish_reason must compare the emitted count against this,
+	// not the requested value, or a context-clamped generation is mis-reported as a
+	// clean "stop" and the client never continues. Set before the first token is sent;
+	// read it after the channel closes (like Err). 0 on generation paths that don't
+	// clamp (speculative/VL) — treat 0 as "use the requested value".
+	Budget int
 }
 
 // Err returns the error that ended the stream, or nil if it ended cleanly
