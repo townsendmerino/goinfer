@@ -8,6 +8,45 @@ The forward-pass and quantization numerics are parity-gated against HuggingFace
 and are the stable contract. The loader and architecture-descriptor surface is
 pre-1.0 and may change as new model families and quant formats land.
 
+## [Unreleased]
+
+### Added
+- **Resolved compute paths are reported, not inferred.** Both GPU fast paths — the resident
+  decode runner and the batched prefill — decline *per call* and fall back correctly but
+  silently. The sharp case: `--backend cuda --quant int8int8` on a dense model builds a full
+  resident decode path (looks healthy, decodes at ~0.7× int4) and then takes the sequential
+  per-token prefill on every prompt, because the batched GEMV is int4-only — **TTFT 1.73 s vs
+  0.19 s on a 300-token prompt (9×), 4.56 vs 0.22 CPU-seconds (20×)**, with nothing logged.
+  Now:
+  - serve prints the **resolved** `decode path` / `prefill path` per model at load;
+  - **`GET /health`** (new) carries `decode_path`, `prefill_batched`, `prefill_path`; the same
+    three fields ride on each `GET /v1/models` entry as a **vendor extension** (unknown keys
+    are ignored by the Go/Python/JS OpenAI clients, but `/health` has no schema contract to
+    break for strictly-typed decoders);
+  - **`--require-backend`** (new, opt-in) exits non-zero at startup on either decline, so a
+    batch client fails at second zero instead of discovering a 9× under load;
+  - `Model.ResidentDecline` names *which* residency decline applies — module not built in, no
+    usable device, or ineligible arch — since the three need different fixes and are otherwise
+    indistinguishable from outside.
+
+  The prefill report shares `prefillStaticDecline` with `prefillCore` rather than restating
+  its conditions, so the startup line cannot drift from the decline it describes.
+
+### Fixed
+- **Docs: batched-prefill coverage was stated per family without the int4-only caveat**, in
+  both `CHANGELOG` and `docs/releases/v0.9.0.md`. A family inside the covered seven, loaded at
+  `--quant int8int8`, also falls back to sequential prefill. Corrected in place.
+- **`TestQwen2Moe_forwardParity` `Fatalf`'d on a partial fixture** — it stat'd
+  `model.safetensors` but not `config.json`, so a half-present checkpoint (interrupted HF
+  download) failed as if it were a numeric parity regression, which made
+  `scripts/refresh_parity_hashes.sh` refuse a provably non-numeric refresh. It now skips
+  unless every file `Load` needs is present.
+
+### Known
+- The int8 prefill fallback itself is **not yet fixed** — only made visible. The fix is scoped
+  in `docs/ollama-chase.md` §C6: int8 is per-row symmetric, so an int32-accumulated batched
+  W8A8 GEMM is bit-identical *by construction* (unlike the int4 lane, where group scales force
+  a non-associative float sum). Speed is unmeasured and deliberately not predicted.
 ## [v0.9.2] — 2026-08-05
 
 Docs only; no code, `go.mod`, or numerics change from v0.9.1.
@@ -76,7 +115,9 @@ families without both a T1 committed golden and a current T3 manifest row ship
   GEMV ingests the whole prompt in one M=len pass. TTFT vs sequential: 128 **5.78×**, 2048
   **6.17×** (13.1 s → 2.1 s). Families joined bit-identically: llama, mistral, phi3, qwen2,
   qwen2_5_vl, qwen3 (batched qk-norm), gemma3 (batched sandwich norms) — 7 of 23
-  (`TestPrefillCoverageAudit`). The Metal MMA prefill path (3.7× TTFT) exists but **declines
+  (`TestPrefillCoverageAudit`). **W4A8 means int4 only**: a covered family loaded at
+  `--quant int8int8` still takes the sequential prefill (9× TTFT) while building a full
+  resident decode path. Reported at load — see [Unreleased]. The Metal MMA prefill path (3.7× TTFT) exists but **declines
   by default** (not bit-identical — 54% stream divergence; opt-in `GOINFER_METAL_BATCHED_PREFILL=1`).
 - **Split-KV long-context decode (CUDA), default-on ≥256 ctx, bit-identical** — splits the
   independent key/value axes without touching the reduction (FA's online rescale is *not*

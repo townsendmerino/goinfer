@@ -160,6 +160,52 @@ ceiling — if true, it is a real tension inside a shipped default and worth kno
 
 ---
 
+## Postscript (2026-08-05) — the campaign shipped a silent 9× and the docs under-stated it
+
+Found in the field after the campaign closed, worth recording because it is a **failure of the
+reporting surface, not of any kernel**, and the campaign's own gates could not have caught it.
+
+**What happened.** `--backend cuda --quant int8int8` on a dense model in the covered seven builds a
+full resident decode path — `ResidentActive` true, decode at ~0.7× int4, load clean, backend
+correctly reported — and then takes the **sequential per-token prefill** on every prompt, because the
+batched GEMV is int4-only. Measured, 300-token prompt (0.5B, RTX 2070 SUPER): **TTFT 1.73 s vs
+0.19 s (9×), 4.56 vs 0.22 CPU-seconds (20×)**, no compute hotspot — the CPU spin-waits through 300
+sequential launches. `generateInto` discards the decline error by design (correct: a decline must
+never be fatal), so **no log, no field, no error** said so. It was discovered by timing.
+
+**Why every gate passed.** The campaign's invariant is *first-token parity* — the sequential path is
+the reference, so falling back to it is bit-identical by definition. Bit-identity gates cannot see a
+performance decline; that is what they are for. The coverage audit (C1) *did* list `int8` among the
+declines, but the headline was stated per **family** ("7 of 23"), and an operator running llama at
+int8int8 reads themselves as covered. The release notes inherited the family framing without the
+quant caveat — corrected in this commit, in both `CHANGELOG.md` and `docs/releases/v0.9.0.md`.
+
+**Two transferable lessons.**
+
+1. **"Declines rather than dropping the feature silently" was a correctness guarantee wearing a
+   performance guarantee's clothes.** `docs/cuda-backend.md` said it about *feature admission*, where
+   it is true and load-bearing. It was never true of the *optional fast paths*, which decline per call
+   with nothing announced. An optional capability that falls back needs a **resolved-path report**, not
+   just a correct fallback — the report is the feature.
+2. **Share the guard, don't restate it.** The fix extracts `prefillStaticDecline` (model-dependent
+   guards only — deliberately not the prompt-dependent `checkCap`) and has both `prefillCore` and the
+   load-time `PrefillPath` call it. A startup line that reproduces the decline conditions would rot
+   within two releases and then lie, which is worse than not reporting at all.
+
+**Shipped:** resolved `decode path` / `prefill path` printed per model at load; the same three fields
+on `GET /health` (and on `/v1/models` as a vendor extension); `--require-backend` to turn either
+decline into a startup failure; `Model.ResidentDecline` so the residency half names *which* of
+module-not-built-in / no-usable-device / ineligible-arch applies.
+
+**The real fix is scoped, not built** — `docs/ollama-chase.md` §C6. int8 is **per-row symmetric**, so
+an int32-accumulated batched W8A8 GEMM is **bit-identical by construction** (integer add is
+associative and exact; the scales apply once at the end). This is strictly easier than the int4 lane,
+where group scales force a float cross-group sum and bit-identity had to be hand-built. Speed is
+**unmeasured and not predicted** — int8 doubles the weight bytes and the int4 batched kernel is
+L1TEX-latency-bound, so profile the unit first (§11 of the chase doc).
+
+---
+
 ## Original plan (2026-07, historical)
 
 > **BLUF.** Prefill **correctness is solved** — the non-deterministic NaN that blocked v0.9.0 was

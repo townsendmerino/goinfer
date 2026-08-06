@@ -228,6 +228,7 @@ type config struct {
 	maxQueue      int           // -max-queue: bounded per-model queue depth (0 = unbounded)
 	spec          string        // -spec: "" (off) | "ngram" — lossless n-gram speculative decode
 	allowAdmin    bool          // -allow-admin: enable POST /admin/models/{load,unload}
+	requireBE     bool          // -require-backend: refuse to start when a model silently fell back off the requested backend's fast paths (resident decode / batched prefill)
 	visionPath    string        // -vision: dir holding the vision tower (SigLIP + projector) for a multimodal --model
 	visionQuant   string        // -vision-quant: "f32" (default) | "int8" (W8A8; only faster on AVX512-VNNI — a WASH on AVX2)
 
@@ -254,6 +255,7 @@ func main() {
 		"(Paths may not contain commas.)")
 	flag.StringVar(&cfg.backend, "backend", "cpu", "compute backend: cpu | webgpu | cuda | metal (process-wide; cuda/metal: dense-only, cgo-free native, -tags cuda|metal)")
 	flag.StringVar(&cfg.quant, "quant", "int8int8", "default decoder weight quant: \"\" | int8 | int8int8 | int4 | int4mix (attn int8, FFN int4 — near-int8 quality below int8 RAM, GGUF only). Per-model: --model p,quant=…")
+	flag.BoolVar(&cfg.requireBE, "require-backend", false, "strict mode: exit non-zero at startup if a model did not resolve to the requested --backend's fast paths — no resident decode path, or a prefill that declined to the sequential per-token loop (e.g. int8int8 on cuda, ~9× slower TTFT). Both fall back silently by design; a batch client should fail at second zero instead of discovering it under load")
 	flag.StringVar(&cfg.kvPrec, "kv", "f32", "GPU residency KV cache precision: f32 (bit-exact, 16k ctx) | f16 (lossy, 32k ctx) | i8 (lossy, ~64k ctx) — webgpu backend only")
 	flag.StringVar(&cfg.kvQuant, "kv-quant", "f32", "CPU KV cache storage: f32 (default, bit-exact) | i8 (per-head int8, ~4× smaller, lossy — argmax ~90%+; excludes MoE/gemma4/qwen3.5)")
 	flag.StringVar(&cfg.lora, "lora", "", "optional PEFT LoRA adapter dir, merged into the (safetensors) base at load")
@@ -324,6 +326,9 @@ func main() {
 	auth := func(h http.HandlerFunc) http.HandlerFunc { return requireAuth(authKey, h) }
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/models", auth(srv.handleModels))
+	// Operator surface for the resolved compute paths — same fields as the /v1/models vendor
+	// extension, on a payload with no OpenAI-schema contract to break. See handleHealth.
+	mux.HandleFunc("GET /health", auth(srv.handleHealth))
 	if len(srv.models) > 0 {
 		mux.HandleFunc("POST /v1/chat/completions", auth(maxBytes(maxVisionBodyBytes, srv.handleChat)))
 		mux.HandleFunc("POST /v1/completions", auth(maxBytes(maxBodyBytes, srv.handleCompletions)))
@@ -638,7 +643,43 @@ func loadDecoder(spec modelSpec, cfg config) (*loadedModel, error) {
 	}
 	fmt.Fprintf(os.Stderr, "loaded %q: %d-layer model (vocab %d) in %s [chat: %s]\n",
 		name, mcfg.NumLayers, mcfg.VocabSize, time.Since(t0).Round(time.Millisecond), templateName(lm.tmpl))
+	// State the RESOLVED paths, not the requested ones. Both the resident decode path and the batched
+	// prefill are optional capabilities that fall back silently — a model can load clean, report a GPU
+	// backend, and still take one forward per prompt token (cuda int8int8: ~9× TTFT). Printing them at
+	// load is what makes that visible; -require-backend turns a decline into a startup failure.
+	batched, why := lm.model.PrefillPath()
+	fmt.Fprintf(os.Stderr, "  decode path: %s\n  prefill path: %s\n", lm.model.DecodePath(), why)
+	if cfg.requireBE {
+		if err := requireFastPaths(name, cfg, lm, batched, why); err != nil {
+			return nil, err
+		}
+	}
 	return lm, nil
+}
+
+// requireFastPaths implements -require-backend for one loaded model: it fails the LOAD (so serve
+// exits non-zero before binding a port) when the model didn't get the requested backend's fast
+// paths. Two independent declines are checked, because either one is a large, silent regression:
+// a GPU backend that produced no resident decode path (the whole forward is staged/CPU), and a
+// prefill that declined to the sequential per-token loop. The CPU backend has no resident path by
+// definition, so only the prefill half applies there.
+func requireFastPaths(name string, cfg config, lm *loadedModel, batched bool, why string) error {
+	if cfg.backend != "cpu" && !lm.model.ResidentActive() {
+		// Covers the whole ladder, not just an ineligible arch: an untagged build (`--backend cuda`
+		// without `-tags cuda` resolves to the CPU backend), a box with no usable device (the cuda
+		// factory always succeeds — the driver is only touched at BuildResident), and a model shape
+		// the runner refuses. All three otherwise present as a healthy server that is silently on CPU.
+		reason := lm.model.ResidentDecline()
+		if reason == "" {
+			reason = "no reason recorded"
+		}
+		return fmt.Errorf("--require-backend: model %q did not build a resident decode path on backend %q: %s (resolved: %s)",
+			name, cfg.backend, reason, lm.model.DecodePath())
+	}
+	if !batched {
+		return fmt.Errorf("--require-backend: model %q declined the batched prefill: %s", name, why)
+	}
+	return nil
 }
 
 // loadDecoderTokenizer loads the tokenizer for a decoder model, picking the loader

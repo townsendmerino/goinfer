@@ -159,6 +159,31 @@ func (s *server) modelNotFound(w http.ResponseWriter, name string) {
 }
 
 // servedNames lists the loaded generative + embedding model ids (sorted).
+// modelByName is an EXACT registry lookup under the read lock — unlike pick, which falls back to
+// "the only loaded model" for any name (right for request routing, wrong for listing: it would
+// attach a decoder's paths to the embedding-model entry).
+func (s *server) modelByName(name string) *loadedModel {
+	s.regMu.RLock()
+	defer s.regMu.RUnlock()
+	return s.models[name]
+}
+
+// pathFields returns the resolved decode/prefill path fields for one served model, or nil when the
+// name has no decoder (an embedding-only entry). ONE source for both /v1/models and /health, so the
+// vendor extension and the operator surface can never disagree about what the server resolved to.
+func (s *server) pathFields(name string) map[string]any {
+	lm := s.modelByName(name)
+	if lm == nil || lm.model == nil {
+		return nil
+	}
+	batched, why := lm.model.PrefillPath()
+	return map[string]any{
+		"decode_path":     lm.model.DecodePath(),
+		"prefill_batched": batched,
+		"prefill_path":    why,
+	}
+}
+
 func (s *server) servedNames() []string {
 	s.regMu.RLock()
 	names := make([]string, 0, len(s.models)+1)
@@ -270,7 +295,18 @@ func (s *server) handleModels(w http.ResponseWriter, _ *http.Request) {
 	created := time.Now().Unix()
 	data := []map[string]any{}
 	for _, name := range s.servedNames() {
-		data = append(data, map[string]any{"id": name, "object": "model", "created": created, "owned_by": "goinfer"})
+		e := map[string]any{"id": name, "object": "model", "created": created, "owned_by": "goinfer"}
+		// VENDOR EXTENSION (goinfer-only, not in the OpenAI schema): the RESOLVED compute paths.
+		// Both the resident decode path and the batched prefill fall back silently per model, so a
+		// client that cares about TTFT (batch jobs, benchmarks) can read which one it actually got
+		// instead of inferring it from latency. Absent for encoder-only entries, which have neither.
+		// Unknown keys are ignored by the Go/Python/JS OpenAI clients, but a strict typed decoder in
+		// another language may reject them — GET /health carries the same three fields on a payload
+		// with no compatibility contract, for operators who need a surface that can't break a client.
+		for k, v := range s.pathFields(name) {
+			e[k] = v
+		}
+		data = append(data, e)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"object": "list", "data": data})
 }

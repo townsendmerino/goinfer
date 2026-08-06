@@ -37,6 +37,37 @@ Which features it implements is not prose — it is
 features each arch derives from its own flags. A backend that has not shipped a kernel
 declines rather than dropping the feature silently (`decoder/features.go`).
 
+### …but that guarantee is about correctness, not speed
+
+A missing kernel never silently produces wrong logits. It **can** silently produce a much
+slower server, and the difference cost a day. Two fast paths decline *per call* and fall back
+correctly but with nothing announced: the resident decode runner (`withResidency`) and the
+batched prefill (`Prefiller`). The sharp case is `--backend cuda --quant int8int8` on a dense
+model: it builds a **full resident decode path** — `ResidentActive` is true, decode runs at
+~0.7× int4, everything looks healthy — and then every prompt takes the sequential per-token
+prefill, because the batched GEMV is int4-only. Measured on a 300-token prompt (0.5B, RTX 2070
+SUPER): **TTFT 1.73 s vs 0.19 s (9×), 4.56 vs 0.22 CPU-seconds (20×)**, with no compute
+hotspot — the CPU is the executor spin-waiting through 300 sequential launches.
+
+The runtime now states both resolved paths, because a decline nothing announces is
+indistinguishable from a slow machine:
+
+- **serve prints the resolved `decode path` / `prefill path`** per model at load — the paths
+  it got, not the ones requested.
+- **`GET /health`** carries `decode_path`, `prefill_batched`, `prefill_path`. The same three
+  fields ride on each `GET /v1/models` entry as a **vendor extension** (extra keys on a schema
+  goinfer does not own — the Go/Python/JS clients ignore unknown keys, but a strictly-typed
+  decoder elsewhere may not; `/health` is the surface with no compatibility contract).
+- **`--require-backend`** turns either decline into a **startup failure**, so a batch client
+  fails at second zero instead of discovering a 9× under load. Opt-in: refusing to start by
+  default would break existing deployments that are legitimately on the fallback.
+
+The prefill report shares `prefillStaticDecline` with `prefillCore` rather than restating its
+conditions, so the startup line cannot drift from the decline it describes. The residency
+decline keeps its **reason** (`Model.ResidentDecline`) — module not built in, no usable device,
+ineligible arch — because those three are fixed by three different actions and are otherwise
+indistinguishable from outside.
+
 MoE specifics: the router runs on-GPU and stays **f32** while the experts are int4. That is
 deliberate — the router's output steers a *discrete* choice, so a quantization error near a
 tie does not perturb the result slightly, it runs a different expert. The experts are

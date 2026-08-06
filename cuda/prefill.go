@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
 	gpu "github.com/townsendmerino/aikit/gpu"
@@ -92,26 +93,23 @@ func (r *cudaResident) PrefillLastN(embeddings [][]float32, startPos int) ([][]f
 	return r.prefillCore(embeddings, startPos, true)
 }
 
-// prefillCore runs the batched (M=len) forward. allLogits=false heads only the last row (PrefillLast);
-// allLogits=true heads every row (PrefillLastN, spec-decode verify).
-func (r *cudaResident) prefillCore(embeddings [][]float32, startPos int, allLogits bool) ([][]float32, error) {
-	M := len(embeddings)
-	if M == 0 {
-		return nil, fmt.Errorf("cuda prefill: empty prompt")
-	}
+// prefillStaticDecline reports why the batched path can't run for THIS model, or nil when it can. It
+// covers exactly the MODEL-dependent guards — arch, per-layer geometry, weight kind, kernel
+// availability — and deliberately not the prompt-dependent one (checkCap, which needs M/startPos).
+// That split is what lets PrefillPath answer at LOAD time from the same code prefillCore enforces at
+// call time: one source of truth, so the startup line can never drift from the actual decline.
+//
+// qk-norm (per-head Q/K RMSNorm) and Gemma sandwich norms are batched (qk_norm_batched /
+// rmsnorm_f32_batched) — neither declines. backend.go asserts qNorm/kNorm length == headDim before
+// residency (⇒ present when r.qkNorm), and the per-layer K=V / non-uniform / int4 checks still catch
+// a Gemma-4-class layer this dense-batched path can't stride. MoE and the Gemma parallel dense‖MoE
+// take the sequential path.
+func (r *cudaResident) prefillStaticDecline() error {
 	if !r.prefillReady {
-		return nil, fmt.Errorf("cuda prefill: batched kernels unavailable: %w", errPrefillDeclined)
+		return fmt.Errorf("cuda prefill: batched kernels unavailable: %w", errPrefillDeclined)
 	}
-	// qk-norm (per-head Q/K RMSNorm) and Gemma sandwich norms are now batched (qk_norm_batched /
-	// rmsnorm_f32_batched, wired below) — neither declines. backend.go asserts qNorm/kNorm length ==
-	// headDim before residency (⇒ present when r.qkNorm), and the per-layer K=V / non-uniform / int8
-	// checks below still catch a Gemma-4-class layer that this dense-batched path can't stride. MoE
-	// and the Gemma parallel dense‖MoE still take the sequential path.
 	if r.moe || r.gemma4Moe {
-		return nil, fmt.Errorf("cuda prefill: arch needs the sequential path (moe/gemma4moe): %w", errPrefillDeclined)
-	}
-	if e := r.checkCap(startPos, M); e != nil {
-		return nil, e
+		return fmt.Errorf("cuda prefill: arch needs the sequential path (moe/gemma4moe): %w", errPrefillDeclined)
 	}
 	L0 := &r.layers[0]
 	hd, nKV, qDim, kvDim, rhalf := L0.hd, L0.nKV, L0.qDim, L0.kvDim, L0.rhalf
@@ -119,16 +117,66 @@ func (r *cudaResident) prefillCore(embeddings [][]float32, startPos int, allLogi
 	for l := range r.layers {
 		Ly := &r.layers[l]
 		if Ly.hd != hd || Ly.nKV != nKV || Ly.qDim != qDim || Ly.kvDim != kvDim || Ly.rhalf != rhalf {
-			return nil, fmt.Errorf("cuda prefill: non-uniform layer geometry at %d: %w", l, errPrefillDeclined)
+			return fmt.Errorf("cuda prefill: non-uniform layer geometry at %d: %w", l, errPrefillDeclined)
 		}
 		if Ly.kEqV {
-			return nil, fmt.Errorf("cuda prefill: K=V layer at %d needs the sequential path: %w", l, errPrefillDeclined)
+			return fmt.Errorf("cuda prefill: K=V layer at %d needs the sequential path: %w", l, errPrefillDeclined)
 		}
-		if Ly.q.kind != "int4" || Ly.k.kind != "int4" || Ly.v.kind != "int4" ||
-			Ly.o.kind != "int4" || Ly.g.kind != "int4" || Ly.u.kind != "int4" || Ly.d.kind != "int4" {
-			return nil, fmt.Errorf("cuda prefill: non-int4 weight at layer %d needs the sequential path: %w", l, errPrefillDeclined)
+		if k := nonInt4Kind(Ly); k != "" {
+			return fmt.Errorf("cuda prefill: %s weight at layer %d needs the sequential path: %w", k, l, errPrefillDeclined)
 		}
 	}
+	return nil
+}
+
+// nonInt4Kind returns the weight kind of the layer's first non-int4 projection, or "" when all seven
+// are int4. The batched GEMV (gemv_w4a8_batched / _rn) reads group-scaled int4 words only; naming the
+// kind that declined is what turns "declined" into an actionable startup message.
+func nonInt4Kind(Ly *cudaLayer) string {
+	for _, w := range []cudaWQ{Ly.q, Ly.k, Ly.v, Ly.o, Ly.g, Ly.u, Ly.d} {
+		if w.kind != "int4" {
+			return w.kind
+		}
+	}
+	return ""
+}
+
+// PrefillPath (decoder.PrefillPathReporter) answers, at load, whether this model will get the batched
+// prefill — before a single request has been served. The int4-only guard is the one that bites in the
+// field: a dense model loaded at int8int8 builds a fully resident decode path (so it looks healthy and
+// decodes at 0.7× int4) but every prompt then takes the sequential per-token prefill — measured 1.73 s
+// vs 0.19 s on a 300-token prompt (9×), burning 20× the CPU (4.56 vs 0.22 CPU-s) with no compute
+// hotspot: the cost is the executor spin-waiting through 300 sequential launches instead of one pass.
+func (r *cudaResident) PrefillPath() (bool, string) {
+	err := r.prefillStaticDecline()
+	if err == nil {
+		return true, "batched (one weight-stationary CUDA pass)"
+	}
+	// Detail without the wrapped sentinel, which says nothing a user can act on.
+	detail := strings.TrimPrefix(strings.TrimSuffix(err.Error(), ": "+errPrefillDeclined.Error()), "cuda prefill: ")
+	if len(r.layers) > 0 {
+		if k := nonInt4Kind(&r.layers[0]); k != "" {
+			return false, fmt.Sprintf("sequential — batched prefill requires int4 projections (%s weights) — ~9× slower TTFT, 20× CPU on a 300-token prompt", k)
+		}
+	}
+	return false, "sequential — " + detail + " (slower TTFT: one forward per prompt token)"
+}
+
+// prefillCore runs the batched (M=len) forward. allLogits=false heads only the last row (PrefillLast);
+// allLogits=true heads every row (PrefillLastN, spec-decode verify).
+func (r *cudaResident) prefillCore(embeddings [][]float32, startPos int, allLogits bool) ([][]float32, error) {
+	M := len(embeddings)
+	if M == 0 {
+		return nil, fmt.Errorf("cuda prefill: empty prompt")
+	}
+	if e := r.prefillStaticDecline(); e != nil {
+		return nil, e
+	}
+	if e := r.checkCap(startPos, M); e != nil {
+		return nil, e
+	}
+	L0 := &r.layers[0]
+	hd, nKV, qDim, kvDim, rhalf := L0.hd, L0.nKV, L0.qDim, L0.kvDim, L0.rhalf
 	hidden, inter := r.hidden, r.inter
 
 	var outs [][]float32

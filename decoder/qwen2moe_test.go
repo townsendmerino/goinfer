@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"math"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -37,11 +38,18 @@ func TestQwen2Moe_forwardParity(t *testing.T) {
 	if err := json.Unmarshal(raw, &g); err != nil {
 		t.Fatalf("parse golden: %v", err)
 	}
-	// Stat the WEIGHTS file, not just the dir: the tokenizer/config JSONs can end up present (e.g. a
-	// stray `git add`) while the large model.safetensors stays uncommitted, which would slip past a
-	// dir-only check and Fatalf in Load. Skip cleanly when the weights are absent, like the siblings.
-	if _, err := os.Stat(qwen2moeModelDir + "/model.safetensors"); errors.Is(err, fs.ErrNotExist) {
-		t.Skipf("no qwen2_moe checkpoint weights at %s — regenerate with scripts/pin_llama_forward.py", qwen2moeModelDir)
+	// Stat EVERY file Load needs, not just the dir and not just one of them. The failure mode runs
+	// both ways: the tokenizer/config JSONs can end up present (a stray `git add`) while the large
+	// model.safetensors stays uncommitted, and — as seen on a box where the HF download was
+	// interrupted — model.safetensors can be present while config.json is absent. Either way a
+	// partial fixture slips past a one-file guard and Fatalfs in Load, which reads as a numeric
+	// parity regression: it is what made scripts/refresh_parity_hashes.sh refuse a provably
+	// non-numeric refresh. An incomplete fixture must SKIP, like the siblings.
+	for _, f := range []string{"/model.safetensors", "/config.json"} {
+		if _, err := os.Stat(qwen2moeModelDir + f); errors.Is(err, fs.ErrNotExist) {
+			t.Skipf("qwen2_moe checkpoint at %s is missing %s — regenerate with scripts/pin_llama_forward.py",
+				qwen2moeModelDir, strings.TrimPrefix(f, "/"))
+		}
 	}
 
 	m, err := Load(qwen2moeModelDir, Options{})

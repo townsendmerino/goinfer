@@ -38,6 +38,10 @@ type Model struct {
 	pager      *expertPager    // MoE expert demand-paging over the mapping (Options.StreamWeights); nil = all-resident
 	layerPager *layerPager     // dense per-layer streaming over the mapping (Options.StreamWeights); nil = all-resident
 	quant      string          // the requested Options.Quant for a direct load ("" for a prequant .giw → Quant() derives from kinds)
+	// resDecline records WHY resident is nil on a non-CPU backend — the reason withResidency
+	// would otherwise discard. Empty when residency was built, or when it was never attempted
+	// (CPU backend). DecodePath / -require-backend read it; see withResidency.
+	resDecline string
 
 	// adapters holds compute-time LoRA adapters loaded against this base (#7),
 	// keyed by name. Each costs only its low-rank A/B bytes; they share the one

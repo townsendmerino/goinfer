@@ -584,6 +584,58 @@ Gather all M tokens per expert, one GEMM per expert. Unsolved anywhere in the re
 declines it and has no reference. `moe.ptx`-constrained, and floored by per-token expert
 streaming that does not batch.
 
+### C6. int8 batched prefill — **scoped, unbuilt, and the cheapest coverage lever left**
+
+**The gap.** C1 lists `int8` among the `PrefillLast` declines, but the coverage headline is
+stated per *family*, and that framing leaked into the release notes. It hides a case that is
+neither rare nor small: `--backend cuda --quant int8int8` on a family that IS in the covered
+seven (llama, qwen2, …) still takes the sequential prefill. Measured on a 300-token prompt
+(0.5B, RTX 2070 SUPER): **TTFT 1.73 s vs 0.19 s (9×), 4.56 vs 0.22 CPU-seconds (20×)**, no
+compute hotspot — the CPU spin-waits through 300 sequential launches. Nothing reported it;
+that half is now fixed (serve prints the resolved path, `--require-backend` refuses to start,
+`docs/cuda-backend.md`). The visibility work is a **stopgap**, not the answer.
+
+**Why it should be cheap — and why bit-identity is *free* here, not engineered.** int8 weights
+are **per-row symmetric**-scaled: one `wScale[n]` per output row, one `aScale` per activation
+row, no group axis (`cudaWQ.ws`, `gemv_w8a8.cu`). So the whole dot product accumulates in
+**exact int32** (`__dp4a` → `int acc`, integer warp-reduce) and the scales apply **once at the
+end**: `dst[n] = (float)acc * aScale * wScale[n]`.
+
+Integer addition is associative and exact, so **the result does not depend on reduction
+order**. A batched W8A8 GEMM may tile K, stage through shared memory, or re-associate the
+reduce however it likes and still produce the identical `acc`. That is the opposite of the
+int4 situation, which `gemv_w4a8_batched.cu` states in its own header: group scales force the
+cross-group sum into **float**, float add is not associative, so bit-identity had to be
+hand-built by copying the M=1 visit order verbatim — and that is precisely why the int4 lane
+has no IMMA path.
+
+**That objection does not transfer to int8.** Tensor-core IMMA accumulates in int32; reordering
+an exact integer sum changes nothing. This does **not** reopen §7 — §7 was refuted for
+converting *group-scaled int4* to per-row scales, which destroyed quality (ppl 108 vs 28.5).
+int8 is already per-row symmetric as stored. No requantization, no quality question.
+
+**Bit-identity holds subject to three checkable conditions**, none of them hard:
+1. **No int32 overflow.** Worst case `K·127²`; K would have to exceed ~133k. Real K ≤ 8192 →
+   ~16× margin.
+2. **The final f32 expression is evaluated identically** — same left-to-right
+   `(float)acc * aScale * wScale[n]`, no FMA contraction, no double promotion.
+3. **Per-row activation scale.** Batched needs `aScale[m]`, not a scalar. The int4 batched path
+   already quantizes per row (`aScB = r.af(M)`), so the quantizer exists.
+
+**Scope.** A `gemv_w8a8_batched.cu` (the existing GEMV plus an MT-wide column loop —
+*structurally simpler* than the int4 one, since there is no group-scale bookkeeping), the
+`kind == "int8"` branch in `bGemvB` (currently a hard `int4-only` error), and relaxing
+`nonInt4Kind` to admit a uniformly-int8 bundle. Everything else in `prefillCore` is already
+weight-kind-independent: `rmsnorm_f32_batched` / `qk_norm_batched` / the attention kernels work
+on f32 activations. Mixed bundles (`int4mix`) fall out for free, since dispatch is per
+projection.
+
+**Unmeasured.** The *speed* is not predicted here — the int4 batched kernel is
+L1TEX-latency-bound, not DRAM-bound, and int8 doubles the weight bytes per row, so the win is
+whatever profiling says and must be measured, not assumed. What is argued above is only that
+the **bit-identity gate is free by construction**, which is the part that usually costs the
+campaign. Profile the unit first (§11).
+
 ---
 
 ## 7. The bit-identity fork — the strategic decision

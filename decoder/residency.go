@@ -80,6 +80,20 @@ type Prefiller interface {
 	PrefillLast(embeddings [][]float32, startPos int) (logits []float32, err error)
 }
 
+// PrefillPathReporter is an OPTIONAL Prefiller extension: report at LOAD time whether the batched
+// prefill will actually be taken for THIS model, and when it won't, why and what that costs. The
+// Prefiller contract declines per call (arch/geometry/quant), and generateInto's fallback is silent
+// by design — correct, but a decline is a large, invisible TTFT regression: a cuda int8int8 model
+// takes the sequential per-token prefill (the batched GEMV is int4-only), measured 9× slower TTFT
+// and 20× the CPU on a 300-token prompt. Backends implement this so serve can state the resolved
+// prefill path at startup instead of leaving it to be discovered under load.
+//
+// reason is a human-readable phrase naming the ACTUAL condition and its cost, not "declined" —
+// e.g. "batched prefill requires int4 projections (int8int8 at layer 0) — ~9× slower TTFT".
+type PrefillPathReporter interface {
+	PrefillPath() (batched bool, reason string)
+}
+
 // ResidentCapped is an OPTIONAL ResidentForward extension exposing the backend's fixed
 // KV context capacity (in positions). A write past it is an out-of-bounds device write
 // (silent KV corruption); the backends refuse it mid-generation, but generateInto also
@@ -494,7 +508,15 @@ func (m *Model) withResidency() *Model {
 		return m // force the per-matmul staged path (decision-matrix measurement)
 	}
 	rb, ok := m.be.(ResidencyBackend)
-	if !ok || !m.DecodeRunnerEligible() {
+	if !ok {
+		// Either the CPU backend (expected), or a GPU backend name that resolved to the CPU
+		// fallback because the module wasn't built in (`--backend cuda` without `-tags cuda`):
+		// NewBackend returns a cpuBackend + a note there, so the request is already lost by here.
+		m.resDecline = "backend does not implement residency (not built in, or the CPU backend)"
+		return m
+	}
+	if !m.DecodeRunnerEligible() {
+		m.resDecline = "arch is not eligible for the resident decode runner"
 		return m
 	}
 	rf, ok, err := rb.BuildResident(m)
@@ -502,7 +524,17 @@ func (m *Model) withResidency() *Model {
 		if os.Getenv("GOINFER_RESIDENT_DEBUG") != "" {
 			fmt.Fprintf(os.Stderr, "[resident-debug] BuildResident ok=%v err=%v\n", ok, err)
 		}
-		return m // build refused/failed → silently fall back
+		// Falls back silently for correctness (a decline must never be fatal mid-load), but the
+		// REASON is kept: on a GPU backend this is the whole forward moving to CPU, which is the
+		// same silent-regression class as the prefill decline one layer down. err is nil for an
+		// ordinary decline (BuildResident reports those via ok=false); a non-nil err is a driver
+		// or device failure — `--backend cuda` on a box with no usable GPU lands here, since the
+		// cuda factory always succeeds and the device is only touched at build time.
+		m.resDecline = "backend declined to build a resident path (no usable device, or an unsupported model shape)"
+		if err != nil {
+			m.resDecline = "backend failed to build a resident path: " + err.Error()
+		}
+		return m
 	}
 	m.resident = rf
 	return m
@@ -567,6 +599,63 @@ func (m *Model) GraniteMambaWeights(i int) (inProj, convW, convB, aLog, dW, dtBi
 // ResidentActive reports whether the GPU full-residency decode path is built and
 // will run for a plain stateless Generate (webgpu backend + eligible arch).
 func (m *Model) ResidentActive() bool { return m.resident != nil }
+
+// DecodePath names the decode path this model actually resolved to — "<backend>-resident" when the
+// full-residency runner built, "<backend>-staged" when the backend runs per-matmul under the CPU
+// forward, "cpu" otherwise — with the resident weight quant in parens. A staged GPU path also names
+// WHY residency declined, because that decline is the larger of the two silent regressions: the
+// whole forward is on CPU, not just the prefill. Display/diagnostic only.
+func (m *Model) DecodePath() string {
+	be := "cpu"
+	if m.be != nil {
+		be = m.be.Name()
+	}
+	switch {
+	case m.resident != nil:
+		return fmt.Sprintf("%s-resident (%s)", be, m.Quant())
+	case be == "cpu":
+		return fmt.Sprintf("cpu (%s)", m.Quant())
+	case m.resDecline != "":
+		return fmt.Sprintf("%s-staged (%s) — %s", be, m.Quant(), m.resDecline)
+	default:
+		return fmt.Sprintf("%s-staged (%s)", be, m.Quant())
+	}
+}
+
+// ResidentDecline returns why the resident decode path is absent, or "" when it is active (or was
+// never requested). withResidency falls back silently by design; this keeps the reason so serve can
+// print it and -require-backend can refuse to start on it.
+func (m *Model) ResidentDecline() string { return m.resDecline }
+
+// PrefillPath reports how a long prompt will actually be ingested — one batched pass, or the
+// sequential per-token loop — plus the reason when it is sequential. It is the load-time answer to
+// a decline that generateInto otherwise takes silently: the batched prefill is an OPTIONAL backend
+// capability that falls back per call, so a model can lose a 9× TTFT (measured: cuda int8int8,
+// 300-token prompt, 1.73 s vs 0.19 s) without emitting anything. serve prints this at startup and
+// -require-backend refuses to start on a decline.
+//
+// Both halves are covered: the resident path asks the backend (PrefillPathReporter), and the
+// staged/CPU path reports canBatchN, which excludes the families with their own sequential forward
+// (Gemma 4, qwen3_5, Mamba-2 hybrids, MLA, Llama 4, gpt-oss).
+func (m *Model) PrefillPath() (batched bool, reason string) {
+	if m.resident == nil {
+		if !m.canBatchN(2) {
+			return false, "sequential — this arch has its own per-token forward (no batched CPU prefill)"
+		}
+		return true, "batched (CPU forwardLayersN, one weight stream for the whole prompt)"
+	}
+	if os.Getenv("GOINFER_BATCHED_PREFILL") == "0" {
+		return false, "sequential — GOINFER_BATCHED_PREFILL=0 forces the per-token loop"
+	}
+	pf, ok := m.resident.(Prefiller)
+	if !ok {
+		return false, "sequential — this backend has no batched prefill (per-token resident forward)"
+	}
+	if rep, ok := pf.(PrefillPathReporter); ok {
+		return rep.PrefillPath()
+	}
+	return true, "batched (backend reports no load-time declines; a per-prompt fallback is still possible)"
+}
 
 // embedResident returns the input embedding [hidden] for token id — the CPU half of the
 // residency forward, including any embedding scale the arch applies before layer 0.
