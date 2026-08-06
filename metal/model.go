@@ -533,6 +533,34 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	if r.g4moe != nil { // Gemma-4 dense‖MoE: the gate|up/down scratch must fit BOTH the dense branch and the experts
 		guDim = max(guDim, max(r.g4moe.denseInter, r.g4moe.moeInter))
 	}
+	// C-10: the SA-GEMV decode kernels (gemv_w4a8_sa / _sa_bias / _sa_resid and the MoE variants)
+	// derive the output row from the runtime threadgroup size and — unlike gemv_w4a8_sa_bk — carry
+	// no `row >= N` guard. So an output width N%8 != 0 makes the tail threadgroup rewrite an
+	// already-written row while the true tail rows stay uninitialised scratch: plausible-looking
+	// wrong logits, no error. The attention widths (qDim = nH·hd, kvDim = nKV·hd) are structurally
+	// %8 (hd is 64/128), so the risk is the model-level FFN/vocab widths below. Decline any that
+	// isn't a multiple of 8 → the correct CPU path. Every shipped metal-eligible arch is %8 today,
+	// so this declines nothing now; it guards a future odd-width model from the silent corruption.
+	// (The deeper fix — an N param + `row >= N` guard in all seven kernels — touches every dispatch
+	// binding and is deferred as device-validation-gated; this build-time decline is the safe half.)
+	bad8 := func(name string, n int) error {
+		if n%8 != 0 {
+			return fmt.Errorf("metal: %s width %d is not a multiple of 8 — SA-GEMV tail-write hazard (audit C-10); use the CPU path", name, n)
+		}
+		return nil
+	}
+	widthChecks := []error{bad8("hidden", H), bad8("intermediate", I), bad8("vocab", V)}
+	if r.moe != nil {
+		widthChecks = append(widthChecks, bad8("MoE expert intermediate", r.moe.inter), bad8("MoE shared-expert intermediate", r.moe.sharedInter))
+	}
+	if r.g4moe != nil {
+		widthChecks = append(widthChecks, bad8("gemma-4 dense intermediate", r.g4moe.denseInter), bad8("gemma-4 MoE intermediate", r.g4moe.moeInter))
+	}
+	for _, e := range widthChecks {
+		if e != nil {
+			return nil, e
+		}
+	}
 	r.x = d.NewBufferLen(H)
 	r.aq, r.aSc = byteBuf(d, H), d.NewBufferLen(1)
 	r.qkv = d.NewBufferLen(maxNHhd + 2*maxKvDim) // fused [q | k | v], sized to the widest layer

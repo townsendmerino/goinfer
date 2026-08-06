@@ -14,7 +14,7 @@ call, not a unilateral fix.
 | severity | closed | remaining |
 |---|---|---|
 | Blockers (B) | 14 / 14 | 0 (all resolved; release shipped) |
-| Critical (C) | 27 / 31 | **4** (C-09, C-10, C-15 + C-11 device-run; +2 owed device-gated regression tests) |
+| Critical (C) | 28 / 31 | **3** (C-09, C-15 + C-11 device-run; C-10 mitigated in code; +2 owed device-gated regression tests) |
 | Gate (G) | 1 / 6 | **5** |
 | Major (M) | 17 / 23 | **6** |
 | Minor (N) | 0 / 24 | **24** |
@@ -24,10 +24,12 @@ with a gate test — plus **C-11** (metal, safe Go one-liner, cross-compiled; de
 Mac). **C-15 is DEFERRED** (fix identified + correct, blocked on MoE-parity recalibration that needs
 moe.ptx regen — see below). **C-12 is now CLOSED** (2026-08-06, Mac) — the B-11 unexport already
 routes every external caller through the cap-checked `metalResident` adapter, so no unchecked path
-remains (details below). **C-09/C-10** stay DEFERRED to the Mac: each needs an objc / kernel-binding
-change that can only be validated on a Metal device, and doing them blind risks the silent
-corruption they aim to prevent (details on each below). Still owed: the 2 device-gated regression
-tests (C-01-resident, C-03).
+remains (details below). **C-10 is now MITIGATED in code** (2026-08-06, Mac, device-verified on macOS
+26.6) — `buildResident` declines any non-multiple-of-8 SA-GEMV output width → CPU fallback, closing
+the silent-corruption half; the kernel-side `N`-guard stays deferred but is no longer a correctness
+gate. **C-09** stays DEFERRED to the Mac: it needs an objc command-buffer-status change that can only
+be validated on a Metal device (details below). Still owed: the 2 device-gated regression tests
+(C-01-resident, C-03).
 
 **⚠ Mac OS update (2026-08-06):** this MacBook moved macOS 26.5.2 (25F84) → 26.6 (25G72), so the
 `TestMetalSnapshotGolden` reference (OS-pinned) now reds on this machine — **expected**, per the
@@ -68,12 +70,18 @@ observes the Metal command-buffer status. A kernel that aborts (see M-11) leaves
 the previous token's logits with no error. Underlies several other metal findings.
 *Fix:* read `commandBuffer.status`/`error` after commit and surface a failure.
 
-**C-10 — DEFERRED to Mac** (2026-08-06). Only `gemv_w4a8_sa_bk` takes `N`. Guarding
-`gemv_w4a8_sa`/`_sa_bias`/`_sa_resid` means ADDING an `N` param (buffer 6) + updating every Go
-dispatch binding — the exact "stale binding" class the metal-CI comment names, not safe without a
-device run. The audit's cheaper alternative (assert `N%8==0` at each SA-gemv dispatch, or decline in
-BuildResident when a projection width isn't a multiple of 8) is Go-side but still wants a device pass
-to confirm no current shape regresses. Original finding below.
+**C-10 — MITIGATED in code** (2026-08-06, Mac — device-verified on macOS 26.6). Took the audit's
+Go-side alternative: `buildResident` (metal/model.go, right after the guDim/MoE-inter resolve) now
+declines — returns an error → CPU fallback — any model whose SA-GEMV output width isn't a multiple
+of 8 (`hidden`, `intermediate`, `vocab`, and the MoE expert/shared/gemma-4 dense/MoE inters). The
+attention widths qDim=nH·hd / kvDim=nKV·hd are structurally %8 (hd is 64/128), so they're exempt.
+This closes the *silent-corruption* half: an odd-width future model gets a clean decline, not
+uninitialised-scratch logits. **Device-verified NOT to regress any current shape** — the resident
+build + parity tests still pass on 26.6 (TestGemma4DenseScaled_metalParity, TestMoE_assemblyVsDense,
+TestMetalResidentCheckCap); every shipped metal-eligible arch is %8, so it declines nothing today.
+The deeper kernel fix (add an `N` param + `if (row >= N) return;` to the other six SA-GEMV variants —
+buffer-binding churn, the "stale binding" class the metal-CI comment names) stays DEFERRED, but is no
+longer a correctness gate now that odd widths can't reach those kernels resident. Original finding below.
 **C-10** [mac] | `metal/kernels.go:134,250` + `moe.go:100,128` — seven GEMV variants derive the
 output row from the *runtime* threadgroup size (reduced in the tail threadgroup of a non-uniform
 `dispatchThreads:` launch). Only `gemv_w4a8_sa_bk` carries `if (row >= N) return;`.
