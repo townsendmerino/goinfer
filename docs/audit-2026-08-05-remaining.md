@@ -14,7 +14,7 @@ call, not a unilateral fix.
 | severity | closed | remaining |
 |---|---|---|
 | Blockers (B) | 14 / 14 | 0 (all resolved; release shipped) |
-| Critical (C) | 26 / 31 | **5** (+2 owed device-gated regression tests) |
+| Critical (C) | 27 / 31 | **4** (C-09, C-10, C-15 + C-11 device-run; +2 owed device-gated regression tests) |
 | Gate (G) | 1 / 6 | **5** |
 | Major (M) | 17 / 23 | **6** |
 | Minor (N) | 0 / 24 | **24** |
@@ -22,10 +22,19 @@ call, not a unilateral fix.
 **Critical batch fixed on the Linux box (2026-08-06):** C-05, C-13, C-23, C-27, C-28, C-29 — each
 with a gate test — plus **C-11** (metal, safe Go one-liner, cross-compiled; device run owed on the
 Mac). **C-15 is DEFERRED** (fix identified + correct, blocked on MoE-parity recalibration that needs
-moe.ptx regen — see below). **C-09/C-10/C-12** are DEFERRED to the Mac: each needs an objc/kernel-
-binding/exported-API change that can only be validated on a Metal device, and doing them blind
-risks the silent corruption they aim to prevent (details on each below). Still owed: the 2
-device-gated regression tests (C-01-resident, C-03).
+moe.ptx regen — see below). **C-12 is now CLOSED** (2026-08-06, Mac) — the B-11 unexport already
+routes every external caller through the cap-checked `metalResident` adapter, so no unchecked path
+remains (details below). **C-09/C-10** stay DEFERRED to the Mac: each needs an objc / kernel-binding
+change that can only be validated on a Metal device, and doing them blind risks the silent
+corruption they aim to prevent (details on each below). Still owed: the 2 device-gated regression
+tests (C-01-resident, C-03).
+
+**⚠ Mac OS update (2026-08-06):** this MacBook moved macOS 26.5.2 (25F84) → 26.6 (25G72), so the
+`TestMetalSnapshotGolden` reference (OS-pinned) now reds on this machine — **expected**, per the
+test's own env-branch (MSL is recompiled per-OS toolchain). It means (a) the golden can't serve as a
+device regression check here until re-baked, and (b) **G-02's owed re-bake is now doubly-owed** (the
+old 26.5.2 baseline is no longer reproducible). Re-bake on 26.6 once the embed-scale fix is confirmed
+on device.
 
 ---
 
@@ -87,12 +96,16 @@ unreduced, so the greedy token can differ from `argmax(Forward())`.
 alone fixes both the OOB write and the unreduced last tile, since the amax kernel writes `part[tgid]`
 and tgid ∈ [0, ceil).)
 
-**C-12 — DEFERRED to Mac** (2026-08-06). The exported `Forward`/`ForwardEmb`/`ForwardArgmax` return
-`[]float32`/`uint32` with NO error return, so "move `checkCap` into the exported methods" needs an
-API decision (add an error return, or a documented clamp/panic policy) plus a call-graph review of
-who reaches the inner `resident.*` directly vs through the `metalResident` adapter (which already
-checks). That is an exported-surface decision best made where it can be device-validated. Original
-finding below.
+**C-12 — CLOSED** (2026-08-06, Mac — by the B-11 unexport, verified against the tree). The premise
+("the *exported* `Forward`/`ForwardEmb`/`ForwardArgmax` take `pos` unchecked") no longer holds: B-11
+unexported the type (`type resident struct`, `metal/model.go:83`), so those inner methods are not
+public API at all. The only external entry is the `metalResident` adapter (registered via
+`decoder.RegisterBackend`), and every one of its methods checks the cap — `Forward` and `ForwardN`
+call `checkCap` (`backend.go:123,161`) before the inner call, and `PrefillLast` rejects
+`startPos+len > metalCtxCap` (`backend.go:154`). Crucially, `metalResident` does **not** implement
+`decoder.ResidentGreedy`, so the unchecked inner `ForwardArgmax` fast path is never reached from
+outside — the decoder falls back to the checked `Forward()` + argmax. No unchecked external path
+remains. Original finding below.
 **C-12** [mac] | `metal/model.go:618,633,831` — the context-cap guard lives only in the unexported
 adapter (`checkCap`); exported `Forward`/`ForwardEmb`/`ForwardArgmax`/`PrefillLast` take `pos`
 unchecked.
