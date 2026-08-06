@@ -382,7 +382,11 @@ func validateShapes(w *Weights, arch *Architecture) *SerializeError {
 }
 
 // Weights exposes the loaded weight bundle, e.g. so a build-time tool can
-// SerializeWeights(m.Weights(), …). The forward pass treats it as immutable.
+// SerializeWeights(m.Weights(), …). It returns the LIVE bundle (a defensive copy would
+// duplicate gigabytes and the device buffers), so the forward pass's correctness depends on it
+// being treated as IMMUTABLE — the derived *Architecture, RoPE tables and resident buffers are
+// built from it at load and are not rebuilt, so any mutation silently desyncs them (audit M-23).
+// Read-only.
 func (m *Model) Weights() *Weights { return m.w }
 
 // Quant names the precision the model's matmul weights are resident in

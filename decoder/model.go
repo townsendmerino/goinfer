@@ -269,8 +269,18 @@ func closeBackend(be Backend) {
 	}
 }
 
-// Config exposes the loaded architecture config.
-func (m *Model) Config() *Config { return &m.w.Cfg }
+// Config returns a SNAPSHOT of the loaded architecture config — a copy, not the live struct
+// (audit M-23). The forward pass reads a derived, unexported *Architecture plus precomputed RoPE
+// tables built from this config AT LOAD; the config itself is not re-read per token. Returning
+// the live &m.w.Cfg let a caller do m.Config().NumLayers = N and silently desync those caches
+// from the config — wrong logits on the path the project calls its stable contract. The copy
+// makes such a write land on a throwaway value instead. (Scalar fields — the realistic footgun —
+// are fully isolated; the copy is shallow, so its slice/pointer fields still alias the model's
+// and must be treated as read-only. There is no supported way to reconfigure a loaded model.)
+func (m *Model) Config() *Config {
+	c := m.w.Cfg
+	return &c
+}
 
 // Close releases backend resources (GPU resident buffers + the backend) and
 // unmaps the .giw mapping if the model was loaded from a prequant bundle. A no-op
