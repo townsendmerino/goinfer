@@ -815,6 +815,22 @@ func (rd *residentDecoder) ForwardN(embeddings [][]float32, startPos int) ([][]f
 	if err := rd.checkCap(startPos, n); err != nil {
 		return nil, err
 	}
+	// Batched verify is ONLY sound when every position this runner writes can be rolled back.
+	// The resident KV can (TruncateTo is a no-op precisely because the cache is positional and
+	// Forward re-sets nKeys=pos+1), but the Mamba {win,ssm} state is NOT positional: mamba2Step
+	// mutates it in place, so running K rows advances it K times and a partial accept has no way
+	// to undo the rejected rows' advance. The next round then decodes from over-advanced state —
+	// silently wrong output, not a crash (audit C-17, compounding C-02).
+	//
+	// Today decoder.specRollbackSafe already refuses the recurrent families, so this is
+	// unreachable in production. That is exactly why the guard belongs HERE: the invariant is a
+	// property of this runner's own state, and it was previously enforced only by a check in
+	// another package that a future "re-enable recurrent speculation" change would relax without
+	// ever reading this function. Decline (the callers fall back to plain decode); do not
+	// silently advance. n==1 is the ordinary single-step case and stays allowed.
+	if n > 1 && rd.rm.mamba != nil {
+		return nil, fmt.Errorf("gpu: batched ForwardN (K=%d) declines on a recurrent (Mamba-2) model — its {win,ssm} state is not positional and cannot be rolled back after a partial accept", n)
+	}
 	if startPos == 0 {
 		rd.Reset() // fresh sequence (prefill from 0): re-zero Mamba {win,ssm} (audit C-01)
 	}

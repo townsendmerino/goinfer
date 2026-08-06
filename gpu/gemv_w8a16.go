@@ -143,5 +143,6 @@ func (c *Context) buildCompute(label, code string) (*wgpu.ShaderModule, *wgpu.Co
 		sh.Release()
 		return nil, nil, nil, fmt.Errorf("gpu: pipeline %s: %w", label, err)
 	}
+	c.track(sh.Release, pl.Release) // audit C-26: register at creation
 	return sh, pl, pl.GetBindGroupLayout(0), nil
 }

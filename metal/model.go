@@ -104,7 +104,13 @@ type resident struct {
 	// it was REMOVED from here so a launch site cannot bind the uniform shape by mistake.
 	H, nL, nH, I, V int
 	finalSoftcap    float32 // Gemma final-logit softcap (30); 0 ⇒ none. Applied host-side in finalizeLogits (FeatFinalLogitSoftcap).
-	embed           *linalg.WeightMat
+	// embedScale is Gemma's √hidden token-embedding multiplier (FeatEmbedScale); 0/1 ⇒ none.
+	// Applied by the id-taking entry points (Forward / ForwardArgmax) right after the embedding
+	// lookup — the ONE place they differ from ForwardEmb, whose caller has already scaled
+	// (decoder.embedResident). Before audit G-02 this field did not exist and those two methods
+	// silently ran Gemma unscaled; see Forward.
+	embedScale float32
+	embed      *linalg.WeightMat
 
 	layers    []residLayer
 	finalNorm Buffer
@@ -560,6 +566,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	}
 	r.vNormUnit = d.NewBufferFloats(ones)
 	r.finalSoftcap = m.FinalLogitSoftcapResident() // Gemma 4: 30 (host-side softcap); 0 for every other family
+	r.embedScale = float32(m.EmbedScaleResident()) // Gemma: √hidden; 0 for every non-scaled family (G-02)
 	r.logitsHost = make([]float32, V)
 
 	// Residency set (default ON when supported + paged; GOINFER_MOE_RESIDENCY=0 opts out). The paged
@@ -624,6 +631,28 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	return r, nil
 }
 
+// loadEmbedRow dequantizes token `id`'s embedding into the shared input buffer and applies the
+// arch's embedding scale — the complete "token id → layer-0 input" step.
+//
+// AUDIT G-02. This exists so the two id-taking entry points cannot disagree with production. The
+// scale (Gemma's √hidden, FeatEmbedScale) was applied ONLY by decoder.embedResident, on the
+// ForwardEmb path; Forward and ForwardArgmax took a raw dequantized row straight into layer 0.
+// Metal declares FeatEmbedScale: true and admits gemma3/gemma4, so both methods returned wrong
+// logits for those families for any direct caller — and the snapshot golden, which drives exactly
+// these two methods, pinned that wrong computation as its stored reference. A regression confined
+// to the embed→layer-0 seam was therefore invisible to the one absolute gate in the Metal suite.
+//
+// The scale is a no-op (≤1) for every non-Gemma family, so this is inert on the dense archs.
+func (r *resident) loadEmbedRow(id int) {
+	dst := r.x.Floats()
+	r.embed.Row(id, dst) // CPU dequant embedding into the shared buffer
+	if r.embedScale > 1 {
+		for i := range dst {
+			dst[i] *= r.embedScale
+		}
+	}
+}
+
 // Forward runs token `id` at absolute position `pos` and returns logits[V]. The whole
 // layer stack + LM head is encoded into ONE command buffer, one commit/wait.
 func (r *resident) Forward(id, pos int) []float32 {
@@ -633,14 +662,20 @@ func (r *resident) Forward(id, pos int) []float32 {
 	// the CUDA backend's LockOSThread executor uses.
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	r.embed.Row(id, r.x.Floats()) // CPU dequant embedding into the shared buffer
+	r.loadEmbedRow(id)
 	return r.forwardLogits(pos)
 }
 
 // ForwardEmb is Forward given a precomputed embedding[H] (the decoder.ResidentForward shape)
 // instead of a token id — it copies the embedding into the shared input buffer and skips the
-// internal embedding lookup. Numerically identical to Forward(id,pos) when emb = Embed.Row(id)
-// (the eligible dense archs have no embed scale).
+// internal embedding lookup. This is the PRODUCTION path: decoder.embedResident does the lookup
+// and applies any embed scale before calling in.
+//
+// Numerically identical to Forward(id,pos) when emb is the SCALED embedding row. The previous
+// wording — "when emb = Embed.Row(id) (the eligible dense archs have no embed scale)" — was the
+// premise audit G-02 falsified: it stopped being true once Metal declared FeatEmbedScale and
+// admitted gemma3/gemma4, and Forward carried on ignoring the scale. Forward now applies it
+// (loadEmbedRow), so the two are equivalent again on every admitted family.
 func (r *resident) ForwardEmb(emb []float32, pos int) []float32 {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -846,7 +881,7 @@ func (r *resident) LastGPUTimes() (gpuBusy, kernTotal float64) {
 func (r *resident) ForwardArgmax(id, pos int) uint32 {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	r.embed.Row(id, r.x.Floats())
+	r.loadEmbedRow(id) // includes the arch embed scale — see loadEmbedRow (G-02)
 	r.uPos.SetU32(uint32(pos))
 	r.uNKeys.SetU32(uint32(pos + 1))
 	e := r.q.Begin()

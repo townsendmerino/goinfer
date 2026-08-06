@@ -88,23 +88,47 @@ echo "    staleness gate green; ${changed:-0} deps_hash line(s) refreshed, nothi
 
 head=$(git rev-parse --short HEAD)
 echo
-echo "==> PROOF (paste into the commit body — makes the exception auditable, and the trailer"
-echo "    keeps the recurrence counter below accurate):"
+echo "==> PROOF (paste into the commit body — makes the exception auditable):"
 echo "    non-numeric core refresh; validated_at preserved."
 echo "    forward goldens green at ${head}: ${pass} passed / ${skip} skipped / 0 failed."
 echo
-echo "    Parity-Deps-Refresh: ${head} goldens=${pass}"
-
-# Self-announcing Phase-2 trigger. This script running IS the "recurring toil" signal, so the
-# reminder to do the durable fix belongs here — not in anyone's memory. Count is stateless and
-# PRECISE: only real script-driven refreshes carry the Parity-Deps-Refresh trailer above.
-prior=$(git log --grep='^Parity-Deps-Refresh:' --format='%H' 2>/dev/null | wc -l | tr -d ' ')
+echo "    Deps-Hash-Refresh: ${head} goldens=${pass}"
 echo
-if [ "${prior:-0}" -ge 2 ]; then
-	echo "==> ⚠ RECURRING (~${prior} past deps_hash refreshes). This is the Phase-2 trigger."
-	echo "    Stop refreshing and do the DURABLE fix: one generic tap surface so diagnostic seams"
-	echo "    stop churning core — docs/task-parity-staleness-diagnostic-seams.md, Phase 2 / option C."
-else
-	echo "==> If this recurs, the durable fix is Phase 2 / C (one generic tap surface, seams out of"
-	echo "    core): docs/task-parity-staleness-diagnostic-seams.md — don't just keep refreshing."
-fi
+echo "    (Trailer renamed from Parity-Deps-Refresh, which had been used for dependency bumps too."
+echo "     It is now documentation only — the recurrence counter reads the manifest diff, not this.)"
+
+# Recurrence counter — MEASURED FROM THE MANIFEST, not from a commit trailer.
+#
+# It used to grep '^Parity-Deps-Refresh:'. That trailer is overloaded (it has been used for
+# dependency bumps too) and it post-dates some refreshes, so it is wrong in BOTH directions —
+# measured 2026-08-05: 35 commits carried the trailer, only 24 of those actually changed a
+# deps_hash, and ~10 refreshes changed one without carrying it. A counter that can't be trusted
+# either way trains people to dismiss the warning, which is worse than not counting.
+#
+# The precise definition of "a script-driven non-numeric refresh" is written into the manifest
+# itself: deps_hash lines changed, validated_at lines NOT. A real re-validation moves both. Read
+# that directly — self-correcting over history, and immune to how anyone words a commit.
+count_refreshes() {
+	local n=0 d
+	for h in $(git log --format='%H' -- testdata/parity_manifest.json 2>/dev/null); do
+		d=$(git show --format= --unified=0 "$h" -- testdata/parity_manifest.json 2>/dev/null)
+		printf '%s\n' "$d" | grep -q '^[+-].*deps_hash' || continue
+		printf '%s\n' "$d" | grep -q '^[+-].*validated_at' && continue
+		n=$((n + 1))
+	done
+	printf '%s' "$n"
+}
+prior=$(count_refreshes)
+echo
+echo "==> ${prior} prior non-numeric deps_hash refreshes (deps_hash moved, validated_at preserved)."
+echo "    Counted from the manifest history, not from commit trailers — see the note above."
+echo
+echo "    This is EXPECTED, not a defect to fix by building option C. The classification in"
+echo "    docs/task-parity-staleness-diagnostic-seams.md found most refreshes are ordinary"
+echo "    non-numeric edits to shared core files, NOT the inert diagnostic seams option C targets —"
+echo "    and the recorded verdict was: DON'T build option C (it addresses a small minority while"
+echo "    adding an invisible channel for a genuine numeric change to slip through), keep paying"
+echo "    this small tax, and make the counter honest. The counter is now honest."
+echo
+echo "    Re-open option C only if the CLASSIFICATION shifts — i.e. refreshes start being dominated"
+echo "    by inert diagnostic seams. The raw count alone is not that signal and never was."

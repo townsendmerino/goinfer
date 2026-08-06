@@ -3,7 +3,6 @@
 package gpu
 
 import (
-	"fmt"
 	"math"
 
 	"github.com/cogentcore/webgpu/wgpu"
@@ -116,17 +115,16 @@ func (c *Context) ensureVision() error {
 	if c.lnRowsPipeline != nil {
 		return nil
 	}
+	// This closure used to DISCARD its *wgpu.ShaderModule (returning only pipeline+layout), so the
+	// five vision shader modules were unreachable for the rest of the process — not merely missing
+	// from Close, but impossible to release from anywhere (audit C-26a). Delegating to the tracked
+	// constructor registers both objects at creation; the shader is dropped here only after that.
 	mk := func(label, code string) (*wgpu.ComputePipeline, *wgpu.BindGroupLayout, error) {
-		sh, err := c.device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{Label: label, WGSLDescriptor: &wgpu.ShaderModuleWGSLDescriptor{Code: code}})
+		_, pl, lay, err := c.mkPipeline(label, code)
 		if err != nil {
-			return nil, nil, fmt.Errorf("gpu: compile %s: %w", label, err)
+			return nil, nil, err
 		}
-		pl, err := c.device.CreateComputePipeline(&wgpu.ComputePipelineDescriptor{Label: label, Compute: wgpu.ProgrammableStageDescriptor{Module: sh, EntryPoint: "main"}})
-		if err != nil {
-			sh.Release()
-			return nil, nil, fmt.Errorf("gpu: pipeline %s: %w", label, err)
-		}
-		return pl, pl.GetBindGroupLayout(0), nil
+		return pl, lay, nil
 	}
 	var err error
 	if c.lnRowsPipeline, c.lnRowsLayout, err = mk("layerNormRows", layerNormRowsWGSL); err != nil {

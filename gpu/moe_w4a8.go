@@ -100,6 +100,7 @@ func (c *Context) ensureMoEExpertW4() error {
 		sh.Release()
 		return fmt.Errorf("gpu: pipeline moeExpertGEMVW4: %w", err)
 	}
+	c.track(sh.Release, pl.Release) // audit C-26: register at creation
 	c.moeExpertW4Shader, c.moeExpertW4Pipeline, c.moeExpertW4Layout = sh, pl, pl.GetBindGroupLayout(0)
 	return nil
 }

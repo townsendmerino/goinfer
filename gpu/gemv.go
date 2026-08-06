@@ -146,6 +146,7 @@ func (c *Context) ensureGEMVBias() error {
 		sh.Release()
 		return fmt.Errorf("gpu: create GEMV-bias pipeline: %w", err)
 	}
+	c.track(sh.Release, pl.Release) // audit C-26: register at creation
 	c.gemvBiasShader = sh
 	c.gemvBiasPipeline = pl
 	c.gemvBiasLayout = pl.GetBindGroupLayout(0)
@@ -171,6 +172,7 @@ func (c *Context) ensureGEMV() error {
 		sh.Release()
 		return fmt.Errorf("gpu: create GEMV pipeline: %w", err)
 	}
+	c.track(sh.Release, pl.Release) // audit C-26: register at creation
 	c.gemvShader = sh
 	c.gemvPipeline = pl
 	c.gemvLayout = pl.GetBindGroupLayout(0)

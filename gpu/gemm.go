@@ -89,6 +89,7 @@ func (c *Context) ensureTiled() error {
 		sh.Release()
 		return fmt.Errorf("gpu: create tiled pipeline: %w", err)
 	}
+	c.track(sh.Release, pl.Release) // audit C-26: register at creation
 	c.tiledShader = sh
 	c.tiledPipeline = pl
 	c.tiledLayout = pl.GetBindGroupLayout(0)

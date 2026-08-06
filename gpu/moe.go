@@ -193,6 +193,7 @@ func (c *Context) ensureSharedGate() error {
 		sh.Release()
 		return fmt.Errorf("gpu: pipeline sharedGate: %w", err)
 	}
+	c.track(sh.Release, pl.Release) // audit C-26: register at creation
 	c.sharedGateShader, c.sharedGatePipeline, c.sharedGateLayout = sh, pl, pl.GetBindGroupLayout(0)
 	return nil
 }
@@ -266,6 +267,7 @@ func (c *Context) ensureMoEExpert() error {
 		sh.Release()
 		return fmt.Errorf("gpu: pipeline moeExpertGEMV: %w", err)
 	}
+	c.track(sh.Release, pl.Release) // audit C-26: register at creation
 	c.moeExpertShader, c.moeExpertPipeline, c.moeExpertLayout = sh, pl, pl.GetBindGroupLayout(0)
 	return nil
 }
@@ -287,6 +289,7 @@ func (c *Context) ensureMoERoute() error {
 		sh.Release()
 		return fmt.Errorf("gpu: pipeline moeRoute: %w", err)
 	}
+	c.track(sh.Release, pl.Release) // audit C-26: register at creation
 	c.moeRouteShader, c.moeRoutePipeline, c.moeRouteLayout = sh, pl, pl.GetBindGroupLayout(0)
 	return nil
 }

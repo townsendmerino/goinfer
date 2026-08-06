@@ -181,31 +181,41 @@ func (r *cudaResident) prefillCore(embeddings [][]float32, startPos int, allLogi
 
 	var outs [][]float32
 	err := r.do(func() error {
-		// --- M-sized scratch (device), freed at the end. Allocation panics on OOM (recovered by the
-		// caller's guard → declines to the sequential path), so a too-long prompt never proceeds half-set.
-		xB := r.af(M * hidden)
-		aqB, aScB := r.ai(M*hidden/4), r.af(M)
-		qBb, kBb, vBb := r.af(M*qDim), r.af(M*kvDim), r.af(M*kvDim)
-		cctxB := r.af(M * qDim)
-		cqB, cScB := r.ai(M*qDim/4), r.af(M)
-		mqB, mScB := r.ai(M*hidden/4), r.af(M)
-		gOb, uOb := r.af(M*inter), r.af(M*inter)
-		dqB, dScB, dScrB := r.ai(M*inter/4), r.af(M), r.af(M*inter)
-		scratch := []Buffer{xB, aqB, aScB, qBb, kBb, vBb, cctxB, cqB, cScB, mqB, mScB, gOb, uOb, dqB, dScB, dScrB}
-		// Sandwich families (Gemma) norm the attention / MLP sublayer output BEFORE adding it to the
-		// residual, so the o-proj and down GEMVs write a temp instead of accumulating in place. One
-		// [M, hidden] buffer, reused for both (the two uses are sequential).
-		var sbB Buffer
-		if r.sandwich {
-			sbB = r.af(M * hidden)
-			scratch = append(scratch, sbB)
-		}
-		residMN := uint32((M*hidden + 255) / 256)
+		// --- M-sized scratch (device), freed at the end.
+		//
+		// The free list and its defer are registered BEFORE the first allocation, and each buffer
+		// joins the list as it is created (audit C-24). Allocation PANICS on OOM per
+		// gpu.NewBufferLenOf's contract, and at M=3000 this is hundreds of MB, so a partial
+		// allocation is the expected failure on a nearly-full card — not a rare one. Building the
+		// list first and deferring after (the previous shape) freed nothing at all when allocation
+		// #10 of 17 panicked, because the defer had not been registered yet. That leaked only
+		// because the panic used to kill the process anyway; now that runJob recovers it into a
+		// decline, the leak would be real, repeatable, and would push the NEXT prompt closer to OOM.
+		var scratch []Buffer
 		defer func() {
 			for _, b := range scratch {
 				r.dev.ReleaseBuf(b)
 			}
 		}()
+		af := func(n int) Buffer { b := r.af(n); scratch = append(scratch, b); return b }
+		ai := func(n int) Buffer { b := r.ai(n); scratch = append(scratch, b); return b }
+
+		xB := af(M * hidden)
+		aqB, aScB := ai(M*hidden/4), af(M)
+		qBb, kBb, vBb := af(M*qDim), af(M*kvDim), af(M*kvDim)
+		cctxB := af(M * qDim)
+		cqB, cScB := ai(M*qDim/4), af(M)
+		mqB, mScB := ai(M*hidden/4), af(M)
+		gOb, uOb := af(M*inter), af(M*inter)
+		dqB, dScB, dScrB := ai(M*inter/4), af(M), af(M*inter)
+		// Sandwich families (Gemma) norm the attention / MLP sublayer output BEFORE adding it to the
+		// residual, so the o-proj and down GEMVs write a temp instead of accumulating in place. One
+		// [M, hidden] buffer, reused for both (the two uses are sequential).
+		var sbB Buffer
+		if r.sandwich {
+			sbB = af(M * hidden)
+		}
+		residMN := uint32((M*hidden + 255) / 256)
 
 		// Upload the M embeddings contiguously as xB[M, hidden] (already FeatEmbedScale-scaled by the
 		// caller, exactly as Forward/ForwardNoLogits receive them).
@@ -382,6 +392,14 @@ func (r *cudaResident) prefillCore(embeddings [][]float32, startPos int, allLogi
 		return r.launchErr
 	})
 	if err != nil {
+		// An OOM inside the job arrives as a recovered panic (runJob, audit C-24). For prefill
+		// specifically that is a DECLINE, not a request failure: the sequential per-token path needs
+		// no M-sized scratch and will serve this prompt. Mark it so generateInto falls back instead
+		// of surfacing "executor job panicked" to an API client. Errors that are already declines
+		// (the static guards, checkCap) keep their own wrapping.
+		if strings.Contains(err.Error(), "panicked") && !errors.Is(err, errPrefillDeclined) {
+			return nil, fmt.Errorf("cuda prefill: out of device memory for M=%d scratch (%w): %v", M, errPrefillDeclined, err)
+		}
 		return nil, err
 	}
 	// Final-logit softcap (Gemma) — host-side, exactly as step(). No-op (0) for the dense families

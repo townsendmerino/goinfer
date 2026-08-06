@@ -3,7 +3,6 @@
 package gpu
 
 import (
-	"fmt"
 	"math"
 
 	"github.com/cogentcore/webgpu/wgpu"
@@ -469,18 +468,8 @@ func (c *Context) ensureAttn() error {
 	if c.ropePipeline != nil {
 		return nil
 	}
-	mk := func(label, code string) (*wgpu.ShaderModule, *wgpu.ComputePipeline, *wgpu.BindGroupLayout, error) {
-		sh, err := c.device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{Label: label, WGSLDescriptor: &wgpu.ShaderModuleWGSLDescriptor{Code: code}})
-		if err != nil {
-			return nil, nil, nil, fmt.Errorf("gpu: compile %s: %w", label, err)
-		}
-		pl, err := c.device.CreateComputePipeline(&wgpu.ComputePipelineDescriptor{Label: label, Compute: wgpu.ProgrammableStageDescriptor{Module: sh, EntryPoint: "main"}})
-		if err != nil {
-			sh.Release()
-			return nil, nil, nil, fmt.Errorf("gpu: pipeline %s: %w", label, err)
-		}
-		return sh, pl, pl.GetBindGroupLayout(0), nil
-	}
+	// Shared tracked constructor (gpu.go): registers shader+pipeline for release (audit C-26).
+	mk := c.mkPipeline
 	var err error
 	if c.ropeShader, c.ropePipeline, c.ropeLayout, err = mk("rope", ropeShaderWGSL); err != nil {
 		return err

@@ -298,8 +298,17 @@ func (r *cudaResident) cacheWQ(h hostW) cudaWQ {
 
 // slotBytesPerLayer is the device VRAM one slot's worth of BOTH expert projections costs (int4
 // weight + f16 scales), used to size the cache to free VRAM.
-func (r *cudaResident) slotBytesPerLayer() int {
-	gu, dn := &r.layers[0].expGU, &r.layers[0].expDown
+//
+// It must be measured from a ROUTED layer, not from layer 0 (audit C-25). Layer 0 is dense on every
+// family with `first_k_dense_replace` — GLM-4.5/4.6, DeepSeek-V2/V3, Kimi — so its expGU/expDown
+// strides are zero, and the caller's `budget / len(moeLayers) / perLayer` is then an integer divide
+// by zero. That panic raised on the EXECUTOR goroutine, which (before C-24) killed the process
+// rather than declining. Trigger: GOINFER_MOE_CACHE_EXPERTS=1 on any dense-prefix MoE.
+func (r *cudaResident) slotBytesPerLayer(layer int) int {
+	if layer < 0 || layer >= len(r.layers) {
+		return 0
+	}
+	gu, dn := &r.layers[layer].expGU, &r.layers[layer].expDown
 	return (gu.perExpertW+dn.perExpertW)*4 + (gu.perExpertS+dn.perExpertS)*2
 }
 
@@ -317,7 +326,15 @@ func (r *cudaResident) allocSlots() error {
 	if len(moeLayers) == 0 {
 		return nil
 	}
-	perLayer := r.slotBytesPerLayer()
+	// Size from the FIRST ROUTED layer (moeLayers[0]), not layer 0 — see slotBytesPerLayer (C-25).
+	perLayer := r.slotBytesPerLayer(moeLayers[0])
+	if perLayer <= 0 {
+		// No routed layer reports a per-expert stride: nothing to cache and, more importantly,
+		// nothing to divide by. Decline the expert cache rather than panic; the fully-resident
+		// path is still correct, it just holds every expert.
+		fmt.Fprintf(os.Stderr, "[cuda] C′ cache: routed layer %d reports zero per-expert bytes — expert cache disabled\n", moeLayers[0])
+		return nil
+	}
 	const marginBytes = 384 << 20 // headroom for the greedy-argmax readback + driver overhead
 	if free, _, err := r.dev.Context().MemInfo(); err == nil {
 		budget := int64(free) - marginBytes
@@ -478,6 +495,30 @@ func (r *cudaResident) mapBytes(src []byte) *gpu.MappedHostBuffer {
 }
 
 func (r *cudaResident) do(j func() error) error { r.reqCh <- j; return <-r.ackCh }
+
+// runJob is the executor goroutine's PANIC BOUNDARY: it runs one job and converts a panic into
+// an ordinary error, so the pinned thread survives and `do` returns to its caller (audit C-24).
+//
+// Why it has to live here and not at a call site. Every job runs on the executor goroutine, but
+// `do` blocks on a *different* goroutine — so a `defer recover()` in BuildResident, or in any
+// caller, cannot catch a panic raised inside `j()`. Two comments (resident.go's setup path and
+// prefill.go's scratch note) asserted this was already handled; it was not, and the gap is
+// reachable by design rather than by accident: `gpu.NewBufferLenOf` PANICS on allocation failure
+// per its own contract, and prefillCore allocates M*(2*inter+2*hidden+…) floats — hundreds of MB
+// on a long prompt. So a long prompt against a nearly-full card killed the serve process, at the
+// one seam whose entire job is to decline to the sequential path instead.
+//
+// The recovered error is deliberately NOT wrapped in errPrefillDeclined here: `do` is shared by
+// every job (setup, decode, prefill), and only the prefill caller knows a decline is the right
+// response. prefillCore wraps it at its own boundary.
+func runJob(j func() error) (err error) {
+	defer func() {
+		if p := recover(); p != nil {
+			err = fmt.Errorf("cuda: executor job panicked: %v", p)
+		}
+	}()
+	return j()
+}
 
 // checkCap guards the resident KV allocation. Every layer's cache is sized cudaCtxCap*kvDim, so
 // a write for absolute position p lands at kc[p*kvDim ...]; valid positions are [0, cudaCtxCap).

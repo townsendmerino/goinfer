@@ -404,9 +404,11 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		runtime.LockOSThread()
 		defer runtime.UnlockOSThread()
 		for j := range r.reqCh {
-			r.ackCh <- j()
+			r.ackCh <- runJob(j)
 		}
 	}()
+
+	// (runJob — the executor's panic boundary — is defined below.)
 
 	// setup job: create the context on the pinned thread, JIT kernels, upload everything.
 	setupErr := r.do(func() error {

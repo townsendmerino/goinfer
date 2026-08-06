@@ -285,6 +285,7 @@ func (c *Context) ensureGEMVW4() error {
 		sh.Release()
 		return fmt.Errorf("gpu: create W4A8 pipeline: %w", err)
 	}
+	c.track(sh.Release, pl.Release) // audit C-26: register at creation
 	c.gemvW4Shader = sh
 	c.gemvW4Pipeline = pl
 	c.gemvW4Layout = pl.GetBindGroupLayout(0)

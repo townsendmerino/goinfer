@@ -96,6 +96,7 @@ func (c *Context) ensureGemmRow() error {
 		sh.Release()
 		return fmt.Errorf("gpu: create gemmRow pipeline: %w", err)
 	}
+	c.track(sh.Release, pl.Release) // audit C-26: register at creation
 	c.gemmRowShader = sh
 	c.gemmRowPipeline = pl
 	c.gemmRowLayout = pl.GetBindGroupLayout(0)

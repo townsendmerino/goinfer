@@ -35,10 +35,79 @@ import (
 //
 //	GOINFER_UPDATE_GOLDENS=1 go test -run TestMetalSnapshotGolden ./metal/
 //
+// ⚠ RE-BAKE OWED (audit G-02, fixed on Linux where this suite cannot run). The checkpoint call now
+// drives ForwardEmb with the production-scaled embedding row instead of Forward with a raw one, and
+// Forward/ForwardArgmax now apply the arch embed scale. For `gemma4-dense-scaled` (EmbedScale =
+// √hidden) that CHANGES the hashed stream — the stored entries pin the pre-fix, non-production
+// computation, so this test is EXPECTED TO FAIL until re-baked on the Mac:
+//
+//	GOINFER_UPDATE_GOLDENS=1 go test -run TestMetalSnapshotGolden ./metal/
+//
+// `mixtral-tiny` has no embed scale and its entries must NOT move; if they do, something other than
+// G-02 changed and the re-bake should be refused pending investigation.
+//
 // Regenerate too on a hardware change (different Mac). Runs on every `go test` (tiny committed models,
 // no heavy-model dependency). Coverage: mixtral-tiny is full-causal (attention softmax denom over
 // >256 keys → the width coupling at multi-iteration depth) + rmsnorm_quant; gemma4-dense-scaled covers
 // attention_f32 + rmsnorm_f32 + qk_norm. Union = every pinned-width reduction kernel. See §A2-Metal.
+// prodEmbedRow fills dst with token id's LAYER-0 INPUT exactly as production builds it:
+// decoder.embedResident dequantizes the embedding row and multiplies by the arch's embed scale
+// (Gemma's √hidden). Mirroring it here is what makes the golden a reference for the SHIPPED
+// computation rather than for an entry point production never calls (audit G-02).
+func prodEmbedRow(r *resident, id int, dst []float32) {
+	r.embed.Row(id, dst)
+	if r.embedScale > 1 {
+		for i := range dst {
+			dst[i] *= r.embedScale
+		}
+	}
+}
+
+// TestMetalEmbedScale_forwardMatchesForwardEmb is the regression gate for G-02's live-correctness
+// half — the one the snapshot golden structurally could not provide, because it drove the buggy
+// path on BOTH sides of its own comparison.
+//
+// Before the fix, Forward(id,pos) fed layer 0 a RAW embedding row while production (ForwardEmb via
+// decoder.embedResident) fed it a √hidden-scaled one. On gemma4-dense-scaled those are different
+// inputs, so this test fails on the old code and passes on the new — which is the property a
+// regression test has to have. It is also the cheapest possible statement of the invariant: the
+// two entry points must agree on every admitted family.
+func TestMetalEmbedScale_forwardMatchesForwardEmb(t *testing.T) {
+	const dir = "../testdata/gemma4-dense-scaled" // the admitted family that HAS an embed scale
+	if _, err := os.Stat(dir + "/model.safetensors"); err != nil {
+		t.Skipf("no scaled-embed fixture at %s: %v", dir, err)
+	}
+	m, err := decoder.Load(dir, decoder.Options{Quant: "int4"})
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	r, err := buildResident(m)
+	if err != nil {
+		t.Fatalf("buildResident: %v", err)
+	}
+	if r.embedScale <= 1 {
+		t.Fatalf("fixture reports embedScale %v — it cannot exercise the finding", r.embedScale)
+	}
+	H, _, _, _, _, _, _ := m.Dims()
+
+	const id, pos = 42, 0
+	viaID := append([]float32(nil), r.Forward(id, pos)...)
+	emb := make([]float32, H)
+	prodEmbedRow(r, id, emb)
+	viaEmb := r.ForwardEmb(emb, pos)
+
+	if len(viaID) != len(viaEmb) {
+		t.Fatalf("logit lengths differ: %d vs %d", len(viaID), len(viaEmb))
+	}
+	for i := range viaID {
+		if viaID[i] != viaEmb[i] {
+			t.Fatalf("Forward(id) and ForwardEmb(production row) diverge at logit %d (%v vs %v) — "+
+				"the id-taking entry point is skipping the arch embed scale, so every direct caller "+
+				"gets wrong logits on this family", i, viaID[i], viaEmb[i])
+		}
+	}
+}
+
 func TestMetalSnapshotGolden(t *testing.T) {
 	models := []struct{ dir, quant string }{
 		{"../testdata/mixtral-tiny", "int8int8"},    // full-causal: attention denom past width; rmsnorm_quant
@@ -55,7 +124,7 @@ func TestMetalSnapshotGolden(t *testing.T) {
 		if err != nil {
 			t.Fatalf("load %s: %v", mm.dir, err)
 		}
-		_, _, _, _, _, _, V := m.Dims()
+		H, _, _, _, _, _, V := m.Dims()
 		r, err := buildResident(m)
 		if err != nil {
 			t.Fatalf("BuildResident %s: %v", mm.dir, err)
@@ -64,9 +133,16 @@ func TestMetalSnapshotGolden(t *testing.T) {
 			got.Env.GPU = r.d.Name()
 		}
 		tok := ids[0]
+		emb := make([]float32, H)
 		for pos := 0; pos <= maxD; pos++ {
 			if checkpoints[pos] {
-				lg := r.Forward(tok, pos)
+				// Drive the PRODUCTION entry point (audit G-02). decoder.embedResident does the
+				// lookup + embed scale and calls ForwardEmb; hashing r.Forward instead pinned a
+				// stream production never produces — it skipped the √hidden scale on gemma4, so
+				// the suite's one absolute reference hashed a different computation than the
+				// shipped path, and any regression at the embed→layer-0 seam was invisible to it.
+				prodEmbedRow(r, tok, emb)
+				lg := r.ForwardEmb(emb, pos)
 				h := sha256.Sum256(f32ToBytes(lg))
 				got.Entries = append(got.Entries, snapEntry{Model: name, Quant: mm.quant, Depth: pos, Argmax: argmaxF(lg), SHA256: hex.EncodeToString(h[:])})
 				tok = argmaxF(lg)

@@ -162,6 +162,7 @@ func (c *Context) ensureMLAStore() error {
 		sh.Release()
 		return fmt.Errorf("gpu: pipeline mlaLatentStore: %w", err)
 	}
+	c.track(sh.Release, pl.Release) // audit C-26: register at creation
 	c.mlaStoreShader, c.mlaStorePipeline, c.mlaStoreLayout = sh, pl, pl.GetBindGroupLayout(0)
 	return nil
 }
@@ -303,6 +304,7 @@ func (c *Context) ensureMLAHeadMV() error {
 		sh.Release()
 		return fmt.Errorf("gpu: pipeline mlaHeadMatvec: %w", err)
 	}
+	c.track(sh.Release, pl.Release) // audit C-26: register at creation
 	c.mlaHeadMVShader, c.mlaHeadMVPipeline, c.mlaHeadMVLayout = sh, pl, pl.GetBindGroupLayout(0)
 	return nil
 }
@@ -369,6 +371,7 @@ func (c *Context) ensureMLAQRope() error {
 		sh.Release()
 		return fmt.Errorf("gpu: pipeline mlaQRope: %w", err)
 	}
+	c.track(sh.Release, pl.Release) // audit C-26: register at creation
 	c.mlaQRopeShader, c.mlaQRopePipeline, c.mlaQRopeLayout = sh, pl, pl.GetBindGroupLayout(0)
 	return nil
 }
@@ -390,6 +393,7 @@ func (c *Context) ensureMLAAttn() error {
 		sh.Release()
 		return fmt.Errorf("gpu: pipeline mlaAttn: %w", err)
 	}
+	c.track(sh.Release, pl.Release) // audit C-26: register at creation
 	c.mlaAttnShader, c.mlaAttnPipeline, c.mlaAttnLayout = sh, pl, pl.GetBindGroupLayout(0)
 	return nil
 }

@@ -2,11 +2,7 @@
 
 package gpu
 
-import (
-	"fmt"
-
-	"github.com/cogentcore/webgpu/wgpu"
-)
+import ()
 
 // §2 fused decode kernels. The §5 finding: decode is glue-serialization-bound —
 // the per-token cost is a deep RAW dependency chain of ~535 small dispatches,
@@ -142,18 +138,8 @@ func (c *Context) ensureFuse() error {
 	if c.rmsQuantPipeline != nil {
 		return nil
 	}
-	mk := func(label, code string) (*wgpu.ShaderModule, *wgpu.ComputePipeline, *wgpu.BindGroupLayout, error) {
-		sh, err := c.device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{Label: label, WGSLDescriptor: &wgpu.ShaderModuleWGSLDescriptor{Code: code}})
-		if err != nil {
-			return nil, nil, nil, fmt.Errorf("gpu: compile %s: %w", label, err)
-		}
-		pl, err := c.device.CreateComputePipeline(&wgpu.ComputePipelineDescriptor{Label: label, Compute: wgpu.ProgrammableStageDescriptor{Module: sh, EntryPoint: "main"}})
-		if err != nil {
-			sh.Release()
-			return nil, nil, nil, fmt.Errorf("gpu: pipeline %s: %w", label, err)
-		}
-		return sh, pl, pl.GetBindGroupLayout(0), nil
-	}
+	// Shared tracked constructor (gpu.go): registers shader+pipeline for release (audit C-26).
+	mk := c.mkPipeline
 	var err error
 	if c.rmsQuantShader, c.rmsQuantPipeline, c.rmsQuantLayout, err = mk("rmsnormQuant", rmsnormQuantWGSL); err != nil {
 		return err

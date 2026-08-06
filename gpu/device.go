@@ -101,6 +101,7 @@ func (c *Context) ensureQuantize() error {
 		sh.Release()
 		return fmt.Errorf("gpu: create quantize pipeline: %w", err)
 	}
+	c.track(sh.Release, pl.Release) // audit C-26: register at creation
 	c.quantizeShader = sh
 	c.quantizePipeline = pl
 	c.quantizeLayout = pl.GetBindGroupLayout(0)

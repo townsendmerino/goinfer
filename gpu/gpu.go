@@ -58,6 +58,23 @@ type Context struct {
 	pipeline *wgpu.ComputePipeline
 	layout   *wgpu.BindGroupLayout
 
+	// releases holds one closure per lazily-created device object (shader module + compute
+	// pipeline), registered AT CREATION by mkPipeline/track and drained LIFO by Close (audit C-26).
+	//
+	// It replaces the hand-maintained per-field release list Close used to carry, which had drifted
+	// to 14 of ~40 pipelines — every ensure* added since simply leaked, and ensureVision's shader
+	// modules were dropped on the floor entirely (never stored, so unreleasable at any later point).
+	// A hand list cannot stay correct: it is edited in a different file from the code that allocates.
+	// Registering at the allocation site makes the default behaviour correct for pipelines that do
+	// not exist yet.
+	releases []func()
+	// closed makes Close IDEMPOTENT. `defer m.Close()` alongside an explicit m.Close() is the
+	// ordinary Go shape, and decoder.Model.Close calls m.be.Close() unconditionally — so a second
+	// Close used to double-release the wgpu handles, a use-after-free inside the native layer. The
+	// cpu and cuda backends were already idempotent (cuda guards on r.reqCh == nil); only WebGPU
+	// crashed, and only on a machine with a real GPU.
+	closed bool
+
 	// W8A8 (int8×int8) pipeline, compiled lazily by ensureQuant (quant.go).
 	quantShader   *wgpu.ShaderModule
 	quantPipeline *wgpu.ComputePipeline
@@ -338,71 +355,75 @@ func (c *Context) Backend() string {
 	return c.adapter.GetInfo().BackendType.String()
 }
 
+// track registers release closures to be run by Close, LIFO. Call it at the ALLOCATION site —
+// that is the whole point (see Context.releases): a teardown list maintained anywhere else drifts
+// out of date the first time someone adds a pipeline without reading Close.
+func (c *Context) track(fs ...func()) { c.releases = append(c.releases, fs...) }
+
+// mkPipeline compiles one WGSL shader into a compute pipeline, registers BOTH objects for release,
+// and returns them plus the auto bind-group layout. It is the single tracked constructor the
+// ensure* builders share; it was four byte-identical `mk` closures (attention.go, decodefuse.go,
+// layer.go, vision.go), one of which — vision's — discarded its *wgpu.ShaderModule so it could
+// never be released at all (audit C-26a).
+//
+// On pipeline-creation failure the shader is released immediately and NOTHING is registered, so a
+// failed ensure* leaves the Context exactly as it found it.
+func (c *Context) mkPipeline(label, code string) (*wgpu.ShaderModule, *wgpu.ComputePipeline, *wgpu.BindGroupLayout, error) {
+	sh, err := c.device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{
+		Label: label, WGSLDescriptor: &wgpu.ShaderModuleWGSLDescriptor{Code: code},
+	})
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("gpu: compile %s: %w", label, err)
+	}
+	pl, err := c.device.CreateComputePipeline(&wgpu.ComputePipelineDescriptor{
+		Label: label, Compute: wgpu.ProgrammableStageDescriptor{Module: sh, EntryPoint: "main"},
+	})
+	if err != nil {
+		sh.Release()
+		return nil, nil, nil, fmt.Errorf("gpu: pipeline %s: %w", label, err)
+	}
+	c.track(sh.Release, pl.Release)
+	return sh, pl, pl.GetBindGroupLayout(0), nil
+}
+
 // Close releases all GPU resources. Safe to call once; the Context must
 // not be used afterward.
 func (c *Context) Close() error {
-	if c.quantPipeline != nil {
-		c.quantPipeline.Release()
-		c.quantShader.Release()
+	if c.closed {
+		return nil // idempotent: `defer m.Close()` + an explicit Close must not double-release (C-26b)
 	}
-	if c.quantizePipeline != nil {
-		c.quantizePipeline.Release()
-		c.quantizeShader.Release()
+	c.closed = true
+	// Drain every lazily-created pipeline/shader, newest first. Registered at the allocation site
+	// (mkPipeline / track), so this stays complete as new ensure* builders are added — unlike the
+	// hand-maintained field list this replaces, which covered 14 of ~40.
+	for i := len(c.releases) - 1; i >= 0; i-- {
+		c.releases[i]()
 	}
-	if c.gemvPipeline != nil {
-		c.gemvPipeline.Release()
-		c.gemvShader.Release()
+	c.releases = nil
+	// The base objects created by New, released last (pipelines depend on the device). Each is
+	// nil-checked: New releases what it built and returns nil on a mid-construction failure, and
+	// the nil-out below means a Context is only ever partially populated OR already drained.
+	// Nil each handle after release so a use-after-free is a nil dereference at the Go boundary —
+	// a stack trace pointing at the bug — rather than undefined behaviour inside the native layer.
+	if c.pipeline != nil {
+		c.pipeline.Release()
 	}
-	if c.tiledPipeline != nil {
-		c.tiledPipeline.Release()
-		c.tiledShader.Release()
+	if c.shader != nil {
+		c.shader.Release()
 	}
-	if c.gemmRowPipeline != nil {
-		c.gemmRowPipeline.Release()
-		c.gemmRowShader.Release()
+	if c.queue != nil {
+		c.queue.Release()
 	}
-	if c.rmsnormPipeline != nil {
-		c.rmsnormPipeline.Release()
-		c.rmsnormShader.Release()
-		c.swigluPipeline.Release()
-		c.swigluShader.Release()
-		c.residualPipeline.Release()
-		c.residualShader.Release()
+	if c.device != nil {
+		c.device.Release()
 	}
-	if c.ropePipeline != nil {
-		c.ropePipeline.Release()
-		c.ropeShader.Release()
-		c.attnPipeline.Release()
-		c.attnShader.Release()
-		c.ropeStorePipeline.Release()
-		c.ropeStoreShader.Release()
-		c.kvStorePipeline.Release()
-		c.kvStoreShader.Release()
+	if c.adapter != nil {
+		c.adapter.Release()
 	}
-	if c.attnF16Pipeline != nil {
-		c.attnF16Pipeline.Release()
-		c.attnF16Shader.Release()
-		c.ropeStoreF16Pipeline.Release()
-		c.ropeStoreF16Shader.Release()
-		c.kvStoreF16Pipeline.Release()
-		c.kvStoreF16Shader.Release()
+	if c.instance != nil {
+		c.instance.Release()
 	}
-	if c.rmsQuantPipeline != nil {
-		c.rmsQuantPipeline.Release()
-		c.rmsQuantShader.Release()
-		c.swigluQuantPipeline.Release()
-		c.swigluQuantShader.Release()
-	}
-	if c.gemvW4Pipeline != nil {
-		c.gemvW4Pipeline.Release()
-		c.gemvW4Shader.Release()
-	}
-	c.pipeline.Release()
-	c.shader.Release()
-	c.queue.Release()
-	c.device.Release()
-	c.adapter.Release()
-	c.instance.Release()
+	c.pipeline, c.shader, c.queue, c.device, c.adapter, c.instance = nil, nil, nil, nil, nil, nil
 	return nil
 }
 

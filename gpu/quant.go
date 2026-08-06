@@ -80,6 +80,7 @@ func (c *Context) ensureQuant() error {
 		sh.Release()
 		return fmt.Errorf("gpu: create W8A8 pipeline: %w", err)
 	}
+	c.track(sh.Release, pl.Release) // audit C-26: register at creation
 	c.quantShader = sh
 	c.quantPipeline = pl
 	c.quantLayout = pl.GetBindGroupLayout(0)
