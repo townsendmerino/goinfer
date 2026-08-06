@@ -270,23 +270,29 @@ func (ve *VisionEncoder) ForwardPatches(patches []float32) ([]float32, error) {
 }
 
 // Close releases all device buffers.
-func (ve *VisionEncoder) Close() {
+// Close releases every device buffer and resident matrix this encoder allocated. Returns error to
+// satisfy io.Closer and match the rest of the gpu resource types (audit B-12; VisionEncoder was the
+// one type the finding named that still returned nothing). Teardown is best-effort — the underlying
+// releases can't meaningfully fail — so it always returns nil. Calls the standard Close() (not the
+// deprecated Release alias) on each sub-resource.
+func (ve *VisionEncoder) Close() error {
 	for _, d := range []*DeviceBuffer{ve.patchW, ve.patchB, ve.posEmb, ve.postLNw, ve.postLNb} {
 		if d != nil {
-			d.Release()
+			_ = d.Close()
 		}
 	}
 	for i := range ve.layers {
 		L := &ve.layers[i]
 		for _, d := range []*DeviceBuffer{L.ln1w, L.ln1b, L.ln2w, L.ln2b, L.qb, L.kb, L.vb, L.ob, L.fc1b, L.fc2b} {
 			if d != nil {
-				d.Release()
+				_ = d.Close()
 			}
 		}
 		for _, r := range []*ResidentW8A8{L.qw, L.kw, L.vw, L.ow, L.fc1w, L.fc2w} {
 			if r != nil {
-				r.Release()
+				_ = r.Close()
 			}
 		}
 	}
+	return nil
 }
