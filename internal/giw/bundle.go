@@ -102,7 +102,19 @@ func ReadTokFile(path string) ([]byte, error) {
 	if _, err := f.ReadAt(tl[:], tokOff); err != nil {
 		return nil, fmt.Errorf("giw: read tok length: %w", err)
 	}
-	tok := make([]byte, binary.LittleEndian.Uint32(tl[:]))
+	// Bound the allocation by the file (C-31): the tokenizer body starts at tokOff+4, so it can hold at
+	// most (fileSize - tokOff - 4) bytes. Without this a crafted u32 tokLen (e.g. 0xFFFFFFFF in a 21-byte
+	// file) makes a 4 GiB allocation before the ReadAt below fails. The ReadAt above succeeded, so
+	// tokOff+4 ≤ fileSize and avail ≥ 0.
+	tokLen := int64(binary.LittleEndian.Uint32(tl[:]))
+	fi, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if avail := fi.Size() - (tokOff + 4); tokLen > avail {
+		return nil, fmt.Errorf("giw: tokenizer length %d exceeds the %d bytes remaining in the file (truncated or corrupt)", tokLen, avail)
+	}
+	tok := make([]byte, tokLen)
 	if _, err := f.ReadAt(tok, tokOff+4); err != nil {
 		return nil, fmt.Errorf("giw: read tok: %w", err)
 	}

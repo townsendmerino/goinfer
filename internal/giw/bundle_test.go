@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"io"
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -166,5 +167,41 @@ func TestBundle_over4GiB(t *testing.T) {
 	}
 	if len(w) != n || w[0] != 0xAB || w[n-1] != 0xCD {
 		t.Fatalf(">4 GiB truncated: len=%d (want %d) first=%#x last=%#x", len(w), n, w[0], w[n-1])
+	}
+}
+
+// TestReadTokFile_boundsAlloc is the C-31 gate: ReadTokFile must not allocate from an unbounded
+// file-controlled u32 tok length. The 21-byte exploit (v2 header, weightsLen=0, tokLen=0xFFFFFFFF)
+// would make a 4 GiB allocation before the trailing ReadAt fails; now it's rejected up front. A valid
+// bundle written to a file still round-trips (the bound doesn't reject honest files).
+func TestReadTokFile_boundsAlloc(t *testing.T) {
+	dir := t.TempDir()
+
+	// the exploit: tokLen far larger than the file.
+	bad := make([]byte, 21)
+	copy(bad, bundleMagic)
+	binary.LittleEndian.PutUint32(bad[5:9], 2)            // version 2
+	binary.LittleEndian.PutUint64(bad[9:17], 0)           // weightsLen 0 → tokOff 17
+	binary.LittleEndian.PutUint32(bad[17:21], 0xFFFFFFFF) // tokLen 4 GiB
+	badPath := filepath.Join(dir, "bad.giw")
+	if err := os.WriteFile(badPath, bad, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadTokFile(badPath); err == nil {
+		t.Fatal("ReadTokFile accepted a tokLen far larger than the file (would 4 GiB-allocate) — C-31")
+	}
+
+	// control: a valid bundle round-trips through ReadTokFile.
+	tok := []byte("tokenizer-gguf-bytes")
+	goodPath := filepath.Join(dir, "good.giw")
+	if err := os.WriteFile(goodPath, Write([]byte("weights"), tok), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ReadTokFile(goodPath)
+	if err != nil {
+		t.Fatalf("ReadTokFile rejected a valid bundle: %v", err)
+	}
+	if string(got) != string(tok) {
+		t.Fatalf("ReadTokFile returned %q, want %q", got, tok)
 	}
 }
