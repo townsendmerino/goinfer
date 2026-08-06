@@ -20,9 +20,12 @@ call, not a unilateral fix.
 | Minor (N) | 0 / 24 | **24** |
 
 **Critical batch fixed on the Linux box (2026-08-06):** C-05, C-13, C-23, C-27, C-28, C-29 — each
-with a gate test. **C-15 is DEFERRED** (fix identified and correct, but blocked — see below). The
-4 remaining open criticals are all **[mac]** (C-09/10/11/12). So the remaining criticals are: 4
-[mac] + C-15 [deferred], plus the 2 owed device-gated regression tests (C-01-resident, C-03).
+with a gate test — plus **C-11** (metal, safe Go one-liner, cross-compiled; device run owed on the
+Mac). **C-15 is DEFERRED** (fix identified + correct, blocked on MoE-parity recalibration that needs
+moe.ptx regen — see below). **C-09/C-10/C-12** are DEFERRED to the Mac: each needs an objc/kernel-
+binding/exported-API change that can only be validated on a Metal device, and doing them blind
+risks the silent corruption they aim to prevent (details on each below). Still owed: the 2
+device-gated regression tests (C-01-resident, C-03).
 
 ---
 
@@ -48,11 +51,20 @@ gemma-4 session round-trips through `--session-dir` and then mis-slices on the f
 Reachable via the serve session path.
 *Fix:* refuse gemma-4 (per-layer KV width) in `Snapshot`, or restore per-layer strides on load.
 
+**C-09 — DEFERRED to Mac** (2026-08-06). Reading `commandBuffer.status`/`error` after commit is
+purego-objc work whose abort path can only be validated on a Metal device; foundational (several
+findings depend on it), so it should be done where it can be exercised. Original finding below.
 **C-09** [mac] | `metal/model.go:651,730` + `gemma4_moe.go:479,503` — no site in `metal/` ever
 observes the Metal command-buffer status. A kernel that aborts (see M-11) leaves the host reading
 the previous token's logits with no error. Underlies several other metal findings.
 *Fix:* read `commandBuffer.status`/`error` after commit and surface a failure.
 
+**C-10 — DEFERRED to Mac** (2026-08-06). Only `gemv_w4a8_sa_bk` takes `N`. Guarding
+`gemv_w4a8_sa`/`_sa_bias`/`_sa_resid` means ADDING an `N` param (buffer 6) + updating every Go
+dispatch binding — the exact "stale binding" class the metal-CI comment names, not safe without a
+device run. The audit's cheaper alternative (assert `N%8==0` at each SA-gemv dispatch, or decline in
+BuildResident when a projection width isn't a multiple of 8) is Go-side but still wants a device pass
+to confirm no current shape regresses. Original finding below.
 **C-10** [mac] | `metal/kernels.go:134,250` + `moe.go:100,128` — seven GEMV variants derive the
 output row from the *runtime* threadgroup size (reduced in the tail threadgroup of a non-uniform
 `dispatchThreads:` launch). Only `gemv_w4a8_sa_bk` carries `if (row >= N) return;`.
@@ -61,13 +73,26 @@ true tail rows are never written — GEMV output tail is uninitialised scratch. 
 multiples of 8 by luck.
 *Fix:* add the guard to all seven, or assert `N%8==0` at each dispatch site.
 
+**C-11 — FIXED in code** (2026-08-06, Linux box — cross-compiled darwin/arm64, DEVICE RUN OWED on
+the Mac). `nTiles := (V + 7) / 8` (was floor `V/8`): the strictly-larger `r.part` buffer holds
+every tile ForwardArgmax dispatches and `uP` now counts all of them, so the last tile is written
+in-bounds AND reduced. No kernel/binding change; cannot corrupt. The greedy-token-vs-argmax(Forward)
+device check for a non-multiple-of-8 V is owed on the Mac. Original finding below.
 **C-11** [mac] | `metal/model.go:534` — `nTiles := V / 8` (floor) sizes `r.part`/`r.uP`, but
 `ForwardArgmax` dispatches `ceil(V/8)` tiles and the kernel writes `part[tgid]` unconditionally.
 *Failure:* any `V % 8 != 0` (e.g. 50257) writes 8 bytes past `r.part` — on UMA it lands in the
 next buffer, potentially another resident model's weights — and `uP = V/8` leaves the last tile
 unreduced, so the greedy token can differ from `argmax(Forward())`.
-*Fix:* `nTiles := (V + 7) / 8` plus the row guard.
+*Fix (applied):* `nTiles := (V + 7) / 8`. (The audit also mentions a row guard; the ceil buffer
+alone fixes both the OOB write and the unreduced last tile, since the amax kernel writes `part[tgid]`
+and tgid ∈ [0, ceil).)
 
+**C-12 — DEFERRED to Mac** (2026-08-06). The exported `Forward`/`ForwardEmb`/`ForwardArgmax` return
+`[]float32`/`uint32` with NO error return, so "move `checkCap` into the exported methods" needs an
+API decision (add an error return, or a documented clamp/panic policy) plus a call-graph review of
+who reaches the inner `resident.*` directly vs through the `metalResident` adapter (which already
+checks). That is an exported-surface decision best made where it can be device-validated. Original
+finding below.
 **C-12** [mac] | `metal/model.go:618,633,831` — the context-cap guard lives only in the unexported
 adapter (`checkCap`); exported `Forward`/`ForwardEmb`/`ForwardArgmax`/`PrefillLast` take `pos`
 unchecked.

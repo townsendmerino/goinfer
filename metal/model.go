@@ -541,7 +541,12 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	r.oO, r.mq, r.mSc = d.NewBufferLen(H), byteBuf(d, H), d.NewBufferLen(1)
 	r.dq, r.dSc, r.dO = byteBuf(d, guDim), d.NewBufferLen(1), d.NewBufferLen(H)
 	r.logits = d.NewBufferLen(V)
-	nTiles := V / 8 // one (maxLogit,rowIdx) partial per threadgroup (8 rows) — V divisible by 8
+	// CEIL, not floor: ForwardArgmax dispatches V*32 threads = ceil(V/8) threadgroups and the amax
+	// kernel writes part[tgid] unconditionally, so a floor V/8 both under-sizes r.part (an 8-byte
+	// write past it — on UMA into an adjacent buffer) and leaves the last tile out of uP's reduce,
+	// so the greedy token could differ from argmax(Forward) (audit C-11). ceil(V/8) sizes the buffer
+	// for every tile and reduces all of them.
+	nTiles := (V + 7) / 8 // one (maxLogit,rowIdx) partial per threadgroup (8 rows)
 	r.part, r.tok, r.uP = d.NewBufferLen(nTiles*2), d.NewBufferLen(1), d.NewBufferU32(uint32(nTiles))
 	// Model-level rope table for the (uniform-only) prefill path; decode uses each layer's L.invf.
 	r.invf = d.NewBufferFloats(m.RopeInvFreq())
