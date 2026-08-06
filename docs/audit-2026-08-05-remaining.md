@@ -168,6 +168,21 @@ without per-layer RoPE prefills its *global* layers with the local window applie
 because every shipped mixed-window arch also has per-layer RoPE.
 *Fix:* bind the per-layer values (both already exist).
 
+**M-25 (new, 2026-08-06)** [any] | `decoder/kvcache.go` — `TruncateTo(0)` (the Session.Reset /
+`sessionLRU.fresh` reset path) clears the KV, recurrent (`mamba`/`delta`), and MLA state but
+**leaves the multimodal fields `imgBlocks`, `mropePos`, `mropeDelta` populated**. Reported by an
+external pass with a unit repro (`TestTempKVCacheStateLeak`, not committed) asserting `imgBlocks`
+is empty after `TruncateTo(0)` — the method behaviour is confirmed. **Latent, not currently
+reachable:** verified that every VL generation gets a *fresh* cache (`GenerateVL`/`GenerateQwenVL`
+→ `m.NewCache`), `SetImageBlocks`/`mropePos` are set only inside the VL prefill on that single-use
+cache, and the serve dispatch routes image requests to the fresh-cache VL path while warm-KV
+**sessions are text-only** (`openai.go:797/799` vs `sess.Generate`) — so no reused cache ever
+carries image state into a later read. It goes **live and silent** the day VL is wired through the
+warm-KV session path (image-in-chat with prefix reuse), which is a plausible future feature.
+*Fix (cheap defence-in-depth):* nil `imgBlocks`/`mropePos` and zero `mropeDelta` in the `pos == 0`
+branch of `TruncateTo`, alongside `resetRecurrent()` — makes the reset complete and the external
+repro pass. Touches core, so it carries a goldens-gated parity refresh.
+
 **M-10** [mac] | `metal/model.go:251` + `pack.go:11` — int4 pack paths check `group == 32` but never
 `K % 32 == 0`, while the kernels hard-assume it. `K=40` fills only the first group and leaves zero
 nibbles decoding as −8; the per-row stride disagrees with the kernel's; `K=12` panics. CUDA declines
