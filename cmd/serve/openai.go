@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/rand"
 	"net/http"
 	"sort"
 	"strings"
@@ -474,13 +475,23 @@ type genRequest struct {
 func (lm *loadedModel) prepare(sm sampling, promptIDs []int) (genRequest, error) {
 	sp := decoder.SamplingParams{
 		Temperature: deref(sm.Temperature, 1.0),
-		Seed:        deref(sm.Seed, 0),
+		Seed:        seedOrRandom(sm.Seed), // M-03: omitted seed → fresh random, not deterministic seed 0
 		StopIDs:     lm.stopIDs,
 		Logprobs:    sm.Logprobs,
 		TopLogprobs: deref(sm.TopLogprobs, 0),
 	}
-	if sm.TopP != nil && *sm.TopP < 1 {
-		sp.TopP = *sm.TopP
+	// M-02: top_p == 0 is the tightest nucleus (the single most-likely token), which is greedy — the old
+	// `< 1` path stored 0, and the sampler treats TopP == 0 as DISABLED, so the request asking for the
+	// tightest filter got a full-vocab draw. Reject outside [0,1]; map explicit 0 to greedy.
+	if sm.TopP != nil {
+		switch p := *sm.TopP; {
+		case p < 0 || p > 1:
+			return genRequest{}, fmt.Errorf("top_p must be in [0,1] (got %v)", p)
+		case p == 0:
+			sp.Temperature = 0
+		case p < 1:
+			sp.TopP = p
+		}
 	}
 	if sm.TopK != nil {
 		sp.TopK = *sm.TopK
@@ -551,6 +562,17 @@ func contextLengthError(promptLen, ctx int) error {
 		return fmt.Errorf("prompt is %d tokens but the model's context window is %d (context_length_exceeded)", promptLen, ctx)
 	}
 	return nil
+}
+
+// seedOrRandom returns the request's seed, or a fresh random seed when absent (M-03). OpenAI's contract
+// is that an OMITTED seed varies output run to run — best-of-N, "regenerate", and agent retry-for-
+// diversity all depend on it — but deref(sm.Seed, 0) pinned every seedless request to the deterministic
+// seed-0 stream. A supplied seed (including 0) is still honored verbatim for reproducibility.
+func seedOrRandom(seed *int64) int64 {
+	if seed != nil {
+		return *seed
+	}
+	return rand.Int63()
 }
 
 // clampMaxTokens bounds max_tokens by the model's context window (C-18). The KV cache is preallocated

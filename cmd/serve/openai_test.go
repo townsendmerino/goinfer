@@ -489,3 +489,37 @@ func TestContextLengthError(t *testing.T) {
 		}
 	}
 }
+
+// TestPrepare_topPAndSeed gates M-02 (top_p==0 is greedy, out-of-range rejected) and M-03 (an omitted
+// seed varies, a supplied seed is honored).
+func TestPrepare_topPAndSeed(t *testing.T) {
+	lm := &loadedModel{}
+	f := func(v float64) *float64 { return &v }
+	// M-02: top_p==0 → greedy (Temperature 0), not a full-vocab draw.
+	gr, err := lm.prepare(sampling{TopP: f(0)}, []int{1})
+	if err != nil {
+		t.Fatalf("top_p=0: %v", err)
+	}
+	if gr.sp.Temperature != 0 || gr.sp.TopP != 0 {
+		t.Errorf("top_p=0 → Temperature %v TopP %v, want greedy (0,0)", gr.sp.Temperature, gr.sp.TopP)
+	}
+	// M-02: 0 < top_p < 1 sets the nucleus; out-of-range is a 400.
+	if gr, _ := lm.prepare(sampling{TopP: f(0.9)}, []int{1}); gr.sp.TopP != 0.9 {
+		t.Errorf("top_p=0.9 → TopP %v, want 0.9", gr.sp.TopP)
+	}
+	for _, bad := range []float64{-0.1, 1.5} {
+		if _, err := lm.prepare(sampling{TopP: f(bad)}, []int{1}); err == nil {
+			t.Errorf("top_p=%v not rejected", bad)
+		}
+	}
+	// M-03: omitted seed varies (two calls differ w.h.p.); a supplied seed is honored.
+	a, _ := lm.prepare(sampling{}, []int{1})
+	b, _ := lm.prepare(sampling{}, []int{1})
+	if a.sp.Seed == 0 && b.sp.Seed == 0 {
+		t.Error("omitted seed is still deterministic 0 (M-03)")
+	}
+	sd := int64(42)
+	if gr, _ := lm.prepare(sampling{Seed: &sd}, []int{1}); gr.sp.Seed != 42 {
+		t.Errorf("supplied seed 42 → %d", gr.sp.Seed)
+	}
+}
