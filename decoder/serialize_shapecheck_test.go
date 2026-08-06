@@ -14,11 +14,13 @@ import (
 // write past the slice from caller-supplied bytes.
 func TestValidateShapes_catchesArchMismatch(t *testing.T) {
 	const (
-		vocab, hidden, nH, nKV, hd, nE = 32, 8, 2, 1, 4, 4
+		vocab, hidden, nH, nKV, hd, nE, inter, moeInter = 32, 8, 2, 1, 4, 4, 16, 12
 	)
 	arch := &Architecture{
 		VocabSize: vocab, HiddenDim: hidden, NumHeads: nH, NumKVHeads: nKV, HeadDim: hd,
-		MoE: &MoEConfig{NumExperts: nE, TopK: 2},
+		IntermediateDim: inter,
+		NumLayers:       1, // one layer in the bundle below; the C-06 layer-count check needs them to agree
+		MoE:             &MoEConfig{NumExperts: nE, TopK: 2, IntermediateDim: moeInter},
 	}
 	f := func(rows, cols int) linalg.WeightMat {
 		return linalg.WrapF32(make([]float32, rows*cols), rows, cols)
@@ -49,6 +51,17 @@ func TestValidateShapes_catchesArchMismatch(t *testing.T) {
 		{"lmhead vocab wrong", func(w *Weights) { w.LMHead = f(vocab*2, hidden) }, "LMHead"},
 		{"qproj rows wrong", func(w *Weights) { w.Layers[0].QProj = f(nH*hd+1, hidden) }, "QProj"},
 		{"kproj rows wrong", func(w *Weights) { w.Layers[0].KProj = f(nKV*hd+3, hidden) }, "KProj"},
+		{"oproj rows wrong", func(w *Weights) { w.Layers[0].OProj = f(hidden+1, nH*hd) }, "OProj"},
+		{"gateproj rows wrong", func(w *Weights) { w.Layers[0].GateProj = f(inter+1, hidden) }, "GateProj"},
+		{"upproj rows wrong", func(w *Weights) { w.Layers[0].UpProj = f(inter*2, hidden) }, "UpProj"},
+		{"expert gate rows wrong", func(w *Weights) {
+			w.Layers[0].Experts = []expertWeights{{Gate: f(moeInter+1, hidden)}}
+		}, "expert 0 Gate"},
+		{"expert down rows wrong", func(w *Weights) {
+			w.Layers[0].Experts = []expertWeights{{Down: f(hidden+1, moeInter)}}
+		}, "expert 0 Down"},
+		{"too few layers (OOB read)", func(w *Weights) { w.Layers = nil }, "layer count"},
+		{"too many layers", func(w *Weights) { w.Layers = append(w.Layers, LayerWeights{}) }, "layer count"},
 	} {
 		w := good()
 		tc.mutate(w)

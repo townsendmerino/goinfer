@@ -538,7 +538,9 @@ func TestLoadSerialized_finalizesTiedLMHead(t *testing.T) {
 		t.Fatalf("resolveArchitecture: %v", err)
 	}
 	emb := linalg.WrapF32(make([]float32, cfg.VocabSize*cfg.HiddenDim), cfg.VocabSize, cfg.HiddenDim)
-	w := &Weights{Cfg: *cfg, arch: arch, Embed: emb} // LMHead zero-value ⇒ tied; no layers needed
+	// LMHead zero-value ⇒ tied. The layers are present but empty (Rows()==0 ⇒ the per-projection
+	// shape checks skip them); the C-06 layer-count check needs len(Layers) == arch.NumLayers.
+	w := &Weights{Cfg: *cfg, arch: arch, Embed: emb, Layers: make([]LayerWeights, arch.NumLayers)}
 	blob, err := SerializeWeights(w, "tied-head-test")
 	if err != nil {
 		t.Fatalf("serialize: %v", err)

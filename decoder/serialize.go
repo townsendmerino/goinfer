@@ -316,33 +316,64 @@ func validateShapes(w *Weights, arch *Architecture) *SerializeError {
 			return e
 		}
 	}
-	uniform := arch.gemma4 == nil // gemma-4 has per-layer geometry; skip the model-level dim checks
-	qDim, kvDim := arch.NumHeads*arch.HeadDim, arch.NumKVHeads*arch.HeadDim
+	// The blob controls len(w.Layers), but the forward indexes arch.NumLayers — a short blob is an
+	// out-of-bounds layer read the per-layer checks below never reach (C-06).
+	if len(w.Layers) != arch.NumLayers {
+		return &SerializeError{fmt.Sprintf("layer count: blob has %d, arch expects %d", len(w.Layers), arch.NumLayers)}
+	}
+	// The per-layer accessors (headDimAt/kvHeadsAt/ffnAt) collapse to the uniform Architecture fields
+	// for every non-gemma-4 family, so ONE per-layer check set covers all families — gemma-4 included,
+	// closing the old `uniform := arch.gemma4 == nil` skip that left its projections unvalidated. Each
+	// check is guarded by Rows()>0, so a family that legitimately omits a projection (a routed layer's
+	// empty dense FFN, gemma-4's MLP living in the MoE sub-block) is not false-rejected.
 	for i := range w.Layers {
 		lw := &w.Layers[i]
-		// Router feeds moeMLP's make([]float32, NumExperts) — the exploit the audit names.
-		if arch.MoE != nil && lw.Router.Rows() > 0 {
-			if e := eq(fmt.Sprintf("layer %d Router", i), lw.Router.Rows(), arch.MoE.NumExperts); e != nil {
-				return e
-			}
-		}
-		if !uniform {
-			continue
-		}
+		hd := arch.headDimAt(i)
+		qDim, kvDim, ffn := arch.NumHeads*hd, arch.kvHeadsAt(i)*hd, arch.ffnAt(i)
 		for _, c := range []struct {
 			name string
 			got  int
-			cond bool
 			want int
 		}{
-			{"QProj", lw.QProj.Rows(), lw.QProj.Rows() > 0, qDim},
-			{"KProj", lw.KProj.Rows(), lw.KProj.Rows() > 0, kvDim},
-			{"VProj", lw.VProj.Rows(), lw.VProj.Rows() > 0, kvDim},
-			{"DownProj", lw.DownProj.Rows(), lw.DownProj.Rows() > 0, arch.HiddenDim},
+			{"QProj", lw.QProj.Rows(), qDim},
+			{"KProj", lw.KProj.Rows(), kvDim},
+			{"VProj", lw.VProj.Rows(), kvDim},
+			{"OProj", lw.OProj.Rows(), arch.HiddenDim},
+			{"GateProj", lw.GateProj.Rows(), ffn},
+			{"UpProj", lw.UpProj.Rows(), ffn},
+			{"DownProj", lw.DownProj.Rows(), arch.HiddenDim},
 		} {
-			if c.cond {
+			if c.got > 0 {
 				if e := eq(fmt.Sprintf("layer %d %s", i, c.name), c.got, c.want); e != nil {
 					return e
+				}
+			}
+		}
+		if arch.MoE != nil {
+			// Router feeds moeMLP's make([]float32, NumExperts) — the exploit the audit names.
+			if lw.Router.Rows() > 0 {
+				if e := eq(fmt.Sprintf("layer %d Router", i), lw.Router.Rows(), arch.MoE.NumExperts); e != nil {
+					return e
+				}
+			}
+			// Per-expert Gate/Up (moe intermediate width) and Down (hidden) — same config-sized-scratch
+			// write class as the dense projections. Empty for families that stack experts elsewhere.
+			for xe := range lw.Experts {
+				ex := &lw.Experts[xe]
+				for _, c := range []struct {
+					name string
+					got  int
+					want int
+				}{
+					{"Gate", ex.Gate.Rows(), arch.MoE.IntermediateDim},
+					{"Up", ex.Up.Rows(), arch.MoE.IntermediateDim},
+					{"Down", ex.Down.Rows(), arch.HiddenDim},
+				} {
+					if c.got > 0 {
+						if e := eq(fmt.Sprintf("layer %d expert %d %s", i, xe, c.name), c.got, c.want); e != nil {
+							return e
+						}
+					}
 				}
 			}
 		}
