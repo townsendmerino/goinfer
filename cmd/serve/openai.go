@@ -522,7 +522,11 @@ func (lm *loadedModel) prepare(sm sampling, promptIDs []int) (genRequest, error)
 	// (decoder/model.go). Only shrinks; a request already within context is untouched. (A prompt that
 	// itself exceeds the context is C-20's concern; here we only bound the max_tokens contribution.)
 	if lm.model != nil {
-		gr.maxTokens = clampMaxTokens(gr.maxTokens, len(promptIDs), lm.model.Config().MaxPositions)
+		ctx := lm.model.Config().MaxPositions
+		if err := contextLengthError(len(promptIDs), ctx); err != nil {
+			return genRequest{}, err
+		}
+		gr.maxTokens = clampMaxTokens(gr.maxTokens, len(promptIDs), ctx)
 	}
 	g, err := grammarFor(sm.ResponseFormat)
 	if err != nil {
@@ -535,6 +539,18 @@ func (lm *loadedModel) prepare(sm sampling, promptIDs []int) (genRequest, error)
 		gr.masker = m // enables grammar-fused speculative decode (drive)
 	}
 	return gr, nil
+}
+
+// contextLengthError rejects a prompt that alone fills or exceeds the model's context window (C-20).
+// MaxPositions is loaded but was never compared to len(prompt): a multi-MiB body tokenizes to ~1M ids
+// and preallocates tens of GiB of KV (NewCache is sized len(prompt)+max_tokens) → OOM-kill; and even
+// within memory, positions past the trained context drive out-of-range RoPE and return plausible
+// garbage under HTTP 200 instead of a 400. ctx ≤ 0 (unknown) never rejects.
+func contextLengthError(promptLen, ctx int) error {
+	if ctx > 0 && promptLen >= ctx {
+		return fmt.Errorf("prompt is %d tokens but the model's context window is %d (context_length_exceeded)", promptLen, ctx)
+	}
+	return nil
 }
 
 // clampMaxTokens bounds max_tokens by the model's context window (C-18). The KV cache is preallocated

@@ -464,3 +464,28 @@ func TestClampMaxTokens_contextWindow(t *testing.T) {
 		}
 	}
 }
+
+// TestContextLengthError is the C-20 gate: a prompt that fills or exceeds the model's context is
+// rejected (context_length_exceeded) rather than OOM-killing the server or decoding out-of-range RoPE.
+func TestContextLengthError(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		promptLen, ctx int
+		wantErr        bool
+	}{
+		{"within context", 100, 4096, false},
+		{"one below context", 4095, 4096, false},
+		{"exactly at context (no room)", 4096, 4096, true},
+		{"past context", 5000, 4096, true},
+		{"1M-token body", 1_000_000, 32768, true},
+		{"unknown ctx (0) never rejects", 1_000_000, 0, false},
+	} {
+		err := contextLengthError(tc.promptLen, tc.ctx)
+		if (err != nil) != tc.wantErr {
+			t.Errorf("%s: contextLengthError(%d, %d) err=%v, wantErr=%v", tc.name, tc.promptLen, tc.ctx, err, tc.wantErr)
+		}
+		if err != nil && !strings.Contains(err.Error(), "context_length_exceeded") {
+			t.Errorf("%s: error %q should name context_length_exceeded", tc.name, err.Error())
+		}
+	}
+}
