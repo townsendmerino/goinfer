@@ -201,31 +201,49 @@ func (ve *VisionEncoder) ForwardPatches(patches []float32) ([]float32, error) {
 		}
 		for head := 0; head < nH; head++ {
 			off := head * hd
-			qh, e1 := ve.gatherHead(q, np, hd, hidden, off, 0)
-			kh, e2 := ve.gatherHead(k, np, hd, hidden, off, 0)
-			vt, e3 := ve.gatherHead(v, np, hd, hidden, off, 2) // [hd, np]
+			// Per-iteration buffers are released at the end of a SUCCESSFUL iteration; on any
+			// error mid-iteration they were leaked (up to five) because `fail`/`keep` only track
+			// the layer-scoped buffers, not these (audit M-16). hrel releases whatever this
+			// iteration has allocated so far, on the success path AND every error return.
+			var hbufs []*DeviceBuffer
+			hrel := func() {
+				for _, b := range hbufs {
+					b.Release()
+				}
+			}
+			htrack := func(d *DeviceBuffer, e error) (*DeviceBuffer, error) {
+				if e != nil {
+					return nil, e
+				}
+				hbufs = append(hbufs, d)
+				return d, nil
+			}
+			qh, e1 := htrack(ve.gatherHead(q, np, hd, hidden, off, 0))
+			kh, e2 := htrack(ve.gatherHead(k, np, hd, hidden, off, 0))
+			vt, e3 := htrack(ve.gatherHead(v, np, hd, hidden, off, 2)) // [hd, np]
 			if e1 != nil || e2 != nil || e3 != nil {
+				hrel()
 				return nil, fail(fmt.Errorf("gather: %v %v %v", e1, e2, e3))
 			}
-			scores, e := c.matmulF32Device(qh.buf, kh.buf, np, hd, np) // [np,np]
+			scores, e := htrack(c.matmulF32Device(qh.buf, kh.buf, np, hd, np)) // [np,np]
 			if e != nil {
+				hrel()
 				return nil, fail(e)
 			}
 			if e := c.inplaceKernel(c.softmaxPipeline, c.softmaxLayout, scores.buf, []uint32{uint32(np), uint32(np), math.Float32bits(scale), 0}, np); e != nil {
+				hrel()
 				return nil, fail(e)
 			}
-			oh, e := c.matmulF32Device(scores.buf, vt.buf, np, np, hd) // [np,hd]
+			oh, e := htrack(c.matmulF32Device(scores.buf, vt.buf, np, np, hd)) // [np,hd]
 			if e != nil {
+				hrel()
 				return nil, fail(e)
 			}
 			if e := c.copyHeadDevice(oh.buf, att.buf, np, hd, hidden, off, 1); e != nil { // scatter
+				hrel()
 				return nil, fail(e)
 			}
-			qh.Release()
-			kh.Release()
-			vt.Release()
-			scores.Release()
-			oh.Release()
+			hrel()
 		}
 		o, err := add(ve.proj(att, L.ow, L.ob, np, hidden))
 		if err != nil {

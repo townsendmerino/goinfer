@@ -308,6 +308,14 @@ func (c *Context) matmulF32Device(a, b *wgpu.Buffer, M, K, N int) (*DeviceBuffer
 	if err != nil {
 		return nil, err
 	}
+	// dst is handed to the caller only on success; release it on EVERY early error return below
+	// (dims-create, bind-group-create, pass.End) — before this it leaked on those paths (audit M-16).
+	ok := false
+	defer func() {
+		if !ok {
+			dst.Release()
+		}
+	}()
 	dims, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "dims", Contents: wgpu.ToBytes([]uint32{uint32(M), uint32(K), uint32(N), 0}), Usage: wgpu.BufferUsageUniform})
 	if err != nil {
 		return nil, err
@@ -337,6 +345,7 @@ func (c *Context) matmulF32Device(a, b *wgpu.Buffer, M, K, N int) (*DeviceBuffer
 	cmd, _ := enc.Finish(nil)
 	defer cmd.Release()
 	c.queue.Submit(cmd)
+	ok = true // dst now owned by the returned DeviceBuffer
 	return &DeviceBuffer{buf: dst, n: M * N}, nil
 }
 
