@@ -22,7 +22,7 @@ func TestPrefillLast_qwen3(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
 		t.Skip("set GOINFER_HEAVY_TESTS=1 (loads Qwen3-1.7B)")
 	}
-	const path = "/home/francis/models/qwen3-1.7b-q8_0.gguf"
+	path := modelPath("qwen3-1.7b-q8_0.gguf")
 	if err := gc.Init(); err != nil {
 		t.Skipf("cuInit: %v", err)
 	}

@@ -24,7 +24,7 @@ func TestPrefillLast_gemma3(t *testing.T) {
 		t.Skip("set GOINFER_HEAVY_TESTS=1 (loads Gemma-3-4B)")
 	}
 	t.Setenv("GOINFER_GEMMA4_RESIDENT", "1") // the gemma dense-resident path gate
-	const path = "/home/francis/models/gemma-3-4b-it-Q4_K_M.gguf"
+	path := modelPath("gemma-3-4b-it-Q4_K_M.gguf")
 	if err := gc.Init(); err != nil {
 		t.Skipf("cuInit: %v", err)
 	}

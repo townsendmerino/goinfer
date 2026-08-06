@@ -95,8 +95,8 @@ func count(ids []int, id int) int {
 func TestRenderSegments_chatml(t *testing.T) {
 	p := firstExisting(
 		os.Getenv("GOINFER_CHATML_GGUF"),
-		"/home/francis/models/qwen2.5-0.5b-q6k.gguf",
-		"/home/francis/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf",
+		modelPath("qwen2.5-0.5b-q6k.gguf"),
+		modelPath("qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"),
 	)
 	checkFamily(t, p, ChatML(), "<|im_end|>")
 }
@@ -104,7 +104,7 @@ func TestRenderSegments_chatml(t *testing.T) {
 func TestRenderSegments_llama3(t *testing.T) {
 	p := firstExisting(
 		os.Getenv("GOINFER_LLAMA3_GGUF"),
-		"/home/francis/models/llama-3.2-1b-instruct-q4_k_m.gguf",
+		modelPath("llama-3.2-1b-instruct-q4_k_m.gguf"),
 	)
 	checkFamily(t, p, Llama3(), "<|eot_id|>")
 }
@@ -112,7 +112,7 @@ func TestRenderSegments_llama3(t *testing.T) {
 func TestRenderSegments_gemma3(t *testing.T) {
 	p := firstExisting(
 		os.Getenv("GOINFER_GEMMA3_GGUF"),
-		"/home/francis/models/gemma-3-4b-it-Q4_K_M.gguf",
+		modelPath("gemma-3-4b-it-Q4_K_M.gguf"),
 	)
 	checkFamily(t, p, Gemma3(), "<end_of_turn>")
 }

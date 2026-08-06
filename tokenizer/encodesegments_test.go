@@ -13,8 +13,8 @@ func chatmlGGUF(t *testing.T) *Tokenizer {
 	path := os.Getenv("GOINFER_CHATML_GGUF")
 	if path == "" {
 		for _, p := range []string{
-			"/home/francis/models/qwen2.5-0.5b-q6k.gguf",
-			"/home/francis/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf",
+			modelPath("qwen2.5-0.5b-q6k.gguf"),
+			modelPath("qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"),
 		} {
 			if _, err := os.Stat(p); err == nil {
 				path = p

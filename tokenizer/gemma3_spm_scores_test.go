@@ -16,7 +16,7 @@ import (
 // Covers prose, code, mixed whitespace, unicode (accents / CJK / emoji) and a digit run — the segments
 // where the greedy best-score merge order matters. Skips when the gitignored GGUF fixture is absent.
 func TestGemma3SPMScoresParity(t *testing.T) {
-	const g = "/home/francis/models/gemma-3-4b-it-Q4_K_M.gguf"
+	g := modelPath("gemma-3-4b-it-Q4_K_M.gguf")
 	if _, err := os.Stat(g); err != nil {
 		t.Skipf("no gemma-3-4b GGUF at %s", g)
 	}

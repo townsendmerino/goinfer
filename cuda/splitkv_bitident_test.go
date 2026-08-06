@@ -23,7 +23,7 @@ func TestSplitKV_bitIdentical(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
 		t.Skip("set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)")
 	}
-	const path = "/home/francis/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"
+	path := modelPath("qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")
 	if err := gc.Init(); err != nil {
 		t.Skipf("cuInit: %v", err)
 	}
@@ -108,7 +108,7 @@ func TestSplitKV_bitIdentical_gemma3(t *testing.T) {
 		t.Skip("set GOINFER_HEAVY_TESTS=1 (loads Gemma-3-4B)")
 	}
 	t.Setenv("GOINFER_GEMMA4_RESIDENT", "1")
-	const path = "/home/francis/models/gemma-3-4b-it-Q4_K_M.gguf"
+	path := modelPath("gemma-3-4b-it-Q4_K_M.gguf")
 	if err := gc.Init(); err != nil {
 		t.Skipf("cuInit: %v", err)
 	}

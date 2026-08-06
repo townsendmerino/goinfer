@@ -26,7 +26,7 @@ func TestArgmaxTieBreak(t *testing.T) {
 	if _, err := gc.GetDevice(0); err != nil {
 		t.Skipf("no device: %v", err)
 	}
-	const path = "/home/francis/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"
+	path := modelPath("qwen2.5-coder-0.5b-instruct-q4_k_m.gguf")
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no fixture at %s", path)
 	}

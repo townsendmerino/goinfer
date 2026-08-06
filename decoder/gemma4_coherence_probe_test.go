@@ -19,7 +19,7 @@ import (
 // {greedy, sampled} from one model load. Set ZZBASE / GOINFER_FAKEQUANT[_ACT] as usual.
 func TestGemma4CoherenceProbe(t *testing.T) {
 	requireHeavyModel(t)
-	dir := "/home/francis/models/gemma-4-26b-a4b-it"
+	dir := modelPath("gemma-4-26b-a4b-it")
 	if _, err := os.Stat(dir); err != nil {
 		t.Skip("real gemma-4-26b-a4b-it not present")
 	}

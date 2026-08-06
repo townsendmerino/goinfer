@@ -22,7 +22,7 @@ func TestB2DenseFlagship(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
 		t.Skip("set GOINFER_HEAVY_TESTS=1 (loads a 7B model)")
 	}
-	const path = "/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf"
+	path := modelPath("qwen2.5-7b-instruct-q4_k_m.gguf")
 	if err := gc.Init(); err != nil {
 		t.Skipf("cuInit: %v", err)
 	}
