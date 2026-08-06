@@ -296,7 +296,16 @@ func loadWeights(dir string, quant quantMode, embedInt4 bool, lora *loraAdapter)
 	if err != nil {
 		return nil, err
 	}
-	return buildWeightsFromSafetensors(cfg, arch, schema, st, quant, embedInt4, lora)
+	// buildWeightsFromSafetensors retains st (the WeightMats alias its mmap) ONLY on success —
+	// on any of its ~40 error returns st would otherwise leak the mapping + fd. A serve process
+	// probing candidate dirs, or retrying a load of a checkpoint with one missing tensor,
+	// accumulates GBs of address space — the exact leak Model.Close exists to avoid (audit M-08).
+	w, err := buildWeightsFromSafetensors(cfg, arch, schema, st, quant, embedInt4, lora)
+	if err != nil {
+		_ = st.Close()
+		return nil, err
+	}
+	return w, nil
 }
 
 const shardIndexFile = "model.safetensors.index.json"
@@ -344,7 +353,12 @@ func loadWeightsFromFS(fsys fs.FS, dir string, quant quantMode) (*Weights, error
 	if err != nil {
 		return nil, err
 	}
-	return buildWeightsFromSafetensors(cfg, arch, schema, st, quant, false, nil)
+	w, err := buildWeightsFromSafetensors(cfg, arch, schema, st, quant, false, nil)
+	if err != nil {
+		_ = st.Close() // st is retained only on success; close it on error so the mapping/fd doesn't leak (M-08)
+		return nil, err
+	}
+	return w, nil
 }
 
 // openCheckpointFromFS is the fs.FS counterpart of openCheckpointMmap (heap):

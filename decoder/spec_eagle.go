@@ -39,6 +39,15 @@ func (m *Model) GenerateEagleSpeculativeTree(ctx context.Context, prompt []int, 
 	if D < 1 {
 		D = 4
 	}
+	// The EAGLE loop batches the target forward (forwardN) with the hidden-state capture seam
+	// on. specRollbackSafe alone is insufficient: an own-runLayers family (gemma4/qwen35/
+	// granite/nemotron/mla/llama4/gptoss) can pass it yet never populate cache.captured, so
+	// fuseAt would slice a nil buffer — and even where the sequential path captures, forwardN
+	// can't batch it. canBatchN gates exactly the batched-capture-safe arches (a superset of
+	// ForwardCapture's allow-list); refuse the rest so the caller falls back to plain decode (M-07).
+	if !m.canBatchN(eagleTreeNodes(B, D)) {
+		return nil, nil, fmt.Errorf("decoder.GenerateEagleSpeculativeTree: batched hidden-state capture not supported for arch %q (own runLayers)", m.w.arch.Name)
+	}
 	hidden := m.w.arch.HiddenDim
 	embedOf := func(tok int, dst []float32) { m.embedToken(tok, dst) }
 
@@ -198,6 +207,12 @@ func (m *Model) GenerateEagleSpeculative(ctx context.Context, prompt []int, maxT
 	}
 	if K < 1 {
 		K = 5
+	}
+	// See GenerateEagleSpeculativeTree: canBatchN gates the batched hidden-state capture the
+	// verify relies on; an own-runLayers family passes specRollbackSafe but never fills
+	// cache.captured, panicking fuseAt. Refuse → the caller falls back to plain decode (M-07).
+	if !m.canBatchN(K + 1) {
+		return nil, nil, fmt.Errorf("decoder.GenerateEagleSpeculative: batched hidden-state capture not supported for arch %q (own runLayers)", m.w.arch.Name)
 	}
 	hidden := m.w.arch.HiddenDim
 	embedOf := func(tok int, dst []float32) { m.embedToken(tok, dst) }
