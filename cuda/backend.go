@@ -459,12 +459,20 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		}{
 			{&r.fRms, "rmsnorm_quant"}, {&r.fRmsF32, "rmsnorm_f32"}, {&r.fQ, "quant_vec"}, {&r.fRope, "rope"},
 			{&r.fAttn, "attention"}, {&r.fSw, "glu_quant"}, {&r.fRes, "residual"},
-			{&r.fArg, "argmax_reduce"},
 		}
 		for _, f := range fns {
 			if *f.dst, e = r.dev.NewComputePipeline(glmod, f.name); e != nil {
 				return e
 			}
+		}
+		// argmax_reduce lives in its own module (argmax.ptx), off the audited 12.6 glue.ptx, so the
+		// C-14 index tie-break fix didn't force a glue.ptx regen at 12.9. See cuda/argmax.cu.
+		amod, e2 := r.dev.CompileLibrary(argmaxPTX)
+		if e2 != nil {
+			return e2
+		}
+		if r.fArg, e = r.dev.NewComputePipeline(amod, "argmax_reduce"); e != nil {
+			return e
 		}
 		// Batched prefill kernels (weight-stationary M=len path). Own module; the audited PTX is
 		// untouched. bGemv comes from gemv_w4a8_batched.ptx, the rest from prefill_batched.ptx.

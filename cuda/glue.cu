@@ -193,16 +193,9 @@ __global__ void residual(float* __restrict__ x, const float* __restrict__ y, int
     if (i < N) x[i] += y[i];
 }
 
-// argmax: greedy token = argmax(logits[V]). Two-level: block-local argmax → atomic to global.
-__global__ void argmax_reduce(const float* __restrict__ logits, int V, int* __restrict__ outIdx, float* __restrict__ outVal) {
-    extern __shared__ float sv[];
-    int* si = (int*)(sv + blockDim.x);
-    int t = threadIdx.x, nt = blockDim.x;
-    float bv = -1e30f; int bi = -1;
-    for (int k = t; k < V; k += nt) if (logits[k] > bv) { bv = logits[k]; bi = k; }
-    sv[t] = bv; si[t] = bi; __syncthreads();
-    for (int o = nt >> 1; o > 0; o >>= 1) { if (t < o && sv[t + o] > sv[t]) { sv[t] = sv[t + o]; si[t] = si[t + o]; } __syncthreads(); }
-    if (t == 0) { *outIdx = si[0]; *outVal = sv[0]; }
-}
+// argmax_reduce moved to argmax.cu (audit C-14: index tie-break). It is loaded from argmax.ptx, NOT
+// this module — kept out of glue.ptx so the tie-break fix didn't force a full glue.ptx regen at this
+// box's 12.9 NVRTC (which would rewrite the audited numeric kernels above). The committed glue.ptx
+// still contains an unused argmax_reduce until the next audited-PTX refresh at a matching NVRTC.
 
 } // extern "C"

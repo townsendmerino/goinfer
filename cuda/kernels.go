@@ -70,10 +70,18 @@ var gemvStagedPTX []byte
 var gemvRNPTX []byte
 
 // gluePTX: the per-token elementwise/attention glue — rmsnorm_quant, quant_vec, rope,
-// attention (GQA online softmax), swiglu_quant, residual, argmax_reduce.
+// attention (GQA online softmax), swiglu_quant, residual. (argmax_reduce moved to argmaxPTX;
+// see below. The committed glue.ptx still contains a dead copy until the next 12.6 regen.)
 //
 //go:embed testdata/glue.ptx
 var gluePTX []byte
+
+// argmaxPTX: argmax_reduce — the greedy-decode reduction, split out of glue.ptx so the C-14 index
+// tie-break fix did not force a full glue.ptx regen at this box's 12.9 NVRTC (which would rewrite the
+// audited numeric glue kernels). Same isolation reasoning as routerF32PTX. See cuda/argmax.cu.
+//
+//go:embed testdata/argmax.ptx
+var argmaxPTX []byte
 
 // moePTX: sparse mixture-of-experts — moe_route (on-GPU router), gemv_f32_a8 (the f32 router
 // projection), gemv_w4a8_moe / _wacc (indexed stacked-expert GEMVs), shared_gate_combine.
