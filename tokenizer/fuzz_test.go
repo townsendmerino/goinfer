@@ -25,7 +25,7 @@ func FuzzParseTokenizerJSON(f *testing.F) {
 		f.Add([]byte(s))
 	}
 	f.Fuzz(func(t *testing.T, raw []byte) {
-		tk, err := parseTokenizerJSON(raw, "fuzz-nonexistent-dir/tokenizer.json")
+		tk, err := parseTokenizerJSON(raw, "fuzz-nonexistent-dir/tokenizer.json", "fuzz-nonexistent-dir")
 		if err != nil {
 			return
 		}

@@ -27,7 +27,7 @@ func TestParseTokenizerJSON_hostileIDs(t *testing.T) {
 					t.Fatalf("parseTokenizerJSON panicked on %q: %v", s, r)
 				}
 			}()
-			if _, err := parseTokenizerJSON([]byte(s), "x/tokenizer.json"); err == nil {
+			if _, err := parseTokenizerJSON([]byte(s), "x/tokenizer.json", "x"); err == nil {
 				t.Errorf("expected an out-of-range error for %q", s)
 			}
 		}()
@@ -35,7 +35,7 @@ func TestParseTokenizerJSON_hostileIDs(t *testing.T) {
 	// An in-range high id (well below the ceiling) must NOT be rejected by the
 	// bounds check — any error here is for another reason (e.g. missing special
 	// tokens), never "out of range".
-	if _, err := parseTokenizerJSON([]byte(`{"model":{"type":"BPE","vocab":{"a":300000}}}`), "x/tokenizer.json"); err != nil && strings.Contains(err.Error(), "out of range") {
+	if _, err := parseTokenizerJSON([]byte(`{"model":{"type":"BPE","vocab":{"a":300000}}}`), "x/tokenizer.json", "x"); err != nil && strings.Contains(err.Error(), "out of range") {
 		t.Fatalf("in-range id wrongly rejected as out of range: %v", err)
 	}
 }

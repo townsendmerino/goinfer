@@ -210,23 +210,28 @@ func Load(path string) (*Tokenizer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("tokenizer.Load: %w", err)
 	}
-	return parseTokenizerJSON(raw, jsonPath)
+	return parseTokenizerJSON(raw, jsonPath, filepath.Dir(jsonPath))
 }
 
 // LoadJSONBytes parses a tokenizer from raw tokenizer.json bytes — the dir-less twin of
 // Load. Used to load the tokenizer carried in a prequant .giw built from a SAFETENSORS
 // model, whose tok half is the tokenizer.json itself (not a GGUF metadata blob, which is
-// what LoadGGUFBytes expects). Self-contained tokenizer.json only (no sibling files).
+// what LoadGGUFBytes expects). Self-contained tokenizer.json only: it passes an EMPTY
+// sibling dir so a byte-level pipeline never reads tokenizer_config.json — before this a
+// bare "tokenizer.json" resolved siblings relative to the process CWD, silently adopting an
+// unrelated tokenizer_config.json (wrong BOS at prefill, wrong template fingerprint) if one
+// sat in the server's working directory (audit M-14).
 func LoadJSONBytes(raw []byte) (*Tokenizer, error) {
-	return parseTokenizerJSON(raw, "tokenizer.json")
+	return parseTokenizerJSON(raw, "tokenizer.json", "")
 }
 
-// parseTokenizerJSON builds a Tokenizer from raw tokenizer.json bytes. jsonPath
-// is the display path (for error messages) and locates any sibling files a
-// byte-level pipeline references (via its directory). Split out from Load so the
-// parse — the untrusted-input surface — is testable and fuzzable without a file
-// on disk.
-func parseTokenizerJSON(raw []byte, jsonPath string) (*Tokenizer, error) {
+// parseTokenizerJSON builds a Tokenizer from raw tokenizer.json bytes. jsonPath is the
+// display path (for error messages only). siblingDir is where a byte-level pipeline looks
+// for sibling files (tokenizer_config.json) — pass "" for no-sibling mode (a self-contained
+// blob load), NOT filepath.Dir of a bare filename, which would resolve to "." (the CWD) and
+// read an unrelated config (audit M-14). Split out from Load so the parse — the untrusted-input
+// surface — is testable and fuzzable without a file on disk.
+func parseTokenizerJSON(raw []byte, jsonPath, siblingDir string) (*Tokenizer, error) {
 	var tj tokenizerJSON
 	if err := json.Unmarshal(raw, &tj); err != nil {
 		return nil, fmt.Errorf("tokenizer.Load: parse %s: %w", jsonPath, err)
@@ -306,7 +311,7 @@ func parseTokenizerJSON(raw []byte, jsonPath string) (*Tokenizer, error) {
 			return nil, err
 		}
 	case modeByteLevel:
-		if err := t.initByteLevel(&tj, filepath.Dir(jsonPath)); err != nil {
+		if err := t.initByteLevel(&tj, siblingDir); err != nil {
 			return nil, err
 		}
 	}
@@ -709,6 +714,16 @@ func (h *mergeHeap) Pop() any {
 // tokens render as their literal surface form (e.g. "<eos>") — the generation
 // loop is responsible for stopping at EOS, not Decode.
 func (t *Tokenizer) Decode(ids []int) (string, error) {
+	// Whole-sequence decode DOES strip the single leading dummy-prefix space
+	// (Llama-2/Mistral; Gemma leaves it) — it is the prefix of the SEQUENCE.
+	return t.decode(ids, t.stripLeadingSpace)
+}
+
+// decode renders ids to text; stripLeading applies the SentencePiece dummy-prefix
+// leading-space strip to the assembled string. The strip is a sequence-level concern
+// (the space belongs to the first token of the whole sequence), so per-piece callers
+// pass false — see DecodePiece.
+func (t *Tokenizer) decode(ids []int, stripLeading bool) (string, error) {
 	if t.mode == modeByteLevel {
 		return t.decodeByteLevel(ids)
 	}
@@ -733,11 +748,7 @@ func (t *Tokenizer) Decode(ids []int) (string, error) {
 	}
 	flush()
 	out := sb.String()
-	// SentencePiece decode strips the single leading space introduced by the
-	// dummy prefix (Llama-2/Mistral); Gemma leaves it. This applies to the
-	// rendered string as a whole, so callers streaming via DecodePiece should
-	// decode the cumulative id slice (as the demo does), not piece-by-piece.
-	if t.stripLeadingSpace {
+	if stripLeading {
 		out = strings.TrimPrefix(out, " ")
 	}
 	return out, nil
@@ -747,8 +758,14 @@ func (t *Tokenizer) Decode(ids []int) (string, error) {
 // streaming so the demo can print as it goes. A lone byte-fallback piece may
 // be an incomplete UTF-8 sequence; callers that stream should buffer across
 // calls (a demo concern, not the tokenizer's).
+//
+// It does NOT apply the whole-sequence dummy-prefix strip (audit M-13): that
+// space belongs to the first token of the SEQUENCE, so stripping it per piece
+// would drop the leading space of EVERY "▁word" token — a caller printing
+// piece-by-piece would emit "Theanswerisfour". A streaming caller that wants the
+// sequence's own leading space trimmed does it once on the assembled output.
 func (t *Tokenizer) DecodePiece(id int) (string, error) {
-	return t.Decode([]int{id})
+	return t.decode([]int{id}, false)
 }
 
 // TokenText returns the raw surface bytes a single token id contributes when

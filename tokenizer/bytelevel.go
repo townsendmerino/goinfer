@@ -37,7 +37,12 @@ func (t *Tokenizer) initByteLevel(tj *tokenizerJSON, dir string) error {
 		}
 		return -1
 	}
-	cfg := readTokenizerConfig(dir) // best-effort; missing file → empty
+	// dir=="" is no-sibling mode (a self-contained blob load): NEVER fall back to reading
+	// tokenizer_config.json from the process CWD, which would adopt an unrelated config (M-14).
+	var cfg tokenizerConfig
+	if dir != "" {
+		cfg = readTokenizerConfig(dir) // best-effort; missing file → empty
+	}
 	t.special.BOS = lookup(cfg.BosToken)
 	t.special.EOS = lookup(cfg.EosToken)
 	t.special.Pad = lookup(cfg.PadToken)
