@@ -440,3 +440,27 @@ func TestServe_grammarSpecLossless(t *testing.T) {
 	}
 	t.Logf("grammar-spec lossless OK: %q", spec)
 }
+
+// TestClampMaxTokens_contextWindow is the C-18 gate: max_tokens is bounded by the model's context so
+// KV preallocation (NewCache is sized len(prompt)+max_tokens) can't be driven to OOM by a request at
+// the server ceiling against a small-context model. It only ever shrinks.
+func TestClampMaxTokens_contextWindow(t *testing.T) {
+	for _, tc := range []struct {
+		name                      string
+		maxTokens, promptLen, ctx int
+		want                      int
+	}{
+		{"over-ceiling clamps to room", 131072, 100, 4096, 3996},
+		{"within context untouched", 500, 100, 4096, 500},
+		{"exact fit untouched", 4000, 96, 4096, 4000},
+		{"unknown ctx (0) untouched", 131072, 100, 0, 131072},
+		{"prompt at ctx left to C-20", 500, 4096, 4096, 500},
+		{"prompt over ctx left to C-20", 500, 5000, 4096, 500},
+		{"room exactly equals request", 3996, 100, 4096, 3996},
+	} {
+		if got := clampMaxTokens(tc.maxTokens, tc.promptLen, tc.ctx); got != tc.want {
+			t.Errorf("%s: clampMaxTokens(%d, %d, %d) = %d, want %d",
+				tc.name, tc.maxTokens, tc.promptLen, tc.ctx, got, tc.want)
+		}
+	}
+}

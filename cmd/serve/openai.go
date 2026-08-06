@@ -514,6 +514,16 @@ func (lm *loadedModel) prepare(sm sampling, promptIDs []int) (genRequest, error)
 		maxTokens:   deref(maxTok, defaultMaxTokens),
 		stopStrings: parseStop(sm.Stop),
 	}
+	// C-18: bound max_tokens by the model's context window. The KV cache is preallocated as
+	// NewCache(len(prompt)+max_tokens); the server ceiling above (131072) is far larger than most
+	// models' context, so a request at the ceiling against a small-context model preallocates tens of
+	// GiB per layer and OOM-kills the server. The model cannot attend past MaxPositions, so tokens
+	// beyond it are wasted anyway — clamp to what fits, matching the resident path's ContextCap clamp
+	// (decoder/model.go). Only shrinks; a request already within context is untouched. (A prompt that
+	// itself exceeds the context is C-20's concern; here we only bound the max_tokens contribution.)
+	if lm.model != nil {
+		gr.maxTokens = clampMaxTokens(gr.maxTokens, len(promptIDs), lm.model.Config().MaxPositions)
+	}
 	g, err := grammarFor(sm.ResponseFormat)
 	if err != nil {
 		return genRequest{}, err
@@ -525,6 +535,22 @@ func (lm *loadedModel) prepare(sm sampling, promptIDs []int) (genRequest, error)
 		gr.masker = m // enables grammar-fused speculative decode (drive)
 	}
 	return gr, nil
+}
+
+// clampMaxTokens bounds max_tokens by the model's context window (C-18). The KV cache is preallocated
+// as NewCache(len(prompt)+max_tokens); the server ceiling (131072) is far larger than most models'
+// context, so a request at the ceiling against a small-context model preallocates tens of GiB per layer
+// and OOM-kills the server. The model cannot attend past ctx (MaxPositions) anyway, so tokens beyond it
+// are wasted — clamp to what fits, matching the resident path's ContextCap clamp (decoder/model.go). It
+// only shrinks: ctx ≤ 0 (unknown) or a request already within context is returned unchanged, and a
+// prompt that itself meets/exceeds ctx is left to C-20's prompt-length check rather than clamped to 0.
+func clampMaxTokens(maxTokens, promptLen, ctx int) int {
+	if ctx > 0 && promptLen < ctx {
+		if room := ctx - promptLen; room < maxTokens {
+			return room
+		}
+	}
+	return maxTokens
 }
 
 // grammarFor maps response_format to a constraint grammar (nil = unconstrained).
