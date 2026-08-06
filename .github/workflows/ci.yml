@@ -85,6 +85,13 @@ jobs:
       - name: build -tags gpu
         run: go build -tags 'gpu goinfer_testhooks' ./gpu/...
 
+      # Compile the WIRED serve + demo (cmd/serve/gpu.go, demo/chat/gpu.go): the root's tag-gated
+      # RegisterBackend blank-imports live here and were in NO CI configuration, so a backend
+      # signature drift broke the shipped -tags gpu binary while CI stayed green (audit M-18).
+      # Mirrors the cuda job's wired-serve step.
+      - name: build -tags gpu (wired serve + demo)
+        run: go build -tags gpu ./cmd/serve ./demo/chat
+
       - name: vet -tags gpu
         run: go vet -tags 'gpu goinfer_testhooks' ./gpu/...
 
@@ -177,6 +184,10 @@ jobs:
       - name: build -tags gpu
         run: go build -tags 'gpu goinfer_testhooks' ./gpu/...
 
+      # Wired serve + demo compile-check on darwin too (audit M-18) — see the linux gpu job.
+      - name: build -tags gpu (wired serve + demo)
+        run: go build -tags gpu ./cmd/serve ./demo/chat
+
       - name: vet -tags gpu
         run: go vet -tags 'gpu goinfer_testhooks' ./gpu/...
 
@@ -210,6 +221,15 @@ jobs:
 
       - name: build (metal module)
         run: go build ./metal/...
+
+      # Compile the WIRED serve + demos (cmd/serve/metal.go, demo/chat/metal.go,
+      # demo/gemma/metal.go): the root's `darwin && metal` RegisterBackend blank-imports live
+      # here and were in NO CI configuration — a backend signature drift broke the shipped
+      # -tags metal binary while CI stayed green (audit M-18). This is the compile-check the
+      # three stale kernel bindings this job's comment names would have been caught by at the
+      # wiring layer.
+      - name: build -tags metal (wired serve + demos)
+        run: go build -tags metal ./cmd/serve ./demo/chat ./demo/gemma
 
       - name: vet (metal module)
         run: go vet ./metal/...
