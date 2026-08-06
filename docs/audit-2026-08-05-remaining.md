@@ -131,22 +131,43 @@ robustness clamps to 15, so rows ≥16 accumulate into and read back the row-15 
 silently wrong logits, no error. The one-shot sibling `MatmulW8A8GemmRow` does check.
 *Fix:* reject `M > gemmRowMaxM`, or chunk.
 
-**C-15 — DEFERRED** (2026-08-06, Linux box — fix identified + correct, blocked on gate recalibration).
-`cuda/f32tof16` is a pure-Go helper (no PTX), and the CORRECT fix is to make it byte-identical to the
-CANONICAL cross-backend representation `decoder.f32ToF16bits` (which metal/pack.go + aikit/linalg
-replicate, and which `GOINFER_INT4_F16_SCALES` measures) — **round-half-up + gradual underflow to
-subnormals**, NOT the audit's suggested RNE+saturate (a lone RNE here would re-introduce the very
-cross-backend divergence being fixed). The old cuda helper TRUNCATED and flushed all subnormals,
-diverging from every other backend. **Blocker:** `TestMoEResidentParity`'s cosine floor (0.999) was
-empirically calibrated with the truncating helper — the truncation happened to resolve one near-tie
-token the same way as the CPU-f32 reference (0.999906). With the corrected helper, the correct
-dispatch measures 0.997833, which collapses the separation from the tightest *dispatch bug* the
-floor exists to catch (gate/up swap, 0.997687). Re-deriving that break-to-verify control table
-requires injecting the A–E dispatch bugs into `moe.cu` and regenerating `moe.ptx` — the audited PTX
-that must NOT be regenerated on this 12.9 NVRTC box. So the fix is right but unshippable here until
-the MoE-parity control table is re-measured (on a 12.6 box, or by making the gate single-variable via
-`GOINFER_INT4_F16_SCALES` on the CPU reference and re-calibrating). Diagnosis complete; do not
-re-attempt without addressing the gate.
+**C-15 — DEFERRED, escalated** (2026-08-06, Linux box). Two updates: the ENV blocker is REMOVED, but
+the gate turns out to be un-recalibratable — it needs a redesign, not a floor change.
+
+*Env unblocked:* the "must not regen `moe.ptx` on this box" premise is false. A pip venv with
+`nvidia-cuda-nvrtc-cu12==12.6.85` (the exact V-number in the frozen PTX header) regenerates
+`cuda/testdata/moe.ptx` **byte-identically** (verified) — so bug-injected PTX rebuilds for the
+control table CAN be done here. See `build_ptx.sh` `NVRTC_LIB`/`CUDA_INC` overrides.
+
+*The correct fix* is still to make `cuda/f32tof16` byte-identical to the canonical
+`decoder.f32ToF16bits` (round-half-up + subnormals), NOT the audit's RNE.
+
+*The real blocker (measured 2026-08-06):* `TestMoEResidentParity`'s cosine floor (0.999) had its
+entire bug-B (gate/up swap) discriminating power from the TRUNCATION bug — a coincidence, not a real
+signal. With the corrected canonical helper:
+  - correct dispatch = **0.997833** (default) / **0.997861** (matched f16 scales via GOINFER_INT4_F16_SCALES)
+  - bug B, gate/up swap = **0.997846** (default) / **0.997903** (matched)
+So correct ≈ bug-B ≈ 0.9978 — the gate can no longer tell them apart, and matched scales do NOT help
+(the near-tie is int4 KERNEL arithmetic, device W8A8-GEMV vs CPU int4, not the scale confound; the
+router is f32 so it's a razor-thin logit-argmax tie, not an expert flip). The `mixtral-tiny` experts
+are RANDOM, so `silu(up)*gate ≈ silu(gate)*up` in magnitude — the fixture cannot separate the swap
+from noise once the truncation coincidence is gone. **No floor exists that passes correct and fails
+bug B.** The structural bugs (A/C/D/E) likely still separate (they produce large errors), so only
+bug-B coverage is lost.
+
+*What completing C-15 now requires (a decision, not a recalibration):* one of —
+  (a) **regenerate the committed `testdata/mixtral-tiny` fixture + `mixtral_forward_golden.json` with
+      STRUCTURED (non-interchangeable) experts** (distinct gate/up distributions per expert) so a
+      swap/wrong-expert diverges clearly, then re-run the full break-to-verify control table and set
+      the floor — the correct, robust fix, but it rewrites shared test infrastructure the Mac also
+      uses (`scripts/pin_mixtral_tiny.py`);
+  (b) add a **dedicated dispatch test** for the glu `gOff`/`uOff` wiring (resident.go:877) that is
+      scale/fixture-independent (bug B is Go-side injectable, so a structured-input assertion works);
+  (c) accept **documented reduced bug-B coverage** on this gate and lower the floor to catch A/C/D/E
+      only — violates the project's "a gate must be able to fail" norm, so least preferred.
+Recommendation: (a). Held pending a decision because it modifies a committed safety-gate fixture +
+golden that a co-worker depends on. The `f32tof16` fix, the 12.6.85 gate test, and the control
+re-measurement are all ready to compose once the fixture is structured.
 **C-15 (original)** [linux] | `cuda/kernels.go:119-132` — `f32tof16` truncates the mantissa (`m>>13`,
 no rounding) despite a doc comment claiming round-to-nearest-even, flushes everything below the f16
 normal range to zero, and returns `+Inf` rather than saturating on overflow.
