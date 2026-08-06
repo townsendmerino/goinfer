@@ -13,7 +13,18 @@ Third-party Go dependencies
     Copyright (c) The Go Authors.
     Licensed under the BSD 3-Clause License.
 
+    golang.org/x/sys
+    Copyright (c) The Go Authors.
+    Licensed under the BSD 3-Clause License.
+    Required by all four modules (root, gpu, cuda, metal); imported directly by
+    the Metal backend (metal/gemma4_moe.go).
+
     github.com/townsendmerino/aikit   (embedding + tensor primitives)
+    Copyright (c) 2026 Francis Townsend-Merino
+    Licensed under the MIT License.
+
+    github.com/townsendmerino/aikit/gpu   (shared GPU tensor primitives; used by
+    the optional cuda and metal backends)
     Copyright (c) 2026 Francis Townsend-Merino
     Licensed under the MIT License.
 
@@ -35,6 +46,21 @@ additionally links:
     github.com/ebitengine/purego   (dlopen/FFI without cgo; gocudrv dependency)
     Copyright (c) The Ebitengine Authors.
     Licensed under the Apache License, Version 2.0.
+
+The optional cgo-free Metal backend (./metal module, built only under
+`-tags metal` on darwin) additionally links:
+
+    github.com/ebitengine/purego   (Objective-C runtime / Metal FFI without cgo)
+    Copyright (c) The Ebitengine Authors.
+    Licensed under the Apache License, Version 2.0.
+
+    golang.org/x/sys   (syscall bindings; imported at metal/gemma4_moe.go)
+    Copyright (c) The Go Authors.
+    Licensed under the BSD 3-Clause License.
+
+    github.com/townsendmerino/aikit/gpu   (shared GPU tensor primitives)
+    Copyright (c) 2026 Francis Townsend-Merino
+    Licensed under the MIT License.
 
 ──────────────────────────────────────────────────────────────────────────────
 
