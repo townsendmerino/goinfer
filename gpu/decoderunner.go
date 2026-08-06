@@ -225,7 +225,36 @@ func (c *Context) NewDecodeRunner(m ModelW, hidden, nH, nKV, hd, inter, start in
 }
 
 // newDecodeRunner builds the persistent decode plan for either precision.
+// attnHeadDimSupported declines a resident decode plan whose model-level or any per-layer
+// head_dim exceeds what the single-query attention kernels can dot. Those kernels run at
+// @workgroup_size(128) with a fixed 128-entry `red` reduction array (attention.go, one lane per
+// dim), so a head_dim above attnMaxHeadDim would leave the tail dims un-dotted and the
+// o-projection would consume half-zero context — plausible-looking WRONG output, no error. The
+// caller falls back to the staged/CPU path on this error. MLAAttn guards its own analogous rank
+// limit; this covers the softmax/GQA runners including Gemma 4's per-layer head_dim (audit M-12).
+func attnHeadDimSupported(hd int, layers []runLayer) error {
+	if hd > attnMaxHeadDim {
+		return fmt.Errorf("gpu: resident decode declines head_dim=%d > %d (attention kernel workgroup is %d-wide)", hd, attnMaxHeadDim, attnMaxHeadDim)
+	}
+	for i := range layers {
+		if ghd := layers[i].ghd; ghd > attnMaxHeadDim {
+			return fmt.Errorf("gpu: resident decode declines layer %d head_dim=%d > %d (attention kernel workgroup)", i, ghd, attnMaxHeadDim)
+		}
+	}
+	return nil
+}
+
 func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start int, eps, scale float32, addOne bool) (*DecodeRunner, error) {
+	// The single-query attention kernels (attention.go) parallelize over head_dim at
+	// @workgroup_size(128) with a fixed 128-wide workgroup reduction array (`red: array<f32,128>`).
+	// A head_dim > 128 would dot only dims 0..127 and leave ctxv[128..hd) zeroed — the o-projection
+	// then consumes half-zero context: plausible-looking WRONG output, no error. Decline here (like a
+	// VRAM-exhaustion decline) so the caller falls back to the staged/CPU path; MLAAttn guards its own
+	// analogous rank limit (audit M-12). Covers the model-level shape and any per-layer geometry
+	// override (Gemma 4's per-layer head_dim), so an admitted arch can never silently truncate.
+	if err := attnHeadDimSupported(hd, m.layers); err != nil {
+		return nil, err
+	}
 	ssmStopLayer := -1 // GOINFER_SSM_STOP_LAYER debug (resident SSM bring-up): truncate the plan
 	if v := os.Getenv("GOINFER_SSM_STOP_LAYER"); v != "" {
 		if n, e := strconv.Atoi(v); e == nil {

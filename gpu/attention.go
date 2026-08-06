@@ -38,6 +38,13 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 `
 
+// attnMaxHeadDim is the largest head_dim the single-query attention kernels support: they run
+// at @workgroup_size(128) with a 128-entry `red` reduction array (one lane per dim), so a
+// head_dim above this would leave the tail dims un-dotted. newDecodeRunner declines any resident
+// arch/layer above it (audit M-12). It MUST stay equal to the @workgroup_size(128) below and the
+// `red: array<f32, 128>` widths in both single-query kernels.
+const attnMaxHeadDim = 128
+
 // Single-query attention (decode): one workgroup per query head, an online
 // (FlashAttention-style) softmax over keys [start, nKeys) so it is numerically
 // stable and needs no scratch for the full score row. GQA maps kvh = qh/group.

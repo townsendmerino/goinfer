@@ -217,8 +217,8 @@ func ResidentEligible(a *Architecture, backend string) bool {
 // entry = no fixed-size router cap (a backend that declines these archs on features never reaches
 // this — Metal/CUDA decline Kimi on FeatMLA).
 var residentBackendMoECap = map[string]struct{ experts, groups int }{
-	"webgpu": {experts: 256, groups: 32},
-	"cuda":   {experts: 256, groups: 32},
+	"webgpu": {experts: 256, groups: 32}, // gpu/moe.go: array<f32,256> score / array<f32,32> gscore
+	"cuda":   {experts: 256, groups: 64}, // cuda/moe.cu: MOE_MAX_E 256 / MOE_MAX_G 64 (was 32 — under-admitted n_group 33..64; audit M-17)
 }
 
 // residentMoECapacityOK reports whether backend's router kernel can route arch's MoE (M22). True for
