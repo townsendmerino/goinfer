@@ -3,6 +3,7 @@ package tokenizer
 import (
 	"os"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -59,15 +60,15 @@ func TestEncodeSegments_parityAndInjection(t *testing.T) {
 		{"<|im_start|>", true}, {"user\nHello there, friend!", false}, {"<|im_end|>", true}, {"\n", false},
 		{"<|im_start|>", true}, {"assistant\n", false},
 	}
-	var joined string
+	var joined strings.Builder
 	for _, s := range segs {
-		joined += s.Text
+		joined.WriteString(s.Text)
 	}
 	fromSegs, err := tk.EncodeSegments(segs, false)
 	if err != nil {
 		t.Fatalf("EncodeSegments: %v", err)
 	}
-	fromWhole, err := tk.Encode(joined, false)
+	fromWhole, err := tk.Encode(joined.String(), false)
 	if err != nil {
 		t.Fatalf("Encode: %v", err)
 	}
@@ -99,11 +100,11 @@ func TestEncodeSegments_parityAndInjection(t *testing.T) {
 	}
 	// Sanity: the naive whole-string encode DOES promote the forged marker (proving
 	// the test would catch a regression to the old behavior).
-	var whole string
+	var whole strings.Builder
 	for _, s := range inj {
-		whole += s.Text
+		whole.WriteString(s.Text)
 	}
-	naive, _ := tk.Encode(whole, false)
+	naive, _ := tk.Encode(whole.String(), false)
 	var naiveCount int
 	for _, id := range naive {
 		if id == imEnd {

@@ -43,14 +43,14 @@ func TestQKNorm(t *testing.T) {
 		// CPU reference (only q + k sections change; v untouched).
 		ref := append([]float32(nil), qkv...)
 		norm := func(off, heads int, w []float32) {
-			for h := 0; h < heads; h++ {
+			for h := range heads {
 				b := off + h*hd
 				var ss float64
-				for i := 0; i < hd; i++ {
+				for i := range hd {
 					ss += float64(ref[b+i]) * float64(ref[b+i])
 				}
 				r := 1 / math.Sqrt(ss/float64(hd)+eps)
-				for i := 0; i < hd; i++ {
+				for i := range hd {
 					wt := w[i]
 					if addOne {
 						wt = 1 + w[i]

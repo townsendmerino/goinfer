@@ -78,7 +78,7 @@ func TestDecodeRunnerMoEShared_parity(t *testing.T) {
 				layers[l].gS = make([][]float32, nE)
 				layers[l].uS = make([][]float32, nE)
 				layers[l].dS = make([][]float32, nE)
-				for e := 0; e < nE; e++ {
+				for e := range nE {
 					layers[l].gBQ[e], layers[l].gS[e] = W(inter, hidden)
 					layers[l].uBQ[e], layers[l].uS[e] = W(inter, hidden)
 					layers[l].dBQ[e], layers[l].dS[e] = W(hidden, inter)
@@ -129,7 +129,7 @@ func TestDecodeRunnerMoEShared_parity(t *testing.T) {
 				idx = make([]int, topK)
 				wts = make([]float32, topK)
 				var wsum float32
-				for j := 0; j < topK; j++ {
+				for j := range topK {
 					best, bestv := 0, float32(math.Inf(-1))
 					for i, v := range sel {
 						if v > bestv {

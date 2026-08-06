@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"math/rand"
 	"net/http"
 	"sort"
@@ -311,9 +312,7 @@ func (s *server) handleModels(w http.ResponseWriter, _ *http.Request) {
 		// Unknown keys are ignored by the Go/Python/JS OpenAI clients, but a strict typed decoder in
 		// another language may reject them — GET /health carries the same three fields on a payload
 		// with no compatibility contract, for operators who need a surface that can't break a client.
-		for k, v := range s.pathFields(name) {
-			e[k] = v
-		}
+		maps.Copy(e, s.pathFields(name))
 		data = append(data, e)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"object": "list", "data": data})

@@ -231,7 +231,7 @@ func (c *Context) UploadStackedExperts(q8 [][]int8, scales [][]float32, nE, N, K
 	words := kp / 4
 	packed := make([]uint32, nE*N*words)
 	allScales := make([]float32, nE*N)
-	for e := 0; e < nE; e++ {
+	for e := range nE {
 		if len(q8[e]) < N*K || len(scales[e]) < N {
 			return nil, fmt.Errorf("gpu: UploadStackedExperts expert %d too small", e)
 		}

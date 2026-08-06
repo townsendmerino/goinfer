@@ -73,7 +73,7 @@ func TestZZ_residencyProbe(t *testing.T) {
 	}
 	avgSubmit := func(bufs []Buffer, reps int) (float64, float64) {
 		var w, g int64
-		for r := 0; r < reps; r++ {
+		for range reps {
 			wn, gn := submit(bufs)
 			w += wn
 			g += gn
@@ -86,7 +86,7 @@ func TestZZ_residencyProbe(t *testing.T) {
 	// ARM A: repeated submits, identical 256×1MB set. Is submit[0] more expensive than submit[1..]?
 	a := mkBufs(256, 1*MB)
 	var firstW, restW, firstG float64
-	for r := 0; r < 12; r++ {
+	for r := range 12 {
 		wn, gn := submit(a)
 		w := float64(wn) / 1e6
 		if r == 0 {

@@ -199,7 +199,7 @@ func (ve *VisionEncoder) ForwardPatches(patches []float32) ([]float32, error) {
 		if err != nil {
 			return nil, fail(err)
 		}
-		for head := 0; head < nH; head++ {
+		for head := range nH {
 			off := head * hd
 			// Per-iteration buffers are released at the end of a SUCCESSFUL iteration; on any
 			// error mid-iteration they were leaked (up to five) because `fail`/`keep` only track

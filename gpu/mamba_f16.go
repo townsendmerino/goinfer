@@ -54,8 +54,8 @@ func f32ToF16(f float32) uint16 {
 func packF16(w []float32, N, K int, mult float32) []uint32 {
 	kw := (K + 1) / 2
 	out := make([]uint32, N*kw)
-	for r := 0; r < N; r++ {
-		for v := 0; v < kw; v++ {
+	for r := range N {
+		for v := range kw {
 			lo := f32ToF16(w[r*K+2*v] * mult)
 			var hi uint16
 			if 2*v+1 < K {

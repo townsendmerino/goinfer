@@ -70,7 +70,7 @@ func TestSAGemv_OutlierRegime(t *testing.T) {
 	words := make([]uint32, N*(K/8))
 	scalesH := make([]uint16, N*(K/32))
 	ref := make([]float32, N)
-	for n := 0; n < N; n++ {
+	for n := range N {
 		row := make([]float32, K)
 		for k := range row {
 			row[k] = rng.Float32()*2 - 1
@@ -78,10 +78,10 @@ func TestSAGemv_OutlierRegime(t *testing.T) {
 		w, s := packW4A8Row(row)
 		copy(words[n*(K/8):(n+1)*(K/8)], w)
 		var acc float64
-		for g := 0; g < K/32; g++ {
+		for g := range K / 32 {
 			scalesH[n*(K/32)+g] = f32ToF16(s[g])
 			sc := float64(f16ToF32(scalesH[n*(K/32)+g]))
-			for e := 0; e < 32; e++ {
+			for e := range 32 {
 				k := g*32 + e
 				nib := int((w[k/8]>>(4*uint(k%8)))&0xF) - 8
 				acc += float64(nib) * float64(aq[k]) * sc
@@ -100,7 +100,7 @@ func TestSAGemv_OutlierRegime(t *testing.T) {
 	// Worst per-row divergence AND the worst on the small-output rows (the ones the flip hits).
 	var worstAbs, worstRel float64
 	var worstRow int
-	for n := 0; n < N; n++ {
+	for n := range N {
 		dd := math.Abs(float64(got[n] - ref[n]))
 		if dd > worstAbs {
 			worstAbs = dd

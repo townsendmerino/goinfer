@@ -35,7 +35,7 @@ func naiveMergeSymbols(pr map[bigram]int32, syms []string) []string {
 // leftmost-on-a-tie choice and stale-candidate handling.
 func TestMergeSymbols_matchesNaive(t *testing.T) {
 	rng := rand.New(rand.NewSource(1))
-	for trial := 0; trial < 3000; trial++ {
+	for trial := range 3000 {
 		n := 2 + rng.Intn(7) // up to 8 single-char symbols
 		syms := make([]string, n)
 		for i := range syms {

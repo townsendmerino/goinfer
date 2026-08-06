@@ -121,7 +121,7 @@ func newExpertPool(d *Device, N, nGuW, nGuS, nDW, nDS int, stage stageFn) *exper
 		lru:        make([]int, 0, N),
 		stage:      stage,
 	}
-	for s := 0; s < N; s++ {
+	for s := range N {
 		p.slots[s] = expertSlot{
 			guW: d.NewBufferUint32s(make([]uint32, nGuW)),
 			guS: d.NewBufferU16s(make([]uint16, nGuS)),

@@ -29,7 +29,7 @@ func TestSwigluQuant_MassiveChannel(t *testing.T) {
 	const I = 10240
 	const ch = 7027
 	gu := make([]float32, 2*I) // [gate(I) | up(I)]
-	for i := 0; i < I; i++ {
+	for i := range I {
 		gu[i] = 0.3    // gate: small
 		gu[I+i] = -0.2 // up: small
 	}

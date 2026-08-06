@@ -116,17 +116,17 @@ func TestNemotronRelu2FFN_parity(t *testing.T) {
 	// difference is the resident int8 ACTIVATION quant — the parity we want (not weight quant).
 	cpuFFN := func(x []float32) []float32 {
 		up2 := make([]float32, interOdd)
-		for r := 0; r < interOdd; r++ {
+		for r := range interOdd {
 			var s float64
-			for c := 0; c < hidden; c++ {
+			for c := range hidden {
 				s += float64(float32(upQ[r*hidden+c])*upS[r]) * float64(x[c])
 			}
 			up2[r] = relu2f(float32(s))
 		}
 		out := make([]float32, hidden)
-		for r := 0; r < hidden; r++ {
+		for r := range hidden {
 			var s float64
-			for c := 0; c < interOdd; c++ {
+			for c := range interOdd {
 				s += float64(float32(downQ[r*interOdd+c])*downS[r]) * float64(up2[c])
 			}
 			out[r] = float32(s)
@@ -134,7 +134,7 @@ func TestNemotronRelu2FFN_parity(t *testing.T) {
 		return out
 	}
 	worst := 1.0
-	for tok := 0; tok < 32; tok++ {
+	for tok := range 32 {
 		x := make([]float32, hidden)
 		for i := range x {
 			x[i] = float32(rng.NormFloat64())

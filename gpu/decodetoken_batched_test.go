@@ -159,7 +159,7 @@ func TestDecodeTokenFusedBatched_microbench(t *testing.T) {
 	seed := uint64(1)
 	W := func(N, K int) *ResidentW8A8 { seed++; return mk(N, K, seed) }
 	mw := ModelW{FinalNorm: up32(randMat(hidden, 600)), LMHead: mk(vocab, hidden, 999)}
-	for l := 0; l < L; l++ {
+	for l := range L {
 		kc, _ := ctx.NewKVCache(randMat(start*kvDim, uint64(400+l)), capKV)
 		vc, _ := ctx.NewKVCache(randMat(start*kvDim, uint64(500+l)), capKV)
 		mw.Layers = append(mw.Layers, LayerW{

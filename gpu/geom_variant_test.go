@@ -55,7 +55,7 @@ func TestGeomVariants_dedup(t *testing.T) {
 	buildMW := func() ModelW {
 		invD := up32(invFreq)
 		mw := ModelW{FinalNorm: up32(randMat(hidden, 600)), LMHead: W(vocab, hidden)}
-		for l := 0; l < 2; l++ {
+		for l := range 2 {
 			kc, _ := ctx.NewKVCache(nil, (pos+1)*kvDim)
 			vc, _ := ctx.NewKVCache(nil, (pos+1)*kvDim)
 			mw.Layers = append(mw.Layers, LayerW{

@@ -65,7 +65,7 @@ func TestDecodeRunnerW4A8_7B_fit(t *testing.T) {
 	rm := runModel{finalNorm: up32(randMat(hidden, 1)).buf, lmHead: w4(vocab, hidden)}
 	var kvBytes int64
 	prior := randMat(pos*kvDim, 1) // small prior; cache capacity is the 16k allocation
-	for l := 0; l < L; l++ {
+	for l := range L {
 		kc, e1 := ctx.NewKVCache(prior, ctxLen*kvDim)
 		vc, e2 := ctx.NewKVCache(prior, ctxLen*kvDim)
 		if e1 != nil || e2 != nil {

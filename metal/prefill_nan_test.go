@@ -40,7 +40,7 @@ func TestPrefillNoNaN(t *testing.T) {
 	// regression can't hide behind aligned sizes.
 	for _, M := range []int{8, 16, 140, 144, 200} {
 		embs := make([][]float32, M)
-		for i := 0; i < M; i++ {
+		for i := range M {
 			e := make([]float32, r.H)
 			r.embed.Row(base[i%len(base)], e)
 			embs[i] = e

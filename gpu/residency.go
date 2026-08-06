@@ -47,10 +47,10 @@ func (c *Context) uploadProj(w *linalg.WeightMat) (decodeWeight, error) {
 		// Fallback (K not a multiple of 32 → row padding differs): unpack 2-nibble/byte to
 		// one nibble (0..15) per element and let UploadW4A8 re-pack. Values preserved.
 		nib := make([]uint8, N*K)
-		for r := 0; r < N; r++ {
+		for r := range N {
 			row := q4[r*((K+1)/2):]
 			dst := nib[r*K : r*K+K]
-			for k := 0; k < K; k++ {
+			for k := range K {
 				b := row[k>>1]
 				if k&1 == 0 {
 					dst[k] = b & 0x0F
@@ -345,7 +345,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 		case "int8":
 			q8 := make([][]int8, nE)
 			sc := make([][]float32, nE)
-			for e := 0; e < nE; e++ {
+			for e := range nE {
 				w := get(e)
 				if w.Kind() != "int8" {
 					return nil, fmt.Errorf("gpu: MoE residency expert %d kind %q (mixed; want int8)", e, w.Kind())
@@ -367,7 +367,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 			if K%w4a8GroupSize == 0 && !int4SlowPath {
 				q4s := make([][]byte, nE)
 				scs := make([][]float32, nE)
-				for e := 0; e < nE; e++ {
+				for e := range nE {
 					w := get(e)
 					if w.Kind() != "int4" {
 						return nil, fmt.Errorf("gpu: MoE residency expert %d kind %q (mixed; want int4)", e, w.Kind())
@@ -387,7 +387,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 			// Fallback (K not a multiple of 32): unpack 2-nibble/byte → one nibble per element.
 			nib := make([][]uint8, nE)
 			sc := make([][]float32, nE)
-			for e := 0; e < nE; e++ {
+			for e := range nE {
 				w := get(e)
 				if w.Kind() != "int4" {
 					return nil, fmt.Errorf("gpu: MoE residency expert %d kind %q (mixed; want int4)", e, w.Kind())
@@ -397,10 +397,10 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 					return nil, fmt.Errorf("gpu: MoE residency int4 group %d != %d", group, w4a8GroupSize)
 				}
 				un := make([]uint8, N*K)
-				for r := 0; r < N; r++ {
+				for r := range N {
 					row := q4[r*((K+1)/2):]
 					d := un[r*K : r*K+K]
-					for k := 0; k < K; k++ {
+					for k := range K {
 						b := row[k>>1]
 						if k&1 == 0 {
 							d[k] = b & 0x0F
@@ -614,14 +614,14 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 			hRow := qkNope + vHead
 			wuk := make([]float32, nH*kvLoRA*qkNope)
 			wuv := make([]float32, nH*vHead*kvLoRA)
-			for h := 0; h < nH; h++ {
-				for d := 0; d < qkNope; d++ {
+			for h := range nH {
+				for d := range qkNope {
 					src := kvB[(h*hRow+d)*kvLoRA : (h*hRow+d)*kvLoRA+kvLoRA]
-					for cc := 0; cc < kvLoRA; cc++ {
+					for cc := range kvLoRA {
 						wuk[(h*kvLoRA+cc)*qkNope+d] = src[cc] // transpose: [c][d] ← kvB[d][c]
 					}
 				}
-				for ev := 0; ev < vHead; ev++ {
+				for ev := range vHead {
 					copy(wuv[(h*vHead+ev)*kvLoRA:(h*vHead+ev)*kvLoRA+kvLoRA], kvB[(h*hRow+qkNope+ev)*kvLoRA:(h*hRow+qkNope+ev)*kvLoRA+kvLoRA])
 				}
 			}

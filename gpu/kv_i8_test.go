@@ -124,7 +124,7 @@ func TestKVI8Kernels(t *testing.T) {
 	}
 	rope := func(headK []float32) []float32 {
 		out := make([]float32, hd)
-		for d := 0; d < half; d++ {
+		for d := range half {
 			th := float64(pos) * float64(invFreq[d])
 			cs, sn := float32(math.Cos(th)), float32(math.Sin(th))
 			out[d] = headK[d]*cs - headK[half+d]*sn
@@ -144,10 +144,10 @@ func TestKVI8Kernels(t *testing.T) {
 	kWords := c.readWords(kCache, (maxLen*kvDim+3)/4)
 	kSc := c.readF(kScale, maxLen*nKV)
 	var gotK, wantK []float32
-	for h := 0; h < nKV; h++ {
+	for h := range nKV {
 		want := dq(rope(kSrc[h*hd : h*hd+hd]))
 		wantK = append(wantK, want...)
-		for d := 0; d < hd; d++ {
+		for d := range hd {
 			gotK = append(gotK, float32(i8byte(kWords, pos*kvDim+h*hd+d))*kSc[pos*nKV+h])
 		}
 	}
@@ -168,9 +168,9 @@ func TestKVI8Kernels(t *testing.T) {
 	vWords := c.readWords(vCache, (maxLen*kvDim+3)/4)
 	vSc := c.readF(vScale, maxLen*nKV)
 	var gotV, wantV []float32
-	for h := 0; h < nKV; h++ {
+	for h := range nKV {
 		wantV = append(wantV, dq(vSrc[h*hd:h*hd+hd])...)
-		for d := 0; d < hd; d++ {
+		for d := range hd {
 			gotV = append(gotV, float32(i8byte(vWords, pos*kvDim+h*hd+d))*vSc[pos*nKV+h])
 		}
 	}
@@ -228,8 +228,8 @@ func TestKVI8Attn(t *testing.T) {
 			de[e] = float32(qv) * s
 		}
 	}
-	for s := 0; s < nKeys; s++ {
-		for h := 0; h < nKV; h++ {
+	for s := range nKeys {
+		for h := range nKV {
 			quant(randF(rng, hd), kWords, kSc, deK, s*kvDim+h*hd, s*nKV+h)
 			quant(randF(rng, hd), vWords, vSc, deV, s*kvDim+h*hd, s*nKV+h)
 		}
@@ -237,13 +237,13 @@ func TestKVI8Attn(t *testing.T) {
 
 	// f32 reference attention over deK/deV.
 	want := make([]float32, nH*hd)
-	for qh := 0; qh < nH; qh++ {
+	for qh := range nH {
 		kvh := qh / group
 		sc := make([]float64, nKeys)
 		mx := math.Inf(-1)
-		for s := 0; s < nKeys; s++ {
+		for s := range nKeys {
 			var dot float64
-			for d := 0; d < hd; d++ {
+			for d := range hd {
 				dot += float64(q[qh*hd+d]) * float64(deK[s*kvDim+kvh*hd+d])
 			}
 			sc[s] = dot * float64(scale)
@@ -256,9 +256,9 @@ func TestKVI8Attn(t *testing.T) {
 			sc[s] = math.Exp(sc[s] - mx)
 			sum += sc[s]
 		}
-		for d := 0; d < hd; d++ {
+		for d := range hd {
 			var acc float64
-			for s := 0; s < nKeys; s++ {
+			for s := range nKeys {
 				acc += sc[s] / sum * float64(deV[s*kvDim+kvh*hd+d])
 			}
 			want[qh*hd+d] = float32(acc)

@@ -252,10 +252,9 @@ func firstStop(text string, stops []string) (int, string, bool) {
 func stopTailHold(text string, stops []string) int {
 	hold := 0
 	for _, st := range stops {
-		k := len(st) - 1 // proper prefixes st[:k], 1 <= k < len(st)
-		if k > len(text) {
-			k = len(text)
-		}
+		k := min(
+			// proper prefixes st[:k], 1 <= k < len(st)
+			len(st)-1, len(text))
 		for ; k > hold; k-- {
 			if strings.HasSuffix(text, st[:k]) {
 				hold = k

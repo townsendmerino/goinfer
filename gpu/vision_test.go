@@ -15,7 +15,7 @@ import (
 // vision.layerNorm.
 func cpuLayerNorm(src, w, b []float32, rows, h int, eps float32) []float32 {
 	out := make([]float32, rows*h)
-	for r := 0; r < rows; r++ {
+	for r := range rows {
 		row := src[r*h : r*h+h]
 		var mean, m2 float64
 		for _, v := range row {
@@ -92,7 +92,7 @@ func TestVisionSoftmax_parity(t *testing.T) {
 	}
 	// CPU reference: scale, stable softmax per row.
 	want := make([]float32, rows*n)
-	for r := 0; r < rows; r++ {
+	for r := range rows {
 		row := x[r*n : r*n+n]
 		mx := float32(-3.4e38)
 		for _, v := range row {
@@ -116,7 +116,7 @@ func TestVisionSoftmax_parity(t *testing.T) {
 			maxAbs = d
 		}
 	}
-	for i := 0; i < n; i++ {
+	for i := range n {
 		sumCheck += float64(got[i])
 	} // row 0 should sum to ~1
 	t.Logf("GPU softmax vs CPU: max abs diff = %.3e, row0 sum = %.6f", maxAbs, sumCheck)

@@ -160,7 +160,7 @@ func buildGemma4MoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H, 
 	}
 	var b decoder.Gemma4MoEResidentBundle
 	var ok bool
-	for l := 0; l < nL; l++ {
+	for l := range nL {
 		if b, ok = m.Gemma4MoEResidentLayer(l); ok {
 			break
 		}

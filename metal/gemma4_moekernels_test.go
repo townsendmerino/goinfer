@@ -104,14 +104,14 @@ func TestGemma4Kernels_scaleWgtByExpert(t *testing.T) {
 	perExpertScale := []float32{1.5, 0.5, 2.0, 1.0}
 	K := len(wgt)
 	want := make([]float32, K)
-	for k := 0; k < K; k++ {
+	for k := range K {
 		want[k] = wgt[k] * perExpertScale[idx[k]] // 0.6*2.0=1.2 ; 0.4*1.5=0.6
 	}
 	wgtBuf := d.NewBufferFloats(wgt)
 	q := d.NewCommandQueue()
 	q.Run1D(pipe, K, K, wgtBuf, d.NewBufferUint32s(idx), d.NewBufferFloats(perExpertScale), d.NewBufferU32(uint32(K)))
 	got := wgtBuf.Floats()
-	for k := 0; k < K; k++ {
+	for k := range K {
 		if dd := math.Abs(float64(got[k] - want[k])); dd > 1e-6 {
 			t.Errorf("wgt[%d]: got %.6f want %.6f (idx=%d scale=%.3f)", k, got[k], want[k], idx[k], perExpertScale[idx[k]])
 		}

@@ -29,18 +29,18 @@ func TestDecodeRunnerPerLayerRoPE_parity(t *testing.T) {
 	invFreq := [L][]float32{make([]float32, half), make([]float32, half)}
 	bases := [L]float64{1e6, 1e4}
 	ropeScale := [L]float32{1.3, 1.0} // per-layer mscale
-	for l := 0; l < L; l++ {
+	for l := range L {
 		for d := range invFreq[l] {
 			invFreq[l][d] = float32(1.0 / math.Pow(bases[l], float64(2*d)/float64(hd)))
 		}
 	}
 	// scaledRoPE applies decoder.applyRoPE with a cos/sin scale (the per-layer mscale).
 	scaledRoPE := func(vec []float32, heads int, inv []float32, rs float32) {
-		for d := 0; d < half; d++ {
+		for d := range half {
 			theta := float64(pos) * float64(inv[d])
 			c := float32(math.Cos(theta)) * rs
 			s := float32(math.Sin(theta)) * rs
-			for h := 0; h < heads; h++ {
+			for h := range heads {
 				off := h * hd
 				x1, x2 := vec[off+d], vec[off+half+d]
 				vec[off+d] = x1*c - x2*s

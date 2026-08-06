@@ -453,11 +453,11 @@ func packKVInt8(vals []float32, nKV, hd int) ([]uint32, []float32) {
 	nPos := len(vals) / kvDim
 	words := make([]uint32, (len(vals)+3)/4)
 	scales := make([]float32, nPos*nKV)
-	for p := 0; p < nPos; p++ {
-		for h := 0; h < nKV; h++ {
+	for p := range nPos {
+		for h := range nKV {
 			base := p*kvDim + h*hd
 			var amax float32
-			for d := 0; d < hd; d++ {
+			for d := range hd {
 				if a := float32(math.Abs(float64(vals[base+d]))); a > amax {
 					amax = a
 				}
@@ -468,7 +468,7 @@ func packKVInt8(vals []float32, nKV, hd int) ([]uint32, []float32) {
 			}
 			scales[p*nKV+h] = sc
 			inv := 1 / sc
-			for d := 0; d < hd; d++ {
+			for d := range hd {
 				q := int32(math.Round(float64(vals[base+d] * inv)))
 				if q > 127 {
 					q = 127

@@ -119,7 +119,7 @@ func (c *Context) UploadStackedExpertsInt4(nib [][]uint8, scales [][]float32, nE
 	wpr := kp / 8            // u32 words per row (nibbles, 8/u32)
 	packed := make([]uint32, nE*N*wpr)
 	allScales := make([]float32, nE*N*ng)
-	for e := 0; e < nE; e++ {
+	for e := range nE {
 		if len(nib[e]) < N*K || len(scales[e]) < N*ng {
 			return nil, fmt.Errorf("gpu: UploadStackedExpertsInt4 expert %d too small (nib %d<%d, sc %d<%d)", e, len(nib[e]), N*K, len(scales[e]), N*ng)
 		}
@@ -155,7 +155,7 @@ func (c *Context) UploadStackedExpertsInt4Packed(q4 [][]byte, scales [][]float32
 	bpe := N * kp / 2 // bytes per expert
 	packed := make([]byte, nE*bpe)
 	allScales := make([]float32, nE*N*ng)
-	for e := 0; e < nE; e++ {
+	for e := range nE {
 		if len(q4[e]) < bpe || len(scales[e]) < N*ng {
 			return nil, fmt.Errorf("gpu: UploadStackedExpertsInt4Packed expert %d too small (q4 %d<%d, sc %d<%d)", e, len(q4[e]), bpe, len(scales[e]), N*ng)
 		}

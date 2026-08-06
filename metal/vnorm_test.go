@@ -42,14 +42,14 @@ func TestVNorm_scaleless(t *testing.T) {
 
 	// CPU oracle: scale-less RMSNorm per head — rms = rsqrt(mean(x²)+eps); out = x·rms (weight 1).
 	want := make([]float32, nKV*hd)
-	for h := 0; h < nKV; h++ {
+	for h := range nKV {
 		var ss float64
-		for i := 0; i < hd; i++ {
+		for i := range hd {
 			v := float64(in[h*hd+i])
 			ss += v * v
 		}
 		rms := 1.0 / math.Sqrt(ss/float64(hd)+eps)
-		for i := 0; i < hd; i++ {
+		for i := range hd {
 			want[h*hd+i] = float32(float64(in[h*hd+i]) * rms)
 		}
 	}

@@ -223,10 +223,7 @@ func int4DirectBytes(w *linalg.WeightMat) (q4 []byte, scales []uint16, ok bool) 
 // inputs (the non-paged one-time build, where goroutine spawn would not pay).
 func parallelF32ToF16(dst []uint16, src []float32) {
 	n := len(src)
-	workers := runtime.GOMAXPROCS(0)
-	if workers > 8 {
-		workers = 8
-	}
+	workers := min(runtime.GOMAXPROCS(0), 8)
 	if n < 8192 || workers <= 1 {
 		for i, s := range src {
 			dst[i] = f32ToF16(s)
@@ -236,10 +233,7 @@ func parallelF32ToF16(dst []uint16, src []float32) {
 	chunk := (n + workers - 1) / workers
 	var wg sync.WaitGroup
 	for lo := 0; lo < n; lo += chunk {
-		hi := lo + chunk
-		if hi > n {
-			hi = n
-		}
+		hi := min(lo+chunk, n)
 		wg.Add(1)
 		go func(lo, hi int) {
 			defer wg.Done()
@@ -390,10 +384,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		addOne = 1
 	}
 	r.uAddOne = d.NewBufferU32(addOne)
-	win := m.SlidingWindowResident() // 0 = full causal; Mistral is all-local with this window
-	if win < 0 {
-		win = 0
-	}
+	win := max(
+		// 0 = full causal; Mistral is all-local with this window
+		m.SlidingWindowResident(), 0)
 	r.uWindow = d.NewBufferU32(uint32(win))
 	if r.moe, err = buildMoE(d, m, pipe, H); err != nil { // nil for a dense (or gemma4-MoE) model; error ⇒ decline
 		return nil, err

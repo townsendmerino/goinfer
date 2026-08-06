@@ -26,10 +26,7 @@ func packW4A8Row(row []float32) (words []uint32, scales []float32) {
 			inv = 1 / sc
 		}
 		for k := g * 32; k < g*32+32; k++ {
-			q := min(int(math.Round(float64(row[k]*inv))), 7)
-			if q < -7 {
-				q = -7
-			}
+			q := max(min(int(math.Round(float64(row[k]*inv))), 7), -7)
 			words[k/8] |= uint32(q+8) << (4 * (uint(k) % 8))
 		}
 	}

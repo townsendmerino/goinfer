@@ -127,7 +127,7 @@ func TestKVCacheI8_parity(t *testing.T) {
 	// real margin (guarded by the 3%-of-range gap, the qwen35/f16 near-tie rule).
 	minCos, sumCos, argmaxHits := 1.0, 0.0, 0
 	maxFlipGap := 0.0
-	for s := 0; s < steps; s++ {
+	for s := range steps {
 		x := randMat(hidden, uint64(7000+s))
 		pos := prior + s
 		l32, err := runner32.Run(x, pos)

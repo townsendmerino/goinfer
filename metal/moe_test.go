@@ -58,9 +58,9 @@ func TestMoE_routerGEMV(t *testing.T) {
 	q.Run1D(pipe, rows*32, 32, d.NewBufferFloats(wf), d.NewBufferInt8(aq),
 		d.NewBufferFloats([]float32{aSc}), out, d.NewBufferU32(uint32(K)))
 	got := out.Floats()
-	for r := 0; r < rows; r++ {
+	for r := range rows {
 		var acc float64
-		for k := 0; k < K; k++ {
+		for k := range K {
 			acc += float64(wf[r*K+k]) * float64(aq[k])
 		}
 		want := float32(acc) * aSc
@@ -141,7 +141,7 @@ func refRoute(logits, bias []float32, k int, sigmoid, norm bool, scale float64, 
 	if nGroup > 1 {
 		gsz := nE / nGroup
 		gscore := make([]float32, nGroup)
-		for g := 0; g < nGroup; g++ {
+		for g := range nGroup {
 			t1, t2 := negInf, negInf
 			for i := g * gsz; i < (g+1)*gsz; i++ {
 				v := sel[i]
@@ -158,7 +158,7 @@ func refRoute(logits, bias []float32, k int, sigmoid, norm bool, scale float64, 
 		for _, g := range keepG {
 			keep[g] = true
 		}
-		for g := 0; g < nGroup; g++ {
+		for g := range nGroup {
 			if !keep[g] {
 				for i := g * gsz; i < (g+1)*gsz; i++ {
 					sel[i] = negInf
@@ -289,9 +289,9 @@ func buildStackedExperts(t *testing.T, d *Device, E, N, K int, aq []int8, aSc fl
 	words := make([]uint32, E*N*(K/8))
 	scalesH := make([]uint16, E*N*(K/32))
 	ref = make([][]float32, E)
-	for e := 0; e < E; e++ {
+	for e := range E {
 		ref[e] = make([]float32, N)
-		for n := 0; n < N; n++ {
+		for n := range N {
 			row := make([]float32, K)
 			for k := range row {
 				row[k] = rng.Float32()*2 - 1
@@ -303,7 +303,7 @@ func buildStackedExperts(t *testing.T, d *Device, E, N, K int, aq []int8, aSc fl
 			for g := 0; g < K/32; g++ {
 				scalesH[rIdx*(K/32)+g] = f32ToF16(s[g])
 				sc := float64(f16ToF32(scalesH[rIdx*(K/32)+g]))
-				for j := 0; j < 32; j++ {
+				for j := range 32 {
 					k := g*32 + j
 					nib := int((w[k/8]>>(4*uint(k%8)))&0xF) - 8
 					acc += float64(nib) * float64(aq[k]) * sc

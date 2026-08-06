@@ -30,9 +30,9 @@ func TestInt4LayoutMatch(t *testing.T) {
 		}
 		// Decoder layout (what a .giw / safetensors int4 WeightMat stores).
 		dec := make([]byte, N*((K+1)/2))
-		for r := 0; r < N; r++ {
+		for r := range N {
 			row := dec[r*((K+1)/2):]
-			for k := 0; k < K; k++ {
+			for k := range K {
 				if k&1 == 0 {
 					row[k>>1] |= un[r*K+k] & 0xF
 				} else {

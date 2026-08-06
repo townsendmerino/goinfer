@@ -31,7 +31,7 @@ func TestPagingBudget(t *testing.T) {
 	var b decoder.Gemma4MoEResidentBundle
 	nMoE := 0
 	firstL := -1
-	for l := 0; l < 64; l++ {
+	for l := range 64 {
 		if bb, ok := m.Gemma4MoEResidentLayer(l); ok {
 			if firstL < 0 {
 				b = bb

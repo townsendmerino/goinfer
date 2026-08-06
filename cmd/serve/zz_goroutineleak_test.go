@@ -93,14 +93,14 @@ func TestServe_goroutineLeakCheck(t *testing.T) {
 		t.Fatalf("write goroutineleak profile: %v", err)
 	}
 	report := sb.String()
-	for _, ln := range strings.Split(report, "\n") {
-		if strings.HasPrefix(ln, "goroutineleak profile: total ") {
-			t.Logf("goroutineleak total: %s", strings.TrimPrefix(ln, "goroutineleak profile: total "))
+	for ln := range strings.SplitSeq(report, "\n") {
+		if after, ok := strings.CutPrefix(ln, "goroutineleak profile: total "); ok {
+			t.Logf("goroutineleak total: %s", after)
 			break
 		}
 	}
 	leaks := 0
-	for _, block := range strings.Split(report, "\n\n") {
+	for block := range strings.SplitSeq(report, "\n\n") {
 		if strings.Contains(block, "@") && strings.Contains(block, "townsendmerino/goinfer") {
 			leaks++
 		}

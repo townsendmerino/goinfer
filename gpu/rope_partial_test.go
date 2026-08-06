@@ -32,7 +32,7 @@ func TestRopeStorePartialRotary_tailStored(t *testing.T) {
 	// CPU reference: rotate [0,2*half), pass the tail [2*half,hd) through unchanged.
 	ropeFull := func(head []float32) []float32 {
 		out := make([]float32, hd)
-		for d := 0; d < half; d++ {
+		for d := range half {
 			th := float64(pos) * float64(invFreq[d])
 			cs, sn := float32(math.Cos(th)), float32(math.Sin(th))
 			out[d] = head[d]*cs - head[half+d]*sn
@@ -45,14 +45,14 @@ func TestRopeStorePartialRotary_tailStored(t *testing.T) {
 	}
 	wantK := func(src []float32) []float32 {
 		var w []float32
-		for h := 0; h < nKV; h++ {
+		for h := range nKV {
 			w = append(w, ropeFull(src[h*hd:h*hd+hd])...)
 		}
 		return w
 	}
 	// assertTail fails if any tail dim was dropped (the C4 bug wrote zeros there).
 	assertTail := func(label string, got, src []float32) {
-		for h := 0; h < nKV; h++ {
+		for h := range nKV {
 			for d := 2 * half; d < hd; d++ {
 				if g, w := got[h*hd+d], src[h*hd+d]; g != w {
 					t.Fatalf("%s: tail [h=%d d=%d] = %v, want src %v (un-rotated pass-through, C4)", label, h, d, g, w)

@@ -53,7 +53,7 @@ func TestMambaGatedNorm_parity(t *testing.T) {
 		y := make([]float32, dInner)
 		z := make([]float32, dInner)
 		w := make([]float32, dInner)
-		for i := 0; i < dInner; i++ {
+		for i := range dInner {
 			y[i] = float32(rng.NormFloat64())
 			z[i] = float32(rng.NormFloat64())
 			w[i] = float32(rng.NormFloat64()*0.2 + 1)
@@ -95,17 +95,17 @@ func TestMambaGatedNorm_parity(t *testing.T) {
 		stag.Unmap()
 		// golden
 		gold := make([]float32, dInner)
-		for i := 0; i < dInner; i++ {
+		for i := range dInner {
 			gold[i] = y[i] * siluRef(z[i])
 		}
-		for g := 0; g < nGroups; g++ {
+		for g := range nGroups {
 			var ss float64
-			for j := 0; j < groupSize; j++ {
+			for j := range groupSize {
 				v := gold[g*groupSize+j]
 				ss += float64(v) * float64(v)
 			}
 			inv := float32(1 / math.Sqrt(ss/float64(groupSize)+float64(eps)))
-			for j := 0; j < groupSize; j++ {
+			for j := range groupSize {
 				gold[g*groupSize+j] = w[g*groupSize+j] * gold[g*groupSize+j] * inv
 			}
 		}
@@ -191,9 +191,9 @@ func TestMambaConv_parity(t *testing.T) {
 	var win [][]float32
 	golden := func(xBC []float32) []float32 {
 		conv := make([]float32, convDim)
-		for c := 0; c < convDim; c++ {
+		for c := range convDim {
 			s := convB[c] + convW[c*K+(K-1)]*xBC[c]
-			for j := 0; j < K-1; j++ {
+			for j := range K - 1 {
 				if idx := len(win) - (K - 1) + j; idx >= 0 {
 					s += convW[c*K+j] * win[idx][c]
 				}
@@ -257,7 +257,7 @@ func TestMambaLayer_compose(t *testing.T) {
 	for i := range convB {
 		convB[i] = float32(rng.NormFloat64() * 0.2)
 	}
-	for h := 0; h < nHeads; h++ {
+	for h := range nHeads {
 		aLog[h], dtBias[h], dW[h] = float32(rng.NormFloat64()*0.5-1), float32(rng.NormFloat64()*0.3), float32(rng.NormFloat64()*0.5)
 		headP[h*3], headP[h*3+1], headP[h*3+2] = float32(-math.Exp(float64(aLog[h]))), dtBias[h], dW[h]
 	}
@@ -337,9 +337,9 @@ func TestMambaLayer_compose(t *testing.T) {
 	ssm := make([]float32, nHeads*P*N)
 	cpuMixer := func(xBC, z, dt []float32) []float32 {
 		conv := make([]float32, convDim)
-		for c := 0; c < convDim; c++ {
+		for c := range convDim {
 			s := convB[c] + convW[c*K+(K-1)]*xBC[c]
-			for j := 0; j < K-1; j++ {
+			for j := range K - 1 {
 				if idx := len(win) - (K - 1) + j; idx >= 0 {
 					s += convW[c*K+j] * win[idx][c]
 				}
@@ -352,16 +352,16 @@ func TestMambaLayer_compose(t *testing.T) {
 		}
 		x, B, C := conv[:dInner], conv[dInner:dInner+gSize], conv[dInner+gSize:]
 		y := make([]float32, dInner)
-		for head := 0; head < nHeads; head++ {
+		for head := range nHeads {
 			g := head / repeat
 			A := -math.Exp(float64(aLog[head]))
 			dth := softplusRef(dt[head] + dtBias[head])
 			dA := float32(math.Exp(float64(dth) * A))
-			for pi := 0; pi < P; pi++ {
+			for pi := range P {
 				sBase := (head*P + pi) * N
 				dx := dth * x[head*P+pi]
 				var acc float32
-				for n := 0; n < N; n++ {
+				for n := range N {
 					ssm[sBase+n] = ssm[sBase+n]*dA + dx*B[g*N+n]
 					acc += ssm[sBase+n] * C[g*N+n]
 				}
@@ -433,7 +433,7 @@ func TestMambaSSM_driftParity(t *testing.T) {
 	dtBias := make([]float32, nHeads)
 	dW := make([]float32, nHeads)
 	headP := make([]float32, nHeads*3)
-	for h := 0; h < nHeads; h++ {
+	for h := range nHeads {
 		aLog[h] = float32(rng.NormFloat64()*0.5 - 1.0)
 		dtBias[h] = float32(rng.NormFloat64() * 0.3)
 		dW[h] = float32(rng.NormFloat64() * 0.5)
@@ -505,16 +505,16 @@ func TestMambaSSM_driftParity(t *testing.T) {
 		B := conv[dInner : dInner+gSize]
 		C := conv[dInner+gSize:]
 		y := make([]float32, dInner)
-		for head := 0; head < nHeads; head++ {
+		for head := range nHeads {
 			g := head / repeat
 			A := -math.Exp(float64(aLog[head]))
 			dth := softplusRef(dt[head] + dtBias[head])
 			dA := float32(math.Exp(float64(dth) * A))
-			for pi := 0; pi < P; pi++ {
+			for pi := range P {
 				sBase := (head*P + pi) * N
 				dx := dth * x[head*P+pi]
 				var acc float32
-				for n := 0; n < N; n++ {
+				for n := range N {
 					ssm[sBase+n] = ssm[sBase+n]*dA + dx*B[g*N+n]
 					acc += ssm[sBase+n] * C[g*N+n]
 				}

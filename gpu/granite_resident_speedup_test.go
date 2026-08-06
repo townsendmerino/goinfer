@@ -64,7 +64,7 @@ func TestGraniteResidentSpeedup(t *testing.T) {
 
 	// speedup: best steady-state inter-token rate over rounds (prefill excluded).
 	best := 1e9
-	for r := 0; r < 4; r++ {
+	for range 4 {
 		ch, _ := m.Generate(context.Background(), prompt, 32, greedy)
 		var n int
 		var ttft time.Duration

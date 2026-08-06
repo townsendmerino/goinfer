@@ -23,10 +23,10 @@ func TestExpertPool_lruAndStaging(t *testing.T) {
 	stage := func(e int) ([]byte, []uint16, []byte, []uint16) {
 		guW := make([]byte, nGuW*4)
 		dW := make([]byte, nDW*4)
-		for i := 0; i < nGuW; i++ {
+		for i := range nGuW {
 			binary.LittleEndian.PutUint32(guW[i*4:], uint32(e))
 		}
-		for i := 0; i < nDW; i++ {
+		for i := range nDW {
 			binary.LittleEndian.PutUint32(dW[i*4:], uint32(e))
 		}
 		guS := make([]uint16, nGuS)
@@ -49,7 +49,7 @@ func TestExpertPool_lruAndStaging(t *testing.T) {
 	p := newExpertPool(d, N, nGuW, nGuS, nDW, nDS, stage)
 
 	// (1) cold start: 4 distinct experts fill the 4 free slots — 4 stages, contents correct.
-	for e := 0; e < 4; e++ {
+	for e := range 4 {
 		if s := p.ensureResident(e); !holds(s, e) {
 			t.Fatalf("cold start: slot for expert %d holds wrong bytes", e)
 		}

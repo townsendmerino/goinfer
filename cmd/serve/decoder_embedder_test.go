@@ -153,7 +153,7 @@ func TestDecoderEmbedder_concurrentEncode(t *testing.T) {
 	var wg sync.WaitGroup
 	errs := make([]error, workers)
 	got := make([][]float32, workers)
-	for i := 0; i < workers; i++ {
+	for i := range workers {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
@@ -161,7 +161,7 @@ func TestDecoderEmbedder_concurrentEncode(t *testing.T) {
 		}(i)
 	}
 	wg.Wait()
-	for i := 0; i < workers; i++ {
+	for i := range workers {
 		if errs[i] != nil {
 			t.Fatalf("worker %d: %v", i, errs[i])
 		}

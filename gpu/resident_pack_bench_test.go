@@ -37,10 +37,10 @@ func TestResidentPackCost(t *testing.T) {
 	// Pass 1: decoder 2-nibble/byte → one nibble per element (the buildStacked/uploadProj unpack).
 	t0 := time.Now()
 	un := make([]uint8, N*K)
-	for r := 0; r < N; r++ {
+	for r := range N {
 		row := q4[r*((K+1)/2):]
 		d := un[r*K : r*K+K]
-		for k := 0; k < K; k++ {
+		for k := range K {
 			b := row[k>>1]
 			if k&1 == 0 {
 				d[k] = b & 0x0F

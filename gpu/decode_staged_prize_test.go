@@ -71,7 +71,7 @@ func TestDecodeStaged_prize(t *testing.T) {
 		}
 		rate(8) // warm
 		best := 1e9
-		for r := 0; r < 6; r++ {
+		for range 6 {
 			if v := rate(48); v > 0 && v < best {
 				best = v
 			}

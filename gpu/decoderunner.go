@@ -680,10 +680,7 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		if ropeScale == 0 {
 			ropeScale = 1
 		}
-		n := nH * g.half
-		if g.kvDim > n {
-			n = g.kvDim
-		}
+		n := max(g.kvDim, nH*g.half)
 		add(c.qkvFinPipeline, bind(c.qkvFinLayout, q, k, v, invFreq, kCache, vCache, qkvFinUniFor(g, ropeScale)), uint32(n+63)/64, 1)
 	}
 	// biasAdd adds a per-output bias into a projection result (Qwen2 q/k/v bias),
@@ -1123,7 +1120,7 @@ func runBatch(c *Context, runners []*DecodeRunner, xs [][]float32, startPos int)
 	if n == 0 {
 		return nil, nil
 	}
-	for i := 0; i < n; i++ {
+	for i := range n {
 		if err := runners[i].writeInputs(xs[i], startPos+i); err != nil {
 			return nil, err
 		}
@@ -1134,12 +1131,12 @@ func runBatch(c *Context, runners []*DecodeRunner, xs [][]float32, startPos int)
 	}
 	defer enc.Release()
 	pass := enc.BeginComputePass(nil)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		runners[i].record(pass)
 	}
 	pass.End()
 	pass.Release()
-	for i := 0; i < n; i++ {
+	for i := range n {
 		enc.CopyBufferToBuffer(runners[i].lastLogits, 0, runners[i].stag, 0, uint64(runners[i].vocab*4))
 	}
 	cmd, err := enc.Finish(nil)
@@ -1149,7 +1146,7 @@ func runBatch(c *Context, runners []*DecodeRunner, xs [][]float32, startPos int)
 	defer cmd.Release()
 	c.queue.Submit(cmd)
 	sts := make([]wgpu.BufferMapAsyncStatus, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		i := i
 		sts[i] = wgpu.BufferMapAsyncStatusUnknown
 		if err := runners[i].stag.MapAsync(wgpu.MapModeRead, 0, uint64(runners[i].vocab*4), func(s wgpu.BufferMapAsyncStatus) { sts[i] = s }); err != nil {
@@ -1158,7 +1155,7 @@ func runBatch(c *Context, runners []*DecodeRunner, xs [][]float32, startPos int)
 	}
 	c.device.Poll(true, nil) // one sync drains all K maps
 	out := make([][]float32, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		if sts[i] != wgpu.BufferMapAsyncStatusSuccess {
 			return nil, fmt.Errorf("gpu: runBatch row %d map failed: %v", i, sts[i])
 		}

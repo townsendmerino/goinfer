@@ -80,7 +80,7 @@ func TestDecodeRealModel_throughput(t *testing.T) {
 	rate(8) // warm: compile pipelines, fill the cache; discarded
 	const rounds, gen = 6, 48
 	best := 0.0
-	for i := 0; i < rounds; i++ {
+	for range rounds {
 		if tps, _ := rate(gen); tps > best {
 			best = tps
 		}

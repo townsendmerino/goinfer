@@ -1,6 +1,7 @@
 package main
 
 import (
+	"maps"
 	"net/http"
 )
 
@@ -20,9 +21,7 @@ func (s *server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	models := []map[string]any{}
 	for _, name := range s.servedNames() {
 		e := map[string]any{"id": name}
-		for k, v := range s.pathFields(name) {
-			e[k] = v
-		}
+		maps.Copy(e, s.pathFields(name))
 		models = append(models, e)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{

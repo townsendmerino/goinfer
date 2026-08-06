@@ -71,7 +71,7 @@ func TestMoE_assemblyVsDense(t *testing.T) {
 	const steps = 16
 	tok, pos, mism, nan := ids[0], 0, 0, 0
 	var cosMin float64 = 1
-	for i := 0; i < steps; i++ {
+	for i := range steps {
 		gMoE := append([]float32(nil), moeR.Forward(tok, pos)...)
 		gDense := denseR.Forward(tok, pos)
 		c := cosF(gMoE, gDense)
@@ -136,7 +136,7 @@ func genTinyWeights(rng *rand.Rand) *tinyWeights {
 		norm:   ones(tmHidden),
 		lmHead: rnd(tmVocab*tmHidden, 0.4),
 	}
-	for l := 0; l < tmLayers; l++ {
+	for range tmLayers {
 		w.q = append(w.q, rnd(qDim*tmHidden, 0.3))
 		w.qb = append(w.qb, rnd(qDim, 0.1))
 		w.k = append(w.k, rnd(kvDim*tmHidden, 0.3))
@@ -184,11 +184,11 @@ func writeMoEIdentical(t *testing.T, dir string, w *tinyWeights) {
 		"model.norm.weight":         {[]int{tmHidden}, w.norm},
 		"lm_head.weight":            {[]int{tmVocab, tmHidden}, w.lmHead},
 	}
-	for l := 0; l < tmLayers; l++ {
+	for l := range tmLayers {
 		attnTensors(ts, w, l)
 		p := fmt.Sprintf("model.layers.%d.", l)
 		ts[p+"mlp.gate.weight"] = stf32{[]int{tmExperts, tmHidden}, w.router[l]}
-		for e := 0; e < tmExperts; e++ { // identical experts
+		for e := range tmExperts { // identical experts
 			ep := fmt.Sprintf("%smlp.experts.%d.", p, e)
 			ts[ep+"gate_proj.weight"] = stf32{[]int{tmInter, tmHidden}, w.ffnGate[l]}
 			ts[ep+"up_proj.weight"] = stf32{[]int{tmInter, tmHidden}, w.ffnUp[l]}
@@ -216,7 +216,7 @@ func writeDense(t *testing.T, dir string, w *tinyWeights) {
 		"model.norm.weight":         {[]int{tmHidden}, w.norm},
 		"lm_head.weight":            {[]int{tmVocab, tmHidden}, w.lmHead},
 	}
-	for l := 0; l < tmLayers; l++ {
+	for l := range tmLayers {
 		attnTensors(ts, w, l)
 		p := fmt.Sprintf("model.layers.%d.", l)
 		ts[p+"mlp.gate_proj.weight"] = stf32{[]int{tmInter, tmHidden}, w.ffnGate[l]}

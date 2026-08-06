@@ -73,7 +73,7 @@ func TestMetal_CloseFreesMemory(t *testing.T) {
 	base := rssMB(t)
 	const cycles = 4
 	peak := base
-	for i := 0; i < cycles; i++ {
+	for i := range cycles {
 		cycle()
 		got := rssMB(t)
 		if got > peak {
@@ -145,7 +145,7 @@ func TestMetal_PrefillScratchDoesNotLeak(t *testing.T) {
 	base := rssMB(t)
 	const iters = 30
 	peak := base
-	for i := 0; i < iters; i++ {
+	for range iters {
 		r.PrefillLast(embs, 0)
 		if got := rssMB(t); got > peak {
 			peak = got

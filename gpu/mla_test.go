@@ -16,14 +16,14 @@ func mlaRopeRef(vec []float32, ropeDim, pos int, invFreq []float32, interleave b
 	half := ropeDim / 2
 	if interleave {
 		tmp := make([]float32, ropeDim)
-		for i := 0; i < half; i++ {
+		for i := range half {
 			tmp[i] = out[2*i]
 			tmp[half+i] = out[2*i+1]
 		}
 		copy(out, tmp)
 	}
 	rot := append([]float32(nil), out...)
-	for d := 0; d < half; d++ {
+	for d := range half {
 		theta := float64(pos) * float64(invFreq[d])
 		c, s := float32(math.Cos(theta)), float32(math.Sin(theta))
 		rot[d] = out[d]*c - out[half+d]*s
@@ -97,7 +97,7 @@ func TestDecodeRunnerMLA_parity(t *testing.T) {
 		layers[l].gS = make([][]float32, nE)
 		layers[l].uS = make([][]float32, nE)
 		layers[l].dS = make([][]float32, nE)
-		for e := 0; e < nE; e++ {
+		for e := range nE {
 			layers[l].gBQ[e], layers[l].gS[e] = W(inter, hidden)
 			layers[l].uBQ[e], layers[l].uS[e] = W(inter, hidden)
 			layers[l].dBQ[e], layers[l].dS[e] = W(hidden, inter)
@@ -128,7 +128,7 @@ func TestDecodeRunnerMLA_parity(t *testing.T) {
 			v float32
 		}
 		groups := make([]gs, nGroup)
-		for g := 0; g < nGroup; g++ {
+		for g := range nGroup {
 			t1, t2 := float32(math.Inf(-1)), float32(math.Inf(-1))
 			for i := g * gsz; i < (g+1)*gsz; i++ {
 				if sel[i] > t1 {
@@ -140,7 +140,7 @@ func TestDecodeRunnerMLA_parity(t *testing.T) {
 			groups[g] = gs{g, t1 + t2}
 		}
 		keep := make([]bool, nGroup)
-		for j := 0; j < topkGroup; j++ {
+		for range topkGroup {
 			best, bv := -1, float32(math.Inf(-1))
 			for _, gg := range groups {
 				if !keep[gg.g] && gg.v > bv {
@@ -149,7 +149,7 @@ func TestDecodeRunnerMLA_parity(t *testing.T) {
 			}
 			keep[best] = true
 		}
-		for g := 0; g < nGroup; g++ {
+		for g := range nGroup {
 			if !keep[g] {
 				for i := g * gsz; i < (g+1)*gsz; i++ {
 					sel[i] = float32(math.Inf(-1))
@@ -159,7 +159,7 @@ func TestDecodeRunnerMLA_parity(t *testing.T) {
 		idx = make([]int, topK)
 		wts = make([]float32, topK)
 		var wsum float32
-		for j := 0; j < topK; j++ {
+		for j := range topK {
 			best, bv := 0, float32(math.Inf(-1))
 			for i, v := range sel {
 				if v > bv {
@@ -200,30 +200,30 @@ func TestDecodeRunnerMLA_parity(t *testing.T) {
 		nKeys := pos + 1
 		// absorb W_UK + qRope → qAbs per head.
 		qNopeAbs := make([]float32, nH*rank)
-		for h := 0; h < nH; h++ {
-			for c := 0; c < rank; c++ {
+		for h := range nH {
+			for c := range rank {
 				var s float32
-				for d := 0; d < qkNope; d++ {
+				for d := range qkNope {
 					s += q[h*qkHead+d] * L.wuk[(h*rank+c)*qkNope+d]
 				}
 				qNopeAbs[h*rank+c] = s
 			}
 		}
 		qRope := make([]float32, nH*qkRope)
-		for h := 0; h < nH; h++ {
+		for h := range nH {
 			copy(qRope[h*qkRope:], mlaRopeRef(q[h*qkHead+qkNope:h*qkHead+qkHead], qkRope, pos, invFreq, interleave))
 		}
 		// rank-space attention.
 		wsum := make([]float32, nH*rank)
-		for h := 0; h < nH; h++ {
+		for h := range nH {
 			sc := make([]float64, nKeys)
 			mx := math.Inf(-1)
-			for j := 0; j < nKeys; j++ {
+			for j := range nKeys {
 				var dot float64
-				for c := 0; c < rank; c++ {
+				for c := range rank {
 					dot += float64(qNopeAbs[h*rank+c]) * float64(lat[j*latDim+c])
 				}
-				for d := 0; d < qkRope; d++ {
+				for d := range qkRope {
 					dot += float64(qRope[h*qkRope+d]) * float64(lat[j*latDim+rank+d])
 				}
 				sc[j] = dot * float64(scale)
@@ -236,19 +236,19 @@ func TestDecodeRunnerMLA_parity(t *testing.T) {
 				sc[j] = math.Exp(sc[j] - mx)
 				sum += sc[j]
 			}
-			for j := 0; j < nKeys; j++ {
+			for j := range nKeys {
 				w := sc[j] / sum
-				for c := 0; c < rank; c++ {
+				for c := range rank {
 					wsum[h*rank+c] += float32(w * float64(lat[j*latDim+c]))
 				}
 			}
 		}
 		// lift W_UV → ctx.
 		cv := make([]float32, nH*vHead)
-		for h := 0; h < nH; h++ {
-			for e := 0; e < vHead; e++ {
+		for h := range nH {
+			for e := range vHead {
 				var s float32
-				for c := 0; c < rank; c++ {
+				for c := range rank {
 					s += L.wuv[(h*vHead+e)*rank+c] * wsum[h*rank+c]
 				}
 				cv[h*vHead+e] = s
@@ -397,23 +397,23 @@ func TestMLALatentStore_parity(t *testing.T) {
 			// CPU reference: RMSNorm(kvDown[:rank], normW) ‖ mlaRope(kvDown[rank:], pos).
 			ref := make([]float32, rank+qkRope)
 			var ss float64
-			for i := 0; i < rank; i++ {
+			for i := range rank {
 				ss += float64(kvDown[i]) * float64(kvDown[i])
 			}
 			inv := float32(1.0 / math.Sqrt(ss/float64(rank)+float64(eps)))
-			for i := 0; i < rank; i++ {
+			for i := range rank {
 				ref[i] = kvDown[i] * inv * normW[i]
 			}
 			key := append([]float32(nil), kvDown[rank:]...)
 			if interleave {
 				tmp := make([]float32, qkRope)
-				for i := 0; i < half; i++ {
+				for i := range half {
 					tmp[i] = key[2*i]
 					tmp[half+i] = key[2*i+1]
 				}
 				copy(key, tmp)
 			}
-			for d := 0; d < half; d++ {
+			for d := range half {
 				theta := float64(pos) * float64(invFreq[d])
 				c, s := float32(math.Cos(theta)), float32(math.Sin(theta))
 				x1, x2 := key[d], key[half+d]
@@ -507,7 +507,7 @@ func TestMLAAttn_parity(t *testing.T) {
 				mx := math.Inf(-1)
 				for j := 0; j < tc.nKeys; j++ {
 					var dot float64
-					for d := 0; d < latDim; d++ {
+					for d := range latDim {
 						dot += float64(qAbs[h*latDim+d]) * float64(lat[j*latDim+d])
 					}
 					sc[j] = dot * float64(scale)

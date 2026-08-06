@@ -853,10 +853,7 @@ func (s *server) modelList() []*loadedModel {
 }
 
 func demoteLoop(srv *server, idle time.Duration, stop <-chan struct{}) {
-	period := max(idle/4, 5*time.Second)
-	if period > time.Minute {
-		period = time.Minute
-	}
+	period := min(max(idle/4, 5*time.Second), time.Minute)
 	t := time.NewTicker(period)
 	defer t.Stop()
 	for {

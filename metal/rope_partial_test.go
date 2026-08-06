@@ -38,9 +38,9 @@ func TestRopePartial(t *testing.T) {
 	}
 	// CPU reference: rotate (d, rhalf+d) for d<rhalf per head; tail untouched.
 	ref := append([]float32(nil), x...)
-	for h := 0; h < nH; h++ {
+	for h := range nH {
 		b := h * hd
-		for dd := 0; dd < rhalf; dd++ {
+		for dd := range rhalf {
 			th := float64(pos) * float64(invf[dd])
 			c, s := math.Cos(th), math.Sin(th)
 			x0, x1 := float64(ref[b+dd]), float64(ref[b+rhalf+dd])
@@ -56,8 +56,8 @@ func TestRopePartial(t *testing.T) {
 
 	var maxAbs float64
 	tailChanged := false
-	for h := 0; h < nH; h++ {
-		for i := 0; i < hd; i++ {
+	for h := range nH {
+		for i := range hd {
 			gi := h*hd + i
 			if dd := math.Abs(float64(got[gi] - ref[gi])); math.IsNaN(dd) || dd > maxAbs {
 				maxAbs = dd // propagate NaN so mustFinite can catch degenerate output

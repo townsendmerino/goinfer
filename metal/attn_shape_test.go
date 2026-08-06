@@ -109,19 +109,19 @@ func runAttnCase(t *testing.T, d *Device, pAttn Pipeline, nH, nKV, hd, nKeys int
 		vf[i] = float32(rng.NormFloat64()) * 0.5
 	}
 	// Gemma's <bos> is an attention SINK: its V is trained near-zero (|V| 9.4 vs 129 typical).
-	for i := 0; i < kvDim; i++ {
+	for i := range kvDim {
 		vf[i] *= 0.05
 	}
 	// A SHARP softmax: make one mid-sequence key align strongly with q, so the output is
 	// dominated by a single V row rather than an average of all of them.
 	hot := nKeys / 2
-	for h := 0; h < nKV; h++ {
-		for dd := 0; dd < hd; dd++ {
+	for h := range nKV {
+		for dd := range hd {
 			kf[hot*kvDim+h*hd+dd] = q[(h*(nH/nKV))*hd+dd] * 3
 		}
 	}
 	// An OUTLIER V row — real value vectors are not homogeneous.
-	for i := 0; i < kvDim; i++ {
+	for i := range kvDim {
 		vf[(nKeys-2)*kvDim+i] *= 20
 	}
 
@@ -170,13 +170,13 @@ func cpuAttention(q, kf, vf []float32, nH, nKV, hd, nKeys, window int, scale flo
 	if window > 0 && nKeys > window {
 		winStart = nKeys - window
 	}
-	for qh := 0; qh < nH; qh++ {
+	for qh := range nH {
 		kvh := qh / (nH / nKV)
 		sc := make([]float32, nKeys)
 		mx := float32(math.Inf(-1))
 		for s := winStart; s < nKeys; s++ {
 			var a float32
-			for dd := 0; dd < hd; dd++ {
+			for dd := range hd {
 				a += q[qh*hd+dd] * kf[s*kvDim+kvh*hd+dd]
 			}
 			sc[s] = a * scale
@@ -189,7 +189,7 @@ func cpuAttention(q, kf, vf []float32, nH, nKV, hd, nKeys, window int, scale flo
 			sc[s] = float32(math.Exp(float64(sc[s] - mx)))
 			sum += sc[s]
 		}
-		for dd := 0; dd < hd; dd++ {
+		for dd := range hd {
 			var a float32
 			for s := winStart; s < nKeys; s++ {
 				a += sc[s] * vf[s*kvDim+kvh*hd+dd]
