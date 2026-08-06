@@ -241,19 +241,31 @@ func (r *cudaResident) ai(n int) Buffer {
 func (r *cudaResident) au32(n int) Buffer {
 	return gpu.NewBufferLenOf[uint32](r.dev, n)
 }
+
+// recordUpload captures the FIRST alloc/upload error hit during BuildResident's setup job into
+// r.setupErr (audit C-08). The up* helpers used to discard gpu.Upload's error with `_ =`, so a failed
+// weight upload left a ZEROED device buffer and the build still returned ok=true — a resident that
+// decodes garbage. The setup job's last statement returns r.setupErr, which BuildResident turns into a
+// graceful decline (→ staged/CPU fallback); recording here is what makes that check ever fire. Only the
+// first error is kept (later uploads in the same doomed job are noise). Called only at load time.
+func (r *cudaResident) recordUpload(e error) {
+	if e != nil && r.setupErr == nil {
+		r.setupErr = e
+	}
+}
 func (r *cudaResident) up32(v []float32) Buffer {
 	b := r.af(len(v))
-	_ = gpu.Upload(b, v)
+	r.recordUpload(gpu.Upload(b, v))
 	return b
 }
 func (r *cudaResident) upu32(v []uint32) Buffer {
 	b := r.au32(len(v))
-	_ = gpu.Upload(b, v)
+	r.recordUpload(gpu.Upload(b, v))
 	return b
 }
 func (r *cudaResident) upu16(v []uint16) Buffer {
 	b := gpu.NewBufferLenOf[uint16](r.dev, len(v))
-	_ = gpu.Upload(b, v)
+	r.recordUpload(gpu.Upload(b, v))
 	return b
 }
 func (r *cudaResident) upW(h hostW) cudaWQ {
