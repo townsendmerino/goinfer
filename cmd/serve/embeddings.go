@@ -23,6 +23,32 @@ type embedReq struct {
 	User           string          `json:"user"`            // accepted, ignored
 }
 
+// Embedding request bounds (audit C-21). /v1/embeddings is deliberately un-queued (the encoder is
+// goroutine-safe and parallelizes internally), so without a per-request cap a single body drives an
+// unbounded allocation and N concurrent requests multiply it: a 4 MiB body of empty strings is ~2M
+// inputs, and the response builder materializes 2M maps + 2M []float32 of HiddenDim (~6 GB at dim 768)
+// before writing a byte; with a decoder-as-embedder (maxTokens 0) one multi-MiB string prefills ~1M
+// positions. maxEmbedInputs matches OpenAI's per-request batch cap; maxEmbedInputBytes bounds a single
+// input to text sizes (an embedding input is a query/passage, not a document dump).
+const (
+	maxEmbedInputs     = 2048
+	maxEmbedInputBytes = 1 << 20 // 1 MiB
+)
+
+// checkEmbedInputBounds rejects a request whose input count or any single input exceeds the caps above,
+// so the handler's allocation is bounded before EncodeBatch runs.
+func checkEmbedInputBounds(inputs []string) error {
+	if len(inputs) > maxEmbedInputs {
+		return fmt.Errorf("too many inputs: %d (max %d per request)", len(inputs), maxEmbedInputs)
+	}
+	for i, in := range inputs {
+		if len(in) > maxEmbedInputBytes {
+			return fmt.Errorf("input %d is %d bytes, exceeds the %d-byte per-input limit", i, len(in), maxEmbedInputBytes)
+		}
+	}
+	return nil
+}
+
 // handleEmbeddings serves POST /v1/embeddings. Vectors are L2-normalized (so cosine
 // is a dot product, matching OpenAI's unit-length outputs); an optional dimensions
 // field truncates each vector and renormalizes (Matryoshka-style). encoding_format
@@ -39,6 +65,10 @@ func (s *server) handleEmbeddings(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(inputs) == 0 {
 		writeErr(w, http.StatusBadRequest, "input is required (a string or array of strings)")
+		return
+	}
+	if err := checkEmbedInputBounds(inputs); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	isQuery, err := parseInputType(req.InputType)

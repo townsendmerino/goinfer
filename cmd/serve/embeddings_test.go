@@ -454,3 +454,23 @@ func TestMatryoshkaFloor_contract(t *testing.T) {
 		}
 	}
 }
+
+// TestCheckEmbedInputBounds is the C-21 gate: /v1/embeddings must reject an input count or per-input
+// length that would drive an unbounded allocation (the endpoint is un-queued, so it also multiplies
+// across concurrent requests).
+func TestCheckEmbedInputBounds(t *testing.T) {
+	if err := checkEmbedInputBounds([]string{"hello", "world"}); err != nil {
+		t.Errorf("valid batch rejected: %v", err)
+	}
+	if err := checkEmbedInputBounds(make([]string, maxEmbedInputs)); err != nil {
+		t.Errorf("batch exactly at the cap rejected: %v", err)
+	}
+	if err := checkEmbedInputBounds(make([]string, maxEmbedInputs+1)); err == nil {
+		t.Error("over-cap input count not rejected (C-21)")
+	}
+	big := make([]string, 1)
+	big[0] = strings.Repeat("x", maxEmbedInputBytes+1)
+	if err := checkEmbedInputBounds(big); err == nil {
+		t.Error("over-length single input not rejected (C-21)")
+	}
+}
