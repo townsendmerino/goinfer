@@ -89,6 +89,11 @@ func LoadQwenPreprocessConfig(dir string) (QwenPreprocessConfig, error) {
 	return cfg, nil
 }
 
+// qwenMaxInputPixels bounds the raw (pre-resize) image area QwenPreprocess will allocate for,
+// independent of cfg.MaxPixels (which caps only the resized output). ~33.5 MP: above any real
+// camera image, below the memory a decompression bomb would demand (audit M-15).
+const qwenMaxInputPixels = 32 * 1024 * 1024
+
 // QwenPreprocess turns image bytes into the Qwen2.5-VL vision input. Returns the
 // flattened pixel_values and grid_thw = (1, grid_h, grid_w) for a single image.
 func QwenPreprocess(data []byte, cfg QwenPreprocessConfig) ([]float32, [3]int, error) {
@@ -100,6 +105,14 @@ func QwenPreprocess(data []byte, cfg QwenPreprocessConfig) ([]float32, [3]int, e
 	h, w := b.Dy(), b.Dx()
 	if h == 0 || w == 0 {
 		return nil, [3]int{}, fmt.Errorf("multimodal(qwen): empty image")
+	}
+	// Reject oversized INPUT dimensions before allocating. cfg.MaxPixels caps only the
+	// resized OUTPUT; qwenExtractRGB/qwenBicubicU8 allocate on the raw h*w, so a ~10 MB
+	// compressible PNG decoding to 10000×10000 costs ~1.2 GB here, per concurrent request,
+	// and this runs before lm.enter serializes the model (audit M-15). The ceiling sits well
+	// above any real photo (~33.5 MP ≈ 5792²) but bounds a decompression bomb.
+	if int64(h)*int64(w) > qwenMaxInputPixels {
+		return nil, [3]int{}, fmt.Errorf("multimodal(qwen): image %dx%d exceeds %d-pixel input limit", w, h, qwenMaxInputPixels)
 	}
 	factor := cfg.PatchSize * cfg.MergeSize
 	hb, wb := qwenSmartResize(h, w, factor, cfg.MinPixels, cfg.MaxPixels)
