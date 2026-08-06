@@ -14,13 +14,15 @@ call, not a unilateral fix.
 | severity | closed | remaining |
 |---|---|---|
 | Blockers (B) | 14 / 14 | 0 (all resolved; release shipped) |
-| Critical (C) | 20 / 31 | **11** (+2 owed device-gated regression tests) |
+| Critical (C) | 26 / 31 | **5** (+2 owed device-gated regression tests) |
 | Gate (G) | 1 / 6 | **5** |
 | Major (M) | 17 / 23 | **6** |
 | Minor (N) | 0 / 24 | **24** |
 
-Of the remaining: **6 are [mac]** (C-09/10/11/12, G-02/G-04/G-06-residual, M-09/10/11, plus metal
-minors), the rest are [linux]-ownable or [decision].
+**Critical batch fixed on the Linux box (2026-08-06):** C-05, C-13, C-23, C-27, C-28, C-29 — each
+with a gate test. **C-15 is DEFERRED** (fix identified and correct, but blocked — see below). The
+4 remaining open criticals are all **[mac]** (C-09/10/11/12). So the remaining criticals are: 4
+[mac] + C-15 [deferred], plus the 2 owed device-gated regression tests (C-01-resident, C-03).
 
 ---
 
@@ -34,7 +36,12 @@ log for detail.
 
 ## §2 — Critical (open)
 
-**C-05 — PARTIAL** [linux] | `decoder/kvsnapshot.go` — session KV snapshot mis-slices gemma-4.
+**C-05 — FIXED** (2026-08-06, Linux box). `Snapshot` now refuses a cache whose global layers have
+non-uniform KV widths (a global `stride[l] != 0 && != kvDim`) — gemma-4's per-layer geometry — the
+same policy as the recurrent/latent families, so the caller cold-prefills instead of round-tripping
+a snapshot the format can't restore. Gate `TestSnapshot_refusesNonUniformKVWidth_C05`. Original
+finding below.
+**C-05 (was PARTIAL)** [linux] | `decoder/kvsnapshot.go` — session KV snapshot mis-slices gemma-4.
 `LoadSession` restores `stride[l] = kvDim` for uniform geometry, but gemma-4 global layers use a
 different KV width than local ones, and `Snapshot` refuses only delta/mamba/mlaLatent — so a
 gemma-4 session round-trips through `--session-dir` and then mis-slices on the first `TruncateTo`.
@@ -68,6 +75,9 @@ unchecked.
 buffer (UMA write into an adjacent buffer) and `attention` index `threadgroup float sc[4096]` OOB.
 *Fix:* move the check into the exported methods.
 
+**C-13 — FIXED** (2026-08-06, Linux box). `DecodeTokenFusedBatched` rejects `M > gemmRowMaxM` up
+front (the one-shot `MatmulW8A8GemmRow` already did), so a block wider than the accumulator can't
+alias row 15. Gate `TestDecodeTokenFusedBatched_Mbound_C13`. Original finding below.
 **C-13** [linux] | `gpu/decodetoken_batched.go:127` — `DecodeTokenFusedBatched` dispatches with
 `M = len(xs)` and no bound, while the kernel's accumulator is `array<i32, 16>`.
 *Failure:* 17+ rows (a speculative block of K≥16) index a 16-element private array OOB; WGSL
@@ -75,16 +85,35 @@ robustness clamps to 15, so rows ≥16 accumulate into and read back the row-15 
 silently wrong logits, no error. The one-shot sibling `MatmulW8A8GemmRow` does check.
 *Fix:* reject `M > gemmRowMaxM`, or chunk.
 
-**C-15** [linux] | `cuda/kernels.go:119-132` — `f32tof16` truncates the mantissa (`m>>13`, no
-rounding) despite a doc comment claiming round-to-nearest-even, flushes everything below the f16
+**C-15 — DEFERRED** (2026-08-06, Linux box — fix identified + correct, blocked on gate recalibration).
+`cuda/f32tof16` is a pure-Go helper (no PTX), and the CORRECT fix is to make it byte-identical to the
+CANONICAL cross-backend representation `decoder.f32ToF16bits` (which metal/pack.go + aikit/linalg
+replicate, and which `GOINFER_INT4_F16_SCALES` measures) — **round-half-up + gradual underflow to
+subnormals**, NOT the audit's suggested RNE+saturate (a lone RNE here would re-introduce the very
+cross-backend divergence being fixed). The old cuda helper TRUNCATED and flushed all subnormals,
+diverging from every other backend. **Blocker:** `TestMoEResidentParity`'s cosine floor (0.999) was
+empirically calibrated with the truncating helper — the truncation happened to resolve one near-tie
+token the same way as the CPU-f32 reference (0.999906). With the corrected helper, the correct
+dispatch measures 0.997833, which collapses the separation from the tightest *dispatch bug* the
+floor exists to catch (gate/up swap, 0.997687). Re-deriving that break-to-verify control table
+requires injecting the A–E dispatch bugs into `moe.cu` and regenerating `moe.ptx` — the audited PTX
+that must NOT be regenerated on this 12.9 NVRTC box. So the fix is right but unshippable here until
+the MoE-parity control table is re-measured (on a 12.6 box, or by making the gate single-variable via
+`GOINFER_INT4_F16_SCALES` on the CPU reference and re-calibrating). Diagnosis complete; do not
+re-attempt without addressing the gate.
+**C-15 (original)** [linux] | `cuda/kernels.go:119-132` — `f32tof16` truncates the mantissa (`m>>13`,
+no rounding) despite a doc comment claiming round-to-nearest-even, flushes everything below the f16
 normal range to zero, and returns `+Inf` rather than saturating on overflow.
 *Failure:* every int4 group scale is biased downward by up to 1 ULP (mean ≈ −0.05%) — a systematic
 shrink applied to every int4 projection/expert/LM-head scale. Any group whose max |w| falls under
 ~4.3e-4 is silently zeroed on device while the CPU reference keeps it.
-*Fix:* implement RNE, emit subnormals down to `e >= -10`, clamp overflow to `0x7bff`.
-*Note:* touches a numeric kernel → the audited PTX (glue.ptx/moe.ptx at NVRTC 12.6) must not be
-regenerated on the 12.9 box; split into its own `.cu`→`.ptx` module (precedent: argmax.cu for C-14).
+*Original suggested fix (SUPERSEDED — see DEFERRED note):* implement RNE, emit subnormals, clamp
+overflow to `0x7bff`. The real fix is to match `decoder.f32ToF16bits` (round-half-up), not RNE.
 
+**C-23 — FIXED** (2026-08-06, Linux box). `LoadProjector` now rejects `len(normW) != visionHidden`
+right after reading it (mirroring the existing `projW` guard), so a short norm tensor is a load
+error, not an index-out-of-range panic in `Forward` on the first image request. Gate
+`TestLoadProjector_normWLength_C23` (synthetic safetensors). Original finding below.
 **C-23** [linux] | `multimodal/projector.go:80` — `mm_soft_emb_norm.weight` is never validated
 against `vision_config.hidden_size` (the sibling `projW` length *is* gated two lines below).
 *Failure:* a checkpoint whose config says 1152 but whose norm tensor is shorter loads cleanly, then
@@ -92,6 +121,12 @@ against `vision_config.hidden_size` (the sibling `projW` length *is* gated two l
 the process.
 *Fix:* reject `len(normW) != p.visionHidden` at load.
 
+**C-27 — FIXED** (2026-08-06, Linux box). Both `DecodeTokenFused` and `DecodeTokenFusedBatched`
+now carry the `newDecodeRunner` `buildErr` pattern: `storF`/`uni`/`bind`/`disp` (and a guarded
+`cpy`) short-circuit on the first allocation/bind failure and the function returns it before Submit
+— VRAM exhaustion is an error the caller falls back on, never a panic or a nil-buffer deref. Error
+paths only fire under device-allocation failure (not unit-testable without a fault-injecting mock);
+verified by build/vet/staticcheck `-tags gpu`. Original finding below.
 **C-27** [linux] | `gpu/decodetoken_fused.go:64` + `decodetoken_batched.go:72` — exported
 `DecodeTokenFused`/`DecodeTokenFusedBatched` `panic(e)` on bind-group failure, and their
 `storF`/`uni` helpers discard `CreateBuffer` errors and pass nil buffers downstream.
@@ -100,6 +135,11 @@ down the calling server. `newDecodeRunner` fixed exactly this with a `buildErr` 
 these two were left behind.
 *Fix:* port the `buildErr` pattern.
 
+**C-28 — FIXED** (2026-08-06, Linux box). `runBatch` now records a `mapErr` and settles the Poll,
+then a deferred sweep `Unmap`s every successfully-mapped-but-unconsumed `stag` on ALL return paths
+(a MapAsync error, a non-Success status, or a clean finish) — the persistent per-runner buffer can
+no longer be left mapped and poison every future call. Error path needs device failure to fire;
+verified by build/vet/staticcheck `-tags gpu`. Original finding below.
 **C-28** [linux] | `gpu/decoderunner.go:1133` — `runBatch` returns on the first non-Success map
 status without unmapping the rows it already mapped (`stag` is a per-runner *persistent* buffer).
 *Failure:* the next call's `MapAsync` on an already-mapped buffer fails, and every subsequent call
@@ -107,6 +147,11 @@ fails identically — the runner is permanently poisoned for the process lifetim
 same shape.
 *Fix:* deferred cleanup walking all rows whose `MapAsync` succeeded.
 
+**C-29 — FIXED** (2026-08-06, Linux box). A new `adaptersMu` guards `m.adapters` (LoadAdapter write
+vs UseAdapter/HasAdapter reads), and re-registration now RETIRES the displaced runtime into
+`retiredAdapters` (released only at `Model.Close`) instead of munmapping it — a live Session holding
+it via `cache.lora` keeps reading valid memory. Gate `TestRegisterAdapter_retiresNotCloses_C29`
+(retire bookkeeping + `-race` concurrent register/read). Original finding below.
 **C-29** [linux] | `decoder/lora.go:285` — `LoadAdapter` closes (munmaps) the previously registered
 runtime with no check that a live `Session` still references it, and mutates the unsynchronized
 `m.adapters` map.

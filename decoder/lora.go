@@ -279,20 +279,39 @@ func (m *Model) LoadAdapter(name, dir string) error {
 		a.close()
 		return err
 	}
+	m.registerAdapter(name, buildLoraRuntime(name, a, arch.NumLayers, m.w.schema))
+	return nil
+}
+
+// registerAdapter installs rt under name, retiring any runtime it displaces (audit C-29). A live
+// Session may still hold the displaced runtime via cache.lora and read its mmap'd deltas
+// mid-generation, so it is retired (released at Model.Close), never munmap'd here. Locked because
+// UseAdapter/HasAdapter read the map from other request goroutines.
+func (m *Model) registerAdapter(name string, rt *loraRuntime) {
+	m.adaptersMu.Lock()
+	defer m.adaptersMu.Unlock()
 	if m.adapters == nil {
 		m.adapters = map[string]*loraRuntime{}
 	}
 	if old := m.adapters[name]; old != nil {
-		old.close()
+		m.retiredAdapters = append(m.retiredAdapters, old)
 	}
-	m.adapters[name] = buildLoraRuntime(name, a, arch.NumLayers, m.w.schema)
-	return nil
+	m.adapters[name] = rt
 }
 
 // HasAdapter reports whether a compute-time adapter is registered under name.
 func (m *Model) HasAdapter(name string) bool {
+	m.adaptersMu.Lock()
+	defer m.adaptersMu.Unlock()
 	_, ok := m.adapters[name]
 	return ok
+}
+
+// adapter returns the runtime registered under name (nil if absent), under the lock.
+func (m *Model) adapter(name string) *loraRuntime {
+	m.adaptersMu.Lock()
+	defer m.adaptersMu.Unlock()
+	return m.adapters[name]
 }
 
 // applyLoRA adds the low-rank delta s·B(A·x) into y in place — the compute-time

@@ -45,29 +45,60 @@ func (c *Context) DecodeTokenFused(x []float32, m ModelW, hidden, nH, nKV, hd, i
 	}
 	defer enc.Release()
 
+	// buildErr accumulates the FIRST device-allocation/bind failure (audit C-27), mirroring
+	// newDecodeRunner: the storF/uni/bind/disp helpers short-circuit once it is set, and the
+	// function returns it before Submit — so VRAM exhaustion is an error the caller can fall back
+	// on, never a panic (the old code did `b, _ :=` then passed nil buffers downstream, and bind
+	// panicked on a nil-buffer bind-group failure).
+	var buildErr error
 	storF := func(n int) *wgpu.Buffer {
-		b, _ := c.device.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(n * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
+		if buildErr != nil {
+			return nil
+		}
+		b, e := c.device.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(n * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
+		if e != nil {
+			buildErr = e
+			return nil
+		}
 		keepBuf(b)
 		return b
 	}
 	uni := func(v []uint32) *wgpu.Buffer {
-		b, _ := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(v), Usage: wgpu.BufferUsageUniform})
+		if buildErr != nil {
+			return nil
+		}
+		b, e := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(v), Usage: wgpu.BufferUsageUniform})
+		if e != nil {
+			buildErr = e
+			return nil
+		}
 		keepBuf(b)
 		return b
 	}
 	bind := func(layout *wgpu.BindGroupLayout, bufs ...*wgpu.Buffer) *wgpu.BindGroup {
+		if buildErr != nil {
+			return nil
+		}
 		es := make([]wgpu.BindGroupEntry, len(bufs))
 		for i, b := range bufs {
+			if b == nil { // an upstream storF/uni failed; don't deref a nil buffer
+				buildErr = fmt.Errorf("gpu: DecodeTokenFused: nil buffer for binding %d (allocation failed)", i)
+				return nil
+			}
 			es[i] = wgpu.BindGroupEntry{Binding: uint32(i), Buffer: b, Size: b.GetSize()}
 		}
 		bg, e := c.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: layout, Entries: es})
 		if e != nil {
-			panic(e)
+			buildErr = e
+			return nil
 		}
 		keepBG(bg)
 		return bg
 	}
 	disp := func(pl *wgpu.ComputePipeline, bg *wgpu.BindGroup, gx, gy uint32) {
+		if buildErr != nil || bg == nil {
+			return
+		}
 		pass := enc.BeginComputePass(nil)
 		pass.SetPipeline(pl)
 		pass.SetBindGroup(0, bg, nil)
@@ -108,6 +139,9 @@ func (c *Context) DecodeTokenFused(x []float32, m ModelW, hidden, nH, nKV, hd, i
 		disp(c.residualPipeline, bind(c.residualLayout, x, y, p), uint32(hidden+63)/64, 1)
 	}
 	copyKV := func(src, cache *wgpu.Buffer) {
+		if buildErr != nil || src == nil || cache == nil {
+			return
+		}
 		enc.CopyBufferToBuffer(src, 0, cache, uint64(pos*kvDim*4), uint64(kvDim*4))
 	}
 
@@ -151,6 +185,12 @@ func (c *Context) DecodeTokenFused(x []float32, m ModelW, hidden, nH, nKV, hd, i
 	xnf := rms(xd, m.FinalNorm.buf)
 	fq, fs := quant(xnf, hidden)
 	logits := gemv(fq, fs, m.LMHead)
+
+	// A device-allocation/bind failure anywhere above surfaces here as an error, not a panic or a
+	// read of an uninitialised `logits` buffer (audit C-27).
+	if buildErr != nil {
+		return nil, buildErr
+	}
 
 	stag, err := c.device.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(m.LMHead.rows * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
 	if err != nil {

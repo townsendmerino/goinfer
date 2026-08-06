@@ -77,6 +77,13 @@ func LoadProjector(dir string) (*Projector, error) {
 	if e1 != nil || e2 != nil {
 		return nil, fmt.Errorf("multimodal: projector weights: %v %v", e1, e2)
 	}
+	// Validate the norm tensor's length like the projection tensor below: Forward indexes normW by
+	// vision-hidden channel, so a checkpoint whose config says visionHidden=N but ships a shorter
+	// mm_soft_emb_norm.weight would load cleanly and then panic "index out of range" inside the HTTP
+	// handler on the first image request, killing the process (audit C-23).
+	if len(normW) != p.visionHidden {
+		return nil, fmt.Errorf("multimodal: mm_soft_emb_norm.weight length %d, want %d (vision_hidden)", len(normW), p.visionHidden)
+	}
 	p.normW = append([]float32(nil), normW...)
 	// Transpose [visionHidden, textHidden] → [textHidden, visionHidden] for MatmulBT.
 	vh, th := p.visionHidden, p.textHidden

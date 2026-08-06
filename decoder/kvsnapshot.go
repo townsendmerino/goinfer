@@ -67,6 +67,19 @@ func (s *Session) Snapshot(id string) []byte {
 	if c.delta != nil || len(c.mamba) > 0 || len(c.mlaLatent) > 0 {
 		return nil
 	}
+	// Gemma-4's global (append-forever) layers carry PER-LAYER KV widths — its E2B/E4B geometry
+	// gives some layers a different NumKVHeads·HeadDim than the cache's uniform c.kvDim. The
+	// snapshot format records no per-global-layer stride, so LoadSession restores every global
+	// layer to kvDim and the first TruncateTo mis-slices the odd-width ones — silently wrong on the
+	// serve session path (audit C-05). Refuse a non-uniform-width cache (caller → cold prefill), the
+	// same policy as the recurrent/latent families above. Ring-layer width mismatches are caught
+	// loudly by LoadSession instead (it rejects a ring stride != kvDim), so only globals leak.
+	for l := 0; l < c.numLayers; l++ {
+		isRing := c.rings[l] != nil
+		if !isRing && c.stride[l] != 0 && c.stride[l] != c.kvDim {
+			return nil
+		}
+	}
 	wr := &giwWriter{}
 	wr.raw([]byte(kvSnapMagic))
 	wr.u32(kvSnapVersion)

@@ -7,6 +7,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 	"unsafe"
@@ -46,7 +47,16 @@ type Model struct {
 	// adapters holds compute-time LoRA adapters loaded against this base (#7),
 	// keyed by name. Each costs only its low-rank A/B bytes; they share the one
 	// resident base. A stream activates one via Session.UseAdapter / cache.lora.
-	adapters map[string]*loraRuntime
+	// adaptersMu guards the map AND retiredAdapters: LoadAdapter mutates them while
+	// UseAdapter/HasAdapter read concurrently from other request goroutines (audit C-29).
+	adaptersMu sync.Mutex
+	adapters   map[string]*loraRuntime
+	// retiredAdapters holds runtimes displaced by a re-registration of the same name. A live
+	// Session may still hold the old *loraRuntime in its cache.lora and read its mmap'd deltas
+	// mid-generation, so it must NOT be munmap'd on re-register (that SIGSEGVs the reader, audit
+	// C-29). They are retired here and released only at Model.Close. A small, bounded leak (one
+	// entry per re-registration of a live name) traded for read-after-free safety.
+	retiredAdapters []*loraRuntime
 }
 
 // GiwPath returns the .giw file path this model was mmap-loaded from, or "" if it was not loaded
@@ -303,10 +313,15 @@ func (m *Model) Close() error {
 		_ = m.w.st.Close()
 		m.w.st = nil
 	}
+	m.adaptersMu.Lock()
 	for _, rt := range m.adapters { // release each compute-time adapter's mmap (#7)
 		rt.close()
 	}
-	m.adapters = nil
+	for _, rt := range m.retiredAdapters { // and any displaced by a re-registration (C-29)
+		rt.close()
+	}
+	m.adapters, m.retiredAdapters = nil, nil
+	m.adaptersMu.Unlock()
 	return err
 }
 

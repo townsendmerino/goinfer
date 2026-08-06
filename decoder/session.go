@@ -47,7 +47,7 @@ func (s *Session) Tokens() []int { return s.tokens }
 // projections, so any KV built under a different (or no) adapter is stale — the
 // caller should Reset first if the cached prefix was produced by another adapter.
 func (s *Session) UseAdapter(name string) error {
-	rt := s.m.adapters[name]
+	rt := s.m.adapter(name) // locked read — LoadAdapter may mutate the map concurrently (audit C-29)
 	if rt == nil {
 		return fmt.Errorf("decoder: no compute-time adapter %q loaded", name)
 	}

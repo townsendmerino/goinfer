@@ -44,9 +44,9 @@ func TestGoroutineLeakCheck(t *testing.T) {
 	for range 3 {
 		ctx, cancel := context.WithCancel(context.Background())
 		out, _ := m.Generate(ctx, prompt, 64, sp)
-		<-out       // consume one token
-		cancel()    // ask it to stop
-		_ = out     // drop the reference; stop reading
+		<-out    // consume one token
+		cancel() // ask it to stop
+		_ = out  // drop the reference; stop reading
 	}
 
 	// (c) cancel BEFORE reading anything.

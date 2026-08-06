@@ -27,6 +27,13 @@ func (c *Context) DecodeTokenFusedBatched(xs [][]float32, m ModelW, hidden, nH, 
 	if M == 0 {
 		return nil, nil
 	}
+	// The thin-M gemmRow kernel accumulates into a private array<i32, gemmRowMaxM> (gemm_rows.go),
+	// so M rows past that silently alias the last accumulator under WGSL's robustness clamp —
+	// wrong logits, no error (audit C-13). The one-shot MatmulW8A8GemmRow guards this; the fused
+	// batched path did not. Reject rather than corrupt; the caller (spec verify) chunks its block.
+	if M > gemmRowMaxM {
+		return nil, fmt.Errorf("gpu: DecodeTokenFusedBatched M=%d exceeds gemmRowMaxM=%d (chunk the block)", M, gemmRowMaxM)
+	}
 	if len(positions) != M {
 		return nil, fmt.Errorf("gpu: DecodeTokenFusedBatched %d rows but %d positions", M, len(positions))
 	}
@@ -52,35 +59,72 @@ func (c *Context) DecodeTokenFusedBatched(xs [][]float32, m ModelW, hidden, nH, 
 	}
 	defer enc.Release()
 
+	// buildErr accumulates the FIRST device-allocation/bind failure (audit C-27): the helpers
+	// short-circuit once set and the function returns it before Submit, so VRAM exhaustion is an
+	// error the caller falls back on rather than a panic (bind) or a downstream nil-buffer deref.
+	var buildErr error
 	storF := func(n int) *wgpu.Buffer {
-		b, _ := c.device.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(n * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc | wgpu.BufferUsageCopyDst})
+		if buildErr != nil {
+			return nil
+		}
+		b, e := c.device.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(n * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc | wgpu.BufferUsageCopyDst})
+		if e != nil {
+			buildErr = e
+			return nil
+		}
 		keepBuf(b)
 		return b
 	}
 	uni := func(v []uint32) *wgpu.Buffer {
-		b, _ := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(v), Usage: wgpu.BufferUsageUniform})
+		if buildErr != nil {
+			return nil
+		}
+		b, e := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(v), Usage: wgpu.BufferUsageUniform})
+		if e != nil {
+			buildErr = e
+			return nil
+		}
 		keepBuf(b)
 		return b
 	}
 	bind := func(layout *wgpu.BindGroupLayout, bufs ...*wgpu.Buffer) *wgpu.BindGroup {
+		if buildErr != nil {
+			return nil
+		}
 		es := make([]wgpu.BindGroupEntry, len(bufs))
 		for i, b := range bufs {
+			if b == nil {
+				buildErr = fmt.Errorf("gpu: DecodeTokenFusedBatched: nil buffer for binding %d (allocation failed)", i)
+				return nil
+			}
 			es[i] = wgpu.BindGroupEntry{Binding: uint32(i), Buffer: b, Size: b.GetSize()}
 		}
 		bg, e := c.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: layout, Entries: es})
 		if e != nil {
-			panic(e)
+			buildErr = e
+			return nil
 		}
 		keepBG(bg)
 		return bg
 	}
 	disp := func(pl *wgpu.ComputePipeline, bg *wgpu.BindGroup, gx, gy uint32) {
+		if buildErr != nil || bg == nil {
+			return
+		}
 		pass := enc.BeginComputePass(nil)
 		pass.SetPipeline(pl)
 		pass.SetBindGroup(0, bg, nil)
 		pass.DispatchWorkgroups(gx, gy, 1)
 		pass.End()
 		pass.Release()
+	}
+	// cpy is a buildErr/nil-guarded CopyBufferToBuffer — a nil src/dst here means an upstream
+	// storF/tiledProj already failed, so skip rather than deref (audit C-27).
+	cpy := func(src *wgpu.Buffer, so uint64, dst *wgpu.Buffer, do, sz uint64) {
+		if buildErr != nil || src == nil || dst == nil {
+			return
+		}
+		enc.CopyBufferToBuffer(src, so, dst, do, sz)
 	}
 
 	// --- per-row ops (one row's [hidden]/[dim] buffer) ---
@@ -118,8 +162,8 @@ func (c *Context) DecodeTokenFusedBatched(xs [][]float32, m ModelW, hidden, nH, 
 		asC := storF(M)
 		for r, xn := range xnRows {
 			q, s := quant1(xn, K)
-			enc.CopyBufferToBuffer(q, 0, aqC, uint64(r*kw*4), uint64(kw*4))
-			enc.CopyBufferToBuffer(s, 0, asC, uint64(r*4), 4)
+			cpy(q, 0, aqC, uint64(r*kw*4), uint64(kw*4))
+			cpy(s, 0, asC, uint64(r*4), 4)
 		}
 		dstC := storF(M * N)
 		p := uni([]uint32{uint32(M), uint32(rm.kp), uint32(N), 0})
@@ -128,7 +172,7 @@ func (c *Context) DecodeTokenFusedBatched(xs [][]float32, m ModelW, hidden, nH, 
 		outs := make([]*wgpu.Buffer, M)
 		for r := range outs {
 			o := storF(N)
-			enc.CopyBufferToBuffer(dstC, uint64(r*N*4), o, 0, uint64(N*4))
+			cpy(dstC, uint64(r*N*4), o, 0, uint64(N*4))
 			outs[r] = o
 		}
 		return outs
@@ -159,8 +203,8 @@ func (c *Context) DecodeTokenFusedBatched(xs [][]float32, m ModelW, hidden, nH, 
 		for r := range xd {
 			rope(q[r], lw.Attn.InvFreq.buf, nH, positions[r])
 			rope(k[r], lw.Attn.InvFreq.buf, nKV, positions[r])
-			enc.CopyBufferToBuffer(k[r], 0, lw.Attn.KCache.buf, uint64(positions[r]*kvDim*4), uint64(kvDim*4))
-			enc.CopyBufferToBuffer(v[r], 0, lw.Attn.VCache.buf, uint64(positions[r]*kvDim*4), uint64(kvDim*4))
+			cpy(k[r], 0, lw.Attn.KCache.buf, uint64(positions[r]*kvDim*4), uint64(kvDim*4))
+			cpy(v[r], 0, lw.Attn.VCache.buf, uint64(positions[r]*kvDim*4), uint64(kvDim*4))
 		}
 		// All rows' K/V are now in the cache; each row attends to its causal prefix
 		// (including earlier rows of this block).
@@ -201,6 +245,12 @@ func (c *Context) DecodeTokenFusedBatched(xs [][]float32, m ModelW, hidden, nH, 
 		xnf[r] = rms(xd[r], m.FinalNorm.buf)
 	}
 	logits := tiledProj(xnf, m.LMHead)
+
+	// Surface any device-allocation/bind failure as an error before the readback, instead of
+	// copying from uninitialised `logits` rows (audit C-27).
+	if buildErr != nil {
+		return nil, buildErr
+	}
 
 	vocab := m.LMHead.rows
 	stag := make([]*wgpu.Buffer, M)

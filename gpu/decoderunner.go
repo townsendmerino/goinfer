@@ -1146,14 +1146,31 @@ func runBatch(c *Context, runners []*DecodeRunner, xs [][]float32, startPos int)
 	defer cmd.Release()
 	c.queue.Submit(cmd)
 	sts := make([]wgpu.BufferMapAsyncStatus, n)
+	var mapErr error
 	for i := range n {
-		i := i
 		sts[i] = wgpu.BufferMapAsyncStatusUnknown
 		if err := runners[i].stag.MapAsync(wgpu.MapModeRead, 0, uint64(runners[i].vocab*4), func(s wgpu.BufferMapAsyncStatus) { sts[i] = s }); err != nil {
-			return nil, err
+			mapErr = fmt.Errorf("gpu: runBatch row %d MapAsync: %w", i, err)
+			break // later rows are not requested; the ones already requested settle on the Poll below
 		}
 	}
-	c.device.Poll(true, nil) // one sync drains all K maps
+	c.device.Poll(true, nil) // one sync settles every requested map (success or not)
+	// runners[i].stag is a PERSISTENT per-runner buffer. Returning while any stag is still mapped
+	// leaves it mapped forever, and every future MapAsync on it fails — poisoning the runner for the
+	// process lifetime (audit C-28). consumed[i] marks rows the readback already Unmapped; this
+	// deferred sweep Unmaps any that mapped but weren't consumed, on ALL return paths (a MapAsync
+	// error, a non-Success status, or a clean finish — where nothing is left to sweep).
+	consumed := make([]bool, n)
+	defer func() {
+		for i := range n {
+			if sts[i] == wgpu.BufferMapAsyncStatusSuccess && !consumed[i] {
+				runners[i].stag.Unmap()
+			}
+		}
+	}()
+	if mapErr != nil {
+		return nil, mapErr
+	}
 	out := make([][]float32, n)
 	for i := range n {
 		if sts[i] != wgpu.BufferMapAsyncStatusSuccess {
@@ -1162,6 +1179,7 @@ func runBatch(c *Context, runners []*DecodeRunner, xs [][]float32, startPos int)
 		row := make([]float32, runners[i].vocab)
 		copy(row, wgpu.FromBytes[float32](runners[i].stag.GetMappedRange(0, uint(runners[i].vocab*4))))
 		runners[i].stag.Unmap()
+		consumed[i] = true
 		out[i] = row
 	}
 	return out, nil
