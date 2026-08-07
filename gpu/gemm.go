@@ -92,7 +92,7 @@ func (c *Context) ensureTiled() error {
 	c.track(sh.Release, pl.Release) // audit C-26: register at creation
 	c.tiledShader = sh
 	c.tiledPipeline = pl
-	c.tiledLayout = pl.GetBindGroupLayout(0)
+	c.tiledLayout = c.bgl(pl)
 	return nil
 }
 
@@ -147,7 +147,13 @@ func (c *Context) BatchTiled(aq []int8, aScales []float32, M int, rms []*Residen
 			release()
 			return nil, fmt.Errorf("gpu: BatchTiled dst: %w", err)
 		}
-		dims, _ := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "btiled-dims", Contents: wgpu.ToBytes([]uint32{uint32(M), uint32(rm.kp), uint32(N), 0}), Usage: wgpu.BufferUsageUniform})
+		dims, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "btiled-dims", Contents: wgpu.ToBytes([]uint32{uint32(M), uint32(rm.kp), uint32(N), 0}), Usage: wgpu.BufferUsageUniform})
+		if err != nil { // nil dims → nil-panic in CreateBindGroup / the cleanup Release below (audit R-06)
+			dst.Release()
+			pass.Release()
+			release()
+			return nil, fmt.Errorf("gpu: BatchTiled dims: %w", err)
+		}
 		bg, err := c.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.tiledLayout, Entries: []wgpu.BindGroupEntry{
 			{Binding: 0, Buffer: aBuf, Size: aBuf.GetSize()}, {Binding: 1, Buffer: rm.bq, Size: rm.bq.GetSize()},
 			{Binding: 2, Buffer: asBuf, Size: asBuf.GetSize()}, {Binding: 3, Buffer: rm.bScales, Size: rm.bScales.GetSize()},

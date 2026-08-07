@@ -99,7 +99,7 @@ func (c *Context) ensureGemmRow() error {
 	c.track(sh.Release, pl.Release) // audit C-26: register at creation
 	c.gemmRowShader = sh
 	c.gemmRowPipeline = pl
-	c.gemmRowLayout = pl.GetBindGroupLayout(0)
+	c.gemmRowLayout = c.bgl(pl)
 	return nil
 }
 

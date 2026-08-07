@@ -112,7 +112,11 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid
 
 // ensureVision compiles the vision-only kernels (lazily, once per Context).
 func (c *Context) ensureVision() error {
-	if c.lnRowsPipeline != nil {
+	// Guard on the LAST pipeline built (copyHead), not the first (lnRows): a mid-build failure left
+	// the first-field guard satisfied with later pipelines nil, so the next call dispatched a nil
+	// pipeline (audit R-30). On a partial-build retry the earlier fields are rebuilt (old ones stay
+	// tracked for release at Close).
+	if c.copyHeadPipeline != nil {
 		return nil
 	}
 	// This closure used to DISCARD its *wgpu.ShaderModule (returning only pipeline+layout), so the

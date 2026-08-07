@@ -135,17 +135,19 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>) {
 `
 
 func (c *Context) ensureFuse() error {
-	if c.rmsQuantPipeline != nil {
-		return nil
-	}
-	// Shared tracked constructor (gpu.go): registers shader+pipeline for release (audit C-26).
+	// Per-pipeline guards: a mid-build failure must not leave the first-field guard satisfied with a
+	// later pipeline nil (audit R-30). Shared tracked constructor (gpu.go) registers for release (C-26).
 	mk := c.mkPipeline
 	var err error
-	if c.rmsQuantShader, c.rmsQuantPipeline, c.rmsQuantLayout, err = mk("rmsnormQuant", rmsnormQuantWGSL); err != nil {
-		return err
+	if c.rmsQuantPipeline == nil {
+		if c.rmsQuantShader, c.rmsQuantPipeline, c.rmsQuantLayout, err = mk("rmsnormQuant", rmsnormQuantWGSL); err != nil {
+			return err
+		}
 	}
-	if c.swigluQuantShader, c.swigluQuantPipeline, c.swigluQuantLayout, err = mk("swigluQuant", swigluQuantWGSL); err != nil {
-		return err
+	if c.swigluQuantPipeline == nil {
+		if c.swigluQuantShader, c.swigluQuantPipeline, c.swigluQuantLayout, err = mk("swigluQuant", swigluQuantWGSL); err != nil {
+			return err
+		}
 	}
 	return nil
 }

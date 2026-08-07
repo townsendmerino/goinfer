@@ -149,7 +149,7 @@ func (c *Context) ensureGEMVBias() error {
 	c.track(sh.Release, pl.Release) // audit C-26: register at creation
 	c.gemvBiasShader = sh
 	c.gemvBiasPipeline = pl
-	c.gemvBiasLayout = pl.GetBindGroupLayout(0)
+	c.gemvBiasLayout = c.bgl(pl)
 	return nil
 }
 
@@ -175,7 +175,7 @@ func (c *Context) ensureGEMV() error {
 	c.track(sh.Release, pl.Release) // audit C-26: register at creation
 	c.gemvShader = sh
 	c.gemvPipeline = pl
-	c.gemvLayout = pl.GetBindGroupLayout(0)
+	c.gemvLayout = c.bgl(pl)
 	return nil
 }
 
@@ -239,7 +239,13 @@ func (c *Context) BatchGEMV(aq []int8, aScale float32, rms []*ResidentW8A8) ([][
 			release()
 			return nil, fmt.Errorf("gpu: BatchGEMV dst: %w", err)
 		}
-		dims, _ := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "batch-dims", Contents: wgpu.ToBytes([]uint32{1, uint32(rm.kp), uint32(N), 0}), Usage: wgpu.BufferUsageUniform})
+		dims, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "batch-dims", Contents: wgpu.ToBytes([]uint32{1, uint32(rm.kp), uint32(N), 0}), Usage: wgpu.BufferUsageUniform})
+		if err != nil { // nil dims → nil-panic in CreateBindGroup / the cleanup Release below (audit R-06)
+			dst.Release()
+			pass.Release()
+			release()
+			return nil, fmt.Errorf("gpu: BatchGEMV dims: %w", err)
+		}
 		bg, err := c.device.CreateBindGroup(&wgpu.BindGroupDescriptor{
 			Layout: c.gemvLayout,
 			Entries: []wgpu.BindGroupEntry{
@@ -336,9 +342,27 @@ func (c *Context) NewGEMVRunner(rm *ResidentW8A8) (*GEMVRunner, error) {
 	if err != nil {
 		return nil, err
 	}
-	asBuf, _ := mk("gemvr-ascale", 4, wgpu.BufferUsageStorage|wgpu.BufferUsageCopyDst)
-	dstBuf, _ := mk("gemvr-dst", uint64(N*4), wgpu.BufferUsageStorage|wgpu.BufferUsageCopySrc)
-	stag, _ := mk("gemvr-stage", uint64(N*4), wgpu.BufferUsageMapRead|wgpu.BufferUsageCopyDst)
+	// Check each alloc: a failed CreateBuffer returns nil, which would flow into CreateBindGroup and
+	// then nil-panic in the error-cleanup Release() below — the C-27 class, in the production staged
+	// path (audit R-06). Release the already-allocated buffers on the way out.
+	asBuf, err := mk("gemvr-ascale", 4, wgpu.BufferUsageStorage|wgpu.BufferUsageCopyDst)
+	if err != nil {
+		aBuf.Release()
+		return nil, err
+	}
+	dstBuf, err := mk("gemvr-dst", uint64(N*4), wgpu.BufferUsageStorage|wgpu.BufferUsageCopySrc)
+	if err != nil {
+		aBuf.Release()
+		asBuf.Release()
+		return nil, err
+	}
+	stag, err := mk("gemvr-stage", uint64(N*4), wgpu.BufferUsageMapRead|wgpu.BufferUsageCopyDst)
+	if err != nil {
+		aBuf.Release()
+		asBuf.Release()
+		dstBuf.Release()
+		return nil, err
+	}
 	dimsBuf, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{
 		Label: "gemvr-dims", Contents: wgpu.ToBytes([]uint32{1, uint32(rm.kp), uint32(N), 0}), Usage: wgpu.BufferUsageUniform,
 	})

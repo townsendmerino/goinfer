@@ -131,7 +131,9 @@ func (c *Context) DecodeTokenFusedBatched(xs [][]float32, m ModelW, hidden, nH, 
 	rms := func(in, w *wgpu.Buffer) *wgpu.Buffer {
 		out := storF(hidden)
 		p := uni([]uint32{uint32(hidden), f32bits(eps), boolU32(addOne), 0})
-		disp(c.rmsnormPipeline, bind(c.rmsnormLayout, in, w, out, p), 64, 1)
+		// The rmsnorm kernel is single-workgroup (reduces one row); one workgroup, not 64. 64 was 64×
+		// redundant work + 64 unsynchronised writes to the same addresses (audit R-19; N-07 sibling).
+		disp(c.rmsnormPipeline, bind(c.rmsnormLayout, in, w, out, p), 1, 1)
 		return out
 	}
 	quant1 := func(in *wgpu.Buffer, K int) (*wgpu.Buffer, *wgpu.Buffer) {

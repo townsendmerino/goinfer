@@ -104,7 +104,7 @@ func (c *Context) ensureQuantize() error {
 	c.track(sh.Release, pl.Release) // audit C-26: register at creation
 	c.quantizeShader = sh
 	c.quantizePipeline = pl
-	c.quantizeLayout = pl.GetBindGroupLayout(0)
+	c.quantizeLayout = c.bgl(pl)
 	return nil
 }
 

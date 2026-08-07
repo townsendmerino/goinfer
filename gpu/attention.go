@@ -472,7 +472,12 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 `
 
 func (c *Context) ensureAttn() error {
-	if c.ropePipeline != nil {
+	// Guard on the LAST pipeline built, not the first: these are created in order, so a non-nil last
+	// field means every earlier one succeeded too. Guarding on ropePipeline (the first) let a
+	// mid-build failure leave the guard satisfied with later pipelines nil, and the next call
+	// dispatched a nil pipeline (audit R-30). On a retry after a partial build the earlier fields are
+	// rebuilt (the old ones stay tracked for release at Close — bounded, not leaked).
+	if c.kvStoreI8Pipeline != nil {
 		return nil
 	}
 	// Shared tracked constructor (gpu.go): registers shader+pipeline for release (audit C-26).

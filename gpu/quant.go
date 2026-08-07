@@ -83,7 +83,7 @@ func (c *Context) ensureQuant() error {
 	c.track(sh.Release, pl.Release) // audit C-26: register at creation
 	c.quantShader = sh
 	c.quantPipeline = pl
-	c.quantLayout = pl.GetBindGroupLayout(0)
+	c.quantLayout = c.bgl(pl)
 	return nil
 }
 

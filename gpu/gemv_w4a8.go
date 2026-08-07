@@ -288,7 +288,7 @@ func (c *Context) ensureGEMVW4() error {
 	c.track(sh.Release, pl.Release) // audit C-26: register at creation
 	c.gemvW4Shader = sh
 	c.gemvW4Pipeline = pl
-	c.gemvW4Layout = pl.GetBindGroupLayout(0)
+	c.gemvW4Layout = c.bgl(pl)
 	return nil
 }
 

@@ -252,7 +252,16 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 	// VRAM-exhaustion decline) so the caller falls back to the staged/CPU path; MLAAttn guards its own
 	// analogous rank limit (audit M-12). Covers the model-level shape and any per-layer geometry
 	// override (Gemma 4's per-layer head_dim), so an admitted arch can never silently truncate.
-	if err := attnHeadDimSupported(hd, m.layers); err != nil {
+	// MLA (DeepSeek/Kimi) attention runs the mlaAttn kernel family (mla.go) with its own rank-bounded
+	// accumulator, NOT the 128-wide GQA kernels attnHeadDimSupported protects — its qk head dim
+	// (qk_nope+qk_rope) is 192 on real V2-Lite/V3/Kimi and legitimately exceeds 128. Applying the GQA
+	// guard here regressed EVERY MLA checkpoint off residency (audit R-05, collateral of M-12). Exempt
+	// MLA, but enforce the analogous per-lane rank cap MLAAttn itself checks (rank ≤ 1024; audit R-24).
+	if m.mla != nil {
+		if m.mla.kvLoRARank > 1024 {
+			return nil, fmt.Errorf("gpu: newDecodeRunner: MLA kv-LoRA rank %d exceeds the resident per-lane cap 1024; declining to CPU", m.mla.kvLoRARank)
+		}
+	} else if err := attnHeadDimSupported(hd, m.layers); err != nil {
 		return nil, err
 	}
 	// The mamba causal-conv kernel (mamba.go) holds the window in a fixed `array<f32, 8>` indexed
@@ -375,7 +384,9 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			add(c.rmsnormPipeline, bind(c.rmsnormLayout, in, w, out, p), 1, 1)
 			return out, nil
 		}
-		kp := padK(K)
+		kp := padK32(K) // int8 activation for a W4A8/W8A8 gemv that reads to the weight's kPad==padK32;
+		// padK (mult-16) under-sizes it when K%32 ∈ [1,16] → OOB read + int4 zero-pad nibbles decode
+		// to −8 (audit R-18 / N-05). Latent since real dims are mult-32; matches the siblings below.
 		q, s := storF(kp/4), storF(1)
 		p := uni([]uint32{uint32(K), f32bits(eps), boolU32(addOne), uint32(kp)})
 		add(c.rmsQuantPipeline, bind(c.rmsQuantLayout, in, w, q, s, p), 1, 1)

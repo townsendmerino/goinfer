@@ -76,20 +76,26 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 `
 
 func (c *Context) ensureLayer() error {
-	if c.rmsnormPipeline != nil {
-		return nil
-	}
-	// Shared tracked constructor (gpu.go): registers shader+pipeline for release (audit C-26).
+	// Guard EACH pipeline independently, not just the first: a mid-build failure (transient OOM)
+	// used to leave rmsnormPipeline set but swiglu/residual nil, and the next call saw the first-field
+	// guard satisfied and dispatched a nil pipeline (audit R-30). Per-field guards retry only what's
+	// missing — the ensureGEMVW8A16 shape. Shared tracked constructor (gpu.go) registers for release (C-26).
 	mk := c.mkPipeline
 	var err error
-	if c.rmsnormShader, c.rmsnormPipeline, c.rmsnormLayout, err = mk("rmsnorm", rmsnormShaderWGSL); err != nil {
-		return err
+	if c.rmsnormPipeline == nil {
+		if c.rmsnormShader, c.rmsnormPipeline, c.rmsnormLayout, err = mk("rmsnorm", rmsnormShaderWGSL); err != nil {
+			return err
+		}
 	}
-	if c.swigluShader, c.swigluPipeline, c.swigluLayout, err = mk("swiglu", swigluShaderWGSL); err != nil {
-		return err
+	if c.swigluPipeline == nil {
+		if c.swigluShader, c.swigluPipeline, c.swigluLayout, err = mk("swiglu", swigluShaderWGSL); err != nil {
+			return err
+		}
 	}
-	if c.residualShader, c.residualPipeline, c.residualLayout, err = mk("residual", residualShaderWGSL); err != nil {
-		return err
+	if c.residualPipeline == nil {
+		if c.residualShader, c.residualPipeline, c.residualLayout, err = mk("residual", residualShaderWGSL); err != nil {
+			return err
+		}
 	}
 	return nil
 }

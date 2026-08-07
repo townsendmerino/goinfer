@@ -66,6 +66,6 @@ func (c *Context) ensureQKNorm() error {
 		return fmt.Errorf("gpu: pipeline qkNorm: %w", err)
 	}
 	c.track(sh.Release, pl.Release) // audit C-26: register at creation
-	c.qkNormShader, c.qkNormPipeline, c.qkNormLayout = sh, pl, pl.GetBindGroupLayout(0)
+	c.qkNormShader, c.qkNormPipeline, c.qkNormLayout = sh, pl, c.bgl(pl)
 	return nil
 }

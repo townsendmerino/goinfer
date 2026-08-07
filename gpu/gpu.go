@@ -360,6 +360,16 @@ func (c *Context) Backend() string {
 // out of date the first time someone adds a pipeline without reading Close.
 func (c *Context) track(fs ...func()) { c.releases = append(c.releases, fs...) }
 
+// bgl captures a pipeline's group-0 bind-group layout AND registers its Release, so the ~20
+// c.*Layout fields built outside mkPipeline don't leak a native BGL (each holding a device ref)
+// per Context (audit R-17/C-26). GetBindGroupLayout returns a NEW object per call, so it must be
+// captured once — never call it again for the same field.
+func (c *Context) bgl(pl *wgpu.ComputePipeline) *wgpu.BindGroupLayout {
+	lay := pl.GetBindGroupLayout(0)
+	c.track(lay.Release)
+	return lay
+}
+
 // mkPipeline compiles one WGSL shader into a compute pipeline, registers BOTH objects for release,
 // and returns them plus the auto bind-group layout. It is the single tracked constructor the
 // ensure* builders share; it was four byte-identical `mk` closures (attention.go, decodefuse.go,
@@ -382,8 +392,12 @@ func (c *Context) mkPipeline(label, code string) (*wgpu.ShaderModule, *wgpu.Comp
 		sh.Release()
 		return nil, nil, nil, fmt.Errorf("gpu: pipeline %s: %w", label, err)
 	}
-	c.track(sh.Release, pl.Release)
-	return sh, pl, pl.GetBindGroupLayout(0), nil
+	// Track the bind-group layout for release too: GetBindGroupLayout returns a new native BGL
+	// object (each holding a device ref) that must be Released, and every caller stores it in a
+	// c.*Layout field for the Context's lifetime — untracked, ~40 leaked per Context (audit R-17/C-26).
+	lay := pl.GetBindGroupLayout(0)
+	c.track(sh.Release, pl.Release, lay.Release)
+	return sh, pl, lay, nil
 }
 
 // Close releases all GPU resources. Safe to call once; the Context must
@@ -405,6 +419,9 @@ func (c *Context) Close() error {
 	// the nil-out below means a Context is only ever partially populated OR already drained.
 	// Nil each handle after release so a use-after-free is a nil dereference at the Go boundary —
 	// a stack trace pointing at the bug — rather than undefined behaviour inside the native layer.
+	if c.layout != nil { // the primary pipeline's group-0 BGL (New's struct literal), never released (audit R-17)
+		c.layout.Release()
+	}
 	if c.pipeline != nil {
 		c.pipeline.Release()
 	}
@@ -423,7 +440,7 @@ func (c *Context) Close() error {
 	if c.instance != nil {
 		c.instance.Release()
 	}
-	c.pipeline, c.shader, c.queue, c.device, c.adapter, c.instance = nil, nil, nil, nil, nil, nil
+	c.layout, c.pipeline, c.shader, c.queue, c.device, c.adapter, c.instance = nil, nil, nil, nil, nil, nil, nil
 	return nil
 }
 

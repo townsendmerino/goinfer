@@ -129,6 +129,6 @@ func (c *Context) ensureMambaF16() error {
 		return fmt.Errorf("gpu: pipeline mambaGemvF16: %w", err)
 	}
 	c.track(sh.Release, pl.Release) // audit C-26: register at creation
-	c.mambaF16Shader, c.mambaF16Pipeline, c.mambaF16Layout = sh, pl, pl.GetBindGroupLayout(0)
+	c.mambaF16Shader, c.mambaF16Pipeline, c.mambaF16Layout = sh, pl, c.bgl(pl)
 	return nil
 }
