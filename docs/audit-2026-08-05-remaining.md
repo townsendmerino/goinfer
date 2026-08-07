@@ -15,7 +15,7 @@ call, not a unilateral fix.
 |---|---|---|
 | Blockers (B) | 14 / 14 | 0 (all resolved; release shipped) |
 | Critical (C) | 31 / 31 | **0** (both owed regression tests now device-verified: C-01-resident on the Linux/webgpu box — real granite, maxAbs=0; C-03 on the Mac and cross-confirmed on the box under `-race`) |
-| Gate (G) | 4 / 6 | **2** (G-03/G-05 fixed on Linux; G-04/G-06-residual fixed in code, metal device-run owed) |
+| Gate (G) | 6 / 6 | **0** (G-03/G-05 on Linux; G-04/G-06-residual device-verified on the Mac / macOS 26.6) |
 | Major (M) | 17 / 23 | **6** |
 | Minor (N) | 0 / 24 | **24** |
 
@@ -304,21 +304,25 @@ everywhere; `GOINFER_CHATML_GGUF` stays an override. The tests' own naive-encode
 
 ### Metal G-items — code fixed on the Linux box (cross-compiled darwin/arm64, device run owed)
 
-**G-04 — FIXED in code** (2026-08-06, Linux box; cross-compiled darwin/arm64 clean, device run
-owed). The residency-scope switch now accumulates the pinned buffers into a local `pinned` slice
-inside `addAll()` and assigns `r.residencyBufs = pinned` AFTER the switch — so every slot-scoped arm
+**G-04 — DONE** (fixed on the Linux box; device-verified on the Mac / macOS 26.6, 2026-08-06). The
+residency-scope switch now accumulates the pinned buffers into a local `pinned` slice inside
+`addAll()` and assigns `r.residencyBufs = pinned` AFTER the switch — so every slot-scoped arm
 (`slots`, `slots+kv`, `slots+scratch`, default) records the true pinned set, not just `default`. The
 two whole-device diagnostic arms (`readonly`/`all`) intentionally leave it nil (not a slot-pool
-contract; `TestResidencySet_pinsExactlyTheLiveSlots` doesn't run under them). Please device-run that
-gate under `GOINFER_MOE_RESIDENCY_SCOPE=slots` to confirm it no longer reports "no buffers pinned".
-Original finding: `r.residencyBufs` was assigned only in the `default` arm.
+contract; `TestResidencySet_pinsExactlyTheLiveSlots` doesn't run under them). **Device-verified:**
+`TestResidencySet_pinsExactlyTheLiveSlots` PASSES ("pins exactly the 24 live slot buffers") under BOTH
+the default scope AND the previously-broken `GOINFER_MOE_RESIDENCY_SCOPE=slots` arm (which pre-fix
+reported "no buffers pinned"). Original finding: `r.residencyBufs` was assigned only in the `default`
+arm.
 
-**G-06 (residual) — FIXED in code** (2026-08-06, Linux box; cross-compiled darwin/arm64 clean,
-device run owed). Added a `metal/modelsdir_test.go` `modelPath` helper (mirrors the
-tokenizer/chat/decoder ones: `GOINFER_MODELS_DIR`, default `$HOME/models`) and routed all 6
-`gemma4-26b-int4.giw` test sites through it (`gemma4_26b_{localize,paged,routing,possweep,
-widthconsistency}_test.go` + `paging_budget_test.go`) — no more hardcoded `/Users/...`. These are
-skip-guarded on `os.Stat`, so they still skip cleanly where the .giw is absent.
+**G-06 (residual) — DONE** (fixed on the Linux box; device-verified on the Mac / macOS 26.6,
+2026-08-06). Added a `metal/modelsdir_test.go` `modelPath` helper (mirrors the tokenizer/chat/decoder
+ones: `GOINFER_MODELS_DIR`, default `$HOME/models`) and routed all 6 `gemma4-26b-int4.giw` test sites
+through it (`gemma4_26b_{localize,paged,routing,possweep,widthconsistency}_test.go` +
+`paging_budget_test.go`) — no more hardcoded `/Users/...`. **Device-verified:** metal module builds +
+vets clean on-device; with the `.giw` at `$HOME/models`, all five `gemma4_26b_*` tests resolved the
+model and PASSED (`paging_budget` skips cleanly behind `GOINFER_BUDGET_PROBE`), confirming the
+path-resolution refactor is behavior-neutral.
 
 ---
 
