@@ -10,7 +10,7 @@
 - **cuda** `-tags cuda` build + vet + full test suite green — **incl. `-tags 'cuda goinfer_testhooks'`** (22.2 s, 0 fail / 0 race), which is what actually exercises **R-03**'s ordered `g4x2` clear: all g4moe parity gates (`TestGemma4{MoE_localize,Router_residentIdxParity,DenseScaled_residentParity,_perExpertScaleFold}`, `TestMoEResidentParity`, `TestGemma4Graphs_bitExact_*`) pass bit-exact — no regression from the added `Sync`. R-20 `TestRunJob_recoversPanic` ✓, R-25 `TestSlotBytesPerLayer_outOfRange` ✓.
 - **R-04** FMA lint green (`TestKernelFMALint` + `_coversEmbeddedPTX`); regenerating `router_f32.ptx` at the box's NVRTC 12.9.86 (its recorded version) is **byte-identical** (sha unchanged) — `__fmaf_rn` lowers to the `fma.rn.f32` NVRTC already chose, so no numeric change and nothing to commit.
 - **R-12** confirmed on Linux: with the `//go:build darwin` tag now on `snapshot_golden_test.go`, native-GOOS `go vet` over the metal module matches **no packages** (no `undefined: resident`).
-- **R-05** (MLA-goes-resident regression test) not run here — no DeepSeek/Kimi checkpoint on the box; still owed a real-model pass.
+- **R-05** verified on the box: real **DeepSeek-V2-Lite** (`~/models/deepseek-v2-lite-gguf`, qk head dim = 128+64 = **192**) loaded on the webgpu backend goes **fully GPU-resident** (`ResidentActive()` true) and decodes on the resident runner — the head-dim guard no longer rejects MLA's >128 qk head. New regression gate `gpu/mla_real_resident_test.go::TestMLAResidency_realDeepSeek_R05` (asserts resident, or — for a card too small to fit the 16B — a non-`head_dim` decline reason; a `head_dim` decline is the R-05 regression).
 
 ---
 
