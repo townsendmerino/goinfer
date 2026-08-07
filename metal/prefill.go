@@ -387,13 +387,18 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 		if r.qkNorm { // Qwen3: per-head Q/K RMSNorm before RoPE
 			e.Dispatch(pf.pQK, M*(r.nH+g0.nKV)*tgReduceAttn, tgReduceAttn, qkvF, L.qNorm, L.kNorm, r.uNH, g0.uNKV, uHd, g0.uNHhd, uStride, r.uEps, r.uAddOne)
 		}
-		// rope q, k (per-row positions)
-		e.Dispatch(pf.pRope, M*r.nH*g0.half, 128, qkvF, r.invf, uHd, posB, uTotalQ, uStride, uBase0, g0.uHalf)
-		e.Dispatch(pf.pRope, M*g0.nKV*g0.half, 128, qkvF, r.invf, uHd, posB, uTotalK, uStride, uBaseK, g0.uHalf)
+		// rope q, k (per-row positions) — bind the PER-LAYER RoPE table and window, exactly as decode
+		// does (encodeTrunkInto), not the model-level r.invf/r.uWindow. For a mixed local/global-window
+		// arch the global layers must see window=0, and each layer its own RoPE base; the model-level
+		// bindings applied the local window (and one RoPE table) to every layer (audit M-09). Admitted
+		// prefill archs have a uniform RoPE table (FeatPerLayerRoPE is not claimed), so L.invf equals
+		// r.invf there — this is behaviour-neutral for them and correct for the mixed-window case.
+		e.Dispatch(pf.pRope, M*r.nH*g0.half, 128, qkvF, L.invf, uHd, posB, uTotalQ, uStride, uBase0, g0.uHalf)
+		e.Dispatch(pf.pRope, M*g0.nKV*g0.half, 128, qkvF, L.invf, uHd, posB, uTotalK, uStride, uBaseK, g0.uHalf)
 		// scatter K,V to cache
 		e.Dispatch(pf.pKv, M*kvDim, 128, qkvF, r.kc[l], r.vc[l], posB, uKvDim, uStride, uKOff, uVOff)
-		// causal attention → ctx
-		e.Dispatch(pf.pAttn, M*r.nH*tgReduceAttn, tgReduceAttn, qkvF, r.kc[l], r.vc[l], ctxF, r.uNH, g0.uNKV, uHd, uStartPos, r.uScale, uStride, r.uWindow)
+		// causal attention → ctx (per-layer window: 0 = full causal on a global layer)
+		e.Dispatch(pf.pAttn, M*r.nH*tgReduceAttn, tgReduceAttn, qkvF, r.kc[l], r.vc[l], ctxF, r.uNH, g0.uNKV, uHd, uStartPos, r.uScale, uStride, L.uWindow)
 		// o-proj + residual into x
 		t, tg = gg(H)
 		e.Dispatch(pf.pGemmStore, t, tg, ctxF, L.oW, L.oS, xF, uM, uH, uQDim, dummyBias, m2)

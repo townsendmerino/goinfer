@@ -16,7 +16,7 @@ call, not a unilateral fix.
 | Blockers (B) | 14 / 14 | 0 (all resolved; release shipped) |
 | Critical (C) | 31 / 31 | **0** (both owed regression tests now device-verified: C-01-resident on the Linux/webgpu box — real granite, maxAbs=0; C-03 on the Mac and cross-confirmed on the box under `-race`) |
 | Gate (G) | 6 / 6 | **0** (G-03/G-05 on Linux; G-04/G-06-residual device-verified on the Mac / macOS 26.6) |
-| Major (M) | 17 / 23 | **6** |
+| Major (M) | 20 / 23 | **3** (M-19 [linux]; M-21/M-22 [decision]) + M-25 (new, latent, deferred) — the 3 metal Majors M-09/M-10/M-11 are done |
 | Minor (N) | 0 / 24 | **24** |
 
 **Critical batch fixed on the Linux box (2026-08-06):** C-05, C-13, C-23, C-27, C-28, C-29 — each
@@ -328,6 +328,16 @@ path-resolution refactor is behavior-neutral.
 
 ## §4 — Major (open)
 
+**M-09 — DONE** (2026-08-06, Mac, macOS 26.6). `PrefillLast`'s per-layer loop now binds `L.invf` and
+`L.uWindow` (the same per-layer RoPE table + window `encodeTrunkInto` decode binds), not the model-
+level `r.invf`/`r.uWindow`. A mixed local/global-window arch now prefills each global layer with
+window=0 instead of the local window. **Latent, so no positive on-device trigger exists** (every
+shipped mixed-window arch also has per-layer RoPE and is declined by `prefillFeatures`, which does not
+claim `FeatPerLayerRoPE`); admitted archs have a uniform RoPE table so `L.invf == r.invf` there and
+the change is behaviour-neutral. **Verified correct-by-construction** (prefill now binds identically
+to decode) **and regression-clean on device**: `TestPrefillParity` (qwen2.5-1.5B) still matches
+sequential decode — last-token argmax equal, cosine 0.9986 — and `TestPrefillNoNaN` passes. Original
+finding below.
 **M-09** [mac] | `metal/prefill.go:391` — `PrefillLast` binds the model-level RoPE table and window
 while decode binds the per-layer `L.invf`/`L.uWindow` (0 for non-local layers). `prefillFeatures`
 claims `FeatSlidingWindow` and omits only `FeatPerLayerRoPE`, so a mixed local/global-window arch
@@ -350,12 +360,27 @@ warm-KV session path (image-in-chat with prefix reuse), which is a plausible fut
 branch of `TruncateTo`, alongside `resetRecurrent()` — makes the reset complete and the external
 repro pass. Touches core, so it carries a goldens-gated parity refresh.
 
+**M-10 — DONE** (2026-08-06, Mac, device-verified on macOS 26.6). The dense W4A8 pack entry points
+now reject `K%32 != 0`: `int4Buf` returns an error and `int4Concat` panics (no error return; caught
+by `buildResident`'s recover → clean CPU decline), each above their int4-direct and int8-repack
+sub-paths. The gemma4-MoE paged path already guarded `H/MoeInter/DenseInter %32` (gemma4_moe.go:173).
+Gate `TestInt4Pack_declinesNonMultipleOf32K` (K=40 declines via both error and panic; K=64 still
+accepted); gemma4-dense + MoE residents still build and match parity (no false decline). Original
+finding below.
 **M-10** [mac] | `metal/model.go:251` + `pack.go:11` — int4 pack paths check `group == 32` but never
 `K % 32 == 0`, while the kernels hard-assume it. `K=40` fills only the first group and leaves zero
 nibbles decoding as −8; the per-row stride disagrees with the kernel's; `K=12` panics. CUDA declines
 this shape; WebGPU pads.
 *Fix:* reject `K%32 != 0` in the three pack entry points so `BuildResident` declines.
 
+**M-11 — DONE** (2026-08-06, Mac, device-verified on macOS 26.6). aikit `gpu/v0.27.0` adds
+`Device.MaxThreadgroupMemoryLength()`, and `buildResident` now computes the widest threadgroup
+staging (`maxThreadgroupStageBytes` = 2·max(hidden, q-width, MoE expert intermediate)) and declines →
+CPU when it exceeds the device tile limit. The dense down-proj uses the non-staging `pGemv`, so the
+dense intermediate is deliberately excluded. Gate `TestMaxThreadgroupStageBytes` (arithmetic: which K
+wins, ×2, exactly-at-limit allowed, dense-inter excluded) + aikit `TestMaxThreadgroupMemoryLength`
+(device reports 32768 B) + gemma4-dense/MoE residents still build (no false decline). Original
+finding below.
 **M-11** [mac] | `metal/moe.go:307` + `model.go:1091` + `gemma4_moe.go:411` — dynamic threadgroup
 memory is computed from model dims and never validated against `maxThreadgroupMemoryLength`. Mixtral
 is already at 87% of a 32 KB budget; `inter ≥ 16384` exceeds it, Metal aborts the command buffer,
