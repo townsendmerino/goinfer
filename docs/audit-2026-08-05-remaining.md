@@ -16,7 +16,7 @@ call, not a unilateral fix.
 | Blockers (B) | 14 / 14 | 0 (all resolved; release shipped) |
 | Critical (C) | 31 / 31 | **0** (both owed regression tests now device-verified: C-01-resident on the Linux/webgpu box — real granite, maxAbs=0; C-03 on the Mac and cross-confirmed on the box under `-race`) |
 | Gate (G) | 6 / 6 | **0** (G-03/G-05 on Linux; G-04/G-06-residual device-verified on the Mac / macOS 26.6) |
-| Major (M) | 23 / 23 | **0** of the original 23 — M-21 (ctx on transcodes) + M-22 (GPUSpecStats rename) now FIXED. Only **M-25** remains (new, latent, deferred — not in the original count) |
+| Major (M) | 23 / 23 (+M-25) | **0** — original 23 all FIXED; the later latent **M-25** (multimodal reset leak) also FIXED (2026-08-07) |
 | Minor (N) | 0 / 24 | **24** |
 
 **Critical batch fixed on the Linux box (2026-08-06):** C-05, C-13, C-23, C-27, C-28, C-29 — each
@@ -345,7 +345,16 @@ without per-layer RoPE prefills its *global* layers with the local window applie
 because every shipped mixed-window arch also has per-layer RoPE.
 *Fix:* bind the per-layer values (both already exist).
 
-**M-25 (new, 2026-08-06)** [any] | `decoder/kvcache.go` — `TruncateTo(0)` (the Session.Reset /
+**M-25 — FIXED** (2026-08-07, Linux box; cheap defence-in-depth). `TruncateTo`'s `pos == 0` full
+reset now calls a new `resetMultimodal()` — nils `imgBlocks`/`mropePos` and zeroes `mropeDelta` —
+alongside `resetRecurrent()`, but OUTSIDE the recurrent guard (a VL family isn't necessarily
+recurrent). A recycled cache can no longer carry a prior sequence's image blocks / m-RoPE offsets
+into a later read, so the leak stays closed the day VL is wired through the warm-KV session path.
+Gate `TestTruncateTo_resetsMultimodal` (break-it-first: image blocks + m-RoPE set, `TruncateTo(0)`,
+assert all cleared — on a plain non-recurrent cache, proving it fires outside the recurrent guard).
+Non-numeric core edit → deps_hash refreshed (goldens 19/0, validated_at preserved). Original finding
+below.
+**M-25 (was latent)** [any] | `decoder/kvcache.go` — `TruncateTo(0)` (the Session.Reset /
 `sessionLRU.fresh` reset path) clears the KV, recurrent (`mamba`/`delta`), and MLA state but
 **leaves the multimodal fields `imgBlocks`, `mropePos`, `mropeDelta` populated**. Reported by an
 external pass with a unit repro (`TestTempKVCacheStateLeak`, not committed) asserting `imgBlocks`

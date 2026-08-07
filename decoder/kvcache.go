@@ -399,6 +399,19 @@ func (c *KVCache) resetRecurrent() {
 	}
 }
 
+// resetMultimodal clears the per-sequence multimodal state — image attention blocks and
+// Qwen2.5-VL m-RoPE positions/delta — so a reused cache doesn't leak a prior sequence's
+// image blocks or m-RoPE offsets into a fresh one (audit M-25). Like the recurrent state,
+// these have no per-position rewind, so they're only cleared on a full reset. No-op on
+// text-only caches (nil slices / zero delta). Latent today (every VL generation uses a
+// fresh cache and warm-KV sessions are text-only), so this makes the reset complete before
+// VL is ever wired through the warm-KV session path rather than fixing a live leak.
+func (c *KVCache) resetMultimodal() {
+	c.imgBlocks = nil
+	c.mropePos = nil
+	c.mropeDelta = 0
+}
+
 func (c *KVCache) TruncateTo(pos int) (exact bool) {
 	exact = true
 	if pos < 0 || pos > c.pos {
@@ -415,6 +428,12 @@ func (c *KVCache) TruncateTo(pos int) (exact bool) {
 		} else if pos < c.pos {
 			exact = false
 		}
+	}
+	// Multimodal state (image blocks + m-RoPE) also has no per-position rewind, and unlike
+	// the recurrent state can live on a non-recurrent (VL) family — so clear it on any full
+	// reset, outside the recurrent guard (audit M-25).
+	if pos == 0 {
+		c.resetMultimodal()
 	}
 	for l := range c.numLayers {
 		if c.mlaLatent != nil { // DeepSeek MLA: reslice the per-layer latent store

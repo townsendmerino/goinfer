@@ -41,3 +41,30 @@ func TestTruncateTo_resetsRecurrent(t *testing.T) {
 		t.Errorf("TruncateTo(2) on a recurrent cache reported exact; want inexact (cold-prefill)")
 	}
 }
+
+// TestTruncateTo_resetsMultimodal is the break-it-first gate for audit M-25: a reused
+// cache must not leak the prior sequence's multimodal state — image attention blocks and
+// Qwen2.5-VL m-RoPE positions/delta. A full clear (Session.Reset → TruncateTo(0)) must
+// clear them, alongside the recurrent reset (C-01), so a future image-in-chat with warm-KV
+// prefix reuse can't inherit stale image blocks / m-RoPE offsets. This runs on a plain
+// (non-recurrent) cache, proving the reset happens outside the recurrent guard.
+func TestTruncateTo_resetsMultimodal(t *testing.T) {
+	c := NewKVCache(1, 1, 1, 0, 4)
+	c.pos = 5
+	c.SetImageBlocks([][2]int{{1, 4}})
+	c.mropePos = [][3]int{{0, 0, 0}, {1, 1, 1}}
+	c.mropeDelta = -3
+
+	if exact := c.TruncateTo(0); !exact {
+		t.Errorf("TruncateTo(0) reported inexact on a text/VL cache")
+	}
+	if c.imgBlocks != nil {
+		t.Errorf("imgBlocks not cleared after TruncateTo(0): %v", c.imgBlocks)
+	}
+	if c.mropePos != nil {
+		t.Errorf("mropePos not cleared after TruncateTo(0): %v", c.mropePos)
+	}
+	if c.mropeDelta != 0 {
+		t.Errorf("mropeDelta not zeroed after TruncateTo(0): %d", c.mropeDelta)
+	}
+}
