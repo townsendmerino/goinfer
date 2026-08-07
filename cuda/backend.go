@@ -386,8 +386,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	// C′ step 2: device slots per layer. Default topK (step-1 fresh-load, no cross-token reuse,
 	// byte-identical); GOINFER_MOE_CACHE_SLOTS=N gives an LRU cache of N slots (clamped [topK, nE]).
 	// VRAM for slots is nLayers·nSlots·perExpert, so a bigger N trades VRAM for fewer per-token DMAs.
-	// CAUTION: too large OOMs at BuildResident (the alloc runs in the executor goroutine, so it
-	// crashes rather than declining) — keep N within the free-VRAM budget (~40 for the 26B on 8 GB).
+	// CAUTION: too large OOMs at BuildResident — but post-C-24 the executor's runJob recover turns the
+	// alloc panic into setupErr and BuildResident DECLINES (→ staged fallback), it does not crash the
+	// process. Still keep N within the free-VRAM budget (~40 for the 26B on 8 GB) to stay resident.
 	r.cacheSlots = topK
 	if r.cacheExperts {
 		if v, err := strconv.Atoi(os.Getenv("GOINFER_MOE_CACHE_SLOTS")); err == nil && v > topK {
@@ -465,8 +466,10 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				return e
 			}
 		}
-		// argmax_reduce lives in its own module (argmax.ptx), off the audited 12.6 glue.ptx, so the
-		// C-14 index tie-break fix didn't force a glue.ptx regen at 12.9. See cuda/argmax.cu.
+		// argmax_reduce lives in its own module (argmax.ptx), off glue.ptx, so the C-14 index tie-break
+		// fix didn't force a glue.ptx regen. (glue.ptx and all production PTX except moe.ptx are this
+		// box's NVRTC 12.9.86; only moe.ptx + the bench kernels are the audited 12.6.85 — audit R-26.)
+		// See cuda/argmax.cu.
 		amod, e2 := r.dev.CompileLibrary(argmaxPTX)
 		if e2 != nil {
 			return e2

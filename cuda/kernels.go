@@ -71,7 +71,8 @@ var gemvRNPTX []byte
 
 // gluePTX: the per-token elementwise/attention glue — rmsnorm_quant, quant_vec, rope,
 // attention (GQA online softmax), swiglu_quant, residual. (argmax_reduce moved to argmaxPTX;
-// see below. The committed glue.ptx still contains a dead copy until the next 12.6 regen.)
+// see below. The committed glue.ptx still contains a dead copy until the next regen — glue.ptx is
+// this box's NVRTC 12.9.86, not 12.6; only moe.ptx + the bench kernels are the audited 12.6.85 (R-26).)
 //
 //go:embed testdata/glue.ptx
 var gluePTX []byte

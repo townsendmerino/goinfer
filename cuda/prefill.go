@@ -394,12 +394,14 @@ func (r *cudaResident) prefillCore(embeddings [][]float32, startPos int, allLogi
 		return r.launchErr
 	})
 	if err != nil {
-		// An OOM inside the job arrives as a recovered panic (runJob, audit C-24). For prefill
-		// specifically that is a DECLINE, not a request failure: the sequential per-token path needs
-		// no M-sized scratch and will serve this prompt. Mark it so generateInto falls back instead
-		// of surfacing "executor job panicked" to an API client. Errors that are already declines
-		// (the static guards, checkCap) keep their own wrapping.
-		if strings.Contains(err.Error(), "panicked") && !errors.Is(err, errPrefillDeclined) {
+		// An OOM inside the job arrives as a recovered panic (runJob, audit C-24) carrying aikit
+		// MustBuf's "device allocation failed" message. For prefill specifically that is a DECLINE, not
+		// a request failure: the sequential per-token path needs no M-sized scratch and will serve this
+		// prompt. Match that OOM SENTINEL, not any "panicked" (audit R-20): a future programming-bug
+		// panic in the batched path must surface as a real error, not be silently absorbed into the
+		// ~9×-slower sequential path. Errors that are already declines (static guards, checkCap) keep
+		// their own wrapping.
+		if strings.Contains(err.Error(), "device allocation failed") && !errors.Is(err, errPrefillDeclined) {
 			return nil, fmt.Errorf("cuda prefill: out of device memory for M=%d scratch (%w): %v", M, errPrefillDeclined, err)
 		}
 		return nil, err

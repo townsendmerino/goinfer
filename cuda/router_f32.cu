@@ -23,7 +23,7 @@ __global__ void gemv_f32_f32(const float* __restrict__ W, const float* __restric
     const float* wr = W + (long)n * K;
     int t = threadIdx.x, nt = blockDim.x;
     float acc = 0.f;
-    for (int k = t; k < K; k += nt) acc += wr[k] * a[k];
+    for (int k = t; k < K; k += nt) acc = __fmaf_rn(wr[k], a[k], acc); // explicit fma: pin the router GEMV (audit R-04)
     extern __shared__ float red[];
     red[t] = acc;
     __syncthreads();
@@ -56,7 +56,7 @@ __global__ void rmsnorm_nw(const float* __restrict__ src, float* __restrict__ ds
     extern __shared__ float red[];
     int t = threadIdx.x, nt = blockDim.x;
     float ss = 0.f;
-    for (int k = t; k < H; k += nt) ss += src[k] * src[k];
+    for (int k = t; k < H; k += nt) ss = __fmaf_rn(src[k], src[k], ss); // explicit fma: pin the rmsnorm reduction (audit R-04)
     red[t] = ss;
     __syncthreads();
     for (int o = nt >> 1; o > 0; o >>= 1) {

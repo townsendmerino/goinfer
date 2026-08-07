@@ -229,9 +229,10 @@ type cudaResident struct {
 }
 
 // alloc/upload helpers — called ONLY inside the setup job (r.dev's context current on the
-// executor thread). gpu.NewBufferLenOf PANICS on OOM (recorded into the Device ledger);
-// BuildResident's defer recovers that panic and declines gracefully (→ staged fallback)
-// instead of proceeding with unusable buffers.
+// executor thread). gpu.NewBufferLenOf PANICS on OOM (recorded into the Device ledger); the
+// executor's runJob recover (NOT BuildResident's own defer, which runs on a different goroutine and
+// cannot reach an executor-thread panic — that was the C-24 finding) turns it into setupErr, so
+// BuildResident declines gracefully (→ staged fallback) instead of proceeding with unusable buffers.
 func (r *cudaResident) af(n int) Buffer {
 	return gpu.NewBufferLenOf[float32](r.dev, n)
 }
@@ -343,7 +344,9 @@ func (r *cudaResident) allocSlots() error {
 	if perLayer <= 0 {
 		// No routed layer reports a per-expert stride: nothing to cache and, more importantly,
 		// nothing to divide by. Decline the expert cache rather than panic; the fully-resident
-		// path is still correct, it just holds every expert.
+		// path is still correct, it just holds every expert. Clear cacheExperts so the decode path
+		// doesn't later read slots/expCache that were never allocated → nil-deref (audit R-25).
+		r.cacheExperts = false
 		fmt.Fprintf(os.Stderr, "[cuda] C′ cache: routed layer %d reports zero per-expert bytes — expert cache disabled\n", moeLayers[0])
 		return nil
 	}
@@ -582,6 +585,10 @@ func (r *cudaResident) ForwardNoLogits(embedding []float32, pos int) error {
 // ForwardN runs K tokens at consecutive positions. Correctness-first: sequential steps in a
 // single executor round-trip (bit-identical to K Forward calls; amortizes the channel hop).
 func (r *cudaResident) ForwardN(embeddings [][]float32, startPos int) ([][]float32, error) {
+	if len(embeddings) == 0 {
+		return nil, nil // no-op on empty, matching the cpu/webgpu ForwardN contract (audit R-21) —
+		// prefillReady would otherwise route into prefillCore and return a spurious "empty prompt" error.
+	}
 	if e := r.checkCap(startPos, len(embeddings)); e != nil {
 		return nil, e
 	}
@@ -1293,6 +1300,15 @@ func (r *cudaResident) launchToken(emb []float32, pos int, head bool) error {
 		// to the host and DMA the routed experts into their VRAM slots (D2H+H2D). Host copies, not
 		// graph-capturable; synchronous, so the slots are filled before segC replays.
 		if Ly.g4moe {
+			// segC(l-1) writes AND reads g4x2 on r.stream (CU_STREAM_NON_BLOCKING); gpu.Upload runs the
+			// zero-fill copy on the context's legacy null stream, which has NO ordering vs r.stream
+			// (aikit gpu/cuda.go) — its full sync fixes upload→next-launch, not pending-launch→upload.
+			// Without this, the DMA can land mid-segC(l-1) and zero the previous layer's expert
+			// contribution before the join reads it: a data race on every g4moe layer after the first.
+			// Sync r.stream so the clear is ordered after the prior layer's kernels (audit R-03).
+			if e := r.stream.Sync(); e != nil {
+				return e
+			}
 			if e := gpu.Upload(r.g4x2, r.g4zero); e != nil {
 				return e
 			}

@@ -55,7 +55,12 @@ func TestKernelFMALint(t *testing.T) {
 	// float MACs cast with (float) or not at all, which the compliant check already covers).
 	isDeclOrIndex := regexp.MustCompile(`^\s*(const\s+)?(unsigned\s+)?(int|long|short|char|size_t|void|float\*|double\*|__half\*|const int\*|const unsigned)\b|` +
 		`^\s*(const\s+)?[\w]+\s*\*+\s*\w+\s*=|` + // pointer declaration: T* p = ...
-		`\bfor\s*\(|\(long\)|\(int\)|\(unsigned`) // loop headers + int-cast arithmetic
+		`\(long\)|\(int\)|\(unsigned`) // int-cast arithmetic
+	// A for-header is INTEGER arithmetic (the init/cond/incr), but the loop BODY on the same line is
+	// not — a single-line `for (…) acc += a[k] * b[k];` carries a real float MAC. Skipping the whole
+	// line (the old `\bfor\s*\(` in isDeclOrIndex) let router_f32.cu's two MACs pass unseen (audit
+	// R-04). Strip only the `for (…)` header, then lint the remaining body.
+	forHeader := regexp.MustCompile(`\bfor\s*\([^)]*\)`)
 	// remaining genuine non-MACs: reduce-adds (no '*'), lone float muls (no +/-), int array indices.
 	whitelist := []string{
 		"red[t] += red[t", "rednf[t] += rednf[t", "qkred[t] += qkred[t", // tree reduce-adds
@@ -73,6 +78,7 @@ func TestKernelFMALint(t *testing.T) {
 			if k := strings.Index(code, "//"); k >= 0 {
 				code = code[:k]
 			}
+			code = forHeader.ReplaceAllString(code, "") // strip the loop header; keep any single-line body (R-04)
 			if strings.TrimSpace(code) == "" || compliant.MatchString(code) || isDeclOrIndex.MatchString(code) {
 				continue
 			}
