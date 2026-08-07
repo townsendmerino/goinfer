@@ -256,14 +256,15 @@ to work with it, so `go get github.com/townsendmerino/goinfer` brings all four a
 only needed to pin, vendor, or audit it:
 
 ```bash
-go get github.com/townsendmerino/goinfer/gpu@v0.9.0
+go get github.com/townsendmerino/goinfer/cuda@v0.9.0
 ```
 
 **The backend modules are versioned independently of the root and of each other** — they are
 not in lockstep, since a root-only release doesn't retag them. Backend tags carry the module
-path as a prefix (e.g. `gpu/v0.9.0`), which is how Go's module proxy resolves a submodule tag;
-the bare `v0.9.x` tags are the root's. When in doubt, take the root's requirement rather than
-picking a backend version yourself.
+path as a prefix — the three backends are currently tagged `gpu/v0.9.0`, `cuda/v0.9.0`, and
+`metal/v0.9.0` — which is how Go's module proxy resolves a submodule tag; the bare `v0.9.x`
+tags are the root's. When in doubt, take the root's requirement rather than picking a backend
+version yourself.
 
 ## Packages
 
