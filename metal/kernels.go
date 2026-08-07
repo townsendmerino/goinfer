@@ -223,6 +223,10 @@ kernel void gemv_w4a8_sa_resid(device const uint4* wq[[buffer(0)]], device const
 // + CPU scan. Merge key (v, -idx) is a commutative monoid → order-independent, tie-broken
 // identically to a CPU first-max-wins scan (strict >, lower index wins).
 struct AmaxPart { float v; uint i; };
+// NOTE (N-09): NOT currently dispatched — no pipeline is created for it (see model.go). Unlike the
+// batch-K variant it takes no N and has no row>=N guard, so before wiring it, add N and mask any
+// out-of-range row's logit to -INFINITY (it's a reduction: all simdgroups must reach the barrier, so
+// do NOT early-return like the store variants). SA_BODY reads weight row=row, so guard the read too.
 kernel void gemv_w4a8_sa_amax(device const uint4* wq[[buffer(0)]], device const half* sct[[buffer(1)]],
     device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device AmaxPart* part[[buffer(4)]],
     constant uint& K[[buffer(5)]], threadgroup short* As [[threadgroup(0)]], uint tgid[[threadgroup_position_in_grid]],

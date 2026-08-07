@@ -153,7 +153,7 @@ func (s *server) handleResponses(w http.ResponseWriter, r *http.Request) {
 			"type": "response.created", "response": responseObject(id, lm.name, created, "in_progress", []any{}, inTok, 0),
 		})
 		var sb strings.Builder
-		_, nComp, _, _, gerr := lm.drive(r.Context(), gr, func(t string) {
+		finish, nComp, _, _, gerr := lm.drive(r.Context(), gr, func(t string) {
 			sb.WriteString(t)
 			sseEvent(w, f, "response.output_text.delta", map[string]any{
 				"type": "response.output_text.delta", "item_id": id + "-msg", "output_index": 0, "content_index": 0, "delta": t,
@@ -166,7 +166,7 @@ func (s *server) handleResponses(w http.ResponseWriter, r *http.Request) {
 		}
 		out := []any{outputMessage(id+"-msg", sb.String())}
 		sseEvent(w, f, "response.completed", map[string]any{
-			"type": "response.completed", "response": responseObject(id, lm.name, created, "completed", out, inTok, nComp),
+			"type": "response.completed", "response": responseObject(id, lm.name, created, respStatus(finish), out, inTok, nComp),
 		})
 		sseDone(w, f)
 		s.maybeStore(store, id, lm.name, messages, sb.String())
@@ -174,13 +174,13 @@ func (s *server) handleResponses(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var sb strings.Builder
-	_, nComp, _, _, gerr := lm.drive(r.Context(), gr, func(t string) { sb.WriteString(t) })
+	finish, nComp, _, _, gerr := lm.drive(r.Context(), gr, func(t string) { sb.WriteString(t) })
 	if gerr != nil {
 		writeServerErr(w, "generation failed: "+gerr.Error())
 		return
 	}
 	out := []any{outputMessage(id+"-msg", sb.String())}
-	writeJSON(w, http.StatusOK, responseObject(id, lm.name, created, "completed", out, inTok, nComp))
+	writeJSON(w, http.StatusOK, responseObject(id, lm.name, created, respStatus(finish), out, inTok, nComp))
 	s.maybeStore(store, id, lm.name, messages, sb.String())
 }
 
@@ -330,11 +330,25 @@ func textFormatToRespFormat(t *respText) *respFormat {
 }
 
 func responseObject(id, model string, created int64, status string, output []any, inTok, outTok int) map[string]any {
-	return map[string]any{
+	o := map[string]any{
 		"id": id, "object": "response", "created_at": created, "status": status, "model": model,
 		"output": output,
 		"usage":  map[string]any{"input_tokens": inTok, "output_tokens": outTok, "total_tokens": inTok + outTok},
 	}
+	// A generation cut off by max_output_tokens is "incomplete", not "completed" (N-15).
+	if status == "incomplete" {
+		o["incomplete_details"] = map[string]any{"reason": "max_output_tokens"}
+	}
+	return o
+}
+
+// respStatus maps drive's finish reason to a Responses status: "length" (truncated by
+// max_output_tokens) → "incomplete"; everything else → "completed" (N-15).
+func respStatus(finish string) string {
+	if finish == "length" {
+		return "incomplete"
+	}
+	return "completed"
 }
 
 func outputMessage(itemID, text string) map[string]any {

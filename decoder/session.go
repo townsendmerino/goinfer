@@ -185,7 +185,12 @@ func (s *Session) genSpec(ctx context.Context, prompt []int, maxTokens int, draf
 	stats := &SpecStats{}
 	g := &Generation{Spec: stats}
 
-	matched := s.rewindForReuse(prompt) // cold-prefill on an inexact rewind (C1)
+	// An empty prompt is a genNgramInto error: don't rewind/reconcile the cache, so a rejected
+	// call leaves a warm session's KV intact — matching Session.Generate (N-01).
+	matched := 0
+	if len(prompt) > 0 {
+		matched = s.rewindForReuse(prompt) // cold-prefill on an inexact rewind (C1)
+	}
 	seq := append([]int(nil), prompt...)
 	commit := func(id int) { seq = append(seq, id) }
 

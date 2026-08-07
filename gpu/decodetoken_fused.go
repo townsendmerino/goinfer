@@ -110,7 +110,9 @@ func (c *Context) DecodeTokenFused(x []float32, m ModelW, hidden, nH, nKV, hd, i
 	rms := func(in, w *wgpu.Buffer) *wgpu.Buffer {
 		out := storF(hidden)
 		p := uni([]uint32{uint32(hidden), f32bits(eps), boolU32(addOne), 0})
-		disp(c.rmsnormPipeline, bind(c.rmsnormLayout, in, w, out, p), 64, 1)
+		// One workgroup covers the whole row (the resident runner dispatches this same pipeline
+		// 1×1). 64 was 64× redundant work + 64 unsynchronised writes to the same addresses (N-07).
+		disp(c.rmsnormPipeline, bind(c.rmsnormLayout, in, w, out, p), 1, 1)
 		return out
 	}
 	quant := func(in *wgpu.Buffer, K int) (*wgpu.Buffer, *wgpu.Buffer) {

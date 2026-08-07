@@ -181,6 +181,8 @@ func (r *cudaResident) prefillCore(embeddings [][]float32, startPos int, allLogi
 
 	var outs [][]float32
 	err := r.do(func() error {
+		r.launchErr = nil // N-04: clear the sticky accumulator first (like launchToken), so a prior
+		// decode's discarded launch error isn't re-reported by this prefill.
 		// --- M-sized scratch (device), freed at the end.
 		//
 		// The free list and its defer are registered BEFORE the first allocation, and each buffer

@@ -144,9 +144,11 @@ func (b *webgpuBackend) MatmulW8A8(a []float32, bQ []int8, bScales []float32, ds
 func (b *webgpuBackend) MatmulBT(a, bMat, dst []float32, M, K, N int) {
 	b.mu.Lock()
 	out, err := b.matmulLocked(a, bMat, M, K, N)
+	if err != nil {
+		b.fallbacks++ // N-06: under the lock, like the other fallbacks counters (was racy post-Unlock, tripping -race)
+	}
 	b.mu.Unlock()
 	if err != nil {
-		b.fallbacks++
 		linalg.MatmulBT(a, bMat, dst, M, K, N) // correctness over speed
 		return
 	}

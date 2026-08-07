@@ -41,7 +41,9 @@ func metadataPrefixLen(raw []byte) (int, error) {
 	for i := uint64(0); i < tensorCount && c.err == nil; i++ {
 		c.str()            // name
 		nd := int(c.u32()) // n_dims
-		for range nd {
+		// Break on c.err so a hostile n_dims (e.g. 0xFFFFFFFF ≈ 4.29e9) doesn't spin billions of
+		// no-op reads past the exhausted buffer (N-17); a real tensor has 1–4 dims.
+		for j := 0; j < nd && c.err == nil; j++ {
 			c.u64() // dim
 		}
 		c.u32() // ggml type
@@ -110,7 +112,18 @@ func (c *ggufCur) str() string {
 // string(8)/array(9).
 var ggufScalarSize = map[uint32]int{0: 1, 1: 1, 2: 2, 3: 2, 4: 4, 5: 4, 6: 4, 7: 1, 10: 8, 11: 8, 12: 8}
 
-func (c *ggufCur) skipValue(vtype uint32) {
+// maxGGUFArrayDepth bounds skipValue's recursion. Real GGUF arrays never nest (the element
+// type is a scalar or string), so a small cap turns a hostile nested-array header into a typed
+// error instead of ~5.6M levels of stack growth against a 64 MiB prefix (N-18).
+const maxGGUFArrayDepth = 64
+
+func (c *ggufCur) skipValue(vtype uint32) { c.skipValueDepth(vtype, 0) }
+
+func (c *ggufCur) skipValueDepth(vtype uint32, depth int) {
+	if depth > maxGGUFArrayDepth {
+		c.err = fmt.Errorf("gguf header: array nesting exceeds %d (malformed)", maxGGUFArrayDepth)
+		return
+	}
 	switch vtype {
 	case 8: // string
 		c.str()
@@ -118,7 +131,7 @@ func (c *ggufCur) skipValue(vtype uint32) {
 		et := c.u32()
 		n := int(c.u64())
 		for i := 0; i < n && c.err == nil; i++ {
-			c.skipValue(et)
+			c.skipValueDepth(et, depth+1)
 		}
 	default:
 		sz, ok := ggufScalarSize[vtype]

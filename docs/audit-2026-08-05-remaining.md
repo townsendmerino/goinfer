@@ -17,7 +17,7 @@ call, not a unilateral fix.
 | Critical (C) | 31 / 31 | **0** (both owed regression tests now device-verified: C-01-resident on the Linux/webgpu box — real granite, maxAbs=0; C-03 on the Mac and cross-confirmed on the box under `-race`) |
 | Gate (G) | 6 / 6 | **0** (G-03/G-05 on Linux; G-04/G-06-residual device-verified on the Mac / macOS 26.6) |
 | Major (M) | 23 / 23 (+M-25) | **0** — original 23 all FIXED; the later latent **M-25** (multimodal reset leak) also FIXED (2026-08-07) |
-| Minor (N) | 0 / 24 | **24** |
+| Minor (N) | 24 / 24 | **0** — all fixed 2026-08-07 (the 4 metal ones N-09/10/11 cross-compiled, device-run owed; N-24 was closed by G-04) |
 
 **Critical batch fixed on the Linux box (2026-08-06):** C-05, C-13, C-23, C-27, C-28, C-29 — each
 with a gate test — plus **C-11** (metal, safe Go one-liner, cross-compiled; device run owed on the
@@ -445,7 +445,60 @@ CHANGELOG note.
 
 ---
 
-## §5 — Minor (all open)
+## §5 — Minor — ALL FIXED (2026-08-07, Linux box)
+
+All 24 minors are now fixed (verified: root build+vet+staticcheck+targeted tests green; gpu/cuda
+tests pass on the box; metal cross-compiles darwin/arm64 — the 4 metal items **N-09/N-10/N-11**, plus
+**N-24** which was already closed by G-04, still owe a device run on the Mac). Non-numeric decoder-core
+edits (N-01/02/03/13) carried a goldens-gated deps_hash refresh (19/0). Fixes, by finding:
+
+- **N-01** — `Session.genSpec` now guards the empty-prompt case (no rewind/reconcile), matching
+  `Session.Generate`, so a rejected empty-prompt spec call can't destroy a warm session's KV.
+- **N-02** — `groupLimit` masks the trailing experts beyond `nGroup*gsz` to −inf (were left at 0.0).
+- **N-03** — the webgpu backend-fallback note goes to **stderr** (was stdout — contaminated piped streams).
+- **N-04** — `cuda.prefillCore` clears the sticky `launchErr` first (like `launchToken`), so a stale
+  prior-decode error isn't re-reported.
+- **N-05** — the int8 activation-quant scratch is sized `padK32` (matching the W4A8 weight `kPad` the
+  gemv reads to) in `quant`/`swigluQuant`/`relu2Quant`, closing a latent OOB read when `K%32 != 0`.
+- **N-06** — `webgpuBackend.MatmulBT` increments `fallbacks` **under the lock** (was racy post-Unlock).
+- **N-07** — the fused-decode rmsnorm dispatches **1** workgroup, not 64 (the resident runner already
+  dispatches this pipeline 1×1) — kills 64× redundant work + 64 unsynchronised same-address writes.
+- **N-08** — `newDecodeRunner` declines (→ CPU) a mamba `conv_kernel` outside [1,8], which would overrun
+  the conv kernel's fixed `array<f32,8>` — like the existing head-dim>128 decline.
+- **N-09** [mac] — dropped the never-dispatched `pGemvBias`/`pSAAmax` pipelines; added a kernel note that
+  `gemv_w4a8_sa_amax` needs an N/`row>=N` mask (as a reduction) before it's wired.
+- **N-10** [mac] — `TestMetalSnapshotGolden` now `Close()`s the model/resident, so it also exercises the
+  teardown-leak path.
+- **N-11** [mac] — moved the rich `Close` doc (incl. the idempotency guarantee) off the unexported
+  `slotBuffers` onto `Close`.
+- **N-12** — the `known` feature map includes `FeatAttnSink`/`FeatGemma4EModel` (declaring either no
+  longer fails with a misleading "unknown feature").
+- **N-13** — `newLayerPager` returns nil for own-forward families (gemma4/nemotron), which never call
+  `enterLayer`, so no RAM-bound banner is printed for a bound it can't deliver.
+- **N-14** — the ~152k-entry constraint token→bytes table is built once per model (`cachedTokenBytes`),
+  not on every constrained request before the queue gate.
+- **N-15** — `/v1/responses` reports `status:"incomplete"` (+ `incomplete_details`) when cut off by
+  `max_output_tokens`, instead of always `"completed"`.
+- **N-16** — a chat request carrying both `tools` and an image now 400s instead of silently dropping the
+  tools.
+- **N-17** — the tensor-dimension loop in `ggufmeta` breaks on `c.err` (a hostile `n_dims=0xFFFFFFFF`
+  no longer spins ~4.29e9 reads).
+- **N-18** — `ggufmeta.skipValue` caps array-nesting recursion (depth 64) — a hostile nested-array header
+  is a typed error, not ~5.6M stack levels.
+- **N-19** — `Projector.Forward` fails loudly when `mm_tokens_per_image` exceeds the patch grid (kernel
+  0 → every embedding was silently NaN).
+- **N-20** — `tokenizer.LoadGGUF` distinguishes an ABSENT merges array (fine) from a PRESENT-but-malformed
+  one (now a typed error, not a misleading later "decode-only vocab").
+- **N-21** — `pin_gemma4_forward.py` writes `~/mycode/...` (was `~/tmcode`, so the golden never landed).
+- **N-22** — `gen_chat_goldens.py`/`gen_tool_goldens.py` thread a `revision=` pin (per-repo `REVISIONS`
+  dict) into `from_pretrained` and warn when unpinned, so an upstream template edit can't silently change
+  a committed golden. (SHAs to be filled at next regen.)
+- **N-23** — `demo/agent/go.mod` pins `go 1.26.5` (was `1.26.3`, forcing a toolchain download).
+- **N-24** [mac] — already closed by G-04 (`r.residencyBufs` recorded in every slot-scoped arm).
+
+The original per-finding text is retained below for reference.
+
+### Original findings
 
 All 24 minors are unworked. None are release-blocking. `[mac]` = metal.
 

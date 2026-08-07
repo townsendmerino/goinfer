@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"os"
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
@@ -1131,7 +1132,7 @@ func LoadGGUFBytes(raw []byte, opts Options) (*Model, error) {
 		return nil, err
 	}
 	if beErr != nil {
-		fmt.Println(beErr) // webgpu requested but fell back — not fatal.
+		fmt.Fprintln(os.Stderr, beErr) // webgpu requested but fell back — not fatal (N-03: stderr, not stdout — never contaminate a piped token stream)
 	}
 	return (&Model{w: w, be: be, quant: opts.Quant, eosIDs: w.Cfg.EOSIDs(), kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8"}).withResidency(), nil
 }

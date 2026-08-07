@@ -50,6 +50,12 @@ type loadedModel struct {
 	spec     bool        // --spec ngram: lossless n-gram (prompt-lookup) speculative decode with adaptive depth
 	sessions *sessionLRU // prefix-keyed KV reuse across requests
 	mu       sync.Mutex  // serialize this model's generations (the single decode worker)
+
+	// tokenBytes is the constraint masker's token→bytes table (one entry per vocab id, up to
+	// ~152k). It's a pure function of (vocab, tokenizer), so build it ONCE per model rather than
+	// on every constrained request before the queue gate (N-14).
+	tokenBytesOnce sync.Once
+	tokenBytes     [][]byte
 	// queue bounds in-flight+waiting requests (cap = 1 running + --max-queue
 	// waiting); a request claims a slot before mu. nil = unbounded. Honest
 	// backpressure, not continuous batching — queue-full returns 429 Retry-After.
@@ -71,6 +77,15 @@ type loadedModel struct {
 	qwenPP     multimodal.QwenPreprocessConfig
 	qwenMerge  int // spatial_merge_size
 	qwenImgTok int // <|image_pad|> id
+}
+
+// cachedTokenBytes returns the constraint masker's token→bytes table, built once per model
+// and reused across constrained requests (N-14 — it was rebuilt every request before the queue).
+func (lm *loadedModel) cachedTokenBytes() [][]byte {
+	lm.tokenBytesOnce.Do(func() {
+		lm.tokenBytes = constrain.TokenBytes(lm.vocab, lm.tk.TokenText)
+	})
+	return lm.tokenBytes
 }
 
 // visionCapable reports whether this model has a loaded vision tower.
@@ -330,6 +345,12 @@ func (s *server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(imgs) > 0 {
+		// serveVisionChat neither renders nor parses tools, so a tools+image request would
+		// silently drop the tools — fail loudly instead (N-16).
+		if len(req.Tools) > 0 && toolChoiceMode(req.ToolChoice) != "none" {
+			writeErr(w, http.StatusBadRequest, "tools are not supported together with image inputs; send images or tools, not both")
+			return
+		}
 		s.serveVisionChat(w, r, req, imgs)
 		return
 	}
@@ -555,7 +576,7 @@ func (lm *loadedModel) prepare(sm sampling, promptIDs []int) (genRequest, error)
 	}
 	if g != nil {
 		eos := append(append([]int(nil), lm.eosIDs...), lm.stopIDs...)
-		m := constrain.NewMasker(g, constrain.TokenBytes(lm.vocab, lm.tk.TokenText), eos).StopWhenComplete()
+		m := constrain.NewMasker(g, lm.cachedTokenBytes(), eos).StopWhenComplete()
 		gr.sp.LogitProcessor = m.Process
 		gr.masker = m // enables grammar-fused speculative decode (drive)
 	}

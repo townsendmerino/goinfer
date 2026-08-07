@@ -26,6 +26,11 @@ FAMILIES = {
     "mistral": "mistralai/Mistral-7B-Instruct-v0.3",
 }
 
+# N-22: pin each repo to the commit SHA the committed goldens were built from, so an upstream
+# chat_template edit can't silently change a byte-exact fixture on regeneration. None = track the
+# repo's main branch (the drift-prone default) — the loop warns loudly when a repo is unpinned.
+REVISIONS = {repo: None for repo in FAMILIES.values()}
+
 # Every case carries an EXPLICIT system message so no family injects its own
 # default (e.g. Qwen's "You are Qwen…") — the renderer takes system from the
 # caller. add_generation_prompt=True (we're building a prompt to continue).
@@ -44,12 +49,15 @@ CASES = [
 ]
 
 for fam, repo in FAMILIES.items():
+    rev = REVISIONS.get(repo)
+    if rev is None:
+        print(f"WARNING {fam} ({repo}): unpinned revision — goldens may drift; set REVISIONS[{repo!r}] to a commit SHA")
     try:
-        tok = AutoTokenizer.from_pretrained(repo)
+        tok = AutoTokenizer.from_pretrained(repo, revision=rev)
     except Exception as e:
         print(f"SKIP {fam} ({repo}): {e}")
         continue
-    out = {"family": fam, "repo": repo, "chat_template": (tok.chat_template or ""), "cases": []}
+    out = {"family": fam, "repo": repo, "revision": rev, "chat_template": (tok.chat_template or ""), "cases": []}
     for name, msgs in CASES:
         try:
             rendered = tok.apply_chat_template(msgs, tokenize=False, add_generation_prompt=True)

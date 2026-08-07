@@ -124,11 +124,14 @@ func TestMetalSnapshotGolden(t *testing.T) {
 		if err != nil {
 			t.Fatalf("load %s: %v", mm.dir, err)
 		}
+		defer m.Close()
 		H, _, _, _, _, _, V := m.Dims()
 		r, err := buildResident(m)
 		if err != nil {
 			t.Fatalf("BuildResident %s: %v", mm.dir, err)
 		}
+		defer r.Close() // N-10: exercise the Close path so this test also guards the teardown-leak regressions
+
 		if got.Env.GPU == "" {
 			got.Env.GPU = r.d.Name()
 		}

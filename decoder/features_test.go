@@ -201,6 +201,7 @@ func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 		FeatSandwichNorm: true, FeatGatedGELU: true, FeatNonGatedMLP: true, FeatLearnedPos: true,
 		FeatOutBias: true, FeatLogitScale: true, FeatMoE: true, FeatMoEGatedShared: true,
 		FeatMLA: true, FeatSSM: true, FeatLayerNorm: true, FeatParallelBlock: true, FeatNoPE: true,
+		FeatAttnSink: true, FeatGemma4EModel: true, // N-12: were omitted, so declaring either failed with a misleading "unknown feature"
 	}
 	for be, set := range residentBackendFeatures {
 		for f := range set {

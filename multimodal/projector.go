@@ -111,6 +111,11 @@ func (p *Projector) Forward(visionHidden []float32) ([]float32, error) {
 		return nil, fmt.Errorf("multimodal: projector input len %d, want %d (%d patches × %d)", len(visionHidden), np*vh, np, vh)
 	}
 	kernel := grid / tps
+	// A config with mm_tokens_per_image larger than the patch grid makes kernel 0, so the pool
+	// divides by kernel*kernel == 0 and every embedding is silently NaN. Fail loudly instead (N-19).
+	if kernel == 0 {
+		return nil, fmt.Errorf("multimodal: projector tokens-per-side %d exceeds patch grid %d (mm_tokens_per_image too large)", tps, grid)
+	}
 	mm := tps * tps
 
 	// 2D average pool the grid → tps×tps (patch (ph,pw) at seq ph*grid+pw).

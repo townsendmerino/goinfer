@@ -255,6 +255,13 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 	if err := attnHeadDimSupported(hd, m.layers); err != nil {
 		return nil, err
 	}
+	// The mamba causal-conv kernel (mamba.go) holds the window in a fixed `array<f32, 8>` indexed
+	// by conv_kernel-1, so a conv_kernel > 8 would overrun it (and == 0 underflow) — plausible-looking
+	// WRONG output, no error. Decline here (like the head-dim guard above) so the caller falls back to
+	// CPU rather than silently corrupting (N-08; real Mamba-2 uses conv_kernel 4).
+	if m.mamba != nil && (m.mamba.dConv > 8 || m.mamba.dConv < 1) {
+		return nil, fmt.Errorf("gpu: newDecodeRunner: mamba conv_kernel %d out of range [1,8] for the resident conv kernel; declining to CPU", m.mamba.dConv)
+	}
 	ssmStopLayer := -1 // GOINFER_SSM_STOP_LAYER debug (resident SSM bring-up): truncate the plan
 	if v := os.Getenv("GOINFER_SSM_STOP_LAYER"); v != "" {
 		if n, e := strconv.Atoi(v); e == nil {
@@ -383,7 +390,9 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			add(c.swigluPipeline, bind(c.swigluLayout, gate, up, out, p), uint32(K+63)/64, 1)
 			return out, nil
 		}
-		kp := padK(K)
+		kp := padK32(K) // int8 activation for a W4A8/W8A8 down-proj gemv, which reads to the weight's
+		// kPad == padK32; padK (mult-16) under-sizes it when K%32 != 0 (N-08→N-05: OOB read; latent
+		// since real dims are mult-32). padK32 also zeroes the tail, matching the zero-padded weight.
 		q, s := storF(kp/4), storF(1)
 		p := uni([]uint32{uint32(K), uint32(kp), 0, 0})
 		add(c.swigluQuantPipeline, bind(c.swigluQuantLayout, gate, up, q, s, p), 1, 1)
@@ -392,7 +401,7 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 	// relu2Quant fuses Nemotron-H's non-gated relu²(up)→int8 (the squared-ReLU MLP), the
 	// unary analog of swigluQuant. Bindings: up / qout / scales / dims (4 — no gate).
 	relu2Quant := func(up *wgpu.Buffer, K int) (*wgpu.Buffer, *wgpu.Buffer) {
-		kp := padK(K)
+		kp := padK32(K) // int8 activation for a W4A8/W8A8 gemv reading to padK32 — see swigluQuant (N-05)
 		q, s := storF(kp/4), storF(1)
 		p := uni([]uint32{uint32(K), uint32(kp), 0, 0})
 		add(c.relu2Pipeline, bind(c.relu2Layout, up, q, s, p), 1, 1)
@@ -403,7 +412,7 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			// only granite caller, the mamba out_proj gated[dInner]); nil scale.
 			return in, nil
 		}
-		kp := padK(K)
+		kp := padK32(K) // int8 activation for a W4A8/W8A8 gemv reading to padK32 — see swigluQuant (N-05)
 		q, s := storF(kp/4), storF(1)
 		p := uni([]uint32{1, uint32(K), uint32(kp), 0})
 		add(c.quantizePipeline, bind(c.quantizeLayout, in, q, s, p), 1, 1)

@@ -81,21 +81,21 @@ type residLayer struct {
 // resident is a Metal-resident dense decoder. Weights uploaded once in BuildResident;
 // per token only the embedding + pos uniforms change.
 type resident struct {
-	d                                                                     *Device
-	q                                                                     Queue
-	pRms, pQv, pGemv, pGemvBias, pGemvResid, pRope, pKv, pAttn, pSw, pRes Pipeline
-	pSA, pSABias, pSAResid                                                Pipeline // Stage A gemv (K<=1536)
-	pSAAmax, pArgFinish                                                   Pipeline // fused block-argmax lm head
-	pQKNorm                                                               Pipeline // per-head QK-RMSNorm (Qwen3)
-	pRmsF32                                                               Pipeline // Gemma sandwich: in-place RMSNorm of a sublayer output
-	pGemvW8, pGemvW8Amax                                                  Pipeline // int8 GEMV + fused block-argmax — the logit-critical LM head (see lmW)
-	qkNorm                                                                bool     // arch has QK-norm
-	sandwich                                                              bool     // Gemma NormSandwich4: norm each sublayer output before the residual add
-	kvF32                                                                 bool     // f32 KV cache (Gemma sandwich path) — f16 rounding craters Gemma's sensitive contexts
-	uAct                                                                  Buffer   // gated-MLP activation ordinal (decoder.ActKind: 0=GELU-tanh, 1=SiLU)
-	uAddOne, uWindow                                                      Buffer   // qk_norm + sliding-window uniforms
-	uZero                                                                 Buffer   // constant 0 (nH=0 / nHhd=0 / addOne=0 for the scale-less v_norm dispatch)
-	vNormUnit                                                             Buffer   // [maxHd] of 1.0 — unit weight so qk_norm (x·rms·w, addOne=0) = scale-less v_norm for K=V layers
+	d                                                          *Device
+	q                                                          Queue
+	pRms, pQv, pGemv, pGemvResid, pRope, pKv, pAttn, pSw, pRes Pipeline
+	pSA, pSABias, pSAResid                                     Pipeline // Stage A gemv (K<=1536)
+	pArgFinish                                                 Pipeline // fused block-argmax lm head reduce
+	pQKNorm                                                    Pipeline // per-head QK-RMSNorm (Qwen3)
+	pRmsF32                                                    Pipeline // Gemma sandwich: in-place RMSNorm of a sublayer output
+	pGemvW8, pGemvW8Amax                                       Pipeline // int8 GEMV + fused block-argmax — the logit-critical LM head (see lmW)
+	qkNorm                                                     bool     // arch has QK-norm
+	sandwich                                                   bool     // Gemma NormSandwich4: norm each sublayer output before the residual add
+	kvF32                                                      bool     // f32 KV cache (Gemma sandwich path) — f16 rounding craters Gemma's sensitive contexts
+	uAct                                                       Buffer   // gated-MLP activation ordinal (decoder.ActKind: 0=GELU-tanh, 1=SiLU)
+	uAddOne, uWindow                                           Buffer   // qk_norm + sliding-window uniforms
+	uZero                                                      Buffer   // constant 0 (nH=0 / nHhd=0 / addOne=0 for the scale-less v_norm dispatch)
+	vNormUnit                                                  Buffer   // [maxHd] of 1.0 — unit weight so qk_norm (x·rms·w, addOne=0) = scale-less v_norm for K=V layers
 
 	qkv, gu Buffer // fused QKV out, fused gate/up out
 
@@ -404,9 +404,13 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	H, nL, nH, _, _, I, V := m.Dims() // model-level hd/nKV dropped — geometry is per-layer (geom.go)
 	r := &resident{d: d, H: H, nL: nL, nH: nH, I: I, V: V}
 	r.pRms, r.pQv, r.pGemv = pipe("rmsnorm_quant"), pipe("quant_vec"), pipe("gemv_w4a8_coal")
-	r.pGemvBias, r.pGemvResid = pipe("gemv_w4a8_bias"), pipe("gemv_w4a8_resid")
+	r.pGemvResid = pipe("gemv_w4a8_resid")
 	r.pSA, r.pSABias, r.pSAResid = pipe("gemv_w4a8_sa"), pipe("gemv_w4a8_sa_bias"), pipe("gemv_w4a8_sa_resid")
-	r.pSAAmax, r.pArgFinish = pipe("gemv_w4a8_sa_amax"), pipe("argmax_finish")
+	r.pArgFinish = pipe("argmax_finish")
+	// N-09: the gemv_w4a8_bias and gemv_w4a8_sa_amax pipelines were created here but never dispatched
+	// (ForwardArgmax uses the int8 pGemvW8Amax head; the profiler builds gemv_w4a8_bias locally).
+	// Dropped. If gemv_w4a8_sa_amax is wired later, it needs an N/row>=N guard — see the note on the
+	// kernel in kernels.go (it's a reduction, so mask the logit to -INF, don't early-return past the barrier).
 	r.pRope, r.pKv, r.pAttn = pipe("rope"), pipe("kv_store"), pipe("attention")
 	r.pSw, r.pRes = pipe("swiglu_quant"), pipe("residual")
 	r.pGemvW8, r.pGemvW8Amax = pipe("gemv_w8a8_coal"), pipe("gemv_w8a8_amax")
@@ -898,15 +902,6 @@ func (r *resident) stopExec() {
 	}
 }
 
-// Close stops the executor, waits for it, then releases every MTLBuffer this resident allocated.
-//
-// It used to do only the first of those, with the comment "Metal buffers are freed at process
-// exit (single-model lifetime)". That assumption was false and had teeth: cmd/serve is
-// multi-model (--model name=path is repeatable) with /admin/models/{load,unload}, so every
-// load+unload leaked the whole model — weights + per-layer KV + the MoE stacked experts, i.e.
-// GIGABYTES of unified (system) memory, until the process exited. purego has no ARC and Metal
-// has no context-destroy to reclaim in bulk, so each buffer must be released explicitly.
-// Idempotent: ReleaseAll empties the ledger, so a second Close is a no-op.
 // slotBuffers returns the paged MoE slot-pool buffers — GPU-READ-ONLY (phase 2 reads them; the pread
 // stage CPU-writes their contents). Safe to pin resident.
 func (r *resident) slotBuffers() []Buffer {
@@ -948,9 +943,17 @@ func (r *resident) writtenBuffers() []Buffer {
 	return append(r.kvBuffers(), r.scratchBuffers()...)
 }
 
-// Close releases every resource this resident allocated. Returns error to satisfy
-// io.Closer and match cuda/gpu's Close() error (audit B-12); teardown itself can't fail
-// (best-effort native releases), so it always returns nil.
+// Close stops the executor, waits for it, then releases every MTLBuffer this resident allocated.
+// Returns error to satisfy io.Closer and match cuda/gpu's Close() error (audit B-12); teardown
+// itself can't fail (best-effort native releases), so it always returns nil.
+//
+// It used to do only the first of those, with the comment "Metal buffers are freed at process
+// exit (single-model lifetime)". That assumption was false and had teeth: cmd/serve is
+// multi-model (--model name=path is repeatable) with /admin/models/{load,unload}, so every
+// load+unload leaked the whole model — weights + per-layer KV + the MoE stacked experts, i.e.
+// GIGABYTES of unified (system) memory, until the process exited. purego has no ARC and Metal
+// has no context-destroy to reclaim in bulk, so each buffer must be released explicitly.
+// Idempotent: ReleaseAll empties the ledger, so a second Close is a no-op (N-11).
 func (r *resident) Close() error {
 	r.stopExec()
 	if r.g4moe != nil && r.g4moe.giwFile != nil {

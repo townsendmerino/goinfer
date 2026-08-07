@@ -130,9 +130,15 @@ func fromGGUF(g *embed.GGUFFile) (*Tokenizer, error) {
 	// instead of merges (gemma-3 GGUFs do), and hard-failing the whole load on a missing array
 	// blocked decode-only uses — including reading a model's own output back. So treat merges as
 	// optional; Encode refuses loudly rather than silently mis-tokenizing without them.
+	// Distinguish ABSENT (fine — a SentencePiece export may ship scores instead) from PRESENT
+	// BUT MALFORMED (a corrupt merges array), so the latter surfaces here instead of later as a
+	// misleading "decode-only vocab" error (N-20).
 	merges, err := ggufStringArray(g, ggufTokMerges)
 	if err != nil {
-		merges = nil // no BPE merge list — a SentencePiece export may ship scores instead (below)
+		if _, present := g.Metadata[ggufTokMerges]; present {
+			return nil, fmt.Errorf("%s present but malformed: %w", ggufTokMerges, err)
+		}
+		merges = nil // key absent — no BPE merge list; scores may follow (below)
 	}
 	for i, m := range merges {
 		l, r, ok := strings.Cut(m, " ")

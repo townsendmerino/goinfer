@@ -19,6 +19,10 @@ FAMILIES = {
     "gemma4": "google/gemma-4-12B-it-qat-q4_0-unquantized",
 }
 
+# N-22: pin each repo to the commit SHA the committed goldens were built from, so an upstream
+# chat_template edit can't silently change a byte-exact fixture on regeneration. None = main (drift).
+REVISIONS = {repo: None for repo in FAMILIES.values()}
+
 TOOLS = [{
     "type": "function",
     "function": {
@@ -45,12 +49,15 @@ FULL = [
 ]
 
 for fam, repo in FAMILIES.items():
+    rev = REVISIONS.get(repo)
+    if rev is None:
+        print(f"WARNING {fam} ({repo}): unpinned revision — goldens may drift; set REVISIONS[{repo!r}] to a commit SHA")
     try:
-        tok = AutoTokenizer.from_pretrained(repo)
+        tok = AutoTokenizer.from_pretrained(repo, revision=rev)
     except Exception as e:
         print(f"SKIP {fam}: {e}")
         continue
-    out = {"family": fam, "repo": repo, "tools": TOOLS, "cases": []}
+    out = {"family": fam, "repo": repo, "revision": rev, "tools": TOOLS, "cases": []}
     for name, conv in [("declare", DECLARE), ("call_result", FULL)]:
         try:
             s = tok.apply_chat_template(conv, tools=TOOLS, tokenize=False, add_generation_prompt=True)

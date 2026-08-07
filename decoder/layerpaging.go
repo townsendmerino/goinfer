@@ -57,6 +57,12 @@ func newLayerPager(w *Weights, mapping []byte, budget int64) *layerPager {
 	if w.arch.MoE != nil || len(mapping) == 0 {
 		return nil
 	}
+	// Own-forward families run their own layer loop that never calls enterLayer, so a pager
+	// would print a RAM-bound banner it can't deliver (N-13; the dense ones are gemma4 and
+	// nemotron — the rest are MoE, already excluded above). Only the generic dense forward pages.
+	if a := w.arch; a.gemma4 != nil || a.qwen35 != nil || a.granite != nil || a.nemotron != nil || a.mla != nil || a.llama4 != nil || a.gptoss != nil {
+		return nil
+	}
 	base := uintptr(unsafe.Pointer(&mapping[0]))
 	end := base + uintptr(len(mapping))
 

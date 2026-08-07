@@ -10,7 +10,7 @@ cosine. Resolves the open softcap question empirically (does HF cap to ±30?).
 import json, os, numpy as np, torch
 
 PATH = os.path.expanduser("~/models/gemma-4-E2B-unq")
-OUT = os.path.expanduser("~/tmcode/goinfer/testdata/gemma4_forward_golden.json")
+OUT = os.path.expanduser("~/mycode/goinfer/testdata/gemma4_forward_golden.json")  # N-21: was ~/tmcode (wrong tree; golden never landed where the test looks)
 PROMPT = "The capital of France is"
 
 from transformers import AutoTokenizer

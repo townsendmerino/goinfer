@@ -237,6 +237,12 @@ func groupLimit(sel []float32, nGroup, topkGroup int) []float32 {
 			}
 		}
 	}
+	// Trailing experts beyond nGroup*gsz (when NumExperts % nGroup != 0) belong to no group
+	// and must be masked, not left at 0.0 — else they can outscore a legitimately -inf'd expert
+	// (N-02; latent, real DeepSeek divides evenly, but a future/odd config would mis-route).
+	for i := nGroup * gsz; i < len(sel); i++ {
+		out[i] = negInf
+	}
 	return out
 }
 
