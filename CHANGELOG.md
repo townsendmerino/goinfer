@@ -53,6 +53,32 @@ pre-1.0 and may change as new model families and quant formats land.
   two have distinct, non-1:1 field sets and now carry reciprocal doc comments.
 
 ### Fixed
+- **The entire 2026-08-05 code audit is closed** ([`docs/audit-2026-08-05.md`](docs/audit-2026-08-05.md)):
+  14/14 blockers, 31/31 criticals, 6/6 gates, 23/23 majors (+ the later latent M-25), 24/24 minors.
+  Behaviour-affecting highlights:
+  - **No silently-wrong output:** gemma4 session KV snapshots refuse a per-layer-KV geometry the
+    format can't restore instead of mis-slicing on reuse (C-05); aborted Metal command buffers surface
+    as an error instead of the host reading stale logits (C-09); the resident build declines odd
+    (non-%8 / non-%32) GEMV/pack widths → CPU fallback rather than corrupt logits (C-10/C-11); the cuda
+    f16 scale conversion is byte-canonical (C-15); group-limited MoE masks trailing experts to −inf
+    (N-02); the vision projector errors when `mm_tokens_per_image` exceeds the patch grid, instead of
+    emitting silent NaNs (N-19).
+  - **API / serving:** `/v1/responses` reports `status:"incomplete"` (+ `incomplete_details`) when cut
+    off by `max_output_tokens` (N-15); a chat request carrying both `tools` and an image now 400s
+    instead of silently dropping the tools (N-16); the backend-fallback note goes to stderr, never
+    contaminating a piped token stream (N-03).
+  - **Hostile-input robustness:** the resident build declines a threadgroup-memory budget over the
+    device limit (M-11); the GGUF metadata reader bounds a hostile `n_dims` / nested-array header into
+    a typed error instead of a ~4e9-iteration spin or stack overflow (N-17/N-18); a corrupt tokenizer
+    merges array is a typed error, not a misleading "decode-only vocab" (N-20).
+  - **Concurrency:** resident `GenerateSpeculative` claims (C-03) and recurrent + multimodal
+    cross-sequence state resets (C-01 / M-25) are regression-gated; the adapter registry and the webgpu
+    fallback counter are race-clean (C-29 / N-06).
+  - **Cancellation & perf:** multi-GB `.gguf`→`.giw` transcodes are cancellable (M-21, above); the
+    ~152k-entry constraint token→bytes table is built once per model, not per request (N-14); the
+    fused-decode rmsnorm dispatches one workgroup, not 64 (N-07).
+  - Plus test-gate hardening (env/fixture independence — G-03/G-05, `GOINFER_MODELS_DIR` — G-06) and
+    dependency hygiene (pure-Go root module graph — M-19, above; `go 1.26.5` in demo/agent — N-23).
 - **Docs: batched-prefill coverage was stated per family without the int4-only caveat**, in
   both `CHANGELOG` and `docs/releases/v0.9.0.md`. A family inside the covered seven, loaded at
   `--quant int8int8`, also falls back to sequential prefill. Corrected in place.
