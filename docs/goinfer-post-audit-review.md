@@ -6,6 +6,12 @@
 
 **Verdict:** the audit work broadly holds — the large majority of the 78 dispositions checked out exactly as described, including the hairy ones (C-01/02/03 recurrent+spec guards, C-08 setupErr, C-24/25/26/27/28, C-09 execErr ordering, C-11, C-14, C-15 bit-for-bit, M-01..M-08, M-10..M-18, B-08..B-14). What remains is: **8 confirmed findings that meet the audit's own critical bar** (silent wrong output, process death, or a gate that cannot fail) — most of them residuals or regressions of closed findings — plus ~20 confirmed minors and a short unconfirmed-leads list.
 
+**Box verification — the R-01…R-30 fixes are device-verified (2026-08-07).** The Mac ran metal + gpu(webgpu) + the pure-Go modules on-device; the cuda module (code-complete but unbuilt on the Mac) is now verified on the Linux RTX-2070 box:
+- **cuda** `-tags cuda` build + vet + full test suite green — **incl. `-tags 'cuda goinfer_testhooks'`** (22.2 s, 0 fail / 0 race), which is what actually exercises **R-03**'s ordered `g4x2` clear: all g4moe parity gates (`TestGemma4{MoE_localize,Router_residentIdxParity,DenseScaled_residentParity,_perExpertScaleFold}`, `TestMoEResidentParity`, `TestGemma4Graphs_bitExact_*`) pass bit-exact — no regression from the added `Sync`. R-20 `TestRunJob_recoversPanic` ✓, R-25 `TestSlotBytesPerLayer_outOfRange` ✓.
+- **R-04** FMA lint green (`TestKernelFMALint` + `_coversEmbeddedPTX`); regenerating `router_f32.ptx` at the box's NVRTC 12.9.86 (its recorded version) is **byte-identical** (sha unchanged) — `__fmaf_rn` lowers to the `fma.rn.f32` NVRTC already chose, so no numeric change and nothing to commit.
+- **R-12** confirmed on Linux: with the `//go:build darwin` tag now on `snapshot_golden_test.go`, native-GOOS `go vet` over the metal module matches **no packages** (no `undefined: resident`).
+- **R-05** (MLA-goes-resident regression test) not run here — no DeepSeek/Kimi checkpoint on the box; still owed a real-model pass.
+
 ---
 
 ## Confirmed findings — critical bar (ranked)
