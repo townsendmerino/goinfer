@@ -14,7 +14,7 @@ call, not a unilateral fix.
 | severity | closed | remaining |
 |---|---|---|
 | Blockers (B) | 14 / 14 | 0 (all resolved; release shipped) |
-| Critical (C) | 31 / 31 | **0** (+2 owed device-gated regression tests: C-01-resident, C-03) |
+| Critical (C) | 31 / 31 | **0** (both owed regression tests now authored: C-03 device-verified on the Mac; C-01-resident runs on the box — no SSM model on the Mac) |
 | Gate (G) | 1 / 6 | **5** |
 | Major (M) | 17 / 23 | **6** |
 | Minor (N) | 0 / 24 | **24** |
@@ -35,7 +35,8 @@ clears) after each forward instead of returning the stale logits a faulted buffe
 **C-11 is now CLOSED** (2026-08-06, Mac, device-verified on macOS 26.6) — the ceil-tiled fused
 argmax is confirmed equal to argmax(full-logits Forward) by a committed-fixture device gate, and the
 non-%8-V failure it targeted is now unreachable (C-10 declines that shape from the resident path).
-Still owed: the 2 device-gated regression tests (C-01-resident, C-03).
+The 2 owed regression tests are now authored: **C-03** device-verified on the Mac (webgpu), and
+**C-01-resident** runs on the box (this Mac carries no SSM checkpoint).
 
 **⚠ Mac OS update (2026-08-06):** this MacBook moved macOS 26.5.2 (25F84) → 26.6 (25G72), so the
 `TestMetalSnapshotGolden` reference (OS-pinned) now reds on this machine — **expected**, per the
@@ -259,8 +260,14 @@ triggers Go's fatal `concurrent map read and map write`.
   carries no SSM checkpoint**, so it skips here and executes on the CUDA/webgpu box. WebGPU itself was
   confirmed working on the Mac (device inits; the skip is purely model-absence). CPU half covered by
   `TestTruncateTo_resetsRecurrent`.
-- **C-03** [linux/gpu] — `GenerateSpeculative`'s `resBusy` CAS is fixed in code; a test needs a
-  resident target + draft.
+- **C-03** — **DONE** (2026-08-06, Mac, device-verified on webgpu). `GenerateSpeculative`'s `resBusy`
+  CAS is fixed in code; `gpu.TestSpeculative_C03_concurrentResidentClaim` runs a plain resident
+  `Generate` and a `GenerateSpeculative` CONCURRENTLY on one `*Model` (webgpu 1.5B target + CPU 0.5B
+  draft, the parity-test models) across 4 rounds and asserts every stream is a valid greedy decode on
+  EITHER backend — resident, or the staged CPU fallback the CAS loser takes (the two differ by a token
+  at a near-tie: the documented resident-vs-CPU gap, not corruption). An interleaved-resident-KV
+  corruption (the pre-fix bug) matches neither reference. Passes on this Mac; heavy+webgpu gated
+  (`GOINFER_HEAVY_TESTS=1`, models via `GOINFER_SPEC_TARGET`/`GOINFER_SPEC_DRAFT`).
 
 ---
 
