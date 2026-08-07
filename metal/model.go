@@ -637,9 +637,15 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			written := r.writtenBuffers() // GPU-WRITTEN per token: KV cache + intermediates/scratch
 			kv := r.kvBuffers()
 			scratch := r.scratchBuffers()
+			// pinned accumulates EXACTLY what addAll() Adds, so r.residencyBufs is the true
+			// pinned list in EVERY slot-scoped arm, not just default (G-04: the teardown-
+			// consistency gate was silently disabled on the explicit `case "slots"` and the
+			// bisect arms, which left the field nil).
+			var pinned []Buffer
 			addAll := func(bs []Buffer) {
 				for _, b := range bs {
 					rs.Add(b)
+					pinned = append(pinned, b)
 				}
 			}
 			switch os.Getenv("GOINFER_MOE_RESIDENCY_SCOPE") {
@@ -652,17 +658,17 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 				addAll(slots)
 				addAll(scratch)
 			case "readonly", "slots+weights": // diagnostic: pin all buffers EXCEPT the written set
-				rs.AddAllDeviceBuffersExcept(d, written)
+				rs.AddAllDeviceBuffersExcept(d, written) // whole-device: not slot-scoped, pinned stays nil
 			case "all": // diagnostic: pin every device buffer (regresses phase 1 — set-size overhead)
-				rs.AddAllDeviceBuffers(d)
+				rs.AddAllDeviceBuffers(d) // whole-device: not slot-scoped, pinned stays nil
 			default: // SHIP DEFAULT: slots only. The five-arm bisect showed pinning anything BEYOND the
 				// pread-invalidated slot buffers regresses phase 1 in proportion to the pinned set size
 				// (read/write-agnostic), so slots-only is the sole net win (phase 2 idle 9→0.44 ms/CB).
 				addAll(slots)
-				r.residencyBufs = slots
 				_ = kv
 				_ = scratch
 			}
+			r.residencyBufs = pinned
 			rs.Commit()
 			rs.RequestResidency()
 			// KNOWN COST (cold A/B): attaching the set at the QUEUE rides it on EVERY command buffer,

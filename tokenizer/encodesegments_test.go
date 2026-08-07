@@ -14,6 +14,7 @@ func chatmlGGUF(t *testing.T) *Tokenizer {
 	path := os.Getenv("GOINFER_CHATML_GGUF")
 	if path == "" {
 		for _, p := range []string{
+			"testdata/chatml-tiny.gguf", // committed G-05 fixture (scripts/chatml_tiny_fixture.py)
 			modelPath("qwen2.5-0.5b-q6k.gguf"),
 			modelPath("qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"),
 		} {

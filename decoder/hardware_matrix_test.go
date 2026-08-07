@@ -35,6 +35,10 @@ type hwRow struct {
 
 func buildHardwareRows(t *testing.T) ([]hwRow, error) {
 	t.Helper()
+	// G-03: the hardware rows depend on decodeRunnerEligible(), which reads these residency
+	// env vars. Neutralize them so the matrix reflects the code, not the ambient environment.
+	t.Setenv("GOINFER_GEMMA4_RESIDENT", "")
+	t.Setenv("GOINFER_SSM_RESIDENT", "")
 	keys := make([]string, 0, len(registry))
 	for k := range registry {
 		keys = append(keys, k)

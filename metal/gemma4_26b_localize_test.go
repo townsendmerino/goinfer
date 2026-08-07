@@ -51,7 +51,7 @@ func (r *resident) forwardPagedCaptureForTest(pos int) [][]float32 {
 // discontinuity and correlates it with local/global + K=V + geometry. Heavy + paged.
 func TestGemma4_26B_localize(t *testing.T) {
 	requireHeavyModel(t)
-	const giw = "/Users/francistownsend-merino/models/gemma4-26b-int4.giw"
+	giw := modelPath("gemma4-26b-int4.giw") // GOINFER_MODELS_DIR (default $HOME/models); see modelsdir_test.go (G-06)
 	if _, err := os.Stat(giw); err != nil {
 		t.Skipf("no .giw")
 	}

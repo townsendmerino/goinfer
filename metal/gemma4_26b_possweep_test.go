@@ -22,7 +22,7 @@ import (
 // call — so "wrong base/fraction" is a priori unlikely; the sweep separates off-by-one from KV.)
 func TestGemma4_26B_posSweep(t *testing.T) {
 	requireHeavyModel(t)
-	const giw = "/Users/francistownsend-merino/models/gemma4-26b-int4.giw"
+	giw := modelPath("gemma4-26b-int4.giw") // GOINFER_MODELS_DIR (default $HOME/models); see modelsdir_test.go (G-06)
 	if _, err := os.Stat(giw); err != nil {
 		t.Skipf("no .giw")
 	}

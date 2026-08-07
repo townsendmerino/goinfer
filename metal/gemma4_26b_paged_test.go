@@ -24,7 +24,7 @@ import (
 // Heavy + paged: GOINFER_HEAVY_TESTS=1 go test -run TestGemma4_26B_pagedRuns.
 func TestGemma4_26B_pagedRuns(t *testing.T) {
 	requireHeavyModel(t)
-	const giw = "/Users/francistownsend-merino/models/gemma4-26b-int4.giw"
+	giw := modelPath("gemma4-26b-int4.giw") // GOINFER_MODELS_DIR (default $HOME/models); see modelsdir_test.go (G-06)
 	if _, err := os.Stat(giw); err != nil {
 		t.Skipf("no .giw (%s)", giw)
 	}

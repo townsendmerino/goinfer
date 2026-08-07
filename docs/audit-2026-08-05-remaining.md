@@ -15,7 +15,7 @@ call, not a unilateral fix.
 |---|---|---|
 | Blockers (B) | 14 / 14 | 0 (all resolved; release shipped) |
 | Critical (C) | 31 / 31 | **0** (both owed regression tests now device-verified: C-01-resident on the Linux/webgpu box — real granite, maxAbs=0; C-03 on the Mac and cross-confirmed on the box under `-race`) |
-| Gate (G) | 2 / 6 | **4** |
+| Gate (G) | 4 / 6 | **2** (G-03/G-05 fixed on Linux; G-04/G-06-residual fixed in code, metal device-run owed) |
 | Major (M) | 17 / 23 | **6** |
 | Minor (N) | 0 / 24 | **24** |
 
@@ -286,29 +286,39 @@ move at all** (byte-identical across 26.5.2→26.6 — the invariant held), plus
 `TestMetalSnapshotGolden` is now green on this Mac. (Re-baking on a different Mac/OS will red again —
 expected, MSL recompiles per-OS toolchain — and would re-bake to that machine's reference.)
 
-**G-03** [linux] | `decoder/capability_matrix_test.go:546` — the generated capability matrix depends
-on ambient environment. `GPUResident` = `arch.decodeRunnerEligible()`, which reads
-`GOINFER_GEMMA4_RESIDENT` / `GOINFER_SSM_RESIDENT`. A dev/CI job with either exported fails the
-freshness check for an unrelated reason; `-update` with them set bakes an env-on answer into the
-doc. **Also** affects `hardware_matrix_test.go`'s `buildHardwareRows`.
-*Fix:* `t.Setenv` both to empty at the top of `buildMatrix` (and the hardware-matrix builder).
+**G-03 — FIXED** (2026-08-06, Linux box). `buildMatrix` and `buildHardwareRows` now `t.Setenv`
+both `GOINFER_GEMMA4_RESIDENT` and `GOINFER_SSM_RESIDENT` to empty up front, so the generated
+matrix is a property of the code alone. Verified: `TestCapabilityMatrix`/`TestHardwareMatrix`/
+`TestParityManifest` pass even with **both env vars exported** (pre-fix, that reddened the freshness
+check for an unrelated reason and `-update` baked an env-on answer). Original finding:
+`GPUResident` = `arch.decodeRunnerEligible()` reads those two env vars.
 
-**G-04** [mac] | `metal/model.go:579` — `r.residencyBufs` is assigned only in the `default` arm of
-the residency-scope switch. The explicit `case "slots"` arm leaves it nil, so
-`TestResidencySet_pinsExactlyTheLiveSlots` silently reports "no buffers pinned" — disabling the
-staleness gate on exactly the arm a user sets explicitly.
-*Fix:* record the set in every arm.
+**G-05 — FIXED** (2026-08-06, Linux box). Committed a tiny (~4.3 KB) tokenizer-only ChatML GGUF
+fixture at `tokenizer/testdata/chatml-tiny.gguf` (generator: `scripts/chatml_tiny_fixture.py`) — a
+real GPT-2 byte-level base (`bytes_to_unicode`, byte-for-byte matching `buildByteLevelTables`) + 15
+merges (the loader refuses a zero-merge decode-only vocab) + `<|im_start|>`/`<|im_end|>` CONTROL
+tokens, `model=gpt2`/`pre=qwen2`. Both `TestEncodeSegments_parityAndInjection` (tokenizer) and
+`TestRenderSegments_chatml` (chat) now default to it and **PASS with no env** — the gate runs
+everywhere; `GOINFER_CHATML_GGUF` stays an override. The tests' own naive-encode sanity assertion
+(forged `<|im_end|>` must promote under whole-string Encode) confirms the fixture is discriminating.
 
-**G-05** [linux] | `tokenizer/encodesegments_test.go:16` and `chat/rendersegments_test.go` — the M25
-EncodeSegments byte-identity / prompt-injection gate is keyed on hardcoded
-`/home/francis/models/qwen2.5-*.gguf` via `GOINFER_CHATML_GGUF`. On every other machine both skip,
-so a regression in the parse-special split ships green.
-*Fix:* commit a tiny ChatML GGUF fixture and default to it, env var as override.
+### Metal G-items — code fixed on the Linux box (cross-compiled darwin/arm64, device run owed)
 
-**G-06 (residual)** [mac] — the Linux subset is fixed (cuda/decoder/tokenizer/chat now read
-`GOINFER_MODELS_DIR`, default `$HOME/models`, via a `modelPath` helper). The 6 metal
-`/Users/francistownsend-merino/models/...` paths remain hardcoded.
-*Fix:* route the metal tests through the same `GOINFER_MODELS_DIR` helper.
+**G-04 — FIXED in code** (2026-08-06, Linux box; cross-compiled darwin/arm64 clean, device run
+owed). The residency-scope switch now accumulates the pinned buffers into a local `pinned` slice
+inside `addAll()` and assigns `r.residencyBufs = pinned` AFTER the switch — so every slot-scoped arm
+(`slots`, `slots+kv`, `slots+scratch`, default) records the true pinned set, not just `default`. The
+two whole-device diagnostic arms (`readonly`/`all`) intentionally leave it nil (not a slot-pool
+contract; `TestResidencySet_pinsExactlyTheLiveSlots` doesn't run under them). Please device-run that
+gate under `GOINFER_MOE_RESIDENCY_SCOPE=slots` to confirm it no longer reports "no buffers pinned".
+Original finding: `r.residencyBufs` was assigned only in the `default` arm.
+
+**G-06 (residual) — FIXED in code** (2026-08-06, Linux box; cross-compiled darwin/arm64 clean,
+device run owed). Added a `metal/modelsdir_test.go` `modelPath` helper (mirrors the
+tokenizer/chat/decoder ones: `GOINFER_MODELS_DIR`, default `$HOME/models`) and routed all 6
+`gemma4-26b-int4.giw` test sites through it (`gemma4_26b_{localize,paged,routing,possweep,
+widthconsistency}_test.go` + `paging_budget_test.go`) — no more hardcoded `/Users/...`. These are
+skip-guarded on `os.Stat`, so they still skip cleanly where the .giw is absent.
 
 ---
 

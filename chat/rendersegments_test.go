@@ -95,6 +95,7 @@ func count(ids []int, id int) int {
 func TestRenderSegments_chatml(t *testing.T) {
 	p := firstExisting(
 		os.Getenv("GOINFER_CHATML_GGUF"),
+		"../tokenizer/testdata/chatml-tiny.gguf", // committed G-05 fixture (scripts/chatml_tiny_fixture.py)
 		modelPath("qwen2.5-0.5b-q6k.gguf"),
 		modelPath("qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"),
 	)

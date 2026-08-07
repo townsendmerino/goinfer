@@ -16,7 +16,7 @@ func TestPagingBudget(t *testing.T) {
 	if os.Getenv("GOINFER_BUDGET_PROBE") == "" {
 		t.Skip("set GOINFER_BUDGET_PROBE=1")
 	}
-	const giw = "/Users/francistownsend-merino/models/gemma4-26b-int4.giw"
+	giw := modelPath("gemma4-26b-int4.giw") // GOINFER_MODELS_DIR (default $HOME/models); see modelsdir_test.go (G-06)
 	if _, err := os.Stat(giw); err != nil {
 		t.Skip("no .giw")
 	}
