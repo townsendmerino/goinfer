@@ -306,6 +306,16 @@ func validateShapes(w *Weights, arch *Architecture) *SerializeError {
 		}
 		return nil
 	}
+	// vec checks a per-layer f32 vector (bias / norm weight) whose length the blob controls but the
+	// forward indexes at an arch-derived width — addBias iterates over the projection output and
+	// rmsNorm indexes weight[0:dim], so a short vector slice-panics in the decode goroutine and a long
+	// one is silently mis-consumed (audit R-07). 0 = absent (a family that omits it), allowed.
+	vec := func(name string, got, want int) *SerializeError {
+		if got != 0 && got != want {
+			return &SerializeError{fmt.Sprintf("%s: len %d, arch expects %d", name, got, want)}
+		}
+		return nil
+	}
 	if w.Embed.Rows() > 0 {
 		if e := eq("Embed", w.Embed.Rows(), arch.VocabSize); e != nil {
 			return e
@@ -345,6 +355,49 @@ func validateShapes(w *Weights, arch *Architecture) *SerializeError {
 		} {
 			if c.got > 0 {
 				if e := eq(fmt.Sprintf("layer %d %s", i, c.name), c.got, c.want); e != nil {
+					return e
+				}
+			}
+		}
+		// Per-layer f32 vectors: biases feed addBias over the projection output, norm weights feed
+		// rmsNorm at their consumed width (QK-norm is per-head-dim hd; the block norms are hidden).
+		// The blob controls their length; the forward indexes an arch width with no check (R-07).
+		for _, c := range []struct {
+			name string
+			got  int
+			want int
+		}{
+			{"QBias", len(lw.QBias), qDim}, {"KBias", len(lw.KBias), kvDim},
+			{"VBias", len(lw.VBias), kvDim}, {"OBias", len(lw.OBias), arch.HiddenDim},
+			{"QNorm", len(lw.QNorm), hd}, {"KNorm", len(lw.KNorm), hd},
+			{"PreAttnNorm", len(lw.PreAttnNorm), arch.HiddenDim}, {"PostAttnNorm", len(lw.PostAttnNorm), arch.HiddenDim},
+			{"PreMLPNorm", len(lw.PreMLPNorm), arch.HiddenDim}, {"PostMLPNorm", len(lw.PostMLPNorm), arch.HiddenDim},
+			{"UpBias", len(lw.UpBias), ffn}, {"DownBias", len(lw.DownBias), arch.HiddenDim},
+		} {
+			if e := vec(fmt.Sprintf("layer %d %s", i, c.name), c.got, c.want); e != nil {
+				return e
+			}
+		}
+		// gemma-4 dense‖MoE sub-block (l.gemma4moe): the standard Router/Experts are empty for gemma-4,
+		// so the arch.MoE block below never validates it. The router feeds make([]float32, nE) and each
+		// expert index runs to nE — a short router mis-routes silently, a long one or ne != NumExperts
+		// panics in the decode goroutine (R-07). Cross-check against the arch.
+		if mo := lw.gemma4moe; mo != nil && arch.MoE != nil {
+			nE, moeInter := arch.MoE.NumExperts, arch.MoE.IntermediateDim
+			if e := eq(fmt.Sprintf("layer %d gemma4moe router", i), mo.routerProj.Rows(), nE); e != nil {
+				return e
+			}
+			if len(mo.expertsGateUp) != nE || len(mo.expertsDown) != nE {
+				return &SerializeError{fmt.Sprintf("layer %d gemma4moe expert count: gate|up %d / down %d, arch expects %d", i, len(mo.expertsGateUp), len(mo.expertsDown), nE)}
+			}
+			if e := vec(fmt.Sprintf("layer %d gemma4moe perExpertScale", i), len(mo.perExpertScale), nE); e != nil {
+				return e
+			}
+			for xe := range mo.expertsGateUp {
+				if e := eq(fmt.Sprintf("layer %d gemma4moe expert %d gate|up", i, xe), mo.expertsGateUp[xe].Rows(), 2*moeInter); e != nil {
+					return e
+				}
+				if e := eq(fmt.Sprintf("layer %d gemma4moe expert %d down", i, xe), mo.expertsDown[xe].Rows(), arch.HiddenDim); e != nil {
 					return e
 				}
 			}

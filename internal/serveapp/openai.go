@@ -565,6 +565,14 @@ func (lm *loadedModel) prepare(sm sampling, promptIDs []int) (genRequest, error)
 	// itself exceeds the context is C-20's concern; here we only bound the max_tokens contribution.)
 	if lm.model != nil {
 		ctx := lm.model.Config().MaxPositions
+		// On a resident backend the stateless path prefills the fixed-size resident KV, which is
+		// often smaller than MaxPositions. A prompt in (residentCap, MaxPositions) passes the
+		// MaxPositions check, then dies mid-prefill with a 500 whose body leaks the internal
+		// "use the staged path" hint (there is no staged fallback on the stateless resident path).
+		// Reject it here as a clean context_length_exceeded 400 instead (audit R-10).
+		if rc := lm.model.ResidentContextCap(); rc > 0 && (ctx <= 0 || rc < ctx) {
+			ctx = rc
+		}
 		if err := contextLengthError(len(promptIDs), ctx); err != nil {
 			return genRequest{}, err
 		}
@@ -748,7 +756,13 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, onText func(
 	// (resBusy) like Generate. Constrained/tool requests (grammar masker) keep plain resident
 	// Generate for now; a validation error (sampler not yet on the spec path) falls back to plain
 	// Generate before the KV is touched, so the fallback is exact.
-	if lm.model.ResidentActive() {
+	// Adapter (compute-time LoRA) models MUST NOT take the stateless resident path: the LoRA is
+	// applied only through the session binding (sessionLRU.bindAdapter → Session.UseAdapter → the
+	// cache's lora), and the stateless Generate/GenerateNgram… run on a fresh cache with lora == nil,
+	// so they'd silently return BASE-model output. Route adapter requests down the session path below
+	// (correct, if slower — it drops to the staged path); base models keep the resident fast path
+	// (audit R-01).
+	if lm.model.ResidentActive() && lm.adapter == "" {
 		if lm.spec && gr.masker == nil {
 			if s, gn, err := lm.model.GenerateNgramSpeculativeAdaptive(ctx, gr.promptIDs, gr.maxTokens, &decoder.NgramDrafter{}, &decoder.AdaptiveDepth{MaxDraft: 8}, gr.sp); err == nil {
 				stream, gen = s, gn
@@ -885,7 +899,10 @@ func (lm *loadedModel) streamTokens(cancel context.CancelFunc, stream <-chan int
 // (clean finish) instead of "length" (truncated), so the client never continues (audit M-04).
 // gen is nil / Budget 0 on paths that don't clamp (VL, speculative) → fall back to requested.
 func effectiveBudget(gen *decoder.Generation, requested int) int {
-	if gen != nil && gen.Budget > 0 {
+	// Trust Budget only when the resident cap actually clamped this turn — Budget can be a genuine 0
+	// (prompt fills the whole context → 0 tokens emitted → "length") which a `> 0` test mis-read as
+	// "unclamped" and fell back to the requested value, mis-reporting the empty turn as "stop" (R-09).
+	if gen != nil && gen.BudgetClamped {
 		return gen.Budget
 	}
 	return requested

@@ -214,7 +214,7 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 	defer lm.exit()
 	inTok := len(gr.promptIDs)
 	var sb strings.Builder
-	_, nComp, _, _, gerr := lm.drive(r.Context(), gr, func(t string) { sb.WriteString(t) })
+	finish, nComp, _, _, gerr := lm.drive(r.Context(), gr, func(t string) { sb.WriteString(t) })
 	if gerr != nil {
 		writeServerErr(w, "generation failed: "+gerr.Error())
 		return
@@ -238,7 +238,9 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 	if len(out) == 0 { // model produced nothing parseable → empty message
 		out = append(out, outputMessage(id+"-msg", sb.String()))
 	}
-	resp := responseObject(id, lm.name, created, "completed", out, inTok, nComp)
+	// Reflect the real finish, like the non-tools paths: a tool turn cut off by max_output_tokens is
+	// "incomplete", not "completed" (audit R-16 — the N-15 residual in the tools branch).
+	resp := responseObject(id, lm.name, created, respStatus(finish), out, inTok, nComp)
 	if req.Stream {
 		f, ok := sseStart(w)
 		if !ok {

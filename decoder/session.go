@@ -84,8 +84,21 @@ func (s *Session) rewindForReuse(prompt []int) int {
 // than seq claims, so clamp — otherwise the next call "reuses" KV that was never written and
 // prefills at the wrong position (M10).
 func (s *Session) reconcile(seq []int) {
-	if p := s.cache.Pos(); p < len(seq) {
+	// A forward that errored mid-sweep leaves the cache position behind the emitted token stream.
+	p := s.cache.Pos()
+	rolledBack := p < len(seq)
+	if rolledBack {
 		seq = seq[:p]
+	}
+	// Recurrent (Mamba-2 / Gated DeltaNet) rolling state is not positional: TruncateTo cannot rewind
+	// it (it reports inexact), and a mid-sweep error can leave it over-advanced past the committed KV.
+	// Clamping seq to cache.Pos() makes the truncate a no-op (exact), so the corrupt state would be
+	// warm-reused on the next call and decode a new sequence from leaked state (C-01 class). On any
+	// rollback, reset a recurrent session to cold so the next call re-prefills (audit R-14).
+	if rolledBack && (s.cache.mamba != nil || s.cache.delta != nil) {
+		s.cache.TruncateTo(0) // re-zeroes the rolling state (C-01)
+		s.tokens = nil
+		return
 	}
 	s.tokens = seq
 	s.cache.TruncateTo(len(seq))
@@ -200,8 +213,12 @@ func (s *Session) genSpec(ctx context.Context, prompt []int, maxTokens int, draf
 		// Reconcile: seq == prompt + every token committed to the cache, so the session's token
 		// list mirrors the cache exactly for the next call's prefix match — clamped to what the
 		// cache actually holds if a forward errored (the final pending token was emitted but not
-		// committed — one behind, same as a fresh prefill would leave it).
-		s.reconcile(seq)
+		// committed — one behind, same as a fresh prefill would leave it). Skip on an empty prompt:
+		// genNgramInto rejected it without touching the cache, so reconcile(seq=[]) would TruncateTo(0)
+		// and wipe a warm session's KV — the same guard Session.Generate has (audit R-13 / N-01).
+		if len(prompt) > 0 {
+			s.reconcile(seq)
+		}
 	}()
 	return out, g, nil
 }

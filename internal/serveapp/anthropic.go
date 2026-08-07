@@ -402,6 +402,12 @@ func (s *server) handleMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(imgs) > 0 {
+		// The vision path renders/parses no tools, so a tools+image request would silently drop the
+		// tools and answer in prose — refuse it, mirroring the OpenAI surface's N-16 guard (audit R-08).
+		if vmode, _ := anthropicToolMode(req.ToolChoice); len(req.Tools) > 0 && vmode != "none" {
+			writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", "tools are not supported together with image inputs; send images or tools, not both")
+			return
+		}
 		s.serveVisionMessages(w, r, &req, lm, imgs)
 		return
 	}

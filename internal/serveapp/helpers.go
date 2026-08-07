@@ -91,7 +91,20 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
 			writeErr(w, http.StatusRequestEntityTooLarge, "request body too large")
 			return false
 		}
-		writeErr(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		// Don't echo the raw json error: UnmarshalTypeError's default string leaks the Go struct name
+		// (e.g. "…Go struct field completionReq.logprobs of type bool"), which M-06 exists to prevent.
+		// Report the JSON-side field + expected type instead (audit R-11).
+		var ute *json.UnmarshalTypeError
+		if errors.As(err, &ute) {
+			writeErr(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: field %q has the wrong type (expected %s)", ute.Field, ute.Type))
+			return false
+		}
+		var se *json.SyntaxError
+		if errors.As(err, &se) {
+			writeErr(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: malformed JSON at byte %d", se.Offset))
+			return false
+		}
+		writeErr(w, http.StatusBadRequest, "invalid request body")
 		return false
 	}
 	return true

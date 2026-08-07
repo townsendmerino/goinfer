@@ -600,6 +600,20 @@ func (m *Model) GraniteMambaWeights(i int) (inProj, convW, convB, aLog, dW, dtBi
 // will run for a plain stateless Generate (webgpu backend + eligible arch).
 func (m *Model) ResidentActive() bool { return m.resident != nil }
 
+// ResidentContextCap returns the resident backend's fixed KV/attention capacity in positions, or 0
+// when the model is not GPU-resident or its backend exposes no cap. A stateless prompt longer than
+// this cannot be prefilled on the resident path, so a caller can reject it up front rather than
+// fail mid-prefill (audit R-10). Mirrors the ResidentCapped clamp generateInto applies to maxTokens.
+func (m *Model) ResidentContextCap() int {
+	if m.resident == nil {
+		return 0
+	}
+	if capper, ok := m.resident.(ResidentCapped); ok {
+		return capper.ContextCap()
+	}
+	return 0
+}
+
 // DecodePath names the decode path this model actually resolved to — "<backend>-resident" when the
 // full-residency runner built, "<backend>-staged" when the backend runs per-matmul under the CPU
 // forward, "cpu" otherwise — with the resident weight quant in parens. A staged GPU path also names

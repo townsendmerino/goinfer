@@ -589,10 +589,11 @@ func TestEffectiveBudget_M04(t *testing.T) {
 		requested int
 		want      int
 	}{
-		{"clamped below request", &decoder.Generation{Budget: 96}, 512, 96},
-		{"unset budget → request", &decoder.Generation{Budget: 0}, 512, 512},
+		{"clamped below request", &decoder.Generation{Budget: 96, BudgetClamped: true}, 512, 96},
+		{"clamped to zero (prompt fills cap)", &decoder.Generation{Budget: 0, BudgetClamped: true}, 512, 0}, // R-09: must use 0, not fall back to 512
+		{"unclamped Budget-0 → request", &decoder.Generation{Budget: 0}, 512, 512},
 		{"nil gen → request", nil, 512, 512},
-		{"budget equals request", &decoder.Generation{Budget: 512}, 512, 512},
+		{"clamped equals request", &decoder.Generation{Budget: 512, BudgetClamped: true}, 512, 512},
 	}
 	for _, c := range cases {
 		if got := effectiveBudget(c.gen, c.requested); got != c.want {

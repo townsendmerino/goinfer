@@ -234,6 +234,13 @@ func (m *Model) LoadSession(data []byte, wantID string) (*Session, error) {
 			nLive, st := int(r.u32()), int(r.u32())
 			rr.stride = st
 			if st == 0 || nLive == 0 {
+				// A never-written ring must also have count 0. count>0 with stride/nLive 0 is a state
+				// the writer never emits — it leaves rr.count set but the k/v buffers unallocated, so
+				// the first decode reads a nil ring and panics. The continue skips the geometry check
+				// below, so guard it here (audit R-15; crafted/corrupt-snapshot threat model).
+				if rr.count != 0 {
+					return nil, &SnapshotError{"inconsistent ring geometry: nonzero count on an unwritten ring"}
+				}
 				continue // never-written ring
 			}
 			// M17: st/nLive/count are blob-controlled and drive make([]…, rr.w·st) + the slice

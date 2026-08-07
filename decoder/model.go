@@ -865,11 +865,14 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		if capper, ok := m.resident.(ResidentCapped); ok {
 			if ctxCap := capper.ContextCap(); ctxCap > 0 && gpuPos+maxTokens > ctxCap {
 				maxTokens = ctxCap - gpuPos // may be 0 (prompt used the whole context)
+				g.BudgetClamped = true      // the resident cap (not the request) bounds this turn (M-04/R-09)
 			}
 		}
 	}
 	// Publish the effective budget so the caller reports finish_reason "length" when this
 	// clamp (not an EOS) ends the turn (audit M-04). Set before any send; read after close.
+	// BudgetClamped disambiguates a genuine clamp-to-0 (prompt fills the cap → "length") from an
+	// unclamped turn whose Budget is coincidentally 0 (R-09).
 	g.Budget = maxTokens
 
 	// Decode loop.
@@ -999,8 +1002,14 @@ type Generation struct {
 	// not the requested value, or a context-clamped generation is mis-reported as a
 	// clean "stop" and the client never continues. Set before the first token is sent;
 	// read it after the channel closes (like Err). 0 on generation paths that don't
-	// clamp (speculative/VL) — treat 0 as "use the requested value".
+	// clamp (speculative/VL).
 	Budget int
+	// BudgetClamped is true iff the resident context cap (not the request) bounded this turn, so
+	// Budget is the authoritative limit — including a clamp to 0 when the prompt fills the whole
+	// context. A caller must judge finish_reason against Budget only when this is set; otherwise it
+	// falls back to the requested max_tokens. Without it, a genuine clamp-to-0 is indistinguishable
+	// from an unclamped Budget-0 turn and an empty-context-full response mis-reports "stop" (R-09).
+	BudgetClamped bool
 }
 
 // Err returns the error that ended the stream, or nil if it ended cleanly
