@@ -184,3 +184,24 @@ func caseName(s string) string {
 	}
 	return string(out)
 }
+
+// TestBuildScoreRank_equalScoresShareRank is the R-29 gate: SentencePiece tokens with the SAME score
+// must get the SAME merge rank, so a score tie is broken by leftmost position (the heap key's
+// leftIndex) as llama.cpp does — not by token id. Before the fix each id got a distinct rank via a
+// lower-id tiebreak, so a same-score merge on a lower id fired ahead of a leftward one.
+func TestBuildScoreRank_equalScoresShareRank(t *testing.T) {
+	// ids: 0=-1.0, 1=-2.0, 2=-3.0, 3=-2.0 (ties id 1), 4=-0.5 (highest)
+	scores := []float32{-1.0, -2.0, -3.0, -2.0, -0.5}
+	rank := buildScoreRank(scores)
+	if rank[1] != rank[3] {
+		t.Errorf("equal-score ids 1 and 3 got distinct ranks %d and %d — a tie must share a rank so "+
+			"leftmost position, not the lower id, breaks it (R-29)", rank[1], rank[3])
+	}
+	if rank[4] != 0 {
+		t.Errorf("highest-scoring id 4 = rank %d, want 0", rank[4])
+	}
+	// Strictly-decreasing score ⇒ strictly-increasing rank across distinct scores.
+	if !(rank[4] < rank[0] && rank[0] < rank[1] && rank[1] < rank[2]) {
+		t.Errorf("rank order wrong: -0.5=%d -1.0=%d -2.0=%d -3.0=%d", rank[4], rank[0], rank[1], rank[2])
+	}
+}

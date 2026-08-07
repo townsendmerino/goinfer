@@ -667,10 +667,13 @@ func (t *Tokenizer) mergeRank(left, right string) (int32, bool) {
 	return r, ok
 }
 
-// buildScoreRank turns per-id SentencePiece scores into a dense merge-priority rank: rank 0 is the
-// highest-scoring token, so a lower rank merges first (matching mergeSymbols' min-heap). Ties in
-// score break by lower id — deterministic, and the leftmost-position tie-break still lives in the
-// heap key, so two equal-score merges at different positions fire left-to-right as llama.cpp does.
+// buildScoreRank turns per-id SentencePiece scores into a merge-priority rank: rank 0 is the
+// highest-scoring token, so a lower rank merges first (matching mergeSymbols' min-heap). Tokens with
+// the SAME score share a rank, so on a score tie the heap key's leftIndex — not the token id —
+// decides, and two equal-score merges at different positions fire left-to-right, matching llama.cpp's
+// leftmost-position SPM order. (Previously every id got a distinct rank via a lower-id tiebreak, so a
+// same-score merge on a lower id fired ahead of a leftward one — a silent divergence from the
+// reference tokenization on a vocab with equal-score competing merges: audit R-29.)
 func buildScoreRank(scores []float32) []int32 {
 	order := make([]int32, len(scores))
 	for i := range order {
@@ -680,11 +683,15 @@ func buildScoreRank(scores []float32) []int32 {
 		if scores[order[a]] != scores[order[b]] {
 			return scores[order[a]] > scores[order[b]]
 		}
-		return order[a] < order[b]
+		return order[a] < order[b] // stable, deterministic within an equal-score run
 	})
 	rank := make([]int32, len(scores))
 	for r, id := range order {
-		rank[id] = int32(r)
+		if r > 0 && scores[id] == scores[order[r-1]] {
+			rank[id] = rank[order[r-1]] // same score → same rank (leftmost position breaks the tie)
+		} else {
+			rank[id] = int32(r)
+		}
 	}
 	return rank
 }
