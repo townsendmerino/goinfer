@@ -82,3 +82,47 @@ func TestMetalResident_C09_execErrSurfaces(t *testing.T) {
 		t.Fatalf("Forward after a consumed abort returned %v, want nil (error must not stick)", err)
 	}
 }
+
+// TestMetalResident_C11_argmaxEqualsFullLogits is the device gate for audit C-11: the fused
+// block-argmax LM head (ForwardArgmax → gemv_w8a8_amax tile partials → argmax_finish reduce) must
+// pick the SAME token as argmax over the full-logits Forward. C-11 sized r.part/r.uP with floor
+// V/8, but the amax kernel dispatches ceil(V/8) tiles and writes part[tgid] unconditionally, so a
+// V%8 != 0 both wrote past r.part and left the last tile out of uP's reduce — the greedy token
+// could diverge from argmax(Forward). The fix is nTiles := (V+7)/8 (ceil), correct by construction:
+// r.part holds every tile the dispatch writes and uP counts them all.
+//
+// This exercises the ceil-sized reduction on device for a %8 vocab (tmVocab=64) — a committed,
+// always-runnable fixture, so it needs no heavy model. The non-%8 case that C-11 originally worried
+// about is now UNREACHABLE on the resident path: C-10's buildResident guard declines any non-%8
+// vocab to the CPU (and ForwardArgmax has no production caller — metal decode uses full-logits
+// Forward + host argmax), so a non-%8 V never reaches this kernel resident.
+func TestMetalResident_C11_argmaxEqualsFullLogits(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	w := genTinyWeights(rand.New(rand.NewSource(1111)))
+	dir := t.TempDir()
+	writeDense(t, dir, w)
+	m, err := decoder.Load(dir, decoder.Options{Quant: "int8int8"})
+	if err != nil {
+		t.Fatalf("load dense: %v", err)
+	}
+	r, err := buildResident(m)
+	if err != nil {
+		t.Fatalf("build resident: %v", err)
+	}
+	t.Cleanup(func() { r.Close() })
+
+	// Greedy walk: at each position the fused argmax must equal argmax over the full logits Forward
+	// produces at the SAME (tok, pos). Both entry points apply the identical embed path (loadEmbedRow)
+	// and write the same KV at pos, so they are directly comparable.
+	tok := 1
+	for pos := 0; pos < 12; pos++ {
+		want := argmaxF(r.Forward(tok, pos))  // full lm head → host argmax
+		got := int(r.ForwardArgmax(tok, pos)) // fused block-argmax (ceil-tiled reduce)
+		if got != want {
+			t.Fatalf("pos %d: ForwardArgmax=%d != argmax(Forward)=%d — fused block-argmax diverged (C-11)", pos, got, want)
+		}
+		tok = want
+	}
+}

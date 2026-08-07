@@ -14,7 +14,7 @@ call, not a unilateral fix.
 | severity | closed | remaining |
 |---|---|---|
 | Blockers (B) | 14 / 14 | 0 (all resolved; release shipped) |
-| Critical (C) | 30 / 31 | **1** (C-11 device-run owed; +2 owed device-gated regression tests) |
+| Critical (C) | 31 / 31 | **0** (+2 owed device-gated regression tests: C-01-resident, C-03) |
 | Gate (G) | 1 / 6 | **5** |
 | Major (M) | 17 / 23 | **6** |
 | Minor (N) | 0 / 24 | **24** |
@@ -31,8 +31,11 @@ the silent-corruption half; the kernel-side `N`-guard stays deferred but is no l
 gate. **C-09 is now FIXED** (2026-08-06, Mac, device-verified on macOS 26.6) — `gpu.Encoder.Err()`
 (aikit `gpu/v0.26.1`) latches the command buffer's status/error at `WaitDone`/`End`, and every metal
 forward path records it into `resident.execErr`, which the `metalResident` adapter surfaces (and
-clears) after each forward instead of returning the stale logits a faulted buffer left behind. Still
-owed: the C-11 device run and the 2 device-gated regression tests (C-01-resident, C-03).
+clears) after each forward instead of returning the stale logits a faulted buffer left behind.
+**C-11 is now CLOSED** (2026-08-06, Mac, device-verified on macOS 26.6) — the ceil-tiled fused
+argmax is confirmed equal to argmax(full-logits Forward) by a committed-fixture device gate, and the
+non-%8-V failure it targeted is now unreachable (C-10 declines that shape from the resident path).
+Still owed: the 2 device-gated regression tests (C-01-resident, C-03).
 
 **⚠ Mac OS update (2026-08-06):** this MacBook moved macOS 26.5.2 (25F84) → 26.6 (25G72), so the
 `TestMetalSnapshotGolden` reference (OS-pinned) now reds on this machine — **expected**, per the
@@ -112,11 +115,17 @@ true tail rows are never written — GEMV output tail is uninitialised scratch. 
 multiples of 8 by luck.
 *Fix:* add the guard to all seven, or assert `N%8==0` at each dispatch site.
 
-**C-11 — FIXED in code** (2026-08-06, Linux box — cross-compiled darwin/arm64, DEVICE RUN OWED on
-the Mac). `nTiles := (V + 7) / 8` (was floor `V/8`): the strictly-larger `r.part` buffer holds
-every tile ForwardArgmax dispatches and `uP` now counts all of them, so the last tile is written
-in-bounds AND reduced. No kernel/binding change; cannot corrupt. The greedy-token-vs-argmax(Forward)
-device check for a non-multiple-of-8 V is owed on the Mac. Original finding below.
+**C-11 — CLOSED** (2026-08-06, Mac, device-verified on macOS 26.6). `nTiles := (V + 7) / 8` (was
+floor `V/8`): the strictly-larger `r.part` buffer holds every tile ForwardArgmax dispatches and `uP`
+now counts all of them, so the last tile is written in-bounds AND reduced. No kernel/binding change;
+correct by construction. Device gate `metal.TestMetalResident_C11_argmaxEqualsFullLogits` confirms
+the fused block-argmax equals argmax(full-logits Forward) across a greedy walk on a committed %8-vocab
+fixture (tmVocab=64) — a self-contained replacement for the owed heavy-model run. Note the gate can't
+exercise the ceil≠floor *difference* directly: that needs a non-%8 V, and the only V where ceil≠floor
+is exactly the shape **C-10 now declines from the resident path** (and `ForwardArgmax` has no
+production caller — metal decode uses full-logits Forward + host argmax), so the non-%8 failure is
+unreachable two ways over. The ceil fix stands as belt (correct sizing by construction) to C-10's
+suspenders (decline). Original finding below.
 **C-11** [mac] | `metal/model.go:534` — `nTiles := V / 8` (floor) sizes `r.part`/`r.uP`, but
 `ForwardArgmax` dispatches `ceil(V/8)` tiles and the kernel writes `part[tgid]` unconditionally.
 *Failure:* any `V % 8 != 0` (e.g. 50257) writes 8 bytes past `r.part` — on UMA it lands in the
