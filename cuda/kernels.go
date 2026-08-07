@@ -124,17 +124,38 @@ func permuteFast(w uint32) uint32 {
 	return o
 }
 
-// f32tof16 encodes an IEEE float32 into a float16 bit pattern (round-to-nearest-even, simple).
+// f32tof16 encodes an IEEE-754 float32 into a float16 bit pattern, byte-for-byte identical to
+// decoder.f32ToF16bits — the CANONICAL resident-backend f16 scale representation that metal/pack.go,
+// aikit/linalg, and the GOINFER_INT4_F16_SCALES CPU diagnostic all replicate. The int4 group scales
+// this encodes (resident.go `ws16`) MUST match every other backend's f16 scales bit-for-bit (audit
+// C-15). Round-half-up + gradual underflow to subnormals. The OLD version TRUNCATED (m>>13, no
+// rounding — a systematic downward bias) and flushed the whole e<=0 range to zero, diverging CUDA's
+// scales from metal/aikit/CPU. NOT RNE/saturate: a lone RNE here would re-introduce that divergence.
 func f32tof16(f float32) uint16 {
 	b := math.Float32bits(f)
-	s := uint16((b >> 16) & 0x8000)
-	e := int32((b>>23)&0xff) - 127 + 15
-	m := b & 0x7fffff
-	if e <= 0 {
-		return s
+	sign := uint16((b >> 16) & 0x8000)
+	e := int32((b>>23)&0xFF) - 112 // f16-biased exponent = (exp-127) + 15
+	m := b & 0x7FFFFF
+	switch {
+	case (b>>23)&0xFF == 0xFF: // Inf / NaN
+		if m != 0 {
+			return sign | 0x7E00
+		}
+		return sign | 0x7C00
+	case e >= 0x1F: // overflow → Inf (matches the canonical; unreachable for scales)
+		return sign | 0x7C00
+	case e <= 0: // subnormal or underflow to zero
+		if e < -10 {
+			return sign
+		}
+		m |= 0x800000 // restore the implicit leading 1
+		sh := uint32(14 - e)
+		return sign | uint16((m+(1<<(sh-1)))>>sh) // round-half-up
+	default: // normal f16
+		half := sign | uint16(e<<10) | uint16(m>>13)
+		if m&0x1000 != 0 { // guard bit set → round up
+			half++
+		}
+		return half
 	}
-	if e >= 0x1f {
-		return s | 0x7c00
-	}
-	return s | uint16(e<<10) | uint16(m>>13)
 }

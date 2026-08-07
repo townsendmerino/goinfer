@@ -14,15 +14,16 @@ call, not a unilateral fix.
 | severity | closed | remaining |
 |---|---|---|
 | Blockers (B) | 14 / 14 | 0 (all resolved; release shipped) |
-| Critical (C) | 28 / 31 | **3** (C-09, C-15 + C-11 device-run; C-10 mitigated in code; +2 owed device-gated regression tests) |
+| Critical (C) | 29 / 31 | **2** (C-09 [mac]; C-11 device-run owed; +2 owed device-gated regression tests) |
 | Gate (G) | 1 / 6 | **5** |
 | Major (M) | 17 / 23 | **6** |
 | Minor (N) | 0 / 24 | **24** |
 
 **Critical batch fixed on the Linux box (2026-08-06):** C-05, C-13, C-23, C-27, C-28, C-29 — each
 with a gate test — plus **C-11** (metal, safe Go one-liner, cross-compiled; device run owed on the
-Mac). **C-15 is DEFERRED** (fix identified + correct, blocked on MoE-parity recalibration that needs
-moe.ptx regen — see below). **C-12 is now CLOSED** (2026-08-06, Mac) — the B-11 unexport already
+Mac). **C-15 is FIXED** (2026-08-06, option (b) — canonical f32tof16 + a dedicated gate/up-wiring
+test `TestMoeSwigluWiring_C15`, since the e2e cosine gate's bug-B power was a truncation artifact; the
+PTX-regen blocker was also shown surmountable via a pip NVRTC 12.6.85 venv — see below). **C-12 is now CLOSED** (2026-08-06, Mac) — the B-11 unexport already
 routes every external caller through the cap-checked `metalResident` adapter, so no unchecked path
 remains (details below). **C-10 is now MITIGATED in code** (2026-08-06, Mac, device-verified on macOS
 26.6) — `buildResident` declines any non-multiple-of-8 SA-GEMV output width → CPU fallback, closing
@@ -131,43 +132,33 @@ robustness clamps to 15, so rows ≥16 accumulate into and read back the row-15 
 silently wrong logits, no error. The one-shot sibling `MatmulW8A8GemmRow` does check.
 *Fix:* reject `M > gemmRowMaxM`, or chunk.
 
-**C-15 — DEFERRED, escalated** (2026-08-06, Linux box). Two updates: the ENV blocker is REMOVED, but
-the gate turns out to be un-recalibratable — it needs a redesign, not a floor change.
+**C-15 — FIXED** (2026-08-06, Linux box; chose option (b)). Shipped as three parts:
 
-*Env unblocked:* the "must not regen `moe.ptx` on this box" premise is false. A pip venv with
-`nvidia-cuda-nvrtc-cu12==12.6.85` (the exact V-number in the frozen PTX header) regenerates
-`cuda/testdata/moe.ptx` **byte-identically** (verified) — so bug-injected PTX rebuilds for the
-control table CAN be done here. See `build_ptx.sh` `NVRTC_LIB`/`CUDA_INC` overrides.
+1. **The fix:** `cuda/f32tof16` is now byte-identical to the canonical `decoder.f32ToF16bits`
+   (round-half-up + gradual underflow to subnormals) — NOT the audit's RNE (a lone RNE would
+   re-diverge cuda from metal/aikit). The old helper truncated + flushed all subnormals. Gate
+   `TestF32ToF16_C15` asserts bit-for-bit canonical agreement over a sweep incl. the subnormal range.
 
-*The correct fix* is still to make `cuda/f32tof16` byte-identical to the canonical
-`decoder.f32ToF16bits` (round-half-up + subnormals), NOT the audit's RNE.
+2. **Why a floor recalibration was impossible** (measured): the 0.999 floor's entire bug-B (gate/up
+   swap) discrimination was a TRUNCATION artifact. With correct scales, correct dispatch = 0.997833
+   and bug B = 0.997846 — indistinguishable (matched f16 scales don't help; the near-tie is int4
+   KERNEL arithmetic, device W8A8-GEMV vs CPU int4, and the f32 router makes it a razor-thin
+   logit-argmax tie, not an expert flip). On `mixtral-tiny`'s RANDOM experts `silu(up)*gate ≈
+   silu(gate)*up`, so no floor separates correct from bug B.
 
-*The real blocker (measured 2026-08-06):* `TestMoEResidentParity`'s cosine floor (0.999) had its
-entire bug-B (gate/up swap) discriminating power from the TRUNCATION bug — a coincidence, not a real
-signal. With the corrected canonical helper:
-  - correct dispatch = **0.997833** (default) / **0.997861** (matched f16 scales via GOINFER_INT4_F16_SCALES)
-  - bug B, gate/up swap = **0.997846** (default) / **0.997903** (matched)
-So correct ≈ bug-B ≈ 0.9978 — the gate can no longer tell them apart, and matched scales do NOT help
-(the near-tie is int4 KERNEL arithmetic, device W8A8-GEMV vs CPU int4, not the scale confound; the
-router is f32 so it's a razor-thin logit-argmax tie, not an expert flip). The `mixtral-tiny` experts
-are RANDOM, so `silu(up)*gate ≈ silu(gate)*up` in magnitude — the fixture cannot separate the swap
-from noise once the truncation coincidence is gone. **No floor exists that passes correct and fails
-bug B.** The structural bugs (A/C/D/E) likely still separate (they produce large errors), so only
-bug-B coverage is lost.
+3. **The gate redesign (option b):** the e2e cosine floor was recalibrated to **0.995** — below the
+   correct run (0.997833) and above the one STRUCTURAL bug that survives the 3% argmax rule (A,
+   down-proj slot pinned, 0.988509; C/D/E have >3% gaps, caught by the rule). Bug B is now caught by a
+   NEW dedicated test `TestMoeSwigluWiring_C15`: the gate/up split convention was centralized into
+   `cudaResident.launchGluSplit` (one place, shared by routed/shared/gemma-4), and the test drives it
+   with crafted gate≠up and asserts the pre-quant SwiGLU output directly — scale/fixture-independent.
+   Break-to-verify: swapping gOff/uOff fails the wiring test (maxErr 0.40) while the e2e cosine
+   (0.997846) sails past. Re-measured control table is in the `moe_parity_test.go` comment.
 
-*What completing C-15 now requires (a decision, not a recalibration):* one of —
-  (a) **regenerate the committed `testdata/mixtral-tiny` fixture + `mixtral_forward_golden.json` with
-      STRUCTURED (non-interchangeable) experts** (distinct gate/up distributions per expert) so a
-      swap/wrong-expert diverges clearly, then re-run the full break-to-verify control table and set
-      the floor — the correct, robust fix, but it rewrites shared test infrastructure the Mac also
-      uses (`scripts/pin_mixtral_tiny.py`);
-  (b) add a **dedicated dispatch test** for the glu `gOff`/`uOff` wiring (resident.go:877) that is
-      scale/fixture-independent (bug B is Go-side injectable, so a structured-input assertion works);
-  (c) accept **documented reduced bug-B coverage** on this gate and lower the floor to catch A/C/D/E
-      only — violates the project's "a gate must be able to fail" norm, so least preferred.
-Recommendation: (a). Held pending a decision because it modifies a committed safety-gate fixture +
-golden that a co-worker depends on. The `f32tof16` fix, the 12.6.85 gate test, and the control
-re-measurement are all ready to compose once the fixture is structured.
+*Env note (resolved, not needed in the end):* the "no `moe.ptx` regen on this box" premise was false —
+a pip venv with `nvidia-cuda-nvrtc-cu12==12.6.85` (the exact V-number in the frozen PTX header)
+regenerates `moe.ptx` byte-identically (`build_ptx.sh` `NVRTC_LIB`/`CUDA_INC`). Not needed: the fix is
+a Go-side helper (no PTX) and every control bug was Go-side injectable.
 **C-15 (original)** [linux] | `cuda/kernels.go:119-132` — `f32tof16` truncates the mantissa (`m>>13`,
 no rounding) despite a doc comment claiming round-to-nearest-even, flushes everything below the f16
 normal range to zero, and returns `+Inf` rather than saturating on overflow.

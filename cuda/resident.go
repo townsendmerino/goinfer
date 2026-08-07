@@ -853,6 +853,21 @@ func (r *cudaResident) moeMLPPre(Ly *cudaLayer) error {
 		gpu.ArgValue(int32(r.nGroup)), gpu.ArgValue(int32(r.topkGroup)))
 }
 
+// launchGluSplit runs the fused-gate‖up SwiGLU (glu_quant): dscratch[k]=act(gu[k])*gu[inter+k], then
+// symmetric-int8-quantizes it into (outQ,outSc). The stacked-expert GEMV lays gate and up CONTIGUOUS
+// in one buffer, so this passes the same pointer twice with gOff=0, uOff=inter — the ONE place that
+// gate/up split convention lives, so every MoE call site (routed, shared, gemma-4) shares it. This
+// centralization is deliberate: a gOff/uOff swap here silently computes silu(up)*gate, which the e2e
+// MoE parity gate CANNOT catch on random-weight experts (silu(up)*gate ≈ silu(gate)*up in magnitude,
+// the final-logit near-tie washout) — so TestMoeSwigluWiring exercises this exact helper with crafted
+// gate≠up and asserts gate-first (audit C-15, bug B). Keep this the sole gate/up-split dispatch.
+func (r *cudaResident) launchGluSplit(gu Buffer, inter int, outQ, outSc, outScr Buffer) error {
+	return r.launch(r.fSw, onecfg(256, 256*4),
+		Arg(gu), Arg(gu), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(inter)),
+		gpu.ArgValue(int32(inter)), gpu.ArgValue(r.act),
+		Arg(outQ), Arg(outSc), Arg(outScr))
+}
+
 // moeMLPPost issues the post-readback half: the sequential expert loop (each expert selected by
 // ARITHMETIC on r.expIdx(), so the launch geometry is identical regardless of routing — the property
 // that makes this graph-static) weight-accumulating into the residual r.x, then the always-on shared
@@ -873,10 +888,7 @@ func (r *cudaResident) moeMLPPost(Ly *cudaLayer) error {
 		}
 		// SwiGLU over the halves of that one buffer. gocudrv exposes no buffer view/offset, so
 		// the split is the kernel's gOff/uOff rather than Go-side pointer arithmetic.
-		if e := r.launch(r.fSw, onecfg(256, 256*4),
-			Arg(r.moeGU), Arg(r.moeGU), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(r.moeInter)),
-			gpu.ArgValue(int32(r.moeInter)), gpu.ArgValue(r.act),
-			Arg(r.moeQ), Arg(r.moeSc), Arg(r.moeScr)); e != nil {
+		if e := r.launchGluSplit(r.moeGU, r.moeInter, r.moeQ, r.moeSc, r.moeScr); e != nil {
 			return e
 		}
 		// down-proj, weight-accumulating into the residual: x += wgt[j] * (Down_e · act).
@@ -898,10 +910,7 @@ func (r *cudaResident) moeMLPPost(Ly *cudaLayer) error {
 		if e := r.doG(Ly.shGU, r.mq, r.mSc, nullBias, r.shGUout, 0); e != nil {
 			return e
 		}
-		if e := r.launch(r.fSw, onecfg(256, 256*4),
-			Arg(r.shGUout), Arg(r.shGUout), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(r.sharedInter)),
-			gpu.ArgValue(int32(r.sharedInter)), gpu.ArgValue(r.act),
-			Arg(r.shQ), Arg(r.shSc), Arg(r.shScr)); e != nil {
+		if e := r.launchGluSplit(r.shGUout, r.sharedInter, r.shQ, r.shSc, r.shScr); e != nil {
 			return e
 		}
 		if e := r.doG(Ly.shDown, r.shQ, r.shSc, nullBias, r.shDownOut, 0); e != nil {
@@ -995,8 +1004,7 @@ func (r *cudaResident) gemma4MoeMLPPost(Ly *cudaLayer, l int) error {
 			gpu.ArgValue(int32(r.hidden/8)), gpu.ArgValue(int32(r.hidden/32)), Arg(r.moeGU)); e != nil {
 			return e
 		}
-		if e := r.launch(r.fSw, onecfg(256, 256*4), Arg(r.moeGU), Arg(r.moeGU), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(r.moeInter)),
-			gpu.ArgValue(int32(r.moeInter)), gpu.ArgValue(r.act), Arg(r.moeQ), Arg(r.moeSc), Arg(r.moeScr)); e != nil {
+		if e := r.launchGluSplit(r.moeGU, r.moeInter, r.moeQ, r.moeSc, r.moeScr); e != nil {
 			return e
 		}
 		if e := r.launch(r.fMoEWacc, LaunchConfig{GridX: uint32((r.hidden + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
