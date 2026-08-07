@@ -255,29 +255,35 @@ no cgo — a backend is compiled only when you pass its build tag.
 
 ## Running on a GPU
 
-The default build is pure-Go CPU. Three **opt-in** GPU backends accelerate decode —
-each a separate build tag that never affects the default build:
+The default build is pure-Go CPU. Three **opt-in** GPU backends accelerate decode.
+Each lives in its own submodule with its own binaries under `<submodule>/cmd/` — the
+pure-Go root module never imports them, so `go install …/cmd/serve` and any SBOM of the
+root stay free of webgpu/purego/gocudrv (audit M-19). The `serve` and `chat` binaries
+exist in each flavor:
 
-| Backend | Build tag | Platform | cgo |
+| Backend | Binary (server / REPL) | Platform | cgo |
 |---|---|---|---|
-| WebGPU | `-tags gpu` | any GPU (Metal / Vulkan / DX12) | yes (confined to the `gpu` submodule) |
-| CUDA | `-tags cuda` | NVIDIA — Linux / Windows x86-64 | **no** — `CGO_ENABLED=0`, dlopens the driver |
-| Metal | `-tags metal` | Apple Silicon | **no** — `CGO_ENABLED=0`, purego / Obj-C |
+| WebGPU | `./gpu/cmd/serve`, `./gpu/cmd/chat` (`-tags gpu`) | any GPU (Metal / Vulkan / DX12) | yes (confined to the `gpu` submodule) |
+| CUDA | `./cuda/cmd/serve`, `./cuda/cmd/chat` (`-tags cuda`) | NVIDIA — Linux / Windows x86-64 | **no** — `CGO_ENABLED=0`, dlopens the driver |
+| Metal | `./metal/cmd/serve`, `./metal/cmd/chat` | Apple Silicon | **no** — `CGO_ENABLED=0`, purego / Obj-C |
 
 The native **CUDA** and **Metal** backends need only the platform's GPU driver —
 **no CUDA toolkit, no Xcode, no Python, no cgo** — and are selected at runtime with
-`--backend` (the same flag works in `demo/chat` and the `cmd/serve` OpenAI-compatible
-server):
+`--backend`. Build from inside the submodule (its `go.mod` resolves the root via a
+`replace`, so no workspace setup is needed on a fresh clone):
 
 ```bash
 # NVIDIA — cgo-free native CUDA
-CGO_ENABLED=0 go run -tags cuda ./demo/chat --backend cuda \
+cd cuda && CGO_ENABLED=0 go run -tags cuda ./cmd/chat --backend cuda \
     --model ~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
 
-# Apple Silicon — cgo-free native Metal
-CGO_ENABLED=0 go run -tags metal ./demo/chat --backend metal --quant int8int8 \
+# Apple Silicon — cgo-free native Metal (the metal module is darwin-gated; no -tags needed)
+cd metal && CGO_ENABLED=0 go run ./cmd/chat --backend metal --quant int8int8 \
     --model ~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
 ```
+
+The OpenAI-compatible server is the same, one directory over: `cd cuda && go run -tags
+cuda ./cmd/serve …`, `cd metal && go run ./cmd/serve …`.
 
 ### Measured throughput (server-to-server, q4_k_m 4-bit)
 

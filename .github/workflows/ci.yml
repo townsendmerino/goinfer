@@ -38,16 +38,33 @@ jobs:
       - name: staticcheck
         run: go run honnef.co/go/tools/cmd/staticcheck@2025.1.1 ./...
 
-      # Core promise: the cgo WebGPU dependency must never enter the runtime's
-      # module graph. webgpu lives only in the opt-in ./gpu submodule.
-      - name: cleanliness guard (no webgpu / cuda deps in root)
+      # Core promise: the cgo WebGPU/CUDA/Metal deps must never enter the runtime's
+      # module graph. They live only in the opt-in ./gpu, ./cuda, ./metal submodules,
+      # reached through their own cmd/ entrypoints (audit M-19) — never blank-imported
+      # from a root package.
+      #
+      # TWO checks, because -deps and -m see different things (audit M-19):
+      #   1. go list -deps  — the COMPILED package set (what actually links). Catches a
+      #      backend imported under the default build.
+      #   2. go list -m all — the MODULE GRAPH a consumer resolves (`go install`, SBOM,
+      #      vuln scanners). A tag-gated blank import leaks here even though -deps stays
+      #      clean, so a pure-Go `go install .../cmd/serve` used to pull webgpu/purego/
+      #      gocudrv. This second check is the one that regresses if a root package
+      #      blank-imports a submodule again.
+      - name: cleanliness guard (no webgpu / cuda / metal in root)
         run: |
-          if go list -deps ./... | grep -Eiq 'cogentcore/webgpu|eitamring/gocudrv|ebitengine/purego'; then
-            echo "::error::an opt-in backend dep leaked into the goinfer root module graph"
-            go list -deps ./... | grep -Ei 'cogentcore/webgpu|eitamring/gocudrv|ebitengine/purego'
+          leak='cogentcore/webgpu|eitamring/gocudrv|ebitengine/purego|townsendmerino/aikit/gpu|townsendmerino/goinfer/(gpu|cuda|metal)'
+          if go list -deps ./... | grep -Eiq "$leak"; then
+            echo "::error::an opt-in backend dep leaked into the compiled root package set"
+            go list -deps ./... | grep -Ei "$leak"
             exit 1
           fi
-          echo "clean: no webgpu/gocudrv/purego in goinfer root"
+          if go list -m all | grep -Eiq "$leak"; then
+            echo "::error::an opt-in backend module leaked into the root module graph (a root package blank-imports a submodule? move it to <submodule>/cmd/)"
+            go list -m all | grep -Ei "$leak"
+            exit 1
+          fi
+          echo "clean: no webgpu/gocudrv/purego/aikit-gpu/submodules in the goinfer root (packages or module graph)"
 
       # Model-asset parity tests skip themselves when their checkpoints /
       # goldens are absent (see testdata/README), so this is green on a fresh
@@ -85,12 +102,12 @@ jobs:
       - name: build -tags gpu
         run: go build -tags 'gpu goinfer_testhooks' ./gpu/...
 
-      # Compile the WIRED serve + demo (cmd/serve/gpu.go, demo/chat/gpu.go): the root's tag-gated
-      # RegisterBackend blank-imports live here and were in NO CI configuration, so a backend
-      # signature drift broke the shipped -tags gpu binary while CI stayed green (audit M-18).
-      # Mirrors the cuda job's wired-serve step.
-      - name: build -tags gpu (wired serve + demo)
-        run: go build -tags gpu ./cmd/serve ./demo/chat
+      # Compile the WIRED serve + demo entrypoints (gpu/cmd/serve, gpu/cmd/chat): the
+      # RegisterBackend blank-imports live in the submodule cmd/ mains since audit M-19, so a
+      # backend signature drift must fail CI here (it once broke the shipped -tags gpu binary
+      # while CI stayed green — audit M-18). Covered by ./gpu/... above, but kept explicit.
+      - name: build -tags gpu (wired serve + demo entrypoints)
+        run: go build -tags 'gpu goinfer_testhooks' ./gpu/cmd/serve ./gpu/cmd/chat
 
       - name: vet -tags gpu
         run: go vet -tags 'gpu goinfer_testhooks' ./gpu/...
@@ -124,9 +141,9 @@ jobs:
       - name: build -tags cuda (backend module)
         run: CGO_ENABLED=0 go build -tags 'cuda goinfer_testhooks' ./cuda/...
 
-      # The wired binaries must compile with the cuda backend registered.
-      - name: build -tags cuda (wired serve + demo)
-        run: CGO_ENABLED=0 go build -tags cuda ./cmd/serve ./demo/chat
+      # The wired binaries must compile with the cuda backend registered (cuda/cmd/* since M-19).
+      - name: build -tags cuda (wired serve + demo entrypoints)
+        run: CGO_ENABLED=0 go build -tags 'cuda goinfer_testhooks' ./cuda/cmd/serve ./cuda/cmd/chat
 
       - name: vet -tags cuda
         run: go vet -tags 'cuda goinfer_testhooks' ./cuda/...
@@ -185,8 +202,8 @@ jobs:
         run: go build -tags 'gpu goinfer_testhooks' ./gpu/...
 
       # Wired serve + demo compile-check on darwin too (audit M-18) — see the linux gpu job.
-      - name: build -tags gpu (wired serve + demo)
-        run: go build -tags gpu ./cmd/serve ./demo/chat
+      - name: build -tags gpu (wired serve + demo entrypoints)
+        run: go build -tags 'gpu goinfer_testhooks' ./gpu/cmd/serve ./gpu/cmd/chat
 
       - name: vet -tags gpu
         run: go vet -tags 'gpu goinfer_testhooks' ./gpu/...
@@ -222,14 +239,13 @@ jobs:
       - name: build (metal module)
         run: go build ./metal/...
 
-      # Compile the WIRED serve + demos (cmd/serve/metal.go, demo/chat/metal.go,
-      # demo/gemma/metal.go): the root's `darwin && metal` RegisterBackend blank-imports live
-      # here and were in NO CI configuration — a backend signature drift broke the shipped
-      # -tags metal binary while CI stayed green (audit M-18). This is the compile-check the
-      # three stale kernel bindings this job's comment names would have been caught by at the
-      # wiring layer.
-      - name: build -tags metal (wired serve + demos)
-        run: go build -tags metal ./cmd/serve ./demo/chat ./demo/gemma
+      # Compile the WIRED serve + demo entrypoints (metal/cmd/{serve,chat,gemma}): the
+      # RegisterBackend blank-imports live in the metal submodule cmd/ mains since audit M-19
+      # (darwin-gated; the metal module registers on plain darwin, so no `metal` tag needed).
+      # A backend signature drift must fail CI here — it once broke the shipped metal binary
+      # while CI stayed green (audit M-18). Covered by ./metal/... above, but kept explicit.
+      - name: build metal (wired serve + demo entrypoints)
+        run: go build ./metal/cmd/serve ./metal/cmd/chat ./metal/cmd/gemma
 
       - name: vet (metal module)
         run: go vet ./metal/...

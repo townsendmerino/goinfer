@@ -16,7 +16,7 @@ call, not a unilateral fix.
 | Blockers (B) | 14 / 14 | 0 (all resolved; release shipped) |
 | Critical (C) | 31 / 31 | **0** (both owed regression tests now device-verified: C-01-resident on the Linux/webgpu box — real granite, maxAbs=0; C-03 on the Mac and cross-confirmed on the box under `-race`) |
 | Gate (G) | 6 / 6 | **0** (G-03/G-05 on Linux; G-04/G-06-residual device-verified on the Mac / macOS 26.6) |
-| Major (M) | 20 / 23 | **3** (M-19 [linux]; M-21/M-22 [decision]) + M-25 (new, latent, deferred) — the 3 metal Majors M-09/M-10/M-11 are done |
+| Major (M) | 21 / 23 | **2** (M-21/M-22 [decision]) + M-25 (new, latent, deferred) — M-19 now FIXED (submodule entrypoints; root graph clean); the 3 metal Majors M-09/M-10/M-11 are done |
 | Minor (N) | 0 / 24 | **24** |
 
 **Critical batch fixed on the Linux box (2026-08-06):** C-05, C-13, C-23, C-27, C-28, C-29 — each
@@ -387,13 +387,29 @@ is already at 87% of a 32 KB budget; `inter ≥ 16384` exceeds it, Metal aborts 
 and per C-09 nobody notices.
 *Fix:* query the limit in `BuildResident` and decline.
 
-**M-19** [linux] | root `go.mod:14-18` — the pure-Go CPU consumer pulls the whole GPU dependency
-set. Because `cmd/serve/{gpu,cuda,metal}.go` blank-import the submodules under build tags, the root
-requires all three, and therefore `cogentcore/webgpu`, `purego`, `gocudrv` and `aikit/gpu` as
-indirects. The CI cleanliness guard checks `go list -deps`, which sees only imported packages and
-can't catch it.
-*Fix:* move the tag-gated blank imports out of the root module; extend the guard to
-`go list -m all`. (Structural — coordinate with the release module strategy.)
+**M-19 — FIXED** (2026-08-07, Linux box; idiomatic submodule-entrypoints approach). The tag-gated
+blank imports are OUT of the root module. Server/REPL logic moved to importable app packages
+(`internal/serveapp`, `internal/chatapp`, `internal/gemmaapp`); the root `cmd/serve`, `demo/chat`,
+`demo/gemma` are now pure-Go shims that call `…app.Main()` and import no backend. The opt-in
+accelerated builds live in the submodules as their own binaries — `gpu/cmd/{serve,chat}` (`-tags
+gpu`), `cuda/cmd/{serve,chat}` (`-tags cuda`), `metal/cmd/{serve,chat,gemma}` (darwin) — each
+blank-importing its backend before the shared entrypoint. Root `go.mod` now requires only
+`aikit` + `golang.org/x/text`; **`GOWORK=off go list -m all` on the root is clean** — no
+`cogentcore/webgpu`, `purego`, `gocudrv`, `aikit/gpu`, or the three submodules. The CI cleanliness
+guard now runs BOTH `go list -deps` (compiled set) AND `go list -m all` (module graph a consumer
+resolves), so a future root-package blank-import of a submodule fails CI. `build-embed.sh` stages
+the `//go:embed` asset into `internal/chatapp`; README's "Running on a GPU" + the M-18 wired-serve
+CI steps point at the new `<submodule>/cmd/*` paths. Verified: root pure-Go build + `go vet` +
+staticcheck + `-race ./...` green; cuda/gpu entrypoints build under the workspace; metal entrypoints
+cross-compile darwin/arm64. Original finding below.
+**M-19 (was OPEN)** [linux] | root `go.mod:14-18` — the pure-Go CPU consumer pulled the whole GPU
+dependency set. Because `cmd/serve/{gpu,cuda,metal}.go` (and `demo/chat`, `demo/gemma`) blank-imported
+the submodules under build tags, the root required all three, and therefore `cogentcore/webgpu`,
+`purego`, `gocudrv` and `aikit/gpu` as indirects. The old CI guard checked only `go list -deps`, which
+sees imported packages and can't catch a module-graph leak.
+*Note:* release-strategy consequence — the submodule `cmd/*` entrypoints import `internal/…app` from
+the root, so a published accelerated build needs the goinfer root tagged with those packages (the
+existing `replace … => ../` covers local clones; `go install …/cuda/cmd/serve@latest` needs the tag).
 
 **M-21** [decision] | `decoder/gguf.go:985` + `internal/prequant` — no `context.Context` on
 multi-gigabyte transcodes. `StreamTranscodeGGUF`, `Transcode`, `EnsureCachedGIW` do minutes-long

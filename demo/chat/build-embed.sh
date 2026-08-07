@@ -37,17 +37,21 @@ MODEL="${1:?usage: build-embed.sh [--gguf] [--name <basename>] <model.gguf> [os/
 shift || true
 DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$DIR/../.." && pwd)"
+# The REPL (and its //go:embed directives) live in internal/chatapp since audit M-19;
+# demo/chat is now a thin CPU-only main shim. Stage the embed asset next to the directive
+# there, but keep the built binary + dist under demo/chat.
+PKGDIR="$ROOT/internal/chatapp"
 
 if [ ! -f "$MODEL" ]; then echo "model not found: $MODEL" >&2; exit 1; fi
 
 # //go:embed needs the asset inside the package dir and does not follow symlinks.
 if [ "$MODE" = prequant ]; then
-  echo "building prequant bundle -> model.giw"
-  ( cd "$ROOT" && go run ./cmd/prequant -o "$DIR/model.giw" "$MODEL" )
+  echo "building prequant bundle -> internal/chatapp/model.giw"
+  ( cd "$ROOT" && go run ./cmd/prequant -o "$PKGDIR/model.giw" "$MODEL" )
   TAGS=prequant
 else
-  echo "staging $(basename "$MODEL") -> model.gguf ($(du -h "$MODEL" | cut -f1))"
-  cp "$MODEL" "$DIR/model.gguf"
+  echo "staging $(basename "$MODEL") -> internal/chatapp/model.gguf ($(du -h "$MODEL" | cut -f1))"
+  cp "$MODEL" "$PKGDIR/model.gguf"
   TAGS=embed
 fi
 
