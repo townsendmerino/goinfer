@@ -415,6 +415,7 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 	e.Dispatch(pf.pRmsQ, tgReduceNorm, tgReduceNorm, xF.At((M-1)*H*2), r.finalNorm, r.aq, r.aSc, uH, r.uEps, r.uAddOne)
 	e.Dispatch(r.pGemvW8, V*32, 32, r.aq, r.aSc, r.lmW, r.lmS, r.logits, r.uH)
 	e.End()
+	r.recordExecErr(e.Err()) // C-09
 
 	out := make([]float32, V)
 	copy(out, r.logits.Floats()[:V])

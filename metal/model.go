@@ -144,7 +144,30 @@ type resident struct {
 	execAck  chan []float32
 	execDone chan struct{} // closed when execLoop returns — Close must WAIT on this before freeing
 
+	// execErr latches the first aborted-command-buffer error any forward path sees (audit C-09).
+	// waitUntilCompleted returns cleanly even on a GPU fault, so every completion site records
+	// enc.Err() here and the adapter consumes it (takeExecErr) after each forward — surfacing an
+	// error instead of the stale logits/token the aborted buffer left behind. Plain field: the
+	// pipelined executor is single-goroutine and writes it BEFORE the execAck send (which
+	// happens-before the adapter's read); the synchronous paths run on the caller's locked thread.
+	execErr error
+
 	pf *prefillState // lazily-compiled f16 MMA prefill pipelines (opt-in)
+}
+
+// recordExecErr latches the first command-buffer abort a forward path observes (audit C-09).
+func (r *resident) recordExecErr(err error) {
+	if err != nil && r.execErr == nil {
+		r.execErr = err
+	}
+}
+
+// takeExecErr returns and clears the latched command-buffer error (audit C-09). The adapter calls
+// it after each forward and returns the error in place of the (stale) logits.
+func (r *resident) takeExecErr() error {
+	err := r.execErr
+	r.execErr = nil
+	return err
 }
 
 type execJob struct {
@@ -721,6 +744,7 @@ func (r *resident) forwardLogits(pos int) []float32 {
 	r.encodeTrunkInto(e)                                                           // 28 layers → final norm → r.aq/r.aSc
 	e.Dispatch(r.pGemvW8, (r.V)*32, 32, r.aq, r.aSc, r.lmW, r.lmS, r.logits, r.uH) // full lm head (int8 — logit-critical)
 	e.End()
+	r.recordExecErr(e.Err()) // C-09
 	r.gpuStart, r.gpuEnd, r.kernStart, r.kernEnd = e.GPUStart(), e.GPUEnd(), e.KernStart(), e.KernEnd()
 	r.finalizeLogits()
 	return r.logitsHost
@@ -800,6 +824,7 @@ func (r *resident) execLoop() {
 			next = r.encodeLogitsCB() // overlaps cur's GPU execution — the encode-ahead win
 		}
 		cur.WaitDone()
+		r.recordExecErr(cur.Err()) // C-09: set BEFORE the execAck send so the adapter's read is ordered
 		r.gpuStart, r.gpuEnd, r.kernStart, r.kernEnd = cur.GPUStart(), cur.GPUEnd(), cur.KernStart(), cur.KernEnd()
 		r.finalizeLogits()
 
@@ -915,6 +940,7 @@ func (r *resident) ForwardArgmax(id, pos int) uint32 {
 	e.Dispatch(r.pGemvW8Amax, (r.V)*32, 256, r.aq, r.aSc, r.lmW, r.lmS, r.part, r.uH) // tile partials (int8 head)
 	e.Dispatch(r.pArgFinish, 256, 256, r.part, r.tok, r.uP)                           // reduce tiles → token
 	e.End()
+	r.recordExecErr(e.Err()) // C-09
 	return r.tok.U32()
 }
 

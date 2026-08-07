@@ -14,7 +14,7 @@ call, not a unilateral fix.
 | severity | closed | remaining |
 |---|---|---|
 | Blockers (B) | 14 / 14 | 0 (all resolved; release shipped) |
-| Critical (C) | 29 / 31 | **2** (C-09 [mac]; C-11 device-run owed; +2 owed device-gated regression tests) |
+| Critical (C) | 30 / 31 | **1** (C-11 device-run owed; +2 owed device-gated regression tests) |
 | Gate (G) | 1 / 6 | **5** |
 | Major (M) | 17 / 23 | **6** |
 | Minor (N) | 0 / 24 | **24** |
@@ -28,9 +28,11 @@ routes every external caller through the cap-checked `metalResident` adapter, so
 remains (details below). **C-10 is now MITIGATED in code** (2026-08-06, Mac, device-verified on macOS
 26.6) — `buildResident` declines any non-multiple-of-8 SA-GEMV output width → CPU fallback, closing
 the silent-corruption half; the kernel-side `N`-guard stays deferred but is no longer a correctness
-gate. **C-09** stays DEFERRED to the Mac: it needs an objc command-buffer-status change that can only
-be validated on a Metal device (details below). Still owed: the 2 device-gated regression tests
-(C-01-resident, C-03).
+gate. **C-09 is now FIXED** (2026-08-06, Mac, device-verified on macOS 26.6) — `gpu.Encoder.Err()`
+(aikit `gpu/v0.26.1`) latches the command buffer's status/error at `WaitDone`/`End`, and every metal
+forward path records it into `resident.execErr`, which the `metalResident` adapter surfaces (and
+clears) after each forward instead of returning the stale logits a faulted buffer left behind. Still
+owed: the C-11 device run and the 2 device-gated regression tests (C-01-resident, C-03).
 
 **⚠ Mac OS update (2026-08-06):** this MacBook moved macOS 26.5.2 (25F84) → 26.6 (25G72), so the
 `TestMetalSnapshotGolden` reference (OS-pinned) now reds on this machine — **expected**, per the
@@ -63,9 +65,28 @@ gemma-4 session round-trips through `--session-dir` and then mis-slices on the f
 Reachable via the serve session path.
 *Fix:* refuse gemma-4 (per-layer KV width) in `Snapshot`, or restore per-layer strides on load.
 
-**C-09 — DEFERRED to Mac** (2026-08-06). Reading `commandBuffer.status`/`error` after commit is
-purego-objc work whose abort path can only be validated on a Metal device; foundational (several
-findings depend on it), so it should be done where it can be exercised. Original finding below.
+**C-09 — FIXED** (2026-08-06, Mac, device-verified on macOS 26.6). Two layers:
+- **aikit `gpu/v0.26.1`** adds `Encoder.Err()`. `WaitDone`/`End` now read the command buffer's
+  `status` (via `objc.Send[uintptr]`, the arm64 integer-return path) and, on
+  `MTLCommandBufferStatusError`, format the `NSError.localizedDescription` — latched into `Encoder.err`
+  *before* the autorelease pool drains (reading a drained cb is a use-after-free), so `Err()` is a safe
+  getter. (`gpu/v0.26.0` first added `Err()` reading the cb directly; `v0.26.1` moved the read ahead of
+  the drain.)
+- **goinfer `metal/`** records `enc.Err()` at every command-buffer completion site (`execLoop` pipelined
+  decode, `forwardLogits`, `forwardLogitsPaged`'s per-layer submits + final head, `PrefillLast`,
+  `ForwardArgmax`) into `resident.execErr` (plain field: the pipelined executor writes it before the
+  `execAck` send, which happens-before the adapter's read). The `metalResident` adapter's `Forward` /
+  `PrefillLast` call `takeExecErr()` after each forward and return the error **instead of** the stale
+  logits an aborted buffer left behind, clearing it so the next token is unaffected.
+
+Device validation: `gpu.TestCmdBufStatus_C09` (aikit) proves the objc status read (completed→4, `Err()`
+nil) and the `NSError`→string abort formatting on device; `metal.TestMetalResident_C09_execErrSurfaces`
+(goinfer) proves a clean decode never false-positives and that a recorded abort surfaces through the
+adapter and then clears. The abort is injected rather than provoked by a real GPU fault because **this
+machine's GPU silently tolerates every abort trigger tried** (OOB and 32-GiB-unmapped stores, 64-MiB
+threadgroup memory vs a 32-KiB limit, 4096 threads/tg vs a 1024 max — all report status Completed);
+that permissiveness is exactly the hazard this check guards against on stricter OS/GPUs. Original
+finding below.
 **C-09** [mac] | `metal/model.go:651,730` + `gemma4_moe.go:479,503` — no site in `metal/` ever
 observes the Metal command-buffer status. A kernel that aborts (see M-11) leaves the host reading
 the previous token's logits with no error. Underlies several other metal findings.

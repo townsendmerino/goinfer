@@ -452,6 +452,7 @@ func (r *resident) forwardLogitsPaged(pos int) []float32 {
 	end := func(e *Encoder, commitAcc, waitAcc *int64) {
 		if !split {
 			e.End()
+			r.recordExecErr(e.Err()) // C-09: catch an abort in any paged per-layer submit
 			return
 		}
 		e.FinishEncoding()
@@ -459,7 +460,8 @@ func (r *resident) forwardLogitsPaged(pos int) []float32 {
 		e.Commit()
 		*commitAcc += time.Since(tc).Nanoseconds()
 		tw := time.Now()
-		e.WaitDone() // waitUntilCompleted + ReadTimes
+		e.WaitDone()             // waitUntilCompleted + ReadTimes
+		r.recordExecErr(e.Err()) // C-09
 		*waitAcc += time.Since(tw).Nanoseconds()
 	}
 	begin := func() *Encoder {
@@ -522,6 +524,7 @@ func (r *resident) forwardLogitsPaged(pos int) []float32 {
 	e.Dispatch(r.pRms, 256, 256, r.x, r.finalNorm, r.aq, r.aSc, r.uH, r.uEps, r.uAddOne)
 	e.Dispatch(r.pGemvW8, (r.V)*32, 32, r.aq, r.aSc, r.lmW, r.lmS, r.logits, r.uH)
 	e.End()
+	r.recordExecErr(e.Err()) // C-09
 	r.finalizeLogits()
 	return r.logitsHost
 }
