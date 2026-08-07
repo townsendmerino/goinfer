@@ -272,6 +272,13 @@ func parallelF32ToF16(dst []uint16, src []float32) {
 // ALREADY int4 (a Quant:"int4" load), it consumes the nibbles directly (int4-direct, no int8
 // step); otherwise it re-quantizes the int8 weight through the validated packer. One-time at build.
 func int4Buf(d *Device, w *linalg.WeightMat) (Buffer, Buffer, error) {
+	// The W4A8 layout and every GEMV kernel hard-assume K is a multiple of the group (32): rows are
+	// packed K/8 words + K/32 scales with no partial-group handling. A K%32 != 0 weight would pack a
+	// truncated last group (trailing nibbles decode as −8) with a per-row stride the kernel disagrees
+	// with — silently wrong, or a panic at K<32. Decline so BuildResident falls back to CPU (M-10).
+	if k := w.Cols(); k%32 != 0 {
+		return Buffer{}, Buffer{}, fmt.Errorf("metal: W4A8 pack needs K%%32==0 (group=32), got K=%d — declining to CPU (audit M-10)", k)
+	}
 	if words, scales, ok := int4DirectWords(w); ok {
 		return d.NewBufferUint32s(words), d.NewBufferU16s(scales), nil
 	}
@@ -298,6 +305,12 @@ func int4Concat(d *Device, wms ...*linalg.WeightMat) (Buffer, Buffer) {
 	var words []uint32
 	var scales []uint16 // f16 group scales (L1)
 	for _, w := range wms {
+		// K%32==0 is a hard W4A8 invariant (group=32) — see int4Buf. int4Concat has no error return
+		// and is only called from the build path, so panic; buildResident's recover turns it into a
+		// clean CPU decline, the same as its existing wrong-kind panic below (audit M-10).
+		if k := w.Cols(); k%32 != 0 {
+			panic(fmt.Sprintf("metal: W4A8 concat needs K%%32==0 (group=32), got K=%d (audit M-10)", k))
+		}
 		if dw, ds, ok := int4DirectWords(w); ok { // int4-direct: consume nibbles verbatim
 			words = append(words, dw...)
 			scales = append(scales, ds...)
