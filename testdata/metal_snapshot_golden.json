@@ -1,7 +1,7 @@
 {
   "env": {
     "gpu": "Apple M1 Pro",
-    "os": "26.5.2 (25F84)"
+    "os": "26.6 (25G72)"
   },
   "entries": [
     {
@@ -29,22 +29,22 @@
       "model": "gemma4-dense-scaled",
       "quant": "int4",
       "depth": 130,
-      "argmax": 170,
-      "sha256": "77ebd3beda1518c2fc8aee25cd9f965ab828f69d006da01b9eb070dfa8a79c76"
+      "argmax": 2,
+      "sha256": "0eb099362db84c40a8caa2aa0e2c93cee16e1d58485cb4f2be1c8b65fd1c7c3d"
     },
     {
       "model": "gemma4-dense-scaled",
       "quant": "int4",
       "depth": 260,
-      "argmax": 123,
-      "sha256": "cbeb79a7e6e29ad9aa568fbd97e9503606482075960c0d4a72f6dd7374165ba9"
+      "argmax": 2,
+      "sha256": "ec14843188925c43f89bd321e2248fdf5cf0d562dc0b28ee057b5d1c0c2fd572"
     },
     {
       "model": "gemma4-dense-scaled",
       "quant": "int4",
       "depth": 320,
-      "argmax": 52,
-      "sha256": "bfd285fe804226edb44e69724c1a7ad698c6c5d337b43ad3935ab712e082c43f"
+      "argmax": 2,
+      "sha256": "741e572280563c137e73ea2982d1663aab275e71ab8d12580e56475a0e226310"
     }
   ]
 }

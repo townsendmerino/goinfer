@@ -15,7 +15,7 @@ call, not a unilateral fix.
 |---|---|---|
 | Blockers (B) | 14 / 14 | 0 (all resolved; release shipped) |
 | Critical (C) | 31 / 31 | **0** (both owed regression tests now authored: C-03 device-verified on the Mac; C-01-resident runs on the box — no SSM model on the Mac) |
-| Gate (G) | 1 / 6 | **5** |
+| Gate (G) | 2 / 6 | **4** |
 | Major (M) | 17 / 23 | **6** |
 | Minor (N) | 0 / 24 | **24** |
 
@@ -38,12 +38,11 @@ non-%8-V failure it targeted is now unreachable (C-10 declines that shape from t
 The 2 owed regression tests are now authored: **C-03** device-verified on the Mac (webgpu), and
 **C-01-resident** runs on the box (this Mac carries no SSM checkpoint).
 
-**⚠ Mac OS update (2026-08-06):** this MacBook moved macOS 26.5.2 (25F84) → 26.6 (25G72), so the
-`TestMetalSnapshotGolden` reference (OS-pinned) now reds on this machine — **expected**, per the
-test's own env-branch (MSL is recompiled per-OS toolchain). It means (a) the golden can't serve as a
-device regression check here until re-baked, and (b) **G-02's owed re-bake is now doubly-owed** (the
-old 26.5.2 baseline is no longer reproducible). Re-bake on 26.6 once the embed-scale fix is confirmed
-on device.
+**Mac OS update (2026-08-06) — RESOLVED.** This MacBook moved macOS 26.5.2 (25F84) → 26.6 (25G72),
+which redded the OS-pinned `TestMetalSnapshotGolden` (expected — MSL recompiles per-OS toolchain). The
+golden has now been **re-baked on 26.6** (see G-02 below), folding in the embed-scale fix; it is green
+again on this machine. Notably `mixtral-tiny` was byte-identical across the two OS versions (only
+`gemma4-dense-scaled` moved, via the embed-scale fix), so the OS bump alone changed no bits here.
 
 ---
 
@@ -273,11 +272,16 @@ triggers Go's fatal `concurrent map read and map write`.
 
 ## §3 — Gates that cannot fail (open)
 
-**G-02** [mac] — golden re-bake owed. The embed-scale fix (`resident.embedScale` applied by
-`loadEmbedRow`) landed in code and the golden was re-pointed through `ForwardEmb`, but Metal can't
-run on the Linux box: `TestMetalSnapshotGolden` is expected red until `GOINFER_UPDATE_GOLDENS=1` is
-run on the Mac. `gemma4-dense-scaled` entries WILL move; `mixtral-tiny` (no embed scale) must NOT —
-if it does, refuse the re-bake and investigate.
+**G-02 — DONE** (2026-08-06, Mac, re-baked on macOS 26.6). The embed-scale fix (`resident.embedScale`
+applied by `loadEmbedRow`) is baked into `testdata/metal_snapshot_golden.json` on this machine. The
+re-bake was gated on evidence, not reflex: before writing, both live-correctness gates passed on 26.6
+— `TestMetalEmbedScale_forwardMatchesForwardEmb` (Forward(id) == ForwardEmb(production √hidden-scaled
+row)) and `TestGemma4DenseScaled_metalParity` (metal == CPU truth, cosine 1.0) — so the new values are
+the *correct* fixed output, not degenerate. The diff is exactly the expected shape: `gemma4-dense-scaled`
+moved (argmax 170/123/52 → the embed-scaled 2/2/2 at depths 130/260/320) and **`mixtral-tiny` did NOT
+move at all** (byte-identical across 26.5.2→26.6 — the invariant held), plus the env bump to 26.6.
+`TestMetalSnapshotGolden` is now green on this Mac. (Re-baking on a different Mac/OS will red again —
+expected, MSL recompiles per-OS toolchain — and would re-bake to that machine's reference.)
 
 **G-03** [linux] | `decoder/capability_matrix_test.go:546` — the generated capability matrix depends
 on ambient environment. `GPUResident` = `arch.decodeRunnerEligible()`, which reads
