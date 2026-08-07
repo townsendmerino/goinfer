@@ -6,7 +6,11 @@ import (
 	"sync/atomic"
 )
 
-// SpecStats accumulates speculative-decoding telemetry for one Generate run.
+// SpecStats accumulates CPU speculative-decoding telemetry for one Generate run. The GPU
+// backend's batched-verify counters are a DISTINCT type, cuda.GPUSpecStats (audit M-22 —
+// renamed off this shared name so the two can't be silently conflated); their fields do
+// not map 1:1 (e.g. this Evaluated stops at the first reject, cuda.VerifyToks counts every
+// position fed to the batched verify).
 type SpecStats struct {
 	Rounds    int // verification passes (one expensive target forwardN each)
 	Drafted   int // draft tokens proposed (== Rounds*K)

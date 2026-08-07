@@ -66,7 +66,7 @@ func (s *server) handleAdminLoad(w http.ResponseWriter, r *http.Request) {
 	if req.Lora != "" {
 		c.lora = req.Lora
 	}
-	lm, err := loadDecoder(modelSpec{name: name, path: req.Path}, c)
+	lm, err := loadDecoder(r.Context(), modelSpec{name: name, path: req.Path}, c)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return

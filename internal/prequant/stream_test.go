@@ -2,6 +2,8 @@ package prequant
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -25,7 +27,7 @@ func TestGIWRoundTripPreservesRouterBias(t *testing.T) {
 	// directly (StreamTranscodeGGUF → LoadSerializedWeights) rather than the full
 	// .giw bundle — it's the serialize round-trip we're guarding.
 	var body bytes.Buffer
-	if _, err := decoder.StreamTranscodeGGUF(gguf, &body, "int4", false, "glm-tiny"); err != nil {
+	if _, err := decoder.StreamTranscodeGGUF(context.Background(), gguf, &body, "int4", false, "glm-tiny"); err != nil {
 		t.Fatalf("StreamTranscodeGGUF: %v", err)
 	}
 	w, err := decoder.LoadSerializedWeights(body.Bytes())
@@ -40,6 +42,27 @@ func TestGIWRoundTripPreservesRouterBias(t *testing.T) {
 		if len(layers[i].RouterBias) == 0 {
 			t.Errorf("layer %d RouterBias dropped by the .giw round-trip", i)
 		}
+	}
+}
+
+// TestStreamTranscode_ctxCancel_M21 gates the M-21 cancellation contract: an
+// already-cancelled context makes StreamTranscodeGGUF abort with the context error
+// instead of running the whole multi-GB pass. The sink counts bytes so we also prove
+// nothing was written (the ctxWriter refuses the first write).
+func TestStreamTranscode_ctxCancel_M21(t *testing.T) {
+	gguf := filepath.Join("..", "..", "testdata", "glm-tiny.gguf")
+	if _, err := os.Stat(gguf); err != nil {
+		t.Skipf("no tiny GLM GGUF at %s — run scripts/pin_glm_tiny_gguf.py", gguf)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // pre-cancelled
+	var body bytes.Buffer
+	n, err := decoder.StreamTranscodeGGUF(ctx, gguf, &body, "int4", false, "glm-tiny")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("StreamTranscodeGGUF with a cancelled ctx = (%d, %v); want a context.Canceled error", n, err)
+	}
+	if body.Len() != 0 {
+		t.Errorf("wrote %d bytes after cancellation; want 0 (the transcode must abort before writing)", body.Len())
 	}
 }
 
@@ -68,7 +91,7 @@ func TestStreamTranscodeMatchesResident(t *testing.T) {
 			}
 			// Streaming: transcode layer-by-layer into a buffer.
 			var streamed bytes.Buffer
-			if _, err := decoder.StreamTranscodeGGUF(gguf, &streamed, quant, false, "glm-tiny.gguf"); err != nil {
+			if _, err := decoder.StreamTranscodeGGUF(context.Background(), gguf, &streamed, quant, false, "glm-tiny.gguf"); err != nil {
 				t.Fatalf("StreamTranscodeGGUF: %v", err)
 			}
 			if !bytes.Equal(resident, streamed.Bytes()) {

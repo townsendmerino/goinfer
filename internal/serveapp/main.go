@@ -439,7 +439,10 @@ func Main() {
 func newServer(cfg config) (*server, error) {
 	s := &server{models: map[string]*loadedModel{}, cfg: cfg, responses: newResponseStore(256)}
 	for _, spec := range cfg.models {
-		lm, err := loadDecoder(spec, cfg)
+		// Startup load: a transparent .gguf→.giw transcode here isn't request-scoped, so
+		// context.Background() (a Ctrl-C during startup already ends the process). The admin
+		// load path below passes the request context so a disconnect cancels it (M-21).
+		lm, err := loadDecoder(context.Background(), spec, cfg)
 		if err != nil {
 			return nil, err
 		}
@@ -621,7 +624,7 @@ func (s *server) loadQwenVisionTower(dir string, int8Tower bool) error {
 // loadDecoder loads one generative model + tokenizer, resolves its chat template,
 // and returns it as a *loadedModel. The served name is the spec's name=, else (a
 // single unnamed --model) --served-model-name, else the file/dir basename.
-func loadDecoder(spec modelSpec, cfg config) (*loadedModel, error) {
+func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel, error) {
 	// Resolve this model's knobs (per-model overrides over server-global defaults)
 	// and reject invalid enums up front.
 	opts := spec.options(cfg)
@@ -638,7 +641,7 @@ func loadDecoder(spec modelSpec, cfg config) (*loadedModel, error) {
 		if opts.EmbedInt4 {
 			fmt.Fprintln(os.Stderr, "note: embed-int4 is ignored with stream-weights (the cached .giw keeps the int8 pin); prequant the model with embed-int4 to bake it")
 		}
-		giwPath, err := prequant.EnsureCachedGIW(spec.path, opts.Quant)
+		giwPath, err := prequant.EnsureCachedGIW(ctx, spec.path, opts.Quant)
 		if err != nil {
 			return nil, fmt.Errorf("stream-weights cache (%s): %w", spec.path, err)
 		}

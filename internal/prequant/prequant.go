@@ -7,6 +7,7 @@
 package prequant
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -31,10 +32,11 @@ const metaPrefixCap = 64 << 20
 // layer at a time, peak RAM ≈ one layer — fits a 35B on a modest box) OR a safetensors
 // model DIRECTORY (loaded whole then serialized, peak RAM ≈ the resident weight size —
 // the path for safetensors-only models like Mellum2). A failed write removes the partial
-// output.
-func Transcode(in, out, quant string, embedInt4 bool) error {
+// output. A cancelled ctx aborts a long streaming transcode at the next layer boundary
+// (audit M-21) and removes the partial output.
+func Transcode(ctx context.Context, in, out, quant string, embedInt4 bool) error {
 	if fi, err := os.Stat(in); err == nil && fi.IsDir() {
-		return transcodeDir(in, out, quant, embedInt4)
+		return transcodeDir(ctx, in, out, quant, embedInt4)
 	}
 	// 1) Tokenizer half: the source GGUF truncated at the tensor-data boundary —
 	// metadata + tensor infos, no weight bytes. Only the file's head is read.
@@ -61,7 +63,7 @@ func Transcode(in, out, quant string, embedInt4 bool) error {
 		return fmt.Errorf("create %s: %w", out, err)
 	}
 	werr := giw.WriteStream(f, tokBytes, func(w io.Writer) (int64, error) {
-		return decoder.StreamTranscodeGGUF(in, w, quant, false, filepath.Base(in))
+		return decoder.StreamTranscodeGGUF(ctx, in, w, quant, false, filepath.Base(in))
 	})
 	runtime.GC()
 	if cerr := f.Close(); werr == nil {
@@ -87,7 +89,10 @@ func Transcode(in, out, quant string, embedInt4 bool) error {
 // verbatim as the tok half (the serve side loads it via tokenizer.LoadJSONBytes when the
 // blob isn't GGUF metadata). Peak RAM ≈ the resident weight size, since the whole model
 // is loaded rather than layer-streamed — acceptable for the models this targets.
-func transcodeDir(dir, out, quant string, embedInt4 bool) error {
+func transcodeDir(ctx context.Context, dir, out, quant string, embedInt4 bool) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	// Tokenizer half is best-effort: the resident/decode path never reads it (the Model
 	// is built from the serialized weights alone), so a missing or non-goinfer-loadable
 	// tokenizer.json must NOT block the weights bundle — it only affects serve. Carry the
@@ -134,7 +139,7 @@ func transcodeDir(dir, out, quant string, embedInt4 bool) error {
 // so replacing the GGUF rebuilds it. The one-time transcode is logged to stderr
 // (it can take minutes and write tens of GB) so a slow first start isn't mistaken
 // for a hang. Returns the .giw path to load.
-func EnsureCachedGIW(ggufPath, quant string) (string, error) {
+func EnsureCachedGIW(ctx context.Context, ggufPath, quant string) (string, error) {
 	cache := streamCachePath(ggufPath, quant)
 	if cacheFresh(cache, ggufPath) {
 		return cache, nil
@@ -142,7 +147,7 @@ func EnsureCachedGIW(ggufPath, quant string) (string, error) {
 	fmt.Fprintf(os.Stderr, "stream-weights: transcoding %s → %s (%s, one-time — minutes + ~model-size on disk)…\n",
 		filepath.Base(ggufPath), filepath.Base(cache), quantLabel(quant))
 	t0 := time.Now()
-	if err := Transcode(ggufPath, cache, quant, false); err != nil {
+	if err := Transcode(ctx, ggufPath, cache, quant, false); err != nil {
 		return "", err
 	}
 	if fi, e := os.Stat(cache); e == nil {

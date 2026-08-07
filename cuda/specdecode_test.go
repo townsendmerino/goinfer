@@ -89,7 +89,7 @@ func TestSpecDecode(t *testing.T) {
 	prime()
 	const k, ctxLen = 8, 2
 	hist := append([]int(nil), seed...)
-	var st SpecStats
+	var st GPUSpecStats
 	t1 := time.Now()
 	for len(hist)-S < N {
 		p := len(hist) - 1

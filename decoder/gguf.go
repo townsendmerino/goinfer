@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"context"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -982,7 +983,16 @@ func buildGGUFWeights(g *embed.GGUFFile, quant quantMode, embedInt4 bool) (*Weig
 // the qwen35/gemma4 dedicated loaders fall back to a resident build + serialize
 // (those models fit). Returns the bytes written. Typically invoked inside
 // giw.WriteStream as the weights half of a .giw bundle.
-func StreamTranscodeGGUF(path string, out io.Writer, quant string, embedInt4 bool, id string) (int64, error) {
+func StreamTranscodeGGUF(ctx context.Context, path string, out io.Writer, quant string, embedInt4 bool, id string) (int64, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+	// Cancellation (M-21): a transcode of a >RAM model can run for minutes writing tens
+	// of GB. Wrapping the sink makes every per-layer write observe ctx, so a cancelled
+	// context aborts at the next layer boundary (the granularity the streaming loop
+	// writes at) rather than only after the whole pass. Covers both the streaming path
+	// and the qwen35 resident-then-serialize path, which also writes through out.
+	out = &ctxWriter{ctx: ctx, w: out}
 	q, err := parseQuant(quant)
 	if err != nil {
 		return 0, err
@@ -1028,6 +1038,22 @@ func StreamTranscodeGGUF(path string, out io.Writer, quant string, embedInt4 boo
 		return wr.n, err
 	}
 	return wr.n + 4, nil
+}
+
+// ctxWriter aborts an in-flight streamed transcode: it returns ctx.Err() before each
+// underlying Write once the context is cancelled, so StreamTranscodeGGUF stops writing
+// (and the caller removes the partial .giw) instead of running the whole multi-GB pass
+// to completion after a shutdown/disconnect (audit M-21).
+type ctxWriter struct {
+	ctx context.Context
+	w   io.Writer
+}
+
+func (c *ctxWriter) Write(p []byte) (int, error) {
+	if err := c.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return c.w.Write(p)
 }
 
 // Generous sanity ceilings for the metadata-derived core dims — orders of

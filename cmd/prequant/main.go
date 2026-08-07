@@ -14,9 +14,12 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/townsendmerino/goinfer/internal/prequant"
 )
@@ -32,7 +35,11 @@ func main() {
 		flag.Usage()
 		os.Exit(2)
 	}
-	if err := prequant.Transcode(in, *out, *quant, *embedInt4); err != nil {
+	// Ctrl-C / SIGTERM aborts the (minutes-long, tens-of-GB) transcode and removes the
+	// partial .giw, instead of running to completion after the user gives up (audit M-21).
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := prequant.Transcode(ctx, in, *out, *quant, *embedInt4); err != nil {
 		fmt.Fprintf(os.Stderr, "prequant: %v\n", err)
 		os.Exit(1)
 	}

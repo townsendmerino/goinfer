@@ -16,7 +16,7 @@ call, not a unilateral fix.
 | Blockers (B) | 14 / 14 | 0 (all resolved; release shipped) |
 | Critical (C) | 31 / 31 | **0** (both owed regression tests now device-verified: C-01-resident on the Linux/webgpu box — real granite, maxAbs=0; C-03 on the Mac and cross-confirmed on the box under `-race`) |
 | Gate (G) | 6 / 6 | **0** (G-03/G-05 on Linux; G-04/G-06-residual device-verified on the Mac / macOS 26.6) |
-| Major (M) | 21 / 23 | **2** (M-21/M-22 [decision]) + M-25 (new, latent, deferred) — M-19 now FIXED (submodule entrypoints; root graph clean); the 3 metal Majors M-09/M-10/M-11 are done |
+| Major (M) | 23 / 23 | **0** of the original 23 — M-21 (ctx on transcodes) + M-22 (GPUSpecStats rename) now FIXED. Only **M-25** remains (new, latent, deferred — not in the original count) |
 | Minor (N) | 0 / 24 | **24** |
 
 **Critical batch fixed on the Linux box (2026-08-06):** C-05, C-13, C-23, C-27, C-28, C-29 — each
@@ -411,16 +411,28 @@ sees imported packages and can't catch a module-graph leak.
 the root, so a published accelerated build needs the goinfer root tagged with those packages (the
 existing `replace … => ../` covers local clones; `go install …/cuda/cmd/serve@latest` needs the tag).
 
-**M-21** [decision] | `decoder/gguf.go:985` + `internal/prequant` — no `context.Context` on
-multi-gigabyte transcodes. `StreamTranscodeGGUF`, `Transcode`, `EnsureCachedGIW` do minutes-long
-quantize-and-write passes with no cancellation. Adding the parameter after the tag is a breaking
-signature change → needs a maintainer decision (do it in a minor with a breaking-change note, or
-accept as-is).
+**M-21 — FIXED** (2026-08-07, Linux box; maintainer chose the breaking change). `context.Context` is
+now the first parameter of `decoder.StreamTranscodeGGUF` (public) and `internal/prequant`'s
+`Transcode`/`transcodeDir`/`EnsureCachedGIW` (internal). Cancellation is enforced by wrapping the
+sink in a `ctxWriter` that returns `ctx.Err()` before each per-layer write, so a cancelled context
+aborts the streaming transcode at the next layer boundary (and the caller removes the partial
+`.giw`) rather than running the whole multi-GB pass. Wired: `cmd/prequant` installs a
+`signal.NotifyContext` (Ctrl-C / SIGTERM) so the CLI aborts cleanly; serve's admin load passes the
+request context (a disconnected `POST /admin/models/load` cancels), while startup load passes
+`context.Background()` (a Ctrl-C there already ends the process). Gate
+`TestStreamTranscode_ctxCancel_M21` (pre-cancelled ctx → `context.Canceled`, zero bytes written);
+existing round-trip/byte-identity tests unchanged. Breaking to the one exported func — pre-1.0
+(v0.9.x), so a minor bump with a CHANGELOG note.
+*Original finding:* no `context.Context` on the minutes-long quantize-and-write passes.
 
-**M-22** [decision] | `cuda/specdecode.go:48` — `cuda.SpecStats` and `decoder.SpecStats` are
-different types with the same name for the same concept, in two modules always used together. A
-reader assembling telemetry silently compares `Evaluated` vs `VerifyToks` and `Emitted` vs
-`Generated`. Unifying after the tag breaks both APIs → maintainer decision.
+**M-22 — FIXED** (2026-08-07, Linux box; maintainer chose the rename). `cuda.SpecStats` →
+`cuda.GPUSpecStats`, so the GPU batched-verify counters no longer share a name with
+`decoder.SpecStats` (the CPU-spec counters) — a telemetry reader can't silently conflate the two
+distinct field sets. Both types now carry reciprocal doc comments mapping the (non-1:1) field
+correspondence (`Emitted`≈`Generated`, `Evaluated`≈`VerifyToks`, etc.). No external consumer existed,
+so the break is contained to the `cuda` module. Breaking to `cuda.GPUSpecStats` users (none today) —
+CHANGELOG note.
+*Original finding:* `cuda.SpecStats` and `decoder.SpecStats` were different types with the same name.
 
 ---
 

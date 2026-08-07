@@ -44,8 +44,14 @@ func ngramDraft(hist []int, k, ctxLen int) []int {
 	return nil
 }
 
-// SpecStats reports one speculative-decode run.
-type SpecStats struct {
+// GPUSpecStats reports one GPU (batched-verify) speculative-decode run. It is a
+// DISTINCT type from decoder.SpecStats (the CPU-spec counters), renamed off the shared
+// name so telemetry code can't silently conflate the two (audit M-22) — the fields do
+// not line up 1:1. Rough correspondence to decoder.SpecStats: Generated≈Emitted,
+// VerifyToks≈Evaluated (GPU counts every position fed to the batched verify; CPU counts
+// positions actually checked before the first reject), Rounds/Drafted/Accepted align;
+// PlainRounds is GPU-only (a round that fell back to a 1-token step).
+type GPUSpecStats struct {
 	Generated   int // tokens produced (excluding the seed)
 	Rounds      int // verify rounds
 	VerifyToks  int // total tokens fed to the batched verify (the work done)
