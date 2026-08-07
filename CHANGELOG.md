@@ -32,6 +32,26 @@ pre-1.0 and may change as new model families and quant formats land.
   The prefill report shares `prefillStaticDecline` with `prefillCore` rather than restating
   its conditions, so the startup line cannot drift from the decline it describes.
 
+### Changed
+- **BREAKING (build): the opt-in GPU/CUDA/Metal builds moved to submodule entrypoints** (audit
+  M-19). The pure-Go root module no longer imports any backend, so `go install
+  …/goinfer/cmd/serve@latest` — and any SBOM/vuln scan of the root — no longer resolves
+  `cogentcore/webgpu`, `ebitengine/purego`, `eitamring/gocudrv`, or `aikit/gpu`. The accelerated
+  binaries now live in the submodules:
+  - was `go run -tags cuda ./demo/chat` → now `cd cuda && go run -tags cuda ./cmd/chat`
+    (likewise `./cmd/serve`); `gpu/cmd/*` under `-tags gpu`.
+  - was `go run -tags metal ./demo/gemma` → now `cd metal && go run ./cmd/gemma` (the metal
+    module is `darwin`-gated, so no `-tags metal`); `metal/cmd/{serve,chat}` too.
+  The root `cmd/serve`, `demo/chat`, `demo/gemma` are unchanged as **pure-Go CPU** binaries. Serve
+  logic moved to importable `internal/serveapp` / `internal/chatapp` / `internal/gemmaapp`.
+- **BREAKING (API): `decoder.StreamTranscodeGGUF` gained a leading `ctx context.Context`** (audit
+  M-21), so a minutes-long, multi-GB `.gguf`→`.giw` transcode is cancellable — a cancelled context
+  aborts at the next layer boundary. `cmd/prequant` now aborts on Ctrl-C/SIGTERM; serve's admin
+  model-load cancels on client disconnect.
+- **BREAKING (API): `cuda.SpecStats` renamed to `cuda.GPUSpecStats`** (audit M-22) so the GPU
+  batched-verify counters no longer share a name with `decoder.SpecStats` (CPU-spec counters); the
+  two have distinct, non-1:1 field sets and now carry reciprocal doc comments.
+
 ### Fixed
 - **Docs: batched-prefill coverage was stated per family without the int4-only caveat**, in
   both `CHANGELOG` and `docs/releases/v0.9.0.md`. A family inside the covered seven, loaded at
