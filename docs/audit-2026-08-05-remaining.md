@@ -14,7 +14,7 @@ call, not a unilateral fix.
 | severity | closed | remaining |
 |---|---|---|
 | Blockers (B) | 14 / 14 | 0 (all resolved; release shipped) |
-| Critical (C) | 31 / 31 | **0** (both owed regression tests now authored: C-03 device-verified on the Mac; C-01-resident runs on the box — no SSM model on the Mac) |
+| Critical (C) | 31 / 31 | **0** (both owed regression tests now device-verified: C-01-resident on the Linux/webgpu box — real granite, maxAbs=0; C-03 on the Mac and cross-confirmed on the box under `-race`) |
 | Gate (G) | 2 / 6 | **4** |
 | Major (M) | 17 / 23 | **6** |
 | Minor (N) | 0 / 24 | **24** |
@@ -35,8 +35,9 @@ clears) after each forward instead of returning the stale logits a faulted buffe
 **C-11 is now CLOSED** (2026-08-06, Mac, device-verified on macOS 26.6) — the ceil-tiled fused
 argmax is confirmed equal to argmax(full-logits Forward) by a committed-fixture device gate, and the
 non-%8-V failure it targeted is now unreachable (C-10 declines that shape from the resident path).
-The 2 owed regression tests are now authored: **C-03** device-verified on the Mac (webgpu), and
-**C-01-resident** runs on the box (this Mac carries no SSM checkpoint).
+The 2 owed regression tests are now device-verified: **C-03** on the Mac (webgpu) and cross-confirmed
+on the Linux box under `-race`, and **C-01-resident** on the Linux/webgpu box against real granite
+(maxAbs=0; this Mac carries no SSM checkpoint so it skips there).
 
 **Mac OS update (2026-08-06) — RESOLVED.** This MacBook moved macOS 26.5.2 (25F84) → 26.6 (25G72),
 which redded the OS-pinned `TestMetalSnapshotGolden` (expected — MSL recompiles per-OS toolchain). The
@@ -250,14 +251,14 @@ triggers Go's fatal `concurrent map read and map write`.
 
 ### Owed regression tests (code fixed, device-gated)
 
-- **C-01 (resident half)** [linux/gpu] — **test AUTHORED** (2026-08-06), runs on the box. The gpu
-  resident re-zeroing `{win,ssm}` at `pos==0` is fixed in code;
+- **C-01 (resident half)** [linux/gpu] — **DONE** (2026-08-06, Linux/webgpu box, device-verified on
+  real granite-4.0-h-tiny-Q8_0). The gpu resident re-zeroing `{win,ssm}` at `pos==0` is fixed in code;
   `gpu.TestResident_C01_pos0ResetsRecurrent` reproduces the leak directly — run token T at pos 0 on a
   fresh resident, compound `{win,ssm}` by decoding 8 more tokens, then run token T at pos 0 again and
-  assert the logits are reproducible (fix re-zeroes; a leak diverges). Needs a Mamba-2 hybrid resident
-  (`GOINFER_HEAVY_TESTS=1`; path via `GOINFER_SSM_MODEL` or the default granite path) — **this Mac
-  carries no SSM checkpoint**, so it skips here and executes on the CUDA/webgpu box. WebGPU itself was
-  confirmed working on the Mac (device inits; the skip is purely model-absence). CPU half covered by
+  assert the logits are reproducible (fix re-zeroes; a leak diverges). **Passed on the box: maxAbs = 0**
+  (exact reproduction across sequences — state genuinely re-zeroed; well inside the 1e-3 floor). Needs a
+  Mamba-2 hybrid resident (`GOINFER_HEAVY_TESTS=1`; path via `GOINFER_SSM_MODEL` or the default granite
+  path); skips on the Mac purely for model-absence (WebGPU itself inits there). CPU half covered by
   `TestTruncateTo_resetsRecurrent`.
 - **C-03** — **DONE** (2026-08-06, Mac, device-verified on webgpu). `GenerateSpeculative`'s `resBusy`
   CAS is fixed in code; `gpu.TestSpeculative_C03_concurrentResidentClaim` runs a plain resident
@@ -266,7 +267,9 @@ triggers Go's fatal `concurrent map read and map write`.
   EITHER backend — resident, or the staged CPU fallback the CAS loser takes (the two differ by a token
   at a near-tie: the documented resident-vs-CPU gap, not corruption). An interleaved-resident-KV
   corruption (the pre-fix bug) matches neither reference. Passes on this Mac; heavy+webgpu gated
-  (`GOINFER_HEAVY_TESTS=1`, models via `GOINFER_SPEC_TARGET`/`GOINFER_SPEC_DRAFT`).
+  (`GOINFER_HEAVY_TESTS=1`, models via `GOINFER_SPEC_TARGET`/`GOINFER_SPEC_DRAFT`). **Cross-confirmed
+  2026-08-06 on the Linux/webgpu box under `-race`** (PASS, 181s, 4 concurrent rounds, no
+  interleaved-KV corruption) — clean on both backends' hardware.
 
 ---
 
