@@ -237,6 +237,34 @@ land. See `CHANGELOG.md`.
 go get github.com/townsendmerino/goinfer
 ```
 
+### Modules
+
+goinfer ships as **four Go modules**. The three GPU backends are separate modules so their
+dependencies (`cogentcore/webgpu` and its cgo, `eitamring/gocudrv`, `ebitengine/purego`)
+never enter the dependency graph of a build that doesn't ask for them.
+
+| Module path | Contents |
+|---|---|
+| `github.com/townsendmerino/goinfer` | everything in the Packages table below except the three backends |
+| `github.com/townsendmerino/goinfer/gpu` | WebGPU backend (`-tags gpu`) |
+| `github.com/townsendmerino/goinfer/cuda` | native CUDA backend (`-tags cuda`) |
+| `github.com/townsendmerino/goinfer/metal` | native Metal backend (`-tags metal`) |
+
+**You normally name only the root.** Its `go.mod` requires the other three at versions known
+to work with it, so `go get github.com/townsendmerino/goinfer` brings all four and a
+`-tags cuda` build resolves without further action. Naming a backend module explicitly is
+only needed to pin, vendor, or audit it:
+
+```bash
+go get github.com/townsendmerino/goinfer/gpu@v0.9.0
+```
+
+**The backend modules are versioned independently of the root and of each other** — they are
+not in lockstep, since a root-only release doesn't retag them. Backend tags carry the module
+path as a prefix (e.g. `gpu/v0.9.0`), which is how Go's module proxy resolves a submodule tag;
+the bare `v0.9.x` tags are the root's. When in doubt, take the root's requirement rather than
+picking a backend version yourself.
+
 ## Packages
 
 | Package | Purpose | Deps beyond stdlib |
@@ -366,6 +394,39 @@ WebGPU backend (`-tags gpu`) covers a broader resident set (MoE, MLA, SSM, YaRN)
 > speculative decoding — the resident decode path is fast enough that the per-request
 > session optimization isn't worth it. The OpenAI API is stateless (clients resend the
 > whole conversation), so this is a throughput trade, not a correctness change.
+
+## Prequantized weight bundles (`.giw`)
+
+Loading a GGUF quantizes its weights on every launch. A **`.giw` bundle** stores the
+already-quantized resident weights alongside a metadata-only GGUF (the source truncated at
+the tensor-data boundary, so it still carries the tokenizer). Loading one skips
+dequant/requant entirely — the weights are aliased straight from the file image rather than
+copied into a multi-GB heap.
+
+Build one with `cmd/prequant`:
+
+```bash
+go run ./cmd/prequant -o model.giw ~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
+```
+
+| Flag | Meaning |
+|---|---|
+| `-o PATH` | output bundle path (**required**) |
+| `-quant` | quant baked into the bundle: `int8int8` (default), `int8`, or `int4` |
+| `-embed-int4` | with `-quant int4`, store the token-embedding / LM-head table at int4 too instead of pinning it at int8 — roughly halves the head's per-token traffic on a big-vocab model |
+
+The quant is **baked in at build time**: a bundle made with `-quant int8int8` is an int8int8
+model, and `serve --quant` cannot change it afterwards. Build a separate bundle per quant you
+intend to serve.
+
+Then serve it like any other model:
+
+```bash
+./serve --model model.giw
+```
+
+`serve --stream-weights` also produces these on demand — a plain `.gguf` is transcoded to a
+sidecar `.giw` cache on first use, so the one-time cost is paid once rather than per launch.
 
 ## Quick start
 
