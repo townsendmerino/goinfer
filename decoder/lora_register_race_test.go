@@ -22,8 +22,8 @@ func TestRegisterAdapter_retiresNotCloses_C29(t *testing.T) {
 	if got := m.adapter("a"); got != rt2 {
 		t.Errorf("re-register did not replace: got %p want %p", got, rt2)
 	}
-	if len(m.retiredAdapters) != 1 || m.retiredAdapters[0] != rt1 {
-		t.Errorf("displaced rt1 not retired (retired=%v) — a live session holding it would read freed memory (C-29)", m.retiredAdapters)
+	if len(m.adapters.retired) != 1 || m.adapters.retired[0] != rt1 {
+		t.Errorf("displaced rt1 not retired (retired=%v) — a live session holding it would read freed memory (C-29)", m.adapters.retired)
 	}
 
 	// Concurrent register (re-register) + reads must be race-free (run under -race).

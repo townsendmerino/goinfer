@@ -153,7 +153,7 @@ func TestLoRACompute_forwardParity(t *testing.T) {
 		t.Fatalf("merged prefill: %v", err)
 	}
 	cb := mBase.NewCache(len(prompt))
-	cb.lora = mBase.adapters["a"]
+	cb.lora = mBase.adapter("a")
 	lCT, err := mBase.prefillLogits(prompt, cb)
 	if err != nil {
 		t.Fatalf("compute-time prefill: %v", err)

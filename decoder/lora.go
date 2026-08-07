@@ -285,33 +285,44 @@ func (m *Model) LoadAdapter(name, dir string) error {
 
 // registerAdapter installs rt under name, retiring any runtime it displaces (audit C-29). A live
 // Session may still hold the displaced runtime via cache.lora and read its mmap'd deltas
-// mid-generation, so it is retired (released at Model.Close), never munmap'd here. Locked because
-// UseAdapter/HasAdapter read the map from other request goroutines.
+// mid-generation, so it is retired (released at Model.Close), never munmap'd here. The registry's
+// mutex guards this against concurrent UseAdapter/HasAdapter reads from other request goroutines.
+// The registry is allocated on first use (adapters are loaded at setup, before serving), so the
+// pointer field is only ever set here.
 func (m *Model) registerAdapter(name string, rt *loraRuntime) {
-	m.adaptersMu.Lock()
-	defer m.adaptersMu.Unlock()
 	if m.adapters == nil {
-		m.adapters = map[string]*loraRuntime{}
+		m.adapters = newAdapterRegistry()
 	}
-	if old := m.adapters[name]; old != nil {
-		m.retiredAdapters = append(m.retiredAdapters, old)
+	reg := m.adapters
+	reg.mu.Lock()
+	defer reg.mu.Unlock()
+	if old := reg.byName[name]; old != nil {
+		reg.retired = append(reg.retired, old)
 	}
-	m.adapters[name] = rt
+	reg.byName[name] = rt
 }
 
 // HasAdapter reports whether a compute-time adapter is registered under name.
 func (m *Model) HasAdapter(name string) bool {
-	m.adaptersMu.Lock()
-	defer m.adaptersMu.Unlock()
-	_, ok := m.adapters[name]
+	reg := m.adapters
+	if reg == nil {
+		return false
+	}
+	reg.mu.Lock()
+	defer reg.mu.Unlock()
+	_, ok := reg.byName[name]
 	return ok
 }
 
-// adapter returns the runtime registered under name (nil if absent), under the lock.
+// adapter returns the runtime registered under name (nil if absent), under the registry lock.
 func (m *Model) adapter(name string) *loraRuntime {
-	m.adaptersMu.Lock()
-	defer m.adaptersMu.Unlock()
-	return m.adapters[name]
+	reg := m.adapters
+	if reg == nil {
+		return nil
+	}
+	reg.mu.Lock()
+	defer reg.mu.Unlock()
+	return reg.byName[name]
 }
 
 // applyLoRA adds the low-rank delta s·B(A·x) into y in place — the compute-time
