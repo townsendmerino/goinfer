@@ -26,9 +26,9 @@ the gitignored `go.work` masks it locally, so it survives to a tag unless caught
 
 ## Pre-flight (before touching versions)
 
-1. All §1 API blockers are in (B-08…B-14 — see `docs/audit-2026-08-05.md`; B-09/B-10/B-11/B-13
+1. All §1 API blockers are in (B-08…B-14 — see `docs/completed/audit-2026-08-05.md`; B-09/B-10/B-11/B-13
    landed 2555edc; B-08/B-12 must be done first — they are breaking-to-fix-after-tag).
-2. `docs/audit-2026-08-05.md` §9 "before the tag" set (C-18/C-19 in; confirm nothing regressed).
+2. `docs/completed/audit-2026-08-05.md` §9 "before the tag" set (C-18/C-19 in; confirm nothing regressed).
 3. **§C1 parity re-validation** (below, real T3 on the box) is scheduled — it is the one ⛔ gate.
 4. Working tree clean; on `main`; `gh auth switch --user townsendmerino`.
 

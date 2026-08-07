@@ -53,7 +53,7 @@ pre-1.0 and may change as new model families and quant formats land.
   two have distinct, non-1:1 field sets and now carry reciprocal doc comments.
 
 ### Fixed
-- **The entire 2026-08-05 code audit is closed** ([`docs/audit-2026-08-05.md`](docs/audit-2026-08-05.md)):
+- **The entire 2026-08-05 code audit is closed** ([`docs/completed/audit-2026-08-05.md`](docs/completed/audit-2026-08-05.md)):
   14/14 blockers, 31/31 criticals, 6/6 gates, 23/23 majors (+ the later latent M-25), 24/24 minors.
   Behaviour-affecting highlights:
   - **No silently-wrong output:** gemma4 session KV snapshots refuse a per-layer-KV geometry the
