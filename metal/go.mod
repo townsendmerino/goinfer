@@ -11,7 +11,7 @@ require (
 
 require (
 	github.com/townsendmerino/aikit v1.16.0
-	github.com/townsendmerino/aikit/gpu v0.26.1
+	github.com/townsendmerino/aikit/gpu v0.27.0
 	golang.org/x/sys v0.47.0
 	golang.org/x/text v0.40.0 // indirect
 )

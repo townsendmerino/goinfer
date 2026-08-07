@@ -271,6 +271,16 @@ func parallelF32ToF16(dst []uint16, src []float32) {
 // int4Buf uploads a WeightMat as W4A8 (int4, group=32) + f16 group scales. If the weight is
 // ALREADY int4 (a Quant:"int4" load), it consumes the nibbles directly (int4-direct, no int8
 // step); otherwise it re-quantizes the int8 weight through the validated packer. One-time at build.
+// maxThreadgroupStageBytes returns the largest threadgroup staging allocation (bytes) any resident
+// dispatch will request. The SA-GEMV / MoE kernels stage the GEMV's contraction row into threadgroup
+// memory at 2 bytes/element (DispatchTG tgBytes = 2·K); the widest staged K is `hidden` (qkv/gate-up),
+// the q-width `qWidth` = nH·hd (o-proj), or — for MoE — the expert intermediate `moeInter`/`g4moeInter`
+// (the expert down-proj stages `inter`). The dense down-proj uses the non-staging pGemv, so the dense
+// intermediate is deliberately NOT counted. Split out so the M-11 budget arithmetic is unit-testable.
+func maxThreadgroupStageBytes(hidden, qWidth, moeInter, g4moeInter int) int {
+	return 2 * max(max(hidden, qWidth), max(moeInter, g4moeInter))
+}
+
 func int4Buf(d *Device, w *linalg.WeightMat) (Buffer, Buffer, error) {
 	// The W4A8 layout and every GEMV kernel hard-assume K is a multiple of the group (32): rows are
 	// packed K/8 words + K/32 scales with no partial-group handling. A K%32 != 0 weight would pack a
@@ -596,6 +606,23 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		if e != nil {
 			return nil, e
 		}
+	}
+	// M-11: the SA-GEMV / MoE kernels stage the GEMV's contraction row into threadgroup memory at
+	// 2 bytes/element (DispatchTG tgBytes = 2·K). The widest staged K is hidden, the q-width
+	// (nH·hd), or — for MoE — the expert intermediate (the expert down-proj stages `inter`). A
+	// dispatch whose threadgroup memory exceeds the device tile limit ABORTS the command buffer,
+	// and per C-09 the host would otherwise read stale logits. Decline here so the caller falls back
+	// to CPU. (Mixtral's inter=14336 → 28672 B is already 87% of a 32 KiB budget; inter≥16384
+	// exceeds it. Dense down-proj uses the non-staging pGemv, so I is NOT counted.)
+	moeInter, g4Inter := 0, 0
+	if r.moe != nil {
+		moeInter = r.moe.inter
+	}
+	if r.g4moe != nil {
+		g4Inter = r.g4moe.moeInter
+	}
+	if tg, lim := maxThreadgroupStageBytes(H, maxNHhd, moeInter, g4Inter), d.MaxThreadgroupMemoryLength(); tg > lim {
+		return nil, fmt.Errorf("metal: threadgroup staging needs %d B (2×K) > device tile-memory max %d B — declining to CPU (audit M-11)", tg, lim)
 	}
 	r.x = d.NewBufferLen(H)
 	r.aq, r.aSc = byteBuf(d, H), d.NewBufferLen(1)
