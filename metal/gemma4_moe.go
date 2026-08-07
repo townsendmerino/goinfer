@@ -434,7 +434,19 @@ func (r *resident) encodeG4Phase2Paged(e *Encoder, slots []expertSlot) {
 // +43%): [attention + dense + router] → submit+wait → read rIdx → stage the routed top-k into the
 // layer's LRU slot pool → [experts-from-slots + join] → submit+wait. Assumes the caller filled r.x
 // with the embedding and holds the OS thread (ForwardEmb does both).
-func (r *resident) forwardLogitsPaged(pos int) []float32 {
+func (r *resident) forwardLogitsPaged(pos int) (logits []float32) {
+	// The pread staging closure (stagePread) and the per-token MustBuf allocations panic on a
+	// transient .giw read error or OOM — deep inside expertPool.ensureResident, at DECODE time, where
+	// no recover otherwise exists (buildResident's is build-scoped). A single external-volume hiccup on
+	// the flagship 26B paged path would kill the whole server mid-token. Convert the panic to execErr
+	// so the metalResident adapter surfaces a failed request and drops the stale logits, rather than
+	// crashing the process (audit R-02; same runtime-abort discipline as C-09).
+	defer func() {
+		if p := recover(); p != nil {
+			r.recordExecErr(fmt.Errorf("metal: paged forward aborted: %v", p))
+			logits = nil
+		}
+	}()
 	r.uPos.SetU32(uint32(pos))
 	r.uNKeys.SetU32(uint32(pos + 1))
 	g := r.g4moe

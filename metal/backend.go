@@ -151,10 +151,28 @@ func (a *metalResident) PrefillLast(embeddings [][]float32, startPos int) ([]flo
 	if !a.r.prefillOK {
 		return nil, fmt.Errorf("metal: prefill not implemented for this arch's FFN shape (use the sequential path)")
 	}
-	if len(embeddings) == 0 || startPos+len(embeddings) > metalCtxCap {
-		return nil, fmt.Errorf("metal: prompt %d exceeds resident cap %d", len(embeddings), metalCtxCap)
+	// startPos < 0 would wrap to a huge uint32 and make kv_store_f16 write far out of bounds — on
+	// UMA that silently corrupts adjacent buffers (audit R-27). Unreachable today (the decoder always
+	// passes 0) but cheap to guard.
+	if startPos < 0 || len(embeddings) == 0 || startPos+len(embeddings) > metalCtxCap {
+		return nil, fmt.Errorf("metal: prompt len %d at startPos %d out of resident cap %d", len(embeddings), startPos, metalCtxCap)
 	}
-	logits := a.r.PrefillLast(embeddings, startPos)
+	// ensurePrefill's compile panic and the ~24 per-call MustBuf OOM panics fire HERE, at request
+	// time, with no recover of their own (buildResident's is build-scoped). A transient OOM would kill
+	// the server; recover into an error so the request fails and the caller falls back to sequential
+	// decode (audit R-23; B-10 class).
+	var logits []float32
+	if err := func() (err error) {
+		defer func() {
+			if p := recover(); p != nil {
+				err = fmt.Errorf("metal: batched prefill aborted: %v", p)
+			}
+		}()
+		logits = a.r.PrefillLast(embeddings, startPos)
+		return nil
+	}(); err != nil {
+		return nil, err
+	}
 	if err := a.r.takeExecErr(); err != nil {
 		return nil, err // C-09
 	}

@@ -599,7 +599,14 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		}
 		return nil
 	}
-	widthChecks := []error{bad8("hidden", H), bad8("intermediate", I), bad8("vocab", V)}
+	// Include the attention widths too (audit R-28): the fused-QKV projection dispatches
+	// (nH·hd + 2·nKV·hd) rows through pSABias, so both the q-width (nH·hd) and kv-width (nKV·hd) — and
+	// hence their sum — must be %8. C-10 exempted them on the "hd is 64/128" assumption; check them
+	// explicitly so an admitted arch with hd%8 != 0 declines instead of corrupting.
+	widthChecks := []error{
+		bad8("hidden", H), bad8("intermediate", I), bad8("vocab", V),
+		bad8("attn q-width (nH·hd)", maxNHhd), bad8("attn kv-width (nKV·hd)", maxKvDim),
+	}
 	if r.moe != nil {
 		widthChecks = append(widthChecks, bad8("MoE expert intermediate", r.moe.inter), bad8("MoE shared-expert intermediate", r.moe.sharedInter))
 	}

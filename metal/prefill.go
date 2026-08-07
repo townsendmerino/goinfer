@@ -258,7 +258,9 @@ kernel void kv_store_f16(device const half* qkv[[buffer(0)]], device half* kc[[b
 
 // prefillState holds the lazily-compiled prefill pipelines (opt-in; decode-only builds skip it).
 type prefillState struct {
-	pGemm, pGemmStore, pRms, pRes, pSw, pRope, pKv, pAttn, pQK, pRmsQ Pipeline
+	// pGemm (gemm_w4f16, no store epilogue) was created but never dispatched — the prefill LM head
+	// moved to pRmsQ + pGemvW8, and every GEMM here uses pGemmStore. Removed (audit R-22 / N-09 class).
+	pGemmStore, pRms, pRes, pSw, pRope, pKv, pAttn, pQK, pRmsQ Pipeline
 }
 
 func (r *resident) ensurePrefill() {
@@ -284,7 +286,7 @@ func (r *resident) ensurePrefill() {
 		return pp
 	}
 	r.pf = &prefillState{
-		pGemm: p("gemm_w4f16"), pGemmStore: p("gemm_w4f16_store"), pRms: p("rmsnorm_f16"),
+		pGemmStore: p("gemm_w4f16_store"), pRms: p("rmsnorm_f16"),
 		pRes: p("residual_f16"), pSw: p("swiglu_f16"), pRope: p("rope_f16"),
 		pKv: p("kv_store_f16"), pAttn: p("attention_prefill"), pQK: p("qk_norm_f16"),
 		pRmsQ: p("rmsnorm_quant_f16"),
