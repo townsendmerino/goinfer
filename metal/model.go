@@ -603,9 +603,15 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	// (nH·hd + 2·nKV·hd) rows through pSABias, so both the q-width (nH·hd) and kv-width (nKV·hd) — and
 	// hence their sum — must be %8. C-10 exempted them on the "hd is 64/128" assumption; check them
 	// explicitly so an admitted arch with hd%8 != 0 declines instead of corrupting.
-	widthChecks := []error{
-		bad8("hidden", H), bad8("intermediate", I), bad8("vocab", V),
-		bad8("attn q-width (nH·hd)", maxNHhd), bad8("attn kv-width (nKV·hd)", maxKvDim),
+	widthChecks := []error{bad8("hidden", H), bad8("intermediate", I), bad8("vocab", V)}
+	// Check EACH layer geom, not the maxima: a two-geom arch (Gemma-4 local/global) whose SMALLER
+	// q/kv width is non-%8 while the larger is %8 would pass a max-only check yet corrupt that layer's
+	// SA-GEMV (audit F-04). Duplicate widths across uniform layers are harmless.
+	for l := range r.layers {
+		g := r.layers[l].geom
+		widthChecks = append(widthChecks,
+			bad8(fmt.Sprintf("layer %d attn q-width (nH·hd)", l), r.nH*g.hd),
+			bad8(fmt.Sprintf("layer %d attn kv-width (nKV·hd)", l), g.kvDim))
 	}
 	if r.moe != nil {
 		widthChecks = append(widthChecks, bad8("MoE expert intermediate", r.moe.inter), bad8("MoE shared-expert intermediate", r.moe.sharedInter))

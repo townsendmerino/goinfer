@@ -437,7 +437,7 @@ func (s *server) handleMessages(w http.ResponseWriter, r *http.Request) {
 		writeAnthropicErr(w, http.StatusInternalServerError, "api_error", "encode: "+err.Error())
 		return
 	}
-	if gr, err = lm.prepare(req.toSampling(), ids); err != nil {
+	if gr, err = lm.prepare(req.toSampling(), ids, lm.adapter == ""); err != nil {
 		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return
 	}

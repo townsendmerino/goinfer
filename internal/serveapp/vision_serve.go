@@ -135,7 +135,7 @@ func (s *server) serveVisionChat(w http.ResponseWriter, r *http.Request, req cha
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	gr, err := lm.prepare(req.sampling, vi.ids)
+	gr, err := lm.prepare(req.sampling, vi.ids, false)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
@@ -205,7 +205,7 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return
 	}
-	gr, err := lm.prepare(req.toSampling(), vi.ids)
+	gr, err := lm.prepare(req.toSampling(), vi.ids, false)
 	if err != nil {
 		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return

@@ -133,7 +133,7 @@ func (s *server) handleResponses(w http.ResponseWriter, r *http.Request) {
 		writeServerErr(w, "encode: "+err.Error())
 		return
 	}
-	gr, err := lm.prepare(sm, ids)
+	gr, err := lm.prepare(sm, ids, lm.adapter == "")
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
@@ -197,7 +197,7 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 		writeServerErr(w, "encode: "+err.Error())
 		return
 	}
-	gr, err := lm.prepare(sm, ids)
+	gr, err := lm.prepare(sm, ids, lm.adapter == "")
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return

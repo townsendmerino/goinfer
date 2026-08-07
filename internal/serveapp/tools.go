@@ -35,7 +35,7 @@ func (s *server) handleChatTools(w http.ResponseWriter, r *http.Request, req cha
 		writeServerErr(w, "encode: "+err.Error())
 		return
 	}
-	gr, err := lm.prepare(req.sampling, ids)
+	gr, err := lm.prepare(req.sampling, ids, lm.adapter == "")
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return

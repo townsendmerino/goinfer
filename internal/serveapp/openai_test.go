@@ -92,7 +92,7 @@ func TestPrepare_sampling(t *testing.T) {
 	gr, err := lm.prepare(sampling{
 		Temperature: f(0.3), TopP: f(0.9), TopK: i(40), MaxTokens: i(128),
 		FrequencyPenalty: f(0.5), PresencePenalty: f(0.2),
-	}, []int{1, 2, 3})
+	}, []int{1, 2, 3}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +103,7 @@ func TestPrepare_sampling(t *testing.T) {
 		t.Errorf("penalties not mapped: %+v", gr.sp)
 	}
 	// Defaults: no fields → temperature 1, max_tokens default, top_p disabled (0).
-	def, _ := lm.prepare(sampling{}, nil)
+	def, _ := lm.prepare(sampling{}, nil, true)
 	if def.sp.Temperature != 1.0 || def.maxTokens != defaultMaxTokens || def.sp.TopP != 0 {
 		t.Errorf("defaults wrong: temp %v max %d topP %v", def.sp.Temperature, def.maxTokens, def.sp.TopP)
 	}
@@ -126,7 +126,7 @@ func TestPrepare_maxTokensBounds(t *testing.T) {
 		{"ceiling", maxOutputTokensCeiling, true},
 		{"over-ceiling", maxOutputTokensCeiling + 1, false},
 	} {
-		_, err := lm.prepare(sampling{MaxTokens: i(tc.mt)}, []int{1, 2, 3})
+		_, err := lm.prepare(sampling{MaxTokens: i(tc.mt)}, []int{1, 2, 3}, true)
 		if tc.ok && err != nil {
 			t.Errorf("%s: max_tokens=%d unexpectedly rejected: %v", tc.name, tc.mt, err)
 		}
@@ -500,7 +500,7 @@ func TestPrepare_topPAndSeed(t *testing.T) {
 	lm := &loadedModel{}
 	f := func(v float64) *float64 { return &v }
 	// M-02: top_p==0 → greedy (Temperature 0), not a full-vocab draw.
-	gr, err := lm.prepare(sampling{TopP: f(0)}, []int{1})
+	gr, err := lm.prepare(sampling{TopP: f(0)}, []int{1}, true)
 	if err != nil {
 		t.Fatalf("top_p=0: %v", err)
 	}
@@ -508,22 +508,22 @@ func TestPrepare_topPAndSeed(t *testing.T) {
 		t.Errorf("top_p=0 → Temperature %v TopP %v, want greedy (0,0)", gr.sp.Temperature, gr.sp.TopP)
 	}
 	// M-02: 0 < top_p < 1 sets the nucleus; out-of-range is a 400.
-	if gr, _ := lm.prepare(sampling{TopP: f(0.9)}, []int{1}); gr.sp.TopP != 0.9 {
+	if gr, _ := lm.prepare(sampling{TopP: f(0.9)}, []int{1}, true); gr.sp.TopP != 0.9 {
 		t.Errorf("top_p=0.9 → TopP %v, want 0.9", gr.sp.TopP)
 	}
 	for _, bad := range []float64{-0.1, 1.5} {
-		if _, err := lm.prepare(sampling{TopP: f(bad)}, []int{1}); err == nil {
+		if _, err := lm.prepare(sampling{TopP: f(bad)}, []int{1}, true); err == nil {
 			t.Errorf("top_p=%v not rejected", bad)
 		}
 	}
 	// M-03: omitted seed varies (two calls differ w.h.p.); a supplied seed is honored.
-	a, _ := lm.prepare(sampling{}, []int{1})
-	b, _ := lm.prepare(sampling{}, []int{1})
+	a, _ := lm.prepare(sampling{}, []int{1}, true)
+	b, _ := lm.prepare(sampling{}, []int{1}, true)
 	if a.sp.Seed == 0 && b.sp.Seed == 0 {
 		t.Error("omitted seed is still deterministic 0 (M-03)")
 	}
 	sd := int64(42)
-	if gr, _ := lm.prepare(sampling{Seed: &sd}, []int{1}); gr.sp.Seed != 42 {
+	if gr, _ := lm.prepare(sampling{Seed: &sd}, []int{1}, true); gr.sp.Seed != 42 {
 		t.Errorf("supplied seed 42 → %d", gr.sp.Seed)
 	}
 }

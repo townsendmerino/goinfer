@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -96,7 +97,18 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
 		// Report the JSON-side field + expected type instead (audit R-11).
 		var ute *json.UnmarshalTypeError
 		if errors.As(err, &ute) {
-			writeErr(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: field %q has the wrong type (expected %s)", ute.Field, ute.Type))
+			// ute.Type is a reflect.Type; for a composite field it renders the internal named type
+			// (e.g. "[]serveapp.chatMessage"), re-leaking the Go type names M-06/R-11 exist to hide.
+			// Name the expected type only for scalar kinds (bool/number/string); else stay generic (F-03).
+			switch ute.Type.Kind() {
+			case reflect.Bool, reflect.String,
+				reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+				reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
+				reflect.Float32, reflect.Float64:
+				writeErr(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: field %q has the wrong type (expected %s)", ute.Field, ute.Type.Kind()))
+			default:
+				writeErr(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: field %q has the wrong type", ute.Field))
+			}
 			return false
 		}
 		var se *json.SyntaxError

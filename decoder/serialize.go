@@ -378,6 +378,26 @@ func validateShapes(w *Weights, arch *Architecture) *SerializeError {
 				return e
 			}
 		}
+		// gemma-4 per-layer-embedding (PLE) branch: PLEGate/PLEProj are matmul'd and PostPLENorm
+		// rmsNorm'd at fixed widths; a wrong-rows blob OOB-panics or silently truncates the PLE
+		// activation (audit F-02, R-07 remainder).
+		if arch.gemma4 != nil {
+			if pleDim := arch.gemma4.HiddenSizePerLayerInput; pleDim > 0 {
+				if lw.PLEGate.Rows() > 0 {
+					if e := eq(fmt.Sprintf("layer %d PLEGate", i), lw.PLEGate.Rows(), pleDim); e != nil {
+						return e
+					}
+				}
+				if lw.PLEProj.Rows() > 0 {
+					if e := eq(fmt.Sprintf("layer %d PLEProj", i), lw.PLEProj.Rows(), arch.HiddenDim); e != nil {
+						return e
+					}
+				}
+			}
+			if e := vec(fmt.Sprintf("layer %d PostPLENorm", i), len(lw.PostPLENorm), arch.HiddenDim); e != nil {
+				return e
+			}
+		}
 		// gemma-4 dense‖MoE sub-block (l.gemma4moe): the standard Router/Experts are empty for gemma-4,
 		// so the arch.MoE block below never validates it. The router feeds make([]float32, nE) and each
 		// expert index runs to nE — a short router mis-routes silently, a long one or ne != NumExperts
@@ -393,6 +413,21 @@ func validateShapes(w *Weights, arch *Architecture) *SerializeError {
 			if e := vec(fmt.Sprintf("layer %d gemma4moe perExpertScale", i), len(mo.perExpertScale), nE); e != nil {
 				return e
 			}
+			// routerScale scales the [hidden] router input; the three branch norms rmsNorm at hidden —
+			// a short slice OOB-panics in the decode goroutine (audit F-02, R-07 remainder).
+			for _, c := range []struct {
+				name string
+				got  int
+			}{
+				{"gemma4moe routerScale", len(mo.routerScale)},
+				{"gemma4moe postFFNNorm1", len(mo.postFFNNorm1)},
+				{"gemma4moe preFFNNorm2", len(mo.preFFNNorm2)},
+				{"gemma4moe postFFNNorm2", len(mo.postFFNNorm2)},
+			} {
+				if e := vec(fmt.Sprintf("layer %d %s", i, c.name), c.got, arch.HiddenDim); e != nil {
+					return e
+				}
+			}
 			for xe := range mo.expertsGateUp {
 				if e := eq(fmt.Sprintf("layer %d gemma4moe expert %d gate|up", i, xe), mo.expertsGateUp[xe].Rows(), 2*moeInter); e != nil {
 					return e
@@ -403,6 +438,28 @@ func validateShapes(w *Weights, arch *Architecture) *SerializeError {
 			}
 		}
 		if arch.MoE != nil {
+			// RouterBias is addBias'd over the [NumExperts] router logits; the shared expert's
+			// Gate/Up write SharedIntermediateDim scratch, Down writes hidden, and SharedGate is the
+			// scalar sigmoid gate (1 row). A short blob panics; validate them (audit F-02).
+			if e := vec(fmt.Sprintf("layer %d RouterBias", i), len(lw.RouterBias), arch.MoE.NumExperts); e != nil {
+				return e
+			}
+			for _, c := range []struct {
+				name string
+				got  int
+				want int
+			}{
+				{"SharedExpert Gate", lw.SharedExpert.Gate.Rows(), arch.MoE.SharedIntermediateDim},
+				{"SharedExpert Up", lw.SharedExpert.Up.Rows(), arch.MoE.SharedIntermediateDim},
+				{"SharedExpert Down", lw.SharedExpert.Down.Rows(), arch.HiddenDim},
+				{"SharedGate", lw.SharedGate.Rows(), 1},
+			} {
+				if c.got > 0 {
+					if e := eq(fmt.Sprintf("layer %d %s", i, c.name), c.got, c.want); e != nil {
+						return e
+					}
+				}
+			}
 			// Router feeds moeMLP's make([]float32, NumExperts) — the exploit the audit names.
 			if lw.Router.Rows() > 0 {
 				if e := eq(fmt.Sprintf("layer %d Router", i), lw.Router.Rows(), arch.MoE.NumExperts); e != nil {

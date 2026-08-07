@@ -342,10 +342,14 @@ func (r *cudaResident) allocSlots() error {
 	// Size from the FIRST ROUTED layer (moeLayers[0]), not layer 0 — see slotBytesPerLayer (C-25).
 	perLayer := r.slotBytesPerLayer(moeLayers[0])
 	if perLayer <= 0 {
-		// No routed layer reports a per-expert stride: nothing to cache and, more importantly,
-		// nothing to divide by. Decline the expert cache rather than panic; the fully-resident
-		// path is still correct, it just holds every expert. Clear cacheExperts so the decode path
-		// doesn't later read slots/expCache that were never allocated → nil-deref (audit R-25).
+		// No routed layer reports a per-expert stride (a degenerate blob): nothing to cache and,
+		// more importantly, nothing to divide by. Clear cacheExperts so the decode path can't later
+		// read slots/expCache that were never allocated → nil-deref (audit R-25). NOTE (F-05): this
+		// does NOT yield a working "hold every expert" resident path — with caching off and no stride,
+		// upExperts left the expert stacks host-mapped-only, so the expert GEMVs would bind zero-value
+		// device buffers. This branch is unreachable with any real MoE checkpoint (they all report a
+		// per-expert stride); it exists only to fail safe, not to serve. A blob that trips it should be
+		// declined to the staged/CPU path upstream.
 		r.cacheExperts = false
 		fmt.Fprintf(os.Stderr, "[cuda] C′ cache: routed layer %d reports zero per-expert bytes — expert cache disabled\n", moeLayers[0])
 		return nil

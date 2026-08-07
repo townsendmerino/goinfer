@@ -445,6 +445,12 @@ func (r *resident) forwardLogitsPaged(pos int) (logits []float32) {
 		if p := recover(); p != nil {
 			r.recordExecErr(fmt.Errorf("metal: paged forward aborted: %v", p))
 			logits = nil
+			// Accepted bounded side-effects on this rare abort path (audit F-06): the in-flight
+			// encoder is left un-ended (a small native cb/pool leak) and a slot's stale slotExpert tag
+			// may cost one spurious re-stage on a later eviction. Both are perf-only and bounded by the
+			// abort count. We deliberately do NOT drain/End the live encoder here: the path mixes
+			// Begin() (own autorelease pool) and BeginNP() (nil pool, shared arp), so a blind
+			// DrainPool/End would nil-panic or commit a half-encoded command buffer — worse than the leak.
 		}
 	}()
 	r.uPos.SetU32(uint32(pos))

@@ -41,7 +41,7 @@ func FuzzServeChatRequest(f *testing.F) {
 		sm := req.sampling
 		sm.ResponseFormat = nil
 		lm := &loadedModel{}
-		_, _ = lm.prepare(sm, []int{1, 2, 3})
+		_, _ = lm.prepare(sm, []int{1, 2, 3}, true)
 		_, _ = messagesToTurns(req.Messages)
 		_ = parseStop(req.sampling.Stop)
 	})
@@ -74,7 +74,7 @@ func FuzzServeMessagesRequest(f *testing.F) {
 		mode, name := anthropicToolMode(req.ToolChoice)
 		_ = anthropicForcedTool(mode, name, anthropicTools(req.Tools))
 		lm := &loadedModel{}
-		_, _ = lm.prepare(req.toSampling(), []int{1, 2, 3})
+		_, _ = lm.prepare(req.toSampling(), []int{1, 2, 3}, true)
 	})
 }
 

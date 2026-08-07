@@ -368,7 +368,7 @@ func (s *server) handleChat(w http.ResponseWriter, r *http.Request) {
 		writeServerErr(w, "encode: "+err.Error())
 		return
 	}
-	gr, err := lm.prepare(req.sampling, ids)
+	gr, err := lm.prepare(req.sampling, ids, lm.adapter == "")
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
@@ -449,7 +449,7 @@ func (s *server) handleCompletions(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "encode: "+err.Error())
 		return
 	}
-	gr, err := lm.prepare(req.sampling, ids)
+	gr, err := lm.prepare(req.sampling, ids, lm.adapter == "")
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
@@ -503,7 +503,11 @@ type genRequest struct {
 
 // prepare translates the OpenAI sampling fields into goinfer's SamplingParams,
 // wires response_format into a constraint masker, and resolves stop strings.
-func (lm *loadedModel) prepare(sm sampling, promptIDs []int) (genRequest, error) {
+// residentPath tells prepare whether THIS request will actually run the stateless GPU-resident
+// decode path (so the resident context cap binds). It's false for vision requests (GenerateVL is
+// CPU-only) and for adapter models (R-01 routes them to the staged/CPU session path) — applying the
+// resident cap to those over-rejected prompts the CPU path would serve (audit F-01).
+func (lm *loadedModel) prepare(sm sampling, promptIDs []int, residentPath bool) (genRequest, error) {
 	sp := decoder.SamplingParams{
 		Temperature: deref(sm.Temperature, 1.0),
 		Seed:        seedOrRandom(sm.Seed), // M-03: omitted seed → fresh random, not deterministic seed 0
@@ -569,9 +573,13 @@ func (lm *loadedModel) prepare(sm sampling, promptIDs []int) (genRequest, error)
 		// often smaller than MaxPositions. A prompt in (residentCap, MaxPositions) passes the
 		// MaxPositions check, then dies mid-prefill with a 500 whose body leaks the internal
 		// "use the staged path" hint (there is no staged fallback on the stateless resident path).
-		// Reject it here as a clean context_length_exceeded 400 instead (audit R-10).
-		if rc := lm.model.ResidentContextCap(); rc > 0 && (ctx <= 0 || rc < ctx) {
-			ctx = rc
+		// Reject it here as a clean context_length_exceeded 400 instead (audit R-10). Only when this
+		// request actually runs stateless-resident — never for vision (CPU VL) or adapter (staged)
+		// requests, which are bounded by MaxPositions, not the resident cap (audit F-01).
+		if residentPath {
+			if rc := lm.model.ResidentContextCap(); rc > 0 && (ctx <= 0 || rc < ctx) {
+				ctx = rc
+			}
 		}
 		if err := contextLengthError(len(promptIDs), ctx); err != nil {
 			return genRequest{}, err
