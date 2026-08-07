@@ -10,6 +10,8 @@ pre-1.0 and may change as new model families and quant formats land.
 
 ## [Unreleased]
 
+## [v0.10.0] — 2026-08-07
+
 ### Added
 - **Resolved compute paths are reported, not inferred.** Both GPU fast paths — the resident
   decode runner and the batched prefill — decline *per call* and fall back correctly but
@@ -79,6 +81,21 @@ pre-1.0 and may change as new model families and quant formats land.
     fused-decode rmsnorm dispatches one workgroup, not 64 (N-07).
   - Plus test-gate hardening (env/fixture independence — G-03/G-05, `GOINFER_MODELS_DIR` — G-06) and
     dependency hygiene (pure-Go root module graph — M-19, above; `go 1.26.5` in demo/agent — N-23).
+- **Two independent post-audit reviews closed** ([`docs/completed/goinfer-post-audit-review.md`](docs/completed/goinfer-post-audit-review.md),
+  [`docs/completed/goinfer-fresh-review-2026-08-07b.md`](docs/completed/goinfer-fresh-review-2026-08-07b.md)):
+  30 findings (R-01…R-30) + 7 follow-ups (F-01…F-07) — residuals and regressions of the audit fixes,
+  all fixed and device-verified (the CUDA leg on the RTX box). Behaviour-affecting highlights:
+  - an adapter (LoRA) request against a resident base returned **base-model output at HTTP 200** — now
+    routed down the adapter-applying session path (R-01);
+  - a transient `.giw` read error on the Metal paged 26B decode could **crash the whole server mid-token**
+    — now a failed request via the command-buffer-abort path (R-02);
+  - a CUDA gemma-4 MoE accumulator zero-fill raced the previous layer's kernels (R-03);
+  - the webgpu **MLA (DeepSeek/Kimi) residency path was silently disabled** by an over-broad head-dim
+    guard introduced with the M-12 fix (R-05);
+  - the resident context cap over-rejected vision and adapter prompts the CPU path serves (F-01);
+  - plus crafted-`.giw` shape validation (R-07/F-02), JSON-error Go-type-name leaks (R-11/F-03), a
+    defective FMA lint that couldn't see its own kernel (R-04), and several bounded GPU resource leaks
+    (R-06/R-17).
 - **Docs: batched-prefill coverage was stated per family without the int4-only caveat**, in
   both `CHANGELOG` and `docs/releases/v0.9.0.md`. A family inside the covered seven, loaded at
   `--quant int8int8`, also falls back to sequential prefill. Corrected in place.
