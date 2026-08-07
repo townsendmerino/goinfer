@@ -250,9 +250,15 @@ triggers Go's fatal `concurrent map read and map write`.
 
 ### Owed regression tests (code fixed, device-gated)
 
-- **C-01 (resident half)** [linux/gpu] — the gpu resident re-zeroing `{win,ssm}` at `pos==0` is
-  fixed in code; a reintroduction test needs a webgpu SSM resident. (CPU half covered by
-  `TestTruncateTo_resetsRecurrent`.)
+- **C-01 (resident half)** [linux/gpu] — **test AUTHORED** (2026-08-06), runs on the box. The gpu
+  resident re-zeroing `{win,ssm}` at `pos==0` is fixed in code;
+  `gpu.TestResident_C01_pos0ResetsRecurrent` reproduces the leak directly — run token T at pos 0 on a
+  fresh resident, compound `{win,ssm}` by decoding 8 more tokens, then run token T at pos 0 again and
+  assert the logits are reproducible (fix re-zeroes; a leak diverges). Needs a Mamba-2 hybrid resident
+  (`GOINFER_HEAVY_TESTS=1`; path via `GOINFER_SSM_MODEL` or the default granite path) — **this Mac
+  carries no SSM checkpoint**, so it skips here and executes on the CUDA/webgpu box. WebGPU itself was
+  confirmed working on the Mac (device inits; the skip is purely model-absence). CPU half covered by
+  `TestTruncateTo_resetsRecurrent`.
 - **C-03** [linux/gpu] — `GenerateSpeculative`'s `resBusy` CAS is fixed in code; a test needs a
   resident target + draft.
 
