@@ -524,11 +524,20 @@ dp4a; the real win is tensor cores (the per-row-scales fork, §7). **Not a bit-i
 ### C1. Coverage audit — **DONE (2026-08-04, `TestPrefillCoverageAudit`)**
 
 `PrefillLast` declines: MoE, gemma4-moe, ~~sandwich norms~~ (**lifted**), ~~qk-norm~~ (**lifted**),
-K=V, int8, non-uniform, over-cap.
+K=V, ~~int8~~ (**lifted 2026-08-07, C6**), non-uniform, over-cap.
 
-**Result: batched CUDA prefill now covers 7 of 23 validated families** — `llama`, `mistral`,
+**Two orthogonal axes — do not conflate them.** "Covers 7 of 23 families" is the *family-architecture*
+axis: which resident decode paths have a batched-prefill counterpart. The *quant* axis is separate —
+within a covered family, which weight kinds batch. As of C6 the quant axis is **fully open**: int4,
+int4mix, int8, and int8int8 all batch; only native f32 (unquantized) stays sequential. Before C6 the
+family figure was silently gated by a quant restriction — a covered family at `--quant int8int8` still
+fell back — which is exactly the leak C6 fixed. The 7/23 below is unchanged by C6 (it removes a quant
+restriction, not a family guard); the `int8` decline is struck from the list above.
+
+**Result: batched CUDA prefill covers 7 of 23 validated families** — `llama`, `mistral`,
 `phi3`, `qwen2`, `qwen2_5_vl`, **`qwen3`**, and **`gemma3`** (both guards extended 2026-08-04,
-below). The other 16 fall back to sequential, by binding guard:
+below) — **now at every quantized weight kind, not int4-only**. The other 16 fall back to sequential,
+by binding guard:
 
 | # | guard | families |
 |---|---|---|
@@ -584,7 +593,41 @@ Gather all M tokens per expert, one GEMM per expert. Unsolved anywhere in the re
 declines it and has no reference. `moe.ptx`-constrained, and floored by per-token expert
 streaming that does not batch.
 
-### C6. int8 batched prefill — **scoped, unbuilt, and the cheapest coverage lever left**
+### C6. int8 batched prefill — **DONE (2026-08-07, `gemv_w8a8_batched.cu`)**
+
+**Built and gated.** `cuda/gemv_w8a8_batched.cu` (the M=1 `gemv_w8a8_fwd` plus an `MT`=32-wide
+column loop), the `kind == "int8"` branch in `bGemvB`, and `nonInt4Kind` → `nonBatchableKind`
+(admits any bundle whose seven projections are each int4 *or* int8; mixed int4/int8 — `int4mix` —
+batches per projection). Bit-identity is **free by construction** as predicted and was proven at
+three levels, on both int4 and int8int8:
+- **kernel** (`TestGemvW8A8Batched_bitIdentical`): bit-for-bit vs per-row `gemv_w8a8_fwd`, M ∈
+  {1, 8, 45, 100} (45 clamps the last MT tile; K/4=40 gives a partial lane-strided dot).
+- **prefill** (`TestPrefillLast_e2e`, mistral-tiny-window): KV bit-identical across **all layers ×
+  all 56 rows** + last-token logits bit-identical, prompt past the window (16) and not a multiple
+  of MT.
+- **e2e** (same test): 64-token greedy decode **byte-identical** to the sequential path.
+
+The three checkable conditions all hold: no int32 overflow (K ≤ 8192 ≪ ~133k), the final f32
+expression copies `gemv_w8a8_fwd` verbatim (`__fmaf_rn(__fmul_rn((float)acc, wScale[n]), aScale[m],
+bias)`, no bare `a*b*c`) and is in `TestKernelFMALint`'s file list, and the per-row `aScale[m]` is
+the same per-row quantizer the int4 lane already uses.
+
+**Measured (qwen2.5-coder-1.5b, RTX 2070 SUPER, best-of-3, sequential → batched TTFT):**
+
+| N | int8int8 seq | int8int8 batched | int8 speedup | int4 batched (ref) |
+|---|---|---|---|---|
+| 128 | 642 ms | 312 ms | **2.06×** | 82 ms (5.66×) |
+| 512 | 2.73 s | 1.47 s | **1.86×** | 372 ms (5.34×) |
+| 2048 | 12.3 s | 6.69 s | **1.84×** | 2.14 s (4.42×) |
+
+The int8 win (~1.8–2.1×) is smaller than int4's (~4.4–5.7×) exactly as §C6 flagged: the batched
+kernel is bandwidth-bound and int8 doubles the weight bytes per row, so batching amortizes fewer
+weight re-reads. But the 9× sequential trap the C1 headline hid is gone — an int8int8 prompt is now
+~2× faster at load-out-of-box lengths, and every quantized mode (int4/int4mix/int8/int8int8) batches.
+
+---
+
+<details><summary>Original C6 scoping (pre-build) — retained for the argument that made bit-identity free</summary>
 
 **The gap.** C1 lists `int8` among the `PrefillLast` declines, but the coverage headline is
 stated per *family*, and that framing leaked into the release notes. It hides a case that is
@@ -635,6 +678,8 @@ L1TEX-latency-bound, not DRAM-bound, and int8 doubles the weight bytes per row, 
 whatever profiling says and must be measured, not assumed. What is argued above is only that
 the **bit-identity gate is free by construction**, which is the part that usually costs the
 campaign. Profile the unit first (§11).
+
+</details>
 
 ---
 

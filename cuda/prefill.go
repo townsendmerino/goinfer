@@ -122,19 +122,22 @@ func (r *cudaResident) prefillStaticDecline() error {
 		if Ly.kEqV {
 			return fmt.Errorf("cuda prefill: K=V layer at %d needs the sequential path: %w", l, errPrefillDeclined)
 		}
-		if k := nonInt4Kind(Ly); k != "" {
+		if k := nonBatchableKind(Ly); k != "" {
 			return fmt.Errorf("cuda prefill: %s weight at layer %d needs the sequential path: %w", k, l, errPrefillDeclined)
 		}
 	}
 	return nil
 }
 
-// nonInt4Kind returns the weight kind of the layer's first non-int4 projection, or "" when all seven
-// are int4. The batched GEMV (gemv_w4a8_batched / _rn) reads group-scaled int4 words only; naming the
-// kind that declined is what turns "declined" into an actionable startup message.
-func nonInt4Kind(Ly *cudaLayer) string {
+// nonBatchableKind returns the weight kind of the layer's first projection the batched GEMVs can't
+// handle, or "" when every projection is int4 or int8. The batched path dispatches per projection
+// (bGemvB): int4 → gemv_w4a8_batched/_rn (group-scaled float accumulate), int8 → gemv_w8a8_batched
+// (exact int32, §C6). A uniformly-int4, uniformly-int8, or MIXED int4mix bundle all batch; anything
+// else (e.g. a native/f32 projection) declines. Naming the kind turns "declined" into an actionable
+// startup message.
+func nonBatchableKind(Ly *cudaLayer) string {
 	for _, w := range []cudaWQ{Ly.q, Ly.k, Ly.v, Ly.o, Ly.g, Ly.u, Ly.d} {
-		if w.kind != "int4" {
+		if w.kind != "int4" && w.kind != "int8" {
 			return w.kind
 		}
 	}
@@ -142,11 +145,12 @@ func nonInt4Kind(Ly *cudaLayer) string {
 }
 
 // PrefillPath (decoder.PrefillPathReporter) answers, at load, whether this model will get the batched
-// prefill — before a single request has been served. The int4-only guard is the one that bites in the
-// field: a dense model loaded at int8int8 builds a fully resident decode path (so it looks healthy and
-// decodes at 0.7× int4) but every prompt then takes the sequential per-token prefill — measured 1.73 s
-// vs 0.19 s on a 300-token prompt (9×), burning 20× the CPU (4.56 vs 0.22 CPU-s) with no compute
-// hotspot: the cost is the executor spin-waiting through 300 sequential launches instead of one pass.
+// prefill — before a single request has been served. Batched prefill now covers int4 AND int8 bundles
+// (§C6); it still declines a native/f32 projection or a non-uniform/K=V geometry. Before int8 batched
+// prefill landed, a dense model loaded at int8int8 built a fully resident decode path (looked healthy,
+// decoded at 0.7× int4) but every prompt took the sequential per-token prefill — measured 1.73 s vs
+// 0.19 s on a 300-token prompt (9×), 20× the CPU (4.56 vs 0.22 CPU-s), no compute hotspot: the executor
+// spin-waiting through 300 sequential launches instead of one pass.
 func (r *cudaResident) PrefillPath() (bool, string) {
 	err := r.prefillStaticDecline()
 	if err == nil {
@@ -155,8 +159,8 @@ func (r *cudaResident) PrefillPath() (bool, string) {
 	// Detail without the wrapped sentinel, which says nothing a user can act on.
 	detail := strings.TrimPrefix(strings.TrimSuffix(err.Error(), ": "+errPrefillDeclined.Error()), "cuda prefill: ")
 	if len(r.layers) > 0 {
-		if k := nonInt4Kind(&r.layers[0]); k != "" {
-			return false, fmt.Sprintf("sequential — batched prefill requires int4 projections (%s weights) — ~9× slower TTFT, 20× CPU on a 300-token prompt", k)
+		if k := nonBatchableKind(&r.layers[0]); k != "" {
+			return false, fmt.Sprintf("sequential — batched prefill needs int4 or int8 projections (%s weights) — ~9× slower TTFT, 20× CPU on a 300-token prompt", k)
 		}
 	}
 	return false, "sequential — " + detail + " (slower TTFT: one forward per prompt token)"
@@ -450,12 +454,22 @@ const rnBlockRows = 2
 // (each row keeps its own facc across all K, one warp-reduce), just with each activation load reused
 // across RN rows. Grid = ceil(N/RN) warps → ceil(that/8) blocks of 256 threads.
 func (r *cudaResident) bGemvB(wt cudaWQ, a, as Buffer, bias KernelArg, dst Buffer, M int, accum int32) error {
-	if wt.kind != "int4" {
-		return fmt.Errorf("cuda prefill: batched GEMV is int4-only, got %q", wt.kind)
+	switch wt.kind {
+	case "int4":
+		warps := (wt.N + rnBlockRows - 1) / rnBlockRows
+		cfg := LaunchConfig{GridX: uint32((warps + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
+		return r.launch(r.bRN, cfg, Arg(wt.W), Arg(a), Arg(wt.ws16), Arg(as), bias,
+			gpu.ArgValue(int32(wt.N)), gpu.ArgValue(int32(wt.K/8)), gpu.ArgValue(int32(wt.K/32)),
+			gpu.ArgValue(int32(M)), Arg(dst), gpu.ArgValue(accum))
+	case "int8":
+		// Batched W8A8 (§C6). One warp per output row (8 warps/block), same layout as doG's int8
+		// GEMV (wt.ws = per-row f32 scale, K/4 int words). Bit-identical to gemv_w8a8_fwd by
+		// construction — exact int32 accumulation, so tiling M cannot change any element.
+		cfg := LaunchConfig{GridX: uint32((wt.N + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
+		return r.launch(r.bW8, cfg, Arg(wt.W), Arg(a), Arg(wt.ws), Arg(as), bias,
+			gpu.ArgValue(int32(wt.N)), gpu.ArgValue(int32(wt.K/4)), gpu.ArgValue(int32(M)),
+			Arg(dst), gpu.ArgValue(accum))
+	default:
+		return fmt.Errorf("cuda prefill: batched GEMV is int4/int8-only, got %q", wt.kind)
 	}
-	warps := (wt.N + rnBlockRows - 1) / rnBlockRows
-	cfg := LaunchConfig{GridX: uint32((warps + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
-	return r.launch(r.bRN, cfg, Arg(wt.W), Arg(a), Arg(wt.ws16), Arg(as), bias,
-		gpu.ArgValue(int32(wt.N)), gpu.ArgValue(int32(wt.K/8)), gpu.ArgValue(int32(wt.K/32)),
-		gpu.ArgValue(int32(M)), Arg(dst), gpu.ArgValue(accum))
 }

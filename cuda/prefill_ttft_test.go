@@ -32,7 +32,15 @@ func TestPrefillTTFT(t *testing.T) {
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no fixture at %s", path)
 	}
-	mc, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "int4"})
+	// int8's "before" is the sequential column (what int8int8 fell back to pre-§C6); "after" is the
+	// batched column. int4 is measured at the same lengths so the remaining int8-vs-int4 gap is visible.
+	for _, quant := range []string{"int4", "int8int8"} {
+		t.Run(quant, func(t *testing.T) { ttftMeasure(t, path, quant) })
+	}
+}
+
+func ttftMeasure(t *testing.T, path, quant string) {
+	mc, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: quant})
 	if err != nil {
 		t.Fatalf("load (cuda): %v", err)
 	}

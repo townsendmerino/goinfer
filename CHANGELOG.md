@@ -10,20 +10,35 @@ pre-1.0 and may change as new model families and quant formats land.
 
 ## [Unreleased]
 
+### Added
+- **Batched CUDA prefill for int8 weights (`int8`/`int8int8`), closing the "int4-only" TTFT gap.**
+  A new `gemv_w8a8_batched.cu` (the per-row W8A8 GEMV plus a tiled multi-column loop) lets the
+  dense resident prefill path batch int8 and int4mix bundles, not just int4. Because int8 is
+  per-row symmetric — the dot accumulates in exact int32 and the scales apply once at the end —
+  the batched result is **bit-identical** to the sequential per-token GEMV *by construction* (no
+  reduction-order sensitivity, unlike the int4 lane's group-scaled float sum). Gated at three
+  levels on both int4 and int8int8: kernel bit-identity at M ∈ {1,8,45,100}, prefill KV +
+  logits bit-identical across all layers × all rows past a sliding window, and a 64-token greedy
+  decode byte-identical. Measured TTFT (qwen2.5-coder-1.5b, RTX 2070 SUPER), sequential →
+  batched: **128 tok 642→312 ms (2.06×), 512 tok 2.73→1.47 s (1.86×), 2048 tok 12.3→6.69 s
+  (1.84×)**. The win is smaller than int4's (~4.4–5.7×) because int8 doubles the weight bytes per
+  row on a bandwidth-bound kernel — but the ~9× sequential fallback the old int8int8 default hit
+  is gone, and **every quantized mode now batches** (only native f32 stays sequential).
+
 ### Changed
-- **BREAKING (behaviour): the default `--quant` moved from `int8int8` to `int4`.** Batched CUDA
-  prefill is int4-only, so the old default put every out-of-the-box `serve`/`chat` on the ~9×
-  slower sequential per-token prefill (TTFT 1.73 s vs 0.19 s on a 300-token prompt, 4.56 vs 0.22
-  CPU-s); int4 is also smaller in RAM. **Output will differ from prior versions for anyone who
-  relied on the default** — int4 is lossier than int8 (a decode/quality change, not just speed).
-  Pass `--quant int8int8` (or `int8`/`int4mix`/`""`) to keep the old behaviour. `demo/chat`
-  aligned to the same default; `demo/gemma` stays native-f32 (a faithful inspection CLI) and
+- **BREAKING (behaviour): the default `--quant` moved from `int8int8` to `int4`.** int4 is
+  smaller in RAM and, being the lightest quant on a bandwidth-bound kernel, the fastest to
+  prefill and decode. **Output will differ from prior versions for anyone who relied on the
+  default** — int4 is lossier than int8 (a decode/quality change, not just speed). Pass
+  `--quant int8int8` (or `int8`/`int4mix`/`""`) to keep the old behaviour. `demo/chat` aligned
+  to the same default; `demo/gemma` stays native-f32 (a faithful inspection CLI) and
   `cmd/prequant` stays `int8int8` (it bakes a `.giw` bundle that carries its own quant). The
   flag help now enumerates all five values with their accuracy/speed/RAM tradeoffs — including
   that **`--backend metal` requires `int8int8`** (int4 declines to CPU on the dense Metal
-  resident path), and that only `int4` currently gets batched prefill (until int8 batched
-  prefill lands). This is the out-of-box half of the v0.10.0 "int4-only batched prefill" note:
-  the *default* is no longer the slow path.
+  resident path), and that all quantized modes get batched prefill while native f32 falls back to
+  the sequential path. (At v0.10.0 batched prefill was int4-only, so this default flip also moved
+  the out-of-box path off the ~9× slower sequential prefill; the int8 batched-prefill work above
+  now removes that restriction entirely.)
 
 ### Fixed
 - **The pre-v0.10.0 GPU build command no longer silently produces a CPU binary.** After M-19

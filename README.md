@@ -143,10 +143,11 @@ go run ./cmd/serve --model ~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
 # OpenAI base URL: http://localhost:8080/v1
 ```
 
-> **Default quantization is `int4`** (smallest + fastest — the only quant with batched CUDA
-> prefill). Override with `--quant int8int8|int8|int4mix|""`: `int8int8` is more accurate at
-> ~2× the RAM and is **required for `--backend metal`** (int4 declines to CPU there). `--quant
-> -h` explains all five. A prequantized `.giw` model ignores `--quant` (it carries its own).
+> **Default quantization is `int4`** (smallest + fastest). Override with `--quant
+> int8int8|int8|int4mix|""`: `int8int8` is more accurate at ~2× the RAM and is **required for
+> `--backend metal`** (int4 declines to CPU there). All quantized modes get batched CUDA prefill
+> (fast TTFT); only native f32 falls back to the sequential path. `--quant -h` explains all five.
+> A prequantized `.giw` model ignores `--quant` (it carries its own).
 
 `/v1/chat/completions`, `/v1/completions`, `/v1/responses`, `/v1/messages`
 (Anthropic — see below), `/v1/models`;

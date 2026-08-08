@@ -258,15 +258,14 @@ func Main() {
 		"(Paths may not contain commas.)")
 	flag.StringVar(&cfg.backend, "backend", "cpu", "compute backend: cpu | webgpu | cuda | metal (process-wide; cuda/metal: dense-only, cgo-free native, -tags cuda|metal)")
 	flag.StringVar(&cfg.quant, "quant", "int4", "default decoder weight quant — the accuracy/speed/RAM tradeoff (per-model override: --model name=path,quant=…):\n"+
-		"  int4      W4A8 (int4 weights, int8 activations): smallest + FASTEST — the ONLY quant with batched CUDA prefill;\n"+
-		"            the others fall back to the ~9x slower sequential per-token prefill until int8 batched prefill lands.\n"+
-		"            Lossier than int8 (4-bit weights). THE DEFAULT.\n"+
-		"  int4mix   attn int8 + FFN int4 (GGUF only): near-int8 quality at below-int8 RAM; sequential prefill.\n"+
-		"  int8int8  W8A8 (int8 weights + int8 activations, native SDOT): higher accuracy, ~2x the RAM of int4, sequential\n"+
-		"            prefill. REQUIRED for --backend metal (int4 declines to CPU on the dense Metal resident path).\n"+
+		"  int4      W4A8 (int4 weights, int8 activations): smallest + fastest. Lossier than int8 (4-bit weights). THE DEFAULT.\n"+
+		"  int4mix   attn int8 + FFN int4 (GGUF only): near-int8 quality at below-int8 RAM.\n"+
+		"  int8int8  W8A8 (int8 weights + int8 activations, native SDOT): higher accuracy, ~2x the RAM of int4.\n"+
+		"            REQUIRED for --backend metal (int4 declines to CPU on the dense Metal resident path).\n"+
 		"  int8      int8 weights with wider activations: between int8int8 and native.\n"+
 		"  \"\"        native (no quantization, f32): most accurate, largest, slowest.\n"+
-		"A prequantized .giw model carries its own baked-in quant; --quant is ignored for it.")
+		"All quantized modes (int4/int4mix/int8/int8int8) get batched CUDA prefill (fast TTFT); only native f32\n"+
+		"falls back to the ~9x slower sequential prefill. A prequantized .giw model carries its own baked-in quant.")
 	flag.BoolVar(&cfg.requireBE, "require-backend", false, "strict mode: exit non-zero at startup if a model did not resolve to the requested --backend's fast paths — no resident decode path, or a prefill that declined to the sequential per-token loop (e.g. int8int8 on cuda, ~9× slower TTFT). Both fall back silently by design; a batch client should fail at second zero instead of discovering it under load")
 	flag.StringVar(&cfg.kvPrec, "kv", "f32", "GPU residency KV cache precision: f32 (bit-exact, 16k ctx) | f16 (lossy, 32k ctx) | i8 (lossy, ~64k ctx) — webgpu backend only")
 	flag.StringVar(&cfg.kvQuant, "kv-quant", "f32", "CPU KV cache storage: f32 (default, bit-exact) | i8 (per-head int8, ~4× smaller, lossy — argmax ~90%+; excludes MoE/gemma4/qwen3.5)")

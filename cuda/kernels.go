@@ -36,6 +36,15 @@ var gemvFwdPTX []byte
 //go:embed testdata/gemv_w4a8_batched.ptx
 var gemvBatchedPTX []byte
 
+// gemvW8BatchedPTX: gemv_w8a8_batched — the weight-stationary batched GEMV for M=len prefill on int8
+// bundles. Bit-identical to aikit's gemv_w8a8_fwd per output element BY CONSTRUCTION: int8 is per-row
+// symmetric, so the dot is an exact int32 __dp4a sum (reorder-independent) and the scales apply once
+// at the end with the same explicit __fmul_rn/__fmaf_rn form. Its own file (gemv_w8a8_batched.cu); the
+// audited PTX (moe.ptx, gemv_fwd/glue) is untouched.
+//
+//go:embed testdata/gemv_w8a8_batched.ptx
+var gemvW8BatchedPTX []byte
+
 // prefillBatchedPTX: the batched (M=len) glue kernels for the weight-stationary prefill path —
 // rmsnorm_quant_batched, rope_kv_batched, attn_batched (causal + per-row sliding window),
 // glu_quant_batched, residual_batched. Each is the corresponding M=1 kernel (glue/gemv_fwd) with an

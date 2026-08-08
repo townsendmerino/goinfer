@@ -39,7 +39,17 @@ func (r *cudaResident) readKVForTest(l, rows int) (k, v []float32) {
 func TestPrefillLast_e2e(t *testing.T) {
 	const path = "../testdata/mistral-tiny-window"
 	requireDeviceAndFixture(t, path)
-	mc, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "int4"})
+	// Batched prefill must be bit-identical to sequential on BOTH int4 (original milestone-2) and int8
+	// (§C6). The 56-token prompt is past the window (16) AND not a multiple of MT=32, so both mask
+	// seams and the clamped last tile are exercised. int8's batched GEMV is exact-int32, so any diff is
+	// a wiring bug, not a rounding one.
+	for _, quant := range []string{"int4", "int8int8"} {
+		t.Run(quant, func(t *testing.T) { prefillE2EGate(t, path, quant) })
+	}
+}
+
+func prefillE2EGate(t *testing.T, path, quant string) {
+	mc, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: quant})
 	if err != nil {
 		t.Fatalf("load (cuda): %v", err)
 	}

@@ -494,6 +494,12 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				} else {
 					ok = false
 				}
+				// int8 batched GEMV (§C6): own module, own file; the audited PTX is untouched.
+				if w8mod, e5 := r.dev.CompileLibrary(gemvW8BatchedPTX); e5 == nil {
+					load(&r.bW8, w8mod, "gemv_w8a8_batched")
+				} else {
+					ok = false
+				}
 				load(&r.bGemv, bgmod, "gemv_w4a8_batched")
 				load(&r.bRms, pbmod, "rmsnorm_quant_batched")
 				load(&r.bQKN, pbmod, "qk_norm_batched")

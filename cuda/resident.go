@@ -177,6 +177,7 @@ type cudaResident struct {
 	// the ~128-token Ollama crossover. bGemv is the batched W4A8 GEMV; the rest are the M=1 glue
 	// kernels with an M dimension, each bit-identical per row. Loaded once at build (small module).
 	bGemv, bRN, bRms, bRopeKV, bAttn, bQuant, bSw, bRes     Pipeline
+	bW8                                                     Pipeline     // batched W8A8 GEMV (int8 bundles); §C6. nil ⇒ int8 prefill declines
 	bQKN                                                    Pipeline     // batched per-head Q/K RMSNorm (qwen3 etc.); loaded with the batched set
 	bNormF32                                                Pipeline     // batched plain f32 RMSNorm for Gemma sandwich post-norms; loaded with the batched set
 	skScores, skSoftmax, skVsum                             Pipeline     // Campaign-A split-KV decode attention (high-occupancy, bit-identical)

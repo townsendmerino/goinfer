@@ -37,15 +37,30 @@ func declineFixture(n int, kind string) *cudaResident {
 
 // TestPrefillPath_int8Declines is the gate for the shipped defect: int8 weights must report the
 // sequential path, name int4 as the requirement, and state the cost.
-func TestPrefillPath_int8Declines(t *testing.T) {
+// TestPrefillPath_int8Batched: int8 bundles now get batched prefill (§C6 — the batched W8A8 GEMV is
+// exact-int32, bit-identical to gemv_w8a8_fwd by construction). This was TestPrefillPath_int8Declines
+// before int8 batched prefill landed; it now asserts the OPPOSITE, so the 9× TTFT trap is gone.
+func TestPrefillPath_int8Batched(t *testing.T) {
 	batched, why := declineFixture(4, "int8").PrefillPath()
+	if !batched {
+		t.Fatalf("int8 projections reported as NOT batched (%q) — int8 batched prefill regressed", why)
+	}
+	if !strings.Contains(why, "batched") {
+		t.Errorf("reason %q does not say batched", why)
+	}
+	t.Logf("reason: %s", why)
+}
+
+// TestPrefillPath_nativeDeclinesNamed: a non-batchable projection kind (native/f32) still declines, and
+// the reason names int4/int8 as the batchable kinds so an operator can act on it.
+func TestPrefillPath_nativeDeclinesNamed(t *testing.T) {
+	batched, why := declineFixture(4, "f32").PrefillPath()
 	if batched {
-		t.Fatal("int8 projections reported as batched prefill — this is the 9× TTFT regression being " +
-			"reported as the fast path")
+		t.Fatalf("native (f32) projections reported as batched — %q", why)
 	}
 	for _, want := range []string{"sequential", "int4", "int8", "TTFT"} {
 		if !strings.Contains(why, want) {
-			t.Errorf("reason %q does not mention %q — an operator can't act on it", why, want)
+			t.Errorf("reason %q does not mention %q", why, want)
 		}
 	}
 	t.Logf("reason: %s", why)
@@ -102,12 +117,21 @@ func TestPrefillPath_matchesPrefillCore(t *testing.T) {
 // TestPrefillPath_mixedQuantNamesTheKind: a bundle that is int4 at layer 0 but int8 deeper (int4mix)
 // still declines. The message falls back to the generic form naming the layer — worse than the
 // int8int8 message, but it must not claim the batched path.
-func TestPrefillPath_mixedQuantNamesTheKind(t *testing.T) {
+// TestPrefillPath_mixedInt4Int8Batches: an int4mix-style bundle (int4 in most projections, int8 in
+// one) now gets batched prefill — dispatch is per projection, so a mix of the two batchable kinds
+// "falls out for free" (§C6). A genuinely non-batchable kind (native/f32) at a specific layer still
+// declines with the layer located.
+func TestPrefillPath_mixedInt4Int8Batches(t *testing.T) {
 	r := declineFixture(3, "int4")
 	r.layers[2].g.kind = "int8"
+	if batched, why := r.PrefillPath(); !batched {
+		t.Fatalf("a mixed int4/int8 (int4mix) bundle did not batch: %q", why)
+	}
+	// A native/f32 projection is not batchable and must decline, naming the layer.
+	r.layers[2].g.kind = "f32"
 	batched, why := r.PrefillPath()
 	if batched {
-		t.Fatal("a mixed-quant bundle reported batched prefill")
+		t.Fatalf("a bundle with an f32 projection reported batched: %q", why)
 	}
 	if !strings.Contains(why, "layer 2") {
 		t.Errorf("reason should locate the declining layer: %q", why)

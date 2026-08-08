@@ -42,12 +42,16 @@ declines rather than dropping the feature silently (`decoder/features.go`).
 A missing kernel never silently produces wrong logits. It **can** silently produce a much
 slower server, and the difference cost a day. Two fast paths decline *per call* and fall back
 correctly but with nothing announced: the resident decode runner (`withResidency`) and the
-batched prefill (`Prefiller`). The sharp case is `--backend cuda --quant int8int8` on a dense
+batched prefill (`Prefiller`). The sharp case *was* `--backend cuda --quant int8int8` on a dense
 model: it builds a **full resident decode path** — `ResidentActive` is true, decode runs at
-~0.7× int4, everything looks healthy — and then every prompt takes the sequential per-token
-prefill, because the batched GEMV is int4-only. Measured on a 300-token prompt (0.5B, RTX 2070
+~0.7× int4, everything looks healthy — and then every prompt took the sequential per-token
+prefill, because the batched GEMV was int4-only. Measured on a 300-token prompt (0.5B, RTX 2070
 SUPER): **TTFT 1.73 s vs 0.19 s (9×), 4.56 vs 0.22 CPU-seconds (20×)**, with no compute
-hotspot — the CPU is the executor spin-waiting through 300 sequential launches.
+hotspot — the CPU spin-waiting through 300 sequential launches. That specific decline is now
+**fixed**: `gemv_w8a8_batched.cu` batches int8/int8int8/int4mix as well as int4 (§C6), so only
+native-f32 weights (and the non-dense family/MoE/MLA classes) still fall back. But the lesson —
+and the visibility below — stand: a per-call decline that announces nothing is indistinguishable
+from a slow machine, and the remaining fallbacks are exactly as silent as this one was.
 
 The runtime now states both resolved paths, because a decline nothing announces is
 indistinguishable from a slow machine:
