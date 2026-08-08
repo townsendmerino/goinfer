@@ -68,6 +68,12 @@ func TestInt4MixMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new model: %v", err)
 	}
+	// The .giw path infers the label via quantLabel (m2.quant is empty). A GENUINE mix — int8
+	// attention projections beside int4 FFN — must still read "int4mix": the T1-6 fix excludes
+	// only the embed/head tables, not the body projections that make this a real mix.
+	if got := m2.Quant(); got != "int4mix" {
+		t.Errorf("giw Quant() = %q, want int4mix (int8 attn + int4 FFN projections)", got)
+	}
 	if got := greedyFirst(t, m2, prompt); got != tok {
 		t.Fatalf("round-trip greedy token changed: %d → %d", tok, got)
 	}

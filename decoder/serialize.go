@@ -514,15 +514,30 @@ func (m *Model) Quant() string {
 }
 
 // quantLabel names the precision of the resident matmul weights for display + the
-// KV-snapshot fingerprint, accounting for MIXED bundles. quantMode (the .giw format tag)
-// reports only the FIRST weight's kind, which mislabels a mixed bundle — e.g. Mellum2's
-// int4 experts with an int8-kept embedding/LM head report as plain "int8" — so this scans
-// every matmul weight and returns "int4mix" when int4 coexists with higher-precision
-// tensors. Pure bundles collapse to int4 / int8int8 / int8 / native as before.
+// KV-snapshot fingerprint, accounting for MIXED bundles. It scans the BODY matmuls — the
+// per-layer attention/FFN projections, experts, and routers, i.e. exactly what
+// `-quant int4|int4mix|int8int8` selects and what the batched-prefill gate inspects — and
+// returns "int4mix" only when int4 coexists with a higher-precision BODY weight. Pure
+// bundles collapse to int4 / int8int8 / int8 / native.
+//
+// The token embedding and LM head are EXCLUDED. int4 mode pins them to int8 by DEFAULT
+// (logit-critical; the EmbedInt4 knob relaxes them), so their precision is orthogonal to
+// the int4-vs-int4mix distinction — a plain `-quant int4` bundle keeps an int8 head.
+// Including them made such a bundle mislabel as "int4mix" (audit/T1-6) even though every
+// projection is int4 and the prefill gate correctly batched it: the label contradicted the
+// path. Excluding them also sidesteps the older quantMode failure this comment used to cite
+// (that .giw header field derives from the FIRST weight — the int8 embed — so it reports
+// plain "int8" for the same all-int4-body bundle). Both mislabels have the same root: the
+// int8-pinned logit tables are not part of the quant the user chose.
 func (w *Weights) quantLabel() string {
 	var hasInt4, hasInt8I8, hasInt8, hasOther bool
 	for _, m := range w.matmulWeights() {
 		if m.Rows() == 0 {
+			continue
+		}
+		// The embedding / LM head / Gemma-4 PLE tables are int8-pinned by default in int4
+		// mode; their kind must not drive the int4-vs-int4mix label (see the doc comment).
+		if m == &w.Embed || m == &w.LMHead || m == &w.PerLayerTokenEmbed || m == &w.PerLayerModelProj {
 			continue
 		}
 		switch m.Kind() {

@@ -8,6 +8,20 @@ The forward-pass and quantization numerics are parity-gated against HuggingFace
 and are the stable contract. The loader and architecture-descriptor surface is
 pre-1.0 and may change as new model families and quant formats land.
 
+## [Unreleased]
+
+### Fixed
+- **A prequantized int4 `.giw` bundle no longer mislabels itself as `int4mix`** on `/health`,
+  `/v1/models`, and the startup line. `-quant int4` pins the embedding / LM head to int8 by
+  default (logit-critical; `--embed-int4` opts out), and the label inference counted those tables
+  — so an all-int4-projection bundle read as `int4mix` while the batched-prefill gate (which
+  inspects only the seven projections) correctly batched it. The label now scans just the body
+  matmuls the quant actually selects, matching the gate; the int8-pinned logit tables are
+  excluded. Generation was always correct (the bundle is genuinely int4 — bit-identical logprobs
+  to the GGUF int4 load); only the reported label and the KV-snapshot fingerprint were wrong.
+  Direct (non-`.giw`) loads were unaffected — they report the requested quant string verbatim.
+  (Reported as T1-6.)
+
 ## [v0.10.1] — 2026-08-07
 
 ### Added
