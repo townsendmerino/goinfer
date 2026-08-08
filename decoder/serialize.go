@@ -513,6 +513,31 @@ func (m *Model) Quant() string {
 	return m.w.quantLabel()
 }
 
+// CheckGiwQuantMatch returns a startup error when an EXPLICIT weight-quant request cannot take
+// effect because the model is an already-baked prequant .giw whose quant differs. A .giw is
+// serialized at a fixed precision, so --quant is inert for it (Load ignores it); today it is
+// silently dropped, which the T1-7 report flagged. This surfaces the mismatch instead.
+//
+// `requested` is the quant the user EXPLICITLY asked for — pass "" when they did not (relied on the
+// default). A bare default must NOT conflict: a .giw carries its own quant, and running it with
+// process defaults is the normal cross-format case (the caller, which alone knows whether the flag
+// was set, is responsible for passing "" then). For a non-.giw model (GGUF/safetensors), where
+// --quant IS honored at load, this is a no-op.
+//
+// The comparison uses the corrected Quant() label (commit 9020160) — the resident weight kinds —
+// not the raw .giw header field. Message shape mirrors the safetensors int4mix decline
+// (weights.go): the constraint, the requested value, the baked value, and the file.
+func (m *Model) CheckGiwQuantMatch(requested string) error {
+	path := m.GiwPath()
+	if requested == "" || path == "" {
+		return nil
+	}
+	if baked := m.Quant(); requested != baked {
+		return fmt.Errorf("decoder: --quant %q cannot apply to the prequantized .giw bundle %s — it is baked at %q, and a .giw carries its own quant; pass --quant %s or omit --quant", requested, path, baked, baked)
+	}
+	return nil
+}
+
 // quantLabel names the precision of the resident matmul weights for display + the
 // KV-snapshot fingerprint, accounting for MIXED bundles. It scans the BODY matmuls — the
 // per-layer attention/FFN projections, experts, and routers, i.e. exactly what

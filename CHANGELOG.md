@@ -11,6 +11,16 @@ pre-1.0 and may change as new model families and quant formats land.
 ## [Unreleased]
 
 ### Fixed
+- **`--quant` on a prequantized `.giw` bundle is now a startup error when it conflicts, instead of
+  being silently ignored** (T1-7). A `.giw` is serialized at a fixed precision, so `--quant` cannot
+  re-quantize it — but it was accepted and dropped, so a user who passed `--quant int8int8` at a
+  `.giw` baked at int4 got int4 with no signal. `serve` and `chat` now fail before binding a port:
+  `--quant "int8int8" cannot apply to the prequantized .giw bundle <file> — it is baked at "int4",
+  and a .giw carries its own quant; pass --quant int4 or omit --quant` (same shape as the
+  safetensors int4mix decline). The comparison uses the corrected `Quant()` label, not the raw
+  header field. A **matching** quant proceeds silently, and a bare default never conflicts — only an
+  *explicit* `--quant` (global flag actually passed, or a per-model `quant=` override) is checked, so
+  scripting one command across GGUF and `.giw` targets still works.
 - **The submodule build command is now correct in every active doc** (field-report F2). The README
   build section already carried the verified per-backend entrypoints (v0.10.1); this sweeps the
   rest: `docs/cuda-backend.md` used the pre-split `go build -tags cuda ./cmd/serve` (the root, now a

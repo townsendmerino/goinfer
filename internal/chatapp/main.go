@@ -95,6 +95,14 @@ func Main() {
 	flag.Parse()
 
 	opts := decoder.Options{Backend: *backend, Quant: *quant, LoRA: *lora}
+	// The quant the user EXPLICITLY chose (vs the "int4" default) — for the .giw mismatch check
+	// (T1-7); a bare default must not conflict with an already-baked bundle.
+	explicitQuant := ""
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "quant" {
+			explicitQuant = *quant
+		}
+	})
 	useTmp := *modelTmp || os.Getenv("GOINFER_MODEL_TMP") != ""
 
 	// (Decode-parallelism tuning is now automatic per-Workspace inside decoder — the
@@ -118,6 +126,12 @@ func Main() {
 	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
+		os.Exit(1)
+	}
+	// A prequant .giw carries its own quant; --quant can't re-quantize it. Fail on an explicit
+	// mismatch rather than silently ignoring the flag (T1-7).
+	if qerr := s.model.CheckGiwQuantMatch(explicitQuant); qerr != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", qerr)
 		os.Exit(1)
 	}
 	s.system = *system

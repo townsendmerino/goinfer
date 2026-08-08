@@ -139,6 +139,20 @@ func (s *modelSpec) setOverride(key, val string, hasVal bool) error {
 	return err
 }
 
+// explicitQuant returns the quant the user EXPLICITLY chose for this model — the per-model
+// `quant=` override if present, else the global --quant if it was actually passed — or "" if
+// neither was set (the process default). Used only for the .giw mismatch check (T1-7): a bare
+// default must never conflict with an already-baked bundle.
+func (s modelSpec) explicitQuant(cfg config) string {
+	if s.quant != nil {
+		return *s.quant
+	}
+	if cfg.quantSet {
+		return cfg.quant
+	}
+	return ""
+}
+
 // options resolves this spec's overrides over the server-global defaults in cfg
 // into a decoder.Options. Backend is process-wide (GPU device init), never per-model.
 func (s modelSpec) options(cfg config) decoder.Options {
@@ -216,6 +230,7 @@ type config struct {
 	// quant + the per-model knobs below are server-global DEFAULTS; a --model spec
 	// can override each one (see modelSpec / modelFlag.Set).
 	quant         string
+	quantSet      bool   // was --quant given on the CLI? (vs the "int4" default) — for the .giw explicit-quant check (T1-7)
 	kvPrec        string // GPU residency KV cache precision: "" | f32 | f16 (-kv)
 	kvQuant       string // CPU KV cache storage precision: "" | f32 | i8 (-kv-quant)
 	lora          string
@@ -288,6 +303,13 @@ func Main() {
 	flag.StringVar(&cfg.embedQuant, "embed-quant", "f32", "embedding weight precision: f32 | q8")
 	flag.StringVar(&cfg.embedName, "embed-served-model-name", "", "embedding model id reported by /v1/models (default: dir basename)")
 	flag.Parse()
+	// Was --quant given, or is cfg.quant the "int4" default? The .giw explicit-quant check (T1-7)
+	// must fire only on an explicit request — the default must not "mismatch" a non-int4 bundle.
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "quant" {
+			cfg.quantSet = true
+		}
+	})
 	if len(cfg.models) == 0 && cfg.embedPath == "" && !cfg.allowAdmin {
 		fmt.Fprintln(os.Stderr, "error: need at least one of --model, --embed-model, or --allow-admin")
 		flag.Usage()
@@ -664,6 +686,13 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 	model, err := decoder.Load(loadPath, opts)
 	if err != nil {
 		return nil, fmt.Errorf("load model (%s): %w", loadPath, err)
+	}
+	// A prequant .giw carries its own quant, so --quant cannot re-quantize it. If the user
+	// explicitly asked for a different one, fail here (before binding) rather than silently
+	// serving the baked precision (T1-7). A bare default never conflicts (explicitQuant == "").
+	if err := model.CheckGiwQuantMatch(spec.explicitQuant(cfg)); err != nil {
+		model.Close()
+		return nil, fmt.Errorf("--model %q: %w", spec.path, err)
 	}
 	mcfg := model.Config()
 	name := spec.name
