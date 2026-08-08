@@ -91,16 +91,18 @@ func NewBackend(name string) (Backend, error) {
 	if factory != nil {
 		return factory()
 	}
+	// Since v0.10.0 (audit M-19) the backend lives in a submodule ENTRYPOINT, not a build tag on
+	// the root binary — `-tags gpu|cuda|metal` on cmd/serve does nothing. Point at the real one.
 	if name == "webgpu" {
-		return &cpuBackend{}, fmt.Errorf("decoder: webgpu backend not registered; import github.com/townsendmerino/goinfer/gpu and build `-tags gpu`; using cpu")
+		return &cpuBackend{}, fmt.Errorf("decoder: webgpu backend not built in; build the submodule entrypoint (go build -tags gpu github.com/townsendmerino/goinfer/gpu/cmd/serve) — not `-tags gpu` on the root cmd/serve; using cpu")
 	}
 	if name == "cuda" {
-		return &cpuBackend{}, fmt.Errorf("decoder: cuda backend not registered; import github.com/townsendmerino/goinfer/cuda and build `-tags cuda`; using cpu")
+		return &cpuBackend{}, fmt.Errorf("decoder: cuda backend not built in; build the submodule entrypoint (CGO_ENABLED=0 go build -tags cuda github.com/townsendmerino/goinfer/cuda/cmd/serve) — not `-tags cuda` on the root cmd/serve; using cpu")
 	}
 	if name == "metal" {
 		// Same CPU-fallback+note treatment as webgpu/cuda: Options.Validate accepts "metal",
 		// so an untagged build reaching here must fall back, not return a nil backend (M14).
-		return &cpuBackend{}, fmt.Errorf("decoder: metal backend not registered; import github.com/townsendmerino/goinfer/metal and build `-tags metal` (darwin); using cpu")
+		return &cpuBackend{}, fmt.Errorf("decoder: metal backend not built in; build the submodule entrypoint (go build github.com/townsendmerino/goinfer/metal/cmd/serve, darwin) — not `-tags metal` on the root cmd/serve; using cpu")
 	}
 	return nil, fmt.Errorf("decoder: unknown backend %q (have: cpu, webgpu, cuda, metal)", name)
 }

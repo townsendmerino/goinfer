@@ -298,21 +298,39 @@ exist in each flavor:
 
 The native **CUDA** and **Metal** backends need only the platform's GPU driver —
 **no CUDA toolkit, no Xcode, no Python, no cgo** — and are selected at runtime with
-`--backend`. Build from inside the submodule (its `go.mod` resolves the root via a
-`replace`, so no workspace setup is needed on a fresh clone):
+`--backend`.
+
+> **Upgrading from ≤ v0.9.x?** The old `go build -tags cuda …/cmd/serve` (the *root*
+> command) no longer enables a backend — since v0.10.0 the root is pure-Go and the tag is a
+> no-op. Build the **submodule entrypoint** instead (the commands below). Passing a backend
+> tag to the root now fails the build with a message pointing here, rather than silently
+> producing a CPU binary.
+
+**Out-of-tree** (you `go get` goinfer, no checkout) — build the submodule entrypoint by its
+full module path; nothing else is needed:
+
+```bash
+# CUDA server / REPL
+CGO_ENABLED=0 go build -tags cuda github.com/townsendmerino/goinfer/cuda/cmd/serve
+CGO_ENABLED=0 go build -tags cuda github.com/townsendmerino/goinfer/cuda/cmd/chat
+# WebGPU (cgo)
+go build -tags gpu   github.com/townsendmerino/goinfer/gpu/cmd/serve
+# Metal (darwin; the module is darwin-gated, so no -tags)
+go build             github.com/townsendmerino/goinfer/metal/cmd/serve
+```
+
+**In-tree** (a checkout) — run straight from the submodule; its `go.mod` resolves the root
+via a `replace`, so no workspace setup is needed:
 
 ```bash
 # NVIDIA — cgo-free native CUDA
-cd cuda && CGO_ENABLED=0 go run -tags cuda ./cmd/chat --backend cuda \
-    --model ~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+cd cuda && CGO_ENABLED=0 go run -tags cuda ./cmd/serve --backend cuda \
+    --model ~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf     # or ./cmd/chat for the REPL
 
-# Apple Silicon — cgo-free native Metal (the metal module is darwin-gated; no -tags needed)
-cd metal && CGO_ENABLED=0 go run ./cmd/chat --backend metal --quant int8int8 \
+# Apple Silicon — cgo-free native Metal (darwin-gated; no -tags needed)
+cd metal && CGO_ENABLED=0 go run ./cmd/serve --backend metal --quant int8int8 \
     --model ~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
 ```
-
-The OpenAI-compatible server is the same, one directory over: `cd cuda && go run -tags
-cuda ./cmd/serve …`, `cd metal && go run ./cmd/serve …`.
 
 ### Measured throughput (server-to-server, q4_k_m 4-bit)
 

@@ -10,6 +10,22 @@ pre-1.0 and may change as new model families and quant formats land.
 
 ## [Unreleased]
 
+### Fixed
+- **The pre-v0.10.0 GPU build command no longer silently produces a CPU binary.** After M-19
+  moved the backend imports to the submodule entrypoints, `go build -tags cuda|gpu|metal
+  …/cmd/serve` (the *root* command in every ≤v0.9.x doc/note) kept exiting 0 while building an
+  inert CPU binary — you only found out from a warning line at startup. The root `cmd/serve`,
+  `demo/chat`, and `demo/gemma` now carry a `//go:build cuda || gpu || metal` guard that **fails
+  the build** with a message naming the submodule entrypoint to use instead. (Reported by an
+  external v0.10.0 trial, F1.)
+- **The runtime "backend not registered" note pointed at the command that no-ops.** It said
+  "build `-tags cuda`" — exactly what the user did — instead of naming the submodule entrypoint.
+  Now: "build the submodule entrypoint (… `…/cuda/cmd/serve`) — not `-tags cuda` on the root".
+- **README documents the GPU `serve` entrypoints, including the out-of-tree module-path form**
+  (`go build -tags cuda github.com/townsendmerino/goinfer/cuda/cmd/serve`) and an explicit
+  upgrade note. Previously the only GPU example was the in-tree `cd cuda && … ./cmd/chat` (the
+  REPL, and `cd cuda` presumes a checkout an out-of-tree consumer doesn't have). (F2.)
+
 ## [v0.10.0] — 2026-08-07
 
 ### Added
