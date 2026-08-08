@@ -10,6 +10,21 @@ pre-1.0 and may change as new model families and quant formats land.
 
 ## [Unreleased]
 
+### Changed
+- **BREAKING (behaviour): the default `--quant` moved from `int8int8` to `int4`.** Batched CUDA
+  prefill is int4-only, so the old default put every out-of-the-box `serve`/`chat` on the ~9×
+  slower sequential per-token prefill (TTFT 1.73 s vs 0.19 s on a 300-token prompt, 4.56 vs 0.22
+  CPU-s); int4 is also smaller in RAM. **Output will differ from prior versions for anyone who
+  relied on the default** — int4 is lossier than int8 (a decode/quality change, not just speed).
+  Pass `--quant int8int8` (or `int8`/`int4mix`/`""`) to keep the old behaviour. `demo/chat`
+  aligned to the same default; `demo/gemma` stays native-f32 (a faithful inspection CLI) and
+  `cmd/prequant` stays `int8int8` (it bakes a `.giw` bundle that carries its own quant). The
+  flag help now enumerates all five values with their accuracy/speed/RAM tradeoffs — including
+  that **`--backend metal` requires `int8int8`** (int4 declines to CPU on the dense Metal
+  resident path), and that only `int4` currently gets batched prefill (until int8 batched
+  prefill lands). This is the out-of-box half of the v0.10.0 "int4-only batched prefill" note:
+  the *default* is no longer the slow path.
+
 ### Fixed
 - **The pre-v0.10.0 GPU build command no longer silently produces a CPU binary.** After M-19
   moved the backend imports to the submodule entrypoints, `go build -tags cuda|gpu|metal
