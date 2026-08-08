@@ -1,12 +1,19 @@
 # Releasing goinfer (tri-module: root + gpu + cuda + metal)
 
-goinfer is **four Go modules** in one repo — the root (`github.com/townsendmerino/goinfer`),
-plus `gpu/`, `cuda/`, `metal/`, and the ancillary `demo/agent/`. They form a **requirement
-cycle** (root → gpu/cuda/metal → root via `replace => ../`), so there is no single-shot tag
-that produces a consistent, go-gettable set. This file is the ordering that does, plus the
-module-graph fixes that must land with it. It exists because four release blockers in the
-2026-08-05 audit (§1a/§1b: B-01…B-07) were "the tagged submodules don't build for anyone" —
-the gitignored `go.work` masks it locally, so it survives to a tag unless caught here.
+goinfer is **five Go modules** in one repo — the root (`github.com/townsendmerino/goinfer`),
+plus `gpu/`, `cuda/`, `metal/`, and the ancillary `demo/agent/`. This file is the tag ordering
+that produces a consistent, go-gettable set, plus the module-graph fixes that must land with it.
+It exists because four release blockers in the 2026-08-05 audit (§1a/§1b: B-01…B-07) were "the
+tagged submodules don't build for anyone" — the gitignored `go.work` masks it locally, so it
+survives to a tag unless caught here.
+
+> **M-19 broke the requirement cycle — this is now a TWO-step tag, not three.** The audit-era
+> flow tagged the root *twice* because the graph was a cycle (root → gpu/cuda/metal → root). M-19
+> moved the backend imports out of the root (`cmd/serve`/`demo` build tags became no-op guards),
+> so the **root no longer requires `gpu`/`cuda`/`metal`** — the graph is one-way: submodules
+> require the root, the root requires none of them. Tag the root **once**, then the submodules;
+> there is no second root tag. Confirm before starting: `grep -E "goinfer/(cuda|gpu|metal)" go.mod`
+> in the root prints nothing. (git history holds the obsolete three-step flow.)
 
 ## Invariants (why the steps are shaped this way)
 
@@ -32,44 +39,60 @@ the gitignored `go.work` masks it locally, so it survives to a tag unless caught
 3. **§C1 parity re-validation** (below, real T3 on the box) is scheduled — it is the one ⛔ gate.
 4. Working tree clean; on `main`; `gh auth switch --user townsendmerino`.
 
-## The three-step tag (B-06)
+## The two-step tag (post-M-19)
 
-The cycle is broken by tagging the root **twice**: once so the submodules have a real version
-to require, once so the root points at the tagged submodules.
+The root no longer requires the submodules, so tag the root **once**, push it, then bump and tag
+the submodules against that published root. The example uses `v0.10.1`.
 
-**Step 1 — tag the root.**
+**Step 1 — tag the root, push FIRST.** The submodules `go get` the root from the proxy, so it must
+be published before Step 2 runs.
 ```
-# align the aikit versions the root records (B-07)
-go get github.com/townsendmerino/aikit@v1.16.0 github.com/townsendmerino/aikit/gpu@v0.25.2
+# align aikit ONLY if the root records a stale version (B-07). As of v0.10.1 all four modules
+# already agree on aikit v1.16.0 — check `grep aikit go.mod` and skip the go get if aligned.
 go mod tidy
-git commit -am "release: root v0.9.0 (aikit aligned)"
-git tag v0.9.0
+git commit -am "release: v0.10.1 (<one-line summary>)"
+git tag v0.10.1
+git push origin main v0.10.1        # published BEFORE any submodule go-gets it
 ```
 
-**Step 2 — point each submodule at the tagged root, align deps, tidy, tag.**
-For each of `gpu/`, `cuda/`, `metal/` (and `demo/agent/` if kept):
+**Step 2 — point each submodule at the tagged root, prove the standalone build, tag.**
+Do `gpu/`, `cuda/`, `metal/` first, then `demo/agent/` LAST (it also requires `goinfer/gpu`, so
+`gpu/vX` must be tagged and pushed before demo/agent can `go get` it).
 ```
 cd <mod>
-go get github.com/townsendmerino/goinfer@v0.9.0          # B-01/B-05: real version, not placeholder/pseudo
-go get github.com/townsendmerino/aikit@v1.16.0            # B-07 (metal ALSO fixes B-02: adds the aikit require)
-go get github.com/townsendmerino/aikit/gpu@v0.25.2        # where applicable
-# TEMPORARILY remove the `replace github.com/townsendmerino/goinfer => ../` line, then:
-GOWORK=off go mod tidy                                    # B-02/B-03/B-04: complete go.sum for the SELECTED versions
-GOWORK=off go build -tags <cuda|gpu|metal> ./...          # PROVE it builds with no workspace
-# restore the `replace => ../` line (dev convenience; ignored by consumers)
+# TEMPORARILY remove the `replace github.com/townsendmerino/goinfer => ..` line, then:
+GOWORK=off go get github.com/townsendmerino/goinfer@v0.10.1        # B-01/B-05: real version, not placeholder/pseudo
+GOWORK=off go get github.com/townsendmerino/goinfer/gpu@v0.10.1    # demo/agent ONLY (it requires goinfer/gpu too)
+GOWORK=off go mod tidy                                             # B-02/B-03/B-04: complete go.sum for the SELECTED versions
+GOWORK=off go build -tags <cuda|gpu|metal> ./...                  # PROVE it builds with no workspace
+# restore the `replace => ..` line (dev convenience; ignored by consumers)
 ```
-Then tag them: `git tag gpu/v0.9.0 cuda/v0.9.0 metal/v0.9.0`.
+`metal` on a Linux box prints `matched no packages` (its files are darwin-gated) — that is
+EXPECTED; the `go mod tidy` go.sum bump is the deliverable, and macOS/CI runs the real build gate.
+Then commit the go.mod/go.sum bumps and tag. **`git tag` takes ONE name per call** (unlike
+`git push`, which takes many):
+```
+git commit -am "release: gpu/cuda/metal require goinfer v0.10.1"
+git tag cuda/v0.10.1 ; git tag gpu/v0.10.1 ; git tag metal/v0.10.1
+# a SEPARATE commit for demo/agent (requires goinfer + goinfer/gpu):
+git commit -am "release: demo/agent requires goinfer + goinfer/gpu v0.10.1"
+git tag demo/agent/v0.10.1
+git push origin main cuda/v0.10.1 gpu/v0.10.1 metal/v0.10.1 demo/agent/v0.10.1
+```
 
-**Step 3 — point the root at the tagged submodules; tag the root again.**
+## GitHub Release (non-optional final step)
+
+Every version also gets a **GitHub Release on the ROOT tag only** (13/13 prior versions; never
+per-submodule). After all five tags are pushed:
 ```
-go get github.com/townsendmerino/goinfer/gpu@v0.9.0 \
-       github.com/townsendmerino/goinfer/cuda@v0.9.0 \
-       github.com/townsendmerino/goinfer/metal@v0.9.0
-go mod tidy
-git commit -am "release: root v0.9.1 (require tagged submodules)"
-git tag v0.9.1
-git push origin main v0.9.0 v0.9.1 gpu/v0.9.0 cuda/v0.9.0 metal/v0.9.0
+gh release create v0.10.1 \
+  --title "goinfer v0.10.1 — <one-line descriptor>" \
+  --notes-file <notes-from-changelog> \
+  --latest
 ```
+Notes come from the CHANGELOG section for that version (Added/Changed/Fixed); keep any BREAKING
+marker honest even on a patch bump. `go get` resolves from the git tag via the proxy and needs no
+Release object — this step is for the rendered notes + the watcher notification.
 
 ## The standalone-build gate (make B-01…B-04 catchable next time)
 
