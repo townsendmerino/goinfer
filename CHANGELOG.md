@@ -8,7 +8,7 @@ The forward-pass and quantization numerics are parity-gated against HuggingFace
 and are the stable contract. The loader and architecture-descriptor surface is
 pre-1.0 and may change as new model families and quant formats land.
 
-## [Unreleased]
+## [v0.10.1] — 2026-08-07
 
 ### Added
 - **Batched CUDA prefill for int8 weights (`int8`/`int8int8`), closing the "int4-only" TTFT gap.**
