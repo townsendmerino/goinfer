@@ -11,6 +11,18 @@ pre-1.0 and may change as new model families and quant formats land.
 ## [Unreleased]
 
 ### Fixed
+- **`go build -tags cuda|gpu|metal ./cmd/serve` on the ROOT module now fails the build instead of
+  silently producing a CPU binary** (audit D-B / field-report F1). Since the M-19 submodule split
+  the root `cmd/serve` imports no backend, so those tags were accepted, exited 0, and yielded a
+  CPU binary 48 bytes larger than the untagged one — the trap anyone upgrading from a cached
+  README, blog post, or the v0.9.0 release page falls into. The v0.10.1 guard already failed the
+  build, but with one generic message; it is now **one guard file per tag**, and the compiler
+  error names the *exact* replacement command (`… go build -tags cuda github.com/townsendmerino/goinfer/cuda/cmd/serve`,
+  and the gpu/metal equivalents). A new `TestBackendTagGuardFailsBuild` runs in the default
+  `go test ./...` (no `-short`, no build tag): it shells out `go build -tags <backend> ./cmd/serve`
+  for all three backends and asserts both a non-zero exit and the exact replacement command in
+  stderr. The submodule entrypoints (`./cuda/cmd/serve`, `./gpu/cmd/serve`, `./metal/cmd/serve`)
+  are a different module and build unaffected — verified after the change.
 - **A prequantized int4 `.giw` bundle no longer mislabels itself as `int4mix`** on `/health`,
   `/v1/models`, and the startup line. `-quant int4` pins the embedding / LM head to int8 by
   default (logit-critical; `--embed-int4` opts out), and the label inference counted those tables
