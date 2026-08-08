@@ -159,14 +159,22 @@ func TestQwen35GGUF_gate(t *testing.T) {
 	}
 	// Coherence-vs-bf16 bar. The GGUF path legitimately carries MORE quant error
 	// than Gate 2 (Q8_0→int8 double-quant vs a single bf16→int8 step), so it sits
-	// just under Gate-2's 74/80 + 0.99466: measured argmax 68/80, cosine min
+	// just under Gate-2's 74/80 + 0.99466: one box measured argmax 68/80, cosine min
 	// 0.99445, the two misses being rank-2 near-ties (gap ~0.003 of logit range).
-	// Bar set at that measured level with margin — a real regression still craters
-	// well past it, while the structural guards above catch any loader defect.
+	//
+	// The min-cosine value is BOX-SENSITIVE: the Q8_0 dequant→forward runs through
+	// SIMD/FMA whose reduction order differs across CPUs, so the worst-position cosine
+	// varies by ~0.0015 between machines with no code change. The v0.10.0 release box
+	// (Linux RTX-2070) measures argmax 69/80, cosine min 0.99298 — and a bisect confirmed
+	// v0.9.2 produces the IDENTICAL 0.99298 there (i.e. NOT a regression; the 0.99445
+	// above was a different machine). So the min-cosine floor is set below the lower
+	// observed machine with margin; the REAL loader-defect detectors are the guards
+	// ABOVE — minCos<0.98 (a bug craters well past this), the near-tie requirement
+	// (maxDivFrac>0.03), and argmax<66 — none of which are box-sensitive.
 	if argmaxHits < 66 {
 		t.Errorf("argmax %d/80 < 66 — below the GGUF Q8_0 coherence floor", argmaxHits)
 	}
-	if minCos < 0.9943 {
-		t.Errorf("min cosine %.5f < 0.9943 — below the GGUF Q8_0 coherence floor", minCos)
+	if minCos < 0.992 {
+		t.Errorf("min cosine %.5f < 0.992 — below the GGUF Q8_0 coherence floor", minCos)
 	}
 }
