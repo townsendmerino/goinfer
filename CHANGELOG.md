@@ -8,7 +8,7 @@ The forward-pass and quantization numerics are parity-gated against HuggingFace
 and are the stable contract. The loader and architecture-descriptor surface is
 pre-1.0 and may change as new model families and quant formats land.
 
-## [Unreleased]
+## [v0.10.2] — 2026-08-08
 
 ### Changed
 - **The `.giw` bundle format (v5) now records the resolved quant label in its header** instead of
