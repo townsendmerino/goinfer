@@ -56,7 +56,7 @@ matmul — evaluated, NOT shipped"). The file states the revisit condition expli
 > W8A8 path) is untouched by this result; it is a throughput lever independent of the coherence
 > question, and the shared 4-bit encoder work should be scoped to that, not to unblocking Gemma 4.
 
-`docs/task-gemma4-moe.md` is stuck at Phase 5. The real 26B-A4B is coherent at int8
+`docs/completed/task-gemma4-moe.md` is stuck at Phase 5. The real 26B-A4B is coherent at int8
 (~26 GB, needs the 64 GB box) and **garbage at int4** (~13 GB) — which is the size that has
 to work, because the fieldfare-comparable rig is an M1 Pro 16 GB. Measured reconstruction
 (commit `bcadd44`): symmetric-g32 **0.99514** (garbage) vs affine-g32 **0.99690** vs int8

@@ -117,7 +117,7 @@ skips the ken search (the image is the context) and answers it through goinfer's
 pure-Go vision path (SigLIP encoder + projector → the decoder's embed-by-vector
 seam). **Heads-up:** the SigLIP prefill is CPU-heavy — expect a minute or two per
 image (the UI shows "analyzing image…"); a faster int8 tower is the planned
-follow-on (`docs/task-cpu-vision-prefill.md`).
+follow-on (`docs/completed/task-cpu-vision-prefill.md`).
 
 ## Demo script
 

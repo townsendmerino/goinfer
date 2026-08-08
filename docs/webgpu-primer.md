@@ -205,8 +205,8 @@ way in for this codebase specifically.
 
 - In-repo: `gpu/spike_test.go`, `gpu/quant.go`, `gpu/attention.go`,
   `gpu/decoderunner.go`, `decoder/residency.go`, `gpu/go.mod` (cogentcore/webgpu
-  v0.23.0); `docs/gpu-assessment.md` (§3 cross-backend numerics, §4 cgo quarantine),
-  `docs/gpu-next-levers-assessment.md`.
+  v0.23.0); `docs/completed/gpu-assessment.md` (§3 cross-backend numerics, §4 cgo quarantine),
+  `docs/completed/gpu-next-levers-assessment.md`.
 - Spec: [gpuweb/gpuweb](https://github.com/gpuweb/gpuweb),
   [WGSL — Wikipedia](https://en.wikipedia.org/wiki/WebGPU_Shading_Language).
 - Implementations: [gfx-rs/wgpu](https://github.com/gfx-rs/wgpu) (PRs

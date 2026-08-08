@@ -170,8 +170,8 @@ against the CPU reference.** Both backends are `CGO_ENABLED=0` (pure Go via pure
 behind build tags + `--backend`, with graceful CPU fallback — so the default pure-Go build
 is unchanged. **Pre-1.0:** the full per-family parity backfill remains the 1.0 gate;
 families without both a T1 committed golden and a current T3 manifest row ship
-*experimental* (`docs/parity-coverage-policy.md`). See `docs/task-cuda-cgofree-spike.md`,
-`docs/task-metal-cgofree-spike.md`, `docs/metal-verdict.md`, `docs/ollama-chase.md`, and
+*experimental* (`docs/parity-coverage-policy.md`). See `docs/completed/task-cuda-cgofree-spike.md`,
+`docs/completed/task-metal-cgofree-spike.md`, `docs/completed/metal-verdict.md`, `docs/ollama-chase.md`, and
 `docs/spec/` for the full arcs, scorecards, and dead ends.
 
 > **Peer numbers re-anchored.** Every goinfer-vs-Ollama comparison in `docs/benchmarks.md`
@@ -311,7 +311,7 @@ families without both a T1 committed golden and a current T3 manifest row ship
   out by the bit-identity contract — four independent bit-identical dedup attempts (split-KV,
   two grouped, staged) were built and lost. **Decision (M1 = M-A):** stay bit-identical, accept
   the depth floor; an opt-in FA-style throughput mode (M-B) is scoped and deferred, not rejected
-  (`docs/metal-verdict.md`).
+  (`docs/completed/metal-verdict.md`).
 - **CUDA graphs are a measured null on real models** (1.01×; the ~1.4–1.7× was a
   tiny-model/dispatch-dominated artifact). Only a safe-gate shipped
   (`GOINFER_CUDA_GRAPHS=1`, promotes to live under EXCLUSIVE_PROCESS/MPS + a startup
@@ -319,7 +319,7 @@ families without both a T1 committed golden and a current T3 manifest row ship
 - **Rotation + per-row scales + IMMA (tensor cores) deferred** — the cheap path (per-row scale
   search) is measured dead (per-row perplexity 108 vs per-group 28.5; the 1.24× weight-space
   error compounds ~4× at the output), and the expensive path buys only a prefill-only ~3× on an
-  already-past-threshold TTFT. Format stays group-scaled int4 (`docs/task-rotation-perrow-imma.md`,
+  already-past-threshold TTFT. Format stays group-scaled int4 (`docs/completed/task-rotation-perrow-imma.md`,
   `ollama-chase.md` §7).
 - **EAGLE-3 and Stage-B GPU verify are built-and-parked** — EAGLE-3 is lossless but a CPU
   wall-clock loss (needs GPU); Stage-B M=k GEMM verify is a NO-GO on small models, conditional-GO
@@ -330,7 +330,7 @@ families without both a T1 committed golden and a current T3 manifest row ship
 
 Theme: **the GPU resident-decode path expands from "dense Qwen2/Llama only" to most
 families served, and gains a Mamba-2 SSM engine for hybrids.** (See
-`docs/decode-residency-campaign.md` for the full arc, scorecard, and dead ends.)
+`docs/completed/decode-residency-campaign.md` for the full arc, scorecard, and dead ends.)
 
 ### Added
 - **Resident decode for most mainstream families** (the C-lever ladder — bounded
@@ -401,7 +401,7 @@ families served, and gains a Mamba-2 SSM engine for hybrids.** (See
   does not hit this — which is why it's default-on. Full write-up: `docs/ssm-int8-quality.md`.
 - **No "wgpu-native v29 decode penalty"** — measured ≈ cogentcore/v22 (gemv + per-dispatch record);
   the real binding blocker is the go-webgpu *goffi* (zero-CGO) Go-1.26 crash, not v29. Staying on
-  `cogentcore/webgpu`. (`docs/gpu-gowebgpu-migration-assessment.md`.)
+  `cogentcore/webgpu`. (`docs/completed/gpu-gowebgpu-migration-assessment.md`.)
 
 ## [v0.7.0] — 2026-06-15
 
@@ -623,7 +623,7 @@ families served, and gains a Mamba-2 SSM engine for hybrids.** (See
   resident backend is attached). `demo/agent` (the web UI) gets it too via
   `--vision-backend webgpu` — dropped/pasted image captions go ~9× faster. The
   attention matmuls still use a naive f32 kernel — a tiled GEMM there is the next
-  lever toward the ~8–12 s estimate (`docs/task-gpu-vision-tower.md`).
+  lever toward the ~8–12 s estimate (`docs/completed/task-gpu-vision-tower.md`).
 - **SigLIP attention vectorized** — QKᵀ/scores·V moved onto the SIMD A·Bᵀ kernels
   (QKᵀ f64-accumulating for parity), >2× faster vision prefill (>400 s → ~190 s),
   bit-faithful (encoder golden cosine 1.0).
@@ -749,7 +749,7 @@ untrusted-input fuzzing hardening._
   §B2 supersede them.)* v1 limits: **stateless `Generate` only**
   (`Session`/prefix-reuse/`GenerateSpeculative` fall back to the staged path),
   **16k context cap** (f32 KV), **eligible archs only** (dense Qwen2/Llama;
-  MoE/Gemma/hybrid → staged). See `docs/gpu-assessment.md` §0.0 + the §1 decision
+  MoE/Gemma/hybrid → staged). See `docs/completed/gpu-assessment.md` §0.0 + the §1 decision
   matrix. (The `.giw` bundle's weights length is now u64 — v2 — so int4 models
   past 4 GiB, i.e. the 7B+ class, serialize without truncation; v1 bundles still
   load.)

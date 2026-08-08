@@ -18,7 +18,7 @@ The firm cap is Linux-only.
 That is precisely the thing fieldfare avoided by not using mmap at all. It `pread`s into
 buffers it owns and runs its own 16-slot LFU per layer, so on an 8 GB M2 Air it gets a
 *predictable* 5.1–6.3 tok/s. goinfer on the same machine would be at the mercy of the UBC.
-Since the Gemma 4 26B-A4B benchmark rig is an M1 Pro 16 GB (`docs/task-gemma4-moe.md`),
+Since the Gemma 4 26B-A4B benchmark rig is an M1 Pro 16 GB (`docs/completed/task-gemma4-moe.md`),
 this is on the critical path for that number, not a nice-to-have.
 
 ---
@@ -189,7 +189,7 @@ architectures goinfer had. fieldfare found the hiding place: run the **resident*
 while the routed reads are in flight.
 
 **Gemma 4 26B-A4B hands goinfer the same opportunity for free.** Its FFN sub-block is a
-*parallel* dense-MLP + MoE pair (`docs/task-gemma4-moe.md`, Delta 1): the dense branch is
+*parallel* dense-MLP + MoE pair (`docs/completed/task-gemma4-moe.md`, Delta 1): the dense branch is
 always resident, independent of the routed branch, and its output is simply summed. So the
 sequence becomes — route → issue the expert fills (Lever 1's pool) → **compute the dense
 branch** → join → combine. On a 30-layer model that is 30 overlap windows per token.
@@ -560,7 +560,7 @@ In-repo: `docs/ideas-weight-memory.md` §2 (shipped 2026-06-13; skew and hit-rat
 tables; the "unhideable" claim) and §4 (dense layer streaming), `decoder/moepaging.go`,
 `decoder/layerpaging.go`, `decoder/moepaging_spike_test.go`, `decoder/mlp.go:81`,
 `decoder/forwardn.go:14`/`:228`, `decoder/residency.go:130`, `go.mod:6`,
-`docs/task-gemma4-moe.md`, `docs/benchmarks.md`.
+`docs/completed/task-gemma4-moe.md`, `docs/benchmarks.md`.
 aikit: `mmap/spancache.go`, `mmap/madvise_darwin.go` (the darwin no-op eviction),
 `mmap/madvise_linux.go`, commit `6c0483f` + `docs/internal/perf-campaign-2026-07-28.md`
 item 9 (the scan-resistance measurement), tags through v1.14.0.

@@ -82,7 +82,7 @@ Carried from the prefill campaign, where five attributions were made and four we
   (`__fmaf_rn` on CUDA, `fma()` on Metal). A bare `a*b + c` leaves the fma-vs-mul+add contraction to
   the compiler, and two kernels with identical source can compile to different numerics — ~1 ULP
   apart, DATA-DEPENDENT, invisible on uniform random fixtures but an 84% token-stream divergence on
-  real weights (the batched-prefill-vs-decode split, `docs/task-batched-prefill-bitidentity.md`). The
+  real weights (the batched-prefill-vs-decode split, `docs/completed/task-batched-prefill-bitidentity.md`). The
   gate is the PTX/AIR **instruction histogram**, not a numerical test — a data-driven test only catches
   it when the fixture has the dynamic range to expose it, which random data does not. Enforced by
   `cuda.TestKernelFMALint` (fails the build on any bare float MAC in a contracted kernel; extends to
@@ -320,7 +320,7 @@ order and diverged at nKeys>256. Reduction *width* is part of the bit-identity c
 **Conclusion — four independent confirmations that Metal decode attention is structurally
 dispatch-/occupancy-bound.** The DRAM-dedup prize is real but uncapturable: any dedup needs group
 co-location (→ few threadgroups → occupancy death) or extra dispatches (→ tax death). This is the same
-wall as the whole decode path (`docs/task-metal-cgofree-spike.md`: megakernel closed, dispatch-count the
+wall as the whole decode path (`docs/completed/task-metal-cgofree-spike.md`: megakernel closed, dispatch-count the
 ceiling). **A1-Metal (half4 coalescing, 1.37–1.40×) remains the one capturable decode-attention win on
 this box.** Stop proposing dedup layouts; the lever is elsewhere (KV-quant §A3, or accept the floor).
 

@@ -187,7 +187,7 @@ not the prefill scan* — which brings the **hybrid SSM families onto the GPU**:
 quant cliff where its 64-expert MoE router turns tiny perturbations into discrete
 expert-selection flips — see `docs/ssm-int8-quality.md`). Still staged: **Gemma** (logit/attn
 softcap own-forward), **Llama-4** (ports cleanly but needs ≥12 GB), gpt2. Full numbers:
-`docs/gpu-assessment.md`, `docs/gpu-residency-coverage.md`, `docs/decode-residency-campaign.md`.
+`docs/completed/gpu-assessment.md`, `docs/gpu-residency-coverage.md`, `docs/completed/decode-residency-campaign.md`.
 
 ## 3. Module map (and where cgo is quarantined)
 

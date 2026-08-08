@@ -36,7 +36,7 @@ A measurement enters a table **only if it satisfies all of**:
 - **Date** of the run, and a **thermal note** (plugged in, warm, repeated runs, median).
 
 Anything not matching all of these is `—` and a re-measure, never a guess. This page
-exists *because* a sloppy comparison is worse than none: `docs/gpu-assessment.md`
+exists *because* a sloppy comparison is worse than none: `docs/completed/gpu-assessment.md`
 caught one of its own early runs comparing a **Qwen1.5-1.8B q4** against the
 **Qwen2.5-1.5B** target (a 191 tok/s number) and discarded it. Same-checkpoint,
 same-quant, same-machine is the whole discipline.
@@ -110,7 +110,7 @@ weights mapped from the binary's read-only image) · ᵉ `README.md` + `CHANGELO
 (forward-pass numerics parity-gated vs HF; per-family logit-parity tests) ·
 ᶠ `README.md` (`GrammarFromStruct` — grammar derived from a Go struct) · ᵍ `README.md` /
 `cmd/serve` (OpenAI-compatible server in pure stdlib) · ʰ `README.md` (LoRA PEFT,
-merged at load) · ⁱ `ARCHITECTURE.md` §2 + `docs/gpu-assessment.md` (WebGPU full
+merged at load) · ⁱ `ARCHITECTURE.md` §2 + `docs/completed/gpu-assessment.md` (WebGPU full
 residency; cgo quarantined behind `-tags gpu`) + §B2/§B3 below (`cuda/`, `metal/`:
 driver-JIT / MSL, **CGO_ENABLED=0**, admission-gated by
 `decoder/features.go`) ·
@@ -175,7 +175,7 @@ naive f32 — a tiled GEMM there is the next lever (`docs/completed/task-gpu-vis
 
 Rig: **RTX 2070 SUPER / Ryzen 7 3700X**, warm (`ollama ps` 100% GPU), greedy. goinfer
 WebGPU residency (`-tags gpu`), bit-exact vs CPU decode on the first tokens. Source &
-lab notebook: `docs/gpu-assessment.md` §0.0 (goinfer commit `eaf9a6c`, **2026-06-08**);
+lab notebook: `docs/completed/gpu-assessment.md` §0.0 (goinfer commit `eaf9a6c`, **2026-06-08**);
 final corrected numbers only. The 1.5B row (89.7 / 147 / 61%) is from gpu-assessment;
 the **7B row's peer figure (72.8 / 71%) is from `CHANGELOG.md` v0.5.0**, not
 gpu-assessment — cited there.
@@ -239,7 +239,7 @@ gpu-assessment — cited there.
 >   uniform-magnitude fixture rounds identically). **FIXED:** every float MAC in both paths is now an
 >   explicit `__fmaf_rn` intrinsic (no compiler discretion), enforced at build time by
 >   `cuda.TestKernelFMALint`. Evidence it's restored: **`TestPrefillDivergenceRate` = 0/50** on the real
->   1.5B (was 42/50), gap byte-identical. Full write-up: `docs/task-batched-prefill-bitidentity.md`.*
+>   1.5B (was 42/50), gap byte-identical. Full write-up: `docs/completed/task-batched-prefill-bitidentity.md`.*
 > - **§B4's 26B-A4B on an 8 GB card, fully GPU-resident** at 16.98 tok/s. *Re-verified (Task 2): the
 >   old "peers fail to load it" claim is FALSE for current Ollama — v0.32.5 loads and runs the same
 >   26B via a 42% GPU / 58% CPU-RAM split at ~24.5 tok/s, faster than goinfer here.* The honest,
@@ -401,7 +401,7 @@ comparison on this page.
     above is bounded by L1TEX/shared, not free. (b) The GEMV residual is the **tensor-core gap**: Compute
     is 54% of the *dp4a* peak, and dp4a is ~1/3 of Turing IMMA — perfect latency hiding buys ~another
     1.85× to the dp4a ceiling, but the ceiling itself is dp4a, not IMMA. Closing that needs the
-    tensor-core GEMM in `docs/task-rotation-perrow-imma.md`, which reorders the group-scaled cross-group
+    tensor-core GEMM in `docs/completed/task-rotation-perrow-imma.md`, which reorders the group-scaled cross-group
     float sum and so cannot be bit-identical — **scoped and unfunded**. An architectural consequence of
     the cgo-free, bit-identical thesis: a **stated trade, not a deficiency**. (Against the current peer
     v0.32.5 the total-time crossover is short — see the re-anchor box at the top of §B2; goinfer stays
@@ -520,7 +520,7 @@ above); the two take opposite approaches to the same over-capacity problem.
   the ~714 MB/token of routed experts stream host→VRAM over **PCIe (~12 GB/s, ~30× slower than
   VRAM's ~450 GB/s)**, and that DMA — not compute, router, or quantization — is the wall. Put the
   same model on a card that holds it (16 GB+) and it should beat the dense 7B, not trail it. So the
-  26B's low rate is a **hardware-mismatch** result (`docs/task-26b-prefill-bound.md`), and "other
+  26B's low rate is a **hardware-mismatch** result (`docs/completed/task-26b-prefill-bound.md`), and "other
   MoE models run faster" reduces to "other MoE models fit." Do not read this as an MoE or kernel
   deficiency and do not point IMMA/kernel work at it — the fix is memory, or a model that fits.
 - **Which number to quote: 16.98 tok/s** (capture-free, the headline). The **4.98 tok/s** that also
@@ -587,7 +587,7 @@ GINFER_PREQUANT_GGUF=~/models/qwen2.5-coder-1.5b-instruct-q8_0.gguf \
 
 ## Sources
 
-**goinfer (in-repo):** `docs/gpu-assessment.md` §0.0 (GPU residency: 89.7 / 51.7 tok/s;
+**goinfer (in-repo):** `docs/completed/gpu-assessment.md` §0.0 (GPU residency: 89.7 / 51.7 tok/s;
 61% / 71% of CUDA at equal quant; the discarded wrong-model 191 tok/s; commit `eaf9a6c`,
 2026-06-08) · `docs/ARCHITECTURE.md` §2 (cold-start / heap / binary tiers; embedded-GGUF
 vs `.giw`) · `docs/completed/perf-campaign.md` (M1 Pro CPU decode, measurement conventions) ·
@@ -598,10 +598,10 @@ figure lives in CHANGELOG, not gpu-assessment) · `README.md` (capabilities) ·
 **§B2 (cgo-free CUDA)** — measured 2026-07-16 on this repo at commit `7557723`, RTX 2070
 SUPER / driver 595.58.03, peer Ollama 0.5.7 via `/api/generate`; goinfer via `cmd/serve`
 `/v1/chat/completions`; both wall-clock, best of 3 warm; lab notes in
-`docs/task-cuda-cgofree-spike.md` · **§B3 (cgo-free Metal)** — **re-anchored 2026-08-04** on
+`docs/completed/task-cuda-cgofree-spike.md` · **§B3 (cgo-free Metal)** — **re-anchored 2026-08-04** on
 Apple M1 Pro 16 GB / macOS 26.5.2, goinfer `38e5cd7` (W4A8) via `cmd/serve` `/v1/chat/completions`,
 peer **Ollama v0.32.5** (FA-on) via `/api/chat`, both from the identical local q4_K_M GGUF, same
-server-to-server wall-clock method; notes in `docs/metal-model-coverage.md`.
+server-to-server wall-clock method; notes in `docs/completed/metal-model-coverage.md`.
 
 **Peers (verified 2026-06-10, against each project's repo/docs):**
 llama.cpp — github.com/ggml-org/llama.cpp (README; `tools/server/README.md`;
