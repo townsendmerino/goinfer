@@ -8,8 +8,9 @@ pure-Go CPU/WebGPU; CUDA is never the default.
 ## Build & run
 
 ```sh
-# build with the cuda tag (the go.work stitches the ./cuda submodule)
-go build -tags cuda -o goinfer-cuda ./cmd/serve      # or ./demo/chat
+# build the cuda submodule entrypoint (since v0.10.0 the root cmd/serve builds no backend —
+# a -tags cuda on it fails the build; see the README build section)
+CGO_ENABLED=0 go build -tags cuda -o goinfer-cuda github.com/townsendmerino/goinfer/cuda/cmd/serve   # or …/cuda/cmd/chat
 
 # select it at runtime
 ./goinfer-cuda --backend cuda --model qwen2.5-coder-1.5b-instruct-q4_k_m.gguf

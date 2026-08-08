@@ -11,6 +11,15 @@ pre-1.0 and may change as new model families and quant formats land.
 ## [Unreleased]
 
 ### Fixed
+- **The submodule build command is now correct in every active doc** (field-report F2). The README
+  build section already carried the verified per-backend entrypoints (v0.10.1); this sweeps the
+  rest: `docs/cuda-backend.md` used the pre-split `go build -tags cuda ./cmd/serve` (the root, now a
+  no-op) — replaced with the verified `CGO_ENABLED=0 go build -tags cuda github.com/townsendmerino/goinfer/cuda/cmd/serve`.
+  The historical `docs/releases/v0.9.0.md` keeps its original command (correct at v0.9.0) but gains
+  a forward-pointer note; `docs/completed/audit-2026-08-05.md` is left verbatim (it documents the
+  finding). Every command written was run in-tree first. Note: the *published* v0.10.0 GitHub
+  release notes still show the pre-split command and a literal `<exact command — fill from the repo
+  before publishing>` placeholder — flagged for a maintainer decision (not editable from the repo).
 - **`go build -tags cuda|gpu|metal ./cmd/serve` on the ROOT module now fails the build instead of
   silently producing a CPU binary** (audit D-B / field-report F1). Since the M-19 submodule split
   the root `cmd/serve` imports no backend, so those tags were accepted, exited 0, and yielded a
