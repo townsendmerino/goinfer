@@ -29,9 +29,11 @@ import (
 //
 //	magic   [5]byte = "GINFW"
 //	version uint32
-//	quant   uint32   (quantMode the weights were serialized at)
+//	quant   uint32   (quantMode enum: first-weight kind — the legacy tag, validated on read)
 //	id      str      (model identity — source name/hash, for tooling)
 //	config  str      (Config as JSON; arch is re-derived from it on load)
+//	quantLabel str   (v5+: the resolved quant label — int4|int4mix|int8int8|int8|native — or "" to
+//	                  fall back to inference; the reader PREFERS this over re-deriving from kinds)
 //	Embed, LMHead, PosEmbed     weightMat
 //	FinalNorm, FinalNormBias    f32
 //	numLayers uint32
@@ -53,8 +55,8 @@ import (
 
 const (
 	giwMagic    = "GINFW"
-	giwVersion  = 4 // v4: gemma4 tail (PLE + layer_scalar + KV-share flags + the gemma4moe sub-block)
-	giwMinReadV = 3 // read v3 too (v4 only ADDS the gemma4-gated tail; non-gemma4 v3 bundles stay valid)
+	giwVersion  = 5 // v5: header records the resolved quant label (int4/int4mix/int8int8/int8/native) so the reader need not infer it
+	giwMinReadV = 3 // read v3/v4 too (each version only ADDS: v4 the gemma4-gated tail, v5 the quant-label field; older bundles stay valid and fall back to inference)
 	giwV4Gemma4 = 4 // the version at/after which the gemma4 tail is present
 	// v3: per-layer RouterBias (DeepSeek/GLM e_score_correction_bias); v2: qwen3_5_moe hybrid tail
 	// Sanity ceilings on the count fields, generous vs any real checkpoint
@@ -167,6 +169,16 @@ func (wr *giwWriter) writeHeadGlobals(w *Weights, id string) error {
 	wr.str(id)
 	wr.bytesField(cfgJSON)
 
+	// v5: the resolved quant label, so the reader need not re-infer it (the source of truth is
+	// recorded, not reconstructed). Only the buffer path (full weights in hand) can resolve it
+	// here; the streaming transcode writes the header BEFORE its layers load, so it records ""
+	// (absent) and the reader falls back to inference — which is exactly the pre-v5 behaviour.
+	label := ""
+	if wr.sink == nil {
+		label = w.quantLabel()
+	}
+	wr.str(label)
+
 	wr.weightMat(&w.Embed)
 	wr.weightMat(&w.LMHead)
 	wr.weightMat(&w.PosEmbed)
@@ -213,6 +225,12 @@ func LoadSerializedWeights(data []byte) (*Weights, error) {
 	quant := quantMode(r.u32())
 	_ = r.str() // id — stored for tooling, not validated here
 	cfgJSON := r.bytesField()
+	// v5+: the recorded resolved quant label (may be "" for a streamed bundle → infer). Absent
+	// entirely in v3/v4 bundles, which keep working unchanged.
+	bakedQuant := ""
+	if v >= 5 {
+		bakedQuant = r.str()
+	}
 	if r.err != nil {
 		return nil, &SerializeError{"truncated header"}
 	}
@@ -237,7 +255,7 @@ func LoadSerializedWeights(data []byte) (*Weights, error) {
 	}
 	r.arch = arch // gates the v4 gemma4 model-level + per-layer tail
 
-	w := &Weights{Cfg: cfg, arch: arch, backing: data}
+	w := &Weights{Cfg: cfg, arch: arch, backing: data, bakedQuant: bakedQuant}
 	w.Embed = r.weightMat()
 	w.LMHead = r.weightMat()
 	// A tied checkpoint (Qwen3/Qwen2.5-0.5B/Llama-3.2 with no output.weight) round-trips with an
@@ -510,6 +528,11 @@ func (m *Model) Quant() string {
 	case "int8", "int8int8", "int4", "int4mix":
 		return m.quant
 	}
+	// A v5 .giw records the resolved label at bake time — prefer it over re-inferring. Empty for
+	// a pre-v5 or streamed bundle, which fall back to the (corrected) tensor-kind inference.
+	if m.w.bakedQuant != "" {
+		return m.w.bakedQuant
+	}
 	return m.w.quantLabel()
 }
 
@@ -556,13 +579,10 @@ func (m *Model) CheckGiwQuantMatch(requested string) error {
 // int8-pinned logit tables are not part of the quant the user chose.
 func (w *Weights) quantLabel() string {
 	var hasInt4, hasInt8I8, hasInt8, hasOther bool
-	for _, m := range w.matmulWeights() {
+	// bodyMatmulWeights excludes the int8-pinned logit tables — the single definition of that
+	// exclusion (weights.go), so the label and the .giw resolved-quant field can never disagree.
+	for _, m := range w.bodyMatmulWeights() {
 		if m.Rows() == 0 {
-			continue
-		}
-		// The embedding / LM head / Gemma-4 PLE tables are int8-pinned by default in int4
-		// mode; their kind must not drive the int4-vs-int4mix label (see the doc comment).
-		if m == &w.Embed || m == &w.LMHead || m == &w.PerLayerTokenEmbed || m == &w.PerLayerModelProj {
 			continue
 		}
 		switch m.Kind() {

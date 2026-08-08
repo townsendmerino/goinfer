@@ -10,6 +10,19 @@ pre-1.0 and may change as new model families and quant formats land.
 
 ## [Unreleased]
 
+### Changed
+- **The `.giw` bundle format (v5) now records the resolved quant label in its header** instead of
+  leaving the reader to re-infer it (T1-6 follow-up, structural). A freshly baked bundle stores
+  `int4` / `int4mix` / `int8int8` / `int8` / `native`, and the loader **prefers** that field; a
+  pre-v5 bundle (or a streamed bundle, which writes the header before its layers load) has the field
+  absent and falls back to the corrected tensor-kind inference — so **existing bundles keep working
+  unchanged**. The reader still accepts v3/v4. Also single-sourced the "which tensors define the
+  quant" fact: `quantLabel` and the recorded field now both classify over one `bodyMatmulWeights`
+  (matmuls minus the int8-pinned logit tables), so the T1-6 class of bug — two lists of one fact
+  drifting apart — cannot reopen within the decoder. (The cuda batched-prefill gate inspects the
+  resident per-layer projections, a different type in a different module; it agrees on excluding the
+  logit tables but cannot share the host-side list — documented at both sites.)
+
 ### Fixed
 - **`--quant` on a prequantized `.giw` bundle is now a startup error when it conflicts, instead of
   being silently ignored** (T1-7). A `.giw` is serialized at a fixed precision, so `--quant` cannot

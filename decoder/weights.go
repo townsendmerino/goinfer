@@ -150,8 +150,14 @@ type expertWeights struct {
 // Embed doubles as the LM head (logits = h · Embedᵀ), so there is no
 // separate output projection tensor.
 type Weights struct {
-	Cfg           Config
-	arch          *Architecture    // resolved descriptor the forward pass reads
+	Cfg  Config
+	arch *Architecture // resolved descriptor the forward pass reads
+	// bakedQuant is the resolved quant label recorded in the .giw header (v5+): "int4" |
+	// "int4mix" | "int8int8" | "int8" | "native". Non-empty only for a v5 .giw loaded with the
+	// field present; Model.Quant() prefers it over re-inferring from tensor kinds. Empty for a
+	// direct GGUF/safetensors load, a pre-v5 bundle, or a streamed v5 bundle (which records "")
+	// — those fall back to quantLabel() inference.
+	bakedQuant    string
 	Embed         linalg.WeightMat // [VocabSize, HiddenDim] — input embedding (AND tied LM head when LMHead unset)
 	LMHead        linalg.WeightMat // [VocabSize, HiddenDim] — separate output head (untied families); zero value when tied
 	PosEmbed      linalg.WeightMat // [MaxPositions, HiddenDim] — learned position embedding (GPT-2); zero value otherwise
@@ -200,6 +206,33 @@ func (w *Weights) matmulWeights() []*linalg.WeightMat {
 		ms = append(ms, &w.PerLayerTokenEmbed, &w.PerLayerModelProj)
 	}
 	return ms
+}
+
+// isLogitTable reports whether m is one of the embedding-class tensors — the token embedding, the
+// LM head, or the Gemma-4 model-level PLE embeddings. In int4 mode these are pinned to int8 by
+// DEFAULT (logit-critical; the EmbedInt4 knob relaxes them), so their precision is orthogonal to the
+// int4-vs-int4mix distinction and must be excluded from the quant classification (T1-6). This is the
+// single definition of that exclusion.
+func (w *Weights) isLogitTable(m *linalg.WeightMat) bool {
+	return m == &w.Embed || m == &w.LMHead || m == &w.PerLayerTokenEmbed || m == &w.PerLayerModelProj
+}
+
+// bodyMatmulWeights is matmulWeights minus the logit tables: the attention/FFN projections, experts,
+// and routers — exactly the matmuls whose precision the chosen quant (int4|int4mix|int8|int8int8)
+// determines. It is the one list quantLabel classifies over (and, through quantLabel, the value the
+// .giw header records at bake time), so the "which tensors define the quant" fact lives in ONE place
+// and cannot drift the way the T1-6 label did. (The cuda batched-prefill gate — nonBatchableKind,
+// cuda/prefill.go — inspects the *resident* per-layer projections, a different type in a different
+// module; it agrees on excluding the logit tables but cannot share this host-side function.)
+func (w *Weights) bodyMatmulWeights() []*linalg.WeightMat {
+	all := w.matmulWeights()
+	body := make([]*linalg.WeightMat, 0, len(all))
+	for _, m := range all {
+		if !w.isLogitTable(m) {
+			body = append(body, m)
+		}
+	}
+	return body
 }
 
 // LoadWeights reads config.json + model.safetensors from a real on-disk
