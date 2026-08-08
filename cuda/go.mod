@@ -5,8 +5,8 @@ go 1.26.5
 require (
 	github.com/eitamring/gocudrv v0.3.2
 	github.com/townsendmerino/aikit v1.16.0
-	github.com/townsendmerino/aikit/gpu v0.25.2
-	github.com/townsendmerino/goinfer v0.9.0
+	github.com/townsendmerino/aikit/gpu v0.27.0
+	github.com/townsendmerino/goinfer v0.10.0
 )
 
 require (
