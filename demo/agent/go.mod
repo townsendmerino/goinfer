@@ -9,8 +9,8 @@ go 1.26.5
 require (
 	github.com/modelcontextprotocol/go-sdk v1.6.1
 	github.com/townsendmerino/aikit v1.16.0
-	github.com/townsendmerino/goinfer v0.10.1
-	github.com/townsendmerino/goinfer/gpu v0.10.1
+	github.com/townsendmerino/goinfer v0.10.2
+	github.com/townsendmerino/goinfer/gpu v0.10.2
 )
 
 require (
