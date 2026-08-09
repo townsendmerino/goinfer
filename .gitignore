@@ -31,6 +31,15 @@ demo/chat/dist/
 !testdata/cohere-tiny/model.safetensors
 !testdata/cohere2-tiny/
 !testdata/cohere2-tiny/model.safetensors
+# EXCEPTION: glm-tiny.gguf is an 812 KB SYNTHETIC GGUF — scripts/pin_glm_tiny.py builds a
+# randomly-initialized Glm4MoeForCausalLM from a config (vocab 256, hidden 64, 3 layers; no real
+# GLM weights are copied, so no licensing question), and scripts/pin_glm_tiny_gguf.py converts it.
+# Committed on purpose: while it was gitignored, TestStreamTranscodeMatchesResident and the .giw
+# round-trip gates SELF-SKIPPED in CI and had never run there — so the .giw v5 quant-label change
+# (ac6977f) silently invalidated the byte-identity assertion and shipped in v0.10.2 with nothing
+# red. Same rationale as mixtral-tiny/cohere-tiny above; see docs/parity-coverage-policy.md,
+# "A gate must be able to run, and able to fail".
+!testdata/glm-tiny.gguf
 testdata/model
 testdata/models
 testdata/*-gguf

@@ -967,6 +967,15 @@ func (r *resident) writtenBuffers() []Buffer {
 // GIGABYTES of unified (system) memory, until the process exited. purego has no ARC and Metal
 // has no context-destroy to reclaim in bulk, so each buffer must be released explicitly.
 // Idempotent: ReleaseAll empties the ledger, so a second Close is a no-op (N-11).
+//
+// ⚠ THIS COMMENT IS WHY SOMEONE WILL ADD THE UNSAFE CALL. Read in isolation it says "unload leaks
+// gigabytes; Close reclaims them", which makes calling Close from handleAdminUnload look obviously
+// correct. It is not safe TODAY, and the reason is not in this file: serve's unload has a window
+// between pick() and enter() in which a request still holds lm.model with no lock held, so
+// TryLock grants the unload while a handler is mid-tokenize against those weights. Adding the call
+// turns a bounded leak into a use-after-free — on CUDA, a driver SIGSEGV that kills the server.
+// The blocker is serve's drain, not this teardown. Full account: internal/serveapp/admin.go,
+// handleAdminUnload. Close itself is correct and stays correct; it just has no safe caller yet.
 func (r *resident) Close() error {
 	r.stopExec()
 	if r.g4moe != nil && r.g4moe.giwFile != nil {

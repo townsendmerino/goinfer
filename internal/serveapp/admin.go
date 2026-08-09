@@ -92,6 +92,33 @@ func (s *server) handleAdminLoad(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleAdminUnload drops a model from the registry (refusing if it is busy).
+//
+// ⚠ DO NOT "FIX THE LEAK" BY ADDING lm.model.Close() HERE. It looks like an obvious one-liner —
+// the model is out of the registry, nothing can pick it again, so free the weights. It is not: it
+// converts a BOUNDED LEAK into a USE-AFTER-FREE, which on the CUDA backend is a driver SIGSEGV
+// that takes the whole server down rather than an error a handler can recover from.
+//
+// THE WINDOW. TryLock below succeeds when no generation holds lm.mu — but a request can be holding
+// the *lm pointer and using lm.model without that mutex. Every handler with the
+//
+//	pick() → work → enter()
+//
+// shape has a preamble between them that touches lm.model / lm.tk with NO lock held. In
+// handleChat that is pick (openai.go:456) → promptTooLargeForContext → chatPrompt (tokenize) →
+// prepare → enter (openai.go:481): three uses, one of which is a full BPE over the prompt, so the
+// window is milliseconds wide on a large body — not a theoretical instant. TryLock sees an idle
+// model and grants the unload while that request is mid-tokenize against weights about to be freed.
+//
+// It is BACKEND-AGNOSTIC — the shape, not the backend, is the defect — and present in every handler
+// sharing it (chat, completions, responses, messages, embeddings-on-a-decoder). On CUDA it surfaces
+// as drive() called on a torn-down context; on CPU it is a read of unmapped/reused memory, which is
+// quieter and worse.
+//
+// THE SAFE FIX IS A DRAIN, NOT A CLOSE: in-flight holders must be waited out before release —
+// pick() handing back a release func and unload refusing until the holder count is zero. Until that
+// exists, leaking the weights of an unloaded model is the DELIBERATE, bounded choice: an operator
+// who unloads N models leaks N models' weights until restart, which is recoverable. A SIGSEGV
+// mid-request is not. See the reciprocal note at resident.Close.
 func (s *server) handleAdminUnload(w http.ResponseWriter, r *http.Request) {
 	if !s.adminEnabled(w) {
 		return

@@ -25,9 +25,11 @@ survives to a tag unless caught here.
 - **`go.work` is gitignored** (`.gitignore`) and must stay dev-only. Nothing in the shipped
   tag may depend on it. CI's standalone-build step (below) is what proves this.
 - **Version alignment (B-07):** all four modules must agree on `aikit` and `aikit/gpu`.
-  As of the audit: root/cuda want `aikit v1.16.0`, gpu wants `v1.11.0` (skew); metal wants
-  `aikit/gpu v0.25.2`, root records `v0.25.0`. Align everything on **`aikit v1.16.0` /
-  `aikit/gpu v0.25.2`**, tidy the root last.
+  **The audit-era skew is RESOLVED — do not follow the old instruction.** As of v0.10.3 all five
+  modules are on `aikit v1.16.0`, and `cuda`/`metal` are on **`aikit/gpu v0.27.0`**. The previous
+  text here told you to align on `aikit/gpu v0.25.2`, which would now be a DOWNGRADE. Verify with
+  `for m in . gpu cuda metal demo/agent; do grep aikit $m/go.mod; done` and only act if a module
+  actually disagrees; tidy the root last.
 - **metal is missing an `aikit` require (B-02):** it imports `aikit/linalg` + `aikit/mmap`
   but only requires `aikit/gpu` (a different module). Add `require github.com/townsendmerino/aikit v1.16.0`.
 
@@ -47,13 +49,22 @@ the submodules against that published root. The example uses `v0.10.1`.
 **Step 1 — tag the root, push FIRST.** The submodules `go get` the root from the proxy, so it must
 be published before Step 2 runs.
 ```
-# align aikit ONLY if the root records a stale version (B-07). As of v0.10.1 all four modules
-# already agree on aikit v1.16.0 — check `grep aikit go.mod` and skip the go get if aligned.
+# align aikit ONLY if a module actually disagrees (B-07 above) — as of v0.10.3 they all agree.
 go mod tidy
 git commit -am "release: v0.10.1 (<one-line summary>)"
 git tag v0.10.1
 git push origin main v0.10.1        # published BEFORE any submodule go-gets it
 ```
+
+> **If `git commit -am` says "nothing to commit", that is expected — tag HEAD instead.** This step
+> assumes the `[Unreleased]` → `[vX]` CHANGELOG move happens *here*. When that move already landed
+> in an earlier commit (it usually has, if the release was staged over more than one sitting) and
+> `go mod tidy` is a no-op, there is nothing left for a release commit. Do **not** force an empty
+> one: `git tag vX` on the current HEAD and push. Observed on the v0.10.3 run.
+
+> **Do not use `git commit -am` with unrelated work in the tree.** Both this step and Step 2 stage
+> every tracked modification. Stash anything not part of the release first (`git stash push -u --
+> <paths>`) — Step 2 in particular runs `-am` four times across four modules.
 
 **Step 2 — point each submodule at the tagged root, prove the standalone build, tag.**
 Do `gpu/`, `cuda/`, `metal/` first, then `demo/agent/` LAST (it also requires `goinfer/gpu`, so
