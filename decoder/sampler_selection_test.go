@@ -1,9 +1,11 @@
 package decoder
 
 import (
+	"fmt"
 	"math"
 	"math/rand"
 	"sort"
+	"sync"
 	"testing"
 )
 
@@ -130,23 +132,58 @@ func TestTopFilterLogits_MatchesReference(t *testing.T) {
 	}
 	temps := []float64{0.8, 0.01, 1.0, 2.0}
 
-	total := 0
-	for s := 0; s < seeds; s++ {
-		r := rand.New(rand.NewSource(int64(s) + 1))
-		// small vocab: dense parameter coverage, with ties.
-		var logits []float32
-		if s%2 == 0 {
-			logits = randLogitsWithTies(4096, r)
-		} else {
-			logits = randLogits(4096, r)
-		}
-		for _, c := range cfgs {
-			for _, temp := range temps {
-				assertSameFilter(t, logits, temp, c.topK, c.topP, c.minP, s)
-				total++
-			}
-		}
+	// The seed sweep is run in PARALLEL SHARDS. Every case still runs — the shards partition the
+	// same seed range and assert the same things — but wall time divides by the core count.
+	//
+	// Why it matters: CI runs `go test -race`, and this sweep is pure computation with no
+	// goroutines and no shared state, so the race detector finds nothing here while costing ~10×.
+	// At 400 seeds × 15 cfgs × 4 temps that pushed the whole decoder package past the 600 s default
+	// timeout on CI's slower runner (locally 63 s un-raced) — main went red on a TIMEOUT, not a
+	// failure. Sharding is the coverage-neutral fix; reducing the sweep would have traded away the
+	// exactness gate that justifies the optimization, which is the wrong thing to trade.
+	// Seed selection: every seed normally, an evenly-STRIDED subset under -race (the detector has
+	// nothing to find in this pure-compute sweep — see sampler_sweep_race_test.go). Striding rather
+	// than truncating keeps the selection spread across the whole range, so both logit shapes
+	// (tie-heavy / tie-free, which alternate on seed parity) stay represented. All 15 configs and
+	// all 4 temperatures run for every selected seed either way.
+	var seedList []int
+	for s := 0; s < seeds; s += sweepSeedStride {
+		seedList = append(seedList, s)
 	}
+
+	// The shards are nested inside one group subtest: parallel subtests only run once their
+	// PARENT returns, so without the group the totals below would be read before any case ran.
+	const shards = 8
+	var mu sync.Mutex
+	total := 0
+	t.Run("seed-sweep", func(t *testing.T) {
+		for sh := 0; sh < shards; sh++ {
+			t.Run(fmt.Sprintf("shard-%d", sh), func(t *testing.T) {
+				t.Parallel()
+				n := 0
+				for i := sh; i < len(seedList); i += shards {
+					s := seedList[i]
+					r := rand.New(rand.NewSource(int64(s) + 1))
+					// small vocab: dense parameter coverage, with ties.
+					var logits []float32
+					if s%2 == 0 {
+						logits = randLogitsWithTies(4096, r)
+					} else {
+						logits = randLogits(4096, r)
+					}
+					for _, c := range cfgs {
+						for _, temp := range temps {
+							assertSameFilter(t, logits, temp, c.topK, c.topP, c.minP, s)
+							n++
+						}
+					}
+				}
+				mu.Lock()
+				total += n
+				mu.Unlock()
+			})
+		}
+	})
 
 	// Real vocab sizes at the reported config, a handful of seeds (these are big).
 	for _, V := range vocabs {
@@ -159,8 +196,23 @@ func TestTopFilterLogits_MatchesReference(t *testing.T) {
 			total += 3
 		}
 	}
-	t.Logf("bit-for-bit identity confirmed over %d (logits,params) cases across %d seeds and vocab sizes %v",
-		total, seeds, append(vocabs, 4096))
+	// Report the MODE as well as the count: a reader of CI output must be able to tell the full
+	// sweep from the strided one without inferring it from the number.
+	ties, noTies := 0, 0
+	for _, s := range seedList {
+		if s%2 == 0 {
+			ties++
+		} else {
+			noTies++
+		}
+	}
+	if ties == 0 || noTies == 0 {
+		t.Fatalf("seed stride %d selects only one logit shape (%d tie-heavy / %d tie-free) — the "+
+			"subset no longer spans the space it claims to; the stride must be odd", sweepSeedStride, ties, noTies)
+	}
+	t.Logf("bit-for-bit identity confirmed over %d (logits,params) cases across %d seeds "+
+		"(%d tie-heavy / %d tie-free) and vocab sizes %v — sweep: %s",
+		total, len(seedList), ties, noTies, append(vocabs, 4096), sweepMode)
 }
 
 func assertSameFilter(t *testing.T, logits []float32, temp float64, topK int, topP, minP float64, seed int) {

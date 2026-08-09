@@ -70,7 +70,12 @@ jobs:
       # goldens are absent (see testdata/README), so this is green on a fresh
       # checkout. Race detector on, matching aikit.
       - name: test
-        run: go test -race -tags goinfer_testhooks ./...
+        # -timeout 25m: the default is 10m PER PACKAGE, and ./decoder carries heavy parity +
+        # exhaustive sampler sweeps that the race detector slows ~8x. main went red on a TIMEOUT
+        # (not a failure) at 600.0s. The sweep itself is now sharded across parallel subtests
+        # (same 24,018 cases, ~5x less wall time); this raises the ceiling so a slow runner
+        # cannot re-trip it, and so a real hang is still caught rather than masked forever.
+        run: go test -race -timeout 25m -tags goinfer_testhooks ./...
 
   # GPU submodule: the opt-in WebGPU backend, built under -tags gpu (cgo).
   # It imports the as-yet-unpublished goinfer root, so we stitch an ephemeral
@@ -179,7 +184,12 @@ jobs:
       # green and fast on a fresh checkout (the heavy 12B parity only runs where
       # assets are present, e.g. the local sweep box). Race detector on.
       - name: test
-        run: go test -race -tags goinfer_testhooks ./...
+        # -timeout 25m: the default is 10m PER PACKAGE, and ./decoder carries heavy parity +
+        # exhaustive sampler sweeps that the race detector slows ~8x. main went red on a TIMEOUT
+        # (not a failure) at 600.0s. The sweep itself is now sharded across parallel subtests
+        # (same 24,018 cases, ~5x less wall time); this raises the ceiling so a slow runner
+        # cannot re-trip it, and so a real hang is still caught rather than masked forever.
+        run: go test -race -timeout 25m -tags goinfer_testhooks ./...
 
   # GPU submodule on darwin/arm64 — the resident Metal decode path. Same
   # ephemeral-workspace stitch as the Linux gpu job, but no apt deps: Metal is a
