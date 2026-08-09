@@ -76,8 +76,11 @@ while a request of A is still in flight; later unload base B (now last owner) dr
 and closes the model — while A's straggler request is still reading it. The registry scan says "no
 entry routes to the model," which is true, yet a deleted entry can still have in-flight work on the
 model. A per-**model** lock closes this: A's straggler holds the model's `RLock`, so B's close (the
-model's `Lock`) waits for it. Consequence that also simplifies things: a **non-last** unload does not
-drain at all — it just unpublishes; only the **last** unload drains the model and closes.
+model's `Lock`) waits for it. Consequence: a
+**non-last** unload of an entry with no entry-private native resources (a plain adapter) does not
+drain at all — it just unpublishes. An unload drains only when it will **close something** —
+`refs==0` (close the model) **or** the entry owns a vision tower (§Round 2, item 1: entry-private
+native memory that must be closed on the entry's own unload regardless of `refs`).
 
 ### Phase 1 — unpublish + decide, atomically under `regMu` (answers #1 and #2)
 
@@ -238,6 +241,54 @@ now"** (still unpublishes and still drains-and-closes detached), then polling `f
 `409` never did. So: add `?wait=false` = immediate 202; drop the `409-busy` semantics.
 
 ---
+
+## Review round 2 — holder audit, completion signal, shutdown, T
+
+### 1. Every out-of-registry holder of a `*decoder.Model`, and how it participates
+
+| holder | participates via | why |
+|---|---|---|
+| `sessionLRU` (`sessions.go:25`; an adapter's holds `base.model`, main.go) | **refs** (via its entry) + **rw** | Entry-scoped — dies with the entry it belongs to, which is already the unit `refs` counts, so no separate slot. Its KV state is touched only during a request (`rw`). **One wrinkle:** the KV checkpoint-save reads settled KV, which for a resident backend lives in the model's device buffers, so it must run **after the drain and before `Close`** (today it is synchronous pre-return). |
+| vision tower `venc`/`vproj`/`qwenEnc` | **rw**, entry-private | Adapters do **not** copy it (main.go `loadAdapters`), so it is never shared and is not `refs`-relevant — but it is native memory that also leaks on unload and is used only during a request. It must be `Close`d on **this entry's** unload, drained via the model `rw`. This is why an unload must drain-and-close when the entry owns a tower even at `refs>0` (see the design note above). |
+| embedding encoder `s.embed` | neither | Not in `s.models`, never admin-unloaded, holds no `*decoder.Model`. Process-lifetime. |
+| speculative draft | neither (today) | serve `--spec` is `ngram` — prompt-lookup over the *same* model, no draft model. The decoder EAGLE path uses a separate `Model` (speculative.go:123) but is **not** wired into a serve `loadedModel`. **Flag:** if a draft-model spec mode is ever wired into serve, that draft `*decoder.Model` is a new holder needing its own refs+rw. |
+| KV snapshots | neither / covered | On-disk snapshots are model-independent bytes; in-memory KV is the `sessionLRU` above. |
+
+No holder is counted by neither-and-outlives-a-request once the vision-tower `Close` is added — so no
+second straggler door.
+
+**Cache confirmation.** There is **no path-keyed model cache**. `loadDecoder` allocates a fresh
+`*decoder.Model` per load; `-stream-weights` opens a per-resident-model giw fd/mmap (closed by
+`Model.Close`), not a cross-load cache; `-weight-cache` is a byte *budget*, not a model store. So the
+publish-under-`regMu` invariant (§Phase 1) is the *only* sharing path — nothing hands a condemned
+model to a fresh load around it.
+
+### 2. Completion signal for a 202
+
+`/health` gains a **`draining`** array — the models unpublished-but-not-yet-freed, each `{id}` (plus
+an in-flight count if cheap). Not `/v1/models`: a draining model is unroutable, and `/v1/models` is
+the OpenAI-schema surface clients pick from, so listing it there invites use. `/health` is the
+operator surface with no schema contract (health.go). The 202 body points at it; the operator polls
+until their model leaves `draining` ⇒ freed ⇒ safe to reload. An entry enters `draining` when the
+detached worker starts and leaves it when `Close` returns.
+
+### 3. Shutdown does not join the drain
+
+The detached drain-close goroutine is a **bare `go`** (a `WaitGroup`, if used, is for tests only and
+is **never** awaited by the shutdown path). Graceful shutdown (`main.go`) waits only on its own
+checkpoint goroutine (`<-done`, main.go:480) — there is no worker `WaitGroup` today, and none must be
+added on the shutdown path. Otherwise shutdown inherits the unbounded wait just removed from unload
+and presents as "the server sometimes takes minutes to stop." Process exit reclaims device memory
+regardless, so detached means detached from shutdown too.
+
+### 4. `T`
+
+**Default `T = 5s`, configurable via `-unload-drain-wait` (a duration flag).** Rationale: an unload of
+an **idle** model — the common operator swap — drains instantly and returns 200 regardless of `T`;
+`T` only bites when the model is mid-request. 5s covers a short interactive generation (→ 200) and
+falls to 202 quickly for anything longer, so the endpoint never hangs. `?wait=false` forces `T=0`
+(immediate 202). It is a design decision because it sets whether 200 or 202 is the common case: with
+5s, idle swaps and short generations are 200; only genuinely busy models 202.
 
 ## Scope
 
