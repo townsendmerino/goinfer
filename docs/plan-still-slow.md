@@ -25,9 +25,27 @@ leave it, it was true at press time... verify commit order first; see P0).
    TestArgmaxTieBreak ./cuda/` (needs the 0.5B fixture). The audit says fixed; the D6 text written
    *after* the audit says open — one of them is wrong, and P1 is gated on the test being green, not
    on either doc.
+   **CONFIRMED (CUDA box, 2026-08-09).** Green, and it genuinely ran (3.91 s — loads the 0.5B and
+   builds the resident; a skip would be instant):
+   ```
+   === RUN   TestArgmaxTieBreak
+   --- PASS: TestArgmaxTieBreak (3.91s)
+   PASS
+   ok  	github.com/townsendmerino/goinfer/cuda	4.031s
+   ```
+   So the **audit is right and the D6 text was stale**. With P0.3 (Metal) already confirmed, both
+   device thirds of P1's tie-agreement now hold; the host third is the amendment-1 contract in
+   `topFilterLogits`, gated by `TestTopFilterLogits_MatchesReference`.
 2. **Fix the stale texts** (`sampler.go` comment, ollama-chase §8 D6 + `top_k=1` section). Decide
    the CHANGELOG note by commit order: if `c6600fc` predates the v0.10.3 tag, the entry was wrong
    at press time and gets a correction line; if not, it stands.
+   **DONE (2026-08-09).** Commit order decided: `c6600fc` is dated **2026-08-05**, the v0.10.3 tag
+   commit `03b1832` **2026-08-08**, and `git merge-base --is-ancestor c6600fc v0.10.3` confirms it —
+   so `c6600fc` **predates the tag** and the CHANGELOG entry was **wrong at press time**, not merely
+   overtaken. It carries a dated correction line rather than a silent edit. Also flipped:
+   `decoder/sampler.go`'s amendment-1 comment and ollama-chase §8 D6 (both now cite C-14 / `c6600fc`
+   and the `cuda.TestArgmaxTieBreak` gate). The `top_k=1` prerequisite in D6 is therefore
+   **satisfied on both backends** — P1 is unblocked.
 3. **Confirm which Metal amax kernel is actually dispatched.** The `w4a8` fused amax carries an
    N-09 note ("NOT currently dispatched — no pipeline is created for it"); the int8 twin is the
    logit-critical one. P1's Metal claim depends on the *live* greedy path tie-breaking correctly —

@@ -1067,17 +1067,26 @@ and take the on-device argmax with no readback. Measured gap it would recover �
 - qwen2.5-coder-0.5b: `top_k=1` **272** vs greedy **312** tok/s
 - gemma3-1b: `top_k=1` **148** vs greedy **180** tok/s
 
-**Hard prerequisite — do not implement this first.** The device argmax needs a **defined index
-tie-break matching the ascending-token-id rule v0.10.3 establishes** on the host. Today the CUDA
-argmax-reduce has no specified tie-break (an open audit critical). Routing `top_k=1` to it before
-that is fixed would make the two paths disagree on ties — reintroducing, at the device level,
-exactly the unspecified-order defect this release just closed on the host. **This is a concrete,
-funded reason to fix the argmax tie-break**, which previously had only a theoretical one.
+**Prerequisite — SATISFIED (2026-08-09).** Routing `top_k=1` to a device argmax requires that argmax
+to break index ties the same way the host does (ascending token id, the amendment-1 contract
+v0.10.3 established in `topFilterLogits`). It does, on both backends:
+
+- **CUDA** — `argmax_reduce` returns the **lowest** index on an exact tie: audit **C-14**, fixed in
+  `c6600fc` (2026-08-05) and split into its own `argmax.ptx`. Gate: `cuda.TestArgmaxTieBreak`,
+  confirmed green on the box 2026-08-09 (3.91 s — it loads the 0.5B, so it ran rather than skipped).
+- **Metal** — live greedy dispatches `gemv_w8a8_amax` + `argmax_finish`, both merging on
+  `(v desc, i asc)` → lowest tied index. The `w4a8` fused amax is the N-09 variant and is unwired,
+  so it does not touch the live path (confirmed on the Mac, `docs/plan-still-slow.md` P0.3).
+
+*Earlier revisions of this section called the tie-break an "open audit critical" and used it as the
+reason NOT to implement `top_k=1` routing. That text was written after the audit recorded the fix
+and was simply stale — the fix predates it. Corrected here rather than left as a blocker that no
+longer exists.*
 
 **Rank:** decode-side, benefits every non-greedy serving user (most real chat traffic runs
 temperature > 0), and reuses the adaptive-bound logic already written host-side. Above prefill;
 alongside D1/D5. Lazy Z is host-only and needs no device box; the rest is gated on device-box kernel
-work, and `top_k=1` routing is gated on the argmax tie-break.
+work; `top_k=1` routing was gated on the argmax tie-break, which is now fixed and gated by test.
 
 ---
 

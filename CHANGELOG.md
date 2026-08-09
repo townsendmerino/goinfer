@@ -99,8 +99,10 @@ pre-1.0 and may change as new model families and quant formats land.
   probability** order (a load-bearing contract: a different summation order can move the denominator
   by ULPs and flip a draw near a `top_p` boundary). Greedy (`temperature==0`) argmax is unchanged.
   Sampled output for a given seed may therefore differ from prior releases at tie/boundary points;
-  the distribution is unchanged. (Same defect class as the open CUDA argmax-reduce index tie-break;
-  not fixed here.)
+  the distribution is unchanged. (Same defect class as the CUDA argmax-reduce index tie-break.
+  **Correction (2026-08-09):** this entry said that tie-break was "open ... not fixed here". It was
+  already fixed — audit C-14, `c6600fc`, 2026-08-05 — which predates this release, so the statement
+  was wrong at press time, not merely overtaken. Gate: `cuda.TestArgmaxTieBreak`.)
 - **`docs/benchmarks.md` now requires sampling configuration as a per-number metadata field**, on
   the same footing as machine/driver/peer-version/date, for goinfer and the peer. Rows whose
   sampling config was not recorded are marked `sampling: unrecorded` and must not be assumed greedy

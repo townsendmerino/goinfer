@@ -342,8 +342,9 @@ type indexedProb struct {
 // of tied entries was arbitrary — and since that order feeds the cumulative-CDF draw,
 // it was an unspecified part of the sampling result. It is now specified. The test-only
 // reference (refTopFilter, sampler_selection_test.go) carries the identical tie-break
-// and this path is gated bit-for-bit against it. (Same defect class as the open CUDA
-// argmax-reduce index tie-break; not fixed here.)
+// and this path is gated bit-for-bit against it. (Same defect class as the CUDA
+// argmax-reduce index tie-break, which is FIXED — audit C-14, c6600fc: argmax_reduce returns the
+// lowest index on an exact tie, matching this contract. Gate: cuda.TestArgmaxTieBreak.)
 //
 // SUMMATION-ORDER CONTRACT (amendment 2): every probability sum below — the top-p
 // cumulative and the final renormalization — runs in DESCENDING probability order.
