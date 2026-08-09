@@ -396,23 +396,35 @@ Both engines need an NVIDIA driver; neither needs a CUDA toolkit at build or run
 token onward, over HTTP. Prefill is a separate axis and goinfer is **behind** on it (~4.7× at last
 measurement, `docs/benchmarks.md` §B2); nothing here captures it.
 
-**Provenance, every figure below:** qwen2.5-coder **0.5B / 1.5B**, **q4_K_M** · goinfer **v0.10.3**
-· RTX 2070 SUPER, driver **595.58.03** · **2026-08-09** · servers restarted per cell, ≥8 completions
-per run, ≥2 runs per cell, spread shown · sampling sent explicitly (never assumed).
+**Provenance, every figure below:** qwen2.5-coder **0.5B / 1.5B**, **q4_K_M** · goinfer **v0.10.3**,
+except the KV-depth rows which are **`2693dce`** (post-v0.10.3, labelled at each table) · RTX 2070
+SUPER, driver **595.58.03** · **2026-08-09** · servers restarted per cell, ≥8 completions per run, ≥2
+runs per cell, spread shown · sampling sent explicitly (never assumed).
 
-**Decode by KV depth — greedy (`temperature 0`):**
+**Decode by KV depth — greedy (`temperature 0`)** (re-measured 2026-08-09 on goinfer `2693dce`,
+post-v0.10.3 — see the note below):
 
 | context | 0.5B | 1.5B |
 |---|---|---|
-| 128 | **320.1** ±2.2 | **217.8** ±0.4 |
-| 512 | 253.8 ±6.5 | 184.7 ±1.2 |
-| 2048 | 239.0 ±2.6 | 157.6 ±0.2 |
-| 3900 | 201.1 ±0.1 | 122.3 ±0.2 |
+| 128 | **320.9** ±0.0 | **218.5** ±0.9 |
+| 512 | 286.6 ±2.4 | 195.0 ±0.8 |
+| 2048 | 250.2 ±1.0 | 157.0 ±0.6 |
+| 3900 | 200.8 ±0.0 | 122.1 ±0.2 |
 
-Decode slows with KV depth: −37% (0.5B) and −44% (1.5B) from 128 to 3900. Closing that is scoped as
-long-context attention work in `docs/ollama-chase.md`.
+**These rows moved because a kernel-selection bug was fixed, not because the engine got faster at
+anything.** The split-KV decode-attention path was switched on at a KV depth characterized on a single
+model, and it was a net loss on most geometries in the 256–2048 band — up to 18% on the 0.5B. It is
+now gated per geometry and per layer (`2693dce`). Output is byte-identical either way. The 512 and
+2048 rows are the ones that changed; 128 and 3900 re-measured unchanged, which is the control.
+Derivation and the full 48-cell table: [docs/benchmarks.md](docs/benchmarks.md) §B6.
 
-**Decode by sampling configuration — 128 context:**
+Decode still slows with KV depth: −37% (0.5B) and −44% (1.5B) from 128 to 3900. Closing that is scoped
+as long-context attention work in `docs/ollama-chase.md`.
+
+**Decode by sampling configuration — 128 context** (goinfer **v0.10.3**; the greedy row is this
+campaign's measurement of the same cell the depth table above re-measured on `2693dce` — 320.1 vs
+320.9 and 217.8 vs 218.5 is run-to-run noise, not a discrepancy: the split-KV gate does not engage at
+128 context in either build):
 
 | configuration | 0.5B | 1.5B |
 |---|---|---|
@@ -426,28 +438,39 @@ with no truncation — the OpenAI-compatible default, which samples the full dis
 and is its slowest path. Passing `top_k` recovers most of the difference. The remaining nucleus-path
 cost is scoped as **D6** in `docs/ollama-chase.md`.
 
-### Compared with Ollama v0.32.5
+### Compared with Ollama v0.32.6
 
 Secondary, and annotated — read the absolute numbers above and the cgo-free property first. Same
 measurements as the tables above, with the peer measured **identically**: both engines driven over
 their own HTTP server, client-timed inter-token rate, **interleaved cell-by-cell with a server
 restart between cells**, the **same GGUF file** on both sides (md5-verified), sampling sent
-explicitly to each. Peer: **Ollama v0.32.5**. Ollama **v0.32.6** exists and was **not** measured.
+explicitly to each. Peer: **Ollama v0.32.6** (`OLLAMA_FLASH_ATTENTION:false`, its default), except
+the one row footnoted ᵇ, which is carried from the earlier v0.32.5 campaign and labelled as such.
 
-**Greedy, by KV depth:**
+**Greedy, by KV depth** (re-measured 2026-08-09, goinfer `2693dce` vs Ollama **v0.32.6**,
+`OLLAMA_FLASH_ATTENTION:false`, `num_ctx` verified per cell, interleaved with a server restart per
+cell):
 
 | context | goinfer 0.5B | Ollama | | goinfer 1.5B | Ollama | |
 |---|---|---|---|---|---|---|
-| 128 | 320.1 ±2.2 | 269.4 ±0.0 | goinfer 1.19× | 217.8 ±0.4 | 195.2 ±0.0 | goinfer 1.12× |
-| 512 | 253.8 ±6.5 | 269.4 ±0.2 | Ollama 1.06× | 184.7 ±1.2 | 166.2 ±13.6 ᵃ | goinfer 1.11× |
-| 2048 | 239.0 ±2.6 | 264.6 ±2.8 | Ollama 1.11× | 157.6 ±0.2 | 179.2 ±0.0 | Ollama 1.14× |
-| 3900 | 201.1 ±0.1 | 258.5 ±0.2 | Ollama 1.29× | 122.3 ±0.2 | 174.1 ±0.1 | Ollama 1.42× |
+| 128 | 320.9 ±0.0 | 269.4 ±0.4 | goinfer 1.19× | 218.5 ±0.9 | 195.4 ±0.0 | goinfer 1.12× |
+| 512 | 286.6 ±2.4 | 269.6 ±0.3 | **goinfer 1.06×** | 195.0 ±0.8 | 176.6 ±27.0 ᵃ | goinfer 1.10× |
+| 2048 | 250.2 ±1.0 | 266.4 ±1.4 | Ollama 1.06× | 157.0 ±0.6 | 179.5 ±0.3 | Ollama 1.14× |
+| 3900 | 200.8 ±0.0 | 259.8 ±0.2 | Ollama 1.29× | 122.1 ±0.2 | 174.3 ±0.1 | Ollama 1.43× |
 
-ᵃ The peer's rate in this one cell varied 146–182 across ten runs — wider than the gap between the
-engines. Treat that cell as indicative only.
+ᵃ The peer's rate in this one cell varied widely (spread 27.0, and 146–182 across ten runs in the
+previous campaign) — wider than the gap between the engines. Treat that cell as indicative only.
 
-Ahead at short context, behind at long, the gap widening with depth: Ollama's flash attention holds
-nearly flat (269 → 259 on 0.5B) while goinfer decays (320 → 201).
+**What changed from the previously published rows, in both directions.** The 0.5B 512 cell **changes
+sign** — it read `Ollama 1.06×` and is now `goinfer 1.06×`; the 0.5B 2048 gap narrows from
+`Ollama 1.11×` to `Ollama 1.06×`; the 1.5B 512 lead is essentially unchanged (1.11× → 1.10×). Going
+the other way, the **1.5B 3900 deficit widens slightly, 1.42× → 1.43×**, and 128/2048 on the 1.5B and
+128/3900 on the 0.5B are unchanged. The improvements are goinfer's own regression being removed
+(`2693dce`), not the peer moving; the peer columns are a fresh v0.32.6 measurement, which is why they
+differ slightly from the v0.32.5 numbers these rows previously carried.
+
+Still ahead at short context, behind at long, the gap widening with depth: Ollama's flash attention
+holds nearly flat (269 → 260 on 0.5B) while goinfer decays (321 → 201).
 
 **By sampling configuration, 128 context** (re-measured 2026-08-09, goinfer `686c9f8` vs Ollama
 **v0.32.6**, `OLLAMA_FLASH_ATTENTION:false`, `num_ctx` verified per cell):
