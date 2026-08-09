@@ -40,13 +40,15 @@ temperature is mathematically greedy: temperature scaling is monotone (order pre
 one-token distribution is deterministic.
 
 **Honest framing of the payoff.** The 13–18% applies ONLY to `top_k=1`-with-nonzero-temperature
-requests, which is a rare, near-pathological shape (sampling from a one-token set) — and D6's own
-rank note says the traffic that matters is `temperature>0` broadly, which P2/P3 serve, not this. So
-P1's real value is not the headline number: it is (a) a correctness/consistency fix — `top_k=1`
-*should* be greedy-fast on every backend — and (b) the cheapest place to **prove the C-14 tie-break
-agreement end-to-end** (host `topKByLogit` vs device argmax vs Metal amax all resolving the same tied
-index) that P3 later relies on. Treat it as the warm-up that validates P3's hardest assumption, not
-as a throughput win in its own right.
+requests. That shape is narrow but NOT purely pathological: some client libraries and eval harnesses
+use `top_k=1` as their idiom for "deterministic output" instead of `temperature=0`, so real traffic
+does hit it and those users get the 13–18% as a side effect. Still, it is not the traffic D6's rank
+note points at (`temperature>0` broadly, which P2/P3 serve). So P1's real value is not the headline
+number: it is (a) a correctness/consistency fix — `top_k=1` *should* be greedy-fast on every
+backend — and (b) the cheapest place to **prove the C-14 tie-break agreement end-to-end** (host
+`topKByLogit` vs device argmax vs Metal amax all resolving the same tied index) that P3 later relies
+on. Treat it as the warm-up that validates P3's hardest assumption, with a real-if-narrow throughput
+side effect — not a throughput win in its own right.
 
 **Predicate — extend the sampler, not the backends,** so every backend inherits it. Add a
 `GreedyEquivalent()` (or widen `ArgmaxEquivalent`, renaming honestly) that returns true for:
@@ -144,12 +146,14 @@ over the returned K:
   and byte-identical to the full path; `TestMetalSnapshotGolden` untouched (selection reads logits,
   never writes).
 - **Bound the fallback COST, not only its correctness.** A flat/adversarial distribution can make
-  EVERY token short-read → a top-K reduction PLUS a full-V readback per token, i.e. strictly more
-  work than today. Correctness is preserved (identical-by-fallback) but throughput could regress
-  below the current full-readback path. Add a perf gate: the adversarial-flat case must stay within a
-  stated factor of today's full-readback path (not just "byte-identical"). If it can't, the kernel
-  should stage the full row alongside the top-K so a short read costs one copy, not a second
-  round-trip — decide this from the measured all-fallback number, not up front.
+  EVERY token short-read. Note what the fallback actually costs: the V-wide logit row already lives
+  in VRAM after the forward, so the fallback readback is a copy of an EXISTING buffer, not a
+  recompute. The worst case is therefore today's copy + the top-K reduction + one extra host-side
+  decision round-trip — i.e. **two syncs per token instead of one**; the regression risk is added
+  sync latency, not duplicated compute. So the perf gate should measure **per-token latency overhead
+  vs today** on the adversarial-flat case (not just "byte-identical"), and the "stage alongside"
+  remedy reduces to "don't free/overwrite the logit row until the host has verified sufficiency,"
+  which is nearly free. Decide from the measured number, but expect the overhead to be small.
 - **Expected:** the reporter's ~2.9× nonzero-temperature penalty collapses to ≈ the P2 residue;
   gemma3-1b (widest vocab, largest readback) is the headline number.
 
@@ -267,7 +271,7 @@ one hand tied.
 | phase | effort | needs | buys |
 |---|---|---|---|
 | P0 truth maintenance | hours | CUDA box | unblocks P1; docs stop lying |
-| P1 `top_k=1` routing | days | CUDA box (gate) | 13–18% on `top_k=1` requests, all backends |
+| P1 `top_k=1` routing | days | CUDA box (gate) | `top_k=1` consistency; proves C-14 agreement e2e (13–18% for that shape) |
 | P2 Lazy Z | days | none (host) | kills the ~44 ns/entry softmax; temp-only stops being the slowest config |
 | P3 device top-K | weeks | CUDA box + Mac | kills the readback; nonzero-temp ≈ greedy |
 | P4 KV-quant opt-in | 1–2 wks | both boxes, profile-gated | Metal long-context floor; KV VRAM halved |
