@@ -32,6 +32,12 @@ leave it, it was true at press time... verify commit order first; see P0).
    N-09 note ("NOT currently dispatched — no pipeline is created for it"); the int8 twin is the
    logit-critical one. P1's Metal claim depends on the *live* greedy path tie-breaking correctly —
    check `model.go`, don't assume from the kernel source.
+   **CONFIRMED (Mac, 2026-08-09).** `ForwardArgmax` dispatches `gemv_w8a8_amax` + `argmax_finish`
+   (`pGemvW8Amax`/`pArgFinish`, the int8 head; model.go:1011). `gemv_w4a8_sa_amax` is the N-09
+   variant — unwired, pipeline dropped (model.go:410–412) — so the trap does not touch the live path.
+   Both dispatched kernels merge on `(v desc, i asc)` → **lowest tied index** (kernels.go:264 and
+   272–273), matching the ascending-id contract. So the **Metal third of P1's tie-agreement holds**;
+   only P0.1 (CUDA `TestArgmaxTieBreak`, box-only) remains to confirm the CUDA third before P1.
 
 ## P1 — Route `top_k=1` to the greedy fast path (days; cheap consistency fix, and de-risks P3)
 
