@@ -216,7 +216,11 @@ func (s *server) pick(name string) *loadedModel {
 	if lm, ok := s.models[name]; ok {
 		return lm
 	}
-	if len(s.models) == 1 {
+	// G6: an OMITTED model on a single-model server routes to that model (convenience — the
+	// client named nothing, so nothing is served-under-a-wrong-name). A NON-EMPTY unknown name
+	// is rejected by the caller (modelNotFound) rather than silently served, so a client that
+	// sent the wrong id gets an error naming what IS served instead of confident wrong output.
+	if name == "" && len(s.models) == 1 {
 		for _, lm := range s.models {
 			return lm
 		}
@@ -423,6 +427,12 @@ func (s *server) handleChat(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
+	// G5: a request that dropped (or emptied) messages must be a 400, not a confident
+	// generation from a BOS-only prompt. Naming the field so the client sees what is missing.
+	if len(req.Messages) == 0 {
+		writeErr(w, http.StatusBadRequest, "messages is required and must contain at least one message")
+		return
+	}
 	// Multimodal: a message carrying an image_url part routes to the vision path.
 	imgs, ierr := chatImages(req.Messages)
 	if ierr != nil {
@@ -609,6 +619,14 @@ func (lm *loadedModel) prepare(sm sampling, promptIDs []int, residentPath bool) 
 		StopIDs:     lm.stopIDs,
 		Logprobs:    sm.Logprobs,
 		TopLogprobs: deref(sm.TopLogprobs, 0),
+	}
+	// G4: temperature has the same lower bound as top_p (rejected < 0), for consistency —
+	// previously top_p=-1 was a 400 but temperature=-1 was accepted. It is not silently-wrong
+	// output: SampleWithInfo short-circuits Temperature <= 0 to greedy argmax before any logit
+	// scaling, so a negative temperature decoded greedily rather than inverting the ordering.
+	// 0 is the documented greedy/deterministic setting and stays valid; only negatives are rejected.
+	if sm.Temperature != nil && *sm.Temperature < 0 {
+		return genRequest{}, fmt.Errorf("temperature must be >= 0 (got %v); 0 selects greedy/deterministic decoding", *sm.Temperature)
 	}
 	// M-02: top_p == 0 is the tightest nucleus (the single most-likely token), which is greedy — the old
 	// `< 1` path stored 0, and the sampler treats TopP == 0 as DISABLED, so the request asking for the
