@@ -8,7 +8,7 @@ The forward-pass and quantization numerics are parity-gated against HuggingFace
 and are the stable contract. The loader and architecture-descriptor surface is
 pre-1.0 and may change as new model families and quant formats land.
 
-## [Unreleased]
+## [v0.10.3] — 2026-08-08
 
 ### Security
 - **Request bodies are bounded before they are buffered or tokenized (G1/G2/G3).** An oversized
@@ -21,8 +21,18 @@ pre-1.0 and may change as new model families and quant formats land.
   existing `MaxBytesReader` backstop's 413 now **names the limit and received size**; a
   **pre-tokenization guard** rejects an input whose text cannot fit the context window before the
   O(n) tokenize (the ~27 s → µs fix), as a conservative upper bound that never rejects a servable
-  prompt; and the body cap is **derived from the model's context window** (`-max-body-bytes` to
-  override) and reported on the startup line. Gated in `internal/serveapp/bodylimit_test.go`.
+  prompt; and the body cap is **derived per route** (`-max-body-bytes` to override every route) and
+  reported on the startup line. Gated in `internal/serveapp/bodylimit_test.go`.
+  - **The cap is derived per route, not globally** (pre-tag review). The text cap comes from the
+    largest served *decoder's* context window; the vision routes (`/v1/chat/completions`,
+    `/v1/messages`) add 32 MiB for base64 image data; and **`/v1/embeddings` gets its own 64 MiB
+    cap, independent of any decoder**. That last one was a real false rejection: `/v1/embeddings` is
+    served by the encoder, which is not in the decoder registry, so on an embed-only server the cap
+    collapsed to the 4 MiB text floor and rejected a batch the route's own bounds
+    (`maxEmbedInputs=2048`, `maxEmbedInputBytes=1 MiB`) accept — a legal 2048×4 KiB batch is ~8 MiB.
+    Multimodal was checked and is safe: the pre-tokenization guard measures only `type:"text"`
+    content parts, so base64 image bytes are never charged against a context window they do not
+    consume. Both pinned in `internal/serveapp/bodycaps_routes_test.go`.
 
 ### Fixed
 - **`temperature` is validated consistently with `top_p` (G4).** A negative `temperature` returned

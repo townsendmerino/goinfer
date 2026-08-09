@@ -228,12 +228,16 @@ func (s *server) pick(name string) *loadedModel {
 	return nil
 }
 
-// resolveBodyCaps returns the (text, vision) request-body caps in bytes (G1d). override > 0
-// sets the text cap verbatim; otherwise it is derived from the largest served model's context
-// window — ctx tokens × the longest token's byte length × 4 (JSON structure/escaping) — and
-// floored at maxBodyBytes so a small-context model keeps a usable budget. The vision cap adds
-// base64-image headroom on top (at least maxVisionBodyBytes). Both are reported on startup.
-func (s *server) resolveBodyCaps(override int64) (textCap, visionCap int64) {
+// resolveBodyCaps returns the (text, vision, embed) request-body caps in bytes (G1d). override > 0
+// sets all three verbatim; otherwise the text cap is derived from the largest served DECODER's
+// context window — ctx tokens × the longest token's byte length × 4 (JSON structure/escaping) —
+// and floored at maxBodyBytes so a small-context model keeps a usable budget. The vision cap adds
+// base64-image headroom on top (at least maxVisionBodyBytes).
+//
+// The embed cap is INDEPENDENT of both: /v1/embeddings is served by the encoder, which is not in
+// s.models, so a decoder-derived cap is measuring the wrong thing entirely — see maxEmbedBodyBytes.
+// All three are reported on startup.
+func (s *server) resolveBodyCaps(override int64) (textCap, visionCap, embedCap int64) {
 	textCap = maxBodyBytes // 4 MiB floor
 	if override > 0 {
 		textCap = override
@@ -256,7 +260,11 @@ func (s *server) resolveBodyCaps(override int64) (textCap, visionCap int64) {
 		}
 	}
 	visionCap = textCap + maxVisionBodyBytes // image data on top of the text budget
-	return textCap, visionCap
+	embedCap = maxEmbedBodyBytes
+	if override > 0 {
+		embedCap = override // an explicit -max-body-bytes governs every route
+	}
+	return textCap, visionCap, embedCap
 }
 
 // modelNotFound writes the OpenAI-shaped 404 for an unknown model field.

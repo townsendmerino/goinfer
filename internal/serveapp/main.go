@@ -374,7 +374,7 @@ func Main() {
 	// served model's context window, floored at the historical constants so a small-context
 	// model keeps a usable body budget (the per-request tokenization guard, not this cap,
 	// protects it), and overridable with -max-body-bytes. Reported on the startup line.
-	textCap, visionCap := srv.resolveBodyCaps(cfg.maxBodyBytes)
+	textCap, visionCap, embedCap := srv.resolveBodyCaps(cfg.maxBodyBytes)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/models", auth(srv.handleModels))
 	// Operator surface for the resolved compute paths — same fields as the /v1/models vendor
@@ -389,7 +389,11 @@ func Main() {
 	}
 	// Registered unconditionally (G7): with no embedding model, handleEmbeddings returns a JSON
 	// error naming -embed-model rather than a bare 404, so an SDK sees "unconfigured" not "wrong URL".
-	mux.HandleFunc("POST /v1/embeddings", auth(inf(maxBytes(textCap, srv.handleEmbeddings))))
+	mux.HandleFunc("POST /v1/embeddings", auth(inf(maxBytes(embedCap, srv.handleEmbeddings,
+		// The per-input / per-batch bounds are per-DIMENSION and multiply out past any body cap, so
+		// name all three: a client within both per-dimension limits can still exceed the total.
+		fmt.Sprintf("this route also limits each request to %d inputs of at most %d bytes each; "+
+			"the body cap bounds their total", maxEmbedInputs, maxEmbedInputBytes)))))
 	mux.HandleFunc("POST /admin/models/load", auth(maxBytes(textCap, srv.handleAdminLoad)))
 	mux.HandleFunc("POST /admin/models/unload", auth(maxBytes(textCap, srv.handleAdminUnload)))
 
@@ -468,7 +472,7 @@ func Main() {
 	if cfg.maxBodyBytes > 0 {
 		capSrc = "-max-body-bytes"
 	}
-	fmt.Fprintf(os.Stderr, "request body cap: %s (text) / %s (vision) [%s]\n", humanBytes(textCap), humanBytes(visionCap), capSrc)
+	fmt.Fprintf(os.Stderr, "request body cap: %s (text) / %s (vision) / %s (embeddings) [%s]\n", humanBytes(textCap), humanBytes(visionCap), humanBytes(embedCap), capSrc)
 	if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		fmt.Fprintf(os.Stderr, "server: %v\n", err)
 		os.Exit(1)

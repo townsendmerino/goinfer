@@ -1020,9 +1020,60 @@ otherwise. The reduction itself is FMA-free (a max/compare tree), so it sits cle
 existing kernel bit-identity lint. **Not attempted here** (scope): it needs new CUDA + Metal kernels
 and a device box to validate, so it is a campaign, not a patch.
 
+### The second, larger cost the same fix removes — full-vocabulary normalization
+
+D6 was scoped as the `temperature==0` **branch cliff**. That is only half of it. The
+temperature-only path (no `top_k`, no `top_p`) still **normalizes over the whole vocabulary**: a
+softmax across all V, every token, on the host. This is a separate, additive cost from the readback
+branch, and it is the larger one on wide-vocabulary models.
+
+Measured (v0.10.3 verification, one box, one session, interleaved):
+
+| model | vocab | temp-only added vs greedy | per vocabulary entry |
+|---|---|---|---|
+| phi3-mini | 32k | +1.19 ms | 37.2 ns |
+| qwen2.5-coder-0.5b | 152k | +6.66 ms | 43.8 ns |
+| gemma3-1b | 262k | +11.57 ms | 44.1 ns |
+
+**~44 ns per vocabulary entry, flat across a 32k → 262k span** — i.e. genuinely linear in V, unlike
+the "linear" top-p cell that turned out to be a sort. On a large-vocabulary model this is a **3.1×
+throughput factor**, and it is why plain `temperature` is now the *slowest* sampled configuration:
+adding `top_k=20` is faster than leaving it off, because `top_k` bounds the set that gets normalized.
+
+**Two candidate approaches — recorded so neither is re-proposed from intuition:**
+
+1. **Lazy Z (host-side, no new kernels).** The full softmax denominator `Z` is needed only for two
+   things: reporting logprobs, and resolving a draw that lands in the distribution's tail. So take
+   the top-K by *logit* with no `exp` at all, sum those K exactly, and bound the unseen remainder by
+   `(V-K)·exp(x_K - m)`. If the draw resolves inside K **regardless of where the true Z sits inside
+   that interval**, the full pass is skipped; otherwise fall back deterministically to the exact
+   full computation. Same adaptive-bound shape as the nucleus selection that already works in
+   `topFilterLogits`, so the machinery and the proof obligation are both familiar. Cheapest to try.
+2. **On-device sampling.** Subsumes this *and* the readback branch above — the V-wide logit transfer
+   disappears entirely rather than being made cheaper. Strictly better if funded, strictly more
+   expensive: new CUDA + Metal kernels plus a device box to validate.
+
+### `top_k=1` should route to greedy
+
+`top_k=1` with a positive temperature is **mathematically identical to greedy**: temperature scaling
+is monotonic so it preserves ordering, and a distribution restricted to a single token is
+deterministic regardless of its probability. It can therefore route to the `ArgmaxEquivalent` branch
+and take the on-device argmax with no readback. Measured gap it would recover — **13–18%**:
+
+- qwen2.5-coder-0.5b: `top_k=1` **272** vs greedy **312** tok/s
+- gemma3-1b: `top_k=1` **148** vs greedy **180** tok/s
+
+**Hard prerequisite — do not implement this first.** The device argmax needs a **defined index
+tie-break matching the ascending-token-id rule v0.10.3 establishes** on the host. Today the CUDA
+argmax-reduce has no specified tie-break (an open audit critical). Routing `top_k=1` to it before
+that is fixed would make the two paths disagree on ties — reintroducing, at the device level,
+exactly the unspecified-order defect this release just closed on the host. **This is a concrete,
+funded reason to fix the argmax tie-break**, which previously had only a theoretical one.
+
 **Rank:** decode-side, benefits every non-greedy serving user (most real chat traffic runs
 temperature > 0), and reuses the adaptive-bound logic already written host-side. Above prefill;
-alongside D1/D5. Gated on device-box kernel work.
+alongside D1/D5. Lazy Z is host-only and needs no device box; the rest is gated on device-box kernel
+work, and `top_k=1` routing is gated on the argmax tie-break.
 
 ---
 

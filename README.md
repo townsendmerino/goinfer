@@ -166,6 +166,28 @@ expensive — prequant `.giw` maps weights zero-copy for a cheap zoo. With
 busy model). `--max-queue N` (default 8) bounds each model's queue: a full queue
 returns 429 + Retry-After (single decode worker per model; no continuous batching).
 
+**Sampling: pass `top_k` alongside your temperature.** Since v0.10.3, `top_k`/`top_p`/`min_p` use
+bounded selection instead of a full-vocabulary sort, so they are cheap. Plain `temperature` with
+*neither* set is the one configuration that still normalizes over the **entire** vocabulary every
+token, which makes it now the **slowest** sampled configuration — roughly **3× behind `top_k=20` on
+a 152k-vocabulary model**, and worse as the vocabulary grows. If you are setting a temperature,
+adding `top_k` is faster than leaving it off. (Removing that remaining cost is scoped in
+`docs/ollama-chase.md` §8 D6.) Greedy (`temperature=0`) stays the fastest path and is unaffected.
+
+> **Tie-break (changed in v0.10.3).** Tokens with *equal* probability now resolve by **ascending
+> token id**. Before v0.10.3 the order came from an unstable sort and was arbitrary — an
+> unspecified part of the result, since that order feeds the cumulative-probability draw. The
+> distribution is unchanged, but a sampled sequence from a given seed may differ from v0.10.2 at
+> tie points. Greedy argmax is unchanged.
+
+**Request-body limits.** Every request body is capped, and an over-cap body is rejected with `413`
+on `Content-Length` **before a byte is read**. `--max-body-bytes` sets the cap explicitly for every
+route; left at `0` (the default) it is derived per route: the text cap from the largest served
+model's context window (floored at 4 MiB, since a body that could never fit the window is not worth
+reading), the vision routes get 32 MiB on top for base64 image data, and `/v1/embeddings` gets its
+own 64 MiB — independent of any decoder, because a batch embeddings body scales with batch count,
+not with a chat model's context. The resolved caps are printed on the startup line.
+
 **Responses API.** `/v1/responses` honors `input` (string or message items),
 `instructions`, `text.format` (→ the same constrained grammar), `tools`, and
 streaming (`response.created`/`output_text.delta`/`completed`). `store` +

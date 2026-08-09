@@ -20,6 +20,16 @@ import (
 const (
 	maxBodyBytes       = 4 << 20  // 4 MiB
 	maxVisionBodyBytes = 32 << 20 // 32 MiB
+	// maxEmbedBodyBytes is /v1/embeddings' own floor, deliberately NOT derived from any decoder's
+	// context window. A batch embeddings body scales with (batch count × input length) — quantities
+	// the route already bounds itself (maxEmbedInputs=2048, maxEmbedInputBytes=1 MiB) — and has
+	// nothing to do with a chat model's MaxPositions. Deriving it from the text cap made the limit
+	// arbitrary in both directions: on an embed-only server (no decoder loaded) it collapsed to the
+	// 4 MiB text floor, rejecting a perfectly legal 2048×4 KiB batch at 8 MiB before
+	// checkEmbedInputBounds could accept it; alongside a 128k-context chat model it ballooned for no
+	// reason. 64 MiB covers a realistic maximal RAG batch (2048 inputs × ~32 KiB) while still
+	// bounding the read. -max-body-bytes overrides it like the others.
+	maxEmbedBodyBytes = 64 << 20 // 64 MiB
 )
 
 // maxBytes wraps a handler so its request body is bounded to n bytes (n <= 0 disables).
@@ -32,11 +42,21 @@ const (
 // The 413 names the limit (and the received size when the client declared one) so a client
 // sees why it was rejected rather than a bare close. A client still uploading when the
 // pre-check fires may see EPIPE regardless — but today it gets no HTTP response at all (G3).
-func maxBytes(n int64, h http.HandlerFunc) http.HandlerFunc {
+// note, when non-empty, is appended to the 413. A route whose own validator declares limits in
+// DIFFERENT units than the body cap needs it: /v1/embeddings advertises "up to 2048 inputs of up to
+// 1 MiB each", which multiplies out to 2 GiB and can therefore never all be satisfied at once. Those
+// are per-DIMENSION bounds; the body cap bounds the TOTAL. A request can respect both per-dimension
+// limits and still exceed the total, and a 413 naming only the total leaves the client unable to
+// tell which of the three numbers it actually violated.
+func maxBytes(n int64, h http.HandlerFunc, note ...string) http.HandlerFunc {
+	extra := ""
+	if len(note) > 0 && note[0] != "" {
+		extra = " " + note[0]
+	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		if n > 0 && r.ContentLength > n {
 			writeErr(w, http.StatusRequestEntityTooLarge,
-				fmt.Sprintf("request body is %d bytes, which exceeds the %d-byte limit (raise it with -max-body-bytes)", r.ContentLength, n))
+				fmt.Sprintf("request body is %d bytes, which exceeds the %d-byte limit (raise it with -max-body-bytes)%s", r.ContentLength, n, extra))
 			return
 		}
 		if n > 0 {

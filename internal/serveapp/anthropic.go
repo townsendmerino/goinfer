@@ -162,6 +162,19 @@ func anthropicText(raw json.RawMessage) string {
 	return b.String()
 }
 
+// anthropicInputBytes sums the TOKENIZABLE text across an Anthropic request — the system prompt
+// plus every message's text blocks. It is the /v1/messages analogue of chatInputBytes, and it
+// matters that it uses anthropicText: image blocks (and tool_use/cache_control metadata) are
+// excluded, so a base64 image is never charged against a context window it does not consume. A
+// vision request is a few hundred tokens of image regardless of its megabytes on the wire.
+func anthropicInputBytes(req *anthropicReq) int {
+	n := len(anthropicText(req.System))
+	for i := range req.Messages {
+		n += len(anthropicText(req.Messages[i].Content))
+	}
+	return n
+}
+
 // anthropicTurns maps the system prompt + messages into the internal chat shape.
 // Content may be a plain string or an array of blocks; tool_use blocks (assistant
 // replay) become ToolCalls, tool_result blocks (user replay) become "tool"
@@ -393,6 +406,16 @@ func (s *server) handleMessages(w http.ResponseWriter, r *http.Request) {
 	lm := s.pick(req.Model)
 	if lm == nil {
 		s.anthropicModelNotFound(w, req.Model)
+		return
+	}
+	// G1c on the Anthropic surface: reject an input that cannot fit the context window BEFORE the
+	// O(n) tokenize. The OpenAI routes got this guard; /v1/messages did not, so a body under the
+	// body cap still paid full tokenization only to be rejected afterwards — bounded, but the same
+	// defect this release claims to fix, left half-covered on one surface. Placed before the vision
+	// branch so both paths are guarded; image bytes are excluded from the count (anthropicInputBytes),
+	// so this cannot reject a valid image request on a small-context model.
+	if err := lm.promptTooLargeForContext(anthropicInputBytes(&req)); err != nil {
+		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return
 	}
 	// Multimodal: image blocks route to the vision path.
