@@ -33,11 +33,20 @@ leave it, it was true at press time... verify commit order first; see P0).
    logit-critical one. P1's Metal claim depends on the *live* greedy path tie-breaking correctly —
    check `model.go`, don't assume from the kernel source.
 
-## P1 — Route `top_k=1` to the greedy fast path (days; recovers 13–18% for those requests)
+## P1 — Route `top_k=1` to the greedy fast path (days; cheap consistency fix, and de-risks P3)
 
 Measured gap: qwen2.5-coder-0.5b 272 vs 312 tok/s, gemma3-1b 148 vs 180. `top_k=1` at any
 temperature is mathematically greedy: temperature scaling is monotone (order preserved) and a
 one-token distribution is deterministic.
+
+**Honest framing of the payoff.** The 13–18% applies ONLY to `top_k=1`-with-nonzero-temperature
+requests, which is a rare, near-pathological shape (sampling from a one-token set) — and D6's own
+rank note says the traffic that matters is `temperature>0` broadly, which P2/P3 serve, not this. So
+P1's real value is not the headline number: it is (a) a correctness/consistency fix — `top_k=1`
+*should* be greedy-fast on every backend — and (b) the cheapest place to **prove the C-14 tie-break
+agreement end-to-end** (host `topKByLogit` vs device argmax vs Metal amax all resolving the same tied
+index) that P3 later relies on. Treat it as the warm-up that validates P3's hardest assumption, not
+as a throughput win in its own right.
 
 **Predicate — extend the sampler, not the backends,** so every backend inherits it. Add a
 `GreedyEquivalent()` (or widen `ArgmaxEquivalent`, renaming honestly) that returns true for:
@@ -91,6 +100,21 @@ draws resolve in descending-prob / ascending-id order, matching the filtered pat
 bit-for-bit against a slow reference that shares the new order (the `refTopFilter` pattern), plus
 the existing throughput-ratio gate extended to temp-only vs greedy.
 
+**The load-bearing gate case is near-boundary `r`, not the happy path.** The bug surface is where the
+draw's CDF position falls inside the interval `[S_K, S_K+R]` — the code must then *deterministically*
+grow K (or fall back to the exact full pass), and the SAME `(logits, seed)` must always take the same
+branch or the output is nondeterministic. The reference gate must therefore include adversarially
+constructed near-boundary draws (an `r` engineered to land just inside/outside `S_K/(S_K+R)`, and
+flat distributions where R never shrinks), the same way the v0.10.3 `topFilterLogits` gate needed
+tie-heavy and boundary inputs. A gate that only tests peaked distributions passes while the boundary
+logic is wrong.
+
+**Seed-churn discipline.** This is the SECOND given-seed output change in two releases (v0.10.3
+re-specified the filtered path; this re-specifies temp-only). Do not dribble a third: bundle any
+other pending seed-affecting sampler change into P2's release, and state once, plainly, in that
+release's notes — "sampled output for a given seed changed in vX; the distribution is unchanged" —
+rather than surprising seed-pinning users across successive versions.
+
 **Expected:** most of the ~44 ns/entry disappears (the exp+sum over V); the remaining temp-only
 gap becomes the readback, which is P3's job. Optional follow-on, not scoped: the same
 interval-resolution trick can sometimes decide the exact top-p cut without the full Z pass (if the
@@ -114,9 +138,18 @@ over the returned K:
   pattern from single-max to K; mind the N-09 unwired-variant trap and Metal's dispatch-count
   sensitivity (one extra dispatch per token is fine; per-layer would not be).
 - **Gates:** crafted-logits equivalence vs host selection (both backends, both vocab widths,
-  tie-heavy cases); e2e sweep — temperature-only and temp+top_p converge to within the selection
-  cost of greedy; fallback-path exercised (adversarial flat distribution) and byte-identical to
-  the full path; `TestMetalSnapshotGolden` untouched (selection reads logits, never writes).
+  tie-heavy AND near-boundary sufficiency-check cases — the same boundary surface as P2, since P2's
+  interval bound IS the short-read verifier); e2e sweep — temperature-only and temp+top_p converge
+  to within the selection cost of greedy; fallback-path exercised (adversarial flat distribution)
+  and byte-identical to the full path; `TestMetalSnapshotGolden` untouched (selection reads logits,
+  never writes).
+- **Bound the fallback COST, not only its correctness.** A flat/adversarial distribution can make
+  EVERY token short-read → a top-K reduction PLUS a full-V readback per token, i.e. strictly more
+  work than today. Correctness is preserved (identical-by-fallback) but throughput could regress
+  below the current full-readback path. Add a perf gate: the adversarial-flat case must stay within a
+  stated factor of today's full-readback path (not just "byte-identical"). If it can't, the kernel
+  should stage the full row alongside the top-K so a short read costs one copy, not a second
+  round-trip — decide this from the measured all-fallback number, not up front.
 - **Expected:** the reporter's ~2.9× nonzero-temperature penalty collapses to ≈ the P2 residue;
   gemma3-1b (widest vocab, largest readback) is the headline number.
 
