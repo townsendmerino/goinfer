@@ -25,7 +25,47 @@ var (
 	_ decoder.ResidentGreedy  = (*cudaResident)(nil)
 )
 
-const cudaCtxCap = 4096 // resident KV capacity (positions); staged path handles longer.
+// cudaCtxCapDefault is the resident KV capacity in positions when nothing asks for more; the staged
+// path handles longer. It is a DEFAULT, not a ceiling: decoder.Options.ResidentContext raises it (see
+// resolveCtxCap). It stays 4096 so that a caller who did not ask never allocates deep-KV VRAM —
+// raising the default would silently multiply every resident model's KV footprint.
+const cudaCtxCapDefault = 4096
+
+// ctxCapMarginBytes is the VRAM left free beside weights+KV at the load-time fit check: driver
+// overhead plus the transient allocations decode makes (logits readback, split-KV scratch). Same
+// margin the C′ expert cache uses, for the same reason.
+const ctxCapMarginBytes = 384 << 20
+
+// resolveCtxCap turns a request into the effective resident KV capacity:
+//
+//	cap = min(model context window, request)   — request 0 ⇒ cudaCtxCapDefault
+//
+// Clamping to the model's own context window matters because the KV beyond it can never be attended:
+// allocating it would burn VRAM to hold positions the RoPE tables and the model's training never
+// cover. modelCtx 0 means "unknown" (some architectures do not report one), in which case the request
+// stands on its own — the VRAM fit check is then the only guard, which is why that check is not
+// optional.
+func resolveCtxCap(request, modelCtx int) int {
+	if request <= 0 {
+		return cudaCtxCapDefault
+	}
+	if modelCtx > 0 && request > modelCtx {
+		return modelCtx
+	}
+	return request
+}
+
+// kvBytesForCap is the device bytes the resident K+V caches occupy at a given capacity: every layer
+// holds K and V as f32[cap*kvDim]. Measured against this formula: 24.0 KB/position for
+// qwen2.5-coder-0.5b (24 layers × 128 kvDim × 2 × 4 B) and 56.0 KB/position for the 1.5B
+// (28 × 256 × 2 × 4 B), which is what the deep-context sizing in docs/benchmarks.md is derived from.
+func kvBytesForCap(cap int, layers []cudaLayer) int64 {
+	var perPos int64
+	for i := range layers {
+		perPos += int64(layers[i].kvDim)
+	}
+	return perPos * 2 /* K+V */ * 4 /* f32 */ * int64(cap)
+}
 
 // splitkvNever disables the split-KV decode attention for a geometry (no depth within the resident's
 // capacity pays for it). Larger than any reachable nWin, so the gate comparison stays a plain >=.
@@ -271,11 +311,13 @@ type cudaResident struct {
 	fRoute, fRouterGemv, fMoEGemv, fMoEWacc, fSharedCombine Pipeline
 	fRouterF32, fScaleWgt, fRmsNW, fScaleVec                Pipeline // gemma4 MoE (router_f32 module)
 
-	fuseQKV   bool  // all of Q/K/V/gate/up int4 ⇒ the fused K1 (fQKV) + fGU super-kernels are usable
-	launchErr error // sticky first launch error within a launchToken call (reset per token) — M23
-	layers    []cudaLayer
-	lmW       cudaWQ
-	finalNorm Buffer
+	fuseQKV     bool  // all of Q/K/V/gate/up int4 ⇒ the fused K1 (fQKV) + fGU super-kernels are usable
+	launchErr   error // sticky first launch error within a launchToken call (reset per token) — M23
+	layers      []cudaLayer
+	ctxExplicit bool // the cap came from configuration (Options.ResidentContext), not the default — decides whether a VRAM miss is a hard error or a decline
+	ctxCap      int  // effective resident KV capacity in positions = resolveCtxCap(request, model ctx). Every kc/vc is sized cap*kvDim; checkCap guards against it.
+	lmW         cudaWQ
+	finalNorm   Buffer
 
 	// per-token scratch + KV caches (device).
 	x, aSc, qB, kB, vB, cctx, cSc, oO, mSc, gO, uO, dSc, dScr, dO, logits Buffer
@@ -623,22 +665,76 @@ func runJob(j func() error) (err error) {
 	return j()
 }
 
-// checkCap guards the resident KV allocation. Every layer's cache is sized cudaCtxCap*kvDim, so
-// a write for absolute position p lands at kc[p*kvDim ...]; valid positions are [0, cudaCtxCap).
+// checkKVFits fails the LOAD if the KV the configured cap implies does not fit beside what is
+// already on the device. It runs after the weights are uploaded and before the K/V caches are
+// allocated, so `free` is genuinely "what is left for KV".
+//
+// The point is the failure MODE, not the arithmetic: without this, an over-large cap surfaces as an
+// allocation failure part-way through sizing the per-layer caches, or worse as an OOM mid-decode
+// under load — after the server reported ready. Naming the number at startup turns a production
+// incident into a config error, so the message states what was asked for, what it costs, and what is
+// actually free.
+// errKVWontFit marks the one setup failure that must NOT degrade quietly to the staged path: an
+// explicitly configured resident context whose KV does not fit. BuildResident turns it into a hard
+// startup error instead of a decline. An UNCONFIGURED (default-cap) miss stays a decline, because
+// that is the historical behaviour for "this device cannot host this model".
+var errKVWontFit = errors.New("resident KV does not fit in device memory")
+
+// kvWontFitError carries the full operator-facing message while still matching errKVWontFit under
+// errors.Is. A plain %w wrap would append the sentinel's text to a message that already says all of
+// this, so the reader sees it twice — the classification must not leak into the prose.
+type kvWontFitError struct{ msg string }
+
+func (e *kvWontFitError) Error() string        { return e.msg }
+func (e *kvWontFitError) Is(target error) bool { return target == errKVWontFit }
+
+func (r *cudaResident) checkKVFits() error {
+	need := kvBytesForCap(r.ctxCap, r.layers)
+	free, _, err := r.dev.Context().MemInfo()
+	if err != nil {
+		// No MemInfo ⇒ no fit check possible. Do not fail the load on that: the default cap has
+		// always been allocated without one, and a hard failure here would regress every driver
+		// that does not report memory. The allocation itself still errors if it truly cannot fit.
+		return nil
+	}
+	if need+ctxCapMarginBytes <= int64(free) {
+		return nil
+	}
+	perPos := float64(need) / float64(max(r.ctxCap, 1)) / 1024
+	e := &kvWontFitError{msg: fmt.Sprintf("cuda: resident context %d positions needs %.2f GB of KV "+
+		"(%.1f KB/position across %d layers) but only %.2f GB is free on the device beside the weights "+
+		"(plus %.0f MB reserved for driver and decode scratch) — lower the serve context setting (-ctx), "+
+		"or use a smaller/more-quantized model",
+		r.ctxCap, float64(need)/1e9, perPos, len(r.layers), float64(free)/1e9, float64(ctxCapMarginBytes)/(1<<20))}
+	if !r.ctxExplicit {
+		// Default cap: keep the historical decline. Strip the sentinel so BuildResident treats it as
+		// an ordinary "cannot host this here" and the staged path takes over, as it always has.
+		return fmt.Errorf("cuda: default resident context %d positions does not fit (%.2f GB of KV, %.2f GB free) — staged path",
+			r.ctxCap, float64(need)/1e9, float64(free)/1e9)
+	}
+	return e
+}
+
+// checkCap guards the resident KV allocation. Every layer's cache is sized r.ctxCap*kvDim, so
+// a write for absolute position p lands at kc[p*kvDim ...]; valid positions are [0, r.ctxCap).
 // Writing past it (rope_kv/kv_store) is an out-of-bounds DEVICE write — silent memory corruption,
 // UB, and the attention launch's shared-mem request eventually exceeds the block limit. Nothing
 // upstream clamps prompt+max_tokens to the cap, so return an error here; the decode loop stops on
 // it (model.go) and the caller can fall back to the staged path, which handles longer contexts.
+//
+// The cap is now configuration-derived (resolveCtxCap) rather than a constant, but the invariant
+// this guards is unchanged: it is always the capacity the caches were actually SIZED with, read from
+// the same field the allocation used. A request beyond a configured cap still fails here, cleanly.
 func (r *cudaResident) checkCap(pos, n int) error {
-	if pos < 0 || pos+n > cudaCtxCap {
-		return fmt.Errorf("cuda: KV position %d(+%d) exceeds resident context cap %d — use the staged path for longer contexts", pos, n, cudaCtxCap)
+	if pos < 0 || pos+n > r.ctxCap {
+		return fmt.Errorf("cuda: KV position %d(+%d) exceeds resident context cap %d — raise it with the serve context setting (bounded by the model's own context window), or use the staged path for longer contexts", pos, n, r.ctxCap)
 	}
 	return nil
 }
 
 // ContextCap is the resident KV capacity in positions (queryable so callers can clamp max_tokens
 // up front rather than discover the limit mid-generation).
-func (r *cudaResident) ContextCap() int { return cudaCtxCap }
+func (r *cudaResident) ContextCap() int { return r.ctxCap }
 
 // Forward runs one token at absolute position pos and returns logits[vocab].
 func (r *cudaResident) Forward(embedding []float32, pos int) ([]float32, error) {

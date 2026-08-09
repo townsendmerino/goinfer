@@ -34,6 +34,7 @@ type Model struct {
 	kvF16      bool            // residency KV cache precision request (Options.KVPrecision == "f16")
 	kvPrecI8   bool            // residency KV cache int8 request (Options.KVPrecision == "i8") — GPU
 	kvI8       bool            // CPU KV cache int8 storage request (Options.KVQuant == "i8") — CPU staged path
+	resCtxReq  int             // requested GPU-resident KV capacity in positions (Options.ResidentContext); 0 ⇒ backend default
 	mmap       []byte          // .giw mmap region the int8/int4 weights alias; munmap'd by Close (nil off the .giw mmap path)
 	srcPath    string          // the .giw path this model mmap-loaded from ("" off the .giw path) — for pread-staging over the same file
 	pager      *expertPager    // MoE expert demand-paging over the mapping (Options.StreamWeights); nil = all-resident
@@ -99,6 +100,12 @@ func (m *Model) KVCacheF16() bool { return m.kvF16 }
 // card. Lossy; f32 + f16 paths unchanged. Distinct from KVQuant (the CPU cache).
 func (m *Model) KVCacheI8() bool { return m.kvPrecI8 }
 
+// ResidentContextRequest returns the requested GPU-resident KV capacity in positions
+// (Options.ResidentContext), or 0 for "use the backend default". The residency builder resolves the
+// effective cap as min(model context window, this) and VRAM-checks it at load; off the residency
+// path it has no effect. See cuda.resolveCtxCap.
+func (m *Model) ResidentContextRequest() int { return m.resCtxReq }
+
 // Options configures Load.
 type Options struct {
 	Backend string // "cpu" (default) or "webgpu"
@@ -127,6 +134,12 @@ type Options struct {
 	// big-vocab small model. Lossy + opt-in (~2.3 pts top-1, mostly on rare tokens);
 	// default off keeps the bit-exact int8 pin. GGUF load path only.
 	EmbedInt4 bool
+	// ResidentContext requests a GPU-resident KV capacity in positions. 0 (default) keeps the
+	// backend's built-in default, so nobody who did not ask allocates deep-KV VRAM. When set, the
+	// backend caps it at the model's own context window — the effective cap is
+	// min(model context window, this) — and fails at LOAD if the KV that implies does not fit
+	// beside the weights, rather than OOM-ing mid-decode. Ignored off the residency path.
+	ResidentContext int
 }
 
 // Load reads a Gemma 3 snapshot (config.json + model.safetensors) from dir
@@ -170,7 +183,7 @@ func Load(dir string, opts Options) (*Model, error) {
 		if beErr != nil {
 			fmt.Fprintln(os.Stderr, beErr)
 		}
-		m := &Model{w: w, be: be, mmap: data, srcPath: dir, eosIDs: w.Cfg.EOSIDs(), kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8"}
+		m := &Model{w: w, be: be, mmap: data, srcPath: dir, eosIDs: w.Cfg.EOSIDs(), kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", resCtxReq: opts.ResidentContext}
 		if opts.StreamWeights {
 			// MoE → expert demand-paging (#2); dense → per-layer streaming (#4).
 			if w.arch.MoE != nil {
@@ -227,7 +240,7 @@ func Load(dir string, opts Options) (*Model, error) {
 		// running fully resident (prequant to .giw with cmd/prequant to use it).
 		fmt.Fprintln(os.Stderr, "decoder: --stream-weights ignored — weights are heap-resident; prequant to .giw (cmd/prequant) to enable streaming")
 	}
-	return (&Model{w: w, be: be, quant: opts.Quant, eosIDs: resolveEOSIDs(dir, &w.Cfg), kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8"}).withResidency(), nil
+	return (&Model{w: w, be: be, quant: opts.Quant, eosIDs: resolveEOSIDs(dir, &w.Cfg), kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", resCtxReq: opts.ResidentContext}).withResidency(), nil
 }
 
 // Validate checks the stringly-typed knobs against their allowed values, so an

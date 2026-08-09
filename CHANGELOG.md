@@ -38,6 +38,21 @@ pre-1.0 and may change as new model families and quant formats land.
   temperature is still not speculative-eligible. Metal inherits the routing but has no e2e
   measurement yet.
 
+### Added
+- **`-ctx N` raises the CUDA resident KV capacity, which was a hard-coded 4096.** The effective cap is
+  `min(model context window, -ctx)`; per model via `--model name=path,ctx=N`. **The default is
+  unchanged** — `-ctx` unset still means 4096, so nobody who did not ask allocates deep-KV VRAM, and a
+  request past the cap still fails cleanly to the staged path. The KV a configured cap implies is
+  computed and **VRAM-checked at load**, after the weights are resident and before the caches are
+  allocated: a configured cap that does not fit is a **hard startup failure naming the cost**
+  (`resident context 32768 positions needs 1.88 GB of KV (56.0 KB/position across 28 layers) but only
+  0.37 GB is free …`), surfaced in the startup `decode path:` line and on `/health`, and a non-zero
+  exit under `-require-backend`. A *default*-cap miss keeps the historical decline, so existing
+  deployments cannot start failing to boot. This is an allocation-size change only — no kernel and no
+  numerics; `checkCap` guards the same invariant at the new cap. Measured: at `-ctx 8192` the 1.5B's
+  VRAM rose exactly +224 MiB over the default and at `-ctx 32768` +1570 MiB, against a predicted
+  +1568 MiB. It unblocks the 8k/16k/32k depth cells, which previously fell to the staged path.
+
 ### Fixed
 - **Split-KV decode attention is re-gated per geometry; up to 1.19× faster decode on CUDA, with
   byte-identical output.** This is a **kernel-selection change only** — no kernel, numerics, or weight

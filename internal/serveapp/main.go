@@ -66,6 +66,7 @@ type modelSpec struct {
 	stream      *bool    // stream (bare) or stream=true|false
 	weightCache *float64 // weight-cache= (GB)
 	embedInt4   *bool    // embed-int4 (bare) or embed-int4=true|false
+	ctxSize     *int     // ctx= (resident KV positions)
 }
 
 // modelFlag collects repeated --model flags. Each value is
@@ -123,6 +124,15 @@ func (s *modelSpec) setOverride(key, val string, hasVal bool) error {
 		s.kvPrec = &val
 	case "kv-quant":
 		s.kvQuant = &val
+	case "ctx":
+		n, perr := strconv.Atoi(val)
+		if perr != nil {
+			return fmt.Errorf("ctx=%q: %w", val, perr)
+		}
+		if n < 0 {
+			return fmt.Errorf("ctx=%d: must be >= 0 (0 = backend default)", n)
+		}
+		s.ctxSize = &n
 	case "weight-cache":
 		gb, perr := strconv.ParseFloat(val, 64)
 		if perr != nil {
@@ -165,6 +175,7 @@ func (s modelSpec) options(cfg config) decoder.Options {
 		StreamWeights:    orBool(s.stream, cfg.streamWeights),
 		WeightCacheBytes: int64(orFloat(s.weightCache, cfg.weightCacheGB) * 1e9),
 		EmbedInt4:        orBool(s.embedInt4, cfg.embedInt4),
+		ResidentContext:  orInt(s.ctxSize, cfg.ctxSize),
 	}
 }
 
@@ -220,6 +231,12 @@ func orFloat(p *float64, def float64) float64 {
 	}
 	return def
 }
+func orInt(p *int, def int) int {
+	if p != nil {
+		return *p
+	}
+	return def
+}
 
 // config is the resolved command line for newServer (the flag set outgrew a
 // positional signature once embeddings landed).
@@ -232,6 +249,7 @@ type config struct {
 	quant           string
 	quantSet        bool   // was --quant given on the CLI? (vs the "int4" default) — for the .giw explicit-quant check (T1-7)
 	kvPrec          string // GPU residency KV cache precision: "" | f32 | f16 (-kv)
+	ctxSize         int    // -ctx: requested GPU-resident KV capacity in positions (0 = backend default). Effective cap = min(model context window, this)
 	kvQuant         string // CPU KV cache storage precision: "" | f32 | i8 (-kv-quant)
 	lora            string
 	name            string // -served-model-name (applies only to a single unnamed --model)
@@ -285,6 +303,7 @@ func Main() {
 		"falls back to the ~9x slower sequential prefill. A prequantized .giw model carries its own baked-in quant.")
 	flag.BoolVar(&cfg.requireBE, "require-backend", false, "strict mode: exit non-zero at startup if a model did not resolve to the requested --backend's fast paths — no resident decode path, or a prefill that declined to the sequential per-token loop (e.g. int8int8 on cuda, ~9× slower TTFT). Both fall back silently by design; a batch client should fail at second zero instead of discovering it under load")
 	flag.StringVar(&cfg.kvPrec, "kv", "f32", "GPU residency KV cache precision: f32 (bit-exact, 16k ctx) | f16 (lossy, 32k ctx) | i8 (lossy, ~64k ctx) — webgpu backend only")
+	flag.IntVar(&cfg.ctxSize, "ctx", 0, "GPU-resident KV capacity in positions (per-model override: --model name=path,ctx=…). 0 (default) keeps the backend default of 4096, so nothing you did not ask for allocates deep-KV VRAM. When set, the effective cap is min(model context window, this) and the KV it implies is VRAM-checked AT LOAD — the server refuses to start, naming the GB, rather than OOM mid-decode. A request past the cap still fails cleanly and falls back to the staged path")
 	flag.StringVar(&cfg.kvQuant, "kv-quant", "f32", "CPU KV cache storage: f32 (default, bit-exact) | i8 (per-head int8, ~4× smaller, lossy — argmax ~90%+; excludes MoE/gemma4/qwen3.5)")
 	flag.StringVar(&cfg.lora, "lora", "", "optional PEFT LoRA adapter dir, merged into the (safetensors) base at load")
 	flag.Var(&cfg.adapters, "adapter", "compute-time LoRA adapter sharing a base model's resident weights: `serveName=baseName=dir`.\n"+

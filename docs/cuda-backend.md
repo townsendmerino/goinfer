@@ -38,6 +38,37 @@ Which features it implements is not prose — it is
 features each arch derives from its own flags. A backend that has not shipped a kernel
 declines rather than dropping the feature silently (`decoder/features.go`).
 
+### Resident context capacity (`-ctx`)
+
+The resident K/V caches are allocated once at load, so their capacity is fixed for the process. It
+defaults to **4096 positions** and is raised with `-ctx N` (or per model, `--model name=path,ctx=N`):
+
+```
+cap = min(model context window, -ctx)        # -ctx unset (0) ⇒ 4096
+```
+
+**The default is deliberately unchanged by this knob's existence.** Raising the default would
+multiply every resident model's KV footprint for callers who never asked; a caller who does not pass
+`-ctx` allocates exactly what they always did, and a request past 4096 still fails cleanly and takes
+the staged path.
+
+The cap costs VRAM linearly and it is **not** small: **24.0 KB/position** on qwen2.5-coder-0.5b
+(24 layers × 128 kvDim × K+V × f32) and **56.0 KB/position** on the 1.5B, so 32k positions is
+0.79 GB and **1.88 GB** respectively. That is checked **at load**, immediately before the caches are
+allocated and after the weights are on the device, so `free` means what is actually left for KV:
+
+- **Configured cap that does not fit → hard startup failure**, naming the cost:
+  `resident context 32768 positions needs 1.88 GB of KV (56.0 KB/position across 28 layers) but only
+  0.37 GB is free …`. It is reported in the startup `decode path:` line and on `/health`, and
+  `-require-backend` turns it into a **non-zero exit**. An operator who asked for a capability and
+  cannot have it should not discover that as a latency mystery under load.
+- **Default cap that does not fit → ordinary decline** to the staged path, as it always has. This
+  path must not start failing to boot on deployments that never configured anything.
+
+Measured against the formula: at `-ctx 8192` the 1.5B's VRAM rose exactly **+224 MiB** over the
+default, and at `-ctx 32768` **+1570 MiB** (predicted +1568). Depth measurements at these caps:
+`docs/benchmarks.md`.
+
 ### …but that guarantee is about correctness, not speed
 
 A missing kernel never silently produces wrong logits. It **can** silently produce a much

@@ -63,9 +63,12 @@ func TestSplitKVGate_neverClassIsUnreachable(t *testing.T) {
 	if got := splitkvThreshold(splitkvMaxHeads, 128); got != splitkvNever {
 		t.Fatalf("nH=%d should be the never class, got threshold %d", splitkvMaxHeads, got)
 	}
-	if splitkvNever <= cudaCtxCap {
-		t.Fatalf("splitkvNever (%d) must exceed cudaCtxCap (%d) or the never class is reachable",
-			splitkvNever, cudaCtxCap)
+	// The cap is configurable now, so this must hold against the largest context anyone could
+	// configure, not merely the default. 1<<20 positions is far past any model's window.
+	const maxConfigurableCap = 1 << 20
+	if splitkvNever <= maxConfigurableCap {
+		t.Fatalf("splitkvNever (%d) must exceed any configurable resident cap (%d) or the never class "+
+			"becomes reachable at deep context", splitkvNever, maxConfigurableCap)
 	}
 }
 

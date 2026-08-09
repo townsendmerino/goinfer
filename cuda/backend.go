@@ -3,6 +3,7 @@
 package cuda
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -376,6 +377,13 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		// C′: DMA the routed int4 experts host→VRAM slots per token (device read, correct). The
 		// path to running a model whose experts exceed VRAM. Off by default; byte-identical when off.
 		cacheExperts: os.Getenv("GOINFER_MOE_CACHE_EXPERTS") != "",
+		// Resolve the resident KV capacity HERE, at construction, not at the KV allocation site:
+		// several buffers are sized from it earlier (the split-KV score scratch among them), and a
+		// zero-value ctxCap makes those 0-byte allocations that fail the whole resident build.
+		// cap = min(model context window, request); request 0 ⇒ the 4096 default, so a caller who
+		// did not ask allocates exactly what they always did.
+		ctxCap:      resolveCtxCap(m.ResidentContextRequest(), m.Config().MaxPositions),
+		ctxExplicit: m.ResidentContextRequest() > 0,
 	}
 	if moeSig {
 		r.moeSigmoid = 1
@@ -532,7 +540,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				loadSK(&r.skSoftmax, "splitkv_softmax")
 				loadSK(&r.skVsum, "splitkv_vsum")
 				if skOK {
-					r.skScoreBuf = r.af(r.nH * cudaCtxCap)
+					r.skScoreBuf = r.af(r.nH * r.ctxCap)
 					r.skInvBuf = r.af(r.nH)
 					// Default ON (bit-identical; gated per layer at runtime on the effective attended span
 					// nWin ≥ splitkvThreshold(nH, hd), so geometries and depths it loses on are unaffected).
@@ -684,6 +692,12 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		r.x, r.aSc, r.aq = r.af(H), r.af(1), r.ai(H/4)
 		r.qB, r.kB, r.vB = r.af(maxQDim), r.af(maxKVDim), r.af(maxKVDim)
 		r.kc, r.vc = make([]Buffer, nLayers), make([]Buffer, nLayers)
+		// r.ctxCap was resolved at construction (several earlier buffers size from it). The fit check
+		// belongs HERE, though: it needs the per-layer kvDims, and running it immediately before the
+		// caches are allocated is what makes `free` mean "what is actually left for KV".
+		if e := r.checkKVFits(); e != nil {
+			return e
+		}
 		for l := range r.kc {
 			// Each layer's KV cache is sized by ITS OWN kvDim (Gemma 4's local 2048 vs global
 			// 1024), matching the pos*Ly.kvDim stride launchToken indexes it with. Cross-file
@@ -695,7 +709,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			if want := m.KVHeadsAtResident(l) * m.HeadDimAtResident(l); r.layers[l].kvDim != want {
 				return fmt.Errorf("cuda: layer %d KV cache kvDim=%d != nKV*hd=%d (accessor-derived) — geometry/cache-size mismatch", l, r.layers[l].kvDim, want)
 			}
-			r.kc[l], r.vc[l] = r.af(cudaCtxCap*r.layers[l].kvDim), r.af(cudaCtxCap*r.layers[l].kvDim)
+			r.kc[l], r.vc[l] = r.af(r.ctxCap*r.layers[l].kvDim), r.af(r.ctxCap*r.layers[l].kvDim)
 		}
 		r.cctx, r.cSc, r.cq = r.af(maxQDim), r.af(1), r.ai(maxQDim/4)
 		// K=V (attention_k_eq_v) layers derive V = v_norm(k) by reusing qk_norm with a UNIT weight
@@ -751,6 +765,15 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	})
 	if setupErr != nil {
 		r.Close()
+		// A silent decline is right for a shape this backend simply does not implement — the staged
+		// path serves it correctly, just slower. It is WRONG when the operator explicitly asked for a
+		// resident context that does not fit: they asked for a capability, we cannot provide it, and
+		// degrading quietly to the staged path means they discover it as a latency mystery under
+		// load. Surface that one as a hard startup error naming the GB (errKVWontFit); everything
+		// else keeps the historical decline, so the default path is byte-for-byte unchanged.
+		if errors.Is(setupErr, errKVWontFit) {
+			return nil, false, setupErr
+		}
 		return declined(setupErr)
 	}
 	// The fused path needs every projection it reads as int4: fQKV reads Q/K/V, and fGU reads
