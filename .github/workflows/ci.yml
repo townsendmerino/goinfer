@@ -71,11 +71,24 @@ jobs:
       # checkout. Race detector on, matching aikit.
       - name: test
         # -timeout 25m: the default is 10m PER PACKAGE, and ./decoder carries heavy parity +
-        # exhaustive sampler sweeps that the race detector slows ~8x. main went red on a TIMEOUT
-        # (not a failure) at 600.0s. The sweep itself is now sharded across parallel subtests
-        # (same 24,018 cases, ~5x less wall time); this raises the ceiling so a slow runner
-        # cannot re-trip it, and so a real hang is still caught rather than masked forever.
+        # exhaustive sampler sweeps that the race detector slows down substantially. main went red
+        # on a TIMEOUT (not a failure) at 600.0s; ./decoder was already 246s at v0.10.2, so the
+        # package was two-fifths of the way to the default before the sampler work landed. The
+        # sweep is now sharded across parallel subtests and strided under -race; this raises the
+        # ceiling so a slow runner cannot re-trip it, while still catching a real hang.
         run: go test -race -timeout 25m -tags goinfer_testhooks ./...
+
+      # The sampler gates that MUST NOT run under the race detector, run here without it.
+      #   - the full 24,018-case exactness sweep: the -race build strides the seed axis (the
+      #     detector finds nothing in a pure-compute sweep and costs a lot), so this step is the
+      #     ONLY place the exhaustive gate actually runs. Without it, gating on race mode would
+      #     silently shrink the gate to a subset in every job.
+      #   - the throughput ratio gate: a wall-clock ratio measured under -race measures the
+      #     detector. It passed on linux/-race and failed on darwin/-race (3.86x, 3.99x vs a 3.0x
+      #     bound) on commits touching no sampler code.
+      # ~25s. Linux only: both are platform-independent, so running them twice buys nothing.
+      - name: sampler gates (no -race)
+        run: go test -count=1 -run 'TestTopFilterLogits_MatchesReference|TestSample_DrawIdentity|TestSamplingThroughputGate|TestSweepCoverage' ./decoder/
 
   # GPU submodule: the opt-in WebGPU backend, built under -tags gpu (cgo).
   # It imports the as-yet-unpublished goinfer root, so we stitch an ephemeral
@@ -185,10 +198,11 @@ jobs:
       # assets are present, e.g. the local sweep box). Race detector on.
       - name: test
         # -timeout 25m: the default is 10m PER PACKAGE, and ./decoder carries heavy parity +
-        # exhaustive sampler sweeps that the race detector slows ~8x. main went red on a TIMEOUT
-        # (not a failure) at 600.0s. The sweep itself is now sharded across parallel subtests
-        # (same 24,018 cases, ~5x less wall time); this raises the ceiling so a slow runner
-        # cannot re-trip it, and so a real hang is still caught rather than masked forever.
+        # exhaustive sampler sweeps that the race detector slows down substantially. main went red
+        # on a TIMEOUT (not a failure) at 600.0s; ./decoder was already 246s at v0.10.2, so the
+        # package was two-fifths of the way to the default before the sampler work landed. The
+        # sweep is now sharded across parallel subtests and strided under -race; this raises the
+        # ceiling so a slow runner cannot re-trip it, while still catching a real hang.
         run: go test -race -timeout 25m -tags goinfer_testhooks ./...
 
   # GPU submodule on darwin/arm64 — the resident Metal decode path. Same

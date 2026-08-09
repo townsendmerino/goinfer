@@ -10,4 +10,6 @@ package decoder
 const (
 	sweepSeedStride = 1
 	sweepMode       = "full (no -race)"
+	// raceEnabled lets timing-based gates opt out under the detector, which distorts wall clock.
+	raceEnabled = false
 )

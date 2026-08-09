@@ -4,7 +4,10 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"os"
+	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -278,6 +281,18 @@ func TestSamplingThroughputGate(t *testing.T) {
 	if testing.Short() {
 		t.Skip("throughput gate: skipped under -short")
 	}
+	// A WALL-CLOCK RATIO measured under the race detector measures the DETECTOR, not the sampler.
+	// Observed on CI: this gate passed on linux/-race and failed on darwin/-race at 3.86× and 3.99×
+	// against a 3.0× bound, on two commits that touched no sampler code — the instrumentation does
+	// not scale the two arms equally, and a shared runner adds noise on top. Left on, it is a
+	// permanently red gate that says "full-vocab selection has regressed" when nothing has.
+	//
+	// It is not skipped into oblivion: ci.yml runs this test WITHOUT -race on every push, which is
+	// where a real regression would show. Timing gates belong in an un-instrumented run.
+	if raceEnabled {
+		t.Skip("throughput gate: skipped under -race (the detector distorts wall clock; ci.yml runs " +
+			"this test without -race on every push)")
+	}
 	const factor = 3.0 // temp+top_p wall time must be ≤ 3× temp-only; the old full sort was ~7×
 	for _, V := range []int{152064, 262144} {
 		r := rand.New(rand.NewSource(1))
@@ -323,3 +338,37 @@ func BenchmarkFilterRef152k(b *testing.B) { benchFilter(b, 152064, true) }
 func BenchmarkFilterNew152k(b *testing.B) { benchFilter(b, 152064, false) }
 func BenchmarkFilterRef262k(b *testing.B) { benchFilter(b, 262144, true) }
 func BenchmarkFilterNew262k(b *testing.B) { benchFilter(b, 262144, false) }
+
+// TestSweepCoverage_fullSweepRunsSomewhere is the gate on the gate.
+//
+// The exactness sweep is strided under -race, and BOTH root CI jobs run -race — so the full
+// 24,018-case sweep runs only because ci.yml carries an explicit non-race step for it. That is a
+// coupling between a build tag and a YAML file, invisible from either side: delete the step and the
+// gate silently shrinks to a subset in every job, with nothing red. (An earlier version of this
+// change asserted the full sweep "still runs in the non-race job" when no such job existed.)
+//
+// This reads ci.yml and fails if the step is gone. It is deliberately a string check rather than a
+// YAML parse: what matters is that SOME step runs this test without -race, and the cheapest honest
+// way to assert that is to look for it.
+func TestSweepCoverage_fullSweepRunsSomewhere(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join("..", ".github", "workflows", "ci.yml"))
+	if err != nil {
+		t.Skipf("no ci.yml to check (%v) — this gate only applies in the repo", err)
+	}
+	ci := string(b)
+	for _, line := range strings.Split(ci, "\n") {
+		s := strings.TrimSpace(line)
+		if !strings.HasPrefix(s, "run:") || !strings.Contains(s, "go test") {
+			continue
+		}
+		if strings.Contains(s, "-race") || !strings.Contains(s, "./decoder/") {
+			continue
+		}
+		if strings.Contains(s, "TestTopFilterLogits_MatchesReference") {
+			return // found a non-race step running the full sweep
+		}
+	}
+	t.Error("no CI step runs TestTopFilterLogits_MatchesReference WITHOUT -race. Both root jobs use " +
+		"-race, where the sweep strides its seed axis — so the full 24,018-case exactness gate is " +
+		"currently running nowhere. Restore the 'sampler gates (no -race)' step in .github/workflows/ci.yml.")
+}
