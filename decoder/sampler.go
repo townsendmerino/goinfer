@@ -157,22 +157,19 @@ func (s *Sampler) SampleWithInfo(logits []float32) (SampleInfo, error) {
 		// (amendment 3). The old path softmaxed all V then full-sorted all V; both
 		// are gone for the filtered case, replaced by topFilterLogits below.
 		info.ID = s.drawFiltered(topFilterLogits(work, s.p.Temperature, s.p.TopK, s.p.TopP, s.p.MinP))
-	} else {
-		// Unfiltered temperature sampling still draws from the full distribution, so it keeps the
-		// full-vocab softmax (no selection, no sort).
-		//
-		// LAZY Z WAS TRIED HERE AND REFUTED (P2, 2026-08-09) — do not re-propose it from intuition.
-		// The idea: take the top-K by logit, sum those weights exactly as S_K, bound everything
-		// unseen by R = (V-K)*exp((x_K-m)/T), and skip the remaining exponentials whenever the draw
-		// resolves to the same token at both ends of Z's interval [S_K, S_K+R]. Implemented and
-		// proven correct (432 reference-matched draws incl. boundary-straddling cases), then
-		// measured 3.3x SLOWER at 152k and 4.4x at 262k, because the bound is far too loose at a
-		// large vocabulary: R < S_K needs a gap of ln((V-K)/S_K) ~ 11.2 nats, and on REAL decode
-		// logits (qwen2.5-coder-0.5b) the gap is 5.29 nats at K=32 (R/S_K = 366) and only reaches
-		// 11.6 nats at K=2048. So K must grow to thousands, each growth costs a full O(V)
-		// topKByLogit pass, and the exact single-pass softmax wins. The cost is real but it is not
-		// removable this way — see docs/ollama-chase.md D6.
+	} else if s.p.Logprobs {
+		// Logprobs needs the full normalized distribution anyway, so the exact path costs nothing extra.
 		info.ID = s.drawFull(softmaxStable(work, s.p.Temperature))
+	} else {
+		// P2b: deterministic PARALLEL normalization over a FIXED chunk count, drawing against
+		// unnormalized weights (the divide pass is gone). Same exp values as before; the sum is
+		// regrouped by chunk, which shifts Z by ULPs and therefore moves near-boundary draws — the
+		// one given-seed change, bundled with the top-p Z pass below.
+		//
+		// LAZY Z WAS TRIED HERE AND REFUTED (P2, bc59c56): skipping the tail is not possible at these
+		// vocabularies (the remainder bound needs an ~11.2-nat gap; real logits give 5.29 at K=32).
+		// So the work is done in parallel instead of avoided.
+		info.ID = s.sampleChunked(work, s.p.Temperature, s.rng.Float64())
 	}
 	if s.p.Logprobs {
 		info.Logprob, info.Top = computeLogprobs(work, info.ID, s.p.Temperature, s.p.TopLogprobs)
@@ -412,9 +409,10 @@ func topFilterLogits(logits []float32, temperature float64, topK int, topP, minP
 	topPActive := topP > 0 && topP < 1
 	var Z float64
 	if topPActive {
-		for _, v := range logits {
-			Z += math.Exp((float64(v) - maxL) / texp)
-		}
+		// P2b step 3: the same fixed-chunk fold as the temperature-only path. This Z feeds the
+		// nucleus cut, so regrouping it also moves boundary draws — which is exactly why it lands in
+		// the SAME release rather than dribbling out later as a second seed change.
+		Z = chunkedZ(logits, maxL, texp)
 	}
 
 	// Candidate set: a bounded SUPERSET of the retained set, trimmed by the min-p /

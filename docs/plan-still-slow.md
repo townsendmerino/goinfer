@@ -222,7 +222,83 @@ interval-resolution trick can sometimes decide the exact top-p cut without the f
 cut index agrees at both interval endpoints); bank it unless profiling shows the Z pass matters
 after P3.
 
-## P3 — Device-side top-K logit reduction (the campaign; weeks, needs both device boxes)
+## P2b — Deterministic parallel host normalization — **DONE (2026-08-09)**
+
+Replaces the refuted P2. Lazy Z tried to SKIP the full-vocabulary exp+sum; this does the same work
+in parallel instead, and deletes the normalize-divide pass by drawing against unnormalized weights.
+
+**Motivating attribution (bc59c56)** — the temperature-only penalty splits as:
+
+| | phi3-mini 32k | qwen2.5-0.5b 152k | gemma3-1b 262k |
+|---|---|---|---|
+| host normalize+draw | 1.00 ms/tok | 5.25 ms/tok | 8.00 ms/tok |
+| per vocabulary entry | 31.3 ns | 34.5 ns | 30.5 ns |
+| logit readback | — | 0.12 ms/tok | 0.43 ms/tok |
+
+i.e. **host ~78%, readback ~2%** — so the host term was the whole game, and P3's premise was wrong.
+
+**The load-bearing design decision: `numChunks` is a COMPILE-TIME CONSTANT (64), never
+`runtime.NumCPU()`.** Workers schedule over chunks freely; the REDUCTION is folded in ascending
+chunk index. Float addition is not associative, so the grouping decides Z's last ULPs and therefore
+which side of a boundary a near-boundary draw lands on — if chunk shape followed core count, the
+same seed on the same build would emit different tokens on a 4-core and a 16-core machine.
+`TestChunkedSoftmax_MachineIndependent` runs the same draws at GOMAXPROCS 1/2/8 and requires
+identical output *and* identical Z, so a completion-order reduction or a NumCPU-sized split is
+unwriteable rather than merely discouraged.
+
+**Measured, host-only** (16 cores): 1.62× (32k), **3.06×** (152k), **4.72×** (262k) — per-entry
+31.3 → 17.3, 34.5 → 10.0, 30.5 → 7.0 ns. The gain grows with vocabulary, the opposite of what a
+core-count-sized split would do.
+
+**Measured, end-to-end** (decode-only, prefill excluded; RTX 2070 SUPER / driver 595.58.03; q4_K_M
+int4; 128-token prompt; 8 completions × 2 runs; "before" = the P1 binary ed81e13):
+
+| model | config | before | after | |
+|---|---|---|---|---|
+| phi3-mini | temp-only t=1.0 | 88.8 ±6.4 | **113.7** ±5.4 | +28% |
+| qwen2.5-0.5b | temp-only t=1.0 | 97.6 ±9.8 | **220.2** ±3.8 | **+126%** |
+| gemma3-1b | temp-only t=1.0 | 56.6 ±7.3 | **134.2** ±0.2 | **+137%** |
+| phi3-mini | temp0.8+top_p0.95 | 81.5 ±1.5 | **94.7** ±2.3 | +16% |
+| qwen2.5-0.5b | temp0.8+top_p0.95 | 93.4 ±0.4 | **184.7** ±10.6 | +98% |
+| gemma3-1b | temp0.8+top_p0.95 | 56.3 ±0.1 | **117.0** ±0.4 | +108% |
+
+Step 3 (bundling top-p's Z pass) was specified as a timing requirement — land the seed shift once —
+and turned out to be a performance win too, since that denominator paid the same full-vocab exp-sum.
+
+**WHAT P3 COULD STILL BUY — the residual.** On qwen2.5-0.5b, temperature-only is now **220.2** against
+greedy's **320.1**. The remaining gap is the readback (0.12 ms/tok measured) plus the parallel host
+term (~1.53 ms/tok), i.e. **P3's device-side reduction addresses only the readback portion**, which
+this box measures at ~2% of the original penalty and a small fraction of what remains.
+
+**Seed churn spent.** Both Z passes are regrouped, so given-seed sampled output changes once, for
+temperature-only and top-p together. Distribution unchanged.
+
+## P3 — Device-side top-K logit reduction — **BANKED, pending the P2b residual. NOT "the campaign that finishes D6".**
+
+> **RE-SCOPED (2026-08-09). Read this before building kernels.** This section previously read as the
+> campaign that finishes D6. Two measurements since have removed that footing:
+>
+> 1. **The interval-verifier design is refuted for temperature-only.** P3's host-side half was to
+>    verify the returned K carry mass ≥ top_p and fall back on a short read — the SAME interval
+>    argument Lazy Z used, over the SAME distributions. bc59c56 measured that argument dead at these
+>    vocabularies: the remainder bound needs an ~11.2-nat gap and real decode logits give 5.29 nats
+>    at K=32 (R/S_K = 366). A device top-K does not change the arithmetic; it only moves where the
+>    K is chosen. Any revival needs **device-exact Z**, not a bound.
+> 2. **The readback it removes is ~2% of the penalty, not the bulk.** Measured attribution: host
+>    normalize+draw ~78%, readback ~2% (0.12 ms/tok on qwen 0.5B, 0.43 on gemma3-1b). P2b then took
+>    the host term down 3–4.7×, so what P3 addresses is a small fraction of a now-smaller gap.
+>
+> **Cost side, unchanged and non-trivial:** new kernels on TWO backends, both device boxes, plus a
+> per-backend given-seed divergence — device `exp` is not bit-identical to host `math.Exp`, so a
+> device-exact Z makes sampled output differ *between backends* for the same seed, which the
+> host-only work so far has carefully avoided.
+>
+> **Decision: BANKED.** Re-open only if the P2b residual is measured to matter on a real workload —
+> the number to beat is qwen2.5-0.5b temperature-only at 220.2 vs greedy 320.1, of which the readback
+> is ~0.12 ms/tok. Do not start from the text below without re-reading this box.
+
+### Original design (retained, premise now falsified — see above)
+
 
 D6's "approach 2", subsuming the readback branch entirely: CUDA + Metal kernels return the K
 highest (logit, id) pairs (K fixed, 256–1024) instead of the V-wide row — the ~608 KB/token copy

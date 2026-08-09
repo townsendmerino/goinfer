@@ -1044,6 +1044,14 @@ the "linear" top-p cell that turned out to be a sort. On a large-vocabulary mode
 throughput factor**, and it is why plain `temperature` is now the *slowest* sampled configuration:
 adding `top_k=20` is faster than leaving it off, because `top_k` bounds the set that gets normalized.
 
+**RESOLVED (2026-08-09) — P2b shipped the fix, and it was neither of the two approaches below.**
+The full-vocabulary normalization is now done in PARALLEL over a fixed 64-chunk split with an
+ascending-chunk reduction (machine-independent by construction), drawing against unnormalized
+weights so the divide pass is gone. Host-only, no kernels. Measured: **3.06× at 152k, 4.72× at
+262k**; end-to-end temperature-only **97.6 → 220.2 tok/s** (qwen2.5-0.5b) and **56.6 → 134.2**
+(gemma3-1b). The top-p denominator got the same treatment in the same release (**+98% / +108%** on
+the filtered path). Given-seed sampled output changed once, for both paths; distribution unchanged.
+
 **Two candidate approaches — recorded so neither is re-proposed from intuition:**
 
 1. ~~**Lazy Z (host-side, no new kernels).**~~ **BUILT AND REFUTED (2026-08-09) — do not re-propose
@@ -1059,9 +1067,12 @@ adding `top_k=20` is faster than leaving it off, because `top_k` bounds the set 
    at K=256 (8.65), reaching 11.6 only at K=2048 (0.60) — where the interval still spans 60% so most
    draws straddle a boundary and grow again, each growth costing a full O(V) pass. Reverted; table in
    `docs/plan-still-slow.md` P2.
-2. **On-device sampling.** Subsumes this *and* the readback branch above — the V-wide logit transfer
-   disappears entirely rather than being made cheaper. Strictly better if funded, strictly more
-   expensive: new CUDA + Metal kernels plus a device box to validate.
+2. **On-device sampling — BANKED, and no longer the finisher.** The host term is ~78% of the
+   temperature-only penalty and the readback ~2% (measured 2026-08-09), and **P2b then took the host
+   term down 3.06× at 152k / 4.72× at 262k** with deterministic parallel chunked normalization —
+   host-only, no kernels. So on-device sampling now addresses the ~2% readback of an already-shrunk
+   gap, at the cost of new kernels on two backends plus per-backend given-seed divergence (device
+   `exp` ≠ host `math.Exp` at ULP level). Re-scope and the number to beat: `docs/plan-still-slow.md` P3.
 
 ### `top_k=1` should route to greedy — **DONE (P1, 2026-08-09)**
 

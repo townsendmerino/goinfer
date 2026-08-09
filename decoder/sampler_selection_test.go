@@ -293,7 +293,17 @@ func TestSamplingThroughputGate(t *testing.T) {
 		t.Skip("throughput gate: skipped under -race (the detector distorts wall clock; ci.yml runs " +
 			"this test without -race on every push)")
 	}
-	const factor = 3.0 // temp+top_p wall time must be ≤ 3× temp-only; the old full sort was ~7×
+	// RE-BOUNDED after P2b (2026-08-09). This gate compares temp+top_p against temp-only, and P2b made
+	// the DENOMINATOR ~4.7× faster (parallel chunked normalization), so the ratio rose from 0.86× to
+	// 3.88× at 262k WITHOUT the filtered path regressing — top_p itself went 6.98 ms → 6.72 ms over the
+	// same change. A gate whose baseline moves is measuring two things at once; the bound is raised to
+	// keep it catching real filtered-path regressions rather than firing on an improvement elsewhere.
+	//
+	// Note the synthetic logits here overstate top_p's cost: randLogits is near-Gaussian, so a 0.95
+	// nucleus over 262k entries retains an enormous candidate set, where REAL peaked decode logits
+	// retain a handful. The e2e A/B on real models shows the filtered path ~2× FASTER after P2b
+	// (gemma3-1b 56.3 → 117.0 tok/s), the opposite of what this ratio suggests in isolation.
+	const factor = 5.0
 	for _, V := range []int{152064, 262144} {
 		r := rand.New(rand.NewSource(1))
 		logits := randLogits(V, r)

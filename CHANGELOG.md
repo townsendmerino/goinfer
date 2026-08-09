@@ -11,6 +11,19 @@ pre-1.0 and may change as new model families and quant formats land.
 ## [Unreleased]
 
 ### Changed
+- **Sampled output for a given seed changed; the distribution is unchanged.** The full-vocabulary
+  softmax denominator on both the temperature-only and `top_p` paths is now summed in parallel over
+  a fixed 64-chunk split rather than in one sequential pass. Float addition is not associative, so
+  the regrouping moves the denominator by a few ULPs, which can flip a draw that sits exactly on a
+  token boundary. Same distribution, same sampler semantics — only the seed→token mapping shifts,
+  once, for both paths together.
+- **Temperature sampling is 1.6–4.7× faster on the host, and up to 2.4× end-to-end.** The
+  normalization is parallel (fixed chunk count, reduction ordered by chunk index — so output stays
+  identical across machines and `GOMAXPROCS`, gated by `TestChunkedSoftmax_MachineIndependent`), and
+  the separate normalize-divide pass is gone: the draw walks unnormalized weights with a two-level
+  chunk walk. Measured decode-only on an RTX 2070 SUPER, q4_K_M int4, 128-token prompt:
+  temperature-only **97.6 → 220.2 tok/s** (qwen2.5-coder-0.5b), **56.6 → 134.2** (gemma3-1b),
+  **88.8 → 113.7** (phi3-mini); `temperature+top_p` **93.4 → 184.7**, **56.3 → 117.0**, **81.5 → 94.7**.
 - **`top_k=1` requests now take the on-device greedy fast path.** A request with `top_k=1` and no
   `logprobs` / `logit_bias` / repetition-presence-frequency penalties is deterministic — temperature
   scaling is monotone so it preserves ordering, and a one-token distribution has nothing to sample —
