@@ -3,6 +3,7 @@
 package metal
 
 import (
+	"os"
 	"testing"
 	"time"
 )
@@ -32,6 +33,16 @@ kernel void touch16(
 }`
 
 func TestZZ_residencyProbe(t *testing.T) {
+	// Opt-in (like GOINFER_BUDGET_PROBE / GOINFER_HEAVY_TESTS), so the default suite stays green
+	// on its own terms with no -skip. Full rationale in the skip message below (census-visible).
+	if os.Getenv("GOINFER_RESIDENCY_PROBE") == "" {
+		t.Skip("residency-cost diagnostic, not a gate; set GOINFER_RESIDENCY_PROBE=1 to run. " +
+			"Opt-in (not a permanent -skip) because its deferred arp.Drain() runs on an UNPINNED " +
+			"goroutine — an autorelease-pool drain without runtime.LockOSThread, the documented " +
+			"purego-objc hazard — so at the tail of a long metal run it can trip the spurious " +
+			"`fault 0x10` teardown crash, which aborts the whole test binary. Production never hits " +
+			"this: every serve-path ARPool.Drain runs on a LockOSThread'd executor/prefill goroutine")
+	}
 	d, err := CreateSystemDefaultDevice()
 	if err != nil {
 		t.Skipf("device: %v", err)
