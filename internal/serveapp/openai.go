@@ -56,6 +56,13 @@ type loadedModel struct {
 	// on every constrained request before the queue gate (N-14).
 	tokenBytesOnce sync.Once
 	tokenBytes     [][]byte
+	// maxTokBytes is the byte length of the longest token in the vocab, computed once. It
+	// bounds tokenization cost (G1): a servable prompt is ≤ ctx tokens, so its text is ≤
+	// ctx·maxTokBytes bytes; any longer input needs > ctx tokens and cannot fit — reject it
+	// before the O(n) BPE runs, instead of tokenizing a multi-MiB body to completion (~27 s
+	// on a 32 MiB body) and only then comparing against the context window.
+	maxTokBytesOnce sync.Once
+	maxTokBytes     int
 	// queue bounds in-flight+waiting requests (cap = 1 running + --max-queue
 	// waiting); a request claims a slot before mu. nil = unbounded. Honest
 	// backpressure, not continuous batching — queue-full returns 429 Retry-After.
@@ -86,6 +93,53 @@ func (lm *loadedModel) cachedTokenBytes() [][]byte {
 		lm.tokenBytes = constrain.TokenBytes(lm.vocab, lm.tk.TokenText)
 	})
 	return lm.tokenBytes
+}
+
+// maxTokenBytes returns the byte length of the longest token in the vocab (≥ 1), computed
+// once and cached. It is the per-token byte ceiling the tokenization guard uses (G1).
+func (lm *loadedModel) maxTokenBytes() int {
+	lm.maxTokBytesOnce.Do(func() {
+		m := 1
+		for id := 0; id < lm.vocab; id++ {
+			if n := len(lm.tk.TokenText(id)); n > m {
+				m = n
+			}
+		}
+		lm.maxTokBytes = m
+	})
+	return lm.maxTokBytes
+}
+
+// promptTooLargeForContext cheaply rejects an input whose tokenizable text cannot fit the
+// model's context window, BEFORE the expensive tokenize (G1c). It is a conservative upper
+// bound — it never rejects a servable prompt (a prompt of ctx tokens has text ≤ ctx·maxTok
+// bytes) — so the exact token-count check (contextLengthError, post-tokenize) still runs for
+// inputs that pass here. Uses MaxPositions, not the (smaller) resident cap, to stay an upper
+// bound; the resident-cap tightening remains in prepare.
+func (lm *loadedModel) promptTooLargeForContext(inputBytes int) error {
+	if lm.model == nil {
+		return nil
+	}
+	return promptByteBudgetError(inputBytes, lm.model.Config().MaxPositions, lm.maxTokenBytes())
+}
+
+// promptByteBudgetError is the pure guard: input text longer than ctx·maxTokenBytes needs
+// more than ctx tokens and cannot fit. ctx ≤ 0 (unknown) or maxTokenBytes ≤ 0 never rejects.
+func promptByteBudgetError(inputBytes, ctx, maxTokenBytes int) error {
+	if ctx > 0 && maxTokenBytes > 0 && inputBytes > ctx*maxTokenBytes {
+		return fmt.Errorf("prompt is too large for the model's context window of %d tokens (context_length_exceeded)", ctx)
+	}
+	return nil
+}
+
+// chatInputBytes sums the tokenizable text across chat messages — the input the BPE runs
+// over (JSON structure and image data are not tokenized), so it is what the G1c guard bounds.
+func chatInputBytes(msgs []chatMessage) int {
+	n := 0
+	for _, m := range msgs {
+		n += len(m.text())
+	}
+	return n
 }
 
 // visionCapable reports whether this model has a loaded vision tower.
@@ -168,6 +222,37 @@ func (s *server) pick(name string) *loadedModel {
 		}
 	}
 	return nil
+}
+
+// resolveBodyCaps returns the (text, vision) request-body caps in bytes (G1d). override > 0
+// sets the text cap verbatim; otherwise it is derived from the largest served model's context
+// window — ctx tokens × the longest token's byte length × 4 (JSON structure/escaping) — and
+// floored at maxBodyBytes so a small-context model keeps a usable budget. The vision cap adds
+// base64-image headroom on top (at least maxVisionBodyBytes). Both are reported on startup.
+func (s *server) resolveBodyCaps(override int64) (textCap, visionCap int64) {
+	textCap = maxBodyBytes // 4 MiB floor
+	if override > 0 {
+		textCap = override
+	} else {
+		var derived int64
+		for _, lm := range s.modelList() {
+			if lm.model == nil {
+				continue
+			}
+			ctx := lm.model.Config().MaxPositions
+			if ctx <= 0 {
+				continue
+			}
+			if b := int64(ctx) * int64(lm.maxTokenBytes()) * 4; b > derived {
+				derived = b
+			}
+		}
+		if derived > textCap {
+			textCap = derived
+		}
+	}
+	visionCap = textCap + maxVisionBodyBytes // image data on top of the text budget
+	return textCap, visionCap
 }
 
 // modelNotFound writes the OpenAI-shaped 404 for an unknown model field.
@@ -363,6 +448,12 @@ func (s *server) handleChat(w http.ResponseWriter, r *http.Request) {
 		s.modelNotFound(w, req.Model)
 		return
 	}
+	// Reject an over-context prompt before tokenizing it (G1c): turns a multi-MiB body from
+	// ~27 s of BPE + gigabytes of ids into a byte-length comparison.
+	if err := lm.promptTooLargeForContext(chatInputBytes(req.Messages)); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	ids, err := lm.chatPrompt(req.Messages)
 	if err != nil {
 		writeServerErr(w, "encode: "+err.Error())
@@ -442,6 +533,10 @@ func (s *server) handleCompletions(w http.ResponseWriter, r *http.Request) {
 	prompt, perr := singlePromptString(req.Prompt)
 	if perr != nil { // a []int token-id prompt or a batch array used to decode to "" → BOS-only 200
 		writeErr(w, http.StatusBadRequest, perr.Error())
+		return
+	}
+	if err := lm.promptTooLargeForContext(len(prompt)); err != nil { // G1c: reject before tokenizing
+		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	ids, err := lm.tk.Encode(prompt, true) // raw completion: tokenizer adds BOS

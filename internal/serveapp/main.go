@@ -244,6 +244,7 @@ type config struct {
 	embedInt4     bool          // -embed-int4: relax the int8 embed/head pin to int4 (lossy, big-vocab small models)
 	maxQueue      int           // -max-queue: bounded per-model queue depth (0 = unbounded)
 	maxInflight   int           // -max-inflight: global cap on concurrent inference handlers (bounds pre-queue work; 0 = unbounded)
+	maxBodyBytes  int64         // -max-body-bytes: request-body cap (0 = derive from the model's context window)
 	spec          string        // -spec: "" (off) | "ngram" — lossless n-gram speculative decode
 	allowAdmin    bool          // -allow-admin: enable POST /admin/models/{load,unload}
 	requireBE     bool          // -require-backend: refuse to start when a model silently fell back off the requested backend's fast paths (resident decode / batched prefill)
@@ -298,6 +299,7 @@ func Main() {
 	flag.BoolVar(&cfg.embedInt4, "embed-int4", false, "with -quant int4, store the token-embedding/LM-head table at int4 too instead of the int8 pin — halves the largest resident tensor on a big-vocab small model. Lossy (~2.3 pts top-1, mostly rare tokens); GGUF direct load only (not the -stream-weights .giw cache)")
 	flag.IntVar(&cfg.maxQueue, "max-queue", 8, "per-model backpressure: max queued requests before 429 (0 = unbounded)")
 	flag.IntVar(&cfg.maxInflight, "max-inflight", 128, "global cap on concurrent inference requests, bounding the pre-queue stage (JSON+image decode, tokenization, template render, vision Forward) that runs before the per-model queue; a full cap returns 503 Retry-After (0 = unbounded)")
+	flag.Int64Var(&cfg.maxBodyBytes, "max-body-bytes", 0, "cap on request body size in bytes; a larger body is rejected 413 before it is read. 0 = derive from the model's context window (a body that could never fit is rejected up front). The vision endpoints get at least 32 MiB on top for base64 image data")
 	flag.StringVar(&cfg.spec, "spec", "", "speculative decoding: \"\" (off) | ngram — lossless n-gram (prompt-lookup) drafting with adaptive depth. Wins on copy-heavy traffic (code edits / RAG / agent loops) on the CPU backend; output is identical (greedy bit-exact, sampled in-distribution incl. temperature/top-k/p/min-p + repetition penalties + logit bias). On greedy constrained/tool requests (response_format / tool grammar) it switches to grammar-fused drafting — the grammar's forced bytes are drafted for free, fused with the n-gram source. Auto-falls back to plain decode per-request when the sampler isn't yet supported on the spec path (e.g. constrained + temperature>0)")
 	flag.StringVar(&cfg.embedPath, "embed-model", "", "embedding model: a CodeRankEmbed HF dir (config.json + model.safetensors + tokenizer.json) for /v1/embeddings")
 	flag.StringVar(&cfg.embedQuant, "embed-quant", "f32", "embedding weight precision: f32 | q8")
@@ -367,23 +369,29 @@ func Main() {
 		inflight = make(chan struct{}, cfg.maxInflight)
 	}
 	inf := func(h http.HandlerFunc) http.HandlerFunc { return limitInflight(inflight, h) }
+	// Resolve the request-body caps (G1d). The largest servable text prompt is ctx tokens ×
+	// the longest token's bytes; ×4 covers JSON structure/escaping. Derived per the largest
+	// served model's context window, floored at the historical constants so a small-context
+	// model keeps a usable body budget (the per-request tokenization guard, not this cap,
+	// protects it), and overridable with -max-body-bytes. Reported on the startup line.
+	textCap, visionCap := srv.resolveBodyCaps(cfg.maxBodyBytes)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/models", auth(srv.handleModels))
 	// Operator surface for the resolved compute paths — same fields as the /v1/models vendor
 	// extension, on a payload with no OpenAI-schema contract to break. See handleHealth.
 	mux.HandleFunc("GET /health", auth(srv.handleHealth))
 	if len(srv.models) > 0 {
-		mux.HandleFunc("POST /v1/chat/completions", auth(inf(maxBytes(maxVisionBodyBytes, srv.handleChat))))
-		mux.HandleFunc("POST /v1/completions", auth(inf(maxBytes(maxBodyBytes, srv.handleCompletions))))
-		mux.HandleFunc("POST /v1/responses", auth(inf(maxBytes(maxBodyBytes, srv.handleResponses))))
-		mux.HandleFunc("POST /v1/messages", auth(inf(maxBytes(maxVisionBodyBytes, srv.handleMessages))))
-		mux.HandleFunc("POST /v1/messages/count_tokens", auth(inf(maxBytes(maxBodyBytes, srv.handleCountTokens))))
+		mux.HandleFunc("POST /v1/chat/completions", auth(inf(maxBytes(visionCap, srv.handleChat))))
+		mux.HandleFunc("POST /v1/completions", auth(inf(maxBytes(textCap, srv.handleCompletions))))
+		mux.HandleFunc("POST /v1/responses", auth(inf(maxBytes(textCap, srv.handleResponses))))
+		mux.HandleFunc("POST /v1/messages", auth(inf(maxBytes(visionCap, srv.handleMessages))))
+		mux.HandleFunc("POST /v1/messages/count_tokens", auth(inf(maxBytes(textCap, srv.handleCountTokens))))
 	}
 	if srv.embed != nil {
-		mux.HandleFunc("POST /v1/embeddings", auth(inf(maxBytes(maxBodyBytes, srv.handleEmbeddings))))
+		mux.HandleFunc("POST /v1/embeddings", auth(inf(maxBytes(textCap, srv.handleEmbeddings))))
 	}
-	mux.HandleFunc("POST /admin/models/load", auth(maxBytes(maxBodyBytes, srv.handleAdminLoad)))
-	mux.HandleFunc("POST /admin/models/unload", auth(maxBytes(maxBodyBytes, srv.handleAdminUnload)))
+	mux.HandleFunc("POST /admin/models/load", auth(maxBytes(textCap, srv.handleAdminLoad)))
+	mux.HandleFunc("POST /admin/models/unload", auth(maxBytes(textCap, srv.handleAdminUnload)))
 
 	// ReadHeaderTimeout + ReadTimeout + IdleTimeout bound slow-header (slowloris), slow-body
 	// dribble, and idle keep-alive connections. ReadTimeout is the whole-request read deadline
@@ -456,6 +464,11 @@ func Main() {
 	}()
 
 	fmt.Fprintf(os.Stderr, "goinfer serving on %s [%s]\n", *addr, srv.endpointSummary())
+	capSrc := "derived from context window"
+	if cfg.maxBodyBytes > 0 {
+		capSrc = "-max-body-bytes"
+	}
+	fmt.Fprintf(os.Stderr, "request body cap: %s (text) / %s (vision) [%s]\n", humanBytes(textCap), humanBytes(visionCap), capSrc)
 	if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		fmt.Fprintf(os.Stderr, "server: %v\n", err)
 		os.Exit(1)

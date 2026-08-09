@@ -22,12 +22,26 @@ const (
 	maxVisionBodyBytes = 32 << 20 // 32 MiB
 )
 
-// maxBytes wraps a handler so its request body is bounded to n bytes: a larger
-// body fails the read with *http.MaxBytesError, which the decode helpers render
-// as 413. It also caps non-JSON reads on the same body. M3.
+// maxBytes wraps a handler so its request body is bounded to n bytes (n <= 0 disables).
+// Two layers (G1/G2/G3):
+//   - Content-Length pre-check: a declared body over the cap is rejected 413 BEFORE a byte
+//     is read — the case that matters, and it costs nothing (no allocation, no upload wait).
+//   - http.MaxBytesReader backstop for chunked encoding or a lying Content-Length; it fails
+//     the read with *http.MaxBytesError, which the decode helpers render as 413.
+//
+// The 413 names the limit (and the received size when the client declared one) so a client
+// sees why it was rejected rather than a bare close. A client still uploading when the
+// pre-check fires may see EPIPE regardless — but today it gets no HTTP response at all (G3).
 func maxBytes(n int64, h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		r.Body = http.MaxBytesReader(w, r.Body, n)
+		if n > 0 && r.ContentLength > n {
+			writeErr(w, http.StatusRequestEntityTooLarge,
+				fmt.Sprintf("request body is %d bytes, which exceeds the %d-byte limit (raise it with -max-body-bytes)", r.ContentLength, n))
+			return
+		}
+		if n > 0 {
+			r.Body = http.MaxBytesReader(w, r.Body, n)
+		}
 		h(w, r)
 	}
 }
@@ -89,7 +103,8 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
 	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
 		var mbe *http.MaxBytesError
 		if errors.As(err, &mbe) {
-			writeErr(w, http.StatusRequestEntityTooLarge, "request body too large")
+			writeErr(w, http.StatusRequestEntityTooLarge,
+				fmt.Sprintf("request body exceeds the %d-byte limit (raise it with -max-body-bytes)", mbe.Limit))
 			return false
 		}
 		// Don't echo the raw json error: UnmarshalTypeError's default string leaks the Go struct name
@@ -312,3 +327,18 @@ var reqCounter atomic.Uint64
 func init() { reqCounter.Store(uint64(time.Now().UnixNano())) }
 
 func reqID() string { return fmt.Sprintf("%x", reqCounter.Add(1)) }
+
+// humanBytes formats a byte count as MiB/GiB for the startup line (whole MiB is exact here —
+// every cap is a multiple of a MiB or a small model-derived product).
+func humanBytes(n int64) string {
+	switch {
+	case n >= 1<<30:
+		return fmt.Sprintf("%.1f GiB", float64(n)/(1<<30))
+	case n >= 1<<20:
+		return fmt.Sprintf("%.1f MiB", float64(n)/(1<<20))
+	case n >= 1<<10:
+		return fmt.Sprintf("%.1f KiB", float64(n)/(1<<10))
+	default:
+		return fmt.Sprintf("%d B", n)
+	}
+}
