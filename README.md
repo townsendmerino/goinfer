@@ -449,23 +449,23 @@ engines. Treat that cell as indicative only.
 Ahead at short context, behind at long, the gap widening with depth: Ollama's flash attention holds
 nearly flat (269 → 259 on 0.5B) while goinfer decays (320 → 201).
 
-**By sampling configuration, 128 context:**
+**By sampling configuration, 128 context** (re-measured 2026-08-09, goinfer `686c9f8` vs Ollama
+**v0.32.6**, `OLLAMA_FLASH_ATTENTION:false`, `num_ctx` verified per cell):
 
-| configuration | goinfer 0.5B | Ollama | goinfer 1.5B | Ollama |
+| configuration | goinfer 0.5B | Ollama | goinfer gemma3-1b | Ollama |
 |---|---|---|---|---|
-| greedy (`temperature 0`) | 320.1 | 269.4 | 217.8 | 195.2 |
-| `temperature 0.8` + `top_k 40` | 268.8 | 284.7 | 193.2 | 186.8 |
-| `temperature 0.8` + `top_p 0.95` | 92.8 | 266.6 | 86.8 | 182.8 |
-| each side's own defaults *(unmatched)* | 101.9 | 274.4 | 82.3 | 192.6 |
+| greedy (`temperature 0`) | 318.9 | 269.4 | — | — |
+| `temperature 0.8` + `top_k 40` | 268.8 ᵇ | 284.7 ᵇ | — | — |
+| `temperature 1.0`, no truncation (goinfer's default) | 219.2 | 269.0 | 133.5 | 148.9 |
+| `temperature 0.8` + `top_p 0.95` | 190.3 | 266.2 | 116.6 | 149.7 |
 
-**At `top_k 40` — the configuration Ollama itself defaults to — the two are at parity** (1.06×
-behind at 0.5B, 1.03× ahead at 1.5B). Under **nucleus sampling goinfer is 2.1–2.9× behind**; that
-gap is scoped as D6 in `docs/ollama-chase.md`.
+ᵇ `top_k` row carried from the previous campaign (Ollama v0.32.5) — not re-measured in this pass.
 
-**The defaults row is not like-for-like.** goinfer defaults to `temperature 1.0` with no truncation
-(the OpenAI-compatible default, sampling the full distribution); Ollama's defaults include
-`top_k 40`, which truncates it. Ours is faithful and slow, theirs is truncated and fast, and passing
-`top_k` closes most of the gap.
+**Where this leaves sampled decoding.** goinfer is **1.12–1.40× behind** the peer under sampled
+configurations, down from 2.1–2.9× before the parallel-normalization work (`686c9f8`): the qwen0.5b
+`top_p` figure went 92.8 → 190.3 tok/s while the peer was unchanged (266.6 → 266.2). Greedy and
+`top_k` remain the fastest paths — see the sampling note above. phi3-mini's `top_p` cell is **held
+pending re-measurement** (11% run-to-run spread); `docs/benchmarks.md` §B5 records why.
 
 Absolute tok/s are **not** comparable across the CUDA and Metal sections — that would compare two
 graphics cards, not two engines. Method, hardware and history:

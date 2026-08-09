@@ -589,6 +589,103 @@ GINFER_PREQUANT_GGUF=~/models/qwen2.5-coder-1.5b-instruct-q8_0.gguf \
 
 ---
 
+## B5 — Anchored re-measure, 2026-08-09 (goinfer `686c9f8` vs Ollama v0.32.6)
+
+One binary for every cell. Supersedes the sampled rows in the README's G11 section; the older rows
+elsewhere on this page keep their own binary and peer version and are NOT updated in place.
+
+**Provenance, every row below:** goinfer **`686c9f8`** · peer **Ollama v0.32.6** with
+**`OLLAMA_FLASH_ATTENTION:false`** (its default — not overridden), `num_ctx` set explicitly per cell
+and **verified via the `ollama ps` CONTEXT column** (all 10 peer cells: observed == requested,
+`100% GPU`) · RTX 2070 SUPER, driver **595.58.03** · qwen2.5-coder / phi3-mini / gemma3-1b at
+**q4_K_M**, same GGUF file both sides · **2026-08-09** · **decode-only, prefill excluded**
+(inter-token rate timed client-side from the first streamed token) · servers restarted per cell,
+interleaved · ≥8 completions per run, 2 runs per cell, spread shown · sampling sent explicitly.
+
+**Controls.** goinfer greedy@128 measured 318.9 against 320.1 on the pre-P1 binary, and Ollama
+greedy@128 measured 269.4 against 269.4 on v0.32.5 — so neither the goinfer sampling work (P1/P2b)
+nor the peer version bump moved the greedy path, and the sampled deltas below are attributable.
+
+### Sampled configurations, 128 context
+
+| model (vocab) | config | goinfer | Ollama v0.32.6 | verdict |
+|---|---|---|---|---|
+| phi3-mini (32k) | temp-only | 112.4 ±2.5 | 125.8 ±0.1 | Ollama 1.12× |
+| phi3-mini (32k) | temp+top_p 0.95 | *held — see below* | 121.8 ±0.1 | *not published* |
+| qwen2.5-coder-0.5b (152k) | temp-only | 219.2 ±1.1 | 269.0 ±0.9 | Ollama 1.23× |
+| qwen2.5-coder-0.5b (152k) | temp+top_p 0.95 | 190.3 ±1.6 | 266.2 ±0.3 | Ollama 1.40× |
+| gemma3-1b (262k) | temp-only | 133.5 ±3.5 | 148.9 ±0.0 | Ollama 1.12× |
+| gemma3-1b (262k) | temp+top_p 0.95 | 116.6 ±1.1 | 149.7 ±0.2 | Ollama 1.28× |
+
+**One cell is HELD, not published:** `phi3-mini` + `temp+top_p` measured **95.4 ±10.7** — an 11%
+spread, over the 5% threshold this page uses. It needs additional runs before it appears in the
+README. Publishing a number whose two runs disagree by 11% is how a spread gets averaged away.
+
+*What changed since the previous sampled numbers:* goinfer's `top_p` figure on qwen0.5b went
+92.8 → 190.3 while the peer moved 266.6 → 266.2, i.e. the deficit went **2.87× → 1.40×** and the
+change is entirely ours (P2b's parallel normalization, `686c9f8`).
+
+### Greedy decode by KV depth
+
+| depth | goinfer 0.5B | Ollama 0.5B | goinfer 1.5B | Ollama 1.5B |
+|---|---|---|---|---|
+| 128 | 318.9 | 269.4 | 217.6 | 195.4 |
+| 512 | 243.2 | 269.6 | 181.9 | 176.6 ᵃ |
+| 2048 | 244.0 | 266.4 | 157.5 | 179.5 |
+| 3900 | 200.1 | 259.8 | 122.3 | 174.3 |
+
+ᵃ High variance (spread 27.0), reproducing the same instability seen in the previous campaign on
+v0.32.5 (146–182 over ten runs). Treat as indicative.
+
+**Depth stops at 3900 because of `cudaCtxCap = 4096`** (`cuda/resident.go:28`), the resident KV
+capacity — not because 3900 was chosen as an interesting depth. 8k/16k/32k are unmeasurable on the
+resident path until that cap is configuration-derived.
+
+### Per-segment coefficients (µs per KV position) — and the step is a KERNEL SWITCH, not depth
+
+| model | segment | goinfer | Ollama |
+|---|---|---|---|
+| qwen0.5b | 128→512 | +2.542 | −0.007 |
+| qwen0.5b | 512→2048 | −0.009 | +0.029 |
+| qwen0.5b | 2048→3900 | +0.485 | +0.051 |
+| qwen1.5b | 128→512 | +2.349 | +1.419 |
+| qwen1.5b | 512→2048 | +0.554 | −0.060 |
+| qwen1.5b | 2048→3900 | +0.987 | +0.090 |
+
+KV bytes/position (K+V, **f32** — the resident cache is f32): **0.5B 24.0 KB**, **1.5B 56.0 KB**.
+
+goinfer's 128→512 coefficient is ~2.4–2.5 µs/pos on BOTH models despite different layer counts and
+head dims, which a genuine per-position attention cost cannot do. A 6-cell A/B attributes it:
+
+| depth | split-KV ON (default) | split-KV OFF | |
+|---|---|---|---|
+| 128 (below the 256-key gate) | 314.9 ±3.6 | 319.2 ±1.3 | equal — control |
+| 512 | 239.7 ±4.4 | **290.0 ±5.6** | OFF **21% faster** |
+| 2048 | 242.5 ±7.9 | **249.3 ±1.8** | OFF faster |
+
+**Split-KV attention costs the 0.5B ~0.72 ms/token at 512 and ~0.11 ms at 2048.** It engages at
+`splitkvMinKeys = 256` (`cuda/resident.go:32`), inside the 128→512 segment, which is exactly why the
+step is fixed-size and layer-count-insensitive. With it off the 0.5B coefficient is an ordinary
++0.820 / +0.366 µs/pos and the anomaly disappears.
+
+The crossover in that constant was characterized on the **1.5B** ("break-even at 256, a clear win
+from 384+"); it is **default-on for every model**, and on the 0.5B it is a net loss at both measured
+depths. Follow-up: per-geometry gating or a re-characterized crossover. Note the published 0.5B
+depth curves — including the previous campaign's — were measured with split-KV on and carry this cost.
+
+**Not launch latency.** CUDA graphs measured 1.01× on a fitting model (§10 / `docs/cuda-graphs-investigation.md`),
+so this ~0.7 ms is small-kernel **execution** overhead. Do not re-propose graphs for it.
+
+### On Ollama's depth behaviour — do not attribute it to flash attention
+
+Earlier text on this page explains Ollama's flat depth curve as flash attention. **These rows were
+measured with `OLLAMA_FLASH_ATTENTION:false` (the v0.32.6 default) and the 0.5B curve is still flat**
+(0.029–0.051 µs/pos across 512→3900). So flash attention is not the explanation for the 0.5B, and the
+honest statement is narrower: Ollama is **flat at depth, not across the whole range** — on the 1.5B it
+shows the same 128→512 step goinfer does (+1.419 µs/pos), so part of that step is likely shared and
+not goinfer-specific. Any mechanism claim beyond that is unmeasured. §D4's flash-attention
+explanation should be read with this 2026-08-09 caveat rather than trusted as-is.
+
 ## Measurement notes worth keeping
 
 - **Early EOS at `temperature 1.0` shortens completions.** In the 2026-08-09 sweep, **4 of 16**

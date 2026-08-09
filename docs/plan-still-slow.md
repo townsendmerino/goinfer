@@ -332,7 +332,24 @@ over the returned K:
 - **Expected:** the reporter's ~2.9× nonzero-temperature penalty collapses to ≈ the P2 residue;
   gemma3-1b (widest vocab, largest readback) is the headline number.
 
-## P4 — Long-context decode: KV-cache quantization, opt-in (1–2 weeks, profile-gated)
+## P4 — Long-context decode: KV-cache quantization, opt-in — **CUDA go/no-go DEFERRED (2026-08-09)**
+
+> **Measured coefficients confine the CUDA case to depth > 2048.** KV quantization attacks the
+> PER-POSITION term, and on qwen0.5b that term is **near zero mid-range** (−0.009 µs/pos across
+> 512→2048) — so it buys ~nothing over the range where goinfer currently leads the peer. The
+> short-context loss there is a fixed kernel-switch cost (split-KV, see P6), which KV-quant does not
+> touch. **CUDA go/no-go is DEFERRED until the cap-raise leg delivers 8k–32k coefficients**, which is
+> where a per-position term large enough to be worth compressing would show up. Metal-first rationale
+> unchanged.
+>
+> **Corrected KV geometry (measured, not assumed).** The resident cache is **f32**, K+V:
+> **24.0 KB/position** (qwen0.5b: 24 layers × 2 KV heads × 64 head-dim × 2 × 4 B) and
+> **56.0 KB/position** (qwen1.5b: 28 × 2 × 128 × 2 × 4). The plan previously reasoned from an f16
+> baseline; from f32, **q8 KV is a 4× byte cut on CUDA, not 2×**, which strengthens the reachability
+> arithmetic proportionally. At 32k positions the 1.5B needs ~1.88 GB f32 / ~0.47 GB q8 beside the
+> weights on an 8 GB card — feasible, but it is a real budget, not headroom.
+
+### Original P4 plan (retained; CUDA case now deferred — see the box above)
 
 Where things stand, honestly: CUDA Campaign A **closed at the bit-identity ceiling** — split-KV
 landed (99.5→160 tok/s @2048 cumulative, **1.17× behind** Ollama), the V-sum ILP unroll was tried
@@ -380,7 +397,46 @@ protocol (env-same → investigate; this is the "verified change" arm). This is 
 *re-specification*, still exact and deterministic — not the tolerance trap. Gate: divergence-rate
 tests re-pinned at the new baseline, full parity manifest, both backends, before the tag.
 
-## P6 — Extend the depth sweep into the agentic regime (8k/16k/32k) (days; measurement only)
+## P6 — Extend the depth sweep — **PARTIAL (2026-08-09). 8k+ BLOCKED; truncated sweep + G11 refresh DONE.**
+
+> **8k/16k/32k are BLOCKED on `cudaCtxCap = 4096` (`cuda/resident.go:28`)** — the resident KV
+> capacity is a compile-time constant, so `checkCap` refuses those depths and the request falls to
+> the staged path. A staged number is a different engine under the same label, so those cells were
+> NOT measured (option 3 rejected). Unblocked by the cap-raise leg: cap becomes
+> `min(model context, serve setting)`, VRAM-checked at load with a fail-fast error, default
+> behaviour unchanged.
+>
+> **The published 3900 ceiling was the cap showing through.** Every depth curve this project has
+> published tops out just under 4096 — that was infrastructure, not a chosen depth, and it was never
+> stated as such.
+>
+> **DONE in this leg:** the truncated greedy sweep {128, 512, 2048, 3900} on qwen 0.5B/1.5B, and the
+> full G11 sampled refresh (three models, both engines, anchored to one binary). Numbers and full
+> provenance: `docs/benchmarks.md` §B5. Metal depth leg (M1) **pending, not claimed**.
+>
+> **Headline coefficients (µs per KV position):** 0.5B goinfer +2.542 / −0.009 / +0.485 across the
+> three segments against Ollama's −0.007 / +0.029 / +0.051; 1.5B goinfer +2.349 / +0.554 / +0.987
+> against +1.419 / −0.060 / +0.090.
+>
+> **THE 128→512 STEP IS A KERNEL SWITCH, NOT DEPTH.** It measured ~2.4–2.5 µs/pos on both models
+> despite different layer counts and head dims — impossible for a true per-position cost. A 6-cell
+> A/B (`GOINFER_SPLITKV_ATTN=0`, with d=128 as the below-gate control) attributes it to split-KV
+> attention engaging at `splitkvMinKeys = 256`:
+>
+> | depth | split-KV ON | split-KV OFF | |
+> |---|---|---|---|
+> | 128 | 314.9 ±3.6 | 319.2 ±1.3 | equal (gate inactive) — control |
+> | 512 | 239.7 ±4.4 | **290.0 ±5.6** | OFF 21% faster |
+> | 2048 | 242.5 ±7.9 | **249.3 ±1.8** | OFF faster |
+>
+> Split-KV costs the 0.5B **~0.72 ms/token at 512** and ~0.11 ms at 2048. With it off the coefficient
+> is an ordinary +0.820 / +0.366 µs/pos. Its crossover was characterized on the **1.5B** yet it is
+> **default-on for every model** — on the 0.5B it is a net loss at both measured depths, in the range
+> where goinfer otherwise leads. Follow-up: per-geometry gating or a re-characterized crossover.
+> **Not launch latency** — CUDA graphs measured 1.01×, so this is small-kernel execution overhead;
+> do not re-propose graphs (§10).
+
+### Original P6 plan (retained; 8k+ blocked — see the box above)
 
 The current depth axis (128–3900) covers the chat regime. Measured agent workloads run far
 deeper: a 30k-request sample of the author's Claude Code transcripts puts per-request context at
