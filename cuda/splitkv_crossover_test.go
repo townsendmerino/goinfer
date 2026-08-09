@@ -11,11 +11,18 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestSplitKVCrossover finds the KV depth where split-KV overtakes attn_batched(M=1), so default-on
-// can gate on it: split-KV loses at shallow ctx (3-launch overhead vs a cheap single-block attention)
-// and wins at long ctx (occupancy). Measures both modes at several depths on the real 1.5B by toggling
-// the resident's splitkvAttn flag. Prints the per-depth ratio; the threshold is the smallest depth
-// where split-KV is a clear win. Heavy; gated.
+// TestSplitKVCrossover measures split-KV vs attn_batched(M=1) at several KV depths on the real 1.5B
+// by toggling the resident's splitkvAttn flag. Prints the per-depth ratio.
+//
+// DO NOT SET THE SHIPPED THRESHOLD FROM THIS TEST ALONE. It is an in-process microbenchmark: a tight
+// ForwardArgmax loop, best-of-3 MINIMUM. Both choices flatter split-KV relative to real serving — the
+// loop hides the per-token CPU dispatch that an e2e request exposes, and best-of-min favours the
+// higher-variance arm (split-KV's). Its "break-even at 256, clear win from 384+" reading is what put
+// splitkvMinKeys=256 in the tree, and P6a's e2e measurement refuted that ON THIS VERY GEOMETRY (the
+// 1.5B loses at both 256 and 512; its real crossover is in (512, 1024]). Treat this as a kernel-level
+// probe and set thresholds from the e2e table in docs/benchmarks.md §B6.
+//
+// Heavy; gated.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags cuda -run TestSplitKVCrossover -v
 func TestSplitKVCrossover(t *testing.T) {
@@ -43,6 +50,7 @@ func TestSplitKVCrossover(t *testing.T) {
 
 	measure := func(depth int, useSK bool) float64 {
 		rf.splitkvAttn = useSK
+		rf.skMinKeys = 0 // characterize the KERNEL, not the gate: force the split path at every depth
 		embs := make([][]float32, depth)
 		for i := range embs {
 			embs[i] = emb(i)

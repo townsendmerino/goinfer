@@ -664,14 +664,15 @@ head dims, which a genuine per-position attention cost cannot do. A 6-cell A/B a
 | 2048 | 242.5 ±7.9 | **249.3 ±1.8** | OFF faster |
 
 **Split-KV attention costs the 0.5B ~0.72 ms/token at 512 and ~0.11 ms at 2048.** It engages at
-`splitkvMinKeys = 256` (`cuda/resident.go:32`), inside the 128→512 segment, which is exactly why the
+`splitkvMinKeys = 256` (the constant as it stood at `686c9f8`; replaced in §B6), inside the 128→512 segment, which is exactly why the
 step is fixed-size and layer-count-insensitive. With it off the 0.5B coefficient is an ordinary
 +0.820 / +0.366 µs/pos and the anomaly disappears.
 
 The crossover in that constant was characterized on the **1.5B** ("break-even at 256, a clear win
 from 384+"); it is **default-on for every model**, and on the 0.5B it is a net loss at both measured
-depths. Follow-up: per-geometry gating or a re-characterized crossover. Note the published 0.5B
-depth curves — including the previous campaign's — were measured with split-KV on and carry this cost.
+depths. Note the published 0.5B depth curves — including the previous campaign's — were measured with
+split-KV on and carry this cost. **→ Followed up and fixed in §B6 below; the constant was wrong on
+its own geometry too.**
 
 **Not launch latency.** CUDA graphs measured 1.01× on a fitting model (§10 / `docs/cuda-graphs-investigation.md`),
 so this ~0.7 ms is small-kernel **execution** overhead. Do not re-propose graphs for it.
@@ -685,6 +686,140 @@ honest statement is narrower: Ollama is **flat at depth, not across the whole ra
 shows the same 128→512 step goinfer does (+1.419 µs/pos), so part of that step is likely shared and
 not goinfer-specific. Any mechanism claim beyond that is unmeasured. §D4's flash-attention
 explanation should be read with this 2026-08-09 caveat rather than trusted as-is.
+
+## B6 — Split-KV decode attention, re-gated (2026-08-09, P6a)
+
+§B5 above flagged the split-KV gate as a follow-up. It turned out to be worse than "characterized on
+one model": **the shipped constant `splitkvMinKeys = 256` was wrong on the geometry it was
+characterized on, and the rule it encodes cannot be right for all geometries in any form.**
+
+**Method.** 48 cells: 4 resident geometries × 6 KV depths × {split-KV ON, split-KV OFF}. Each cell is
+a freshly started `serve` (so the arm is a process-level setting, never a mid-process toggle), int4
+q4_K_M, greedy, `max_tokens=64`, one warm request discarded, then 2 blocks of 8 requests; the number
+is the **client-timed inter-token rate from the first streamed token** (decode-only — prefill and TTFT
+excluded), reported as the mean of the two block means with the block spread. Prompts are
+**token-calibrated per depth** (repeated `" the"`, verified against `usage.prompt_tokens`) so a "512"
+cell really attends ~512 keys. Anchor: goinfer `686c9f8`, driver 595.58.03, RTX 2070 SUPER (40 SMs).
+OFF arm = `GOINFER_SPLITKV_ATTN=0`. Raw cells: `scratchpad/p6a.json`.
+
+**Ratios are ON ÷ OFF; >1 means split-KV wins.** The 128 column is below the old gate on every model,
+so it is the control — it should read ~1.000, and it does.
+
+| geometry | nH | nKV | hd | L | 128 | 256 | 512 | 1024 | 2048 | 3900 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| qwen2.5-coder-0.5b | 14 | 2 | 64 | 24 | 1.023 | **0.839** | **0.819** | **0.869** | **0.955** | 1.197 |
+| qwen2.5-coder-1.5b | 12 | 2 | 128 | 28 | 1.007 | **0.941** | **0.939** | 1.078 | 1.191 | 1.280 |
+| gemma3-1b (win 512) | 4 | 1 | 256 | 26 | 0.989 | **0.890** | **0.909** | **0.919** | **0.941** | 1.084 |
+| phi3-mini (MHA) | 32 | 32 | 96 | 32 | 1.001 | 0.993 | **0.969** | **0.919** | **0.815** | **0.754** |
+
+Bold = the old default was a **live regression** there. The old gate fired from 256 up, so every bold
+cell at 256+ was being paid in production. Worst single cells: **0.819** (0.5B at 512, −18%) and
+**0.815 / 0.754** (phi3 at 2048 / 3900, −19% / −25%).
+
+**Two separate defects.**
+
+1. **The characterization overstated itself ~3–4× on its own geometry.** `TestSplitKVCrossover`
+   measured the **1.5B** and reported "break-even at 256, a clear win from 384+". The 1.5B *loses* at
+   256 and 512; its real crossover is in (512, 1024]. The cause is methodological, not arithmetic:
+   that test times a tight in-process `ForwardArgmax` loop and takes **best-of-3 minimum**. Both
+   choices flatter split-KV against real serving — the loop hides the per-token CPU dispatch a real
+   request exposes, and best-of-min favours the higher-variance arm, which is consistently ON (spread
+   3.6–6.4 tok/s vs OFF's 0.1–0.6). The test now carries this caveat in its docstring.
+2. **A one-geometry constant was applied to every model.** qwen0.5b does not break even until ~2560
+   (localized: 2560 → 1.019, 3072 → 1.061); phi3-mini **never** crosses over.
+
+**Why the gate is a lookup and not a formula.** Split-KV buys occupancy and pays for it in DRAM:
+`attn_batched` launches nH blocks and keeps the whole score row in **shared** memory; split-KV
+materializes an nH×nWin f32 score array in **global** memory and touches it three times (scores
+writes, softmax reads+writes, vsum reads) to fill the SMs that nH blocks leave idle. So
+
+    net(nWin) ≈ (A − B)·nWin − 2·nLayers·T_launch
+
+with A growing with the occupancy deficit (it needs nH ≪ SM count) and B growing with nH. A > B gives
+a crossover; **A < B means split-KV never wins and the deficit widens with depth** — which is exactly
+phi3-mini's monotone 0.993 → 0.754 (nH=32 on a 40-SM part: almost no deficit to recover, and the
+largest score array of the four). This is why no formula fits: a formula gate has the shape
+**"ON iff nWin ≥ f(geometry)"**, which always predicts ON wins at sufficient depth. **phi3 falsifies
+that shape, not merely its constants.** Two candidate laws (`nLayers/(nH·hd)` and `nLayers/(nKV·hd)`)
+additionally underpredicted the 0.5B crossover by ~2×. Shipped as a measured per-geometry table with a
+"never" class and a conservative default, cited beside the constants in `cuda/resident.go` and pinned
+by `TestSplitKVGate_measuredGeometries`.
+
+**Asymmetric loss.** Firing early costs up to 18–25%; firing late costs a few percent, because OFF's
+slope near the crossover is mild. Every threshold is therefore rounded **up**, and an unmeasured
+geometry gets the conservative default rather than an extrapolation.
+
+**A structural bug fixed at the same time: the gate tested the wrong quantity.** It compared the raw
+position `nKeys`, but the kernel's work is set by the **effective attended span** `nWin` (window-clamped).
+A sliding-window layer never attends more than `window` keys, so gemma3-1b's window-512 layers were
+taking the split path at a 512-key span — its loss regime — at *every* depth past the window, which is
+why its curve above is a mixture and stays below 1.0 out to 2048. The gate is now evaluated **per
+layer on `nWin`**. Both arms are byte-identical, so a layer changing arms mid-request as `nWin` grows
+is safe by construction.
+
+### B6.1 — What the new default recovers (measured on the fixed binary)
+
+Same harness and anchor; `DEF` is the shipped default, `OFF`/`ON` are the forced arms. `old DEF` is
+the previous default (= the forced-ON number, since the old gate fired at every depth here).
+
+| model | depth | old DEF | new DEF | forced OFF | forced ON | recovery |
+|---|---|---|---|---|---|---|
+| qwen2.5-coder-0.5b | 512 | 240.0 | **286.6** | 282.0 | 240.0 | **1.19×** |
+| qwen2.5-coder-0.5b | 2048 | 240.0 | **250.2** | 250.8 | 240.0 | **1.04×** |
+| qwen2.5-coder-1.5b | 512 | 182.2 | **195.0** | 194.1 | 182.2 | **1.07×** |
+| qwen2.5-coder-1.5b | 1024 | 182.3 | **182.6** | 169.1 | 182.3 | 1.00× (see below) |
+| gemma3-1b | 512 | 152.7 | **167.7** | 168.0 | 152.7 | **1.10×** |
+| gemma3-1b | 1024 | 147.4 | **161.5** | 163.5 | 147.4 | **1.10×** |
+| gemma3-1b | 2048 | 147.3 | **155.6** | 155.9 | 147.3 | **1.06×** |
+| gemma3-1b | 3900 | 154.5 | **163.0** | 142.4 | 154.5 | **1.055×** |
+
+Three things to read off this table:
+
+- **The gate still engages where split-KV genuinely wins.** The qwen1.5b 1024 row is unchanged by
+  design: `new DEF 182.6 ≈ forced ON 182.3`, and both beat `forced OFF 169.1` by 1.08×. This is not a
+  blanket disable — 1024 is exactly that geometry's measured threshold, and the gate fires there.
+- **Below threshold, `new DEF ≈ forced OFF`**, which is the expected no-op result.
+- **The gemma3 3900 row beats *both* uniform arms** (163.0 vs 154.5 all-split and 142.4 all-single).
+  That is the per-layer `nWin` gate doing the thing only it can do — the global-attention layers
+  (nWin = 3900) take the split path while the window-512 layers stay on `attn_batched`. **No per-model
+  gate can reach this point, whatever constant it uses**, because the right answer differs *between
+  layers of the same model at the same position*.
+
+### B6.2 — Anchored depth rows, re-measured on the fixed binary
+
+The §B5 "Greedy decode by KV depth" rows above **stay as published** — they are the honest record of
+what `686c9f8` did. These are the same cells on the P6a binary, default settings, same harness and
+anchor. Ollama columns are unchanged (v0.32.6, `OLLAMA_FLASH_ATTENTION:false`) and are repeated only
+so the comparison is readable.
+
+| depth | goinfer 0.5B `686c9f8` | goinfer 0.5B **P6a** | Ollama 0.5B | goinfer 1.5B `686c9f8` | goinfer 1.5B **P6a** | Ollama 1.5B |
+|---|---|---|---|---|---|---|
+| 128 | 318.9 | 320.9 | 269.4 | 217.6 | 218.5 | 195.4 |
+| 512 | 243.2 | **286.6** | 269.6 | 181.9 | **195.0** | 176.6 ᵃ |
+| 2048 | 244.0 | **250.2** | 266.4 | 157.5 | 157.0 | 179.5 |
+| 3900 | 200.1 | 200.8 | 259.8 | 122.3 | 122.1 | 174.3 |
+
+ᵃ Same high-variance caveat as §B5.
+
+**Depths where the gate decision did not change re-measure unchanged** — 128 (below threshold either
+way), 2048 on the 1.5B and 3900 on both (the gate fires in both the old and new schemes). That is the
+no-collateral-perturbation check: this was a selection change, and only the cells whose selection
+flipped moved.
+
+**One peer comparison changes sign, in goinfer's favour.** At 512 on the 0.5B, `686c9f8` read 243.2
+vs Ollama's 269.6 — Ollama ahead by 1.11×. The corrected number is 286.6, i.e. **goinfer ahead by
+1.06×**. The 1.5B at 512 goes from 1.03× to **1.10×** ahead. Both were self-inflicted by the gate, not
+engine differences.
+
+**The §B5 sampled/G11 rows are unaffected and were not re-run.** Those cells use a 129-token prompt,
+so their deepest `nKeys` is 193 — below even the old 256 gate. They never paid this cost, so no
+sampled figure and no README row moves because of P6a.
+
+**NOT DEVICE-PORTABLE.** The occupancy term scales with SM count and every cell here is one 40-SM
+Turing part. On a much wider GPU, nH=32 would be starved and phi3's "never" would not hold. Re-measure
+per device class; do not rescale these on paper. `GOINFER_SPLITKV_MIN_KEYS=<n>` now overrides the
+threshold on a stock binary (0 ⇒ always split) so re-characterization no longer needs a rebuild —
+needing one is part of why a refuted number survived.
 
 ## Measurement notes worth keeping
 

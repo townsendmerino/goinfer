@@ -39,6 +39,26 @@ pre-1.0 and may change as new model families and quant formats land.
   measurement yet.
 
 ### Fixed
+- **Split-KV decode attention is re-gated per geometry; up to 1.19× faster decode on CUDA, with
+  byte-identical output.** This is a **kernel-selection change only** — no kernel, numerics, or weight
+  path was touched, and both arms remain bit-identical (`TestSplitKV_bitIdentical`), so any given
+  request produces exactly the same tokens as before. The previous gate turned the split-KV path on at
+  `nKeys ≥ 256` for every model, a constant characterized on one geometry (qwen2.5-1.5b) by an
+  in-process best-of-3-minimum microbenchmark. End-to-end measurement across four geometries × six KV
+  depths shows it fired **3–12× too early** and was a live regression of up to **18–25%** — and that it
+  was wrong on its own geometry too (the 1.5B loses at both 256 and 512; its real crossover is
+  (512, 1024]). phi3-mini (MHA, nH=32) **never** benefits at any depth: its ratio declines
+  monotonically to 0.754 at 3900. Because a threshold rule always predicts "wins eventually", no
+  formula can express that, so the gate is now a measured per-geometry table with a "never" class and a
+  conservative default, documented with its derivation beside the constants and pinned by
+  `TestSplitKVGate_measuredGeometries`. The gate also now tests the **effective attended span** per
+  layer rather than the raw position, so sliding-window layers are judged by their window: gemma3-1b at
+  3900 ctx now beats both uniform arms (163.0 vs 154.5 all-split and 142.4 all-single). Measured
+  decode-only, RTX 2070 SUPER, q4_K_M int4: qwen2.5-coder-0.5b at 512 ctx **240.0 → 286.6 tok/s**,
+  gemma3-1b at 512 **152.7 → 167.7**. `GOINFER_SPLITKV_ATTN=0` still force-disables; new
+  `GOINFER_SPLITKV_MIN_KEYS=<n>` overrides the threshold without a rebuild. Full table and method:
+  `docs/benchmarks.md` §B6. Note these thresholds are **not device-portable** — the occupancy term
+  scales with SM count and all cells are one 40-SM part.
 - **`POST /admin/models/unload` now frees the model's native memory instead of leaking it.** Unload
   deleted the entry from the registry but never called `Close()`, and with no ARC or finalizers under
   purego, GC reclaimed only the Go wrappers — so each unload/reload cycle leaked a full model

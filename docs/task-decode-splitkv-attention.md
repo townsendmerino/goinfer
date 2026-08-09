@@ -137,15 +137,33 @@ would need a non-bit-identical reduction (the §7 fork), which Campaign A does n
 lands at 160 tok/s (1.61× over glue, 1.17× behind Ollama) — a solved-as-far-as-bit-identity-allows
 result, not full parity.**
 
-### Default-on with a context threshold — LANDED (2026-08-04)
+### Default-on with a context threshold — LANDED (2026-08-04), **RE-GATED (2026-08-09, P6a)**
 
-Crossover measured (`TestSplitKVCrossover`, 1.5B): split-KV **breaks even at nKeys=256** and wins
-from 384+ (1.02 → 1.20× at 2048); it loses ~3% only at 128. So split-KV is now **default-on**, gated
-at runtime on **`nKeys ≥ splitkvMinKeys (256)`** — long-context decode gets the win, shallow decode
-keeps the single-block `attn_batched` (byte-identical either way). `GOINFER_SPLITKV_ATTN=0`
-force-disables (A/B / rollback). A/B confirms: depth128 unchanged (225→227), depth2048 133→160.
-Bit-identity gated on both the GQA/hd=128/no-window path (qwen2.5, `TestSplitKV_bitIdentical`) and
-the hd=256/windowed path (gemma3, `TestSplitKV_bitIdentical_gemma3`, winStart>0).
+Original reading (`TestSplitKVCrossover`, 1.5B): split-KV **breaks even at nKeys=256** and wins from
+384+ (1.02 → 1.20× at 2048); it loses ~3% only at 128. Shipped as default-on gated on
+`nKeys ≥ splitkvMinKeys (256)`.
+
+> **That gate was wrong and has been replaced.** P6a measured all four resident geometries end-to-end
+> through `serve` and found `256` fires **3–12× too early**, costing up to **18–25%**. Two independent
+> defects: (1) the crossover was overstated ~3–4× **on its own geometry** — the 1.5B actually loses at
+> 256 *and* 512, real crossover in (512, 1024]; and (2) a constant characterized on one geometry was
+> applied to all of them, including one (phi3-mini, MHA nH=32) where split-KV **never wins at any
+> depth** and the deficit *widens* with context. The `TestSplitKVCrossover` reading was an in-process
+> tight-loop, best-of-3-minimum microbenchmark; both choices flatter split-KV against real serving.
+>
+> Now gated **per layer** on the **effective attended span** `nWin ≥ splitkvThreshold(nH, hd)` — a
+> measured per-geometry lookup, not a formula (see the derivation and the full table beside the
+> function in `cuda/resident.go`, and `docs/benchmarks.md` §B6). `nWin` not `nKeys`: a sliding-window
+> layer never attends more than `window` keys, so gating it on position made gemma3's windowed layers
+> take the split path at a 512-key span — its loss regime — at every depth past the window.
+> `GOINFER_SPLITKV_ATTN=0` still force-disables; `GOINFER_SPLITKV_MIN_KEYS=<n>` now overrides the
+> threshold so the crossover is re-measurable without a rebuild (needing a rebuild is part of why a
+> refuted number survived this long). Selection is pinned by `TestSplitKVGate_measuredGeometries`.
+
+Bit-identity is unaffected and still gated on both the GQA/hd=128/no-window path (qwen2.5,
+`TestSplitKV_bitIdentical`) and the hd=256/windowed path (gemma3, `TestSplitKV_bitIdentical_gemma3`,
+winStart>0) — both now force the split path via the override so a raised threshold cannot make them
+pass vacuously by comparing `attn_batched` against itself.
 
 ## Why this one is worth it (recap from §4)
 

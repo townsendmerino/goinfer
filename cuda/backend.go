@@ -515,6 +515,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		// Campaign-A split-KV decode attention: a high-occupancy, bit-identical alternative to the A1
 		// attn_batched(M=1) decode launch (it replaces exactly that launch, so it needs prefillReady).
 		// Opt-in via GOINFER_SPLITKV_ATTN so it can be A/B'd and gated before default-on. Own module.
+		// -1 ⇒ use the per-geometry table. Set before the load so a partial split-KV load can never
+		// leave the zero value (0) sitting here meaning "always split".
+		r.skMinKeys = -1
 		if r.prefillReady {
 			if skmod, e2 := r.dev.CompileLibrary(decodeSplitKVPTX); e2 == nil {
 				skOK := true
@@ -531,9 +534,15 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				if skOK {
 					r.skScoreBuf = r.af(r.nH * cudaCtxCap)
 					r.skInvBuf = r.af(r.nH)
-					// Default ON (bit-identical; gated at runtime on nKeys≥splitkvMinKeys so shallow
-					// decode is unaffected). GOINFER_SPLITKV_ATTN=0 force-disables it (A/B / rollback).
+					// Default ON (bit-identical; gated per layer at runtime on the effective attended span
+					// nWin ≥ splitkvThreshold(nH, hd), so geometries and depths it loses on are unaffected).
+					// GOINFER_SPLITKV_ATTN=0 force-disables it (A/B / rollback); GOINFER_SPLITKV_MIN_KEYS
+					// overrides the per-geometry threshold so the crossover is re-measurable without a
+					// rebuild (0 ⇒ always split — the force-on arm).
 					r.splitkvAttn = os.Getenv("GOINFER_SPLITKV_ATTN") != "0"
+					if v, err := strconv.Atoi(os.Getenv("GOINFER_SPLITKV_MIN_KEYS")); err == nil && v >= 0 {
+						r.skMinKeys = v
+					}
 				}
 			}
 		}

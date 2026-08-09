@@ -27,11 +27,93 @@ var (
 
 const cudaCtxCap = 4096 // resident KV capacity (positions); staged path handles longer.
 
-// splitkvMinKeys: the decode attention uses the high-occupancy split-KV path only at/above this KV
-// depth. Below it the single-block attn_batched wins (the 3-launch overhead outweighs occupancy) —
-// measured crossover (TestSplitKVCrossover, 1.5B): break-even at 256, a clear win from 384+ (up to
-// 1.20× at 2048), a ~3% loss only at 128. 256 captures the win with no measured shallow regression.
-const splitkvMinKeys = 256
+// splitkvNever disables the split-KV decode attention for a geometry (no depth within the resident's
+// capacity pays for it). Larger than any reachable nWin, so the gate comparison stays a plain >=.
+const splitkvNever = 1 << 30
+
+// splitkvThreshold returns the EFFECTIVE attended-key count (nWin — window-clamped, not the raw
+// position) at/above which the split-KV decode attention beats the single-block attn_batched(M=1)
+// for this geometry, or splitkvNever to disable it.
+//
+// WHY A TABLE AND NOT A FORMULA. Split-KV buys occupancy and pays for it in DRAM. attn_batched
+// launches nH blocks and keeps the whole score row in SHARED memory (SharedMemBytes=(nWin+128)*4);
+// split-KV materializes an nH×nWin f32 score array in GLOBAL memory and touches it three times
+// (splitkv_scores writes, splitkv_softmax reads+writes, splitkv_vsum reads) in exchange for filling
+// the SMs that nH blocks leave idle. So
+//
+//	net(nWin) ≈ (A−B)·nWin − 2·nLayers·T_launch
+//
+// where A grows with the occupancy deficit (it needs nH ≪ SM count) and B grows with nH (score
+// materialization). A > B gives a crossover; A < B means split-KV NEVER wins and the deficit WIDENS
+// with depth — which is exactly what phi3-mini measures (nH=32 on a 40-SM part: almost no deficit to
+// recover, and the largest score array of the four). No one-parameter law reproduces all four
+// geometries — nLayers/(nH·hd) and nLayers/(nKV·hd) both underpredict the 0.5B crossover by ~2×, and
+// neither can express phi3's "never" at any threshold. An honest lookup beats a false formula.
+//
+// MEASURED (e2e decode-only tok/s through serve, int4, RTX 2070 SUPER / 40 SMs, ON÷OFF; >1 = split-KV
+// wins). Full table and method: docs/benchmarks.md §B6.
+//
+//	geometry              nH  nKV  hd   L   256    512    1024   2048   3900    crossover
+//	qwen2.5-0.5b          14   2    64  24  0.839  0.819  0.869  0.955  1.197   ~2560 (see below)
+//	qwen2.5-1.5b          12   2   128  28  0.941  0.939  1.078  1.191  1.280   ( 512, 1024]
+//	gemma3-1b (win 512)    4   1   256  26  0.890  0.909  0.919  0.941  1.084   windowed — see below
+//	phi3-mini (MHA)       32  32    96  32  0.993  0.969  0.919  0.815  0.754   NONE (monotone)
+//
+// qwen2.5-0.5b was localized further inside the (2048, 3900] band: 2560 → 1.019 (break-even), 3072 →
+// 1.061 (first clear win). So splitkvConservative = 3072 is the measured first-clear-win depth for
+// that geometry, not a guess; it forfeits ~2% at 2560, which is the asymmetric-loss trade taken
+// deliberately.
+//
+// The 256/512 columns are where the old constant fired: it cost the 0.5B up to 18%. The old comment
+// here claimed "break-even 256, clear win from 384+" from TestSplitKVCrossover on the 1.5B — that is
+// refuted even on its own geometry (the 1.5B loses at 256 AND 512). That test measures a tight
+// in-process ForwardArgmax loop and takes best-of-3 MINIMUM; both choices flatter split-KV relative
+// to serving (the loop hides per-token CPU dispatch that e2e exposes, and best-of-min favours the
+// higher-variance arm — ON's spread is 3.6–6.4 tok/s vs OFF's 0.1–0.6).
+//
+// ASYMMETRIC LOSS: firing early costs up to 18–25%, firing late costs a few percent (OFF's slope is
+// mild near the crossover). Every threshold is therefore rounded UP, and unmeasured geometries get
+// the conservative default rather than an extrapolation.
+//
+// NOT DEVICE-PORTABLE: the occupancy term scales with SM count and every cell above is one 40-SM
+// Turing part. On a much wider GPU nH=32 would be starved and phi3's "never" would not hold.
+// Re-measure per device class before trusting these on other hardware; do not scale them by SM count
+// on paper.
+func splitkvThreshold(nH, hd int) int {
+	switch {
+	case nH >= splitkvMaxHeads:
+		// Enough blocks to keep a 40-SM part busy: no deficit to buy, and the score array is at its
+		// largest. phi3-mini (nH=32) measures a monotone loss to 0.754 at 3900 — it never crosses.
+		return splitkvNever
+	case nH == 12 && hd == 128:
+		return 1024 // qwen2.5-1.5b class: measured crossover in (512, 1024]
+	default:
+		return splitkvConservative
+	}
+}
+
+// splitkvMaxHeads: at/above this many query heads the single-block kernel already fills the device,
+// so split-KV is pure cost. Anchored at phi3-mini's measured nH=32 ("never") and lowered to 24
+// because the asymmetric loss says be conservative between the measured points (the next geometry
+// down is nH=14, which does cross over).
+const splitkvMaxHeads = 24
+
+// splitkvConservative: qwen2.5-0.5b's measured first-clear-win depth (2560 break-even, 3072 → 1.061),
+// which also serves as the default for any geometry not in the table. Three of the four measured
+// geometries do not cross over until past 2048, so an unmeasured one is assumed not to either; that
+// forfeits a few percent at depth rather than risk the 18–25% shallow regression.
+const splitkvConservative = 3072
+
+// splitkvMin is splitkvThreshold with the runtime override applied. The override exists because the
+// previous constant could only be re-characterized by rebuilding, which is part of why a refuted
+// number survived a release: GOINFER_SPLITKV_MIN_KEYS=<n> re-gates a stock binary (0 ⇒ always take
+// the split path, the force-on A/B arm), GOINFER_SPLITKV_ATTN=0 still force-disables entirely.
+func (r *cudaResident) splitkvMin(hd int) int {
+	if r.skMinKeys >= 0 {
+		return r.skMinKeys
+	}
+	return splitkvThreshold(r.nH, hd)
+}
 
 // cudaWQ is a device projection weight in whatever precision the checkpoint stored it.
 type cudaWQ struct {
@@ -183,6 +265,7 @@ type cudaResident struct {
 	skScores, skSoftmax, skVsum                             Pipeline     // Campaign-A split-KV decode attention (high-occupancy, bit-identical)
 	skScoreBuf, skInvBuf                                    Buffer       // split-KV scratch: [nH·ctxCap] raw/exp scores, [nH] inverse denominators
 	splitkvAttn                                             bool         // GOINFER_SPLITKV_ATTN: use the split-KV decode attention (else the A1 attn_batched(M=1))
+	skMinKeys                                               int          // GOINFER_SPLITKV_MIN_KEYS: -1 ⇒ per-geometry table; ≥0 overrides it (0 ⇒ always split)
 	prefillReady                                            bool         // batched kernels loaded; PrefillLast usable
 	prof                                                    *prefillProf // non-nil ⇒ PrefillLast times each kernel category (test-only; adds stream syncs)
 	fRoute, fRouterGemv, fMoEGemv, fMoEWacc, fSharedCombine Pipeline
@@ -1269,10 +1352,15 @@ func (r *cudaResident) launchToken(emb []float32, pos int, head bool) error {
 		if Ly.window > 0 && nKeys > int(Ly.window) {
 			nWin = int(Ly.window)
 		}
-		if r.splitkvAttn && r.skScores != (Pipeline{}) && nKeys >= splitkvMinKeys {
+		if r.splitkvAttn && r.skScores != (Pipeline{}) && nWin >= r.splitkvMin(Ly.hd) {
 			// Campaign-A split-KV: high-occupancy, BIT-IDENTICAL to attn_batched(M=1) (proven by
 			// TestSplitKV_bitIdentical) — fills the SMs the single-block kernel leaves idle at long ctx.
-			// Gated on nKeys≥splitkvMinKeys so shallow decode keeps the cheaper single-block path.
+			// Gated PER LAYER on nWin (the EFFECTIVE attended span) against a per-geometry threshold, so
+			// shallow decode keeps the cheaper single-block path. nWin not nKeys: a sliding-window layer
+			// never attends more than `window` keys, so its cost is set by the window, not by position —
+			// gating it on position made gemma3's windowed layers take the split path at a 512-key span
+			// (its loss regime) at every depth past the window. Both arms are byte-identical, so a layer
+			// flipping arms mid-request as nWin grows is safe by construction.
 			_ = r.splitKVAttnDecode(l, pos)
 		} else if r.prefillReady {
 			// Coalesced M=1 decode attention: attn_batched with M=1 is BIT-IDENTICAL to the glue

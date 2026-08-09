@@ -53,6 +53,14 @@ func TestSplitKV_bitIdentical(t *testing.T) {
 		prefill[i] = append([]float32(nil), emb(int(s>>8)%vocab)...)
 	}
 
+	// Force the split path whenever the flag is on, bypassing the per-geometry depth gate. Without
+	// this the test would be VACUOUS for any geometry whose threshold exceeds D: both arms would run
+	// attn_batched and compare it against itself. This test compares KERNELS; which kernel the gate
+	// picks at a given depth is TestSplitKVGate_measuredGeometries' job.
+	rf.skMinKeys = 0
+	if rf.splitkvMin(0) != 0 {
+		t.Fatal("override did not take: the split path would not be exercised")
+	}
 	run := func(useSplitKV bool) ([]float32, []int) {
 		rf.splitkvAttn = useSplitKV
 		lg, e := rf.PrefillLast(prefill, 0) // prefill unaffected by the decode-attn choice
@@ -136,6 +144,14 @@ func TestSplitKV_bitIdentical_gemma3(t *testing.T) {
 	for i := range prefill {
 		s = s*1664525 + 1013904223
 		prefill[i] = append([]float32(nil), emb(int(s>>8)%vocab)...)
+	}
+	// Force the split path whenever the flag is on, bypassing the per-geometry depth gate. Without
+	// this the test would be VACUOUS for any geometry whose threshold exceeds D: both arms would run
+	// attn_batched and compare it against itself. This test compares KERNELS; which kernel the gate
+	// picks at a given depth is TestSplitKVGate_measuredGeometries' job.
+	rf.skMinKeys = 0
+	if rf.splitkvMin(0) != 0 {
+		t.Fatal("override did not take: the split path would not be exercised")
 	}
 	run := func(useSplitKV bool) ([]float32, []int) {
 		rf.splitkvAttn = useSplitKV

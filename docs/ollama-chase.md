@@ -244,6 +244,39 @@ Built as a 3-kernel split (`decode_splitkv.cu`, own file): `splitkv_scores` (til
 way); `GOINFER_SPLITKV_ATTN=0` force-disables. Bit-identity gated on GQA/hd=128/no-window (qwen2.5)
 AND hd=256/windowed (gemma3, winStart>0).
 
+> #### AMENDMENT (2026-08-09, P6a) — the `nKeys ≥ 256` gate above is REFUTED and replaced
+>
+> A 48-cell e2e sweep (4 geometries × 6 depths × ON/OFF, decode-only through `serve`) found the
+> shipped constant fires **3–12× too early**, costing up to **18–25%**. **Two independent defects**,
+> and it matters that they are separate:
+>
+> 1. **The original characterization overstated itself ~3–4× on its own geometry.** The 1.5B is the
+>    model `TestSplitKVCrossover` measured, and it *loses* at 256 (0.941) and at 512 (0.939). Its real
+>    crossover is in (512, 1024]. "Break-even at 256, clear win from 384+" was never true, even here.
+> 2. **A one-geometry constant was generalized to every model.** qwen0.5b does not cross until ~2560;
+>    phi3-mini (MHA, nH=32) **never crosses at any depth** — its ratio *declines monotonically*
+>    (0.993 → 0.969 → 0.919 → 0.815 → 0.754 at 3900).
+>
+> **Why the microbenchmark disagreed with serving** (one line, not chased further): `TestSplitKVCrossover`
+> times a tight in-process `ForwardArgmax` loop and takes **best-of-3 minimum**. Both choices flatter
+> split-KV — the loop hides the per-token CPU dispatch a real request exposes, and best-of-min favours
+> the higher-variance arm, which is consistently ON (spread 3.6–6.4 tok/s vs OFF's 0.1–0.6).
+>
+> **The replacement is a lookup, not a formula.** Split-KV buys occupancy and pays for it in DRAM:
+> `attn_batched` keeps the score row in *shared* memory and launches nH blocks; split-KV materializes
+> an nH×nWin f32 array in *global* memory and touches it three times. So
+> `net(nWin) ≈ (A−B)·nWin − 2·L·T_launch`, and when A < B split-KV never wins and the deficit *widens*
+> with depth — exactly phi3. That is why no formula works: a formula gate has the form
+> "ON iff `nWin ≥ f(geometry)`", which always predicts ON wins eventually. **phi3 falsifies the form,
+> not just the constants.** Two candidate laws (`nLayers/(nH·hd)`, `nLayers/(nKV·hd)`) also
+> underpredicted the 0.5B crossover by ~2×. Shipped as a measured per-geometry table with a
+> conservative default, pinned by `TestSplitKVGate_measuredGeometries`.
+>
+> Also fixed structurally: the gate now tests the **effective attended span `nWin`**, per layer, not
+> the raw position. A sliding-window layer never attends more than `window` keys, so gating on
+> position put gemma3's windowed layers on the split path at a 512-key span — its loss regime — at
+> every depth past the window. Full table and method: `docs/benchmarks.md` §B6.
+
 **Campaign A closed at the bit-identity ceiling (~160, 1.17× behind — not full parity).** ncu showed
 `splitkv_vsum` the residual bottleneck (50 µs, 3.8% occupancy = the nH·hd parallelism ceiling). The
 one bit-identical lever left — a **V-sum ILP unroll** — was **tried and REFUTED**: nvcc already
@@ -1190,7 +1223,8 @@ current Ollama: 1.94× → **1.41×**.
 ## 12. Suggested order
 
 1. ~~**Campaign A**~~ **CLOSED** — A0 profile, A1 coalescing (1.34×), A1-reprofile (→occupancy), D4
-   (Ollama=flash-attn, confirmed), split-KV decode attention (default-on, bit-identical, +1.20× @2048).
+   (Ollama=flash-attn, confirmed), split-KV decode attention (default-on, bit-identical, +1.20× @2048
+   **on the 1.5B — its depth gate was re-characterized per geometry in P6a, see the §A2 amendment**).
    Long-ctx decode **99.5 → 160 tok/s = 1.61×**, gap to Ollama **1.94× → 1.17×**. Stopped at the
    bit-identity ceiling (V-sum ILP unroll refuted); full parity needs the §7 non-bit-identical fork,
    which A does not take. The tiling primitive is available to share with B1.
