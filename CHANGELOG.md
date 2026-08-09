@@ -10,7 +10,34 @@ pre-1.0 and may change as new model families and quant formats land.
 
 ## [Unreleased]
 
+### Security
+- **Request bodies are bounded before they are buffered or tokenized (G1/G2/G3).** An oversized
+  body was read and tokenized in full before the context-window check ran, so a body under the
+  32 MiB chat cap (e.g. 20 MB) drove RSS up by gigabytes and spent ~27 s tokenizing only to be
+  rejected 400, and a ≥40 MB body tripped the reader mid-upload and closed the connection with no
+  HTTP response. This ran before the request queue, so `-max-queue` did not bound it. Now, in
+  increasing cost order: a **Content-Length pre-check** rejects an over-cap declared body with a 413
+  before a byte is read (O(1) in body size — measured 6–145 µs, ~5 KB heap at 1/20/40 MB); the
+  existing `MaxBytesReader` backstop's 413 now **names the limit and received size**; a
+  **pre-tokenization guard** rejects an input whose text cannot fit the context window before the
+  O(n) tokenize (the ~27 s → µs fix), as a conservative upper bound that never rejects a servable
+  prompt; and the body cap is **derived from the model's context window** (`-max-body-bytes` to
+  override) and reported on the startup line. Gated in `internal/serveapp/bodylimit_test.go`.
+
 ### Fixed
+- **`temperature` is validated consistently with `top_p` (G4).** A negative `temperature` returned
+  200 while `top_p=-1` returned 400. It was not silently-wrong output — the sampler treats
+  `temperature <= 0` as greedy argmax before any scaling — but the inconsistency is fixed: negative
+  `temperature` is now a 400; `0` stays valid as greedy/deterministic.
+- **A chat request with no `messages` is now a 400 (G5)** naming the field, instead of a 200
+  generated from a BOS-only prompt.
+- **An unknown `model` name is rejected on a single-model server (G6).** `pick` fell back to the
+  only loaded model for any name, so a wrong id produced confident output from a different model; it
+  now serves an omitted name but rejects a non-empty unknown one, naming what is served (the
+  multi-model behavior was already correct).
+- **`POST /v1/embeddings` is registered even when no embedding model is loaded (G7).** It returned
+  Go's text/plain `404 page not found` (SDKs surface it as a wrong-URL `NotFoundError`); it now
+  returns a JSON 501 naming the `-embed-model` flag that enables it.
 - **Sampling with `top_p`/`top_k` no longer full-sorts the whole vocabulary on the host every
   token.** The filtered-sampling path softmaxed all V logits and then ran a `sort.Slice` over all V
   — an O(V·log V) sort whose per-comparison reflection cost made it *present* as linear in V, single-
