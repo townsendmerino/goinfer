@@ -1,237 +1,257 @@
 # Design: draining `/admin/models/unload` so it can free device memory safely
 
-**Status:** design only — nothing implemented. This note exists to be read before any code, and is
-the durable target for the two code comments that already describe the hazard inline:
-`handleAdminUnload` (internal/serveapp/admin.go:95–121) and the reciprocal note at `resident.Close`
-(metal/model.go:972–976). Update both to cite this file when the fix lands.
+**Status:** design only — nothing implemented. Read this before any code. It is the durable target
+for the two comments that describe the hazard inline: `handleAdminUnload` (internal/serveapp/admin.go:95–121)
+and the reciprocal note at `resident.Close` (metal/model.go:972–976); update both to cite this file
+when the fix lands.
 
 **One line:** `handleAdminUnload` must release the model's native memory, but the obvious
 `lm.model.Close()` after the registry delete is a use-after-free. The fix is a *drain* — wait out
-every in-flight request that holds the model pointer, then close — implemented with a per-model
-liveness `sync.RWMutex` and a two-phase unload (unpublish, then drain-and-close).
+every in-flight request that touches the model, then close — implemented with a **liveness
+`sync.RWMutex` keyed to the `*decoder.Model`**, a **regMu-atomic unpublish+decide**, and a
+**detached drain-and-close** with a bounded-wait HTTP response.
+
+**Revision (design reviewed).** Five points were raised in review; all are resolved below, and
+resolving them changed two things from the first draft: the liveness lock is now **per-`*decoder.Model`,
+not per-entry** (§A, closes a straggler-sibling UAF), and the unload response is a **bounded wait →
+200-or-202**, not an unbounded block (§Q1/§Q4).
 
 ---
 
 ## The problem, as established
 
 `handleAdminUnload` (admin.go:122) deletes the model from the registry and never calls `Close()`.
-purego has no ARC and there are no finalizers anywhere in `metal/`, `cuda/`, or `gpu/`, so GC
-reclaims the Go wrappers and never the native device allocations. Measured on Metal:
-**+451 MB per unload/reload cycle** of a ~450 MB model, and memory does not return. It is
-**backend-agnostic** — CUDA VRAM and WebGPU buffers leak identically — and on an 8 GB card an
-unload-then-reload of a large model fails to allocate, because the card cannot hold two copies.
+purego has no ARC and there are no finalizers in `metal/`, `cuda/`, or `gpu/`, so GC reclaims the Go
+wrappers and never the native device allocations. Measured on Metal: **+451 MB per unload/reload
+cycle** of a ~450 MB model, memory does not return. **Backend-agnostic** — CUDA VRAM and WebGPU
+buffers leak identically — and on an 8 GB card an unload-then-reload of a large model fails to
+allocate because the card cannot hold two copies.
 
-`Model.Close` is complete and idempotent on all three backends (verified: Metal N-11 `ReleaseAll`
-empties the ledger; CUDA `reqCh == nil` guard; WebGPU C-26 `closed` flag + register-at-creation
-release list). So *closing is safe*. **Closing at the wrong time is not.**
+`Model.Close` is complete and idempotent on all three backends (Metal N-11; CUDA `reqCh==nil` guard;
+WebGPU C-26 `closed` flag). So *closing is safe.* **Closing at the wrong time is not.**
 
 ### Why the one-liner is a use-after-free
 
-Every request handler has the shape `pick() → work → enter()`. `pick` (openai.go:213) returns the
+Every handler has the shape `pick() → work → enter()`. `pick` (openai.go:213) returns the
 `*loadedModel` under `regMu`; `enter` (openai.go:166) is where `lm.mu` is finally taken. Between them
-the **preamble** touches `lm.model` and `lm.tk` with **no lock held** — in `handleChat`, that is
-`pick` (openai.go:464) → `promptTooLargeForContext` → `chatPrompt` (a full BPE over the prompt) →
-`prepare` → `enter` (openai.go:489). `handleAdminUnload`'s current `lm.mu.TryLock()` sees an idle
-model (the preamble holds no mutex) and would grant the unload while that request is mid-tokenize
-against weights about to be freed. The request then `enter`s and `drive()`s on a torn-down backend.
+the **preamble** touches `lm.model`/`lm.tk` with **no lock** — in `handleChat`: `pick` (openai.go:464)
+→ `promptTooLargeForContext` → `chatPrompt` (a full BPE) → `prepare` → `enter` (openai.go:489).
+`handleAdminUnload`'s `lm.mu.TryLock()` sees an idle model and would grant the unload while that
+request is mid-tokenize against weights about to be freed; the request then `drive()`s on a torn-down
+backend. On CUDA that is a driver SIGSEGV that kills the server; on CPU it is a quieter read of reused
+memory. Seven handlers share the shape:
 
-The seven handlers sharing the shape:
-
-| handler | file:line of `pick` |
+| handler | `pick` |
 |---|---|
 | `handleChat` | openai.go:464 |
 | `handleCompletions` | openai.go:542 |
-| `handleMessages` (Anthropic) | anthropic.go:406 |
-| `handleCountTokens` (Anthropic) | anthropic.go:535 |
+| `handleMessages` | anthropic.go:406 |
+| `handleCountTokens` | anthropic.go:535 |
 | `handleChatTools` | tools.go:19 |
 | `handleResponses` | responses.go:86 |
 | `serveVisionChat` | vision_serve.go:119 |
 
-The in-generation case is already safe: once a request is past `enter`, it holds `lm.mu`, so a
-mid-stream unload gets 409 (verified on Metal with a 400-token stream). The hole is the preamble.
+The in-generation case is already safe (past `enter`, the request holds `lm.mu`, so a mid-stream
+unload 409s — verified on Metal). The hole is the preamble.
 
 ---
 
 ## The design
 
-Two mechanisms, both needed (see Q3 for why neither subsumes the other):
+Two locks, one detached worker, one guarded decision.
 
-1. **Liveness lock** — a second `sync.RWMutex` on `loadedModel` (call it `live`), *distinct from the
-   existing generation mutex `mu`*. It answers "is any request using this entry *right now*."
-   - The request path takes `live.RLock()` at `pick` and holds it until the handler returns —
-     spanning the preamble *and* the generation, which is what closes the window (today's `mu` only
-     covers `enter`→`exit`).
-   - `pick` acquires `live.RLock()` **while still holding `regMu`** (atomic with the registry
-     lookup), then releases `regMu`. This is the ordering hinge (proof below).
+- **`mu` (existing, per entry):** serializes generation, held `enter`→`exit`. Unchanged.
+- **liveness (new): a `sync.RWMutex` keyed to the `*decoder.Model`,** shared by every registry entry
+  backed by that model (§A explains why per-model, not per-entry). A server side-table
+  `map[*decoder.Model]*modelLiveness` guarded by `regMu`, where `modelLiveness{ rw sync.RWMutex; refs int }`;
+  `refs` counts registry entries backed by the model. Every request path takes `rw.RLock()` at model
+  resolution and holds it until the handler returns — spanning the preamble *and* the generation,
+  which is what the existing `mu` misses.
 
-2. **Two-phase unload** in `handleAdminUnload`:
-   - **Phase 1 — unpublish (synchronous, under `regMu.Lock`):** `delete(s.models, name)`. After this,
-     no new `pick` can find the model. This is the instant the model is "unloaded" from the API's
-     point of view; other models keep serving.
-   - **Phase 2 — drain + close:** acquire `live.Lock()` (write). Because unpublish already happened,
-     **no new `RLock` holder can appear**, so existing holders decrease monotonically to zero and the
-     write lock is *guaranteed to be acquired* — this is the drain. Then, **iff this is the last
-     registry entry backed by the `*decoder.Model`** (Q3), call `lm.model.Close()`. Respond 200.
+### §A — why liveness is keyed to the model, not the entry (straggler UAF)
 
-**Ordering-correctness (why the drain terminates and never races the delete).** `pick` takes
-`live.RLock` under `regMu.RLock`; unload's `delete` runs under `regMu.Lock`; the two are mutually
-exclusive. So for any request and any unload, exactly one of:
-- unload's `delete` wins → the later `pick` doesn't find the model → no `RLock` taken → nothing to
-  drain from that request; or
-- `pick` wins → it holds `live.RLock` *before* unload deletes → unload's later `live.Lock` waits for
-  it.
+A base and its compute-time adapters share one `*decoder.Model` (main.go:537). With a *per-entry*
+lock and detached drains, this sequence UAFs: unload adapter A (not last owner, so it does not close)
+while a request of A is still in flight; later unload base B (now last owner) drains only *B's* lock
+and closes the model — while A's straggler request is still reading it. The registry scan says "no
+entry routes to the model," which is true, yet a deleted entry can still have in-flight work on the
+model. A per-**model** lock closes this: A's straggler holds the model's `RLock`, so B's close (the
+model's `Lock`) waits for it. Consequence that also simplifies things: a **non-last** unload does not
+drain at all — it just unpublishes; only the **last** unload drains the model and closes.
 
-Unload releases `regMu` **before** taking `live.Lock` (it never holds both), so there is no lock-order
-cycle. After `delete`, no code path can find the model to `RLock` it, so `live.Lock` cannot be
-starved by new readers and completes once the finite set of in-flight holders drains. Go's RWMutex
-writer-priority is irrelevant here precisely because no new readers arrive.
+### Phase 1 — unpublish + decide, atomically under `regMu` (answers #1 and #2)
 
-This **replaces** unload's `mu.TryLock` with `live.Lock`; `mu` stays as the generation serializer,
-untouched.
+Under a single `regMu.Lock`:
+1. `delete(s.models, name)` — the entry is now unroutable; no new `pick` can find it.
+2. `ml := s.liveness[lm.model]; ml.refs--` — **decrement after delete.**
+3. decide: `last := ml.refs == 0`. If `last`, remove `s.liveness[lm.model]` and hand the model to the
+   detached closer (Phase 2). Otherwise the model stays; nothing is freed.
+
+Release `regMu`. The **close-decision is made under `regMu`; the `Close` itself runs outside it**
+(Phase 2) — holding `regMu` across a multi-second drain would freeze all request routing serverwide.
+
+**#1 — a concurrent load cannot race the decision.** A load that would share an existing model
+(today only startup `--adapter`; any future runtime equivalent) must look up the base entry under
+`regMu` to obtain its `*decoder.Model`. Phase 1 deletes the entry and decrements `refs` under the same
+`regMu`, so the load's lookup is serialized against it: if the lookup precedes Phase 1 it bumped
+`refs` first, so Phase 1 sees `refs>0` and does **not** close; if it follows Phase 1 the entry is
+gone, so the share fails to resolve. There is no interleaving in which a new sharer is published
+against a model already decided-to-close. **Invariant for the future:** any publish that shares an
+existing `*decoder.Model` must do its lookup-and-`refs++` inside one `regMu` section — the same rule
+that makes today's fresh-model loads (which allocate a new model, `refs==1`) trivially safe.
+
+**#2 — delete/decrement strictly before the last-owner test, and why.** Two concurrent unloads of
+entries sharing one model must not *both* decline to close — that orphans the model with no entry left
+to retry, and unlike a double-close (idempotent, harmless) a double-decline is unrecoverable. With
+decrement-before-test under `regMu`, the two Phase-1 sections serialize: the first decrements to
+`refs=1` and declines; the second decrements to `refs=0` and closes. Exactly one closes. Reverse it —
+test the count while still counting yourself — and both can read `refs≥1` and both decline. Write this
+into the code comment; the ordering looks arbitrary and is not. (Stated in refcount terms; the
+equivalent scan-based phrasing is "`delete` self from the registry *before* scanning it for
+siblings," so the second unloader necessarily sees an empty field.)
+
+### Phase 2 — detached drain-and-close (answers #3)
+
+If Phase 1 decided `last`, a **server-lifetime goroutine** — not tied to `r.Context()` — takes the
+model's `rw.Lock()`. Because the model is now absent from both the registry and the liveness table, no
+new `RLock` can appear, so the write lock is acquired once the finite set of in-flight holders (across
+all now-deleted sibling entries) drains — **guaranteed to terminate**. Then it calls `lm.model.Close()`
+and signals done.
+
+**The drain must outlive the request.** The entry is already unpublished, so nothing will ever retry
+it; if an admin client disconnects (or a `curl` times out) mid-drain and that aborted the close, the
+model would be orphaned for the process lifetime. So the goroutine owns the close and runs to
+completion regardless of the handler; the handler only *observes* it (below). `sync.RWMutex.Lock` is
+not context-cancellable, which is correct here — we do **not** want cancellation.
+
+### The HTTP response — bounded wait, 200 or 202 (answers #4, supersedes the draft's pure block)
+
+The draft said "block until freed, 200." Review's steelman of 202 is right on one point: because the
+drain now waits for the **whole queue**, not just the active generation (see §Q5), a pure block is an
+admin endpoint that can hang for a long time with no recourse. So:
+
+- Phase 1 is synchronous and instant → the model is unroutable the moment the call is accepted.
+- The handler waits up to a bounded **`T`** (a few seconds) on the closer's done signal:
+  - drained within `T` → **200** `{status:"unloaded", freed:true}`.
+  - not yet → **202** `{status:"unloading", freed:false}` and the detached closer keeps going.
+
+This keeps the draft's good contract — **`freed:true` means the memory is actually released** — for
+the common fast case, which is what makes unload→reload safe on an 8 GB card. It adds recourse for the
+pathological busy-queue case instead of hanging. The residual: after a 202 an operator who reloads
+before `freed:true` can still hit the two-copies OOM — but that is now an observable, documented
+contract ("reload after `freed:true`"), not a silent hang and not a crash. Pure block does not
+actually beat this: it only moves the same wait to inside the one call, at the cost of no recourse.
+`T` can be a flag later; not needed for v1.
+
+### `withModel` is the only route to a request-path model (answers #5)
+
+A returned release func relies on every handler deferring it on every exit path (preamble 400s,
+panic, disconnect); a single miss leaks a **reader**, which hangs the model's `Lock` forever — worse
+than the memory leak. And "handlers remember to defer" is not enforcement. So:
+
+**Eliminate `pick` as a callable function.** Fold its lookup into `withModel(w, name, fn func(*loadedModel))`,
+which is the *sole* code that turns a request's model name into a `*loadedModel`: it does the
+`regMu`+`RLock` acquisition, `defer`s the `RUnlock` once (covering panic / early return / disconnect),
+resolves not-found to the standard 404, and calls `fn`. With no `pick` symbol in the package, the
+author of the eighth handler *cannot* call it — the safety is a property of the code, not of memory.
+The non-request lookups that legitimately need no liveness (`modelByName`, `servedNames`, `handleModels`)
+stay separate and visibly distinct. A lint test asserts no handler file reads `s.models` directly.
+Each of the seven handlers is restructured to `return s.withModel(w, req.Model, func(lm){ ... })`.
 
 ---
 
-## Questions the design must answer
+## The seven original questions (updated)
 
-### Q1 — SSE streams: block, don't 409, don't time-out-into-leak
+**Q1 — SSE streams.** Bounded wait, not 409 and not unbounded block. 409-on-any-reader makes unload
+impossible on a busy server (never a zero-holder instant); unbounded block hangs with no recourse
+(§Q4). Bounded wait → 200 if drained within `T`, else 202 with the drain detached (§Phase 2). The
+model is unroutable immediately either way.
 
-A long generation holds `live.RLock` for its whole duration (minutes for a max-length stream).
-Three options for unload when a reader is present:
+**Q2 — release safety.** A `withModel` wrapper that is the *only* route (pick removed), so no exit
+path and no future handler can skip the release. Enumerated seven handlers above.
 
-- **409 immediately (the starting shape's `TryLock`).** Rejected. On a busy server there may never be
-  a zero-holder instant, which makes unload *effectively impossible* — the operator can never reclaim
-  the memory. This is the failure the prompt flagged, and it is real.
-- **Time out, then give up.** Rejected. Leaves the model unpublished but its memory unreleased — a
-  leak with extra steps, and now the model is gone from the API too.
-- **Block on the drain, return 200 when the memory is actually freed. ← recommended.** Terminates
-  because unpublish (Phase 1) stops new readers, so the drain is bounded by the in-flight set, which
-  is itself bounded by `max_tokens` and by client disconnect (`r.Context()` cancel → `drive` stops →
-  the deferred release fires). The model is unroutable the instant Phase 1 runs, so the rest of the
-  server is unaffected while unload waits. **"200 means freed"** is the contract that makes
-  unload→reload safe on a small card.
+**Q3 — where the ownership check fits.** Two orthogonal checks, now unified in one structure. The
+`modelLiveness.refs` count is the **structural** check ("does any registry entry still route to this
+model") and replaces the standalone scan; the `modelLiveness.rw` lock is the **temporal** check ("is
+any in-flight request still touching it," across *all* sibling entries — §A). Close requires both:
+`refs==0` **and** the drain complete. Neither subsumes the other — an idle-but-referenced model
+(`refs>0`, `rw` free) must not close, and a de-referenced-but-still-draining model (`refs==0`, `rw`
+held) must not close. (The stashed last-owner-scan work maps onto maintaining `refs`; an O(1)
+decrement replaces the O(n) scan, but the scan is an acceptable equivalent if refcount wiring at every
+load site is judged too invasive.)
 
-Note this **changes the mid-stream behavior** from today's `409 busy; retry` to *block until the
-stream ends, then 200*. That is the point: `409` was only ever safe because we never actually freed
-anything. A second unload of the same name while the first drains gets 404 (already unpublished),
-which is acceptable idempotency.
+**Q4 — 202 re-argued.** Adopted as the >`T` branch (§the HTTP response). Recommendation is the
+bounded-wait hybrid, which survives the strongest 202 argument (recourse for the long-queue case)
+while keeping `freed:true`⇒safe-reload for the common case.
 
-Rejected alternative worth recording: **202 + background drain-and-close.** Returns immediately, closes
-in a goroutine. Rejected because "unloaded" would then *precede* the memory actually being freed, so
-an immediate reload on an 8 GB card hits the two-copies OOM this whole fix exists to prevent.
-Synchronous drain is what makes the response mean something.
+**Q5 — queued requests.** Premise corrected: admission is non-blocking *before* generation
+(`limitInflight`, helpers.go:78, is a non-blocking semaphore → 503; `tryEnter`, openai.go:153, does a
+non-blocking queue send → 429). The only post-`pick` block is `mu.Lock`. So a "queued" request has
+already resolved its model and holds the liveness `RLock`; it is drained like any other and **served
+to completion** on the still-valid model (the close waits for it), not errored. Requests arriving
+after unpublish get 404.
 
-### Q2 — a release func is not enough; scope the lock in one place
+**Q6 — shutdown.** Leave graceful shutdown unchanged; do not use the drain there. Process exit
+reclaims device memory via the OS; the leak only matters for a long-lived unload/reload process.
+Wiring the drain into shutdown adds executor-teardown/checkpoint risk for no benefit, and a detached
+unload-drain in flight at shutdown simply dies with the process (harmless). `Model.Close`'s startup
+caller (main.go:707, `.giw` `--quant` cleanup, pre-executor) stays untouched.
 
-Seven handlers share the shape today, and the eighth will be written by someone who never read this
-note. A bare `release := pick(...)` relies on every handler deferring it on **every** exit route —
-the preamble's early-return 400s, a panic, a client disconnect mid-preamble. Miss one and you leak a
-**reader**, which is strictly worse than leaking memory: a permanently-held `RLock` means unload's
-`live.Lock` never completes, so unload hangs forever.
+**Q7 — blast radius.** The lock/drain/refcount logic is pure Go in `internal/serveapp`, backend-
+independent → fully unit-testable on the Mac with the CPU backend (no device), including the §Q4
+regression test. Metal: real reclaim re-verifiable here (+451 MB→~0). WebGPU: `gpu-darwin` CI / a Mac
+WebGPU device. **CUDA cannot be verified here (no hardware), and its failure mode — `drive()` on a
+torn-down context, a driver SIGSEGV that kills the server — is the fatal one the drain exists to
+prevent. Confirming it on real CUDA requires the Linux box.** That is the residual risk to call out.
 
-Recommendation: **do not hand back a bare func.** Put acquisition and release in a **single
-choke-point wrapper** — `s.withModel(w, name, func(lm *loadedModel) { ... })` — that does the
-`regMu`+`RLock` dance, `defer`s the `RUnlock` once, and runs the handler body. One `defer` in one
-place covers panic, early return, and disconnect for all seven handlers and every future one; a
-handler physically cannot skip the release because it does not own it. The cost is restructuring each
-handler body into a closure — mechanical, and it also centralizes the `modelNotFound` path.
+---
 
-If the wrapper is judged too invasive, the fallback is `pick` returning `(lm, release)` with a
-`goinfer_testhooks` lint test asserting every `pick(` call site is immediately followed by
-`defer` — but the wrapper is the design that is *hard to get wrong*, which is the requirement.
+## Regression test (the honesty hook)
 
-### Q3 — the last-owner scan is orthogonal and still required
+Park a request **inside the preamble window** (holding the model `RLock`, before `enter`) and assert
+unload cannot free the model out from under it. Use the existing **`goinfer_testhooks`** build tag
+(CI already runs `go test -race -tags goinfer_testhooks ./...`; pattern in `gpu/testhooks_gen.go`):
+production build defines `func preamblePark() {}` (empty, inlined, not a branch); the test build
+defines `var preamblePark = func(){}`, settable by a test. `withModel` calls `preamblePark()`
+immediately after taking the `RLock`. The test blocks the hook, fires a request (which parks holding
+the lock), then fires an unload and asserts it returns 202/`freed:false` and that **no `Close` ran**
+while parked; releasing the request then lets the drain complete.
 
-The stashed last-owner-refcount work (a scan of `s.models` for another entry sharing the same
-`*decoder.Model`) and the liveness lock answer **different** questions:
+**Honest against reordering:** the invariant is "a request parked in the preamble holds the liveness
+lock ⇒ the drain cannot complete." The hook lives at the acquisition site, so if someone moves the
+`RLock` down to `enter` (reopening the window), the parked request no longer holds it, the drain
+completes and closes while it is parked, and the test fails — which is exactly the reintroduced bug.
 
-- **Liveness lock** — is any *request* using **this loadedModel entry** right now? (temporal)
-- **Last-owner scan** — does any *other registry entry* (a base and its compute-time adapters share
-  one `*decoder.Model`; main.go:537) still reference this model? (structural)
+---
 
-Neither subsumes the other. An adapter can be perfectly idle — its own `live` fully drained — yet
-still share `base.model`; closing the base on the base's unload would free weights the adapter's
-*next* request reads. And a base with no adapters still needs the liveness drain against its own
-in-flight requests. So **`Close` fires only when both hold: this entry's `live` is drained *and* no
-sibling shares the `*decoder.Model`.** The per-entry liveness lock deliberately does not span
-siblings — the scan is what bridges entries. `Model.Close` already releases every adapter registered
-on the base, so the last-owner close frees the whole family at once.
+## Compatibility / CHANGELOG
 
-### Q4 — regression test via the `goinfer_testhooks` seam, honest against reordering
+Mid-stream unload changes on an observable public endpoint: today `409 busy; retry`, after the fix an
+immediate unpublish + `200 freed:true` (fast) or `202 freed:false` (slow). This belongs in the
+`[Unreleased]` CHANGELOG when the code lands, with the `freed` field documented.
 
-The test must park a request **inside the preamble window** (holding `live.RLock`, before `enter`)
-and assert unload does not free the model out from under it. The park point must not be a test-only
-branch in production code.
-
-Use the existing **`goinfer_testhooks`** build tag (CI already runs `go test -race -tags
-goinfer_testhooks ./...`; the pattern is `gpu/testhooks_gen.go`). Add, in `internal/serveapp`:
-- production build (`//go:build !goinfer_testhooks`): `func preamblePark() {}` — empty, inlined to
-  nothing, not a branch;
-- test build (`//go:build goinfer_testhooks`): `var preamblePark = func() {}`, settable by a test.
-
-The shared `withModel` wrapper calls `preamblePark()` **immediately after taking `live.RLock`**, i.e.
-inside the window. The test sets it to block on a channel, fires a request (which parks holding the
-lock), then fires an unload and asserts it **blocks / does not complete** until the parked request is
-released — and that no `Close` ran meanwhile.
-
-Honesty against reordering: the invariant under test is "a request parked in the preamble holds the
-liveness lock ⇒ unload cannot drain." If someone later moves the `RLock` acquisition from `pick`/the
-wrapper down to `enter` (reopening the window), the parked request no longer holds the lock, unload
-drains and closes while it is parked, and the test **fails** — which is exactly the reintroduced bug.
-The hook lives at the acquisition site, so it tracks the lock, not a line number.
-
-### Q5 — queued requests have already picked; serve them, don't fail them
-
-The prompt's premise ("a request waiting on `--max-queue` has not picked yet") is **incorrect** —
-worth stating plainly so no one designs around a false model. Admission is entirely non-blocking
-*before* generation: `limitInflight` (helpers.go:78) is a non-blocking semaphore (503 if full),
-and `tryEnter` (openai.go:153) does a non-blocking channel send for the queue slot (429 if full).
-The only place a request **blocks** is `mu.Lock` inside `tryEnter` — which is **after** `pick` and
-the preamble. So a "queued" request is one holding an inflight slot + a queue slot + (under this
-design) `live.RLock`, blocked on `mu.Lock`.
-
-Consequence: such a request is a live holder and is **drained like any other** — unload's `live.Lock`
-waits for it. It runs its generation to completion on the still-valid model (`Close` cannot run until
-the drain completes), then releases. So it is **served normally, not errored**. No generic failure,
-no special "unloaded" error path needed. Requests arriving *after* unpublish simply 404. This is
-simpler than injecting an unload-aware error and is correct.
-
-### Q6 — do not use the drain at shutdown
-
-Recommendation: **leave graceful shutdown unchanged.** It never calls `Close` today, which is
-harmless: at process exit the OS reclaims all device memory regardless. The leak only matters for a
-**long-lived** process doing repeated unload/reload — the admin path, not shutdown. Wiring the drain
-into shutdown would add executor-teardown ordering and checkpoint-interaction risk for zero benefit
-(the process is dying). Keep it out. This also keeps `Model.Close`'s startup caller (main.go:707,
-`.giw` `--quant` mismatch cleanup, before the executor starts) untouched, per scope.
-
-### Q7 — blast radius: what can be verified here, and what cannot
-
-- **Lock/drain semantics** are pure Go in `internal/serveapp`, independent of any backend. Fully
-  unit-testable on the Mac with the CPU backend (no device): the Q4 park-and-assert test needs no GPU.
-  This covers the *correctness of the drain itself*, which is the part most likely to be wrong.
-- **Metal** — real memory reclaim is verifiable on this Mac: the existing repro (+451 MB/cycle → ~0)
-  re-run after the fix.
-- **WebGPU** — `gpu-darwin` CI builds and tests it; a Mac WebGPU device can exercise the reclaim.
-- **CUDA — cannot be verified here (no hardware).** And the CUDA failure mode is the fatal one: the
-  one-liner's UAF surfaces as `drive()` on a torn-down context — a driver SIGSEGV that kills the
-  server. The drain is designed to make that path unreachable, but **confirming it on real CUDA
-  requires the Linux box.** This is the residual risk to call out explicitly: everything except the
-  CUDA fatal-path is verifiable on the Mac; the CUDA fatal-path is exactly what we cannot test here.
+**`?wait=false`?** Not worth preserving the old `409` — it was safe only because nothing was ever
+freed, and it forced callers into a retry loop that could never succeed on a busy model. A scripted
+non-blocking caller is better served by `?wait=false` meaning **"skip the bounded wait, return 202
+now"** (still unpublishes and still drains-and-closes detached), then polling `freed` via
+`GET /v1/models`. That gives scripts a clean non-blocking path *and* real reclamation, which the old
+`409` never did. So: add `?wait=false` = immediate 202; drop the `409-busy` semantics.
 
 ---
 
 ## Scope
 
-- Do **not** touch `Model.Close`'s startup caller (main.go:707). It runs before the executor starts,
-  so `stopExec` is a no-op and no drain is involved; it stays working unchanged.
-- Do **not** wire the drain into graceful shutdown (Q6).
-- `Model.Close` itself is not modified — it is already complete and idempotent. Only the *timing* of
-  the call (drain-gated, last-owner-gated) is new.
+- Do **not** touch `Model.Close`'s startup caller (main.go:707) — pre-executor, no drain involved.
+- Do **not** wire the drain into shutdown (§Q6).
+- `Model.Close` itself is unchanged — already complete and idempotent; only the *timing* (drain-gated,
+  `refs==0`-gated, detached) is new.
 
 ## Recommendation summary
 
-Liveness `sync.RWMutex` per `loadedModel`, acquired at `pick` under `regMu` and released by a single
-`withModel` wrapper; unload = unpublish-then-`live.Lock`-drain-then-(last-owner)-`Close`, blocking
-until freed (200 = freed). Keep the last-owner scan; keep `mu` for generation serialization; leave
-shutdown and the startup `.giw` path alone. Regression test parks in the window via the
-`goinfer_testhooks` seam. CUDA's fatal path is the one thing the Mac cannot verify.
+Per-`*decoder.Model` liveness `sync.RWMutex` + `refs` in a `regMu`-guarded side-table; `RLock` taken
+only through a `withModel` wrapper that is the sole route to a request-path model (pick removed);
+unload = `regMu`-atomic {delete, `refs--`, decide} → detached drain (`rw.Lock`) + last-owner
+`Close` → bounded-wait 200/202 (`freed` field), `?wait=false` for immediate 202. Decide under `regMu`,
+close outside it; delete/decrement strictly before the last-owner test; drain detached from the
+request. Keep `mu` for generation; leave shutdown and the startup `.giw` path alone. CUDA's fatal path
+is the one thing the Mac cannot verify.
