@@ -1046,13 +1046,19 @@ adding `top_k=20` is faster than leaving it off, because `top_k` bounds the set 
 
 **Two candidate approaches — recorded so neither is re-proposed from intuition:**
 
-1. **Lazy Z (host-side, no new kernels).** The full softmax denominator `Z` is needed only for two
-   things: reporting logprobs, and resolving a draw that lands in the distribution's tail. So take
-   the top-K by *logit* with no `exp` at all, sum those K exactly, and bound the unseen remainder by
-   `(V-K)·exp(x_K - m)`. If the draw resolves inside K **regardless of where the true Z sits inside
-   that interval**, the full pass is skipped; otherwise fall back deterministically to the exact
-   full computation. Same adaptive-bound shape as the nucleus selection that already works in
-   `topFilterLogits`, so the machinery and the proof obligation are both familiar. Cheapest to try.
+1. ~~**Lazy Z (host-side, no new kernels).**~~ **BUILT AND REFUTED (2026-08-09) — do not re-propose
+   from intuition.** The idea: top-K by *logit* with no `exp`, sum those exactly as `S_K`, bound the
+   unseen remainder by `R = (V-K)·exp((x_K-m)/T)`, and skip the full pass whenever the draw resolves
+   to the same token at BOTH ends of Z's interval `[S_K, S_K+R]`. (That endpoint-index condition is
+   itself a correction: the original "lands inside the top-K prefix" shorthand pins the prefix, not
+   the token — `t = r·Z` slides as Z moves and can cross a boundary inside K.) Implemented, proven
+   correct against a slow exact reference — 432 matched draws across peaked / flat / tie-heavy plus
+   boundary-straddling cases — and then measured **3.3× SLOWER at 152k, 4.4× at 262k**.
+   The bound is structurally too loose here: `R < S_K` needs a gap of `ln((V-K)/S_K) ≈ 11.2 nats`,
+   and on real qwen2.5-coder-0.5b decode logits the gap is 5.29 nats at K=32 (**R/S_K = 366**), 8.97
+   at K=256 (8.65), reaching 11.6 only at K=2048 (0.60) — where the interval still spans 60% so most
+   draws straddle a boundary and grow again, each growth costing a full O(V) pass. Reverted; table in
+   `docs/plan-still-slow.md` P2.
 2. **On-device sampling.** Subsumes this *and* the readback branch above — the V-wide logit transfer
    disappears entirely rather than being made cheaper. Strictly better if funded, strictly more
    expensive: new CUDA + Metal kernels plus a device box to validate.
@@ -1085,6 +1091,10 @@ and gated by `decoder.TestTopK1_MatchesGreedy`.
 
 *Metal: the sampler-level predicate applies on every backend, so Metal inherits the routing; an e2e
 A/B on the Mac is **pending** and not claimed here.*
+
+*Banked, not built: `top_k=1` is now greedy-routed (ed81e13), so it could also join greedy
+speculative eligibility — those paths gate on `temperature <= 0` directly, so it would be a
+deliberate second change, not an automatic consequence.*
 
 **Prerequisite — SATISFIED (2026-08-09).** Routing `top_k=1` to a device argmax requires that argmax
 to break index ties the same way the host does (ascending token id, the amendment-1 contract

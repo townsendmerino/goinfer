@@ -124,7 +124,55 @@ greedy across seeds and both vocab widths (extend `sampler_sweep_*_test.go`); (b
 CUDA box — expect ≈272→~312 and ≈148→~180, i.e. the `top_k=1` column collapses onto greedy;
 (c) same sweep on Metal. CPU backend is unaffected (host argmax already, no readback to skip).
 
-## P2 — Lazy Z: kill the full-vocab softmax on the temperature-only path (days; host-only, no device box)
+## P2 — Lazy Z — **BUILT, MEASURED, REFUTED (2026-08-09). Do not re-propose from intuition.**
+
+> **NO-GO.** Lazy Z was implemented, proven CORRECT against a slow exact reference (432 matched
+> draws across peaked / flat / tie-heavy distributions, plus boundary-straddling draws that force the
+> grow path), and then measured **3.3× SLOWER at 152k and 4.4× slower at 262k** than the exact
+> full-vocab softmax it was meant to replace. Reverted; the temperature-only path is unchanged.
+>
+> **Why, quantitatively.** The remainder bound `R = (V−K)·exp((x_K−m)/T)` is far too loose at a large
+> vocabulary. For it to be useful you need `R < S_K`, i.e. a gap of `ln((V−K)/S_K) ≈ ln(150000/2) ≈
+> **11.2 nats**`. Measured on REAL decode logits (qwen2.5-coder-0.5b, V=151936):
+>
+> | K | max − x_K | S_K | R | R/S_K |
+> |---|---|---|---|---|
+> | 32 | 5.29 nats | 2.085 | 763 | **366×** |
+> | 256 | 8.97 nats | 2.227 | 19.27 | **8.65×** |
+> | 2048 | 11.61 nats | 2.277 | 1.366 | **0.60×** |
+>
+> So K must reach ~2048 before the bound is even comparable to the retained mass — and there the
+> interval still spans 60%, so most draws straddle a token boundary and grow again. Every growth step
+> costs a full O(V) `topKByLogit` pass, so the algorithm does several full passes where the exact path
+> does one. **The tail is not skippable this way**: real decode distributions are peaked in the top
+> few tokens but not peaked enough to dominate 150,000 unseen ones.
+>
+> **What step 1's measurement established (still valid, and it is the useful output).** The
+> temperature-only host cost is **~30–34 ns per vocabulary entry**, flat across widths: 1.00 ms/tok at
+> 32k, 5.25 ms/tok at 152k, 8.00 ms/tok at 262k. Against the readback (0.12 ms on qwen, 0.43 ms on
+> gemma3-1b, from P1's fast-path A/B), the host term is **~78% of the temperature-only penalty and the
+> readback ~2%** — so this cost is real and worth attacking, just not by bounding Z. **P3 (device-side
+> sampling) now owns essentially all of it**, which is the opposite of the earlier framing that treated
+> the readback as the main term.
+
+### Original design (retained, with its error corrected)
+
+**DESIGN CORRECTION.** The resolution condition below originally read "resolves inside K when it
+lands inside the top-K prefix for every Z in [S_K, S_K+R] (conservatively: `r < S_K/(S_K+R)`)". That
+is **insufficient**: it pins which PREFIX the target lands in, not which TOKEN. The target is
+`t = r·Z`, so as Z moves across the interval, t SLIDES along the prefix and can cross a token
+boundary while staying inside the top-K — returning a different token than the exact path for
+near-boundary draws. The correct condition is index equality at both endpoints:
+
+    resolve iff index(r·S_K) == index(r·(S_K+R))
+
+where `index(t)` is the token the CDF walk selects at unnormalized target t (descending-prob,
+ascending-id ties, comparator `t < cum` matching `drawFull`). On disagreement, grow K and retry; at
+K = V, R = 0, the interval collapses and the answer is exact by construction, so there is no separate
+fallback path. The implementation used this corrected rule and was verified against it — the refutation
+above is about COST, not correctness.
+
+
 
 The temperature-only path (`drawFull(softmaxStable(...))`) normalizes all V every token: measured
 **~44 ns per vocab entry, flat 32k→262k** (+1.19 / +6.66 / +11.57 ms at phi3/qwen/gemma widths), a
