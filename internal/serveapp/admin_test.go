@@ -76,19 +76,15 @@ func TestServe_admin(t *testing.T) {
 		t.Errorf("generate after load: %d, want 200", code)
 	}
 
-	// unload-while-busy → 409 (hold the model's mutex to simulate a generation).
-	srv.regMu.RLock()
-	lm := srv.models["t"]
-	srv.regMu.RUnlock()
-	lm.mu.Lock()
-	if code := post(ts, "/admin/models/unload", `{"name":"t"}`); code != http.StatusConflict {
-		t.Errorf("unload while busy: %d, want 409", code)
-	}
-	lm.mu.Unlock()
-
-	// unload → 404 on a subsequent request → reload.
+	// unload an idle model → 200 freed (the drain completes at once; native memory released). The
+	// old contract was "busy → 409"; unload now DRAINS instead of refusing — the in-flight-vs-unload
+	// race is the drain regression test's job (TestUnloadDrain_*), not this cycle test.
 	if code := post(ts, "/admin/models/unload", `{"name":"t"}`); code != 200 {
 		t.Errorf("unload status %d, want 200", code)
+	}
+	// A second unload of the now-gone model → 404.
+	if code := post(ts, "/admin/models/unload", `{"name":"t"}`); code != http.StatusNotFound {
+		t.Errorf("second unload status %d, want 404", code)
 	}
 	if code := chat(); code != http.StatusNotFound {
 		t.Errorf("generate after unload: %d, want 404", code)

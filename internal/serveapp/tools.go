@@ -16,11 +16,11 @@ import (
 // unambiguous (one tool or a forced function), generates, then PARSES the output
 // against the family's template into OpenAI tool_calls.
 func (s *server) handleChatTools(w http.ResponseWriter, r *http.Request, req chatReq) {
-	lm := s.pick(req.Model)
-	if lm == nil {
-		s.modelNotFound(w, req.Model)
-		return
-	}
+	s.withModel(w, req.Model, func(lm *loadedModel) { s.serveChatToolsWith(w, r, req, lm) })
+}
+
+// serveChatToolsWith runs the tool-calling generation. Reached ONLY through withModel (liveness RLock held).
+func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req chatReq, lm *loadedModel) {
 	if lm.tmpl == nil || !lm.tmpl.SupportsTools() {
 		writeErr(w, http.StatusBadRequest, "this model has no tool-calling template")
 		return

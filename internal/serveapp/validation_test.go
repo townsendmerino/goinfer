@@ -36,24 +36,24 @@ func TestPrepare_temperatureValidation(t *testing.T) {
 // server. Previously a single-model server served any name (confident wrong-model output).
 func TestPick_modelValidation(t *testing.T) {
 	single := &server{models: map[string]*loadedModel{"m": {name: "m"}}}
-	if single.pick("m") == nil {
+	if single.pickTest("m") == nil {
 		t.Errorf("single-model: correct name did not resolve")
 	}
-	if single.pick("") == nil {
+	if single.pickTest("") == nil {
 		t.Errorf("single-model: omitted name should route to the only model")
 	}
-	if single.pick("does-not-exist") != nil {
+	if single.pickTest("does-not-exist") != nil {
 		t.Errorf("single-model: unknown name resolved (should be rejected → modelNotFound)")
 	}
 
 	multi := &server{models: map[string]*loadedModel{"a": {name: "a"}, "b": {name: "b"}}}
-	if multi.pick("a") == nil {
+	if multi.pickTest("a") == nil {
 		t.Errorf("multi-model: correct name did not resolve")
 	}
-	if multi.pick("does-not-exist") != nil {
+	if multi.pickTest("does-not-exist") != nil {
 		t.Errorf("multi-model: unknown name resolved")
 	}
-	if multi.pick("") != nil {
+	if multi.pickTest("") != nil {
 		t.Errorf("multi-model: omitted name is ambiguous and must not resolve")
 	}
 }
@@ -92,4 +92,13 @@ func TestEmbeddings_unconfigured(t *testing.T) {
 	if !strings.Contains(w.Body.String(), "-embed-model") {
 		t.Errorf("error does not name the -embed-model flag: %s", w.Body.String())
 	}
+}
+
+// pickTest is a test-only wrapper for the request-path lookup (lookupLocked requires regMu). It
+// exists because pick was removed in favor of withModel; the resolution logic under test (exact
+// match + single-model fallback, G6) is unchanged.
+func (s *server) pickTest(name string) *loadedModel {
+	s.regMu.RLock()
+	defer s.regMu.RUnlock()
+	return s.lookupLocked(name)
 }

@@ -55,7 +55,7 @@ func chaosMux(srv *server) *http.ServeMux {
 // (notably 500 / a transport error on a non-cancelled request) is a failure.
 func okStatus(code int) bool {
 	switch code {
-	case http.StatusOK, http.StatusTooManyRequests, http.StatusConflict,
+	case http.StatusOK, http.StatusAccepted, http.StatusTooManyRequests, http.StatusConflict,
 		http.StatusNotFound, http.StatusBadRequest, http.StatusForbidden:
 		return true
 	}

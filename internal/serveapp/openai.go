@@ -191,6 +191,17 @@ type server struct {
 	models map[string]*loadedModel
 	cfg    config // backend/quant/lora/kv/session-dir/allow-admin for admin loads
 
+	// liveness tracks, per underlying *decoder.Model, the request holders (rw) and the number of
+	// registry entries backed by it (refs) — the machinery that lets unload DRAIN in-flight work
+	// before freeing native memory instead of racing it into a use-after-free. A base and its
+	// compute-time adapters share one *decoder.Model and thus one entry here. Guarded by regMu;
+	// see liveness.go and docs/task-admin-unload-drain.md.
+	liveness map[*decoder.Model]*modelLiveness
+	// draining is the set of served names whose entry has been unpublished but whose native memory
+	// is not yet freed (the detached drain is still running). Surfaced by /health so an operator can
+	// tell when a 202'd unload has actually reclaimed memory before reloading. Guarded by regMu.
+	draining map[string]struct{}
+
 	// Embedding (encoder) half — nil when only a generative model is served.
 	// The encoder is goroutine-safe for concurrent Encode, so /v1/embeddings is
 	// served without a mutex (the per-model mutex guards only the shared decoder).
@@ -210,9 +221,12 @@ type server struct {
 // served-name match, else (for single-model OpenAI compatibility, where clients
 // send an arbitrary name) the sole model when only one is loaded. nil otherwise —
 // the handler returns an OpenAI-shaped 404.
-func (s *server) pick(name string) *loadedModel {
-	s.regMu.RLock()
-	defer s.regMu.RUnlock()
+// lookupLocked resolves a request's model name to a loaded entry. The CALLER MUST HOLD regMu
+// (read or write). It is deliberately unexported and lock-requiring so it cannot be the route a
+// handler uses — withModel (liveness.go) is the ONLY way a request reaches a *loadedModel, because
+// withModel also takes the liveness read-lock that keeps the model alive for the request's duration.
+// Adding a handler that calls this directly would skip that lock; there is no exported pick to call.
+func (s *server) lookupLocked(name string) *loadedModel {
 	if lm, ok := s.models[name]; ok {
 		return lm
 	}
@@ -461,11 +475,12 @@ func (s *server) handleChat(w http.ResponseWriter, r *http.Request) {
 		s.handleChatTools(w, r, req)
 		return
 	}
-	lm := s.pick(req.Model)
-	if lm == nil {
-		s.modelNotFound(w, req.Model)
-		return
-	}
+	s.withModel(w, req.Model, func(lm *loadedModel) { s.serveChatText(w, r, req, lm) })
+}
+
+// serveChatText runs the text (non-vision, non-tool) chat generation. Reached ONLY through withModel,
+// so the model's liveness RLock is held for this whole call — unload cannot free it out from under us.
+func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatReq, lm *loadedModel) {
 	// Reject an over-context prompt before tokenizing it (G1c): turns a multi-MiB body from
 	// ~27 s of BPE + gigabytes of ids into a byte-length comparison.
 	if err := lm.promptTooLargeForContext(chatInputBytes(req.Messages)); err != nil {
@@ -539,11 +554,11 @@ func (s *server) handleCompletions(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	lm := s.pick(req.Model)
-	if lm == nil {
-		s.modelNotFound(w, req.Model)
-		return
-	}
+	s.withModel(w, req.Model, func(lm *loadedModel) { s.serveCompletion(w, r, req, lm) })
+}
+
+// serveCompletion runs a /v1/completions generation. Reached ONLY through withModel (liveness RLock held).
+func (s *server) serveCompletion(w http.ResponseWriter, r *http.Request, req completionReq, lm *loadedModel) {
 	if req.Logprobs != nil { // legacy Completions logprobs (integer) is unimplemented — reject cleanly (M-06)
 		writeErr(w, http.StatusBadRequest, "logprobs is not supported on /v1/completions; use /v1/chat/completions with logprobs:true")
 		return

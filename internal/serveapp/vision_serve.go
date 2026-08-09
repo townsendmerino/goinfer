@@ -116,11 +116,11 @@ func (lm *loadedModel) qwenVisionPrompt(system string, turns []chat.Turn, idx in
 // bypasses the warm-KV session). usage.prompt_tokens includes the image tokens
 // (they occupy real KV positions). Streaming + non-streaming.
 func (s *server) serveVisionChat(w http.ResponseWriter, r *http.Request, req chatReq, imgs []imageRef) {
-	lm := s.pick(req.Model)
-	if lm == nil {
-		s.modelNotFound(w, req.Model)
-		return
-	}
+	s.withModel(w, req.Model, func(lm *loadedModel) { s.serveVisionChatWith(w, r, req, imgs, lm) })
+}
+
+// serveVisionChatWith runs the multimodal generation. Reached ONLY through withModel (liveness RLock held).
+func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req chatReq, imgs []imageRef, lm *loadedModel) {
 	if !lm.visionCapable() {
 		writeErr(w, http.StatusBadRequest, "this model has no vision tower (start with --vision <dir> to enable image input)")
 		return

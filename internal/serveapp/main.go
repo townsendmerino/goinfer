@@ -229,27 +229,28 @@ type config struct {
 	backend  string
 	// quant + the per-model knobs below are server-global DEFAULTS; a --model spec
 	// can override each one (see modelSpec / modelFlag.Set).
-	quant         string
-	quantSet      bool   // was --quant given on the CLI? (vs the "int4" default) — for the .giw explicit-quant check (T1-7)
-	kvPrec        string // GPU residency KV cache precision: "" | f32 | f16 (-kv)
-	kvQuant       string // CPU KV cache storage precision: "" | f32 | i8 (-kv-quant)
-	lora          string
-	name          string // -served-model-name (applies only to a single unnamed --model)
-	kvSessions    int
-	sessionDir    string        // -session-dir (also where /admin unload snapshots warm KV)
-	kvIdleDemote  time.Duration // -kv-idle-demote: tiered KV — demote a session idle this long to disk (0 = off)
-	kvDemotedMax  int           // -kv-demoted-max: cap on the on-disk cold tier
-	streamWeights bool          // -stream-weights: page MoE expert weights out of an mmap'd .giw under a RAM budget
-	weightCacheGB float64       // -weight-cache: resident expert-weight budget in GB (0 = auto)
-	embedInt4     bool          // -embed-int4: relax the int8 embed/head pin to int4 (lossy, big-vocab small models)
-	maxQueue      int           // -max-queue: bounded per-model queue depth (0 = unbounded)
-	maxInflight   int           // -max-inflight: global cap on concurrent inference handlers (bounds pre-queue work; 0 = unbounded)
-	maxBodyBytes  int64         // -max-body-bytes: request-body cap (0 = derive from the model's context window)
-	spec          string        // -spec: "" (off) | "ngram" — lossless n-gram speculative decode
-	allowAdmin    bool          // -allow-admin: enable POST /admin/models/{load,unload}
-	requireBE     bool          // -require-backend: refuse to start when a model silently fell back off the requested backend's fast paths (resident decode / batched prefill)
-	visionPath    string        // -vision: dir holding the vision tower (SigLIP + projector) for a multimodal --model
-	visionQuant   string        // -vision-quant: "f32" (default) | "int8" (W8A8; only faster on AVX512-VNNI — a WASH on AVX2)
+	quant           string
+	quantSet        bool   // was --quant given on the CLI? (vs the "int4" default) — for the .giw explicit-quant check (T1-7)
+	kvPrec          string // GPU residency KV cache precision: "" | f32 | f16 (-kv)
+	kvQuant         string // CPU KV cache storage precision: "" | f32 | i8 (-kv-quant)
+	lora            string
+	name            string // -served-model-name (applies only to a single unnamed --model)
+	kvSessions      int
+	sessionDir      string        // -session-dir (also where /admin unload snapshots warm KV)
+	kvIdleDemote    time.Duration // -kv-idle-demote: tiered KV — demote a session idle this long to disk (0 = off)
+	kvDemotedMax    int           // -kv-demoted-max: cap on the on-disk cold tier
+	streamWeights   bool          // -stream-weights: page MoE expert weights out of an mmap'd .giw under a RAM budget
+	weightCacheGB   float64       // -weight-cache: resident expert-weight budget in GB (0 = auto)
+	embedInt4       bool          // -embed-int4: relax the int8 embed/head pin to int4 (lossy, big-vocab small models)
+	maxQueue        int           // -max-queue: bounded per-model queue depth (0 = unbounded)
+	maxInflight     int           // -max-inflight: global cap on concurrent inference handlers (bounds pre-queue work; 0 = unbounded)
+	maxBodyBytes    int64         // -max-body-bytes: request-body cap (0 = derive from the model's context window)
+	unloadDrainWait time.Duration // -unload-drain-wait: how long an unload waits for in-flight requests to drain before 202 (native free continues detached)
+	spec            string        // -spec: "" (off) | "ngram" — lossless n-gram speculative decode
+	allowAdmin      bool          // -allow-admin: enable POST /admin/models/{load,unload}
+	requireBE       bool          // -require-backend: refuse to start when a model silently fell back off the requested backend's fast paths (resident decode / batched prefill)
+	visionPath      string        // -vision: dir holding the vision tower (SigLIP + projector) for a multimodal --model
+	visionQuant     string        // -vision-quant: "f32" (default) | "int8" (W8A8; only faster on AVX512-VNNI — a WASH on AVX2)
 
 	embedPath  string // encoder (-embed-model); "" = no /v1/embeddings
 	embedQuant string // "" | f32 | q8
@@ -300,6 +301,7 @@ func Main() {
 	flag.IntVar(&cfg.maxQueue, "max-queue", 8, "per-model backpressure: max queued requests before 429 (0 = unbounded)")
 	flag.IntVar(&cfg.maxInflight, "max-inflight", 128, "global cap on concurrent inference requests, bounding the pre-queue stage (JSON+image decode, tokenization, template render, vision Forward) that runs before the per-model queue; a full cap returns 503 Retry-After (0 = unbounded)")
 	flag.Int64Var(&cfg.maxBodyBytes, "max-body-bytes", 0, "cap on request body size in bytes; a larger body is rejected 413 before it is read. 0 = derive from the model's context window (a body that could never fit is rejected up front). The vision endpoints get at least 32 MiB on top for base64 image data")
+	flag.DurationVar(&cfg.unloadDrainWait, "unload-drain-wait", 5*time.Second, "how long POST /admin/models/unload waits for in-flight requests to drain before returning 202 (native memory is freed as they finish either way; the model is unroutable immediately). ?wait=false returns 202 at once")
 	flag.StringVar(&cfg.spec, "spec", "", "speculative decoding: \"\" (off) | ngram — lossless n-gram (prompt-lookup) drafting with adaptive depth. Wins on copy-heavy traffic (code edits / RAG / agent loops) on the CPU backend; output is identical (greedy bit-exact, sampled in-distribution incl. temperature/top-k/p/min-p + repetition penalties + logit bias). On greedy constrained/tool requests (response_format / tool grammar) it switches to grammar-fused drafting — the grammar's forced bytes are drafted for free, fused with the n-gram source. Auto-falls back to plain decode per-request when the sampler isn't yet supported on the spec path (e.g. constrained + temperature>0)")
 	flag.StringVar(&cfg.embedPath, "embed-model", "", "embedding model: a CodeRankEmbed HF dir (config.json + model.safetensors + tokenizer.json) for /v1/embeddings")
 	flag.StringVar(&cfg.embedQuant, "embed-quant", "f32", "embedding weight precision: f32 | q8")
@@ -484,7 +486,16 @@ func Main() {
 // template, and KV sessions) and/or an encoder (with its tokenizer for token
 // counting). At least one must be configured.
 func newServer(cfg config) (*server, error) {
-	s := &server{models: map[string]*loadedModel{}, cfg: cfg, responses: newResponseStore(256)}
+	if cfg.unloadDrainWait <= 0 {
+		cfg.unloadDrainWait = 5 * time.Second // floor; the flag defaults here too. ?wait=false is the per-request path to an immediate 202.
+	}
+	s := &server{
+		models:    map[string]*loadedModel{},
+		liveness:  map[*decoder.Model]*modelLiveness{},
+		draining:  map[string]struct{}{},
+		cfg:       cfg,
+		responses: newResponseStore(256),
+	}
 	for _, spec := range cfg.models {
 		// Startup load: a transparent .gguf→.giw transcode here isn't request-scoped, so
 		// context.Background() (a Ctrl-C during startup already ends the process). The admin
@@ -497,6 +508,7 @@ func newServer(cfg config) (*server, error) {
 			return nil, fmt.Errorf("duplicate served model name %q (use --model name=path to disambiguate)", lm.name)
 		}
 		s.models[lm.name] = lm
+		s.retainLocked(lm.model) // liveness refs (startup is single-threaded; no lock contention)
 	}
 	if err := s.loadAdapters(cfg); err != nil {
 		return nil, err
@@ -551,6 +563,7 @@ func (s *server) loadAdapters(cfg config) error {
 			lm.queue = make(chan struct{}, 1+cfg.maxQueue)
 		}
 		s.models[spec.name] = lm
+		s.retainLocked(lm.model) // adapter shares base.model → same liveness entry, refs++
 		fmt.Fprintf(os.Stderr, "loaded adapter %q on base %q in %s\n", spec.name, spec.base, time.Since(t0).Round(time.Millisecond))
 	}
 	return nil

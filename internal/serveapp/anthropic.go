@@ -403,11 +403,12 @@ func (s *server) handleMessages(w http.ResponseWriter, r *http.Request) {
 		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", "max_tokens is required and must be > 0")
 		return
 	}
-	lm := s.pick(req.Model)
-	if lm == nil {
-		s.anthropicModelNotFound(w, req.Model)
-		return
-	}
+	s.withModelAnthropic(w, req.Model, func(lm *loadedModel) { s.serveMessagesWith(w, r, req, lm) })
+}
+
+// serveMessagesWith runs an Anthropic /v1/messages generation. Reached ONLY through withModelAnthropic
+// (liveness RLock held).
+func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req anthropicReq, lm *loadedModel) {
 	// G1c on the Anthropic surface: reject an input that cannot fit the context window BEFORE the
 	// O(n) tokenize. The OpenAI routes got this guard; /v1/messages did not, so a body under the
 	// body cap still paid full tokenization only to be rejected afterwards — bounded, but the same
@@ -532,11 +533,12 @@ func (s *server) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 	if !decodeAnthropicJSON(w, r, &req) {
 		return
 	}
-	lm := s.pick(req.Model)
-	if lm == nil {
-		s.anthropicModelNotFound(w, req.Model)
-		return
-	}
+	s.withModelAnthropic(w, req.Model, func(lm *loadedModel) { s.serveCountTokensWith(w, req, lm) })
+}
+
+// serveCountTokensWith counts prompt tokens for /v1/messages/count_tokens. Reached ONLY through
+// withModelAnthropic (liveness RLock held). No generation, no decode mutex.
+func (s *server) serveCountTokensWith(w http.ResponseWriter, req anthropicReq, lm *loadedModel) {
 	system, turns, aerr := anthropicTurns(&req)
 	if aerr != nil {
 		aerr.write(w)

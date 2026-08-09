@@ -8,6 +8,31 @@ The forward-pass and quantization numerics are parity-gated against HuggingFace
 and are the stable contract. The loader and architecture-descriptor surface is
 pre-1.0 and may change as new model families and quant formats land.
 
+## [Unreleased]
+
+### Fixed
+- **`POST /admin/models/unload` now frees the model's native memory instead of leaking it.** Unload
+  deleted the entry from the registry but never called `Close()`, and with no ARC or finalizers under
+  purego, GC reclaimed only the Go wrappers — so each unload/reload cycle leaked a full model
+  (measured ~450 MB on Metal; on an 8 GB CUDA card the reload then OOMs). Adding a bare `Close()` was
+  a use-after-free: a request between resolving the model and taking its mutex touches the model
+  unlocked, so `Close()` could free weights mid-request (a driver SIGSEGV on CUDA). The fix is a
+  drain: a per-`*decoder.Model` liveness `RWMutex` is held by every request from resolution through
+  completion (via a single `withModel` wrapper; the old `pick` is gone so no handler can skip it),
+  and unload unpublishes the model, then on a detached goroutine waits that lock out before closing —
+  freeing the shared model only when it is the last owner (a base and its adapters share one). Design
+  and rationale: `docs/task-admin-unload-drain.md`.
+
+### Changed
+- **`POST /admin/models/unload` no longer returns `409 busy` for a model that is generating; it
+  drains.** The model is unpublished immediately (unroutable at once), then the response is a bounded
+  wait: `200 {"freed":true}` when the native memory is released within `-unload-drain-wait` (default
+  5s), else `202 {"freed":false}` with the release continuing in the background. `GET /health` gains a
+  `draining` array listing models whose memory is not yet freed; `?wait=false` returns `202`
+  immediately. The old `409` was only ever safe because unload never actually freed anything.
+- **New flag `-unload-drain-wait` (default `5s`)** — how long an unload waits for in-flight requests
+  to drain before answering `202` (the release always completes regardless).
+
 ## [v0.10.3] — 2026-08-08
 
 ### Security

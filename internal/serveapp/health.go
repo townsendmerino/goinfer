@@ -3,6 +3,7 @@ package serveapp
 import (
 	"maps"
 	"net/http"
+	"sort"
 )
 
 // GET /health — a goinfer-native operator surface, deliberately NOT an OpenAI-compatible one.
@@ -24,9 +25,21 @@ func (s *server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 		maps.Copy(e, s.pathFields(name))
 		models = append(models, e)
 	}
+	// draining: models unpublished by an unload but whose native memory is not yet freed (the
+	// detached drain is still waiting out in-flight requests). An operator who got a 202 from unload
+	// polls here and reloads once their model no longer appears — the signal that memory is reclaimed.
+	s.regMu.RLock()
+	draining := make([]string, 0, len(s.draining))
+	for name := range s.draining {
+		draining = append(draining, name)
+	}
+	s.regMu.RUnlock()
+	sort.Strings(draining)
+
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status":  "ok",
-		"backend": s.cfg.backend,
-		"models":  models,
+		"status":   "ok",
+		"backend":  s.cfg.backend,
+		"models":   models,
+		"draining": draining,
 	})
 }

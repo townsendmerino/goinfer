@@ -5,14 +5,16 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // Dynamic model load/unload (Track B Inc3), mirroring llama.cpp / mistral.rs
 // admin conventions but kept small. Gated behind --allow-admin: loading an
 // attacker-supplied path is RCE-adjacent, so it is off by default (403 when off).
-// Unload refuses a model that is mid-generation (the model's own mutex, try-lock
-// → 409) and snapshots its warm KV first. Go's GC + mmap mean RSS shrinks lazily
-// after unload, not immediately.
+// Unload unpublishes the model immediately, then DRAINS in-flight requests before
+// freeing its native memory (purego has no ARC / finalizers, so GC never reclaims
+// it) — see handleAdminUnload and docs/task-admin-unload-drain.md. It snapshots warm
+// KV as part of the drain, and reports 200 (freed) or 202 (draining) per the wait.
 
 type adminLoadReq struct {
 	Name  string `json:"name"` // served id (default: file/dir basename)
@@ -78,6 +80,7 @@ func (s *server) handleAdminLoad(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.models[lm.name] = lm
+	s.retainLocked(lm.model) // one more registry entry backed by this *decoder.Model (liveness refs)
 	s.regMu.Unlock()
 	if s.cfg.sessionDir != "" && s.cfg.kvSessions > 0 {
 		// The model is now published, so a request can already acquire it. lm.mu is the
@@ -91,34 +94,23 @@ func (s *server) handleAdminLoad(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"id": lm.name, "object": "model", "status": "loaded"})
 }
 
-// handleAdminUnload drops a model from the registry (refusing if it is busy).
+// handleAdminUnload drops a model from the registry and DRAINS before freeing its native memory.
 //
-// ⚠ DO NOT "FIX THE LEAK" BY ADDING lm.model.Close() HERE. It looks like an obvious one-liner —
-// the model is out of the registry, nothing can pick it again, so free the weights. It is not: it
-// converts a BOUNDED LEAK into a USE-AFTER-FREE, which on the CUDA backend is a driver SIGSEGV
-// that takes the whole server down rather than an error a handler can recover from.
+// The naive fix — lm.model.Close() straight after the registry delete — is a use-after-free: a
+// request past pick() but not yet at enter() holds the *lm pointer and touches lm.model in its
+// preamble (tokenize/prepare) with no lock, so a Close there frees weights mid-request (on CUDA, a
+// driver SIGSEGV). The safe fix is a DRAIN: every in-flight holder takes a per-model liveness RLock
+// via withModel (spanning the preamble and the generation), and unload waits that lock out before
+// closing. See docs/task-admin-unload-drain.md and the reciprocal note at resident.Close.
 //
-// THE WINDOW. TryLock below succeeds when no generation holds lm.mu — but a request can be holding
-// the *lm pointer and using lm.model without that mutex. Every handler with the
-//
-//	pick() → work → enter()
-//
-// shape has a preamble between them that touches lm.model / lm.tk with NO lock held. In
-// handleChat that is pick (openai.go:456) → promptTooLargeForContext → chatPrompt (tokenize) →
-// prepare → enter (openai.go:481): three uses, one of which is a full BPE over the prompt, so the
-// window is milliseconds wide on a large body — not a theoretical instant. TryLock sees an idle
-// model and grants the unload while that request is mid-tokenize against weights about to be freed.
-//
-// It is BACKEND-AGNOSTIC — the shape, not the backend, is the defect — and present in every handler
-// sharing it (chat, completions, responses, messages, embeddings-on-a-decoder). On CUDA it surfaces
-// as drive() called on a torn-down context; on CPU it is a read of unmapped/reused memory, which is
-// quieter and worse.
-//
-// THE SAFE FIX IS A DRAIN, NOT A CLOSE: in-flight holders must be waited out before release —
-// pick() handing back a release func and unload refusing until the holder count is zero. Until that
-// exists, leaking the weights of an unloaded model is the DELIBERATE, bounded choice: an operator
-// who unloads N models leaks N models' weights until restart, which is recoverable. A SIGSEGV
-// mid-request is not. See the reciprocal note at resident.Close.
+// Two phases. Phase 1 (here, under regMu): unpublish the entry and decide last-ownership —
+// delete-before-decide, so two concurrent sibling unloads cannot both decline (releaseLocked). Phase
+// 2 (startDrain, detached): drain in-flight holders, checkpoint the settled KV, close the entry's
+// private natives, close the shared model iff last owner. The response is a bounded wait: 200
+// (freed) if the drain completes within -unload-drain-wait, else 202 with the drain continuing
+// detached — the model is unroutable immediately either way, and /health lists what is still
+// draining. ?wait=false skips straight to 202. (This replaces the old 409-busy, which was only ever
+// safe because it never freed anything.)
 func (s *server) handleAdminUnload(w http.ResponseWriter, r *http.Request) {
 	if !s.adminEnabled(w) {
 		return
@@ -134,17 +126,26 @@ func (s *server) handleAdminUnload(w http.ResponseWriter, r *http.Request) {
 		s.modelNotFound(w, req.Name)
 		return
 	}
-	if !lm.mu.TryLock() { // a generation holds the mutex — refuse rather than wait
-		s.regMu.Unlock()
-		writeErr(w, http.StatusConflict, fmt.Sprintf("model %q is busy (generating); retry", req.Name))
-		return
-	}
-	delete(s.models, req.Name)
+	delete(s.models, req.Name)            // unpublish: no new request can resolve it
+	ml, last := s.releaseLocked(lm.model) // decrement refs + last-owner decision (delete-before-decide)
 	s.regMu.Unlock()
-	// Snapshot warm KV before the model goes unreferenced.
-	if s.cfg.sessionDir != "" && s.cfg.kvSessions > 0 {
-		_ = lm.sessions.save(sessionSubdir(s.cfg.sessionDir, lm.fp))
+
+	// Detached drain-and-close: waits out in-flight holders, checkpoints KV, frees native memory.
+	// It owns the free and runs to completion regardless of this request (a disconnected admin
+	// client must not orphan the model) and regardless of shutdown (bare goroutine, never joined).
+	done := s.startDrain(lm, ml, last)
+
+	wait := s.cfg.unloadDrainWait
+	if r.URL.Query().Get("wait") == "false" {
+		wait = 0
 	}
-	lm.mu.Unlock()
-	writeJSON(w, http.StatusOK, map[string]any{"id": req.Name, "status": "unloaded"})
+	select {
+	case <-done:
+		writeJSON(w, http.StatusOK, map[string]any{"id": req.Name, "status": "unloaded", "freed": last})
+	case <-time.After(wait):
+		writeJSON(w, http.StatusAccepted, map[string]any{
+			"id": req.Name, "status": "unloading", "freed": false,
+			"note": "native memory is released as in-flight requests finish; poll GET /health (draining) until this model no longer appears",
+		})
+	}
 }

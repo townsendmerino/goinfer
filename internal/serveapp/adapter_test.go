@@ -80,7 +80,7 @@ func TestServe_multiAdapter(t *testing.T) {
 
 	// All three route; the adapters share the base's resident weights.
 	for _, n := range []string{"base", "a1", "a2"} {
-		if srv.pick(n) == nil {
+		if srv.pickTest(n) == nil {
 			t.Fatalf("model %q not routable", n)
 		}
 	}

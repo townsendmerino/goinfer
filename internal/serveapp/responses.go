@@ -83,12 +83,11 @@ func (s *server) handleResponses(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	lm := s.pick(req.Model)
-	if lm == nil {
-		s.modelNotFound(w, req.Model)
-		return
-	}
+	s.withModel(w, req.Model, func(lm *loadedModel) { s.serveResponsesWith(w, r, req, lm) })
+}
 
+// serveResponsesWith runs a /v1/responses generation. Reached ONLY through withModel (liveness RLock held).
+func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req responseReq, lm *loadedModel) {
 	// Assemble the conversation: prior (previous_response_id) + instructions
 	// (first turn only) + this request's input.
 	var messages []chatMessage
