@@ -17,9 +17,9 @@ and runs them **in-process**. What makes it different — you don't have to choo
   offline.
 - **Fast when you want it — still cgo-free.** The default build is pure-Go CPU
   (SIMD-accelerated, NEON / AVX2). Opt into a GPU backend and it *stays* `CGO_ENABLED=0`:
-  **native CUDA** (cgo-free, driver-only — no toolkit; vs **current Ollama v0.32.5**: ~1.7× on
-  tiny 0.5B, modestly ahead on 1.5B up to ~1k tokens of context and behind beyond it, and behind
-  on prefill — see the table below), **native Metal** on Apple Silicon (**at parity on small models**, behind on larger),
+  **native CUDA** (cgo-free, driver-only — no toolkit; **14.6 MB** of binary against a bundled
+  toolkit's gigabytes, decoding qwen2.5-coder-1.5B at **217.8 tok/s** at short context — measured
+  numbers and the peer comparison below), **native Metal** on Apple Silicon,
   and a portable **WebGPU** backend (~60–70% of native, but runs on *any* GPU and streams
   bigger-than-VRAM MoE weights). Going fast never costs you the single binary.
 - **~20 architectures, one binary.** All four attention / sequence-mixing families —
@@ -360,38 +360,115 @@ cd metal && CGO_ENABLED=0 go run ./cmd/serve --backend metal --quant int8int8 \
     --model ~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
 ```
 
-### Measured throughput (server-to-server, q4_k_m 4-bit)
+### What ships
 
-Both goinfer and the reference are driven through their own HTTP server — sampling,
-detokenize, and JSON all included — so there's no methodology gap to discount:
+goinfer's CUDA backend is `CGO_ENABLED=0` with **driver-only linkage**: it dlopens `libcuda` and
+carries **932 KB of embedded PTX**. It ships no cuBLAS, no cuDNN, no CUDA runtime — `ldd` on the
+binary lists no CUDA library at all.
 
-Peers: **Ollama-CUDA v0.32.5** (2026-07) and **Ollama-Metal 0.32.0** (2026-07-16), each on
-the same machine as its goinfer column. *(Earlier revisions of this table quoted Ollama 0.5.7
-from 2025-01 — ~18 months stale — which inflated the CUDA ratios to ~2×; re-anchored below.)*
+| | ships | on disk |
+|---|---|---|
+| goinfer (`cuda/cmd/serve`) | one static binary | **14.6 MB** |
+| Ollama v0.32.5 (linux-amd64) | binary + bundled CUDA v12 **and** v13 toolchains | **2.1 GB** (1.42 GB download) |
 
-| Model | goinfer CUDA | Ollama-CUDA v0.32.5 | goinfer Metal | Ollama-Metal |
+**Why one small artifact covers every card: goinfer ships PTX, not SASS.** PTX is
+architecture-portable, and the driver compiles it for whatever GPU is present. Precompiled kernels
+must ship per GPU architecture *and* per toolkit version — most of the peer's bulk is exactly that
+(`libcublasLt` alone is 752 MB, fat-binaried across compute capabilities).
+
+**What each side pays for it.** Bundling a toolkit buys ahead-of-time-tuned kernels and no
+first-run compile, at the cost of size — a real engineering tradeoff, not waste. Shipping PTX costs
+a **one-time JIT at startup**, and makes you depend on the driver's compiler rather than a pinned
+toolkit, so a driver upgrade can change generated code where a bundled toolkit is reproducible.
+Measured (RTX 2070 SUPER, driver 595.58.03, qwen2.5-coder-0.5B, process start → `/health`):
+
+| | time to ready |
+|---|---|
+| cold — CUDA JIT cache cleared | **5.07 s** |
+| warm — cache present | **4.06 s** |
+
+The JIT costs **~1.0 s, once**: the driver caches the result (1.1 MB) and later starts pay nothing.
+Both engines need an NVIDIA driver; neither needs a CUDA toolkit at build or run time.
+
+### Measured throughput — goinfer
+
+**Decode-only; prefill excluded.** Inter-token rate, timed client-side from the first streamed
+token onward, over HTTP. Prefill is a separate axis and goinfer is **behind** on it (~4.7× at last
+measurement, `docs/benchmarks.md` §B2); nothing here captures it.
+
+**Provenance, every figure below:** qwen2.5-coder **0.5B / 1.5B**, **q4_K_M** · goinfer **v0.10.3**
+· RTX 2070 SUPER, driver **595.58.03** · **2026-08-09** · servers restarted per cell, ≥8 completions
+per run, ≥2 runs per cell, spread shown · sampling sent explicitly (never assumed).
+
+**Decode by KV depth — greedy (`temperature 0`):**
+
+| context | 0.5B | 1.5B |
+|---|---|---|
+| 128 | **320.1** ±2.2 | **217.8** ±0.4 |
+| 512 | 253.8 ±6.5 | 184.7 ±1.2 |
+| 2048 | 239.0 ±2.6 | 157.6 ±0.2 |
+| 3900 | 201.1 ±0.1 | 122.3 ±0.2 |
+
+Decode slows with KV depth: −37% (0.5B) and −44% (1.5B) from 128 to 3900. Closing that is scoped as
+long-context attention work in `docs/ollama-chase.md`.
+
+**Decode by sampling configuration — 128 context:**
+
+| configuration | 0.5B | 1.5B |
+|---|---|---|
+| greedy (`temperature 0`) | **320.1** | **217.8** |
+| `temperature 0.8` + `top_k 40` | 268.8 | 193.2 |
+| `temperature 0.8` + `top_p 0.95` | 92.8 | 86.8 |
+| default (`temperature 1.0`, no truncation) | 101.9 | 82.3 |
+
+**Sampling configuration matters more than model size here.** goinfer's default is `temperature 1.0`
+with no truncation — the OpenAI-compatible default, which samples the full distribution faithfully
+and is its slowest path. Passing `top_k` recovers most of the difference. The remaining nucleus-path
+cost is scoped as **D6** in `docs/ollama-chase.md`.
+
+### Compared with Ollama v0.32.5
+
+Secondary, and annotated — read the absolute numbers above and the cgo-free property first. Same
+measurements as the tables above, with the peer measured **identically**: both engines driven over
+their own HTTP server, client-timed inter-token rate, **interleaved cell-by-cell with a server
+restart between cells**, the **same GGUF file** on both sides (md5-verified), sampling sent
+explicitly to each. Peer: **Ollama v0.32.5**. Ollama **v0.32.6** exists and was **not** measured.
+
+**Greedy, by KV depth:**
+
+| context | goinfer 0.5B | Ollama | | goinfer 1.5B | Ollama | |
+|---|---|---|---|---|---|---|
+| 128 | 320.1 ±2.2 | 269.4 ±0.0 | goinfer 1.19× | 217.8 ±0.4 | 195.2 ±0.0 | goinfer 1.12× |
+| 512 | 253.8 ±6.5 | 269.4 ±0.2 | Ollama 1.06× | 184.7 ±1.2 | 166.2 ±13.6 ᵃ | goinfer 1.11× |
+| 2048 | 239.0 ±2.6 | 264.6 ±2.8 | Ollama 1.11× | 157.6 ±0.2 | 179.2 ±0.0 | Ollama 1.14× |
+| 3900 | 201.1 ±0.1 | 258.5 ±0.2 | Ollama 1.29× | 122.3 ±0.2 | 174.1 ±0.1 | Ollama 1.42× |
+
+ᵃ The peer's rate in this one cell varied 146–182 across ten runs — wider than the gap between the
+engines. Treat that cell as indicative only.
+
+Ahead at short context, behind at long, the gap widening with depth: Ollama's flash attention holds
+nearly flat (269 → 259 on 0.5B) while goinfer decays (320 → 201).
+
+**By sampling configuration, 128 context:**
+
+| configuration | goinfer 0.5B | Ollama | goinfer 1.5B | Ollama |
 |---|---|---|---|---|
-| Qwen2.5-Coder-0.5B | ~476 tok/s (**1.78×**) | ~268 | ~128 tok/s (**1.03×**) | ~124 |
-| Qwen2.5-Coder-1.5B | *CUDA by KV depth ↓* | | ~61 tok/s (**0.77×**) | ~79 |
+| greedy (`temperature 0`) | 320.1 | 269.4 | 217.8 | 195.2 |
+| `temperature 0.8` + `top_k 40` | 268.8 | 284.7 | 193.2 | 186.8 |
+| `temperature 0.8` + `top_p 0.95` | 92.8 | 266.6 | 86.8 | 182.8 |
+| each side's own defaults *(unmatched)* | 101.9 | 274.4 | 82.3 | 192.6 |
 
-**Qwen2.5-Coder-1.5B, CUDA decode by KV depth** (same RTX 2070 SUPER, best-of-3):
+**At `top_k 40` — the configuration Ollama itself defaults to — the two are at parity** (1.06×
+behind at 0.5B, 1.03× ahead at 1.5B). Under **nucleus sampling goinfer is 2.1–2.9× behind**; that
+gap is scoped as D6 in `docs/ollama-chase.md`.
 
-| context | goinfer CUDA | Ollama-CUDA v0.32.5 | |
-|---|---|---|---|
-| 128 | ~226.6 tok/s | ~197.5 | goinfer **1.15×** |
-| 512 | ~207.3 tok/s | ~191.7 | goinfer **1.08×** |
-| 2048 | ~160.1 tok/s | ~186.6 | Ollama **1.17×** |
-| 3900 | ~123.5 tok/s | ~180.7 | Ollama **1.46×** |
+**The defaults row is not like-for-like.** goinfer defaults to `temperature 1.0` with no truncation
+(the OpenAI-compatible default, sampling the full distribution); Ollama's defaults include
+`top_k 40`, which truncates it. Ours is faithful and slow, theirs is truncated and fast, and passing
+`top_k` closes most of the gap.
 
-**What the curve shows:** on CUDA goinfer is ahead on **tiny models** (0.5B, launch-bound) and
-on 1.5B up to **roughly 1000 tokens of context**; the 1.5B decode curve crosses over there —
-ahead below it, behind above it, and the gap widens with depth (1.15× ahead at 128, 1.46× behind
-at 3900), because Ollama's flash attention stays nearly flat as context grows. On **prefill**
-goinfer is **~4–5× behind** current Ollama (`docs/benchmarks.md` §B2). Metal is at parity on 0.5B
-and behind on 1.5B (issue-bound — no DP4A on Apple GPUs). Each engine is compared **only against
-its peer on the same machine** — CUDA on an RTX 2070 SUPER, Metal on an M1 Pro — so the absolute
-tok/s do *not* compare across the CUDA and Metal columns (that would compare two graphics cards,
-not two engines). Best of 3 warm runs; full provenance — hardware, driver, peer versions, method — in
+Absolute tok/s are **not** comparable across the CUDA and Metal sections — that would compare two
+graphics cards, not two engines. Method, hardware and history:
 [docs/benchmarks.md](docs/benchmarks.md).
 
 ### What runs on the GPU

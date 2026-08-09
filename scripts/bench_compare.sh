@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
-# bench_compare.sh — reproduce goinfer's column of docs/benchmarks.md end-to-end,
-# and print (NOT run) the peer commands so you can fill their columns on the SAME
-# machine. Peers' install is yours; this script never drives them.
+# bench_compare.sh — goinfer's OWN numbers only. NOT a peer comparison.
+#
+# ⚠ DO NOT USE THIS FOR PEER FIGURES. It measures goinfer with IN-PROCESS Go benchmarks
+# (BenchmarkDecode et al) and does not drive any peer. Pasting its output beside a peer's
+# server-measured number compares a kernel throughput against an end-to-end throughput — exactly
+# how the retired "0.5B 476 vs 268 / 1.78x" claim was produced (docs/benchmarks.md B2, retired
+# 2026-08-09). For a defensible comparison use scripts/bench_peer.py, which drives BOTH sides over
+# HTTP, interleaved, with a restart between cells and sampling recorded on each.
 #
 # It measures goinfer's side: steady-state decode tok/s (BenchmarkDecode), a timed
 # prefill (BenchmarkPrefillLong), cold-start wall clock to first token, and resident
@@ -91,9 +96,10 @@ fi
 cat <<'PEERS'
 
 ═══════════════════════════════════════════════════════════════════════
- PEER COMMANDS — run these YOURSELF on the SAME machine, same checkpoint,
- same quant, greedy/fixed seed. Record each peer's version + the date.
- (This script does not run them: their install is yours.)
+ PEER COMMANDS — reference only. Numbers you obtain this way are NOT comparable
+ with the goinfer figures above (those are in-process benchmarks, these are
+ end-to-end server measurements). For a publishable comparison run
+ scripts/bench_peer.py instead, which measures both sides identically.
 ═══════════════════════════════════════════════════════════════════════
 
 # Ollama (decode tok/s; ensure `ollama ps` shows 100% GPU for the GPU row):

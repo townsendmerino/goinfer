@@ -753,6 +753,13 @@ cause was the allocation. 1.5B: logits path 232.8→236.2, greedy edge 3.2%→2.
 | 1.5B | 232.8 | **236.2** | **241.5** |
 | 0.5B | 390.2 | **449.4** | **476.1** |
 
+> **Forward-note (2026-08-09):** the 476.1 above is an **in-process kernel measurement**, not a
+> server-to-server figure. It was later published beside a peer's HTTP-server number as
+> "476 vs 268 / 1.78×" — a kernel throughput divided by an end-to-end throughput. That claim is
+> **retired** (docs/benchmarks.md §B2). Server-to-server, 0.5B at 128 greedy measures 320.1 tok/s.
+> The number here is correct for what it measured; only its later reuse was wrong.
+
+
 ### The 3-super-kernel fusion (spec §5.2) — K1 built: rmsnorm folded into the QKV GEMV
 
 A measured precondition first: **all layer projections are int4** (168/196 and 196/196 across

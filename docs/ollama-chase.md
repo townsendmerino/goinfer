@@ -16,6 +16,10 @@ Measured on the RTX 2070 SUPER box, qwen2.5-coder-1.5b, q4 both sides, against *
 v0.32.5** (current) — not the 0.5.7 pin, which was ~18 months stale and produced a
 competitive claim that did not survive re-measurement.
 
+> **Sampling was not recorded for this table (2026-08-04).** The 2026-08-09 re-measurement in the
+> README records it on both sides and broadly reproduces this curve (within 1–4% at every depth),
+> so the shape stands; treat the README table as the citable one.
+
 Decode tok/s by KV depth (best-of-3, interleaved, first run dropped; re-measured 2026-08-04 **after**
 the explicit-FMA contraction fix, which changes instruction counts everywhere):
 
@@ -23,7 +27,7 @@ the explicit-FMA contraction fix, which changes instruction counts everywhere):
 |---|---|---|---|
 | 128 | **226.6** | 197.5 | **goinfer 1.15×** |
 | 512 | **207.3** | 191.7 | **goinfer 1.08×** |
-| 2048 | 160.1 (was 97; A1 + split-KV) | 186.6 | Ollama 1.17× |
+| 2048 | 160.1 (was 97; A1 + split-KV) | 186.6 | Ollama 1.17× |   ← re-measured 2026-08-09: 157.6 vs 179.2 (Ollama 1.14×)
 | 3900 | 123.5 | 180.7 | Ollama 1.46× |
 | prefill | 0.66 ms/tok | 0.14 ms/tok | **4.7× behind** |
 

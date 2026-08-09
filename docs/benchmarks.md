@@ -192,6 +192,18 @@ gpu-assessment — cited there.
 
 ### B2. cgo-free CUDA (`-tags cuda`) vs Ollama-CUDA — 4-bit both sides
 
+> **⚠ RETIRED (2026-08-09) — the 0.5B pair and its 1.78× are withdrawn, not corrected.**
+> The two halves were produced by **different methods**: `scripts/bench_compare.sh` measures
+> goinfer with **in-process Go benchmarks** and, by its own design note, **never drives the peer**
+> ("This script does not run them: their install is yours"), while the peer column came from
+> Ollama's HTTP server. The ratio therefore divided a **kernel throughput** by an **end-to-end
+> throughput**. Measured server-to-server on 2026-08-09, goinfer's 0.5B at 128 greedy is
+> **320.1 tok/s** against Ollama v0.32.5's **269.4**. *The peer half reproduced exactly (268 → 269.4);
+> ours did not, because it was never measuring the same thing.* The row previously marked
+> `sampling: unrecorded` is **retired** for the same reason — no committed artifact reproduces it.
+> Current, fully-provenanced numbers: the README (`### Measured throughput — goinfer` and
+> `### Compared with Ollama v0.32.5`). This box is retained as a record of what was claimed.
+>
 > **⚠ RE-ANCHORED TO CURRENT OLLAMA (2026-08-04). Read this before the historical rows below.**
 > The tables further down were measured against **Ollama 0.5.7 (released 2025-01-16)**. Current
 > Ollama is **v0.32.5 (2026-07-27)** — ~18 months and a new inference engine + flash attention
@@ -203,7 +215,7 @@ gpu-assessment — cited there.
 > |---|---|---|---|
 > | 0.5B decode | ~476 tok/s | 211 | **268** |
 > | 1.5B decode, short ctx | ~221 tok/s | 149 | **186** |
-> | 1.5B decode, **2048 ctx** | ~97 → **~133 tok/s** (coalesced) | — | **~188** |
+> | 1.5B decode, **2048 ctx** | **157.6 tok/s** (re-measured 2026-08-09; was ~97, then ~133 mid-campaign) | — | **179.2** |
 > | 1.5B prefill | ~0.66 ms/tok | ~0.17 | **~0.14** |
 >
 > **The honest current claims:**
@@ -266,7 +278,14 @@ q4_K_M, warm (`/api/ps` shows `size_vram == size`, 100% GPU), greedy (`temperatu
 256-token completions (both hit the cap), **best of 3 warm runs**. **These rows are HISTORICAL (peer Ollama 0.5.7, 2025-01-16); the current-peer numbers are in the re-anchor box above.** (the first run after
 load is discarded as a warmup outlier on both sides).
 
-**Method — server-to-server, identical on both sides.** Each engine is driven through
+**Method (2026-08-09 re-measurement).** Server-to-server: both engines driven over their own HTTP
+server, **client-timed inter-token rate** (decode-only, prefill excluded), **interleaved cell-by-cell
+with a server restart between cells**, same GGUF file both sides, sampling sent explicitly to each.
+The committed harness is `scripts/bench_peer.py`. *Historical note: the older rows below claimed
+"no methodology gap to discount" while goinfer's side came from in-process Go benchmarks — that
+claim was false and is withdrawn.*
+
+**Historical method (pre-2026-08-09).** Each engine is driven through
 its *own* HTTP server (goinfer `cmd/serve` `/v1/chat/completions`; Ollama
 `/api/generate`) and timed by **client wall clock**, so prefill, sampling, detokenize,
 JSON, and HTTP are inside *both* numbers. This is the only methodology-symmetric
@@ -569,6 +588,19 @@ GINFER_PREQUANT_GGUF=~/models/qwen2.5-coder-1.5b-instruct-q8_0.gguf \
 ```
 
 ---
+
+## Measurement notes worth keeping
+
+- **Early EOS at `temperature 1.0` shortens completions.** In the 2026-08-09 sweep, **4 of 16**
+  completions at goinfer's default sampling terminated before the 64-token cap (11/36/45/61 tokens);
+  greedy hit the cap all 16 times. Short completions make a per-token rate noisier. This is a
+  property of *that configuration* (untruncated sampling reaches EOS sooner), **not a measurement
+  fault** — the rate itself is unaffected. Any future sweep at `temperature > 0` without truncation
+  should expect it and report run counts.
+- **One peer cell is genuinely high-variance.** Ollama v0.32.5 at 1.5B/512 measured 146–182 tok/s
+  across ten runs (mean 162.7, stdev 11.2) while goinfer was stable at 184.7 ±1.2 in the same cell,
+  interleaved. A two-run sample there read as a near-tie; ten runs read as a ~1.11× goinfer win.
+  Do not quote that cell without its run count.
 
 ## Maintenance rules (so this page never rots into a lie)
 
