@@ -54,6 +54,15 @@ func checkEmbedInputBounds(inputs []string) error {
 // field truncates each vector and renormalizes (Matryoshka-style). encoding_format
 // "base64" returns little-endian float32 bytes, else a JSON number array.
 func (s *server) handleEmbeddings(w http.ResponseWriter, r *http.Request) {
+	// G7: the route is registered unconditionally so an unconfigured server gives a JSON
+	// error naming the constraint and the flag that fixes it — not Go's default text/plain
+	// "404 page not found", which SDKs surface as NotFoundError (reads as a wrong URL rather
+	// than an unconfigured server). Same shape as the .giw --quant decline. 501 Not
+	// Implemented: the endpoint exists, this server just has no embedding model loaded.
+	if s.embed == nil {
+		writeErr(w, http.StatusNotImplemented, "no embedding model is loaded; start the server with -embed-model <path> to enable /v1/embeddings")
+		return
+	}
 	var req embedReq
 	if !decodeJSON(w, r, &req) {
 		return

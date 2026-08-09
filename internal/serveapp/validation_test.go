@@ -75,3 +75,21 @@ func TestHandleChat_emptyMessages(t *testing.T) {
 		}
 	}
 }
+
+// TestEmbeddings_unconfigured gates G7: with no embedding model, /v1/embeddings returns a JSON
+// error naming -embed-model (not Go's text/plain 404, which SDKs read as a wrong URL).
+func TestEmbeddings_unconfigured(t *testing.T) {
+	s := &server{models: map[string]*loadedModel{}} // embed == nil
+	r := httptest.NewRequest("POST", "/v1/embeddings", strings.NewReader(`{"input":"hi"}`))
+	w := httptest.NewRecorder()
+	s.handleEmbeddings(w, r)
+	if w.Code != http.StatusNotImplemented {
+		t.Errorf("status %d, want 501", w.Code)
+	}
+	if ct := w.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
+		t.Errorf("content-type %q, want application/json (not Go's text/plain 404)", ct)
+	}
+	if !strings.Contains(w.Body.String(), "-embed-model") {
+		t.Errorf("error does not name the -embed-model flag: %s", w.Body.String())
+	}
+}

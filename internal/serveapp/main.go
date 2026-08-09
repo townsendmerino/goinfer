@@ -387,9 +387,9 @@ func Main() {
 		mux.HandleFunc("POST /v1/messages", auth(inf(maxBytes(visionCap, srv.handleMessages))))
 		mux.HandleFunc("POST /v1/messages/count_tokens", auth(inf(maxBytes(textCap, srv.handleCountTokens))))
 	}
-	if srv.embed != nil {
-		mux.HandleFunc("POST /v1/embeddings", auth(inf(maxBytes(textCap, srv.handleEmbeddings))))
-	}
+	// Registered unconditionally (G7): with no embedding model, handleEmbeddings returns a JSON
+	// error naming -embed-model rather than a bare 404, so an SDK sees "unconfigured" not "wrong URL".
+	mux.HandleFunc("POST /v1/embeddings", auth(inf(maxBytes(textCap, srv.handleEmbeddings))))
 	mux.HandleFunc("POST /admin/models/load", auth(maxBytes(textCap, srv.handleAdminLoad)))
 	mux.HandleFunc("POST /admin/models/unload", auth(maxBytes(textCap, srv.handleAdminUnload)))
 
