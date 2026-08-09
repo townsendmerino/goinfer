@@ -1057,7 +1057,7 @@ adding `top_k=20` is faster than leaving it off, because `top_k` bounds the set 
    disappears entirely rather than being made cheaper. Strictly better if funded, strictly more
    expensive: new CUDA + Metal kernels plus a device box to validate.
 
-### `top_k=1` should route to greedy
+### `top_k=1` should route to greedy — **DONE (P1, 2026-08-09)**
 
 `top_k=1` with a positive temperature is **mathematically identical to greedy**: temperature scaling
 is monotonic so it preserves ordering, and a distribution restricted to a single token is
@@ -1066,6 +1066,25 @@ and take the on-device argmax with no readback. Measured gap it would recover �
 
 - qwen2.5-coder-0.5b: `top_k=1` **272** vs greedy **312** tok/s
 - gemma3-1b: `top_k=1` **148** vs greedy **180** tok/s
+
+**SHIPPED and measured (2026-08-09, this box).** `top_k=1` now takes the on-device greedy fast path
+via the `GreedyEquivalent` sampler predicate (`decoder/sampler.go`), so the readback is skipped.
+Decode-only, prefill excluded; RTX 2070 SUPER / driver 595.58.03; goinfer at the P1 commit; q4_K_M
+int4; 128-token prompt; 8 completions/run, 2 runs/cell, spread shown. "before" is the same binary
+with `GOINFER_NO_GREEDY_FASTPATH=1` (the readback path), so both arms are one build:
+
+| model | `top_k=1` before | `top_k=1` after | greedy (after) | recovered |
+|---|---|---|---|---|
+| qwen2.5-coder-0.5b | 271.4 ±1.8 | **319.2** ±5.5 | 315.2 ±3.3 | **+17.6%** |
+| gemma3-1b | 144.3 ±0.8 | **175.9** ±1.0 | 175.9 ±3.0 | **+21.9%** |
+
+The "before" figures independently reproduce the gap recorded above (271.4 vs 272; 144.3 vs 148),
+and after routing `top_k=1` lands ON greedy — identically at 175.9 on gemma3-1b, and within spread
+on qwen. Recovery is at or above the predicted 13–18%. Emitted tokens are unchanged by construction
+and gated by `decoder.TestTopK1_MatchesGreedy`.
+
+*Metal: the sampler-level predicate applies on every backend, so Metal inherits the routing; an e2e
+A/B on the Mac is **pending** and not claimed here.*
 
 **Prerequisite — SATISFIED (2026-08-09).** Routing `top_k=1` to a device argmax requires that argmax
 to break index ties the same way the host does (ascending token id, the amendment-1 contract

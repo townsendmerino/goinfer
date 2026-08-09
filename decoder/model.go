@@ -851,10 +851,27 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	// GOINFER_NO_GREEDY_FASTPATH forces the logits path (escape hatch / A-B check).
 	// fastNext >= 0 means "the resident already picked the next token"; the first token
 	// still comes from the prefill logits through the sampler.
+	// P1: `top_k=1` takes this path too (GreedyEquivalent), at ANY temperature — monotone scaling
+	// preserves ordering and a one-token distribution is deterministic, so the emitted tokens are
+	// the same ones greedy emits. Both predicates are consulted; neither is widened, so this
+	// routing decision is the ONLY behaviour that changes.
+	//
+	// SCOPE — the speculative paths are deliberately NOT affected. They gate on `sp.Temperature <= 0`
+	// directly (speculative.go, spec_grammar.go, spec_eagle.go, spec_ngram.go), never on these
+	// predicates, so `top_k=1` with a temperature stays speculative-INELIGIBLE exactly as before.
+	// That is the conservative half of P1: making it eligible would be correct (argmax verification
+	// reproduces greedy, which top_k=1 equals) but is a second behaviour change, and it does not
+	// ride along silently here.
+	//
+	// RNG: this path skips the per-token rng.Float64() draw that SampleWithInfo would make. That is
+	// unobservable rather than merely harmless — under top_k=1 every step is deterministic, so no
+	// later draw's VALUE can depend on the skipped ones, and no emitted token can differ. (The RNG
+	// stream position does advance differently, which is why nothing may depend on it downstream.)
 	fastNext := -1
 	greedyRF, hasGreedy := m.resident.(ResidentGreedy)
 	fastGreedy := useGPU && hasGreedy && sp.LogitProcessor == nil &&
-		sampler.ArgmaxEquivalent() && os.Getenv("GOINFER_NO_GREEDY_FASTPATH") == ""
+		(sampler.ArgmaxEquivalent() || sampler.GreedyEquivalent()) &&
+		os.Getenv("GOINFER_NO_GREEDY_FASTPATH") == ""
 
 	// Clamp the decode length to the resident KV cap up front (C3/M20). A Forward past
 	// the cap is refused mid-generation (the silent-corruption guard), but a resident
@@ -895,7 +912,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		if fastNext >= 0 {
 			// The resident already picked this token's argmax on-device (greedy fast
 			// path): nothing reads logits this step, so there is nothing to process or
-			// sample. Identical to the logits path — guarded by ArgmaxEquivalent.
+			// sample. Identical to the logits path — guarded by ArgmaxEquivalent/GreedyEquivalent.
 			next = fastNext
 		} else {
 			// Constrained decoding: let the processor mask this step's logits
@@ -921,7 +938,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		if m.isStop(next, sp) {
 			break
 		}
-		// ArgmaxEquivalent excludes Logprobs, so the fast path never reaches this.
+		// Both fast-path predicates exclude Logprobs, so the fast path never reaches this.
 		if sp.Logprobs {
 			g.Logprobs = append(g.Logprobs, info)
 		}

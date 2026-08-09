@@ -54,7 +54,8 @@ type ResidentForward interface {
 // ResidentGreedy is an optional capability on a ResidentForward: compute the token's greedy
 // argmax on-device and hand back just the id, skipping the full-logits readback (594 KB per
 // token at a 151936 vocab — ~1.7% of a 1.5B token, ~6.5% of a 0.5B one, measured on CUDA).
-// The decode loop uses it ONLY when Sampler.ArgmaxEquivalent() and no LogitProcessor is set,
+// The decode loop uses it ONLY when Sampler.ArgmaxEquivalent() OR Sampler.GreedyEquivalent()
+// (the `top_k=1` shape, P1) holds and no LogitProcessor is set,
 // so the emitted tokens are identical to the logits path. Backends may skip implementing it.
 type ResidentGreedy interface {
 	ForwardArgmax(embedding []float32, pos int) (int, error)

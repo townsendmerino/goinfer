@@ -57,7 +57,34 @@ leave it, it was true at press time... verify commit order first; see P0).
    272–273), matching the ascending-id contract. So the **Metal third of P1's tie-agreement holds**;
    only P0.1 (CUDA `TestArgmaxTieBreak`, box-only) remains to confirm the CUDA third before P1.
 
-## P1 — Route `top_k=1` to the greedy fast path (days; cheap consistency fix, and de-risks P3)
+## P1 — Route `top_k=1` to the greedy fast path — **DONE (2026-08-09)**
+
+> **SHIPPED.** `Sampler.GreedyEquivalent()` (`decoder/sampler.go`) is a NEW predicate beside
+> `ArgmaxEquivalent` — `TopK == 1 && !HistoryDependent() && !Logprobs`, unconstrained in temperature —
+> and `generateInto` routes on `ArgmaxEquivalent() || GreedyEquivalent()`. Measured on this box
+> (decode-only, prefill excluded; "before" = same binary with `GOINFER_NO_GREEDY_FASTPATH=1`):
+>
+> | model | `top_k=1` before | after | greedy | recovered |
+> |---|---|---|---|---|
+> | qwen2.5-coder-0.5b | 271.4 ±1.8 | **319.2** ±5.5 | 315.2 ±3.3 | +17.6% |
+> | gemma3-1b | 144.3 ±0.8 | **175.9** ±1.0 | 175.9 ±3.0 | +21.9% |
+>
+> The before-figures reproduce the recorded gap (272 / 148) independently, and after routing
+> `top_k=1` collapses onto greedy. Gates: `decoder.TestTopK1_MatchesGreedy` (byte-identical streams
+> at temps 0.01/0.7/1.5, both vocab widths, tie-heavy logits), `TestGreedyEquivalent_predicate`,
+> `TestGreedyEquivalent_stableAcrossHistory`.
+>
+> **Scoped deliberately: speculative eligibility is UNCHANGED.** The speculative paths gate on
+> `sp.Temperature <= 0` directly (speculative.go:69, spec_grammar.go:179, spec_eagle.go:194,
+> spec_ngram.go:176) and never consult either predicate, so `top_k=1`-with-temperature remains
+> speculative-ineligible. Making it eligible would be correct but is a separate change; it does not
+> ride inside P1.
+>
+> **Metal: pending.** The predicate is sampler-level so every backend inherits the routing, but no
+> e2e A/B has been run on the Mac. Not claimed.
+
+### Original plan (retained)
+
 
 Measured gap: qwen2.5-coder-0.5b 272 vs 312 tok/s, gemma3-1b 148 vs 180. `top_k=1` at any
 temperature is mathematically greedy: temperature scaling is monotone (order preserved) and a
@@ -295,7 +322,7 @@ one hand tied.
 | phase | effort | needs | buys |
 |---|---|---|---|
 | P0 truth maintenance | hours | CUDA box | unblocks P1; docs stop lying |
-| P1 `top_k=1` routing | days | CUDA box (gate) | `top_k=1` consistency; proves C-14 agreement e2e (13–18% for that shape) |
+| P1 `top_k=1` routing | **DONE** | CUDA box (gate) | `top_k=1` consistency; proves C-14 agreement e2e; 13–18% for that shape |
 | P2 Lazy Z | days | none (host) | kills the ~44 ns/entry softmax; temp-only stops being the slowest config |
 | P3 device top-K | weeks | CUDA box + Mac | kills the readback; nonzero-temp ≈ greedy |
 | P4 KV-quant opt-in | 1–2 wks | both boxes, profile-gated | Metal long-context floor; KV VRAM halved |

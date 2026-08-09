@@ -102,11 +102,38 @@ func (s *Sampler) Sample(logits []float32) (int, error) {
 // logit bias, no penalties, no temperature/filtering, and no logprob reporting that would
 // need the distribution. When true (and SamplingParams.LogitProcessor is nil), a backend that
 // can compute the argmax on-device may return just the id and skip the full-logits readback —
-// the emitted tokens are identical. This lives next to every logit-touching parameter on
-// purpose: adding a new one that mutates or reads logits must be reflected here, so a fast
-// path can never silently diverge.
+// the emitted tokens are identical.
+//
+// THIS AND GreedyEquivalent BELOW LIVE NEXT TO EVERY LOGIT-TOUCHING PARAMETER ON PURPOSE:
+// adding a new parameter that mutates or reads logits must be reflected in BOTH, so a fast path
+// can never silently diverge. They are separate predicates, not one widened one, so that call
+// sites choose deliberately which notion of "deterministic" they need (see GreedyEquivalent).
 func (s *Sampler) ArgmaxEquivalent() bool {
 	return s.p.Temperature <= 0 && len(s.p.LogitBias) == 0 && !s.penaltiesActive() && !s.p.Logprobs
+}
+
+// GreedyEquivalent reports whether this sampler's pick is deterministically the argmax token even
+// though a temperature is set — the `top_k=1` shape. It is TRUE at any temperature, which is not a
+// loophole: temperature scaling is strictly monotone, so it preserves the ordering of logits, and a
+// distribution restricted to ONE token is deterministic regardless of that token's probability.
+// So `top_k=1` at temperature 1.5 emits exactly what greedy emits.
+//
+// `top_p` / `min_p` at any value are safe alongside it: both cuts clamp at ≥1 retained token
+// (topFilterLogits, "always keep the top token"), so the retained set is exactly the top-1 either
+// way. The tie-break agrees too — topFilterLogits orders ties by ascending id and argmax() uses a
+// strict `>`, both selecting the LOWEST tied index, which is the contract the device argmax was
+// aligned to (audit C-14, gate cuda.TestArgmaxTieBreak).
+//
+// It uses HistoryDependent, NOT penaltiesActive: penaltiesActive() is computed from the sampler's
+// observed history, so it is false before the first Observe and true after. A backend consults this
+// predicate ONCE per request, before any token is observed, and would latch the wrong answer.
+// HistoryDependent asks the question that is actually stable — "are penalties/bias CONFIGURED" —
+// which is the right shape for a per-request routing decision.
+//
+// Logprobs is excluded for the same reason as in ArgmaxEquivalent: reporting a distribution needs
+// the logits the fast path is skipping.
+func (s *Sampler) GreedyEquivalent() bool {
+	return s.p.TopK == 1 && !s.p.HistoryDependent() && !s.p.Logprobs
 }
 
 func (s *Sampler) SampleWithInfo(logits []float32) (SampleInfo, error) {

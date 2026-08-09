@@ -10,6 +10,21 @@ pre-1.0 and may change as new model families and quant formats land.
 
 ## [Unreleased]
 
+### Changed
+- **`top_k=1` requests now take the on-device greedy fast path.** A request with `top_k=1` and no
+  `logprobs` / `logit_bias` / repetition-presence-frequency penalties is deterministic — temperature
+  scaling is monotone so it preserves ordering, and a one-token distribution has nothing to sample —
+  so it now skips the full-logits readback (594 KB/token at a 151936 vocab) exactly as
+  `temperature=0` does. **Emitted tokens are unchanged**; this is a routing change, gated
+  byte-for-byte by `decoder.TestTopK1_MatchesGreedy`. Measured on an RTX 2070 SUPER (decode-only,
+  prefill excluded, q4_K_M int4, 128-token prompt, 8 completions × 2 runs): qwen2.5-coder-0.5b
+  **271.4 → 319.2 tok/s (+17.6%)**, gemma3-1b **144.3 → 175.9 (+21.9%)** — landing on the greedy
+  figure in both cases. Implemented as a new `Sampler.GreedyEquivalent()` predicate rather than by
+  widening `ArgmaxEquivalent`, so each call site chooses deliberately. **Speculative-decode
+  eligibility is unchanged** (those paths gate on `temperature <= 0` directly): `top_k=1` with a
+  temperature is still not speculative-eligible. Metal inherits the routing but has no e2e
+  measurement yet.
+
 ### Fixed
 - **`POST /admin/models/unload` now frees the model's native memory instead of leaking it.** Unload
   deleted the entry from the registry but never called `Close()`, and with no ARC or finalizers under
