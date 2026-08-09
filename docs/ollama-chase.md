@@ -975,6 +975,55 @@ kernel.
   parity, whereas this changes what a small-VRAM box can run at a usable rate. Days-to-weeks build,
   gated on the CPU-kernel decision.
 
+### D6. Sampling on the critical path — the `temperature==0` readback cliff — **SCOPED, evidence-attached**
+
+Surfaced by outside-consumer testing of the released **v0.10.2** across a five-model sweep. Two
+distinct sampling cliffs were measured; **one is now fixed, one remains and is the lever here.**
+
+**Fixed this session (host-side, `decoder/sampler.go`).** The top-p/top-k selection path softmaxed
+all V and then **full-sorted all V** (`sort.Slice`) on the host, single-threaded, every token — the
+reporter's inferred "O(V×k) successive scans" was actually an O(V·log V) sort whose Go
+reflection-per-comparison constant made it *present* as linear in V. Replaced with bounded
+logit-space selection (k-bounded heap for top-k, adaptive nucleus for top-p; exp applied only to the
+retained set). Measured on synthetic logits at the reporter's two vocab sizes, temp 0.8 + top_p 0.95:
+
+| vocab | selection: full-sort | selection: bounded | full-path temp+top_p ÷ temp-only |
+|---|---|---|---|
+| 152 064 (qwen2.5) | 122.3 ms/tok | **1.80 ms/tok** (68×) | ~7× → **1.10×** |
+| 262 144 (gemma3) | 233.0 ms/tok | **4.37 ms/tok** (53×) | → **1.48×** |
+
+That closes the *top-p/top-k* portion of the reporter's ~15 tok/s cell (the ~361–418 ns/entry the
+sweep attributed to "linear in V" was the sort). It does **not** touch the second cliff:
+
+**The remaining lever — the `temperature==0` branch.** `Sampler.ArgmaxEquivalent()`
+(`decoder/sampler.go`) is true only for greedy: `Temperature <= 0 && no bias && no penalties &&
+!Logprobs`. When true, the resident CUDA/Metal backends return the token from an **on-device argmax
+and never read the V-wide logits back to the host**. Any nonzero temperature — even `0.01` — flips
+that branch, forcing a **full V-float logit readback per token + a host softmax over V**. The
+reporter measured this as a **~2.9× cost for any nonzero temperature** (greedy → temperature-only),
+before top-p is even applied. Reporter's sweep, per config (end-to-end, incl. model forward):
+
+- greedy ≈ up to ~310 tok/s (qwen2.5-coder-0.5b); temperature-only ≈ ~100 tok/s; temp+top_p ≈ ~15
+  tok/s (that last cell now recovers to ≈ the temperature-only figure via the host-side fix above).
+- **gemma3-1b @ 262k carries the largest penalty** (widest vocab → largest per-token readback).
+- The cost scales with V because it is a **per-token host-copy of the whole logit row**, not
+  compute — so the design must move the selection to the device, not merely speed up the host.
+
+**Design sketch (device-side, under the bit-identity contract).** Add a device-side **top-K
+reduction** (K a small fixed bound, e.g. 256–1024) to the CUDA and Metal decode kernels: return only
+the K highest logits + ids, not the V-wide row. The host runs the existing exact sampler over those
+K. Correctness bound: the retained nucleus must fit inside K, so the host **verifies the returned K
+carry mass ≥ top_p** and, on the rare short read, **falls back to a full V readback** for that token
+(adaptive bound verified host-side — the same shape as the host fix's `topPCandidates`). This is
+bit-identical to the current sampler on every token where K suffices, and exactly the full path
+otherwise. The reduction itself is FMA-free (a max/compare tree), so it sits cleanly under the
+existing kernel bit-identity lint. **Not attempted here** (scope): it needs new CUDA + Metal kernels
+and a device box to validate, so it is a campaign, not a patch.
+
+**Rank:** decode-side, benefits every non-greedy serving user (most real chat traffic runs
+temperature > 0), and reuses the adaptive-bound logic already written host-side. Above prefill;
+alongside D1/D5. Gated on device-box kernel work.
+
 ---
 
 ## 9. Landed — do not redo

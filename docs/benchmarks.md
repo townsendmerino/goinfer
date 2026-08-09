@@ -199,7 +199,7 @@ gpu-assessment — cited there.
 > **re-measured against v0.32.5** on the same RTX 2070 SUPER (installed at `~/ollama-0325`, kept
 > beside the pinned 0.5.7). The competitive picture changed materially:
 >
-> | metric (q4_K_M, best of 3, decode-only server-reported) | goinfer | Ollama 0.5.7 | **Ollama v0.32.5** |
+> | metric (q4_K_M, best of 3, decode-only server-reported · **sampling: unrecorded for the v0.32.5 re-measure**) | goinfer | Ollama 0.5.7 | **Ollama v0.32.5** |
 > |---|---|---|---|
 > | 0.5B decode | ~476 tok/s | 211 | **268** |
 > | 1.5B decode, short ctx | ~221 tok/s | 149 | **186** |
@@ -572,8 +572,14 @@ GINFER_PREQUANT_GGUF=~/models/qwen2.5-coder-1.5b-instruct-q8_0.gguf \
 
 ## Maintenance rules (so this page never rots into a lie)
 
-- **Every number carries its date + goinfer commit + peer version, inline.** No
-  floating "~90 tok/s" without the run that produced it.
+- **Every number carries its date + goinfer commit + peer version + sampling config, inline.**
+  No floating "~90 tok/s" without the run that produced it — and no number without its
+  **sampling configuration** (greedy, or `temperature`/`top_p` with their values), for goinfer
+  *and* the peer. Sampling config is a REQUIRED per-number field, on the same footing as machine,
+  driver, peer version, and date: a row's throughput is only interpretable once you know whether
+  it was sampled greedily or with temperature+top_p (the two can differ by an order of magnitude
+  on the same engine). Any existing row that does not state one is marked **sampling: unrecorded**
+  and must **not** be assumed greedy.
 - **Re-run `scripts/bench_compare.sh` at each tag.** A number more than one minor
   version stale is re-measured or struck — never silently carried forward.
 - **Re-verify the capability matrix against peer release notes at each tag** (cheap —

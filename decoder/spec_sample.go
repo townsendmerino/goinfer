@@ -29,12 +29,13 @@ func (s *Sampler) distVectorFrom(logits []float32) []float64 {
 		v[argmax(logits)] = 1
 		return v
 	}
-	probs := softmaxStable(logits, s.p.Temperature)
 	if s.p.TopK <= 0 && s.p.TopP <= 0 && s.p.MinP <= 0 {
-		return probs // drawFull draws from this directly
+		return softmaxStable(logits, s.p.Temperature) // drawFull draws from this directly
 	}
-	kept := topFilter(probs, s.p.TopK, s.p.TopP, s.p.MinP) // renormalized support
-	v := make([]float64, len(probs))
+	// Same canonical selection the plain sampler uses (topFilterLogits), so the
+	// speculative residual stays lossless against the target distribution.
+	kept := topFilterLogits(logits, s.p.Temperature, s.p.TopK, s.p.TopP, s.p.MinP) // renormalized support
+	v := make([]float64, len(logits))
 	for _, ip := range kept {
 		v[ip.id] = ip.p
 	}

@@ -125,13 +125,15 @@ func (s *Sampler) SampleWithInfo(logits []float32) (SampleInfo, error) {
 	var info SampleInfo
 	if s.p.Temperature <= 0 {
 		info.ID = argmax(work)
+	} else if s.p.TopK > 0 || s.p.TopP > 0 || s.p.MinP > 0 {
+		// Bounded selection in logit space — no softmax over the whole vocabulary
+		// (amendment 3). The old path softmaxed all V then full-sorted all V; both
+		// are gone for the filtered case, replaced by topFilterLogits below.
+		info.ID = s.drawFiltered(topFilterLogits(work, s.p.Temperature, s.p.TopK, s.p.TopP, s.p.MinP))
 	} else {
-		probs := softmaxStable(work, s.p.Temperature)
-		if s.p.TopK > 0 || s.p.TopP > 0 || s.p.MinP > 0 {
-			info.ID = s.drawFiltered(topFilter(probs, s.p.TopK, s.p.TopP, s.p.MinP))
-		} else {
-			info.ID = s.drawFull(probs)
-		}
+		// Unfiltered temperature sampling still draws from the full distribution,
+		// so it keeps the full-vocab softmax (no selection, no sort).
+		info.ID = s.drawFull(softmaxStable(work, s.p.Temperature))
 	}
 	if s.p.Logprobs {
 		info.Logprob, info.Top = computeLogprobs(work, info.ID, s.p.Temperature, s.p.TopLogprobs)
@@ -331,22 +333,102 @@ type indexedProb struct {
 	p  float64
 }
 
-// topFilter applies top-k, then min-p, then top-p to a probability vector,
-// returning the surviving (id, renormalized-prob) pairs.
-func topFilter(probs []float64, topK int, topP, minP float64) []indexedProb {
-	ips := make([]indexedProb, len(probs))
-	for i, p := range probs {
-		ips[i] = indexedProb{id: i, p: p}
+// topFilterLogits applies top-k, then min-p, then top-p to a LOGIT vector,
+// returning the surviving (id, renormalized-prob) pairs in descending order.
+// It replaces the old topFilter, which softmaxed all V then full-sorted all V.
+//
+// TIE-BREAK CONTRACT (amendment 1): entries with equal probability are ordered by
+// ASCENDING token id. The old path used sort.Slice, which is not stable, so the order
+// of tied entries was arbitrary — and since that order feeds the cumulative-CDF draw,
+// it was an unspecified part of the sampling result. It is now specified. The test-only
+// reference (refTopFilter, sampler_selection_test.go) carries the identical tie-break
+// and this path is gated bit-for-bit against it. (Same defect class as the open CUDA
+// argmax-reduce index tie-break; not fixed here.)
+//
+// SUMMATION-ORDER CONTRACT (amendment 2): every probability sum below — the top-p
+// cumulative and the final renormalization — runs in DESCENDING probability order.
+// The denominator is load-bearing: summing in a different order moves it by ULPs and
+// can flip which side of the cumulative-p boundary a token lands on, changing the draw.
+// Do not reorder these loops. (Same treatment as the Metal reduction widths.)
+//
+// LOGIT-SPACE SELECTION (amendment 3): temperature scaling and exp are monotone, so
+// top-k and min-p are decided on the raw logits with no softmax over V; exp is applied
+// only to the (small) retained set. top-p is the one filter whose cutoff is defined on
+// the NORMALIZED mass, so it needs the full-vocab softmax denominator Z — computed as a
+// single O(V) exp-sum, with no full probability array and no O(V·log V) sort. That Z
+// pass is irreducible for an exact nucleus; the sort it replaces is not.
+func topFilterLogits(logits []float32, temperature float64, topK int, topP, minP float64) []indexedProb {
+	texp := temperature
+	if texp <= 0 {
+		texp = 1 // defensive; SampleWithInfo only reaches here for temperature > 0
 	}
-	sort.Slice(ips, func(a, b int) bool { return ips[a].p > ips[b].p })
-	if topK > 0 && topK < len(ips) {
-		ips = ips[:topK]
+	maxL := float64(logits[0])
+	for _, v := range logits[1:] {
+		if float64(v) > maxL {
+			maxL = float64(v)
+		}
 	}
+	// Z (full-vocab softmax denominator) is needed ONLY for the top-p cutoff.
+	topPActive := topP > 0 && topP < 1
+	var Z float64
+	if topPActive {
+		for _, v := range logits {
+			Z += math.Exp((float64(v) - maxL) / texp)
+		}
+	}
+
+	// Candidate set: a bounded SUPERSET of the retained set, trimmed by the min-p /
+	// top-p cuts below. The most restrictive active selector bounds it in logit space.
+	var cand []int
+	switch {
+	case topK > 0:
+		cand = topKByLogit(logits, topK)
+	case minP > 0:
+		// e_i ≥ minP·e_max ⟺ logit_i ≥ maxL + T·ln(minP)  (e_max = 1 at the argmax).
+		thr := maxL + texp*math.Log(minP)
+		cand = make([]int, 0, 64)
+		for i, v := range logits {
+			if float64(v) >= thr {
+				cand = append(cand, i)
+			}
+		}
+	case topPActive:
+		cand = topPCandidates(logits, texp, maxL, Z, topP)
+	default:
+		// Only reachable when the sole "filter" is top-p ≥ 1 (i.e. no effective filter);
+		// keep every token, matching the reference. Degenerate and rare.
+		cand = make([]int, len(logits))
+		for i := range cand {
+			cand[i] = i
+		}
+	}
+
+	// Materialize e (unnormalized prob) for the candidates, then order by (prob desc,
+	// id asc). We MUST sort by e, not by the raw logit: at low temperature many distinct
+	// logits underflow to the same e (typically 0), so they are tied in probability and
+	// the contract orders those by id — sorting by logit would split that tie wrongly.
+	ips := make([]indexedProb, len(cand))
+	for i, id := range cand {
+		ips[i] = indexedProb{id: id, p: math.Exp((float64(logits[id]) - maxL) / texp)}
+	}
+	slices.SortFunc(ips, func(a, b indexedProb) int {
+		switch {
+		case a.p > b.p:
+			return -1
+		case a.p < b.p:
+			return 1
+		default:
+			return a.id - b.id // equal prob → ascending token id (tie-break contract)
+		}
+	})
+
+	// min-p cut, relative to the most-likely retained token. Idempotent when min-p was
+	// the selector; a genuine trim when top-k was.
 	if minP > 0 && len(ips) > 0 {
-		thresh := minP * ips[0].p // relative to the most-likely token
+		thresh := minP * ips[0].p
 		cut := len(ips)
-		for i, ip := range ips {
-			if ip.p < thresh {
+		for i := range ips {
+			if ips[i].p < thresh {
 				cut = i
 				break
 			}
@@ -356,24 +438,135 @@ func topFilter(probs []float64, topK int, topP, minP float64) []indexedProb {
 		}
 		ips = ips[:cut]
 	}
-	if topP > 0 && topP < 1 {
+	// top-p cut: smallest DESCENDING prefix whose normalized mass reaches topP. Compared
+	// as Σe ≥ topP·Z (Z is the full-vocab denominator) so it is the exact nucleus without
+	// a per-term divide. If the candidate set holds less mass than topP (top-k/min-p
+	// already capped it), cut stays len(ips) — keep them all, matching the reference.
+	if topPActive {
+		target := topP * Z
 		var cum float64
 		cut := len(ips)
-		for i, ip := range ips {
-			cum += ip.p
-			if cum >= topP {
+		for i := range ips {
+			cum += ips[i].p // p == e here (pre-renormalization)
+			if cum >= target {
 				cut = i + 1
 				break
 			}
 		}
+		if cut < 1 {
+			cut = 1
+		}
 		ips = ips[:cut]
 	}
-	var sum float64
+	// Drop unsamplable zero-probability tokens (temperature underflow). They carry no
+	// mass, so the draw is unchanged — but their relative order is unobservable, and a
+	// top-k that reaches into the zero region would otherwise keep a different subset of
+	// them than the reference. Dropping them keeps the returned set exactly the reference's
+	// and never returns a token the CDF walk can't reach. (The argmax has e=1, so ≥1 stays.)
+	nz := ips[:0]
 	for _, ip := range ips {
-		sum += ip.p
+		if ip.p > 0 {
+			nz = append(nz, ip)
+		}
+	}
+	ips = nz
+
+	// Renormalize the retained set in DESCENDING order (summation-order contract).
+	var sum float64
+	for i := range ips {
+		sum += ips[i].p
 	}
 	for i := range ips {
 		ips[i].p /= sum
 	}
 	return ips
+}
+
+// topKByLogit returns the indices of the k highest logits (ties resolved toward the
+// smaller id, matching the ascending-id tie-break), via a k-bounded min-heap: O(V·log k),
+// no O(V·log V) sort. The returned slice is unordered; the caller sorts it.
+func topKByLogit(logits []float32, k int) []int {
+	n := len(logits)
+	if k >= n {
+		out := make([]int, n)
+		for i := range out {
+			out[i] = i
+		}
+		return out
+	}
+	// "worse to keep": lower logit, or on a tie the LARGER id (so ties evict larger ids,
+	// keeping smaller). The min-heap root is the worst-kept element.
+	h := make([]int, 0, k)
+	worse := func(a, b int) bool {
+		if logits[a] != logits[b] {
+			return logits[a] < logits[b]
+		}
+		return a > b
+	}
+	siftUp := func(i int) {
+		for i > 0 {
+			p := (i - 1) / 2
+			if worse(h[i], h[p]) { // child worse than parent → move it toward the root
+				h[p], h[i] = h[i], h[p]
+				i = p
+			} else {
+				break
+			}
+		}
+	}
+	siftDownRoot := func() {
+		i := 0
+		for {
+			l, r, m := 2*i+1, 2*i+2, i
+			if l < len(h) && worse(h[l], h[m]) {
+				m = l
+			}
+			if r < len(h) && worse(h[r], h[m]) {
+				m = r
+			}
+			if m == i {
+				break
+			}
+			h[i], h[m] = h[m], h[i]
+			i = m
+		}
+	}
+	for id := 0; id < n; id++ {
+		if len(h) < k {
+			h = append(h, id)
+			siftUp(len(h) - 1)
+		} else if worse(h[0], id) { // candidate better than the worst kept → swap in
+			h[0] = id
+			siftDownRoot()
+		}
+	}
+	return h
+}
+
+// topPCandidates returns a SUPERSET of the top-p nucleus: the top-b logits (by
+// topKByLogit) for the smallest b whose retained exp-mass reaches topP·Z. The bound is
+// adaptive — it grows until the mass is verified sufficient host-side, so no fixed cutoff
+// can truncate the nucleus (amendment: adaptive bound). The caller applies the exact
+// descending cut. Typical nuclei are small; the pathological flat case grows to V.
+func topPCandidates(logits []float32, texp, maxL, Z, topP float64) []int {
+	n := len(logits)
+	target := topP * Z
+	b := 32
+	if b > n {
+		b = n
+	}
+	for {
+		cand := topKByLogit(logits, b)
+		var sum float64
+		for _, id := range cand {
+			sum += math.Exp((float64(logits[id]) - maxL) / texp)
+		}
+		if sum >= target || b >= n {
+			return cand
+		}
+		b *= 8
+		if b > n {
+			b = n
+		}
+	}
 }

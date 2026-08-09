@@ -8,6 +8,42 @@ The forward-pass and quantization numerics are parity-gated against HuggingFace
 and are the stable contract. The loader and architecture-descriptor surface is
 pre-1.0 and may change as new model families and quant formats land.
 
+## [Unreleased]
+
+### Fixed
+- **Sampling with `top_p`/`top_k` no longer full-sorts the whole vocabulary on the host every
+  token.** The filtered-sampling path softmaxed all V logits and then ran a `sort.Slice` over all V
+  — an O(V·log V) sort whose per-comparison reflection cost made it *present* as linear in V, single-
+  threaded on the decode critical path. It is replaced with bounded selection in logit space
+  (`decoder/sampler.go`): a k-bounded min-heap for `top_k` (O(V·log k)), an adaptive partial
+  selection for the `top_p` nucleus (grown until the retained mass provably reaches `p`), and a
+  `min_p` logit-space threshold — with the softmax applied **only to the retained set**, not all V.
+  Measured on synthetic logits at `temperature=0.8, top_p=0.95`: selection cost **122.3 ms→1.80
+  ms/tok at 152 064-vocab (68×)** and **233.0 ms→4.37 ms/tok at 262 144-vocab (53×)**; the full
+  sampling path at `temperature+top_p` now runs within **1.1–1.5×** of temperature-only sampling
+  (was ~7×). `top_k` no longer funnels through the general `top_p` routine. A test-only reference
+  implementation gates the bounded path bit-for-bit across a wide seed sweep and both vocab sizes
+  (`decoder/sampler_selection_test.go`), and a throughput gate asserts the ratio to the
+  temperature-only baseline. Speculative decoding's distribution vector uses the same selection, so
+  it stays lossless. **This does not address the separate `temperature==0`→nonzero cliff** (loss of
+  on-device argmax → full logit readback per token); that needs device-side kernels and is scoped in
+  `docs/ollama-chase.md` §8 D6.
+
+### Changed
+- **Tied-probability selection order is now specified.** The old `sort.Slice` filter was not stable,
+  so tokens with equal probability were ordered arbitrarily — and since that order feeds the
+  cumulative-CDF draw, it was an unspecified part of the sampling result. Ties now resolve by
+  **ascending token id**, and the renormalization/`top_p` sums run in a fixed **descending-
+  probability** order (a load-bearing contract: a different summation order can move the denominator
+  by ULPs and flip a draw near a `top_p` boundary). Greedy (`temperature==0`) argmax is unchanged.
+  Sampled output for a given seed may therefore differ from prior releases at tie/boundary points;
+  the distribution is unchanged. (Same defect class as the open CUDA argmax-reduce index tie-break;
+  not fixed here.)
+- **`docs/benchmarks.md` now requires sampling configuration as a per-number metadata field**, on
+  the same footing as machine/driver/peer-version/date, for goinfer and the peer. Rows whose
+  sampling config was not recorded are marked `sampling: unrecorded` and must not be assumed greedy
+  (the one such row is the §B2 v0.32.5 re-measure box).
+
 ## [v0.10.2] — 2026-08-08
 
 ### Changed
