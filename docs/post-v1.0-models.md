@@ -28,16 +28,23 @@ matter more than a sixth/seventh family and should land **before** this backlog:
 
 ### Tier A — ride a just-built path for nearly free
 
-- **DeepSeek-V4** — now the open-weight frontier. An evolution of the MLA + MoE path
-  we just built; most likely a **config-delta on `deepseekArchitecture`** plus
-  possibly a routing tweak. Verify the routing/expert-bias changes vs V3; gate with
-  `weightDiff` + layer-slice (full oracle infeasible at V4 scale), same as V3/Kimi.
-  Highest prestige in the backlog, probably the cheapest.
+- ~~**DeepSeek-V4**~~ — **MOVED OUT OF TIER A (2026-08-09). Config-verified: NOT an alias.**
+  The assumption below ("a config-delta on `deepseekArchitecture` plus possibly a routing
+  tweak") was tested against the real `config.json` + `inference/model.py` and **refuted**:
+  `kv_lora_rank` is absent, attention is `sparse_attn` over a learned `Indexer` with a KV
+  `Compressor` and sliding window, and the router has no `n_group`/`topk_group` and a third
+  `scoring_func` (`sqrtsoftplus`). Eight new primitives. Full findings and the re-scope:
+  `docs/task-model-family-deepseek-v4-kimi-k3.md`. **Kimi-K3 is PARTIAL** — its MLA and router
+  *are* ours, but MLA runs on only 24 of 93 layers behind a linear-attention (KDA) mixer.
 
-- **Other DeepSeek-V3-shaped MoEs** — the MLA + DeepSeekMoE shape is now a *de facto
-  standard* (Kimi already rides it). As more 2026 frontier MoEs adopt MLA, each is a
-  near-free alias on `deepseekArchitecture` with scalar deltas + the
-  `scoring_func`-keying check (the Kimi gotcha). Treat new MLA models as alias-first.
+- **Other DeepSeek-V3-shaped MoEs** — ⚠ **the "de facto standard" premise did not survive its
+  first two test cases.** Both 2026 flagships moved off the V3 shape within one generation
+  (V4 replaced the KV latent outright; K3 demoted MLA to a quarter of its layers). The
+  corrected rule: **frontier MoE attention is diverging, not converging.** "Alias-first" is
+  still the right *starting hypothesis* — it is cheap and sometimes right (Kimi-K2 was) — but
+  it is a hypothesis to config-verify every time, never an estimate to fund. The
+  `scoring_func`-keying check (the Kimi gotcha) generalized in an unexpected direction too: K3
+  renames the key entirely (`moe_router_activation_func`), and V4 introduces a third value.
 
 - **Watch — Kimi K3** (reportedly in development, ~3–4T params, billed as "the next
   major architecture jump"). *Not* a Kimi K2.x point release — K2 through K2.7-Code
