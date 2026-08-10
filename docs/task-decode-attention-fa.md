@@ -132,6 +132,23 @@ floor" — and a written refutation joining that record is a legitimate M3 outco
 Metal's ~9–12 µs/pos remains the largest single backend deficit in the repo; that is the
 prize *if* a lever exists, not evidence that one does.
 
+**M3 STARTED — first data point, and it lands on the refutation (`TestZZ_attnM3ThreadWidth`,
+2026-08-10, M1 Pro).** On M=1 decode, FA's "don't materialize the score vector" benefit does not
+apply (the score vector is only nKeys floats), so FA's only lever over the shipped one-threadgroup-
+per-head serial pass is more in-flight parallelism to hide the latency wall. Sweeping the per-head
+threadgroup width **128 → 256 → 512** (4× the concurrent K/V loads per head), all-28-layer attention
+@2048, min GPU-busy/20 reps: **17.05 / 17.5 / 17.5 ms — the wider tiles are 102–103% of shipped, i.e.
+slightly worse, never better.** More parallelism *within* a head does not touch the wall. And the
+other direction — more threadgroups *across* the key axis (split-KV) — was already measured as a
+**regression** on Metal and reverted (§A2-Metal). So **both forms of added parallelism fail on M1**,
+and FA's remaining theoretical lever (smaller threadgroup memory → higher occupancy) does not bind
+here: an attention dispatch launches only nH≈12 threadgroups, already under the threadgroup-memory
+occupancy limit, so the ceiling is DRAM-latency serialization per access, not occupancy FA could lift.
+**M3 verdict: NO-GO on Metal** — this is the written refutation joining the A2-Metal record. Caveat:
+this is the go/no-go probe plus the split-KV/half-width record, not a full FA-prototype disproof, but
+all three point the same way. The Metal ~9–12 µs/pos deficit stands as accepted floor unless a
+fundamentally different memory system (not this M1 Pro) changes the latency picture.
+
 ## 5. The quality lane (the actual spec)
 
 The exact path stays default; its byte gates are **untouched** — not one threshold moves.
@@ -166,7 +183,7 @@ its own gate lane before it ships). Gates, all on the opt-in path:
 | M0 | CUDA prototype, one geometry (qwen 1.5B class) | exact-vs-FA accuracy distribution measured at 4 depths; determinism holds; coefficient measured |
 | M1 | coefficient ≤ 3× peer on that geometry — **go/no-go** | anchored A/B vs exact path and vs peer (§B-style table), OR a written refutation ("FA fuses but the 2070S occupancy wall holds") — §3 |
 | M2 | coverage: GQA/hd=256/window/softcap + gate lane complete | all §5 gates live and demonstrated-firing; opt-in flag |
-| M3 | Metal profile → go/no-go → port if go | M1-style result on M1 Pro, or a written refutation joining the A2-Metal record |
+| M3 | Metal profile → go/no-go → port if go | **NO-GO (2026-08-10)** — thread-width probe refuted the parallelism lever (§4); split-KV already refuted; occupancy doesn't bind at nH≈12. Written refutation, joins A2-Metal |
 | M4 | P7 wiring | `--mode fast` aggregates it per the P7 constraints |
 
 Class: **weeks per backend** (M0–M2 is the campaign core). Not in scope: prefill's path 3
