@@ -1,9 +1,20 @@
 // router_f32.cu — pure-f32 router projection for the Gemma-4 MoE router.
 //
 // A SEPARATE .cu from moe.cu on purpose. moe.ptx ships built at CUDA 12.6; this box's NVRTC is 12.9,
-// so regenerating moe.ptx to add a kernel would rewrite EVERY shipped kernel's codegen (a toolchain
-// bump masquerading as a kernel add). A fresh file adds only router_f32.ptx and leaves the audited
+// so regenerating moe.ptx AT 12.9 would rewrite EVERY shipped kernel's codegen (a toolchain bump
+// masquerading as a kernel add). A fresh file adds only router_f32.ptx and leaves the audited
 // 12.6 moe.ptx untouched.
+//
+// READ THE RULE PRECISELY: it is "never regenerate at a DIFFERENT toolchain", NOT "never regenerate".
+// A regen at the PINNED, IDENTICAL version (NVRTC 12.6.85) is the sanctioned path for editing a
+// kernel that already lives in moe.ptx, because it is provably a no-op on every unrelated kernel —
+// establish that by rebuilding UNCHANGED and confirming the artifact is byte-identical BEFORE making
+// the edit. That control plus a per-kernel diff is what makes the change auditable. Procedure and
+// exact wheel version: cuda/testdata/REGEN.md (used to raise MOE_MAX_E 256→512).
+//
+// So: add a NEW kernel → new file (this one). Change an EXISTING moe.ptx kernel → pinned regen.
+// Do not reach for a duplicate second implementation to dodge the regen; two routers that must agree
+// is a worse failure mode than one auditable artifact.
 //
 // WHY f32xf32 and not gemv_f32_a8 (the shared int8-activation router GEMV). Gemma-4's router is the
 // one DISCRETE-failure path: a quantization error near a top-k tie picks a DIFFERENT expert — a

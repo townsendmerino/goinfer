@@ -114,8 +114,8 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		// decline here would be a hand-coded copy that could drift from the taxonomy (the exact
 		// class the hardware-matrix generator caught) — single source of truth instead.
 		switch {
-		case nE > 256:
-			return declined(fmt.Errorf("MoE nE=%d exceeds moe_route's MOE_MAX_E=256", nE))
+		case nE > 512:
+			return declined(fmt.Errorf("MoE nE=%d exceeds moe_route's MOE_MAX_E=512", nE))
 		case nGroup > 64:
 			return declined(fmt.Errorf("MoE nGroup=%d exceeds moe_route's MOE_MAX_G=64", nGroup))
 		case m.GatedActResident() != 1: // decoder.ActSiLU — decoder/mlp.go errors on any other
@@ -135,8 +135,8 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		if moeInter%32 != 0 || H%32 != 0 {
 			return declined(fmt.Errorf("gemma4 MoE int4 needs moeInter(%d) and hidden(%d) both multiples of 32", moeInter, H))
 		}
-		if nE > 256 {
-			return declined(fmt.Errorf("gemma4 MoE nE=%d exceeds moe_route's MOE_MAX_E=256", nE))
+		if nE > 512 {
+			return declined(fmt.Errorf("gemma4 MoE nE=%d exceeds moe_route's MOE_MAX_E=512", nE))
 		}
 	}
 

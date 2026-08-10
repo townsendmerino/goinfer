@@ -14,12 +14,28 @@
 // CUDA-native spelling and is what the fp32 +inf bit pattern means anyway.
 #define MOE_NEG_INF (-__int_as_float(0x7f800000))
 
-#define MOE_MAX_E 256 // router cap; buildMoE rejects larger
+// MOE_MAX_E bounds moe_route's per-thread scratch (score[]/sel[] below). Raised 256 → 512 so
+// Kimi-K2 (384 routed experts) stops declining to CPU on this backend; DeepSeek-V4-Pro's 384 is
+// covered by the same number. It stops SHORT of Kimi-K3's 896 on purpose — that family is not built,
+// and an unbuilt model should not set a validated limit.
+//
+// CHANGING THIS REQUIRES REGENERATING THE AUDITED moe.ptx. That is allowed, but only at the PINNED
+// SAME toolchain (NVRTC 12.6.85) and only with the byte-identical rebuild-unchanged control run
+// first — see cuda/testdata/REGEN.md, and the expanded policy note in router_f32.cu. The 256→512
+// regen's entire PTX diff was moe_route's stack depot (2368 → 4416 B = 2×512×4 score/sel + 64×4
+// gscore + 64 keep) plus three stack offsets; gemv_f32_a8 / gemv_w4a8_moe / gemv_w4a8_moe_wacc /
+// shared_gate_combine came out byte-identical.
+//
+// Cost when nE is SMALL: the depot is sized unconditionally, so every MoE model now carries a 4416-B
+// per-thread local frame instead of 2368. moe_route runs ONE thread once per layer per token, so
+// that is ~2 KB of extra local memory on a single thread — measured no decode regression on a
+// mixtral-class model at 8 experts (see the CHANGELOG entry for the A/B).
+#define MOE_MAX_E 512 // router cap; buildMoE rejects larger
 #define MOE_MAX_G 64  // group-limited routing cap
 
 extern "C" {
 
-// moe_route: score -> select top-k -> weights. ONE thread: nE is <=256 and this runs once per
+// moe_route: score -> select top-k -> weights. ONE thread: nE is <=MOE_MAX_E and this runs once per
 // layer per token, so the parallel version would cost more in launch/reduction overhead than it
 // saves. Semantics mirror decoder's CPU router exactly (see gpu/moe.go, metal/moe.go).
 //

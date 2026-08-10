@@ -31,12 +31,28 @@
 >
 > ### What the two "genuinely new work" items actually are
 >
-> **1. Router-capacity cap — the doc's numbers were stale, the direction holds.** The real cap is
-> `residentBackendMoECap` (`decoder/features.go:219-221`): **webgpu `{experts:256, groups:32}`, cuda
-> `{experts:256, groups:64}`** — cuda's groups were already bumped to 64 by audit M-17, which the old
-> table did not reflect. The comparison is `>` (`features.go:231-236`), so **256 is admitted**.
-> Targets: **V4-Flash `n_routed_experts: 256` already passes**; **V4-Pro needs ≥384**; **K3 needs
-> ≥896**. Group counts are a non-issue (V4 has no groups at all; K3 has `num_expert_group: 1`).
+> **1. Router-capacity cap — ✅ DONE (2026-08-09), raised to 512.** "The cap" was never one number:
+> it is **three shader constants plus one Go map**, and only one of them sat inside a frozen artifact.
+> Itemized, with what changed:
+>
+> | where | was | now | why |
+> |---|---|---|---|
+> | `cuda/moe.cu` `MOE_MAX_E` | 256 | **512** | bounds `moe_route`'s per-thread `score[]`/`sel[]`. **Inside the audited 12.6.85 `moe.ptx`** — required regenerating it at the *pinned same* toolchain, with a byte-identical rebuild-unchanged control first (`cuda/testdata/REGEN.md`) |
+> | `gpu/moe.go` `MAXE` / `array<f32,N>` | 256 | **512** | WGSL, compiled at runtime — no frozen artifact. **This is the one that actually unblocks K2** |
+> | `metal/moe.go` `float score[256]` | 256 | **256 (unchanged)** | runtime-compiled MSL, but raising it is Mac-validation work — deferred |
+> | `decoder/features.go` `residentBackendMoECap` | webgpu/cuda only | webgpu **512**, cuda **512**, **metal `{256,64}` newly DECLARED** | the map claimed "absent entry = no fixed-size router cap", which was **false for Metal** — its shader really is 256 and rejects above it |
+>
+> **512 not 896, deliberately:** it covers Kimi-K2's 384 (the shipped family that was declining) and
+> DeepSeek-V4-Pro's 384, and stops short of K3's 896 — an unbuilt family should not set a validated
+> limit. **V4-Flash's 256 already passed** (comparison is `>`).
+>
+> ⚠ **The headline claim in this doc needed correcting: raising the CUDA cap does NOT unblock K2.**
+> `FeatMLA` is declared by **webgpu only** (`cuda: false`, `metal: false`), so on CUDA/Metal K2
+> declines on *features*, not capacity — the cap was never its blocker there. WebGPU is the one
+> backend where the cap was the sole obstacle, and after the bump **Kimi K2 flips `CPU → ✅ resident`
+> in the generated hardware matrix**. The CUDA raise is still worth having (it admits non-MLA MoEs at
+> 257–512 experts and removes one of two blockers ahead of any MLA-on-CUDA work), but it is not what
+> delivered K2.
 >
 > **2. `streamExperts` — THE ASSUMPTION DOES NOT MATCH THESE CHECKPOINTS.** The doc claimed the
 > gemma4 work "generalized `streamExperts` to *any* fused-stacked-expert MoE". That statement is true

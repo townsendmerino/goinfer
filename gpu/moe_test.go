@@ -109,3 +109,81 @@ func TestMoERoute_parity(t *testing.T) {
 		t.Logf("%s: idx=%v wgt=%v", tc.name, gi, gw)
 	}
 }
+
+// TestMoERoute_pastOldCap is the gate for raising the router cap 256 -> 512 (MAXE in gpu/moe.go,
+// MOE_MAX_E in cuda/moe.cu). The cap bounds the ROUTER's per-invocation scratch and nothing else —
+// the expert GEMVs select by index arithmetic into row-stacked weights, so they are expert-count
+// agnostic. That makes "does moe_route still agree with the CPU reference at nE > 256" the whole
+// correctness question, and this is it.
+//
+// 384 is Kimi-K2's real routed-expert count, which is the shipped family the old cap declined.
+// 512 is the new cap exactly (the boundary that must still work). Both run the deepseek-shaped
+// sigmoid+bias+scale config, since that is what a real K2-class router uses.
+func TestMoERoute_pastOldCap(t *testing.T) {
+	c, err := gpu.New()
+	if err != nil {
+		t.Skipf("no WebGPU adapter: %v", err)
+	}
+	defer c.Close()
+
+	for _, nE := range []int{257, 384, 512} { // just past the OLD cap, K2's real count, the NEW cap
+		// Deterministic, non-degenerate, and deliberately NOT sorted: a router that silently
+		// truncated at 256 would still look plausible if the winners lived in the first 256, so
+		// the top scorers are placed PAST index 256 where a truncating kernel cannot find them.
+		logits := make([]float32, nE)
+		bias := make([]float32, nE)
+		var s uint32 = 12345
+		for i := range logits {
+			s = s*1664525 + 1013904223
+			logits[i] = float32(int32(s>>8)%2000)/1000 - 1 // [-1, 1)
+			bias[i] = float32(int32(s>>16)%200) / 1000
+		}
+		logits[nE-1] = 5.0 // the strongest expert is the LAST one
+		logits[nE-2] = 4.5
+		logits[300%nE] = 4.0
+
+		const k = 3
+		gi, gw, err := c.RouteExpertsForTest(logits, bias, k, true, false, 2.5)
+		if err != nil {
+			t.Fatalf("nE=%d: RouteExpertsForTest: %v", nE, err)
+		}
+		ri, rw := refRoute(logits, bias, k, true, false, 2.5)
+		for j := 0; j < k; j++ {
+			if gi[j] != ri[j] {
+				t.Errorf("nE=%d: idx[%d] gpu=%d ref=%d (gpu=%v ref=%v)", nE, j, gi[j], ri[j], gi, ri)
+			}
+			if d := math.Abs(float64(gw[j] - rw[j])); d > 1e-5 {
+				t.Errorf("nE=%d: wgt[%d] gpu=%.6f ref=%.6f (Δ%.2g)", nE, j, gw[j], rw[j], d)
+			}
+		}
+		// The three planted experts must all be SELECTED. Order is deliberately not asserted: under
+		// sigmoid the planted logits (5.0/4.5/4.0) all saturate to ~0.99, so the additive selection
+		// bias decides their relative order — asserting a specific winner would encode a false
+		// expectation, not a stronger check. What matters is that experts living PAST index 256 are
+		// reachable at all: a router still clamping to the old cap could not select 383 or 511.
+		planted := map[int]bool{nE - 1: true, nE - 2: true, 300 % nE: true}
+		got := map[int]bool{}
+		for _, ix := range gi {
+			got[ix] = true
+		}
+		for ix := range planted {
+			if !got[ix] {
+				t.Errorf("nE=%d: planted expert %d not selected (got %v) — a router clamping to the "+
+					"old 256 cap would miss the ones past index 256", nE, ix, gi)
+			}
+		}
+		if nE > 256 {
+			maxIdx := 0
+			for _, ix := range gi {
+				if ix > maxIdx {
+					maxIdx = ix
+				}
+			}
+			if maxIdx < 256 {
+				t.Errorf("nE=%d: every selected expert is < 256 (%v) — cannot distinguish a working "+
+					"kernel from one truncating at the old cap", nE, gi)
+			}
+		}
+		t.Logf("nE=%d: idx=%v wgt=%v", nE, gi, gw)
+	}
+}

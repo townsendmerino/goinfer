@@ -322,26 +322,61 @@ func TestResidentMoECapacity_routerCap(t *testing.T) {
 	if miss := missingFeatures(arch.residentFeatures(), residentBackendFeatures["webgpu"]); len(miss) != 0 {
 		t.Fatalf("kimi_k2 is missing WebGPU features %v — this test can no longer isolate the router cap", miss)
 	}
-	if ResidentEligible(arch, "webgpu") {
-		t.Error("kimi_k2 (384 experts) must NOT be WebGPU-resident-eligible — the router kernel caps at 256 (M22)")
+	// The cap was raised 256 -> 512 (MOE_MAX_E / MAXE) so Kimi-K2's 384 is now ADMITTED on the two
+	// backends whose router scratch was widened. This is the point of the change: K2 is the shipped
+	// family the old cap declined.
+	if !residentMoECapacityOK(arch, "webgpu") {
+		t.Error("kimi_k2 (384 experts) must now pass the WebGPU router cap (raised to 512)")
 	}
-	if residentMoECapacityOK(arch, "webgpu") {
-		t.Error("residentMoECapacityOK(kimi, webgpu) = true; 384 > 256 must fail")
+	if !residentMoECapacityOK(arch, "cuda") {
+		t.Error("kimi_k2 (384 experts) must now pass the CUDA router cap (raised to 512)")
+	}
+	// ...and WebGPU is where that actually matters: it is the only backend declaring FeatMLA, so
+	// K2 is genuinely resident-eligible there now. On cuda/metal it still declines, on FEATURES not
+	// capacity — asserted below so a future MLA-on-CUDA leg does not mistake this for already-done.
+	if !ResidentEligible(arch, "webgpu") {
+		t.Error("kimi_k2 must be WebGPU-resident-eligible once the router cap admits 384")
+	}
+	if ResidentEligible(arch, "cuda") {
+		t.Error("kimi_k2 must still decline on CUDA — it needs FeatMLA, which CUDA does not implement")
+	}
+	if miss := missingFeatures(arch.residentFeatures(), residentBackendFeatures["cuda"]); len(miss) == 0 {
+		t.Error("the CUDA decline for kimi_k2 must be a FEATURE decline (MLA); if this is empty the " +
+			"cap is now the only guard and the assertion above is testing the wrong thing")
+	}
+
+	// Metal is DECLARED in the cap map for the first time (its shader really is 256 and rejects
+	// above it, metal/moe.go:206) — the map previously claimed "absent = uncapped", which was false.
+	if residentMoECapacityOK(arch, "metal") {
+		t.Error("kimi_k2 (384 experts) must fail Metal's router cap — its shader is still float score[256]")
 	}
 
 	// Boundary: at/under the cap the same arch is admitted (proves it's the count, not the family).
 	atCap := *arch.MoE
-	atCap.NumExperts = 256
+	atCap.NumExperts = 512
 	capped := *arch
 	capped.MoE = &atCap
 	if !residentMoECapacityOK(&capped, "webgpu") {
-		t.Error("256 experts is at the cap and must be admitted (off-by-one in the router-cap check)")
+		t.Error("512 experts is at the cap and must be admitted (off-by-one in the router-cap check)")
 	}
 	over := atCap
-	over.NumExperts = 257
+	over.NumExperts = 513
 	capped.MoE = &over
 	if residentMoECapacityOK(&capped, "webgpu") {
-		t.Error("257 experts must decline (cap is 256)")
+		t.Error("513 experts must decline (cap is 512)")
+	}
+	if residentMoECapacityOK(&capped, "cuda") {
+		t.Error("513 experts must decline on CUDA too (MOE_MAX_E is 512; past it moe_route writes out of bounds)")
+	}
+	// Kimi-K3's 896 must STILL decline everywhere — the cap was deliberately not stretched to an
+	// unbuilt family, and a future reader must not assume otherwise.
+	k3 := atCap
+	k3.NumExperts = 896
+	capped.MoE = &k3
+	for _, be := range []string{"webgpu", "cuda", "metal"} {
+		if residentMoECapacityOK(&capped, be) {
+			t.Errorf("896 experts (Kimi-K3 class) must decline on %s — 512 was chosen deliberately", be)
+		}
 	}
 
 	// A backend with no fixed-size router cap is unaffected (dense archs and cap-less backends pass).

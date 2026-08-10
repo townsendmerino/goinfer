@@ -19,10 +19,10 @@ import (
 // expert's WEIGHT to its un-biased score, optionally renormalize the k weights to sum 1
 // (Mixtral norm_topk_prob) and scale them (DeepSeek routed_scaling_factor). The
 // group-limited variant (DeepSeek nGroup>1) is deferred to C3d; this kernel is the
-// nGroup==1 path. nE is tiny (8–256) so one single-lane workgroup is plenty — selection
+// nGroup==1 path. nE is tiny (8–512) so one single-lane workgroup is plenty — selection
 // is not the cost, the expert GEMVs are.
 const moeRouteWGSL = `
-const MAXE: u32 = 256u;
+const MAXE: u32 = 512u;
 struct P { nE: u32, k: u32, sigmoid: u32, norm: u32, scale: f32, hasBias: u32, nGroup: u32, topkGroup: u32 };
 @group(0) @binding(0) var<storage, read>       logits: array<f32>;  // [nE] router logits
 @group(0) @binding(1) var<storage, read>       bias:   array<f32>;  // [nE] selection bias (read only if hasBias)
@@ -32,8 +32,8 @@ struct P { nE: u32, k: u32, sigmoid: u32, norm: u32, scale: f32, hasBias: u32, n
 @compute @workgroup_size(1)
 fn main() {
     let nE = min(p.nE, MAXE);
-    var score: array<f32, 256>;  // un-biased score (softmax prob or sigmoid)
-    var sel:   array<f32, 256>;  // selection score (score + bias)
+    var score: array<f32, 512>;  // un-biased score (softmax prob or sigmoid) — MAXE
+    var sel:   array<f32, 512>;  // selection score (score + bias) — MAXE
     if (p.sigmoid == 1u) {
         for (var i: u32 = 0u; i < nE; i = i + 1u) { score[i] = 1.0 / (1.0 + exp(-logits[i])); }
     } else {

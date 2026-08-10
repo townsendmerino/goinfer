@@ -68,6 +68,14 @@ func TestMoERoute(t *testing.T) {
 		{"kimi/group-limited-wide", 128, 8, true, true, 2.827, 8, 4, true},
 		{"k=1/top1", 16, 1, false, false, 0, 0, 0, false},
 		{"k==nE/all-experts", 8, 8, false, true, 0, 0, 0, false},
+		// Past the OLD 256 cap. These exist because MOE_MAX_E was raised 256 -> 512 and moe.ptx was
+		// regenerated for it; without them the regen is unvalidated at exactly the widths it added.
+		// The kernel writes score[nE]/sel[nE] into a per-thread depot sized by MOE_MAX_E, so an
+		// under-sized depot here is an out-of-bounds local write, not a clean failure.
+		{"past-old-cap/257", 257, 4, true, false, 1, 0, 0, true},
+		{"kimi_k2/384-real-shape", 384, 8, true, true, 2.827, 8, 4, true},
+		{"new-cap-boundary/512", 512, 8, true, true, 2.5, 0, 0, true},
+		{"new-cap-boundary/512-grouped", 512, 6, true, true, 2.5, 8, 4, true},
 	}
 
 	for _, c := range cases {

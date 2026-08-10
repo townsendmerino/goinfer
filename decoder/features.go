@@ -217,9 +217,31 @@ func ResidentEligible(a *Architecture, backend string) bool {
 // entry = no fixed-size router cap (a backend that declines these archs on features never reaches
 // this — Metal/CUDA decline Kimi on FeatMLA).
 var residentBackendMoECap = map[string]struct{ experts, groups int }{
-	"webgpu": {experts: 256, groups: 32}, // gpu/moe.go: array<f32,256> score / array<f32,32> gscore
-	"cuda":   {experts: 256, groups: 64}, // cuda/moe.cu: MOE_MAX_E 256 / MOE_MAX_G 64 (was 32 — under-admitted n_group 33..64; audit M-17)
+	"webgpu": {experts: 512, groups: 32}, // gpu/moe.go: MAXE 512, array<f32,512> score/sel / array<f32,32> gscore
+	"cuda":   {experts: 512, groups: 64}, // cuda/moe.cu: MOE_MAX_E 512 / MOE_MAX_G 64. 256→512 raised deliberately (see below); groups was 32→64 by audit M-17
+	"metal":  {experts: 256, groups: 64}, // metal/moe.go: float score[256]/sel[256], gscore[64]/keep[64]; guarded at build (moe.go:206-211)
 }
+
+// WHY cuda is 512 and the others are not — this is three shader constants plus this map, and only
+// one of them is expensive to change:
+//
+//   - cuda   moe.cu MOE_MAX_E, raised 256→512. The constant bounds moe_route's per-thread scratch
+//            (score[]/sel[]), and moe_route lives in the AUDITED 12.6.85 cuda/testdata/moe.ptx — so
+//            raising it required regenerating that artifact. Done at a PINNED, IDENTICAL toolchain
+//            with a byte-identical rebuild-unchanged control first; the resulting diff touches only
+//            moe_route's stack depot (2368→4416 B) and every other kernel in the file is
+//            byte-identical. Procedure: cuda/testdata/REGEN.md. 512 covers Kimi-K2's 384 routed
+//            experts (its whole point) and DeepSeek-V4-Pro's 384; it deliberately stops short of
+//            Kimi-K3's 896, which is an unbuilt family that should not set validated limits.
+//   - metal  DECLARED here for the first time, NOT raised. Its shader really is capped at 256
+//            (metal/moe.go:48-49) and rejects above it, so the old "absent entry = no fixed-size
+//            router cap" claim was FALSE for metal and the hardware-matrix generator derived a
+//            different answer than the runtime gives — exactly the C6 one-source-of-truth defect
+//            this map exists to prevent. Raising metal's shader needs Mac validation: future leg.
+//   - webgpu ALSO raised 256→512, and this is the one that actually unblocks Kimi-K2: webgpu is the
+//            only backend declaring FeatMLA, so on cuda/metal K2 declines on FEATURES no matter what
+//            this cap says. Its WGSL compiles at runtime (no frozen artifact), and it was validated
+//            on this box. Groups stay 32 — array<f32,32> gscore is untouched and no target needs more.
 
 // residentMoECapacityOK reports whether backend's router kernel can route arch's MoE (M22). True for
 // a dense arch or a backend without a fixed-size router.

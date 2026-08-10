@@ -27,7 +27,7 @@
 	.param .u32 moe_route_param_10
 )
 {
-	.local .align 16 .b8 	__local_depot0[2368];
+	.local .align 16 .b8 	__local_depot0[4416];
 	.reg .b64 	%SP;
 	.reg .b64 	%SPL;
 	.reg .pred 	%p<122>;
@@ -53,9 +53,9 @@
 	cvta.to.global.u64 	%rd3, %rd38;
 	cvta.to.global.u64 	%rd4, %rd35;
 	add.u64 	%rd5, %SPL, 0;
-	add.u64 	%rd6, %SPL, 1024;
-	add.u64 	%rd7, %SPL, 2048;
-	add.u64 	%rd8, %SPL, 2304;
+	add.u64 	%rd6, %SPL, 2048;
+	add.u64 	%rd7, %SPL, 4096;
+	add.u64 	%rd8, %SPL, 4352;
 	mov.u32 	%r167, %ctaid.x;
 	mov.u32 	%r168, %tid.x;
 	or.b32  	%r169, %r167, %r168;

@@ -61,6 +61,35 @@ pre-1.0 and may change as new model families and quant formats land.
   KV quantization is **no-go as a CUDA speed lever, go as a reachability lever** (4× VRAM cut from f32).
   The 1.5B/32000 cells were deliberately skipped and the omission is stated in §B7's header.
 
+### Changed
+- **Kimi K2 is now GPU-resident-eligible on WebGPU: the MoE router capacity cap is raised 256 → 512.**
+  This is an **eligibility** change, not a correctness change — nothing about how a model computes
+  moved. K2 ships 384 routed experts, and the router scored experts into a fixed-size scratch array
+  of 256, so it correctly declined to CPU rather than route on only the first 256 (plausible-looking
+  wrong output). Raised to **512**, which also covers DeepSeek-V4-Pro's 384; it deliberately stops
+  short of Kimi-K3's 896, since an unbuilt family should not set a validated limit. Models past the
+  new cap still decline cleanly, gated by `TestResidentMoECapacity_routerCap`. **`Kimi K2` flips
+  `CPU → ✅ resident` on WebGPU in the generated hardware matrix.**
+
+  "The cap" was three shader constants plus one Go map, not one number: `gpu/moe.go` (WGSL, 512),
+  `cuda/moe.cu` `MOE_MAX_E` (512), `metal/moe.go` (**still 256** — raising it is Mac-validation work),
+  and `residentBackendMoECap`. **Metal is now DECLARED in that map for the first time** at its real
+  `{256, 64}`: the map claimed "absent entry = no fixed-size router cap", which was false for Metal
+  and made the generated hardware matrix derive a different answer than the runtime gives.
+
+  Note the CUDA raise does **not** by itself make K2 resident there — `FeatMLA` is declared by WebGPU
+  only, so on CUDA/Metal K2 declines on features regardless of capacity. CUDA's raise admits non-MLA
+  MoEs at 257–512 experts and clears one of two blockers ahead of any MLA-on-CUDA work.
+
+  Raising CUDA's constant required regenerating the **audited** `cuda/testdata/moe.ptx`, which the
+  repo otherwise avoids. Done at the **pinned, identical** NVRTC 12.6.85 with a byte-identical
+  rebuild-unchanged control run first; the resulting PTX diff is confined to `moe_route`'s stack depot
+  (2368 → 4416 B) with `gemv_f32_a8` / `gemv_w4a8_moe` / `gemv_w4a8_moe_wacc` / `shared_gate_combine`
+  byte-identical. Procedure, shas and the perf control (router 1.038× at nE=8, within the 5% budget):
+  `cuda/testdata/REGEN.md`. The policy comment now states the actual rule — *never regen at a
+  different toolchain*, a pinned same-version regen is the sanctioned edit path — so the next reader
+  does not clone the kernel into a second file to dodge it.
+
 ### Added
 - **`-ctx N` raises the CUDA resident KV capacity, which was a hard-coded 4096.** The effective cap is
   `min(model context window, -ctx)`; per model via `--model name=path,ctx=N`. **The default is
