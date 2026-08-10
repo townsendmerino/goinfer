@@ -49,6 +49,20 @@ func TestDecodeTokenFusedBatched_largedim(t *testing.T) {
 	// ceiling is what would make Stage-B + a model drafter viable end-to-end.
 	t.Log("--- M-sweep @ llama70b-layer dims ---")
 	for _, mm := range []int{4, 8, 16, 32, 48} {
+		// gemmRowMaxM is a HARD kernel limit, not a tuning knob: the thin-M gemmRow kernel
+		// accumulates into a private array<i32, gemmRowMaxM> (gemm_rows.go:19), and
+		// DecodeTokenFusedBatched returns a clean error above it. This sweep used to request
+		// M=32/48 anyway and t.Fatalf on that error, so the whole test reported FAIL for asking
+		// the API to do something it documents it cannot — charging every unrelated leg an
+		// investigation. (Proven unrelated to the MoE cap work in 0018114 by stashing that
+		// commit's only gpu/ change and re-running: identical failure.) The measurable part of
+		// the sweep is M <= gemmRowMaxM; beyond it the answer is "chunk the block", which is a
+		// Stage-B design question, not a measurement.
+		if mm > gemmRowMaxM {
+			t.Logf("70b-M%d: SKIPPED — exceeds gemmRowMaxM=%d (kernel limit; batching past it needs "+
+				"block chunking, tracked as Stage-B runner surgery in docs/spec/07)", mm, gemmRowMaxM)
+			continue
+		}
 		runLargeDim(t, ctx, "70b-M"+strconv.Itoa(mm), 8192, 64, 8, 128, 28672, vocab, 1, start, mm, iters)
 	}
 }
