@@ -34,8 +34,22 @@ and runs them **in-process**. What makes it different — you don't have to choo
   feature quietly dropped. And constrained decoding masks the logits so structured output
   always fits your JSON schema (below).
 
-> Not to be confused with provider-orchestration libraries (e.g. teilomillet/gollm)
-> that call remote LLM APIs. goinfer runs the weights itself, locally, in-process.
+### What it's for — and what it isn't
+
+goinfer targets **single-user local inference**: one process, one machine, batch-1 decode,
+deployed by copying a file. That is the axis it optimizes — `go build` with **no toolchain of
+any kind** (no CUDA toolkit, no C++ compiler, no CMake, no Python), cross-compiling like any
+other Go program, and every GPU fast path is gated bit-identical against its own reference path,
+with all backends parity-gated against the pure-Go CPU implementation — which is itself
+parity-gated against HuggingFace.
+
+It is **not a serving engine.** There is no continuous batching and no paged attention: a
+model serves one generation at a time behind a bounded queue. If your problem is saturating a
+datacentre GPU with concurrent requests, vLLM and its ports are built for that and goinfer is
+not.
+
+It is also not a provider-orchestration library (e.g. `teilomillet/gollm`) that calls remote
+LLM APIs. goinfer runs the weights itself, locally, in-process.
 
 Built on [`aikit`](https://github.com/townsendmerino/aikit)'s embedding and tensor
 primitives.
@@ -143,7 +157,7 @@ go run ./cmd/serve --model ~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
 # OpenAI base URL: http://localhost:8080/v1
 ```
 
-> **Default quantization is `int4`** (smallest + fastest). Override with `--quant
+> **Default quantization is `int4`** (smallest, and fastest on the GPU backends). Override with `--quant
 > int8int8|int8|int4mix|""`: `int8int8` is more accurate at ~2× the RAM and is **required for
 > `--backend metal`** (int4 declines to CPU there). All quantized modes get batched CUDA prefill
 > (fast TTFT); only native f32 falls back to the sequential path. `--quant -h` explains all five.
@@ -162,8 +176,10 @@ one process; requests route on the OpenAI `model` field, `/v1/models` lists all,
 and distinct models run in parallel (per-model mutex). Resident int8 models are
 expensive — prequant `.giw` maps weights zero-copy for a cheap zoo. With
 `--allow-admin` (off by default — it loads attacker-named paths), `POST
-/admin/models/{load,unload}` manage the registry at runtime (unload refuses a
-busy model). `--max-queue N` (default 8) bounds each model's queue: a full queue
+/admin/models/{load,unload}` manage the registry at runtime — an unload makes the
+model unroutable immediately and frees its device memory once in-flight requests
+finish, returning `200` if that completes within `--unload-drain-wait` (default 5s)
+and `202` otherwise. `--max-queue N` (default 8) bounds each model's queue: a full queue
 returns 429 + Retry-After (single decode worker per model; no continuous batching).
 
 **Sampling: pass `top_k` alongside your temperature.** Since v0.10.3, `top_k`/`top_p`/`min_p` use
@@ -284,15 +300,15 @@ to work with it, so `go get github.com/townsendmerino/goinfer` brings all four a
 only needed to pin, vendor, or audit it:
 
 ```bash
-go get github.com/townsendmerino/goinfer/cuda@v0.9.0
+go get github.com/townsendmerino/goinfer/cuda@latest
 ```
 
 **The backend modules are versioned independently of the root and of each other** — they are
 not in lockstep, since a root-only release doesn't retag them. Backend tags carry the module
-path as a prefix — the three backends are currently tagged `gpu/v0.9.0`, `cuda/v0.9.0`, and
-`metal/v0.9.0` — which is how Go's module proxy resolves a submodule tag; the bare `v0.9.x`
-tags are the root's. When in doubt, take the root's requirement rather than picking a backend
-version yourself.
+path as a prefix (`gpu/vX.Y.Z`, `cuda/vX.Y.Z`, `metal/vX.Y.Z`), which is how Go's module proxy
+resolves a submodule tag; the bare `vX.Y.Z` tags are the root's. Check the
+[releases page](https://github.com/townsendmerino/goinfer/releases) for what is current — and
+when in doubt, take the root's requirement rather than picking a backend version yourself.
 
 ## Packages
 
