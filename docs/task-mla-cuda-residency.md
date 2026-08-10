@@ -94,6 +94,35 @@ which is a host-side stride, not a kernel change.
 **If that holds, MLA decode attention on CUDA needs no new attention kernel and inherits the existing
 byte-identical gate** — collapsing the expensive half of this task.
 
+> ### ✅ TESTED AND IT HOLDS (2026-08-09, micro-leg B) — `cuda/mla_latent_reuse_prototype_test.go`
+>
+> Test-only prototype at `testdata/deepseek-tiny`'s real MLA geometry (nH=4, `kv_lora_rank` 16,
+> `qk_rope_head_dim` 8 ⇒ latDim 24), driving `attn_batched` at `nKV=1, hd=latDim, M=1` against an
+> independently-written f64 CPU reference of the absorb-path math. The fixture cannot be loaded
+> *resident* here — CUDA declines MLA on features, which is the task — so this drives the kernel at
+> the fixture's dims rather than through a model. `kc`/`vc` are two **duplicated allocations**, not
+> one aliased buffer (the `restrict` fix is production work, not a prerequisite for the answer).
+>
+> | criterion | result |
+> |---|---|
+> | (1)+(2) rank-prefix == absorb-path rank collapse | **max\|Δ\| = 3.18e-08, max relΔ = 2.77e-06** ✅ |
+> | (2b) rope-tail accumulate is inert — *verified, not assumed* | zeroing the value buffer's rope tail leaves the first `rank` dims **bit-identical** ✅ |
+> | (3) cost of the wasted dims | **1.127×** (hd=24 → 5692 ns vs hd=16 → 5049 ns), order-alternated |
+>
+> **⚠ Read the 1.127× in context — it is a worst case, not the production number.** The tiny
+> fixture's rope tail is 8/24 = **33.3%** of the value width; V2-Lite/V3 geometry is 64/576 =
+> **11.1%**, i.e. **3.0× less waste**. The measured overhead is at triple the production waste
+> fraction, so real-geometry overhead should land well under it. (Not extrapolated to a number here —
+> the honest statement is a bound, and the real geometry is one prototype run away.)
+>
+> **VERDICT: the reuse holds. The ~3-day path in §6 is the live one; the bespoke-kernel row does not
+> activate.** MLA decode attention on CUDA needs no new attention kernel and inherits
+> `TestAttnBatched_bitIdentical`'s byte-identical contract — so the §2 flag (WebGPU's tolerance-gated
+> online softmax) is not merely avoided, it is *unnecessary*.
+>
+> The prototype is kept as the parity gate's skeleton: its CPU reference and per-dim-independence
+> check are what a production resident-vs-CPU gate needs.
+
 > **Blocker to check first, and it is real.** `attn_batched` declares `const float* __restrict__ kc`
 > and `const float* __restrict__ vc`. Passing the same buffer to both **violates `restrict`** — both
 > are read-only so it is benign in practice, but it is language-level UB and the compiler may key
@@ -177,7 +206,8 @@ hole, and this is the only task that closes it.
 
 ## 6. Effort class and recommended queue position
 
-**Effort: days, not weeks — *if* the `attn_batched` reuse holds.**
+**Effort: days, not weeks — and the condition is DISCHARGED.** Micro-leg B tested the
+`attn_batched` reuse and it holds (see §2), so the bespoke-kernel branch is closed.
 
 | item | class |
 |---|---|
@@ -190,10 +220,9 @@ hole, and this is the only task that closes it.
 
 **Recommended queue position: AFTER the v1.0 cut, and behind the other CUDA depth work.**
 
-1. **The gate to run first is half a day, not a campaign**: prototype `attn_batched` with
-   `kc = vc = latent, nKV = 1, hd = latDim` against the CPU absorb reference on the existing tiny
-   fixture. That single experiment decides whether this is a ~3-day task or a ~3-week one, and it
-   costs almost nothing. **Do that before scheduling anything else here.**
+1. ~~**The gate to run first**~~ — **DONE (micro-leg B).** The prototype ran; the reuse holds; this
+   is the ~3-day task, not the ~3-week one. `cuda/mla_latent_reuse_prototype_test.go` is checked in
+   and doubles as the parity gate's skeleton.
 2. **Do not schedule the full build on K2/V3's account** — they do not fit, and the doc should stop
    implying otherwise.
 3. **Reconsider immediately if K3 is funded**, or if a mid-size MLA checkpoint lands that the C′
