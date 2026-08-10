@@ -8,7 +8,18 @@ The forward-pass and quantization numerics are parity-gated against HuggingFace
 and are the stable contract. The loader and architecture-descriptor surface is
 pre-1.0 and may change as new model families and quant formats land.
 
-## [Unreleased]
+## [v0.11.0] — 2026-08-10
+
+**MINOR** (0.10.3 → 0.11.0): backward-compatible additions and behavior changes — new flags
+(`-ctx`, per-model `ctx=N`, `GOINFER_SPLITKV_MIN_KEYS`, `-unload-drain-wait`), eligibility changes
+(`top_k=1` greedy routing, MoE router cap 256→512), and performance/gating fixes. No public API was
+removed. The core-numerics surface is unchanged since `6edd1ca`; the delta from there to the tag is
+docs-only.
+
+> **⚠ Sampled output for a given seed changed in this release** (the temperature-only path AND the
+> filtered `top_p`/`top_k`/`min_p` paths). **The distribution is unchanged** — same sampler semantics,
+> same probabilities — only the seed→token mapping shifts, once, for both paths together. If you pin a
+> seed for reproducible sampling, expect a different token stream; see the sampling entry below.
 
 ### Docs
 - **The post-v0.10.3 "still slow" campaign is closed and filed** (`docs/completed/plan-still-slow.md`;
@@ -48,6 +59,15 @@ pre-1.0 and may change as new model families and quant formats land.
   eligibility is unchanged** (those paths gate on `temperature <= 0` directly): `top_k=1` with a
   temperature is still not speculative-eligible. Metal inherits the routing but has no e2e
   measurement yet.
+- **Parity `status: validated` now MEANS a T3 run, enforced — and a new `experimental` tier lets a
+  weak row stop lying.** The manifest parsed `Method` as an opaque blob and never checked it against
+  the T3 method list, so a row could sit at `validated` with a T1 artifact in a T3 slot and be counted
+  as *supported* (the staleness gate keys on `deps_hash`, which says nothing about HOW a row was
+  validated). `TestParityManifest_methodTier` now requires a T3 method (`full-forward-oracle` /
+  `real-model-oracle` / `weightDiff` / `shared-path`) for `validated`; a genuine but sub-T3 row takes
+  the new `status: experimental`, keeps its method and metrics, renders as `experimental: <method>` in
+  the generated capability matrix, and is **excluded from the supported count**. Validation-semantics
+  and docs only — no numerics.
 
 ### Documentation
 - **Deep-context decode is measured for the first time (8k/16k/32k) and it is linear, not

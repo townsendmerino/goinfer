@@ -742,6 +742,23 @@ shows the same 128→512 step goinfer does (+1.419 µs/pos), so part of that ste
 not goinfer-specific. Any mechanism claim beyond that is unmeasured. §D4's flash-attention
 explanation should be read with this 2026-08-09 caveat rather than trusted as-is.
 
+## v0.11.0 release qualification (2026-08-10) — go/no-go vs these anchors
+
+The v0.11.0 tag's delta from the last code commit (`6edd1ca`) is **docs-only** (README wording), so no
+resident cell's numerics changed and the §B6/§B7 (CUDA) and §B3 (Metal) anchors below **are** the
+v0.11.0 numbers — the sweep is a no-regression confirmation, not a re-measure.
+
+| backend | qualification at the tag commit | verdict |
+|---|---|---|
+| **Metal** (M1 Pro) | re-run on device at the tag: snapshot golden **byte-identical**, LayerB **per-kernel parity vs CPU** (attention / gemvW8A8 / gemvW4A8 / rmsnorm / rope / swiglu), C11 argmax=full-logits, NaN-cosine gate — all green | **GO** — decode numerics unchanged |
+| **CUDA** (RTX 2070 SUPER) | carries over from the §B6/§B7 anchors by **code-identity** (the tag path is byte-identical to their measurement commit); the box confirms via the CUDA tier of `scripts/gpu_gate.sh` before the tag is final | **GO (carry-over)** — box re-confirm is the box's step |
+
+No regression vs anchors on either backend (code unchanged; Metal gates green). This table doubles as
+v1.0's sweep **iff** the code delta between the two tags stays zero (v1.0 is planned as a data/docs-only
+delta — see the v1.0 doc). **Judgment call flagged:** the CUDA half is carry-over-by-code-identity, not
+a fresh box run; the strongest no-regression guarantee is that the code did not change, but a box
+`gpu_gate.sh` CUDA pass is the owner's confirmation before the tag ships.
+
 ## B6 — Split-KV decode attention, re-gated (2026-08-09, P6a)
 
 §B5 above flagged the split-KV gate as a follow-up. It turned out to be worse than "characterized on
