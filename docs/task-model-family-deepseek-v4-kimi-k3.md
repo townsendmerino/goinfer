@@ -139,6 +139,164 @@ is that the field the question presupposes is absent.)
 
 ---
 
+## PHASE 0b (2026-08-09) — K3's two cost questions, priced
+
+Read-only follow-up to Phase 0: modeling files, configs, the safetensors index, and goinfer's own
+source. No weights, no code.
+
+| question | verdict |
+|---|---|
+| **KDA vs shipped DeltaNet** | **SMALL VARIANT KERNEL** — same delta rule, per-channel decay instead of per-head scalar. *One open question named below.* |
+| **MXFP4 packing** | **LAYOUT SHIM** — identical numeric format, different container (separate planes vs interleaved blocks). Confined to routed experts only. |
+| **RoPE-less MLA** | **NEEDS A BRANCH** — the shipped MLA forward ropes unconditionally and `mlaParams` has no NoPE flag. |
+
+### 1. KDA vs the shipped Gated DeltaNet — op by op
+
+Ours: `decoder/deltanet.go` (qwen3_5_moe). Theirs: `KimiDeltaAttention`, `modeling_kimi_linear.py:477`.
+
+| op | goinfer DeltaNet | K3 KDA | delta |
+|---|---|---|---|
+| q/k/v projection | **fused** `inProjQKV → [q;k;v]` | **separate** `q_proj`/`k_proj`/`v_proj` | ⚪ load-time concat |
+| conv front-end | depthwise causal conv `convW[convDim,K]` + **SiLU** | `q_conv1d`/`k_conv1d`/`v_conv1d` = `ShortConvolution(kernel_size=4, activation='silu')` | ⚪ **same**, `short_conv_kernel_size: 4` |
+| q/k L2 norm | `l2normScaled(...)` on q and k | `use_qk_l2norm_in_kernel=True` | ⚪ **same** |
+| write gate β | `beta = sigmoid(b_t[headV])` — **per head** | `beta = b_proj(hidden)` → `[num_heads]`, `use_beta_sigmoid_in_kernel=True` | ⚪ **same** |
+| **decay gate g** | `g = negExpA[headV] · softplus(a_t[headV] + dtBias[headV])` — **PER-HEAD SCALAR**; state decays uniformly `S[i] *= gt` | `g = f_b_proj(f_a_proj(h))` → `rearrange('... (h d) -> ... h d')` — **PER-CHANNEL**, with `dt_bias` of width `num_heads·head_dim` and `A_log` per head | 🔴 **THE DELTA** |
+| gate floor | none | `safe_gate` + `gate_lower_bound: -5.0` | 🔴 new clamp |
+| state update | `kv = Σ S[kd·hv+vd]·k[kd]`; `delta = (v[vd] − kv)·β`; `S += k⊗delta` | `chunk_kda` / `fused_recurrent_kda` (from **`fla`**) | ⚪ same delta rule |
+| output norm | gated RMSNorm (`normW`) | `FusedRMSNormGated(head_dim, activation='sigmoid')` | ⚪ **same** |
+| output gate | `inProjZ → z` | `g_proj` (`use_full_rank_gate: True`; a low-rank `g_a`/`g_b` variant also exists) | ⚪ same role |
+
+**Why "small variant kernel" and not "new scan primitive".** The recurrence is the *same gated delta
+rule* — L2-normed q/k, sigmoid β, `S ← decay·S + k⊗(v − S·k)β`. Every surrounding op (conv+SiLU,
+L2 norm, gated RMSNorm, output gate, A_log/dt_bias/softplus decay) is already implemented and was
+validated op-for-op for qwen3_5_moe. **The one structural change is that the decay stops being a
+scalar per head and becomes a vector along one axis of the state matrix** — our `S[i] *= gt` becomes
+a per-column multiply. That is a broadcast-shape change to an existing inner loop plus a clamp, not a
+different fold.
+
+> 🚩 **OPEN QUESTION, and it must be answered before anyone writes the kernel.** `g` has shape
+> `(h, head_dim)` and KDA sets `head_k_dim == head_dim == head_v_dim`, so **the config alone does not
+> say which axis of the `[head_k_dim, head_v_dim]` state the decay indexes** — key-dim or value-dim.
+> The scan itself lives in **`fla` (flash-linear-attention), an external Triton library the modeling
+> file only calls**; it is not in the checkpoint repo. Resolving this needs `fla`'s source, not more
+> config reading. Getting the axis wrong is a silent-wrong class (plausible output, incorrect decay),
+> so it is a hard prerequisite, not an implementation detail.
+>
+> **Bit-identity note:** the reference fold is `chunk_kda` — a *chunkwise* scan, whose accumulation
+> order differs from a strict sequential recurrence. goinfer's DeltaNet decodes one token at a time
+> (sequential by construction), so decode parity is against the sequential order and is unaffected;
+> any future chunked *prefill* would inherit the same reassociation question the SSM work already met.
+
+### 2. MXFP4 — the gpt-oss unpacker's format, a different container
+
+`quantization_config` (text_config): `format: "mxfp4-pack-quantized"`, `quant_method:
+"compressed-tensors"`, `group_size: 32`, `num_bits: 4`, `type: "float"`, `symmetric: true`,
+`scale_dtype: "torch.uint8"`, `strategy: "group"`.
+
+Ours (`decoder/mxfp4.go`): *"A block is 32 elements: one e8m0 8-bit power-of-two scale byte, then 16
+bytes each packing two e2m1 4-bit values (4.25 bits/weight). 17 bytes/block."*
+
+**The numbers match exactly** — 32-element groups, 4-bit e2m1 values, an 8-bit (e8m0/uint8)
+power-of-two scale per group, symmetric. **The container does not:** ours reads one *interleaved*
+17-byte-per-block stream (GGML type 39); K3 ships **two separate planes**, `…experts.N.w{1,2,3}.weight_packed`
+and `…weight_scale`. So the value table and scale semantics are reusable verbatim; what is new is a
+reader that zips two planes into the existing per-block decode. **Layout shim, not a new dequant.**
+
+> ⚠ **One bit-level unknown that config cannot settle: nibble order within a byte** (low-then-high vs
+> high-then-low) may differ between GGML MXFP4 and compressed-tensors packing. Our unpacker's order
+> was *transcribed from the reference and verified bit-for-bit against a real gpt-oss checkpoint* —
+> the same standard must be met here, which needs one real tensor. Until then, "shim" is the estimate,
+> not a guarantee.
+
+**What is quantized is narrow, and that is good news.** The `ignore` list excludes
+`re:.*self_attn.*`, `re:.*shared_experts.*`, `re:.*mlp\.(gate|up|gate_up|down)_proj.*`,
+`re:.*lm_head.*`, `re:.*vision_tower.*`, `re:.*mm_projector.*`. So **only the routed experts are
+4-bit**; MLA, KDA, norms, router, shared experts and the head are all bf16. The MXFP4 work is
+confined to the expert loader and **never touches the KDA or MLA parity work**. Per the gpt-oss
+precedent this lands CPU-first with the GPU backends declining cleanly.
+
+### 3. RoPE-less MLA — the shipped path assumes RoPE
+
+Phase 0 found `mla_use_nope: True`, `self.rotary_emb = None`, and no `rope_theta`/`rope_scaling`
+anywhere in `text_config`. Checked against our implementation:
+
+- `decoder/arch.go:173-182` — `mlaParams` carries `QLoRARank`, `KVLoRARank`, `QKNopeHeadDim`,
+  `QKRopeHeadDim`, `VHeadDim`. **There is no NoPE flag.**
+- `decoder/forward_deepseek.go:89,108-111` — the forward computes `invFreq := arch.ropeInvFreq(layer)`
+  and ropes the query's rope dims and the latent's rope key **unconditionally**; the file's own header
+  says *"Decoupled RoPE rides on a separate qk_rope_head_dim slice"* with no conditional.
+
+**Answer: K3's MLA layers need a no-rope config branch, and it does not exist today.** Cheap — a
+descriptor flag plus skipping step 3, leaving the `qk_rope_head_dim` slice as extra nope dims carried
+through unroped — but it is a real, currently-absent branch, and silently roping a NoPE model is
+plausible-wrong output rather than an error.
+
+### 4. `streamExperts` generalization — design note (shared with any future V4)
+
+Current contract (`decoder/weights.go:1032`): one fused `[nExpert, rows, cols]` tensor, hard-validated
+`t.Elements() == nExpert*stride`, sliced per expert via `SubF32` so the 3-D f32 is never materialized.
+Both new families ship **one tensor per expert** (K3: 82 432 entries = 92 layers × 896 experts × 3).
+
+Sketch — **not code**:
+
+- Add a sibling entry point taking a **per-expert tensor list** (resolved by name template from the
+  safetensors index) rather than one fused tensor.
+- **Validate the count against config** (`len(list) == NumExperts`) exactly as the fused path validates
+  element count — the check must not be quietly dropped, since a missing expert would otherwise route
+  to a zero weight and produce plausible-wrong output.
+- **Quantize at load, per expert**, reusing `quantizeWM` unchanged — each tensor *is* one expert, so
+  the slicing step simply disappears. The bf16-transient win the fused path engineered is inherent
+  here, not something to re-earn.
+- **Retain the fused path** — gemma4 and the existing MoE families use it; this is an added shape, not
+  a replacement.
+
+> **Residency reality, recorded as the expected v1 shape:** K3 has **896 routed experts**, above the
+> new **512** router cap (`0018114`), so K3's MoE **declines resident on cuda/webgpu and runs CPU**.
+> That is correct and intended — the cap-bump leg deliberately stopped at 512 rather than let an
+> unbuilt family set a validated limit. **Do not propose raising it here.**
+
+### 5. Oracle plan sketch for the KDA layers
+
+- **HF reference at tiny scale:** `text_config.model_type: "kimi_linear"` with `auto_map` →
+  `modeling_kimi_linear.KimiLinearForCausalLM`, i.e. remote-code, runnable with `transformers` at a
+  toy geometry. **Caveat: it calls `fla` for the scan**, so the oracle needs `flash-linear-attention`
+  installed and (being Triton) likely a GPU — the same dependency that gates the §1 open question.
+  If `fla` proves impractical, the fallback is a **NumPy transcription of the sequential recurrence**,
+  which is the shape our DeltaNet was validated against anyway.
+- **Tiny fixture:** buildable the way the DeltaNet/Mamba fixtures were (random weights at toy dims,
+  pinned golden). ⚠ `testdata/kimi-tiny/` exists but is **config-only — no `model.safetensors`**
+  (unlike `testdata/deepseek-tiny/`, which has weights); a K3/KDA fixture must be generated.
+- **Harness reuse:** the qwen3_5_moe parity shape applies directly — same axis, same per-layer
+  structure, and `deltanet` already has a validated op-for-op reference to diff against.
+
+### 6. Revised bottom line for K3
+
+| item | rides free | new work | class |
+|---|---|---|---|
+| MLA (24 layers) | shape is ours (`kv_lora_rank: 512`, `kv_a_proj_with_mqa`, `kv_b_proj`) | **NoPE branch**; MLA output gate | small |
+| KDA (69 layers) | conv+SiLU, L2 norm, β, gated RMSNorm, output gate, A_log/dt_bias/softplus | **per-channel decay** + gate clamp; **`fla` axis question** | small variant kernel, **blocked on one external read** |
+| Router | ours entirely (`e_score_correction_bias`, `noaux_tc`, sigmoid, `first_k_dense_replace: 1`) | config **key renames** only | config-delta |
+| Latent-MoE | — | `routed_expert_{up,down}_proj` + norm | small |
+| `situ` activation | — | new activation (`SituAndMul`, 2 betas) | trivial |
+| Residual projections | — | per-sublayer `*_res_proj`/`*_res_norm`, `attn_res_block_size: 12` | small |
+| MXFP4 experts | value table + e8m0 scale semantics | **plane-zip shim**; nibble order unverified | layout shim |
+| Loader | `quantizeWM`, streaming discipline | **per-expert tensor entry point** | small |
+| Hybrid scheduling | per-layer-kind dispatch exists (granite/nemotron precedent) | 24/69 interleave wiring | small |
+
+**Effort: weeks, not days and not a campaign** — *conditional on the `fla` axis question resolving as
+a broadcast change.* If it resolves as a different fold, the KDA row becomes **new scan primitive**
+and the estimate moves to campaign class; that is exactly what this gate exists to catch, and it is
+**not yet closed**.
+
+**Queue: behind v1.0, and behind DeepSeek-V4's prerequisites** (fp8 blockwise dequant, per-expert
+loader) which K3 partly shares. Two cheap unblocks are worth doing independently of K3 because they
+serve other work: the **per-expert-tensor loader entry point** (§4) and the **MLA NoPE branch** (§3).
+
+**Cross-reference:** `docs/task-mla-cuda-residency.md` lists K3's 24 MLA layers in its payoff table.
+That doc's recommendation stands and is not duplicated here — note only that K3 would land **CPU-only
+for its MoE regardless** (896 > 512 cap), so MLA-on-CUDA does not make K3 a GPU-resident model; the
+two tasks are independent.
+
 ## Verified configuration — Kimi-K3 (`model_type: "kimi_k3"`)
 
 Source: `moonshotai/Kimi-K3/config.json`, `modeling_kimi_linear.py`, `configuration_kimi_k3.py`.
