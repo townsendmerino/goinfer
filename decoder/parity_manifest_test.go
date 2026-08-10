@@ -55,12 +55,12 @@ type familyParity struct {
 	Uses        []string        `json:"uses"`
 	Own         []string        `json:"own"`
 	DepsHash    string          `json:"deps_hash"`
-	Status      json.RawMessage `json:"status"`
+	Status      string          `json:"status"`
 	ValidatedAt json.RawMessage `json:"validated_at"`
 	Date        json.RawMessage `json:"date"`
 	Reference   json.RawMessage `json:"reference"`
 	Machine     json.RawMessage `json:"machine"`
-	Method      json.RawMessage `json:"method"`
+	Method      string          `json:"method"`
 	Metrics     json.RawMessage `json:"metrics"`
 }
 
@@ -133,8 +133,8 @@ func TestParityManifest_merge(t *testing.T) {
 		if !ok {
 			t.Fatalf("PARITY_ROW for unknown family %q (not in %s)", row.Family, parityManifestPath)
 		}
-		f.Status = rawString("validated")
-		f.Method = rawString(row.Method)
+		f.Status = "validated"
+		f.Method = row.Method
 		f.Reference = rawString(row.Reference)
 		f.Metrics = row.Metrics
 		f.ValidatedAt = rawString(sha)
@@ -323,4 +323,78 @@ func TestParityManifest_fresh(t *testing.T) {
 		}
 		t.Logf("wrote %s", parityManifestPath)
 	}
+}
+
+// t3Methods is parity-coverage-policy.md's authoritative list of T3 `method` values. A row is only
+// allowed to claim `status: "validated"` — the status the capability matrix and the README's
+// "supported" count read as a real gate — if its method is one of these.
+//
+//	full-forward-oracle   cosine/argmax vs a full bf16 forward of a released checkpoint
+//	real-model-oracle     int8-resident vs a bf16 reference (when both won't co-reside)
+//	weightDiff            GGUF-vs-safetensors to Q8_0 tolerance, when no oracle is feasible
+//	shared-path (via X)   an alias family riding X's already-validated forward AND deps_hash
+var t3Methods = map[string]bool{
+	"full-forward-oracle": true,
+	"real-model-oracle":   true,
+	"weightDiff":          true,
+}
+
+func isT3Method(m string) bool {
+	return t3Methods[m] || strings.HasPrefix(m, "shared-path (via ")
+}
+
+// TestParityManifest_methodTier is the claim-discipline gate: it makes "validated" MEAN T3.
+//
+// WHY IT EXISTS. `parity-coverage-policy.md` has always defined which methods clear T3, but nothing
+// enforced it — `Method` was parsed as a `json.RawMessage` and never compared to the list. That let
+// five rows sit at `status: validated` with `method: tiny-golden` / `tiny-golden+coherent`: a T1
+// artifact (cosine vs the family's own seeded tiny golden — no released checkpoint involved)
+// recorded in a T3 slot, and therefore counted as "supported". The staleness gate could not catch it
+// because it keys on `deps_hash` freshness, which says nothing about how the row was validated.
+//
+// THE HONEST ALTERNATIVE, so a weak row does not have to lie. `status: "experimental"` records a
+// family whose gate is real but sub-T3. Such a row keeps its method and metrics, renders distinctly
+// in the capability matrix, and is EXCLUDED from the supported count. Downgrading is not a
+// regression — it is the matrix finally saying what the row always was.
+func TestParityManifest_methodTier(t *testing.T) {
+	m, err := loadParityManifest()
+	if err != nil {
+		t.Fatalf("load manifest: %v", err)
+	}
+	var bad []string
+	for _, name := range sortedKeys(m.Families) {
+		f := m.Families[name]
+		switch f.Status {
+		case "validated":
+			if !isT3Method(f.Method) {
+				bad = append(bad, fmt.Sprintf("  %-18s method=%q — not a T3 method", name, f.Method))
+			}
+		case "experimental":
+			if f.Method == "" {
+				bad = append(bad, fmt.Sprintf("  %-18s status=experimental but no method recorded", name))
+			}
+		case "pending", "":
+			// nothing claimed, nothing to check.
+		default:
+			bad = append(bad, fmt.Sprintf("  %-18s unknown status %q", name, f.Status))
+		}
+	}
+	if len(bad) > 0 {
+		t.Errorf("manifest rows claim a tier their method does not support:\n%s\n\n"+
+			"A row may claim status:\"validated\" ONLY with a T3 method (%s, or \"shared-path (via X)\").\n"+
+			"If the gate is real but sub-T3 (e.g. tiny-golden), record status:\"experimental\" instead —\n"+
+			"it keeps the method and metrics, renders as experimental in the capability matrix, and is\n"+
+			"excluded from the supported count. See docs/parity-coverage-policy.md.",
+			strings.Join(bad, "\n"), strings.Join(sortedKeys(t3Methods), ", "))
+	}
+}
+
+// sortedKeys is a tiny helper so the gate's output is deterministic.
+func sortedKeys[V any](m map[string]V) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }

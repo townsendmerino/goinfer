@@ -362,11 +362,17 @@ type capabilityRow struct {
 //     ran a real model qualitatively, rendered with a " +coherent" suffix so the cell
 //     shows BOTH the tiny numeric proof and that real weights were exercised.
 func parityColumn(fam familyParity) string {
-	if string(fam.Status) != `"validated"` {
+	if fam.Status != "validated" && fam.Status != "experimental" {
 		return "pending"
 	}
-	var method string
-	_ = json.Unmarshal(fam.Method, &method)
+	// A sub-T3 row is rendered with an explicit marker so the matrix never reads as if a
+	// tiny-golden gate were a released-checkpoint oracle. These are EXCLUDED from the
+	// "supported" count the README cites (docs/parity-coverage-policy.md, TestParityManifest_methodTier).
+	expPrefix := ""
+	if fam.Status == "experimental" {
+		expPrefix = "experimental: "
+	}
+	method := fam.Method
 	suffix := ""
 	switch method {
 	case "full-forward-oracle":
@@ -380,14 +386,14 @@ func parityColumn(fam familyParity) string {
 	case "tiny-golden+coherent":
 		method, suffix = "tiny-oracle", " +coherent"
 	case "coherent-generation":
-		return "coherent-gen" // qualitative real-model gate, no numeric oracle at all
+		return expPrefix + "coherent-gen" // qualitative real-model gate, no numeric oracle at all
 	}
 	var metrics struct {
 		ArgmaxPct float64 `json:"argmax_pct"`
 		CosineMin float64 `json:"cosine_min"`
 	}
 	_ = json.Unmarshal(fam.Metrics, &metrics)
-	return fmt.Sprintf("%s %.1f%%/%.5f%s", method, metrics.ArgmaxPct, metrics.CosineMin, suffix)
+	return fmt.Sprintf("%s%s %.1f%%/%.5f%s", expPrefix, method, metrics.ArgmaxPct, metrics.CosineMin, suffix)
 }
 
 // loadParityManifest reads testdata/parity_manifest.json for the matrix join.
