@@ -494,6 +494,32 @@ registers via `decoder.RegisterBackend` and must be blank-imported by the binary
   and adds prefill + HTTP/JSON + detokenize + sampling. The two are consistent; the served rate
   asymptotes ~55–58 tok/s as fixed per-request overhead amortizes (16-tok req 30 tok/s → 512-tok 55).
 
+#### Metal greedy decode by KV depth — qwen2.5-coder-1.5b (the depth axis, current binary)
+
+The §B3 rows above are a single short-prompt point; this is the depth curve, the Metal analogue of
+the CUDA §B6/§B7 sweep, so the Metal side stops being a pre-P6a single number. **Split-KV was never
+enabled on Metal** (built, measured a regression, reverted — ollama-chase §A2-Metal), so unlike the
+CUDA 0.5B curve these rows carry **no split-KV caveat**: this is the single attention path Metal
+ships. Provenance: **Apple M1 Pro**, macOS 26.6.1, **qwen2.5-coder-1.5b W4A8**, greedy decode-only
+(the resident `ForwardArgmax` on-device-argmax path, no serving/prompt overhead — isolates the depth
+term), KV warmed incrementally, min-of-batches, current binary, 2026-08-09 (`TestZZ_metalDepthBench`,
+opt-in `GOINFER_METAL_DEPTH_BENCH=1`). 4000 is near `metalCtxCap=4096`; the top cell is clamped
+inside the resident KV.
+
+| depth | goinfer 1.5B (Metal, decode-only) | µs/pos vs previous |
+|---|---|---|
+| 128  | 62.0 tok/s | — |
+| 512  | 47.8 tok/s | +12.46 |
+| 2048 | 27.2 tok/s | +10.30 |
+| 4000 | 18.2 tok/s | +9.33 |
+
+The per-position term is a **~9–12 µs/pos plateau** — roughly an order of magnitude above the same
+model's CUDA coefficients (§B7: +0.55 / +0.99 µs/pos) and far above the peer's ~0.03–0.09. Decode
+falls 3.4× over 128→4000 (vs 1.8× on CUDA), i.e. Metal degrades harder at depth. This is the
+latency/occupancy-bound attention the half-width KV probe confirmed (plan §P4: q8 costs 88% of full,
+so byte reduction is not the lever) plus the absence of split-KV — not a bandwidth wall. The lever is
+the occupancy/latency rewrite, not KV-quant; q8 on Metal buys VRAM/reachability, not decode speed.
+
 ### B4. Host↔VRAM MoE streaming — a 26B that does not fit the card (cgo-free CUDA)
 
 > **⚠ RE-VERIFIED against current Ollama (v0.32.5) — the "peers fail to load it" claim was
