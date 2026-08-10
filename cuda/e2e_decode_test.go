@@ -52,7 +52,14 @@ func TestE2EDecode(t *testing.T) {
 	fAttn, _ := glmod.Function("attention")
 	fSwiglu, _ := glmod.Function("glu_quant")
 	fResid, _ := glmod.Function("residual")
-	fArgmax, _ := glmod.Function("argmax_reduce")
+	// argmax_reduce comes from argmaxPTX, NOT gluePTX. C-14 (c6600fc) split it into its own
+	// module so the index tie-break fix could land without regenerating the audited glue.ptx;
+	// binding it off glmod here exercised the PRE-C-14 kernel, i.e. not the one production ships.
+	amod, err := ctx.LoadModule(argmaxPTX)
+	if err != nil {
+		t.Fatalf("LoadModule(argmax): %v", err)
+	}
+	fArgmax, _ := amod.Function("argmax_reduce")
 	stream := mustStream(t, ctx)
 
 	// qwen2.5-coder-1.5b geometry, realistic decode position.

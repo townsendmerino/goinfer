@@ -241,7 +241,9 @@ func TestRealE2EDecode(t *testing.T) {
 		fQ, _ = glmod.Function("quant_vec")
 		fAttn, _ = glmod.Function("attention")
 		fSw, _ = glmod.Function("glu_quant")
-		fArg, _ = glmod.Function("argmax_reduce")
+		// argmax_reduce lives in argmaxPTX, not gluePTX — see the note in e2e_decode_test.go (C-14).
+		amod, _ := cx.LoadModule(argmaxPTX)
+		fArg, _ = amod.Function("argmax_reduce")
 		stream, _ = cx.NewStream()
 
 		layers = make([]layer, nLayers)

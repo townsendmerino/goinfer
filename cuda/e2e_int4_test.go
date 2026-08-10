@@ -39,7 +39,9 @@ func TestE2EDecodeInt4(t *testing.T) {
 	fAttn, _ := glmod.Function("attention")
 	fSwiglu, _ := glmod.Function("glu_quant")
 	fResid, _ := glmod.Function("residual")
-	fArgmax, _ := glmod.Function("argmax_reduce")
+	// argmax_reduce lives in argmaxPTX, not gluePTX — see the note in e2e_decode_test.go (C-14).
+	amod, _ := ctx.LoadModule(argmaxPTX)
+	fArgmax, _ := amod.Function("argmax_reduce")
 	stream := mustStream(t, ctx)
 
 	const H, I, nH, nKV, hd, vocab, nLayers = 1536, 8960, 12, 2, 128, 151936, 28
