@@ -610,16 +610,45 @@ nor the peer version bump moved the greedy path, and the sampled deltas below ar
 
 | model (vocab) | config | goinfer | Ollama v0.32.6 | verdict |
 |---|---|---|---|---|
-| phi3-mini (32k) | temp-only | 112.4 ±2.5 | 125.8 ±0.1 | Ollama 1.12× |
-| phi3-mini (32k) | temp+top_p 0.95 | *held — see below* | 121.8 ±0.1 | *not published* |
+| phi3-mini (32k) ᵈ | temp-only | 116.6 ±0.5 | 125.6 ±0.2 | Ollama 1.08× |
+| phi3-mini (32k) ᵈ | temp+top_p 0.95 | 99.4 ±0.6 | 121.4 ±0.3 | Ollama 1.22× |
 | qwen2.5-coder-0.5b (152k) | temp-only | 219.2 ±1.1 | 269.0 ±0.9 | Ollama 1.23× |
 | qwen2.5-coder-0.5b (152k) | temp+top_p 0.95 | 190.3 ±1.6 | 266.2 ±0.3 | Ollama 1.40× |
-| gemma3-1b (262k) | temp-only | 133.5 ±3.5 | 148.9 ±0.0 | Ollama 1.12× |
-| gemma3-1b (262k) | temp+top_p 0.95 | 116.6 ±1.1 | 149.7 ±0.2 | Ollama 1.28× |
+| gemma3-1b (262k) ᵈ | temp-only | 131.7 ±6.1 ᵉ | 149.1 ±0.5 | Ollama 1.13× |
+| gemma3-1b (262k) ᵈ | temp+top_p 0.95 | 115.2 ±2.3 | 149.6 ±0.4 | Ollama 1.30× |
 
-**One cell is HELD, not published:** `phi3-mini` + `temp+top_p` measured **95.4 ±10.7** — an 11%
-spread, over the 5% threshold this page uses. It needs additional runs before it appears in the
-README. Publishing a number whose two runs disagree by 11% is how a spread gets averaged away.
+ᵈ **The phi3-mini and gemma3-1b rows were RE-MEASURED on 2026-08-09 and supersede the originals**
+(goinfer `ca29d6c`, Ollama v0.32.6, 5 runs × 8 completions, both engines **interleaved in one
+session**). The qwen2.5-coder rows are unchanged — they came from the main harness, which already
+interleaved.
+
+ᵉ 4.6% spread: under the 5% threshold, but the widest cell on this page. Treat it as indicative.
+The `temp+top_p` cell had been **HELD, not published**, at **95.4 ±10.7** — an 11% spread, over the
+5% threshold this page uses; publishing a number whose two runs disagree by 11% is how a spread gets
+averaged away. It now reads **99.4 ±0.6 (0.6%)** and clears the threshold, so it is published. The
+`temp-only` row moved 112.4 → **116.6** and is superseded for the reason below.
+
+**Why the held cell was noisy, and what it exposed — three findings, none of them "we averaged more":**
+
+1. **Not early EOS.** Every completion in the re-measure ran exactly 63 tokens, so the short-completion
+   hypothesis this page raises elsewhere does not explain it. Ruled out by recording token counts
+   rather than by assumption.
+2. **Not a binary change.** The re-measured goinfer figure is ~3.7% above the original. Running the
+   *original* binary (`686c9f8`) and the current one back-to-back **today** gives **116.5 vs 116.4** —
+   identical. So the shift is session-to-session machine state, not code. Absolute sampled numbers on
+   this box carry ~3.5% between-session drift; treat cross-session comparisons of them accordingly.
+3. **The original phi3 row paired numbers from two different sessions.** Its goinfer and Ollama cells
+   were measured by separate scripts, not interleaved — so its `1.12×` verdict combined a goinfer
+   number carrying that drift with a peer number that did not (Ollama moved only 125.8 → 125.6 and
+   121.8 → 121.4 across the same gap). The corrected, same-session verdict is **1.08×**. This is
+   exactly what the page's own "interleaved cell by cell" rule exists to prevent, and it was skipped
+   for these two rows.
+
+   **The same defect applied to the gemma3-1b rows** (the same add-on script measured the peer side
+   alone for both models), so those were re-measured too. There the impact was small — 1.12 → 1.13 and
+   1.28 → 1.30 — which is the honest result: the construction flaw was real in both rows, and it
+   happened to bite one and not the other. That is precisely why it cannot be judged from the output;
+   a cross-session pairing is not visibly wrong, it is just not a measurement of the engines.
 
 *What changed since the previous sampled numbers:* goinfer's `top_p` figure on qwen0.5b went
 92.8 → 190.3 while the peer moved 266.6 → 266.2, i.e. the deficit went **2.87× → 1.40×** and the
@@ -946,6 +975,12 @@ known geometry, **not an ncu profile** — a profile could refine the number, no
 
 ## Measurement notes worth keeping
 
+- **Interleaving is not optional, and skipping it is invisible in the output.** Absolute sampled
+  numbers on this box drift ~3.5% between sessions (proven: the same binary read 112.4 in one session
+  and 116.5 in another, while a *different* binary read 116.4 alongside it). A ratio built from two
+  engines measured in different sessions silently absorbs that drift — which is what made the original
+  phi3-mini row read 1.12× where the same-session pair reads 1.08×. If a cell's two sides were not
+  measured back-to-back, the verdict column is not a measurement of the engines.
 - **A fresh server per cell does not protect you from the PREVIOUS engine.** Interleaved peer
   benchmarking kills engine A and starts engine B, but Ollama keeps a model resident for minutes after
   its last request, so B's first cells can contend with A still unloading. This produced a −52.9%

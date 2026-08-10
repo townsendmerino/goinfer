@@ -479,16 +479,22 @@ holds nearly flat (269 → 260 on 0.5B) while goinfer decays (321 → 201).
 |---|---|---|---|---|
 | greedy (`temperature 0`) | 318.9 | 269.4 | — | — |
 | `temperature 0.8` + `top_k 40` | 268.8 ᵇ | 284.7 ᵇ | — | — |
-| `temperature 1.0`, no truncation (goinfer's default) | 219.2 | 269.0 | 133.5 | 148.9 |
-| `temperature 0.8` + `top_p 0.95` | 190.3 | 266.2 | 116.6 | 149.7 |
+| `temperature 1.0`, no truncation (goinfer's default) | 219.2 | 269.0 | 131.7 ᵈ | 149.1 ᵈ |
+| `temperature 0.8` + `top_p 0.95` | 190.3 | 266.2 | 115.2 ᵈ | 149.6 ᵈ |
 
 ᵇ `top_k` row carried from the previous campaign (Ollama v0.32.5) — not re-measured in this pass.
 
-**Where this leaves sampled decoding.** goinfer is **1.12–1.40× behind** the peer under sampled
+ᵈ gemma3-1b cells **re-measured 2026-08-09** with both engines interleaved in one session (the
+original pair was measured by separate scripts, which is not a valid engine comparison — see
+`docs/benchmarks.md` §B5). The verdicts barely moved (1.12× → 1.13×, 1.28× → 1.30×).
+
+**Where this leaves sampled decoding.** goinfer is **1.08–1.40× behind** the peer under sampled
 configurations, down from 2.1–2.9× before the parallel-normalization work (`686c9f8`): the qwen0.5b
 `top_p` figure went 92.8 → 190.3 tok/s while the peer was unchanged (266.6 → 266.2). Greedy and
-`top_k` remain the fastest paths — see the sampling note above. phi3-mini's `top_p` cell is **held
-pending re-measurement** (11% run-to-run spread); `docs/benchmarks.md` §B5 records why.
+`top_k` remain the fastest paths — see the sampling note above. phi3-mini's previously held `top_p`
+cell has been **re-measured and published** (99.4 ±0.6, a 0.6% spread against the 5% threshold —
+Ollama 1.22×), together with its `temp-only` row, as a fresh same-session interleaved pair;
+`docs/benchmarks.md` §B5 records the re-measure and what the original row got wrong.
 
 Absolute tok/s are **not** comparable across the CUDA and Metal sections — that would compare two
 graphics cards, not two engines. Method, hardware and history:
