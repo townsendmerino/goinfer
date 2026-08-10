@@ -372,9 +372,28 @@ over the returned K:
 >
 > **The CUDA speed lever the coefficients actually point at** is the same one Campaign A closed at:
 > occupancy/latency in the deep-context attention path. That is the §7 non-bit-identical fork or a
-> flash-attention-shaped rewrite, not KV-quant. Metal-first rationale for the *quantization* work is
-> unchanged — its own profile showed 75% of attention time in distinct per-key DRAM reads, which is
-> the opposite finding and exactly why "no diagnosis transfers" is the standing rule.
+> flash-attention-shaped rewrite, not KV-quant.
+>
+> **Metal is NOT a speed exception — the deciding half-width probe (Mac, 2026-08-09) closes it.** The
+> "75% of attention is distinct per-key DRAM reads" finding was the *pin-every-read-to-key-0* collapse
+> (21.5→5.3 ms), which drops BOTH bytes and latency, so it could not tell bandwidth from latency. The
+> third arm — int8 KV, half the bytes per key at the SAME element count / ALU (q8's exact profile) —
+> answers it (all-28-layer attention @2048, M1 Pro, min GPU-busy; `TestZZ_attnKVWidthProbe`):
+>
+> | arm | time | vs full |
+> |---|---|---|
+> | full (f16 KV) | 16.62 ms | — |
+> | q8 (int8 KV, half the bytes) | **14.66 ms** | **88%** |
+> | pin0 (key-0, zero distinct DRAM) | 5.22 ms | 31% (3.2× collapse — control) |
+>
+> pin0 reproduces the 2026-08-04 floor (5.3 ms) → harness sound. **Halving the KV bytes moved
+> attention only 12%, nowhere near proportional** — so Metal decode attention is latency/occupancy-
+> bound too, NOT bandwidth-bound; the distinct per-key reads are serial-latency-exposed, and reading
+> fewer bytes per key barely helps while bandwidth sits idle. **q8 is therefore NOT a Metal speed
+> lever.** The earlier "Metal-first for the quantization *speed* work" rationale is refuted; P4 is
+> **reachability-only on BOTH backends** (q8 for VRAM/capacity, speed on neither). The Metal decode
+> speed lever, like CUDA's, is the occupancy/latency rewrite, not KV-quant. ("No diagnosis transfers"
+> held — but so did the *conclusion*, once the byte term was isolated on each backend.)
 >
 > **Corrected KV geometry (measured, not assumed).** The resident cache is **f32**, K+V:
 > **24.0 KB/position** (qwen0.5b: 24 layers × 2 KV heads × 64 head-dim × 2 × 4 B) and
