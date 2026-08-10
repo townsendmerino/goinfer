@@ -38,6 +38,18 @@ pre-1.0 and may change as new model families and quant formats land.
   temperature is still not speculative-eligible. Metal inherits the routing but has no e2e
   measurement yet.
 
+### Documentation
+- **Deep-context decode is measured for the first time (8k/16k/32k) and it is linear, not
+  superlinear.** With the cap raised, `docs/benchmarks.md` §B7 records decode by KV depth out to
+  32000 against Ollama v0.32.6. goinfer's per-position cost rises from +0.330 µs/pos mid-range to a
+  **plateau of ~+0.74 (0.5B) / ~+1.0 (1.5B)** reached by ~8k and confirmed flat by a 16384→32000 probe
+  (+0.748 → +0.735) — so deep context is an optimization target with a predictable cost, not
+  unreachable in principle. Against the peer that is a flat ~25× per-position penalty (5.54× end-to-end
+  at 32k on the 0.5B). The bound is **not DRAM bandwidth**: goinfer moves KV at 6–10% of peak at depth
+  while Ollama is 3.2× faster reading identical bytes. This decides `docs/plan-still-slow.md` **P4** —
+  KV quantization is **no-go as a CUDA speed lever, go as a reachability lever** (4× VRAM cut from f32).
+  The 1.5B/32000 cells were deliberately skipped and the omission is stated in §B7's header.
+
 ### Added
 - **`-ctx N` raises the CUDA resident KV capacity, which was a hard-coded 4096.** The effective cap is
   `min(model context window, -ctx)`; per model via `--model name=path,ctx=N`. **The default is

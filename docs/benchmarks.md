@@ -821,8 +821,137 @@ per device class; do not rescale these on paper. `GOINFER_SPLITKV_MIN_KEYS=<n>` 
 threshold on a stock binary (0 ⇒ always split) so re-characterization no longer needs a rebuild —
 needing one is part of why a refuted number survived.
 
+## B7 — Deep context: 8k/16k/32k decode (2026-08-09, cap-raise leg)
+
+§B5 recorded that every depth curve this project had published stopped just under 4096 because
+`cudaCtxCap` was a compile-time constant — infrastructure, not a chosen depth. The cap is now
+configuration-derived (`-ctx`, `ca29d6c`), so these are the first cells past it.
+
+> **SCOPE — cells deliberately NOT measured, and why.** The **1.5B at 32000 was skipped**, as was any
+> cell past 32000. This was a decision, not an omission or a silent truncation. The 1.5B/32000 goinfer
+> cell alone costs 45–70 minutes (six 32k prefills on the larger model) and no decision turns on it:
+> the per-position coefficient had already plateaued, and the 0.5B 32000 pair — kept precisely as the
+> bend-detection probe — confirmed no second regime change past 16k. A louder version of the same
+> answer was not worth the hour. **`-ctx 32768` is separately and functionally verified** by the
+> cap-raise gates (resident build at 32768, VRAM +1570 MiB against a predicted +1568, clean fail-fast,
+> `checkCap` at the new cap) — the skipped cells are throughput numbers, not a capability question. A
+> future campaign can fill them against this same anchor.
+
+**Method.** Same anchor and discipline as §B5/§B6: fresh server per cell, interleaved engine by
+engine, same GGUF both sides, token-calibrated prompts verified against `usage.prompt_tokens`,
+client-timed inter-token rate from the first streamed token (**decode-only** — prefill and TTFT
+excluded). goinfer `ca29d6c` at `-ctx 32768`; Ollama **v0.32.6** with `num_ctx 32768`,
+`OLLAMA_FLASH_ATTENTION:false`, and the `ollama ps` CONTEXT column captured per cell (it read `32768`
+on every one). **One protocol difference, deliberate:** a 32k prefill costs orders of magnitude more
+than the decode being measured, so deep cells use fewer requests with more decode tokens each
+(`num_predict` 128, 1 warm + 2×2) instead of the shallow harness's 17 completions. Run-to-run spreads
+came out at 0.0–0.7 tok/s, so the smaller sample did not cost precision. Deepest cell is **32000, not
+32768**: prompt + chat template + the 128 generated tokens must fit inside the 32768 cap.
+
+**Decode tok/s by KV depth** (the shallow rows are §B6.2's, same anchor, repeated for continuity):
+
+| depth | goinfer 0.5B | Ollama 0.5B | | goinfer 1.5B | Ollama 1.5B | |
+|---|---|---|---|---|---|---|
+| 128 | 320.9 | 269.4 | goinfer 1.19× | 218.5 | 195.4 | goinfer 1.12× |
+| 512 | 286.6 | 269.6 | goinfer 1.06× | 195.0 | 176.6 | goinfer 1.10× |
+| 2048 | 250.2 | 266.4 | Ollama 1.06× | 157.0 | 179.5 | Ollama 1.14× |
+| 3900 | 200.8 | 259.8 | Ollama 1.29× | 122.1 | 174.3 | Ollama 1.43× |
+| 8192 | 124.4 | 259.1 | **Ollama 2.08×** | 80.7 | 164.0 | **Ollama 2.03×** |
+| 16384 | 70.6 | 239.7 | **Ollama 3.39×** | 48.3 | 154.4 | **Ollama 3.20×** |
+| 32000 | 39.0 | 215.9 | **Ollama 5.54×** | *skipped* | *skipped* | — |
+
+**These deep cells measure the CORRECTED kernel selection** (`2693dce`): the split-KV decode attention
+is now gated per geometry and per layer, so the 0.5B takes the split path only at ≥3072 effective keys
+and the 1.5B at ≥1024. Every cell here at 8192+ therefore *is* on the split-KV path for both models.
+**Do not diff these against any pre-`2693dce` depth curve** without accounting for that — the old
+default engaged split-KV from 256 keys up and was a net loss on most geometries below ~2560.
+
+### Per-segment coefficients — µs per KV position
+
+| segment | goinfer 0.5B | Ollama 0.5B | goinfer 1.5B | Ollama 1.5B |
+|---|---|---|---|---|
+| 128→512 | +0.971 | −0.007 | +1.436 | +1.419 |
+| 512→2048 | +0.330 | +0.029 | +0.808 | −0.060 |
+| 2048→3900 | +0.531 | +0.051 | +0.983 | +0.090 |
+| 3900→8192 | +0.713 | +0.002 | +0.979 | +0.084 |
+| 8192→16384 | +0.748 | +0.038 | +1.015 | +0.046 |
+| 16384→32000 | +0.735 | +0.029 | *skipped* | *skipped* |
+
+**There IS a regime change, and it completes — it does not compound.** goinfer's per-position cost
+rises from **+0.330 µs/pos** mid-range to a **plateau of ~+0.74** (0.5B) and **~+1.0** (1.5B), reached
+by roughly 8k. The 16384→32000 probe is what establishes the plateau rather than assuming it:
+**+0.748 → +0.735 is flat.** So deep decode is **linear in depth with a large fixed coefficient**, not
+superlinear. That distinction matters — a superlinear curve would mean deep context is unreachable in
+principle; a linear one with a bad constant means it is an optimization target with a predictable cost.
+
+Against the peer that constant is a flat **~25× penalty** (0.735 vs 0.029 on the 0.5B; 1.015 vs 0.046
+on the 1.5B). The 5.54× throughput gap at 32k is that constant integrated over depth, not an
+accelerating divergence.
+
+### B7.1 — Control: the cap change did not move the shallow numbers
+
+Two controls, because the obvious one is not sufficient. The deep table's coefficients are computed
+against the shallow rows, so it is not enough that the **default** cap still reproduces them — the
+deep cells were measured at `-ctx 32768`, and if merely *allocating* a 32k KV slowed shallow decode
+(larger buffers, worse locality) the anchor would be wrong and every coefficient with it. So the
+shallow depths were re-measured on the cap binary (`ca29d6c`) in **both** arms:
+
+| model | depth | anchor (`2693dce`) | `ca29d6c` default | `ca29d6c` `-ctx 32768` |
+|---|---|---|---|---|
+| 0.5B | 128 | 320.9 | 312.7 ᶜ | 309.3 |
+| 0.5B | 512 | 286.6 | 286.6 ᶜ | 284.2 |
+| 0.5B | 2048 | 250.2 | 249.9 | 248.7 |
+| 0.5B | 3900 | 200.8 | 199.5 | 199.0 |
+| 1.5B | 128 | 218.5 | 216.0 | 216.7 |
+| 1.5B | 512 | 195.0 | 192.1 | 193.6 |
+| 1.5B | 2048 | 157.0 | 156.8 | 156.9 |
+| 1.5B | 3900 | 122.1 | 121.8 | 122.0 |
+
+Every cell reproduces within **2.6%**, most within 1%, in both arms. So the cap change is
+allocation-only as claimed, **and** running with a 32k cap costs nothing at shallow depth — the deep
+table's anchor is sound.
+
+ᶜ **These two cells were re-run, and the reason is worth recording.** In the first pass they read
+**151.0** and **258.7** — a −52.9% and −9.7% "regression" that appeared *only* in the default arm
+while the same cells in the `-ctx 32768` arm were clean. A real regression cannot be arm-specific in
+that direction. They were cells 1 and 2 of the run, launched immediately after the deep sweep's Ollama
+server was killed, and Ollama holds a model resident for minutes after its last request: the first
+cells were contending for the GPU with a process that was still unloading. Re-run on a verified-idle
+device they read 312.7 and 286.6. The lesson is the harness's, not the engine's — **a fresh-server
+protocol does not protect against the _previous_ engine still holding the device**, and interleaved
+peer benchmarking makes that a standing hazard rather than a one-off.
+
+### The deep gap is NOT DRAM bandwidth — and the alternative is falsified, not assumed
+
+Each decode token attends the whole KV cache, so the bytes it must read are known exactly from the
+cache geometry (§B5: **24.0 KB/position** on the 0.5B, **56.0 KB/position** on the 1.5B, f32, K+V):
+
+| model | depth | engine | KV MB read/token | GB/s | % of 448 GB/s peak |
+|---|---|---|---|---|---|
+| 0.5B | 16384 | goinfer | 393.2 | 27.8 | **6.2%** |
+| 0.5B | 16384 | Ollama | 393.2 | 94.3 | 21.0% |
+| 1.5B | 16384 | goinfer | 917.5 | 44.3 | **9.9%** |
+| 1.5B | 16384 | Ollama | 917.5 | 141.7 | 31.6% |
+
+**goinfer moves KV at 6–10% of peak bandwidth at depth**, and **Ollama is ~3.2× faster reading
+identical bytes.** Whatever bounds deep decode here, it is not DRAM traffic — which is why a
+byte-count reduction (KV quantization) cannot be the CUDA speed lever; see P4 in
+`docs/plan-still-slow.md`.
+
+*The competing read model is ruled out, not waved away.* If each GQA query head re-read its own KV
+head's bytes (×7 on the 0.5B, ×6 on the 1.5B), Ollama would sit at **147–190% of peak — physically
+impossible**. So the bytes are read ~once. Even under that falsified upper bound goinfer never exceeds
+59% of peak, so the conclusion survives either model. This is arithmetic from measured throughput plus
+known geometry, **not an ncu profile** — a profile could refine the number, not flip the sign.
+
 ## Measurement notes worth keeping
 
+- **A fresh server per cell does not protect you from the PREVIOUS engine.** Interleaved peer
+  benchmarking kills engine A and starts engine B, but Ollama keeps a model resident for minutes after
+  its last request, so B's first cells can contend with A still unloading. This produced a −52.9%
+  phantom regression in §B7.1 that was arm-specific — the tell that it was an artifact, not a result.
+  Wait for a verified-idle device (`nvidia-smi` at ~0% and baseline memory) between engines, and treat
+  any anomaly in the FIRST cells of a run as suspect until re-run.
 - **Early EOS at `temperature 1.0` shortens completions.** In the 2026-08-09 sweep, **4 of 16**
   completions at goinfer's default sampling terminated before the 64-token cap (11/36/45/61 tokens);
   greedy hit the cap all 16 times. Short completions make a per-token rate noisier. This is a

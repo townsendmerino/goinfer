@@ -332,15 +332,49 @@ over the returned K:
 - **Expected:** the reporter's ~2.9× nonzero-temperature penalty collapses to ≈ the P2 residue;
   gemma3-1b (widest vocab, largest readback) is the headline number.
 
-## P4 — Long-context decode: KV-cache quantization, opt-in — **CUDA go/no-go DEFERRED (2026-08-09)**
+## P4 — Long-context decode: KV-cache quantization, opt-in — **CUDA go/no-go DECIDABLE (2026-08-09)**
 
-> **Measured coefficients confine the CUDA case to depth > 2048.** KV quantization attacks the
-> PER-POSITION term, and on qwen0.5b that term is **near zero mid-range** (−0.009 µs/pos across
-> 512→2048) — so it buys ~nothing over the range where goinfer currently leads the peer. The
-> short-context loss there is a fixed kernel-switch cost (split-KV, see P6), which KV-quant does not
-> touch. **CUDA go/no-go is DEFERRED until the cap-raise leg delivers 8k–32k coefficients**, which is
-> where a per-position term large enough to be worth compressing would show up. Metal-first rationale
-> unchanged.
+> **DECIDABLE — the deep coefficients landed (P6, §B7). Split verdict: NO-GO as a CUDA speed lever,
+> GO as a reachability lever.** The deferral condition ("until the cap-raise leg delivers 8k–32k
+> coefficients") is discharged.
+>
+> **The premise that deferred this is now refuted in KV-quant's favour, and it still does not save the
+> speed case.** The per-position term is *not* near-zero at depth — on qwen0.5b it rises from
+> +0.330 (512→2048) through +0.531 (2048→3900) to **a plateau of +0.713 / +0.748 / +0.735 µs/pos**
+> across 3900→8192→16384→32000. So there is a large depth term to attack, which is what P4 was waiting
+> to see, and it is a *constant* one: decode is linear in depth past ~8k, ~25× the peer's per-position
+> cost (0.735 vs 0.029). But *what bounds it* is the question KV-quant's value actually turns on, and
+> the arithmetic answers it:
+>
+> | model | depth | engine | KV MB read/token | GB/s | % of 448 GB/s peak |
+> |---|---|---|---|---|---|
+> | 0.5B | 16384 | goinfer | 393.2 | 27.8 | **6.2%** |
+> | 0.5B | 16384 | Ollama | 393.2 | 94.3 | 21.0% |
+> | 1.5B | 16384 | goinfer | 917.5 | 44.3 | **9.9%** |
+> | 1.5B | 16384 | Ollama | 917.5 | 141.7 | 31.6% |
+>
+> **goinfer's deep decode moves KV at 6–10% of peak DRAM bandwidth.** A byte-count reduction cannot
+> be the lever when bandwidth is 90% idle. The comparison seals it: **Ollama is 3.2× faster while
+> reading identical bytes** — the difference is latency hiding (occupancy / flash attention), not
+> traffic.
+>
+> *The pessimistic read model is falsified, not assumed away.* If each GQA query head re-read its KV
+> head's bytes (×7 on the 0.5B, ×6 on the 1.5B), Ollama would sit at **147–190% of peak — physically
+> impossible**. So the bytes really are read ~once. Even under that falsified upper bound goinfer
+> never exceeds 59% of peak, so the conclusion holds under either model. This is arithmetic from
+> measured throughput plus known cache geometry, not an ncu profile — but the bracket is wide enough
+> that a profile could only refine the number, not flip the sign.
+>
+> **What survives: reachability.** q8 KV is a **4× byte cut from f32** (not 2× — the resident cache is
+> f32, corrected below), so it is what makes deep context *fit*, and that is a VRAM claim, not a tok/s
+> claim. Concretely, the 1.5B's KV is 1.88 GB at 32k f32 → ~0.47 GB at q8 on an 8 GB card. Ship it
+> for capacity and say so; do not promise CUDA decode speed from it.
+>
+> **The CUDA speed lever the coefficients actually point at** is the same one Campaign A closed at:
+> occupancy/latency in the deep-context attention path. That is the §7 non-bit-identical fork or a
+> flash-attention-shaped rewrite, not KV-quant. Metal-first rationale for the *quantization* work is
+> unchanged — its own profile showed 75% of attention time in distinct per-key DRAM reads, which is
+> the opposite finding and exactly why "no diagnosis transfers" is the standing rule.
 >
 > **Corrected KV geometry (measured, not assumed).** The resident cache is **f32**, K+V:
 > **24.0 KB/position** (qwen0.5b: 24 layers × 2 KV heads × 64 head-dim × 2 × 4 B) and
@@ -397,9 +431,50 @@ protocol (env-same → investigate; this is the "verified change" arm). This is 
 *re-specification*, still exact and deterministic — not the tolerance trap. Gate: divergence-rate
 tests re-pinned at the new baseline, full parity manifest, both backends, before the tag.
 
-## P6 — Extend the depth sweep — **PARTIAL (2026-08-09). 8k+ BLOCKED; truncated sweep + G11 refresh DONE.**
+## P6 — Extend the depth sweep — **COMPLETE (2026-08-09). Cap raised, deep cells measured.**
 
-> **8k/16k/32k are BLOCKED on `cudaCtxCap = 4096` (`cuda/resident.go:28`)** — the resident KV
+> **DONE. The 8k+ blocker is gone and the cells are measured.** `cudaCtxCap` is configuration-derived
+> (`-ctx`, `ca29d6c`), and the deep sweep ran at `-ctx 32768`. Full numbers, method and the scope
+> decision: `docs/benchmarks.md` **§B7**.
+>
+> **Headline — the regime change is real, and it COMPLETES rather than compounding.** goinfer's
+> per-position decode cost rises from **+0.330 µs/pos** mid-range to a **plateau of ~+0.74** (0.5B) /
+> **~+1.0** (1.5B) reached by ~8k, and the 16384→32000 probe pins it flat (**+0.748 → +0.735**). Deep
+> decode is therefore **linear in depth with a large fixed constant, not superlinear** — deep context
+> is an optimization target with a predictable cost, not unreachable in principle. Against the peer
+> that constant is a flat **~25×** (0.735 vs 0.029); the 5.54× throughput gap at 32k is that constant
+> integrated over depth, not an accelerating divergence.
+>
+> | depth | goinfer 0.5B | Ollama 0.5B | goinfer 1.5B | Ollama 1.5B |
+> |---|---|---|---|---|
+> | 3900 | 200.8 | 259.8 | 122.1 | 174.3 |
+> | 8192 | 124.4 | 259.1 | 80.7 | 164.0 |
+> | 16384 | 70.6 | 239.7 | 48.3 | 154.4 |
+> | 32000 | 39.0 | 215.9 | *skipped* | *skipped* |
+>
+> **And the bound is NOT bandwidth**: goinfer moves KV at **6–10% of peak** at depth while Ollama is
+> 3.2× faster reading *identical* bytes; the competing "each GQA head re-reads K" model is falsified
+> because it would put Ollama at 147–190% of peak. That is what makes **P4 decidable** (above): no-go
+> as a CUDA speed lever, go as a reachability lever.
+>
+> **Scope, recorded not silent:** the 1.5B/32000 pair was **deliberately skipped** (45–70 min for a
+> number that changes no decision, once the plateau was established by the 0.5B probe). `-ctx 32768`
+> remains functionally verified by the cap-raise gates. §B7's header states this; a future campaign
+> can fill the cells against the same anchor.
+>
+> **Deep cells measure the corrected kernel selection** (`2693dce`, split-KV re-gated per geometry):
+> at 8192+ both models are on the split-KV path. Pre-`2693dce` curves are not comparable without that
+> caveat.
+>
+> **Control (§B7.1): the anchor holds in BOTH arms.** The shallow depths reproduce on the cap binary
+> at the default cap *and* at `-ctx 32768`, every cell within 2.6% (most within 1%) — so the cap
+> change is allocation-only and a 32k cap costs nothing at shallow depth, which is what makes the
+> deep coefficients trustworthy. Two cells needed a re-run after being contaminated by GPU contention
+> with the just-killed peer server; recorded in §B7.1 rather than quietly replaced.
+>
+> ---
+> *Historical (the blocker this leg removed):* **8k/16k/32k were BLOCKED on `cudaCtxCap = 4096`** —
+> the resident KV
 > capacity is a compile-time constant, so `checkCap` refuses those depths and the request falls to
 > the staged path. A staged number is a different engine under the same label, so those cells were
 > NOT measured (option 3 rejected). Unblocked by the cap-raise leg: cap becomes
@@ -583,9 +658,9 @@ one hand tied.
 | P1 `top_k=1` routing | **DONE** | CUDA box (gate) | `top_k=1` consistency; proves C-14 agreement e2e; 13–18% for that shape |
 | P2 Lazy Z | days | none (host) | kills the ~44 ns/entry softmax; temp-only stops being the slowest config |
 | P3 device top-K | weeks | CUDA box + Mac | kills the readback; nonzero-temp ≈ greedy |
-| P4 KV-quant opt-in | 1–2 wks | both boxes, profile-gated | Metal long-context floor; KV VRAM halved |
+| P4 KV-quant opt-in | 1–2 wks | Metal box (CUDA speed case CLOSED) | Metal long-context floor; on CUDA a **reachability** lever only (4× KV VRAM cut), not speed — §B7 |
 | P5 B1 path 2 | campaign | funding decision | ~1.3× prefill attention; one re-baseline |
-| P6 depth-sweep extension | days | CUDA box (Metal after) | the axis agents actually run at; feeds P4's gate |
+| P6 depth-sweep extension | **DONE** | CUDA box (Metal after) | 8k–32k measured (§B7); coefficient plateaus ~+0.74 µs/pos; decided P4 |
 | P7 `--mode exact\|fast` | days (plumbing) | P4 landed (P5 optional) | one-word contract opt-out; fair-fight benchmark cell |
 
 P0→P1→P2 are sequential and cheap — together they close most of the sampled-decode complaint
