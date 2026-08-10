@@ -166,6 +166,23 @@ Ours: `decoder/deltanet.go` (qwen3_5_moe). Theirs: `KimiDeltaAttention`, `modeli
 | output norm | gated RMSNorm (`normW`) | `FusedRMSNormGated(head_dim, activation='sigmoid')` | ⚪ **same** |
 | output gate | `inProjZ → z` | `g_proj` (`use_full_rank_gate: True`; a low-rank `g_a`/`g_b` variant also exists) | ⚪ same role |
 
+#### State shape — what the hybrid cache must store (NO new kind of state)
+
+This is the part that could have forced a bigger class, and it does not.
+
+| | goinfer today (`deltaState`, `decoder/deltanet.go:70-81`) | K3 (`KimiDynamicCache`, `modeling_kimi_linear.py:120`) | delta |
+|---|---|---|---|
+| recurrent state | `s []float32` — `[numV · head_k_dim · head_v_dim]`, one matrix block per value head | `recurrent_states[layer_idx]`, same `[head_k, head_v]` per head (`head_k_dim == head_v_dim == head_dim = 128`, `num_heads = 96`) | ⚪ **identical in kind AND shape formula** |
+| conv window | `convWin [][]float32` — last K−1 **fused** `mixed_qkv` vectors (`convDim = 2·keyDim + valueDim`) | `conv_states[layer_idx]`, but produced as **three separate** states (`conv_state_q/k/v`, one per `ShortConvolution`) | ⚪ same information, **three planes vs one fused buffer** — a packing concern |
+| per-layer-kind dispatch | already hybrid (DeltaNet+attention on qwen3_5_moe; SSM+attention on granite/nemotron) | `layer_types` drives `conv_states`/`recurrent_states` for linear layers vs `key_cache`/`value_cache` for full-attention layers | ⚪ **same design**; the 24/69 interleave rides existing machinery |
+| any additional state | — | none beyond conv + recurrent | ✅ **no new kind of state** |
+
+So the cache absorbs KDA by shape and packing alone. Note the K3 recurrent state is **large in
+absolute terms** — 96 heads × 128 × 128 × 4 B ≈ **6 MB per KDA layer**, ×69 layers ≈ **415 MB** of
+fixed, sequence-length-independent state. That is a residency budget line, not a blocker, and it
+inherits the standing qwen3_5_moe caveat: the recurrent state is **not position-truncatable**, so
+prefix reuse and speculative decode fall back for these layers exactly as they do today.
+
 **Why "small variant kernel" and not "new scan primitive".** The recurrence is the *same gated delta
 rule* — L2-normed q/k, sigmoid β, `S ← decay·S + k⊗(v − S·k)β`. Every surrounding op (conv+SiLU,
 L2 norm, gated RMSNorm, output gate, A_log/dt_bias/softplus decay) is already implemented and was
