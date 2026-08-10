@@ -14,6 +14,67 @@
 > code or goldens are missing. Per family: get the checkpoint → run the existing
 > gate → transcribe metrics into the manifest. The matrix re-joins automatically.
 
+## Current state — RECOMPUTED FROM THE MANIFEST (2026-08-09)
+
+> **The June snapshot below the fold is superseded.** The manifest is the source of truth, not this
+> doc; recomputed at HEAD from `testdata/parity_manifest.json` + the staleness gate. **Drift in both
+> directions, as expected — and one category this doc never contemplated.**
+>
+> **23 families, not 20.** Landed since June: `cohere`, `cohere2`, `gpt-oss` (and the doc's list
+> omitted `gemma4`/`llama4_text` from its pending arithmetic).
+>
+> **Genuinely `pending`: 4, not 14.** The relay era cleared most of the campaign in passing —
+> 14 rows carry Aug 4–5 `validated_at` commits.
+
+| category | count | families |
+|---|---|---|
+| **T3-backed** (valid method, fresh hash) | **14** | cohere, cohere2, deepseek_v2, deepseek_v3, gemma3, gemma4, gpt-oss, llama, mellum, mistral, phi3, qwen2, qwen3, qwen3_5_moe |
+| **`pending`** (empty row) | **4** | `gpt2`, `granitemoehybrid`, `kimi_k2`, `nemotron_h` |
+| ⚠ **`validated` at a NON-T3 method** | **5** | `glm4_moe`, `mixtral`, `qwen2_5_vl`, `qwen2_moe` (`tiny-golden`); `llama4_text` (`tiny-golden+coherent`) |
+
+### ⚠ The category this doc missed: `status: validated` at a method T3 does not accept
+
+`parity-coverage-policy.md` defines **T3 valid `method` values** as exactly
+`full-forward-oracle`, `real-model-oracle`, `weightDiff` (+ layer-slice), and
+`shared-path (via <family>)`. **`tiny-golden` is not among them** — it is a T1 artifact recorded in
+a T3 slot. Five rows sit in that gap today, and **nothing catches it**:
+`decoder/parity_manifest_test.go` reads `Method` as `json.RawMessage` and **never validates it
+against the allowed list**, so the staleness gate is silent (it keys on `deps_hash` freshness only).
+
+So the honest count of rows that cannot back a "supported" claim is **9, not 4** — and four of those
+five were *already* assigned stronger methods by this doc's own buckets (`glm4_moe` → weightDiff +
+layer-slice, `mixtral`/`qwen2_moe` → Bucket B oracle, `qwen2_5_vl` → Bucket A full oracle). They were
+recorded at the weaker method instead. **`llama4_text` is therefore not "the one weak row" the Polish
+section describes — it is one of five.**
+
+**Recommended (flagged for the owner, not decided here):** add method validation to the manifest gate
+so this cannot recur silently. That is a core-adjacent test change and per Rule 1 must land *before*
+the freeze, not after.
+
+### The coupling caveat has grown: 10 → **14** families on one `deps_hash`
+
+`f9e6caf6` is now shared by **14** families: cohere, cohere2, gemma3, glm4_moe, gpt2, llama, mellum,
+mistral, mixtral, phi3, qwen2, qwen2_5_vl, qwen2_moe, qwen3. Of those, **9 are currently our
+strongest rows**, 4 are the sub-T3 rows, and 1 (`gpt2`) is pending. **One core edit re-stales all
+14 simultaneously** — Rules 1 and 2 are more load-bearing than when written, not less.
+
+Other groups: `81476749` ×3 (deepseek_v2, deepseek_v3, **kimi_k2** — note the alias already shares the
+parent's hash, which is exactly what makes its shared-path row sound); the remaining 6 families each
+have their own hash and do not couple.
+
+### `validated_at` vs `deps_hash` after the goldens-gated refreshes — coherent, by exception
+
+`ed81e13` (P1) and `ca29d6c` (cap-raise) both carry `Deps-Hash-Refresh` trailers. The refresh script
+updates **`deps_hash` only, preserving `validated_at`** by design. Consequence: rows say
+`validated_at: b6dfbb3` (2026-08-04, an ancestor of HEAD — verified) while `deps_hash` reflects
+HEAD-era source. That technically violates this doc's own Definition of Done ("`validated_at` … must
+match the family's current `deps_hash`"), and it is the *sanctioned* exception: the goldens ran green
+at each refresh, which is what licenses preserving the validation date. **The staleness gate is green
+at HEAD — no row is stale.** Recording it so nobody "fixes" the mismatch by re-dating rows that were
+never re-validated.
+
+<details><summary>Superseded June 2026 snapshot (kept for provenance)</summary>
+
 ## Current state (2026-06-16 manifest)
 
 **Validated (6):** `qwen3_5_moe`, `deepseek_v2`, `deepseek_v3`, `gemma4`, `phi3`
@@ -23,6 +84,8 @@ see §"Polish").
 **Pending (14):** `gemma3`, `gpt2`, `llama`, `mistral`, `qwen2`, `qwen3`,
 `qwen2_5_vl`, `qwen2_moe`, `mellum`, `mixtral`, `granitemoehybrid`, `nemotron_h`,
 `glm4_moe`, `kimi_k2`.
+
+</details>
 
 ## The buckets (by oracle feasibility — determines method + which box)
 
