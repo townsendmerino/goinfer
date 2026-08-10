@@ -146,7 +146,7 @@ source. No weights, no code.
 
 | question | verdict |
 |---|---|
-| **KDA vs shipped DeltaNet** | **SMALL VARIANT KERNEL** — same delta rule, per-channel decay instead of per-head scalar. *One open question named below.* |
+| **KDA vs shipped DeltaNet** | **SMALL VARIANT KERNEL — VARIANT CONFIRMED (broadcast).** Same delta rule; the per-channel decay indexes the **KEY axis** of the `[K,V]` state. *Open question CLOSED — see the resolution box.* |
 | **MXFP4 packing** | **LAYOUT SHIM** — identical numeric format, different container (separate planes vs interleaved blocks). Confined to routed experts only. |
 | **RoPE-less MLA** | **NEEDS A BRANCH** — the shipped MLA forward ropes unconditionally and `mlaParams` has no NoPE flag. |
 
@@ -191,18 +191,46 @@ scalar per head and becomes a vector along one axis of the state matrix** — ou
 a per-column multiply. That is a broadcast-shape change to an existing inner loop plus a clamp, not a
 different fold.
 
-> 🚩 **OPEN QUESTION, and it must be answered before anyone writes the kernel.** `g` has shape
-> `(h, head_dim)` and KDA sets `head_k_dim == head_dim == head_v_dim`, so **the config alone does not
-> say which axis of the `[head_k_dim, head_v_dim]` state the decay indexes** — key-dim or value-dim.
-> The scan itself lives in **`fla` (flash-linear-attention), an external Triton library the modeling
-> file only calls**; it is not in the checkpoint repo. Resolving this needs `fla`'s source, not more
-> config reading. Getting the axis wrong is a silent-wrong class (plausible output, incorrect decay),
-> so it is a hard prerequisite, not an implementation detail.
+> ### ✅ RESOLVED (2026-08-09, micro-leg A) — the decay indexes the **KEY** axis
 >
-> **Bit-identity note:** the reference fold is `chunk_kda` — a *chunkwise* scan, whose accumulation
-> order differs from a strict sequential recurrence. goinfer's DeltaNet decodes one token at a time
-> (sequential by construction), so decode parity is against the sequential order and is unaffected;
-> any future chunked *prefill* would inherit the same reassociation question the SSM work already met.
+> Read from **`fla/ops/kda/naive.py`** (fla-org/flash-linear-attention), the torch reference that
+> pins semantics without running Triton:
+>
+> ```python
+> g:  "Per-dimension decay gates (log-space) of shape [B, T, HV, K]"
+> S:  [B, HV, K, V]
+> S = S * g_i[..., None].exp()     # g_i [B,HV,K] -> [B,HV,K,1]: broadcasts over V
+> ```
+> and again in the chunked path: `S = S * rearrange(g_i[:, :, -1].exp(), 'b h k -> b h k 1')`.
+>
+> **So each key-row of the `[K,V]` state decays at its own rate, shared across every value column,
+> and `g` is LOG-space** (the recurrence exponentiates). The rest of the update is byte-for-byte our
+> delta rule: `err = v − Sᵀk` (sum over K), rank-1 update by `(β·k) ⊗ err`, readout `o = qᵀS`.
+>
+> **VARIANT CONFIRMED — broadcast change, not a different fold.** In goinfer's existing layout
+> (`S[kd*hv+vd]`, `decoder/deltanet.go`) today's `for i := range S { S[i] *= gt }` becomes a per-ROW
+> multiply on the outer index — `gkd := exp(g[kd])` applied across each contiguous `hv`-run. Cheap,
+> contiguous, and the surrounding ops are unchanged. **The estimate does NOT move to campaign class.**
+>
+> **Deliverable, checked in: `scripts/kda_oracle.py`** — a NumPy transcription of the sequential
+> recurrence plus the surrounding ops (conv+SiLU front-end, q/k L2 norm, clamped log-decay gate,
+> gated RMSNorm), validated against `fla`'s own reference. It is the future KDA parity oracle and it
+> runs **without Triton or a GPU** (it imports `naive.py` by file path, because `import fla` drags in
+> Triton the reference itself does not need). That removes the dependency loop §5 flagged in the
+> oracle plan.
+>
+> *Tolerance note:* the diff against `fla` sits at ~5e-7 because `naive.py` casts inputs to
+> `torch.float` (f32) internally while the transcription runs f64 — invariant to the dtype handed in,
+> which is the signature of an internal cast, not a semantic gap. Break-it-first on the oracle itself:
+> broadcasting the decay over the **value** axis instead measures **3.57** against the same reference,
+> an O(1) error **4.7e6× larger** than the rounding floor, so the check separates right-from-wrong by
+> ~5 orders of magnitude.
+>
+> **Bit-identity planning (unchanged in conclusion, now sourced):** the reference sequential fold is
+> strict left-to-right over T with the `err` reduction summing over K. `chunk_kda` uses a different
+> (chunked, `g.cumsum(-2)`-based) accumulation, so chunk ≠ sequential bitwise. goinfer decodes one
+> token at a time, so decode parity is against the sequential order and is unaffected; only a future
+> chunked *prefill* would inherit the reassociation question.
 
 ### 2. MXFP4 — the gpt-oss unpacker's format, a different container
 
@@ -274,12 +302,16 @@ Sketch — **not code**:
 
 ### 5. Oracle plan sketch for the KDA layers
 
-- **HF reference at tiny scale:** `text_config.model_type: "kimi_linear"` with `auto_map` →
-  `modeling_kimi_linear.KimiLinearForCausalLM`, i.e. remote-code, runnable with `transformers` at a
-  toy geometry. **Caveat: it calls `fla` for the scan**, so the oracle needs `flash-linear-attention`
-  installed and (being Triton) likely a GPU — the same dependency that gates the §1 open question.
-  If `fla` proves impractical, the fallback is a **NumPy transcription of the sequential recurrence**,
-  which is the shape our DeltaNet was validated against anyway.
+- **✅ The oracle now exists: `scripts/kda_oracle.py`** (micro-leg A). NumPy transcription of the
+  sequential recurrence + surrounding ops, validated against `fla`'s `naive_recurrent_kda`. Runs with
+  **no Triton and no GPU** — it loads `naive.py` by file path, sidestepping the `import fla` Triton
+  dependency. The dependency loop this section originally flagged is gone: `--vs-fla` re-pins the
+  transcription to upstream whenever `flash-linear-attention` is installed, and the default path is
+  NumPy-only.
+- **HF reference at tiny scale** (still useful as a second opinion): `text_config.model_type:
+  "kimi_linear"` with `auto_map` → `modeling_kimi_linear.KimiLinearForCausalLM`, remote-code,
+  runnable with `transformers` at toy geometry — but it calls `fla` for the scan, so it needs Triton.
+  Prefer the checked-in oracle for routine gating.
 - **Tiny fixture:** buildable the way the DeltaNet/Mamba fixtures were (random weights at toy dims,
   pinned golden). ⚠ `testdata/kimi-tiny/` exists but is **config-only — no `model.safetensors`**
   (unlike `testdata/deepseek-tiny/`, which has weights); a K3/KDA fixture must be generated.
@@ -291,7 +323,7 @@ Sketch — **not code**:
 | item | rides free | new work | class |
 |---|---|---|---|
 | MLA (24 layers) | shape is ours (`kv_lora_rank: 512`, `kv_a_proj_with_mqa`, `kv_b_proj`) | **NoPE branch**; MLA output gate | small |
-| KDA (69 layers) | conv+SiLU, L2 norm, β, gated RMSNorm, output gate, A_log/dt_bias/softplus | **per-channel decay** + gate clamp; **`fla` axis question** | small variant kernel, **blocked on one external read** |
+| KDA (69 layers) | conv+SiLU, L2 norm, β, gated RMSNorm, output gate, A_log/dt_bias/softplus | **per-key-dim decay** (per-row multiply in our layout) + gate clamp | small variant kernel, **UNBLOCKED — axis resolved, oracle checked in** |
 | Router | ours entirely (`e_score_correction_bias`, `noaux_tc`, sigmoid, `first_k_dense_replace: 1`) | config **key renames** only | config-delta |
 | Latent-MoE | — | `routed_expert_{up,down}_proj` + norm | small |
 | `situ` activation | — | new activation (`SituAndMul`, 2 betas) | trivial |
@@ -300,10 +332,11 @@ Sketch — **not code**:
 | Loader | `quantizeWM`, streaming discipline | **per-expert tensor entry point** | small |
 | Hybrid scheduling | per-layer-kind dispatch exists (granite/nemotron precedent) | 24/69 interleave wiring | small |
 
-**Effort: weeks, not days and not a campaign** — *conditional on the `fla` axis question resolving as
-a broadcast change.* If it resolves as a different fold, the KDA row becomes **new scan primitive**
-and the estimate moves to campaign class; that is exactly what this gate exists to catch, and it is
-**not yet closed**.
+**Effort: weeks, not days and not a campaign — and the condition is now DISCHARGED.** The `fla` axis
+question resolved as a broadcast change (key axis), so the KDA row stays *small variant kernel* and
+the campaign-class branch is closed out. With the oracle checked in, K3's remaining cost is
+**mostly loader and fixture work**: the per-expert-tensor entry point, the MXFP4 plane-zip shim, a
+generated KDA fixture, the MLA NoPE branch, and the interleave wiring.
 
 **Queue: behind v1.0, and behind DeepSeek-V4's prerequisites** (fp8 blockwise dequant, per-expert
 loader) which K3 partly shares. Two cheap unblocks are worth doing independently of K3 because they
