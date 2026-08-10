@@ -119,7 +119,12 @@ cuda)
 	fi
 
 	hdr "3. cgo-free (the whole premise — verify, never assume)"
-	if CGO_ENABLED=0 go build -tags cuda -o /tmp/gpu_gate_serve ./cmd/serve 2>/dev/null; then
+	# Build the CUDA SUBMODULE entrypoint. The root ./cmd/serve has been a DELIBERATE compile
+	# error under -tags cuda since v0.10.0 (cmd/serve/backendtag_guard_cuda.go: the root command
+	# builds no backend, and failing loudly beats silently producing a CPU-only binary named as
+	# though it had CUDA). This check pointed at the root command for that entire period, so it
+	# could not pass — see audit G-01.
+	if (cd cuda && CGO_ENABLED=0 go build -tags cuda -o /tmp/gpu_gate_serve ./cmd/serve) 2>/dev/null; then
 		RAN=$((RAN + 1))
 		LINKED="$(ldd /tmp/gpu_gate_serve 2>/dev/null | grep -iE "libcuda|libnvrtc|libcudart" || true)"
 		if [ -n "$LINKED" ]; then
@@ -130,28 +135,95 @@ cuda)
 		fi
 		rm -f /tmp/gpu_gate_serve
 	else
-		fail "serve does not build under -tags cuda"
+		fail "cuda/cmd/serve does not build under -tags cuda (CGO_ENABLED=0)"
 	fi
 
-	hdr "4. PTX is reproducible from committed sources"
+	hdr "4. PTX reproduces from source, each at the NVRTC it records"
+	# INTEGRITY: this block must ALWAYS reach pass/fail/skip. An earlier revision of it died on a
+	# bash error midway and the gate still reported PASS overall — a check that can neither pass
+	# nor fail is the same defect as one that can only fail (audit G-01). PTX4_DONE is asserted at
+	# the end and checked after; if the block ever exits early, that becomes a FAIL, not silence.
+	PTX4_DONE=0
+	# Every .ptx states the toolchain that produced it in its own header:
+	#   // Cuda compilation tools, release 12.6, V12.6.85
+	# That is the artifact's provenance, and it is what we rebuild against — NOT whatever NVRTC
+	# this box happens to default to. The tree legitimately carries a MIX (kernels added after a
+	# toolchain bump were built at the newer one, and the audited ones are deliberately pinned),
+	# so a single-toolchain rebuild reports a false FAIL on every file from the other era. That is
+	# what made this check unpassable for the whole of v0.10.x/v0.11.0 — see audit G-01.
+	#
+	# Nothing is exempted by name. A file is only skipped when the NVRTC version IT RECORDS is not
+	# installed here, and the skip names the version so it is actionable.
+	#
+	# Provide extra toolchains via GOINFER_NVRTC_DIRS (colon-separated dirs, each containing
+	# lib/libnvrtc.so.12), e.g. a pinned pip venv:
+	#   python3 -m venv ~/nvrtc-12.6.85 && ~/nvrtc-12.6.85/bin/pip install \
+	#       nvidia-cuda-nvrtc-cu12==12.6.85 nvidia-cuda-runtime-cu12==12.6.77
 	if [ -x cuda/build_ptx.sh ]; then
-		BEFORE="$(mktemp -d)"; cp cuda/testdata/*.ptx "$BEFORE"/ 2>/dev/null
-		if (cd cuda && ./build_ptx.sh >/dev/null 2>&1); then
-			RAN=$((RAN + 1))
-			DIFF=0
-			for f in cuda/testdata/*.ptx; do cmp -s "$f" "$BEFORE/$(basename "$f")" || DIFF=$((DIFF + 1)); done
-			if [ "$DIFF" -eq 0 ]; then
-				pass "all $(ls cuda/testdata/*.ptx | wc -l | tr -d ' ') PTX regenerate byte-identically"
-			else
-				fail "$DIFF PTX file(s) differ from their committed form — the shipped kernels do not match their .cu"
+		PROBE="$(mktemp -d)"
+		# Build version -> NVRTC dir by PROBING each candidate: compile a trivial kernel and read
+		# the version out of the PTX it emits. Exact, and it exercises the same path the real
+		# build uses (filename/soname heuristics only give major.minor, and the patch matters).
+		declare -A NVRTC_FOR=()
+		CANDS="${GOINFER_NVRTC_DIRS:-}"
+		for g in "$HOME"/nvrtc-*/lib/python*/site-packages/nvidia "$HOME"/.venv*/lib/python*/site-packages/nvidia; do
+			[ -d "$g/cuda_nvrtc/lib" ] && CANDS="$CANDS:$g"
+		done
+		printf 'extern "C" __global__ void p(float* o){ o[0]=1.f; }\n' > "$PROBE/p.cu"
+		IFS=':' read -ra CAND_ARR <<< "$CANDS"
+		for c in "${CAND_ARR[@]}"; do
+			[ -z "$c" ] && continue
+			L="$c/cuda_nvrtc/lib"; I="$c/cuda_runtime/include"
+			[ -d "$L" ] || { L="$c/lib"; I="$c/include"; }
+			[ -f "$L/libnvrtc.so.12" ] || continue
+			if (cd cuda && LD_LIBRARY_PATH="$L" NVRTC_SO="$L/libnvrtc.so.12" \
+				python3 nvrtc_compile.py "$PROBE/p.cu" "$PROBE/p.ptx" "${ARCH:-compute_75}" "$I") >/dev/null 2>&1; then
+				V="$(sed -n 's|.*Cuda compilation tools, release [0-9.]*, V\([0-9.]*\).*|\1|p' "$PROBE/p.ptx" | head -1)"
+				[ -n "$V" ] && [ -z "${NVRTC_FOR[$V]:-}" ] && NVRTC_FOR[$V]="$L|$I"
 			fi
+		done
+		TCS="${!NVRTC_FOR[*]}"   # NOT ${!NVRTC_FOR[*]:-none}: that is indirect expansion and aborts the block
+		echo "  toolchains available: ${TCS:-none}"
+
+		BEFORE="$(mktemp -d)"; cp cuda/testdata/*.ptx "$BEFORE"/ 2>/dev/null
+		DIFF=0; OKN=0; UNAVAIL=""
+		for f in cuda/testdata/*.ptx; do
+			b="$(basename "$f" .ptx)"
+			[ -f "cuda/$b.cu" ] || continue   # no source ⇒ not ours to reproduce
+			WANT="$(sed -n 's|.*Cuda compilation tools, release [0-9.]*, V\([0-9.]*\).*|\1|p' "$f" | head -1)"
+			if [ -z "$WANT" ]; then
+				UNAVAIL="$UNAVAIL $b(no recorded version)"; continue
+			fi
+			ENT="${NVRTC_FOR[$WANT]:-}"
+			if [ -z "$ENT" ]; then
+				UNAVAIL="$UNAVAIL $b(needs V$WANT)"; continue
+			fi
+			L="${ENT%%|*}"; I="${ENT##*|}"
+			if (cd cuda && NVRTC_LIB="$L" CUDA_INC="$I" ./build_ptx.sh "$b") >/dev/null 2>&1; then
+				if cmp -s "$f" "$BEFORE/$b.ptx"; then OKN=$((OKN + 1)); else
+					DIFF=$((DIFF + 1)); echo "      DIFFERS: $b.ptx (rebuilt at its recorded V$WANT)"
+				fi
+			else
+				UNAVAIL="$UNAVAIL $b(build failed at V$WANT)"
+			fi
+		done
+		cp "$BEFORE"/*.ptx cuda/testdata/ 2>/dev/null   # restore; this check must not mutate the tree
+		rm -rf "$BEFORE" "$PROBE"
+
+		if [ "$DIFF" -eq 0 ] && [ "$OKN" -gt 0 ]; then
+			RAN=$((RAN + 1))
+			pass "$OKN PTX regenerate byte-identically at their recorded NVRTC"
+		elif [ "$DIFF" -gt 0 ]; then
+			RAN=$((RAN + 1))
+			fail "$DIFF PTX differ from their committed form — the shipped kernels do not match their .cu"
 		else
-			skip "PTX rebuild (no NVRTC toolchain here — see cuda/build_ptx.sh)"
+			skip "PTX reproducibility (no usable NVRTC for any recorded version)"
 		fi
-		rm -rf "$BEFORE"
+		[ -n "$UNAVAIL" ] && skip "PTX not verified here:$UNAVAIL"
 	else
 		skip "PTX reproducibility (cuda/build_ptx.sh missing)"
 	fi
+	PTX4_DONE=1
 	;;
 
 metal)
@@ -223,6 +295,15 @@ metal)
 	skip "no GPU backend detected on this host — only the seam gate ran"
 	;;
 esac
+
+# ---- 4z. integrity: check 4 must have reached a verdict ----
+# A bash expansion error inside check 4 once aborted the rest of that block while the gate still
+# printed PASS overall. A check that can neither pass nor fail is the same defect as one that can
+# only fail (audit G-01), so silence is now itself a failure. This sits AFTER the case statement
+# because that is the first point execution is guaranteed to reach if the block died.
+if [ "$BACKEND" = cuda ] && [ "${PTX4_DONE:-0}" -ne 1 ]; then
+	fail "PTX check did not complete — it emitted no verdict (aborted mid-block; see audit G-01)"
+fi
 
 # ---- 5. shared: the whole non-GPU suite still has to be green ----
 hdr "5. repo (CPU path, formatting, vet)"
