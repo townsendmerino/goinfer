@@ -10,6 +10,17 @@ pre-1.0 and may change as new model families and quant formats land.
 
 ## [Unreleased]
 
+### Docs
+- **The post-v0.10.3 "still slow" campaign is closed and filed** (`docs/completed/plan-still-slow.md`;
+  a pointer remains at `docs/plan-still-slow.md`). Relay executed 2026-08-09. Outcomes: the sampling
+  cliff is largely closed — temperature-only decode +126–137%, temp+top_p +98–108% (P2b), `top_k=1`
+  +18–22% (P1); the published sampled deficit fell from 2.1–2.9× to 1.08–1.40×. `top_k=1` closed
+  outright (C-14 was already fixed; stale docs corrected, P0). Long-context was measured to 32k —
+  linear with a plateau coefficient (~0.74/1.0 µs/pos CUDA, ~9–12 Metal vs peer ~0.03–0.09; 5.54× at
+  32k) — split-KV re-gated (+19% @0.5B@512) and a live regression fixed (P6a); KV-quant was refuted
+  as a speed lever on both backends (P4, reachability-only, build-deferred) and prefill (P5) stays
+  banked. The remaining decode lever is a non-bit-identical FA-class rewrite (unfunded).
+
 ### Changed
 - **Sampled output for a given seed changed; the distribution is unchanged.** The full-vocabulary
   softmax denominator on both the temperature-only and `top_p` paths is now summed in parallel over
