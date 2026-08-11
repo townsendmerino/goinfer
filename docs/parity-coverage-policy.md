@@ -448,3 +448,34 @@ Until 2–4 exist, the family ships as experimental.
 - Bit-identical parity as the universal bar — the gate is argmax-exact + cosine
   (+ the rare-token set where a precision claim is made); lossy paths (quant, KV
   precision, paging) gate against their own opt-in bars, default stays bit-exact.
+
+## The pure-Go CPU reference is bit-identical WITHIN an architecture, not across
+
+The same kind of scope statement as Metal's bit-identity (pinned to machine + OS): the pure-Go CPU
+reference — the thing every GPU backend is gated against — is bit-identical **within an architecture,
+not across arm64 and amd64.**
+
+**Mechanism (measured, not folklore).** Go's spec permits fusing `x*y + z` into a single-rounding FMA
+"across statements." gc does this on **arm64** and not on **amd64's default GOAMD64 baseline** (FMA is
+not in v1). `go build -gcflags=-S`: **85** fused sites in `decoder` and **47** in `aikit/linalg` on
+arm64 (e.g. `FMADDS` at `dot.go:25`, the SIMD dot inner loop) — **0** on amd64. A fusion-sensitive
+`x*y+z` reproducer diverges on arm64 and agrees on amd64. So one source produces two f32 results.
+
+**Consequence (measured cross-box, identical weights + fixed prompt + f32, both arches).** On
+qwen2.5-coder-0.5b: **93% of the 151,936 logits differ bit-for-bit, median 4 / max 91,136 ULP** — yet
+the last-token **argmax and the full 64-token greedy continuation are IDENTICAL** across arm64/amd64.
+On a 4-layer tiny fixture: 86% differ, max 832 ULP, same conclusion. Depth and width amplify the float
+divergence ~110× (832 → 91,136 ULP) but it stays **below every decision boundary: floats differ,
+decisions do not, measured at this depth.** (No flip was observed; max ULP grows with depth, so a flip
+is not proven impossible on larger models or much longer runs — the claim is scoped to what was
+measured.)
+
+**The cross-architecture contract is argmax + cosine** — the gate's existing bar — not bit-for-bit.
+Both arches pass every argmax-exact + cosine golden; the divergence lives entirely inside the tolerance.
+The parity manifest's `deps_hash` is a hash of **source bytes + aikit_version** (architecture-independent),
+so it needs **no architecture field** — it is valid on both boxes unchanged. Only a *float-valued* golden
+would be arch-sensitive, and those are argmax+cosine, which absorbs it.
+
+**Remediation declined.** Forcing bit-agreement means explicit `math.FMA` everywhere — a software
+fallback on amd64 that would cost the SIMD performance the CPU backend exists for. Not worth it for a
+divergence that stays below every decision boundary. Recorded here so nobody re-derives the worry.
