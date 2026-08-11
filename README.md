@@ -41,7 +41,10 @@ deployed by copying a file. That is the axis it optimizes — `go build` with **
 any kind** (no CUDA toolkit, no C++ compiler, no CMake, no Python), cross-compiling like any
 other Go program, and every GPU fast path is gated bit-identical against its own reference path,
 with all backends parity-gated against the pure-Go CPU implementation — which is itself
-parity-gated against HuggingFace.
+parity-gated against HuggingFace. Bit-identity is a **within-machine, within-OS** property: the
+Metal backend compiles its MSL at runtime with the OS's own shader toolchain, so identity holds
+for a given machine and OS version, not between them. The parity *gates* are what is portable;
+the bytes are not.
 
 It is **not a serving engine.** There is no continuous batching and no paged attention: a
 model serves one generation at a time behind a bounded queue. If your problem is saturating a

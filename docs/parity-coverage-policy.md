@@ -149,6 +149,84 @@ A parity gate is **vacuous until seen to fail on a real defect**. Before a new g
    own bug — an early CUDA gate asserted cosine ≥ 0.999 and failed the *shipped* dense path
    at 0.9936.
 
+### Relevant: the gate must exercise the path the product runs (audit G-01, the class)
+
+Runnable and falsifiable are both about the *gate's* machinery. This third one is about what
+the gate is pointed at, and it is the one that keeps recurring. The class:
+
+> **A test, benchmark or gate exercises something *adjacent* to what ships, and reports its
+> result as if it had exercised the real thing.**
+
+The result is not wrong the way a failing test is wrong. It is green, plausible, sometimes
+published — and about a different computation than the one users run. Nothing in the tooling
+distinguishes the two, because the gate's own machinery is working perfectly.
+
+**The recognition test** — apply to any new test, benchmark, or gate, and to any old one whose
+number you are about to publish:
+
+> **Does it call the same code path the product calls, and does it assert on the result?**
+
+Both halves are load-bearing. Same path without an assertion measures a corrupted computation
+and reports its speed. An assertion on a parallel path pins a number the product never produces.
+A "no" to either means the artifact is about something adjacent — say so, or fix it.
+
+Instances to date. They are listed together deliberately: each was found and fixed as a one-off,
+and the cost of that is that the next one was also found as a one-off.
+
+*In code — a parallel implementation drifts from the shipped one:*
+
+- **The three CUDA e2e tests bound `argmax_reduce` from the glue module** — the pre-C-14 kernel,
+  without the index tie-break — while production loads `argmax.ptx`. They gated the kernel the
+  product had stopped using (`7f03230`).
+- **`TestRealE2EDecodeThroughput` hand-rolled its own launch sequence** and omitted `rope_kv`'s
+  `rhalf` argument (added when partial rotary landed). The kernel read garbage for the rotary
+  half-width and corrupted K/V, and the test reported a throughput number for a broken forward
+  for as long as partial rotary has existed. The CUDA launch API does not arity-check, so nothing
+  failed (`f5ec7a2`; see the production-side note below).
+- **`bench_compare.sh` measured goinfer with in-process Go benchmarks while the peer ran over
+  HTTP** — a published ratio dividing a kernel throughput by an end-to-end one. Same class,
+  across a process boundary rather than a code path.
+- **`glue.ptx` kept a committed symbol its source no longer generates**, so the shipped artifact
+  could not be regenerated from the code it claimed to come from (`e2913dc`). The artifact-level
+  form: the *thing* is adjacent to its source, not the test to the thing.
+
+*One level up — the mechanism that should have caught it is itself adjacent:*
+
+- **A gate that can only FAIL is ignored exactly like one that can only pass.** `gpu_gate.sh`
+  could not reach a green verdict across the whole of v0.10.x and v0.11.0 (it built an
+  entrypoint that is a deliberate compile error). Once a gate's red is unremarkable, its red
+  stops carrying information — the same end state as G-01's original tautological green, reached
+  from the opposite direction (`d2c4858`).
+- **A check emitting neither pass nor fail vanished from the tally**, and the gate printed PASS
+  having tested nothing. The tally was computed from what emitted, so silence was
+  indistinguishable from success. Fixed by reconciling emitted verdicts against a **declared**
+  set (`4e293f9`).
+
+*And once as process:*
+
+- **`docs/completed/task-cuda-cgofree-spike.md:798` already recorded** that the reale2e harness
+  was not authoritative. The fact was known, written down, and filed where nobody reads it.
+  Knowledge parked under `completed/` is indistinguishable from knowledge nobody had — the same
+  decay as the stale version pin in `RELEASING.md`. **This is why the class lives here and not
+  in an audit file**: a policy doc is read before the next gate is written; an audit is read
+  once, at most.
+
+**Production-side status (checked, `f5ec7a2`).** The CUDA launch path hand-rolls its arguments
+too: `launch(f Pipeline, cfg LaunchConfig, args ...KernelArg)` (`cuda/resident.go:910`), called
+variadically from 48 sites (`resident.go` 36, `prefill.go` 11, `testhooks_gen.go` 1). There are
+no typed per-kernel wrappers, so **the compiler enforces neither arity nor argument order** — a
+missing trailing argument is silent, and so is a transposition between same-typed parameters,
+which counting cannot catch either. `rope_kv`'s tail is five consecutive `int`s
+(`nH, nKV, hd, pos, rhalf`); swapping `nH`/`nKV` is invisible on every MHA model and surfaces
+only under GQA, and `rhalf == hd/2` under full rotary hides a whole family of confusions there
+too. What protects production today is **behavioral, not structural**: the end-to-end parity
+gates assert on the shipped path, so a corrupted launch shows up as a parity failure. That is a
+real defense — it is the reason the same bug was live in a test and not in production — but it
+is coverage-shaped, not compiler-shaped, and it is only as good as the geometries the gates run.
+Structural options exist (typed per-kernel wrappers mirroring each `.cu` signature; or
+`cuKernelGetParamInfo`, CUDA 12.4+, to check arity against the module at load). **Not funded —
+recorded so the next signature change knows what is and isn't holding the line.**
+
 ## The validation manifest is the source of truth
 
 `testdata/parity_manifest.json` records, per family: the commit it was last
