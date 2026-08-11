@@ -1317,6 +1317,15 @@ bit-identity-preserving (pure buffer/traffic reuse).
   int4 case to `matmulInto` with a persistent per-stream Workspace.
 
 ### Measured negative — not the win the audit claimed
+- **PGO (profile-guided optimization) on the pure-Go CPU path.** Prototyped end-to-end (2026-08-11):
+  collected a combined decode+prefill CPU profile on qwen2.5-coder-0.5b, rebuilt with it. **Net-zero
+  throughput** — decode 70.5→69.9 tok/s, prefill 88-90→88-90 tok/s, both within noise. The profile
+  shows why: 62.8% flat is `aikit.dotF32Acc64 (inline)` — already inlined — and the rest is
+  hand-written assembly (dot/GEMV kernels), so PGO's inlining lever has no headroom. **AND
+  bit-identical numerics**: a PGO vs non-PGO dump on the same arm64 box differs in 0/151,936 logits
+  (PGO *was* applied — build info + binaries differ — but its codegen changes never reached the
+  fusion-bearing hot loop). So the FMA-fusion-shift risk did not materialize either. Same root cause
+  on both axes: the hot path's compilation is already at a fixed point. Not adopted; no `default.pgo`.
 - **Metal 2× rope dispatch → one grid-merged dispatch (audit #4).** Built on branch `metal-rope-merge`
   (bit-identical: snapshot golden byte-exact, LayerB ropeParity green, `TestGeometryPortIsLive` seam
   live on the merged `uQKtotal`). **MEASURED NET-ZERO on decode** (`TestZZ_metalDepthBench`,
