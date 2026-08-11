@@ -322,6 +322,52 @@ here as live policy.
 7. **A claim nobody can reproduce from the public documents is not shipped.** Before publishing,
    read the user-facing docs as a stranger with a default build and check that the claim survives.
 
+## Rule: a gate lands with a mutation check
+
+**A new or changed gate is not landed until something demonstrates it can fail.** The commit (or
+the test's own comment) names *what was mutated* and *what the failure looked like*. "I reasoned
+about it" does not count; nor does "it passed", which is the state a gate that cannot fail is
+permanently in.
+
+This is the base rate, not a recurring surprise. The "verification artifact that is not itself
+verified" class has surfaced about a dozen times across this program — and three of those were
+inside a single gate group written in one week:
+
+- the skip census read `0` because `go test` prints no `--- SKIP` without `-v`, so a suite known to
+  skip six reported none;
+- the heavy tier's failure filter was copied from a non-`-v` group, so under `-v` it matched every
+  `t.Logf` line and `head` truncated the real `--- FAIL` away — a 28-minute group that lost its own
+  failure;
+- and the fix for that one piped through `tee`, which would have made the group take **tee's** exit
+  status and be structurally incapable of reporting red. That is the sharp case: a defect that
+  arrived *as the remedy for another*, in the code whose job is catching exactly this.
+
+What a mutation check looks like, in ascending cost: assert the negative case directly
+(`(exit 1) | tee | grep | sed` → `PIPESTATUS[0]=1`, and without `pipefail` → `0`, the bug
+confirmed); or perturb the thing under test and confirm red (route to the wrong expert, drop a
+launch argument, point the pattern at a renamed test); or run the gate against a known-bad commit.
+Cheapest sufficient one wins — the point is evidence, not ceremony.
+
+Related and already policy: **Falsifiable** (break-it-first, above) says the same thing about
+numeric gates. This generalises it to the tooling: scripts, censuses, lints and filters are gates
+too, and they have been the likelier place for this defect precisely because nobody thinks of them
+as tests.
+
+## Rule: reverting a commit includes reverting what it claimed
+
+`git revert` undoes code mechanically and leaves prose behind. A commit that changed a default and
+told users about it in the README has *two* effects, and reverting one of them ships documentation
+that describes software that no longer exists.
+
+Concretely: a change that made the MoE expert cache self-sizing reduced the README's documented
+configuration from two environment variables to one. The revert restored the code and left the
+README saying "needs one environment variable", with a copyable command that produced a third of
+the published rate. That is claim-discipline rule 7 — a claim nobody can reproduce from the public
+documents is not shipped — broken by an operation that never looked at the claim.
+
+So a revert's checklist is the original commit's diff, not just its code hunks: every doc, comment,
+CHANGELOG entry and published number the commit touched gets re-examined in the same commit.
+
 ## Rule: archiving a doc strips its imperatives
 
 When a task doc or checklist moves to `docs/completed/`, its imperative content either **moves to

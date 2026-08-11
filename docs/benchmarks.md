@@ -548,7 +548,7 @@ above); the two take opposite approaches to the same over-capacity problem.
 | model | Gemma 4 **26B-A4B**, int4 (128 experts, top-8, 30 layers) — experts ~11.4 GB, **does not fit 8 GB** |
 | decode | **16.98 tok/s** (64-tok greedy, capture-free, synchronous H2D) |
 | expert cache | 38 slots/layer (auto-capped from 48 to measured free VRAM), **81.6% hit rate over the whole run** (17816 / 4024) — the steady-state decode figure is higher, **89.1%**, because this one includes the cold-cache fill (see §"production-config decomposition", `docs/task-moe-streaming.md`) |
-| **configuration (required — none of this is the default)** | `GOINFER_GEMMA4_RESIDENT=1` (admits Gemma 4 to the resident runner) + `GOINFER_MOE_CACHE_EXPERTS=1` (host→VRAM expert streaming) + `GOINFER_MOE_CACHE_SLOTS=48` (auto-caps to 38). Omitting the third leaves the cache at its `topK` default — fresh-load per token, ~5 tok/s, not 17 |
+| **configuration (required — not the default)** | `GOINFER_MOE_CACHE_EXPERTS=1` (host→VRAM expert streaming) + `GOINFER_MOE_CACHE_SLOTS=48` (auto-caps to 38). Omitting the second leaves the cache at its `topK` default — fresh-load per token, ~5 tok/s, not 17. *(`GOINFER_GEMMA4_RESIDENT=1` was also required when this was measured; Gemma-4 residency became unconditional in `a5ebb35` and the variable is now inert.)* |
 | resident VRAM | ~1.3 GB core + ~3.8 GB slots + KV — the 11.4 GB of experts live in host RAM |
 | coherence | greedy through the real chat template: distinct-trigram 0.818, *"…**Paris**… the Eiffel Tower, the Louvre Museum… **Gastronomy:**"* |
 | peers | **Ollama v0.32.5: loads + runs** via 42% GPU / 58% CPU-RAM split, **~24.5 tok/s** (faster than goinfer here) — the old "fail to load" claim was outdated and is retracted |
