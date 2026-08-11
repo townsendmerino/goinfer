@@ -13,7 +13,7 @@ import (
 
 // gluePTX + gemvFwdPTX now live in kernels.go (shared with the production backend).
 
-// TestE2EDecode is the real end-to-end cgo-free CUDA decode measurement
+// TestE2EDecodeThroughput_synthetic is the end-to-end cgo-free CUDA decode THROUGHPUT measurement
 // (docs/prompts/cuda-measure-e2e-decode.md): the full per-token work — GEMVs PLUS the
 // glue the 244 projection omitted (RMSNorm+quant, RoPE, GQA attention, SwiGLU+quant,
 // residual, argmax) — so the tok/s is end-to-end, not a streaming ceiling. Shippable
@@ -22,7 +22,13 @@ import (
 // the number), CGO_ENABLED=0. Synthetic weights (bandwidth is value-independent); the
 // non-trivial kernels are cosine-validated vs a CPU reference here. Run:
 // CGO_ENABLED=0 go test -tags cuda -run E2EDecode -v
-func TestE2EDecode(t *testing.T) {
+// NOT A CORRECTNESS GATE. This measures THROUGHPUT over SYNTHETIC random weights — no model
+// is loaded, so the "token" it argmaxes is a pick over garbage and there is no CPU reference a
+// token-identity assertion could be written against. It was previously named TestE2EDecode and
+// asserted nothing, so it read as e2e correctness evidence for CUDA greedy decode while being a
+// benchmark. Correctness for that path lives in TestRealE2EDecode (real model, token identity vs
+// the CPU reference) and in the per-kernel bit-identity gates.
+func TestE2EDecodeThroughput_synthetic(t *testing.T) {
 	if err := gc.Init(); err != nil {
 		t.Skipf("cuInit: %v", err)
 	}

@@ -171,7 +171,10 @@ tok/s (1.34×)**, shallow unchanged. Narrows the gap to current Ollama from ~1.9
 coalescing bought 1.34×, so the redundant-re-read / latency residual remains — that is what **A2
 (KV layout)** and a query-tiled decode path would attack next. Campaign A is *open*, not closed.
 
-Gates that held: decode byte-identical; parity manifest green; `TestE2EDecode` / `TestRealE2EDecode`.
+Gates that held: decode byte-identical; parity manifest green; `TestRealE2EDecodeThroughput` / `TestBackendResidentWired`.
+(`TestE2EDecode` was cited here as a gate, but it asserted nothing — synthetic weights, throughput
+only. Renamed `TestE2EDecodeThroughput_synthetic`; `TestRealE2EDecodeThroughput` / `TestBackendResidentWired` now carries the token-identity
+assertion vs the CPU reference. See audit G-01.)
 
 ### A1-Metal. Same fix on Metal — landed (`994539c`, 2026-08-04)
 

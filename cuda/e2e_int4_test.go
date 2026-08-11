@@ -10,12 +10,18 @@ import (
 	gc "github.com/eitamring/gocudrv/cuda"
 )
 
-// TestE2EDecodeInt4 is the matching-quant (int4) apples-to-apples vs Ollama-on-q4_k_m
+// TestE2EDecodeInt4Throughput_synthetic is the matching-quant (int4) apples-to-apples vs Ollama-on-q4_k_m
 // (fresh ~149 tok/s on this box, v0.5.7): the full per-token decode with the W4A8 GEMV
 // (cosine-validated) + the same glue. Same shippable config (driver-JIT, executor hop,
 // CGO_ENABLED=0). NOTE our W4A8 is a naive nibble-unpack (compute-bound, 43% peak) —
 // int4's fewer bytes don't help us as they help tuned llama.cpp; that is the finding.
-func TestE2EDecodeInt4(t *testing.T) {
+// NOT A CORRECTNESS GATE. This measures THROUGHPUT over SYNTHETIC random weights — no model
+// is loaded, so the "token" it argmaxes is a pick over garbage and there is no CPU reference a
+// token-identity assertion could be written against. It was previously named TestE2EDecodeInt4 and
+// asserted nothing, so it read as e2e correctness evidence for CUDA greedy decode while being a
+// benchmark. Correctness for that path lives in TestRealE2EDecode (real model, token identity vs
+// the CPU reference) and in the per-kernel bit-identity gates.
+func TestE2EDecodeInt4Throughput_synthetic(t *testing.T) {
 	if err := gc.Init(); err != nil {
 		t.Skipf("cuInit: %v", err)
 	}

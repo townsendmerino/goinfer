@@ -22,7 +22,18 @@ import (
 // LockOSThread-pinned CUDA executor fed by a channel (one round-trip per token), so the
 // thread-safety executor cost is IN the number (guardrail #3). Wall-clock steady-state
 // (the number a user feels), vs same-box pinned Ollama 149 / WebGPU 111.6. cgo-free.
-func TestRealE2EDecode(t *testing.T) {
+// NOT A CORRECTNESS GATE, despite the name it used to carry. This drives a HAND-ROLLED sequence of
+// kernel launches written inside the test — not the production resident path — so its tokens are not
+// evidence about what ships. MEASURED, not assumed: driving the CPU reference identically (same
+// prompt, same re-feed of the last prompt token, same argmax rule) yields a DIFFERENT sequence, so
+// this bespoke pipeline does not reproduce decoder.forward. Making it faithful would just duplicate
+// the production resident path, which is already gated — so it is labelled instead.
+//
+// CORRECTNESS FOR THIS PATH LIVES IN TestBackendResidentWired: it loads --backend cuda, takes the
+// real *cudaResident, and compares argmax against mcpu.ForwardForTest position by position
+// (measured 7/8 exact, worst near-tie 0.087%, hard fails 0). That is the token-identity evidence;
+// this file is the throughput number.
+func TestRealE2EDecodeThroughput(t *testing.T) {
 	requireHeavyModel(t)
 	gguf := os.Getenv("GOINFER_CUDA_MODEL")
 	if gguf == "" {

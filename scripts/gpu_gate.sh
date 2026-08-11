@@ -52,10 +52,25 @@ SKIPPED=0
 RAN=0
 NOTES=()
 
+# GROUP ACCOUNTING (audit G-01). The tally used to be computed purely from what emitted, so a check
+# that died mid-block simply vanished and the gate still reported PASS — it had tested nothing and
+# said so in no way that a reader could notice. Counting what emitted can never detect what did not.
+# So the expected groups are DECLARED up front and reconciled at the end: a group that emits no
+# verdict, or an unexpected group id, is itself a FAIL.
+case "$BACKEND" in
+cuda)  EXPECT=(cleangpu seam suite cgofree ptx repo) ;;
+metal) EXPECT=(cleangpu seam suite cgofree lifecycle prefill repo) ;;
+*)     EXPECT=(cleangpu seam suite repo) ;;
+esac
+declare -A EMITTED=()
+CURGROUP=""
+grp() { CURGROUP="$1"; }                                  # set by each hdr, before its checks run
+mark() { [ -n "$CURGROUP" ] && EMITTED[$CURGROUP]=1; return 0; }
+
 hdr() { printf '\n\033[1m== %s ==\033[0m\n' "$1"; }
-pass() { printf '  \033[32mPASS\033[0m  %s\n' "$1"; }
-fail() { printf '  \033[31mFAIL\033[0m  %s\n' "$1"; FAILED=$((FAILED + 1)); }
-skip() { printf '  \033[33mSKIP\033[0m  %s\n' "$1"; SKIPPED=$((SKIPPED + 1)); NOTES+=("SKIPPED: $1"); }
+pass() { printf '  \033[32mPASS\033[0m  %s\n' "$1"; mark; }
+fail() { printf '  \033[31mFAIL\033[0m  %s\n' "$1"; FAILED=$((FAILED + 1)); mark; }
+skip() { printf '  \033[33mSKIP\033[0m  %s\n' "$1"; SKIPPED=$((SKIPPED + 1)); NOTES+=("SKIPPED: $1"); mark; }
 
 hdr "provenance"
 echo "  repo        $COMMIT$DIRTY"
@@ -74,7 +89,7 @@ esac
 [ -n "$DIRTY" ] && NOTES+=("WORKING TREE DIRTY — this verdict does not describe a committed state.")
 
 # ---- 0. the card must be quiet, or every memory-sensitive result below is noise ----
-hdr "0. clean GPU"
+grp cleangpu; hdr "0. clean GPU"
 if [ "$BACKEND" = cuda ] && command -v nvidia-smi >/dev/null 2>&1; then
 	PROCS="$(nvidia-smi --query-compute-apps=pid,used_memory,process_name --format=csv,noheader 2>/dev/null)"
 	USED="$(nvidia-smi --query-gpu=memory.used --format=csv,noheader 2>/dev/null | tr -d ' MiB')"
@@ -96,7 +111,7 @@ else
 fi
 
 # ---- 1. seam: no GPU needed, and it is the class that cost five weeks ----
-hdr "1. seam (runs anywhere — no GPU, no model download)"
+grp seam; hdr "1. seam (runs anywhere — no GPU, no model download)"
 if out="$(go test ./decoder/ -run 'TestSeam_' -count=1 2>&1)"; then
 	RAN=$((RAN + 1))
 	pass "serve↔decoder↔backend seam: residency is actually reached, backend names validate"
@@ -108,7 +123,7 @@ fi
 # ---- 2/3/4. per-backend suites ----
 case "$BACKEND" in
 cuda)
-	hdr "2. CUDA kernels + parity (sequential: these contend for VRAM)"
+	grp suite; hdr "2. CUDA kernels + parity (sequential: these contend for VRAM)"
 	if out="$(CGO_ENABLED=0 go test -tags cuda -p 1 ./cuda/ -count=1 -short 2>&1)"; then
 		RAN=$((RAN + 1))
 		pass "full cuda suite"
@@ -118,7 +133,7 @@ cuda)
 		echo "$out" | grep -E "^--- FAIL|\.go:[0-9]+:" | head -12 | sed 's/^/      /'
 	fi
 
-	hdr "3. cgo-free (the whole premise — verify, never assume)"
+	grp cgofree; hdr "3. cgo-free (the whole premise — verify, never assume)"
 	# Build the CUDA SUBMODULE entrypoint. The root ./cmd/serve has been a DELIBERATE compile
 	# error under -tags cuda since v0.10.0 (cmd/serve/backendtag_guard_cuda.go: the root command
 	# builds no backend, and failing loudly beats silently producing a CPU-only binary named as
@@ -138,7 +153,7 @@ cuda)
 		fail "cuda/cmd/serve does not build under -tags cuda (CGO_ENABLED=0)"
 	fi
 
-	hdr "4. PTX reproduces from source, each at the NVRTC it records"
+	grp ptx; hdr "4. PTX reproduces from source, each at the NVRTC it records"
 	# INTEGRITY: this block must ALWAYS reach pass/fail/skip. An earlier revision of it died on a
 	# bash error midway and the gate still reported PASS overall — a check that can neither pass
 	# nor fail is the same defect as one that can only fail (audit G-01). PTX4_DONE is asserted at
@@ -165,10 +180,17 @@ cuda)
 		# the version out of the PTX it emits. Exact, and it exercises the same path the real
 		# build uses (filename/soname heuristics only give major.minor, and the patch matters).
 		declare -A NVRTC_FOR=()
-		CANDS="${GOINFER_NVRTC_DIRS:-}"
-		for g in "$HOME"/nvrtc-*/lib/python*/site-packages/nvidia "$HOME"/.venv*/lib/python*/site-packages/nvidia; do
-			[ -d "$g/cuda_nvrtc/lib" ] && CANDS="$CANDS:$g"
-		done
+		# GOINFER_NVRTC_DIRS is an OVERRIDE, not an addition: set it and ONLY those toolchains are
+		# used. That makes the "toolchain absent" path reachable on a box that happens to have it,
+		# which is how the counted-skip behaviour below is tested rather than assumed.
+		if [ -n "${GOINFER_NVRTC_DIRS:-}" ]; then
+			CANDS="$GOINFER_NVRTC_DIRS"
+		else
+			CANDS=""
+			for g in "$HOME"/nvrtc-*/lib/python*/site-packages/nvidia "$HOME"/.venv*/lib/python*/site-packages/nvidia; do
+				[ -d "$g/cuda_nvrtc/lib" ] && CANDS="$CANDS:$g"
+			done
+		fi
 		printf 'extern "C" __global__ void p(float* o){ o[0]=1.f; }\n' > "$PROBE/p.cu"
 		IFS=':' read -ra CAND_ARR <<< "$CANDS"
 		for c in "${CAND_ARR[@]}"; do
@@ -186,17 +208,18 @@ cuda)
 		echo "  toolchains available: ${TCS:-none}"
 
 		BEFORE="$(mktemp -d)"; cp cuda/testdata/*.ptx "$BEFORE"/ 2>/dev/null
-		DIFF=0; OKN=0; UNAVAIL=""
+		DIFF=0; OKN=0; UNAVAIL=""; TOTAL=0; NUNAVAIL=0
 		for f in cuda/testdata/*.ptx; do
 			b="$(basename "$f" .ptx)"
 			[ -f "cuda/$b.cu" ] || continue   # no source ⇒ not ours to reproduce
+			TOTAL=$((TOTAL + 1))
 			WANT="$(sed -n 's|.*Cuda compilation tools, release [0-9.]*, V\([0-9.]*\).*|\1|p' "$f" | head -1)"
 			if [ -z "$WANT" ]; then
-				UNAVAIL="$UNAVAIL $b(no recorded version)"; continue
+				UNAVAIL="$UNAVAIL $b(no recorded version)"; NUNAVAIL=$((NUNAVAIL + 1)); continue
 			fi
 			ENT="${NVRTC_FOR[$WANT]:-}"
 			if [ -z "$ENT" ]; then
-				UNAVAIL="$UNAVAIL $b(needs V$WANT)"; continue
+				UNAVAIL="$UNAVAIL $b(needs V$WANT)"; NUNAVAIL=$((NUNAVAIL + 1)); continue
 			fi
 			L="${ENT%%|*}"; I="${ENT##*|}"
 			if (cd cuda && NVRTC_LIB="$L" CUDA_INC="$I" ./build_ptx.sh "$b") >/dev/null 2>&1; then
@@ -204,7 +227,7 @@ cuda)
 					DIFF=$((DIFF + 1)); echo "      DIFFERS: $b.ptx (rebuilt at its recorded V$WANT)"
 				fi
 			else
-				UNAVAIL="$UNAVAIL $b(build failed at V$WANT)"
+				UNAVAIL="$UNAVAIL $b(build failed at V$WANT)"; NUNAVAIL=$((NUNAVAIL + 1))
 			fi
 		done
 		cp "$BEFORE"/*.ptx cuda/testdata/ 2>/dev/null   # restore; this check must not mutate the tree
@@ -212,14 +235,17 @@ cuda)
 
 		if [ "$DIFF" -eq 0 ] && [ "$OKN" -gt 0 ]; then
 			RAN=$((RAN + 1))
-			pass "$OKN PTX regenerate byte-identically at their recorded NVRTC"
+			pass "$OKN/$TOTAL PTX regenerate byte-identically at their recorded NVRTC"
 		elif [ "$DIFF" -gt 0 ]; then
 			RAN=$((RAN + 1))
 			fail "$DIFF PTX differ from their committed form — the shipped kernels do not match their .cu"
 		else
 			skip "PTX reproducibility (no usable NVRTC for any recorded version)"
 		fi
-		[ -n "$UNAVAIL" ] && skip "PTX not verified here:$UNAVAIL"
+		# A partial verification must never read as a full one: name the count AND the files, and
+		# make it a counted SKIP so it appears in the verdict's skipped tally and the notes block.
+		# "21/21 verified" and "11/21 verified" must be visibly different outcomes.
+		[ -n "$UNAVAIL" ] && skip "$NUNAVAIL/$TOTAL PTX NOT verified on this box (toolchain absent):$UNAVAIL"
 	else
 		skip "PTX reproducibility (cuda/build_ptx.sh missing)"
 	fi
@@ -227,7 +253,7 @@ cuda)
 	;;
 
 metal)
-	hdr "2. Metal suite"
+	grp suite; hdr "2. Metal suite"
 	if out="$(go test -p 1 ./metal/ -count=1 -short 2>&1)"; then
 		RAN=$((RAN + 1))
 		pass "full metal suite"
@@ -237,7 +263,7 @@ metal)
 		echo "$out" | grep -E "^--- FAIL|\.go:[0-9]+:" | head -12 | sed 's/^/      /'
 	fi
 
-	hdr "3. cgo-free"
+	grp cgofree; hdr "3. cgo-free"
 	if CGO_ENABLED=0 go build -o /tmp/gpu_gate_serve ./cmd/serve 2>/dev/null; then
 		RAN=$((RAN + 1))
 		pass "serve builds CGO_ENABLED=0 (Metal is dlopen'd via purego-objc)"
@@ -246,7 +272,7 @@ metal)
 		fail "serve does not build CGO_ENABLED=0"
 	fi
 
-	hdr "4. lifecycle"
+	grp lifecycle; hdr "4. lifecycle"
 	# Was a SKIP pointing at this work; the gate landed, so it is now a real check. Metal HAD the
 	# same hole CUDA did — Close() froze a channel and freed nothing, leaking ~267 MB per
 	# Load+Close on a 0.5B (aacec89). These run WITHOUT -short (the suite above uses it) because
@@ -265,7 +291,7 @@ metal)
 		skip "Close() lifecycle gate needs ~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"
 	fi
 
-	hdr "4b. prefill (f16-MMA TTFT — a shipped path, and it shipped NaN)"
+	grp prefill; hdr "4b. prefill (f16-MMA TTFT — a shipped path, and it shipped NaN)"
 	# The newest bug that maps to this doctrine. PrefillLast — the f16 simdgroup_matrix TTFT
 	# path — emitted NaN logits at EVERY prompt length (incl. the minimal single-tile M=8) after
 	# the LM head was pinned to int8: prefill still ran the int8 head weights through the int4
@@ -291,22 +317,13 @@ metal)
 	;;
 
 *)
-	hdr "2-4. backend suites"
+	grp suite; hdr "2-4. backend suites"
 	skip "no GPU backend detected on this host — only the seam gate ran"
 	;;
 esac
 
-# ---- 4z. integrity: check 4 must have reached a verdict ----
-# A bash expansion error inside check 4 once aborted the rest of that block while the gate still
-# printed PASS overall. A check that can neither pass nor fail is the same defect as one that can
-# only fail (audit G-01), so silence is now itself a failure. This sits AFTER the case statement
-# because that is the first point execution is guaranteed to reach if the block died.
-if [ "$BACKEND" = cuda ] && [ "${PTX4_DONE:-0}" -ne 1 ]; then
-	fail "PTX check did not complete — it emitted no verdict (aborted mid-block; see audit G-01)"
-fi
-
 # ---- 5. shared: the whole non-GPU suite still has to be green ----
-hdr "5. repo (CPU path, formatting, vet)"
+grp repo; hdr "5. repo (CPU path, formatting, vet)"
 if [ -n "$(gofmt -l . 2>/dev/null)" ]; then
 	fail "gofmt: $(gofmt -l . | tr '\n' ' ')"
 else
@@ -314,9 +331,26 @@ else
 fi
 if go vet ./decoder/ ./cmd/... >/dev/null 2>&1; then pass "go vet"; else fail "go vet"; fi
 
+# ---- 6. group reconciliation: every DECLARED check must have emitted a verdict ----
+# The generalisation of the check-4 guard. A block that dies mid-way emits nothing, and a tally
+# computed from what emitted cannot see the hole — "ran 3" and "ran 4" are both plausible-looking
+# numbers. Reconciling against the DECLARED set is what makes silence detectable (audit G-01).
+CURGROUP=""   # reconciliation failures belong to no group
+MISSING=""; UNEXPECTED=""
+for g in "${EXPECT[@]}"; do [ -z "${EMITTED[$g]:-}" ] && MISSING="$MISSING $g"; done
+for g in "${!EMITTED[@]}"; do
+	case " ${EXPECT[*]} " in *" $g "*) ;; *) UNEXPECTED="$UNEXPECTED $g" ;; esac
+done
+if [ -n "$MISSING" ]; then
+	fail "check group(s) declared but emitted NO verdict:$MISSING — the gate tested less than it reports (audit G-01)"
+fi
+if [ -n "$UNEXPECTED" ]; then
+	fail "check group(s) emitted but not declared:$UNEXPECTED — update EXPECT so the tally stays meaningful"
+fi
+
 # ---- verdict ----
 hdr "verdict"
-echo "  ran $RAN check group(s), $SKIPPED skipped, $FAILED failed"
+echo "  groups declared ${#EXPECT[@]}, emitted ${#EMITTED[@]}; ran $RAN check(s), $SKIPPED skipped, $FAILED failed"
 if [ "$SKIPPED" -gt 0 ]; then
 	printf '\n  \033[33mSkipped — a skip is not a pass; this gate does NOT cover:\033[0m\n'
 	for n in "${NOTES[@]}"; do printf '    - %s\n' "$n"; done
