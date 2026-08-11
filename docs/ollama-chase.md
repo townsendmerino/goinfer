@@ -1297,11 +1297,16 @@ bit-identity-preserving (pure buffer/traffic reuse).
   `linalg.Workspace` (the W8A8 sibling was fixed, int4 missed) → make() per projection per token. Add an
   int4 case to `matmulInto` with a persistent per-stream Workspace.
 
+### Measured negative — not the win the audit claimed
+- **aikit `q8Span` scalar→SIMD int8→f32 widen (audit #2).** Predicted "several ms/token" on large-vocab
+  int4/int8 CPU decode; built on branch `aikit:q8span-simd-widen` (bit-identical, `dequantRowInt8` scale=1.0,
+  gates green). **MEASURED NET-ZERO on M1 Pro arm64** (`BenchmarkQ8LMHeadDecode_fused`, M=1 K=1536 N=151936:
+  6.79-6.85 → 6.83-6.87 ms/op, flat). The widen isn't the bottleneck at the LM-head shape — it overlaps the
+  233 MB int8 head read (memory latency / dotF32 / parallel overhead dominate). **amd64 (AVX2 widen, different
+  memory subsystem) UNMEASURED — the box should A/B before this is reconsidered for release.** Do not release
+  for perf on the arm64 evidence alone.
+
 ### Outside the freeze — fundable now
-- **aikit `q8Span` scalar int8→f32 widen.** The tied LM head stays weight-only Q8 even in int4 models;
-  `q8Span` re-widens all vocab rows with a scalar loop at M=1 every token when a bit-identical SIMD widen
-  (`dequantRowInt8`) exists in the same package. Several ms/token on large-vocab int4/int8 CPU decode —
-  best effort:payoff. Lives in aikit (separate release + require-bump), not the frozen core.
 - **Gemma final-logit softcap host parallel-for.** `cuda/resident.go` runs a serial O(vocab) `math.Tanh`
   loop every *sampling* token (greedy skips it — softcap is monotonic). 10-30% on the Gemma+sampling
   intersection; element-independent → a host parallel-for is trivially bit-identical. `cuda/` not frozen.
