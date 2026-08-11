@@ -257,6 +257,7 @@ gpu-assessment — cited there.
 >   26B via a 42% GPU / 58% CPU-RAM split at ~24.5 tok/s, faster than goinfer here.* The honest,
 >   peer-independent claim is narrower: goinfer runs it **fully on the GPU** (experts streamed
 >   host→VRAM, not offloaded to CPU) — an architecture distinction, not a capability the peer lacks.
+>   *Opt-in: this row needs three environment variables (§B4), none of them the default.*
 >
 > Everything below this box is a **labeled historical record (vs Ollama 0.5.7, 2025-01-16)**, not a
 > current competitive claim.
@@ -546,7 +547,8 @@ above); the two take opposite approaches to the same over-capacity problem.
 | --- | --- |
 | model | Gemma 4 **26B-A4B**, int4 (128 experts, top-8, 30 layers) — experts ~11.4 GB, **does not fit 8 GB** |
 | decode | **16.98 tok/s** (64-tok greedy, capture-free, synchronous H2D) |
-| expert cache | 38 slots/layer (auto-capped from 48 to measured free VRAM), **81.6% hit rate** (17816 / 4024) |
+| expert cache | 38 slots/layer (auto-capped from 48 to measured free VRAM), **81.6% hit rate over the whole run** (17816 / 4024) — the steady-state decode figure is higher, **89.1%**, because this one includes the cold-cache fill (see §"production-config decomposition", `docs/task-moe-streaming.md`) |
+| **configuration (required — none of this is the default)** | `GOINFER_GEMMA4_RESIDENT=1` (admits Gemma 4 to the resident runner) + `GOINFER_MOE_CACHE_EXPERTS=1` (host→VRAM expert streaming) + `GOINFER_MOE_CACHE_SLOTS=48` (auto-caps to 38). Omitting the third leaves the cache at its `topK` default — fresh-load per token, ~5 tok/s, not 17 |
 | resident VRAM | ~1.3 GB core + ~3.8 GB slots + KV — the 11.4 GB of experts live in host RAM |
 | coherence | greedy through the real chat template: distinct-trigram 0.818, *"…**Paris**… the Eiffel Tower, the Louvre Museum… **Gastronomy:**"* |
 | peers | **Ollama v0.32.5: loads + runs** via 42% GPU / 58% CPU-RAM split, **~24.5 tok/s** (faster than goinfer here) — the old "fail to load" claim was outdated and is retracted |
@@ -555,6 +557,11 @@ above); the two take opposite approaches to the same over-capacity problem.
 - The number is a **floor**: synchronous H2D with no async overlap yet, and it still clears
   fieldfare's 5.1–6.3 tok/s on its own 8 GB M2 Air (the closest analogue either project has —
   *different silicon, so a floor in the peer's constrained regime, not a comparison row*).
+- **Reproducing this row needs three environment variables** (listed in the table above); a default
+  build runs this model on CPU. The three hit-rate figures in the docs are three different
+  measurements, not a disagreement: **77.5%** is 32 slots whole-run, **81.6%** is 38 slots whole-run
+  (same 21840 expert reads, more slots), and **89.1%** is 38 slots *steady-state decode only*,
+  which excludes the cold-cache fill. Quote the basis with the number.
 - The 81.6%-hit-rate-at-30%-residency is the empirical basis of the design: trained MoE routing
   is a stationary skew, so an LRU cache over a small resident fraction captures most reads
   (`turbo-fieldfare` reaches the same conclusion via 16-slot LFU — two mechanisms, one property).
