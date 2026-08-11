@@ -192,7 +192,31 @@ cuda)
         streaming, real-weight GEMV parity, resident spec-serve, the bandwidth benchmarks"
 	else
 		HEAVY_T0=$(date +%s)
-		if out="$(GOINFER_HEAVY_TESTS=1 CGO_ENABLED=0 go test -tags 'cuda goinfer_testhooks' -p 1 ./cuda/ -count=1 -timeout 60m -v 2>&1)"; then
+		# Persist the FULL output. The first run of this group failed and printed twelve lines of
+		# PASSING log text, because the failure filter was copied from groups 2a/2b which do not use
+		# -v — under -v every t.Logf carries a "file.go:NNN:" prefix, so the filter matched everything
+		# and `head` truncated the actual "--- FAIL" away. A 28-minute group that loses its own
+		# evidence has to be re-run from scratch to learn what broke, which is exactly the cost this
+		# gate exists to avoid. Keep the log; point at it on failure.
+		HEAVY_LOG="${TMPDIR:-/tmp}/gpu_gate_heavy_$$.log"
+		# STREAM progress, do not buffer 28 minutes of silence. The first version captured straight
+		# into `out="$(...)"`, so nothing printed until the group finished — and a running heavy tier
+		# and a hung one produced byte-identical output (none). Liveness had to be checked with
+		# nvidia-smi, from outside the gate, which is the silence-reads-as-health shape this script
+		# exists to prevent, one level up in the tooling.
+		#
+		# So: write the full log, stream one line per completed test, and take go test's status from
+		# PIPESTATUS[0] — NOT the pipeline's, which is `sed`'s and always zero. That last point is
+		# load-bearing: piping without it makes this group structurally incapable of reporting red.
+		# Mutation-checked both directions.
+		echo "      streaming (one line per test; full log at $HEAVY_LOG):"
+		GOINFER_HEAVY_TESTS=1 CGO_ENABLED=0 go test -tags 'cuda goinfer_testhooks' -p 1 ./cuda/ \
+			-count=1 -timeout 60m -v 2>&1 | tee "$HEAVY_LOG" \
+			| grep --line-buffered -E '^--- (PASS|FAIL|SKIP)' \
+			| sed -u 's/^--- /        · /'
+		HEAVY_RC=${PIPESTATUS[0]}
+		out="$(cat "$HEAVY_LOG")"
+		if [ "$HEAVY_RC" -eq 0 ]; then
 			HEAVY_SECS=$(( $(date +%s) - HEAVY_T0 ))
 			RAN=$((RAN + 1))
 			pass "heavy tier (real models) — ${HEAVY_SECS}s"
@@ -200,7 +224,10 @@ cuda)
 		else
 			HEAVY_SECS=$(( $(date +%s) - HEAVY_T0 ))
 			fail "heavy tier (real models) — ${HEAVY_SECS}s"
-			echo "$out" | grep -E "^--- FAIL|\.go:[0-9]+:" | head -12 | sed 's/^/      /'
+			# -v-safe: name the failing TESTS first, then their assertion lines. Never a bare
+			# "file.go:N:" match, which under -v is every log line in the run.
+			echo "$out" | grep -E "^(---|    ---) FAIL|^panic:" | head -12 | sed 's/^/      /'
+			echo "      full output: $HEAVY_LOG"
 		fi
 		# Census its skips BY NAME with their reason. A tier whose value is "it runs the real models"
 		# is worth nothing if the real-model tests inside it skipped.
