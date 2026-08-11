@@ -1263,9 +1263,11 @@ generations, not steady-state tok/s. Recording them here so nothing gets re-prop
   reused `Sampler.expScratch`. Bit-identical (a Sampler draws one token at a time; expChunked overwrites
   every element; `TestChunkedSoftmax_MachineIndependent` + full suite green under `-race`). Measured
   (`BenchmarkSample_*`, qwen 151936): temp-only **1.22 MB → 3.8 KB B/op (−99.7%) AND 525 → 392 µs/op
-  (−25%)** — the per-token make+zero+GC was real sampler time, not just jitter; top-p **4.52 → 3.32 MB**
-  (the chunkedZ scratch; its remaining ~3.3 MB is the candidate-set/sort, a separate follow-up). The
-  more-than-jitter speedup makes this the best of the small wins. Applies to the temperature paths
+  (−25%)** — the per-token make+zero+GC was real sampler time, not just jitter; top-p **4.52 → 1.27 MB
+  (−72%)** across two commits (chunkedZ scratch, then the candidate `[]indexedProb` via making
+  topFilterLogits a Sampler method + `s.ipsBuf`; ns flat — the path is sort-dominated). Remaining
+  1.27 MB is `cand` (`[]int` via topKByLogit's retry loop — higher surface, left as follow-up). The
+  more-than-jitter temp-only speedup makes this the best of the small wins. Temperature paths only
   (greedy/argmax unaffected).
 - **Metal Gemma final-logit softcap parallel-for** (audit #3), branch `metal-softcap-parallel`.
   `finalizeLogits` applied `sc·tanh(x/sc)` with a serial O(vocab) float64-tanh loop every sampling
