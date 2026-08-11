@@ -453,29 +453,45 @@ Until 2–4 exist, the family ships as experimental.
 
 The same kind of scope statement as Metal's bit-identity (pinned to machine + OS): the pure-Go CPU
 reference — the thing every GPU backend is gated against — is bit-identical **within an architecture,
-not across arm64 and amd64.**
+not across arm64 and amd64**. The divergence is real but decision-irrelevant, and the margin is
+measured, not assumed.
 
-**Mechanism (measured, not folklore).** Go's spec permits fusing `x*y + z` into a single-rounding FMA
-"across statements." gc does this on **arm64** and not on **amd64's default GOAMD64 baseline** (FMA is
-not in v1). `go build -gcflags=-S`: **85** fused sites in `decoder` and **47** in `aikit/linalg` on
-arm64 (e.g. `FMADDS` at `dot.go:25`, the SIMD dot inner loop) — **0** on amd64. A fusion-sensitive
-`x*y+z` reproducer diverges on arm64 and agrees on amd64. So one source produces two f32 results.
+**Decision headroom — the number that matters.** Cross-box, identical weights + fixed prompt + f32,
+qwen2.5-coder-0.5b, 64 greedy positions: **no argmax flip at any position.** The winner and runner-up
+logits — the pair that decides each token — diverge by at most **7.6e-6 absolute (≈6 ULP)**, while the
+**smallest top-2 margin across all 64 positions is 0.655**. So the closest call across the whole run
+cleared the divergence by **114,000×** (the minimum, not the median). Five orders of magnitude of
+headroom below the decision boundary — this is a measured margin, not "no flip was observed."
 
-**Consequence (measured cross-box, identical weights + fixed prompt + f32, both arches).** On
-qwen2.5-coder-0.5b: **93% of the 151,936 logits differ bit-for-bit, median 4 / max 91,136 ULP** — yet
-the last-token **argmax and the full 64-token greedy continuation are IDENTICAL** across arm64/amd64.
-On a 4-layer tiny fixture: 86% differ, max 832 ULP, same conclusion. Depth and width amplify the float
-divergence ~110× (832 → 91,136 ULP) but it stays **below every decision boundary: floats differ,
-decisions do not, measured at this depth.** (No flip was observed; max ULP grows with depth, so a flip
-is not proven impossible on larger models or much longer runs — the claim is scoped to what was
-measured.)
+**Mechanism.** Go's spec permits fusing `x*y + z` into a single-rounding FMA "across statements." gc
+does this on **arm64** and not on **amd64's default GOAMD64 baseline** (FMA is not in v1): `-gcflags=-S`
+shows **85** fused sites in `decoder` and **47** in `aikit/linalg` on arm64 (e.g. `FMADDS` at
+`dot.go:25`, the SIMD dot inner loop) — **0** on amd64. A fusion-sensitive `x*y+z` reproducer diverges
+on arm64, agrees on amd64. One source, two f32 results: 93% of the 151,936 logits differ bit-for-bit.
+
+**On the tail figure, and why ULP is the secondary metric.** The largest single divergence looks like
+91,136 ULP — but that logit has |value| = 2.6e-4 (near zero) and an absolute error of 2.6e-6. ULP
+spacing collapses toward zero, so a near-zero logit posts a huge ULP count for a negligible absolute
+error. **The absolute error is magnitude-independent** (~1.4e-6 median, ~1.0e-5 max over all logits);
+ULP divergence is strongly inversely correlated with |logit| (median 91,136 ULP in the |logit|<1e-3
+bucket vs **4** ULP in the 1–10 range where every decision lives). The tail is an artifact of measuring
+values near zero, not depth-driven growth — lead with absolute error, carry ULP as secondary.
+
+**The 6.6% that agree bit-for-bit are coincidental, not structural.** 10,057 / 151,936 logits match
+exactly, but **none are zeros** — they are ordinary non-zero logits that happened to round identically
+under fuse-vs-no-fuse. This corrects an expectation: the resident-vs-CPU comparison found its matches
+were all `logit[0] == 0.0` (structural, ≈0.02% agreement), so the same structural explanation was
+expected here — it does not hold. Nor are the two agreement rates the same kind of number: fusion
+perturbs **one** rounding per multiply-accumulate (6.6% survive), whereas two different reduction
+implementations perturb **many** (≈0.02% survive). The cross-architecture effect is the smaller of the
+two; do not flatten them together.
 
 **The cross-architecture contract is argmax + cosine** — the gate's existing bar — not bit-for-bit.
-Both arches pass every argmax-exact + cosine golden; the divergence lives entirely inside the tolerance.
-The parity manifest's `deps_hash` is a hash of **source bytes + aikit_version** (architecture-independent),
-so it needs **no architecture field** — it is valid on both boxes unchanged. Only a *float-valued* golden
-would be arch-sensitive, and those are argmax+cosine, which absorbs it.
+Both arches pass every argmax-exact + cosine golden; the divergence lives entirely inside the tolerance,
+10⁵× below the decision boundary. The parity manifest's `deps_hash` is a hash of **source bytes +
+aikit_version** (architecture-independent), so it needs **no architecture field** — it is valid on both
+boxes unchanged. Only a *float-valued* golden would be arch-sensitive, and those are argmax+cosine.
 
 **Remediation declined.** Forcing bit-agreement means explicit `math.FMA` everywhere — a software
 fallback on amd64 that would cost the SIMD performance the CPU backend exists for. Not worth it for a
-divergence that stays below every decision boundary. Recorded here so nobody re-derives the worry.
+divergence that clears every decision by 10⁵×. Recorded here so nobody re-derives the worry.
