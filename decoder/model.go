@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -35,6 +36,8 @@ type Model struct {
 	kvPrecI8   bool            // residency KV cache int8 request (Options.KVPrecision == "i8") — GPU
 	kvI8       bool            // CPU KV cache int8 storage request (Options.KVQuant == "i8") — CPU staged path
 	resCtxReq  int             // requested GPU-resident KV capacity in positions (Options.ResidentContext); 0 ⇒ backend default
+	moeCache   bool            // stream routed MoE experts host→VRAM (Options.MoECacheExperts)
+	moeSlots   int             // per-layer expert slot request (Options.MoECacheSlots); 0 ⇒ ask for all, auto-cap to VRAM
 	mmap       []byte          // .giw mmap region the int8/int4 weights alias; munmap'd by Close (nil off the .giw mmap path)
 	srcPath    string          // the .giw path this model mmap-loaded from ("" off the .giw path) — for pread-staging over the same file
 	pager      *expertPager    // MoE expert demand-paging over the mapping (Options.StreamWeights); nil = all-resident
@@ -106,6 +109,39 @@ func (m *Model) KVCacheI8() bool { return m.kvPrecI8 }
 // path it has no effect. See cuda.resolveCtxCap.
 func (m *Model) ResidentContextRequest() int { return m.resCtxReq }
 
+// MoECacheExperts reports whether routed MoE experts should stream host→VRAM per token instead of
+// being held resident (Options.MoECacheExperts, `--moe-cache-experts`). This is what lets a model
+// whose experts exceed VRAM run with every expert still executing ON the GPU. Off by default:
+// running a model larger than your card is a deliberate act, it costs a per-token PCIe transfer,
+// and with it off the runtime declines honestly instead of silently going slow.
+//
+// Falls back to GOINFER_MOE_CACHE_EXPERTS so existing scripts keep working.
+func (m *Model) MoECacheExperts() bool {
+	return m.moeCache || os.Getenv("GOINFER_MOE_CACHE_EXPERTS") != ""
+}
+
+// MoECacheSlotsRequest returns the requested per-layer expert-slot count, or 0 for "as many as
+// fit". Only meaningful with MoECacheExperts.
+//
+// 0 means ask for ALL experts and let the builder cap to measured free VRAM — deliberately, and
+// this is a change from the env-var-only behaviour, where an unset value meant topK. topK is the
+// WORST setting for the only situation in which this applies: it degenerates to fresh-loading
+// every routed expert every token (~714 MB/token on the 26B, ~5 tok/s instead of ~17). A user who
+// asked for expert streaming and said nothing about slots wants it to work, not to be safe; the
+// safety is already provided by allocSlots, which measures free VRAM and caps-and-logs rather
+// than OOMing.
+//
+// Falls back to GOINFER_MOE_CACHE_SLOTS.
+func (m *Model) MoECacheSlotsRequest() int {
+	if m.moeSlots > 0 {
+		return m.moeSlots
+	}
+	if v, err := strconv.Atoi(os.Getenv("GOINFER_MOE_CACHE_SLOTS")); err == nil && v > 0 {
+		return v
+	}
+	return 0
+}
+
 // Options configures Load.
 type Options struct {
 	Backend string // "cpu" (default) or "webgpu"
@@ -116,6 +152,15 @@ type Options struct {
 	// "i8" (lossy, 4× vs f32 → ~64k context). Ignored off the residency path. See
 	// task-gpu-f16-kv.md / task-gpu-kv-i8.md.
 	KVPrecision string
+	// MoECacheExperts streams routed MoE experts host→VRAM per token instead of holding the whole
+	// expert stack resident — the path to running a model whose experts exceed VRAM with every
+	// expert still executing on the GPU. Off by default; bit-identical to fully-resident when on
+	// (cuda.TestGemma4MoE_cacheExpertsBitExact_*). CUDA residency only.
+	MoECacheExperts bool
+	// MoECacheSlots is the per-layer expert-slot count for MoECacheExperts (0 = ask for all and
+	// auto-cap to measured free VRAM). More slots ⇒ higher LRU hit rate ⇒ fewer per-token DMAs,
+	// at VRAM cost. Only meaningful with MoECacheExperts.
+	MoECacheSlots int
 	// KVQuant selects the CPU KV cache storage precision: "" / "f32" (default,
 	// bit-exact) or "i8" (per-(position,KV-head) symmetric int8, 4× smaller +
 	// SDOT decode). Lossy, opt-in; excluded on MoE / gemma4 / qwen3_5_moe in v1.
@@ -183,7 +228,7 @@ func Load(dir string, opts Options) (*Model, error) {
 		if beErr != nil {
 			fmt.Fprintln(os.Stderr, beErr)
 		}
-		m := &Model{w: w, be: be, mmap: data, srcPath: dir, eosIDs: w.Cfg.EOSIDs(), kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", resCtxReq: opts.ResidentContext}
+		m := &Model{w: w, be: be, mmap: data, srcPath: dir, eosIDs: w.Cfg.EOSIDs(), kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", resCtxReq: opts.ResidentContext, moeCache: opts.MoECacheExperts, moeSlots: opts.MoECacheSlots}
 		if opts.StreamWeights {
 			// MoE → expert demand-paging (#2); dense → per-layer streaming (#4).
 			if w.arch.MoE != nil {
@@ -240,7 +285,7 @@ func Load(dir string, opts Options) (*Model, error) {
 		// running fully resident (prequant to .giw with cmd/prequant to use it).
 		fmt.Fprintln(os.Stderr, "decoder: --stream-weights ignored — weights are heap-resident; prequant to .giw (cmd/prequant) to enable streaming")
 	}
-	return (&Model{w: w, be: be, quant: opts.Quant, eosIDs: resolveEOSIDs(dir, &w.Cfg), kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", resCtxReq: opts.ResidentContext}).withResidency(), nil
+	return (&Model{w: w, be: be, quant: opts.Quant, eosIDs: resolveEOSIDs(dir, &w.Cfg), kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", resCtxReq: opts.ResidentContext, moeCache: opts.MoECacheExperts, moeSlots: opts.MoECacheSlots}).withResidency(), nil
 }
 
 // Validate checks the stringly-typed knobs against their allowed values, so an
