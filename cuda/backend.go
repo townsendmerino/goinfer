@@ -443,9 +443,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			return e
 		}
 		r.gemvW4, r.gemvW8 = qgemv.W4A8, qgemv.W8A8
-		if r.kvStore, e = r.dev.NewComputePipeline(gmod, "kv_store"); e != nil {
-			return e
-		}
+		// kv_store and rope are NOT bound: the fused rope_kv below subsumes both (the Incr1
+		// decode-fusion win). They were left bound and dead after that fusion shipped, JIT-compiled
+		// into every model load and launched by nothing — see TestPipelineLint_boundKernelsAreLaunched.
 		if r.ropeKV, e = r.dev.NewComputePipeline(gmod, "rope_kv"); e != nil {
 			return e
 		}
@@ -466,7 +466,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			dst  *Pipeline
 			name string
 		}{
-			{&r.fRms, "rmsnorm_quant"}, {&r.fRmsF32, "rmsnorm_f32"}, {&r.fQ, "quant_vec"}, {&r.fRope, "rope"},
+			{&r.fRms, "rmsnorm_quant"}, {&r.fRmsF32, "rmsnorm_f32"}, {&r.fQ, "quant_vec"},
 			{&r.fAttn, "attention"}, {&r.fSw, "glu_quant"}, {&r.fRes, "residual"},
 		}
 		for _, f := range fns {
@@ -487,7 +487,10 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		}
 		// Batched prefill kernels (weight-stationary M=len path). Own module; the audited PTX is
 		// untouched. bGemv comes from gemv_w4a8_batched.ptx, the rest from prefill_batched.ptx.
-		if bgmod, e2 := r.dev.CompileLibrary(gemvBatchedPTX); e2 == nil {
+		// gemvBatchedPTX is NO LONGER COMPILED HERE: its only entry, gemv_w4a8_batched, was bound
+		// and never launched, so an entire PTX module was JIT-compiled on every model load to feed
+		// a dead field. bGemvB dispatches int4 to bRN (gemv_w4a8_rn) unconditionally.
+		{
 			if pbmod, e3 := r.dev.CompileLibrary(prefillBatchedPTX); e3 == nil {
 				ok := true
 				load := func(dst *Pipeline, mod gpu.Library, name string) {
@@ -508,7 +511,6 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				} else {
 					ok = false
 				}
-				load(&r.bGemv, bgmod, "gemv_w4a8_batched")
 				load(&r.bRms, pbmod, "rmsnorm_quant_batched")
 				load(&r.bQKN, pbmod, "qk_norm_batched")
 				load(&r.bNormF32, pbmod, "rmsnorm_f32_batched")
