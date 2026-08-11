@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -15,8 +16,11 @@ import (
 // on or off. Skips if the fixture/GPU is absent.
 func loadG4MoECache(t *testing.T, dir string, cache bool) (*decoder.Model, decoder.ResidentForward) {
 	t.Helper()
-	if _, err := os.Stat(dir); errors.Is(err, fs.ErrNotExist) {
-		t.Skipf("no fixture (%s)", dir)
+	// Stat the WEIGHTS, not the directory. Fixture weights are gitignored but their config JSONs
+	// are not, so a stray `git add` of the directory makes it "exist" in CI with no model in it —
+	// and a dir-only guard then skips nothing and Fatalfs on the load instead.
+	if _, err := os.Stat(filepath.Join(dir, "model.safetensors")); errors.Is(err, fs.ErrNotExist) {
+		t.Skipf("no fixture weights (%s/model.safetensors) — run scripts/pin_gemma4_moe_scaled.py", dir)
 	}
 	t.Setenv("GOINFER_GEMMA4_RESIDENT", "1")
 	if cache {
@@ -31,7 +35,17 @@ func loadG4MoECache(t *testing.T, dir string, cache bool) (*decoder.Model, decod
 	rf := mc.ResidentForwardForTest()
 	if rf == nil {
 		mc.Close()
-		t.Fatalf("cuda resident DECLINED gemma4 MoE (cache=%v)", cache)
+		// The cache=false arm needs the WHOLE expert stack in VRAM, which is precisely what the
+		// cache exists to avoid. Pointing this gate at a model that does not fit (the real 26B:
+		// ~11.4 GB of experts on an 8 GB card) therefore fails STRUCTURALLY, not numerically —
+		// it burned 307 s to reach an OOM the runtime already knew about. Say so here rather
+		// than leaving a bare decline that reads like a parity failure.
+		t.Fatalf("cuda resident DECLINED gemma4 MoE (cache=%v).\n"+
+			"If cache=false: this gate needs BOTH arms resident, so the fixture's ENTIRE expert stack "+
+			"must fit VRAM — it is the control arm, not the streaming one. A model that only runs WITH "+
+			"the cache (the real 26B) can never satisfy it; use testdata/gemma4-moe-scaled, which is "+
+			"sized so both arms fit (see scripts/pin_gemma4_moe_scaled.py). The runtime prints the "+
+			"decline reason unconditionally — check stderr above for the actual cause.", cache)
 	}
 	return mc, rf
 }
@@ -83,15 +97,45 @@ func TestGemma4MoE_cacheReuse_tiny(t *testing.T) {
 	cacheBitExact(t, "../testdata/gemma4-moe-tiny")
 }
 
-// TestGemma4MoE_cacheExpertsBitExact_scaled runs the same gate at the WIDTH that broke A′ zero-copy
-// (bigk/scaled): the correctness proof that matters for B′. Gated on a scaled fixture + heavy tests.
+// TestGemma4MoE_cacheExpertsBitExact_scaled runs the same gate at the WIDTH that broke A′ zero-copy:
+// the correctness proof that matters for B′, and the one this track never actually had.
+//
+// It had never run. GOINFER_MOE_SCALED_FIXTURE named no fixture that existed (the only MoE fixtures
+// were the three tiny ones), so it skipped from the day it was written; and aimed at the real 26B it
+// fails structurally, because the cache=false control arm cannot be resident on a card the model
+// does not fit. So C′ — the path the shipped 26B result runs on — was gated only at toy width
+// (2 layers, hidden 256, 4 experts), which is the SAME class of evidence A′ had when A′ was wrong.
+//
+// testdata/gemma4-moe-scaled resolves both problems. It keeps hidden=2816 and moe_inter=704 — the
+// REAL per-expert row geometry, the dimension A′ was actually sensitive to — and shrinks only the
+// axes the A′ post-mortem excludes (128→32 experts, 30→4 layers). Its full int4 expert stack is
+// ~428 MB, so BOTH arms are resident simultaneously-satisfiable on an 8 GB card with wide margin,
+// which is what makes the control arm meaningful rather than impossible.
+//
+// Defaults to that fixture; GOINFER_MOE_SCALED_FIXTURE still overrides for a one-off.
 func TestGemma4MoE_cacheExpertsBitExact_scaled(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
 		t.Skip("GOINFER_HEAVY_TESTS unset")
 	}
 	dir := os.Getenv("GOINFER_MOE_SCALED_FIXTURE")
 	if dir == "" {
-		t.Skip("GOINFER_MOE_SCALED_FIXTURE unset")
+		dir = "../testdata/gemma4-moe-scaled"
 	}
+	cacheBitExact(t, dir)
+}
+
+// TestGemma4MoE_cacheReuse_scaled is the same gate with cross-token slot reuse AND eviction active
+// at real width: nSlots=12 sits between topK=8 and nE=32, so the LRU both hits and evicts. Step-2's
+// reuse path is what the 26B actually decodes on (38 slots of 128), and until now it too was only
+// gated at nE=4.
+func TestGemma4MoE_cacheReuse_scaled(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
+		t.Skip("GOINFER_HEAVY_TESTS unset")
+	}
+	dir := os.Getenv("GOINFER_MOE_SCALED_FIXTURE")
+	if dir == "" {
+		dir = "../testdata/gemma4-moe-scaled"
+	}
+	t.Setenv("GOINFER_MOE_CACHE_SLOTS", "12")
 	cacheBitExact(t, dir)
 }
