@@ -1246,3 +1246,97 @@ current Ollama: 1.94× → **1.41×**.
    per-row-scale quality cost) still the cheap gate before funding.
 
 Everything in §6 (C2–C5) is coverage work whose priority depends on C1's answer (now known: 5/23).
+
+---
+
+## 13. Per-token allocation & host-scratch audit (2026-08-10)
+
+A fan-out decode audit (9 findings, adversarially verified vs the bit-identity contract) surfaced a
+class the named frontiers (CUDA int4-unpack, Metal megakernel, WebGPU tiled GEMM) don't cover:
+per-token host allocations and redundant per-token work. These are **GC/jitter-grade**, not throughput
+levers — the GEMV dominates wall time — so the payoff is decode-loop tail-latency over long
+generations, not steady-state tok/s. Recording them here so nothing gets re-proposed.
+
+### Done (branch `gpu-logits-reuse`, pending merge to main)
+- **WebGPU logits host-buffer reuse.** `gpu.DecodeRunner.Run` did `make([]float32, vocab)` every token;
+  now returns a reused `r.logitsHost` (mirrors CUDA pinned scratch / Metal `logitsHost`). Measured
+  before/after (qwen3-class vocab 151936, `TestZZ_decodeRunAllocs`, `GOINFER_GPU_ALLOC_BENCH=1`):
+  **615589 → 1182 B/op, 61 → 60 allocs/op**, wall time unchanged (garbage −99.8%, matches vocab·4).
+  Bit-identical (parity tests green). `gpu/` is outside the parity-manifest freeze.
+
+### Refuted — do not re-propose (measured negative)
+- **Wiring Metal `ForwardArgmax` into `decoder.ResidentGreedy`** (the greedy on-device-argmax fast path
+  CUDA takes). Built, bit-identical, gated — but a **~2-3% REGRESSION** on Metal (A/B on
+  qwen2.5-coder-1.5b int4, B/A 0.977/0.984/0.971 @128/512/2048). Unified memory has **no PCIe D2H** to
+  eliminate (unlike CUDA), so the only saving is a cheap host argmax scan, while the naive wiring drops
+  the encode-ahead pipeline (~3%) and adds a dispatch on the dispatch-count-bound path (§A2-Metal). A
+  *pipelined* on-device-argmax executor variant could recover ~1-2%, not worth it vs the megakernel.
+  General rule: a win justified by one backend's bottleneck must be re-measured on the other (CUDA =
+  PCIe/bandwidth, Metal = dispatch-count + unified memory). **NB:** an independent code-grounded audit
+  (Cursor, 2026-08-10) listed this as its #1 "easy win / first cut" on the CUDA-analogy — measurement
+  refutes it on Metal. Do not re-open without the pipelined-executor variant AND a fresh A/B.
+
+### Freeze-blocked — deferred to the v1.0 unfreeze
+These require editing parity-manifest "core"/hashed `decoder/` files (`model.go`, `forwardn.go`,
+`attention.go`, `mlp.go`, `weightmat.go`), which re-stales every family's `deps_hash`. Held under the
+pre-1.0 core-numerics freeze; **batch them when v1.0 lands so the manifest re-validates once.** All are
+bit-identity-preserving (pure buffer/traffic reuse).
+- **KV re-gather / V re-transpose every token (the big one).** `forwardn.go:378` (`attendBatchedHeads`)
+  re-gathers the whole K history and re-transposes all of V into scratch each decode token (~2-3× the
+  intrinsic KV traffic; ~10-15% of per-token traffic at 4k+ ctx, all mainstream CPU families). Needs a
+  row-pitch arg on aikit `MatmulBTAcc64` + a per-layer persistent transposed-V cache layout. Highest
+  lift, biggest broad CPU win — the headline unfreeze item.
+- **embedResident host-scratch reuse.** `embedResident` (`residency.go:677`, itself freeze-safe) does
+  `make([]float32, HiddenDim)` per token, then H2D. The decode-hot-path call sites (`model.go:973/977`)
+  are frozen — can't reroute; and reusing in place breaks the batch caller `model.go:825`
+  (`embs[i]=embedResident(id)` collection would alias). Small (~6-14 KB/token). Bigger follow-on: an
+  **on-device embed table** (GPU looks the row up from the id — Metal's `loadEmbedRow` already does).
+- **MoE `moeMLP` allocates MB/token.** `mlp.go:82` skips the `*decodeScratch` invariant the dense
+  `gatedMLP` honors → ~7-8 MB garbage/token (Mixtral-class). Thread `*decodeScratch` through.
+- **int4 W4A8 `Workspace` alloc/token.** `weightmat.go:202` int4 branch of `matmul()` uses a cap-0
+  `linalg.Workspace` (the W8A8 sibling was fixed, int4 missed) → make() per projection per token. Add an
+  int4 case to `matmulInto` with a persistent per-stream Workspace.
+
+### Outside the freeze — fundable now
+- **aikit `q8Span` scalar int8→f32 widen.** The tied LM head stays weight-only Q8 even in int4 models;
+  `q8Span` re-widens all vocab rows with a scalar loop at M=1 every token when a bit-identical SIMD widen
+  (`dequantRowInt8`) exists in the same package. Several ms/token on large-vocab int4/int8 CPU decode —
+  best effort:payoff. Lives in aikit (separate release + require-bump), not the frozen core.
+- **Gemma final-logit softcap host parallel-for.** `cuda/resident.go` runs a serial O(vocab) `math.Tanh`
+  loop every *sampling* token (greedy skips it — softcap is monotonic). 10-30% on the Gemma+sampling
+  intersection; element-independent → a host parallel-for is trivially bit-identical. `cuda/` not frozen.
+  (An alternative device tanh-before-readback is DOA unless double-precision — `tanhf(float32)` diverges
+  the CPU reference. The host parallel-for is the safe form.)
+- **CUDA g4x2 accumulator clear: H2D per MoE layer per token** (Cursor audit, verified). `cudaResident`
+  clears the `g4x2` expert accumulator by uploading host zeros (`g4zero`, "no D2D helper" —
+  cuda/resident.go:340,1182) every MoE layer. An on-stream memset/zero kernel removes an H2D (and its
+  implicit null-stream sync) per MoE layer per token. cuda/ not frozen; bit-identical (a zero is a zero).
+- **Metal fuse rope + kv_store (and merge the 2× rope dispatch).** CUDA already has a fused `rope_kv`;
+  Metal issues `rope`, `kv_store` as separate dispatches (metal/model.go:414) AND ropes Q then K in two
+  dispatches (audit #4). Both are grid-mergeable/fusable, bit-identical (per-element, no cross-thread
+  reduction), and attack the *known* Metal dispatch-count bound. metal/ not frozen; gate on the snapshot
+  golden + `forwardTrunkForTest` per-layer bisect.
+
+### Medium / larger — verify + measure before funding
+- **MoE expert-cache host round-trip.** `loadRoutedExperts` (cuda/resident.go:583) does Sync → D2H routing
+  indices → H2D expert misses; the Metal paged path is worse (submit/wait per layer, `metal/gemma4_moe.go`).
+  A device-side gather or async overlap matters whenever experts are paged — see the standing verdict that
+  synchronous MoE paging is dead and *speculative prefetch* is the path (memory: Metal MoE paging needs
+  speculation). cuda/metal not frozen.
+- **Parallel top-k expert GEMVs.** `moeMLPPost` (cuda/resident.go:1066) runs the selected experts
+  sequentially. Concurrent launches need separate per-expert scratch + an ORDERED combine, or the FMA
+  association changes and the bit-identity gate fails. Real but bit-identity-delicate; measure the win
+  against the added scratch VRAM.
+- **WebGPU on-device argmax.** Same shape as the Metal item above — today `Run` always `MapAsync`es full
+  logits. CAVEAT from the Metal result: on unified memory this is a wash-to-negative (no D2H to remove);
+  it only pays where the readback crosses PCIe (discrete-GPU WebGPU). Measure per target before funding.
+- **Graph/fuse the rope→attention gap (CUDA).** Live launches still fire every layer after graph segA.
+- **Constrained `Masker.Process` O(V).** Full-vocab mask each constrained-decode token, and setting a
+  masker disables the greedy fast path. Scoped to grammar/JSON-constrained requests.
+- **Metal batched prefill.** Default-off (f16-MMA vs int8-decode divergence, §A2-Metal) — a TTFT lever
+  only if you accept a separate, non-bit-identical lane.
+
+*Corroboration:* the fan-out audit and an independent code-grounded pass (Cursor, 2026-08-10) agreed on
+the WebGPU logits reuse, the Gemma softcap, the embedResident scratch, and the Metal-argmax gap
+(measurement then refuted the last as a Metal win). Cursor additionally surfaced the g4x2 H2D clear, the
+rope+kv_store fuse, the MoE expert round-trip, and the parallel-expert-GEMV items above.
