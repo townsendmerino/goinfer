@@ -21,7 +21,7 @@ var (
 
 func loadBenchModel() (*Model, error) {
 	benchOnce.Do(func() {
-		path := os.Getenv("GINFER_PREQUANT_GGUF")
+		path := os.Getenv("GOINFER_PREQUANT_GGUF")
 		if path == "" {
 			path = "../testdata/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"
 		}
@@ -44,26 +44,26 @@ func loadBenchModel() (*Model, error) {
 //	go test ./decoder -run '^$' -bench BenchmarkDecode -benchmem \
 //	  -cpuprofile cpu.out -memprofile mem.out -benchtime 5s
 //
-// Skips cleanly without the model asset (set GINFER_PREQUANT_GGUF or drop the
+// Skips cleanly without the model asset (set GOINFER_PREQUANT_GGUF or drop the
 // gguf in testdata), like the other model-dependent tests.
 func BenchmarkDecode(b *testing.B) {
 	m, err := loadBenchModel()
 	if err != nil {
-		b.Skipf("no model (%v); set GINFER_PREQUANT_GGUF", err)
+		b.Skipf("no model (%v); set GOINFER_PREQUANT_GGUF", err)
 	}
 	// Measure the shipping config by default (the demo's decode threshold), so
-	// this is a faithful regression guard. GINFER_PAR_THRESHOLD overrides it (in
+	// this is a faithful regression guard. GOINFER_PAR_THRESHOLD overrides it (in
 	// MACs; 0 = parallelize everything, huge = serial) for sweeps.
 	thr := DefaultDecodeParallelThreshold
-	if t := os.Getenv("GINFER_PAR_THRESHOLD"); t != "" {
+	if t := os.Getenv("GOINFER_PAR_THRESHOLD"); t != "" {
 		if v, err := strconv.Atoi(t); err == nil {
 			thr = v
 		}
 	}
 	linalg.SetParallelThreshold(thr)
-	// GINFER_PAR_WIDTH caps the matmul fan-out (0 = GOMAXPROCS) — the P-core
+	// GOINFER_PAR_WIDTH caps the matmul fan-out (0 = GOMAXPROCS) — the P-core
 	// straggler sweep.
-	if w, err := strconv.Atoi(os.Getenv("GINFER_PAR_WIDTH")); err == nil {
+	if w, err := strconv.Atoi(os.Getenv("GOINFER_PAR_WIDTH")); err == nil {
 		linalg.SetParallelWidth(w)
 	}
 

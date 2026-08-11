@@ -616,8 +616,8 @@ to run yourself on the same machine; it never drives the peers (their install is
 yours). Peers absent → it still emits goinfer's column.
 
 ```bash
-GINFER_PREQUANT_GGUF=~/models/qwen2.5-coder-1.5b-instruct-q8_0.gguf \
-  scripts/bench_compare.sh            # add GINFER_GPU=1 for the -tags gpu residency row
+GOINFER_PREQUANT_GGUF=~/models/qwen2.5-coder-1.5b-instruct-q8_0.gguf \
+  scripts/bench_compare.sh            # add GOINFER_GPU=1 for the -tags gpu residency row
 ```
 
 ---

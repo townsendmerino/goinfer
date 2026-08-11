@@ -13,7 +13,7 @@ import (
 func TestSessionNgramSpecParity(t *testing.T) {
 	m, err := loadBenchModel()
 	if err != nil {
-		t.Skipf("no model (%v); set GINFER_PREQUANT_GGUF", err)
+		t.Skipf("no model (%v); set GOINFER_PREQUANT_GGUF", err)
 	}
 	const n = 24
 	ctx := context.Background()

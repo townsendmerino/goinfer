@@ -28,7 +28,7 @@ import (
 // exactly one load (this one), so the HeapInuse-vs-RSS discriminator on one test
 // is unchanged; sharing only collapses the multi-test load COUNT.
 //
-// Keyed by (loadPath, quant) so GINFER_EAGLE_BASE overrides still get their own
+// Keyed by (loadPath, quant) so GOINFER_EAGLE_BASE overrides still get their own
 // base rather than colliding with the default int8int8 one.
 var (
 	eagleBaseMu    sync.Mutex

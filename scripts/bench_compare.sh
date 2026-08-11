@@ -15,14 +15,14 @@
 # provenance intact.
 #
 # Usage:
-#   GINFER_PREQUANT_GGUF=~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf \
+#   GOINFER_PREQUANT_GGUF=~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf \
 #     scripts/bench_compare.sh
 #
 # Env:
-#   GINFER_PREQUANT_GGUF  model checkpoint for the Go benchmarks (a .giw or .gguf).
+#   GOINFER_PREQUANT_GGUF  model checkpoint for the Go benchmarks (a .giw or .gguf).
 #                         Defaults to the in-repo 0.5B testdata GGUF if present.
-#   GINFER_PREFILL_LEN    prefill length for the TTFT/prefill bench (default 1024).
-#   GINFER_GPU            set to 1 to also run the -tags gpu residency BenchmarkDecode
+#   GOINFER_PREFILL_LEN    prefill length for the TTFT/prefill bench (default 1024).
+#   GOINFER_GPU            set to 1 to also run the -tags gpu residency BenchmarkDecode
 #                         (needs a webgpu-capable build + an int8/int4 .giw).
 set -u
 
@@ -38,8 +38,8 @@ case "$OS" in
   Linux)  CPU="$(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | sed 's/.*: //' || echo Linux)" ;;
 esac
 
-MODEL="${GINFER_PREQUANT_GGUF:-testdata/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf}"
-PREFILL_LEN="${GINFER_PREFILL_LEN:-1024}"
+MODEL="${GOINFER_PREQUANT_GGUF:-testdata/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf}"
+PREFILL_LEN="${GOINFER_PREFILL_LEN:-1024}"
 
 echo "═══════════════════════════════════════════════════════════════════════"
 echo " goinfer bench_compare — provenance for docs/benchmarks.md"
@@ -51,24 +51,24 @@ echo "   NOTE: plug in, run 2–3×, take the median; record thermal state."
 echo "═══════════════════════════════════════════════════════════════════════"
 
 if [ ! -e "$MODEL" ]; then
-  echo "!! model not found: $MODEL — set GINFER_PREQUANT_GGUF. Skipping Go benches."
+  echo "!! model not found: $MODEL — set GOINFER_PREQUANT_GGUF. Skipping Go benches."
 else
   echo
   echo "── goinfer: steady-state decode tok/s (BenchmarkDecode) ──────────────"
-  GINFER_PREQUANT_GGUF="$MODEL" go test ./decoder -run '^$' \
+  GOINFER_PREQUANT_GGUF="$MODEL" go test ./decoder -run '^$' \
     -bench '^BenchmarkDecode$' -benchtime 30x 2>/dev/null | grep -E 'Benchmark|tok/s' || \
     echo "  (BenchmarkDecode unavailable — check the model loads at int8int8)"
 
   echo
   echo "── goinfer: prefill tok/s @ ${PREFILL_LEN} tokens (BenchmarkPrefillLong) ──"
-  GINFER_PREQUANT_GGUF="$MODEL" GINFER_PREFILL_LEN="$PREFILL_LEN" go test ./decoder -run '^$' \
+  GOINFER_PREQUANT_GGUF="$MODEL" GOINFER_PREFILL_LEN="$PREFILL_LEN" go test ./decoder -run '^$' \
     -bench '^BenchmarkPrefillLong$' -benchtime 3x 2>/dev/null | grep -E 'Benchmark|tok/s|canBatchN' || \
     echo "  (BenchmarkPrefillLong unavailable)"
 
-  if [ "${GINFER_GPU:-0}" = "1" ]; then
+  if [ "${GOINFER_GPU:-0}" = "1" ]; then
     echo
     echo "── goinfer: GPU residency decode (-tags gpu BenchmarkDecode) ─────────"
-    GINFER_PREQUANT_GGUF="$MODEL" go test -tags gpu ./decoder -run '^$' \
+    GOINFER_PREQUANT_GGUF="$MODEL" go test -tags gpu ./decoder -run '^$' \
       -bench '^BenchmarkDecode$' -benchtime 30x 2>/dev/null | grep -E 'Benchmark|tok/s' || \
       echo "  (GPU bench unavailable — needs a webgpu build + resident-eligible .giw)"
   fi

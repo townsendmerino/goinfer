@@ -43,7 +43,7 @@ func TestNgramDrafter(t *testing.T) {
 func TestNgramSpeculativeGreedyParity(t *testing.T) {
 	m, err := loadBenchModel()
 	if err != nil {
-		t.Skipf("no model (%v); set GINFER_PREQUANT_GGUF", err)
+		t.Skipf("no model (%v); set GOINFER_PREQUANT_GGUF", err)
 	}
 	const n = 32
 	ctx := context.Background()
@@ -128,7 +128,7 @@ func (stubResident) Close() error                                   { return nil
 func TestNgramAdaptiveGreedyParity(t *testing.T) {
 	m, err := loadBenchModel()
 	if err != nil {
-		t.Skipf("no model (%v); set GINFER_PREQUANT_GGUF", err)
+		t.Skipf("no model (%v); set GOINFER_PREQUANT_GGUF", err)
 	}
 	const n = 32
 	ctx := context.Background()

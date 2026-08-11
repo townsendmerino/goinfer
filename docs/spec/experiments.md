@@ -67,7 +67,7 @@ Rows are (spoke × its home workload). `α̅` = mean per-position acceptance.
 > metrics (α̅, tok/v) hold across backends; the CPU wall-clock speedup does not (the
 > batched `ForwardN` amortizes the weight stream — a much bigger win on GPU/`mac`).
 > **First §06 dataset dumped**: 308 traced positions → `/tmp/spec_ngram_traces.jsonl`
-> (`GINFER_SPECTRACE_OUT`), schema matches §06 §2.
+> (`GOINFER_SPECTRACE_OUT`), schema matches §06 §2.
 
 | Model | Workload | Machine | Lossless | α̅ | acc | tok/v | speedup (CPU) | Status |
 |---|---|---|---|---|---|---|---|---|

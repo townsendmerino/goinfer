@@ -18,7 +18,7 @@ var parityWant = []int{4710, 73594, 12669, 198, 750, 1438, 4136, 3932, 262, 671,
 func TestDecodeParity(t *testing.T) {
 	m, err := loadBenchModel()
 	if err != nil {
-		t.Skipf("no model (%v); set GINFER_PREQUANT_GGUF", err)
+		t.Skipf("no model (%v); set GOINFER_PREQUANT_GGUF", err)
 	}
 	const n = 24
 	out, gen := m.Generate(context.Background(), parityPrompt, n, SamplingParams{Temperature: 0})

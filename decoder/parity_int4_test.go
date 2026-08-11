@@ -8,14 +8,14 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// loadInt4Model loads GINFER_PREQUANT_GGUF as group-wise int4 — the W4A8 path,
+// loadInt4Model loads GOINFER_PREQUANT_GGUF as group-wise int4 — the W4A8 path,
 // the int4 analog of loadBenchModel's int8int8. A plain q4_k_m GGUF works: the
 // loader dequantizes it and re-quantizes to goinfer's group-wise int4, so no
 // prebuilt .giw bundle (or torch) is needed. Fresh model per call (no cache).
 func loadInt4Model(tb testing.TB) *Model {
-	path := os.Getenv("GINFER_PREQUANT_GGUF")
+	path := os.Getenv("GOINFER_PREQUANT_GGUF")
 	if path == "" {
-		tb.Skip("no model; set GINFER_PREQUANT_GGUF to a q4_k_m gguf")
+		tb.Skip("no model; set GOINFER_PREQUANT_GGUF to a q4_k_m gguf")
 	}
 	m, err := Load(path, Options{Quant: "int4"})
 	if err != nil {
@@ -80,10 +80,10 @@ func TestDecodeParityInt4(t *testing.T) {
 // at every M) against the parent commit (M>1 used the dequant-bound MatmulBTQ4):
 //
 //	M=$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
-//	GINFER_PREQUANT_GGUF=$M GINFER_PREFILL_LEN=2048 \
+//	GOINFER_PREQUANT_GGUF=$M GOINFER_PREFILL_LEN=2048 \
 //	  go test ./decoder -run '^$' -bench BenchmarkPrefillInt4 -benchtime 8x
 //	git checkout HEAD~1 -- decoder/weightmat.go   # old Q4 split
-//	GINFER_PREQUANT_GGUF=$M GINFER_PREFILL_LEN=2048 \
+//	GOINFER_PREQUANT_GGUF=$M GOINFER_PREFILL_LEN=2048 \
 //	  go test ./decoder -run '^$' -bench BenchmarkPrefillInt4 -benchtime 8x
 //	git checkout HEAD -- decoder/weightmat.go      # restore
 func BenchmarkPrefillInt4(b *testing.B) {
@@ -92,7 +92,7 @@ func BenchmarkPrefillInt4(b *testing.B) {
 	linalg.SetParallelThreshold(DefaultDecodeParallelThreshold)
 
 	L := 2048
-	if s := os.Getenv("GINFER_PREFILL_LEN"); s != "" {
+	if s := os.Getenv("GOINFER_PREFILL_LEN"); s != "" {
 		if v, err := atoiPositive(s); err == nil {
 			L = v
 		}

@@ -26,10 +26,10 @@ func TestEagleAcceptedLength(t *testing.T) {
 		}
 	}
 	head := sharedEagleHead(t, headDir)
-	// GINFER_EAGLE_BASE overrides the base (e.g. a bf16 safetensors dir — the head was
+	// GOINFER_EAGLE_BASE overrides the base (e.g. a bf16 safetensors dir — the head was
 	// trained on bf16 hidden states, so q8 likely depresses acceptance). f32 for a dir.
 	loadPath, quant := basePath, "int8int8"
-	if b := os.Getenv("GINFER_EAGLE_BASE"); b != "" {
+	if b := os.Getenv("GOINFER_EAGLE_BASE"); b != "" {
 		loadPath = b
 		if !strings.HasSuffix(b, ".gguf") {
 			quant = "" // safetensors dir → f32 (max fidelity to the head's training)

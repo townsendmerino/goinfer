@@ -13,7 +13,7 @@ the doc's rule to *measure predictability before shipping anything heavier*:
 
 - **Emitter (§2):** `decoder.SpecTrace` (schema-matched) + the `specTracer` hook in the
   n-gram path + `TraceCollector` (JSONL sink, `MeanAccept`). The harness dumps the §06
-  dataset with `GINFER_SPECTRACE_OUT`.
+  dataset with `GOINFER_SPECTRACE_OUT`.
 - **Predictability verdict (§6):** `TestNgramAlphaPredictor` runs the copy-heavy
   workloads, buckets traces by suffix `match_len`, and reports the calibration curve +
   AUC. Result (qwen2.5-coder-0.5b): **match_len → accept AUC = 0.818**, monotone curve

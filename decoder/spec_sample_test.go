@@ -86,7 +86,7 @@ func freq(c []float64, n int) []float64 {
 func TestNgramSampledFirstTokenMatchesPlain(t *testing.T) {
 	m, err := loadBenchModel()
 	if err != nil {
-		t.Skipf("no model (%v); set GINFER_PREQUANT_GGUF", err)
+		t.Skipf("no model (%v); set GOINFER_PREQUANT_GGUF", err)
 	}
 	ctx := context.Background()
 	for _, seed := range []int64{1, 42, 1234} {
@@ -154,7 +154,7 @@ func TestDistVectorHistMatchesSampler(t *testing.T) {
 func TestNgramSampledRejectsUnsupported(t *testing.T) {
 	m, err := loadBenchModel()
 	if err != nil {
-		t.Skipf("no model (%v); set GINFER_PREQUANT_GGUF", err)
+		t.Skipf("no model (%v); set GOINFER_PREQUANT_GGUF", err)
 	}
 	ctx := context.Background()
 	// Penalties + bias are now supported — must NOT error.

@@ -51,7 +51,7 @@ Reproduce the source list exactly:
 }
 
 func benchGGUFPath() string {
-	if p := os.Getenv("GINFER_PREQUANT_GGUF"); p != "" {
+	if p := os.Getenv("GOINFER_PREQUANT_GGUF"); p != "" {
 		return p
 	}
 	return "../testdata/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"
@@ -60,14 +60,14 @@ func benchGGUFPath() string {
 // TestNgramSpecHarness is the §00-core §7 measurement harness: per workload it
 // runs plain greedy and n-gram-speculative greedy, asserts they are token-identical
 // (lossless), and reports the machine-independent acceptance metrics (α̅, committed
-// tokens/verify) plus this-machine wall-clock speedup. With GINFER_SPECTRACE_OUT
+// tokens/verify) plus this-machine wall-clock speedup. With GOINFER_SPECTRACE_OUT
 // set it also dumps the per-position SpecTrace JSONL (the §06 dataset).
 //
 // Run: go test ./decoder -run TestNgramSpecHarness -v
 func TestNgramSpecHarness(t *testing.T) {
 	m, err := loadBenchModel()
 	if err != nil {
-		t.Skipf("no model (%v); set GINFER_PREQUANT_GGUF", err)
+		t.Skipf("no model (%v); set GOINFER_PREQUANT_GGUF", err)
 	}
 	tk, err := tokenizer.LoadGGUF(benchGGUFPath())
 	if err != nil {
@@ -80,7 +80,7 @@ func TestNgramSpecHarness(t *testing.T) {
 	greedy := SamplingParams{Temperature: 0}
 
 	var sink *os.File
-	if out := os.Getenv("GINFER_SPECTRACE_OUT"); out != "" {
+	if out := os.Getenv("GOINFER_SPECTRACE_OUT"); out != "" {
 		if sink, err = os.Create(out); err != nil {
 			t.Fatalf("create trace sink: %v", err)
 		}

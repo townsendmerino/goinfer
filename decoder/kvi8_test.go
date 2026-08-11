@@ -148,7 +148,7 @@ func TestKVI8_truncateReappend(t *testing.T) {
 // sliding-window layers + int8 global layers). Skips without the checkpoint.
 func TestKVI8_snapshotRoundtrip(t *testing.T) {
 	requireHeavyModel(t)
-	dir := os.Getenv("GINFER_TEST_MODEL")
+	dir := os.Getenv("GOINFER_TEST_MODEL")
 	if dir == "" {
 		dir = os.Getenv("HOME") + "/models/gemma-3-4b-it"
 	}
@@ -207,19 +207,19 @@ func TestKVI8_snapshotRoundtrip(t *testing.T) {
 // avg per-step logit cosine — NOT a 0.999 bar (int8 KV lands ~0.993/~93% over a
 // long context, in line with the shipped full-int8-weights precedent of 92.5%;
 // the lossy KV cache is opt-in). Skips without a checkpoint dir that carries a
-// tokenizer.json (GINFER_TEST_MODEL or ~/models/gemma-3-4b-it). NOTE: the prompt
+// tokenizer.json (GOINFER_TEST_MODEL or ~/models/gemma-3-4b-it). NOTE: the prompt
 // MUST be tokenized by THIS model's tokenizer — feeding foreign token ids is
 // garbage input where argmax is a coin-flip (the bug that faked an earlier
 // "int8 fails" result).
 func TestKVI8_genParity(t *testing.T) {
 	requireHeavyModel(t)
-	dir := os.Getenv("GINFER_TEST_MODEL")
+	dir := os.Getenv("GOINFER_TEST_MODEL")
 	if dir == "" {
 		dir = os.Getenv("HOME") + "/models/gemma-3-4b-it"
 	}
 	tkPath := filepath.Join(dir, "tokenizer.json")
 	if _, err := os.Stat(tkPath); err != nil {
-		t.Skipf("no checkpoint with tokenizer.json at %s — set GINFER_TEST_MODEL", dir)
+		t.Skipf("no checkpoint with tokenizer.json at %s — set GOINFER_TEST_MODEL", dir)
 	}
 	tk, err := tokenizer.Load(tkPath)
 	if err != nil {
@@ -280,7 +280,7 @@ const kvi8GateText = "The history of computing began in the early nineteenth cen
 // no longer forces sequential prefill. Skips without a checkpoint + tokenizer.
 func TestKVI8_batchedPrefill(t *testing.T) {
 	requireHeavyModel(t)
-	dir := os.Getenv("GINFER_TEST_MODEL")
+	dir := os.Getenv("GOINFER_TEST_MODEL")
 	if dir == "" {
 		dir = os.Getenv("HOME") + "/models/gemma-3-4b-it"
 	}

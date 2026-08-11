@@ -16,7 +16,7 @@ import (
 func TestGrammarForcedFraction(t *testing.T) {
 	m, err := loadBenchModel()
 	if err != nil {
-		t.Skipf("no model (%v); set GINFER_PREQUANT_GGUF", err)
+		t.Skipf("no model (%v); set GOINFER_PREQUANT_GGUF", err)
 	}
 	tk, err := tokenizer.LoadGGUF(benchGGUFPath())
 	if err != nil {

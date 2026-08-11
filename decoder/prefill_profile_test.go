@@ -13,18 +13,18 @@ import (
 // actually goes — specifically whether the per-position scalar attendQuery
 // (QKᵀ + scores·V, the O(L²) term) is a hotspot vs the SIMD weight matmuls.
 //
-//	GINFER_PREQUANT_GGUF=~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf \
-//	GINFER_PREFILL_LEN=2048 go test ./decoder -run '^$' \
+//	GOINFER_PREQUANT_GGUF=~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf \
+//	GOINFER_PREFILL_LEN=2048 go test ./decoder -run '^$' \
 //	  -bench BenchmarkPrefillLong -benchtime 8x -cpuprofile prefill.cpu
 func BenchmarkPrefillLong(b *testing.B) {
 	m, err := loadBenchModel()
 	if err != nil {
-		b.Skipf("no model (%v); set GINFER_PREQUANT_GGUF", err)
+		b.Skipf("no model (%v); set GOINFER_PREQUANT_GGUF", err)
 	}
 	linalg.SetParallelThreshold(DefaultDecodeParallelThreshold)
 
 	L := 2048
-	if s := os.Getenv("GINFER_PREFILL_LEN"); s != "" {
+	if s := os.Getenv("GOINFER_PREFILL_LEN"); s != "" {
 		if v, err := strconv.Atoi(s); err == nil {
 			L = v
 		}

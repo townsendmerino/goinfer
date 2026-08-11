@@ -28,7 +28,7 @@ func TestEagleAlpha(t *testing.T) {
 	}
 	head := sharedEagleHead(t, headDir)
 	loadPath, quant := basePath, "int8int8"
-	if b := os.Getenv("GINFER_EAGLE_BASE"); b != "" {
+	if b := os.Getenv("GOINFER_EAGLE_BASE"); b != "" {
 		loadPath = b
 		if !strings.HasSuffix(b, ".gguf") {
 			quant = ""

@@ -54,16 +54,16 @@ func TestConfig_giwRoundTrip_nilRawMessage(t *testing.T) {
 
 // prequantGGUF is the model used for the serialize round-trip test. It skips
 // cleanly when absent (like the other GGUF parity tests). Point it at a real
-// .gguf via GINFER_PREQUANT_GGUF to run locally.
+// .gguf via GOINFER_PREQUANT_GGUF to run locally.
 func prequantGGUF(t *testing.T) string {
 	t.Helper()
-	requireHeavyModel(t) // loads a real GGUF (qwen2.5-coder-0.5b, or GINFER_PREQUANT_GGUF) — auto-fired on the box
-	path := os.Getenv("GINFER_PREQUANT_GGUF")
+	requireHeavyModel(t) // loads a real GGUF (qwen2.5-coder-0.5b, or GOINFER_PREQUANT_GGUF) — auto-fired on the box
+	path := os.Getenv("GOINFER_PREQUANT_GGUF")
 	if path == "" {
 		path = "../testdata/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"
 	}
 	if _, err := os.Stat(path); err != nil {
-		t.Skipf("no gguf at %s (set GINFER_PREQUANT_GGUF)", path)
+		t.Skipf("no gguf at %s (set GOINFER_PREQUANT_GGUF)", path)
 	}
 	return path
 }

@@ -303,7 +303,7 @@ high-core machines too (a 16-core x86 server forced to 4-way) — the width is
 hardware-specific, as the task doc itself notes, and pure Go can't pin P vs E
 cores (statistical at best). The knob stays exported in aikit for consumers that
 know their hardware / run the 1.5B on M-series; goinfer ships no default width.
-Allocs unchanged. (`GINFER_PAR_WIDTH` left on `BenchmarkDecode` for future sweeps.)
+Allocs unchanged. (`GOINFER_PAR_WIDTH` left on `BenchmarkDecode` for future sweeps.)
 
 ### Speculative decoding — PARKED on CPU (the win is bandwidth-bound, this isn't)
 

@@ -12,7 +12,7 @@
 # The skip-if-absent gates look for checkpoints at their default paths
 # (testdata/<...>, ~/models/<...>) or via env vars; put the assets in place /
 # export the vars before running. Known env vars (see the test files):
-#   GINFER_PREQUANT_GGUF      — TestDecodeParity / serialize round-trip / quant gates
+#   GOINFER_PREQUANT_GGUF      — TestDecodeParity / serialize round-trip / quant gates
 #   GOINFER_QWEN35_GGUF       — qwen3_5_moe real-checkpoint gates (-tags realckpt)
 #   GOINFER_QWEN35_GOLDEN     — its Gate-2 golden manifest dir
 #   GOINFER_SERVE_MODEL[2]    — cmd/serve soak/chaos (optional; not a family gate)

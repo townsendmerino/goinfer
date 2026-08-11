@@ -16,7 +16,7 @@ import (
 func TestAttendBatchedHeads_vsNaive(t *testing.T) {
 	m, err := loadBenchModel()
 	if err != nil {
-		t.Skipf("no model (%v); set GINFER_PREQUANT_GGUF", err)
+		t.Skipf("no model (%v); set GOINFER_PREQUANT_GGUF", err)
 	}
 	arch := m.w.arch
 	nH, nKV, hd := arch.NumHeads, arch.NumKVHeads, arch.HeadDim
@@ -103,7 +103,7 @@ func TestAttendBatchedHeads_vsNaive(t *testing.T) {
 func TestForwardN_matchesSequential(t *testing.T) {
 	m, err := loadBenchModel()
 	if err != nil {
-		t.Skipf("no model (%v); set GINFER_PREQUANT_GGUF", err)
+		t.Skipf("no model (%v); set GOINFER_PREQUANT_GGUF", err)
 	}
 	base := []int{785, 264, 6573, 311, 1438, 279}
 
@@ -183,7 +183,7 @@ func logitCosine(a, b []float32) float64 {
 func TestTruncateTo(t *testing.T) {
 	m, err := loadBenchModel()
 	if err != nil {
-		t.Skipf("no model (%v); set GINFER_PREQUANT_GGUF", err)
+		t.Skipf("no model (%v); set GOINFER_PREQUANT_GGUF", err)
 	}
 	ids := []int{785, 264, 6573, 311, 1438, 279}
 

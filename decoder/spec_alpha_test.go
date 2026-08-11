@@ -17,11 +17,11 @@ import (
 // plus the AUC of match_len predicting the realized accept. The doc's rule: establish
 // the minimal predictor's AUC before shipping anything heavier. If match_len carries
 // the signal, the runtime needs only this tiny 1-D table — no offline ML, no Python.
-// Run: GINFER_PREQUANT_GGUF=... go test ./decoder -run TestNgramAlphaPredictor -v
+// Run: GOINFER_PREQUANT_GGUF=... go test ./decoder -run TestNgramAlphaPredictor -v
 func TestNgramAlphaPredictor(t *testing.T) {
 	m, err := loadBenchModel()
 	if err != nil {
-		t.Skipf("no model (%v); set GINFER_PREQUANT_GGUF", err)
+		t.Skipf("no model (%v); set GOINFER_PREQUANT_GGUF", err)
 	}
 	tk, err := tokenizer.LoadGGUF(benchGGUFPath())
 	if err != nil {
@@ -166,11 +166,11 @@ func aucByFeature(rows []SpecTrace) (auc float64, nPos, nNeg int) {
 // §6 sanity is that forced tokens accept ≈1 — they're grammar-legal by construction, so
 // the only loss is a tokenization mismatch (the model preferring a different legal
 // tokenization of the same bytes). The mean is the calibrated α̂_grammar that replaces
-// the heuristic constant. Run: GINFER_PREQUANT_GGUF=... go test ./decoder -run GrammarAlpha -v
+// the heuristic constant. Run: GOINFER_PREQUANT_GGUF=... go test ./decoder -run GrammarAlpha -v
 func TestGrammarAlphaPredictor(t *testing.T) {
 	m, err := loadBenchModel()
 	if err != nil {
-		t.Skipf("no model (%v); set GINFER_PREQUANT_GGUF", err)
+		t.Skipf("no model (%v); set GOINFER_PREQUANT_GGUF", err)
 	}
 	tk, err := tokenizer.LoadGGUF(benchGGUFPath())
 	if err != nil {
@@ -354,11 +354,11 @@ func TestRouterOnlineCorrection(t *testing.T) {
 // ECE = Σ_bin (n/N)·|empirical_accept − ngramAlpha(match_len)| of the table against that
 // workload's realized acceptance. Low ECE across held-out workloads ⇒ the static table
 // generalizes; a high-ECE workload quantifies the drift the §9 online correction absorbs.
-// Run: GINFER_PREQUANT_GGUF=... go test ./decoder -run CrossWorkload -v
+// Run: GOINFER_PREQUANT_GGUF=... go test ./decoder -run CrossWorkload -v
 func TestNgramAlphaCrossWorkload(t *testing.T) {
 	m, err := loadBenchModel()
 	if err != nil {
-		t.Skipf("no model (%v); set GINFER_PREQUANT_GGUF", err)
+		t.Skipf("no model (%v); set GOINFER_PREQUANT_GGUF", err)
 	}
 	tk, err := tokenizer.LoadGGUF(benchGGUFPath())
 	if err != nil {

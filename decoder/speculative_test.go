@@ -29,7 +29,7 @@ var specPrompts = [][]int{
 func TestSpeculativeGreedyParity(t *testing.T) {
 	m, err := loadBenchModel()
 	if err != nil {
-		t.Skipf("no model (%v); set GINFER_PREQUANT_GGUF", err)
+		t.Skipf("no model (%v); set GOINFER_PREQUANT_GGUF", err)
 	}
 	const n = 32
 	ctx := context.Background()
@@ -61,12 +61,12 @@ func TestSpeculativeGreedyParity(t *testing.T) {
 // TestSpeculativeGreedyParity_draftTarget runs the real pair — 1.5B target, 0.5B
 // draft — exercising the mismatch/correction path. Output must STILL be
 // token-identical to plain 1.5B greedy (the target's distribution is preserved
-// regardless of draft quality). Skips unless GINFER_SPEC_TARGET points at the
+// regardless of draft quality). Skips unless GOINFER_SPEC_TARGET points at the
 // 1.5B gguf.
 func TestSpeculativeGreedyParity_draftTarget(t *testing.T) {
-	tpath := os.Getenv("GINFER_SPEC_TARGET")
+	tpath := os.Getenv("GOINFER_SPEC_TARGET")
 	if tpath == "" {
-		t.Skip("set GINFER_SPEC_TARGET to the 1.5B gguf to run the draft≠target gate")
+		t.Skip("set GOINFER_SPEC_TARGET to the 1.5B gguf to run the draft≠target gate")
 	}
 	draft, err := loadBenchModel() // 0.5B
 	if err != nil {

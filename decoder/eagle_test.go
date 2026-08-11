@@ -10,10 +10,10 @@ import (
 // head (converted to f32 safetensors) loads with the confirmed shapes — fc fuses
 // 3*hidden, the layer projects from 2*hidden, lm_head is the draft vocab, d2t maps
 // back to the target vocab. Skips unless the converted head is present at
-// ~/models/qwen3-1.7b-eagle3 (GINFER_EAGLE_DIR overrides).
+// ~/models/qwen3-1.7b-eagle3 (GOINFER_EAGLE_DIR overrides).
 func TestLoadEagleHead(t *testing.T) {
 	requireHeavyModel(t)
-	dir := os.Getenv("GINFER_EAGLE_DIR")
+	dir := os.Getenv("GOINFER_EAGLE_DIR")
 	if dir == "" {
 		home, _ := os.UserHomeDir()
 		dir = filepath.Join(home, "models", "qwen3-1.7b-eagle3")
