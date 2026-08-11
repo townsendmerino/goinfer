@@ -321,7 +321,8 @@ func TestRealE2EDecodeThroughput(t *testing.T) {
 			doG(Ly.k, aq, aSc, kb, kB, 0)
 			doG(Ly.v, aq, aSc, vb, vB, 0)
 			L(ropeKV, g1(nH*half+nKV*half, 256), gc.Arg(qB), gc.Arg(kB), gc.Arg(vB), gc.Arg(invF), gc.Arg(kc[l]), gc.Arg(vc[l]),
-				gc.ArgValue(int32(nH)), gc.ArgValue(int32(nKV)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(pos)))
+				gc.ArgValue(int32(nH)), gc.ArgValue(int32(nKV)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(pos)),
+				gc.ArgValue(int32(half)))
 			nKeys := pos + 1
 			L(fAttn, gc.LaunchConfig{GridX: uint32(nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nKeys + 128) * 4)},
 				gc.Arg(qB), gc.Arg(kc[l]), gc.Arg(vc[l]), gc.ArgValue(int32(nH)), gc.ArgValue(int32(nKV)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(nKeys)), gc.ArgValue(attnScale), gc.ArgValue(int32(0)), gc.Arg(cctx))
@@ -349,14 +350,78 @@ func TestRealE2EDecodeThroughput(t *testing.T) {
 	// ---- warm, then wall-clock steady-state autoregressive decode through the executor ----
 	prompt := []int{785, 3840, 315, 24231, 6137}
 	pos := 0
-	for _, tok := range prompt {
-		tk := tok
-		p := pos
-		_ = do(func() error { step(m.EmbedResidentForTest(tk), p); return nil })
-		pos++
+	// ---- CORRECTNESS FIRST: TEACHER-FORCED argmax parity against the CPU reference.
+	//
+	// Teacher-forced, not free-running, and that is not a convenience. This path is argmax-equal to
+	// the CPU reference but NOT bit-identical — TestBackendResidentWired measures 7/8 exact with a
+	// worst near-tie of 0.087% on this very model. Free-running amplifies a single near-tie flip
+	// into total divergence: an earlier version of this check drove both sides from the prompt-phase
+	// argmax and got GPU [271 785 3840 ...] vs CPU [448 279 27130 ...], which looks like a
+	// catastrophic bug and is actually one flipped tie plus chaos. Feeding both sides the SAME
+	// tokens isolates the per-position computation, which is the thing under test.
+	//
+	// This assertion is also what keeps this file from being a second UNVALIDATED forward. It is a
+	// hand-rolled launch sequence, so it can drift from production silently — and it did: the
+	// rope_kv call was missing its `rhalf` argument (added when partial rotary landed), which the
+	// CUDA launch API does not arity-check, so the kernel read garbage for the rotary half-width and
+	// this test happily reported a throughput number for a broken forward. The check below is what
+	// makes the next drift fail instead of pass.
+	cpuCache := m.NewCache(len(prompt) + 2)
+	cpuLogits := make([][]float32, 0, len(prompt))
+	gpuArg := make([]int, 0, len(prompt))
+	cpuArg := make([]int, 0, len(prompt))
+	for i, tk := range prompt {
+		lg, e := m.ForwardForTest(tk, cpuCache)
+		if e != nil {
+			t.Fatalf("cpu forward[%d]: %v", i, e)
+		}
+		cpuArg = append(cpuArg, argmaxF32(lg))
+		cpuLogits = append(cpuLogits, lg)
+		tkc, p := tk, i
+		var got int
+		_ = do(func() error { got = step(m.EmbedResidentForTest(tkc), p); return nil })
+		gpuArg = append(gpuArg, got)
 	}
-	// warm decode
-	tok := prompt[len(prompt)-1]
+	pos = len(prompt)
+	// CLASSIFY a mismatch rather than failing on it blindly. This path is argmax-equal but not
+	// bit-identical, so a position whose top-2 CPU logits are a near-tie can legitimately flip —
+	// TestBackendResidentWired applies the same rule and measures a worst near-tie of 0.087% here.
+	// A mismatch with a WIDE margin is a real defect; a hair-thin one is float ordering.
+	exact, hardFail, worst := 0, 0, 0.0
+	for i := range cpuArg {
+		if gpuArg[i] == cpuArg[i] {
+			exact++
+			continue
+		}
+		lg := cpuLogits[i]
+		lo, hi := lg[0], lg[0]
+		for _, v := range lg {
+			if v < lo {
+				lo = v
+			}
+			if v > hi {
+				hi = v
+			}
+		}
+		gap := 0.0
+		if hi > lo {
+			gap = float64(lg[cpuArg[i]]-lg[gpuArg[i]]) / float64(hi-lo) * 100
+		}
+		if gap > worst {
+			worst = gap
+		}
+		if gap > 0.5 { // well above the 0.087% the production gate measures on this model
+			hardFail++
+			t.Errorf("teacher-forced argmax pos %d: GPU %d != CPU %d with a %.3f%% margin — not a "+
+				"near-tie, so this hand-rolled sequence does not reproduce decoder.forward and its "+
+				"throughput number describes code that does not ship", i, gpuArg[i], cpuArg[i], gap)
+		}
+	}
+	t.Logf("teacher-forced argmax vs CPU: %d/%d exact | worst near-tie %.3f%% | hard fails %d | GPU=%v CPU=%v",
+		exact, len(cpuArg), worst, hardFail, gpuArg, cpuArg)
+
+	// warm decode (free-running is fine for TIMING; it is only unsound as a correctness check)
+	tok := gpuArg[len(gpuArg)-1]
 	for i := 0; i < 8; i++ {
 		tk, p := tok, pos
 		var nt int
@@ -455,4 +520,16 @@ func verdictOf(cpu, gpu float64) string {
 	default:
 		return "GPU-bound (device is the limit; CPU issue hides under it)"
 	}
+}
+
+// argmaxF32 is the CPU-side greedy pick: strict >, so an exact tie takes the LOWEST index — the
+// same ascending-token-id contract C-14 pinned on the device kernel.
+func argmaxF32(v []float32) int {
+	best := 0
+	for i := 1; i < len(v); i++ {
+		if v[i] > v[best] {
+			best = i
+		}
+	}
+	return best
 }

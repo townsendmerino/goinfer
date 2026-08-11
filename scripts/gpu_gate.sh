@@ -49,6 +49,7 @@ fi
 
 FAILED=0
 SKIPPED=0
+PASSED=0
 RAN=0
 NOTES=()
 
@@ -68,7 +69,7 @@ grp() { CURGROUP="$1"; }                                  # set by each hdr, bef
 mark() { [ -n "$CURGROUP" ] && EMITTED[$CURGROUP]=1; return 0; }
 
 hdr() { printf '\n\033[1m== %s ==\033[0m\n' "$1"; }
-pass() { printf '  \033[32mPASS\033[0m  %s\n' "$1"; mark; }
+pass() { printf '  \033[32mPASS\033[0m  %s\n' "$1"; PASSED=$((PASSED + 1)); mark; }
 fail() { printf '  \033[31mFAIL\033[0m  %s\n' "$1"; FAILED=$((FAILED + 1)); mark; }
 skip() { printf '  \033[33mSKIP\033[0m  %s\n' "$1"; SKIPPED=$((SKIPPED + 1)); NOTES+=("SKIPPED: $1"); mark; }
 
@@ -350,7 +351,12 @@ fi
 
 # ---- verdict ----
 hdr "verdict"
-echo "  groups declared ${#EXPECT[@]}, emitted ${#EMITTED[@]}; ran $RAN check(s), $SKIPPED skipped, $FAILED failed"
+# ONE UNIT: check groups. "6 declared / 4 ran" previously sat next to an unrelated count and a
+# reader deciding whether to ship could not tell at a glance whether something was missing.
+echo "  check groups: ${#EXPECT[@]} declared -> ${#EMITTED[@]} reported   |   verdicts within them: $PASSED pass, $SKIPPED skip, $FAILED fail"
+if [ "${#EXPECT[@]}" -ne "${#EMITTED[@]}" ]; then
+	echo "  (declared != reported: $(( ${#EXPECT[@]} - ${#EMITTED[@]} )) group(s) produced no verdict — see the FAIL above)"
+fi
 if [ "$SKIPPED" -gt 0 ]; then
 	printf '\n  \033[33mSkipped — a skip is not a pass; this gate does NOT cover:\033[0m\n'
 	for n in "${NOTES[@]}"; do printf '    - %s\n' "$n"; done
