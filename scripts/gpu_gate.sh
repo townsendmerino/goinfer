@@ -59,7 +59,7 @@ NOTES=()
 # So the expected groups are DECLARED up front and reconciled at the end: a group that emits no
 # verdict, or an unexpected group id, is itself a FAIL.
 case "$BACKEND" in
-cuda)  EXPECT=(cleangpu seam suite cgofree ptx repo) ;;
+cuda)  EXPECT=(cleangpu seam suite parity cgofree ptx repo) ;;
 metal) EXPECT=(cleangpu seam suite cgofree lifecycle prefill repo) ;;
 *)     EXPECT=(cleangpu seam suite repo) ;;
 esac
@@ -124,13 +124,47 @@ fi
 # ---- 2/3/4. per-backend suites ----
 case "$BACKEND" in
 cuda)
-	grp suite; hdr "2. CUDA kernels + parity (sequential: these contend for VRAM)"
-	if out="$(CGO_ENABLED=0 go test -tags cuda -p 1 ./cuda/ -count=1 -short 2>&1)"; then
+	# The header used to read "CUDA kernels + parity" while running NEITHER the resident parity
+	# gates NOR anything that asserts a forward. Every resident parity gate is behind
+	# `goinfer_testhooks` (backend_wired, the gemma4/GLM/MoE resident parities, sliding-window),
+	# so for the whole of v0.10.x/v0.11.0 this block ran 53 kernel-level tests and the release
+	# record said "full cuda suite". Combined with parity_manifest.json's shared_sets covering
+	# decoder/*.go ONLY — no cuda/ file appears in it, so deps_hash cannot go stale on
+	# resident.go — a change to CUDA forward numerics had no enforced signal anywhere in the
+	# gate. TWO groups now, because they answer different questions and one is not evidence for
+	# the other (audit G-01: the artifact must not be adjacent to what it is read as).
+	grp suite; hdr "2a. CUDA kernel-level suite (no testhooks: kernels, admission, lint)"
+	# -v is REQUIRED, not cosmetic: without it `go test` prints no "--- SKIP" lines at all, so the
+	# census below silently counts zero and prints nothing — a check that reports nothing while
+	# looking healthy, which is the very defect this block exists to close. Caught by writing it
+	# without -v first and getting an empty census on a suite known to skip six.
+	if out="$(CGO_ENABLED=0 go test -tags cuda -p 1 ./cuda/ -count=1 -short -v 2>&1)"; then
 		RAN=$((RAN + 1))
-		pass "full cuda suite"
+		pass "cuda kernel-level suite"
 		echo "$out" | grep -E "^ok" | sed 's/^/      /'
 	else
-		fail "cuda suite"
+		fail "cuda kernel-level suite"
+		echo "$out" | grep -E "^--- FAIL|\.go:[0-9]+:" | head -12 | sed 's/^/      /'
+	fi
+	# Census the skips INSIDE the passing suite. "ok" hides them, and a skip is not a pass.
+	SK="$(printf '%s' "$out" | grep -cE '^--- SKIP' || true)"
+	if [ "${SK:-0}" -eq 0 ]; then
+		# A zero here is far more likely to mean "the census broke" than "nothing skipped".
+		echo "      skip census: 0 — verify -v is still on this invocation before believing it"
+	fi
+	if [ "${SK:-0}" -gt 0 ]; then
+		echo "      skipped within it: $SK (all GOINFER_HEAVY_TESTS=1 — 4 bandwidth benchmarks,"
+		echo "      TestRealWeightGemvParity (real q4_K_M weights), TestResidentSpecServe (loads a 1.5B model))"
+		printf '%s' "$out" | grep -E '^--- SKIP' | sed 's/--- SKIP: /        · /;s/ (.*//'
+	fi
+
+	grp parity; hdr "2b. resident PARITY gates (-tags goinfer_testhooks — the forward is asserted here)"
+	if out="$(CGO_ENABLED=0 go test -tags 'cuda goinfer_testhooks' -p 1 ./cuda/ -count=1 2>&1)"; then
+		RAN=$((RAN + 1))
+		pass "resident parity gates (gemma4 dense/two-geom/MoE+router, GLM partial-rotary, mixtral MoE, sliding-window, rope-partial)"
+		echo "$out" | grep -E "^ok" | sed 's/^/      /'
+	else
+		fail "resident parity gates — a CUDA forward moved. This is the group 2a cannot see."
 		echo "$out" | grep -E "^--- FAIL|\.go:[0-9]+:" | head -12 | sed 's/^/      /'
 	fi
 
@@ -354,6 +388,14 @@ hdr "verdict"
 # ONE UNIT: check groups. "6 declared / 4 ran" previously sat next to an unrelated count and a
 # reader deciding whether to ship could not tell at a glance whether something was missing.
 echo "  check groups: ${#EXPECT[@]} declared -> ${#EMITTED[@]} reported   |   verdicts within them: $PASSED pass, $SKIPPED skip, $FAILED fail"
+# The release record now turns on this distinction: "the suite passed" is NOT "the forward is
+# gated". Say which of the two actually happened, by name, so neither can be read as the other.
+if [ "$BACKEND" = cuda ]; then
+	s2a="not run"; s2b="not run"
+	[ -n "${EMITTED[suite]:-}" ] && s2a="reported"
+	[ -n "${EMITTED[parity]:-}" ] && s2b="reported"
+	echo "  of which: kernel-level suite = $s2a   |   resident PARITY gates (forward asserted) = $s2b"
+fi
 if [ "${#EXPECT[@]}" -ne "${#EMITTED[@]}" ]; then
 	echo "  (declared != reported: $(( ${#EXPECT[@]} - ${#EMITTED[@]} )) group(s) produced no verdict — see the FAIL above)"
 fi
