@@ -114,9 +114,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	// job is future arches: one that lands with a feature nobody implemented declines here
 	// instead of mis-running.
 	if missing := m.MissingResidentFeatures(decoder.ResidentBackendFeatures("webgpu")); len(missing) > 0 {
-		if os.Getenv("GOINFER_RESIDENT_DEBUG") != "" {
-			fmt.Fprintf(os.Stderr, "[gpu] BuildResident declined: arch needs unimplemented feature(s) %v\n", missing)
-		}
+		fmt.Fprintf(os.Stderr, "[gpu] BuildResident declined: arch needs unimplemented feature(s) %v\n", missing)
 		return nil, false, nil
 	}
 	// Router-kernel capacity (gpu/moe.go): score/sel are array<f32,256> with nE clamped to
@@ -126,9 +124,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	// is plausible-looking wrong output, so decline to the staged path — matching cuda/backend.go's
 	// nE>256 build check (M22). Checked here, before any allocation, so the decline is clean.
 	if nE, _, _, _, _, _, _, _, nGroup, _, moeOK := m.MoEResidentParams(); moeOK && (nE > 256 || nGroup > 32) {
-		if os.Getenv("GOINFER_RESIDENT_DEBUG") != "" {
-			fmt.Fprintf(os.Stderr, "[gpu] BuildResident declined: MoE nE=%d/nGroup=%d exceeds router-kernel cap (256 experts / 32 groups)\n", nE, nGroup)
-		}
+		fmt.Fprintf(os.Stderr, "[gpu] BuildResident declined: MoE nE=%d/nGroup=%d exceeds router-kernel cap (256 experts / 32 groups)\n", nE, nGroup)
 		return nil, false, nil
 	}
 	b.mu.Lock()

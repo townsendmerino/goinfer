@@ -67,10 +67,14 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		}
 	}()
 
+	// The reason is printed UNCONDITIONALLY, not behind a debug flag. Declining moves the whole
+	// forward to CPU, and v0.10.0's contract is that the runtime names the reason when it is not on
+	// the fast path — a reason nobody can see does not satisfy that. It cost a 307-second 26B run to
+	// learn "the experts do not fit VRAM", which the runtime knew at the moment it declined. One
+	// line at load, not a debug stream: it is the same "zero means either" shape as a skip census
+	// that prints nothing — a silent decline and a successful build look identical from outside.
 	declined := func(e error) (decoder.ResidentForward, bool, error) {
-		if os.Getenv("GOINFER_RESIDENT_DEBUG") != "" {
-			fmt.Fprintf(os.Stderr, "[cuda] BuildResident declined: %v\n", e)
-		}
+		fmt.Fprintf(os.Stderr, "[cuda] resident path DECLINED (falling back to the staged/CPU path): %v\n", e)
 		return nil, false, nil
 	}
 

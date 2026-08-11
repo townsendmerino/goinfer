@@ -522,9 +522,9 @@ func (m *Model) withResidency() *Model {
 	}
 	rf, ok, err := rb.BuildResident(m)
 	if err != nil || !ok {
-		if os.Getenv("GOINFER_RESIDENT_DEBUG") != "" {
-			fmt.Fprintf(os.Stderr, "[resident-debug] BuildResident ok=%v err=%v\n", ok, err)
-		}
+		// Unconditional, for the same reason as the cuda side: a decline moves the entire forward to
+		// CPU, and the runtime's contract is to say so rather than quietly get slower.
+		fmt.Fprintf(os.Stderr, "[resident] BuildResident declined (ok=%v err=%v) — continuing on the CPU/staged path\n", ok, err)
 		// Falls back silently for correctness (a decline must never be fatal mid-load), but the
 		// REASON is kept: on a GPU backend this is the whole forward moving to CPU, which is the
 		// same silent-regression class as the prefill decline one layer down. err is nil for an

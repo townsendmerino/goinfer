@@ -50,9 +50,7 @@ func (b *metalBackend) MatmulBT(a, bmat, dst []float32, M, K, N int) {
 func (b *metalBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForward, ok bool, err error) {
 	defer func() {
 		if p := recover(); p != nil {
-			if os.Getenv("GOINFER_RESIDENT_DEBUG") != "" {
-				fmt.Fprintf(os.Stderr, "[metal] BuildResident declined: %v\n", p)
-			}
+			fmt.Fprintf(os.Stderr, "[metal] BuildResident declined: %v\n", p)
 			rf, ok, err = nil, false, nil
 		}
 	}()
@@ -62,16 +60,12 @@ func (b *metalBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwa
 	// DECLINE (→ correct CPU fallback) rather than run with the feature silently dropped. The
 	// subset check uses the shared taxonomy (one source of truth; a new arch classifies itself).
 	if missing := m.MissingResidentFeatures(decoder.ResidentBackendFeatures("metal")); len(missing) > 0 {
-		if os.Getenv("GOINFER_RESIDENT_DEBUG") != "" {
-			fmt.Fprintf(os.Stderr, "[metal] declined — unimplemented features: %v\n", missing)
-		}
+		fmt.Fprintf(os.Stderr, "[metal] declined — unimplemented features: %v\n", missing)
 		return nil, false, nil
 	}
 	res, e := buildResident(m)
 	if e != nil {
-		if os.Getenv("GOINFER_RESIDENT_DEBUG") != "" {
-			fmt.Fprintf(os.Stderr, "[metal] BuildResident declined: %v\n", e)
-		}
+		fmt.Fprintf(os.Stderr, "[metal] BuildResident declined: %v\n", e)
 		return nil, false, nil
 	}
 	b.resident = &metalResident{r: res, hidden: res.H}
