@@ -1037,6 +1037,25 @@ func (r *cudaResident) moeMLPPre(Ly *cudaLayer) error {
 		gpu.ArgValue(int32(r.hidden)), Arg(r.rLogits)); e != nil {
 		return e
 	}
+	// TRAP: the nGroup/topkGroup mapping below has NEVER been exercised through this path.
+	//
+	// moe_route's group-limited routing is well gated as a KERNEL — TestMoERoute constructs
+	// nGroup != topkGroup (8/4) across four cases and asserts against cpuRoute. But that test
+	// builds its own argument list and calls the kernel directly, so it validates the kernel's
+	// math, not this call's argument ORDER. Every CUDA-admissible MoE model has
+	// nGroup == topkGroup (glm-tiny sets 1/1; mixtral and gemma4-moe set neither, so both
+	// default to 0; the gemma4 path below hardcodes 1, 1), because the group-routed families
+	// (DeepSeek, Kimi) decline earlier on FeatMLA, which CUDA does not declare.
+	//
+	// Consequence, measured not assumed: transposing these two arguments and re-running every
+	// gate — kernel-level suite, resident parity gates, TestMoERoute itself — passes all of
+	// them. The transposition is currently INERT rather than silent-wrong, since nGroup ==
+	// topkGroup makes the swap a no-op, but nothing here would notice if it were live.
+	//
+	// Typed launch wrappers (one generated type per (parameter name, C type)) make a
+	// transposition at this site a COMPILE error. They do not verify that the values are the
+	// right way round — a wrong value of the right kind still compiles. See the reciprocal trap
+	// at decoder/features.go's cuda entry, and docs/parity-coverage-policy.md § "Relevant".
 	return r.launch(r.fRoute, onecfg(1, 0),
 		Arg(r.rLogits), Arg(Ly.routerB), Arg(r.rIdx), Arg(r.rWgt),
 		gpu.ArgValue(int32(r.nE)), gpu.ArgValue(int32(r.topK)), gpu.ArgValue(r.moeSigmoid),

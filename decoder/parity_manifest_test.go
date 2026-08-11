@@ -275,6 +275,11 @@ func TestParityManifest_fresh(t *testing.T) {
 	sort.Strings(famKeys)
 
 	var stale []string
+	// Count what was actually ENFORCED, not just what came back stale. An empty `stale` means
+	// either "every validated family's hash matched" or "no family was enforced at all" — the
+	// loop `continue`s past every validated_at:null row, so a manifest whose rows were all
+	// pending would report zero staleness having checked nothing. Zero has to say which.
+	enforced := 0
 	for _, fam := range famKeys {
 		f := m.Families[fam]
 		fresh, err := freshDepsHash(&m, f)
@@ -290,6 +295,7 @@ func TestParityManifest_fresh(t *testing.T) {
 		if string(f.ValidatedAt) == "null" || len(f.ValidatedAt) == 0 {
 			continue
 		}
+		enforced++
 		if fresh != f.DepsHash {
 			var validatedAt string
 			_ = json.Unmarshal(f.ValidatedAt, &validatedAt)
@@ -310,6 +316,14 @@ func TestParityManifest_fresh(t *testing.T) {
 			"Fix: re-run T3 (scripts/parity_sweep.sh) then -update; or, for a provably non-numeric core edit "+
 			"(a guarded diagnostic seam, comment, rename), scripts/refresh_parity_hashes.sh.",
 			len(stale), strings.Join(stale, "\n"))
+	}
+	if !*updateMatrix {
+		if enforced == 0 {
+			t.Fatalf("staleness gate enforced ZERO families of %d — every row is validated_at:null, so this "+
+				"gate passed having checked nothing. That is not a green manifest.", len(famKeys))
+		}
+		t.Logf("staleness: %d/%d families enforced (the rest are validated_at:null and carry no hash to check)",
+			enforced, len(famKeys))
 	}
 
 	if *updateMatrix {

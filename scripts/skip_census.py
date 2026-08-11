@@ -148,6 +148,19 @@ def main():
 
     # release-ritual gate
     rc = 1 if nfail else 0
+
+    # A census of ZERO tests is not a clean census — it is the absence of one. An empty -json
+    # stream (bad -tags, wrong package path, truncated capture, a build error that emitted no
+    # test events) lands here as PASS 0 / FAIL 0 / SKIP 0 and used to exit 0, which reads as
+    # "nothing wrong" when it means "nothing looked". Same shape as the gate's skip counter,
+    # which read zero both for "no skips" and for "I forgot -v so go test never printed them".
+    # Wherever a zero can mean either, it has to say which.
+    if not final:
+        print("\n  ✗ NO TESTS OBSERVED — the -json stream contained no test events.")
+        print("    This is NOT a pass. Usual causes: a build/tag error that produced no test")
+        print("    events, a package path matching nothing, or a truncated recorded stream.")
+        print("    Re-run and check `go test` itself succeeds before reading this census.")
+        rc = 1
     if os.environ.get("GOINFER_REQUIRE_FIXTURES") and bucketed["missing-fixture"]:
         print("\n  ✗ GOINFER_REQUIRE_FIXTURES=1 and missing-fixture skips present:")
         for pkg, t, r in bucketed["missing-fixture"]:

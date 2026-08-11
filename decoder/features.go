@@ -294,6 +294,16 @@ var residentBackendFeatures = map[string]map[ResidentFeature]bool{
 	// rotary, and MoE (routed + ungated shared expert). Still NOT implemented: per-layer rotary
 	// WIDTH (only per-layer base); no YaRN mscale; no logit softcap; no MLA/SSM.
 	//
+	// TRAP — before adding FeatMLA here (or otherwise making a GROUP-ROUTED family
+	// CUDA-admissible), verify the nGroup/topkGroup mapping at cuda/resident.go's moe_route
+	// launch END TO END. DeepSeek and Kimi are the only families with nGroup != topkGroup, and
+	// they decline on this line today, which is the sole reason that mapping has never run.
+	// Every admissible MoE model has nGroup == topkGroup, so a transposition there is a no-op
+	// and passes every gate in the repo (verified by transposing it). Adding MLA arms it: the
+	// first group-routed forward would route through the wrong groups, and NOTHING would go red
+	// — expert selection is discrete, so the output is unrelated rather than slightly off, the
+	// exact class the Granite SSM investigation cost 66% agreement to. Gate the mapping first.
+	//
 	// FeatMoE covers the ROUTED block (router + stacked experts + every routing flavour the
 	// route kernel handles) AND the always-on UNGATED shared expert (GLM/DeepSeek). The GATED
 	// shared expert (Qwen-MoE's sigmoid(SharedGate·h) scaling) is NOT wired — BuildResident
