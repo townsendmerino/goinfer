@@ -227,6 +227,45 @@ Structural options exist (typed per-kernel wrappers mirroring each `.cu` signatu
 `cuKernelGetParamInfo`, CUDA 12.4+, to check arity against the module at load). **Not funded —
 recorded so the next signature change knows what is and isn't holding the line.**
 
+### Representative: a fixture must be real in the dimensions the failure lives in
+
+Two properties have to survive a fixture's shrink, and only one of them is a dimension. Both were
+learned by paying for them.
+
+**Geometry.** A′ zero-copy was bit-exact on a 32-expert / hidden-256 fixture and 255/256 logits
+wrong at hidden 2048 / `moe_inter` 768. The post-mortem excludes the alternatives by measurement —
+"not offset, K, occupancy, **expert count**, or the allocation". So a Gemma-4 MoE fixture shrinks
+expert count and depth and keeps `hidden`/`moe_intermediate` real. The reduction that *looks*
+right — keep 128 experts, cut hidden — rebuilds the configuration that already passed while the
+code was broken. **Shrink the axis the post-mortem excluded, never the one it indicted.**
+
+**Distribution.** v0.9.0's fused multiply-add caused an 84% token-stream divergence on real models
+and was invisible on random-weight fixtures, because uniform data rounds the same way in both
+orders. Perfect geometry with random weights reproduces that false negative exactly — one axis
+over from the first mistake.
+
+Measured on the real Gemma-4 26B (per-group absmax, groups of 32 along K):
+
+| tensor class | log2 std | dynamic range |
+|---|---|---|
+| experts (`gate_up`, `down`) | 0.31 | **13× within a layer, 20–24× across layers** |
+| `q_proj` / `embed_tokens` | 0.49 | 35–39× |
+| HF random init `normal(0, 0.02)` | 0.27 | 5.0× |
+
+**Quote 24×, not "orders of magnitude."** The v0.9.0 release note says the latter; it is an
+explanatory aside and stays as history, but anyone calibrating a new fixture against it will build
+the wrong thing. The gap that matters is real and modest: 24× against 5×.
+
+The cheap way to get it right is not to fit a distribution but to **transplant** one — impose real
+per-row group scales on random weights, sampling whole rows so within-row correlation survives.
+That only works if the geometry rule above kept K real, which is the second reason to follow it.
+See `scripts/pin_gemma4_moe_scaled.py`, which refuses to write a fixture with any untransplanted
+tensor, and pins its own output hash because gates asserting bit-identity cannot afford a fixture
+that drifts between machines.
+
+State what a fixture does **not** cover, in the fixture's own docs — host-buffer ratio, depth,
+whether routing is trained. A gate's edges should be legible to whoever trusts it next.
+
 ## The validation manifest is the source of truth
 
 `testdata/parity_manifest.json` records, per family: the commit it was last

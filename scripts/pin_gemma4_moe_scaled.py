@@ -76,8 +76,19 @@ WHAT THIS FIXTURE DOES NOT COVER
   not a trained distribution. Cache HIT RATES from this fixture are meaningless. Bit-exactness
   is not, since it holds per-read regardless of which experts get picked.
 
+DETERMINISTIC. Two seeds drive everything: torch.manual_seed(0) for the base weights and a
+SEPARATE Generator(1234) for the scale sampling and the norm strengthening, so the transplant
+cannot perturb the base draw. Verified by regenerating and comparing:
+
+    model.safetensors sha256 = a56ed8bba8ca5125aacf325ab19b9492c5bec9b642227e97f86abc360a018154
+
+That matters because these gates assert bit-identity: a fixture that drifted between machines
+would make a real failure look like an environment difference, and an environment difference
+look like a real failure. If the hash moves, the donor checkpoint or torch changed -- find out
+which before trusting a red gate.
+
     ~/.venv-vl/bin/python scripts/pin_gemma4_moe_scaled.py
-    -> testdata/gemma4-moe-scaled/            (~1.6 GB, bf16, gitignored)
+    -> testdata/gemma4-moe-scaled/            (~1.9 GB, bf16, gitignored)
 """
 import json
 import os

@@ -114,9 +114,6 @@ func TestGemma4MoE_cacheReuse_tiny(t *testing.T) {
 //
 // Defaults to that fixture; GOINFER_MOE_SCALED_FIXTURE still overrides for a one-off.
 func TestGemma4MoE_cacheExpertsBitExact_scaled(t *testing.T) {
-	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
-		t.Skip("GOINFER_HEAVY_TESTS unset")
-	}
 	dir := os.Getenv("GOINFER_MOE_SCALED_FIXTURE")
 	if dir == "" {
 		dir = "../testdata/gemma4-moe-scaled"
@@ -129,9 +126,6 @@ func TestGemma4MoE_cacheExpertsBitExact_scaled(t *testing.T) {
 // reuse path is what the 26B actually decodes on (38 slots of 128), and until now it too was only
 // gated at nE=4.
 func TestGemma4MoE_cacheReuse_scaled(t *testing.T) {
-	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
-		t.Skip("GOINFER_HEAVY_TESTS unset")
-	}
 	dir := os.Getenv("GOINFER_MOE_SCALED_FIXTURE")
 	if dir == "" {
 		dir = "../testdata/gemma4-moe-scaled"

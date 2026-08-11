@@ -25,8 +25,9 @@ import (
 //
 // So every real Gemma-4 checkpoint that reached the resident path was compared only to itself, and
 // the shipped "26B decodes coherently at ~17 tok/s" rested on a distinct-trigram degeneracy score —
-// a forward that was numerically wrong but non-repetitive would have passed everything. That is why
-// GOINFER_GEMMA4_RESIDENT could not be defaulted on: the flag had become load-bearing by accident.
+// a forward that was numerically wrong but non-repetitive would have passed everything. Until this
+// gate existed, GOINFER_GEMMA4_RESIDENT could not be defaulted on: the flag had become load-bearing
+// by accident. This is what let it come off (a5ebb35).
 //
 // The fixture keeps hidden=2816 / moe_inter=704 / head_dim 256 local, 512 global K=V — the real
 // 26B's per-expert and per-head geometry — and shrinks only expert count and depth. Its per-group
@@ -42,10 +43,6 @@ import (
 //     CPU-int4 share weights and differ only in W4A8 activation rounding, so CUDA must track or sit
 //     above that baseline. Dropping BELOW it is a real divergence no conditioning explains.
 func TestGemma4MoEScaled_residentParity(t *testing.T) {
-	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
-		t.Skip("GOINFER_HEAVY_TESTS unset (loads three copies of a 1.9 GB fixture)")
-	}
-	t.Setenv("GOINFER_GEMMA4_RESIDENT", "1")
 	dir := os.Getenv("GOINFER_MOE_SCALED_FIXTURE")
 	if dir == "" {
 		dir = "../testdata/gemma4-moe-scaled"
@@ -62,8 +59,8 @@ func TestGemma4MoEScaled_residentParity(t *testing.T) {
 	defer mc.Close()
 	rf := mc.ResidentForwardForTest()
 	if rf == nil {
-		t.Fatal("cuda resident DECLINED scaled gemma4 MoE with env on — admission regressed " +
-			"(the runtime prints the reason unconditionally; see stderr)")
+		t.Fatal("cuda resident DECLINED scaled gemma4 MoE — admission regressed (Gemma 4 is resident " +
+			"unconditionally since a5ebb35; the runtime prints the reason unconditionally, see stderr)")
 	}
 	mc4, err := decoder.Load(dir, decoder.Options{Quant: "int4"})
 	if err != nil {
