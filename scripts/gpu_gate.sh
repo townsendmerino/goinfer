@@ -59,7 +59,7 @@ NOTES=()
 # So the expected groups are DECLARED up front and reconciled at the end: a group that emits no
 # verdict, or an unexpected group id, is itself a FAIL.
 case "$BACKEND" in
-cuda)  EXPECT=(cleangpu seam suite parity cgofree ptx repo) ;;
+cuda)  EXPECT=(cleangpu seam suite parity heavy graphsforced cgofree ptx repo) ;;
 metal) EXPECT=(cleangpu seam suite cgofree lifecycle prefill repo) ;;
 *)     EXPECT=(cleangpu seam suite repo) ;;
 esac
@@ -72,6 +72,14 @@ hdr() { printf '\n\033[1m== %s ==\033[0m\n' "$1"; }
 pass() { printf '  \033[32mPASS\033[0m  %s\n' "$1"; PASSED=$((PASSED + 1)); mark; }
 fail() { printf '  \033[31mFAIL\033[0m  %s\n' "$1"; FAILED=$((FAILED + 1)); mark; }
 skip() { printf '  \033[33mSKIP\033[0m  %s\n' "$1"; SKIPPED=$((SKIPPED + 1)); NOTES+=("SKIPPED: $1"); mark; }
+
+# nomatch: a `-run` pattern that matches NOTHING is a FAIL, not a zero-test pass (ported from
+# aikit's gate). `go test -run NoSuchTest` exits 0 and prints "ok", so renaming a test away silently
+# deletes a check while the gate stays green — the same shape as a skip counted as a pass. Counts
+# "=== RUN" lines, so it needs -v on the invocation it judges.
+nomatch() { # $1 = go test output, $2 = pattern (for the message); returns 0 if nothing ran
+	[ "$(printf '%s' "$1" | grep -cE '^=== RUN' || true)" -eq 0 ]
+}
 
 hdr "provenance"
 echo "  repo        $COMMIT$DIRTY"
@@ -113,9 +121,14 @@ fi
 
 # ---- 1. seam: no GPU needed, and it is the class that cost five weeks ----
 grp seam; hdr "1. seam (runs anywhere — no GPU, no model download)"
-if out="$(go test ./decoder/ -run 'TestSeam_' -count=1 2>&1)"; then
+if out="$(go test ./decoder/ -run 'TestSeam_' -count=1 -v 2>&1)"; then
+	if nomatch "$out" ; then
+		fail "seam gate: -run 'TestSeam_' matched NO tests — the pattern or the test names moved, and a
+        zero-test run exits 0. This gate reported PASS for a check it never executed."
+	else
 	RAN=$((RAN + 1))
 	pass "serve↔decoder↔backend seam: residency is actually reached, backend names validate"
+	fi
 else
 	fail "seam gate — GPU serve may be silently CPU-only (see 7557723 / 727f198)"
 	echo "$out" | tail -8 | sed 's/^/      /'
@@ -167,6 +180,60 @@ cuda)
 		fail "resident parity gates — a CUDA forward moved. This is the group 2a cannot see."
 		echo "$out" | grep -E "^--- FAIL|\.go:[0-9]+:" | head -12 | sed 's/^/      /'
 	fi
+
+	# ---- heavy tier: the 119-test real-model group NOTHING has ever run ----
+	grp heavy; hdr "2c. heavy tier (GOINFER_HEAVY_TESTS=1 — real models; ~28 min)"
+	# This tier existed and was never executed by anything: no script set the variable, so the tests
+	# behind it were written, committed, and skipped forever. Declared here so it cannot quietly stop
+	# running again, and TIMED into the verdict line so its cost is visible up front rather than
+	# discovered by someone waiting 28 minutes for a gate they thought took one.
+	if [ -n "${GOINFER_GATE_SKIP_HEAVY:-}" ]; then
+		skip "heavy tier (GOINFER_GATE_SKIP_HEAVY set) — the real-model gates did NOT run: 26B expert
+        streaming, real-weight GEMV parity, resident spec-serve, the bandwidth benchmarks"
+	else
+		HEAVY_T0=$(date +%s)
+		if out="$(GOINFER_HEAVY_TESTS=1 CGO_ENABLED=0 go test -tags 'cuda goinfer_testhooks' -p 1 ./cuda/ -count=1 -timeout 60m -v 2>&1)"; then
+			HEAVY_SECS=$(( $(date +%s) - HEAVY_T0 ))
+			RAN=$((RAN + 1))
+			pass "heavy tier (real models) — ${HEAVY_SECS}s"
+			echo "$out" | grep -E "^ok" | sed 's/^/      /'
+		else
+			HEAVY_SECS=$(( $(date +%s) - HEAVY_T0 ))
+			fail "heavy tier (real models) — ${HEAVY_SECS}s"
+			echo "$out" | grep -E "^--- FAIL|\.go:[0-9]+:" | head -12 | sed 's/^/      /'
+		fi
+		# Census its skips BY NAME with their reason. A tier whose value is "it runs the real models"
+		# is worth nothing if the real-model tests inside it skipped.
+		HSK="$(printf '%s' "$out" | grep -cE '^--- SKIP' || true)"
+		echo "      ran $(printf '%s' "$out" | grep -cE '^=== RUN' || true) tests, skipped ${HSK:-0}"
+		if [ "${HSK:-0}" -gt 0 ]; then
+			printf '%s' "$out" | grep -E '^--- SKIP' | sed 's/--- SKIP: /        · /;s/ (.*//'
+			NOTES+=("heavy tier skipped ${HSK} test(s) — see the 2c census for which")
+		fi
+	fi
+
+	# ---- graphs, FORCED: the code path is otherwise never exercised on this box ----
+	grp graphsforced; hdr "2d. CUDA graphs bit-exactness, FORCED (GOINFER_CUDA_GRAPHS_UNSAFE=1)"
+	# SEPARATE and LABELLED, deliberately. admitGraphs declines under DEFAULT compute mode without
+	# MPS, which is correct production behaviour and must stay that way — so on this box the graph
+	# capture/replay path is never exercised at all. Forcing it here tests the CODE without changing
+	# the admission POLICY. Keeping it out of 2b matters: a forced result must never be read as
+	# evidence that graphs are admitted in production, which is the adjacency the group split exists
+	# to prevent (audit G-01).
+	if out="$(GOINFER_CUDA_GRAPHS_UNSAFE=1 CGO_ENABLED=0 go test -tags 'cuda goinfer_testhooks' -p 1 ./cuda/ -count=1 -run 'TestGemma4Graphs_' -v 2>&1)"; then
+		if nomatch "$out"; then
+			fail "graphs (forced): -run 'TestGemma4Graphs_' matched NO tests — zero-test runs exit 0"
+		else
+			RAN=$((RAN + 1))
+			GSK="$(printf '%s' "$out" | grep -cE '^--- SKIP' || true)"
+			pass "graphs replay == live launches, FORCED capture ($(printf '%s' "$out" | grep -cE '^=== RUN' || true) tests, ${GSK:-0} skipped)"
+			[ "${GSK:-0}" -gt 0 ] && printf '%s' "$out" | grep -E '^--- SKIP' | sed 's/--- SKIP: /        · /;s/ (.*//'
+		fi
+	else
+		fail "graphs bit-exactness FAILED under forced capture — replay diverges from live launches"
+		echo "$out" | grep -E "^--- FAIL|\.go:[0-9]+:" | head -12 | sed 's/^/      /'
+	fi
+	NOTES+=("graphs are FORCED in 2d (GOINFER_CUDA_GRAPHS_UNSAFE): this proves the capture/replay CODE, not that graphs are admitted in production — admitGraphs still declines here (DEFAULT compute mode, no MPS).")
 
 	grp cgofree; hdr "3. cgo-free (the whole premise — verify, never assume)"
 	# Build the CUDA SUBMODULE entrypoint. The root ./cmd/serve has been a DELIBERATE compile
@@ -411,6 +478,21 @@ if [ "$FAILED" -gt 0 ]; then
 	printf '\n  \033[31mFAIL\033[0m — %s on %s @ %s. Do not tag.\n' "$BACKEND" "$(uname -s)" "$COMMIT$DIRTY"
 	exit 1
 fi
-printf '\n  \033[32mPASS\033[0m — %s on %s @ %s (%s)\n' "$BACKEND" "$(uname -s)" "$COMMIT$DIRTY" "$DATE"
+# THREE STATES, NOT TWO (ported from aikit 17f1517). Every check is green here. A dirty tree is not
+# a failure of the CHECKS — it is a failure of PROVENANCE: this verdict names a commit, and an
+# uncommitted edit means the verdict does not describe what that commit contains. Collapsing the two
+# loses the distinction a reader actually needs: is the CODE broken, or is the EVIDENCE broken?
+#
+# It used to print "repo <sha>+dirty" in the provenance block and then PASS as normal — so the gate
+# could emit a verdict that reads as "PASS at <sha>" for a tree that is not <sha>, with the whole
+# distinction carried by a three-character suffix in a different block. Verdicts get pasted into tag
+# messages; that is what this script is FOR.
+if [ -n "$DIRTY" ]; then
+	printf '\n  \033[33mINCONCLUSIVE\033[0m — %s/%s groups green, but the working tree is DIRTY.\n' "${#EXPECT[@]}" "${#EXPECT[@]}"
+	printf '  The verdict names %s and the tree is not %s. Commit, then re-run before tagging.\n' "$COMMIT" "$COMMIT"
+	git status --porcelain 2>/dev/null | head -10 | sed 's/^/    /'
+	exit 1
+fi
+printf '\n  \033[32mPASS\033[0m — %s on %s @ %s (%s)\n' "$BACKEND" "$(uname -s)" "$COMMIT" "$DATE"
 echo "  Paste this block for the tag. The OTHER box must pass its own run: no machine has both GPUs."
 exit 0
