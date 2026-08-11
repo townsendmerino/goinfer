@@ -451,6 +451,31 @@ func (r *cudaResident) slotBytesPerLayer(layer int) int {
 	return (gu.perExpertW+dn.perExpertW)*4 + (gu.perExpertS+dn.perExpertS)*2
 }
 
+// slotMarginBytes is the launch-time headroom the cap must leave free. NOTE it is currently the
+// only unmeasured constant in this path: whether 384 MiB is the right figure is open, and the
+// per-layer allocation overhead it must absorb has not yet been measured within a single process.
+const slotMarginBytes = 384 << 20
+
+// capSlots is the sizing arithmetic, factored out of allocSlots so it can be gated without a 26B
+// (cuda/slotcap_test.go). Returns the slot count to use, or decline=true when not even topK fits.
+//
+// Pure function of (free VRAM, layer count, bytes per slot per layer, topK, request), so synthetic
+// free-VRAM figures exercise a branch that in production only binds on models far larger than any
+// fixture — the exercised-but-never-triggered shape.
+func capSlots(free, nLayers, perLayer int64, topK, request int) (slots int, decline bool) {
+	if nLayers <= 0 || perLayer <= 0 {
+		return request, false
+	}
+	fit := int((free - slotMarginBytes) / nLayers / perLayer)
+	if fit < topK {
+		return fit, true
+	}
+	if fit < request {
+		return fit, false
+	}
+	return request, false
+}
+
 // allocSlots caps r.cacheSlots to the MEASURED free device VRAM (with a safety margin) and then
 // allocates each MoE layer's slot buffers + its LRU cache. Called after the resident core + KV +
 // scratch are up, so the cap reflects what is actually left — an over-large GOINFER_MOE_CACHE_SLOTS
@@ -483,11 +508,30 @@ func (r *cudaResident) allocSlots() error {
 	const marginBytes = 384 << 20 // headroom for the greedy-argmax readback + driver overhead
 	if free, _, err := r.dev.Context().MemInfo(); err == nil {
 		budget := int64(free) - marginBytes
-		if fit := int(budget / int64(len(moeLayers)) / int64(perLayer)); fit < r.cacheSlots {
+		fit := int(budget / int64(len(moeLayers)) / int64(perLayer))
+		// FLOOR. topK slots is the minimum that can work — one token's routed set must be
+		// simultaneously resident — so if even that does not fit, DECLINE naming the shortfall
+		// instead of allocating and discovering it at the first kernel launch.
+		//
+		// This used to read `if capped < r.topK { capped = r.topK }`, commented "topK always fits".
+		// That is an assumption written as a check: when false, it clamps UP to a figure it has
+		// just computed does not fit, allocates it, and the failure surfaces later as
+		// CUDA_ERROR_OUT_OF_MEMORY from cuLaunchKernel or a generation loop returning nothing —
+		// neither of which points back here.
+		//
+		// Deliberately independent of the slot-accounting investigation: whatever the true per-slot
+		// cost turns out to be, this converts the entire class into an honest decline at the point
+		// the decision is made. (It is NOT what the 26B hit — that run capped to 34 with topK 8, so
+		// the clamp never fired. This closes a real path at much lower free VRAM.)
+		if fit < r.topK {
+			need := float64(len(moeLayers)) * float64(r.topK) * float64(perLayer)
+			return fmt.Errorf("C′ expert cache cannot fit its MINIMUM: top-%d routed experts across %d MoE "+
+				"layers need %.2f GB of slots, but only %.2f GB is free — %d slots/layer fit. Free VRAM, "+
+				"lower --ctx, or drop GOINFER_MOE_CACHE_EXPERTS and use a card that holds the experts outright",
+				r.topK, len(moeLayers), need/1e9, float64(free)/1e9, fit)
+		}
+		if fit < r.cacheSlots {
 			capped := fit
-			if capped < r.topK {
-				capped = r.topK // topK always fits — one token's routed set must be resident
-			}
 			if capped < r.cacheSlots {
 				fmt.Fprintf(os.Stderr, "[cuda] C′ cache: %d slots/layer would need %.1f GB VRAM but only %.1f GB free — "+
 					"capping to %d (%.1f GB)\n", r.cacheSlots,

@@ -348,6 +348,113 @@ confirmed); or perturb the thing under test and confirm red (route to the wrong 
 launch argument, point the pattern at a renamed test); or run the gate against a known-bad commit.
 Cheapest sufficient one wins — the point is evidence, not ceremony.
 
+**Every number stated in a check's documentation must be derived, not asserted.** The mutation
+requirement above makes a gate demonstrate a red; this makes its *description* checkable too,
+because that description is what the next person reads to decide whether the check still means
+what it says. A slot-cap gate shipped with a comment claiming "removing the margin yields 35 not
+34". The assertion beside it was sound — it only tested that the value differed — but 35 was a
+figure nobody had computed. The real answer is 38: one slot costs 30 layers x 3.49 MB = 104.7 MB,
+so a 384 MB margin buys 3.67 of them and the cap moves by 4. An unverified number inside the check
+whose job is being checkable is the same defect one layer out, and the assertion and the prose fail
+INDEPENDENTLY — a green test does not vet its own comment.
+
+**Keep a table of measured quantities; every new model must reproduce all of them.** Seven
+mechanism claims were made in one day on a single defect. Six were caught by a reader. The seventh
+was caught by arithmetic: a proposed accounting model predicted 276.8 MB per slot where an earlier
+sweep had measured ~106 MB, and a 2.5x disagreement with an existing number cannot be argued with.
+
+That is the cheap detector, and it is the one that scales — it does not require a second person.
+Record what has actually been measured, with its units and the conditions, and make reproducing
+every entry a precondition for any new account. A model that explains the failure but contradicts
+a measurement is not a candidate.
+
+**But record what each measurement can and cannot support.** The same sweep that falsified the
+2.5x error cannot derive a per-slot cost at all: it logged free AFTER allocSlots and never before,
+so every consumption figure from it assumes constant starting-free across separate process
+launches — measured afterwards as varying ~300 MB, against deltas of ~850 MB. A +/-35% instrument
+soundly refutes a 2.5x error and cannot establish an 8% one. Both the discarded 8% figure and its
+replacement rested on it, and neither was derivable.
+
+The corrective is within-process measurement: two `cuMemGetInfo` calls immediately either side of
+the allocation under study, in one run, compared against what the model predicts for that same
+configuration. No cross-run assumption survives that, and the shape of any gap — fixed or
+proportional — falls out of a second configuration.
+
+**An absence of signal is not a positive state.** Distinct from premature mechanism, which names
+a cause too early; this one assigns a benign meaning to a silence that is consistent with several
+states. Three instances in one day, all the same shape:
+
+| the absence | read as | also consistent with |
+|---|---|---|
+| `no tokens generated` | "generation produced nothing" | a swallowed error, EOS on token 1, a routing result selecting nothing, an unlogged exit condition |
+| a skip census of `0` | "nothing skipped" | `go test` printing no `--- SKIP` without `-v` — nobody looked |
+| a process "still running" | "progressing" | a wait condition that can never become false; it never started |
+
+The third cost 27 minutes and produced no measurement, while being reported on twice as progress —
+including a confident account of what its *duration implied*. The discriminating check (GPU at 0%,
+370 MiB) was one command away and stopped seeming necessary once a plausible story existed.
+
+**The rule: any run longer than a few minutes emits periodic progress**, so that silence is
+unambiguous. A heartbeat, or the underlying signal — GPU utilisation, tokens so far, elapsed loads
+— at an interval. Not a final result with nothing before it. Then "still running" is a reading
+rather than an inference.
+
+This was already fixed once, as an instance rather than a property: the heavy-tier gate group
+buffered 28 minutes of silence so that a hung run and a working run were byte-identical from
+outside, and it was corrected there. The chaining mechanism had the same defect and it went
+unnoticed four days later, because the fix had been applied to one runner instead of made a rule.
+
+**One signal is never enough, and the rule applies to itself.** "GPU at 0%" was the check that
+would have caught the dead wrapper, and on its own it is still ambiguous — three states share it:
+
+| GPU util | device memory | host CPU | state |
+|---|---|---|---|
+| 0% | climbing | busy | LOADING (pinned-host allocation, PCIe-bound — the 26B spends ~7 min here) |
+| 0% | static | busy | HOST-SIDE WORK — a CPU-path fallback or any long host phase. Not a hang. |
+| 0% | static | flat | STALLED or never started |
+
+So the hang signature is **GPU 0% AND device memory static AND host CPU flat**, past the
+threshold. `/proc/<pid>/stat` fields 14+15 (utime+stime) give the third in one line. Each signal
+alone assigns a benign or alarming meaning to an absence; together they discriminate — which is
+this entry's own argument applied one level further than the entry first went.
+
+Same argument as the unconditional decline reason: **a state that cannot report itself will be
+reported as whatever the observer finds plausible.** Prefer a bound that yields evidence at the
+boundary — `go test -timeout` dumps goroutine stacks — over a wall-clock rule that yields only
+"too long".
+
+**If a summarising noun appears before an interval, the noun is the claim and the interval is
+missing.** "Fragmentation", "capacity shortfall", "different arithmetic by construction" — each of
+those was written when there was a *suggestive* number and no *discriminating* one, and each was
+overturned by the next measurement. The word arrives before the evidence, and once written it
+reads as concluded: a named mechanism in prose is indistinguishable from a diagnosed one.
+
+The rule: **state the measurement and its bounds; let the name wait for the control.** "Largest
+contiguous block is in [96, 128) MiB with 189.8 MiB free, against a 133.5 MiB demand" survives
+scrutiny; "fragmentation" does not, and in this case was refuted by a control that produced the
+reverse of its prediction — a fresh heap filled by ten large allocations had *worse* contiguity
+(32–64 MiB) than the one filled by two thousand small ones.
+
+This is catchable in a draft, which "be more careful" is not: scan for the noun, and check whether
+an interval precedes it.
+
+**A shared precondition is not a shared mechanism.** Two failures that print the same line are
+not thereby one bug. `TestGemma4_26B_1bBound` and `TestGemma4_26B_cache_B` both logged
+`capping to 34` and were grouped as a single defect for a day — but the cap runs UPSTREAM of both,
+so that line is a precondition they inherit, not evidence they share a cause. They fail in
+different places (`cuLaunchKernel: CUDA_ERROR_OUT_OF_MEMORY` versus a generation loop returning
+nothing) on different shapes (one token at position 0 versus a 27-token prefill plus 64 decode
+steps with the expert cache cycling), and an out-of-memory condition announces itself where a
+routing or eviction defect does not.
+
+This is a distinct variant of premature mechanism: not inferring a cause with no evidence, but
+inferring ONE cause from two symptoms whose only common element is something both were configured
+into. The check is to ask what the shared line actually is — an output of the code under
+suspicion, or an input both received.
+
+It surfaced only because a reader happened to redo the arithmetic. That is not a detection
+mechanism, so it becomes a rule: show the derivation, or assert the number in the test.
+
 Related and already policy: **Falsifiable** (break-it-first, above) says the same thing about
 numeric gates. This generalises it to the tooling: scripts, censuses, lints and filters are gates
 too, and they have been the likelier place for this defect precisely because nobody thinks of them
