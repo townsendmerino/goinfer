@@ -5,8 +5,10 @@ package cuda
 import (
 	"errors"
 	"io/fs"
+	"math"
 	"os"
 	"path/filepath"
+	"sort"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -98,24 +100,7 @@ func TestGemma4MoEScaled_residentParity(t *testing.T) {
 	}
 
 	cos := func(a, b []float32) float64 { c, _ := cosMaxAbs(a, b); return c }
-	// Byte-identity census, reported not asserted. The resident W4A8 path quantizes ACTIVATIONS to
-	// int8; the CPU int4 path does not. They are different arithmetic, so they are not expected to
-	// agree bit-for-bit and no gate requires it — but the count belongs in the log, because
-	// "byte-reproducible against the CPU reference" is a claim the project makes in prose and this
-	// is the number that bears on it.
-	identical, totalF := 0, 0
-	for i := range prompt {
-		for j := range cuda[i] {
-			totalF++
-			if cuda[i][j] == cpu4[i][j] {
-				identical++
-			}
-		}
-	}
-	t.Logf("byte-identity CUDA-resident vs CPU-int4: %d/%d logits exactly equal (%.2f%%) — "+
-		"W4A8 quantizes activations to int8 and the CPU int4 path does not, so this is expected "+
-		"to be well below 100%%; the asserted contract is the calibrated curve below, not bit-equality",
-		identical, totalF, 100*float64(identical)/float64(totalF))
+	byteIdentityCensus(t, "CUDA-resident vs CPU-int4 (both W4A8)", cuda, cpu4)
 
 	pos0, exact, sumCuda, sumCpu := 0.0, 0, 0.0, 0.0
 	for i := range prompt {
@@ -145,4 +130,50 @@ func TestGemma4MoEScaled_residentParity(t *testing.T) {
 			"FASTER than the fixture's own int4 quantization: a real bug, not conditioning",
 			meanCuda, meanCpu)
 	}
+}
+
+// byteIdentityCensus reports how far apart two logit streams actually are: how many floats match
+// bitwise, and for those that don't, the ULP distance and relative gap.
+//
+// It exists because a raw "N of M differ" count was misread in both directions during the audit.
+// A count alone cannot distinguish reduction-order residue (differ, but by 1-2 ULP) from a genuine
+// numerical divergence (differ by parts in 1e3), and those have opposite remediations. Report the
+// magnitude with the count, always.
+func byteIdentityCensus(t *testing.T, label string, a, b [][]float32) {
+	t.Helper()
+	var total, equal int
+	var ulps []float64
+	var maxRel float64
+	for i := range a {
+		for j := range a[i] {
+			total++
+			x, y := a[i][j], b[i][j]
+			if x == y {
+				equal++
+				continue
+			}
+			d := math.Abs(float64(x) - float64(y))
+			m := math.Max(math.Abs(float64(x)), math.Abs(float64(y)))
+			if m > 0 {
+				if rel := d / m; rel > maxRel {
+					maxRel = rel
+				}
+			}
+			// ULP distance at this magnitude (float32 has 24-bit mantissa).
+			if ulp := math.Abs(float64(math.Nextafter32(float32(m), float32(m*2)) - float32(m))); ulp > 0 {
+				ulps = append(ulps, d/ulp)
+			}
+		}
+	}
+	sort.Float64s(ulps)
+	pick := func(q float64) float64 {
+		if len(ulps) == 0 {
+			return 0
+		}
+		return ulps[int(q*float64(len(ulps)-1))]
+	}
+	t.Logf("%s: %d/%d bit-identical (%.3f%%); of the %d differing — ULP distance median %.0f, "+
+		"p99 %.0f, max %.0f; max relative gap %.3g",
+		label, equal, total, 100*float64(equal)/float64(total), len(ulps),
+		pick(0.5), pick(0.99), pick(1.0), maxRel)
 }

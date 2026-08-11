@@ -77,6 +77,8 @@ func TestGemma4DenseScaled_residentParity(t *testing.T) {
 		cuda[i] = append([]float32(nil), l...)
 	}
 
+	byteIdentityCensus(t, "CUDA-resident vs CPU-int4 (both W4A8), DENSE", cuda, cpu4)
+
 	cos := func(a, b []float32) float64 { c, _ := cosMaxAbs(a, b); return c }
 	cVs4, c4VsF := make([]float64, len(prompt)), make([]float64, len(prompt))
 	pos0, exact := 0.0, 0
