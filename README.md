@@ -87,18 +87,18 @@ goinfer's distinction is all-experts-on-GPU, not that peers can't run it —
 > **Running a model larger than your card is opt-in.** Gemma-4 residency is on by default, but
 > host→VRAM expert streaming is not — without it the 26B's experts must fit VRAM, and on an 8 GB
 > card they do not, so the runtime declines to CPU (and says so). Reproducing the number above
-> needs two environment variables:
+> needs one environment variable:
 >
 > ```bash
 > cd cuda && CGO_ENABLED=0 \
 >   GOINFER_MOE_CACHE_EXPERTS=1 \ # stream routed experts host→VRAM (they exceed 8 GB)
->   GOINFER_MOE_CACHE_SLOTS=48 \  # LRU depth; auto-caps to free VRAM (38 on this card)
 >   go run -tags cuda ./cmd/serve --backend cuda --quant int4 \
 >     --model ~/models/gemma-4-26b-a4b-it
 > ```
 >
-> Setting only the first leaves the cache at its `topK` default, which is fresh-load-per-token
-> (~714 MB/token) and decodes at ~5 tok/s, not 17.
+> The expert cache sizes itself: it asks for every expert and caps to measured free VRAM (38 of
+> 128 slots per layer on this card, an 81.6% hit rate). `GOINFER_MOE_CACHE_SLOTS=N` overrides that
+> if you want to leave VRAM for something else.
 
 ## Try it: an LLM in one file
 

@@ -395,16 +395,27 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	if moeNorm {
 		r.moeNormTopK = 1
 	}
-	// C′ step 2: device slots per layer. Default topK (step-1 fresh-load, no cross-token reuse,
-	// byte-identical); GOINFER_MOE_CACHE_SLOTS=N gives an LRU cache of N slots (clamped [topK, nE]).
-	// VRAM for slots is nLayers·nSlots·perExpert, so a bigger N trades VRAM for fewer per-token DMAs.
-	// CAUTION: too large OOMs at BuildResident — but post-C-24 the executor's runJob recover turns the
-	// alloc panic into setupErr and BuildResident DECLINES (→ staged fallback), it does not crash the
-	// process. Still keep N within the free-VRAM budget (~40 for the 26B on 8 GB) to stay resident.
+	// C′ step 2: device slots per layer — an LRU cache of nSlots experts (clamped [topK, nE]).
+	// VRAM is nLayers·nSlots·perExpert, so more slots trades VRAM for fewer per-token DMAs.
+	// GOINFER_MOE_CACHE_SLOTS=N requests N explicitly.
+	//
+	// With caching ON and NO explicit request, ask for ALL experts and let allocSlots cap to
+	// measured free VRAM. This reverses a default of topK, which was the worst possible setting for
+	// the only situation this code runs in: at nSlots=topK the cache degenerates to fresh-loading
+	// every routed expert every token — ~714 MB/token on the 26B, ~5 tok/s against ~17 at the 38
+	// slots that fit. Nobody enables expert streaming to get the slow version of it, so the
+	// conservative default was really deferring a VRAM decision that allocSlots already makes
+	// properly: it measures free VRAM and caps-and-logs. An over-large request was never the hazard
+	// it looked like either — post-C-24 an alloc panic on the executor becomes a DECLINE (→ staged
+	// fallback), not a process kill.
 	r.cacheSlots = topK
 	if r.cacheExperts {
-		if v, err := strconv.Atoi(os.Getenv("GOINFER_MOE_CACHE_SLOTS")); err == nil && v > topK {
-			r.cacheSlots = v
+		req := nE // default: as many as fit
+		if v, err := strconv.Atoi(os.Getenv("GOINFER_MOE_CACHE_SLOTS")); err == nil && v > 0 {
+			req = v
+		}
+		if req > topK {
+			r.cacheSlots = req
 			if nE > 0 && r.cacheSlots > nE {
 				r.cacheSlots = nE
 			}

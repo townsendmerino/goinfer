@@ -43,6 +43,14 @@ pre-1.0 and may change as new model families and quant formats land.
   exist. Generate with `scripts/pin_gemma4_moe_scaled.py`.
 
 ### Fixed
+- **The MoE expert cache now sizes itself.** With `GOINFER_MOE_CACHE_EXPERTS=1` and no explicit
+  slot count, it asks for every expert and caps to measured free VRAM instead of defaulting to
+  `topK`. `topK` was the worst possible setting for the only situation the code runs in — the
+  cache degenerated to fresh-loading every routed expert every token (~714 MB/token on the 26B),
+  so anyone who enabled expert streaming and read no further got **~5 tok/s instead of ~17**, about
+  a third of the advertised rate. The safety this default appeared to provide was already provided
+  properly by `allocSlots`, which measures free VRAM and caps-and-logs. `GOINFER_MOE_CACHE_SLOTS=N`
+  still overrides. Bit-identity is unaffected (the scaled and tiny C′ gates stay green).
 - **A resident decline now always says why.** The reason was gated behind `GOINFER_RESIDENT_DEBUG`
   on all four backends, so a model silently moving its entire forward to CPU looked identical to
   one running resident. Unconditional now — one line at load.
