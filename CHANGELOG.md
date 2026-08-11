@@ -43,7 +43,15 @@ pre-1.0 and may change as new model families and quant formats land.
   exist. Generate with `scripts/pin_gemma4_moe_scaled.py`.
 
 ### Fixed
-- **The MoE expert cache now sizes itself.** With `GOINFER_MOE_CACHE_EXPERTS=1` and no explicit
+- **The MoE expert cache does NOT size itself, and the attempt to make it is reverted.**
+  A default of "request every expert, let `allocSlots` cap to measured free VRAM" shipped briefly
+  and **broke both real-26B gates**: it capped 128 slots to 34 (3.4 GB of 3.8 GB free) and the warm
+  forward then died with `cuLaunchKernel: CUDA_ERROR_OUT_OF_MEMORY`. The cap is not the safety net
+  it appears to be — its headroom is a flat 384 MB sized for per-token readback, while it must
+  leave room for everything the forward allocates afterwards, which scales with layers, context and
+  vocabulary. The default is back to `top_k`. Set `GOINFER_MOE_CACHE_SLOTS=48` to get the published
+  rate; the flat margin is the real defect and is tracked. *Superseded entry, kept for the record:*
+- ~~**The MoE expert cache now sizes itself.**~~ With `GOINFER_MOE_CACHE_EXPERTS=1` and no explicit
   slot count, it asks for every expert and caps to measured free VRAM instead of defaulting to
   `topK`. `topK` was the worst possible setting for the only situation the code runs in — the
   cache degenerated to fresh-loading every routed expert every token (~714 MB/token on the 26B),

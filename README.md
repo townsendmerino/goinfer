@@ -96,9 +96,11 @@ goinfer's distinction is all-experts-on-GPU, not that peers can't run it —
 >     --model ~/models/gemma-4-26b-a4b-it
 > ```
 >
-> The expert cache sizes itself: it asks for every expert and caps to measured free VRAM (38 of
-> 128 slots per layer on this card, an 81.6% hit rate). `GOINFER_MOE_CACHE_SLOTS=N` overrides that
-> if you want to leave VRAM for something else.
+> `GOINFER_MOE_CACHE_SLOTS=N` sets the per-layer expert cache depth, and you want it: the default
+> is the minimum that works (`top_k`), which re-fetches every routed expert every token — ~5 tok/s
+> rather than ~17. `48` is what produced the number above (auto-capped to 38 on this card, 81.6%
+> hit rate). It is not defaulted higher because the auto-cap does not currently leave enough
+> headroom for the forward on a model this size; see CHANGELOG.
 
 ## Try it: an LLM in one file
 

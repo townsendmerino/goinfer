@@ -408,14 +408,27 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	// properly: it measures free VRAM and caps-and-logs. An over-large request was never the hazard
 	// it looked like either — post-C-24 an alloc panic on the executor becomes a DECLINE (→ staged
 	// fallback), not a process kill.
+	//
+	// REVERTED to topK (2026-08-11). Defaulting to "ask for all, let allocSlots cap to free VRAM"
+	// was correct in intent and WRONG in practice, because allocSlots' cap is not the safety net it
+	// looks like: its headroom is a flat `marginBytes = 384 MB` described as covering "the
+	// greedy-argmax readback + driver overhead" — per-token costs — while what it must actually
+	// leave room for is everything the forward allocates AFTER it runs, which scales with layers,
+	// context and vocab. On the real 26B it capped 128 slots to 34 (3.4 GB of 3.8 GB free) and the
+	// warm forward then died with cuLaunchKernel: CUDA_ERROR_OUT_OF_MEMORY.
+	//
+	// Measured, same test, same box, only this default differing:
+	//     GOINFER_MOE_CACHE_SLOTS=8  (this default) -> PASS 305s
+	//     unset -> 128, capped to 34               -> FAIL 477s (OOM)
+	//
+	// topK is still a poor default — it degenerates to fresh-loading every routed expert every
+	// token (~5 tok/s against ~17 at 38 slots) — but a slow default beats one that cannot run the
+	// model at all. Raising it again requires fixing the margin FIRST and proving it on the 26B,
+	// which is the test that binds; no fixture is large enough for the cap to engage.
 	r.cacheSlots = topK
 	if r.cacheExperts {
-		req := nE // default: as many as fit
-		if v, err := strconv.Atoi(os.Getenv("GOINFER_MOE_CACHE_SLOTS")); err == nil && v > 0 {
-			req = v
-		}
-		if req > topK {
-			r.cacheSlots = req
+		if v, err := strconv.Atoi(os.Getenv("GOINFER_MOE_CACHE_SLOTS")); err == nil && v > topK {
+			r.cacheSlots = v
 			if nE > 0 && r.cacheSlots > nE {
 				r.cacheSlots = nE
 			}
