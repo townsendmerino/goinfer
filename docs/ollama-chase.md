@@ -1257,7 +1257,15 @@ per-token host allocations and redundant per-token work. These are **GC/jitter-g
 levers — the GEMV dominates wall time — so the payoff is decode-loop tail-latency over long
 generations, not steady-state tok/s. Recording them here so nothing gets re-proposed.
 
-### Done (branch `gpu-logits-reuse`, pending merge to main)
+### Done (on branches, pending merge to main)
+- **Metal Gemma final-logit softcap parallel-for** (audit #3), branch `metal-softcap-parallel`.
+  `finalizeLogits` applied `sc·tanh(x/sc)` with a serial O(vocab) float64-tanh loop every sampling
+  token; now fanned across GOMAXPROCS (bit-identical — element-independent, disjoint writes; gated by
+  `TestMetalSoftcapParallel_bitIdentical` + snapshot golden). Measured `BenchmarkSoftcap_gemmaVocab`
+  (262144): **3.40 → 0.86 ms/op (~3.96×, −2.54 ms per SAMPLING token on gemma-4)**. Greedy unaffected
+  (skips the softcap — monotonic). gemma-3 removed the softcap (no-op there). The CUDA twin
+  (`cuda/resident.go`, same host parallel-for) is a box follow-up — identical pattern, needs Linux to
+  build/measure.
 - **WebGPU logits host-buffer reuse.** `gpu.DecodeRunner.Run` did `make([]float32, vocab)` every token;
   now returns a reused `r.logitsHost` (mirrors CUDA pinned scratch / Metal `logitsHost`). Measured
   before/after (qwen3-class vocab 151936, `TestZZ_decodeRunAllocs`, `GOINFER_GPU_ALLOC_BENCH=1`):
@@ -1307,11 +1315,8 @@ bit-identity-preserving (pure buffer/traffic reuse).
   for perf on the arm64 evidence alone.
 
 ### Outside the freeze — fundable now
-- **Gemma final-logit softcap host parallel-for.** `cuda/resident.go` runs a serial O(vocab) `math.Tanh`
-  loop every *sampling* token (greedy skips it — softcap is monotonic). 10-30% on the Gemma+sampling
-  intersection; element-independent → a host parallel-for is trivially bit-identical. `cuda/` not frozen.
-  (An alternative device tanh-before-readback is DOA unless double-precision — `tanhf(float32)` diverges
-  the CPU reference. The host parallel-for is the safe form.)
+- **CUDA Gemma softcap parallel-for** — the box twin of the Metal item above (Done). Same host
+  parallel-for on `cuda/resident.go`'s serial tanh loop; bit-identical; needs Linux to build/measure.
 - **CUDA g4x2 accumulator clear: H2D per MoE layer per token** (Cursor audit, verified). `cudaResident`
   clears the `g4x2` expert accumulator by uploading host zeros (`g4zero`, "no D2D helper" —
   cuda/resident.go:340,1182) every MoE layer. An on-stream memset/zero kernel removes an H2D (and its
