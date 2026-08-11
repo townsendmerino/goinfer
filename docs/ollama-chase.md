@@ -1306,6 +1306,14 @@ bit-identity-preserving (pure buffer/traffic reuse).
   int4 case to `matmulInto` with a persistent per-stream Workspace.
 
 ### Measured negative — not the win the audit claimed
+- **Metal 2× rope dispatch → one grid-merged dispatch (audit #4).** Built on branch `metal-rope-merge`
+  (bit-identical: snapshot golden byte-exact, LayerB ropeParity green, `TestGeometryPortIsLive` seam
+  live on the merged `uQKtotal`). **MEASURED NET-ZERO on decode** (`TestZZ_metalDepthBench`,
+  qwen2.5-coder-1.5b W4A8, M1 Pro): 62.4/49.7/28.1/18.3 → 62.3/49.7/27.6/18.3 tok/s @ 128/512/2048/4000,
+  flat. Removing ONE rope dispatch of ~17/layer (~6% of ~476 dispatches/token) is lost in noise.
+  **Lesson:** "dispatch-count-bound" means the SUM — incremental single-dispatch removal (this, and by
+  extension fuse-rope+kv_store alone) will NOT move Metal decode. Only the **megakernel** (collapse most
+  dispatches) or **int4-unpack bandwidth** will. Correct + harmless; do not merge expecting a speedup.
 - **aikit `q8Span` scalar→SIMD int8→f32 widen (audit #2).** Predicted "several ms/token" on large-vocab
   int4/int8 CPU decode; built on branch `aikit:q8span-simd-widen` (bit-identical, `dequantRowInt8` scale=1.0,
   gates green). **MEASURED NET-ZERO on M1 Pro arm64** (`BenchmarkQ8LMHeadDecode_fused`, M=1 K=1536 N=151936:
@@ -1321,11 +1329,6 @@ bit-identity-preserving (pure buffer/traffic reuse).
   clears the `g4x2` expert accumulator by uploading host zeros (`g4zero`, "no D2D helper" —
   cuda/resident.go:340,1182) every MoE layer. An on-stream memset/zero kernel removes an H2D (and its
   implicit null-stream sync) per MoE layer per token. cuda/ not frozen; bit-identical (a zero is a zero).
-- **Metal fuse rope + kv_store (and merge the 2× rope dispatch).** CUDA already has a fused `rope_kv`;
-  Metal issues `rope`, `kv_store` as separate dispatches (metal/model.go:414) AND ropes Q then K in two
-  dispatches (audit #4). Both are grid-mergeable/fusable, bit-identical (per-element, no cross-thread
-  reduction), and attack the *known* Metal dispatch-count bound. metal/ not frozen; gate on the snapshot
-  golden + `forwardTrunkForTest` per-layer bisect.
 
 ### Medium / larger — verify + measure before funding
 - **MoE expert-cache host round-trip.** `loadRoutedExperts` (cuda/resident.go:583) does Sync → D2H routing
