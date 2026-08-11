@@ -456,12 +456,17 @@ reference — the thing every GPU backend is gated against — is bit-identical 
 not across arm64 and amd64**. The divergence is real but decision-irrelevant, and the margin is
 measured, not assumed.
 
-**Decision headroom — the number that matters.** Cross-box, identical weights + fixed prompt + f32,
-qwen2.5-coder-0.5b, 64 greedy positions: **no argmax flip at any position.** The winner and runner-up
-logits — the pair that decides each token — diverge by at most **7.6e-6 absolute (≈6 ULP)**, while the
-**smallest top-2 margin across all 64 positions is 0.655**. So the closest call across the whole run
-cleared the divergence by **114,000×** (the minimum, not the median). Five orders of magnitude of
-headroom below the decision boundary — this is a measured margin, not "no flip was observed."
+**Decision headroom — stated as a threshold.** Cross-box, identical weights + fixed prompt + f32,
+qwen2.5-coder-0.5b, 64 greedy positions: **no argmax flip at any position.** A flip requires a **top-2
+margin below ~2×10⁻⁵** — twice the maximum absolute divergence measured on the decision-relevant
+(winner/runner-up) logits (7.6×10⁻⁶). The **tightest top-2 margin observed across all 64 positions was
+0.65** — more than four orders of magnitude above that threshold. The margin would have to be ~10⁴×
+tighter than anything measured before the question even becomes live; a challenger now knows exactly
+what to look for. And the tightest position was **position 0**, which is the expected shape rather than
+a lucky draw: a greedy continuation settles and the model grows more confident, so the first generated
+token has the narrowest margin by construction — the run started at the hardest position. (For
+calibration against something this codebase has actually hit: MoE top-k routing margins run ~10⁻³, the
+tightest margin regime seen here; even there the headroom clears the threshold by ~66×.)
 
 **Mechanism.** Go's spec permits fusing `x*y + z` into a single-rounding FMA "across statements." gc
 does this on **arm64** and not on **amd64's default GOAMD64 baseline** (FMA is not in v1): `-gcflags=-S`
