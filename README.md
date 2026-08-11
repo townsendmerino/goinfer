@@ -399,14 +399,15 @@ must ship per GPU architecture *and* per toolkit version — most of the peer's 
 first-run compile, at the cost of size — a real engineering tradeoff, not waste. Shipping PTX costs
 a **one-time JIT at startup**, and makes you depend on the driver's compiler rather than a pinned
 toolkit, so a driver upgrade can change generated code where a bundled toolkit is reproducible.
-Measured (RTX 2070 SUPER, driver 595.58.03, qwen2.5-coder-0.5B, process start → `/health`):
+Measured (RTX 2070 SUPER, driver 595.58.03, qwen2.5-coder-0.5B, process start → `/health`,
+median of 3 at `8b6aa1f`):
 
 | | time to ready |
 |---|---|
-| cold — CUDA JIT cache cleared | **5.07 s** |
-| warm — cache present | **4.06 s** |
+| cold — CUDA JIT cache cleared | **4.94 s** |
+| warm — cache present | **4.09 s** |
 
-The JIT costs **~1.0 s, once**: the driver caches the result (1.1 MB) and later starts pay nothing.
+The JIT costs **~0.85 s, once**: the driver caches the result (916 KB) and later starts pay nothing.
 Both engines need an NVIDIA driver; neither needs a CUDA toolkit at build or run time.
 
 ### Measured throughput — goinfer
