@@ -190,6 +190,9 @@ func FuzzAWQReconstruct(f *testing.F) {
 			return
 		}
 		outP := out / 8
+		if outP == 0 { // out < 8: AWQ packs 8 values per int32, so this can't form a valid qweight
+			return // (shape [in,0] is a malformed tensor the loader rejects — a degenerate fuzz input, not a bug)
+		}
 		ts := map[string]stTyped{
 			"l.qweight": {"I32", []int{in, outP}, i32Bytes(fillI32(in*outP, content))},
 			"l.qzeros":  {"I32", []int{groups, outP}, i32Bytes(fillI32(groups*outP, content))},

@@ -1,0 +1,87 @@
+name: fuzz-weekly
+
+# Active-fuzz discovery on the untrusted-input surfaces (binary loaders, the giw
+# bundle reader, the serving request parsers, the schema/grammar compilers). The
+# committed seed corpora (f.Add seeds + testdata/fuzz/) already replay under the
+# per-push `go test ./...` race step; this runs each target for minutes on a weekly
+# schedule to reach the deeper inputs a seed replay can't, and uploads any discovered
+# crasher so it can be replayed and promoted to a committed regression seed.
+#
+# Weekly, not nightly: goinfer's untrusted surface changes slowly, and a found
+# crasher is a permanent regression once seeded — the value is discovery over time,
+# not fast turnaround.
+on:
+  schedule:
+    - cron: "0 7 * * 1" # Mondays, 07:00 UTC
+  workflow_dispatch: # and on demand
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    name: long fuzz
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # binary loaders (a panic here takes down a model load from an untrusted file)
+          - { pkg: decoder, fn: FuzzGGUFConfig }
+          - { pkg: decoder, fn: FuzzLoadSerializedWeights }
+          - { pkg: decoder, fn: FuzzParseQuantConfig }
+          - { pkg: decoder, fn: FuzzGPTQReconstruct }
+          - { pkg: decoder, fn: FuzzAWQReconstruct }
+          - { pkg: internal/giw, fn: FuzzGIWRead }
+          - { pkg: internal/giw, fn: FuzzGIWRoundTrip }
+          - { pkg: tokenizer, fn: FuzzParseTokenizerJSON }
+          # serving request parsers (a panic here is a remote DoS on the server)
+          - { pkg: internal/serveapp, fn: FuzzServeChatRequest }
+          - { pkg: internal/serveapp, fn: FuzzServeMessagesRequest }
+          - { pkg: internal/serveapp, fn: FuzzServeImageParts }
+          - { pkg: internal/serveapp, fn: FuzzServeResponsesInput }
+          # constrained-decoding compilers (untrusted JSON Schema / grammar bytes)
+          - { pkg: constrain, fn: FuzzJSONSchema }
+          - { pkg: constrain, fn: FuzzSchemaGrammarBytes }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # Retry ONCE, but only when no reproducer was written. `go test -fuzz` with a
+      # duration deadline can report a deadline error with no crasher when the coordinator
+      # can't wind its workers down within the grace on a slow/loaded runner — a
+      # shutdown-timing flake, not a bug (empty testdata/fuzz). A REAL find persists a
+      # reproducer under testdata/fuzz/<Target>/ that replays deterministically, so if one
+      # exists we fail immediately: never retry a real crasher away, and let the upload
+      # step capture it.
+      - name: fuzz ${{ matrix.pkg }} ${{ matrix.fn }}
+        shell: bash
+        run: |
+          crashdir="${{ matrix.pkg }}/testdata/fuzz/${{ matrix.fn }}"
+          for attempt in 1 2; do
+            echo "::group::fuzz attempt ${attempt}: ${{ matrix.pkg }} ${{ matrix.fn }}"
+            if go test "./${{ matrix.pkg }}/" -run '^$' -fuzz "^${{ matrix.fn }}\$" -fuzztime=5m; then
+              echo "::endgroup::"
+              exit 0
+            fi
+            echo "::endgroup::"
+            if compgen -G "${crashdir}/*" >/dev/null 2>&1; then
+              echo "reproducer written under ${crashdir} — real failure, not retrying"
+              exit 1
+            fi
+            echo "no reproducer written (shutdown/deadline flake) — retry ${attempt}/2"
+          done
+          echo "fuzz flaked with no reproducer on both attempts"
+          exit 1
+
+      # A crash drops a reproducer under testdata/fuzz/<Target>/; keep it so the failure
+      # can be replayed locally (go test ./pkg -run <Target>/<hash>) and committed as a seed.
+      - name: upload crashers
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crash-${{ matrix.fn }}
+          path: "**/testdata/fuzz/${{ matrix.fn }}/**"
+          if-no-files-found: ignore

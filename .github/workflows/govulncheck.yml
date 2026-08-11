@@ -1,0 +1,38 @@
+name: govulncheck
+
+# Reachability-filtered vulnerability scan of the pure-Go serve/decode binary — the
+# artifact the project's pitch is about ("one static binary you scp and run offline").
+# For an air-gapped deployment, "no known vulnerability is reachable from this binary"
+# is part of the deployment claim, not just hygiene, so it gates per-PR AND runs weekly
+# to catch vulnerabilities DISCLOSED after a release without a code change.
+#
+# govulncheck does call-graph reachability by default: it reports only vulnerabilities
+# in functions actually reachable from the build targets, so the signal is low-noise —
+# an unreachable CVE in a transitive dependency does not fail the build.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "0 8 * * 1" # Mondays, 08:00 UTC — newly-disclosed vulns, no code change needed
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  govulncheck:
+    name: govulncheck (root module)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      # Root module = the pure-Go CPU serve/decode binary (cmd/serve, cmd/chat, decoder,
+      # constrain, tokenizer, internal/*). The gpu/cuda/metal submodules are separate
+      # modules with their own go.mod + native deps and are scanned separately if added.
+      - name: govulncheck ./...
+        run: govulncheck ./...
