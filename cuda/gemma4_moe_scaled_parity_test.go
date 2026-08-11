@@ -4,11 +4,13 @@ package cuda
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"math"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -141,15 +143,25 @@ func TestGemma4MoEScaled_residentParity(t *testing.T) {
 // magnitude with the count, always.
 func byteIdentityCensus(t *testing.T, label string, a, b [][]float32) {
 	t.Helper()
-	var total, equal int
+	var total, equal, equalAtArgmax, equalElsewhere int
 	var ulps []float64
 	var maxRel float64
+	var examples []string
 	for i := range a {
+		am := argmaxF(a[i])
 		for j := range a[i] {
 			total++
 			x, y := a[i][j], b[i][j]
 			if x == y {
 				equal++
+				if j == am {
+					equalAtArgmax++
+				} else {
+					equalElsewhere++
+					if len(examples) < 4 {
+						examples = append(examples, fmt.Sprintf("pos%d/logit%d=%g", i, j, x))
+					}
+				}
 				continue
 			}
 			d := math.Abs(float64(x) - float64(y))
@@ -176,4 +188,15 @@ func byteIdentityCensus(t *testing.T, label string, a, b [][]float32) {
 		"p99 %.0f, max %.0f; max relative gap %.3g",
 		label, equal, total, 100*float64(equal)/float64(total), len(ulps),
 		pick(0.5), pick(0.99), pick(1.0), maxRel)
+	// WHERE the matches land is the interesting part. If every bit-identical logit is the ARGMAX,
+	// the winning logit is computed bit-exactly while the rest drift — which explains argmax
+	// agreement mechanically rather than leaving it to luck.
+	t.Logf("%s: of %d bit-identical, %d are the ARGMAX (%d of %d positions) and %d are elsewhere%s",
+		label, equal, equalAtArgmax, equalAtArgmax, len(a), equalElsewhere,
+		func() string {
+			if len(examples) == 0 {
+				return ""
+			}
+			return " — e.g. " + strings.Join(examples, ", ")
+		}())
 }

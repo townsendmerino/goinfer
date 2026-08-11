@@ -13,7 +13,8 @@ pre-1.0 and may change as new model families and quant formats land.
 > **⚠ Gemma 4 output changes on CUDA and Metal.** Gemma 4 previously fell back to the CPU path
 > unless you set `GOINFER_GEMMA4_RESIDENT`; it now runs GPU-resident by default. The resident path
 > is W4A8 — it quantizes activations to int8, which the CPU path does not — so **logits differ and
-> a token can flip at a near-tie.** Both paths are parity-gated against the CPU reference, and
+> a token can flip at a near-tie.** Both paths are parity-gated — argmax-exact with a calibrated
+> cosine, which is the contract; GPU and CPU are not byte-identical to each other — and
 > argmax agreed at every position on the new real-width gate, but this is a real output change for
 > anyone running Gemma 4 on a GPU. It is opt-out: `--backend cpu` keeps the previous numerics.
 >
@@ -518,8 +519,12 @@ backends are `go get`-able at a real version.
 
 Theme: **two cgo-free GPU decode backends land as opt-in — CUDA (Linux/NVIDIA) and Metal
 (macOS/Apple Silicon) — joined by speculative decoding, batched prefill, and long-context
-decode, all under a bit-identity contract that makes every GPU path byte-reproducible
-against the CPU reference.** Both backends are `CGO_ENABLED=0` (pure Go via purego/dlopen),
+decode, all under a bit-identity contract that makes every GPU execution strategy
+byte-reproducible against every other.** *(Corrected 2026-08-11: this originally read
+"byte-reproducible against the CPU reference", which overstates it. Bit-identity holds
+GPU-vs-GPU — batched vs sequential prefill, graph replay vs live, cache on vs off, split-KV vs
+full. Agreement with the CPU path is argmax-exact with a calibrated cosine, not byte-identical.
+See the correction note in `docs/releases/v0.9.0.md`.)* Both backends are `CGO_ENABLED=0` (pure Go via purego/dlopen),
 behind build tags + `--backend`, with graceful CPU fallback — so the default pure-Go build
 is unchanged. **Pre-1.0:** the full per-family parity backfill remains the 1.0 gate;
 families without both a T1 committed golden and a current T3 manifest row ship

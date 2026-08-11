@@ -127,7 +127,8 @@ re-validated — the v0.8.0 §1 trap.
 - [ ] GitHub release from the `[v0.9.0]` CHANGELOG; attach the `-tags cuda` / `-tags metal` +
       portable CPU/WebGPU binaries; `sha256` for each.
 - [ ] **Lead the announcement with the two cgo-free GPU backends + the bit-identity contract**
-      (portable, `CGO_ENABLED=0`, byte-reproducible against CPU) — the intersection no other Go
+      (portable, `CGO_ENABLED=0`, byte-reproducible across GPU execution strategies — NOT against
+      CPU; corrected 2026-08-11, see `docs/releases/v0.9.0.md`) — the intersection no other Go
       runtime ships. Not a speed pivot. Credit eitam-ring / gocudrv by name.
 - [ ] Heads-up notes: any cache/fingerprint invalidations from the spec / CUDA work.
 
