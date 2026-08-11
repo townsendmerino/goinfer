@@ -1258,6 +1258,15 @@ levers — the GEMV dominates wall time — so the payoff is decode-loop tail-la
 generations, not steady-state tok/s. Recording them here so nothing gets re-proposed.
 
 ### Done (on branches, pending merge to main)
+- **Sampler full-vocab scratch reuse** (audit #9), branch `sampler-scratch-reuse`. `sampleChunked`'s
+  `e` and `chunkedZ`'s `tmp` allocated a vocab-wide `[]float64` (~1.2-2 MB) every sampled token; now a
+  reused `Sampler.expScratch`. Bit-identical (a Sampler draws one token at a time; expChunked overwrites
+  every element; `TestChunkedSoftmax_MachineIndependent` + full suite green under `-race`). Measured
+  (`BenchmarkSample_*`, qwen 151936): temp-only **1.22 MB → 3.8 KB B/op (−99.7%) AND 525 → 392 µs/op
+  (−25%)** — the per-token make+zero+GC was real sampler time, not just jitter; top-p **4.52 → 3.32 MB**
+  (the chunkedZ scratch; its remaining ~3.3 MB is the candidate-set/sort, a separate follow-up). The
+  more-than-jitter speedup makes this the best of the small wins. Applies to the temperature paths
+  (greedy/argmax unaffected).
 - **Metal Gemma final-logit softcap parallel-for** (audit #3), branch `metal-softcap-parallel`.
   `finalizeLogits` applied `sc·tanh(x/sc)` with a serial O(vocab) float64-tanh loop every sampling
   token; now fanned across GOMAXPROCS (bit-identical — element-independent, disjoint writes; gated by
