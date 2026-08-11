@@ -1,5 +1,13 @@
 # Gemma 3 on the Metal backend — debug report (UNRESOLVED)
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+
 A port of Gemma 3 to goinfer's cgo-free Metal resident decoder produces wrong output on the
 real model. Every kernel is unit-tested correct, a synthetic Gemma 3 passes at the real model's
 exact per-layer dimensions, and ~9 hypotheses have been measured and killed. This is everything

@@ -1,5 +1,13 @@
 # Resident SSM/Mamba decode engine — scope (Granite-4.0-H / Nemotron-H)
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+
 MEASURE + CHARACTERIZE + DESIGN + ESTIMATE, read-only (a throwaway measurement harness +
 this doc; no engine code). On the box, `-tags gpu`, granite-4.0-h-tiny-Q8_0 (6.9 GB, fits).
 

@@ -1,5 +1,13 @@
 # Model family: Cohere / Command-R (+ Aya)
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+
 > **Why this one:** the **largest unsupported cluster** in the popular-model catalog — 8
 > entries (`command-r`, `command-r-plus`, `command-r7b`, `command-a`, `command-r7b-arabic`,
 > `aya`, `aya-expanse`, `north-mini-code-1.0`) — and **Aya is the only strong multilingual

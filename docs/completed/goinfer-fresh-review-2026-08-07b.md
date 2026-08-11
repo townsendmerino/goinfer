@@ -1,5 +1,13 @@
 # goinfer fresh review — 2026-08-07 (post R-01..R-30 fixes)
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+
 **Scope:** the tree at HEAD `6ad3ebc` (six fix commits since the previously reviewed `53c67eb`; +650/−138 across 51 files). Every hunk of the fix diff was read line-by-line by the lead pass and cross-checked by an independent fresh-eyes reviewer; the residual candidates below were then re-verified directly (file:line, mechanism traced).
 
 **Toolchain (go1.26.5):** `go build` clean — root workspace, `-tags gpu`, cuda standalone, metal darwin/arm64 cross. `go vet` clean on all four modules — including native-GOOS `go vet ./metal/`, which R-12's tag fixed (reproduced here). `gofmt -l` clean. **Every test suite green with zero failures** — root (now including `TestParityManifest_fresh` and `TestCapabilityMatrix`, since this sync carried the re-baked `testdata/parity_manifest.json`), gpu, cuda incl. the new R-gates (`TestBuildScoreRank_equalScoresShareRank`, `TestRunJob_recoversPanic`, lint + coverage tests), serveapp suites.

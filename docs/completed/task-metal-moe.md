@@ -1,5 +1,13 @@
 # Task: Metal MoE resident decode (full-parity)
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+
 Add mixture-of-experts (MoE) GPU-resident decode to the cgo-free Metal backend
 (`metal/`, `-tags metal`), mirroring the proven WebGPU implementation so `FeatMoE`
 can be flipped on **honestly** for every MoE arch whose other needs Metal already meets:

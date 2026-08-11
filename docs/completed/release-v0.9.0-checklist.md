@@ -1,5 +1,13 @@
 # Release checklist — goinfer v0.9.0
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+
 > **Status (main, 2026-08-04):** v0.9.0 is a **ship-what's-already-built** release. The
 > engineering landed across ~520 commits since v0.8.0 and is working, gated, and correct;
 > what remains is **re-validation, the tri-module tag, and publishing**. This checklist was
@@ -126,10 +134,12 @@ re-validated — the v0.8.0 §1 trap.
 ### C6. Publish + promote
 - [ ] GitHub release from the `[v0.9.0]` CHANGELOG; attach the `-tags cuda` / `-tags metal` +
       portable CPU/WebGPU binaries; `sha256` for each.
-- [ ] **Lead the announcement with the two cgo-free GPU backends + the bit-identity contract**
-      (portable, `CGO_ENABLED=0`, byte-reproducible across GPU execution strategies — NOT against
-      CPU; corrected 2026-08-11, see `docs/releases/v0.9.0.md`) — the intersection no other Go
-      runtime ships. Not a speed pivot. Credit eitam-ring / gocudrv by name.
+- [ ] ~~Lead the announcement with the two cgo-free GPU backends + the bit-identity contract
+      (portable, `CGO_ENABLED=0`, byte-reproducible against CPU)~~ — **STRUCK 2026-08-11.** The
+      claim was wrong (bit-identity is GPU-vs-GPU, not against CPU; see the correction note in
+      `docs/releases/v0.9.0.md`), and an announcement instruction has no business living in an
+      archive. The surviving guidance is live policy now: `docs/parity-coverage-policy.md`,
+      "Claim discipline". Credit eitam-ring / gocudrv by name.
 - [ ] Heads-up notes: any cache/fingerprint invalidations from the spec / CUDA work.
 
 ---

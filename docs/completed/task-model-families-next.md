@@ -1,5 +1,13 @@
 # Plan: model families after GLM + Granite — go for coverage axes, not model count
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+
 > **Audience:** internal planning, the sequel to
 > `task-model-families-glm-granite.md` (GLM-4.5/4.6 **shipped** — safetensors +
 > GGUF + real GLM-4.5-Air; Granite-4.0-H **shipped** — Phases 0–3, Mamba-2 scan +

@@ -1,5 +1,13 @@
 # Batched prefill vs sequential decode bit-identity — FOUND, FIXED
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+
 > Found 2026-08-04 while building D1 (spec-decode); **FIXED same day** (explicit-FMA everywhere).
 > Status: **batched prefill default-ON again, bit-identical** — `TestPrefillDivergenceRate` 0/50
 > (was 42/50), enforced by `cuda.TestKernelFMALint`. The root cause was **compiler FMA contraction**,

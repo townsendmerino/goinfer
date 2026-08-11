@@ -1,5 +1,13 @@
 # C8 softcap residency — Phase 1 STOP: target is not softcap-dense
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+
 **Outcome: stopped at Phase 1 per the funding rule** ("if it trips a gate other than
 softcap, STOP and report — we only fund softcap-dense here"). The target Gemma-4-E2B is
 blocked from the resident DecodeRunner by **own-forward + sandwich-norm gates, not softcap**.

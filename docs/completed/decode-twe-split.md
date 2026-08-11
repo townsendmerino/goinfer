@@ -1,5 +1,13 @@
 # Decode TWrite/TEncode/TSync split — §2 (widen eligibility) vs §3 (spine fusion)
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+
 Measurement task on RTX 2070 SUPER / Vulkan / cogentcore wgpu, `-tags gpu`. Drives the
 DecodeRunner's `TWrite`/`TEncode`/`TSync` instrumentation on **real resident decode**
 (`decoder.Load` → `ResidentForwardForTest` → `Forward` per token) and the staged fallback

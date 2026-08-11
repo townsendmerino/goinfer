@@ -1,5 +1,13 @@
 # goinfer performance campaign (decode tok/s)
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+
 > **Status: concluded** — net result ~48 → ~68–70 tok/s on the 0.5B (zero-alloc,
 > parity-identical); each phase below is resolved/parked inline. Prefill got its
 > own ~3.4× win later (see CHANGELOG / `docs/benchmarks.md`).

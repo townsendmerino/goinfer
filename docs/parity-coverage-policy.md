@@ -266,6 +266,59 @@ that drifts between machines.
 State what a fixture does **not** cover, in the fixture's own docs — host-buffer ratio, depth,
 whether routing is trained. A gate's edges should be legible to whoever trusts it next.
 
+## Claim discipline: rules for whoever drafts an announcement
+
+These were written as release-checklist items and archived with the release, which is the wrong
+place for them — they apply *when a claim is drafted*, and a checklist under `docs/completed/`
+runs never. Their absence is traceable: the retracted 476/268 headline and the peer-multiple
+framing the README spent a week retiring are both what these rules exist to prevent. Recovered
+here as live policy.
+
+1. **Name the regime the number came from.** "dense-model GPU decode, cgo-free / driver-only
+   (no CUDA toolkit, no Xcode)" is the claim. A number measured on one model at one context depth
+   on one card is not a property of the runtime. If the regime does not fit in the sentence, the
+   sentence is too short.
+
+2. **Lead with the property, not a multiple.** cgo-free / no-toolchain plus correctness parity is
+   the distinction; a raw-speed multiple over a peer is not, and it inverts the moment the peer
+   ships a kernel. Peer comparisons are a row in a table with a date and a version, never a
+   headline.
+
+3. **State opt-in-ness in the same breath as the result.** If reproducing a number needs a flag,
+   an environment variable, or a non-default build, say so where the number appears — not in a
+   later section. Two statements, each true in its own place, compose into a false picture for a
+   reader who does not read one section at a time. That is the documentation-adjacency class
+   above, and the 26B-A4B result is what it cost to learn.
+
+4. **Do not imply generality a gate does not cover.** "Lossless" means the gate asserts losslessness
+   on the path being described; "bit-identical" means some specific pair is bit-identical — say
+   which pair. The v0.9.0 "every GPU path is byte-reproducible against the CPU reference" was
+   assembled from a true GPU-vs-GPU property and an untested GPU-vs-CPU one.
+
+5. **Quote the figure with its basis.** Same measurement, different denominators are not a
+   contradiction, but three unlabelled hit rates read as one. Whole-run vs steady-state,
+   argmax-exact vs byte-identical, floor vs median — the qualifier is part of the number.
+
+6. **A claim nobody can reproduce from the public documents is not shipped.** Before publishing,
+   read the user-facing docs as a stranger with a default build and check that the claim survives.
+
+## Rule: archiving a doc strips its imperatives
+
+When a task doc or checklist moves to `docs/completed/`, its imperative content either **moves to
+live policy or is struck**. Nothing that tells a future reader what to do survives archival
+unchanged.
+
+This is the sibling of the campaign-closeout checklist, and it exists for the same reason: several
+instances proved the step does not happen on its own. `release-v0.9.0-checklist.md` sat in
+`completed/` instructing whoever wrote the next announcement to lead with a claim that was wrong —
+a stale instruction, still live, that would have regenerated the wrong text into the next promo
+cycle no matter how carefully the drafts were edited. The six rules above are what was recovered
+from that sweep.
+
+Every file in `docs/completed/` now carries an archival header saying its checkboxes are a record
+rather than a task list, so an unticked box no longer reads as outstanding work. That handles the
+backlog; this rule is what keeps it from re-accumulating.
+
 ## The validation manifest is the source of truth
 
 `testdata/parity_manifest.json` records, per family: the commit it was last

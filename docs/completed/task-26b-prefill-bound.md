@@ -1,5 +1,13 @@
 # 26B batched-prefill bound — DEFERRED, not cancelled (bound recorded so nobody re-derives it)
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+
 > **⚠ Shape note (2026-08-04):** expert paging is **likely the wrong shape** for an oversized
 > model on a PCIe-attached GPU. Current Ollama v0.32.5 runs this same 26B at **24.5 tok/s** on the
 > 8 GB card by a **layer split** (42% GPU / 58% CPU-RAM), moving only an **activation vector**

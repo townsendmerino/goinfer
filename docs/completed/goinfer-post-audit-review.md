@@ -1,5 +1,13 @@
 # goinfer post-audit review — 2026-08-07
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+
 **Scope:** the whole repo at the current tree (working copy synced from the Mac today; HEAD `53c67eb`), reviewed against the closed `docs/completed/audit-2026-08-05.md`. The question asked: do the audit fixes hold, and are there remaining bugs?
 
 **Method:** six parallel subsystem reviews (serve/HTTP, decoder state & concurrency, loaders/tokenizer/constrain/multimodal, gpu/, cuda/, metal/), each instructed to verify the audit's fix claims in code and then hunt beyond them. Every major finding below was then re-verified directly by the lead pass (file:line, mechanism traced end-to-end); minors were verified by the subsystem pass and spot-checked. Tooling ran under a real **go1.26.5** toolchain (built from source in the sandbox): `go build` clean for root / gpu / cuda / metal(darwin-arm64 cross) incl. `-tags gpu` serve; `go vet` clean for all four modules (one exception → R-12); `gofmt -l` clean; **test suites green** for root, gpu, cuda (the only failures are the two tests needing the 5.5 GB `testdata/` that wasn't copied to the sandbox). No GPU device here, so nothing device-side was executed — device-dependent findings are static, and say so.

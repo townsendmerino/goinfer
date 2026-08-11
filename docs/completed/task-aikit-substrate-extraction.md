@@ -1,5 +1,13 @@
 # Plan (goinfer): promote the weight-paging substrate to aikit
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+
 > **Status: DONE (2026-06-17).** aikit v1.9.0 shipped the leaf (`aikit/mmap`:
 > `MapReadOnly`/`Unmap`/`Advise`/`SpanCache`/`PageAlignedInterior`/`AutoBudget`/
 > `AvailableRAM`, plus `linalg.WeightMat.MappedSpan`); goinfer refactored onto it
