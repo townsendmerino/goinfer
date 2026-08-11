@@ -504,10 +504,15 @@ func normColumn(a *Architecture) string {
 // that failed to resolve.
 func buildMatrix(t *testing.T) ([]capabilityRow, error) {
 	t.Helper()
-	// G-03: GPUResident derives from arch.decodeRunnerEligible(), which reads these
-	// residency env vars. Neutralize them so the generated matrix is a property of the
-	// code alone — otherwise a dev/CI job with either exported fails the freshness check
-	// for an unrelated reason, and `-update` bakes an env-on answer into the doc.
+	// G-03: GPUResident derives from arch.decodeRunnerEligible(). Pin EVERY residency env var it
+	// could read, so the generated matrix is a property of the code alone — otherwise a dev/CI job
+	// with one exported fails the freshness check for an unrelated reason, and `-update` bakes an
+	// env-on answer into the doc.
+	//
+	// Keep GOINFER_GEMMA4_RESIDENT pinned even though decodeRunnerEligible no longer reads it. The
+	// pin is what makes the generator's independence CHECKED rather than assumed: if someone
+	// reintroduces the read, the matrix stays honest and TestGemma4Admission_unconditional fails
+	// loudly, instead of the doc quietly acquiring an env-dependent answer.
 	t.Setenv("GOINFER_GEMMA4_RESIDENT", "")
 	t.Setenv("GOINFER_SSM_RESIDENT", "")
 	keys := make([]string, 0, len(registry))

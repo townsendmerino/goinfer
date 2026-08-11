@@ -200,7 +200,7 @@
     "tied_lm_head": true,
     "loaders": "safetensors, GGUF",
     "modality": "text",
-    "gpu_residency_eligible": false,
+    "gpu_residency_eligible": true,
     "parity": "full-oracle 100.0%/0.99128"
   },
   {

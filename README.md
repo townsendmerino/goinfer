@@ -84,22 +84,21 @@ cache (81.6% hit rate over the whole run, 38 slots/layer) over the cgo-free CUDA
 goinfer's distinction is all-experts-on-GPU, not that peers can't run it —
 [docs/task-moe-streaming.md](docs/task-moe-streaming.md).)*
 
-> **This is opt-in and not the default.** Gemma-4 residency and host→VRAM expert streaming are
-> both off unless you turn them on, so a plain `go build` runs this model on CPU. Reproducing the
-> number above needs three environment variables:
+> **Running a model larger than your card is opt-in.** Gemma-4 residency is on by default, but
+> host→VRAM expert streaming is not — without it the 26B's experts must fit VRAM, and on an 8 GB
+> card they do not, so the runtime declines to CPU (and says so). Reproducing the number above
+> needs two environment variables:
 >
 > ```bash
 > cd cuda && CGO_ENABLED=0 \
->   GOINFER_GEMMA4_RESIDENT=1 \   # admit Gemma 4 to the resident runner (bring-up gate)
 >   GOINFER_MOE_CACHE_EXPERTS=1 \ # stream routed experts host→VRAM (they exceed 8 GB)
 >   GOINFER_MOE_CACHE_SLOTS=48 \  # LRU depth; auto-caps to free VRAM (38 on this card)
 >   go run -tags cuda ./cmd/serve --backend cuda --quant int4 \
 >     --model ~/models/gemma-4-26b-a4b-it
 > ```
 >
-> Setting only the first two leaves the cache at its `topK` default, which is fresh-load-per-token
-> (~714 MB/token) and decodes at ~5 tok/s, not 17. The capability table below reports the
-> **default** configuration, which is why it lists Gemma 4 as CPU.
+> Setting only the first leaves the cache at its `topK` default, which is fresh-load-per-token
+> (~714 MB/token) and decodes at ~5 tok/s, not 17.
 
 ## Try it: an LLM in one file
 
@@ -551,7 +550,8 @@ load and falls back to CPU* rather than run with a feature quietly dropped.
 | Mistral · Phi-3-mini-4k | ✅ resident | ✅ resident¹ |
 | Gemma 3 | ✅ resident³ | ✅ resident³ |
 | MoE — Mixtral · Qwen2-MoE · Qwen3-MoE · GLM-MoE | ✅ resident⁴ | ✅ resident² |
-| Gemma 4 · MLA · DeltaNet/YaRN | CPU fallback⁵ | CPU fallback⁵ |
+| Gemma 4 (dense + MoE) | ✅ resident⁵ | ✅ resident⁵ |
+| MLA · DeltaNet/YaRN | CPU fallback | CPU fallback |
 
 The full per-family × 4-backend (CPU · WebGPU · CUDA · Metal) table is **generated** from the
 residency predicate (`decoder.ResidentEligible`) and freshness-gated in CI, so it can never drift
@@ -566,17 +566,13 @@ variant is resident on Metal but falls back on CUDA.
 the CPU path. Metal parity was gated on a GELU-tanh overflow fix (the `<bos>` massive-activation
 gate drove `tanh`'s argument past its internal `exp` range → NaN; clamped).
 
-⁵ **Gemma 4 is CPU by default, but a resident CUDA path exists behind an opt-in flag.** This
-table — and the generated one it links to — reports what a default build admits, and by default
-`decodeRunnerEligible` declines Gemma 4 outright. Setting `GOINFER_GEMMA4_RESIDENT=1` admits the
-dense and MoE variants on CUDA (Metal has the features too); that is the configuration the 26B-A4B
-result at the top of this README was measured in. The flag is a bring-up gate, not a capability
-gap: logit-softcap landed in 9a-P2 and is a per-backend feature (`FeatFinalLogitSoftcap`) that
-both CUDA and Metal declare, and the per-layer `head_dim` / KV-sharing geometry is implemented.
-It stays opt-in because the resident forward's parity coverage is fixture-width — the real-width
-gate is still being built — so the default declines to the CPU path rather than run a forward
-whose numerics are not yet gated at the width users would run it at. **E-models (PLE) decline on
-every backend regardless of the flag**, and there is a real-checkpoint test asserting they do.
+⁵ Gemma 4 (both the dense variants and the `enable_moe_block` MoE) runs resident on CUDA and
+Metal. It was opt-in behind `GOINFER_GEMMA4_RESIDENT` through the bring-up and is now
+unconditional; the variable is inert and can be removed from any script that sets it. WebGPU
+still declines — it lacks the four Gemma kernels — and **E-models (E2B/E4B, per-layer
+embeddings) decline on every backend**, since none implements the PLE branch and admitting one
+would silently skip it. Both are the feature gate's answer, not a hardcoded row, and both are
+asserted (`TestGemma4Admission_unconditional`, `TestGemma4EModel_realDeclinesResident`).
 
 ⁴ CUDA MoE runs Mixtral and GLM-MoE resident (on-GPU router, row-stacked int4 experts, ungated
 shared expert). Qwen2-MoE / Qwen3-MoE decline to CPU on CUDA — their gated shared expert

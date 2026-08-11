@@ -101,6 +101,25 @@ func TestGemma4MoEScaled_residentParity(t *testing.T) {
 	}
 
 	cos := func(a, b []float32) float64 { c, _ := cosMaxAbs(a, b); return c }
+	// Byte-identity census, reported not asserted. The resident W4A8 path quantizes ACTIVATIONS to
+	// int8; the CPU int4 path does not. They are different arithmetic, so they are not expected to
+	// agree bit-for-bit and no gate requires it — but the count belongs in the log, because
+	// "byte-reproducible against the CPU reference" is a claim the project makes in prose and this
+	// is the number that bears on it.
+	identical, totalF := 0, 0
+	for i := range prompt {
+		for j := range cuda[i] {
+			totalF++
+			if cuda[i][j] == cpu4[i][j] {
+				identical++
+			}
+		}
+	}
+	t.Logf("byte-identity CUDA-resident vs CPU-int4: %d/%d logits exactly equal (%.2f%%) — "+
+		"W4A8 quantizes activations to int8 and the CPU int4 path does not, so this is expected "+
+		"to be well below 100%%; the asserted contract is the calibrated curve below, not bit-equality",
+		identical, totalF, 100*float64(identical)/float64(totalF))
+
 	pos0, exact, sumCuda, sumCpu := 0.0, 0, 0.0, 0.0
 	for i := range prompt {
 		cVs4, c4VsF := cos(cpu4[i], cuda[i]), cos(cpuF[i], cpu4[i])

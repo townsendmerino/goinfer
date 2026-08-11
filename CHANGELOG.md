@@ -8,6 +8,51 @@ The forward-pass and quantization numerics are parity-gated against HuggingFace
 and are the stable contract. The loader and architecture-descriptor surface is
 pre-1.0 and may change as new model families and quant formats land.
 
+## [Unreleased]
+
+> **⚠ Gemma 4 output changes on CUDA and Metal.** Gemma 4 previously fell back to the CPU path
+> unless you set `GOINFER_GEMMA4_RESIDENT`; it now runs GPU-resident by default. The resident path
+> is W4A8 — it quantizes activations to int8, which the CPU path does not — so **logits differ and
+> a token can flip at a near-tie.** Both paths are parity-gated against the CPU reference, and
+> argmax agreed at every position on the new real-width gate, but this is a real output change for
+> anyone running Gemma 4 on a GPU. It is opt-out: `--backend cpu` keeps the previous numerics.
+>
+> **This is the third consecutive release to change output for some users** — v0.10.3 moved the
+> sampler tie-break, v0.11.0 shifted the seed→token mapping for the temperature and filtered
+> sampling paths, and this one moves Gemma 4 from CPU to GPU numerics. Each was individually
+> justified and each was disclosed, but three in a row is worth stating plainly in one place
+> rather than leaving a user to assemble it from three release notes. If you depend on
+> reproducible output across upgrades, pin a version and read this section before moving.
+
+### Changed
+- **Gemma 4 is resident by default on CUDA and Metal.** `GOINFER_GEMMA4_RESIDENT` is now inert and
+  can be dropped from any script that sets it. The flag was a bring-up gate that outlived its
+  purpose in an instructive way: because every real Gemma-4 checkpoint reaching the resident path
+  was only ever compared against *itself* (expert-cache on/off, CUDA-graphs on/off), the flag had
+  become the only thing standing between users and a forward whose numerics no gate asserted at
+  real width. It comes off because that gate now exists, not because it looked like residue.
+  WebGPU still declines (no Gemma kernels) and E-models (E2B/E4B, PLE) decline everywhere.
+
+### Added
+- **A real-width parity gate for the Gemma-4 resident forward** (`TestGemma4MoEScaled_residentParity`)
+  and the composition gate the expert cache never had (`TestGemma4MoE_cacheExpertsBitExact_scaled`,
+  `..._cacheReuse_scaled`), on a new fixture that keeps the real per-expert row geometry
+  (hidden 2816, `moe_intermediate` 704) and transplants per-group weight scales from the real 26B.
+  The scaled cache gate had never executed since it was written: it named a fixture that did not
+  exist. Generate with `scripts/pin_gemma4_moe_scaled.py`.
+
+### Fixed
+- **A resident decline now always says why.** The reason was gated behind `GOINFER_RESIDENT_DEBUG`
+  on all four backends, so a model silently moving its entire forward to CPU looked identical to
+  one running resident. Unconditional now — one line at load.
+
+### Docs
+- **The 26B-A4B result is disclosed as opt-in.** Reproducing it needs `GOINFER_MOE_CACHE_EXPERTS=1`
+  and `GOINFER_MOE_CACHE_SLOTS=48`; the README headline and the capability table were each correct
+  in isolation and composed into a claim no default build could reproduce. Also corrected: the
+  stale "Gemma 4 needs logit-softcap" reason (softcap landed in 9a-P2), and three hit-rate figures
+  (77.5% / 81.6% / 89.1%) that were three different measurements without their bases stated.
+
 ## [v0.11.0] — 2026-08-10
 
 **MINOR** (0.10.3 → 0.11.0): backward-compatible additions and behavior changes — new flags

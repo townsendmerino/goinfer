@@ -162,14 +162,24 @@ func (a *Architecture) decodeRunnerEligible() bool {
 	// bridged case as a fall-through makes that mistake un-writable (cf. the geometry port).
 	switch {
 	case a.gemma4 != nil:
-		// Gemma 4 under GOINFER_GEMMA4_RESIDENT (Split-A bring-up, like granite's
-		// GOINFER_SSM_RESIDENT through P5b). Split B lands the enable_moe_block parallel dense‖MoE
-		// FFN (arch.MoE != nil) on its OWN cuda path (gemma4MoeMLP), so it is no longer declined here
-		// — the CUDA build routes it around the generic MoE checks via HasGemma4MoEResident. Both the
-		// dense and MoE variants fall through to the common checks (softcap handled by the feature gate).
-		if os.Getenv("GOINFER_GEMMA4_RESIDENT") == "" {
-			return false
-		}
+		// Gemma 4 is admitted UNCONDITIONALLY as of the Check-A backfill. It sat behind
+		// GOINFER_GEMMA4_RESIDENT through the Split-A/B bring-up (granite's GOINFER_SSM_RESIDENT
+		// precedent), and that flag outlived its purpose in a way worth recording: it had become
+		// load-bearing by accident. Every real Gemma-4 checkpoint reaching the resident path was
+		// compared only against ITSELF (cache on/off, graphs on/off), so the flag was the only thing
+		// standing between users and a forward whose numerics no gate asserted at real width.
+		//
+		// It comes off because that gate now exists and passes, not because the flag was tidy to
+		// remove: cuda.TestGemma4MoEScaled_residentParity (MoE, real hidden/moe_inter/head geometry,
+		// scales transplanted from the real 26B) and TestGemma4DenseScaled_residentParity (dense,
+		// real head dims) both assert the calibrated CPU curve. Do not re-gate a family on an env
+		// var without a gate behind it; the flag reads as caution and functions as a coverage hole.
+		//
+		// Split B lands the enable_moe_block parallel dense‖MoE FFN (arch.MoE != nil) on its OWN cuda
+		// path (gemma4MoeMLP) — the CUDA build routes it around the generic MoE checks via
+		// HasGemma4MoEResident. Both dense and MoE fall through to the common checks below (softcap
+		// is handled by the per-backend feature gate, so WebGPU still declines on its own terms).
+		// E-models (PLE) decline via the feature gate regardless — TestGemma4EModel_realDeclinesResident.
 	case a.qwen35 != nil || a.llama4 != nil || a.gptoss != nil:
 		return false // own forward, not yet bridged
 	}
