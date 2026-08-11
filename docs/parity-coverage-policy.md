@@ -284,22 +284,42 @@ here as live policy.
    ships a kernel. Peer comparisons are a row in a table with a date and a version, never a
    headline.
 
-3. **State opt-in-ness in the same breath as the result.** If reproducing a number needs a flag,
+3. **A comparison names the measurement method for BOTH sides, and they must be the same method.**
+   This is the rule the 476/268 headline broke, and it is not a special case of rule 1. That number
+   was not stale, and it was not a sampling-config difference: **goinfer's side came from an
+   in-process Go benchmark and Ollama's from an HTTP server.** Both sides could have been described
+   in full — model, quant, context depth, card, driver, version — and the comparison would still
+   have been meaningless, because one side was not paying for a socket, a scheduler, or a
+   serialize/deserialize round trip and the other was.
+
+   So: measure both sides through the same door. If the peer is only reachable over HTTP, put your
+   own side over HTTP too. In-process numbers are legitimate and useful — for tracking your own
+   regressions across commits, where the harness is constant — and they are **not** comparable to
+   anything measured a different way.
+
+   Where the protocols genuinely cannot match, say so at the point of comparison, say why, and say
+   which direction it biases. `docs/benchmarks.md` §B7 is the shape: *"One protocol difference,
+   deliberate: a 32k prefill costs orders of magnitude more than the decode being measured, so deep
+   cells use fewer requests with more decode tokens each"* — followed by the run-to-run spread
+   showing the smaller sample did not cost precision. A named, justified, bounded difference is
+   honest. An unnamed one is the 476/268.
+
+4. **State opt-in-ness in the same breath as the result.** If reproducing a number needs a flag,
    an environment variable, or a non-default build, say so where the number appears — not in a
    later section. Two statements, each true in its own place, compose into a false picture for a
    reader who does not read one section at a time. That is the documentation-adjacency class
    above, and the 26B-A4B result is what it cost to learn.
 
-4. **Do not imply generality a gate does not cover.** "Lossless" means the gate asserts losslessness
+5. **Do not imply generality a gate does not cover.** "Lossless" means the gate asserts losslessness
    on the path being described; "bit-identical" means some specific pair is bit-identical — say
    which pair. The v0.9.0 "every GPU path is byte-reproducible against the CPU reference" was
    assembled from a true GPU-vs-GPU property and an untested GPU-vs-CPU one.
 
-5. **Quote the figure with its basis.** Same measurement, different denominators are not a
+6. **Quote the figure with its basis.** Same measurement, different denominators are not a
    contradiction, but three unlabelled hit rates read as one. Whole-run vs steady-state,
    argmax-exact vs byte-identical, floor vs median — the qualifier is part of the number.
 
-6. **A claim nobody can reproduce from the public documents is not shipped.** Before publishing,
+7. **A claim nobody can reproduce from the public documents is not shipped.** Before publishing,
    read the user-facing docs as a stranger with a default build and check that the claim survives.
 
 ## Rule: archiving a doc strips its imperatives
@@ -312,8 +332,8 @@ This is the sibling of the campaign-closeout checklist, and it exists for the sa
 instances proved the step does not happen on its own. `release-v0.9.0-checklist.md` sat in
 `completed/` instructing whoever wrote the next announcement to lead with a claim that was wrong —
 a stale instruction, still live, that would have regenerated the wrong text into the next promo
-cycle no matter how carefully the drafts were edited. The six rules above are what was recovered
-from that sweep.
+cycle no matter how carefully the drafts were edited. The rules above are what was recovered from that
+sweep, plus what this year's retractions cost to learn.
 
 Every file in `docs/completed/` now carries an archival header saying its checkboxes are a record
 rather than a task list, so an unticked box no longer reads as outstanding work. That handles the
