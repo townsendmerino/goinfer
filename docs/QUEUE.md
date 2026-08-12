@@ -989,6 +989,37 @@ default is "request all, let the corrected cap decide" — which on this card la
 Separate from D3 on purpose: D3 changes the *surface*, this changes *what happens to someone who sets
 nothing*. Needs the 26B run and a hit-rate figure at the chosen cap before it lands.
 
+**PRECONDITION READ, 2026-08-12 — and it is NOT met. D3b waits on A10.**
+
+`cuda/backend.go`'s comment says *"raising it again requires fixing the margin FIRST and proving it on
+the 26B"*. Two readings are available and the comment's own complaint chooses between them: it faults
+the margin for being *"a flat `marginBytes = 384 MB` **described as** covering the greedy-argmax
+readback + driver overhead — per-token costs — **while what it must actually leave room for** is
+everything the forward allocates AFTER it runs"*.
+
+That is an objection to the margin **not being derived from what it must cover**. So "fixing the
+margin" means **deriving** it, not checking it — and the second reading is the intended one:
+
+> **margin derived rather than asserted → A10 blocks D3b, and it waits on the floor being attributed.**
+
+**What we have instead**, and it is genuinely better than when the comment was written, just not the
+thing it asks for:
+
+- `slotMarginBytes` is still **402,653,184 by assertion** — the same flat constant.
+- **A9-FIX removed the largest unaccounted consumer from the margin's job**, by paying the deferred
+  first-launch reservation *before* sizing rather than expecting the margin to absorb it. The
+  concrete failure the comment names — capped to 34, then `CUDA_ERROR_OUT_OF_MEMORY` — cannot recur
+  that way.
+- A gate asserts `slotMarginBytes ≥ measured peak demand` (402,653,184 ≥ 289,013,760, clear by
+  113,639,424). **That is a check, not a derivation**: it confirms the constant is big enough today
+  on this card, and would confirm it just as happily if the constant had been picked by coin flip.
+- **A10's 151,191,552 B floor is unexplained and sits inside that margin** — 37% of it. A derivation
+  cannot be written while more than a third of what the margin covers is unattributed.
+
+**So: D3b is unblocked as a question and blocked as a change.** The precondition's second half
+("proving it on the 26B") is met — A7 did that. The first half is not. Recorded here so the next
+person does not re-decide it; **reopen when A10 is attributed**, not before.
+
 **Historical framing: out of the release, and the first question was not a merge question.**
 
 D3 was designed **while the cap computed the wrong value**. A5 fixed the cap. So before anything:
@@ -1886,6 +1917,7 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `1d0d1ed` | test(decoder): int4 forward goldens — 23 fixtures, 16 architectures (Q1c) |
 | `1f6dbe0` | fix(parity,fmt): gofmt the threshold sweep + refresh deps_hash after comment-only core edits |
 | `23b2ee7` | fix(parity): the goldens refresh runs quantized goldens, and reports the split |
+| `2d28358` | docs(branch-note): re-derive against the corrected cap (D3 design read) |
 | `2e91607` | test: refresh parity deps_hash — non-numeric core-file drift (un-reds main) |
 | `38061b1` | perf(gemma4-paging): pread expert nibbles straight into the slot buffers |
 | `3d6ae1e` | chore: go fix modernizers, one deterministic pass (G2) |

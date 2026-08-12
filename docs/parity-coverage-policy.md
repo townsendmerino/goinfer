@@ -343,8 +343,15 @@ The number is real and the code path is real, but where the instrument sits, or 
 differences away, determines what could have been visible. The reading is then interpreted as though
 it described the system rather than the instrument's view of it.
 
-Two shapes:
+Three shapes:
 
+- **Environment — WHERE it ran.** The check is correct and the context is not, so the result is about
+  the context. Two instances, both this campaign, both a *false* answer from a *working* check:
+  `gpu_gate.sh`'s module-boundary guard reported `cuda`, `gpu` and `webgpu` leaking into the root
+  module graph — an artifact of a committed `go.work` that CI's root job does not have; and the
+  goldens refresh reported 7 passed / 35 skipped in a fresh worktree against 33 / 9 in the checkout,
+  an artifact of gitignored fixtures. *Recognition test:* **if this ran one environment over, would
+  the answer change?** Same test as Position, applied to the surroundings rather than the placement.
 - **Position** — the probe sits on one side of the event and reports the other side's state.
   *Recognition test:* if the probe were one line earlier or later, would the number change? If yes,
   the position is part of the claim and has to be stated with it.
@@ -583,6 +590,15 @@ already was, and it is the only moment at which someone has the source open anyw
 this tool change?" with the tool that changes things is a category error, and the standing form is
 cheap enough that no judgment call is warranted: `git worktree add`, run it there, read the diff,
 remove the worktree.
+
+**And the boundary, which is not optional: a fresh worktree lacks everything gitignored** — fixtures,
+checkpoints, caches, build artifacts. That makes it safe for **reading code** and unsafe for **running
+anything that consumes untracked assets**. A measurement taken in one is about *the worktree*, unless
+every asset it needs is tracked. Measured instance: the same commit's goldens refresh reported
+**33 passed / 9 skipped** in the main checkout and **7 / 35** in a fresh worktree, because the fixture
+checkpoints are gitignored — and `goldens=7` would have gone into a commit body reading exactly like
+`goldens=33`. The skip-ratio warning in `scripts/refresh_parity_hashes.sh` catches that one instance;
+this rule is for the next one.
 
 The instance: `go fix ./decoder/` was run against the real tree to answer exactly that question — a
 tool the standing constraints forbid, reached for because it was the obvious way to see the answer.
