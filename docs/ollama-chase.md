@@ -364,6 +364,21 @@ wall as the whole decode path (`docs/completed/task-metal-cgofree-spike.md`: meg
 ceiling). **A1-Metal (half4 coalescing, 1.37–1.40×) remains the one capturable decode-attention win on
 this box.** Stop proposing dedup layouts; the lever is elsewhere (KV-quant §A3, or accept the floor).
 
+**The floor is confirmed at the COMMIT level too, not only at dispatch count (census, 2026-08-12).**
+An external Metal write-up (dmikey's A1111 fork) frames the dominant hidden cost as command-buffer
+*submits* and CPU⇄GPU *syncs* — "the fastest kernel still loses if you submit the command buffer after
+every call" — a lever separate from the dispatch/encode count our floor is framed in. Measured at the
+Metal command-buffer boundary (qwen2.5-coder-1.5b int4, resident; counters on aikit branch
+`metal-census-probe`, goinfer probe branch `metal-commit-census`): **commits/token = 1.000 and
+waits/token = 1.000** at both shallow (pos 8) and depth 2048, on *both* the production pipelined
+sampling path (`ForwardEmbPipe`) and the greedy on-device-argmax path (`ForwardArgmax`) — encoders
+≈ 1/token (the +0.5% at shallow is the encode-ahead executor's one pre-encoded next-token spanning the
+measurement window). This is the structural minimum: the next token needs its logits back, so one
+commit + one blocking wait is unavoidable, and goinfer already encodes the whole trunk + LM head into a
+single command buffer per token (`resident.encodeLogitsCB`), committing once. So submit/sync frequency
+is **not** a hidden lever here — the coalescing win the external finding describes is already fully
+realized, and the accepted-floor conclusion stands with one more axis explicitly ruled out.
+
 **The Metal gate suite had a structural blind spot — now closed by a snapshot golden.** The
 reduction-width finding (§2) is one instance of a general blind class: **a self-consistent gate cannot
 detect a change that moves both arms together.** `paged ≡ non-paged` compares one kernel against itself
@@ -1220,6 +1235,11 @@ current Ollama: 1.94× → **1.41×**.
   too shallow cannot compound; too narrow cannot route; without discrete decisions it cannot
   exhibit a flip.
 - **Peer versions expire.** Re-pin and re-measure before any competitive claim ships.
+- **Microbenchmarks nominate changes; full generations elect them.** A kernel/dispatch win measured in
+  isolation is a candidate, not a result — the real path has costs (commit/sync cadence, readback,
+  scheduling) a microbench omits, and several "wins" here reversed under a full decode (split-KV on
+  Metal, the greedy on-device-argmax wiring). Our own form is the split-KV crossover lesson; stated
+  more sharply, and independently derived, by dmikey's A1111 Metal write-up.
 
 ---
 
