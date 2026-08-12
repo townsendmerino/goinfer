@@ -390,9 +390,35 @@ a launch demand at all**: it is the allocator's own limit, and `moe_route`'s 289
 floor sits underneath everything, kernel-independent.
 
 **Candidate space halved without proposing a mechanism.** Ruled out: anything scaling with a kernel's
-declared local memory. Remaining: a per-context or per-device allocator reserve. Next discriminator
-should vary the *context*, not the kernel — two contexts in one process, or a second process — since
-that is the axis the floor has not been tested against.
+declared local memory. Remaining: a per-context or per-device allocator reserve.
+
+**MODEL TESTED, 2026-08-12 — the reporting gap is CONFIRMED, exactly.**
+
+> `cuMemGetInfo` reports **151,191,552 B more free than is allocatable, by anyone**.
+> `usable = reported_free − 151,191,552`.
+
+Cross-checked **with no launch and no bisection**: allocate directly in a fresh context until even a
+1 MiB request fails, and compare what was obtained against what was reported at the start.
+
+    reported free at start   7,665,287,168
+    total obtained           7,514,095,616
+    SHORTFALL                  151,191,552   ← the floor, to the byte
+
+No kernel involved, so this is not about launches at all. It also reproduces the 34-slot failure
+directly: usable at 198,836,224 reported is **47,644,672**, against `moe_route`'s 137,822,208 backing
+store — short by 90 MiB, which is the figure A9 measured.
+
+**The CONTEXT discriminator did not resolve, and is blocked by the API.** With the child holding
+everything down to the floor, the parent process **cannot create a context at all** —
+`cuDevicePrimaryCtxRetain: CUDA_ERROR_OUT_OF_MEMORY` at 151,191,552 B reported free. That is a real
+finding (the floor is not available for context setup either) but it means the arm cannot measure
+what it was built for. The in-process arm is blocked too: gocudrv exposes only primary-context
+retain, not `cuCtxCreate`.
+
+**What is established:** the floor is 151,191,552 B in every separate process measured, so it is a
+**stable per-device property, not something accumulating per process**. **What is not:** whether two
+*simultaneous* contexts each pay it — untestable with the current API surface, and it needs a
+`cuCtxCreate` binding before it can be asked.
 
 **Original entry follows.**
 
@@ -1047,6 +1073,17 @@ thing it asks for:
   on this card, and would confirm it just as happily if the constant had been picked by coin flip.
 - **A10's 151,191,552 B floor is unexplained and sits inside that margin** — 37% of it. A derivation
   cannot be written while more than a third of what the margin covers is unattributed.
+
+**THE BLOCKER NOW HAS A ROUTE — read this before treating D3b as indefinitely stalled.** A candidate
+derivation exists:
+
+> **margin ≥ reporting gap + peak transient** = 151,191,552 + 137,822,208 = **289,013,760**
+
+against the shipped 402,653,184, which clears it by 113,639,424. The reporting gap is confirmed
+exactly; the peak transient is measured. **Pending, not settled:** whether the gap is per-device (one
+reserve, and the derivation holds as written) or per-context (N contexts cost N × 151 MiB, and the
+margin is not a constant at all). That is the context experiment above, and it needs a `cuCtxCreate`
+binding first.
 
 **So: D3b is unblocked as a question and blocked as a change.** The precondition's second half
 ("proving it on the 26B") is met — A7 did that. The first half is not. Recorded here so the next
