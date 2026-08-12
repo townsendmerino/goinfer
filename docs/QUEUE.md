@@ -809,6 +809,15 @@ the item on it would repeat the exact distinction the SHA lint learned this turn
 not have seen the object does not report its absence. `stash@{0}` may only ever have existed on the
 mac. **In the mac batch below.**
 
+**macbook-arm64 searched (2026-08-12):** `git stash list` = **0** in `goinfer`, `aikit`, `wgpu`. The
+original `stash@{0}` (the "item2 unload-close fix + tests (wip)") DID live here and was **backed up to
+`~/goinfer-stash-backup/*.patch` then cleared** — preserved as patches, not lost; the mac stash is now
+empty. So goinfer/aikit/wgpu are **closed on both boxes**. **One residue with an owner:** `cpubrrr` is
+**not present on macbook-arm64** (could-not-search here), and `linux-62gb`'s "empty in all four repos"
+did **not enumerate cpubrrr** — so its status is unconfirmed by name. **Owner `linux-62gb`:** run
+`git stash list` in `cpubrrr` specifically and record it as searched (with count) or could-not-search.
+That single confirmation closes B4.
+
 **B8 · Position-keyed pins — audited 2026-08-12; the gates are clean, the PROSE is not**
 
 `TestDispatchCensus` went red on a pure line shift (the fused gate+up guard in `decoder/mlp.go`, site
@@ -963,6 +972,27 @@ unfalsifiable gate.
 The tautological-gate shape was found on CUDA today (four graph tests comparing graphs-on against
 graphs-off without asserting graphs were admitted). **The same shape is plausibly live on Metal and
 nothing would say so.**
+
+**DEFERRED BY CHOICE (2026-08-12) — auto-pickup, trigger pinned. Not sunk: deferral is the decision.**
+
+- **Trigger = the next goinfer RELEASE TAG (≥ v0.13.0) that carries the aikit v1.17.0 bump** — *not*
+  the bump commit on `main`. C3 is a public-view consumer evaluation: an external consumer `go get`s a
+  released tag, so evaluating main-HEAD-with-the-bump would certify a state **nobody installs**. This
+  is the (b) reading, chosen deliberately over the faster (a): "post-bump tag" here means a **release**
+  tag, not the bump commit. (v0.12.0 shipped 2026-08-12, so v0.13.0 may be days out — hence the bound.)
+- **Bound = 2026-08-26 (14 days).** If no qualifying release tag by then, run C3 anyway against the
+  **latest published goinfer tag** and **record the exact dependency set it evaluated** (resolved
+  `aikit` + `aikit/gpu` versions), flagged as the bounded fallback. A consumer window against a
+  slightly stale set beats one that never runs — an auto-pickup with no bound is indistinguishable
+  from forgetting.
+- **Why deferred, not dropped:** the attached claims (73.6 tok/s, cgo-free/no-Xcode, 0.96×/0.74× vs
+  Ollama-Metal, bit-identity) are version-sensitive and all originate in `aikit/gpu`; running mid-bump
+  documents a set superseded within hours and forces a re-run. This surface **sank once already** and
+  was first in its batch precisely to prevent that.
+- **Auto-pickup mechanism:** a **session-scoped** cron (daily) checks for the trigger and runs C3 the
+  moment a qualifying tag appears. That cron is best-effort — it dies with the session and **expires
+  after 7 days** — so **THIS entry is the durable pin**: if the cron is gone, the next `mac` session
+  honors the trigger + bound from here.
 
 **C4 · Soak testing** — either box
 
