@@ -379,6 +379,28 @@ single command buffer per token (`resident.encodeLogitsCB`), committing once. So
 is **not** a hidden lever here — the coalescing win the external finding describes is already fully
 realized, and the accepted-floor conclusion stands with one more axis explicitly ruled out.
 
+**Where the token's dispatches actually go — the dispatch census (2026-08-12, same probe).** Since the
+floor is dispatch-*count*-bound, the same probe counted dispatches/token and attributed them per
+pipeline (qwen2.5-coder-1.5b int4, depth 2048, 28 layers): **338 dispatches/token** — 12/layer + the
+final norm + the LM head. Per layer: `rms`×2, `rope`×2, and one each of `stageA_gemv`, `stageA_bias`,
+`stageA_resid`, `kv_write`, `attn`, `gemv_resid`, `quant_vec`, `swiglu`. This turns the two queued
+Metal dispatch-removals (P4/P5) from audit estimates into **measured dispatch shares**:
+
+| item | pipeline | measured/token | removes | share of the 338 |
+|---|---|---|---|---|
+| **P4** RoPE grid-merge (2→1/layer) | `rope` | 56 (exactly 2/layer) | 28/token | **8.3%** (audit est. "a few %") |
+| **P5** fuse `quant_vec` into o-proj | `quant_vec` | 28 (exactly 1/layer) | 28/token | **8.3%** (audit est. "~5–6%") |
+| **combined** | | | 56/token | **16.6%** |
+
+The census also *clarifies* P5: there is exactly **one** `quant_vec` dispatch per layer (the o-proj
+input quant — the other GEMVs already fuse their quant), so P5 removes the whole pipeline, not a
+fraction. **Caveat — this is a dispatch-count fraction, not a tok/s number.** In a dispatch-count-bound
+regime it is the *ceiling* on the combined headroom; RoPE/quant_vec are small kernels, so if per-dispatch
+GPU-launch latency is close to a fixed floor they recover near-proportionally, but the exact tok/s needs
+an A/B of the grid-merge (P4 is the clean one). What is now measured rather than estimated: **each is
+~8.3% of the per-token dispatch count, ~16.6% together** — which is why both belong in the v1.0.1 Metal
+batch ahead of any further dedup speculation.
+
 **The Metal gate suite had a structural blind spot — now closed by a snapshot golden.** The
 reduction-width finding (§2) is one instance of a general blind class: **a self-consistent gate cannot
 detect a change that moves both arms together.** `paged ≡ non-paged` compares one kernel against itself

@@ -1069,10 +1069,18 @@ the threshold and GOMAXPROCS ∈ {1, 3, 16}, with lengths that do not divide eve
 
 **P4 · Metal RoPE dispatched twice per layer** — `metal/model.go:1301`
 
-One grid-merged dispatch is bit-identical. Estimated a few %.
+One grid-merged dispatch is bit-identical. **MEASURED (2026-08-12, dispatch census, ollama-chase
+§A2-Metal):** `rope` runs **56 dispatches/token = exactly 2/layer**; the grid-merge removes 28/token =
+**8.3% of the 338 dispatches/token** (was estimated "a few %"). Dispatch-count fraction — the tok/s A/B
+of the merge is the remaining measurement, and P4 is the clean one to prototype first.
 
-**P5 · Metal `quant_vec` fused into the o-proj GEMV** — estimated ~5–6% of dispatches per token.
-The swiglu half is **not** a clean fusion; do not bundle them.
+**P5 · Metal `quant_vec` fused into the o-proj GEMV** — `metal/model.go`
+
+**MEASURED (2026-08-12, dispatch census):** exactly **one** `quant_vec` dispatch per layer =
+28/token; fusing it into the o-proj GEMV removes the whole pipeline = **8.3% of the 338
+dispatches/token** (was estimated "~5–6%"). The census confirms there is only the single o-proj quant
+to fuse (the other GEMVs already fuse their quant), so the swiglu half the estimate worried about is
+**not** a `quant_vec` dispatch and is not in scope — do not bundle.
 
 **P6 · `moeMLP` allocates ~7–8 MB/token** — `decoder/mlp.go:82`
 
