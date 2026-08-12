@@ -8,6 +8,22 @@ The forward-pass and quantization numerics are parity-gated against HuggingFace
 and are the stable contract. The loader and architecture-descriptor surface is
 pre-1.0 and may change as new model families and quant formats land.
 
+## [Unreleased]
+
+### Changed
+
+- **`aikit` v1.16.0 → v1.17.0, `aikit/gpu` v0.27.0 → v0.28.0** across all five modules. A
+  dependency update. The quantized GEMV is untouched — `gpu/testdata/gemv_quant.ptx` is
+  byte-identical across `gpu/v0.27.0..gpu/v0.28.0`, and the `gemv_quant.cu` diff is three comment
+  lines — as is the vision tower (`vit.ptx` byte-identical, `ViTBlock`/`LNBLOCK` still 256). What
+  reaches goinfer is in the root module: a new AVX2 int8 kernel behind `w8a8Span` on the W8A8 decode
+  path, and a reworked inner loop in the blocked f32 matmul. Both are argued bit-identical upstream;
+  what demonstrates it here is the forward goldens — **33 passed, 0 failed, 9 skipped, of which 14
+  drive a quantized path and 19 are f32**, all against recorded values.
+
+  **No performance figure is claimed for this bump.** Upstream reports one; it is not reproduced
+  here, and goinfer's docs carry only goinfer's own measurements.
+
 ## [v0.12.0] — 2026-08-12
 
 **MINOR** (0.11.0 → 0.12.0): a correctness release for the CUDA MoE expert cache, three
