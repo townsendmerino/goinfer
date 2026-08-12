@@ -62,8 +62,8 @@ echo "    forward goldens: ${pass} passed, ${fail} failed, ${skip} skipped"
 # The QUANTIZATION breakdown, not just the count. A run of 19 green f32 goldens and a run of 21 that
 # includes two int8 ones are different proofs, and "19 passed" cannot tell them apart — which is how
 # the f32-only hole stayed invisible. Q1 in docs/QUEUE.md.
-nonf32=$(printf '%s\n' "$out" | grep '^--- PASS:' | grep -cE 'TestGemma4_logitParity|TestGemma4_12B_logitParity|TestMellum2_logitParity|TestGptOssReal_logitParity' || true)
-echo "    of those, ${nonf32} drive a QUANTIZED path (int8/int8int8); the rest are f32."
+nonf32=$(printf '%s\n' "$out" | grep '^--- PASS:' | grep -cE 'TestGemma4_logitParity|TestGemma4_12B_logitParity|TestMellum2_logitParity|TestGptOssReal_logitParity|TestInt4_forwardParity' || true)
+echo "    of those, ${nonf32} drive a QUANTIZED path (int4/int8/int8int8); the rest are f32."
 if [ "$nonf32" -eq 0 ]; then
 	echo "    NOTE: this refresh proves f32 numerics ONLY — no quantized golden ran. See Q1."
 fi
