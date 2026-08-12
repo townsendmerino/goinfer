@@ -106,8 +106,16 @@ func (m *Model) llama4MoE(h, out []float32, lw *LayerWeights, arch *Architecture
 	matmul(m.be, &lw.Router, h, logits, 1)
 	idx, _ := topK(logits, moe.TopK) // top-k by raw logit (== top-k by sigmoid, monotonic)
 
+	// P6: one gate/up pair for the token, shared by the shared expert and every routed one. They
+	// run sequentially, so k pairs were never simultaneously live.
+	sc := moe.IntermediateDim
+	if moe.SharedIntermediateDim > sc {
+		sc = moe.SharedIntermediateDim
+	}
+	l4gate, l4up := make([]float32, sc), make([]float32, sc)
+
 	// Shared expert on the unscaled input, ungated.
-	swiGLUExpert(&lw.SharedExpert, h, out, moe.SharedIntermediateDim, m.be)
+	swiGLUExpert(&lw.SharedExpert, h, out, moe.SharedIntermediateDim, m.be, l4gate, l4up)
 
 	scaled := make([]float32, hidden)
 	expOut := make([]float32, hidden)
@@ -116,7 +124,7 @@ func (m *Model) llama4MoE(h, out []float32, lw *LayerWeights, arch *Architecture
 		for i := range h {
 			scaled[i] = w * h[i]
 		}
-		swiGLUExpert(&lw.Experts[e], scaled, expOut, moe.IntermediateDim, m.be)
+		swiGLUExpert(&lw.Experts[e], scaled, expOut, moe.IntermediateDim, m.be, l4gate, l4up)
 		for i := range out {
 			out[i] += expOut[i]
 		}

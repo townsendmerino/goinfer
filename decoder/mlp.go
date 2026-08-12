@@ -117,9 +117,17 @@ func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend, pager
 	hidden := arch.HiddenDim
 	out := make([]float32, hidden)
 	expOut := make([]float32, hidden)
+	// One gate/up pair for the whole token. The experts run sequentially, so k pairs were never
+	// simultaneously live — this was 2*k allocations per token where 2 suffice, and at top-k 8 with
+	// a large moe_intermediate that is the bulk of moeMLP's per-token allocation.
+	sc := moe.IntermediateDim
+	if moe.SharedIntermediateDim > sc {
+		sc = moe.SharedIntermediateDim
+	}
+	egate, eup := make([]float32, sc), make([]float32, sc)
 	for j, e := range idx {
 		ex := &lw.Experts[e]
-		swiGLUExpert(ex, h, expOut, moe.IntermediateDim, be)
+		swiGLUExpert(ex, h, expOut, moe.IntermediateDim, be, egate, eup)
 		w := wts[j]
 		for i := range out {
 			out[i] += w * expOut[i]
@@ -129,7 +137,7 @@ func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend, pager
 	// Shared always-on expert (Qwen2-MoE / GLM). Qwen2 scales it by a per-token
 	// sigmoid(SharedGate·h) gate; GLM/DeepSeek add it ungated.
 	if moe.SharedIntermediateDim > 0 {
-		swiGLUExpert(&lw.SharedExpert, h, expOut, moe.SharedIntermediateDim, be)
+		swiGLUExpert(&lw.SharedExpert, h, expOut, moe.SharedIntermediateDim, be, egate, eup)
 		if moe.SharedUngated {
 			for i := range out {
 				out[i] += expOut[i]
@@ -248,9 +256,18 @@ func groupLimit(sel []float32, nGroup, topkGroup int) []float32 {
 
 // swiGLUExpert evaluates one gated (SwiGLU) expert MLP of the given intermediate
 // width into dst[:hidden]: dst = Down·(silu(Gate·h) ⊙ Up·h).
-func swiGLUExpert(ex *expertWeights, h, dst []float32, inter int, be Backend) {
-	gate := make([]float32, inter)
-	up := make([]float32, inter)
+// P6: gate/up come from the CALLER so a token's k experts share one pair instead of allocating a
+// pair each. They are fully overwritten by the two matmuls below before anything reads them, so
+// reuse cannot carry state between experts and the result is bit-identical by construction — same
+// operands, same order, same accumulation.
+//
+// expertScratch sizes them; a nil or short buffer allocates, so callers that have no scratch (the
+// llama4 path) keep working unchanged.
+func swiGLUExpert(ex *expertWeights, h, dst []float32, inter int, be Backend, gate, up []float32) {
+	if cap(gate) < inter || cap(up) < inter {
+		gate, up = make([]float32, inter), make([]float32, inter)
+	}
+	gate, up = gate[:inter], up[:inter]
 	matmul(be, &ex.Gate, h, gate, 1)
 	matmul(be, &ex.Up, h, up, 1)
 	for i := range gate {

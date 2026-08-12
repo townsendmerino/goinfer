@@ -372,7 +372,7 @@ func parityColumn(fam familyParity) string {
 	if fam.Status == "experimental" {
 		expPrefix = "experimental: "
 	}
-	method := fam.Method
+	method := methodString(fam.Method)
 	suffix := ""
 	switch method {
 	case "full-forward-oracle":

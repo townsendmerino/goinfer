@@ -20,6 +20,7 @@ package decoder
 // capability matrix test (var updateMatrix in capability_matrix_test.go).
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -60,11 +61,45 @@ type familyParity struct {
 	Date        json.RawMessage `json:"date"`
 	Reference   json.RawMessage `json:"reference"`
 	Machine     json.RawMessage `json:"machine"`
-	Method      string          `json:"method"`
+	Method      json.RawMessage `json:"method"`
 	Metrics     json.RawMessage `json:"metrics"`
 }
 
 const parityManifestPath = "../testdata/parity_manifest.json"
+
+// writeManifest serialises the manifest back to disk FAITHFULLY.
+//
+// Two round-trip defects made scripts/refresh_parity_hashes.sh unusable — it correctly ABORTED on
+// "the update changed more than deps_hash" every time, which is the guard working, but it meant the
+// sanctioned goldens-gated refresh could not actually be used:
+//
+//   - json.MarshalIndent HTML-escapes, turning a ">" inside a `reference` string into "\u003e".
+//   - `Method` was a plain string, so a JSON `null` came back as `""`.
+//
+// Neither changed any meaning, and both showed up as a diff the abort guard could not distinguish
+// from a real edit. Fixed here rather than by loosening the guard: the guard was right.
+func writeManifest(m *parityManifest) error {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(m); err != nil {
+		return err
+	}
+	return os.WriteFile(parityManifestPath, buf.Bytes(), 0o644)
+}
+
+// methodString reads Method's JSON literal as a string; a null or absent value reads as "".
+func methodString(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return ""
+	}
+	return s
+}
 
 // repoPath resolves a repo-root-relative path (as stored in the manifest, e.g.
 // "decoder/model.go") to a path usable from the decoder package directory.
@@ -134,7 +169,7 @@ func TestParityManifest_merge(t *testing.T) {
 			t.Fatalf("PARITY_ROW for unknown family %q (not in %s)", row.Family, parityManifestPath)
 		}
 		f.Status = "validated"
-		f.Method = row.Method
+		f.Method = rawString(row.Method)
 		f.Reference = rawString(row.Reference)
 		f.Metrics = row.Metrics
 		f.ValidatedAt = rawString(sha)
@@ -157,13 +192,8 @@ func TestParityManifest_merge(t *testing.T) {
 		f.DepsHash = fresh
 		m.Families[fam] = f
 	}
-	out, err := json.MarshalIndent(&m, "", "  ")
-	if err != nil {
-		t.Fatalf("marshal manifest: %v", err)
-	}
-	out = append(out, '\n')
-	if err := os.WriteFile(parityManifestPath, out, 0o644); err != nil {
-		t.Fatalf("write %s: %v", parityManifestPath, err)
+	if err := writeManifest(&m); err != nil {
+		t.Fatalf("write manifest: %v", err)
 	}
 	sort.Strings(applied)
 	t.Logf("merged %d row(s) into %s at %s (%s): %v", len(applied), parityManifestPath, sha, date, applied)
@@ -327,13 +357,8 @@ func TestParityManifest_fresh(t *testing.T) {
 	}
 
 	if *updateMatrix {
-		out, err := json.MarshalIndent(&m, "", "  ")
-		if err != nil {
-			t.Fatalf("marshal manifest: %v", err)
-		}
-		out = append(out, '\n')
-		if err := os.WriteFile(parityManifestPath, out, 0o644); err != nil {
-			t.Fatalf("write %s: %v", parityManifestPath, err)
+		if err := writeManifest(&m); err != nil {
+			t.Fatalf("write manifest: %v", err)
 		}
 		t.Logf("wrote %s", parityManifestPath)
 	}
@@ -380,11 +405,11 @@ func TestParityManifest_methodTier(t *testing.T) {
 		f := m.Families[name]
 		switch f.Status {
 		case "validated":
-			if !isT3Method(f.Method) {
-				bad = append(bad, fmt.Sprintf("  %-18s method=%q — not a T3 method", name, f.Method))
+			if !isT3Method(methodString(f.Method)) {
+				bad = append(bad, fmt.Sprintf("  %-18s method=%q — not a T3 method", name, methodString(f.Method)))
 			}
 		case "experimental":
-			if f.Method == "" {
+			if methodString(f.Method) == "" {
 				bad = append(bad, fmt.Sprintf("  %-18s status=experimental but no method recorded", name))
 			}
 		case "pending", "":
