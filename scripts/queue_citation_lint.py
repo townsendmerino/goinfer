@@ -169,6 +169,21 @@ def discriminating(content: str) -> bool:
     return len(c) >= 12 and any(ch.isalnum() for ch in c)
 
 
+# When the cited line is not discriminating, key on the nearest ENCLOSING DECLARATION instead. A
+# citation at a bare `//` is pointing at a line; what it MEANS is almost always a nameable thing —
+# allocSlots' call site, a const, a type — and a name is discriminating by construction and survives
+# reformatting inside the body. The citation then verifies "this declaration still exists" rather
+# than "this line still reads the same", which is the claim the prose was making anyway.
+DECL_RE = re.compile(r"^(?:func|type|const|var)\s")
+
+
+def anchor_for(lines, line: int):
+    for i in range(min(line, len(lines)) - 1, -1, -1):
+        if DECL_RE.match(lines[i]):
+            return "anchor: " + lines[i].strip()[:80]
+    return None
+
+
 def resolve_path(rel: str, line: int):
     """Return (repo, content) for a cited path:line, or ("", None) when the file exists nowhere.
 
@@ -180,7 +195,11 @@ def resolve_path(rel: str, line: int):
         if f.is_file():
             lines = f.read_text(errors="replace").split("\n")
             if line <= len(lines):
-                return name, lines[line - 1].strip()
+                c = lines[line - 1].strip()
+                if discriminating(c):
+                    return name, c
+                a = anchor_for(lines, line)
+                return name, (a if a else c)
             return name, ""
     return "", None
 
@@ -329,7 +348,8 @@ def main() -> int:
             repo, content = presolved[key]
             if content is None:
                 continue
-            body_txt = content.replace('|', chr(92) + '|')[:88] if discriminating(content) else "UNKEYABLE"
+            keyable = discriminating(content) or content.startswith("anchor: ")
+            body_txt = content.replace('|', chr(92) + '|')[:88] if keyable else "UNKEYABLE"
             lines.append(f"| `{key}` | {repo} | `{body_txt}` |")
         lines += ["", "## Bare file index", "",
                   "Generated. Every file referenced WITHOUT a line number, and the repo it resolves in.",
@@ -401,10 +421,21 @@ def main() -> int:
             bad.append(f"  {key}  cited but absent from the path index — run --update")
             continue
         want = rec[1].replace(chr(92) + "|", "|")
-        if want == "UNKEYABLE" or not discriminating(content):
+        if want == "UNKEYABLE" or not (discriminating(content) or content.startswith("anchor: ")):
             unkeyable.append(key)
             continue
         if content[:88] == want:
+            continue
+        if want.startswith("anchor: "):
+            # The anchor is a declaration; look for it anywhere in the file before calling it gone.
+            decl = want[len("anchor: "):]
+            for _n, _b in path_repos():
+                _f = _b / rel
+                if _f.is_file() and any(l.strip()[:80] == decl for l in _f.read_text(errors="replace").split("\n")):
+                    break
+            else:
+                bad.append(f"  {key}  ANCHOR GONE — the citation pointed at `{decl[:52]}`, which is "
+                           f"no longer in the file")
             continue
         # The content moved or vanished. Look for it elsewhere in the file before calling it red.
         found_at = None

@@ -365,7 +365,38 @@ What this run did establish: with the reservation paid up front, the decrement a
 **0 at every cap tested**, so post-sizing consumption is genuinely nil and the margin is not covering
 launch growth. Its remaining job is whatever the next item names.
 
-**A10 · The ~150 MiB driver allocation floor** — `linux`, **THE OPEN CUDA ITEM.** Mechanism measured,
+**A10 · The ~150 MiB driver allocation floor** — `linux`, **THE OPEN CUDA ITEM — and now SCHEDULED,
+not merely interesting: D3b is blocked on it.**
+
+Raising the expert-cache default above `topK` requires `cuda/backend.go`'s stated precondition,
+"fixing the margin FIRST" — read as *derived rather than asserted*. **A10 is 151,191,552 B of the
+402,653,184 B margin, 37% of it, unattributed**, and no derivation can be written while more than a
+third of what the margin covers is unexplained. So A10 is on D3b's critical path.
+
+**FIRST DISCRIMINATOR RUN 2026-08-12 — the floor is NOT local-memory backing.**
+
+Launched `shared_gate_combine` — zero declared per-thread scratch — alone, from a freshly loaded
+module, in the balloon harness:
+
+    allocation floor                151,191,552
+    zero-local kernel LAUNCHES at   153,288,704   (one 2 MiB quantum above the floor)
+    moe_route demand                289,013,760   = floor + 137,822,208
+    moe_route residual              138,412,032   (differs by 589,824, the A9-RESID drift)
+
+**The bracket check refused to search**, because the low end *succeeded* — which is the answer. A
+kernel with no local memory launches at the lowest free the balloon can reach, so **the floor is not
+a launch demand at all**: it is the allocator's own limit, and `moe_route`'s 289 MiB is
+`floor + its backing store`. Local-memory backing is fully accounted for by the residual, and the
+floor sits underneath everything, kernel-independent.
+
+**Candidate space halved without proposing a mechanism.** Ruled out: anything scaling with a kernel's
+declared local memory. Remaining: a per-context or per-device allocator reserve. Next discriminator
+should vary the *context*, not the kernel — two contexts in one process, or a second process — since
+that is the axis the floor has not been tested against.
+
+**Original entry follows.**
+
+**A10 (original) · The ~150 MiB driver allocation floor** — `linux`, **THE OPEN CUDA ITEM.** Mechanism measured,
 cause unattributed.
 
 **Status: measured, not explained.** ~150 MiB that `cuMemGetInfo` reports as free and `cuMemAlloc`
@@ -1975,7 +2006,7 @@ supports.
 | `docs/QUEUE.md|decoder/kvsnapshot_gemma4_test.go:10` | goinfer | `func TestSnapshot_refusesNonUniformKVWidth_C05(t *testing.T) {` |
 | `docs/QUEUE.md|decoder/layerpaging.go:42` | goinfer | `// mu guards the mutable paging state below (audit C-30). The pager lives on *Model, sha` |
 | `docs/QUEUE.md|decoder/mlp.go:82` | goinfer | `func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend, pager *expert` |
-| `docs/QUEUE.md|decoder/model.go:731` | goinfer | `UNKEYABLE` |
+| `docs/QUEUE.md|decoder/model.go:731` | goinfer | `anchor: func (m *Model) ForwardSubCapture(id int, cache *KVCache) (attn, mlp, ctx, mlpPr` |
 | `docs/QUEUE.md|decoder/modelsdir_test.go:13` | goinfer | `root := os.Getenv("GOINFER_MODELS_DIR")` |
 | `docs/QUEUE.md|decoder/sampler_chunked.go:188` | goinfer | `return drawChunked(e, sums, z, r)` |
 | `docs/QUEUE.md|decoder/scratch.go:38` | goinfer | `ws        *linalg.Workspace // W8A8 activation-quant scratch (zero-alloc Into/Batch)` |
@@ -1987,7 +2018,7 @@ supports.
 | `docs/QUEUE.md|metal/model.go:728` | goinfer | `r.residencyBufs = pinned` |
 | `docs/QUEUE.md|metal/model.go:827` | goinfer | `r.logitsHost[j] = sc * float32(math.Tanh(float64(v/sc)))` |
 | `docs/QUEUE.md|metal/snapshot_golden_test.go:77` | goinfer | `func TestMetalEmbedScale_forwardMatchesForwardEmb(t *testing.T) {` |
-| `docs/benchmarks.md|cuda/resident.go:28` | goinfer | `UNKEYABLE` |
+| `docs/benchmarks.md|cuda/resident.go:28` | goinfer | `anchor: var (` |
 | `docs/cuda-megakernel-spec.md|gpu/attention.go:14` | goinfer | `// uses f64 accumulation; the GPU f32 — cosine ~1.0, not bit-exact).` |
 | `docs/cuda-megakernel-spec.md|gpu/decoderunner.go:730` | goinfer | `// moeExpert records one indexed sparse-expert GEMV: dst[n] = expert[idx[slot]]·aq` |
 | `docs/cuda-megakernel-spec.md|gpu/decoderunner.go:835` | goinfer | `// relu²→int8 → down + residual into xd. The other kinds fall through to the mixer.` |
@@ -1999,21 +2030,21 @@ supports.
 | `docs/how-inference-works.md|decoder/attention.go:59` | goinfer | `nH, nKV, hd := arch.NumHeads, arch.NumKVHeads, arch.HeadDim` |
 | `docs/how-inference-works.md|decoder/kvcache.go:126` | goinfer | `subCapture bool` |
 | `docs/how-inference-works.md|decoder/kvcache.go:20` | goinfer | `func quantizeHeads(src []float32, q []int8, scales []float32, nKV, headDim int) {` |
-| `docs/how-inference-works.md|decoder/model.go:545` | goinfer | `UNKEYABLE` |
-| `docs/how-inference-works.md|decoder/model.go:586` | goinfer | `UNKEYABLE` |
+| `docs/how-inference-works.md|decoder/model.go:545` | goinfer | `anchor: func (m *Model) runLayers(id int, cache *KVCache) ([]float32, error) {` |
+| `docs/how-inference-works.md|decoder/model.go:586` | goinfer | `anchor: func (m *Model) runLayersFromEmbed(h []float32, cache *KVCache) ([]float32, erro` |
 | `docs/how-inference-works.md|decoder/registry.go:19` | goinfer | `var registry = map[string]archAdapter{` |
 | `docs/how-inference-works.md|decoder/sampler.go:109` | goinfer | `// can never silently diverge. They are separate predicates, not one widened one, so tha` |
 | `docs/how-inference-works.md|decoder/sampler.go:116` | goinfer | `// though a temperature is set — the `top_k=1` shape. It is TRUE at any temperature, whi` |
 | `docs/how-inference-works.md|decoder/sampler.go:118` | goinfer | `// distribution restricted to ONE token is deterministic regardless of that token's prob` |
 | `docs/how-inference-works.md|decoder/session.go:71` | goinfer | `// stale history. Callers must skip it (and reconcile) for an empty prompt, so a rejecte` |
-| `docs/ideas-weight-memory.md|decoder/mlp.go:69` | goinfer | `UNKEYABLE` |
-| `docs/internal/recon-qwen35-gguf.md|decoder/gguf.go:541` | goinfer | `UNKEYABLE` |
+| `docs/ideas-weight-memory.md|decoder/mlp.go:69` | goinfer | `anchor: func mlp(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend, scr` |
+| `docs/internal/recon-qwen35-gguf.md|decoder/gguf.go:541` | goinfer | `anchor: func ggufGptOssConfig(g *embed.GGUFFile) (*Config, error) {` |
 | `docs/multimodal.md|decoder/config.go:466` | goinfer | `case c.MoeIntermediateSize <= 0:` |
-| `docs/multimodal.md|decoder/gguf_qwen35.go:77` | goinfer | `UNKEYABLE` |
+| `docs/multimodal.md|decoder/gguf_qwen35.go:77` | goinfer | `anchor: func ggufQwen35Config(g *embed.GGUFFile) (*Config, error) {` |
 | `docs/multimodal.md|decoder/weights.go:344` | goinfer | `const shardIndexFile = "model.safetensors.index.json"` |
 | `docs/ollama-chase.md|cuda/resident.go:1066` | goinfer | `// All of it runs ON the executor thread — that thread made the context current — and th` |
 | `docs/ollama-chase.md|cuda/resident.go:340` | goinfer | `g4x1, g4x2, g4rn Buffer` |
-| `docs/ollama-chase.md|cuda/resident.go:41` | goinfer | `UNKEYABLE` |
+| `docs/ollama-chase.md|cuda/resident.go:41` | goinfer | `anchor: const ctxCapMarginBytes = 384 << 20` |
 | `docs/ollama-chase.md|cuda/resident.go:583` | goinfer | `// declined to the staged/CPU path upstream.` |
 | `docs/ollama-chase.md|decoder/forwardn.go:378` | goinfer | `for kvh := range nKV {` |
 | `docs/ollama-chase.md|decoder/mlp.go:82` | goinfer | `func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend, pager *expert` |
@@ -2039,18 +2070,18 @@ supports.
 | `docs/scoping-lfm2.md|decoder/rmsnorm.go:49` | goinfer | `func layerNorm(x, weight, bias []float32, rows, dim int, eps float64) {` |
 | `docs/task-admin-unload-drain.md|decoder/speculative.go:123` | goinfer | `// staged CPU cache. Draft is a separate Model with its own claim.` |
 | `docs/task-admin-unload-drain.md|internal/serveapp/admin.go:122` | goinfer | `s.regMu.Lock()` |
-| `docs/task-admin-unload-drain.md|internal/serveapp/admin.go:95` | goinfer | `UNKEYABLE` |
+| `docs/task-admin-unload-drain.md|internal/serveapp/admin.go:95` | goinfer | `anchor: func (s *server) handleAdminLoad(w http.ResponseWriter, r *http.Request) {` |
 | `docs/task-admin-unload-drain.md|internal/serveapp/anthropic.go:406` | goinfer | `s.withModelAnthropic(w, req.Model, func(lm *loadedModel) { s.serveMessagesWith(w, r, req` |
-| `docs/task-admin-unload-drain.md|internal/serveapp/anthropic.go:535` | goinfer | `UNKEYABLE` |
+| `docs/task-admin-unload-drain.md|internal/serveapp/anthropic.go:535` | goinfer | `anchor: func (s *server) handleCountTokens(w http.ResponseWriter, r *http.Request) {` |
 | `docs/task-admin-unload-drain.md|internal/serveapp/helpers.go:78` | goinfer | `func limitInflight(sem chan struct{}, h http.HandlerFunc) http.HandlerFunc {` |
 | `docs/task-admin-unload-drain.md|internal/serveapp/main.go:480` | goinfer | `if cfg.sessionDir != "" && cfg.kvSessions > 0 {` |
-| `docs/task-admin-unload-drain.md|internal/serveapp/main.go:537` | goinfer | `UNKEYABLE` |
-| `docs/task-admin-unload-drain.md|internal/serveapp/main.go:707` | goinfer | `UNKEYABLE` |
+| `docs/task-admin-unload-drain.md|internal/serveapp/main.go:537` | goinfer | `anchor: func newServer(cfg config) (*server, error) {` |
+| `docs/task-admin-unload-drain.md|internal/serveapp/main.go:707` | goinfer | `anchor: func (s *server) loadQwenVisionTower(dir string, int8Tower bool) error {` |
 | `docs/task-admin-unload-drain.md|internal/serveapp/openai.go:153` | goinfer | `func (lm *loadedModel) tryEnter() bool {` |
 | `docs/task-admin-unload-drain.md|internal/serveapp/openai.go:166` | goinfer | `func (lm *loadedModel) enter(w http.ResponseWriter) bool {` |
 | `docs/task-admin-unload-drain.md|internal/serveapp/openai.go:213` | goinfer | `// the safe default). Only Matryoshka-trained models may be sliced; see resolveDimension` |
 | `docs/task-admin-unload-drain.md|internal/serveapp/openai.go:464` | goinfer | `if len(imgs) > 0 {` |
-| `docs/task-admin-unload-drain.md|internal/serveapp/openai.go:489` | goinfer | `UNKEYABLE` |
+| `docs/task-admin-unload-drain.md|internal/serveapp/openai.go:489` | goinfer | `anchor: func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR` |
 | `docs/task-admin-unload-drain.md|internal/serveapp/openai.go:542` | goinfer | `if req.Logprobs {` |
 | `docs/task-admin-unload-drain.md|internal/serveapp/responses.go:86` | goinfer | `s.withModel(w, req.Model, func(lm *loadedModel) { s.serveResponsesWith(w, r, req, lm) })` |
 | `docs/task-admin-unload-drain.md|internal/serveapp/sessions.go:25` | goinfer | `model   *decoder.Model` |
@@ -2064,13 +2095,13 @@ supports.
 | `docs/task-mla-cuda-residency.md|cuda/backend.go:89` | goinfer | `// Without this check the failure is silent — the feature is dropped and the logits are` |
 | `docs/task-mla-cuda-residency.md|decoder/arch.go:173` | goinfer | `QLoRARank      int  // q_a_proj bottleneck width; 0 ⇒ direct q_proj (no q-LoRA)` |
 | `docs/task-mla-cuda-residency.md|decoder/features.go:126` | goinfer | `// shared taxonomy, so the hardware matrix matches admission.` |
-| `docs/task-mla-cuda-residency.md|decoder/features.go:330` | goinfer | `UNKEYABLE` |
+| `docs/task-mla-cuda-residency.md|decoder/features.go:330` | goinfer | `anchor: var residentBackendFeatures = map[string]map[ResidentFeature]bool{` |
 | `docs/task-mla-cuda-residency.md|decoder/features.go:48` | goinfer | `FeatMoE               ResidentFeature = "moe"                 // sparse mixture-of-exper` |
 | `docs/task-mla-cuda-residency.md|decoder/forward_deepseek.go:188` | goinfer | `func (m *Model) mlaAttentionAbsorb(n []float32, lw *LayerWeights, arch *Architecture, ca` |
 | `docs/task-mla-cuda-residency.md|gpu/decoderunner.go:776` | goinfer | `add(c.mlaStorePipeline, bind(c.mlaStoreLayout, kvDown, normW, invFreq, latCache, mlaStor` |
 | `docs/task-mla-cuda-residency.md|gpu/mla.go:26` | goinfer | `UNKEYABLE` |
 | `docs/task-model-family-deepseek-v4-kimi-k3.md|decoder/arch.go:173` | goinfer | `QLoRARank      int  // q_a_proj bottleneck width; 0 ⇒ direct q_proj (no q-LoRA)` |
-| `docs/task-model-family-deepseek-v4-kimi-k3.md|decoder/deltanet.go:70` | goinfer | `UNKEYABLE` |
+| `docs/task-model-family-deepseek-v4-kimi-k3.md|decoder/deltanet.go:70` | goinfer | `anchor: func softplusf(x float32) float32 {` |
 | `docs/task-model-family-deepseek-v4-kimi-k3.md|decoder/forward_deepseek.go:89` | goinfer | `invFreq := arch.ropeInvFreq(layer)` |
 | `docs/task-model-family-deepseek-v4-kimi-k3.md|decoder/weights.go:1032` | goinfer | `func streamExperts(t embed.Tensor, nExpert, rows, cols int, quant quantMode) ([]linalg.W` |
 | `docs/task-moe-streaming.md|decoder/forwardn.go:14` | goinfer | `// MoE FFN itself stays per-row (router picks different experts per token).` |

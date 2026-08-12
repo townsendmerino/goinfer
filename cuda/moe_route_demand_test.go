@@ -160,6 +160,24 @@ func TestMoERouteDemandThresholdChild(t *testing.T) {
 	q := dev.NewCommandQueue()
 	one := LaunchConfig{GridX: 1, GridY: 1, GridZ: 1, BlockX: 1, BlockY: 1, BlockZ: 1}
 	before := read()
+
+	// A10 discriminator: launch ONLY a kernel with zero declared local memory, from a freshly loaded
+	// module. If the ~151 MiB floor is still there, it is per-module or per-context and has nothing
+	// to do with local-memory backing; if it vanishes, it is part of backing-store setup.
+	if os.Getenv("GOINFER_A9_KERNELS") == "zerolocal" {
+		zp, ze := dev.NewComputePipeline(mod, "shared_gate_combine")
+		if ze != nil {
+			t.Fatalf("shared_gate_combine: %v", ze)
+		}
+		zerr := q.Launch(zp, one, Arg(rLogits), Arg(rBias), Arg(rIdx),
+			gpu.ArgValue(int32(1)), gpu.ArgValue(int32(1)))
+		zs := q.Sync()
+		zafter := read()
+		fmt.Printf("A9CHILD ok=%t freeBefore=%d freeAfter=%d err=%q\n",
+			zerr == nil && zs == nil, before, zafter, strings.TrimSpace(fmt.Sprintf("%v|%v", zerr, zs)))
+		return
+	}
+
 	lerr := q.Launch(p, one,
 		Arg(rLogits), Arg(rBias), Arg(rIdx), Arg(rWgt),
 		gpu.ArgValue(int32(8)), gpu.ArgValue(int32(2)), gpu.ArgValue(int32(1)),
