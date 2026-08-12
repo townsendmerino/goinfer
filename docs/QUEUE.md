@@ -109,6 +109,14 @@ Convert that table into the Go source of truth and have a lint read it — **do 
 registry beside the document**, which leaves two lists to drift apart. The lint fails on any
 `os.Getenv` in the tree naming a variable absent from the registry.
 
+**Also catch env reads at package initialisation.** A `var x = os.Getenv(...)` at package scope is
+read before any test runs, so `t.Setenv` cannot override it — a test that sets it silently gets the
+default and its result reads as a measurement. That cost a full six-minute 26B run on 2026-08-12
+(`GOINFER_A1_PROBE`), and the only reason it was caught is that the probe asserted it had recorded
+something. The lint has the `os.Getenv` call sites already; flagging the ones in package-level
+initialisers is the same pass. Folded in here rather than filed separately, because a second env
+registry is exactly what B1 exists to prevent.
+
 Why it matters: 105 variables, exactly one of which anything has ever set. Six have no prefix at all
 (`ZZBASE`, `GEMMA3_4B`, `G4_TRACE`, `NOISE_FLOOR_CKPT`, `ROUTER_CAPTURE_OUT`, `GIW_BIG`) and are
 only findable *as a class* if something enumerates `os.Getenv` mechanically. A markdown table
@@ -192,17 +200,87 @@ Land it in ONE implementation — `allocSlots` calls `capSlots`, not a copy — 
 at the shipping path and a mutation check. And correct, in the same change, wherever it was written
 down that `slotcap_test.go` corroborates production sizing: it corroborates a parallel copy.
 
-**A9 · The deferred fixed cost paid after the cap is computed** — `linux`, **CLOSED — premise
-confirmed in shape, mechanism corrected**
+**A9 · The deferred fixed cost paid after the cap is computed** — `linux`, **CLOSED — cause
+established, after one reopen**
 
 Ran 2026-08-12, **before A5 landed**, so no cap override was needed and 34 was reachable.
 
-**Answer: `moe_route`'s first launch reserves 138,412,032 B (132 MiB) of local-memory backing
-store.** Two instruments agree to the byte (`cuMemGetInfo` −138,412,032; `nvidia-smi` 104 → 236 MiB).
-It declares two `float[MOE_MAX_E]` per-thread arrays, and at `MOE_MAX_E = 512` that is 4 KiB/thread
-which the driver must back for the **device's occupancy** on first use — regardless of the 1×1 grid
-goinfer launches it with. Paid at first launch, long after `allocSlots` sized the cache from a free
-reading that could not include it.
+**Answer: `moe_route`'s first launch demands 289,013,760 B (275.6 MiB) of free VRAM, and retains
+138,412,032 B (132.0 MiB) of it.**
+
+| quantity | bytes | MiB |
+|---|---|---|
+| highest observed FAIL | 286,916,608 | 273.6 |
+| **lowest observed PASS (the demand)** | **289,013,760** | **275.6** |
+| residual after a successful launch | 138,412,032 | 132.0 |
+
+Peak demand is **2.09× the residual**, and the ~150 MiB difference is transient and **still
+unnamed** — the one loose end this item leaves.
+
+**It closed once too early.** The first answer was the 132 MiB residual, taken as the cause. It is
+not: free before the failing launch was 198,836,224 B, which *exceeds* 138,412,032 by 60,424,192 B.
+The reservation fit and the launch failed anyway. The tell was in the numbers already recorded —
+free after the failure (265,945,088) was 67,108,864 B **above** the pre-attempt level, and an unwind
+cannot return more than was taken, so something that pre-existed the attempt had been released. The
+demand was measured directly rather than inferred: balloon the device to a chosen free level, launch
+`moe_route`, bisect, one fresh context per trial.
+
+**The arithmetic closes now:**
+
+- 26B at 34 slots: 198,836,224 free against 275.6 MiB demand — short by **90,177,536 B**. Fails.
+- post-trim 265,945,088 — still short by **23,068,672 B**, which is why trimming did not save it.
+- 26B at 33 slots: 450,494,464 free — clear by **161,480,704 B**. (A7 still runs; see below.)
+
+**Capacity, not contiguity.** Three identical repeats only exclude run-to-run noise, since a
+deterministic balloon produces a deterministic layout. The discriminating control is balloon *shape*:
+re-run filling with many 2 MiB blocks instead of a few large ones — same free bytes, very different
+arrangement — and the threshold is **identical to the byte**. (Contiguity was refuted earlier in this
+campaign against a different observation; that refutation was about slot buffers and did not carry
+here, so it was re-tested rather than reused.)
+
+**Enumerated, not sampled** (`TestKernelLocalMemoryCensus`): `LOCAL_SIZE_BYTES` for all **37 entry
+points across all 12 embedded modules**. Three declare per-thread local memory — `moe_route` at
+**4416** B/thread, `rope_kv` and `rope_kv_batched` at 32 each. Two kernels was a sample and the
+sibling-drift class is about exactly that.
+
+**All three figures are pinned**, not asserted non-zero — a gate that only checks "a reservation
+exists" lets a future `MOE_MAX_E` change double a hidden cost while staying green, which is the
+exercised-but-never-triggered shape inside the gate written for this finding. Mutation-checked: each
+pin perturbed by one byte, each fails red.
+
+**A9-FIX · The fix is ORDERING, not a bigger margin** — `linux`, **do this, not the constant**
+
+Adding 275.6 MiB (or 132, or any measured figure) to `slotMarginBytes` is the correction-term mistake
+relocated from A5 to A9. It buries a named consumer inside an unnamed constant, and the next deferred
+cost — a new kernel with per-thread scratch, a driver that reserves differently — reopens it silently.
+
+**Structural fix: pay the deferred reservation BEFORE taking the free reading that sizes the cache.**
+Force `moe_route` (and any kernel the census flags) to launch once during `BuildResident`, ahead of
+`allocSlots` at `cuda/backend.go:793`. The cap is then correct **by construction**, because the free
+reading it is computed from already includes every fixed cost that will ever be paid. Recorded here
+before anyone reaches for the constant.
+
+**A9-SPEC · Specialize `MOE_MAX_E` at JIT time** — `linux`, real reclaim, measured not estimated
+
+The per-thread arrays are `float[MOE_MAX_E] × 2` and `MOE_MAX_E` is compile-time — but goinfer JITs
+through NVRTC, so it can be specialized to the loaded model's **actual expert count** rather than the
+worst case. A 128-expert model currently pays the 512-expert reservation.
+
+Attach the measured figures, not an estimate: `moe_route` declares **4416 B/thread**, retains
+**138,412,032 B**, and demands **289,013,760 B** at first launch. What the reclaim actually is must be
+**measured by building at a lower `MOE_MAX_E`** — see A9-MULT below for why it cannot be derived.
+Note the PTX freeze: regeneration is reproducible only via the pinned `nvidia-cuda-nvrtc-cu12==12.6.85`
+venv, so this is a deliberate exercise rather than an incidental rebuild.
+
+**A9-MULT · The halving was DERIVED and is now withdrawn** — `linux`, **CLOSED, refuted**
+
+"`MOE_MAX_E` 256 → 512 doubled the cost from ~66 to 132 MiB" assumed the backing store is linear in
+per-thread bytes with a constant occupancy multiplier. Checked: `moe_route` declares **4416**
+B/thread (not the 4096 that "two `float[512]`" implies), and 4416 × 40 SMs × 1024 threads/SM =
+180,879,360 B ≠ the measured 138,412,032 (**ratio 0.7652**). The occupancy factor is **not**
+`SMs × maxThreadsPerSM`, so proportionality in local-bytes is unverified and the halving does not
+follow. Withdrawn rather than restated. The replacement is a measurement at a lower `MOE_MAX_E`,
+which A9-SPEC needs anyway.
 
 **The named mechanism was wrong.** moePTX's *module* memory is **0 B** — at `CompileLibrary`, at
 `NewComputePipeline`, and at the first launch of a module kernel that declares no scratch — with both
@@ -307,6 +385,20 @@ without saying so — so running the gate would not have caught this either.
 
 Fix: the repo-hygiene group runs what CI runs, **derived rather than duplicated** if practical, so
 the next check CI gains does not reopen the gap.
+
+**B0a · A guard that cannot find its tool must fail, not skip** — `linux`, the guard shape
+
+B0 is the CI side; this is the shape one level down, and it happened *inside* the session written to
+close B0. A check ran as `command -v staticcheck >/dev/null && staticcheck ... | head`. The binary
+exists but is not on `PATH`, so `command -v` failed, the `&&` short-circuited, the whole check
+evaluated to nothing, and the surrounding output looked exactly like a clean run. It was reported as
+"clean". Re-running it directly, with CI's own invocation, was clean — so the conclusion survived and
+**the guard did not**.
+
+This is an absence-of-signal instance in its guard form: a missing tool is indistinguishable from a
+passing check. Remedy, either: **the guard fails when its tool is absent**, or **the skip is recorded
+in the census** so a not-run check is visibly not-run. A silent third state is what makes it dangerous
+— it was found last and mentioned last, which is where things sink.
 
 **B5 · `RELEASING.md` must reference `QUEUE.md`** — either box
 

@@ -472,6 +472,7 @@ states. Five instances, all the same shape:
 | a process "still running" | "progressing" | a wait condition that can never become false; it never started |
 | a probe recording nothing | "no launches happened" | the probe's env var read at package-init, before `t.Setenv` ran |
 | **an experiment's null under a forcing flag** | "the forced thing is excluded" | **the flag never engaged, so nothing was forced** |
+| a guard's tool not on `PATH` | "the check passed" | `command -v tool && tool ...` short-circuiting the whole `&&` chain into silence |
 
 The last one is the sharpest, because the null was the *designed output* of the experiment. A 26B run
 under `CUDA_MODULE_LOADING=EAGER` came back byte-identical to the default run and failed identically,
@@ -483,10 +484,25 @@ its result has been written down.
 
 That control also relocated the answer. Measuring each step directly on a fresh context — no model,
 no cache, under a second — found the deferred cost the experiment was looking for, and it was not the
-one the experiment named: `moe_route`'s first launch reserves 138,412,032 B of **local memory** (two
-`float[512]` per-thread arrays backed for the device's occupancy), while module memory is a true zero
-on both instruments. The five-minute 26B run had been the wrong instrument for a question that was
-never model-dependent.
+one the experiment named: `moe_route`'s first launch retains 138,412,032 B of **local memory**, while
+module memory is a true zero on both instruments. The five-minute 26B run had been the wrong
+instrument for a question that was never model-dependent.
+
+**And that answer was still not the cause** — worth recording as its own step, because it is the
+failure mode of a *satisfying* result. 138,412,032 B was a real, twice-confirmed measurement, and it
+was adopted as the explanation without checking that it explained the observation. It does not: free
+before the failing launch was 198,836,224, which exceeds it by 60,424,192. The refuting arithmetic was
+sitting in the numbers already written down, including a post-failure reading 67,108,864 B *above* the
+pre-attempt level — which an unwind cannot produce. Measuring the demand directly put it at
+289,013,760 B, 2.09× the residual. **A measurement that is real, reproducible and about the right
+object can still not be the cause; the check is whether it reproduces the observation, and it is a
+different check from whether the measurement is sound.**
+
+The last-mile control there is worth naming too. Three identical repeats look like capacity rather
+than contiguity, but a deterministic balloon produces a deterministic layout, so identical repeats
+only exclude run-to-run noise. The discriminating variable is the balloon's *shape*: same free bytes,
+many small blocks instead of a few large ones. **Vary what the hypothesis says should not matter, not
+just the seed.**
 
 The third cost 27 minutes and produced no measurement, while being reported on twice as progress —
 including a confident account of what its *duration implied*. The discriminating check (GPU at 0%,
