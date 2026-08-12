@@ -227,6 +227,78 @@ Structural options exist (typed per-kernel wrappers mirroring each `.cu` signatu
 `cuKernelGetParamInfo`, CUDA 12.4+, to check arity against the module at load). **Not funded —
 recorded so the next signature change knows what is and isn't holding the line.**
 
+### Sibling drift: the fix lands on one member of a pair
+
+Adjacent to G-01 and distinct from it. G-01 is a gate pointed at the wrong path. This one is a
+*fix* pointed at the wrong path — or rather, at only half of it.
+
+> **Two code paths that are siblings by construction — the same operation across quantizations,
+> backends, or dense versus sparse. A fix or invariant lands on one and not the other, and nothing
+> fails when they diverge.**
+
+The pair is usually written in one sitting by one person, which is exactly why it drifts: at the
+time of writing the two bodies are obviously the same shape, so neither carries a note saying the
+other exists. Months later a fix arrives via one call site. The sibling is not forgotten — it is
+never brought to mind at all, and no test is looking, because both members were already covered
+by tests that pass just as happily before and after the divergence.
+
+**Recognition test:**
+
+> **When a fix lands on one member of a pair, what checks the other?**
+
+*Remedy shape:* a test that **enumerates** the members and asserts the invariant on all of them.
+A test that names one member reproduces the class — it is what the passing sibling already had.
+Where enumeration is not mechanical, the invariant's own comment names the full set, so the next
+fix is written by someone who has been told the set exists.
+
+Instances at time of writing, five, none of them found by a failing test:
+
+| the pair | what drifted |
+|---|---|
+| W8A8 / W4A8 projection | W8A8 was fixed to reuse a `Workspace`; W4A8 still allocates a fresh one per projection per token |
+| dense `mlp` / `moeMLP` | the dense sibling honours the `decodeScratch` invariant; `moeMLP` skips it and allocates ~7–8 MB/token |
+| batched GEMV int8 / int4 | fix applied to one quantization |
+| `capSlots` / its inline copy in `allocSlots` | production runs the inline copy; the gate tests `capSlots`, so a change to either is uncontradicted by the other |
+| SIMD / scalar widen | a SIMD `int8→f32` widen sits in the same package as the scalar one still used by the LM head |
+
+The `capSlots` row is the sharpest, because there the drift is between the shipped path and *the
+thing written to check it* — sibling drift and G-01 in the same object. It is also the reason this
+class is stated as enumeration rather than diligence: a documented claim that the gate
+"corroborates production sizing" survived precisely because both halves passed.
+
+### The measurement's shape
+
+The number is real and the code path is real, but where the instrument sits, or what the comparison
+differences away, determines what could have been visible. The reading is then interpreted as though
+it described the system rather than the instrument's view of it.
+
+Two shapes:
+
+- **Position** — the probe sits on one side of the event and reports the other side's state.
+  *Recognition test:* if the probe were one line earlier or later, would the number change? If yes,
+  the position is part of the claim and has to be stated with it.
+- **Differencing** — a delta between two configurations cannot see a cost that does not scale with
+  the configuration. *Recognition test:* what cancels? Where a sweep compares configurations, **at
+  least one absolute measurement is required before any mechanism is proposed.**
+
+*Remedy shape:* the measured-quantities rule below already requires machine, method and date. Add
+**probe position** for any figure whose value depends on it — which call it was taken before or
+after.
+
+Instances at time of writing, all 2026-08-12, three readings and one shape:
+
+- the **ladder ceilings** — contiguity reported as a rising fraction of free (36% → 50% → 60%) when
+  the ladder stopped at first success against a falling denominator, so the trend was the
+  instrument's, not the heap's;
+- the **cross-run deltas** — per-slot cost derived from between-configuration differences, which
+  cancel any fixed cost exactly, however many configurations are sampled;
+- **free-at-failing-launch** read from `describeLaunchErr`, which is reached only *after*
+  `Launch` has returned non-nil and therefore reports the **post-failure** state
+  (265,945,088 = 198,836,224 + exactly 64 MiB, the first-launch figure — an exact 2^26 that reads as
+  a driver block unwinding rather than as application scratch released).
+
+Each was stated as a fact about the system before the instrument's position was checked.
+
 ### Representative: a fixture must be real in the dimensions the failure lives in
 
 Two properties have to survive a fixture's shrink, and only one of them is a dimension. Both were
@@ -357,36 +429,6 @@ figure nobody had computed. The real answer is 38: one slot costs 30 layers x 3.
 so a 384 MB margin buys 3.67 of them and the cap moves by 4. An unverified number inside the check
 whose job is being checkable is the same defect one layer out, and the assertion and the prose fail
 INDEPENDENTLY — a green test does not vet its own comment.
-
-**The measurement's shape.** The number is real and the code path is real, but where the instrument
-sits, or what the comparison differences away, determines what could have been visible. The reading
-is then interpreted as though it described the system rather than the instrument's view of it.
-
-Two shapes:
-
-- **Position** — the probe sits on one side of the event and reports the other side's state.
-  *Recognition test:* if the probe were one line earlier or later, would the number change? If yes,
-  the position is part of the claim and has to be stated with it.
-- **Differencing** — a delta between two configurations cannot see a cost that does not scale with
-  the configuration. *Recognition test:* what cancels? Where a sweep compares configurations, **at
-  least one absolute measurement is required before any mechanism is proposed.**
-
-*Remedy shape:* the measured-quantities table already requires machine, method and date. Add **probe
-position** for any figure whose value depends on it — which call it was taken before or after.
-
-Instances at time of writing, all 2026-08-12, three readings and one shape:
-
-- the **ladder ceilings** — contiguity reported as a rising fraction of free (36% → 50% → 60%) when
-  the ladder stopped at first success against a falling denominator, so the trend was the
-  instrument's, not the heap's;
-- the **cross-run deltas** — per-slot cost derived from between-configuration differences, which
-  cancel any fixed cost exactly, however many configurations are sampled;
-- **free-at-failing-launch** read from `describeLaunchErr`, which is reached only *after*
-  `Launch` has returned non-nil and therefore reports the **post-failure** state
-  (265,945,088 = 198,836,224 + exactly 64 MiB, the first-launch figure — an exact 2^26 that reads as
-  a driver block unwinding rather than as application scratch released).
-
-Each was stated as a fact about the system before the instrument's position was checked.
 
 **Keep a table of measured quantities; every new model must reproduce all of them.** Seven
 mechanism claims were made in one day on a single defect. Six were caught by a reader. The seventh
