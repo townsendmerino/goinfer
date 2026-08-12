@@ -358,14 +358,23 @@ readback, per-allocation driver overhead, and whatever prefill transiently needs
 289,013,760 demand figure. Recovering the two slots is the payoff; the reason to do it at all is that
 an unmeasured constant guarding a now-measured path is the last soft spot in this chain.
 
-**A9-RESID · 589,824 B unexplained between two reservation measurements** — `linux`, small
+**A9-RESID · The 589,824 B is baseline variance, not reservation variance** — `linux`, **CLOSED**
 
-The 26B run implies a reservation of 137,822,208 B (3,847,880,704 − 3,710,058,496); the
-fresh-context harness measures 138,412,032 B. **576 KiB apart.** Candidates: run-to-run variance in
-the 26B's pre-`allocSlots` free, or a dependence on launch configuration (the warm-up launches with
-nE=1/k=1, the harness with nE=8/k=2 — local memory is a compile-time property, so a dependence would
-itself be a finding). Does not affect A9-FIX's property, which is exact. Cheap to settle: vary the
-harness's nE/k and see whether the reservation moves.
+The launch-configuration branch is **refuted**. The reservation is **138,412,032 B at every
+configuration tested** — nE ∈ {1, 8, 128, 512}, k ∈ {1, 2, 8}, a 512× span in nE — which is what a
+compile-time property should do, and confirms the driver sizes the backing store from the kernel's
+declared footprint rather than from anything passed at launch.
+
+So the 576 KiB is the other branch: **the pre-launch free-VRAM baseline itself moves**. It reproduced
+directly — the same harness reported free before the first `moe_route` as 7,662,600,192 in one build
+and 7,663,190,016 in another, **a difference of exactly 589,824 B**, with the reservation identical in
+both.
+
+**Caveat worth carrying.** Every figure in A1/A2/A5/A7 is anchored to a pre-`allocSlots` free of
+3,847,880,704 B, and that anchor is now known to drift by ~576 KiB. That is well under the 2,097,152 B
+quantum, so it can only change a cap decision when a requirement lands within 576 KiB of the
+free-minus-margin boundary — not the case at any figure recorded here, but it is why the cap should
+never be quoted as a property of the card alone.
 
 **Why the ordering fix is better than a margin bump, stated so nobody later "simplifies" it into one.**
 Peak demand is 289,013,760 and residual is 138,412,032 — a ratio of **2.09×**. Forcing early pays the

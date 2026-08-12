@@ -157,13 +157,24 @@ func TestMoERouteFirstLaunchReservation(t *testing.T) {
 	// block of one thread. That reservation is a deferred fixed cost paid at first launch, which is
 	// A9's shape exactly — but in local memory, not module code, which is why probing the module
 	// found nothing.
-	rLogits, rBias := afn(dev, 8), afn(dev, 8)
-	rIdx, rWgt := aun(dev, 2), afn(dev, 2)
+	// A9-RESID: nE and k are variable so the reservation can be tested for launch-configuration
+	// dependence. Local memory is a COMPILE-TIME property, so a dependence here would itself be a
+	// finding — the driver would be sizing the backing store from something other than the kernel's
+	// declared footprint.
+	nE, k := 8, 2
+	if v, e := strconv.Atoi(os.Getenv("GOINFER_A9_NE")); e == nil && v > 0 {
+		nE = v
+	}
+	if v, e := strconv.Atoi(os.Getenv("GOINFER_A9_K")); e == nil && v > 0 {
+		k = v
+	}
+	rLogits, rBias := afn(dev, nE), afn(dev, nE)
+	rIdx, rWgt := aun(dev, k), afn(dev, k)
 	beforeRoute := read()
 	smi("before moe_route")
 	rerr := q.Launch(pipes[0], LaunchConfig{GridX: 1, GridY: 1, GridZ: 1, BlockX: 1, BlockY: 1, BlockZ: 1},
 		Arg(rLogits), Arg(rBias), Arg(rIdx), Arg(rWgt),
-		gpu.ArgValue(int32(8)), gpu.ArgValue(int32(2)), gpu.ArgValue(int32(1)),
+		gpu.ArgValue(int32(nE)), gpu.ArgValue(int32(k)), gpu.ArgValue(int32(1)),
 		gpu.ArgValue(int32(0)), gpu.ArgValue(float32(1)),
 		gpu.ArgValue(int32(1)), gpu.ArgValue(int32(1)))
 	rserr := q.Sync()
@@ -173,6 +184,7 @@ func TestMoERouteFirstLaunchReservation(t *testing.T) {
 		t.Fatalf("launching moe_route failed (launch=%v sync=%v)", rerr, rserr)
 	}
 	routeCost := beforeRoute - afterRoute
+	t.Logf("  launch config nE=%d k=%d", nE, k)
 	t.Logf("  free before first moe_route     %11d B", beforeRoute)
 	t.Logf("  free after  first moe_route     %11d B   (cost %d B = %.1f MiB)",
 		afterRoute, routeCost, float64(routeCost)/(1<<20))
