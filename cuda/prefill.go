@@ -5,7 +5,6 @@ package cuda
 import (
 	"errors"
 	"fmt"
-	"math"
 	"strings"
 	"time"
 
@@ -412,16 +411,8 @@ func (r *cudaResident) prefillCore(embeddings [][]float32, startPos int, allLogi
 	}
 	// Final-logit softcap (Gemma) — host-side, exactly as step(). No-op (0) for the dense families
 	// this path serves, but kept so the contract matches Forward if a softcapped dense arch appears.
-	if r.finalSoftcap > 0 {
-		sc := r.finalSoftcap
-		for _, out := range outs {
-			if out == nil {
-				continue
-			}
-			for j, v := range out {
-				out[j] = sc * float32(math.Tanh(float64(v/sc)))
-			}
-		}
+	for _, out := range outs {
+		applySoftcap(out, r.finalSoftcap)
 	}
 	return outs, nil
 }

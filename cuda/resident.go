@@ -5,7 +5,6 @@ package cuda
 import (
 	"errors"
 	"fmt"
-	"math"
 	"os"
 	"reflect"
 	"strings"
@@ -1812,12 +1811,7 @@ func (r *cudaResident) step(emb []float32, pos int) ([]float32, error) {
 	// and as FeatEmbedScale's √hidden is host-side. This is what FeatFinalLogitSoftcap declares on
 	// this backend; 0 for every non-softcapped family (no-op). Covers Forward and ForwardN (both
 	// route through step).
-	if r.finalSoftcap > 0 {
-		sc := r.finalSoftcap
-		for j, v := range r.logitsHost {
-			r.logitsHost[j] = sc * float32(math.Tanh(float64(v/sc)))
-		}
-	}
+	applySoftcap(r.logitsHost, r.finalSoftcap)
 	return r.logitsHost, nil
 }
 
