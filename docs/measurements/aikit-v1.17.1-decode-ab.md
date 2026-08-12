@@ -54,3 +54,51 @@ is still live. That path is a **prefill** shape which this decode instrument bar
 Consequently every statement of this result names **decode** explicitly, and a prefill measurement is
 owed before a goinfer tag carrying this bump: a release characterizing one phase while silently
 carrying an unmeasured change to another is a claim by omission.
+
+---
+
+# Result — appended after the run. Branch 1: FLAT
+
+Raw, in the order run. **Bold = the pre-registered warm-up discard** (first sample of each visit).
+
+| visit | samples (tok/s) |
+|---|---|
+| 1 · `v1.16.0` | **0.7932**, 0.9704, 0.9690, 0.9819 |
+| 1 · `v1.17.1` | **0.9865**, 1.0350, 0.9995, 0.9996 |
+| 2 · `v1.16.0` | **0.9999**, 0.9988, 0.9792, 0.9888 |
+| 2 · `v1.17.1` | **0.9556**, 0.9601, 0.9605, 0.9700 |
+
+| arm | n | median | mean | sd | min | max |
+|---|---|---|---|---|---|---|
+| `v1.16.0` | 6 | 0.9806 | 0.9813 | 0.0113 | 0.9690 | 0.9988 |
+| `v1.17.1` | 6 | 0.9848 | 0.9874 | 0.0294 | 0.9601 | 1.0350 |
+
+**Median delta +0.0042 tok/s = +0.43% of the pooled mean (0.98440). The floor was ±2.0%, so this is
+BRANCH 1: flat — below this instrument's noise floor.** That is the result, recorded as one.
+
+The non-separation is about as clean as this instrument produces: **17 of 36** pairwise comparisons
+put a v1.17.1 sample below a v1.16.0 sample, where 18 is exactly no separation. The per-visit medians
+interleave rather than order — v1.16.0 {0.9704, 0.9888} against v1.17.1 {0.9996, 0.9605} — which is
+what no effect looks like, as opposed to a small one.
+
+Compare the same instrument on v1.17.0: **−2.96%**, above the floor, with per-visit medians that did
+not overlap. The difference between the two results is not subtle.
+
+**No secondary v1.17.0-vs-v1.17.1 arm was run**, per the pre-registration: it was conditional on the
+primary *not* coming back flat. It came back flat, so a second number would have been decoration.
+
+## What this does not say
+
+It does not say v1.17.1 is faster (+0.43% is noise, not a win — branch 3's scoping rule would have
+applied had it cleared the floor, and it did not come close).
+
+It says **nothing about prefill**, in either direction, for v1.17.0 or v1.17.1.
+`linalg/matmul_blocked.go` is unchanged in the patch, so the f32 blocked-matmul rework is still live
+and unmeasured. A prefill number is owed before a goinfer tag carries this bump.
+
+## Note on session drift, which is the case for the harness
+
+This whole session ran at ~0.98–1.03 tok/s; the v1.17.0 A/B ran at ~0.93–0.97 on the same box, same
+model, same binary shape. A **5% session-level shift** — larger than either effect under test.
+Any before/after comparison spanning the two sessions would have been dominated by it, in whichever
+direction the sessions happened to fall. Interleaving is what makes both results mean anything.

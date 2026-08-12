@@ -1875,8 +1875,52 @@ exactly where it matters**. P7 lands when Q1 gives int4 a golden, or behind a re
 not W8A8-fixed / W4A8-unfixed, it is `matmulInto` covering one quantization and silently delegating
 the rest.
 
-**P9 · aikit v1.17.0 costs ~3% of decode throughput on this shape — MEASURED, direction robust,
-locus not isolated** — `linux`, **open, 2026-08-12**
+**P9 · aikit v1.17.0 cost ~3% of DECODE throughput on this shape — CLOSED 2026-08-12 by aikit
+v1.17.1** — `linux`
+
+**Four statements, kept separate on purpose. Collapsing them would make the record claim more than
+the work did.**
+
+1. **The A/B measured a decode regression.** v1.16.0 against v1.17.0, interleaved, pre-registered
+   2.0% floor: **−2.96%**, above the floor, per-visit medians not overlapping.
+2. **aikit v1.17.1 fixed it.** The same instrument, the same floor, re-run with the expectation
+   written down first: **+0.43%**, branch 1, **flat**. 17 of 36 pairwise comparisons separate, where
+   18 is exactly none. `w8a8Span`'s executable body in v1.17.1 is byte-identical to v1.16.0.
+3. **The locus was INFERRED, not measured.** "The int8 kernel at M=1" was recorded as inference at
+   the time, explicitly labelled, with an ablation named as the thing that would settle it. The
+   ablation was never run here. Upstream's revert later confirmed the inference was right — **and
+   that does not retroactively make it evidence.** This measurement established a direction and a
+   magnitude; it never located a cause. Anyone reading this entry as "the A/B found the int8 kernel"
+   has upgraded a guess to a finding, which is the error the labelling existed to prevent.
+4. **The upstream report produced a fix in a patch release the same day.** aikit v1.17.1 reverts the
+   eight-column span, and its commit message adopts the method — *"interleaved with a pre-registered
+   2% floor and warm-up discard — a better methodology than the one that shipped the regression"* —
+   and states the mechanism this A/B could not: the two forms walk memory differently, so the
+   eight-column kernel wins when B is cache-resident and loses when B is streamed. Both production
+   callers stream.
+
+**That last point is the case for the methodology, and it is written down for the next time a
+careful A/B looks expensive.** The regression shipped from a real measurement taken at ONE shape.
+What caught it was not a better benchmark but a *disciplined* one — interleaved rather than
+sequential, floor fixed before the data, warm-up discard defined in advance, and the limits stated
+rather than the result rounded. The first attempt at this number, two runs separated in time, was
+worthless and would have been reported as −4% had it not been checked. **The extra ~40 minutes of
+machine time is the entire reason a regression reached a patch release instead of a user.**
+
+**Session drift makes the point concretely:** this box ran ~0.93–0.97 tok/s during the v1.17.0 A/B
+and ~0.98–1.03 during the v1.17.1 one — a **5% shift, larger than either effect under test**. Any
+before/after comparison spanning them would have been dominated by whichever session it straddled.
+
+**STILL OWED — DECODE ONLY.** Every number here is decode. `linalg/matmul_blocked.go` is **unchanged
+in v1.17.1**, so v1.17.0's f32 blocked-matmul rework is still live and **unmeasured in both
+versions**. That path is a prefill shape this instrument barely exercises. **A prefill measurement
+gates cutting a goinfer tag that carries this bump** — a release characterizing one phase while
+silently carrying an unmeasured change to another is a claim by omission.
+
+Full records: `docs/measurements/aikit-v1.17.0-decode-ab.md` and `-v1.17.1-decode-ab.md`, each
+carrying its pre-registration, its raw samples, and its own weaknesses.
+
+<details><summary>The original v1.17.0 finding, as recorded before the fix</summary>
 
 Not a product claim and deliberately not in the CHANGELOG: an engineering finding, recorded with its
 method and its limits so it is not lost. The bump (`f33fcaf`) is the **only** compiled-code change
@@ -1916,6 +1960,10 @@ rather than mis-shaped for this workload.
 
 *Action:* report upstream with the method above. Not urgent — 3% of decode on one shape, against a
 bump whose bit-identity is gated and green.
+
+*(That action was taken. It produced aikit v1.17.1 the same day — see statement 4 above.)*
+
+</details>
 
 **P8 · `sampleChunked` allocates a full-vocab `[]float64` and rebuilds the goroutine pool twice per
 sampled token** — `decoder/sampler_chunked.go:188`. **TRIED AND REVERTED — the allocation removal
