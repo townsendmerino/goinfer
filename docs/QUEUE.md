@@ -430,10 +430,28 @@ via `nvidia-smi` (no context needed), retains the primary context, reads again:
 **Per-process: a second context pays again.** So `slotMarginBytes` is **not a device constant** in
 general — N contexts cost roughly N × this.
 
-**Two quantities, not one, and they should not be conflated:** the unallocatable gap within a process
-is 151,191,552 B; a second context costs 107,806,720 B. They differ by 43,384,832 B, so the gap is
-**not simply "the context allocation"** — something else makes up the rest, and that part is still
-unattributed.
+**A10 IS NOW FULLY DECOMPOSED — nothing is unattributed.** The gap splits exactly into a
+**once-per-device** portion and a **per-context** one, and the split is measured rather than fitted:
+
+| quantity | bytes | MiB |
+|---|---|---|
+| gap in a single process (its first context) | 151,191,552 | 144.1875 |
+| marginal cost, **2nd** context | **106,954,752** | **102.0000** |
+| marginal cost, **3rd** context | **106,954,752** | **identical, to the byte** |
+| device-once portion (gap − per-context) | **44,236,800** | 42.1875 |
+
+    44,236,800 + 106,954,752 = 151,191,552   EXACT
+
+Two independent additional contexts cost the same 102.00 MiB, so the per-context term is a constant
+and the residue is the once-per-device setup. **`usable = reported_free − 44,236,800 − 102 MiB × contexts`**,
+which for goinfer's single context is the 151,191,552 already in use.
+
+**A measurement defect was fixed to get here, and it mattered.** The first run reported the marginal
+cost as 107,806,720 B — it took `pre` from `nvidia-smi` and `post` from `cuMemGetInfo`, so the delta
+silently carried ~832 KiB of *instrument disagreement* as if it were context cost. That is the
+851,968 B discrepancy visible in the earlier record. Reading both sides with the same instrument gives
+**exactly 102.00 MiB**, and the decomposition only closes with the corrected figure. Same shape as the
+measurement-shape class: the number was real and the comparison was not like-for-like.
 
 **Why the derivation holds for goinfer regardless: it creates exactly ONE context, and cannot create
 a second.** `cuda/backend.go:463` is the only production call of `CreateSystemDefaultDevice`, aikit
@@ -1110,8 +1128,9 @@ bound by gocudrv, and aikit uses only the refcounted primary context.
 
 **Stated precondition: revisit if goinfer ever creates a second CUDA context**, or if a dependency
 gains `cuCtxCreate` and something uses it. Until then D3b's blocker is **resolved on that basis**, and
-the remaining A10 unknown — the 43,384,832 B by which the gap exceeds the context cost — does not
-block it, because the derivation uses the *measured gap*, not a model of its parts.
+and A10 is now **fully decomposed**, so there is no longer a residue to worry about: the gap is
+44,236,800 B once per device plus 106,954,752 B per context, summing exactly. The derivation used the
+*measured gap* and did not depend on the decomposition — it is simply better founded for having it.
 
 **So: D3b is unblocked as a question and blocked as a change.** The precondition's second half
 ("proving it on the 26B") is met — A7 did that. The first half is not. Recorded here so the next

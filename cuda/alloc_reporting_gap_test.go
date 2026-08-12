@@ -110,7 +110,10 @@ func TestA10FloorIsPerProcessOrPerDevice(t *testing.T) {
 		// Leave ~300 MiB reported free rather than draining to the floor. The first attempt drained
 		// completely, and the parent then could not create a context at all — context setup needs
 		// memory the floor does not provide, so the arm could not measure what it was built for.
-		const leave = 300 << 20
+		leave := int64(300 << 20)
+		if os.Getenv("GOINFER_A10_DRAIN_CHILD") == "roomy" {
+			leave = 620 << 20 // room for three contexts, not two
+		}
 		for size := int64(1) << 30; size >= (2 << 20); {
 			rem := read() - leave
 			if rem <= 0 {
@@ -130,8 +133,13 @@ func TestA10FloorIsPerProcessOrPerDevice(t *testing.T) {
 		return
 	}
 
+	mode := os.Getenv("GOINFER_A10_MODE") // "third" adds a middle context-holder
 	cmd := exec.Command(os.Args[0], "-test.run=TestA10FloorIsPerProcessOrPerDevice", "-test.timeout=2m")
-	cmd.Env = append(os.Environ(), "GOINFER_A10_DRAIN_CHILD=1")
+	drainMode := "1"
+	if mode == "third" {
+		drainMode = "roomy"
+	}
+	cmd.Env = append(os.Environ(), "GOINFER_A10_DRAIN_CHILD="+drainMode)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		t.Fatalf("pipe: %v", err)
@@ -163,21 +171,71 @@ func TestA10FloorIsPerProcessOrPerDevice(t *testing.T) {
 
 	// Read free BEFORE and AFTER retaining the primary context in this second process. The delta is
 	// what a context costs on a device that already has one — which is the whole question.
+	if mode == "third" {
+		// A middle process that only retains a context and holds, so the parent below becomes the
+		// THIRD context on the device rather than the second.
+		mid := exec.Command(os.Args[0], "-test.run=TestA10CtxHolder", "-test.timeout=2m")
+		mid.Env = append(os.Environ(), "GOINFER_A10_CTX_HOLDER=1")
+		mp, _ := mid.StdoutPipe()
+		if e := mid.Start(); e != nil {
+			t.Fatalf("mid: %v", e)
+		}
+		defer func() { _ = mid.Process.Kill(); _, _ = mid.Process.Wait() }()
+		mb := make([]byte, 4096)
+		for dl := time.Now().Add(60 * time.Second); time.Now().Before(dl); {
+			n, _ := mp.Read(mb)
+			if n > 0 && strings.Contains(string(mb[:n]), "A10CTXHELD") {
+				for _, ln := range strings.Split(string(mb[:n]), "\n") {
+					if strings.HasPrefix(ln, "A10CTXHELD") {
+						t.Logf("  middle process: %s", strings.TrimPrefix(ln, "A10CTXHELD "))
+					}
+				}
+				break
+			}
+		}
+	}
+
+	// BOTH readings from nvidia-smi. An earlier version took `pre` from nvidia-smi and `post` from
+	// cuMemGetInfo, so the delta silently carried the disagreement between two instruments (~832 KiB
+	// here) as if it were context cost. Same shape as the measurement-shape class: the number was
+	// real and the comparison was not like-for-like.
 	pre := probeFreeWithoutContext(t)
 	dev, err := CreateSystemDefaultDevice()
 	if err != nil {
 		t.Fatalf("parent still cannot retain a context with ~300 MiB free: %v", err)
 	}
-	post, _, _ := dev.Context().MemInfo()
+	_, _, _ = dev.Context().MemInfo() // force the context to be live before re-reading
+	post := probeFreeWithoutContext(t)
 	t.Logf("  child holds, reporting     %13d B free", childFree)
 	t.Logf("  parent BEFORE its context  %13d B free", pre)
 	t.Logf("  parent AFTER  its context  %13d B free", post)
-	t.Logf("  DELTA (what the 2nd context cost) %8d B (%.1f MiB)", pre-int64(post), float64(pre-int64(post))/(1<<20))
-	if pre-int64(post) > 100<<20 {
+	t.Logf("  DELTA (this context cost) %13d B (%.2f MiB)", pre-post, float64(pre-post)/(1<<20))
+	if pre-post > 100<<20 {
 		t.Logf("  => PER-PROCESS: the reserve is paid again per context, so N contexts cost N x it " +
 			"and slotMarginBytes is not a device constant.")
 	} else {
 		t.Logf("  => PER-DEVICE: a second context costs far less than the 151,191,552 B gap, so the " +
 			"gap is one device-wide reserve and the margin derivation is a constant.")
 	}
+}
+
+// TestA10CtxHolder retains the primary context, reports what it cost by the same instrument on both
+// sides, and holds. Used as the middle process when measuring a THIRD context's cost.
+func TestA10CtxHolder(t *testing.T) {
+	if os.Getenv("GOINFER_A10_CTX_HOLDER") == "" {
+		t.Skip("helper for TestA10FloorIsPerProcessOrPerDevice")
+	}
+	pre := probeFreeWithoutContext(t)
+	dev, err := CreateSystemDefaultDevice()
+	if err != nil {
+		fmt.Printf("A10CTXHELD FAILED %v\n", err)
+		os.Stdout.Sync()
+		time.Sleep(25 * time.Second)
+		return
+	}
+	_, _, _ = dev.Context().MemInfo()
+	post := probeFreeWithoutContext(t)
+	fmt.Printf("A10CTXHELD before=%d after=%d cost=%d\n", pre, post, pre-post)
+	os.Stdout.Sync()
+	time.Sleep(25 * time.Second)
 }
