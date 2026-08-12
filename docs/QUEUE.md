@@ -314,7 +314,7 @@ cost — a new kernel with per-thread scratch, a driver that reserves differentl
 
 **Structural fix: pay the deferred reservation BEFORE taking the free reading that sizes the cache.**
 Force the flagged kernels to launch once during `BuildResident`, ahead of `allocSlots` at
-`cuda/backend.go:793`. The cap is then correct **by construction**, because the free reading it is
+`cuda/backend.go:836`. The cap is then correct **by construction**, because the free reading it is
 computed from already includes every fixed cost that will ever be paid.
 
 **Known-unbounded, recorded rather than filed as a defect.** Module load is **resident-zero and
@@ -601,7 +601,7 @@ It is **additive with the rounding shortfall, not an alternative to it**: roundi
 headroom the 384 MiB margin was sized to provide, and the module load then spends from what remains.
 
 **Mechanism, now located precisely.** `CompileLibrary(moePTX)` runs at `cuda/backend.go:591`;
-`allocSlots` runs at `cuda/backend.go:793`. Under lazy loading the module's *device* memory is not
+`allocSlots` runs at `cuda/backend.go:836`. Under lazy loading the module's *device* memory is not
 taken at 591 — it is taken at the first launch of one of its kernels, which is `fRoute`, long after
 the cap was computed from the free reading at 793. Corroborating: the failed attempt released
 exactly 2^26 B while unwinding, which reads as a driver-side code/constant block rather than as
@@ -715,7 +715,8 @@ mac. **In the mac batch below.**
 
 **B8 · Position-keyed pins — audited 2026-08-12; the gates are clean, the PROSE is not**
 
-`TestDispatchCensus` went red on a pure line shift (`mlp.go:356 → :353`, site unchanged) and was
+`TestDispatchCensus` went red on a pure line shift (the fused gate+up guard in `decoder/mlp.go`, site
+unchanged) and was
 re-keyed on trimmed line content. Everything else pinned this campaign was swept for the same
 property:
 
@@ -734,16 +735,25 @@ property:
 **No gate remains position-keyed.** The residual surface is **14 `file:line` citations in this file's
 prose**, which no lint covers and which drift silently. Already stale, checked:
 
-- `cuda/backend.go:793` — cited as `allocSlots`'s call site; now points at a bare `//` (A9-FIX
+- `cuda/backend.go:836` — cited as `allocSlots`'s call site; now points at a bare `//` (A9-FIX
   inserted the warm-up above it).
 - `cuda/resident.go:244` — cited for audit C-08's `_ = gpu.Upload`; now a comment about backend locals.
-- `linalg/quant.go:113` and `weightmat.go:202` — **unresolvable**, because they omit the repo. Both
+- two citations were **unresolvable**, because they omitted the repo — an aikit `linalg/quant.go`
+  line and a bare `weightmat.go` one. Both
   are aikit paths written as if they were local ones; the SHA lint learned this distinction for
   commits and the same gap exists for paths.
 
-Recorded rather than fixed, per the audit's purpose: **the count is the useful thing.** A prose
-citation is not a gate, so it fails differently — it misleads a reader rather than turning a build
-red, which is why it survives longer.
+**FIXED in the same change as the lint that found them** (`scripts/queue_citation_lint.py`), because
+a lint landing red on its first run is a lint nobody adopts. `cuda/backend.go:793` → `:836`;
+the two bare `weightmat.go` / `mlp.go` references repo-qualified or de-numbered; `linalg/quant.go:113` resolves in
+aikit once the lint searches the sibling set.
+
+**And one turned out not to be a line drift at all.** `cuda/resident.go:244` was cited for audit
+C-08 — `_ = gpu.Upload(...)` discarding errors. That code is **gone**: `recordUpload` captures the
+first error into `r.setupErr` and the build declines gracefully. The citation was stale because the
+CLAIM was stale, and F2 had been listing a fixed critical as open. A line-number check would have
+reported a shift; the content check reported that the file no longer supports what was said about
+it, which is the difference worth having.
 
 **B7 · Off-origin work — swept, 2026-08-12** — `linux` for the local half, `mac` for the rest
 
@@ -1079,9 +1089,11 @@ problem seen twice.
 
 Roughly eleven remain. The ones with the sharpest consequences:
 
-- **C-08** — `cuda/resident.go:244-256`, `_ = gpu.Upload(...)` in `up32`/`upu32`/`upu16`;
-  `r.setupErr` declared and read but never assigned, so a failed upload yields `ok=true` over
-  zeroed weights
+- ~~**C-08**~~ — **FIXED, and this entry was stale.** `recordUpload` now captures the first
+  alloc/upload error into `r.setupErr`, which the setup job returns and `BuildResident` turns into a
+  graceful decline. The `up*` helpers no longer discard `gpu.Upload`'s error. Found by the path-
+  citation lint: the cited line no longer supports the claim, which is the outcome that lint exists
+  for — a stale CLAIM, not a stale line number
 - **C-14** — CUDA argmax reduce has no index tie-break. Now has a funded reason: routing `top_k=1`
   to `ArgmaxEquivalent` recovers 13–18% and is blocked on it, and v0.10.3 made ascending-token-id a
   written contract the device side doesn't honour
@@ -1483,7 +1495,7 @@ lives inside that per-stream struct, so W8A8's "fix" was never a *shared* Worksp
 
 **So the per-call Workspace comment is accurate and irrelevant to the fix.** `matmul` — the free
 function, for callers with no scratch — keeps a per-call Workspace for W8A8 *and* W4A8 alike
-(`weightmat.go:202` and `:219`, the same pattern twice). The divergence is elsewhere: `matmulInto`
+(`decoder/weightmat.go`, the same per-call-Workspace pattern twice). The divergence is elsewhere: `matmulInto`
 special-cases `isW8A8(w)` and falls through to `matmul` for everything else, so W4A8 never reaches
 the per-stream Workspace even though its six call sites already pass one.
 
@@ -1690,3 +1702,75 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `f9d5d07` | feat(decoder): dispatch census (B6); close the GGUF-quant gap; reopen B4 |
 
 <!-- /SHA-INDEX -->
+
+<!-- CITATION-INDEX: generated by scripts/queue_citation_lint.py --update; do not edit by hand -->
+
+## SHA index
+
+Generated. Every commit id cited above, with the subject it resolved to at the time
+of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
+
+| sha | subject |
+|---|---|
+| `0103b49` | fix(cuda): pay the deferred reservation before sizing the cache (A9-FIX) |
+| `0c54e35` | fix(gate): repo hygiene runs what CI runs, derived from ci.yml (B0) |
+| `1d0d1ed` | test(decoder): int4 forward goldens — 23 fixtures, 16 architectures (Q1c) |
+| `1f6dbe0` | fix(parity,fmt): gofmt the threshold sweep + refresh deps_hash after comment-only core edits |
+| `23b2ee7` | fix(parity): the goldens refresh runs quantized goldens, and reports the split |
+| `2e91607` | test: refresh parity deps_hash — non-numeric core-file drift (un-reds main) |
+| `38061b1` | perf(gemma4-paging): pread expert nibbles straight into the slot buffers |
+| `3d6ae1e` | chore: go fix modernizers, one deterministic pass (G2) |
+| `4c26a58` | perf(cuda): parallelise the Gemma final-logit softcap, bit-identical (P3) |
+| `588052b` | serve: drain in-flight requests before freeing an unloaded model (fixes the leak safely) |
+| `6091e7a` | fix(cuda): size the expert cache by SEARCH over the granularity form (A5) |
+| `6edd1ca` | parity: make "validated" MEAN T3 — method-tier gate + honest experimental tier (D2, pre-freeze) |
+| `7c91ccc` | cuda+docs: decline floor, slot-cap gate, driver allocation facts, and seven rules |
+| `7cc2f0d` | fix(parity,ci): refresh deps_hash after 38061b1's pread-staging core plumbing (non-numeric) |
+| `7ccec1e` | fix(cuda): the expert cache sizes itself — topK was the worst possible default |
+| `82b39cc` | docs(parity): document qwen3_5_moe's int8-vs-bf16 movement (v0.8.0 §1 — gate-backed pass) |
+| `8fecfad` | ci: heavy_gate.sh — a runner for the real-checkpoint tier that no CI job executes |
+| `91f359f` | fix(decoder): matmulInto dispatches on the property, not on W8A8 (P7) |
+| `93eb7d4` | feat(decoder): gpt-oss real-model path — batched-prefill fix + real gates |
+| `9624dd9` | chore(parity): refresh deps_hash for aikit v1.12.0 (goldens-proven non-numeric) |
+| `98936cf` | test(goldens): strengthen mamba-2 + deltanet parity fixtures (kill identity weights) |
+| `99b3f95` | chore(deps): pin aikit v1.12.0 — gpt-oss MXFP4 reproducible on main |
+| `9e5f8fa` | fix(quant): reject --quant that conflicts with a prequant .giw at startup (T1-7) |
+| `bd08936` | fix(gate): cannot-search is not not-found; cross-gate composition; B7 sweep |
+| `be049df` | [aikit] gpu(gemv): explicit __fmaf_rn in the quantized GEMV — the bit-identity contraction rule |
+| `c8b65ba` | feat(serve): --moe-cache-experts / --moe-cache-slots — PARKED on the freeze |
+| `ca29d6c` | cuda: resident context cap becomes configuration-derived (-ctx), VRAM-checked at load |
+| `cc238c6` | cleanup: consolidate GINFER_ env vars to GOINFER_ + add env-var registry |
+| `e42e83e` | fix(cuda): name the kernel and both slot counts when a launch runs out of memory |
+| `e58ac8a` | fix(parity): refresh deps_hash after f340d4e's guarded int4-scale seam — non-numeric, validated_at preserved |
+| `ecc5af2` | chore(parity): refresh deps_hash after default-off diagnostic hooks (non-numeric) |
+| `ed81e13` | P1: route top_k=1 to the on-device greedy fast path |
+| `eea7f29` | perf(decoder): one gate/up pair per token in MoE, not one per expert (P6) |
+| `f340d4e` | metal(9c Step 4): argmax-primary gate + f16-scale confound diagnostic (finding recorded) |
+| `f6bbf7c` | feat(serve): --moe-cache-experts / --moe-cache-slots (decisions 2+3) — HELD, trips the parity manifest |
+| `f9d5d07` | feat(decoder): dispatch census (B6); close the GGUF-quant gap; reopen B4 |
+
+## Path index
+
+Generated. Every `file:line` cited above, the repo it resolved in, and the trimmed
+content of that line. A line that MOVED is reported with its new number; content that
+has VANISHED is red, because the citation then claims something the file no longer
+supports.
+
+| path:line | repo | line content |
+|---|---|---|
+| `cuda/backend.go:591` | goinfer | `mmod, e2 := r.dev.CompileLibrary(moePTX)` |
+| `cuda/backend.go:793` | goinfer | `//` |
+| `cuda/backend.go:836` | goinfer | `if e := r.allocSlots(); e != nil {` |
+| `cuda/resident.go:244` | goinfer | `// backend.go locals; the per-layer KV cache and UploadKV read r.layers[l].kvDim.` |
+| `decoder/forwardn.go:378` | goinfer | `for kvh := range nKV {` |
+| `decoder/forwardn.go:502` | goinfer | `logits[j] = sc * float32(math.Tanh(float64(val/sc)))` |
+| `decoder/mlp.go:82` | goinfer | `func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend, pager *expert` |
+| `decoder/model.go:731` | goinfer | `logits[i] = softcap * float32(math.Tanh(float64(v/softcap)))` |
+| `decoder/sampler_chunked.go:188` | goinfer | `return drawChunked(e, sums, z, r)` |
+| `decoder/scratch.go:38` | goinfer | `ws        *linalg.Workspace // W8A8 activation-quant scratch (zero-alloc Into/Batch)` |
+| `internal/giw/bundle.go:105` | goinfer | `// Bound the allocation by the file (C-31): the tokenizer body starts at tokOff+4, so it` |
+| `linalg/quant.go:113` | aikit | `for k := range K {` |
+| `metal/model.go:590` | goinfer | `// wrong logits, no error. The attention widths (qDim = nH·hd, kvDim = nKV·hd) are struc` |
+| `metal/model.go:827` | goinfer | `r.logitsHost[j] = sc * float32(math.Tanh(float64(v/sc)))` |
+
+<!-- /CITATION-INDEX -->
