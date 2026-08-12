@@ -713,6 +713,38 @@ the item on it would repeat the exact distinction the SHA lint learned this turn
 not have seen the object does not report its absence. `stash@{0}` may only ever have existed on the
 mac. **In the mac batch below.**
 
+**B8 · Position-keyed pins — audited 2026-08-12; the gates are clean, the PROSE is not**
+
+`TestDispatchCensus` went red on a pure line shift (`mlp.go:356 → :353`, site unchanged) and was
+re-keyed on trimmed line content. Everything else pinned this campaign was swept for the same
+property:
+
+| pin | keyed on | positional? |
+|---|---|---|
+| `TestDispatchCensus` | trimmed line content | **no** — re-keyed `3d6ae1e` |
+| `TestKernelLocalMemoryCensus` | kernel **name** (`moe_route`, `rope_kv`…) | no |
+| `TestMoERouteFirstLaunchReservation` | byte value (138,412,032) | no |
+| `TestMoERouteDemandThreshold` | byte values (286,916,608 / 289,013,760) | no |
+| `TestSlotAllocation_matchesGranularityForm` | measured strides + quantum | no |
+| `TestSlotCapArithmetic` | measured free/strides | no |
+| `TestInt4_forwardParity` | fixture **name** → recorded metrics | no |
+| `applySoftcap` threshold | size value | no |
+| queue SHA lint index | sha → **subject** (content) | no |
+
+**No gate remains position-keyed.** The residual surface is **14 `file:line` citations in this file's
+prose**, which no lint covers and which drift silently. Already stale, checked:
+
+- `cuda/backend.go:793` — cited as `allocSlots`'s call site; now points at a bare `//` (A9-FIX
+  inserted the warm-up above it).
+- `cuda/resident.go:244` — cited for audit C-08's `_ = gpu.Upload`; now a comment about backend locals.
+- `linalg/quant.go:113` and `weightmat.go:202` — **unresolvable**, because they omit the repo. Both
+  are aikit paths written as if they were local ones; the SHA lint learned this distinction for
+  commits and the same gap exists for paths.
+
+Recorded rather than fixed, per the audit's purpose: **the count is the useful thing.** A prose
+citation is not a gate, so it fails differently — it misleads a reader rather than turning a build
+red, which is why it survives longer.
+
 **B7 · Off-origin work — swept, 2026-08-12** — `linux` for the local half, `mac` for the rest
 
 Branches with no upstream, across all four repos on this box:
@@ -1137,6 +1169,12 @@ Answer that before estimating.
 
   **No float `min`/`max` anywhere, and none of the 85 contraction sites is touched.** The headroom
   measurement survives and G2 needs no scope narrowing.
+
+  **`slicessort`'s NaN axis, answered rather than left unasked.** Tie-order was the first question and
+  it is not the only one: `slices.Sort` uses `cmp.Less`, which *defines* NaN placement, where a bare
+  `<` does not — the same shape as `minmax`, one analyzer over, and the tie-order answer does not
+  cover it. Its single site sorts `[]ResidentFeature`, and `ResidentFeature` is a **`string`** type.
+  **Strings cannot carry NaN, so the question is moot** — recorded so it is answered.
 
   **WHAT CLEARED G2 WAS SOURCE ANALYSIS, NOT THE GOLDENS RUN — and the distinction is load-bearing.**
   A float `minmax` rewrite differs from the if/else form only on **NaN**, and NaN paths trigger on
@@ -1622,6 +1660,7 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `1f6dbe0` | fix(parity,fmt): gofmt the threshold sweep + refresh deps_hash after comment-only core edits |
 | `23b2ee7` | fix(parity): the goldens refresh runs quantized goldens, and reports the split |
 | `2e91607` | test: refresh parity deps_hash — non-numeric core-file drift (un-reds main) |
+| `3d6ae1e` | chore: go fix modernizers, one deterministic pass (G2) |
 | `4c26a58` | perf(cuda): parallelise the Gemma final-logit softcap, bit-identical (P3) |
 | `588052b` | serve: drain in-flight requests before freeing an unloaded model (fixes the leak safely) |
 | `6091e7a` | fix(cuda): size the expert cache by SEARCH over the granularity form (A5) |
