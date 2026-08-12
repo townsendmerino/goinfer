@@ -29,6 +29,27 @@
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
+# PRE-FLIGHT: the manifest must be CLEAN before the refresh runs.
+#
+# This exists because of a real mistake, not a hypothetical one. An aikit bump edited
+# aikit_version by hand and then ran this script. The abort below fired correctly — the diff was
+# no longer deps_hash-only — but it fired on a file that already held an edit worth keeping, so
+# "revert and investigate" was advice the operator did not take, and the mixed edit got committed
+# anyway. The guard detected the problem and still did not prevent it.
+#
+# Requiring a clean start fixes both halves. It catches that case BEFORE the 4-minute goldens run
+# rather than after, and it makes the abort's automatic revert safe: with nothing uncommitted at
+# entry, `git checkout` can only discard what this script itself wrote.
+if ! git diff --quiet -- testdata/parity_manifest.json || ! git diff --cached --quiet -- testdata/parity_manifest.json; then
+	echo "ABORT: testdata/parity_manifest.json already has uncommitted changes."
+	git diff HEAD -- testdata/parity_manifest.json | grep -E '^[+-]' | grep -vE '^(\+\+\+|---)' | sed 's/^/    /'
+	echo
+	echo "Commit or revert them first, THEN re-run. A refresh started from a dirty manifest cannot"
+	echo "tell its own output from yours, and this script's proof block would claim the goldens"
+	echo "vouched for both."
+	exit 1
+fi
+
 # The forward-numeric goldens: they compare a forward pass to a committed golden, so a
 # numeric change to the forward breaks them. (Deliberately NOT the spec-decode / session /
 # KV / vision parity tests — those gate features, not the forward numerics.)
@@ -121,7 +142,12 @@ if [ -n "$nonhash" ]; then
 	echo
 	echo "ABORT: the update changed more than deps_hash — refusing to leave a mixed edit:"
 	printf '%s\n' "$nonhash" | sed 's/^/    /'
-	echo "Revert (git checkout testdata/parity_manifest.json) and investigate."
+	echo "The file has been REVERTED automatically — nothing is left on disk to commit by accident."
+	git checkout -- testdata/parity_manifest.json
+	echo
+	echo "If the extra change is an intentional aikit_version bump, commit THAT alone first (it"
+	echo "re-stales the matrix), then re-run this script so it sees only deps_hash. That is the"
+	echo "shape of 278637f followed by 9624dd9."
 	exit 1
 fi
 changed=$(git diff --numstat -- testdata/parity_manifest.json | awk '{print $1}')
