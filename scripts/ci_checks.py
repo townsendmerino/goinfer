@@ -48,7 +48,7 @@ except ImportError:  # pragma: no cover - environment guard
 # Hygiene class, matched on the step's name. Test steps are excluded on purpose: the gate runs
 # suites in its own groups with their own timeouts, and duplicating them here would double a
 # 25-minute race run.
-HYGIENE = re.compile(r"gofmt|staticcheck|^vet|^build|cleanliness", re.I)
+HYGIENE = re.compile(r"gofmt|staticcheck|^vet|^build|cleanliness|lint", re.I)
 SKIP = re.compile(r"^test|^install|^workspace|^checkout|^setup|^sampler gates", re.I)
 
 # Steps whose command cannot be run as-is off a GitHub runner, with the reason. Anything matching

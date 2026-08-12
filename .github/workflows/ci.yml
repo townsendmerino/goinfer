@@ -38,6 +38,13 @@ jobs:
       - name: staticcheck
         run: go run honnef.co/go/tools/cmd/staticcheck@2025.1.1 ./...
 
+      # Content keys make a stale citation DETECTABLE on the next sweep; they do not prevent one.
+      # Here it goes red in the commit that makes the entry stale — while someone is already in that
+      # code — which is the difference between the F group happening again and not. Citations whose
+      # repo is not checked out here are a counted skip naming the repo, never a silent pass.
+      - name: queue citation lint
+        run: python3 scripts/queue_citation_lint.py
+
       # Core promise: the cgo WebGPU/CUDA/Metal deps must never enter the runtime's
       # module graph. They live only in the opt-in ./gpu, ./cuda, ./metal submodules,
       # reached through their own cmd/ entrypoints (audit M-19) — never blank-imported

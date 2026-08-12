@@ -124,19 +124,23 @@ PATH_RE = re.compile(r"(?<![\w/])((?:[a-z0-9_]+/)*[a-z0-9_]+\.(?:go|sh|py)):(\d+
 
 
 def path_repos():
-    """Search roots for path citations — the same sibling set the commit check uses.
+    """Search roots for path citations — literally the same set the commit check uses.
+
+    These were two functions with two notions of "the sibling set", and they disagreed the moment the
+    env override was exercised: the commit search honoured it and repo_present did not, so a foreign
+    commit was reported fabricated while its repo was still considered present. Same defect shape as
+    capSlots and its inline copy — one concept, two implementations.
 
     linalg/quant.go:113 and weightmat.go:202 were written as if local and are aikit paths. Resolving
     across the sibling set and RECORDING WHERE IT RESOLVED is the same repair that fixed be049df's
     false red: searching one place and reporting absence is a claim the search was not entitled to
     make.
     """
-    root = QUEUE.parent.parent
-    out = [(root.name, root)]
-    dflt = (root / ".." / "aikit" / "aikit").resolve()
-    if (dflt / ".git").exists():
-        out.append((dflt.name, dflt))
-    return out
+    return [(pathlib.Path(r).name, pathlib.Path(r)) for r in sibling_repos()]
+
+
+def repo_present(name: str) -> bool:
+    return any(n == name for n, _ in path_repos())
 
 
 def resolve_path(rel: str, line: int):
@@ -223,10 +227,19 @@ def main() -> int:
         else:
             resolved[sha] = s
 
+    pidx0 = {}
+    if MARK_BEGIN in text:
+        for line in text.split(MARK_BEGIN, 1)[1].splitlines():
+            m = re.match(r"\|\s*`([^`]+:\d+)`\s*\|\s*([^|]*?)\s*\|\s*`(.*)`\s*\|$", line.strip())
+            if m:
+                pidx0[m.group(1)] = m.group(2)
     presolved, pmissing = {}, []
     for key, rel, ln in paths:
         repo, content = resolve_path(rel, ln)
         if content is None:
+            if pidx0.get(key) and not repo_present(pidx0[key]):
+                presolved[key] = (pidx0[key], None)  # foreign repo absent; skipped below
+                continue
             pmissing.append((key, rel))
         else:
             presolved[key] = (repo, content)
@@ -295,7 +308,16 @@ def main() -> int:
             index[m.group(1)] = m.group(2)
 
     bad = []
+    skipped_foreign = []
     for sha in unresolved:
+        # The index records a foreign subject as "[repo] subject". If that repo is not checked out
+        # here — CI clones goinfer alone — the citation is UNCHECKED, not fabricated. Reporting it as
+        # fabricated is the be049df false red, reintroduced by a different route.
+        rec = index.get(sha, "")
+        m = re.match(r"\[([a-z0-9_-]+)\]", rec)
+        if m and not repo_present(m.group(1)):
+            skipped_foreign.append((sha, m.group(1)))
+            continue
         bad.append(f"  {sha}  DOES NOT RESOLVE — fabricated, mistyped, or from a dropped branch")
     for sha, subj in resolved.items():
         if sha in allowed:
@@ -315,8 +337,15 @@ def main() -> int:
         if m:
             pindex[m.group(1)] = (m.group(2), m.group(3))
     for key, rel, ln in paths:
+        rec0 = pindex.get(key)
+        if rec0 is not None and rec0[0] and not repo_present(rec0[0]):
+            # The index records which repo this resolved in. If that repo is not checked out here —
+            # CI clones goinfer alone — the citation is UNCHECKED, not broken. Counted and named, so
+            # a skip and a pass do not look the same.
+            skipped_foreign.append((key, rec0[0]))
+            continue
         repo, content = presolved[key]
-        rec = pindex.get(key)
+        rec = rec0
         if rec is None:
             bad.append(f"  {key}  cited but absent from the path index — run --update")
             continue
@@ -342,7 +371,19 @@ def main() -> int:
                        f"recorded content {want[:60]!r} is nowhere in the file. The citation claims "
                        f"something the file no longer supports.")
 
+    bindex = {}
+    for line in text.split(MARK_BEGIN, 1)[1].splitlines():
+        m = re.match(r"\|\s*`([^`]+\.(?:go|sh|py))`\s*\|\s*([^|]*?)\s*\|$", line.strip())
+        if m:
+            bindex[m.group(1)] = m.group(2)
+    still = []
     for rel in bmissing:
+        rec = bindex.get(rel, "")
+        if rec and rec != "**RESOLVES NOWHERE**" and not repo_present(rec):
+            skipped_foreign.append((rel, rec))
+            continue
+        still.append(rel)
+    for rel in still:
         bad.append(f"  {rel}  bare reference resolves in NO repository "
                    f"({', '.join(n for n, _ in path_repos())}) — moved package, deleted, or a typo")
 
@@ -354,6 +395,11 @@ def main() -> int:
         print(f"queue_sha_lint: {len(allowed)} citation(s) DECLARED unresolvable here:")
         for sha, why in sorted(allowed.items()):
             print(f"    {sha}  {why}")
+    if skipped_foreign:
+        print(f"queue_citation_lint: SKIPPED {len(skipped_foreign)} citation(s) — the repo they "
+              f"resolved in is not checked out here:")
+        for k, r in sorted(skipped_foreign):
+            print(f"    {k}  (recorded in: {r})")
     print(f"queue_citation_lint: VALIDATED {len(resolved) - len(allowed)} commit citation(s), "
           f"{len(paths)} path:line citation(s), and {len(bresolved)} bare file reference(s) "
           f"(existence only).")

@@ -202,6 +202,21 @@ and the cost of that is that the next one was also found as a one-off.
   indistinguishable from success. Fixed by reconciling emitted verdicts against a **declared**
   set (`4e293f9`).
 
+*And once as process, with the cost now measured rather than argued:*
+
+**The `completed/` folder buried ten fixed findings, and every one of them stayed listed as open.**
+The F group — five §4 gates (G-01, G-02, G-04, G-05, G-06) and five §2/§3 criticals (C-05, C-06,
+C-08, C-14, C-30, plus C-21/C-22 and C-31) — came from an audit filed under `docs/completed/`. Swept
+against the tree on 2026-08-12: **all fixed, none propagated back.** The fixes were real, landed, and
+often carried their own named gate; the register that people read still said open.
+
+This was an argument before ("knowledge parked under `completed/` is indistinguishable from knowledge
+nobody had") and it is evidence now. The cost is not that the work was lost — it was done — but that
+**a decision register accumulated ten false entries**, and correctness and security items are where a
+false entry costs most in *both* directions: an open item listed fixed hides a hole, and a fixed item
+listed open spends attention on nothing. The remedy shipped with the measurement: every row now
+carries a content-keyed citation and CI fails on the commit that makes one stale.
+
 *And once as process:*
 
 - **`docs/completed/task-cuda-cgofree-spike.md:798` already recorded** that the reale2e harness
@@ -524,6 +539,17 @@ What a mutation check looks like, in ascending cost: assert the negative case di
 confirmed); or perturb the thing under test and confirm red (route to the wrong expert, drop a
 launch argument, point the pattern at a renamed test); or run the gate against a known-bad commit.
 Cheapest sufficient one wins — the point is evidence, not ceremony.
+
+**"Could what I ran have found it?" is a question for prose sweeps, not only for tooling.** The
+citation lint was taught, this same day, that a repository which cannot be searched is a hard error
+rather than a negative result — after `git -C` against a non-repo path reported a valid commit as
+fabricated. Hours later a manual sweep of the F group recorded C-30 as "unverifiable, names a paging
+path that is not a file", having globbed `decoder/paging*.go` when the files are `layerpaging.go` and
+`moepaging.go`. Same error, no tool involved.
+
+*Recognition test:* not "did I look" but **"could the thing I ran have matched the thing I was looking
+for?"** A glob, a grep pattern, or a directory choice is a search scope, and a scope that excludes the
+target produces a confident absence.
 
 **A read-only question gets a throwaway worktree by default, not by judgment.** Asking "what would
 this tool change?" with the tool that changes things is a category error, and the standing form is

@@ -1100,17 +1100,27 @@ rather than struck, because "substantially fixed" is a different state from "fix
 | C-08 `_ = gpu.Upload` over zeroed weights | **fixed** — `recordUpload` → `setupErr` → graceful decline | `cuda/resident.go:397` |
 | C-14 CUDA argmax has no index tie-break | **fixed** at `c6600fc`, gated | `cuda/argmax_tiebreak_test.go:19` |
 | C-31 `make([]byte, u32)` unbounded | **fixed** — bounded against the remaining file size before the allocation | `internal/giw/bundle.go:114` |
-| C-21/C-22 embeddings batch cap; shutdown lock | **UNVERIFIED** — body-cap tests exist (`internal/serveapp/bodycaps_routes_test.go`) but I did not establish they cover these two findings | — |
-| C-30 no mutex in the paging paths | **UNVERIFIABLE AS WRITTEN** — the entry names a paging path that does not exist as a file in the tree; `decoder/paging_race_test.go` is the only anchor and it is a test, not the code | `decoder/paging_race_test.go` |
+| C-21 embeddings batch cap, un-queued | **fixed** — `checkEmbedInputBounds` caps the input count, gated at the boundary and at +1; the un-queued half is a *documented deliberate decision*, not an omission. The body-cap tests are a different concern (bytes, not count) — covered-by-something-else, which is why they did not answer this | `internal/serveapp/embeddings.go:26` |
+| C-22 shutdown lock, swallowed second signal | **fixed**, with a named gate — the checkpoint cannot block forever on a busy model, and a second Ctrl-C always kills | `internal/serveapp/main.go:432` |
+| C-30 no mutex in the paging paths | **fixed** — both pagers carry an internal mutex, each citing the audit finding | `decoder/layerpaging.go:42` |
 
 **These are correctness and security items, so a wrong entry costs more here than in P or B — in both
 directions.** Five listed as open were fixed, which wastes attention; and had any been listed as fixed
 while open, the cost would have been the reverse and worse. That asymmetry is why every row above
 carries an anchor now: **the lint keeps them honest without anyone re-reading the code.**
 
-**An item with no anchor is a different kind of item.** C-30 has nothing in the tree to point at, and
-that is its recorded state rather than a gap in the sweep. It needs re-deriving from the audit before
-it can be checked at all.
+**Every listed critical is fixed.** The whole F group was stale.
+
+**And two of the three "open" verdicts in the first pass of this sweep were MY search failing, not the
+entries.** C-30 was recorded as "unverifiable — names a paging path that is not a file"; the files are
+`decoder/layerpaging.go` and `decoder/moepaging.go`, and the glob used was `decoder/paging*.go`, which
+could not have matched them. C-21/C-22 were recorded "unverified" after looking only at the body-cap
+tests, which measure bytes where the finding is about counts.
+
+That is **exactly the distinction the citation lint learned this turn** — a search that could not have
+seen the target does not report absence — applied to commits and paths on the same day, and then not
+applied to my own sweep of the F group. The recognition test is not "did I look" but **"could what I
+ran have found it"**, and it has to be asked of prose sweeps, not only of tooling.
 
 **F3 · G-01 class — confirm the sub-shapes landed** — `linux`, **status unconfirmed**
 
@@ -1774,6 +1784,7 @@ supports.
 | `decoder/forwardn.go:378` | goinfer | `for kvh := range nKV {` |
 | `decoder/forwardn.go:502` | goinfer | `logits[j] = sc * float32(math.Tanh(float64(val/sc)))` |
 | `decoder/kvsnapshot_gemma4_test.go:10` | goinfer | `func TestSnapshot_refusesNonUniformKVWidth_C05(t *testing.T) {` |
+| `decoder/layerpaging.go:42` | goinfer | `// mu guards the mutable paging state below (audit C-30). The pager lives on *Model, sha` |
 | `decoder/mlp.go:82` | goinfer | `func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend, pager *expert` |
 | `decoder/model.go:731` | goinfer | `logits[i] = softcap * float32(math.Tanh(float64(v/softcap)))` |
 | `decoder/modelsdir_test.go:13` | goinfer | `root := os.Getenv("GOINFER_MODELS_DIR")` |
@@ -1781,6 +1792,8 @@ supports.
 | `decoder/scratch.go:38` | goinfer | `ws        *linalg.Workspace // W8A8 activation-quant scratch (zero-alloc Into/Batch)` |
 | `decoder/serialize_shapecheck_test.go:15` | goinfer | `func TestValidateShapes_catchesArchMismatch(t *testing.T) {` |
 | `internal/giw/bundle.go:114` | goinfer | `if avail := fi.Size() - (tokOff + 4); tokLen > avail {` |
+| `internal/serveapp/embeddings.go:26` | goinfer | `// Embedding request bounds (audit C-21). /v1/embeddings is deliberately un-queued (the ` |
+| `internal/serveapp/main.go:432` | goinfer | `// below deadlocks on lm.mu.Lock() forever (audit C-22).` |
 | `linalg/quant.go:113` | aikit | `for k := range K {` |
 | `metal/model.go:728` | goinfer | `r.residencyBufs = pinned` |
 | `metal/model.go:827` | goinfer | `r.logitsHost[j] = sc * float32(math.Tanh(float64(v/sc)))` |
@@ -1804,15 +1817,15 @@ than papered over.
 | `decoder/gguf.go` | goinfer |
 | `decoder/giwquant_test.go` | goinfer |
 | `decoder/gptoss_real_test.go` | goinfer |
+| `decoder/layerpaging.go` | goinfer |
 | `decoder/mlp.go` | goinfer |
 | `decoder/model.go` | goinfer |
-| `decoder/paging_race_test.go` | goinfer |
+| `decoder/moepaging.go` | goinfer |
 | `decoder/sampler.go` | goinfer |
 | `decoder/sampler_chunked.go` | goinfer |
 | `decoder/serialize.go` | goinfer |
 | `decoder/weightmat.go` | goinfer |
 | `decoder/weights.go` | goinfer |
-| `internal/serveapp/bodycaps_routes_test.go` | goinfer |
 | `linalg/quant.go` | aikit |
 | `scripts/bench_compare.sh` | goinfer |
 | `scripts/ci_checks.py` | goinfer |
