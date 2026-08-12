@@ -25,6 +25,45 @@ Boxes: `linux` (nvidia-rtx2070s, CUDA) · `mac` (Apple Silicon, Metal).
 
 ## In flight
 
+**P10 · PREFILL A/B — THE CRITICAL PATH. One unmeasured phase is holding a tag AND C3** — `linux`,
+**open, pre-registered 2026-08-12**
+
+**Do this before anything else in this list.** It is not the largest task; it is the one everything
+downstream is queued behind.
+
+**What it blocks, and why that is two things rather than one:**
+
+1. **Cutting a goinfer tag.** `linalg/matmul_blocked.go` is **unchanged between aikit v1.17.0 and
+   v1.17.1**, so v1.17.0's f32 blocked-matmul rework (`dot8ColsInto` replacing `Dot8x4`'s
+   32-partial round trip, plus `blockRows3x4` on amd64) is **live in both versions and measured in
+   neither**. Decode is measured and flat (P9). Prefill is the phase that rework actually lives on.
+   A release characterizing one phase while silently carrying an unmeasured change to another is a
+   **claim by omission**, and this repo has a rule against exactly that.
+2. **C3, the Metal consumer window** — the largest completely uncovered surface in the project,
+   which has **already sunk once**. Its trigger is any release tag carrying an aikit bump; this bump
+   qualifies. So C3 cannot fire until a tag is cut, and the tag cannot honestly be cut until prefill
+   is measured.
+
+**One unmeasured phase, two things held.** That is the whole argument for its position.
+
+**Design, pre-registered in full at `docs/measurements/aikit-v1.17.1-prefill-ab.md` before any
+sample exists.** Same discipline as the decode A/B, for the same reason: **v1.16.0 against v1.17.1**
+(the only baseline predating the rework, since v1.17.0 and v1.17.1 are identical here), interleaved
+a/b/a/b in one session on one box, two worktrees at the same goinfer commit differing only in
+`go.mod`, warm-up discard carried over from the recorded calibration, floor **2.0%** fixed before the
+first sample. All three branches are written down, **including the flat one** — if it lands inside
+the floor, "the rework is below this instrument's noise floor on prefill" is the **recorded answer**
+that discharges the obligation, not an absence of one that leaves the tag blocked.
+
+**The known weakness, stated in advance rather than discovered later:** `BenchmarkDecode` is a decode
+harness, so prefill needs a batched-forward instrument that is **not** the one already calibrated.
+The 2.0% floor is inherited and is therefore an **assumption** here. If the prefill instrument's own
+spread exceeds it, the floor is wrong — re-derive it from a characterization run and say so, rather
+than keeping it because it was written down first.
+
+**The 5% session-drift figure applies** (`decoder/decode_bench_test.go`): a sequential before/after
+would be dominated by it.
+
 **A2 (partial) · 26B documentation correction** — `linux`, 2026-08-12
 
 The half that does NOT depend on A1 is done: the README instructed
