@@ -160,6 +160,15 @@ def repo_present(name: str) -> bool:
     return any(n == name for n, _ in path_repos())
 
 
+# A content key only works if the content DISCRIMINATES. `//`, `}`, a blank line or a lone brace
+# appear hundreds of times, so "the recorded content is now at line 114" is a coincidence rather than
+# a move. Such citations are indexed as UNKEYABLE and counted, not silently mis-matched — the failure
+# mode otherwise is a confident wrong answer, which is worse than no answer.
+def discriminating(content: str) -> bool:
+    c = content.strip()
+    return len(c) >= 12 and any(ch.isalnum() for ch in c)
+
+
 def resolve_path(rel: str, line: int):
     """Return (repo, content) for a cited path:line, or ("", None) when the file exists nowhere.
 
@@ -320,7 +329,8 @@ def main() -> int:
             repo, content = presolved[key]
             if content is None:
                 continue
-            lines.append(f"| `{key}` | {repo} | `{content.replace('|', chr(92) + '|')[:88]}` |")
+            body_txt = content.replace('|', chr(92) + '|')[:88] if discriminating(content) else "UNKEYABLE"
+            lines.append(f"| `{key}` | {repo} | `{body_txt}` |")
         lines += ["", "## Bare file index", "",
                   "Generated. Every file referenced WITHOUT a line number, and the repo it resolves in.",
                   "Existence only — there is no line to key content against, which is recorded rather",
@@ -346,6 +356,7 @@ def main() -> int:
             index[m.group(1)] = m.group(2)
 
     bad = []
+    unkeyable = []
     skipped_foreign = []
     for sha in unresolved:
         # The index records a foreign subject as "[repo] subject". If that repo is not checked out
@@ -390,6 +401,9 @@ def main() -> int:
             bad.append(f"  {key}  cited but absent from the path index — run --update")
             continue
         want = rec[1].replace(chr(92) + "|", "|")
+        if want == "UNKEYABLE" or not discriminating(content):
+            unkeyable.append(key)
+            continue
         if content[:88] == want:
             continue
         # The content moved or vanished. Look for it elsewhere in the file before calling it red.
@@ -435,6 +449,11 @@ def main() -> int:
         print(f"queue_sha_lint: {len(allowed)} citation(s) DECLARED unresolvable here:")
         for sha, why in sorted(allowed.items()):
             print(f"    {sha}  {why}")
+    if unkeyable:
+        print(f"queue_citation_lint: {len(unkeyable)} citation(s) UNKEYABLE — the cited line's content "
+              f"does not discriminate (a bare `//`, a brace, a blank), so a match would be coincidence:")
+        for k in sorted(unkeyable):
+            print(f"    {k}")
     if skipped_foreign:
         print(f"queue_citation_lint: SKIPPED {len(skipped_foreign)} citation(s) — the repo they "
               f"resolved in is not checked out here:")
@@ -442,8 +461,11 @@ def main() -> int:
             print(f"    {k}  (recorded in: {r})")
     ndocs = len({k.split("|", 1)[0] for k, _, _ in paths})
     print(f"queue_citation_lint: VALIDATED {len(resolved) - len(allowed)} commit citation(s), "
-          f"{len(paths)} path:line citation(s) across {ndocs} live document(s), and "
+          f"{len(paths) - len(unkeyable)} path:line citation(s) across {ndocs} live document(s), and "
           f"{len(bresolved)} bare file reference(s) in the queue (existence only).")
+    if unkeyable:
+        print(f"  {len(unkeyable)} path citation(s) are EXISTENCE-CHECKED ONLY — their line content "
+              f"does not discriminate, so a shift in them is invisible.")
     print("  docs/completed/ is EXCLUDED on purpose — archived records are supposed to age with the "
           "code they described, and linting them would fight the archival rule.")
     print("  NOT validated: RELEVANCE. A commit citation is checked to resolve and to match its "
