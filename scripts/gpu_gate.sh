@@ -451,14 +451,63 @@ metal)
 	;;
 esac
 
-# ---- 5. shared: the whole non-GPU suite still has to be green ----
-grp repo; hdr "5. repo (CPU path, formatting, vet)"
-if [ -n "$(gofmt -l . 2>/dev/null)" ]; then
-	fail "gofmt: $(gofmt -l . | tr '\n' ' ')"
+# ---- 5. repo hygiene: run what CI runs, DERIVED rather than duplicated (B0) ----
+#
+# This block used to run `gofmt -l .` and `go vet ./decoder/ ./cmd/...` — a hand-written list that
+# was a strict SUBSET of CI's: no staticcheck at all, vet without the goinfer_testhooks tag and over
+# narrower packages, no build. So CI went red on `staticcheck -tags cuda` and stayed red for three
+# commits, and running this gate — the thing you run INSTEAD of remembering — would not have caught
+# it either.
+#
+# Adding staticcheck to the list would fix the instance and leave the class open: the next check CI
+# gains reopens the gap. So the list is now DERIVED from .github/workflows/ci.yml by
+# scripts/ci_checks.py, and a check CI adds appears here with no edit to this file.
+grp repo; hdr "5. repo hygiene (derived from .github/workflows/ci.yml)"
+CI_ROWS="$(python3 scripts/ci_checks.py 2>/tmp/ci_checks.err)"
+CI_RC=$?
+if [ "$CI_RC" -ne 0 ] || [ -z "$CI_ROWS" ]; then
+	# A derivation that fails must FAIL, not silently degrade to the old hand-written list. That
+	# would be the very substitution this block exists to prevent, and it would look like a pass.
+	fail "cannot derive CI's check set: $(head -2 /tmp/ci_checks.err 2>/dev/null | tr '\n' ' ')"
 else
-	pass "gofmt clean"
+	# This host runs the linux jobs; the *-darwin ones are a COUNTED SKIP naming why, never dropped.
+	# A check that is skipped and a check that passed must not look the same (B0a).
+	case "$(uname -s)" in
+	Darwin) MINE='-darwin$' ; OTHER="linux" ;;
+	*)      MINE='^(root|gpu|cuda)$' ; OTHER="darwin" ;;
+	esac
+	ci_ok=0; ci_bad=0; ci_skipped=0
+	while IFS=$'\t' read -r job name kind env cmd; do
+		[ -z "$job" ] && continue
+		if ! printf '%s' "$job" | grep -Eq "$MINE"; then
+			ci_skipped=$((ci_skipped + 1)); continue
+		fi
+		if [ "${kind%%:*}" = "runner" ]; then
+			skip "CI[$job] $name — ${kind#runner:}"
+			continue
+		fi
+		# The ENVIRONMENT is part of the check. CI's root job has no go.work, so the
+		# module-boundary guard sees the root module graph in isolation; a developer box with a
+		# committed go.work unions every submodule and the guard reports a false red. Derived from
+		# whether the job sets up a workspace, not hardcoded here.
+		# "-" means no override. An EMPTY column would be collapsed by read (tab is IFS
+		# whitespace), shifting every field after it.
+		[ "$env" = "-" ] && env=""
+		if printf '%b' "$cmd" | env ${env:+"$env"} bash >/tmp/ci_step.out 2>&1; then
+			ci_ok=$((ci_ok + 1))
+		else
+			ci_bad=$((ci_bad + 1))
+			fail "CI[$job] $name"
+			head -5 /tmp/ci_step.out | sed 's/^/      /'
+		fi
+	done <<< "$CI_ROWS"
+	if [ "$ci_skipped" -gt 0 ]; then
+		skip "$ci_skipped ${OTHER}-only CI hygiene step(s) — wrong platform for this host"
+	fi
+	if [ "$ci_bad" -eq 0 ]; then
+		pass "$ci_ok CI hygiene check(s) reproduced locally, derived from ci.yml"
+	fi
 fi
-if go vet ./decoder/ ./cmd/... >/dev/null 2>&1; then pass "go vet"; else fail "go vet"; fi
 
 # ---- 6. group reconciliation: every DECLARED check must have emitted a verdict ----
 # The generalisation of the check-4 guard. A block that dies mid-way emits nothing, and a tally
