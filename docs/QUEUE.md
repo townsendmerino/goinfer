@@ -936,8 +936,29 @@ Both print their composition (`scripts/sweep_composition.py`, and the refresh's 
 only since this turn, and only because the GGUF parity gates entered the selector: before `f9d5d07`
 the refresh was safetensors-only on loader as well as f32-only on quant.
 
-**So the unfreeze is available now, not at a version number.** The decision is whose to make and
-should be recorded with its scope, lift condition and decider as originally specified.
+**THE FREEZE, RE-DECLARED AS A PROOF REQUIREMENT.** It has functioned as one all day — every
+frozen-path change that landed ran the goldens, and none was refused:
+
+> **Changes to paths covered by `testdata/parity_manifest.json` require a goldens run whose axis
+> composition is printed with the result. No version gate, no per-change exception.**
+
+**Decider: Francis. Declared 2026-08-12.** Recorded with an author because a rule with none drifts
+back into habit.
+
+**Justifying inventory:** the freeze-only column is **D3** and **G2**, both landable under this rule
+today; **P1** is blocked on the aikit row-pitch API and E6 independently. **Lifting the freeze as a
+freeze buys nothing the rule does not.**
+
+**THE AXES, and why ARCHITECTURE is excluded — stated, not left silent.** The condition names
+**loader** and **quantization**. It does not name architecture, and the reason is measured rather
+than assumed: arm64 contracts `x*y+z` at **85 decoder sites** where amd64's baseline contracts none,
+and the FMA campaign measured **114,431× minimum headroom with no argmax flip**. A separate arm64
+run is therefore very likely unnecessary, and 18 of 23 manifest rows are `linux-62gb` anyway.
+
+**The exception, in the same breath:** that headroom was measured **for the code as written**. A
+change that **rewrites expressions** rather than allocations puts it back in scope, because the
+measurement does not survive the expressions changing. **G2 is exactly that change class** — which is
+why it gets the check below rather than a wave-through.
 
 The `6edd1ca` freeze remains in force; tagging on top of it touches no core numerics and does not
 lift it. But it needs re-declaring in a **live document** with scope, an explicit lift condition,
@@ -1057,8 +1078,30 @@ Answer that before estimating.
   dissolved the question. Confirms the Phase-3b pool-null-result. Writeup: perf-campaign.md
   "Profiling coda". (Lesson: for park/wake questions use `-pprof=sync`/`-pprof=sched` from `trace`,
   not pprof CPU, which can't tell critical-path stall from an idle parked M.)
-- **`go fix` modernizers** — one deterministic pass across ~20 adapters written over months,
-  reviewed as a diff. **After the freeze**; it re-stales the manifest wholesale.
+- **`go fix` modernizers** — one deterministic pass, reviewed as a diff. **CLEARED FOR THE amd64
+  GOLDENS RUN ALONE; no arm64 read needed.** Checked before running, in an isolated `git worktree` so
+  the real tree could not be touched:
+
+  **21 of the 22 registered analyzers are numerics-inert by construction** — API/idiom migration
+  (`any`, `fmtappendf`, `mapsloop`, `newexpr`, `omitzero`, `reflecttypefor`, `slices*`, `stditerators`,
+  `strings*`, `testingcontext`, `waitgroup`, `inline`), loop/scope forms (`forvar`, `rangeint`), build
+  directives (`buildtag`, `plusbuild`), and one diagnostic-only (`hostport`). None rewrites an
+  arithmetic expression.
+
+  **`minmax` is the one that could**, and it is the reason to check rather than assume: it replaces
+  `if a > b { m = a } else { m = b }` with `max(a, b)`, and Go's builtins **propagate NaN** where the
+  if/else form does not — a real behaviour change in a float path. Its candidates in `decoder/` are
+  **7, and every one is integer** dimension or index arithmetic:
+
+      ge := min(gs+group, cols)                                  end := min(g+int4GroupSize, len(row))
+      sc := max(moe.SharedIntermediateDim, moe.IntermediateDim)  b := min(32, n)          (x2)
+      window := max(len(access)/8, 1)                            workers := min(GOMAXPROCS(0), numChunks)
+
+  **No float `min`/`max`, and none of the 85 contraction sites is touched.** So the headroom
+  measurement survives and the amd64 goldens run is sufficient.
+
+- **D3** has no expression-rewriting exposure at all (it adds `Options` fields and accessors), so it
+  proceeds on the goldens run alone.
 
 ### P. Audit findings, 2026-08-12 — nine survived adversarial verification
 
