@@ -525,7 +525,7 @@ func (r *cudaResident) allocSlots() error {
 		// the clamp never fired. This closes a real path at much lower free VRAM.)
 		if fit < r.topK {
 			need := float64(len(moeLayers)) * float64(r.topK) * float64(perLayer)
-			return fmt.Errorf("C′ expert cache cannot fit its MINIMUM: top-%d routed experts across %d MoE "+
+			return fmt.Errorf("expert cache (C′) cannot fit its MINIMUM: top-%d routed experts across %d MoE "+
 				"layers need %.2f GB of slots, but only %.2f GB is free — %d slots/layer fit. Free VRAM, "+
 				"lower --ctx, or drop GOINFER_MOE_CACHE_EXPERTS and use a card that holds the experts outright",
 				r.topK, len(moeLayers), need/1e9, float64(free)/1e9, fit)
