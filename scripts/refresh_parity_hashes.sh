@@ -34,9 +34,24 @@ cd "$(git rev-parse --show-toplevel)"
 # KV / vision parity tests — those gate features, not the forward numerics.)
 GOLDEN_RE='(_forwardParity|_logitParity|_textParity)$'
 
+# GOINFER_HEAVY_TESTS is set by default here, and that is a coverage decision rather than a
+# convenience. Without it the three int8int8 goldens (gemma4, gemma4-12B, mellum2) all skip on
+# "heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in", which meant EVERY golden that ran
+# was f32 — the refresh proved f32 numerics and silently nothing else, on a runtime whose documented
+# default quantization is int4. Two of those three pass here in ~70 s, so the quantized coverage was
+# UNPLUMBED rather than missing. Set GOINFER_REFRESH_HEAVY=0 to opt back out on a box without the
+# checkpoints; the counts printed below say what actually ran either way.
+HEAVY="${GOINFER_REFRESH_HEAVY:-1}"
 echo "==> Running forward goldens (the numeric proof a core refresh is non-numeric)…"
+if [ "$HEAVY" = "1" ]; then
+	echo "    heavy checkpoints ENABLED — the int8 goldens participate (GOINFER_REFRESH_HEAVY=0 to skip)"
+fi
 set +e
-out=$(go test ./decoder/ -run "$GOLDEN_RE" -v 2>&1)
+if [ "$HEAVY" = "1" ]; then
+	out=$(GOINFER_HEAVY_TESTS=1 go test ./decoder/ -run "$GOLDEN_RE" -v -timeout 60m 2>&1)
+else
+	out=$(go test ./decoder/ -run "$GOLDEN_RE" -v 2>&1)
+fi
 set -e
 
 pass=$(printf '%s\n' "$out" | grep -c '^--- PASS:' || true)
@@ -44,6 +59,14 @@ fail=$(printf '%s\n' "$out" | grep -c '^--- FAIL:' || true)
 skip=$(printf '%s\n' "$out" | grep -c '^--- SKIP:' || true)
 
 echo "    forward goldens: ${pass} passed, ${fail} failed, ${skip} skipped"
+# The QUANTIZATION breakdown, not just the count. A run of 19 green f32 goldens and a run of 21 that
+# includes two int8 ones are different proofs, and "19 passed" cannot tell them apart — which is how
+# the f32-only hole stayed invisible. Q1 in docs/QUEUE.md.
+nonf32=$(printf '%s\n' "$out" | grep '^--- PASS:' | grep -cE 'TestGemma4_logitParity|TestGemma4_12B_logitParity|TestMellum2_logitParity|TestGptOssReal_logitParity' || true)
+echo "    of those, ${nonf32} drive a QUANTIZED path (int8/int8int8); the rest are f32."
+if [ "$nonf32" -eq 0 ]; then
+	echo "    NOTE: this refresh proves f32 numerics ONLY — no quantized golden ran. See Q1."
+fi
 
 if [ "$fail" -gt 0 ]; then
 	echo
