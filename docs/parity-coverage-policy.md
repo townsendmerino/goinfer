@@ -299,6 +299,24 @@ Instances at time of writing, all 2026-08-12, three readings and one shape:
 
 Each was stated as a fact about the system before the instrument's position was checked.
 
+**The third one was then settled by moving the probe**, which is the remedy the class prescribes and
+worth recording because it came out on the artifact side. A reading taken immediately *before* each
+`cuLaunchKernel` returned 198,836,224 B at every one of the 20 launches of the token, including
+immediately before the failing `fRoute` — identical to free after `allocSlots`. Nothing was released
+between launches; the 64 MiB appears only after the failure, so "64 MiB was released" was a fact
+about where the probe sat and not about the system. The claim never reached a document.
+
+**And the instrument written to settle it had the same defect, one level down.** Its trigger was
+specified as two decrements — free after `allocSlots` → free at first launch → free at failing
+launch — on the reasoning that a deferred module load would show up as a gap between them. Every
+gap came back **0**, which by that wording reads as "module loading cost nothing". It does not: under
+the driver's default lazy module loading the module under suspicion materialises *during* the launch
+that fails, which is after the last pre-launch reading and before the post-failure one. **No
+difference of those three readings can contain it.** The zero was the instrument's blind spot
+presented as a measurement — the differencing shape, in a probe written by someone who had just
+finished writing this section. Recognition tests do not fire on their own; they have to be applied to
+the instrument being built, not only to the one being criticised.
+
 ### Representative: a fixture must be real in the dimensions the failure lives in
 
 Two properties have to survive a fixture's shrink, and only one of them is a dimension. Both were
@@ -445,13 +463,30 @@ of which the sweep that could not derive a per-slot cost is the differencing ins
 
 **An absence of signal is not a positive state.** Distinct from premature mechanism, which names
 a cause too early; this one assigns a benign meaning to a silence that is consistent with several
-states. Three instances in one day, all the same shape:
+states. Five instances, all the same shape:
 
 | the absence | read as | also consistent with |
 |---|---|---|
 | `no tokens generated` | "generation produced nothing" | a swallowed error, EOS on token 1, a routing result selecting nothing, an unlogged exit condition |
 | a skip census of `0` | "nothing skipped" | `go test` printing no `--- SKIP` without `-v` — nobody looked |
 | a process "still running" | "progressing" | a wait condition that can never become false; it never started |
+| a probe recording nothing | "no launches happened" | the probe's env var read at package-init, before `t.Setenv` ran |
+| **an experiment's null under a forcing flag** | "the forced thing is excluded" | **the flag never engaged, so nothing was forced** |
+
+The last one is the sharpest, because the null was the *designed output* of the experiment. A 26B run
+under `CUDA_MODULE_LOADING=EAGER` came back byte-identical to the default run and failed identically,
+which reads as "module load excluded" — one of the branches pre-registered for it. A control taking
+under a second showed the flag changes no reading at all on this driver and path: it never fired, so
+its null was about the flag, not about module loading. **A forcing mechanism has to be shown to fire
+before a null from it means anything**, and that check belongs in the experiment rather than after
+its result has been written down.
+
+That control also relocated the answer. Measuring each step directly on a fresh context — no model,
+no cache, under a second — found the deferred cost the experiment was looking for, and it was not the
+one the experiment named: `moe_route`'s first launch reserves 138,412,032 B of **local memory** (two
+`float[512]` per-thread arrays backed for the device's occupancy), while module memory is a true zero
+on both instruments. The five-minute 26B run had been the wrong instrument for a question that was
+never model-dependent.
 
 The third cost 27 minutes and produced no measurement, while being reported on twice as progress —
 including a confident account of what its *duration implied*. The discriminating check (GPU at 0%,

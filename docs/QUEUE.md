@@ -114,7 +114,7 @@ Why it matters: 105 variables, exactly one of which anything has ever set. Six h
 only findable *as a class* if something enumerates `os.Getenv` mechanically. A markdown table
 maintained by intention drifts on the first variable someone adds.
 
-**A3 · Make the launch OOM say what it is** — `linux`, NOT blocked on A1
+**A3 · Make the launch OOM say what it is** — `linux`, **DONE `e42e83e`**
 
 The one failure that has resisted a day of investigation also produces the least informative
 message: a raw `cuLaunchKernel: CUDA_ERROR_OUT_OF_MEMORY` with nothing tying it to the cache
@@ -192,23 +192,69 @@ Land it in ONE implementation — `allocSlots` calls `capSlots`, not a copy — 
 at the shipping path and a mutation check. And correct, in the same change, wherever it was written
 down that `slotcap_test.go` corroborates production sizing: it corroborates a parallel copy.
 
-**A9 · Force `moePTX` to load BEFORE `allocSlots`, then re-run at 34** — `linux`, **TRIGGERED**
+**A9 · The deferred fixed cost paid after the cap is computed** — `linux`, **CLOSED — premise
+confirmed in shape, mechanism corrected**
 
-Not conditional. What survives every instrument question about the 34-slot failure is that free VRAM
-at the moment of the attempt was **at least 189.6 MiB**, and a one-block routing kernel cannot want
-that. So this is **not exhaustion**, and A5 is necessary without being the whole remedy.
+Ran 2026-08-12, **before A5 landed**, so no cap override was needed and 34 was reachable.
 
-**Read the decrements, not the absolute value.** The earlier threshold ("run only if free at the
-failing launch exceeds ~100 MiB") was written before the post-allocation headroom was known and
-reads the wrong way round: the closed form predicts **198,836,224 B free after `allocSlots` at 34
-slots**, so a reading above 100 MiB is the *expected* case, not a signal. The two informative gaps:
+**Answer: `moe_route`'s first launch reserves 138,412,032 B (132 MiB) of local-memory backing
+store.** Two instruments agree to the byte (`cuMemGetInfo` −138,412,032; `nvidia-smi` 104 → 236 MiB).
+It declares two `float[MOE_MAX_E]` per-thread arrays, and at `MOE_MAX_E = 512` that is 4 KiB/thread
+which the driver must back for the **device's occupancy** on first use — regardless of the 1×1 grid
+goinfer launches it with. Paid at first launch, long after `allocSlots` sized the cache from a free
+reading that could not include it.
 
-- free after `allocSlots` → free at first launch — what `gmod` and the glue module cost.
-- free at first launch → free at failing launch — what the successful launches cost.
+**The named mechanism was wrong.** moePTX's *module* memory is **0 B** — at `CompileLibrary`, at
+`NewComputePipeline`, and at the first launch of a module kernel that declares no scratch — with both
+instruments agreeing, so it is a real zero and not a blind spot. A9's *shape* (a deferred fixed cost
+invisible to the cap) is confirmed; the thing paying it is local memory, not code.
 
-The only outcome that would make A9 unnecessary is free after `allocSlots` coming back **far below**
-198,836,224 — which would mean the closed form is wrong and the cache took more than predicted. That
-reopens A1; it does not close A9.
+Gated by `TestMoERouteFirstLaunchReservation` (`cuda/moe_route_reservation_test.go`, seconds, no
+fixture), which asserts `shared_gate_combine` reserves 0 and `moe_route` reserves more than 0 — so a
+future change to `MOE_MAX_E` cannot silently move a 132 MiB fixed cost.
+
+**Price of the router cap, recorded not proposed.** Raising `MOE_MAX_E` 256 → 512 doubled this
+reservation from ~66 MiB to 132 MiB. That halving is **derived from the form, not measured**. It is
+written down as the VRAM price of the cap, not as an argument to change it.
+
+**The forcing mechanism that did not fire.** `CUDA_MODULE_LOADING=EAGER` was the intended way to pay
+the load early. Readings are **byte-identical with and without it**, so it does not engage on this
+driver and path — and the 26B run made under it forced nothing. Its null was uninformative, and would
+have been read as "module load excluded" had the cheap control not been run. **A forcing mechanism
+has to be shown to fire before a null from it means anything.**
+
+**What this leaves for A5/A7.** At 34 slots free after `allocSlots` is 189.6 MiB against a 132 MiB
+reservation — the granularity shortfall had already eaten the 384 MiB margin down to less than half,
+and the deferred reservation then spent most of what remained. At the corrected cap of 33, free after
+`allocSlots` is 429.6 MiB, comfortably clear of 132 MiB. **A7 should therefore be expected to pass,
+and its value is that it tests this rather than assuming it.**
+
+Historical framing, kept because the trigger was rewritten twice:
+
+**Measured, 2026-08-12 — the pre-launch probe.** Free VRAM read immediately *before* every
+`cuLaunchKernel` of the token, at 34 slots:
+
+| reading | value |
+|---|---|
+| free after `allocSlots` | 198,836,224 (= predicted, to the byte) |
+| free before each of the 20 launches, `fRms` … `fRouterF32` | 198,836,224, **constant** |
+| free before the failing `fRoute` | **198,836,224** |
+| free reported by `describeLaunchErr`, after the failure | 265,945,088 |
+
+So **nothing is consumed between launches**, and the "64 MiB released" was an artifact of probe
+position: the block appears only after the failed attempt unwinds. Settled — do not carry it as an
+observation.
+
+**Two supersessions this produced.** First, the earlier ~100 MiB threshold was already wrong (the
+closed form predicts 198,836,224, so a large reading is the expected case). Second, **the decrement
+trigger that replaced it is blind to the thing A9 is about.** It read free after `allocSlots` → free
+at first launch → free at failing launch, expecting a deferred module load to appear as a gap. All
+gaps came back 0 — but under the driver's default `CUDA_MODULE_LOADING=LAZY`, `moePTX` materialises
+*during* the launch that fails, which is after the last pre-launch reading and before the
+post-failure one. **No difference of those three readings can contain it.** The zero is the
+instrument's blind spot, not a result.
+
+A9 therefore runs on its own merits, and it is the only instrument that can see the cost at all.
 
 Rationale: `fRoute` is the first kernel launched out of `moePTX` (`ropeKV` comes from `gmod`,
 `fAttn` from the glue module), so a lazily-deferred module load is attributable to it exactly as a
@@ -219,21 +265,34 @@ delta, because it does not scale with slots.
 It is **additive with the rounding shortfall, not an alternative to it**: rounding eats into the
 headroom the 384 MiB margin was sized to provide, and the module load then spends from what remains.
 
+**Mechanism, now located precisely.** `CompileLibrary(moePTX)` runs at `cuda/backend.go:591`;
+`allocSlots` runs at `cuda/backend.go:793`. Under lazy loading the module's *device* memory is not
+taken at 591 — it is taken at the first launch of one of its kernels, which is `fRoute`, long after
+the cap was computed from the free reading at 793. Corroborating: the failed attempt released
+exactly 2^26 B while unwinding, which reads as a driver-side code/constant block rather than as
+application scratch.
+
 Experiment: force `moePTX` to load while free VRAM is still at its full ~3.8 GB, then re-run at 34
-slots. Branches, pre-registered:
+slots. The cheapest forcing is `CUDA_MODULE_LOADING=EAGER` in the environment — driver-level, read at
+context creation, and **read-only on the allocation path**, so it changes when the cost is paid
+without changing any goinfer code. Branches, pre-registered:
 
 - `fRoute` launches after the forced load → module load was the mechanism; the fix shape is to size
   the cache **after** deferred fixed costs are paid, not before.
 - `fRoute` still fails → module load excluded; candidate list reopens one entry shorter.
 - the forced load itself fails → same finding, relocated to where it is visible. That is a result.
 
+**Outcome against those branches: none of them, because the forcing mechanism never fired.** The
+question was settled instead by measuring each step directly on a fresh context, which needed no
+model and took under a second — the mechanism question was never model-dependent, and trying to
+answer it inside a five-minute 26B load is what made it look expensive.
+
 Read-only on the allocation path. The reordering is an **experiment first and a fix only after it
 answers**.
 
-**Sequencing constraint — this is the part that can be lost silently.** A9 reproduces at 34 slots,
-and A5 fixes the cap to 33, which makes 34 unreachable. **Run A9 before A5 lands, or with an
-explicit cap override — and record which was used.** A run at the new cap of 33 would simply pass
-and look like confirmation, so the loss would leave no trace.
+**Sequencing constraint, honoured.** A9 reproduced at 34 slots and A5 fixes the cap to 33, which
+makes 34 unreachable. A9 ran **before A5 landed**, so no override was needed. Recorded because a run
+at the new cap would simply pass and look like confirmation, leaving no trace of the loss.
 
 **B0 · Repo-hygiene group must run what CI runs** — `linux`
 
