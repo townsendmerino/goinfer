@@ -10,8 +10,8 @@ require (
 )
 
 require (
-	github.com/townsendmerino/aikit v1.16.0
-	github.com/townsendmerino/aikit/gpu v0.27.0
+	github.com/townsendmerino/aikit v1.17.0
+	github.com/townsendmerino/aikit/gpu v0.28.0
 	golang.org/x/sys v0.47.0
 	golang.org/x/text v0.40.0 // indirect
 )

@@ -1,5 +1,5 @@
-github.com/townsendmerino/aikit v1.16.0 h1:zEmupyxnqNfkesIIyQ1e3Dva2iYd0flCAfwn9+iklpc=
-github.com/townsendmerino/aikit v1.16.0/go.mod h1:v3jliknZOOxCFxqas2MBWfQr4SPXH4JwOefZ0wgpnZE=
+github.com/townsendmerino/aikit v1.17.0 h1:4sPLSYYpeZfkHIo430bAw3duw/hja7VaKJHQTDiUoJQ=
+github.com/townsendmerino/aikit v1.17.0/go.mod h1:v3jliknZOOxCFxqas2MBWfQr4SPXH4JwOefZ0wgpnZE=
 golang.org/x/sys v0.47.0 h1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=
 golang.org/x/sys v0.47.0/go.mod h1:4GL1E5IUh+htKOUEOaiffhrAeqysfVGipDYzABqnCmw=
 golang.org/x/text v0.40.0 h1:Ub2Z6/xjgF1WrYQz2nuITOEegKFtiIy+rieRJ5lHZKs=
