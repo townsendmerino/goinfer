@@ -651,19 +651,32 @@ the derivation's selector makes it **refuse** ("derived ZERO hygiene steps") rat
 empty set as a pass. The second is the one that matters — a derivation that degrades to nothing
 looks exactly like a clean run.
 
-**B0a · A guard that cannot find its tool must fail, not skip** — `linux`, the guard shape
+**B0a · A guard that cannot find its tool must fail, not skip** — `linux`, **AUDITED — no live
+instance in the repo. Closed with the residual risk named.**
 
-B0 is the CI side; this is the shape one level down, and it happened *inside* the session written to
-close B0. A check ran as `command -v staticcheck >/dev/null && staticcheck ... | head`. The binary
-exists but is not on `PATH`, so `command -v` failed, the `&&` short-circuited, the whole check
-evaluated to nothing, and the surrounding output looked exactly like a clean run. It was reported as
-"clean". Re-running it directly, with CI's own invocation, was clean — so the conclusion survived and
-**the guard did not**.
+The shape: a check ran as `command -v staticcheck >/dev/null && staticcheck ... | head`. The binary
+exists but is not on `PATH`, so `command -v` failed, the `&&` short-circuited, and the whole check
+evaluated to nothing while the surrounding output looked exactly like a clean run. It was reported as
+"clean".
 
-This is an absence-of-signal instance in its guard form: a missing tool is indistinguishable from a
-passing check. Remedy, either: **the guard fails when its tool is absent**, or **the skip is recorded
-in the census** so a not-run check is visibly not-run. A silent third state is what makes it dangerous
-— it was found last and mentioned last, which is where things sink.
+**Audit result: the repo does not do this.** Three `command -v` uses, all in `scripts/gpu_gate.sh`,
+all `nvidia-smi` **backend detection** rather than tool-guarding a check — and each emits a counted
+verdict on the absent path (group 0: `skip "clean-GPU check (no nvidia-smi; ...)"`). Absence there is
+a real condition about the machine, not a missing instrument.
+
+**And the class is structurally prevented**, which is the better answer than "we checked". Group 6
+reconciles **emitted** verdicts against a **declared** set, so a group that dies or short-circuits
+without emitting fails the gate — silence is detectable by construction, not by remembering.
+
+**B0's new group 5 is correct by the same standard**, mutation-checked two ways: PyYAML unavailable →
+`ci_checks.py` exits 2 with a message and group 5 **fails**; the script missing entirely → non-zero
+and empty output, group 5 **fails**. Neither degrades to the old hand-written list, which would have
+looked like a pass.
+
+**Residual risk, named because it is the one that actually bit:** the instance was an **ad-hoc shell
+command typed at a prompt**, not repo code. No gate polices that. The mitigation is the habit the
+gate exists to replace — run `gpu_gate.sh` rather than hand-rolling the check — which is exactly what
+B0 makes worth doing.
 
 **B5 · `RELEASING.md` must reference `QUEUE.md`** — either box
 
