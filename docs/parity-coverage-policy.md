@@ -299,6 +299,21 @@ Instances at time of writing, all 2026-08-12, three readings and one shape:
 
 Each was stated as a fact about the system before the instrument's position was checked.
 
+**A check has a measurement's shape too, and a false RED only by luck.** `scripts/gpu_gate.sh`'s
+repo-hygiene group was rewritten to run CI's checks derived from `ci.yml` rather than a hand-written
+copy (B0). On its first run the module-boundary guard reported a **leak of `cuda`, `gpu` and `webgpu`
+into the root module graph** — a serious-looking red that was entirely an artifact of *where the
+check ran*: CI's root job has no `go.work`, this box has one committed, and a workspace unions every
+submodule into the graph the guard inspects. Same command, same repo, opposite verdict.
+
+Two things make it worth recording here rather than in the gate's own notes. The recognition test is
+the position one, applied to a check instead of a probe: *if this ran one environment over, would the
+answer change?* And the failure direction was **luck** — a workspace makes the module-boundary guard
+report a false red, but a check whose environment hides a condition would report a false green just as
+silently, and nothing about the setup chose which. **Reproducing a check's command without
+reproducing its environment is not reproducing the check**, and the environment therefore belongs in
+the derivation, not in a developer's habits.
+
 **The third one was then settled by moving the probe**, which is the remedy the class prescribes and
 worth recording because it came out on the artifact side. A reading taken immediately *before* each
 `cuLaunchKernel` returned 198,836,224 B at every one of the 20 launches of the token, including

@@ -365,8 +365,25 @@ What this run did establish: with the reservation paid up front, the decrement a
 **0 at every cap tested**, so post-sizing consumption is genuinely nil and the margin is not covering
 launch growth. Its remaining job is whatever the next item names.
 
-**A10 · The total fitting does not imply the allocations succeed** — `linux`, **CLOSED. It is a
-driver allocation FLOOR, measured at 151,191,552 B.**
+**A10 · The ~150 MiB driver allocation floor** — `linux`, **THE OPEN CUDA ITEM.** Mechanism measured,
+cause unattributed.
+
+**Status: measured, not explained.** ~150 MiB that `cuMemGetInfo` reports as free and `cuMemAlloc`
+will not hand out — 150,601,728 B at `MOE_MAX_E=512`, 151,191,552 B at 256, i.e. **constant across
+the one parameter tested**, within the known 589,824 B baseline drift. What it *is* remains
+unattributed: driver reserve, allocator bookkeeping, or something else. It is not fragmentation
+(refused at any request size down to 1 MiB) and not capacity (free was 2.71× the request).
+
+**Two figures are RETIRED, and why matters.** A9 twice recorded a "~150 MiB transient, still unnamed"
+and a "peak is 2.09× the residual" ratio. Both dissolve: **demand = floor + residual**, exact at
+`MOE_MAX_E=256` and off by exactly the baseline drift at 512. So the transient was never transient —
+it is this floor — and the 2.09× was never a property of anything, being `(floor + residual)/residual`,
+which reads **3.77×** at 256 for the same system. A ratio between two quantities that scale
+differently is not a constant of the thing.
+
+The original finding follows.
+
+**Original: the total fitting does not imply the allocations succeed.**
 
 **The mechanism.** `cuMemGetInfo` reports **151,191,552 B (144.2 MiB) more free than `cuMemAlloc`
 will hand out** — at *any* request size down to 1 MiB. Measured directly by draining the device in
@@ -436,8 +453,18 @@ Peak demand is 289,013,760 and residual is 138,412,032 — a ratio of **2.09×**
 constant.** A margin bump would have to be sized against the peak, permanently, while the peak is
 transient — it would reserve 275.6 MiB forever to cover something that is only briefly needed.
 
-**A9-SPEC · Specialize `MOE_MAX_E` at JIT time** — `linux`, **RECLAIM MEASURED. Artifact question
-dissolved.**
+**A9-SPEC · Specialize `MOE_MAX_E` at JIT time** — `linux`, **CLOSED — not worth doing, on
+measurement.**
+
+**Measured basis for closing.** The allocation floor is **150,601,728 B at `MOE_MAX_E=512` and
+151,191,552 B at 256** — invariant within 589,824 B, which is exactly the A9-RESID baseline drift. At
+256 the floor is already **74% of total demand** (151,191,552 of 205,717,504). Driving the residual
+all the way to zero would still leave the floor, so the reclaim is **bounded near one slot** — and
+the measured 512→256 step already buys exactly one (cap 31 → 32).
+
+Against that: a second specialized module, selection logic keyed on expert count at load, and a
+dependency on the pinned 12.6.85 NVRTC path for every future rebuild. **Closed on the numbers, not
+on preference.** Reopen only if the floor changes or a device shows a materially different ratio.
 
 **The frozen-artifact decision is not part of this item.** The standing constraint is that frozen
 artifacts are not regenerated and new kernels get their own files — so the shape is a **second,
@@ -471,9 +498,9 @@ free before `allocSlots` rises from 3,709,468,672 to 3,793,354,752 — and the c
 83.9 MB is *less than one slot* (30 layers × 3,345,408 = 100,362,240 raw), so this is a boundary
 effect, not a proportional win. Worth knowing before anyone budgets a second module for it.
 
-**Not extrapolable to 128.** Gemma 4 routes 128 experts, and 0.394 at one halving does not predict
-the next — that is the derivation A9-MULT withdrew. Build at 128 and measure it the same way; the
-harness now takes `GOINFER_MOE_PTX_FILE`, so it is a two-minute job.
+**Not extrapolable to 128**, and now moot: 0.394 at one halving does not predict the next (the
+derivation A9-MULT withdrew), and the floor caps the payoff regardless. The harness keeps
+`GOINFER_MOE_PTX_FILE`, so re-measuring is a two-minute job if the basis for closing ever changes.
 
 **A9-MULT · The halving was DERIVED and is now withdrawn** — `linux`, **CLOSED, refuted**
 
@@ -1056,23 +1083,71 @@ zoo, no HF venv. (18 of the 23 manifest rows name `linux-62gb`; only `gemma4` na
 **Verdict: P6 can land now under the exception.** Do not refresh the hash without running the
 script — it refuses on any golden failure and on a vacuous all-skipped run, which is the whole point.
 
+**Q1 · The forward goldens prove f32 ONLY — no quantized path has a golden that runs** — `linux`,
+**NEW. G-01 at the largest scale it has appeared.**
+
+int4 is the documented default quantization. **Zero goldens drive it.** And the hole is wider than
+that: of the 19 goldens that actually RAN in the 2026-08-12 refresh, **every one is f32**.
+
+| quantization | golden files | did any RUN? |
+|---|---|---|
+| f32 (explicit or default) | 24 | **19 ran** |
+| `int8int8` (W8A8) | 3 — `gemma4_parity`, `gemma4_12b_parity`, `mellum2_parity` | **all 3 SKIPPED** |
+| `int8` (weight-only Q8) | 1 — `gptoss_real` | not matched by the goldens regexp at all |
+| **`int4` / W4A8** | **0** | — |
+
+So `refresh_parity_hashes.sh` — the sanctioned freeze-exception path, and the thing that makes a
+core edit auditable — **proves f32 numerics and nothing else**. A change that is bit-identical in f32
+and wrong in int4 passes it in 6 seconds.
+
+**Retroactive scope, and this is the part to act on.** Any claim of the form *"the parity suite
+covers X"* is scoped to **the quantizations the goldens drive**, which today is f32. Every place such
+a claim is written down needs that scope added — `docs/parity-coverage-policy.md`'s tier table,
+`RELEASING.md`'s §C1, the README's support matrix, and the P6 commit body (which states it already).
+
+**And the freeze protects what the goldens check.** The `6edd1ca` numerics freeze over `decoder/` is
+enforced by `deps_hash` staleness, whose release valve is this goldens run. Where the goldens are
+silent — every quantized path — the freeze is a *procedural* barrier with no numeric proof behind it.
+That is not an argument for lifting it; it is an argument for knowing what it is.
+
+**What it would take.** The three `int8int8` goldens exist and skip for want of fixtures, so the
+cheapest first step is regenerating those checkpoints — that lifts W8A8 from zero to three families
+at no new test-writing cost. int4 needs new goldens: pick the families where int4 is a supported
+configuration, generate a tiny fixture per family, and pin logits from the f32 path with the int4
+tolerance the quant tier already defines (quant-vs-f32 argmax + cosine, per the policy's axis table)
+rather than a bit-identity golden, since int4 is lossy by construction.
+
+**Also record with P6's 6.09 s price: cheap and thorough are different properties.** 6.09 s buys 19
+passes and 11 skips. The skips are not free — they are the coverage this item is about.
+
 **P7 · W4A8 allocates a fresh `Workspace` per projection per token** — `decoder/weightmat.go:202`
 
-**Two findings that change the item, both from reading the source the audit line summarised.**
+**RESOLVED BY READING THE SIBLING — and the answer is neither branch as posed.** No concurrency
+argument is needed; the tree already contains one.
 
-**1. The fresh Workspace is deliberate, and the reason is in the code:** *"per-call ws so it's
-race-free across decode streams"*. So this is not simply a fix the sibling got and this one missed —
-removing it needs a concurrency argument the audit line did not make. The W8A8 "sibling" also routes
-through `qb.MatmulW8A8`, a different shape entirely, so the pairing itself is loose.
+**Concurrent decode streams DO exist**, and W8A8 has **no latent race**. `decodeScratch`'s own doc
+settles it: *"One lives on each KVCache — a cache is one generation stream, so the buffers are never
+shared concurrently."* The Workspace W8A8 reuses (`ws *linalg.Workspace`, `decoder/scratch.go:38`)
+lives inside that per-stream struct, so W8A8's "fix" was never a *shared* Workspace — it is a
+**per-stream** one, race-free by the same property that makes every other scratch buffer safe.
 
-**2. The goldens give NO numeric proof here.** Zero of the 20 forward-golden files drive `int4` or
-W4A8 — checked mechanically. So unlike P6, P7 **cannot** use the 6-second goldens-gated refresh: the
-proof would be vacuous on exactly the path being changed. It needs either a regenerated int4 golden
-or the real T3 quant gate.
+**So the per-call Workspace comment is accurate and irrelevant to the fix.** `matmul` — the free
+function, for callers with no scratch — keeps a per-call Workspace for W8A8 *and* W4A8 alike
+(`weightmat.go:202` and `:219`, the same pattern twice). The divergence is elsewhere: `matmulInto`
+special-cases `isW8A8(w)` and falls through to `matmul` for everything else, so W4A8 never reaches
+the per-stream Workspace even though its six call sites already pass one.
 
-**Verdict: P7 does NOT land under the exception.** It is materially more expensive than P6 and its
-premise needs re-establishing first. **See B6** — and note this is the second B6 row where the
-"sibling" framing turned out looser than the audit implied.
+**Verdict: P7 is a straightforward divergence repair.** Route W4A8 through
+`linalg.MatmulBTW4A8Into(ws, ...)` in `matmulInto`, exactly as W8A8 does. Race-free by the same
+argument, no new one required.
+
+**Blocked ONLY by Q1.** The goldens give no numeric proof on this path — every golden that runs is
+f32, and W4A8 is precisely the path being changed — so the 6-second refresh would be **vacuous
+exactly where it matters**. P7 lands when Q1 gives int4 a golden, or behind a real T3 quant gate.
+
+**See B6** — and note the "sibling" framing was loose in a way the audit did not capture: the pair is
+not W8A8-fixed / W4A8-unfixed, it is `matmulInto` covering one quantization and silently delegating
+the rest.
 
 **P8 · `sampleChunked` allocates a full-vocab `[]float64` and rebuilds the goroutine pool twice per
 sampled token** — `decoder/sampler_chunked.go:188`. **TRIED AND REVERTED — the allocation removal
