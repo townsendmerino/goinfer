@@ -37,7 +37,7 @@ func TestFakeQuantSymMatchesRuntimeInt4(t *testing.T) {
 	nGroups := (cols + group - 1) / group
 	bpr := (cols + 1) / 2
 	ref := make([]float32, rows*cols)
-	for r := 0; r < rows; r++ {
+	for r := range rows {
 		linalg.DequantizeRowInt4(packed[r*bpr:(r+1)*bpr], scales[r*nGroups:(r+1)*nGroups], group, cols, ref[r*cols:(r+1)*cols])
 	}
 

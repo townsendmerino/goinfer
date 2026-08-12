@@ -61,7 +61,7 @@ func TestB2DenseFlagship(t *testing.T) {
 		embs := build(n)
 		var bestPre, bestDec time.Duration
 		best := time.Hour
-		for rep := 0; rep < 3; rep++ { // best of 3, first (rep 0) is the warm-up and discarded by "best"
+		for rep := range 3 { // best of 3, first (rep 0) is the warm-up and discarded by "best"
 			t0 := time.Now()
 			lg, e := rf.PrefillLast(embs, 0)
 			if e != nil {
@@ -70,7 +70,7 @@ func TestB2DenseFlagship(t *testing.T) {
 			pre := time.Since(t0)
 			t1 := time.Now()
 			cur := lg
-			for i := 0; i < gen; i++ {
+			for i := range gen {
 				tok := argmaxF(cur)
 				l, e := rf.Forward(mc.EmbedResidentForTest(tok), n+i)
 				if e != nil {

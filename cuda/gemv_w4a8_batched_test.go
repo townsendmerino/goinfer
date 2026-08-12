@@ -90,7 +90,7 @@ func TestGemvW4A8Batched_bitIdentical(t *testing.T) {
 		// M activation rows, each independently int8-quantized (row scale), packed 4 int8/word.
 		Apk := make([]uint32, M*kd4)
 		aSc := make([]float32, M)
-		for m := 0; m < M; m++ {
+		for m := range M {
 			af := make([]float32, K)
 			for i := range af {
 				s = s*1664525 + 1013904223
@@ -115,7 +115,7 @@ func TestGemvW4A8Batched_bitIdentical(t *testing.T) {
 		dArow := mustAlloc[uint32](t, cx, kd4)
 		dAsRow := mustAlloc[float32](t, cx, 1)
 		ref := make([][]float32, M)
-		for m := 0; m < M; m++ {
+		for m := range M {
 			if e := gc.CopyHtoD(bg, dArow, Apk[m*kd4:(m+1)*kd4]); e != nil {
 				t.Fatalf("H2D Arow: %v", e)
 			}
@@ -155,8 +155,8 @@ func TestGemvW4A8Batched_bitIdentical(t *testing.T) {
 		}
 
 		mism := 0
-		for m := 0; m < M; m++ {
-			for n := 0; n < N; n++ {
+		for m := range M {
+			for n := range N {
 				if ref[m][n] != bat[m*N+n] {
 					if mism < 3 {
 						t.Errorf("M=%d [m=%d,n=%d]: batched %v != GEMV %v (bits differ)", M, m, n, bat[m*N+n], ref[m][n])

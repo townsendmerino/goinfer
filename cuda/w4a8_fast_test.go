@@ -59,13 +59,13 @@ func runW4A8Variant(t *testing.T, ptx []byte, fnName, label string) {
 	for i := range gs {
 		gs[i] = f32tof16(0.02 + 0.001*float32(i%7))
 	}
-	for k := 0; k < K; k++ {
+	for k := range K {
 		seed = seed*1664525 + 1013904223
 		aB[k] = int8(seed >> 24)
 	}
-	for j := 0; j < Kdiv4; j++ {
+	for j := range Kdiv4 {
 		var p int32
-		for b := 0; b < 4; b++ {
+		for b := range 4 {
 			p |= (int32(aB[4*j+b]) & 0xff) << (8 * b)
 		}
 		a[j] = p
@@ -73,19 +73,19 @@ func runW4A8Variant(t *testing.T, ptx []byte, fnName, label string) {
 	const aScale = float32(0.03)
 
 	Wp := make([]uint32, N*Kwords)
-	for n := 0; n < N; n++ {
-		for m := 0; m < Kwords; m++ {
+	for n := range N {
+		for m := range Kwords {
 			var word uint32
-			for i := 0; i < 8; i++ {
+			for i := range 8 {
 				word |= uint32(qv[n*K+8*m+i]) << (4 * nibblePosFast(i))
 			}
 			Wp[n*Kwords+m] = word
 		}
 	}
 	ref := make([]float32, N)
-	for n := 0; n < N; n++ {
+	for n := range N {
 		var facc float64
-		for g := 0; g < Kgroups; g++ {
+		for g := range Kgroups {
 			var iacc int64
 			for k := g * grp; k < (g+1)*grp; k++ {
 				iacc += (int64(qv[n*K+k]) - 8) * int64(aB[k])
@@ -114,14 +114,14 @@ func runW4A8Variant(t *testing.T, ptx []byte, fnName, label string) {
 		_ = fn.LaunchOn(bg, stream, cfg, gc.Arg(dW), gc.Arg(dA), gc.Arg(dGs),
 			gc.ArgValue(aScale), gc.ArgValue(int32(N)), gc.ArgValue(int32(Kwords)), gc.ArgValue(int32(Kgroups)), gc.Arg(dOut))
 	}
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		launch()
 	}
 	_ = stream.Synchronize(bg)
 	got := make([]float32, N)
 	_ = gc.CopyDtoH(bg, got, dOut)
 	var d, ng, nr, maxAbs float64
-	for n := 0; n < N; n++ {
+	for n := range N {
 		d += float64(got[n]) * float64(ref[n])
 		ng += float64(got[n]) * float64(got[n])
 		nr += float64(ref[n]) * float64(ref[n])
@@ -135,12 +135,12 @@ func runW4A8Variant(t *testing.T, ptx []byte, fnName, label string) {
 	}
 	wbytes := int64(N)*int64(K)/2 + int64(N)*int64(Kgroups)*2
 	bestUs := 1e18
-	for r := 0; r < 8; r++ {
+	for range 8 {
 		s, _ := ctx.NewEvent()
 		e, _ := ctx.NewEvent()
 		_ = s.Record(stream)
 		const it = 50
-		for i := 0; i < it; i++ {
+		for range it {
 			launch()
 		}
 		_ = e.Record(stream)

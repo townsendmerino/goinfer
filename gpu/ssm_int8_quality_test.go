@@ -109,7 +109,7 @@ func TestSSMInt8Quality(t *testing.T) {
 	r1Arg := make([]int, N)
 	r1NLL := 0.0
 	cache := r1.NewCache(len(ids) + 1)
-	for i := 0; i < N; i++ {
+	for i := range N {
 		lg, e := r1.ForwardForTest(ids[i], cache)
 		if e != nil {
 			t.Fatal(e)
@@ -124,7 +124,7 @@ func TestSSMInt8Quality(t *testing.T) {
 	// score: teacher-forced agreement + KL(R1||X) + top5 overlap + perplexity for path X.
 	score := func(name string, dist [][]float64, arg []int, ids []int) {
 		agree, klSum, t5Sum, nll := 0, 0.0, 0.0, 0.0
-		for i := 0; i < N; i++ {
+		for i := range N {
 			if arg[i] == r1Arg[i] {
 				agree++
 			}
@@ -160,7 +160,7 @@ func TestSSMInt8Quality(t *testing.T) {
 	resDist := make([][]float64, N)
 	resArg := make([]int, N)
 	rf.Reset()
-	for i := 0; i < N; i++ {
+	for i := range N {
 		lg, e := rf.Forward(res.EmbedResidentForTest(ids[i]), i)
 		if e != nil {
 			t.Fatal(e)
@@ -180,7 +180,7 @@ func TestSSMInt8Quality(t *testing.T) {
 		r2Dist := make([][]float64, N)
 		r2Arg := make([]int, N)
 		c2 := r2.NewCache(len(ids) + 1)
-		for i := 0; i < N; i++ {
+		for i := range N {
 			lg, e := r2.ForwardForTest(ids[i], c2)
 			if e != nil {
 				t.Fatal(e)

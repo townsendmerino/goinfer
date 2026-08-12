@@ -148,7 +148,7 @@ func TestMoERoute_pastOldCap(t *testing.T) {
 			t.Fatalf("nE=%d: RouteExpertsForTest: %v", nE, err)
 		}
 		ri, rw := refRoute(logits, bias, k, true, false, 2.5)
-		for j := 0; j < k; j++ {
+		for j := range k {
 			if gi[j] != ri[j] {
 				t.Errorf("nE=%d: idx[%d] gpu=%d ref=%d (gpu=%v ref=%v)", nE, j, gi[j], ri[j], gi, ri)
 			}

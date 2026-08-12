@@ -19,18 +19,16 @@ func TestLayerPager_concurrentNoRace(t *testing.T) {
 	}
 	p := &layerPager{spans: spans, window: 4, ahead: 1, state: make([]bool, n)}
 	var wg sync.WaitGroup
-	for g := 0; g < 6; g++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for iter := 0; iter < 3; iter++ {
-				for l := 0; l < n; l++ {
+	for range 6 {
+		wg.Go(func() {
+			for range 3 {
+				for l := range n {
 					p.enterLayer(l)
 				}
 				p.finishLayers()
 				_, _ = p.stats()
 			}
-		}()
+		})
 	}
 	wg.Wait()
 }
@@ -45,11 +43,11 @@ func TestExpertPager_concurrentNoRace(t *testing.T) {
 	}
 	p := &expertPager{cache: cache, nExperts: nExp, total: nExp * 4096}
 	var wg sync.WaitGroup
-	for g := 0; g < 6; g++ {
+	for g := range 6 {
 		wg.Add(1)
 		go func(off int) {
 			defer wg.Done()
-			for iter := 0; iter < 50; iter++ {
+			for iter := range 50 {
 				p.touch(keys[(iter+off)%nExp])
 				_, _, _ = p.stats()
 			}

@@ -11,7 +11,7 @@ func TestTruncateTo_wrappedRingRewindIsInexact(t *testing.T) {
 	c := NewKVCache(1, nKV, hd, W, 16)
 	c.enableRings(W, func(l int) bool { return false }) // layer 0 local (ring)
 	kvDim := nKV * hd
-	for p := 0; p < 10; p++ { // 10 positions into a W=4 ring ⇒ wraps
+	for range 10 { // 10 positions into a W=4 ring ⇒ wraps
 		c.Append(0, make([]float32, kvDim), make([]float32, kvDim))
 	}
 	if c.Pos() != 10 {
@@ -34,7 +34,7 @@ func TestTruncateTo_raggedLayerUsesRecordedStride(t *testing.T) {
 	c := NewKVCache(2, nKV, hd, 0, 16) // window 0 ⇒ global (append-forever) layers
 	kvDim := nKV * hd
 	k := make([]float32, kvDim)
-	for p := 0; p < 2; p++ { // 2 clean positions across both layers
+	for range 2 { // 2 clean positions across both layers
 		c.Append(0, k, k)
 		c.Append(1, k, k)
 	}

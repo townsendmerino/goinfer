@@ -52,7 +52,7 @@ func TestNemotronResidentQuality(t *testing.T) {
 	r1Arg := make([]int, N)
 	r1NLL := 0.0
 	cache := r1.NewCache(len(ids) + 1)
-	for i := 0; i < N; i++ {
+	for i := range N {
 		lg, e := r1.ForwardForTest(ids[i], cache)
 		if e != nil {
 			t.Fatal(e)
@@ -66,7 +66,7 @@ func TestNemotronResidentQuality(t *testing.T) {
 
 	score := func(name string, dist [][]float64, arg []int) {
 		agree, klSum, t5Sum, nll := 0, 0.0, 0.0, 0.0
-		for i := 0; i < N; i++ {
+		for i := range N {
 			if arg[i] == r1Arg[i] {
 				agree++
 			}
@@ -105,7 +105,7 @@ func TestNemotronResidentQuality(t *testing.T) {
 	resDist := make([][]float64, N)
 	resArg := make([]int, N)
 	rf.Reset()
-	for i := 0; i < N; i++ {
+	for i := range N {
 		lg, e := rf.Forward(res.EmbedResidentForTest(ids[i]), i)
 		if e != nil {
 			t.Fatal(e)
@@ -133,7 +133,7 @@ func TestNemotronResidentQuality(t *testing.T) {
 	// speed: best-of-3 rounds, 32 decode steps each
 	pid, _ := tk.Encode("Tell me about the solar system.", true)
 	best := time.Hour
-	for r := 0; r < 3; r++ {
+	for range 3 {
 		t0 := time.Now()
 		ch, _ := res.Generate(context.Background(), pid, 32, decoder.SamplingParams{Temperature: 0})
 		nt := 0

@@ -47,7 +47,7 @@ func TestNemotronBenignHarmful(t *testing.T) {
 	r1Dist := make([][]float64, N)
 	r1Arg := make([]int, N)
 	cache := r1.NewCache(len(ids) + 1)
-	for i := 0; i < N; i++ {
+	for i := range N {
 		lg, e := r1.ForwardForTest(ids[i], cache)
 		if e != nil {
 			t.Fatal(e)
@@ -72,7 +72,7 @@ func TestNemotronBenignHarmful(t *testing.T) {
 	resArg := make([]int, N)
 	resDist := make([][]float64, N)
 	rf.Reset()
-	for i := 0; i < N; i++ {
+	for i := range N {
 		lg, e := rf.Forward(res.EmbedResidentForTest(ids[i]), i)
 		if e != nil {
 			t.Fatal(e)
@@ -115,7 +115,7 @@ func TestNemotronBenignHarmful(t *testing.T) {
 	// (top1-top2 margin > 0.10). benign = everything else among disagreements.
 	harmful := 0
 	var harmfulPos []int
-	for i := 0; i < N; i++ {
+	for i := range N {
 		i1, i2, p1, p2 := top2(r1Dist[i])
 		margin := p1 - p2
 		if resArg[i] == r1Arg[i] {

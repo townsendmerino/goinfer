@@ -64,7 +64,7 @@ func TestResidentCloseFreesVRAM(t *testing.T) {
 
 	const cycles = 3
 	var loaded, closed []uint64
-	for i := 0; i < cycles; i++ {
+	for i := range cycles {
 		m, err := decoder.Load(gguf, decoder.Options{Backend: "cuda", Quant: "int4"})
 		if err != nil {
 			t.Fatalf("cycle %d: load: %v", i, err)

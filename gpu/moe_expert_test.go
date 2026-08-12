@@ -26,12 +26,12 @@ func TestMoEExpertGEMV_indexing(t *testing.T) {
 	// Distinct per-expert int8 weights + scales so a wrong index is caught.
 	q8 := make([][]int8, nE)
 	scales := make([][]float32, nE)
-	for e := 0; e < nE; e++ {
+	for e := range nE {
 		q8[e] = make([]int8, N*K)
 		scales[e] = make([]float32, N)
-		for n := 0; n < N; n++ {
+		for n := range N {
 			scales[e][n] = 0.01 * float32(e+1) * float32(n+1)
-			for k := 0; k < K; k++ {
+			for k := range K {
 				q8[e][n*K+k] = int8(((e*7 + n*3 + k*5) % 17) - 8) // deterministic, in [-8,8]
 			}
 		}
@@ -44,7 +44,7 @@ func TestMoEExpertGEMV_indexing(t *testing.T) {
 
 	// Activation: a fixed int8 vector + scale.
 	aq := make([]int8, K)
-	for k := 0; k < K; k++ {
+	for k := range K {
 		aq[k] = int8((k % 11) - 5)
 	}
 	const aScale = 0.0123
@@ -52,9 +52,9 @@ func TestMoEExpertGEMV_indexing(t *testing.T) {
 	// CPU reference int8 GEMV for expert e: out[n] = (Σ_k q8[e][n,k]·aq[k])·aScale·scale[e][n].
 	ref := func(e int) []float32 {
 		out := make([]float32, N)
-		for n := 0; n < N; n++ {
+		for n := range N {
 			var acc int32
-			for k := 0; k < K; k++ {
+			for k := range K {
 				acc += int32(q8[e][n*K+k]) * int32(aq[k])
 			}
 			out[n] = float32(acc) * aScale * scales[e][n]
@@ -62,14 +62,14 @@ func TestMoEExpertGEMV_indexing(t *testing.T) {
 		return out
 	}
 
-	for e := 0; e < nE; e++ {
+	for e := range nE {
 		got, err := c.IndexedGEMVForTest(st, aq, aScale, []int{e}, 0)
 		if err != nil {
 			t.Fatalf("expert %d: IndexedGEMVForTest: %v", e, err)
 		}
 		want := ref(e)
 		var maxd float64
-		for n := 0; n < N; n++ {
+		for n := range N {
 			if d := math.Abs(float64(got[n] - want[n])); d > maxd {
 				maxd = d
 			}
@@ -84,7 +84,7 @@ func TestMoEExpertGEMV_indexing(t *testing.T) {
 		t.Fatalf("slot-1 select: %v", err)
 	}
 	want := ref(2)
-	for n := 0; n < N; n++ {
+	for n := range N {
 		if math.Abs(float64(got[n]-want[n])) > 1e-3 {
 			t.Fatalf("slot-1 idx[1]=2 picked wrong expert at n=%d: got=%.5f want=%.5f", n, got[n], want[n])
 		}

@@ -85,12 +85,12 @@ func TestGemma4_26B_1bBound(t *testing.T) {
 	timeSeq := func(seq func()) float64 {
 		var ms float64
 		_ = r.do(func() error {
-			for i := 0; i < 10; i++ {
+			for range 10 {
 				seq()
 			}
 			_ = r.stream.Sync()
 			start := time.Now()
-			for i := 0; i < N; i++ {
+			for range N {
 				seq()
 			}
 			_ = r.stream.Sync()

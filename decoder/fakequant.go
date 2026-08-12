@@ -63,14 +63,11 @@ func fakeInt4WM(f32 []float32, rows, cols int, scheme string) linalg.WeightMat {
 //	affine — per-group zero-point over [min,max]/15, codes [0,15] (MLX's scheme)
 func fakeQuantInt4(scheme string, w []float32, rows, cols, group int) []float32 {
 	out := make([]float32, rows*cols)
-	for r := 0; r < rows; r++ {
+	for r := range rows {
 		row := w[r*cols : (r+1)*cols]
 		dst := out[r*cols : (r+1)*cols]
 		for gs := 0; gs < cols; gs += group {
-			ge := gs + group
-			if ge > cols {
-				ge = cols
-			}
+			ge := min(gs+group, cols)
 			fakeQuantGroup(scheme, row[gs:ge], dst[gs:ge])
 		}
 	}

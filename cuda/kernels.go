@@ -127,7 +127,7 @@ func nibblePosFast(i int) int {
 // forward GEMV expects (element i at nibble nibblePosFast(i)).
 func permuteFast(w uint32) uint32 {
 	var o uint32
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		nv := (w >> (4 * i)) & 0xf
 		o |= nv << (4 * nibblePosFast(i))
 	}

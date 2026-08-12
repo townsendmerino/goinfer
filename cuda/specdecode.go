@@ -22,7 +22,7 @@ func ngramDraft(hist []int, k, ctxLen int) []int {
 	// Most recent earlier match wins (locality: recent context predicts best).
 	for i := n - ctxLen - 1; i >= 0; i-- {
 		ok := true
-		for j := 0; j < ctxLen; j++ {
+		for j := range ctxLen {
 			if hist[i+j] != suffix[j] {
 				ok = false
 				break

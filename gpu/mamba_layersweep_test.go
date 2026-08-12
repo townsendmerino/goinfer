@@ -43,7 +43,7 @@ func TestMambaResidentLayerSweep(t *testing.T) {
 	}
 	_, nLayers, _, _, _, _, _ := mc.Dims()
 	cpuLogits := make([][]float32, nLayers)
-	for L := 0; L < nLayers; L++ {
+	for L := range nLayers {
 		os.Setenv("GOINFER_SSM_STOP_LAYER", itoa(L))
 		cache := mc.NewCache(8)
 		lg, e := mc.ForwardForTest(tok, cache)
@@ -67,7 +67,7 @@ func TestMambaResidentLayerSweep(t *testing.T) {
 	emb := m.EmbedResidentForTest(tok)
 
 	prev := 1.0
-	for L := 0; L < nLayers; L++ {
+	for L := range nLayers {
 		os.Setenv("GOINFER_SSM_STOP_LAYER", itoa(L))
 		runner, e := rd.newRunner()
 		if e != nil {

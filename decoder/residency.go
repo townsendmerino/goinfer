@@ -295,7 +295,7 @@ func (m *Model) Gemma4MoEResidentLayer(l int) (b Gemma4MoEResidentBundle, ok boo
 	root := float32(math.Pow(float64(H), -0.5))
 	scaled := make([]float32, len(proj))
 	for e := 0; e < gm.nE; e++ {
-		for i := 0; i < H; i++ {
+		for i := range H {
 			scaled[e*H+i] = proj[e*H+i] * gm.routerScale[i] * root
 		}
 	}

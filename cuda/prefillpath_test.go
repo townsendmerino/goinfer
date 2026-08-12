@@ -25,7 +25,7 @@ import (
 // batched kernels loaded, all seven projections of the given kind.
 func declineFixture(n int, kind string) *cudaResident {
 	r := &cudaResident{prefillReady: true, nLayers: n}
-	for i := 0; i < n; i++ {
+	for range n {
 		w := cudaWQ{kind: kind, N: 8, K: 32}
 		r.layers = append(r.layers, cudaLayer{
 			q: w, k: w, v: w, o: w, g: w, u: w, d: w,

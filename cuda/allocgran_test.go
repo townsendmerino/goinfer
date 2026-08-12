@@ -43,7 +43,7 @@ func TestAllocGranularity(t *testing.T) {
 	for _, mib := range []int64{5, 6, 9} {
 		sz := mib * MiB
 		before, _, _ := dev.Context().MemInfo()
-		for i := 0; i < K; i++ {
+		for range K {
 			_ = gpu.NewBufferLenOf[byte](dev, int(sz))
 		}
 		after, _, _ := dev.Context().MemInfo()
@@ -84,7 +84,7 @@ func TestSmallAllocPool(t *testing.T) {
 	}
 	const sz, n = 371712, 512
 	base, _, _ := dev.Context().MemInfo()
-	for i := 0; i < n; i++ {
+	for range n {
 		_ = gpu.NewBufferLenOf[byte](dev, sz)
 	}
 	final, _, _ := dev.Context().MemInfo()

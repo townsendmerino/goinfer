@@ -72,7 +72,7 @@ func TestMellum2_decodeThroughput(t *testing.T) {
 		}
 		measure := func(label string, warmTo, N int) {
 			rd.Reset()
-			for i := 0; i < warmTo; i++ {
+			for i := range warmTo {
 				if _, err := rd.Forward(emb, i); err != nil {
 					t.Fatalf("warm[%d]: %v", i, err)
 				}
@@ -81,7 +81,7 @@ func TestMellum2_decodeThroughput(t *testing.T) {
 			tw := make([]float64, N)
 			te := make([]float64, N)
 			ts := make([]float64, N)
-			for i := 0; i < N; i++ {
+			for i := range N {
 				t0 := time.Now()
 				if _, err := rd.Forward(emb, warmTo+i); err != nil {
 					t.Fatalf("Forward[%d]: %v", i, err)
@@ -132,7 +132,7 @@ func TestMellum2_decodeThroughput(t *testing.T) {
 	rate(4) // warm
 	const rounds, gen = 4, 32
 	best := 0.0
-	for i := 0; i < rounds; i++ {
+	for range rounds {
 		if tps := rate(gen); tps > best {
 			best = tps
 		}

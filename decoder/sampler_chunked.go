@@ -108,10 +108,7 @@ func foldChunkSums(sums []float64) float64 {
 // forEachChunk runs fn over all numChunks chunks, distributing them across workers. Worker count may
 // vary with the machine; chunk BOUNDARIES and the later reduction order may not.
 func forEachChunk(n int, fn func(c, lo, hi int)) {
-	workers := runtime.GOMAXPROCS(0)
-	if workers > numChunks {
-		workers = numChunks
-	}
+	workers := min(runtime.GOMAXPROCS(0), numChunks)
 	if workers <= 1 || n < numChunks*64 { // small vocab: the goroutine overhead dominates
 		for c := range numChunks {
 			lo, hi := chunkBounds(n, c)

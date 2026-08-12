@@ -69,9 +69,9 @@ func TestGoroutineLeakCheck(t *testing.T) {
 	report := sb.String()
 	// Header line is "goroutineleak profile: total N".
 	total := "unknown"
-	for _, ln := range strings.Split(report, "\n") {
-		if strings.HasPrefix(ln, "goroutineleak profile: total ") {
-			total = strings.TrimPrefix(ln, "goroutineleak profile: total ")
+	for ln := range strings.SplitSeq(report, "\n") {
+		if after, ok := strings.CutPrefix(ln, "goroutineleak profile: total "); ok {
+			total = after
 			break
 		}
 	}
@@ -85,7 +85,7 @@ func TestGoroutineLeakCheck(t *testing.T) {
 
 func countFrames(report, needle string) int {
 	n := 0
-	for _, block := range strings.Split(report, "\n\n") {
+	for block := range strings.SplitSeq(report, "\n\n") {
 		if strings.Contains(block, needle) && strings.Contains(block, "@") {
 			n++
 		}

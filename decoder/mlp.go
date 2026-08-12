@@ -120,10 +120,7 @@ func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend, pager
 	// One gate/up pair for the whole token. The experts run sequentially, so k pairs were never
 	// simultaneously live — this was 2*k allocations per token where 2 suffice, and at top-k 8 with
 	// a large moe_intermediate that is the bulk of moeMLP's per-token allocation.
-	sc := moe.IntermediateDim
-	if moe.SharedIntermediateDim > sc {
-		sc = moe.SharedIntermediateDim
-	}
+	sc := max(moe.SharedIntermediateDim, moe.IntermediateDim)
 	egate, eup := make([]float32, sc), make([]float32, sc)
 	for j, e := range idx {
 		ex := &lw.Experts[e]

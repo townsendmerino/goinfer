@@ -89,7 +89,7 @@ func TestGemvRN_bitIdentical(t *testing.T) {
 		for _, M := range []int{1, 8, 13, 100} {
 			Apk := make([]uint32, M*kd4)
 			aSc := make([]float32, M)
-			for m := 0; m < M; m++ {
+			for m := range M {
 				af := make([]float32, K)
 				for i := range af {
 					s = s*1664525 + 1013904223
@@ -109,7 +109,7 @@ func TestGemvRN_bitIdentical(t *testing.T) {
 			dArow := mustAlloc[uint32](t, cx, kd4)
 			dAsRow := mustAlloc[float32](t, cx, 1)
 			ref := make([][]float32, M)
-			for m := 0; m < M; m++ {
+			for m := range M {
 				_ = gc.CopyHtoD(bg, dArow, Apk[m*kd4:(m+1)*kd4])
 				_ = gc.CopyHtoD(bg, dAsRow, aSc[m:m+1])
 				_ = fnRef.LaunchOn(bg, stream, refCfg,
@@ -134,8 +134,8 @@ func TestGemvRN_bitIdentical(t *testing.T) {
 			_ = gc.CopyDtoH(bg, out, dRN)
 
 			mism := 0
-			for m := 0; m < M; m++ {
-				for n := 0; n < N; n++ {
+			for m := range M {
+				for n := range N {
 					if ref[m][n] != out[m*N+n] {
 						if mism < 3 {
 							t.Errorf("N=%d K=%d [m=%d,n=%d]: rn %v != GEMV %v", N, K, m, n, out[m*N+n], ref[m][n])
@@ -225,13 +225,13 @@ func TestGemvRNBandwidth(t *testing.T) {
 			gc.ArgValue(int32(N)), gc.ArgValue(int32(kw)), gc.ArgValue(int32(kg)), gc.ArgValue(int32(M)),
 			gc.Arg(dOut), gc.ArgValue(int32(0)))
 	}
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		launch()
 	}
 	_ = stream.Synchronize(bg)
 	const reps = 20
 	t0 := time.Now()
-	for i := 0; i < reps; i++ {
+	for range reps {
 		launch()
 	}
 	_ = stream.Synchronize(bg)

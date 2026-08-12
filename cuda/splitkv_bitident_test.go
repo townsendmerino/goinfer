@@ -69,7 +69,7 @@ func TestSplitKV_bitIdentical(t *testing.T) {
 		}
 		cur := append([]float32(nil), lg...)
 		stream := make([]int, 0, 24)
-		for i := 0; i < 24; i++ {
+		for i := range 24 {
 			tok := argmaxF(cur)
 			stream = append(stream, tok)
 			l, e := rf.Forward(emb(tok), D+i) // decode attention = split-KV or attn_batched per the flag
@@ -161,7 +161,7 @@ func TestSplitKV_bitIdentical_gemma3(t *testing.T) {
 		}
 		cur := append([]float32(nil), lg...)
 		stream := make([]int, 0, 16)
-		for i := 0; i < 16; i++ {
+		for i := range 16 {
 			tok := argmaxF(cur)
 			stream = append(stream, tok)
 			l, e := rf.Forward(emb(tok), D+i)

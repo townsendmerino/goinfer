@@ -34,7 +34,7 @@ func TestPackWeightStack(t *testing.T) {
 	}
 	mats := make([]linalg.WeightMat, nE)
 	ptrs := make([]*linalg.WeightMat, nE)
-	for e := 0; e < nE; e++ {
+	for e := range nE {
 		mats[e] = mk(uint32(1000 + e*7))
 		ptrs[e] = &mats[e]
 	}
@@ -51,7 +51,7 @@ func TestPackWeightStack(t *testing.T) {
 	}
 
 	kw, kg := K/8, K/group
-	for e := 0; e < nE; e++ {
+	for e := range nE {
 		alone, err := packWeight(ptrs[e])
 		if err != nil {
 			t.Fatalf("packWeight[%d]: %v", e, err)

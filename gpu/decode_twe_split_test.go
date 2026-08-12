@@ -58,7 +58,7 @@ func TestDecodeTWE_split(t *testing.T) {
 
 	// warmup (compile pipelines, fill some KV), then steady-state.
 	rd.Reset()
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		if _, err := rd.Forward(emb, i); err != nil {
 			t.Fatalf("warmup Forward: %v", err)
 		}
@@ -70,7 +70,7 @@ func TestDecodeTWE_split(t *testing.T) {
 	ts := make([]float64, N)
 	tot := make([]float64, N)
 	us := func(d time.Duration) float64 { return float64(d.Microseconds()) }
-	for i := 0; i < N; i++ {
+	for i := range N {
 		if _, err := rd.Forward(emb, 8+i); err != nil {
 			t.Fatalf("Forward[%d]: %v", i, err)
 		}
@@ -103,7 +103,7 @@ func TestDecodeTWE_split(t *testing.T) {
 		}
 		const reps = 20
 		best := time.Hour
-		for r := 0; r < reps; r++ {
+		for range reps {
 			rd.Reset()
 			t0 := time.Now()
 			if _, err := rd.ForwardN(embs, 0); err != nil {
@@ -143,7 +143,7 @@ func TestDecodeTWE_split(t *testing.T) {
 // this brackets the pass with encoder WriteTimestamp.
 func gpuTimePlanTWE(c *Context, steps []runStep) float64 {
 	bestTicks := math.MaxFloat64
-	for run := 0; run < 30; run++ {
+	for range 30 {
 		qset, e := c.device.CreateQuerySet(&wgpu.QuerySetDescriptor{Label: "ts", Type: wgpu.QueryTypeTimestamp, Count: 2})
 		if e != nil || qset == nil {
 			return -1

@@ -54,7 +54,7 @@ func TestSpecVerifyCeiling(t *testing.T) {
 
 	timeIt := func(f func()) time.Duration {
 		best := time.Hour
-		for rep := 0; rep < 5; rep++ {
+		for range 5 {
 			t0 := time.Now()
 			f()
 			if d := time.Since(t0); d < best {
@@ -83,7 +83,7 @@ func TestSpecVerifyCeiling(t *testing.T) {
 			}
 		})
 		seq := timeIt(func() {
-			for i := 0; i < k; i++ {
+			for i := range k {
 				if _, e := rf.Forward(ek[i], depth+i); e != nil {
 					t.Fatal(e)
 				}

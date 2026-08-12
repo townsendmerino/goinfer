@@ -38,7 +38,7 @@ func TestCUDA_graphReplayBound(t *testing.T) {
 	// live and graph apply the identical op sequence, so bit-exact equality is the claim under test.
 	const s = float32(0.9999)
 	chain := func() error {
-		for i := 0; i < K; i++ {
+		for range K {
 			if e := r.launch(r.fScaleVec, cfg, Arg(r.x), gpu.ArgValue(s), gpu.ArgValue(int32(r.hidden))); e != nil {
 				return e
 			}
@@ -89,23 +89,23 @@ func TestCUDA_graphReplayBound(t *testing.T) {
 		}
 
 		// --- timing: live K-launch chain vs single graph Replay, per iteration ---
-		for i := 0; i < 200; i++ { // warm
+		for range 200 { // warm
 			_ = chain()
 		}
 		_ = r.stream.Sync()
 		start := time.Now()
-		for i := 0; i < N; i++ {
+		for range N {
 			_ = chain()
 		}
 		_ = r.stream.Sync()
 		liveUs = time.Since(start).Seconds() * 1e6 / float64(N)
 
-		for i := 0; i < 200; i++ { // warm
+		for range 200 { // warm
 			_ = g.Replay()
 		}
 		_ = r.stream.Sync()
 		start = time.Now()
-		for i := 0; i < N; i++ {
+		for range N {
 			_ = g.Replay()
 		}
 		_ = r.stream.Sync()

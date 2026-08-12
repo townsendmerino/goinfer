@@ -64,7 +64,7 @@ func TestCUDA_graphSegAIsolated(t *testing.T) {
 			return e
 		}
 		defer g.Close()
-		for rep := 0; rep < REPS; rep++ {
+		for range REPS {
 			if e := gpu.Upload(r.x, seed); e != nil { // reset the input each replay
 				return e
 			}

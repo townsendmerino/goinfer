@@ -99,9 +99,9 @@ func TestRopePartial(t *testing.T) {
 			wkc := make([]float32, cap*kvDim)
 			wvc := make([]float32, cap*kvDim)
 			rot := func(buf []float32, nHeads int) {
-				for h := 0; h < nHeads; h++ {
+				for h := range nHeads {
 					base := h * c.hd
-					for d := 0; d < rhalf; d++ {
+					for d := range rhalf {
 						ang := float64(c.pos) * float64(invF[d])
 						cs, sn := math.Cos(ang), math.Sin(ang)
 						a, b := float64(buf[base+d]), float64(buf[base+d+rhalf])

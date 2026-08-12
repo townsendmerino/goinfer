@@ -33,7 +33,7 @@ import (
 // /proc/self/status; macOS/BSD shell out to `ps`. 0 if it can't be determined.
 func memRSS() uint64 {
 	if b, err := os.ReadFile("/proc/self/status"); err == nil { // Linux (the box)
-		for _, line := range strings.Split(string(b), "\n") {
+		for line := range strings.SplitSeq(string(b), "\n") {
 			if strings.HasPrefix(line, "VmRSS:") {
 				if f := strings.Fields(line); len(f) >= 2 {
 					if kb, err := strconv.ParseUint(f[1], 10, 64); err == nil {

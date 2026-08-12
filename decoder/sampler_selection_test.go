@@ -160,7 +160,7 @@ func TestTopFilterLogits_MatchesReference(t *testing.T) {
 	var mu sync.Mutex
 	total := 0
 	t.Run("seed-sweep", func(t *testing.T) {
-		for sh := 0; sh < shards; sh++ {
+		for sh := range shards {
 			t.Run(fmt.Sprintf("shard-%d", sh), func(t *testing.T) {
 				t.Parallel()
 				n := 0
@@ -190,7 +190,7 @@ func TestTopFilterLogits_MatchesReference(t *testing.T) {
 
 	// Real vocab sizes at the reported config, a handful of seeds (these are big).
 	for _, V := range vocabs {
-		for s := 0; s < 3; s++ {
+		for s := range 3 {
 			r := rand.New(rand.NewSource(int64(s) + 7))
 			logits := randLogitsWithTies(V, r)
 			assertSameFilter(t, logits, 0.8, 0, 0.95, 0, s)
@@ -247,7 +247,7 @@ func TestSample_DrawIdentity(t *testing.T) {
 			k    int
 			p, m float64
 		}{{0, 0.95, 0}, {40, 0, 0}, {0, 0, 0.05}, {40, 0.95, 0.02}} {
-			for seed := int64(0); seed < 64; seed++ {
+			for seed := range int64(64) {
 				optSampler := &Sampler{rng: rand.New(rand.NewSource(seed))}
 				refDraw := drawFromRef(refTopFilter(logits, temp, c.k, c.p, c.m), rand.New(rand.NewSource(seed)))
 				optDraw := optSampler.drawFiltered(topFilterLogits(logits, temp, c.k, c.p, c.m))
@@ -366,7 +366,7 @@ func TestSweepCoverage_fullSweepRunsSomewhere(t *testing.T) {
 		t.Skipf("no ci.yml to check (%v) — this gate only applies in the repo", err)
 	}
 	ci := string(b)
-	for _, line := range strings.Split(ci, "\n") {
+	for line := range strings.SplitSeq(ci, "\n") {
 		s := strings.TrimSpace(line)
 		if !strings.HasPrefix(s, "run:") || !strings.Contains(s, "go test") {
 			continue

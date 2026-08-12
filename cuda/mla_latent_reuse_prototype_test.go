@@ -123,12 +123,12 @@ func TestMLALatentReuse_prototype(t *testing.T) {
 	// ---- CPU reference: the absorb-path math, written independently of the kernel (f64).
 	// score_j = scale·(qAbs[h]·lat[j]) over the FULL latDim; wsum[h] = Σ_j softmax_j · cn_j.
 	refRank := make([]float64, nH*rank)
-	for h := 0; h < nH; h++ {
+	for h := range nH {
 		sc := make([]float64, nKeys)
 		mx := math.Inf(-1)
-		for j := 0; j < nKeys; j++ {
+		for j := range nKeys {
 			var dot float64
-			for d := 0; d < latDim; d++ {
+			for d := range latDim {
 				dot += float64(qAbs[h*latDim+d]) * float64(lat[j*latDim+d])
 			}
 			sc[j] = dot * float64(scale)
@@ -142,9 +142,9 @@ func TestMLALatentReuse_prototype(t *testing.T) {
 		for j := range sc {
 			sc[j] /= sum
 		}
-		for d := 0; d < rank; d++ { // value = the key row's own rank-prefix
+		for d := range rank { // value = the key row's own rank-prefix
 			var acc float64
-			for j := 0; j < nKeys; j++ {
+			for j := range nKeys {
 				acc += sc[j] * float64(lat[j*latDim+d])
 			}
 			refRank[h*rank+d] = acc
@@ -155,8 +155,8 @@ func TestMLALatentReuse_prototype(t *testing.T) {
 
 	// ---- (1)+(2) the first `rank` dims of each head's row must BE the rank-space collapse.
 	var maxAbs, maxRel float64
-	for h := 0; h < nH; h++ {
-		for d := 0; d < rank; d++ {
+	for h := range nH {
+		for d := range rank {
 			g, r := float64(got[h*latDim+d]), refRank[h*rank+d]
 			ad := math.Abs(g - r)
 			if ad > maxAbs {
@@ -178,7 +178,7 @@ func TestMLALatentReuse_prototype(t *testing.T) {
 	// perturb the rank dims at all. Zero the VALUE buffer's rope tail and require the first `rank`
 	// output dims to come back BIT-IDENTICAL. (A shared reduction across dims would show up here.)
 	latVzero := append([]float32(nil), latV...)
-	for j := 0; j < nKeys; j++ {
+	for j := range nKeys {
 		for d := rank; d < latDim; d++ {
 			latVzero[j*latDim+d] = 0
 		}
@@ -187,8 +187,8 @@ func TestMLALatentReuse_prototype(t *testing.T) {
 		t.Fatalf("H2D zeroed: %v", e)
 	}
 	gotZ := launch(dV)
-	for h := 0; h < nH; h++ {
-		for d := 0; d < rank; d++ {
+	for h := range nH {
+		for d := range rank {
 			if got[h*latDim+d] != gotZ[h*latDim+d] {
 				t.Errorf("per-dim independence VIOLATED at head %d dim %d: %v vs %v — the rope-tail "+
 					"accumulate is NOT ignorable waste and the reuse argument does not hold",
@@ -211,14 +211,14 @@ func TestMLALatentReuse_prototype(t *testing.T) {
 				gc.ArgValue(int32(nKeys-1)), gc.ArgValue(scale), gc.ArgValue(int32(window)),
 				gc.ArgValue(int32(M)), gc.Arg(dCtx))
 		}
-		for i := 0; i < 200; i++ {
+		for range 200 {
 			run()
 		}
 		_ = stream.Synchronize(bg)
 		best := time.Hour
-		for rep := 0; rep < 5; rep++ {
+		for range 5 {
 			t0 := time.Now()
-			for i := 0; i < 2000; i++ {
+			for range 2000 {
 				run()
 			}
 			_ = stream.Synchronize(bg)
@@ -231,7 +231,7 @@ func TestMLALatentReuse_prototype(t *testing.T) {
 	// Order-alternated: a single-order A/B on this box measures GPU clock ramp, not the kernel
 	// (learned the hard way in cuda/testdata/REGEN.md).
 	full, narrow := math.Inf(1), math.Inf(1)
-	for pass := 0; pass < 2; pass++ {
+	for pass := range 2 {
 		if pass == 0 {
 			full = math.Min(full, timeIt(latDim))
 			narrow = math.Min(narrow, timeIt(rank))

@@ -53,7 +53,7 @@ func TestDecodeAttn2048Probe(t *testing.T) {
 		t.Fatalf("prefill: %v", err)
 	}
 	cur := lg
-	for i := 0; i < 24; i++ { // decode at pos 2048.. — each launches the M=1 `attention` at nKeys≈2048
+	for i := range 24 { // decode at pos 2048.. — each launches the M=1 `attention` at nKeys≈2048
 		tok := argmaxF(cur)
 		l, e := rf.Forward(mc.EmbedResidentForTest(tok), N+i)
 		if e != nil {

@@ -115,7 +115,7 @@ func TestSpeculative_C03_concurrentResidentClaim(t *testing.T) {
 	// Run several overlapping rounds — the resident claim is contended, so each round exercises the
 	// CAS: one of the two takes the resident, the other falls back to staged CPU rather than sharing
 	// the device KV. Each output must be a VALID greedy decode on one backend or the other.
-	for round := 0; round < 4; round++ {
+	for round := range 4 {
 		var gotA, gotB []int
 		var wg sync.WaitGroup
 		wg.Add(2)

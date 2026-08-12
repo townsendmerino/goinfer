@@ -197,7 +197,7 @@ func a9Run(t *testing.T, leave int64) a9Trial {
 	cmd := exec.Command(os.Args[0], "-test.run=TestMoERouteDemandThresholdChild", "-test.timeout=5m")
 	cmd.Env = append(os.Environ(), a9ChildEnv+"="+strconv.FormatInt(leave, 10))
 	out, err := cmd.CombinedOutput()
-	for _, ln := range strings.Split(string(out), "\n") {
+	for ln := range strings.SplitSeq(string(out), "\n") {
 		if !strings.HasPrefix(ln, "A9CHILD ") {
 			continue
 		}
@@ -285,9 +285,9 @@ func TestMoERouteDemandThreshold(t *testing.T) {
 			cmd := exec.Command(os.Args[0], "-test.run=TestMoERouteDemandThresholdChild", "-test.timeout=5m")
 			cmd.Env = append(os.Environ(), a9ChildEnv+"="+strconv.FormatInt(leave, 10), "GOINFER_A9_BALLOON=fine")
 			out, _ := cmd.CombinedOutput()
-			for _, ln := range strings.Split(string(out), "\n") {
-				if strings.HasPrefix(ln, "A9CHILD ") {
-					t.Logf("  fine balloon, leave %d: %s", leave, strings.TrimPrefix(ln, "A9CHILD "))
+			for ln := range strings.SplitSeq(string(out), "\n") {
+				if after, ok := strings.CutPrefix(ln, "A9CHILD "); ok {
+					t.Logf("  fine balloon, leave %d: %s", leave, after)
 				}
 			}
 		}
@@ -341,7 +341,7 @@ func TestMoERouteDemandThreshold(t *testing.T) {
 	const reps = 3
 	t.Logf("repeating the lowest PASS %d times to separate capacity from contiguity", reps)
 	varied := false
-	for i := 0; i < reps; i++ {
+	for i := range reps {
 		tr := a9Run(t, h)
 		t.Logf("  repeat %d: leave %d -> free %d ok=%t", i+1, h, tr.freeBefore, tr.ok)
 		if !tr.ok {

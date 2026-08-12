@@ -32,12 +32,18 @@ import (
 
 // declaredIdentityDispatch is every use of an identity predicate in a dispatch position, with why it
 // is legitimate. Definition sites and comments are excluded by the scanner.
+//
+// KEYED ON CONTENT, NOT POSITION. The first version keyed on file:line and tripped the moment a
+// mechanical edit (G2's minmax rewrite) removed three lines above a declared site: mlp.go:356 became
+// :353, the site itself unchanged. A census that cries wolf on every reformat is a census someone
+// disables, and the thing it is supposed to notice — a member being named in a dispatch — is a
+// property of the CODE, not of where the code sits.
 var declaredIdentityDispatch = map[string]string{
-	"decoder/attention.go:70": "fused QKV batched W8A8 kernel — a real fused kernel exists only for W8A8, so the guard selects a capability, not a member",
-	"decoder/forwardn.go:155": "same fused QKV path on the batched-prefill forward",
-	"decoder/forwardn.go:277": "fused gate+up batched W8A8 kernel — same capability guard",
-	"decoder/mlp.go:356":      "fused gate+up on the decode path — same capability guard",
-	"decoder/weightmat.go:248": "matmulInto's W8A8 branch. Legitimate SINCE P7 (91f359f): it now selects the " +
+	"decoder/attention.go|if isW8A8(&lw.QProj) && isW8A8(&lw.KProj) && isW8A8(&lw.VProj) {": "fused QKV batched W8A8 kernel — a real fused kernel exists only for W8A8, so the guard selects a capability, not a member",
+	"decoder/forwardn.go|if isW8A8(&lw.QProj) && isW8A8(&lw.KProj) && isW8A8(&lw.VProj) {":  "same fused QKV path on the batched-prefill forward",
+	"decoder/forwardn.go|if isW8A8(&lw.GateProj) && isW8A8(&lw.UpProj) {":                   "fused gate+up batched W8A8 kernel — same capability guard",
+	"decoder/mlp.go|if isW8A8(&lw.GateProj) && isW8A8(&lw.UpProj) {":                        "fused gate+up on the decode path — same capability guard",
+	"decoder/weightmat.go|if isW8A8(w) {": "matmulInto's W8A8 branch. Legitimate SINCE P7 (91f359f): it now selects the " +
 		"W8A8-specific QuantBackend kernel, and the int4 branch beside it reaches the same Workspace. " +
 		"Before P7 this was the defect — the else-path silently excluded every other quantization",
 }
@@ -46,9 +52,9 @@ var declaredIdentityDispatch = map[string]string{
 // three are GGUF metadata decoding, where the switch IS the parse and there is no property to
 // dispatch on instead.
 var declaredTypeSwitches = map[string]string{
-	"decoder/gguf.go:251": "GGUF tensor-shape element decode — switching on the wire type is the parse",
-	"decoder/gguf.go:572": "GGUF KV array element decode — same",
-	"decoder/gguf.go:642": "GGUF KV array element decode (nested) — same",
+	"decoder/gguf.go|switch n := e.(type) {":        "GGUF tensor-shape element decode — switching on the wire type is the parse",
+	"decoder/gguf.go|switch v := kvArr[i].(type) {": "GGUF KV array element decode — same",
+	"decoder/gguf.go|switch v := arr[i].(type) {":   "GGUF KV array element decode (nested) — same",
 }
 
 // The predicate set is DERIVED, not listed: a definition `func isX(... *linalg.WeightMat ...) bool`
@@ -103,12 +109,12 @@ func scanDispatchSites(t *testing.T) (ident, tsw []string) {
 		if err != nil {
 			t.Fatalf("read %s: %v", f, err)
 		}
-		for i, line := range strings.Split(string(raw), "\n") {
+		for _, line := range strings.Split(string(raw), "\n") {
 			trimmed := strings.TrimSpace(line)
 			if strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "func is") {
 				continue
 			}
-			loc := fmt.Sprintf("decoder/%s:%d", f, i+1)
+			loc := fmt.Sprintf("decoder/%s|%s", f, trimmed)
 			if identityCall.MatchString(line) {
 				ident = append(ident, loc)
 			}
@@ -151,6 +157,7 @@ func TestDispatchCensus(t *testing.T) {
 	if len(ident) == 0 && len(tsw) == 0 {
 		t.Fatal("the scanner found ZERO dispatch sites — it is broken, not the tree clean")
 	}
-	t.Logf("dispatch census: %d identity-predicate site(s), %d type switch(es), all declared. "+
+	t.Logf("dispatch census: %d identity-predicate site(s), %d type switch(es), all declared "+
+		"(keyed on content, so line moves do not trip it). "+
 		"GREEN MEANS UNCHANGED, NOT CORRECT.", len(ident), len(tsw))
 }

@@ -107,7 +107,7 @@ func TestAttnBatched_bitIdentical(t *testing.T) {
 		dQrow := mustAlloc[float32](t, cx, qDim)
 		dCtxRow := mustAlloc[float32](t, cx, qDim)
 		ref := make([][]float32, M)
-		for m := 0; m < M; m++ {
+		for m := range M {
 			nKeys := startPos + m + 1
 			winStart := 0
 			if window > 0 && nKeys > window {
@@ -160,8 +160,8 @@ func TestAttnBatched_bitIdentical(t *testing.T) {
 		}
 
 		mism := 0
-		for m := 0; m < M; m++ {
-			for i := 0; i < qDim; i++ {
+		for m := range M {
+			for i := range qDim {
 				if ref[m][i] != bat[m*qDim+i] {
 					if mism < 3 {
 						t.Errorf("sp=%d win=%d [m=%d,i=%d]: batched %v != M=1 %v", startPos, window, m, i, bat[m*qDim+i], ref[m][i])

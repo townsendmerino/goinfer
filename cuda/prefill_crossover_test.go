@@ -54,7 +54,7 @@ func TestPrefillCrossover(t *testing.T) {
 		embs := build(n)
 		best := time.Hour
 		var pf, dc time.Duration
-		for rep := 0; rep < 3; rep++ {
+		for range 3 {
 			t0 := time.Now()
 			lg, e := rf.PrefillLast(embs, 0)
 			if e != nil {
@@ -63,7 +63,7 @@ func TestPrefillCrossover(t *testing.T) {
 			pfx := time.Since(t0)
 			t1 := time.Now()
 			cur := lg
-			for i := 0; i < 64; i++ {
+			for i := range 64 {
 				tok := argmaxF(cur)
 				l, e := rf.Forward(mc.EmbedResidentForTest(tok), n+i)
 				if e != nil {

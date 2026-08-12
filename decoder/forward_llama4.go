@@ -108,10 +108,7 @@ func (m *Model) llama4MoE(h, out []float32, lw *LayerWeights, arch *Architecture
 
 	// P6: one gate/up pair for the token, shared by the shared expert and every routed one. They
 	// run sequentially, so k pairs were never simultaneously live.
-	sc := moe.IntermediateDim
-	if moe.SharedIntermediateDim > sc {
-		sc = moe.SharedIntermediateDim
-	}
+	sc := max(moe.SharedIntermediateDim, moe.IntermediateDim)
 	l4gate, l4up := make([]float32, sc), make([]float32, sc)
 
 	// Shared expert on the unscaled input, ungated.

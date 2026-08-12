@@ -162,7 +162,7 @@ func TestRealForwardParity(t *testing.T) {
 		hasQKVBias          bool
 	}
 	layers := make([]layer, nLayers)
-	for l := 0; l < nLayers; l++ {
+	for l := range nLayers {
 		lw := &w.Layers[l]
 		var L layer
 		L.q = extract(&lw.QProj)
@@ -253,7 +253,7 @@ func TestRealForwardParity(t *testing.T) {
 
 	forward := func(emb []float32, pos int) []float32 {
 		_ = gc.CopyHtoD(bg, x, emb)
-		for l := 0; l < nLayers; l++ {
+		for l := range nLayers {
 			Ly := &layers[l]
 			rms(x, Ly.preNorm, aq, aSc)
 			qbias, kbias, vbias := nullBias, nullBias, nullBias

@@ -141,7 +141,7 @@ func TestE2EDecodeThroughput_synthetic(t *testing.T) {
 	// ---- the full per-token forward (all real work) ----
 	rmsShared := (H + 256) * 4
 	token := func() {
-		for l := 0; l < nLayers; l++ {
+		for range nLayers {
 			L(fRms, one(256, rmsShared), gc.Arg(x), gc.Arg(rmsA), gc.ArgValue(int32(H)), gc.ArgValue(float32(1e-6)), gc.ArgValue(int32(0)), gc.Arg(aq), gc.Arg(aSc))
 			doGemv(Wqkv, aq, sQkv, qkvR, H, qkv)
 			L(fRope, cfg1D(nH*half, 256), gc.Arg(qkv), gc.Arg(invF), gc.ArgValue(int32(nH)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(pos)))
@@ -165,7 +165,7 @@ func TestE2EDecodeThroughput_synthetic(t *testing.T) {
 
 	// GEMV-only pass (the 244 projection's workload) for the breakdown: full − gemvOnly = glue+attn.
 	gemvOnly := func() {
-		for l := 0; l < nLayers; l++ {
+		for range nLayers {
 			doGemv(Wqkv, aq, sQkv, qkvR, H, qkv)
 			doGemv(Wo, cq, sO, H, qDim, oOut)
 			doGemv(Wg, mq, sG, I, H, gO)
@@ -180,12 +180,12 @@ func TestE2EDecodeThroughput_synthetic(t *testing.T) {
 
 	timeBest := func(f func()) float64 {
 		best := 1e18
-		for r := 0; r < 8; r++ {
+		for range 8 {
 			start, _ := ctx.NewEvent()
 			done, _ := ctx.NewEvent()
 			_ = start.Record(stream)
 			const iters = 5
-			for i := 0; i < iters; i++ {
+			for range iters {
 				f()
 			}
 			_ = done.Record(stream)
@@ -245,7 +245,7 @@ func validateGlue(t *testing.T, ctx *gc.Context, stream *gc.Stream, bg context.C
 	}
 	unpack := func(packed []int32, n int) []float32 { // int8 → float (for cosine on quantized out)
 		out := make([]float32, n)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			out[i] = float32(int8(packed[i/4] >> (8 * (i % 4))))
 		}
 		return out
@@ -313,13 +313,13 @@ func validateGlue(t *testing.T, ctx *gc.Context, stream *gc.Stream, bg context.C
 		}
 		ref := make([]float32, nH*hd)
 		group := nH / nKV
-		for h := 0; h < nH; h++ {
+		for h := range nH {
 			kvh := h / group
 			sc := make([]float64, nKeys)
 			mx := -1e30
-			for s := 0; s < nKeys; s++ {
+			for s := range nKeys {
 				var dot float64
-				for d := 0; d < hd; d++ {
+				for d := range hd {
 					dot += float64(qh[h*hd+d]) * float64(kh[s*kvDim+kvh*hd+d])
 				}
 				sc[s] = dot * float64(scale)
@@ -330,9 +330,9 @@ func validateGlue(t *testing.T, ctx *gc.Context, stream *gc.Stream, bg context.C
 				sc[s] = math.Exp(sc[s] - mx)
 				sum += sc[s]
 			}
-			for d := 0; d < hd; d++ {
+			for d := range hd {
 				var acc float64
-				for s := 0; s < nKeys; s++ {
+				for s := range nKeys {
 					acc += sc[s] * float64(vh[s*kvDim+kvh*hd+d])
 				}
 				ref[h*hd+d] = float32(acc / sum)

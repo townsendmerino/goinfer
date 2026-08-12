@@ -21,7 +21,7 @@ func vmRSSKB(t *testing.T) int64 {
 	if err != nil {
 		t.Skipf("no /proc/self/status: %v", err)
 	}
-	for _, line := range strings.Split(string(data), "\n") {
+	for line := range strings.SplitSeq(string(data), "\n") {
 		if strings.HasPrefix(line, "VmRSS:") {
 			if f := strings.Fields(line); len(f) >= 2 {
 				kb, _ := strconv.ParseInt(f[1], 10, 64)

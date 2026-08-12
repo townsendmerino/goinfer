@@ -569,7 +569,7 @@ func topKByLogit(logits []float32, k int) []int {
 			i = m
 		}
 	}
-	for id := 0; id < n; id++ {
+	for id := range n {
 		if len(h) < k {
 			h = append(h, id)
 			siftUp(len(h) - 1)
@@ -589,10 +589,7 @@ func topKByLogit(logits []float32, k int) []int {
 func topPCandidates(logits []float32, texp, maxL, Z, topP float64) []int {
 	n := len(logits)
 	target := topP * Z
-	b := 32
-	if b > n {
-		b = n
-	}
+	b := min(32, n)
 	for {
 		cand := topKByLogit(logits, b)
 		var sum float64

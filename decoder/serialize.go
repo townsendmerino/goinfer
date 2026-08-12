@@ -1098,7 +1098,7 @@ func (r *giwReader) gemma4Layer(l *LayerWeights) {
 	}
 	mo.expertsGateUp = make([]linalg.WeightMat, ne)
 	mo.expertsDown = make([]linalg.WeightMat, ne)
-	for e := 0; e < ne; e++ {
+	for e := range ne {
 		mo.expertsGateUp[e] = r.weightMat()
 		mo.expertsDown[e] = r.weightMat()
 	}

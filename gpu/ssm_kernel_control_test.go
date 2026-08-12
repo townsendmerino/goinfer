@@ -53,7 +53,7 @@ func TestSSMKernelControlD3(t *testing.T) {
 	r1Arg := make([]int, N)
 	r1Dist := make([][]float64, N)
 	c1 := r1.NewCache(len(ids) + 1)
-	for i := 0; i < N; i++ {
+	for i := range N {
 		lg, e := r1.ForwardForTest(ids[i], c1)
 		if e != nil {
 			t.Fatal(e)
@@ -65,7 +65,7 @@ func TestSSMKernelControlD3(t *testing.T) {
 
 	score := func(name string, dist [][]float64, arg []int) {
 		agree, kl := 0, 0.0
-		for i := 0; i < N; i++ {
+		for i := range N {
 			if arg[i] == r1Arg[i] {
 				agree++
 			}
@@ -89,7 +89,7 @@ func TestSSMKernelControlD3(t *testing.T) {
 		c := r2.NewCache(len(ids) + 1)
 		dist := make([][]float64, N)
 		arg := make([]int, N)
-		for i := 0; i < N; i++ {
+		for i := range N {
 			lg, e := r2.ForwardForTest(ids[i], c)
 			if e != nil {
 				t.Fatal(e)

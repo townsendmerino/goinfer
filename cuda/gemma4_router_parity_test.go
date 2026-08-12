@@ -91,7 +91,7 @@ func TestGemma4Router_residentIdxParity(t *testing.T) {
 	// MoE layer indices (routerProj differs per layer). Decisions are token-outer, layer-inner, so
 	// decision d → moeLayers[d % nMoELayers] (asserted below).
 	var moeLayers []int
-	for l := 0; l < 64; l++ {
+	for l := range 64 {
 		if _, _, _, _, _, ok := m.Gemma4MoERouterForTest(l); ok {
 			moeLayers = append(moeLayers, l)
 		}
@@ -188,7 +188,7 @@ func TestGemma4_perExpertScaleFold(t *testing.T) {
 	perExpertScale := []float32{1.5, 0.5, 2.0, 1.0}
 	nE, K := len(perExpertScale), len(wgt)
 	want := make([]float32, K)
-	for k := 0; k < K; k++ {
+	for k := range K {
 		want[k] = wgt[k] * perExpertScale[idx[k]] // 0.6*2.0=1.2 ; 0.4*1.5=0.6
 	}
 
@@ -204,7 +204,7 @@ func TestGemma4_perExpertScaleFold(t *testing.T) {
 	got := make([]float32, K)
 	_ = gc.CopyDtoH(bg, got, dWgt)
 
-	for k := 0; k < K; k++ {
+	for k := range K {
 		if d := got[k] - want[k]; d > 1e-6 || d < -1e-6 {
 			t.Errorf("wgt[%d]: got %.6f want %.6f (idx=%d scale=%.3f)", k, got[k], want[k], idx[k], perExpertScale[idx[k]])
 		}
@@ -359,7 +359,7 @@ func mustFn(t *testing.T, mod *gc.Module, name string) *gc.Function {
 // firstMoELayer returns the lowest gemma4 MoE layer index (fails if none).
 func firstMoELayer(t *testing.T, m *decoder.Model) int {
 	t.Helper()
-	for l := 0; l < 64; l++ {
+	for l := range 64 {
 		if _, _, _, _, _, ok := m.Gemma4MoERouterForTest(l); ok {
 			return l
 		}

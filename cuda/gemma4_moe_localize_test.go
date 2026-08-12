@@ -72,13 +72,13 @@ func TestGemma4MoE_localize(t *testing.T) {
 	// rn is NOT asserted: the resident buffer is the UNSCALED rmsnorm_nw(h) (routerScale·hidden^-0.5 is
 	// folded into RouterProjScaled), while CPU captures the SCALED rn — different vectors by design.
 	// The router OUTPUT (wgt) matching subsumes it: if the fold were wrong, wgt would diverge.
-	for k := 0; k < n; k++ {
+	for k := range n {
 		c, m := cosMaxAbs(cpuRn[k], resRn[k])
 		t.Logf("  rn   decision %d: cosine %.6f maxAbs %.4e (UNSCALED vs scaled — not gated; wgt subsumes it)", k, c, m)
 	}
 	// wgt / x1 / x2 ARE the localized kernel gate: router, dense branch, expert branch, each vs CPU.
 	assertBranch := func(name string, cpu, res [][]float32, floor float64) {
-		for k := 0; k < n; k++ {
+		for k := range n {
 			c, m := cosMaxAbs(cpu[k], res[k])
 			t.Logf("  %-4s decision %d: cosine %.6f maxAbs %.4e", name, k, c, m)
 			if c < floor {

@@ -80,7 +80,7 @@ func TestGemma4MoE_quantizedLoad(t *testing.T) {
 				if mo.denseInter != denseInter {
 					t.Errorf("layer %d: denseInter %d, want %d", li, mo.denseInter, denseInter)
 				}
-				for e := 0; e < nExpert; e++ {
+				for e := range nExpert {
 					gu, dn := mo.expertsGateUp[e], mo.expertsDown[e]
 					if _, isF32 := gu.F32(); isF32 {
 						t.Errorf("layer %d expert %d gate_up not quantized (%q)", li, e, gu.Kind())

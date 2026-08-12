@@ -253,10 +253,7 @@ func lfuSim(access []int, C int) (hits, misses int) {
 func lfuAgingSim(access []int, C int) (hits, misses int) {
 	type ent struct{ freq, last int }
 	res := make(map[int]*ent, C)
-	window := len(access) / 8
-	if window < 1 {
-		window = 1
-	}
+	window := max(len(access)/8, 1)
 	for t, key := range access {
 		if t > 0 && t%window == 0 { // age: halve all resident counts
 			for _, e := range res {

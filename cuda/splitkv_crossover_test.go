@@ -60,9 +60,9 @@ func TestSplitKVCrossover(t *testing.T) {
 		}
 		const steps = 96
 		best := time.Hour
-		for rep := 0; rep < 3; rep++ {
+		for range 3 {
 			t0 := time.Now()
-			for i := 0; i < steps; i++ {
+			for i := range steps {
 				if _, e := rf.ForwardArgmax(emb(70000+i), depth+i); e != nil {
 					t.Fatalf("decode@%d: %v", depth, e)
 				}

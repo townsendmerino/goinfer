@@ -69,7 +69,7 @@ func TestSpecDecodeCurve(t *testing.T) {
 		gt := make([]int, 0, N)
 		pos := depth
 		t0 := time.Now()
-		for i := 0; i < N; i++ {
+		for range N {
 			tk := argmaxF(lg)
 			gt = append(gt, tk)
 			l, e := rf.Forward(emb(tk), pos)
@@ -101,7 +101,7 @@ func TestSpecDecodeCurve(t *testing.T) {
 			rounds++
 			drafted += len(draft)
 			acc := 0
-			for i := 0; i < len(draft); i++ {
+			for i := range draft {
 				if argmaxF(Ls[i]) == draft[i] {
 					acc++
 				} else {
@@ -118,7 +118,7 @@ func TestSpecDecodeCurve(t *testing.T) {
 		spec := hist[depth:]
 
 		// --- lossless gate vs the SEQUENTIAL stream ---
-		for i := 0; i < N; i++ {
+		for i := range N {
 			if spec[i] != gt[i] {
 				t.Fatalf("depth %d: LOSSLESS VIOLATION at token %d — spec %d vs sequential %d", depth, i, spec[i], gt[i])
 			}

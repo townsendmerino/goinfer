@@ -24,6 +24,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -416,10 +417,8 @@ func loadParityManifest() (*parityManifest, error) {
 // (sorted-key) order. Used for the MoE column of a family that ships both a dense
 // and a sparse variant under one Architecture.Name.
 func mergeColumn(existing, add string) string {
-	for _, p := range strings.Split(existing, " ‖ ") {
-		if p == add {
-			return existing
-		}
+	if slices.Contains(strings.Split(existing, " ‖ "), add) {
+		return existing
 	}
 	return existing + " ‖ " + add
 }

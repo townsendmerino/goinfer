@@ -86,13 +86,13 @@ func TestAttnBatchedBandwidth(t *testing.T) {
 			gc.ArgValue(int32(hd)), gc.ArgValue(int32(0)), gc.ArgValue(scale), gc.ArgValue(int32(window)),
 			gc.ArgValue(int32(M)), gc.Arg(dCtx))
 	}
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		launch()
 	}
 	_ = stream.Synchronize(bg)
 	const reps = 10
 	t0 := time.Now()
-	for i := 0; i < reps; i++ {
+	for range reps {
 		launch()
 	}
 	_ = stream.Synchronize(bg)

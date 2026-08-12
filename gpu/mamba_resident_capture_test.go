@@ -78,7 +78,7 @@ func TestMambaResidentCapture(t *testing.T) {
 		xBC := proj[dInner : dInner+convDim]
 		dt := proj[projDim-nHeads:]
 		conv = make([]float32, convDim)
-		for c := 0; c < convDim; c++ {
+		for c := range convDim {
 			s := convB[c] + convW[c*K+(K-1)]*xBC[c]
 			for j := 0; j < K-1; j++ {
 				if idx := len(win) - (K - 1) + j; idx >= 0 {
@@ -93,7 +93,7 @@ func TestMambaResidentCapture(t *testing.T) {
 		}
 		x, B, C := conv[:dInner], conv[dInner:dInner+gSize], conv[dInner+gSize:]
 		y = make([]float32, dInner)
-		for head := 0; head < nHeads; head++ {
+		for head := range nHeads {
 			g := head / repeat
 			A := -math.Exp(float64(aLog[head]))
 			dthf := dt[head] + dtBias[head]
@@ -104,11 +104,11 @@ func TestMambaResidentCapture(t *testing.T) {
 				dth = float32(math.Log1p(math.Exp(float64(dthf))))
 			}
 			dA := float32(math.Exp(float64(dth) * A))
-			for pi := 0; pi < headDim; pi++ {
+			for pi := range headDim {
 				sBase := (head*headDim + pi) * dState
 				dx := dth * x[head*headDim+pi]
 				var acc float32
-				for n := 0; n < dState; n++ {
+				for n := range dState {
 					ssm[sBase+n] = ssm[sBase+n]*dA + dx*B[g*dState+n]
 					acc += ssm[sBase+n] * C[g*dState+n]
 				}

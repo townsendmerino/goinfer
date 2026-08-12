@@ -107,7 +107,7 @@ func TestE2EDecodeInt4Throughput_synthetic(t *testing.T) {
 	}
 	rms := (H + 256) * 4
 	token := func() {
-		for l := 0; l < nLayers; l++ {
+		for range nLayers {
 			L(fRms, one(256, rms), gc.Arg(x), gc.Arg(x), gc.ArgValue(int32(H)), gc.ArgValue(float32(1e-6)), gc.ArgValue(int32(0)), gc.Arg(aq), gc.Arg(sc1))
 			gemvW4(Wqkv, aq, qkvR, H, qkv)
 			L(fRope, cfg1D(nH*half, 256), gc.Arg(qkv), gc.Arg(invF), gc.ArgValue(int32(nH)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(pos)))
@@ -131,12 +131,12 @@ func TestE2EDecodeInt4Throughput_synthetic(t *testing.T) {
 	_ = stream.Synchronize(bg)
 
 	best := 1e18
-	for r := 0; r < 8; r++ {
+	for range 8 {
 		s, _ := ctx.NewEvent()
 		e, _ := ctx.NewEvent()
 		_ = s.Record(stream)
 		const it = 5
-		for i := 0; i < it; i++ {
+		for range it {
 			token()
 		}
 		_ = e.Record(stream)

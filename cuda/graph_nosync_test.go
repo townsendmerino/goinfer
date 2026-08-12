@@ -59,12 +59,12 @@ func TestCUDA_graphLiveNoSyncOrdering(t *testing.T) {
 		defer g.Close()
 
 		zero := make([]float32, n)
-		for c := 0; c < CHAINS; c++ {
+		for range CHAINS {
 			if e := gpu.Upload(r.x, zero); e != nil {
 				return e
 			}
 			// N steps, NO sync between ops on the stream
-			for step := 0; step < N; step++ {
+			for range N {
 				if e := r.launch(r.fScaleVec, cfg, Arg(r.x), gpu.ArgValue(float32(2)), gpu.ArgValue(int32(n))); e != nil { // live x*=2
 					return e
 				}

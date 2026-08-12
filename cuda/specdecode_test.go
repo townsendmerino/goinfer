@@ -70,7 +70,7 @@ func TestSpecDecode(t *testing.T) {
 	gt := make([]int, 0, N)
 	pos := S
 	t0 := time.Now()
-	for i := 0; i < N; i++ {
+	for i := range N {
 		tk := argmaxF(lg)
 		gt = append(gt, tk)
 		// Baseline uses the batched path per-token (PrefillLast M=1) — the SAME forward the verify uses,
@@ -110,7 +110,7 @@ func TestSpecDecode(t *testing.T) {
 			st.PlainRounds++
 		}
 		accepted := 0
-		for i := 0; i < len(draft); i++ {
+		for i := range draft {
 			if argmaxF(Ls[i]) == draft[i] {
 				accepted++
 			} else {
@@ -130,7 +130,7 @@ func TestSpecDecode(t *testing.T) {
 	if len(specStream) < N {
 		t.Fatalf("spec produced %d < %d tokens", len(specStream), N)
 	}
-	for i := 0; i < N; i++ {
+	for i := range N {
 		if specStream[i] != gt[i] {
 			t.Fatalf("LOSSLESS VIOLATION at token %d: spec %d vs greedy %d", i, specStream[i], gt[i])
 		}

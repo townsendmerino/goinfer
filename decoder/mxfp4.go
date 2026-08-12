@@ -44,7 +44,7 @@ func e8m0ToF32Half(x uint8) float32 {
 func mxfp4DequantBlock(block []byte, dst []float32) {
 	d := e8m0ToF32Half(block[0])
 	qs := block[1:mxfp4BlockBytes] // 16 bytes
-	for j := 0; j < 16; j++ {
+	for j := range 16 {
 		b := qs[j]
 		dst[j] = d * float32(mxfp4KValues[b&0x0F])
 		dst[j+16] = d * float32(mxfp4KValues[b>>4])
@@ -59,7 +59,7 @@ func mxfp4Dequant(raw []byte, nBlocks int) ([]float32, error) {
 			len(raw), nBlocks, nBlocks*mxfp4BlockBytes)
 	}
 	out := make([]float32, nBlocks*mxfp4BlockElems)
-	for i := 0; i < nBlocks; i++ {
+	for i := range nBlocks {
 		mxfp4DequantBlock(raw[i*mxfp4BlockBytes:], out[i*mxfp4BlockElems:])
 	}
 	return out, nil

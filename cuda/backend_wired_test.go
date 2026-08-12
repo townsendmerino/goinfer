@@ -146,14 +146,14 @@ func TestProdThroughput(t *testing.T) {
 		}
 		tok, pos = argmaxF(l), pos+1
 	}
-	for i := 0; i < 8; i++ { // warm
+	for range 8 { // warm
 		step()
 	}
 	best := 1e18
-	for b := 0; b < 6; b++ {
+	for range 6 {
 		const N = 16
 		t0 := time.Now()
-		for i := 0; i < N; i++ {
+		for range N {
 			step()
 		}
 		if dt := time.Since(t0).Seconds() / N; dt < best {
@@ -171,13 +171,13 @@ func TestProdThroughput(t *testing.T) {
 			}
 			tok, pos = id, pos+1
 		}
-		for i := 0; i < 8; i++ {
+		for range 8 {
 			stepG()
 		}
-		for b := 0; b < 6; b++ {
+		for range 6 {
 			const N = 16
 			t0 := time.Now()
-			for i := 0; i < N; i++ {
+			for range N {
 				stepG()
 			}
 			if dt := time.Since(t0).Seconds() / N; dt < bestG {

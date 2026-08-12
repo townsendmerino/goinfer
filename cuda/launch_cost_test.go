@@ -47,12 +47,12 @@ func TestCUDA_launchCost(t *testing.T) {
 	bench := func(cfg LaunchConfig) float64 {
 		var us float64
 		_ = r.do(func() error {
-			for i := 0; i < 200; i++ {
+			for range 200 {
 				_ = r.launch(r.fScaleVec, cfg, Arg(r.x), gpu.ArgValue(float32(1.0)), gpu.ArgValue(int32(r.hidden)))
 			}
 			_ = r.stream.Sync()
 			start := time.Now()
-			for i := 0; i < N; i++ {
+			for range N {
 				_ = r.launch(r.fScaleVec, cfg, Arg(r.x), gpu.ArgValue(float32(1.0)), gpu.ArgValue(int32(r.hidden)))
 			}
 			_ = r.stream.Sync()

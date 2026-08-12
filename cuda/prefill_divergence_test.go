@@ -53,7 +53,7 @@ func TestPrefillDivergenceRate(t *testing.T) {
 	decodeFrom := func(lg []float32, pos int) []int {
 		out := make([]int, 0, genLen)
 		cur := lg
-		for i := 0; i < genLen; i++ {
+		for range genLen {
 			tk := argmaxF(cur)
 			out = append(out, tk)
 			l, e := rf.Forward(emb(tk), pos)
@@ -69,7 +69,7 @@ func TestPrefillDivergenceRate(t *testing.T) {
 	diverged, firstMin, firstSum := 0, genLen+1, 0
 	firsts := []int{}
 	var s uint32 = 0x9e3779b9
-	for p := 0; p < prompts; p++ {
+	for range prompts {
 		prompt := make([]int, promptLen)
 		for i := range prompt {
 			s = s*1664525 + 1013904223
@@ -88,7 +88,7 @@ func TestPrefillDivergenceRate(t *testing.T) {
 		streamA := decodeFrom(lgA, promptLen)
 
 		// arm B: SEQUENTIAL prefill → decode
-		for i := 0; i < promptLen-1; i++ {
+		for i := range promptLen - 1 {
 			if e := rf.ForwardNoLogits(pe[i], i); e != nil {
 				t.Fatalf("seq prefill: %v", e)
 			}
@@ -101,7 +101,7 @@ func TestPrefillDivergenceRate(t *testing.T) {
 		streamB := decodeFrom(lgB, promptLen)
 
 		first := -1
-		for i := 0; i < genLen; i++ {
+		for i := range genLen {
 			if streamA[i] != streamB[i] {
 				first = i
 				break

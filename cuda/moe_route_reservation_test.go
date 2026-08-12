@@ -243,7 +243,7 @@ func smiProcessBytes() (int64, error) {
 		return 0, err
 	}
 	me := strconv.Itoa(os.Getpid())
-	for _, ln := range strings.Split(string(out), "\n") {
+	for ln := range strings.SplitSeq(string(out), "\n") {
 		p := strings.Split(ln, ",")
 		if len(p) == 2 && strings.TrimSpace(p[0]) == me {
 			mib, e := strconv.ParseInt(strings.TrimSpace(p[1]), 10, 64)

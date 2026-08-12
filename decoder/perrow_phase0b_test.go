@@ -71,7 +71,7 @@ func TestPerRowScalePhase0b(t *testing.T) {
 			return nil, false
 		}
 		r := &run{dist: make([][]float64, N), arg: make([]int, N)}
-		for i := 0; i < N; i++ {
+		for i := range N {
 			d := softmax64(logits[i])
 			r.dist[i] = d
 			r.arg[i] = argmax64(d)
@@ -91,7 +91,7 @@ func TestPerRowScalePhase0b(t *testing.T) {
 
 	compare := func(name string, r *run) (agreePct, meanKL, ppl float64) {
 		agree, klSum := 0, 0.0
-		for i := 0; i < N; i++ {
+		for i := range N {
 			if r.arg[i] == oracle.arg[i] {
 				agree++
 			}

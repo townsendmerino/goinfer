@@ -124,10 +124,7 @@ func rowRange(row []float32) float64 {
 	var rowMax float64
 	var groupMaxes []float64
 	for g := 0; g < len(row); g += int4GroupSize {
-		end := g + int4GroupSize
-		if end > len(row) {
-			end = len(row)
-		}
+		end := min(g+int4GroupSize, len(row))
 		var gm float64
 		for _, v := range row[g:end] {
 			if a := math.Abs(float64(v)); a > gm {

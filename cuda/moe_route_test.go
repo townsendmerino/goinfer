@@ -204,7 +204,7 @@ func cpuRoute(logits, bias []float32, nE, k int, sigmoid, norm bool, scale float
 			v float64
 		}
 		gscore := make([]gs, nGroup)
-		for g := 0; g < nGroup; g++ {
+		for g := range nGroup {
 			t1, t2 := negInf, negInf
 			for i := g * gsz; i < (g+1)*gsz; i++ {
 				if sel[i] > t1 {
@@ -216,7 +216,7 @@ func cpuRoute(logits, bias []float32, nE, k int, sigmoid, norm bool, scale float
 			gscore[g] = gs{g, t1 + t2}
 		}
 		keep := make([]bool, nGroup)
-		for j := 0; j < topkGroup; j++ {
+		for range topkGroup {
 			bg, bv := -1, negInf
 			for _, x := range gscore {
 				if !keep[x.g] && x.v > bv {
@@ -227,7 +227,7 @@ func cpuRoute(logits, bias []float32, nE, k int, sigmoid, norm bool, scale float
 				keep[bg] = true
 			}
 		}
-		for g := 0; g < nGroup; g++ {
+		for g := range nGroup {
 			if !keep[g] {
 				for i := g * gsz; i < (g+1)*gsz; i++ {
 					sel[i] = negInf
@@ -238,9 +238,9 @@ func cpuRoute(logits, bias []float32, nE, k int, sigmoid, norm bool, scale float
 	idx := make([]int, k)
 	wgt := make([]float32, k)
 	var wsum float64
-	for j := 0; j < k; j++ {
+	for j := range k {
 		best, bv := 0, negInf
-		for i := 0; i < nE; i++ {
+		for i := range nE {
 			if sel[i] > bv {
 				bv, best = sel[i], i
 			}

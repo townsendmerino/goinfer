@@ -58,7 +58,7 @@ func TestPrefillDecomp(t *testing.T) {
 		}
 		var best prefillProf
 		bestSum := time.Duration(1<<62 - 1)
-		for rep := 0; rep < 3; rep++ {
+		for range 3 {
 			rf.prof = &prefillProf{}
 			if _, e := rf.PrefillLast(embs, 0); e != nil {
 				t.Fatalf("prof n=%d: %v", n, e)

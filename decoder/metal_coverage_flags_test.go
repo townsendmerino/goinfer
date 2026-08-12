@@ -61,7 +61,7 @@ func TestMetalCoverageFlags(t *testing.T) {
 			// Per-layer QK-norm tensors — Metal reads these; empty ⇒ it silently skips the norm.
 			if qkn {
 				bad := 0
-				for l := 0; l < nL; l++ {
+				for l := range nL {
 					lw := &m.Weights().Layers[l]
 					if len(lw.QNorm) != hd || len(lw.KNorm) != hd {
 						bad++
@@ -76,7 +76,7 @@ func TestMetalCoverageFlags(t *testing.T) {
 			// Sliding window: report which layers are local (Metal advances start per-layer).
 			if win > 0 {
 				local := 0
-				for l := 0; l < nL; l++ {
+				for l := range nL {
 					if m.LayerIsLocalResident(l) {
 						local++
 					}

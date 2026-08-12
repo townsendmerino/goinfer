@@ -48,13 +48,13 @@ func TestQKNorm_widths(t *testing.T) {
 
 	cpuNorm := func(x, w []float32, rows, hd int) []float32 {
 		out := append([]float32(nil), x...)
-		for r := 0; r < rows; r++ {
+		for r := range rows {
 			var ss float64
-			for d := 0; d < hd; d++ {
+			for d := range hd {
 				ss += float64(out[r*hd+d]) * float64(out[r*hd+d])
 			}
 			inv := float32(1.0 / math.Sqrt(ss/float64(hd)+float64(eps)))
-			for d := 0; d < hd; d++ {
+			for d := range hd {
 				out[r*hd+d] *= inv * w[d]
 			}
 		}
@@ -175,13 +175,13 @@ func TestVNorm_scaleless(t *testing.T) {
 
 	// CPU oracle: rmsNormNoWeight per head (the exact scale-less norm the forward applies to V).
 	ref := append([]float32(nil), vh...)
-	for r := 0; r < nKV; r++ {
+	for r := range nKV {
 		var ss float64
-		for d := 0; d < hd; d++ {
+		for d := range hd {
 			ss += float64(ref[r*hd+d]) * float64(ref[r*hd+d])
 		}
 		inv := float32(1.0 / math.Sqrt(ss/float64(hd)+float64(eps)))
-		for d := 0; d < hd; d++ {
+		for d := range hd {
 			ref[r*hd+d] *= inv
 		}
 	}

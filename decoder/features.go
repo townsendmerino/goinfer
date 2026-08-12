@@ -1,6 +1,8 @@
 package decoder
 
-import "sort"
+import "slices"
+
+import "maps"
 
 // ResidentFeature is one architecture capability a resident (GPU) decode path must implement
 // in order to run a model CORRECTLY.
@@ -132,7 +134,7 @@ func (a *Architecture) residentFeatures() []ResidentFeature {
 	// branch silently skipped). PLE alone catches every real E-model; the shared-KV/FFN disjuncts make
 	// the decline complete against a hypothetical PLE-less E-variant.
 	add(a.gemma4 != nil && (a.gemma4.HiddenSizePerLayerInput > 0 || a.gemma4.SharedKVLayers > 0 || len(a.gemma4.FFNPerLayer) > 0), FeatGemma4EModel)
-	sort.Slice(f, func(i, j int) bool { return f[i] < f[j] })
+	slices.Sort(f)
 	return f
 }
 
@@ -271,9 +273,7 @@ func ResidentBackendFeatures(backend string) map[ResidentFeature]bool {
 		return nil
 	}
 	out := make(map[ResidentFeature]bool, len(src))
-	for k, v := range src {
-		out[k] = v
-	}
+	maps.Copy(out, src)
 	return out
 }
 

@@ -176,7 +176,7 @@ func TestChunkedSoftmax_Deterministic(t *testing.T) {
 	logits := randLogits(262144, rand.New(rand.NewSource(6)))
 	for _, rv := range []float64{0.2, 0.6, 0.95} {
 		first := chunkedAt(logits, 1.0, rv)
-		for rep := 0; rep < 4; rep++ {
+		for rep := range 4 {
 			if got := chunkedAt(logits, 1.0, rv); got != first {
 				t.Fatalf("r=%v repeat %d: %d != %d", rv, rep, got, first)
 			}

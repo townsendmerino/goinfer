@@ -111,7 +111,7 @@ func TestRealE2EDecodeThroughput(t *testing.T) {
 		hasBias             bool
 	}
 	hls := make([]hlayer, nLayers)
-	for l := 0; l < nLayers; l++ {
+	for l := range nLayers {
 		lw := &w.Layers[l]
 		hls[l] = hlayer{
 			q: pack(&lw.QProj), k: pack(&lw.KProj), v: pack(&lw.VProj), o: pack(&lw.OProj),
@@ -133,7 +133,7 @@ func TestRealE2EDecodeThroughput(t *testing.T) {
 	// per token (decode is weight-streaming). Splits the GPU time into GEMV-bytes vs glue.
 	var wBytes, lmBytes int64
 	bytesOf := func(h hw) int64 { return int64(len(h.wpk))*4 + int64(len(h.ws))*4 + int64(len(h.ws16))*2 }
-	for l := 0; l < nLayers; l++ {
+	for l := range nLayers {
 		h := &hls[l]
 		for _, x := range []hw{h.q, h.k, h.v, h.o, h.g, h.u, h.d} {
 			wBytes += bytesOf(x)
@@ -258,7 +258,7 @@ func TestRealE2EDecodeThroughput(t *testing.T) {
 		stream, _ = cx.NewStream()
 
 		layers = make([]layer, nLayers)
-		for l := 0; l < nLayers; l++ {
+		for l := range nLayers {
 			h := &hls[l]
 			L := layer{q: upW(h.q), k: upW(h.k), v: upW(h.v), o: upW(h.o), g: upW(h.g), u: upW(h.u), d: upW(h.d),
 				preNorm: up32(h.preNorm), postNorm: up32(h.postNorm)}
@@ -310,7 +310,7 @@ func TestRealE2EDecodeThroughput(t *testing.T) {
 	}
 	launchToken := func(emb []float32, pos int) {
 		_ = gc.CopyHtoD(bg, x, emb)
-		for l := 0; l < nLayers; l++ {
+		for l := range nLayers {
 			Ly := &layers[l]
 			rms(x, Ly.preNorm, aq, aSc)
 			qb, kb, vb := nullBias, nullBias, nullBias
@@ -422,7 +422,7 @@ func TestRealE2EDecodeThroughput(t *testing.T) {
 
 	// warm decode (free-running is fine for TIMING; it is only unsound as a correctness check)
 	tok := gpuArg[len(gpuArg)-1]
-	for i := 0; i < 8; i++ {
+	for range 8 {
 		tk, p := tok, pos
 		var nt int
 		_ = do(func() error { nt = step(m.EmbedResidentForTest(tk), p); return nil })
@@ -431,11 +431,11 @@ func TestRealE2EDecodeThroughput(t *testing.T) {
 
 	// timed: best per-token over several batches, real advancing positions, executor round-trip/token.
 	best := 1e18
-	for b := 0; b < 6; b++ {
+	for range 6 {
 		const N = 16
 		startPos, startTok := pos, tok
 		t0 := time.Now()
-		for i := 0; i < N; i++ {
+		for range N {
 			tk, p := tok, pos
 			var nt int
 			_ = do(func() error { nt = step(m.EmbedResidentForTest(tk), p); return nil })
@@ -455,7 +455,7 @@ func TestRealE2EDecodeThroughput(t *testing.T) {
 	// round-trips → the channel-hop cost included in every token above.
 	const hops = 20000
 	th := time.Now()
-	for i := 0; i < hops; i++ {
+	for range hops {
 		_ = do(func() error { return nil })
 	}
 	hopUs := time.Since(th).Seconds() / hops * 1e6
@@ -471,7 +471,7 @@ func TestRealE2EDecodeThroughput(t *testing.T) {
 	_ = do(func() error {
 		const N = 16
 		emb := m.EmbedResidentForTest(tok)
-		for i := 0; i < 4; i++ { // warm
+		for i := range 4 { // warm
 			launchToken(emb, pos+i)
 		}
 		_ = stream.Synchronize(bg)
@@ -479,7 +479,7 @@ func TestRealE2EDecodeThroughput(t *testing.T) {
 		evE, _ := cx.NewEvent()
 		t0 := time.Now()
 		_ = evS.Record(stream)
-		for i := 0; i < N; i++ {
+		for i := range N {
 			launchToken(emb, pos+i) // launches only — no sync, no readback
 		}
 		_ = evE.Record(stream)

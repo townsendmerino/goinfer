@@ -70,7 +70,7 @@ func TestGocudrvLayerA(t *testing.T) {
 	cfg := gc.LaunchConfig1D(n, 256)
 
 	// warm (drop first-launch driver/JIT warmup, per the methodology)
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		if err := fn.LaunchOn(bg, stream, cfg, gc.Arg(buf), gc.ArgValue(int32(n))); err != nil {
 			t.Fatalf("warm launch: %v", err)
 		}
@@ -95,7 +95,7 @@ func TestGocudrvLayerA(t *testing.T) {
 	launched := 0
 
 	// (A) true GPU per-kernel time
-	for r := 0; r < rounds; r++ {
+	for range rounds {
 		start, _ := ctx.NewEvent()
 		done, _ := ctx.NewEvent()
 		_ = start.Record(stream)
@@ -115,9 +115,9 @@ func TestGocudrvLayerA(t *testing.T) {
 
 	// (B) CPU per-launch cost (channel-hop + enqueue), async burst, no sync inside
 	const iters = 500
-	for r := 0; r < rounds; r++ {
+	for range rounds {
 		tEnq := time.Now()
-		for i := 0; i < iters; i++ {
+		for range iters {
 			if err := fn.LaunchOn(bg, stream, cfg, gc.Arg(buf), gc.ArgValue(int32(n))); err != nil {
 				t.Fatalf("launch: %v", err)
 			}

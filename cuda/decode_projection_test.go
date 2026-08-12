@@ -91,7 +91,7 @@ func TestDecodeTokProjection(t *testing.T) {
 			gc.ArgValue(int32(p.N)), gc.ArgValue(int32(p.K/4)), gc.Arg(p.out))
 	}
 	token := func() {
-		for l := 0; l < nLayers; l++ {
+		for range nLayers {
 			for _, p := range layer {
 				launch(p)
 			}
@@ -111,12 +111,12 @@ func TestDecodeTokProjection(t *testing.T) {
 	wbytes += int64(lm.N) * int64(lm.K)
 
 	bestMs := 1e18
-	for r := 0; r < 8; r++ {
+	for range 8 {
 		start, _ := ctx.NewEvent()
 		done, _ := ctx.NewEvent()
 		_ = start.Record(stream)
 		const iters = 5
-		for i := 0; i < iters; i++ {
+		for range iters {
 			token()
 		}
 		_ = done.Record(stream)

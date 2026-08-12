@@ -174,7 +174,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	}
 	sandwich := m.SandwichNormResident()
 	hls := make([]hlayer, nLayers)
-	for l := 0; l < nLayers; l++ {
+	for l := range nLayers {
 		lw := &w.Layers[l]
 		var hl hlayer
 		hl.isMoE = isMoE && lw.Experts != nil // same key as decoder/mlp.go; false on dense prefix layers
@@ -632,7 +632,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		r.stream = r.dev.NewCommandQueue()
 
 		r.layers = make([]cudaLayer, nLayers)
-		for l := 0; l < nLayers; l++ {
+		for l := range nLayers {
 			h := &hls[l]
 			L := cudaLayer{
 				q: r.upW(h.q), k: r.upW(h.k), o: r.upW(h.o), // v uploaded below only for non-K=V layers

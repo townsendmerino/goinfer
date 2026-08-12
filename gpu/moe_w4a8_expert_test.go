@@ -23,7 +23,7 @@ func TestMoEExpertW4A8_parity(t *testing.T) {
 
 	nib := make([][]uint8, nE)
 	sc := make([][]float32, nE)
-	for e := 0; e < nE; e++ {
+	for e := range nE {
 		ne := make([]uint8, N*K)
 		for i := range ne {
 			ne[i] = uint8(rng.Intn(16)) // nibble 0..15 (value−8)
@@ -50,7 +50,7 @@ func TestMoEExpertW4A8_parity(t *testing.T) {
 	aScale := float32(0.02)
 
 	idx := []int{5, 0, 3} // chosen experts per slot
-	for slot := 0; slot < len(idx); slot++ {
+	for slot := range idx {
 		got, err := ctx.IndexedGEMVForTestInt4(stack, act, aScale, idx, slot)
 		if err != nil {
 			t.Fatalf("IndexedGEMVForTestInt4 slot %d: %v", slot, err)
@@ -58,7 +58,7 @@ func TestMoEExpertW4A8_parity(t *testing.T) {
 		e := idx[slot]
 		want := refMatmulW4A8(act, aScale, nib[e], sc[e], N, K, group)
 		var dot, na, nb, maxAbs float64
-		for n := 0; n < N; n++ {
+		for n := range N {
 			dot += float64(got[n]) * float64(want[n])
 			na += float64(got[n]) * float64(got[n])
 			nb += float64(want[n]) * float64(want[n])

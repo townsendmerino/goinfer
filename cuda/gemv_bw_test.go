@@ -65,15 +65,15 @@ func TestGemvW8A8Bandwidth(t *testing.T) {
 	// CPU reference (exact int dp4 accumulation, then scale).
 	dp4 := func(x, y int32) int32 {
 		var s int32
-		for b := 0; b < 4; b++ {
+		for b := range 4 {
 			s += int32(int8(x>>(8*b))) * int32(int8(y>>(8*b)))
 		}
 		return s
 	}
 	ref := make([]float32, N)
-	for n := 0; n < N; n++ {
+	for n := range N {
 		var acc int32
-		for k := 0; k < Kdiv4; k++ {
+		for k := range Kdiv4 {
 			acc += dp4(W[n*Kdiv4+k], a[k])
 		}
 		ref[n] = float32(acc) * aScale * wScale[n]
@@ -117,7 +117,7 @@ func TestGemvW8A8Bandwidth(t *testing.T) {
 	}
 
 	// warm + correctness
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		if err := launch(); err != nil {
 			t.Fatalf("launch: %v", err)
 		}
@@ -127,7 +127,7 @@ func TestGemvW8A8Bandwidth(t *testing.T) {
 	_ = gc.CopyDtoH(bg, got, dOut)
 	var dot, ng, nr float64
 	maxAbs := 0.0
-	for n := 0; n < N; n++ {
+	for n := range N {
 		dot += float64(got[n]) * float64(ref[n])
 		ng += float64(got[n]) * float64(got[n])
 		nr += float64(ref[n]) * float64(ref[n])
@@ -142,12 +142,12 @@ func TestGemvW8A8Bandwidth(t *testing.T) {
 
 	// bandwidth: best of ≥5 event-timed runs
 	bestUs := 1e18
-	for r := 0; r < 8; r++ {
+	for range 8 {
 		start, _ := ctx.NewEvent()
 		done, _ := ctx.NewEvent()
 		_ = start.Record(stream)
 		const iters = 50
-		for i := 0; i < iters; i++ {
+		for range iters {
 			_ = launch()
 		}
 		_ = done.Record(stream)

@@ -81,7 +81,7 @@ func TestMoEIndexedGemv(t *testing.T) {
 	var s uint32 = 987
 	for i := range act {
 		var p int32
-		for b := 0; b < 4; b++ {
+		for b := range 4 {
 			s = s*1664525 + 1013904223
 			p |= (int32(int8(s>>24)) & 0xff) << (8 * uint(b))
 		}
@@ -151,7 +151,7 @@ func TestMoEIndexedGemv(t *testing.T) {
 
 	// For each expert: route slot 0 to it, and compare against that expert packed ALONE
 	// (rowsPerExpert=N, idx=0 ⇒ offset 0). Same kernel, same bytes, only the index differs.
-	for e := 0; e < nE; e++ {
+	for e := range nE {
 		if err := gc.CopyHtoD(bg, dIdx, []uint32{uint32(e), 0, 0}); err != nil {
 			t.Fatalf("H2D idx: %v", err)
 		}

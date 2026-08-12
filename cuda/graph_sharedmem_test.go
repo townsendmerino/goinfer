@@ -87,7 +87,7 @@ func TestCUDA_graphSharedMemHazard(t *testing.T) {
 
 	// Elementwise chain: K in-place scales. No shared memory.
 	elemChain := func() error {
-		for i := 0; i < K; i++ {
+		for range K {
 			if e := r.launch(r.fScaleVec, LaunchConfig{GridX: 1, GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
 				Arg(r.x), gpu.ArgValue(float32(0.9999)), gpu.ArgValue(int32(r.hidden))); e != nil {
 				return e
@@ -104,7 +104,7 @@ func TestCUDA_graphSharedMemHazard(t *testing.T) {
 	// the int8 quant r.aq and scale r.aSc from r.x and Ly.preNorm; r.x is left unchanged, so the K
 	// launches are independent-but-identical — the output r.aq is deterministic.
 	redChain := func() error {
-		for i := 0; i < K; i++ {
+		for range K {
 			if e := r.rms(r.x, Ly.preNorm, r.aq, r.aSc); e != nil {
 				return e
 			}

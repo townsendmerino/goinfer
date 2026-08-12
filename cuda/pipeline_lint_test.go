@@ -34,7 +34,7 @@ func TestPipelineLint_boundKernelsAreLaunched(t *testing.T) {
 	fieldDecl := regexp.MustCompile(`(?m)^\s+([A-Za-z0-9_, \t]+?)\s+Pipeline\b`)
 	fields := map[string]bool{}
 	for _, m := range fieldDecl.FindAllStringSubmatch(src["resident.go"], -1) {
-		for _, name := range strings.Split(m[1], ",") {
+		for name := range strings.SplitSeq(m[1], ",") {
 			if name = strings.TrimSpace(name); name != "" {
 				fields[name] = true
 			}

@@ -41,7 +41,7 @@ func TestStagedLayerSweep(t *testing.T) {
 	}
 	_, nLayers, _, _, _, _, _ := mc.Dims()
 	cpuLogits := make([][]float32, nLayers)
-	for L := 0; L < nLayers; L++ {
+	for L := range nLayers {
 		os.Setenv("GOINFER_SSM_STOP_LAYER", itoa(L))
 		cache := mc.NewCache(8)
 		lg, e := mc.ForwardForTest(tok, cache)
@@ -64,7 +64,7 @@ func TestStagedLayerSweep(t *testing.T) {
 	if ms.ResidentActive() {
 		t.Fatal("expected staged, got resident")
 	}
-	for L := 0; L < nLayers; L++ {
+	for L := range nLayers {
 		os.Setenv("GOINFER_SSM_STOP_LAYER", itoa(L))
 		cache := ms.NewCache(8)
 		lg, e := ms.ForwardForTest(tok, cache)

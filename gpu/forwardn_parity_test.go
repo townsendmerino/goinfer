@@ -77,7 +77,7 @@ func TestResidentForwardN_parity(t *testing.T) {
 	// Sequential: same positions overwrite the same KV with identical values, so each
 	// Forward(embs[i], i) must reproduce ForwardN's row i.
 	rf.Reset()
-	for i := 0; i < K; i++ {
+	for i := range K {
 		seq, err := rf.Forward(embs[i], i)
 		if err != nil {
 			t.Fatalf("Forward[%d]: %v", i, err)

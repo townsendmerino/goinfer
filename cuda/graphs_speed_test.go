@@ -52,16 +52,16 @@ func TestGraphsDecodeSpeedup(t *testing.T) {
 		_, _, _, _, _, _, vocab := mc.Dims()
 		emb := func(i int) []float32 { return mc.EmbedResidentForTest((i*2654435761 + 1) % (vocab - 1)) }
 		// warm + establish KV over a short prefix
-		for i := 0; i < 16; i++ {
+		for i := range 16 {
 			if _, err := rf.ForwardArgmax(emb(i), i); err != nil {
 				t.Fatalf("warm: %v", err)
 			}
 		}
 		const steps = 256
 		best := time.Hour
-		for rep := 0; rep < 3; rep++ {
+		for range 3 {
 			t0 := time.Now()
-			for i := 0; i < steps; i++ {
+			for i := range steps {
 				if _, err := rf.ForwardArgmax(emb(1000+i), 16+i); err != nil {
 					t.Fatalf("decode: %v", err)
 				}

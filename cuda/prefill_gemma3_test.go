@@ -64,7 +64,7 @@ func TestPrefillLast_gemma3(t *testing.T) {
 	}
 
 	// --- sequential reference.
-	for i := 0; i < n-1; i++ {
+	for i := range n - 1 {
 		if e := rf.ForwardNoLogits(embs[i], i); e != nil {
 			t.Fatalf("seq ForwardNoLogits pos %d: %v", i, e)
 		}
@@ -76,7 +76,7 @@ func TestPrefillLast_gemma3(t *testing.T) {
 	seqLogits = append([]float32(nil), seqLogits...)
 	seqK := make([][]float32, nLayers)
 	seqV := make([][]float32, nLayers)
-	for l := 0; l < nLayers; l++ {
+	for l := range nLayers {
 		seqK[l], seqV[l] = rf.readKVForTest(l, n)
 	}
 	seqStream := decodeGreedy(t, mc, rf, seqLogits, n, 64)
@@ -88,14 +88,14 @@ func TestPrefillLast_gemma3(t *testing.T) {
 	}
 	batK := make([][]float32, nLayers)
 	batV := make([][]float32, nLayers)
-	for l := 0; l < nLayers; l++ {
+	for l := range nLayers {
 		batK[l], batV[l] = rf.readKVForTest(l, n)
 	}
 	batStream := decodeGreedy(t, mc, rf, batLogits, n, 64)
 
 	// --- gate 1: KV bit-identical, ALL layers, ALL rows.
 	kvMism := 0
-	for l := 0; l < nLayers; l++ {
+	for l := range nLayers {
 		for i := range seqK[l] {
 			if seqK[l][i] != batK[l][i] {
 				if kvMism < 3 {

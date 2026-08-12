@@ -52,9 +52,9 @@ func TestDecodeDepthThroughput(t *testing.T) {
 		}
 		const steps = 128
 		best := time.Hour
-		for rep := 0; rep < 3; rep++ {
+		for range 3 {
 			t0 := time.Now()
-			for i := 0; i < steps; i++ {
+			for i := range steps {
 				if _, err := rf.ForwardArgmax(emb(100000+i), depth+i); err != nil {
 					t.Fatalf("decode@%d: %v", depth, err)
 				}

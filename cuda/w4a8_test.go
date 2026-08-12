@@ -55,7 +55,7 @@ func TestGemvW4A8(t *testing.T) {
 	nib := func() uint32 { seed = seed*1664525 + 1013904223; return (seed >> 28) & 0xf } // 0..15
 	for i := range Wp {
 		var w uint32
-		for j := 0; j < 8; j++ {
+		for j := range 8 {
 			w |= nib() << (4 * j)
 		}
 		Wp[i] = w
@@ -66,7 +66,7 @@ func TestGemvW4A8(t *testing.T) {
 	i8 := func() int32 { seed = seed*1664525 + 1013904223; return int32(int8(seed >> 24)) }
 	for i := range a {
 		var p int32
-		for b := 0; b < 4; b++ {
+		for b := range 4 {
 			p |= (i8() & 0xff) << (8 * b)
 		}
 		a[i] = p
@@ -75,13 +75,13 @@ func TestGemvW4A8(t *testing.T) {
 
 	// CPU ref
 	ref := make([]float32, N)
-	for n := 0; n < N; n++ {
+	for n := range N {
 		var facc float64
-		for g := 0; g < Kgroups; g++ {
+		for g := range Kgroups {
 			var iacc int64
-			for w := 0; w < 4; w++ {
+			for w := range 4 {
 				word := Wp[n*Kwords+4*g+w]
-				for j := 0; j < 8; j++ {
+				for j := range 8 {
 					nb := int64((word>>(4*j))&0xf) - 8
 					ai := a[8*g+2*w+j/4]
 					av := int64(int8(ai >> (8 * (j % 4))))
@@ -112,14 +112,14 @@ func TestGemvW4A8(t *testing.T) {
 		_ = fn.LaunchOn(bg, stream, cfg, gc.Arg(dW), gc.Arg(dA), gc.Arg(dGs),
 			gc.ArgValue(aScale), gc.ArgValue(int32(N)), gc.ArgValue(int32(Kwords)), gc.ArgValue(int32(Kgroups)), gc.Arg(dOut))
 	}
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		launch()
 	}
 	_ = stream.Synchronize(bg)
 	got := make([]float32, N)
 	_ = gc.CopyDtoH(bg, got, dOut)
 	var d, ng, nr float64
-	for n := 0; n < N; n++ {
+	for n := range N {
 		d += float64(got[n]) * float64(ref[n])
 		ng += float64(got[n]) * float64(got[n])
 		nr += float64(ref[n]) * float64(ref[n])
@@ -131,12 +131,12 @@ func TestGemvW4A8(t *testing.T) {
 	// bandwidth: int4 = N*K/2 weight bytes + N*Kgroups*2 scale bytes
 	wbytes := int64(N)*int64(K)/2 + int64(N)*int64(Kgroups)*2
 	bestUs := 1e18
-	for r := 0; r < 8; r++ {
+	for range 8 {
 		s, _ := ctx.NewEvent()
 		e, _ := ctx.NewEvent()
 		_ = s.Record(stream)
 		const it = 50
-		for i := 0; i < it; i++ {
+		for range it {
 			launch()
 		}
 		_ = e.Record(stream)

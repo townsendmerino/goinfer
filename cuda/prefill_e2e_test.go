@@ -81,7 +81,7 @@ func prefillE2EGate(t *testing.T, path, quant string) {
 	}
 
 	// --- sequential reference: ForwardNoLogits for [:-1], Forward for the last → seqLogits + KV.
-	for i := 0; i < n-1; i++ {
+	for i := range n - 1 {
 		if e := rf.ForwardNoLogits(embs[i], i); e != nil {
 			t.Fatalf("seq ForwardNoLogits pos %d: %v", i, e)
 		}
@@ -93,7 +93,7 @@ func prefillE2EGate(t *testing.T, path, quant string) {
 	seqLogits = append([]float32(nil), seqLogits...)
 	seqK := make([][]float32, nLayers)
 	seqV := make([][]float32, nLayers)
-	for l := 0; l < nLayers; l++ {
+	for l := range nLayers {
 		seqK[l], seqV[l] = rf.readKVForTest(l, n)
 	}
 	// greedy decode 56→56+63 from the sequential cache
@@ -106,14 +106,14 @@ func prefillE2EGate(t *testing.T, path, quant string) {
 	}
 	batK := make([][]float32, nLayers)
 	batV := make([][]float32, nLayers)
-	for l := 0; l < nLayers; l++ {
+	for l := range nLayers {
 		batK[l], batV[l] = rf.readKVForTest(l, n)
 	}
 	batStream := decodeGreedy(t, mc, rf, batLogits, n, 64)
 
 	// --- gate 1: KV bit-identical, ALL layers, ALL rows.
 	kvMism := 0
-	for l := 0; l < nLayers; l++ {
+	for l := range nLayers {
 		for i := range seqK[l] {
 			if seqK[l][i] != batK[l][i] {
 				if kvMism < 3 {
@@ -167,7 +167,7 @@ func decodeGreedy(t *testing.T, mc *decoder.Model, rf *cudaResident, logits []fl
 	out := make([]int, 0, count)
 	cur := logits
 	pos := startPos
-	for i := 0; i < count; i++ {
+	for range count {
 		tok := argmaxF(cur)
 		out = append(out, tok)
 		l, err := rf.Forward(mc.EmbedResidentForTest(tok), pos)

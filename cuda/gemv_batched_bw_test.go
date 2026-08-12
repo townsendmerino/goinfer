@@ -97,13 +97,13 @@ func TestGemvBatchedBandwidth(t *testing.T) {
 			gc.Arg(dOut), gc.ArgValue(int32(0)))
 	}
 	// warm
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		launch()
 	}
 	_ = stream.Synchronize(bg)
 	const reps = 20
 	t0 := time.Now()
-	for i := 0; i < reps; i++ {
+	for range reps {
 		launch()
 	}
 	_ = stream.Synchronize(bg)

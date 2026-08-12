@@ -121,9 +121,9 @@ func TestGemvShapeSweep(t *testing.T) {
 			// Pack exactly as the production path does, so a packing/kernel disagreement shows up.
 			Wp := make([]uint32, c.N*kw)
 			for n := 0; n < c.N; n++ {
-				for w := 0; w < kw; w++ {
+				for w := range kw {
 					var word uint32
-					for j := 0; j < 8; j++ {
+					for j := range 8 {
 						word |= uint32(nibs[n*c.K+w*8+j]) << (4 * uint(nibblePosFast(j)))
 					}
 					Wp[n*kw+w] = word
@@ -143,9 +143,9 @@ func TestGemvShapeSweep(t *testing.T) {
 				effScale[i] = f16tof32(gsH[i])
 			}
 			aPacked := make([]int32, kd4)
-			for j := 0; j < kd4; j++ {
+			for j := range kd4 {
 				var p int32
-				for b := 0; b < 4; b++ {
+				for b := range 4 {
 					p |= (int32(act[4*j+b]) & 0xff) << (8 * uint(b))
 				}
 				aPacked[j] = p

@@ -59,7 +59,7 @@ func TestRealWeightGemvParity(t *testing.T) {
 	af := make([]float32, K)
 	const aS = float32(0.021)
 	var s uint32 = 7
-	for i := 0; i < K; i++ {
+	for i := range K {
 		s = s*1664525 + 1013904223
 		v := int8(s >> 24)
 		af[i] = float32(v) * aS
@@ -70,10 +70,10 @@ func TestRealWeightGemvParity(t *testing.T) {
 	ref := make([]float32, N)
 	rowBytes := (K + 1) / 2
 	wf := make([]float32, K)
-	for n := 0; n < N; n++ {
+	for n := range N {
 		linalg.DequantizeRowInt4(q4[n*rowBytes:(n+1)*rowBytes], scales[n*(K/group):(n+1)*(K/group)], group, K, wf)
 		var acc float64
-		for k := 0; k < K; k++ {
+		for k := range K {
 			acc += float64(wf[k]) * float64(af[k])
 		}
 		ref[n] = float32(acc)
@@ -85,7 +85,7 @@ func TestRealWeightGemvParity(t *testing.T) {
 		gs[i] = f32tof16(v)
 	}
 	wpk := make([]uint32, N*(K/8))
-	for i := 0; i < len(wpk); i++ {
+	for i := range wpk {
 		b := q4[i*4 : i*4+4]
 		wpk[i] = uint32(b[0]) | uint32(b[1])<<8 | uint32(b[2])<<16 | uint32(b[3])<<24
 	}
@@ -106,7 +106,7 @@ func TestRealWeightGemvParity(t *testing.T) {
 	_ = gc.CopyDtoH(bg, got, dOut)
 
 	var d, ng, nr float64
-	for n := 0; n < N; n++ {
+	for n := range N {
 		d += float64(got[n]) * float64(ref[n])
 		ng += float64(got[n]) * float64(got[n])
 		nr += float64(ref[n]) * float64(ref[n])
