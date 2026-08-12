@@ -1007,7 +1007,37 @@ is a sibling-drift instance, and fixing it without enumerating the pair leaves t
 The W8A8 sibling was fixed; this one was not. Frozen core. **See B6.**
 
 **P8 · `sampleChunked` allocates a full-vocab `[]float64` and rebuilds the goroutine pool twice per
-sampled token** — `decoder/sampler_chunked.go:188`. A jitter reducer rather than a throughput win.
+sampled token** — `decoder/sampler_chunked.go:188`. **TRIED AND REVERTED — the allocation removal
+costs 5–6% throughput.**
+
+**Not frozen** (checked, not assumed): `decoder/sampler_chunked.go` and `decoder/sampler.go` are
+absent from `testdata/parity_manifest.json`'s 21 files, so this does not re-stale any family's
+`deps_hash`. Sampling is not forward numerics. (`decoder/mlp.go` and `decoder/weightmat.go` — P6 and
+P7 — **are** in it, confirming those two are genuinely blocked.)
+
+**The change:** hang the full-vocabulary `exp()` scratch off the `Sampler` and reuse it, rather than
+`make([]float64, vocab)` per draw. Safe by the type's existing contract — a `Sampler` holds a
+`*rand.Rand` and appends to `history` without a lock, so it was never usable across goroutines.
+
+**Measured, `BenchmarkFilterNew262k`, 5 runs of 400 iterations each:**
+
+| | ns/op median | B/op |
+|---|---|---|
+| before | 6,344,898 | 2,150,668 |
+| after | 6,682,883 | **58,732** |
+
+Allocation drops **97%** and throughput drops **5.3% median / 6.3% min**, with the two distributions
+**not overlapping** (before max 6,391,328 < after min 6,649,446). So this is not noise.
+
+**Reverted.** P8 was filed as a jitter reducer, and paying 5–6% of throughput for it is a bad trade
+against jitter nobody has measured. **No mechanism proposed** — the obvious guesses (page-fault
+behaviour on fresh spans, aliasing or bounds-check effects from a field-derived slice) are exactly
+the premature-mechanism shape, and none was tested.
+
+**What would make this landable**, in order: measure the jitter P8 exists to reduce, so the trade has
+two numbers rather than one; and establish *why* reuse is slower, since a 2 MB allocation per token
+being cheaper than reusing a warm buffer is surprising enough that the explanation probably matters
+elsewhere. Until then the allocation stays.
 
 ## Struck — decided against, kept so the decision is visible
 
