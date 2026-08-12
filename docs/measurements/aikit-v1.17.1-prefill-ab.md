@@ -32,7 +32,28 @@ P10 is owed under both, which is why it is the critical path regardless. The res
 
 Two prerequisites, both before the first comparison sample, and the first was nearly missed.
 
-**0a. Capability. The obvious instrument cannot see the change.** `BenchmarkPrefillLong` calls
+**0a. Capability — proven by EXECUTION, not by configuration.** Configuring f32 weights and a
+`canBatchN` architecture establishes what was *intended*; it does not establish that `blockedFill`
+ran or that it ran at M>1. Those diverge exactly the way `loadBenchModel()`'s hardcoded
+`int8int8` made them diverge — a correct-looking invocation measuring the wrong kernel.
+
+**The assertion is on observed execution:**
+
+- **`blockedFill` executed** — non-zero samples in a CPU profile of the run (`-cpuprofile`, then
+  `go tool pprof -top`). Taken from inside the function, and it needs no change to aikit or to
+  goinfer's production code.
+- **M was greater than 1** — non-zero samples in **`blockRows3x4`**, which returns immediately
+  unless `iEnd-i >= 3` (`linalg/rowblock_amd64.go`). Its presence in the profile is direct evidence
+  that the multi-row batched path ran, as opposed to N calls at M=1. The v1.16.0 arm has no
+  `blockRows3x4`; its equivalent witness is `blockedFill` plus `Dot8x4`.
+- **Both checked non-zero BEFORE the characterization begins.** If either is zero, the instrument
+  did not measure the rework and no number from it is reportable — the honest outcome is "no
+  instrument exists for this yet".
+
+`b.Logf("canBatchN=%v")` and the quant setting are recorded as *configuration*, alongside the
+execution evidence, never in place of it.
+
+**Why the obvious instrument cannot see the change.** `BenchmarkPrefillLong` calls
 `loadBenchModel()`, which hardcodes `Options{Quant: "int8int8"}`. Traced through goinfer:
 
     int8 weights -> matmulInto -> linalg.MatmulBTW8A8Into        (never reaches blockedFill)

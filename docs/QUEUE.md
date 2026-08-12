@@ -73,6 +73,40 @@ than keeping it because it was written down first.
 **The 5% session-drift figure applies** (`decoder/decode_bench_test.go`): a sequential before/after
 would be dominated by it.
 
+**P11 · arm64 f32 goldens for the aikit blocked-matmul rework — A TAG GATE** — `mac`,
+**CREATED 2026-08-12**
+
+**Provenance first, because it changes how the next search is read.** This gate is **new**, derived
+2026-08-12 by Francis from the architecture-exception clause meeting the aikit f32 rework. It was
+**not** a pre-existing obligation that a sweep overlooked: the tree was searched for it — `arm64
+read`, `arm64 goldens`, architecture-gating language across every live document and 400 commit
+bodies — and the only hit *declined* an arm64 read (G2's `go fix` clearance, §1536). **The search was
+correct and found nothing because there was nothing to find.** Recording it as created rather than as
+missed is what keeps that search trustworthy next time.
+
+**The derivation, and it is stronger than it first looks.** aikit's own comment on the rework carries
+**two different bit-identity arguments, one per architecture** (`linalg/matmul_blocked.go`, v1.17.1):
+
+- **amd64** — `dotFMA8` already reduces in-register, so the removed partial-sum round trip was "32
+  adds of which 24 added literal 0.0". Adding `0.0` is exact in IEEE-754. **Structural**: it cannot
+  move a bit, whatever the inputs.
+- **arm64** — "the four lanes per column are **real partial sums** and `dot8ColsInto` folds them in
+  **this same left-to-right order**". That is an **ordering claim about the new implementation**, not
+  a structural impossibility. f32 addition is not associative, so if the fold order differs anywhere,
+  bits move.
+
+**goinfer's green goldens verify the amd64 argument only** — they ran on amd64, where the claim is
+exact by construction. The arm64 argument is the weaker of the two and is the one nobody here has
+checked on an arm64 box. The policy's architecture clause (*"the pure-Go CPU reference is bit-identical
+WITHIN an architecture, not across"*) says a *float-valued* golden is arch-sensitive; this rework is
+precisely a change to how f32 values are accumulated, so the clause bites.
+
+**Scope:** run the f32 forward goldens on `macbook-arm64` against v1.17.1 and confirm they hold at
+the recorded values. This is an argmax+cosine contract, not bit-for-bit across arches — the question
+is whether the rework moved arm64's numbers *relative to arm64's own goldens*.
+
+**Carried by the Mac batch.** Gates a tag alongside P10; unlike P10 it needs the other box.
+
 **A2 (partial) · 26B documentation correction** — `linux`, 2026-08-12
 
 The half that does NOT depend on A1 is done: the README instructed

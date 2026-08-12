@@ -29,7 +29,21 @@ func loadBenchModel() (*Model, error) {
 			benchErr = err
 			return
 		}
-		benchModel, benchErr = Load(path, Options{Quant: "int8int8"})
+		// int8int8 by DEFAULT, so every existing benchmark and the recorded decode
+		// calibration are unchanged. The override exists because a quantization choice
+		// here decides which kernel is measured at all:
+		//
+		//	int8int8 -> matmulInto -> linalg.MatmulBTW8A8Into   (never enters blockedFill)
+		//	""/f32   -> matmulInto -> matmul -> MatmulBT -> blockedFill
+		//
+		// P10 measures aikit's f32 blocked-matmul rework, which lives in blockedFill, so
+		// an int8int8 prefill run would exercise the changed code NOT AT ALL and return a
+		// confident flat result measuring nothing. Set GOINFER_BENCH_QUANT="" for f32.
+		quant := "int8int8"
+		if q, ok := os.LookupEnv("GOINFER_BENCH_QUANT"); ok {
+			quant = q
+		}
+		benchModel, benchErr = Load(path, Options{Quant: quant})
 	})
 	return benchModel, benchErr
 }
