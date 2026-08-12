@@ -71,6 +71,17 @@ echo "    forward goldens: ${pass} passed, ${fail} failed, ${skip} skipped"
 # the f32-only hole stayed invisible. Q1 in docs/QUEUE.md.
 nonf32=$(printf '%s\n' "$out" | grep '^--- PASS:' | grep -cE 'TestGemma4_logitParity|TestGemma4_12B_logitParity|TestMellum2_logitParity|TestGptOssReal_logitParity|TestInt4_forwardParity|^--- PASS: TestGGUF_' || true)
 echo "    of those, ${nonf32} drive a QUANTIZED path (int4/int8/int8int8); the rest are f32."
+# WHERE this ran is part of what the count means. Fixture checkpoints are gitignored, so a fresh
+# `git worktree` has none of them: the same commit that proves 33 goldens in the main checkout proves
+# 7 in a worktree, and the difference is the machine, not the change. The count alone cannot say
+# which — so say it.
+if [ "$skip" -gt "$pass" ]; then
+	echo
+	echo "    MORE SKIPPED (${skip}) THAN PASSED (${pass}). Almost always a checkout without the"
+	echo "    gitignored fixture checkpoints — a fresh git worktree has none of them. This refresh"
+	echo "    is REAL but much weaker than the same commit would prove where the fixtures live."
+	echo "    Re-run it on a fixture-bearing checkout before treating it as the proof of record."
+fi
 if [ "$nonf32" -eq 0 ]; then
 	echo "    NOTE: this refresh proves f32 numerics ONLY — no quantized golden ran. See Q1."
 fi

@@ -962,7 +962,32 @@ to override it.** So the flag pair is the second branch: legitimate explicit ove
 `decoder/model.go` and `decoder/gguf.go` were untouched by A5/A9-FIX/P6/P7, so only `cuda/backend.go`
 should conflict.
 
-**Still not rebased** — that is the next action on this item, not a blocker discovered by it.
+**REBASED 2026-08-12 (`2d28358`), not yet merged.** One conflict, in `cuda/backend.go`, and it was
+not the plumbing conflict the old note predicted:
+
+**the branch defaults the slot request to `nE` — "ask for all, auto-cap" — which is `7ccec1e`'s
+reverted behaviour.** Resolved by keeping the accessor (the flag promotion) and **preserving main's
+`topK` default**: unset changes nothing. Raising the default is a **separate decision** and main's own
+comment states its precondition — *"fixing the margin FIRST and proving it on the 26B"* — which A5
+(`6091e7a`) and A7 have now met. It belongs in a change about defaults, not one promoting env vars to
+flags. **Queued below as D3b.**
+
+Flag help rewritten for the corrected cap: `--moe-cache-slots` now documents itself as *request at
+most this many*, notes that the runtime lowers it and logs what it chose, and no longer describes a
+"deliberately greedy" default that is not taken.
+
+**The goldens run is still owed, on a fixture-bearing checkout** — see the finding below. Merging is
+the next action.
+
+**D3b · Should the expert-cache default rise above `topK`?** — `linux`, **unblocked, now a real question**
+
+`topK` degenerates to re-fetching every routed expert every token (~5 tok/s against ~17 at 38 slots on
+the 26B). It was set there because the cap could not be trusted; A5 fixed the cap and A7 proved it on
+the 26B, which is exactly the precondition `cuda/backend.go`'s own comment names. The candidate
+default is "request all, let the corrected cap decide" — which on this card lands at 31.
+
+Separate from D3 on purpose: D3 changes the *surface*, this changes *what happens to someone who sets
+nothing*. Needs the 26B run and a hit-rate figure at the chosen cap before it lands.
 
 **Historical framing: out of the release, and the first question was not a merge question.**
 
@@ -1709,6 +1734,11 @@ is a different state and should read as one.
 The status sweep found 1 of 13. **D3 shows description can be wrong while status is right, and
 description is what someone acts on.** So: for every open entry with a source outside conversation —
 a branch, a commit, an audit line, a script — does the entry describe it correctly?
+
+*(A goldens run in a fresh `git worktree` is fixture-less: the same commit proved 33 goldens in the
+main checkout and 7 in the worktree, because the fixture checkpoints are gitignored. The refresh
+script now says so when skips outnumber passes — `scripts/refresh_parity_hashes.sh`. Found by running
+D3's refresh in the rebase worktree and getting `goldens=7`.)*
 
 | entry | source | description matches? |
 |---|---|---|
