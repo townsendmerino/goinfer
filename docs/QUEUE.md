@@ -910,7 +910,7 @@ Precedent exists for a goldens-gated refresh (`9e5f8fa`, where a metadata field 
 
 **E1 · v1.0 gate as written criteria** — `linux`
 
-Decisions already taken: the parity backfill lands as **v0.12.0**, not v1.0. v1.0 gets its own gate
+Decisions already taken: the parity backfill lands as **v0.13.0** (moved from v0.12.0, which this campaign took — decided 2026-08-12), not v1.0. v1.0 gets its own gate
 requiring parity coverage complete, the verification machinery sound, the loader and
 architecture-descriptor surface **actually frozen** (the docs still say it may change), and a clean
 out-of-tree audit against the release candidate.

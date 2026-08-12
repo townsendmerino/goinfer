@@ -8,7 +8,13 @@ The forward-pass and quantization numerics are parity-gated against HuggingFace
 and are the stable contract. The loader and architecture-descriptor surface is
 pre-1.0 and may change as new model families and quant formats land.
 
-## [Unreleased]
+## [v0.12.0] — 2026-08-12
+
+**MINOR** (0.11.0 → 0.12.0): a correctness release for the CUDA MoE expert cache, three
+bit-identical performance items, and behaviour changes that are disclosed above. No public API was
+removed. The core-numerics surface is unchanged since `6edd1ca`; every change to a path covered by
+`testdata/parity_manifest.json` carried a goldens run whose axis composition is printed with the
+result.
 
 > **⚠ Gemma 4 output changes on CUDA and Metal.** Gemma 4 previously fell back to the CPU path
 > unless you set `GOINFER_GEMMA4_RESIDENT`; it now runs GPU-resident by default. The resident path
