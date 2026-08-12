@@ -358,6 +358,36 @@ so a 384 MB margin buys 3.67 of them and the cap moves by 4. An unverified numbe
 whose job is being checkable is the same defect one layer out, and the assertion and the prose fail
 INDEPENDENTLY — a green test does not vet its own comment.
 
+**The measurement's shape.** The number is real and the code path is real, but where the instrument
+sits, or what the comparison differences away, determines what could have been visible. The reading
+is then interpreted as though it described the system rather than the instrument's view of it.
+
+Two shapes:
+
+- **Position** — the probe sits on one side of the event and reports the other side's state.
+  *Recognition test:* if the probe were one line earlier or later, would the number change? If yes,
+  the position is part of the claim and has to be stated with it.
+- **Differencing** — a delta between two configurations cannot see a cost that does not scale with
+  the configuration. *Recognition test:* what cancels? Where a sweep compares configurations, **at
+  least one absolute measurement is required before any mechanism is proposed.**
+
+*Remedy shape:* the measured-quantities table already requires machine, method and date. Add **probe
+position** for any figure whose value depends on it — which call it was taken before or after.
+
+Instances at time of writing, all 2026-08-12, three readings and one shape:
+
+- the **ladder ceilings** — contiguity reported as a rising fraction of free (36% → 50% → 60%) when
+  the ladder stopped at first success against a falling denominator, so the trend was the
+  instrument's, not the heap's;
+- the **cross-run deltas** — per-slot cost derived from between-configuration differences, which
+  cancel any fixed cost exactly, however many configurations are sampled;
+- **free-at-failing-launch** read from `describeLaunchErr`, which is reached only *after*
+  `Launch` has returned non-nil and therefore reports the **post-failure** state
+  (265,945,088 = 198,836,224 + exactly 64 MiB, the first-launch figure — an exact 2^26 that reads as
+  a driver block unwinding rather than as application scratch released).
+
+Each was stated as a fact about the system before the instrument's position was checked.
+
 **Keep a table of measured quantities; every new model must reproduce all of them.** Seven
 mechanism claims were made in one day on a single defect. Six were caught by a reader. The seventh
 was caught by arithmetic: a proposed accounting model predicted 276.8 MB per slot where an earlier
@@ -368,17 +398,8 @@ Record what has actually been measured, with its units and the conditions, and m
 every entry a precondition for any new account. A model that explains the failure but contradicts
 a measurement is not a candidate.
 
-**But record what each measurement can and cannot support.** The same sweep that falsified the
-2.5x error cannot derive a per-slot cost at all: it logged free AFTER allocSlots and never before,
-so every consumption figure from it assumes constant starting-free across separate process
-launches — measured afterwards as varying ~300 MB, against deltas of ~850 MB. A +/-35% instrument
-soundly refutes a 2.5x error and cannot establish an 8% one. Both the discarded 8% figure and its
-replacement rested on it, and neither was derivable.
-
-The corrective is within-process measurement: two `cuMemGetInfo` calls immediately either side of
-the allocation under study, in one run, compared against what the model predicts for that same
-configuration. No cross-run assumption survives that, and the shape of any gap — fixed or
-proportional — falls out of a second configuration.
+**But record what each measurement can and cannot support** — see "the measurement's shape" above,
+of which the sweep that could not derive a per-slot cost is the differencing instance.
 
 **An absence of signal is not a positive state.** Distinct from premature mechanism, which names
 a cause too early; this one assigns a benign meaning to a silence that is consistent with several
