@@ -559,6 +559,26 @@ path that is not a file", having globbed `decoder/paging*.go` when the files are
 for?"** A glob, a grep pattern, or a directory choice is a search scope, and a scope that excludes the
 target produces a confident absence.
 
+**A claim that arrives with its own corroborating detail has not been corroborated.** The supporting
+fact came from the same source as the claim, so it adds *texture* rather than evidence — and texture
+is precisely what a reader uses to judge whether something was researched. A bare assertion invites a
+check; an assertion with a specific-sounding detail beside it does not.
+
+*Recognition test:* **does the corroborating detail come from a DIFFERENT source than the claim, or
+from the same one?**
+
+*Instance.* `9e5f8fa` was cited across two documents as the goldens-refresh precedent, alongside "a
+metadata field addition re-staled `decoder/weights.go` and the refresh ran 19 goldens". Neither was
+true: that commit is `fix(quant): reject --quant that conflicts with a prequant .giw` and touches the
+manifest not at all, and **none of the nine real refreshes touches `decoder/weights.go`**. The pair
+read as researched and survived weeks of citation. Either half alone would have read as a guess and
+been checked.
+
+*Where the check goes:* **into the description trigger, not into a new sweep.** When an entry is
+re-read against its source at pickup, the specific details inside it — counts, file names,
+measurements that no lint covers — get the same read as the description. That is where D3's detail
+already was, and it is the only moment at which someone has the source open anyway.
+
 **A read-only question gets a throwaway worktree by default, not by judgment.** Asking "what would
 this tool change?" with the tool that changes things is a category error, and the standing form is
 cheap enough that no judgment call is warranted: `git worktree add`, run it there, read the diff,

@@ -1726,8 +1726,9 @@ a branch, a commit, an audit line, a script — does the entry describe it corre
 4 entries — C2, C3, E1, E5 — have no source outside conversation and are recorded as unverifiable
 rather than checked.**
 
-**THE TRIGGER, not a cadence.** An entry's description is re-read against its source **at the moment
-the item is picked up for work** — nothing schedules this and nothing lints it. That is when the
+**THE TRIGGER, not a cadence.** An entry's description **and the specific details inside it** — counts,
+file names, measurements that no lint covers — are re-read against their source **at the moment the
+item is picked up for work** — nothing schedules this and nothing lints it. That is when the
 description matters, when someone is already loading the context anyway, and it is exactly what caught
 D3: the read happened because the item was next, not because a sweep came due. The cost falls at the
 only point where the drift would have changed what someone did.
