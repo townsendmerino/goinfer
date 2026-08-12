@@ -123,6 +123,64 @@ Two changes, both error handling rather than prediction, useful whatever A1 turn
 Deliberately its own item rather than folded into A1, so the next investigation starts from a
 message rather than a symptom.
 
+**A5 · The corrected cap must be a SEARCH, not a division** — `linux`, design fixed in advance
+
+When A1's fix lands, do not write it as a division with a correction term. Per-buffer 2 MiB
+rounding makes the requirement a **step function of slot count**, and
+
+    fit := int((free - marginBytes) / nLayers / perLayer)
+
+cannot invert a step function — it is wrong precisely at the boundaries the failure lives on. A
+division plus a fudge term reproduces the class A5 exists to close.
+
+The requirement is monotone non-decreasing in n, so binary-search it:
+
+    largest n such that
+      nLayers × Σᵢ ceil(n·pᵢ / 2 MiB) × 2 MiB + marginBytes ≤ free
+
+where pᵢ are the per-slot per-buffer byte strides (4 buffers per MoE layer).
+
+Land it in ONE implementation — `allocSlots` calls `capSlots`, not a copy — with the gate pointed
+at the shipping path and a mutation check. And correct, in the same change, wherever it was written
+down that `slotcap_test.go` corroborates production sizing: it corroborates a parallel copy.
+
+**A9 · Force `moePTX` to load BEFORE `allocSlots`, then re-run at 34** — `linux`, CONDITIONAL
+
+**Trigger, restated.** The earlier threshold ("run only if free at the failing launch exceeds
+~100 MiB") was written before the post-allocation headroom was known, and it now reads the wrong
+way: the closed form predicts **198,836,224 B free after `allocSlots` at 34 slots**, so a reading
+above 100 MiB is the *expected* case rather than a signal.
+
+Read the **decrements, not the absolute value**:
+
+- free after `allocSlots` → free at first launch — the gap is what `gmod` and the glue module cost.
+- free at first launch → free at failing launch — the gap is what the successful launches cost.
+
+Run A9 if either gap is large enough that the remaining headroom was spent by **module loading
+rather than by the cache**. Skip A9, recording it as unnecessary, only if free after `allocSlots`
+comes back far below 198,836,224 — which would mean the closed form is wrong and the cache took
+more than predicted, a different finding.
+
+Rationale: `fRoute` is the first kernel launched out of `moePTX` (`ropeKV` comes from `gmod`,
+`fAttn` from the glue module), so a lazily-deferred module load is attributable to it exactly as a
+first-launch would be. The cap is computed from a free-VRAM reading taken **before** that load. That
+cost is invisible to before/after readings around `allocSlots`, and invisible to a between-slot-count
+delta, because it does not scale with slots.
+
+It is **additive with the rounding shortfall, not an alternative to it**: rounding eats into the
+headroom the 384 MiB margin was sized to provide, and the module load then spends from what remains.
+
+Experiment: force `moePTX` to load while free VRAM is still at its full ~3.8 GB, then re-run at 34
+slots. Branches, pre-registered:
+
+- `fRoute` launches after the forced load → module load was the mechanism; the fix shape is to size
+  the cache **after** deferred fixed costs are paid, not before.
+- `fRoute` still fails → module load excluded; candidate list reopens one entry shorter.
+- the forced load itself fails → same finding, relocated to where it is visible. That is a result.
+
+Read-only on the allocation path. The reordering is an **experiment first and a fix only after it
+answers**.
+
 **B0 · Repo-hygiene group must run what CI runs** — `linux`
 
 CI went red on `staticcheck -tags cuda` (ST1005) and stayed red for three commits. The local
