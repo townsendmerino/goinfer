@@ -198,7 +198,7 @@ clears that by 161,480,704 B. The old framing would have called 33 marginal when
 glue module) precede it. But it is plausibly the first launch out of **`moePTX`**, so a lazily
 deferred module load is attributable to it exactly as a first-launch would be. A9 stands.
 
-**A5 · The corrected cap must be a SEARCH, not a division** — `linux`, design fixed in advance
+**A5 · The corrected cap must be a SEARCH, not a division** — `linux`, **DONE `6091e7a`**
 
 When A1's fix lands, do not write it as a division with a correction term. Per-buffer 2 MiB
 rounding makes the requirement a **step function of slot count**, and
@@ -218,6 +218,27 @@ where pᵢ are the per-slot per-buffer byte strides (4 buffers per MoE layer).
 Land it in ONE implementation — `allocSlots` calls `capSlots`, not a copy — with the gate pointed
 at the shipping path and a mutation check. And correct, in the same change, wherever it was written
 down that `slotcap_test.go` corroborates production sizing: it corroborates a parallel copy.
+
+**Landed and verified on hardware through the shipping auto-cap path**, no manual slot count:
+requesting 128 on the real 26B logs `capping to 33` and generates 4 tokens, where it previously
+logged `capping to 34` and generated 0. Free after `allocSlots` is 450,494,464 B — byte-identical to
+A7's manually-set 33-slot run, so the search lands exactly where the measurement said.
+
+Two withdrawn claims went with it. `slotcap_test.go` said it "corroborates the sizing" (it
+corroborated the *copying*; the answer was wrong) and that the agreement placed the discrepancy
+"downstream of the sizing decision" (the sizing decision **was** the defect). The gate now asserts
+properties rather than a remembered number: search ≠ division at the 26B configuration, monotonicity
+in n, the 4-quanta step at 33→34, and that no returned count leaves n+1 also fitting.
+
+**README retraction, done in the same change — revert-includes-claims.** The README said the slot
+count was "a manual workaround for a safety net that is not holding". That was accurate and stopped
+being accurate the moment this landed. It is not deleted: it now records what the old behaviour was,
+names both costs the cap was missing with their measured figures, and gives a reader who hit the
+failure a way to tell whether their build has the fix (`capping to 33` has it, `34` does not).
+
+**Mutation deltas, re-derived.** The margin mutation was first documented as 38, carried over from
+the raw-sum derivation without re-deriving under the rounding form; the gate caught it. The real
+answer is **37** — 33 → 37, not 34 → 38. Same delta, different endpoints, and only one is real.
 
 **A9 · The deferred fixed cost paid after the cap is computed** — `linux`, **CLOSED — cause
 established, after one reopen**
@@ -277,6 +298,13 @@ cost — a new kernel with per-thread scratch, a driver that reserves differentl
 Force the flagged kernels to launch once during `BuildResident`, ahead of `allocSlots` at
 `cuda/backend.go:793`. The cap is then correct **by construction**, because the free reading it is
 computed from already includes every fixed cost that will ever be paid.
+
+**Known-unbounded, recorded rather than filed as a defect.** Module load is **resident-zero and
+transient-nonzero**: `CompileLibrary` + `NewComputePipeline` cost 0 B by both instruments at 7.6 GB
+free, but `cuModuleLoadData` *fails* with `CUDA_ERROR_OUT_OF_MEMORY` under memory pressure — measured
+incidentally when a test's module setup was placed behind a balloon. The transient is unbounded and
+unmeasured. A9-FIX's ordering argument is unaffected, because forcing happens while ~3.8 GB is free;
+what nothing currently prevents is a *later* module load paying that transient under pressure.
 
 **Iterate the census; do not name `moe_route`.** `rope_kv` and `rope_kv_batched` declare 32 B/thread —
 small, and small is exactly how sibling drift gets in. Forcing by name would reproduce, inside the fix,
@@ -356,6 +384,13 @@ The relationship is now pinned (`slotMarginBytes ≥ measured peak demand`, clea
 it is at least checked rather than merely true. **`max`, not `Σ`** — launching the whole census gives
 a threshold and residual identical to `moe_route` alone, to the byte, so the driver shares one backing
 store sized by the largest kernel.
+
+**The regime is part of that claim.** It was measured with the census launched **sequentially in one
+context**, which is what goinfer does: batch-1, single stream, one resident model. Under concurrent
+residency on separate streams there is no reason the bound stays `max` — and the assertion would then
+be **wrong without failing**, the worse of the two ways to be wrong. Recorded next to the claim, and
+in the gate's own failure message, the way the measured-quantities rule requires. Concurrent streams
+or multi-model residency reopens it.
 
 Historical framing, kept because the trigger was rewritten twice:
 

@@ -94,24 +94,41 @@ goinfer's distinction is all-experts-on-GPU, not that peers can't run it —
 > ```bash
 > cd cuda && CGO_ENABLED=0 \
 >   GOINFER_MOE_CACHE_EXPERTS=1 \ # stream routed experts host→VRAM (they exceed 8 GB)
->   GOINFER_MOE_CACHE_SLOTS=30 \  # per-layer cache depth. NOT optional: the default is the
->                                 # minimum that works and re-fetches every expert every token
+>   GOINFER_MOE_CACHE_SLOTS=128 \ # per-layer cache depth. NOT optional: the default is the
+>                                 # minimum that works and re-fetches every expert every token.
+>                                 # Set it high — the runtime caps it to what fits (33 here).
 >   go run -tags cuda ./cmd/serve --backend cuda --quant int4 \
 >     --model ~/models/gemma-4-26b-a4b-it
 > ```
 >
-> **Sizing it, and what to do when it fails.** A slot count is only safe *relative to free VRAM*, so
-> there is no universally correct number: a display attached, another process resident, or a longer
-> `--ctx` all leave you less than a bare card. On an 8 GB card with nothing else on the GPU, **30 is
-> the highest value measured safe here** (34 fails outright). If you see
-> `CUDA_ERROR_OUT_OF_MEMORY` at the first forward, **the slot count is too high for your free VRAM —
-> lower it.**
+> **Sizing it.** A slot count is only safe *relative to free VRAM*, so there is no universally
+> correct number: a display attached, another process resident, or a longer `--ctx` all leave you
+> less than a bare card. **You do not have to pick one.** The runtime measures free VRAM and caps
+> the slot count, so setting it high (or leaving it at 128, "all experts") gets you the largest cache
+> that actually fits — on an 8 GB card with nothing else on the GPU that is 33, and it is chosen for
+> you.
 >
-> You should not have to know this. The runtime measures free VRAM and caps the slot count for
-> exactly that reason, and that cap is the thing currently under suspicion — it can land on a value
-> that allocates successfully and then cannot launch (open defect A1, `docs/QUEUE.md`). Until it is
-> fixed this section is a manual workaround for a safety net that is not holding, which is why it
-> gives you the symptom and the remedy rather than a number to trust.
+> **If you are on an older build, this section used to say the cap could not be trusted.** That was
+> accurate. Between v0.11.0 and the fix, the cap summed requested bytes while the CUDA driver charges
+> each allocation whole 2 MiB quanta, so on an 8 GB card it granted 34 slots — a value that allocates
+> successfully and then cannot launch, giving `CUDA_ERROR_OUT_OF_MEMORY` at the first forward and
+> zero tokens. The recommended workaround was to set the count manually to 30.
+>
+> The cap now accounts for both costs it was missing:
+>
+> - **allocation granularity** — four buffers per MoE layer, each rounded up to its own 2 MiB quantum,
+>   so the requirement is a step function of the slot count and is searched rather than divided. At 34
+>   slots all four buffers tip a quantum at once, putting the requirement 203,816,960 B over free.
+> - **the deferred first-launch reservation** — the on-GPU router kernel declares per-thread scratch,
+>   and the driver backs it for the device's occupancy the first time that kernel runs. Measured on an
+>   RTX 2070 SUPER: it *demands* 289,013,760 B at that launch and *retains* 138,412,032 B, and none of
+>   it is visible to the free-VRAM reading the cap is computed from.
+>
+> **How to tell whether your build has the fix:** the cap logs the value it chose
+> (`C′ cache: … capping to N`). On an 8 GB card with a bare GPU, **33 has the fix and 34 does not**.
+> If you still see `CUDA_ERROR_OUT_OF_MEMORY` at the first forward, the launch error now names the
+> kernel and both the requested and effective slot counts; lower `GOINFER_MOE_CACHE_SLOTS` below the
+> effective value.
 >
 > What the slot count buys, measured on this card — the flag is not a tuning knob, it is the
 > difference between the feature working and not:
