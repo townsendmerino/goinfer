@@ -84,6 +84,16 @@ func TestPipelineLint_boundKernelsAreLaunched(t *testing.T) {
 }
 
 // packageSources reads the package's non-test .go sources, keyed by base name.
+//
+// EXCLUDING _test.go IS THE POINT, not an oversight — do not "fix" it. The lint asks whether a
+// pipeline bound in PRODUCTION is launched in PRODUCTION. gemv_w4a8_batched, the defect this was
+// written for, was launched by a parity test AND a bandwidth benchmark; counting those would have
+// hidden it, and made the benchmark's throughput read as the shipping kernel's. A field launched
+// only from tests is precisely what this must flag.
+//
+// It DOES include build-tagged non-test files (testhooks_gen.go among them), since it reads every
+// .go in the directory rather than a tag-filtered set — so a field launched only from
+// goinfer_testhooks production code is seen. That is the opposite exposure and it is not present.
 func packageSources(t *testing.T) map[string]string {
 	t.Helper()
 	ents, err := os.ReadDir(".")

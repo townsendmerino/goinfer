@@ -93,6 +93,26 @@ Why it matters: 105 variables, exactly one of which anything has ever set. Six h
 only findable *as a class* if something enumerates `os.Getenv` mechanically. A markdown table
 maintained by intention drifts on the first variable someone adds.
 
+**B0 · Repo-hygiene group must run what CI runs** — `linux`
+
+CI went red on `staticcheck -tags cuda` (ST1005) and stayed red for three commits. The local
+sequence — gofmt, go build, go test — and CI's check set are **different, and nothing declares the
+relationship**, so they drift on the next change to either. Adding staticcheck to one person's
+habits fixes the instance, not the class.
+
+`gpu_gate.sh` group 5 has the identical gap: it runs `gofmt` and `go vet`, not `staticcheck`. The
+gate is supposed to be what you run *instead of* remembering, and on this axis it is a subset of CI
+without saying so — so running the gate would not have caught this either.
+
+Fix: the repo-hygiene group runs what CI runs, **derived rather than duplicated** if practical, so
+the next check CI gains does not reopen the gap.
+
+**B5 · `RELEASING.md` must reference `QUEUE.md`** — either box
+
+A file nothing reads is accurate today and inert the first week nobody opens it — the pattern this
+queue was written to fix, applied to itself. A tag is the natural moment to review what is
+outstanding, and it is a checkpoint that already happens. Cheap; do it before it is needed.
+
 **B2 · Gate reconciliation — one entry point** — `linux`
 
 Two mechanisms now exist for running the heavy tier: `gpu_gate.sh` group 2c (linux) and
@@ -347,7 +367,7 @@ Answer that before estimating.
 - **PGO** — absent from both repos. goinfer's default build is the pure-Go CPU path and this is a
   performance project; 2–7% is typical. Gate it on the parity goldens, since PGO changes inlining
   and inlining could shift Go's permitted FMA fusion.
-- **govulncheck** — absent from both. For a project whose pitch is one static binary you `scp` and
+- **govulncheck** — VERIFY FIRST: goinfer already runs it in CI and it is green (confirmed 2026-08-12), so this is stale for goinfer. aikit may still lack it; the entry should end up saying which rather than being struck entire. Originally: absent from both. For a project whose pitch is one static binary you `scp` and
   run offline, a reachability-filtered vulnerability statement is part of the deployment claim.
 - **Fuzz corpora** — sixteen fuzz targets across the two repos, three committed corpus directories.
   A crasher found once and not committed is found again next year. The audit's hostile-input
