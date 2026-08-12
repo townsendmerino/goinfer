@@ -524,7 +524,10 @@ func (r *cudaResident) allocSlots() error {
 		fmt.Fprintf(os.Stderr, "[cuda] C′ cache: routed layer %d reports zero per-expert bytes — expert cache disabled\n", moeLayers[0])
 		return nil
 	}
-	const marginBytes = 384 << 20 // headroom for the greedy-argmax readback + driver overhead
+	// One name, not a second copy of the same number. slotMarginBytes is what capSlots applies; a
+	// local const here was a sibling-drift instance waiting to happen, and the gate that pins the
+	// margin against measured kernel demand needs a single symbol to pin.
+	const marginBytes = slotMarginBytes
 	if f0, _, e0 := r.dev.Context().MemInfo(); e0 == nil {
 		r.dbgFreeBefore = f0 // A1 instrument, recording only
 	}

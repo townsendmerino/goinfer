@@ -96,6 +96,32 @@ func TestMoERouteDemandThresholdChild(t *testing.T) {
 	rIdx := gpu.NewBufferLenOf[uint32](dev, 2)
 	rWgt := gpu.NewBufferLenOf[float32](dev, 2)
 
+	// Census mode launches EVERY entry point the local-memory census flags, not just moe_route.
+	// The margin has to cover the whole set, and whether the driver sums the backing stores or
+	// shares one sized by the largest is a property of the driver that must be measured rather than
+	// assumed — Sigma and max differ by a factor here.
+	census := os.Getenv("GOINFER_A9_KERNELS") == "census"
+	var pRope, pRopeB Pipeline
+	var rq, rk, rv, rInv, rKc, rVc gpu.Buffer
+	if census {
+		gm, e := dev.CompileLibrary(gemvFwdPTX)
+		if e != nil {
+			t.Fatalf("CompileLibrary(gemv_fwd): %v", e)
+		}
+		if pRope, e = dev.NewComputePipeline(gm, "rope_kv"); e != nil {
+			t.Fatalf("rope_kv: %v", e)
+		}
+		pb, e := dev.CompileLibrary(prefillBatchedPTX)
+		if e != nil {
+			t.Fatalf("CompileLibrary(prefill_batched): %v", e)
+		}
+		if pRopeB, e = dev.NewComputePipeline(pb, "rope_kv_batched"); e != nil {
+			t.Fatalf("rope_kv_batched: %v", e)
+		}
+		rq, rk, rv = gpu.NewBufferLenOf[float32](dev, 64), gpu.NewBufferLenOf[float32](dev, 64), gpu.NewBufferLenOf[float32](dev, 64)
+		rInv, rKc, rVc = gpu.NewBufferLenOf[float32](dev, 64), gpu.NewBufferLenOf[float32](dev, 64), gpu.NewBufferLenOf[float32](dev, 64)
+	}
+
 	// Back off on failure rather than stopping. A failed request does not mean the heap is full —
 	// it means THAT SIZE does not fit, which is a statement about contiguity, not capacity. Halving
 	// until the quantum is reached is what actually drains the pool; the first version gave up on
@@ -132,12 +158,25 @@ func TestMoERouteDemandThresholdChild(t *testing.T) {
 	}
 
 	q := dev.NewCommandQueue()
+	one := LaunchConfig{GridX: 1, GridY: 1, GridZ: 1, BlockX: 1, BlockY: 1, BlockZ: 1}
 	before := read()
-	lerr := q.Launch(p, LaunchConfig{GridX: 1, GridY: 1, GridZ: 1, BlockX: 1, BlockY: 1, BlockZ: 1},
+	lerr := q.Launch(p, one,
 		Arg(rLogits), Arg(rBias), Arg(rIdx), Arg(rWgt),
 		gpu.ArgValue(int32(8)), gpu.ArgValue(int32(2)), gpu.ArgValue(int32(1)),
 		gpu.ArgValue(int32(0)), gpu.ArgValue(float32(1)),
 		gpu.ArgValue(int32(1)), gpu.ArgValue(int32(1)))
+	if census && lerr == nil {
+		// nH=1, nKV=1, hd=2, rhalf=1, pos=0 keeps idx=0 on the first branch, touching q[0..1] and
+		// invFreq[0] only. 64-float buffers are far larger than anything reachable.
+		lerr = q.Launch(pRope, one, Arg(rq), Arg(rk), Arg(rv), Arg(rInv), Arg(rKc), Arg(rVc),
+			gpu.ArgValue(int32(1)), gpu.ArgValue(int32(1)), gpu.ArgValue(int32(2)),
+			gpu.ArgValue(int32(0)), gpu.ArgValue(int32(1)))
+	}
+	if census && lerr == nil {
+		lerr = q.Launch(pRopeB, one, Arg(rq), Arg(rk), Arg(rv), Arg(rInv), Arg(rKc), Arg(rVc),
+			gpu.ArgValue(int32(1)), gpu.ArgValue(int32(1)), gpu.ArgValue(int32(2)),
+			gpu.ArgValue(int32(0)), gpu.ArgValue(int32(1)), gpu.ArgValue(int32(1)))
+	}
 	serr := q.Sync()
 	after := read()
 	ok := lerr == nil && serr == nil
@@ -264,6 +303,28 @@ func TestMoERouteDemandThreshold(t *testing.T) {
 			"cap safe; if it has moved, docs/QUEUE.md A1/A5/A7/A9 need re-deriving, not editing",
 			lastFail.freeBefore, int64(pinnedFail), firstPass.freeBefore, int64(pinnedPass))
 	}
+
+	// ---- the RELATIONSHIP, not just the figures (item 2) ----
+	//
+	// The three per-kernel byte pins say "a number changed". This says "the safety property broke",
+	// which is the one that explains why anyone should care. slotMarginBytes exists to leave room
+	// for exactly the costs measured here, and nothing checked that it does.
+	//
+	// MAX, not SIGMA. Launching the whole census (moe_route + rope_kv + rope_kv_batched) gives a
+	// threshold and a residual IDENTICAL to moe_route alone, to the byte — the driver shares one
+	// local-memory backing store sized by the largest kernel rather than summing them. Summing would
+	// overstate the requirement, so the assertion is against the maximum, and the census gate is what
+	// guarantees the maximum is taken over every kernel rather than a remembered one.
+	if int64(slotMarginBytes) < firstPass.freeBefore {
+		t.Errorf("slotMarginBytes (%d) is BELOW the measured peak launch demand (%d). The margin's "+
+			"whole job is to leave room for deferred first-launch costs, so the expert-cache cap "+
+			"can now be granted at a size whose forward cannot run — the 34-slot failure, "+
+			"structurally, at whatever the new cap is",
+			int64(slotMarginBytes), firstPass.freeBefore)
+	}
+	t.Logf("margin check: slotMarginBytes %d >= peak demand %d, clear by %d B (%.1f MiB)",
+		int64(slotMarginBytes), firstPass.freeBefore, int64(slotMarginBytes)-firstPass.freeBefore,
+		float64(int64(slotMarginBytes)-firstPass.freeBefore)/(1<<20))
 
 	// Capacity or contiguity? Repeat the boundary. A threshold that moves between identical runs is
 	// not a capacity threshold.
