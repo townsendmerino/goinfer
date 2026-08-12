@@ -128,6 +128,11 @@ def sibling_repos():
     return out
 
 
+def _commit_count(repo: str) -> str:
+    r = subprocess.run(["git", "rev-list", "--count", "HEAD"], capture_output=True, text=True, cwd=repo)
+    return r.stdout.strip() or "?"
+
+
 def subject_of(sha: str):
     """Return the subject, or None if the SHA is genuinely absent from every searchable repo.
 
@@ -140,6 +145,25 @@ def subject_of(sha: str):
                                capture_output=True, text=True, cwd=repo)
         if probe.returncode != 0:
             raise SearchError(f"{repo}: not a usable git repository ({probe.stderr.strip()})")
+        # A SHALLOW clone cannot answer this question at all. It holds one commit, so every cited
+        # SHA "does not resolve" — and reporting 35 accurate citations as fabricated is the exact
+        # false red this file's own docstring calls worse than a false green, because it tells
+        # someone to go and change references that were right.
+        #
+        # This is the "could not look" versus "looked and did not find" distinction the rest of
+        # this function already makes, applied to the one case that actually shipped: the lint ran
+        # in CI under a depth-1 checkout and main was red for 15 consecutive runs.
+        shallow = subprocess.run(["git", "rev-parse", "--is-shallow-repository"],
+                                 capture_output=True, text=True, cwd=repo)
+        if shallow.stdout.strip() == "true":
+            raise SearchError(
+                f"{repo}: SHALLOW clone — it contains {_commit_count(repo)} commit(s), so no "
+                f"citation can be resolved and every one would be reported as fabricated.\n"
+                f"  This lint needs full history. In GitHub Actions set:\n"
+                f"      - uses: actions/checkout@v4\n"
+                f"        with:\n"
+                f"          fetch-depth: 0\n"
+                f"  Locally: git fetch --unshallow")
         r = subprocess.run(
             ["git", "log", "-1", "--format=%s", sha],
             capture_output=True, text=True, cwd=repo,

@@ -14,7 +14,17 @@ jobs:
   root:
     runs-on: ubuntu-latest
     steps:
+      # fetch-depth: 0 is REQUIRED, and only on this job — it is the one that runs the citation
+      # lint, which resolves commit SHAs. The default depth-1 checkout has exactly one commit, so
+      # every cited SHA fails to resolve. That is not a hypothetical: the lint went into CI at
+      # 5ceb8d7 and CI was red for 15 consecutive runs before anyone looked, with the lint
+      # reporting ~35 accurate citations as "fabricated" every time.
+      #
+      # The other jobs deliberately keep the shallow default — they run builds and tests, do not
+      # touch git history, and a full clone would cost them fetch time for nothing.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
