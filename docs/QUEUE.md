@@ -344,19 +344,55 @@ after `allocSlots` rises to 501,415,936 B; 4 tokens generate as before. **The tr
 that is the point: the margin no longer silently absorbs 132 MiB it was never sized for, so 384 MiB
 now means 384 MiB.
 
-**A9-MARGIN · Re-derive `slotMarginBytes` now that it covers only what it names** — `linux`, new
+**A9-MARGIN · Re-derive `slotMarginBytes` now that it covers only what it names** — `linux`,
+**MEASURED, and the answer is "do not lower it yet"**
 
-With the deferred reservation paid before sizing, the 384 MiB margin no longer has to hide it, and
-`slotMarginBytes` is by its own comment "the only unmeasured constant in this path". Free after
-`allocSlots` at the new cap is 501,415,936 B and nothing further is consumed (measured decrement 0),
-so the margin is now visibly **larger than anything measured needs it to be** — and it costs two
-slots of cache.
+Three runs on the real 26B with A9-FIX in place, varying only the margin:
 
-Do not just lower it. Measure what it must cover with the reservation excluded: the greedy-argmax
-readback, per-allocation driver overhead, and whatever prefill transiently needs at the configured
-`--ctx`. Then set it from that measurement, with the same balloon-harness method that produced the
-289,013,760 demand figure. Recovering the two slots is the payoff; the reason to do it at all is that
-an unmeasured constant guarding a now-measured path is the last soft spot in this chain.
+| margin | cap granted | outcome | leftover after `allocSlots` |
+|---|---|---|---|
+| 384 MiB (shipped) | 31 | 4 tokens | 501,415,936 |
+| 128 MiB | **33** | **4 tokens** | 312,672,256 |
+| 32 MiB | 34 | **allocation FAILS**, declines to CPU | — |
+
+So the two slots A9-FIX cost **are recoverable** at a 128 MiB margin, on this card, at this free
+level. **But do not take that as the recommendation**, because the reason 34 fails is not the one the
+margin models — see the next item. The margin is currently doing a job nobody specified, and lowering
+it to 128 MiB would work here for a reason that is not understood. Measure the *servability*
+constraint first.
+
+What this run did establish: with the reservation paid up front, the decrement after `allocSlots` is
+**0 at every cap tested**, so post-sizing consumption is genuinely nil and the margin is not covering
+launch growth. Its remaining job is whatever the next item names.
+
+**A10 · The total fitting does not imply the allocations succeed** — `linux`, **NEW, open**
+
+At cap 34 with a 32 MiB margin, `allocSlots` **failed mid-sequence**:
+
+    cuMemAlloc_v2: CUDA_ERROR_OUT_OF_MEMORY  (typed-len, 67,403,776 bytes)
+
+The closed form does not predict this. Free before `allocSlots` was 3,710,058,496 and
+Requirement(34) is 3,649,044,480 — the total fits with **61,014,016 B to spare**. And the failing
+buffer is one of the 120 the form accounts for: 34 × 1,982,464 = 67,403,776, the `expGU.W` of some
+layer. By the model, free immediately before the *last* layer's `expGU.W` is **182,648,832 B**, or
+2.7× what was requested. **The model says it fits and the driver says it does not.**
+
+The form is not wrong about totals — it matched measured consumption to the byte at 16, 30 and 34
+slots. So this is a **different** constraint: either per-allocation servability (contiguity, at a
+pressure the earlier struck fragmentation probe never reached — that probe was about slot buffers at
+much lower occupancy and does not carry here), or a driver overhead that grows near exhaustion and
+the quantum model does not capture.
+
+Why it matters beyond this cap: **`capSlots` can grant a cap whose allocations fail.** A5's search is
+correct about bytes and silent about servability. Two things currently mask it — the 384 MiB margin
+keeps the cap at 31, and the failure declines cleanly to the staged/CPU path rather than crashing
+(the decline printer and the executor-panic guard both did their job). Neither is a reason to leave
+it unmodelled, and A9-MARGIN is blocked on it.
+
+Next measurement, pre-registered: instrument `allocSlots` to record free VRAM before **every** slot
+allocation and report which index fails and what free was at that moment. That distinguishes "free
+was genuinely below the request" (the model is wrong near the boundary) from "free was ample and the
+allocation still failed" (contiguity). Read-only; recording, as with the A1 instrument.
 
 **A9-RESID · The 589,824 B is baseline variance, not reservation variance** — `linux`, **CLOSED**
 
@@ -875,15 +911,46 @@ Estimated **~10–15% of per-token traffic at 4k+ context**, on all mainstream C
 largest single item in the group. Frozen core, and it needs a new aikit row-pitch API, so it is the
 **v1.0-unfreeze headline** rather than something to slip in.
 
-**P2 · Scalar `int8→f32` widen on the LM head** — aikit `linalg/quant.go:113`
+**P2 · Scalar `int8→f32` widen on the LM head** — aikit `linalg/quant.go:113`, **condition VERIFIED,
+and it does not hold as a drop-in**
 
-A SIMD widen sits in the same package. Estimated **several ms/token at large vocab**. Not frozen,
-so the work is unblocked — but shipping it **reverses E6** (aikit release deferred to v1.0), which
-must be an explicit decision rather than one arrived at by landing the patch.
+Not frozen, so the work is unblocked — but shipping it **reverses E6** (aikit release deferred to
+v1.0), which must be an explicit decision rather than one arrived at by landing the patch. **Not
+landed.**
 
-Bit-identity is **structural** if the SIMD path is purely elementwise: `int8→f32` widening is exact,
-and a per-element scale is a single multiply with no reordering freedom. Verify that condition holds
-and it needs no parity argument at all.
+**The bit-identity condition, checked in source rather than assumed.** It splits in two, and the
+half that matters is the one the original wording did not cover:
+
+- *The widen kernel itself is exact.* `dequantI8AVX2` (VPMOVSXBD → VCVTDQ2PS → VMULPS) and
+  `dequantI8NEON` (SXTL/SXTL2 → SCVTF → FMUL) both compute `float32(q[i]) * scale` elementwise, with
+  no reduction and no reassociation freedom. `int8 → float32` is exact for all 256 values.
+- **But the shipped call site does not apply the scale per element.** `q8Span` widens *without* the
+  scale — `deq[k] = float32(bq[k])` — and applies it **after** the dot:
+  `dst[i,j] = dotF32(a_i, deq_j) · s_j`. So the naive substitution changes
+
+      dot(a, widen(q)) · s        one rounding of the scale, at the end
+      dot(a, widen(q) · s)        one rounding PER ELEMENT
+
+  which are mathematically equal and **not bit-equal**. Swapping in `DequantizeRowsInt8Into` with the
+  real scale is a silent numerics change, exactly the kind that reaches a release looking like a pure
+  speedup.
+
+**The route that IS bit-identical: pass `scale = 1.0`.** Multiplication by 1.0 is exact in IEEE-754
+for every finite value (and preserves ±0, inf, NaN), so `float32(q[k]) * 1.0` equals `float32(q[k])`
+bit for bit on both kernels, and the scale stays where `q8Span` already applies it. Then the
+structural argument holds and no parity run is needed.
+
+Mechanics: `dequantRowInt8` is unexported and `DequantizeRowsInt8Into` is the whole-matrix form
+taking a per-row `scales` slice, so this needs either an exported per-row entry or a ones-filled
+slice. The `len(q) < 8` (amd64) / `< 16` (arm64) and `!hasAVX2` fallbacks all route to
+`dequantRowInt8Scalar`, which is the same expression — no additional argument needed there.
+
+**The magnitude is still an ESTIMATE and should be measured before the E6 decision.** "Several
+ms/token at large vocab" was a verifier's reading. The package comment measures the same widen at
+~190 ms per CodeRankEmbed forward for 113 M elements (~1.7 ns/element), and an LM head at Gemma's
+262,144 × 2,560 would be 671 M elements — two orders of magnitude larger, which suggests the LM head
+does **not** go through `q8Span` on the paths that matter. Establish which path the LM head actually
+takes before quoting a number, and measure it there.
 
 **P3 · Gemma final-logit softcap, serial O(vocab) `tanh` on the sampling path** — **DONE `4c26a58`**
 
