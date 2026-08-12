@@ -206,11 +206,16 @@ func TestMoERouteFirstLaunchReservation(t *testing.T) {
 	// readings here are byte-identical with and without it — it does not engage on this driver and
 	// path. The 26B run made under EAGER therefore forced nothing, and its null was uninformative.
 	// A forcing mechanism has to be shown to fire before a null from it means anything.
-	if routeCost <= 0 {
-		t.Errorf("moe_route's first launch consumed %d B — expected a large local-memory "+
-			"reservation (two float[MOE_MAX_E] per-thread arrays). Either MOE_MAX_E shrank, the "+
-			"kernel stopped using per-thread scratch, or this instrument stopped seeing it; each "+
-			"changes A9's conclusion", routeCost)
+	// PINNED (item 6). Asserting only "> 0" would let a MOE_MAX_E change double a hidden cost with
+	// the gate still green. This is the RESIDUAL cost, which is 48% of the launch's PEAK demand —
+	// see TestMoERouteDemandThreshold, which pins the other number.
+	const pinnedReservation = 138412032
+	if routeCost != pinnedReservation {
+		t.Errorf("moe_route's first-launch reservation is %d B, pinned at %d B. This is a deferred "+
+			"fixed cost the expert-cache sizing does not account for, so a change here invalidates "+
+			"the cap analysis in docs/QUEUE.md A1/A5/A9 — re-run TestMoERouteDemandThreshold and "+
+			"update both figures together, or the residual and the peak drift apart",
+			routeCost, int64(pinnedReservation))
 	}
 
 }
