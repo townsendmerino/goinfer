@@ -104,6 +104,9 @@ class SearchError(Exception):
 # not fabricated, it points at history that no longer exists anywhere others can see.
 ORPHANED = object()
 
+# Cited commits reachable only from a LOCAL ref — reported as a warning, never a hard failure here.
+LOCAL_ONLY = []
+
 
 def sibling_repos():
     root = QUEUE.parent.parent
@@ -191,11 +194,23 @@ def subject_of(sha: str):
             )
             if reach.returncode != 0:
                 anyref = subprocess.run(
-                    ["git", "for-each-ref", "--contains", sha, "--count=1", "--format=%(refname)"],
+                    ["git", "for-each-ref", "--contains", sha, "--format=%(refname)"],
                     capture_output=True, text=True, cwd=repo,
                 )
-                if not anyref.stdout.strip():
+                refs = [r for r in anyref.stdout.split() if r]
+                if not refs:
                     return ORPHANED
+                # Reachable — but from WHAT? A commit on a local-only branch is exactly as invisible
+                # to everyone else as an orphan, and passes here for the same bad reason: this box
+                # has a ref nobody else does. c8b65ba did precisely that — green locally, "DOES NOT
+                # RESOLVE" in CI, one push after the orphan check was added to stop this very shape.
+                #
+                # NOT fatal, deliberately. Citing a commit in the same push that creates it is normal
+                # and would fail every pre-push run, which is how a lint gets disabled. CI is the
+                # enforcement — it has only the pushed refs, so it fails there if the commit never
+                # left. This names them so the failure is predicted rather than discovered.
+                if not any(r.startswith("refs/remotes/") or r.startswith("refs/tags/") for r in refs):
+                    LOCAL_ONLY.append((sha, refs[0]))
             subj = r.stdout.strip()
             if repo != str(QUEUE.parent.parent):
                 subj = f"[{pathlib.Path(repo).name}] {subj}"
@@ -579,6 +594,13 @@ def main() -> int:
     if unkeyable:
         print(f"  {len(unkeyable)} path citation(s) are EXISTENCE-CHECKED ONLY — their line content "
               f"does not discriminate, so a shift in them is invisible.")
+    if LOCAL_ONLY:
+        print(f"  {len(LOCAL_ONLY)} citation(s) resolve here ONLY VIA A LOCAL REF — they will fail in CI "
+              f"until pushed, because CI has only the published refs:")
+        for sha, ref in sorted(set(LOCAL_ONLY)):
+            print(f"    {sha}  reachable from {ref} — push it, or allowlist it with a reason")
+        print("    Not failed here on purpose: citing a commit in the same push that creates it is "
+              "normal. CI is the enforcement; this is the advance warning.")
     print("  docs/completed/ is EXCLUDED on purpose — archived records are supposed to age with the "
           "code they described, and linting them would fight the archival rule.")
     print("  NOT validated: RELEVANCE. A commit citation is checked to resolve and to match its "
