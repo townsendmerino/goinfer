@@ -1187,6 +1187,19 @@ enforced by `deps_hash` staleness, whose release valve is this goldens run. Wher
 silent — every quantized path — the freeze is a *procedural* barrier with no numeric proof behind it.
 That is not an argument for lifting it; it is an argument for knowing what it is.
 
+**WHY THIS OUTRANKS THE REST OF THE QUEUE — sequencing, not enthusiasm.**
+
+**P1 is the v1.0 headline and lives in the frozen core.** The numeric proof available when that core
+unfreezes was **f32-only**. So lifting the freeze did not buy the ability to verify the work the
+freeze defers — and the shortfall **would not have announced itself**, because the goldens would pass.
+An f32-green refresh over an int4 regression is a passing gate, not a silent one; nothing in the
+output distinguishes them.
+
+That makes Q1(c) a **prerequisite for the v1.0 core work**, not a parallel item, and it belongs ahead
+of the E-group release gate for that reason rather than because it is interesting. **Done
+2026-08-12 (`1d0d1ed`)**: 23 fixtures across 16 architectures, so the prerequisite is now met for
+int4 specifically.
+
 **RUN WHAT EXISTS FIRST — and most of it was UNPLUMBED, not missing.** Done 2026-08-12, `23b2ee7`:
 
 - **(b) the three `int8int8` goldens** skipped for one liftable reason, the same for all three:
@@ -1205,10 +1218,25 @@ gpt-oss int8 row is **asset-blocked behind a build tag**.
 The refresh now also prints the **quantization breakdown**, because "19 passed" and "21 passed" read
 identically to a human and that is precisely how this stayed invisible through nine prior refreshes.
 
-**(c) int4 goldens remain to author** — the only genuinely missing coverage. Pick the families where
-int4 is supported, generate a tiny fixture each, and pin against the f32 path with the **quant-tier
-tolerance** (quant-vs-f32 argmax + cosine, per the policy's axis table) rather than bit-identity,
-since int4 is lossy by construction.
+**(c) int4 goldens — DONE `1d0d1ed`.** Scope measured *before* authoring and stated as a target: int4
+has no divisibility constraint (`nGroups` is a ceiling divide), so eligibility was never the limit —
+fixture availability was. **Target: 23 fixtures / 16 architectures. Delivered: 23 / 16.**
+
+The goldens compare **int4 output against recorded int4 output**, not int4 against f32 within a
+tolerance. A tolerance band against f32 measures quantizer loss — a real question with its own gate
+on the policy's quant axis — and would read as "int4 is covered" while proving nothing about whether
+the W4A8 path still computes what it computed yesterday. Only the self-comparison catches a
+regression in the path the freeze protects and P7 will change.
+
+Fixtures are **enumerated** from `testdata/` rather than listed by name, so a new family is picked up
+without editing the gate, and a run comparing **zero** fixtures **fails** rather than passing.
+Mutation-checked by perturbing the quantizer itself (`int4GroupSize` 32 → 64 → red).
+
+Recorded **absences**, not gaps: `gpt_oss` (MXFP4-prequant, rejects a conflicting `--quant` by
+design), `siglip_vision_model` (an encoder), `gpt2` / `mellum` / `qwen2` / `qwen3` (no tiny
+safetensors fixture), `qwen2_moe` and `gemma4-dense-scaled-{24,48,64}` (incomplete fixture dirs).
+
+**Refresh now reports 22 passed / 3 quantized**, against 19 passed / 0 quantized when this began.
 
 **Also record with P6's 6.09 s price: cheap and thorough are different properties.** 6.09 s buys 19
 passes and 11 skips. The skips are not free — they are the coverage this item is about.
@@ -1333,6 +1361,7 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 |---|---|
 | `0103b49` | fix(cuda): pay the deferred reservation before sizing the cache (A9-FIX) |
 | `0c54e35` | fix(gate): repo hygiene runs what CI runs, derived from ci.yml (B0) |
+| `1d0d1ed` | test(decoder): int4 forward goldens — 23 fixtures, 16 architectures (Q1c) |
 | `1f6dbe0` | fix(parity,fmt): gofmt the threshold sweep + refresh deps_hash after comment-only core edits |
 | `23b2ee7` | fix(parity): the goldens refresh runs quantized goldens, and reports the split |
 | `2e91607` | test: refresh parity deps_hash — non-numeric core-file drift (un-reds main) |
