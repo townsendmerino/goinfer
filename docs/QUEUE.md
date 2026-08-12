@@ -345,7 +345,7 @@ that is the point: the margin no longer silently absorbs 132 MiB it was never si
 now means 384 MiB.
 
 **A9-MARGIN · Re-derive `slotMarginBytes` now that it covers only what it names** — `linux`,
-**MEASURED, and the answer is "do not lower it yet"**
+**MEASURED; blocked on A10, which named the mechanism**
 
 Three runs on the real 26B with A9-FIX in place, varying only the margin:
 
@@ -365,34 +365,49 @@ What this run did establish: with the reservation paid up front, the decrement a
 **0 at every cap tested**, so post-sizing consumption is genuinely nil and the margin is not covering
 launch growth. Its remaining job is whatever the next item names.
 
-**A10 · The total fitting does not imply the allocations succeed** — `linux`, **NEW, open**
+**A10 · The total fitting does not imply the allocations succeed** — `linux`, **ANSWERED: it is
+servability, not capacity. Fix candidate identified, not implemented.**
 
-At cap 34 with a 32 MiB margin, `allocSlots` **failed mid-sequence**:
+At cap 34 with a 32 MiB margin, `allocSlots` fails mid-sequence. The per-allocation probe
+(`GOINFER_A10_PROBE=1`, recording only) names it exactly:
 
-    cuMemAlloc_v2: CUDA_ERROR_OUT_OF_MEMORY  (typed-len, 67,403,776 bytes)
+    [a10] alloc #112:   67403776 B, free before  304283648
+    [a10] alloc #113:    8425472 B, free before  235077632
+    [a10] alloc #114:   33701888 B, free before  224591872
+    [a10] alloc #115:    4212736 B, free before  188940288
+    [a10] alloc #116:   67403776 B, free before  182648832   <- REFUSED
+    [a10] alloc #116 FAILED: requested 67403776 B, free immediately before = 182648832 B
+          (174.2 MiB), ratio free/request = 2.71 — cuMemAlloc_v2: CUDA_ERROR_OUT_OF_MEMORY
 
-The closed form does not predict this. Free before `allocSlots` was 3,710,058,496 and
-Requirement(34) is 3,649,044,480 — the total fits with **61,014,016 B to spare**. And the failing
-buffer is one of the 120 the form accounts for: 34 × 1,982,464 = 67,403,776, the `expGU.W` of some
-layer. By the model, free immediately before the *last* layer's `expGU.W` is **182,648,832 B**, or
-2.7× what was requested. **The model says it fits and the driver says it does not.**
+**The model is not wrong — 182,648,832 B is the figure derived from the closed form BEFORE the run,
+to the byte.** Free was **2.71×** the request and the driver refused. So the constraint is
+**per-allocation servability**: the remaining 174.2 MiB exists only as fragments smaller than the
+64.3 MiB wanted.
 
-The form is not wrong about totals — it matched measured consumption to the byte at 16, 30 and 34
-slots. So this is a **different** constraint: either per-allocation servability (contiguity, at a
-pressure the earlier struck fragmentation probe never reached — that probe was about slot buffers at
-much lower occupancy and does not carry here), or a driver overhead that grows near exhaustion and
-the quantum model does not capture.
+**This does not re-open the struck fragmentation item, and it does not contradict it.** That control
+compared heaps at *low* occupancy and found a fresh heap had *worse* contiguity than the slot-loaded
+one — a valid result at that pressure, and it says nothing about the tail of a sequence that has just
+consumed 3.5 GB in 116 allocations. The refutation was scoped and this is outside its scope.
 
-Why it matters beyond this cap: **`capSlots` can grant a cap whose allocations fail.** A5's search is
-correct about bytes and silent about servability. Two things currently mask it — the 384 MiB margin
-keeps the cap at 31, and the failure declines cleanly to the staged/CPU path rather than crashing
-(the decline printer and the executor-panic guard both did their job). Neither is a reason to leave
-it unmodelled, and A9-MARGIN is blocked on it.
+**Where it bites.** #116 is the **last MoE layer's `expGU.W`**, the largest buffer in the per-layer
+group (34 × 1,982,464). The sequence is 30 repetitions of {64.3, 8.0, 32.1, 4.0} MiB, so the biggest
+request in each group is issued into a heap the previous group has already carved up, and the last
+one is issued into the most carved-up heap of all.
 
-Next measurement, pre-registered: instrument `allocSlots` to record free VRAM before **every** slot
-allocation and report which index fails and what free was at that moment. That distinguishes "free
-was genuinely below the request" (the model is wrong near the boundary) from "free was ample and the
-allocation still failed" (contiguity). Read-only; recording, as with the A1 instrument.
+**Fix candidate: allocate largest-first across ALL layers, not group-by-group.** Issue all 30
+`expGU.W` while the heap is least fragmented, then all `expDown.W`, then the two scale buffers. Total
+bytes are unchanged, so `capSlots` needs no change and the granularity form still holds; only the
+issue order moves. Pre-registered test: at cap 34 with a 32 MiB margin, the current order fails at
+#116 and largest-first should complete — and if it does not, the ordering hypothesis is wrong and the
+remedy is a slack term rather than a permutation.
+
+*(The slab restructure remains struck. This is not that: it is a reordering of the same allocations,
+not one big buffer sub-allocated, and it costs nothing if it works.)*
+
+**Until it is fixed, the shipped configuration is safe by margin.** The 384 MiB margin keeps the cap
+at 31, where the tail allocation has ~500 MiB behind it, and a failure declines cleanly to the
+staged/CPU path rather than crashing. **A9-MARGIN stays blocked on this** — lowering the margin to
+128 MiB is what moves the cap into the region where servability starts to bind.
 
 **A9-RESID · The 589,824 B is baseline variance, not reservation variance** — `linux`, **CLOSED**
 

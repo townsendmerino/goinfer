@@ -618,15 +618,55 @@ func (r *cudaResident) allocSlots() error {
 			r.cacheSlots = fit
 		}
 	}
+	// A10 instrument, recording only. Read at CALL time, not package-init time, so a test's
+	// t.Setenv reaches it — the opposite mistake cost a full 26B run once already.
+	//
+	// The question it answers: allocSlots can fail mid-sequence on an individual buffer while the
+	// closed form says the TOTAL fits with room to spare (observed at 34 slots: a 67,403,776 B
+	// request refused with 61,014,016 B of predicted total slack, and 182,648,832 B predicted free
+	// at that point). Recording free before every allocation separates "free was genuinely below the
+	// request", which would mean the form is wrong near the boundary, from "free was ample and the
+	// allocation failed anyway", which is servability rather than capacity.
+	a10 := os.Getenv("GOINFER_A10_PROBE") != ""
+	allocN := 0
+	probe := func(nBytes int, alloc func()) {
+		if !a10 {
+			alloc()
+			allocN++
+			return
+		}
+		var freeNow uint64
+		if f, _, e := r.dev.Context().MemInfo(); e == nil {
+			freeNow = f
+		}
+		// The failure arrives as a panic from gpu's MustBuf, and the resident is discarded on
+		// decline — so the diagnostic has to be emitted HERE, before the panic propagates, or the
+		// run reports only that something declined.
+		defer func() {
+			if p := recover(); p != nil {
+				fmt.Fprintf(os.Stderr, "[a10] alloc #%d FAILED: requested %d B, free immediately "+
+					"before = %d B (%.1f MiB), ratio free/request = %.2f — %v\n",
+					allocN, nBytes, freeNow, float64(freeNow)/(1<<20),
+					float64(freeNow)/float64(nBytes), p)
+				panic(p)
+			}
+		}()
+		fmt.Fprintf(os.Stderr, "[a10] alloc #%3d: %10d B, free before %13d B\n", allocN, nBytes, freeNow)
+		alloc()
+		allocN++
+	}
 	for _, i := range moeLayers {
 		L := &r.layers[i]
 		for _, w := range []*cudaWQ{&L.expGU, &L.expDown} {
-			w.W = r.au32(r.cacheSlots * w.perExpertW)
-			w.ws16 = gpu.NewBufferLenOf[uint16](r.dev, r.cacheSlots*w.perExpertS)
+			wq := w
+			probe(r.cacheSlots*wq.perExpertW*4, func() { wq.W = r.au32(r.cacheSlots * wq.perExpertW) })
+			probe(r.cacheSlots*wq.perExpertS*2, func() {
+				wq.ws16 = gpu.NewBufferLenOf[uint16](r.dev, r.cacheSlots*wq.perExpertS)
+			})
 			// A1, recording only: the REQUESTED byte size of each allocation, so predicted
 			// consumption can be recomputed with per-buffer 2 MiB rounding instead of a raw sum.
 			r.dbgAllocSizes = append(r.dbgAllocSizes,
-				r.cacheSlots*w.perExpertW*4, r.cacheSlots*w.perExpertS*2)
+				r.cacheSlots*wq.perExpertW*4, r.cacheSlots*wq.perExpertS*2)
 		}
 		L.expCache = newExpertCache(r.nE, r.cacheSlots)
 	}
