@@ -1,5 +1,5 @@
 {
-  "aikit_version": "v1.17.0",
+  "aikit_version": "v1.17.1",
   "shared_sets": {
     "core": [
       "decoder/model.go",
