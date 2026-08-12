@@ -415,10 +415,31 @@ finding (the floor is not available for context setup either) but it means the a
 what it was built for. The in-process arm is blocked too: gocudrv exposes only primary-context
 retain, not `cuCtxCreate`.
 
-**What is established:** the floor is 151,191,552 B in every separate process measured, so it is a
-**stable per-device property, not something accumulating per process**. **What is not:** whether two
-*simultaneous* contexts each pay it — untestable with the current API surface, and it needs a
-`cuCtxCreate` binding before it can be asked.
+**RESOLVED 2026-08-12 — the reserve is PER-CONTEXT, and the derivation survives anyway because
+goinfer has exactly one.**
+
+The first attempt failed because the child drained to the floor and left the parent nothing for
+context setup. Giving it room — child balloons to ~300 MiB reported free and holds, parent reads free
+via `nvidia-smi` (no context needed), retains the primary context, reads again:
+
+    child holds, reporting          312,672,256 B free
+    parent BEFORE its context       313,524,224 B free
+    parent AFTER  its context       205,717,504 B free
+    DELTA — what a 2nd context cost 107,806,720 B  (102.8 MiB)
+
+**Per-process: a second context pays again.** So `slotMarginBytes` is **not a device constant** in
+general — N contexts cost roughly N × this.
+
+**Two quantities, not one, and they should not be conflated:** the unallocatable gap within a process
+is 151,191,552 B; a second context costs 107,806,720 B. They differ by 43,384,832 B, so the gap is
+**not simply "the context allocation"** — something else makes up the rest, and that part is still
+unattributed.
+
+**Why the derivation holds for goinfer regardless: it creates exactly ONE context, and cannot create
+a second.** `cuda/backend.go:463` is the only production call of `CreateSystemDefaultDevice`, aikit
+retains the **primary** context (`cuDevicePrimaryCtxRetain`, refcounted per device per process, so
+repeat calls do not make a second), and **`cuCtxCreate` is not bound by gocudrv at all**. The
+single-context premise is therefore enforced by the dependency, not merely by current usage.
 
 **Original entry follows.**
 
@@ -1079,11 +1100,18 @@ derivation exists:
 
 > **margin ≥ reporting gap + peak transient** = 151,191,552 + 137,822,208 = **289,013,760**
 
-against the shipped 402,653,184, which clears it by 113,639,424. The reporting gap is confirmed
-exactly; the peak transient is measured. **Pending, not settled:** whether the gap is per-device (one
-reserve, and the derivation holds as written) or per-context (N contexts cost N × 151 MiB, and the
-margin is not a constant at all). That is the context experiment above, and it needs a `cuCtxCreate`
-binding first.
+against the shipped 402,653,184, which clears it by 113,639,424.
+
+**BASIS — read this rather than the number alone.** The derivation rests on **single-context scoping**,
+not on a per-device result. The reserve was measured as **per-context** (a second context costs
+107,806,720 B), so the margin is not a device constant in general. It is a constant *for goinfer*
+because goinfer creates exactly one context and **cannot create a second** — `cuCtxCreate` is not
+bound by gocudrv, and aikit uses only the refcounted primary context.
+
+**Stated precondition: revisit if goinfer ever creates a second CUDA context**, or if a dependency
+gains `cuCtxCreate` and something uses it. Until then D3b's blocker is **resolved on that basis**, and
+the remaining A10 unknown — the 43,384,832 B by which the gap exceeds the context cost — does not
+block it, because the derivation uses the *measured gap*, not a model of its parts.
 
 **So: D3b is unblocked as a question and blocked as a change.** The precondition's second half
 ("proving it on the 26B") is met — A7 did that. The first half is not. Recorded here so the next
@@ -2033,6 +2061,7 @@ supports.
 | doc \| path:line | repo | line content |
 |---|---|---|
 | `docs/QUEUE.md|cuda/argmax_tiebreak_test.go:19` | goinfer | `func TestArgmaxTieBreak(t *testing.T) {` |
+| `docs/QUEUE.md|cuda/backend.go:463` | goinfer | `if r.dev, e = CreateSystemDefaultDevice(); e != nil {` |
 | `docs/QUEUE.md|cuda/backend.go:591` | goinfer | `if v, err := strconv.Atoi(os.Getenv("GOINFER_SPLITKV_MIN_KEYS")); err == nil && v >= 0 {` |
 | `docs/QUEUE.md|cuda/backend.go:836` | goinfer | `// Synchronise: the reservation must be a fact before free VRAM is read, and an async` |
 | `docs/QUEUE.md|cuda/resident.go:244` | goinfer | `// backend.go locals; the per-layer KV cache and UploadKV read r.layers[l].kvDim.` |

@@ -77,6 +77,19 @@ func TestA10ReportingGap(t *testing.T) {
 // What IS established: the floor is 151,191,552 B in every separate process measured, so it is a
 // stable per-device property rather than something accumulating per process. Whether two SIMULTANEOUS
 // contexts each pay it is untested and untestable with the current API surface.
+// probeFreeWithoutContext reads free VRAM from nvidia-smi, which needs no CUDA context — so it can
+// be read BEFORE this process retains one, which cuMemGetInfo cannot.
+func probeFreeWithoutContext(t *testing.T) int64 {
+	t.Helper()
+	out, err := exec.Command("nvidia-smi", "--query-gpu=memory.free", "--format=csv,noheader,nounits").Output()
+	if err != nil {
+		t.Skipf("nvidia-smi unavailable: %v", err)
+	}
+	var mib int64
+	fmt.Sscanf(strings.TrimSpace(strings.Split(string(out), "\n")[0]), "%d", &mib)
+	return mib << 20
+}
+
 func TestA10FloorIsPerProcessOrPerDevice(t *testing.T) {
 	if os.Getenv("GOINFER_A10_DRAIN_CHILD") != "" {
 		dev, err := CreateSystemDefaultDevice()
@@ -94,8 +107,20 @@ func TestA10FloorIsPerProcessOrPerDevice(t *testing.T) {
 			hold = append(hold, gpu.NewBufferLenOf[byte](dev, n))
 			return true
 		}
-		for size := int64(1) << 30; size >= (1 << 20); size /= 2 {
-			for alloc(int(size)) {
+		// Leave ~300 MiB reported free rather than draining to the floor. The first attempt drained
+		// completely, and the parent then could not create a context at all — context setup needs
+		// memory the floor does not provide, so the arm could not measure what it was built for.
+		const leave = 300 << 20
+		for size := int64(1) << 30; size >= (2 << 20); {
+			rem := read() - leave
+			if rem <= 0 {
+				break
+			}
+			if size > rem {
+				size = rem
+			}
+			if !alloc(int(size)) {
+				size /= 2
 			}
 		}
 		fmt.Printf("A10DRAINED free=%d\n", read())
@@ -136,28 +161,23 @@ func TestA10FloorIsPerProcessOrPerDevice(t *testing.T) {
 		t.Skip("child never reported draining — cannot run the discriminator")
 	}
 
+	// Read free BEFORE and AFTER retaining the primary context in this second process. The delta is
+	// what a context costs on a device that already has one — which is the whole question.
+	pre := probeFreeWithoutContext(t)
 	dev, err := CreateSystemDefaultDevice()
 	if err != nil {
-		t.Skipf("parent cannot open a device while the child holds: %v", err)
+		t.Fatalf("parent still cannot retain a context with ~300 MiB free: %v", err)
 	}
-	f, _, _ := dev.Context().MemInfo()
-	ok := func() (o bool) {
-		defer func() {
-			if recover() != nil {
-				o = false
-			}
-		}()
-		_ = gpu.NewBufferLenOf[byte](dev, 2<<20)
-		return true
-	}()
-	t.Logf("  child drained to           %13d B free (its own reading)", childFree)
-	t.Logf("  parent, separate process:  %13d B free", f)
-	t.Logf("  parent 2 MiB allocation:   %v", ok)
-	if ok {
-		t.Logf("  => the floor is PER-PROCESS/PER-CONTEXT. N contexts cost N x the reserve, and " +
-			"slotMarginBytes is not a constant that can be derived once.")
+	post, _, _ := dev.Context().MemInfo()
+	t.Logf("  child holds, reporting     %13d B free", childFree)
+	t.Logf("  parent BEFORE its context  %13d B free", pre)
+	t.Logf("  parent AFTER  its context  %13d B free", post)
+	t.Logf("  DELTA (what the 2nd context cost) %8d B (%.1f MiB)", pre-int64(post), float64(pre-int64(post))/(1<<20))
+	if pre-int64(post) > 100<<20 {
+		t.Logf("  => PER-PROCESS: the reserve is paid again per context, so N contexts cost N x it " +
+			"and slotMarginBytes is not a device constant.")
 	} else {
-		t.Logf("  => ONE DEVICE-WIDE reserve. The margin CAN be derived from it: " +
-			"margin >= reporting gap + peak transient.")
+		t.Logf("  => PER-DEVICE: a second context costs far less than the 151,191,552 B gap, so the " +
+			"gap is one device-wide reserve and the margin derivation is a constant.")
 	}
 }
