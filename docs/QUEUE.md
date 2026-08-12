@@ -774,11 +774,15 @@ command typed at a prompt**, not repo code. No gate polices that. The mitigation
 gate exists to replace — run `scripts/gpu_gate.sh` rather than hand-rolling the check — which is exactly what
 B0 makes worth doing.
 
-**B5 · `RELEASING.md` must reference `QUEUE.md`** — either box
+**B5 · `RELEASING.md` must reference `QUEUE.md`** — **DONE (2026-08-12).**
 
 A file nothing reads is accurate today and inert the first week nobody opens it — the pattern this
 queue was written to fix, applied to itself. A tag is the natural moment to review what is
-outstanding, and it is a checkpoint that already happens. Cheap; do it before it is needed.
+outstanding, and it is a checkpoint that already happens. **Landed:** `RELEASING.md` now has a
+"Queue-gated follow-ups — consult QUEUE.md at each tag" section (after the GitHub Release step),
+whose **first concrete customer is C3** (Metal consumer window fires on a release carrying an aikit
+bump). The abstract "reference QUEUE.md" and its first real trigger landed together, so the reference
+is not itself an inert line.
 
 **B2 · Gate reconciliation — one entry point** — `linux`
 
@@ -984,15 +988,20 @@ nothing would say so.**
   **latest published goinfer tag** and **record the exact dependency set it evaluated** (resolved
   `aikit` + `aikit/gpu` versions), flagged as the bounded fallback. A consumer window against a
   slightly stale set beats one that never runs — an auto-pickup with no bound is indistinguishable
-  from forgetting.
+  from forgetting. **The bound is a date with no in-repo reader, so it is carried EXTERNALLY:** Francis
+  is arranging a persistent 2026-08-26 reminder from the Cowork side. Do **not** assume the cron or a
+  session covers the bound — the cron expires at 7 days, well before it.
 - **Why deferred, not dropped:** the attached claims (73.6 tok/s, cgo-free/no-Xcode, 0.96×/0.74× vs
   Ollama-Metal, bit-identity) are version-sensitive and all originate in `aikit/gpu`; running mid-bump
   documents a set superseded within hours and forces a re-run. This surface **sank once already** and
   was first in its batch precisely to prevent that.
-- **Auto-pickup mechanism:** a **session-scoped** cron (daily) checks for the trigger and runs C3 the
-  moment a qualifying tag appears. That cron is best-effort — it dies with the session and **expires
-  after 7 days** — so **THIS entry is the durable pin**: if the cron is gone, the next `mac` session
-  honors the trigger + bound from here.
+- **Carriers, in order of durability:** (1) **`RELEASING.md`** carries the trigger as a release-process
+  line — *"if this release carries an aikit bump, C3 runs on macbook-arm64 against this tag; see
+  QUEUE.md C3"* — read by whoever cuts the tag, **at the moment it fires**, surviving every session
+  ending. This is the actual carrier (and B5's first concrete customer, landed with it). (2) a
+  **session-scoped** cron (daily, 7-day cap) runs C3 the moment a qualifying tag appears *while this
+  session lives* — a bonus accelerator, not the guarantee. (3) **this entry** is the record. The
+  fragile half — needing a session to outlive the wait — is retired: the release process carries it.
 
 **C4 · Soak testing** — either box
 

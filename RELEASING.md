@@ -105,6 +105,23 @@ Notes come from the CHANGELOG section for that version (Added/Changed/Fixed); ke
 marker honest even on a patch bump. `go get` resolves from the git tag via the proxy and needs no
 Release object — this step is for the rendered notes + the watcher notification.
 
+## Queue-gated follow-ups — consult QUEUE.md at each tag (B5)
+
+A tag is the natural checkpoint to review what is outstanding, and the release process is read at
+exactly the moment those triggers fire. **After pushing the tags, open `docs/QUEUE.md` and action any
+item whose trigger is a release or an aikit bump.** The queue is the list; this line is what makes a
+tagger look at it — a file nothing reads is inert the first week nobody opens it.
+
+First concrete customer:
+
+- **C3 · Metal consumer window.** If THIS release carries an **aikit bump** (`aikit` and/or `aikit/gpu`
+  increased vs the previous tag — the B-07 version-alignment step above is where you'd have seen it),
+  then **C3 runs on `macbook-arm64` against this tag**: an out-of-tree consumer evaluation of the
+  cgo-free Metal backend (build with no Xcode, decode tok/s vs the 73.6 claim, bit-identity, and
+  whether the tautological-gate shape is live on Metal). See `docs/QUEUE.md` → "C3 · Metal consumer
+  window" for the full scope, trigger, and bound. **This line is the durable carrier** — read by
+  whoever cuts the tag, dependent on no session or cron surviving.
+
 ## The standalone-build gate (make B-01…B-04 catchable next time)
 
 Add to CI, one job per submodule — **no workspace**, so `replace` and the borrowed root
