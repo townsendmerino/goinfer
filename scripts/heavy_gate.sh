@@ -32,6 +32,13 @@
 # Env:
 #   GOINFER_GATE_MODELS   dir holding the real checkpoints (default: $HOME/models)
 #   GOINFER_HEAVY_RUN     optional `go test -run` regex to narrow the run (default: all)
+#   GOINFER_HEAVY_PKGS    space-separated packages (default: "./decoder/ ./internal/serveapp/")
+#   GOINFER_HEAVY_TIMEOUT per-package `go test -timeout` (default 120m). The decoder tier loads ~15+
+#                         big real checkpoints SEQUENTIALLY and legitimately takes ~50-60 min; the old
+#                         40m default TIMED OUT (panic: test timed out) — which reads as a failure, not
+#                         a pass, so give it real headroom.
+#
+# EXPECT this to run ~1 HOUR on a full zoo — it is a release-qualification gate, not a smoke.
 set -u
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; cd "$ROOT"
@@ -67,7 +74,7 @@ for pkg in "${PKGS[@]}"; do
   # tee to a per-package log (not command substitution) so the raw output — including a panic or a
   # crash that never prints a "--- FAIL:" line — survives for inspection; PIPESTATUS keeps go's rc.
   pkglog="/tmp/heavy_gate_$(printf '%s' "$pkg" | tr '/.' '__').log"
-  go test "$pkg" -tags 'goinfer_testhooks realckpt' -run "$RUN" -v -count=1 -p 1 -timeout 40m >"$pkglog" 2>&1
+  go test "$pkg" -tags 'goinfer_testhooks realckpt' -run "$RUN" -v -count=1 -p 1 -timeout "${GOINFER_HEAVY_TIMEOUT:-120m}" >"$pkglog" 2>&1
   rc=${PIPESTATUS[0]}
   out="$(cat "$pkglog")"
   # top-level results only (subtest lines are indented; anchor at column 0)
