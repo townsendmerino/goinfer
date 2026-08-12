@@ -42,33 +42,76 @@ pre-1.0 and may change as new model families and quant formats land.
   The scaled cache gate had never executed since it was written: it named a fixture that did not
   exist. Generate with `scripts/pin_gemma4_moe_scaled.py`.
 
+### Performance
+
+All three are **bit-identical** — same operands, same order, no tolerance involved.
+
+- **Gemma's final-logit softcap runs in parallel: 1.43 ms → 640 µs** per sampled token at a 262,144
+  vocabulary. Elementwise, so each output depends only on the input at the same index and the split
+  cannot change a bit. Sampling path only — greedy reduces the argmax on-device and never paid it.
+  The threshold is measured rather than chosen: below ~32k elements the split is a *loss* (8,192
+  elements parallelise at 0.95×), so small vocabularies keep the serial path.
+- **MoE experts share one gate/up buffer pair per token instead of one per expert** — at top-k 8,
+  **16 allocations per token become 2**. The experts run sequentially, so the extra pairs were never
+  simultaneously live. Applied to both MoE forwards.
+- **W4A8 reuses the per-stream `Workspace`** instead of allocating a fresh one per projection per
+  token. It was excluded by a dispatch that tested "is this W8A8" rather than "does this weight have
+  a form that takes a workspace"; it now asks the second question.
+
 ### Fixed
-- **The MoE expert cache does NOT size itself, and the attempt to make it is reverted.**
-  A default of "request every expert, let `allocSlots` cap to measured free VRAM" shipped briefly
-  and **broke both real-26B gates**: it capped 128 slots to 34 (3.4 GB of 3.8 GB free) and the warm
-  forward then died with `cuLaunchKernel: CUDA_ERROR_OUT_OF_MEMORY`. The cap is not the safety net
-  it appears to be — its headroom is a flat 384 MB sized for per-token readback, while it must
-  leave room for everything the forward allocates afterwards, which scales with layers, context and
-  vocabulary. The default is back to `top_k`. Set `GOINFER_MOE_CACHE_SLOTS=48` to get the published
-  rate; the flat margin is the real defect and is tracked. *Superseded entry, kept for the record:*
-- ~~**The MoE expert cache now sizes itself.**~~ With `GOINFER_MOE_CACHE_EXPERTS=1` and no explicit
-  slot count, it asks for every expert and caps to measured free VRAM instead of defaulting to
-  `topK`. `topK` was the worst possible setting for the only situation the code runs in — the
-  cache degenerated to fresh-loading every routed expert every token (~714 MB/token on the 26B),
-  so anyone who enabled expert streaming and read no further got **~5 tok/s instead of ~17**, about
-  a third of the advertised rate. The safety this default appeared to provide was already provided
-  properly by `allocSlots`, which measures free VRAM and caps-and-logs. `GOINFER_MOE_CACHE_SLOTS=N`
-  still overrides. Bit-identity is unaffected (the scaled and tiny C′ gates stay green).
+- **The MoE expert cache sizes itself correctly on an 8 GB card, and the 26B decodes.** The cap was
+  a division over a raw byte sum; the CUDA driver charges each of four buffers per MoE layer its own
+  whole **2 MiB quantum**, so the requirement is a *step function* of the slot count. At 34 slots all
+  four tip at once — putting the requirement **203,816,960 B over free** — and the granted cap
+  allocated successfully and then could not launch. The forward produced **zero tokens**.
+  `capSlots` is now a **search** over the granularity form rather than a division (a division plus a
+  correction term is wrong at exactly the boundaries the failure lives on), and it is the single
+  implementation `allocSlots` calls. On this card the auto-cap moves **34 → 31** and the 26B decodes
+  coherently.
+- **The deferred first-launch reservation is paid before the cache is sized.** The on-GPU router
+  kernel declares per-thread scratch, and the driver backs it for the device's occupancy the *first
+  time that kernel runs* — **138,412,032 B retained, 289,013,760 B demanded at the launch itself**,
+  none of it visible to the free-VRAM reading the cap was computed from. Forcing that launch before
+  the reading makes the cap correct **by construction** instead of covered by a margin. Measured
+  after: nothing at all is consumed between the sizing decision and the end of the token.
+- **A launch that runs out of memory now names the kernel and both slot counts.** Previously a bare
+  `cuLaunchKernel: CUDA_ERROR_OUT_OF_MEMORY` with nothing tying it to the setting that caused it. It
+  now names the kernel, the **requested** count and the **effective** count after capping — they
+  differ once the cap fires, and naming only the effective one sends someone who set 48 to lower it
+  to 40, which caps to the same value and fails identically.
 - **A resident decline now always says why.** The reason was gated behind `GOINFER_RESIDENT_DEBUG`
   on all four backends, so a model silently moving its entire forward to CPU looked identical to
   one running resident. Unconditional now — one line at load.
 
 ### Docs
-- **The 26B-A4B result is disclosed as opt-in.** Reproducing it needs `GOINFER_MOE_CACHE_EXPERTS=1`
-  and `GOINFER_MOE_CACHE_SLOTS=48`; the README headline and the capability table were each correct
-  in isolation and composed into a claim no default build could reproduce. Also corrected: the
-  stale "Gemma 4 needs logit-softcap" reason (softcap landed in 9a-P2), and three hit-rate figures
-  (77.5% / 81.6% / 89.1%) that were three different measurements without their bases stated.
+- **The 26B-A4B section is retracted and rewritten.** It told users the slot count was "a manual
+  workaround for a safety net that is not holding". That was accurate and is no longer: the cap
+  holds. The section now records what the old behaviour was (34 slots allocates, then cannot launch),
+  names both costs the cap was missing with their measured figures, and gives a version test —
+  `capping to 33` has the fix, `34` does not. The example sets the slot count high and lets the cap
+  choose, because it can now be trusted to.
+
+### Verification
+
+- **int4 now has forward goldens** — 23 fixtures across 16 architectures, comparing int4 output
+  against *recorded int4 output*. int4 is the documented default quantization and nothing gated it:
+  every golden that ran was f32, so a change that was correct in f32 and wrong in int4 passed. This
+  is a note about what the gates cover, not a feature; nothing in the runtime changed because of it.
+  The goldens run that gates a core change went from 19 to 33 tests, 14 of them on a quantized path,
+  and now prints that composition alongside the count.
+
+### Known unfixed
+
+- **~150 MiB of reported-free VRAM is not allocatable**, on this driver and card. `cuMemGetInfo`
+  reports it as free and `cuMemAlloc` refuses it at *any* request size down to 1 MiB —
+  **151,191,552 B**, measured, cause unattributed. It is not fragmentation (a request 2.71× smaller
+  than free was refused) and not exhaustion.
+
+  This is why the 384 MiB slot margin cannot simply be lowered to recover the two slots the sizing
+  fix costs: **151,191,552 B of that margin is this floor, not slack.** A 128 MiB margin was measured
+  working on this card and is *below* the floor — it worked because the cap it produced happened to
+  leave enough leftover, which is luck rather than safety. The margin holds the correct value for the
+  wrong-looking reason, and lowering it needs the floor understood first.
 
 ## [v0.11.0] — 2026-08-10
 

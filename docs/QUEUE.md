@@ -882,10 +882,19 @@ slot-default commit that was **reverted** — and it touches `cuda/backend.go` a
 both of which A5 (`6091e7a`) and A9-FIX (`0103b49`) changed substantially. So this is a **rebase and
 re-verify**, not a merge.
 
-**Recommendation, with the evidence rather than a preference:** if the rebase onto post-A9-FIX main is
-clean, include D3 and ship one coherent MoE-cache story. If it fights, cut without it — the README
-stays env-var-based for one more version, which is a smaller cost than a contested rebase immediately
-before a tag.
+**OUT OF THE RELEASE. Do not attempt the rebase yet — the first question is not a merge question.**
+
+D3 was designed **while the cap computed the wrong value**. A5 fixed the cap. So before anything:
+**does the flag pair still have a reason?**
+
+- **If the flags exist to work around a cap that could not size the cache correctly** — that reason
+  is **gone**, and shipping them would document a control whose justification was removed. The item
+  **closes** rather than rebases.
+- **If they exist for legitimate explicit override** — a smaller cache than the correct cap, chosen
+  deliberately — they stay. But the **defaults and the docs were written against the old behaviour**
+  and both need re-deriving against the corrected cap.
+
+**A clean rebase would not distinguish those two.** Read the design, not the diff. Scheduled after G2.
 
 **D3 (original) · blocked on the freeze** — superseded
 
@@ -1537,7 +1546,13 @@ _(append with commit sha and date)_
 
 ## Sequencing — release BEFORE G2
 
-Agreed and recorded: **D3 (if its rebase is clean) → cut the release → G2 → B1, B2 → mac batch.**
+**Revised, and D3 is OUT of the release — no rebase attempted.**
+
+> **cut the release → G2 → D3 design read → B1, B2 → mac batch**
+
+The README change in this release is a **retraction**: the workaround language goes away because the
+cap holds. D3, if it survives its design read, is an *addition to adjacent text later* — not the same
+edit made twice, which was the argument for including it.
 
 A repo-wide mechanical diff immediately before a tag costs bisectability and reasoning room and buys
 the modernizers nothing. G2 is not urgent and never was; it is cleared, which is different from being
