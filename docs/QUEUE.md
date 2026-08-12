@@ -143,6 +143,22 @@ not one: the root module *and* `gpu/`, which are separate tag series that do not
 (see E6). A single `aikit_version` string cannot represent both, so the field likely becomes a small
 object. Until then the enforcement is the bump ritual in `docs/RELEASING.md`, i.e. a person.
 
+**THE SHAPE, which is why this is filed as a class and not a chore.** A hand-maintained constant that
+duplicates a value computed elsewhere is **sibling drift with a literal as one of the siblings**. The
+existing two shapes are a *check* naming one member and a *dispatch* naming one member (B6,
+`docs/parity-coverage-policy.md`); this is the third — a *constant* restating one. The recognition
+test is unchanged: **is this value maintained anywhere else?** If yes, the copy will drift, and being
+data rather than code buys it nothing — it buys it less, because no compiler, vet or lint reads it.
+The remedy is unchanged too: derive it.
+
+Two instances landed the same day, which is what promoted it from a chore to a class. This one, and
+`RELEASING.md`'s version-alignment step, which named the versions to align on and went stale
+**twice** before being rewritten to read them (`0898295`). Both were literals restating something a
+`go.mod` already knew.
+
+*Cross-reference:* B6 carries the check/dispatch shapes; this is the constant shape, and the three
+belong to one class.
+
 **B1 · Env-var lint** — either box
 
 `cc238c6` landed the `GINFER_`→`GOINFER_` rename (31 files, real work) and an env-var

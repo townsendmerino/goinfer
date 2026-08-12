@@ -270,10 +270,32 @@ The two shapes have opposite roles and it is worth keeping them straight: **the 
 CREATES divergences; the check shape FAILS TO CATCH them.** The same recognition test finds both, and
 the remedies differ:
 
+**And a third shape, found 2026-08-12: a CONSTANT restating a value maintained elsewhere.**
+
+> **A hand-maintained literal duplicates a value that is computed or declared somewhere else.
+> Sibling drift with a literal as one of the siblings.**
+
+Two instances landed the same day, which is what made it a shape rather than a chore. The manifest's
+`aikit_version` field is mixed into `deps_hash` — so changing it re-stales every family, which is the
+right design — but nothing *computes* it, and it read `v1.12.0` against a `go.mod` saying `v1.16.0`
+(QUEUE B7). And `RELEASING.md`'s version-alignment step named the versions to align on, going stale
+**twice** — once telling you to align on what had become a downgrade — before being rewritten to read
+them instead (`0898295`).
+
+Being **data rather than code buys it nothing, and in practice buys it less**: no compiler, `vet`,
+`staticcheck` or lint reads a literal in a JSON field or a Markdown checklist, so the copy drifts in
+total silence. The failure is also quieter than the other two shapes — a stale constant feeding a
+computed gate produces a **green that means "nothing asked"** rather than "nothing changed", which is
+the absence-of-signal shape one level down.
+
 | shape | remedy |
 |---|---|
 | check names one member | **enumerate** the members and assert the invariant on all of them |
 | dispatch names one member | **dispatch on the property**, not the member — here, "does this path have a reusable Workspace", not "is this W8A8" |
+| constant restates a value | **derive it** from the source of truth at build or test time, and fail on disagreement — never restate it |
+
+The recognition test is the same for all three, and for the constant shape it is one question: **is
+this value maintained anywhere else?**
 
 **Tractability, assessed before building a lint rather than after.** The two shapes automate very
 differently, and a lint doing only the tractable half would ship as though it covered the class —
