@@ -896,7 +896,9 @@ rebuild against current numbers on request.
 
 **E6 · aikit release** — `linux` or `mac`
 
-**Deliberately not cut.** `be049df`'s FMA fix is already released (contained in `gpu/v0.25.0`
+**Deliberately not cut.** `be049df` (aikit: *gpu(gemv): explicit `__fmaf_rn` in the quantized GEMV —
+the bit-identity contraction rule*, 2026-08-04, in six tags `gpu/v0.25.0`…`gpu/v0.27.0`) — its FMA fix
+is already released (contained in `gpu/v0.25.0`
 onward, and goinfer requires `gpu/v0.27.0`), and the unreleased diff is two test files plus
 comment-only edits with byte-identical PTX. The rule recorded: **a release needs a reason a consumer
 can receive**; test coverage, lint rules and CI are properties of the repository, not of the
@@ -1070,7 +1072,9 @@ the threshold and GOMAXPROCS ∈ {1, 3, 16}, with lengths that do not divide eve
 **P4 · Metal RoPE dispatched twice per layer — DONE, MEASURED NET-ZERO. Do not re-queue as a win.**
 
 Grid-merge (2→1 dispatch/layer) is bit-identical and already implemented on branch `metal-rope-merge`
-(`d682315`; snapshot-golden byte-exact). The audit re-surfaced this as "estimated a few %" **not knowing
+(`d682315`; snapshot-golden byte-exact) — **but that branch is not on origin and the commit resolves
+in no clone here, so this claim is unverifiable from any machine but the mac. Push it or restate the
+claim.** The audit re-surfaced this as "estimated a few %" **not knowing
 that branch existed** — a measurement that wasn't composed into the queue (the class this file exists to
 prevent). Dispatch census (2026-08-12) measured `rope` = 56/token = exactly 2/layer, so the merge
 removes 28/token = **8.3% of the 338 dispatches/token**. But re-A/B'd on the current binary
@@ -1241,7 +1245,7 @@ safetensors fixture), `qwen2_moe` and `gemma4-dense-scaled-{24,48,64}` (incomple
 **Also record with P6's 6.09 s price: cheap and thorough are different properties.** 6.09 s buys 19
 passes and 11 skips. The skips are not free — they are the coverage this item is about.
 
-**P7 · W4A8 allocates a fresh `Workspace` per projection per token** — `decoder/weightmat.go:202`
+**P7 · W4A8 allocates a fresh `Workspace` per projection per token** — **DONE `91f359f`**, verified by the int4 goldens
 
 **RESOLVED BY READING THE SIBLING — and the answer is neither branch as posed.** No concurrency
 argument is needed; the tree already contains one.
@@ -1267,7 +1271,13 @@ numeric protection is **f32-only**; P7 is an **int4** path. Lifting `6edd1ca` ad
 whatsoever to W4A8, so P7 would be **just as blocked at v1.0** as it is today. It is blocked on Q1(c)
 — authoring int4 goldens — and on nothing else.
 
-**Blocked ONLY by Q1.** The goldens give no numeric proof on this path — every golden that runs is
+**Landed once Q1(c) existed** — `91f359f`. `matmulInto` now dispatches on *"does this weight have an
+Into form that takes a Workspace"* rather than on `isW8A8`. All **23 int4 rows pass** across 16
+architectures; before `1d0d1ed` nothing in the tree could have told a correct W4A8 change from a
+broken one, and the goldens-gated refresh would have gone green either way. That is the whole
+argument for Q1(c), demonstrated on its first customer.
+
+**Historical: blocked ONLY by Q1.** The goldens give no numeric proof on this path — every golden that runs is
 f32, and W4A8 is precisely the path being changed — so the 6-second refresh would be **vacuous
 exactly where it matters**. P7 lands when Q1 gives int4 a golden, or behind a real T3 quant gate.
 
@@ -1372,6 +1382,7 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `7cc2f0d` | fix(parity,ci): refresh deps_hash after 38061b1's pread-staging core plumbing (non-numeric) |
 | `82b39cc` | docs(parity): document qwen3_5_moe's int8-vs-bf16 movement (v0.8.0 §1 — gate-backed pass) |
 | `8fecfad` | ci: heavy_gate.sh — a runner for the real-checkpoint tier that no CI job executes |
+| `91f359f` | fix(decoder): matmulInto dispatches on the property, not on W8A8 (P7) |
 | `93eb7d4` | feat(decoder): gpt-oss real-model path — batched-prefill fix + real gates |
 | `9624dd9` | chore(parity): refresh deps_hash for aikit v1.12.0 (goldens-proven non-numeric) |
 | `99b3f95` | chore(deps): pin aikit v1.12.0 — gpt-oss MXFP4 reproducible on main |
