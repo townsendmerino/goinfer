@@ -228,9 +228,22 @@ func matmul(be Backend, w *linalg.WeightMat, a, dst []float32, M int) {
 	be.MatmulBT(a, f32, dst, M, w.Cols(), w.Rows())
 }
 
-// matmulInto is matmul using a Workspace for the W8A8 path, so steady-state decode
-// quantizes the activation once into reusable scratch (no per-call allocation).
-// Other quant paths ignore ws and use matmul.
+// matmulInto is matmul using the caller's Workspace, so steady-state decode quantizes the activation
+// once into reusable scratch instead of allocating per call.
+//
+// P7 — this used to dispatch on `isW8A8(w)` and send EVERYTHING ELSE to matmul, which allocates a
+// fresh Workspace. So W4A8 never reached the per-stream Workspace its six call sites already hand
+// in, purely because the dispatch named one quantization instead of asking the question it meant.
+// That is the DISPATCH form of sibling drift (see parity-coverage-policy.md): a check that names one
+// member fails to CATCH divergences, a dispatch that names one member CREATES them.
+//
+// The question it meant is "does this weight have an Into form that takes a Workspace", so that is
+// what it asks now. Adding a third such quantization needs a case here and nothing else.
+//
+// Race-freedom is unchanged and does not need a new argument: `ws` is the per-stream Workspace on
+// decodeScratch, and "a cache is one generation stream, so the buffers are never shared
+// concurrently" (decoder/scratch.go). The per-call Workspace in matmul stays exactly as it was, for
+// callers that have no scratch at all.
 func matmulInto(ws *linalg.Workspace, be Backend, w *linalg.WeightMat, a, dst []float32, M int) {
 	if isW8A8(w) {
 		q8, scales, _, _ := w.Int8()
@@ -238,6 +251,13 @@ func matmulInto(ws *linalg.Workspace, be Backend, w *linalg.WeightMat, a, dst []
 			return
 		}
 		linalg.MatmulBTW8A8Into(ws, a, q8, scales, dst, M, w.Cols(), w.Rows())
+		return
+	}
+	if q4, q4s, group, ok := w.Int4(); ok {
+		// Same threshold matmul's fresh Workspace sets — the point of the reuse is to stop
+		// allocating one per projection per token, not to change how the work is fanned out.
+		ws.SetThreshold(int4ParThreshold)
+		linalg.MatmulBTW4A8Into(ws, a, q4, q4s, dst, M, w.Cols(), w.Rows(), group)
 		return
 	}
 	matmul(be, w, a, dst, M)
