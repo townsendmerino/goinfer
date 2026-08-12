@@ -148,9 +148,20 @@ from the tree, and document that a workspace is mandatory for cross-module devel
 
 The pre-tag campaigns (spec tree-attention in `forwardn.go`, the Cohere `lmHeadN` logit-scale
 path, gemma4_text merges) and the audit fixes touched hashed-core files. Before the tag:
-- `go test ./decoder -run ParityManifest` must be green. Mac non-numeric refreshes used
+- `go test ./decoder -run ParityManifest` must be green. Non-numeric refreshes use
   `scripts/refresh_parity_hashes.sh` (goldens-gated, `validated_at` preserved) — those prove
-  only the paths the *committed* fixtures exercise.
+  only the paths the *committed* fixtures exercise. **It runs on EITHER machine** (it ran on
+  `linux-62gb` repeatedly on 2026-08-12), not the mac — earlier text here calling it "the Mac
+  tool" was wrong. **Its proof trailer records the goldens count but NOT the execution arch**
+  (now `arch=` — see the script), so a *past* refresh with only `goldens=N` cannot tell you whether
+  its f32 goldens ran on arm64 or amd64.
+- **Arch exception for a float expression-rewrite.** When a bump carries an expression-rewrite to a
+  **float** path (e.g. a reworked matmul inner loop), the argmax+cosine goldens can pass on one arch
+  and breach on the other — arm64 fuses FMA where amd64's baseline does not (`parity-coverage-policy.md`,
+  "arch-scoped"). So the f32 goldens must be run **on arm64 explicitly**, and the run must **say so**;
+  an amd64-only refresh does not discharge it. (Concretely: `2e8dfb6`'s 19 f32 rows carry no arch, and
+  the aikit v1.17.0 f32 blocked-matmul rework is exactly such a rewrite — the arm64 read is owed. See
+  `docs/QUEUE.md` mac batch.)
 - **On the box:** run the real T3 suite (`scripts/parity_sweep.sh` / the `-tags cuda` real
   parity) on real checkpoints, then `-update` the manifest (bump `validated_at` + metrics) at
   the freeze commit. That is the true validation; the Mac refresh is not a substitute.

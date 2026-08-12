@@ -978,6 +978,17 @@ and none needs this one:
    snapshot-golden byte-exact" becomes checkable. It does not need merging to be safe.
 3. **B4's stash check** — `git stash list` in all four repos; the stash is absent here and unsearched
    there.
+4. **arm64 f32 goldens read — TAG-GATE, minutes.** The aikit **v1.17.0 f32 blocked-matmul rework** is
+   an expression-rewrite to a float path, still live in v1.17.1. The arch exception (arm64 fuses FMA,
+   amd64 baseline does not) means the f32 goldens must run on **arm64** to discharge it — an amd64
+   refresh does not. **Checked 2026-08-12: `2e8dfb6`'s 19 f32 rows carry NO arch** (the refresh trailer
+   didn't stamp one; now fixed to emit `arch=`), git notes are empty, and the manifest `machine` field
+   is the preserved *T3* machine (18 `linux-62gb` / 1 `macbook-arm64` / 4 null), not the refresh's. So
+   the machine is **not recorded** and cannot be read back — and every recorded pointer (today's box
+   refreshes, the 18/23 amd64 validation record) points away from arm64. Disposition: **owed, not
+   discharged.** Run `scripts/refresh_parity_hashes.sh` (or the f32 forward goldens) here on
+   `macbook-arm64`; the new `arch=arm64` trailer discharges it on the record. This is the **second**
+   tag-gate alongside the prefill measurement — both attach to the same aikit-bump change.
 
 **Still outstanding, and it needs the mac:** `metal-rope-merge` carrying `d682315`. It is not on
 origin and resolves in no clone here, so **P4's "already implemented, snapshot-golden byte-exact" is

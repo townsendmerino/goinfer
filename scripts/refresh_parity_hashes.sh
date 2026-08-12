@@ -154,12 +154,17 @@ changed=$(git diff --numstat -- testdata/parity_manifest.json | awk '{print $1}'
 echo "    staleness gate green; ${changed:-0} deps_hash line(s) refreshed, nothing else."
 
 head=$(git rev-parse --short HEAD)
+# The execution arch is load-bearing: an expression-rewrite to a float path can pass the
+# argmax+cosine goldens on one arch and breach on the other (arm64 fuses FMA; amd64 baseline does
+# not — see parity-coverage-policy.md "arch-scoped"). Stamping it here is the difference between a
+# later reader being able to READ which arch ran the f32 goldens vs having to infer it (or re-run).
+arch="$(go env GOARCH 2>/dev/null || uname -m)"
 echo
 echo "==> PROOF (paste into the commit body — makes the exception auditable):"
 echo "    non-numeric core refresh; validated_at preserved."
-echo "    forward goldens green at ${head}: ${pass} passed / ${skip} skipped / 0 failed."
+echo "    forward goldens green at ${head} on arch=${arch}: ${pass} passed / ${skip} skipped / 0 failed."
 echo
-echo "    Deps-Hash-Refresh: ${head} goldens=${pass}"
+echo "    Deps-Hash-Refresh: ${head} goldens=${pass} arch=${arch}"
 echo
 echo "    (Trailer renamed from Parity-Deps-Refresh, which had been used for dependency bumps too."
 echo "     It is now documentation only — the recurrence counter reads the manifest diff, not this.)"
