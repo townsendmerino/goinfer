@@ -285,7 +285,7 @@ def path_repos():
     false red: searching one place and reporting absence is a claim the search was not entitled to
     make.
     """
-    roots = [(pathlib.Path(r).name, pathlib.Path(r)) for r in sibling_repos()]
+    roots = [(repo_name(r), pathlib.Path(r)) for r in sibling_repos()]
     # A cross-repo path citation resolves against the VERSION GOINFER REQUIRES, not against whatever
     # the sibling checkout happens to be on. Those are different questions and only one of them is
     # about goinfer.
@@ -304,7 +304,7 @@ def path_repos():
     for mod, ver in required_modules().items():
         d = modcache_dir(mod, ver)
         if d is not None:
-            roots.insert(0, (pathlib.Path(mod).name, d))
+            roots.insert(0, (repo_name(d), d))
     return roots
 
 
@@ -314,6 +314,31 @@ def is_modcache(base) -> bool:
         return bool(r) and str(base).startswith(str(r))
     except Exception:
         return False
+
+
+def repo_name(path) -> str:
+    """The repo's NAME, from its go.mod module line — not from the directory it happens to sit in.
+
+    A clone into a directory not called "goinfer" made path_repo_present("goinfer") false, so every
+    goinfer-recorded citation was SKIPPED: 116 of them, reported as a clean green. CI checks out into
+    a directory matching the repo, so it was correct there and wrong anywhere else — one more verdict
+    that depended on the environment rather than on the citations.
+
+    `module github.com/townsendmerino/goinfer` is in go.mod regardless of what the checkout is
+    called, so the last element of the module path is the stable answer. Directory name remains the
+    fallback for a root with no go.mod (the aikit module cache directory is `aikit@v1.17.1`, and its
+    own go.mod names it, so it resolves correctly too).
+    """
+    p = pathlib.Path(path)
+    gm = p / "go.mod"
+    try:
+        m = re.search(r"^module\s+(\S+)", gm.read_text(), re.M)
+        if m:
+            return m.group(1).rstrip("/").split("/")[-1]
+    except OSError:
+        pass
+    name = p.name
+    return name.split("@")[0]
 
 
 def path_repo_present(name: str) -> bool:
@@ -335,7 +360,7 @@ def commit_repo_present(name: str) -> bool:
     predicates" — the merge was correct. It is that a predicate answers ONE question, and adding a
     root that can answer only half of them re-split the question without re-splitting the predicate.
     """
-    return any(pathlib.Path(r).name == name and (pathlib.Path(r) / ".git").exists()
+    return any(repo_name(r) == name and (pathlib.Path(r) / ".git").exists()
                for r in sibling_repos())
 
 
@@ -703,7 +728,7 @@ def main() -> int:
     print(f"  CROSS-REPO RESOLUTION: {nmc} path lookup(s) answered from the MODULE CACHE at the "
           f"version go.mod requires, {nco} from a checkout.")
     for mod, ver in sorted(required_modules().items()):
-        name = pathlib.Path(mod).name
+        name = mod.rstrip("/").split("/")[-1]
         cached = modcache_dir(mod, ver) is not None
         sib = commit_repo_present(name)
         state = ("module cache @ " + ver) if cached else ("sibling checkout" if sib else "NOWHERE")

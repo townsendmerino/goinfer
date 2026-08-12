@@ -40,11 +40,20 @@ downstream is queued behind.
    A release characterizing one phase while silently carrying an unmeasured change to another is a
    **claim by omission**, and this repo has a rule against exactly that.
 2. **C3, the Metal consumer window** — the largest completely uncovered surface in the project,
-   which has **already sunk once**. Its trigger is any release tag carrying an aikit bump; this bump
-   qualifies. So C3 cannot fire until a tag is cut, and the tag cannot honestly be cut until prefill
-   is measured.
+   which has **already sunk once** — **if the tag is numbered `v0.13.0` or above.**
 
-**One unmeasured phase, two things held.** That is the whole argument for its position.
+**The C3 half is CONDITIONAL and was stated too strongly when this was filed.** C3's trigger is *"the
+next goinfer RELEASE TAG (≥ v0.13.0) that carries an AIKIT BUMP"*, and the version floor is part of
+it. A `v0.12.1` patch carrying this bump fires **neither** C3 **nor** E1's parity backfill (E1
+reserves that for v0.13.0):
+
+| next tag | P10 owed? | C3 fires? | E1 backfill owed? |
+|---|---|---|---|
+| `v0.12.1` (patch) | **yes** — the f32 rework ships either way | no | no |
+| `v0.13.0` | **yes** | **yes** | **yes** |
+
+**P10 is owed under both**, which is why it is the critical path regardless of the numbering. Whether
+it is holding one thing or three is a decision nobody has taken — see E1.
 
 **Design, pre-registered in full at `docs/measurements/aikit-v1.17.1-prefill-ab.md` before any
 sample exists.** Same discipline as the decode A/B, for the same reason: **v1.16.0 against v1.17.1**
