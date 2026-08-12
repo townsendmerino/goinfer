@@ -117,6 +117,32 @@ rate, ~15.0–15.8 tok/s**.
 
 ### B. Enforcement gaps — things that exist but aren't composed into a decision
 
+**B7 · `aikit_version` is a hand-maintained input to a computed gate** — `linux`, **found 2026-08-12
+during the v1.17.0 bump**
+
+`testdata/parity_manifest.json` carries an `aikit_version` field that is **mixed into `deps_hash`**,
+so the staleness gate re-stales every family when it changes. That is the right design and it works.
+The gap is that **nothing computes the field** — it is typed in by hand. At the v1.17.0 bump it read
+`v1.12.0` against a `go.mod` that said `v1.16.0`.
+
+**What the drift means, stated precisely, because it is narrower than it first looks.** An aikit bump
+that does not touch the field changes no manifest input, so `deps_hash` does not move, so the
+staleness gate stays green and **no goldens run**. At least one prior bump went through that way.
+The gate did not fail; it was never given the input that would have made it fire. This is the
+absence-of-signal shape — a green that means "nothing asked" rather than "nothing changed".
+
+**Why it is a B and not an A.** goinfer's numerics did not silently drift: aikit's own bit-identity
+discipline (`be049df`, `TestKernelFMALint`) is what held, and the v1.17.0 bump was checked by hand
+and by a goldens run. So this is a *missing interlock*, not a live defect. It also means the fix
+cannot be "trust the field more".
+
+**The fix is to derive it.** Read the aikit `require` lines out of the `go.mod` files at manifest-
+build time and fail if they disagree with each other or with the recorded value — the same
+derive-both-sides rule `scripts/selector_coverage.py` follows for its selectors. Two versions matter,
+not one: the root module *and* `gpu/`, which are separate tag series that do not track each other
+(see E6). A single `aikit_version` string cannot represent both, so the field likely becomes a small
+object. Until then the enforcement is the bump ritual in `docs/RELEASING.md`, i.e. a person.
+
 **B1 · Env-var lint** — either box
 
 `cc238c6` landed the `GINFER_`→`GOINFER_` rename (31 files, real work) and an env-var
@@ -1311,7 +1337,35 @@ Blocked on nothing now. They need **rebuilding, not editing**: written for v0.9.
 and predating the `top_k` guidance and the §5 bit-identity correction. Claude holds them and will
 rebuild against current numbers on request.
 
-**E6 · aikit release** — `linux` or `mac`
+**E6 · aikit release** — `linux` or `mac` — **SUPERSEDED BY EVENTS 2026-08-12, and the deferral was
+right on its own terms**
+
+aikit cut `v1.17.0` / `gpu/v0.28.0` (`ada417e`), and goinfer is on it (`4dfefee`). E6 is closed by the
+release happening, not by the argument below being withdrawn — and the release **satisfied E6's own
+criterion** rather than overriding it. The reason a consumer can receive is `linalg.MatmulBTW8A8Pre`
+gaining 8-column blocking: goinfer never calls it directly, but `MatmulBTW8A8Into` now delegates to
+it, so every W8A8 decode matmul goes through changed code. That is a consumer-visible change. The
+gates and CI that E6 declined to release *for* rode along as line items, which is exactly the shape
+E6 predicted for them.
+
+**The FMA fix was never the pending part, and the bump re-confirmed it.** `be049df` is an ancestor of
+`gpu/v0.27.0`, so goinfer had already been running that PTX; across `gpu/v0.27.0..gpu/v0.28.0` the
+quantized GEMV PTX is **byte-identical** and `gpu/gemv_quant.cu` changes by three lines, all comment.
+E6's read of its own diff was accurate.
+
+**A measurement trap found while checking this, worth more than the closure.** `git diff
+v1.16.0..v1.17.0 -- gpu/` reports the quantized GEMV PTX changed by 72 lines. It is a **misleading
+comparison**, and it looks authoritative. `gpu/` is a nested module with its **own tag series**, and
+the two series do not track: `v1.17.0` and `gpu/v0.28.0` are the same commit, but `v1.16.0`
+(`a79303e`) and `gpu/v0.27.0` (`4642b7c`) are not. Diffing a nested module across the *parent's* tags
+therefore spans commits the consumer already had — here it re-reports `be049df`, weeks-old and
+already shipped, as if the pending bump introduced it. **Diff a nested module across ITS OWN tags.**
+This is the Environment class from the measurement-shape list (docs/parity-coverage-policy.md) with a
+new instance: not where it ran, but which boundary it was measured across. It was caught only because
+72 changed lines contradicted a claim already written down — an expectation, not an instrument. There
+is no gate for this; the countermeasure is the rule in bold.
+
+The original reasoning, kept because the rule in it outlives the decision:
 
 **Deliberately not cut.** `be049df` (aikit: *gpu(gemv): explicit `__fmaf_rn` in the quantized GEMV —
 the bit-identity contraction rule*, 2026-08-04, in six tags `gpu/v0.25.0`…`gpu/v0.27.0`) — its FMA fix
@@ -1488,6 +1542,13 @@ largest single item in the group. Frozen core, and it needs a new aikit row-pitc
 
 **P2 · Scalar `int8→f32` widen on the LM head** — aikit `linalg/quant.go:113`, **condition VERIFIED,
 and it does not hold as a drop-in**
+
+**STILL OPEN after aikit `v1.17.0` — checked, not assumed (2026-08-12).** The v1.17.0 bump did land
+8-column blocking in `MatmulBTW8A8Pre`, which is close enough to this entry to look like it. It is
+not: `q8Span` is **unchanged** between `v1.16.0` and `v1.17.0`, still widening with
+`deq[k] = float32(bq[k])` and still applying the scale after the dot. The blocking landed in a
+different function, so neither the ~1.7 ns/element cost nor the scale-placement hazard below has
+moved. Nothing here is superseded; the entry stands as written.
 
 Not frozen, so the work is unblocked. **And no decision gets reversed: merge into aikit `main` and
 leave it UNRELEASED.** The `require` bump is already planned for v1.0, so the win lands on the
@@ -1898,7 +1959,7 @@ groups were seeded from conversation, and **the rate is much lower**, which is t
 | E3 freeze re-declaration | **DONE `cda8cfe`** | re-declared as a proof requirement, with decider and date |
 | E4 `scripts/bench_compare.sh` fix or retire | **FIXED** | it now opens with *"goinfer's OWN numbers only. NOT a peer comparison"* and points at `scripts/bench_peer.py`, which drives both sides |
 | E5 promo drafts | **unverifiable** | held in conversation, nothing in the tree to check |
-| E6 aikit release | **open by decision**, not by omission | — |
+| E6 aikit release | **CLOSED 2026-08-12** — superseded by events, not by reversal | aikit cut `v1.17.0`/`gpu/v0.28.0` (`ada417e`); goinfer is on it (`4dfefee`). The release met E6's own "a reason a consumer can receive" test |
 | G1 LFM2.5 family | **open** | no LFM2 code in the tree |
 | G2 `go fix` modernizers | **DONE `3d6ae1e`** | — |
 
@@ -1934,7 +1995,7 @@ D3's refresh in the rebase worktree and getting `goldens=7`.)*
 | D2 | design recorded in-entry, no branch | matches; no external source to drift from |
 | E2 | `testdata/parity_manifest.json` | matches — the four families are still `pending` |
 | E4 | `scripts/bench_compare.sh` | **stale** — the entry says "status unconfirmed, may still measure the two sides differently"; the script now refuses that use and points at `scripts/bench_peer.py`. Corrected in the status sweep above |
-| E6 | aikit tree + `gpu/v0.27.0` | matches |
+| E6 | aikit tree + `gpu/v0.27.0` | **now stale by design** — the tag it pinned is superseded by `gpu/v0.28.0`. Re-checked at the bump: `be049df` is an ancestor of `gpu/v0.27.0`, and across `gpu/v0.27.0..gpu/v0.28.0` the quantized GEMV PTX is byte-identical |
 | G1 | `docs/scoping-lfm2.md` | matches |
 | P1, P2, P4, P5, P8 | audit lines + the cited source | match; each carries a measured figure or an explicit ESTIMATE label |
 
@@ -2076,7 +2137,9 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `2e91607` | test: refresh parity deps_hash — non-numeric core-file drift (un-reds main) |
 | `38061b1` | perf(gemma4-paging): pread expert nibbles straight into the slot buffers |
 | `3d6ae1e` | chore: go fix modernizers, one deterministic pass (G2) |
+| `4642b7c` | [aikit] gpu(metal): Device.MaxThreadgroupMemoryLength() — tile-memory limit (goinfer M-11) |
 | `4c26a58` | perf(cuda): parallelise the Gemma final-logit softcap, bit-identical (P3) |
+| `4dfefee` | chore(deps): aikit v1.16.0 -> v1.17.0, aikit/gpu v0.27.0 -> v0.28.0 |
 | `588052b` | serve: drain in-flight requests before freeing an unloaded model (fixes the leak safely) |
 | `6091e7a` | fix(cuda): size the expert cache by SEARCH over the granularity form (A5) |
 | `6edd1ca` | parity: make "validated" MEAN T3 — method-tier gate + honest experimental tier (D2, pre-freeze) |
@@ -2093,6 +2156,8 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `99b3f95` | chore(deps): pin aikit v1.12.0 — gpt-oss MXFP4 reproducible on main |
 | `9e5f8fa` | fix(quant): reject --quant that conflicts with a prequant .giw at startup (T1-7) |
 | `9ef908c` | docs(branch-note): re-derive against the corrected cap (D3 design read) |
+| `a79303e` | [aikit] release: prepare v1.16.0 — mmap SpanCache eviction-policy knob |
+| `ada417e` | [aikit] scripts: ptx-repro is n/a on darwin, keyed on the PLATFORM not on NVRTC's absence |
 | `bd08936` | fix(gate): cannot-search is not not-found; cross-gate composition; B7 sweep |
 | `be049df` | [aikit] gpu(gemv): explicit __fmaf_rn in the quantized GEMV — the bit-identity contraction rule |
 | `c6600fc` | audit C-14: argmax index tie-break (match CPU lowest-index on exact ties) |
@@ -2273,6 +2338,7 @@ than papered over.
 | `scripts/parity_sweep.sh` | goinfer |
 | `scripts/queue_citation_lint.py` | goinfer |
 | `scripts/refresh_parity_hashes.sh` | goinfer |
+| `scripts/selector_coverage.py` | goinfer |
 | `scripts/sweep_composition.py` | goinfer |
 
 <!-- /CITATION-INDEX -->

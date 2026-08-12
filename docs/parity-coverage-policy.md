@@ -352,6 +352,15 @@ Three shapes:
   goldens refresh reported 7 passed / 35 skipped in a fresh worktree against 33 / 9 in the checkout,
   an artifact of gitignored fixtures. *Recognition test:* **if this ran one environment over, would
   the answer change?** Same test as Position, applied to the surroundings rather than the placement.
+  A third instance (2026-08-12) moves the wrong context from *where* to *across what*: `git diff
+  v1.16.0..v1.17.0 -- gpu/` reported aikit's quantized GEMV PTX changed by 72 lines, when across
+  `gpu/v0.27.0..gpu/v0.28.0` — the tags goinfer actually consumes — it is byte-identical. `gpu/` is a
+  nested module with its **own tag series**, and the two series do not track: the new tags are the
+  same commit, the old ones are not. Diffing a nested module across the *parent's* tags spans commits
+  the consumer already had, re-reporting a weeks-old shipped change as new. **Diff a nested module
+  across its own tags.** *Recognition test for the variant:* is the boundary I measured across the
+  same boundary the consumer sees? Nothing gates this; it was caught only because the number
+  contradicted a claim already written down.
 - **Position** — the probe sits on one side of the event and reports the other side's state.
   *Recognition test:* if the probe were one line earlier or later, would the number change? If yes,
   the position is part of the claim and has to be stated with it.
