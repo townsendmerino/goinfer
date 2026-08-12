@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"reflect"
 	"strings"
 	"unsafe"
 
@@ -351,7 +352,10 @@ type cudaResident struct {
 	logitsPinned *HostBuffer[float32]
 	logitsHost   []float32 // zero-copy view of logitsPinned
 	setupErr     error     // first alloc/upload error during BuildResident's setup job
-
+	// cacheSlotsReq is the slot count the OPERATOR asked for, before capping. Kept so a failure
+	// can name both: telling a user who set 48 to lower it below the capped 34 is advice they
+	// can act on; telling them to lower it below 48 is not.
+	cacheSlotsReq int
 }
 
 // alloc/upload helpers — called ONLY inside the setup job (r.dev's context current on the
@@ -954,6 +958,9 @@ func onecfg(b, sh int) LaunchConfig {
 func (r *cudaResident) launch(f Pipeline, cfg LaunchConfig, args ...KernelArg) error {
 	r.launchN++ // per-token dispatch count (diagnostic: graph-capturable-fraction bound)
 	e := r.stream.Launch(f, cfg, args...)
+	if e != nil {
+		e = r.describeLaunchErr(f, e)
+	}
 	if e != nil && r.launchErr == nil {
 		// Sticky: launchToken's dense hot chain discards many launch errors (`_ = r.launch(...)`),
 		// so a config error (bad shared-mem size, bad args) would let the token "succeed" with
@@ -962,6 +969,83 @@ func (r *cudaResident) launch(f Pipeline, cfg LaunchConfig, args ...KernelArg) e
 		r.launchErr = e
 	}
 	return e
+}
+
+// pipeName recovers the struct-field name a Pipeline was bound to, by scanning cudaResident's
+// fields for one equal to it. Pipeline is a single-pointer struct, so it compares by identity.
+//
+// aikit's Pipeline carries no name (it is `struct{ f *gc.Function }`) and lives in another module,
+// so the name cannot come from the value itself — but goinfer binds every pipeline to a named
+// field, which makes the mapping recoverable here. Error path only; the reflection cost never
+// touches a working launch.
+func (r *cudaResident) pipeName(f Pipeline) (name string) {
+	// TOTAL BY CONSTRUCTION. This runs only when something has already failed, so it must not be
+	// able to turn a diagnosable error into a panic — not on a nil receiver, not on an unexported
+	// field, not on a pipeline held somewhere other than a named field. The recover is the
+	// guarantee; "all 48 sites resolve today" is an observation about today.
+	name = "?"
+	defer func() {
+		if recover() != nil {
+			name = "?"
+		}
+	}()
+	if r == nil {
+		return "?"
+	}
+	v := reflect.ValueOf(r).Elem()
+	t := v.Type()
+	pt := reflect.TypeOf(Pipeline{})
+	for i := 0; i < t.NumField(); i++ {
+		if t.Field(i).Type != pt {
+			continue
+		}
+		fv := reflect.NewAt(pt, unsafe.Pointer(v.Field(i).UnsafeAddr())).Elem().Interface().(Pipeline)
+		if fv == f {
+			return t.Field(i).Name
+		}
+	}
+	return "?"
+}
+
+// describeLaunchErr turns a bare driver status into something that names what ran out and what the
+// operator can do about it.
+//
+// The motivating case: a 26B at 34 expert-cache slots died with exactly
+// `cuLaunchKernel: CUDA_ERROR_OUT_OF_MEMORY` — the API call, not the kernel, and no connection to
+// the setting that caused it. A day of investigation started from that string. The decline floor
+// added alongside does NOT cover this: it fires below topK, and this failed at 34 slots with topK
+// of 8, so the path most in need of an honest failure had none.
+//
+// Message content only — the error is wrapped with %w, so type and classification are unchanged.
+func (r *cudaResident) describeLaunchErr(f Pipeline, e error) error {
+	name := r.pipeName(f)
+	// Reframe an out-of-memory launch against the expert cache when it is on: the slot count is by
+	// far the largest operator-controlled VRAM consumer on this path. Deliberately does NOT suggest
+	// a specific safe value — the computation that would produce one (capSlots) is the thing under
+	// suspicion, and printing a number from it would launder a suspect figure into advice.
+	if r.cacheExperts && strings.Contains(e.Error(), "OUT_OF_MEMORY") {
+		// Name the REQUESTED and EFFECTIVE counts both. They differ when the cap fires, and naming
+		// only the effective one sends a user who set 48 to lower it to 40 — which caps to the same
+		// value, fails identically, and makes the advice look wrong.
+		slots := fmt.Sprintf("%d slots/layer", r.cacheSlots)
+		if r.cacheSlotsReq != r.cacheSlots {
+			slots = fmt.Sprintf("%d slots/layer requested, capped to %d", r.cacheSlotsReq, r.cacheSlots)
+		}
+		// Deliberately NO free-VRAM reading here. This site is reached only after Launch has
+		// returned non-nil, so any figure taken here is a POST-failure state and cannot be
+		// distinguished by the reader from a pre-launch one — the number's meaning depends on where
+		// the probe sits, which is not something an error string can carry. It was carrying one, and
+		// the 64 MiB apparently "released" between two launches was an artifact of exactly that.
+		// Free VRAM belongs to instrumentation, which can state its own probe position.
+		//
+		// Also deliberately NOT suggesting a specific safe slot count: the computation that would
+		// produce one is the thing under suspicion whenever this fires, and printing a number from
+		// it would launder a suspect figure into advice.
+		return fmt.Errorf("launch %s: out of device memory with the expert cache at %s — the slot "+
+			"count is the likely cause; lower GOINFER_MOE_CACHE_SLOTS below the effective value "+
+			"above and retry: %w", name, slots, e)
+	}
+	return fmt.Errorf("launch %s: %w", name, e)
 }
 
 // capVec copies the first n elements of a device vector to host into dst[l] (diagnostic

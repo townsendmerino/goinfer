@@ -426,9 +426,11 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	// model at all. Raising it again requires fixing the margin FIRST and proving it on the 26B,
 	// which is the test that binds; no fixture is large enough for the cap to engage.
 	r.cacheSlots = topK
+	r.cacheSlotsReq = topK
 	if r.cacheExperts {
 		if v, err := strconv.Atoi(os.Getenv("GOINFER_MOE_CACHE_SLOTS")); err == nil && v > topK {
 			r.cacheSlots = v
+			r.cacheSlotsReq = v
 			if nE > 0 && r.cacheSlots > nE {
 				r.cacheSlots = nE
 			}
