@@ -470,29 +470,90 @@ func (r *cudaResident) slotBytesPerLayer(layer int) int {
 	return (gu.perExpertW+dn.perExpertW)*4 + (gu.perExpertS+dn.perExpertS)*2
 }
 
+// slotStrides is the per-slot byte size of each buffer allocated per MoE layer, IN THE ORDER AND
+// GROUPING allocSlots allocates them. The sum is slotBytesPerLayer; the split matters because the
+// driver charges each allocation its own whole quanta, so the total is not a function of the sum.
+func (r *cudaResident) slotStrides(layer int) []int64 {
+	if layer < 0 || layer >= len(r.layers) {
+		return nil
+	}
+	gu, dn := &r.layers[layer].expGU, &r.layers[layer].expDown
+	return []int64{
+		int64(gu.perExpertW) * 4, int64(gu.perExpertS) * 2,
+		int64(dn.perExpertW) * 4, int64(dn.perExpertS) * 2,
+	}
+}
+
+// allocQuantumBytes is the driver's allocation granularity, MEASURED (cuda/allocgran_test.go:
+// 5 MiB -> 6, 6 -> 6, 9 -> 10, so 2 MiB granular and NOT next-power-of-two, which would over-charge
+// by up to 2x on any buffer not sitting just above a power of two).
+const allocQuantumBytes = 2 << 20
+
+// slotRequirement is the device VRAM n slots/layer actually costs: each buffer rounded up to its own
+// quantum, times the layer count. Monotone non-decreasing in n, which is what makes capSlots'
+// binary search valid.
+func slotRequirement(n int, nLayers int64, strides []int64) int64 {
+	var perLayer int64
+	for _, p := range strides {
+		b := int64(n) * p
+		perLayer += (b + allocQuantumBytes - 1) / allocQuantumBytes * allocQuantumBytes
+	}
+	return nLayers * perLayer
+}
+
 // slotMarginBytes is the launch-time headroom the cap must leave free. NOTE it is currently the
 // only unmeasured constant in this path: whether 384 MiB is the right figure is open, and the
 // per-layer allocation overhead it must absorb has not yet been measured within a single process.
 const slotMarginBytes = 384 << 20
 
-// capSlots is the sizing arithmetic, factored out of allocSlots so it can be gated without a 26B
-// (cuda/slotcap_test.go). Returns the slot count to use, or decline=true when not even topK fits.
+// capSlots is the sizing arithmetic, and it is a SEARCH rather than a division.
 //
-// Pure function of (free VRAM, layer count, bytes per slot per layer, topK, request), so synthetic
-// free-VRAM figures exercise a branch that in production only binds on models far larger than any
-// fixture — the exercised-but-never-triggered shape.
-func capSlots(free, nLayers, perLayer int64, topK, request int) (slots int, decline bool) {
-	if nLayers <= 0 || perLayer <= 0 {
+// Per-buffer 2 MiB rounding makes the requirement a step function of the slot count, and
+//
+//	fit := (free - slotMarginBytes) / nLayers / perLayer
+//
+// cannot invert a step function — it is wrong precisely at the boundaries the failure lives on. On
+// the real 26B that division returned 34, where the true requirement at 34 exceeds free by
+// 203,816,960 B: at n=34 the ratio n*123904/2MiB crosses 2 and all four buffers tip a quantum AT
+// ONCE, a 4-quanta step. The forward then generated zero tokens. A division plus a correction term
+// would reproduce the same class one boundary over, so there is no fudge factor here.
+//
+// The requirement is monotone non-decreasing in n, so bisect it. Pure function of its inputs, so
+// synthetic free-VRAM figures exercise a branch that in production binds only on models far larger
+// than any fixture — the exercised-but-never-triggered shape.
+//
+// Returns the slot count to use, or decline=true when not even topK fits.
+func capSlots(free, nLayers int64, strides []int64, topK, request int) (slots int, decline bool) {
+	if nLayers <= 0 || len(strides) == 0 {
 		return request, false
 	}
-	fit := int((free - slotMarginBytes) / nLayers / perLayer)
-	if fit < topK {
-		return fit, true
+	var any bool
+	for _, p := range strides {
+		if p > 0 {
+			any = true
+		}
 	}
-	if fit < request {
-		return fit, false
+	if !any {
+		return request, false
 	}
-	return request, false
+	fits := func(n int) bool { return slotRequirement(n, nLayers, strides)+slotMarginBytes <= free }
+	if fits(request) {
+		return request, false
+	}
+	// Largest n in [0, request) that fits. lo always fits (n=0 costs nothing), hi never does.
+	lo, hi := 0, request
+	for hi-lo > 1 {
+		mid := (lo + hi) / 2
+		if fits(mid) {
+			lo = mid
+		} else {
+			hi = mid
+		}
+	}
+	if lo < topK {
+		return lo, true
+	}
+	return lo, false
 }
 
 // allocSlots caps r.cacheSlots to the MEASURED free device VRAM (with a safety margin) and then
@@ -524,46 +585,38 @@ func (r *cudaResident) allocSlots() error {
 		fmt.Fprintf(os.Stderr, "[cuda] C′ cache: routed layer %d reports zero per-expert bytes — expert cache disabled\n", moeLayers[0])
 		return nil
 	}
-	// One name, not a second copy of the same number. slotMarginBytes is what capSlots applies; a
-	// local const here was a sibling-drift instance waiting to happen, and the gate that pins the
-	// margin against measured kernel demand needs a single symbol to pin.
-	const marginBytes = slotMarginBytes
+	strides := r.slotStrides(moeLayers[0])
 	if f0, _, e0 := r.dev.Context().MemInfo(); e0 == nil {
 		r.dbgFreeBefore = f0 // A1 instrument, recording only
 	}
 	if free, _, err := r.dev.Context().MemInfo(); err == nil {
-		budget := int64(free) - marginBytes
-		fit := int(budget / int64(len(moeLayers)) / int64(perLayer))
-		// FLOOR. topK slots is the minimum that can work — one token's routed set must be
-		// simultaneously resident — so if even that does not fit, DECLINE naming the shortfall
-		// instead of allocating and discovering it at the first kernel launch.
-		//
-		// This used to read `if capped < r.topK { capped = r.topK }`, commented "topK always fits".
-		// That is an assumption written as a check: when false, it clamps UP to a figure it has
-		// just computed does not fit, allocates it, and the failure surfaces later as
-		// CUDA_ERROR_OUT_OF_MEMORY from cuLaunchKernel or a generation loop returning nothing —
-		// neither of which points back here.
-		//
-		// Deliberately independent of the slot-accounting investigation: whatever the true per-slot
-		// cost turns out to be, this converts the entire class into an honest decline at the point
-		// the decision is made. (It is NOT what the 26B hit — that run capped to 34 with topK 8, so
-		// the clamp never fired. This closes a real path at much lower free VRAM.)
-		if fit < r.topK {
-			need := float64(len(moeLayers)) * float64(r.topK) * float64(perLayer)
+		// ONE implementation. This used to be an inline copy of the same arithmetic, with capSlots
+		// existing only for the gate — so the gate corroborated a parallel copy and a change to
+		// either was uncontradicted by the other (the sibling-drift instance in
+		// docs/parity-coverage-policy.md). The gate now points at the shipping path.
+		fit, decline := capSlots(int64(free), int64(len(moeLayers)), strides, r.topK, r.cacheSlots)
+		if decline {
+			// FLOOR. topK slots is the minimum that can work — one token's routed set must be
+			// simultaneously resident — so if even that does not fit, DECLINE naming the shortfall
+			// instead of allocating and discovering it at the first kernel launch.
+			//
+			// This used to read `if capped < r.topK { capped = r.topK }`, commented "topK always
+			// fits". That is an assumption written as a check: when false it clamps UP to a figure
+			// it has just computed does not fit, allocates it, and the failure surfaces later as
+			// CUDA_ERROR_OUT_OF_MEMORY from cuLaunchKernel or a generation loop returning nothing —
+			// neither of which points back here.
+			need := slotRequirement(r.topK, int64(len(moeLayers)), strides)
 			return fmt.Errorf("expert cache (C′) cannot fit its MINIMUM: top-%d routed experts across %d MoE "+
 				"layers need %.2f GB of slots, but only %.2f GB is free — %d slots/layer fit. Free VRAM, "+
 				"lower --ctx, or drop GOINFER_MOE_CACHE_EXPERTS and use a card that holds the experts outright",
-				r.topK, len(moeLayers), need/1e9, float64(free)/1e9, fit)
+				r.topK, len(moeLayers), float64(need)/1e9, float64(free)/1e9, fit)
 		}
 		if fit < r.cacheSlots {
-			capped := fit
-			if capped < r.cacheSlots {
-				fmt.Fprintf(os.Stderr, "[cuda] C′ cache: %d slots/layer would need %.1f GB VRAM but only %.1f GB free — "+
-					"capping to %d (%.1f GB)\n", r.cacheSlots,
-					float64(len(moeLayers))*float64(r.cacheSlots)*float64(perLayer)/1e9, float64(free)/1e9,
-					capped, float64(len(moeLayers))*float64(capped)*float64(perLayer)/1e9)
-				r.cacheSlots = capped
-			}
+			fmt.Fprintf(os.Stderr, "[cuda] C′ cache: %d slots/layer would need %.1f GB VRAM but only %.1f GB free — "+
+				"capping to %d (%.1f GB)\n", r.cacheSlots,
+				float64(slotRequirement(r.cacheSlots, int64(len(moeLayers)), strides))/1e9, float64(free)/1e9,
+				fit, float64(slotRequirement(fit, int64(len(moeLayers)), strides))/1e9)
+			r.cacheSlots = fit
 		}
 	}
 	for _, i := range moeLayers {
@@ -581,17 +634,12 @@ func (r *cudaResident) allocSlots() error {
 	if f1, _, e1 := r.dev.Context().MemInfo(); e1 == nil {
 		r.dbgFreeAfter = f1 // A1 instrument, recording only
 	}
-	// Record BOTH predictions. Production runs the inline copy above; capSlots is what the gate
-	// tests. If the two chosen counts disagree, that difference is its own finding and must be
-	// explained BEFORE any unaccounted-VRAM branch — two copies disagreeing numerically would
-	// account for a claimed cap of 38 against an observed 34 with no unaccounted VRAM at all.
+	// One prediction now, because there is one implementation. These used to record BOTH the inline
+	// copy's choice and capSlots' choice, precisely because they could disagree.
 	r.dbgSlotsInline = r.cacheSlots
-	r.dbgPredInline = int64(len(moeLayers)) * int64(perLayer) * int64(r.cacheSlots)
-	if r.dbgFreeBefore > 0 {
-		cs, _ := capSlots(int64(r.dbgFreeBefore), int64(len(moeLayers)), int64(perLayer), r.topK, r.cacheSlotsReq)
-		r.dbgSlotsCapSlots = cs
-		r.dbgPredCapSlots = int64(len(moeLayers)) * int64(perLayer) * int64(cs)
-	}
+	r.dbgPredInline = slotRequirement(r.cacheSlots, int64(len(moeLayers)), strides)
+	r.dbgSlotsCapSlots = r.cacheSlots
+	r.dbgPredCapSlots = r.dbgPredInline
 	return nil
 }
 

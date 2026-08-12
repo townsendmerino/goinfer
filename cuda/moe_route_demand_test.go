@@ -315,11 +315,21 @@ func TestMoERouteDemandThreshold(t *testing.T) {
 	// local-memory backing store sized by the largest kernel rather than summing them. Summing would
 	// overstate the requirement, so the assertion is against the maximum, and the census gate is what
 	// guarantees the maximum is taken over every kernel rather than a remembered one.
+	//
+	// THE REGIME IS PART OF THE CLAIM. That measurement launched the census SEQUENTIALLY IN ONE
+	// CONTEXT, which is what goinfer does today: batch-1, single stream, one resident model. Under
+	// concurrent residency on separate streams there is no reason the bound stays `max` — two
+	// kernels in flight may each need their own backing store — and this assertion would then be
+	// wrong WITHOUT FAILING, which is the worse of the two ways to be wrong. If goinfer gains
+	// concurrent streams or multi-model residency on one context, re-measure before trusting this.
 	if int64(slotMarginBytes) < firstPass.freeBefore {
 		t.Errorf("slotMarginBytes (%d) is BELOW the measured peak launch demand (%d). The margin's "+
 			"whole job is to leave room for deferred first-launch costs, so the expert-cache cap "+
 			"can now be granted at a size whose forward cannot run — the 34-slot failure, "+
-			"structurally, at whatever the new cap is",
+			"structurally, at whatever the new cap is. NOTE the demand here is a MAX over the "+
+			"kernel census, valid for SEQUENTIAL SINGLE-STREAM launch, which is the regime goinfer "+
+			"runs in; if concurrent streams were added, the bound may be a sum and this figure is "+
+			"then a lower bound rather than the requirement",
 			int64(slotMarginBytes), firstPass.freeBefore)
 	}
 	t.Logf("margin check: slotMarginBytes %d >= peak demand %d, clear by %d B (%.1f MiB)",
