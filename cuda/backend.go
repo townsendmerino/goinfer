@@ -788,6 +788,49 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		} else {
 			r.logitsPinned, r.logitsHost = hb, hb.Slice()
 		}
+		// A9-FIX: pay the DEFERRED first-launch reservation BEFORE the free reading that sizes the
+		// cache, so the cap is correct by construction rather than covered by a margin.
+		//
+		// moe_route declares per-thread local scratch (two float[MOE_MAX_E]), and the driver backs
+		// local memory for the device's occupancy the first time that kernel runs — not at module
+		// load, which costs a measured 0 B. On an RTX 2070 SUPER that launch DEMANDS 289,013,760 B
+		// and RETAINS 138,412,032 B. Both were invisible here: allocSlots reads free VRAM before any
+		// kernel has run, so it sized the cache against memory that was about to be taken.
+		//
+		// Forcing it here is strictly better than enlarging slotMarginBytes, which is the fix
+		// everyone reaches for first. The peak is 2.09x the residual, and it is TRANSIENT: paying it
+		// now, while ~3.8 GB is still free, means the free reading below sees only the 132 MiB that
+		// is actually retained. A margin bump would have to reserve the 275.6 MiB peak permanently
+		// to cover something needed for microseconds — and it would bury a named consumer inside an
+		// unnamed constant, so the next kernel with per-thread scratch reopens it silently.
+		//
+		// WHY BY NAME IS SAFE HERE, given that naming one member of a set is the sibling-drift shape:
+		// the backing store is SHARED and sized by the largest kernel, measured — launching the whole
+		// census gives a threshold and residual identical to moe_route alone, to the byte. So forcing
+		// the maximum forces the pool for every kernel. That moe_route IS the maximum is not assumed:
+		// TestKernelLocalMemoryCensus enumerates every entry point in every embedded module and fails
+		// if any other kernel declares more, naming this site.
+		//
+		// REGIME: `max` was measured with sequential single-stream launch, which is what goinfer
+		// does. Concurrent streams would reopen whether the bound is max or a sum.
+		if r.moe && r.cacheExperts {
+			// nE=1, k=1, nGroup=1 does the least work the kernel can do. It writes rIdx[0]/rWgt[0],
+			// which every real token overwrites before reading, and reads rLogits as both logits and
+			// bias — allocated above, uninitialised, and never observed: the kernel's OUTPUT is
+			// discarded, only its allocation side effect is wanted.
+			if e := r.stream.Launch(r.fRoute, onecfg(1, 0),
+				Arg(r.rLogits), Arg(r.rLogits), Arg(r.rIdx), Arg(r.rWgt),
+				gpu.ArgValue(int32(1)), gpu.ArgValue(int32(1)), gpu.ArgValue(int32(1)),
+				gpu.ArgValue(int32(0)), gpu.ArgValue(float32(1)),
+				gpu.ArgValue(int32(1)), gpu.ArgValue(int32(1))); e != nil {
+				return fmt.Errorf("pre-sizing warm-up of moe_route failed: %w", e)
+			}
+			// Synchronise: the reservation must be a fact before free VRAM is read, and an async
+			// launch would let allocSlots read the pre-launch figure and reproduce the whole defect.
+			if e := r.stream.Sync(); e != nil {
+				return fmt.Errorf("pre-sizing warm-up of moe_route failed to complete: %w", e)
+			}
+		}
 		// C′: the core + KV + scratch are now up, so free VRAM reflects them — size the expert slot
 		// cache to what actually fits (cap-and-log, never OOM) and allocate it.
 		if e := r.allocSlots(); e != nil {

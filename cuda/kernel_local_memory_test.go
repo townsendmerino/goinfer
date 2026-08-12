@@ -175,6 +175,30 @@ func TestKernelLocalMemoryCensus(t *testing.T) {
 		}
 	}
 
+	// ---- A9-FIX's precondition ----
+	//
+	// BuildResident forces moe_route BY NAME before sizing the expert cache, which is only sound
+	// because the local-memory backing store is shared and sized by the LARGEST kernel (measured:
+	// launching the whole census gives a threshold and residual identical to moe_route alone, to the
+	// byte). Forcing the maximum forces the pool for everything.
+	//
+	// That moe_route IS the maximum is checked here rather than assumed. Without this, a new kernel
+	// with deeper per-thread scratch would make the warm-up force the wrong pool, allocSlots would
+	// again size against memory about to be taken, and nothing would say so — naming one member of a
+	// set is the sibling-drift shape, and this is what keeps the naming honest.
+	maxFn, maxLocal := "", -1
+	for _, r := range rows {
+		if r.local > maxLocal {
+			maxFn, maxLocal = r.fn, r.local
+		}
+	}
+	if maxFn != "moe_route" {
+		t.Errorf("%s declares %d B/thread, more than moe_route's %d — cuda/backend.go forces "+
+			"moe_route before allocSlots to pay the deferred local-memory reservation, and that is "+
+			"sound only while moe_route is the maximum. Force %s there instead, or force both, and "+
+			"re-measure the demand threshold", maxFn, maxLocal, pinned["moe_route"], maxFn)
+	}
+
 	// ---- the multiplier, checked rather than assumed ----
 	//
 	// moe_route's reservation was MEASURED at 138,412,032 B (RTX 2070 SUPER, driver 595.58.03,
