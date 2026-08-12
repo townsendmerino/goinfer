@@ -40,7 +40,14 @@ def test_source(test: str):
     return out[0] if out else None
 
 
-def golden_quants():
+def golden_axes():
+    """Quantizations AND loaders the forward goldens actually drive.
+
+    The loader axis was the one nobody had checked — the cross-gate check compared quant only, so
+    "both gates span the same axes" was an answer about one axis presented as an answer about the
+    gate. Derived the same way as the quant side: the selector comes from refresh_parity_hashes.sh's
+    own GOLDEN_RE, and loader from the test name.
+    """
     """Quantizations the forward goldens actually drive, derived the same way.
 
     The goldens are selected by refresh_parity_hashes.sh's GOLDEN_RE, so the set is derived from that
@@ -53,7 +60,7 @@ def golden_quants():
     if not m:
         return None
     sel = re.compile(m.group(1))
-    out = set()
+    quants, loaders = set(), set()
     for f in sorted(ROOT.glob("decoder/*_test.go")):
         txt = f.read_text()
         names = [n for n in re.findall(r"func (Test[A-Za-z0-9_]+)\(", txt) if sel.search(n)]
@@ -62,8 +69,10 @@ def golden_quants():
         if re.search(r"^//go:build", txt, re.M) and "realckpt" in txt.split("\n")[0]:
             continue  # behind a build tag the refresh does not pass — invisible to it
         qs = set(re.findall(r'Quant:\s*"([a-z0-9]+)"', txt))
-        out |= qs if qs else {"f32"}
-    return out
+        quants |= qs if qs else {"f32"}
+        for n in names:
+            loaders.add("gguf" if "GGUF" in n or "gguf" in n.lower() else "safetensors")
+    return quants, loaders
 
 
 def main() -> int:
@@ -107,8 +116,9 @@ def main() -> int:
     # the sweep covered int4 all along while the refresh was f32-only, and nobody saw the gap because
     # neither said what it spanned. Printing both and their difference makes a future divergence
     # visible rather than inferred.
-    gold = golden_quants()
-    if gold is not None:
+    gold_axes = golden_axes()
+    if gold_axes is not None:
+        gold, gold_l = gold_axes
         # ATOMISE both sides before comparing. A gate whose test file drives two quantizations gets a
         # composite label like "int4/int8", and comparing that against the atomic labels the other
         # side produces reports a difference that is purely notational — a permanent false positive
@@ -120,6 +130,7 @@ def main() -> int:
             return out
 
         sweep_q, gold_q = atoms(q), atoms(gold)
+        sweep_l, gl = atoms(l), atoms(gold_l)
         print()
         print("  CROSS-GATE quant coverage (release gate vs the freeze-exception goldens):")
         print(f"    parity_sweep.sh   : {' '.join(sorted(sweep_q)) or '(none)'}")
@@ -134,6 +145,17 @@ def main() -> int:
             print(f"    ONLY in the goldens: {' '.join(sorted(only_gold))}")
         if not only_sweep and not only_gold:
             print("    -> the two gates span the same quantizations.")
+        print()
+        print("  CROSS-GATE loader coverage:")
+        print(f"    parity_sweep.sh   : {' '.join(sorted(sweep_l))}")
+        print(f"    forward goldens   : {' '.join(sorted(gl))}")
+        ls_only, lg_only = sweep_l - gl, gl - sweep_l
+        if ls_only:
+            print(f"    ONLY in the sweep : {' '.join(sorted(ls_only))}")
+        if lg_only:
+            print(f"    ONLY in the goldens: {' '.join(sorted(lg_only))}")
+        if not ls_only and not lg_only:
+            print("    -> the two gates span the same loaders.")
 
     if len(q) == 1:
         print(f"    WARNING: the quant axis has collapsed to a single value ({next(iter(q))}). "

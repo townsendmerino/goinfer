@@ -901,7 +901,43 @@ experimental. **Honesty test per family — would you move it to experimental if
 pending?** Structural reasons qualify (no reference, fixture size, licence). "Unfinished" does not;
 demoting unfinished work to clear a release hollows out the tier permanently.
 
-**E3 · Freeze re-declaration** — `linux`
+**E3 · Freeze re-declaration** — `linux`, **inventory taken and the condition drafted; see below**
+
+**THE FREEZE-BLOCKED INVENTORY, read rather than grepped** (21 frozen paths, from
+`testdata/parity_manifest.json`'s `shared_sets`):
+
+| column | item | what blocks it |
+|---|---|---|
+| **freeze-only** | **D3** the parked flag-pair | `Options` fields touch `model.go` + `gguf.go`; re-stales 19 families |
+| **freeze-only** | **G2** `go fix` modernizers | re-stales the manifest wholesale |
+| freeze **plus other** | **P1** KV re-gather / V re-transpose | freeze **+** a new aikit row-pitch API **+** E6's deferred aikit release |
+
+Everything else touching a frozen path has **landed** (P6 `eea7f29`, P7 `91f359f`) or only references
+those paths as instances (B6, P8 — `sampler_chunked.go` is not in the manifest).
+
+**So the freeze-only column is TWO items — and that is the answer to what an unfreeze buys.** It is
+smaller than it looks, because both are landable *today* under the goldens exception, exactly as P6
+and P7 were: the cost is a ~33-golden run, not a blocked queue.
+
+**THE UNFREEZE CONDITION, drafted as a capability rather than a version number:**
+
+> The core unfreezes when a change to a frozen path receives numeric proof across the **loader** and
+> **quantization** axes it can affect, demonstrated by a gate that **prints its composition**.
+
+**What remains unmet: nothing.** Checked against the axes, not against a summary:
+
+| axis | release gate | goldens refresh (the freeze-exception path) |
+|---|---|---|
+| quantization | f32, int4, int8, int8int8 | f32, int4, int8, int8int8 |
+| loader | safetensors, gguf | safetensors, gguf |
+
+Both print their composition (`scripts/sweep_composition.py`, and the refresh's own
+"33 passed / 14 quantized" line). **The loader axis was the open question and it is covered** — but
+only since this turn, and only because the GGUF parity gates entered the selector: before `f9d5d07`
+the refresh was safetensors-only on loader as well as f32-only on quant.
+
+**So the unfreeze is available now, not at a version number.** The decision is whose to make and
+should be recorded with its scope, lift condition and decider as originally specified.
 
 The `6edd1ca` freeze remains in force; tagging on top of it touches no core numerics and does not
 lift it. But it needs re-declaring in a **live document** with scope, an explicit lift condition,
@@ -1130,7 +1166,7 @@ worth a standalone build for a tok/s win. Only reconsider inside a **megakernel 
 dispatches at once), which is the actual Metal-decode lever (with int4 unpack / bandwidth). If ever
 built, A/B it — do not assume the estimate.
 
-**P6 · `moeMLP` allocates ~7–8 MB/token** — `decoder/mlp.go:82`
+**P6 · `moeMLP` allocates ~7–8 MB/token** — **DONE `eea7f29`** (`decoder/mlp.go:82`)
 
 By skipping the `decodeScratch` invariant its dense sibling honours. **See B6.**
 
@@ -1417,6 +1453,53 @@ numbers rather than one. Until then the allocation stays.
 
 _(append with commit sha and date)_
 
+## Draft: contents of the next release
+
+**Not a version number** — that is a separate call. This is what has accumulated since
+`demo/agent/v0.11.0` (93 commits) that a user would notice, and **none of it depends on the freeze
+decision**.
+
+### The headline: the 26B expert cache sizes itself correctly
+
+The defect that opened this campaign was live in the product and is fixed. On an 8 GB card the
+runtime auto-capped the MoE expert cache to **34 slots/layer, which allocates and then cannot
+launch** — the forward produced **zero tokens**.
+
+- **A5 (`6091e7a`)** — the cap is a **search over the granularity form**, not a division. The driver
+  charges each of four buffers per layer its own whole 2 MiB quantum, so the requirement is a step
+  function; at 34 all four tip at once, putting it 203,816,960 B over free. Verified through the
+  shipping auto-cap path: `capping to 34` → 0 tokens becomes `capping to 33` → coherent output.
+- **A9-FIX (`0103b49`)** — the deferred first-launch reservation (`moe_route` takes 138,412,032 B of
+  local memory the first time it runs) is now paid **before** the free reading that sizes the cache,
+  so the cap is correct by construction rather than covered by a margin. Costs two slots, and that is
+  the point: 384 MiB now means 384 MiB.
+- **A3 (`e42e83e`)** — a launch OOM now names the kernel and **both** the requested and effective
+  slot counts, instead of a bare `cuLaunchKernel: CUDA_ERROR_OUT_OF_MEMORY`.
+- **README** — the manual-workaround section is retracted and replaced with what the cap now
+  accounts for, plus a version test (`capping to 33` has the fix, `34` does not).
+
+### Performance, all bit-identical
+
+- **P3 (`4c26a58`)** — Gemma's final-logit softcap parallelised: **1.43 ms → 640 µs** per sampled
+  token at 262,144 vocab. Sampling path only; greedy never paid it.
+- **P6 (`eea7f29`)** — MoE experts share one gate/up buffer pair per token instead of one per expert:
+  **16 allocations → 2** at top-k 8.
+- **P7 (`91f359f`)** — W4A8 reaches the per-stream `Workspace` it was silently excluded from, ending
+  a fresh allocation per projection per token.
+
+### Verification a user can check
+
+- **int4 forward goldens** (`1d0d1ed`) — 23 fixtures across 16 architectures. int4 is the documented
+  default quantization and **nothing gated it** before this.
+- The goldens refresh went from **19 passed / 0 quantized** to **33 passed / 14 quantized**, and now
+  prints its composition rather than a bare count.
+
+### Known-unfixed, disclosed
+
+- **A10** — a ~150 MiB driver allocation floor: memory `cuMemGetInfo` reports as free and
+  `cuMemAlloc` will not hand out, at any request size down to 1 MiB. Measured, unattributed. It is
+  why the margin cannot simply be lowered to recover the two slots.
+
 <!-- sha-lint: allow d682315 UNPUSHED — Metal branch `metal-rope-merge`, mac-local; not on origin and not in any clone here. Owner: whoever cited it. P4's "already implemented, snapshot-golden byte-exact" rests on a commit only that machine can see; push the branch or the claim stays unverifiable from anywhere else. Flagged 2026-08-12 -->
 
 <!-- SHA-INDEX: generated by scripts/queue_sha_lint.py --update; do not edit by hand -->
@@ -1458,5 +1541,6 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `ed81e13` | P1: route top_k=1 to the on-device greedy fast path |
 | `eea7f29` | perf(decoder): one gate/up pair per token in MoE, not one per expert (P6) |
 | `f6bbf7c` | feat(serve): --moe-cache-experts / --moe-cache-slots (decisions 2+3) — HELD, trips the parity manifest |
+| `f9d5d07` | feat(decoder): dispatch census (B6); close the GGUF-quant gap; reopen B4 |
 
 <!-- /SHA-INDEX -->
