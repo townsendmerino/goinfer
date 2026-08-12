@@ -52,6 +52,7 @@ Deliberately NOT checking that the surrounding prose describes the commit accura
 mechanisable. It checks the citation, which is the part that was wrong.
 """
 
+import collections
 import os
 import pathlib
 import re
@@ -103,6 +104,12 @@ class SearchError(Exception):
 # on a deleted branch. Distinct from "does not resolve" because the remedy differs — the citation is
 # not fabricated, it points at history that no longer exists anywhere others can see.
 ORPHANED = object()
+
+# Where each path citation was answered from, so the scope line can say whether the version-pinned
+# resolution ACTUALLY RAN rather than merely being available. A fix that is present but never
+# exercised is the exercised-but-never-triggered shape, and this one exists to make a verdict
+# reproducible — so "it would have resolved from the module cache" is not good enough to print.
+RESOLVED_FROM = collections.Counter()
 
 # Cited commits reachable only from a LOCAL ref — reported as a warning, never a hard failure here.
 LOCAL_ONLY = []
@@ -301,8 +308,35 @@ def path_repos():
     return roots
 
 
-def repo_present(name: str) -> bool:
+def is_modcache(base) -> bool:
+    r = modcache_root()
+    try:
+        return bool(r) and str(base).startswith(str(r))
+    except Exception:
+        return False
+
+
+def path_repo_present(name: str) -> bool:
+    """Can PATH citations into this repo be checked here? A module-cache directory counts."""
     return any(n == name for n, _ in path_repos())
+
+
+def commit_repo_present(name: str) -> bool:
+    """Can COMMIT citations into this repo be checked here? Only a GIT checkout counts.
+
+    These were one predicate, and merging them was right while both callers needed the same thing —
+    a git checkout. Adding the module cache as a path root broke that premise, because a module cache
+    answers "what is at line 327 of quant.go" and cannot answer "what is commit be049df": it has no
+    history at all. The single predicate then reported aikit as present, the four aikit SHAs stopped
+    being skipped, and CI called four accurate citations fabricated.
+
+    That is the be049df false red for the third time, arriving by a third route, and produced BY the
+    fix meant to make path resolution reproducible. The lesson is not "do not merge duplicated
+    predicates" — the merge was correct. It is that a predicate answers ONE question, and adding a
+    root that can answer only half of them re-split the question without re-splitting the predicate.
+    """
+    return any(pathlib.Path(r).name == name and (pathlib.Path(r) / ".git").exists()
+               for r in sibling_repos())
 
 
 # A content key only works if the content DISCRIMINATES. `//`, `}`, a blank line or a lone brace
@@ -338,6 +372,7 @@ def resolve_path(rel: str, line: int):
     for name, base in path_repos():
         f = base / rel
         if f.is_file():
+            RESOLVED_FROM[("module cache" if is_modcache(base) else "checkout", name)] += 1
             lines = f.read_text(errors="replace").split("\n")
             if line <= len(lines):
                 c = lines[line - 1].strip()
@@ -448,7 +483,7 @@ def main() -> int:
             continue
         repo, content = resolve_path(rel, ln)
         if content is None:
-            if pidx0.get(key) and not repo_present(pidx0[key]):
+            if pidx0.get(key) and not path_repo_present(pidx0[key]):
                 presolved[key] = (pidx0[key], None)  # foreign repo absent; skipped below
                 continue
             pmissing.append((key, rel))
@@ -531,7 +566,7 @@ def main() -> int:
         # fabricated is the be049df false red, reintroduced by a different route.
         rec = index.get(sha, "")
         m = re.match(r"\[([a-z0-9_-]+)\]", rec)
-        if m and not repo_present(m.group(1)):
+        if m and not commit_repo_present(m.group(1)):
             skipped_foreign.append((sha, m.group(1)))
             continue
         bad.append(f"  {sha}  DOES NOT RESOLVE — fabricated, mistyped, or from a dropped branch")
@@ -562,7 +597,7 @@ def main() -> int:
         if rel in pallow or rel.split("/")[0] in pallow:
             continue
         rec0 = pindex.get(key)
-        if rec0 is not None and rec0[0] and not repo_present(rec0[0]):
+        if rec0 is not None and rec0[0] and not path_repo_present(rec0[0]):
             # The index records which repo this resolved in. If that repo is not checked out here —
             # CI clones goinfer alone — the citation is UNCHECKED, not broken. Counted and named, so
             # a skip and a pass do not look the same.
@@ -617,7 +652,7 @@ def main() -> int:
     still = []
     for rel in bmissing:
         rec = bindex.get(rel, "")
-        if rec and rec != "**RESOLVES NOWHERE**" and not repo_present(rec):
+        if rec and rec != "**RESOLVES NOWHERE**" and not path_repo_present(rec):
             skipped_foreign.append((rel, rec))
             continue
         still.append(rel)
@@ -657,6 +692,31 @@ def main() -> int:
             print(f"    {sha}  reachable from {ref} — push it, or allowlist it with a reason")
         print("    Not failed here on purpose: citing a commit in the same push that creates it is "
               "normal. CI is the enforcement; this is the advance warning.")
+    # THE VERSION-PINNED RESOLUTION, reported rather than assumed. A required module whose cache is
+    # cold AND which has no sibling checkout cannot be searched at all — and by the could-not-search
+    # rule that is a HARD ERROR, never a skip: reporting "unchecked" when the answer is "we could not
+    # look" is how a green comes to cover nothing. CI populates the cache with `go build ./...`
+    # before this step; if that ever stops being true, this says so instead of quietly narrowing.
+    cold_modules = []
+    nmc = sum(c for (k, _), c in RESOLVED_FROM.items() if k == "module cache")
+    nco = sum(c for (k, _), c in RESOLVED_FROM.items() if k == "checkout")
+    print(f"  CROSS-REPO RESOLUTION: {nmc} path lookup(s) answered from the MODULE CACHE at the "
+          f"version go.mod requires, {nco} from a checkout.")
+    for mod, ver in sorted(required_modules().items()):
+        name = pathlib.Path(mod).name
+        cached = modcache_dir(mod, ver) is not None
+        sib = commit_repo_present(name)
+        state = ("module cache @ " + ver) if cached else ("sibling checkout" if sib else "NOWHERE")
+        print(f"    {mod} -> {state}")
+        if not cached and not sib:
+            print(f"      COLD CACHE and no checkout — citations into {name} could not be searched. "
+                  f"Run `go mod download` before this lint; a skip here would be a green that "
+                  f"covers nothing.")
+            cold_modules.append(mod)
+    if nmc == 0 and required_modules():
+        print("    NOTE: zero lookups used the module cache. Either no citation points into a "
+              "required module, or the pinning is not being exercised here — the second is the "
+              "exercised-but-never-triggered shape and worth checking.")
     print("  docs/completed/ is EXCLUDED on purpose — archived records are supposed to age with the "
           "code they described, and linting them would fight the archival rule.")
     print("  NOT validated: RELEVANCE. A commit citation is checked to resolve and to match its "
@@ -674,6 +734,13 @@ def main() -> int:
           "references, WHAT IS SAID ABOUT THEM, since there is no line to key against.")
     print("  A lint on a document raises trust in EVERY citation in it, not only the kinds it checks — "
           "so the scope is printed with the green.")
+    if cold_modules:
+        sys.stderr.write("queue_citation_lint: CANNOT SEARCH — no module cache and no checkout for: "
+                         + ", ".join(cold_modules) + "\n")
+        sys.stderr.write("  This is a hard failure on purpose. Citations into these modules were not "
+                         "checked, and calling that a skip would make the green cover nothing.\n")
+        sys.stderr.write("  Fix: run `go mod download` (CI does `go build ./...`) before this lint.\n")
+        return 1
     return 0
 
 
