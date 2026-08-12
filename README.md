@@ -100,11 +100,18 @@ goinfer's distinction is all-experts-on-GPU, not that peers can't run it —
 >     --model ~/models/gemma-4-26b-a4b-it
 > ```
 >
-> **Do not set this higher than 30 on an 8 GB card.** Measured on this box: 30 slots runs, **34
-> fails outright** with `CUDA_ERROR_OUT_OF_MEMORY` at the first forward. The cap sizes itself from
-> free VRAM and can currently land on a value that allocates successfully and then cannot launch —
-> an open defect, tracked as A1 in `docs/QUEUE.md`. Until it is fixed, the safe ceiling is a
-> measured number rather than a computed one.
+> **Sizing it, and what to do when it fails.** A slot count is only safe *relative to free VRAM*, so
+> there is no universally correct number: a display attached, another process resident, or a longer
+> `--ctx` all leave you less than a bare card. On an 8 GB card with nothing else on the GPU, **30 is
+> the highest value measured safe here** (34 fails outright). If you see
+> `CUDA_ERROR_OUT_OF_MEMORY` at the first forward, **the slot count is too high for your free VRAM —
+> lower it.**
+>
+> You should not have to know this. The runtime measures free VRAM and caps the slot count for
+> exactly that reason, and that cap is the thing currently under suspicion — it can land on a value
+> that allocates successfully and then cannot launch (open defect A1, `docs/QUEUE.md`). Until it is
+> fixed this section is a manual workaround for a safety net that is not holding, which is why it
+> gives you the symptom and the remedy rather than a number to trust.
 >
 > What the slot count buys, measured on this card — the flag is not a tuning knob, it is the
 > difference between the feature working and not:

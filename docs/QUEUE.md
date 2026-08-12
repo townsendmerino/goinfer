@@ -103,6 +103,26 @@ Why it matters: 105 variables, exactly one of which anything has ever set. Six h
 only findable *as a class* if something enumerates `os.Getenv` mechanically. A markdown table
 maintained by intention drifts on the first variable someone adds.
 
+**A3 · Make the launch OOM say what it is** — `linux`, NOT blocked on A1
+
+The one failure that has resisted a day of investigation also produces the least informative
+message: a raw `cuLaunchKernel: CUDA_ERROR_OUT_OF_MEMORY` with nothing tying it to the cache
+setting the user chose. The decline floor added in `7c91ccc` does not catch it — that fires below
+`topK`, and this dies at 34 slots with `topK` of 8.
+
+Two changes, both error handling rather than prediction, useful whatever A1 turns out to be:
+
+1. **Name the kernel in the launch error.** One line. As a side effect it collapses much of A1's
+   candidate space — a router or eviction kernel failing means something very different from the
+   main expert GEMV failing, and right now the message does not distinguish them.
+2. **Catch the launch OOM on the resident MoE path and reframe it**: name the configured slot
+   count, say it is the likely cause, suggest lowering it. That converts a fatal driver error into
+   an actionable decline — the pattern applied everywhere else this fortnight and conspicuously
+   absent exactly where a day was spent.
+
+Deliberately its own item rather than folded into A1, so the next investigation starts from a
+message rather than a symptom.
+
 **B0 · Repo-hygiene group must run what CI runs** — `linux`
 
 CI went red on `staticcheck -tags cuda` (ST1005) and stayed red for three commits. The local
