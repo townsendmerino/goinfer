@@ -40,6 +40,32 @@ def test_source(test: str):
     return out[0] if out else None
 
 
+def golden_quants():
+    """Quantizations the forward goldens actually drive, derived the same way.
+
+    The goldens are selected by refresh_parity_hashes.sh's GOLDEN_RE, so the set is derived from that
+    regexp rather than from a second list that could drift from it.
+    """
+    sh = ROOT / "scripts" / "refresh_parity_hashes.sh"
+    if not sh.exists():
+        return None
+    m = re.search(r"GOLDEN_RE='([^']+)'", sh.read_text())
+    if not m:
+        return None
+    sel = re.compile(m.group(1))
+    out = set()
+    for f in sorted(ROOT.glob("decoder/*_test.go")):
+        txt = f.read_text()
+        names = [n for n in re.findall(r"func (Test[A-Za-z0-9_]+)\(", txt) if sel.search(n)]
+        if not names:
+            continue
+        if re.search(r"^//go:build", txt, re.M) and "realckpt" in txt.split("\n")[0]:
+            continue  # behind a build tag the refresh does not pass — invisible to it
+        qs = set(re.findall(r'Quant:\s*"([a-z0-9]+)"', txt))
+        out |= qs if qs else {"f32"}
+    return out
+
+
 def main() -> int:
     m = GATES_BLOCK.search(SWEEP.read_text())
     if not m:
@@ -76,6 +102,29 @@ def main() -> int:
     print(f"    loader:  " + "  ".join(f"{k}={v}" for k, v in sorted(l.items())))
     if unknown:
         print(f"    NOTE: {unknown} gate(s) UNKNOWN — test source not located, NOT counted as f32")
+    # CROSS-GATE. parity_sweep.sh and the goldens refresh protect overlapping properties over the
+    # same axis, and until both printed their composition the difference between them was invisible:
+    # the sweep covered int4 all along while the refresh was f32-only, and nobody saw the gap because
+    # neither said what it spanned. Printing both and their difference makes a future divergence
+    # visible rather than inferred.
+    gold = golden_quants()
+    if gold is not None:
+        sweep_q, gold_q = set(q), gold
+        print()
+        print("  CROSS-GATE quant coverage (release gate vs the freeze-exception goldens):")
+        print(f"    parity_sweep.sh   : {' '.join(sorted(sweep_q)) or '(none)'}")
+        print(f"    forward goldens   : {' '.join(sorted(gold_q)) or '(none)'}")
+        only_sweep = sweep_q - gold_q
+        only_gold = gold_q - sweep_q
+        if only_sweep:
+            print(f"    ONLY in the sweep : {' '.join(sorted(only_sweep))}")
+            print("      -> a core edit can pass the goldens refresh and still be unproven on these,")
+            print("         because the refresh is the ONLY numeric proof a frozen-core edit gets.")
+        if only_gold:
+            print(f"    ONLY in the goldens: {' '.join(sorted(only_gold))}")
+        if not only_sweep and not only_gold:
+            print("    -> the two gates span the same quantizations.")
+
     if len(q) == 1:
         print(f"    WARNING: the quant axis has collapsed to a single value ({next(iter(q))}). "
               f"This gate no longer varies over the axis it is supposed to protect.")

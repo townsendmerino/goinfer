@@ -705,7 +705,29 @@ heavy-gated tests, with `TestSplitKV_bitIdentical`, `TestPrefillDivergenceRate` 
 `TestArgmaxTieBreak` all backing published claims. Report the resulting tier membership so the
 split is reviewable.
 
-**B4 · Label or drop `stash@{0}`** — `linux`
+**B4 · Label or drop `stash@{0}`** — `linux`, **CLOSED: the stash does not exist.** `git stash list`
+is empty in all four repos (goinfer, aikit, wgpu, goduct). Either it was applied or dropped, or it
+only ever lived on the other machine. Folded into B7's sweep below.
+
+**B7 · Off-origin work — swept, 2026-08-12** — `linux` for the local half, `mac` for the rest
+
+Branches with no upstream, across all four repos on this box:
+
+| repo | branch | unique commits | action |
+|---|---|---|---|
+| goinfer | `test/strengthen-mamba-deltanet-goldens` | **1** (`98936cf` strengthen mamba-2 + deltanet parity fixtures) | **PUSHED** |
+| goinfer | `task/gemma4-moe-phase1a` | 0 — fully merged | leave; delete when convenient |
+| aikit | `decoder-m2-tokenizer` | 0 — fully merged | leave; delete when convenient |
+| wgpu, goduct | none | — | — |
+
+Stashes: **none, in any of the four.**
+
+**Still outstanding, and it needs the mac:** `metal-rope-merge` carrying `d682315`. It is not on
+origin and resolves in no clone here, so **P4's "already implemented, snapshot-golden byte-exact" is
+unverifiable from any machine but that one**. Pushing the branch is enough — it does not need merging
+to make the claim checkable.
+
+**B4 (original) · Label or drop `stash@{0}`** — superseded
 
 "item2 unload-close fix + tests (wip)", `admin.go` +32. Almost certainly adds `Close()` to the
 admin unload path — the change that converts a bounded leak into a use-after-free through the
@@ -1385,6 +1407,7 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `91f359f` | fix(decoder): matmulInto dispatches on the property, not on W8A8 (P7) |
 | `93eb7d4` | feat(decoder): gpt-oss real-model path — batched-prefill fix + real gates |
 | `9624dd9` | chore(parity): refresh deps_hash for aikit v1.12.0 (goldens-proven non-numeric) |
+| `98936cf` | test(goldens): strengthen mamba-2 + deltanet parity fixtures (kill identity weights) |
 | `99b3f95` | chore(deps): pin aikit v1.12.0 — gpt-oss MXFP4 reproducible on main |
 | `9e5f8fa` | fix(quant): reject --quant that conflicts with a prequant .giw at startup (T1-7) |
 | `be049df` | [aikit] gpu(gemv): explicit __fmaf_rn in the quantized GEMV — the bit-identity contraction rule |

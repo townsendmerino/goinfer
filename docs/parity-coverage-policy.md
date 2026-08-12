@@ -260,6 +260,23 @@ the remedies differ:
 | check names one member | **enumerate** the members and assert the invariant on all of them |
 | dispatch names one member | **dispatch on the property**, not the member — here, "does this path have a reusable Workspace", not "is this W8A8" |
 
+**Tractability, assessed before building a lint rather than after.** The two shapes automate very
+differently, and a lint doing only the tractable half would ship as though it covered the class —
+reproducing, inside the gate built for the class, exactly the thing the class is about.
+
+- **The check shape is enumerable.** Given a declared sibling set, a test can assert the invariant
+  over all members and fail when one is missing. That is a real gate and B6 builds it.
+- **The dispatch shape is NOT tractable as a verdict.** Measured on this tree: `decoder/` production
+  code contains **one** identity predicate of this form (`isW8A8`, 5 if-sites) and 3 type switches.
+  The surface is small enough to enumerate — but `if isW8A8(w)` is **syntactically indistinguishable**
+  from a legitimate special case, and 4 of those 5 sites *are* legitimate (W8A8 genuinely has its own
+  `QuantBackend` kernel). Only the 5th was the defect. Nothing in the syntax separates them; it takes
+  knowing the intended set.
+
+So B6 ships the check half as a gate and the dispatch half as a **census plus a recognition test
+applied at review time** — recorded here as a known limit, with the measurement as the reason, rather
+than left to look like coverage.
+
 **Recognition test:**
 
 > **When a fix lands on one member of a pair, what checks the other?**

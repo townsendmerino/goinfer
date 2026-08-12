@@ -57,20 +57,45 @@ def looks_like_sha(tok: str) -> bool:
 #
 # Override with GOINFER_SHA_LINT_REPOS (colon-separated). Absent repos are skipped silently — they
 # are a property of the machine, not of the queue.
+class SearchError(Exception):
+    """A repository could not be searched — distinct from a SHA not being found in it."""
+
+
 def sibling_repos():
     root = QUEUE.parent.parent
     env = os.environ.get("GOINFER_SHA_LINT_REPOS")
-    cands = env.split(":") if env else [str(root / ".." / "aikit" / "aikit")]
-    out = [str(root)]
-    for c in cands:
-        pp = pathlib.Path(c).expanduser()
-        if (pp / ".git").exists():
+    if env:
+        # EXPLICITLY named repos are required to be searchable. A typo'd or moved path must be a hard
+        # error, not a silent narrowing of the search — that is precisely how be049df, a correct
+        # citation contained in six released tags, was reported as fabricated: the aikit path was one
+        # level off, `git -C` failed for that reason, and the failure was read as absence.
+        out = [str(root)]
+        for c in env.split(":"):
+            pp = pathlib.Path(c).expanduser()
+            if not (pp / ".git").exists():
+                raise SearchError(f"GOINFER_SHA_LINT_REPOS names {pp}, which is not a git repository")
             out.append(str(pp))
+        return out
+    # The DEFAULT sibling is best-effort: its absence is a property of the machine, not of the queue.
+    out = [str(root)]
+    dflt = (root / ".." / "aikit" / "aikit").resolve()
+    if (dflt / ".git").exists():
+        out.append(str(dflt))
     return out
 
 
 def subject_of(sha: str):
+    """Return the subject, or None if the SHA is genuinely absent from every searchable repo.
+
+    Raises SearchError if a repo could not be searched at all. "Could not look" and "looked and did
+    not find" are different answers, and conflating them produces a false RED on a correct citation —
+    which costs more than a false green, because it prompts someone to change something accurate.
+    """
     for repo in sibling_repos():
+        probe = subprocess.run(["git", "rev-parse", "--git-dir"],
+                               capture_output=True, text=True, cwd=repo)
+        if probe.returncode != 0:
+            raise SearchError(f"{repo}: not a usable git repository ({probe.stderr.strip()})")
         r = subprocess.run(
             ["git", "log", "-1", "--format=%s", sha],
             capture_output=True, text=True, cwd=repo,
@@ -80,6 +105,11 @@ def subject_of(sha: str):
             if repo != str(QUEUE.parent.parent):
                 subj = f"[{pathlib.Path(repo).name}] {subj}"
             return subj
+        err = r.stderr.lower()
+        # "unknown revision" is a real negative. Anything else — a corrupt or unreadable ref store,
+        # a permissions problem — means the search did not happen and must not read as absence.
+        if "unknown revision" not in err and "bad object" not in err and "ambiguous argument" not in err:
+            raise SearchError(f"{repo}: git failed while resolving {sha}: {r.stderr.strip()}")
     return None
 
 
@@ -117,7 +147,13 @@ def main() -> int:
     allowed = allowlist(text)
     resolved, unresolved = {}, []
     for sha in found:
-        s = subject_of(sha)
+        try:
+            s = subject_of(sha)
+        except SearchError as e:
+            sys.stderr.write(f"queue_sha_lint: CANNOT SEARCH — {e}\n")
+            sys.stderr.write("  This is not a missing SHA. Fix the repository path and re-run; "
+                             "reporting citations as unresolved from here would be a false red.\n")
+            return 2
         if s is None:
             if sha in allowed:
                 resolved[sha] = f"(unresolvable here) {allowed[sha]}"
