@@ -32,7 +32,14 @@ cd "$(git rev-parse --show-toplevel)"
 # The forward-numeric goldens: they compare a forward pass to a committed golden, so a
 # numeric change to the forward breaks them. (Deliberately NOT the spec-decode / session /
 # KV / vision parity tests — those gate features, not the forward numerics.)
-GOLDEN_RE='(_forwardParity|_logitParity|_textParity)$'
+# ^TestGGUF_.*_parity$ is included deliberately, and it cost nothing to add. The cross-gate check
+# (scripts/sweep_composition.py) showed parity_sweep.sh covering the GGUF quant formats while these
+# goldens did not — and parity_sweep.sh is RELEASE-ONLY, run by hand on the box, so between releases
+# a frozen-core edit got no GGUF-quant proof at all. The gates already existed and already passed;
+# they were simply outside the selector. 11 gates, 26.8 s measured. Same shape as the int8int8
+# goldens that skipped for want of an env var: unplumbed coverage, not missing coverage, and far
+# cheaper than authoring the goldens that would have duplicated them.
+GOLDEN_RE='(_forwardParity|_logitParity|_textParity)$|^TestGGUF_.*_parity$'
 
 # GOINFER_HEAVY_TESTS is set by default here, and that is a coverage decision rather than a
 # convenience. Without it the three int8int8 goldens (gemma4, gemma4-12B, mellum2) all skip on
@@ -62,7 +69,7 @@ echo "    forward goldens: ${pass} passed, ${fail} failed, ${skip} skipped"
 # The QUANTIZATION breakdown, not just the count. A run of 19 green f32 goldens and a run of 21 that
 # includes two int8 ones are different proofs, and "19 passed" cannot tell them apart — which is how
 # the f32-only hole stayed invisible. Q1 in docs/QUEUE.md.
-nonf32=$(printf '%s\n' "$out" | grep '^--- PASS:' | grep -cE 'TestGemma4_logitParity|TestGemma4_12B_logitParity|TestMellum2_logitParity|TestGptOssReal_logitParity|TestInt4_forwardParity' || true)
+nonf32=$(printf '%s\n' "$out" | grep '^--- PASS:' | grep -cE 'TestGemma4_logitParity|TestGemma4_12B_logitParity|TestMellum2_logitParity|TestGptOssReal_logitParity|TestInt4_forwardParity|^--- PASS: TestGGUF_' || true)
 echo "    of those, ${nonf32} drive a QUANTIZED path (int4/int8/int8int8); the rest are f32."
 if [ "$nonf32" -eq 0 ]; then
 	echo "    NOTE: this refresh proves f32 numerics ONLY — no quantized golden ran. See Q1."

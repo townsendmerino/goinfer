@@ -109,7 +109,17 @@ def main() -> int:
     # visible rather than inferred.
     gold = golden_quants()
     if gold is not None:
-        sweep_q, gold_q = set(q), gold
+        # ATOMISE both sides before comparing. A gate whose test file drives two quantizations gets a
+        # composite label like "int4/int8", and comparing that against the atomic labels the other
+        # side produces reports a difference that is purely notational — a permanent false positive
+        # in the check built to make real differences visible.
+        def atoms(xs):
+            out = set()
+            for x in xs:
+                out |= set(x.split("/"))
+            return out
+
+        sweep_q, gold_q = atoms(q), atoms(gold)
         print()
         print("  CROSS-GATE quant coverage (release gate vs the freeze-exception goldens):")
         print(f"    parity_sweep.sh   : {' '.join(sorted(sweep_q)) or '(none)'}")

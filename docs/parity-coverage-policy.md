@@ -273,9 +273,21 @@ reproducing, inside the gate built for the class, exactly the thing the class is
   `QuantBackend` kernel). Only the 5th was the defect. Nothing in the syntax separates them; it takes
   knowing the intended set.
 
-So B6 ships the check half as a gate and the dispatch half as a **census plus a recognition test
-applied at review time** — recorded here as a known limit, with the measurement as the reason, rather
-than left to look like coverage.
+So B6 ships the check half as a gate and the dispatch half as a **census** — `TestDispatchCensus`,
+which declares every identity-predicate dispatch site and type switch with a one-line reason and goes
+red when the set changes in either direction.
+
+**The census detects CHANGE, not correctness, and that has to be said where the green is read.** A
+pass means "the dispatch surface is what it was when a person last reviewed it". It does **not** mean
+"no dispatch drift exists" — 4 of the 5 declared sites are legitimate and one was P7's defect, and
+nothing in the census could tell them apart. Reading a green as the second thing is the class's own
+mistake, one level up, which is why the test logs `GREEN MEANS UNCHANGED, NOT CORRECT` rather than a
+bare pass.
+
+The predicate set is **derived from signatures** (`func isX(... *linalg.WeightMat ...) bool`), not
+listed, so a predicate that does not exist yet still enters the census — the property that matters,
+since the next instance will be named by something nobody has written. Mutation-checked both
+directions: a new site goes red, and removing a declared one goes red for the other reason.
 
 **Recognition test:**
 

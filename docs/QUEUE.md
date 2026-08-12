@@ -705,9 +705,13 @@ heavy-gated tests, with `TestSplitKV_bitIdentical`, `TestPrefillDivergenceRate` 
 `TestArgmaxTieBreak` all backing published claims. Report the resulting tier membership so the
 split is reviewable.
 
-**B4 · Label or drop `stash@{0}`** — `linux`, **CLOSED: the stash does not exist.** `git stash list`
-is empty in all four repos (goinfer, aikit, wgpu, goduct). Either it was applied or dropped, or it
-only ever lived on the other machine. Folded into B7's sweep below.
+**B4 · Label or drop `stash@{0}`** — **REOPENED. Absent on `linux-62gb`, UNSEARCHED on
+`macbook-arm64`.**
+
+`git stash list` is empty in all four repos here. That is a result about **this box**, and closing
+the item on it would repeat the exact distinction the SHA lint learned this turn: a search that could
+not have seen the object does not report its absence. `stash@{0}` may only ever have existed on the
+mac. **In the mac batch below.**
 
 **B7 · Off-origin work — swept, 2026-08-12** — `linux` for the local half, `mac` for the rest
 
@@ -721,6 +725,16 @@ Branches with no upstream, across all four repos on this box:
 | wgpu, goduct | none | — | — |
 
 Stashes: **none, in any of the four.**
+
+**MAC BATCH — one session, not three interruptions.** Collected because each item needs that machine
+and none needs this one:
+
+1. **Push `metal-rope-merge`** so `d682315` resolves from anywhere and P4's "already implemented,
+   snapshot-golden byte-exact" becomes checkable. It does not need merging to be safe.
+2. **B4's stash check** — `git stash list` in all four repos; the stash is absent here and unsearched
+   there.
+3. **C3, the Metal consumer window** — the largest completely uncovered surface, and the
+   highest-priority of the three items that sank before this campaign started.
 
 **Still outstanding, and it needs the mac:** `metal-rope-merge` carrying `d682315`. It is not on
 origin and resolves in no clone here, so **P4's "already implemented, snapshot-golden byte-exact" is
@@ -1186,6 +1200,30 @@ hash or verdict, but the claim "a clean result means the guard held" would have 
 **What is durable:** the writer is now faithful (`SetEscapeHTML(false)`, `Method` as `RawMessage`), so
 neither defect can recur through either route.
 
+**Q2 · The GGUF-quant cross-gate gap — CLOSED, and it was unplumbed too** — `linux`, `bd08936`→
+
+The cross-gate check showed `parity_sweep.sh` covering the GGUF quant formats while the goldens
+refresh did not. **(a) Exposure: a LAG, not a hole.** `parity_sweep.sh` is not in CI — it is
+release-only, run by hand on the box (`RELEASING.md` §C1). So the formats are covered at release and
+**not between releases**, which is exactly when a frozen-core edit gets only the goldens refresh.
+
+**(b) Both routes priced before choosing, and route B turned out unnecessary:**
+
+| route | cost |
+|---|---|
+| extend the goldens selector to the existing GGUF gates | **26.8 s**, 11 gates, no new fixtures |
+| author GGUF-quant goldens for those 11 rows | unnecessary — the gates already exist and already pass |
+
+Same shape as Q1(b): **unplumbed, not missing.** The gates were simply outside `GOLDEN_RE`. Adding
+`^TestGGUF_.*_parity$` took the refresh from **19 passed / 0 quantized** at the start of this campaign
+to **33 passed / 14 quantized**, and the cross-gate check now reports *"the two gates span the same
+quantizations."*
+
+One bug fixed in the cross-gate check itself: it compared a composite label (`int4/int8`, from a file
+driving two quantizations) against atomic ones and reported a difference that was purely notational —
+a permanent false positive in the check built to make real differences visible. Both sides are
+atomised now.
+
 **Q1 · The forward goldens prove f32 ONLY — no quantized path has a golden that runs** — `linux`,
 **NEW. G-01 at the largest scale it has appeared.**
 
@@ -1410,6 +1448,7 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `98936cf` | test(goldens): strengthen mamba-2 + deltanet parity fixtures (kill identity weights) |
 | `99b3f95` | chore(deps): pin aikit v1.12.0 — gpt-oss MXFP4 reproducible on main |
 | `9e5f8fa` | fix(quant): reject --quant that conflicts with a prequant .giw at startup (T1-7) |
+| `bd08936` | fix(gate): cannot-search is not not-found; cross-gate composition; B7 sweep |
 | `be049df` | [aikit] gpu(gemv): explicit __fmaf_rn in the quantized GEMV — the bit-identity contraction rule |
 | `ca29d6c` | cuda: resident context cap becomes configuration-derived (-ctx), VRAM-checked at load |
 | `cc238c6` | cleanup: consolidate GINFER_ env vars to GOINFER_ + add env-var registry |
