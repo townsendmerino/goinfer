@@ -978,17 +978,37 @@ and none needs this one:
    snapshot-golden byte-exact" becomes checkable. It does not need merging to be safe.
 3. **B4's stash check** — `git stash list` in all four repos; the stash is absent here and unsearched
    there.
-4. **arm64 f32 goldens read — TAG-GATE, minutes.** The aikit **v1.17.0 f32 blocked-matmul rework** is
-   an expression-rewrite to a float path, still live in v1.17.1. The arch exception (arm64 fuses FMA,
-   amd64 baseline does not) means the f32 goldens must run on **arm64** to discharge it — an amd64
-   refresh does not. **Checked 2026-08-12: `2e8dfb6`'s 19 f32 rows carry NO arch** (the refresh trailer
-   didn't stamp one; now fixed to emit `arch=`), git notes are empty, and the manifest `machine` field
-   is the preserved *T3* machine (18 `linux-62gb` / 1 `macbook-arm64` / 4 null), not the refresh's. So
-   the machine is **not recorded** and cannot be read back — and every recorded pointer (today's box
-   refreshes, the 18/23 amd64 validation record) points away from arm64. Disposition: **owed, not
-   discharged.** Run `scripts/refresh_parity_hashes.sh` (or the f32 forward goldens) here on
-   `macbook-arm64`; the new `arch=arm64` trailer discharges it on the record. This is the **second**
-   tag-gate alongside the prefill measurement — both attach to the same aikit-bump change.
+4. **arm64 f32 goldens read — TAG-GATE (NEW, created 2026-08-12). Minutes.**
+
+   **Provenance — created, not overlooked.** This gate came into existence on 2026-08-12, the moment
+   the architecture-exception clause met the aikit **v1.17.0 f32 blocked-matmul rework** (an
+   expression-rewrite to a float path, still live in v1.17.1). It did **not** exist before that rework,
+   so any earlier search that looked and found nothing **searched correctly — there was nothing to
+   find.** Do not record this as a pre-existing gate someone skipped; that distinction is what keeps
+   the search trustworthy next time. (The check on `2e8dfb6` — its 19 f32 rows carry no arch, the
+   trailer didn't stamp one, git notes are empty, the manifest `machine` field is the preserved *T3*
+   machine not the refresh's — asked whether the v1.17.1 refresh *incidentally* discharged the new
+   gate. It didn't: the arch isn't recorded and every pointer, incl. today's box refreshes and the
+   18/23 `linux-62gb` validation, points to amd64. So the gate is **open**, never yet run on arm64.)
+
+   **What a green PROVES — written here so a green is not over-read.** The f32 goldens are
+   **argmax + cosine, not bit-identity.** A green therefore does **NOT** show byte-agreement across
+   arm64/amd64 — that cross-arch divergence is real, expected, and decision-irrelevant
+   (`parity-coverage-policy.md` "arch-scoped"). What it proves is narrower and exact: **the argmax
+   margin survives the summation-order change on the architecture that contracts `x*y+z`** (arm64 fuses
+   FMA; amd64's baseline does not). The FMA campaign's **114,431× headroom was measured for the code as
+   written**; the rework **changed the summation order**, so that headroom is no longer known to hold.
+   Re-confirming it on the fusing arch is the **entire content** of this gate — nothing more, nothing
+   less.
+
+   **What a red MEANS — pre-registered, before it can be argued after.** A failure is **the headroom
+   collapsing** — the reordered summation pushed a decision across the ~2×10⁻⁵ argmax tolerance on
+   arm64 — **not a flaky fixture.** A red is a real numeric finding about the rework and is treated as
+   one; it does not get waved off as fixture noise after the fact.
+
+   **How.** Run `scripts/refresh_parity_hashes.sh` (or the f32 forward goldens) on `macbook-arm64`; the
+   new `arch=arm64` trailer records the discharge. Second tag-gate alongside the prefill measurement —
+   both attach to the same aikit-bump change.
 
 **Still outstanding, and it needs the mac:** `metal-rope-merge` carrying `d682315`. It is not on
 origin and resolves in no clone here, so **P4's "already implemented, snapshot-golden byte-exact" is

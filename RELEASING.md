@@ -159,9 +159,11 @@ path, gemma4_text merges) and the audit fixes touched hashed-core files. Before 
   **float** path (e.g. a reworked matmul inner loop), the argmax+cosine goldens can pass on one arch
   and breach on the other — arm64 fuses FMA where amd64's baseline does not (`parity-coverage-policy.md`,
   "arch-scoped"). So the f32 goldens must be run **on arm64 explicitly**, and the run must **say so**;
-  an amd64-only refresh does not discharge it. (Concretely: `2e8dfb6`'s 19 f32 rows carry no arch, and
-  the aikit v1.17.0 f32 blocked-matmul rework is exactly such a rewrite — the arm64 read is owed. See
-  `docs/QUEUE.md` mac batch.)
+  an amd64-only refresh does not discharge it. And a green proves the **argmax margin survives the
+  reordered summation** on the FMA-fusing arch — **not** cross-arch byte-identity, which f32 goldens
+  (argmax+cosine) never show. (Concretely: `2e8dfb6`'s 19 f32 rows carry no arch, and the aikit v1.17.0
+  f32 blocked-matmul rework is exactly such a rewrite — so this is a **new gate created 2026-08-12**,
+  open, not a pre-existing one that was skipped. See `docs/QUEUE.md` mac batch.)
 - **On the box:** run the real T3 suite (`scripts/parity_sweep.sh` / the `-tags cuda` real
   parity) on real checkpoints, then `-update` the manifest (bump `validated_at` + metrics) at
   the freeze commit. That is the true validation; the Mac refresh is not a substitute.
