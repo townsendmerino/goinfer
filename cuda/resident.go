@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"sort"
 	"strings"
 	"unsafe"
 
@@ -655,20 +656,59 @@ func (r *cudaResident) allocSlots() error {
 		alloc()
 		allocN++
 	}
+	// Issue LARGEST FIRST across all layers, rather than group-by-group. Total is identical either
+	// way — capSlots and the granularity form are untouched, only the order moves.
+	//
+	// HONEST ACCOUNT OF WHY: this was A10's hypothesised FIX and it was REFUTED as one. The theory
+	// was that group-by-group (30 repetitions of {64.3, 8.0, 32.1, 4.0} MiB) leaves the last layer's
+	// biggest request facing the most carved-up heap. Largest-first was predicted to complete at 34
+	// slots; it did not. It failed on a 4,212,736 B request with 155,385,856 B free — a ratio of
+	// 36.88, which no contiguity story survives.
+	//
+	// The real constraint is a driver ALLOCATION FLOOR: 151,191,552 B (144.2 MiB) that cuMemGetInfo
+	// reports as free and cuMemAlloc will not hand out at ANY request size down to 1 MiB, measured
+	// directly in TestAllocFloor. Leftover after allocSlots must exceed it, which is what the margin
+	// now provides.
+	//
+	// This ordering is KEPT anyway, on its measured merit and not on the refuted theory: it drains
+	// 27 MiB further before hitting the floor (155,385,856 vs 182,648,832) and packs more bytes
+	// before failing, at zero cost. It is a packing improvement, not a fix.
+	//
+	// Sorting by MEASURED request size rather than by an assumed stride order, because per-layer
+	// geometry is not guaranteed uniform (Gemma 4's KV widths already differ per layer, and
+	// slotBytesPerLayer exists because layer 0 can be dense). A stable sort keeps layer order within
+	// each size class, so the sequence stays deterministic.
+	type slotReq struct {
+		w    *cudaWQ
+		n    int // element count for the allocator
+		size int // bytes, for ordering and for the probe
+		isW  bool
+	}
+	reqs := make([]slotReq, 0, 4*len(moeLayers))
 	for _, i := range moeLayers {
 		L := &r.layers[i]
 		for _, w := range []*cudaWQ{&L.expGU, &L.expDown} {
-			wq := w
-			probe(r.cacheSlots*wq.perExpertW*4, func() { wq.W = r.au32(r.cacheSlots * wq.perExpertW) })
-			probe(r.cacheSlots*wq.perExpertS*2, func() {
-				wq.ws16 = gpu.NewBufferLenOf[uint16](r.dev, r.cacheSlots*wq.perExpertS)
-			})
-			// A1, recording only: the REQUESTED byte size of each allocation, so predicted
-			// consumption can be recomputed with per-buffer 2 MiB rounding instead of a raw sum.
-			r.dbgAllocSizes = append(r.dbgAllocSizes,
-				r.cacheSlots*wq.perExpertW*4, r.cacheSlots*wq.perExpertS*2)
+			reqs = append(reqs,
+				slotReq{w, r.cacheSlots * w.perExpertW, r.cacheSlots * w.perExpertW * 4, true},
+				slotReq{w, r.cacheSlots * w.perExpertS, r.cacheSlots * w.perExpertS * 2, false})
 		}
-		L.expCache = newExpertCache(r.nE, r.cacheSlots)
+	}
+	sort.SliceStable(reqs, func(a, b int) bool { return reqs[a].size > reqs[b].size })
+	for _, q := range reqs {
+		q := q
+		if q.isW {
+			probe(q.size, func() { q.w.W = r.au32(q.n) })
+		} else {
+			probe(q.size, func() { q.w.ws16 = gpu.NewBufferLenOf[uint16](r.dev, q.n) })
+		}
+		// A1, recording only: the REQUESTED byte size of each allocation, so predicted consumption
+		// can be recomputed with per-buffer 2 MiB rounding instead of a raw sum. Recorded in ISSUE
+		// order, which is now sorted; every gate on this reads it order-independently (counts,
+		// distinct sizes, occurrences, sum).
+		r.dbgAllocSizes = append(r.dbgAllocSizes, q.size)
+	}
+	for _, i := range moeLayers {
+		r.layers[i].expCache = newExpertCache(r.nE, r.cacheSlots)
 	}
 	if f1, _, e1 := r.dev.Context().MemInfo(); e1 == nil {
 		r.dbgFreeAfter = f1 // A1 instrument, recording only

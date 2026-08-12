@@ -345,7 +345,7 @@ that is the point: the margin no longer silently absorbs 132 MiB it was never si
 now means 384 MiB.
 
 **A9-MARGIN · Re-derive `slotMarginBytes` now that it covers only what it names** — `linux`,
-**MEASURED; blocked on A10, which named the mechanism**
+**ANSWERED by A10: do not lower it. 151,191,552 B of the margin is a driver floor, not slack.**
 
 Three runs on the real 26B with A9-FIX in place, varying only the margin:
 
@@ -365,49 +365,51 @@ What this run did establish: with the reservation paid up front, the decrement a
 **0 at every cap tested**, so post-sizing consumption is genuinely nil and the margin is not covering
 launch growth. Its remaining job is whatever the next item names.
 
-**A10 · The total fitting does not imply the allocations succeed** — `linux`, **ANSWERED: it is
-servability, not capacity. Fix candidate identified, not implemented.**
+**A10 · The total fitting does not imply the allocations succeed** — `linux`, **CLOSED. It is a
+driver allocation FLOOR, measured at 151,191,552 B.**
 
-At cap 34 with a 32 MiB margin, `allocSlots` fails mid-sequence. The per-allocation probe
-(`GOINFER_A10_PROBE=1`, recording only) names it exactly:
+**The mechanism.** `cuMemGetInfo` reports **151,191,552 B (144.2 MiB) more free than `cuMemAlloc`
+will hand out** — at *any* request size down to 1 MiB. Measured directly by draining the device in
+shrinking blocks (`TestAllocFloor`, seconds, no model):
 
-    [a10] alloc #112:   67403776 B, free before  304283648
-    [a10] alloc #113:    8425472 B, free before  235077632
-    [a10] alloc #114:   33701888 B, free before  224591872
-    [a10] alloc #115:    4212736 B, free before  188940288
-    [a10] alloc #116:   67403776 B, free before  182648832   <- REFUSED
-    [a10] alloc #116 FAILED: requested 67403776 B, free immediately before = 182648832 B
-          (174.2 MiB), ratio free/request = 2.71 — cuMemAlloc_v2: CUDA_ERROR_OUT_OF_MEMORY
+    1024 MiB blocks exhausted -> free 1,222,836,224
+     ...
+      32 MiB blocks exhausted -> free   182,648,832
+      16 MiB blocks exhausted -> free   165,871,616
+       8 MiB blocks exhausted -> free   157,483,008
+       4 MiB blocks exhausted -> free   153,288,704
+       2 MiB blocks exhausted -> free   151,191,552
+       1 MiB blocks exhausted -> free   151,191,552   <- FLOOR
 
-**The model is not wrong — 182,648,832 B is the figure derived from the closed form BEFORE the run,
-to the byte.** Free was **2.71×** the request and the driver refused. So the constraint is
-**per-allocation servability**: the remaining 174.2 MiB exists only as fragments smaller than the
-64.3 MiB wanted.
+**The ladder reproduces both 26B failures exactly.** The 32 MiB rung exhausts at **182,648,832** —
+the precise free figure at which the group-by-group order refused a 67 MB request. The 4–8 MiB rungs
+bracket 155,385,856, where largest-first refused a 4.2 MB one. Nothing about either failure is
+mysterious once the floor is named.
 
-**This does not re-open the struck fragmentation item, and it does not contradict it.** That control
-compared heaps at *low* occupancy and found a fresh heap had *worse* contiguity than the slot-loaded
-one — a valid result at that pressure, and it says nothing about the tail of a sequence that has just
-consumed 3.5 GB in 116 allocations. The refutation was scoped and this is outside its scope.
+**The rule, and it fits every observation:** *leftover after `allocSlots` must exceed the floor.*
 
-**Where it bites.** #116 is the **last MoE layer's `expGU.W`**, the largest buffer in the per-layer
-group (34 × 1,982,464). The sequence is 30 repetitions of {64.3, 8.0, 32.1, 4.0} MiB, so the biggest
-request in each group is issued into a heap the previous group has already carved up, and the last
-one is issued into the most carved-up heap of all.
+| cap | leftover | vs floor 151,191,552 | outcome |
+|---|---|---|---|
+| 31 (shipped) | 501,415,936 | clear | works |
+| 33 | 312,672,256 | clear | works |
+| 34 | 61,014,016 | **below** | fails mid-allocation |
 
-**Fix candidate: allocate largest-first across ALL layers, not group-by-group.** Issue all 30
-`expGU.W` while the heap is least fragmented, then all `expDown.W`, then the two scale buffers. Total
-bytes are unchanged, so `capSlots` needs no change and the granularity form still holds; only the
-issue order moves. Pre-registered test: at cap 34 with a 32 MiB margin, the current order fails at
-#116 and largest-first should complete — and if it does not, the ordering hypothesis is wrong and the
-remedy is a slack term rather than a permutation.
+**This retires a figure A9-MARGIN nearly recommended.** A 128 MiB margin is **134,217,728 — below the
+floor**. The cap-33 run under it worked only because *that cap's leftover* happened to be 312 MiB;
+the margin itself was unsafe. That was luck, and it is now something a test can see:
+`TestAllocFloor` asserts `slotMarginBytes ≥ floor` (shipped 402,653,184, clear by 251,461,632).
+Mutation-checked at 128 MiB → red.
 
-*(The slab restructure remains struck. This is not that: it is a reordering of the same allocations,
-not one big buffer sub-allocated, and it costs nothing if it works.)*
+**The ordering hypothesis was REFUTED, and the change was kept anyway on different grounds.**
+Largest-first was pre-registered to complete at 34 slots. It did not — it failed on a 4,212,736 B
+request with 155,385,856 B free, a ratio of **36.88**, which no contiguity account survives. It *is*
+kept, because measured on its own merit it drains **27 MiB further** before hitting the floor at zero
+cost. The code comment says so rather than carrying the refuted rationale.
 
-**Until it is fixed, the shipped configuration is safe by margin.** The 384 MiB margin keeps the cap
-at 31, where the tail allocation has ~500 MiB behind it, and a failure declines cleanly to the
-staged/CPU path rather than crashing. **A9-MARGIN stays blocked on this** — lowering the margin to
-128 MiB is what moves the cap into the region where servability starts to bind.
+**A9-MARGIN is unblocked and its answer is: do not lower it.** The margin's job is now decomposed —
+151,191,552 B of it is the unallocatable floor and the remaining 251,461,632 B is genuine headroom.
+Any reduction has to stay above the floor, which leaves far less room than the "recover two slots"
+framing suggested.
 
 **A9-RESID · The 589,824 B is baseline variance, not reservation variance** — `linux`, **CLOSED**
 
