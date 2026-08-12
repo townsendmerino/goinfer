@@ -1356,7 +1356,7 @@ rebuild against current numbers on request.
 **E6 · aikit release** — `linux` or `mac` — **SUPERSEDED BY EVENTS 2026-08-12, and the deferral was
 right on its own terms**
 
-aikit cut `v1.17.0` / `gpu/v0.28.0` (`ada417e`), and goinfer is on it (`4a075ac`). E6 is closed by the
+aikit cut `v1.17.0` / `gpu/v0.28.0` (`ada417e`), and goinfer is on it (`f33fcaf`). E6 is closed by the
 release happening, not by the argument below being withdrawn — and the release **satisfied E6's own
 criterion** rather than overriding it. The reason a consumer can receive is `linalg.MatmulBTW8A8Pre`
 gaining 8-column blocking: goinfer never calls it directly, but `MatmulBTW8A8Into` now delegates to
@@ -1873,7 +1873,7 @@ the rest.
 locus not isolated** — `linux`, **open, 2026-08-12**
 
 Not a product claim and deliberately not in the CHANGELOG: an engineering finding, recorded with its
-method and its limits so it is not lost. The bump (`4a075ac`) is the **only** compiled-code change
+method and its limits so it is not lost. The bump (`f33fcaf`) is the **only** compiled-code change
 between the arms, so the effect is attributable to it.
 
 **Result: −2.96%**, against a noise floor of **2.0% pre-registered before the comparison ran**.
@@ -1898,7 +1898,7 @@ range. But the **per-visit means do not overlap** — pre {0.9658, 0.9690} again
 **magnitude as ~3% ± a point**, not as 2.96%.
 
 **Locus NOT isolated — this is the open part.** v1.17.0 brings two new kernels onto goinfer's paths
-(see `4a075ac`): a new AVX2 int8 routine behind `w8a8Span`, and a reworked inner loop in the blocked
+(see `f33fcaf`): a new AVX2 int8 routine behind `w8a8Span`, and a reworked inner loop in the blocked
 f32 matmul. This benchmark is int8int8 at M=1, so the int8 kernel is the *likely* locus and the f32
 blocked path is barely exercised — **that is inference, not measurement.** An ablation would pin it;
 nobody has run one. Do not repeat the inference as a finding.
@@ -2017,7 +2017,7 @@ groups were seeded from conversation, and **the rate is much lower**, which is t
 | E3 freeze re-declaration | **DONE `cda8cfe`** | re-declared as a proof requirement, with decider and date |
 | E4 `scripts/bench_compare.sh` fix or retire | **FIXED** | it now opens with *"goinfer's OWN numbers only. NOT a peer comparison"* and points at `scripts/bench_peer.py`, which drives both sides |
 | E5 promo drafts | **unverifiable** | held in conversation, nothing in the tree to check |
-| E6 aikit release | **CLOSED 2026-08-12** — superseded by events, not by reversal | aikit cut `v1.17.0`/`gpu/v0.28.0` (`ada417e`); goinfer is on it (`4a075ac`). The release met E6's own "a reason a consumer can receive" test |
+| E6 aikit release | **CLOSED 2026-08-12** — superseded by events, not by reversal | aikit cut `v1.17.0`/`gpu/v0.28.0` (`ada417e`); goinfer is on it (`f33fcaf`). The release met E6's own "a reason a consumer can receive" test |
 | G1 LFM2.5 family | **open** | no LFM2 code in the tree |
 | G2 `go fix` modernizers | **DONE `3d6ae1e`** | — |
 
@@ -2195,7 +2195,6 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `38061b1` | perf(gemma4-paging): pread expert nibbles straight into the slot buffers |
 | `3d6ae1e` | chore: go fix modernizers, one deterministic pass (G2) |
 | `4642b7c` | [aikit] gpu(metal): Device.MaxThreadgroupMemoryLength() — tile-memory limit (goinfer M-11) |
-| `4a075ac` | chore(deps): aikit v1.16.0 -> v1.17.0, aikit/gpu v0.27.0 -> v0.28.0 |
 | `4c26a58` | perf(cuda): parallelise the Gemma final-logit softcap, bit-identical (P3) |
 | `588052b` | serve: drain in-flight requests before freeing an unloaded model (fixes the leak safely) |
 | `6091e7a` | fix(cuda): size the expert cache by SEARCH over the granularity form (A5) |
@@ -2228,6 +2227,7 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `ecc5af2` | chore(parity): refresh deps_hash after default-off diagnostic hooks (non-numeric) |
 | `ed81e13` | P1: route top_k=1 to the on-device greedy fast path |
 | `eea7f29` | perf(decoder): one gate/up pair per token in MoE, not one per expert (P6) |
+| `f33fcaf` | chore(deps): aikit v1.16.0 -> v1.17.0, aikit/gpu v0.27.0 -> v0.28.0 |
 | `f340d4e` | metal(9c Step 4): argmax-primary gate + f16-scale confound diagnostic (finding recorded) |
 | `f9d5d07` | feat(decoder): dispatch census (B6); close the GGUF-quant gap; reopen B4 |
 
