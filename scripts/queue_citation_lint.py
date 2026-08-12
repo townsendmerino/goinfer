@@ -446,8 +446,13 @@ def main() -> int:
           f"{len(bresolved)} bare file reference(s) in the queue (existence only).")
     print("  docs/completed/ is EXCLUDED on purpose — archived records are supposed to age with the "
           "code they described, and linting them would fight the archival rule.")
-    print("  NOT validated: every test name, tag, env var, URL and prose claim in the file — and for "
-          "the bare file references, WHAT IS SAID ABOUT THEM, since there is no line to key against.")
+    print("  NOT validated: RELEVANCE. A commit citation is checked to resolve and to match its "
+          "recorded subject; nothing checks that the commit SUPPORTS the claim made about it.")
+    print("    9e5f8fa passed green through two documents for weeks as \"the goldens-refresh "
+          "precedent\" while touching the manifest not at all — a resolving sha with a matching "
+          "subject and a false claim attached.")
+    print("  Also NOT validated: every test name, tag, env var and URL — and for the bare file "
+          "references, WHAT IS SAID ABOUT THEM, since there is no line to key against.")
     print("  A lint on a document raises trust in EVERY citation in it, not only the kinds it checks — "
           "so the scope is printed with the green.")
     return 0

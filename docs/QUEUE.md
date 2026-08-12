@@ -985,8 +985,12 @@ flags. The `Options` fields and accessors touch `decoder/model.go` and `decoder/
 families' `deps_hash`. `BRANCH-NOTE.md` records the pickup steps and the instruction that matters:
 **run the goldens, do not refresh `deps_hash` to quiet the gate**.
 
-Precedent exists for a goldens-gated refresh (`9e5f8fa`, where a metadata field addition re-staled
-`decoder/weights.go` and the refresh ran 19 goldens). It was deliberately not spent on ergonomics.
+Precedent exists for a goldens-gated refresh on exactly this shape: **`ca29d6c`**, where making the
+resident context cap configuration-derived added `Options` plumbing to **`decoder/model.go` and
+`decoder/gguf.go` — the same two files this branch touches** — and refreshed behind 19 goldens.
+(This line previously cited `9e5f8fa`, which touches the manifest not at all; the "re-staled
+`decoder/weights.go`" detail was fabricated with it — none of the nine real refreshes touches that
+file.) It was deliberately not spent on ergonomics.
 
 ### E. Release and claims
 
@@ -1367,7 +1371,9 @@ By skipping the `decodeScratch` invariant its dense sibling honours. **See B6.**
 **PRICED (2026-08-12) — the freeze is a cost, not a prohibition, and the cost is 6 seconds.**
 `decoder/mlp.go` is in the `core` shared set and `decoder/weightmat.go` in `quant`, and **all 23
 families use both**, so an exception re-stales the entire matrix. But the sanctioned instrument is
-`scripts/refresh_parity_hashes.sh` — the goldens-gated refresh, precedent `9e5f8fa` — **not**
+`scripts/refresh_parity_hashes.sh` — the goldens-gated refresh, precedent **`ecc5af2`** (default-off
+diagnostic hooks: a core-file change that is non-numeric by construction, refreshed behind the
+goldens) — **not**
 `scripts/parity_sweep.sh`'s T3 oracle sweep, because these are allocation changes rather than arithmetic.
 
 Measured on `linux-62gb`: **19 goldens pass, 11 skip, 0 fail, 6.09 s wall.** One machine, no model
@@ -1719,6 +1725,12 @@ a branch, a commit, an audit line, a script — does the entry describe it corre
 **Split: 9 entries had an external source and were checkable; 2 of those 9 were wrong (D3, E4).
 4 entries — C2, C3, E1, E5 — have no source outside conversation and are recorded as unverifiable
 rather than checked.**
+
+**THE TRIGGER, not a cadence.** An entry's description is re-read against its source **at the moment
+the item is picked up for work** — nothing schedules this and nothing lints it. That is when the
+description matters, when someone is already loading the context anyway, and it is exactly what caught
+D3: the read happened because the item was next, not because a sweep came due. The cost falls at the
+only point where the drift would have changed what someone did.
 
 **That rate (2 of 9) is higher than the status sweep's (1 of 13), and the two are not the same
 population.** A description drifts silently because nothing re-reads it against its source; a status
