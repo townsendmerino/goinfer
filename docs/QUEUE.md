@@ -186,7 +186,7 @@ maintained by intention drifts on the first variable someone adds.
 
 The one failure that has resisted a day of investigation also produces the least informative
 message: a raw `cuLaunchKernel: CUDA_ERROR_OUT_OF_MEMORY` with nothing tying it to the cache
-setting the user chose. The decline floor added in `7c91ccc` does not catch it — that fires below
+setting the user chose. The decline floor added in `a15a394` does not catch it — that fires below
 `topK`, and this dies at 34 slots with `topK` of 8.
 
 Two changes, both error handling rather than prediction, useful whatever A1 turns out to be:
@@ -1092,7 +1092,7 @@ transpositions the type system prevents; passing a wrong *value* of the right ki
 The failure moves from an invisible positional slip to a legible mis-assertion at the call site.
 **Do not write "eliminates transposition bugs".**
 
-**D3 · Promote the expert-cache env vars to CLI flags** — `linux`, **re-derived `9ef908c`; ready to
+**D3 · Promote the expert-cache env vars to CLI flags** — `linux`, **re-derived `2d28358`; ready to
 rebase**
 
 **This entry's own description was wrong at the source, not stale.** It read as a "parked flag-pair"
@@ -1233,7 +1233,7 @@ D3 was designed **while the cap computed the wrong value**. A5 fixed the cap. So
 
 **D3 (original) · blocked on the freeze** — superseded
 
-`flag-pair-moe-cache` (`f6bbf7c`) carries `--moe-cache-experts` and `--moe-cache-slots` as CLI
+`flag-pair-moe-cache` (`bacc04c`) carries `--moe-cache-experts` and `--moe-cache-slots` as CLI
 flags. The `Options` fields and accessors touch `decoder/model.go` and `decoder/gguf.go`, which re-stales 19
 families' `deps_hash`. `BRANCH-NOTE.md` records the pickup steps and the instruction that matters:
 **run the goldens, do not refresh `deps_hash` to quiet the gate**.
@@ -1356,7 +1356,7 @@ rebuild against current numbers on request.
 **E6 · aikit release** — `linux` or `mac` — **SUPERSEDED BY EVENTS 2026-08-12, and the deferral was
 right on its own terms**
 
-aikit cut `v1.17.0` / `gpu/v0.28.0` (`ada417e`), and goinfer is on it (`4dfefee`). E6 is closed by the
+aikit cut `v1.17.0` / `gpu/v0.28.0` (`ada417e`), and goinfer is on it (`4a075ac`). E6 is closed by the
 release happening, not by the argument below being withdrawn — and the release **satisfied E6's own
 criterion** rather than overriding it. The reason a consumer can receive is `linalg.MatmulBTW8A8Pre`
 gaining 8-column blocking: goinfer never calls it directly, but `MatmulBTW8A8Into` now delegates to
@@ -1788,7 +1788,7 @@ of the E-group release gate for that reason rather than because it is interestin
 2026-08-12 (`1d0d1ed`)**: 23 fixtures across 16 architectures, so the prerequisite is now met for
 int4 specifically.
 
-**RUN WHAT EXISTS FIRST — and most of it was UNPLUMBED, not missing.** Done 2026-08-12, `23b2ee7`:
+**RUN WHAT EXISTS FIRST — and most of it was UNPLUMBED, not missing.** Done 2026-08-12, `a6c5b57`:
 
 - **(b) the three `int8int8` goldens** skipped for one liftable reason, the same for all three:
   `GOINFER_HEAVY_TESTS` unset. **Two of the three pass here in ~70 s** (gemma4, mellum2). The refresh
@@ -1975,7 +1975,7 @@ groups were seeded from conversation, and **the rate is much lower**, which is t
 | E3 freeze re-declaration | **DONE `cda8cfe`** | re-declared as a proof requirement, with decider and date |
 | E4 `scripts/bench_compare.sh` fix or retire | **FIXED** | it now opens with *"goinfer's OWN numbers only. NOT a peer comparison"* and points at `scripts/bench_peer.py`, which drives both sides |
 | E5 promo drafts | **unverifiable** | held in conversation, nothing in the tree to check |
-| E6 aikit release | **CLOSED 2026-08-12** — superseded by events, not by reversal | aikit cut `v1.17.0`/`gpu/v0.28.0` (`ada417e`); goinfer is on it (`4dfefee`). The release met E6's own "a reason a consumer can receive" test |
+| E6 aikit release | **CLOSED 2026-08-12** — superseded by events, not by reversal | aikit cut `v1.17.0`/`gpu/v0.28.0` (`ada417e`); goinfer is on it (`4a075ac`). The release met E6's own "a reason a consumer can receive" test |
 | G1 LFM2.5 family | **open** | no LFM2 code in the tree |
 | G2 `go fix` modernizers | **DONE `3d6ae1e`** | — |
 
@@ -2005,7 +2005,7 @@ D3's refresh in the rebase worktree and getting `goldens=7`.)*
 
 | entry | source | description matches? |
 |---|---|---|
-| D3 | branch `flag-pair-moe-cache` + `BRANCH-NOTE.md` | **NO — corrected `9ef908c`.** Called a "parked flag-pair" on a workaround premise; it is an API-surface promotion following `KVPrecision` |
+| D3 | branch `flag-pair-moe-cache` + `BRANCH-NOTE.md` | **NO — corrected `2d28358`.** Called a "parked flag-pair" on a workaround premise; it is an API-surface promotion following `KVPrecision` |
 | B4 | a stash that does not exist here | **unverifiable** — the description is all that survives, and it names a file that resolves nowhere |
 | C1 | `588052b` (the drain fix) | matches — Metal-verified, CUDA arm untested |
 | D2 | design recorded in-entry, no branch | matches; no external source to drift from |
@@ -2102,14 +2102,14 @@ of generation. Regenerate with `scripts/queue_citation_lint.py --update`.
 | `0c54e35` | fix(gate): repo hygiene runs what CI runs, derived from ci.yml (B0) |
 | `1d0d1ed` | test(decoder): int4 forward goldens — 23 fixtures, 16 architectures (Q1c) |
 | `1f6dbe0` | fix(parity,fmt): gofmt the threshold sweep + refresh deps_hash after comment-only core edits |
-| `23b2ee7` | fix(parity): the goldens refresh runs quantized goldens, and reports the split |
+| `a6c5b57` | fix(parity): the goldens refresh runs quantized goldens, and reports the split |
 | `2e91607` | test: refresh parity deps_hash — non-numeric core-file drift (un-reds main) |
 | `3d6ae1e` | chore: go fix modernizers, one deterministic pass (G2) |
 | `4c26a58` | perf(cuda): parallelise the Gemma final-logit softcap, bit-identical (P3) |
 | `588052b` | serve: drain in-flight requests before freeing an unloaded model (fixes the leak safely) |
 | `6091e7a` | fix(cuda): size the expert cache by SEARCH over the granularity form (A5) |
 | `6edd1ca` | parity: make "validated" MEAN T3 — method-tier gate + honest experimental tier (D2, pre-freeze) |
-| `7c91ccc` | cuda+docs: decline floor, slot-cap gate, driver allocation facts, and seven rules |
+| `a15a394` | cuda+docs: decline floor, slot-cap gate, driver allocation facts, and seven rules |
 | `7cc2f0d` | fix(parity,ci): refresh deps_hash after 38061b1's pread-staging core plumbing (non-numeric) |
 | `7ccec1e` | fix(cuda): the expert cache sizes itself — topK was the worst possible default |
 | `82b39cc` | docs(parity): document qwen3_5_moe's int8-vs-bf16 movement (v0.8.0 §1 — gate-backed pass) |
@@ -2130,7 +2130,7 @@ of generation. Regenerate with `scripts/queue_citation_lint.py --update`.
 | `ecc5af2` | chore(parity): refresh deps_hash after default-off diagnostic hooks (non-numeric) |
 | `ed81e13` | P1: route top_k=1 to the on-device greedy fast path |
 | `eea7f29` | perf(decoder): one gate/up pair per token in MoE, not one per expert (P6) |
-| `f6bbf7c` | feat(serve): --moe-cache-experts / --moe-cache-slots (decisions 2+3) — HELD, trips the parity manifest |
+| `bacc04c` | feat(serve): --moe-cache-experts / --moe-cache-slots (decisions 2+3) — HELD, trips the parity manifest |
 | `f9d5d07` | feat(decoder): dispatch census (B6); close the GGUF-quant gap; reopen B4 |
 
 <!-- /SHA-INDEX -->
@@ -2148,18 +2148,16 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `0c54e35` | fix(gate): repo hygiene runs what CI runs, derived from ci.yml (B0) |
 | `1d0d1ed` | test(decoder): int4 forward goldens — 23 fixtures, 16 architectures (Q1c) |
 | `1f6dbe0` | fix(parity,fmt): gofmt the threshold sweep + refresh deps_hash after comment-only core edits |
-| `23b2ee7` | fix(parity): the goldens refresh runs quantized goldens, and reports the split |
 | `2d28358` | docs(branch-note): re-derive against the corrected cap (D3 design read) |
 | `2e91607` | test: refresh parity deps_hash — non-numeric core-file drift (un-reds main) |
 | `38061b1` | perf(gemma4-paging): pread expert nibbles straight into the slot buffers |
 | `3d6ae1e` | chore: go fix modernizers, one deterministic pass (G2) |
 | `4642b7c` | [aikit] gpu(metal): Device.MaxThreadgroupMemoryLength() — tile-memory limit (goinfer M-11) |
+| `4a075ac` | chore(deps): aikit v1.16.0 -> v1.17.0, aikit/gpu v0.27.0 -> v0.28.0 |
 | `4c26a58` | perf(cuda): parallelise the Gemma final-logit softcap, bit-identical (P3) |
-| `4dfefee` | chore(deps): aikit v1.16.0 -> v1.17.0, aikit/gpu v0.27.0 -> v0.28.0 |
 | `588052b` | serve: drain in-flight requests before freeing an unloaded model (fixes the leak safely) |
 | `6091e7a` | fix(cuda): size the expert cache by SEARCH over the granularity form (A5) |
 | `6edd1ca` | parity: make "validated" MEAN T3 — method-tier gate + honest experimental tier (D2, pre-freeze) |
-| `7c91ccc` | cuda+docs: decline floor, slot-cap gate, driver allocation facts, and seven rules |
 | `7cc2f0d` | fix(parity,ci): refresh deps_hash after 38061b1's pread-staging core plumbing (non-numeric) |
 | `7ccec1e` | fix(cuda): the expert cache sizes itself — topK was the worst possible default |
 | `82b39cc` | docs(parity): document qwen3_5_moe's int8-vs-bf16 movement (v0.8.0 §1 — gate-backed pass) |
@@ -2171,9 +2169,11 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `98936cf` | test(goldens): strengthen mamba-2 + deltanet parity fixtures (kill identity weights) |
 | `99b3f95` | chore(deps): pin aikit v1.12.0 — gpt-oss MXFP4 reproducible on main |
 | `9e5f8fa` | fix(quant): reject --quant that conflicts with a prequant .giw at startup (T1-7) |
-| `9ef908c` | docs(branch-note): re-derive against the corrected cap (D3 design read) |
+| `a15a394` | cuda+docs: decline floor, slot-cap gate, driver allocation facts, and seven rules |
+| `a6c5b57` | fix(parity): the goldens refresh runs quantized goldens, and reports the split |
 | `a79303e` | [aikit] release: prepare v1.16.0 — mmap SpanCache eviction-policy knob |
 | `ada417e` | [aikit] scripts: ptx-repro is n/a on darwin, keyed on the PLATFORM not on NVRTC's absence |
+| `bacc04c` | feat(serve): --moe-cache-experts / --moe-cache-slots — PARKED on the freeze |
 | `bd08936` | fix(gate): cannot-search is not not-found; cross-gate composition; B7 sweep |
 | `be049df` | [aikit] gpu(gemv): explicit __fmaf_rn in the quantized GEMV — the bit-identity contraction rule |
 | `c6600fc` | audit C-14: argmax index tie-break (match CPU lowest-index on exact ties) |
@@ -2187,7 +2187,6 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `ed81e13` | P1: route top_k=1 to the on-device greedy fast path |
 | `eea7f29` | perf(decoder): one gate/up pair per token in MoE, not one per expert (P6) |
 | `f340d4e` | metal(9c Step 4): argmax-primary gate + f16-scale confound diagnostic (finding recorded) |
-| `f6bbf7c` | feat(serve): --moe-cache-experts / --moe-cache-slots (decisions 2+3) — HELD, trips the parity manifest |
 | `f9d5d07` | feat(decoder): dispatch census (B6); close the GGUF-quant gap; reopen B4 |
 
 ## Path index

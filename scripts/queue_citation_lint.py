@@ -17,10 +17,27 @@ more confidence than it started with.
 
 The remedy is mechanical. This lint extracts every SHA-looking token from the queue, resolves it, and
 compares its subject against a recorded index at the bottom of the file. `--update` regenerates the
-index. Two failure modes are covered, and both were mutation-checked:
+index. Three failure modes are covered, and all three were mutation-checked:
 
   - a SHA that does not resolve  -> fabricated, mistyped, or from a dropped branch
   - a SHA whose subject changed  -> the index is stale, or the citation was always wrong
+  - a SHA reachable from NO ref  -> amended away or rebased out; see below
+
+THE THIRD ONE WAS A HOLE IN THIS LINT, found 2026-08-12 by walking into it. `git log -1 <sha>`
+succeeds for any object still in the local store, including one no branch or tag points at. Amending
+a commit leaves the original in the reflog, so every citation to the old SHA kept passing green while
+pointing at history that existed on exactly one machine. Turning the check on found FOUR such
+citations already in the queue, all from this campaign's own rebases and amends — they had been green
+the whole time.
+
+Worse than a plain false green: it was MACHINE-DEPENDENT. The same citation is a hard red in a fresh
+clone, where the orphan was never fetched. A gate whose answer depends on which box ran it is the
+Environment class (docs/parity-coverage-policy.md) wearing a gate's clothes — and this one was the
+gate written to stop exactly this kind of drift, which is the G-01 shape one level up: the instrument
+exempting itself from the property it enforces.
+
+The check is reachability from any ref, not ancestry of HEAD, so a commit legitimately living on
+another branch or a tag still passes.
 
 A citation that cannot resolve here but is still legitimate — another repository, a commit that
 never left a machine — is declared explicitly:
@@ -82,6 +99,12 @@ class SearchError(Exception):
     """A repository could not be searched — distinct from a SHA not being found in it."""
 
 
+# A commit that still resolves locally but is reachable from no ref: amended away, rebased out, or
+# on a deleted branch. Distinct from "does not resolve" because the remedy differs — the citation is
+# not fabricated, it points at history that no longer exists anywhere others can see.
+ORPHANED = object()
+
+
 def sibling_repos():
     root = QUEUE.parent.parent
     env = os.environ.get("GOINFER_SHA_LINT_REPOS")
@@ -122,6 +145,33 @@ def subject_of(sha: str):
             capture_output=True, text=True, cwd=repo,
         )
         if r.returncode == 0:
+            # RESOLVING IS NOT ENOUGH — the commit must be REACHABLE FROM A REF.
+            #
+            # `git log -1 <sha>` succeeds for any object still in the local store, including one
+            # that no branch or tag points at: an amended-away or rebased-out commit survives in
+            # the reflog and keeps resolving for as long as gc spares it. Found the honest way —
+            # this file's own bump commit was amended, every citation to the old sha kept passing
+            # green, and the old sha was by then reachable from nothing.
+            #
+            # That green was also MACHINE-DEPENDENT, which is the worse half: the same citation is
+            # a hard red in a fresh clone, where the orphan was never fetched. A lint whose answer
+            # depends on which box ran it is the Environment class (docs/parity-coverage-policy.md)
+            # wearing a gate's clothes.
+            #
+            # So: reachable from any ref, or it does not count. Checked with rev-list rather than
+            # `merge-base --is-ancestor HEAD`, because a legitimately cited commit may live on
+            # another branch or a tag and must still pass.
+            reach = subprocess.run(
+                ["git", "merge-base", "--is-ancestor", sha, "HEAD"],
+                capture_output=True, text=True, cwd=repo,
+            )
+            if reach.returncode != 0:
+                anyref = subprocess.run(
+                    ["git", "for-each-ref", "--contains", sha, "--count=1", "--format=%(refname)"],
+                    capture_output=True, text=True, cwd=repo,
+                )
+                if not anyref.stdout.strip():
+                    return ORPHANED
             subj = r.stdout.strip()
             if repo != str(QUEUE.parent.parent):
                 subj = f"[{pathlib.Path(repo).name}] {subj}"
@@ -271,7 +321,7 @@ def main() -> int:
     bares.sort()
 
     allowed = allowlist(text)
-    resolved, unresolved = {}, []
+    resolved, unresolved, orphaned = {}, [], []
     for sha in found:
         try:
             s = subject_of(sha)
@@ -280,7 +330,9 @@ def main() -> int:
             sys.stderr.write("  This is not a missing SHA. Fix the repository path and re-run; "
                              "reporting citations as unresolved from here would be a false red.\n")
             return 2
-        if s is None:
+        if s is ORPHANED:
+            orphaned.append(sha)
+        elif s is None:
             if sha in allowed:
                 resolved[sha] = f"(unresolvable here) {allowed[sha]}"
                 continue
@@ -388,6 +440,12 @@ def main() -> int:
             skipped_foreign.append((sha, m.group(1)))
             continue
         bad.append(f"  {sha}  DOES NOT RESOLVE — fabricated, mistyped, or from a dropped branch")
+    for sha in orphaned:
+        bad.append(f"  {sha}  ORPHANED — it resolves in this local object store but is reachable "
+                   f"from NO ref.\n      An amended, rebased or deleted-branch commit. It survives "
+                   f"here in the reflog until gc, and is a hard failure in any fresh clone, so a "
+                   f"green on this machine would not travel.\n      Re-point the citation at the "
+                   f"commit that replaced it.")
     for sha, subj in resolved.items():
         if sha in allowed:
             continue  # declared unresolvable, with a stated reason; nothing to compare against
