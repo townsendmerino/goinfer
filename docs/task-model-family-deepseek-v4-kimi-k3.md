@@ -501,3 +501,5 @@ loader** work, which serves every large MoE regardless of attention shape.
 - **`kimi_linear` as a standalone family** — worth checking separately whether Moonshot ships
   non-multimodal `kimi_linear` checkpoints; if so it is a smaller, more tractable entry point to the
   same primitives than K3 itself.
+
+<!-- citation-lint: allow-path modeling_kimi_linear.py EXTERNAL — the HuggingFace reference implementation, read for the port -->

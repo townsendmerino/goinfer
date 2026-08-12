@@ -25,7 +25,7 @@ Differences vs LFM2-2.6B are **scale/hyperparameter only** — and two contradic
 ## B. Mamba conv reusable? — Composition in design, a new copy in code
 
 Mamba-2's causal depthwise conv1d is **inlined, not factored out**: three verbatim copies —
-`mamba2.go:89-105` (decode), `mamba2_chunked.go:60-75` (prefill oracle, not wired), `deltanet.go:99-117`
+`decoder/mamba2.go:89-105` (decode), `decoder/mamba2_chunked.go:60-75` (prefill oracle, not wired), `decoder/deltanet.go:99-117`
 (bias-free). DeltaNet reusing the identical loop against a **non-SSM** recurrence proves the conv is
 algorithmically SSM-independent and its rolling-state prefill/decode boundary is solved. `conv_bias=false`
 matches DeltaNet's bias-free form. **New: ~15 lines** (a 4th copy, or extract a shared
@@ -33,9 +33,9 @@ matches DeltaNet's bias-free form. **New: ~15 lines** (a 4th copy, or extract a 
 
 ## C. Mixed per-layer cache state? — Yes
 
-`KVCache` (`kvcache.go:50-146`) already holds parallel per-layer arrays (`keys/vals`, `rings`, `mamba`,
+`KVCache` (`decoder/kvcache.go:50-146`) already holds parallel per-layer arrays (`keys/vals`, `rings`, `mamba`,
 `delta`, `mlaLatent`), populated only on layers of the matching kind. Granite/Nemotron are live
-Mamba+attention hybrids; Nemotron's `blockKind []uint8` (`arch.go:156-165`) is the per-layer-type
+Mamba+attention hybrids; Nemotron's `blockKind []uint8` (`decoder/arch.go:156-165`) is the per-layer-type
 template. LFM2's rolling conv state is a **strict subset of `mamba2State`** (the `convWin` field already
 exists in both `mamba2State` and `deltaState`). New: `shortConvState` + `conv []*shortConvState` slice +
 alloc/reset/truncate, ~30-50 lines verbatim from `mamba`/`delta`. All recurrent hybrids run
@@ -43,7 +43,7 @@ alloc/reset/truncate, ~30-50 lines verbatim from `mamba`/`delta`. All recurrent 
 
 ## D. Closest interleave — Qwen3.5-MoE
 
-The only candidate with a *true two-mixer* per-layer dispatch (`forward_qwen35.go:30-34`:
+The only candidate with a *true two-mixer* per-layer dispatch (`decoder/forward_qwen35.go:30-34`:
 `isLinearLayer(l)` → `gatedDeltaNetStep` vs `qwen35Attention`), driven by `layer_types` — the exact twin
 of LFM2's conv-vs-GQA split. Llama 4 / Mellum2 toggle a parameter inside one shared mixer. **Build on
 Qwen3.5-MoE**: copy `layerIsLinear→layerIsConv`, `IsLinearLayer→IsConvLayer`,
@@ -53,9 +53,9 @@ Qwen3.5-MoE**: copy `layerIsLinear→layerIsConv`, `IsLinearLayer→IsConvLayer`
 
 The brief said "QK LayerNorm (not RMSNorm)." The reference `modeling_lfm2.py` uses **`Lfm2RMSNorm(head_dim)`
 per-head** — RMSNorm. **If RMSNorm (confirm directly), LFM2 uses goinfer's existing hardcoded RMSNorm
-QK-norm path (`attention.go:94-96`) with ZERO new code.** This is exactly the "quiet wrong answer" risk —
+QK-norm path (`decoder/attention.go:94-96`) with ZERO new code.** This is exactly the "quiet wrong answer" risk —
 verify before building. Contingency if LayerNorm: the `layerNorm(x, weight, bias, …)` primitive already
-exists and handles bias (`rmsnorm.go:49`; `config.go:627-628` flags LayerNorm-QK as a known Phase-2
+exists and handles bias (`decoder/rmsnorm.go:49`; `decoder/config.go:627-628` flags LayerNorm-QK as a known Phase-2
 primitive) → ~25 lines forward-selector + `.bias`-tensor plumbing.
 
 ## F. Computed FFN dim — moot here (stated 10752)

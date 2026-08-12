@@ -51,7 +51,7 @@ Today's attention (`gpu/attention.go` `attnShaderWGSL`, `c.attnPipeline`) is
 `[0, pos]`. Prefill needs **M queries**, each query i (abs pos `startPos+i`)
 attending causally to keys `[0, startPos+i]` — a **plain causal mask, no sliding
 window.** `DecodeRunnerEligible` requires `SlidingWindow == 0` (verified,
-`residency.go:54`), so the residency path is **full-attention-only** by
+`decoder/residency.go:54`), so the residency path is **full-attention-only** by
 construction — there are no local/windowed layers to handle. K/V for all M are
 written into the resident cache by the batched `ropeStore`/`vStore` *before* the
 attention reads it, so it's a self-contained pass. This kernel doesn't exist yet,

@@ -40,7 +40,7 @@ and there is no second hidden guard — the capacity cap is now 512 and K2's 384
 
 **Everything except the attention (and three small variants) is an existing GEMV.** The strategy
 question — absorbed vs materialized — is settled by the CPU path already: `decoder`'s
-`mlaAttentionAbsorb` (`forward_deepseek.go:188`) is the absorb path, and WebGPU mirrors it. Building
+`mlaAttentionAbsorb` (`decoder/forward_deepseek.go:188`) is the absorb path, and WebGPU mirrors it. Building
 CUDA on **materialize-per-token K/V** would mean expanding `kv_b_proj` every step for every head
 (nH × (qkNope+vHead) floats per position) — strictly more work *and* it discards MLA's whole point.
 **Absorb is the only sane choice; it is not really a fork.**

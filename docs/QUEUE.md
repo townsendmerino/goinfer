@@ -771,12 +771,13 @@ Stashes: **none, in any of the four.**
 **MAC BATCH — one session, not three interruptions.** Collected because each item needs that machine
 and none needs this one:
 
-1. **Push `metal-rope-merge`** so `d682315` resolves from anywhere and P4's "already implemented,
+1. **C3, the Metal consumer window — FIRST.** The largest completely uncovered surface, and it sank
+   once already. Ordering it behind the two chores below is how that happened; a session that runs
+   out of time should lose a chore, not this.
+2. **Push `metal-rope-merge`** so `d682315` resolves from anywhere and P4's "already implemented,
    snapshot-golden byte-exact" becomes checkable. It does not need merging to be safe.
-2. **B4's stash check** — `git stash list` in all four repos; the stash is absent here and unsearched
+3. **B4's stash check** — `git stash list` in all four repos; the stash is absent here and unsearched
    there.
-3. **C3, the Metal consumer window** — the largest completely uncovered surface, and the
-   highest-priority of the three items that sank before this campaign started.
 
 **Still outstanding, and it needs the mac:** `metal-rope-merge` carrying `d682315`. It is not on
 origin and resolves in no clone here, so **P4's "already implemented, snapshot-golden byte-exact" is
@@ -913,8 +914,15 @@ transpositions the type system prevents; passing a wrong *value* of the right ki
 The failure moves from an invisible positional slip to a legible mis-assertion at the call site.
 **Do not write "eliminates transposition bugs".**
 
-**D3 · The parked flag-pair** — `linux`, **unblocked by the proof requirement; belongs in the
-release if its rebase is clean**
+**D3 · Promote the expert-cache env vars to CLI flags** — `linux`, **re-derived `9ef908c`; ready to
+rebase**
+
+**This entry's own description was wrong at the source, not stale.** It read as a "parked flag-pair"
+with a workaround premise. `BRANCH-NOTE.md` says what it is: **an API-surface promotion** of
+env-var-only controls to CLI flags, wired `decoder.Options` → `Model` accessor → CUDA backend,
+following the `KVPrecision` pattern rather than adding more `os.Getenv` to the backend. The entry was
+mine and it mischaracterised the branch from the beginning — a status sweep would never have caught
+it, because the status was right.
 
 **Does it complete the MoE-cache story the release headlines? YES.** `c8b65ba` adds
 `--moe-cache-experts` / `--moe-cache-slots` to `serve`, and the README instructs the **env vars in
@@ -1689,6 +1697,43 @@ be assumed to pay again on groups that did not.
 E5 is recorded as **unverifiable** rather than open: nothing in the tree can confirm or deny it, which
 is a different state and should read as one.
 
+
+## Description sweep (2026-08-12) — does each entry match its source?
+
+The status sweep found 1 of 13. **D3 shows description can be wrong while status is right, and
+description is what someone acts on.** So: for every open entry with a source outside conversation —
+a branch, a commit, an audit line, a script — does the entry describe it correctly?
+
+| entry | source | description matches? |
+|---|---|---|
+| D3 | branch `flag-pair-moe-cache` + `BRANCH-NOTE.md` | **NO — corrected `9ef908c`.** Called a "parked flag-pair" on a workaround premise; it is an API-surface promotion following `KVPrecision` |
+| B4 | a stash that does not exist here | **unverifiable** — the description is all that survives, and it names a file that resolves nowhere |
+| C1 | `588052b` (the drain fix) | matches — Metal-verified, CUDA arm untested |
+| D2 | design recorded in-entry, no branch | matches; no external source to drift from |
+| E2 | `testdata/parity_manifest.json` | matches — the four families are still `pending` |
+| E4 | `scripts/bench_compare.sh` | **stale** — the entry says "status unconfirmed, may still measure the two sides differently"; the script now refuses that use and points at `scripts/bench_peer.py`. Corrected in the status sweep above |
+| E6 | aikit tree + `gpu/v0.27.0` | matches |
+| G1 | `docs/scoping-lfm2.md` | matches |
+| P1, P2, P4, P5, P8 | audit lines + the cited source | match; each carries a measured figure or an explicit ESTIMATE label |
+
+**Split: 9 entries had an external source and were checkable; 2 of those 9 were wrong (D3, E4).
+4 entries — C2, C3, E1, E5 — have no source outside conversation and are recorded as unverifiable
+rather than checked.**
+
+**That rate (2 of 9) is higher than the status sweep's (1 of 13), and the two are not the same
+population.** A description drifts silently because nothing re-reads it against its source; a status
+drifts only when work lands elsewhere. The queue's SHA and path citations are now linted, but **no
+lint reads an entry's prose against the branch note or audit line it describes** — that remains a
+person's job, and this sweep is its baseline.
+
+## Sequencing
+
+**D3 (loaded and bounded) → the mac batch as one session → B1, B2.**
+
+Within the mac batch, **C3 goes FIRST**, not last: it is the largest completely uncovered surface and
+it sank once already. Batching it behind two chores is precisely how that happened. Then
+`metal-rope-merge`'s push, then B4's stash check.
+
 ## Draft: contents of the next release
 
 **Not a version number** — that is a separate call. This is what has accumulated since
@@ -1817,6 +1862,7 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `98936cf` | test(goldens): strengthen mamba-2 + deltanet parity fixtures (kill identity weights) |
 | `99b3f95` | chore(deps): pin aikit v1.12.0 — gpt-oss MXFP4 reproducible on main |
 | `9e5f8fa` | fix(quant): reject --quant that conflicts with a prequant .giw at startup (T1-7) |
+| `9ef908c` | docs(branch-note): re-derive against the corrected cap (D3 design read) |
 | `bd08936` | fix(gate): cannot-search is not not-found; cross-gate composition; B7 sweep |
 | `be049df` | [aikit] gpu(gemv): explicit __fmaf_rn in the quantized GEMV — the bit-identity contraction rule |
 | `c6600fc` | audit C-14: argmax index tie-break (match CPU lowest-index on exact ties) |
@@ -1840,32 +1886,124 @@ content of that line. A line that MOVED is reported with its new number; content
 has VANISHED is red, because the citation then claims something the file no longer
 supports.
 
-| path:line | repo | line content |
+| doc \| path:line | repo | line content |
 |---|---|---|
-| `cuda/argmax_tiebreak_test.go:19` | goinfer | `func TestArgmaxTieBreak(t *testing.T) {` |
-| `cuda/backend.go:591` | goinfer | `mmod, e2 := r.dev.CompileLibrary(moePTX)` |
-| `cuda/backend.go:793` | goinfer | `//` |
-| `cuda/backend.go:836` | goinfer | `if e := r.allocSlots(); e != nil {` |
-| `cuda/resident.go:244` | goinfer | `// backend.go locals; the per-layer KV cache and UploadKV read r.layers[l].kvDim.` |
-| `cuda/resident.go:397` | goinfer | `func (r *cudaResident) recordUpload(e error) {` |
-| `decoder/features_test.go:146` | goinfer | `want, ok := admissionGolden[name]` |
-| `decoder/forwardn.go:378` | goinfer | `for kvh := range nKV {` |
-| `decoder/forwardn.go:502` | goinfer | `logits[j] = sc * float32(math.Tanh(float64(val/sc)))` |
-| `decoder/kvsnapshot_gemma4_test.go:10` | goinfer | `func TestSnapshot_refusesNonUniformKVWidth_C05(t *testing.T) {` |
-| `decoder/layerpaging.go:42` | goinfer | `// mu guards the mutable paging state below (audit C-30). The pager lives on *Model, sha` |
-| `decoder/mlp.go:82` | goinfer | `func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend, pager *expert` |
-| `decoder/model.go:731` | goinfer | `logits[i] = softcap * float32(math.Tanh(float64(v/softcap)))` |
-| `decoder/modelsdir_test.go:13` | goinfer | `root := os.Getenv("GOINFER_MODELS_DIR")` |
-| `decoder/sampler_chunked.go:188` | goinfer | `return drawChunked(e, sums, z, r)` |
-| `decoder/scratch.go:38` | goinfer | `ws        *linalg.Workspace // W8A8 activation-quant scratch (zero-alloc Into/Batch)` |
-| `decoder/serialize_shapecheck_test.go:15` | goinfer | `func TestValidateShapes_catchesArchMismatch(t *testing.T) {` |
-| `internal/giw/bundle.go:114` | goinfer | `if avail := fi.Size() - (tokOff + 4); tokLen > avail {` |
-| `internal/serveapp/embeddings.go:26` | goinfer | `// Embedding request bounds (audit C-21). /v1/embeddings is deliberately un-queued (the ` |
-| `internal/serveapp/main.go:432` | goinfer | `// below deadlocks on lm.mu.Lock() forever (audit C-22).` |
-| `linalg/quant.go:113` | aikit | `for k := range K {` |
-| `metal/model.go:728` | goinfer | `r.residencyBufs = pinned` |
-| `metal/model.go:827` | goinfer | `r.logitsHost[j] = sc * float32(math.Tanh(float64(v/sc)))` |
-| `metal/snapshot_golden_test.go:77` | goinfer | `func TestMetalEmbedScale_forwardMatchesForwardEmb(t *testing.T) {` |
+| `docs/QUEUE.md|cuda/argmax_tiebreak_test.go:19` | goinfer | `func TestArgmaxTieBreak(t *testing.T) {` |
+| `docs/QUEUE.md|cuda/backend.go:591` | goinfer | `mmod, e2 := r.dev.CompileLibrary(moePTX)` |
+| `docs/QUEUE.md|cuda/backend.go:793` | goinfer | `//` |
+| `docs/QUEUE.md|cuda/backend.go:836` | goinfer | `if e := r.allocSlots(); e != nil {` |
+| `docs/QUEUE.md|cuda/resident.go:244` | goinfer | `// backend.go locals; the per-layer KV cache and UploadKV read r.layers[l].kvDim.` |
+| `docs/QUEUE.md|cuda/resident.go:397` | goinfer | `func (r *cudaResident) recordUpload(e error) {` |
+| `docs/QUEUE.md|decoder/features_test.go:146` | goinfer | `want, ok := admissionGolden[name]` |
+| `docs/QUEUE.md|decoder/forwardn.go:378` | goinfer | `for kvh := range nKV {` |
+| `docs/QUEUE.md|decoder/forwardn.go:502` | goinfer | `logits[j] = sc * float32(math.Tanh(float64(val/sc)))` |
+| `docs/QUEUE.md|decoder/kvsnapshot_gemma4_test.go:10` | goinfer | `func TestSnapshot_refusesNonUniformKVWidth_C05(t *testing.T) {` |
+| `docs/QUEUE.md|decoder/layerpaging.go:42` | goinfer | `// mu guards the mutable paging state below (audit C-30). The pager lives on *Model, sha` |
+| `docs/QUEUE.md|decoder/mlp.go:82` | goinfer | `func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend, pager *expert` |
+| `docs/QUEUE.md|decoder/model.go:731` | goinfer | `logits[i] = softcap * float32(math.Tanh(float64(v/softcap)))` |
+| `docs/QUEUE.md|decoder/modelsdir_test.go:13` | goinfer | `root := os.Getenv("GOINFER_MODELS_DIR")` |
+| `docs/QUEUE.md|decoder/sampler_chunked.go:188` | goinfer | `return drawChunked(e, sums, z, r)` |
+| `docs/QUEUE.md|decoder/scratch.go:38` | goinfer | `ws        *linalg.Workspace // W8A8 activation-quant scratch (zero-alloc Into/Batch)` |
+| `docs/QUEUE.md|decoder/serialize_shapecheck_test.go:15` | goinfer | `func TestValidateShapes_catchesArchMismatch(t *testing.T) {` |
+| `docs/QUEUE.md|internal/giw/bundle.go:114` | goinfer | `if avail := fi.Size() - (tokOff + 4); tokLen > avail {` |
+| `docs/QUEUE.md|internal/serveapp/embeddings.go:26` | goinfer | `// Embedding request bounds (audit C-21). /v1/embeddings is deliberately un-queued (the ` |
+| `docs/QUEUE.md|internal/serveapp/main.go:432` | goinfer | `// below deadlocks on lm.mu.Lock() forever (audit C-22).` |
+| `docs/QUEUE.md|linalg/quant.go:113` | aikit | `for k := range K {` |
+| `docs/QUEUE.md|metal/model.go:728` | goinfer | `r.residencyBufs = pinned` |
+| `docs/QUEUE.md|metal/model.go:827` | goinfer | `r.logitsHost[j] = sc * float32(math.Tanh(float64(v/sc)))` |
+| `docs/QUEUE.md|metal/snapshot_golden_test.go:77` | goinfer | `func TestMetalEmbedScale_forwardMatchesForwardEmb(t *testing.T) {` |
+| `docs/benchmarks.md|cuda/resident.go:28` | goinfer | `` |
+| `docs/cuda-megakernel-spec.md|gpu/attention.go:14` | goinfer | `// uses f64 accumulation; the GPU f32 — cosine ~1.0, not bit-exact).` |
+| `docs/cuda-megakernel-spec.md|gpu/decoderunner.go:730` | goinfer | `// moeExpert records one indexed sparse-expert GEMV: dst[n] = expert[idx[slot]]·aq` |
+| `docs/cuda-megakernel-spec.md|gpu/decoderunner.go:835` | goinfer | `// relu²→int8 → down + residual into xd. The other kinds fall through to the mixer.` |
+| `docs/cuda-megakernel-spec.md|gpu/forward_parity_test.go:36` | goinfer | `func TestWebGPU_forwardParity(t *testing.T) {` |
+| `docs/cuda-megakernel-spec.md|gpu/gemv.go:41` | goinfer | `@compute @workgroup_size(64)` |
+| `docs/gpu-residency-coverage.md|decoder/registry.go:135` | goinfer | `IntermediateDim:   cfg.IntermediateDim,` |
+| `docs/how-inference-works.md|decoder/attention.go:104` | goinfer | `if !arch.LearnedPosEmbed && !arch.isNoPELayer(layer) {` |
+| `docs/how-inference-works.md|decoder/attention.go:144` | goinfer | `cache.Append(layer, k, v)` |
+| `docs/how-inference-works.md|decoder/attention.go:59` | goinfer | `nH, nKV, hd := arch.NumHeads, arch.NumKVHeads, arch.HeadDim` |
+| `docs/how-inference-works.md|decoder/kvcache.go:126` | goinfer | `subCapture bool` |
+| `docs/how-inference-works.md|decoder/kvcache.go:20` | goinfer | `func quantizeHeads(src []float32, q []int8, scales []float32, nKV, headDim int) {` |
+| `docs/how-inference-works.md|decoder/model.go:545` | goinfer | `}` |
+| `docs/how-inference-works.md|decoder/model.go:586` | goinfer | `cache.subMLP[l] = append(cache.subMLP[l][:0], scr.sub...)` |
+| `docs/how-inference-works.md|decoder/registry.go:19` | goinfer | `var registry = map[string]archAdapter{` |
+| `docs/how-inference-works.md|decoder/sampler.go:109` | goinfer | `// can never silently diverge. They are separate predicates, not one widened one, so tha` |
+| `docs/how-inference-works.md|decoder/sampler.go:116` | goinfer | `// though a temperature is set — the `top_k=1` shape. It is TRUE at any temperature, whi` |
+| `docs/how-inference-works.md|decoder/sampler.go:118` | goinfer | `// distribution restricted to ONE token is deterministic regardless of that token's prob` |
+| `docs/how-inference-works.md|decoder/session.go:71` | goinfer | `// stale history. Callers must skip it (and reconcile) for an empty prompt, so a rejecte` |
+| `docs/ideas-weight-memory.md|decoder/mlp.go:69` | goinfer | `}` |
+| `docs/internal/recon-qwen35-gguf.md|decoder/gguf.go:541` | goinfer | `` |
+| `docs/multimodal.md|decoder/config.go:466` | goinfer | `case c.MoeIntermediateSize <= 0:` |
+| `docs/multimodal.md|decoder/gguf_qwen35.go:77` | goinfer | `}` |
+| `docs/multimodal.md|decoder/weights.go:344` | goinfer | `const shardIndexFile = "model.safetensors.index.json"` |
+| `docs/ollama-chase.md|cuda/resident.go:1066` | goinfer | `// All of it runs ON the executor thread — that thread made the context current — and th` |
+| `docs/ollama-chase.md|cuda/resident.go:340` | goinfer | `g4x1, g4x2, g4rn Buffer` |
+| `docs/ollama-chase.md|cuda/resident.go:41` | goinfer | `//` |
+| `docs/ollama-chase.md|cuda/resident.go:583` | goinfer | `// declined to the staged/CPU path upstream.` |
+| `docs/ollama-chase.md|decoder/forwardn.go:378` | goinfer | `for kvh := range nKV {` |
+| `docs/ollama-chase.md|decoder/mlp.go:82` | goinfer | `func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend, pager *expert` |
+| `docs/ollama-chase.md|decoder/model.go:825` | goinfer | `embs[i] = m.embedResident(id)` |
+| `docs/ollama-chase.md|decoder/model.go:973` | goinfer | `emb = m.embedResident(next)` |
+| `docs/ollama-chase.md|decoder/residency.go:677` | goinfer | `return false, "sequential — this backend has no batched prefill (per-token resident forw` |
+| `docs/ollama-chase.md|decoder/weightmat.go:202` | goinfer | `var ws linalg.Workspace` |
+| `docs/parity-coverage-policy.md|cuda/resident.go:910` | goinfer | `// always been allocated without one, and a hard failure here would regress every driver` |
+| `docs/parity-coverage-policy.md|linalg/dot.go:25` | aikit | `sum += a[k] * b[k]` |
+| `docs/plan-cpubrrr-steal-and-bindings.md|decoder/registry.go:46` | goinfer | `"gpt_oss":             gptOssArchitecture,     // gpt-oss (20b/120b): sparse MoE + per-h` |
+| `docs/plan-cpubrrr-steal-and-bindings.md|linalg/quant.go:327` | aikit | `// w8a8BatchSpan computes the [g0,g1) slice of the ops' concatenated column` |
+| `docs/prompts/metal-close-leak-check.md|metal/backend.go:139` | goinfer | `return nil, fmt.Errorf("metal: batched prefill declined — not bit-identical to decode (5` |
+| `docs/prompts/metal-close-leak-check.md|metal/model.go:350` | goinfer | `// expert weights, buffer OOM — model.go/moe.go/gemma4_moe.go) into the error this signa` |
+| `docs/prompts/metal-close-leak-check.md|metal/model.go:46` | goinfer | `// same-op kernel inherit it. A byte-exact fixture for such an op MUST use context > the` |
+| `docs/scoping-lfm2.md|decoder/arch.go:156` | goinfer | `type nemotronParams struct {` |
+| `docs/scoping-lfm2.md|decoder/attention.go:94` | goinfer | `if arch.QKNorm {` |
+| `docs/scoping-lfm2.md|decoder/config.go:627` | goinfer | `case c.UseQKNorm:` |
+| `docs/scoping-lfm2.md|decoder/deltanet.go:99` | goinfer | `// 1. Projection + depthwise causal conv (+ SiLU). Taps t-K+1..t: the last K-1` |
+| `docs/scoping-lfm2.md|decoder/forward_qwen35.go:30` | goinfer | `if arch.isLinearLayer(l) {` |
+| `docs/scoping-lfm2.md|decoder/kvcache.go:50` | goinfer | `type KVCache struct {` |
+| `docs/scoping-lfm2.md|decoder/mamba2.go:89` | goinfer | `// 2. Depthwise causal conv over xBC (+ bias, + SiLU). Taps t-K+1..t: the last` |
+| `docs/scoping-lfm2.md|decoder/mamba2_chunked.go:60` | goinfer | `// Depthwise causal conv over xBC (+bias, +SiLU), then split into x/B/C.` |
+| `docs/scoping-lfm2.md|decoder/rmsnorm.go:49` | goinfer | `func layerNorm(x, weight, bias []float32, rows, dim int, eps float64) {` |
+| `docs/task-admin-unload-drain.md|decoder/speculative.go:123` | goinfer | `// staged CPU cache. Draft is a separate Model with its own claim.` |
+| `docs/task-admin-unload-drain.md|internal/serveapp/admin.go:122` | goinfer | `s.regMu.Lock()` |
+| `docs/task-admin-unload-drain.md|internal/serveapp/admin.go:95` | goinfer | `}` |
+| `docs/task-admin-unload-drain.md|internal/serveapp/anthropic.go:406` | goinfer | `s.withModelAnthropic(w, req.Model, func(lm *loadedModel) { s.serveMessagesWith(w, r, req` |
+| `docs/task-admin-unload-drain.md|internal/serveapp/anthropic.go:535` | goinfer | `}` |
+| `docs/task-admin-unload-drain.md|internal/serveapp/helpers.go:78` | goinfer | `func limitInflight(sem chan struct{}, h http.HandlerFunc) http.HandlerFunc {` |
+| `docs/task-admin-unload-drain.md|internal/serveapp/main.go:480` | goinfer | `if !tryLockUntil(&lm.mu, deadline) {` |
+| `docs/task-admin-unload-drain.md|internal/serveapp/main.go:537` | goinfer | `return nil, err` |
+| `docs/task-admin-unload-drain.md|internal/serveapp/main.go:707` | goinfer | `// Resolve this model's knobs (per-model overrides over server-global defaults)` |
+| `docs/task-admin-unload-drain.md|internal/serveapp/openai.go:153` | goinfer | `func (lm *loadedModel) tryEnter() bool {` |
+| `docs/task-admin-unload-drain.md|internal/serveapp/openai.go:166` | goinfer | `func (lm *loadedModel) enter(w http.ResponseWriter) bool {` |
+| `docs/task-admin-unload-drain.md|internal/serveapp/openai.go:213` | goinfer | `// the safe default). Only Matryoshka-trained models may be sliced; see resolveDimension` |
+| `docs/task-admin-unload-drain.md|internal/serveapp/openai.go:464` | goinfer | `if len(imgs) > 0 {` |
+| `docs/task-admin-unload-drain.md|internal/serveapp/openai.go:489` | goinfer | `}` |
+| `docs/task-admin-unload-drain.md|internal/serveapp/openai.go:542` | goinfer | `if req.Logprobs {` |
+| `docs/task-admin-unload-drain.md|internal/serveapp/responses.go:86` | goinfer | `s.withModel(w, req.Model, func(lm *loadedModel) { s.serveResponsesWith(w, r, req, lm) })` |
+| `docs/task-admin-unload-drain.md|internal/serveapp/sessions.go:25` | goinfer | `model   *decoder.Model` |
+| `docs/task-admin-unload-drain.md|internal/serveapp/tools.go:19` | goinfer | `s.withModel(w, req.Model, func(lm *loadedModel) { s.serveChatToolsWith(w, r, req, lm) })` |
+| `docs/task-admin-unload-drain.md|internal/serveapp/vision_serve.go:119` | goinfer | `s.withModel(w, req.Model, func(lm *loadedModel) { s.serveVisionChatWith(w, r, req, imgs,` |
+| `docs/task-admin-unload-drain.md|metal/model.go:972` | goinfer | `// gigabytes; Close reclaims them", which makes calling Close from handleAdminUnload loo` |
+| `docs/task-decode-attention-fa.md|cuda/attn_batched_test.go:28` | goinfer | `func TestAttnBatched_bitIdentical(t *testing.T) {` |
+| `docs/task-decode-attention-fa.md|gpu/mla.go:27` | goinfer | `// One workgroup per query head, online (FlashAttention-style) softmax over keys so no` |
+| `docs/task-decode-attention-fa.md|gpu/mla_test.go:366` | goinfer | `if cos < 0.9999 {` |
+| `docs/task-gpu-batched-prefill.md|decoder/residency.go:54` | goinfer | `// ResidentGreedy is an optional capability on a ResidentForward: compute the token's gr` |
+| `docs/task-mla-cuda-residency.md|cuda/backend.go:89` | goinfer | `// Without this check the failure is silent — the feature is dropped and the logits are` |
+| `docs/task-mla-cuda-residency.md|decoder/arch.go:173` | goinfer | `QLoRARank      int  // q_a_proj bottleneck width; 0 ⇒ direct q_proj (no q-LoRA)` |
+| `docs/task-mla-cuda-residency.md|decoder/features.go:126` | goinfer | `// shared taxonomy, so the hardware matrix matches admission.` |
+| `docs/task-mla-cuda-residency.md|decoder/features.go:330` | goinfer | `` |
+| `docs/task-mla-cuda-residency.md|decoder/features.go:48` | goinfer | `FeatMoE               ResidentFeature = "moe"                 // sparse mixture-of-exper` |
+| `docs/task-mla-cuda-residency.md|decoder/forward_deepseek.go:188` | goinfer | `func (m *Model) mlaAttentionAbsorb(n []float32, lw *LayerWeights, arch *Architecture, ca` |
+| `docs/task-mla-cuda-residency.md|gpu/decoderunner.go:776` | goinfer | `add(c.mlaStorePipeline, bind(c.mlaStoreLayout, kvDown, normW, invFreq, latCache, mlaStor` |
+| `docs/task-mla-cuda-residency.md|gpu/mla.go:26` | goinfer | `//` |
+| `docs/task-model-family-deepseek-v4-kimi-k3.md|decoder/arch.go:173` | goinfer | `QLoRARank      int  // q_a_proj bottleneck width; 0 ⇒ direct q_proj (no q-LoRA)` |
+| `docs/task-model-family-deepseek-v4-kimi-k3.md|decoder/deltanet.go:70` | goinfer | `}` |
+| `docs/task-model-family-deepseek-v4-kimi-k3.md|decoder/forward_deepseek.go:89` | goinfer | `invFreq := arch.ropeInvFreq(layer)` |
+| `docs/task-model-family-deepseek-v4-kimi-k3.md|decoder/weights.go:1032` | goinfer | `func streamExperts(t embed.Tensor, nExpert, rows, cols int, quant quantMode) ([]linalg.W` |
+| `docs/task-moe-streaming.md|decoder/forwardn.go:14` | goinfer | `// MoE FFN itself stays per-row (router picks different experts per token).` |
+| `docs/task-moe-streaming.md|decoder/forwardn.go:228` | goinfer | `// Sequential: add the attention residual, then re-norm the updated stream for the MLP.` |
+| `docs/task-moe-streaming.md|decoder/mlp.go:81` | goinfer | `// Only the chosen experts are evaluated — the point of MoE.` |
+| `docs/task-moe-streaming.md|decoder/moepaging.go:15` | goinfer | `// only K·L per token; the router's top-k selection is the demand signal. The` |
+| `docs/task-moe-streaming.md|decoder/moepaging_test.go:11` | goinfer | `// it with the frequency-aware policy (TestSpanCache_evictsLeastRecentWithPolicy),` |
+| `docs/task-moe-streaming.md|decoder/residency.go:130` | goinfer | `return m.residentProjsInt4()` |
 
 ## Bare file index
 

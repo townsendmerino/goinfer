@@ -1359,19 +1359,19 @@ These require editing parity-manifest "core"/hashed `decoder/` files (`model.go`
 `attention.go`, `mlp.go`, `weightmat.go`), which re-stales every family's `deps_hash`. Held under the
 pre-1.0 core-numerics freeze; **batch them when v1.0 lands so the manifest re-validates once.** All are
 bit-identity-preserving (pure buffer/traffic reuse).
-- **KV re-gather / V re-transpose every token (the big one).** `forwardn.go:378` (`attendBatchedHeads`)
+- **KV re-gather / V re-transpose every token (the big one).** `decoder/forwardn.go:378` (`attendBatchedHeads`)
   re-gathers the whole K history and re-transposes all of V into scratch each decode token (~2-3× the
   intrinsic KV traffic; ~10-15% of per-token traffic at 4k+ ctx, all mainstream CPU families). Needs a
   row-pitch arg on aikit `MatmulBTAcc64` + a per-layer persistent transposed-V cache layout. Highest
   lift, biggest broad CPU win — the headline unfreeze item.
-- **embedResident host-scratch reuse.** `embedResident` (`residency.go:677`, itself freeze-safe) does
-  `make([]float32, HiddenDim)` per token, then H2D. The decode-hot-path call sites (`model.go:973/977`)
-  are frozen — can't reroute; and reusing in place breaks the batch caller `model.go:825`
+- **embedResident host-scratch reuse.** `embedResident` (`decoder/residency.go:677`, itself freeze-safe) does
+  `make([]float32, HiddenDim)` per token, then H2D. The decode-hot-path call sites (`decoder/model.go:973/977`)
+  are frozen — can't reroute; and reusing in place breaks the batch caller `decoder/model.go:825`
   (`embs[i]=embedResident(id)` collection would alias). Small (~6-14 KB/token). Bigger follow-on: an
   **on-device embed table** (GPU looks the row up from the id — Metal's `loadEmbedRow` already does).
-- **MoE `moeMLP` allocates MB/token.** `mlp.go:82` skips the `*decodeScratch` invariant the dense
+- **MoE `moeMLP` allocates MB/token.** `decoder/mlp.go:82` skips the `*decodeScratch` invariant the dense
   `gatedMLP` honors → ~7-8 MB garbage/token (Mixtral-class). Thread `*decodeScratch` through.
-- **int4 W4A8 `Workspace` alloc/token.** `weightmat.go:202` int4 branch of `matmul()` uses a cap-0
+- **int4 W4A8 `Workspace` alloc/token.** `decoder/weightmat.go:202` int4 branch of `matmul()` uses a cap-0
   `linalg.Workspace` (the W8A8 sibling was fixed, int4 missed) → make() per projection per token. Add an
   int4 case to `matmulInto` with a persistent per-stream Workspace.
 

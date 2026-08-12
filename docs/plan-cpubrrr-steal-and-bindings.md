@@ -15,7 +15,7 @@ fallback is chosen.
 | task | state | where |
 |---|---|---|
 | **A1** Q8_K integer-accum kernel | ◐ **built, measured, DECLINED for Q6_K — Q4_K left open** | aikit `linalg/kquant.go` |
-| **A2** MXFP4 + gpt-oss | ✅ **shipped** | `decoder/mxfp4.go`, `gpt_oss` in `registry.go:46`, GGUF loader + parity + decline |
+| **A2** MXFP4 + gpt-oss | ✅ **shipped** | `decoder/mxfp4.go`, `gpt_oss` in `decoder/registry.go:46`, GGUF loader + parity + decline |
 | **A3** yielding spin-barrier | ☐ not started | — |
 | **B** bindings (sidecar + c-archive) | ☐ not started | `docs/task-bindings.md` still reads *Status: NOT STARTED* |
 | A2 deliverable §6.6 — gpt-oss tok/s row | ☐ not published | `docs/benchmarks.md` has no gpt-oss entry |
@@ -62,7 +62,7 @@ to work, because the fieldfare-comparable rig is an M1 Pro 16 GB. Measured recon
 (commit `bcadd44`): symmetric-g32 **0.99514** (garbage) vs affine-g32 **0.99690** vs int8
 **0.99995**. The diagnosis is that goinfer's 4-bit is **group-wise symmetric**,
 `int4GroupSize = 32`, codes `[1,15]` with 8 = zero → 15 levels, no zero-point, maxabs
-scale (`aikit/linalg/quant.go:327–331`).
+scale (`linalg/quant.go:327–331`).
 
 cpubrrr's two 4-bit formats are precisely the alternatives:
 

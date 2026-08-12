@@ -20,7 +20,7 @@ not per-entry** (§A, closes a straggler-sibling UAF), and the unload response i
 
 ## The problem, as established
 
-`handleAdminUnload` (admin.go:122) deletes the model from the registry and never calls `Close()`.
+`handleAdminUnload` (internal/serveapp/admin.go:122) deletes the model from the registry and never calls `Close()`.
 purego has no ARC and there are no finalizers in `metal/`, `cuda/`, or `gpu/`, so GC reclaims the Go
 wrappers and never the native device allocations. Measured on Metal: **+451 MB per unload/reload
 cycle** of a ~450 MB model, memory does not return. **Backend-agnostic** — CUDA VRAM and WebGPU
@@ -32,10 +32,10 @@ WebGPU C-26 `closed` flag). So *closing is safe.* **Closing at the wrong time is
 
 ### Why the one-liner is a use-after-free
 
-Every handler has the shape `pick() → work → enter()`. `pick` (openai.go:213) returns the
-`*loadedModel` under `regMu`; `enter` (openai.go:166) is where `lm.mu` is finally taken. Between them
-the **preamble** touches `lm.model`/`lm.tk` with **no lock** — in `handleChat`: `pick` (openai.go:464)
-→ `promptTooLargeForContext` → `chatPrompt` (a full BPE) → `prepare` → `enter` (openai.go:489).
+Every handler has the shape `pick() → work → enter()`. `pick` (internal/serveapp/openai.go:213) returns the
+`*loadedModel` under `regMu`; `enter` (internal/serveapp/openai.go:166) is where `lm.mu` is finally taken. Between them
+the **preamble** touches `lm.model`/`lm.tk` with **no lock** — in `handleChat`: `pick` (internal/serveapp/openai.go:464)
+→ `promptTooLargeForContext` → `chatPrompt` (a full BPE) → `prepare` → `enter` (internal/serveapp/openai.go:489).
 `handleAdminUnload`'s `lm.mu.TryLock()` sees an idle model and would grant the unload while that
 request is mid-tokenize against weights about to be freed; the request then `drive()`s on a torn-down
 backend. On CUDA that is a driver SIGSEGV that kills the server; on CPU it is a quieter read of reused
@@ -43,13 +43,13 @@ memory. Seven handlers share the shape:
 
 | handler | `pick` |
 |---|---|
-| `handleChat` | openai.go:464 |
-| `handleCompletions` | openai.go:542 |
-| `handleMessages` | anthropic.go:406 |
-| `handleCountTokens` | anthropic.go:535 |
-| `handleChatTools` | tools.go:19 |
-| `handleResponses` | responses.go:86 |
-| `serveVisionChat` | vision_serve.go:119 |
+| `handleChat` | internal/serveapp/openai.go:464 |
+| `handleCompletions` | internal/serveapp/openai.go:542 |
+| `handleMessages` | internal/serveapp/anthropic.go:406 |
+| `handleCountTokens` | internal/serveapp/anthropic.go:535 |
+| `handleChatTools` | internal/serveapp/tools.go:19 |
+| `handleResponses` | internal/serveapp/responses.go:86 |
+| `serveVisionChat` | internal/serveapp/vision_serve.go:119 |
 
 The in-generation case is already safe (past `enter`, the request holds `lm.mu`, so a mid-stream
 unload 409s — verified on Metal). The hole is the preamble.
@@ -70,7 +70,7 @@ Two locks, one detached worker, one guarded decision.
 
 ### §A — why liveness is keyed to the model, not the entry (straggler UAF)
 
-A base and its compute-time adapters share one `*decoder.Model` (main.go:537). With a *per-entry*
+A base and its compute-time adapters share one `*decoder.Model` (internal/serveapp/main.go:537). With a *per-entry*
 lock and detached drains, this sequence UAFs: unload adapter A (not last owner, so it does not close)
 while a request of A is still in flight; later unload base B (now last owner) drains only *B's* lock
 and closes the model — while A's straggler request is still reading it. The registry scan says "no
@@ -188,7 +188,7 @@ bounded-wait hybrid, which survives the strongest 202 argument (recourse for the
 while keeping `freed:true`⇒safe-reload for the common case.
 
 **Q5 — queued requests.** Premise corrected: admission is non-blocking *before* generation
-(`limitInflight`, helpers.go:78, is a non-blocking semaphore → 503; `tryEnter`, openai.go:153, does a
+(`limitInflight`, internal/serveapp/helpers.go:78, is a non-blocking semaphore → 503; `tryEnter`, internal/serveapp/openai.go:153, does a
 non-blocking queue send → 429). The only post-`pick` block is `mu.Lock`. So a "queued" request has
 already resolved its model and holds the liveness `RLock`; it is drained like any other and **served
 to completion** on the still-valid model (the close waits for it), not errored. Requests arriving
@@ -198,7 +198,7 @@ after unpublish get 404.
 reclaims device memory via the OS; the leak only matters for a long-lived unload/reload process.
 Wiring the drain into shutdown adds executor-teardown/checkpoint risk for no benefit, and a detached
 unload-drain in flight at shutdown simply dies with the process (harmless). `Model.Close`'s startup
-caller (main.go:707, `.giw` `--quant` cleanup, pre-executor) stays untouched.
+caller (internal/serveapp/main.go:707, `.giw` `--quant` cleanup, pre-executor) stays untouched.
 
 **Q7 — blast radius.** The lock/drain/refcount logic is pure Go in `internal/serveapp`, backend-
 independent → fully unit-testable on the Mac with the CPU backend (no device), including the §Q4
@@ -248,10 +248,10 @@ now"** (still unpublishes and still drains-and-closes detached), then polling `f
 
 | holder | participates via | why |
 |---|---|---|
-| `sessionLRU` (`sessions.go:25`; an adapter's holds `base.model`, main.go) | **refs** (via its entry) + **rw** | Entry-scoped — dies with the entry it belongs to, which is already the unit `refs` counts, so no separate slot. Its KV state is touched only during a request (`rw`). **One wrinkle:** the KV checkpoint-save reads settled KV, which for a resident backend lives in the model's device buffers, so it must run **after the drain and before `Close`** (today it is synchronous pre-return). |
+| `sessionLRU` (`internal/serveapp/sessions.go:25`; an adapter's holds `base.model`, main.go) | **refs** (via its entry) + **rw** | Entry-scoped — dies with the entry it belongs to, which is already the unit `refs` counts, so no separate slot. Its KV state is touched only during a request (`rw`). **One wrinkle:** the KV checkpoint-save reads settled KV, which for a resident backend lives in the model's device buffers, so it must run **after the drain and before `Close`** (today it is synchronous pre-return). |
 | vision tower `venc`/`vproj`/`qwenEnc` | **rw**, entry-private | Adapters do **not** copy it (main.go `loadAdapters`), so it is never shared and is not `refs`-relevant — but it is native memory that also leaks on unload and is used only during a request. It must be `Close`d on **this entry's** unload, drained via the model `rw`. This is why an unload must drain-and-close when the entry owns a tower even at `refs>0` (see the design note above). |
 | embedding encoder `s.embed` | neither | Not in `s.models`, never admin-unloaded, holds no `*decoder.Model`. Process-lifetime. |
-| speculative draft | neither (today) | serve `--spec` is `ngram` — prompt-lookup over the *same* model, no draft model. The decoder EAGLE path uses a separate `Model` (speculative.go:123) but is **not** wired into a serve `loadedModel`. **Flag:** if a draft-model spec mode is ever wired into serve, that draft `*decoder.Model` is a new holder needing its own refs+rw. |
+| speculative draft | neither (today) | serve `--spec` is `ngram` — prompt-lookup over the *same* model, no draft model. The decoder EAGLE path uses a separate `Model` (decoder/speculative.go:123) but is **not** wired into a serve `loadedModel`. **Flag:** if a draft-model spec mode is ever wired into serve, that draft `*decoder.Model` is a new holder needing its own refs+rw. |
 | KV snapshots | neither / covered | On-disk snapshots are model-independent bytes; in-memory KV is the `sessionLRU` above. |
 
 No holder is counted by neither-and-outlives-a-request once the vision-tower `Close` is added — so no
@@ -276,7 +276,7 @@ detached worker starts and leaves it when `Close` returns.
 
 The detached drain-close goroutine is a **bare `go`** (a `WaitGroup`, if used, is for tests only and
 is **never** awaited by the shutdown path). Graceful shutdown (`main.go`) waits only on its own
-checkpoint goroutine (`<-done`, main.go:480) — there is no worker `WaitGroup` today, and none must be
+checkpoint goroutine (`<-done`, internal/serveapp/main.go:480) — there is no worker `WaitGroup` today, and none must be
 added on the shutdown path. Otherwise shutdown inherits the unbounded wait just removed from unload
 and presents as "the server sometimes takes minutes to stop." Process exit reclaims device memory
 regardless, so detached means detached from shutdown too.
@@ -292,7 +292,7 @@ falls to 202 quickly for anything longer, so the endpoint never hangs. `?wait=fa
 
 ## Scope
 
-- Do **not** touch `Model.Close`'s startup caller (main.go:707) — pre-executor, no drain involved.
+- Do **not** touch `Model.Close`'s startup caller (internal/serveapp/main.go:707) — pre-executor, no drain involved.
 - Do **not** wire the drain into shutdown (§Q6).
 - `Model.Close` itself is unchanged — already complete and idempotent; only the *timing* (drain-gated,
   `refs==0`-gated, detached) is new.

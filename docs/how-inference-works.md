@@ -14,7 +14,7 @@ next, and so on, until you decide to stop. Everything below is detail about (a)
 how that one prediction works and (b) the engineering tricks that make running it
 thousands of times not unbearably slow.
 
-That outer loop lives in [`model.go:545-655`](../decoder/model.go#L545-L655), a
+That outer loop lives in [`decoder/model.go:545-655`](../decoder/model.go#L545-L655), a
 function called `generateInto`.
 
 ---
@@ -110,11 +110,11 @@ Two refinements you'll see in the code, worth knowing because they're everywhere
 in modern models:
 - **Multiple "heads"** — instead of one Query/Key/Value comparison, there are
   many running in parallel (one head might track grammar, another long-range
-  topic). [attention.go:59](../decoder/attention.go#L59).
+  topic). [decoder/attention.go:59](../decoder/attention.go#L59).
 - **Position information (RoPE)** — raw attention has no sense of word *order*
   ("dog bites man" = "man bites dog"). So the model rotates the Query/Key vectors
   by an amount that depends on each token's position, encoding *where* each word
-  is. [attention.go:104-109](../decoder/attention.go#L104-L109).
+  is. [decoder/attention.go:104-109](../decoder/attention.go#L104-L109).
 
 ### 2d. The MLP — the "thinking" step
 
@@ -149,19 +149,19 @@ Now we have 100,000 scores. How do we choose one? That's
 [`SampleWithInfo`](../decoder/sampler.go#L101-L120).
 
 - The simplest choice: just take the highest-scoring token. That's **greedy /
-  argmax** ([sampler.go:116](../decoder/sampler.go#L116)) — deterministic, the
+  argmax** ([decoder/sampler.go:116](../decoder/sampler.go#L116)) — deterministic, the
   model's single best guess.
 - More commonly we add controlled randomness so output isn't robotic.
   **Temperature** flattens or sharpens the scores (high temperature = more
   adventurous, low = more predictable). Then we usually restrict the random draw
   to the top few candidates — **top-k** (only the k best), **top-p / nucleus**
   (the smallest set covering p% of the probability) — to avoid picking something
-  absurd ([sampler.go:118-120](../decoder/sampler.go#L118-L120)).
+  absurd ([decoder/sampler.go:118-120](../decoder/sampler.go#L118-L120)).
 
 The scores are turned into actual probabilities via **softmax** (exponentiate and
 normalize so they sum to 1), and one token is drawn. There are also **penalties**
 to discourage the model from repeating itself
-([sampler.go:109-111](../decoder/sampler.go#L109-L111)).
+([decoder/sampler.go:109-111](../decoder/sampler.go#L109-L111)).
 
 The output is a single integer — the next token.
 
@@ -177,7 +177,7 @@ Now zoom back out to [`generateInto`](../decoder/model.go#L545-L655). We:
 4. Run the forward pass again — now with that new token as input,
 5. Sample the next one,
 6. Repeat until we hit a stop token or a length limit
-   ([model.go:586-649](../decoder/model.go#L586-L649)).
+   ([decoder/model.go:586-649](../decoder/model.go#L586-L649)).
 
 This is called **autoregression** — the model's own outputs become its next
 inputs. The text you see "streaming" out of a chatbot is exactly this loop, one
@@ -204,18 +204,18 @@ So we don't. We compute each token's Key and Value once and **stash them in a
 cache**, then reuse them forever. That's the
 [KVCache](../decoder/kvcache.go#L50-L105), and it's why generation stays roughly
 linear instead of exploding. The cache is appended to on every step
-([attention.go:144](../decoder/attention.go#L144)).
+([decoder/attention.go:144](../decoder/attention.go#L144)).
 
 The catch: this cache *grows with context length* and becomes the dominant memory
 consumer for long conversations. So a big chunk of this repo is clever ways to
 shrink it:
 - **int8 KV quantization** — store the cached Keys/Values as 8-bit integers
   instead of 32-bit floats, ~4× smaller, with a per-head scale factor to
-  reconstruct them ([kvcache.go:20-25](../decoder/kvcache.go#L20-L25)).
+  reconstruct them ([decoder/kvcache.go:20-25](../decoder/kvcache.go#L20-L25)).
 - **Ring buffers for sliding-window layers** — some layers only ever need the
   last *W* tokens, so the cache for them is a fixed-size circular buffer that
   overwrites old entries instead of growing forever
-  ([kvcache.go:126-141](../decoder/kvcache.go#L126-L141)).
+  ([decoder/kvcache.go:126-141](../decoder/kvcache.go#L126-L141)).
 
 ### Quantization — making the *weights* small too
 
@@ -265,7 +265,7 @@ is precisely the positioning claim in the families roadmap.
 Different model families (Gemma, Llama, Qwen, GLM, Granite…) differ in small but
 real ways — how they normalize, how they do positions, whether they're MoE, etc.
 Rather than one tangled code path, this repo uses a **registry**
-([registry.go:19-52](../decoder/registry.go#L19-L52)): each family registers an
+([decoder/registry.go:19-52](../decoder/registry.go#L19-L52)): each family registers an
 "adapter" describing its quirks, and the engine resolves the right one at load
 time. Most families share a generic forward pass; the genuinely different ones
 (the Gated DeltaNet hybrid in
@@ -276,7 +276,7 @@ adapter."
 
 ### Two more worth a mention
 
-- **Session prefix reuse** ([session.go:71-99](../decoder/session.go#L71-L99)) —
+- **Session prefix reuse** ([decoder/session.go:71-99](../decoder/session.go#L71-L99)) —
   in a chat, each new turn shares a long prefix with the last one (the whole
   conversation history). Instead of reprocessing it, the engine keeps the KV
   cache from before and only processes the *new* part. Huge win for chat and

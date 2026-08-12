@@ -51,7 +51,7 @@ func (r *Resident) stopExec() {
 
 So `Close()` closes a channel and frees nothing — the same shape as CUDA's, and if
 anything more minimal (ours at least freed the pinned host buffer). Meanwhile `Resident`
-owns real device memory: `kc, vc []Buffer` (per-layer KV cache, `model.go:46`), the
+owns real device memory: `kc, vc []Buffer` (per-layer KV cache, `metal/model.go:46`), the
 packed weights, and MoE's `uSlot []Buffer`.
 
 Three things make this worth an hour of your time:
@@ -61,7 +61,7 @@ Three things make this worth an hour of your time:
    (`--model name=path` repeatable), has `/admin/models/{load,unload}`, and your own MoE
    tests load models in sequence. A documented assumption is *more* dangerous than a bug,
    because it reads as considered and survives review.
-2. **`Buffer` has no release path at all.** `metal/metal.go:151` wraps a bare `objc.ID`
+2. **`Buffer` has no release path at all.** `gpu/metal.go` (aikit) wraps a bare `objc.ID`
    with `At`/`Floats`/`Int8s`/`U32s` — we see no `release`/`Close`. purego-objc means no
    ARC, so an unreleased `MTLBuffer` leaks by construction. If that's right, the fix is
    larger than CUDA's: we could lean on context-destroy to reclaim everything at once;

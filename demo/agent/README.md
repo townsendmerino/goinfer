@@ -145,3 +145,5 @@ against their own `$GOROOT/src`. Good opening trio:
 - [ ] add to goinfer's go.work + CI build (separate module keeps it out of
       the root `go build ./...`, like ken's `chunk/treesitter`)
 - [ ] record the README gif — web UI, with/without retrieval A/B as the closer
+
+<!-- citation-lint: allow-path net EXTERNAL — the Go standard library, not a file in any repo here -->
