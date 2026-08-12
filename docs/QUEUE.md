@@ -602,19 +602,27 @@ answers**.
 makes 34 unreachable. A9 ran **before A5 landed**, so no override was needed. Recorded because a run
 at the new cap would simply pass and look like confirmation, leaving no trace of the loss.
 
-**B0 · Repo-hygiene group must run what CI runs** — `linux`
+**B0 · Repo-hygiene group must run what CI runs** — `linux`, **DONE `0c54e35`**
 
-CI went red on `staticcheck -tags cuda` (ST1005) and stayed red for three commits. The local
-sequence — gofmt, go build, go test — and CI's check set are **different, and nothing declares the
-relationship**, so they drift on the next change to either. Adding staticcheck to one person's
-habits fixes the instance, not the class.
+`scripts/ci_checks.py` parses `.github/workflows/ci.yml` and emits the hygiene-class steps; group 5
+runs them. **Derived, not duplicated** — a check CI gains appears in the gate with no edit to the
+gate. 21 steps across 7 jobs; 13 run here and pass, 8 are darwin-only and are a **counted skip**
+naming the platform.
 
-`gpu_gate.sh` group 5 has the identical gap: it runs `gofmt` and `go vet`, not `staticcheck`. The
-gate is supposed to be what you run *instead of* remembering, and on this axis it is a subset of CI
-without saying so — so running the gate would not have caught this either.
+The old block was a strict subset of CI: no staticcheck at all, `vet` without the
+`goinfer_testhooks` tag and over narrower packages, no build, no module-boundary guard.
 
-Fix: the repo-hygiene group runs what CI runs, **derived rather than duplicated** if practical, so
-the next check CI gains does not reopen the gap.
+**The environment turned out to be part of the check**, found rather than reasoned. CI's root job has
+no `go.work`, so the module-boundary guard sees the root module graph in isolation; this box has a
+committed `go.work` that unions every submodule, so the guard reported a **false red** on its first
+run, naming `cuda`, `gpu` and `webgpu` as leaks. Derived fix: a job with a `workspace` step runs with
+one, a job without runs `GOWORK=off`. **Reproducing the command without reproducing the environment
+is not reproducing the check** — worth carrying to any other "run what CI runs" work.
+
+Mutation-checked both directions: a gofmt violation turns root gofmt and staticcheck red; breaking
+the derivation's selector makes it **refuse** ("derived ZERO hygiene steps") rather than report an
+empty set as a pass. The second is the one that matters — a derivation that degrades to nothing
+looks exactly like a clean run.
 
 **B0a · A guard that cannot find its tool must fail, not skip** — `linux`, the guard shape
 
