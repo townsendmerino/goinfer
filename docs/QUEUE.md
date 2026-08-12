@@ -274,10 +274,21 @@ relocated from A5 to A9. It buries a named consumer inside an unnamed constant, 
 cost — a new kernel with per-thread scratch, a driver that reserves differently — reopens it silently.
 
 **Structural fix: pay the deferred reservation BEFORE taking the free reading that sizes the cache.**
-Force `moe_route` (and any kernel the census flags) to launch once during `BuildResident`, ahead of
-`allocSlots` at `cuda/backend.go:793`. The cap is then correct **by construction**, because the free
-reading it is computed from already includes every fixed cost that will ever be paid. Recorded here
-before anyone reaches for the constant.
+Force the flagged kernels to launch once during `BuildResident`, ahead of `allocSlots` at
+`cuda/backend.go:793`. The cap is then correct **by construction**, because the free reading it is
+computed from already includes every fixed cost that will ever be paid.
+
+**Iterate the census; do not name `moe_route`.** `rope_kv` and `rope_kv_batched` declare 32 B/thread —
+small, and small is exactly how sibling drift gets in. Forcing by name would reproduce, inside the fix,
+the class the same commit filed. Driving the loop from the enumerated entry points means a kernel that
+gains per-thread scratch later is forced **without anyone editing a list**.
+
+**Why the ordering fix is better than a margin bump, stated so nobody later "simplifies" it into one.**
+Peak demand is 289,013,760 and residual is 138,412,032 — a ratio of **2.09×**. Forcing early pays the
+275.6 MiB *peak* while ~3.8 GB is still free, and the free reading taken afterwards then sees only the
+132 MiB *residual*. **One reordering covers both quantities, and neither has to be represented by a
+constant.** A margin bump would have to be sized against the peak, permanently, while the peak is
+transient — it would reserve 275.6 MiB forever to cover something that is only briefly needed.
 
 **A9-SPEC · Specialize `MOE_MAX_E` at JIT time** — `linux`, real reclaim, measured not estimated
 
@@ -298,8 +309,16 @@ per-thread bytes with a constant occupancy multiplier. Checked: `moe_route` decl
 B/thread (not the 4096 that "two `float[512]`" implies), and 4416 × 40 SMs × 1024 threads/SM =
 180,879,360 B ≠ the measured 138,412,032 (**ratio 0.7652**). The occupancy factor is **not**
 `SMs × maxThreadsPerSM`, so proportionality in local-bytes is unverified and the halving does not
-follow. Withdrawn rather than restated. The replacement is a measurement at a lower `MOE_MAX_E`,
-which A9-SPEC needs anyway.
+follow.
+
+**A second, independent reason.** The residual is **exactly 66 quanta** — 138,412,032 / 2,097,152 = 66
+— so it passes through the same 2 MiB rounding A1 closed on. A quantity that is both occupancy-scaled
+by an unknown factor *and* quantum-rounded cannot be halved by halving its input, even if the
+occupancy factor were linear. Two independent reasons, which is why A9-SPEC's reclaim has to be
+**measured** rather than predicted.
+
+Withdrawn rather than restated. The replacement is a measurement at a lower `MOE_MAX_E`, which
+A9-SPEC needs anyway.
 
 **The named mechanism was wrong.** moePTX's *module* memory is **0 B** — at `CompileLibrary`, at
 `NewComputePipeline`, and at the first launch of a module kernel that declares no scratch — with both
@@ -320,11 +339,23 @@ driver and path — and the 26B run made under it forced nothing. Its null was u
 have been read as "module load excluded" had the cheap control not been run. **A forcing mechanism
 has to be shown to fire before a null from it means anything.**
 
-**What this leaves for A5/A7.** At 34 slots free after `allocSlots` is 189.6 MiB against a 132 MiB
-reservation — the granularity shortfall had already eaten the 384 MiB margin down to less than half,
-and the deferred reservation then spent most of what remained. At the corrected cap of 33, free after
-`allocSlots` is 429.6 MiB, comfortably clear of 132 MiB. **A7 should therefore be expected to pass,
-and its value is that it tests this rather than assuming it.**
+**What this leaves for A5 — corrected, because the earlier statement is now checkable and false.**
+This entry previously recorded A5 as *necessary but not sufficient*, on the reasoning that the
+rounding fix alone would not have prevented the failure. With the demand measured, **it would have**:
+the corrected cap picks 33, which leaves 450,494,464 B against a demand of 289,013,760 B. **A5 alone
+avoids this failure.**
+
+What A5 does not avoid is the **class**. It works only because `slotMarginBytes` (402,653,184)
+happens to exceed the peak demand (289,013,760) — a relationship **nobody chose, nothing checked, and
+`MOE_MAX_E` has already moved once**. That is a stronger reason to keep A9-FIX than the one written
+here before, not a weaker one: the fix is not needed to make 33 work, it is needed so that the next
+`MOE_MAX_E`, the next kernel with per-thread scratch, or the next driver does not silently reintroduce
+a cap whose forward cannot run.
+
+The relationship is now pinned (`slotMarginBytes ≥ measured peak demand`, clear by 113,639,424 B) so
+it is at least checked rather than merely true. **`max`, not `Σ`** — launching the whole census gives
+a threshold and residual identical to `moe_route` alone, to the byte, so the driver shares one backing
+store sized by the largest kernel.
 
 Historical framing, kept because the trigger was rewritten twice:
 

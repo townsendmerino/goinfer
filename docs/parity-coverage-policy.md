@@ -488,8 +488,14 @@ one the experiment named: `moe_route`'s first launch retains 138,412,032 B of **
 module memory is a true zero on both instruments. The five-minute 26B run had been the wrong
 instrument for a question that was never model-dependent.
 
-**And that answer was still not the cause** — worth recording as its own step, because it is the
-failure mode of a *satisfying* result. 138,412,032 B was a real, twice-confirmed measurement, and it
+**And that answer was still not the cause.** Its own recognition test, alongside the ones sibling
+drift and the measurement's shape carry:
+
+> **Put the measured figure into the observed arithmetic — does it reproduce the observation?**
+
+Draft-checkable, and it does not need the answer known first: it is subtraction against numbers
+already written down. Here it fails by 60,424,192 B. This is the failure mode of a *satisfying*
+result. 138,412,032 B was a real, twice-confirmed measurement, and it
 was adopted as the explanation without checking that it explained the observation. It does not: free
 before the failing launch was 198,836,224, which exceeds it by 60,424,192. The refuting arithmetic was
 sitting in the numbers already written down, including a post-failure reading 67,108,864 B *above* the
