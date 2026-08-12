@@ -73,40 +73,6 @@ than keeping it because it was written down first.
 **The 5% session-drift figure applies** (`decoder/decode_bench_test.go`): a sequential before/after
 would be dominated by it.
 
-**P11 · arm64 f32 goldens for the aikit blocked-matmul rework — A TAG GATE** — `mac`,
-**CREATED 2026-08-12**
-
-**Provenance first, because it changes how the next search is read.** This gate is **new**, derived
-2026-08-12 by Francis from the architecture-exception clause meeting the aikit f32 rework. It was
-**not** a pre-existing obligation that a sweep overlooked: the tree was searched for it — `arm64
-read`, `arm64 goldens`, architecture-gating language across every live document and 400 commit
-bodies — and the only hit *declined* an arm64 read (G2's `go fix` clearance, §1536). **The search was
-correct and found nothing because there was nothing to find.** Recording it as created rather than as
-missed is what keeps that search trustworthy next time.
-
-**The derivation, and it is stronger than it first looks.** aikit's own comment on the rework carries
-**two different bit-identity arguments, one per architecture** (`linalg/matmul_blocked.go`, v1.17.1):
-
-- **amd64** — `dotFMA8` already reduces in-register, so the removed partial-sum round trip was "32
-  adds of which 24 added literal 0.0". Adding `0.0` is exact in IEEE-754. **Structural**: it cannot
-  move a bit, whatever the inputs.
-- **arm64** — "the four lanes per column are **real partial sums** and `dot8ColsInto` folds them in
-  **this same left-to-right order**". That is an **ordering claim about the new implementation**, not
-  a structural impossibility. f32 addition is not associative, so if the fold order differs anywhere,
-  bits move.
-
-**goinfer's green goldens verify the amd64 argument only** — they ran on amd64, where the claim is
-exact by construction. The arm64 argument is the weaker of the two and is the one nobody here has
-checked on an arm64 box. The policy's architecture clause (*"the pure-Go CPU reference is bit-identical
-WITHIN an architecture, not across"*) says a *float-valued* golden is arch-sensitive; this rework is
-precisely a change to how f32 values are accumulated, so the clause bites.
-
-**Scope:** run the f32 forward goldens on `macbook-arm64` against v1.17.1 and confirm they hold at
-the recorded values. This is an argmax+cosine contract, not bit-for-bit across arches — the question
-is whether the rework moved arm64's numbers *relative to arm64's own goldens*.
-
-**Carried by the Mac batch.** Gates a tag alongside P10; unlike P10 it needs the other box.
-
 **A2 (partial) · 26B documentation correction** — `linux`, 2026-08-12
 
 The half that does NOT depend on A1 is done: the README instructed
@@ -1043,6 +1009,26 @@ and none needs this one:
    **How.** Run `scripts/refresh_parity_hashes.sh` (or the f32 forward goldens) on `macbook-arm64`; the
    new `arch=arm64` trailer records the discharge. Second tag-gate alongside the prefill measurement —
    both attach to the same aikit-bump change.
+
+   **The mechanism behind that, from aikit's own comment — it names TWO bit-identity arguments, one
+   per architecture** (`linalg/matmul_blocked.go`), and they are not equally strong:
+
+   - **amd64** — `dotFMA8` already reduces in-register, so the removed round trip was "32 adds of
+     which 24 added literal `0.0`". Adding `0.0` is exact in IEEE-754: **structural**, it cannot move
+     a bit whatever the inputs.
+   - **arm64** — "the four lanes per column are **real partial sums** and `dot8ColsInto` folds them
+     in **this same left-to-right order**". An **ordering claim about the new implementation**, not a
+     structural impossibility. f32 addition is not associative, so if the fold order differs anywhere,
+     the sums move.
+
+   This is *why* the margin needs re-confirming on arm64 rather than a separate claim about
+   byte-agreement: goinfer's green goldens ran on amd64 and exercised the **structural** argument, so
+   the **weaker** of the two arguments is precisely the one nothing here has tested. A second,
+   independent reason the gate is owed, alongside the unrecorded-arch reason above — both hold.
+
+   (Search scope, for the provenance point: `arm64 read`, `arm64 goldens`, and architecture-gating
+   language across every live document and 400 commit bodies returned exactly one hit, and that hit
+   *declined* an arm64 read — G2's `go fix` clearance, §1536, cleared by source census.)
 
 **Still outstanding, and it needs the mac:** `metal-rope-merge` carrying `d682315`. It is not on
 origin and resolves in no clone here, so **P4's "already implemented, snapshot-golden byte-exact" is
@@ -2401,6 +2387,7 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `1d0d1ed` | test(decoder): int4 forward goldens — 23 fixtures, 16 architectures (Q1c) |
 | `1f6dbe0` | fix(parity,fmt): gofmt the threshold sweep + refresh deps_hash after comment-only core edits |
 | `2d28358` | docs(branch-note): re-derive against the corrected cap (D3 design read) |
+| `2e8dfb6` | fix(parity): goldens-gated deps_hash refresh for the aikit v1.17.1 bump |
 | `2e91607` | test: refresh parity deps_hash — non-numeric core-file drift (un-reds main) |
 | `38061b1` | perf(gemma4-paging): pread expert nibbles straight into the slot buffers |
 | `3d6ae1e` | chore: go fix modernizers, one deterministic pass (G2) |
@@ -2581,6 +2568,7 @@ than papered over.
 | `cuda/resident.go` | goinfer |
 | `cuda/slotcap_test.go` | goinfer |
 | `cuda/softcap.go` | goinfer |
+| `decoder/decode_bench_test.go` | goinfer |
 | `decoder/gguf.go` | goinfer |
 | `decoder/giwquant_test.go` | goinfer |
 | `decoder/gptoss_real_test.go` | goinfer |
