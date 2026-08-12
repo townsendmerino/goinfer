@@ -657,6 +657,21 @@ also satisfies. The **byte comparison against a snapshot taken before the comman
 carried the claim. Worth naming, because two of the three checks were reassurance rather than
 evidence, and a reader counting three would have over-weighted the result.
 
+**When a citation check goes red, the fix may be the CITATION or the PROSE — and the citation is
+always cheaper.** Re-pointing a reference is one `sed`; correcting the sentence around it means
+rereading what was claimed and deciding whether it still holds. Both turn the gate green, and only
+one of them is honest when the prose is what went stale. **The pressure toward the cheap fix is
+strongest exactly when CI is red and everything else is green**, which is also the moment the choice
+matters most — a wrong citation is a broken pointer, but a re-pointed citation under an unchanged
+sentence is a false statement with a working link, and the lint will never flag it again.
+
+The instance: `c8b65ba` failed in CI, and its rebased successor `bacc04c` sat on `main` carrying the
+**same subject and the same five files**. One `sed` from green. Their **patch-IDs differ**, so they
+are not the same change, and the passage cites the branch as it stood *before* the rebase — a state
+`bacc04c` no longer illustrates. Re-pointing would have gone green while making the sentence false.
+Allowlisted with the reason instead. *Ask which one actually went stale, and prefer the answer that
+costs more.*
+
 **A claim that a check passed names the COMMITTED check that produced it.** Gates police committed
 files; a command typed in a session is outside every gate, and no gate can be added that fixes that.
 So the rule is about the claim rather than the tooling: "staticcheck is clean" is only reportable if

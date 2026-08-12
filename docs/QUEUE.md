@@ -1757,6 +1757,48 @@ atomised now.
 **Q1 · The forward goldens prove f32 ONLY — no quantized path has a golden that runs** — `linux`,
 **NEW. G-01 at the largest scale it has appeared.**
 
+> **The "14 quantized" composition figure, resolved by enumeration rather than by authority
+> (2026-08-12).** Two classifiers disagreed — an ad-hoc name grep said **7**, the refresh script's
+> said **14** — and 14 had already propagated into commit bodies and into the proof requirement.
+> Adopting it because it was the script's would have been a tiebreak by authority, so both were
+> tested instead.
+>
+> **7 was structurally incapable of being right**, for two independent reasons. Five of the fourteen
+> carry no quantization token in their NAME at all: `TestGemma4_logitParity` and
+> `TestMellum2_logitParity` set it in the test body (`Options{Quant: "int8int8"}`), and
+> `TestGGUF_gemma3/qwen2/qwen3_parity` set it in the **fixture filename** the test loads. No
+> name-based match can see either. (The other two misses, `Q2_K` and `Q3_K_M`, were a plain gap in
+> the ad-hoc pattern, which listed `q4|q5|q6|q8` — a bug rather than a structural limit, but it lands
+> in the same place.)
+>
+> **The script's classifier cannot double-count.** `grep -c` counts matching LINES; every top-level
+> result is one line; subtest lines are indented and excluded by its `^--- PASS:` anchor. Measured on
+> the captured run: 33 top-level PASS lines, **0** indented ones, no duplicate names among the 14.
+>
+> And it does not misclassify — all fourteen drive a genuinely quantized path:
+>
+> | gate | quantization | set where |
+> |---|---|---|
+> | `TestGemma4_logitParity` | int8×int8 | test body |
+> | `TestMellum2_logitParity` | int8×int8 | helper body |
+> | `TestInt4_forwardParity` | int4 group-wise | test body |
+> | `TestGGUF_Q2_K_parity` | Q2_K (+Q3_K/Q4_K/Q6_K mix-ins) | fixture |
+> | `TestGGUF_Q3_K_M_parity` | Q3_K (+Q4_K/Q6_K) | fixture |
+> | `TestGGUF_Q4_0_parity` | Q4_0 | fixture |
+> | `TestGGUF_Q4_K_M_parity` | Q4_K (+Q6_K) | fixture |
+> | `TestGGUF_Q4_K_S_parity` | Q4_K_S | fixture |
+> | `TestGGUF_Q5_K_M_parity` | Q5_K (+Q6_K) | fixture |
+> | `TestGGUF_Q6_K_parity` | Q6_K | fixture |
+> | `TestGGUF_Q8_0_parity` | Q8_0 (tinyllama) | fixture |
+> | `TestGGUF_gemma3_parity` | Q8_0 (gemma-3-270m) | fixture |
+> | `TestGGUF_qwen2_parity` | Q8_0 (Qwen2.5-0.5B) | fixture |
+> | `TestGGUF_qwen3_parity` | Q8_0 (Qwen3-1.7B) | fixture |
+>
+> **So 14 stands, and every commit body citing it is correct.** The reason is now recorded, which is
+> the point: the figure is load-bearing in the proof requirement, and "the script said so" is not a
+> reason. Note what the table also shows — **11 of the 14 take their quantization from a fixture**,
+> so any future classifier that reads test names will undercount for the same structural reason.
+
 int4 is the documented default quantization. **Zero goldens drive it.** And the hole is wider than
 that: of the 19 goldens that actually RAN in the 2026-08-12 refresh, **every one is f32**.
 
@@ -2440,11 +2482,12 @@ than papered over.
 | `decoder/weights.go` | goinfer |
 | `internal/serveapp/chaos_test.go` | goinfer |
 | `internal/serveapp/fuzz_test.go` | goinfer |
+| `linalg/matmul_blocked.go` | aikit |
 | `linalg/quant.go` | aikit |
 | `scripts/bench_compare.sh` | goinfer |
 | `scripts/bench_peer.py` | goinfer |
 | `scripts/ci_checks.py` | goinfer |
-| `scripts/gpu_gate.sh` | goinfer |
+| `scripts/gpu_gate.sh` | aikit |
 | `scripts/heavy_gate.sh` | goinfer |
 | `scripts/parity_sweep.sh` | goinfer |
 | `scripts/queue_citation_lint.py` | goinfer |

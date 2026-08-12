@@ -229,6 +229,42 @@ def subject_of(sha: str):
 PATH_RE = re.compile(r"(?<![\w/])((?:[a-z0-9_]+/)*[a-z0-9_]+\.(?:go|sh|py)):(\d+)(?![\d])")
 
 
+_MODCACHE = None
+
+
+def modcache_root():
+    global _MODCACHE
+    if _MODCACHE is None:
+        r = subprocess.run(["go", "env", "GOMODCACHE"], capture_output=True, text=True, cwd=str(ROOT))
+        _MODCACHE = pathlib.Path(r.stdout.strip()) if r.returncode == 0 and r.stdout.strip() else pathlib.Path("")
+    return _MODCACHE
+
+
+def required_modules():
+    """{module path: version} for the cross-repo modules goinfer cites, read from the ROOT go.mod.
+
+    Derived, never restated — the same rule B7 filed against hand-maintained version literals. The
+    version this returns IS the one goinfer compiles against, so a citation checked against it is a
+    citation about the code goinfer actually runs.
+    """
+    out = {}
+    try:
+        text = (ROOT / "go.mod").read_text()
+    except OSError:
+        return out
+    for m in re.finditer(r"^\s*(github\.com/townsendmerino/aikit)\s+(v[0-9][^\s/]*)\s*$", text, re.M):
+        out[m.group(1)] = m.group(2)
+    return out
+
+
+def modcache_dir(mod: str, ver: str):
+    root = modcache_root()
+    if not root or not root.exists():
+        return None
+    d = root / f"{mod}@{ver}"
+    return d if d.is_dir() else None
+
+
 def path_repos():
     """Search roots for path citations — literally the same set the commit check uses.
 
@@ -242,7 +278,27 @@ def path_repos():
     false red: searching one place and reporting absence is a claim the search was not entitled to
     make.
     """
-    return [(pathlib.Path(r).name, pathlib.Path(r)) for r in sibling_repos()]
+    roots = [(pathlib.Path(r).name, pathlib.Path(r)) for r in sibling_repos()]
+    # A cross-repo path citation resolves against the VERSION GOINFER REQUIRES, not against whatever
+    # the sibling checkout happens to be on. Those are different questions and only one of them is
+    # about goinfer.
+    #
+    # linalg/quant.go:113 went red TWICE in one day because aikit committed — the citation was fine
+    # and goinfer had not changed. A gate whose verdict moves when another repository's working tree
+    # moves is not measuring this repo; it is the Environment class again, with the environment being
+    # somebody else's uncommitted work.
+    #
+    # The module cache is the right root: content-addressed and immutable per version, present in CI
+    # once anything has built, reproducible on any machine, and stale EXACTLY when goinfer bumps the
+    # dependency — which is when a citation into it genuinely should be re-checked.
+    #
+    # Placed FIRST so it wins over the sibling checkout when both exist. The sibling stays as a
+    # fallback for a machine with no populated module cache.
+    for mod, ver in required_modules().items():
+        d = modcache_dir(mod, ver)
+        if d is not None:
+            roots.insert(0, (pathlib.Path(mod).name, d))
+    return roots
 
 
 def repo_present(name: str) -> bool:
