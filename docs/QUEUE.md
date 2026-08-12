@@ -33,9 +33,10 @@ observe it caps to **34 — which fails**. So the published instruction could pr
 card it was measured on. Corrected to the highest measured-safe value (30), with the hit-rate curve
 and an explicit reproducibility note on 16.98.
 
-**Still blocked on A1:** publishing what the *corrected* cap delivers, and the leftover-VRAM column.
-Neither exists until the accounting is measured — the model that was going to supply them was
-refuted and reverted. Do not synthesise these from the current cap; it is the one under suspicion.
+**Unblocked — A1 is closed.** The corrected cap is **33**, and the leftover-VRAM column follows from
+the closed form (table under A1). Both were previously withheld because the model that would supply
+them had been refuted; that is no longer the case. The remaining half is publishing them, and A7
+confirms 33 by run before anything is published as safe rather than as computed.
 
 ## Queued
 
@@ -44,36 +45,46 @@ cold. Where something is believed done but unconfirmed, it says so — **verify 
 
 ### A. Open investigation
 
-**A1 · Why the 26B forward failed at 34 slots** — `linux`
+**A1 · Why the 26B forward failed at 34 slots** — `linux`, **CLOSED**
 
-The last inferred link is measured (384 MiB free does serve a 133.5 MiB forward on this card); the
-accounting model that was going to explain the failure was refuted by the sweep and reverted.
-**Current state: mechanism unexplained.**
+Waste is **allocation granularity**, fully accounted. Buffers are 123,904 × {1, 2, 8, 16} bytes per
+slot, 4 per layer, 30 layers; each is rounded up **independently** to the driver's 2 MiB quantum.
 
-Next measurement, specified and pre-registered: two `cuMemGetInfo` calls immediately either side of
-`allocSlots`, **within one process**, at one slot count, compared against what `slotBytesPerLayer`
-predicts for that exact configuration. Then a second slot count for the slope, which distinguishes
-a fixed cost from a proportional one.
+    x = n × 123,904 / 2,097,152
+    Q(n)           = ceil(x) + ceil(2x) + ceil(8x) + ceil(16x)      per-layer quanta
+    Requirement(n) = 30 × Q(n) × 2,097,152
 
-- **agree** → accounting is fine, the mechanism is elsewhere, candidate list reopens
-- **disagree** → the gap is measured rather than modelled, and its shape falls out of the second point
+`roundedPredicted` matched measured actual **to the byte** at 16 and 30 slots, with structure
+asserted before totals at both (120 allocations, 4 distinct sizes, 30 occurrences each, distinct
+sum = n × 3,345,408), and predicted post-`allocSlots` free matched to the byte at 34 — a slot count
+never used to derive the form.
 
-Why within-process: the sweep recorded free *after* `allocSlots` and never before, so every
-consumption figure derived from it assumes constant starting-free across separate process launches
-— measured afterwards as varying ~300 MB against deltas of ~850 MB. That instrument can falsify a
-2.5× error and cannot establish an 8% one.
+**No memory was ever unaccounted.** The delta was real; the prior closed form under-predicted it by
+ignoring the quantum. Machine state for every figure here: free 3,847,880,704 B, margin
+402,653,184 B (384 MiB), quantum 2,097,152 B, 30 MoE layers.
+
+| n | Q(n) | requirement | + margin | vs free | free after `allocSlots` |
+|---|---|---|---|---|---|
+| 30 | 50 | 3,145,728,000 | 3,548,381,184 | 299,499,520 spare | 702,152,704 |
+| 32 | 53 | 3,334,471,680 | 3,737,124,864 | 110,755,840 spare | 513,409,024 |
+| 33 | 54 | 3,397,386,240 | 3,800,039,424 | 47,841,280 spare | 450,494,464 |
+| 34 | 58 | 3,649,044,480 | 4,051,697,664 | **203,816,960 over** | 198,836,224 |
+
+**Corrected cap is 33.** At n = 34, x crosses 2 and all four buffers tip at once — a 4-quanta step.
+34 is the worst boundary in the range, and it is the value the README used to recommend.
 
 Known and durable: driver quantum is **2 MiB** (not next-power-of-two — 5→6, 6→6, 9→10 MiB
 measured); sub-quantum requests are pool-served but **not free**. Both asserted in
 `cuda/allocgran_test.go` with their measurements.
 
-**A2 · 26B documentation correction** — `linux`, downstream of A1
+**A2 · 26B documentation correction** — `linux`, **unblocked by A1**
 
 38 slots is unreachable with correct accounting. The published 16.98 tok/s was measured at a cap
 that shouldn't have been granted — it worked with ~133 MB leftover, equal to the forward's demand
 within measurement error. The README currently instructs `GOINFER_MOE_CACHE_SLOTS=48`.
 
-When A1 resolves: publish what the corrected cap actually delivers, with a fourth column for
+The corrected-cap figure is **33**, and the leftover-VRAM column can now be filled from the closed
+form (the table under A1). Publish what the corrected cap delivers, with that fourth column for
 **leftover VRAM after `allocSlots`** — the figure that distinguishes a safe operating point from a
 lucky one. Record 16.98 as **measured-but-unsafe rather than retracted**; the correction is a few
 percent, not a repudiation.
@@ -123,6 +134,43 @@ Two changes, both error handling rather than prediction, useful whatever A1 turn
 Deliberately its own item rather than folded into A1, so the next investigation starts from a
 message rather than a symptom.
 
+**Landing shape, fixed.** Shipped error text is: kernel name, **requested** slot count, **effective**
+slot count after capping, cause, remedy. Naming only the effective count sends a user who set 48 to
+lower it to 40 — which caps to the same value and fails identically, making the advice look wrong.
+**No VRAM readings in user-facing error text**: those are instrumentation, they move with the probe,
+and a number whose meaning depends on where it was taken does not belong in a message the reader
+cannot situate. `pipeName` must be **total** — no panic on any shape, including nil, unexported, and
+a pipeline not held in a named field; it runs only when something has already failed, so it must not
+be able to turn a diagnosable error into a crash. staticcheck ST1005: lowercase, unpunctuated.
+
+Split from the A1 VRAM instrumentation before committing — the two are currently interleaved in
+`cuda/resident.go` and `cuda/backend.go`, and one ships while the other does not.
+
+**A4 · Do the two cap implementations differ?** — `linux`, **CLOSED, refuted**
+
+Both copies apply the 384 MiB margin; they do not disagree. The benchmark's cap of 38 came from a
+machine state with more free VRAM, not from a second implementation computing a different answer.
+
+This mattered because a numeric disagreement between the copies would have accounted for a claimed
+cap of 38 against an observed 34 with **no unaccounted VRAM at all** — it had to be excluded before
+any accounting branch was believed. That they agree numerically does not make the duplication
+harmless: see A5, and the `capSlots` row under sibling drift in `parity-coverage-policy.md`.
+
+**A7 · Confirm the corrected cap by run** — `linux`, after A5
+
+33 should succeed; 34 should fail. **Pre-registered: free after `allocSlots` at 33 slots is
+450,494,464 B exactly.** State it before running, not after.
+
+33 clears the margin by only 47,841,280 B, so treat a **failure at 33** as information about the
+margin rather than about the formula — the closed form predicting the requirement correctly and the
+margin being too thin to absorb what follows are different findings with different fixes.
+
+**A8 · Is `fRoute` the first launch?** — `linux`, **CLOSED**
+
+`fRoute` is **not** the first launch of the token — `ropeKV` (from `gmod`) and `fAttn` (from the
+glue module) precede it. But it is plausibly the first launch out of **`moePTX`**, so a lazily
+deferred module load is attributable to it exactly as a first-launch would be. A9 stands.
+
 **A5 · The corrected cap must be a SEARCH, not a division** — `linux`, design fixed in advance
 
 When A1's fix lands, do not write it as a division with a correction term. Per-buffer 2 MiB
@@ -144,22 +192,23 @@ Land it in ONE implementation — `allocSlots` calls `capSlots`, not a copy — 
 at the shipping path and a mutation check. And correct, in the same change, wherever it was written
 down that `slotcap_test.go` corroborates production sizing: it corroborates a parallel copy.
 
-**A9 · Force `moePTX` to load BEFORE `allocSlots`, then re-run at 34** — `linux`, CONDITIONAL
+**A9 · Force `moePTX` to load BEFORE `allocSlots`, then re-run at 34** — `linux`, **TRIGGERED**
 
-**Trigger, restated.** The earlier threshold ("run only if free at the failing launch exceeds
-~100 MiB") was written before the post-allocation headroom was known, and it now reads the wrong
-way: the closed form predicts **198,836,224 B free after `allocSlots` at 34 slots**, so a reading
-above 100 MiB is the *expected* case rather than a signal.
+Not conditional. What survives every instrument question about the 34-slot failure is that free VRAM
+at the moment of the attempt was **at least 189.6 MiB**, and a one-block routing kernel cannot want
+that. So this is **not exhaustion**, and A5 is necessary without being the whole remedy.
 
-Read the **decrements, not the absolute value**:
+**Read the decrements, not the absolute value.** The earlier threshold ("run only if free at the
+failing launch exceeds ~100 MiB") was written before the post-allocation headroom was known and
+reads the wrong way round: the closed form predicts **198,836,224 B free after `allocSlots` at 34
+slots**, so a reading above 100 MiB is the *expected* case, not a signal. The two informative gaps:
 
-- free after `allocSlots` → free at first launch — the gap is what `gmod` and the glue module cost.
-- free at first launch → free at failing launch — the gap is what the successful launches cost.
+- free after `allocSlots` → free at first launch — what `gmod` and the glue module cost.
+- free at first launch → free at failing launch — what the successful launches cost.
 
-Run A9 if either gap is large enough that the remaining headroom was spent by **module loading
-rather than by the cache**. Skip A9, recording it as unnecessary, only if free after `allocSlots`
-comes back far below 198,836,224 — which would mean the closed form is wrong and the cache took
-more than predicted, a different finding.
+The only outcome that would make A9 unnecessary is free after `allocSlots` coming back **far below**
+198,836,224 — which would mean the closed form is wrong and the cache took more than predicted. That
+reopens A1; it does not close A9.
 
 Rationale: `fRoute` is the first kernel launched out of `moePTX` (`ropeKV` comes from `gmod`,
 `fAttn` from the glue module), so a lazily-deferred module load is attributable to it exactly as a
@@ -180,6 +229,11 @@ slots. Branches, pre-registered:
 
 Read-only on the allocation path. The reordering is an **experiment first and a fix only after it
 answers**.
+
+**Sequencing constraint — this is the part that can be lost silently.** A9 reproduces at 34 slots,
+and A5 fixes the cap to 33, which makes 34 unreachable. **Run A9 before A5 lands, or with an
+explicit cap override — and record which was used.** A run at the new cap of 33 would simply pass
+and look like confirmation, so the loss would leave no trace.
 
 **B0 · Repo-hygiene group must run what CI runs** — `linux`
 
@@ -229,6 +283,20 @@ admin unload path — the change that converts a bounded leak into a use-after-f
 `pick()`-to-`enter()` window. The safe version needs the drain, which is now implemented
 (`588052b`), so this stash may simply be superseded. Either retitle it to say what it is, or drop
 it. **An untitled WIP that looks ready is a trap.**
+
+**B6 · Sibling-drift enumeration** — either box
+
+A check that fails when one member of a sibling pair carries a fix or invariant the other does not.
+The class is written up in `docs/parity-coverage-policy.md` ("Sibling drift"); this is the executable
+half.
+
+Known instances: **W8A8 / W4A8 `Workspace`**; **dense `mlp` / `moeMLP` `decodeScratch`**; **batched
+GEMV int8 / int4**; **`capSlots` and its inline copy in `allocSlots`**; **SIMD / scalar widen**.
+
+**Enumerate the members; do not name one.** A test that names one member is exactly what the passing
+sibling already had — it reproduces the class rather than closing it. Where enumeration cannot be
+mechanical, the invariant's own comment carries the full set, so the next fix is written by someone
+who has been told the set exists.
 
 ### C. Verification surfaces never exercised
 
@@ -471,6 +539,58 @@ Answer that before estimating.
 - **`go fix` modernizers** — one deterministic pass across ~20 adapters written over months,
   reviewed as a diff. **After the freeze**; it re-stales the manifest wholesale.
 
+### P. Audit findings, 2026-08-12 — nine survived adversarial verification
+
+Eight are below. The **ninth is the Metal `ResidentGreedy` gap**, filed under Struck rather than here
+because it is measured net-negative and therefore not work — the count is stated so its absence from
+this list reads as a decision rather than as a dropped item.
+
+**Every figure below is a verifier's ESTIMATE, not a measurement.** Written with that word attached
+deliberately: these came from reading code, not from running it. Any figure later measured **moves
+to the measured-quantities table** in `parity-coverage-policy.md` with machine, method and date, and
+stops being an estimate here.
+
+**P1 · KV re-gather and V re-transpose on every decode token** — `decoder/forwardn.go:378`
+
+Estimated **~10–15% of per-token traffic at 4k+ context**, on all mainstream CPU families — the
+largest single item in the group. Frozen core, and it needs a new aikit row-pitch API, so it is the
+**v1.0-unfreeze headline** rather than something to slip in.
+
+**P2 · Scalar `int8→f32` widen on the LM head** — aikit `linalg/quant.go:113`
+
+A SIMD widen sits in the same package. Estimated **several ms/token at large vocab**. Not frozen,
+so the work is unblocked — but shipping it **reverses E6** (aikit release deferred to v1.0), which
+must be an explicit decision rather than one arrived at by landing the patch.
+
+Bit-identity is **structural** if the SIMD path is purely elementwise: `int8→f32` widening is exact,
+and a per-element scale is a single multiply with no reordering freedom. Verify that condition holds
+and it needs no parity argument at all.
+
+**P3 · Gemma final-logit softcap, serial O(vocab) `tanh` on the sampling path** — `cuda/resident.go:1561`
+
+Estimated **10–30%**, Gemma with sampling only. A host parallel-for is bit-identical by construction.
+Not frozen. **Queued for work now.** Measure with the sampling configuration recorded on **both**
+sides, same method both sides — this is the rule the 476/268 headline broke.
+
+**P4 · Metal RoPE dispatched twice per layer** — `metal/model.go:1301`
+
+One grid-merged dispatch is bit-identical. Estimated a few %.
+
+**P5 · Metal `quant_vec` fused into the o-proj GEMV** — estimated ~5–6% of dispatches per token.
+The swiglu half is **not** a clean fusion; do not bundle them.
+
+**P6 · `moeMLP` allocates ~7–8 MB/token** — `decoder/mlp.go:82`
+
+By skipping the `decodeScratch` invariant its dense sibling honours. Frozen core. **See B6** — this
+is a sibling-drift instance, and fixing it without enumerating the pair leaves the class open.
+
+**P7 · W4A8 allocates a fresh `Workspace` per projection per token** — `decoder/weightmat.go:202`
+
+The W8A8 sibling was fixed; this one was not. Frozen core. **See B6.**
+
+**P8 · `sampleChunked` allocates a full-vocab `[]float64` and rebuilds the goroutine pool twice per
+sampled token** — `decoder/sampler_chunked.go:188`. A jitter reducer rather than a throughput win.
+
 ## Struck — decided against, kept so the decision is visible
 
 - ~~**Default `top_k`**~~ — truncating the distribution changes which tokens are reachable, which is
@@ -486,6 +606,10 @@ Answer that before estimating.
   slot-loaded heap (96–128 MiB) at the same free figure.
 - ~~**aikit branch protection**~~ — required checks force PR-only merges, which is friction against
   a threat model aikit doesn't have. The gate ritual is the enforcement. Revisit at v1.0.
+- ~~**Metal `ResidentGreedy` gap**~~ — measured **net-negative**. Kept here rather than under group
+  P because it is not work. The 2026-08-12 audit reached the same conclusion **independently**, from
+  code, without access to the measurement — recorded as a corroboration of that audit's calibration,
+  which is the only reason the entry is worth keeping at all.
 
 ## Done
 
