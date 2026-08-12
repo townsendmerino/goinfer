@@ -31,6 +31,7 @@ Deliberately NOT checking that the surrounding prose describes the commit accura
 mechanisable. It checks the citation, which is the part that was wrong.
 """
 
+import os
 import pathlib
 import re
 import subprocess
@@ -49,14 +50,37 @@ def looks_like_sha(tok: str) -> bool:
     return any(c.isdigit() for c in tok) and any(c.isalpha() for c in tok)
 
 
+# The queue legitimately cites SIBLING repositories — aikit's gpu module ships the kernels goinfer
+# embeds, so its SHAs appear here as a matter of course. Searching only this repo made a correct
+# citation (be049df) look fabricated, which is a false RED and exactly as bad as the false green the
+# lint exists to prevent: it would have driven someone to "fix" an accurate reference.
+#
+# Override with GOINFER_SHA_LINT_REPOS (colon-separated). Absent repos are skipped silently — they
+# are a property of the machine, not of the queue.
+def sibling_repos():
+    root = QUEUE.parent.parent
+    env = os.environ.get("GOINFER_SHA_LINT_REPOS")
+    cands = env.split(":") if env else [str(root / ".." / "aikit" / "aikit")]
+    out = [str(root)]
+    for c in cands:
+        pp = pathlib.Path(c).expanduser()
+        if (pp / ".git").exists():
+            out.append(str(pp))
+    return out
+
+
 def subject_of(sha: str):
-    r = subprocess.run(
-        ["git", "log", "-1", "--format=%s", sha],
-        capture_output=True, text=True, cwd=str(QUEUE.parent.parent),
-    )
-    if r.returncode != 0:
-        return None
-    return r.stdout.strip()
+    for repo in sibling_repos():
+        r = subprocess.run(
+            ["git", "log", "-1", "--format=%s", sha],
+            capture_output=True, text=True, cwd=repo,
+        )
+        if r.returncode == 0:
+            subj = r.stdout.strip()
+            if repo != str(QUEUE.parent.parent):
+                subj = f"[{pathlib.Path(repo).name}] {subj}"
+            return subj
+    return None
 
 
 ALLOW_RE = re.compile(r"<!--\s*sha-lint:\s*allow\s+([0-9a-f]{7,40})\s+(.+?)\s*-->")

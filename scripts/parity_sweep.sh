@@ -49,6 +49,10 @@ if [ "$EMIT_MANIFEST" = "1" ]; then
 fi
 
 echo "== parity sweep on ${SHA} (${TAGREF}) =="
+# The composition, not just the verdict. This gate's axes are family x quant x loader; a pass count
+# alone cannot distinguish "the axes are covered" from "an axis collapsed to one value" — which is
+# exactly how the forward goldens stayed f32-only through nine refreshes behind an accurate count.
+python3 scripts/sweep_composition.py || echo "  (composition unavailable — see above)"
 if [ -n "$(git status --porcelain)" ]; then
   echo "WARNING: working tree is dirty — tag on a clean checkout, not this."
 fi
