@@ -1021,7 +1021,13 @@ nothing would say so.**
 
 **DEFERRED BY CHOICE (2026-08-12) — auto-pickup, trigger pinned. Not sunk: deferral is the decision.**
 
-- **Trigger = the next goinfer RELEASE TAG (≥ v0.13.0) that carries the aikit v1.17.0 bump** — *not*
+- **Trigger = the next goinfer RELEASE TAG (≥ v0.13.0) that carries an AIKIT BUMP** — `aikit` and/or
+  `aikit/gpu` increased against the previous release tag, whatever the version. **Was written as "the
+  aikit v1.17.0 bump" and that literal drifted within hours**: aikit shipped v1.17.1 the same day, so
+  the trigger named a version `main` was no longer on. RELEASING.md's copy was already generic, which
+  is the only reason the trigger still fires — the two carriers disagreed and only the durable one was
+  right. This is B7's constant shape (a literal restating a value maintained in five `go.mod` files),
+  and it is now stated the same way in both places. It is *not*
   the bump commit on `main`. C3 is a public-view consumer evaluation: an external consumer `go get`s a
   released tag, so evaluating main-HEAD-with-the-bump would certify a state **nobody installs**. This
   is the (b) reading, chosen deliberately over the faster (a): "post-bump tag" here means a **release**
