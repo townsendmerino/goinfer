@@ -1112,6 +1112,54 @@ zoo, no HF venv. (18 of the 23 manifest rows name `linux-62gb`; only `gemma4` na
 **Verdict: P6 can land now under the exception.** Do not refresh the hash without running the
 script — it refuses on any golden failure and on a vacuous all-skipped run, which is the whole point.
 
+**R1 · The refresh script's history — two corrections to the record** — `linux`, **CLOSED, both
+answered from the log**
+
+**Correction 1: "the refresh script had never been usable" is WRONG.** I wrote that in `eea7f29`'s
+commit body. The log says otherwise — **nine commits carry its goldens proof**, with counts rising as
+fixtures were added:
+
+| date | commit | goldens |
+|---|---|---|
+| 2026-07-26 | `2e91607` | 14 passed |
+| 2026-07-28 | `9624dd9` | 14 passed |
+| 2026-08-01 | `ecc5af2` | 119 passed |
+| 2026-08-02 | `e58ac8a` | 17 passed |
+| 2026-08-02 | `1f6dbe0` | 4 passed |
+| 2026-08-03 | `2922468` | 17 passed |
+| 2026-08-04 | `7cc2f0d` | 17 passed |
+| 2026-08-09 09:58 | `ed81e13` | 19 passed |
+| 2026-08-09 15:10 | `ca29d6c` | goldens=19 |
+
+**It worked, was used, and broke on 2026-08-09 at 20:59** — `6edd1ca` introduced `method: null`,
+which the writer could not round-trip. `eea7f29` (2026-08-12) is the **first refresh attempted after
+that**, three days later, and it aborted. The abort was the guard working on its first real
+opportunity, not a guard that had never let anything through.
+
+**Correction 2: the precedent cited in this queue was the wrong commit.** `9e5f8fa` was described
+here as "a metadata field addition re-staled `weights.go` and the refresh ran 19 goldens". It is
+`fix(quant): reject --quant that conflicts with a prequant .giw at startup` and **touches the manifest
+not at all** — its five files are `CHANGELOG.md`, `giwquant_test.go`, `serialize.go` and two `main.go`s.
+The real precedents are the nine above. I repeated the wrong SHA several times from this file without
+opening it.
+
+**Second-order check: a mangled write DID land, and lived ~7 weeks.** The HTML-escaping defect was not
+caught by the guard, because it predates the script and arrived through `go test -run ParityManifest
+-update`:
+
+    2026-06-20  82b39cc  \u003e appears (1)
+    2026-07-26  93eb7d4  (2)
+    2026-07-28  99b3f95  (1)
+    2026-08-09  6edd1ca  0 — cleaned
+
+So the answer to "did the guard hold from the start" is **no**: escaped sequences were in the tree
+from 2026-06-20 to 2026-08-09. They are cosmetic — a `>` inside a `reference` string — and changed no
+hash or verdict, but the claim "a clean result means the guard held" would have been false.
+`method: ""` never landed (checked; 4 `null`s today, 0 empty strings).
+
+**What is durable:** the writer is now faithful (`SetEscapeHTML(false)`, `Method` as `RawMessage`), so
+neither defect can recur through either route.
+
 **Q1 · The forward goldens prove f32 ONLY — no quantized path has a golden that runs** — `linux`,
 **NEW. G-01 at the largest scale it has appeared.**
 
@@ -1139,12 +1187,28 @@ enforced by `deps_hash` staleness, whose release valve is this goldens run. Wher
 silent — every quantized path — the freeze is a *procedural* barrier with no numeric proof behind it.
 That is not an argument for lifting it; it is an argument for knowing what it is.
 
-**What it would take.** The three `int8int8` goldens exist and skip for want of fixtures, so the
-cheapest first step is regenerating those checkpoints — that lifts W8A8 from zero to three families
-at no new test-writing cost. int4 needs new goldens: pick the families where int4 is a supported
-configuration, generate a tiny fixture per family, and pin logits from the f32 path with the int4
-tolerance the quant tier already defines (quant-vs-f32 argmax + cosine, per the policy's axis table)
-rather than a bit-identity golden, since int4 is lossy by construction.
+**RUN WHAT EXISTS FIRST — and most of it was UNPLUMBED, not missing.** Done 2026-08-12, `23b2ee7`:
+
+- **(b) the three `int8int8` goldens** skipped for one liftable reason, the same for all three:
+  `GOINFER_HEAVY_TESTS` unset. **Two of the three pass here in ~70 s** (gemma4, mellum2). The refresh
+  now enables heavy by default. The third (gemma4-12B) skips on a genuinely absent GGUF — an asset
+  question, not a plumbing one.
+- **(a) the `int8` golden did NOT turn out to be a selector bug.** `TestGptOssReal_logitParity` **does**
+  match the regexp. It is invisible because `gptoss_real_test.go` is behind `//go:build realckpt`,
+  which the refresh does not pass — and with the tag it still skips for a missing GGUF. **Two gates,
+  either sufficient.** A one-line regexp change would have bought nothing.
+
+**Non-f32 rows after (a) and (b): 2** (21 passed, 2 quantized). The distinction the ordering was meant
+to test comes out clearly: **int8 was unplumbed** (one env var), **int4 is genuinely missing**, and the
+gpt-oss int8 row is **asset-blocked behind a build tag**.
+
+The refresh now also prints the **quantization breakdown**, because "19 passed" and "21 passed" read
+identically to a human and that is precisely how this stayed invisible through nine prior refreshes.
+
+**(c) int4 goldens remain to author** — the only genuinely missing coverage. Pick the families where
+int4 is supported, generate a tiny fixture each, and pin against the f32 path with the **quant-tier
+tolerance** (quant-vs-f32 argmax + cosine, per the policy's axis table) rather than bit-identity,
+since int4 is lossy by construction.
 
 **Also record with P6's 6.09 s price: cheap and thorough are different properties.** 6.09 s buys 19
 passes and 11 skips. The skips are not free — they are the coverage this item is about.
@@ -1169,6 +1233,11 @@ the per-stream Workspace even though its six call sites already pass one.
 **Verdict: P7 is a straightforward divergence repair.** Route W4A8 through
 `linalg.MatmulBTW4A8Into(ws, ...)` in `matmulInto`, exactly as W8A8 does. Race-free by the same
 argument, no new one required.
+
+**THE FREEZE IS NOT P7'S BLOCKER, and waiting for the unfreeze is not a route to it.** The goldens'
+numeric protection is **f32-only**; P7 is an **int4** path. Lifting `6edd1ca` adds no coverage
+whatsoever to W4A8, so P7 would be **just as blocked at v1.0** as it is today. It is blocked on Q1(c)
+— authoring int4 goldens — and on nothing else.
 
 **Blocked ONLY by Q1.** The goldens give no numeric proof on this path — every golden that runs is
 f32, and W4A8 is precisely the path being changed — so the 6-second refresh would be **vacuous

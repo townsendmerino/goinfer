@@ -242,9 +242,28 @@ other exists. Months later a fix arrives via one call site. The sibling is not f
 never brought to mind at all, and no test is looking, because both members were already covered
 by tests that pass just as happily before and after the divergence.
 
+**Two locations, and they are not the same defect.** Everything above is the *check* shape — a gate,
+lint or golden that names one member. There is a **dispatch** shape too, in production code:
+
+> **A dispatch names one member of the set instead of dispatching on the property.**
+
+`matmulInto` is the instance (P7): it special-cases `isW8A8(w)` and delegates everything else to
+`matmul`, so W4A8 never reaches the per-stream `Workspace` its six call sites already hand in. Nothing
+is broken and nothing fails — one quantization silently gets a different implementation.
+
+The two shapes have opposite roles and it is worth keeping them straight: **the dispatch shape
+CREATES divergences; the check shape FAILS TO CATCH them.** The same recognition test finds both, and
+the remedies differ:
+
+| shape | remedy |
+|---|---|
+| check names one member | **enumerate** the members and assert the invariant on all of them |
+| dispatch names one member | **dispatch on the property**, not the member — here, "does this path have a reusable Workspace", not "is this W8A8" |
+
 **Recognition test:**
 
 > **When a fix lands on one member of a pair, what checks the other?**
+> **And when a dispatch names a member, what does the rest of the set get?**
 
 *Remedy shape:* a test that **enumerates** the members and asserts the invariant on all of them.
 A test that names one member reproduces the class — it is what the passing sibling already had.
@@ -452,6 +471,19 @@ What a mutation check looks like, in ascending cost: assert the negative case di
 confirmed); or perturb the thing under test and confirm red (route to the wrong expert, drop a
 launch argument, point the pattern at a renamed test); or run the gate against a known-bad commit.
 Cheapest sufficient one wins — the point is evidence, not ceremony.
+
+**A claim that a check passed names the COMMITTED check that produced it.** Gates police committed
+files; a command typed in a session is outside every gate, and no gate can be added that fixes that.
+So the rule is about the claim rather than the tooling: "staticcheck is clean" is only reportable if
+a committed check ran it — a script, a CI step, a Makefile target. An **ad-hoc command is evidence
+for the person who ran it and for nobody else**, because nobody else can re-run it, and because its
+failure modes are invisible in the transcript.
+
+The instance: `command -v staticcheck >/dev/null && staticcheck ... | head`, typed at a prompt. The
+binary was not on `PATH`, the `&&` short-circuited, the whole check evaluated to nothing, and it was
+reported as clean. Re-running it as CI invokes it was clean too — so the conclusion survived and the
+*claim* had been unfounded when it was made. That is the failure this rule addresses: not a wrong
+answer, an unearned one.
 
 **Every number stated in a check's documentation must be derived, not asserted.** The mutation
 requirement above makes a gate demonstrate a red; this makes its *description* checkable too,
