@@ -352,10 +352,25 @@ type cudaResident struct {
 	logitsPinned *HostBuffer[float32]
 	logitsHost   []float32 // zero-copy view of logitsPinned
 	setupErr     error     // first alloc/upload error during BuildResident's setup job
-	// cacheSlotsReq is the slot count the OPERATOR asked for, before capping. Kept so a failure
-	// can name both: telling a user who set 48 to lower it below the capped 34 is advice they
-	// can act on; telling them to lower it below 48 is not.
-	cacheSlotsReq int
+	// A1 instrument, RECORDING ONLY — never read by production logic. Free device VRAM immediately
+	// before and after allocSlots in the SAME process, so consumption is measured without the
+	// cross-run assumption the earlier sweep depended on.
+	dbgFreeBefore, dbgFreeAfter uint64
+	dbgPredInline               int64  // consumption predicted by the arithmetic production executes
+	dbgPredCapSlots             int64  // consumption predicted from capSlots' chosen count
+	dbgSlotsInline              int    // slot count the INLINE copy at allocSlots chose
+	dbgSlotsCapSlots            int    // slot count capSlots would choose from the same free
+	dbgFreeBeforeLaunch         uint64 // free VRAM immediately before the first forward's launches
+	dbgFreePreLaunch            uint64 // free VRAM immediately before the MOST RECENT launch
+	dbgLaunchTrace              []string
+	// dbgProbe enables the per-launch pre-launch probe. A FIELD, not a package var read from the
+	// environment: a package var is initialised at package-init time, which is before t.Setenv can
+	// run, so the first attempt at this probe silently recorded nothing. The test sets the field on
+	// the resident it already holds, which has no ordering question in it. Off by default — the
+	// probe costs a MemInfo round-trip and a reflection scan on EVERY launch.
+	dbgProbe      bool
+	cacheSlotsReq int   // slots REQUESTED (pre-cap), so errors can name both
+	dbgAllocSizes []int // every requested slot-buffer size, recording only
 }
 
 // alloc/upload helpers — called ONLY inside the setup job (r.dev's context current on the
@@ -510,6 +525,9 @@ func (r *cudaResident) allocSlots() error {
 		return nil
 	}
 	const marginBytes = 384 << 20 // headroom for the greedy-argmax readback + driver overhead
+	if f0, _, e0 := r.dev.Context().MemInfo(); e0 == nil {
+		r.dbgFreeBefore = f0 // A1 instrument, recording only
+	}
 	if free, _, err := r.dev.Context().MemInfo(); err == nil {
 		budget := int64(free) - marginBytes
 		fit := int(budget / int64(len(moeLayers)) / int64(perLayer))
@@ -550,8 +568,26 @@ func (r *cudaResident) allocSlots() error {
 		for _, w := range []*cudaWQ{&L.expGU, &L.expDown} {
 			w.W = r.au32(r.cacheSlots * w.perExpertW)
 			w.ws16 = gpu.NewBufferLenOf[uint16](r.dev, r.cacheSlots*w.perExpertS)
+			// A1, recording only: the REQUESTED byte size of each allocation, so predicted
+			// consumption can be recomputed with per-buffer 2 MiB rounding instead of a raw sum.
+			r.dbgAllocSizes = append(r.dbgAllocSizes,
+				r.cacheSlots*w.perExpertW*4, r.cacheSlots*w.perExpertS*2)
 		}
 		L.expCache = newExpertCache(r.nE, r.cacheSlots)
+	}
+	if f1, _, e1 := r.dev.Context().MemInfo(); e1 == nil {
+		r.dbgFreeAfter = f1 // A1 instrument, recording only
+	}
+	// Record BOTH predictions. Production runs the inline copy above; capSlots is what the gate
+	// tests. If the two chosen counts disagree, that difference is its own finding and must be
+	// explained BEFORE any unaccounted-VRAM branch — two copies disagreeing numerically would
+	// account for a claimed cap of 38 against an observed 34 with no unaccounted VRAM at all.
+	r.dbgSlotsInline = r.cacheSlots
+	r.dbgPredInline = int64(len(moeLayers)) * int64(perLayer) * int64(r.cacheSlots)
+	if r.dbgFreeBefore > 0 {
+		cs, _ := capSlots(int64(r.dbgFreeBefore), int64(len(moeLayers)), int64(perLayer), r.topK, r.cacheSlotsReq)
+		r.dbgSlotsCapSlots = cs
+		r.dbgPredCapSlots = int64(len(moeLayers)) * int64(perLayer) * int64(cs)
 	}
 	return nil
 }
@@ -956,6 +992,26 @@ func onecfg(b, sh int) LaunchConfig {
 }
 
 func (r *cudaResident) launch(f Pipeline, cfg LaunchConfig, args ...KernelArg) error {
+	if r.dbgFreeBeforeLaunch == 0 { // A1: free VRAM at the FIRST launch, recording only
+		if f0, _, e0 := r.dev.Context().MemInfo(); e0 == nil {
+			r.dbgFreeBeforeLaunch = f0
+		}
+	}
+	// A1 item 2, recording only: free VRAM immediately BEFORE the launch, i.e. on the other side of
+	// the event from describeLaunchErr's reading. That reading is reached only after Launch returns
+	// non-nil, so it cannot distinguish "memory was released before this launch was attempted" from
+	// "the failed attempt released it while unwinding" — the two hypotheses differ by where the
+	// probe sits, not by what happened. Recording the pre-launch value at every launch also yields
+	// the decrement A9 asks for (free at first launch → free at the failing launch) from one run.
+	if r.dbgProbe {
+		if f0, _, e0 := r.dev.Context().MemInfo(); e0 == nil {
+			r.dbgFreePreLaunch = f0
+			if len(r.dbgLaunchTrace) < 512 {
+				r.dbgLaunchTrace = append(r.dbgLaunchTrace,
+					fmt.Sprintf("%3d %-14s free=%d", len(r.dbgLaunchTrace), r.pipeName(f), f0))
+			}
+		}
+	}
 	r.launchN++ // per-token dispatch count (diagnostic: graph-capturable-fraction bound)
 	e := r.stream.Launch(f, cfg, args...)
 	if e != nil {
