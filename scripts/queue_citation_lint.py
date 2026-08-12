@@ -155,6 +155,12 @@ def resolve_path(rel: str, line: int):
     return "", None
 
 
+# A BARE file reference: same shape, no line number. Existence is checkable without a content key —
+# it catches a file that moved packages or was deleted, which is most of the way to keeping a
+# reference honest and costs nothing to record.
+BARE_RE = re.compile(r"(?<![\w/])((?:[a-z0-9_]+/)*[a-z0-9_]+\.(?:go|sh|py))(?![\w:])")
+
+
 ALLOW_RE = re.compile(r"<!--\s*sha-lint:\s*allow\s+([0-9a-f]{7,40})\s+(.+?)\s*-->")
 
 
@@ -192,6 +198,13 @@ def main() -> int:
         if key not in [p[0] for p in paths]:
             paths.append((key, m.group(1), int(m.group(2))))
 
+    bares = []
+    for m in BARE_RE.finditer(body):
+        rel = m.group(1)
+        if rel not in bares:
+            bares.append(rel)
+    bares.sort()
+
     allowed = allowlist(text)
     resolved, unresolved = {}, []
     for sha in found:
@@ -225,6 +238,18 @@ def main() -> int:
                          "  citation names no real file, or it omits the repo it belongs to.\n")
         return 2
 
+    bresolved, bmissing = {}, []
+    for rel in bares:
+        hit = ""
+        for name, base in path_repos():
+            if (base / rel).is_file():
+                hit = name
+                break
+        if hit:
+            bresolved[rel] = hit
+        else:
+            bmissing.append(rel)
+
     if update:
         lines = [MARK_BEGIN, "", "## SHA index", "",
                  "Generated. Every commit id cited above, with the subject it resolved to at the time",
@@ -245,6 +270,15 @@ def main() -> int:
         for key in sorted(presolved):
             repo, content = presolved[key]
             lines.append(f"| `{key}` | {repo} | `{content.replace('|', chr(92) + '|')[:88]}` |")
+        lines += ["", "## Bare file index", "",
+                  "Generated. Every file referenced WITHOUT a line number, and the repo it resolves in.",
+                  "Existence only — there is no line to key content against, which is recorded rather",
+                  "than papered over.", "",
+                  "| file | repo |", "|---|---|"]
+        for rel in sorted(bresolved):
+            lines.append(f"| `{rel}` | {bresolved[rel]} |")
+        for rel in bmissing:
+            lines.append(f"| `{rel}` | **RESOLVES NOWHERE** |")
         lines += ["", MARK_END, ""]
         QUEUE.write_text(body.rstrip("\n") + "\n\n" + "\n".join(lines))
         print(f"queue_sha_lint: indexed {len(resolved)} SHAs ({len(unresolved)} unresolved)")
@@ -308,6 +342,10 @@ def main() -> int:
                        f"recorded content {want[:60]!r} is nowhere in the file. The citation claims "
                        f"something the file no longer supports.")
 
+    for rel in bmissing:
+        bad.append(f"  {rel}  bare reference resolves in NO repository "
+                   f"({', '.join(n for n, _ in path_repos())}) — moved package, deleted, or a typo")
+
     if bad:
         sys.stderr.write("queue_citation_lint: docs/QUEUE.md citations are not sound:\n")
         sys.stderr.write("\n".join(bad) + "\n")
@@ -316,11 +354,11 @@ def main() -> int:
         print(f"queue_sha_lint: {len(allowed)} citation(s) DECLARED unresolvable here:")
         for sha, why in sorted(allowed.items()):
             print(f"    {sha}  {why}")
-    bare = len(re.findall(r"(?<![\w/])(?:[a-z0-9_]+/)*[a-z0-9_]+\.(?:go|sh|py)(?![\w:])", body))
-    print(f"queue_citation_lint: VALIDATED {len(resolved) - len(allowed)} commit citation(s) "
-          f"and {len(paths)} path:line citation(s).")
-    print(f"  NOT validated: {bare} bare file reference(s) with no line number, plus every test name, "
-          f"tag, env var, URL and prose claim in the file.")
+    print(f"queue_citation_lint: VALIDATED {len(resolved) - len(allowed)} commit citation(s), "
+          f"{len(paths)} path:line citation(s), and {len(bresolved)} bare file reference(s) "
+          f"(existence only).")
+    print("  NOT validated: every test name, tag, env var, URL and prose claim in the file — and for "
+          "the bare file references, WHAT IS SAID ABOUT THEM, since there is no line to key against.")
     print("  A lint on a document raises trust in EVERY citation in it, not only the kinds it checks — "
           "so the scope is printed with the green.")
     return 0

@@ -235,14 +235,14 @@ where pᵢ are the per-slot per-buffer byte strides (4 buffers per MoE layer).
 
 Land it in ONE implementation — `allocSlots` calls `capSlots`, not a copy — with the gate pointed
 at the shipping path and a mutation check. And correct, in the same change, wherever it was written
-down that `slotcap_test.go` corroborates production sizing: it corroborates a parallel copy.
+down that `cuda/slotcap_test.go` corroborates production sizing: it corroborates a parallel copy.
 
 **Landed and verified on hardware through the shipping auto-cap path**, no manual slot count:
 requesting 128 on the real 26B logs `capping to 33` and generates 4 tokens, where it previously
 logged `capping to 34` and generated 0. Free after `allocSlots` is 450,494,464 B — byte-identical to
 A7's manually-set 33-slot run, so the search lands exactly where the measurement said.
 
-Two withdrawn claims went with it. `slotcap_test.go` said it "corroborates the sizing" (it
+Two withdrawn claims went with it. `cuda/slotcap_test.go` said it "corroborates the sizing" (it
 corroborated the *copying*; the answer was wrong) and that the agreement placed the discrepancy
 "downstream of the sizing decision" (the sizing decision **was** the defect). The gate now asserts
 properties rather than a remembered number: search ≠ division at the 26B configuration, monotonicity
@@ -669,13 +669,13 @@ reconciles **emitted** verdicts against a **declared** set, so a group that dies
 without emitting fails the gate — silence is detectable by construction, not by remembering.
 
 **B0's new group 5 is correct by the same standard**, mutation-checked two ways: PyYAML unavailable →
-`ci_checks.py` exits 2 with a message and group 5 **fails**; the script missing entirely → non-zero
+`scripts/ci_checks.py` exits 2 with a message and group 5 **fails**; the script missing entirely → non-zero
 and empty output, group 5 **fails**. Neither degrades to the old hand-written list, which would have
 looked like a pass.
 
 **Residual risk, named because it is the one that actually bit:** the instance was an **ad-hoc shell
 command typed at a prompt**, not repo code. No gate polices that. The mitigation is the habit the
-gate exists to replace — run `gpu_gate.sh` rather than hand-rolling the check — which is exactly what
+gate exists to replace — run `scripts/gpu_gate.sh` rather than hand-rolling the check — which is exactly what
 B0 makes worth doing.
 
 **B5 · `RELEASING.md` must reference `QUEUE.md`** — either box
@@ -686,12 +686,12 @@ outstanding, and it is a checkpoint that already happens. Cheap; do it before it
 
 **B2 · Gate reconciliation — one entry point** — `linux`
 
-Two mechanisms now exist for running the heavy tier: `gpu_gate.sh` group 2c (linux) and
-`heavy_gate.sh` (`8fecfad`, mac).
+Two mechanisms now exist for running the heavy tier: `scripts/gpu_gate.sh` group 2c (linux) and
+`scripts/heavy_gate.sh` (`8fecfad`, mac).
 
-Resolve to one: **`gpu_gate.sh` always declares the heavy group.** When not requested it emits a
+Resolve to one: **`scripts/gpu_gate.sh` always declares the heavy group.** When not requested it emits a
 counted skip with its reason and the verdict line carries it. Fast runs stay fast; no run silently
-omits the tier. `heavy_gate.sh` becomes the implementation group 2c invokes, or it goes. Two files
+omits the tier. `scripts/heavy_gate.sh` becomes the implementation group 2c invokes, or it goes. Two files
 is fine; two entry points isn't, because **the verdict has to come from one place**.
 
 **B3 · Re-tier by cost** — `linux`
@@ -739,13 +739,13 @@ prose**, which no lint covers and which drift silently. Already stale, checked:
   inserted the warm-up above it).
 - `cuda/resident.go:244` — cited for audit C-08's `_ = gpu.Upload`; now a comment about backend locals.
 - two citations were **unresolvable**, because they omitted the repo — an aikit `linalg/quant.go`
-  line and a bare `weightmat.go` one. Both
+  line and a bare `decoder/weightmat.go` one. Both
   are aikit paths written as if they were local ones; the SHA lint learned this distinction for
   commits and the same gap exists for paths.
 
 **FIXED in the same change as the lint that found them** (`scripts/queue_citation_lint.py`), because
 a lint landing red on its first run is a lint nobody adopts. `cuda/backend.go:793` → `:836`;
-the two bare `weightmat.go` / `mlp.go` references repo-qualified or de-numbered; `linalg/quant.go:113` resolves in
+the two bare `decoder/weightmat.go` / `decoder/mlp.go` references repo-qualified or de-numbered; `linalg/quant.go:113` resolves in
 aikit once the lint searches the sibling set.
 
 **And one turned out not to be a line drift at all.** `cuda/resident.go:244` was cited for audit
@@ -785,7 +785,9 @@ to make the claim checkable.
 
 **B4 (original) · Label or drop `stash@{0}`** — superseded
 
-"item2 unload-close fix + tests (wip)", `admin.go` +32. Almost certainly adds `Close()` to the
+"item2 unload-close fix + tests (wip)", a +32 hunk in the admin-unload source file. That filename
+resolves in no repo here, so the stash cannot be reconstructed from its description either. Almost
+certainly adds `Close()` to the
 admin unload path — the change that converts a bounded leak into a use-after-free through the
 `pick()`-to-`enter()` window. The safe version needs the drain, which is now implemented
 (`588052b`), so this stash may simply be superseded. Either retitle it to say what it is, or drop
@@ -887,7 +889,7 @@ model.
 Design approved and fully specified. Positional parameters, one generated named type per
 **(parameter name, C type)** — 13 names carry more than one C type, so name-only keying is
 ambiguous. Buffers typed too. Returns `[]KernelArg` rather than launching, so `r.launch`'s sticky-
-error accumulator stays intact and `prefill.go` and tests share the wrappers.
+error accumulator stays intact and `cuda/prefill.go` and tests share the wrappers.
 
 Extraction: `cuda/internal/gen` parsing `__global__ void NAME(params)`, comments stripped before
 splitting, **hard-failing on any parameter outside the closed 9-type table — never skipping**.
@@ -903,8 +905,8 @@ proved `.cu` and `.ptx` can diverge for months. Plus a second lint: **every gene
 called at least once from non-test code**, or is on an explicit test-only list — that closes
 embedded-but-never-bound, the last uncovered member of the dead-code family.
 
-Commit 1 changes no call sites and must be provably inert. Then migrate per file (`resident.go` 36,
-`prefill.go` 11, testhooks 1) with a trace comparison at each step.
+Commit 1 changes no call sites and must be provably inert. Then migrate per file (`cuda/resident.go` 36,
+`cuda/prefill.go` 11, testhooks 1) with a trace comparison at each step.
 
 State the **641 → 0** figure in the commit message with its limit: zero counts cross-name
 transpositions the type system prevents; passing a wrong *value* of the right kind still compiles.
@@ -941,12 +943,12 @@ D3 was designed **while the cap computed the wrong value**. A5 fixed the cap. So
 **D3 (original) · blocked on the freeze** — superseded
 
 `flag-pair-moe-cache` (`f6bbf7c`) carries `--moe-cache-experts` and `--moe-cache-slots` as CLI
-flags. The `Options` fields and accessors touch `decoder/model.go` and `gguf.go`, which re-stales 19
+flags. The `Options` fields and accessors touch `decoder/model.go` and `decoder/gguf.go`, which re-stales 19
 families' `deps_hash`. `BRANCH-NOTE.md` records the pickup steps and the instruction that matters:
 **run the goldens, do not refresh `deps_hash` to quiet the gate**.
 
 Precedent exists for a goldens-gated refresh (`9e5f8fa`, where a metadata field addition re-staled
-`weights.go` and the refresh ran 19 goldens). It was deliberately not spent on ergonomics.
+`decoder/weights.go` and the refresh ran 19 goldens). It was deliberately not spent on ergonomics.
 
 ### E. Release and claims
 
@@ -977,12 +979,12 @@ demoting unfinished work to clear a release hollows out the tier permanently.
 
 | column | item | what blocks it |
 |---|---|---|
-| **freeze-only** | **D3** the parked flag-pair | `Options` fields touch `model.go` + `gguf.go`; re-stales 19 families |
+| **freeze-only** | **D3** the parked flag-pair | `Options` fields touch `decoder/model.go` + `decoder/gguf.go`; re-stales 19 families |
 | **freeze-only** | **G2** `go fix` modernizers | re-stales the manifest wholesale |
 | freeze **plus other** | **P1** KV re-gather / V re-transpose | freeze **+** a new aikit row-pitch API **+** E6's deferred aikit release |
 
 Everything else touching a frozen path has **landed** (P6 `eea7f29`, P7 `91f359f`) or only references
-those paths as instances (B6, P8 — `sampler_chunked.go` is not in the manifest).
+those paths as instances (B6, P8 — `decoder/sampler_chunked.go` is not in the manifest).
 
 **So the freeze-only column is TWO items — and that is the answer to what an unfreeze buys.** It is
 smaller than it looks, because both are landable *today* under the goldens exception, exactly as P6
@@ -1038,7 +1040,7 @@ No `cuda/` file appears in the manifest at all.
 
 And answer, rather than leave as an absence: **should `cuda/` files be in the parity manifest**, or
 are the resident parity gates the right home for that guarantee with the manifest deliberately
-CPU-only? Note that until B2/`gpu_gate.sh` ran the parity gates, GPU forward numerics had no
+CPU-only? Note that until B2/`scripts/gpu_gate.sh` ran the parity gates, GPU forward numerics had no
 enforced signal in the release gate — not a staleness tripwire, not a parity assertion.
 
 **E4 · `scripts/bench_compare.sh` — fix or retire** — `linux`, **status unconfirmed**
@@ -1072,40 +1074,43 @@ Also open there, deliberately: branch protection is not enabled and `gpu-kernels
 
 ### F. Audit backlog
 
-**F1 · §4 gates — five still open** — `linux`
+**F1 · §4 gates — SWEPT 2026-08-12: all five were already FIXED** — `linux`, **CLOSED**
 
-G-03 closed today (`buildMatrix` env-pinning, via the `GOINFER_GEMMA4_RESIDENT` flip). Remaining:
+Every entry here was stale, the same shape as C-08 and five times over. Swept against the tree with a
+content-keyed citation added to each, so the next sweep is the lint rather than a person:
 
-- **G-01** — `TestResidentAdmission_matrix` tautological
-- **G-02** — Metal snapshot golden drives `Forward`/`ForwardArgmax`, which apply no embed scale
-- **G-04** — `metal/model.go:590`, `case "slots"` doesn't assign `r.residencyBufs`
-- **G-05** — tokenizer/chat tests probe `/home/francis/models/...` with no committed fixture
-- **G-06** — hardcoded developer-home paths across many files; no `GOINFER_MODELS_DIR`
+| gate | state | anchor |
+|---|---|---|
+| G-01 `TestResidentAdmission_matrix` tautological | **fixed** — compares against a reviewed golden and errors on any family missing a row | `decoder/features_test.go:146` |
+| G-02 Metal snapshot golden applies no embed scale | **fixed** — `Forward`/`ForwardArgmax` apply the arch scale, with a named regression gate | `metal/snapshot_golden_test.go:77` |
+| G-03 `buildMatrix` env-pinning | already closed | — |
+| G-04 `case "slots"` doesn't assign `residencyBufs` | **fixed** — the switch populates `pinned` and it is assigned after | `metal/model.go:728` |
+| G-05 tokenizer/chat tests probe a developer home | **fixed** — `GOINFER_MODELS_DIR`, defaulting to `$HOME/models` | `decoder/modelsdir_test.go:13` |
+| G-06 hardcoded developer-home paths | **substantially fixed** — same mechanism; residue is a literal `/home/francis/models` reached only when `os.UserHomeDir()` *fails*, in the four per-package `modelsdir` test helpers | `decoder/modelsdir_test.go:13` |
 
-G-06 is now partly subsumed by B1's registry, since the paths and the env surface are the same
-problem seen twice.
+G-06's residue is the only thing left and it is a last-resort fallback, not a probe path. Recorded
+rather than struck, because "substantially fixed" is a different state from "fixed".
 
-**F2 · §2/§3 open criticals** — `linux`
+**F2 · §2/§3 criticals — SWEPT 2026-08-12** — `linux`, **most were already fixed; two lack an anchor**
 
-Roughly eleven remain. The ones with the sharpest consequences:
+| finding | state | anchor |
+|---|---|---|
+| C-05 gemma-4 stride on snapshot restore | **fixed**, with a gate | `decoder/kvsnapshot_gemma4_test.go:10` |
+| C-06 unvalidated tensor shapes | **fixed**, break-it-first gate | `decoder/serialize_shapecheck_test.go:15` |
+| C-08 `_ = gpu.Upload` over zeroed weights | **fixed** — `recordUpload` → `setupErr` → graceful decline | `cuda/resident.go:397` |
+| C-14 CUDA argmax has no index tie-break | **fixed** at `c6600fc`, gated | `cuda/argmax_tiebreak_test.go:19` |
+| C-31 `make([]byte, u32)` unbounded | **fixed** — bounded against the remaining file size before the allocation | `internal/giw/bundle.go:114` |
+| C-21/C-22 embeddings batch cap; shutdown lock | **UNVERIFIED** — body-cap tests exist (`internal/serveapp/bodycaps_routes_test.go`) but I did not establish they cover these two findings | — |
+| C-30 no mutex in the paging paths | **UNVERIFIABLE AS WRITTEN** — the entry names a paging path that does not exist as a file in the tree; `decoder/paging_race_test.go` is the only anchor and it is a test, not the code | `decoder/paging_race_test.go` |
 
-- ~~**C-08**~~ — **FIXED, and this entry was stale.** `recordUpload` now captures the first
-  alloc/upload error into `r.setupErr`, which the setup job returns and `BuildResident` turns into a
-  graceful decline. The `up*` helpers no longer discard `gpu.Upload`'s error. Found by the path-
-  citation lint: the cited line no longer supports the claim, which is the outcome that lint exists
-  for — a stale CLAIM, not a stale line number
-- **C-14** — CUDA argmax reduce has no index tie-break. Now has a funded reason: routing `top_k=1`
-  to `ArgmaxEquivalent` recovers 13–18% and is blocked on it, and v0.10.3 made ascending-token-id a
-  written contract the device side doesn't honour
-- **C-05 / C-06** — gemma-4 stride assumption on snapshot restore, and unvalidated tensor shapes
-  driving writes into config-sized scratch
-- **C-21 / C-22** — embeddings has no batch cap and is un-queued; shutdown takes an unconditional
-  lock after `Shutdown` and swallows a second signal
-- **C-30 / C-31** — no mutex in the paging paths; `internal/giw/bundle.go:105` `make([]byte, u32)`
-  with no file-size bound
+**These are correctness and security items, so a wrong entry costs more here than in P or B — in both
+directions.** Five listed as open were fixed, which wastes attention; and had any been listed as fixed
+while open, the cost would have been the reverse and worse. That asymmetry is why every row above
+carries an anchor now: **the lint keeps them honest without anyone re-reading the code.**
 
-§5 (23 major) and §6 (24 minor) have **never been verified at all** — presumed open pending a
-targeted pass.
+**An item with no anchor is a different kind of item.** C-30 has nothing in the tree to point at, and
+that is its recorded state rather than a gap in the sweep. It needs re-deriving from the audit before
+it can be checked at all.
 
 **F3 · G-01 class — confirm the sub-shapes landed** — `linux`, **status unconfirmed**
 
@@ -1174,7 +1179,7 @@ Answer that before estimating.
   | package | candidates | float | integer |
   |---|---|---|---|
   | `decoder` | 7 | 0 | 7 |
-  | `cuda` | 2 | 0 | 2 — `softcap.go`, worker count and chunk bounds |
+  | `cuda` | 2 | 0 | 2 — `cuda/softcap.go`, worker count and chunk bounds |
   | `gpu` | 0 | — | — |
   | `metal` | 0 | — | — |
   | aikit | 0 | — | — |
@@ -1315,7 +1320,7 @@ By skipping the `decodeScratch` invariant its dense sibling honours. **See B6.**
 `decoder/mlp.go` is in the `core` shared set and `decoder/weightmat.go` in `quant`, and **all 23
 families use both**, so an exception re-stales the entire matrix. But the sanctioned instrument is
 `scripts/refresh_parity_hashes.sh` — the goldens-gated refresh, precedent `9e5f8fa` — **not**
-`parity_sweep.sh`'s T3 oracle sweep, because these are allocation changes rather than arithmetic.
+`scripts/parity_sweep.sh`'s T3 oracle sweep, because these are allocation changes rather than arithmetic.
 
 Measured on `linux-62gb`: **19 goldens pass, 11 skip, 0 fail, 6.09 s wall.** One machine, no model
 zoo, no HF venv. (18 of the 23 manifest rows name `linux-62gb`; only `gemma4` names
@@ -1354,9 +1359,9 @@ that**, three days later, and it aborted. The abort was the guard working on its
 opportunity, not a guard that had never let anything through.
 
 **Correction 2: the precedent cited in this queue was the wrong commit.** `9e5f8fa` was described
-here as "a metadata field addition re-staled `weights.go` and the refresh ran 19 goldens". It is
+here as "a metadata field addition re-staled `decoder/weights.go` and the refresh ran 19 goldens". It is
 `fix(quant): reject --quant that conflicts with a prequant .giw at startup` and **touches the manifest
-not at all** — its five files are `CHANGELOG.md`, `giwquant_test.go`, `serialize.go` and two `main.go`s.
+not at all** — its five files are `CHANGELOG.md`, `decoder/giwquant_test.go`, `decoder/serialize.go` and two `an aikit benchmarks entrypoint`s.
 The real precedents are the nine above. I repeated the wrong SHA several times from this file without
 opening it.
 
@@ -1379,8 +1384,8 @@ neither defect can recur through either route.
 
 **Q2 · The GGUF-quant cross-gate gap — CLOSED, and it was unplumbed too** — `linux`, `bd08936`→
 
-The cross-gate check showed `parity_sweep.sh` covering the GGUF quant formats while the goldens
-refresh did not. **(a) Exposure: a LAG, not a hole.** `parity_sweep.sh` is not in CI — it is
+The cross-gate check showed `scripts/parity_sweep.sh` covering the GGUF quant formats while the goldens
+refresh did not. **(a) Exposure: a LAG, not a hole.** `scripts/parity_sweep.sh` is not in CI — it is
 release-only, run by hand on the box (`RELEASING.md` §C1). So the formats are covered at release and
 **not between releases**, which is exactly when a frozen-core edit gets only the goldens refresh.
 
@@ -1414,7 +1419,7 @@ that: of the 19 goldens that actually RAN in the 2026-08-12 refresh, **every one
 | `int8` (weight-only Q8) | 1 — `gptoss_real` | not matched by the goldens regexp at all |
 | **`int4` / W4A8** | **0** | — |
 
-So `refresh_parity_hashes.sh` — the sanctioned freeze-exception path, and the thing that makes a
+So `scripts/refresh_parity_hashes.sh` — the sanctioned freeze-exception path, and the thing that makes a
 core edit auditable — **proves f32 numerics and nothing else**. A change that is bit-identical in f32
 and wrong in int4 passes it in 6 seconds.
 
@@ -1448,7 +1453,7 @@ int4 specifically.
   now enables heavy by default. The third (gemma4-12B) skips on a genuinely absent GGUF — an asset
   question, not a plumbing one.
 - **(a) the `int8` golden did NOT turn out to be a selector bug.** `TestGptOssReal_logitParity` **does**
-  match the regexp. It is invisible because `gptoss_real_test.go` is behind `//go:build realckpt`,
+  match the regexp. It is invisible because `decoder/gptoss_real_test.go` is behind `//go:build realckpt`,
   which the refresh does not pass — and with the tag it still skips for a missing GGUF. **Two gates,
   either sufficient.** A one-line regexp change would have bought nothing.
 
@@ -1657,12 +1662,12 @@ launch** — the forward produced **zero tokens**.
 
 <!-- sha-lint: allow d682315 UNPUSHED — Metal branch `metal-rope-merge`, mac-local; not on origin and not in any clone here. Owner: whoever cited it. P4's "already implemented, snapshot-golden byte-exact" rests on a commit only that machine can see; push the branch or the claim stays unverifiable from anywhere else. Flagged 2026-08-12 -->
 
-<!-- SHA-INDEX: generated by scripts/queue_sha_lint.py --update; do not edit by hand -->
+<!-- SHA-INDEX: generated by scripts/queue_citation_lint.py --update; do not edit by hand -->
 
 ## SHA index
 
 Generated. Every commit id cited above, with the subject it resolved to at the time
-of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
+of generation. Regenerate with `scripts/queue_citation_lint.py --update`.
 
 | sha | subject |
 |---|---|
@@ -1681,7 +1686,7 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `7cc2f0d` | fix(parity,ci): refresh deps_hash after 38061b1's pread-staging core plumbing (non-numeric) |
 | `7ccec1e` | fix(cuda): the expert cache sizes itself — topK was the worst possible default |
 | `82b39cc` | docs(parity): document qwen3_5_moe's int8-vs-bf16 movement (v0.8.0 §1 — gate-backed pass) |
-| `8fecfad` | ci: heavy_gate.sh — a runner for the real-checkpoint tier that no CI job executes |
+| `8fecfad` | ci: scripts/heavy_gate.sh — a runner for the real-checkpoint tier that no CI job executes |
 | `91f359f` | fix(decoder): matmulInto dispatches on the property, not on W8A8 (P7) |
 | `93eb7d4` | feat(decoder): gpt-oss real-model path — batched-prefill fix + real gates |
 | `9624dd9` | chore(parity): refresh deps_hash for aikit v1.12.0 (goldens-proven non-numeric) |
@@ -1737,6 +1742,7 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `9e5f8fa` | fix(quant): reject --quant that conflicts with a prequant .giw at startup (T1-7) |
 | `bd08936` | fix(gate): cannot-search is not not-found; cross-gate composition; B7 sweep |
 | `be049df` | [aikit] gpu(gemv): explicit __fmaf_rn in the quantized GEMV — the bit-identity contraction rule |
+| `c6600fc` | audit C-14: argmax index tie-break (match CPU lowest-index on exact ties) |
 | `c8b65ba` | feat(serve): --moe-cache-experts / --moe-cache-slots — PARKED on the freeze |
 | `ca29d6c` | cuda: resident context cap becomes configuration-derived (-ctx), VRAM-checked at load |
 | `cc238c6` | cleanup: consolidate GINFER_ env vars to GOINFER_ + add env-var registry |
@@ -1758,19 +1764,63 @@ supports.
 
 | path:line | repo | line content |
 |---|---|---|
+| `cuda/argmax_tiebreak_test.go:19` | goinfer | `func TestArgmaxTieBreak(t *testing.T) {` |
 | `cuda/backend.go:591` | goinfer | `mmod, e2 := r.dev.CompileLibrary(moePTX)` |
 | `cuda/backend.go:793` | goinfer | `//` |
 | `cuda/backend.go:836` | goinfer | `if e := r.allocSlots(); e != nil {` |
 | `cuda/resident.go:244` | goinfer | `// backend.go locals; the per-layer KV cache and UploadKV read r.layers[l].kvDim.` |
+| `cuda/resident.go:397` | goinfer | `func (r *cudaResident) recordUpload(e error) {` |
+| `decoder/features_test.go:146` | goinfer | `want, ok := admissionGolden[name]` |
 | `decoder/forwardn.go:378` | goinfer | `for kvh := range nKV {` |
 | `decoder/forwardn.go:502` | goinfer | `logits[j] = sc * float32(math.Tanh(float64(val/sc)))` |
+| `decoder/kvsnapshot_gemma4_test.go:10` | goinfer | `func TestSnapshot_refusesNonUniformKVWidth_C05(t *testing.T) {` |
 | `decoder/mlp.go:82` | goinfer | `func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend, pager *expert` |
 | `decoder/model.go:731` | goinfer | `logits[i] = softcap * float32(math.Tanh(float64(v/softcap)))` |
+| `decoder/modelsdir_test.go:13` | goinfer | `root := os.Getenv("GOINFER_MODELS_DIR")` |
 | `decoder/sampler_chunked.go:188` | goinfer | `return drawChunked(e, sums, z, r)` |
 | `decoder/scratch.go:38` | goinfer | `ws        *linalg.Workspace // W8A8 activation-quant scratch (zero-alloc Into/Batch)` |
-| `internal/giw/bundle.go:105` | goinfer | `// Bound the allocation by the file (C-31): the tokenizer body starts at tokOff+4, so it` |
+| `decoder/serialize_shapecheck_test.go:15` | goinfer | `func TestValidateShapes_catchesArchMismatch(t *testing.T) {` |
+| `internal/giw/bundle.go:114` | goinfer | `if avail := fi.Size() - (tokOff + 4); tokLen > avail {` |
 | `linalg/quant.go:113` | aikit | `for k := range K {` |
-| `metal/model.go:590` | goinfer | `// wrong logits, no error. The attention widths (qDim = nH·hd, kvDim = nKV·hd) are struc` |
+| `metal/model.go:728` | goinfer | `r.residencyBufs = pinned` |
 | `metal/model.go:827` | goinfer | `r.logitsHost[j] = sc * float32(math.Tanh(float64(v/sc)))` |
+| `metal/snapshot_golden_test.go:77` | goinfer | `func TestMetalEmbedScale_forwardMatchesForwardEmb(t *testing.T) {` |
+
+## Bare file index
+
+Generated. Every file referenced WITHOUT a line number, and the repo it resolves in.
+Existence only — there is no line to key content against, which is recorded rather
+than papered over.
+
+| file | repo |
+|---|---|
+| `cuda/allocgran_test.go` | goinfer |
+| `cuda/backend.go` | goinfer |
+| `cuda/moe_route_reservation_test.go` | goinfer |
+| `cuda/prefill.go` | goinfer |
+| `cuda/resident.go` | goinfer |
+| `cuda/slotcap_test.go` | goinfer |
+| `cuda/softcap.go` | goinfer |
+| `decoder/gguf.go` | goinfer |
+| `decoder/giwquant_test.go` | goinfer |
+| `decoder/gptoss_real_test.go` | goinfer |
+| `decoder/mlp.go` | goinfer |
+| `decoder/model.go` | goinfer |
+| `decoder/paging_race_test.go` | goinfer |
+| `decoder/sampler.go` | goinfer |
+| `decoder/sampler_chunked.go` | goinfer |
+| `decoder/serialize.go` | goinfer |
+| `decoder/weightmat.go` | goinfer |
+| `decoder/weights.go` | goinfer |
+| `internal/serveapp/bodycaps_routes_test.go` | goinfer |
+| `linalg/quant.go` | aikit |
+| `scripts/bench_compare.sh` | goinfer |
+| `scripts/ci_checks.py` | goinfer |
+| `scripts/gpu_gate.sh` | goinfer |
+| `scripts/heavy_gate.sh` | goinfer |
+| `scripts/parity_sweep.sh` | goinfer |
+| `scripts/queue_citation_lint.py` | goinfer |
+| `scripts/refresh_parity_hashes.sh` | goinfer |
+| `scripts/sweep_composition.py` | goinfer |
 
 <!-- /CITATION-INDEX -->
