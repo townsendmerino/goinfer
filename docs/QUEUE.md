@@ -402,9 +402,14 @@ Answer that before estimating.
 - **Fuzz corpora** — sixteen fuzz targets across the two repos, three committed corpus directories.
   A crasher found once and not committed is found again next year. The audit's hostile-input
   findings should each be seeds.
-- **Execution tracing** — the ~8 ms of model-independent per-token host cost was characterised
-  precisely and never explained; the conclusion was "needs profiling". `go tool trace` and `pprof`
-  are that.
+- ~~**Execution tracing**~~ — **DONE (2026-08-11).** `go tool trace` on `BenchmarkDecode` (0.5B,
+  M1 Pro) resolved it: the "~8 ms host cost" / "71% `pthread_cond`" is an **idle-M sampling artifact**,
+  not a recoverable cost — serial (zero fork/join) ties parallel in tok/s, the trace's real
+  scheduler-wake tax is ~1%/token, and pprof's `pthread_cond` samples are parked idle workers between
+  dispatches (a CPU profiler counts them, a wall-clock trace shows them idle). The right tool
+  dissolved the question. Confirms the Phase-3b pool-null-result. Writeup: perf-campaign.md
+  "Profiling coda". (Lesson: for park/wake questions use `-pprof=sync`/`-pprof=sched` from `trace`,
+  not pprof CPU, which can't tell critical-path stall from an idle parked M.)
 - **`go fix` modernizers** — one deterministic pass across ~20 adapters written over months,
   reviewed as a diff. **After the freeze**; it re-stales the manifest wholesale.
 

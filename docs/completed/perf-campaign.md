@@ -368,3 +368,68 @@ but the kernel re-block delivered a real, felt 1.5B latency win via prefill.
    ~12–15% of CPU at 0.5B batch=1; tuning them won't move the needle while
    dispatch dominates. Revisit after Phase 3, once the kernel is exposed as the
    next ceiling (and it'll matter more on the 1.5B / larger shapes).
+
+---
+
+## Profiling coda — the "71% `pthread_cond`" is an idle-M artifact, not a recoverable host cost (2026-08-11, `go tool trace`)
+
+This closes the one caveat this campaign left explicit — *"spawn ≈ pool, so the
+71% `pthread_cond` is the inherent cost … **plus idle-worker park samples that
+overcount**"* — and the QUEUE.md **"Execution tracing"** item (*"the ~8 ms of
+model-independent per-token host cost was characterised precisely and never
+explained; the conclusion was 'needs profiling'"*). The gap was never a missing
+number; it was that **pprof CPU cannot separate a critical-path fork/join stall
+from a parked idle M sampled in `pthread_cond_wait`** — both show the same stack.
+`go tool trace` can, because it measures wall-clock blocking, not samples.
+Re-measured on `BenchmarkDecode` (0.5B int8int8, Apple M1 Pro, Go 1.26.5).
+
+**The A/B that settles it — fork/join is net-neutral here.** Shipping-parallel vs
+`GOINFER_PAR_THRESHOLD=huge` (serial, *zero* `parallelSpawnCols`, no `wg.Wait`),
+same session, interleaved:
+
+| config | tok/s | ms/tok |
+|---|---|---|
+| parallel (shipping fork/join) | 54.34 | 18.40 |
+| **serial (no fork/join at all)** | **54.77** | **18.26** |
+
+Removing every fork/join changes nothing (serial a hair *faster*). If the ~57%
+`pthread_cond` the CPU profile still shows (`pthread_cond_wait` 30.7% +
+`pthread_cond_signal` 26.2% flat — the old "71% fork/join" reproduced) were
+recoverable critical-path overhead, serial would win by that margin. It doesn't.
+(The original campaign saw parallel ≤1.3× *faster* than serial on a warmer/idler
+box; this colder/loaded run saw equality. Either way the dispatch is **not** an
+8 ms recoverable tax — it is bounded by `serial − parallel`, which is ≤ 0 here.)
+
+**Why pprof mis-reads it — the trace decomposition.** Two trace-derived
+wall-clock profiles (`go tool trace -pprof=sync` / `-pprof=sched`):
+
+- **Sync-blocking (time goroutines sit blocked):** `chanrecv1` 75.6% + `selectgo`
+  14.3% = **~90% is idle harness / parked goroutines** — literally the "overcount"
+  this campaign suspected, now visible as idle blocking instead of CPU samples
+  (`BenchmarkDecode` drives `forward`+`Sample` directly, no channels, so none of
+  this chanrecv is on the decode path). The real decode fork/join —
+  `sync.(*WaitGroup).Wait`, 100% under `forward→runLayers→parallelSpawnCols` — is
+  **10%** (4.22 s), and it is the main goroutine **waiting while the workers
+  compute** (≈66% of decode wall): *productive* wall-clock the serial path spends
+  as compute on the same thread, not overhead.
+- **Scheduler-latency (unblocked→running — the *only* true dispatch tax):** decode's
+  share (`parallelSpawnCols.func1`) is **~70 ms over ~6.4 s of decode ≈ 1%**
+  (~0.2 ms/token). Total scheduler latency over the whole 11 s run is ~480 ms, most
+  of it one-time model-load quant (`buildWeightsFromGGUF`, `QuantizeRowInt8`).
+
+**Verdict.** The per-token time is real serial compute + a **~1 %/token,
+pool-irreducible** scheduler tax; the "71 % `pthread_cond`" is idle worker-M
+`notesleep`→`pthread_cond_wait` between dispatches, which a CPU profiler counts as
+cost and a wall-clock trace correctly shows as idle. There is **no ~8 ms
+recoverable host cost to explain** — profiling with the *right* tool dissolves the
+question rather than answering it, and independently re-vindicates the Phase-3b
+decision not to ship the spin-before-park pool (a hotter pool cannot recover time
+that idle Ms were never spending). The remaining CPU-decode levers are the ones
+this campaign already named as *structural*, not scheduler: coarser (whole-layer)
+parallelism / QKV fusion to cut the *count* of dispatches, and bigger batch /
+speculative decode to make each dispatch's parallel work non-trivial.
+
+*Caveat:* arm64 M1 Pro, one thermal state (this run 46–55 tok/s vs the campaign's
+66–68). The decomposition is Go-runtime-structural and matches the Ryzen 3700X
+recheck qualitatively; a box re-run can re-confirm absolute magnitudes but cannot
+change the mechanism (idle-M oversampling is not architecture-specific).
