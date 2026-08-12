@@ -511,6 +511,24 @@ here as live policy.
    showing the smaller sample did not cost precision. A named, justified, bounded difference is
    honest. An unnamed one is the 476/268.
 
+   **SCOPE — this governs ANY arithmetic over two readings, not only comparisons that get
+   published.** The rule was written for headline claims and therefore did not fire on an internal
+   delta inside an experiment, which is the same defect one layer down and harder to see, because
+   nobody reviews a subtraction the way they review a number in a README.
+
+   *Instance.* A10's per-context cost was computed as `pre − post` with **`pre` from `nvidia-smi` and
+   `post` from `cuMemGetInfo`** — two instruments that disagree by up to a MiB of granularity. It
+   gave **107,806,720 B**. The same instrument on both sides gives **106,954,752 B**, and the
+   decomposition only closes with the latter: 44,236,800 + 106,954,752 = 151,191,552 exactly, where
+   the mixed figure left 43,384,832 and no clean split. The discrepancy was *visible* in the log the
+   whole time — 851,968 B between the two readings — and was written off as "does not affect the
+   delta, since that is computed within one process". It was computed within one process and **across
+   two instruments**, which is the thing the rule is about.
+
+   So: **name the instrument on both sides of every subtraction**, including the ones that never
+   leave the test output. A delta between two instruments measures their disagreement as well as the
+   quantity.
+
 4. **State opt-in-ness in the same breath as the result.** If reproducing a number needs a flag,
    an environment variable, or a non-default build, say so where the number appears — not in a
    later section. Two statements, each true in its own place, compose into a false picture for a
