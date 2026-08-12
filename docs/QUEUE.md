@@ -1869,6 +1869,48 @@ exactly where it matters**. P7 lands when Q1 gives int4 a golden, or behind a re
 not W8A8-fixed / W4A8-unfixed, it is `matmulInto` covering one quantization and silently delegating
 the rest.
 
+**P9 · aikit v1.17.0 costs ~3% of decode throughput on this shape — MEASURED, direction robust,
+locus not isolated** — `linux`, **open, 2026-08-12**
+
+Not a product claim and deliberately not in the CHANGELOG: an engineering finding, recorded with its
+method and its limits so it is not lost. The bump (`4a075ac`) is the **only** compiled-code change
+between the arms, so the effect is attributable to it.
+
+**Result: −2.96%**, against a noise floor of **2.0% pre-registered before the comparison ran**.
+
+| arm | median | mean | sd | min | max |
+|---|---|---|---|---|---|
+| pre (`aikit v1.16.0`) | 0.9662 | 0.9674 | 0.0051 | 0.9621 | 0.9745 |
+| post (`aikit v1.17.0`) | 0.9380 | 0.9364 | 0.0220 | 0.8988 | 0.9631 |
+
+**Method**, because the first attempt at this number was confounded and the design is the finding as
+much as the figure. `BenchmarkDecode`, DeepSeek-V2-Lite-Chat-Q4_K_M at `Quant: "int8int8"` (W8A8),
+`-benchtime 30x`, batch=1 greedy, Ryzen 7 3700X / GOMAXPROCS 16. Both arms in detached worktrees,
+`GOWORK=off`, no `replace`, aikit from the module cache. **Interleaved pre/post/pre/post in one
+session** — not two runs separated in time, which is what made the first attempt worthless. The
+**first sample of every visit is discarded** as warm-up, defined from an independent 8-sample
+characterization and applied identically to both arms. 6 retained per arm.
+
+**Why the direction survives the noise.** The post arm's sd is 4× the pre arm's, concentrated
+entirely in one visit (per-visit sd 0.0055 then 0.0343), and one post sample reaches into the pre
+range. But the **per-visit means do not overlap** — pre {0.9658, 0.9690} against post {0.9351,
+0.9378} — and 34 of 36 pairwise comparisons put post below pre. The direction is solid; treat the
+**magnitude as ~3% ± a point**, not as 2.96%.
+
+**Locus NOT isolated — this is the open part.** v1.17.0 brings two new kernels onto goinfer's paths
+(see `4a075ac`): a new AVX2 int8 routine behind `w8a8Span`, and a reworked inner loop in the blocked
+f32 matmul. This benchmark is int8int8 at M=1, so the int8 kernel is the *likely* locus and the f32
+blocked path is barely exercised — **that is inference, not measurement.** An ablation would pin it;
+nobody has run one. Do not repeat the inference as a finding.
+
+**Scope.** One model, one quantization, batch=1, one box. It says nothing about prefill, where the
+changed f32 blocked path actually lives and where the upstream optimisation is presumably aimed — a
+decode regression is consistent with a prefill win. Measure that before concluding the change is bad
+rather than mis-shaped for this workload.
+
+*Action:* report upstream with the method above. Not urgent — 3% of decode on one shape, against a
+bump whose bit-identity is gated and green.
+
 **P8 · `sampleChunked` allocates a full-vocab `[]float64` and rebuilds the goroutine pool twice per
 sampled token** — `decoder/sampler_chunked.go:188`. **TRIED AND REVERTED — the allocation removal
 costs 5–6% throughput.**
