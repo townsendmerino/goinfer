@@ -592,7 +592,25 @@ The class is written up in `docs/parity-coverage-policy.md` ("Sibling drift"); t
 half.
 
 Known instances: **W8A8 / W4A8 `Workspace`**; **dense `mlp` / `moeMLP` `decodeScratch`**; **batched
-GEMV int8 / int4**; **`capSlots` and its inline copy in `allocSlots`**; **SIMD / scalar widen**.
+GEMV int8 / int4**; ~~**`capSlots` and its inline copy in `allocSlots`**~~ (closed by A5 `6091e7a` —
+`allocSlots` now calls `capSlots`); **SIMD / scalar widen**; and **the final-logit softcap, five
+members**.
+
+The softcap set is the largest found so far and is worth writing out, because P3 named exactly one
+of them:
+
+| site | status |
+|---|---|
+| `cuda/resident.go` (decode) | **shares `applySoftcap`** (`4c26a58`) |
+| `cuda/prefill.go` | **shares `applySoftcap`** (`4c26a58`) |
+| `decoder/forwardn.go:502` | unchanged — `decoder/` is under the `6edd1ca` numerics freeze |
+| `decoder/model.go:731` | unchanged — same freeze |
+| `metal/model.go:827` | unchanged — Metal is on hold for core-numerics surfaces |
+
+The three unchanged members are a **deliberate** partial fix, not an oversight, and they are the
+reason this row exists: had P3 been taken at face value and only `cuda/resident.go` parallelised,
+even the second CUDA site would have drifted from it. Adopting `applySoftcap` (or its equivalent) at
+the remaining three is the work that closes the row, and it unblocks with the freeze.
 
 **Enumerate the members; do not name one.** A test that names one member is exactly what the passing
 sibling already had — it reproduces the class rather than closing it. Where enumeration cannot be
@@ -867,11 +885,26 @@ Bit-identity is **structural** if the SIMD path is purely elementwise: `int8→f
 and a per-element scale is a single multiply with no reordering freedom. Verify that condition holds
 and it needs no parity argument at all.
 
-**P3 · Gemma final-logit softcap, serial O(vocab) `tanh` on the sampling path** — `cuda/resident.go:1561`
+**P3 · Gemma final-logit softcap, serial O(vocab) `tanh` on the sampling path** — **DONE `4c26a58`**
 
-Estimated **10–30%**, Gemma with sampling only. A host parallel-for is bit-identical by construction.
-Not frozen. **Queued for work now.** Measure with the sampling configuration recorded on **both**
-sides, same method both sides — this is the rule the 476/268 headline broke.
+Measured rather than estimated: the loop costs **1.43 ms/sampled token** at Gemma's 262,144 vocab and
+**640 µs** parallelised — a **2.3×** on the loop, saving ~0.85 ms/token.
+
+**The 10–30% estimate needed qualifying, not correcting.** 0.85 ms is ~28% of a 3 ms decode step and
+**under 1% of the 26B's ~80 ms**. The share depends entirely on which model you run, so the loop
+figure is what is recorded — it is the part that does not.
+
+Greedy decoding does not pay it at all (`ForwardArgmax` reduces on-device and reads back 4 B), which
+confirms the audit's "sampling only".
+
+The threshold is measured, and the small end is a **loss**: 8,192 elements parallelise at 0.95×.
+Hence `softcapParallelMin = 32768` rather than an unconditional fan-out.
+
+Bit-identity is **structural** — each output element is a pure function of the input at the same
+index, so there is no accumulation order to perturb. Gated at exact equality across sizes straddling
+the threshold and GOMAXPROCS ∈ {1, 3, 16}, with lengths that do not divide evenly.
+
+**Two of five siblings fixed** — see B6. The other three are frozen or on hold.
 
 **P4 · Metal RoPE dispatched twice per layer** — `metal/model.go:1301`
 
