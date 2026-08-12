@@ -525,6 +525,19 @@ confirmed); or perturb the thing under test and confirm red (route to the wrong 
 launch argument, point the pattern at a renamed test); or run the gate against a known-bad commit.
 Cheapest sufficient one wins — the point is evidence, not ceremony.
 
+**A read-only question gets a throwaway worktree by default, not by judgment.** Asking "what would
+this tool change?" with the tool that changes things is a category error, and the standing form is
+cheap enough that no judgment call is warranted: `git worktree add`, run it there, read the diff,
+remove the worktree.
+
+The instance: `go fix ./decoder/` was run against the real tree to answer exactly that question — a
+tool the standing constraints forbid, reached for because it was the obvious way to see the answer.
+Three checks then established the tree was unmodified, and **only one of them actually established
+it**: `git status` and `git diff HEAD` both only show agreement with HEAD, which a modify-and-restore
+also satisfies. The **byte comparison against a snapshot taken before the command** is the one that
+carried the claim. Worth naming, because two of the three checks were reassurance rather than
+evidence, and a reader counting three would have over-weighted the result.
+
 **A claim that a check passed names the COMMITTED check that produced it.** Gates police committed
 files; a command typed in a session is outside every gate, and no gate can be added that fixes that.
 So the rule is about the claim rather than the tooling: "staticcheck is clean" is only reportable if

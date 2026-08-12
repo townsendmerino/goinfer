@@ -869,7 +869,25 @@ transpositions the type system prevents; passing a wrong *value* of the right ki
 The failure moves from an invisible positional slip to a legible mis-assertion at the call site.
 **Do not write "eliminates transposition bugs".**
 
-**D3 · The parked flag-pair** — `linux`, blocked on the freeze
+**D3 · The parked flag-pair** — `linux`, **unblocked by the proof requirement; belongs in the
+release if its rebase is clean**
+
+**Does it complete the MoE-cache story the release headlines? YES.** `c8b65ba` adds
+`--moe-cache-experts` / `--moe-cache-slots` to `serve`, and the README instructs the **env vars in
+three places** — including the very section this release rewrites around the cap fix. Shipping the
+release without D3 means rewriting that section again next version, for the same feature.
+
+**But its branch predates the fix it completes.** `flag-pair-moe-cache` is based on `7ccec1e` — the
+slot-default commit that was **reverted** — and it touches `cuda/backend.go` and `decoder/model.go`,
+both of which A5 (`6091e7a`) and A9-FIX (`0103b49`) changed substantially. So this is a **rebase and
+re-verify**, not a merge.
+
+**Recommendation, with the evidence rather than a preference:** if the rebase onto post-A9-FIX main is
+clean, include D3 and ship one coherent MoE-cache story. If it fights, cut without it — the README
+stays env-var-based for one more version, which is a smaller cost than a contested rebase immediately
+before a tag.
+
+**D3 (original) · blocked on the freeze** — superseded
 
 `flag-pair-moe-cache` (`f6bbf7c`) carries `--moe-cache-experts` and `--moe-cache-slots` as CLI
 flags. The `Options` fields and accessors touch `decoder/model.go` and `gguf.go`, which re-stales 19
@@ -1097,8 +1115,29 @@ Answer that before estimating.
       sc := max(moe.SharedIntermediateDim, moe.IntermediateDim)  b := min(32, n)          (x2)
       window := max(len(access)/8, 1)                            workers := min(GOMAXPROCS(0), numChunks)
 
-  **No float `min`/`max`, and none of the 85 contraction sites is touched.** So the headroom
-  measurement survives and the amd64 goldens run is sufficient.
+  **Censused across G2's ACTUAL scope**, not just `decoder/` — 9 candidates, **all integer, zero
+  float**:
+
+  | package | candidates | float | integer |
+  |---|---|---|---|
+  | `decoder` | 7 | 0 | 7 |
+  | `cuda` | 2 | 0 | 2 — `softcap.go`, worker count and chunk bounds |
+  | `gpu` | 0 | — | — |
+  | `metal` | 0 | — | — |
+  | aikit | 0 | — | — |
+
+  **No float `min`/`max` anywhere, and none of the 85 contraction sites is touched.** The headroom
+  measurement survives and G2 needs no scope narrowing.
+
+  **WHAT CLEARED G2 WAS SOURCE ANALYSIS, NOT THE GOLDENS RUN — and the distinction is load-bearing.**
+  A float `minmax` rewrite differs from the if/else form only on **NaN**, and NaN paths trigger on
+  degenerate inputs while goldens run normal ones. Such a rewrite would have landed **green** and sat
+  dormant until a real NaN arrived. That is exercised-but-never-triggered, in the one change class the
+  proof requirement above does **not** cover — the requirement proves numerics for the inputs the
+  goldens carry, and this class changes behaviour only outside them.
+
+  So do not let "goldens green" later read as the authorization for G2. **The authorization is the
+  census**, and it must be re-run if the analyzer set changes.
 
 - **D3** has no expression-rewriting exposure at all (it adds `Options` fields and accessors), so it
   proceeds on the goldens run alone.
@@ -1496,6 +1535,14 @@ numbers rather than one. Until then the allocation stays.
 
 _(append with commit sha and date)_
 
+## Sequencing — release BEFORE G2
+
+Agreed and recorded: **D3 (if its rebase is clean) → cut the release → G2 → B1, B2 → mac batch.**
+
+A repo-wide mechanical diff immediately before a tag costs bisectability and reasoning room and buys
+the modernizers nothing. G2 is not urgent and never was; it is cleared, which is different from being
+next.
+
 ## Draft: contents of the next release
 
 **Not a version number** — that is a separate call. This is what has accumulated since
@@ -1566,6 +1613,7 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `6edd1ca` | parity: make "validated" MEAN T3 — method-tier gate + honest experimental tier (D2, pre-freeze) |
 | `7c91ccc` | cuda+docs: decline floor, slot-cap gate, driver allocation facts, and seven rules |
 | `7cc2f0d` | fix(parity,ci): refresh deps_hash after 38061b1's pread-staging core plumbing (non-numeric) |
+| `7ccec1e` | fix(cuda): the expert cache sizes itself — topK was the worst possible default |
 | `82b39cc` | docs(parity): document qwen3_5_moe's int8-vs-bf16 movement (v0.8.0 §1 — gate-backed pass) |
 | `8fecfad` | ci: heavy_gate.sh — a runner for the real-checkpoint tier that no CI job executes |
 | `91f359f` | fix(decoder): matmulInto dispatches on the property, not on W8A8 (P7) |
@@ -1576,6 +1624,7 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `9e5f8fa` | fix(quant): reject --quant that conflicts with a prequant .giw at startup (T1-7) |
 | `bd08936` | fix(gate): cannot-search is not not-found; cross-gate composition; B7 sweep |
 | `be049df` | [aikit] gpu(gemv): explicit __fmaf_rn in the quantized GEMV — the bit-identity contraction rule |
+| `c8b65ba` | feat(serve): --moe-cache-experts / --moe-cache-slots — PARKED on the freeze |
 | `ca29d6c` | cuda: resident context cap becomes configuration-derived (-ctx), VRAM-checked at load |
 | `cc238c6` | cleanup: consolidate GINFER_ env vars to GOINFER_ + add env-var registry |
 | `e42e83e` | fix(cuda): name the kernel and both slot counts when a launch runs out of memory |
