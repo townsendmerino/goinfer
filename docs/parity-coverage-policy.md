@@ -314,7 +314,14 @@ A test that names one member reproduces the class — it is what the passing sib
 Where enumeration is not mechanical, the invariant's own comment names the full set, so the next
 fix is written by someone who has been told the set exists.
 
-Instances at time of writing, five, none of them found by a failing test:
+**The class is broader than any census of it.** `TestDispatchCensus` covers *dispatch* sites in
+`decoder/`, and that is one shape in one language in one package. The sixth instance found was in
+**Python, in a gate** — `path_repos()` and `sibling_repos()` were two implementations of "the sibling
+set" that disagreed the moment an override was exercised. Neither the dispatch census nor any Go lint
+would ever have seen it. So the census's green is qualified twice over: **unchanged, not correct —
+and unchanged *within its scope*, which is narrower than the class.**
+
+Instances at time of writing, six, none of them found by a failing test:
 
 | the pair | what drifted |
 |---|---|
@@ -323,6 +330,7 @@ Instances at time of writing, five, none of them found by a failing test:
 | batched GEMV int8 / int4 | fix applied to one quantization |
 | `capSlots` / its inline copy in `allocSlots` | production runs the inline copy; the gate tests `capSlots`, so a change to either is uncontradicted by the other |
 | SIMD / scalar widen | a SIMD `int8→f32` widen sits in the same package as the scalar one still used by the LM head |
+| `path_repos` / `sibling_repos` (Python, in a gate) | two notions of "the sibling repo set"; only one honoured the env override, so a foreign commit read as fabricated while its repo counted as present |
 
 The `capSlots` row is the sharpest, because there the drift is between the shipped path and *the
 thing written to check it* — sibling drift and G-01 in the same object. It is also the reason this

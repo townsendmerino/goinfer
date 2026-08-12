@@ -926,7 +926,37 @@ slot-default commit that was **reverted** — and it touches `cuda/backend.go` a
 both of which A5 (`6091e7a`) and A9-FIX (`0103b49`) changed substantially. So this is a **rebase and
 re-verify**, not a merge.
 
-**OUT OF THE RELEASE. Do not attempt the rebase yet — the first question is not a merge question.**
+**DESIGN READ DONE 2026-08-12 — the reason SURVIVES, but the entry was resting on a stale premise.**
+
+Read from `BRANCH-NOTE.md`, not the diff. The stated intent is *"the env-var-only expert-cache
+controls promoted to real CLI flags, wired `decoder.Options` → `Model` accessor → CUDA backend,
+following the `KVPrecision` pattern rather than adding more `os.Getenv` to the backend"*. That is an
+**API-surface change**, not a workaround.
+
+**And the branch note itself draws the line the question asks about**: *"the user-visible half of this
+work — the slot default, which was costing ~3× decode rate — was CUDA-only and landed on `main` at
+`7ccec1e`"*. The workaround-shaped part was always a **separate change**. It landed, was reverted, and
+was redone correctly as A5. **A5 changed what the default computes; it did not remove a user's reason
+to override it.** So the flag pair is the second branch: legitimate explicit override, and it stays.
+
+**What needs re-deriving, per that branch:**
+
+1. **The flag's documented meaning.** Written when the cap could not be trusted, so it read as *how
+   you get a working cache*. With A5 it means *request no more than N*, and the cap may still lower
+   it — the log line says which.
+2. **`BRANCH-NOTE.md`'s own rebase guidance is stale.** It says to expect one conflict in
+   `cuda/backend.go` and to *"keep `main`'s comment"* — but that hunk has changed three times since
+   (`7ccec1e` reverted at `97ee663`, then A5 `6091e7a`, then A9-FIX `0103b49`). The instruction now
+   points at text that no longer exists.
+3. **Its freeze paragraph is superseded** — it waits on a lift; the freeze is now a proof requirement
+   and the goldens run is the authorisation.
+
+`decoder/model.go` and `decoder/gguf.go` were untouched by A5/A9-FIX/P6/P7, so only `cuda/backend.go`
+should conflict.
+
+**Still not rebased** — that is the next action on this item, not a blocker discovered by it.
+
+**Historical framing: out of the release, and the first question was not a merge question.**
 
 D3 was designed **while the cap computed the wrong value**. A5 fixed the cap. So before anything:
 **does the flag pair still have a reason?**
@@ -1623,6 +1653,42 @@ A repo-wide mechanical diff immediately before a tag costs bisectability and rea
 the modernizers nothing. G2 is not urgent and never was; it is cleared, which is different from being
 next.
 
+
+## Freshness sweep — C, D, E, G (2026-08-12)
+
+F was **fifteen for fifteen already fixed**, because it was seeded from `docs/completed/`. These
+groups were seeded from conversation, and **the rate is much lower**, which is the useful result:
+
+| entry | state | evidence |
+|---|---|---|
+| C1 drain fix — CUDA verification | **open** | no CUDA unload/drain test found |
+| C2 out-of-tree consumer audit | **open** | needs a fresh no-repo session by design |
+| C3 Metal consumer window | **open** | mac batch |
+| C4 soak testing | **open** | `internal/serveapp/fuzz_test.go` and `internal/serveapp/chaos_test.go` exist; neither is an hours-long soak |
+| D1 trace tap + launch-site table | **open** | no coverage table in `docs/` |
+| D2 launch-wrapper commit 1 | **open** | no `cuda/internal/gen` |
+| D3 parked flag-pair | **open**, design read done above | — |
+| E1 v1.0 gate as written criteria | **open** | prose item, no tree anchor |
+| E2 four per-family demotions | **open** | manifest still lists `gpt2`, `granitemoehybrid`, `kimi_k2`, `nemotron_h` as `pending` |
+| E3 freeze re-declaration | **DONE `cda8cfe`** | re-declared as a proof requirement, with decider and date |
+| E4 `scripts/bench_compare.sh` fix or retire | **FIXED** | it now opens with *"goinfer's OWN numbers only. NOT a peer comparison"* and points at `scripts/bench_peer.py`, which drives both sides |
+| E5 promo drafts | **unverifiable** | held in conversation, nothing in the tree to check |
+| E6 aikit release | **open by decision**, not by omission | — |
+| G1 LFM2.5 family | **open** | no LFM2 code in the tree |
+| G2 `go fix` modernizers | **DONE `3d6ae1e`** | — |
+
+**Rate: 1 of 13 previously-open entries was silently already fixed (E4), against F's 15 of 15.**
+Two more (E3, G2) were closed by this campaign and were already recorded.
+
+**That difference is the finding.** F was seeded from a *filed audit* — work done elsewhere, reported
+once, never propagated back. C/D/E/G were seeded from *conversation*, where the person who did the
+work was the person holding the list. **The burial folder is what produced the 15/15, not the passage
+of time.** So the sweep paid for itself once, on the group that came from a document, and should not
+be assumed to pay again on groups that did not.
+
+E5 is recorded as **unverifiable** rather than open: nothing in the tree can confirm or deny it, which
+is a different state and should read as one.
+
 ## Draft: contents of the next release
 
 **Not a version number** — that is a separate call. This is what has accumulated since
@@ -1747,6 +1813,7 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `91f359f` | fix(decoder): matmulInto dispatches on the property, not on W8A8 (P7) |
 | `93eb7d4` | feat(decoder): gpt-oss real-model path — batched-prefill fix + real gates |
 | `9624dd9` | chore(parity): refresh deps_hash for aikit v1.12.0 (goldens-proven non-numeric) |
+| `97ee663` | revert(cuda): the expert-cache default back to topK — it broke both real-26B gates |
 | `98936cf` | test(goldens): strengthen mamba-2 + deltanet parity fixtures (kill identity weights) |
 | `99b3f95` | chore(deps): pin aikit v1.12.0 — gpt-oss MXFP4 reproducible on main |
 | `9e5f8fa` | fix(quant): reject --quant that conflicts with a prequant .giw at startup (T1-7) |
@@ -1756,6 +1823,7 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `c8b65ba` | feat(serve): --moe-cache-experts / --moe-cache-slots — PARKED on the freeze |
 | `ca29d6c` | cuda: resident context cap becomes configuration-derived (-ctx), VRAM-checked at load |
 | `cc238c6` | cleanup: consolidate GINFER_ env vars to GOINFER_ + add env-var registry |
+| `cda8cfe` | docs: re-declare the freeze as a proof requirement; clear G2 for amd64 alone |
 | `e42e83e` | fix(cuda): name the kernel and both slot counts when a launch runs out of memory |
 | `e58ac8a` | fix(parity): refresh deps_hash after f340d4e's guarded int4-scale seam — non-numeric, validated_at preserved |
 | `ecc5af2` | chore(parity): refresh deps_hash after default-off diagnostic hooks (non-numeric) |
@@ -1826,8 +1894,11 @@ than papered over.
 | `decoder/serialize.go` | goinfer |
 | `decoder/weightmat.go` | goinfer |
 | `decoder/weights.go` | goinfer |
+| `internal/serveapp/chaos_test.go` | goinfer |
+| `internal/serveapp/fuzz_test.go` | goinfer |
 | `linalg/quant.go` | aikit |
 | `scripts/bench_compare.sh` | goinfer |
+| `scripts/bench_peer.py` | goinfer |
 | `scripts/ci_checks.py` | goinfer |
 | `scripts/gpu_gate.sh` | goinfer |
 | `scripts/heavy_gate.sh` | goinfer |
