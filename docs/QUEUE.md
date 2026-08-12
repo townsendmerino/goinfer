@@ -436,17 +436,44 @@ Peak demand is 289,013,760 and residual is 138,412,032 — a ratio of **2.09×**
 constant.** A margin bump would have to be sized against the peak, permanently, while the peak is
 transient — it would reserve 275.6 MiB forever to cover something that is only briefly needed.
 
-**A9-SPEC · Specialize `MOE_MAX_E` at JIT time** — `linux`, real reclaim, measured not estimated
+**A9-SPEC · Specialize `MOE_MAX_E` at JIT time** — `linux`, **RECLAIM MEASURED. Artifact question
+dissolved.**
 
-The per-thread arrays are `float[MOE_MAX_E] × 2` and `MOE_MAX_E` is compile-time — but goinfer JITs
-through NVRTC, so it can be specialized to the loaded model's **actual expert count** rather than the
-worst case. A 128-expert model currently pays the 512-expert reservation.
+**The frozen-artifact decision is not part of this item.** The standing constraint is that frozen
+artifacts are not regenerated and new kernels get their own files — so the shape is a **second,
+specialized module alongside `moe.ptx`, selected by expert count at load**, never a rebuild of the
+audited artifact. Recorded so it is not re-litigated as a freeze exception.
 
-Attach the measured figures, not an estimate: `moe_route` declares **4416 B/thread**, retains
-**138,412,032 B**, and demands **289,013,760 B** at first launch. What the reclaim actually is must be
-**measured by building at a lower `MOE_MAX_E`** — see A9-MULT below for why it cannot be derived.
-Note the PTX freeze: regeneration is reproducible only via the pinned `nvidia-cuda-nvrtc-cu12==12.6.85`
-venv, so this is a deliberate exercise rather than an incidental rebuild.
+**Measured, 2026-08-12** — `moe.cu` compiled at `MOE_MAX_E=256` to a scratch PTX through the pinned
+12.6.85 NVRTC (`cuda/testdata/moe.ptx` untouched), then read in the balloon harness:
+
+| | MOE_MAX_E=512 (shipped) | MOE_MAX_E=256 | saved |
+|---|---|---|---|
+| residual reservation | 138,412,032 | **54,525,952** | 83,886,080 |
+| launch demand | 289,013,760 | **205,717,504** | 83,296,256 |
+| ratio (residual) | — | **0.394** | not 0.5 |
+
+**0.394, not a halving** — which settles A9-MULT by measurement rather than by refuting a derivation.
+
+**And it names the transient.** The two reductions are nearly identical, because
+**demand = allocation floor + residual**:
+
+    MOE_MAX_E=256:  151,191,552 + 54,525,952 = 205,717,504  — EXACT
+    MOE_MAX_E=512:  151,191,552 + 138,412,032 = 289,603,584  — measured 289,013,760, off by 589,824,
+                    which is exactly the baseline drift A9-RESID measured
+
+So the "~150 MiB transient, still unnamed" that A9 recorded twice **is the A10 allocation floor**, and
+the "peak is 2.09× the residual" ratio was never a property of anything — it is
+`(floor + residual) / residual`, and at 256 it reads 3.77×. Both figures are retired.
+
+**What the reclaim actually buys: ONE slot.** With A9-FIX the residual is charged before sizing, so
+free before `allocSlots` rises from 3,709,468,672 to 3,793,354,752 — and the cap moves **31 → 32**.
+83.9 MB is *less than one slot* (30 layers × 3,345,408 = 100,362,240 raw), so this is a boundary
+effect, not a proportional win. Worth knowing before anyone budgets a second module for it.
+
+**Not extrapolable to 128.** Gemma 4 routes 128 experts, and 0.394 at one halving does not predict
+the next — that is the derivation A9-MULT withdrew. Build at 128 and measure it the same way; the
+harness now takes `GOINFER_MOE_PTX_FILE`, so it is a two-minute job.
 
 **A9-MULT · The halving was DERIVED and is now withdrawn** — `linux`, **CLOSED, refuted**
 
@@ -931,9 +958,11 @@ largest single item in the group. Frozen core, and it needs a new aikit row-pitc
 **P2 · Scalar `int8→f32` widen on the LM head** — aikit `linalg/quant.go:113`, **condition VERIFIED,
 and it does not hold as a drop-in**
 
-Not frozen, so the work is unblocked — but shipping it **reverses E6** (aikit release deferred to
-v1.0), which must be an explicit decision rather than one arrived at by landing the patch. **Not
-landed.**
+Not frozen, so the work is unblocked. **And no decision gets reversed: merge into aikit `main` and
+leave it UNRELEASED.** The `require` bump is already planned for v1.0, so the win lands on the
+schedule E6 already chose — E6 defers the *release*, not the *work*, and banking verified work in
+`main` costs nothing and reverses nothing. Recorded this way so it is not re-litigated as an E6
+exception every time it surfaces.
 
 **The bit-identity condition, checked in source rather than assumed.** It splits in two, and the
 half that matters is the one the original wording did not cover:
@@ -999,12 +1028,43 @@ The swiglu half is **not** a clean fusion; do not bundle them.
 
 **P6 · `moeMLP` allocates ~7–8 MB/token** — `decoder/mlp.go:82`
 
-By skipping the `decodeScratch` invariant its dense sibling honours. Frozen core. **See B6** — this
-is a sibling-drift instance, and fixing it without enumerating the pair leaves the class open.
+By skipping the `decodeScratch` invariant its dense sibling honours. **See B6.**
+
+**PRICED (2026-08-12) — the freeze is a cost, not a prohibition, and the cost is 6 seconds.**
+`decoder/mlp.go` is in the `core` shared set and `decoder/weightmat.go` in `quant`, and **all 23
+families use both**, so an exception re-stales the entire matrix. But the sanctioned instrument is
+`scripts/refresh_parity_hashes.sh` — the goldens-gated refresh, precedent `9e5f8fa` — **not**
+`parity_sweep.sh`'s T3 oracle sweep, because these are allocation changes rather than arithmetic.
+
+Measured on `linux-62gb`: **19 goldens pass, 11 skip, 0 fail, 6.09 s wall.** One machine, no model
+zoo, no HF venv. (18 of the 23 manifest rows name `linux-62gb`; only `gemma4` names
+`macbook-arm64`, and that is its *oracle*, not its golden — `TestGemma4MoE_forwardParity` ran here.)
+
+**Coverage is good for P6.** Nine MoE goldens actually RAN: `TestGemma4MoE_forwardParity`,
+`TestGemma4MoEKV_forwardParity`, `TestGemma4MoEUnified_forwardParity`, `TestMixtral_forwardParity`,
+`TestGlm4Moe_textParity`, `TestQwen35_forwardParity`, `TestDeepseek_textParity`,
+`TestKimi_textParity`, `TestLlama4_textParity`. `TestQwen2Moe_forwardParity` skipped.
+
+**Verdict: P6 can land now under the exception.** Do not refresh the hash without running the
+script — it refuses on any golden failure and on a vacuous all-skipped run, which is the whole point.
 
 **P7 · W4A8 allocates a fresh `Workspace` per projection per token** — `decoder/weightmat.go:202`
 
-The W8A8 sibling was fixed; this one was not. Frozen core. **See B6.**
+**Two findings that change the item, both from reading the source the audit line summarised.**
+
+**1. The fresh Workspace is deliberate, and the reason is in the code:** *"per-call ws so it's
+race-free across decode streams"*. So this is not simply a fix the sibling got and this one missed —
+removing it needs a concurrency argument the audit line did not make. The W8A8 "sibling" also routes
+through `qb.MatmulW8A8`, a different shape entirely, so the pairing itself is loose.
+
+**2. The goldens give NO numeric proof here.** Zero of the 20 forward-golden files drive `int4` or
+W4A8 — checked mechanically. So unlike P6, P7 **cannot** use the 6-second goldens-gated refresh: the
+proof would be vacuous on exactly the path being changed. It needs either a regenerated int4 golden
+or the real T3 quant gate.
+
+**Verdict: P7 does NOT land under the exception.** It is materially more expensive than P6 and its
+premise needs re-establishing first. **See B6** — and note this is the second B6 row where the
+"sibling" framing turned out looser than the audit implied.
 
 **P8 · `sampleChunked` allocates a full-vocab `[]float64` and rebuilds the goroutine pool twice per
 sampled token** — `decoder/sampler_chunked.go:188`. **TRIED AND REVERTED — the allocation removal
@@ -1034,10 +1094,25 @@ against jitter nobody has measured. **No mechanism proposed** — the obvious gu
 behaviour on fresh spans, aliasing or bounds-check effects from a field-derived slice) are exactly
 the premature-mechanism shape, and none was tested.
 
-**What would make this landable**, in order: measure the jitter P8 exists to reduce, so the trade has
-two numbers rather than one; and establish *why* reuse is slower, since a 2 MB allocation per token
-being cheaper than reusing a warm buffer is surprising enough that the explanation probably matters
-elsewhere. Until then the allocation stays.
+**Two discriminators run, both NEGATIVE.** Medians, `BenchmarkFilterNew262k`, 4 runs × 400 iterations:
+
+| variant | GOGC default | GOGC=off |
+|---|---|---|
+| baseline (`make` per call) | 6,221,779 | 6,215,477 |
+| pooled, inline arg | 6,690,158 | — |
+| pooled + hoisted local | 6,585,193 | 6,700,647 |
+
+- **(a) codegen — NOT the cause.** Hoisting the field-derived slice into a local at function entry
+  recovers ~1.6 of ~7 points. The gap does not close, so **no systematic grep for the pattern is
+  warranted** — that follow-up was conditional on (a) closing it, and it did not.
+- **(b) GC — EXCLUDED.** The gap survives `GOGC=off` and is slightly *wider* there (ratio 1.078
+  against 1.058).
+
+**Cause unidentified, and no mechanism is proposed.** What remains untested is memory/page behaviour,
+which is where the guesses point and precisely why they are not written down as findings.
+
+**What would make this landable:** measure the jitter P8 exists to reduce, so the trade has two
+numbers rather than one. Until then the allocation stays.
 
 ## Struck — decided against, kept so the decision is visible
 

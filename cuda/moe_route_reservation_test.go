@@ -73,7 +73,7 @@ func TestMoERouteFirstLaunchReservation(t *testing.T) {
 
 	base := read()
 	smi("start")
-	mod, err := dev.CompileLibrary(moePTX)
+	mod, err := dev.CompileLibrary(moePTXOrOverride())
 	if err != nil {
 		t.Fatalf("CompileLibrary(moePTX): %v", err)
 	}
@@ -96,7 +96,7 @@ func TestMoERouteFirstLaunchReservation(t *testing.T) {
 	t.Logf("  free after CompileLibrary     %13d B   (cost %d B)", afterCompile, base-afterCompile)
 	t.Logf("  free after %d NewComputePipeline %10d B   (cost %d B)",
 		len(names), afterPipelines, afterCompile-afterPipelines)
-	t.Logf("  moePTX source size %d B", len(moePTX))
+	t.Logf("  moePTX source size %d B", len(moePTXOrOverride()))
 
 	total := base - afterPipelines
 	t.Logf("  TOTAL moePTX device cost      %13d B  (%.1f MiB)", total, float64(total)/(1<<20))

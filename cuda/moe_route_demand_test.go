@@ -83,7 +83,7 @@ func TestMoERouteDemandThresholdChild(t *testing.T) {
 	// four small buffers. That is both the right shape (in production they exist long before the
 	// launch) and the fix for a real bug in the first version, which ballooned first and then could
 	// not allocate 32 bytes for an argument buffer.
-	mod, err := dev.CompileLibrary(moePTX)
+	mod, err := dev.CompileLibrary(moePTXOrOverride())
 	if err != nil {
 		t.Fatalf("CompileLibrary(moePTX): %v", err)
 	}
