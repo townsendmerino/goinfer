@@ -1067,20 +1067,28 @@ the threshold and GOMAXPROCS ∈ {1, 3, 16}, with lengths that do not divide eve
 
 **Two of five siblings fixed** — see B6. The other three are frozen or on hold.
 
-**P4 · Metal RoPE dispatched twice per layer** — `metal/model.go:1301`
+**P4 · Metal RoPE dispatched twice per layer — DONE, MEASURED NET-ZERO. Do not re-queue as a win.**
 
-One grid-merged dispatch is bit-identical. **MEASURED (2026-08-12, dispatch census, ollama-chase
-§A2-Metal):** `rope` runs **56 dispatches/token = exactly 2/layer**; the grid-merge removes 28/token =
-**8.3% of the 338 dispatches/token** (was estimated "a few %"). Dispatch-count fraction — the tok/s A/B
-of the merge is the remaining measurement, and P4 is the clean one to prototype first.
+Grid-merge (2→1 dispatch/layer) is bit-identical and already implemented on branch `metal-rope-merge`
+(`d682315`; snapshot-golden byte-exact). The audit re-surfaced this as "estimated a few %" **not knowing
+that branch existed** — a measurement that wasn't composed into the queue (the class this file exists to
+prevent). Dispatch census (2026-08-12) measured `rope` = 56/token = exactly 2/layer, so the merge
+removes 28/token = **8.3% of the 338 dispatches/token**. But re-A/B'd on the current binary
+(`TestZZ_metalDepthBench`, qwen2.5-coder-1.5b W4A8, M1 Pro): before 59.7/49.1/28.4/18.4 vs after
+61.0/46.5/26.9/18.4 tok/s at 128/512/2048/4000 — **net-zero, within noise**. 8.3% fewer dispatches, 0%
+tok/s. Correct and harmless; kept on the branch as a measured record, not merged (no speedup to bank).
+See ollama-chase §A2-Metal.
 
-**P5 · Metal `quant_vec` fused into the o-proj GEMV** — `metal/model.go`
+**P5 · Metal `quant_vec` fused into the o-proj GEMV — PREDICTED NET-ZERO (do not build standalone)**
 
-**MEASURED (2026-08-12, dispatch census):** exactly **one** `quant_vec` dispatch per layer =
-28/token; fusing it into the o-proj GEMV removes the whole pipeline = **8.3% of the 338
-dispatches/token** (was estimated "~5–6%"). The census confirms there is only the single o-proj quant
-to fuse (the other GEMVs already fuse their quant), so the swiglu half the estimate worried about is
-**not** a `quant_vec` dispatch and is not in scope — do not bundle.
+Dispatch census (2026-08-12): exactly **one** `quant_vec` dispatch/layer = 28/token (the o-proj input
+quant; the other GEMVs already fuse theirs — so the swiglu half the "~5–6%" estimate worried about is
+not a `quant_vec` dispatch and is out of scope). Fusing it removes 28/token = **8.3% of 338** — the
+**same magnitude and mechanism as P4** (one small per-layer dispatch), and **P4 measured net-zero**. So
+P5 is predicted net-zero by direct analogy; the fusion is more invasive than P4's merge, so it is not
+worth a standalone build for a tok/s win. Only reconsider inside a **megakernel collapse** (many
+dispatches at once), which is the actual Metal-decode lever (with int4 unpack / bandwidth). If ever
+built, A/B it — do not assume the estimate.
 
 **P6 · `moeMLP` allocates ~7–8 MB/token** — `decoder/mlp.go:82`
 

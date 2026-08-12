@@ -393,13 +393,30 @@ Metal dispatch-removals (P4/P5) from audit estimates into **measured dispatch sh
 | **combined** | | | 56/token | **16.6%** |
 
 The census also *clarifies* P5: there is exactly **one** `quant_vec` dispatch per layer (the o-proj
-input quant — the other GEMVs already fuse their quant), so P5 removes the whole pipeline, not a
-fraction. **Caveat — this is a dispatch-count fraction, not a tok/s number.** In a dispatch-count-bound
-regime it is the *ceiling* on the combined headroom; RoPE/quant_vec are small kernels, so if per-dispatch
-GPU-launch latency is close to a fixed floor they recover near-proportionally, but the exact tok/s needs
-an A/B of the grid-merge (P4 is the clean one). What is now measured rather than estimated: **each is
-~8.3% of the per-token dispatch count, ~16.6% together** — which is why both belong in the v1.0.1 Metal
-batch ahead of any further dedup speculation.
+input quant — the other GEMVs already fuse their quant), so P5 would remove the whole pipeline, not a
+fraction.
+
+**But the dispatch-count fraction does NOT convert to tok/s — the A/B says net-zero (2026-08-12).** The
+count was the ceiling, and the ceiling turns out to be ~0. P4's grid-merge was already implemented
+bit-identically on branch `metal-rope-merge` (snapshot-golden byte-exact) and re-A/B'd on the current
+338-dispatch binary (`TestZZ_metalDepthBench`, qwen2.5-coder-1.5b W4A8, M1 Pro):
+
+| depth | before (2 rope disp) | after (1, merged) |
+|---|---|---|
+| 128 | 59.7 | 61.0 |
+| 512 | 49.1 | 46.5 |
+| 2048 | 28.4 | 26.9 |
+| 4000 | 18.4 | 18.4 |
+
+Mixed-sign, within thermal noise — **8.3% fewer dispatches, 0% tok/s.** The reason is the floor's own
+logic: "dispatch-count-bound" is set by the *sum* of ~338 dispatches gating the token, and removing one
+small per-layer dispatch is lost in it (the same result the branch found at its then-476-dispatch
+binary — the conclusion survived the binary shrinking). **P5 is the same magnitude and mechanism** (one
+small per-layer dispatch, 28/token, 8.3%), so it is **predicted net-zero by direct analogy** and not
+worth a standalone build — if built, A/B it, don't assume the estimate. This is the §11 note made
+concrete: *microbenchmarks (dispatch count) nominate; full generations (tok/s) elect* — and they voted
+no. The levers that actually move Metal decode remain the **megakernel** (collapse *most* dispatches at
+once, not one) and **int4 unpack** (bandwidth). Recorded so P4/P5 are not re-proposed as tok/s wins.
 
 **The Metal gate suite had a structural blind spot — now closed by a snapshot golden.** The
 reduction-width finding (§2) is one instance of a general blind class: **a self-consistent gate cannot
