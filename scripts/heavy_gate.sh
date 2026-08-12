@@ -40,7 +40,7 @@ DIRTY=""; [ -n "$(git status --porcelain 2>/dev/null)" ] && DIRTY=" +dirty"
 DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 MODELS="${GOINFER_GATE_MODELS:-$HOME/models}"
 RUN="${GOINFER_HEAVY_RUN:-.}"
-PKGS=(./decoder/ ./internal/serveapp/)
+if [ -n "${GOINFER_HEAVY_PKGS:-}" ]; then read -ra PKGS <<<"$GOINFER_HEAVY_PKGS"; else PKGS=(./decoder/ ./internal/serveapp/); fi
 
 PASSED=0 SKIPPED=0 FAILED=0 RAN=0
 SKIPS=()
@@ -64,8 +64,12 @@ export GOINFER_MODELS_DIR="$MODELS"
 for pkg in "${PKGS[@]}"; do
   printf '\n\033[1m== %s ==\033[0m\n' "$pkg"
   # -v is required: without it `go test` prints no --- SKIP lines, so a skip would be invisible.
-  out="$(go test "$pkg" -tags 'goinfer_testhooks realckpt' -run "$RUN" -v -count=1 -p 1 -timeout 40m 2>&1)"
-  rc=$?
+  # tee to a per-package log (not command substitution) so the raw output — including a panic or a
+  # crash that never prints a "--- FAIL:" line — survives for inspection; PIPESTATUS keeps go's rc.
+  pkglog="/tmp/heavy_gate_$(printf '%s' "$pkg" | tr '/.' '__').log"
+  go test "$pkg" -tags 'goinfer_testhooks realckpt' -run "$RUN" -v -count=1 -p 1 -timeout 40m >"$pkglog" 2>&1
+  rc=${PIPESTATUS[0]}
+  out="$(cat "$pkglog")"
   # top-level results only (subtest lines are indented; anchor at column 0)
   p=$(printf '%s\n' "$out" | grep -cE '^--- PASS: ' || true)
   s=$(printf '%s\n' "$out" | grep -cE '^--- SKIP: ' || true)
@@ -78,8 +82,16 @@ for pkg in "${PKGS[@]}"; do
   if [ "$f" -gt 0 ]; then
     printf '%s\n' "$out" | grep -E '^--- FAIL: |^\s+.*\.go:[0-9]+:' | head -30 | sed 's/^/    /'
   fi
-  # a package that compiled+ran nothing at all (0 RUN) with rc!=0 is a compile/setup break, not "ok"
-  if [ "$ran" -eq 0 ] && [ "$rc" -ne 0 ]; then FAILED=$((FAILED + 1)); echo "    (0 tests ran and go exited $rc — compile/setup break, counted FAIL)"; fi
+  # rc-aware honesty: a non-zero exit is a FAILURE even when no "--- FAIL:" line was counted — a panic
+  # in a goroutine, a fatal error, a timeout, or a 0-match crashes/aborts the binary without the
+  # per-test FAIL line. Counting only --- FAIL lines would report GREEN on a crashed package (the exact
+  # "a green that means nothing" this gate exists to prevent). Count it, and surface the cause.
+  if [ "$rc" -ne 0 ] && [ "$f" -eq 0 ]; then
+    FAILED=$((FAILED + 1))
+    echo "    go test exited $rc with 0 --- FAIL lines — a HIDDEN failure (panic / fatal / timeout / 0-match). cause:"
+    grep -nE 'panic:|fatal error|SIGSEGV|SIGABRT|test timed out|^FAIL\b|goroutine [0-9]+ \[running\]|no matches for pattern|build failed|\.go:[0-9]+: ' "$pkglog" | head -20 | sed 's/^/      /'
+  fi
+  echo "    raw log: $pkglog"
 done
 
 printf '\n\033[1m== verdict ==\033[0m\n'
