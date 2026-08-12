@@ -387,6 +387,30 @@ See `scripts/pin_gemma4_moe_scaled.py`, which refuses to write a fixture with an
 tensor, and pins its own output hash because gates asserting bit-identity cannot afford a fixture
 that drifts between machines.
 
+**A gate whose value depends on an axis must PRINT its composition along that axis.** The
+Representative rule above is a design-time property — the gate varies over the axis it protects.
+Nothing made a gate *say* that it had, and the gap is not cosmetic: the forward goldens reported
+"19 passed" through **nine** deps_hash refreshes while every one of those 19 was f32, on a runtime
+whose documented default quantization is int4. The count was accurate. It was also the only thing
+anyone read, and it cannot distinguish 19 f32 goldens from 19 that span three quantizations.
+
+Same shape as the skip census, one level along: a skip census exists because "0 failures" cannot
+distinguish "nothing failed" from "nothing ran", and this exists because "19 passed" cannot
+distinguish "the axis is covered" from "the axis collapsed to one value".
+
+*Recognition test:* **name the axis the gate is supposed to vary over, then read its output — can you
+tell from the output alone what values it actually covered?**
+
+Audited 2026-08-12. Reporting the composition: the goldens refresh (quantization), `gpu_gate.sh`'s
+skip census (run-vs-skipped) and its derived hygiene group (platform), `TestInt4_forwardParity`
+(fixture), `TestKernelLocalMemoryCensus` (kernel). **Not reporting it:** `parity_sweep.sh` (family ×
+quant × loader — pass/fail per gate, no quant column), `TestSlotAllocation_matchesGranularityForm`
+(slot count — one per run, absent from the verdict), `TestApplySoftcap_bitIdentical` (size ×
+GOMAXPROCS — loops both, prints neither), `TestMoERouteDemandThreshold` (balloon shape — an env var
+absent from the verdict line). The capability matrix (family × backend) is unread. Listed rather than
+fixed: the audit is the deliverable, and `parity_sweep.sh` is the one that matters most, because it
+is the release gate.
+
 State what a fixture does **not** cover, in the fixture's own docs — host-buffer ratio, depth,
 whether routing is trained. A gate's edges should be legible to whoever trusts it next.
 

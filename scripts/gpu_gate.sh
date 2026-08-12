@@ -463,6 +463,15 @@ esac
 # gains reopens the gap. So the list is now DERIVED from .github/workflows/ci.yml by
 # scripts/ci_checks.py, and a check CI adds appears here with no edit to this file.
 grp repo; hdr "5. repo hygiene (derived from .github/workflows/ci.yml)"
+# The queue's SHA citations. A state document is cited without being re-derived, so a wrong SHA in it
+# propagates with more confidence than the same error in conversation — 9e5f8fa was cited several
+# times, from the file, without anyone opening it.
+if python3 scripts/queue_sha_lint.py >/tmp/sha_lint.out 2>&1; then
+	pass "$(tail -1 /tmp/sha_lint.out)"
+else
+	fail "docs/QUEUE.md SHA citations"
+	head -6 /tmp/sha_lint.out | sed 's/^/      /'
+fi
 CI_ROWS="$(python3 scripts/ci_checks.py 2>/tmp/ci_checks.err)"
 CI_RC=$?
 if [ "$CI_RC" -ne 0 ] || [ -z "$CI_ROWS" ]; then
