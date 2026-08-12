@@ -90,9 +90,27 @@ lucky one. Record 16.98 as **measured-but-unsafe rather than retracted**; the co
 percent, not a repudiation.
 
 The hit-rate curve is worth publishing alongside, since it explains the flag better than an
-instruction does: **8 slots / 0% hit / ~5 tok/s · 16 / 57.3% / 11.33 · 38 / 81.6% / 16.98**. Note
-that at the default of 8 the cache is **inert** — the routed set exactly fills it and nothing
-survives to the next token.
+instruction does. **The leftover-VRAM column now falls out of the closed form** — it is what
+distinguishes a safe operating point from a lucky one, and it is the column whose absence let 38 be
+published:
+
+| slots/layer | LRU hit rate | decode | requirement (rounded) | leftover after `allocSlots` |
+|---|---|---|---|---|
+| 8 (default) | 0% — **inert** | ~5 tok/s | 838,860,800 | 3,009,019,904 |
+| 16 | 57.3% | 11.33 tok/s | 1,698,693,120 | 2,149,187,584 |
+| 30 | *not yet measured* | *not yet measured* | 3,145,728,000 | 702,152,704 |
+| 33 | *not yet measured* | *not yet measured* | 3,397,386,240 | 450,494,464 |
+| 34 | — | **0 tok/s** | 3,649,044,480 | 198,836,224 — **below the 289,013,760 demand** |
+| 38 | 81.6% | 16.98 tok/s | 3,900,702,720 | **negative** — unreachable |
+
+Machine state: free 3,847,880,704 B at `allocSlots`, 30 MoE layers. Leftover = free − requirement;
+the 384 MiB margin is what the cap additionally reserves, so a row is grantable when
+requirement + 402,653,184 ≤ free. The 8/16 rows' leftovers are confirmed by measurement (the A1
+instrument read 16 slots' consumption to the byte); 30/33/34/38 are computed from the same form that
+matched at 16, 30 and 34.
+
+At the default of 8 the cache is **inert** — the routed set exactly fills it and nothing survives to
+the next token.
 
 Pre-registered prediction for 30 slots, to test the curve rather than assume it: **~74–78% hit
 rate, ~15.0–15.8 tok/s**.
@@ -288,7 +306,7 @@ exists" lets a future `MOE_MAX_E` change double a hidden cost while staying gree
 exercised-but-never-triggered shape inside the gate written for this finding. Mutation-checked: each
 pin perturbed by one byte, each fails red.
 
-**A9-FIX · The fix is ORDERING, not a bigger margin** — `linux`, **do this, not the constant**
+**A9-FIX · The fix is ORDERING, not a bigger margin** — `linux`, **DONE `0103b49`**
 
 Adding 275.6 MiB (or 132, or any measured figure) to `slotMarginBytes` is the correction-term mistake
 relocated from A5 to A9. It buries a named consumer inside an unnamed constant, and the next deferred
@@ -306,10 +324,48 @@ incidentally when a test's module setup was placed behind a balloon. The transie
 unmeasured. A9-FIX's ordering argument is unaffected, because forcing happens while ~3.8 GB is free;
 what nothing currently prevents is a *later* module load paying that transient under pressure.
 
-**Iterate the census; do not name `moe_route`.** `rope_kv` and `rope_kv_batched` declare 32 B/thread —
-small, and small is exactly how sibling drift gets in. Forcing by name would reproduce, inside the fix,
-the class the same commit filed. Driving the loop from the enumerated entry points means a kernel that
-gains per-thread scratch later is forced **without anyone editing a list**.
+**On iterating the census rather than naming `moe_route` — how this actually landed, and why.**
+Mechanical iteration turned out not to be available: forcing a reservation requires *launching*, and
+launching requires valid arguments, which is per-kernel knowledge. A zero-block launch would have
+avoided that (no thread runs, so no argument is dereferenced) and was tested — **rejected by aikit's
+geometry validation**, `invalid launch geometry (grid 0x1x1)`.
+
+So the fix forces `moe_route` **by name**, which is sound for a reason that is itself measured: the
+backing store is **shared and sized by the largest kernel**, so forcing the maximum forces the pool
+for every kernel. The naming is kept honest by moving the assumption into a check —
+`TestKernelLocalMemoryCensus` enumerates every entry point in every embedded module and **fails,
+naming `cuda/backend.go`**, if any kernel declares more per-thread scratch than `moe_route`. That is
+the enumerate-the-members remedy applied where enumeration cannot be mechanical: the *selection* is
+checked even though the *launch* is hand-written.
+
+**Measured result.** Cap moves 33 → 31 and the decrement from first launch to last launch goes from
+138,412,032 B to **0** — nothing is taken after the sizing decision, which is the whole property. Free
+after `allocSlots` rises to 501,415,936 B; 4 tokens generate as before. **The trade is two slots**, and
+that is the point: the margin no longer silently absorbs 132 MiB it was never sized for, so 384 MiB
+now means 384 MiB.
+
+**A9-MARGIN · Re-derive `slotMarginBytes` now that it covers only what it names** — `linux`, new
+
+With the deferred reservation paid before sizing, the 384 MiB margin no longer has to hide it, and
+`slotMarginBytes` is by its own comment "the only unmeasured constant in this path". Free after
+`allocSlots` at the new cap is 501,415,936 B and nothing further is consumed (measured decrement 0),
+so the margin is now visibly **larger than anything measured needs it to be** — and it costs two
+slots of cache.
+
+Do not just lower it. Measure what it must cover with the reservation excluded: the greedy-argmax
+readback, per-allocation driver overhead, and whatever prefill transiently needs at the configured
+`--ctx`. Then set it from that measurement, with the same balloon-harness method that produced the
+289,013,760 demand figure. Recovering the two slots is the payoff; the reason to do it at all is that
+an unmeasured constant guarding a now-measured path is the last soft spot in this chain.
+
+**A9-RESID · 589,824 B unexplained between two reservation measurements** — `linux`, small
+
+The 26B run implies a reservation of 137,822,208 B (3,847,880,704 − 3,710,058,496); the
+fresh-context harness measures 138,412,032 B. **576 KiB apart.** Candidates: run-to-run variance in
+the 26B's pre-`allocSlots` free, or a dependence on launch configuration (the warm-up launches with
+nE=1/k=1, the harness with nE=8/k=2 — local memory is a compile-time property, so a dependence would
+itself be a finding). Does not affect A9-FIX's property, which is exact. Cheap to settle: vary the
+harness's nE/k and see whether the reservation moves.
 
 **Why the ordering fix is better than a margin bump, stated so nobody later "simplifies" it into one.**
 Peak demand is 289,013,760 and residual is 138,412,032 — a ratio of **2.09×**. Forcing early pays the
