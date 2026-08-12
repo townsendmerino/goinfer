@@ -86,11 +86,11 @@ func TestResidentLaunchVRAMProbe(t *testing.T) {
 	t.Logf("  free at FIRST launch   %13d B", r.dbgFreeBeforeLaunch)
 	t.Logf("  free before LAST launch attempted %13d B", r.dbgFreePreLaunch)
 	if r.dbgFreeAfter > 0 && r.dbgFreeBeforeLaunch > 0 {
-		t.Logf("  DECREMENT allocSlots→first launch  %13d B  (gmod + glue module cost — A9's first gap)",
+		t.Logf("  DECREMENT allocSlots→first launch  %13d B  (STRUCTURALLY ~0: lazy module materialisation\n    happens DURING the first launch, i.e. after this reading — this gap cannot contain it)",
 			int64(r.dbgFreeAfter)-int64(r.dbgFreeBeforeLaunch))
 	}
 	if r.dbgFreeBeforeLaunch > 0 && r.dbgFreePreLaunch > 0 {
-		t.Logf("  DECREMENT first launch→last launch %13d B  (what the successful launches cost — A9's second gap)",
+		t.Logf("  DECREMENT first launch→last launch %13d B  (the deferred first-launch reservations;\n    138,412,032 of it is moe_route — see TestMoERouteFirstLaunchReservation)",
 			int64(r.dbgFreeBeforeLaunch)-int64(r.dbgFreePreLaunch))
 	}
 	for _, ln := range r.dbgLaunchTrace {

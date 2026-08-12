@@ -164,14 +164,33 @@ cap of 38 against an observed 34 with **no unaccounted VRAM at all** — it had 
 any accounting branch was believed. That they agree numerically does not make the duplication
 harmless: see A5, and the `capSlots` row under sibling drift in `parity-coverage-policy.md`.
 
-**A7 · Confirm the corrected cap by run** — `linux`, after A5
+**A7 · Confirm the corrected cap by run** — `linux`, **DONE 2026-08-12, every figure as predicted**
 
-33 should succeed; 34 should fail. **Pre-registered: free after `allocSlots` at 33 slots is
-450,494,464 B exactly.** State it before running, not after.
+Pre-registered before the run: free after `allocSlots` at 33 slots is 450,494,464 B exactly, and the
+forward succeeds. Both held.
 
-33 clears the margin by only 47,841,280 B, so treat a **failure at 33** as information about the
-margin rather than about the formula — the closed form predicting the requirement correctly and the
-margin being too thin to absorb what follows are different findings with different fixes.
+| reading (real 26B, 33 slots) | measured | predicted |
+|---|---|---|
+| free before `allocSlots` | 3,847,880,704 | 3,847,880,704 |
+| free after `allocSlots` | **450,494,464** | **450,494,464** (exact) |
+| free at first launch | 450,494,464 | — |
+| free before the last launch | 312,082,432 | — |
+| tokens generated | **4** | > 0 (34 slots gives 0) |
+
+**The cross-validation is the valuable part.** The decrement from first launch to last launch is
+**138,412,032 B — exactly the `moe_route` residual pinned from the synthetic fresh-context harness**,
+reproduced here on a completely different path: real model, real expert cache, real decode. Two
+independent routes to the same byte figure.
+
+So the corrected cap of **33 is confirmed by run**, not only by formula, and A2 can publish it.
+
+What this run does *not* do is narrow the demand: 33 passes with 450,494,464 free and 34 fails with
+198,836,224, which brackets the 289,013,760 threshold without tightening it. The balloon search is
+still the only measurement of the demand itself.
+
+Note the margin reading has changed. The concern written here in advance was that 33 clears the
+*margin* by only 47,841,280 B — but the margin is not the binding quantity; the **demand** is, and 33
+clears that by 161,480,704 B. The old framing would have called 33 marginal when it is not.
 
 **A8 · Is `fRoute` the first launch?** — `linux`, **CLOSED**
 
