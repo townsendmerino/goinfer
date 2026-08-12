@@ -380,7 +380,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		gemma4Moe:   isG4MoE, g4cap: os.Getenv("GOINFER_G4_CAPTURE") != "",
 		// C′: DMA the routed int4 experts host→VRAM slots per token (device read, correct). The
 		// path to running a model whose experts exceed VRAM. Off by default; byte-identical when off.
-		cacheExperts: os.Getenv("GOINFER_MOE_CACHE_EXPERTS") != "",
+		cacheExperts: m.MoECacheExperts(),
 		// Resolve the resident KV capacity HERE, at construction, not at the KV allocation site:
 		// several buffers are sized from it earlier (the split-KV score scratch among them), and a
 		// zero-value ctxCap makes those 0-byte allocations that fail the whole resident build.
@@ -428,9 +428,17 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	r.cacheSlots = topK
 	r.cacheSlotsReq = topK
 	if r.cacheExperts {
-		if v, err := strconv.Atoi(os.Getenv("GOINFER_MOE_CACHE_SLOTS")); err == nil && v > topK {
-			r.cacheSlots = v
-			r.cacheSlotsReq = v
+		// The request now comes from Options (--moe-cache-slots), and MoECacheSlotsRequest still
+		// honours GOINFER_MOE_CACHE_SLOTS, so nothing that set the env var breaks.
+		//
+		// NOTE the accessor documents 0 as "ask for all, auto-cap to VRAM". That default is NOT
+		// taken here: unset leaves topK in place, exactly as before this branch. Raising it is a
+		// SEPARATE decision — main's comment above states its own precondition ("fixing the margin
+		// FIRST and proving it on the 26B"), which A5 (6091e7a) and A7 have now met — and a change
+		// of default belongs in a change about defaults, not in one promoting env vars to flags.
+		if req := m.MoECacheSlotsRequest(); req > topK {
+			r.cacheSlots = req
+			r.cacheSlotsReq = req
 			if nE > 0 && r.cacheSlots > nE {
 				r.cacheSlots = nE
 			}
