@@ -546,7 +546,7 @@ above); the two take opposite approaches to the same over-capacity problem.
 | RTX 2070 SUPER · 8 GB · driver 595.58.03 · 2026-08-02 | value |
 | --- | --- |
 | model | Gemma 4 **26B-A4B**, int4 (128 experts, top-8, 30 layers) — experts ~11.4 GB, **does not fit 8 GB** |
-| decode | **16.98 tok/s** (64-tok greedy, capture-free, synchronous H2D) |
+| decode | **16.98 tok/s** (64-tok greedy, capture-free, synchronous H2D) — *see the reproducibility note below; not currently reproducible on this card* |
 | expert cache | 38 slots/layer (auto-capped from 48 to measured free VRAM), **81.6% hit rate over the whole run** (17816 / 4024) — the steady-state decode figure is higher, **89.1%**, because this one includes the cold-cache fill (see §"production-config decomposition", `docs/task-moe-streaming.md`) |
 | **configuration (required — not the default)** | `GOINFER_MOE_CACHE_EXPERTS=1` (host→VRAM expert streaming) + `GOINFER_MOE_CACHE_SLOTS=48` (auto-caps to 38). Omitting the second leaves the cache at its `topK` default — fresh-load per token, ~5 tok/s, not 17. *(`GOINFER_GEMMA4_RESIDENT=1` was also required when this was measured; Gemma-4 residency became unconditional in `a5ebb35` and the variable is now inert.)* |
 | resident VRAM | ~1.3 GB core + ~3.8 GB slots + KV — the 11.4 GB of experts live in host RAM |
@@ -557,6 +557,15 @@ above); the two take opposite approaches to the same over-capacity problem.
 - The number is a **floor**: synchronous H2D with no async overlap yet, and it still clears
   fieldfare's 5.1–6.3 tok/s on its own 8 GB M2 Air (the closest analogue either project has —
   *different silicon, so a floor in the peer's constrained regime, not a comparison row*).
+- **REPRODUCIBILITY (2026-08-12).** This row is **not currently reproducible on the same card**. It
+  was measured at 38 slots/layer, which requires materially more free VRAM than the 26B gates now
+  observe; at the free VRAM they see, the cap lands at **34 slots, and 34 fails outright** with
+  `CUDA_ERROR_OUT_OF_MEMORY` at the first forward (both real-26B gates, plus a direct sweep — 30
+  runs, 34 does not). The measurement was real; the configuration was narrow, running with roughly
+  the forward's own demand left over. Why the cap can choose a value that allocates and then cannot
+  launch is an open defect (A1, `docs/QUEUE.md`). Until it resolves, the README recommends the
+  highest **measured-safe** value (30) rather than a computed one, and this row should be read as a
+  ceiling reached once, not a configuration to aim at.
 - **Reproducing this row needs three environment variables** (listed in the table above); a default
   build runs this model on CPU. The three hit-rate figures in the docs are three different
   measurements, not a disagreement: **77.5%** is 32 slots whole-run, **81.6%** is 38 slots whole-run

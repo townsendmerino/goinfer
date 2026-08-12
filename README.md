@@ -77,9 +77,11 @@ weights once to a `.giw` bundle and it reloads in ~13 s
 ([docs/mellum2-resident.md](docs/mellum2-resident.md)).*
 
 *And bigger still — **Gemma 4 26B-A4B** (a 26B MoE whose ~11.4 GB of int4 experts **do not
-fit 8 GB even at 4-bit**) decodes coherently on the same card at **~17 tok/s**, running
-**fully GPU-resident** — every expert executes on the GPU, streamed from host RAM into a VRAM
-cache (81.6% hit rate over the whole run, 38 slots/layer) over the cgo-free CUDA backend.
+fit 8 GB even at 4-bit**) decodes coherently on the same card, running **fully GPU-resident** —
+every expert executes on the GPU, streamed from host RAM into a VRAM cache over the cgo-free CUDA
+backend. Rate depends on how much of that cache fits: **11.3 tok/s at 16 slots/layer**, and
+**16.98 tok/s** was measured once at 38 — a configuration not currently reproducible on this card
+(see the note below, and read the slot count as part of the claim).
 (Current Ollama also runs this 26B on 8 GB, but by offloading 58% to the CPU, at ~24.5 tok/s;
 goinfer's distinction is all-experts-on-GPU, not that peers can't run it —
 [docs/task-moe-streaming.md](docs/task-moe-streaming.md).)*
@@ -92,16 +94,33 @@ goinfer's distinction is all-experts-on-GPU, not that peers can't run it —
 > ```bash
 > cd cuda && CGO_ENABLED=0 \
 >   GOINFER_MOE_CACHE_EXPERTS=1 \ # stream routed experts host→VRAM (they exceed 8 GB)
->   GOINFER_MOE_CACHE_SLOTS=48 \  # per-layer cache depth; auto-caps to 38 here. NOT optional:
->                                 # the default re-fetches every expert every token (~5 tok/s)
+>   GOINFER_MOE_CACHE_SLOTS=30 \  # per-layer cache depth. NOT optional: the default is the
+>                                 # minimum that works and re-fetches every expert every token
 >   go run -tags cuda ./cmd/serve --backend cuda --quant int4 \
 >     --model ~/models/gemma-4-26b-a4b-it
 > ```
 >
-> `48` is what produced the number above (auto-capped to 38 on this card, 81.6% hit rate). It is
-> not the default because the auto-cap does not currently leave enough headroom for the forward on
-> a model this size — a higher default broke this model outright, so the safe minimum ships and the
-> fast value is documented. See CHANGELOG.
+> **Do not set this higher than 30 on an 8 GB card.** Measured on this box: 30 slots runs, **34
+> fails outright** with `CUDA_ERROR_OUT_OF_MEMORY` at the first forward. The cap sizes itself from
+> free VRAM and can currently land on a value that allocates successfully and then cannot launch —
+> an open defect, tracked as A1 in `docs/QUEUE.md`. Until it is fixed, the safe ceiling is a
+> measured number rather than a computed one.
+>
+> What the slot count buys, measured on this card — the flag is not a tuning knob, it is the
+> difference between the feature working and not:
+>
+> | slots/layer | LRU hit rate | decode | note |
+> |---|---|---|---|
+> | 8 (default) | **0%** | ~5 tok/s | `top_k` is 8, so each token's routed set exactly fills the cache and nothing survives to the next — the cache is **inert** |
+> | 16 | 57.3% | 11.33 tok/s | eviction cycling normally |
+> | 30 | *not yet measured* | *not yet measured* | highest value confirmed to run here |
+> | 38 | 81.6% | **16.98 tok/s** | the published figure — see below |
+>
+> **About the 16.98 tok/s quoted above.** It was measured, on this card, at 38 slots. It is not
+> currently reproducible here: that run had materially more free VRAM than the gates now see, and
+> at the free VRAM these tests observe the cap lands at 34, which fails. The number was real and
+> the configuration was narrow — it ran with roughly the forward's own demand left over. Treat it
+> as the ceiling this approach reached on one occasion, not as a target to configure toward.
 
 ## Try it: an LLM in one file
 

@@ -25,7 +25,17 @@ Boxes: `linux` (nvidia-rtx2070s, CUDA) · `mac` (Apple Silicon, Metal).
 
 ## In flight
 
-_(none — claim here)_
+**A2 (partial) · 26B documentation correction** — `linux`, 2026-08-12
+
+The half that does NOT depend on A1 is done: the README instructed
+`GOINFER_MOE_CACHE_SLOTS=48` and claimed it auto-caps to 38, when at the free VRAM the gates
+observe it caps to **34 — which fails**. So the published instruction could produce an OOM on the
+card it was measured on. Corrected to the highest measured-safe value (30), with the hit-rate curve
+and an explicit reproducibility note on 16.98.
+
+**Still blocked on A1:** publishing what the *corrected* cap delivers, and the leftover-VRAM column.
+Neither exists until the accounting is measured — the model that was going to supply them was
+refuted and reverted. Do not synthesise these from the current cap; it is the one under suspicion.
 
 ## Queued
 
