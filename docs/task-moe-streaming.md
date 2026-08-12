@@ -58,7 +58,8 @@ engineering, not insight.
 
 ## Phase 0 — the aikit bump hazard (**DONE** — verified 2026-08-02)
 
-**Status: complete.** goinfer is now on `aikit v1.16.0` (`go.mod:6`), past the `6c0483f`
+**Status: complete.** goinfer moved to `aikit v1.16.0` here and is on `v1.17.0` as of 2026-08-12
+(`go.mod:6`); the durable claim is that both are past the `6c0483f`
 scan-resistant-eviction change. aikit shipped the fix as an `EvictPolicy` API
 (`mmap/spancache.go`: `EvictMostRecent` default + `EvictLeastRecent`), and
 `decoder/moepaging.go` selects `mmap.NewSpanCacheWithPolicy(budget, mmap.EvictLeastRecent)` —

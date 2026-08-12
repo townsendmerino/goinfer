@@ -24,14 +24,25 @@ survives to a tag unless caught here.
   `require` a **real, published** root tag before *it* is tagged.
 - **`go.work` is gitignored** (`.gitignore`) and must stay dev-only. Nothing in the shipped
   tag may depend on it. CI's standalone-build step (below) is what proves this.
-- **Version alignment (B-07):** all four modules must agree on `aikit` and `aikit/gpu`.
-  **The audit-era skew is RESOLVED — do not follow the old instruction.** As of v0.10.3 all five
-  modules are on `aikit v1.16.0`, and `cuda`/`metal` are on **`aikit/gpu v0.27.0`**. The previous
-  text here told you to align on `aikit/gpu v0.25.2`, which would now be a DOWNGRADE. Verify with
-  `for m in . gpu cuda metal demo/agent; do grep aikit $m/go.mod; done` and only act if a module
-  actually disagrees; tidy the root last.
-- **metal is missing an `aikit` require (B-02):** it imports `aikit/linalg` + `aikit/mmap`
-  but only requires `aikit/gpu` (a different module). Add `require github.com/townsendmerino/aikit v1.16.0`.
+- **Version alignment (B-07):** all five modules must agree on `aikit`, and `cuda`/`metal` must
+  agree on `aikit/gpu`. **Read the versions, do not read them here.**
+
+  ```sh
+  for m in . gpu cuda metal demo/agent; do printf '%-12s ' "$m"; grep -h aikit $m/go.mod | tr '\n' ' '; echo; done
+  ```
+
+  This used to name the versions, and it has gone stale **twice** — first telling you to align on
+  `aikit/gpu v0.25.2` when that had become a downgrade, then naming `v1.16.0`/`v0.27.0` after the
+  v1.17.0 bump. A release checklist that restates a value maintained somewhere else is a second copy
+  that drifts, which is the defect this repo keeps finding; the command above has no such failure
+  mode. Act only if a module actually disagrees, **never downgrade**, and tidy the root last.
+
+  Two things the command will not tell you, so they are stated rather than restated:
+  `aikit` and `aikit/gpu` are **separate modules with separate tag series that do not track each
+  other** — equal-looking version numbers mean nothing across them, and a nested module must be
+  diffed across its own tags (see `docs/QUEUE.md` E6). And `metal` needs an explicit `aikit`
+  require: it imports `aikit/linalg` and `aikit/mmap` while only `aikit/gpu` is implied. (That was
+  B-02; it is present now, and the command above is what confirms it still is.)
 
 ## Pre-flight (before touching versions)
 

@@ -504,6 +504,12 @@ def main() -> int:
     print("    9e5f8fa passed green through two documents for weeks as \"the goldens-refresh "
           "precedent\" while touching the manifest not at all — a resolving sha with a matching "
           "subject and a false claim attached.")
+    print("    The same gap on the PATH side, and worse because the anchor keeps working: "
+          "docs/task-moe-streaming.md read \"goinfer is now on aikit v1.16.0 (go.mod:6)\". The "
+          "aikit bump changed what go.mod:6 SAYS without changing that it is the aikit require, so "
+          "the content key still matched and the citation stayed green while the version it "
+          "asserted went stale. A path citation is checked to point somewhere stable — not to "
+          "still mean what the sentence around it claims.")
     print("  Also NOT validated: every test name, tag, env var and URL — and for the bare file "
           "references, WHAT IS SAID ABOUT THEM, since there is no line to key against.")
     print("  A lint on a document raises trust in EVERY citation in it, not only the kinds it checks — "
