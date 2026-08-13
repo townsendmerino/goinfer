@@ -1549,9 +1549,13 @@ func (r *cudaResident) gemma4MoeMLPPost(Ly *cudaLayer, l int) error {
 		r.capVec(r.rWgt, r.g4capWgt, l, r.topK)
 		r.capVec(r.g4x1, r.g4capX1, l, r.hidden)
 		r.capVec(r.g4x2, r.g4capX2, l, r.hidden)
-		_ = r.stream.Sync()
+		if err := r.stream.Sync(); err != nil {
+			return err
+		}
 		idx := make([]uint32, r.topK)
-		_ = gpu.Download(r.rIdx, idx)
+		if err := gpu.Download(r.rIdx, idx); err != nil {
+			return err
+		}
 		r.g4capIdx = append(r.g4capIdx, idx) // append order = CPU routerCaptureBuf order (per-position routing check)
 	}
 
@@ -1609,12 +1613,18 @@ func (r *cudaResident) segA(Ly *cudaLayer, l int) error {
 		if e := r.doG(Ly.q, r.aq, r.aSc, qb, r.qB, 0); e != nil {
 			return e
 		}
-		_ = r.doG(Ly.k, r.aq, r.aSc, kb, r.kB, 0)
+		if err := r.doG(Ly.k, r.aq, r.aSc, kb, r.kB, 0); err != nil {
+			return err
+		}
 		if Ly.kEqV {
 			// K=V: recompute the k projection into vB (raw pre-norm k), which v_norm consumes below.
-			_ = r.doG(Ly.k, r.aq, r.aSc, kb, r.vB, 0)
+			if err := r.doG(Ly.k, r.aq, r.aSc, kb, r.vB, 0); err != nil {
+				return err
+			}
 		} else {
-			_ = r.doG(Ly.v, r.aq, r.aSc, vb, r.vB, 0)
+			if err := r.doG(Ly.v, r.aq, r.aSc, vb, r.vB, 0); err != nil {
+				return err
+			}
 		}
 	}
 	if r.qkNorm { // per-head Q/K RMSNorm before RoPE (Qwen3/GLM/Mellum)
@@ -1631,11 +1641,13 @@ func (r *cudaResident) segA(Ly *cudaLayer, l int) error {
 		}
 	}
 	if Ly.kEqV { // scale-less v_norm(raw k in vB), BEFORE rope_kv rotates k
-		_ = r.launch(r.fQKN, LaunchConfig{GridX: uint32(Ly.nKV), GridY: 1, GridZ: 1,
+		if err := r.launch(r.fQKN, LaunchConfig{GridX: uint32(Ly.nKV), GridY: 1, GridZ: 1,
 			BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: 128 * 8},
 			Arg(r.vB), Arg(r.vB), Arg(r.vNormUnit), Arg(r.vNormUnit),
 			gpu.ArgValue(int32(0)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)),
-			gpu.ArgValue(r.eps), gpu.ArgValue(int32(0)))
+			gpu.ArgValue(r.eps), gpu.ArgValue(int32(0))); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -1645,16 +1657,26 @@ func (r *cudaResident) segA(Ly *cudaLayer, l int) error {
 // MoE pre-readback half (moeMLPPre / gemma4MoeMLPPre) for a routed layer.
 func (r *cudaResident) segB(Ly *cudaLayer, l int) error {
 	nullBias := ArgNull()
-	_ = r.launch(r.fQ, onecfg(256, 256*4), Arg(r.cctx), gpu.ArgValue(int32(Ly.qDim)), Arg(r.cq), Arg(r.cSc))
+	if err := r.launch(r.fQ, onecfg(256, 256*4), Arg(r.cctx), gpu.ArgValue(int32(Ly.qDim)), Arg(r.cq), Arg(r.cSc)); err != nil {
+		return err
+	}
 	if r.sandwich {
-		_ = r.doG(Ly.o, r.cq, r.cSc, nullBias, r.oO, 0)
-		_ = r.normF32(r.oO, Ly.postAttnNorm)
+		if err := r.doG(Ly.o, r.cq, r.cSc, nullBias, r.oO, 0); err != nil {
+			return err
+		}
+		if err := r.normF32(r.oO, Ly.postAttnNorm); err != nil {
+			return err
+		}
 		if r.subCap {
 			r.capVec(r.oO, r.subAttnC, l, r.hidden)
 		}
-		_ = r.launch(r.fRes, g1cfg(r.hidden, 256), Arg(r.x), Arg(r.oO), gpu.ArgValue(int32(r.hidden)))
+		if err := r.launch(r.fRes, g1cfg(r.hidden, 256), Arg(r.x), Arg(r.oO), gpu.ArgValue(int32(r.hidden))); err != nil {
+			return err
+		}
 	} else {
-		_ = r.doG(Ly.o, r.cq, r.cSc, nullBias, r.x, 1)
+		if err := r.doG(Ly.o, r.cq, r.cSc, nullBias, r.x, 1); err != nil {
+			return err
+		}
 	}
 	if Ly.g4moe {
 		return r.gemma4MoeMLPPre(Ly, l)
@@ -1677,12 +1699,20 @@ func (r *cudaResident) segB(Ly *cudaLayer, l int) error {
 			return e
 		}
 	} else {
-		_ = r.rms(r.x, Ly.postNorm, r.mq, r.mSc)
-		_ = r.doG(Ly.g, r.mq, r.mSc, nullBias, r.gO, 0)
-		_ = r.doG(Ly.u, r.mq, r.mSc, nullBias, r.uO, 0)
+		if err := r.rms(r.x, Ly.postNorm, r.mq, r.mSc); err != nil {
+			return err
+		}
+		if err := r.doG(Ly.g, r.mq, r.mSc, nullBias, r.gO, 0); err != nil {
+			return err
+		}
+		if err := r.doG(Ly.u, r.mq, r.mSc, nullBias, r.uO, 0); err != nil {
+			return err
+		}
 	}
-	_ = r.launch(r.fSw, onecfg(256, 256*4), Arg(r.gO), Arg(r.uO), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(r.inter)),
-		gpu.ArgValue(r.act), Arg(r.dq), Arg(r.dSc), Arg(r.dScr))
+	if err := r.launch(r.fSw, onecfg(256, 256*4), Arg(r.gO), Arg(r.uO), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(r.inter)),
+		gpu.ArgValue(r.act), Arg(r.dq), Arg(r.dSc), Arg(r.dScr)); err != nil {
+		return err
+	}
 	if r.sandwich {
 		if e := r.doG(Ly.d, r.dq, r.dSc, nullBias, r.dO, 0); e != nil {
 			return e
@@ -1690,11 +1720,15 @@ func (r *cudaResident) segB(Ly *cudaLayer, l int) error {
 		if r.subCap {
 			r.capVec(r.dO, r.subMLPpreC, l, r.hidden)
 		}
-		_ = r.normF32(r.dO, Ly.postMLPNorm)
+		if err := r.normF32(r.dO, Ly.postMLPNorm); err != nil {
+			return err
+		}
 		if r.subCap {
 			r.capVec(r.dO, r.subMLPC, l, r.hidden)
 		}
-		_ = r.launch(r.fRes, g1cfg(r.hidden, 256), Arg(r.x), Arg(r.dO), gpu.ArgValue(int32(r.hidden)))
+		if err := r.launch(r.fRes, g1cfg(r.hidden, 256), Arg(r.x), Arg(r.dO), gpu.ArgValue(int32(r.hidden))); err != nil {
+			return err
+		}
 	} else if e := r.doG(Ly.d, r.dq, r.dSc, nullBias, r.x, 1); e != nil {
 		return e
 	}
@@ -1763,7 +1797,9 @@ func (r *cudaResident) launchToken(emb []float32, pos int, head bool) error {
 				return e
 			}
 			if r.graphsSync {
-				_ = r.stream.Sync()
+				if err := r.stream.Sync(); err != nil {
+					return err
+				}
 			}
 		} else if e := r.segA(Ly, l); e != nil {
 			return e
@@ -1771,10 +1807,12 @@ func (r *cudaResident) launchToken(emb []float32, pos int, head bool) error {
 		// --- dynamic gap: rope_kv + attention (bind pos/nKeys; attention's shared-mem grows with the
 		// attended span — never graph-static). Same stream as the segments, so ordering is preserved.
 		// fused rope(q)+rope(k)+kv_store(k)+kv_store(v): rhalf == hd/2 for full rotary, rotaryDim/2 for partial.
-		_ = r.launch(r.ropeKV, g1cfg(r.nH*Ly.rhalf+Ly.nKV*Ly.rhalf+Ly.nKV*(Ly.hd-2*Ly.rhalf), 256),
+		if err := r.launch(r.ropeKV, g1cfg(r.nH*Ly.rhalf+Ly.nKV*Ly.rhalf+Ly.nKV*(Ly.hd-2*Ly.rhalf), 256),
 			Arg(r.qB), Arg(r.kB), Arg(r.vB), Arg(Ly.invF), Arg(r.kc[l]), Arg(r.vc[l]),
 			gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)),
-			gpu.ArgValue(int32(pos)), gpu.ArgValue(int32(Ly.rhalf)))
+			gpu.ArgValue(int32(pos)), gpu.ArgValue(int32(Ly.rhalf))); err != nil {
+			return err
+		}
 		nKeys := pos + 1
 		// Sliding window (per layer: Mistral all-local, Mellum interleaves); shared sized to the attended span.
 		nWin := nKeys
@@ -1790,7 +1828,9 @@ func (r *cudaResident) launchToken(emb []float32, pos int, head bool) error {
 			// gating it on position made gemma3's windowed layers take the split path at a 512-key span
 			// (its loss regime) at every depth past the window. Both arms are byte-identical, so a layer
 			// flipping arms mid-request as nWin grows is safe by construction.
-			_ = r.splitKVAttnDecode(l, pos)
+			if err := r.splitKVAttnDecode(l, pos); err != nil {
+				return err
+			}
 		} else if r.prefillReady {
 			// Coalesced M=1 decode attention: attn_batched with M=1 is BIT-IDENTICAL to the glue
 			// `attention` (TestAttnBatched_bitIdentical) but reads K via float4 — 21.96%→98% bytes/sector.
@@ -1798,11 +1838,15 @@ func (r *cudaResident) launchToken(emb []float32, pos int, head bool) error {
 			// the 221→97 tok/s long-context deficit vs current Ollama); the coalesced read recovers it.
 			// startPos=pos, M=1 → nKeys = pos+1; same GridX/block/shared/ctx-layout as the glue launch, so
 			// decode stays byte-identical. glue `attention` (audited) is UNTOUCHED and is the fallback below.
-			_ = r.launch(r.bAttn, LaunchConfig{GridX: uint32(r.nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nWin + 128) * 4)},
-				Arg(r.qB), Arg(r.kc[l]), Arg(r.vc[l]), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)), gpu.ArgValue(int32(pos)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window), gpu.ArgValue(int32(1)), Arg(r.cctx))
+			if err := r.launch(r.bAttn, LaunchConfig{GridX: uint32(r.nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nWin + 128) * 4)},
+				Arg(r.qB), Arg(r.kc[l]), Arg(r.vc[l]), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)), gpu.ArgValue(int32(pos)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window), gpu.ArgValue(int32(1)), Arg(r.cctx)); err != nil {
+				return err
+			}
 		} else {
-			_ = r.launch(r.fAttn, LaunchConfig{GridX: uint32(r.nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nWin + 128) * 4)},
-				Arg(r.qB), Arg(r.kc[l]), Arg(r.vc[l]), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)), gpu.ArgValue(int32(nKeys)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window), Arg(r.cctx))
+			if err := r.launch(r.fAttn, LaunchConfig{GridX: uint32(r.nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nWin + 128) * 4)},
+				Arg(r.qB), Arg(r.kc[l]), Arg(r.vc[l]), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)), gpu.ArgValue(int32(nKeys)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window), Arg(r.cctx)); err != nil {
+				return err
+			}
 		}
 		if r.subCap { // pre-o-proj attention context (qDim), before quant — the cross-box discriminator (live path only)
 			r.capVec(r.cctx, r.subCtxC, l, Ly.qDim)
@@ -1813,7 +1857,9 @@ func (r *cudaResident) launchToken(emb []float32, pos int, head bool) error {
 				return e
 			}
 			if r.graphsSync {
-				_ = r.stream.Sync()
+				if err := r.stream.Sync(); err != nil {
+					return err
+				}
 			}
 		} else if e := r.segB(Ly, l); e != nil {
 			return e
@@ -1847,16 +1893,22 @@ func (r *cudaResident) launchToken(emb []float32, pos int, head bool) error {
 					return e
 				}
 				if r.graphsSync {
-					_ = r.stream.Sync()
+					if err := r.stream.Sync(); err != nil {
+						return err
+					}
 				}
 			} else if e := r.segC(Ly, l); e != nil {
 				return e
 			}
 		}
 		if r.layerCap { // DEBUG: snapshot the residual after this layer (divergence-localization probe)
-			_ = r.stream.Sync()
+			if err := r.stream.Sync(); err != nil {
+				return err
+			}
 			h := make([]float32, r.hidden)
-			_ = gpu.Download(r.x, h)
+			if err := gpu.Download(r.x, h); err != nil {
+				return err
+			}
 			r.layerCapBuf = append(r.layerCapBuf, h)
 		}
 	}
