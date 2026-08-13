@@ -332,6 +332,32 @@ version are all still there after the underlying module has been evicted. So the
 exactly the "returns success and does nothing" shape, and it explains every observation at once:
 identical launch arguments, all calls succeeding, full card, zeros out.
 
+## A13 — THE TAG ARGUMENT, AS ONE ENUMERABLE CLAIM
+
+> **No shipped path drives the device to refusal and then continues using the context.**
+
+The trigger is **exhaustion** — `TestAllocFloor` allocates until even a 1 MiB request is refused
+(~144 MiB free) and poisons every time, 5/5. Partial holds are a weaker, intermittent stimulus. So
+the claim is checkable path by path rather than argued from sizes:
+
+| path | reaches refusal? | continues on the context? | evidence |
+|---|---|---|---|
+| **prefill scratch** | **no** — min free **5752.2 MiB** during a real-model prefill (qwen2.5-coder-1.5B, M to 2048), **39.9× the refusal floor**, 5608 MiB of margin | yes | `docs/measurements/prefill-peak-vram.md` — VRAM tracer, 445 samples; M=3000 extrapolates to ≈35× |
+| **admin unload** | **no** — frees, never allocates toward refusal | yes (shared primary context) | `Model.Close` → `ReleaseObjects`; refcount reading |
+| **multi-model unload** | **no** | yes | measured clean 3/3 — 7B (≈4.9 GB) unloaded under a co-resident B, B's logits byte-identical |
+| **A5 cap search** | **no** — allocates nothing | n/a | `fits(n)` is arithmetic against `free` |
+| **resident build OOM** | **YES** | **no** — declines and the fallback issues no CUDA | `(nil,false,nil)`; `cudaBackend.MatmulBT` → `linalg.MatmulBT`; refusals harmless at 1000× |
+
+**One property, five checks.** The only path that reaches the trigger is the one that stops using the
+context, and the only paths that keep using the context stay orders of magnitude away from it. That
+is a stronger and more falsifiable statement than the four shifting properties it replaces — any new
+path need only be tested against the one claim.
+
+**A13 stays OPEN as understood-but-uncharacterised:** the trigger is named and reproducible, the
+mechanism (module unusable while the handle stays queryable) is established, and the thread factor —
+why a pinned test goroutine poisons and the resident's executor does not — is **not** characterised.
+Chasing it further is research, not release work.
+
 **THE SWEEP'S STIMULUS IS INTERMITTENT; THE REAL ONE IS NOT. The percentage figures are weaker than
 recorded (2026-08-13).**
 
@@ -380,7 +406,7 @@ test's does not. **Not characterised, and not guessed at here.**
 
 | cell | stimulus | result |
 |---|---|---|
-| **(LoadModule prebuilt PTX, test goroutine)** | drain / hold+release ≥25% | **POISONS** — the only combination ever observed to |
+| **(LoadModule prebuilt PTX, test goroutine)** | **drain to refusal** (deterministic, 5/5); the synthetic hold+release percentages once cited here are withdrawn | **POISONS** — the only combination ever observed to |
 | **(CompileLibrary, resident executor)** | hold+release 3648 MiB via `rf.do` | clean |
 | **(LoadModule prebuilt PTX, resident executor)** | hold+release 3648 MiB via `rf.do`, module loaded and launched on the same executor | **clean** — `before=768 after=768` non-zero |
 | **multi-model unload** (`A` = 7B int4 ≈ 4.9 GB ≈ 67% of the card, `B` co-resident, `A` closed through the shipped path) | the real feature | **clean, 3/3** — B's logits byte-identical to its pre-unload baseline |
@@ -472,11 +498,12 @@ invariant, not the invariant itself.
 prompt allocates hundreds of MB of scratch and frees it without leaving the context. That is
 structurally the sweep's stimulus, on the hot path, in a shipped feature.
 
-**IT IS NOT ARGUED SAFE FROM ITS SIZE, deliberately.** "Hundreds of MB" falls in the band that was
-*reliably* clean (≤~12%, ~876 MiB) — and the sweep is **non-monotonic**: 15% (~1.1 GiB) poisoned once
-in three while 18% and 21% were clean 3/3. **The only demonstrated safe state is not doing it inside
-a live context**, and prefill does. Whether repeated prefill churn actually poisons a subsequent
-launch is a measurement nobody has taken.
+**SUPERSEDED — the band it referenced was a proxy's noise.** This paragraph originally sized
+prefill's risk against the sweep's "reliably clean ≤~12%" figure. **Those percentages are withdrawn**
+(see below): they came from a synthetic hold+release probe that later proved intermittent, while the
+real stimulus — drain to refusal — is deterministic. Prefill is now closed on a *measurement of its
+own peak*: min free 5752.2 MiB, 39.9× the refusal floor. That is a better argument than the one this
+paragraph made, and it does not depend on any band.
 
 **TAG: this is the open question, and it is a shipping path rather than a test one.** If repeated
 prefill scratch churn poisons the context, that is a correctness bug on the same constraint as
@@ -501,10 +528,18 @@ leave the context perfectly usable; holding and releasing roughly a gigabyte or 
 That inverts the intuition the draining tests suggested, and it matters because *the decline path
 only ever experiences refusals*.
 
-**NO THRESHOLD IS CLAIMED. The sweep is NON-MONOTONIC** — 15% poisoned once and was clean twice while
-18% and 21% were clean 3/3 and 25% poisoned. Whatever governs this is not held bytes alone, and a
-single run per percentage establishes nothing. The honest statement is a *range*: reliably clean at
-or below ~12%, reliably poisoned at or above ~25%, unstable between.
+**NO THRESHOLD IS CLAIMED, AND THE RANGE IS WITHDRAWN (2026-08-13).** This paragraph used to close
+with "reliably clean at or below ~12%, reliably poisoned at or above ~25%, unstable between." That
+range is **retracted as a correction, not softened**: a re-run of the *same* stimulus at a fixed
+percentage returned `C C C C P C`, so the probe is **intermittent at a fixed setting** and the
+non-monotonicity was its own noise being read as structure. A single run per percentage never
+supported a band, and the second run showed it.
+
+What survives is the stimulus that is *deterministic*: **drain until a 1 MiB request is refused**
+(~144 MiB free) poisons **5 of 5**. The trigger is exhaustion, not held bytes — which is why the
+percentages never resolved. Everywhere the withdrawn band was used to size risk (prefill's "hundreds
+of MB", the multi-model unload's 67%, the A13 cell) it has been replaced by a direct measurement or
+by the enumeration above.
 
 **What this does to the tag.** The exposure requires a **large successful allocation, freed, followed
 by a launch on the same context**. Two things stand between production and that, and they should be

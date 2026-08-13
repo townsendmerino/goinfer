@@ -72,6 +72,7 @@ var (
 
 func scanDispatchSites(t *testing.T) (ident, tsw []string) {
 	t.Helper()
+	var nScanned, nSkipped int
 	files, err := filepath.Glob("*.go")
 	if err != nil {
 		t.Fatalf("glob: %v", err)
@@ -82,8 +83,10 @@ func scanDispatchSites(t *testing.T) (ident, tsw []string) {
 	names := map[string]bool{}
 	for _, f := range files {
 		if strings.HasSuffix(f, "_test.go") {
+			nSkipped++
 			continue
 		}
+		nScanned++
 		raw, _ := os.ReadFile(f)
 		for _, m := range identityDef.FindAllStringSubmatch(string(raw), -1) {
 			names[m[1]] = true
@@ -123,6 +126,12 @@ func scanDispatchSites(t *testing.T) (ident, tsw []string) {
 			}
 		}
 	}
+	// DENOMINATOR. A census that reports only its numerator hides its own shrinkage: if the glob
+	// stops matching, or the package is split, the count drops to a smaller green number and reads
+	// exactly like a clean tree. So state the universe examined, every run.
+	t.Logf("EXAMINED: %d non-test .go file(s) in package decoder/ (glob \"*.go\"; %d skipped as "+
+		"_test.go). That is the whole denominator — dispatch outside decoder/ is NOT scanned here.",
+		nScanned, nSkipped)
 	return
 }
 

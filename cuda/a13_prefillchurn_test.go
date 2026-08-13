@@ -25,9 +25,12 @@ import (
 // cudaresult.MemFree. No pool, no reuse. So the stimulus occurs on the hot path on every long
 // prompt, and whether it poisons is a measurement rather than an argument.
 //
-// SIZE IS NOT AN ARGUMENT HERE. "Hundreds of MB" lands in the band that was reliably clean, but the
-// sweep is non-monotonic — 15% (~1.1 GiB) poisoned once in three while 18% and 21% were clean 3/3 —
-// so nothing is safe by being under a number. Only the measurement counts.
+// SIZE IS NOT AN ARGUMENT HERE, and the percentages this comment used to quote are WITHDRAWN. They
+// came from a synthetic hold-and-release probe that later proved INTERMITTENT (C C C C P C on a
+// repeat), so its "reliably clean <=12%" and "poisons at >=25%" bands were reading noise as
+// structure. The real trigger is DRAIN TO REFUSAL — deterministic, 5/5. What actually closes prefill
+// is a measurement of its own peak: min free 5752.2 MiB during a real-model prefill, 39.9x the
+// refusal floor. Only measurements count, and the one that counts here is that one.
 //
 // TWO SYMPTOMS, reported separately because they mean different things:
 //

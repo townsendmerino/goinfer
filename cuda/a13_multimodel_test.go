@@ -22,9 +22,11 @@ import (
 // success and writing nothing. Not synthetic, not a test artifact: a shipped feature reached by
 // ordinary operation.
 //
-// A is the 7B at int4 (~4.9 GB, ~67% of this card) so its release lands unambiguously inside the
-// poisoning range rather than in the unstable band — the sweep was reliable at >=25% and ambiguous
-// at 15%. B is small, so both fit at once.
+// A is the 7B at int4 (~4.9 GB, ~67% of this card) so its release is the largest one a shipped path
+// can make on this device. The ">=25% reliable / 15% ambiguous" sweep bands this comment once cited
+// to justify that size are WITHDRAWN — that probe proved intermittent, and the real trigger is drain
+// to refusal, which an unload never does. The size is chosen as the worst realistic case, not as a
+// point inside a band. B is small, so both fit at once.
 //
 // NO CONTROL IS NEEDED FOR A POSITIVE. If B's output degrades after A is unloaded, that is a
 // shipping correctness bug and the diagnosis stops there. A clean result is NOT clean yet — it needs

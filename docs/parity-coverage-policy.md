@@ -1202,3 +1202,22 @@ on **both** machines (they need HF downloads and are not kept), so those familie
 Their skip *is* the legitimate kind (no local checkpoint, not one command away). Do not conflate them
 with the arch trap: transferring or regenerating synthetic fixtures does not fetch these, and their
 absence is not an arm64-specific coverage hole.
+
+## A census reports its denominator, not just its numerator
+
+**Rule.** Any check that scans a universe and reports a count must print, on every run, **what it
+examined** — the size and the shape of the universe, next to the finding.
+
+**Why.** "5 sites, all declared" and "the scanner's glob stopped matching" produce the *same green
+output*. Every shrinking-denominator failure looks like success, which makes it the one failure mode
+a passing check cannot warn you about. This is the shape's seventh instance in this campaign, after
+the empty `${t}:l` extraction that read as IDENTICAL, the `GOOS=darwin` errcheck run that never
+executed, the fixture-dir skip-guard, and the probe that answered from a cache.
+
+**Sharper where the universe is hand-maintained.** `ptxModules()` and `SCAN_DIRS` are literal lists.
+Printing them by name turns "did anyone add the new module?" from an archaeology question into a line
+of log output. Prefer an assertion over a print when one is cheap; when it is not, print the list
+rather than only its length.
+
+**Not sufficient.** The denominator makes an omission visible; it does not prevent one. Say so in the
+census rather than letting the line read as a guarantee.

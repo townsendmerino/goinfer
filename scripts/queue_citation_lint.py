@@ -712,6 +712,14 @@ def main() -> int:
         for k, r in sorted(skipped_foreign):
             print(f"    {k}  (recorded in: {r})")
     ndocs = len({k.split("|", 1)[0] for k, _, _ in paths})
+    # DENOMINATOR, stated every run alongside the numerator. "VALIDATED N" alone cannot distinguish
+    # a clean tree from a scanner whose universe shrank — an rglob that stops matching, or a doc that
+    # moved under an excluded prefix, both report a smaller green N.
+    _all_md = [f for f in ROOT.rglob("*.md") if "/.git/" not in str(f)]
+    _buried = [f for f in _all_md if "docs/completed/" in str(f)]
+    print(f"queue_citation_lint: EXAMINED {len(live_docs())} live markdown document(s) of "
+          f"{len(_all_md)} in the tree ({len(_buried)} excluded as docs/completed/, by the archival "
+          f"rule below). A document that leaves this denominator leaves the lint silently.")
     print(f"queue_citation_lint: VALIDATED {len(resolved) - len(allowed)} commit citation(s), "
           f"{len(paths) - len(unkeyable)} path:line citation(s) across {ndocs} live document(s), and "
           f"{len(bresolved)} bare file reference(s) in the queue (existence only).")

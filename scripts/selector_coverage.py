@@ -84,6 +84,10 @@ def main() -> int:
     selected = [r for r in rows if r["sel"]]
     unselected = [r for r in rows if not r["sel"]]
 
+    # DENOMINATOR, stated before the numbers. SCAN_DIRS is hand-maintained: a package outside it is
+    # invisible to this census, and its absence looks identical to full coverage.
+    print(f"  EXAMINED: {len(rows)} test func(s) across {len(SCAN_DIRS)} scanned dir(s) — "
+          f"{', '.join(SCAN_DIRS)}. Packages outside that list are NOT counted here.")
     print(f"  SELECTOR COVERAGE — {len(rows)} tests in {'/'.join(SCAN_DIRS)}/")
     print(f"    reached by a selector : {len(selected)}")
     print(f"    reached by NONE       : {len(unselected)}")
