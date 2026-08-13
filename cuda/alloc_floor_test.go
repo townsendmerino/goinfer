@@ -91,5 +91,17 @@ func TestAllocFloor(t *testing.T) {
 	t.Logf("margin check: slotMarginBytes %d >= floor %d, clear by %d B (%.1f MiB)",
 		int64(slotMarginBytes), floor, int64(slotMarginBytes)-floor,
 		float64(int64(slotMarginBytes)-floor)/(1<<20))
-	_ = hold
+	// FREE THE DRAIN. This test deliberately allocates until the device refuses a 2 MiB
+	// request — that is what it measures — and every buffer stays reachable in `hold` so the
+	// GC cannot reclaim one mid-measurement. Without an explicit release the process then
+	// carries an EXHAUSTED device into every later test in the package.
+	//
+	// That is not hypothetical: it made TestAllocGranularity fail with CUDA_ERROR_OUT_OF_MEMORY
+	// on a 5 MiB allocation whenever it ran after this test, and scripts/gpu_gate.sh reported it
+	// as "a CUDA forward moved" — a numerics-sounding verdict for a bookkeeping leak. Bisected:
+	// TestAllocFloor+TestAllocGranularity fails, TestA10Floor...+TestAllocGranularity passes.
+	for _, b := range hold {
+		dev.ReleaseBuf(b)
+	}
+	hold = nil
 }

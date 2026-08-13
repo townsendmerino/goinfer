@@ -55,7 +55,13 @@ func TestA10ReportingGap(t *testing.T) {
 	if start-got <= 0 {
 		t.Fatalf("obtained %d B against %d B reported — the instrument is wrong", got, start)
 	}
-	_ = hold
+	// Free the drain — same reason as TestAllocFloor: this test allocates until the device
+	// refuses, holds every buffer so the GC cannot reclaim one mid-measurement, and without an
+	// explicit release leaves an EXHAUSTED device to every later test in the process.
+	for _, b := range hold {
+		dev.ReleaseBuf(b)
+	}
+	hold = nil
 }
 
 // TestA10FloorIsPerProcessOrPerDevice varies the CONTEXT rather than the kernel — the axis the floor
