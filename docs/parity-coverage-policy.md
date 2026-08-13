@@ -293,9 +293,36 @@ the absence-of-signal shape one level down.
 | check names one member | **enumerate** the members and assert the invariant on all of them |
 | dispatch names one member | **dispatch on the property**, not the member — here, "does this path have a reusable Workspace", not "is this W8A8" |
 | constant restates a value | **derive it** from the source of truth at build or test time, and fail on disagreement — never restate it |
+| **a literal names a CHOICE where the rule means a PROPERTY** | **state the property**, and let the choice follow from it per case |
 
-The recognition test is the same for all three, and for the constant shape it is one question: **is
-this value maintained anywhere else?**
+**The fourth row is the same shape one level up, and it caught a rule written the SAME DAY this class
+was named** — which is the strongest argument available that naming a class does not immunise you
+against it.
+
+The instance (2026-08-12, P10's pre-registration). The dilution bound is computed by dividing a
+benchmark-level figure by the changed path's share of runtime, and the two arms had different shares.
+The rule was written as:
+
+> *use the **smaller** share*
+
+...reasoned from the **flat** branch, where a smaller share means a larger admissible hidden effect —
+correctly conservative. The result landed on the **win** branch, where dividing by the smaller share
+yields a **larger** claimed speedup, i.e. the **least** conservative reading. The literal "smaller"
+had been standing in for the property "**conservative**", and the two point at opposite shares
+depending on which way the result falls.
+
+**Restated as the property: divide by whichever share makes the resulting claim WEAKER.** On a flat
+result that is the smaller share (bigger admissible hidden effect); on a win or a loss it is the
+larger (smaller claimed effect). Following the literal would have added two points to a claim about
+someone else's work.
+
+Exactly the shape of a version literal standing in for a condition (`≥ v0.13.0` for "carries an aikit
+bump"; "the aikit v1.17.0 bump" for "any aikit bump"). A rule that names the *answer* instead of the
+*question* is correct only for the case its author had in mind.
+
+The recognition test is the same for all four, and for the constant shape it is one question: **is
+this value maintained anywhere else?** For the fourth: **does this rule name a choice, or the reason
+for the choice?**
 
 **Tractability, assessed before building a lint rather than after.** The two shapes automate very
 differently, and a lint doing only the tractable half would ship as though it covered the class —
@@ -704,6 +731,20 @@ are not the same change, and the passage cites the branch as it stood *before* t
 `bacc04c` no longer illustrates. Re-pointing would have gone green while making the sentence false.
 Allowlisted with the reason instead. *Ask which one actually went stale, and prefer the answer that
 costs more.*
+
+**Read a recorded figure; do not retype it — and note WHY that works: the early write-down is what
+catches you.** Two retyped-number errors landed the same day (2026-08-12): an extraction that
+silently compared two **empty** files and printed a false match, and a conversion that used one A/B
+run's samples for a different run, producing +0.916% where the recorded value was +0.43%.
+
+**Both were caught by comparison against something already written down** — the recorded raw sample
+table, and P9's recorded delta. Neither was caught by noticing at the time, and neither would have
+been catchable at all had the earlier result not been committed with its raw numbers.
+
+So the remedy is **not only** "read rather than retype". It is an argument for **writing the raw data
+down early**, because a recorded figure is what makes a later mistyping *detectable* rather than
+merely *avoidable*. A measurement recorded with its samples is a check on every future statement
+about it; a measurement recorded only as a conclusion is not.
 
 **A claim that a check passed names the COMMITTED check that produced it.** Gates police committed
 files; a command typed in a session is outside every gate, and no gate can be added that fixes that.

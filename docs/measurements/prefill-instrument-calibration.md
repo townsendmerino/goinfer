@@ -110,3 +110,30 @@ favours an arm (applied identically), and the sample count is raised to compensa
 so nobody later reads the discard as evidence of a warm-up effect that was not observed.
 
 **Statistic: median of retained samples per arm.** Same as decode.
+
+
+---
+
+## The conversion METHOD is externally cross-validated — and P10 inherits that support
+
+The dilution conversion (benchmark-level figure ÷ profiled share of runtime → within-path figure) was
+checked against an independent measurement on the **decode** side, and it held:
+
+| route | figure |
+|---|---|
+| goinfer, end-to-end: v1.17.0 decode regression **−2.96%** ÷ `MatmulBTW8A8Into` share **6.48%** | **≈ −46% within the int8 path** |
+| aikit, direct measurement of that kernel, worst (serial) case | **+49% slower** |
+
+Two unrelated methods — one an end-to-end benchmark divided by a profile share, the other a direct
+kernel measurement — landing **~3 points apart**.
+
+**What that supports is the METHOD, not merely that number, and the support TRANSFERS.** The same
+arithmetic produces P10's within-path figure for prefill (**≈8.6%**, dividing +4.49% by the 52.18%
+share). Nothing independently confirms *that* figure — but the procedure generating it has been
+checked once, on a different phase, a different kernel and a different order of magnitude, against a
+measurement taken by someone else with a different instrument. **P10's ≈8.6% therefore rests on a
+cross-validated method rather than on an unexamined one**, and that is worth writing down here rather
+than leaving to be re-derived by whoever next wonders whether the divisor arithmetic means anything.
+
+It remains a *derived* figure, and the caveats stand: the divisor is measured under a profiler and
+applied to unprofiled runs, and one cross-validation is one, not a guarantee.

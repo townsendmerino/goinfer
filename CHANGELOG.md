@@ -10,6 +10,29 @@ pre-1.0 and may change as new model families and quant formats land.
 
 ## [Unreleased]
 
+### Performance
+
+- **Prefill is ~4.5% faster on one measured shape**, from `aikit`'s f32 blocked-matmul rework
+  (arriving with the v1.17.1 bump below). **Benchmark-level +4.49%** (median; bootstrap 95% CI
+  +4.24% to +5.26%).
+
+  **Measured, and the method is part of the claim:** `BenchmarkPrefillLong`, Qwen2.5-Coder-0.5B
+  (dense), **f32**, **512-token** prompt, batch prefill, on one box (Ryzen 7 3700X, linux/amd64).
+  Both arms interleaved in a single session, warm-up discard and a 0.6% significance floor fixed in
+  advance from the instrument's own characterization, 12 retained samples per arm. The arms do not
+  overlap and per-visit medians are consistently ordered across three rounds. Full record, including
+  every raw sample and the pre-registration: `docs/measurements/aikit-v1.17.1-prefill-ab.md`.
+
+  **Scope — what this does not say.** One model, one prompt length, one quantization, one box,
+  **prefill only**. It says nothing about decode, about other prompt lengths, about MoE or Gemma4
+  architectures (which route down a sequential per-token path and never reach this shape), or about
+  any other machine. A *derived* figure of ~8.6% within the reworked kernel itself follows from
+  dividing by that path's profiled share of runtime — **derived, not measured**, and quoted second
+  for that reason.
+
+  *Recorded because it was measured to the standard this project demands of a regression. A record
+  that discloses losses and withholds equally-measured wins is biased, not cautious.*
+
 ### Changed
 
 - **`aikit` v1.16.0 → v1.17.0, `aikit/gpu` v0.27.0 → v0.28.0** across all five modules. A
@@ -21,8 +44,11 @@ pre-1.0 and may change as new model families and quant formats land.
   what demonstrates it here is the forward goldens — **33 passed, 0 failed, 9 skipped, of which 14
   drive a quantized path and 19 are f32**, all against recorded values.
 
-  **No performance figure is claimed for this bump.** Upstream reports one; it is not reproduced
-  here, and goinfer's docs carry only goinfer's own measurements.
+  **The only performance figure carried for this bump is goinfer's own prefill measurement above.**
+  Upstream reports its own numbers; those are not reproduced here. Decode was also measured and is
+  **flat** — no benchmark-level change against v1.16.0 — recorded in
+  `docs/measurements/aikit-v1.17.1-decode-ab.md` rather than claimed here, because "no measurable
+  change" is not a release-note item.
 
 ## [v0.12.0] — 2026-08-12
 
