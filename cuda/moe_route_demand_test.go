@@ -245,6 +245,14 @@ func TestMoERouteDemandThreshold(t *testing.T) {
 	if os.Getenv(a9ChildEnv) != "" {
 		t.Skip("running as the child worker")
 	}
+	// MARKED AS A DRAINER, and found by the gate rather than by the derivation — see the note in
+	// cuda/drain_marker_test.go. The bisection deliberately balloons the device to leave as little as
+	// 64 MiB (below the 144 MiB floor) and records the resulting refusal as data: `bracket low: leave
+	// 67108864 -> ok=false` IS a refusal, driven on purpose. It balloons through child processes, so
+	// each child's memory is returned when it exits, but a child that fails or hangs leaves the
+	// device at the floor for whatever runs next in this process — which is exactly what the log
+	// showed: the following test opened with `free at start 151191552 B`.
+	drainsDevice(t, "bisects by ballooning the device to as little as 64 MiB free, refusals included")
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no CUDA device: %v", err)
 	}
