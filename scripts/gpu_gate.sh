@@ -233,12 +233,72 @@ cuda)
 		# PIPESTATUS[0] — NOT the pipeline's, which is `sed`'s and always zero. That last point is
 		# load-bearing: piping without it makes this group structurally incapable of reporting red.
 		# Mutation-checked both directions.
+		# ---- THE PARTITION, DERIVED FROM A MARKER (A13) ----
+		# The draining tests take the device to refusal, which is A13's only reproducible poisoning
+		# stimulus. They therefore run in their OWN process, after the main tier, so an exhausted
+		# device cannot reach anything else.
+		#
+		# The group is DERIVED, not listed. `drainsDevice(t, why)` in cuda/drain_marker_test.go is
+		# the marker; this awk walks the test files, tracks the enclosing `func TestX`, and emits X
+		# for each one that calls it. A hand-kept -run list would be a constant restating a property
+		# — the same drift shape the census denominators just made visible.
+		DRAIN_TESTS="$(awk '
+			/^func Test[A-Za-z0-9_]*\(/ { name=$2; sub(/\(.*/,"",name); next }
+			/drainsDevice\(t,/ { if (name != "") { print name; name="" } }
+		' "$ROOT"/cuda/*_test.go | sort -u)"
+		DRAIN_N="$(printf '%s\n' "$DRAIN_TESTS" | grep -c . || true)"
+		if [ "${DRAIN_N:-0}" -eq 0 ]; then
+			fail "heavy tier partition: the marker derivation found ZERO draining tests"
+			NOTES+=("drainsDevice() marker matched nothing — the derivation is broken, not the tree clean")
+		fi
+		DRAIN_RE="^($(printf '%s\n' "$DRAIN_TESTS" | paste -sd'|' -))$"
+		TOTAL_N="$(CGO_ENABLED=0 go test -tags 'cuda goinfer_testhooks' ./cuda/ -list '.*' 2>/dev/null \
+			| grep -cE '^Test' || true)"
+		echo "      partition (derived from drainsDevice() in cuda/drain_marker_test.go):"
+		echo "        package total     ${TOTAL_N:-?} test(s)   [go test -list '.*']"
+		echo "        drain group        ${DRAIN_N} test(s)   $(printf '%s' "$DRAIN_TESTS" | tr '\n' ' ')"
+		echo "        main group         $(( ${TOTAL_N:-0} - DRAIN_N )) test(s)   [complement, by construction]"
+
 		echo "      streaming (one line per test; full log at $HEAVY_LOG):"
 		GOINFER_HEAVY_TESTS=1 CGO_ENABLED=0 go test -tags 'cuda goinfer_testhooks' -p 1 ./cuda/ \
 			-count=1 -timeout 60m -v 2>&1 | tee "$HEAVY_LOG" \
 			| grep --line-buffered -E '^--- (PASS|FAIL|SKIP)' \
 			| sed -u 's/^--- /        · /'
 		HEAVY_RC=${PIPESTATUS[0]}
+
+		# ---- INVOCATION 2: the drain group, its own process, after everything else ----
+		# GOINFER_DRAIN_GROUP is what un-skips the marker. -run restricts it to the derived set so
+		# the rest of the package is not paid for twice.
+		DRAIN_LOG="${TMPDIR:-/tmp}/gpu_gate_drain_$$.log"
+		echo "      drain group, separate process (full log at $DRAIN_LOG):"
+		GOINFER_DRAIN_GROUP=1 GOINFER_HEAVY_TESTS=1 CGO_ENABLED=0 \
+			go test -tags 'cuda goinfer_testhooks' -p 1 ./cuda/ \
+			-count=1 -timeout 20m -run "$DRAIN_RE" -v 2>&1 | tee "$DRAIN_LOG" \
+			| grep --line-buffered -E '^--- (PASS|FAIL|SKIP)' \
+			| sed -u 's/^--- /        · /'
+		DRAIN_RC=${PIPESTATUS[0]}
+		dout="$(cat "$DRAIN_LOG")"
+
+		# ---- RECONCILIATION: a partition that silently drops a test is the failure mode ----
+		# Counted from the marker's own tokens, in both directions:
+		#   main tier   -> every marked test must have SKIPPED, and no more than the derived count
+		#   drain tier  -> every marked test must have RUN
+		# A derivation miss shows up as a main-tier DRAIN-GROUP-SKIP with no matching drain-tier run,
+		# and fails here rather than being quietly absent from both halves.
+		MAIN_SKIPPED="$(grep -c 'DRAIN-GROUP-SKIP' "$HEAVY_LOG" 2>/dev/null || true)"
+		DRAIN_RAN="$(grep -c 'DRAIN-GROUP-RUN' "$DRAIN_LOG" 2>/dev/null || true)"
+		echo "      reconciliation: marked=${DRAIN_N}  skipped-in-main=${MAIN_SKIPPED:-0}  ran-in-drain=${DRAIN_RAN:-0}"
+		if [ "${MAIN_SKIPPED:-0}" -ne "$DRAIN_N" ] || [ "${DRAIN_RAN:-0}" -ne "$DRAIN_N" ]; then
+			fail "heavy tier partition does not reconcile — a test is in neither half or in both"
+			NOTES+=("partition mismatch: ${DRAIN_N} marked, ${MAIN_SKIPPED:-0} skipped in main, ${DRAIN_RAN:-0} ran in drain")
+		fi
+		if [ "$DRAIN_RC" -eq 0 ]; then
+			RAN=$((RAN + 1)); pass "drain group (${DRAIN_N} test(s), separate process)"
+		else
+			fail "drain group (${DRAIN_N} test(s), separate process)"
+			echo "$dout" | grep -E "^(---|    ---) FAIL|^panic:" | head -8 | sed 's/^/      /'
+			echo "      full output: $DRAIN_LOG"
+		fi
 		out="$(cat "$HEAVY_LOG")"
 		if [ "$HEAVY_RC" -eq 0 ]; then
 			HEAVY_SECS=$(( $(date +%s) - HEAVY_T0 ))

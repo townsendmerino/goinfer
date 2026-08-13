@@ -22,6 +22,7 @@ import (
 // confirmed with no kernel involved at all — which separates "the allocator reserves" from anything
 // about launches.
 func TestA10ReportingGap(t *testing.T) {
+	drainsDevice(t, "drains to refusal in-process to measure the reported-vs-obtained shortfall")
 	dev, err := CreateSystemDefaultDevice()
 	if err != nil {
 		t.Skipf("no device: %v", err)
@@ -97,6 +98,13 @@ func probeFreeWithoutContext(t *testing.T) int64 {
 }
 
 func TestA10FloorIsPerProcessOrPerDevice(t *testing.T) {
+	// Marked AFTER the child branch is checked, not before: the child arm IS the drain, and it is
+	// spawned with GOINFER_A10_DRAIN_CHILD set, so gating it on the group flag as well would be
+	// redundant. The parent is marked because it holds a live context against a device its own child
+	// has taken to ~300 MiB — the near-floor half of the same hazard.
+	if os.Getenv("GOINFER_A10_DRAIN_CHILD") == "" {
+		drainsDevice(t, "spawns a child that holds the device near the floor while this context works")
+	}
 	if os.Getenv("GOINFER_A10_DRAIN_CHILD") != "" {
 		dev, err := CreateSystemDefaultDevice()
 		if err != nil {

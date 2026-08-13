@@ -22,6 +22,7 @@ import (
 // with no model and no 26B: drain in shrinking chunks until even a 2 MiB request is refused, then
 // report what free says.
 func TestAllocFloor(t *testing.T) {
+	drainsDevice(t, "drains the device in shrinking chunks until a 1 MiB request is refused")
 	dev, err := CreateSystemDefaultDevice()
 	if err != nil {
 		t.Skipf("no CUDA device: %v", err)
