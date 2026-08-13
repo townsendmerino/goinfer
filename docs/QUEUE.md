@@ -332,6 +332,38 @@ version are all still there after the underlying module has been evicted. So the
 exactly the "returns success and does nothing" shape, and it explains every observation at once:
 identical launch arguments, all calls succeeding, full card, zeros out.
 
+**PREFILL MEASUREMENT: INCONCLUSIVE, because the POSITIVE CONTROL DOES NOT FIRE. Reported as
+inconclusive rather than clean.** (`cuda/a13_prefillchurn_test.go`, 2026-08-13)
+
+`ReleaseBuf` was read first and the stimulus is real: `ReleaseBuf` → `Buffer.Close` →
+`cudaresult.MemFree`. **No pool, no reuse** — prefill scratch genuinely returns hundreds of MB to
+the driver inside a live context, on every long prompt.
+
+The measurement ran, and both symptoms came back clean: 8 repeated prefills produced **identical
+logits, 128/128 non-zero, zero drift**, and a decode forward on the same context afterwards was
+also clean. **That result is not evidence, because the control that should have poisoned the same
+context did not.**
+
+| control attempt | stimulus | poisoned? |
+|---|---|---|
+| v1 — allocate/free 3648 MiB via `dev.Primary()` | wrong context entirely: `BuildResident` creates its **own** context, so this never touched the subject | no |
+| v2 — allocate/free 3648 MiB via `rf.dev` on the resident's own executor thread (`rf.do`) | **the right context** | **still no** |
+
+**So one of two things is true, and the measurement cannot distinguish them:** either a resident
+context is genuinely immune to this stimulus — which would be the real reason production is safe, and
+a far better answer than any of the four enumerated properties — or the harness still cannot express
+the effect and the prefill question remains open.
+
+**What separates them:** demonstrate the poisoning on a *resident-context* launch at all. Every
+observed instance so far used a module loaded by a test via `ctx.LoadModule(gluePTX)` in the primary
+context; the resident compiles its own via `CompileLibrary` on a pinned thread. If the effect cannot
+be produced there by any stimulus, resident immunity is the finding and it is worth more than the
+enumeration. **Until that is shown, prefill is not cleared, and the tag question stays open.**
+
+*(v1's failure is itself the recorded lesson: a control on the wrong context looked like a clean
+result. It was caught by running the control before believing the null — the fifth time in this
+campaign that a null needed its forcing mechanism verified first.)*
+
 **THE INVARIANT, STATED AS WHAT IT ACTUALLY IS:** *no large hold-and-release inside a live CUDA
 context.* "Per-model contexts" understates it — that is one mechanism that happens to satisfy the
 invariant, not the invariant itself.
@@ -3204,6 +3236,7 @@ than papered over.
 
 | file | repo |
 |---|---|
+| `cuda/a13_prefillchurn_test.go` | goinfer |
 | `cuda/allocgran_test.go` | goinfer |
 | `cuda/backend.go` | goinfer |
 | `cuda/build_ptx.sh` | goinfer |
