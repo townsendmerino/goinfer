@@ -374,6 +374,44 @@ rate, ~15.0–15.8 tok/s**.
 
 ### B. Enforcement gaps — things that exist but aren't composed into a decision
 
+**B9 · Dropped errors on launch/copy/sync paths — 268 production sites, enumerated** — `linux`,
+**filed 2026-08-13**
+
+A12's fourth failure was `attention cosine 0.000000`, silently, with no CUDA error anywhere in the
+run. The cause was every call in the block discarding its error (`_ = gc.CopyHtoD`, `_ = LaunchOn`,
+`_ = Synchronize`, `_ = CopyDtoH`): the output buffer was never written, `got` stayed zero, and a
+resource failure arrived wearing a numerics bug's clothes. **`errcheck -blank` census:**
+
+| module | total | test | **production** |
+|---|---|---|---|
+| `cuda/` | 622 | 587 | **35** |
+| `gpu/` | 573 | 409 | **164** |
+| `metal/` | 21 | 18 | **3** |
+| root (`decoder/` etc.) | 317 | 251 | **66** |
+| | | | **268** |
+
+**The production set is the one that matters, and `cuda/`'s 35 are concentrated on the DECODE FORWARD
+PATH** — `r.launch(...)`, `r.doG(...)`, `r.stream.Sync()`, `gpu.Download(...)` in `cuda/resident.go` and
+`cuda/prefill.go`. In a test a dropped error reaches an assertion; **in production it reaches a caller**,
+as silently wrong output. That is a strictly worse version of the bug A12 just found in a test.
+
+**It can be a gate, unlike the dispatch shape.** `_ =` on an error return is **syntactically
+decidable**, so a lint can decide it without knowing intent — which is exactly what made B6's
+dispatch census a report rather than a verdict. Deliberately-ignored sites get **declared with a
+reason**, in the shape the citation lint already uses for allow-paths, so **the count is the check**
+rather than anyone's judgement about a given line.
+
+**Cost, stated so it is chosen rather than discovered:** 268 sites need triage before the gate can
+go green, and most are tests where the ignore is defensible. The forward-path production sites are
+the ones worth fixing first, and they are ~35 rather than 268.
+
+**A false zero in the census itself, recorded because it nearly shipped:** the first `metal/` run
+reported **0** — because exporting `GOOS=darwin` made `go run` build a *darwin* errcheck binary and
+try to execute it on Linux (`exec format error`). The tool never ran. A native binary with `GOOS`
+set for the analysis only, run from inside the module with `GOWORK=off`, gives the real 21/18/3.
+"Zero findings" and "the tool did not run" are the same output, which is the same class the tracer's
+zero samples belonged to.
+
 **B8 · A sweep must distinguish "could not evaluate" from "failed"** — `linux`, **filed 2026-08-12**
 
 `scripts/parity_sweep.sh` reported **27 blockers**, then **15**, then **0**. The tree was fine at all

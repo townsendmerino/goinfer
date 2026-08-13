@@ -270,6 +270,28 @@ The two shapes have opposite roles and it is worth keeping them straight: **the 
 CREATES divergences; the check shape FAILS TO CATCH them.** The same recognition test finds both, and
 the remedies differ:
 
+**A DOCUMENTED MECHANISM WITH NO ENUMERATION is the same shape, and it is the one that feels
+safest.** When a defect is found, understood, written up, and fixed *at the site where it was found*,
+the write-up creates a strong impression that the class is handled. It is not: the fix landed on one
+member and nothing enumerated the others.
+
+*Instance (A12, 2026-08-13).* `scripts/gpu_gate.sh`'s header documents this exact defect from a
+previous incident, in detail — *"the tests DROPPED those errors, and the resulting zero-filled
+buffers surfaced as 'cosine 0.000000 — layout/unpack mismatch'. An OOM wore a parity bug's clothes
+for long enough that two people independently concluded 'the tests just interfere; they pass
+individually' and moved on."* The mechanism was known, the remedy was applied where it was found, and
+**nobody enumerated**. `errcheck -blank` then found **268 production sites** across four modules,
+including `cuda/`'s decode forward path — and the defect recurred in
+`cuda/e2e_decode_test.go`, a file the header does not cover, reproducing the *"they pass
+individually"* conclusion a second time, in the same repository, against a document describing it.
+
+Same family as W8A8-fixed/W4A8-missed and `capSlots`' inline copy: **a fix at the instance, with no
+check for the other members.** The distinguishing feature here is that the documentation makes it
+*less* likely anyone looks — a written-up mechanism reads as a closed one.
+
+*Recognition test:* **when a defect is written up, was the class ENUMERATED or only the instance
+fixed?** If the write-up names a mechanism and no list exists, the list is the missing work.
+
 **And a third shape, found 2026-08-12: a CONSTANT restating a value maintained elsewhere.**
 
 > **A hand-maintained literal duplicates a value that is computed or declared somewhere else.
