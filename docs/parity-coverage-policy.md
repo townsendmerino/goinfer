@@ -1048,3 +1048,32 @@ boxes unchanged. Only a *float-valued* golden would be arch-sensitive, and those
 **Remediation declined.** Forcing bit-agreement means explicit `math.FMA` everywhere — a software
 fallback on amd64 that would cost the SIMD performance the CPU backend exists for. Not worth it for a
 divergence that clears every decision by 10⁵×. Recorded here so nobody re-derives the worry.
+
+### The contracting-arch fixture gap — a standing structural cost every float-rewrite hits
+
+A corollary of the above, filed so the next instance starts from a known price. A change that
+**rewrites a float expression** (a reworked matmul inner loop, a `minmax`, a reassociated sum) can
+pass the argmax+cosine goldens on amd64 and breach on **arm64** — the arch that fuses `x*y+z` (the
+arch exception, `RELEASING.md` §C1). So the goldens for such a change **must run on arm64**. But the
+tiny fixtures the goldens need are **gitignored** (kept out of the repo by size policy), and
+**nothing reconciles them onto the arm64 machine** — so the arm64 box typically starts with none, and
+each instance rediscovers "the arch that must test has no fixtures." First seen 2026-08-13 (aikit
+v1.17.0 f32 rework): the initial arm64 run covered **8** f32 families, the rest skipped for want of
+fixtures.
+
+**The trap is real but the remedy is cheap — this is the price, measured, not estimated:**
+- The tiny fixtures are **deterministic synthetic** (`pin_*_tiny.py`, `torch.manual_seed(0)`,
+  "sub-second, no download") — arch-independent bytes. **rsync them from any machine that has them**
+  (measured 2026-08-13: **~38M, minutes**, box→mac), or regenerate via the `pin_*_tiny.py` scripts
+  (seconds each, no network). Either takes the arm64 run to the **full 19 f32**, the same coverage the
+  amd64 box proves.
+- **Permanent fix, if the recurrence annoys:** promote the synthetic fixtures into the *committed* set
+  (they are KB–few-MB deterministic random-weight, the same class as `mixtral-tiny`) so both arches
+  always have them. Cost: ~38M of repo size against the current per-run transfer. Weigh under "The
+  committed set (chosen, not accidental)" above — this is exactly the promotion rule's use case.
+
+**Not part of this gap — a separate, arch-INDEPENDENT tier:** the *real* checkpoints
+(`qwen2.5-0.5b`, `qwen3-1.7b`, `tinymistral-248m`, `gpt2`, `llama-3.2-1b`, `gemma-3-270m`) are absent
+on **both** machines (they need HF downloads and are not kept), so those families skip on amd64 too.
+Do not conflate them with the arch trap: transferring synthetic fixtures does not fetch these, and
+their absence is not an arm64-specific coverage hole.
