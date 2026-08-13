@@ -50,17 +50,19 @@ claimed**. aikit's own numbers never cross into goinfer's notes.
 | gate | box | cost | state |
 |---|---|---|---|
 | **§C1 real-T3 parity sweep** (`RELEASING.md`, the one ⛔) | `linux` | **hours — dominant** | not started |
-| **P10 prefill A/B** | `linux` | ~1 h | **running** |
+| **P10 prefill A/B** | `linux` | ~1 h | **DONE — branch 3, +4.49%** |
 | **arm64 f32 goldens** | `mac` | minutes | not started |
 | **CUDA tier of `scripts/gpu_gate.sh`** | `linux` | 10–20 min | not started |
 
 **Owed but NOT gating the tag** — both are bounds that currently read as provisional, and stop
 doing so once measured:
 
-- **v1.16.0 prefill arm profile** — for P10's conservative dilution bound (the ~43% figure is the
-  v1.17.1 arm's; the smaller of the two is the one that counts).
-- **`BenchmarkDecode` profile** — P9's unknown divisor. Without it, "v1.17.1 fixed it" reads only as
-  far as "the benchmark-level regression is gone".
+- ~~**v1.16.0 prefill arm profile**~~ — **DONE 2026-08-12**: 52.18% against v1.17.1's 42.65%. The
+  shares differ materially, and the pre-registered "use the smaller" rule turned out to be written
+  for the flat branch; on a *win* the conservative direction reverses. See P10.
+- ~~**`BenchmarkDecode` profile**~~ — **DONE 2026-08-12**: 6.48%. It materially weakens P9's flat
+  verdict (a ~31% residual inside the int8 path was undetectable) and independently corroborates the
+  v1.17.0 regression at ≈−46% within the path against aikit's own +49%. See P9.
 
 
 **P10 · PREFILL A/B — THE CRITICAL PATH. One unmeasured phase is holding a tag AND C3** — `linux`,
@@ -92,6 +94,26 @@ reserves that for v0.13.0):
 
 **P10 is owed under both**, which is why it is the critical path regardless of the numbering. Whether
 it is holding one thing or three is a decision nobody has taken — see E1.
+
+**RESULT (2026-08-12): BRANCH 3 — v1.17.1 is FASTER on prefill by +4.49%** (median; mean +4.68%;
+bootstrap 95% CI **[+4.24%, +5.26%]**, B=20000, fixed seed; analytic SE 0.222%, so 21 SE). The arms
+do not overlap — v1.16.0 [78.02, 79.51], v1.17.1 [81.93, 83.06] — and per-visit medians are ordered
+consistently across all three rounds. **P10's obligation is discharged: prefill is measured on both
+versions.**
+
+**Scoped exactly as a loss would be, per the pre-registration:** one model (Qwen2.5-Coder-0.5B,
+dense), one prompt length (512), f32 only, one box, prefill only. **No CHANGELOG entry, no
+release-note claim** — a measurement, referenced.
+
+**Within the reworked path: ~8.6% (conservative), range 8.6–10.5%.** Both arms are profiled and the
+shares differ — 52.18% (v1.16.0) vs 42.65% (v1.17.1) — the drop being coherent with the rework making
+that path cheaper. The pre-registered rule said "use the smaller share", but **that rule was written
+for the FLAT branch**, where a smaller share means a larger admissible hidden effect. On a *win* the
+direction reverses: dividing by the smaller share inflates the claim. So the quoted figure divides by
+the **larger** share. Applying the letter of the rule would have added two points to the claim.
+
+**Bootstrap and analytic agreed** (half-widths 0.510% vs 0.435%), so no skew or heavy tails — checked
+rather than assumed, in the one place normality had been explicitly rejected.
 
 **Design, pre-registered in full at `docs/measurements/aikit-v1.17.1-prefill-ab.md` before any
 sample exists.** Same discipline as the decode A/B, for the same reason: **v1.16.0 against v1.17.1**
@@ -2098,13 +2120,36 @@ the work did.**
    the changed code is unchanged in cost. A residual effect inside the int8 path smaller than
    `0.43% ÷ (that path's share of decode runtime)` is entirely consistent with this result.
 
-   **The share is UNKNOWN, and that is different from small.** No CPU profile of `BenchmarkDecode`
-   was ever taken — not during the v1.17.0 A/B, not during the v1.17.1 one — so the divisor does not
-   exist and is **not being estimated here.** An *undeclared* bound (nobody thought about it) and an
-   *unknown* one (measured to be missing, and said so) are different states; this is now the second.
-   **Owed: profile `BenchmarkDecode` and state the bound in the same form the prefill calibration
-   uses.** Until then P9's statement 2 reads exactly as far as "the benchmark-level regression is
-   gone".
+   **THE SHARE IS NOW MEASURED (2026-08-12), and it is small: 6.48%.** `BenchmarkDecode` was
+   profiled — `linalg.MatmulBTW8A8Into` is **6.48%** of decode runtime (`w8a8Span` 5.22%,
+   `dotI8AVX2` 5.13% flat), on the v1.17.1 build. The changed int8 code is a **sixteenth** of what
+   this benchmark spends time in, so benchmark-level figures divide by ~0.065 to become statements
+   about that code:
+
+   | benchmark-level | ÷ 6.48% → within the int8 path |
+   |---|---|
+   | v1.17.0 regression **−2.96%** | **≈ −46%** |
+   | v1.17.1 result **+0.43%** (median) | ≈ +6.6% |
+   | v1.17.1 bootstrap 95% CI **[−2.52%, +3.73%]** | **[−39%, +58%]** |
+   | the 2.0% floor | **≈ 31%** |
+
+   **What that does to statement 2, plainly: the flat verdict is much weaker than it looks.** A
+   residual of up to **~31%** inside the int8 path would have been *undetectable* by that A/B, and
+   the bootstrap interval on the measured delta spans **−39% to +58%** within the path. So
+   "v1.17.1 fixed it" means **the benchmark-level regression is gone** — nothing more. It is *not*
+   evidence that the int8 path returned to its v1.16.0 cost, and it never was.
+
+   **A corroboration worth recording, because it is independent.** The v1.17.0 regression converts
+   to **≈ −46% within the int8 path**, derived end-to-end from goinfer's benchmark and a profile
+   divisor. aikit measured that kernel directly at **+49% slower** in its worst (serial) case. Two
+   unrelated methods, ~3 points apart — which raises confidence in the divisor and in the −2.96%
+   alike.
+
+   **Caveats on the divisor, stated with it.** Measured **under a profiler** and applied to
+   **unprofiled** runs, so it is rough. And only the **v1.17.1** build is profiled — the v1.17.0
+   build's share would likely be *larger* (a slower kernel takes a bigger slice), which would make
+   the −46% an *over*-estimate; 6.48% is the conservative choice for the *flat* claim, which is
+   where it matters most here.
 
    **And the flat verdict needs its delta and uncertainty printed beside it**, for the same reason:
    a floor is a practical-significance threshold, not a detection limit. "Flat" means *no effect

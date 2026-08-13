@@ -154,3 +154,94 @@ The remaining weakness is **sensitivity, not noise**. The reworked path is ~43% 
 runtime, so an effect inside it is diluted ~2.3× here: a flat result means *no effect larger than
 about 1.4% within the reworked code*, not *no effect*. That bound is stated in every wording of the
 result.
+
+---
+
+# Result — appended after the run. BRANCH 3: FASTER
+
+Raw, in run order. **Bold = the pre-registered discard** (first sample of each visit).
+
+| visit | samples (tok/s) |
+|---|---|
+| 1 · `v1.16.0` | **78.39**, 78.63, 78.54, 78.38, 78.19 |
+| 1 · `v1.17.1` | **82.07**, 82.24, 82.07, 82.35, 81.97 |
+| 2 · `v1.16.0` | **78.29**, 78.02, 78.55, 79.51, 79.35 |
+| 2 · `v1.17.1` | **82.16**, 82.05, 81.93, 82.04, 81.99 |
+| 3 · `v1.16.0` | **78.01**, 78.11, 78.03, 78.57, 78.73 |
+| 3 · `v1.17.1` | **81.93**, 83.06, 82.88, 82.80, 82.41 |
+
+| arm | n | median | mean | sd | min | max |
+|---|---|---|---|---|---|---|
+| `v1.16.0` | 12 | 78.5450 | 78.5508 | 0.4771 | 78.02 | 79.51 |
+| `v1.17.1` | 12 | 82.1550 | 82.3158 | 0.3936 | 81.93 | 83.06 |
+
+## The delta and its uncertainty — printed regardless of branch, as pre-registered
+
+| quantity | value |
+|---|---|
+| **median delta** | **+3.6100 tok/s = +4.488%** |
+| mean delta | +3.7650 tok/s = +4.681% |
+| analytic SE (mean diff) | 0.1786 tok/s = 0.222% → the mean delta is **21.1 SE** |
+| **bootstrap 95% CI (median diff)** | **[+4.240%, +5.259%]** (percentile, B=20000, seed 20260812) |
+
+**Bootstrap vs analytic — they agree, and that is worth stating.** Bootstrap half-width 0.510%
+against an analytic 1.96·SE half-width of 0.435%: the bootstrap is slightly wider, as expected for
+a median, with no sign of the heavy tails or skew that would have made the normality-derived factor
+misleading. The median was bootstrapped rather than scaled by 1.25 **because it was chosen for
+robustness**, and estimating its uncertainty by assuming normality would have assumed away the
+property it was chosen for. Here the two happen to agree; the point is that this was checked.
+
+**Verdict: BRANCH 3 — v1.17.1 is FASTER on prefill by ~4.5%**, far outside the 0.6% floor
+(~20 floor-widths, 21 analytic SE). The arms **do not overlap at all**: `v1.16.0` spans
+[78.02, 79.51], `v1.17.1` spans [81.93, 83.06]. Per-visit medians are ordered consistently across
+all three rounds (78.46 / 78.95 / 78.34 against 82.16 / 82.02 / 82.84).
+
+## Branch 3 gets the SAME scoping a loss would — as pre-registered
+
+**One model** (Qwen2.5-Coder-0.5B, dense), **one prompt length** (512), **one quantization** (f32),
+**one box**, **prefill only**. It does **not** enter the CHANGELOG, the docs or the release notes on
+this evidence, and no user-facing claim is made from it. It is a measurement, referenced from P10.
+
+## Converting to a within-path figure — and the conservative direction FLIPS on this branch
+
+Both arms are now profiled, and the reworked path's share **differs materially between them**:
+
+| arm | `blockedFill` cumulative |
+|---|---|
+| `v1.16.0` | **52.18%** |
+| `v1.17.1` | **42.65%** |
+
+The share *dropping* is itself coherent with the result: the rework makes that path cheaper, so it
+takes a smaller slice of a smaller total.
+
+**The pre-registered rule said "use the smaller fraction", and that rule was written for the FLAT
+branch, where a smaller share means a larger admissible hidden effect — genuinely conservative.
+This result landed on branch 3, where the direction reverses:** dividing by the smaller share yields
+a *larger* claimed within-path speedup, which is the *less* conservative reading of a win.
+
+So both are given, with the conservative end named:
+
+- ÷ 52.18% (v1.16.0 share) → **~8.6% within the reworked path** ← **conservative for this claim**
+- ÷ 42.65% (v1.17.1 share) → ~10.5% within the reworked path
+
+**The figure to quote is ~8.6%, and the honest range is 8.6–10.5%.** Applying the letter of a rule
+written for a different branch would have inflated the claim.
+
+**Divisor provenance:** measured **under a CPU profiler**, applied to **unprofiled** A/B runs.
+Profiling perturbs what it measures, so this is a rough divisor — adequate for converting a
+benchmark-level figure into an order-of-magnitude statement about the reworked code, and not more
+than that.
+
+## What this does and does not settle
+
+It **discharges P10's obligation**: prefill is measured, on both versions, and the f32 blocked-matmul
+rework is a **prefill win** on this shape rather than an unmeasured risk.
+
+It says nothing about **other prompt lengths, other models, MoE or Gemma4 architectures** (which
+route down the sequential per-token path and never reach the batched shape), **non-f32
+quantizations**, or **any other box**.
+
+**Read alongside P9:** the same aikit change set cost ~3% of *decode* at v1.17.0 (from the int8
+kernel, since reverted) and gains ~4.5% of *prefill* at v1.17.1 (from the f32 rework, still live).
+Those are different phases, different kernels, and different releases — the pairing is a summary of
+two measurements, not a trade-off anyone chose.
