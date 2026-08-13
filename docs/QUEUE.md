@@ -332,6 +332,36 @@ version are all still there after the underlying module has been evicted. So the
 exactly the "returns success and does nothing" shape, and it explains every observation at once:
 identical launch arguments, all calls succeeding, full card, zeros out.
 
+**THE INVARIANT, STATED AS WHAT IT ACTUALLY IS:** *no large hold-and-release inside a live CUDA
+context.* "Per-model contexts" understates it — that is one mechanism that happens to satisfy the
+invariant, not the invariant itself.
+
+**ENUMERATION OF PATHS THAT COULD VIOLATE IT (2026-08-13):**
+
+| path | allocates & frees in a live context? | verdict |
+|---|---|---|
+| **admin unload** (`POST /admin/models/unload`, `--unload-drain-wait`) | **no — destroys the context.** `Model.Close` → `cudaResident.Close` → `dev.ReleaseObjects()`, which ends in `cx.Close()` | **CLEAN — record as a safety property** |
+| **A5 cap search** (`capSlots`) | **no — pure arithmetic.** `fits(n)` compares `slotRequirement(...)+slotMarginBytes` against `free`; nothing is allocated to probe | **CLEAN** |
+| **`allocSlots` failure** | **no.** OOM arrives as a panic from `MustBuf` and *the resident is discarded on decline* — context torn down | **CLEAN** |
+| **expert cache / KV growth** | no mid-life grow/resize path exists in `cuda/` | **CLEAN** |
+| **prefill scratch** (`cuda/prefill.go:200`) | **YES.** `scratch` is allocated per call and released by a deferred loop of `r.dev.ReleaseBuf(b)`, inside the live resident context. Its own comment: *"at M=3000 this is hundreds of MB"* | **NEEDS MEASUREMENT — see below** |
+
+**PREFILL SCRATCH IS THE ONE PATH THAT MATCHES THE POISONING CONDITION, and it ships.** Every long
+prompt allocates hundreds of MB of scratch and frees it without leaving the context. That is
+structurally the sweep's stimulus, on the hot path, in a shipped feature.
+
+**IT IS NOT ARGUED SAFE FROM ITS SIZE, deliberately.** "Hundreds of MB" falls in the band that was
+*reliably* clean (≤~12%, ~876 MiB) — and the sweep is **non-monotonic**: 15% (~1.1 GiB) poisoned once
+in three while 18% and 21% were clean 3/3. **The only demonstrated safe state is not doing it inside
+a live context**, and prefill does. Whether repeated prefill churn actually poisons a subsequent
+launch is a measurement nobody has taken.
+
+**TAG: this is the open question, and it is a shipping path rather than a test one.** If repeated
+prefill scratch churn poisons the context, that is a correctness bug on the same constraint as
+before — silently wrong output with no error — and the tag waits. If it does not, the tag stands on
+four named properties rather than two. The measurement is one test: build a resident, run several
+long prefills, then validate a launch on the same context.
+
 **THE PRODUCTION QUESTION, ANSWERED FIRST (2026-08-13): a failed allocation does NOT poison. A
 large SUCCESSFUL one, freed, can.**
 
@@ -3052,6 +3082,7 @@ supports.
 | `docs/QUEUE.md|cuda/backend.go:463` | goinfer | `if r.dev, e = CreateSystemDefaultDevice(); e != nil {` |
 | `docs/QUEUE.md|cuda/backend.go:591` | goinfer | `if r.prefillReady {` |
 | `docs/QUEUE.md|cuda/backend.go:836` | goinfer | `anchor: func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar` |
+| `docs/QUEUE.md|cuda/prefill.go:200` | goinfer | `defer func() {` |
 | `docs/QUEUE.md|cuda/resident.go:244` | goinfer | `// backend.go locals; the per-layer KV cache and UploadKV read r.layers[l].kvDim.` |
 | `docs/QUEUE.md|cuda/resident.go:397` | goinfer | `func (r *cudaResident) recordUpload(e error) {` |
 | `docs/QUEUE.md|decoder/features_test.go:146` | goinfer | `want, ok := admissionGolden[name]` |
