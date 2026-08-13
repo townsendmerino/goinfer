@@ -82,11 +82,12 @@ claimed**. aikit's own numbers never cross into goinfer's notes.
 
 | gate | box | cost | state |
 |---|---|---|---|
-| **C1a — real-T3 sweep runs green** on real checkpoints | `linux` | **hours — dominant** | **running** (`EMIT_MANIFEST=0`, manifest untouched) |
+| **C1a — real-T3 sweep runs green** on real checkpoints | `linux` | 41 min | **DISCHARGED 2026-08-12** — `d1c15ca`: **49 pass / 0 skip / 0 fail**, exit 0, *"ALL REQUIRED GATES GREEN"*. Carries to `3d0f8a2` (deps_hash unchanged) |
 | **C1b — manifest `-update`d at the FREEZE COMMIT** (`validated_at` + metrics) | `linux` | minutes | not started |
 | **P10 prefill A/B** | `linux` | ~1 h | **DONE — branch 3, +4.49%** |
+| **arm64 f32 goldens** | `mac` | minutes | **DISCHARGED** (`b2c7f4d`, 19 f32 via fixture transfer) |
+| **CUDA `scripts/gpu_gate.sh`** | `linux` | ~30 min | **RED — A11 only.** Kernel suite, graphs, CGO_ENABLED=0, PTX 21/21, hygiene all green |
 | **arm64 f32 goldens** | `mac` | minutes | **✅ DISCHARGED** — 19 f32 green on arm64 (`f8c4777`, 2026-08-13), = the box's 19, 0 hash Δ, no headroom collapse. Achieved by rsync'ing the ~38M synthetic fixtures from the box. Residual (real-checkpoint families) is absent on both boxes — arch-independent, not a gap here. See item 4 |
-| **CUDA tier of `scripts/gpu_gate.sh`** | `linux` | 10–20 min | not started |
 
 **§C1 IS TWO STATES, AND ONLY THE SECOND DISCHARGES THE GATE.** `RELEASING.md`'s ⛔ gate is
 *"run the real T3 suite … then `-update` the manifest (bump `validated_at` + metrics) **at the freeze
@@ -2691,6 +2692,7 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `2e8dfb6` | fix(parity): goldens-gated deps_hash refresh for the aikit v1.17.1 bump |
 | `2e91607` | test: refresh parity deps_hash — non-numeric core-file drift (un-reds main) |
 | `38061b1` | perf(gemma4-paging): pread expert nibbles straight into the slot buffers |
+| `3d0f8a2` | fix(ci): regenerate the citation index after rebasing A11 onto the mac batch |
 | `3d6ae1e` | chore: go fix modernizers, one deterministic pass (G2) |
 | `4642b7c` | [aikit] gpu(metal): Device.MaxThreadgroupMemoryLength() — tile-memory limit (goinfer M-11) |
 | `4c26a58` | perf(cuda): parallelise the Gemma final-logit softcap, bit-identical (P3) |
@@ -2715,6 +2717,7 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `a6c5b57` | fix(parity): the goldens refresh runs quantized goldens, and reports the split |
 | `a79303e` | [aikit] release: prepare v1.16.0 — mmap SpanCache eviction-policy knob |
 | `ada417e` | [aikit] scripts: ptx-repro is n/a on darwin, keyed on the PLATFORM not on NVRTC's absence |
+| `b2c7f4d` | docs: arm64 f32 gate DISCHARGED (19 f32 via fixture transfer); arch-trap filed; arch-stamp validated |
 | `bacc04c` | feat(serve): --moe-cache-experts / --moe-cache-slots — PARKED on the freeze |
 | `bd08936` | fix(gate): cannot-search is not not-found; cross-gate composition; B7 sweep |
 | `be049df` | [aikit] gpu(gemv): explicit __fmaf_rn in the quantized GEMV — the bit-identity contraction rule |
@@ -2785,6 +2788,7 @@ supports.
 | `docs/how-inference-works.md|decoder/sampler.go:118` | goinfer | `// distribution restricted to ONE token is deterministic regardless of that token's prob` |
 | `docs/how-inference-works.md|decoder/session.go:71` | goinfer | `// stale history. Callers must skip it (and reconcile) for an empty prompt, so a rejecte` |
 | `docs/ideas-weight-memory.md|decoder/mlp.go:69` | goinfer | `anchor: func mlp(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend, scr` |
+| `docs/internal/recon-qwen35-gguf.md|decoder/gguf.go:541` | goinfer | `anchor: func ggufGptOssConfig(g *embed.GGUFFile) (*Config, error) {` |
 | `docs/multimodal.md|decoder/config.go:466` | goinfer | `case c.MoeIntermediateSize <= 0:` |
 | `docs/multimodal.md|decoder/gguf_qwen35.go:77` | goinfer | `anchor: func ggufQwen35Config(g *embed.GGUFFile) (*Config, error) {` |
 | `docs/multimodal.md|decoder/weights.go:344` | goinfer | `const shardIndexFile = "model.safetensors.index.json"` |
