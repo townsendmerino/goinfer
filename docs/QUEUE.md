@@ -75,6 +75,52 @@ suspicion than a residue that is merely small.** 589,824 B against 289 MiB is 0.
 through. Its appearing *twice, exactly* is what made it a mechanism, and the second observation is
 what resolved the first.
 
+**A12 · The CUDA heavy tier does not fit in 8 GB in one process — the gate cannot pass here** —
+`linux`, **open, found 2026-08-12**
+
+`scripts/gpu_gate.sh` is red, and after A11 and the two leak fixes the remaining failures are **all
+VRAM exhaustion presenting as something else**:
+
+| test | in-suite | alone |
+|---|---|---|
+| `TestAttention_HeadDimWidths` | FAIL — `attention cosine 0.000000 vs CPU ref` | **PASS**, cosine ≈ 1.0 |
+| `TestSplitKV_bitIdentical_gemma3` | FAIL | **PASS** — bit-identical at depth 1536 |
+| `TestMoERouteFirstLaunchReservation` | FAIL (0.13 s) | **PASS** |
+| `TestResidentLaunchVRAMProbe` | FAIL (248 s) | VRAM-sensitive by construction |
+
+**`cosine 0.000000` is the signature the script's own header names**: *"parallel packages contend for
+VRAM and the failures come back as bogus numerics ('cosine 0.000000') rather than 'you are out of
+memory'."* The other symptom is `panic: interface conversion: decoder.ResidentForward is nil` — a
+`BuildResident` that could not allocate. Neither is a numerics defect.
+
+**It is CUMULATIVE, not a single leaker.** Two genuine leaks were found and fixed (`5ece205`:
+`TestAllocFloor`, `TestA10ReportingGap` — both drained the device and never released). Fixing them
+stopped the tier aborting at 91 s and let it run its full ~26 minutes, which is what exposed these.
+Beyond that: `TestMoERouteDemandThreshold` + `TestMoERouteFirstLaunchReservation` pass as a pair; the
+pressure builds across the whole tier rather than at one site.
+
+**And there is no systematic missing-`Close`.** Audited: 75 `Load` calls against 175 `defer …Close()`
+across the CUDA tests; only three small files load without any (`cuda/gemma_bos_build_test.go`,
+`cuda/graphs_safe_test.go`, `cuda/mustalloc_test.go`). Worth tidying, but not the cause.
+
+**So this reads as a capacity limit of the 8 GB card for the full heavy tier in one process, not a
+defect in the tree.** Every test passes on its own; the tier as a whole does not fit.
+
+**Options, none taken yet — this is a decision, not a fix:**
+
+1. **Run each heavy test in its own process.** Bounds VRAM by construction, since exit reclaims
+   everything. Costs process-start time per test and needs the runner reworked. This is the one that
+   actually removes the class.
+2. **Tidy the three no-`Close` files and re-measure.** Cheap, and it may or may not be enough — say
+   which before running it, or it becomes a fishing expedition.
+3. **Declare the heavy tier out of scope for an 8 GB box** and record the gate as environment-limited,
+   with the per-test isolation runs as the evidence. Honest, but it weakens the gate.
+
+**The tag is blocked on this.** Not because numerics are wrong — they are demonstrably right test by
+test — but because `scripts/gpu_gate.sh` says *do not tag*, and a gate that is overridden by the person it
+was written to constrain is not a gate. B8 applies here too: the gate cannot presently distinguish
+"failed" from "could not evaluate", and these four are the second kind.
+
 **A2 (partial) · 26B documentation correction** — `linux`, 2026-08-12
 
 The half that does NOT depend on A1 is done: the README instructed
@@ -2593,6 +2639,7 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `4c26a58` | perf(cuda): parallelise the Gemma final-logit softcap, bit-identical (P3) |
 | `53a96f6` | docs: P10 DISCHARGED — prefill +4.49%; P9's divisor measured and it weakens the flat verdict |
 | `588052b` | serve: drain in-flight requests before freeing an unloaded model (fixes the leak safely) |
+| `5ece205` | fix(cuda): two VRAM-draining tests never freed — they failed a later test as "a forward moved" |
 | `6091e7a` | fix(cuda): size the expert cache by SEARCH over the granularity form (A5) |
 | `6edd1ca` | parity: make "validated" MEAN T3 — method-tier gate + honest experimental tier (D2, pre-freeze) |
 | `7cc2f0d` | fix(parity,ci): refresh deps_hash after 38061b1's pread-staging core plumbing (non-numeric) |
@@ -2765,8 +2812,11 @@ than papered over.
 | `cuda/allocgran_test.go` | goinfer |
 | `cuda/backend.go` | goinfer |
 | `cuda/build_ptx.sh` | goinfer |
+| `cuda/gemma_bos_build_test.go` | goinfer |
+| `cuda/graphs_safe_test.go` | goinfer |
 | `cuda/moe_route_demand_test.go` | goinfer |
 | `cuda/moe_route_reservation_test.go` | goinfer |
+| `cuda/mustalloc_test.go` | goinfer |
 | `cuda/nvrtc_compile.py` | goinfer |
 | `cuda/prefill.go` | goinfer |
 | `cuda/resident.go` | goinfer |
