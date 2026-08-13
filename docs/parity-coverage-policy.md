@@ -684,6 +684,32 @@ also satisfies. The **byte comparison against a snapshot taken before the comman
 carried the claim. Worth naming, because two of the three checks were reassurance rather than
 evidence, and a reader counting three would have over-weighted the result.
 
+**When a pre-registration compares a FRESH measurement against a RECORDED one, the branch set must
+include "THE RECORDED VALUE IS THE ERROR."** A recorded number is a measurement too — taken once,
+possibly under conditions nobody wrote down — and treating it as the fixed point smuggles in an
+assumption that the machine is what changed.
+
+The instance (A11, 2026-08-12). `TestMoERouteDemandThreshold` failed with both bounds moved by
+exactly 589,824 B. Three branches were pre-registered — *the floor moved*, *the residual moved*, or
+*the floor+residual identity is wrong* — and **the actual outcome was outside all three**, because
+all three assumed the machine moved. What had happened:
+
+    floor     unchanged
+    residual  unchanged
+    demand    now equals floor + residual, to the byte
+
+The **old pin** was the outlier, recorded from the one measurement that did not close, with the
+589,824 shortfall misattributed to "baseline drift" (A9-RESID) rather than read as *a failure to
+close*. The new measurement was not a regression; it was the identity finally holding.
+
+*Recognition test:* **is the recorded value load-bearing, and was it ever re-measured?** If it was
+recorded once and never reproduced, it is a hypothesis with a number attached.
+
+*Remedy, and it generalises past this case:* **where a closed form relates the quantities, check the
+IDENTITY before treating a mismatch as a change.** If the components still satisfy it, the mismatch
+is in the record rather than in the machine. Prefer a relation over a constant when pinning at all —
+a pinned identity survives conditions a pinned scalar does not.
+
 **A correctness argument with PER-ARCHITECTURE BRANCHES is verified per-branch.** Verifying it on
 one architecture verifies **one branch**, and the branches may not be equally strong — so *"the
 argument was verified"* carries a scope exactly the way a gate's axis composition does, and must be
