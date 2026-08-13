@@ -2593,12 +2593,14 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `3d6ae1e` | chore: go fix modernizers, one deterministic pass (G2) |
 | `4642b7c` | [aikit] gpu(metal): Device.MaxThreadgroupMemoryLength() — tile-memory limit (goinfer M-11) |
 | `4c26a58` | perf(cuda): parallelise the Gemma final-logit softcap, bit-identical (P3) |
+| `53a96f6` | docs: P10 DISCHARGED — prefill +4.49%; P9's divisor measured and it weakens the flat verdict |
 | `588052b` | serve: drain in-flight requests before freeing an unloaded model (fixes the leak safely) |
 | `6091e7a` | fix(cuda): size the expert cache by SEARCH over the granularity form (A5) |
 | `6edd1ca` | parity: make "validated" MEAN T3 — method-tier gate + honest experimental tier (D2, pre-freeze) |
 | `7cc2f0d` | fix(parity,ci): refresh deps_hash after 38061b1's pread-staging core plumbing (non-numeric) |
 | `7ccec1e` | fix(cuda): the expert cache sizes itself — topK was the worst possible default |
 | `82b39cc` | docs(parity): document qwen3_5_moe's int8-vs-bf16 movement (v0.8.0 §1 — gate-backed pass) |
+| `8ec96c6` | docs: split §C1 into C1a (sweep green) and C1b (manifest stamped) — only C1b discharges it |
 | `8fecfad` | ci: heavy_gate.sh — a runner for the real-checkpoint tier that no CI job executes |
 | `91f359f` | fix(decoder): matmulInto dispatches on the property, not on W8A8 (P7) |
 | `93eb7d4` | feat(decoder): gpt-oss real-model path — batched-prefill fix + real gates |
@@ -2608,6 +2610,7 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `99b3f95` | chore(deps): pin aikit v1.12.0 — gpt-oss MXFP4 reproducible on main |
 | `9e5f8fa` | fix(quant): reject --quant that conflicts with a prequant .giw at startup (T1-7) |
 | `a15a394` | cuda+docs: decline floor, slot-cap gate, driver allocation facts, and seven rules |
+| `a163150` | fix(release): the parity refresh's arch is load-bearing and was unrecorded — stamp it, correct the "Mac tool" error |
 | `a6c5b57` | fix(parity): the goldens refresh runs quantized goldens, and reports the split |
 | `a79303e` | [aikit] release: prepare v1.16.0 — mmap SpanCache eviction-policy knob |
 | `ada417e` | [aikit] scripts: ptx-repro is n/a on darwin, keyed on the PLATFORM not on NVRTC's absence |
@@ -2625,6 +2628,7 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `eea7f29` | perf(decoder): one gate/up pair per token in MoE, not one per expert (P6) |
 | `f33fcaf` | chore(deps): aikit v1.16.0 -> v1.17.0, aikit/gpu v0.27.0 -> v0.28.0 |
 | `f340d4e` | metal(9c Step 4): argmax-primary gate + f16-scale confound diagnostic (finding recorded) |
+| `f8c4777` | docs(queue): arm64 f32 goldens gate — PARTLY discharged on arm64, 8/19 f32 green, 0 hash delta |
 | `f9d5d07` | feat(decoder): dispatch census (B6); close the GGUF-quant gap; reopen B4 |
 
 ## Path index
@@ -2680,7 +2684,6 @@ supports.
 | `docs/how-inference-works.md|decoder/sampler.go:118` | goinfer | `// distribution restricted to ONE token is deterministic regardless of that token's prob` |
 | `docs/how-inference-works.md|decoder/session.go:71` | goinfer | `// stale history. Callers must skip it (and reconcile) for an empty prompt, so a rejecte` |
 | `docs/ideas-weight-memory.md|decoder/mlp.go:69` | goinfer | `anchor: func mlp(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend, scr` |
-| `docs/internal/recon-qwen35-gguf.md|decoder/gguf.go:541` | goinfer | `anchor: func ggufGptOssConfig(g *embed.GGUFFile) (*Config, error) {` |
 | `docs/multimodal.md|decoder/config.go:466` | goinfer | `case c.MoeIntermediateSize <= 0:` |
 | `docs/multimodal.md|decoder/gguf_qwen35.go:77` | goinfer | `anchor: func ggufQwen35Config(g *embed.GGUFFile) (*Config, error) {` |
 | `docs/multimodal.md|decoder/weights.go:344` | goinfer | `const shardIndexFile = "model.safetensors.index.json"` |
