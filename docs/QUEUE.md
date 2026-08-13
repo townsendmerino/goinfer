@@ -106,6 +106,45 @@ across the CUDA tests; only three small files load without any (`cuda/gemma_bos_
 **So this reads as a capacity limit of the 8 GB card for the full heavy tier in one process, not a
 defect in the tree.** Every test passes on its own; the tier as a whole does not fit.
 
+**CANDIDATE LIST AFTER THE RETRACTION — two cheapest CANDIDATES REFUTED BY MEASUREMENT
+(2026-08-13).**
+
+**1. Parallelism — REFUTED by reading the invocation.** `scripts/gpu_gate.sh` passes **`-p 1` on
+every CUDA invocation** (four of them), targets the **single `./cuda/` package** rather than
+`./cuda/...`, and the package contains **zero `t.Parallel()` calls**. Tests are strictly sequential;
+no two test binaries touch the card at once. This was the cheapest candidate and it would have
+explained every symptom, which is why it was checked first.
+
+**2. Asynchronous teardown — REFUTED by measurement** (`cuda/closesettle_test.go`, 7B + 16-step
+decode):
+
+    free before Close        2418.2 MiB
+    Close() returned after   123.1 ms
+    free at Close's return   7310.2 MiB   +4892.0 MiB released SYNCHRONOUSLY
+    free once stable         7310.2 MiB   +0.0 MiB more, asynchronously
+    settle time after return 15.7 ms      (polling overhead only)
+
+**`Close()` is fully synchronous — everything is back before it returns, and there is no tail.** The
+2.4 → 4.3 → 6.2 GiB climb the tracer saw was the sampler catching Close *during* its own 123 ms
+execution, which is consistent with this and not with an async release. So no stabilisation wait is
+warranted, and "the next Load starts inside the previous teardown" is not the mechanism.
+
+**STILL OPEN, and the list is genuinely short now:**
+
+- **Per-context kernel reservations.** The one mechanism that survives both refutations, and it is
+  already measured in this queue: A9/A10 established that a kernel's **first launch** reserves
+  local-memory backing store sized for occupancy, that it is a **context** property rather than a
+  model one, and that `Close()` tears down a *model* without destroying the *context*. `moe_route`
+  alone was 138,412,032 B. A tier that touches many kernels for the first time would accumulate
+  reservations that no model-level `Close` can return — which fits sequential execution, no leak,
+  full synchronous release, and order-dependence simultaneously. **Not yet tested.** The test is
+  cheap: read free VRAM at process start, run tests exercising disjoint kernel sets with every model
+  closed, and see whether the baseline steps down and stays down.
+- **Genuine peak** — one test's high-water mark plus whatever is legitimately resident exceeding the
+  card.
+- **Fragmentation** — refuted earlier against a *different* observation, which does not refute it
+  here.
+
 **RETRACTED 2026-08-13 — THERE IS NO LEAK. The "leak" was a probe-position artifact, and the
 authoritative experiment says `Close()` returns everything.**
 
@@ -2935,6 +2974,7 @@ than papered over.
 | `cuda/allocgran_test.go` | goinfer |
 | `cuda/backend.go` | goinfer |
 | `cuda/build_ptx.sh` | goinfer |
+| `cuda/closesettle_test.go` | goinfer |
 | `cuda/gemma_bos_build_test.go` | goinfer |
 | `cuda/graphs_safe_test.go` | goinfer |
 | `cuda/lifecycle7b_test.go` | goinfer |

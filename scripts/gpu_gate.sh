@@ -77,6 +77,29 @@ skip() { printf '  \033[33mSKIP\033[0m  %s\n' "$1"; SKIPPED=$((SKIPPED + 1)); NO
 # aikit's gate). `go test -run NoSuchTest` exits 0 and prints "ok", so renaming a test away silently
 # deletes a check while the gate stays green — the same shape as a skip counted as a pass. Counts
 # "=== RUN" lines, so it needs -v on the invocation it judges.
+# vram_note: on a cosine of EXACTLY zero, print the card's free VRAM and point at A12.
+#
+# A cosine of 0.000000 is not a parity result — an all-zero buffer is what a failed allocation leaves
+# behind, and this script's own header records the history: an OOM wore a parity bug's clothes long
+# enough that two people concluded "the tests just interfere" and moved on.
+#
+# WORDING IS DELIBERATE. It states the READING and points at the entry; it does NOT name a mechanism.
+# "Suspect retention" was the obvious phrasing and is now DISPROVEN — A12 measured Close() returning
+# all 4892 MiB synchronously in 123 ms, with a 0 MiB asynchronous tail. Naming a mechanism a gate
+# cannot see is how the last three explanations became someone else's wasted afternoon.
+vram_note() {
+	printf '%s' "$1" | grep -q 'cosine 0\.000000' || return 0
+	local free
+	free="$(nvidia-smi --query-gpu=memory.free --format=csv,noheader 2>/dev/null || echo 'unknown')"
+	echo "      NOTE: a cosine of EXACTLY 0.000000 is an all-zero buffer, which is what a failed"
+	echo "            allocation leaves behind — not necessarily a numerics defect."
+	echo "            free VRAM on the card right now: ${free}"
+	echo "            (measured AFTER the run, so it is a bound, not the value at failure)"
+	echo "            See docs/QUEUE.md A12. Mechanism NOT established: parallelism (-p 1, one"
+	echo "            package, no t.Parallel) and async teardown (Close is synchronous) are both"
+	echo "            REFUTED, and there is no leak. Do not assume; measure."
+}
+
 nomatch() { # $1 = go test output, $2 = pattern (for the message); returns 0 if nothing ran
 	[ "$(printf '%s' "$1" | grep -cE '^=== RUN' || true)" -eq 0 ]
 }
@@ -179,6 +202,7 @@ cuda)
 	else
 		fail "resident parity gates — a CUDA forward moved. This is the group 2a cannot see."
 		echo "$out" | grep -E "^--- FAIL|\.go:[0-9]+:" | head -12 | sed 's/^/      /'
+		vram_note "$out"
 	fi
 
 	# ---- heavy tier: the 119-test real-model group NOTHING has ever run ----
