@@ -314,7 +314,25 @@ func TestMoERouteDemandThreshold(t *testing.T) {
 	// PINNED (item 6). The threshold is the number the cap analysis depends on; leaving it unasserted
 	// makes this a report rather than a gate. Both bounds are pinned because the pair brackets the
 	// demand and a one-sided pin would drift.
-	const pinnedFail, pinnedPass = 286916608, 289013760
+	//
+	// RE-DERIVED 2026-08-12 (A11), not edited to match a red gate. The pins moved +589,824 B, and
+	// that is the number A9-RESID recorded as "baseline drift" — the amount by which
+	// demand = floor + residual failed to close at MOE_MAX_E=512 while closing EXACTLY at 256:
+	//
+	//     256:  151,191,552 + 54,525,952 = 205,717,504   measured 205,717,504   EXACT
+	//     512:  151,191,552 + 138,412,032 = 289,603,584   measured 289,013,760   short by 589,824
+	//
+	// The measurement now reads 289,603,584 — the closed form, to the byte. Both components were
+	// re-measured here and BOTH HELD: the floor is 151,191,552 (allocate-until-failure in a fresh
+	// context: 7,665,287,168 reported, 7,514,095,616 obtained) and the residual is 138,412,032.
+	// So nothing about the machine or the kernel moved; the OLD PIN was the outlier, recorded from
+	// the one measurement that did not close, and the 589,824 was misattributed to drift rather
+	// than read as a failure to close.
+	//
+	// The new values are therefore the DERIVED ones, and the identity is what justifies them. If
+	// these ever move again, check the identity first: if floor + residual still equals the demand,
+	// the components are what moved and this pin is downstream of them.
+	const pinnedFail, pinnedPass = 287506432, 289603584
 	if lastFail.freeBefore != pinnedFail || firstPass.freeBefore != pinnedPass {
 		t.Errorf("demand threshold moved: FAIL at %d (pinned %d), PASS at %d (pinned %d). "+
 			"moe_route's peak launch demand is what makes the 34-slot cap unsafe and the 33-slot "+

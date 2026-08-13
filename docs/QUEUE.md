@@ -25,189 +25,55 @@ Boxes: `linux` (nvidia-rtx2070s, CUDA) · `mac` (Apple Silicon, Metal).
 
 ## In flight
 
-**A11 · moe_route's demand threshold MOVED by 589,824 B — the A9 pins no longer hold** — `linux`,
-**open, found 2026-08-12 by `scripts/gpu_gate.sh`**
+**A11 · moe_route's demand threshold — RESOLVED 2026-08-12. The identity now CLOSES; the old pin was
+the outlier** — `linux`, **CLOSED**, and it merges with A9-RESID
 
-`TestMoERouteDemandThreshold` fails, and it fails **in isolation** — not a suite artifact. It is the
-gate built to notice exactly this, and its own message says what to do: *"if it has moved,
-docs/QUEUE.md A1/A5/A7/A9 need re-deriving, not editing."*
+**A11 and A9-RESID are ONE finding with two observations.** `TestMoERouteDemandThreshold` failed with
+both bounds moved by exactly **+589,824 B**, deterministically. That number was already on the record:
+A9-RESID called it "baseline drift". It is not drift. It is the amount by which
+**demand = floor + residual** failed to close at `MOE_MAX_E=512` while closing exactly at 256:
 
-| bound | pinned | measured now | delta |
+    256:  151,191,552 + 54,525,952  = 205,717,504   measured 205,717,504   EXACT
+    512:  151,191,552 + 138,412,032 = 289,603,584   measured 289,013,760   short by 589,824
+
+**The measurement now reads 289,603,584 — the closed form, to the byte.**
+
+**Both components re-measured, and BOTH HELD** — so this is a fourth outcome, not one of the three
+that were pre-registered (floor moved / residual moved / identity wrong):
+
+| component | recorded | re-measured | |
 |---|---|---|---|
-| highest observed FAIL | 286,916,608 | **287,506,432** | +589,824 |
-| lowest observed PASS | 289,013,760 | **289,603,584** | +589,824 |
+| floor (allocate-until-failure, fresh context: 7,665,287,168 reported − 7,514,095,616 obtained) | 151,191,552 | **151,191,552** | unchanged |
+| residual (`cuMemGetInfo` either side of first launch) | 138,412,032 | **138,412,032** | unchanged |
+| demand (balloon bisection) | 289,013,760 | **289,603,584** | = floor + residual |
 
-**Both bounds moved by exactly the same 589,824 B (576 KiB), and it is DETERMINISTIC** — two
-consecutive runs reproduced both figures byte-for-byte. That rules out measurement noise and rules
-out a brittle pin: the quantity itself has shifted, by a fixed amount, in a way the bisection sees
-identically from both directions.
+Nothing about the machine or the kernel moved — consistent with `aikit/gpu` never leaving `v0.28.0`
+and the gate's own 21/21 byte-identical PTX. **The OLD PIN was the outlier**, recorded from the one
+measurement that did not close, with the 589,824 misattributed to drift rather than read as *a
+failure to close*. A9-RESID's "CLOSED — baseline variance" verdict was wrong on the mechanism while
+being harmless in effect.
 
-**The shipping cap is NOT affected, and that is worth separating from the failure.** The test's own
-margin check passes: `slotMarginBytes` 402,653,184 ≥ peak demand 289,603,584, **clear by 113,049,600 B
-(107.8 MiB)**. The 33-slot cap is derived by binary search against the margin, not against these
-pins, so nothing that ships is wrong. What is wrong is that a recorded constant no longer matches the
-machine, and A1/A5/A7/A9 all rest on it.
+**The pins are RE-DERIVED, not edited to match** (`cuda/moe_route_demand_test.go`), with the identity
+recorded at the pin site as their justification, plus the instruction for next time: if these move
+again, check the identity first — if `floor + residual` still equals the demand, the components moved
+and the pin is downstream of them.
 
-**Not investigated yet, and the obvious suspect does not obviously fit.** The only compiled-code
-change since A9 was derived is the aikit bump — but `moe_route` lives in `aikit/gpu`, which stayed at
-`v0.28.0` across v1.17.0 and v1.17.1, and the gate separately confirms **21/21 PTX regenerate
-byte-identically**. So the kernel is unchanged and the demand still moved. That is the interesting
-part and the reason this needs re-deriving rather than a new number typed into the test.
+**BLAST RADIUS — narrower than the first filing implied.**
 
-**Do NOT edit the pinned values to match.** That converts a live finding into a silent one, and the
-pins are what make A1/A5/A7/A9 checkable at all.
+- **A1 is NOT at risk.** Its closed form does not rest on the demand threshold: it was confirmed by
+  predicting allocation at 16, 30 and 34 slots and free-after-`allocSlots` at 34, **all to the byte**.
+  Nothing in this touches it, and A11 must not be read as reopening the A-chain.
+- **In scope, and now corrected:** A9's demand figure, and A10's decomposition — which is *vindicated*
+  rather than revisited. The identity it proposed now closes at both `MOE_MAX_E` values instead of
+  one.
+- **Nothing that ships is affected.** The margin check passes with `slotMarginBytes` 402,653,184 ≥
+  289,603,584, **clear by 107.8 MiB**, and the 33-slot cap is a binary search against the margin, not
+  against these pins. This was a record-versus-machine mismatch, never a defect.
 
-
-### v0.13.0 — the next tag (decided 2026-08-12, decider Francis)
-
-**MINOR**, and the number follows the content: **D3's `--moe-cache-experts` / `--moe-cache-slots`
-promotion is new user-visible CLI surface.** E1's parity-backfill reservation moved off this number
-to `v0.14.0` rather than the release being numbered to suit it — reservations attach to plans, not
-to numbers.
-
-**Contents:**
-
-- `aikit` **v1.16.0 → v1.17.1**, `aikit/gpu` **v0.27.0 → v0.28.0**
-- **D3** — expert-cache env vars promoted to CLI flags (the headline; the user-visible change)
-- **G2** — `go fix` modernizers, one deterministic pass, cleared by source census
-- **Gate and lint infrastructure** — citation lint in CI (reachability, local-only refs, shallow-clone
-  detection, version-pinned cross-repo resolution), dispatch census, selector coverage, int4 goldens,
-  the refresh guard's clean-manifest pre-flight
-
-**NO PERFORMANCE FIGURES IN THE RELEASE NOTES.** The decode and prefill A/B results are
-*measurements*, recorded in `docs/measurements/` and referenced from P9/P10 — **referenced, not
-claimed**. aikit's own numbers never cross into goinfer's notes.
-
-**Gates outstanding — all four must clear before the tag:**
-
-| gate | box | cost | state |
-|---|---|---|---|
-| **C1a — real-T3 sweep runs green** on real checkpoints | `linux` | 41 min | **DISCHARGED 2026-08-12** — `d1c15ca`: **49 pass / 0 skip / 0 fail**, exit 0, *"ALL REQUIRED GATES GREEN"*. Carries to `3d0f8a2` (deps_hash unchanged) |
-| **C1b — manifest `-update`d at the FREEZE COMMIT** (`validated_at` + metrics) | `linux` | minutes | not started |
-| **P10 prefill A/B** | `linux` | ~1 h | **DONE — branch 3, +4.49%** |
-| **arm64 f32 goldens** | `mac` | minutes | **DISCHARGED** (`b2c7f4d`, 19 f32 via fixture transfer) |
-| **CUDA `scripts/gpu_gate.sh`** | `linux` | ~30 min | **RED — A11 only.** Kernel suite, graphs, CGO_ENABLED=0, PTX 21/21, hygiene all green |
-| **arm64 f32 goldens** | `mac` | minutes | **✅ DISCHARGED** — 19 f32 green on arm64 (`f8c4777`, 2026-08-13), = the box's 19, 0 hash Δ, no headroom collapse. Achieved by rsync'ing the ~38M synthetic fixtures from the box. Residual (real-checkpoint families) is absent on both boxes — arch-independent, not a gap here. See item 4 |
-
-**§C1 IS TWO STATES, AND ONLY THE SECOND DISCHARGES THE GATE.** `RELEASING.md`'s ⛔ gate is
-*"run the real T3 suite … then `-update` the manifest (bump `validated_at` + metrics) **at the freeze
-commit**"* — which is one sentence describing two separate things:
-
-- **C1a** — the sweep runs green on real checkpoints. **Evidence for the gate. It is not the gate.**
-- **C1b** — the manifest is stamped at the freeze commit. **This is what discharges it.**
-
-**Why they are deliberately NOT simultaneous, which is exactly what makes conflating them easy.** The
-stamp belongs at the **freeze commit**, and the sweep runs before it — necessarily, since the sweep is
-what tells you the tree is fit to freeze. So the two are separated in time *by design*, and the
-failure mode is ordinary rather than exotic: **a green sweep reads as a finished gate**, the freeze
-commit lands afterwards, and **nobody re-checks in between**. The manifest then carries a
-`validated_at` pointing at neither the sweep's commit nor the tag's, or carries nothing at all while
-the release notes say "parity re-validated".
-
-**WHETHER THE GAP IS SAFE IS DERIVED, NOT REMEMBERED.** A green C1a on commit *X* carries to a
-freeze commit *Y* **exactly when `deps_hash(Y) == deps_hash(X)`** — because `deps_hash` is a hash of
-**source bytes + `aikit_version`**, which is precisely the set of inputs the sweep consumed. Nothing
-else about *Y* can change what the sweep would have found.
-
-| condition | consequence |
-|---|---|
-| `deps_hash(freeze) == deps_hash(swept)` | **C1a carries.** Record the carry *with that equality as its reason* |
-| differs | **Re-run C1a at the freeze commit.** No scope statement rescues it |
-
-So the designed gap between sweep and stamp is **safe when `deps_hash` is unchanged across it, and
-unsafe otherwise** — and that is a question you *check*, not one you hold in your head.
-
-**Checked for the current gap (2026-08-12).** The sweep is running at `cabcdbe`; HEAD has since moved
-to `8ec96c6`. That range changes **one file, `docs/QUEUE.md`** — intersection with the manifest's 29
-tracked Go files is **empty**, and `aikit_version` is untouched. Confirmed mechanically rather than
-inferred from the file list: `TestParityManifest_fresh` is **green at HEAD**, i.e. the recorded
-`deps_hash` equals the one computed at HEAD. **C1a's result therefore carries as far as `8ec96c6`**,
-and the caveat this entry used to carry is a discharged question rather than an outstanding one.
-
-**And C1b cannot invalidate the sweep that justified it.** The `-update` writes `validated_at`,
-metrics and dates into `testdata/parity_manifest.json` — **none of which are `deps_hash` inputs**
-(the inputs are source bytes and `aikit_version`). So stamping the manifest at the freeze commit
-leaves `deps_hash` unchanged by construction, and the stamp can never retroactively break the carry
-that permitted it. The ordering is safe in both directions.
-
-**Owed but NOT gating the tag** — both are bounds that currently read as provisional, and stop
-doing so once measured:
-
-- ~~**v1.16.0 prefill arm profile**~~ — **DONE 2026-08-12**: 52.18% against v1.17.1's 42.65%. The
-  shares differ materially, and the pre-registered "use the smaller" rule turned out to be written
-  for the flat branch; on a *win* the conservative direction reverses. See P10.
-- ~~**`BenchmarkDecode` profile**~~ — **DONE 2026-08-12**: 6.48%. It materially weakens P9's flat
-  verdict (a ~31% residual inside the int8 path was undetectable) and independently corroborates the
-  v1.17.0 regression at ≈−46% within the path against aikit's own +49%. See P9.
-
-
-**P10 · PREFILL A/B — THE CRITICAL PATH. One unmeasured phase is holding a tag AND C3** — `linux`,
-**open, pre-registered 2026-08-12**
-
-**Do this before anything else in this list.** It is not the largest task; it is the one everything
-downstream is queued behind.
-
-**What it blocks, and why that is two things rather than one:**
-
-1. **Cutting a goinfer tag.** `linalg/matmul_blocked.go` is **unchanged between aikit v1.17.0 and
-   v1.17.1**, so v1.17.0's f32 blocked-matmul rework (`dot8ColsInto` replacing `Dot8x4`'s
-   32-partial round trip, plus `blockRows3x4` on amd64) is **live in both versions and measured in
-   neither**. Decode is measured and flat (P9). Prefill is the phase that rework actually lives on.
-   A release characterizing one phase while silently carrying an unmeasured change to another is a
-   **claim by omission**, and this repo has a rule against exactly that.
-2. **C3, the Metal consumer window** — the largest completely uncovered surface in the project,
-   which has **already sunk once** — **if the tag is numbered `v0.13.0` or above.**
-
-**The C3 half is CONDITIONAL and was stated too strongly when this was filed.** C3's trigger is *"the
-next goinfer RELEASE TAG (≥ v0.13.0) that carries an AIKIT BUMP"*, and the version floor is part of
-it. A `v0.12.1` patch carrying this bump fires **neither** C3 **nor** E1's parity backfill (E1
-reserves that for v0.13.0):
-
-| next tag | P10 owed? | C3 fires? | E1 backfill owed? |
-|---|---|---|---|
-| `v0.12.1` (patch) | **yes** — the f32 rework ships either way | no | no |
-| `v0.13.0` | **yes** | **yes** | **yes** |
-
-**P10 is owed under both**, which is why it is the critical path regardless of the numbering. Whether
-it is holding one thing or three is a decision nobody has taken — see E1.
-
-**RESULT (2026-08-12): BRANCH 3 — v1.17.1 is FASTER on prefill by +4.49%** (median; mean +4.68%;
-bootstrap 95% CI **[+4.24%, +5.26%]**, B=20000, fixed seed; analytic SE 0.222%, so 21 SE). The arms
-do not overlap — v1.16.0 [78.02, 79.51], v1.17.1 [81.93, 83.06] — and per-visit medians are ordered
-consistently across all three rounds. **P10's obligation is discharged: prefill is measured on both
-versions.**
-
-**Scoped exactly as a loss would be, per the pre-registration:** one model (Qwen2.5-Coder-0.5B,
-dense), one prompt length (512), f32 only, one box, prefill only. **No CHANGELOG entry, no
-release-note claim** — a measurement, referenced.
-
-**Within the reworked path: ~8.6% (conservative), range 8.6–10.5%.** Both arms are profiled and the
-shares differ — 52.18% (v1.16.0) vs 42.65% (v1.17.1) — the drop being coherent with the rework making
-that path cheaper. The pre-registered rule said "use the smaller share", but **that rule was written
-for the FLAT branch**, where a smaller share means a larger admissible hidden effect. On a *win* the
-direction reverses: dividing by the smaller share inflates the claim. So the quoted figure divides by
-the **larger** share. Applying the letter of the rule would have added two points to the claim.
-
-**Bootstrap and analytic agreed** (half-widths 0.510% vs 0.435%), so no skew or heavy tails — checked
-rather than assumed, in the one place normality had been explicitly rejected.
-
-**Design, pre-registered in full at `docs/measurements/aikit-v1.17.1-prefill-ab.md` before any
-sample exists.** Same discipline as the decode A/B, for the same reason: **v1.16.0 against v1.17.1**
-(the only baseline predating the rework, since v1.17.0 and v1.17.1 are identical here), interleaved
-a/b/a/b in one session on one box, two worktrees at the same goinfer commit differing only in
-`go.mod`, warm-up discard carried over from the recorded calibration, floor **2.0%** fixed before the
-first sample. All three branches are written down, **including the flat one** — if it lands inside
-the floor, "the rework is below this instrument's noise floor on prefill" is the **recorded answer**
-that discharges the obligation, not an absence of one that leaves the tag blocked.
-
-**The known weakness, stated in advance rather than discovered later:** `BenchmarkDecode` is a decode
-harness, so prefill needs a batched-forward instrument that is **not** the one already calibrated.
-The 2.0% floor is inherited and is therefore an **assumption** here. If the prefill instrument's own
-spread exceeds it, the floor is wrong — re-derive it from a characterization run and say so, rather
-than keeping it because it was written down first.
-
-**The 5% session-drift figure applies** (`decoder/decode_bench_test.go`): a sequential before/after
-would be dominated by it.
+**The lesson worth keeping: a residue that "is exactly the drift we measured elsewhere" deserves more
+suspicion than a residue that is merely small.** 589,824 B against 289 MiB is 0.2% — easy to wave
+through. Its appearing *twice, exactly* is what made it a mechanism, and the second observation is
+what resolved the first.
 
 **A2 (partial) · 26B documentation correction** — `linux`, 2026-08-12
 
@@ -300,6 +166,30 @@ Pre-registered prediction for 30 slots, to test the curve rather than assume it:
 rate, ~15.0–15.8 tok/s**.
 
 ### B. Enforcement gaps — things that exist but aren't composed into a decision
+
+**B8 · A sweep must distinguish "could not evaluate" from "failed"** — `linux`, **filed 2026-08-12**
+
+`scripts/parity_sweep.sh` reported **27 blockers**, then **15**, then **0**. The tree was fine at all
+three. Every one of the 42 was a **missing asset or an unset env var** — an *inability to evaluate*,
+rendered in the output as a *result*, under one label: `⚠️ SKIP — asset missing (blocker)`.
+
+**Two concrete costs, both paid.** The label says "asset missing" for gates that skipped on
+`GOINFER_HEAVY_TESTS` being unset, which sent me looking for checkpoints that were sitting in
+`~/models` the whole time. And a run whose blockers are all unevaluated gates reads identically to a
+run with real failures — the operator cannot tell a red tree from an unequipped box without opening
+the log.
+
+**The fix is in the output, not in the gating.** Both still block a tag: an unevaluated required gate
+is not a pass, and that rule is right. But they must be *counted and named separately*:
+
+    27 BLOCKER(S): 0 FAILED, 27 NOT EVALUATED (19 asset absent, 8 env gate unset)
+
+and the env-gated ones should name the variable, since that is a one-line fix rather than a download.
+
+**Same shape as the Mac's 31 silent skips, and as `scripts/gpu_gate.sh` reporting an OOM as "a CUDA forward
+moved".** An absence rendered as a result, and a cause rendered as the wrong kind of cause. The
+project already has the rule — *a skip is not a pass* — and these are the corollary: **a skip is also
+not a failure, and a gate that cannot say which it had is asking the operator to guess.**
 
 **B7 · `aikit_version` is a hand-maintained input to a computed gate** — `linux`, **found 2026-08-12
 during the v1.17.0 bump**
@@ -750,7 +640,13 @@ cost. The code comment says so rather than carrying the refuted rationale.
 Any reduction has to stay above the floor, which leaves far less room than the "recover two slots"
 framing suggested.
 
-**A9-RESID · The 589,824 B is baseline variance, not reservation variance** — `linux`, **CLOSED**
+**A9-RESID · The 589,824 B is baseline variance, not reservation variance** — `linux`, **CLOSED —
+BUT THE MECHANISM WAS WRONG; see A11 (2026-08-12)**
+
+> The verdict "baseline variance" was harmless in effect and wrong in cause. 589,824 B is the amount
+> by which `demand = floor + residual` failed to close at `MOE_MAX_E=512`, and the demand now measures
+> the closed form to the byte with both components unchanged. It was a **failure to close**, read as
+> drift. Merged into A11, which is the resolved record.
 
 The launch-configuration branch is **refuted**. The reservation is **138,412,032 B at every
 configuration tested** — nE ∈ {1, 8, 128, 512}, k ∈ {1, 2, 8}, a 512× span in nE — which is what a
@@ -2692,7 +2588,6 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `2e8dfb6` | fix(parity): goldens-gated deps_hash refresh for the aikit v1.17.1 bump |
 | `2e91607` | test: refresh parity deps_hash — non-numeric core-file drift (un-reds main) |
 | `38061b1` | perf(gemma4-paging): pread expert nibbles straight into the slot buffers |
-| `3d0f8a2` | fix(ci): regenerate the citation index after rebasing A11 onto the mac batch |
 | `3d6ae1e` | chore: go fix modernizers, one deterministic pass (G2) |
 | `4642b7c` | [aikit] gpu(metal): Device.MaxThreadgroupMemoryLength() — tile-memory limit (goinfer M-11) |
 | `4c26a58` | perf(cuda): parallelise the Gemma final-logit softcap, bit-identical (P3) |
@@ -2703,7 +2598,6 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `7cc2f0d` | fix(parity,ci): refresh deps_hash after 38061b1's pread-staging core plumbing (non-numeric) |
 | `7ccec1e` | fix(cuda): the expert cache sizes itself — topK was the worst possible default |
 | `82b39cc` | docs(parity): document qwen3_5_moe's int8-vs-bf16 movement (v0.8.0 §1 — gate-backed pass) |
-| `8ec96c6` | docs: split §C1 into C1a (sweep green) and C1b (manifest stamped) — only C1b discharges it |
 | `8fecfad` | ci: heavy_gate.sh — a runner for the real-checkpoint tier that no CI job executes |
 | `91f359f` | fix(decoder): matmulInto dispatches on the property, not on W8A8 (P7) |
 | `93eb7d4` | feat(decoder): gpt-oss real-model path — batched-prefill fix + real gates |
@@ -2717,7 +2611,6 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `a6c5b57` | fix(parity): the goldens refresh runs quantized goldens, and reports the split |
 | `a79303e` | [aikit] release: prepare v1.16.0 — mmap SpanCache eviction-policy knob |
 | `ada417e` | [aikit] scripts: ptx-repro is n/a on darwin, keyed on the PLATFORM not on NVRTC's absence |
-| `b2c7f4d` | docs: arm64 f32 gate DISCHARGED (19 f32 via fixture transfer); arch-trap filed; arch-stamp validated |
 | `bacc04c` | feat(serve): --moe-cache-experts / --moe-cache-slots — PARKED on the freeze |
 | `bd08936` | fix(gate): cannot-search is not not-found; cross-gate composition; B7 sweep |
 | `be049df` | [aikit] gpu(gemv): explicit __fmaf_rn in the quantized GEMV — the bit-identity contraction rule |
@@ -2872,13 +2765,13 @@ than papered over.
 | `cuda/allocgran_test.go` | goinfer |
 | `cuda/backend.go` | goinfer |
 | `cuda/build_ptx.sh` | goinfer |
+| `cuda/moe_route_demand_test.go` | goinfer |
 | `cuda/moe_route_reservation_test.go` | goinfer |
 | `cuda/nvrtc_compile.py` | goinfer |
 | `cuda/prefill.go` | goinfer |
 | `cuda/resident.go` | goinfer |
 | `cuda/slotcap_test.go` | goinfer |
 | `cuda/softcap.go` | goinfer |
-| `decoder/decode_bench_test.go` | goinfer |
 | `decoder/gguf.go` | goinfer |
 | `decoder/giwquant_test.go` | goinfer |
 | `decoder/gptoss_real_test.go` | goinfer |
