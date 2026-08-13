@@ -1055,25 +1055,35 @@ A corollary of the above, filed so the next instance starts from a known price. 
 **rewrites a float expression** (a reworked matmul inner loop, a `minmax`, a reassociated sum) can
 pass the argmax+cosine goldens on amd64 and breach on **arm64** — the arch that fuses `x*y+z` (the
 arch exception, `RELEASING.md` §C1). So the goldens for such a change **must run on arm64**. But the
-tiny fixtures the goldens need are **gitignored** (kept out of the repo by size policy), and
-**nothing reconciles them onto the arm64 machine** — so the arm64 box typically starts with none, and
-each instance rediscovers "the arch that must test has no fixtures." First seen 2026-08-13 (aikit
-v1.17.0 f32 rework): the initial arm64 run covered **8** f32 families, the rest skipped for want of
-fixtures.
+tiny fixtures the goldens need are **gitignored**, and the arm64 machine typically starts with none.
 
-**The trap is real but the remedy is cheap — this is the price, measured, not estimated:**
-- The tiny fixtures are **deterministic synthetic** (`pin_*_tiny.py`, `torch.manual_seed(0)`,
-  "sub-second, no download") — arch-independent bytes. **rsync them from any machine that has them**
-  (measured 2026-08-13: **~38M, minutes**, box→mac), or regenerate via the `pin_*_tiny.py` scripts
-  (seconds each, no network). Either takes the arm64 run to the **full 19 f32**, the same coverage the
-  amd64 box proves.
-- **Permanent fix, if the recurrence annoys:** promote the synthetic fixtures into the *committed* set
-  (they are KB–few-MB deterministic random-weight, the same class as `mixtral-tiny`) so both arches
-  always have them. Cost: ~38M of repo size against the current per-run transfer. Weigh under "The
-  committed set (chosen, not accidental)" above — this is exactly the promotion rule's use case.
+**Name the trap precisely: it is not that the fixtures were absent — it is that their absence rendered
+as 31 silent skips instead of a message.** A skip is a *legitimate* outcome for a machine that
+**cannot** run something (no GPU, no real checkpoint). It is the *wrong* outcome for a machine that
+**could** run it after one command. First seen 2026-08-13 (aikit v1.17.0 f32 rework): the initial
+arm64 run rendered 8 f32 green and 31 skips — and read as "partly covered" when the true state was
+"one `rsync`/regen away from full." The defect is the silent skip, not the missing bytes.
+
+**Remedies, cheapest-and-best first — the price is measured, not estimated:**
+
+1. **Regenerate on demand — the best permanent fix, zero repo cost.** `pin_*_tiny.py` is **seeded**
+   (`torch.manual_seed(0)`), deterministic, and runs in **seconds** with no network. So the right
+   behaviour is for the gate to **generate what is missing, or fail naming the exact command**, rather
+   than skip. A fixture that is one deterministic command away should never render as a silent skip.
+   This costs nothing in the repo and removes the trap at its root (the skip), not just its symptom.
+2. **`rsync` ~38M between machines — works today, minutes.** Measured 2026-08-13 (box→mac): the 14
+   synthetic dirs the arm64 machine lacked, ~38M, a few minutes. Needs both machines up. This is the
+   *today* fix; regeneration (1) is the *standing* one.
+3. **Commit the fixtures — the MOST EXPENSIVE, despite reading as "permanent."** `testdata/` ships in
+   the module, so ~38M reaches **every `go get`, every proxy copy, and every clone, forever** — for a
+   runtime whose whole pitch is "deploy by copying one static binary." Do **not** pick this because it
+   is labelled permanent: regeneration (1) is permanent *and* free. Committing is justified only for
+   the rare fixture that is both CI-load-bearing and cannot be regenerated (the `mixtral-tiny` case —
+   see "The committed set (chosen, not accidental)"), never as the default answer to a skip.
 
 **Not part of this gap — a separate, arch-INDEPENDENT tier:** the *real* checkpoints
 (`qwen2.5-0.5b`, `qwen3-1.7b`, `tinymistral-248m`, `gpt2`, `llama-3.2-1b`, `gemma-3-270m`) are absent
 on **both** machines (they need HF downloads and are not kept), so those families skip on amd64 too.
-Do not conflate them with the arch trap: transferring synthetic fixtures does not fetch these, and
-their absence is not an arm64-specific coverage hole.
+Their skip *is* the legitimate kind (no local checkpoint, not one command away). Do not conflate them
+with the arch trap: transferring or regenerating synthetic fixtures does not fetch these, and their
+absence is not an arm64-specific coverage hole.
