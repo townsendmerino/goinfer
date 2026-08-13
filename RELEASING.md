@@ -127,7 +127,9 @@ First concrete customer:
 
 - **C3 · Metal consumer window.** If THIS release carries an **aikit bump** (`aikit` and/or `aikit/gpu`
   increased vs the previous tag — the B-07 version-alignment step above is where you'd have seen it),
-  then **C3 runs on `macbook-arm64` against this tag**: an out-of-tree consumer evaluation of the
+  then **C3 runs on `macbook-arm64` against this tag**. *(The condition is the bump, deliberately —
+  no version floor. A number standing in for the real condition is a literal that drifts; QUEUE.md's
+  copy carried "≥ v0.13.0" and was corrected 2026-08-12 for that reason.)*: an out-of-tree consumer evaluation of the
   cgo-free Metal backend (build with no Xcode, decode tok/s vs the 73.6 claim, bit-identity, and
   whether the tautological-gate shape is live on Metal). See `docs/QUEUE.md` → "C3 · Metal consumer
   window" for the full scope, trigger, and bound. **This line is the durable carrier** — read by

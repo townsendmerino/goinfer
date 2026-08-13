@@ -54,6 +54,27 @@ in **means** is 0.227% × √(2/12) ≈ **0.093%** — so the 0.6% floor sits at
 errors**. (For the pre-registered **median** statistic the standard error is ≈1.25× that under
 normality, ≈0.12%; both are reported so the statistic and its uncertainty match.)
 
+**THE MEDIAN'S UNCERTAINTY IS BOOTSTRAPPED, NOT DERIVED FROM NORMALITY.** The median was chosen
+**for robustness** — because the distribution is not trusted — so estimating its uncertainty with a
+normality-derived ×1.25 factor would assume away the exact property it was chosen to tolerate. That
+is the same error as deriving a threshold from the data it judges, one level over: using the
+convenient assumption precisely where it was rejected.
+
+So: **percentile bootstrap over the 12 retained samples per arm** (resample each arm with
+replacement, recompute the median difference, take the 2.5/97.5 percentiles). The mean's analytic SE
+(±0.093%) is reported **alongside** it. **If the two disagree, both are printed and the disagreement
+is itself reported** — a bootstrap interval much wider than the analytic one is evidence the
+distribution is skewed or heavy-tailed, which is information about the instrument, not an
+inconvenience to be smoothed over.
+
+**PROVENANCE OF THE SHARE DIVISOR, on the record now rather than discovered later.** The ~43%
+reworked-path fraction was measured **under a CPU profiler**, and it is applied to **unprofiled**
+A/B runs. Profiling perturbs what it measures (sampling interrupts, disabled inlining in some
+paths), so the divisor is **rough**. The imprecision does not matter at the resolution it is used
+for — it converts a benchmark-level bound into an order-of-magnitude statement about the reworked
+code — but "measured under a profiler, applied to a run without one" is the kind of detail that
+looks like sleight of hand when found later and like ordinary care when stated up front.
+
 **Consequence, fixed here:** the flat branch reads *"no effect exceeding the declared threshold"*,
 **never** *"no difference"* — and the measured delta and its uncertainty are printed alongside the
 branch in every case. A real 0.3% effect would be correctly below the floor and **invisible if only

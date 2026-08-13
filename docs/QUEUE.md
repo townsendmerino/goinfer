@@ -25,6 +25,44 @@ Boxes: `linux` (nvidia-rtx2070s, CUDA) · `mac` (Apple Silicon, Metal).
 
 ## In flight
 
+### v0.13.0 — the next tag (decided 2026-08-12, decider Francis)
+
+**MINOR**, and the number follows the content: **D3's `--moe-cache-experts` / `--moe-cache-slots`
+promotion is new user-visible CLI surface.** E1's parity-backfill reservation moved off this number
+to `v0.14.0` rather than the release being numbered to suit it — reservations attach to plans, not
+to numbers.
+
+**Contents:**
+
+- `aikit` **v1.16.0 → v1.17.1**, `aikit/gpu` **v0.27.0 → v0.28.0**
+- **D3** — expert-cache env vars promoted to CLI flags (the headline; the user-visible change)
+- **G2** — `go fix` modernizers, one deterministic pass, cleared by source census
+- **Gate and lint infrastructure** — citation lint in CI (reachability, local-only refs, shallow-clone
+  detection, version-pinned cross-repo resolution), dispatch census, selector coverage, int4 goldens,
+  the refresh guard's clean-manifest pre-flight
+
+**NO PERFORMANCE FIGURES IN THE RELEASE NOTES.** The decode and prefill A/B results are
+*measurements*, recorded in `docs/measurements/` and referenced from P9/P10 — **referenced, not
+claimed**. aikit's own numbers never cross into goinfer's notes.
+
+**Gates outstanding — all four must clear before the tag:**
+
+| gate | box | cost | state |
+|---|---|---|---|
+| **§C1 real-T3 parity sweep** (`RELEASING.md`, the one ⛔) | `linux` | **hours — dominant** | not started |
+| **P10 prefill A/B** | `linux` | ~1 h | **running** |
+| **arm64 f32 goldens** | `mac` | minutes | not started |
+| **CUDA tier of `scripts/gpu_gate.sh`** | `linux` | 10–20 min | not started |
+
+**Owed but NOT gating the tag** — both are bounds that currently read as provisional, and stop
+doing so once measured:
+
+- **v1.16.0 prefill arm profile** — for P10's conservative dilution bound (the ~43% figure is the
+  v1.17.1 arm's; the smaller of the two is the one that counts).
+- **`BenchmarkDecode` profile** — P9's unknown divisor. Without it, "v1.17.1 fixed it" reads only as
+  far as "the benchmark-level regression is gone".
+
+
 **P10 · PREFILL A/B — THE CRITICAL PATH. One unmeasured phase is holding a tag AND C3** — `linux`,
 **open, pre-registered 2026-08-12**
 
@@ -1117,7 +1155,12 @@ nothing would say so.**
 
 **DEFERRED BY CHOICE (2026-08-12) — auto-pickup, trigger pinned. Not sunk: deferral is the decision.**
 
-- **Trigger = the next goinfer RELEASE TAG (≥ v0.13.0) that carries an AIKIT BUMP** — `aikit` and/or
+- **Trigger = the next goinfer RELEASE TAG THAT CARRIES AN AIKIT BUMP.** No version floor: the
+  condition is the *bump*, and a version number standing in for it is a literal that drifts. **Same
+  shape corrected twice in one day** — "the aikit **v1.17.0** bump" was loosened to *any* aikit bump
+  this morning when v1.17.1 shipped hours later, and "**≥ v0.13.0**" is the same substitution one
+  level up (it happens to fire correctly for v0.13.0, so this is hygiene, not a fix). B7's constant
+  class. `aikit` and/or
   `aikit/gpu` increased against the previous release tag, whatever the version. **Was written as "the
   aikit v1.17.0 bump" and that literal drifted within hours**: aikit shipped v1.17.1 the same day, so
   the trigger named a version `main` was no longer on. RELEASING.md's copy was already generic, which
@@ -1351,7 +1394,30 @@ file.) It was deliberately not spent on ergonomics.
 
 **E1 · v1.0 gate as written criteria** — `linux`
 
-Decisions already taken: the parity backfill lands as **v0.13.0** (moved from v0.12.0, which this campaign took — decided 2026-08-12), not v1.0. v1.0 gets its own gate
+**The parity backfill lands as `v0.14.0`** — moved from `v0.13.0`, **decided 2026-08-12 by
+Francis**, which is the **second** move of this reservation and the history is kept deliberately:
+
+| target | moved because |
+|---|---|
+| `v0.12.0` | that number was taken by the CUDA expert-cache campaign |
+| `v0.13.0` | *(superseded, 2026-08-12)* |
+| **`v0.14.0`** | **current** — v0.13.0 is being cut for the aikit bump + D3's flag promotion |
+
+**The reason, recorded because it is the useful part.** `v0.13.0` is the honest number for what it
+carries: **D3's `--moe-cache-experts` / `--moe-cache-slots` promotion is new user-visible CLI
+surface**, and a minor is what that content warrants. The backfill reservation had been attached to
+a **number** rather than to a **plan** — and reservations attach to plans. Moving the reservation is
+a **smaller correction than numbering a release to satisfy a bookkeeping artifact**, which is what
+holding v0.13.0 for the backfill would have been.
+
+*(Same shape as B7's constant class, one level up: a plan pinned to a literal drifts when the
+literal is needed for something else. The remedy there was to derive the value; here it is to attach
+the reservation to the work rather than to the number.)*
+
+**E2's obligation is unchanged in substance — only its target release moves.** The four families
+still carry `validated_at: null`; see E2.
+
+v1.0 gets its own gate
 requiring parity coverage complete, the verification machinery sound, the loader and
 architecture-descriptor surface **actually frozen** (the docs still say it may change), and a clean
 out-of-tree audit against the release candidate.
@@ -1363,6 +1429,8 @@ Write that as a checklist so 1.0 is a decision against criteria rather than a fe
 `gpt2`, `granitemoehybrid`, `kimi_k2`, `nemotron_h` carry `validated_at: null` and are the same four
 the `deps_hash` tripwire does not enforce — so 19/23 tracks both the backfill's progress and the
 tripwire's coverage, and clearing it closes both.
+
+**Retargeted to `v0.14.0`** (2026-08-12, with E1's reservation — substance unchanged, target only).
 
 Rule: every family claimed as supported at v1.0 has a current T3 row; families that can't get one go
 experimental. **Honesty test per family — would you move it to experimental if no release were
