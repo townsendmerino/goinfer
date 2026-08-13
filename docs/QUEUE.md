@@ -106,11 +106,37 @@ across the CUDA tests; only three small files load without any (`cuda/gemma_bos_
 **So this reads as a capacity limit of the 8 GB card for the full heavy tier in one process, not a
 defect in the tree.** Every test passes on its own; the tier as a whole does not fit.
 
+**BEING MEASURED BEFORE CHOOSING** (`cuda/vramtrace_test.go`, `7fa09da`). Free VRAM is sampled
+in-process by `cuMemGetInfo` — the A-chain's own instrument — every 50 ms, joined to test boundaries
+from `-v` output by wall clock, because Go exposes no per-test hook and the four failing tests share
+no helper. **Pre-registered readings:**
+
+| shape | reading |
+|---|---|
+| monotonic decline, not recovering | **accumulation** — something is not freeing, the `defer` audit missed it, the gate is correctly red. Option (b), with a target |
+| sawtooth, recovering per test, high-water above the card | **genuine environment limit.** Option (c) is honest, and statable with a number rather than as a judgement |
+| neither | report it — both candidates are wrong and the candidate list reopens |
+
+The per-test table is the deliverable, not a conclusion.
+
+**OPTION (a) HAS A PRICE THAT MUST BE PAID KNOWINGLY.** Per-test process isolation removes the
+symptom **by removing the conditions under which a real leak is observable**. A genuine leak looks
+exactly like today — green alone, red in suite — so after isolation a leak and an environment limit
+**both read green**, on the gate that covers the resident CUDA path. It buys a **permanent blind
+spot**, and it may still be right; it must not be chosen as the option that "removes the class",
+which is how I first described it.
+
+**A FOURTH OPTION, and probably the best of them: PARTITION.** Split the tier into two or three
+groups by memory footprint, each its own process. Fits the card, **preserves cross-test detection
+within a group**, and `scripts/gpu_gate.sh` already orchestrates multiple `go test` invocations so it
+costs no product code. Weaker than one process, much stronger than N.
+
 **Options, none taken yet — this is a decision, not a fix:**
 
 1. **Run each heavy test in its own process.** Bounds VRAM by construction, since exit reclaims
-   everything. Costs process-start time per test and needs the runner reworked. This is the one that
-   actually removes the class.
+   everything. Costs process-start time per test, needs the runner reworked, and — the part that
+   matters — **buys a permanent blind spot for leaks** (see above). Not "the one that removes the
+   class"; the one that removes the *observation*.
 2. **Tidy the three no-`Close` files and re-measure.** Cheap, and it may or may not be enough — say
    which before running it, or it becomes a fishing expedition.
 3. **Declare the heavy tier out of scope for an 8 GB box** and record the gate as environment-limited,
@@ -2644,6 +2670,7 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `6edd1ca` | parity: make "validated" MEAN T3 — method-tier gate + honest experimental tier (D2, pre-freeze) |
 | `7cc2f0d` | fix(parity,ci): refresh deps_hash after 38061b1's pread-staging core plumbing (non-numeric) |
 | `7ccec1e` | fix(cuda): the expert cache sizes itself — topK was the worst possible default |
+| `7fa09da` | test(cuda): opt-in VRAM tracer for A12 — cuMemGetInfo, in-process, per-sample |
 | `82b39cc` | docs(parity): document qwen3_5_moe's int8-vs-bf16 movement (v0.8.0 §1 — gate-backed pass) |
 | `8fecfad` | ci: heavy_gate.sh — a runner for the real-checkpoint tier that no CI job executes |
 | `91f359f` | fix(decoder): matmulInto dispatches on the property, not on W8A8 (P7) |
@@ -2822,6 +2849,7 @@ than papered over.
 | `cuda/resident.go` | goinfer |
 | `cuda/slotcap_test.go` | goinfer |
 | `cuda/softcap.go` | goinfer |
+| `cuda/vramtrace_test.go` | goinfer |
 | `decoder/gguf.go` | goinfer |
 | `decoder/giwquant_test.go` | goinfer |
 | `decoder/gptoss_real_test.go` | goinfer |
