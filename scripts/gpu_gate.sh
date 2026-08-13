@@ -100,6 +100,27 @@ vram_note() {
 	echo "            REFUTED, and there is no leak. Do not assume; measure."
 }
 
+# detail <output> <regex> — print the matching assertion lines, or the RAW TAIL if nothing matched.
+#
+# A group that fails and explains nothing is the silence-reads-as-health shape this script exists to
+# prevent, one level up in the tooling. `go test` killed by a signal, an OOM, or a timeout emits
+# neither "--- FAIL" nor a "file.go:N:" line — only "FAIL <pkg> <secs>" — so every filter below
+# reported an EMPTY explanation for exactly the failures that are hardest to reproduce.
+#
+# Observed 2026-08-13: group 2b failed in a full gate run and printed nothing at all, while passing
+# standalone. The failure was real and the gate had no way to say what it was.
+detail() {
+	local out="$1" re="$2" n
+	n="$(printf '%s\n' "$out" | grep -cE "$re" || true)"
+	if [ "${n:-0}" -gt 0 ]; then
+		printf '%s\n' "$out" | grep -E "$re" | head -12 | sed 's/^/      /'
+	else
+		echo "      NO ASSERTION LINE MATCHED — this run failed without a test-level failure."
+		echo "      That is a signal, an OOM kill, or a timeout. Raw tail (last 15 lines):"
+		printf '%s\n' "$out" | tail -15 | sed 's/^/      | /'
+	fi
+}
+
 nomatch() { # $1 = go test output, $2 = pattern (for the message); returns 0 if nothing ran
 	[ "$(printf '%s' "$1" | grep -cE '^=== RUN' || true)" -eq 0 ]
 }
@@ -180,7 +201,7 @@ cuda)
 		echo "$out" | grep -E "^ok" | sed 's/^/      /'
 	else
 		fail "cuda kernel-level suite"
-		echo "$out" | grep -E "^--- FAIL|\.go:[0-9]+:" | head -12 | sed 's/^/      /'
+		detail "$out" "^--- FAIL|\.go:[0-9]+:"
 	fi
 	# Census the skips INSIDE the passing suite. "ok" hides them, and a skip is not a pass.
 	SK="$(printf '%s' "$out" | grep -cE '^--- SKIP' || true)"
@@ -201,7 +222,7 @@ cuda)
 		echo "$out" | grep -E "^ok" | sed 's/^/      /'
 	else
 		fail "resident parity gates — a CUDA forward moved. This is the group 2a cannot see."
-		echo "$out" | grep -E "^--- FAIL|\.go:[0-9]+:" | head -12 | sed 's/^/      /'
+		detail "$out" "^--- FAIL|\.go:[0-9]+:"
 		vram_note "$out"
 	fi
 
@@ -342,7 +363,7 @@ cuda)
 		fi
 	else
 		fail "graphs bit-exactness FAILED under forced capture — replay diverges from live launches"
-		echo "$out" | grep -E "^--- FAIL|\.go:[0-9]+:" | head -12 | sed 's/^/      /'
+		detail "$out" "^--- FAIL|\.go:[0-9]+:"
 	fi
 	NOTES+=("graphs are FORCED in 2d (GOINFER_CUDA_GRAPHS_UNSAFE): this proves the capture/replay CODE, not that graphs are admitted in production — admitGraphs still declines here (DEFAULT compute mode, no MPS).")
 
@@ -473,7 +494,7 @@ metal)
 		echo "$out" | grep -E "^ok" | sed 's/^/      /'
 	else
 		fail "metal suite"
-		echo "$out" | grep -E "^--- FAIL|\.go:[0-9]+:" | head -12 | sed 's/^/      /'
+		detail "$out" "^--- FAIL|\.go:[0-9]+:"
 	fi
 
 	grp cgofree; hdr "3. cgo-free"
@@ -498,7 +519,7 @@ metal)
 			echo "$out" | grep -E "trajectory|A\+B alive" | sed 's/^/      /'
 		else
 			fail "Close() leaks memory"
-			echo "$out" | grep -E "^--- FAIL|LEAK|did NOT free|USE-AFTER-FREE|\.go:[0-9]+:" | head -8 | sed 's/^/      /'
+			detail "$out" "^--- FAIL|LEAK|did NOT free|USE-AFTER-FREE|\.go:[0-9]+:"
 		fi
 	else
 		skip "Close() lifecycle gate needs ~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"
@@ -522,7 +543,7 @@ metal)
 			echo "$out" | grep -E "argmax matches|faster TTFT" | sed 's/^/      /'
 		else
 			fail "prefill parity/NaN gate — the f16-MMA TTFT path is wrong on a shipped model"
-			echo "$out" | grep -E "^--- FAIL|parity FAIL|contain NaN|\.go:[0-9]+:" | head -8 | sed 's/^/      /'
+			detail "$out" "^--- FAIL|parity FAIL|contain NaN|\.go:[0-9]+:"
 		fi
 	else
 		skip "prefill gate needs ~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"
