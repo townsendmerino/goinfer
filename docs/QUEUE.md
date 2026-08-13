@@ -52,7 +52,7 @@ claimed**. aikit's own numbers never cross into goinfer's notes.
 | **C1a — real-T3 sweep runs green** on real checkpoints | `linux` | **hours — dominant** | **running** (`EMIT_MANIFEST=0`, manifest untouched) |
 | **C1b — manifest `-update`d at the FREEZE COMMIT** (`validated_at` + metrics) | `linux` | minutes | not started |
 | **P10 prefill A/B** | `linux` | ~1 h | **DONE — branch 3, +4.49%** |
-| **arm64 f32 goldens** | `mac` | minutes | not started |
+| **arm64 f32 goldens** | `mac` | minutes | **PARTLY DISCHARGED** — 8 f32 green on arm64 (`53a96f6`, 2026-08-13), 0 hash Δ; 11 of the box's 19 f32 rows skipped (no local fixtures). Full coverage needs the tiny fixtures regenerated **on arm64** — see item 4 |
 | **CUDA tier of `scripts/gpu_gate.sh`** | `linux` | 10–20 min | not started |
 
 **§C1 IS TWO STATES, AND ONLY THE SECOND DISCHARGES THE GATE.** `RELEASING.md`'s ⛔ gate is
@@ -1129,6 +1129,31 @@ and none needs this one:
    **How.** Run `scripts/refresh_parity_hashes.sh` (or the f32 forward goldens) on `macbook-arm64`; the
    new `arch=arm64` trailer records the discharge. Second tag-gate alongside the prefill measurement —
    both attach to the same aikit-bump change.
+
+   **RUN 2026-08-13 on `macbook-arm64` (`53a96f6`) — PARTLY DISCHARGED. Evidence, not inference:**
+   - **arch stamp present** in both the proof block (*"forward goldens green at 53a96f6 on
+     arch=arm64"*) and the trailer (`Deps-Hash-Refresh: 53a96f6 goldens=11 arch=arm64`).
+   - **Composition: 11 passed / 0 failed / 31 skipped.** Of the 11, **3 quantized** (`TestInt4_forwardParity`,
+     `TestGemma4_logitParity`, `TestGemma4_12B_logitParity`) → **8 f32 rows ran**, vs the box's 19. So
+     pre-registration point 1 fired: **fewer than 19 → PARTLY discharged, not rounded up.**
+   - **8 f32 rows GREEN on arm64** (argmax margin survives the summation-order change): `TestCohere_forwardParity`,
+     `TestCohere2_forwardParity`, `TestGemma4MoE_forwardParity`, `TestGemma4DenseTwoGeom_forwardParity`,
+     `TestGemma4DenseScaled_forwardParity`, `TestGemma4MoEKV_forwardParity`, `TestLoRACompute_forwardParity`,
+     `TestMixtral_forwardParity`. A diverse spread — dense, MoE, LoRA — but **missing the mainstream dense
+     f32 families** (Qwen2/2Moe/3/35, Llama/Llama32/Llama4, Mistral, Phi3, GPT2, Deepseek, Granite, Kimi,
+     Nemotron, Glm4Moe, the VL/text families) — all **skipped for want of the gitignored tiny fixtures** on
+     this checkout, NOT covered by this run.
+   - **0 deps_hash lines changed** (pre-registration point 2 confirmed): the arch-independence claim
+     (`deps_hash` = source bytes + `aikit_version`) **holds** on arm64. The "more interesting than the
+     gate" case (a hash moving on arm64) did **not** trigger — nothing to report there.
+   - **Nothing committed** — 0 hash Δ means no refresh commit; the arch-stamped proof lives here as the
+     record (there is no manifest commit to carry the trailer).
+
+   **To FULLY discharge:** regenerate the missing tiny fixtures (`scripts/pin_*.py`) **on the arm64 Mac**
+   and re-run. Note the constraint: the box **cannot** do it (amd64 — wrong arch for this gate), and the
+   arm64 Mac lacks the fixtures — so full coverage is regenerate-on-arm64, which needs the reference
+   checkpoints and is more than minutes. Whether 8/19 f32 (dense + MoE + LoRA, all green) is sufficient
+   coverage to cut v0.13.0 is Francis's call; recorded as partial so it is a decision, not a rounding.
 **Still outstanding, and it needs the mac:** `metal-rope-merge` carrying `d682315`. It is not on
 origin and resolves in no clone here, so **P4's "already implemented, snapshot-golden byte-exact" is
 unverifiable from any machine but that one**. Pushing the branch is enough — it does not need merging
