@@ -49,10 +49,29 @@ claimed**. aikit's own numbers never cross into goinfer's notes.
 
 | gate | box | cost | state |
 |---|---|---|---|
-| **§C1 real-T3 parity sweep** (`RELEASING.md`, the one ⛔) | `linux` | **hours — dominant** | not started |
+| **C1a — real-T3 sweep runs green** on real checkpoints | `linux` | **hours — dominant** | **running** (`EMIT_MANIFEST=0`, manifest untouched) |
+| **C1b — manifest `-update`d at the FREEZE COMMIT** (`validated_at` + metrics) | `linux` | minutes | not started |
 | **P10 prefill A/B** | `linux` | ~1 h | **DONE — branch 3, +4.49%** |
 | **arm64 f32 goldens** | `mac` | minutes | not started |
 | **CUDA tier of `scripts/gpu_gate.sh`** | `linux` | 10–20 min | not started |
+
+**§C1 IS TWO STATES, AND ONLY THE SECOND DISCHARGES THE GATE.** `RELEASING.md`'s ⛔ gate is
+*"run the real T3 suite … then `-update` the manifest (bump `validated_at` + metrics) **at the freeze
+commit**"* — which is one sentence describing two separate things:
+
+- **C1a** — the sweep runs green on real checkpoints. **Evidence for the gate. It is not the gate.**
+- **C1b** — the manifest is stamped at the freeze commit. **This is what discharges it.**
+
+**Why they are deliberately NOT simultaneous, which is exactly what makes conflating them easy.** The
+stamp belongs at the **freeze commit**, and the sweep runs before it — necessarily, since the sweep is
+what tells you the tree is fit to freeze. So the two are separated in time *by design*, and the
+failure mode is ordinary rather than exotic: **a green sweep reads as a finished gate**, the freeze
+commit lands afterwards, and **nobody re-checks in between**. The manifest then carries a
+`validated_at` pointing at neither the sweep's commit nor the tag's, or carries nothing at all while
+the release notes say "parity re-validated".
+
+A green C1a on commit *X* is a statement about *X*. If the freeze commit is *Y ≠ X*, C1a must be
+re-run or its scope stated — the same rule as every other measurement here, applied to a gate.
 
 **Owed but NOT gating the tag** — both are bounds that currently read as provisional, and stop
 doing so once measured:
