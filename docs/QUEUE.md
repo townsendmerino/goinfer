@@ -70,8 +70,31 @@ commit lands afterwards, and **nobody re-checks in between**. The manifest then 
 `validated_at` pointing at neither the sweep's commit nor the tag's, or carries nothing at all while
 the release notes say "parity re-validated".
 
-A green C1a on commit *X* is a statement about *X*. If the freeze commit is *Y ≠ X*, C1a must be
-re-run or its scope stated — the same rule as every other measurement here, applied to a gate.
+**WHETHER THE GAP IS SAFE IS DERIVED, NOT REMEMBERED.** A green C1a on commit *X* carries to a
+freeze commit *Y* **exactly when `deps_hash(Y) == deps_hash(X)`** — because `deps_hash` is a hash of
+**source bytes + `aikit_version`**, which is precisely the set of inputs the sweep consumed. Nothing
+else about *Y* can change what the sweep would have found.
+
+| condition | consequence |
+|---|---|
+| `deps_hash(freeze) == deps_hash(swept)` | **C1a carries.** Record the carry *with that equality as its reason* |
+| differs | **Re-run C1a at the freeze commit.** No scope statement rescues it |
+
+So the designed gap between sweep and stamp is **safe when `deps_hash` is unchanged across it, and
+unsafe otherwise** — and that is a question you *check*, not one you hold in your head.
+
+**Checked for the current gap (2026-08-12).** The sweep is running at `cabcdbe`; HEAD has since moved
+to `8ec96c6`. That range changes **one file, `docs/QUEUE.md`** — intersection with the manifest's 29
+tracked Go files is **empty**, and `aikit_version` is untouched. Confirmed mechanically rather than
+inferred from the file list: `TestParityManifest_fresh` is **green at HEAD**, i.e. the recorded
+`deps_hash` equals the one computed at HEAD. **C1a's result therefore carries as far as `8ec96c6`**,
+and the caveat this entry used to carry is a discharged question rather than an outstanding one.
+
+**And C1b cannot invalidate the sweep that justified it.** The `-update` writes `validated_at`,
+metrics and dates into `testdata/parity_manifest.json` — **none of which are `deps_hash` inputs**
+(the inputs are source bytes and `aikit_version`). So stamping the manifest at the freeze commit
+leaves `deps_hash` unchanged by construction, and the stamp can never retroactively break the carry
+that permitted it. The ordering is safe in both directions.
 
 **Owed but NOT gating the tag** — both are bounds that currently read as provisional, and stop
 doing so once measured:
