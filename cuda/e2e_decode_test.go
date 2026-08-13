@@ -342,16 +342,37 @@ func validateGlue(t *testing.T, ctx *gc.Context, stream *gc.Stream, bg context.C
 		dk := mustAlloc[float32](t, ctx, nKeys*kvDim)
 		dv := mustAlloc[float32](t, ctx, nKeys*kvDim)
 		dc := mustAlloc[float32](t, ctx, nH*hd)
-		_ = gc.CopyHtoD(bg, dq, qh)
-		_ = gc.CopyHtoD(bg, dk, kh)
-		_ = gc.CopyHtoD(bg, dv, vh)
-		_ = fAttn.LaunchOn(bg, stream, gc.LaunchConfig{GridX: uint32(nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nKeys + 128) * 4)},
-			gc.Arg(dq), gc.Arg(dk), gc.Arg(dv), gc.ArgValue(int32(nH)), gc.ArgValue(int32(nKV)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(nKeys)), gc.ArgValue(scale), gc.ArgValue(int32(0)), gc.Arg(dc))
-		_ = stream.Synchronize(bg)
+		// ERRORS ARE CHECKED, NOT DROPPED. Every call here used to be `_ =`, so a failure left `dc`
+		// UNWRITTEN, `got` all zeros, and the assertion reported "attention cosine 0.000000" with no
+		// error text at all — a resource failure wearing a numerics bug's clothes. That is the exact
+		// history in scripts/gpu_gate.sh's header ("the tests DROPPED those errors, and the resulting
+		// zero-filled buffers surfaced as cosine 0.000000"), and it recurred here: four silent zero
+		// cosines in the tier, with zero CUDA errors anywhere in the log.
+		//
+		// A zero cosine now means the arithmetic is wrong. Anything else names the call that failed.
+		if e := gc.CopyHtoD(bg, dq, qh); e != nil {
+			t.Fatalf("hd=%d: CopyHtoD(q): %v", hd, e)
+		}
+		if e := gc.CopyHtoD(bg, dk, kh); e != nil {
+			t.Fatalf("hd=%d: CopyHtoD(k): %v", hd, e)
+		}
+		if e := gc.CopyHtoD(bg, dv, vh); e != nil {
+			t.Fatalf("hd=%d: CopyHtoD(v): %v", hd, e)
+		}
+		if e := fAttn.LaunchOn(bg, stream, gc.LaunchConfig{GridX: uint32(nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nKeys + 128) * 4)},
+			gc.Arg(dq), gc.Arg(dk), gc.Arg(dv), gc.ArgValue(int32(nH)), gc.ArgValue(int32(nKV)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(nKeys)), gc.ArgValue(scale), gc.ArgValue(int32(0)), gc.Arg(dc)); e != nil {
+			t.Fatalf("hd=%d: attention launch (shared=%d B): %v", hd, (nKeys+128)*4, e)
+		}
+		if e := stream.Synchronize(bg); e != nil {
+			t.Fatalf("hd=%d: sync after attention launch: %v", hd, e)
+		}
 		got := make([]float32, nH*hd)
-		_ = gc.CopyDtoH(bg, got, dc)
+		if e := gc.CopyDtoH(bg, got, dc); e != nil {
+			t.Fatalf("hd=%d: CopyDtoH(out): %v", hd, e)
+		}
 		if c := cos(got, ref); c < 0.9999 {
-			t.Fatalf("attention cosine %.6f vs CPU ref", c)
+			t.Fatalf("hd=%d: attention cosine %.6f vs CPU ref (every CUDA call above succeeded, so "+
+				"this is an arithmetic result, not a dropped error)", hd, c)
 		}
 		dq.Close()
 		dk.Close()

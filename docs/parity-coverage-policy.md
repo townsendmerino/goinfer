@@ -657,6 +657,30 @@ manifest not at all, and **none of the nine real refreshes touches `decoder/weig
 read as researched and survived weeks of citation. Either half alone would have read as a guess and
 been checked.
 
+*A SECOND INSTANCE, and a bigger one (A12, 2026-08-13) — SHARED PRECONDITION IS NOT SHARED
+MECHANISM.* Four CUDA tests failed in one run. `scripts/gpu_gate.sh`'s header supplies a mechanism
+for one of the symptoms — *"parallel packages contend for VRAM and the failures come back as bogus
+numerics (cosine 0.000000)"* — and that sentence, written from a real past incident, was **inherited
+rather than measured**. It framed every candidate for a day: leak, per-test isolation, partitioning,
+async teardown, per-context reservations. **Three explanations died inside the frame** before anyone
+grepped the run for a CUDA error and found **none**.
+
+The four shared only a *precondition* — the same long suite on the same card. Their mechanisms were
+four different things: an unchecked type assertion panicking on a **correct, designed decline**; a
+test that prints *"this run says nothing about the probe"* and reports FAIL; a test requiring it be
+the **first to launch a kernel in the process**, with nothing enforcing that; and one genuine
+unknown, which turned out to be **every CUDA call's error discarded with `_ =`**, leaving an
+unwritten buffer to read as `cosine 0.000000`.
+
+This is the same shape as the rule above, one level up: the header's detail came from the *same
+source* as the framing, so it read as researched. A bare "these fail together" would have invited the
+grep on day one.
+
+*Recognition test for the variant:* **do these observations share a mechanism, or only a
+precondition?** Co-occurrence in one run is a precondition. And when a document hands you a
+mechanism for a symptom, check whether that document *measured this instance* or is describing a
+past one.
+
 *Where the check goes:* **into the description trigger, not into a new sweep.** When an entry is
 re-read against its source at pickup, the specific details inside it — counts, file names,
 measurements that no lint covers — get the same read as the description. That is where D3's detail

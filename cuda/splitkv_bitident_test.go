@@ -38,7 +38,18 @@ func TestSplitKV_bitIdentical(t *testing.T) {
 		t.Fatalf("load: %v", err)
 	}
 	defer mc.Close()
-	rf := mc.ResidentForwardForTest().(*cudaResident)
+	// A DECLINE IS DESIGNED BEHAVIOUR, NOT A FAILURE. BuildResident declines when the resident
+	// context does not fit — it logs the reason and falls back to the staged path — and the
+	// unchecked type assertion below turned that into `panic: decoder.ResidentForward is nil`.
+	// Observed in the tier at 1.14 GB of KV against 0.74 GB free. A test that cannot evaluate says
+	// so; it does not panic, and it does not pass either.
+	rfAny := mc.ResidentForwardForTest()
+	if rfAny == nil {
+		t.Skip("could not evaluate: the resident path DECLINED (see the [cuda] decline line above " +
+			"for the KV-vs-free figures) — the split-KV kernels were never built, so this run says " +
+			"nothing about bit-identity")
+	}
+	rf := rfAny.(*cudaResident)
 	if rf.skScores == (Pipeline{}) || rf.skVsum == (Pipeline{}) {
 		t.Fatal("split-KV kernels did not load")
 	}
@@ -131,7 +142,18 @@ func TestSplitKV_bitIdentical_gemma3(t *testing.T) {
 		t.Fatalf("load: %v", err)
 	}
 	defer mc.Close()
-	rf := mc.ResidentForwardForTest().(*cudaResident)
+	// A DECLINE IS DESIGNED BEHAVIOUR, NOT A FAILURE. BuildResident declines when the resident
+	// context does not fit — it logs the reason and falls back to the staged path — and the
+	// unchecked type assertion below turned that into `panic: decoder.ResidentForward is nil`.
+	// Observed in the tier at 1.14 GB of KV against 0.74 GB free. A test that cannot evaluate says
+	// so; it does not panic, and it does not pass either.
+	rfAny := mc.ResidentForwardForTest()
+	if rfAny == nil {
+		t.Skip("could not evaluate: the resident path DECLINED (see the [cuda] decline line above " +
+			"for the KV-vs-free figures) — the split-KV kernels were never built, so this run says " +
+			"nothing about bit-identity")
+	}
+	rf := rfAny.(*cudaResident)
 	if rf.skScores == (Pipeline{}) {
 		t.Fatal("split-KV kernels did not load")
 	}
