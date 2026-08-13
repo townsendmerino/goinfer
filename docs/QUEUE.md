@@ -317,6 +317,25 @@ ceiling would fail the large dims" puzzle, because the large dims *do* fail.
 zeros, on a card with 7.3 GB free, reporting success at every step.** That is the finding, and no
 mechanism is proposed for it here.
 
+**MECHANISM FOUND (2026-08-13): the DRAIN EVICTS THE MODULE'S DEVICE CODE, and the cached handle
+survives it.** Two tests, and they only look like they disagree:
+
+| probe | result | reading |
+|---|---|---|
+| **1. interrogate the cached handle** (`cuFuncGetAttribute` ×6, poisoned vs clean) | **byte-identical, all valid, no errors** — `maxThreadsPerBlock=1024 sharedSizeBytes=0 localSizeBytes=0 numRegs=62 ptxVersion=75 binaryVersion=75` | the handle *answers*; it looks live |
+| **2. force a module reload before the launch** | **all five widths PASS, 3/3 runs.** Control without reload in the same session: 4 failures, 2/2 runs | the module *was* the problem |
+
+**They reconcile, and the reconciliation is the finding: `cuFuncGetAttribute` is NOT A LIVENESS
+PROBE.** It answers out of metadata that outlives the device code — max threads, register count, PTX
+version are all still there after the underlying module has been evicted. So the handle stays
+*queryable* while what it names is gone, the launch reports success, and nothing executes. That is
+exactly the "returns success and does nothing" shape, and it explains every observation at once:
+identical launch arguments, all calls succeeding, full card, zeros out.
+
+**Why hd=16 survives is not yet explained** and is not claimed to be. Anything that reads it as
+confirming a size threshold is guessing; the reload result says the module is evicted, and a partial
+survival wants its own measurement.
+
 **THE LAUNCH IS IDENTICAL — the state is in the driver or the context, not in the call.** Every field
 the launch depends on was logged in both a clean and a poisoned run (`GOINFER_A13_LAUNCH=1`):
 
@@ -349,6 +368,20 @@ stops issuing CUDA work entirely, and the poisoned context is never launched int
 a staged path that still issued kernels, say — A13's mechanism would be reachable from a real 26B OOM
 and this would be a correctness bug rather than a test-interaction one. It is worth knowing that the
 safety comes from the decline rather than from the kernel being robust.
+
+> **DO NOT "SIMPLIFY" THE FALLBACK INTO SOMETHING THAT KEEPS ISSUING KERNELS.** `BuildResident`
+> returning `(nil, false, nil)` on exhaustion, and `cudaBackend.MatmulBT` dispatching to
+> `linalg.MatmulBT` with no CUDA at all, is the *only* thing standing between a real OOM and
+> silently wrong output. It reads like an incidental fallback and it is a safety property.
+
+**AND THE CONSEQUENCE, now that eviction is confirmed:** the shape where this would bite is a
+**long-running process that hits memory pressure and recovers** — a server that OOMs once, sheds
+load, and carries on. Its cached module handles would survive the pressure event while the device
+code behind them did not, and every subsequent launch would succeed and produce zeros. goinfer does
+not reach that today only because it stops issuing CUDA work entirely after a decline. A future
+change that recovers residency after pressure, instead of declining permanently, must re-load modules
+rather than reuse cached handles — and must not rely on `cuFuncGetAttribute` to tell it whether it
+needs to.
 
 **TAG IMPACT — a test-interaction defect, not a production one**, for the reason above rather than
 because the trigger is rare. The production forward path is unaffected and the resident parity gates

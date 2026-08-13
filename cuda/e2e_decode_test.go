@@ -366,6 +366,43 @@ func validateGlue(t *testing.T, ctx *gc.Context, stream *gc.Stream, bg context.C
 		// pointer differs, something upstream is holding state from the drain and the culprit is
 		// named; if every field is identical and only the result differs, the state is inside the
 		// driver or the context rather than in this call.
+		// A13 step 1: interrogate the CACHED function handle. Hypothesis under test — the drain
+		// causes driver-side module eviction under pressure, and the cached CUfunction outlives what
+		// it names, so a launch through a stale handle returns success and does nothing.
+		//   errors or implausible values in the poisoned run only -> handle is stale, confirmed
+		//   identical valid attributes in both                    -> handle is live, look elsewhere
+		if os.Getenv("GOINFER_A13_HANDLE") != "" {
+			type qa struct {
+				name string
+				a    gc.FunctionAttribute
+			}
+			for _, q := range []qa{
+				{"maxThreadsPerBlock", gc.FuncAttrMaxThreadsPerBlock},
+				{"sharedSizeBytes", gc.FuncAttrSharedSizeBytes},
+				{"localSizeBytes", gc.FuncAttrLocalSizeBytes},
+				{"numRegs", gc.FuncAttrNumRegs},
+				{"ptxVersion", gc.FuncAttrPTXVersion},
+				{"binaryVersion", gc.FuncAttrBinaryVersion},
+			} {
+				v, e := fAttn.Attribute(q.a)
+				t.Logf("A13HANDLE hd=%d %s=%d err=%v", hd, q.name, v, e)
+			}
+		}
+		// A13 step 2, TEMPORARY PROBE (GOINFER_A13_RELOAD=1) — not a fix. Re-load the module and
+		// re-resolve the function immediately before the launch. If the result becomes correct,
+		// eviction is confirmed from the other direction; if it is still zeros, the state lives
+		// BELOW the module layer, in the context. A reload before every launch would mask the
+		// mechanism rather than address it, which is why this is env-gated and disposable.
+		if os.Getenv("GOINFER_A13_RELOAD") != "" {
+			if m2, e := ctx.LoadModule(gluePTX); e != nil {
+				t.Logf("A13RELOAD hd=%d module reload FAILED: %v", hd, e)
+			} else if f2, e2 := m2.Function("attention"); e2 != nil {
+				t.Logf("A13RELOAD hd=%d function re-resolve FAILED: %v", hd, e2)
+			} else {
+				t.Logf("A13RELOAD hd=%d module reloaded and function re-resolved", hd)
+				fAttn = f2
+			}
+		}
 		if os.Getenv("GOINFER_A13_LAUNCH") != "" {
 			t.Logf("A13LAUNCH hd=%d grid=(%d,1,1) block=(128,1,1) shared=%d nH=%d nKV=%d nKeys=%d scale=%g "+
 				"dq=%#x dk=%#x dv=%#x dc=%#x lens=(%d,%d,%d,%d)",
