@@ -1512,6 +1512,16 @@ out-of-tree audit against the release candidate.
 
 Write that as a checklist so 1.0 is a decision against criteria rather than a feeling.
 
+**The v1.0 gate checklist (draft — the point of E1):**
+- [ ] Parity coverage complete (E2's four `validated_at: null` families resolved: T3 or demoted to experimental).
+- [ ] Verification machinery sound (the gates run and can fail; skip census clean at the freeze).
+- [ ] Loader + architecture-descriptor surface **actually frozen** (docs stop saying it may change).
+- [ ] Clean out-of-tree audit against the release candidate (C-group consumer window).
+- [ ] **The repo contains no Python** — all analysis in Go tests; shell minimized to process
+  orchestration. **Decided 2026-08-12 by Francis.** Inventory, ranking, acceptance criteria and the
+  reference-tensor carve-out are in **E7**. (The reference-tensor / `pin_*` generation is *excluded*
+  from this line — blocked on Francis's torch-replacement research; see E7 item 7.)
+
 **E2 · The four per-family demotion judgments** — `linux`
 
 `gpt2`, `granitemoehybrid`, `kimi_k2`, `nemotron_h` carry `validated_at: null` and are the same four
@@ -1652,6 +1662,45 @@ rather than the whole changelog.
 
 Also open there, deliberately: branch protection is not enabled and `gpu-kernels` is advisory.
 `scripts/gpu_gate.sh` plus a `RELEASING.md` gate ritual is the enforcement instead. Revisit at v1.0.
+
+**E7 · No Python in the repo by v1.0** — `linux`/`mac`, **INVENTORY DONE; no migrations until after the v0.13.0 tag (§C1 + CUDA gate first).** Decided 2026-08-12 by Francis.
+
+**Scope of the decision:** the repo contains no Python by v1.0. Analysis moves to Go tests; shell is
+minimized to process orchestration. **The reference-tensor / pin-fixture generation is OUT (item 7),
+blocked on Francis's torch-replacement research — do not attempt it or design around a guess at it.**
+
+**Inventory (67 tracked Python files, 6843 lines), split by the only axis that matters here — does it need an ecosystem Go cannot reach:**
+
+- **57 scripts import torch / transformers / safetensors / numpy** → the reference-tensor surface. **OUT OF SCOPE** (item 7). ~5000 lines: the whole `scripts/pin_*` family plus the torch oracles, golden/ref generators, and analysis probes (kda-oracle, gptoss oracle/golden, chat/tool golden gen, eagle parity ref, mxfp4 extract, gemma4 recon / scale-probe / 12b-trace, and similar).
+- **10 stdlib-only scripts** → the migratable set (~1827 lines). Ranked by **load-bearing × easy** (first migrations cut the most risk per hour):
+
+| # | script | lines | what it decides/produces | CI/gate dep today | difficulty | rank rationale |
+|---|---|---|---|---|---|---|
+| 1 | `scripts/skip_census.py` | 174 | PASS/SKIP/FAIL census, SKIPs bucketed by reason (release ritual) | release ritual | **stdlib Go** — and *strictly better*: reads `go test -json` structured events instead of scraping text | load-bearing × easy, and the Go version is a *reader* not a parser. **Migrate first.** |
+| 2 | `scripts/sweep_composition.py` | 167 | prints the parity-sweep coverage composition along family×quant×loader | `scripts/parity_sweep.sh` + `scripts/refresh_parity_hashes.sh` | **stdlib Go** (grep test source for the quant literal + `go test -json`) | release-gate axis print; high load-bearing, easy |
+| 3 | `scripts/ci_checks.py` | 108 | DERIVES CI's hygiene check-set from the CI workflow so the gate can't drift from CI | `scripts/gpu_gate.sh` | **stdlib Go, probably** — it already uses `re` on the workflow, no YAML lib. **Check the actual workflow shape reads with stdlib BEFORE reaching for YAML.** If a real parser is needed → `tools/` module, not main `go.mod` (item 4). | high load-bearing, medium |
+| 4 | `scripts/selector_coverage.py` | 117 | tests that EXIST vs tests any selector RUNS (the difference) | census (not a hard gate) | **stdlib Go** | medium load-bearing, easy |
+| 5 | `scripts/queue_citation_lint.py` | 773 | validates the queue's commit-SHA + file:line citations | **CI** (the only Python in CI) | **stdlib Go, HARD** — git via `os/exec`, module-cache path resolution against the required aikit version, orphan/reachability, generated index. No external ecosystem, but 773 lines. | **highest load-bearing, lowest easy** — the capstone: do it after the easy wins prove the pattern; it is what actually removes Python from the CI critical path. |
+| 6 | `scripts/bench_peer.py` | 229 | goinfer-vs-peer decode A/B over both HTTP servers | `scripts/bench_compare.sh` | **stdlib Go** (`net/http`, `os/exec`) but larger | low load-bearing (benchmark, not a gate) |
+| — | `scripts/chatml_tiny_fixture.py` (97), `scripts/diff_gemma4_12b.py` (53), `scripts/bench_prompts_calibrate.py` (41) | | fixture-gen / debug-diff / bench-prompt calibration | none | stdlib | low priority tail — opportunistic |
+
+**Separate category — build tooling / FFI:** `cuda/nvrtc_compile.py` (68) compiles a CUDA source to PTX via **NVRTC through `ctypes` FFI** (invoked by `cuda/build_ptx.sh` → `scripts/gpu_gate.sh`). Not analysis and not tree-reading — it's a build step. Go can do it (cgo/purego to NVRTC, same shape as the Metal binding) but that is **needs-FFI-dependency**, not stdlib. **Decision needed from Francis: does "no Python" cover the build helper, or does it stay as orchestration-adjacent?** Flagged, not assumed.
+
+**Acceptance criterion per migration (non-negotiable, from Francis):**
+- **a.** Run the Python and the Go against the current tree; outputs must **agree**. Any disagreement is **investigated before the swap**, not explained after.
+- **b.** Mutation-check the Go both ways: introduce the defect it exists to catch → assert RED; remove it → assert GREEN.
+- **c.** **Delete the Python in the same commit that lands the Go** — the two never coexist as sources of truth (B7's constant shape, applied).
+- **d.** The **scope line survives**: whatever the Python printed about what it did and did NOT validate, the Go prints too.
+
+**Dependency constraint:** **no tooling dependency in the main module's `go.mod`.** Stdlib-only where possible; a separate **`tools/` module with its own `go.mod`** where a parser is genuinely needed (the ci-checks YAML question is the only candidate). A consumer's module graph must not grow because a lint changed language.
+
+**Shell — minimize, harden what stays (item 6 audit, 9 shell scripts):**
+- **Keep (orchestration):** `scripts/parity_sweep.sh`, `scripts/gpu_gate.sh`, `scripts/heavy_gate.sh`, `cuda/build_ptx.sh`, and the two demo asset-build scripts under `demo/chat/` and `demo/agent/`. **Move (reads tree + decides):** the deciding half of `scripts/refresh_parity_hashes.sh` and `scripts/mutation_check.sh` are candidates once the Go tooling exists; `scripts/bench_compare.sh` folds into the bench-peer Go successor.
+- **Rule audit (the four rules):**
+  - **Rule 3 (`set -euo pipefail`):** `scripts/refresh_parity_hashes.sh` and the three build scripts compliant. **Violations:** `scripts/bench_compare.sh` (`set -u` only) and `scripts/mutation_check.sh` (`set -u` only) — add `pipefail`. The gate scripts (`scripts/gpu_gate.sh`, `scripts/heavy_gate.sh` are `set -u`; `scripts/parity_sweep.sh` is `set -uo pipefail`) **omit `-e` DELIBERATELY** — they run N families/packages and tally, and `-e` would abort on the first failure and lose the tally. The real requirement there is per-command rc / `PIPESTATUS` capture, which they already do; **do not blanket-add `-e` to a tallying gate.** Document the reason inline so it is not "fixed" into a regression.
+  - **Rules 1/2/4:** no violations found in a targeted pass. The scripts show awareness — `scripts/mutation_check.sh`'s header explicitly records fixing the `command -v staticcheck && staticcheck` (rule 1+4) anti-pattern; `scripts/gpu_gate.sh`'s `command -v nvidia-smi` is backend *detection*, not a skipped check; the `grep -c … || true` counts guard the pipe's exit correctly. A full line-by-line pass on the keep-set is deferred with the migration.
+
+**Item 7 — OUT OF SCOPE, owner named:** the pin-fixture and reference-tensor generation (the 57 torch/HF scripts). **BLOCKED on Francis's torch/reference-tensor replacement research — Francis owns it.** Do not start it in parallel and do not design the tooling migration around a guess at what he finds.
 
 ### F. Audit backlog
 
@@ -2766,7 +2815,9 @@ than papered over.
 |---|---|
 | `cuda/allocgran_test.go` | goinfer |
 | `cuda/backend.go` | goinfer |
+| `cuda/build_ptx.sh` | goinfer |
 | `cuda/moe_route_reservation_test.go` | goinfer |
+| `cuda/nvrtc_compile.py` | goinfer |
 | `cuda/prefill.go` | goinfer |
 | `cuda/resident.go` | goinfer |
 | `cuda/slotcap_test.go` | goinfer |
@@ -2790,13 +2841,18 @@ than papered over.
 | `linalg/quant.go` | aikit |
 | `scripts/bench_compare.sh` | goinfer |
 | `scripts/bench_peer.py` | goinfer |
+| `scripts/bench_prompts_calibrate.py` | goinfer |
+| `scripts/chatml_tiny_fixture.py` | goinfer |
 | `scripts/ci_checks.py` | goinfer |
+| `scripts/diff_gemma4_12b.py` | goinfer |
 | `scripts/gpu_gate.sh` | aikit |
 | `scripts/heavy_gate.sh` | goinfer |
+| `scripts/mutation_check.sh` | goinfer |
 | `scripts/parity_sweep.sh` | goinfer |
 | `scripts/queue_citation_lint.py` | goinfer |
 | `scripts/refresh_parity_hashes.sh` | goinfer |
 | `scripts/selector_coverage.py` | goinfer |
+| `scripts/skip_census.py` | goinfer |
 | `scripts/sweep_composition.py` | goinfer |
 
 <!-- /CITATION-INDEX -->
