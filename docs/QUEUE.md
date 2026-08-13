@@ -332,6 +332,25 @@ version are all still there after the underlying module has been evicted. So the
 exactly the "returns success and does nothing" shape, and it explains every observation at once:
 identical launch arguments, all calls succeeding, full card, zeros out.
 
+**PINNING IS NOT THE VARIABLE (2026-08-13) — the eviction story SURVIVES.** The cheapest possible
+alternative explanation was that CUDA usage from a goroutine Go is free to migrate across OS threads
+is the real mechanism, and the resident's `LockOSThread`-pinned executor is immune merely by being
+pinned. One line tested it:
+
+    UNPINNED  hold+release 50%   POISON POISON POISON
+    PINNED    hold+release 50%   POISON POISON POISON   (runtime.LockOSThread + defer Unlock)
+
+**Three of three either way.** So `cuFuncGetAttribute` staying valid while a reload fixes the result
+still stands as the finding, `cuda/backend.go`'s cache-site comment stands as written, and nothing
+downstream of eviction needs revisiting.
+
+**What it does leave open: the thread factor is real but NOT pinning.** A pinned test goroutine
+poisons; the resident's executor does not. Both are pinned, both use the same primary context, both
+go through gocudrv. Whatever distinguishes them is something other than OS-thread affinity —
+candidates not yet separated include how context currency is established on each thread, and the
+fact that the resident's context permanently holds a model's worth of live allocations while the
+test's does not. **Not characterised, and not guessed at here.**
+
 **THE 1×2 IS FILLED, AND BOTH SHIPPED-PATH RESULTS ARE NULLS THAT DO NOT YET COUNT (2026-08-13).**
 
 | cell | stimulus | result |
@@ -469,11 +488,14 @@ named separately because they are different guarantees:
 1. **The decline path never gets there.** On exhaustion `BuildResident` refuses and returns
    `(nil,false,nil)` — refusals only, which the sweep shows are harmless at any count — and the
    fallback runs `linalg.MatmulBT` with no CUDA at all.
-2. **Each resident model builds its own context** (`cuda/backend.go:463`, `CreateSystemDefaultDevice`
-   inside `BuildResident`'s setup job) and tears it down on `Close`. `TestResidentCloseFreesVRAM`
-   does three full 7B load→forward→close cycles — 4892 MiB allocated and freed each time — and every
-   cycle's forward is correct. A per-model context is why a load/unload cycle does not poison the
-   next model.
+2. ~~**Each resident model builds its own context**~~ — **WITHDRAWN, THIS WAS FALSE.**
+   `CreateSystemDefaultDevice` calls `dev.Primary()` and `Context.Close` calls `PrimaryCtxRelease`,
+   a refcount decrement; gocudrv never binds `cuCtxCreate`. **All models share ONE primary context
+   per device per process**, destroyed only when the last holder releases. What survives is
+   narrower: `TestResidentCloseFreesVRAM`'s three 7B load→forward→close cycles are green *because
+   they are sequential with no other holder*, so each `Close` does drop the refcount to zero. That
+   is the **single-model** case only; it says nothing about a co-resident model, and I used it to
+   argue the multi-model case was safe. See the correction below.
 
 **The multi-model server case is therefore covered by (2), not by luck** — but it is covered by a
 property nobody wrote down as a safety property until now, which is exactly how it gets refactored
@@ -644,6 +666,34 @@ Pre-registered prediction for 30 slots, to test the curve rather than assume it:
 rate, ~15.0–15.8 tok/s**.
 
 ### B. Enforcement gaps — things that exist but aren't composed into a decision
+
+**B10 · `aikit` and `aikit/gpu` carry SEPARATE TAG SERIES — the single home for that fact** —
+`linux`, **filed 2026-08-13**
+
+Three instances, one fact, and the third was inside the tool built to check the first two:
+
+| instance | how it bit |
+|---|---|
+| **E6** | `git diff v1.16.0..v1.17.0 -- gpu/` reported a 72-line PTX change that goinfer had already been running — a nested module diffed across the *parent's* tags |
+| **B7** | the manifest's single `aikit_version` field cannot represent two versions; it drifted to `v1.12.0` against a `go.mod` saying `v1.16.0` |
+| **the citation lint** | `gpu/cuda.go` resolved nowhere, because `required_modules()` read only the root `go.mod` and `aikit/gpu` is not inside `aikit@v1.17.1`'s module-cache directory. Reddened CI on a correct reference |
+
+**THE FACT LIVES IN `scripts/queue_citation_lint.py`'s `required_modules()`**, which now reads *both*
+`go.mod` files — the root for `aikit`, `cuda/go.mod` for `aikit/gpu` — and prints both resolutions
+with every green:
+
+    CROSS-REPO RESOLUTION: ... answered from the MODULE CACHE at the version go.mod requires
+      github.com/townsendmerino/aikit      -> module cache @ v1.17.1
+      github.com/townsendmerino/aikit/gpu  -> module cache @ v0.28.0
+
+That is the right home because it is **derived rather than restated** — it reads the versions from
+the files that own them, so it cannot drift the way B7's hand-maintained field did, and it is
+**executed on every CI run** rather than being a paragraph someone has to remember. The printed lines
+mean a fourth instance has somewhere to look and something to compare against.
+
+*Still restated by hand, and therefore still able to drift:* the manifest's `aikit_version` (B7,
+open) and `RELEASING.md`'s alignment step (now derived — it reads the versions rather than naming
+them, `0898295`).
 
 **B9 · Dropped errors on launch/copy/sync paths — 268 production sites, enumerated** — `linux`,
 **filed 2026-08-13**

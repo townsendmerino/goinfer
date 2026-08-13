@@ -5,6 +5,7 @@ package cuda
 import (
 	"context"
 	"os"
+	"runtime"
 	"strconv"
 	"testing"
 
@@ -31,6 +32,16 @@ import (
 func TestA13_SingleFailedAllocPoisons(t *testing.T) {
 	if os.Getenv("GOINFER_A13_SINGLEFAIL") == "" {
 		t.Skip("set GOINFER_A13_SINGLEFAIL=1 — A13 probe, deliberately not part of the tier")
+	}
+	// A13 item 1: PIN THE GOROUTINE. Every observed poisoning has been on a test goroutine, which Go
+	// is free to migrate across OS threads; the resident's executor is LockOSThread-pinned and has
+	// never poisoned. If pinning alone makes this clean, the mechanism is unpinned CUDA usage from a
+	// migrating goroutine rather than driver-side module eviction — and the eviction story, the
+	// cache-site comment, and everything downstream of it are wrong.
+	if os.Getenv("GOINFER_A13_PIN") != "" {
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+		t.Logf("goroutine PINNED (runtime.LockOSThread)")
 	}
 	if err := gc.Init(); err != nil {
 		t.Skipf("cuInit: %v", err)
