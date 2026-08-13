@@ -52,6 +52,23 @@ testdata/qwen35-tiny/
 # generated tiny/scaled parity checkpoints — weights are *.safetensors (ignored above), but the
 # tokenizer/config JSONs are not, so ignore the whole dirs; the *_golden.json in testdata/ stay tracked.
 testdata/tiny-qwen2-moe/
+# Per-machine real-checkpoint fixtures for the §C1 sweep's forward-parity and tokenizer gates.
+# Same class as the dirs above: regenerable/fetchable locally, never committed. Listed because
+# these gates skip without them, and a skip in that sweep is a release blocker — so the dirs get
+# created on any box that runs it, and an unignored fixture dir is how generated metadata gets
+# swept into a commit and turns CI red.
+# NO trailing slash on purpose: on a box that satisfies these from ~/models they are
+# SYMLINKS, and git treats a symlink as a file — a "dir/" pattern silently fails to match
+# it, leaving exactly the untracked fixture entry this block exists to prevent.
+testdata/qwen2.5-0.5b
+testdata/qwen3-1.7b
+testdata/tinyllama-1.1b
+testdata/tinymistral-248m
+testdata/llama3.2-1b
+testdata/gemma-3-270m
+testdata/gpt2
+testdata/llama3-tokenizer
+testdata/mellum2-tokenizer
 testdata/gemma4-dense-scaled-*/
 # generated tiny vision-language parity checkpoints (scripts/pin_siglip_vision.py,
 # scripts/pin_gemma3_vl_tiny.py) — regenerated locally; the *_golden.json stay tracked.
