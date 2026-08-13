@@ -332,6 +332,34 @@ version are all still there after the underlying module has been evicted. So the
 exactly the "returns success and does nothing" shape, and it explains every observation at once:
 identical launch arguments, all calls succeeding, full card, zeros out.
 
+**CORRECTION (2026-08-13): "each resident model builds its own context" IS FALSE, and it was doing
+load-bearing work in the tag argument.** Read rather than assumed, after the prefill control failed
+to fire:
+
+- `CreateSystemDefaultDevice()` (aikit `gpu/cuda.go`) calls **`dev.Primary()`** — the device's
+  **primary context**, retained by refcount. gocudrv **does not bind `cuCtxCreate` at all**.
+- `Context.Close()` calls **`PrimaryCtxRelease`** — a refcount **decrement**, not a destroy.
+
+So every resident model in a process shares **one primary context per device**, and that context is
+destroyed only when the **last** holder releases it.
+
+**What that breaks, and what it does not:**
+
+- **`TestResidentCloseFreesVRAM` is still valid** — its three load→forward→close cycles are
+  sequential with no other holder, so each `Close` drops the refcount to zero and the context really
+  is torn down between cycles. Its green is honest for the single-model case.
+- **The multi-model case is NOT covered, and I argued it was.** With model B loaded, unloading model
+  A releases gigabytes **inside a context that stays live for B** — which is precisely the sweep's
+  stimulus, in a shipped feature (`POST /admin/models/unload`), reached by ordinary operation.
+- **"Resident immunity" was a misnomer** before it was ever tested: the resident's context and the
+  test's context are the same object, so the context cannot be the variable in the 2×2. The
+  remaining factors are the **module route** (`ctx.LoadModule` of prebuilt PTX vs `CompileLibrary`
+  via NVRTC) and the **thread** (test goroutine vs the resident's pinned executor).
+
+**Consequence for the tag: the admin-unload path returns to the open list.** Its earlier "CLEAN —
+destroys the context" verdict rested on the same false premise and is withdrawn. What it actually
+does is release a model's device memory into a context that other models may still be using.
+
 **PREFILL MEASUREMENT: INCONCLUSIVE, because the POSITIVE CONTROL DOES NOT FIRE. Reported as
 inconclusive rather than clean.** (`cuda/a13_prefillchurn_test.go`, 2026-08-13)
 
@@ -372,7 +400,7 @@ invariant, not the invariant itself.
 
 | path | allocates & frees in a live context? | verdict |
 |---|---|---|
-| **admin unload** (`POST /admin/models/unload`, `--unload-drain-wait`) | **no — destroys the context.** `Model.Close` → `cudaResident.Close` → `dev.ReleaseObjects()`, which ends in `cx.Close()` | **CLEAN — record as a safety property** |
+| **admin unload** (`POST /admin/models/unload`, `--unload-drain-wait`) | **WITHDRAWN — see the correction above.** `cx.Close()` is `PrimaryCtxRelease`, a refcount decrement. With another model loaded the context stays live and this is a large free inside it | **OPEN — the strongest candidate** |
 | **A5 cap search** (`capSlots`) | **no — pure arithmetic.** `fits(n)` compares `slotRequirement(...)+slotMarginBytes` against `free`; nothing is allocated to probe | **CLEAN** |
 | **`allocSlots` failure** | **no.** OOM arrives as a panic from `MustBuf` and *the resident is discarded on decline* — context torn down | **CLEAN** |
 | **expert cache / KV growth** | no mid-life grow/resize path exists in `cuda/` | **CLEAN** |
@@ -3266,6 +3294,7 @@ than papered over.
 | `decoder/serialize.go` | goinfer |
 | `decoder/weightmat.go` | goinfer |
 | `decoder/weights.go` | goinfer |
+| `gpu/cuda.go` | aikit |
 | `internal/serveapp/chaos_test.go` | goinfer |
 | `internal/serveapp/fuzz_test.go` | goinfer |
 | `linalg/matmul_blocked.go` | aikit |
