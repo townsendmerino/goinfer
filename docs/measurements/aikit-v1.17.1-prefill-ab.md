@@ -112,11 +112,15 @@ variable. `GOWORK=off`, no `replace`, aikit from the module cache.
 **Comparison: v1.16.0 against v1.17.1**, because `matmul_blocked.go` is identical between v1.17.0 and
 v1.17.1 — the rework is live in both, so v1.16.0 is the only baseline that predates it.
 
-**Warm-up discard: from the STEP 0b characterization**, not carried over from the decode one — a
-prefill run is a different shape (one long batched forward per iteration rather than many small
-ones) and there is no reason its warm-up form should match.
+**Warm-up discard: 1 per visit, and NOT because warm-up was found** — 0b found none (sample 1 at
+−0.86 sd, not an outlier). It is retained because 0b observed one process start and the A/B has
+several. Applied identically to both arms, so it cannot favour either.
 
-**Floor: 2.0% provisionally, confirmed or replaced by 0b before the first comparison sample.**
+**Floor: 0.6%** — 0b ran, the inherited 2.0% did **not** survive it, and a measured floor replaced
+it before the first comparison sample. The prefill instrument is 3.6× quieter than decode (rel-sd
+0.227% vs 0.82%); 2.0% would have been ~8.8σ, able to miss a real 1.5% effect while reporting flat.
+Derived by decode's own method and multiplier (2.4σ). Full record:
+`docs/measurements/prefill-instrument-calibration.md`.
 
 **Statistic: median of the retained samples per arm.**
 
@@ -125,20 +129,28 @@ before/after would be dominated by it. Interleaving is not optional.
 
 ## Branches, fixed now — including the flat one
 
-1. **Within ±2.0%** → **flat.** The f32 blocked-matmul rework is **below this instrument's noise
+**In every branch, the measured delta AND its standard error are reported alongside the verdict.**
+The floor is a practical-significance threshold (~6 standard errors), **not** a detection limit, so
+"flat" means *no effect exceeding the declared threshold* — never *no difference*. A real 0.3% effect
+would be correctly below the floor and invisible if only the branch were recorded.
+
+1. **Within ±0.6%** → **flat.** The f32 blocked-matmul rework is **below this instrument's noise
    floor on prefill**. That is the recorded answer and it discharges the obligation — it is a
    result, not an absence of one, and it does *not* become "prefill is unmeasured" in the release
    notes.
-2. **v1.17.1 slower by ≥2.0%** → a prefill regression carried by the rework, still live upstream.
+2. **v1.17.1 slower by ≥0.6%** → a prefill regression carried by the rework, still live upstream.
    Reported upstream with the same discipline as the decode one: direction, magnitude, method, and
    an explicit statement of what was not isolated.
-3. **v1.17.1 faster by ≥2.0%** → the rework does what it was aimed at. **Scoped exactly as a loss
+3. **v1.17.1 faster by ≥0.6%** → the rework does what it was aimed at. **Scoped exactly as a loss
    would be** — one model, one prompt length, one box, prefill only — and it does **not** enter
    CHANGELOG, docs or release notes on this evidence alone.
 
 ## Known weakness, stated in advance
 
-The floor is inherited until 0b runs. That is now a **sequenced prerequisite** rather than a caveat:
-the earlier wording ("re-derive the floor if the spread exceeds it") was right in intent and wrong in
-mechanism, because a re-derivation performed on the A/B's own samples derives the threshold from the
-data it judges. 0b fixes the number first, from separate data.
+**0b has run and the floor is fixed at 0.6% from its data.** The sequencing held: the number
+predates the first comparison sample.
+
+The remaining weakness is **sensitivity, not noise**. The reworked path is ~43% of this benchmark's
+runtime, so an effect inside it is diluted ~2.3× here: a flat result means *no effect larger than
+about 1.4% within the reworked code*, not *no effect*. That bound is stated in every wording of the
+result.

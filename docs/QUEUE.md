@@ -2022,7 +2022,25 @@ the work did.**
 1. **The A/B measured a decode regression.** v1.16.0 against v1.17.0, interleaved, pre-registered
    2.0% floor: **−2.96%**, above the floor, per-visit medians not overlapping.
 2. **aikit v1.17.1 fixed it.** The same instrument, the same floor, re-run with the expectation
-   written down first: **+0.43%**, branch 1, **flat**. 17 of 36 pairwise comparisons separate, where
+   written down first: **+0.43%**, branch 1, **flat**.
+
+   **SCOPE OF THAT "FIXED", added 2026-08-12 — it says less than it appears to.** +0.43% is a
+   **benchmark-level** number, and the changed int8 code is only part of what `BenchmarkDecode`
+   spends time in. So what was confirmed is that **the benchmark-level regression is gone**, not that
+   the changed code is unchanged in cost. A residual effect inside the int8 path smaller than
+   `0.43% ÷ (that path's share of decode runtime)` is entirely consistent with this result.
+
+   **The share is UNKNOWN, and that is different from small.** No CPU profile of `BenchmarkDecode`
+   was ever taken — not during the v1.17.0 A/B, not during the v1.17.1 one — so the divisor does not
+   exist and is **not being estimated here.** An *undeclared* bound (nobody thought about it) and an
+   *unknown* one (measured to be missing, and said so) are different states; this is now the second.
+   **Owed: profile `BenchmarkDecode` and state the bound in the same form the prefill calibration
+   uses.** Until then P9's statement 2 reads exactly as far as "the benchmark-level regression is
+   gone".
+
+   **And the flat verdict needs its delta and uncertainty printed beside it**, for the same reason:
+   a floor is a practical-significance threshold, not a detection limit. "Flat" means *no effect
+   exceeding the declared threshold*, never *no difference*. 17 of 36 pairwise comparisons separate, where
    18 is exactly none. `w8a8Span`'s executable body in v1.17.1 is byte-identical to v1.16.0.
 3. **The locus was INFERRED, not measured.** "The int8 kernel at M=1" was recorded as inference at
    the time, explicitly labelled, with an ablation named as the thing that would settle it. The
