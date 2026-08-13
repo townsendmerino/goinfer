@@ -332,9 +332,28 @@ version are all still there after the underlying module has been evicted. So the
 exactly the "returns success and does nothing" shape, and it explains every observation at once:
 identical launch arguments, all calls succeeding, full card, zeros out.
 
-**Why hd=16 survives is not yet explained** and is not claimed to be. Anything that reads it as
-confirming a size threshold is guessing; the reload result says the module is evicted, and a partial
-survival wants its own measurement.
+**REFINED, because the obvious remedy failed and the failure is informative.** Reloading the module
+*inside the draining test* — repairing what it disturbed — **does NOT fix the victim**:
+
+| sequence | result |
+|---|---|
+| drain → victim loads module → allocates → launch | **fails** |
+| drain → **drain reloads** → victim loads → allocates → launch | **fails** |
+| drain → victim loads → allocates → **reload** → launch | **passes, 3/3** |
+
+All three load the module after the drain. The one that works is the one with **no allocation between
+the load and the launch**. So this is not a single eviction the drain can undo: **allocation activity
+after a load, in a post-drain context, re-invalidates the module.** The victim's own `mustAlloc`
+calls are enough to do it.
+
+That also rules out the tidy fix — a draining test cannot restore the invariant for whatever runs
+next, because the next test's own allocations break it again.
+
+**OPEN OBSERVATION, deliberately not folded into the story: hd=16 survives.** Every other width
+fails in the minimal pair. The reload result says the module is unusable, and that does not
+distinguish *"module gone"* from *"module gone except one path"* — a partial survival wants its own
+measurement. Reading it as a size threshold would be a guess, and it is recorded here as an
+observation precisely so it does not get absorbed into the eviction narrative as though explained.
 
 **THE LAUNCH IS IDENTICAL — the state is in the driver or the context, not in the call.** Every field
 the launch depends on was logged in both a clean and a poisoned run (`GOINFER_A13_LAUNCH=1`):
@@ -2992,8 +3011,8 @@ supports.
 |---|---|---|
 | `docs/QUEUE.md|cuda/argmax_tiebreak_test.go:19` | goinfer | `func TestArgmaxTieBreak(t *testing.T) {` |
 | `docs/QUEUE.md|cuda/backend.go:463` | goinfer | `if r.dev, e = CreateSystemDefaultDevice(); e != nil {` |
-| `docs/QUEUE.md|cuda/backend.go:591` | goinfer | `if v, err := strconv.Atoi(os.Getenv("GOINFER_SPLITKV_MIN_KEYS")); err == nil && v >= 0 {` |
-| `docs/QUEUE.md|cuda/backend.go:836` | goinfer | `// Synchronise: the reservation must be a fact before free VRAM is read, and an async` |
+| `docs/QUEUE.md|cuda/backend.go:591` | goinfer | `if r.prefillReady {` |
+| `docs/QUEUE.md|cuda/backend.go:836` | goinfer | `anchor: func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar` |
 | `docs/QUEUE.md|cuda/resident.go:244` | goinfer | `// backend.go locals; the per-layer KV cache and UploadKV read r.layers[l].kvDim.` |
 | `docs/QUEUE.md|cuda/resident.go:397` | goinfer | `func (r *cudaResident) recordUpload(e error) {` |
 | `docs/QUEUE.md|decoder/features_test.go:146` | goinfer | `want, ok := admissionGolden[name]` |

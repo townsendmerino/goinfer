@@ -463,6 +463,28 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		if r.dev, e = CreateSystemDefaultDevice(); e != nil {
 			return e
 		}
+		// THESE MODULE AND PIPELINE HANDLES DO NOT SURVIVE DEVICE EXHAUSTION. Read this before
+		// adding any path that recovers residency after memory pressure.
+		//
+		// Measured (A13, docs/QUEUE.md): once the device has been drained to exhaustion, a later
+		// launch through a handle cached here returns SUCCESS and executes NOTHING — the output
+		// buffer is left untouched and surfaces downstream as an all-zero result, e.g. a cosine of
+		// exactly 0.000000. No CUDA call reports an error at any point, and free VRAM is back to
+		// ~7.3 GB by then, so neither an error check nor a memory check will catch it.
+		//
+		// AND cuFuncGetAttribute WILL NOT DETECT IT. Queried across a poisoned and a clean run it
+		// returns byte-identical valid values (maxThreadsPerBlock, numRegs, ptxVersion) because
+		// those come from metadata that outlives the device code. A handle that answers is not a
+		// handle that works.
+		//
+		// What restores it, measured 3/3: re-loading the module and re-resolving the function
+		// IMMEDIATELY BEFORE the launch. Re-loading earlier does not — allocations performed
+		// between the load and the launch re-invalidate it.
+		//
+		// goinfer does not hit this today only because BuildResident DECLINES on exhaustion
+		// ((nil,false,nil)) and cudaBackend.MatmulBT then runs linalg.MatmulBT with no CUDA at all.
+		// That decline is a safety property, not an incidental fallback. Any future residency
+		// recovery must RE-LOAD rather than reuse what is cached here.
 		gmod, e := r.dev.CompileLibrary(gemvFwdPTX)
 		if e != nil {
 			return e

@@ -270,6 +270,26 @@ The two shapes have opposite roles and it is worth keeping them straight: **the 
 CREATES divergences; the check shape FAILS TO CATCH them.** The same recognition test finds both, and
 the remedies differ:
 
+**A QUERY THAT SUCCEEDS AGAINST A HANDLE DOES NOT PROVE THE HANDLE IS LIVE.** Many APIs answer from
+a cached descriptor that outlives the thing it describes, so the probe returns a confident, valid,
+*wrong* answer.
+
+*Recognition test:* **does this probe have to touch the thing to answer?** If it can be satisfied
+from a cache, a descriptor, or metadata, it is not a liveness check — whatever it is named.
+
+*Instance (A13, 2026-08-13).* `cuFuncGetAttribute` on a cached CUDA function handle returned
+**byte-identical valid values** in a poisoned run and a clean one — `maxThreadsPerBlock=1024`,
+`numRegs=62`, `ptxVersion=75` — because those live in metadata that survives the device code being
+evicted. The handle answered while what it named was gone; the launch then reported success and
+executed nothing.
+
+**The probe was cheap, it was mine, and ALONE IT WAS WORSE THAN NOTHING** — it returns a confident
+negative ("the handle is fine, look elsewhere") and would have sent the investigation away from the
+right answer. What settled it was the *pair*: forcing a module reload before the launch fixed the
+result, 3/3 against a 2/2 control. **Neither probe alone was sufficient, and the cheap one alone was
+actively misleading.** A probe that cannot discriminate should be labelled as such when it is
+proposed, not after it has been believed.
+
 **A DOCUMENTED MECHANISM WITH NO ENUMERATION is the same shape, and it is the one that feels
 safest.** When a defect is found, understood, written up, and fixed *at the site where it was found*,
 the write-up creates a strong impression that the class is handled. It is not: the fix landed on one
