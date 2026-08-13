@@ -657,6 +657,39 @@ also satisfies. The **byte comparison against a snapshot taken before the comman
 carried the claim. Worth naming, because two of the three checks were reassurance rather than
 evidence, and a reader counting three would have over-weighted the result.
 
+**A correctness argument with PER-ARCHITECTURE BRANCHES is verified per-branch.** Verifying it on
+one architecture verifies **one branch**, and the branches may not be equally strong — so *"the
+argument was verified"* carries a scope exactly the way a gate's axis composition does, and must be
+stated with it.
+
+The instance (2026-08-12, aikit's f32 blocked-matmul rework, `linalg/matmul_blocked.go`). The comment
+justifies bit-identity **per architecture**:
+
+- **amd64** — the removed round trip was "32 adds of which 24 added literal `0.0`", and adding `0.0`
+  is exact in IEEE-754. **Structural**: it cannot move a bit whatever the inputs.
+- **arm64** — "the four lanes per column are **real partial sums**" folded "in this same
+  left-to-right order". An **ordering claim about the new implementation**. f32 addition is not
+  associative, so it holds only as long as that order actually holds.
+
+goinfer's goldens went green on amd64 — which exercised the **structural** branch, the one that could
+not have failed. **The weaker branch is the one nothing tested**, and a green that reads as "the
+bit-identity argument was verified" silently generalises from the strong branch to the weak one.
+
+*Recognition test:* **does the argument say "on X… on Y…"? Then a pass on X is a pass about X.** Same
+question as the axis-composition rule — a result whose value depends on an axis must state its
+position on that axis — applied to the reasoning rather than to the test matrix. The remedy is the
+same too: run the other branch, or state the scope.
+
+**An instruction that arrives GARBLED or TRUNCATED is not evidence of intent — quote it back and
+stop.** Relayed messages can arrive mangled. When one does, reproduce **exactly what arrived**, say
+what it was probably meant to be, and **wait** — do not infer through it and act.
+
+The instance: two messages reached this session as `"geton top"` and `"get on tip"`, and both were
+acted on by inference. It happened to be harmless; the reasoning was not. A garbled instruction acted
+on confidently is **worse than a delay**, because the delay is visible and the misreading is not —
+and unlike every other failure mode in this document, **no gate covers it.** Confidence in a reading
+is not evidence about the text, and a short message carries fewer bits with which to be wrong.
+
 **When a citation check goes red, the fix may be the CITATION or the PROSE — and the citation is
 always cheaper.** Re-pointing a reference is one `sed`; correcting the sentence around it means
 rereading what was claimed and deciding whether it still holds. Both turn the gate green, and only

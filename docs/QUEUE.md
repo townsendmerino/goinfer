@@ -980,6 +980,24 @@ and none needs this one:
    there.
 4. **arm64 f32 goldens read — TAG-GATE (NEW, created 2026-08-12). Minutes.**
 
+   **WHY IT IS OWED — primary reason: the correctness argument has per-architecture branches, and
+   only the stronger one has been exercised.** aikit's comment on the rework justifies bit-identity
+   **per architecture** (`linalg/matmul_blocked.go`), and the two branches are not equally strong:
+
+   - **amd64** — `dotFMA8` already reduces in-register, so the removed round trip was "32 adds of
+     which 24 added literal `0.0`". Adding `0.0` is exact in IEEE-754: **structural**, it cannot move
+     a bit whatever the inputs.
+   - **arm64** — "the four lanes per column are **real partial sums** and `dot8ColsInto` folds them
+     in **this same left-to-right order**". An **ordering claim about the new implementation**, not a
+     structural impossibility. f32 addition is not associative, so if the fold order differs anywhere,
+     the sums move.
+
+   **goinfer's green goldens ran on amd64 and therefore exercised the STRUCTURAL branch. The weaker
+   branch is the one nothing has tested.** That is what this gate closes, and it is why the argmax
+   margin needs re-confirming on arm64 rather than being a separate claim about byte-agreement.
+
+   **Secondary reason (independent, and it also holds): the refresh's arch was never recorded.**
+
    **Provenance — created, not overlooked.** This gate came into existence on 2026-08-12, the moment
    the architecture-exception clause met the aikit **v1.17.0 f32 blocked-matmul rework** (an
    expression-rewrite to a float path, still live in v1.17.1). It did **not** exist before that rework,
@@ -1009,27 +1027,6 @@ and none needs this one:
    **How.** Run `scripts/refresh_parity_hashes.sh` (or the f32 forward goldens) on `macbook-arm64`; the
    new `arch=arm64` trailer records the discharge. Second tag-gate alongside the prefill measurement —
    both attach to the same aikit-bump change.
-
-   **The mechanism behind that, from aikit's own comment — it names TWO bit-identity arguments, one
-   per architecture** (`linalg/matmul_blocked.go`), and they are not equally strong:
-
-   - **amd64** — `dotFMA8` already reduces in-register, so the removed round trip was "32 adds of
-     which 24 added literal `0.0`". Adding `0.0` is exact in IEEE-754: **structural**, it cannot move
-     a bit whatever the inputs.
-   - **arm64** — "the four lanes per column are **real partial sums** and `dot8ColsInto` folds them
-     in **this same left-to-right order**". An **ordering claim about the new implementation**, not a
-     structural impossibility. f32 addition is not associative, so if the fold order differs anywhere,
-     the sums move.
-
-   This is *why* the margin needs re-confirming on arm64 rather than a separate claim about
-   byte-agreement: goinfer's green goldens ran on amd64 and exercised the **structural** argument, so
-   the **weaker** of the two arguments is precisely the one nothing here has tested. A second,
-   independent reason the gate is owed, alongside the unrecorded-arch reason above — both hold.
-
-   (Search scope, for the provenance point: `arm64 read`, `arm64 goldens`, and architecture-gating
-   language across every live document and 400 commit bodies returned exactly one hit, and that hit
-   *declined* an arm64 read — G2's `go fix` clearance, §1536, cleared by source census.)
-
 **Still outstanding, and it needs the mac:** `metal-rope-merge` carrying `d682315`. It is not on
 origin and resolves in no clone here, so **P4's "already implemented, snapshot-golden byte-exact" is
 unverifiable from any machine but that one**. Pushing the branch is enough — it does not need merging

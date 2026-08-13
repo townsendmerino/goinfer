@@ -46,9 +46,24 @@ ran or that it ran at M>1. Those diverge exactly the way `loadBenchModel()`'s ha
   unless `iEnd-i >= 3` (`linalg/rowblock_amd64.go`). Its presence in the profile is direct evidence
   that the multi-row batched path ran, as opposed to N calls at M=1. The v1.16.0 arm has no
   `blockRows3x4`; its equivalent witness is `blockedFill` plus `Dot8x4`.
-- **Both checked non-zero BEFORE the characterization begins.** If either is zero, the instrument
-  did not measure the rework and no number from it is reportable — the honest outcome is "no
-  instrument exists for this yet".
+- **Both checked non-zero BEFORE the characterization begins.**
+
+**A ZERO MUST BE DISAMBIGUATED BEFORE IT IS READ AS A RESULT.** A zero sample count means *either*
+"did not execute" *or* "executed below the sampler's resolution", and **a profile cannot tell you
+which**. That is the absence-of-signal class applied to profiling: absence of samples is not absence
+of execution.
+
+The two witnesses are not equally informative, and they get different treatment:
+
+- **`blockedFill` on a long f32 prefill should dominate the profile.** A zero there is genuinely
+  informative — at that weight, "below the sampler's resolution" is not a plausible explanation.
+- **`blockRows3x4` is much narrower** (a 3-row inner sweep). **Its zero is NOT evidence of M=1 on its
+  own** — it is equally consistent with a sampling miss.
+
+So on any zero, before concluding anything: **raise `runtime.SetCPUProfileRate` (or `-cpuprofilerate`)
+and re-check, or add an explicit counter and read that instead.** Only a zero that survives a
+higher-resolution re-check, or a counter reading zero, supports "did not execute". Only then is "no
+instrument exists for this yet" the honest outcome — and it is a conclusion reached, not a default.
 
 `b.Logf("canBatchN=%v")` and the quant setting are recorded as *configuration*, alongside the
 execution evidence, never in place of it.
