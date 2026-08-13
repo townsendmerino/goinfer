@@ -282,6 +282,44 @@ test — but because `scripts/gpu_gate.sh` says *do not tag*, and a gate that is
 was written to constrain is not a gate. B8 applies here too: the gate cannot presently distinguish
 "failed" from "could not evaluate", and these four are the second kind.
 
+**A13 · `attention` kernel returns ZEROS at hd=64 and hd=128, in-suite only, with every CUDA call
+succeeding** — `linux`, **open, found 2026-08-13**
+
+Fixing A12's dropped errors (`668a2bc`, `e682eb2`) turned a silent symptom into a sharp one. With
+every call checked — `CopyHtoD`, `LaunchOn`, `Synchronize`, `CopyDtoH` — `TestAttention_HeadDimWidths`
+now reports:
+
+| head dim | alone | in the full tier |
+|---|---|---|
+| 16 | PASS | PASS |
+| **64** | PASS | **cosine 0.000000** |
+| **128** | PASS | **cosine 0.000000** |
+| 256 | PASS | PASS |
+| 512 | PASS | PASS |
+
+**No CUDA call fails.** The launch succeeds, the synchronize succeeds, the copy back succeeds, and
+the result is zeros — at two specific head dimensions, only when other tests have run first.
+
+**What this is NOT, each ruled out rather than assumed:** not a dropped error (they are checked now);
+not VRAM exhaustion (no allocation fails, and the two passing dims either side are larger); not a
+parallelism artifact (`-p 1`, one package, no `t.Parallel`); not the resident path at all — this test
+builds its own buffers and launches the kernel directly.
+
+**The bracketing is the strange part.** 16 passes, 64 and 128 fail, 256 and 512 pass. A resource
+ceiling would fail the *large* dims. Shared memory is `(nKeys+128)*4` and does not vary with `hd`.
+Whatever this is, it is selective in a way that resource pressure is not.
+
+**Also observed: the in-suite failures VARY BETWEEN RUNS.** One tier run failed
+`TestAttention_HeadDimWidths` and `TestGemma4MoEScaled_residentParity`; another failed
+`TestMoERouteDemandThreshold`'s child ("child produced no A9CHILD line"). Both runs were made with
+and without the forward-path change and the variation is present either way, so it is not that
+change. Non-determinism across runs is itself a finding and narrows the candidates: whatever it is,
+it depends on accumulated process state, not on the test's own inputs.
+
+**Next step, cheap and specific:** run the tier with `-run` narrowed to a bisection of preceding
+tests to find the minimal predecessor set that makes hd=64 fail. That names the interaction, which no
+amount of reasoning about the kernel will.
+
 **A2 (partial) · 26B documentation correction** — `linux`, 2026-08-12
 
 The half that does NOT depend on A1 is done: the README instructed
@@ -2840,6 +2878,7 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `588052b` | serve: drain in-flight requests before freeing an unloaded model (fixes the leak safely) |
 | `5ece205` | fix(cuda): two VRAM-draining tests never freed — they failed a later test as "a forward moved" |
 | `6091e7a` | fix(cuda): size the expert cache by SEARCH over the granularity form (A5) |
+| `668a2bc` | fix(cuda): check the 26 dropped errors on the decode forward path |
 | `6edd1ca` | parity: make "validated" MEAN T3 — method-tier gate + honest experimental tier (D2, pre-freeze) |
 | `7cc2f0d` | fix(parity,ci): refresh deps_hash after 38061b1's pread-staging core plumbing (non-numeric) |
 | `7ccec1e` | fix(cuda): the expert cache sizes itself — topK was the worst possible default |
@@ -2867,6 +2906,7 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `cda8cfe` | docs: re-declare the freeze as a proof requirement; clear G2 for amd64 alone |
 | `e42e83e` | fix(cuda): name the kernel and both slot counts when a launch runs out of memory |
 | `e58ac8a` | fix(parity): refresh deps_hash after f340d4e's guarded int4-scale seam — non-numeric, validated_at preserved |
+| `e682eb2` | A12: four failures, four causes — three test defects and one dropped error |
 | `ecc5af2` | chore(parity): refresh deps_hash after default-off diagnostic hooks (non-numeric) |
 | `ed81e13` | P1: route top_k=1 to the on-device greedy fast path |
 | `eea7f29` | perf(decoder): one gate/up pair per token in MoE, not one per expert (P6) |
