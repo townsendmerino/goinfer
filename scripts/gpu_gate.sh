@@ -53,6 +53,29 @@ PASSED=0
 RAN=0
 NOTES=()
 
+# ---- THE GROUPS DEFINE THEIR OWN ENVIRONMENT (learned the hard way, 2026-08-13) ----
+# Each group sets the variables it needs INLINE: 2c sets GOINFER_HEAVY_TESTS=1, the drain group sets
+# GOINFER_DRAIN_GROUP=1. Nothing unsets them for the groups that must NOT have them, so an operator
+# who exports one "to be helpful" silently changes what the other groups MEAN.
+#
+# That is not hypothetical: three consecutive red gate runs were caused by invoking this script as
+#   GOINFER_HEAVY_TESTS=1 bash scripts/gpu_gate.sh
+# which pulled the real-model tests into group 2b as well. 2b then ran for 608s against go's DEFAULT
+# 600s timeout and failed with no assertion line at all, and in an earlier run left enough VRAM held
+# that a 7B could not go resident. Two different-looking failures, one ambient variable, none of it
+# in the tree.
+#
+# So the script now takes control of them. Neutralised, and REPORTED rather than silently ignored --
+# an operator who set one deliberately must see that it did not take effect.
+for _v in GOINFER_HEAVY_TESTS GOINFER_DRAIN_GROUP; do
+	if [ -n "${!_v:-}" ]; then
+		echo "note: ${_v}=${!_v} was set in the calling environment — UNSET."
+		echo "      Every group sets what it needs itself; ambient values change what a group means."
+		NOTES+=("${_v} was set in the caller's environment and was neutralised — groups set their own")
+		unset "$_v"
+	fi
+done
+
 # GROUP ACCOUNTING (audit G-01). The tally used to be computed purely from what emitted, so a check
 # that died mid-block simply vanished and the gate still reported PASS — it had tested nothing and
 # said so in no way that a reader could notice. Counting what emitted can never detect what did not.
@@ -216,7 +239,10 @@ cuda)
 	fi
 
 	grp parity; hdr "2b. resident PARITY gates (-tags goinfer_testhooks — the forward is asserted here)"
-	if out="$(CGO_ENABLED=0 go test -tags 'cuda goinfer_testhooks' -p 1 ./cuda/ -count=1 2>&1)"; then
+	# -timeout DECLARED, not defaulted. Without it this group inherits go's 10m default, and a group
+	# that overruns reports "FAIL <pkg> 608.417s" with no test named -- indistinguishable from a crash
+	# until detail() dumps the tail. State the budget so an overrun reads as an overrun.
+	if out="$(CGO_ENABLED=0 go test -tags 'cuda goinfer_testhooks' -p 1 ./cuda/ -count=1 -timeout 10m 2>&1)"; then
 		RAN=$((RAN + 1))
 		pass "resident parity gates (gemma4 dense/two-geom/MoE+router, GLM partial-rotary, mixtral MoE, sliding-window, rope-partial)"
 		echo "$out" | grep -E "^ok" | sed 's/^/      /'
