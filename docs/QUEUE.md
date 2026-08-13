@@ -353,10 +353,34 @@ context, and the only paths that keep using the context stay orders of magnitude
 is a stronger and more falsifiable statement than the four shifting properties it replaces — any new
 path need only be tested against the one claim.
 
-**A13 stays OPEN as understood-but-uncharacterised:** the trigger is named and reproducible, the
-mechanism (module unusable while the handle stays queryable) is established, and the thread factor —
-why a pinned test goroutine poisons and the resident's executor does not — is **not** characterised.
-Chasing it further is research, not release work.
+### A13 — CLOSING STATE (2026-08-13). Understood, uncharacterised in one part, NON-BLOCKING.
+
+| | |
+|---|---|
+| **status** | **UNDERSTOOD, not solved.** Open deliberately, not parked by neglect |
+| **trigger** | **named and reproducible: drain the device until a 1 MiB request is refused (~144 MiB free). 5/5.** Deterministic |
+| **mechanism** | **established.** The module's device code becomes unusable while the cached handle stays *queryable* — `cuFuncGetAttribute` returns byte-identical valid values across poisoned and clean runs, because that metadata outlives the device code. Launches then return SUCCESS and write nothing. No CUDA call reports an error, and free VRAM is back to ~7.3 GB by the time it shows |
+| **remedy, measured** | re-load the module and re-resolve the function **immediately before** the launch — 3/3. Re-loading earlier does not work: allocations between load and launch re-invalidate it |
+| **NOT characterised** | the **thread factor** — why a pinned test goroutine poisons where the resident's `LockOSThread` executor does not. Pinning alone was tested and is *not* the variable. This is the honest gap |
+| **why it does not block** | the enumeration above: no shipped path drives the device to refusal and then continues using the context. Five paths, each with its own evidence, four of them measurements |
+
+**THE FALSIFIER — the one sentence a future implementer needs:**
+
+> **Any future change that drives the device to refusal and then continues using the same context
+> breaks this.**
+
+That is what makes A13 non-blocking rather than merely unobserved, and it is what a reader must check
+a change against. It is deliberately a *property*, not a list of forbidden functions: a retry loop, an
+evict-and-rebuild, a "try a smaller cache and continue", a second model sized against free VRAM — none
+of those is named anywhere, and all of them break it. The failure will be **silent zeros, not an
+error**, so it will not announce itself.
+
+**It is recorded in two places on purpose**, because the entry is not where the change gets written:
+here, and at the module/pipeline cache site in `cuda/backend.go` — the code someone adding residency
+recovery is actually reading. Neither location is decorative; a rule filed only in a queue entry is a
+rule nobody encounters at the moment they break it.
+
+Chasing the thread factor past this point is research, not release work.
 
 **THE SWEEP'S STIMULUS IS INTERMITTENT; THE REAL ONE IS NOT. The percentage figures are weaker than
 recorded (2026-08-13).**
@@ -3268,8 +3292,8 @@ supports.
 |---|---|---|
 | `docs/QUEUE.md|cuda/argmax_tiebreak_test.go:19` | goinfer | `func TestArgmaxTieBreak(t *testing.T) {` |
 | `docs/QUEUE.md|cuda/backend.go:463` | goinfer | `if r.dev, e = CreateSystemDefaultDevice(); e != nil {` |
-| `docs/QUEUE.md|cuda/backend.go:591` | goinfer | `if r.prefillReady {` |
-| `docs/QUEUE.md|cuda/backend.go:836` | goinfer | `anchor: func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar` |
+| `docs/QUEUE.md|cuda/backend.go:591` | goinfer | `load(&r.bRopeKV, pbmod, "rope_kv_batched")` |
+| `docs/QUEUE.md|cuda/backend.go:836` | goinfer | `// cache, so the cap is correct by construction rather than covered by a margin.` |
 | `docs/QUEUE.md|cuda/prefill.go:200` | goinfer | `defer func() {` |
 | `docs/QUEUE.md|cuda/resident.go:244` | goinfer | `// backend.go locals; the per-layer KV cache and UploadKV read r.layers[l].kvDim.` |
 | `docs/QUEUE.md|cuda/resident.go:397` | goinfer | `func (r *cudaResident) recordUpload(e error) {` |

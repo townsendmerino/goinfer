@@ -485,6 +485,20 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		// ((nil,false,nil)) and cudaBackend.MatmulBT then runs linalg.MatmulBT with no CUDA at all.
 		// That decline is a safety property, not an incidental fallback. Any future residency
 		// recovery must RE-LOAD rather than reuse what is cached here.
+		//
+		// THE FALSIFIER, which is the one sentence to carry away from all of this:
+		//
+		//	ANY CHANGE THAT DRIVES THE DEVICE TO REFUSAL AND THEN CONTINUES USING THE SAME CONTEXT
+		//	BREAKS THIS.
+		//
+		// The whole tag rests on that single property holding across every shipped path — measured
+		// path by path in docs/QUEUE.md A13 (prefill peaks 39.9x clear of the floor; unload frees
+		// rather than exhausts; the cap search allocates nothing; the one path that DOES exhaust,
+		// resident build, then declines and issues no CUDA). It is not a guarantee the type system
+		// or any test can enforce for code that does not exist yet, so it is written here, where
+		// someone adding a retry loop, an eviction-and-rebuild, or a "just try a smaller cache"
+		// will be reading. If your change makes the device refuse and then keeps going on that
+		// context, the failure will be silent zeros, not an error.
 		gmod, e := r.dev.CompileLibrary(gemvFwdPTX)
 		if e != nil {
 			return e
