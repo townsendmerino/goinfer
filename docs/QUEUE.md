@@ -106,6 +106,55 @@ across the CUDA tests; only three small files load without any (`cuda/gemma_bos_
 **So this reads as a capacity limit of the 8 GB card for the full heavy tier in one process, not a
 defect in the tree.** Every test passes on its own; the tier as a whole does not fit.
 
+**RETRACTED 2026-08-13 — THERE IS NO LEAK. The "leak" was a probe-position artifact, and the
+authoritative experiment says `Close()` returns everything.**
+
+`TestResidentCloseFreesVRAM_7B` (`cuda/lifecycle7b_test.go`) runs the sibling gate's shape at the
+scale that supposedly reproduced: **qwen2.5-7B, int4, backend cuda, a real 16-step decode loop, three
+Load→Forward→Close cycles in one process**, reading free VRAM after each Close from a held probe
+context:
+
+    baseline 474 MiB
+    cycle 0: loaded 5366 MiB (+4892), after Close 474 MiB (+0)
+    cycle 1: loaded 5366 MiB (+4892), after Close 474 MiB (+0)
+    cycle 2: loaded 5366 MiB (+4892), after Close 474 MiB (+0)
+
+**Zero retention on every cycle, including the first** — a FOURTH outcome, outside all three
+pre-registered branches. Not per-cycle growth (no leak), and not even the one-time context retention
+the A9/A10 mechanism predicted.
+
+**What produced the false −1344 MiB.** The tracer's final sample is taken at an *uncontrolled point
+relative to teardown*. Re-running `TestB2DenseFlagship` under the tracer and reading the tail shows
+free VRAM still climbing as the process exits:
+
+    free=2,535,653,376   (2.4 GiB)
+    free=2,535,653,376
+    free=4,475,518,976   (4.3 GiB)   <- deferred Close running
+    free=6,509,756,416   (6.2 GiB)   <- still recovering when the process ended
+
+`Close()` was working the whole time; the sampler simply stopped watching before it finished. **This
+is the Position class** — the probe sat on one side of the event and reported the other side's state
+— which this queue has recorded twice before and which I walked into a third time while building an
+instrument specifically to avoid guessing.
+
+**Consequences, stated rather than quietly dropped:**
+
+- **The per-test table's `after` column is not trustworthy for tests with large teardowns.** Every
+  such reading may have been taken mid-`Close`. The raw data stays at
+  `docs/measurements/a12-vram-per-test.json` with this caveat attached; the *shape* claim (sawtooth,
+  declining ceiling) rests on those same readings and is therefore **unproven**, not merely uncertain.
+- **The "correctly scoped, silently narrow" criticism of `TestResidentCloseFreesVRAM` does not
+  survive.** It was green because it is right. Its scope is still worth printing (below), but it was
+  not hiding anything.
+- **Option (b) is off the table** — there is no leak to hunt. What blocks the gate is still open, and
+  the candidate list reopens as the third pre-registered branch said it would.
+
+**What the new gate is still worth keeping for:** it is the 7B/decode-loop coverage that did not
+exist, it prints its scope with its verdict, and it asserts steady state from cycle 2 so a real
+per-cycle leak would fail it. It just happens to be green today.
+
+*(Superseded reading below, kept because the reasoning was sound and only the probe was not.)*
+
 **MEASURED 2026-08-13 — the reading is the THIRD branch: NEITHER shape, and the diagnosis is
 accumulation LOCALIZED to a few tests.** 186 tests traced, `cuMemGetInfo` at 50 ms, joined to `-v`
 boundaries.
@@ -2888,6 +2937,7 @@ than papered over.
 | `cuda/build_ptx.sh` | goinfer |
 | `cuda/gemma_bos_build_test.go` | goinfer |
 | `cuda/graphs_safe_test.go` | goinfer |
+| `cuda/lifecycle7b_test.go` | goinfer |
 | `cuda/lifecycle_test.go` | goinfer |
 | `cuda/moe_route_demand_test.go` | goinfer |
 | `cuda/moe_route_reservation_test.go` | goinfer |

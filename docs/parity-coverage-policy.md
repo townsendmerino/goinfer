@@ -684,6 +684,29 @@ also satisfies. The **byte comparison against a snapshot taken before the comman
 carried the claim. Worth naming, because two of the three checks were reassurance rather than
 evidence, and a reader counting three would have over-weighted the result.
 
+**G-01 has a third variant: CORRECTLY SCOPED, SILENTLY NARROW.** Distinct from the tautological
+gate (cannot fail) and from exercised-but-never-triggered (runs, never reaches the condition), and it
+is **the one that looks most like a working gate** — because it is one. It runs, it can fail, it
+tests a real property, and its scope is a fraction of the claim readers take it to support.
+
+`TestResidentCloseFreesVRAM` is the instance: three Load+Forward+Close cycles asserting used ≤
+baseline+128 MiB. Well built and green. It covers the **0.5B** model with a **single one-token
+forward**, while the claim it gets read as supporting is "`Close()` frees the model's VRAM" —
+across every model and workload, three orders of magnitude wider.
+
+*Recognition test:* **name the axes the gate actually ran on, then ask what it is being cited for.**
+Model size, workload shape, quantization, backend — a gate that fixes all four and a claim that fixes
+none are not the same statement.
+
+*Remedy:* **print the scope with the verdict**, exactly as a gate whose value depends on an axis must
+print its composition along that axis. This is the axis-composition rule applied to a *resource* gate
+rather than to a parity matrix, and it costs one `Logf`.
+
+*Honesty note attached to this instance (2026-08-13):* the narrowness was real, but the defect it was
+first cited for was not — the wider gate at 7B came back green, and the "leak" it was supposed to
+have missed turned out to be a probe-position artifact. A gate being narrow does not imply something
+is hiding in the gap. Both halves of that belong in the record.
+
 **When a pre-registration compares a FRESH measurement against a RECORDED one, the branch set must
 include "THE RECORDED VALUE IS THE ERROR."** A recorded number is a measurement too — taken once,
 possibly under conditions nobody wrote down — and treating it as the fixed point smuggles in an
