@@ -332,6 +332,45 @@ version are all still there after the underlying module has been evicted. So the
 exactly the "returns success and does nothing" shape, and it explains every observation at once:
 identical launch arguments, all calls succeeding, full card, zeros out.
 
+**THE PRODUCTION QUESTION, ANSWERED FIRST (2026-08-13): a failed allocation does NOT poison. A
+large SUCCESSFUL one, freed, can.**
+
+| stimulus | result |
+|---|---|
+| **1 refused allocation** (15.1 GiB request) | **CLEAN, 3/3** |
+| **2, 10, 100, 1000 refused allocations** | **CLEAN** at every count |
+| hold+release 1%, 3%, 6%, 12% of free VRAM (≤ ~876 MiB) | CLEAN |
+| hold+release 18%, 21% (~1.3–1.5 GiB) | CLEAN, and 18% is 3/3 |
+| hold+release **15%** (~1.1 GiB) | **POISON once, CLEAN twice** |
+| hold+release **25%, 50%, 75%, 90%, 95%** | **POISON** |
+
+**So the refusal is not the trigger — the successful allocation is.** A thousand refused requests
+leave the context perfectly usable; holding and releasing roughly a gigabyte or more can break it.
+That inverts the intuition the draining tests suggested, and it matters because *the decline path
+only ever experiences refusals*.
+
+**NO THRESHOLD IS CLAIMED. The sweep is NON-MONOTONIC** — 15% poisoned once and was clean twice while
+18% and 21% were clean 3/3 and 25% poisoned. Whatever governs this is not held bytes alone, and a
+single run per percentage establishes nothing. The honest statement is a *range*: reliably clean at
+or below ~12%, reliably poisoned at or above ~25%, unstable between.
+
+**What this does to the tag.** The exposure requires a **large successful allocation, freed, followed
+by a launch on the same context**. Two things stand between production and that, and they should be
+named separately because they are different guarantees:
+
+1. **The decline path never gets there.** On exhaustion `BuildResident` refuses and returns
+   `(nil,false,nil)` — refusals only, which the sweep shows are harmless at any count — and the
+   fallback runs `linalg.MatmulBT` with no CUDA at all.
+2. **Each resident model builds its own context** (`cuda/backend.go:463`, `CreateSystemDefaultDevice`
+   inside `BuildResident`'s setup job) and tears it down on `Close`. `TestResidentCloseFreesVRAM`
+   does three full 7B load→forward→close cycles — 4892 MiB allocated and freed each time — and every
+   cycle's forward is correct. A per-model context is why a load/unload cycle does not poison the
+   next model.
+
+**The multi-model server case is therefore covered by (2), not by luck** — but it is covered by a
+property nobody wrote down as a safety property until now, which is exactly how it gets refactored
+away. **A shared long-lived context across models would expose this directly.**
+
 **REFINED, because the obvious remedy failed and the failure is informative.** Reloading the module
 *inside the draining test* — repairing what it disturbed — **does NOT fix the victim**:
 
