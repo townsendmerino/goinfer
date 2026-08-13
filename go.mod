@@ -1,6 +1,6 @@
 module github.com/townsendmerino/goinfer
 
-go 1.26.5
+go 1.26.6
 
 require (
 	github.com/townsendmerino/aikit v1.17.1
