@@ -317,14 +317,42 @@ ceiling would fail the large dims" puzzle, because the large dims *do* fail.
 zeros, on a card with 7.3 GB free, reporting success at every step.** That is the finding, and no
 mechanism is proposed for it here.
 
-**TAG IMPACT — this is a test-interaction defect, not a production one.** The trigger is deliberate
-drain-to-exhaustion, which exists only in three measurement tests; production never drains the card
-on purpose. The production forward path is unaffected, and the resident parity gates pass. It joins
-the other three A12 items as a test defect rather than blocking on correctness grounds.
+**THE LAUNCH IS IDENTICAL — the state is in the driver or the context, not in the call.** Every field
+the launch depends on was logged in both a clean and a poisoned run (`GOINFER_A13_LAUNCH=1`):
 
-**Worth its own item regardless of the tag:** a kernel that silently produces zeros after the device
-has been exhausted — no error, full card by then — is a robustness question for any real OOM
-recovery, not just for this suite.
+    grid=(12,1,1) block=(128,1,1) shared=1028 nH=12 nKV=2 nKeys=129 scale=0.05
+    lens=(768,16512,16512,768)          <- identical for a given hd, both runs
+
+**No argument differs. No extent differs. No stride differs.** And the pointer question is answered
+too: **hd=64 FAILS at the very same base address where hd=16 PASSES** (`0x…200000` in both), so a
+differing device pointer is not the discriminator either. That is the third pre-registered branch —
+everything identical, result different — which **rules out anything goinfer computes** and scopes the
+remaining search to context- or driver-level state.
+
+*(A secondary observation, not the cause: after a drain the allocator stops reusing the freed slot
+and hands out advancing addresses, where a clean run returns the same address for every subtest.
+Consistent with allocator state having changed; it does not explain a zero result, since the failing
+launch happens at a reused address.)*
+
+**SCOPE, SHARPENED — "only three measurement tests drain" was too comfortable.** The trigger is
+**exhaustion followed by continued use of the same context**, and **production does reach
+exhaustion** — the 26B at 34 slots is the origin of this entire campaign. So the question is not
+whether production drains the card; it is whether anything keeps using the context afterwards.
+
+**It does not, and that is the reason A13 is unreachable in production — stated rather than left
+implicit.** On exhaustion `BuildResident` declines and returns `(nil, false, nil)`, and the fallback
+is `cudaBackend.MatmulBT`, which dispatches to **`linalg.MatmulBT` — the shared SIMD kernels, the
+same ones the CPU backend uses**. The staged path touches no CUDA. So after a real OOM the process
+stops issuing CUDA work entirely, and the poisoned context is never launched into again.
+
+**The decline is load-bearing, and that is the finding.** If the fallback had kept using the context —
+a staged path that still issued kernels, say — A13's mechanism would be reachable from a real 26B OOM
+and this would be a correctness bug rather than a test-interaction one. It is worth knowing that the
+safety comes from the decline rather than from the kernel being robust.
+
+**TAG IMPACT — a test-interaction defect, not a production one**, for the reason above rather than
+because the trigger is rare. The production forward path is unaffected and the resident parity gates
+pass. A13 joins the other three A12 items as a test defect.
 
 **A2 (partial) · 26B documentation correction** — `linux`, 2026-08-12
 

@@ -6,6 +6,8 @@ import (
 	"context"
 	_ "embed"
 	"math"
+	"os"
+	"reflect"
 	"testing"
 
 	gc "github.com/eitamring/gocudrv/cuda"
@@ -359,6 +361,18 @@ func validateGlue(t *testing.T, ctx *gc.Context, stream *gc.Stream, bg context.C
 		if e := gc.CopyHtoD(bg, dv, vh); e != nil {
 			t.Fatalf("hd=%d: CopyHtoD(v): %v", hd, e)
 		}
+		// A13 launch diff (GOINFER_A13_LAUNCH=1). Prints everything the launch depends on, so a
+		// poisoned run and a clean one can be diffed field by field: if an argument or a device
+		// pointer differs, something upstream is holding state from the drain and the culprit is
+		// named; if every field is identical and only the result differs, the state is inside the
+		// driver or the context rather than in this call.
+		if os.Getenv("GOINFER_A13_LAUNCH") != "" {
+			t.Logf("A13LAUNCH hd=%d grid=(%d,1,1) block=(128,1,1) shared=%d nH=%d nKV=%d nKeys=%d scale=%g "+
+				"dq=%#x dk=%#x dv=%#x dc=%#x lens=(%d,%d,%d,%d)",
+				hd, nH, (nKeys+128)*4, nH, nKV, nKeys, scale,
+				devPtr(dq), devPtr(dk), devPtr(dv), devPtr(dc),
+				dq.Len(), dk.Len(), dv.Len(), dc.Len())
+		}
 		if e := fAttn.LaunchOn(bg, stream, gc.LaunchConfig{GridX: uint32(nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nKeys + 128) * 4)},
 			gc.Arg(dq), gc.Arg(dk), gc.Arg(dv), gc.ArgValue(int32(nH)), gc.ArgValue(int32(nKV)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(nKeys)), gc.ArgValue(scale), gc.ArgValue(int32(0)), gc.Arg(dc)); e != nil {
 			t.Fatalf("hd=%d: attention launch (shared=%d B): %v", hd, (nKeys+128)*4, e)
@@ -380,4 +394,18 @@ func validateGlue(t *testing.T, ctx *gc.Context, stream *gc.Stream, bg context.C
 		dc.Close()
 	}
 	t.Logf("glue kernels validated vs CPU ref (rmsnorm_quant, attention cosine ≈ 1.0)")
+}
+
+// devPtr reads a Buffer's DEVICE pointer, which gocudrv keeps unexported. Diagnostic only (A13):
+// a differing pointer between a poisoned run and a clean one would say the launch is writing
+// somewhere valid that nobody reads, which is a different culprit from a differing extent.
+func devPtr[T gc.Supported](b *gc.Buffer[T]) uint64 {
+	if b == nil {
+		return 0
+	}
+	f := reflect.ValueOf(b).Elem().FieldByName("ptr")
+	if !f.IsValid() {
+		return 0
+	}
+	return f.Uint()
 }
