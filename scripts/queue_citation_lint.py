@@ -255,12 +255,20 @@ def required_modules():
     citation about the code goinfer actually runs.
     """
     out = {}
-    try:
-        text = (ROOT / "go.mod").read_text()
-    except OSError:
-        return out
-    for m in re.finditer(r"^\s*(github\.com/townsendmerino/aikit)\s+(v[0-9][^\s/]*)\s*$", text, re.M):
-        out[m.group(1)] = m.group(2)
+    # BOTH aikit modules, from the go.mod that actually requires each. aikit and aikit/gpu are
+    # SEPARATE modules with separate tag series (B7, E6), so gpu/ is not inside aikit@vX's module
+    # cache directory — reading only the root go.mod left every `gpu/...` citation unresolvable and
+    # reddened CI on a reference that was perfectly correct.
+    for mod_file, want in ((ROOT / "go.mod", "github.com/townsendmerino/aikit"),
+                           (ROOT / "cuda" / "go.mod", "github.com/townsendmerino/aikit/gpu")):
+        try:
+            text = mod_file.read_text()
+        except OSError:
+            continue
+        for m in re.finditer(r"^\s*(github\.com/townsendmerino/aikit(?:/gpu)?)\s+(v[0-9][^\s]*)\s*$",
+                             text, re.M):
+            if m.group(1) == want:
+                out[m.group(1)] = m.group(2)
     return out
 
 

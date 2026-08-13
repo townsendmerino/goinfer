@@ -332,6 +332,24 @@ version are all still there after the underlying module has been evicted. So the
 exactly the "returns success and does nothing" shape, and it explains every observation at once:
 identical launch arguments, all calls succeeding, full card, zeros out.
 
+**THE 1×2 IS FILLED, AND BOTH SHIPPED-PATH RESULTS ARE NULLS THAT DO NOT YET COUNT (2026-08-13).**
+
+| cell | stimulus | result |
+|---|---|---|
+| **(LoadModule prebuilt PTX, test goroutine)** | drain / hold+release ≥25% | **POISONS** — the only combination ever observed to |
+| **(CompileLibrary, resident executor)** | hold+release 3648 MiB via `rf.do` | clean |
+| **(LoadModule prebuilt PTX, resident executor)** | hold+release 3648 MiB via `rf.do`, module loaded and launched on the same executor | **clean** — `before=768 after=768` non-zero |
+| **multi-model unload** (`A` = 7B int4 ≈ 4.9 GB ≈ 67% of the card, `B` co-resident, `A` closed through the shipped path) | the real feature | **clean, 3/3** — B's logits byte-identical to its pre-unload baseline |
+
+**The context factor is eliminated by reading, not by testing:** `CreateSystemDefaultDevice` calls
+`dev.Primary()` and gocudrv never binds `cuCtxCreate`, so every cell above uses the *same* primary
+context. What is left is the **thread**, and the missing cell says resident-executor launches are
+**not** poisonable by this stimulus — which is exactly why the multi-model null is not yet evidence.
+**Nothing has ever poisoned a launch made on the resident's executor.**
+
+So the honest position: **the shipped paths look clean and the harness cannot yet demonstrate that it
+could show otherwise.** Two nulls from a route with no positive control are not a clearance.
+
 **CORRECTION (2026-08-13): "each resident model builds its own context" IS FALSE, and it was doing
 load-bearing work in the tag argument.** Read rather than assumed, after the prefill control failed
 to fire:
