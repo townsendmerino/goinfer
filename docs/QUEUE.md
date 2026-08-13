@@ -25,6 +25,39 @@ Boxes: `linux` (nvidia-rtx2070s, CUDA) · `mac` (Apple Silicon, Metal).
 
 ## In flight
 
+**A11 · moe_route's demand threshold MOVED by 589,824 B — the A9 pins no longer hold** — `linux`,
+**open, found 2026-08-12 by `scripts/gpu_gate.sh`**
+
+`TestMoERouteDemandThreshold` fails, and it fails **in isolation** — not a suite artifact. It is the
+gate built to notice exactly this, and its own message says what to do: *"if it has moved,
+docs/QUEUE.md A1/A5/A7/A9 need re-deriving, not editing."*
+
+| bound | pinned | measured now | delta |
+|---|---|---|---|
+| highest observed FAIL | 286,916,608 | **287,506,432** | +589,824 |
+| lowest observed PASS | 289,013,760 | **289,603,584** | +589,824 |
+
+**Both bounds moved by exactly the same 589,824 B (576 KiB), and it is DETERMINISTIC** — two
+consecutive runs reproduced both figures byte-for-byte. That rules out measurement noise and rules
+out a brittle pin: the quantity itself has shifted, by a fixed amount, in a way the bisection sees
+identically from both directions.
+
+**The shipping cap is NOT affected, and that is worth separating from the failure.** The test's own
+margin check passes: `slotMarginBytes` 402,653,184 ≥ peak demand 289,603,584, **clear by 113,049,600 B
+(107.8 MiB)**. The 33-slot cap is derived by binary search against the margin, not against these
+pins, so nothing that ships is wrong. What is wrong is that a recorded constant no longer matches the
+machine, and A1/A5/A7/A9 all rest on it.
+
+**Not investigated yet, and the obvious suspect does not obviously fit.** The only compiled-code
+change since A9 was derived is the aikit bump — but `moe_route` lives in `aikit/gpu`, which stayed at
+`v0.28.0` across v1.17.0 and v1.17.1, and the gate separately confirms **21/21 PTX regenerate
+byte-identically**. So the kernel is unchanged and the demand still moved. That is the interesting
+part and the reason this needs re-deriving rather than a new number typed into the test.
+
+**Do NOT edit the pinned values to match.** That converts a live finding into a silent one, and the
+pins are what make A1/A5/A7/A9 checkable at all.
+
+
 ### v0.13.0 — the next tag (decided 2026-08-12, decider Francis)
 
 **MINOR**, and the number follows the content: **D3's `--moe-cache-experts` / `--moe-cache-slots`
