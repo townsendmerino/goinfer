@@ -106,6 +106,53 @@ across the CUDA tests; only three small files load without any (`cuda/gemma_bos_
 **So this reads as a capacity limit of the 8 GB card for the full heavy tier in one process, not a
 defect in the tree.** Every test passes on its own; the tier as a whole does not fit.
 
+**MEASURED 2026-08-13 — the reading is the THIRD branch: NEITHER shape, and the diagnosis is
+accumulation LOCALIZED to a few tests.** 186 tests traced, `cuMemGetInfo` at 50 ms, joined to `-v`
+boundaries.
+
+**It sawtooths** — 33 tests end with *more* free VRAM than they started, 38 with less — so most of the
+tier frees correctly and a blanket "environment limit" is wrong. **But the ceiling declines and never
+recovers:**
+
+| fifth of run | ceiling (max free after any test) |
+|---|---|
+| 1 | 7310 MiB |
+| 2 | 5966 |
+| 3 | 5828 |
+| 4 | 5822 |
+| 5 | **3400** |
+
+**Eight tests take a step down that is never regained.** The two largest early ones were re-run
+**alone, each in its own process with nothing else on the card**, and both reproduce:
+
+| test | free before | free after | net |
+|---|---|---|---|
+| `TestB2DenseFlagship` | 7310 MiB | 5966 | **−1344** |
+| `TestRealForwardParity` | 7310 MiB | 6144 | **−1166** |
+
+(The late entries in the eight — `TestSplitKV_bitIdentical_gemma3` is the final test — are confounded
+by having few successors, so "never regained" is trivially true for them. The two above are not.)
+
+**AND BOTH ALREADY `defer Close()`.** So this is not a missing cleanup in a test: **closing a
+CUDA-backed model does not return all of its VRAM** on these paths. That is a product-level finding,
+not a test-hygiene one.
+
+**The gate that should catch it passes, and the gap is visible.** `TestResidentCloseFreesVRAM`
+(`cuda/lifecycle_test.go`) does three Load+Forward+Close cycles and asserts used ≤ baseline+128 MiB —
+a well-built gate, and green. It exercises the **0.5B coder** model with a **single one-token
+forward**. `TestB2DenseFlagship` loads **qwen2.5-7B** and drives a real decode loop. So the gate
+covers a model an order of magnitude smaller on a path that never populates whatever is being
+retained. Not a tautological gate — a **correctly-scoped gate whose scope is narrower than the claim
+it is read as supporting**.
+
+**This selects option (b), and it now has a target** rather than being a fishing expedition: find
+what `Close()` does not release on the 7B/decode-loop path, and widen
+`TestResidentCloseFreesVRAM` to a model and workload that would have caught it. Options (a), (c) and
+the partition all become unnecessary if the leak is real and fixable — and the measurement says it is
+real.
+
+**Superseded by the above, kept for the reasoning:**
+
 **BEING MEASURED BEFORE CHOOSING** (`cuda/vramtrace_test.go`, `7fa09da`). Free VRAM is sampled
 in-process by `cuMemGetInfo` — the A-chain's own instrument — every 50 ms, joined to test boundaries
 from `-v` output by wall clock, because Go exposes no per-test hook and the four failing tests share
@@ -2841,6 +2888,7 @@ than papered over.
 | `cuda/build_ptx.sh` | goinfer |
 | `cuda/gemma_bos_build_test.go` | goinfer |
 | `cuda/graphs_safe_test.go` | goinfer |
+| `cuda/lifecycle_test.go` | goinfer |
 | `cuda/moe_route_demand_test.go` | goinfer |
 | `cuda/moe_route_reservation_test.go` | goinfer |
 | `cuda/mustalloc_test.go` | goinfer |
