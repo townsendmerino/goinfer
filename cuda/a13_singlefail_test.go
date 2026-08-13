@@ -87,6 +87,34 @@ func TestA13_SingleFailedAllocPoisons(t *testing.T) {
 	free0, _, _ := ctx.MemInfo()
 	t.Logf("(a) baseline OK, free=%.1f MiB", float64(free0)/(1<<20))
 
+	// A13 item 1: PERSISTENT ALLOCATION (GOINFER_A13_KEEP=<MiB>). Held for the whole test and never
+	// freed, so the context's LIVE SET never collapses to empty.
+	//
+	// The hypothesis it tests: the trigger is not memory pressure but the live set going (near)
+	// empty — every poisoning run frees everything it allocated, while a resident context always
+	// holds a model's weights. If holding ~1 GB makes the known-poisoning sequence clean, that one
+	// variable explains the resident executor, prefill churn and multi-model unload together, and
+	// converts four separately-measured nulls into one predicted property.
+	if v := os.Getenv("GOINFER_A13_KEEP"); v != "" {
+		mib, _ := strconv.Atoi(v)
+		var keep []*gc.Buffer[float32]
+		const chunk = 64 << 20
+		for got := 0; got < mib<<20; got += chunk {
+			kb, e := gc.Alloc[float32](ctx, chunk/4)
+			if e != nil {
+				break
+			}
+			keep = append(keep, kb)
+		}
+		t.Logf("KEEP: holding %d x 64 MiB = %d MiB for the whole test (never freed)",
+			len(keep), len(keep)*64)
+		defer func() {
+			for _, kb := range keep {
+				kb.Close()
+			}
+		}()
+	}
+
 	// (b) EXACTLY ONE failed allocation. Not a drain: one request, larger than the whole device, and
 	// nothing retained. If it succeeds the probe is void, so that is checked rather than assumed.
 	// N failed allocations, N=1 by default. GOINFER_A13_NFAIL bisects upward: the point of the

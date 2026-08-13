@@ -332,6 +332,31 @@ version are all still there after the underlying module has been evicted. So the
 exactly the "returns success and does nothing" shape, and it explains every observation at once:
 identical launch arguments, all calls succeeding, full card, zeros out.
 
+**THE SWEEP'S STIMULUS IS INTERMITTENT; THE REAL ONE IS NOT. The percentage figures are weaker than
+recorded (2026-08-13).**
+
+| stimulus | reproducibility, measured today |
+|---|---|
+| `TestAllocFloor` drain → `attention` (the original) | **4 subtest failures in 5 of 5 runs — fully deterministic** |
+| synthetic hold+release 50% (`GOINFER_A13_HOLDPCT`) | **intermittent** — one 6-run block came back `C C C C P C` |
+
+Earlier the synthetic probe returned POISON three times running, and the sweep's "reliably poisoned
+at ≥25%, unstable at 15%" was built on it. **That characterisation is withdrawn**: the percentages
+were measuring an unreliable proxy, not the phenomenon. What is stable is the *real* stimulus —
+`TestAllocFloor` drains until even a 1 MiB request is refused, i.e. to **actual exhaustion** (~144
+MiB free), and that reproduces every time.
+
+**So the trigger is exhaustion, not held bytes.** A partial hold — even 90% — is a different and much
+weaker stimulus than driving the device to refusal. That reconciles the non-monotonic sweep: it was
+noise around a threshold effect the probe only sometimes reached.
+
+**Consequence for the persistent-allocation test.** It was run against the *flaky* probe and returned
+`P P C C C C` at 1024 MiB against a control of `C C C C P C` — **no separation, and neither arm
+reliable**. It says nothing either way about the live-set-collapse hypothesis. **The test needs
+re-running against `TestAllocFloor`'s drain**, which is the only stimulus with a stable positive:
+hold ~1 GB that the drain cannot take, let the drain exhaust and release, then launch. That is a real
+experiment; the one just run was not.
+
 **PINNING IS NOT THE VARIABLE (2026-08-13) — the eviction story SURVIVES.** The cheapest possible
 alternative explanation was that CUDA usage from a goroutine Go is free to migrate across OS threads
 is the real mechanism, and the resident's `LockOSThread`-pinned executor is immune merely by being
