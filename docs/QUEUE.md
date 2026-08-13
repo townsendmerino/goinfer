@@ -282,43 +282,49 @@ test — but because `scripts/gpu_gate.sh` says *do not tag*, and a gate that is
 was written to constrain is not a gate. B8 applies here too: the gate cannot presently distinguish
 "failed" from "could not evaluate", and these four are the second kind.
 
-**A13 · `attention` kernel returns ZEROS at hd=64 and hd=128, in-suite only, with every CUDA call
-succeeding** — `linux`, **open, found 2026-08-13**
+**A13 · A device-draining predecessor poisons the `attention` kernel — zeros at hd≥64, with the
+card empty and every call succeeding** — `linux`, **open, BISECTED 2026-08-13**
 
-Fixing A12's dropped errors (`668a2bc`, `e682eb2`) turned a silent symptom into a sharp one. With
-every call checked — `CopyHtoD`, `LaunchOn`, `Synchronize`, `CopyDtoH` — `TestAttention_HeadDimWidths`
-now reports:
+**The predecessor is found, and it is a category rather than a single test.** Bisected over the ten
+tests that precede the victim in run order, each paired with it, two repeats each:
 
-| head dim | alone | in the full tier |
+| predecessor | reproduces | what it does |
 |---|---|---|
-| 16 | PASS | PASS |
-| **64** | PASS | **cosine 0.000000** |
-| **128** | PASS | **cosine 0.000000** |
-| 256 | PASS | PASS |
-| 512 | PASS | PASS |
+| `TestAllocFloor` | **yes, 4/4** | allocates until the device refuses |
+| `TestA10ReportingGap` | **yes, 4/4** | allocates until the device refuses |
+| `TestA10FloorIsPerProcessOrPerDevice` | **yes, 4/4** | balloons VRAM to measure the floor |
+| the other seven | **0/2 each** | none of them drain |
 
-**No CUDA call fails.** The launch succeeds, the synchronize succeeds, the copy back succeeds, and
-the result is zeros — at two specific head dimensions, only when other tests have run first.
+**Every poisoner drains the device to exhaustion; nothing that does not drain, poisons.** Two of the
+three were fixed earlier to release everything (`5ece205`), and they still poison — so it is **not
+residual allocation**.
 
-**What this is NOT, each ruled out rather than assumed:** not a dropped error (they are checked now);
-not VRAM exhaustion (no allocation fails, and the two passing dims either side are larger); not a
-parallelism artifact (`-p 1`, one package, no `t.Parallel`); not the resident path at all — this test
-builds its own buffers and launches the kernel directly.
+**Four things ruled out by measurement, not by argument:**
 
-**The bracketing is the strange part.** 16 passes, 64 and 128 fail, 256 and 512 pass. A resource
-ceiling would fail the *large* dims. Shared memory is `(nKeys+128)*4` and does not vary with `hd`.
-Whatever this is, it is selective in a way that resource pressure is not.
+- **Memory pressure.** Free VRAM at the moment attention runs is **7,661,092,864 B (7306 MiB)** — the
+  card is essentially empty.
+- **A failed allocation.** `mustAlloc` fatals on an error *and* on a nil buffer with no error.
+- **A dropped error.** Every call is checked now (`e682eb2`): `CopyHtoD`, `LaunchOn`, `Synchronize`,
+  `CopyDtoH` all succeed.
+- **Parallelism.** `-p 1`, one package, no `t.Parallel`.
 
-**Also observed: the in-suite failures VARY BETWEEN RUNS.** One tier run failed
-`TestAttention_HeadDimWidths` and `TestGemma4MoEScaled_residentParity`; another failed
-`TestMoERouteDemandThreshold`'s child ("child produced no A9CHILD line"). Both runs were made with
-and without the forward-path change and the variation is present either way, so it is not that
-change. Non-determinism across runs is itself a finding and narrows the candidates: whatever it is,
-it depends on accumulated process state, not on the test's own inputs.
+**A correction to the first filing: the "hd=64/128 only" bracket was an artefact of the full-tier
+ordering.** In the minimal pair, **hd=64, 128, 256 and 512 all fail and only hd=16 passes**. So the
+rule is *everything above the smallest width*, not a middle band — which removes the "a resource
+ceiling would fail the large dims" puzzle, because the large dims *do* fail.
 
-**Next step, cheap and specific:** run the tier with `-run` narrowed to a bisection of preceding
-tests to find the minimal predecessor set that makes hd=64 fail. That names the interaction, which no
-amount of reasoning about the kernel will.
+**So: a drain-to-exhaustion leaves the context in a state where a later `attention` launch writes
+zeros, on a card with 7.3 GB free, reporting success at every step.** That is the finding, and no
+mechanism is proposed for it here.
+
+**TAG IMPACT — this is a test-interaction defect, not a production one.** The trigger is deliberate
+drain-to-exhaustion, which exists only in three measurement tests; production never drains the card
+on purpose. The production forward path is unaffected, and the resident parity gates pass. It joins
+the other three A12 items as a test defect rather than blocking on correctness grounds.
+
+**Worth its own item regardless of the tag:** a kernel that silently produces zeros after the device
+has been exhausted — no error, full card by then — is a robustness question for any real OOM
+recovery, not just for this suite.
 
 **A2 (partial) · 26B documentation correction** — `linux`, 2026-08-12
 
@@ -2878,7 +2884,6 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `588052b` | serve: drain in-flight requests before freeing an unloaded model (fixes the leak safely) |
 | `5ece205` | fix(cuda): two VRAM-draining tests never freed — they failed a later test as "a forward moved" |
 | `6091e7a` | fix(cuda): size the expert cache by SEARCH over the granularity form (A5) |
-| `668a2bc` | fix(cuda): check the 26 dropped errors on the decode forward path |
 | `6edd1ca` | parity: make "validated" MEAN T3 — method-tier gate + honest experimental tier (D2, pre-freeze) |
 | `7cc2f0d` | fix(parity,ci): refresh deps_hash after 38061b1's pread-staging core plumbing (non-numeric) |
 | `7ccec1e` | fix(cuda): the expert cache sizes itself — topK was the worst possible default |
