@@ -693,6 +693,26 @@ here as live policy.
 7. **A claim nobody can reproduce from the public documents is not shipped.** Before publishing,
    read the user-facing docs as a stranger with a default build and check that the claim survives.
 
+8. **"Filed", "fixed" and "pushed" are claims about the COMMITTED TREE, not about the edit you
+   made.** Verify before reporting: grep the committed tree for the entry, or cite the commit and
+   confirm it contains what the claim says. An edit that was written is not an edit that landed — a
+   lost write, a failed `git add`, an ignored path, a heredoc that raised after the first file, and
+   an amend that dropped a hunk all produce a tree that does not match the sentence, and none of
+   them announce themselves.
+
+   The same applies one step further out: **"pushed" is a claim about the remote and about CI.** A
+   push that has not been watched is a claim about a local ref.
+
+   **Instances, 2026-08-13, both mine.** `efcef16` was reported as filing B14 when it changed only
+   `docs/parity-coverage-policy.md` — the QUEUE write was lost and the report went out without a
+   grep. And a push was reported without watching CI **one message after** writing that adding a gate
+   includes watching it go green once.
+
+   Both were caught by the author, which is the good half — but **the rule exists so that the catch
+   is not the mechanism.** Self-correction that happens reliably is still a process whose reliability
+   rests on attention, and attention is exactly what is scarce at the end of a long session. The
+   check is two seconds; noticing afterwards is luck wearing a competence costume.
+
 ## Rule: a gate lands with a mutation check
 
 **A new or changed gate is not landed until something demonstrates it can fail.** The commit (or
