@@ -617,6 +617,17 @@ confirms 33 by run before anything is published as safe rather than as computed.
 
 ## Queued
 
+**INHERITED · `scripts/shard_checkpoint.py` moved here from aikit** — `unclaimed`, **filed 2026-08-14**.
+aikit's zero-Python campaign found this script in `aikit/scripts/`, but it is goinfer's: it splits a
+single-file safetensors checkpoint into N shards + `model.safetensors.index.json`, and
+`decoder/sharded_test.go` (`const gemmaShardedDir = "../testdata/gemma-3-270m-sharded"`) consumes its
+output. It references `decoder.LoadWeights`, which only exists here — a leftover from the aikit/goinfer
+split; aikit deleted its copy. It now lives at `goinfer/scripts/shard_checkpoint.py` and runs from the
+goinfer root (its `sys.argv` defaults resolve to `goinfer/testdata/gemma-3-270m{,-sharded}`). Action:
+none required unless goinfer wants it gated or under a `scripts/` convention — recorded so it is not a
+second thing that "exists and is composed into no decision". Uses `safetensors.torch` (a torch dep):
+goinfer's to keep or port on goinfer's terms.
+
 **B10 · `aikit` and `aikit/gpu` carry SEPARATE TAG SERIES — the single home for that fact** —
 `linux`, **filed 2026-08-13**
 
