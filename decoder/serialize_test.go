@@ -441,6 +441,49 @@ func TestSerializeWeightsTo_matchesBuffer(t *testing.T) {
 	t.Logf("streamed %d bytes, byte-identical to buffered", n)
 }
 
+// TestSerialize_unpopulatedLayersOmitsLabel is the dangerous half of B11, gated directly and
+// without a heavy asset. writeHeadGlobals used to decide whether to write the v5 quant-label
+// field by asking `wr.sink == nil` — "are we the buffered writer" — as a proxy for "do we have
+// the real weight data yet". Those disagree for the true GGUF streaming transcode, which writes
+// the header on a freshly make()'d, all-zero Layers slice BEFORE any layer has streamed in: at
+// that moment quantLabel()'s own "nothing matched" case returns "native" — a REAL quant mode, not
+// an empty string — so calling it unconditionally would bake a FALSE "native" label into every
+// genuinely-streamed bundle. hasPopulatedLayers() is the correct guard (data availability, not
+// writer identity); this asserts it actually withholds the label when the data is not there.
+//
+// Walks the header by hand (no heavy checkpoint, no architecture resolution needed on write: only
+// json.Marshal(w.Cfg) must succeed, and a zero Config does) rather than round-tripping through
+// LoadSerializedWeights, which would additionally require a resolvable arch.
+func TestSerialize_unpopulatedLayersOmitsLabel(t *testing.T) {
+	w := &Weights{Layers: make([]LayerWeights, 4)}
+	if w.hasPopulatedLayers() {
+		t.Fatal("hasPopulatedLayers() = true on an all-zero Layers slice")
+	}
+	if got := w.quantLabel(); got != "native" {
+		t.Fatalf("quantLabel() on unpopulated Layers = %q — the guard's rationale assumes this is "+
+			"the dangerous default \"native\"; if that changed, re-read why hasPopulatedLayers exists", got)
+	}
+
+	blob, err := SerializeWeights(w, "")
+	if err != nil {
+		t.Fatalf("serialize: %v", err)
+	}
+	off := len(giwMagic) + 4 + 4 // magic, version(u32), quant(u32)
+	readStr := func() string {
+		n := binary.LittleEndian.Uint32(blob[off:])
+		off += 4
+		s := string(blob[off : off+int(n)])
+		off += int(n)
+		return s
+	}
+	_ = readStr() // id
+	_ = readStr() // config json
+	if label := readStr(); label != "" {
+		t.Fatalf("label field = %q on an UNPOPULATED w — must be absent, not a guessed quant that "+
+			"was never actually resolved from real weight data", label)
+	}
+}
+
 func greedyFirst(t *testing.T, m *Model, prompt []int) int {
 	t.Helper()
 	out, gen := m.Generate(context.Background(), prompt, 1, SamplingParams{Temperature: 0})

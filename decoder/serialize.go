@@ -170,11 +170,25 @@ func (wr *giwWriter) writeHeadGlobals(w *Weights, id string) error {
 	wr.bytesField(cfgJSON)
 
 	// v5: the resolved quant label, so the reader need not re-infer it (the source of truth is
-	// recorded, not reconstructed). Only the buffer path (full weights in hand) can resolve it
-	// here; the streaming transcode writes the header BEFORE its layers load, so it records ""
-	// (absent) and the reader falls back to inference — which is exactly the pre-v5 behaviour.
+	// recorded, not reconstructed).
+	//
+	// GATED ON DATA AVAILABILITY, NOT ON WHICH WRITER IS IN USE (B11). The condition used to be
+	// `wr.sink == nil` — "are we the buffered writer" — on the theory that only the buffered path
+	// has full weights in hand. That conflated two different questions: which io.Writer the bytes
+	// go to, and whether w.Layers is actually populated yet. They agree for the true incremental
+	// GGUF transcode (gguf.go's per-family streaming path calls writeHeadGlobals on a freshly
+	// make()'d, all-zero Layers slice BEFORE streaming any layer in — quantLabel() truly cannot see
+	// real data there, and its default case returns "native", a REAL quant mode, not an empty
+	// string, so calling it unconditionally would have baked a FALSE "native" label into every
+	// genuinely-streamed bundle). But they disagree for a caller that already has a fully-loaded
+	// *Weights and simply chooses the streaming API for its I/O shape — internal/prequant and the
+	// qwen35 GGUF branch (a dedicated loader that fully materializes w, THEN calls
+	// SerializeWeightsTo) both do exactly this — and there the label WAS resolvable, just skipped
+	// because the wrong signal was being tested. That mismatch is B11: a buffered and a streamed
+	// call on the SAME fully-loaded model produced non-identical bytes for no reason tied to the
+	// data itself, differing by exactly len("int8int8") = 8 bytes in the length-prefixed field.
 	label := ""
-	if wr.sink == nil {
+	if w.hasPopulatedLayers() {
 		label = w.quantLabel()
 	}
 	wr.str(label)
@@ -559,6 +573,21 @@ func (m *Model) CheckGiwQuantMatch(requested string) error {
 		return fmt.Errorf("decoder: --quant %q cannot apply to the prequantized .giw bundle %s — it is baked at %q, and a .giw carries its own quant; pass --quant %s or omit --quant", requested, path, baked, baked)
 	}
 	return nil
+}
+
+// hasPopulatedLayers reports whether w's body matmul weights actually hold data, as opposed to a
+// freshly make()'d Layers slice whose elements are still zero-valued (the true streaming GGUF
+// transcode's state at header-write time, before any layer has streamed in). MUST be checked
+// before calling quantLabel() to decide whether to trust its answer: quantLabel()'s own "nothing
+// matched" case returns "native", a real quant mode, not an empty string — so an unpopulated w
+// would silently produce a FALSE "native" label rather than a distinguishable absence (B11).
+func (w *Weights) hasPopulatedLayers() bool {
+	for _, m := range w.bodyMatmulWeights() {
+		if m.Rows() > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // quantLabel names the precision of the resident matmul weights for display + the

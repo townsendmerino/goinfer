@@ -1463,10 +1463,41 @@ overlaps **B13**
 — the two lists should be reconciled before either is worked, since a dark test and an unregistered
 asset are frequently the same test.
 
-## B11 — TWO SERIALIZATION PATHS DIFFER BY 8 BYTES, and neither is known correct
+## B11 — TWO SERIALIZATION PATHS DIFFER BY 8 BYTES (FIXED)
 
-**RE-FILED 2026-08-13** — the original was destroyed by the `--update` data-loss bug (fixed in
-`8827c6a`), and its framing was **wrong on the facts**. Both corrections are below.
+**Fixed 2026-08-14.** The 8 bytes were `len("int8int8")`: `writeHeadGlobals` decided whether to
+write the v5 quant-label field on `wr.sink == nil` — "are we the buffered writer" — as a proxy for
+"do we have the real weight data yet". Those agree for the true incremental GGUF streaming
+transcode (which writes the header on an all-zero `Layers` slice before any layer streams in — see
+below for why that path genuinely can't resolve a label). They **disagree** for a caller that
+already holds a fully-loaded `*Weights` and simply chooses the streaming API for its I/O shape:
+`internal/prequant` and the qwen35 GGUF branch (a dedicated loader that fully materializes `w`,
+*then* calls `SerializeWeightsTo`) both do exactly this, and both — along with this test — were
+needlessly dropping a field the buffered path wrote.
+
+**Fixed by testing the real thing:** `hasPopulatedLayers()` checks whether any body matmul weight
+actually has `Rows() > 0`, and `writeHeadGlobals` gates the label on that instead of on which
+writer is in use. `decoder/serialize.go:594` (`hasPopulatedLayers`).
+
+**The other half mattered more than the byte count.** `quantLabel()`'s own "nothing matched" case
+returns `"native"` — a real, valid quant mode, not an empty string. Measured directly on an
+unpopulated `Weights{Layers: make([]LayerWeights, 4)}`: `quantLabel()` returns `"native"`. So the
+naive fix (drop the `wr.sink == nil` check and always call `quantLabel()`) would have **baked a
+false `"native"` label into every genuinely-streamed bundle** — trading an 8-byte omission for a
+silently wrong claim in the header. `TestSerialize_unpopulatedLayersOmitsLabel` gates this
+specifically, mutation-verified: removing the `hasPopulatedLayers()` guard reproduces exactly this
+failure (`label field = "native" on an UNPOPULATED w`).
+
+**Neither side was ever corrupt.** The old comment already documented the fallback: a v5 bundle
+with an empty label field is read exactly like a pre-v5 bundle — `LoadSerializedWeights` leaves
+`bakedQuant` empty and `Model.Quant()` falls back to re-deriving `quantLabel()` from the loaded
+tensor kinds, the same function that would have written the label. So a streamed .giw missing the
+optimization hint produces the identical answer at load time as one that has it — the label is
+provably cosmetic, and its absence was never a data-loss risk. This resolves the open question
+below without qualification, not by trusting the design intent but by tracing the actual fallback
+path both ends use.
+
+**Original entry, corrected in place, for the record:**
 
 `TestSerializeWeightsTo_matchesBuffer` fails:
 
@@ -1487,16 +1518,23 @@ by anything in v0.13.0.
 
 What still stands:
 
-1. **There is no basis yet for saying which side is correct.** The test asserts the two agree, not
-   which is right. "Streamed is short by 8" and "buffered is long by 8" are the same observation.
-2. **If the streamed path is the short one, anything it has written may be affected.** That is the
-   `--stream-weights` / `.giw` transcode path used for bigger-than-RAM models — where regenerating
-   an artifact is most expensive. Whether existing `.giw` files are readable, subtly truncated, or
-   fine is **not established** and is the first thing to determine.
+1. ~~There is no basis yet for saying which side is correct.~~ **RESOLVED above** — the streamed
+   side was correct to omit the field where it genuinely lacked the data (the true transcode); it
+   was wrong to omit it where it had the data in hand (this test, `internal/prequant`, qwen35).
+2. ~~If the streamed path is the short one, anything it has written may be affected.~~
+   **RESOLVED.** All five real `.giw` files on this box (`gemma4-26b-int4`, `GLM-4.5-Air-Q2_K.int4`,
+   `mellum2.int4`, both `qwen3.6-35b-a3b-int4*`) were hand-parsed at the header: every one is
+   `weights_v2`/`v3`/`v4` — **pre-v5**, so the label field this bug concerns doesn't exist in any
+   of them at all. Not "unaffected because harmless" — unaffected because the field they'd need to
+   have gotten wrong didn't exist yet when they were written. Two were also load-tested end to end
+   post-fix (`mellum2.int4.giw` → `Quant()="int4mix"`, `gemma4-26b-int4.giw` → `Quant()="int4"`),
+   both correct, both via the pre-v5 inference fallback exactly as before.
 
-**First moves:** (a) find the field — diff the two writers' header/section emission, not the
-payloads, since 8 bytes at one site is structural; (b) decide which side is correct against the
-reader; (c) only then ask whether any written artifact is affected.
+**Verification:** `TestSerializeWeightsTo_matchesBuffer` passes (632,821,551 bytes, byte-identical).
+Both new/changed behaviors mutation-verified — reverting the `hasPopulatedLayers()` guard to the
+old `wr.sink == nil` reproduces the original 8-byte failure exactly; removing the guard entirely
+reproduces the `"native"`-mislabel hazard exactly. Full `decoder` serialize/giw test group green
+(18 tests). `go build`, `go vet -tags goinfer_testhooks ./...` clean.
 
 ## B12 — the selector census could not see a gate nobody was running (FIXED)
 
