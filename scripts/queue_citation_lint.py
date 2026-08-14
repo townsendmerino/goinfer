@@ -404,6 +404,19 @@ def anchor_for(lines, line: int):
     return None
 
 
+def resolve_base(rel: str):
+    """The (name, base) resolve_path() reads from — the FIRST root containing rel, same order.
+
+    Exists because the "did the content move?" search used to re-walk EVERY root instead of the one
+    the citation actually resolved against, and then reported a line number from a different file as
+    if it were a shift in this one. See the SHIFTED branch for what that produced.
+    """
+    for name, base in path_repos():
+        if (base / rel).is_file():
+            return name, base
+    return None, None
+
+
 def resolve_path(rel: str, line: int):
     """Return (repo, content) for a cited path:line, or ("", None) when the file exists nowhere.
 
@@ -597,6 +610,14 @@ def main() -> int:
             if m:
                 pidx0[m.group(1)] = m.group(2)
     pallow = path_allowlist()
+    # The index AS IT STANDS, read before --update rewrites it — the only record of what each
+    # citation was keyed to before this run, and what the launder check compares against.
+    pindex_prior = {}
+    if MARK_BEGIN in text:
+        for line in text.split(MARK_BEGIN, 1)[1].splitlines():
+            mm = re.match(r"\|\s*`([^`]+:\d+)`\s*\|\s*([^|]*?)\s*\|\s*`(.*)`\s*\|$", line.strip())
+            if mm:
+                pindex_prior[mm.group(1)] = mm.group(3).replace(chr(92) + "|", "|")
     presolved, pmissing = {}, []
     for key, rel, ln in paths:
         if rel in pallow or rel.split("/")[0] in pallow:
@@ -630,6 +651,46 @@ def main() -> int:
             bmissing.append(rel)
 
     if update:
+        # REFUSE TO LAUNDER A SHIFTED CITATION.
+        #
+        # --update rewrites the index from whatever is at the cited line NOW. When that line is no
+        # longer discriminating, resolve_path() substitutes the enclosing declaration as an anchor --
+        # and the rewrite then records that anchor against the STALE line number. The check passes
+        # afterwards (the declaration still exists), so the gate goes green while the prose still
+        # cites a line that no longer holds what the sentence claims.
+        #
+        # That is not hypothetical: `decoder/serialize_test.go:443` cited a specific assertion; an
+        # edit moved it to :436; --update re-keyed :443 to `anchor: func
+        # TestSerializeWeightsTo_matchesBuffer(` and went green, with the prose still saying :443.
+        # It was caught by hand, which is the wrong mechanism.
+        #
+        # --update CANNOT fix this: the line number lives in the prose, and this tool rewrites only
+        # the generated index. So it refuses, names the new line, and makes the author edit the
+        # sentence. Weakening a key is a decision, never a side effect of regenerating an index.
+        launder = []
+        for key in sorted(presolved):
+            repo, content = presolved[key]
+            oldrec = pindex_prior.get(key)
+            if content is None or not oldrec or not discriminating(oldrec):
+                continue
+            if content[:88] == oldrec:
+                continue
+            rel = key.split("|", 1)[1].rsplit(":", 1)[0]
+            _rn, rbase = resolve_base(rel)
+            if rbase is None:
+                continue
+            at = next((i for i, l in enumerate((rbase / rel).read_text(errors="replace").split("\n"), 1)
+                       if l.strip()[:88] == oldrec), None)
+            if at is not None:
+                launder.append(f"  {key}  SHIFTED to line {at}. --update would re-key this to "
+                               f"`{content[:48]}` — whatever now sits at the STALE line — and go "
+                               f"green with the prose still citing a line that no longer holds what "
+                               f"the sentence claims. Fix the citation to :{at} in the document, "
+                               f"then re-run --update.")
+        if launder:
+            sys.stderr.write("queue_citation_lint --update: refusing to weaken shifted citation(s):\n")
+            sys.stderr.write("\n".join(launder) + "\n")
+            return 1
         lines = [MARK_BEGIN, "", "## SHA index", "",
                  "Generated. Every commit id cited above, with the subject it resolved to at the time",
                  "of generation. Regenerate with `scripts/queue_sha_lint.py --update`.", "",
@@ -750,20 +811,50 @@ def main() -> int:
                 bad.append(f"  {key}  ANCHOR GONE — the citation pointed at `{decl[:52]}`, which is "
                            f"no longer in the file")
             continue
-        # The content moved or vanished. Look for it elsewhere in the file before calling it red.
+        # The content moved or vanished. Look for it elsewhere IN THE SAME FILE before calling it red.
+        #
+        # SCOPED TO THE RESOLVING BASE, and that scoping is the whole point. This search used to
+        # re-walk EVERY root in path_repos(). When the first root lacked the content it fell through
+        # to a later one -- a sibling checkout, or another version of the same module in the module
+        # cache -- and reported THAT file's line number as a shift in this one. The symptom was a
+        # self-contradictory message ("cited :113 ... now at line 113": two different files, same
+        # line). The danger was the quiet case: a sibling holding the content at line 405 would have
+        # produced "Update the citation to linalg/quant.go:405" -- a confident instruction naming a
+        # line in a DIFFERENT VERSION of the file, which would then verify green against the wrong
+        # root. A search that crosses repositories cannot report a line number.
+        rname, rbase = resolve_base(rel)
         found_at = None
-        for name, base in path_repos():
-            f = base / rel
-            if f.is_file():
-                for i, l in enumerate(f.read_text(errors="replace").split("\n"), 1):
-                    if l.strip()[:88] == want and want:
-                        found_at = i
-                        break
-            if found_at:
-                break
+        if want and rbase is not None:
+            for i, l in enumerate((rbase / rel).read_text(errors="replace").split("\n"), 1):
+                if l.strip()[:88] == want:
+                    found_at = i
+                    break
+        # Absent HERE, present in another root, is a different diagnosis: the citation is keyed to a
+        # version other than the one goinfer requires. Named, never converted into a line number.
+        elsewhere = []
+        if found_at is None and want:
+            for name, base in path_repos():
+                if base == rbase:
+                    continue
+                f = base / rel
+                if f.is_file() and any(l.strip()[:88] == want
+                                       for l in f.read_text(errors="replace").split("\n")):
+                    elsewhere.append(str(base))
+        # No found_at == ln guard: with the search scoped to the resolving base it is UNREACHABLE.
+        # Reaching here means the cited line's content differs from `want`; if resolve_path()
+        # substituted an anchor it did so because that line is NOT discriminating, and `want` is,
+        # so `want` cannot match at that same line. A guard for an impossible state would silently
+        # pass whatever future bug produced it -- better that "now at line {ln}" show up as the
+        # visible absurdity it would be.
         if found_at:
-            bad.append(f"  {key}  SHIFTED — the cited content is now at line {found_at}. "
+            bad.append(f"  {key}  SHIFTED — the cited content is now at line {found_at} (in {rname}). "
                        f"Update the citation to {rel}:{found_at} and re-run --update.")
+        elif elsewhere:
+            bad.append(f"  {key}  VERSION MISMATCH — the recorded content is NOT in the {rname} copy "
+                       f"this repo resolves against, but IS in: {', '.join(elsewhere)}. The citation "
+                       f"is keyed to a different version than goinfer requires; re-cite against the "
+                       f"required one. NO line number is offered — it would name a line in another "
+                       f"file.")
         else:
             bad.append(f"  {key}  CONTENT ABSENT — the line now reads {content[:60]!r}, and the "
                        f"recorded content {want[:60]!r} is nowhere in the file. The citation claims "
