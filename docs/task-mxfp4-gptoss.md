@@ -3,7 +3,7 @@
 > Status: **NOT STARTED.** Drafted 2026-07-26 from a review of
 > [`arizqi/cpubrrr`](https://github.com/arizqi/cpubrrr).
 >
-> Depends on `aikit/docs/internal/task-q8k-integer-accum.md` *(another repo's uncommitted note — unresolvable from here)* for §4 only. §1–§3 and §5
+> Depends on aikit's Q8_K integer-accumulation task note (uncommitted in that repo, so not reachable from here) for §4 only. §1–§3 and §5
 > are independent and can start immediately.
 
 ---

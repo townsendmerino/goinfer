@@ -16,8 +16,8 @@
 
 ## State of play
 
-**v0.3.0 is tagged and released** (release notes:
-`docs/internal/release-notes-v0.3.0.md` *(uncommitted working note — not in any clone, and no copy survives on the release box; the claim above stands on the commit, not on this reference)*). Cumulative since v0.1.3, goinfer
+**v0.3.0 is tagged and released** (its release notes were an uncommitted draft that no longer
+exists anywhere; the GitHub Release for the tag is the surviving copy). Cumulative since v0.1.3, goinfer
 gained: Gemma 4 (E2B/E4B/12B, parity-gated), sampler completeness (min-p,
 penalties, logit bias, logprobs), the `chat` package (template detection +
 byte-exact native renderers), JSON Schema constrained decoding

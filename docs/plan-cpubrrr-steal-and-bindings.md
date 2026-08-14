@@ -25,7 +25,7 @@ fallback is chosen.
 integer accumulation, one float conversion per 256-superblock), bit-exact and benchmarked,
 deliberately **not** wired into `WeightMat` dispatch. The ≥1.3× decode gate is *provably*
 unreachable for Q6_K: byte-ratio ceiling 256/210 = **1.22×** against the int8 W8A8 path,
-regardless of unpack quality (`aikit/docs/internal/cpu-acceleration.md` *(another repo's uncommitted note — unresolvable from here)* → "Native K-quant
+regardless of unpack quality (aikit's CPU-acceleration note, uncommitted in that repo → "Native K-quant
 matmul — evaluated, NOT shipped"). The file states the revisit condition explicitly:
 
 > a future revisit (e.g. a bandwidth-bound **Q4_K variant, ceiling 1.78×**) starts from a
@@ -143,13 +143,13 @@ algorithmic and portable. Three tasks:
 
 | task | repo | file | why |
 |---|---|---|---|
-| **A1** Q8_K integer-accumulation kernel | aikit | `docs/internal/task-q8k-integer-accum.md` (uncommitted, unresolvable from here) | The kernel that took cpubrrr from losing to winning on Q4_K. Lands in `linalg`, Experimental tier. |
+| **A1** Q8_K integer-accumulation kernel | aikit | its Q8_K integer-accum task note (uncommitted in aikit) | The kernel that took cpubrrr from losing to winning on Q4_K. Lands in `linalg`, Experimental tier. |
 | **A2** MXFP4 + gpt-oss support | goinfer | `docs/task-mxfp4-gptoss.md` | goinfer has **zero** MXFP4/gpt-oss support today (`git grep -il mxfp4` → empty). This is a missing model family, not just a speed knob. |
 | **A3** Yielding spin-barrier for the CPU decode pool | goinfer | folded into A2 §5 | cpubrrr measured condvar wakeups costing **7.5 ms/token**. Pure spin collapses under jitter; spin-then-yield fixes both. |
 
 ### The strategic point on A1
 
-You already have `docs/internal/task-native-q6k-kernel.md` *(another repo's uncommitted note — unresolvable from here)*, **DEFERRED 2026-06-13**,
+You already have aikit's native-Q6_K kernel note (uncommitted in that repo), **DEFERRED 2026-06-13**,
 covering a fused native-K-quant kernel. It was deferred because the justification examined
 was *fidelity and footprint vs int4-requant* — and those numbers came back weak (native
 Q6_K is 31% **larger** than int4; your selective-int8-head already captures most of the
@@ -236,7 +236,7 @@ device is available.
 ## Where these files live
 
 - **this file** — `~/tmcode/goinfer/docs/plan-cpubrrr-steal-and-bindings.md`
-- **A1** — `~/tmcode/aikit/docs/internal/task-q8k-integer-accum.md` *(another repo's uncommitted note — unresolvable from here)*
+- **A1** — aikit's Q8_K integer-accum task note (uncommitted in that repo)
 - **A2 + A3** — `~/tmcode/goinfer/docs/task-mxfp4-gptoss.md`
 - **B** — `~/tmcode/goinfer/docs/task-bindings.md`
 

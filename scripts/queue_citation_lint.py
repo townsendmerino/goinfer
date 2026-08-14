@@ -456,6 +456,66 @@ def body_without_index(text: str) -> str:
     return text
 
 
+# ---- GITIGNORED DESTINATIONS: forbidden in a committed document ----
+#
+# The lint treats a gitignored path in TWO DISTINCT ROLES, and they get opposite treatment:
+#
+#   as a SOURCE      -- excluded (see live_docs). Its own citations resolve on one machine, so CI
+#                       cannot check them and a red there is unfixable from anywhere else.
+#   as a DESTINATION -- FORBIDDEN. A committed document citing a path under a gitignored directory
+#                       is red, ALWAYS, and WITHOUT AN EXISTENCE TEST. The gitignore status decides.
+#
+# WHY NO EXISTENCE TEST. Two reasons, and the second is the one that makes this absolute:
+#   1. No reader outside this machine can reach it. The pointer is dead on arrival in every clone.
+#   2. An uncommitted target HAS NO HISTORY, so nobody can ever establish whether it existed. The
+#      five notes this rule was written after are unauditable BY CONSTRUCTION -- git cannot say
+#      whether they were deleted or never written, and no amount of care later recovers that.
+# A rule that tested existence would pass today and rot silently; the gitignore status is a property
+# of the repository, checkable identically in every clone.
+#
+# SCOPE, stated because it is narrower than it sounds: this decides by THIS repository's gitignore.
+# A path into ANOTHER repo's gitignored directory (aikit/docs/internal/...) is not ignored here and
+# this check cannot see it. Those are handled by not writing them -- see the cleanup in this commit.
+#
+# Concrete file paths only. A directory mention (`docs/internal/`) or a glob (`docs/internal/
+# RELEASE-*.md`) names a CLASS, not a document, and is how the convention gets described at all --
+# RELEASING.md and roadmap.md both legitimately do so.
+IGNORED_DEST_RE = re.compile(r"`([A-Za-z0-9_][A-Za-z0-9_./-]*/[A-Za-z0-9_.-]+\.[A-Za-z0-9]+)`")
+
+
+def gitignored_destinations():
+    """Every (doc, path) where a COMMITTED document cites a concrete path that git ignores."""
+    import subprocess
+    tracked = set()
+    try:
+        out = subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True, text=True, check=True)
+        tracked = set(out.stdout.split())
+    except Exception:
+        return []
+    cands, hits = {}, []
+    for doc in live_docs():
+        rel = str(doc.relative_to(ROOT))
+        if rel not in tracked:
+            continue  # only COMMITTED documents make this claim
+        for m in IGNORED_DEST_RE.finditer(doc.read_text(errors="replace")):
+            path = m.group(1)
+            if "*" in path or path in tracked:
+                continue
+            cands.setdefault(path, []).append(rel)
+    if not cands:
+        return []
+    try:
+        proc = subprocess.run(["git", "check-ignore", "--stdin"], cwd=ROOT, input="\n".join(cands),
+                              capture_output=True, text=True)
+        ignored = set(proc.stdout.split())
+    except Exception:
+        return []
+    for path in sorted(ignored):
+        for doc in cands.get(path, []):
+            hits.append((doc, path))
+    return hits
+
+
 def main() -> int:
     update = "--update" in sys.argv
     text = QUEUE.read_text()
@@ -786,6 +846,23 @@ def main() -> int:
           "references, WHAT IS SAID ABOUT THEM, since there is no line to key against.")
     print("  A lint on a document raises trust in EVERY citation in it, not only the kinds it checks — "
           "so the scope is printed with the green.")
+
+    # DESTINATION RULE. Red, always, no existence test — the gitignore status decides.
+    ignored_dests = gitignored_destinations()
+    if ignored_dests:
+        sys.stderr.write("queue_citation_lint: FORBIDDEN DESTINATION — a committed document cites a "
+                         "path under a gitignored directory:\n")
+        for doc, path in ignored_dests:
+            sys.stderr.write(f"    {doc}  ->  {path}\n")
+        sys.stderr.write("  No reader outside this machine can reach it, and an uncommitted target "
+                         "has NO HISTORY — nobody can ever establish whether it existed. Either move "
+                         "the target to a committed location, or drop the pointer and keep the "
+                         "claim's real support (the commit).\n")
+        return 1
+    else:
+        print(f"  GITIGNORED DESTINATIONS: none. A committed document citing a path under a "
+              f"gitignored directory is red without an existence test — the gitignore status "
+              f"decides, because an uncommitted target has no history to audit.")
     if cold_modules:
         sys.stderr.write("queue_citation_lint: CANNOT SEARCH — no module cache and no checkout for: "
                          + ", ".join(cold_modules) + "\n")
