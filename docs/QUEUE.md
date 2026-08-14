@@ -342,7 +342,7 @@ the claim is checkable path by path rather than argued from sizes:
 
 | path | reaches refusal? | continues on the context? | evidence |
 |---|---|---|---|
-| **prefill scratch** | **no** — min free **5752.2 MiB** during a real-model prefill (qwen2.5-coder-1.5B, M to 2048), **39.9× the refusal floor**, 5608 MiB of margin | yes | `docs/measurements/prefill-peak-vram.md` — VRAM tracer, 445 samples; M=3000 extrapolates to ≈35× |
+| **prefill scratch** | **no** — min free **1820.2 MiB** with a **7B** resident (the largest this box runs) at M=2048: **12.6× the refusal floor**, 1676 MiB of margin | yes | `docs/measurements/prefill-peak-vram.md` — VRAM tracer, 1347 samples. **CORRECTED from 39.9×**, which was measured against a 1.5B and overstated the headroom ~3×; scratch competes with resident weights, so the small model was not the worst case |
 | **admin unload** | **no** — frees, never allocates toward refusal | yes (shared primary context) | `Model.Close` → `ReleaseObjects`; refcount reading |
 | **multi-model unload** | **no** | yes | measured clean 3/3 — 7B (≈4.9 GB) unloaded under a co-resident B, B's logits byte-identical |
 | **A5 cap search** | **no** — allocates nothing | n/a | `fits(n)` is arithmetic against `free` |

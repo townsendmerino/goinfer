@@ -36,6 +36,31 @@ weights and KV.
 **Prefill's worst moment leaves 39.9× the refusal floor free.** It does not approach the trigger; it
 is not in the same order of magnitude as the trigger.
 
+## CORRECTION (2026-08-13, same day): the 1.5B was not the worst case
+
+The run above uses a **1.5B**. The gate then failed `TestB2DenseFlagship`, which runs prefill against
+a **7B q4_k_m** — ~4.9 GB of an 8 GB card — and the failure prompted the obvious question: prefill's
+scratch competes with the resident weights, so a bigger model leaves less headroom, and 39.9× was
+measured on a model chosen for convenience rather than for pressure.
+
+Re-measured under the same tracer, `TestB2DenseFlagship`, 7B resident, prompts to M=2048, **1347
+samples**:
+
+| | MiB |
+|---|---|
+| free MAX during the run | 7310.2 |
+| **free MIN during the run** | **1820.2** |
+| refusal floor | 144.2 |
+| **margin** | **1676.0 — 12.6× the floor** |
+
+**The conclusion is unchanged; the number was three times too generous.** Prefill against the largest
+model this box runs still peaks at 12.6× the refusal floor. Quote **12.6×**, not 39.9× — the latter
+is a property of a small model, not of the prefill path.
+
+(The gate failure that prompted this was NOT prefill's fault: `GOINFER_HEAVY_TESTS=1` had been
+exported into group 2b, so heavy tests ran there and left VRAM held. B2 passes cleanly on a correct
+invocation. The re-measurement stands on its own regardless.)
+
 ## What this closes
 
 Prefill was the one enumerated shipped path that both allocates largely inside a live context *and*

@@ -8,7 +8,25 @@ The forward-pass and quantization numerics are parity-gated against HuggingFace
 and are the stable contract. The loader and architecture-descriptor surface is
 pre-1.0 and may change as new model families and quant formats land.
 
-## [Unreleased]
+## [v0.13.0] — 2026-08-14
+
+### Security
+
+- **Go 1.26.5 → 1.26.6 across all four modules**, closing three standard-library
+  vulnerabilities that are **reachable from this project's own code** — not dormant
+  transitive imports:
+
+  | | | reached via |
+  |---|---|---|
+  | [GO-2026-6090](https://pkg.go.dev/vuln/GO-2026-6090) | `crypto/tls` — limit post-handshake messages | `serve` → `http.Server.ListenAndServe` → `tls.Conn.HandshakeContext`; also `prequant.readHead` → `io.ReadFull` |
+  | [GO-2026-6089](https://pkg.go.dev/vuln/GO-2026-6089) | `net/http` — apply `ReadHeaderTimeout` on the unencrypted HTTP/2 check | `serve` → `http.Server.ListenAndServe` |
+  | [GO-2026-5972](https://pkg.go.dev/vuln/GO-2026-5972) | `encoding/asn1` — enforce maximum recursion depth | `serve` → `signal.Notify` → `asn1.Unmarshal` |
+
+  `govulncheck ./...` reports **no vulnerabilities** after the bump. If you build
+  `goinfer serve` yourself, use Go 1.26.6 or later; the `go` directive now requires it.
+
+  The CUDA gate was re-run in full on 1.26.6 before tagging — a toolchain change is a
+  compiler change, and the resident parity gates exist to catch a forward that moved.
 
 ### Performance
 
