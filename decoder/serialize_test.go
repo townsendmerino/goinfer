@@ -58,14 +58,7 @@ func TestConfig_giwRoundTrip_nilRawMessage(t *testing.T) {
 func prequantGGUF(t *testing.T) string {
 	t.Helper()
 	requireHeavyModel(t) // loads a real GGUF (qwen2.5-coder-0.5b, or GOINFER_PREQUANT_GGUF) — auto-fired on the box
-	path := os.Getenv("GOINFER_PREQUANT_GGUF")
-	if path == "" {
-		path = "../testdata/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"
-	}
-	if _, err := os.Stat(path); err != nil {
-		t.Skipf("no gguf at %s (set GOINFER_PREQUANT_GGUF)", path)
-	}
-	return path
+	return assetPath(t, "GOINFER_PREQUANT_GGUF")
 }
 
 // TestSerializeWeights_roundTrip is the important one: int8int8 GGUF →

@@ -13,10 +13,14 @@ import (
 // loader dequantizes it and re-quantizes to goinfer's group-wise int4, so no
 // prebuilt .giw bundle (or torch) is needed. Fresh model per call (no cache).
 func loadInt4Model(tb testing.TB) *Model {
-	path := os.Getenv("GOINFER_PREQUANT_GGUF")
-	if path == "" {
-		tb.Skip("no model; set GOINFER_PREQUANT_GGUF to a q4_k_m gguf")
-	}
+	// BEHAVIOUR CHANGE, deliberate. This site previously skipped whenever GOINFER_PREQUANT_GGUF was
+	// UNSET -- alone among the four readers of that variable, the other three fell back to
+	// ../testdata. So the same box ran TestSerializeWeightsTo_matchesBuffer and skipped
+	// TestDecodeParityInt4 with nothing in either output naming the difference. Both now resolve
+	// through the registry's candidate list. Under the sweep nothing changes (the preflight exports
+	// the variable either way); under a bare `go test ./decoder`, this gate now RUNS where it used
+	// to skip.
+	path := assetPath(tb, "GOINFER_PREQUANT_GGUF")
 	m, err := Load(path, Options{Quant: "int4"})
 	if err != nil {
 		tb.Fatalf("load int4: %v", err)

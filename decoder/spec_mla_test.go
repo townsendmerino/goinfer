@@ -2,8 +2,6 @@ package decoder
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"slices"
 	"testing"
 
@@ -21,14 +19,7 @@ import (
 // Gated on the local DeepSeek-V2-Lite GGUF (GOINFER_DEEPSEEK_GGUF); skips without it.
 func TestNgramSpecMLA_parity(t *testing.T) {
 	requireHeavyModel(t)
-	home, _ := os.UserHomeDir()
-	gguf := os.Getenv("GOINFER_DEEPSEEK_GGUF")
-	if gguf == "" {
-		gguf = filepath.Join(home, "models", "deepseek-v2-lite-gguf", "DeepSeek-V2-Lite-Chat-Q4_K_M.gguf")
-	}
-	if _, err := os.Stat(gguf); err != nil {
-		t.Skipf("no DeepSeek GGUF at %s: %v", gguf, err)
-	}
+	gguf := assetPath(t, "GOINFER_DEEPSEEK_GGUF")
 	m, err := Load(gguf, Options{Quant: "int8int8"})
 	if err != nil {
 		t.Fatalf("Load(%s): %v", gguf, err)

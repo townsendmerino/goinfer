@@ -21,8 +21,6 @@ package decoder
 
 import (
 	"math"
-	"os"
-	"path/filepath"
 	"runtime"
 	"testing"
 
@@ -96,15 +94,8 @@ func tensorAgreement(got, ref []float32) (cos float64, maxAbs, relL2 float64) {
 
 func TestQwen35GGUF_weightDiff(t *testing.T) {
 	requireHeavyModel(t)
-	home, _ := os.UserHomeDir()
 	dir := realQwen35Dir(t) // safetensors (skips if absent)
-	gguf := os.Getenv("GOINFER_QWEN35_GGUF")
-	if gguf == "" {
-		gguf = filepath.Join(home, "models", "qwen3.6-35b-a3b-Q8_0.gguf")
-	}
-	if _, err := os.Stat(gguf); err != nil {
-		t.Skipf("no qwen35moe GGUF at %s: %v", gguf, err)
-	}
+	gguf := assetPath(t, "GOINFER_QWEN35_GGUF")
 
 	const nLayer = 4
 	// Safetensors reference first (Gate-1 bit-exact vs HF), then the GGUF slice.

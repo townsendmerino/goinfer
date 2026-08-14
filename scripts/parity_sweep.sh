@@ -60,41 +60,39 @@ EMIT_GATES=(
 #
 # An unresolvable variable prints NOT FOUND here, at the top, where it is a one-line fix -- instead of
 # surfacing 40 minutes later as a blocker that names a family rather than a path.
+#
+# THE RESOLUTION NOW COMES FROM THE SHARED REGISTRY (testdata/assets.json), not from a table in this
+# file. The table that used to live here was a SECOND implementation of "is this asset present", and
+# it was the weaker one:
+#
+#   * it tested `[ -e "$path" ]`, which a DIRECTORY satisfies -- so three of its entries named a
+#     directory where the loader wanted the .gguf FILE inside it, and it reported them resolved.
+#     Four gates were costed by that.
+#   * it could not express GOINFER_QWEN35_GOLDEN's actual requirement, a readable manifest.json
+#     INSIDE the directory, so it said present while the gate skipped.
+#   * its default paths were a copy of the defaults each gate spelled out separately, free to drift
+#     from them -- and GOINFER_PREQUANT_GGUF had drifted into three different values.
+#   * its closing line said "all 10 assets resolved" above a table of NINE rows: a hardcoded count,
+#     in the sentence announcing that everything was fine. The registry derives that number now.
+#
+# GOINFER_QWEN35_REAL is registered too, and was never in the table here at all.
 export GOINFER_HEAVY_TESTS=1
-MODELS="${GOINFER_MODELS:-$HOME/models}"
-echo "== asset preflight (models root: $MODELS) =="
-echo "   GOINFER_HEAVY_TESTS=1 set by this script — the release sweep loads real checkpoints"
-_miss=0
-_resolve() { # $1 = var name, $2 = default path under $MODELS
-  local var="$1" def="$MODELS/$2" cur="${!1:-}"
-  if [ -n "$cur" ]; then
-    printf '   %-28s %-9s %s\n' "$var" "$([ -e "$cur" ] && echo '(env)' || echo '(env!!)')" "$cur"
-    [ -e "$cur" ] || _miss=$((_miss + 1))
-    return
-  fi
-  if [ -e "$def" ]; then
-    export "$var=$def"
-    printf '   %-28s %-9s %s\n' "$var" "resolved" "$def"
-  else
-    printf '   %-28s %-9s %s\n' "$var" "NOT FOUND" "$def"
-    _miss=$((_miss + 1))
-  fi
-}
-_resolve GOINFER_PREQUANT_GGUF      "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"
-_resolve GOINFER_QWEN35_GGUF        "qwen3.6-35b-a3b-Q8_0.gguf"
-_resolve GOINFER_QWEN35_GOLDEN      "qwen35_real_golden"
-_resolve GOINFER_DEEPSEEK_V2LITE    "deepseek-v2-lite"
-_resolve GOINFER_DEEPSEEK_MOONLIGHT "moonlight-16b"
-_resolve GOINFER_DEEPSEEK_GGUF      "deepseek-v2-lite-gguf/DeepSeek-V2-Lite-Chat-Q4_K_M.gguf"
-_resolve GOINFER_PHI3_MINI          "phi3-mini-4k"
-_resolve GOINFER_PHI3_GGUF          "phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf"
-_resolve GOINFER_LLAMA4_GGUF        "llama4-scout-gguf/Llama-4-Scout-17B-16E-Instruct-Q2_K.gguf"
-if [ "$_miss" -gt 0 ]; then
-  echo "   ^^ $_miss asset(s) UNRESOLVED — the gates needing them will skip, and a skip is reported as"
-  echo "      a blocker. Fix the path above rather than reading the blocker list as a tree defect."
+_ASSET_ENV="$(mktemp)"
+if python3 scripts/asset_registry.py preflight --export-to "$_ASSET_ENV"; then
+  # shellcheck source=/dev/null
+  . "$_ASSET_ENV"
+  echo "   GOINFER_HEAVY_TESTS=1 set by this script — the release sweep loads real checkpoints"
 else
-  echo "   all 10 assets resolved — a blocker below is about the TREE, not the invocation"
+  # There is no set -e here, so without this branch a missing python3 would export NOTHING, every
+  # asset-gated test would skip, and the sweep would print a full slate of blockers about a tree
+  # that is fine -- the precise false-blocker cascade this preflight was written to end. Fail loudly
+  # instead: the sweep continues so the non-asset gates still report, but nobody can read the
+  # blocker count as a statement about the tree.
+  echo "   !! ASSET PREFLIGHT DID NOT RUN (scripts/asset_registry.py failed above)."
+  echo "   !! No asset variable has been resolved. Every asset-gated gate below will skip and be"
+  echo "   !! counted as a blocker. THAT COUNT IS ABOUT THIS FAILURE, NOT ABOUT THE TREE."
 fi
+rm -f "$_ASSET_ENV"
 echo
 
 if [ "$EMIT_MANIFEST" = "1" ]; then

@@ -15,8 +15,6 @@ package decoder
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -25,14 +23,7 @@ import (
 
 func TestLlama4Real_gate(t *testing.T) {
 	requireHeavyModel(t)
-	home, _ := os.UserHomeDir()
-	gguf := os.Getenv("GOINFER_LLAMA4_GGUF")
-	if gguf == "" {
-		gguf = filepath.Join(home, "models", "llama4-scout-gguf", "Llama-4-Scout-17B-16E-Instruct-Q2_K.gguf")
-	}
-	if _, err := os.Stat(gguf); err != nil {
-		t.Skipf("no Llama 4 GGUF at %s: %v", gguf, err)
-	}
+	gguf := assetPath(t, "GOINFER_LLAMA4_GGUF")
 	m, err := Load(gguf, Options{Quant: "int4"})
 	if err != nil {
 		t.Fatalf("Load(%s): %v", gguf, err)

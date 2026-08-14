@@ -25,7 +25,6 @@ import (
 	"context"
 	"encoding/json"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -113,11 +112,7 @@ func deepseekRealGate(t *testing.T, ckpt, golden, wantArch, reference string, wa
 // TestDeepseekV2LiteReal_gate — V2-Lite (deepseek_v2): direct-q + SOFTMAX routing + YaRN.
 func TestDeepseekV2LiteReal_gate(t *testing.T) {
 	requireHeavyModel(t)
-	home, _ := os.UserHomeDir()
-	ckpt := os.Getenv("GOINFER_DEEPSEEK_V2LITE")
-	if ckpt == "" {
-		ckpt = filepath.Join(home, "models", "deepseek-v2-lite")
-	}
+	ckpt := assetPath(t, "GOINFER_DEEPSEEK_V2LITE")
 	deepseekRealGate(t, ckpt, "../testdata/deepseek_v2lite_golden.json", "deepseek_v2", "HF bf16 (DeepSeek-V2-Lite 15.7B; int8 resident)", false)
 }
 
@@ -132,14 +127,7 @@ func TestMLAAbsorb_speed(t *testing.T) {
 	if testing.Short() {
 		t.Skip("perf measurement: skipped in -short")
 	}
-	home, _ := os.UserHomeDir()
-	ckpt := os.Getenv("GOINFER_DEEPSEEK_V2LITE")
-	if ckpt == "" {
-		ckpt = filepath.Join(home, "models", "deepseek-v2-lite")
-	}
-	if _, err := os.Stat(ckpt); err != nil {
-		t.Skipf("no checkpoint at %s: %v", ckpt, err)
-	}
+	ckpt := assetPath(t, "GOINFER_DEEPSEEK_V2LITE")
 	// Time IDENTICAL work on both paths: forward a fixed 128-token sequence (the latent
 	// cache grows to 128, so the per-step attention cost — where absorb wins — ramps up).
 	// Greedy-GENERATING would diverge: absorb and naive are two equally-valid int8
@@ -185,11 +173,7 @@ func TestMLAAbsorb_speed(t *testing.T) {
 // noaux_tc routing with a real e_score_correction_bias + routed_scaling_factor.
 func TestDeepseekMoonlightReal_gate(t *testing.T) {
 	requireHeavyModel(t)
-	home, _ := os.UserHomeDir()
-	ckpt := os.Getenv("GOINFER_DEEPSEEK_MOONLIGHT")
-	if ckpt == "" {
-		ckpt = filepath.Join(home, "models", "moonlight-16b")
-	}
+	ckpt := assetPath(t, "GOINFER_DEEPSEEK_MOONLIGHT")
 	deepseekRealGate(t, ckpt, "../testdata/deepseek_moonlight_golden.json", "deepseek_v3", "HF bf16 (Moonlight-16B-A3B; int8 resident)", true)
 }
 
@@ -205,14 +189,7 @@ func TestDeepseekMoonlightReal_gate(t *testing.T) {
 //	  go test -tags realckpt ./decoder/ -run TestDeepseekGGUFReal -v -timeout 20m
 func TestDeepseekGGUFReal_gate(t *testing.T) {
 	requireHeavyModel(t)
-	home, _ := os.UserHomeDir()
-	gguf := os.Getenv("GOINFER_DEEPSEEK_GGUF")
-	if gguf == "" {
-		gguf = filepath.Join(home, "models", "deepseek-v2-lite-gguf", "DeepSeek-V2-Lite-Chat-Q4_K_M.gguf")
-	}
-	if _, err := os.Stat(gguf); err != nil {
-		t.Skipf("no DeepSeek GGUF at %s: %v", gguf, err)
-	}
+	gguf := assetPath(t, "GOINFER_DEEPSEEK_GGUF")
 	m, err := Load(gguf, Options{Quant: "int8int8"})
 	if err != nil {
 		t.Fatalf("Load(%s): %v", gguf, err)

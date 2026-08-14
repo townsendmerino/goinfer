@@ -13,20 +13,12 @@ package decoder
 import (
 	"encoding/json"
 	"os"
-	"path/filepath"
 	"testing"
 )
 
 func TestPhi3MiniReal_gate(t *testing.T) {
 	requireHeavyModel(t)
-	home, _ := os.UserHomeDir()
-	ckpt := os.Getenv("GOINFER_PHI3_MINI")
-	if ckpt == "" {
-		ckpt = filepath.Join(home, "models", "phi3-mini-4k")
-	}
-	if _, err := os.Stat(ckpt); err != nil {
-		t.Skipf("no Phi-3-mini-4k at %s: %v", ckpt, err)
-	}
+	ckpt := assetPath(t, "GOINFER_PHI3_MINI")
 	const golden = "../testdata/phi3_mini_golden.json"
 	raw, err := os.ReadFile(golden)
 	if err != nil {
@@ -104,14 +96,7 @@ func TestPhi3MiniReal_gate(t *testing.T) {
 // out goinfer quant). Fixture reuses scripts/pin_phi3_mini.py's golden.
 func TestPhi3GGUFReal_gate(t *testing.T) {
 	requireHeavyModel(t)
-	home, _ := os.UserHomeDir()
-	gguf := os.Getenv("GOINFER_PHI3_GGUF")
-	if gguf == "" {
-		gguf = filepath.Join(home, "models", "phi3-mini-4k-gguf", "Phi-3-mini-4k-instruct-q4.gguf")
-	}
-	if _, err := os.Stat(gguf); err != nil {
-		t.Skipf("no Phi-3 GGUF at %s: %v", gguf, err)
-	}
+	gguf := assetPath(t, "GOINFER_PHI3_GGUF")
 	raw, err := os.ReadFile("../testdata/phi3_mini_golden.json")
 	if err != nil {
 		t.Skipf("no golden (%v) — run scripts/pin_phi3_mini.py", err)

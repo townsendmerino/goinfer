@@ -26,19 +26,9 @@ import (
 
 func TestQwen35GGUF_vsSafetensors(t *testing.T) {
 	requireHeavyModel(t)
-	home, _ := os.UserHomeDir()
-	gguf := os.Getenv("GOINFER_QWEN35_GGUF")
-	if gguf == "" {
-		gguf = filepath.Join(home, "models", "qwen3.6-35b-a3b-Q8_0.gguf")
-	}
+	gguf := assetPath(t, "GOINFER_QWEN35_GGUF")
 	dir := realQwen35Dir(t) // safetensors dir (skips if absent)
-	if _, err := os.Stat(gguf); err != nil {
-		t.Skipf("no qwen35moe GGUF at %s: %v", gguf, err)
-	}
-	goldenDir := os.Getenv("GOINFER_QWEN35_GOLDEN")
-	if goldenDir == "" {
-		goldenDir = filepath.Join(home, "models", "qwen35_real_golden")
-	}
+	goldenDir := assetPath(t, "GOINFER_QWEN35_GOLDEN")
 	raw, err := os.ReadFile(filepath.Join(goldenDir, "manifest.json"))
 	if err != nil {
 		t.Skipf("no golden manifest: %v", err)

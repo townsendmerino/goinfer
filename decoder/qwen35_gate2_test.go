@@ -101,11 +101,7 @@ func cosineFull(a, b []float32) float64 {
 func TestQwen35Real_gate2FullModel(t *testing.T) {
 	requireHeavyModel(t)
 	dir := realQwen35Dir(t)
-	home, _ := os.UserHomeDir()
-	goldenDir := os.Getenv("GOINFER_QWEN35_GOLDEN")
-	if goldenDir == "" {
-		goldenDir = filepath.Join(home, "models", "qwen35_real_golden")
-	}
+	goldenDir := assetPath(t, "GOINFER_QWEN35_GOLDEN")
 	raw, err := os.ReadFile(filepath.Join(goldenDir, "manifest.json"))
 	if err != nil {
 		t.Skipf("no Gate-2 golden manifest at %s: %v", goldenDir, err)

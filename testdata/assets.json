@@ -1,0 +1,129 @@
+{
+  "_comment": [
+    "THE SHARED ASSET REGISTRY. One table naming every heavy test asset: where to look for it, and",
+    "-- the part that matters -- WHAT MAKES IT USABLE. Read by scripts/asset_registry.py (the sweep's",
+    "preflight) and by decoder/asset_registry_test.go (the gates). Both apply the SAME predicate to",
+    "the SAME candidate paths, because both read this file.",
+    "",
+    "WHY IT EXISTS. The preflight reimplemented 'is this asset present' as `[ -e $path ]` while each",
+    "gate wrote its own resolution inline. Three consequences, all observed:",
+    "  1. A directory satisfies `-e` -- so three preflight entries pointed at a DIRECTORY while the",
+    "     loader wanted a .gguf FILE inside it, and preflight reported them resolved. Four gates were",
+    "     costed by that.",
+    "  2. GOINFER_QWEN35_GOLDEN's real requirement is a READABLE manifest.json INSIDE the directory.",
+    "     `-e` on the directory cannot express that, so preflight said present and the gate skipped.",
+    "  3. GOINFER_PREQUANT_GGUF had THREE different fallbacks across four call sites, and one site",
+    "     (loadInt4Model) had none at all -- so the same box ran different gates against different",
+    "     files, or skipped, with nothing in any output naming the difference.",
+    "",
+    "THE PREDICATE, stated once so it cannot be reimplemented differently:",
+    "  kind=file  -- resolves to a regular file (symlinks followed) of at least min_bytes.",
+    "  kind=dir   -- resolves to a directory containing EVERY name in `members` and AT LEAST ONE",
+    "                name in `members_any`.",
+    "The first candidate that satisfies the predicate wins. An `env` value set by the operator ALWAYS",
+    "wins over the candidates, and is checked by the same predicate -- an explicit path that does not",
+    "satisfy it is an error worth naming, not a silent fallback to something else.",
+    "",
+    "$MODELS is $GOINFER_MODELS, defaulting to ~/models. $REPO is the goinfer checkout root.",
+    "",
+    "used_by IS NOT DECORATION: TestAssetRegistry_usedByExists fails when a named gate does not exist,",
+    "so a renamed or deleted gate cannot leave a stale entry behind claiming coverage."
+  ],
+  "assets": [
+    {
+      "env": "GOINFER_PREQUANT_GGUF",
+      "kind": "file",
+      "min_bytes": 1048576,
+      "candidates": [
+        "$REPO/testdata/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf",
+        "$MODELS/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"
+      ],
+      "used_by": [
+        "TestDecodeParityInt4",
+        "TestSerializeWeightsTo_matchesBuffer",
+        "TestNgramSpecHarness"
+      ],
+      "note": "q4_k_m GGUF; the loader dequantizes and re-quantizes, so no prebuilt .giw is needed. The $REPO candidate is a gitignored local drop and is tried FIRST so a developer copy beats the shared one."
+    },
+    {
+      "env": "GOINFER_QWEN35_GGUF",
+      "kind": "file",
+      "min_bytes": 1048576,
+      "candidates": ["$MODELS/qwen3.6-35b-a3b-Q8_0.gguf"],
+      "used_by": [
+        "TestQwen35GGUF_gate",
+        "TestQwen35GGUF_vsSafetensors",
+        "TestQwen35GGUF_weightDiff"
+      ]
+    },
+    {
+      "env": "GOINFER_QWEN35_GOLDEN",
+      "kind": "dir",
+      "members": ["manifest.json"],
+      "candidates": ["$MODELS/qwen35_real_golden"],
+      "used_by": [
+        "TestQwen35Real_gate2FullModel",
+        "TestQwen35GGUF_gate",
+        "TestQwen35GGUF_vsSafetensors"
+      ],
+      "note": "members is the WHOLE point here: every consumer reads manifest.json out of this directory, so a directory that exists without one is NOT this asset."
+    },
+    {
+      "env": "GOINFER_QWEN35_REAL",
+      "kind": "dir",
+      "members": ["config.json"],
+      "members_any": ["model.safetensors.index.json", "model.safetensors"],
+      "candidates": ["$MODELS/qwen3.6-35b-a3b"],
+      "used_by": [
+        "TestQwen35GGUF_vsSafetensors",
+        "TestQwen35GGUF_weightDiff"
+      ],
+      "note": "Resolved in a file-level helper (realQwen35Dir) rather than in a test body, which is why the selector census attributed it inconsistently -- see B13's 42-vs-41 count. It was NOT in the sweep preflight before this registry."
+    },
+    {
+      "env": "GOINFER_DEEPSEEK_V2LITE",
+      "kind": "dir",
+      "members": ["config.json"],
+      "members_any": ["model.safetensors.index.json", "model.safetensors"],
+      "candidates": ["$MODELS/deepseek-v2-lite"],
+      "used_by": ["TestDeepseekV2LiteReal_gate", "TestMLAAbsorb_speed"]
+    },
+    {
+      "env": "GOINFER_DEEPSEEK_MOONLIGHT",
+      "kind": "dir",
+      "members": ["config.json"],
+      "members_any": ["model.safetensors.index.json", "model.safetensors"],
+      "candidates": ["$MODELS/moonlight-16b"],
+      "used_by": ["TestDeepseekMoonlightReal_gate"]
+    },
+    {
+      "env": "GOINFER_DEEPSEEK_GGUF",
+      "kind": "file",
+      "min_bytes": 1048576,
+      "candidates": ["$MODELS/deepseek-v2-lite-gguf/DeepSeek-V2-Lite-Chat-Q4_K_M.gguf"],
+      "used_by": ["TestDeepseekGGUFReal_gate", "TestNgramSpecMLA_parity"]
+    },
+    {
+      "env": "GOINFER_PHI3_MINI",
+      "kind": "dir",
+      "members": ["config.json"],
+      "members_any": ["model.safetensors.index.json", "model.safetensors"],
+      "candidates": ["$MODELS/phi3-mini-4k"],
+      "used_by": ["TestPhi3MiniReal_gate"]
+    },
+    {
+      "env": "GOINFER_PHI3_GGUF",
+      "kind": "file",
+      "min_bytes": 1048576,
+      "candidates": ["$MODELS/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf"],
+      "used_by": ["TestPhi3GGUFReal_gate"]
+    },
+    {
+      "env": "GOINFER_LLAMA4_GGUF",
+      "kind": "file",
+      "min_bytes": 1048576,
+      "candidates": ["$MODELS/llama4-scout-gguf/Llama-4-Scout-17B-16E-Instruct-Q2_K.gguf"],
+      "used_by": ["TestLlama4Real_gate"]
+    }
+  ]
+}

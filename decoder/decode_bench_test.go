@@ -21,11 +21,11 @@ var (
 
 func loadBenchModel() (*Model, error) {
 	benchOnce.Do(func() {
-		path := os.Getenv("GOINFER_PREQUANT_GGUF")
-		if path == "" {
-			path = "../testdata/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"
-		}
-		if _, err := os.Stat(path); err != nil {
+		// lookupAsset, not assetPath: this runs inside a sync.Once with no testing.TB to skip
+		// on. The error carries the predicate's reason, so a caller reporting benchErr says
+		// WHICH candidate failed and why, instead of a bare stat error.
+		path, err := lookupAsset("GOINFER_PREQUANT_GGUF")
+		if err != nil {
 			benchErr = err
 			return
 		}

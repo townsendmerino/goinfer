@@ -25,18 +25,7 @@ import (
 // var nor the default ~/models/qwen3.6-35b-a3b resolves to a directory.
 func realQwen35Dir(t *testing.T) string {
 	t.Helper()
-	dir := os.Getenv("GOINFER_QWEN35_REAL")
-	if dir == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			t.Skipf("no home dir and GOINFER_QWEN35_REAL unset: %v", err)
-		}
-		dir = filepath.Join(home, "models", "qwen3.6-35b-a3b")
-	}
-	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
-		t.Skipf("real qwen3_5_moe checkpoint not at %s — set GOINFER_QWEN35_REAL", dir)
-	}
-	return dir
+	return assetPath(t, "GOINFER_QWEN35_REAL")
 }
 
 // loadQwen35Slice loads embed + the first nLayer real layers at f32 (quantNone)

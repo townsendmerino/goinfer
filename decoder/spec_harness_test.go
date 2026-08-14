@@ -50,8 +50,11 @@ Reproduce the source list exactly:
 {"tool":"search","args":{"query":"baz","limit":`},
 }
 
+// benchGGUFPath returns the registry's path, or the first registered candidate when nothing is
+// usable — callers here already handle a load failure, and returning a path that does not resolve
+// keeps their error message pointing at a real filename rather than at "".
 func benchGGUFPath() string {
-	if p := os.Getenv("GOINFER_PREQUANT_GGUF"); p != "" {
+	if p, err := lookupAsset("GOINFER_PREQUANT_GGUF"); err == nil {
 		return p
 	}
 	return "../testdata/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"

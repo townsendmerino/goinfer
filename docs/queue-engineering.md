@@ -1361,6 +1361,97 @@ produced a result at all (its int8 `.giw` half has never been built).
 ignored), incomplete entries, and *"confirmed before the gate last changed"* as a **warning that
 does not block**.
 
+## B16 — SHARED ASSET REGISTRY: preflight and gates now apply ONE predicate (IMPLEMENTED)
+
+**Implemented 2026-08-14.** The sweep's preflight and every heavy gate each decided "is this asset
+present" separately — the preflight in bash with `[ -e "$path" ]`, each gate inline with its own
+default path and its own `os.Stat`. Two implementations, free to disagree, and they did.
+
+**What the divergence actually cost, in three observed forms:**
+
+1. **A directory satisfies `-e`.** Three preflight entries named a directory where the loader wanted
+   the `.gguf` file inside it; preflight reported them RESOLVED. **Four gates were costed by that.**
+2. **`GOINFER_QWEN35_GOLDEN`'s real requirement is a readable `manifest.json` INSIDE the directory.**
+   `-e` on the directory cannot express that, so preflight said present and the gate skipped anyway.
+3. **`GOINFER_PREQUANT_GGUF` had three different fallbacks across four call sites** — and at
+   `loadInt4Model`, **none at all**, so that one gate skipped whenever the variable was unset while
+   its three siblings fell back to `../testdata`. The same box ran different gates against different
+   files, with nothing in any output naming the difference.
+
+**The fix is not a better `-e`.** Presence is now DEFINED IN ONE PLACE — `testdata/assets.json`,
+carrying `kind`, `members`, `members_any`, `min_bytes` and the candidate paths — and every consumer
+applies that definition instead of approximating it.
+
+| piece | what it is |
+|---|---|
+| `testdata/assets.json` | the registry: 10 assets, each with its predicate and its `used_by` gates |
+| `scripts/asset_registry.py` | `preflight` / `check` / `list` / `verdicts` / `census` |
+| `decoder/asset_registry_test.go` | `assetPath(t, env)` + `lookupAsset(env)`, and the registry's own gates |
+| `scripts/parity_sweep.sh` | preflight now sources the registry; its own resolution table is deleted |
+
+**TWO IMPLEMENTATIONS, COMPARED RATHER THAN TRUSTED.** Bash cannot read JSON and Go cannot be called
+from the preflight, so the predicate necessarily exists twice. What makes that acceptable is
+`TestAssetRegistry_agreesWithPreflight`, which asks the script for its verdict on all 10 and asserts
+the Go side agrees — **and agrees on the same path**, since two sides can both report success about
+different files.
+
+**Verified by mutation, both directions:**
+
+| mutation | expected | result |
+|---|---|---|
+| drop Go's is-a-directory check | disagreement | **neutralised by `IsRegular` downstream — tested nothing** |
+| drop Go's is-a-directory *and* `IsRegular` checks | disagreement | ✅ `PREDICATES DISAGREE — python ok=false, Go ok=true` |
+| two valid candidates, Go iterates them reversed | same verdict, different path | ✅ `both resolve, but to DIFFERENT paths` |
+| re-introduce a direct `os.Getenv` of a registered var | drift gate red | ✅ names the file and the replacement |
+| registry unreadable | preflight's loud branch | ✅ fires; the sweep says the blocker count is about the failure, not the tree |
+| a `used_by` gate that does not exist | red | ✅ **caught a real one** — the entry named `TestMoonlightReal_gate`; the gate is `TestDeepseekMoonlightReal_gate` |
+
+The first row is the one worth keeping: **a mutation that the code neutralises downstream proves
+nothing**, and it looked like a passing check until the verdict was read.
+
+**Also fixed, found while replacing the block:** the preflight's closing line read *"all 10 assets
+resolved"* above a table of **nine** rows — a hardcoded count in the sentence announcing that
+everything was fine. The count is derived from the registry now. `GOINFER_QWEN35_REAL` was never in
+that table at all and is registered (bringing it to a genuine 10).
+
+**THE DENOMINATOR, reported rather than implied.** `asset_registry.py census` classifies all **124**
+`GOINFER_*` asset-candidate variables **by USE, not by name**: 10 registered, **34 path-shaped but
+unregistered**, 51 switch/scalar, **29 UNCLASSIFIED**. Enforcement is scoped exactly to the
+registered set; the rest is counted, not policed.
+
+*The universe is `read-by-a-test OR registered`, not `read-by-a-test`* — and that correction was
+itself forced by this change. Registering an asset REMOVES its `os.Getenv` from the test sources,
+which is the entire point, so a universe of "variables read by tests" shrank by nine the moment the
+conversions landed and the four buckets stopped summing to the total. **The numerator-vs-universe
+defect, in the tool built to report it.** The census now asserts its buckets partition the universe,
+so that cannot recur silently.
+
+*Unclassified is a real outcome, not a leftover.* `GOINFER_SERVE_MODEL` is a path by any human
+reading, but its value flows into a struct field and never touches a filesystem call — no local rule
+can see it. Folding it into "switch" would be a bucket absorbing what the rule did not determine,
+which is the census failure this line of work exists to stop. An earlier proximity rule ("any
+filesystem call within N lines") called `GOINFER_HEAVY_TESTS` — a pure on/off switch — path-shaped;
+following the bound identifier fixed that and exposed the third bucket.
+
+**One deliberate behaviour change**, marked at the site: `loadInt4Model` previously skipped whenever
+`GOINFER_PREQUANT_GGUF` was unset and now resolves through the candidate list like its three
+siblings. Under the sweep nothing changes (the preflight exports the variable either way); under a
+bare `go test ./decoder`, `TestDecodeParityInt4` now RUNS where it used to skip. Note that
+**B13** records
+this gate as **already red for at least two days** — so expect it red, and do not read that as caused
+by this change.
+
+**End-to-end proof:** `TestPhi3GGUFReal_gate` under `-tags realckpt` loads its model through
+`assetPath` and passes (argmax 3681 = golden, continuation exact). **Note the tag**: the 24
+`realckpt` files are not compiled by a bare `go vet ./decoder/`, so an earlier "PASS" of this gate
+had in fact run **no tests at all**. Vet is clean under `realckpt`, `goinfer_testhooks`, `gpu` and
+`race` as well as the default.
+
+**Not done:** the 34 path-shaped unregistered variables. Registering them is the campaign, and it
+overlaps **B13**
+— the two lists should be reconciled before either is worked, since a dark test and an unregistered
+asset are frequently the same test.
+
 ## B11 — TWO SERIALIZATION PATHS DIFFER BY 8 BYTES, and neither is known correct
 
 **RE-FILED 2026-08-13** — the original was destroyed by the `--update` data-loss bug (fixed in
@@ -1372,7 +1463,7 @@ does not block**.
 streamed length 632821543 != buffered 632821551
 ```
 
-The assertion is `decoder/serialize_test.go:443`.
+The assertion is `decoder/serialize_test.go:436`.
 
 **632,821,551 − 632,821,543 = 8 bytes. One uint64.** On a ~633 MB payload that is not drift or a
 rounding artifact — it is one field written by one path and not the other, or at a different width.
