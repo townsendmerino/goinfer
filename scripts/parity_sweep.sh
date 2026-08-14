@@ -81,15 +81,14 @@ _resolve() { # $1 = var name, $2 = default path under $MODELS
   fi
 }
 _resolve GOINFER_PREQUANT_GGUF      "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"
-_resolve GOINFER_W4A8_INT4          "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"
 _resolve GOINFER_QWEN35_GGUF        "qwen3.6-35b-a3b-Q8_0.gguf"
 _resolve GOINFER_QWEN35_GOLDEN      "qwen35_real_golden"
 _resolve GOINFER_DEEPSEEK_V2LITE    "deepseek-v2-lite"
 _resolve GOINFER_DEEPSEEK_MOONLIGHT "moonlight-16b"
-_resolve GOINFER_DEEPSEEK_GGUF      "deepseek-v2-lite-gguf"
+_resolve GOINFER_DEEPSEEK_GGUF      "deepseek-v2-lite-gguf/DeepSeek-V2-Lite-Chat-Q4_K_M.gguf"
 _resolve GOINFER_PHI3_MINI          "phi3-mini-4k"
-_resolve GOINFER_PHI3_GGUF          "phi3-mini-4k-gguf"
-_resolve GOINFER_LLAMA4_GGUF        "llama4-scout-gguf"
+_resolve GOINFER_PHI3_GGUF          "phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf"
+_resolve GOINFER_LLAMA4_GGUF        "llama4-scout-gguf/Llama-4-Scout-17B-16E-Instruct-Q2_K.gguf"
 if [ "$_miss" -gt 0 ]; then
   echo "   ^^ $_miss asset(s) UNRESOLVED — the gates needing them will skip, and a skip is reported as"
   echo "      a blocker. Fix the path above rather than reading the blocker list as a tree defect."
