@@ -176,6 +176,32 @@ path, gemma4_text merges) and the audit fixes touched hashed-core files. Before 
   parity) on real checkpoints, then `-update` the manifest (bump `validated_at` + metrics) at
   the freeze commit. That is the true validation; the Mac refresh is not a substitute.
 
+    **§C1 HAS TWO HALVES, AND THE SECOND CAN FAIL SEPARATELY.** The wording above assumed an
+    emitter that stamps *truthfully*, so that "run the sweep" and "`-update` the manifest" read as
+    one step described twice. **B15 disproves that assumption.** They are separate obligations:
+
+    | half | what discharges it |
+    |---|---|
+    | **evidence** | the sweep runs green on real checkpoints |
+    | **stamp** | the manifest records what the sweep actually proved |
+
+    **The stamp half can be UNSATISFIABLE while the evidence half is met.** At v0.13.0 the emitter
+    would have promoted `glm4_moe`, `mixtral`, `qwen2_5_vl` and `qwen2_moe` from `experimental` to
+    **`validated`** while leaving `method: tiny-golden`, and rewritten `mellum`'s
+    `real-model-oracle` to `real-oracle` — not a T3 method at all. `TestParityManifest_methodTier`
+    catches it, which is why it did not ship.
+
+    **When the stamp cannot be made truthfully, TAG WITHOUT IT and record the exception** — here,
+    in the tag's own record, and in the queue entry for the emitter defect.
+    **Committing a known-false promotion to satisfy a checklist is worse than an openly unmet
+    item**: the checklist is a proxy for the claim, and satisfying the proxy by falsifying the claim
+    inverts the point of having it. An unmet item is visible and fixable; a false `validated` row is
+    neither.
+
+    The decision is the release owner's — waiting for the emitter fix is equally legitimate. What
+    is **not** legitimate is proceeding quietly: either way it gets **written down as a decision**
+    rather than skipped as a step.
+
 ## Test hooks build tag (`goinfer_testhooks`)
 
 Cross-module test-only hooks (the `*ForTest` / `Set*ForTest` seams a backend's tests use to
