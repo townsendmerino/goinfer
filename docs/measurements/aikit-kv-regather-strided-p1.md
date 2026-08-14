@@ -47,14 +47,33 @@ characterized in advance from an A/A pass; **both polarities** run, since the tr
 `vt` write pollutes cache for whichever arm runs next and a symmetric A/A floor can't see that)
 on **AMD Ryzen 7 3700X (x86-64)** and got the OPPOSITE sign for V:
 
-| shape (group) | floor (A/A) | forward | reversed | result |
-|---|--:|--:|--:|--:|
-| 1.5B / 4096 (6) | 0.03% | +40.06% | (pending) | **+40% SLOWER** |
-| 1.5B / 512 (6)  | 0.77% | +12.11% | +14.66% | **+13.4% slower** |
-| 0.5B / 512 (7)  | 0.47% | +5.21% | — | **+5.2% slower** |
+| shape (group) | floor (A/A) | forward | reversed | mean | transpose → strided | **abs. penalty** |
+|---|--:|--:|--:|--:|--:|--:|
+| 1.5B / 4096 (6) | 0.03% | +40.06% | +42.34% | **+41.20%** | 735 → 1030 ms | **295 ms** |
+| 7B / 4096 (7)   | 0.82% | +23.52% | +23.46% | **+23.49%** | 1705 → 2106 ms | **401 ms** |
+| 1.5B / 512 (6)  | 0.77% | +12.11% | +14.66% | **+13.38%** | 168 → 188 ms | **20 ms** |
+| 0.5B / 512 (7)  | 0.47% | +5.21% | — | +5.21% | — | — |
 
-Both polarities agree in sign — the effect follows the path, not the interleave slot. The kernel
-is not in question: `MatmulBTAcc64Strided` is byte-exact (bit-identity gate passed on 48 greedy
+Both polarities agree in sign at every shape — the effect follows the path, not the interleave
+slot. The 7B point is the confirming shape the original sequencing asked for, and it lands against
+BOTH standing predictions:
+
+- **P1's original expectation — "7B should favour V more"** (the transpose grows with context, the
+  model is more bandwidth-bound) — is refuted. 7B is **+23.5% SLOWER**.
+- **The cache-line account's first phrasing — "7B should be worse than 1.5B's +41%"** — is refuted
+  AS PHRASED, and the phrasing was the error. The account predicts LINE-BYTES, which map to
+  absolute time; it says nothing about a percentage whose denominator is free to move. Read
+  absolutely, the penalty is monotone — **20 → 295 → 401 ms** — exactly as the model claims. At 7B
+  the step time nearly TRIPLES (weight streaming for 7B params dominates), so the same-or-larger
+  absolute cost divides down into a smaller percentage.
+
+**Consequence for anyone reading a percentage here:** on x86-64 the strided read's cost tracks
+`nKeys × group × line-bytes` and is essentially independent of model size, so **a bigger model
+HIDES this regression rather than easing it.** 7B's milder-looking 23% is the denominator moving,
+not the defect shrinking — its absolute penalty is the largest of the three. Percentages are the
+wrong unit for comparing this cost across model sizes.
+
+The kernel is not in question: `MatmulBTAcc64Strided` is byte-exact (bit-identity gate passed on 48 greedy
 tokens + the int8-KV and f32-KV global-cache branches, mutation-verified). Same operand, opposite
 sign, so **the decision is a property of the machine, not the algorithm.**
 
@@ -104,6 +123,40 @@ either box's ms/step is quoted as "decode speed".
 2. **goinfer** must NOT ship strided scores·V on x86-64. Either gate the adoption on arm64, or
    keep the transpose everywhere until a per-ISA dispatch exists. Re-measure any new ISA on target
    with this interleaved A/B (floor characterized in advance, both polarities) before adopting.
+
+## goinfer's disposition (2026-08-14) — DECLINED, transpose kept on BOTH ISAs
+
+Not adopted, and the arm64 gate deliberately NOT built. `attendBatchedHeads` keeps the V_headᵀ
+transpose and the K re-copy on every ISA; goinfer stays on aikit v1.17.1 (the v1.18.0 bump is
+reverted — nothing here consumes `MatmulBTAcc64Strided`). Three reasons, in order of weight:
+
+1. **The arm64 win is −3.8%, and collecting it costs a permanent second code path** that must be
+   kept bit-identical to the first forever, on an ISA the goinfer box cannot measure. The two
+   paths ARE bit-identical today — gated end to end, see below — but that is a property to be
+   re-established at every future edit, on hardware not present.
+2. **The ~4× baseline discrepancy is unresolved, and it sits directly underneath the number that
+   would justify the gate.** M1 179.8 ms/step vs Ryzen 735 ms/step, same model/context/quant.
+   Until that is explained, −3.8% is a delta on a baseline nobody has reconciled.
+3. **Nothing is lost by waiting.** The prototype, the bit-identity gate and the A/B harness are
+   preserved on branch `strided-v-scoresv` (`6ada6ec`, unmerged). Revisiting needs only an arm64
+   box and a re-run; the decision is cheap to reverse and expensive to un-ship.
+
+**What was established and is worth keeping regardless of the decision:**
+
+- The adoption is CORRECT, not merely rejected on speed. Bit-identity was gated end to end — 48
+  greedy tokens byte-identical to the transpose, plus the int8-KV and f32-KV global cache branches
+  at 24 tokens each — and the gate is MUTATION-VERIFIED: reading the neighbouring KV head
+  (in-bounds, different values) fails it at token 0, and the control passes.
+- **A mutation that the code neutralises downstream proves nothing.** The first attempt (`bOff+1`)
+  only tripped an out-of-bounds panic — it tested bounds, not identity, while looking like a
+  passing check. Worth repeating because it is the failure mode of mutation-checking itself.
+- The A/B harness runs **both polarities** by construction. Interleaving controls drift, but the
+  transpose arm's `vt` write pollutes cache for whichever arm runs NEXT, and a symmetric A/A floor
+  cannot see that asymmetry. One-polarity interleaving cannot separate "this path is slower" from
+  "slot 1 is slower because slot 0 trashed the cache".
+- Interleaving is only sound BECAUSE the paths are bit-identical: the token trajectory is the same
+  whichever arm produced each step, so the arms cannot drift into different work. The identity gate
+  is what licenses the measurement design, not just the correctness claim.
 
 _The step-0 instrumentation and the M1 A/B harness were a labeled-temporary prototype (aikit
 under a local `replace`); reverted after measuring. This doc is the durable record; the x86-64
