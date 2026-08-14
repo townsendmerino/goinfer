@@ -1221,3 +1221,30 @@ rather than only its length.
 
 **Not sufficient.** The denominator makes an omission visible; it does not prevent one. Say so in the
 census rather than letting the line read as a guarantee.
+
+## Recognition test: "the gate did not start failing, it started running"
+
+**Rule.** When a previously-unselected or previously-skipped gate fails on its **first execution**,
+the failure's age is **unknown**, and the change that enabled it is the **least likely cause**.
+
+**Ask first: has this ever run before?** A test that has never run has **no regression to
+attribute**. Until that question is answered, "X broke it" is not a hypothesis, it is a coincidence
+of timing — the change that made a failure *visible* is the one change that provably did not cause
+it, because the failure predates the visibility.
+
+**Where this came from.** The v0.13.0 sweep preflight set `GOINFER_PREQUANT_GGUF` for the first time.
+Two gates behind it failed immediately: an int4 parity drift and an 8-byte serialization mismatch
+(B11). The instinct is to suspect the release — it bumps both aikit and the Go toolchain, either of
+which can move numerics. The correct first move was cheaper and more decisive: establish whether the
+gates had ever executed. They had not.
+
+**This is the operational half of "a skip is not a pass."** That rule tells you a skip carries no
+information. This one tells you **what to do the moment a skip stops being one**: treat the first
+green-or-red as a *baseline being established*, not as a *state changing*. The two rules are the same
+observation from both ends — the first says do not bank a skip, the second says do not bill a
+newly-running test's failure to whoever turned it on.
+
+**The discriminator is cheap and it is not optional:** run the same gate, with the same environment,
+at the previous tag. Fails there too → pre-existing, exposed not caused, and it does not block. Passes
+there → the change is implicated and now the investigation is warranted. Report each gate
+independently; two gates enabled by the same variable need not answer the same way.
