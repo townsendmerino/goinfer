@@ -456,6 +456,25 @@ def body_without_index(text: str) -> str:
     return text
 
 
+def tail_after_index(text: str) -> str:
+    """Whatever follows the generated index block — content --update MUST NOT destroy.
+
+    THIS FUNCTION EXISTS BECAUSE --update ATE THREE QUEUE ENTRIES. `--update` rebuilt the file as
+    body_without_index(text) + <fresh index> and dropped everything after MARK_END. Appending an
+    entry to the end of QUEUE.md — the obvious way to add one — put it after the index, so the next
+    `--update` silently deleted it. B11, B12 and B13 were each written, committed as "filed", and
+    erased by the following lint run; B14 survived only because it happened to be inserted ABOVE the
+    marker.
+
+    The failure was invisible from both ends: the write succeeded, the commit contained the entry
+    (until the lint ran again), and the lint reported success while destroying content. A tool that
+    silently deletes what it was pointed at is worse than one that refuses to run.
+    """
+    if MARK_END in text:
+        return text.split(MARK_END, 1)[1]
+    return ""
+
+
 # ---- GITIGNORED DESTINATIONS: forbidden in a committed document ----
 #
 # The lint treats a gitignored path in TWO DISTINCT ROLES, and they get opposite treatment:
@@ -644,7 +663,12 @@ def main() -> int:
         for rel in bmissing:
             lines.append(f"| `{rel}` | **RESOLVES NOWHERE** |")
         lines += ["", MARK_END, ""]
-        QUEUE.write_text(body.rstrip("\n") + "\n\n" + "\n".join(lines))
+        # PRESERVE THE TAIL. See tail_after_index: dropping it deleted three filed queue entries.
+        tail = tail_after_index(text)
+        out = body.rstrip("\n") + "\n\n" + "\n".join(lines)
+        if tail.strip():
+            out = out.rstrip("\n") + "\n" + tail.lstrip("\n")
+        QUEUE.write_text(out)
         print(f"queue_sha_lint: indexed {len(resolved)} SHAs ({len(unresolved)} unresolved)")
         return 1 if unresolved else 0
 
