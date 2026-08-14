@@ -31,6 +31,8 @@ qwen2.5-coder-1.5B, ctx=4097, nKV=2, layers=28, hd=128, **GQA group=6**. Four ar
 on one prefilled cache; 6 visits, first discarded; median ms/step over 5 retained visits ×
 4 steps. Bit-identity gated separately (24 greedy tokens byte-identical, gather vs strided).
 
+**Apple M1 Pro (arm64):**
+
 | arm | median ms/step | Δ vs baseline |
 |---|--:|--:|
 | baseline (gather) | 179.8 | — |
@@ -38,29 +40,71 @@ on one prefilled cache; 6 visits, first discarded; median ms/step over 5 retaine
 | V strided (scores·V) | 173.0 | **−3.8%** |
 | both | 171.8 | −4.4% |
 
-**Decision: adopt the strided read for scores·V (V); keep the K re-copy for QKᵀ.**
+## The sign flips on x86-64 — the decision is ARCH-DEPENDENT
 
-Why the split — and why the isolated microbenchmark (aikit
-`BenchmarkAttnStridedVsPacked`, which showed K a small win and V a large one) was
-misleading: it did not model the GQA group. In real attention the per-head gather is done
-ONCE and reused across the `group=6` query heads. So:
+goinfer re-ran the identical interleaved A/B (same function, model, context, quant; floor
+characterized in advance from an A/A pass; **both polarities** run, since the transpose arm's
+`vt` write pollutes cache for whichever arm runs next and a symmetric A/A floor can't see that)
+on **AMD Ryzen 7 3700X (x86-64)** and got the OPPOSITE sign for V:
 
-- **K re-copy is cheap and its packed buffer is reused cache-friendly 6×.** Replacing it with a
-  strided read that re-walks the interleaved cache per group member is a net LOSS (+2.9%).
-- **The V transpose is an expensive strided-WRITE serial pass** (`vt[d·nKeys+s]`, stride nKeys,
-  write-allocate thrashing) with no comparable reuse benefit, so removing it wins (−3.8%) even
-  though the strided V read is done per group member.
+| shape (group) | floor (A/A) | forward | reversed | result |
+|---|--:|--:|--:|--:|
+| 1.5B / 4096 (6) | 0.03% | +40.06% | (pending) | **+40% SLOWER** |
+| 1.5B / 512 (6)  | 0.77% | +12.11% | +14.66% | **+13.4% slower** |
+| 0.5B / 512 (7)  | 0.47% | +5.21% | — | **+5.2% slower** |
 
-The net (~4%) is smaller than the 10% gather share because the strided read is not free — it
-recovers the transpose but not the whole gather, and K would give it back.
+Both polarities agree in sign — the effect follows the path, not the interleave slot. The kernel
+is not in question: `MatmulBTAcc64Strided` is byte-exact (bit-identity gate passed on 48 greedy
+tokens + the int8-KV and f32-KV global-cache branches, mutation-verified). Same operand, opposite
+sign, so **the decision is a property of the machine, not the algorithm.**
 
-## Sequencing (owed)
+### The governing variable: `bElemStride` relative to the cache-line size
 
-1. **aikit** ships `MatmulBTAcc64Strided` in a release (it is on aikit main; committed 7bca814).
-2. **goinfer** bumps aikit and adopts it for scores·V ONLY, gated by the bit-identity token
-   check and re-measured with this same interleaved A/B before it lands. A longer-context and a
-   larger model (7B, group=7) are worth a confirming point — both should favour V more, since
-   the transpose grows with context and the model is more bandwidth-bound.
+The strided V read has `bElemStride = kvDim` — 256 floats (1 KB) at 1.5B, 512 at 7B. A strided
+read is competitive ONLY when consecutive `k` share a cache line; at `bElemStride = kvDim` they
+never do, so every element read lands on its own line. Line-bytes touched at 1.5B/4096:
+**14.68 MB (transpose) vs 201.33 MB (strided), ~13.7×.** What differs between the two boxes is
+whether that 13.7× is survivable:
 
-_The step-0 instrumentation and the A/B harness were a labeled-temporary prototype (aikit under
-a local `replace`); reverted after measuring. This doc is the durable record._
+- **arm64 / M1 Pro:** 128 B lines, ~200 GB/s unified memory, stronger prefetch → the strided read
+  is absorbed and the transpose (an expensive strided *write*) is the bigger cost → V wins (−3.8%).
+- **x86-64 / Ryzen:** 64 B lines (half the useful bytes per line), weaker prefetch → the 13.7×
+  line-bytes dominate → V loses, and worse as context spills to DRAM (+5% → +13% → +40% as
+  nKeys grows from 512 to 4096). **64 B-line machines are the worst case for this stride.**
+
+### Decision, correctly scoped
+
+- **On arm64 / M1: adopt strided scores·V (−3.8%). Keep the K re-copy (+2.9%).**
+- **On x86-64: do NOT adopt strided scores·V — it is a +40% decode regression at 4k.** Keep the
+  transpose. (K stays a re-copy on both.)
+
+The earlier decision line read as portable; it is not. `bElemStride ≥ cache-line-in-floats` is
+the precondition, and it fails on any 64 B-line ISA with a kvDim-strided read. A consumer must
+scope this to its target ISA, or default to the packed/transpose path and treat strided as an
+arm64-only opt-in.
+
+Why the isolated microbench (aikit `BenchmarkAttnStridedVsPacked`) was misleading in BOTH
+directions: P1 first caught that it missed GQA amortization (it timed one transpose : one matmul,
+not one transpose : `group` matmuls). It ALSO cannot see cache-line geometry — it ran on M1 only,
+so it never exposed the x86-64 sign flip. A microbench that fixes neither is not evidence for a
+portable decision; only the on-target end-to-end A/B is.
+
+## Unexplained — flagging, not asserting
+
+The M1 baseline is **179.8 ms/step**; the same model, context, and quant on the Ryzen box is
+**~735 ms/step — ~4×**. More than ISA differs between these environments (thread count, memory
+config, build). It does not affect either ratio (both are within-box interleaved A/Bs), but it
+matters for which absolute number is representative of a shipping target — worth resolving before
+either box's ms/step is quoted as "decode speed".
+
+## Sequencing (revised)
+
+1. **aikit** shipped `MatmulBTAcc64Strided` in **v1.18.0** (byte-exact, additive; nothing to
+   revert — the primitive is correct, only the adoption is ISA-scoped).
+2. **goinfer** must NOT ship strided scores·V on x86-64. Either gate the adoption on arm64, or
+   keep the transpose everywhere until a per-ISA dispatch exists. Re-measure any new ISA on target
+   with this interleaved A/B (floor characterized in advance, both polarities) before adopting.
+
+_The step-0 instrumentation and the M1 A/B harness were a labeled-temporary prototype (aikit
+under a local `replace`); reverted after measuring. This doc is the durable record; the x86-64
+numbers are goinfer's on the Ryzen box._
