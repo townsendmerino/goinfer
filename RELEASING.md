@@ -40,7 +40,7 @@ survives to a tag unless caught here.
   Two things the command will not tell you, so they are stated rather than restated:
   `aikit` and `aikit/gpu` are **separate modules with separate tag series that do not track each
   other** — equal-looking version numbers mean nothing across them, and a nested module must be
-  diffed across its own tags (see `docs/QUEUE.md` E6). And `metal` needs an explicit `aikit`
+  diffed across its own tags (see `docs/queue-release.md` E6). And `metal` needs an explicit `aikit`
   require: it imports `aikit/linalg` and `aikit/mmap` while only `aikit/gpu` is implied. (That was
   B-02; it is present now, and the command above is what confirms it still is.)
 
@@ -125,7 +125,8 @@ documents, and the divergence is invisible to everyone but the person holding th
 ## Queue-gated follow-ups — consult QUEUE.md at each tag (B5)
 
 A tag is the natural checkpoint to review what is outstanding, and the release process is read at
-exactly the moment those triggers fire. **After pushing the tags, open `docs/QUEUE.md` and action any
+exactly the moment those triggers fire. **After pushing the tags, open the four queues — `docs/queue-release.md` first, then
+performance/correctness/engineering (`docs/QUEUE.md` indexes them) — and action any
 item whose trigger is a release or an aikit bump.** The queue is the list; this line is what makes a
 tagger look at it — a file nothing reads is inert the first week nobody opens it.
 

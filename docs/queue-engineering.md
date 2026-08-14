@@ -1,0 +1,1438 @@
+# Engineering-discipline queue
+
+Gates, lints, censuses, tooling, process rules, and the audit sweeps. Anything whose success criterion is that **a check can be trusted** — that it runs, that it can fail, that its green means what it says. If the question is *would we find out*, it belongs here.
+
+> **One of four queues.** The work list is split by *success criterion*, not by component:
+> [performance](queue-performance.md) · [correctness](queue-correctness.md) ·
+> [engineering](queue-engineering.md) · [release](queue-release.md).
+> [`QUEUE.md`](QUEUE.md) is the index over all four and holds the cross-cutting sweeps.
+>
+> **Task docs are NOT queues.** `docs/task-*.md` are *design records* — why a thing is built as it
+> is — and they are cited from 88 code comments. A queue entry cannot carry that, so the task docs
+> stay put and the queues hold only the open work.
+>
+> Entries keep the section they were filed under (`In flight`, `Queued`, …) and their original IDs,
+> so a citation to an ID still finds it.
+
+
+## In flight
+
+**A12 · The CUDA heavy tier does not fit in 8 GB in one process — the gate cannot pass here** —
+`linux`, **open, found 2026-08-12**
+
+`scripts/gpu_gate.sh` is red, and after A11 and the two leak fixes the remaining failures are **all
+VRAM exhaustion presenting as something else**:
+
+| test | in-suite | alone |
+|---|---|---|
+| `TestAttention_HeadDimWidths` | FAIL — `attention cosine 0.000000 vs CPU ref` | **PASS**, cosine ≈ 1.0 |
+| `TestSplitKV_bitIdentical_gemma3` | FAIL | **PASS** — bit-identical at depth 1536 |
+| `TestMoERouteFirstLaunchReservation` | FAIL (0.13 s) | **PASS** |
+| `TestResidentLaunchVRAMProbe` | FAIL (248 s) | VRAM-sensitive by construction |
+
+**`cosine 0.000000` is the signature the script's own header names**: *"parallel packages contend for
+VRAM and the failures come back as bogus numerics ('cosine 0.000000') rather than 'you are out of
+memory'."* The other symptom is `panic: interface conversion: decoder.ResidentForward is nil` — a
+`BuildResident` that could not allocate. Neither is a numerics defect.
+
+**It is CUMULATIVE, not a single leaker.** Two genuine leaks were found and fixed (`5ece205`:
+`TestAllocFloor`, `TestA10ReportingGap` — both drained the device and never released). Fixing them
+stopped the tier aborting at 91 s and let it run its full ~26 minutes, which is what exposed these.
+Beyond that: `TestMoERouteDemandThreshold` + `TestMoERouteFirstLaunchReservation` pass as a pair; the
+pressure builds across the whole tier rather than at one site.
+
+**And there is no systematic missing-`Close`.** Audited: 75 `Load` calls against 175 `defer …Close()`
+across the CUDA tests; only three small files load without any (`cuda/gemma_bos_build_test.go`,
+`cuda/graphs_safe_test.go`, `cuda/mustalloc_test.go`). Worth tidying, but not the cause.
+
+**So this reads as a capacity limit of the 8 GB card for the full heavy tier in one process, not a
+defect in the tree.** Every test passes on its own; the tier as a whole does not fit.
+
+**CANDIDATE LIST AFTER THE RETRACTION — two cheapest CANDIDATES REFUTED BY MEASUREMENT
+(2026-08-13).**
+
+**1. Parallelism — REFUTED by reading the invocation.** `scripts/gpu_gate.sh` passes **`-p 1` on
+every CUDA invocation** (four of them), targets the **single `./cuda/` package** rather than
+`./cuda/...`, and the package contains **zero `t.Parallel()` calls**. Tests are strictly sequential;
+no two test binaries touch the card at once. This was the cheapest candidate and it would have
+explained every symptom, which is why it was checked first.
+
+**2. Asynchronous teardown — REFUTED by measurement** (`cuda/closesettle_test.go`, 7B + 16-step
+decode):
+
+    free before Close        2418.2 MiB
+    Close() returned after   123.1 ms
+    free at Close's return   7310.2 MiB   +4892.0 MiB released SYNCHRONOUSLY
+    free once stable         7310.2 MiB   +0.0 MiB more, asynchronously
+    settle time after return 15.7 ms      (polling overhead only)
+
+**`Close()` is fully synchronous — everything is back before it returns, and there is no tail.** The
+2.4 → 4.3 → 6.2 GiB climb the tracer saw was the sampler catching Close *during* its own 123 ms
+execution, which is consistent with this and not with an async release. So no stabilisation wait is
+warranted, and "the next Load starts inside the previous teardown" is not the mechanism.
+
+**STILL OPEN, and the list is genuinely short now:**
+
+- **Per-context kernel reservations.** The one mechanism that survives both refutations, and it is
+  already measured in this queue: A9/A10 established that a kernel's **first launch** reserves
+  local-memory backing store sized for occupancy, that it is a **context** property rather than a
+  model one, and that `Close()` tears down a *model* without destroying the *context*. `moe_route`
+  alone was 138,412,032 B. A tier that touches many kernels for the first time would accumulate
+  reservations that no model-level `Close` can return — which fits sequential execution, no leak,
+  full synchronous release, and order-dependence simultaneously. **Not yet tested.** The test is
+  cheap: read free VRAM at process start, run tests exercising disjoint kernel sets with every model
+  closed, and see whether the baseline steps down and stays down.
+- **Genuine peak** — one test's high-water mark plus whatever is legitimately resident exceeding the
+  card.
+- **Fragmentation** — refuted earlier against a *different* observation, which does not refute it
+  here.
+
+**RETRACTED 2026-08-13 — THERE IS NO LEAK. The "leak" was a probe-position artifact, and the
+authoritative experiment says `Close()` returns everything.**
+
+`TestResidentCloseFreesVRAM_7B` (`cuda/lifecycle7b_test.go`) runs the sibling gate's shape at the
+scale that supposedly reproduced: **qwen2.5-7B, int4, backend cuda, a real 16-step decode loop, three
+Load→Forward→Close cycles in one process**, reading free VRAM after each Close from a held probe
+context:
+
+    baseline 474 MiB
+    cycle 0: loaded 5366 MiB (+4892), after Close 474 MiB (+0)
+    cycle 1: loaded 5366 MiB (+4892), after Close 474 MiB (+0)
+    cycle 2: loaded 5366 MiB (+4892), after Close 474 MiB (+0)
+
+**Zero retention on every cycle, including the first** — a FOURTH outcome, outside all three
+pre-registered branches. Not per-cycle growth (no leak), and not even the one-time context retention
+the A9/A10 mechanism predicted.
+
+**What produced the false −1344 MiB.** The tracer's final sample is taken at an *uncontrolled point
+relative to teardown*. Re-running `TestB2DenseFlagship` under the tracer and reading the tail shows
+free VRAM still climbing as the process exits:
+
+    free=2,535,653,376   (2.4 GiB)
+    free=2,535,653,376
+    free=4,475,518,976   (4.3 GiB)   <- deferred Close running
+    free=6,509,756,416   (6.2 GiB)   <- still recovering when the process ended
+
+`Close()` was working the whole time; the sampler simply stopped watching before it finished. **This
+is the Position class** — the probe sat on one side of the event and reported the other side's state
+— which this queue has recorded twice before and which I walked into a third time while building an
+instrument specifically to avoid guessing.
+
+**Consequences, stated rather than quietly dropped:**
+
+- **The per-test table's `after` column is not trustworthy for tests with large teardowns.** Every
+  such reading may have been taken mid-`Close`. The raw data stays at
+  `docs/measurements/a12-vram-per-test.json` with this caveat attached; the *shape* claim (sawtooth,
+  declining ceiling) rests on those same readings and is therefore **unproven**, not merely uncertain.
+- **The "correctly scoped, silently narrow" criticism of `TestResidentCloseFreesVRAM` does not
+  survive.** It was green because it is right. Its scope is still worth printing (below), but it was
+  not hiding anything.
+- **Option (b) is off the table** — there is no leak to hunt. What blocks the gate is still open, and
+  the candidate list reopens as the third pre-registered branch said it would.
+
+**What the new gate is still worth keeping for:** it is the 7B/decode-loop coverage that did not
+exist, it prints its scope with its verdict, and it asserts steady state from cycle 2 so a real
+per-cycle leak would fail it. It just happens to be green today.
+
+*(Superseded reading below, kept because the reasoning was sound and only the probe was not.)*
+
+**MEASURED 2026-08-13 — the reading is the THIRD branch: NEITHER shape, and the diagnosis is
+accumulation LOCALIZED to a few tests.** 186 tests traced, `cuMemGetInfo` at 50 ms, joined to `-v`
+boundaries.
+
+**It sawtooths** — 33 tests end with *more* free VRAM than they started, 38 with less — so most of the
+tier frees correctly and a blanket "environment limit" is wrong. **But the ceiling declines and never
+recovers:**
+
+| fifth of run | ceiling (max free after any test) |
+|---|---|
+| 1 | 7310 MiB |
+| 2 | 5966 |
+| 3 | 5828 |
+| 4 | 5822 |
+| 5 | **3400** |
+
+**Eight tests take a step down that is never regained.** The two largest early ones were re-run
+**alone, each in its own process with nothing else on the card**, and both reproduce:
+
+| test | free before | free after | net |
+|---|---|---|---|
+| `TestB2DenseFlagship` | 7310 MiB | 5966 | **−1344** |
+| `TestRealForwardParity` | 7310 MiB | 6144 | **−1166** |
+
+(The late entries in the eight — `TestSplitKV_bitIdentical_gemma3` is the final test — are confounded
+by having few successors, so "never regained" is trivially true for them. The two above are not.)
+
+**AND BOTH ALREADY `defer Close()`.** So this is not a missing cleanup in a test: **closing a
+CUDA-backed model does not return all of its VRAM** on these paths. That is a product-level finding,
+not a test-hygiene one.
+
+**The gate that should catch it passes, and the gap is visible.** `TestResidentCloseFreesVRAM`
+(`cuda/lifecycle_test.go`) does three Load+Forward+Close cycles and asserts used ≤ baseline+128 MiB —
+a well-built gate, and green. It exercises the **0.5B coder** model with a **single one-token
+forward**. `TestB2DenseFlagship` loads **qwen2.5-7B** and drives a real decode loop. So the gate
+covers a model an order of magnitude smaller on a path that never populates whatever is being
+retained. Not a tautological gate — a **correctly-scoped gate whose scope is narrower than the claim
+it is read as supporting**.
+
+**This selects option (b), and it now has a target** rather than being a fishing expedition: find
+what `Close()` does not release on the 7B/decode-loop path, and widen
+`TestResidentCloseFreesVRAM` to a model and workload that would have caught it. Options (a), (c) and
+the partition all become unnecessary if the leak is real and fixable — and the measurement says it is
+real.
+
+**Superseded by the above, kept for the reasoning:**
+
+**BEING MEASURED BEFORE CHOOSING** (`cuda/vramtrace_test.go`, `7fa09da`). Free VRAM is sampled
+in-process by `cuMemGetInfo` — the A-chain's own instrument — every 50 ms, joined to test boundaries
+from `-v` output by wall clock, because Go exposes no per-test hook and the four failing tests share
+no helper. **Pre-registered readings:**
+
+| shape | reading |
+|---|---|
+| monotonic decline, not recovering | **accumulation** — something is not freeing, the `defer` audit missed it, the gate is correctly red. Option (b), with a target |
+| sawtooth, recovering per test, high-water above the card | **genuine environment limit.** Option (c) is honest, and statable with a number rather than as a judgement |
+| neither | report it — both candidates are wrong and the candidate list reopens |
+
+The per-test table is the deliverable, not a conclusion.
+
+**OPTION (a) HAS A PRICE THAT MUST BE PAID KNOWINGLY.** Per-test process isolation removes the
+symptom **by removing the conditions under which a real leak is observable**. A genuine leak looks
+exactly like today — green alone, red in suite — so after isolation a leak and an environment limit
+**both read green**, on the gate that covers the resident CUDA path. It buys a **permanent blind
+spot**, and it may still be right; it must not be chosen as the option that "removes the class",
+which is how I first described it.
+
+**A FOURTH OPTION, and probably the best of them: PARTITION.** Split the tier into two or three
+groups by memory footprint, each its own process. Fits the card, **preserves cross-test detection
+within a group**, and `scripts/gpu_gate.sh` already orchestrates multiple `go test` invocations so it
+costs no product code. Weaker than one process, much stronger than N.
+
+**Options, none taken yet — this is a decision, not a fix:**
+
+1. **Run each heavy test in its own process.** Bounds VRAM by construction, since exit reclaims
+   everything. Costs process-start time per test, needs the runner reworked, and — the part that
+   matters — **buys a permanent blind spot for leaks** (see above). Not "the one that removes the
+   class"; the one that removes the *observation*.
+2. **Tidy the three no-`Close` files and re-measure.** Cheap, and it may or may not be enough — say
+   which before running it, or it becomes a fishing expedition.
+3. **Declare the heavy tier out of scope for an 8 GB box** and record the gate as environment-limited,
+   with the per-test isolation runs as the evidence. Honest, but it weakens the gate.
+
+**The tag is blocked on this.** Not because numerics are wrong — they are demonstrably right test by
+test — but because `scripts/gpu_gate.sh` says *do not tag*, and a gate that is overridden by the person it
+was written to constrain is not a gate. B8 applies here too: the gate cannot presently distinguish
+"failed" from "could not evaluate", and these four are the second kind.
+
+**A13 · A device-draining predecessor poisons the `attention` kernel — zeros at hd≥64, with the
+card empty and every call succeeding** — `linux`, **open, BISECTED 2026-08-13**
+
+**The predecessor is found, and it is a category rather than a single test.** Bisected over the ten
+tests that precede the victim in run order, each paired with it, two repeats each:
+
+| predecessor | reproduces | what it does |
+|---|---|---|
+| `TestAllocFloor` | **yes, 4/4** | allocates until the device refuses |
+| `TestA10ReportingGap` | **yes, 4/4** | allocates until the device refuses |
+| `TestA10FloorIsPerProcessOrPerDevice` | **yes, 4/4** | balloons VRAM to measure the floor |
+| the other seven | **0/2 each** | none of them drain |
+
+**Every poisoner drains the device to exhaustion; nothing that does not drain, poisons.** Two of the
+three were fixed earlier to release everything (`5ece205`), and they still poison — so it is **not
+residual allocation**.
+
+**Four things ruled out by measurement, not by argument:**
+
+- **Memory pressure.** Free VRAM at the moment attention runs is **7,661,092,864 B (7306 MiB)** — the
+  card is essentially empty.
+- **A failed allocation.** `mustAlloc` fatals on an error *and* on a nil buffer with no error.
+- **A dropped error.** Every call is checked now (`e682eb2`): `CopyHtoD`, `LaunchOn`, `Synchronize`,
+  `CopyDtoH` all succeed.
+- **Parallelism.** `-p 1`, one package, no `t.Parallel`.
+
+**A correction to the first filing: the "hd=64/128 only" bracket was an artefact of the full-tier
+ordering.** In the minimal pair, **hd=64, 128, 256 and 512 all fail and only hd=16 passes**. So the
+rule is *everything above the smallest width*, not a middle band — which removes the "a resource
+ceiling would fail the large dims" puzzle, because the large dims *do* fail.
+
+**So: a drain-to-exhaustion leaves the context in a state where a later `attention` launch writes
+zeros, on a card with 7.3 GB free, reporting success at every step.** That is the finding, and no
+mechanism is proposed for it here.
+
+**MECHANISM FOUND (2026-08-13): the DRAIN EVICTS THE MODULE'S DEVICE CODE, and the cached handle
+survives it.** Two tests, and they only look like they disagree:
+
+| probe | result | reading |
+|---|---|---|
+| **1. interrogate the cached handle** (`cuFuncGetAttribute` ×6, poisoned vs clean) | **byte-identical, all valid, no errors** — `maxThreadsPerBlock=1024 sharedSizeBytes=0 localSizeBytes=0 numRegs=62 ptxVersion=75 binaryVersion=75` | the handle *answers*; it looks live |
+| **2. force a module reload before the launch** | **all five widths PASS, 3/3 runs.** Control without reload in the same session: 4 failures, 2/2 runs | the module *was* the problem |
+
+**They reconcile, and the reconciliation is the finding: `cuFuncGetAttribute` is NOT A LIVENESS
+PROBE.** It answers out of metadata that outlives the device code — max threads, register count, PTX
+version are all still there after the underlying module has been evicted. So the handle stays
+*queryable* while what it names is gone, the launch reports success, and nothing executes. That is
+exactly the "returns success and does nothing" shape, and it explains every observation at once:
+identical launch arguments, all calls succeeding, full card, zeros out.
+
+## A13 — THE TAG ARGUMENT, AS ONE ENUMERABLE CLAIM
+
+> **No shipped path drives the device to refusal and then continues using the context.**
+
+The trigger is **exhaustion** — `TestAllocFloor` allocates until even a 1 MiB request is refused
+(~144 MiB free) and poisons every time, 5/5. Partial holds are a weaker, intermittent stimulus. So
+the claim is checkable path by path rather than argued from sizes:
+
+| path | reaches refusal? | continues on the context? | evidence |
+|---|---|---|---|
+| **prefill scratch** | **no** — min free **1820.2 MiB** with a **7B** resident (the largest this box runs) at M=2048: **12.6× the refusal floor**, 1676 MiB of margin | yes | `docs/measurements/prefill-peak-vram.md` — VRAM tracer, 1347 samples. **CORRECTED from 39.9×**, which was measured against a 1.5B and overstated the headroom ~3×; scratch competes with resident weights, so the small model was not the worst case |
+| **admin unload** | **no** — frees, never allocates toward refusal | yes (shared primary context) | `Model.Close` → `ReleaseObjects`; refcount reading |
+| **multi-model unload** | **no** | yes | measured clean 3/3 — 7B (≈4.9 GB) unloaded under a co-resident B, B's logits byte-identical |
+| **A5 cap search** | **no** — allocates nothing | n/a | `fits(n)` is arithmetic against `free` |
+| **resident build OOM** | **YES** | **no** — declines and the fallback issues no CUDA | `(nil,false,nil)`; `cudaBackend.MatmulBT` → `linalg.MatmulBT`; refusals harmless at 1000× |
+
+**One property, five checks.** The only path that reaches the trigger is the one that stops using the
+context, and the only paths that keep using the context stay orders of magnitude away from it. That
+is a stronger and more falsifiable statement than the four shifting properties it replaces — any new
+path need only be tested against the one claim.
+
+### A13 — CLOSING STATE (2026-08-13). Understood, uncharacterised in one part, NON-BLOCKING.
+
+| | |
+|---|---|
+| **status** | **UNDERSTOOD, not solved.** Open deliberately, not parked by neglect |
+| **trigger** | **named and reproducible: drain the device until a 1 MiB request is refused (~144 MiB free). 5/5.** Deterministic |
+| **mechanism** | **established.** The module's device code becomes unusable while the cached handle stays *queryable* — `cuFuncGetAttribute` returns byte-identical valid values across poisoned and clean runs, because that metadata outlives the device code. Launches then return SUCCESS and write nothing. No CUDA call reports an error, and free VRAM is back to ~7.3 GB by the time it shows |
+| **remedy, measured** | re-load the module and re-resolve the function **immediately before** the launch — 3/3. Re-loading earlier does not work: allocations between load and launch re-invalidate it |
+| **NOT characterised** | the **thread factor** — why a pinned test goroutine poisons where the resident's `LockOSThread` executor does not. Pinning alone was tested and is *not* the variable. This is the honest gap |
+| **why it does not block** | the enumeration above: no shipped path drives the device to refusal and then continues using the context. Five paths, each with its own evidence, four of them measurements |
+
+**THE FALSIFIER — the one sentence a future implementer needs:**
+
+> **Any future change that drives the device to refusal and then continues using the same context
+> breaks this.**
+
+That is what makes A13 non-blocking rather than merely unobserved, and it is what a reader must check
+a change against. It is deliberately a *property*, not a list of forbidden functions: a retry loop, an
+evict-and-rebuild, a "try a smaller cache and continue", a second model sized against free VRAM — none
+of those is named anywhere, and all of them break it. The failure will be **silent zeros, not an
+error**, so it will not announce itself.
+
+**It is recorded in two places on purpose**, because the entry is not where the change gets written:
+here, and at the module/pipeline cache site in `cuda/backend.go` — the code someone adding residency
+recovery is actually reading. Neither location is decorative; a rule filed only in a queue entry is a
+rule nobody encounters at the moment they break it.
+
+Chasing the thread factor past this point is research, not release work.
+
+**THE SWEEP'S STIMULUS IS INTERMITTENT; THE REAL ONE IS NOT. The percentage figures are weaker than
+recorded (2026-08-13).**
+
+| stimulus | reproducibility, measured today |
+|---|---|
+| `TestAllocFloor` drain → `attention` (the original) | **4 subtest failures in 5 of 5 runs — fully deterministic** |
+| synthetic hold+release 50% (`GOINFER_A13_HOLDPCT`) | **intermittent** — one 6-run block came back `C C C C P C` |
+
+Earlier the synthetic probe returned POISON three times running, and the sweep's "reliably poisoned
+at ≥25%, unstable at 15%" was built on it. **That characterisation is withdrawn**: the percentages
+were measuring an unreliable proxy, not the phenomenon. What is stable is the *real* stimulus —
+`TestAllocFloor` drains until even a 1 MiB request is refused, i.e. to **actual exhaustion** (~144
+MiB free), and that reproduces every time.
+
+**So the trigger is exhaustion, not held bytes.** A partial hold — even 90% — is a different and much
+weaker stimulus than driving the device to refusal. That reconciles the non-monotonic sweep: it was
+noise around a threshold effect the probe only sometimes reached.
+
+**Consequence for the persistent-allocation test.** It was run against the *flaky* probe and returned
+`P P C C C C` at 1024 MiB against a control of `C C C C P C` — **no separation, and neither arm
+reliable**. It says nothing either way about the live-set-collapse hypothesis. **The test needs
+re-running against `TestAllocFloor`'s drain**, which is the only stimulus with a stable positive:
+hold ~1 GB that the drain cannot take, let the drain exhaust and release, then launch. That is a real
+experiment; the one just run was not.
+
+**PINNING IS NOT THE VARIABLE (2026-08-13) — the eviction story SURVIVES.** The cheapest possible
+alternative explanation was that CUDA usage from a goroutine Go is free to migrate across OS threads
+is the real mechanism, and the resident's `LockOSThread`-pinned executor is immune merely by being
+pinned. One line tested it:
+
+    UNPINNED  hold+release 50%   POISON POISON POISON
+    PINNED    hold+release 50%   POISON POISON POISON   (runtime.LockOSThread + defer Unlock)
+
+**Three of three either way.** So `cuFuncGetAttribute` staying valid while a reload fixes the result
+still stands as the finding, `cuda/backend.go`'s cache-site comment stands as written, and nothing
+downstream of eviction needs revisiting.
+
+**What it does leave open: the thread factor is real but NOT pinning.** A pinned test goroutine
+poisons; the resident's executor does not. Both are pinned, both use the same primary context, both
+go through gocudrv. Whatever distinguishes them is something other than OS-thread affinity —
+candidates not yet separated include how context currency is established on each thread, and the
+fact that the resident's context permanently holds a model's worth of live allocations while the
+test's does not. **Not characterised, and not guessed at here.**
+
+**THE 1×2 IS FILLED, AND BOTH SHIPPED-PATH RESULTS ARE NULLS THAT DO NOT YET COUNT (2026-08-13).**
+
+| cell | stimulus | result |
+|---|---|---|
+| **(LoadModule prebuilt PTX, test goroutine)** | **drain to refusal** (deterministic, 5/5); the synthetic hold+release percentages once cited here are withdrawn | **POISONS** — the only combination ever observed to |
+| **(CompileLibrary, resident executor)** | hold+release 3648 MiB via `rf.do` | clean |
+| **(LoadModule prebuilt PTX, resident executor)** | hold+release 3648 MiB via `rf.do`, module loaded and launched on the same executor | **clean** — `before=768 after=768` non-zero |
+| **multi-model unload** (`A` = 7B int4 ≈ 4.9 GB ≈ 67% of the card, `B` co-resident, `A` closed through the shipped path) | the real feature | **clean, 3/3** — B's logits byte-identical to its pre-unload baseline |
+
+**The context factor is eliminated by reading, not by testing:** `CreateSystemDefaultDevice` calls
+`dev.Primary()` and gocudrv never binds `cuCtxCreate`, so every cell above uses the *same* primary
+context. What is left is the **thread**, and the missing cell says resident-executor launches are
+**not** poisonable by this stimulus — which is exactly why the multi-model null is not yet evidence.
+**Nothing has ever poisoned a launch made on the resident's executor.**
+
+So the honest position: **the shipped paths look clean and the harness cannot yet demonstrate that it
+could show otherwise.** Two nulls from a route with no positive control are not a clearance.
+
+**CORRECTION (2026-08-13): "each resident model builds its own context" IS FALSE, and it was doing
+load-bearing work in the tag argument.** Read rather than assumed, after the prefill control failed
+to fire:
+
+- `CreateSystemDefaultDevice()` (aikit `gpu/cuda.go`) calls **`dev.Primary()`** — the device's
+  **primary context**, retained by refcount. gocudrv **does not bind `cuCtxCreate` at all**.
+- `Context.Close()` calls **`PrimaryCtxRelease`** — a refcount **decrement**, not a destroy.
+
+So every resident model in a process shares **one primary context per device**, and that context is
+destroyed only when the **last** holder releases it.
+
+**What that breaks, and what it does not:**
+
+- **`TestResidentCloseFreesVRAM` is still valid** — its three load→forward→close cycles are
+  sequential with no other holder, so each `Close` drops the refcount to zero and the context really
+  is torn down between cycles. Its green is honest for the single-model case.
+- **The multi-model case is NOT covered, and I argued it was.** With model B loaded, unloading model
+  A releases gigabytes **inside a context that stays live for B** — which is precisely the sweep's
+  stimulus, in a shipped feature (`POST /admin/models/unload`), reached by ordinary operation.
+- **"Resident immunity" was a misnomer** before it was ever tested: the resident's context and the
+  test's context are the same object, so the context cannot be the variable in the 2×2. The
+  remaining factors are the **module route** (`ctx.LoadModule` of prebuilt PTX vs `CompileLibrary`
+  via NVRTC) and the **thread** (test goroutine vs the resident's pinned executor).
+
+**Consequence for the tag: the admin-unload path returns to the open list.** Its earlier "CLEAN —
+destroys the context" verdict rested on the same false premise and is withdrawn. What it actually
+does is release a model's device memory into a context that other models may still be using.
+
+**PREFILL MEASUREMENT: INCONCLUSIVE, because the POSITIVE CONTROL DOES NOT FIRE. Reported as
+inconclusive rather than clean.** (`cuda/a13_prefillchurn_test.go`, 2026-08-13)
+
+`ReleaseBuf` was read first and the stimulus is real: `ReleaseBuf` → `Buffer.Close` →
+`cudaresult.MemFree`. **No pool, no reuse** — prefill scratch genuinely returns hundreds of MB to
+the driver inside a live context, on every long prompt.
+
+The measurement ran, and both symptoms came back clean: 8 repeated prefills produced **identical
+logits, 128/128 non-zero, zero drift**, and a decode forward on the same context afterwards was
+also clean. **That result is not evidence, because the control that should have poisoned the same
+context did not.**
+
+| control attempt | stimulus | poisoned? |
+|---|---|---|
+| v1 — allocate/free 3648 MiB via `dev.Primary()` | wrong context entirely: `BuildResident` creates its **own** context, so this never touched the subject | no |
+| v2 — allocate/free 3648 MiB via `rf.dev` on the resident's own executor thread (`rf.do`) | **the right context** | **still no** |
+
+**So one of two things is true, and the measurement cannot distinguish them:** either a resident
+context is genuinely immune to this stimulus — which would be the real reason production is safe, and
+a far better answer than any of the four enumerated properties — or the harness still cannot express
+the effect and the prefill question remains open.
+
+**What separates them:** demonstrate the poisoning on a *resident-context* launch at all. Every
+observed instance so far used a module loaded by a test via `ctx.LoadModule(gluePTX)` in the primary
+context; the resident compiles its own via `CompileLibrary` on a pinned thread. If the effect cannot
+be produced there by any stimulus, resident immunity is the finding and it is worth more than the
+enumeration. **Until that is shown, prefill is not cleared, and the tag question stays open.**
+
+*(v1's failure is itself the recorded lesson: a control on the wrong context looked like a clean
+result. It was caught by running the control before believing the null — the fifth time in this
+campaign that a null needed its forcing mechanism verified first.)*
+
+**THE INVARIANT, STATED AS WHAT IT ACTUALLY IS:** *no large hold-and-release inside a live CUDA
+context.* "Per-model contexts" understates it — that is one mechanism that happens to satisfy the
+invariant, not the invariant itself.
+
+**ENUMERATION OF PATHS THAT COULD VIOLATE IT (2026-08-13):**
+
+| path | allocates & frees in a live context? | verdict |
+|---|---|---|
+| **admin unload** (`POST /admin/models/unload`, `--unload-drain-wait`) | **WITHDRAWN — see the correction above.** `cx.Close()` is `PrimaryCtxRelease`, a refcount decrement. With another model loaded the context stays live and this is a large free inside it | **OPEN — the strongest candidate** |
+| **A5 cap search** (`capSlots`) | **no — pure arithmetic.** `fits(n)` compares `slotRequirement(...)+slotMarginBytes` against `free`; nothing is allocated to probe | **CLEAN** |
+| **`allocSlots` failure** | **no.** OOM arrives as a panic from `MustBuf` and *the resident is discarded on decline* — context torn down | **CLEAN** |
+| **expert cache / KV growth** | no mid-life grow/resize path exists in `cuda/` | **CLEAN** |
+| **prefill scratch** (`cuda/prefill.go:200`) | **YES.** `scratch` is allocated per call and released by a deferred loop of `r.dev.ReleaseBuf(b)`, inside the live resident context. Its own comment: *"at M=3000 this is hundreds of MB"* | **NEEDS MEASUREMENT — see below** |
+
+**PREFILL SCRATCH IS THE ONE PATH THAT MATCHES THE POISONING CONDITION, and it ships.** Every long
+prompt allocates hundreds of MB of scratch and frees it without leaving the context. That is
+structurally the sweep's stimulus, on the hot path, in a shipped feature.
+
+**SUPERSEDED — the band it referenced was a proxy's noise.** This paragraph originally sized
+prefill's risk against the sweep's "reliably clean ≤~12%" figure. **Those percentages are withdrawn**
+(see below): they came from a synthetic hold+release probe that later proved intermittent, while the
+real stimulus — drain to refusal — is deterministic. Prefill is now closed on a *measurement of its
+own peak*: min free 5752.2 MiB, 39.9× the refusal floor. That is a better argument than the one this
+paragraph made, and it does not depend on any band.
+
+**TAG: this is the open question, and it is a shipping path rather than a test one.** If repeated
+prefill scratch churn poisons the context, that is a correctness bug on the same constraint as
+before — silently wrong output with no error — and the tag waits. If it does not, the tag stands on
+four named properties rather than two. The measurement is one test: build a resident, run several
+long prefills, then validate a launch on the same context.
+
+**THE PRODUCTION QUESTION, ANSWERED FIRST (2026-08-13): a failed allocation does NOT poison. A
+large SUCCESSFUL one, freed, can.**
+
+| stimulus | result |
+|---|---|
+| **1 refused allocation** (15.1 GiB request) | **CLEAN, 3/3** |
+| **2, 10, 100, 1000 refused allocations** | **CLEAN** at every count |
+| hold+release 1%, 3%, 6%, 12% of free VRAM (≤ ~876 MiB) | CLEAN |
+| hold+release 18%, 21% (~1.3–1.5 GiB) | CLEAN, and 18% is 3/3 |
+| hold+release **15%** (~1.1 GiB) | **POISON once, CLEAN twice** |
+| hold+release **25%, 50%, 75%, 90%, 95%** | **POISON** |
+
+**So the refusal is not the trigger — the successful allocation is.** A thousand refused requests
+leave the context perfectly usable; holding and releasing roughly a gigabyte or more can break it.
+That inverts the intuition the draining tests suggested, and it matters because *the decline path
+only ever experiences refusals*.
+
+**NO THRESHOLD IS CLAIMED, AND THE RANGE IS WITHDRAWN (2026-08-13).** This paragraph used to close
+with "reliably clean at or below ~12%, reliably poisoned at or above ~25%, unstable between." That
+range is **retracted as a correction, not softened**: a re-run of the *same* stimulus at a fixed
+percentage returned `C C C C P C`, so the probe is **intermittent at a fixed setting** and the
+non-monotonicity was its own noise being read as structure. A single run per percentage never
+supported a band, and the second run showed it.
+
+What survives is the stimulus that is *deterministic*: **drain until a 1 MiB request is refused**
+(~144 MiB free) poisons **5 of 5**. The trigger is exhaustion, not held bytes — which is why the
+percentages never resolved. Everywhere the withdrawn band was used to size risk (prefill's "hundreds
+of MB", the multi-model unload's 67%, the A13 cell) it has been replaced by a direct measurement or
+by the enumeration above.
+
+**What this does to the tag.** The exposure requires a **large successful allocation, freed, followed
+by a launch on the same context**. Two things stand between production and that, and they should be
+named separately because they are different guarantees:
+
+1. **The decline path never gets there.** On exhaustion `BuildResident` refuses and returns
+   `(nil,false,nil)` — refusals only, which the sweep shows are harmless at any count — and the
+   fallback runs `linalg.MatmulBT` with no CUDA at all.
+2. ~~**Each resident model builds its own context**~~ — **WITHDRAWN, THIS WAS FALSE.**
+   `CreateSystemDefaultDevice` calls `dev.Primary()` and `Context.Close` calls `PrimaryCtxRelease`,
+   a refcount decrement; gocudrv never binds `cuCtxCreate`. **All models share ONE primary context
+   per device per process**, destroyed only when the last holder releases. What survives is
+   narrower: `TestResidentCloseFreesVRAM`'s three 7B load→forward→close cycles are green *because
+   they are sequential with no other holder*, so each `Close` does drop the refcount to zero. That
+   is the **single-model** case only; it says nothing about a co-resident model, and I used it to
+   argue the multi-model case was safe. See the correction below.
+
+**The multi-model server case is therefore covered by (2), not by luck** — but it is covered by a
+property nobody wrote down as a safety property until now, which is exactly how it gets refactored
+away. **A shared long-lived context across models would expose this directly.**
+
+**REFINED, because the obvious remedy failed and the failure is informative.** Reloading the module
+*inside the draining test* — repairing what it disturbed — **does NOT fix the victim**:
+
+| sequence | result |
+|---|---|
+| drain → victim loads module → allocates → launch | **fails** |
+| drain → **drain reloads** → victim loads → allocates → launch | **fails** |
+| drain → victim loads → allocates → **reload** → launch | **passes, 3/3** |
+
+All three load the module after the drain. The one that works is the one with **no allocation between
+the load and the launch**. So this is not a single eviction the drain can undo: **allocation activity
+after a load, in a post-drain context, re-invalidates the module.** The victim's own `mustAlloc`
+calls are enough to do it.
+
+That also rules out the tidy fix — a draining test cannot restore the invariant for whatever runs
+next, because the next test's own allocations break it again.
+
+**OPEN OBSERVATION, deliberately not folded into the story: hd=16 survives.** Every other width
+fails in the minimal pair. The reload result says the module is unusable, and that does not
+distinguish *"module gone"* from *"module gone except one path"* — a partial survival wants its own
+measurement. Reading it as a size threshold would be a guess, and it is recorded here as an
+observation precisely so it does not get absorbed into the eviction narrative as though explained.
+
+**THE LAUNCH IS IDENTICAL — the state is in the driver or the context, not in the call.** Every field
+the launch depends on was logged in both a clean and a poisoned run (`GOINFER_A13_LAUNCH=1`):
+
+    grid=(12,1,1) block=(128,1,1) shared=1028 nH=12 nKV=2 nKeys=129 scale=0.05
+    lens=(768,16512,16512,768)          <- identical for a given hd, both runs
+
+**No argument differs. No extent differs. No stride differs.** And the pointer question is answered
+too: **hd=64 FAILS at the very same base address where hd=16 PASSES** (`0x…200000` in both), so a
+differing device pointer is not the discriminator either. That is the third pre-registered branch —
+everything identical, result different — which **rules out anything goinfer computes** and scopes the
+remaining search to context- or driver-level state.
+
+*(A secondary observation, not the cause: after a drain the allocator stops reusing the freed slot
+and hands out advancing addresses, where a clean run returns the same address for every subtest.
+Consistent with allocator state having changed; it does not explain a zero result, since the failing
+launch happens at a reused address.)*
+
+**SCOPE, SHARPENED — "only three measurement tests drain" was too comfortable.** The trigger is
+**exhaustion followed by continued use of the same context**, and **production does reach
+exhaustion** — the 26B at 34 slots is the origin of this entire campaign. So the question is not
+whether production drains the card; it is whether anything keeps using the context afterwards.
+
+**It does not, and that is the reason A13 is unreachable in production — stated rather than left
+implicit.** On exhaustion `BuildResident` declines and returns `(nil, false, nil)`, and the fallback
+is `cudaBackend.MatmulBT`, which dispatches to **`linalg.MatmulBT` — the shared SIMD kernels, the
+same ones the CPU backend uses**. The staged path touches no CUDA. So after a real OOM the process
+stops issuing CUDA work entirely, and the poisoned context is never launched into again.
+
+**The decline is load-bearing, and that is the finding.** If the fallback had kept using the context —
+a staged path that still issued kernels, say — A13's mechanism would be reachable from a real 26B OOM
+and this would be a correctness bug rather than a test-interaction one. It is worth knowing that the
+safety comes from the decline rather than from the kernel being robust.
+
+> **DO NOT "SIMPLIFY" THE FALLBACK INTO SOMETHING THAT KEEPS ISSUING KERNELS.** `BuildResident`
+> returning `(nil, false, nil)` on exhaustion, and `cudaBackend.MatmulBT` dispatching to
+> `linalg.MatmulBT` with no CUDA at all, is the *only* thing standing between a real OOM and
+> silently wrong output. It reads like an incidental fallback and it is a safety property.
+
+**AND THE CONSEQUENCE, now that eviction is confirmed:** the shape where this would bite is a
+**long-running process that hits memory pressure and recovers** — a server that OOMs once, sheds
+load, and carries on. Its cached module handles would survive the pressure event while the device
+code behind them did not, and every subsequent launch would succeed and produce zeros. goinfer does
+not reach that today only because it stops issuing CUDA work entirely after a decline. A future
+change that recovers residency after pressure, instead of declining permanently, must re-load modules
+rather than reuse cached handles — and must not rely on `cuFuncGetAttribute` to tell it whether it
+needs to.
+
+**TAG IMPACT — a test-interaction defect, not a production one**, for the reason above rather than
+because the trigger is rare. The production forward path is unaffected and the resident parity gates
+pass. A13 joins the other three A12 items as a test defect.
+
+**A2 (partial) · 26B documentation correction** — `linux`, 2026-08-12
+
+The half that does NOT depend on A1 is done: the README instructed
+`GOINFER_MOE_CACHE_SLOTS=48` and claimed it auto-caps to 38, when at the free VRAM the gates
+observe it caps to **34 — which fails**. So the published instruction could produce an OOM on the
+card it was measured on. Corrected to the highest measured-safe value (30), with the hit-rate curve
+and an explicit reproducibility note on 16.98.
+
+**Unblocked — A1 is closed.** The corrected cap is **33**, and the leftover-VRAM column follows from
+the closed form (table under A1). Both were previously withheld because the model that would supply
+them had been refuted; that is no longer the case. The remaining half is publishing them, and A7
+confirms 33 by run before anything is published as safe rather than as computed.
+
+
+## Queued
+
+**B10 · `aikit` and `aikit/gpu` carry SEPARATE TAG SERIES — the single home for that fact** —
+`linux`, **filed 2026-08-13**
+
+Three instances, one fact, and the third was inside the tool built to check the first two:
+
+| instance | how it bit |
+|---|---|
+| **E6** | `git diff v1.16.0..v1.17.0 -- gpu/` reported a 72-line PTX change that goinfer had already been running — a nested module diffed across the *parent's* tags |
+| **B7** | the manifest's single `aikit_version` field cannot represent two versions; it drifted to `v1.12.0` against a `go.mod` saying `v1.16.0` |
+| **the citation lint** | `gpu/cuda.go` resolved nowhere, because `required_modules()` read only the root `go.mod` and `aikit/gpu` is not inside `aikit@v1.17.1`'s module-cache directory. Reddened CI on a correct reference |
+
+**THE FACT LIVES IN `scripts/queue_citation_lint.py`'s `required_modules()`**, which now reads *both*
+`go.mod` files — the root for `aikit`, `cuda/go.mod` for `aikit/gpu` — and prints both resolutions
+with every green:
+
+    CROSS-REPO RESOLUTION: ... answered from the MODULE CACHE at the version go.mod requires
+      github.com/townsendmerino/aikit      -> module cache @ v1.17.1
+      github.com/townsendmerino/aikit/gpu  -> module cache @ v0.28.0
+
+That is the right home because it is **derived rather than restated** — it reads the versions from
+the files that own them, so it cannot drift the way B7's hand-maintained field did, and it is
+**executed on every CI run** rather than being a paragraph someone has to remember. The printed lines
+mean a fourth instance has somewhere to look and something to compare against.
+
+*Still restated by hand, and therefore still able to drift:* the manifest's `aikit_version` (B7,
+open) and `RELEASING.md`'s alignment step (now derived — it reads the versions rather than naming
+them, `0898295`).
+
+**B9 · Dropped errors on launch/copy/sync paths — 268 production sites, enumerated** — `linux`,
+**filed 2026-08-13**
+
+A12's fourth failure was `attention cosine 0.000000`, silently, with no CUDA error anywhere in the
+run. The cause was every call in the block discarding its error (`_ = gc.CopyHtoD`, `_ = LaunchOn`,
+`_ = Synchronize`, `_ = CopyDtoH`): the output buffer was never written, `got` stayed zero, and a
+resource failure arrived wearing a numerics bug's clothes. **`errcheck -blank` census:**
+
+| module | total | test | **production** |
+|---|---|---|---|
+| `cuda/` | 622 | 587 | **35** |
+| `gpu/` | 573 | 409 | **164** |
+| `metal/` | 21 | 18 | **3** |
+| root (`decoder/` etc.) | 317 | 251 | **66** |
+| | | | **268** |
+
+**The production set is the one that matters, and `cuda/`'s 35 are concentrated on the DECODE FORWARD
+PATH** — `r.launch(...)`, `r.doG(...)`, `r.stream.Sync()`, `gpu.Download(...)` in `cuda/resident.go` and
+`cuda/prefill.go`. In a test a dropped error reaches an assertion; **in production it reaches a caller**,
+as silently wrong output. That is a strictly worse version of the bug A12 just found in a test.
+
+**It can be a gate, unlike the dispatch shape.** `_ =` on an error return is **syntactically
+decidable**, so a lint can decide it without knowing intent — which is exactly what made B6's
+dispatch census a report rather than a verdict. Deliberately-ignored sites get **declared with a
+reason**, in the shape the citation lint already uses for allow-paths, so **the count is the check**
+rather than anyone's judgement about a given line.
+
+**Cost, stated so it is chosen rather than discovered:** 268 sites need triage before the gate can
+go green, and most are tests where the ignore is defensible. The forward-path production sites are
+the ones worth fixing first, and they are ~35 rather than 268.
+
+**A false zero in the census itself, recorded because it nearly shipped:** the first `metal/` run
+reported **0** — because exporting `GOOS=darwin` made `go run` build a *darwin* errcheck binary and
+try to execute it on Linux (`exec format error`). The tool never ran. A native binary with `GOOS`
+set for the analysis only, run from inside the module with `GOWORK=off`, gives the real 21/18/3.
+"Zero findings" and "the tool did not run" are the same output, which is the same class the tracer's
+zero samples belonged to.
+
+**B8 · A sweep must distinguish "could not evaluate" from "failed"** — `linux`, **filed 2026-08-12**
+
+`scripts/parity_sweep.sh` reported **27 blockers**, then **15**, then **0**. The tree was fine at all
+three. Every one of the 42 was a **missing asset or an unset env var** — an *inability to evaluate*,
+rendered in the output as a *result*, under one label: `⚠️ SKIP — asset missing (blocker)`.
+
+**Two concrete costs, both paid.** The label says "asset missing" for gates that skipped on
+`GOINFER_HEAVY_TESTS` being unset, which sent me looking for checkpoints that were sitting in
+`~/models` the whole time. And a run whose blockers are all unevaluated gates reads identically to a
+run with real failures — the operator cannot tell a red tree from an unequipped box without opening
+the log.
+
+**The fix is in the output, not in the gating.** Both still block a tag: an unevaluated required gate
+is not a pass, and that rule is right. But they must be *counted and named separately*:
+
+    27 BLOCKER(S): 0 FAILED, 27 NOT EVALUATED (19 asset absent, 8 env gate unset)
+
+and the env-gated ones should name the variable, since that is a one-line fix rather than a download.
+
+**Same shape as the Mac's 31 silent skips, and as `scripts/gpu_gate.sh` reporting an OOM as "a CUDA forward
+moved".** An absence rendered as a result, and a cause rendered as the wrong kind of cause. The
+project already has the rule — *a skip is not a pass* — and these are the corollary: **a skip is also
+not a failure, and a gate that cannot say which it had is asking the operator to guess.**
+
+**B7 · `aikit_version` is a hand-maintained input to a computed gate** — `linux`, **found 2026-08-12
+during the v1.17.0 bump**
+
+`testdata/parity_manifest.json` carries an `aikit_version` field that is **mixed into `deps_hash`**,
+so the staleness gate re-stales every family when it changes. That is the right design and it works.
+The gap is that **nothing computes the field** — it is typed in by hand. At the v1.17.0 bump it read
+`v1.12.0` against a `go.mod` that said `v1.16.0`.
+
+**What the drift means, stated precisely, because it is narrower than it first looks.** An aikit bump
+that does not touch the field changes no manifest input, so `deps_hash` does not move, so the
+staleness gate stays green and **no goldens run**. At least one prior bump went through that way.
+The gate did not fail; it was never given the input that would have made it fire. This is the
+absence-of-signal shape — a green that means "nothing asked" rather than "nothing changed".
+
+**Why it is a B and not an A.** goinfer's numerics did not silently drift: aikit's own bit-identity
+discipline (`be049df`, `TestKernelFMALint`) is what held, and the v1.17.0 bump was checked by hand
+and by a goldens run. So this is a *missing interlock*, not a live defect. It also means the fix
+cannot be "trust the field more".
+
+**The fix is to derive it.** Read the aikit `require` lines out of the `go.mod` files at manifest-
+build time and fail if they disagree with each other or with the recorded value — the same
+derive-both-sides rule `scripts/selector_coverage.py` follows for its selectors. Two versions matter,
+not one: the root module *and* `gpu/`, which are separate tag series that do not track each other
+(see E6). A single `aikit_version` string cannot represent both, so the field likely becomes a small
+object. Until then the enforcement is the bump ritual in `docs/RELEASING.md`, i.e. a person.
+
+**THE SHAPE, which is why this is filed as a class and not a chore.** A hand-maintained constant that
+duplicates a value computed elsewhere is **sibling drift with a literal as one of the siblings**. The
+existing two shapes are a *check* naming one member and a *dispatch* naming one member (B6,
+`docs/parity-coverage-policy.md`); this is the third — a *constant* restating one. The recognition
+test is unchanged: **is this value maintained anywhere else?** If yes, the copy will drift, and being
+data rather than code buys it nothing — it buys it less, because no compiler, vet or lint reads it.
+The remedy is unchanged too: derive it.
+
+Two instances landed the same day, which is what promoted it from a chore to a class. This one, and
+`RELEASING.md`'s version-alignment step, which named the versions to align on and went stale
+**twice** before being rewritten to read them (`0898295`). Both were literals restating something a
+`go.mod` already knew.
+
+*Cross-reference:* B6 carries the check/dispatch shapes; this is the constant shape, and the three
+belong to one class.
+
+**B1 · Env-var lint** — either box
+
+`cc238c6` landed the `GINFER_`→`GOINFER_` rename (31 files, real work) and an env-var
+classification as `docs/env-vars.md`. The classification is the expensive part and it's done. What's
+missing is that it be **executable**.
+
+Convert that table into the Go source of truth and have a lint read it — **do not write a second
+registry beside the document**, which leaves two lists to drift apart. The lint fails on any
+`os.Getenv` in the tree naming a variable absent from the registry.
+
+**Also catch env reads at package initialisation.** A `var x = os.Getenv(...)` at package scope is
+read before any test runs, so `t.Setenv` cannot override it — a test that sets it silently gets the
+default and its result reads as a measurement. That cost a full six-minute 26B run on 2026-08-12
+(`GOINFER_A1_PROBE`), and the only reason it was caught is that the probe asserted it had recorded
+something. The lint has the `os.Getenv` call sites already; flagging the ones in package-level
+initialisers is the same pass. Folded in here rather than filed separately, because a second env
+registry is exactly what B1 exists to prevent.
+
+Why it matters: 105 variables, exactly one of which anything has ever set. Six have no prefix at all
+(`ZZBASE`, `GEMMA3_4B`, `G4_TRACE`, `NOISE_FLOOR_CKPT`, `ROUTER_CAPTURE_OUT`, `GIW_BIG`) and are
+only findable *as a class* if something enumerates `os.Getenv` mechanically. A markdown table
+maintained by intention drifts on the first variable someone adds.
+
+**B0 · Repo-hygiene group must run what CI runs** — `linux`, **DONE `0c54e35`**
+
+`scripts/ci_checks.py` parses `.github/workflows/ci.yml` and emits the hygiene-class steps; group 5
+runs them. **Derived, not duplicated** — a check CI gains appears in the gate with no edit to the
+gate. 21 steps across 7 jobs; 13 run here and pass, 8 are darwin-only and are a **counted skip**
+naming the platform.
+
+The old block was a strict subset of CI: no staticcheck at all, `vet` without the
+`goinfer_testhooks` tag and over narrower packages, no build, no module-boundary guard.
+
+**The environment turned out to be part of the check**, found rather than reasoned. CI's root job has
+no `go.work`, so the module-boundary guard sees the root module graph in isolation; this box has a
+committed `go.work` that unions every submodule, so the guard reported a **false red** on its first
+run, naming `cuda`, `gpu` and `webgpu` as leaks. Derived fix: a job with a `workspace` step runs with
+one, a job without runs `GOWORK=off`. **Reproducing the command without reproducing the environment
+is not reproducing the check** — worth carrying to any other "run what CI runs" work.
+
+Mutation-checked both directions: a gofmt violation turns root gofmt and staticcheck red; breaking
+the derivation's selector makes it **refuse** ("derived ZERO hygiene steps") rather than report an
+empty set as a pass. The second is the one that matters — a derivation that degrades to nothing
+looks exactly like a clean run.
+
+**B0a · A guard that cannot find its tool must fail, not skip** — `linux`, **AUDITED — no live
+instance in the repo. Closed with the residual risk named.**
+
+The shape: a check ran as `command -v staticcheck >/dev/null && staticcheck ... | head`. The binary
+exists but is not on `PATH`, so `command -v` failed, the `&&` short-circuited, and the whole check
+evaluated to nothing while the surrounding output looked exactly like a clean run. It was reported as
+"clean".
+
+**Audit result: the repo does not do this.** Three `command -v` uses, all in `scripts/gpu_gate.sh`,
+all `nvidia-smi` **backend detection** rather than tool-guarding a check — and each emits a counted
+verdict on the absent path (group 0: `skip "clean-GPU check (no nvidia-smi; ...)"`). Absence there is
+a real condition about the machine, not a missing instrument.
+
+**And the class is structurally prevented**, which is the better answer than "we checked". Group 6
+reconciles **emitted** verdicts against a **declared** set, so a group that dies or short-circuits
+without emitting fails the gate — silence is detectable by construction, not by remembering.
+
+**B0's new group 5 is correct by the same standard**, mutation-checked two ways: PyYAML unavailable →
+`scripts/ci_checks.py` exits 2 with a message and group 5 **fails**; the script missing entirely → non-zero
+and empty output, group 5 **fails**. Neither degrades to the old hand-written list, which would have
+looked like a pass.
+
+**Residual risk, named because it is the one that actually bit:** the instance was an **ad-hoc shell
+command typed at a prompt**, not repo code. No gate polices that. The mitigation is the habit the
+gate exists to replace — run `scripts/gpu_gate.sh` rather than hand-rolling the check — which is exactly what
+B0 makes worth doing.
+
+**B5 · `RELEASING.md` must reference `QUEUE.md`** — **DONE (2026-08-12).**
+
+A file nothing reads is accurate today and inert the first week nobody opens it — the pattern this
+queue was written to fix, applied to itself. A tag is the natural moment to review what is
+outstanding, and it is a checkpoint that already happens. **Landed:** `RELEASING.md` now has a
+"Queue-gated follow-ups — consult QUEUE.md at each tag" section (after the GitHub Release step),
+whose **first concrete customer is C3** (Metal consumer window fires on a release carrying an aikit
+bump). The abstract "reference QUEUE.md" and its first real trigger landed together, so the reference
+is not itself an inert line.
+
+**B2 · Gate reconciliation — one entry point** — `linux`
+
+Two mechanisms now exist for running the heavy tier: `scripts/gpu_gate.sh` group 2c (linux) and
+`scripts/heavy_gate.sh` (`8fecfad`, mac).
+
+Resolve to one: **`scripts/gpu_gate.sh` always declares the heavy group.** When not requested it emits a
+counted skip with its reason and the verdict line carries it. Fast runs stay fast; no run silently
+omits the tier. `scripts/heavy_gate.sh` becomes the implementation group 2c invokes, or it goes. Two files
+is fine; two entry points isn't, because **the verdict has to come from one place**.
+
+**B3 · Re-tier by cost** — `linux`
+
+`GOINFER_HEAVY_TESTS` gates "needs a real model" and is used as "slow".
+`TestSplitKV_bitIdentical` asserts bit-identity at 2048 context in 13 seconds behind two flags,
+while 26B streaming runs 5m16s behind the same one.
+
+Rule: **anything asserting a claim the README makes runs by default.** Census is gathered — 26
+heavy-gated tests, with `TestSplitKV_bitIdentical`, `TestPrefillDivergenceRate` and
+`TestArgmaxTieBreak` all backing published claims. Report the resulting tier membership so the
+split is reviewable.
+
+**B4 · Label or drop `stash@{0}`** — **REOPENED. Absent on `linux-62gb`, UNSEARCHED on
+`macbook-arm64`.**
+
+`git stash list` is empty in all four repos here. That is a result about **this box**, and closing
+the item on it would repeat the exact distinction the SHA lint learned this turn: a search that could
+not have seen the object does not report its absence. `stash@{0}` may only ever have existed on the
+mac. **In the mac batch below.**
+
+**macbook-arm64 searched (2026-08-12):** `git stash list` = **0** in `goinfer`, `aikit`, `wgpu`. The
+original `stash@{0}` (the "item2 unload-close fix + tests (wip)") DID live here and was **backed up to
+`~/goinfer-stash-backup/*.patch` then cleared** — preserved as patches, not lost; the mac stash is now
+empty. So goinfer/aikit/wgpu are **closed on both boxes**. **One residue with an owner:** `cpubrrr` is
+**not present on macbook-arm64** (could-not-search here), and `linux-62gb`'s "empty in all four repos"
+did **not enumerate cpubrrr** — so its status is unconfirmed by name. **Owner `linux-62gb`:** run
+`git stash list` in `cpubrrr` specifically and record it as searched (with count) or could-not-search.
+That single confirmation closes B4.
+
+**B8 · Position-keyed pins — audited 2026-08-12; the gates are clean, the PROSE is not**
+
+`TestDispatchCensus` went red on a pure line shift (the fused gate+up guard in `decoder/mlp.go`, site
+unchanged) and was
+re-keyed on trimmed line content. Everything else pinned this campaign was swept for the same
+property:
+
+| pin | keyed on | positional? |
+|---|---|---|
+| `TestDispatchCensus` | trimmed line content | **no** — re-keyed `3d6ae1e` |
+| `TestKernelLocalMemoryCensus` | kernel **name** (`moe_route`, `rope_kv`…) | no |
+| `TestMoERouteFirstLaunchReservation` | byte value (138,412,032) | no |
+| `TestMoERouteDemandThreshold` | byte values (286,916,608 / 289,013,760) | no |
+| `TestSlotAllocation_matchesGranularityForm` | measured strides + quantum | no |
+| `TestSlotCapArithmetic` | measured free/strides | no |
+| `TestInt4_forwardParity` | fixture **name** → recorded metrics | no |
+| `applySoftcap` threshold | size value | no |
+| queue SHA lint index | sha → **subject** (content) | no |
+
+**No gate remains position-keyed.** The residual surface is **14 `file:line` citations in this file's
+prose**, which no lint covers and which drift silently. Already stale, checked:
+
+- `cuda/backend.go:836` — cited as `allocSlots`'s call site; now points at a bare `//` (A9-FIX
+  inserted the warm-up above it).
+- `cuda/resident.go:244` — cited for audit C-08's `_ = gpu.Upload`; now a comment about backend locals.
+- two citations were **unresolvable**, because they omitted the repo — an aikit `linalg/quant.go`
+  line and a bare `decoder/weightmat.go` one. Both
+  are aikit paths written as if they were local ones; the SHA lint learned this distinction for
+  commits and the same gap exists for paths.
+
+**FIXED in the same change as the lint that found them** (`scripts/queue_citation_lint.py`), because
+a lint landing red on its first run is a lint nobody adopts. The stale `allocSlots` call-site
+line was corrected (it had drifted when A9-FIX inserted the warm-up above it);
+the two bare `decoder/weightmat.go` / `decoder/mlp.go` references repo-qualified or de-numbered; `linalg/quant.go:113` resolves in
+aikit once the lint searches the sibling set.
+
+**And one turned out not to be a line drift at all.** `cuda/resident.go:244` was cited for audit
+C-08 — `_ = gpu.Upload(...)` discarding errors. That code is **gone**: `recordUpload` captures the
+first error into `r.setupErr` and the build declines gracefully. The citation was stale because the
+CLAIM was stale, and F2 had been listing a fixed critical as open. A line-number check would have
+reported a shift; the content check reported that the file no longer supports what was said about
+it, which is the difference worth having.
+
+**B7 · Off-origin work — swept, 2026-08-12** — `linux` for the local half, `mac` for the rest
+
+Branches with no upstream, across all four repos on this box:
+
+| repo | branch | unique commits | action |
+|---|---|---|---|
+| goinfer | `test/strengthen-mamba-deltanet-goldens` | **1** (`98936cf` strengthen mamba-2 + deltanet parity fixtures) | **PUSHED** |
+| goinfer | `task/gemma4-moe-phase1a` | 0 — fully merged | leave; delete when convenient |
+| aikit | `decoder-m2-tokenizer` | 0 — fully merged | leave; delete when convenient |
+| wgpu, goduct | none | — | — |
+
+Stashes: **none, in any of the four.**
+
+**MAC BATCH — one session, not three interruptions.** Collected because each item needs that machine
+and none needs this one:
+
+1. **C3, the Metal consumer window — FIRST.** The largest completely uncovered surface, and it sank
+   once already. Ordering it behind the two chores below is how that happened; a session that runs
+   out of time should lose a chore, not this.
+2. **Push `metal-rope-merge`** so `d682315` resolves from anywhere and P4's "already implemented,
+   snapshot-golden byte-exact" becomes checkable. It does not need merging to be safe.
+3. **B4's stash check** — `git stash list` in all four repos; the stash is absent here and unsearched
+   there.
+4. **arm64 f32 goldens read — TAG-GATE (NEW, created 2026-08-12). Minutes.**
+
+   **WHY IT IS OWED — primary reason: the correctness argument has per-architecture branches, and
+   only the stronger one has been exercised.** aikit's comment on the rework justifies bit-identity
+   **per architecture** (`linalg/matmul_blocked.go`), and the two branches are not equally strong:
+
+   - **amd64** — `dotFMA8` already reduces in-register, so the removed round trip was "32 adds of
+     which 24 added literal `0.0`". Adding `0.0` is exact in IEEE-754: **structural**, it cannot move
+     a bit whatever the inputs.
+   - **arm64** — "the four lanes per column are **real partial sums** and `dot8ColsInto` folds them
+     in **this same left-to-right order**". An **ordering claim about the new implementation**, not a
+     structural impossibility. f32 addition is not associative, so if the fold order differs anywhere,
+     the sums move.
+
+   **goinfer's green goldens ran on amd64 and therefore exercised the STRUCTURAL branch. The weaker
+   branch is the one nothing has tested.** That is what this gate closes, and it is why the argmax
+   margin needs re-confirming on arm64 rather than being a separate claim about byte-agreement.
+
+   **Secondary reason (independent, and it also holds): the refresh's arch was never recorded.**
+
+   **Provenance — created, not overlooked.** This gate came into existence on 2026-08-12, the moment
+   the architecture-exception clause met the aikit **v1.17.0 f32 blocked-matmul rework** (an
+   expression-rewrite to a float path, still live in v1.17.1). It did **not** exist before that rework,
+   so any earlier search that looked and found nothing **searched correctly — there was nothing to
+   find.** Do not record this as a pre-existing gate someone skipped; that distinction is what keeps
+   the search trustworthy next time. (The check on `2e8dfb6` — its 19 f32 rows carry no arch, the
+   trailer didn't stamp one, git notes are empty, the manifest `machine` field is the preserved *T3*
+   machine not the refresh's — asked whether the v1.17.1 refresh *incidentally* discharged the new
+   gate. It didn't: the arch isn't recorded and every pointer, incl. today's box refreshes and the
+   18/23 `linux-62gb` validation, points to amd64. So the gate is **open**, never yet run on arm64.)
+
+   **What a green PROVES — written here so a green is not over-read.** The f32 goldens are
+   **argmax + cosine, not bit-identity.** A green therefore does **NOT** show byte-agreement across
+   arm64/amd64 — that cross-arch divergence is real, expected, and decision-irrelevant
+   (`parity-coverage-policy.md` "arch-scoped"). What it proves is narrower and exact: **the argmax
+   margin survives the summation-order change on the architecture that contracts `x*y+z`** (arm64 fuses
+   FMA; amd64's baseline does not). The FMA campaign's **114,431× headroom was measured for the code as
+   written**; the rework **changed the summation order**, so that headroom is no longer known to hold.
+   Re-confirming it on the fusing arch is the **entire content** of this gate — nothing more, nothing
+   less.
+
+   **What a red MEANS — pre-registered, before it can be argued after.** A failure is **the headroom
+   collapsing** — the reordered summation pushed a decision across the ~2×10⁻⁵ argmax tolerance on
+   arm64 — **not a flaky fixture.** A red is a real numeric finding about the rework and is treated as
+   one; it does not get waved off as fixture noise after the fact.
+
+   **How.** Run `scripts/refresh_parity_hashes.sh` (or the f32 forward goldens) on `macbook-arm64`; the
+   new `arch=arm64` trailer records the discharge. Second tag-gate alongside the prefill measurement —
+   both attach to the same aikit-bump change.
+
+   **DISCHARGED 2026-08-13 on `macbook-arm64` (`f8c4777`). Evidence, not inference.**
+
+   First run (`53a96f6`) was PARTLY discharged — 8 f32, the Mac lacking the gitignored fixtures. The
+   fix was NOT "regenerate on arm64" (my earlier claim, **wrong — I inferred it**): the box's 19 f32 run
+   on **tiny synthetic fixtures** (`torch.manual_seed(0)`, "sub-second, no download") — deterministic,
+   arch-independent data files, ~38M. Nothing ties them to the generating machine; the gitignore keeps
+   them out of the *repo*, not off other *machines*. So I **rsync'd the 14 the Mac lacked from the box
+   (~38M, minutes)** and re-ran:
+   - **arch stamp present** in the proof block (*"forward goldens green at f8c4777 on arch=arm64"*) and
+     the trailer (`Deps-Hash-Refresh: f8c4777 goldens=22 arch=arm64`).
+   - **Composition: 22 passed / 0 failed / 20 skipped.** Of the 22, 3 quantized → **19 f32 rows green on
+     arm64 — equal to the box's 19.** Up from 8. The argmax margin survives the v1.17.0 summation-order
+     change across all 19 (Cohere×2, Gemma4 dense×2 / MoE×3 / logit×2, LoRA, Mixtral, Deepseek, Granite,
+     Llama4, Nemotron, Phi3, Glm4Moe, Kimi, Gemma3VL, Qwen25VL, Qwen35). **No headroom collapse.**
+   - **0 deps_hash lines changed** (both runs): the arch-independence claim holds on arm64. The "hash
+     moves on arm64" finding did not trigger.
+   - **Residual is arch-INDEPENDENT, not an arm64 gap.** The still-skipped f32 families need **real
+     checkpoints absent on BOTH machines** — `qwen2.5-0.5b`, `qwen3-1.7b`, `tinymistral-248m`, `gpt2`,
+     `llama-3.2-1b`, `gemma-3-270m` (HF downloads) — plus `tiny-qwen2-moe` (transferred, but its test
+     has a secondary file check that still skips; worth a look, 1 family). The box's f32 run **could not
+     cover these either**, so they are not a discharge gap for this gate — they are the general
+     "we don't keep real checkpoints" tier, equal on amd64. Gate discharged to the box's f32 standard.
+   - **Nothing committed** — 0 hash Δ → no refresh commit; this entry is the record.
+**Still outstanding, and it needs the mac:** `metal-rope-merge` carrying `d682315`. It is not on
+origin and resolves in no clone here, so **P4's "already implemented, snapshot-golden byte-exact" is
+unverifiable from any machine but that one**. Pushing the branch is enough — it does not need merging
+to make the claim checkable.
+
+**B4 (original) · Label or drop `stash@{0}`** — superseded
+
+"item2 unload-close fix + tests (wip)", a +32 hunk in the admin-unload source file. That filename
+resolves in no repo here, so the stash cannot be reconstructed from its description either. Almost
+certainly adds `Close()` to the
+admin unload path — the change that converts a bounded leak into a use-after-free through the
+`pick()`-to-`enter()` window. The safe version needs the drain, which is now implemented
+(`588052b`), so this stash may simply be superseded. Either retitle it to say what it is, or drop
+it. **An untitled WIP that looks ready is a trap.**
+
+**B6 · Sibling-drift enumeration** — either box
+
+A check that fails when one member of a sibling pair carries a fix or invariant the other does not.
+The class is written up in `docs/parity-coverage-policy.md` ("Sibling drift"); this is the executable
+half.
+
+Known instances: **W8A8 / W4A8 `Workspace`**; **dense `mlp` / `moeMLP` `decodeScratch`**; **batched
+GEMV int8 / int4**; ~~**`capSlots` and its inline copy in `allocSlots`**~~ (closed by A5 `6091e7a` —
+`allocSlots` now calls `capSlots`); **SIMD / scalar widen**; and **the final-logit softcap, five
+members**.
+
+The softcap set is the largest found so far and is worth writing out, because P3 named exactly one
+of them:
+
+| site | status |
+|---|---|
+| `cuda/resident.go` (decode) | **shares `applySoftcap`** (`4c26a58`) |
+| `cuda/prefill.go` | **shares `applySoftcap`** (`4c26a58`) |
+| `decoder/forwardn.go:502` | unchanged — `decoder/` is under the `6edd1ca` numerics freeze |
+| `decoder/model.go:731` | unchanged — same freeze |
+| `metal/model.go:827` | unchanged — Metal is on hold for core-numerics surfaces |
+
+The three unchanged members are a **deliberate** partial fix, not an oversight, and they are the
+reason this row exists: had P3 been taken at face value and only `cuda/resident.go` parallelised,
+even the second CUDA site would have drifted from it. Adopting `applySoftcap` (or its equivalent) at
+the remaining three is the work that closes the row, and it unblocks with the freeze.
+
+**Enumerate the members; do not name one.** A test that names one member is exactly what the passing
+sibling already had — it reproduces the class rather than closing it. Where enumeration cannot be
+mechanical, the invariant's own comment carries the full set, so the next fix is written by someone
+who has been told the set exists.
+
+### C. Verification surfaces never exercised
+
+**D1 · Trace tap and the launch-site coverage table** — `linux`, before D2's migration
+
+For each of the 48 launch sites, two columns: which traces observed it, **and is it covered by any
+asserting gate**. The trace proves the migration is faithful, not that the pre-migration mapping was
+correct — so any site with no asserting gate carries its current mapping across unverified.
+`moe_route` is one known member; enumerate the rest before migrating.
+
+Run traces across sequential prefill, batched prefill, decode, an MoE model, and a partial-rotary
+model.
+
+**D2 · Launch-wrapper commit 1, then the migration** — `linux`
+
+Design approved and fully specified. Positional parameters, one generated named type per
+**(parameter name, C type)** — 13 names carry more than one C type, so name-only keying is
+ambiguous. Buffers typed too. Returns `[]KernelArg` rather than launching, so `r.launch`'s sticky-
+error accumulator stays intact and `cuda/prefill.go` and tests share the wrappers.
+
+Extraction: `cuda/internal/gen` parsing `__global__ void NAME(params)`, comments stripped before
+splitting, **hard-failing on any parameter outside the closed 9-type table — never skipping**.
+
+aikit's two shipped GEMVs (`gemv_w4a8_fwd`, `gemv_w8a8_fwd`) are **derived, not transcribed** —
+aikit ships `gemv_quant.cu` inside the module, resolvable via `go list -m`. The generated header
+records aikit's module version; the diff test distinguishes "vendored, `.cu` legitimately absent →
+counted skip" from "module dir resolves, file gone → loud failure".
+
+Three gates: byte-compare regenerated against committed; coverage (every `.visible .entry` in
+embedded PTX has a wrapper); and the PTX cross-check as a standing assertion, since `glue.ptx`
+proved `.cu` and `.ptx` can diverge for months. Plus a second lint: **every generated wrapper is
+called at least once from non-test code**, or is on an explicit test-only list — that closes
+embedded-but-never-bound, the last uncovered member of the dead-code family.
+
+Commit 1 changes no call sites and must be provably inert. Then migrate per file (`cuda/resident.go` 36,
+`cuda/prefill.go` 11, testhooks 1) with a trace comparison at each step.
+
+State the **641 → 0** figure in the commit message with its limit: zero counts cross-name
+transpositions the type system prevents; passing a wrong *value* of the right kind still compiles.
+The failure moves from an invisible positional slip to a legible mis-assertion at the call site.
+**Do not write "eliminates transposition bugs".**
+
+**E7 · No Python in the repo by v1.0** — `linux`/`mac`, **INVENTORY DONE; no migrations until after the v0.13.0 tag (§C1 + CUDA gate first).** Decided 2026-08-12 by Francis.
+
+**Scope of the decision:** the repo contains no Python by v1.0. Analysis moves to Go tests; shell is
+minimized to process orchestration. **The reference-tensor / pin-fixture generation is OUT (item 7),
+blocked on Francis's torch-replacement research — do not attempt it or design around a guess at it.**
+
+**Inventory (67 tracked Python files, 6843 lines), split by the only axis that matters here — does it need an ecosystem Go cannot reach:**
+
+- **57 scripts import torch / transformers / safetensors / numpy** → the reference-tensor surface. **OUT OF SCOPE** (item 7). ~5000 lines: the whole `scripts/pin_*` family plus the torch oracles, golden/ref generators, and analysis probes (kda-oracle, gptoss oracle/golden, chat/tool golden gen, eagle parity ref, mxfp4 extract, gemma4 recon / scale-probe / 12b-trace, and similar).
+- **10 stdlib-only scripts** → the migratable set (~1827 lines). Ranked by **load-bearing × easy** (first migrations cut the most risk per hour):
+
+| # | script | lines | what it decides/produces | CI/gate dep today | difficulty | rank rationale |
+|---|---|---|---|---|---|---|
+| 1 | `scripts/skip_census.py` | 174 | PASS/SKIP/FAIL census, SKIPs bucketed by reason (release ritual) | release ritual | **stdlib Go** — and *strictly better*: reads `go test -json` structured events instead of scraping text | load-bearing × easy, and the Go version is a *reader* not a parser. **Migrate first.** |
+| 2 | `scripts/sweep_composition.py` | 167 | prints the parity-sweep coverage composition along family×quant×loader | `scripts/parity_sweep.sh` + `scripts/refresh_parity_hashes.sh` | **stdlib Go** (grep test source for the quant literal + `go test -json`) | release-gate axis print; high load-bearing, easy |
+| 3 | `scripts/ci_checks.py` | 108 | DERIVES CI's hygiene check-set from the CI workflow so the gate can't drift from CI | `scripts/gpu_gate.sh` | **stdlib Go, probably** — it already uses `re` on the workflow, no YAML lib. **Check the actual workflow shape reads with stdlib BEFORE reaching for YAML.** If a real parser is needed → `tools/` module, not main `go.mod` (item 4). | high load-bearing, medium |
+| 4 | `scripts/selector_coverage.py` | 117 | tests that EXIST vs tests any selector RUNS (the difference) | census (not a hard gate) | **stdlib Go** | medium load-bearing, easy |
+| 5 | `scripts/queue_citation_lint.py` | 773 | validates the queue's commit-SHA + file:line citations | **CI** (the only Python in CI) | **stdlib Go, HARD** — git via `os/exec`, module-cache path resolution against the required aikit version, orphan/reachability, generated index. No external ecosystem, but 773 lines. | **highest load-bearing, lowest easy** — the capstone: do it after the easy wins prove the pattern; it is what actually removes Python from the CI critical path. |
+| 6 | `scripts/bench_peer.py` | 229 | goinfer-vs-peer decode A/B over both HTTP servers | `scripts/bench_compare.sh` | **stdlib Go** (`net/http`, `os/exec`) but larger | low load-bearing (benchmark, not a gate) |
+| — | `scripts/chatml_tiny_fixture.py` (97), `scripts/diff_gemma4_12b.py` (53), `scripts/bench_prompts_calibrate.py` (41) | | fixture-gen / debug-diff / bench-prompt calibration | none | stdlib | low priority tail — opportunistic |
+
+**Separate category — build tooling / FFI: `cuda/nvrtc_compile.py` (68) — DECIDED 2026-08-12 (Francis): "no Python" COVERS it; do it, LAST, low priority.** It compiles a `.cu` to PTX via **NVRTC** (invoked by `cuda/build_ptx.sh` → `scripts/gpu_gate.sh`); the runtime never calls it (goinfer ships committed PTX, loaded via gocudrv), so it fires only when a `.cu` changes, on the GPU-gate path — **not** always-on CI. Replacement:
+
+- **Mechanism: a purego NVRTC binding**, ~6 C-ABI functions (`nvrtcCreateProgram` / `nvrtcCompileProgram` / `nvrtcGetPTXSize` / `nvrtcGetPTX` / `nvrtcGetProgramLog` / `nvrtcDestroyProgram`), same shape as the Metal binding. **purego is already in the cuda/metal dependency set → no new ecosystem.** A `cuda/cmd/ptxgen` (run from `cuda/build_ptx.sh` / `go:generate`) reads the `.cu`, passes the arch options (`--gpu-architecture=compute_75` for Turing, etc.), writes the `.ptx`. Build tooling only — **not** in the main `go.mod` (item-4 constraint holds by construction).
+- **Load-bearing constraint (from the split-KV / cap-bump PTX discipline):** `ptxgen` must dlopen the **PINNED** `libnvrtc.so` (explicit path, e.g. 12.6.85 — not "whatever's on the box"), or a regen is a toolchain bump masquerading as a kernel change. Acceptance = the relay's byte-identical control: the Go tool must reproduce **every currently-committed `.ptx` byte-for-byte** from the current `.cu` at the pinned version before the Python is deleted (criterion **a**), and rebuild-unchanged → identical sha.
+- **Honest limit:** removes the *Python*, not the *NVRTC dependency* — someone must still compile `.cu`→PTX, which irreducibly needs libnvrtc at regen time (the Python helper needs it too; no new burden). "No Python," not "no CUDA build dep."
+- **Priority: LAST E7 item**, after the `queue_citation_lint` capstone proves the pattern — nvrtc is hardware-gate-path and rarely invoked, unlike the CI-critical citation lint. Independent of the `oracle/` plan (`docs/task-oracle-refforward.md`); shares nothing with it. Deletes `cuda/nvrtc_compile.py` in the landing commit (criterion **c**).
+
+**Acceptance criterion per migration (non-negotiable, from Francis):**
+- **a.** Run the Python and the Go against the current tree; outputs must **agree**. Any disagreement is **investigated before the swap**, not explained after.
+- **b.** Mutation-check the Go both ways: introduce the defect it exists to catch → assert RED; remove it → assert GREEN.
+- **c.** **Delete the Python in the same commit that lands the Go** — the two never coexist as sources of truth (B7's constant shape, applied).
+- **d.** The **scope line survives**: whatever the Python printed about what it did and did NOT validate, the Go prints too.
+
+**Dependency constraint:** **no tooling dependency in the main module's `go.mod`.** Stdlib-only where possible; a separate **`tools/` module with its own `go.mod`** where a parser is genuinely needed (the ci-checks YAML question is the only candidate). A consumer's module graph must not grow because a lint changed language.
+
+**Shell — minimize, harden what stays (item 6 audit, 9 shell scripts):**
+- **Keep (orchestration):** `scripts/parity_sweep.sh`, `scripts/gpu_gate.sh`, `scripts/heavy_gate.sh`, `cuda/build_ptx.sh`, and the two demo asset-build scripts under `demo/chat/` and `demo/agent/`. **Move (reads tree + decides):** the deciding half of `scripts/refresh_parity_hashes.sh` and `scripts/mutation_check.sh` are candidates once the Go tooling exists; `scripts/bench_compare.sh` folds into the bench-peer Go successor.
+- **Rule audit (the four rules):**
+  - **Rule 3 (`set -euo pipefail`):** `scripts/refresh_parity_hashes.sh` and the three build scripts compliant. **Violations:** `scripts/bench_compare.sh` (`set -u` only) and `scripts/mutation_check.sh` (`set -u` only) — add `pipefail`. The gate scripts (`scripts/gpu_gate.sh`, `scripts/heavy_gate.sh` are `set -u`; `scripts/parity_sweep.sh` is `set -uo pipefail`) **omit `-e` DELIBERATELY** — they run N families/packages and tally, and `-e` would abort on the first failure and lose the tally. The real requirement there is per-command rc / `PIPESTATUS` capture, which they already do; **do not blanket-add `-e` to a tallying gate.** Document the reason inline so it is not "fixed" into a regression.
+  - **Rules 1/2/4:** no violations found in a targeted pass. The scripts show awareness — `scripts/mutation_check.sh`'s header explicitly records fixing the `command -v staticcheck && staticcheck` (rule 1+4) anti-pattern; `scripts/gpu_gate.sh`'s `command -v nvidia-smi` is backend *detection*, not a skipped check; the `grep -c … || true` counts guard the pipe's exit correctly. A full line-by-line pass on the keep-set is deferred with the migration.
+
+**Item 7 — OUT OF SCOPE of E7's migration, owner named:** the pin-fixture and reference-tensor generation (the 57 torch/HF scripts). **Francis owns it.** Do not start it in parallel and do not design the tooling migration around a guess at what he finds.
+
+**Replacement research: DELIVERED as a scoping plan — `docs/task-oracle-refforward.md`.** The design questions are resolved there (verdict: buildable; a pure-Go `oracle/` submodule with its own `go.mod`, independent safetensors reader + f64 math, anchored against HF once per architecture, emitting the existing golden schema — Python shrinks from ~50 per-model generators to a handful of per-architecture anchor runs, not to zero). It is a **plan, not a start**: still Francis's go/no-go to fund, and gated behind v0.13.0 (§C1 + CUDA gate) like the rest of E7. Its Phase 0 (cluster the 57 by shared forward-math to size the real kernel surface) is the first work if funded — the E7 inventory counted the scripts but did not cluster them by math.
+
+**E8 · One Go gate-runner over `go test -json` — collapse the tallying shell + census Python** — `linux`/`mac`, **PLAN DRAFTED; not started; after v0.13.0 (§C1 + CUDA gate), same freeze as E7.** Decided 2026-08-12 by Francis.
+
+Distinct from E7 (which migrates scripts one-for-one): **E8 recognizes that six scripts are one program.** The three tallying shell gates (`scripts/parity_sweep.sh`, `scripts/gpu_gate.sh`, `scripts/heavy_gate.sh`) and the three census Python scripts (`scripts/skip_census.py`, `scripts/sweep_composition.py`, `scripts/selector_coverage.py`) all run `go test -json` across a *package × family × quant × tag* matrix, tally PASS/SKIP/FAIL (SKIPs bucketed by reason), and decide — differing only in matrix and decision. **One runner (`cmd/gate`) + committed configs subsumes all six** (~6 scripts → 1 runner + configs).
+
+Why Go is *strictly better* here, not just same-language — it dissolves the item-6 audit's footguns by construction: the deliberate-omit-`-e` tally tension vanishes (Go has no abort-on-error — capture `rc`, append, never lose the count); `PIPESTATUS` capture is direct via `os/exec`; the `command -v tool && tool` silent-skip (the one `scripts/mutation_check.sh` records fixing) can't recur (`exec.LookPath` miss is an explicit error). Backend/asset detection → SKIP-with-reason in Go, where it can't fail open.
+
+**Stays shell (pure glue, per the decides-vs-orchestrates line):** `cuda/build_ptx.sh`, the two `demo/*` asset-build scripts, env-then-run-one-command wrappers. The runner **shells out to** `go test -json` (stdlib `os/exec`) — orchestrates it, doesn't reimplement it; **no new main-`go.mod` dependency.**
+
+**Acceptance = E7's a–d verbatim** (agree-before-swap incl. the tally-integrity mutation case; delete the script in the same commit; the skip-reason scope line survives). **Sequencing note:** do **not** harden shell you're about to delete — the item-6 `pipefail` fixes for `scripts/bench_compare.sh` and `scripts/mutation_check.sh` are moot (both are on the migration list); add `pipefail` only to the surviving glue shells.
+
+**Full plan: `docs/task-gate-runner.md`** (matrix-config shape, core loop, hardware detection, order-within-E8, not-in-scope). E8 and E7's census migrations converge — the three census scripts fold in as configs as each matching gate lands, rather than being migrated twice.
+
+### F. Audit backlog
+
+**F1 · §4 gates — SWEPT 2026-08-12: all five were already FIXED** — `linux`, **CLOSED**
+
+Every entry here was stale, the same shape as C-08 and five times over. Swept against the tree with a
+content-keyed citation added to each, so the next sweep is the lint rather than a person:
+
+| gate | state | anchor |
+|---|---|---|
+| G-01 `TestResidentAdmission_matrix` tautological | **fixed** — compares against a reviewed golden and errors on any family missing a row | `decoder/features_test.go:146` |
+| G-02 Metal snapshot golden applies no embed scale | **fixed** — `Forward`/`ForwardArgmax` apply the arch scale, with a named regression gate | `metal/snapshot_golden_test.go:77` |
+| G-03 `buildMatrix` env-pinning | already closed | — |
+| G-04 `case "slots"` doesn't assign `residencyBufs` | **fixed** — the switch populates `pinned` and it is assigned after | `metal/model.go:728` |
+| G-05 tokenizer/chat tests probe a developer home | **fixed** — `GOINFER_MODELS_DIR`, defaulting to `$HOME/models` | `decoder/modelsdir_test.go:13` |
+| G-06 hardcoded developer-home paths | **substantially fixed** — same mechanism; residue is a literal `/home/francis/models` reached only when `os.UserHomeDir()` *fails*, in the four per-package `modelsdir` test helpers | `decoder/modelsdir_test.go:13` |
+
+G-06's residue is the only thing left and it is a last-resort fallback, not a probe path. Recorded
+rather than struck, because "substantially fixed" is a different state from "fixed".
+
+**F2 · §2/§3 criticals — SWEPT 2026-08-12** — `linux`, **most were already fixed; two lack an anchor**
+
+| finding | state | anchor |
+|---|---|---|
+| C-05 gemma-4 stride on snapshot restore | **fixed**, with a gate | `decoder/kvsnapshot_gemma4_test.go:10` |
+| C-06 unvalidated tensor shapes | **fixed**, break-it-first gate | `decoder/serialize_shapecheck_test.go:15` |
+| C-08 `_ = gpu.Upload` over zeroed weights | **fixed** — `recordUpload` → `setupErr` → graceful decline | `cuda/resident.go:397` |
+| C-14 CUDA argmax has no index tie-break | **fixed** at `c6600fc`, gated | `cuda/argmax_tiebreak_test.go:19` |
+| C-31 `make([]byte, u32)` unbounded | **fixed** — bounded against the remaining file size before the allocation | `internal/giw/bundle.go:114` |
+| C-21 embeddings batch cap, un-queued | **fixed** — `checkEmbedInputBounds` caps the input count, gated at the boundary and at +1; the un-queued half is a *documented deliberate decision*, not an omission. The body-cap tests are a different concern (bytes, not count) — covered-by-something-else, which is why they did not answer this | `internal/serveapp/embeddings.go:26` |
+| C-22 shutdown lock, swallowed second signal | **fixed**, with a named gate — the checkpoint cannot block forever on a busy model, and a second Ctrl-C always kills | `internal/serveapp/main.go:432` |
+| C-30 no mutex in the paging paths | **fixed** — both pagers carry an internal mutex, each citing the audit finding | `decoder/layerpaging.go:42` |
+
+**These are correctness and security items, so a wrong entry costs more here than in P or B — in both
+directions.** Five listed as open were fixed, which wastes attention; and had any been listed as fixed
+while open, the cost would have been the reverse and worse. That asymmetry is why every row above
+carries an anchor now: **the lint keeps them honest without anyone re-reading the code.**
+
+**Every listed critical is fixed.** The whole F group was stale.
+
+**And two of the three "open" verdicts in the first pass of this sweep were MY search failing, not the
+entries.** C-30 was recorded as "unverifiable — names a paging path that is not a file"; the files are
+`decoder/layerpaging.go` and `decoder/moepaging.go`, and the glob used was `decoder/paging*.go`, which
+could not have matched them. C-21/C-22 were recorded "unverified" after looking only at the body-cap
+tests, which measure bytes where the finding is about counts.
+
+That is **exactly the distinction the citation lint learned this turn** — a search that could not have
+seen the target does not report absence — applied to commits and paths on the same day, and then not
+applied to my own sweep of the F group. The recognition test is not "did I look" but **"could what I
+ran have found it"**, and it has to be asked of prose sweeps, not only of tooling.
+
+**F3 · G-01 class — confirm the sub-shapes landed** — `linux`, **status unconfirmed**
+
+The class entry in `parity-coverage-policy.md` should carry **exercised but never triggered** —
+`allocSlots` runs in every MoE test and caps in none of them, so a safety branch reads as fully
+covered by every measure the project has. Recognition test: **does any test reach the branch**, not
+just the function.
+
+### G. New capability, scoped but not started
+
+**R1 · The refresh script's history — two corrections to the record** — `linux`, **CLOSED, both
+answered from the log**
+
+**Correction 1: "the refresh script had never been usable" is WRONG.** I wrote that in `eea7f29`'s
+commit body. The log says otherwise — **nine commits carry its goldens proof**, with counts rising as
+fixtures were added:
+
+| date | commit | goldens |
+|---|---|---|
+| 2026-07-26 | `2e91607` | 14 passed |
+| 2026-07-28 | `9624dd9` | 14 passed |
+| 2026-08-01 | `ecc5af2` | 119 passed |
+| 2026-08-02 | `e58ac8a` | 17 passed |
+| 2026-08-02 | `1f6dbe0` | 4 passed |
+| 2026-08-03 | `2922468` | 17 passed |
+| 2026-08-04 | `7cc2f0d` | 17 passed |
+| 2026-08-09 09:58 | `ed81e13` | 19 passed |
+| 2026-08-09 15:10 | `ca29d6c` | goldens=19 |
+
+**It worked, was used, and broke on 2026-08-09 at 20:59** — `6edd1ca` introduced `method: null`,
+which the writer could not round-trip. `eea7f29` (2026-08-12) is the **first refresh attempted after
+that**, three days later, and it aborted. The abort was the guard working on its first real
+opportunity, not a guard that had never let anything through.
+
+**Correction 2: the precedent cited in this queue was the wrong commit.** `9e5f8fa` was described
+here as "a metadata field addition re-staled `decoder/weights.go` and the refresh ran 19 goldens". It is
+`fix(quant): reject --quant that conflicts with a prequant .giw at startup` and **touches the manifest
+not at all** — its five files are `CHANGELOG.md`, `decoder/giwquant_test.go`, `decoder/serialize.go` and two `an aikit benchmarks entrypoint`s.
+The real precedents are the nine above. I repeated the wrong SHA several times from this file without
+opening it.
+
+**Second-order check: a mangled write DID land, and lived ~7 weeks.** The HTML-escaping defect was not
+caught by the guard, because it predates the script and arrived through `go test -run ParityManifest
+-update`:
+
+    2026-06-20  82b39cc  \u003e appears (1)
+    2026-07-26  93eb7d4  (2)
+    2026-07-28  99b3f95  (1)
+    2026-08-09  6edd1ca  0 — cleaned
+
+So the answer to "did the guard hold from the start" is **no**: escaped sequences were in the tree
+from 2026-06-20 to 2026-08-09. They are cosmetic — a `>` inside a `reference` string — and changed no
+hash or verdict, but the claim "a clean result means the guard held" would have been false.
+`method: ""` never landed (checked; 4 `null`s today, 0 empty strings).
+
+**What is durable:** the writer is now faithful (`SetEscapeHTML(false)`, `Method` as `RawMessage`), so
+neither defect can recur through either route.
+
+**R2 · The refresh `arch=` stamp worked on its first real use — `mac`, CLOSED.** Added `2026-08-12`
+(`a163150`) because last time the machine that ran a refresh was **unrecoverable from the record** —
+the `2e8dfb6` arm64-vs-amd64 question could only be inferred. The `2026-08-13` arm64 gate run is the
+first refresh since, and its record answers the question **directly**: proof block and trailer both
+read `arch=arm64`. The record now says which arch ran the goldens instead of leaving it to inference.
+
+
+## Draft: contents of the next release
+
+## B14 — the gate needs the FOURTH outcome implemented (policy filed, code pending)
+
+`docs/parity-coverage-policy.md` now defines four T3 outcomes: pass / fail / cannot-evaluate /
+**first-run**. `scripts/parity_sweep.sh` implements three — `classify()` returns PASS / FAIL / SKIP /
+MISSING, and everything that is not PASS increments `blockers`.
+
+**What has to be built.** A gate cannot know it is on its first run without a record of prior runs,
+so first-run needs a **ledger of gates that have a confirmed prior result**. A gate that produced a
+result and is absent from the ledger is `first-run`; the sweep prints it on its own line, counts it
+separately, and does **not** increment `blockers`.
+
+**The ledger is the "someone decided it is correct" record**, which is the point rather than an
+implementation detail — a gate enters it by a human promoting an observed value to a baseline, never
+by the sweep observing itself. Auto-promotion would turn "never checked" into "expected" in one
+silent step.
+
+### Ledger entry — the fields, fixed before it is built
+
+Every entry carries all five. An entry missing any of them is not a confirmation, it is a note.
+
+| field | why it is there |
+|---|---|
+| **gate name** | what the entry is about |
+| **confirmed value** | the result a human declared correct — the baseline itself, not a pointer to one |
+| **who promoted it** | a confirmation is an act by a person; an entry with no author is an assertion with nobody behind it |
+| **when** | absolute date |
+| **the commit it was confirmed against** | the state of the tree the human was looking at when they said "this is correct" |
+
+### What the sweep reconciles, and what it reports
+
+Three checks, every sweep, reported next to the counts:
+
+| condition | outcome |
+|---|---|
+| **gate with no ledger entry** | **`first-run`** — the normal path into the new outcome |
+| **ledger entry with no matching gate** | **stale — report and ignore.** Never fail on it: a removed or renamed gate is ordinary, and a ledger that blocks on its own leftovers trains people to delete entries |
+| **entry whose gate's source has changed since the confirming commit** | **"confirmed before the gate last changed"** — printed as a **warning beside the counts** |
+
+### Why the third check is the one that matters
+
+**Renaming a gate reverts it to `first-run`, which is SAFE.** The name stops matching, the entry goes
+stale, the gate has no confirmation, and it re-enters triage. Loud and harmless.
+
+**A gate KEEPING its name while its assertion changes is not safe.** The ledger then compares a
+confirmed value against **different semantics** and reports **pass** — a green built on a
+confirmation of something else, with nothing in the name, the count, or the result to reveal it.
+
+**This is the same staleness the citation lint's content keys catch, and it takes the same remedy.**
+That lint deliberately does not key on line numbers: a citation survives a line move but breaks when
+the cited *content* changes, because the content is what the claim was about. The ledger entry must
+bind to the gate's **source content**, not merely to its name — so editing the assertion invalidates
+the confirmation while reformatting around it does not.
+
+**The warning does NOT block, and must never become one.** It exists so that a human promoting a
+value can see **which confirmations have outlived the code they confirmed** — exactly the list you
+want in front of you at the moment you are deciding what is correct, and one nobody can assemble
+after the fact.
+
+**Not implemented before the tag, deliberately:** `scripts/parity_sweep.sh` has been read by a live
+`bash` for this whole window (bash reads a script lazily; editing it mid-run corrupts execution), and
+the two live instances are being resolved by hand-bisect anyway. Implementing it is the first change
+after the tag sequence, not during it.
+
+## B11 — TWO SERIALIZATION PATHS DIFFER BY 8 BYTES, and neither is known correct
+
+**RE-FILED 2026-08-13** — the original was destroyed by the `--update` data-loss bug (fixed in
+`8827c6a`), and its framing was **wrong on the facts**. Both corrections are below.
+
+`TestSerializeWeightsTo_matchesBuffer` fails:
+
+```
+streamed length 632821543 != buffered 632821551
+```
+
+The assertion is `decoder/serialize_test.go:443`.
+
+**632,821,551 − 632,821,543 = 8 bytes. One uint64.** On a ~633 MB payload that is not drift or a
+rounding artifact — it is one field written by one path and not the other, or at a different width.
+
+**CORRECTION — this is NOT a first-run.** The original entry claimed the gate "did not start
+failing, it started running", on the belief that `GOINFER_PREQUANT_GGUF` had never been set. It had.
+This test **failed identically on 2026-08-12**, in the very sweep C1a was discharged on. It is a
+**known-bad of at least two days' standing**, not a newly-exposed unknown, and it is **not** caused
+by anything in v0.13.0.
+
+What still stands:
+
+1. **There is no basis yet for saying which side is correct.** The test asserts the two agree, not
+   which is right. "Streamed is short by 8" and "buffered is long by 8" are the same observation.
+2. **If the streamed path is the short one, anything it has written may be affected.** That is the
+   `--stream-weights` / `.giw` transcode path used for bigger-than-RAM models — where regenerating
+   an artifact is most expensive. Whether existing `.giw` files are readable, subtly truncated, or
+   fine is **not established** and is the first thing to determine.
+
+**First moves:** (a) find the field — diff the two writers' header/section emission, not the
+payloads, since 8 bytes at one site is structural; (b) decide which side is correct against the
+reader; (c) only then ask whether any written artifact is affected.
+
+## B12 — the selector census could not see a gate nobody was running (FIXED)
+
+**RE-FILED 2026-08-13** — destroyed by the same `--update` bug.
+
+`scripts/selector_coverage.py` analysed gating **only for the 49 SELECTED tests**. The 286 "reached
+by NONE" were printed as a bare count and never attributed, so an env-gated test that no selector
+reaches was invisible *as* env-gated.
+
+A **defect in the census, not a process failure**: nobody ignored a warning, because the information
+was never produced. The count was accurate and told you nothing.
+
+**Fixed:** the unselected bucket is now broken down by what *also* gates it, and the report ends with
+the env vars gating otherwise-unreached tests — **42 of them**.
+
+## B13 — 42 ENV-GATED TEST SETS THAT NOTHING SELECTS. One campaign, budgeted, AFTER the tag.
+
+**RE-FILED 2026-08-13** — destroyed by the same `--update` bug. **DO NOT ENABLE ANY BEFORE THE TAG.**
+
+**Rationale.** Enabling these converts a **bounded release into an unbounded investigation**: each
+failure needs a bisect against the previous tag before anyone can say whether it blocks. **Nothing
+about this surface got worse because v0.13.0 happened** — it has been dark for as long as the
+selectors have existed.
+
+**Sharpened by what the preflight actually found.** The original entry argued the yield would be high
+because one variable was set and produced two failures. The 2026-08-12 comparison shows those two
+were **already failing**, so the correct statement is stronger and simpler: **the dark surface hides
+standing failures, not just unknowns.** Three of the gates reachable this way
+(`TestDecodeParityInt4`, `TestSerializeWeightsTo_matchesBuffer`, `TestQwen35GGUF_vsSafetensors`) have
+been red for at least two days with nobody informed.
+
+**After the release:** batches, each failure triaged by **(a) can a shipped path reach it** and
+**(b) is it older than the current tag**, with a **budget that stops the campaign** rather than the
+list stopping it.
+
+**COUNT — two numbers, recorded rather than smoothed.** The census says **42**; an independent
+re-derivation counting only variables read *inside a test body* says **41**. The difference is
+`GOINFER_QWEN35_REAL`, read in a file-level helper. Both attributions are defensible. The next person
+to count will get 41 and should know why.
+
+The 42, and the test count behind them (47 test functions), are reproduced by
+`python3 scripts/selector_coverage.py` — the report is the list, so it cannot go stale here.
+
+Seven non-`GOINFER_` variables also gate unselected tests and are excluded as out of scope:
+`G4_TRACE`, `GEMMA3_4B`, `GOMEMLIMIT`, `HOME`, `NOISE_FLOOR_CKPT`, `ROUTER_CAPTURE_OUT`, `ZZBASE`.
+
+## B15 — the manifest EMITTER promotes experimental → validated on tiny-golden evidence
+
+**Found 2026-08-13 by running the sweep with `EMIT_MANIFEST=1`.** The merge wrote:
+
+| family | committed | emitted |
+|---|---|---|
+| `glm4_moe`, `mixtral`, `qwen2_5_vl`, `qwen2_moe` | `experimental` / `tiny-golden` | **`validated`** / `tiny-golden` |
+| `mellum` | `validated` / `real-model-oracle` | `validated` / **`real-oracle`** |
+
+Two distinct defects: it **promotes status without upgrading the method**, and it **corrupts a valid
+method string** (`real-model-oracle` → `real-oracle`, which is not a T3 method).
+
+**`TestParityManifest_methodTier` caught it** — it passes on the committed manifest and fails on the
+emitted one. Without that gate this run would have silently upgraded four families to *supported* in
+the published capability matrix on tiny-golden evidence. That is the gate doing exactly the job it
+was written for, against the tool that writes the file.
+
+**The emission was DROPPED, not committed.** The manifest stays at its committed state. Commit Y for
+this release therefore contains **no manifest change**, and that is the honest outcome rather than a
+missing step.
+
+**Not fixed.** The emitter needs the promotion rule and the method-name handling repaired before
+`EMIT_MANIFEST=1` is trusted again; until then the flag writes claims the tier gate has to catch.
