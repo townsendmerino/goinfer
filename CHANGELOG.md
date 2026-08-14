@@ -327,7 +327,7 @@ docs-only.
   completion (via a single `withModel` wrapper; the old `pick` is gone so no handler can skip it),
   and unload unpublishes the model, then on a detached goroutine waits that lock out before closing —
   freeing the shared model only when it is the last owner (a base and its adapters share one). Design
-  and rationale: `docs/task-admin-unload-drain.md`.
+  and rationale: `docs/completed/task-admin-unload-drain.md`.
 
 ### Changed
 - **`POST /admin/models/unload` no longer returns `409 busy` for a model that is generating; it

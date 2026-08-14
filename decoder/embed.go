@@ -2,7 +2,7 @@ package decoder
 
 import "fmt"
 
-// Decoder-as-embedder seam (docs/task-decoder-as-embedder.md).
+// Decoder-as-embedder seam (docs/completed/task-decoder-as-embedder.md).
 //
 // qwen3-embedding and embeddinggemma are causal decoders used as EMBEDDERS: the sentence-
 // transformers stack around them is just `Transformer → Pooling → Normalize`. The only thing the

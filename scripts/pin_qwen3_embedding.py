@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """pin_qwen3_embedding.py — golden fixture for Qwen/Qwen3-Embedding-0.6B, the parity oracle for
-goinfer's DECODER-as-embedder path (docs/task-decoder-as-embedder.md).
+goinfer's DECODER-as-embedder path (docs/completed/task-decoder-as-embedder.md).
 
 Qwen3-Embedding is a causal decoder used as an embedder: sentence-transformers wraps it as
 `Transformer -> Pooling(last-token) -> Normalize`. goinfer reproduces that with

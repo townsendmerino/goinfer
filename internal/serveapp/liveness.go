@@ -7,7 +7,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// Model liveness + the drain-based unload path. See docs/task-admin-unload-drain.md for the full
+// Model liveness + the drain-based unload path. See docs/completed/task-admin-unload-drain.md for the full
 // design and the reciprocal comments at handleAdminUnload and resident.Close.
 //
 // The problem this solves: freeing a model's native memory (purego has no ARC, no finalizers) on

@@ -34,7 +34,7 @@ matter more than a sixth/seventh family and should land **before** this backlog:
   `kv_lora_rank` is absent, attention is `sparse_attn` over a learned `Indexer` with a KV
   `Compressor` and sliding window, and the router has no `n_group`/`topk_group` and a third
   `scoring_func` (`sqrtsoftplus`). Eight new primitives. Full findings and the re-scope:
-  `docs/task-model-family-deepseek-v4-kimi-k3.md`. **Kimi-K3 is PARTIAL** — its MLA and router
+  `docs/completed/task-model-family-deepseek-v4-kimi-k3.md`. **Kimi-K3 is PARTIAL** — its MLA and router
   *are* ours, but MLA runs on only 24 of 93 layers behind a linear-attention (KDA) mixer.
 
 - **Other DeepSeek-V3-shaped MoEs** — ⚠ **the "de facto standard" premise did not survive its

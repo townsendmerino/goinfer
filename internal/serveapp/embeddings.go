@@ -238,7 +238,7 @@ func float32sToBase64(v []float32) string {
 }
 
 // embedTokenCounter is implemented by embedders that carry their OWN tokenizer instead of an aikit
-// embed.Tokenizer — the decoder-backed embedder (docs/task-decoder-as-embedder.md). s.embedTok is
+// embed.Tokenizer — the decoder-backed embedder (docs/completed/task-decoder-as-embedder.md). s.embedTok is
 // nil for those, so without this the count below would silently report prompt_tokens: 0 on every
 // response. Preferring this interface keeps usage honest for both embedder kinds.
 type embedTokenCounter interface {

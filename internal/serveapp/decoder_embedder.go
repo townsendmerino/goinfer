@@ -1,6 +1,6 @@
 package serveapp
 
-// Decoder-as-embedder (docs/task-decoder-as-embedder.md).
+// Decoder-as-embedder (docs/completed/task-decoder-as-embedder.md).
 //
 // qwen3-embedding and embeddinggemma are causal decoders used as EMBEDDERS. goinfer already runs
 // those decoders and already serves /v1/embeddings against an aikit encoder; the only genuinely new

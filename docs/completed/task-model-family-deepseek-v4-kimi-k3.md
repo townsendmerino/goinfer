@@ -342,7 +342,7 @@ generated KDA fixture, the MLA NoPE branch, and the interleave wiring.
 loader) which K3 partly shares. Two cheap unblocks are worth doing independently of K3 because they
 serve other work: the **per-expert-tensor loader entry point** (§4) and the **MLA NoPE branch** (§3).
 
-**Cross-reference:** `docs/task-mla-cuda-residency.md` lists K3's 24 MLA layers in its payoff table.
+**Cross-reference:** `docs/completed/task-mla-cuda-residency.md` lists K3's 24 MLA layers in its payoff table.
 That doc's recommendation stands and is not duplicated here — note only that K3 would land **CPU-only
 for its MoE regardless** (896 > 512 cap), so MLA-on-CUDA does not make K3 a GPU-resident model; the
 two tasks are independent.
@@ -467,7 +467,7 @@ The original doc's escape hatch applies: **"If V4/K3 introduce sparse attention,
   work is KDA + latent-MoE + `situ` + residual projections).
 - **Phase 4 — DeepSeek-V4** (the more expensive: eight new primitives).
 - **MLA-on-CUDA/Metal residency** remains out of scope here and is now scoped in its own doc:
-  `docs/task-mla-cuda-residency.md`. That scoping found the payoff is **thinner** than assumed
+  `docs/completed/task-mla-cuda-residency.md`. That scoping found the payoff is **thinner** than assumed
   (V2-Lite-class only; V3/K2 do not fit regardless, and V4 is not MLA at all) and the cost possibly
   **much lower** (CUDA's existing `attn_batched` may serve the latent geometry as-is). Queued after
   the v1.0 cut.
@@ -494,7 +494,7 @@ loader** work, which serves every large MoE regardless of attention shape.
 
 ## Not in scope (recorded, so it isn't re-litigated)
 
-- **MLA-on-CUDA/Metal residency** — separate kernel task, scoped in `docs/task-mla-cuda-residency.md`.
+- **MLA-on-CUDA/Metal residency** — separate kernel task, scoped in `docs/completed/task-mla-cuda-residency.md`.
 - **Kimi-K3 vision** — tower skipped; boundary named above.
 - **DeepSeek-V4 sparse attention as a primitive** — its own task, now the *main* cost of V4 rather
   than a contingency.

@@ -1,6 +1,6 @@
 # Implement the model × hardware matrix generator (+ freshness gate + README fix)
 
-> Design + rationale: `docs/task-hardware-matrix.md`. This is the build order. The point is
+> Design + rationale: `docs/completed/task-hardware-matrix.md`. This is the build order. The point is
 > to make the "on what hardware" table **generated from the taxonomy and freshness-gated**,
 > so it stops drifting (two cells are stale right now). Everything here is model-free (arch
 > flags only) so it runs in CI. Keep every existing gate green — this is additive.

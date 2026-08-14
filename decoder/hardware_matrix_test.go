@@ -1,6 +1,6 @@
 package decoder
 
-// Generated model × hardware matrix (docs/task-hardware-matrix.md).
+// Generated model × hardware matrix (docs/completed/task-hardware-matrix.md).
 //
 // Mirrors capability_matrix_test.go's registry walk, but the columns are one thing: does each
 // backend run each family on its RESIDENT (GPU) decode path? The cells are 100% derived from

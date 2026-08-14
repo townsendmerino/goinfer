@@ -44,7 +44,7 @@ comment-only edit and getting the same sha — so documenting a kernel never dir
 ## Record: `MOE_MAX_E` 256 → 512 (2026-08-09)
 
 Raised so Kimi-K2 (384 routed experts) stops declining to CPU on CUDA. See
-`decoder/features.go` (`residentBackendMoECap`) and `docs/task-model-family-deepseek-v4-kimi-k3.md`.
+`decoder/features.go` (`residentBackendMoECap`) and `docs/completed/task-model-family-deepseek-v4-kimi-k3.md`.
 
 | step | sha256 (first 16) | bytes |
 |---|---|---|

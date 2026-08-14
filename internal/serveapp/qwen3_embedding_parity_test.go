@@ -9,7 +9,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// Qwen3-Embedding parity gates (docs/task-decoder-as-embedder.md §5).
+// Qwen3-Embedding parity gates (docs/completed/task-decoder-as-embedder.md §5).
 //
 // These are the SEMANTIC gates the mechanical ones in decoder_embedder_test.go cannot replace: a
 // decoder-backed embedder can be perfectly self-consistent and still be wrong (wrong pooled

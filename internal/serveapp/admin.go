@@ -13,7 +13,7 @@ import (
 // attacker-supplied path is RCE-adjacent, so it is off by default (403 when off).
 // Unload unpublishes the model immediately, then DRAINS in-flight requests before
 // freeing its native memory (purego has no ARC / finalizers, so GC never reclaims
-// it) — see handleAdminUnload and docs/task-admin-unload-drain.md. It snapshots warm
+// it) — see handleAdminUnload and docs/completed/task-admin-unload-drain.md. It snapshots warm
 // KV as part of the drain, and reports 200 (freed) or 202 (draining) per the wait.
 
 type adminLoadReq struct {
@@ -101,7 +101,7 @@ func (s *server) handleAdminLoad(w http.ResponseWriter, r *http.Request) {
 // preamble (tokenize/prepare) with no lock, so a Close there frees weights mid-request (on CUDA, a
 // driver SIGSEGV). The safe fix is a DRAIN: every in-flight holder takes a per-model liveness RLock
 // via withModel (spanning the preamble and the generation), and unload waits that lock out before
-// closing. See docs/task-admin-unload-drain.md and the reciprocal note at resident.Close.
+// closing. See docs/completed/task-admin-unload-drain.md and the reciprocal note at resident.Close.
 //
 // Two phases. Phase 1 (here, under regMu): unpublish the entry and decide last-ownership —
 // delete-before-decide, so two concurrent sibling unloads cannot both decline (releaseLocked). Phase

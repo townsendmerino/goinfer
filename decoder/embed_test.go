@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// The decoder-as-embedder seam (docs/task-decoder-as-embedder.md). These gates are MECHANICAL —
+// The decoder-as-embedder seam (docs/completed/task-decoder-as-embedder.md). These gates are MECHANICAL —
 // shape, determinism, pooling position, guards — and run against a base Qwen3 decoder, which shares
 // the architecture (and here the exact 1024×28 geometry) of Qwen3-Embedding-0.6B. The SEMANTIC gates
 // (cosine vs the HF sentence-transformers reference, retrieval top-k) need the embedding-tuned

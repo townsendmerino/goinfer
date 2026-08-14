@@ -487,7 +487,7 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 	// architectures: ["Qwen3ForCausalLM"], so the naming is the only tell.) Detect it from the
 	// index and strip the prefix off the canonical names. tie_word_embeddings is true on these, so
 	// the absent lm_head is expected — the embedding doubles as the head, which an embedder never
-	// runs anyway. See docs/task-decoder-as-embedder.md.
+	// runs anyway. See docs/completed/task-decoder-as-embedder.md.
 	stripModel := !have["model.embed_tokens.weight"] && have["embed_tokens.weight"]
 	mp := func(n string) string { // inject the prefix after the leading "model."
 		if modelPrefix != "" && strings.HasPrefix(n, "model.") {

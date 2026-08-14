@@ -195,7 +195,7 @@ type server struct {
 	// registry entries backed by it (refs) — the machinery that lets unload DRAIN in-flight work
 	// before freeing native memory instead of racing it into a use-after-free. A base and its
 	// compute-time adapters share one *decoder.Model and thus one entry here. Guarded by regMu;
-	// see liveness.go and docs/task-admin-unload-drain.md.
+	// see liveness.go and docs/completed/task-admin-unload-drain.md.
 	liveness map[*decoder.Model]*modelLiveness
 	// draining is the set of served names whose entry has been unpublished but whose native memory
 	// is not yet freed (the detached drain is still running). Surfaced by /health so an operator can

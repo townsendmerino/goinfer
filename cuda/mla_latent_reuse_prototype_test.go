@@ -11,7 +11,7 @@ import (
 	gc "github.com/eitamring/gocudrv/cuda"
 )
 
-// TestMLALatentReuse_prototype is micro-leg B of docs/task-mla-cuda-residency.md: the experiment
+// TestMLALatentReuse_prototype is micro-leg B of docs/completed/task-mla-cuda-residency.md: the experiment
 // that decides that task's 3-days-vs-3-weeks fork, and the skeleton of its eventual parity gate.
 //
 // THE HYPOTHESIS. MLA's decode attention looks like a new kernel shape (score width latDim, value
@@ -37,7 +37,7 @@ import (
 //
 // NOT the WebGPU approach. gpu/mla.go uses online (FlashAttention-style) softmax and is gated on
 // tolerances; CUDA's decode attention is byte-identical by contract and Campaign A rejected online
-// rescale explicitly. See finding (a) in docs/task-mla-cuda-residency.md.
+// rescale explicitly. See finding (a) in docs/completed/task-mla-cuda-residency.md.
 func TestMLALatentReuse_prototype(t *testing.T) {
 	if err := gc.Init(); err != nil {
 		t.Skipf("cuInit: %v", err)
@@ -171,7 +171,7 @@ func TestMLALatentReuse_prototype(t *testing.T) {
 	if maxAbs > 1e-5 {
 		t.Errorf("REUSE DOES NOT HOLD: attn_batched at nKV=1/hd=latDim does not reproduce the "+
 			"absorb-path rank collapse (max|Δ| = %.3e) — the bespoke-kernel row in "+
-			"docs/task-mla-cuda-residency.md activates", maxAbs)
+			"docs/completed/task-mla-cuda-residency.md activates", maxAbs)
 	}
 
 	// ---- (2b) per-dim independence VERIFIED, not assumed: the wasted rope-tail accumulate must not
@@ -245,5 +245,5 @@ func TestMLALatentReuse_prototype(t *testing.T) {
 		latDim, full, rank, narrow, full/narrow, qkRope, latDim, 100*float64(qkRope)/latDim)
 
 	t.Log("VERDICT: attn_batched reuse HOLDS at the latent geometry — " +
-		"docs/task-mla-cuda-residency.md's ~3-day path is the live one")
+		"docs/completed/task-mla-cuda-residency.md's ~3-day path is the live one")
 }

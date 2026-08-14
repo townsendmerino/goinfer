@@ -2,7 +2,7 @@
 """KDA (Kimi Delta Attention) reference oracle — NumPy transcription of the sequential recurrence.
 
 WHY THIS EXISTS. Kimi-K3's text decoder runs KimiDeltaAttention on 69 of its 93 layers
-(docs/task-model-family-deepseek-v4-kimi-k3.md, Phase 0/0b). Its modeling file does NOT contain the
+(docs/completed/task-model-family-deepseek-v4-kimi-k3.md, Phase 0/0b). Its modeling file does NOT contain the
 scan: it calls `chunk_kda` / `fused_recurrent_kda` from `fla` (flash-linear-attention), an external
 Triton library. That left ONE blocking ambiguity for pricing the port — `g` has shape (h, head_dim)
 and KDA sets head_k_dim == head_dim == head_v_dim, so the config alone cannot say which axis of the
