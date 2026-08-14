@@ -43,6 +43,61 @@ EMIT_GATES=(
   "TestCohereAyaReal_gate|cohere"
   "TestCohere2R7bReal_gate|cohere2"
 )
+# ---- PREFLIGHT: resolve the asset environment, and REPORT what it resolved ----
+#
+# This block exists because the same invocation error produced a false "15 BLOCKER(S)" three separate
+# times, and the tree was fine every time. The gates skip-if-absent, and a skip is reported as a
+# blocker, so an unset variable and a genuinely missing checkpoint are INDISTINGUISHABLE in the
+# output. That is the census-denominator shape again: the script reported its finding without
+# reporting what it had examined.
+#
+# Two fixes, both here:
+#   1. GOINFER_HEAVY_TESTS=1 is SET, not required. This is the release sweep; loading multi-GB
+#      checkpoints is its entire purpose, and making the operator remember an opt-in whose absence
+#      reads as "asset missing (blocker)" is a trap, not a safety feature.
+#   2. Every known asset variable is resolved against ~/models when unset, and the resolution TABLE is
+#      printed. An operator's explicit value always wins and is shown as (env).
+#
+# An unresolvable variable prints NOT FOUND here, at the top, where it is a one-line fix -- instead of
+# surfacing 40 minutes later as a blocker that names a family rather than a path.
+export GOINFER_HEAVY_TESTS=1
+MODELS="${GOINFER_MODELS:-$HOME/models}"
+echo "== asset preflight (models root: $MODELS) =="
+echo "   GOINFER_HEAVY_TESTS=1 set by this script — the release sweep loads real checkpoints"
+_miss=0
+_resolve() { # $1 = var name, $2 = default path under $MODELS
+  local var="$1" def="$MODELS/$2" cur="${!1:-}"
+  if [ -n "$cur" ]; then
+    printf '   %-28s %-9s %s\n' "$var" "$([ -e "$cur" ] && echo '(env)' || echo '(env!!)')" "$cur"
+    [ -e "$cur" ] || _miss=$((_miss + 1))
+    return
+  fi
+  if [ -e "$def" ]; then
+    export "$var=$def"
+    printf '   %-28s %-9s %s\n' "$var" "resolved" "$def"
+  else
+    printf '   %-28s %-9s %s\n' "$var" "NOT FOUND" "$def"
+    _miss=$((_miss + 1))
+  fi
+}
+_resolve GOINFER_PREQUANT_GGUF      "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"
+_resolve GOINFER_W4A8_INT4          "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"
+_resolve GOINFER_QWEN35_GGUF        "qwen3.6-35b-a3b-Q8_0.gguf"
+_resolve GOINFER_QWEN35_GOLDEN      "qwen35_real_golden"
+_resolve GOINFER_DEEPSEEK_V2LITE    "deepseek-v2-lite"
+_resolve GOINFER_DEEPSEEK_MOONLIGHT "moonlight-16b"
+_resolve GOINFER_DEEPSEEK_GGUF      "deepseek-v2-lite-gguf"
+_resolve GOINFER_PHI3_MINI          "phi3-mini-4k"
+_resolve GOINFER_PHI3_GGUF          "phi3-mini-4k-gguf"
+_resolve GOINFER_LLAMA4_GGUF        "llama4-scout-gguf"
+if [ "$_miss" -gt 0 ]; then
+  echo "   ^^ $_miss asset(s) UNRESOLVED — the gates needing them will skip, and a skip is reported as"
+  echo "      a blocker. Fix the path above rather than reading the blocker list as a tree defect."
+else
+  echo "   all 10 assets resolved — a blocker below is about the TREE, not the invocation"
+fi
+echo
+
 if [ "$EMIT_MANIFEST" = "1" ]; then
   export GOINFER_MANIFEST_EMIT=1
   echo "== EMIT_MANIFEST=1: real-oracle gates will record measured rows into the manifest =="
