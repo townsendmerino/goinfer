@@ -112,6 +112,44 @@ def main() -> int:
                 print(f"      … and {len(ts) - 6} more")
         print()
 
+    # THE UNSELECTED BUCKET, BROKEN DOWN — added 2026-08-13 after this census failed to surface a
+    # real gap. GOINFER_PREQUANT_GGUF gates TestDecodeParityInt4 and
+    # TestSerializeWeightsTo_matchesBuffer; nothing set it, so both had been skipping silently for an
+    # unknown period. Neither test, and that variable, appeared ANYWHERE in this report -- because
+    # gating was only ever analysed for the 49 SELECTED tests, while these two sit in the 286
+    # "reached by NONE" bucket, which was printed as a bare count and never attributed.
+    #
+    # An env-gated test that no selector reaches was therefore invisible AS env-gated. Nobody could
+    # act on it: the information was not produced. Reporting the count without the breakdown is the
+    # denominator problem one level in -- the number was right and told you nothing.
+    unsel = collections.defaultdict(list)
+    for r in unselected:
+        if r["tag"]:
+            unsel[f"build tag: {r['tag']}"].append(r["test"])
+        elif r["envs"]:
+            unsel["env-gated: " + ",".join(r["envs"])].append(r["test"])
+        elif r["asset"]:
+            unsel["asset-gated (skips without a checkpoint)"].append(r["test"])
+        else:
+            unsel["no gate — runs whenever selected, but nothing selects it"].append(r["test"])
+    if unsel:
+        print(f"  REACHED BY NONE ({len(unselected)}), broken down by what ALSO gates them:")
+        print("    A test here runs only if someone invokes it directly. One that is additionally")
+        print("    env- or asset-gated will then SKIP unless that is set too — two silent layers.")
+        for why, ts in sorted(unsel.items(), key=lambda kv: -len(kv[1])):
+            print(f"    {why}  ({len(ts)})")
+            for t in sorted(ts)[:6]:
+                print(f"      {t}")
+            if len(ts) > 6:
+                print(f"      … and {len(ts) - 6} more")
+        print()
+        envvars = sorted({e for r in unselected for e in (r["envs"] or [])})
+        if envvars:
+            print(f"    ENV VARS gating otherwise-unreached tests ({len(envvars)}) — set these, or")
+            print("    accept that the tests behind them have never run:")
+            print("      " + "  ".join(envvars))
+            print()
+
     print("  A green here means nothing became UNREACHABLE since a person last looked.")
     print("  It does NOT mean coverage is adequate — a test can be selected and still vacuous.")
     return 0
