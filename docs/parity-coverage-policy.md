@@ -69,6 +69,52 @@ forward path changes, *both* families go stale together, so the proxy can never
 silently drift from its source. (If an alias family ever gains its own forward
 file or a distinct `deps_hash`, it loses proxy status and needs its own T3.)
 
+## T3 gate outcomes: there are FOUR, not three
+
+A gate's result is one of these. The fourth was added 2026-08-13 after two live instances
+arrived at tag time as unknowns.
+
+| outcome | meaning | routes to |
+|---|---|---|
+| **pass** | ran, and matched its prior recorded result | the tag decision |
+| **fail** | ran, and **differs from** its prior recorded result | the tag decision — blocker |
+| **cannot-evaluate** | did not run, or ran without its asset (skip, missing, declined) | the tag decision — blocker, because a skip is not a pass |
+| **first-run** | **ran and produced a result, but has NO prior result to compare against** | **triage. Never the tag decision.** |
+
+### first-run — establishes state, not delta
+
+**Not a pass, not a failure, not a cannot-evaluate.** The gate executed and the machinery worked;
+what is missing is the *second point*. A gate reporting FAIL on a first execution is **asserting a
+delta it has no second point to compute** — it is comparing a measurement against a golden that was
+captured under conditions nobody has confirmed still apply, or against nothing at all.
+
+**Rationale, from B11's recognition test:** *the change that made a failure visible is the one change
+that provably did not cause it.* The failure predates the visibility. So attributing a first-run
+result to whatever enabled it is not a weak hypothesis — it is the one hypothesis ruled out by
+construction.
+
+**The gate prints it distinctly and counts it.** It does not fold into pass (which would bank an
+unexamined value as truth), and it does not fold into fail (which would block a release on a delta
+that was never computed). It gets its own line and its own count, and the count appears in the
+summary next to the blockers so that "0 BLOCKER(S), 2 first-run" is legible at a glance.
+
+### The boundary: first-run does NOT mean harmless
+
+This is the half that is easy to lose. **first-run is a statement about attribution, not about
+correctness.**
+
+- The int4 mismatch in B11 **may be a real defect.** first-run says only that it **cannot be
+  attributed** to the current change — so it becomes an **item**, not a **blocker**.
+- **The first observed value must NOT be banked as a baseline** merely because it was observed. A
+  human decides it is correct, and that decision is what promotes first-run to a recorded result.
+  Auto-promotion would convert "we have never checked this" into "this is the expected value" in one
+  silent step, which is how a wrong golden gets pinned for a year.
+
+**Live instances (2026-08-13):** `TestDecodeParityInt4` and `TestSerializeWeightsTo_matchesBuffer`,
+both enabled by the sweep's asset preflight, both arriving at tag time as unknowns that had to be
+**bisected by hand against the previous tag** to establish exactly what a fourth outcome would have
+said automatically.
+
 ## A gate must be able to run, and able to fail
 
 The tiers above say *what* to test; this says when a gate actually counts. Two ways a
