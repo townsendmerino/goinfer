@@ -981,7 +981,7 @@ In-repo: `decoder/registry.go`, `decoder/config.go`, `decoder/arch.go`, `decoder
 `docs/task-metal-moe.md`, `docs/parity-coverage-policy.md`.
 
 aikit: `mmap/spancache.go`, `mmap/madvise_darwin.go` (the darwin no-op eviction),
-`mmap/madvise_linux.go`, commit `6c0483f` + `docs/internal/perf-campaign-2026-07-28.md`
+`mmap/madvise_linux.go`, commit `6c0483f` + `docs/internal/perf-campaign-2026-07-28.md` *(uncommitted working note — not in any clone, and no copy survives on the release box; the claim above stands on the commit, not on this reference)*
 item 9 (the scan-resistance measurement), tags through v1.14.0.
 
 Peer: `github.com/drumih/turbo-fieldfare` README — Gemma 4 26B-A4B, MLX affine 4-bit group

@@ -563,7 +563,7 @@ tables; the "unhideable" claim) and §4 (dense layer streaming), `decoder/moepag
 `decoder/forwardn.go:14`/`:228`, `decoder/residency.go:130`, `go.mod:6`,
 `docs/completed/task-gemma4-moe.md`, `docs/benchmarks.md`.
 aikit: `mmap/spancache.go`, `mmap/madvise_darwin.go` (the darwin no-op eviction),
-`mmap/madvise_linux.go`, commit `6c0483f` + `docs/internal/perf-campaign-2026-07-28.md`
+`mmap/madvise_linux.go`, commit `6c0483f` + `docs/internal/perf-campaign-2026-07-28.md` *(uncommitted working note — not in any clone, and no copy survives on the release box; the claim above stands on the commit, not on this reference)*
 item 9 (the scan-resistance measurement), tags through v1.14.0.
 Peer: `github.com/drumih/turbo-fieldfare` README **@ release `0.4` (commit `8648274`,
 2026-08-02), read 2026-08-02** — 1.35 GB resident core (~2 GB with 4K KV cache), 14.3 GB

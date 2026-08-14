@@ -116,6 +116,12 @@ Notes come from the CHANGELOG section for that version (Added/Changed/Fixed); ke
 marker honest even on a patch bump. `go get` resolves from the git tag via the proxy and needs no
 Release object — this step is for the rendered notes + the watcher notification.
 
+**The GitHub Release body is CANONICAL for release notes.** `docs/internal/RELEASE-*.md` is a
+**working draft**: it is gitignored, so it exists on one machine and in no clone, and it **stops
+being authoritative the moment the Release is published**. Edit the Release, not the draft, once it
+is out — otherwise the only copy anyone can read and the only copy anyone is updating are different
+documents, and the divergence is invisible to everyone but the person holding the draft.
+
 ## Queue-gated follow-ups — consult QUEUE.md at each tag (B5)
 
 A tag is the natural checkpoint to review what is outstanding, and the release process is read at
