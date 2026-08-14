@@ -214,6 +214,8 @@ asset_gap() {
 
 blockers=0
 coverage_gaps=0
+first_runs=0
+checked_gates=""
 printf '\n%-20s %-34s %s\n' "FAMILY" "GATE" "RESULT"
 printf '%s\n' "------------------------------------------------------------------------"
 check_all() {
@@ -221,10 +223,30 @@ check_all() {
     local fam="${g%%|*}"; local name="${g##*|}"
     fam="$(echo "$fam" | xargs)" # trim
     local r; r="$(classify "$name")"
+    checked_gates="${checked_gates:+$checked_gates,}$name"
     local mark
     case "$r" in
       PASS)    mark="✅ pass" ;;
-      FAIL)    mark="❌ FAIL (blocker)"; blockers=$((blockers+1)) ;;
+      FAIL)    # THE FOURTH OUTCOME (B14). A gate failing with no confirmed prior result is
+               # asserting a DELTA IT HAS NO SECOND POINT TO COMPUTE. Reported on its own line and
+               # counted, but it does NOT block: the change that made a failure visible is the one
+               # change that provably did not cause it.
+               #
+               # first-run does NOT mean harmless. It is about ATTRIBUTION, not correctness -- the
+               # finding becomes an ITEM, not a BLOCKER, and the first observed value must not be
+               # banked as a baseline without a person deciding it is correct
+               # (scripts/gate_ledger.py promote).
+               lclass="$(python3 scripts/gate_ledger.py classify --gate "$name" 2>/dev/null || echo CONFIRMED)"
+               case "$lclass" in
+                 FIRST-RUN)
+                   mark="FIRST-RUN - failed, no confirmed prior result (ITEM, not a blocker)"
+                   first_runs=$((first_runs+1)) ;;
+                 SOURCE-CHANGED)
+                   mark="FAIL (blocker) - NOTE: confirmed before this gate last changed"
+                   blockers=$((blockers+1)) ;;
+                 *)
+                   mark="FAIL (blocker)"; blockers=$((blockers+1)) ;;
+               esac ;;
       SKIP)    if asset_gap "$name"; then
                  mark="COVERAGE GAP - asset never built (NOT a blocker; see ASSET_NEVER_BUILT)"
                  coverage_gaps=$((coverage_gaps+1))
@@ -290,11 +312,18 @@ if [ "$EMIT_MANIFEST" = "1" ]; then
 fi
 
 echo
+if [ "$first_runs" -gt 0 ]; then
+  echo "== ${first_runs} FIRST-RUN: failed with no confirmed prior result =="
+  echo "   Reported, NOT counted as blockers -- there is no second point to compute a delta from."
+  echo "   NOT a claim they are harmless: each is an ITEM. Confirm a value deliberately with"
+  echo "   scripts/gate_ledger.py promote --gate <G> --value <V> --by <you>."
+fi
+python3 scripts/gate_ledger.py reconcile --gates "$checked_gates" 2>/dev/null || true
 if [ "$coverage_gaps" -gt 0 ]; then
   echo "== ${coverage_gaps} COVERAGE GAP(S): required gates whose asset has never been built =="
   echo "   Reported, not counted as blockers. No invocation can clear them -- only building the"
   echo "   asset can. A permanent blocker is not a gate, it is an override habit."
 fi
-echo "== ${SHA}: $([ "$blockers" -eq 0 ] && echo 'ALL REQUIRED GATES GREEN' || echo "${blockers} BLOCKER(S)")$([ "$coverage_gaps" -gt 0 ] && echo " (+${coverage_gaps} coverage gap)") =="
+echo "== ${SHA}: $([ "$blockers" -eq 0 ] && echo 'ALL REQUIRED GATES GREEN' || echo "${blockers} BLOCKER(S)")$([ "$coverage_gaps" -gt 0 ] && echo " (+${coverage_gaps} coverage gap)")$([ "$first_runs" -gt 0 ] && echo " (+${first_runs} first-run)") =="
 echo "full log: $LOG"
 exit "$([ "$blockers" -eq 0 ] && echo 0 || echo 1)"

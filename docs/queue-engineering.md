@@ -1328,10 +1328,38 @@ value can see **which confirmations have outlived the code they confirmed** — 
 want in front of you at the moment you are deciding what is correct, and one nobody can assemble
 after the fact.
 
-**Not implemented before the tag, deliberately:** `scripts/parity_sweep.sh` has been read by a live
-`bash` for this whole window (bash reads a script lazily; editing it mid-run corrupts execution), and
-the two live instances are being resolved by hand-bisect anyway. Implementing it is the first change
-after the tag sequence, not during it.
+**IMPLEMENTED 2026-08-14** — `scripts/gate_ledger.py` + the `FAIL` branch of `parity_sweep.sh`.
+
+| behaviour | verified |
+|---|---|
+| no ledger entry, gate exists | `FIRST-RUN` |
+| entry present, source unchanged | `CONFIRMED` |
+| entry present, **function body edited** | `SOURCE-CHANGED` |
+| edit **elsewhere in the same file** | still `CONFIRMED` — the key is the function body, not the file |
+| name in no `_test.go` at all | `UNKNOWN-GATE` |
+| **no ledger file at all** | `CONFIRMED` |
+
+**Two safety properties that were NOT in the original design and are the reason it is safe to ship:**
+
+1. **An absent ledger means "we have no idea", not "nothing has ever run."** If a missing file
+   produced `FIRST-RUN`, then deleting it — or merely shipping this before anyone seeded it — would
+   make **every failing gate non-blocking**. That is a safety regression wearing a new outcome's
+   clothes. The mechanism is **inert until the ledger is deliberately created**, and inert means the
+   old behaviour: a failure blocks.
+2. **`UNKNOWN-GATE` for a name that exists in no test file.** A first-run is a gate that *ran* and
+   produced a result with no baseline. A name nobody can locate is a typo or a deleted test, and
+   granting it first-run amnesty would hand a free pass to precisely the cases no one can inspect.
+   Found by the end-to-end mutation check, not by design.
+
+**Seeded:** 47 of the 48 required gates, from the 2026-08-13 sweep, marked `BULK-SEEDED` **per
+entry** — because pretending a bulk import is 48 individual human judgements would be the
+false-confirmation this ledger exists to prevent. Upgrade one at a time with
+`gate_ledger.py promote`. The 48th, `TestW4A8DecodeParity`, is correctly `FIRST-RUN`: it has never
+produced a result at all (its int8 `.giw` half has never been built).
+
+**Reconciliation** runs every sweep and prints next to the counts: first-run, stale (reported and
+ignored), incomplete entries, and *"confirmed before the gate last changed"* as a **warning that
+does not block**.
 
 ## B11 — TWO SERIALIZATION PATHS DIFFER BY 8 BYTES, and neither is known correct
 

@@ -1,0 +1,427 @@
+{
+  "entries": [
+    {
+      "commit": "679c9e5",
+      "date": "2026-08-14",
+      "gate": "TestAWQ_parity",
+      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
+      "promoted_by": "francis",
+      "source_sha256": "113a6b2c9c9986cd",
+      "value": "PASS"
+    },
+    {
+      "commit": "679c9e5",
+      "date": "2026-08-14",
+      "gate": "TestByteLevel_llama3GoldenParity",
+      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
+      "promoted_by": "francis",
+      "source_sha256": "83a153fdd7280d0a",
+      "value": "PASS"
+    },
+    {
+      "commit": "679c9e5",
+      "date": "2026-08-14",
+      "gate": "TestByteLevel_mellum2GoldenParity",
+      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
+      "promoted_by": "francis",
+      "source_sha256": "580f65b7b894a393",
+      "value": "PASS"
+    },
+    {
+      "commit": "679c9e5",
+      "date": "2026-08-14",
+      "gate": "TestByteLevel_qwen3GoldenParity",
+      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
+      "promoted_by": "francis",
+      "source_sha256": "785565b78cbe1669",
+      "value": "PASS"
+    },
+    {
+      "commit": "679c9e5",
+      "date": "2026-08-14",
+      "gate": "TestDeepseekGGUFReal_gate",
+      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
+      "promoted_by": "francis",
+      "source_sha256": "cdb442c254d84894",
+      "value": "PASS"
+    },
+    {
+      "commit": "679c9e5",
+      "date": "2026-08-14",
+      "gate": "TestDeepseekMoonlightReal_gate",
+      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
+      "promoted_by": "francis",
+      "source_sha256": "c44fe4722792f03a",
+      "value": "PASS"
+    },
+    {
+      "commit": "679c9e5",
+      "date": "2026-08-14",
+      "gate": "TestDeepseekV2LiteReal_gate",
+      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
+      "promoted_by": "francis",
+      "source_sha256": "447d510eff984613",
+      "value": "PASS"
+    },
+    {
+      "commit": "679c9e5",
+      "date": "2026-08-14",
+      "gate": "TestDeepseek_textParity",
+      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
+      "promoted_by": "francis",
+      "source_sha256": "7ed94dd916ecd0a3",
+      "value": "PASS"
+    },
+    {
+      "commit": "679c9e5",
+      "date": "2026-08-14",
+      "gate": "TestEncodeDecode_goldenParity",
+      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
+      "promoted_by": "francis",
+      "source_sha256": "99f95397cb35e7e8",
+      "value": "PASS"
+    },
+    {
+      "commit": "679c9e5",
+      "date": "2026-08-14",
+      "gate": "TestForward_logitParity",
+      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
+      "promoted_by": "francis",
+      "source_sha256": "722859a11a9e18d9",
+      "value": "PASS"
+    },
+    {
+      "commit": "679c9e5",
+      "date": "2026-08-14",
+      "gate": "TestForward_slidingWindowParity",
+      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
+      "promoted_by": "francis",
+      "source_sha256": "0426c64303dc2908",
+      "value": "PASS"
+    },
+    {
+      "commit": "679c9e5",
+      "date": "2026-08-14",
+      "gate": "TestGGUF_Q2_K_parity",
+      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
+      "promoted_by": "francis",
+      "source_sha256": "1afdcdbcfba85a33",
+      "value": "PASS"
+    },
+    {
+      "commit": "679c9e5",
+      "date": "2026-08-14",
+      "gate": "TestGGUF_Q3_K_M_parity",
+      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
+      "promoted_by": "francis",
+      "source_sha256": "9a205502eb91311e",
+      "value": "PASS"
+    },
+    {
+      "commit": "679c9e5",
+      "date": "2026-08-14",
+      "gate": "TestGGUF_Q4_0_parity",
+      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
+      "promoted_by": "francis",
+      "source_sha256": "f0ba390ef56d5b34",
+      "value": "PASS"
+    },
+    {
+      "commit": "679c9e5",
+      "date": "2026-08-14",
+      "gate": "TestGGUF_Q4_K_M_parity",
+      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
+      "promoted_by": "francis",
+      "source_sha256": "078c68f1c5a67f67",
+      "value": "PASS"
+    },
+    {
+      "commit": "679c9e5",
+      "date": "2026-08-14",
+      "gate": "TestGGUF_Q4_K_S_parity",
+      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
+      "promoted_by": "francis",
+      "source_sha256": "f8d27946e53dc66e",
+      "value": "PASS"
+    },
+    {
+      "commit": "679c9e5",
+      "date": "2026-08-14",
+      "gate": "TestGGUF_Q5_K_M_parity",
+      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
+      "promoted_by": "francis",
+      "source_sha256": "6d80d9f6dccb0a9e",
+      "value": "PASS"
+    },
+    {
+      "commit": "679c9e5",
+      "date": "2026-08-14",
+      "gate": "TestGGUF_Q6_K_parity",
+      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
+      "promoted_by": "francis",
+      "source_sha256": "d1685541c97b8146",
+      "value": "PASS"
+    },
+    {
+      "commit": "679c9e5",
+      "date": "2026-08-14",
+      "gate": "TestGGUF_Q8_0_parity",
+      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
+      "promoted_by": "francis",
+      "source_sha256": "4a39e428348f5cfa",
+      "value": "PASS"
+    },
+    {
+      "commit": "679c9e5",
+      "date": "2026-08-14",
+      "gate": "TestGGUF_gemma3_parity",
+      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
+      "promoted_by": "francis",
+      "source_sha256": "bb06ad2449c54ac1",
+      "value": "PASS"
+    },
+    {
+      "commit": "679c9e5",
+      "date": "2026-08-14",
+      "gate": "TestGGUF_qwen2_parity",
+      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
+      "promoted_by": "francis",
+      "source_sha256": "392dca4783735805",
+      "value": "PASS"
+    },
+    {
+      "commit": "679c9e5",
+      "date": "2026-08-14",
+      "gate": "TestGGUF_qwen3_parity",
+      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
+      "promoted_by": "francis",
+      "source_sha256": "bd26c8f7ed1d1a5a",
+      "value": "PASS"
+    },
+    {
+      "commit": "679c9e5",
+      "date": "2026-08-14",
+      "gate": "TestGPT2_forwardParity",
+      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
+      "promoted_by": "francis",
+      "source_sha256": "61c1abd23d64c768",
+      "value": "PASS"
+    },
+    {
+      "commit": "679c9e5",
+      "date": "2026-08-14",
+      "gate": "TestGPTQ_parity",
+      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
+      "promoted_by": "francis",
+      "source_sha256": "566fef3780da6c4c",
+      "value": "PASS"
+    },
+    {
+      "commit": "679c9e5",
+      "date": "2026-08-14",
+      "gate": "TestGatedDeltaNet_parity",
+      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
+      "promoted_by": "francis",
+      "source_sha256": "afbe74a50a8e58ef",
+      "value": "PASS"
+    },
+    {
+      "commit": "679c9e5",
+      "date": "2026-08-14",
+      "gate": "TestGemma4_12B_logitParity",
+      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
+      "promoted_by": "francis",
+      "source_sha256": "704e05646b2d1c91",
+      "value": "PASS"
+    },
+    {
+      "commit": "679c9e5",
+      "date": "2026-08-14",
+      "gate": "TestGemma4_logitParity",
+      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
+      "promoted_by": "francis",
+      "source_sha256": "182a899bfb72dd40",
+      "value": "PASS"
+    },
+    {
+      "commit": "679c9e5",
+      "date": "2026-08-14",
+      "gate": "TestKimi_textParity",
+      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
+      "promoted_by": "francis",
+      "source_sha256": "59857bdf509e979b",
+      "value": "PASS"
+    },
+    {
+      "commit": "679c9e5",
+      "date": "2026-08-14",
+      "gate": "TestLlama32_forwardParity",
+      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
+      "promoted_by": "francis",
+      "source_sha256": "7b09b27cc72aaaa0",
+      "value": "PASS"
+    },
+    {
+      "commit": "679c9e5",
+      "date": "2026-08-14",
+      "gate": "TestLlama4Real_gate",
+      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
+      "promoted_by": "francis",
+      "source_sha256": "67ea1e17d303d201",
+      "value": "PASS"
+    },
+    {
+      "commit": "679c9e5",
+      "date": "2026-08-14",
+      "gate": "TestLlama4_textParity",
+      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
+      "promoted_by": "francis",
+      "source_sha256": "908509ba400082c9",
+      "value": "PASS"
+    },
+    {
+      "commit": "679c9e5",
+      "date": "2026-08-14",
+      "gate": "TestLlama_forwardParity",
+      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
+      "promoted_by": "francis",
+      "source_sha256": "2aabfe88fc97f42d",
+      "value": "PASS"
+    },
+    {
+      "commit": "679c9e5",
+      "date": "2026-08-14",
+      "gate": "TestLoadGGUF_tinyllamaParity",
+      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
+      "promoted_by": "francis",
+      "source_sha256": "8236b9346df8fc7c",
+      "value": "PASS"
+    },
+    {
+      "commit": "679c9e5",
+      "date": "2026-08-14",
+      "gate": "TestMellum2_logitParity",
+      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
+      "promoted_by": "francis",
+      "source_sha256": "c10bfb72ce86a2df",
+      "value": "PASS"
+    },
+    {
+      "commit": "679c9e5",
+      "date": "2026-08-14",
+      "gate": "TestMellum2_windowParity",
+      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
+      "promoted_by": "francis",
+      "source_sha256": "f461f5bf74c7d6b3",
+      "value": "PASS"
+    },
+    {
+      "commit": "679c9e5",
+      "date": "2026-08-14",
+      "gate": "TestMistral_forwardParity",
+      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
+      "promoted_by": "francis",
+      "source_sha256": "35cf0ee1220da32f",
+      "value": "PASS"
+    },
+    {
+      "commit": "679c9e5",
+      "date": "2026-08-14",
+      "gate": "TestMixtral_forwardParity",
+      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
+      "promoted_by": "francis",
+      "source_sha256": "43e05f0d00b193b3",
+      "value": "PASS"
+    },
+    {
+      "commit": "679c9e5",
+      "date": "2026-08-14",
+      "gate": "TestPhi3GGUFReal_gate",
+      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
+      "promoted_by": "francis",
+      "source_sha256": "352cdf1bf0472064",
+      "value": "PASS"
+    },
+    {
+      "commit": "679c9e5",
+      "date": "2026-08-14",
+      "gate": "TestPhi3MiniReal_gate",
+      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
+      "promoted_by": "francis",
+      "source_sha256": "5d33b0d5c2cccf1c",
+      "value": "PASS"
+    },
+    {
+      "commit": "679c9e5",
+      "date": "2026-08-14",
+      "gate": "TestPhi3_textParity",
+      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
+      "promoted_by": "francis",
+      "source_sha256": "1c01d054c8eb8eb7",
+      "value": "PASS"
+    },
+    {
+      "commit": "679c9e5",
+      "date": "2026-08-14",
+      "gate": "TestQwen2Moe_forwardParity",
+      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
+      "promoted_by": "francis",
+      "source_sha256": "f5f56e40da723b57",
+      "value": "PASS"
+    },
+    {
+      "commit": "679c9e5",
+      "date": "2026-08-14",
+      "gate": "TestQwen2_forwardParity",
+      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
+      "promoted_by": "francis",
+      "source_sha256": "455da3144667a329",
+      "value": "PASS"
+    },
+    {
+      "commit": "679c9e5",
+      "date": "2026-08-14",
+      "gate": "TestQwen35GGUF_gate",
+      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
+      "promoted_by": "francis",
+      "source_sha256": "5528384371d42c0d",
+      "value": "PASS"
+    },
+    {
+      "commit": "679c9e5",
+      "date": "2026-08-14",
+      "gate": "TestQwen35GGUF_weightDiff",
+      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
+      "promoted_by": "francis",
+      "source_sha256": "a0cfa176e46e1131",
+      "value": "PASS"
+    },
+    {
+      "commit": "679c9e5",
+      "date": "2026-08-14",
+      "gate": "TestQwen35Real_gate2FullModel",
+      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
+      "promoted_by": "francis",
+      "source_sha256": "330cd86db33c501f",
+      "value": "PASS"
+    },
+    {
+      "commit": "679c9e5",
+      "date": "2026-08-14",
+      "gate": "TestQwen35_forwardParity",
+      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
+      "promoted_by": "francis",
+      "source_sha256": "cf90f5ae4c1b7f2c",
+      "value": "PASS"
+    },
+    {
+      "commit": "679c9e5",
+      "date": "2026-08-14",
+      "gate": "TestQwen3_forwardParity",
+      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
+      "promoted_by": "francis",
+      "source_sha256": "051a58eff88a5cbe",
+      "value": "PASS"
+    }
+  ]
+}
