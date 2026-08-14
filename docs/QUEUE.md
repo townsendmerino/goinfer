@@ -3284,6 +3284,110 @@ after the fact.
 the two live instances are being resolved by hand-bisect anyway. Implementing it is the first change
 after the tag sequence, not during it.
 
+## B11 — TWO SERIALIZATION PATHS DIFFER BY 8 BYTES, and neither is known correct
+
+**RE-FILED 2026-08-13** — the original was destroyed by the `--update` data-loss bug (fixed in
+`8827c6a`), and its framing was **wrong on the facts**. Both corrections are below.
+
+`TestSerializeWeightsTo_matchesBuffer` fails:
+
+```
+streamed length 632821543 != buffered 632821551
+```
+
+The assertion is `decoder/serialize_test.go:443`.
+
+**632,821,551 − 632,821,543 = 8 bytes. One uint64.** On a ~633 MB payload that is not drift or a
+rounding artifact — it is one field written by one path and not the other, or at a different width.
+
+**CORRECTION — this is NOT a first-run.** The original entry claimed the gate "did not start
+failing, it started running", on the belief that `GOINFER_PREQUANT_GGUF` had never been set. It had.
+This test **failed identically on 2026-08-12**, in the very sweep C1a was discharged on. It is a
+**known-bad of at least two days' standing**, not a newly-exposed unknown, and it is **not** caused
+by anything in v0.13.0.
+
+What still stands:
+
+1. **There is no basis yet for saying which side is correct.** The test asserts the two agree, not
+   which is right. "Streamed is short by 8" and "buffered is long by 8" are the same observation.
+2. **If the streamed path is the short one, anything it has written may be affected.** That is the
+   `--stream-weights` / `.giw` transcode path used for bigger-than-RAM models — where regenerating
+   an artifact is most expensive. Whether existing `.giw` files are readable, subtly truncated, or
+   fine is **not established** and is the first thing to determine.
+
+**First moves:** (a) find the field — diff the two writers' header/section emission, not the
+payloads, since 8 bytes at one site is structural; (b) decide which side is correct against the
+reader; (c) only then ask whether any written artifact is affected.
+
+## B12 — the selector census could not see a gate nobody was running (FIXED)
+
+**RE-FILED 2026-08-13** — destroyed by the same `--update` bug.
+
+`scripts/selector_coverage.py` analysed gating **only for the 49 SELECTED tests**. The 286 "reached
+by NONE" were printed as a bare count and never attributed, so an env-gated test that no selector
+reaches was invisible *as* env-gated.
+
+A **defect in the census, not a process failure**: nobody ignored a warning, because the information
+was never produced. The count was accurate and told you nothing.
+
+**Fixed:** the unselected bucket is now broken down by what *also* gates it, and the report ends with
+the env vars gating otherwise-unreached tests — **42 of them**.
+
+## B13 — 42 ENV-GATED TEST SETS THAT NOTHING SELECTS. One campaign, budgeted, AFTER the tag.
+
+**RE-FILED 2026-08-13** — destroyed by the same `--update` bug. **DO NOT ENABLE ANY BEFORE THE TAG.**
+
+**Rationale.** Enabling these converts a **bounded release into an unbounded investigation**: each
+failure needs a bisect against the previous tag before anyone can say whether it blocks. **Nothing
+about this surface got worse because v0.13.0 happened** — it has been dark for as long as the
+selectors have existed.
+
+**Sharpened by what the preflight actually found.** The original entry argued the yield would be high
+because one variable was set and produced two failures. The 2026-08-12 comparison shows those two
+were **already failing**, so the correct statement is stronger and simpler: **the dark surface hides
+standing failures, not just unknowns.** Three of the gates reachable this way
+(`TestDecodeParityInt4`, `TestSerializeWeightsTo_matchesBuffer`, `TestQwen35GGUF_vsSafetensors`) have
+been red for at least two days with nobody informed.
+
+**After the release:** batches, each failure triaged by **(a) can a shipped path reach it** and
+**(b) is it older than the current tag**, with a **budget that stops the campaign** rather than the
+list stopping it.
+
+**COUNT — two numbers, recorded rather than smoothed.** The census says **42**; an independent
+re-derivation counting only variables read *inside a test body* says **41**. The difference is
+`GOINFER_QWEN35_REAL`, read in a file-level helper. Both attributions are defensible. The next person
+to count will get 41 and should know why.
+
+The 42, and the test count behind them (47 test functions), are reproduced by
+`python3 scripts/selector_coverage.py` — the report is the list, so it cannot go stale here.
+
+Seven non-`GOINFER_` variables also gate unselected tests and are excluded as out of scope:
+`G4_TRACE`, `GEMMA3_4B`, `GOMEMLIMIT`, `HOME`, `NOISE_FLOOR_CKPT`, `ROUTER_CAPTURE_OUT`, `ZZBASE`.
+
+## B15 — the manifest EMITTER promotes experimental → validated on tiny-golden evidence
+
+**Found 2026-08-13 by running the sweep with `EMIT_MANIFEST=1`.** The merge wrote:
+
+| family | committed | emitted |
+|---|---|---|
+| `glm4_moe`, `mixtral`, `qwen2_5_vl`, `qwen2_moe` | `experimental` / `tiny-golden` | **`validated`** / `tiny-golden` |
+| `mellum` | `validated` / `real-model-oracle` | `validated` / **`real-oracle`** |
+
+Two distinct defects: it **promotes status without upgrading the method**, and it **corrupts a valid
+method string** (`real-model-oracle` → `real-oracle`, which is not a T3 method).
+
+**`TestParityManifest_methodTier` caught it** — it passes on the committed manifest and fails on the
+emitted one. Without that gate this run would have silently upgraded four families to *supported* in
+the published capability matrix on tiny-golden evidence. That is the gate doing exactly the job it
+was written for, against the tool that writes the file.
+
+**The emission was DROPPED, not committed.** The manifest stays at its committed state. Commit Y for
+this release therefore contains **no manifest change**, and that is the honest outcome rather than a
+missing step.
+
+**Not fixed.** The emitter needs the promotion rule and the method-name handling repaired before
+`EMIT_MANIFEST=1` is trusted again; until then the flag writes claims the tier gate has to catch.
+
 <!-- CITATION-INDEX: generated by scripts/queue_citation_lint.py --update; do not edit by hand -->
 
 ## SHA index
@@ -3313,6 +3417,7 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `7ccec1e` | fix(cuda): the expert cache sizes itself — topK was the worst possible default |
 | `7fa09da` | test(cuda): opt-in VRAM tracer for A12 — cuMemGetInfo, in-process, per-sample |
 | `82b39cc` | docs(parity): document qwen3_5_moe's int8-vs-bf16 movement (v0.8.0 §1 — gate-backed pass) |
+| `8827c6a` | lint: --update was silently DELETING content appended after the index marker |
 | `8fecfad` | ci: heavy_gate.sh — a runner for the real-checkpoint tier that no CI job executes |
 | `91f359f` | fix(decoder): matmulInto dispatches on the property, not on W8A8 (P7) |
 | `93eb7d4` | feat(decoder): gpt-oss real-model path — batched-prefill fix + real gates |
@@ -3371,6 +3476,7 @@ supports.
 | `docs/QUEUE.md|decoder/sampler_chunked.go:188` | goinfer | `return drawChunked(e, sums, z, r)` |
 | `docs/QUEUE.md|decoder/scratch.go:38` | goinfer | `ws        *linalg.Workspace // W8A8 activation-quant scratch (zero-alloc Into/Batch)` |
 | `docs/QUEUE.md|decoder/serialize_shapecheck_test.go:15` | goinfer | `func TestValidateShapes_catchesArchMismatch(t *testing.T) {` |
+| `docs/QUEUE.md|decoder/serialize_test.go:443` | goinfer | `t.Fatalf("streamed length %d != buffered %d", n, len(want))` |
 | `docs/QUEUE.md|internal/giw/bundle.go:114` | goinfer | `if avail := fi.Size() - (tokOff + 4); tokLen > avail {` |
 | `docs/QUEUE.md|internal/serveapp/embeddings.go:26` | goinfer | `// Embedding request bounds (audit C-21). /v1/embeddings is deliberately un-queued (the ` |
 | `docs/QUEUE.md|internal/serveapp/main.go:432` | goinfer | `// write, so a long stream is unaffected. WriteTimeout stays 0: SSE responses are long-l` |
