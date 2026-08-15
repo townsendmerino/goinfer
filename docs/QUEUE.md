@@ -99,7 +99,7 @@ groups were seeded from conversation, and **the rate is much lower**, which is t
 |---|---|---|
 | C1 drain fix — CUDA verification | **open** | no CUDA unload/drain test found |
 | C2 out-of-tree consumer audit | **open** | needs a fresh no-repo session by design |
-| C3 Metal consumer window | **open** | mac batch |
+| C3 Metal consumer window | **RUN 2026-08-15 (metal/v0.13.0)** | cgo-free/no-Xcode build ✅ (require path, otool-confirmed); `go install …/metal/cmd/serve@v0.13.0` **BROKEN** (committed `replace`); resident decode not public-API-drivable; tautology has no Metal analog. Full note: `docs/measurements/c3-metal-consumer-window.md` |
 | C4 soak testing | **open** | `internal/serveapp/fuzz_test.go` and `internal/serveapp/chaos_test.go` exist; neither is an hours-long soak |
 | D1 trace tap + launch-site table | **open** | no coverage table in `docs/` |
 | D2 launch-wrapper commit 1 | **open** | no `cuda/internal/gen` |
@@ -173,6 +173,13 @@ person's job, and this sweep is its baseline.
 Within the mac batch, **C3 goes FIRST**, not last: it is the largest completely uncovered surface and
 it sank once already. Batching it behind two chores is precisely how that happened. Then
 `metal-rope-merge`'s push, then B4's stash check.
+
+**C3 DONE 2026-08-15** (auto-pickup fired on the `v0.13.0` tag). cgo-free/no-Xcode build verified via
+the require path; two real gaps found — `go install …/metal/cmd/serve@v0.13.0` is broken by the
+committed `replace github.com/townsendmerino/goinfer => ../` in the tagged `metal/go.mod`, and
+resident-metal decode isn't drivable via the public API (needs the serve binary, which `go install`
+can't build). Full findings + the resolved dep set in `docs/measurements/c3-metal-consumer-window.md`.
+**Follow-up worth queuing:** tag `metal/` from a replace-free tree so `go install` works.
 
 ## Draft: contents of the next release
 
@@ -348,6 +355,7 @@ supports.
 | `docs/how-inference-works.md|decoder/sampler.go:118` | goinfer | `// distribution restricted to ONE token is deterministic regardless of that token's prob` |
 | `docs/how-inference-works.md|decoder/session.go:71` | goinfer | `// stale history. Callers must skip it (and reconcile) for an empty prompt, so a rejecte` |
 | `docs/ideas-weight-memory.md|decoder/mlp.go:69` | goinfer | `anchor: func mlp(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend, scr` |
+| `docs/measurements/c3-metal-consumer-window.md|metal/gemma_parity_test.go:84` | goinfer | `t.Fatal("metal resident DECLINED — admission says it should be admitted")` |
 | `docs/multimodal.md|decoder/config.go:466` | goinfer | `case c.MoeIntermediateSize <= 0:` |
 | `docs/multimodal.md|decoder/gguf_qwen35.go:77` | goinfer | `anchor: func ggufQwen35Config(g *embed.GGUFFile) (*Config, error) {` |
 | `docs/multimodal.md|decoder/weights.go:344` | goinfer | `const shardIndexFile = "model.safetensors.index.json"` |
