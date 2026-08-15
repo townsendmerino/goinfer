@@ -623,7 +623,9 @@ func renderMarkdown(rows []capabilityRow) []byte {
 	b.WriteString("`tiny-oracle` against the family's tiny HF-seeded golden (used when no released ")
 	b.WriteString("model is small enough to diff); a `+coherent` suffix means a real model also ran ")
 	b.WriteString("qualitatively; `coherent-gen` is a real-model coherence check with no numeric ")
-	b.WriteString("oracle; `pending` is not yet recorded. Source: `testdata/parity_manifest.json`.\n\n")
+	b.WriteString("oracle; `shared-path: X` is an alias family riding X's oracle on the same forward ")
+	b.WriteString("file and the same `deps_hash` (so it carries no metrics of its own — X's are the ")
+	b.WriteString("measurement); `pending` is not yet recorded. Source: `testdata/parity_manifest.json`.\n\n")
 
 	// Group by coverage axis, preserving the sorted order.
 	axes := []string{}

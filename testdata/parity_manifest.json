@@ -46,7 +46,7 @@
         "quant"
       ],
       "own": [],
-      "deps_hash": "sha256:06cc5fcf2a79e01df2b9bf0afe7fd3d2a4a504a4a0068697013d7ba7a64383aa",
+      "deps_hash": "sha256:7b570e397010b682fe1d44eedc5d1374dbd247f524c740e6b3ec8425ed06babb",
       "status": "validated",
       "validated_at": "b067007",
       "date": "2026-08-05",
@@ -66,7 +66,7 @@
         "quant"
       ],
       "own": [],
-      "deps_hash": "sha256:06cc5fcf2a79e01df2b9bf0afe7fd3d2a4a504a4a0068697013d7ba7a64383aa",
+      "deps_hash": "sha256:7b570e397010b682fe1d44eedc5d1374dbd247f524c740e6b3ec8425ed06babb",
       "status": "validated",
       "validated_at": "b067007",
       "date": "2026-08-05",
@@ -89,7 +89,7 @@
       "own": [
         "decoder/forward_deepseek.go"
       ],
-      "deps_hash": "sha256:a3c4014ef9f820b735f3cc04e9729e9090aef2c584fd560db49b7af38214f5fd",
+      "deps_hash": "sha256:7b72cb441268d922bb8916c75c613c8c2e57f5bd6ddc1fa1df69b8d15e1ab5a7",
       "status": "validated",
       "validated_at": "b067007",
       "date": "2026-08-05",
@@ -112,7 +112,7 @@
       "own": [
         "decoder/forward_deepseek.go"
       ],
-      "deps_hash": "sha256:a3c4014ef9f820b735f3cc04e9729e9090aef2c584fd560db49b7af38214f5fd",
+      "deps_hash": "sha256:7b72cb441268d922bb8916c75c613c8c2e57f5bd6ddc1fa1df69b8d15e1ab5a7",
       "status": "validated",
       "validated_at": "b067007",
       "date": "2026-08-05",
@@ -132,7 +132,7 @@
         "quant"
       ],
       "own": [],
-      "deps_hash": "sha256:06cc5fcf2a79e01df2b9bf0afe7fd3d2a4a504a4a0068697013d7ba7a64383aa",
+      "deps_hash": "sha256:7b570e397010b682fe1d44eedc5d1374dbd247f524c740e6b3ec8425ed06babb",
       "status": "validated",
       "validated_at": "38b7b6a",
       "date": "2026-08-04",
@@ -154,7 +154,7 @@
       "own": [
         "decoder/forward_gemma4.go"
       ],
-      "deps_hash": "sha256:18c309adfbb91055d1d8c56931e52180db34b24883d8225ca15ad30cc7e1e9af",
+      "deps_hash": "sha256:6eebc3d5d8fbfa1d079ea43cfb74781eedb2416ceba34094ebf61c6144bd0007",
       "status": "validated",
       "validated_at": "d64afe4",
       "date": "2026-06-16",
@@ -175,7 +175,7 @@
         "moe"
       ],
       "own": [],
-      "deps_hash": "sha256:06cc5fcf2a79e01df2b9bf0afe7fd3d2a4a504a4a0068697013d7ba7a64383aa",
+      "deps_hash": "sha256:7b570e397010b682fe1d44eedc5d1374dbd247f524c740e6b3ec8425ed06babb",
       "status": "experimental",
       "validated_at": "2f26643",
       "date": "2026-08-04",
@@ -198,7 +198,7 @@
       "own": [
         "decoder/forward_gptoss.go"
       ],
-      "deps_hash": "sha256:fb857bb5d531617f5ef80594acda3969d6412113f4c6959c207a528700cf5d27",
+      "deps_hash": "sha256:5437c3728065ec429907fe88f96a9a580cbca342e6ae1850bba3e92a3fa3170d",
       "status": "validated",
       "validated_at": "25a4711",
       "date": "2026-07-27",
@@ -217,14 +217,18 @@
         "quant"
       ],
       "own": [],
-      "deps_hash": "sha256:06cc5fcf2a79e01df2b9bf0afe7fd3d2a4a504a4a0068697013d7ba7a64383aa",
-      "status": "pending",
-      "validated_at": null,
-      "date": null,
-      "reference": null,
-      "machine": null,
-      "method": null,
-      "metrics": null
+      "deps_hash": "sha256:7b570e397010b682fe1d44eedc5d1374dbd247f524c740e6b3ec8425ed06babb",
+      "status": "validated",
+      "validated_at": "c3e43c8",
+      "date": "2026-08-15",
+      "reference": "HF f32 (GPT-2 small, 124M)",
+      "machine": "linux-62gb",
+      "method": "full-forward-oracle",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 1.0,
+        "cosine_mean": 1.0
+      }
     },
     "granitemoehybrid": {
       "uses": [
@@ -237,14 +241,18 @@
       "own": [
         "decoder/forward_granite.go"
       ],
-      "deps_hash": "sha256:fb20431849295bb56672f67a2cbf916b83a27723f51a9a9074f7de26a5fcc3ed",
-      "status": "pending",
-      "validated_at": null,
-      "date": null,
-      "reference": null,
-      "machine": null,
-      "method": null,
-      "metrics": null
+      "deps_hash": "sha256:61082575546e7efcf389c8396ce56ccb97c32ccb04038ee20f726ae591b20e60",
+      "status": "validated",
+      "validated_at": "c3e43c8",
+      "date": "2026-08-15",
+      "reference": "HF bf16 (Granite-4.0-H-Tiny 7B-A1B; int8 resident)",
+      "machine": "linux-62gb",
+      "method": "real-model-oracle",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 0.99566,
+        "cosine_mean": 0.99566
+      }
     },
     "kimi_k2": {
       "uses": [
@@ -256,13 +264,13 @@
       "own": [
         "decoder/forward_deepseek.go"
       ],
-      "deps_hash": "sha256:a3c4014ef9f820b735f3cc04e9729e9090aef2c584fd560db49b7af38214f5fd",
-      "status": "pending",
-      "validated_at": null,
-      "date": null,
-      "reference": null,
-      "machine": null,
-      "method": null,
+      "deps_hash": "sha256:7b72cb441268d922bb8916c75c613c8c2e57f5bd6ddc1fa1df69b8d15e1ab5a7",
+      "status": "validated",
+      "validated_at": "b067007",
+      "date": "2026-08-05",
+      "reference": "rides deepseek_v3's real-model oracle (HF bf16 Moonlight-16B-A3B; int8 resident) — same forward_deepseek.go, same deps_hash. Kimi's config-delta (64 heads, 384 experts top-8, sigmoid noaux_tc routing default) is covered by TestKimi_descriptor / TestKimi_routingDefault / TestKimi_textParity (tiny golden, cosine 1.000000)",
+      "machine": "linux-62gb",
+      "method": "shared-path (via deepseek_v3)",
       "metrics": null
     },
     "llama": {
@@ -272,7 +280,7 @@
         "quant"
       ],
       "own": [],
-      "deps_hash": "sha256:06cc5fcf2a79e01df2b9bf0afe7fd3d2a4a504a4a0068697013d7ba7a64383aa",
+      "deps_hash": "sha256:7b570e397010b682fe1d44eedc5d1374dbd247f524c740e6b3ec8425ed06babb",
       "status": "validated",
       "validated_at": "b6dfbb3",
       "date": "2026-08-04",
@@ -295,7 +303,7 @@
       "own": [
         "decoder/forward_llama4.go"
       ],
-      "deps_hash": "sha256:024d45e615834cdaba72ca876f0be84cac84cee3b9cfc53c95a24b84a3c1202a",
+      "deps_hash": "sha256:6490d74d50f50b179cba039c4a1d7e69c9e72349ec6d309325aaea23f8e96c28",
       "status": "experimental",
       "validated_at": "3f23c96",
       "date": "2026-06-16",
@@ -316,7 +324,7 @@
         "moe"
       ],
       "own": [],
-      "deps_hash": "sha256:06cc5fcf2a79e01df2b9bf0afe7fd3d2a4a504a4a0068697013d7ba7a64383aa",
+      "deps_hash": "sha256:7b570e397010b682fe1d44eedc5d1374dbd247f524c740e6b3ec8425ed06babb",
       "status": "validated",
       "validated_at": "f0e83ed",
       "date": "2026-08-04",
@@ -336,7 +344,7 @@
         "quant"
       ],
       "own": [],
-      "deps_hash": "sha256:06cc5fcf2a79e01df2b9bf0afe7fd3d2a4a504a4a0068697013d7ba7a64383aa",
+      "deps_hash": "sha256:7b570e397010b682fe1d44eedc5d1374dbd247f524c740e6b3ec8425ed06babb",
       "status": "validated",
       "validated_at": "b6dfbb3",
       "date": "2026-08-04",
@@ -357,7 +365,7 @@
         "moe"
       ],
       "own": [],
-      "deps_hash": "sha256:06cc5fcf2a79e01df2b9bf0afe7fd3d2a4a504a4a0068697013d7ba7a64383aa",
+      "deps_hash": "sha256:7b570e397010b682fe1d44eedc5d1374dbd247f524c740e6b3ec8425ed06babb",
       "status": "experimental",
       "validated_at": "2f26643",
       "date": "2026-08-04",
@@ -380,14 +388,18 @@
       "own": [
         "decoder/forward_nemotron.go"
       ],
-      "deps_hash": "sha256:1e10cb3f68b68e92dfea1ce0ced91d265608ce9ad7fc54c127d02567afb88510",
-      "status": "pending",
-      "validated_at": null,
-      "date": null,
-      "reference": null,
-      "machine": null,
-      "method": null,
-      "metrics": null
+      "deps_hash": "sha256:3a265578b61d4dfcee76a618db6b3dfa81d867066ab26d6e7e94226fe6b76634",
+      "status": "validated",
+      "validated_at": "c3e43c8",
+      "date": "2026-08-15",
+      "reference": "HF bf16 (NVIDIA-Nemotron-Nano-9B-v2; int8 resident)",
+      "machine": "linux-62gb",
+      "method": "real-model-oracle",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 0.99574,
+        "cosine_mean": 0.99574
+      }
     },
     "phi3": {
       "uses": [
@@ -396,7 +408,7 @@
         "quant"
       ],
       "own": [],
-      "deps_hash": "sha256:06cc5fcf2a79e01df2b9bf0afe7fd3d2a4a504a4a0068697013d7ba7a64383aa",
+      "deps_hash": "sha256:7b570e397010b682fe1d44eedc5d1374dbd247f524c740e6b3ec8425ed06babb",
       "status": "validated",
       "validated_at": "b067007",
       "date": "2026-08-05",
@@ -416,7 +428,7 @@
         "quant"
       ],
       "own": [],
-      "deps_hash": "sha256:06cc5fcf2a79e01df2b9bf0afe7fd3d2a4a504a4a0068697013d7ba7a64383aa",
+      "deps_hash": "sha256:7b570e397010b682fe1d44eedc5d1374dbd247f524c740e6b3ec8425ed06babb",
       "status": "validated",
       "validated_at": "b6dfbb3",
       "date": "2026-08-04",
@@ -436,11 +448,11 @@
         "quant"
       ],
       "own": [],
-      "deps_hash": "sha256:06cc5fcf2a79e01df2b9bf0afe7fd3d2a4a504a4a0068697013d7ba7a64383aa",
+      "deps_hash": "sha256:7b570e397010b682fe1d44eedc5d1374dbd247f524c740e6b3ec8425ed06babb",
       "status": "experimental",
       "validated_at": "2f26643",
       "date": "2026-08-04",
-      "reference": "HF (qwen2.5-VL-tiny seeded fixture, e2e encoder\u2192decoder)",
+      "reference": "HF (qwen2.5-VL-tiny seeded fixture, e2e encoder→decoder)",
       "machine": "linux-62gb",
       "method": "tiny-golden",
       "metrics": {
@@ -457,7 +469,7 @@
         "moe"
       ],
       "own": [],
-      "deps_hash": "sha256:06cc5fcf2a79e01df2b9bf0afe7fd3d2a4a504a4a0068697013d7ba7a64383aa",
+      "deps_hash": "sha256:7b570e397010b682fe1d44eedc5d1374dbd247f524c740e6b3ec8425ed06babb",
       "status": "experimental",
       "validated_at": "2f26643",
       "date": "2026-08-04",
@@ -477,7 +489,7 @@
         "quant"
       ],
       "own": [],
-      "deps_hash": "sha256:06cc5fcf2a79e01df2b9bf0afe7fd3d2a4a504a4a0068697013d7ba7a64383aa",
+      "deps_hash": "sha256:7b570e397010b682fe1d44eedc5d1374dbd247f524c740e6b3ec8425ed06babb",
       "status": "validated",
       "validated_at": "7cc2f0d",
       "date": "2026-08-04",
@@ -502,11 +514,11 @@
         "decoder/forward_qwen35.go",
         "decoder/gguf_qwen35.go"
       ],
-      "deps_hash": "sha256:1c960906a02062e965e426fd696135c4d39b56faa6070334cc7eae6c34f27af2",
+      "deps_hash": "sha256:2942292f63b3145004715acd99c96f9e45010f575ba895a401003d45e4df508e",
       "status": "validated",
       "validated_at": "b62ba30",
       "date": "2026-06-20",
-      "reference": "HF bf16 (Qwen3.6-35B-A3B text decoder; int8-vs-bf16). v0.8.0 re-run at HEAD: argmax 66/80, cosine_min 0.99333 (>=0.98 floor), all divergences near-ties (worst gap 0.0045). Down from the e3eb033 run (74/80, 0.99466) with the forward_qwen35.go refactors (demand-paging / WeightMat migration / scratch-reuse) \u2014 benign: mean ~unchanged (0.99837), no forward error.",
+      "reference": "HF bf16 (Qwen3.6-35B-A3B text decoder; int8-vs-bf16). v0.8.0 re-run at HEAD: argmax 66/80, cosine_min 0.99333 (>=0.98 floor), all divergences near-ties (worst gap 0.0045). Down from the e3eb033 run (74/80, 0.99466) with the forward_qwen35.go refactors (demand-paging / WeightMat migration / scratch-reuse) — benign: mean ~unchanged (0.99837), no forward error.",
       "machine": "linux-62gb",
       "method": "full-forward-oracle",
       "metrics": {

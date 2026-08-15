@@ -105,7 +105,7 @@ groups were seeded from conversation, and **the rate is much lower**, which is t
 | D2 launch-wrapper commit 1 | **open** | no `cuda/internal/gen` |
 | D3 parked flag-pair | **open**, design read done above | — |
 | E1 v1.0 gate as written criteria | **open** | prose item, no tree anchor |
-| E2 four per-family demotions | **open** | manifest still lists `gpt2`, `granitemoehybrid`, `kimi_k2`, `nemotron_h` as `pending` |
+| E2 four per-family demotions | **DONE 2026-08-15 `1cf8ab2`** — and NO demotions | all four validated at T3, so the judgment the entry anticipated never had to be made: gpt2 `full-forward-oracle`, granitemoehybrid + nemotron_h `real-model-oracle`, kimi_k2 `shared-path (via deepseek_v3)`. **The tripwire now enforces 23/23, up from 19/23.** The two hybrids needed loader fixes first — neither could load its RELEASED checkpoint, and granite was roping a NoPE model (see the commit; the demotion rule's "unfinished does not qualify" is what forced fixing over demoting) |
 | E3 freeze re-declaration | **DONE `cda8cfe`** | re-declared as a proof requirement, with decider and date |
 | E4 `scripts/bench_compare.sh` fix or retire | **FIXED** | it now opens with *"goinfer's OWN numbers only. NOT a peer comparison"* and points at `scripts/bench_peer.py`, which drives both sides |
 | E5 promo drafts | **unverifiable** | held in conversation, nothing in the tree to check |
@@ -143,7 +143,7 @@ D3's refresh in the rebase worktree and getting `goldens=7`.)*
 | B4 | a stash that does not exist here | **unverifiable** — the description is all that survives, and it names a file that resolves nowhere |
 | C1 | `588052b` (the drain fix) | matches — Metal-verified, CUDA arm untested |
 | D2 | design recorded in-entry, no branch | matches; no external source to drift from |
-| E2 | `testdata/parity_manifest.json` | matches — the four families are still `pending` |
+| E2 | `testdata/parity_manifest.json` | matched when written; **resolved 2026-08-15** — all four are now `validated`. What the description got wrong was not its status but its FRAMING: it called them "demotion judgments", inheriting the campaign doc's "validation + recording, NOT engineering". Two of the four were engineering, and only a released checkpoint could say so |
 | E4 | `scripts/bench_compare.sh` | **stale** — the entry says "status unconfirmed, may still measure the two sides differently"; the script now refuses that use and points at `scripts/bench_peer.py`. Corrected in the status sweep above |
 | E6 | aikit tree + `gpu/v0.27.0` | **now stale by design** — the tag it pinned is superseded by `gpu/v0.28.0`. Re-checked at the bump: `be049df` is an ancestor of `gpu/v0.27.0`, and across `gpu/v0.27.0..gpu/v0.28.0` the quantized GEMV PTX is byte-identical |
 | G1 | `docs/scoping-lfm2.md` | matches |
@@ -288,6 +288,7 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 |---|---|
 | `0103b49` | fix(cuda): pay the deferred reservation before sizing the cache (A9-FIX) |
 | `0c54e35` | fix(gate): repo hygiene runs what CI runs, derived from ci.yml (B0) |
+| `1cf8ab2` | E2: the four pending families get real oracles — and two of them were decoding released checkpoints wrong |
 | `1d0d1ed` | test(decoder): int4 forward goldens — 23 fixtures, 16 architectures (Q1c) |
 | `1f6dbe0` | fix(parity,fmt): gofmt the threshold sweep + refresh deps_hash after comment-only core edits |
 | `2d28358` | docs(branch-note): re-derive against the corrected cap (D3 design read) |
@@ -358,7 +359,7 @@ supports.
 | `docs/measurements/c3-metal-consumer-window.md|decoder/model.go:301` | goinfer | `switch o.Backend {` |
 | `docs/measurements/c3-metal-consumer-window.md|decoder/residency.go:517` | goinfer | `func (m *Model) withResidency() *Model {` |
 | `docs/measurements/c3-metal-consumer-window.md|metal/gemma_parity_test.go:84` | goinfer | `t.Fatal("metal resident DECLINED — admission says it should be admitted")` |
-| `docs/multimodal.md|decoder/config.go:466` | goinfer | `case c.MoeIntermediateSize <= 0:` |
+| `docs/multimodal.md|decoder/config.go:875` | goinfer | `if json.Unmarshal(b, &nest) == nil && len(nest.TextConfig) > 0 {` |
 | `docs/multimodal.md|decoder/gguf_qwen35.go:77` | goinfer | `anchor: func ggufQwen35Config(g *embed.GGUFFile) (*Config, error) {` |
 | `docs/multimodal.md|decoder/weights.go:344` | goinfer | `const shardIndexFile = "model.safetensors.index.json"` |
 | `docs/ollama-chase.md|cuda/resident.go:1066` | goinfer | `// All of it runs ON the executor thread — that thread made the context current — and th` |
@@ -409,7 +410,7 @@ supports.
 | `docs/queue-performance.md|linalg/quant.go:136` | aikit | `dequantRowInt8(deq, bq, 1.0)` |
 | `docs/scoping-lfm2.md|decoder/arch.go:156` | goinfer | `type nemotronParams struct {` |
 | `docs/scoping-lfm2.md|decoder/attention.go:94` | goinfer | `if arch.QKNorm {` |
-| `docs/scoping-lfm2.md|decoder/config.go:627` | goinfer | `case c.UseQKNorm:` |
+| `docs/scoping-lfm2.md|decoder/config.go:668` | goinfer | `case c.UseQKNorm:` |
 | `docs/scoping-lfm2.md|decoder/deltanet.go:99` | goinfer | `// 1. Projection + depthwise causal conv (+ SiLU). Taps t-K+1..t: the last K-1` |
 | `docs/scoping-lfm2.md|decoder/forward_qwen35.go:30` | goinfer | `if arch.isLinearLayer(l) {` |
 | `docs/scoping-lfm2.md|decoder/kvcache.go:50` | goinfer | `type KVCache struct {` |

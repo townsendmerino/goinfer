@@ -14,7 +14,39 @@
 > code or goldens are missing. Per family: get the checkpoint → run the existing
 > gate → transcribe metrics into the manifest. The matrix re-joins automatically.
 
-## Current state — RECOMPUTED FROM THE MANIFEST (2026-08-09)
+## CAMPAIGN CLOSED — 2026-08-15 (`1cf8ab2` + the manifest follow-up)
+
+> **Zero `pending` rows remain; the staleness tripwire enforces 23/23 families.** The last four
+> (`gpt2`, `granitemoehybrid`, `kimi_k2`, `nemotron_h`) cleared at T3 — `full-forward-oracle`,
+> `real-model-oracle` ×2, and `shared-path (via deepseek_v3)`. Nothing was demoted. Measurements and
+> the per-family narrative are in `queue-release.md` §E2; what belongs *here* is the correction to
+> this doc's central claim.
+>
+> **"Validation + recording, NOT engineering" was wrong for half the remainder.** Neither hybrid
+> could LOAD its released checkpoint: granite rejected IBM's 4.56-era flat `rope_theta` (it demanded
+> `rope_parameters`) and then roped a model whose config says `position_embedding_type: "nope"`;
+> nemotron_h read `layers_block_type` where NVIDIA ships `hybrid_override_pattern`, and the wrong
+> embedding tensor name. Granite's roped forward measured f32 cosine 0.9936 with a diverging
+> continuation, against 0.9995 and exact once fixed — a real correctness bug in a family the matrix
+> already listed as supported.
+>
+> **Why the doc could believe otherwise, and the rule that generalizes.** Both families' T1 fixtures
+> are *generated* by instantiating a config on the installed transformers, so each encodes that
+> version's spelling of the schema and **cannot disagree with the loader it is gating**. The doc's
+> "every pending family already has its committed T1 tiny golden *and* a parity test harness" was
+> true and yet did not imply what it was taken to imply. **A generated fixture proves the forward
+> against itself on the schema; only a downloaded checkpoint proves the loader against the world.**
+> That distinction is worth adding to `parity-coverage-policy.md` the next time it is edited — it is
+> the same self-consistent-gate blind spot the policy already names, arriving through the fixture
+> rather than through the oracle.
+>
+> **What is genuinely left is the five `experimental` rows** (`glm4_moe`, `mixtral`, `qwen2_5_vl`,
+> `qwen2_moe`, `llama4_text` — all `tiny-golden`), which the §"category this doc missed" section
+> below predicted and which `TestParityManifest_methodTier` now enforces rather than merely
+> describes. They are labelled honestly and excluded from the supported count; upgrading them is a
+> separate piece of work, not this campaign.
+
+## Current state — RECOMPUTED FROM THE MANIFEST (2026-08-09) — superseded by the close-out above
 
 > **The June snapshot below the fold is superseded.** The manifest is the source of truth, not this
 > doc; recomputed at HEAD from `testdata/parity_manifest.json` + the staleness gate. **Drift in both

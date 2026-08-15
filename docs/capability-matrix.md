@@ -8,7 +8,7 @@ an adapter are grouped). Per-checkpoint dims (hidden size, layer/expert
 counts) are intentionally excluded — they vary by checkpoint. Regenerate
 with `go test ./decoder -run CapabilityMatrix -update`.
 
-**Parity** shows each family's strongest validation as `method argmax%/cosine_min`: `full-oracle`/`real-oracle`/`weight-diff` diff against a RELEASED model; `tiny-oracle` against the family's tiny HF-seeded golden (used when no released model is small enough to diff); a `+coherent` suffix means a real model also ran qualitatively; `coherent-gen` is a real-model coherence check with no numeric oracle; `pending` is not yet recorded. Source: `testdata/parity_manifest.json`.
+**Parity** shows each family's strongest validation as `method argmax%/cosine_min`: `full-oracle`/`real-oracle`/`weight-diff` diff against a RELEASED model; `tiny-oracle` against the family's tiny HF-seeded golden (used when no released model is small enough to diff); a `+coherent` suffix means a real model also ran qualitatively; `coherent-gen` is a real-model coherence check with no numeric oracle; `shared-path: X` is an alias family riding X's oracle on the same forward file and the same `deps_hash` (so it carries no metrics of its own — X's are the measurement); `pending` is not yet recorded. Source: `testdata/parity_manifest.json`.
 
 ## gated-linear hybrid (Gated DeltaNet)
 
@@ -30,7 +30,7 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | DeepSeek-V2 | `deepseek_v2` | sparse +shared | none | no | partial | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | real-oracle 100.0%/0.99924 |
 | DeepSeek-V3 | `deepseek_v3` | sparse +shared | none | no | partial | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | real-oracle 100.0%/0.99951 |
-| Kimi K2 | `kimi_k2` | sparse +shared | none | no | partial | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | pending |
+| Kimi K2 | `kimi_k2` | sparse +shared | none | no | partial | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | shared-path: deepseek_v3 |
 
 ## softmax-GQA
 
@@ -73,7 +73,7 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 | Command-R | `cohere` | dense | none | no | full | LayerNorm, parallel | SwiGLU | yes | safetensors | text | yes | full-oracle 100.0%/1.00000 |
 | Command-R7B | `cohere2` | dense | interleave | no | full | LayerNorm, parallel | SwiGLU | yes | safetensors | text | yes | full-oracle 100.0%/1.00000 |
 | GLM-4.5/4.6 | `glm4_moe` | sparse +shared | none | yes | partial | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | experimental: tiny-oracle 100.0%/1.00000 |
-| GPT-2 | `gpt2` | dense | none | no | learned/none | LayerNorm, pre-norm | GELU-tanh (non-gated) | yes | safetensors, GGUF | text | no | pending |
+| GPT-2 | `gpt2` | dense | none | no | learned/none | LayerNorm, pre-norm | GELU-tanh (non-gated) | yes | safetensors, GGUF | text | no | full-oracle 100.0%/1.00000 |
 | Gemma 3 | `gemma3`, `gemma3_text` | dense | interleave | yes | dual-base | RMSNorm, sandwich | GeGLU | yes | safetensors, GGUF | text (+ vision via VL text_config) | yes | full-oracle 100.0%/0.99972 |
 | Gemma 4 | `gemma4`, `gemma4_text`, `gemma4_unified_text` | dense ‖ sparse, no-shared | interleave | yes | dual-base | RMSNorm, sandwich | GeGLU | yes | safetensors, GGUF | text | yes | full-oracle 100.0%/0.99128 |
 | Llama | `llama` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF, GPTQ, AWQ | text | yes | full-oracle 100.0%/1.00000 |
@@ -94,7 +94,7 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 
 | Family | model_type(s) | MoE | Sliding window | QK-norm | RoPE | Norm | Activation | Tied head | Loaders | Modality | GPU-resident | Parity |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Granite-4.0-H | `granitemoehybrid` | sparse +shared | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no | pending |
+| Granite-4.0-H | `granitemoehybrid` | sparse +shared | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no | real-oracle 100.0%/0.99566 |
 
 ## state-space hybrid (Mamba-2, single-op)
 
@@ -102,5 +102,5 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 
 | Family | model_type(s) | MoE | Sliding window | QK-norm | RoPE | Norm | Activation | Tied head | Loaders | Modality | GPU-resident | Parity |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Nemotron-H | `nemotron_h` | dense | none | no | none | RMSNorm, pre-norm | ReLU² (non-gated) | no | safetensors, GGUF | text | yes | pending |
+| Nemotron-H | `nemotron_h` | dense | none | no | none | RMSNorm, pre-norm | ReLU² (non-gated) | no | safetensors, GGUF | text | yes | real-oracle 100.0%/0.99574 |
 

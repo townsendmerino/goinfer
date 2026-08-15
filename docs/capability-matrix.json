@@ -78,7 +78,7 @@
     "loaders": "safetensors, GGUF",
     "modality": "text",
     "gpu_residency_eligible": true,
-    "parity": "pending"
+    "parity": "shared-path: deepseek_v3"
   },
   {
     "name": "cohere",
@@ -158,7 +158,7 @@
     "loaders": "safetensors, GGUF",
     "modality": "text",
     "gpu_residency_eligible": false,
-    "parity": "pending"
+    "parity": "full-oracle 100.0%/1.00000"
   },
   {
     "name": "gemma3",
@@ -441,7 +441,7 @@
     "loaders": "safetensors, GGUF",
     "modality": "text",
     "gpu_residency_eligible": false,
-    "parity": "pending"
+    "parity": "real-oracle 100.0%/0.99566"
   },
   {
     "name": "nemotron_h",
@@ -461,6 +461,6 @@
     "loaders": "safetensors, GGUF",
     "modality": "text",
     "gpu_residency_eligible": true,
-    "parity": "pending"
+    "parity": "real-oracle 100.0%/0.99574"
   }
 ]

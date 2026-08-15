@@ -289,7 +289,11 @@ out-of-tree audit against the release candidate.
 Write that as a checklist so 1.0 is a decision against criteria rather than a feeling.
 
 **The v1.0 gate checklist (draft — the point of E1):**
-- [ ] Parity coverage complete (E2's four `validated_at: null` families resolved: T3 or demoted to experimental).
+- [x] Parity coverage complete (E2's four `validated_at: null` families resolved: T3 or demoted to experimental).
+  **DONE 2026-08-15 `1cf8ab2`** — all four cleared at T3, none demoted; the staleness tripwire now
+  enforces 23/23 families. Five rows remain `experimental` (`glm4_moe`, `mixtral`, `qwen2_5_vl`,
+  `qwen2_moe`, `llama4_text` — all `tiny-golden`), which is a separate line: they are honestly
+  labelled and excluded from the supported count, not `pending`.
 - [ ] Verification machinery sound (the gates run and can fail; skip census clean at the freeze).
 - [ ] Loader + architecture-descriptor surface **actually frozen** (docs stop saying it may change).
 - [ ] Clean out-of-tree audit against the release candidate (C-group consumer window).
@@ -298,11 +302,38 @@ Write that as a checklist so 1.0 is a decision against criteria rather than a fe
   reference-tensor carve-out are in **E7**. (The reference-tensor / `pin_*` generation is *excluded*
   from this line — blocked on Francis's torch-replacement research; see E7 item 7.)
 
-**E2 · The four per-family demotion judgments** — `linux`
+**E2 · The four per-family demotion judgments** — `linux` — **DONE 2026-08-15 (`1cf8ab2` code,
+manifest in the follow-up), and not one demotion among them**
 
-`gpt2`, `granitemoehybrid`, `kimi_k2`, `nemotron_h` carry `validated_at: null` and are the same four
-the `deps_hash` tripwire does not enforce — so 19/23 tracks both the backfill's progress and the
-tripwire's coverage, and clearing it closes both.
+`gpt2`, `granitemoehybrid`, `kimi_k2`, `nemotron_h` carried `validated_at: null` and were the same four
+the `deps_hash` tripwire did not enforce — so 19/23 tracked both the backfill's progress and the
+tripwire's coverage, and clearing it closed both. **The tripwire now enforces 23/23.**
+
+| family | method | measured (linux-62gb) |
+|---|---|---|
+| `gpt2` | `full-forward-oracle` | HF f32 GPT-2 small: argmax exact, cosine 0.99999999999994 |
+| `granitemoehybrid` | `real-model-oracle` | HF bf16 Granite-4.0-H-Tiny, int8 resident: argmax exact, cosine 0.995662, 6/6 continuation exact |
+| `nemotron_h` | `real-model-oracle` | HF bf16 Nemotron-Nano-9B-v2, int8 resident: argmax exact, cosine 0.995737, 6/6 continuation exact |
+| `kimi_k2` | `shared-path (via deepseek_v3)` | no run — same `forward_deepseek.go`, same `deps_hash`; config-delta covered by `TestKimi_*` |
+
+**The finding, which is bigger than the entry.** The campaign doc promised "validation + recording,
+NOT engineering". That was true for `gpt2` (run the existing gate) and `kimi_k2` (a one-line row).
+It was **false for both hybrids, and false in the same way**: neither could LOAD its released
+checkpoint. Granite demanded transformers ≥5.10's `rope_parameters` where IBM ships 4.56-era flat
+`rope_theta`, then roped a model whose config says `position_embedding_type: "nope"` (measured:
+roped ⇒ f32 cosine 0.9936 + wrong continuation; NoPE ⇒ 0.9995 + exact — and the GGUF path had it
+too). Nemotron-H reads `layers_block_type` where NVIDIA ships `hybrid_override_pattern`, and
+`backbone.embedding.weight` where the release says `backbone.embeddings.weight`.
+
+**Both fixtures were built by instantiating a config on the INSTALLED transformers**, so each
+encoded that version's spelling and neither could disagree with the loader. A tiny golden cannot
+catch a released-checkpoint schema — which is the argument for T3 stated more sharply than the
+policy currently states it, and it generalizes to every family whose T1 fixture is generated
+rather than downloaded.
+
+**The demotion rule did the work it was written for.** "Unfinished does not qualify" is exactly
+what a two-line loader gap is, so the honest reading forced fixing over demoting — the cheaper
+path (two `experimental` rows) would have permanently hollowed the tier to save an afternoon.
 
 **Retargeted to `v0.14.0`** (2026-08-12, with E1's reservation — substance unchanged, target only).
 
