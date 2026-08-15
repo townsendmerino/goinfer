@@ -1129,9 +1129,17 @@ which is where the guesses point and precisely why they are not written down as 
 numbers rather than one. Until then the allocation stays.
 
 **P10 · DSpark / DFlash block drafters — the α lever 05/06 named, arriving pretrained** — `linux`
-first (resident CUDA go/no-go), then `mac`, **QUEUED 2026-08-15**. Design page:
+next (resident CUDA go/no-go), then `mac`, **increment 1 DONE 2026-08-15**. Design page:
 [`docs/spec/08-dspark-dflash.md`](spec/08-dspark-dflash.md) — the context lives there; this entry is
 the claimable work.
+
+**Increment 1 (license + checkpoint audit) is done — not a kill, but a real flag, not a clean
+pass.** 3 of the 4 named checkpoints ship with **no license at all** (bare HF pages, no card); only
+`z-lab/Qwen3-4B-DFlash-b16` is documented (MIT). The audit also found more official pairs than
+originally scoped (deepseek-ai `dspark_qwen3_{8b,14b}_block7` + full-size `DeepSeek-V4-*-DSpark`,
+all MIT; z-lab ~20 more DFlash targets) and a first-party NVIDIA Nemotron pair the doc didn't know
+about. Full table and detail in the design page. **Resolve the license gap on the 4 originally-named
+checkpoints before increment 2 touches them** — increment 2 is next, `linux`.
 
 Two pretrained lossless block drafters (DeepSeek **DSpark**: ~5-layer backbone over our
 `ForwardCapture` seam + rank-256 Markov head + confidence head, 7-token blocks; z-lab **DFlash**:

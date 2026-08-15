@@ -132,10 +132,39 @@ and we import no Python either way. Record the decision in the PR as 05 did.
 
 ## Build increments (planned)
 
-1. **License + checkpoint audit.** Enumerate the HF pairs (confirmed at cut time:
-   `deepseek-ai/dspark_gemma4_12b_block7`, `deepseek-ai/dspark_qwen3_4b_block7`,
-   `z-lab/gemma4-12B-it-DFlash`, `z-lab/Qwen3-4B-DFlash-b16`; post implies newer),
-   licenses, sizes. Kill here is free.
+1. **License + checkpoint audit — DONE 2026-08-15, not a kill, but a real flag.** Enumerate the HF
+   pairs (confirmed at cut time: `deepseek-ai/dspark_gemma4_12b_block7`,
+   `deepseek-ai/dspark_qwen3_4b_block7`, `z-lab/gemma4-12B-it-DFlash`,
+   `z-lab/Qwen3-4B-DFlash-b16`), licenses, sizes. Kill here was free; the result doesn't kill it,
+   but it isn't clean either:
+
+   | repo | exists | license | size | notes |
+   |---|---|---|---|---|
+   | `deepseek-ai/dspark_gemma4_12b_block7` | yes | **NONE — no model card at all** | ~3.43B params, BF16, ~6.86GB | drafts for Gemma4; `Gemma4DSparkModel` |
+   | `deepseek-ai/dspark_qwen3_4b_block7` | yes | **NONE — no model card at all** | ~1.39B params, BF16, ~2.79GB | drafts for Qwen3; `Qwen3DSparkModel` |
+   | `z-lab/gemma4-12B-it-DFlash` | yes | **NONE — no model card at all** | ~0.73B params, BF16, ~5.82GB | drafts for Gemma4-12B-it; tagged `model_type: qwen3` (an internal arch label, not a Qwen target) |
+   | `z-lab/Qwen3-4B-DFlash-b16` | yes | **MIT**, documented | ~0.54B params, BF16, ~1.08GB | explicitly "must be used in conjunction with the target model Qwen/Qwen3-4B"; needs `trust_remote_code=True`; cites arXiv:2602.06036 |
+
+   **3 of the 4 confirmed pairs ship no license whatsoever** — not restrictive, not permissive,
+   just absent (HF's bare "No model card" state). That is not automatically a blocker (DeepSeek and
+   z-lab's OWN base-model releases are typically permissive, and the omission may just be a
+   checkpoint-repo oversight), but it is not something to import and ship on the assumption it's
+   fine either — **resolve before increment 2 touches these specific four weights**: either an
+   explicit license appears upstream, or ask the authors, or treat it as blocking for those four
+   and lean on the ones below that ARE licensed.
+
+   **Re-checked HF for newer pairs, per the doc's own note.** The source post's headline model
+   (Qwen3.8-27B) has **no official deepseek-ai or z-lab pair** — the only DSpark checkpoint
+   targeting it is a **third-party community one**, `RadixArk/Qwen3.8-27B-DSpark` (license `other`,
+   trained via SpecForge, not deepseek-ai/z-lab — do not treat as a confirmed pair). But deepseek-ai
+   and z-lab both ship **more official pairs than the four originally listed**: deepseek-ai adds
+   `dspark_qwen3_8b_block7`, `dspark_qwen3_14b_block7`, and full-size `DeepSeek-V4-{Flash,Pro}-DSpark`
+   (**MIT**, documented); z-lab adds ~20 more DFlash targets (`Qwen3.6-27B-DFlash`,
+   `Qwen3-8B-DFlash-b16`, `gpt-oss-120b-DFlash`, `Kimi-K2.6-DFlash`, `gemma-4-31B-it-DFlash`, among
+   others — inconsistent naming, "gemma-4" vs "gemma4"). **No Nemotron pair exists from either
+   deepseek-ai or z-lab** (confirms the doc's own honest gap) — but **NVIDIA ships its own
+   first-party pair**, `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4-{DSpark,DFlash}` (license
+   `other`), a genuinely new option this audit surfaced that the original scoping didn't know about.
 2. **Protocol extraction + fixtures.** Read the reference implementations
    (mlx-dspark being MLX, closest in spirit to our decode loop), dump per-position
    tensors for a short trace, convert one DSpark checkpoint to f32 safetensors, write
