@@ -362,6 +362,10 @@ type capabilityRow struct {
 //     diff (e.g. Llama 4 Scout is 109B / Q2_K-only). "tiny-golden+coherent" additionally
 //     ran a real model qualitatively, rendered with a " +coherent" suffix so the cell
 //     shows BOTH the tiny numeric proof and that real weights were exercised.
+//   - shared-path (via X): an alias family riding X's already-validated forward AND
+//     deps_hash. It carries NO metrics of its own — the numbers belong to X's run — so
+//     the cell names the source family instead of printing a measurement this family
+//     never took. Rendering it with X's numbers would read as a second oracle run.
 func parityColumn(fam familyParity) string {
 	if fam.Status != "validated" && fam.Status != "experimental" {
 		return "pending"
@@ -388,6 +392,9 @@ func parityColumn(fam familyParity) string {
 		method, suffix = "tiny-oracle", " +coherent"
 	case "coherent-generation":
 		return expPrefix + "coherent-gen" // qualitative real-model gate, no numeric oracle at all
+	}
+	if src, ok := strings.CutPrefix(method, "shared-path (via "); ok {
+		return expPrefix + "shared-path: " + strings.TrimSuffix(src, ")") // metrics belong to the source family
 	}
 	var metrics struct {
 		ArgmaxPct float64 `json:"argmax_pct"`

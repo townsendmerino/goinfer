@@ -99,3 +99,20 @@ func TestNemotronReal_gate(t *testing.T) {
 	}
 	t.Logf("nemotron real gate OK.\n  prompt: %q\n  cont:   %q", prompt, text)
 }
+
+// TestNemotronReal_oracle is the T3 row: the released bf16 safetensors loaded at int8 and
+// matched against an HF bf16 forward of the SAME weights (argmax + cosine + greedy
+// continuation). The GGUF gate above is a coherence gate on a different artifact (a
+// llama.cpp Q8_0 convert) and cannot produce a cosine, which is why nemotron_h sat at
+// `pending` in the manifest while having a passing "real gate" — coherent-generation is not
+// a T3 method. Structural assertions stay above; this covers the numerics.
+//
+// Fixture: scripts/pin_nemotron_real.py.
+//
+//	GOINFER_HEAVY_TESTS=1 go test -tags realckpt ./decoder/ -run TestNemotronReal_oracle -v -timeout 60m
+func TestNemotronReal_oracle(t *testing.T) {
+	requireHeavyModel(t)
+	ckpt := assetPath(t, "GOINFER_NEMOTRON_HF")
+	realLogitOracle(t, ckpt, "../testdata/nemotron_real_golden.json", "nemotron_h", "nemotron_h",
+		"HF bf16 (NVIDIA-Nemotron-Nano-9B-v2; int8 resident)")
+}

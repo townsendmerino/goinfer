@@ -615,6 +615,16 @@ func ggufGraniteConfig(g *embed.GGUFFile) (*Config, error) {
 	}
 	cfg.RopeParameters = json.RawMessage(fmt.Sprintf(
 		`{"rope_type":"default","rope_theta":%g}`, gf("rope.freq_base")))
+	// NoPE. The released granite-4.0-h models set position_embedding_type "nope" and the
+	// converter carries that across as rope.scaling.finetuned — the rope.dimension_count /
+	// rope.freq_base keys are written regardless and are vestigial here (this file has
+	// dimension_count 128 on a model HF ropes not at all). Only an explicitly present key
+	// flips the behaviour; absent leaves the roped path, so an older GGUF cannot silently
+	// lose its RoPE. Verified against the bf16 oracle: roped ⇒ cosine 0.9936 + a wrong
+	// continuation, NoPE ⇒ 0.9995 + exact.
+	if finetuned, ok := g.Metadata["granitehybrid.rope.scaling.finetuned"].(bool); ok && !finetuned {
+		cfg.PositionEmbeddingType = "nope"
+	}
 	ggufEOS(g, cfg)
 	return cfg, nil
 }

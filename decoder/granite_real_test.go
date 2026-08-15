@@ -13,6 +13,7 @@ package decoder
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -103,4 +104,78 @@ func TestGraniteReal_gate(t *testing.T) {
 		t.Error("decoded continuation empty")
 	}
 	t.Logf("granite real gate OK.\n  prompt: %q\n  cont:   %q", prompt, text)
+
+	// NoPE on the GGUF path. The Q8_0 convert carries the same base weights as the
+	// safetensors release, so the bf16 golden is a valid reference for it too — and it is
+	// the ONLY check that the rope.scaling.finetuned → NoPE mapping in ggufGraniteConfig is
+	// right, since llama.cpp writes rope.dimension_count/freq_base on this model regardless.
+	// Roped, this reads ~0.9936 with a diverging continuation; NoPE, ~0.9958 and exact. Not
+	// a parity row: the T3 row is the safetensors oracle below, on weights HF actually ran.
+	if !a.isNoPELayer(0) {
+		t.Errorf("granitehybrid GGUF resolved to roped attention; the released granite-4.0-h models are NoPE")
+	}
+	graniteGGUFvsOracle(t, m)
+}
+
+// graniteGGUFvsOracle replays the bf16 golden's prompt through an already-loaded Granite
+// model and gates the last-token argmax + cosine + greedy continuation. Split out so the
+// GGUF gate above reuses its own load rather than quantizing the model a second time.
+func graniteGGUFvsOracle(t *testing.T, m *Model) {
+	t.Helper()
+	raw, err := os.ReadFile("../testdata/granite_real_golden.json")
+	if err != nil {
+		t.Skipf("no golden (%v) — run scripts/pin_granite_real.py", err)
+	}
+	var g struct {
+		PromptIDs       []int     `json:"prompt_ids"`
+		Argmax          int       `json:"argmax"`
+		LastLogits      []float32 `json:"last_logits"`
+		NNew            int       `json:"n_new"`
+		ContinuationIDs []int     `json:"continuation_ids"`
+	}
+	if err := json.Unmarshal(raw, &g); err != nil {
+		t.Fatalf("parse golden: %v", err)
+	}
+	cache := m.NewCache(len(g.PromptIDs) + g.NNew)
+	var logits []float32
+	for _, id := range g.PromptIDs {
+		if logits, err = m.forward(id, cache); err != nil {
+			t.Fatalf("forward: %v", err)
+		}
+	}
+	cos := logitCosine(logits, g.LastLogits)
+	t.Logf("granite GGUF vs bf16 oracle: argmax got=%d want=%d | cosine=%.6f", argmax(logits), g.Argmax, cos)
+	if got := argmax(logits); got != g.Argmax {
+		t.Errorf("GGUF last argmax = %d, want %d", got, g.Argmax)
+	}
+	if cos < 0.99 { // Q8_0 convert + int8 activations vs bf16
+		t.Errorf("GGUF last-logit cosine %.6f < 0.99", cos)
+	}
+	for i := range g.ContinuationIDs {
+		id := argmax(logits)
+		if id != g.ContinuationIDs[i] {
+			t.Errorf("GGUF continuation[%d] = %d, want %d", i, id, g.ContinuationIDs[i])
+			break
+		}
+		if logits, err = m.forward(id, cache); err != nil {
+			t.Fatalf("continuation forward: %v", err)
+		}
+	}
+}
+
+// TestGraniteReal_oracle is the T3 row: the released bf16 safetensors loaded at int8 and
+// matched against an HF bf16 forward of the SAME weights. The gate above runs on a
+// DIFFERENT artifact (a llama.cpp Q8_0 convert), and until this golden existed it had no
+// reference to compare against at all — which is why granitemoehybrid sat at `pending`
+// while having a passing "real gate": coherent-generation is not a T3 method. The row is
+// recorded here, on the weights HF actually ran.
+//
+// Fixture: scripts/pin_granite_real.py.
+//
+//	GOINFER_HEAVY_TESTS=1 go test -tags realckpt ./decoder/ -run TestGraniteReal_oracle -v -timeout 60m
+func TestGraniteReal_oracle(t *testing.T) {
+	requireHeavyModel(t)
+	ckpt := assetPath(t, "GOINFER_GRANITE_HF")
+	realLogitOracle(t, ckpt, "../testdata/granite_real_golden.json", "granitemoehybrid", "granitemoehybrid",
+		"HF bf16 (Granite-4.0-H-Tiny 7B-A1B; int8 resident)")
 }

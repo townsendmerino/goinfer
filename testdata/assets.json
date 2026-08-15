@@ -124,6 +124,24 @@
       "min_bytes": 1048576,
       "candidates": ["$MODELS/llama4-scout-gguf/Llama-4-Scout-17B-16E-Instruct-Q2_K.gguf"],
       "used_by": ["TestLlama4Real_gate"]
+    },
+    {
+      "env": "GOINFER_GRANITE_HF",
+      "kind": "dir",
+      "members": ["config.json"],
+      "members_any": ["model.safetensors.index.json", "model.safetensors"],
+      "candidates": ["$MODELS/granite-hf"],
+      "used_by": ["TestGraniteReal_oracle"],
+      "note": "The bf16 SAFETENSORS release, NOT the Q8_0 GGUF the coherence gate uses (GOINFER_GRANITE_GGUF, still unregistered). The T3 oracle must load the same weights the HF reference forward ran on, so these are two assets, not two paths to one."
+    },
+    {
+      "env": "GOINFER_NEMOTRON_HF",
+      "kind": "dir",
+      "members": ["config.json"],
+      "members_any": ["model.safetensors.index.json", "model.safetensors"],
+      "candidates": ["$MODELS/nemotron-hf"],
+      "used_by": ["TestNemotronReal_oracle"],
+      "note": "The bf16 SAFETENSORS release, NOT the Q8_0 GGUF the coherence gate uses (GOINFER_NEMOTRON_GGUF, still unregistered)."
     }
   ]
 }

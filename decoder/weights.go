@@ -1648,8 +1648,14 @@ func buildNemotronWeights(cfg *Config, arch *Architecture, st *embed.Safetensors
 	np := arch.nemotron
 	w := &Weights{Cfg: *cfg, arch: arch, st: st, Layers: make([]LayerWeights, arch.NumLayers)}
 	var err error
+	// The released NVIDIA checkpoints name the embedding backbone.embeddings.weight;
+	// transformers' own NemotronH names it backbone.embedding.weight, which is the only
+	// spelling the tiny fixture (built by instantiating the config) ever produced. Every
+	// other tensor name agrees, so this one word is the whole delta — try both.
 	if w.Embed, err = loadMat(st, "backbone.embedding.weight", vocab, hidden); err != nil {
-		return nil, err
+		if w.Embed, err = loadMat(st, "backbone.embeddings.weight", vocab, hidden); err != nil {
+			return nil, err
+		}
 	}
 	w.Embed = quantizeWM(w.Embed, quant.embedding())
 	if w.FinalNorm, err = st.TensorF32("backbone.norm_f.weight", hidden); err != nil {

@@ -92,8 +92,14 @@ func (m *Model) runLayersGranite(id int, cache *KVCache) ([]float32, error) {
 }
 
 // graniteAttention is a plain GQA softmax attention layer: q/k/v/o projections, full
-// rotary RoPE, causal attention over the KV cache scaled by attention_multiplier
-// (arch.AttnScale) — no QK-norm, no bias, no output gate.
+// rotary RoPE (or none — see below), causal attention over the KV cache scaled by
+// attention_multiplier (arch.AttnScale) — no QK-norm, no bias, no output gate.
+//
+// RoPE is skipped entirely when the checkpoint sets position_embedding_type "nope", which
+// the RELEASED granite-4.0-h models do (HF then builds no rotary_emb and passes
+// position_embeddings=None). This layer applied RoPE unconditionally until the real-model
+// oracle caught it: the tiny fixture is roped, so every T1 gate agreed while the shipped
+// checkpoints were being decoded with positional rotations HF never applies.
 func (m *Model) graniteAttention(n []float32, lw *LayerWeights, arch *Architecture, cache *KVCache, layer, pos int) []float32 {
 	nH, nKV, hd := arch.NumHeads, arch.NumKVHeads, arch.HeadDim
 	hidden := arch.HiddenDim
@@ -104,10 +110,12 @@ func (m *Model) graniteAttention(n []float32, lw *LayerWeights, arch *Architectu
 	matmul(m.be, &lw.KProj, n, k, 1)
 	matmul(m.be, &lw.VProj, n, v, 1)
 
-	invFreq := arch.ropeInvFreq(layer)
-	ms := arch.ropeMscale(layer)
-	applyRoPE(q, nH, hd, pos, invFreq, ms)
-	applyRoPE(k, nKV, hd, pos, invFreq, ms)
+	if !arch.isNoPELayer(layer) {
+		invFreq := arch.ropeInvFreq(layer)
+		ms := arch.ropeMscale(layer)
+		applyRoPE(q, nH, hd, pos, invFreq, ms)
+		applyRoPE(k, nKV, hd, pos, invFreq, ms)
+	}
 
 	cache.Append(layer, k, v)
 	ctx := make([]float32, nH*hd)

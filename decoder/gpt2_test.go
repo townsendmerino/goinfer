@@ -19,7 +19,9 @@ import (
 // and matches the HF float32 oracle. Also checks the Go byte-level tokenizer
 // reproduces GPT-2's ids (GPT-2 prepends no BOS).
 //
-// Regenerate:  .venv/bin/python scripts/pin_llama_forward.py testdata/gpt2 gpt2
+// Regenerate:  ~/.venv-vl/bin/python scripts/pin_gpt2_real.py
+// (that script writes both the committed golden and the gitignored full-logit dump the
+// cosine reads; the previously-named pin_llama_forward.py no longer exists.)
 const (
 	gpt2ModelDir        = "../testdata/gpt2"
 	gpt2ForwardGolden   = "../testdata/gpt2_forward_golden.json"
@@ -116,4 +118,12 @@ func TestGPT2_forwardParity(t *testing.T) {
 
 	cos := fullCosine(t, logits, gpt2ForwardFullPath)
 	t.Logf("gpt2: argmax=%d (want %d) | maxSampleΔ=%.5f | cosine=%v", argmax(logits), g.Argmax, maxSampleΔ, cos)
+
+	// Record the measured row (no-op unless GOINFER_MANIFEST_EMIT; skipped if anything above
+	// failed). Guarded on a real cosine: without the gitignored full-logit dump, fullCosine
+	// returns NaN and there is no cosine to record — the manifest must not bank a metric the
+	// run did not measure. Regenerate the dump with scripts/pin_gpt2_real.py.
+	if !math.IsNaN(cos) {
+		emitParityRow(t, "gpt2", "full-forward-oracle", "HF f32 (GPT-2 small, 124M)", 100.0, cos, cos)
+	}
 }

@@ -16,26 +16,30 @@ import (
 // Values that vary per layer (the 5:1 local:global attention pattern) are
 // derived from SlidingWindowPattern at load time, not stored per layer.
 type Config struct {
-	ModelType            string  `json:"model_type"`              // "gemma3_text" — selects the arch adapter
-	VocabSize            int     `json:"vocab_size"`              // 262144
-	HiddenDim            int     `json:"hidden_size"`             // 640 (270M)
-	NumLayers            int     `json:"num_hidden_layers"`       // 18 (270M)
-	NumHeads             int     `json:"num_attention_heads"`     // 4 (270M)
-	NumKVHeads           int     `json:"num_key_value_heads"`     // 1 (270M) — GQA
-	HeadDim              int     `json:"head_dim"`                // 256 (270M); note heads*headDim != hidden
-	IntermediateDim      int     `json:"intermediate_size"`       // 2048 (270M) — GeGLU
-	MaxPositions         int     `json:"max_position_embeddings"` // 32768
-	RMSNormEps           float64 `json:"rms_norm_eps"`
-	RoPELocalBase        float64 `json:"rope_local_base_freq"`   // 10000
-	RoPEGlobalBase       float64 `json:"rope_theta"`             // 1000000
-	SlidingWindow        int     `json:"sliding_window"`         // 512 (270M)
-	SlidingWindowPattern int     `json:"sliding_window_pattern"` // 6 → 5 local : 1 global
-	QueryPreAttnScalar   float64 `json:"query_pre_attn_scalar"`  // 256 (270M)
-	UseQKNorm            bool    `json:"use_qk_norm"`            // true in Gemma 3
-	HiddenActivation     string  `json:"hidden_activation"`      // Gemma: "gelu_pytorch_tanh"
-	HiddenAct            string  `json:"hidden_act"`             // Llama/Qwen: "silu" (different JSON key)
-	AttentionBias        bool    `json:"attention_bias"`         // Qwen2/GPT-2 add q/k/v/o bias; Llama-3/Qwen3 don't
-	UseSlidingWindow     bool    `json:"use_sliding_window"`     // Qwen2: gate for sliding-window attention (usually false)
+	ModelType       string  `json:"model_type"`              // "gemma3_text" — selects the arch adapter
+	VocabSize       int     `json:"vocab_size"`              // 262144
+	HiddenDim       int     `json:"hidden_size"`             // 640 (270M)
+	NumLayers       int     `json:"num_hidden_layers"`       // 18 (270M)
+	NumHeads        int     `json:"num_attention_heads"`     // 4 (270M)
+	NumKVHeads      int     `json:"num_key_value_heads"`     // 1 (270M) — GQA
+	HeadDim         int     `json:"head_dim"`                // 256 (270M); note heads*headDim != hidden
+	IntermediateDim int     `json:"intermediate_size"`       // 2048 (270M) — GeGLU
+	MaxPositions    int     `json:"max_position_embeddings"` // 32768
+	RMSNormEps      float64 `json:"rms_norm_eps"`
+	RoPELocalBase   float64 `json:"rope_local_base_freq"` // 10000
+	RoPEGlobalBase  float64 `json:"rope_theta"`           // 1000000
+	// Granite-4.0-H: "rope" (HF default, and what the tiny fixture emits) or "nope" —
+	// which is what the released granite-4.0-h checkpoints ship, and means the attention
+	// layers get NO positional encoding at all.
+	PositionEmbeddingType string  `json:"position_embedding_type"`
+	SlidingWindow         int     `json:"sliding_window"`         // 512 (270M)
+	SlidingWindowPattern  int     `json:"sliding_window_pattern"` // 6 → 5 local : 1 global
+	QueryPreAttnScalar    float64 `json:"query_pre_attn_scalar"`  // 256 (270M)
+	UseQKNorm             bool    `json:"use_qk_norm"`            // true in Gemma 3
+	HiddenActivation      string  `json:"hidden_activation"`      // Gemma: "gelu_pytorch_tanh"
+	HiddenAct             string  `json:"hidden_act"`             // Llama/Qwen: "silu" (different JSON key)
+	AttentionBias         bool    `json:"attention_bias"`         // Qwen2/GPT-2 add q/k/v/o bias; Llama-3/Qwen3 don't
+	UseSlidingWindow      bool    `json:"use_sliding_window"`     // Qwen2: gate for sliding-window attention (usually false)
 
 	// Mixture-of-experts. NormTopKProb is a *bool so an absent field can default
 	// to true (HF's MixtralConfig default). Mixtral names the expert count
@@ -132,12 +136,20 @@ type Config struct {
 	// "mamba" | "attention" | "mlp"), NoPE attention, non-gated relu² MLP. Its
 	// Mamba-2 uses its own key spellings (mamba_num_heads / mamba_head_dim /
 	// ssm_state_size / n_groups / conv_kernel) and layer_norm_epsilon for eps.
-	LayersBlockType []string `json:"layers_block_type"`
-	MambaNumHeads   int      `json:"mamba_num_heads"`
-	MambaHeadDim    int      `json:"mamba_head_dim"`
-	SSMStateSize    int      `json:"ssm_state_size"`
-	NGroups         int      `json:"n_groups"`
-	ConvKernel      int      `json:"conv_kernel"`
+	//
+	// HybridOverridePattern is the SAME layer sequence in NVIDIA's released spelling:
+	// one character per block ("M" mamba, "*" attention, "-" mlp), e.g.
+	// "M-M-M-MM-M-M-M*-…". Every released NemotronH config.json carries this and NOT
+	// layers_block_type — which is transformers' internal spelling, and therefore the
+	// only one the tiny fixtures (built by instantiating NemotronHConfig) ever emitted.
+	// Reading just the fixture spelling made the loader reject every real checkpoint.
+	LayersBlockType       []string `json:"layers_block_type"`
+	HybridOverridePattern string   `json:"hybrid_override_pattern"`
+	MambaNumHeads         int      `json:"mamba_num_heads"`
+	MambaHeadDim          int      `json:"mamba_head_dim"`
+	SSMStateSize          int      `json:"ssm_state_size"`
+	NGroups               int      `json:"n_groups"`
+	ConvKernel            int      `json:"conv_kernel"`
 
 	// Gated DeltaNet (qwen3_5_moe linear-attention layers). The linear layers
 	// replace softmax attention with a gated delta-rule recurrence over a
@@ -494,6 +506,35 @@ func (c *Config) validateGranite() error {
 	case c.IntermediateDim <= 0 || c.SharedIntermediateSize <= 0:
 		return fmt.Errorf("decoder(granite): intermediate_size=%d shared_intermediate_size=%d must be >0", c.IntermediateDim, c.SharedIntermediateSize)
 	}
+	return nil
+}
+
+// normalizeNemotronBlocks expands NVIDIA's hybrid_override_pattern ("M" mamba, "*"
+// attention, "-" mlp) into the layers_block_type spelling the rest of the loader reads,
+// so a RELEASED NemotronH config.json (which carries only the pattern) and a
+// transformers-instantiated one (which carries only layers_block_type) load identically.
+//
+// An unrecognized character is an ERROR, not a mamba block: nemotronhArchitecture's kind
+// switch defaults unknown strings to mamba, and inheriting that here would turn one typo
+// in a 56-character string into a silently different model that still generates text.
+func (c *Config) normalizeNemotronBlocks() error {
+	if len(c.LayersBlockType) > 0 || c.HybridOverridePattern == "" {
+		return nil
+	}
+	types := make([]string, 0, len(c.HybridOverridePattern))
+	for _, r := range c.HybridOverridePattern {
+		switch r {
+		case 'M':
+			types = append(types, "mamba")
+		case '*':
+			types = append(types, "attention")
+		case '-':
+			types = append(types, "mlp")
+		default:
+			return fmt.Errorf("decoder(nemotron_h): hybrid_override_pattern has unknown block %q (want M, * or -)", r)
+		}
+	}
+	c.LayersBlockType = types
 	return nil
 }
 
