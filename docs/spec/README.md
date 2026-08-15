@@ -106,6 +106,7 @@ Why this fits goinfer specifically:
 | 05 | [EAGLE-3 feature head](./05-eagle3-head.md) | Feature-level autoregressive draft head over target hidden states; pure-Go. | High | Matches general-purpose SOTA | ✅ built end-to-end + lossless (greedy+trees); ⛔ CPU wall-clock loss → needs GPU (07) |
 | 06 | [Acceptance analysis playbook](./06-acceptance-analysis.md) | The experimenter's runbook: trace schema → calibrated `α̂` → where to invest. Operationalizes 00-core §4. | Med | Powers 03/04, orders the backlog | ✅ α̂_ngram + α̂_grammar trace-fit + online correction + held-out validation |
 | 07 | [Stage B: M=K GEMM verify](./07-stageb-gemm-verify.md) | Wire the existing (gated) tiled W8A8 GEMM into the resident verify so projection weights stream once across K rows — the only thing blocking a GPU speculative win. | High (runner surgery) | Unlocks GPU; CPU already ships | ⏸ NO-GO small models; **parked** conditional-GO for ~70B + short drafts (needs >8 GB GPU) |
+| 08 | [DSpark / DFlash block drafters](./08-dspark-dflash.md) | Pretrained block drafters (DeepSeek DSpark, z-lab DFlash): per-block draft cost + published tok/verify far above EAGLE's — the α lever 05/06 named, and 07's short-linear-draft shape. | Med–High | Model-quality α on novel text + constrained traffic, near-free draft | 📋 proposal (cut 2026-08-15), queued as P10 |
 
 Build order: **00 first** (nothing is testable until verify + rollback +
 instrumentation exist), then 01 and 02 (cheapest wins, and they generate the

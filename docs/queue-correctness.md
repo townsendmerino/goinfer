@@ -178,3 +178,20 @@ safetensors fixture), `qwen2_moe` and `gemma4-dense-scaled-{24,48,64}` (incomple
 
 **Also record with P6's 6.09 s price: cheap and thorough are different properties.** 6.09 s buys 19
 passes and 11 skips. The skips are not free — they are the coverage this item is about.
+
+**`TestDecodeParityInt4` diverges from its recorded golden — REAL checkpoint, NOT the synthetic
+goldens above, found 2026-08-15, unclaimed.** `decoder/parity_int4_test.go`, real
+qwen2.5-coder-0.5b int4 (W4A8, safetensors-loaded gguf), greedily continuing a fixed prompt: got vs
+want diverge at token index 5 (`got 1438 want 11047`) and every token after — not a subtle drift,
+a different continuation entirely. **Confirmed pre-existing and unrelated to two same-day changes**
+via an isolated `git worktree` bisect: fails identically on the P1 pre-change tree AND at aikit
+`v1.17.1` (before the day's aikit v1.19.0 bump) — same got/want arrays, byte for byte. So this
+predates both P1 (`97f824a`) and the bump (`fb8e26b`); it was sitting on `main` before either.
+
+One live lead, not yet chased: the test's own comment records a **recent asset-resolution fix**
+("this site previously skipped whenever `GOINFER_PREQUANT_GGUF` was unset... under a bare `go test
+./decoder`, this gate now RUNS where it used to skip") — meaning this real-checkpoint gate may have
+been silently skipping for a long stretch, during which `parityWantInt4`'s golden could have gone
+stale against real drift nobody was watching for. That is a hypothesis, not a finding — needs a real
+bisect (not the two-point check done here) to find which commit actually broke it, or whether the
+golden itself was simply never right. **Unclaimed — pick up either box.**

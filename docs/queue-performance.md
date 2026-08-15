@@ -733,29 +733,43 @@ answers**.
 makes 34 unreachable. A9 ran **before A5 landed**, so no override was needed. Recorded because a run
 at the new cap would simply pass and look like confirmation, leaving no trace of the loss.
 
-**P1 · KV re-gather and V re-transpose on every decode token** — `decoder/forwardn.go:378`
+**P1 · KV re-gather and V re-transpose on every decode token** — **LANDED `97f824a`, 2026-08-15**.
+Was `decoder/forwardn.go:378`.
 
-Estimated **~10–15% of per-token traffic at 4k+ context**, on all mainstream CPU families — the
-largest single item in the group. Frozen core, so it is the **v1.0-unfreeze headline** rather than
-something to slip in.
+Was estimated ~10–15% of per-token traffic at 4k+ context — the largest single item in the group.
 
-**The aikit-side blocker is GONE — checked 2026-08-15, not assumed.** "It needs a new aikit row-pitch
-API" was future tense; it no longer is. aikit `v1.18.0` shipped `linalg.MatmulBTAcc64Strided` (already
-in the tree via the v1.19.0 bump, `fb8e26b`) — its own test is titled `TestMatmulBTAcc64Strided_
-bitIdenticalToPacked` and its doc comment says *"(P1 step 3)"*, built against goinfer's exact KV
-cache layout (`[nKeys, kvDim=nKV·hd]`) and both stride shapes `attendBatchedHeads` needs:
+**The aikit-side blocker resolved same-day it was checked.** "It needs a new aikit row-pitch API" was
+future tense; aikit `v1.18.0` shipped `linalg.MatmulBTAcc64Strided` (in the tree via the v1.19.0
+bump, `fb8e26b`) — its own test is titled `TestMatmulBTAcc64Strided_bitIdenticalToPacked` and its
+doc comment says *"(P1 step 3)"*, built against goinfer's exact KV cache layout
+(`[nKeys, kvDim=nKV·hd]`) and both stride shapes `attendBatchedHeads` needed:
 
 - **K re-copy (QKᵀ):** strided rows, contiguous elements — `bOff=kvh·hd, bRowStride=kvDim,
   bElemStride=1` reads `keys` in place, no `kh` scratch.
 - **V re-transpose (scores·V):** contiguous rows, strided elements — `bOff=kvh·hd, bRowStride=1,
   bElemStride=kvDim` reads `vals` "as if transposed", no `vt` scratch.
 
-Both derived from `decoder/forwardn.go:378-387` and `:480` and checked against the current tree,
-not assumed from the aikit side alone. **Asserted bit-identical by construction** (same sequential f64
-reduction order as `MatmulBTAcc64`, addressing only) — a substitution, not a numerics change needing
-its own parity argument, which is exactly the shape a frozen-core edit needs to clear cleanly at
-unfreeze. **So P1 is now blocked on the freeze alone** — when it lifts, the wiring is a substitution
-against an already-shipped, already-verified API, not new kernel work.
+**The freeze itself did not block this** — Francis's 2026-08-12 re-declaration (no version gate, a
+goldens run with printed composition instead) meant landing didn't wait for a v1.0 unfreeze event.
+Verified: `decoder/attend_strided_test.go` transcribes the old gather math and checks the new strided
+calls byte-for-byte across 6 shapes (mutation-checked — a swapped stride flips it red); the named
+end-to-end gates (`TestForwardN_matchesSequential` argmax-exact/cosine 1.000000/max-diff 0.00e+00,
+`TestSpeculativeGreedyParity`) stayed green; the goldens-proof requirement ran clean — 22 passed,
+0 failed, 19 f32 + 3 quantized, zero drift across dense/MoE/MLA.
+
+**Measured, not left as an estimate — and the honest number is FLAT at this model size.**
+`BenchmarkDecodeAtDepth` (new), qwen2.5-coder-0.5b int8int8, depth 2048, M1 Pro: before 9.049 tok/s,
+after 9.078 tok/s (+0.3%) — a single unreplicated before/after pair, not the full interleaved
+discipline this project's decode A/Bs otherwise use, and not distinguishable from the ~5%
+session-level drift measured on a similar benchmark previously. **Correctness does not depend on
+this number and stands regardless; the throughput claim does, and is not being made at 0.5B.** A
+proper interleaved multi-visit A/B, ideally at a larger model where the estimate's own "rising with
+model size and context" should make the effect more visible, is open follow-up work.
+
+*Unrelated finding surfaced along the way, confirmed NOT caused by this change (isolated worktree
+bisect against `6a8a54f`, pre-dating both this and the aikit bump):* `TestDecodeParityInt4` diverges
+from its recorded golden on the real qwen2.5-coder-0.5b int4 checkpoint. Pre-existing on `main`,
+needs its own investigation — filed as its own item, not blocking P1.
 
 **P2 · Scalar `int8→f32` widen on the LM head** — **DONE, landed via the ordinary aikit release
 cadence.** aikit `linalg/quant.go:136` (`q8Span`).
@@ -1113,3 +1127,33 @@ which is where the guesses point and precisely why they are not written down as 
 
 **What would make this landable:** measure the jitter P8 exists to reduce, so the trade has two
 numbers rather than one. Until then the allocation stays.
+
+**P10 · DSpark / DFlash block drafters — the α lever 05/06 named, arriving pretrained** — `linux`
+first (resident CUDA go/no-go), then `mac`, **QUEUED 2026-08-15**. Design page:
+[`docs/spec/08-dspark-dflash.md`](spec/08-dspark-dflash.md) — the context lives there; this entry is
+the claimable work.
+
+Two pretrained lossless block drafters (DeepSeek **DSpark**: ~5-layer backbone over our
+`ForwardCapture` seam + rank-256 Markov head + confidence head, 7-token blocks; z-lab **DFlash**:
+one-pass block diffusion over 16 tokens, reuses the target's embed + lm_head) with HF checkpoints
+for targets we run (Gemma-4 12B, Qwen3-4B; newer pairs likely — increment 1 audits). Surfaced via
+`ARahim3/mlx-dspark` (M4 Pro, batch-1 — our regime): DSpark ~1.4–1.6×, DFlash up to ~2.1× on
+code/math and ~0.98× on open chat, **their numbers, not ours**.
+
+Why this is not "EAGLE again": the spec program's own scorecard says the lever is **α, and a draft
+that isn't paid per token** — EAGLE lost at ~1.6 tok/verify with a head forward per drafted token;
+these draft per *block*, and DFlash's reported ~6.0 tok/verify on structured traffic lands exactly
+where α̂_grammar ≈ 0.20 is our calibrated floor. The verify side is already paid for: resident CUDA
+batched M=k verify measured 2.5–3.6× cheaper than k decodes at k=4–8 (D1), and a 7/16-token
+**linear** block is the short-draft shape 07's large-dim re-measure said amortizes (trees don't).
+Substrate all exists (Drafter/router/rollback/seam); the build is two drafter forwards (DFlash's
+bidirectional block pass is the one genuinely new type) + loaders + fixtures.
+
+**Kill-gates, pre-registered in the design page:** (1) reference-parity on dumped fixtures BEFORE
+any acceptance run — the 05 lesson, priced in; (2) ≥3.0 tok/verify on ≥1 suite, else stop or back
+to gate 1; (3) end-to-end ≥1.3× vs plain resident decode on ≥1 GPU backend (the 07 funding bar),
+lossless gates green; (4) mixed-workload router number must not regress vs n-gram-only. CPU:
+predict the 05 verdict repeats (~0.5·step verify node, ~2.2× perfect-drafter ceiling); measure once
+while the CPU wiring is up, to document rather than assume. Increment 1 (license + checkpoint
+audit) is free — kill there costs nothing. Not release-gating; queues behind the replace-free tag
+(C3) like everything else new.

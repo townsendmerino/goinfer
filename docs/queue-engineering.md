@@ -1055,7 +1055,7 @@ of them:
 |---|---|
 | `cuda/resident.go` (decode) | **shares `applySoftcap`** (`4c26a58`) |
 | `cuda/prefill.go` | **shares `applySoftcap`** (`4c26a58`) |
-| `decoder/forwardn.go:502` | unchanged — `decoder/` is under the `6edd1ca` numerics freeze |
+| `decoder/forwardn.go:526` | unchanged (softcap logic itself; line shifted by P1's edit elsewhere in the file, retargeted 2026-08-15) — `decoder/` core changes ride the goldens-proof requirement, not a version-gated freeze |
 | `decoder/model.go:731` | unchanged — same freeze |
 | `metal/model.go:827` | unchanged — Metal is on hold for core-numerics surfaces |
 
