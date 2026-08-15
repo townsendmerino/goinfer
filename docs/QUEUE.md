@@ -374,7 +374,7 @@ supports.
 | `docs/parity-coverage-policy.md|cuda/resident.go:910` | goinfer | `// always been allocated without one, and a hard failure here would regress every driver` |
 | `docs/parity-coverage-policy.md|linalg/dot.go:25` | aikit | `sum += a[k] * b[k]` |
 | `docs/plan-cpubrrr-steal-and-bindings.md|decoder/registry.go:46` | goinfer | `"gpt_oss":             gptOssArchitecture,     // gpt-oss (20b/120b): sparse MoE + per-h` |
-| `docs/plan-cpubrrr-steal-and-bindings.md|linalg/quant.go:327` | aikit | `for i := range M {` |
+| `docs/plan-cpubrrr-steal-and-bindings.md|linalg/quant.go:412` | aikit | `func QuantizeGroupInt4Row(row []float32, cols, group int, packed []byte, scales []float3` |
 | `docs/prompts/metal-close-leak-check.md|metal/backend.go:139` | goinfer | `return nil, fmt.Errorf("metal: batched prefill declined — not bit-identical to decode (5` |
 | `docs/prompts/metal-close-leak-check.md|metal/model.go:350` | goinfer | `// expert weights, buffer OOM — model.go/moe.go/gemma4_moe.go) into the error this signa` |
 | `docs/prompts/metal-close-leak-check.md|metal/model.go:46` | goinfer | `// same-op kernel inherit it. A byte-exact fixture for such an op MUST use context > the` |
@@ -395,7 +395,7 @@ supports.
 | `docs/queue-engineering.md|internal/giw/bundle.go:114` | goinfer | `if avail := fi.Size() - (tokOff + 4); tokLen > avail {` |
 | `docs/queue-engineering.md|internal/serveapp/embeddings.go:26` | goinfer | `// Embedding request bounds (audit C-21). /v1/embeddings is deliberately un-queued (the ` |
 | `docs/queue-engineering.md|internal/serveapp/main.go:432` | goinfer | `// write, so a long stream is unaffected. WriteTimeout stays 0: SSE responses are long-l` |
-| `docs/queue-engineering.md|linalg/quant.go:113` | aikit | `for k := range K {` |
+| `docs/queue-engineering.md|linalg/quant.go:136` | aikit | `dequantRowInt8(deq, bq, 1.0)` |
 | `docs/queue-engineering.md|metal/model.go:728` | goinfer | `r.residencyBufs = pinned` |
 | `docs/queue-engineering.md|metal/model.go:827` | goinfer | `r.logitsHost[j] = sc * float32(math.Tanh(float64(v/sc)))` |
 | `docs/queue-engineering.md|metal/snapshot_golden_test.go:77` | goinfer | `func TestMetalEmbedScale_forwardMatchesForwardEmb(t *testing.T) {` |
@@ -406,7 +406,7 @@ supports.
 | `docs/queue-performance.md|decoder/mlp.go:82` | goinfer | `func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend, pager *expert` |
 | `docs/queue-performance.md|decoder/sampler_chunked.go:188` | goinfer | `return drawChunked(e, sums, z, r)` |
 | `docs/queue-performance.md|decoder/scratch.go:38` | goinfer | `ws        *linalg.Workspace // W8A8 activation-quant scratch (zero-alloc Into/Batch)` |
-| `docs/queue-performance.md|linalg/quant.go:113` | aikit | `for k := range K {` |
+| `docs/queue-performance.md|linalg/quant.go:136` | aikit | `dequantRowInt8(deq, bq, 1.0)` |
 | `docs/scoping-lfm2.md|decoder/arch.go:156` | goinfer | `type nemotronParams struct {` |
 | `docs/scoping-lfm2.md|decoder/attention.go:94` | goinfer | `if arch.QKNorm {` |
 | `docs/scoping-lfm2.md|decoder/config.go:627` | goinfer | `case c.UseQKNorm:` |

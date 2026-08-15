@@ -62,7 +62,9 @@ to work, because the fieldfare-comparable rig is an M1 Pro 16 GB. Measured recon
 (commit `bcadd44`): symmetric-g32 **0.99514** (garbage) vs affine-g32 **0.99690** vs int8
 **0.99995**. The diagnosis is that goinfer's 4-bit is **group-wise symmetric**,
 `int4GroupSize = 32`, codes `[1,15]` with 8 = zero → 15 levels, no zero-point, maxabs
-scale (`linalg/quant.go:327–331`).
+scale (`linalg/quant.go:412`, `QuantizeGroupInt4Row` — retargeted 2026-08-15 after the aikit v1.19.0
+bump; the prior `:327–331` citation had drifted onto an unrelated `q8Span` line via a non-discriminating
+match on `for i := range M {`, not this function).
 
 cpubrrr's two 4-bit formats are precisely the alternatives:
 

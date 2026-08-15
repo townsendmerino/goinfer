@@ -739,21 +739,39 @@ Estimated **~10–15% of per-token traffic at 4k+ context**, on all mainstream C
 largest single item in the group. Frozen core, and it needs a new aikit row-pitch API, so it is the
 **v1.0-unfreeze headline** rather than something to slip in.
 
-**P2 · Scalar `int8→f32` widen on the LM head** — aikit `linalg/quant.go:113`, **condition VERIFIED,
-and it does not hold as a drop-in**
+**P2 · Scalar `int8→f32` widen on the LM head** — **DONE, landed via the ordinary aikit release
+cadence.** aikit `linalg/quant.go:136` (`q8Span`).
 
-**STILL OPEN after aikit `v1.17.0` — checked, not assumed (2026-08-12).** The v1.17.0 bump did land
-8-column blocking in `MatmulBTW8A8Pre`, which is close enough to this entry to look like it. It is
-not: `q8Span` is **unchanged** between `v1.16.0` and `v1.17.0`, still widening with
-`deq[k] = float32(bq[k])` and still applying the scale after the dot. The blocking landed in a
-different function, so neither the ~1.7 ns/element cost nor the scale-placement hazard below has
-moved. Nothing here is superseded; the entry stands as written.
+**Resolved 2026-08-15.** aikit shipped the exact fix this entry specified — `dequantRowInt8(deq, bq,
+1.0)`, the scale-1.0 route below, verbatim — as `2f0c65f perf(linalg): SIMD widen in q8Span — ~2×
+faster q8 LM head, bit-identical (P2)`, first in aikit `v1.18.0`. goinfer bumped `v1.17.1 → v1.19.0` (`fb8e26b`, goldens-refreshed at
+`88ac2cd`), picking it up. **This entry's own analysis is why the
+shipped fix is correct**, not incidentally: it worked out that the naive substitution
+(`DequantizeRowsInt8Into` with the real scale) is a *silent* numerics change, and that passing `scale
+= 1.0` is the one substitution that is bit-identical by construction — and that is precisely the
+route aikit's commit took, asserted with its own bit-identity test
+(`TestQ8Span_bitIdenticalToScalarWiden`, serial/parallel/SIMD-tail/prefill, every output float
+compared by raw bits).
 
-Not frozen, so the work is unblocked. **And no decision gets reversed: merge into aikit `main` and
-leave it UNRELEASED.** The `require` bump is already planned for v1.0, so the win lands on the
-schedule E6 already chose — E6 defers the *release*, not the *work*, and banking verified work in
-`main` costs nothing and reverses nothing. Recorded this way so it is not re-litigated as an E6
-exception every time it surfaces.
+**goinfer-side proof, not just trust in the upstream claim:** the bump's `deps_hash` refresh ran the
+forward goldens on **both** architectures — 19 f32 argmax+cosine goldens green on arm64 (the
+FMA-contracting arch, where a reassociation would show first) and the prior box run on amd64 — no
+argmax/cosine breach anywhere. Consistent with, but independent confirmation of, aikit's own
+byte-comparison.
+
+**The "leave it UNRELEASED, planned for v1.0" framing below is superseded by events, not reversed.**
+It predates aikit actually resuming ordinary releases (v1.17.0 onward) and goinfer bumping through
+them in the normal course — exactly what E6 (closed 2026-08-12) already settled: a release needs a
+reason a consumer can receive, and this one had two (P2 itself, plus the bit-identical encoder GELU
+fix riding the same bump). No decision reversed; the precondition just arrived sooner than the note
+assumed.
+
+**Still owed — the goinfer-side magnitude, not the aikit-side one.** aikit's own perfgate measured
+**Δ ≈ −50% on the widen** (its own microbenchmark, LM-head shapes, M1 Pro) — real, but internal to
+`q8Span`. What is NOT yet measured: goinfer's own end-to-end decode/LM-head tok/s delta from the bump
+(P9/P10-style A/B, box + Mac). That is the number worth banking before the win goes in a release note.
+
+**Original analysis, kept — it is the record of why the fix had to be exactly this shape:**
 
 **The bit-identity condition, checked in source rather than assumed.** It splits in two, and the
 half that matters is the one the original wording did not cover:

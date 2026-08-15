@@ -48,6 +48,15 @@ jobs:
       - name: staticcheck
         run: go run honnef.co/go/tools/cmd/staticcheck@2025.1.1 ./...
 
+      # The lint resolves aikit/gpu path citations against cuda/go.mod's required version (B10:
+      # aikit and aikit/gpu are separate modules with separate tag series). The root module's
+      # go.mod does NOT require aikit/gpu (M-19 — only cuda/gpu/metal do), so root's own
+      # `go build ./...` above never populates it in the module cache, and the lint hard-fails
+      # with "CANNOT SEARCH" on every aikit/gpu citation. Downloading cuda's deps here (into the
+      # same shared GOMODCACHE) is what actually gives the lint something to search.
+      - name: populate module cache for cross-repo citations (aikit/gpu)
+        run: cd cuda && go mod download
+
       # Content keys make a stale citation DETECTABLE on the next sweep; they do not prevent one.
       # Here it goes red in the commit that makes the entry stale — while someone is already in that
       # code — which is the difference between the F group happening again and not. Citations whose
