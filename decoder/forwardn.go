@@ -376,15 +376,21 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 	}
 
 	for kvh := range nKV {
-		// Gather this KV head's keys [nKeys,hd] and values transposed [hd,nKeys]
-		// once; every query head in the GQA group reuses them. The V transpose is
-		// folded into the gather (free) so scores·V is MatmulBT(scores, V_headᵀ).
-		for s := range nKeys {
-			base := s*kvDim + kvh*hd
-			copy(kh[s*hd:s*hd+hd], keys[base:base+hd])
-			vrow := vals[base : base+hd]
-			for d := range hd {
-				vt[d*nKeys+s] = vrow[d]
+		if !useAcc64 {
+			// Gather this KV head's keys [nKeys,hd] and values transposed [hd,nKeys]
+			// once; every query head in the GQA group reuses them. The V transpose is
+			// folded into the gather (free) so scores·V is MatmulBT(scores, V_headᵀ).
+			// (Acc64 path below reads keys/vals directly instead — P1. Every live
+			// caller passes useAcc64=true, so this gather only runs under the f32
+			// fallback exercised by tests; aikit has not shipped a bit-identical
+			// strided kernel for that reassociating path.)
+			for s := range nKeys {
+				kvBase := s*kvDim + kvh*hd
+				copy(kh[s*hd:s*hd+hd], keys[kvBase:kvBase+hd])
+				vrow := vals[kvBase : kvBase+hd]
+				for d := range hd {
+					vt[d*nKeys+s] = vrow[d]
+				}
 			}
 		}
 		for g := range group {
@@ -393,8 +399,18 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 				base := i*qDim + qhead*hd
 				copy(qh[i*hd:i*hd+hd], q[base:base+hd])
 			}
-			// QKᵀ: scores[K,nKeys] = Q_head[K,hd] · K_head[nKeys,hd]ᵀ
-			matmul(qh[:K*hd], kh[:nKeys*hd], scores[:K*nKeys], K, hd, nKeys)
+			// QKᵀ: scores[K,nKeys] = Q_head[K,hd] · K_head[nKeys,hd]ᵀ. Acc64 reads
+			// keys DIRECTLY — row stride kvDim (rows are nKeys apart), element
+			// stride 1 (a head's hd floats are contiguous) — skipping the kh gather
+			// above entirely. Bit-identical by construction (P1; aikit v1.18.0
+			// MatmulBTAcc64Strided runs the SAME sequential f64 reduction as
+			// MatmulBTAcc64, only b's addressing differs), verified at goinfer's own
+			// stride parameters by TestAttendStrided_matchesGatherReference.
+			if useAcc64 {
+				linalg.MatmulBTAcc64Strided(qh[:K*hd], keys, scores[:K*nKeys], K, hd, nKeys, kvh*hd, kvDim, 1)
+			} else {
+				matmul(qh[:K*hd], kh[:nKeys*hd], scores[:K*nKeys], K, hd, nKeys)
+			}
 			// Scaled, masked softmax per query row; zero the out-of-range entries
 			// so they contribute nothing to the scores·V matmul below.
 			for i := range K {
@@ -477,7 +493,15 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 			}
 			// scores·V: ctx_head[K,hd] = scores[K,nKeys] · V_head[nKeys,hd]
 			//                          = MatmulBT(scores, V_headᵀ[hd,nKeys])
-			matmul(scores[:K*nKeys], vt[:hd*nKeys], ch[:K*hd], K, nKeys, hd)
+			// Acc64 reads vals DIRECTLY, "as if transposed" — row stride 1 (V's hd
+			// floats are contiguous, and vt's row index IS that offset), element
+			// stride kvDim (vt's column index steps by a whole KV row) — skipping
+			// the vt gather+transpose above. Same bit-identity argument as QKᵀ.
+			if useAcc64 {
+				linalg.MatmulBTAcc64Strided(scores[:K*nKeys], vals, ch[:K*hd], K, nKeys, hd, kvh*hd, 1, kvDim)
+			} else {
+				matmul(scores[:K*nKeys], vt[:hd*nKeys], ch[:K*hd], K, nKeys, hd)
+			}
 			for i := range K { // scatter ctx_head into ctx[K,qDim]
 				base := i*qDim + qhead*hd
 				copy(ctx[base:base+hd], ch[i*hd:i*hd+hd])
