@@ -736,8 +736,26 @@ at the new cap would simply pass and look like confirmation, leaving no trace of
 **P1 · KV re-gather and V re-transpose on every decode token** — `decoder/forwardn.go:378`
 
 Estimated **~10–15% of per-token traffic at 4k+ context**, on all mainstream CPU families — the
-largest single item in the group. Frozen core, and it needs a new aikit row-pitch API, so it is the
-**v1.0-unfreeze headline** rather than something to slip in.
+largest single item in the group. Frozen core, so it is the **v1.0-unfreeze headline** rather than
+something to slip in.
+
+**The aikit-side blocker is GONE — checked 2026-08-15, not assumed.** "It needs a new aikit row-pitch
+API" was future tense; it no longer is. aikit `v1.18.0` shipped `linalg.MatmulBTAcc64Strided` (already
+in the tree via the v1.19.0 bump, `fb8e26b`) — its own test is titled `TestMatmulBTAcc64Strided_
+bitIdenticalToPacked` and its doc comment says *"(P1 step 3)"*, built against goinfer's exact KV
+cache layout (`[nKeys, kvDim=nKV·hd]`) and both stride shapes `attendBatchedHeads` needs:
+
+- **K re-copy (QKᵀ):** strided rows, contiguous elements — `bOff=kvh·hd, bRowStride=kvDim,
+  bElemStride=1` reads `keys` in place, no `kh` scratch.
+- **V re-transpose (scores·V):** contiguous rows, strided elements — `bOff=kvh·hd, bRowStride=1,
+  bElemStride=kvDim` reads `vals` "as if transposed", no `vt` scratch.
+
+Both derived from `decoder/forwardn.go:378-387` and `:480` and checked against the current tree,
+not assumed from the aikit side alone. **Asserted bit-identical by construction** (same sequential f64
+reduction order as `MatmulBTAcc64`, addressing only) — a substitution, not a numerics change needing
+its own parity argument, which is exactly the shape a frozen-core edit needs to clear cleanly at
+unfreeze. **So P1 is now blocked on the freeze alone** — when it lifts, the wiring is a substitution
+against an already-shipped, already-verified API, not new kernel work.
 
 **P2 · Scalar `int8→f32` widen on the LM head** — **DONE, landed via the ordinary aikit release
 cadence.** aikit `linalg/quant.go:136` (`q8Span`).
