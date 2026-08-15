@@ -27,4 +27,3 @@ require (
 // Develop against the checkout; drop this once goinfer tags a release
 // that the demo pins.
 
-replace github.com/townsendmerino/goinfer => ../..

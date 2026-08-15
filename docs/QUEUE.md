@@ -99,7 +99,7 @@ groups were seeded from conversation, and **the rate is much lower**, which is t
 |---|---|---|
 | C1 drain fix — CUDA verification | **open** | no CUDA unload/drain test found |
 | C2 out-of-tree consumer audit | **open** | needs a fresh no-repo session by design |
-| C3 Metal consumer window | **RUN 2026-08-15 (metal/v0.13.0)** | cgo-free/no-Xcode build ✅ (require path, otool-confirmed); `go install …/metal/cmd/serve@v0.13.0` **BROKEN** (committed `replace`); resident decode not public-API-drivable; tautology has no Metal analog. Full note: `docs/measurements/c3-metal-consumer-window.md` |
+| C3 Metal consumer window | **RUN + fixes 2026-08-15 (metal/v0.13.0)** | cgo-free/no-Xcode build ✅ (otool-confirmed); resident decode ✅ drivable via `Load(Backend:"metal")`+blank-import, **65.2 tok/s out-of-tree** (my "not drivable" claim was a stale-doc mis-read, corrected); `go install …@v0.13.0` was BROKEN by committed `replace` → **replaces removed from all 4 submodule go.mods 2026-08-15**, RELEASING.md updated. **Box owes: cuda `GOWORK=off` verify + its go.work + a replace-free tag (v0.13.1/v0.14.0).** Full note: `docs/measurements/c3-metal-consumer-window.md` |
 | C4 soak testing | **open** | `internal/serveapp/fuzz_test.go` and `internal/serveapp/chaos_test.go` exist; neither is an hours-long soak |
 | D1 trace tap + launch-site table | **open** | no coverage table in `docs/` |
 | D2 launch-wrapper commit 1 | **open** | no `cuda/internal/gen` |
@@ -355,6 +355,8 @@ supports.
 | `docs/how-inference-works.md|decoder/sampler.go:118` | goinfer | `// distribution restricted to ONE token is deterministic regardless of that token's prob` |
 | `docs/how-inference-works.md|decoder/session.go:71` | goinfer | `// stale history. Callers must skip it (and reconcile) for an empty prompt, so a rejecte` |
 | `docs/ideas-weight-memory.md|decoder/mlp.go:69` | goinfer | `anchor: func mlp(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend, scr` |
+| `docs/measurements/c3-metal-consumer-window.md|decoder/model.go:301` | goinfer | `switch o.Backend {` |
+| `docs/measurements/c3-metal-consumer-window.md|decoder/residency.go:517` | goinfer | `func (m *Model) withResidency() *Model {` |
 | `docs/measurements/c3-metal-consumer-window.md|metal/gemma_parity_test.go:84` | goinfer | `t.Fatal("metal resident DECLINED — admission says it should be admitted")` |
 | `docs/multimodal.md|decoder/config.go:466` | goinfer | `case c.MoeIntermediateSize <= 0:` |
 | `docs/multimodal.md|decoder/gguf_qwen35.go:77` | goinfer | `anchor: func ggufQwen35Config(g *embed.GGUFFile) (*Config, error) {` |

@@ -17,13 +17,19 @@ survives to a tag unless caught here.
 
 ## Invariants (why the steps are shaped this way)
 
-- **`replace => ../` is honored only when a submodule is the *main* module** (its own
-  build/tidy). A *consumer* of `goinfer/metal@vX` gets the `require` line, and Go **ignores
-  the replace** — so a `require goinfer v0.0.0-00010101…` placeholder (B-01) or an Aug-2
-  pseudo-version (B-05) publishes a broken/ stale dependency permanently. Every submodule must
-  `require` a **real, published** root tag before *it* is tagged.
-- **`go.work` is gitignored** (`.gitignore`) and must stay dev-only. Nothing in the shipped
-  tag may depend on it. CI's standalone-build step (below) is what proves this.
+- **Submodule go.mods carry NO `replace` (2026-08-15).** The dev-convenience
+  `replace github.com/townsendmerino/goinfer => ../` was **removed** from `gpu`/`cuda`/`metal`/
+  `demo-agent` go.mods, because a committed replace makes **`go install …/metal/cmd/serve@vX`
+  fail** — `go install pkg@version` treats the target as main and rejects replace directives (C3
+  finding, `docs/measurements/c3-metal-consumer-window.md`). The replace was only ever "ignored by
+  consumers" on the *require* path; the *binary* path could not `go install`. Every submodule still
+  must `require` a **real, published** root tag (`v0.0.0-00010101…` placeholder = B-01, a pseudo-
+  version = B-05 — both publish a broken dependency permanently). **Do NOT re-add the replace.**
+- **`go.work` is gitignored, per-machine, and now MANDATORY for cross-module dev.** With the replaces
+  gone, a submodule build outside a workspace resolves the root from the proxy; local cross-module
+  work needs a `go.work` covering **all five modules** (`.`, `./gpu`, `./cuda`, `./metal`,
+  `./demo/agent`). It stays dev-only — nothing in the shipped tag may depend on it, which CI's
+  standalone-build step (below) is what proves.
 - **Version alignment (B-07):** all five modules must agree on `aikit`, and `cuda`/`metal` must
   agree on `aikit/gpu`. **Read the versions, do not read them here.**
 
@@ -82,12 +88,12 @@ Do `gpu/`, `cuda/`, `metal/` first, then `demo/agent/` LAST (it also requires `g
 `gpu/vX` must be tagged and pushed before demo/agent can `go get` it).
 ```
 cd <mod>
-# TEMPORARILY remove the `replace github.com/townsendmerino/goinfer => ..` line, then:
+# The go.mods are replace-free (2026-08-15) — nothing to remove/restore. Just point at the tag:
 GOWORK=off go get github.com/townsendmerino/goinfer@v0.10.1        # B-01/B-05: real version, not placeholder/pseudo
 GOWORK=off go get github.com/townsendmerino/goinfer/gpu@v0.10.1    # demo/agent ONLY (it requires goinfer/gpu too)
 GOWORK=off go mod tidy                                             # B-02/B-03/B-04: complete go.sum for the SELECTED versions
 GOWORK=off go build -tags <cuda|gpu|metal> ./...                  # PROVE it builds with no workspace
-# restore the `replace => ..` line (dev convenience; ignored by consumers)
+# NO replace to restore — do not re-add it (it breaks `go install …@vX`; see the Invariants).
 ```
 `metal` on a Linux box prints `matched no packages` (its files are darwin-gated) — that is
 EXPECTED; the `go mod tidy` go.sum bump is the deliverable, and macOS/CI runs the real build gate.

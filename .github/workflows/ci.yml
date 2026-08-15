@@ -128,9 +128,10 @@ jobs:
           sudo apt-get install -y libgl1-mesa-dev xorg-dev
 
       # Stitch root + gpu into an ephemeral workspace so `./gpu/...` resolves
-      # the unpublished goinfer root from this checkout. gpu/go.mod already has
-      # `replace github.com/townsendmerino/goinfer => ../`, so `go work init`
-      # alone is enough — no version-pinned `go work edit` needed.
+      # the unpublished goinfer root from this checkout. The workspace's `use .`
+      # provides that local resolution — the submodule go.mods are replace-free
+      # (2026-08-15; a committed replace broke `go install …@vX`), so `go work init`
+      # is what resolves the root, not a replace.
       - name: workspace (resolve unpublished goinfer locally)
         run: go work init . ./gpu
 
@@ -159,8 +160,8 @@ jobs:
   # (CGO_ENABLED=0, dlopen libcuda, driver-JIT of embedded PTX). No CUDA toolkit
   # or GPU needed to BUILD — only to run; the equivalence gate (TestBackendResident-
   # Wired / TestRealForwardParity) runs on the box, and skips cleanly on the
-  # GPU-less CI runner. Mirrors the gpu job: ephemeral workspace stitches the
-  # unpublished goinfer root (cuda/go.mod already has `replace ... => ../`).
+  # GPU-less CI runner. Mirrors the gpu job: ephemeral `go work init` stitches the
+  # unpublished goinfer root locally (submodule go.mods are replace-free since 2026-08-15).
   cuda:
     runs-on: ubuntu-latest
     steps:

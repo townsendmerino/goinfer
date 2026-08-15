@@ -45,23 +45,29 @@ binary, and it **cannot**. Consumers who want the `serve` binary must clone-and-
 B-01/B-05 class the release process guards for the *build gate* (it removes the replace temporarily),
 but the **tagged go.mod still ships it**.
 
-## 3. Running resident-metal decode as a consumer — **not cleanly consumable via the public API** (finding)
+## 3. Running resident-metal decode as a consumer — **WORKS via the public API** (correction)
 
-The resident-metal path is wired internally by the decoder from the registered backend (`internal/serveapp`
-drives `decoder.NewBackend` → `BuildResident` → the model's internal resident). There is **no public
-one-call attach**, and `decoder.Options.Backend` documents only `"cpu"`/`"webgpu"`. So a *library*
-consumer cannot trivially drive resident-metal decode via the public API; the intended path is the
-`metal/cmd/serve` binary — which (per finding 2) `go install` cannot build. So end-to-end, the "run
-Metal decode as an outside consumer" path is: **clone the repo and build**, not `go get`/`go install`.
+**An earlier draft of this note claimed the resident path "is not drivable via the public API." That
+was WRONG — it was read off the *stale doc comment* on `decoder.Options.Backend` ("cpu/webgpu"), not
+the code.** `Options.Backend` actually accepts `cpu | webgpu | cuda | metal` (`decoder/model.go:301-309`),
+and `Load` calls `withResidency()` (`decoder/residency.go:517`) which runs `NewBackend` → `BuildResident`
+→ attaches the resident **automatically**. So the full consumer path is:
 
-## 4. Decode tok/s vs the 73.6 claim — **NOT re-measured out-of-tree** (honest)
+    import _ "github.com/townsendmerino/goinfer/metal"          // registers the backend (darwin)
+    m, _ := decoder.Load(path, decoder.Options{Backend: "metal", Quant: "int4"})
+    ch, _ := m.Generate(ctx, prompt, maxTokens, decoder.SamplingParams{Temperature: 0})
 
-The consumer runs identical compiled code; decode tok/s is not consumer-specific, and replicating
-`internal/serveapp`'s resident driver purely to re-measure an identical-code number would risk an
-approximation dressed as a measurement. The canonical instrument is the in-tree `TestZZ_metalDepthBench`;
-this session measured **~54 tok/s at depth 128 on a thermally-loaded M1 Pro** (earlier runs this
-session; the 73.6 claim is a cooler-run figure and is consistent with the same code path). **No
-out-of-tree tok/s is asserted.**
+**Verified out-of-tree** (fresh module, `CGO_ENABLED=0`): `m.ResidentActive() == true`, `ResidentDecline()
+== ""` — resident metal was live, no fallback. The only defect is the **stale doc comment**
+(one-line fix; `model.go` is frozen core, so it rides a goldens-gated refresh). No public-API gap.
+
+## 4. Decode tok/s vs the 73.6 claim — **MEASURED out-of-tree: 65.2 tok/s** (decode-only)
+
+With the public path above, the out-of-tree consumer decoded qwen2.5-coder-1.5b (int4, resident metal):
+**160 tokens, 65.2 tok/s decode-only** (timed from the first streamed token, prefill excluded), on a
+thermally-loaded M1 Pro this session. Consistent with the **73.6** claim, which is a cooler-run figure
+(the in-tree `TestZZ_metalDepthBench` spanned ~54–61 tok/s at various depths this session, same thermal
+state). Same compiled code in-tree and out — the consumer is not slower.
 
 ## 5. Bit-identity vs the snapshot — **in-tree property, not consumer-observable**
 
@@ -78,16 +84,17 @@ snapshot golden driving `Forward`/`ForwardArgmax` without the embed scale) was a
 Metal tests assert admission (`metal/gemma_parity_test.go:84` fatals if the resident declined when it
 should be admitted). No "gate that can't fail" of the CUDA form is present on Metal.
 
-## Verdict
+## Verdict (revised 2026-08-15)
 
-- **cgo-free / no-Xcode build: holds** (require path).
-- **Two consumer-window gaps:** `go install …/metal/cmd/serve@v0.13.0` is broken by the committed
-  `replace` (binary consumers must clone-build); resident-metal decode is not drivable via the public
-  API (library consumers can't run it without the serve binary).
-- **tok/s:** not re-measured out-of-tree (identical code; in-tree ~54–73 tok/s, thermal-dependent).
+- **cgo-free / no-Xcode build: holds** (library/require path; otool-confirmed).
+- **Resident-metal decode via the public API: WORKS** — `Load(Backend:"metal")` + blank-import auto-
+  wires the resident; verified out-of-tree at **65.2 tok/s** decode-only. My earlier "not drivable"
+  claim was a mis-read of a stale doc comment — corrected above. **Only defect: the stale
+  `Options.Backend` comment** (one-line fix, frozen-core, goldens-gated).
+- **ONE real gap, now FIXED:** `go install …/metal/cmd/serve@v0.13.0` was broken by the committed
+  `replace`. **Fixed 2026-08-15** — the dev-convenience replace was removed from all four submodule
+  go.mods (`gpu`/`cuda`/`metal`/`demo-agent`); metal/gpu/demo-agent verified replace-free `GOWORK=off`
+  on the Mac, cuda pending the box. RELEASING.md updated to stop re-adding it; `go.work` is now the
+  mandatory dev mechanism. **Consumers get it when `v0.13.1`/`v0.14.0` is cut from the replace-free tree.**
 - **Bit-identity + tautological-gate:** in-tree concerns, not consumer-observable; the CUDA tautology
   has no Metal analog.
-
-Follow-up worth queuing: strip the `replace` from the tagged `metal/go.mod` (or the release process
-should tag from a replace-free tree) so `go install …/metal/cmd/serve@vX` works — the standalone-build
-gate proves the *build* but the *tag* still ships the replace.
