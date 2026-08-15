@@ -1165,6 +1165,14 @@ Why Go is *strictly better* here, not just same-language — it dissolves the it
 
 **Full plan: `docs/task-gate-runner.md`** (matrix-config shape, core loop, hardware detection, order-within-E8, not-in-scope). E8 and E7's census migrations converge — the three census scripts fold in as configs as each matching gate lands, rather than being migrated twice.
 
+**E9 · Autonomous kernel-optimization loop (autoresearch) over the gates** — `linux`, **PLAN DRAFTED; not started; after v0.13.0, and after E8 (it drives the gate-runner).** Decided 2026-08-13 by Francis.
+
+An *execution method* for kernel campaigns, not a new campaign: an agent runs **edit → benchmark → keep/revert** unattended (~40 exp/hr), gated by goinfer's existing correctness harness. Filed engineering (it's tooling); its **target** is the performance FA lever (`docs/ollama-chase.md`, "remaining long-context lever") and GEMV micro-tuning. **goinfer is unusually suited** because the bit-identity + parity gates make "fast but wrong" auto-revertable — the contract that costs speed is what makes the autonomous search safe.
+
+**Synthesis with the relay (load-bearing):** the relay decides *what* to search and defines the gates (it catches premise errors — Lazy Z, KV-quant — a loop cannot); the loop does the *mechanical search* inside that validated frame. Do not point a loop at an unvalidated premise, at Metal expecting wins (5 refutations — re-derives M3), or at the exact path expecting big wins (Campaign A exhausted the bit-identical levers; value is the `--mode fast` lane). **Guards:** adversarial/near-boundary cases in the per-candidate gate (or it reward-hacks the accuracy floor — P2/P3); tiered gate (fast inner check + full parity confirm on survivors) built on **E8's gate-runner**; order-alternated best-of-N (P6a clock-ramp); the loop is **gate-read-only** (editing the gate to pass is the automated vacuous-gate trap); survivors go through normal review, the loop replaces the grind not the judgment.
+
+**Full plan + setup recipe: `docs/task-autoresearch-loop.md`** (the single-number CORRECT|WRONG bench, the git keep/revert harness, the agent instruction, results.tsv audit trail). First target: GEMV (bounded, byte-identical) to prove the harness, then the FA fast-lane.
+
 ### F. Audit backlog
 
 **F1 · §4 gates — SWEPT 2026-08-12: all five were already FIXED** — `linux`, **CLOSED**

@@ -36,7 +36,10 @@ gap widening with depth. Ollama's flash attention holds ~flat (197 → 181 over 
 degrades (227 → 124). The decode crossover is ~1000 tokens. A1 coalescing + split-KV lifted 2048 from
 97 → 160 (the old "1.94× behind" → 1.17×), but did not reach parity, and 3900 is 1.46× behind. The
 remaining long-context lever is a bit-identical flash-attention-style decode (the §A2 split-KV is the
-start; the arithmetic says parity is reachable but not yet built).
+start; the arithmetic says parity is reachable but not yet built). **Execution method for this search:**
+an autonomous edit→bench→keep/revert loop over the gates is scoped in `docs/task-autoresearch-loop.md`
+(queue-engineering E9) — its primary target is this lever's fast-mode lane, since the exact-path
+bit-identical levers are largely exhausted (Campaign A ceiling).
 
 **Peer-independent claims that stand regardless:** CGO_ENABLED=0 with driver-only linkage,
 portable, bit-identical decode with a goldens-gated parity discipline, and 2048-token TTFT
