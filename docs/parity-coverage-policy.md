@@ -115,6 +115,23 @@ both enabled by the sweep's asset preflight, both arriving at tag time as unknow
 **bisected by hand against the previous tag** to establish exactly what a fourth outcome would have
 said automatically.
 
+**`TestDecodeParityInt4` RESOLVED 2026-08-15 — first-run → recorded result, by the route this
+section prescribes.** Bisected to `7deb368` (aikit 1.7.3 → 1.8.1, carrying the W4A8 in-register
+scale-fold kernel — aikit-repo commits `36ce824`/`52890f5`, not goinfer's, so they resolve only
+against an aikit checkout — inside a bump whose goinfer-side message is about the Qwen2.5-VL vision
+encoder and asserts no decoder-path regression). Promoted to a re-capture only on a **measurement**:
+against an f32 forward the new int4 path matches **11** leading ids where the pinned golden matched
+**5** (int8int8, unchanged, matches 19) — so the golden was pinning the *worse* of two int4 paths,
+exactly as the previous re-capture note in that file describes for its own predecessor. **This is
+what "a human decides it is correct" has to look like** to be different from silencing the gate: a
+comparison against something that is not either candidate.
+
+**And the boundary held in the other direction too.** The failure predates its visibility by two
+months, not two days: the gate was *skipping* when the kernel landed (it alone required
+`GOINFER_PREQUANT_GGUF` to be set) and went red on its first real execution. A dependency bump moved
+a numerics path while the one gate watching it was dark — which is the "runnable" rule below, and
+the argument for the asset registry, arriving as a live cost rather than a hypothetical.
+
 ## A gate must be able to run, and able to fail
 
 The tiers above say *what* to test; this says when a gate actually counts. Two ways a

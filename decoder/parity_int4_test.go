@@ -44,7 +44,35 @@ func loadInt4Model(tb testing.TB) *Model {
 // 4 (474 vs parityWant's 750) — i.e. it pinned the buggy output. The fixed int4
 // decode now MATCHES int8int8 through id 4 (both 750) and tracks it one token
 // further before int4 lossiness bends off — the more-correct continuation.
-var parityWantInt4 = []int{4710, 73594, 12669, 198, 750, 11047, 10784, 15890, 24337, 982, 262, 2790, 15890, 284, 220, 15, 198, 262, 369, 1509, 304, 3589, 510, 286}
+//
+// RE-CAPTURED AGAIN 2026-08-15, and the same way: the golden was pinning the WORSE
+// of two int4 paths. Attributed by bisect to `7deb368` (2026-06-14, aikit 1.7.3 →
+// 1.8.1) — a bump whose message is entirely about the Qwen2.5-VL vision encoder and
+// which asserts "no regression in the … decoder paths". It carried two aikit linalg
+// commits that are not about vision at all: `36ce824` "fold W4A8 weight scales
+// in-register" and `52890f5` wiring that kernel on NEON. Folding the scales changes
+// the W4A8 accumulation, which moves a greedy continuation.
+//
+// EVIDENCE FOR RE-CAPTURING RATHER THAN CALLING IT A REGRESSION — this is the
+// human decision `parity-coverage-policy.md` requires before a first-run value may
+// be banked, and it is a measurement, not a judgement call. Same prompt, same 0.5B,
+// 24 greedy tokens, scored by how many leading ids match an f32 forward:
+//
+//	int8int8 (unchanged, its own gate green)   19/24
+//	int4 THIS golden                           11/24
+//	int4 the 2026-06-12 golden below it         5/24
+//
+// The kernel change made int4 twice as faithful to f32; it also tracks int8int8 for
+// 11 ids where the old golden bent away at 5. Reverting to hold the gate green would
+// pin the less correct path — the identical mistake the 2026-06-12 note describes.
+//
+// WHY IT WENT UNSEEN FOR TWO MONTHS, which is the part worth fixing elsewhere: this
+// gate was SKIPPING when the kernel landed (it alone required GOINFER_PREQUANT_GGUF
+// to be set, while its three sibling readers fell back to ../testdata — see
+// loadInt4Model above). It only began running when the asset registry gave it the
+// fallback, and it went red on its first execution. A dependency bump moved a
+// numerics path with the one gate that watches it dark.
+var parityWantInt4 = []int{4710, 73594, 12669, 198, 750, 1438, 4136, 3932, 262, 671, 1096, 374, 264, 5878, 369, 279, 5042, 2038, 198, 262, 1494, 271, 8960, 4136}
 
 // TestDecodeParityInt4 greedily continues parityPrompt at int4 and checks the
 // token ids against parityWantInt4. The prompt is prefilled (batched

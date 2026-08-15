@@ -616,13 +616,21 @@ problem in the list, not evidence about C1a.
 
 | test | status |
 |---|---|
-| `TestDecodeParityInt4` | standing — red on 2026-08-12 and today |
+| `TestDecodeParityInt4` | ~~standing — red on 2026-08-12 and today~~ **RESOLVED 2026-08-15**: stale golden, not a defect. Bisected to `7deb368` (aikit 1.7.3→1.8.1's W4A8 scale-fold kernel); re-captured on evidence — vs an f32 forward the new path matches 11 leading ids, the pinned one 5. Red since 2026-06-14, not 2026-08-12: the gate was skipping until the asset registry gave it a fallback |
 | `TestSerializeWeightsTo_matchesBuffer` | standing — red on 2026-08-12 and today ([[B11]]) |
 | `TestQwen35GGUF_vsSafetensors` | standing — red on 2026-08-12 and today; cosine 0.987835 vs a 0.998 floor |
 | `TestParityManifest_methodTier` | **not standing** — red only because of the emission; passes on the committed manifest ([[B15]]) |
 
 So **three** genuine standing failures, not one. This is a **denominator, not a campaign** — the
 campaign is [[B13]] and it is budgeted for after the release. Nothing here is to be fixed now.
+
+**Update 2026-08-15: two, not three.** `TestDecodeParityInt4` was carved out of B13 and closed
+(above) because it turned out to have a *decidable* answer — a stale golden pinning a superseded
+kernel — where the other two are still open questions. **The carve-out rule that produced that
+call:** a standing red leaves the denominator early when triaging it is cheaper than carrying it,
+which is a property of the individual failure, not of the campaign's schedule. `TestQwen35GGUF_vsSafetensors`
+(cosine 0.987835 vs a 0.998 floor) and `TestSerializeWeightsTo_matchesBuffer` stay in B13; neither
+has a reference to decide against the way the int4 gate had an f32 forward.
 
 **Stamp half DECLINED, per the §C1 exception in `RELEASING.md`.** `EMIT_MANIFEST=1` reproduced the
 [[B15]] defect exactly: 4× `status: experimental → validated` with `method` left at `tiny-golden`,

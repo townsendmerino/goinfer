@@ -1577,6 +1577,15 @@ standing failures, not just unknowns.** Three of the gates reachable this way
 (`TestDecodeParityInt4`, `TestSerializeWeightsTo_matchesBuffer`, `TestQwen35GGUF_vsSafetensors`) have
 been red for at least two days with nobody informed.
 
+**"At least two days" was the visible floor, and it was off by a factor of thirty.**
+`TestDecodeParityInt4` was bisected 2026-08-15 to `7deb368` (2026-06-14) — **red for two months**,
+because it was skipping for all but the last few days of that. The dark surface did not merely hide
+a standing failure; it hid **when** the failure started, and therefore what caused it. That is the
+argument for the campaign at full strength: the cost of a dark gate is not the red you eventually
+see, it is the attribution you lose in between. (Resolved as a stale golden, not a defect — the
+W4A8 scale-fold kernel that bump carried made int4 *more* faithful to f32, 5 → 11 leading ids. See
+`queue-release.md`; two of the three remain in this campaign.)
+
 **After the release:** batches, each failure triaged by **(a) can a shipped path reach it** and
 **(b) is it older than the current tag**, with a **budget that stops the campaign** rather than the
 list stopping it.
