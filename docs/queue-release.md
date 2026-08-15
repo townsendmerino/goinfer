@@ -290,7 +290,7 @@ Write that as a checklist so 1.0 is a decision against criteria rather than a fe
 
 **The v1.0 gate checklist (draft — the point of E1):**
 - [x] Parity coverage complete (E2's four `validated_at: null` families resolved: T3 or demoted to experimental).
-  **DONE 2026-08-15 `1cf8ab2`** — all four cleared at T3, none demoted; the staleness tripwire now
+  **DONE 2026-08-15 `c3e43c8`** — all four cleared at T3, none demoted; the staleness tripwire now
   enforces 23/23 families. Five rows remain `experimental` (`glm4_moe`, `mixtral`, `qwen2_5_vl`,
   `qwen2_moe`, `llama4_text` — all `tiny-golden`), which is a separate line: they are honestly
   labelled and excluded from the supported count, not `pending`.
@@ -302,7 +302,7 @@ Write that as a checklist so 1.0 is a decision against criteria rather than a fe
   reference-tensor carve-out are in **E7**. (The reference-tensor / `pin_*` generation is *excluded*
   from this line — blocked on Francis's torch-replacement research; see E7 item 7.)
 
-**E2 · The four per-family demotion judgments** — `linux` — **DONE 2026-08-15 (`1cf8ab2` code,
+**E2 · The four per-family demotion judgments** — `linux` — **DONE 2026-08-15 (`c3e43c8` code,
 manifest in the follow-up), and not one demotion among them**
 
 `gpt2`, `granitemoehybrid`, `kimi_k2`, `nemotron_h` carried `validated_at: null` and were the same four

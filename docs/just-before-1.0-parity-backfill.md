@@ -14,7 +14,7 @@
 > code or goldens are missing. Per family: get the checkpoint → run the existing
 > gate → transcribe metrics into the manifest. The matrix re-joins automatically.
 
-## CAMPAIGN CLOSED — 2026-08-15 (`1cf8ab2` + the manifest follow-up)
+## CAMPAIGN CLOSED — 2026-08-15 (`c3e43c8` + the manifest follow-up)
 
 > **Zero `pending` rows remain; the staleness tripwire enforces 23/23 families.** The last four
 > (`gpt2`, `granitemoehybrid`, `kimi_k2`, `nemotron_h`) cleared at T3 — `full-forward-oracle`,

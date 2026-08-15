@@ -1461,7 +1461,9 @@ siblings. Under the sweep nothing changes (the preflight exports the variable ei
 bare `go test ./decoder`, `TestDecodeParityInt4` now RUNS where it used to skip. Note that
 **B13** records
 this gate as **already red for at least two days** — so expect it red, and do not read that as caused
-by this change.
+by this change. *(Resolved 2026-08-15 `8f63a7d`: red since 2026-06-14, a stale golden pinning a
+superseded W4A8 kernel — so this behaviour change did not cause it, it REVEALED it, and the "two
+days" was the visible floor. The gate is green now; `queue-correctness.md` carries the close-out.)*
 
 **End-to-end proof:** `TestPhi3GGUFReal_gate` under `-tags realckpt` loads its model through
 `assetPath` and passes (argmax 3681 = golden, continuation exact). **Note the tag**: the 24

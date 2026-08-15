@@ -18,7 +18,7 @@ import (
 // byte mismatch, not a silent pass.
 func TestAttendStrided_matchesGatherReference(t *testing.T) {
 	shapes := []struct {
-		name           string
+		name                  string
 		K, nKeys, nKV, nH, hd int
 	}{
 		{"decode M=1 GQA nKV=2 nH=8", 1, 512, 2, 8, 64},

@@ -105,7 +105,7 @@ groups were seeded from conversation, and **the rate is much lower**, which is t
 | D2 launch-wrapper commit 1 | **open** | no `cuda/internal/gen` |
 | D3 parked flag-pair | **open**, design read done above | — |
 | E1 v1.0 gate as written criteria | **open** | prose item, no tree anchor |
-| E2 four per-family demotions | **DONE 2026-08-15 `1cf8ab2`** — and NO demotions | all four validated at T3, so the judgment the entry anticipated never had to be made: gpt2 `full-forward-oracle`, granitemoehybrid + nemotron_h `real-model-oracle`, kimi_k2 `shared-path (via deepseek_v3)`. **The tripwire now enforces 23/23, up from 19/23.** The two hybrids needed loader fixes first — neither could load its RELEASED checkpoint, and granite was roping a NoPE model (see the commit; the demotion rule's "unfinished does not qualify" is what forced fixing over demoting) |
+| E2 four per-family demotions | **DONE 2026-08-15 `c3e43c8`** — and NO demotions | all four validated at T3, so the judgment the entry anticipated never had to be made: gpt2 `full-forward-oracle`, granitemoehybrid + nemotron_h `real-model-oracle`, kimi_k2 `shared-path (via deepseek_v3)`. **The tripwire now enforces 23/23, up from 19/23.** The two hybrids needed loader fixes first — neither could load its RELEASED checkpoint, and granite was roping a NoPE model (see the commit; the demotion rule's "unfinished does not qualify" is what forced fixing over demoting) |
 | E3 freeze re-declaration | **DONE `cda8cfe`** | re-declared as a proof requirement, with decider and date |
 | E4 `scripts/bench_compare.sh` fix or retire | **FIXED** | it now opens with *"goinfer's OWN numbers only. NOT a peer comparison"* and points at `scripts/bench_peer.py`, which drives both sides |
 | E5 promo drafts | **unverifiable** | held in conversation, nothing in the tree to check |
@@ -288,7 +288,7 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 |---|---|
 | `0103b49` | fix(cuda): pay the deferred reservation before sizing the cache (A9-FIX) |
 | `0c54e35` | fix(gate): repo hygiene runs what CI runs, derived from ci.yml (B0) |
-| `1cf8ab2` | E2: the four pending families get real oracles — and two of them were decoding released checkpoints wrong |
+| `c3e43c8` | E2: the four pending families get real oracles — and two of them were decoding released checkpoints wrong |
 | `1d0d1ed` | test(decoder): int4 forward goldens — 23 fixtures, 16 architectures (Q1c) |
 | `1f6dbe0` | fix(parity,fmt): gofmt the threshold sweep + refresh deps_hash after comment-only core edits |
 | `2d28358` | docs(branch-note): re-derive against the corrected cap (D3 design read) |

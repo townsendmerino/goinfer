@@ -194,4 +194,28 @@ One live lead, not yet chased: the test's own comment records a **recent asset-r
 been silently skipping for a long stretch, during which `parityWantInt4`'s golden could have gone
 stale against real drift nobody was watching for. That is a hypothesis, not a finding — needs a real
 bisect (not the two-point check done here) to find which commit actually broke it, or whether the
-golden itself was simply never right. **Unclaimed — pick up either box.**
+golden itself was simply never right. ~~**Unclaimed — pick up either box.**~~
+
+**RESOLVED 2026-08-15 (`8f63a7d`, linux). The lead above was right, and it was the whole answer.**
+The real bisect ran (474 revisions, 9 steps, isolated worktree): first bad commit **`7deb368`**
+(2026-06-14) — *"integrate aikit v1.8.1 Qwen2.5-VL vision encoder"*. Its only code delta is
+`go.mod`; aikit 1.7.3→1.8.1 carries two `linalg` commits that are not vision at all (`36ce824`
+"fold W4A8 weight scales in-register", `52890f5` wiring it on NEON, both **aikit-repo** SHAs).
+Folding the scales changes W4A8 accumulation, which moves a greedy continuation. **So: red for two
+months, not two days** — consistent with the two-point check finding it already red at v1.17.1,
+since v1.17.1 is far downstream of the actual cause.
+
+**Answering the entry's own either/or: the golden was right when captured, and went stale — it was
+NOT "never right".** And it is stale in the direction that matters. Scored by leading ids matching
+an **f32 forward** of the same 0.5B on the same prompt: the new int4 path matches **11** of 24,
+the pinned golden **5**, int8int8 (unchanged) **19**. The kernel made int4 *twice as faithful to
+f32*; the gate was holding the *worse* path. Re-captured on that measurement rather than on the
+gate being red — the distinction `parity-coverage-policy.md` draws between promoting a first-run
+result and silencing a gate — and the identical mistake that file's own 2026-06-12 note records
+for its predecessor. Second time on this gate.
+
+**The finding worth keeping is not the fix.** The dark gate hid not just the failure but **when it
+started**, and therefore what caused it — a dependency bump moved a numerics path with the one gate
+watching it skipping. That is filed against the selector-coverage campaign in
+`queue-engineering.md`, where "red for at least two days" is now corrected as the visible floor,
+off by a factor of thirty.

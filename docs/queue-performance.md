@@ -769,7 +769,11 @@ model size and context" should make the effect more visible, is open follow-up w
 *Unrelated finding surfaced along the way, confirmed NOT caused by this change (isolated worktree
 bisect against `6a8a54f`, pre-dating both this and the aikit bump):* `TestDecodeParityInt4` diverges
 from its recorded golden on the real qwen2.5-coder-0.5b int4 checkpoint. Pre-existing on `main`,
-needs its own investigation — filed as its own item, not blocking P1.
+needs its own investigation — filed as its own item, not blocking P1. **Investigated and closed
+2026-08-15 (`8f63a7d`): bisected to `7deb368` (2026-06-14, aikit 1.7.3→1.8.1's W4A8 in-register
+scale-fold), a STALE GOLDEN rather than a defect — the new kernel matches an f32 forward for 11
+leading ids where the pinned golden matched 5. The "confirmed not caused by this change" above
+holds, and by a wider margin than the two-point check could show.**
 
 **P2 · Scalar `int8→f32` widen on the LM head** — **DONE, landed via the ordinary aikit release
 cadence.** aikit `linalg/quant.go:136` (`q8Span`).
