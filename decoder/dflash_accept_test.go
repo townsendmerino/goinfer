@@ -48,12 +48,29 @@ var dflashSuites = map[string][]string{
 	},
 }
 
+// envOr returns v when set, else the fallback — deferred so assetPath (which can Skip) only
+// runs when the override is absent.
+func envOr(v string, fallback func() string) string {
+	if v != "" {
+		return v
+	}
+	return fallback()
+}
+
 // TestDFlashAcceptance runs the DFlash block-verify loop over each suite and reports
 // tok/verify. The bar (docs/spec/08 kill-gate 2) is >= 3.0 on at least one suite.
 func TestDFlashAcceptance(t *testing.T) {
 	requireHeavyModel(t)
-	ddir := assetPath(t, "GOINFER_DFLASH_F32")
-	tdir := assetPath(t, "GOINFER_QWEN3_4B")
+	// PAIRING-PARAMETERIZED. The default is the Qwen3-4B pairing all the recorded numbers
+	// were measured on; the overrides let the SAME harness measure a second pairing without
+	// forking it, which is what keeps two acceptance numbers comparable.
+	//
+	// GOINFER_DFLASH_DRAFTER / _TARGET / _TOKENIZER are PATHS, not asset names — the second
+	// pairing's target is a 36 GB .gguf whose tokenizer lives in the separate safetensors
+	// directory, a split the asset registry has no entry shape for.
+	ddir := envOr(os.Getenv("GOINFER_DFLASH_DRAFTER"), func() string { return assetPath(t, "GOINFER_DFLASH_F32") })
+	tdir := envOr(os.Getenv("GOINFER_DFLASH_TARGET"), func() string { return assetPath(t, "GOINFER_QWEN3_4B") })
+	tokDir := envOr(os.Getenv("GOINFER_DFLASH_TOKENIZER"), func() string { return tdir })
 
 	d, err := LoadDFlashDrafter(ddir)
 	if err != nil {
@@ -76,10 +93,20 @@ func TestDFlashAcceptance(t *testing.T) {
 	}
 	defer m.Close()
 
-	tk, err := tokenizer.Load(tdir)
+	tk, err := tokenizer.Load(tokDir)
 	if err != nil {
-		t.Fatalf("tokenizer.Load(%s): %v", tdir, err)
+		t.Fatalf("tokenizer.Load(%s): %v", tokDir, err)
 	}
+	if m.w.arch.HiddenDim != d.hidden {
+		t.Fatalf("target hidden %d != drafter hidden %d — wrong pairing", m.w.arch.HiddenDim, d.hidden)
+	}
+	for _, l := range d.TargetLayerIDs() {
+		if l >= m.w.arch.NumLayers {
+			t.Fatalf("drafter taps layer %d but the target has %d — wrong pairing", l, m.w.arch.NumLayers)
+		}
+	}
+	t.Logf("pairing: drafter=%s target=%s (hidden %d, %d target layers, %d taps, block %d)",
+		ddir, tdir, d.hidden, m.w.arch.NumLayers, len(d.TargetLayerIDs()), d.BlockSize())
 
 	maxNew := 48
 	if os.Getenv("GOINFER_DFLASH_MAXNEW") != "" {
@@ -121,9 +148,33 @@ func TestDFlashAcceptance(t *testing.T) {
 	}
 }
 
-// qwen3NoThinkSuffix is "<think>\n\n</think>\n\n" — the four ids Qwen3's template emits
-// for enable_thinking=False (151667 <think>, 271 "\n\n", 151668 </think>, 271).
-var qwen3NoThinkSuffix = []int{151667, 271, 151668, 271}
+// noThinkSuffix returns the ids for "<think>\n\n</think>\n\n" — what Qwen3's template emits
+// for enable_thinking=False.
+//
+// THIS USED TO BE A LITERAL []int{151667, 271, 151668, 271}, pinned from Qwen3-4B, and that was
+// a bug waiting for the second pairing. Qwen3.6-35B-A3B has a 248320-token vocab in which
+// <think> is 248068 and 151667 is an unrelated token — so the literal would have quietly fed
+// the 35B four wrong tokens, depressing acceptance in a way that looks exactly like "the
+// drafter transfers badly to this target". Resolve it through the tokenizer that ships with
+// the target, and verify rather than trust: the encode must produce the <think>/</think> ids
+// the tokenizer itself reports.
+func noThinkSuffix(t *testing.T, tk *tokenizer.Tokenizer) []int {
+	t.Helper()
+	ids, err := tk.Encode("<think>\n\n</think>\n\n", false)
+	if err != nil {
+		t.Fatalf("encode no-think suffix: %v", err)
+	}
+	open, oOK := tk.TokenID("<think>")
+	close, cOK := tk.TokenID("</think>")
+	if !oOK || !cOK {
+		t.Fatalf("target tokenizer has no <think>/</think> — this suite assumes a Qwen3-style template")
+	}
+	if len(ids) != 4 || ids[0] != open || ids[2] != close {
+		t.Fatalf("no-think suffix encoded to %v; want [%d _ %d _] — the template assumption does not hold for this target",
+			ids, open, close)
+	}
+	return ids
+}
 
 // skipNoThink reproduces the ORIGINAL (thinking-mode) measurement for comparison.
 var skipNoThink = os.Getenv("GOINFER_DFLASH_THINKING") != ""
@@ -150,7 +201,7 @@ func dflashRun(t *testing.T, m *Model, d *DFlashDrafter, tk *tokenizer.Tokenizer
 	// distribution it never saw. Cost, measured: code 2.90 -> see the doc.
 	// Verified id-exact: ChatML ids + these four == HF apply_chat_template's ids.
 	if !skipNoThink {
-		ids = append(ids, qwen3NoThinkSuffix...)
+		ids = append(ids, noThinkSuffix(t, tk)...)
 	}
 
 	B := d.BlockSize()
