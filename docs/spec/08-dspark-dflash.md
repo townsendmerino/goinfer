@@ -1009,8 +1009,9 @@ Gate 1's second half is cleared for DSpark too (`TestDSpark_targetEndToEnd`: **7
 exact on both traces**, driven from goinfer's own target through `ForwardCapture`). So the
 question becomes which pairings this can be pointed at. The published catalogue is **38 drafter
 repos** across deepseek-ai and z-lab. Crossed against the 23 families goinfer runs, and against
-`Model.ForwardCapture`'s architecture rejection (`decoder/model.go:703` — it refuses any arch
-with its own `runLayers`):
+`Model.ForwardCapture`'s architecture rejection in `decoder/model.go` — it refuses any arch
+with its own `runLayers`, and the identical guard appears twice (ForwardCapture and its
+sub-capture sibling), which is why this cites the function rather than a line:
 
 | model goinfer runs | drafter published | CPU seam | status |
 |---|---|---|---|
