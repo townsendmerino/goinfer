@@ -1069,6 +1069,20 @@ sibling already had — it reproduces the class rather than closing it. Where en
 mechanical, the invariant's own comment carries the full set, so the next fix is written by someone
 who has been told the set exists.
 
+**B17 · CI staticcheck verdicts are toolchain-nondeterministic** — either box. Filed 2026-08-14,
+decider Francis.
+
+`ci.yml` runs `go run honnef.co/go/tools/cmd/staticcheck@2025.1.1` (root and backend jobs). The
+version pin does not pin the verdict: staticcheck's checks track the Go toolchain it is *built*
+with, and `go run @version` builds it with whatever toolchain the box or runner has. aikit
+diagnosed exactly this on 2026-08-13 (its `docs/task-gpu-lint-staticcheck-drift.md`): identical
+linter version, Mac go1.26.1 vs Linux go1.26.5 → ST1000/ST1023 findings on one box only, green
+elsewhere. Consequence here: a box can be red where CI is green (or the reverse) at the same
+pinned version — the local-vs-CI relationship B0 exists to keep declared. Remedy shape per aikit's
+task doc: make the linter's build toolchain part of the pin (pinned-toolchain build or a prebuilt
+binary), so the verdict is a function of the pin. The "Pinned like fin/ken" comment (`ci.yml`)
+marks where else the same class may live.
+
 ### C. Verification surfaces never exercised
 
 **D1 · Trace tap and the launch-site coverage table** — `linux`, before D2's migration
@@ -1289,6 +1303,29 @@ the `2e8dfb6` arm64-vs-amd64 question could only be inferred. The `2026-08-13` a
 first refresh since, and its record answers the question **directly**: proof block and trailer both
 read `arch=arm64`. The record now says which arch ran the goldens instead of leaving it to inference.
 
+**G3 · Consumer-resolution gate — the aikit twin** — either box, **docs-only now; code after the
+v0.13.0 tag (§C1 + CUDA gate first)**. Filed 2026-08-14, decider Francis.
+
+Verify from a consumer's position that every published goinfer module resolves and builds through
+the Go module proxy — the B-01…B-07 class ("the tagged submodules don't build for anyone",
+2026-08-05 audit), which aikit hit independently on 2026-08-12: eight backend modules never tagged,
+`require …/gpu v0.0.0` → 404 for any consumer, invisible in-tree because replaces + the gitignored
+`go.work` mask it by construction. Nothing inside a repo can see this class; the manual
+scratch-module step in `RELEASING.md` is the only current guard and runs at most at tag time.
+
+The shape is built and proven in aikit (merged 2026-08-13, green on both real runner OSes):
+`tools/gate` (matrix runner — one cell per check, ok / n-a / FAIL plus INCONCLUSIVE = exit 2, the
+count never lost) + `tools/consumergate` (resolve tier: `go get` + `go mod download` per
+module@version against the proxy only, no `,direct` fallback; compile tier: `go build module/...`,
+wrong-OS modules n/a not FAIL) + a tag-triggered job and a scheduled two-OS watch whose compile
+union covers what no single OS can. Port the shape, don't re-derive it. goinfer's set: five modules
+(root, `gpu`, `cuda`, `metal`, `demo/agent`); tag patterns `v*`, `gpu/v*`, `cuda/v*`, `metal/v*`,
+`demo/agent/v*`. `RELEASING.md`'s out-of-tree verification prose becomes an invocation of the tool,
+same commit.
+
+Scoping check before build: whether `ken` is multi-module — it is a promoted repo now, and if
+multi-module it is the third instance of the class; the same tool shape covers it as its own task
+there.
 
 ## Draft: contents of the next release
 
