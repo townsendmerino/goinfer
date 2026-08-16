@@ -46,6 +46,7 @@ func (m *Model) runLayersQwen35(id int, cache *KVCache) ([]float32, error) {
 		for i := range h {
 			h[i] += ffn[i]
 		}
+		cache.captureResidual(l, h)
 	}
 	cache.Advance() // manualPos: one stored position per token
 	return h, nil

@@ -237,6 +237,7 @@ func (m *Model) runLayersGemma4(id int, cache *KVCache) ([]float32, error) {
 		if g4traceHidden != nil {
 			g4traceHidden(l, h)
 		}
+		cache.captureResidual(l, h)
 	}
 	cache.Advance()
 	return h, nil

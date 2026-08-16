@@ -53,6 +53,7 @@ func (m *Model) runLayersGptOss(id int, cache *KVCache) ([]float32, error) {
 		for i := range h {
 			h[i] += moeOut[i]
 		}
+		cache.captureResidual(l, h)
 	}
 	return h, nil
 }

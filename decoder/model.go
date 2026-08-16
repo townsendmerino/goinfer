@@ -695,12 +695,18 @@ func (m *Model) forward(id int, cache *KVCache) ([]float32, error) {
 // PLUS the residual stream after each layer in `layers` (cloned) — the read-only
 // hidden-state seam an EAGLE-3 draft head fuses (05). The forward is byte-identical
 // to forward(id): the captures are copies that never feed back. Layer indices are
-// 0-based into [0, NumLayers); out[i] corresponds to layers[i]. Generic decode path
-// (the families with their own runLayers don't capture yet — return an error there
-// rather than silently producing nothing).
+// 0-based into [0, NumLayers); out[i] corresponds to layers[i].
+//
+// Wired for the generic decode path plus the own-runLayers families whose loops call
+// cache.captureResidual (see decoder/capture.go): qwen3_5_moe, gemma4, gpt-oss — the three
+// P10 block-drafting targets we hold locally with a licensed drafter. The rest still return
+// an error rather than silently producing nothing: granite and nemotron_h interleave recurrent
+// mixers whose "residual after layer l" needs deciding rather than assuming, mla and llama4_text
+// are simply not done. A family is wired only when BOTH its loop captures and it leaves this
+// list, so a half-wired one fails here loudly instead of handing back nil rows.
 func (m *Model) ForwardCapture(id int, cache *KVCache, layers []int) (logits []float32, hidden [][]float32, err error) {
 	a := m.w.arch
-	if a.gemma4 != nil || a.qwen35 != nil || a.granite != nil || a.nemotron != nil || a.mla != nil || a.llama4 != nil || a.gptoss != nil {
+	if a.granite != nil || a.nemotron != nil || a.mla != nil || a.llama4 != nil {
 		return nil, nil, fmt.Errorf("decoder.ForwardCapture: hidden-state seam not wired for arch %q (own runLayers)", a.Name)
 	}
 	for _, l := range layers {
