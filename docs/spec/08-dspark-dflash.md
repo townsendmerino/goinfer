@@ -396,19 +396,70 @@ and we import no Python either way. Record the decision in the PR as 05 did.
    `M=1` matmuls where one `M=16` batch would reuse the weights, and the attention inner
    loop is scalar f64 Go rather than a `linalg` kernel.
 
-   **The other prerequisite: the resident runner has no capture seam.** `cache.captureLayers` is handled only in `decoder/forwardn.go` and
-   `decoder/model.go` — the CPU forward. `gpu/decoderunner.go` has no equivalent and
-   nothing in `gpu/` or `cuda/` reads per-layer residuals out. So a resident target
-   physically cannot hand DFlash the 5 tapped hidden states today, and increment 4 is
-   **"add hidden-state capture to the resident decode runner, then measure"** rather than
-   "wire it up and measure". That work is the same shape as the `ReadMambaCap` readback
-   the SSM port already added, so there is a precedent to copy — but it is device→host
-   traffic on the hot path and needs its own design (which 5 layers, and whether the
-   readback is amortized across the block).
+   **The other prerequisite — resident hidden capture — is BUILT and gated (2026-08-15).**
 
-   This is the same class of gap increment 2 found on the `mac` side (`ForwardCapture`
-   rejects `gemma4`): the seam 05 paid for is CPU-only and single-arch, and every drafter
-   that reads hidden states inherits that limit. Worth pricing once, for both.
+   ~~The resident runner has no capture seam.~~ **That claim, made twice, was wrong**, and
+   how it was wrong is the part worth keeping: the search was for the CPU seam's identifiers
+   (`captureLayers`, `ForwardCapture`), and their absence in `cuda/` was read as absence of
+   the *mechanism*. `cuda/resident.go` already had **`layerCap`** — a divergence-localization
+   probe that snapshots the residual `r.x` after **every** layer. **Absence of a name is not
+   absence of a capability.**
+
+   What `layerCap` is not, is a production seam: every layer, a `stream.Sync()` and a
+   download each, into an unbounded buffer — 36 syncs per token on a 36-layer model, fine to
+   bisect a bug with, far too expensive to decode against. So the work was smaller than
+   "build a seam" and realer than "it already exists":
+
+   **`cudaResident.SetHiddenCapture(taps []int)` / `HiddenCapture()`** — only the TAPPED
+   layer outputs, into fixed slots (5 syncs, not 36), ascending taps validated, `nil`
+   disarms, off by default so no other family pays for it. Reuses the existing `capVec`
+   helper, at the same point in `launchToken` as `layerCap` (after segC, where `r.x` is
+   unambiguously the layer output).
+
+   **Gated by `TestResidentHiddenCapture`** — resident int4 captures vs
+   `decoder.Model.ForwardCapture`, 5 taps × 5 positions: cosine **0.99945 / 0.99824 /
+   0.99801 / 0.99828 / 0.99793**. **And it fails when it should:** an off-by-one tap (`l+1`)
+   drops layer 1 to **0.264**. A wrong layer yields plausible-looking vectors, so only the
+   cross-check against the HF-gated CPU seam catches it.
+
+   The `mac` side still has the sibling gap increment 2 found (`ForwardCapture` rejects
+   `gemma4`): the CPU seam remains single-arch even though the resident one is now general.
+
+   ### Gate 3 PROJECTED from measured inputs, before building the trunk
+
+   The trunk is the expensive build here (non-causal cross-attention kernels at M=16 over
+   `[ctx‖block]`). Both terms of the speedup are measurable without it, so they were.
+
+   **Measured** (`TestSpecVerifyCeiling`, extended to k=16 and pointed at the real pairing
+   through a new `GOINFER_CUDA_MODEL` override — Qwen3-4B int4 resident, depth 1024, 2070S):
+
+   | k | batched M=k | k× sequential | cheaper by |
+   |---|---|---|---|
+   | 8 | 26.4 ms | 89.4 ms | 3.39× |
+   | **16** | **46.4 ms** | **178.9 ms** | **3.86×** |
+
+   M=1 decode is **11.12 ms**; fitting `T(M) = W + M·C` gives an **8.77 ms** weight-read term
+   plus **2.35 ms/row**, so a 16-wide verify costs ~4.2 plain decodes.
+
+   **Modelled draft:** 0.537 B drafter params against 4.02 B target = ratio **0.134**, which
+   independently matches its 5-of-36 layer share (0.139). Bracketing the draft cost:
+
+   | draft cost | code (α 6.14) | math (α 7.32) | chat (α 2.18) |
+   |---|---|---|---|
+   | 6.2 ms (param-scaled fit) | **1.30×** | **1.55×** | 0.46× |
+   | 2.7 ms (bandwidth + FLOP floor) | **1.39×** | **1.66×** | 0.49× |
+
+   **Gate 3 clears on math either way, code sits ON the 1.3× bar, and chat is a ~2× LOSS.**
+   The bar is ≥1.3× on ≥1 real workload, so the trunk is worth funding — but the honest
+   headline will be *"1.3–1.7× on structured traffic"*, not a flat speedup, and **gate 4's
+   router becomes mandatory rather than a nicety**: at 0.46× on open chat a DFlash that
+   fires indiscriminately is worse than no drafter. That agrees with 06's α̂-routing
+   conclusion and with upstream's own ~0.98× on open chat.
+
+   **What the projection cannot settle** is the draft term itself — the bracket spans
+   1.30–1.39× on code and the low end IS the bar. If the real trunk lands 2× worse than the
+   pessimistic estimate, code misses and only math clears. That single number is what the
+   build produces, which is why the build is the next step rather than more modelling.
 5. **DFlash forward** (the new bidirectional block pass) + constrained-traffic
    measurement vs the 01/02 router baseline (gates 2–4).
 6. **Metal run** (`mac`), only if 4 clears. **RE-TARGET (2026-08-15): not the 12B.** Every

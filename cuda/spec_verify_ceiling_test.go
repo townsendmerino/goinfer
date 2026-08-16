@@ -24,7 +24,13 @@ func TestSpecVerifyCeiling(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
 		t.Skip("set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)")
 	}
-	path := modelPath("qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")
+	// GOINFER_CUDA_MODEL overrides the default fixture so the ceiling can be measured on the
+	// pairing that matters rather than only on the 1.5B: the P10 projection needs the REAL
+	// target (Qwen3-4B), where a fixed-size drafter is relatively cheaper.
+	path := os.Getenv("GOINFER_CUDA_MODEL")
+	if path == "" {
+		path = modelPath("qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")
+	}
 	if err := gc.Init(); err != nil {
 		t.Skipf("cuInit: %v", err)
 	}
@@ -72,7 +78,7 @@ func TestSpecVerifyCeiling(t *testing.T) {
 	})
 	t.Logf("single decode (M=1) @depth %d: %.3f ms", depth, float64(one.Microseconds())/1000)
 	t.Logf("%-4s %-14s %-16s %-12s %-s", "k", "batched(M=k)", "k×sequential", "cheaper by", "→ spec ceiling")
-	for _, k := range []int{2, 4, 6, 8} {
+	for _, k := range []int{2, 4, 6, 8, 16} { // 16 = DFlash's block width (P10)
 		ek := make([][]float32, k)
 		for i := range ek {
 			ek[i] = emb(100 + i)
