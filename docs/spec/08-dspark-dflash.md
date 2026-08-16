@@ -1175,3 +1175,70 @@ must agree with the ids the tokenizer itself reports, and be 4 long. Checked on 
 The harness also now checks the pairing at load (target hidden == drafter hidden; every tap in
 range of the target's layer count), so a mismatched pair fails immediately instead of producing
 a number.
+
+## Probe B ANSWERED: acceptance transfers to a second pairing — measured, not projected
+
+Probe B ("does acceptance hold at scale, or is 6.14 a Qwen3-4B artifact?") was open because it
+needed a second target we could actually run. Wiring the capture seam supplied one:
+**Qwen3.6-35B-A3B**, drafter and target both local, both cleanly licensed.
+
+**At the length gate 2 is recorded at, the second pairing is slightly BETTER:**
+
+| suite `code`, int8 target, greedy | Qwen3-4B | Qwen3.6-35B-A3B |
+|---|---|---|
+| **tok/verify @ maxNew=160** | **6.14** | **6.78** |
+| steady state (`1 + mean accepted`) | 6.10 | 6.71 |
+| rounds | 80 (26.7/prompt) | 49 (16.3/prompt) |
+| tokens generated | 491 | 332 |
+
+Both clear the ≥3.0 bar decisively. **Acceptance is not a 4B artifact.** The 35B has a 6-layer
+trunk against 40 layers (ratio 0.15) versus the 4B's 5-against-36 (0.14) — near-identical depth
+ratios, and probe A already established depth ratio as the mechanism, so this is the outcome
+that theory predicts and it is now measured rather than projected.
+
+**The 4B re-measured to 6.14 exactly** — the recorded value, to the digit, under a harness that
+had since gained a tokenizer-resolved template suffix, a maxNew guard and a second metric. That
+is the control saying those changes are numerically inert, and it is the reason the 35B number
+next to it can be trusted.
+
+### The length series, and why one matched length proves nothing
+
+| maxNew | Qwen3-4B | Qwen3.6-35B-A3B |
+|---|---|---|
+| 16 | 7.11 | 4.77 |
+| 48 | 6.75 | **8.15** |
+| 160 | 6.14 | 6.78 |
+
+**The 4B declines monotonically. The 35B is non-monotonic and peaks in the middle.** So the two
+pairings rank *35B worse* at 16, *35B much better* at 48, and *35B slightly better* at 160. Any
+single length would have supported a confident and differently-wrong sentence, and two of the
+three would have been misleading about the magnitude.
+
+The cause is content position, not noise: the 35B's predictable region is the code block, which
+its answers reach after a prose preamble. A 16-token run stops before it; a 48-token run sits
+inside it; a 160-token run runs past it into the prose that follows. This retires the "easy
+prefix" mechanism recorded earlier in this document — the easy part is not reliably at the
+front, and **the sign of the truncation bias is model-dependent**.
+
+**A residual confound, stated rather than buried:** even at maxNew=160 the two runs do not cover
+the same amount of text. The 35B hit EOS earlier (332 tokens over 3 prompts, 111/prompt) than
+the 4B (491, 164/prompt), so a matched *cap* is still not a matched *workload*. The 35B's
+shorter answers are plausibly weighted toward its code-block region. The 1.10× edge should be
+read as "the second pairing is at least as good", not as a measured superiority.
+
+### The error record for this probe
+
+Two conclusions were drawn and retracted before this one, both worth keeping:
+
+1. **Wrong baseline.** The 35B's first number (4.77 at maxNew=16) was compared against **2.90** —
+   a value this document had already retired two sections earlier as the thinking-mode
+   measurement. The correct baseline was 6.14. The inflation figure derived from it (2.45×) was
+   wrong by ~4×.
+2. **A matched control that was too narrow.** Re-measuring the 4B at maxNew=16 gave 7.11 and
+   licensed "at matched settings the 35B accepts less". That was true at 16 and false at 48.
+   A matched setting is necessary for a comparison and demonstrably not sufficient.
+
+Both errors were in the *comparison*, not the measurement — gate 1 green, harness
+mutation-tested, every individual number reproducible. That is now the fourth and fifth
+instance in P10 of the same class: **for a speculative drafter, the apparatus around the number
+is where the mistakes live.**
