@@ -1139,12 +1139,16 @@ Increment 2 landed against **DFlash, not DSpark** — every DSpark drafter check
 Fixtures + f32 conversion + CONFIRMED shapes are in the design page; **first acceptance signal:
 10/15 accepted (11 tok/verify) on a chat-templated code prompt, 0/15 on a bare completion prompt**
 — a smoke reading, not kill-gate 2, but 3.7× the ≥3.0 bar. **Increments 3–4 follow DFlash**
-unless the DSpark license resolves. **Increment 3: KILL-GATE 1 CLEARED, BOTH HALVES; KILL-GATE 2 MISSED at length, 2026-08-15.**
-Gate 2 read 3.53 tok/verify at 32 new tokens (over the >=3.0 bar) and **2.90 at 160** —
-the short run was measuring the boilerplate opening. Gate 1 is mutation-verified, so this
-is not a protocol bug; whether it is "the claims don't transfer" is NOT yet established —
-int8-vs-bf16 target, template, and greedy-only are unseparated, and a reference-side
-measurement is in flight to attribute it. **Do not fund increment 4 on the 3.53.**
+unless the DSpark license resolves. **Increment 3: KILL-GATES 1 AND 2 BOTH CLEARED 2026-08-15.**
+Gate 1: cosine 1.0 per layer + 15/15 drafted ids vs the reference, mutation-verified.
+Gate 2: **6.14 tok/verify on code, 7.32 on math** (int8 target, 160 tokens, bar >=3.0),
+with code landing within 4% of the bf16 reference's 6.37. Chat is ~2.2 and roughly a wash,
+as upstream also reports. **int8 costs only ~4% of acceptance, so a quantized resident
+target does NOT crater this drafter — increment 4's economics survive.**
+**The process finding is worth more than the number:** three separate harness errors each
+produced a confident wrong result first (raw-vs-chat prompt, 32-vs-160 tokens, and
+thinking-mode template), all input-distribution mistakes with gate 1 green throughout. See
+the design page.
 `decoder/dflash.go` (trunk + loader) matches the reference at cosine 1.00000000 on every
 layer, and end-to-end through goinfer's own Qwen3-4B the drafted ids are **15/15 exact** on
 both traces. The gate is falsifiable — 4 wiring mutations all rejected (design page).
