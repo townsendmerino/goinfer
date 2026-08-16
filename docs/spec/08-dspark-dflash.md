@@ -734,3 +734,92 @@ correct, coherent Python.
   claiming transfer; publish α̂ tables per 06 with the same held-out discipline.
 - Speed: 00-core harness suites on both boxes; every number lands in
   [experiments.md](./experiments.md) dated, with the losing runs kept.
+
+## Performance levers and the DSpark pivot (2026-08-15, post gate 2/3)
+
+DFlash cleared gates 1–2 (parity 1.0; acceptance 6.14 code / 7.32 math / 2.18 chat
+tok-per-verify); gate 3 projects 1.29× code / 1.54× math / 0.46× chat; gate 4 (router) is
+now mandatory. **Decision (2026-08-15, Francis): explore the DSpark path — `license=None`
+accepted for exploration.** The work originally pivoted to DFlash only for licensing; with
+that constraint lifted for a spike, DSpark's structural advantages come back into play, and
+they line up with the performance problem gate 3 exposed.
+
+**Why DSpark is the better bet to explore:**
+
+1. **DSpark ships the router mechanism** — its confidence head is a built-in acceptance
+   predictor. The single worst number (chat 0.46×) is fixed by not firing when acceptance is
+   low. DFlash needs an external router built for that; DSpark's per-draft confidence head
+   IS that signal, for free — fire/don't-fire and adaptive block length both read off it.
+   The chat-loss fix is in the checkpoint, not a separate build. **This is the strongest
+   reason.**
+2. **Smaller blocks waste less verify on low-acceptance traffic.** DSpark drafts 7-token
+   blocks vs DFlash's 16; on chat (accept ~1–2), a 7-wide verify wastes far less than a
+   16-wide one, so DSpark's chat floor is structurally higher before the confidence head
+   even gates.
+3. ~~**DSpark likely sidesteps DFlash's largest build.**~~ **CONFIRMED FALSE, 2026-08-15 —
+   the build-cost gate this reason asked for has been run, from first-party source.**
+   DSpark's block attention is **also bidirectional**: in the upstream DeepSpec tree (not
+   vendored here), `eval/dspark/draft_ops.py` calls the backbone with `is_causal=False`, and
+   the training mask
+   (`common.create_dspark_attention_mask`) allows `q_block_id == kv_block_id` with **no
+   `q ≥ k` constraint** — every block position attends every other. This is the same fact
+   already recorded in this page's DSpark CONFIRMED forward, §4. **DSpark needs the identical
+   non-causal cross-attention kernel, at M=7 instead of M=16.** It does not sidestep the
+   trunk build; it re-shapes it.
+
+   And on weights it runs the other way too. `dspark_qwen3_4b_block7` is **1.39 B** against
+   DFlash's 537 M, decomposing exactly as:
+
+   | component | bytes | note |
+   |---|---|---|
+   | trunk (5 layers + `fc`) | 537 M | **identical to DFlash's whole drafter** |
+   | `embed_tokens` + `lm_head` | 778 M | frozen COPIES of the target's — duplicated, not new |
+   | Markov head (`w1`+`w2`) | 77.8 M | plus a **7-step serial chain** of [151936, 256] matvecs per round |
+   | confidence head | 4.4 K | |
+
+   A loader that reuses the resident target's embed/head skips the 778 M, leaving **~615 M
+   resident — only ~15% above DFlash.** So the weight cost is close to a wash, but the
+   *build* is strictly larger: same novel kernel, plus two extra heads and a serial chain
+   whose 7 dependent launches land inside the draft term gate 3 is most sensitive to.
+
+   **Reasons 1 and 2 stand and are the strong ones.** The pivot may well still be right — it
+   rests on the confidence head, not on a cheaper build.
+
+**Levers that apply to either drafter:**
+
+- **Routed economics is the honest baseline — free.** The 0.46× chat figure is
+  indiscriminate firing, which gate 4 forbids. With a router — or DSpark's confidence head —
+  chat floors at 1.0×, so the real economics are **1.29–1.54× on structured, 1.0× on chat**,
+  a win on every class. Evaluate against this, never the un-routed loss.
+- **Bigger target (mac leg) — measure, don't assume.** The draft/verify layer ratio barely
+  moves with depth (5/36 → ~5/40); the real mechanism is verify amortization (currently
+  3.86× at k=16). Whether it rises at scale is empirical — goinfer decode runs at 6–10% of
+  peak bandwidth, so the direction is not guaranteed. Two cheap probes settle it: (a) verify
+  amortization on a 12B/26B target (`cuda/spec_verify_ceiling_test.go` takes the
+  `GOINFER_CUDA_MODEL` override), and (b) acceptance at scale. Do both before any mac trunk.
+- **The 7.32 math anomaly is a caution, not a win.** Acceptance is measured against the int8
+  target's *own* output distribution; int8 biases greedy toward higher-probability tokens
+  (flattens the tail), making text more predictable — hence more draftable — on
+  normally-high-entropy content. Math on 2 prompts / 44 rounds is where that shows.
+  Testable: int8 vs bf16 output entropy on those prompts. The trustworthy cross-check
+  remains code 6.14 vs 6.37 bf16 (within 4%). **Do not quote 7.32 as beating upstream.**
+
+**License, with the user's decision.** Francis accepts `license=None` for exploration
+(2026-08-15) — the `dspark_*_block7` drafters are in scope for the spike. Filing one upstream
+issue is still worth it (DeepSpec is MIT and lists these as releases — likely an oversight),
+but that is for eventual distribution/ship, not a blocker on exploring. Draft issue kept at
+`docs/prompts/dspark-license-issue.md`. The apache-2.0 PARO family in the same org remains a
+cleanly-licensed fallback.
+
+**Sequencing — explore DSpark first.** (1) Reframe against routed economics (free);
+(2) ~~confirm DSpark avoids the non-causal M=16 trunk~~ — **done, it does not** (above), so
+re-price the build as *same kernel at M=7 + Markov chain + confidence head*; (3) run DSpark's
+gates 1–2 (parity + acceptance) reusing the `HiddenCapture` seam and the DFlash harness, with
+the confidence head gating chat; (4) measure verify-amortization + acceptance on a 12B/26B
+target for the mac premise; (5) file the DSpark license issue + keep PARO as a fallback, in
+parallel. Compare DSpark's confidence-gated blended economics against DFlash's 1.29–1.54×
+projection before committing either trunk.
+
+**Autoresearch tie-in:** the confidence-head threshold + block length are a bounded search
+with a clean metric (blended tok/s) and the airtight lossless gate 1 — an E9 target
+([task-autoresearch-loop](../task-autoresearch-loop.md)) once the DSpark path runs.
