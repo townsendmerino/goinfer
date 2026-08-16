@@ -156,6 +156,28 @@ and we import no Python either way. Record the decision in the PR as 05 did.
    constrained), trace-fit α̂ per 06. Bar: **≥3.0 tok/verify** on the paired target on
    at least one suite — anything near EAGLE's 1.6 means the protocol is wrong (back to
    gate 1) or the claims don't transfer (stop, record).
+   **CLEARED 2026-08-15 (`linux-62gb`, `TestDFlashAcceptance`), narrowly, on one suite:**
+
+   | suite | rounds | mean accepted /15 | **tok/verify** |
+   |---|---|---|---|
+   | **code** | 32 | 2.44 | **3.53** ✅ |
+   | chat | 24 | 1.71 | 2.79 |
+   | math | 27 | 1.37 | 2.44 |
+
+   Qwen3-4B **int8** target (the precision the resident GPU paths run), greedy, ChatML,
+   32 new tokens/prompt. Acceptance is a numerics property, so it transfers to the GPU
+   paths at equal precision — **wall-clock does not, and this harness deliberately does
+   not measure it** (it verifies with 16 sequential forwards, not one batched M=16 pass).
+   Losslessness is structural here: every emitted token is the *target's* own argmax.
+
+   **Two honesty notes that matter more than the pass.** (a) The shape matches DFlash's
+   published claim — strongest on code, weakest on open chat — but the LEVEL does not:
+   upstream reports ~6.0 on code/math where we measure 3.53 and 2.44. Candidate causes,
+   unseparated: int8 target vs their bf16, ChatML vs Qwen3's own template (ours omits the
+   thinking block), and greedy-only. (b) **The 11.0 tok/verify from increment 2 was a
+   single round on one prompt, and it did not survive contact with a sustained run** —
+   3.53 is the number to plan against. It was labelled a smoke signal at the time, and
+   this is why that label mattered.
 3. **Wall-clock gate.** End-to-end ≥**1.3×** vs plain resident decode (the 07 funding
    bar) on ≥1 real workload on ≥1 GPU backend, lossless gates green
    (`TestEagleSpecParity` shape). Miss broadly → park with numbers, like Stage B.
@@ -235,7 +257,23 @@ and we import no Python either way. Record the decision in the PR as 05 did.
    context+block) and `logits_start = 1`. Seam prerequisite either way: `ForwardCapture`
    handles 5 taps already but **rejects `gemma4`**, so the `mac` leg needs it extended.
 4. **Resident CUDA end-to-end** on Qwen3-4B (gates 2–3). This is the go/no-go for the
-   rest of the program.
+   rest of the program. **Gate 2 is already cleared on CPU** (above — acceptance is
+   numerics and transfers), so what remains here is gate 3, wall-clock.
+
+   **PREREQUISITE FOUND 2026-08-15, and it is not small: the resident runner has no
+   capture seam.** `cache.captureLayers` is handled only in `decoder/forwardn.go` and
+   `decoder/model.go` — the CPU forward. `gpu/decoderunner.go` has no equivalent and
+   nothing in `gpu/` or `cuda/` reads per-layer residuals out. So a resident target
+   physically cannot hand DFlash the 5 tapped hidden states today, and increment 4 is
+   **"add hidden-state capture to the resident decode runner, then measure"** rather than
+   "wire it up and measure". That work is the same shape as the `ReadMambaCap` readback
+   the SSM port already added, so there is a precedent to copy — but it is device→host
+   traffic on the hot path and needs its own design (which 5 layers, and whether the
+   readback is amortized across the block).
+
+   This is the same class of gap increment 2 found on the `mac` side (`ForwardCapture`
+   rejects `gemma4`): the seam 05 paid for is CPU-only and single-arch, and every drafter
+   that reads hidden states inherits that limit. Worth pricing once, for both.
 5. **DFlash forward** (the new bidirectional block pass) + constrained-traffic
    measurement vs the 01/02 router baseline (gates 2–4).
 6. **Metal run** (`mac`), only if 4 clears. **RE-TARGET (2026-08-15): not the 12B.** Every
