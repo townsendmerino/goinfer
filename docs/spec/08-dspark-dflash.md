@@ -141,9 +141,17 @@ and we import no Python either way. Record the decision in the PR as 05 did.
    per-head `k_norm`**. The unmutated forward passes. So the 1.0 is a measurement, not a
    tautology.
 
-   Still ahead for gate 1's second half: the **logit** comparison at drafted positions
-   (needs the target's `lm_head`, i.e. the end-to-end path through `ForwardCapture`) — the
-   trunk is proven, the two ends it borrows from the target are not yet wired.
+   **Second half also CLEARED the same day — `TestDFlash_targetEndToEnd`.** The trunk gate
+   feeds the reference's own inputs, which proves the trunk but says nothing about the two
+   ends DFlash borrows from the target. This runs the whole path on goinfer's own Qwen3-4B
+   (f32): `ForwardCapture` → `FuseContext` → trunk → target `lm_head`, and compares the
+   drafted token ids. **15/15 exact on both traces**, with the anchor token agreeing before
+   the drafter even runs. So our capture seam, the 5-tap convention *and its +1 layer-output
+   indexing*, the fusion, the trunk, and the borrowed embed/head all agree with the
+   reference at the token level — the seam question flagged above is answered: no off-by-one.
+
+   **Gate 1 is therefore CLEARED for DFlash, both halves.** Acceptance measurement is
+   unblocked; per the pre-registration, that is gate 2 and it happens on the GPU paths.
 2. **Acceptance gate.** Measured tok/verify on the 00-core suites (`chat` / `code` /
    constrained), trace-fit α̂ per 06. Bar: **≥3.0 tok/verify** on the paired target on
    at least one suite — anything near EAGLE's 1.6 means the protocol is wrong (back to

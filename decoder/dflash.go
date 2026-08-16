@@ -260,6 +260,54 @@ func (d *DFlashDrafter) DraftBlock(be Backend, fused, blockIn [][]float32) ([][]
 	return out, nil
 }
 
+// DrafterHeadLogits applies the TARGET's LM head to one already-normed hidden row and
+// returns next-token logits over the target vocabulary. It is the output end that a
+// drafter shipping no `lm_head` of its own (DFlash) borrows from the target.
+//
+// It deliberately does NOT apply the target's final norm — the drafter has already
+// applied its OWN `norm`, and running both would be a second normalization the reference
+// does not do. That is the only difference from logitsFromHidden, and it is why this
+// cannot just call it. The post-head transforms (Gemma softcap, Granite logit scale) ARE
+// applied, mirroring the reference's compute_logits.
+//
+// Declared here rather than in model.go on purpose: model.go is in the parity manifest's
+// `core` set, and adding a drafter-only accessor there would re-stale all 23 families'
+// deps_hash for a function no existing forward calls.
+func (m *Model) DrafterHeadLogits(h []float32) []float32 {
+	arch := m.w.arch
+	logits := make([]float32, arch.VocabSize)
+	if arch.TiedLMHead {
+		matmul(m.be, &m.w.Embed, h, logits, 1)
+	} else {
+		matmul(m.be, &m.w.LMHead, h, logits, 1)
+	}
+	if arch.FinalLogitSoftcap > 0 {
+		softcap := float32(arch.FinalLogitSoftcap)
+		for i, v := range logits {
+			logits[i] = softcap * float32(math.Tanh(float64(v/softcap)))
+		}
+	}
+	if arch.LogitScale != 0 && arch.LogitScale != 1 {
+		inv := float32(1 / arch.LogitScale)
+		for i := range logits {
+			logits[i] *= inv
+		}
+	}
+	return logits
+}
+
+// DrafterEmbedBlock fills the drafter's block input with the TARGET's token embeddings —
+// the input end DFlash borrows. ids must be blockSize long (slot 0 the anchor, the rest
+// the mask token).
+func (m *Model) DrafterEmbedBlock(ids []int) [][]float32 {
+	rows := make([][]float32, len(ids))
+	for i, id := range ids {
+		rows[i] = make([]float32, m.w.arch.HiddenDim)
+		m.embedToken(id, rows[i])
+	}
+	return rows
+}
+
 // layer runs one trunk layer in place over the block rows.
 //
 // The asymmetry worth naming: `input_layernorm` normalizes the BLOCK only. The context's

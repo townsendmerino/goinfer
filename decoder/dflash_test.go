@@ -171,3 +171,106 @@ func compareRows(got, want [][]float32) (cos, maxAbs float64) {
 	}
 	return dot / (math.Sqrt(na) * math.Sqrt(nb)), maxAbs
 }
+
+// TestDFlash_targetEndToEnd is gate 1's second half: the LOGIT comparison. The trunk gate
+// above feeds the reference's own inputs, which proves the trunk in isolation but says
+// nothing about the two ends DFlash borrows from the target — the embedding that builds
+// the block and the LM head that turns trunk output into draft tokens. This runs the whole
+// path on goinfer's own Qwen3-4B: ForwardCapture -> fuse -> trunk -> target lm_head, and
+// requires the drafted token ids to match the reference exactly.
+//
+// It is the first test where OUR target's hidden states (not HF's) drive the drafter, so
+// it also exercises the capture seam's layer convention: target_layer_ids name layer
+// OUTPUTS, and ForwardCapture's `layers` uses the same after-layer-l indexing.
+func TestDFlash_targetEndToEnd(t *testing.T) {
+	requireHeavyModel(t)
+	ddir := assetPath(t, "GOINFER_DFLASH_F32")
+	tdir := assetPath(t, "GOINFER_QWEN3_4B")
+	raw, err := os.ReadFile(dflashGoldenPath)
+	if err != nil {
+		t.Skipf("no golden (%v) — run scripts/pin_dflash_trace.py", err)
+	}
+	var g dflashGolden
+	if err := json.Unmarshal(raw, &g); err != nil {
+		t.Fatalf("parse golden: %v", err)
+	}
+
+	d, err := LoadDFlashDrafter(ddir)
+	if err != nil {
+		t.Fatalf("LoadDFlashDrafter: %v", err)
+	}
+	defer d.Close()
+	m, err := Load(tdir, Options{}) // f32 target — the reference dump is f32
+	if err != nil {
+		t.Fatalf("Load(%s): %v", tdir, err)
+	}
+	defer m.Close()
+	if m.w.arch.HiddenDim != d.hidden {
+		t.Fatalf("target hidden %d != drafter hidden %d", m.w.arch.HiddenDim, d.hidden)
+	}
+
+	for _, tr := range g.Traces {
+		t.Run(tr.Name, func(t *testing.T) {
+			// 1. Capture the target's hidden states at the drafter's tap layers, one
+			//    committed position at a time, and concatenate per position.
+			cache := m.NewCache(len(tr.PromptIDs) + tr.BlockSize)
+			ctxCat := make([][]float32, 0, len(tr.PromptIDs))
+			var logits []float32
+			for _, id := range tr.PromptIDs {
+				lg, hidden, err := m.ForwardCapture(id, cache, d.TargetLayerIDs())
+				if err != nil {
+					t.Fatalf("ForwardCapture: %v", err)
+				}
+				row := make([]float32, 0, len(hidden)*d.hidden)
+				for _, h := range hidden {
+					row = append(row, h...)
+				}
+				ctxCat = append(ctxCat, row)
+				logits = lg
+			}
+
+			// 2. The anchor is the target's own greedy next token — the same thing the
+			//    reference seeds slot 0 with.
+			anchor := argmax(logits)
+			if anchor != tr.AnchorToken {
+				t.Fatalf("anchor token = %d, want %d (target disagrees with the reference before the drafter runs)",
+					anchor, tr.AnchorToken)
+			}
+
+			// 3. Fuse, build the block, run the trunk, apply the TARGET's head.
+			fused, err := d.FuseContext(m.be, ctxCat)
+			if err != nil {
+				t.Fatalf("FuseContext: %v", err)
+			}
+			ids := make([]int, d.BlockSize())
+			for i := range ids {
+				ids[i] = d.MaskTokenID()
+			}
+			ids[0] = anchor
+			if !intsEqual(ids, tr.BlockIDs) {
+				t.Fatalf("block ids = %v, want %v", ids, tr.BlockIDs)
+			}
+			trunk, err := d.DraftBlock(m.be, fused, m.DrafterEmbedBlock(ids))
+			if err != nil {
+				t.Fatalf("DraftBlock: %v", err)
+			}
+			got := make([]int, 0, len(trunk)-1)
+			for _, h := range trunk[1:] { // slot 0 is the anchor, never predicted
+				got = append(got, argmax(m.DrafterHeadLogits(h)))
+			}
+
+			t.Logf("drafted got  = %v", got)
+			t.Logf("drafted want = %v", tr.DraftedIDs)
+			match := 0
+			for i := range got {
+				if i < len(tr.DraftedIDs) && got[i] == tr.DraftedIDs[i] {
+					match++
+				}
+			}
+			t.Logf("%d/%d drafted ids match the reference", match, len(tr.DraftedIDs))
+			if !intsEqual(got, tr.DraftedIDs) {
+				t.Errorf("drafted ids differ from the reference (%d/%d match)", match, len(tr.DraftedIDs))
+			}
+		})
+	}
+}
