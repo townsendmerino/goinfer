@@ -823,3 +823,103 @@ projection before committing either trunk.
 **Autoresearch tie-in:** the confidence-head threshold + block length are a bounded search
 with a clean metric (blended tok/s) and the airtight lossless gate 1 — an E9 target
 ([task-autoresearch-loop](../task-autoresearch-loop.md)) once the DSpark path runs.
+
+### DSpark RE-PRICED against the corrected build cost (2026-08-15)
+
+Reason 3 of the pivot is dead (the kernel is needed either way), so the case had to be re-made
+on economics rather than on build savings. **It re-prices substantially BETTER than DFlash**,
+and for a reason neither the pivot nor this page had identified.
+
+**The mechanism: block-7 verifies EIGHT positions, not sixteen — and that is already measured.**
+
+| term | DFlash | DSpark | source |
+|---|---|---|---|
+| verify | k=16 → **46.385 ms** | k=8 → **26.383 ms** | <span>measured, both</span> |
+| draft | 6.6 ms (M=16 trunk) | 4.3 ms (M=7 trunk 3.5 + Markov chain 0.8) | modelled |
+| **round** | **53.0 ms** | **30.7 ms** | |
+
+The 16-wide block pays **20 ms more verify** than the 8-wide one. Acceptance does not repay
+that, because accepted length is *concave* in block width — the tail positions contribute
+little. Fitting a per-token accept probability to DFlash's measured acceptance and carrying it
+to a 7-token block:
+
+| suite | DFlash α (measured) | implied p/token | DSpark α (projected) | DFlash × | **DSpark ×** |
+|---|---|---|---|---|---|
+| code | 6.14 | 0.849 | 4.83 | 1.29× | **1.75×** |
+| math | 7.32 | 0.882 | 5.36 | 1.54× | **1.94×** |
+| chat | 2.18 | 0.541 | 2.16 | 0.46× | **0.78×** |
+
+**Code clears the 1.3× bar with room, where DFlash missed it.** And chat's un-routed floor rises
+0.46× → 0.78× before the confidence head gates anything — reason 2 of the pivot, quantified: a
+7-wide block wastes less verify when acceptance is low. Under gate 4's routing both floor at 1.0×,
+so the routed picture is **1.75× / 1.94× / 1.0×**.
+
+**Break-even, which is the honest way to read a projection with a transferred input:**
+
+| | needs | of a ceiling of | fraction |
+|---|---|---|---|
+| DSpark → 1.3× | α ≥ **3.59** | 8.00 | 45% |
+| DFlash → 1.3× | α ≥ 6.19 | 16.00 | 39% |
+
+DSpark needs a *higher fraction* of its ceiling but a much *lower absolute* acceptance, and the
+transferred estimate (4.83 on code) clears it by 35%.
+
+**THE LOAD-BEARING ASSUMPTION, stated so it is not mistaken for a measurement: DSpark's
+per-token acceptance is TRANSFERRED from DFlash, not measured.** Both are 5-layer trunks on the
+same taps against the same target, which is why the transfer is defensible at all — but DSpark's
+Markov head exists specifically to correct suffix decay, so its p could be *higher* than
+DFlash's, and it is a differently-trained model, so it could be lower. **Measuring DSpark's
+actual acceptance is the single highest-value next step** — it is gate 2 for DSpark, it reuses
+the `HiddenCapture` seam and the DFlash harness, and it needs no kernel work.
+
+**What this does to the funding question.** The DFlash trunk was worth ~1.5× on math alone. The
+DSpark trunk — same kernel at M=7, plus two heads — projects to **1.75–1.94× on structured
+traffic with chat routed to 1.0×**. The larger build buys a materially better return, so
+"DSpark is more build" is true and no longer the deciding fact.
+
+### Probe A — does a bigger target help? MEASURED, and the premise is wrong as stated
+
+The mac leg rests on "the bigger target makes the draft relatively cheaper". The page already
+hedged it as empirical. It is now measured, on three real targets (`TestSpecVerifyCeiling` with
+`GOINFER_CUDA_MODEL`, int4 resident, depth 1024, 2070S):
+
+| target | layers | M=1 | k=8 | k=16 | amort@8 | amort@16 |
+|---|---|---|---|---|---|---|
+| qwen2.5-1.5B | 28 | 5.39 ms | 11.07 | 17.95 | 3.90× | **4.81×** |
+| Qwen3-4B | 36 | 11.12 ms | 26.38 | 46.39 | 3.37× | **3.84×** |
+| qwen2.5-7B | 28 | 15.17 ms | 34.62 | 58.93 | 3.50× | **4.12×** |
+
+**Verify amortization does NOT rise with target size — within one family it FALLS** (qwen2.5:
+1.5B 4.81× → 7B 4.12×). Qwen3-4B is lowest of all at 3.84× while being the *deepest* of the
+three, so architecture matters as much as scale here. Either way the hoped-for direction is
+absent.
+
+And the projected DSpark speedup is **flat across a 4.7× range of model size**:
+
+| target | draft | round | **projected ×** |
+|---|---|---|---|
+| qwen2.5-1.5B | 2.76 ms | 13.83 ms | **1.88×** |
+| Qwen3-4B | 4.43 ms | 30.81 ms | **1.74×** |
+| qwen2.5-7B | 6.92 ms | 41.55 ms | **1.76×** |
+
+**The mechanism, which is the transferable part: the draft's relative cost is set by `5/L` — the
+target's DEPTH — not by its parameter count.** The drafter is five layers *of the target's own
+shape*, so a WIDER target makes drafter and target more expensive in the same proportion and the
+ratio does not move. 1.5B and 7B both have 28 layers, hence identical 5/28 shares despite 4.7×
+the parameters.
+
+**So the mac premise survives only in its depth form, and weakly.** Gemma-4-12B has **48 layers**
+→ 5/48 = 0.104, the best ratio available here and a real improvement on Qwen3-4B's 0.139 — but
+depth grows far more slowly than size, so the lever is worth a fraction of what "bigger target"
+implied. **Do not fund the mac leg on the size argument; fund it on depth, or not at all.**
+
+**Probe A's second finding, unplanned: Gemma-4-12B DECLINES residency on CUDA** (`BuildResident
+declined`, with and without `GOINFER_GEMMA4_RESIDENT`). So the 48-layer point — the one that
+would actually test the depth lever — cannot be measured on this box today. That is a second
+`gemma4` gap alongside `ForwardCapture`'s rejection, and it blocks the mac premise from being
+settled here at all.
+
+**Probe B (acceptance at scale) NOT RUN — it needs a checkpoint pair we do not have.** DFlash is
+paired to Qwen3-4B; measuring acceptance on a bigger target means `z-lab/Qwen3-8B-DFlash-b16`
+(exists, per increment 1) plus its target — a download and a fresh harness run, not a re-run.
+Recorded as not-done rather than folded into Probe A's result.
