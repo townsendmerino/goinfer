@@ -1270,3 +1270,33 @@ a genuinely new chat format with channel semantics (analysis vs final), and a wr
 the measurement in exactly the silent way the hard error exists to prevent. **Recorded as a
 decision, not done here:** it is chat-template work, not block-drafting work, and P10 has no
 claim that depends on it.
+
+### An instrument that hid the thing it was watching
+
+Recorded because it cost a run and because the class is already known here.
+
+The Gemma-4 acceptance run showed **zero output for ten minutes** at 670% CPU with RSS flat at
+4.2 GB — far under what a 26B target should need. I checked `/proc/PID/maps`, saw the drafter's
+safetensors mapped and **no GGUF**, and concluded the target load was stuck. I killed it with
+SIGQUIT to get a stack dump.
+
+Both inferences were wrong, and the run was healthy:
+
+- **The GGUF was absent from `maps` because loading had FINISHED.** `loadGGUFWeights` closes the
+  mapping once the weights are built — its own comment says so ("the mapping is unneeded once
+  the build returns"). I read the absence as "not yet mapped" when it meant "already done".
+- **The output was not missing; my pipeline was withholding it.** The run was piped through
+  `grep -E` without `--line-buffered`, so ~4 KB of output sat in grep's buffer. The pairing line
+  had in fact been emitted, and appeared the moment the process died. The program was writing
+  the whole time.
+
+So the diagnostic apparatus suppressed the signal, and I read the silence as a fault in the
+subject. **This is the same class as the concurrency-instrument lesson already in this
+repository** — the instrument you reach for to verify a property destroys or hides the property
+— and it is worth noting that the tooling documentation warns about this exact flag. Knowing the
+class was not enough; the check that would have caught it is *"if this process were healthy,
+would my pipeline show me anything?"*, which is the same question the monitor guidance asks
+about failure signatures, pointed the other way.
+
+Practical rule for this harness: **any pipe used to watch a long run must be line-buffered**, and
+a silent stream is evidence about the pipe before it is evidence about the program.
