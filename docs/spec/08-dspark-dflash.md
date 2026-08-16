@@ -1117,3 +1117,61 @@ both-spellings loader covers all four pairings.
 blocked by one arch check**: Qwen3.6-35B-A3B, gpt-oss-20b, Gemma-4-26B-A4B. Two need a few lines
 in their forward loop; gemma4 needs a rewire of a hook it already has. None needs a new drafter,
 a licence resolution, or a download.
+
+## Increment: the capture seam, wired for the three addressable families
+
+`ForwardCapture`'s arch guard was the single thing standing between the measured 4B result and
+every other target on this box. It is now shrunk, and the three families whose targets we hold
+locally with a licensed drafter — `qwen3_5_moe`, `gemma4`, `gpt-oss` — capture through one
+shared helper (`decoder/capture.go`) rather than four copies of the same seven lines.
+
+**The gate is about placement, not shapes.** The failure mode here is quiet: a capture taken
+after ATTENTION rather than after the whole layer has the right shape, the right dtype, and
+plausible magnitudes. Every shape assertion passes, and the only symptom is that the drafter
+accepts less — which reads as *"block drafting is weak for this family"* rather than as a bug,
+and would have been written into this document as a finding about the family.
+
+So `TestCaptureSeam_ownRunLayers` asserts the one identity that pins placement without needing a
+reference dump: **`runLayersX` returns the residual after the last layer, so capturing
+`NumLayers-1` must reproduce it bitwise.** Plus two properties that are cheap and are real bugs
+otherwise — the seam must not perturb the forward (it is documented read-only), and distinct
+layers must yield distinct tensors (the natural bug is a shared backing array).
+
+**Mutation-tested, because a gate that has never failed is not a gate:**
+
+| mutant | result |
+|---|---|
+| capture moved after the attention add | **FAILS** — "the copy is NOT taken after the full layer" |
+| rows alias `h` instead of copying | **FAILS** — "the rows alias" |
+
+`granite` and `nemotron_h` stay rejected **deliberately**, not by oversight: they interleave
+recurrent mixers, so "the residual after layer l" is a decision, not an assumption. `mla` and
+`llama4_text` are simply not done. `ForwardSubCapture`'s guard is unchanged — sub-layer capture
+really is still unwired there.
+
+Manifest cost, paid once rather than three times: this is the sanctioned goldens-gated exception
+(a guarded diagnostic seam in a `core` file), refreshed at **42 goldens passed / 0 skipped / 0
+failed**, `validated_at` preserved.
+
+### The hardcoded think-ids — a latent bug the second pairing exposed
+
+The acceptance harness carried `qwen3NoThinkSuffix = []int{151667, 271, 151668, 271}`, pinned
+from Qwen3-4B. **Qwen3.6-35B-A3B has a 248320-token vocab in which `<think>` is 248068 and
+151667 is an unrelated token.** The literal would have fed the 35B four wrong tokens.
+
+That failure does not error. It depresses acceptance, and it looks exactly like *"the drafter
+does not transfer to this target"* — and given the thinking-vs-non-thinking gap already measured
+on the 4B (0/15 vs 10/15 accepted), it is precisely the kind of number this document would have
+attributed to the drafter.
+
+Now resolved through the target's own tokenizer and **verified rather than trusted**: the encode
+must agree with the ids the tokenizer itself reports, and be 4 long. Checked on both —
+
+| target | resolved suffix |
+|---|---|
+| Qwen3-4B | `[151667 271 151668 271]` — **byte-identical to the old literal**, so no recorded number moves |
+| Qwen3.6-35B-A3B | `[248068 271 248069 271]` |
+
+The harness also now checks the pairing at load (target hidden == drafter hidden; every tap in
+range of the target's layer count), so a mismatched pair fails immediately instead of producing
+a number.

@@ -368,8 +368,8 @@ supports.
 | `docs/ollama-chase.md|cuda/resident.go:596` | goinfer | `// declined to the staged/CPU path upstream.` |
 | `docs/ollama-chase.md|decoder/forwardn.go:378` | goinfer | `for kvh := range nKV {` |
 | `docs/ollama-chase.md|decoder/mlp.go:82` | goinfer | `func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend, pager *expert` |
-| `docs/ollama-chase.md|decoder/model.go:825` | goinfer | `// logits. On the batched archs this runs the layers at M=len in one pass (each` |
-| `docs/ollama-chase.md|decoder/model.go:973` | goinfer | `// sample. Identical to the logits path — guarded by ArgmaxEquivalent/GreedyEquivalent.` |
+| `docs/ollama-chase.md|decoder/model.go:831` | goinfer | `// logits. On the batched archs this runs the layers at M=len in one pass (each` |
+| `docs/ollama-chase.md|decoder/model.go:979` | goinfer | `// sample. Identical to the logits path — guarded by ArgmaxEquivalent/GreedyEquivalent.` |
 | `docs/ollama-chase.md|decoder/residency.go:677` | goinfer | `return false, "sequential — this backend has no batched prefill (per-token resident forw` |
 | `docs/ollama-chase.md|decoder/weightmat.go:202` | goinfer | `var ws linalg.Workspace` |
 | `docs/parity-coverage-policy.md|cuda/resident.go:923` | goinfer | `// always been allocated without one, and a hard failure here would regress every driver` |
@@ -388,7 +388,7 @@ supports.
 | `docs/queue-engineering.md|decoder/forwardn.go:526` | goinfer | `logits[j] = sc * float32(math.Tanh(float64(val/sc)))` |
 | `docs/queue-engineering.md|decoder/kvsnapshot_gemma4_test.go:10` | goinfer | `func TestSnapshot_refusesNonUniformKVWidth_C05(t *testing.T) {` |
 | `docs/queue-engineering.md|decoder/layerpaging.go:42` | goinfer | `// mu guards the mutable paging state below (audit C-30). The pager lives on *Model, sha` |
-| `docs/queue-engineering.md|decoder/model.go:731` | goinfer | `anchor: func (m *Model) ForwardSubCapture(id int, cache *KVCache) (attn, mlp, ctx, mlpPr` |
+| `docs/queue-engineering.md|decoder/model.go:731` | goinfer | `// Diagnostic — same byte-identical-output contract as ForwardCapture. Not wired for own` |
 | `docs/queue-engineering.md|decoder/modelsdir_test.go:13` | goinfer | `root := os.Getenv("GOINFER_MODELS_DIR")` |
 | `docs/queue-engineering.md|decoder/serialize.go:594` | goinfer | `// KV-snapshot fingerprint, accounting for MIXED bundles. It scans the BODY matmuls — th` |
 | `docs/queue-engineering.md|decoder/serialize_shapecheck_test.go:15` | goinfer | `func TestValidateShapes_catchesArchMismatch(t *testing.T) {` |
