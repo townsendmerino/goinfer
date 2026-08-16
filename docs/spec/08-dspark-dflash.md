@@ -1080,3 +1080,40 @@ its target has 16×256 heads and an MoE FFN — same hidden width, different geo
 depth. So the draft-cost model that gave gate 3's 4.3–6.6 ms **is per-pairing and must be
 re-derived** for any target other than Qwen3-4B. The identity was a fact about one pair that read
 like a fact about the method.
+
+### The other two blocked seams, checked — and gemma4 already HAS one
+
+Asked whether `gptoss` and `gemma4` should be checked too. Checked, and it changed the answer for
+one of them.
+
+**gemma4 already has the seam, under another name.** `decoder/forward_gemma4.go` carries
+**`g4traceHidden(l, h)`** — called after *every* layer, plus `-1` for post-embedding — which is
+exactly the per-layer residual a block drafter taps. It is a debug package-global (`var
+g4traceHidden func(layer int, h []float32)`), not the per-stream `cache.captureLayers`, so the
+work is **wiring an existing call site to the production mechanism, not building capture**.
+
+That is the *second* time in this program that a capability I recorded as missing turned out to
+exist under a different name — after `layerCap` in the CUDA resident runner. Both times the
+search was for the CPU seam's identifiers. **The lesson has now repeated often enough to state as
+a rule: before recording a capability as absent, search for the BEHAVIOUR (a per-layer residual
+callback), not the NAME.**
+
+**gptoss has no hook but a clean loop.** `runLayersGptOss` is a single `for l` with
+`h[i] += attnOut[i]` / `h[i] += moeOut[i]`, so the hook is the same few lines the generic path
+carries — no structural obstacle.
+
+**Both drafters are cleanly licensed and DIMENSIONALLY MATCH our local targets** (checked rather
+than assumed, after the 35B taught that the pairing geometry does not generalize):
+
+| drafter | licence | size | trunk | taps | block | target dims | our local target |
+|---|---|---|---|---|---|---|---|
+| `z-lab/gpt-oss-20b-DFlash` | **MIT** | 1.57 GB | 8 layers, h 2880 | 5 of 24 | 8 | vocab 201088 | **exact match** (h 2880, 24 layers, vocab 201088) |
+| `z-lab/gemma-4-26B-A4B-it-DFlash` | **apache-2.0** | 0.86 GB | 5 layers, h 2816 | 6 of 30 | 16 | vocab 262144 | **exact match** (h 2816, 30 layers, vocab 262144) |
+
+Both spell `block_size` at top level, so the 35B's nested spelling was the outlier and the
+both-spellings loader covers all four pairings.
+
+**So the addressable set on this box is three targets, all present, all cleanly licensed, all
+blocked by one arch check**: Qwen3.6-35B-A3B, gpt-oss-20b, Gemma-4-26B-A4B. Two need a few lines
+in their forward loop; gemma4 needs a rewire of a hook it already has. None needs a new drafter,
+a licence resolution, or a download.
