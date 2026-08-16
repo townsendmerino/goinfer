@@ -1401,3 +1401,50 @@ interpretable.
 **Consequence:** the resident W4A8 target is cleared for block drafting, and increment 4
 proceeds on the economics it was designed with. The scope correction stands unchanged —
 *quantizer quality*, not bit-width, is what a block drafter is sensitive to.
+
+## The fourth pairing (gpt-oss): 2.30 — and the comparison is INVALID, not merely confounded
+
+With the harmony template added, gpt-oss became measurable. It reads **2.30 tok/verify** (mean
+accepted 1.28/7, 210 rounds) — the only pairing to miss the ≥3.0 bar. **That number must not be
+placed beside the other three**, and the reason is worth more than the number.
+
+**The run labelled `code` did not measure code.** Harmony declares "Channel must be included for
+every message" and has no non-thinking form — the diagnostic confirms the target's very first
+token is `<|channel|>`, entering **analysis**. So the target spent the run emitting *reasoning
+prose*, while the other three pairings were measured on the code they were asked for.
+
+The drafter is **not** off-distribution: it drafts `":"`, `"We"`, `" need"` — reasoning-style
+tokens, 4 of 7 distinct, healthy monotonic tap profile (rms 4.26 → 331.93). z-lab evidently
+trained it on analysis-channel output. The path works; the *workload* differs.
+
+And this document already records what content type alone is worth on a **fixed** pairing:
+Qwen3-4B scores **6.14 on code and 2.18 on chat**. gpt-oss's 2.30 on reasoning prose sits
+essentially on top of the 4B's 2.18 on prose. **Content type is a sufficient explanation for the
+entire gap**, with no need to invoke anything about the pairing.
+
+### The depth-ratio hypothesis remains UNTESTED
+
+Normalizing to per-token acceptance α (which removes the block-width difference — gpt-oss uses
+block 8, so its `tok/verify` is capped at 8 where the others cap at 16):
+
+| pairing | block | mean accepted | tok/verify | **α** | depth ratio |
+|---|---|---|---|---|---|
+| Qwen3.6-35B-A3B | 15 | 5.71 | 6.78 | **0.866** | 0.150 |
+| Qwen3-4B | 15 | 5.10 | 6.14 | **0.848** | 0.139 |
+| Gemma-4-26B-A4B | 15 | 3.77 | 4.80 | **0.796** | 0.167 |
+| gpt-oss-20b | 7 | 1.28 | 2.30 | **0.566** | 0.333 |
+
+α does decline as depth ratio rises, and gpt-oss is the extreme on both. **This is not evidence
+for the hypothesis.** gpt-oss is simultaneously the highest depth ratio AND the only pairing
+measured on prose, and the 4B's own code-vs-chat spread (0.848 vs roughly 0.57 implied by 2.18)
+shows content type alone spans the entire observed α range. The two explanations are not merely
+correlated here — they are indistinguishable from these four points, and the cheaper one already
+suffices.
+
+The 4B and 35B also rank *against* the hypothesis (0.139 → α 0.848, 0.150 → α 0.866), though
+they differ by ~0.02 in both and should be read as a tie.
+
+**To actually test it** would need gpt-oss measured on the same content type as the others,
+which harmony's mandatory channel makes awkward, or a pairing with a high depth ratio whose
+target does not reason by default. Neither is available today. Recorded as open rather than
+resolved in the direction the numbers superficially suggest.
