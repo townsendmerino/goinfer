@@ -37,18 +37,35 @@ import (
 // the block width is not truncatable (each position's hidden depends on all of them, so
 // a narrower block is off the trained distribution).
 type DFlashDrafter struct {
-	hidden, nHeads, nKV, headDim, inter int
-	blockSize, maskTokenID              int
-	normEps                             float64
-	targetLayerIDs                      []int
-	invFreq                             []float64
-
-	fc         linalg.WeightMat // [hidden, len(targetLayerIDs)*hidden]
-	hiddenNorm []float32        // RMSNorm on the fused context
-	finalNorm  []float32        // RMSNorm before the target's LM head
-	layers     []dflashLayer
+	blockTrunk
+	blockSize, maskTokenID int
+	targetLayerIDs         []int
 
 	st *embed.SafetensorsFile // retained: the WeightMats alias its mmap
+}
+
+// blockTrunk is the non-causal block trunk shared by DFlash and DSpark.
+//
+// Shared because they compute it IDENTICALLY, which was established from first-party source
+// rather than assumed: DeepSpec's `_forward_backbone` is `hidden_norm(fc(ctx))` → rotary →
+// N layers → `norm`, its attention sets `is_causal=False` and takes K/V from
+// concat(raw fused context, block), and its `apply_rotary_pos_emb` — q taking
+// `cos[..., -q_len:, :]` while k takes the full `cos` — is byte-identical to z-lab's. Two
+// separately-developed drafters converged on the same trunk; carrying two copies of it here
+// would be the third copy this repo's own rule warns about.
+//
+// What differs between them lives in the enclosing type: DFlash borrows the target's embedding
+// and LM head and predicts from slot 1; DSpark ships its own, predicts from slot 0, and adds a
+// rank-256 Markov chain plus a confidence head.
+type blockTrunk struct {
+	hidden, nHeads, nKV, headDim, inter int
+	normEps                             float64
+	invFreq                             []float64
+
+	fc         linalg.WeightMat // [hidden, nTaps*hidden]
+	hiddenNorm []float32        // RMSNorm on the fused context
+	finalNorm  []float32        // RMSNorm at the end of the trunk
+	layers     []dflashLayer
 }
 
 type dflashLayer struct {
@@ -137,12 +154,15 @@ func LoadDFlashDrafter(dir string) (*DFlashDrafter, error) {
 	h, hd := c.HiddenSize, c.HeadDim
 	qDim, kvDim := c.NumAttentionHeads*hd, c.NumKeyValueHeads*hd
 	d := &DFlashDrafter{
-		hidden: h, nHeads: c.NumAttentionHeads, nKV: c.NumKeyValueHeads, headDim: hd,
-		inter: c.IntermediateSize, blockSize: c.BlockSize, maskTokenID: c.DFlash.MaskTokenID,
-		normEps: c.RMSNormEps, targetLayerIDs: c.DFlash.TargetLayerIDs,
-		invFreq: computeInvFreq(c.RopeTheta, hd, nil),
-		layers:  make([]dflashLayer, c.NumHiddenLayers),
-		st:      st,
+		blockTrunk: blockTrunk{
+			hidden: h, nHeads: c.NumAttentionHeads, nKV: c.NumKeyValueHeads, headDim: hd,
+			inter: c.IntermediateSize, normEps: c.RMSNormEps,
+			invFreq: computeInvFreq(c.RopeTheta, hd, nil),
+			layers:  make([]dflashLayer, c.NumHiddenLayers),
+		},
+		blockSize: c.BlockSize, maskTokenID: c.DFlash.MaskTokenID,
+		targetLayerIDs: c.DFlash.TargetLayerIDs,
+		st:             st,
 	}
 
 	mat := func(dst *linalg.WeightMat, name string, rows, cols int) error {
@@ -217,13 +237,15 @@ func LoadDFlashDrafter(dir string) (*DFlashDrafter, error) {
 //
 // This is the ONLY place the target's hidden states enter, and the result is what every
 // layer's K/V read. It is computed once per round, not per layer.
-func (d *DFlashDrafter) FuseContext(be Backend, ctxCat [][]float32) ([][]float32, error) {
-	want := len(d.targetLayerIDs) * d.hidden
+func (d *blockTrunk) FuseContext(be Backend, ctxCat [][]float32) ([][]float32, error) {
+	// fc's input width IS the tap count x hidden, so it validates the caller's concatenation
+	// without the trunk needing to know which layers were tapped — that belongs to the drafter.
+	want := d.fc.Cols()
 	fused := make([][]float32, len(ctxCat))
 	for i, row := range ctxCat {
 		if len(row) != want {
-			return nil, fmt.Errorf("dflash: context row %d is %d wide, want %d (%d layers x %d)",
-				i, len(row), want, len(d.targetLayerIDs), d.hidden)
+			return nil, fmt.Errorf("block trunk: context row %d is %d wide, want %d (%d taps x %d)",
+				i, len(row), want, want/d.hidden, d.hidden)
 		}
 		f := make([]float32, d.hidden)
 		matmul(be, &d.fc, row, f, 1)
@@ -250,7 +272,7 @@ type DFlashContext struct {
 }
 
 // NewContext returns an empty per-layer context cache for this drafter.
-func (d *DFlashDrafter) NewContext() *DFlashContext {
+func (d *blockTrunk) NewContext() *DFlashContext {
 	return &DFlashContext{k: make([][][]float32, len(d.layers)), v: make([][][]float32, len(d.layers))}
 }
 
@@ -276,7 +298,7 @@ func (c *DFlashContext) TruncateTo(n int) {
 // ExtendContext projects newly committed positions into the cache. fusedNew is
 // FuseContext's output for those positions ONLY; they are assumed to sit immediately
 // after the positions already cached, which is what fixes their RoPE offsets.
-func (d *DFlashDrafter) ExtendContext(be Backend, ctx *DFlashContext, fusedNew [][]float32) {
+func (d *blockTrunk) ExtendContext(be Backend, ctx *DFlashContext, fusedNew [][]float32) {
 	start := ctx.Len()
 	kvDim := d.nKV * d.headDim
 	for li := range d.layers {
@@ -297,14 +319,16 @@ func (d *DFlashDrafter) ExtendContext(be Backend, ctx *DFlashContext, fusedNew [
 // DraftBlockCtx runs the trunk over one block against a cached context and returns the
 // final-normed hidden states, [blockSize][hidden]. This is the form production should
 // use; DraftBlock is the uncached convenience wrapper.
-func (d *DFlashDrafter) DraftBlockCtx(be Backend, ctx *DFlashContext, blockIn [][]float32) ([][]float32, error) {
-	if len(blockIn) != d.blockSize {
-		return nil, fmt.Errorf("dflash: block is %d rows, want block_size %d", len(blockIn), d.blockSize)
+func (d *blockTrunk) DraftBlockCtx(be Backend, ctx *DFlashContext, blockIn [][]float32) ([][]float32, error) {
+	// The block's WIDTH is whatever the caller passes — the trained width is the drafter's
+	// property, not the trunk's, and the enclosing type checks it.
+	if len(blockIn) == 0 {
+		return nil, fmt.Errorf("block trunk: empty block")
 	}
 	h := make([][]float32, len(blockIn))
 	for i, row := range blockIn {
 		if len(row) != d.hidden {
-			return nil, fmt.Errorf("dflash: block row %d is %d wide, want %d", i, len(row), d.hidden)
+			return nil, fmt.Errorf("block trunk: block row %d is %d wide, want %d", i, len(row), d.hidden)
 		}
 		h[i] = append([]float32(nil), row...)
 	}
@@ -328,7 +352,7 @@ func (d *DFlashDrafter) DraftBlockCtx(be Backend, ctx *DFlashContext, blockIn []
 // Uncached: it projects the whole context every call. Convenient for a one-shot round (and
 // for the parity gate, which is handed the reference's fused context directly), but a
 // generation loop should hold a DFlashContext and call DraftBlockCtx.
-func (d *DFlashDrafter) DraftBlock(be Backend, fused, blockIn [][]float32) ([][]float32, error) {
+func (d *blockTrunk) DraftBlock(be Backend, fused, blockIn [][]float32) ([][]float32, error) {
 	ctx := d.NewContext()
 	d.ExtendContext(be, ctx, fused)
 	return d.DraftBlockCtx(be, ctx, blockIn)
@@ -388,7 +412,7 @@ func (m *Model) DrafterEmbedBlock(ids []int) [][]float32 {
 // K/V are projected from the fused context RAW (in ExtendContext) — the reference passes
 // `target_hidden` straight into k_proj/v_proj while only `hidden_states` goes through the
 // norm. Norming both would be the natural-looking port and would be wrong.
-func (d *DFlashDrafter) layer(be Backend, l *dflashLayer, ctxK, ctxV [][]float32, h [][]float32) {
+func (d *blockTrunk) layer(be Backend, l *dflashLayer, ctxK, ctxV [][]float32, h [][]float32) {
 	hid, hd := d.hidden, d.headDim
 	qDim, kvDim := d.nHeads*hd, d.nKV*hd
 	nBlk, nCtx := len(h), len(ctxK)

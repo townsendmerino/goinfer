@@ -144,6 +144,14 @@
       "note": "The bf16 SAFETENSORS release, NOT the Q8_0 GGUF the coherence gate uses (GOINFER_NEMOTRON_GGUF, still unregistered)."
     },
     {
+      "env": "GOINFER_DSPARK_F32",
+      "kind": "dir",
+      "members": ["config.json", "model.safetensors"],
+      "candidates": ["$MODELS/dspark-qwen3-4b-f32"],
+      "used_by": ["TestDSpark_referenceParity"],
+      "note": "f32 conversion of deepseek-ai/dspark_qwen3_4b_block7 (license=None; accepted for exploration 2026-08-15, see docs/prompts/dspark-license-issue.md), via scripts/convert_dflash_f32.py from $MODELS/dspark-qwen3-4b."
+    },
+    {
       "env": "GOINFER_QWEN3_4B",
       "kind": "dir",
       "members": ["config.json"],

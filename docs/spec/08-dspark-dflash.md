@@ -971,3 +971,34 @@ gate 3 projects **2.12× / 2.15× / 1.29×** — over the 1.3× bar on all three
 1.29× / 1.54× / 0.46×. The remaining projected term is the same modelled 4.3 ms draft; everything
 else is measured. **DSpark is the better drafter on this pairing by every measured axis, and the
 larger build now buys a win on traffic DFlash loses outright.**
+
+### DSpark gate 1 — CLEARED, and the trunk is genuinely SHARED
+
+`decoder/dspark.go` + `TestDSpark_referenceParity`, against DeepSpec's own modeling code
+(`scripts/pin_dspark_trace.py`, f32, greedy, both traces):
+
+| | layer_out.0–4 | trunk_out | markov logits | drafted ids | confidence |
+|---|---|---|---|---|---|
+| raw (ctx 5) | 1.00000000 ×5 | 1.00000000 | 1.00000000 | **7/7 exact** | ±1e-6 |
+| chat (ctx 23) | 1.00000000 ×5 | 1.00000000 | 1.00000000 | **7/7 exact** | ±1e-6 |
+
+**The shared-trunk claim is now measured, not just read from source.** `dspark.go` reuses
+`blockTrunk` — the same Go code that passes the DFlash fixture — and it reproduces DSpark's
+per-layer outputs at cosine 1.0. Two independently-developed drafters, one trunk implementation.
+That is a real reduction in what the resident port has to build: **one non-causal block trunk
+serves both**, and only the heads differ.
+
+**Gate falsifiable, checked on DSpark's own failure modes** (all three rejected): the Markov
+chain not advancing (feeding the anchor at every step instead of the previously drafted token),
+the Markov bias dropped entirely, and the confidence feature missing its Markov half.
+
+**What the Go side now has**: loader (64 tensors incl. own embed/lm_head, rank-256 Markov,
+confidence head), `EmbedBlock`, `BaseLogits`, sequential `SampleBlock`, and `Confidence`. Two
+loader details worth noting — DSpark's config carries RoPE only as nested `rope_parameters`
+(the mirror of granite's flat-only released config, so the loader accepts both spellings), and
+it refuses `markov_head_type != "vanilla"` rather than silently running the vanilla chain
+against gated weights.
+
+**Remaining for DSpark**: the end-to-end logit half (drive it from goinfer's own target through
+`ForwardCapture`, as `TestDFlash_targetEndToEnd` does) and then the resident trunk — which is now
+one kernel serving both drafters rather than two.

@@ -39,6 +39,7 @@ demo/chat/dist/
 # needs the drafter weights (GOINFER_DFLASH_F32, 2.1 GB) and skips without them, so it is
 # T3-in-practice — labelled as such per docs/parity-coverage-policy.md.
 !testdata/dflash_qwen3_4b_ref.safetensors
+!testdata/dspark_qwen3_4b_ref.safetensors
 # EXCEPTION: glm-tiny.gguf is an 812 KB SYNTHETIC GGUF — scripts/pin_glm_tiny.py builds a
 # randomly-initialized Glm4MoeForCausalLM from a config (vocab 256, hidden 64, 3 layers; no real
 # GLM weights are copied, so no licensing question), and scripts/pin_glm_tiny_gguf.py converts it.
