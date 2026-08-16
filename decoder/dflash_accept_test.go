@@ -77,6 +77,38 @@ func TestDFlashAcceptance(t *testing.T) {
 		t.Fatalf("LoadDFlashDrafter: %v", err)
 	}
 	defer d.Close()
+	// Checked BEFORE the target loads: it needs only the drafter's block width, and the
+	// target is a 36 GB load on the second pairing. A guard that fires after the expensive
+	// step is a guard people route around.
+	maxNew := 48
+	if os.Getenv("GOINFER_DFLASH_MAXNEW") != "" {
+		if v, err := atoiPositive(os.Getenv("GOINFER_DFLASH_MAXNEW")); err == nil {
+			maxNew = v
+		}
+	}
+	// maxNew MUST be several blocks, and this is a hard error rather than a note because a
+	// short run does not produce a noisy tok/verify — it produces a systematically INFLATED
+	// one, from two independent mechanisms:
+	//
+	//  1. END-OF-RUN OVERSHOOT. The loop runs while generated < maxNew, so the final round is
+	//     counted in FULL even though it overshoots — up to block-1 extra tokens credited
+	//     against one verify. The smaller maxNew/block is, the less that overshoot is
+	//     amortized.
+	//  2. THE EASY PREFIX. The first tokens of a coding answer are near-deterministic
+	//     boilerplate ("```python\ndef fib(n):"), which is exactly where a block drafter looks
+	//     best. Truncating early measures the prefix and calls it the workload.
+	//
+	// MEASURED, not assumed: the Qwen3-4B code suite reads 7.11 tok/verify at maxNew=16 and
+	// 2.90 at maxNew=48 — a 2.45x inflation. That is large enough to invert a comparison
+	// between two pairings, and it did: the 35B's 4.77 at maxNew=16 reads as BETTER than the
+	// 4B's recorded 2.90 and is in fact considerably WORSE than the 4B's 7.11 at matched
+	// settings. Any two tok/verify numbers being compared must share this setting.
+	if minNew := 3 * d.BlockSize(); maxNew < minNew {
+		t.Fatalf("GOINFER_DFLASH_MAXNEW=%d is under %d (3 blocks of %d): tok/verify is inflated at that "+
+			"length by end-of-run overshoot and by sampling only the easy prefix — measured 2.45x on the "+
+			"4B code suite. Raise it, or the number is not comparable to any other.", maxNew, minNew, d.BlockSize())
+	}
+
 	// int8 target: this is the precision the resident GPU paths would actually run, and
 	// an f32 4B forward per verify position makes the sweep hours instead of minutes.
 	// TestDFlash_targetEndToEnd already pins the f32 numerics against the reference.
@@ -108,13 +140,6 @@ func TestDFlashAcceptance(t *testing.T) {
 	t.Logf("pairing: drafter=%s target=%s (hidden %d, %d target layers, %d taps, block %d)",
 		ddir, tdir, d.hidden, m.w.arch.NumLayers, len(d.TargetLayerIDs()), d.BlockSize())
 
-	maxNew := 48
-	if os.Getenv("GOINFER_DFLASH_MAXNEW") != "" {
-		if v, err := atoiPositive(os.Getenv("GOINFER_DFLASH_MAXNEW")); err == nil {
-			maxNew = v
-		}
-	}
-
 	type result struct{ rounds, accepted, generated int }
 	overall := map[string]*result{}
 	suites := []string{"code", "math", "chat"}
@@ -131,9 +156,11 @@ func TestDFlashAcceptance(t *testing.T) {
 			res.generated += r.generated
 		}
 		tpv := float64(res.generated) / float64(res.rounds)
-		t.Logf("[quant=%q] %-5s  %2d rounds  %3d tokens  mean accepted %.2f/%d  => %.2f tok/verify",
-			quant, suite, res.rounds, res.generated, float64(res.accepted)/float64(res.rounds),
-			d.BlockSize()-1, tpv)
+		// rounds/prompt is printed because it is the number that says whether tok/verify
+		// is trustworthy: few rounds means the end-of-run overshoot is barely amortized.
+		t.Logf("[quant=%q maxNew=%d] %-5s  %2d rounds (%.1f/prompt)  %3d tokens  mean accepted %.2f/%d  => %.2f tok/verify",
+			quant, maxNew, suite, res.rounds, float64(res.rounds)/float64(len(dflashSuites[suite])),
+			res.generated, float64(res.accepted)/float64(res.rounds), d.BlockSize()-1, tpv)
 	}
 
 	best, bestSuite := 0.0, ""
