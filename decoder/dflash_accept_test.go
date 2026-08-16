@@ -94,15 +94,25 @@ func TestDFlashAcceptance(t *testing.T) {
 	//     counted in FULL even though it overshoots — up to block-1 extra tokens credited
 	//     against one verify. The smaller maxNew/block is, the less that overshoot is
 	//     amortized.
-	//  2. THE EASY PREFIX. The first tokens of a coding answer are near-deterministic
-	//     boilerplate ("```python\ndef fib(n):"), which is exactly where a block drafter looks
-	//     best. Truncating early measures the prefix and calls it the workload.
+	//  2. AN UNREPRESENTATIVE SLICE OF THE ANSWER. A truncated run measures whatever part of
+	//     the output it reaches, and that part is not the workload. The DIRECTION of this one
+	//     is model-dependent, which an earlier version of this comment got wrong: it asserted
+	//     a general "easy prefix" inflation, on the theory that a coding answer opens with
+	//     near-deterministic boilerplate. The 4B is consistent with that (7.11 -> 6.75 -> 6.14
+	//     as the run lengthens). The 35B does the OPPOSITE, and sharply — 4.77 at maxNew=16 to
+	//     8.15 at 48 — because its easy region is the code block, which arrives AFTER a prose
+	//     preamble that a 16-token run never gets past.
+	//
+	//     This is why the guard is a hard error rather than a directional correction. The bias
+	//     is not "short runs read high"; it is "short runs read UNPREDICTABLY", and at
+	//     maxNew=16 the two pairings rank in the opposite order from maxNew=48.
 	//
 	// MEASURED, not assumed. The Qwen3-4B code suite, same pairing, same quant, non-thinking:
 	//
-	//	maxNew=16   7.11 tok/verify   ( 9 rounds,  64 tokens)
-	//	maxNew=48   6.75              (24 rounds, 162 tokens)
-	//	maxNew=160  6.14              (the recorded gate-2 number)
+	//	              Qwen3-4B      Qwen3.6-35B-A3B
+	//	maxNew=16     7.11          4.77      <- 35B ranks WORSE
+	//	maxNew=48     6.75          8.15      <- and BETTER, at the very next length
+	//	maxNew=160    6.14 (recorded gate-2 number)
 	//
 	// So the inflation is ~1.16x from 16 to 160, and ~1.10x still remains at 48. Real, and
 	// enough to matter when two pairings are being compared, but MUCH smaller than a figure
