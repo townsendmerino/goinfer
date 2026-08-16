@@ -144,6 +144,14 @@
       "note": "The bf16 SAFETENSORS release, NOT the Q8_0 GGUF the coherence gate uses (GOINFER_NEMOTRON_GGUF, still unregistered)."
     },
     {
+      "env": "GOINFER_DFLASH_35B",
+      "kind": "dir",
+      "members": ["config.json", "model.safetensors"],
+      "candidates": ["$MODELS/qwen36-35b-dflash"],
+      "used_by": ["TestDFlash_secondPairingLoads"],
+      "note": "z-lab/Qwen3.6-35B-A3B-DFlash (apache-2.0, 0.77 GB) — the SECOND pairing, kept because it uses different config spellings than the 4B (nested block_size, nested rope_parameters) and different dims (8 taps, 6 layers)."
+    },
+    {
       "env": "GOINFER_DSPARK_F32",
       "kind": "dir",
       "members": ["config.json", "model.safetensors"],

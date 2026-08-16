@@ -106,9 +106,17 @@ type dflashConfig struct {
 	HeadDim           int     `json:"head_dim"`
 	IntermediateSize  int     `json:"intermediate_size"`
 	RMSNormEps        float64 `json:"rms_norm_eps"`
-	RopeTheta         float64 `json:"rope_theta"`
-	BlockSize         int     `json:"block_size"`
-	DFlash            struct {
+	// RoPE in both spellings too — flat on Qwen3-4B-DFlash-b16, nested rope_parameters on
+	// Qwen3.6-35B-A3B-DFlash (and on every DSpark checkpoint). Three checkpoints, three
+	// config dialects; reading only the first one's is how a supported pairing looks broken.
+	RopeTheta      float64         `json:"rope_theta"`
+	RopeParameters json.RawMessage `json:"rope_parameters"`
+	// block_size appears in BOTH places across z-lab's own checkpoints: top-level on
+	// Qwen3-4B-DFlash-b16, nested in dflash_config on Qwen3.6-35B-A3B-DFlash. One publisher,
+	// two spellings — so read either rather than assume the one the first checkpoint used.
+	BlockSize int `json:"block_size"`
+	DFlash    struct {
+		BlockSize      int   `json:"block_size"`
 		MaskTokenID    int   `json:"mask_token_id"`
 		TargetLayerIDs []int `json:"target_layer_ids"`
 	} `json:"dflash_config"`
@@ -129,6 +137,9 @@ func LoadDFlashDrafter(dir string) (*DFlashDrafter, error) {
 	if c.HeadDim == 0 {
 		c.HeadDim = c.HiddenSize / c.NumAttentionHeads
 	}
+	if c.BlockSize == 0 {
+		c.BlockSize = c.DFlash.BlockSize
+	}
 	switch {
 	case c.HiddenSize <= 0 || c.NumHiddenLayers <= 0 || c.NumAttentionHeads <= 0:
 		return nil, fmt.Errorf("dflash: bad dims (hidden=%d layers=%d heads=%d)", c.HiddenSize, c.NumHiddenLayers, c.NumAttentionHeads)
@@ -136,8 +147,20 @@ func LoadDFlashDrafter(dir string) (*DFlashDrafter, error) {
 		return nil, fmt.Errorf("dflash: block_size must be >= 2, got %d", c.BlockSize)
 	case len(c.DFlash.TargetLayerIDs) == 0:
 		return nil, fmt.Errorf("dflash: dflash_config.target_layer_ids is required")
-	case c.RopeTheta <= 0:
-		return nil, fmt.Errorf("dflash: rope_theta must be >0, got %v", c.RopeTheta)
+	case c.RopeTheta <= 0 && len(c.RopeParameters) == 0:
+		return nil, fmt.Errorf("dflash: no rope_theta and no rope_parameters")
+	}
+
+	theta := c.RopeTheta
+	if len(c.RopeParameters) > 0 {
+		spec, _, perr := parseRopeFlat(c.RopeParameters)
+		if perr != nil {
+			return nil, fmt.Errorf("dflash: rope_parameters: %w", perr)
+		}
+		theta = spec.base
+	}
+	if theta <= 0 {
+		return nil, fmt.Errorf("dflash: rope_theta must be >0, got %v", theta)
 	}
 
 	st, err := embed.OpenSafetensorsMmap(filepath.Join(dir, "model.safetensors"))
@@ -157,7 +180,7 @@ func LoadDFlashDrafter(dir string) (*DFlashDrafter, error) {
 		blockTrunk: blockTrunk{
 			hidden: h, nHeads: c.NumAttentionHeads, nKV: c.NumKeyValueHeads, headDim: hd,
 			inter: c.IntermediateSize, normEps: c.RMSNormEps,
-			invFreq: computeInvFreq(c.RopeTheta, hd, nil),
+			invFreq: computeInvFreq(theta, hd, nil),
 			layers:  make([]dflashLayer, c.NumHiddenLayers),
 		},
 		blockSize: c.BlockSize, maskTokenID: c.DFlash.MaskTokenID,

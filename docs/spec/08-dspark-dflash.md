@@ -1041,3 +1041,42 @@ merits, but the GPU path — which is where this program is going anyway — may
 drafter is five layers of the target's own shape. What moves it is DEPTH (`5/L`) and acceptance,
 not parameter count. So the interesting targets are the deep ones and the ones whose traffic is
 structured, not simply the big ones.
+
+### Can Qwen3.6-35B-A3B be supported? YES — one blocker, one caveat, one correction
+
+Asked directly, and answered by loading it rather than by reasoning about it.
+
+**The drafter is the easy part, and it already works.** `z-lab/Qwen3.6-35B-A3B-DFlash` is
+**apache-2.0, documented, 0.77 GB**. It now loads and its trunk runs through the SAME shared
+`blockTrunk` (`TestDFlash_secondPairingLoads`): block 16, **8 taps** `[1,6,11,16,22,27,32,37]`
+of 40 target layers, **6** trunk layers, hidden 2048, heads 32/8. The 4B gate re-passes
+bit-identically, so nothing regressed.
+
+Getting there needed two loader fixes, and they are the third instance of a class this program
+keeps meeting: **z-lab ships two config dialects across its own checkpoints** — `block_size`
+nested inside `dflash_config` (top-level on the 4B) and RoPE as `rope_parameters` (flat
+`rope_theta` on the 4B). The 4B-only loader reported this supported pairing as
+*"block_size must be >= 2, got 0"*. After granite's flat-only rope and nemotron's
+`hybrid_override_pattern`, that is three publishers whose *second* checkpoint used a different
+spelling than their first.
+
+**The blocker is ours: `ForwardCapture` refuses `qwen35`.** But `runLayersQwen35` has a clean
+per-layer loop with `h` as the residual, so the capture hook is the same few lines the generic
+path already carries. Cost is not the code — it is that `decoder/model.go` (core) and
+`decoder/forward_qwen35.go` (`qwen3_5_moe`'s own) are both in the parity manifest, so it needs a
+goldens-gated refresh. That is the sanctioned path, and the change is additive and inert for
+every other family.
+
+**The caveat is the box, not the method.** 35B-A3B at int4 is a 26.5 GB `.giw` against 8 GB of
+VRAM, so a resident target here means the MoE expert-streaming path (~5 tok/s measured on the
+26B), where gate 3's economics are entirely different and probably unfavourable. **Gates 1 and 2
+are runnable here** — they are numerics — **gate 3 is not.** This is a correctness-and-acceptance
+target on this box and a wall-clock target only on a bigger one.
+
+**And the correction, which matters for every projection above.** This page said the drafter is
+*"exactly five layers of the target's own layer shape"*. **That is true of the Qwen3-4B pairing
+and does NOT generalize.** The 35B drafter is 6 layers at hidden 2048 with 32×128 heads, while
+its target has 16×256 heads and an MoE FFN — same hidden width, different geometry, different
+depth. So the draft-cost model that gave gate 3's 4.3–6.6 ms **is per-pairing and must be
+re-derived** for any target other than Qwen3-4B. The identity was a fact about one pair that read
+like a fact about the method.
