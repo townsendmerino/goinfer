@@ -1145,6 +1145,22 @@ Gate 2: **6.14 tok/verify on code, 7.32 on math** (int8 target, 160 tokens, bar 
 with code landing within 4% of the bf16 reference's 6.37. Chat is ~2.2 and roughly a wash,
 as upstream also reports. **int8 costs only ~4% of acceptance, so a quantized resident
 target does NOT crater this drafter — increment 4's economics survive.**
+**PROBE B ANSWERED 2026-08-16 (`linux-62gb`): acceptance is NOT a Qwen3-4B artifact.** The
+capture seam was the only thing blocking a second pairing, and wiring it (one shared helper +
+a bitwise placement gate, mutation-tested) unblocked three: `qwen3_5_moe`, `gemma4`, `gpt-oss`.
+Measured at gate 2's recorded length, code suite, int8, greedy: **Qwen3.6-35B-A3B 6.78 tok/verify
+vs Qwen3-4B 6.14** — and the 4B **re-measured to 6.14 exactly**, the control that says the
+harness changes are numerically inert. Depth ratios are near-identical (6/40 vs 5/36) and probe A
+established depth ratio as the mechanism, so this is theory confirmed, not luck. All four z-lab
+drafters now load and run the SHARED trunk at 5/6/8 layers, 5/6/8 taps, three hidden widths and
+two block widths. **gpt-oss is blocked on a missing harmony chat template** (not on the seam) —
+`chat.Detect` correctly refuses it rather than silently rendering it as Gemma-4, verified against
+the real 16.7 KB template. **Two MORE retracted conclusions en route**, both in the COMPARISON
+rather than the measurement: a baseline taken from a number the doc had already retired (2.90),
+and a matched control at a single length that the next length reversed (the two pairings rank in
+opposite orders at maxNew 16 vs 48). Plus a killed-healthy-run caused by an unbuffered `grep`.
+The harness now hard-errors on a too-short `maxNew` and on an undetected chat template.
+
 **The process finding is worth more than the number:** three separate harness errors each
 produced a confident wrong result first (raw-vs-chat prompt, 32-vs-160 tokens, and
 thinking-mode template), all input-distribution mistakes with gate 1 green throughout. See
