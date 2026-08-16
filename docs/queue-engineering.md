@@ -852,7 +852,7 @@ counted skip with its reason and the verdict line carries it. Fast runs stay fas
 omits the tier. `scripts/heavy_gate.sh` becomes the implementation group 2c invokes, or it goes. Two files
 is fine; two entry points isn't, because **the verdict has to come from one place**.
 
-**B3 · Re-tier by cost** — `linux`
+**B3 · Re-tier by cost — SUPERSEDED, folded into B18's T4.** `linux`
 
 `GOINFER_HEAVY_TESTS` gates "needs a real model" and is used as "slow".
 `TestSplitKV_bitIdentical` asserts bit-identity at 2048 context in 13 seconds behind two flags,
@@ -862,6 +862,51 @@ Rule: **anything asserting a claim the README makes runs by default.** Census is
 heavy-gated tests, with `TestSplitKV_bitIdentical`, `TestPrefillDivergenceRate` and
 `TestArgmaxTieBreak` all backing published claims. Report the resulting tier membership so the
 split is reviewable.
+
+The idea survives as-is inside B18's T4 ("this is B3, promoted") — a measured-wall-clock
+requirement added, sequenced against the rest of the release-path restructure rather than done
+alone. Kept here, marked, rather than deleted — see B18 for the live version.
+
+**B18 · Release-path restructure (T0–T5)** — `linux` (the diagnosis it's built from is
+CUDA-side), **filed 2026-08-16**. Decided 2026-08-12 by Francis as "the first thing after the
+release"; v0.13.0 shipped before this was recorded, and it was reconstructed from the
+conversation that produced it. Design page:
+[`docs/task-release-path-restructure.md`](task-release-path-restructure.md) — the context, the
+evidence and the acceptance criteria per item live there; this entry is the claimable work.
+
+**Why:** v0.13.0's tag took two days. Day one found real defects (the 26B slot-cap bug, goldens
+covering f32 only, an aikit decode regression, 35 dropped errors). Day two — almost entirely the
+CUDA tier — found zero production defects: three test defects, one test-interaction phenomenon
+(A13) no shipped path can reach, and a lot of careful measurement establishing exactly that. The
+rigor wasn't the problem; it was pointed at something that couldn't affect what ships.
+
+**Five items, budgeted (an afternoon + two days total; overrun >50% on any one item stops and
+reports rather than continuing):**
+
+- **T2 — triage before diagnosis, DO FIRST.** Rule for `RELEASING.md` +
+  `parity-coverage-policy.md`: a red gate's first question is "can any shipped path reach this?",
+  answered by enumeration, not mechanism-hunting. Reachable → blocks the tag; not reachable → file
+  it named, don't block. (A12/A13's enumeration took an hour and settled the tag question — done
+  on day two, after the mechanism hunt already cost a day.)
+- **T1 — instruments are not gates.** `TestAllocFloor`, the A10 probes, the reservation/VRAM
+  sweeps deliberately create device states no shipped path creates — move them out of the gated
+  package (own package or build tag), results to `docs/measurements/`, not a gate verdict.
+- **T3 — four gate outcomes, PARTLY DONE.** `parity-coverage-policy.md` already defines
+  pass/fail/cannot-evaluate/first-run; only **fail** should block a tag — enforcement is what's
+  missing (a correct decline on an 8GB card blocked a release once already).
+- **T4 — re-tier by cost, this is B3 (above), promoted.** Measured wall-clock per tier, printed
+  by the gate, not estimated.
+- **T5 — the gate owns its environment.** A co-tenancy check at start (refuse with
+  cannot-evaluate naming any process already holding device memory, rather than an ambiguous
+  result) and a derived unmarked-drainer assertion (free VRAM recorded at test boundaries, fail
+  if an unmarked test drains below a floor).
+
+**Explicitly out of scope:** splitting the repo — the coupling that cost the two days was between
+kinds of test inside one package, not between modules.
+
+**Acceptance criteria are per-item in the design page** (e.g. T1: the gated package contains no
+test that drives the device to refusal; T3: mutation-checked both ways — missing asset →
+cannot-evaluate, wrong number → fail).
 
 **B4 · Label or drop `stash@{0}`** — **REOPENED. Absent on `linux-62gb`, UNSEARCHED on
 `macbook-arm64`.**
