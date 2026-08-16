@@ -127,9 +127,11 @@ func TestDFlashAcceptance(t *testing.T) {
 	// 4B's 7.11, so the second pairing accepts LESS, not more. Any two tok/verify numbers
 	// being compared must share this setting; prefer 160, which is what gate 2 is recorded at.
 	if minNew := 3 * d.BlockSize(); maxNew < minNew {
-		t.Fatalf("GOINFER_DFLASH_MAXNEW=%d is under %d (3 blocks of %d): tok/verify is inflated at that "+
-			"length by end-of-run overshoot and by sampling only the easy prefix — measured 2.45x on the "+
-			"4B code suite. Raise it, or the number is not comparable to any other.", maxNew, minNew, d.BlockSize())
+		t.Fatalf("GOINFER_DFLASH_MAXNEW=%d is under %d (3 blocks of %d): tok/verify is distorted at that "+
+			"length by end-of-run overshoot and by sampling an unrepresentative slice of the answer, in a "+
+			"MODEL-DEPENDENT direction — the 4B reads 7.11 at 16 vs 6.14 at 160, the 35B 4.77 vs 6.78, and "+
+			"the two rank in opposite orders at 16 vs 48. Use 160, or the number is not comparable to any "+
+			"other.", maxNew, minNew, d.BlockSize())
 	}
 
 	// int8 target: this is the precision the resident GPU paths would actually run, and
@@ -172,11 +174,22 @@ func TestDFlashAcceptance(t *testing.T) {
 	for _, suite := range suites {
 		res := &result{}
 		overall[suite] = res
-		for _, prompt := range dflashSuites[suite] {
+		for i, prompt := range dflashSuites[suite] {
 			r := dflashRun(t, m, d, tk, prompt, maxNew)
 			res.rounds += r.rounds
 			res.accepted += r.accepted
 			res.generated += r.generated
+			// PER-PROMPT PROGRESS. Without this the harness logs once per SUITE, at the
+			// end, so a run that takes half an hour on a big target emits its pairing line
+			// and then nothing — indistinguishable from a hang. That ambiguity already
+			// cost one healthy run, killed on the belief it was stuck (the actual culprit
+			// there was an unbuffered pipe, but a silent harness is what made the belief
+			// plausible). One line per prompt makes progress observable and gives a
+			// running estimate of the final figure.
+			t.Logf("  [%s %d/%d] %d rounds, %d tokens, mean accepted %.2f  (running %.2f tok/verify)",
+				suite, i+1, len(dflashSuites[suite]), r.rounds, r.generated,
+				float64(r.accepted)/float64(r.rounds),
+				float64(res.generated)/float64(res.rounds))
 		}
 		tpv := float64(res.generated) / float64(res.rounds)
 		// STEADY STATE, reported alongside the raw ratio because the raw one has a third
