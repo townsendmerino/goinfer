@@ -1448,3 +1448,34 @@ they differ by ~0.02 in both and should be read as a tie.
 which harmony's mandatory channel makes awkward, or a pairing with a high depth ratio whose
 target does not reason by default. Neither is available today. Recorded as open rather than
 resolved in the direction the numbers superficially suggest.
+
+### Harness: print what the target PRODUCED, and a variance caveat it immediately exposed
+
+The suite names (`code`/`math`/`chat`) describe the **prompt**. Acceptance is a property of the
+**output**, and on a reasoning-by-default model the two diverge silently — gpt-oss's `code` run
+measured the analysis channel and produced a number that looked comparable to three code numbers
+and was not. That was caught only by inspecting an anchor token in a separate diagnostic, which
+is not a process that scales to the next family.
+
+Every run now prints a preview of what the target actually emitted, next to the per-prompt
+progress. The 4B re-measures to **6.75 at maxNew=48, unchanged**, so the instrumentation is inert.
+
+It exposed something the aggregate was hiding on the very first run — the **per-prompt spread
+within a single suite**:
+
+| prompt | target produced | mean accepted |
+|---|---|---|
+| Python / Fibonacci | `Sure! Here's a Python function … ```python` | **9.40** |
+| Go / reverse a slice | `Here's a Go function … ```go func ReverseIntSlice` | **2.62** |
+| SQL / top 5 customers | `To select the top 5 customers … ```sql SELECT` | **9.00** |
+
+**3.6× between prompts in the same suite**, from three prompts total. Every recorded tok/verify
+in this document is a mean over that spread, so cross-pairing differences smaller than roughly a
+factor of two are not resolvable by this suite — a caveat that applies to the 6.78-vs-6.14
+comparison (35B vs 4B), which should be read as *"the second pairing is at least as good"* and
+not as a measured ordering. It does **not** touch the conclusions that rest on large gaps: the
+q4_0 collapse (1.01 vs 6.45) and the int4 clearance are both far outside this range.
+
+Worth noting the Go prompt is the low one, and its answer opens with a *named function*
+(`ReverseIntSlice`) rather than boilerplate — consistent with acceptance tracking how
+predictable the specific continuation is, rather than the language or the suite.

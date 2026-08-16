@@ -186,10 +186,23 @@ func TestDFlashAcceptance(t *testing.T) {
 			// there was an unbuffered pipe, but a silent harness is what made the belief
 			// plausible). One line per prompt makes progress observable and gives a
 			// running estimate of the final figure.
-			t.Logf("  [%s %d/%d] %d rounds, %d tokens, mean accepted %.2f  (running %.2f tok/verify)",
+			// WHAT THE TARGET ACTUALLY PRODUCED, not what the suite label says it was asked
+			// for. The suite names describe the PROMPT; acceptance is a property of the
+			// OUTPUT, and on a reasoning-by-default model the two diverge silently. gpt-oss
+			// is the case in point: harmony has no non-thinking form, so its `code` run
+			// measured the analysis channel — reasoning prose — and produced a number that
+			// looked comparable to three code numbers and was not. That was caught only by
+			// inspecting an anchor token in a separate diagnostic. Printing a preview makes
+			// it visible in the run that produced the number.
+			preview, perr := tk.Decode(r.emitted[:min(24, len(r.emitted))])
+			if perr != nil {
+				preview = "<decode failed: " + perr.Error() + ">"
+			}
+			t.Logf("  [%s %d/%d] %d rounds, %d tokens, mean accepted %.2f  (running %.2f tok/verify)\n"+
+				"      target produced: %q",
 				suite, i+1, len(dflashSuites[suite]), r.rounds, r.generated,
 				float64(r.accepted)/float64(r.rounds),
-				float64(res.generated)/float64(res.rounds))
+				float64(res.generated)/float64(res.rounds), preview)
 		}
 		tpv := float64(res.generated) / float64(res.rounds)
 		// STEADY STATE, reported alongside the raw ratio because the raw one has a third
@@ -256,7 +269,10 @@ func noThinkSuffix(t *testing.T, tk *tokenizer.Tokenizer) []int {
 // skipNoThink reproduces the ORIGINAL (thinking-mode) measurement for comparison.
 var skipNoThink = os.Getenv("GOINFER_DFLASH_THINKING") != ""
 
-type dflashRunResult struct{ rounds, accepted, generated int }
+type dflashRunResult struct {
+	rounds, accepted, generated int
+	emitted                     []int // every token the TARGET committed, for the content preview
+}
 
 // dflashRun greedily generates from one prompt with the DFlash block-verify loop and
 // returns how many rounds it took. Lossless by construction: every emitted token is one
@@ -372,6 +388,8 @@ func dflashRun(t *testing.T, m *Model, d *DFlashDrafter, tk *tokenizer.Tokenizer
 
 		out.rounds++
 		out.accepted += accepted
+		out.emitted = append(out.emitted, anchor)
+		out.emitted = append(out.emitted, drafted[:accepted]...)
 		generated += accepted + 1 // the accepted drafts plus the target's own next token
 		anchor = next             // always a TARGET-produced token — this is the losslessness
 		if eos[anchor] {
