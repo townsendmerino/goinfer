@@ -126,7 +126,11 @@ func TestDFlashAcceptance(t *testing.T) {
 	// control rather than on the recorded number: at maxNew=16 the 35B reads 4.77 against the
 	// 4B's 7.11, so the second pairing accepts LESS, not more. Any two tok/verify numbers
 	// being compared must share this setting; prefer 160, which is what gate 2 is recorded at.
-	if minNew := 3 * d.BlockSize(); maxNew < minNew {
+	effBlock := d.BlockSize()
+	if vw := verifyWidth(); vw > 0 && vw < effBlock {
+		effBlock = vw
+	}
+	if minNew := 3 * effBlock; maxNew < minNew {
 		t.Fatalf("GOINFER_DFLASH_MAXNEW=%d is under %d (3 blocks of %d): tok/verify is distorted at that "+
 			"length by end-of-run overshoot and by sampling an unrepresentative slice of the answer, in a "+
 			"MODEL-DEPENDENT direction — the 4B reads 7.11 at 16 vs 6.14 at 160, the 35B 4.77 vs 6.78, and "+
@@ -221,8 +225,8 @@ func TestDFlashAcceptance(t *testing.T) {
 		// recorded number in docs/spec/08 was measured under, and silently redefining a metric
 		// to move a number past its own bar is the move this whole file exists to prevent.
 		meanAcc := float64(res.accepted) / float64(res.rounds)
-		t.Logf("[quant=%q maxNew=%d] %-5s  %2d rounds (%.1f/prompt)  %3d tokens  mean accepted %.2f/%d  => %.2f tok/verify (steady state %.2f)",
-			quant, maxNew, suite, res.rounds, float64(res.rounds)/float64(len(dflashSuites[suite])),
+		t.Logf("[quant=%q maxNew=%d vw=%d] %-5s  %2d rounds (%.1f/prompt)  %3d tokens  mean accepted %.2f/%d  => %.2f tok/verify (steady state %.2f)",
+			quant, maxNew, verifyWidth(), suite, res.rounds, float64(res.rounds)/float64(len(dflashSuites[suite])),
 			res.generated, meanAcc, d.BlockSize()-1, tpv, 1+meanAcc)
 	}
 
@@ -266,6 +270,17 @@ func noThinkSuffix(t *testing.T, tk *tokenizer.Tokenizer) []int {
 	return ids
 }
 
+// verifyWidth reads GOINFER_DFLASH_VERIFY_WIDTH — how many block positions the target
+// verifies per round (anchor + width-1 drafts). 0 or unset means the drafter's full block.
+func verifyWidth() int {
+	if v := os.Getenv("GOINFER_DFLASH_VERIFY_WIDTH"); v != "" {
+		if n, err := atoiPositive(v); err == nil {
+			return n
+		}
+	}
+	return 0
+}
+
 // skipNoThink reproduces the ORIGINAL (thinking-mode) measurement for comparison.
 var skipNoThink = os.Getenv("GOINFER_DFLASH_THINKING") != ""
 
@@ -280,6 +295,7 @@ type dflashRunResult struct {
 // proposal is rolled out of the cache.
 func dflashRun(t *testing.T, m *Model, d *DFlashDrafter, tk *tokenizer.Tokenizer, prompt string, maxNew int) dflashRunResult {
 	t.Helper()
+	vw := verifyWidth()
 	turns := []chat.Turn{{Role: "user", Content: prompt}}
 	// THE TARGET'S OWN TEMPLATE, detected — not ChatML assumed.
 	//
@@ -363,6 +379,19 @@ func dflashRun(t *testing.T, m *Model, d *DFlashDrafter, tk *tokenizer.Tokenizer
 		drafted := make([]int, 0, B-1)
 		for _, h := range trunk[1:] {
 			drafted = append(drafted, argmax(m.DrafterHeadLogits(h)))
+		}
+		// VERIFY-WIDTH CAP. The drafter still drafts its full trained block; this bounds how
+		// many of those positions the target verifies. Accepted length is CONCAVE in block
+		// width — the tail positions rarely land, yet a k-wide batched verify costs
+		// W + k*C regardless — so the widest block is not obviously the fastest one, and the
+		// doc's own model puts the optimum near 7-8 rather than 16.
+		//
+		// Capping rather than drafting a narrower block is deliberate: DFlash was trained
+		// with a fixed number of mask tokens, so feeding fewer changes the non-causal
+		// attention pattern over [ctx‖block] and takes the drafter off-distribution. That is
+		// a different experiment. This one holds the draft fixed and varies only the verify.
+		if vw > 0 && len(drafted) > vw-1 {
+			drafted = drafted[:vw-1]
 		}
 
 		// Verify. Feed the anchor, then each drafted token, keeping the target's own

@@ -1479,3 +1479,78 @@ q4_0 collapse (1.01 vs 6.45) and the int4 clearance are both far outside this ra
 Worth noting the Go prompt is the low one, and its answer opens with a *named function*
 (`ReverseIntSlice`) rather than boilerplate — consistent with acceptance tracking how
 predictable the specific continuation is, rather than the language or the suite.
+
+## MEASURED: verify width 7 projects **1.74×** on code, against 1.28× at 16
+
+Gate 3 projected **1.29× on code** — under its own 1.3× bar — and the recorded conclusion was
+"pass on math only". That projection verified all 16 of DFlash's drafted positions. It did not
+have to.
+
+**The drafter still drafts its full trained block; only the number of positions the TARGET
+verifies is capped** (`GOINFER_DFLASH_VERIFY_WIDTH`). Drafting a narrower block instead would
+change the non-causal attention pattern over `[ctx‖block]` and take the drafter off-distribution
+— a different experiment. This one holds the draft fixed and varies only the verify.
+
+Measured on the gate-1-backed Qwen3-4B pairing, code suite, int8, maxNew=160:
+
+| verify width | mean accepted | tok/verify | geometric fit | excess | **projected speedup** |
+|---|---|---|---|---|---|
+| **16** (current) | 5.10 | 6.14 | 5.10 | — | **1.28×** ← reproduces the recorded 1.29× |
+| 12 | 5.01 | 6.05 | 4.66 | +7.5% | 1.53× |
+| 10 | 4.64 | 5.67 | 4.31 | +7.7% | 1.61× |
+| 8 | 4.24 | 5.27 | 3.82 | +11.1% | 1.71× |
+| **7** | **3.97** | **5.00** | 3.50 | +13.4% | **1.74×** ← optimum |
+| 6 | 3.41 | 4.44 | 3.13 | +9.0% | 1.66× |
+| 4 | 2.45 | 3.47 | 2.18 | +12.6% | 1.55× |
+
+**k=16 reproduces 6.14 exactly** — 80 rounds, 491 tokens, identical to the uncapped run — so the
+cap is a genuine no-op at full width and the narrower rows are interpretable.
+
+### Why: the last four positions are nearly free acceptance at full price
+
+Marginal accepted tokens per position added, against 2.35 ms of verify per position:
+
+| positions added | accepted gained | per slot |
+|---|---|---|
+| 4→5 | +0.96 | 0.480 |
+| 6 | +0.56 | 0.560 |
+| 7 | +0.27 | 0.270 |
+| 8–9 | +0.40 | 0.200 |
+| 10–11 | +0.37 | 0.185 |
+| **12–15** | **+0.09** | **0.022** |
+
+**Positions 12–15 land 0.09 tokens between them and cost 9.4 ms of verify every round.** The
+block is paying full batched-verify price for four slots that hit 2% of the time.
+
+### The geometric model was wrong in the favourable direction
+
+Fitting a single per-token α to the full block gives 0.8477, and that α **understates measured
+acceptance at every narrower width, by 7.5–13.4%**. Acceptance is not position-independent: it is
+**front-loaded**, which the marginal table shows directly. Mechanically that is what to expect —
+the drafter predicts position 1 from the anchor's true hidden state and position 15 through
+fifteen intervening masks.
+
+So the earlier block-width projection built on that fitted α (optimum 1.58× at k=7) was a
+**floor**, not a target. Measured is 1.74×.
+
+### What this changes
+
+- **Gate 3 goes from "pass on math only" to passing on code as well.** 1.74× against a ≥1.3× bar,
+  where the recorded figure was 1.29× and missing.
+- **DSpark's headline advantage evaporates.** This document projects DSpark at **1.75× on code**
+  versus DFlash's 1.29×, and treats that as a reason the pivot may be right. Measured
+  DFlash-at-7 is **1.74×** — the same number. **The advantage was BLOCK WIDTH, not DSpark**, and
+  DFlash gets it from a one-line cap while being the licensed one. Reason 2 of the pivot
+  ("a 7-wide block wastes less verify when acceptance is low") is confirmed as a real effect and
+  refuted as a DSpark-specific one.
+
+### Standing caveats
+
+This is still a **projection**: acceptance is measured, wall-clock is not. It composes measured
+acceptance with the measured verify curve (`T(M) = 8.77 + 2.35M` ms) and measured draft (6.6 ms)
+against an 11.12 ms decode — all pinned on the 4B on an RTX 2070 SUPER. A different target or GPU
+moves the curve, and gate 3 remains unmeasured. **Gate 3 should now be run at k=7, not k=16.**
+
+Unlike the cross-pairing comparisons, this sweep is **paired** — same prompts, same target, same
+drafter, only the width varies — so the 3.6×-per-prompt suite variance that makes 6.78-vs-6.14
+unresolvable does not undermine it. Seven widths, monotonic on both sides of a clean peak.
