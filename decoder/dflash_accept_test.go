@@ -252,7 +252,24 @@ type dflashRunResult struct{ rounds, accepted, generated int }
 func dflashRun(t *testing.T, m *Model, d *DFlashDrafter, tk *tokenizer.Tokenizer, prompt string, maxNew int) dflashRunResult {
 	t.Helper()
 	turns := []chat.Turn{{Role: "user", Content: prompt}}
-	ids, err := tk.EncodeSegments(chat.ChatML().RenderSegments("", turns), false)
+	// THE TARGET'S OWN TEMPLATE, detected — not ChatML assumed.
+	//
+	// This was hardcoded to chat.ChatML(), which is right for both Qwen3 pairings and wrong
+	// for the other two: Gemma-4 uses <|turn>/<|channel> markers and gpt-oss uses harmony.
+	// Feeding a Gemma target ChatML would not error — it would just measure the drafter
+	// against a prompt format the target never sees, and increment 2 already measured what
+	// that costs (raw vs chat: 0/15 vs 10/15 accepted).
+	//
+	// An unrecognized template is a HARD ERROR rather than the library's raw-completion
+	// fallback. Falling back would produce a number rather than a failure, and a plausible
+	// acceptance figure measured off a malformed prompt is the single most expensive failure
+	// mode this harness has (it has now produced three retracted conclusions in P10).
+	tmpl, err := chat.Detect(chat.Meta{ChatTemplate: tk.ChatTemplate(), HasToken: tk.Has})
+	if err != nil {
+		t.Fatalf("chat.Detect: %v — refusing the raw-completion fallback, which would measure "+
+			"the drafter against a prompt format the target never sees and still print a number", err)
+	}
+	ids, err := tk.EncodeSegments(tmpl.RenderSegments("", turns), false)
 	if err != nil {
 		t.Fatalf("encode segments: %v", err)
 	}
@@ -264,8 +281,12 @@ func dflashRun(t *testing.T, m *Model, d *DFlashDrafter, tk *tokenizer.Tokenizer
 	// thinking-mode targets), so omitting this measures the drafter against a
 	// distribution it never saw. Cost, measured: code 2.90 -> see the doc.
 	// Verified id-exact: ChatML ids + these four == HF apply_chat_template's ids.
+	// Qwen3-family only: a target with no <think> in its vocab has no thinking mode to
+	// suppress, and appending the suffix would inject literal text into the prompt.
 	if !skipNoThink {
-		ids = append(ids, noThinkSuffix(t, tk)...)
+		if _, ok := tk.TokenID("<think>"); ok {
+			ids = append(ids, noThinkSuffix(t, tk)...)
+		}
 	}
 
 	B := d.BlockSize()
