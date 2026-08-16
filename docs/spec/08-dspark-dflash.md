@@ -156,13 +156,26 @@ and we import no Python either way. Record the decision in the PR as 05 did.
    constrained), trace-fit α̂ per 06. Bar: **≥3.0 tok/verify** on the paired target on
    at least one suite — anything near EAGLE's 1.6 means the protocol is wrong (back to
    gate 1) or the claims don't transfer (stop, record).
-   **CLEARED 2026-08-15 (`linux-62gb`, `TestDFlashAcceptance`), narrowly, on one suite:**
+   **MISSED 2026-08-15 (`linux-62gb`, `TestDFlashAcceptance`). It read as cleared at 32
+   new tokens and that was an artifact of generation length** — the honest number is the
+   sustained one, and it is below the bar:
 
-   | suite | rounds | mean accepted /15 | **tok/verify** |
-   |---|---|---|---|
-   | **code** | 32 | 2.44 | **3.53** ✅ |
-   | chat | 24 | 1.71 | 2.79 |
-   | math | 27 | 1.37 | 2.44 |
+   | suite | 32 new tokens | **160 new tokens** |
+   |---|---|---|
+   | **code** | 3.53 ✅ | **2.90** ❌ |
+   | math | 2.44 | 2.79 |
+   | chat | 2.79 | 2.13 |
+
+   (160-token run: code 168 rounds / 487 tokens, math 115 / 321, chat 151 / 322.)
+
+   **Why the short run lied, and why it was checked anyway.** A 32-token generation is
+   mostly the boilerplate opening — *"Sure! Here's a Python function that…"* — which is
+   exactly the text a block drafter nails. Extending to 160 tokens moves the measurement
+   into the body, where code drops **3.53 → 2.90** and chat **2.79 → 2.13**. (Math rises,
+   2.44 → 2.79: at 32 tokens it had barely started its working-out. Small samples both
+   ways.) Nothing forced this re-run — the gate had already gone green. It was run because
+   a bar cleared by 0.53 on the easiest possible sample is not a result, and the cost of
+   being wrong here is an entire GPU increment built on a number that was never real.
 
    Qwen3-4B **int8** target (the precision the resident GPU paths run), greedy, ChatML,
    32 new tokens/prompt. Acceptance is a numerics property, so it transfers to the GPU
@@ -170,14 +183,29 @@ and we import no Python either way. Record the decision in the PR as 05 did.
    not measure it** (it verifies with 16 sequential forwards, not one batched M=16 pass).
    Losslessness is structural here: every emitted token is the *target's* own argmax.
 
-   **Two honesty notes that matter more than the pass.** (a) The shape matches DFlash's
-   published claim — strongest on code, weakest on open chat — but the LEVEL does not:
-   upstream reports ~6.0 on code/math where we measure 3.53 and 2.44. Candidate causes,
-   unseparated: int8 target vs their bf16, ChatML vs Qwen3's own template (ours omits the
-   thinking block), and greedy-only. (b) **The 11.0 tok/verify from increment 2 was a
-   single round on one prompt, and it did not survive contact with a sustained run** —
-   3.53 is the number to plan against. It was labelled a smoke signal at the time, and
-   this is why that label mattered.
+   **The two optimistic readings this program produced, and what they cost.** Increment 2
+   reported **11.0 tok/verify** — one round, one prompt, labelled a smoke signal. The
+   32-token sweep reported **3.53** — a real sweep, but on the easiest part of the output.
+   The sustained number is **2.90**. Each reading was ~2–4× the next, and each was honest
+   about its own scope at the time; what would have been dishonest is planning on any of
+   them. **Plan against 2.90.**
+
+   **What the miss does NOT mean.** Gate 1 is cleared and mutation-verified, so this is
+   not "the protocol is wrong (back to gate 1)" — our forward reproduces the reference to
+   cosine 1.0 and 15/15 drafted ids. That leaves the pre-registration's other branch, "the
+   claims don't transfer" — but three differences from upstream's setup remain
+   **unseparated**, and declaring transfer failure before separating them would be its own
+   unfounded claim:
+   - **int8 target vs their bf16** — quantizing the target changes `p`, and the drafter
+     was trained against an unquantized one. The prime suspect.
+   - **ChatML vs Qwen3's own template** (ours omits the thinking block).
+   - **greedy-only** vs whatever sampling upstream measured under.
+
+   The decisive experiment is cheap and is the same instrument that made gate 1
+   trustworthy: run **the reference implementation** on the same prompts at the same
+   length. If it also lands near 2.9, the claims don't transfer and our implementation is
+   vindicated; if it lands near 6.0, the gap is in our precision/template and gate 2 is
+   re-runnable. That run is in flight — **do not act on this miss until it reports.**
 3. **Wall-clock gate.** End-to-end ≥**1.3×** vs plain resident decode (the 07 funding
    bar) on ≥1 real workload on ≥1 GPU backend, lossless gates green
    (`TestEagleSpecParity` shape). Miss broadly → park with numbers, like Stage B.
