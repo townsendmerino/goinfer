@@ -1153,9 +1153,12 @@ the design page.
 **Increment 4 is now SCOPED, and it is bigger than the plan assumed — two prerequisites,
 both measured rather than guessed.** (1) The drafter must be **GPU-resident too**: the CPU
 trunk costs 1.4 s/block (ctx 64) against ~100 ms of decode bought, a >10x net loss and the
-same wall Lever 2 hit. (2) The **resident runner has no hidden-state capture** —
-`cache.captureLayers` exists only on the CPU forward, so a resident target cannot feed the
-drafter at all. So increment 4 = resident capture seam + a resident bidirectional block
+same wall Lever 2 hit. (2) resident hidden capture, now **BUILT and gated**
+(`SetHiddenCapture`/`HiddenCapture` + `TestResidentHiddenCapture`: cosine 0.998-0.999 vs the
+CPU seam, off-by-one tap correctly rejected at 0.264). **My earlier "the resident runner has
+no capture seam" was wrong** — `cuda/resident.go` already had a `layerCap` debug probe doing
+every layer with a sync each; the grep was for the CPU seam's identifiers and read a missing
+NAME as a missing capability. So increment 4's remainder is the resident bidirectional block
 trunk, THEN gate 3. Landed on the way: a `DFlashContext` K/V cache (−50% at ctx 512+,
 gate-1 bit-identical) that the GPU port should carry.
 `decoder/dflash.go` (trunk + loader) matches the reference at cosine 1.00000000 on every

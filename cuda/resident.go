@@ -256,11 +256,24 @@ type cudaResident struct {
 	graphMask      string  // DEBUG probe: if non-empty, replay ONLY the named segments (e.g. "A","B","C","AB") and issue the rest live — localizes a replay hazard to a segment
 	layerCap       bool    // DEBUG probe: snapshot the residual r.x after every layer (localizes where a full-forward divergence first appears)
 	layerCapBuf    [][]float32
-	launchN        int      // diagnostic: per-forward dispatch count (graph-capturable-fraction bound)
-	cacheSlots     int      // C′ step 2: device slots per layer (≥ topK; = topK ⇒ step-1 fresh-load, no reuse)
-	slotIdx        Buffer   // C′: per-token slot ids for the routed experts, bound as the GEMV's idx
-	hostIdx        []uint32 // C′: scratch for the per-layer rIdx device→host readback
-	hostSlot       []uint32 // C′: scratch for the per-token slot ids uploaded to slotIdx
+
+	// hidCap is the PRODUCTION hidden-state seam (P10 / docs/spec/08): the resident
+	// analogue of decoder.Model.ForwardCapture, which exists only on the CPU forward. A
+	// hidden-state drafter (DFlash, DSpark) reads a handful of the target's layer outputs
+	// per token; without this a resident target cannot feed one at all.
+	//
+	// Distinct from layerCap above, deliberately. layerCap is a divergence-localization
+	// probe: EVERY layer, a stream.Sync() and a download each, appended to an unbounded
+	// buffer. At 36 layers that is 36 syncs per token — fine to bisect a bug with, far too
+	// expensive to decode against. hidCap copies only the TAPPED layers into fixed slots,
+	// so a 5-tap drafter costs 5, not 36.
+	hidCapTaps []int       // layer indices to capture, ascending; nil ⇒ seam off
+	hidCapOut  [][]float32 // [len(hidCapTaps)][hidden], overwritten per token
+	launchN    int         // diagnostic: per-forward dispatch count (graph-capturable-fraction bound)
+	cacheSlots int         // C′ step 2: device slots per layer (≥ topK; = topK ⇒ step-1 fresh-load, no reuse)
+	slotIdx    Buffer      // C′: per-token slot ids for the routed experts, bound as the GEMV's idx
+	hostIdx    []uint32    // C′: scratch for the per-layer rIdx device→host readback
+	hostSlot   []uint32    // C′: scratch for the per-token slot ids uploaded to slotIdx
 
 	// Sparse MoE. The router projection stays f32 (gemv_f32_a8) while the experts are int4:
 	// the router's output steers a DISCRETE choice, so a quantization error near a tie does not
@@ -1901,6 +1914,15 @@ func (r *cudaResident) launchToken(emb []float32, pos int, head bool) error {
 				return e
 			}
 		}
+		// hidden-state seam: this layer's OUTPUT residual, for a drafter that taps it.
+		if len(r.hidCapTaps) > 0 {
+			for slot, tap := range r.hidCapTaps {
+				if tap == l {
+					r.capVec(r.x, r.hidCapOut, slot, r.hidden)
+					break
+				}
+			}
+		}
 		if r.layerCap { // DEBUG: snapshot the residual after this layer (divergence-localization probe)
 			if err := r.stream.Sync(); err != nil {
 				return err
@@ -2070,3 +2092,35 @@ func packWeightStack(ws ...*linalg.WeightMat) (hostW, error) {
 	}
 	return out, nil
 }
+
+// SetHiddenCapture arms the resident hidden-state seam for the given target layer indices
+// (layer OUTPUTS, ascending — the same convention decoder.Model.ForwardCapture uses, and
+// the one DeepSpec/z-lab's `target_layer_ids` name). Pass nil to disarm.
+//
+// This is the resident counterpart of the CPU ForwardCapture seam that 05 paid for and
+// that P10's block drafters need: a resident target cannot feed a hidden-state drafter
+// without it. Cost is one sync + one hidden-sized download per TAPPED layer per token, so
+// arm only the taps the drafter actually reads.
+func (r *cudaResident) SetHiddenCapture(taps []int) error {
+	if len(taps) == 0 {
+		r.hidCapTaps, r.hidCapOut = nil, nil
+		return nil
+	}
+	prev := -1
+	for _, t := range taps {
+		if t < 0 || t >= r.nLayers {
+			return fmt.Errorf("cuda: hidden-capture tap %d out of range [0,%d)", t, r.nLayers)
+		}
+		if t <= prev {
+			return fmt.Errorf("cuda: hidden-capture taps must be ascending and distinct, got %v", taps)
+		}
+		prev = t
+	}
+	r.hidCapTaps = append([]int(nil), taps...)
+	r.hidCapOut = make([][]float32, len(taps))
+	return nil
+}
+
+// HiddenCapture returns the most recent token's captured layer outputs, one row per tap in
+// SetHiddenCapture order. The rows are owned by the caller (capVec allocates per token).
+func (r *cudaResident) HiddenCapture() [][]float32 { return r.hidCapOut }
