@@ -1554,3 +1554,48 @@ moves the curve, and gate 3 remains unmeasured. **Gate 3 should now be run at k=
 Unlike the cross-pairing comparisons, this sweep is **paired** — same prompts, same target, same
 drafter, only the width varies — so the 3.6×-per-prompt suite variance that makes 6.78-vs-6.14
 unresolvable does not undermine it. Seven widths, monotonic on both sides of a clean peak.
+
+### All three suites swept: the optimum width TRACKS acceptance
+
+| suite | k=16 (current) | k=12 | k=10 | k=8 | k=7 | k=6 | k=4 | **optimum** |
+|---|---|---|---|---|---|---|---|---|
+| **math** | 1.53× | — | — | **2.25×** | — | 1.80× | 1.70× | **k=8 → 2.25×** |
+| **code** | 1.28× | 1.53× | 1.61× | 1.71× | **1.74×** | 1.66× | 1.55× | **k=7 → 1.74×** |
+| chat | 0.45× | — | — | 0.70× | — | 0.80× | **0.92×** | **k=4 → 0.92×** |
+
+Each suite's k=16 row reproduces its recorded figure (1.54 / 1.29 / 0.46), so the sweep is
+anchored to the numbers already in this document.
+
+**The optimum moves with acceptance: math (α highest) peaks widest at 8, code at 7, chat (α
+lowest) narrowest at 4.** That is the concavity argument working in both directions — tail
+positions are worth keeping exactly when they land often enough to pay their 2.35 ms.
+
+**Gate 3, re-projected at each suite's own optimum: code 1.74× and math 2.25×, both clearing the
+≥1.3× bar decisively** where the recorded figures were 1.29× (missing) and 1.54×. The routed
+headline moves from *"~1.5× on math-like traffic"* to **1.74× code / 2.25× math / 1.0× chat**.
+
+### Chat: the biggest relative gain, and the router still stays
+
+Chat improves **2.02×** — more than either other suite — and still lands at **0.92×**, under
+break-even. The reason is visible in its acceptance column: **1.16 → 1.15 → 1.11 → 1.04 across a
+16→4 cut.** The drafter lands about one token per round regardless of width, so the wide block
+was buying nothing measurable while costing 28 ms of verify per round. Narrowing stops the waste;
+it cannot manufacture acceptance that was never there.
+
+Nor can narrowing further fix it. At k=4 the round already costs 6.6 ms draft + 18.2 ms verify
+for ~2.0 tokens; the **draft term alone** puts a ceiling near 1.1× even at perfect acceptance,
+and chat's first-position acceptance is roughly 0.5. **So gate 4's router remains necessary** —
+but the penalty for firing indiscriminately falls from a 2.2× loss to a 1.09× loss, which
+demotes it from "mandatory or the feature is harmful" to "worth having".
+
+### A width-selecting router beats an on/off one
+
+The three optima are 8 / 7 / 4 against α of roughly 0.87 / 0.85 / 0.54. Since the optimum is a
+function of predicted acceptance, and gate 4's router already has to predict acceptance to decide
+*whether* to fire, **it can pick the width for free** — the α̂ predictors from 05/§9 are the same
+signal. That is strictly better than gating on/off: on chat, width 4 recovers 0.92× of the 1.0×
+that skipping would give, so a mispredicted fire costs 8% rather than 55%.
+
+**Caveat unchanged:** acceptance is measured, wall-clock is not. These compose measured
+acceptance with the measured verify curve and draft cost on one target and one GPU. Gate 3 should
+be run per-suite at these widths.
