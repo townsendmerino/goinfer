@@ -156,11 +156,25 @@ func TestDFlashAcceptance(t *testing.T) {
 			res.generated += r.generated
 		}
 		tpv := float64(res.generated) / float64(res.rounds)
-		// rounds/prompt is printed because it is the number that says whether tok/verify
-		// is trustworthy: few rounds means the end-of-run overshoot is barely amortized.
-		t.Logf("[quant=%q maxNew=%d] %-5s  %2d rounds (%.1f/prompt)  %3d tokens  mean accepted %.2f/%d  => %.2f tok/verify",
+		// STEADY STATE, reported alongside the raw ratio because the raw one has a third
+		// small upward bias on top of the two the maxNew guard covers.
+		//
+		// `generated` is seeded at 1 per PROMPT — the anchor, which prefill produced and no
+		// verify round paid for. Over R rounds with P prompts:
+		//     generated = P + R + sum(accepted)
+		//     tok/verify = 1 + P/R + mean(accepted)
+		// so the raw ratio carries a +P/R term that has nothing to do with the drafter and
+		// shrinks as the run lengthens: +0.23 on the 35B's 4.77 at 13 rounds, +0.33 on the
+		// 4B's 7.11 at 9 rounds — ~5% each. 1 + mean(accepted) is the prompt-count-independent
+		// figure, and is what two pairings should be compared on.
+		//
+		// The gate below still uses the raw ratio, deliberately: it is the definition every
+		// recorded number in docs/spec/08 was measured under, and silently redefining a metric
+		// to move a number past its own bar is the move this whole file exists to prevent.
+		meanAcc := float64(res.accepted) / float64(res.rounds)
+		t.Logf("[quant=%q maxNew=%d] %-5s  %2d rounds (%.1f/prompt)  %3d tokens  mean accepted %.2f/%d  => %.2f tok/verify (steady state %.2f)",
 			quant, maxNew, suite, res.rounds, float64(res.rounds)/float64(len(dflashSuites[suite])),
-			res.generated, float64(res.accepted)/float64(res.rounds), d.BlockSize()-1, tpv)
+			res.generated, meanAcc, d.BlockSize()-1, tpv, 1+meanAcc)
 	}
 
 	best, bestSuite := 0.0, ""
