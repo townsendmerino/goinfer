@@ -199,7 +199,13 @@ and we import no Python either way. Record the decision in the PR as 05 did.
    the paper and not only from a third-party port. See the CONFIRMED section below.
 3. **DSpark forward + loader** (gate 1), then **Drafter wiring** into the existing
    verify on CPU — correctness first where debugging is cheap; take the one CPU
-   wall-clock measurement while there.
+   wall-clock measurement while there. **RE-TARGET TO DFLASH (2026-08-15)** while the DSpark
+   license is unresolved: the licensed checkpoint, the f32 conversion and the parity fixtures
+   are DFlash's, so gate 1 runs there. The forward is *smaller* than DSpark's (no embed, no
+   lm_head, no Markov chain, no confidence head — 58 tensors, one pass) but carries the two
+   details a port loses silently: the split RoPE application (q at block positions, k over
+   context+block) and `logits_start = 1`. Seam prerequisite either way: `ForwardCapture`
+   handles 5 taps already but **rejects `gemma4`**, so the `mac` leg needs it extended.
 4. **Resident CUDA end-to-end** on Qwen3-4B (gates 2–3). This is the go/no-go for the
    rest of the program.
 5. **DFlash forward** (the new bidirectional block pass) + constrained-traffic
@@ -321,6 +327,108 @@ cache:
   pessimistic for DSpark.** DeepSpec documents the tapped layers, norm placement, mask schedule and
   block protocol outright. The remaining unknowns are values, not wiring — which is precisely what
   the blocked half would settle.
+
+## CONFIRMED tensor structure (`z-lab/Qwen3-4B-DFlash-b16`, dumped 2026-08-15)
+
+**Why DFlash and not DSpark.** Decided 2026-08-15 by Francis after the license finding above:
+`z-lab/Qwen3-4B-DFlash-b16` is **MIT with a real model card**, 1.07 GB, and explicitly paired with
+`Qwen/Qwen3-4B` (Apache-2.0). It is the only licensed, feasible drafter of either family, so
+increment 2 completed against it. **This reorders the program** — DFlash's forward was increment 5;
+its fixtures now exist first, and increments 3–4 (Go forward → resident CUDA) should follow DFlash
+unless the DSpark license resolves. What increments 3+ inherit unchanged: the 5-tap seam, the
+`fc`+`hidden_norm` fusion, and the bidirectional block — DSpark and DFlash agree on all three, and
+even share `target_layer_ids=[1,9,17,25,33]` and `mask_token_id=151669`.
+
+**Environment (checked, not assumed).** `~/.venv-vl` — 05's env — exists and carries
+**torch 2.12.0+cpu, safetensors 0.8.0, transformers 5.12.0**, which is everything the conversion and
+the reference forward need. The one gap: the checkpoint's `utils.py` imports `datasets` at module
+scope for an eval helper the trace never calls, and that is not installed. Stubbed in
+`scripts/pin_dflash_trace.py` rather than installed, so the shared parity venv keeps its pinned
+dependency set — **the reference code itself runs unmodified**, which is the point of using it as
+the oracle.
+
+**Byte-exact accounting.** `model.safetensors` is **1,074,860,568 bytes** = 537,427,200 params ×2
+(bf16) + a 6,160-byte header + its 8-byte prefix, **exactly**. 58 tensors, all BF16:
+
+| tensor | shape | note |
+|---|---|---|
+| `fc.weight` | [2560, **12800**] | fuses the 5 captured target hidden states (5·2560) → 2560 |
+| `hidden_norm.weight` | [2560] | RMSNorm on the fused context |
+| `layers.{0..4}.self_attn.q_proj.weight` | [4096, 2560] | 32 heads × 128 |
+| `layers.{0..4}.self_attn.{k,v}_proj.weight` | [1024, 2560] | GQA 32/8 |
+| `layers.{0..4}.self_attn.o_proj.weight` | [2560, 4096] | |
+| `layers.{0..4}.self_attn.{q,k}_norm.weight` | [128] | Qwen3 per-head RMSNorm |
+| `layers.{0..4}.mlp.{gate,up}_proj.weight` | [9728, 2560] | SwiGLU |
+| `layers.{0..4}.mlp.down_proj.weight` | [2560, 9728] | |
+| `layers.{0..4}.{input,post_attention}_layernorm.weight` | [2560] | 2-norm qwen layout |
+| `norm.weight` | [2560] | final |
+
+**What is ABSENT is the headline.** No `embed_tokens`, no `lm_head`, no Markov head, no confidence
+head. The Idea section's claim — "reuses the **target's own embedding and LM head**; the drafter
+ships only the denoiser trunk" — is **confirmed by the tensor inventory**, not just quoted: the 58
+tensors account for the file to the byte, so there is nowhere for a vocab-sized tensor to hide. At
+537 M params this drafter is **4.4× smaller than DSpark-8b's 2.37 B**, and the entire difference is
+that DSpark ships frozen copies of the target's embed + head (1.24 B, 52% of it) plus the
+Markov/confidence heads.
+
+Config: `block_size=16`, `num_hidden_layers=5`, `hidden 2560 / heads 32:8 / head_dim 128 /
+intermediate 9728 / vocab 151936`, `rope_theta 1e6`, `rms_norm_eps 1e-6`,
+`target_layer_ids=[1,9,17,25,33]` over `num_target_layers=36`, `mask_token_id=151669`.
+
+**f32 fixture:** `scripts/convert_dflash_f32.py` → `~/models/qwen3-4b-dflash-f32` (2,149,714,968 B,
+58 tensors), the 05 precedent (`.bin`/bf16 → f32 safetensors so the Go loader reads one format).
+
+### CONFIRMED forward (`dflash.py` from the checkpoint, MIT, run unmodified)
+
+1. **Context fusion, once per round:** `target_hidden = hidden_norm(fc(concat(h[1], h[9], h[17],
+   h[25], h[33])))`. `extract_context_feature` indexes `hidden_states[layer_id + 1]`, so
+   `hidden_states[0]` is the embedding output and the ids name **layer outputs** — the same +1
+   convention DeepSpec uses, and the off-by-one a Go port loses silently.
+2. **Block:** slot 0 = the last committed token, slots 1..15 = `MASK` (151669).
+   `noise_embedding = target.model.embed_tokens(block_ids)` — the **target's** embedding.
+3. **Trunk:** 5 layers. Each does Q from the block only; `k = cat([k_proj(fused_ctx),
+   k_proj(block)])`, same for v — so the fused context is re-projected per layer (no separate ctx
+   cache in this reference; a `DynamicCache` holds the concatenation and is `crop`ped back to
+   `start` after each round).
+4. **`is_causal = False`, hard-coded in the attention class** — the block is **bidirectional**, same
+   as DSpark. Not truncatable for the same reason.
+5. **RoPE quirk, load-bearing for parity:** `position_embeddings` are built over the whole
+   `[ctx + block]` span; then **q takes `cos[..., -q_len:, :]`** (the block's own positions) while
+   **k takes the full `cos`** (context + block). A port that ropes q at the block's local offset
+   will be subtly wrong rather than obviously wrong.
+6. **Head:** `target.lm_head(trunk_out[:, -15:, :])` → **15 drafted tokens** from a 16-wide block
+   (slot 0 is a pure anchor — `logits_start = 1`, unlike DSpark's 0). Verify is 16 wide.
+7. **One pass. No iterative denoising at inference** — despite "block diffusion", `spec_generate`
+   calls the trunk exactly once per round. The Idea section's "one parallel pass" is literal.
+
+### The fixture, and what it already says
+
+`testdata/dflash_qwen3_4b_golden.json` (committed; weights are not) — `scripts/pin_dflash_trace.py`,
+f32, greedy, two fixed prompts recorded verbatim. Per trace: prompt ids, the anchor, the 16 block
+ids, per-tensor stats (`shape/mean/std/min/max/first8`) for `fused_context`, `block_in`,
+`layer_out.{0..4}` and `trunk_out`, plus the 15 drafted ids, top-8 logits per drafted position, and
+the first 64 raw logits at position 0. **The harness was cross-checked against the reference's own
+`spec_generate` call path (cache + `is_causal=False`): drafted ids byte-identical**, so the dump is
+the reference's behaviour and not an approximation of it.
+
+**Two prompts, because one would have lied.** Accepted length of the dumped block, measured against
+the target's own next-token predictions:
+
+| trace | ctx | accepted | tok/verify |
+|---|---|---|---|
+| `raw` — `"The capital of France is"`, bare completion | 5 | **0 / 15** | 1.0 |
+| `chat` — Qwen chat template, "write a Fibonacci function" | 23 | **10 / 15** | **11.0** |
+
+A spike run only on the bare prompt would have concluded DFlash does not transfer. It is the
+[quant-eval lesson](../../docs/parity-coverage-policy.md) in the acceptance domain: a raw completion
+prompt on an instruction-tuned target is off-distribution, and here it costs *everything*, not a
+little. Both traces are kept for exactly that reason.
+
+**Treat the 11.0 as a smoke signal, not kill-gate 2.** One prompt, one round, their implementation,
+f32 on CPU. But it is 3.7× the ≥3.0 bar and above DFlash's own published ~6.0 on code/math, on the
+traffic class 06 says we care about — which is the first evidence in this program that the published
+numbers might transfer. End-to-end smoke through `spec_generate` (64 tokens, chat prompt) produced
+correct, coherent Python.
 
 ## Validation plan
 

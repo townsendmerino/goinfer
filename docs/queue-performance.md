@@ -1133,9 +1133,13 @@ which is where the guesses point and precisely why they are not written down as 
 numbers rather than one. Until then the allocation stays.
 
 **P10 · DSpark / DFlash block drafters — the α lever 05/06 named, arriving pretrained** — `linux`
-next (resident CUDA go/no-go), then `mac`, **increment 1 DONE 2026-08-15; increment 2 IN FLIGHT
-2026-08-15 on `linux-62gb` (protocol extraction done + written up; the checkpoint-dump half is
-BLOCKED on the license question — see below and the design page)**. Design page:
+next (resident CUDA go/no-go), then `mac`, **increments 1–2 DONE 2026-08-15 (`linux-62gb`)**.
+Increment 2 landed against **DFlash, not DSpark** — every DSpark drafter checkpoint is unlicensed
+(see the correction below), so on Francis's call it pivoted to `z-lab/Qwen3-4B-DFlash-b16` (MIT).
+Fixtures + f32 conversion + CONFIRMED shapes are in the design page; **first acceptance signal:
+10/15 accepted (11 tok/verify) on a chat-templated code prompt, 0/15 on a bare completion prompt**
+— a smoke reading, not kill-gate 2, but 3.7× the ≥3.0 bar. **Increments 3–4 should follow DFlash**
+unless the DSpark license resolves. Design page:
 [`docs/spec/08-dspark-dflash.md`](spec/08-dspark-dflash.md) — the context lives there; this entry is
 the claimable work.
 
