@@ -1242,3 +1242,31 @@ Both errors were in the *comparison*, not the measurement — gate 1 green, harn
 mutation-tested, every individual number reproducible. That is now the fourth and fifth
 instance in P10 of the same class: **for a speculative drafter, the apparatus around the number
 is where the mistakes live.**
+
+### gpt-oss is blocked on a missing chat template, not on the seam
+
+The capture seam works for `gpt-oss` and its drafter loads and runs the shared trunk. It still
+cannot be acceptance-measured, for an unrelated reason worth recording so it is not rediscovered:
+**goinfer has no harmony template.**
+
+- The HF checkpoint ships **no** `chat_template` in `tokenizer_config.json` (length 0).
+- The MXFP4 GGUF ships a **16.7 KB** harmony Jinja template.
+- The harmony markers `<|start|>`, `<|channel|>`, `<|message|>`, `<|end|>`, `<|return|>` are all
+  present in the vocab, and none of them is a marker `chat.Detect` tests.
+
+So `Detect` returns `ErrUnknownTemplate` by both routes — template-string fingerprint and
+bare-checkpoint token heuristic — and the harness's hard error fires. **This is the correct
+outcome**: the measurement stops instead of producing a number.
+
+**Checked rather than assumed, because the near-miss is real:** `Detect`'s first branch matches
+`<|channel>`, and harmony's marker is `<|channel|>`. Those differ by one character in a position
+that makes `strings.Contains` return false — `<|channel>` needs `l` followed by `>`, harmony has
+`l` followed by `|`. Verified against the actual 16.7 KB template: **no branch matches**, so
+gpt-oss is not silently rendered as Gemma-4. Had it matched, the harness would have measured a
+gpt-oss target through Gemma-4's turn markers and printed an acceptance figure for it.
+
+Unblocking gpt-oss means writing a `Harmony()` template in `chat/templates.go` — contained, but
+a genuinely new chat format with channel semantics (analysis vs final), and a wrong one corrupts
+the measurement in exactly the silent way the hard error exists to prevent. **Recorded as a
+decision, not done here:** it is chat-template work, not block-drafting work, and P10 has no
+claim that depends on it.
