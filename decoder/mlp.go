@@ -336,8 +336,12 @@ func nonGatedMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend) 
 		for i := range mid {
 			mid[i] = geluTanh(mid[i])
 		}
+	case ActGelu: // HF's "gelu" — the exact erf function, NOT a spelling of gelu_new
+		for i := range mid {
+			mid[i] = geluErf(mid[i])
+		}
 	default:
-		return nil, fmt.Errorf("decoder: unsupported non-gated activation %d (have gelu-tanh)", arch.Act)
+		return nil, fmt.Errorf("decoder: unsupported non-gated activation %d (have gelu-tanh, gelu)", arch.Act)
 	}
 	out := make([]float32, hidden)
 	matmul(be, &lw.DownProj, mid, out, 1)

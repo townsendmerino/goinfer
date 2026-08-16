@@ -526,6 +526,19 @@ func mistralArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 // layout + fused projections need a dedicated loader (buildGPT2Weights), so
 // this returns the gpt2TensorSchema as a marker; the schema's field names are
 // unused.
+// gpt2Act maps GPT-2's activation_function to the ActKind that actually implements it.
+// "gelu_new" (and the empty default, which is GPT-2's own) is the TANH approximation;
+// "gelu" is the exact erf function. validateGPT2 accepts both, and before this they both
+// ran geluTanh — so a checkpoint declaring the exact function silently got the
+// approximation. The two differ by up to 4.73e-4, small enough to pass unnoticed and
+// still wrong. Every shipping GPT-2 config declares gelu_new, so nothing in tree moves.
+func gpt2Act(name string) ActKind {
+	if name == "gelu" {
+		return ActGelu
+	}
+	return ActGeluTanh
+}
+
 func gpt2Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err := cfg.validateGPT2(); err != nil {
 		return nil, nil, err
@@ -554,7 +567,7 @@ func gpt2Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		Norm:            NormLayer,
 		NormEps:         cfg.LayerNormEpsilon,
 		NormPlacement:   NormPre2, // ln_1 pre-attn, ln_2 pre-MLP
-		Act:             ActGeluTanh,
+		Act:             gpt2Act(cfg.ActivationFunction),
 		NonGatedMLP:     true,
 		QKVBias:         true,
 		OutBias:         true,

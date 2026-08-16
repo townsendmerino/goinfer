@@ -345,6 +345,13 @@ const (
 	ActGeluTanh ActKind = iota
 	ActSiLU
 	ActReLU2 // ReLU-squared (relu(x)²) — Nemotron-H's non-gated MLP
+	// ActGelu is the EXACT erf GELU — HF's "gelu", a different function from
+	// "gelu_new"/"gelu_pytorch_tanh" (ActGeluTanh) rather than a spelling of it.
+	// Appended deliberately: GatedActResident passes this ordinal straight to a CUDA
+	// kernel (0 = GELU-tanh, 1 = SiLU), so the existing values cannot be renumbered.
+	// Only non-gated archs reach it today, and GatedActResident is documented as
+	// meaningless for those.
+	ActGelu
 )
 
 // String renders the activation for the capability matrix / logs. The gated vs
@@ -357,6 +364,8 @@ func (a ActKind) String() string {
 		return "SiLU"
 	case ActReLU2:
 		return "ReLU²"
+	case ActGelu:
+		return "GELU"
 	default:
 		return "unknown"
 	}

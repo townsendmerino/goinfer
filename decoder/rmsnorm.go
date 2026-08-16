@@ -89,6 +89,22 @@ func relu2(x float32) float32 {
 	return x * x
 }
 
+// geluErf is the EXACT GELU — x·Φ(x) with the true Gaussian CDF, HF's "gelu"
+// (ACT2FN["gelu"] = GELUActivation). It is a DIFFERENT FUNCTION from geluTanh, not a
+// spelling of it: they differ by up to 4.73e-4 (worst at x ≈ -2.7).
+//
+// That gap is small — well under int8 quantization error — which is exactly why the
+// conflation survived. goinfer previously accepted `activation_function: "gelu"` for GPT-2
+// and ran geluTanh regardless, so a checkpoint asking for the exact function silently got
+// the approximation. aikit hit the mirror image of this on its encoder side (three tanh
+// names routed through erf) and fixed it in v1.19.0; this is the decoder-side counterpart.
+//
+// In float64 for the same reason geluTanh is: parity with the reference implementation.
+func geluErf(x float32) float32 {
+	v := float64(x)
+	return float32(0.5 * v * (1 + math.Erf(v/math.Sqrt2)))
+}
+
 // geluTanh is the tanh-approximate GELU Gemma's GeGLU MLP uses
 // ("gelu_pytorch_tanh"). Provided here so mlp.go (stub) and tests have the
 // activation ready.
