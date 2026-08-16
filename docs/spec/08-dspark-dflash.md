@@ -1338,3 +1338,31 @@ inspection (prompt id-exactness, embedding scale, LM-head handling, seam placeme
 remaining evidence — degenerate output with *sane-magnitude* inputs — did not point anywhere on
 its own. Changing exactly one variable and re-running a 30-second diagnostic settled it, where
 more inspection would not have.
+
+### Gemma-4 on a sound target: **4.80 tok/verify** — three families, all over the bar
+
+With the q4_0 confound removed (target = the bf16 safetensors, quantized to int8 the same way
+both Qwen3 pairings were), the Gemma-4 pairing measures **4.80 tok/verify** — mean accepted
+3.77/15 over 104 rounds, 499 tokens. It clears the ≥3.0 bar.
+
+That is the *informative* direction for this pairing. It has no gate-1 reference dump, so a low
+number would have been ambiguous between "the drafter does not transfer" and "our path is
+wrong"; a number this far above the bar can only be produced by a working path.
+
+| pairing | trunk / target layers | depth ratio | **tok/verify @160** |
+|---|---|---|---|
+| Qwen3.6-35B-A3B | 6 / 40 | 0.150 | **6.78** |
+| Qwen3-4B | 5 / 36 | 0.139 | **6.14** |
+| Gemma-4-26B-A4B | 5 / 30 | 0.167 | **4.80** |
+
+**Three model families, three architectures, one shared trunk, every one over the bar.** Probe B
+asked whether acceptance was a Qwen3-4B artifact. It is not, and the answer no longer rests on a
+single second pairing that happened to share the 4B's publisher and tokenizer family.
+
+Gemma is the weakest of the three and also has the **highest** depth ratio, i.e. the most
+expensive drafter relative to its target — so it is the worst pairing on both axes at once.
+Whether those two facts are connected is **not** established here: probe A tied depth ratio to
+drafter *cost*, and nothing yet ties it to *acceptance*. Three points across three architectures
+cannot separate that from ordinary per-family variation, and the gpt-oss pairing — the extreme
+at 8/24 = 0.333 — is the one that would test it, which is a further reason its harmony template
+is worth having.
