@@ -31,6 +31,14 @@ demo/chat/dist/
 !testdata/cohere-tiny/model.safetensors
 !testdata/cohere2-tiny/
 !testdata/cohere2-tiny/model.safetensors
+
+# EXCEPTION: the DFlash reference trace (2.6 MB, scripts/pin_dflash_trace.py). It is the
+# upstream implementation's OWN per-layer output, not weights — the oracle P10's kill-gate 1
+# compares against. Regenerating it costs ~24 GB of downloads plus a torch run, so it is
+# committed. NOTE this does NOT make the gate CI-runnable: TestDFlash_referenceParity also
+# needs the drafter weights (GOINFER_DFLASH_F32, 2.1 GB) and skips without them, so it is
+# T3-in-practice — labelled as such per docs/parity-coverage-policy.md.
+!testdata/dflash_qwen3_4b_ref.safetensors
 # EXCEPTION: glm-tiny.gguf is an 812 KB SYNTHETIC GGUF — scripts/pin_glm_tiny.py builds a
 # randomly-initialized Glm4MoeForCausalLM from a config (vocab 256, hidden 64, 3 layers; no real
 # GLM weights are copied, so no licensing question), and scripts/pin_glm_tiny_gguf.py converts it.

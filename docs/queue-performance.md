@@ -1138,8 +1138,13 @@ Increment 2 landed against **DFlash, not DSpark** — every DSpark drafter check
 (see the correction below), so on Francis's call it pivoted to `z-lab/Qwen3-4B-DFlash-b16` (MIT).
 Fixtures + f32 conversion + CONFIRMED shapes are in the design page; **first acceptance signal:
 10/15 accepted (11 tok/verify) on a chat-templated code prompt, 0/15 on a bare completion prompt**
-— a smoke reading, not kill-gate 2, but 3.7× the ≥3.0 bar. **Increments 3–4 should follow DFlash**
-unless the DSpark license resolves. Design page:
+— a smoke reading, not kill-gate 2, but 3.7× the ≥3.0 bar. **Increments 3–4 follow DFlash**
+unless the DSpark license resolves. **Increment 3 HALF DONE 2026-08-15: the Go trunk
+(`decoder/dflash.go`) + loader are in and KILL-GATE 1 IS CLEARED** — cosine 1.00000000 at
+every layer and at the trunk output on both traces, and the gate is falsifiable (4 wiring
+mutations all rejected; see the design page). Remaining in 3: the logit half of gate 1
+(needs the target's embed/lm_head via `ForwardCapture`) and the `Drafter` wiring into the
+existing verify. Design page:
 [`docs/spec/08-dspark-dflash.md`](spec/08-dspark-dflash.md) — the context lives there; this entry is
 the claimable work.
 

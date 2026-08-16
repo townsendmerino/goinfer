@@ -142,6 +142,14 @@
       "candidates": ["$MODELS/nemotron-hf"],
       "used_by": ["TestNemotronReal_oracle"],
       "note": "The bf16 SAFETENSORS release, NOT the Q8_0 GGUF the coherence gate uses (GOINFER_NEMOTRON_GGUF, still unregistered)."
+    },
+    {
+      "env": "GOINFER_DFLASH_F32",
+      "kind": "dir",
+      "members": ["config.json", "model.safetensors"],
+      "candidates": ["$MODELS/qwen3-4b-dflash-f32"],
+      "used_by": ["TestDFlash_referenceParity"],
+      "note": "The f32 CONVERSION of z-lab/Qwen3-4B-DFlash-b16 (MIT), produced by scripts/convert_dflash_f32.py from $MODELS/qwen3-4b-dflash. The parity gate runs at f32 because the reference dump is f32; the bf16 original is not interchangeable here."
     }
   ]
 }

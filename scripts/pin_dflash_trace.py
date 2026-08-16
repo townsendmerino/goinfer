@@ -44,12 +44,14 @@ if "datasets" not in sys.modules:
         setattr(_stub, _name, None)
     sys.modules["datasets"] = _stub
 
+from safetensors.torch import save_file  # noqa: E402
 from transformers import AutoModel, AutoModelForCausalLM, AutoTokenizer  # noqa: E402
 
 DRAFT = os.path.expanduser("~/models/qwen3-4b-dflash")
 TARGET = os.path.expanduser("~/models/qwen3-4b")
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "..", "testdata", "dflash_qwen3_4b_golden.json")
+REF = os.path.join(HERE, "..", "testdata", "dflash_qwen3_4b_ref.safetensors")
 PROMPT = "The capital of France is"
 # The raw prompt above is deliberately off-distribution for an instruction-tuned target;
 # the chat-templated one is what real traffic looks like. Both are dumped, because a
@@ -126,7 +128,16 @@ def trace_one(tok, target, draft, ids, name):
     print(f"[{name}] ctx={ids.shape[1]} anchor={first} ({g['anchor_text']!r})")
     print(f"[{name}] drafted={g['drafted_ids']}")
     print(f"[{name}] drafted_text={g['drafted_text']!r}")
-    return g
+
+    # Full tensors for the Go parity gate. The JSON carries stats only (it stays
+    # human-readable and diffable); the Go forward needs the actual INPUTS to run at all
+    # — fused_context and block_in — and the per-layer outputs to localize a mismatch to
+    # a layer instead of reporting "the logits are wrong". ~1 MB per trace, f32.
+    ten = {f"{name}/fused_context": fused[0], f"{name}/block_in": block_in[0],
+           f"{name}/trunk_out": trunk[0]}
+    for i, t in enumerate(layer_outs):
+        ten[f"{name}/layer_out.{i}"] = t[0]
+    return g, {k: v.contiguous() for k, v in ten.items()}
 
 
 def main():
@@ -148,11 +159,15 @@ def main():
         note=("DFlash one-round reference traces (z-lab/Qwen3-4B-DFlash-b16 + Qwen/Qwen3-4B, "
               "f32, greedy) dumped through the checkpoint's own MIT reference implementation"),
         drafter="z-lab/Qwen3-4B-DFlash-b16", target="Qwen/Qwen3-4B", dtype="float32",
-        traces=[
-            trace_one(tok, target, draft, raw_ids, "raw"),
-            trace_one(tok, target, draft, chat_ids, "chat"),
-        ],
+        traces=[],
     )
+    tensors = {}
+    for ids, nm in ((raw_ids, "raw"), (chat_ids, "chat")):
+        g, ten = trace_one(tok, target, draft, ids, nm)
+        out["traces"].append(g)
+        tensors.update(ten)
+    save_file(tensors, REF, metadata={"format": "pt"})
+    print(f"saved {REF} ({len(tensors)} tensors)")
     with open(OUT, "w") as f:
         json.dump(out, f, indent=1)
         f.write("\n")

@@ -124,6 +124,26 @@ and we import no Python either way. Record the decision in the PR as 05 did.
 1. **Parity gate.** The Go drafter forward matches the upstream reference on dumped
    fixtures (logit cosine + argmax at drafted positions). Not cleared → do not measure
    acceptance; debug or stop. (This is the gate 05 cleared too late.)
+   **CLEARED for the DFlash trunk, 2026-08-15 (`linux-62gb`)** — `TestDFlash_referenceParity`
+   over `decoder/dflash.go`, fed the reference's own `fused_context`/`block_in`:
+
+   | trace | ctx | layer_out.0–4 cosine | trunk_out cosine | maxAbs |
+   |---|---|---|---|---|
+   | `raw` | 5 | 1.00000000 ×5 | **1.00000000** | 5.2e-05 |
+   | `chat` | 23 | 1.00000000 ×5 | **1.00000000** | 3.1e-05 |
+
+   **And the gate was shown to FAIL**, per this repo's "a gate must be able to run, and able
+   to fail" rule — a clean first-run cosine of 1.0 is exactly when that rule earns its keep.
+   Four mutations, each one of the wiring details identified as a silent-divergence risk,
+   all correctly rejected: **causal block** instead of bidirectional; **norming the fused
+   context** with `input_layernorm` the way the block is (the natural-looking wrong port);
+   **q roped at the block-local position** instead of the absolute one; **dropping the
+   per-head `k_norm`**. The unmutated forward passes. So the 1.0 is a measurement, not a
+   tautology.
+
+   Still ahead for gate 1's second half: the **logit** comparison at drafted positions
+   (needs the target's `lm_head`, i.e. the end-to-end path through `ForwardCapture`) — the
+   trunk is proven, the two ends it borrows from the target are not yet wired.
 2. **Acceptance gate.** Measured tok/verify on the 00-core suites (`chat` / `code` /
    constrained), trace-fit α̂ per 06. Bar: **≥3.0 tok/verify** on the paired target on
    at least one suite — anything near EAGLE's 1.6 means the protocol is wrong (back to
@@ -210,7 +230,16 @@ and we import no Python either way. Record the decision in the PR as 05 did.
    rest of the program.
 5. **DFlash forward** (the new bidirectional block pass) + constrained-traffic
    measurement vs the 01/02 router baseline (gates 2–4).
-6. **Metal 12B run** (`mac`), only if 4 clears.
+6. **Metal run** (`mac`), only if 4 clears. **RE-TARGET (2026-08-15): not the 12B.** Every
+   Gemma-4-12B drafter is unlicensed — `z-lab/gemma4-12B-it-DFlash`,
+   `deepseek-ai/dspark_gemma4_12b_block7` and `deepseek-ai/dflash_gemma4_12b_block7` are all bare
+   repos (no license, no README, no LICENSE), verified per-repo. But z-lab ships **apache-2.0,
+   documented** drafters for other Gemma-4 targets that the increment-1 sweep did not reach:
+   **`z-lab/gemma-4-26B-A4B-it-DFlash`** and `z-lab/gemma-4-31B-it-DFlash`. Note the naming split
+   increment 1 flagged is exactly the licensing split: the unlicensed one is `gemma4-…`, the
+   licensed ones are `gemma-4-…`. 26B-A4B is a model this repo already runs resident, so it is the
+   natural mac target. (Same org also ships an apache-2.0 **`PARO`** family — 5 repos, a method
+   neither this page nor the audit knows about. Unexamined thread, recorded so it is not lost.)
 
 ## CONFIRMED architecture (`deepseek-ai/dspark_qwen3_8b_block7`, derived 2026-08-15)
 
