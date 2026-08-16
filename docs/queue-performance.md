@@ -1133,7 +1133,9 @@ which is where the guesses point and precisely why they are not written down as 
 numbers rather than one. Until then the allocation stays.
 
 **P10 · DSpark / DFlash block drafters — the α lever 05/06 named, arriving pretrained** — `linux`
-next (resident CUDA go/no-go), then `mac`, **increment 1 DONE 2026-08-15**. Design page:
+next (resident CUDA go/no-go), then `mac`, **increment 1 DONE 2026-08-15; increment 2 IN FLIGHT
+2026-08-15 on `linux-62gb` (protocol extraction done + written up; the checkpoint-dump half is
+BLOCKED on the license question — see below and the design page)**. Design page:
 [`docs/spec/08-dspark-dflash.md`](spec/08-dspark-dflash.md) — the context lives there; this entry is
 the claimable work.
 
@@ -1144,6 +1146,19 @@ originally scoped (deepseek-ai `dspark_qwen3_{8b,14b}_block7` + full-size `DeepS
 all MIT; z-lab ~20 more DFlash targets) and a first-party NVIDIA Nemotron pair the doc didn't know
 about. Full table and detail in the design page. **Resolve the license gap on the 4 originally-named
 checkpoints before increment 2 touches them** — increment 2 is next, `linux`.
+
+> **CORRECTION (2026-08-15, increment 2).** The clause above — "deepseek-ai
+> `dspark_qwen3_{8b,14b}_block7` + full-size `DeepSeek-V4-*-DSpark`, **all MIT**" — is **wrong**, and
+> it is the sentence that sent increment 2 at the 8b as a "licensed" checkpoint. Re-checked per-repo
+> against the HF detail endpoint: **`dspark_qwen3_{4b,8b,14b}_block7` and `dspark_gemma4_12b_block7`
+> all carry NO license and ship exactly three files** (`.gitattributes`, `config.json`,
+> `model.safetensors`) — no `LICENSE`, no `README`. Only `DeepSeek-V4-{Flash,Pro}-DSpark` are MIT
+> with a `LICENSE` file, and those are **166.9 GB / 892.8 GB full-size V4 models**, not standalone
+> drafters. **So there is no licensed, feasible DSpark drafter checkpoint** — the "MIT" attached to a
+> list whose other members were not. The list endpoint reports `license=None` even for the two that
+> ARE MIT, so an enumeration pass reads them all the same way; only the per-repo detail endpoint
+> separates them. Increment 2 therefore downloaded no weights. See the design page for what the
+> protocol extraction achieved without them, and the decision now owed.
 
 Two pretrained lossless block drafters (DeepSeek **DSpark**: ~5-layer backbone over our
 `ForwardCapture` seam + rank-256 Markov head + confidence head, 7-token blocks; z-lab **DFlash**:
