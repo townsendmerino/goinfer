@@ -1366,3 +1366,38 @@ drafter *cost*, and nothing yet ties it to *acceptance*. Three points across thr
 cannot separate that from ordinary per-family variation, and the gpt-oss pairing — the extreme
 at 8/24 = 0.333 — is the one that would test it, which is a further reason its harmony template
 is worth having.
+
+### Does 4-bit crater block drafting? **goinfer's int4 does not** — increment 4's economics hold
+
+The q4_0 collapse raised a question with consequences past P10: the resident CUDA path is
+**W4A8**, and increment 4's whole economic case is a resident *quantized* target. One 4-bit data
+point showing total collapse is not something to design around, nor to dismiss.
+
+Run on the **Qwen3-4B pairing** specifically — the only one with a gate-1 reference dump behind
+it, so the result is attributable to quantization rather than ambiguous the way Gemma's first
+number was. One variable changed:
+
+| target quantization | tok/verify @160 | mean accepted | rounds / tokens |
+|---|---|---|---|
+| **q4_0** (llama.cpp legacy 4-bit) | **1.01** — collapse | 0.00 | 477 / 480 |
+| **goinfer int4** (W4A8) | **6.45** | 5.41 | 76 / 490 |
+| **goinfer int8** (from bf16) | **6.14** | 5.10 | 80 / 491 |
+
+**Two 4-bit formats, opposite outcomes.** goinfer's int4 preserves acceptance completely;
+llama.cpp's q4_0 destroys it. That is the measured justification for having refused to
+generalize from the q4_0 result by bit-width — these are different quantizers that happen to
+share a width, and goinfer's already measured 92.5% agreement against f32 on nemotron where
+q4_0 evidently would not.
+
+**Do not read 6.45 > 6.14 as "int4 is better."** Different quantization yields a different token
+stream (76 rounds / 490 tokens vs 80 / 491), so the two runs cover different content. The
+supportable claim is **int4 is not worse**, not that it improves anything.
+
+`int4mix` was not measurable on this pairing: it is **GGUF-only** and the gate-1 target is
+safetensors. Recorded rather than worked around, since substituting a different target to
+exercise the flag would have given up the one property that made this measurement
+interpretable.
+
+**Consequence:** the resident W4A8 target is cleared for block drafting, and increment 4
+proceeds on the economics it was designed with. The scope correction stands unchanged —
+*quantizer quality*, not bit-width, is what a block drafter is sensitive to.
