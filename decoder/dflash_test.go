@@ -110,13 +110,16 @@ func TestDFlash_referenceParity(t *testing.T) {
 			blockIn := readRows(t, ref, tr.Name+"/block_in", tr.BlockSize, d.hidden)
 
 			// Run the trunk layer by layer so a mismatch names its layer. Mirrors
-			// DraftBlock, which is what production calls.
+			// DraftBlockCtx, which is what production calls — including the context
+			// cache, so the cached path is what the parity gate actually proves.
+			cctx := d.NewContext()
+			d.ExtendContext(be, cctx, fused)
 			h := make([][]float32, len(blockIn))
 			for i, row := range blockIn {
 				h[i] = append([]float32(nil), row...)
 			}
 			for li := range d.layers {
-				d.layer(be, &d.layers[li], fused, h)
+				d.layer(be, &d.layers[li], cctx.k[li], cctx.v[li], h)
 				want := readRows(t, ref, tr.Name+"/layer_out."+strconv.Itoa(li), tr.BlockSize, d.hidden)
 				cos, maxAbs := compareRows(h, want)
 				t.Logf("layer_out.%d: cosine %.8f maxAbs %.3e", li, cos, maxAbs)

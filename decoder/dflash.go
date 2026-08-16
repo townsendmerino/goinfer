@@ -233,11 +233,71 @@ func (d *DFlashDrafter) FuseContext(be Backend, ctxCat [][]float32) ([][]float32
 	return fused, nil
 }
 
-// DraftBlock runs the trunk over one block and returns its final-normed hidden states,
-// [blockSize][hidden]. blockIn is the TARGET's embedding of the block's token ids (slot 0
-// the anchor, the rest MASK); fused is FuseContext's output for the committed context.
-// The caller applies the target's LM head to rows 1.. to get the drafted logits.
-func (d *DFlashDrafter) DraftBlock(be Backend, fused, blockIn [][]float32) ([][]float32, error) {
+// DFlashContext caches the committed context's PROJECTED K/V per layer — K already
+// RoPE'd at its absolute position, V neither roped nor normed.
+//
+// It exists because the context is projected once per position and then read by every
+// subsequent round: without it, each round re-projects the whole context in every layer,
+// which is O(ctx x layers) of pure repeat work per round and made the CPU trunk scale
+// 1.6 s/block at ctx 64 to 12.9 s at ctx 2048 (measured, BenchmarkDFlashTrunk). Both
+// reference implementations cache it — mlx-dspark's CtxCache and dflash.py's DynamicCache
+// — so this matches them rather than inventing a shortcut.
+//
+// Append-only, plus TruncateTo for the speculative rollback: the drafter's context only
+// ever grows with COMMITTED tokens, and a rejected draft's positions must come back off.
+type DFlashContext struct {
+	k, v [][][]float32 // [layer][pos][nKV*headDim]
+}
+
+// NewContext returns an empty per-layer context cache for this drafter.
+func (d *DFlashDrafter) NewContext() *DFlashContext {
+	return &DFlashContext{k: make([][][]float32, len(d.layers)), v: make([][][]float32, len(d.layers))}
+}
+
+// Len is the number of committed context positions cached.
+func (c *DFlashContext) Len() int {
+	if len(c.k) == 0 {
+		return 0
+	}
+	return len(c.k[0])
+}
+
+// TruncateTo drops cached positions at index >= n — the rollback after a partial accept.
+// The retained K was roped at its absolute position, so it stays valid after the trim.
+func (c *DFlashContext) TruncateTo(n int) {
+	for l := range c.k {
+		if n < len(c.k[l]) {
+			c.k[l] = c.k[l][:n]
+			c.v[l] = c.v[l][:n]
+		}
+	}
+}
+
+// ExtendContext projects newly committed positions into the cache. fusedNew is
+// FuseContext's output for those positions ONLY; they are assumed to sit immediately
+// after the positions already cached, which is what fixes their RoPE offsets.
+func (d *DFlashDrafter) ExtendContext(be Backend, ctx *DFlashContext, fusedNew [][]float32) {
+	start := ctx.Len()
+	kvDim := d.nKV * d.headDim
+	for li := range d.layers {
+		l := &d.layers[li]
+		for i, row := range fusedNew {
+			k := make([]float32, kvDim)
+			v := make([]float32, kvDim)
+			matmul(be, &l.k, row, k, 1)
+			matmul(be, &l.v, row, v, 1)
+			rmsNorm(k, l.kNorm, d.nKV, d.headDim, d.normEps, false)
+			applyRoPE(k, d.nKV, d.headDim, start+i, d.invFreq, 1)
+			ctx.k[li] = append(ctx.k[li], k)
+			ctx.v[li] = append(ctx.v[li], v)
+		}
+	}
+}
+
+// DraftBlockCtx runs the trunk over one block against a cached context and returns the
+// final-normed hidden states, [blockSize][hidden]. This is the form production should
+// use; DraftBlock is the uncached convenience wrapper.
+func (d *DFlashDrafter) DraftBlockCtx(be Backend, ctx *DFlashContext, blockIn [][]float32) ([][]float32, error) {
 	if len(blockIn) != d.blockSize {
 		return nil, fmt.Errorf("dflash: block is %d rows, want block_size %d", len(blockIn), d.blockSize)
 	}
@@ -249,7 +309,7 @@ func (d *DFlashDrafter) DraftBlock(be Backend, fused, blockIn [][]float32) ([][]
 		h[i] = append([]float32(nil), row...)
 	}
 	for i := range d.layers {
-		d.layer(be, &d.layers[i], fused, h)
+		d.layer(be, &d.layers[i], ctx.k[i], ctx.v[i], h)
 	}
 	out := make([][]float32, len(h))
 	for i, row := range h {
@@ -258,6 +318,20 @@ func (d *DFlashDrafter) DraftBlock(be Backend, fused, blockIn [][]float32) ([][]
 		out[i] = r
 	}
 	return out, nil
+}
+
+// DraftBlock runs the trunk over one block and returns its final-normed hidden states,
+// [blockSize][hidden]. blockIn is the TARGET's embedding of the block's token ids (slot 0
+// the anchor, the rest MASK); fused is FuseContext's output for the committed context.
+// The caller applies the target's LM head to rows 1.. to get the drafted logits.
+//
+// Uncached: it projects the whole context every call. Convenient for a one-shot round (and
+// for the parity gate, which is handed the reference's fused context directly), but a
+// generation loop should hold a DFlashContext and call DraftBlockCtx.
+func (d *DFlashDrafter) DraftBlock(be Backend, fused, blockIn [][]float32) ([][]float32, error) {
+	ctx := d.NewContext()
+	d.ExtendContext(be, ctx, fused)
+	return d.DraftBlockCtx(be, ctx, blockIn)
 }
 
 // DrafterHeadLogits applies the TARGET's LM head to one already-normed hidden row and
@@ -311,13 +385,13 @@ func (m *Model) DrafterEmbedBlock(ids []int) [][]float32 {
 // layer runs one trunk layer in place over the block rows.
 //
 // The asymmetry worth naming: `input_layernorm` normalizes the BLOCK only. The context's
-// K/V are projected from the fused context RAW — the reference passes `target_hidden`
-// straight into k_proj/v_proj while only `hidden_states` goes through the norm. Norming
-// both would be the natural-looking port and would be wrong.
-func (d *DFlashDrafter) layer(be Backend, l *dflashLayer, fused, h [][]float32) {
+// K/V are projected from the fused context RAW (in ExtendContext) — the reference passes
+// `target_hidden` straight into k_proj/v_proj while only `hidden_states` goes through the
+// norm. Norming both would be the natural-looking port and would be wrong.
+func (d *DFlashDrafter) layer(be Backend, l *dflashLayer, ctxK, ctxV [][]float32, h [][]float32) {
 	hid, hd := d.hidden, d.headDim
 	qDim, kvDim := d.nHeads*hd, d.nKV*hd
-	nBlk, nCtx := len(h), len(fused)
+	nBlk, nCtx := len(h), len(ctxK)
 	nKeys := nCtx + nBlk
 
 	// Block rows, normed, are the attention input for Q and for the block's own K/V.
@@ -328,21 +402,19 @@ func (d *DFlashDrafter) layer(be Backend, l *dflashLayer, fused, h [][]float32) 
 		xb[i] = x
 	}
 
-	// Keys/values: context first (from the RAW fused rows), then the block. RoPE positions
-	// are ABSOLUTE over [context ‖ block], which is what makes q's positions start at nCtx.
+	// Keys/values: the context's come straight from the cache (projected and roped once,
+	// when those positions were committed); only the BLOCK's are computed here. RoPE
+	// positions are ABSOLUTE over [context ‖ block], which is what makes the block's start
+	// at nCtx and q's likewise.
 	keys := make([][]float32, nKeys)
 	vals := make([][]float32, nKeys)
-	for j := range nKeys {
-		var src []float32
-		if j < nCtx {
-			src = fused[j]
-		} else {
-			src = xb[j-nCtx]
-		}
+	copy(keys, ctxK)
+	copy(vals, ctxV)
+	for j := nCtx; j < nKeys; j++ {
 		k := make([]float32, kvDim)
 		v := make([]float32, kvDim)
-		matmul(be, &l.k, src, k, 1)
-		matmul(be, &l.v, src, v, 1)
+		matmul(be, &l.k, xb[j-nCtx], k, 1)
+		matmul(be, &l.v, xb[j-nCtx], v, 1)
 		rmsNorm(k, l.kNorm, d.nKV, hd, d.normEps, false) // per-head, Qwen3 style
 		applyRoPE(k, d.nKV, hd, j, d.invFreq, 1)         // V is NOT roped and NOT normed
 		keys[j], vals[j] = k, v

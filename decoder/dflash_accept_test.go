@@ -254,3 +254,62 @@ func dflashMeanStd(xs []int) (mean, std float64) {
 
 var _ = fmt.Sprintf
 var _ = dflashMeanStd
+
+// BenchmarkDFlashTrunk times ONE block draft — the cost that decides increment 4's
+// architecture. If the CPU trunk is cheap relative to a resident GPU target step, the
+// target can go resident while the drafter stays on CPU. If it is not, the drafter has to
+// be ported to the GPU too, and increment 4 is a much bigger build.
+//
+// This is the question Lever 2 already answered once the hard way: the DRAFT was the wall,
+// not the verify — a CPU draft against a GPU target measured 0.11×. Measure before
+// building, not after.
+//
+//	GOINFER_HEAVY_TESTS=1 go test -tags realckpt ./decoder/ -run '^$' -bench DFlashTrunk -benchtime 10x
+func BenchmarkDFlashTrunk(b *testing.B) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
+		b.Skip("heavy: set GOINFER_HEAVY_TESTS=1")
+	}
+	ddir, err := lookupAsset("GOINFER_DFLASH_F32")
+	if err != nil {
+		b.Skip(err)
+	}
+	d, err := LoadDFlashDrafter(ddir)
+	if err != nil {
+		b.Fatalf("load: %v", err)
+	}
+	defer d.Close()
+	be := &cpuBackend{}
+
+	for _, ctxLen := range []int{64, 512, 2048} {
+		b.Run(fmt.Sprintf("ctx%d", ctxLen), func(b *testing.B) {
+			fused := make([][]float32, ctxLen)
+			for i := range fused {
+				fused[i] = make([]float32, d.hidden)
+				for j := range fused[i] {
+					fused[i][j] = float32((i*31+j*7)%97) / 97
+				}
+			}
+			blockIn := make([][]float32, d.BlockSize())
+			for i := range blockIn {
+				blockIn[i] = make([]float32, d.hidden)
+				for j := range blockIn[i] {
+					blockIn[i][j] = float32((i*13+j*3)%89) / 89
+				}
+			}
+			// The per-ROUND cost a generation loop pays: the context is projected once
+			// when its positions commit (ExtendContext, amortized over the whole run),
+			// and each round only re-runs the block. Timing DraftBlock instead would
+			// re-project the whole context every round and measure work the reference
+			// implementations never do.
+			cctx := d.NewContext()
+			d.ExtendContext(be, cctx, fused)
+			b.ResetTimer()
+			for range b.N {
+				if _, err := d.DraftBlockCtx(be, cctx, blockIn); err != nil {
+					b.Fatal(err)
+				}
+			}
+			b.ReportMetric(float64(b.Elapsed().Milliseconds())/float64(b.N), "ms/block")
+		})
+	}
+}

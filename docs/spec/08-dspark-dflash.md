@@ -366,8 +366,37 @@ and we import no Python either way. Record the decision in the PR as 05 did.
    rest of the program. **Gate 2 is already cleared on CPU** (above — acceptance is
    numerics and transfers), so what remains here is gate 3, wall-clock.
 
-   **PREREQUISITE FOUND 2026-08-15, and it is not small: the resident runner has no
-   capture seam.** `cache.captureLayers` is handled only in `decoder/forwardn.go` and
+   **ARCHITECTURE DECIDED 2026-08-15 BY MEASUREMENT: the drafter must be GPU-RESIDENT
+   TOO. A resident target with a CPU drafter is not a viable configuration.**
+   `BenchmarkDFlashTrunk`, one block draft, f32 CPU:
+
+   | context | uncached | with the context cache | 
+   |---|---|---|
+   | 64 | 1,640 ms | **1,406 ms** |
+   | 512 | 3,875 ms | **1,926 ms** (−50%) |
+   | 2048 | 12,871 ms | **6,090 ms** (−53%) |
+
+   A resident 4B decode step is ~10–16 ms, and a block buys ~6 accepted tokens ≈ 100 ms of
+   decode. At 1.4 s per draft that is a **>10× net loss** — worse than Lever 2's measured
+   0.11×, which is the same wall from the same cause ("the DRAFT was the wall, not the
+   verify"). Even granting a generous 5–10× from the two known inefficiencies below, the
+   CPU trunk lands at 150–300 ms and still loses. mlx-dspark reaches its numbers with the
+   drafter on the GPU as well; so must we.
+
+   **The context cache landed as part of finding this** (`DFlashContext`, matching
+   mlx-dspark's `CtxCache` and dflash.py's `DynamicCache`): the first implementation
+   re-projected the entire context in every layer on every round, which is O(ctx × layers)
+   of repeat work per round. Gate 1 re-passes bit-for-bit through the cached path (cosine
+   1.0, identical maxAbs), so it is an optimization, not a numerics change. **Any GPU port
+   should carry the cached design** — projecting committed positions once, at commit.
+
+   **Two known CPU inefficiencies, deliberately NOT fixed** (this path is not production —
+   fixing them would be optimizing a configuration just measured as unviable), but recorded
+   because the GPU port must not inherit them: the block's projections run as 16 separate
+   `M=1` matmuls where one `M=16` batch would reuse the weights, and the attention inner
+   loop is scalar f64 Go rather than a `linalg` kernel.
+
+   **The other prerequisite: the resident runner has no capture seam.** `cache.captureLayers` is handled only in `decoder/forwardn.go` and
    `decoder/model.go` — the CPU forward. `gpu/decoderunner.go` has no equivalent and
    nothing in `gpu/` or `cuda/` reads per-layer residuals out. So a resident target
    physically cannot hand DFlash the 5 tapped hidden states today, and increment 4 is
