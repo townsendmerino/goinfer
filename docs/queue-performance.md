@@ -1196,6 +1196,15 @@ distribution, non-blocking. Reframe in the design page §"Performance levers and
   `GOINFER_CUDA_MODEL` override). The **7.32 math figure is an int8-predictability artifact** on
   2 prompts — int8 flattens the tail, making high-entropy text more draftable. Do not quote it as
   beating upstream; the trustworthy cross-check is code 6.14 vs 6.37 bf16.
+- **DSPARK GATE 2 MEASURED 2026-08-15 — it wins on every class, including chat.**
+  `scripts/ref_dspark_accept.py` drives **DeepSpec's own** loop on `dspark_qwen3_4b_block7` +
+  Qwen3-4B (bf16, greedy, non-thinking, 160 tok, the DFlash suites): **α = 5.76 code / 5.73 math
+  / 3.04 chat**, beating the transferred projection on all three (+41% on chat — the Markov head
+  is the likely cause, and it is exactly what DFlash lacks). With the measured verify curve that
+  projects **2.12× / 2.15× / 1.29×**, against DFlash's 1.29× / 1.54× / **0.46×**. **No routing is
+  needed to avoid a loss.** The confidence head is *not* a fire/don't-fire gate — gating slightly
+  lowers acceptance (3.04→2.96) but cuts the proposal 6.96→4.87, so verify falls 26.3→21.2 ms and
+  chat nets 1.11×→1.29×. It is adaptive block length buying back verify, i.e. 04 learned.
 - **Sequencing:** reframe (free) → re-price the DSpark build now the kernel is known to be needed
   → DSpark gates 1–2 on the existing `HiddenCapture` seam + DFlash harness, confidence head gating
   chat → bigger-target probes → file the licence issue, keep apache-2.0 `PARO` as fallback.

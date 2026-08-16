@@ -923,3 +923,51 @@ settled here at all.
 paired to Qwen3-4B; measuring acceptance on a bigger target means `z-lab/Qwen3-8B-DFlash-b16`
 (exists, per increment 1) plus its target — a download and a fresh harness run, not a re-run.
 Recorded as not-done rather than folded into Probe A's result.
+
+### DSpark gate 2 — MEASURED, and it beats its own projection on every suite
+
+The re-pricing above rested on one transferred input: a per-token accept probability fitted to
+DFlash and carried to a 7-token block. **Measured** — `scripts/ref_dspark_accept.py`, which
+drives **DeepSpec's own** `generate_decoding_sample` with the DSpark evaluator's actual
+`_init_context`/`_propose`/`_update` methods (a shim supplies only the attributes they read), on
+`deepseek-ai/dspark_qwen3_4b_block7` + Qwen3-4B, bf16, greedy, non-thinking template, 160 new
+tokens, the same suites as the DFlash harness:
+
+| suite | projected α | **measured α** | ungated × | **gated ×** | DFlash × |
+|---|---|---|---|---|---|
+| code | 4.83 | **5.76** | 2.09× | **2.12×** | 1.29× |
+| math | 5.36 | **5.73** | 2.09× | **2.15×** | 1.54× |
+| chat | 2.16 | **3.04** | 1.11× | **1.29×** | 0.46× |
+
+**The transfer was CONSERVATIVE on all three, and most on chat (2.16 → 3.04, +41%).** The likely
+cause is the component DFlash does not have: the **rank-256 Markov head** exists precisely to
+correct the suffix decay a parallel block suffers, so DSpark's per-token acceptance is higher
+than DFlash's rather than equal to it. Carrying DFlash's `p` across was the conservative choice
+and it under-sold DSpark.
+
+**DSpark wins on EVERY traffic class, including chat.** That is the headline: no routing is
+needed to *avoid a loss* — chat is 1.11× before any gating, against DFlash's 0.46×. Two
+independent causes, both structural: DSpark's raw chat acceptance is 40% higher, and its 8-wide
+verify costs 20 ms less than DFlash's 16-wide one.
+
+**Reason 1 of the pivot is CORRECT but for the wrong reason, and the correction matters.** The
+claim was that the confidence head fixes chat by *not firing when acceptance is low*. Gating at
+0.5 does not raise acceptance — it slightly *lowers* it (3.04 → 2.96). What it does is cut the
+**proposal width**, and therefore the **verify**:
+
+    chat: proposal 6.96 -> 4.87, so verify k 7.96 -> 5.87 = 26.3 ms -> 21.2 ms
+          acceptance barely moves (3.04 -> 2.96)
+          net 1.11x -> 1.29x
+
+So the confidence head is not an accept-rate router; it is an **adaptive block-length control that
+buys back verify cost**. Same conclusion — it is the thing that makes chat work — but the
+mechanism is 04's adaptive depth, learned, exactly as the Idea section originally said, and *not*
+a fire/don't-fire gate. On code and math it barely engages (proposal 6.82 and 6.56 of 7), which is
+the right behaviour and further evidence it is measuring confidence rather than thresholding
+noise.
+
+**Where this leaves the program.** Gate 2 is cleared for DSpark at **5.76 / 5.73 / 3.04**, and
+gate 3 projects **2.12× / 2.15× / 1.29×** — over the 1.3× bar on all three, against DFlash's
+1.29× / 1.54× / 0.46×. The remaining projected term is the same modelled 4.3 ms draft; everything
+else is measured. **DSpark is the better drafter on this pairing by every measured axis, and the
+larger build now buys a win on traffic DFlash loses outright.**
