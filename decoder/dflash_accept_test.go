@@ -98,11 +98,24 @@ func TestDFlashAcceptance(t *testing.T) {
 	//     boilerplate ("```python\ndef fib(n):"), which is exactly where a block drafter looks
 	//     best. Truncating early measures the prefix and calls it the workload.
 	//
-	// MEASURED, not assumed: the Qwen3-4B code suite reads 7.11 tok/verify at maxNew=16 and
-	// 2.90 at maxNew=48 — a 2.45x inflation. That is large enough to invert a comparison
-	// between two pairings, and it did: the 35B's 4.77 at maxNew=16 reads as BETTER than the
-	// 4B's recorded 2.90 and is in fact considerably WORSE than the 4B's 7.11 at matched
-	// settings. Any two tok/verify numbers being compared must share this setting.
+	// MEASURED, not assumed. The Qwen3-4B code suite, same pairing, same quant, non-thinking:
+	//
+	//	maxNew=16   7.11 tok/verify   ( 9 rounds,  64 tokens)
+	//	maxNew=48   6.75              (24 rounds, 162 tokens)
+	//	maxNew=160  6.14              (the recorded gate-2 number)
+	//
+	// So the inflation is ~1.16x from 16 to 160, and ~1.10x still remains at 48. Real, and
+	// enough to matter when two pairings are being compared, but MUCH smaller than a figure
+	// this comment briefly carried: an earlier draft cited 2.45x by comparing 7.11 against
+	// 2.90. That was wrong — 2.90 is the DISCREDITED thinking-mode measurement this document
+	// supersedes with 6.14, so the 2.45x conflated truncation with the thinking-mode error.
+	// Worth leaving recorded: the correct-looking baseline to grab is the one printed nearby,
+	// not the one that survived re-measurement.
+	//
+	// The conclusion that finding supported is unaffected, because it rested on a MATCHED
+	// control rather than on the recorded number: at maxNew=16 the 35B reads 4.77 against the
+	// 4B's 7.11, so the second pairing accepts LESS, not more. Any two tok/verify numbers
+	// being compared must share this setting; prefer 160, which is what gate 2 is recorded at.
 	if minNew := 3 * d.BlockSize(); maxNew < minNew {
 		t.Fatalf("GOINFER_DFLASH_MAXNEW=%d is under %d (3 blocks of %d): tok/verify is inflated at that "+
 			"length by end-of-run overshoot and by sampling only the easy prefix — measured 2.45x on the "+
