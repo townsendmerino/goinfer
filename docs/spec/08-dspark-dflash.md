@@ -1300,3 +1300,41 @@ about failure signatures, pointed the other way.
 
 Practical rule for this harness: **any pipe used to watch a long run must be line-buffered**, and
 a silent stream is evidence about the pipe before it is evidence about the program.
+
+### The Gemma-4 pairing: q4_0 destroyed it, and the drafter was never the problem
+
+The Gemma-4 pairing first measured **0.00 mean accepted** over 477 rounds (1.01 tok/verify).
+That was recorded as *our* bug rather than as a result, per the asymmetry pre-registered for a
+pairing with no gate-1 reference dump. It was the right call: the cause was **the target's
+quantization**, and it is now isolated by a controlled swap.
+
+Same drafter, same prompt, same code, only the target's weights differ:
+
+| | target = q4_0 GGUF | target = bf16 safetensors |
+|---|---|---|
+| target's own anchor token | `"0"` — nonsense for the prompt | `"There"` — sensible |
+| distinct drafted ids (of 15) | **1** | **8** |
+| drafted text | `","` repeated | `" are" " several" " ways" " to" " approach"` |
+| acceptance | **0.00** | measured below |
+
+The **target itself** was broken at q4_0 — its own greedy continuation of *"Write a Python
+function that returns the nth Fibonacci number"* was `"0"`. The drafter was being handed hidden
+states from a degraded forward and had no chance. Nothing was wrong with the capture seam, the
+chat template, the embedding convention or the drafter.
+
+**Why this was not predicted, and what it corrects.** This document already records that "int8
+costs only ~4% of acceptance, so a quantized resident target does NOT crater this drafter". That
+finding stands *for int8 derived from bf16*, which is what it measured. It does **not** extend to
+q4_0 — the crudest 4-bit format, no k-quant grouping — and the failure there is not a 4%
+degradation but a total collapse. **Block drafters read the target's hidden manifold, not just
+its argmax, so they are more sensitive to target quantization than the target's own output
+quality suggests**: a target that still produces text can already be too degraded to draft
+against.
+
+Both Qwen3 pairings used q8_0/f32-derived targets, which is why neither hit this.
+
+**Method note.** The controlled swap is what made this cheap. Four suspects had been cleared by
+inspection (prompt id-exactness, embedding scale, LM-head handling, seam placement) and the
+remaining evidence — degenerate output with *sane-magnitude* inputs — did not point anywhere on
+its own. Changing exactly one variable and re-running a 30-second diagnostic settled it, where
+more inspection would not have.
