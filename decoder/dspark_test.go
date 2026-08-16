@@ -164,3 +164,91 @@ func TestDSpark_referenceParity(t *testing.T) {
 		})
 	}
 }
+
+// TestDSpark_targetEndToEnd is gate 1's second half for DSpark: the whole path on goinfer's
+// OWN target, not the reference's tensors. ForwardCapture → FuseContext → shared trunk → its
+// own LM head → Markov chain, with the drafted ids required to match the reference exactly.
+//
+// Simpler than the DFlash equivalent in one respect worth naming: DSpark ships its own
+// embedding and LM head, so the only thing it borrows from the target is the hidden states.
+// That makes this a clean test of the CAPTURE SEAM — if the 5 taps or the +1 layer-output
+// convention were wrong, nothing else here could absorb it.
+func TestDSpark_targetEndToEnd(t *testing.T) {
+	requireHeavyModel(t)
+	ddir := assetPath(t, "GOINFER_DSPARK_F32")
+	tdir := assetPath(t, "GOINFER_QWEN3_4B")
+	raw, err := os.ReadFile(dsparkGoldenPath)
+	if err != nil {
+		t.Skipf("no golden (%v) — run scripts/pin_dspark_trace.py", err)
+	}
+	var g dsparkGolden
+	if err := json.Unmarshal(raw, &g); err != nil {
+		t.Fatalf("parse golden: %v", err)
+	}
+
+	d, err := LoadDSparkDrafter(ddir)
+	if err != nil {
+		t.Fatalf("LoadDSparkDrafter: %v", err)
+	}
+	defer d.Close()
+	m, err := Load(tdir, Options{}) // f32 — the fixture is f32
+	if err != nil {
+		t.Fatalf("Load(%s): %v", tdir, err)
+	}
+	defer m.Close()
+	if m.w.arch.HiddenDim != d.hidden {
+		t.Fatalf("target hidden %d != drafter hidden %d", m.w.arch.HiddenDim, d.hidden)
+	}
+
+	for _, tr := range g.Traces {
+		t.Run(tr.Name, func(t *testing.T) {
+			cache := m.NewCache(len(tr.PromptIDs) + tr.BlockSize)
+			ctxCat := make([][]float32, 0, len(tr.PromptIDs))
+			var logits []float32
+			for _, id := range tr.PromptIDs {
+				lg, hidden, err := m.ForwardCapture(id, cache, d.TargetLayerIDs())
+				if err != nil {
+					t.Fatalf("ForwardCapture: %v", err)
+				}
+				row := make([]float32, 0, len(hidden)*d.hidden)
+				for _, h := range hidden {
+					row = append(row, h...)
+				}
+				ctxCat = append(ctxCat, row)
+				logits = lg
+			}
+			anchor := argmax(logits)
+			if anchor != tr.AnchorToken {
+				t.Fatalf("anchor = %d, want %d (the target disagrees before the drafter runs)", anchor, tr.AnchorToken)
+			}
+
+			fused, err := d.FuseContext(m.be, ctxCat)
+			if err != nil {
+				t.Fatalf("FuseContext: %v", err)
+			}
+			ids := make([]int, d.BlockSize())
+			for i := range ids {
+				ids[i] = d.MaskTokenID()
+			}
+			ids[0] = anchor
+			trunk, err := d.DraftBlock(m.be, fused, d.EmbedBlock(ids))
+			if err != nil {
+				t.Fatalf("DraftBlock: %v", err)
+			}
+			got, _ := d.SampleBlock(m.be, trunk, anchor)
+
+			t.Logf("drafted got  = %v", got)
+			t.Logf("drafted want = %v", tr.DraftedIDs)
+			match := 0
+			for i := range got {
+				if i < len(tr.DraftedIDs) && got[i] == tr.DraftedIDs[i] {
+					match++
+				}
+			}
+			t.Logf("%d/%d drafted ids match the reference", match, len(tr.DraftedIDs))
+			if !intsEqual(got, tr.DraftedIDs) {
+				t.Errorf("drafted ids differ from the reference (%d/%d match)", match, len(tr.DraftedIDs))
+			}
+		})
+	}
+}

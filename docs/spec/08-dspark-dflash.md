@@ -1002,3 +1002,41 @@ against gated weights.
 **Remaining for DSpark**: the end-to-end logit half (drive it from goinfer's own target through
 `ForwardCapture`, as `TestDFlash_targetEndToEnd` does) and then the resident trunk — which is now
 one kernel serving both drafters rather than two.
+
+### Which models can actually benefit — the binding constraint is OUR seam, not the checkpoints
+
+Gate 1's second half is cleared for DSpark too (`TestDSpark_targetEndToEnd`: **7/7 drafted ids
+exact on both traces**, driven from goinfer's own target through `ForwardCapture`). So the
+question becomes which pairings this can be pointed at. The published catalogue is **38 drafter
+repos** across deepseek-ai and z-lab. Crossed against the 23 families goinfer runs, and against
+`Model.ForwardCapture`'s architecture rejection (`decoder/model.go:703` — it refuses any arch
+with its own `runLayers`):
+
+| model goinfer runs | drafter published | CPU seam | status |
+|---|---|---|---|
+| **Qwen3-4B** | DSpark + DFlash + z-lab | ✅ | **measured: 2.12× / 2.15× / 1.29×** |
+| **Qwen3-8B / 14B** | DSpark + DFlash + z-lab (8B) | ✅ | same arch, same path — checkpoint swap |
+| **Llama-3.1-8B-Instruct** | `z-lab/LLaMA3.1-8B-Instruct-DFlash-UltraChat` | ✅ | unexercised, should work |
+| Qwen3.6-35B-A3B | `z-lab/Qwen3.6-35B-A3B-DFlash` | ❌ `qwen35` | **blocked by our seam** — model is on this box |
+| gpt-oss-20b | `z-lab/gpt-oss-20b-DFlash` | ❌ `gptoss` | **blocked by our seam** — model is on this box |
+| Gemma-4-26B-A4B | `z-lab/gemma-4-26B-A4B-it-DFlash` (apache-2.0) | ❌ `gemma4` | **blocked by our seam** — model is on this box |
+| Gemma-4-31B / 12B | z-lab (31B apache-2.0; 12B unlicensed) | ❌ `gemma4` | blocked; 12B also declines CUDA residency |
+| Kimi-K2.5 / K2.6 | z-lab | ❌ `mla` | blocked; also far past this box |
+| GLM-5.1 | z-lab | ✅ `glm4_moe` | goinfer runs GLM-4.5/4.6, not 5.1 — no matching pair |
+
+**The finding: availability is not the constraint any more — our own seam is.** Three models
+already sitting on this box (Qwen3.6-35B-A3B, gpt-oss-20b, Gemma-4-26B-A4B) have published
+drafters and are refused by `ForwardCapture` purely because their families carry their own
+`runLayers`. That single arch check gates more of this program's addressable surface than the
+licensing question ever did.
+
+**And the resident seam does NOT share the limitation.** `cudaResident.SetHiddenCapture` captures
+`r.x` after any tapped layer in the resident runner's own loop, with no architecture predicate —
+so a resident target can feed a drafter for *any* family the resident runner already supports.
+Extending `ForwardCapture` to the own-`runLayers` families is therefore worth doing on its own
+merits, but the GPU path — which is where this program is going anyway — may not need it.
+
+**Size is not the axis** (Probe A): the benefit is roughly flat from 1.5B to 7B, because the
+drafter is five layers of the target's own shape. What moves it is DEPTH (`5/L`) and acceptance,
+not parameter count. So the interesting targets are the deep ones and the ones whose traffic is
+structured, not simply the big ones.

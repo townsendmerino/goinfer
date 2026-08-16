@@ -148,7 +148,7 @@
       "kind": "dir",
       "members": ["config.json", "model.safetensors"],
       "candidates": ["$MODELS/dspark-qwen3-4b-f32"],
-      "used_by": ["TestDSpark_referenceParity"],
+      "used_by": ["TestDSpark_referenceParity", "TestDSpark_targetEndToEnd"],
       "note": "f32 conversion of deepseek-ai/dspark_qwen3_4b_block7 (license=None; accepted for exploration 2026-08-15, see docs/prompts/dspark-license-issue.md), via scripts/convert_dflash_f32.py from $MODELS/dspark-qwen3-4b."
     },
     {
@@ -157,7 +157,7 @@
       "members": ["config.json"],
       "members_any": ["model.safetensors.index.json", "model.safetensors"],
       "candidates": ["$MODELS/qwen3-4b"],
-      "used_by": ["TestDFlash_targetEndToEnd"],
+      "used_by": ["TestDFlash_targetEndToEnd", "TestDSpark_targetEndToEnd"],
       "note": "Qwen/Qwen3-4B (apache-2.0) — the TARGET z-lab/Qwen3-4B-DFlash-b16 is trained against. DFlash ships no embedding and no LM head, so the drafter cannot produce a token without it."
     },
     {
