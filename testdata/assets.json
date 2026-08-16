@@ -49,7 +49,9 @@
       "env": "GOINFER_QWEN35_GGUF",
       "kind": "file",
       "min_bytes": 1048576,
-      "candidates": ["$MODELS/qwen3.6-35b-a3b-Q8_0.gguf"],
+      "candidates": [
+        "$MODELS/qwen3.6-35b-a3b-Q8_0.gguf"
+      ],
       "used_by": [
         "TestQwen35GGUF_gate",
         "TestQwen35GGUF_vsSafetensors",
@@ -59,8 +61,12 @@
     {
       "env": "GOINFER_QWEN35_GOLDEN",
       "kind": "dir",
-      "members": ["manifest.json"],
-      "candidates": ["$MODELS/qwen35_real_golden"],
+      "members": [
+        "manifest.json"
+      ],
+      "candidates": [
+        "$MODELS/qwen35_real_golden"
+      ],
       "used_by": [
         "TestQwen35Real_gate2FullModel",
         "TestQwen35GGUF_gate",
@@ -71,9 +77,16 @@
     {
       "env": "GOINFER_QWEN35_REAL",
       "kind": "dir",
-      "members": ["config.json"],
-      "members_any": ["model.safetensors.index.json", "model.safetensors"],
-      "candidates": ["$MODELS/qwen3.6-35b-a3b"],
+      "members": [
+        "config.json"
+      ],
+      "members_any": [
+        "model.safetensors.index.json",
+        "model.safetensors"
+      ],
+      "candidates": [
+        "$MODELS/qwen3.6-35b-a3b"
+      ],
       "used_by": [
         "TestQwen35GGUF_vsSafetensors",
         "TestQwen35GGUF_weightDiff"
@@ -83,98 +96,220 @@
     {
       "env": "GOINFER_DEEPSEEK_V2LITE",
       "kind": "dir",
-      "members": ["config.json"],
-      "members_any": ["model.safetensors.index.json", "model.safetensors"],
-      "candidates": ["$MODELS/deepseek-v2-lite"],
-      "used_by": ["TestDeepseekV2LiteReal_gate", "TestMLAAbsorb_speed"]
+      "members": [
+        "config.json"
+      ],
+      "members_any": [
+        "model.safetensors.index.json",
+        "model.safetensors"
+      ],
+      "candidates": [
+        "$MODELS/deepseek-v2-lite"
+      ],
+      "used_by": [
+        "TestDeepseekV2LiteReal_gate",
+        "TestMLAAbsorb_speed"
+      ]
     },
     {
       "env": "GOINFER_DEEPSEEK_MOONLIGHT",
       "kind": "dir",
-      "members": ["config.json"],
-      "members_any": ["model.safetensors.index.json", "model.safetensors"],
-      "candidates": ["$MODELS/moonlight-16b"],
-      "used_by": ["TestDeepseekMoonlightReal_gate"]
+      "members": [
+        "config.json"
+      ],
+      "members_any": [
+        "model.safetensors.index.json",
+        "model.safetensors"
+      ],
+      "candidates": [
+        "$MODELS/moonlight-16b"
+      ],
+      "used_by": [
+        "TestDeepseekMoonlightReal_gate"
+      ]
     },
     {
       "env": "GOINFER_DEEPSEEK_GGUF",
       "kind": "file",
       "min_bytes": 1048576,
-      "candidates": ["$MODELS/deepseek-v2-lite-gguf/DeepSeek-V2-Lite-Chat-Q4_K_M.gguf"],
-      "used_by": ["TestDeepseekGGUFReal_gate", "TestNgramSpecMLA_parity"]
+      "candidates": [
+        "$MODELS/deepseek-v2-lite-gguf/DeepSeek-V2-Lite-Chat-Q4_K_M.gguf"
+      ],
+      "used_by": [
+        "TestDeepseekGGUFReal_gate",
+        "TestNgramSpecMLA_parity"
+      ]
     },
     {
       "env": "GOINFER_PHI3_MINI",
       "kind": "dir",
-      "members": ["config.json"],
-      "members_any": ["model.safetensors.index.json", "model.safetensors"],
-      "candidates": ["$MODELS/phi3-mini-4k"],
-      "used_by": ["TestPhi3MiniReal_gate"]
+      "members": [
+        "config.json"
+      ],
+      "members_any": [
+        "model.safetensors.index.json",
+        "model.safetensors"
+      ],
+      "candidates": [
+        "$MODELS/phi3-mini-4k"
+      ],
+      "used_by": [
+        "TestPhi3MiniReal_gate"
+      ]
     },
     {
       "env": "GOINFER_PHI3_GGUF",
       "kind": "file",
       "min_bytes": 1048576,
-      "candidates": ["$MODELS/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf"],
-      "used_by": ["TestPhi3GGUFReal_gate"]
+      "candidates": [
+        "$MODELS/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf"
+      ],
+      "used_by": [
+        "TestPhi3GGUFReal_gate"
+      ]
     },
     {
       "env": "GOINFER_LLAMA4_GGUF",
       "kind": "file",
       "min_bytes": 1048576,
-      "candidates": ["$MODELS/llama4-scout-gguf/Llama-4-Scout-17B-16E-Instruct-Q2_K.gguf"],
-      "used_by": ["TestLlama4Real_gate"]
+      "candidates": [
+        "$MODELS/llama4-scout-gguf/Llama-4-Scout-17B-16E-Instruct-Q2_K.gguf"
+      ],
+      "used_by": [
+        "TestLlama4Real_gate"
+      ]
     },
     {
       "env": "GOINFER_GRANITE_HF",
       "kind": "dir",
-      "members": ["config.json"],
-      "members_any": ["model.safetensors.index.json", "model.safetensors"],
-      "candidates": ["$MODELS/granite-hf"],
-      "used_by": ["TestGraniteReal_oracle"],
+      "members": [
+        "config.json"
+      ],
+      "members_any": [
+        "model.safetensors.index.json",
+        "model.safetensors"
+      ],
+      "candidates": [
+        "$MODELS/granite-hf"
+      ],
+      "used_by": [
+        "TestGraniteReal_oracle"
+      ],
       "note": "The bf16 SAFETENSORS release, NOT the Q8_0 GGUF the coherence gate uses (GOINFER_GRANITE_GGUF, still unregistered). The T3 oracle must load the same weights the HF reference forward ran on, so these are two assets, not two paths to one."
     },
     {
       "env": "GOINFER_NEMOTRON_HF",
       "kind": "dir",
-      "members": ["config.json"],
-      "members_any": ["model.safetensors.index.json", "model.safetensors"],
-      "candidates": ["$MODELS/nemotron-hf"],
-      "used_by": ["TestNemotronReal_oracle"],
+      "members": [
+        "config.json"
+      ],
+      "members_any": [
+        "model.safetensors.index.json",
+        "model.safetensors"
+      ],
+      "candidates": [
+        "$MODELS/nemotron-hf"
+      ],
+      "used_by": [
+        "TestNemotronReal_oracle"
+      ],
       "note": "The bf16 SAFETENSORS release, NOT the Q8_0 GGUF the coherence gate uses (GOINFER_NEMOTRON_GGUF, still unregistered)."
     },
     {
       "env": "GOINFER_DFLASH_35B",
       "kind": "dir",
-      "members": ["config.json", "model.safetensors"],
-      "candidates": ["$MODELS/qwen36-35b-dflash"],
-      "used_by": ["TestDFlash_secondPairingLoads"],
-      "note": "z-lab/Qwen3.6-35B-A3B-DFlash (apache-2.0, 0.77 GB) — the SECOND pairing, kept because it uses different config spellings than the 4B (nested block_size, nested rope_parameters) and different dims (8 taps, 6 layers)."
+      "members": [
+        "config.json",
+        "model.safetensors"
+      ],
+      "candidates": [
+        "$MODELS/qwen36-35b-dflash"
+      ],
+      "used_by": [
+        "TestDFlash_pairingDialects"
+      ],
+      "note": "z-lab/Qwen3.6-35B-A3B-DFlash (apache-2.0, 0.77 GB) \u2014 the OUTLIER dialect: block_size NESTED in dflash_config and rope as nested rope_parameters, where the other three drafters use the top-level/flat spellings. Kept because it is the row of TestDFlash_pairingDialects that exercises those two spellings."
     },
     {
       "env": "GOINFER_DSPARK_F32",
       "kind": "dir",
-      "members": ["config.json", "model.safetensors"],
-      "candidates": ["$MODELS/dspark-qwen3-4b-f32"],
-      "used_by": ["TestDSpark_referenceParity", "TestDSpark_targetEndToEnd"],
+      "members": [
+        "config.json",
+        "model.safetensors"
+      ],
+      "candidates": [
+        "$MODELS/dspark-qwen3-4b-f32"
+      ],
+      "used_by": [
+        "TestDSpark_referenceParity",
+        "TestDSpark_targetEndToEnd"
+      ],
       "note": "f32 conversion of deepseek-ai/dspark_qwen3_4b_block7 (license=None; accepted for exploration 2026-08-15, see docs/prompts/dspark-license-issue.md), via scripts/convert_dflash_f32.py from $MODELS/dspark-qwen3-4b."
     },
     {
       "env": "GOINFER_QWEN3_4B",
       "kind": "dir",
-      "members": ["config.json"],
-      "members_any": ["model.safetensors.index.json", "model.safetensors"],
-      "candidates": ["$MODELS/qwen3-4b"],
-      "used_by": ["TestDFlash_targetEndToEnd", "TestDSpark_targetEndToEnd"],
-      "note": "Qwen/Qwen3-4B (apache-2.0) — the TARGET z-lab/Qwen3-4B-DFlash-b16 is trained against. DFlash ships no embedding and no LM head, so the drafter cannot produce a token without it."
+      "members": [
+        "config.json"
+      ],
+      "members_any": [
+        "model.safetensors.index.json",
+        "model.safetensors"
+      ],
+      "candidates": [
+        "$MODELS/qwen3-4b"
+      ],
+      "used_by": [
+        "TestDFlash_targetEndToEnd",
+        "TestDSpark_targetEndToEnd"
+      ],
+      "note": "Qwen/Qwen3-4B (apache-2.0) \u2014 the TARGET z-lab/Qwen3-4B-DFlash-b16 is trained against. DFlash ships no embedding and no LM head, so the drafter cannot produce a token without it."
     },
     {
       "env": "GOINFER_DFLASH_F32",
       "kind": "dir",
-      "members": ["config.json", "model.safetensors"],
-      "candidates": ["$MODELS/qwen3-4b-dflash-f32"],
-      "used_by": ["TestDFlash_referenceParity", "TestDFlash_targetEndToEnd"],
+      "members": [
+        "config.json",
+        "model.safetensors"
+      ],
+      "candidates": [
+        "$MODELS/qwen3-4b-dflash-f32"
+      ],
+      "used_by": [
+        "TestDFlash_referenceParity",
+        "TestDFlash_targetEndToEnd"
+      ],
       "note": "The f32 CONVERSION of z-lab/Qwen3-4B-DFlash-b16 (MIT), produced by scripts/convert_dflash_f32.py from $MODELS/qwen3-4b-dflash. The parity gate runs at f32 because the reference dump is f32; the bf16 original is not interchangeable here."
+    },
+    {
+      "env": "GOINFER_DFLASH_GPTOSS",
+      "kind": "dir",
+      "members": [
+        "config.json",
+        "model.safetensors"
+      ],
+      "candidates": [
+        "$MODELS/gptoss-20b-dflash"
+      ],
+      "used_by": [
+        "TestDFlash_pairingDialects"
+      ],
+      "note": "z-lab/gpt-oss-20b-DFlash (MIT, 1.57 GB) \u2014 pairs with our local gpt-oss-20b (hidden 2880, 24 layers, vocab 201088, all exact). NOTE the depth ratio: an 8-layer trunk against a 24-layer target is 0.33, far worse than the 4B's 5/32 = 0.156, and probe A established depth ratio is the mechanism \u2014 price this pairing as the expensive one."
+    },
+    {
+      "env": "GOINFER_DFLASH_GEMMA4",
+      "kind": "dir",
+      "members": [
+        "config.json",
+        "model.safetensors"
+      ],
+      "candidates": [
+        "$MODELS/gemma4-26b-dflash"
+      ],
+      "used_by": [
+        "TestDFlash_pairingDialects"
+      ],
+      "note": "z-lab/gemma-4-26B-A4B-it-DFlash (apache-2.0, 0.86 GB) \u2014 pairs with our local gemma-4-26b-a4b-it (hidden 2816, 30 layers, vocab 262144, all exact)."
     }
   ]
 }
