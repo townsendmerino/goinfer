@@ -1159,7 +1159,12 @@ CPU seam, off-by-one tap correctly rejected at 0.264). **My earlier "the residen
 no capture seam" was wrong** — `cuda/resident.go` already had a `layerCap` debug probe doing
 every layer with a sync each; the grep was for the CPU seam's identifiers and read a missing
 NAME as a missing capability. So increment 4's remainder is the resident bidirectional block
-trunk, THEN gate 3. Landed on the way: a `DFlashContext` K/V cache (−50% at ctx 512+,
+trunk, THEN gate 3. **Gate 3 now PROJECTS from measured inputs, and narrowed twice:** verify
+M=16 is 46.4 ms (3.86x cheaper than 16 decodes), and the draft term — measured off the
+target's own per-layer cost, since the drafter is exactly 5 of the target's layers + fc
+(537.4 M to the digit) — is **~6.6 ms, not the 2.7 ms first modelled**. That puts **code at
+1.29x (UNDER the 1.3x bar) and math at ~1.54x**. Fund the trunk against "~1.5x on math-like
+traffic, break-even on code, 2x loss on chat", not a flat speedup. Landed on the way: a `DFlashContext` K/V cache (−50% at ctx 512+,
 gate-1 bit-identical) that the GPU port should carry.
 `decoder/dflash.go` (trunk + loader) matches the reference at cosine 1.00000000 on every
 layer, and end-to-end through goinfer's own Qwen3-4B the drafted ids are **15/15 exact** on

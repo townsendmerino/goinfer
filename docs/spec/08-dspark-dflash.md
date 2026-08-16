@@ -456,10 +456,45 @@ and we import no Python either way. Record the decision in the PR as 05 did.
    fires indiscriminately is worse than no drafter. That agrees with 06's α̂-routing
    conclusion and with upstream's own ~0.98× on open chat.
 
-   **What the projection cannot settle** is the draft term itself — the bracket spans
-   1.30–1.39× on code and the low end IS the bar. If the real trunk lands 2× worse than the
-   pessimistic estimate, code misses and only math clears. That single number is what the
-   build produces, which is why the build is the next step rather than more modelling.
+   ### The draft term, MEASURED — and it kills the optimistic half of the bracket
+
+   The bracket above spanned 1.30–1.39× on code because the draft cost was modelled. It is
+   measurable without the trunk, on a structural fact worth stating plainly: **the DFlash
+   drafter is exactly FIVE LAYERS OF THE TARGET'S OWN LAYER SHAPE plus `fc`** — same hidden
+   2560, same 32/8 GQA at head_dim 128, same 9728 SwiGLU. 5 × 100.9 M + 32.8 M = **537.4 M**,
+   matching the checkpoint to the digit. The resident runner already executes that layer 36
+   times per token, so the drafter's cost can be read off the target instead of modelled.
+
+   `TestDFlashDraftCostProbe` isolates the LM head via `launchToken`'s `head` flag — the head
+   is 389 M the drafter does **not** have (it borrows the target's, already paid inside the
+   verify), so charging it to the drafter would overstate the draft:
+
+   | quantity (Qwen3-4B int4, depth 1024, 2070S) | measured |
+   |---|---|
+   | M=1 decode, with head | 11.105 ms |
+   | M=1, layers only | 10.144 ms |
+   | LM head | **0.961 ms** (9%) |
+   | **per-layer, M=1** | **0.2818 ms** |
+
+   Scaling the 36-layer M=16 verify the same way gives per-layer(M=16) ≈ 1.23 ms, so the
+   drafter's 5 layers + `fc` ≈ **6.6 ms** — and that is insensitive to the one soft input
+   (varying the head's M=16 cost from 1 to 5 ms moves code by 0.02×):
+
+   | | code (α 6.14) | math (α 7.32) | chat (α 2.18) |
+   |---|---|---|---|
+   | earlier modelled bracket | 1.30–1.39× | 1.55–1.66× | ~0.47× |
+   | **measured draft (6.6 ms)** | **1.29×** | **1.54×** | ~0.46× |
+
+   **The 2.7 ms "bandwidth+FLOP floor" was wrong — the real draft is ~6.6 ms, the pessimistic
+   end of the bracket.** So **code lands at 1.29×, just UNDER the 1.3× bar**, and it can only
+   get worse: this still excludes the drafter's non-causal attention over `[ctx‖block]`,
+   which has no counterpart in the target's per-token path.
+
+   **Gate 3 therefore projects to PASS ON MATH ONLY (~1.5×), with code missing.** The bar is
+   ≥1.3× on ≥1 real workload, so the trunk remains fundable — but the claim it can support
+   has narrowed twice: from "1.3–1.7× on structured traffic" to **"~1.5× on math-like
+   traffic, break-even on code, 2× loss on open chat"**. Fund the kernel work against that
+   sentence, not the earlier one.
 5. **DFlash forward** (the new bidirectional block pass) + constrained-traffic
    measurement vs the 01/02 router baseline (gates 2–4).
 6. **Metal run** (`mac`), only if 4 clears. **RE-TARGET (2026-08-15): not the 12B.** Every
