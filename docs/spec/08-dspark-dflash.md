@@ -201,11 +201,38 @@ and we import no Python either way. Record the decision in the PR as 05 did.
    - **ChatML vs Qwen3's own template** (ours omits the thinking block).
    - **greedy-only** vs whatever sampling upstream measured under.
 
-   The decisive experiment is cheap and is the same instrument that made gate 1
-   trustworthy: run **the reference implementation** on the same prompts at the same
-   length. If it also lands near 2.9, the claims don't transfer and our implementation is
-   vindicated; if it lands near 6.0, the gap is in our precision/template and gate 2 is
-   re-runnable. That run is in flight — **do not act on this miss until it reports.**
+   **THE ATTRIBUTION RAN, AND IT IS THE SECOND BRANCH: the claims DO transfer, and the
+   gap is ours.** z-lab's own `spec_generate` (verbatim from the MIT `dflash.py`, counter
+   added) at their bf16 precision and their template, same prompts, same 160 tokens:
+
+   | suite | ours (int8, ChatML) | **reference (bf16, own template)** | gap |
+   |---|---|---|---|
+   | code | 2.90 | **6.37** | 2.2× |
+   | math | 2.79 | **3.86** | 1.4× |
+   | chat | 2.13 | 2.31 | 1.08× |
+
+   **6.37 on code reproduces upstream's published ~6.0 on our box.** So the drafter is
+   as good as advertised and the pre-registered "stop, record" branch does NOT apply —
+   what is wrong is our harness's configuration, which is a fixable thing rather than a
+   verdict on the method.
+
+   **The gap's shape names the mechanism.** It is largest where acceptance is highest
+   (code 2.2×) and vanishes where acceptance is low (chat 1.08×) — the signature of a
+   small per-token acceptance drop compounding over a long accepted run, not of a
+   structural error. Fitting a geometric accept model over the 16-wide block puts the
+   reference near α≈0.85 and us near α≈0.65. A per-token α that size is exactly what an
+   **int8 target** would cost: every position where int8's argmax differs from bf16's is
+   a forced rejection, and this repo has already measured that class of disagreement at
+   ~7.5% of positions on a quantized model, concentrated at near-ties
+   ([nemotron int4 vs f32](../nemotron-resident.md)). An f32-target control on the code
+   suite is running to confirm it; the template difference remains a second, unseparated
+   variable.
+
+   **Consequence for the program, either way it lands.** If precision is the cause, gate 2
+   is passable but the *resident GPU* increment inherits the problem — the whole point
+   there is a quantized resident target, so a drafter that loses half its acceptance at
+   int8 changes increment 4's economics before a single kernel is written. That is a
+   better thing to learn now than after building the capture seam.
 3. **Wall-clock gate.** End-to-end ≥**1.3×** vs plain resident decode (the 07 funding
    bar) on ≥1 real workload on ≥1 GPU backend, lossless gates green
    (`TestEagleSpecParity` shape). Miss broadly → park with numbers, like Stage B.

@@ -63,7 +63,14 @@ func TestDFlashAcceptance(t *testing.T) {
 	// int8 target: this is the precision the resident GPU paths would actually run, and
 	// an f32 4B forward per verify position makes the sweep hours instead of minutes.
 	// TestDFlash_targetEndToEnd already pins the f32 numerics against the reference.
-	m, err := Load(tdir, Options{Quant: "int8int8"})
+	quant := "int8int8"
+	if q := os.Getenv("GOINFER_DFLASH_QUANT"); q != "" {
+		quant = q // "" selects f32 — the attribution knob for the int8-vs-bf16 question
+	}
+	if quant == "f32" {
+		quant = ""
+	}
+	m, err := Load(tdir, Options{Quant: quant})
 	if err != nil {
 		t.Fatalf("Load(%s): %v", tdir, err)
 	}
@@ -83,7 +90,11 @@ func TestDFlashAcceptance(t *testing.T) {
 
 	type result struct{ rounds, accepted, generated int }
 	overall := map[string]*result{}
-	for _, suite := range []string{"code", "math", "chat"} {
+	suites := []string{"code", "math", "chat"}
+	if s := os.Getenv("GOINFER_DFLASH_SUITE"); s != "" {
+		suites = []string{s}
+	}
+	for _, suite := range suites {
 		res := &result{}
 		overall[suite] = res
 		for _, prompt := range dflashSuites[suite] {
@@ -93,8 +104,8 @@ func TestDFlashAcceptance(t *testing.T) {
 			res.generated += r.generated
 		}
 		tpv := float64(res.generated) / float64(res.rounds)
-		t.Logf("%-5s  %2d rounds  %3d tokens  mean accepted %.2f/%d  => %.2f tok/verify",
-			suite, res.rounds, res.generated, float64(res.accepted)/float64(res.rounds),
+		t.Logf("[quant=%q] %-5s  %2d rounds  %3d tokens  mean accepted %.2f/%d  => %.2f tok/verify",
+			quant, suite, res.rounds, res.generated, float64(res.accepted)/float64(res.rounds),
 			d.BlockSize()-1, tpv)
 	}
 
