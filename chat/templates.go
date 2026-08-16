@@ -93,6 +93,63 @@ func Gemma4() *Template {
 	}}
 }
 
+// Harmony (gpt-oss) — "<|start|>{role}<|message|>{content}<|end|>", with a REQUIRED
+// system message that gpt-oss's template synthesizes rather than taking from the caller,
+// and a generation prompt of a bare "<|start|>assistant".
+//
+// Three things make this family unlike the others here, all of them load-bearing:
+//
+//  1. THE SYSTEM MESSAGE IS SYNTHESIZED, NOT PASSED THROUGH. gpt-oss's own template emits a
+//     fixed identity line, a knowledge cutoff, TODAY'S DATE, a reasoning-effort line and the
+//     valid-channel declaration — whether or not the caller supplied a system prompt. A
+//     caller-supplied system prompt is a DEVELOPER message in harmony, which is a separate
+//     role, so it is rendered as one rather than replacing the preamble.
+//  2. THE DATE IS LIVE. `Current date:` comes from strftime_now in the upstream template, so
+//     it is read from timeNow (the same injectable clock Llama-3's preamble uses) and a
+//     byte-exactness test must pin the clock.
+//  3. THE CHANNEL SET IS DECLARED, NOT OPTIONAL. "Channel must be included for every message"
+//     — gpt-oss always answers on a channel (analysis / commentary / final), so there is no
+//     non-thinking form of this prompt the way Qwen3 and Gemma-4 both have. Callers that want
+//     only the answer must strip the analysis channel from the OUTPUT; it cannot be suppressed
+//     in the prompt.
+//
+// Reasoning effort defaults to "medium", matching the upstream template's own default.
+func Harmony() *Template {
+	return &Template{name: "harmony", stops: []string{"<|return|>", "<|end|>"}, render: func(system string, turns []Turn) []Segment {
+		var b segBuf
+		b.sp("<|start|>")
+		b.ct("system")
+		b.sp("<|message|>")
+		b.ct("You are ChatGPT, a large language model trained by OpenAI.\n" +
+			"Knowledge cutoff: 2024-06\n" +
+			"Current date: " + timeNow().Format("2006-01-02") + "\n\n" +
+			"Reasoning: medium\n\n" +
+			"# Valid channels: analysis, commentary, final. Channel must be included for every message.")
+		b.sp("<|end|>")
+		if system != "" {
+			b.sp("<|start|>")
+			b.ct("developer")
+			b.sp("<|message|>")
+			b.ct("# Instructions\n\n" + system + "\n\n")
+			b.sp("<|end|>")
+		}
+		for _, t := range turns {
+			role := "user"
+			if t.Role == "assistant" {
+				role = "assistant"
+			}
+			b.sp("<|start|>")
+			b.ct(role)
+			b.sp("<|message|>")
+			b.ct(t.Content)
+			b.sp("<|end|>")
+		}
+		b.sp("<|start|>")
+		b.ct("assistant")
+		return b.segs
+	}}
+}
+
 // ChatML (Qwen and most byte-level families) — per turn
 // "<|im_start|>{role}\n{content}<|im_end|>\n", a leading system turn when given,
 // generation prompt "<|im_start|>assistant\n". No BOS in the template.

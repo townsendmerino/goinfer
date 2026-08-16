@@ -99,6 +99,12 @@ func Detect(meta Meta) (*Template, error) {
 		switch {
 		// Order matters: Gemma 4's template also mentions turns/channels, so test
 		// its distinctive markers before the generic ones.
+		// Harmony BEFORE Gemma 4: both mention channels, and harmony's "<|channel|>"
+		// does NOT contain Gemma's "<|channel>" (the trailing pipe breaks the substring),
+		// so the two are distinguishable — but only if harmony's own marker is tested,
+		// and only in this order.
+		case strings.Contains(t, "<|start|>") && strings.Contains(t, "<|message|>"):
+			return Harmony(), nil
 		case strings.Contains(t, "<|turn>") || strings.Contains(t, "<|channel>"):
 			return Gemma4(), nil
 		case strings.Contains(t, "<start_of_turn>"):
@@ -119,6 +125,8 @@ func Detect(meta Meta) (*Template, error) {
 	// Bare checkpoint: detect from the special tokens present in the vocab.
 	if has := meta.HasToken; has != nil {
 		switch {
+		case has("<|start|>") && has("<|message|>") && has("<|channel|>"):
+			return Harmony(), nil
 		case has("<|im_start|>"):
 			return ChatML(), nil
 		case has("<start_of_turn>"):
