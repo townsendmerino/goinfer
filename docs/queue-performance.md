@@ -1164,13 +1164,44 @@ M=16 is 46.4 ms (3.86x cheaper than 16 decodes), and the draft term — measured
 target's own per-layer cost, since the drafter is exactly 5 of the target's layers + fc
 (537.4 M to the digit) — is **~6.6 ms, not the 2.7 ms first modelled**. That puts **code at
 1.29x (UNDER the 1.3x bar) and math at ~1.54x**. Fund the trunk against "~1.5x on math-like
-traffic, break-even on code, 2x loss on chat", not a flat speedup. Landed on the way: a `DFlashContext` K/V cache (−50% at ctx 512+,
+traffic, break-even on code", not a flat speedup — and read the chat figure through the ROUTED
+baseline below, not as a standing 2x loss. Landed on the way: a `DFlashContext` K/V cache (−50% at ctx 512+,
 gate-1 bit-identical) that the GPU port should carry.
 `decoder/dflash.go` (trunk + loader) matches the reference at cosine 1.00000000 on every
 layer, and end-to-end through goinfer's own Qwen3-4B the drafted ids are **15/15 exact** on
 both traces. The gate is falsifiable — 4 wiring mutations all rejected (design page).
 Remaining in 3: the `Drafter` wiring into the existing verify + the one CPU wall-clock
-measurement (which the design page predicts will lose; the entry is the GPU paths). Design page:
+measurement (which the design page predicts will lose; the entry is the GPU paths).
+
+**DECISION 2026-08-15 (Francis) — explore the DSpark path; `license=None` accepted for
+exploration.** The original pivot to DFlash was for licensing only (see the CORRECTION below);
+with that lifted for a spike, `dspark_*_block7` is in scope. Upstream issue drafted at
+[`docs/prompts/dspark-license-issue.md`](prompts/dspark-license-issue.md) — for eventual
+distribution, non-blocking. Reframe in the design page §"Performance levers and the DSpark pivot".
+
+- **Evaluate against ROUTED economics, not the raw 0.46x.** Gate 4 forbids indiscriminate
+  firing, so chat floors at **1.0x** — real economics are **1.29–1.54x structured / 1.0x chat**,
+  a win on every class. The "2x loss on chat" framing was the un-routed baseline.
+- **Why DSpark:** (1) its **confidence head is a built-in acceptance router** — the chat fix is
+  in the checkpoint, not a separate build DFlash needs; (2) **7-token blocks** waste less verify
+  than DFlash's 16 on low-acceptance traffic. ~~(3) it likely avoids DFlash's largest build~~ —
+  **CONFIRMED FALSE 2026-08-15**: DSpark's block attention is also bidirectional
+  (`is_causal=False`; its training mask allows `q_block_id == kv_block_id` with no `q>=k`), so it
+  needs the **identical** non-causal cross-attention kernel at M=7 instead of M=16, plus a Markov
+  head and a 7-step serial matvec chain. Its trunk is 537 M — the same as DFlash's entire drafter
+  — with a further 778 M of embed+lm_head that are frozen copies of the target's. **The build is
+  larger, not smaller; the pivot rests on reasons 1 and 2.**
+- **Two cheap probes before any trunk:** verify-amortization + acceptance on a 12B/26B target,
+  which settles the mac premise (`cuda/spec_verify_ceiling_test.go` now takes a
+  `GOINFER_CUDA_MODEL` override). The **7.32 math figure is an int8-predictability artifact** on
+  2 prompts — int8 flattens the tail, making high-entropy text more draftable. Do not quote it as
+  beating upstream; the trustworthy cross-check is code 6.14 vs 6.37 bf16.
+- **Sequencing:** reframe (free) → re-price the DSpark build now the kernel is known to be needed
+  → DSpark gates 1–2 on the existing `HiddenCapture` seam + DFlash harness, confidence head gating
+  chat → bigger-target probes → file the licence issue, keep apache-2.0 `PARO` as fallback.
+  Confidence-head threshold + block length are an **E9 autoresearch** target once the path runs.
+
+Design page:
 [`docs/spec/08-dspark-dflash.md`](spec/08-dspark-dflash.md) — the context lives there; this entry is
 the claimable work.
 
