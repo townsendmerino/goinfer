@@ -1,5 +1,20 @@
 # Prompt: prototype a batched small-M verify path on Metal (run on the M1 Pro)
 
+> **STATUS: DONE (2026-08-17, `mac`).** This prompt and the direct instruction that landed the
+> work crossed in flight — both converged on the same task independently. Full results, all five
+> phases below, are in `docs/task-metal-batched-verify-kernel.md`: Phase 0's numeric contract
+> confirmed (exact per-32-block int dot, decode's real `SA_BODY`/`W4A8_BODY` reduction, matching
+> this prompt's own recon); Phase 1's threadgroup-budget design (`bvkMaxM`, capped by `2*K*M`
+> against the 32 KiB limit — model-shape-dependent, not universal); Phase 2's prototype kernels
+> (`metal/batched_verify_kernels.go`, `metal/batched_verify_test.go`, additive-only, no decode
+> changes); Phase 3's bit-identity parity — **bit-exact `==`, not cosine, exactly as this prompt
+> required** — green across M∈{2,4,8,16} on qwen2.5-coder-0.5b and M∈{2,4} on gemma-3-4b (M=8/16
+> correctly declined there, not silently skipped — over that model's real threadgroup budget);
+> Phase 4's ceiling re-derivation — **NO-GO**, every k below break-even, worse than the prior
+> ~1.13× MMA-route estimate despite fixing the bit-identity blocker, because only 4 of ~12
+> per-layer dispatches got batched (the marginal cost per verified token ends up ≈ real decode
+> cost). Do not re-run this prompt; read the results doc instead.
+
 Dispatched 2026-08-16, superseding the timing-only task in `metal-verify-curve.md`. That one
 measured the ceiling (~1.13×) and found the real blocker: `metal.PrefillLast` is declined in
 production because it is not bit-identical to decode. **This task attacks that blocker directly**
