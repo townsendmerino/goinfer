@@ -1762,3 +1762,36 @@ is on CUDA.
 move. For scale: if the GPU draft doubled to 13.2 ms, code at k=7 falls 1.74× → 1.44× — still
 over the bar, but the headline changes. Measuring the resident draft remains the gate on
 increment 4; this narrows *where* to look rather than settling it.
+
+#### CORRECTION to the section above: 6.6 ms does NOT omit the context attention
+
+The section above claims the 6.6 ms draft "omits" the context-attention term and calls it "the
+draft term's omitted half". **That is wrong, and the error is in reading rather than in any
+measurement.**
+
+`cuda/dflash_draftcost_test.go` computes an **M=1** floor — `5.33 × per-layer(M=1)` — and its
+"excludes the drafter's non-causal attention" note attaches to **that** figure. Re-run today to
+confirm: per-layer(M=1) = **0.2830 ms**, M=1 decode 11.122 ms, floor **1.51 ms**. Those reproduce
+the recorded 0.2818 / 11.105 / 1.50.
+
+But **6.6 ms is a different number**: `5.33 × per-layer(M=16) ≈ 5.33 × 1.23`, where
+per-layer(M=16) comes from the 36-layer M=16 batched verify **measured at depth 1024**. That
+verify attends over 1024 keys with 16 queries per layer. The drafter's per-layer work is 16
+queries over ctx+16 keys, non-causal — structurally the same shape at the same depth. **So the
+context attention is already inside the 6.6 ms**, and I attached a caveat written about the
+1.51 ms floor to a figure it does not describe.
+
+What the CPU scaling test did show remains true and unchanged: cost grows with context length.
+But so does the target's verify, for the same reason, and the `per-layer(M=16)` scaling already
+carries it. Growth with context is a **shared property already captured**, not an omission.
+
+**Finding 1 of that section stands unaffected** — `DraftBlockCtx` is required, the rebuild path
+costs 2.4× at ctx=1024 and worsens. That was measured, not inferred, and it is the useful result.
+
+**The real residual risk is different, and narrower than I made it sound:** whether a **5-layer**
+drafter achieves the **36-layer** target's per-layer efficiency. The 6.6 ms assumes it does. A
+36-layer model amortizes launch latency across 36 dispatches; five layers have far less to hide
+it behind, which is precisely the mechanism that made the CUDA-graphs projection (1.4–1.7×) land
+at 1.01×, and the mechanism behind Lever 2's "the draft was the wall". That is a **dispatch
+efficiency** question, not a missing-attention question — and it is still the gate on
+increment 4.
