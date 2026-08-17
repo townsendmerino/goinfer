@@ -362,17 +362,17 @@ supports.
 | `docs/multimodal.md|decoder/config.go:875` | goinfer | `if json.Unmarshal(b, &nest) == nil && len(nest.TextConfig) > 0 {` |
 | `docs/multimodal.md|decoder/gguf_qwen35.go:77` | goinfer | `anchor: func ggufQwen35Config(g *embed.GGUFFile) (*Config, error) {` |
 | `docs/multimodal.md|decoder/weights.go:344` | goinfer | `const shardIndexFile = "model.safetensors.index.json"` |
-| `docs/ollama-chase.md|cuda/resident.go:1084` | goinfer | `// All of it runs ON the executor thread — that thread made the context current — and th` |
-| `docs/ollama-chase.md|cuda/resident.go:353` | goinfer | `g4x1, g4x2, g4rn Buffer` |
+| `docs/ollama-chase.md|cuda/resident.go:1085` | goinfer | `// All of it runs ON the executor thread — that thread made the context current — and th` |
+| `docs/ollama-chase.md|cuda/resident.go:354` | goinfer | `g4x1, g4x2, g4rn Buffer` |
 | `docs/ollama-chase.md|cuda/resident.go:41` | goinfer | `anchor: const ctxCapMarginBytes = 384 << 20` |
-| `docs/ollama-chase.md|cuda/resident.go:601` | goinfer | `// declined to the staged/CPU path upstream.` |
+| `docs/ollama-chase.md|cuda/resident.go:602` | goinfer | `// declined to the staged/CPU path upstream.` |
 | `docs/ollama-chase.md|decoder/forwardn.go:378` | goinfer | `for kvh := range nKV {` |
 | `docs/ollama-chase.md|decoder/mlp.go:82` | goinfer | `func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend, pager *expert` |
 | `docs/ollama-chase.md|decoder/model.go:831` | goinfer | `// logits. On the batched archs this runs the layers at M=len in one pass (each` |
 | `docs/ollama-chase.md|decoder/model.go:979` | goinfer | `// sample. Identical to the logits path — guarded by ArgmaxEquivalent/GreedyEquivalent.` |
 | `docs/ollama-chase.md|decoder/residency.go:677` | goinfer | `return false, "sequential — this backend has no batched prefill (per-token resident forw` |
 | `docs/ollama-chase.md|decoder/weightmat.go:202` | goinfer | `var ws linalg.Workspace` |
-| `docs/parity-coverage-policy.md|cuda/resident.go:928` | goinfer | `// always been allocated without one, and a hard failure here would regress every driver` |
+| `docs/parity-coverage-policy.md|cuda/resident.go:929` | goinfer | `// always been allocated without one, and a hard failure here would regress every driver` |
 | `docs/parity-coverage-policy.md|linalg/dot.go:25` | aikit | `sum += a[k] * b[k]` |
 | `docs/plan-cpubrrr-steal-and-bindings.md|decoder/registry.go:46` | goinfer | `"gpt_oss":             gptOssArchitecture,     // gpt-oss (20b/120b): sparse MoE + per-h` |
 | `docs/plan-cpubrrr-steal-and-bindings.md|linalg/quant.go:412` | aikit | `func QuantizeGroupInt4Row(row []float32, cols, group int, packed []byte, scales []float3` |
@@ -385,7 +385,7 @@ supports.
 | `docs/queue-engineering.md|cuda/backend.go:836` | goinfer | `// cache, so the cap is correct by construction rather than covered by a margin.` |
 | `docs/queue-engineering.md|cuda/prefill.go:227` | goinfer | `defer func() {` |
 | `docs/queue-engineering.md|cuda/resident.go:244` | goinfer | `// backend.go locals; the per-layer KV cache and UploadKV read r.layers[l].kvDim.` |
-| `docs/queue-engineering.md|cuda/resident.go:415` | goinfer | `func (r *cudaResident) recordUpload(e error) {` |
+| `docs/queue-engineering.md|cuda/resident.go:416` | goinfer | `func (r *cudaResident) recordUpload(e error) {` |
 | `docs/queue-engineering.md|decoder/features_test.go:146` | goinfer | `want, ok := admissionGolden[name]` |
 | `docs/queue-engineering.md|decoder/forwardn.go:526` | goinfer | `logits[j] = sc * float32(math.Tanh(float64(val/sc)))` |
 | `docs/queue-engineering.md|decoder/kvsnapshot_gemma4_test.go:10` | goinfer | `func TestSnapshot_refusesNonUniformKVWidth_C05(t *testing.T) {` |

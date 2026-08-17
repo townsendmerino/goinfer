@@ -93,6 +93,17 @@ var gluePTX []byte
 //go:embed testdata/argmax.ptx
 var argmaxPTX []byte
 
+// attnBlockPTX: attn_block_full — the DFlash block drafter's NON-CAUSAL attention over
+// [ctx‖block]. A verbatim copy of prefill_batched.cu's attn_batched with ONE line changed
+// (nKeys = startPos+M for every row, not startPos+m+1), because the drafter's block is
+// bidirectional where the target's verify is causal. Its own module for the same isolation
+// reason as argmaxPTX and routerF32PTX: adding a kernel to prefill_batched.cu would regenerate
+// that PTX and risk shifting codegen for the kernels every batched-prefill parity gate rests on.
+// Verified at build time: prefill_batched.ptx and glue.ptx are byte-unchanged. See cuda/attn_block.cu.
+//
+//go:embed testdata/attn_block.ptx
+var attnBlockPTX []byte
+
 // moePTX: sparse mixture-of-experts — moe_route (on-GPU router), gemv_f32_a8 (the f32 router
 // projection), gemv_w4a8_moe / _wacc (indexed stacked-expert GEMVs), shared_gate_combine.
 //
