@@ -1795,3 +1795,42 @@ it behind, which is precisely the mechanism that made the CUDA-graphs projection
 at 1.01×, and the mechanism behind Lever 2's "the draft was the wall". That is a **dispatch
 efficiency** question, not a missing-attention question — and it is still the gate on
 increment 4.
+
+### The last modelled term, MEASURED: the drafter pays a 1.28x per-layer premium
+
+The draft was the only input to gate 3 still modelled rather than measured. It is
+`5.33 × per-layer(M=16)`, where per-layer comes from dividing the 36-layer target's batched
+verify by 36 — which silently assumes **a 5-layer stack costs 5/36ths of a 36-layer one**, i.e.
+that per-layer cost is independent of stack depth. `TestDFlashDispatchAmortization` tests that by
+running the resident forward with the layer loop truncated, at depth 1024:
+
+| layers | M=1 ms | per-layer | M=16 ms | per-layer |
+|---|---|---|---|---|
+| 5 | 1.499 | 0.2998 | 8.273 | **1.6546** |
+| 8 | 2.314 | 0.2893 | 12.105 | 1.5131 |
+| 12 | 3.449 | 0.2874 | 16.943 | 1.4119 |
+| 18 | 5.114 | 0.2841 | 24.413 | 1.3563 |
+| 36 | 10.154 | 0.2821 | 46.698 | **1.2972** |
+
+**The assumption is false, and monotonically so.** A 5-layer stack pays **1.28× per layer at
+M=16** against the full stack — 1.06× at M=1, so this is specifically a *batched*-path effect,
+where each layer issues more kernels and a short stack has fewer of them to hide launch latency
+behind. **Measured drafter cost: 8.82 ms, not 6.6 ms.**
+
+Every projection re-composed with the measured draft:
+
+| suite | k | with 6.6 ms (assumed) | **with 8.82 ms (measured)** |
+|---|---|---|---|
+| **math** | 8 | 2.25× | **2.11×** |
+| **code** | 7 | 1.74× | **1.62×** |
+| chat | 4 | 0.92× | 0.84× |
+
+**Gate 3's conclusions survive**: code 1.62× and math 2.11× both clear the ≥1.3× bar, the
+optimum widths are unchanged (8 / 7 / 4), and chat still needs the router. The correction is
+~7% on each figure, not a reversal — the concern was right in direction and modest in size.
+
+**The headline is now 1.62× code / 2.11× math / 1.0× chat routed, and every term in it is
+measured**: acceptance (7-width sweep, two pairings), the verify curve (`8.77 + 2.35M`), decode
+(11.12 ms), and now the draft (8.82 ms). What remains unmeasured is only the composition itself —
+an end-to-end wall-clock run, which needs the resident trunk built. That is gate 3 proper, and it
+is now the *only* thing standing between this projection and a measurement.
