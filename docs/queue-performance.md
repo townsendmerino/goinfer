@@ -1176,6 +1176,35 @@ width TRACKS acceptance (8/7/4) — so gate 4's router should select WIDTH, not 
 from the α̂ signal it already computes. Still a projection: acceptance measured, wall-clock not;
 **gate 3 should run per-suite at these widths.**
 
+**P10 SHIPPED 2026-08-17 (`linux-62gb`): block drafting is a production feature.** `serve
+--drafter <dir>` — the drafter proposes a block per round, the target verifies it in one batched
+pass, output is token-identical to plain greedy. **Gate 3 measured end to end: code 1.44×, math
+1.58×** against `Model.Generate` (≥1.3× bar). Built: a non-causal attention kernel
+(`attn_block_full`, its own PTX, existing PTX byte-unchanged), the drafter resident on device
+(cosine 0.9973 vs the CPU trunk), incremental context K/V (bit-identical 4+4 vs 8), a batched
+verify head gated on ARGMAX equality (weaker bar than bit-identity, and what makes batching the
+head admissible), batched capture (bit-identical, 1.09 ms/block vs 2.79 per-token), and the
+`decoder.BlockDrafterWeights` / `ResidentDrafterHost` interfaces so DFlash and DSpark both work
+with no type switch and Metal needs only to implement two interfaces.
+
+**THE MEASUREMENT LESSONS COST MORE THAN THE BUILD.** Three published figures were wrong and each
+was corrected by a measurement, not review: (1) gate 3's baseline was a
+`PrefillLastNArgmax(M=1)` loop that downloads 608 KB/token where `Generate` uses a 4-byte GPU
+argmax — every ratio was 10–35% optimistic; (2) a single timing run reported math at 1.50× when
+the steady state is 1.58× (acceptance is deterministic, wall-clock is not — the first run is the
+cold tail); (3) chat measured 0.96× against the wrong baseline and **0.61× against the right
+one**, which twice reversed a "the router is not mandatory" conclusion. **All three failures
+returned CORRECT OUTPUT**, because block drafting is lossless — no correctness test can catch any
+of them.
+
+**Two safeguards ship because of that.** A runtime acceptance guard stops drafting below
+break-even (~3.0 tok/round), turning chat from 0.61× to **0.92×** and a thinking-mode target from
+0.82× to 0.99×; and a startup WARNING when the served template leaves thinking mode on, since
+that halves acceptance (5.76 → 3.00 tok/round) and is otherwise completely silent. **Open:** the
+residual ~7% on short chat (the guard's 6-round decision window can't be recovered after the
+fact) wants a predictor that decides BEFORE drafting — gate 4's router, now with a measured 7%
+behind it.
+
 **The process finding is worth more than the number:** three separate harness errors each
 produced a confident wrong result first (raw-vs-chat prompt, 32-vs-160 tokens, and
 thinking-mode template), all input-distribution mistakes with gate 1 green throughout. See
