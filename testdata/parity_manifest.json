@@ -283,13 +283,16 @@
       "own": [
         "decoder/laguna_config_test.go",
         "decoder/laguna_test.go",
-        "scripts/pin_laguna_tiny.py"
+        "decoder/laguna_slice_test.go",
+        "decoder/laguna_gguf_test.go",
+        "scripts/pin_laguna_tiny.py",
+        "scripts/pin_laguna_slice.py"
       ],
-      "deps_hash": "sha256:7fd6375d3ecc277da71151f6d0ba539275eaa85a04f78ff6c891257d6089c08f",
+      "deps_hash": "sha256:da82c9dc14dca87504020fdbf221e723333ff19328f1f07ca5fe3697cb7b7ad8",
       "status": "experimental",
       "validated_at": "41673f7",
       "date": "2026-08-17",
-      "reference": "HF f32 tiny goldens x3 (xs21/xs2/m1) + a real Laguna-XS.2 33B-A3B coherence/structure gate",
+      "reference": "HF f32 tiny goldens x3 + a REAL-WEIGHT 4-layer slice of Laguna-XS.2 (cosine 1.0) + real XS.2 and XS-2.1-GGUF coherence gates",
       "machine": "linux-62gb",
       "method": "tiny-golden",
       "metrics": {
