@@ -2347,3 +2347,47 @@ The guard is doing most of the work it was built for and not all of it. Closing 
 a drafter that would have paid) or a predictor that decides BEFORE drafting rather than after —
 which is gate 4's router in its original sense, now with a measured 7% to justify it rather than
 the 4% the earlier wrong baseline suggested.
+
+### Tuning the guard: the window was the wrong knob, and my threshold had the margin backwards
+
+Tried shortening the decision window 6 → 3 to recover the ~7% on short chat. **It made things
+worse and refuted the reasoning behind it.**
+
+| case | window 6 | window 3 |
+|---|---|---|
+| code | 1.57× | 1.54× |
+| **math** | 1.58× | **0.91×** ← falsely tripped |
+| chat A | 0.91× | 0.90× |
+| chat B | 0.94× | 0.96× |
+
+Three bought nothing on chat and cost 42% on math. The argument for shortening was that a
+response opens with boilerplate, so early rounds are optimistic and judging early errs toward
+KEEPING a good drafter. **That is false for math**, whose opening is less predictable than its
+body — the whole-generation average (5.88 tok/round) hides a slow start.
+
+**Then a worse finding: math was tripping at window 6 too.** Measured guarded, math ran 0.97×
+against 1.58× unguarded — **the guard was costing 39% on a workload it exists to protect.** The
+cause was the threshold, not the window: break-even is ~3.0 tok/round and I had set **3.8**,
+putting the margin on the wrong side, so anything accepting 3.0–3.8 was profitable and disabled.
+The reasoning behind that margin ("disabling a drafter that is merely breaking even costs
+nothing") is wrong, because acceptance over the first few rounds is not acceptance over the
+generation.
+
+**Two changes, both measured:** threshold **3.8 → 2.5** (below break-even, so the guard fires
+only when a workload is CLEARLY losing), and the running average made **cumulative** rather than
+reset per window — resetting handed a losing workload a fresh budget each time, so chat survived
+its first six rounds and only tripped at twelve.
+
+| case | 3.8 / per-window | **2.5 / cumulative** |
+|---|---|---|
+| code | 1.57× | 1.56× |
+| **math** | **0.97×** | **1.43×** |
+| chat A | 0.91× | 0.81× |
+| chat B | 0.94× | 0.90× |
+| thinking | 0.96× | 0.89× |
+
+**There is no setting that wins everywhere**, and the choice follows the asymmetry: a false
+negative costs ~40% on a paying workload, a false positive ~10-19% on a losing one. Math
+recovering 0.46× outweighs chat giving up 0.10×, and the feature exists to speed up the
+profitable case. **Losing workloads are bounded at ~0.8-0.9× rather than made free** — that is
+the honest claim, replacing the earlier "safe to leave on at break-even".

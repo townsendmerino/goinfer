@@ -391,17 +391,40 @@ func (s *BlockSpec) GenerateStream(ctx context.Context, prompt []int, maxTokens 
 // round than the round costs in decode-equivalents. On the measured 4B/2070S pairing that is
 // ~39 ms per round against an 11.1 ms decode — about 3.5.
 //
-// This is not a tuning knob, it is a break-even, and the two measurements that motivated it
-// straddle it exactly: non-thinking Qwen3 accepts 5.76/round and runs 1.77x, while the SAME
-// model in thinking mode accepts 3.00 and runs 0.98x. The margin below is deliberate: disabling
-// a drafter that is merely breaking even costs nothing, while leaving one running that is losing
-// costs 20% and is INVISIBLE, because block drafting is lossless — the output is identical
-// either way, so an operator sees correct responses at reduced speed and has nothing to look at.
-const breakEvenTokensPerRound = 3.8
+// 2.5, BELOW break-even, not above it. This was 3.8 and that was backwards. The reasoning for a
+// margin ABOVE break-even was "disabling a drafter that is merely breaking even costs nothing" —
+// which is false, because acceptance MEASURED OVER THE FIRST FEW ROUNDS is not acceptance over
+// the generation. Math averages 5.88 tok/round end to end and is a 1.58x workload, but its
+// opening rounds are slow enough that a 3.8 threshold disabled it: 1.58x became 0.97x, the guard
+// costing 39% on a workload it was supposed to protect.
+//
+// So the margin belongs BELOW break-even. A false negative (disabling a paying workload) costs
+// ~40%; a false positive (six unprofitable rounds before tripping) costs ~8%. The guard should
+// only fire when a workload is CLEARLY losing — chat sits at 1.96 and still trips at 2.5 — and
+// should leave anything ambiguous alone.
+const breakEvenTokensPerRound = 2.5
 
 // guardWindow is how many rounds to observe before judging.
 //
-// SIX, not twelve, because the rounds spent deciding are pure loss when the answer is "stop":
+// SIX. Three was TRIED AND REVERTED, and the measurement is worth keeping because it refutes
+// the reasoning that motivated it:
+//
+//	case      window 6   window 3
+//	code        1.57x      1.54x   (kept either way)
+//	MATH        1.58x      0.91x   <- falsely tripped
+//	chat A      0.91x      0.90x
+//	chat B      0.94x      0.96x
+//	thinking    0.96x      0.92x
+//
+// Three bought nothing on chat and cost 42% on math by disabling a drafter that was paying.
+// The argument for shortening was that a response OPENS with boilerplate, so early rounds are
+// optimistic and judging early errs toward keeping a good drafter. That is false for math,
+// whose opening is evidently less predictable than its body — the whole-generation average
+// (5.88 tok/round) hides a slow start.
+//
+// It also confirms the asymmetry that shapes this whole design: a false negative costs ~42%
+// (a paying workload disabled) where a false positive costs ~8% (six unprofitable rounds).
+// The window should err LONG. Six, not twelve, because the rounds spent deciding are pure loss when the answer is "stop":
 // twelve rounds is a third of a 96-token response, and halving the window halves that. The risk
 // of judging early is disabling a drafter that would have paid — and that risk is LOW here in a
 // way worth stating: a response's opening is boilerplate ("Here's a Python function...", a code
@@ -428,14 +451,17 @@ func (g *acceptanceGuard) observe(committed int) bool {
 	}
 	g.rounds++
 	g.tokens += committed
+	// CUMULATIVE, not per-window. Resetting the counters after a passing window gave a losing
+	// workload a fresh budget every time: chat survived its first six rounds, reset, and only
+	// tripped on the twelfth — measured 0.79x where tripping at six gives 0.91x. Keeping the
+	// running average means a workload trips as soon as its EVIDENCE says so, while a
+	// slow-starting profitable one (math opens below its own average) recovers as later rounds
+	// pull the average up, instead of being judged on a six-round snapshot.
 	if g.rounds >= guardWindow {
 		if float64(g.tokens)/float64(g.rounds) < breakEvenTokensPerRound {
 			g.stopped = true
 			return false
 		}
-		// Passed the check: keep going, and re-judge over the next window rather than
-		// letting an early good stretch license an arbitrarily long bad one.
-		g.rounds, g.tokens = 0, 0
 	}
 	return true
 }
