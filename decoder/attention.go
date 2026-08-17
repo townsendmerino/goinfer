@@ -332,22 +332,31 @@ func attendQueryI8(q, ctx, scores []float32, cache *KVCache, layer, pos int, glo
 //     output. Gating on the attention output is the natural-looking misread and
 //     would be a different model.
 //
-// Granularity follows arch.laguna.GatePerHead: per-head emits nH gates, each
-// broadcast across the head's head_dim channels; per-element emits nH*hd gates,
-// one per channel. See docs/task-laguna.md for the three config spellings that
-// resolve into that one bool.
+// Granularity is read from the WEIGHT's row count, not from config.gating. The
+// released checkpoints make that necessary: Laguna-XS.2 declares `gating: true`,
+// which the XS-2.1/M.1 module resolves to per-ELEMENT, yet XS.2's own module
+// hardcodes nn.Linear(hidden, num_heads) and never reads the field — and its
+// shipped g_proj is [64, 2048], i.e. per-HEAD. The vendor's spelling→granularity
+// rule is generation-specific; the tensor shape is not. nH and nH*hd can never
+// collide (hd > 1), so the shape is unambiguous. arch.laguna.GatePerHead records
+// what the CONFIG declared and is used only to flag a mismatch at load.
 func applyAttnGate(scr *decodeScratch, be Backend, lw *LayerWeights, arch *Architecture, h, ctx []float32, nH, hd int) {
 	gates := scr.gateBuf(lw.GProj.Rows())
 	matmulInto(scr.ws, be, &lw.GProj, h, gates, 1)
-	// Granularity is read from the WEIGHT's row count, not from config.gating. The
-	// released checkpoints make that necessary: Laguna-XS.2 declares `gating: true`,
-	// which the XS-2.1/M.1 module resolves to per-ELEMENT, yet XS.2's own module
-	// hardcodes nn.Linear(hidden, num_heads) and never reads the field — and its
-	// shipped g_proj is [64, 2048], i.e. per-HEAD. The vendor's spelling→granularity
-	// rule is generation-specific; the tensor shape is not. nH and nH*hd can never
-	// collide (hd > 1), so the shape is unambiguous. arch.laguna.GatePerHead records
-	// what the CONFIG declared and is used only to flag a mismatch at load.
-	if lw.GProj.Rows() == nH {
+	applyGateRow(gates, ctx, lw.GProj.Rows() == nH, nH, hd)
+}
+
+// applyGateRow multiplies ONE position's attention context by its softplus gate,
+// in place. It is the single home for the gate math: causalAttention calls it at
+// K=1 and the batched forward calls it per row, so the two paths cannot drift.
+// Keeping them separate is exactly how the gate came to be applied on the decode
+// path but not in batched prefill — which reads as a plausible 0.957 cosine
+// rather than as a crash.
+//
+// perHead ⇒ gates has nH entries, one per head, broadcast across that head's hd
+// channels; otherwise gates has nH*hd entries, one per channel.
+func applyGateRow(gates, ctx []float32, perHead bool, nH, hd int) {
+	if perHead {
 		for head := range nH {
 			g := softplus32(gates[head])
 			row := ctx[head*hd : head*hd+hd]

@@ -98,18 +98,22 @@ func (m *Model) embedN(ids []int) []float32 {
 func (m *Model) runLayersFromEmbedN(h []float32, cache *KVCache) ([]float32, error) {
 	arch := m.w.arch
 	be := m.be
-	hidden, nH, nKV, hd := arch.HiddenDim, arch.NumHeads, arch.NumKVHeads, arch.HeadDim
-	qDim, kvDim, inter := nH*hd, nKV*hd, arch.IntermediateDim
+	hidden, nKV, hd := arch.HiddenDim, arch.NumKVHeads, arch.HeadDim
+	// maxQDim, not qDim: a family with PER-LAYER query heads (Laguna — 48 on
+	// full-attention layers, 64 on sliding) reuses q/ctx across every layer, so they
+	// must be sized for the WIDEST one and sliced per layer below. maxHeads collapses
+	// to NumHeads everywhere else, leaving these allocations unchanged.
+	maxQDim, kvDim, inter := arch.maxHeads()*hd, nKV*hd, arch.IntermediateDim
 	K := len(h) / hidden
 	startPos := cache.Pos()
 	sandwich := arch.NormPlacement == NormSandwich4
 	parallel := arch.NormPlacement == NormParallel
 
 	norm := make([]float32, K*hidden)
-	q := make([]float32, K*qDim)
+	q := make([]float32, K*maxQDim)
 	k := make([]float32, K*kvDim)
 	v := make([]float32, K*kvDim)
-	ctx := make([]float32, K*qDim)
+	ctx := make([]float32, K*maxQDim)
 	att := make([]float32, K*hidden)
 	gate := make([]float32, K*inter)
 	up := make([]float32, K*inter)
@@ -135,6 +139,10 @@ func (m *Model) runLayersFromEmbedN(h []float32, cache *KVCache) ([]float32, err
 	var ws linalg.Workspace
 	var qkvOps [3]linalg.W8A8Op
 	var guOps [2]linalg.W8A8Op
+	// Laguna attention-gate scratch, grown on first use. Its width depends on the
+	// gate's granularity (nH or nH*hd) AND on the layer's head count, so it is sized
+	// per layer rather than up front. nil for every other family.
+	var gbuf []float32
 
 	row := func(b []float32, i, w int) []float32 { return b[i*w : i*w+w] }
 
@@ -147,6 +155,12 @@ func (m *Model) runLayersFromEmbedN(h []float32, cache *KVCache) ([]float32, err
 		}
 		lw := &m.w.Layers[l]
 		global := arch.isGlobalLayer(l)
+		// This layer's query width. q/ctx are sliced to it so every row stride, RoPE
+		// call and matmul below sees the layer's OWN head count — the batched twin of
+		// what causalAttention does for K=1.
+		nH := arch.headsAt(l)
+		qDim := nH * hd
+		q, ctx := q[:K*qDim], ctx[:K*qDim]
 
 		copy(norm, h)
 		for i := range K {
@@ -212,6 +226,23 @@ func (m *Model) runLayersFromEmbedN(h []float32, cache *KVCache) ([]float32, err
 			attendBatchedHeads(q, ctx, alk[:nKeys*kvDim], alv[:nKeys*kvDim], 0, cache, l, startPos, K, global, arch, true, aqh, akh, avt, ascores, ach)
 		} else {
 			attendBatchedHeads(q, ctx, cache.Keys(l), cache.Vals(l), 0, cache, l, startPos, K, global, arch, true, aqh, akh, avt, ascores, ach)
+		}
+		// Laguna output gating, per row, BEFORE o_proj — the batched twin of the K=1
+		// call in causalAttention, sharing applyGateRow so the two cannot diverge.
+		// `norm` still holds this layer's POST-input_layernorm rows here (it is not
+		// recomputed for the MLP until after the o_proj below), which is exactly the
+		// tensor the gate reads.
+		if arch.laguna != nil {
+			gRows := lw.GProj.Rows()
+			if cap(gbuf) < K*gRows {
+				gbuf = make([]float32, K*gRows)
+			}
+			gb := gbuf[:K*gRows]
+			matmul(be, &lw.GProj, norm, gb, K)
+			perHead := gRows == nH
+			for i := range K {
+				applyGateRow(row(gb, i, gRows), row(ctx, i, qDim), perHead, nH, hd)
+			}
 		}
 		matmul(be, &lw.OProj, ctx, att, K)
 		if arch.OutBias {

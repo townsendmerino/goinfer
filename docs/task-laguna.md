@@ -193,3 +193,43 @@ rotary width, QK-norm, and per-layer heads), `TestLagunaGating_allThreeSpellings
 layer's attention weights and its output multiplies the entire attention context.
 
 **Not yet gated numerically** — tiny goldens and the real XS.2 oracle are the next increments.
+
+
+## Increment 3 — the real XS.2 gate, and the bug it found
+
+**The real gate failed on its first run, for a real reason**, which is the argument for having
+built it. It crashed inside batched prefill with a shape check: `344064 vs 458752` = `56×6144`
+vs `56×8192`, i.e. **48 heads vs 64**. Increment 1 threaded per-layer query heads through the
+DECODE path (`causalAttention`, `attendQuery`, `attendBatchedHeads`, decode scratch) but not
+through `runLayersFromEmbedN`, whose `q`/`ctx` are allocated once from `NumHeads`.
+
+**T1 did not catch it because T1 only drove the sequential path.** The tiny test looped
+`m.forward` per token; batched prefill was never exercised. So T1 now runs the prompt through
+`prefillLogits` as well and compares against the same golden — the tiny fixtures already carry
+the per-layer geometry (4 heads full / 8 sliding), so this class of bug is now caught in 0.02s
+instead of after a two-minute 63GB load.
+
+Fixing the crash exposed a second, quieter bug: with the buffers right, batched prefill returned
+cosine **0.957021** — byte-identical to the earlier "gate disabled" mutant. The gate was applied
+in `causalAttention` and **nowhere in the batched path**. That is a defect that reads as a
+plausible-looking number rather than a failure, so the gate math now lives in ONE place
+(`applyGateRow`), called by both paths, exactly as `attendQuery`'s own comment argues for.
+
+### Result
+
+Real `poolside/Laguna-XS.2` (33B-A3B, 14 shards, loaded at int4) generates:
+
+> 1. Eiffel Tower
+> 2. Notre-Dame Cathedral
+> 3. Louvre Museum
+
+distinct-trigram 1.000, three real landmarks, through the vendor's own chat template.
+
+### Why the manifest says `experimental`, not `validated`
+
+The parity policy reserves `validated` for a **T3 method** — cosine/argmax against a full
+reference forward of a released checkpoint. This gate is **coherence + structure** on real
+weights, which is a genuinely different and weaker claim, so the row stays `experimental` with
+method `tiny-golden` and the real gate described in its note. A true T3 would need a bf16 forward
+of a 33B model alongside the int4 one; 62GB of RAM does not hold both, so it would have to be a
+layer-slice oracle. That is the one open item for this family, and it is a nice-to-have.

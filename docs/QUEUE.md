@@ -366,7 +366,7 @@ supports.
 | `docs/ollama-chase.md|cuda/resident.go:357` | goinfer | `g4x1, g4x2, g4rn Buffer` |
 | `docs/ollama-chase.md|cuda/resident.go:41` | goinfer | `anchor: const ctxCapMarginBytes = 384 << 20` |
 | `docs/ollama-chase.md|cuda/resident.go:605` | goinfer | `// declined to the staged/CPU path upstream.` |
-| `docs/ollama-chase.md|decoder/forwardn.go:381` | goinfer | `for kvh := range nKV {` |
+| `docs/ollama-chase.md|decoder/forwardn.go:412` | goinfer | `for kvh := range nKV {` |
 | `docs/ollama-chase.md|decoder/mlp.go:82` | goinfer | `func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend, pager *expert` |
 | `docs/ollama-chase.md|decoder/model.go:831` | goinfer | `// logits. On the batched archs this runs the layers at M=len in one pass (each` |
 | `docs/ollama-chase.md|decoder/model.go:979` | goinfer | `// sample. Identical to the logits path — guarded by ArgmaxEquivalent/GreedyEquivalent.` |
@@ -392,7 +392,7 @@ supports.
 | `docs/queue-engineering.md|cuda/resident.go:244` | goinfer | `// backend.go locals; the per-layer KV cache and UploadKV read r.layers[l].kvDim.` |
 | `docs/queue-engineering.md|cuda/resident.go:419` | goinfer | `func (r *cudaResident) recordUpload(e error) {` |
 | `docs/queue-engineering.md|decoder/features_test.go:158` | goinfer | `want, ok := admissionGolden[name]` |
-| `docs/queue-engineering.md|decoder/forwardn.go:529` | goinfer | `logits[j] = sc * float32(math.Tanh(float64(val/sc)))` |
+| `docs/queue-engineering.md|decoder/forwardn.go:560` | goinfer | `logits[j] = sc * float32(math.Tanh(float64(val/sc)))` |
 | `docs/queue-engineering.md|decoder/kvsnapshot_gemma4_test.go:10` | goinfer | `func TestSnapshot_refusesNonUniformKVWidth_C05(t *testing.T) {` |
 | `docs/queue-engineering.md|decoder/layerpaging.go:42` | goinfer | `// mu guards the mutable paging state below (audit C-30). The pager lives on *Model, sha` |
 | `docs/queue-engineering.md|decoder/model.go:731` | goinfer | `// Diagnostic — same byte-identical-output contract as ForwardCapture. Not wired for own` |
@@ -410,7 +410,7 @@ supports.
 | `docs/queue-performance.md|cuda/backend.go:463` | goinfer | `if r.dev, e = CreateSystemDefaultDevice(); e != nil {` |
 | `docs/queue-performance.md|cuda/backend.go:591` | goinfer | `load(&r.bRopeKV, pbmod, "rope_kv_batched")` |
 | `docs/queue-performance.md|cuda/backend.go:836` | goinfer | `// cache, so the cap is correct by construction rather than covered by a margin.` |
-| `docs/queue-performance.md|decoder/forwardn.go:381` | goinfer | `for kvh := range nKV {` |
+| `docs/queue-performance.md|decoder/forwardn.go:412` | goinfer | `for kvh := range nKV {` |
 | `docs/queue-performance.md|decoder/mlp.go:82` | goinfer | `func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend, pager *expert` |
 | `docs/queue-performance.md|decoder/sampler_chunked.go:188` | goinfer | `return drawChunked(e, sums, z, r)` |
 | `docs/queue-performance.md|decoder/scratch.go:39` | goinfer | `ws        *linalg.Workspace // W8A8 activation-quant scratch (zero-alloc Into/Batch)` |
@@ -444,7 +444,7 @@ supports.
 | `docs/task-metal-batched-verify-kernel.md|metal/kernels.go:80` | goinfer | `#define W4A8_BODY \` |
 | `docs/task-metal-batched-verify-kernel.md|metal/model.go:280` | goinfer | `func maxThreadgroupStageBytes(hidden, qWidth, moeInter, g4moeInter int) int {` |
 | `docs/task-moe-streaming.md|decoder/forwardn.go:14` | goinfer | `// MoE FFN itself stays per-row (router picks different experts per token).` |
-| `docs/task-moe-streaming.md|decoder/forwardn.go:228` | goinfer | `// Sequential: add the attention residual, then re-norm the updated stream for the MLP.` |
+| `docs/task-moe-streaming.md|decoder/forwardn.go:259` | goinfer | `// Sequential: add the attention residual, then re-norm the updated stream for the MLP.` |
 | `docs/task-moe-streaming.md|decoder/mlp.go:81` | goinfer | `// Only the chosen experts are evaluated — the point of MoE.` |
 | `docs/task-moe-streaming.md|decoder/moepaging.go:15` | goinfer | `// only K·L per token; the router's top-k selection is the demand signal. The` |
 | `docs/task-moe-streaming.md|decoder/moepaging_test.go:11` | goinfer | `// it with the frequency-aware policy (TestSpanCache_evictsLeastRecentWithPolicy),` |

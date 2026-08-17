@@ -109,6 +109,29 @@ func TestLaguna_textParity(t *testing.T) {
 				t.Errorf("last-logit cosine %.6f < 0.9999", cos)
 			}
 
+			// BATCHED PREFILL, against the same golden. This is a separate code path from
+			// the per-token loop above (runLayersFromEmbedN, with its own buffers), and
+			// exercising only the sequential path is what let a per-layer-head bug reach
+			// the 63GB real gate: q/ctx there were sized once from NumHeads, so layer 1's
+			// 64 heads overran a 48-head buffer and the shape check tripped mid-prefill.
+			// The tiny fixtures reproduce that geometry (4 heads full / 8 sliding), so
+			// this catches it in 0.02s instead of two minutes of loading.
+			if !m.canBatchN(len(g.PromptIDs)) {
+				t.Errorf("canBatchN(%d) = false — laguna should use the batched prefill path", len(g.PromptIDs))
+			} else {
+				bc := m.NewCache(len(g.PromptIDs) + g.NNew)
+				bl, err := m.prefillLogits(g.PromptIDs, bc)
+				if err != nil {
+					t.Fatalf("prefillLogits: %v", err)
+				}
+				if bArg := argmax(bl); bArg != g.Argmax {
+					t.Errorf("batched-prefill argmax = %d, want %d", bArg, g.Argmax)
+				}
+				if bcos := logitCosine(bl, g.LastLogits); bcos < 0.9999 {
+					t.Errorf("batched-prefill last-logit cosine %.6f < 0.9999", bcos)
+				}
+			}
+
 			// Greedy continuation: catches per-position errors (RoPE width, sliding-window
 			// start, per-layer head count) that a single-position logit compare can miss.
 			cont := make([]int, 0, g.NNew)
