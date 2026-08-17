@@ -253,11 +253,19 @@ func TestDFlashLoop_gate3(t *testing.T) {
 			"What is 17 * 23? Show your working.",
 			"A train travels 120 km in 1.5 hours. What is its average speed in km/h?",
 		},
+		// chat is the class the projection says LOSES (0.78x), and gate 4's router exists for
+		// it. Measured here rather than projected, because a router should be designed against
+		// the real number: if chat is a mild loss the router is an optimization, and if it is a
+		// severe one the router is a correctness-of-economics requirement.
+		"chat": {
+			"Explain what a hash table is, in two sentences.",
+			"Give me three tips for keeping houseplants alive.",
+		},
 	}
-	widths := map[string]int{"code": 7, "math": 8}
+	widths := map[string]int{"code": 7, "math": 8, "chat": 4}
 	const maxNew = 96
 
-	for _, suite := range []string{"code", "math"} {
+	for _, suite := range []string{"code", "math", "chat"} {
 		w := widths[suite]
 		var specMs, greedyMs float64
 		var specToks, rounds int

@@ -2186,3 +2186,44 @@ catch this class, by construction: correctness is preserved precisely because th
 **The practical rule this earns:** when a block drafter's measured acceptance is far below its
 known value, suspect the drafter's INPUT before its implementation. Four of the five were prompt
 or token construction; none was a numerics bug.
+
+### Gate 3, repeated: math is **1.79×**, chat is **0.96×**, and the router is NOT mandatory
+
+The gate-3 entry above reported math at 1.50× from a SINGLE run. Repeating it four times shows
+that was a cold first run:
+
+| suite | k | run 1 | run 2 | run 3 | run 4 | **steady** |
+|---|---|---|---|---|---|---|
+| code | 7 | 1.60 | 1.58 | 1.60 | 1.62 | **1.60×** |
+| math | 8 | **1.50** | 1.78 | 1.79 | 1.80 | **1.79×** |
+| chat | 4 | — | 0.97 | 0.94 | 0.97 | **0.96×** |
+
+**Acceptance is deterministic** — identical token and round counts on every run (code 193/41,
+math 194/33, chat 196/100) — so only the wall-clock moved, and the first math run's spec time
+was 1431 ms against 1148 ms steady. The lesson is the ordinary one and I had to relearn it:
+**a single timing run is a draw from a distribution with a cold tail, and the first one is the
+tail.** Acceptance can be measured once; time cannot.
+
+**So gate 3's real figures are code 1.60× and math 1.79×**, against projections of 1.52× and
+1.96×. Code is 5% ABOVE projection, math 9% below — much closer than the single-run 23% gap
+suggested.
+
+### Chat measures 0.96×, and that retires the router's justification
+
+This document says gate 4's router is **mandatory** rather than a nicety, because "at 0.46× on
+open chat a DFlash that fires indiscriminately is a 2× loss". **That was computed at verify
+width 16.** At chat's own optimum width of 4, the measured figure is **0.96×** — firing
+indiscriminately costs about **4%**, not 54%.
+
+That changes what gate 4 is for. A router is now an **optimization worth ~4% on chat-like
+traffic**, not a prerequisite for the feature to be safe to ship. The honest routed-vs-unrouted
+comparison:
+
+| | code | math | chat | 
+|---|---|---|---|
+| always fire (no router) | 1.60× | 1.79× | **0.96×** |
+| perfect router | 1.60× | 1.79× | 1.00× |
+
+**The gap a perfect router can close is 4 percentage points on one traffic class.** Worth having
+eventually; not worth blocking a ship on, and definitely not the "mandatory or the feature is
+harmful" framing the width-16 numbers implied.
