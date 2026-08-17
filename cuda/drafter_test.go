@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	gpu "github.com/townsendmerino/aikit/gpu"
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
@@ -126,5 +127,142 @@ func TestResidentDrafter_fuseParity(t *testing.T) {
 		if cos < 0.999 {
 			t.Errorf("row %d: cosine %.6f < 0.999 — the drafter's fc is mis-packed or mis-scaled on device", i, cos)
 		}
+	}
+}
+
+// TestResidentDrafter_extendContext gates the drafter's context K/V on device.
+//
+// It checks the two things this path does that a decoder layer does NOT, because both are
+// silent when wrong — the K/V would still be the right shape at the right positions:
+//
+//	INCREMENTAL: extending by 4 then 4 must land the same K/V as extending by 8 in one call.
+//	That is the property the serving path depends on (rebuilding costs 2.4x at ctx=1024, per
+//	TestDFlashDraftScaling), and an off-by-one in the write position breaks it while leaving
+//	every buffer plausibly populated.
+//
+//	POSITION-DEPENDENT: rows written at different absolute positions must DIFFER even for
+//	identical input, because RoPE rotates by position. If they matched, the rope call is being
+//	handed the wrong start and every drafted token after the first block would be subtly wrong.
+func TestResidentDrafter_extendContext(t *testing.T) {
+	requireHeavyModel(t)
+	tgt := os.Getenv("GOINFER_CUDA_MODEL")
+	if tgt == "" {
+		tgt = os.ExpandEnv("$HOME/models/qwen3-4b")
+	}
+	ddir := os.Getenv("GOINFER_DFLASH_F32")
+	if ddir == "" {
+		ddir = filepath.Join(os.Getenv("HOME"), "models", "qwen3-4b-dflash-f32")
+	}
+	if _, err := os.Stat(filepath.Join(ddir, "model.safetensors")); err != nil {
+		t.Skipf("no drafter at %s", ddir)
+	}
+	mc, err := decoder.Load(tgt, decoder.Options{Backend: "cuda", Quant: "int4"})
+	if err != nil {
+		t.Fatalf("load target: %v", err)
+	}
+	defer mc.Close()
+	r := mc.ResidentForwardForTest().(*cudaResident)
+	dr, err := decoder.LoadDFlashDrafter(ddir)
+	if err != nil {
+		t.Fatalf("load drafter: %v", err)
+	}
+	defer dr.Close()
+
+	geo := dr.DrafterGeometry()
+	kvDim := geo.NumKVHeads * geo.HeadDim
+
+	mkfused := func(n, seed int) [][]float32 {
+		out := make([][]float32, n)
+		for i := range out {
+			out[i] = make([]float32, geo.Hidden)
+			for j := range out[i] {
+				out[i][j] = float32(math.Sin(float64((i+seed)*geo.Hidden+j) * 0.002))
+			}
+		}
+		return out
+	}
+	// Read layer 0's K cache back for the first n positions.
+	readK := func(d *residentDrafter, n int) []float32 {
+		host := make([]float32, n*kvDim)
+		if e := d.r.do(func() error {
+			if e := d.r.stream.Sync(); e != nil {
+				return e
+			}
+			full := make([]float32, d.kvCap*kvDim)
+			if e := gpu.Download(d.kc[0], full); e != nil {
+				return e
+			}
+			copy(host, full[:n*kvDim])
+			return nil
+		}); e != nil {
+			t.Fatalf("readK: %v", e)
+		}
+		return host
+	}
+
+	// --- one shot: 8 rows in a single call ---
+	dA, err := r.AttachDrafter(dr)
+	if err != nil {
+		t.Fatalf("AttachDrafter: %v", err)
+	}
+	rows := mkfused(8, 0)
+	// Make rows 0 and 4 IDENTICAL so the position check below isolates RoPE: same input at
+	// different absolute positions must produce different K, or the rope start is wrong.
+	copy(rows[4], rows[0])
+	if err := dA.ExtendContext(rows); err != nil {
+		t.Fatalf("one-shot ExtendContext: %v", err)
+	}
+	if dA.ContextLen() != 8 {
+		t.Fatalf("ContextLen = %d, want 8", dA.ContextLen())
+	}
+	oneShot := readK(dA, 8)
+
+	// --- incremental: 4 then 4, same rows ---
+	dB, err := r.AttachDrafter(dr)
+	if err != nil {
+		t.Fatalf("AttachDrafter B: %v", err)
+	}
+	if err := dB.ExtendContext(rows[:4]); err != nil {
+		t.Fatalf("incremental 1: %v", err)
+	}
+	if err := dB.ExtendContext(rows[4:]); err != nil {
+		t.Fatalf("incremental 2: %v", err)
+	}
+	if dB.ContextLen() != 8 {
+		t.Fatalf("incremental ContextLen = %d, want 8", dB.ContextLen())
+	}
+	incr := readK(dB, 8)
+
+	diff := 0
+	for i := range oneShot {
+		if oneShot[i] != incr[i] {
+			diff++
+		}
+	}
+	if diff != 0 {
+		t.Errorf("incremental != one-shot in %d/%d K values — the write position is wrong", diff, len(oneShot))
+	} else {
+		t.Logf("incremental (4+4) is BIT-IDENTICAL to one-shot (8) across %d K values", len(oneShot))
+	}
+
+	// --- position dependence: identical input at different positions must differ (RoPE) ---
+	same := true
+	for j := 0; j < kvDim; j++ {
+		if oneShot[j] != oneShot[4*kvDim+j] {
+			same = false
+			break
+		}
+	}
+	rowsEqual := true
+	for j := range rows[0] {
+		if rows[0][j] != rows[4][j] {
+			rowsEqual = false
+			break
+		}
+	}
+	if !rowsEqual {
+		t.Logf("position check: input rows 0 and 4 differ anyway, so RoPE is not isolated here")
+	} else if same {
+		t.Errorf("identical input rows produced identical K at positions 0 and 4 — RoPE is not being applied per position")
 	}
 }
