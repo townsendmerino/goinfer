@@ -376,7 +376,7 @@ supports.
 | `docs/parity-coverage-policy.md|linalg/dot.go:25` | aikit | `sum += a[k] * b[k]` |
 | `docs/plan-cpubrrr-steal-and-bindings.md|decoder/registry.go:46` | goinfer | `"gpt_oss":             gptOssArchitecture,     // gpt-oss (20b/120b): sparse MoE + per-h` |
 | `docs/plan-cpubrrr-steal-and-bindings.md|linalg/quant.go:412` | aikit | `func QuantizeGroupInt4Row(row []float32, cols, group int, packed []byte, scales []float3` |
-| `docs/prompts/metal-close-leak-check.md|metal/backend.go:139` | goinfer | `return nil, fmt.Errorf("metal: batched prefill declined — not bit-identical to decode (5` |
+| `docs/prompts/metal-close-leak-check.md|metal/backend.go:211` | goinfer | `// Close stops the pipelined executor (waiting for it) and frees every MTLBuffer this re` |
 | `docs/prompts/metal-close-leak-check.md|metal/model.go:350` | goinfer | `// expert weights, buffer OOM — model.go/moe.go/gemma4_moe.go) into the error this signa` |
 | `docs/prompts/metal-close-leak-check.md|metal/model.go:46` | goinfer | `// same-op kernel inherit it. A byte-exact fixture for such an op MUST use context > the` |
 | `docs/queue-engineering.md|cuda/argmax_tiebreak_test.go:19` | goinfer | `func TestArgmaxTieBreak(t *testing.T) {` |
@@ -395,7 +395,7 @@ supports.
 | `docs/queue-engineering.md|decoder/serialize_test.go:436` | goinfer | `t.Fatalf("streamed length %d != buffered %d", n, len(want))` |
 | `docs/queue-engineering.md|internal/giw/bundle.go:114` | goinfer | `if avail := fi.Size() - (tokOff + 4); tokLen > avail {` |
 | `docs/queue-engineering.md|internal/serveapp/embeddings.go:26` | goinfer | `// Embedding request bounds (audit C-21). /v1/embeddings is deliberately un-queued (the ` |
-| `docs/queue-engineering.md|internal/serveapp/main.go:432` | goinfer | `// write, so a long stream is unaffected. WriteTimeout stays 0: SSE responses are long-l` |
+| `docs/queue-engineering.md|internal/serveapp/main.go:479` | goinfer | `// A SECOND signal during the drain force-exits instead of being swallowed by the buffer` |
 | `docs/queue-engineering.md|linalg/quant.go:136` | aikit | `dequantRowInt8(deq, bq, 1.0)` |
 | `docs/queue-engineering.md|metal/model.go:728` | goinfer | `r.residencyBufs = pinned` |
 | `docs/queue-engineering.md|metal/model.go:827` | goinfer | `r.logitsHost[j] = sc * float32(math.Tanh(float64(v/sc)))` |

@@ -1468,12 +1468,20 @@ sequential/CPU reference, for latency-sensitive long-context use") without needi
 "unify activation precision so it's safe as the default" fix P10's case would have required. That
 is a materially smaller bar to clear.
 
-**Recommendation: worth pursuing, shaped as opt-in, not worth pursuing as a default-path fix.** The
-numbers are large and consistent enough to justify the (still real, still needs doing) engineering
-of wiring `PrefillLast` into the actual prompt-ingestion path behind a flag, with the divergence
-disclosed in the flag's own help text and in the README — the same "decline-never-crash, disclose
-the tradeoff" ethos this project uses elsewhere. Not scoped further here (this was a measurement
-task); the wiring itself is a separate, smaller task than the P10 kernel-precision question was.
+**LANDED 2026-08-16: `--metal-fast-prefill` (`internal/serveapp`).** Sets the same env var
+(`GOINFER_METAL_BATCHED_PREFILL`) `metal/backend.go`'s `PrefillLast` already gated on, at CLI
+startup — no frozen-core edit needed, since `decoder/model.go`'s generic batched-prefill gate
+already tries `PrefillLast` by default and falls back gracefully on Metal's own decline; making
+Metal not decline was the whole job. The divergence is disclosed in the flag's own `--help` text
+(README doesn't enumerate individual flags for this class of feature — `--help` is the
+documentation surface, matching `--moe-cache-experts` and similar), matching the
+"decline-never-crash, disclose the tradeoff" ethos used elsewhere in this project.
+
+**Verified end-to-end, not just built and unit-tested:** ran the actual server binary, a real
+~1450-token prompt through `/v1/chat/completions`, off vs on: **68.5s → 18.3s (3.74×)**,
+identical response content both times ("done"). Confirms the flag reaches the real production
+path, not just the synthetic benchmark harness. `go test ./internal/serveapp/...` green; full
+repo build/vet clean.
 
 *Corroboration:* the fan-out audit and an independent code-grounded pass (Cursor, 2026-08-10) agreed on
 the WebGPU logits reuse, the Gemma softcap, the embedResident scratch, and the Metal-argmax gap

@@ -133,10 +133,15 @@ func (a *metalResident) PrefillLast(embeddings [][]float32, startPos int) ([]flo
 	// which diverges the greedy stream on real weights (54% — TestMetalPrefillDivergenceRate; §A2-Metal).
 	// The decoder's shared batched-prefill gate is default-ON (correct for CUDA, which was made
 	// fma-bit-identical), so it would otherwise pull this divergent path in by default. Decline → the
-	// caller falls back to the sequential Forward loop (decode kernels ⇒ bit-identical). Opt in only for
-	// measurement/TTFT-at-the-cost-of-exactness: GOINFER_METAL_BATCHED_PREFILL=1.
+	// caller falls back to the sequential Forward loop (decode kernels ⇒ bit-identical).
+	//
+	// Opt in — a real, disclosed feature since P11 (measured 3.9-4.6x TTFT at real prompt lengths,
+	// docs/ollama-chase.md "Metal batched prefill as a TTFT lever"), not just an internal measurement
+	// knob: `--metal-fast-prefill` on the server binary (internal/serveapp) sets this same env var at
+	// startup, with the tradeoff spelled out in --help. GOINFER_METAL_BATCHED_PREFILL=1 also works
+	// directly for anyone driving decoder.Load without the CLI (tests, embedders).
 	if os.Getenv("GOINFER_METAL_BATCHED_PREFILL") != "1" {
-		return nil, fmt.Errorf("metal: batched prefill declined — not bit-identical to decode (54%% stream divergence, §A2-Metal); using sequential. Set GOINFER_METAL_BATCHED_PREFILL=1 to force")
+		return nil, fmt.Errorf("metal: batched prefill declined — not bit-identical to decode (54%% stream divergence, §A2-Metal); using sequential. Pass --metal-fast-prefill (or set GOINFER_METAL_BATCHED_PREFILL=1) to force")
 	}
 	// The f16 MMA prefill kernels implement only the plain dense shape (a dense FFN out of
 	// L.guW/L.dW, model-level rope/window, SiLU-only swiglu). A MoE model never packs those

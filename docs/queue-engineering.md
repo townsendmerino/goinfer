@@ -1264,7 +1264,7 @@ rather than struck, because "substantially fixed" is a different state from "fix
 | C-14 CUDA argmax has no index tie-break | **fixed** at `c6600fc`, gated | `cuda/argmax_tiebreak_test.go:19` |
 | C-31 `make([]byte, u32)` unbounded | **fixed** — bounded against the remaining file size before the allocation | `internal/giw/bundle.go:114` |
 | C-21 embeddings batch cap, un-queued | **fixed** — `checkEmbedInputBounds` caps the input count, gated at the boundary and at +1; the un-queued half is a *documented deliberate decision*, not an omission. The body-cap tests are a different concern (bytes, not count) — covered-by-something-else, which is why they did not answer this | `internal/serveapp/embeddings.go:26` |
-| C-22 shutdown lock, swallowed second signal | **fixed**, with a named gate — the checkpoint cannot block forever on a busy model, and a second Ctrl-C always kills | `internal/serveapp/main.go:432` |
+| C-22 shutdown lock, swallowed second signal | **fixed**, with a named gate — the checkpoint cannot block forever on a busy model, and a second Ctrl-C always kills | `internal/serveapp/main.go:479` |
 | C-30 no mutex in the paging paths | **fixed** — both pagers carry an internal mutex, each citing the audit finding | `decoder/layerpaging.go:42` |
 
 **These are correctness and security items, so a wrong entry costs more here than in P or B — in both

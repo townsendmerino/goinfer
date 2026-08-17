@@ -248,31 +248,32 @@ type config struct {
 	backend  string
 	// quant + the per-model knobs below are server-global DEFAULTS; a --model spec
 	// can override each one (see modelSpec / modelFlag.Set).
-	quant           string
-	quantSet        bool   // was --quant given on the CLI? (vs the "int4" default) — for the .giw explicit-quant check (T1-7)
-	kvPrec          string // GPU residency KV cache precision: "" | f32 | f16 (-kv)
-	moeCacheExperts bool   // stream routed MoE experts host→VRAM (--moe-cache-experts)
-	moeCacheSlots   int    // per-layer expert slot REQUEST (--moe-cache-slots); an upper bound, 0 = built-in default
-	ctxSize         int    // -ctx: requested GPU-resident KV capacity in positions (0 = backend default). Effective cap = min(model context window, this)
-	kvQuant         string // CPU KV cache storage precision: "" | f32 | i8 (-kv-quant)
-	lora            string
-	name            string // -served-model-name (applies only to a single unnamed --model)
-	kvSessions      int
-	sessionDir      string        // -session-dir (also where /admin unload snapshots warm KV)
-	kvIdleDemote    time.Duration // -kv-idle-demote: tiered KV — demote a session idle this long to disk (0 = off)
-	kvDemotedMax    int           // -kv-demoted-max: cap on the on-disk cold tier
-	streamWeights   bool          // -stream-weights: page MoE expert weights out of an mmap'd .giw under a RAM budget
-	weightCacheGB   float64       // -weight-cache: resident expert-weight budget in GB (0 = auto)
-	embedInt4       bool          // -embed-int4: relax the int8 embed/head pin to int4 (lossy, big-vocab small models)
-	maxQueue        int           // -max-queue: bounded per-model queue depth (0 = unbounded)
-	maxInflight     int           // -max-inflight: global cap on concurrent inference handlers (bounds pre-queue work; 0 = unbounded)
-	maxBodyBytes    int64         // -max-body-bytes: request-body cap (0 = derive from the model's context window)
-	unloadDrainWait time.Duration // -unload-drain-wait: how long an unload waits for in-flight requests to drain before 202 (native free continues detached)
-	spec            string        // -spec: "" (off) | "ngram" — lossless n-gram speculative decode
-	allowAdmin      bool          // -allow-admin: enable POST /admin/models/{load,unload}
-	requireBE       bool          // -require-backend: refuse to start when a model silently fell back off the requested backend's fast paths (resident decode / batched prefill)
-	visionPath      string        // -vision: dir holding the vision tower (SigLIP + projector) for a multimodal --model
-	visionQuant     string        // -vision-quant: "f32" (default) | "int8" (W8A8; only faster on AVX512-VNNI — a WASH on AVX2)
+	quant            string
+	quantSet         bool   // was --quant given on the CLI? (vs the "int4" default) — for the .giw explicit-quant check (T1-7)
+	kvPrec           string // GPU residency KV cache precision: "" | f32 | f16 (-kv)
+	moeCacheExperts  bool   // stream routed MoE experts host→VRAM (--moe-cache-experts)
+	moeCacheSlots    int    // per-layer expert slot REQUEST (--moe-cache-slots); an upper bound, 0 = built-in default
+	metalFastPrefill bool   // opt into Metal's batched (non-bit-identical) prompt prefill (--metal-fast-prefill)
+	ctxSize          int    // -ctx: requested GPU-resident KV capacity in positions (0 = backend default). Effective cap = min(model context window, this)
+	kvQuant          string // CPU KV cache storage precision: "" | f32 | i8 (-kv-quant)
+	lora             string
+	name             string // -served-model-name (applies only to a single unnamed --model)
+	kvSessions       int
+	sessionDir       string        // -session-dir (also where /admin unload snapshots warm KV)
+	kvIdleDemote     time.Duration // -kv-idle-demote: tiered KV — demote a session idle this long to disk (0 = off)
+	kvDemotedMax     int           // -kv-demoted-max: cap on the on-disk cold tier
+	streamWeights    bool          // -stream-weights: page MoE expert weights out of an mmap'd .giw under a RAM budget
+	weightCacheGB    float64       // -weight-cache: resident expert-weight budget in GB (0 = auto)
+	embedInt4        bool          // -embed-int4: relax the int8 embed/head pin to int4 (lossy, big-vocab small models)
+	maxQueue         int           // -max-queue: bounded per-model queue depth (0 = unbounded)
+	maxInflight      int           // -max-inflight: global cap on concurrent inference handlers (bounds pre-queue work; 0 = unbounded)
+	maxBodyBytes     int64         // -max-body-bytes: request-body cap (0 = derive from the model's context window)
+	unloadDrainWait  time.Duration // -unload-drain-wait: how long an unload waits for in-flight requests to drain before 202 (native free continues detached)
+	spec             string        // -spec: "" (off) | "ngram" — lossless n-gram speculative decode
+	allowAdmin       bool          // -allow-admin: enable POST /admin/models/{load,unload}
+	requireBE        bool          // -require-backend: refuse to start when a model silently fell back off the requested backend's fast paths (resident decode / batched prefill)
+	visionPath       string        // -vision: dir holding the vision tower (SigLIP + projector) for a multimodal --model
+	visionQuant      string        // -vision-quant: "f32" (default) | "int8" (W8A8; only faster on AVX512-VNNI — a WASH on AVX2)
 
 	embedPath  string // encoder (-embed-model); "" = no /v1/embeddings
 	embedQuant string // "" | f32 | q8
@@ -307,6 +308,7 @@ func Main() {
 		"falls back to the ~9x slower sequential prefill. A prequantized .giw model carries its own baked-in quant.")
 	flag.BoolVar(&cfg.requireBE, "require-backend", false, "strict mode: exit non-zero at startup if a model did not resolve to the requested --backend's fast paths — no resident decode path, or a prefill that declined to the sequential per-token loop (e.g. int8int8 on cuda, ~9× slower TTFT). Both fall back silently by design; a batch client should fail at second zero instead of discovering it under load")
 	flag.BoolVar(&cfg.moeCacheExperts, "moe-cache-experts", false, "run a MoE model whose experts EXCEED VRAM: routed experts stream host→VRAM per token instead of being held resident, so every expert still executes on the GPU (no CPU offload). Costs a per-token PCIe transfer; bit-identical to fully-resident. Off by default — with it off, a model that doesn't fit declines to the CPU path and says why. CUDA only")
+	flag.BoolVar(&cfg.metalFastPrefill, "metal-fast-prefill", false, "batch the WHOLE prompt through Metal's f16-MMA prefill kernel instead of ingesting it one token at a time — measured 3.9-4.6x faster time-to-first-token on long prompts (a 2048-token prompt: ~51s to ~13s). NOT bit-identical to sequential/CPU decode: the f16-MMA activation path diverges from decode's int8 path on ~54% of runs, so the FIRST FEW TOKENS of a response can differ from what you would get with this off, even at temperature 0. Off by default — decode itself is unaffected either way; this only changes how the prompt is ingested. Metal backend only")
 	flag.IntVar(&cfg.moeCacheSlots, "moe-cache-slots", 0, "per-layer expert slots for --moe-cache-experts: request AT MOST this many. The runtime measures free VRAM and lowers it if the request does not fit, logging what it chose (\"C′ cache: … capping to N\"), so this is an upper bound and not a value you have to get right. 0 keeps the built-in default. More slots ⇒ higher LRU hit rate ⇒ fewer per-token transfers, at VRAM cost")
 	flag.StringVar(&cfg.kvPrec, "kv", "f32", "GPU residency KV cache precision: f32 (bit-exact, 16k ctx) | f16 (lossy, 32k ctx) | i8 (lossy, ~64k ctx) — webgpu backend only")
 	flag.IntVar(&cfg.ctxSize, "ctx", 0, "GPU-resident KV capacity in positions (per-model override: --model name=path,ctx=…). 0 (default) keeps the backend default of 4096, so nothing you did not ask for allocates deep-KV VRAM. When set, the effective cap is min(model context window, this) and the KV it implies is VRAM-checked AT LOAD — the server refuses to start, naming the GB, rather than OOM mid-decode. A request past the cap still fails cleanly and falls back to the staged path")
@@ -332,6 +334,15 @@ func Main() {
 	flag.StringVar(&cfg.embedQuant, "embed-quant", "f32", "embedding weight precision: f32 | q8")
 	flag.StringVar(&cfg.embedName, "embed-served-model-name", "", "embedding model id reported by /v1/models (default: dir basename)")
 	flag.Parse()
+	// --metal-fast-prefill sets the internal gate metal/backend.go's PrefillLast already checks
+	// (GOINFER_METAL_BATCHED_PREFILL) — reusing the existing, already-tested decline/opt-in
+	// machinery rather than threading a new decoder.Options field through frozen core for what is
+	// fundamentally a startup-time choice. Setting it when --backend isn't metal is harmless (the
+	// var is read nowhere else); scoped to a flag rather than left as an internal-only env var so
+	// the tradeoff is disclosed in --help, not something a user has to already know to type.
+	if cfg.metalFastPrefill {
+		os.Setenv("GOINFER_METAL_BATCHED_PREFILL", "1")
+	}
 	// Was --quant given, or is cfg.quant the "int4" default? The .giw explicit-quant check (T1-7)
 	// must fire only on an explicit request — the default must not "mismatch" a non-int4 bundle.
 	flag.Visit(func(f *flag.Flag) {
