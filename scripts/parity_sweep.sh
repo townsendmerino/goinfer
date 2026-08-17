@@ -135,6 +135,8 @@ GATES=(
   "kimi-tiny         |TestKimi_textParity"
   "phi3-tiny         |TestPhi3_textParity"
   "llama4-tiny       |TestLlama4_textParity"
+  "nemotron-tiny     |TestNemotron_textParity"
+  "nemotron3nano-tiny|TestNemotron3NanoMoE_textParity"
   "gguf-Q8_0         |TestGGUF_Q8_0_parity"
   "gguf-Q4_0         |TestGGUF_Q4_0_parity"
   "gguf-Q4_K_M       |TestGGUF_Q4_K_M_parity"

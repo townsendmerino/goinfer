@@ -46,9 +46,21 @@ flip which experts run, a discrete change no averaging smooths (the expert-flip 
 recorded for granite's MoE stack). Comparing against the repo's other MoE rows is what
 distinguished "sensitive" from "broken" cheaply, before any hunt for a forward bug.
 
-**Remaining for "supported" to be a fully backed claim:** T2 (add to the sweep list). The
-capability-matrix row is done (the `nemotron_h` entry now names both variants). GPU residency is
-still correctly DECLINED for this family on both cuda and metal, so it is CPU-only for now.
+**T2 DONE too — G4 IS COMPLETE.** Both tiny gates are now in `scripts/parity_sweep.sh`'s required
+list: `nemotron3nano-tiny|TestNemotron3NanoMoE_textParity` and, closing a pre-existing hole found
+in the same pass, `nemotron-tiny|TestNemotron_textParity` — **the DENSE variant had never been in
+the sweep either**, despite being T3-validated since 2026-08-15. Its fixture is pin-generated and
+gitignored exactly like deepseek-tiny/kimi-tiny/phi3-tiny/llama4-tiny, so it follows the
+established pattern; a release box must have run the pin script, which is what "run it on the box
+with the full asset set" already requires.
+
+**Cross-machine reproducibility confirmed while doing it:** the tiny MoE fixture regenerated on
+`linux-62gb` matches the Mac's committed golden at **cosine 1.000000** with identical argmax and
+continuation (max |Δ| 3.06e-07 on the raw logits — float32 rounding). The Mac's golden was kept
+rather than churned.
+
+GPU residency is still correctly DECLINED for this family on both cuda and metal, so it is
+CPU-only for now — the one remaining limitation, and not a correctness one.
 
 *Original handoff below, kept for the record.*
 
