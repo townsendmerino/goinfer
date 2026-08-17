@@ -44,9 +44,19 @@ calculation. On CUDA they are 11.12 / 8.77 / 2.35 / 6.6 ms, giving 1.74x on code
    depth, for M in {1, 2, 4, 6, 8, 10, 12, 16}. Fit W and C. `T(1)` is `decode_ms`.
    - The CUDA analogue is `cuda/spec_verify_ceiling_test.go` (`TestSpecVerifyCeiling`), which
      times one batched `PrefillLast(M=k)` against k sequential `Forward` calls. Read it first
-     and mirror its method on the `gpu/` (Metal) side. `gpu/` already has resident decode
-     benchmarks (`decode_realmodel_bench_test.go`, `decoderunner_w4a8_bench_test.go`) to model
-     the harness on.
+     and mirror its method.
+   - **Build it in `metal/`, NOT `gpu/`.** [CORRECTED 2026-08-16 — the first version of this
+     prompt said `gpu/` and was wrong.] `gpu/` is the **WebGPU** backend (wgpu-native, cgo,
+     `-tags gpu`) and has no `PrefillLast` at all, only `ForwardN`. The native cgo-free Metal
+     backend is `metal/` (purego, dlopen `Metal.framework`) and does have `PrefillLast`,
+     matching CUDA's structure directly.
+   - **Measure `decode_ms` SEPARATELY via `Forward`. Do not take it as the fit's `T(1)`.**
+     [CORRECTED 2026-08-16 — the first version said "T(1) is decode_ms".] That shortcut is fair
+     only where verify and decode are the same kernel family. On Metal they are not, and the two
+     diverge by **3.15×** (27.40 ms real vs 91.4 ms from the fit), which silently substitutes a
+     never-tuned-for-small-M kernel's cost for real decode cost and understates the ratio the
+     speedup formula needs. `spec_verify_ceiling_test.go` computes its `one` independently for
+     exactly this reason; do the same.
    - Use a real model, not a tiny fixture. Which one is your call given what fits — say which
      you used and its quantization.
 
