@@ -60,6 +60,11 @@ type residentDrafter struct {
 	extCap int    // rows the ExtendContext scratch covers
 
 	blk       blockScratch
+	headIn    Buffer
+	headQ     Buffer
+	headSc    Buffer
+	headOut   Buffer
+	headCap   int
 	attnBlock Pipeline // attn_block_full — bound HERE, where the consumer now exists
 }
 
@@ -532,3 +537,82 @@ func (r *cudaResident) SetBatchedCapture(taps []int) error {
 
 // BatchedCapture returns the rows recorded by the last batched forward, as [tap][M*hidden].
 func (r *cudaResident) BatchedCapture() [][]float32 { return r.capBOut }
+
+// DraftTokens turns trunk output rows into token ids using the TARGET's LM head.
+//
+// A block drafter ships no head of its own — it borrows the target's, which is why the pairing
+// is fixed and why the head cost already sits inside the verify's budget rather than the draft's.
+// The trunk's final norm has already been applied, so this is head + argmax and nothing else.
+//
+// Batched for the same reason the verify's head is: one weight read of the head's ~389 M
+// parameters for all M rows instead of one per row.
+func (d *residentDrafter) DraftTokens(trunk [][]float32) ([]int, error) {
+	M := len(trunk)
+	if M == 0 {
+		return nil, nil
+	}
+	hidden := d.geo.Hidden
+	r := d.r
+	ids := make([]int, M)
+	err := r.do(func() error {
+		if M > d.headCap {
+			d.headIn = r.af(M * hidden)
+			d.headQ, d.headSc = r.ai(M*(hidden/4)), r.af(M)
+			d.headOut = r.af(M * r.vocab)
+			d.headCap = M
+		}
+		flat := make([]float32, 0, M*hidden)
+		for _, row := range trunk {
+			if len(row) != hidden {
+				return fmt.Errorf("cuda drafter: trunk row is %d wide, want %d", len(row), hidden)
+			}
+			flat = append(flat, row...)
+		}
+		if e := gpu.Upload(d.headIn, flat); e != nil {
+			return e
+		}
+		if e := r.launch(r.bQuant, LaunchConfig{GridX: uint32(M), GridY: 1, GridZ: 1,
+			BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
+			Arg(d.headIn), gpu.ArgValue(int32(hidden)), Arg(d.headQ), Arg(d.headSc),
+			gpu.ArgValue(int32(M))); e != nil {
+			return e
+		}
+		if e := r.bGemvB(r.lmW, d.headQ, d.headSc, ArgNull(), d.headOut, M, 0); e != nil {
+			return e
+		}
+		if e := r.stream.Sync(); e != nil {
+			return e
+		}
+		host := make([]float32, M*r.vocab)
+		if e := gpu.Download(d.headOut, host); e != nil {
+			return e
+		}
+		for m := 0; m < M; m++ {
+			row := host[m*r.vocab : (m+1)*r.vocab]
+			bi, bv := 0, row[0]
+			for i, v := range row {
+				if v > bv {
+					bi, bv = i, v
+				}
+			}
+			ids[m] = bi
+		}
+		return r.launchErr
+	})
+	if err != nil {
+		return nil, err
+	}
+	return ids, nil
+}
+
+// TruncateContext drops drafter context positions at index >= n — the rollback after a partial
+// accept. The K/V beyond n stay in the buffers and are simply overwritten by the next
+// ExtendContext, exactly as the target's positional resident cache handles its own rollback.
+func (d *residentDrafter) TruncateContext(n int) {
+	if n < 0 {
+		n = 0
+	}
+	if n < d.ctxLen {
+		d.ctxLen = n
+	}
+}
