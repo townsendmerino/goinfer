@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	gpu "github.com/townsendmerino/aikit/gpu"
 	"github.com/townsendmerino/goinfer/decoder"
@@ -357,4 +358,137 @@ func TestResidentDrafter_blockParity(t *testing.T) {
 	if worst < 0.99 {
 		t.Errorf("worst cosine %.6f < 0.99 — the resident trunk does not reproduce the CPU trunk", worst)
 	}
+}
+
+// TestBatchedCapture_matchesPerToken gates the batched hidden-state seam against the per-token
+// one it replaces.
+//
+// The drafter reads the target's residual at five tap layers for every token the verify commits.
+// The existing seam does that with a sync and a download per tap PER TOKEN (0.465 ms/token
+// measured); the batched one does one download per tap for the whole block. That is only a valid
+// substitution if it records the SAME tensors — and a batched capture taken at the wrong point
+// in the layer loop, or reading the residual before the MLP's residual add, would still be the
+// right shape and the right magnitude.
+//
+// So: run M tokens sequentially with the per-token seam, run the same M as one batched call with
+// the batched seam, and require BIT EQUALITY. Not cosine — both paths are the same kernels on
+// the same weights, and the batched layer stack is already bit-identical to sequential
+// (TestPrefillLast_e2e). Anything less than == here would mean the two seams disagree about
+// which tensor they are recording.
+func TestBatchedCapture_matchesPerToken(t *testing.T) {
+	requireHeavyModel(t)
+	tgt := os.Getenv("GOINFER_CUDA_MODEL")
+	if tgt == "" {
+		tgt = os.ExpandEnv("$HOME/models/qwen3-4b")
+	}
+	mc, err := decoder.Load(tgt, decoder.Options{Backend: "cuda", Quant: "int4"})
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	defer mc.Close()
+	r := mc.ResidentForwardForTest().(*cudaResident)
+	_, _, _, _, _, _, vocab := mc.Dims()
+	taps := []int{1, 9, 17, 25, 33}
+	const M = 6
+	rows := make([][]float32, M)
+	ids := make([]int, M)
+	for i := range rows {
+		ids[i] = (i*7919 + 13) % (vocab - 1)
+		rows[i] = mc.EmbedResidentForTest(ids[i])
+	}
+	// seed a context so the verify runs at a realistic depth
+	seed := make([][]float32, 64)
+	for i := range seed {
+		seed[i] = mc.EmbedResidentForTest((i*2654435761 + 1) % (vocab - 1))
+	}
+	if _, e := r.PrefillLast(seed, 0); e != nil {
+		t.Fatalf("seed: %v", e)
+	}
+	base := 64
+
+	// --- per-token seam, one token at a time ---
+	if e := r.SetHiddenCapture(taps); e != nil {
+		t.Fatalf("SetHiddenCapture: %v", e)
+	}
+	perTok := make([][][]float32, M) // [m][tap][hidden]
+	for m := 0; m < M; m++ {
+		if e := r.do(func() error {
+			if e := r.launchToken(rows[m], base+m, false); e != nil {
+				return e
+			}
+			return r.stream.Sync()
+		}); e != nil {
+			t.Fatalf("launchToken %d: %v", m, e)
+		}
+		snap := make([][]float32, len(taps))
+		for i, v := range r.HiddenCapture() {
+			snap[i] = append([]float32(nil), v...)
+		}
+		perTok[m] = snap
+	}
+	_ = r.SetHiddenCapture(nil)
+
+	// --- batched seam, one call ---
+	if e := r.SetBatchedCapture(taps); e != nil {
+		t.Fatalf("SetBatchedCapture: %v", e)
+	}
+	if _, e := r.PrefillLastNArgmax(rows, base); e != nil {
+		t.Fatalf("PrefillLastNArgmax: %v", e)
+	}
+	got := r.BatchedCapture()
+	_ = r.SetBatchedCapture(nil)
+
+	hidden := len(perTok[0][0])
+	if len(got) != len(taps) {
+		t.Fatalf("batched capture has %d taps, want %d", len(got), len(taps))
+	}
+	bad := 0
+	for ti := range taps {
+		if len(got[ti]) != M*hidden {
+			t.Fatalf("tap %d: batched row block is %d, want %d", taps[ti], len(got[ti]), M*hidden)
+		}
+		for m := 0; m < M; m++ {
+			for j := 0; j < hidden; j++ {
+				a, b := perTok[m][ti][j], got[ti][m*hidden+j]
+				if a != b {
+					if bad < 3 {
+						t.Errorf("tap %d row %d dim %d: per-token %v, batched %v", taps[ti], m, j, a, b)
+					}
+					bad++
+				}
+			}
+		}
+	}
+	if bad == 0 {
+		t.Logf("batched capture is BIT-IDENTICAL to the per-token seam: %d taps x %d rows x %d dims",
+			len(taps), M, hidden)
+	} else {
+		t.Errorf("%d values differ", bad)
+	}
+
+	// What it costs. The per-token seam measured 0.465 ms/token (5 taps), so ~2.3 ms per round
+	// at four accepted -- a term the gate-3 projection carries. This is the batched replacement.
+	best := func() float64 {
+		b := 1e9
+		for range 7 {
+			t0 := time.Now()
+			if _, e := r.PrefillLastNArgmax(rows, base); e != nil {
+				t.Fatalf("timing: %v", e)
+			}
+			if d := float64(time.Since(t0).Microseconds()) / 1000; d < b {
+				b = d
+			}
+		}
+		return b
+	}
+	_ = r.SetBatchedCapture(nil)
+	off := best()
+	if e := r.SetBatchedCapture(taps); e != nil {
+		t.Fatalf("re-arm: %v", e)
+	}
+	on := best()
+	_ = r.SetBatchedCapture(nil)
+	t.Logf("verify M=%d: capture OFF %.3f ms | ON %.3f ms | seam %+.3f ms for the WHOLE block",
+		M, off, on, on-off)
+	t.Logf("   per-token seam would be %.3f ms for %d committed tokens (0.465 ms each)", 0.465*float64(M), M)
 }

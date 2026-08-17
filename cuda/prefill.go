@@ -385,6 +385,27 @@ func (r *cudaResident) prefillCore(embeddings [][]float32, startPos int, tail in
 				return e
 			}
 			r.profToc(gemvCat, t)
+			// BATCHED HIDDEN-STATE CAPTURE (P10). The per-token seam (capVec) syncs and
+			// downloads once per TAP PER TOKEN; a block drafter needs the taps for every token
+			// the verify commits, so on this path that is 5 taps x M tokens of stalls. Here the
+			// residual for all M rows is already in xB, so one download per tap covers the whole
+			// block — 5 downloads per verify instead of 5*M.
+			if len(r.capBTaps) > 0 {
+				for slot, tap := range r.capBTaps {
+					if tap != l {
+						continue
+					}
+					if e := r.stream.Sync(); e != nil {
+						return e
+					}
+					buf := make([]float32, M*hidden)
+					if e := gpu.Download(xB, buf); e != nil {
+						return e
+					}
+					r.capBOut[slot] = buf
+					break
+				}
+			}
 		}
 
 		// Final norm + LM head, per row — copy xB[m] into the M=1 scratch and reuse the exact Forward

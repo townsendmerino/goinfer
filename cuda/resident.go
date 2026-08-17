@@ -269,6 +269,10 @@ type cudaResident struct {
 	// so a 5-tap drafter costs 5, not 36.
 	hidCapTaps []int       // layer indices to capture, ascending; nil ⇒ seam off
 	hidCapOut  [][]float32 // [len(hidCapTaps)][hidden], overwritten per token
+	// The BATCHED counterpart, for the block-drafting verify: one download per tap covering
+	// all M rows, instead of the per-token seam's one per tap PER TOKEN.
+	capBTaps   []int       // layer indices, ascending; nil ⇒ off
+	capBOut    [][]float32 // [len(capBTaps)][M*hidden], overwritten per batched call
 	launchN    int         // diagnostic: per-forward dispatch count (graph-capturable-fraction bound)
 	cacheSlots int         // C′ step 2: device slots per layer (≥ topK; = topK ⇒ step-1 fresh-load, no reuse)
 	slotIdx    Buffer      // C′: per-token slot ids for the routed experts, bound as the GEMV's idx

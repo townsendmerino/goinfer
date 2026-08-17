@@ -502,3 +502,33 @@ func (d *residentDrafter) DraftBlock(blockIn [][]float32) ([][]float32, error) {
 	}
 	return out, nil
 }
+
+// SetBatchedCapture arms the batched hidden-state seam on the target: the next PrefillLastN /
+// PrefillLastNArgmax records the residual for ALL its rows at each named layer.
+//
+// The per-token seam (SetHiddenCapture) costs a sync and a download per tap PER TOKEN — measured
+// at 0.465 ms/token for five taps, ~2.3 ms per round at four accepted. This pays one download
+// per tap for the whole block, because the batched forward already has every row's residual in
+// one buffer.
+func (r *cudaResident) SetBatchedCapture(taps []int) error {
+	if len(taps) == 0 {
+		r.capBTaps, r.capBOut = nil, nil
+		return nil
+	}
+	prev := -1
+	for _, t := range taps {
+		if t <= prev {
+			return fmt.Errorf("cuda: batched capture taps must be ascending, got %v", taps)
+		}
+		if t < 0 || t >= r.nLayers {
+			return fmt.Errorf("cuda: batched capture tap %d out of range [0,%d)", t, r.nLayers)
+		}
+		prev = t
+	}
+	r.capBTaps = append([]int(nil), taps...)
+	r.capBOut = make([][]float32, len(taps))
+	return nil
+}
+
+// BatchedCapture returns the rows recorded by the last batched forward, as [tap][M*hidden].
+func (r *cudaResident) BatchedCapture() [][]float32 { return r.capBOut }

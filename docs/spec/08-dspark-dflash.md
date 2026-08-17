@@ -2095,3 +2095,48 @@ flagged the new field as **bound-and-dead** — correctly, since it was NVRTC-co
 model load with no production consumer, which is `gemv_w4a8_batched`'s exact documented history.
 The binding and field are removed; the gate compiles the module on demand, and the drafter path
 will bind it when it exists.
+
+### BUILT: the resident block trunk, and batched capture — with a correction to my own figure
+
+The drafter now runs entirely on device: weights resident, incremental context K/V, and the full
+five-layer block forward. **Worst cosine 0.9973 against the CPU trunk** over 16 block rows —
+five layers of int8-quantized activations against an f32 reference, which is the accumulation of
+the same arithmetic rather than a different one.
+
+Every kernel is the target's own except `attn_block_full`. The drafter is five layers of the same
+Qwen3 shape, which is why this was assembly rather than new numerics.
+
+**The norm constants are the drafter's everywhere, and that is not incidental.** `bRmsB`,
+`bNormF32B` and the prefill qk-norm all read `r.eps` and `r.addOneArg()` — the TARGET's. Reusing
+any of them applies the target's normalization to the drafter's weights: silent, plausible,
+wrong. Likewise `act=1` (SiLU) is passed literally rather than `r.act`, because a **Gemma target
+would otherwise hand a GELU-tanh to a SwiGLU drafter** — the `FeatGatedGELU` bug class arriving
+through a back door.
+
+**Batched capture** closes the gap flagged when the seam was first measured. The per-token seam
+syncs and downloads per tap PER TOKEN; the batched forward already has every row's residual in
+one buffer, so one download per tap covers the block. **Bit-identical to the per-token seam**
+across 5 taps × 6 rows × 2560 dims — the right bar, since both are the same kernels on the same
+weights, and a capture taken at the wrong point in the layer loop would still have the right
+shape and magnitude.
+
+| | ms |
+|---|---|
+| verify M=6, capture OFF | 14.536 |
+| verify M=6, capture ON (batched) | 15.622 |
+| **batched seam, whole block** | **+1.086** |
+| per-token seam for the same 6 tokens | +2.790 |
+
+**A correction to the figure I recorded when the batched head landed.** That entry composed
+`draft + verify + SEAM` using **0.465 ms as if it were per-round**; it is per-TOKEN. With the
+seam measured properly as a flat ~1.09 ms per block:
+
+| suite | k | with per-token seam | **with batched seam** |
+|---|---|---|---|
+| **math** | 8 | 1.86× | **1.96×** |
+| **code** | 7 | 1.47× | **1.52×** |
+| chat | 4 | 0.79× | 0.78× |
+
+So the standing figures are **code 1.52× / math 1.96×**, not the 1.55×/1.99× recorded earlier —
+a ~2% overstatement from mis-scaling my own measurement, corrected here rather than left to be
+found by whoever runs gate 3.
