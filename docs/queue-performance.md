@@ -1300,3 +1300,22 @@ lossless contract can't be met on Metal until that's fixed, independent of the t
 measurement + method in `docs/spec/08-dspark-dflash.md` under "Metal". Also corrects the
 handoff prompt (`docs/prompts/metal-verify-curve.md`): it pointed at `gpu/` (WebGPU, no
 `PrefillLast`), the actual harness lives in `metal/` (native, has `PrefillLast`).
+
+**P11 · Metal batched prefill as a TTFT lever — MEASURED 2026-08-16 (`mac`), worth pursuing,
+shaped as opt-in.** `metal/prefill_ttft_test.go`. Same kernel P10 evaluated and found marginal
+for verify (tiny M) is a real win at real prefill sizes: **3.9–4.6× TTFT** across P ∈
+{128,512,1024,2048} (qwen2.5-coder-1.5b int4) — a 2048-token prompt drops from ~51s to ~13s.
+Consistent across the whole range, not a one-length artifact; per-token cost columns confirm the
+mechanism (sequential grows with depth, batched stays near-flat, cross-validating P10's
+`C≈5.9ms/row` fit from an unrelated test run). Full table + writeup:
+`docs/ollama-chase.md` §"Medium / larger", "Metal batched prefill as a TTFT lever".
+
+**The blocker is the SAME §A2-Metal divergence P10 hit** (54% stream divergence, f16-MMA vs
+int8-decode) — this does not fix or route around it. What differs is the bar: P10 needed the
+kernel to be the exact default verify oracle (no opt-out under 00-core's lossless contract); a
+prompt-ingestion path can ship as an **explicit opt-in lane** with the divergence disclosed
+(flag help text + README), which is a materially smaller ask than unifying activation precision
+project-wide. **Next step, not done here (this was a measurement task):** wire `PrefillLast` into
+the actual prompt-ingestion path behind a flag (e.g. `--metal-fast-prefill`), disclosed as
+non-bit-identical, gated behind whatever the current release sequencing allows. `mac` or either
+box (the wiring itself doesn't need new measurement).

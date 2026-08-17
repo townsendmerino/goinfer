@@ -1428,8 +1428,52 @@ bit-identity-preserving (pure buffer/traffic reuse).
 - **Graph/fuse the rope→attention gap (CUDA).** Live launches still fire every layer after graph segA.
 - **Constrained `Masker.Process` O(V).** Full-vocab mask each constrained-decode token, and setting a
   masker disables the greedy fast path. Scoped to grammar/JSON-constrained requests.
-- **Metal batched prefill.** Default-off (f16-MMA vs int8-decode divergence, §A2-Metal) — a TTFT lever
-  only if you accept a separate, non-bit-identical lane.
+- **Metal batched prefill — MEASURED 2026-08-16, see below.** Default-off (f16-MMA vs int8-decode
+  divergence, §A2-Metal) — a real TTFT lever if you accept a separate, non-bit-identical lane, and
+  the measured win is large enough to be worth that trade explicitly, not assumed away.
+
+### Metal batched prefill as a TTFT lever — MEASURED, and it's a real win (2026-08-16)
+
+Scoped separately from the P10 question this same kernel was also evaluated for (which found it
+*not* worth fixing bit-identity for — a marginal ~1.13× speculative-decode verify ceiling). Those
+are two different questions with two different answers, because they exercise the kernel at two
+very different M: P10's verify blocks are tiny (M≤16, appended onto an already-warm context, where
+the fixed dispatch cost dominates and never amortizes); a real prompt prefill is M in the hundreds
+to low thousands, where the same kernel's per-row cost amortizes as designed.
+
+**Measured** (`metal/prefill_ttft_test.go`, qwen2.5-coder-1.5b int4 W4A8, `GOINFER_METAL_BATCHED_
+PREFILL=1` forced on): sequential Forward-per-token (today's shipped default TTFT path) against one
+batched `PrefillLast` call, both from an empty cache, at four realistic prompt lengths:
+
+| P | sequential | batched | speedup | sequential/tok | batched/tok |
+|---|---|---|---|---|---|
+| 128 | 2012.6 ms | 441.7 ms | **4.56×** | 15.72 ms | 3.45 ms |
+| 512 | 8641.5 ms | 2049.5 ms | **4.22×** | 16.88 ms | 4.00 ms |
+| 1024 | 19938.1 ms | 5072.6 ms | **3.93×** | 19.47 ms | 4.95 ms |
+| 2048 | 50939.4 ms | 12962.0 ms | **3.93×** | 24.87 ms | 6.33 ms |
+
+**A 2048-token prompt: ~51s TTFT sequentially vs ~13s batched.** Consistent 3.9–4.6× across the
+whole range, not a shape that only shows up at one convenient length. The per-token columns show
+the mechanism plainly: sequential cost *grows* with depth (the same O(depth) attention-scaling
+cost this doc measures everywhere else); batched cost stays close to flat, cross-validating the
+P10 curve-fit's `C≈5.9ms/row` from an entirely separate test run.
+
+**The blocker is unchanged and still real — same kernel, same divergence.** This does not fix or
+route around §A2-Metal's 54% stream divergence; it is exactly the same non-bit-identical f16-MMA
+path P10 also found declined by default. What's different here is the SHIP SHAPE the size of the
+win justifies: P10 needed the prefill kernel to be the exact, default, always-on verify oracle
+(00-core's lossless contract has no opt-out). TTFT doesn't — a prompt-ingestion path can ship as an
+**explicit, disclosed, opt-in lane** ("fast prefill: small first-response divergence from the
+sequential/CPU reference, for latency-sensitive long-context use") without needing the harder
+"unify activation precision so it's safe as the default" fix P10's case would have required. That
+is a materially smaller bar to clear.
+
+**Recommendation: worth pursuing, shaped as opt-in, not worth pursuing as a default-path fix.** The
+numbers are large and consistent enough to justify the (still real, still needs doing) engineering
+of wiring `PrefillLast` into the actual prompt-ingestion path behind a flag, with the divergence
+disclosed in the flag's own help text and in the README — the same "decline-never-crash, disclose
+the tradeoff" ethos this project uses elsewhere. Not scoped further here (this was a measurement
+task); the wiring itself is a separate, smaller task than the P10 kernel-precision question was.
 
 *Corroboration:* the fan-out audit and an independent code-grounded pass (Cursor, 2026-08-10) agreed on
 the WebGPU logits reuse, the Gemma softcap, the embedResident scratch, and the Metal-argmax gap
