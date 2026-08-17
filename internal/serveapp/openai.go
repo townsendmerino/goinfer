@@ -38,18 +38,22 @@ const maxOutputTokensCeiling = 131072
 // The server registry holds N of them keyed by served name; each has its own
 // mutex, so requests to distinct models run in parallel.
 type loadedModel struct {
-	tk       *tokenizer.Tokenizer
-	model    *decoder.Model
-	tmpl     *chat.Template // nil → raw completion
-	stopIDs  []int          // turn-stop token ids from the template
-	eosIDs   []int
-	vocab    int
-	name     string      // served id (reported by /v1/models, matched on the request model field)
-	fp       string      // model fingerprint (binds --session-dir snapshots)
-	adapter  string      // compute-time LoRA adapter name (#7); "" = base model. Shares model with its base.
-	spec     bool        // --spec ngram: lossless n-gram (prompt-lookup) speculative decode with adaptive depth
-	sessions *sessionLRU // prefix-keyed KV reuse across requests
-	mu       sync.Mutex  // serialize this model's generations (the single decode worker)
+	tk      *tokenizer.Tokenizer
+	model   *decoder.Model
+	tmpl    *chat.Template // nil → raw completion
+	stopIDs []int          // turn-stop token ids from the template
+	eosIDs  []int
+	vocab   int
+	name    string // served id (reported by /v1/models, matched on the request model field)
+	fp      string // model fingerprint (binds --session-dir snapshots)
+	adapter string // compute-time LoRA adapter name (#7); "" = base model. Shares model with its base.
+	spec    bool   // --spec ngram: lossless n-gram (prompt-lookup) speculative decode with adaptive depth
+	// blockSpec is an attached pretrained block drafter (--drafter), nil when unused. Attached
+	// ONCE at load: the weight upload is a per-process cost, and doing it per request measured
+	// 0.17x — a 6x loss — with the loop itself perfectly healthy (docs/spec/08).
+	blockSpec *decoder.BlockSpec
+	sessions  *sessionLRU // prefix-keyed KV reuse across requests
+	mu        sync.Mutex  // serialize this model's generations (the single decode worker)
 
 	// tokenBytes is the constraint masker's token→bytes table (one entry per vocab id, up to
 	// ~152k). It's a pure function of (vocab, tokenizer), so build it ONCE per model rather than
@@ -907,7 +911,17 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, onText func(
 	// (correct, if slower — it drops to the staged path); base models keep the resident fast path
 	// (audit R-01).
 	if lm.model.ResidentActive() && lm.adapter == "" {
-		if lm.spec && gr.masker == nil {
+		if lm.blockSpec != nil && gr.masker == nil {
+			// Pretrained BLOCK drafter (--drafter): a whole block per round, verified in one
+			// batched pass. Same try/fallback shape as the n-gram path below — GenerateStream
+			// validates the sampler and returns an error BEFORE touching any state, so a
+			// request with temperature or penalties falls back exactly.
+			if s, gn, err := lm.blockSpec.GenerateStream(ctx, gr.promptIDs, gr.maxTokens, gr.sp); err == nil {
+				stream, gen = s, gn
+			} else {
+				stream, gen = lm.model.Generate(ctx, gr.promptIDs, gr.maxTokens, gr.sp)
+			}
+		} else if lm.spec && gr.masker == nil {
 			if s, gn, err := lm.model.GenerateNgramSpeculativeAdaptive(ctx, gr.promptIDs, gr.maxTokens, &decoder.NgramDrafter{}, &decoder.AdaptiveDepth{MaxDraft: 8}, gr.sp); err == nil {
 				stream, gen = s, gn
 			} else {

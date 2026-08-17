@@ -270,6 +270,7 @@ type config struct {
 	maxBodyBytes     int64         // -max-body-bytes: request-body cap (0 = derive from the model's context window)
 	unloadDrainWait  time.Duration // -unload-drain-wait: how long an unload waits for in-flight requests to drain before 202 (native free continues detached)
 	spec             string        // -spec: "" (off) | "ngram" — lossless n-gram speculative decode
+	drafter          string        // -drafter: dir of a pretrained BLOCK drafter (DFlash); resident GPU backends only
 	allowAdmin       bool          // -allow-admin: enable POST /admin/models/{load,unload}
 	requireBE        bool          // -require-backend: refuse to start when a model silently fell back off the requested backend's fast paths (resident decode / batched prefill)
 	visionPath       string        // -vision: dir holding the vision tower (SigLIP + projector) for a multimodal --model
@@ -296,6 +297,7 @@ func Main() {
 		"defaults below: `--model big=moe.giw,stream,weight-cache=16 --model fast=small.giw`\n"+
 		"streams only the big MoE. Keys: quant,lora,kv,kv-quant,stream,weight-cache,embed-int4.\n"+
 		"(Paths may not contain commas.)")
+	flag.StringVar(&cfg.drafter, "drafter", "", "directory of a pretrained BLOCK drafter (z-lab DFlash) paired with --model: the drafter proposes a whole block of tokens per round and the target verifies them in ONE batched pass, measured 1.6-1.8x on code/math and ~0.96x on open chat (docs/spec/08). LOSSLESS — every emitted token is one the target's own argmax produced, so output is identical to plain greedy. Greedy only: a request with temperature, penalties or logit bias falls back to normal decoding automatically. Requires a resident GPU backend (--backend cuda); declines with a reason otherwise")
 	flag.StringVar(&cfg.backend, "backend", "cpu", "compute backend: cpu | webgpu | cuda | metal (process-wide; cuda/metal: dense-only, cgo-free native, -tags cuda|metal)")
 	flag.StringVar(&cfg.quant, "quant", "int4", "default decoder weight quant — the accuracy/speed/RAM tradeoff (per-model override: --model name=path,quant=…):\n"+
 		"  int4      W4A8 (int4 weights, int8 activations): smallest + fastest. Lossier than int8 (4-bit weights). THE DEFAULT.\n"+
@@ -776,6 +778,18 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 		// capHint 0: KV grows on demand. The fingerprint binds disk snapshots to
 		// this exact model+quant so a -session-dir reused across models is rejected.
 		sessions: newSessionLRU(model, cfg.kvSessions, 0, fp),
+	}
+	// --drafter: attach a pretrained block drafter ONCE, here, on the BASE model only.
+	// Adapter-bearing requests route down the session path (audit R-01) where the block-spec
+	// branch does not run, so attaching one there would upload ~500 MB and never be used.
+	//
+	// It fails startup rather than degrading silently: an operator who passed --drafter wants
+	// block drafting, and a wrong pairing or an incapable backend should be one startup error
+	// they see, not a fleet quietly serving at 1x.
+	if cfg.drafter != "" {
+		if err := attachBlockDrafter(lm, cfg.drafter); err != nil {
+			return nil, fmt.Errorf("--drafter %q: %w", cfg.drafter, err)
+		}
 	}
 	if cfg.maxQueue > 0 {
 		lm.queue = make(chan struct{}, 1+cfg.maxQueue)
