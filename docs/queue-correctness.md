@@ -243,6 +243,16 @@ VENDOR-BLESSED drafter rather than a third-party one.
 the XS-2.1/S-2.1 this entry was filed against. Target XS.2 or support both — the config delta is
 small but real, and XS.2's per-element gating is the more demanding of the two.
 
+**SCOPE SET (2026-08-17): three generations under ONE adapter — XS-2.1, XS.2, M.1.** Full Phase 0
+config-verify of all three, the vendor modeling code, the new primitive, the traps, and the
+real-gate feasibility call now live in `docs/task-laguna.md`. Headlines: the vendor modeling code
+is **byte-identical across generations** (differences are entirely config), so one adapter serves
+all three; **M.1 is structurally SIMPLER** (no sliding window, no per-layer head counts, routed
+scaling 1.0) but ~220B and so **not real-gateable on this box** (tiny-golden only, Kimi-K2 call);
+`gating` has **three spellings across three releases** (`"per-head"` / `true` / `"per-element"`,
+where the latter two are the same path); and the layer-type-keyed RoPE that looked new is mostly
+existing machinery (`ropeScalingLocal` already exists). T3 real gate = **XS.2** (~63GB).
+
 *Original entry:*
 
 Full scoping and reasoning: `docs/post-v1.0-models.md` "Next up" §3. Softmax-GQA territory (mixed
