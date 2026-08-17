@@ -3,6 +3,7 @@
 package cuda
 
 import (
+	"context"
 	"os"
 	"testing"
 	"time"
@@ -280,23 +281,16 @@ func TestDFlashLoop_gate3(t *testing.T) {
 			rounds += rd2
 			rd.TruncateContext(0)
 
-			// plain greedy, same resident, same token count — the baseline this must beat.
+			// THE BASELINE IS Model.Generate — what a server actually runs. An earlier version
+			// looped PrefillLastNArgmax(M=1), which downloads the full 608 KB logit row per
+			// token where Generate uses the GPU argmax fast-path (4-byte readback). That made
+			// every ratio here ~10% optimistic.
 			t0 := time.Now()
-			embs := make([][]float32, len(ids))
-			for i, id := range ids {
-				embs[i] = mc.EmbedResidentForTest(id)
+			ch, gen := mc.Generate(context.Background(), ids, len(got), decoder.SamplingParams{})
+			for range ch {
 			}
-			out, e := r.PrefillLastNArgmax(embs, 0)
-			if e != nil {
-				t.Fatalf("greedy prefill: %v", e)
-			}
-			tok := out[len(out)-1]
-			for n, pos := 1, len(ids); n < len(got); n, pos = n+1, pos+1 {
-				one, e := r.PrefillLastNArgmax([][]float32{mc.EmbedResidentForTest(tok)}, pos)
-				if e != nil {
-					t.Fatalf("greedy step: %v", e)
-				}
-				tok = one[0]
+			if e := gen.Err(); e != nil {
+				t.Fatalf("greedy: %v", e)
 			}
 			greedyMs += float64(time.Since(t0).Milliseconds())
 		}

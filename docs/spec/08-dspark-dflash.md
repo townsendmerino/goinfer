@@ -2274,3 +2274,42 @@ loop drives. Until that is fixed the guard converts a 0.82× into roughly 0.82×
 a ~0.8× loss on Qwen3's default chat template.** That is not a shippable default, and the fix is
 one of: put the fast greedy step on the interface so the guard's fallback actually costs plain
 decode; warn at startup when a thinking-mode template is detected; or both.
+
+### Gate 3 re-run against the corrected baseline — and chat is a 39% loss unguarded
+
+With `Model.Generate` as the baseline (the path a server takes) rather than the
+`PrefillLastNArgmax(M=1)` loop:
+
+| suite | k | previously reported | **corrected** |
+|---|---|---|---|
+| code | 7 | 1.60× | **1.44×** |
+| math | 8 | 1.79× | **1.58×** |
+| chat | 4 | 0.96× | **0.61×** |
+
+**Gate 3 still passes** — 1.44× and 1.58× against a ≥1.3× bar — but every figure was ~10-35%
+optimistic, and chat most of all.
+
+**This reverses the "the router is not mandatory" conclusion twice over.** That claim rested on
+chat measuring 0.96×, i.e. a 4% cost to firing indiscriminately. Against the real baseline it is
+**0.61% — a 39% loss.** Chat accepts 1.96 tokens per round, far under the ~3.0 break-even, so
+every round is a round that would have been cheaper as plain decode.
+
+**The acceptance guard is what makes this safe, and this suite does not use it.** These numbers
+come from the unguarded test loop; the production path (`BlockSpec.Generate`) watches
+tokens-per-round and stops drafting below break-even, which is exactly the chat case. Measured
+end-to-end on the guarded path, the analogous losing configuration (thinking mode, 3.00
+tok/round) runs **0.96-0.99×** rather than 0.82×.
+
+So the honest summary of what ships:
+
+| | unguarded | **guarded (what runs)** |
+|---|---|---|
+| code / math | 1.44× / 1.58× | 1.44× / 1.58× |
+| chat | **0.61×** | ~break-even |
+| thinking-mode target | 0.82× | 0.96-0.99× |
+
+**The guard is not an optimization. It is the difference between a feature that is a 39% loss on
+conversational traffic and one that is safe to leave on.** That is the third time in this
+workstream a conclusion moved because the baseline or the input distribution was wrong, and the
+common thread is the same: block drafting's losslessness means every one of these failures
+returns correct output, so only a measurement ever reveals them.

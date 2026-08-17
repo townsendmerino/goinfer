@@ -178,6 +178,7 @@ func TestBlockSpecStream(t *testing.T) {
 
 	// cancellation must stop the loop rather than run to completion
 	cctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	ch2, _, err := spec.GenerateStream(cctx, prompt, maxNew, decoder.SamplingParams{})
 	if err != nil {
 		t.Fatalf("GenerateStream(cancel): %v", err)
