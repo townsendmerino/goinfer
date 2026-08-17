@@ -79,6 +79,26 @@ type Config struct {
 	FirstKDenseReplace  int     `json:"first_k_dense_replace"`
 	RoutedScalingFactor float64 `json:"routed_scaling_factor"`
 
+	// Laguna (poolside). MoeRoutedScalingFactor is its spelling of
+	// routed_scaling_factor (2.5 on the XS generations, 1.0 on M.1).
+	//
+	// Gating is json.RawMessage because the SAME field ships with three different
+	// JSON types across three releases of one model_type: "per-head" (XS-2.1),
+	// true (XS.2), "per-element" (M.1). Decoding it into a string or a bool would
+	// fail on the other spellings, so it is held raw and resolved by
+	// lagunaGatePerHead, which mirrors the vendor's own two-line rule.
+	//
+	// NumAttentionHeadsPerLayer is layer i's QUERY head count ([48,64,64,64,…] —
+	// 48 on full_attention, 64 on sliding_attention). Absent on M.1, which is
+	// uniform. MlpOnlyLayers lists the layers that are plain dense MLPs rather
+	// than MoE ([0] on XS, [0,1,2] on M.1) — contiguous from the top in every
+	// released config, so it maps onto FirstKDense.
+	MoeRoutedScalingFactor      float64         `json:"moe_routed_scaling_factor"`
+	MoeApplyRouterWeightOnInput bool            `json:"moe_apply_router_weight_on_input"`
+	Gating                      json.RawMessage `json:"gating,omitempty"`
+	NumAttentionHeadsPerLayer   []int           `json:"num_attention_heads_per_layer"`
+	MlpOnlyLayers               []int           `json:"mlp_only_layers"`
+
 	// DeepSeek MLA + DeepSeekMoE (deepseek_v2 / deepseek_v3). MLA splits the
 	// per-head dims: queries route through an optional q_lora_rank bottleneck
 	// (q_a_proj→norm→q_b_proj; null/0 ⇒ a direct q_proj, the V2-Lite path), K/V
@@ -918,4 +938,111 @@ func loadConfig(fsys fs.FS, name string) (*Config, error) {
 		}
 	}
 	return &c, nil
+}
+
+// lagunaGatePerHead resolves Laguna's `gating` field to the gate granularity.
+//
+// The field ships with THREE different JSON types across three releases of one
+// model_type — "per-head" (XS-2.1), true (XS.2), "per-element" (M.1) — so this
+// mirrors the vendor's own resolution exactly (modeling_laguna.py):
+//
+//	self.gating       = bool(gating)              # false only for literal `false`
+//	self.gate_per_head = (gating == "per-head")   # STRING compare, so true ⇒ per-element
+//
+// meaning `true` and `"per-element"` are the SAME path and only `"per-head"`
+// differs. Returns (enabled, perHead, error). An absent field is HF's default of
+// `True` ⇒ gating on, per-element, which is what getattr(config, "gating", True)
+// does; a checkpoint that means "no gating" must say `false` explicitly.
+func (c *Config) lagunaGatePerHead() (enabled, perHead bool, err error) {
+	if len(c.Gating) == 0 || string(c.Gating) == "null" {
+		return true, false, nil // HF default: gating=True ⇒ per-element
+	}
+	var s string
+	if err := json.Unmarshal(c.Gating, &s); err == nil {
+		switch s {
+		case "per-head":
+			return true, true, nil
+		case "per-element":
+			return true, false, nil
+		default:
+			return false, false, fmt.Errorf("decoder(laguna): gating=%q unsupported (per-head / per-element / true / false)", s)
+		}
+	}
+	var b bool
+	if err := json.Unmarshal(c.Gating, &b); err != nil {
+		return false, false, fmt.Errorf("decoder(laguna): gating must be a string or bool, got %s", string(c.Gating))
+	}
+	return b, false, nil // true ⇒ per-element (the vendor's string compare fails on a bool)
+}
+
+// lagunaFirstKDense turns mlp_only_layers into goinfer's FirstKDense prefix
+// count. Every released Laguna lists a CONTIGUOUS prefix ([0] on XS, [0,1,2] on
+// M.1), which is what FirstKDense can express; a non-contiguous list would be a
+// different layout and is rejected rather than silently truncated.
+func (c *Config) lagunaFirstKDense() (int, error) {
+	if len(c.MlpOnlyLayers) == 0 {
+		return 0, nil
+	}
+	seen := make(map[int]bool, len(c.MlpOnlyLayers))
+	maxL := -1
+	for _, l := range c.MlpOnlyLayers {
+		if l < 0 || l >= c.NumLayers {
+			return 0, fmt.Errorf("decoder(laguna): mlp_only_layers has out-of-range layer %d (num_hidden_layers=%d)", l, c.NumLayers)
+		}
+		seen[l] = true
+		maxL = max(maxL, l)
+	}
+	if len(seen) != maxL+1 {
+		return 0, fmt.Errorf("decoder(laguna): mlp_only_layers %v is not a contiguous prefix; FirstKDense cannot express it", c.MlpOnlyLayers)
+	}
+	return maxL + 1, nil
+}
+
+// validateLaguna pins the assumptions the Laguna forward is built on. Read
+// against the three released configs (XS-2.1, XS.2, M.1) — see docs/task-laguna.md.
+func (c *Config) validateLaguna() error {
+	switch {
+	case c.HiddenDim <= 0 || c.NumLayers <= 0 || c.NumHeads <= 0 || c.NumKVHeads <= 0:
+		return fmt.Errorf("decoder(laguna): hidden_size/num_hidden_layers/num_attention_heads/num_key_value_heads must all be >0")
+	case c.headDim() <= 0:
+		return fmt.Errorf("decoder(laguna): head_dim must be >0")
+	case c.NumExperts <= 0:
+		return fmt.Errorf("decoder(laguna): num_experts must be >0, got %d", c.NumExperts)
+	case c.NumExpertsPerTok <= 0 || c.NumExpertsPerTok > c.NumExperts:
+		return fmt.Errorf("decoder(laguna): num_experts_per_tok=%d out of range for num_experts=%d", c.NumExpertsPerTok, c.NumExperts)
+	case c.MoeIntermediateSize <= 0:
+		return fmt.Errorf("decoder(laguna): moe_intermediate_size must be >0")
+	case c.SharedExpertIntermediateSize <= 0:
+		return fmt.Errorf("decoder(laguna): shared_expert_intermediate_size must be >0")
+	case c.HiddenAct != "" && c.HiddenAct != "silu":
+		return fmt.Errorf("decoder(laguna): hidden_act=%q unsupported (silu/SwiGLU only)", c.HiddenAct)
+	// The vendor raises NotImplementedError on this rather than diverge numerically;
+	// match that instead of silently applying the routing weight on the output.
+	case c.MoeApplyRouterWeightOnInput:
+		return fmt.Errorf("decoder(laguna): moe_apply_router_weight_on_input=true is unsupported")
+	}
+	if n := len(c.NumAttentionHeadsPerLayer); n != 0 && n != c.NumLayers {
+		return fmt.Errorf("decoder(laguna): num_attention_heads_per_layer has %d entries, want %d (num_hidden_layers)", n, c.NumLayers)
+	}
+	for i, h := range c.NumAttentionHeadsPerLayer {
+		if h <= 0 || h%c.NumKVHeads != 0 {
+			return fmt.Errorf("decoder(laguna): num_attention_heads_per_layer[%d]=%d must be >0 and a multiple of num_key_value_heads=%d (GQA groups)", i, h, c.NumKVHeads)
+		}
+	}
+	if n := len(c.LayerTypes); n != 0 && n != c.NumLayers {
+		return fmt.Errorf("decoder(laguna): layer_types has %d entries, want %d", n, c.NumLayers)
+	}
+	for i, t := range c.LayerTypes {
+		if t != "full_attention" && t != "sliding_attention" {
+			return fmt.Errorf("decoder(laguna): layer_types[%d]=%q unsupported (full_attention / sliding_attention)", i, t)
+		}
+		if t == "sliding_attention" && c.SlidingWindow <= 0 {
+			return fmt.Errorf("decoder(laguna): layer_types has sliding_attention but sliding_window=%d", c.SlidingWindow)
+		}
+	}
+	if _, _, err := c.lagunaGatePerHead(); err != nil {
+		return err
+	}
+	_, err := c.lagunaFirstKDense()
+	return err
 }

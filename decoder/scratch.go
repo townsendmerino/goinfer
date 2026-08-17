@@ -13,17 +13,18 @@ import "github.com/townsendmerino/aikit/linalg"
 // then the MLP output (also sequential). The residual `h` persists across the
 // layer loop; the rest are local to one matmul/attention.
 type decodeScratch struct {
-	h      []float32 // [hidden] residual stream (overwritten by the embedding each step)
-	norm   []float32 // [hidden] normalized layer input (pre-attn, then pre-mlp)
-	sub    []float32 // [hidden] attention output, then MLP output (added to h)
-	sub2   []float32 // [hidden] parallel-block (Cohere) MLP output, held while attn output lives in sub
-	q      []float32 // [qDim]
-	k, v   []float32 // [kvDim]
-	ctx    []float32 // [qDim] attention context before the O-projection
-	gate   []float32 // [inter] gatedMLP gate
-	up     []float32 // [inter] gatedMLP up
-	scores []float32 // [>=nKeys] attention scores; grown on demand as context extends
-	logits []float32 // [vocab]
+	h        []float32 // [hidden] residual stream (overwritten by the embedding each step)
+	norm     []float32 // [hidden] normalized layer input (pre-attn, then pre-mlp)
+	sub      []float32 // [hidden] attention output, then MLP output (added to h)
+	sub2     []float32 // [hidden] parallel-block (Cohere) MLP output, held while attn output lives in sub
+	q        []float32 // [qDim]
+	k, v     []float32 // [kvDim]
+	ctx      []float32 // [qDim] attention context before the O-projection
+	gate     []float32 // [inter] gatedMLP gate
+	up       []float32 // [inter] gatedMLP up
+	scores   []float32 // [>=nKeys] attention scores; grown on demand as context extends
+	attnGate []float32 // [>=nH or nH*hd] Laguna attention output-gate scratch (g_proj result, pre-softplus); nil for every other family
+	logits   []float32 // [vocab]
 
 	// Gather buffers for the MoE decode path, which routes single-token attention
 	// through attendBatchedHeads (K=1) so it uses the SAME acc64 matmul as the
@@ -52,7 +53,9 @@ func (s *decodeScratch) loraBuf(r int) []float32 {
 }
 
 func newDecodeScratch(a *Architecture) *decodeScratch {
-	qDim, kvDim := a.NumHeads*a.HeadDim, a.NumKVHeads*a.HeadDim
+	// maxHeads, not NumHeads: a family with per-layer query heads (Laguna) must size
+	// q/ctx for its WIDEST layer, since one scratch is reused across every layer.
+	qDim, kvDim := a.maxHeads()*a.HeadDim, a.NumKVHeads*a.HeadDim
 	// Note: aikit's opt-in worker pool (Workspace.SetWorkers) is intentionally NOT
 	// used — goinfer's end-to-end sweep showed it neutral-to-slightly-slower than
 	// the spawn path (the batch=1 fork/join cost is a floor, not pool-fixable).
@@ -87,6 +90,17 @@ func (s *decodeScratch) scoresBuf(n int) []float32 {
 		s.scores = make([]float32, n)
 	}
 	return s.scores[:n]
+}
+
+// gateBuf returns a length-n buffer for Laguna's attention output gate (the
+// g_proj result, before softplus), grown once on demand. n is nH or nH*hd
+// depending on the gate's granularity, so it is sized from the weight's row
+// count rather than assumed.
+func (s *decodeScratch) gateBuf(n int) []float32 {
+	if cap(s.attnGate) < n {
+		s.attnGate = make([]float32, n)
+	}
+	return s.attnGate[:n]
 }
 
 // attnBatchBufs returns the K=1 scratch slices attendBatchedHeads needs for the

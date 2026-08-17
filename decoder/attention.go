@@ -56,7 +56,7 @@ func causalAttention(
 	be Backend,
 	lora *loraLayerDelta, // compute-time LoRA deltas for this layer (#7); nil = none
 ) error {
-	nH, nKV, hd := arch.NumHeads, arch.NumKVHeads, arch.HeadDim
+	nH, nKV, hd := arch.headsAt(layer), arch.NumKVHeads, arch.HeadDim
 	kvDim := nKV * hd
 	global := arch.isGlobalLayer(layer)
 	pos := cache.Pos() // this token's absolute position (stable across layers in one forward)
@@ -66,7 +66,10 @@ func causalAttention(
 	// (the activation is quantized once, weights read in place — no concat), which
 	// is the per-token dispatch cut without disturbing the prequant aliasing.
 	scr := cache.scr
-	q, k, v := scr.q, scr.k, scr.v
+	// The scratch is sized for the WIDEST layer (maxHeads); slice it to this layer's
+	// query width so every downstream reader sees the right length. Identical to
+	// scr.q for every family whose head count is uniform.
+	q, k, v := scr.q[:nH*hd], scr.k, scr.v
 	if isW8A8(&lw.QProj) && isW8A8(&lw.KProj) && isW8A8(&lw.VProj) {
 		scr.qkvOps[0] = linalg.W8A8Op{BQ: wmInt8(&lw.QProj), Scales: wmScales(&lw.QProj), Dst: q, N: lw.QProj.Rows()}
 		scr.qkvOps[1] = linalg.W8A8Op{BQ: wmInt8(&lw.KProj), Scales: wmScales(&lw.KProj), Dst: k, N: lw.KProj.Rows()}
@@ -123,7 +126,7 @@ func causalAttention(
 	// TestForwardN_matchesSequential / TestSpeculativeGreedyParity). The three cases
 	// mirror forwardN's: ring window, int8-KV global (dequant to f32 scratch), f32
 	// global (append-forever).
-	ctx := cache.scr.ctx
+	ctx := cache.scr.ctx[:nH*hd]
 	acc64 := true
 	switch {
 	case cache.rings[layer] != nil:
@@ -154,6 +157,15 @@ func causalAttention(
 		attendBatchedHeads(q, ctx, cache.Keys(layer), cache.Vals(layer), 0, cache, layer, pos, 1, global, arch, acc64, qh, kh, vt, sc, ch)
 	}
 
+	// 6b. Laguna output gating, applied to the attention context BEFORE o_proj:
+	//     ctx *= softplus(g_proj · h)
+	// where h is this layer's POST-input_layernorm hidden state — the same tensor
+	// q/k/v were projected from, so no extra tap is needed. No-op for every other
+	// family (arch.laguna == nil).
+	if arch.laguna != nil {
+		applyAttnGate(scr, be, lw, arch, h, ctx, nH, hd)
+	}
+
 	// 7. Output projection into the caller's buffer (+ bias for GPT-2); the
 	// caller applies the post-attn norm + residual.
 	matmulInto(scr.ws, be, &lw.OProj, ctx, out, 1)
@@ -177,7 +189,7 @@ func attendQuery(q, ctx, scores []float32, cache *KVCache, layer, pos int, globa
 		attendQueryI8(q, ctx, scores, cache, layer, pos, global, arch)
 		return
 	}
-	nH, nKV, hd := arch.NumHeads, arch.NumKVHeads, arch.HeadDim
+	nH, nKV, hd := arch.headsAt(layer), arch.NumKVHeads, arch.HeadDim
 	kvDim := nKV * hd
 	keys, vals := cache.Keys(layer), cache.Vals(layer)
 	nKeys := len(keys) / kvDim
@@ -243,7 +255,7 @@ func attendQuery(q, ctx, scores []float32, cache *KVCache, layer, pos int, globa
 // attention gets faster, not just smaller), and the V-weighted sum dequantizes
 // inline. Handles both ring (local, s%W) and append-forever (global) int8 layers.
 func attendQueryI8(q, ctx, scores []float32, cache *KVCache, layer, pos int, global bool, arch *Architecture) {
-	nH, nKV, hd := arch.NumHeads, arch.NumKVHeads, arch.HeadDim
+	nH, nKV, hd := arch.headsAt(layer), arch.NumKVHeads, arch.HeadDim
 	kvDim := nKV * hd
 
 	// Storage selection: a ring (local) layer reads its int8 fields with row s%W;
@@ -300,4 +312,63 @@ func attendQueryI8(q, ctx, scores []float32, cache *KVCache, layer, pos int, glo
 			}
 		}
 	}
+}
+
+// applyAttnGate applies Laguna's softplus output gating to the attention context
+// in place, before the output projection:
+//
+//	gate = softplus(g_proj · h)            // h = post-input_layernorm hidden state
+//	ctx *= gate                            // per-head (broadcast) or per-element
+//
+// TWO PARITY DETAILS ARE LOAD-BEARING, both mirroring modeling_laguna.py:
+//
+//  1. softplus is computed in FLOAT32 and the product taken there — the vendor
+//     writes F.softplus(self.g_proj(hidden_states).float()).to(attn_output.dtype),
+//     i.e. it deliberately upcasts before the nonlinearity. goinfer's activations are
+//     already f32, so this is the natural path rather than an extra cast; it is
+//     called out because a bf16 port of the same code would be wrong.
+//
+//  2. the gate reads the layer INPUT (post-input_layernorm), NOT the attention
+//     output. Gating on the attention output is the natural-looking misread and
+//     would be a different model.
+//
+// Granularity follows arch.laguna.GatePerHead: per-head emits nH gates, each
+// broadcast across the head's head_dim channels; per-element emits nH*hd gates,
+// one per channel. See docs/task-laguna.md for the three config spellings that
+// resolve into that one bool.
+func applyAttnGate(scr *decodeScratch, be Backend, lw *LayerWeights, arch *Architecture, h, ctx []float32, nH, hd int) {
+	gates := scr.gateBuf(lw.GProj.Rows())
+	matmulInto(scr.ws, be, &lw.GProj, h, gates, 1)
+	// Granularity is read from the WEIGHT's row count, not from config.gating. The
+	// released checkpoints make that necessary: Laguna-XS.2 declares `gating: true`,
+	// which the XS-2.1/M.1 module resolves to per-ELEMENT, yet XS.2's own module
+	// hardcodes nn.Linear(hidden, num_heads) and never reads the field — and its
+	// shipped g_proj is [64, 2048], i.e. per-HEAD. The vendor's spelling→granularity
+	// rule is generation-specific; the tensor shape is not. nH and nH*hd can never
+	// collide (hd > 1), so the shape is unambiguous. arch.laguna.GatePerHead records
+	// what the CONFIG declared and is used only to flag a mismatch at load.
+	if lw.GProj.Rows() == nH {
+		for head := range nH {
+			g := softplus32(gates[head])
+			row := ctx[head*hd : head*hd+hd]
+			for i := range row {
+				row[i] *= g
+			}
+		}
+		return
+	}
+	for i := range ctx {
+		ctx[i] *= softplus32(gates[i])
+	}
+}
+
+// softplus32 is log(1+exp(x)) with the standard large-x guard: for x above the
+// threshold exp(x) overflows while log1p(exp(x)) is x to within f32 resolution, so
+// returning x avoids an Inf that would otherwise poison the whole head. torch's
+// F.softplus applies the same linear fallback (its default threshold is 20).
+func softplus32(x float32) float32 {
+	if x > 20 {
+		return x
+	}
+	return float32(math.Log1p(math.Exp(float64(x))))
 }

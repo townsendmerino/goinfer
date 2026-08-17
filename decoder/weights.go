@@ -27,6 +27,11 @@ type LayerWeights struct {
 	KProj linalg.WeightMat // [NumKVHeads*HeadDim, HiddenDim]
 	VProj linalg.WeightMat // [NumKVHeads*HeadDim, HiddenDim]
 	OProj linalg.WeightMat // [HiddenDim, NumHeads*HeadDim]
+	// GProj is Laguna's attention output gate (g_proj), applied to the attention
+	// context BEFORE OProj as ctx *= softplus(GProj·h). Rows are NumHeads for the
+	// "per-head" granularity or NumHeads*HeadDim for "per-element". Zero-valued
+	// (Rows()==0) for every other family. See applyAttnGate.
+	GProj linalg.WeightMat // [NumHeads | NumHeads*HeadDim, HiddenDim]
 	// Projection biases ([out]; Qwen2 q/k/v only). Nil when the family/checkpoint
 	// has no bias.
 	QBias []float32 // [NumHeads*HeadDim]
@@ -191,6 +196,12 @@ func (w *Weights) matmulWeights() []*linalg.WeightMat {
 		if l.Router.Rows() > 0 {
 			ms = append(ms, &l.Router)
 		}
+		// GProj is deliberately EXCLUDED from quantization, for the same reason Router
+		// is treated carefully: it is tiny (one row per head — [64, hidden] against
+		// q_proj's [8192, hidden], well under 1% of a layer's attention weights) so
+		// quantizing it buys nothing, and it feeds a softplus whose output MULTIPLIES
+		// the whole attention context. Quantization error there scales every channel of
+		// every head rather than perturbing one projection's output additively.
 		for e := range l.Experts {
 			ex := &l.Experts[e]
 			ms = append(ms, &ex.Gate, &ex.Up, &ex.Down)
@@ -648,8 +659,13 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 				return err
 			}
 		} else {
-			// Attention projections ([out, in] row-major).
-			if l.QProj, err = loadProj(tn(i, s.QProj), qDim, hd); err != nil {
+			// Attention projections ([out, in] row-major). qDim is per-LAYER: Laguna's XS
+			// generations vary the query head count by layer type (48 on full-attention,
+			// 64 on sliding), which the real checkpoint shows as q_proj [6144,2048] on
+			// layer 0 and [8192,2048] on layer 1. headsAt collapses to NumHeads for every
+			// other family, leaving lqDim == qDim.
+			lqDim := arch.headsAt(i) * headDim
+			if l.QProj, err = loadProj(tn(i, s.QProj), lqDim, hd); err != nil {
 				return err
 			}
 			if l.KProj, err = loadProj(tn(i, s.KProj), kvDim, hd); err != nil {
@@ -658,8 +674,30 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 			if l.VProj, err = loadProj(tn(i, s.VProj), kvDim, hd); err != nil {
 				return err
 			}
-			if l.OProj, err = loadProj(tn(i, s.OProj), hd, qDim); err != nil {
+			if l.OProj, err = loadProj(tn(i, s.OProj), hd, lqDim); err != nil {
 				return err
+			}
+			// Laguna attention output gate. Its row count SELECTS the granularity —
+			// arch.headsAt(i) rows is per-head, headsAt(i)*headDim is per-element — so
+			// both valid shapes are accepted and anything else is a hard error rather
+			// than a silently mis-shaped gate. See applyAttnGate for why the checkpoint,
+			// not config.gating, is authoritative here.
+			if s.GProj != "" {
+				perHead, perElem := arch.headsAt(i), lqDim
+				rows := perHead
+				if arch.laguna != nil && !arch.laguna.GatePerHead {
+					rows = perElem
+				}
+				if l.GProj, err = loadProj(tn(i, s.GProj), rows, hd); err != nil {
+					if rows == perHead {
+						rows = perElem
+					} else {
+						rows = perHead
+					}
+					if l.GProj, err = loadProj(tn(i, s.GProj), rows, hd); err != nil {
+						return fmt.Errorf("decoder(laguna): layer %d g_proj is neither per-head [%d,%d] nor per-element [%d,%d]: %w", i, perHead, hd, perElem, hd, err)
+					}
+				}
 			}
 			// Projection bias (Qwen2 q/k/v; o_proj stays biasless). Gated on QKVBias so
 			// a family whose schema lists the bias suffix but whose config disables it
@@ -1082,6 +1120,8 @@ type tensorSchema struct {
 	FinalNorm string
 	// per-layer suffixes passed to tensorName(layer, suffix); "" = absent
 	QProj, KProj, VProj, OProj string
+	// GProj is Laguna's attention output gate (g_proj). "" = the family has none.
+	GProj                      string
 	QBias, KBias, VBias        string // "" = no projection bias (Qwen2 sets q/k/v)
 	QNorm, KNorm               string // "" = no QK-norm
 	PreAttnNorm, PostAttnNorm  string
@@ -1971,4 +2011,54 @@ func buildLlama4Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFi
 		return nil, err
 	}
 	return w, nil
+}
+
+// lagunaTensorSchema: Laguna (poolside). Read from the REAL Laguna-XS.2 checkpoint
+// index rather than inferred from modeling_laguna.py, because the two disagree in
+// two places that matter:
+//
+//  1. The module allocates FUSED 3D expert parameters (LagunaExperts holds
+//     gate_up_proj [E, 2*inter, hidden] and down_proj [E, hidden, inter]), but the
+//     shipped checkpoint stores PER-EXPERT 2D tensors — 9984 = 39 MoE layers × 256
+//     experts of each. HF re-packs them at load via its conversion mapping. The
+//     per-expert form is what goinfer already reads, so the Expert* templates apply
+//     unchanged and no stacked-expert handling is needed.
+//
+//  2. The module names the shared expert self.shared_experts (PLURAL, as GLM and
+//     DeepSeek do), but the checkpoint keys are mlp.shared_expert.* (SINGULAR).
+//
+// RouterBias is likewise the SHIPPED spelling: the bias lives under mlp.experts.*
+// on disk and HF's _checkpoint_conversion_mapping rewrites it to mlp.gate.* at
+// load, so reading the checkpoint directly means taking the experts spelling.
+//
+// The dense prefix layers (mlp_only_layers) use the plain GateProj/UpProj/DownProj
+// names at the model's intermediate_size; the MoE layers use the Expert*/Shared*
+// names at moe_intermediate_size. See docs/task-laguna.md.
+var lagunaTensorSchema = tensorSchema{
+	Embed:       "model.embed_tokens.weight",
+	LMHead:      "lm_head.weight",
+	FinalNorm:   "model.norm.weight",
+	QProj:       "self_attn.q_proj.weight",
+	KProj:       "self_attn.k_proj.weight",
+	VProj:       "self_attn.v_proj.weight",
+	OProj:       "self_attn.o_proj.weight",
+	GProj:       "self_attn.g_proj.weight",
+	QNorm:       "self_attn.q_norm.weight",
+	KNorm:       "self_attn.k_norm.weight",
+	PreAttnNorm: "input_layernorm.weight",
+	PreMLPNorm:  "post_attention_layernorm.weight",
+	// dense prefix (mlp_only_layers) layers
+	GateProj: "mlp.gate_proj.weight",
+	UpProj:   "mlp.up_proj.weight",
+	DownProj: "mlp.down_proj.weight",
+	// MoE layers
+	Router:     "mlp.gate.weight",
+	RouterBias: "mlp.experts.e_score_correction_bias",
+	ExpertGate: "mlp.experts.%d.gate_proj.weight",
+	ExpertUp:   "mlp.experts.%d.up_proj.weight",
+	ExpertDown: "mlp.experts.%d.down_proj.weight",
+	SharedGate: "mlp.shared_expert.gate_proj.weight",
+	SharedUp:   "mlp.shared_expert.up_proj.weight",
+	SharedDown: "mlp.shared_expert.down_proj.weight",
+	// SharedExpertGate empty: Laguna adds the shared expert with no outer sigmoid gate.
 }

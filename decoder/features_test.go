@@ -23,16 +23,23 @@ var archFeatureProfile = map[string][]ResidentFeature{
 	// FeatSlidingWindow. This table states the BASE profile; the authoritative requirement is
 	// derived per-model at load (RequiredResidentFeatures), which is what admission uses. The
 	// table's job is to force a new arch to be classified, not to be the runtime check.
-	"phi3":             {},
-	"gpt2":             {FeatLayerNorm, FeatLearnedPos, FeatNonGatedMLP, FeatOutBias},
-	"cohere":           {FeatLayerNorm, FeatLogitScale, FeatParallelBlock},
-	"cohere2":          {FeatLayerNorm, FeatLogitScale, FeatNoPE, FeatParallelBlock, FeatSlidingWindow},
-	"mistral":          {FeatSlidingWindow},
-	"qwen3":            {FeatQKNorm},
-	"mellum":           {FeatMoE, FeatPerLayerRoPE, FeatQKNorm, FeatRopeMscale, FeatSlidingWindow},
-	"mixtral":          {FeatMoE},
-	"qwen2_moe":        {FeatMoE, FeatMoEGatedShared}, // sigmoid-gated always-on shared expert (CUDA declines it)
-	"glm4_moe":         {FeatMoE, FeatPartialRotary, FeatQKNorm},
+	"phi3":      {},
+	"gpt2":      {FeatLayerNorm, FeatLearnedPos, FeatNonGatedMLP, FeatOutBias},
+	"cohere":    {FeatLayerNorm, FeatLogitScale, FeatParallelBlock},
+	"cohere2":   {FeatLayerNorm, FeatLogitScale, FeatNoPE, FeatParallelBlock, FeatSlidingWindow},
+	"mistral":   {FeatSlidingWindow},
+	"qwen3":     {FeatQKNorm},
+	"mellum":    {FeatMoE, FeatPerLayerRoPE, FeatQKNorm, FeatRopeMscale, FeatSlidingWindow},
+	"mixtral":   {FeatMoE},
+	"qwen2_moe": {FeatMoE, FeatMoEGatedShared}, // sigmoid-gated always-on shared expert (CUDA declines it)
+	"glm4_moe":  {FeatMoE, FeatPartialRotary, FeatQKNorm},
+	// Laguna: sigmoid-routed MoE with an UNGATED shared expert (so FeatMoE, not
+	// FeatMoEGatedShared), QK-norm, partial rotary on the full-attention layers, a
+	// sliding/full interleave with per-layer RoPE bases, YaRN mscale on the full
+	// layers, and the family-specific output gate. The XS generations carry all of
+	// these; M.1 drops the sliding-window half, but this table states the family's
+	// BASE profile and RequiredResidentFeatures derives the per-model truth.
+	"laguna":           {FeatAttnOutputGate, FeatMoE, FeatPartialRotary, FeatPerLayerRoPE, FeatQKNorm, FeatRopeMscale, FeatSlidingWindow},
 	"deepseek_v2":      {FeatMLA, FeatMoE},
 	"deepseek_v3":      {FeatMLA, FeatMoE},
 	"kimi_k2":          {FeatMLA, FeatMoE},
@@ -106,23 +113,28 @@ var admissionGolden = map[string][]string{
 	"gemma4_text":         {"cuda", "metal"},
 	"gemma4_unified_text": {"cuda", "metal"},
 	"glm4_moe":            {"cuda", "metal", "webgpu"},
-	"gpt2":                {},
-	"gpt_oss":             {},
-	"granitemoehybrid":    {"webgpu"},
-	"kimi_k2":             {"webgpu"},
-	"llama":               {"cuda", "metal", "webgpu"},
-	"llama4_text":         {"cuda", "metal", "webgpu"},
-	"mellum":              {"webgpu"},
-	"mistral":             {"cuda", "metal", "webgpu"},
-	"mixtral":             {"cuda", "metal", "webgpu"},
-	"nemotron_h":          {"webgpu"},
-	"phi3":                {"cuda", "metal", "webgpu"},
-	"qwen2":               {"cuda", "metal", "webgpu"},
-	"qwen2_5_vl":          {"cuda", "metal", "webgpu"},
-	"qwen2_moe":           {"metal", "webgpu"},
-	"qwen3":               {"cuda", "metal", "webgpu"},
-	"qwen3_5_moe":         {"metal", "webgpu"},
-	"qwen3_5_moe_text":    {"metal", "webgpu"},
+	// Laguna: NO resident backend. Its softplus attention output gate and per-layer
+	// query-head count are unimplemented everywhere, and both are silent failures if
+	// skipped (the gate multiplies the whole attention context; a wrong head count
+	// mis-shapes q/o). CPU-only until a bridge lands.
+	"laguna":           {},
+	"gpt2":             {},
+	"gpt_oss":          {},
+	"granitemoehybrid": {"webgpu"},
+	"kimi_k2":          {"webgpu"},
+	"llama":            {"cuda", "metal", "webgpu"},
+	"llama4_text":      {"cuda", "metal", "webgpu"},
+	"mellum":           {"webgpu"},
+	"mistral":          {"cuda", "metal", "webgpu"},
+	"mixtral":          {"cuda", "metal", "webgpu"},
+	"nemotron_h":       {"webgpu"},
+	"phi3":             {"cuda", "metal", "webgpu"},
+	"qwen2":            {"cuda", "metal", "webgpu"},
+	"qwen2_5_vl":       {"cuda", "metal", "webgpu"},
+	"qwen2_moe":        {"metal", "webgpu"},
+	"qwen3":            {"cuda", "metal", "webgpu"},
+	"qwen3_5_moe":      {"metal", "webgpu"},
+	"qwen3_5_moe_text": {"metal", "webgpu"},
 }
 
 func TestResidentAdmission_matrix(t *testing.T) {

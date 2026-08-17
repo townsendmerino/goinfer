@@ -29,9 +29,10 @@ Common to all three: `model_type: "laguna"`, vocab 100352, `rms_norm_eps` 1e-6,
 `attention_bias` false, `tie_word_embeddings` false, bf16, `max_position_embeddings` 262144,
 eos `[2,24]`, `moe_apply_router_weight_on_input` false, `router_aux_loss_coef` 0.0.
 
-**The vendor modeling code is byte-identical across generations** (only relative-import paths
-and a `transformers>=5.12` conversion-mapping shim differ) — so one adapter genuinely serves all
-three, and the generational differences are entirely config.
+**The vendor modeling code is byte-identical between XS-2.1 and M.1** (only relative-import paths
+and a `transformers>=5.12` conversion-mapping shim differ). **CORRECTED IN PHASE 1: XS.2's module
+is NOT the same file** (34KB vs 41KB) — see the corrections section below. One adapter still serves
+all three, but "generational differences are entirely config" was too strong.
 
 **M.1 is structurally SIMPLER, not harder**: no sliding window, no per-layer head counts, no
 routed scaling. It exercises the per-element gating path at depth and nothing else new.
@@ -74,8 +75,13 @@ cast back.
   stay unbiased) + `norm_topk_prob` + `routed_scaling_factor` — this is exactly goinfer's
   `MoEConfig{RouterSigmoid, RoutedScale, NormTopKProb}` (deepseek / glm4_moe).
   `moe_router_logit_softcapping` is 0.0 in all three releases (path exists in vendor code, unused).
-- **Shared expert**: `LagunaMLP` — a normal gated SwiGLU, so `SharedUngated: false`
-  (GLM's is ungated; Laguna's is not — do not copy that field from glm4_moe).
+- **Shared expert**: `SharedUngated: true`, same as glm4_moe. **Read this flag carefully** — it
+  does NOT mean "not a SwiGLU". Laguna's shared expert IS a normal gated SwiGLU (`LagunaMLP`),
+  but goinfer's `SharedUngated` refers to the OUTER `sigmoid(shared_gate·h)` scalar gate that
+  Qwen2-MoE applies to the shared expert's output. Laguna has no such gate — it adds the shared
+  output raw (`expert_output = expert_output + shared_expert_output`) — so `SharedUngated: true`.
+  Mapping "LagunaMLP is gated" onto `SharedUngated: false` is the natural-looking read and is
+  wrong; it would silently multiply the shared branch by a sigmoid the model never trained with.
 - **Mixed dense/MoE prefix**: `mlp_only_layers` / `mlp_layer_types` → `FirstKDense` (dense layers
   are a contiguous prefix in all three: `[0]`, `[0]`, `[0,1,2]`).
 - **Partial rotary, GLM-style non-interleaved** (`rotate_half` over the first `rotary_dim`,
@@ -125,3 +131,65 @@ existing machinery.
 **Strategic tie-in is real, not prospective:** `poolside/Laguna-XS.2-speculator.dflash` and
 `poolside/Laguna-S-2.1-DFlash` are published, and P10's block drafting shipped today
 (`serve --drafter`). Laguna would be the first pairing with a vendor-blessed drafter.
+
+
+## Phase 1 corrections — what the real checkpoint and XS.2's own module changed
+
+Phase 0 read `config.json` for all three and `modeling_laguna.py` for XS-2.1 and M.1. Increment 1
+added two sources Phase 0 did not consult — **XS.2's own module** and the **real XS.2 checkpoint's
+tensor index and shapes** — and both overturned assumptions. Recording them because the pattern is
+now three-for-three in this family: the released artifact disagrees with the prose.
+
+1. **QK-norm is UNCONDITIONAL, and Phase 0 missed it entirely.** All three modules construct
+   `q_norm`/`k_norm` as `LagunaRMSNorm(head_dim, eps=rms_norm_eps)` with no config flag, and the
+   real checkpoint ships `self_attn.{q,k}_norm.weight` of shape `[128]` on every layer. Nothing in
+   `config.json` mentions it and the vendor's "identical to Qwen2MoE attention except …" list omits
+   it. Phase 0 grepped for gating and softplus, not for norms — so the first adapter had
+   `QKNorm: false`, which would have been a silent parity failure. Caught before any parity run,
+   by reading the checkpoint's tensor names.
+
+2. **The gate's granularity comes from the TENSOR SHAPE, not `config.gating`.** XS.2 declares
+   `gating: true`, which the XS-2.1/M.1 module resolves to per-ELEMENT — but XS.2's own module
+   hardcodes `nn.Linear(config.hidden_size, self.num_heads)` and never reads the field, and its
+   shipped `g_proj` is `[64, 2048]`, i.e. per-HEAD. **The vendor's spelling→granularity rule is
+   generation-specific.** So `applyAttnGate` selects on `GProj.Rows()` (`nH` ⇒ per-head,
+   `nH*head_dim` ⇒ per-element; they can never collide since `head_dim > 1`), and the config value
+   is kept only as the declared expectation. This is the safest possible reading and is immune to a
+   fourth spelling.
+
+3. **Experts ship PER-EXPERT, not stacked.** Phase 0 recorded the module's fused 3D parameters
+   (`gate_up_proj [E, 2*inter, hidden]`). The checkpoint stores per-expert 2D tensors —
+   `mlp.experts.{0..255}.{gate,up,down}_proj.weight`, 9984 = 39 MoE layers × 256 experts of each —
+   which HF re-packs at load. That is the form goinfer already reads, so **no stacked-expert
+   handling is needed at all** and the estimate got cheaper, not dearer.
+
+4. **The shared expert is SINGULAR on disk.** The module says `self.shared_experts` (plural, as GLM
+   and DeepSeek spell it); the checkpoint keys are `mlp.shared_expert.*`.
+
+5. **`e_score_correction_bias` ships under `mlp.experts.*`**, not `mlp.gate.*` — the vLLM-trained
+   spelling, which HF rewrites at load. Reading the checkpoint directly means taking the experts
+   spelling, as Phase 0 predicted.
+
+6. **Per-layer query heads confirmed in real weights**, not just config: `q_proj` is `[6144, 2048]`
+   (48 heads) on layer 0 and `[8192, 2048]` (64 heads) on layer 1.
+
+### Resident-backend safety
+
+Laguna declares a new `FeatAttnOutputGate` resident feature covering both the softplus gate and the
+per-layer query heads, so **every resident backend declines it** (`laguna → admitted by []`).
+Without that declaration the family needs nothing CUDA lacks and would have been
+*admitted-but-mis-run*: the resident path would skip the gate silently and still emit plausible
+logits. This is the same failure shape `FeatGemma4EModel` and `FeatAttnSink` exist to prevent.
+
+### Increment 1 — landed
+
+Config resolution (all three real configs), the `laguna` architecture adapter, per-layer query-head
+accessor (`headsAt`/`maxHeads`, threaded through `causalAttention`/`attendQuery`/
+`attendBatchedHeads` and decode-scratch sizing), `RotaryDimLocal` completing the local/global RoPE
+triple, the softplus output gate, the tensor schema, and `GProj` loading with shape-selected
+granularity. Gated by `TestLagunaArchitecture_realConfigs` (three real configs; mutation-tested on
+rotary width, QK-norm, and per-layer heads), `TestLagunaGating_allThreeSpellings`, and
+`TestLagunaFirstKDense_contiguousOnly`. `GProj` is excluded from quantization: it is <1% of a
+layer's attention weights and its output multiplies the entire attention context.
+
+**Not yet gated numerically** — tiny goldens and the real XS.2 oracle are the next increments.

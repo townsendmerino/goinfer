@@ -360,7 +360,10 @@ func (m *Model) runLayersFromEmbedN(h []float32, cache *KVCache) ([]float32, err
 // masking stays in absolute positions (WindowStart/attendHi) and maps to physical
 // columns s-base.
 func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, layer, startPos, K int, global bool, arch *Architecture, useAcc64 bool, qh, kh, vt, scores, ch []float32) {
-	nH, nKV, hd := arch.NumHeads, arch.NumKVHeads, arch.HeadDim
+	// headsAt, not NumHeads: Laguna varies the QUERY head count per layer (its KV
+	// heads stay uniform, so `group` below is per-layer too). Every other family's
+	// headsAt returns NumHeads, leaving this identical.
+	nH, nKV, hd := arch.headsAt(layer), arch.NumKVHeads, arch.HeadDim
 	kvDim, qDim := nKV*hd, nH*hd
 	group := nH / nKV
 	scale := arch.AttnScale

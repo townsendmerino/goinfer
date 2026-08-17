@@ -45,6 +45,13 @@ type Architecture struct {
 	// HeadDim. <HeadDim is partial rotary (Phi's partial_rotary_factor), where
 	// the trailing dims pass through unrotated.
 	RotaryDim int
+	// RotaryDimLocal is the same for the LOCAL (sliding) layers when they rotate a
+	// DIFFERENT width than the global ones; 0 ⇒ both use RotaryDim. It completes the
+	// local/global RoPE triple that RoPELocalBase and ropeScalingLocal already start:
+	// Laguna's XS generations key partial_rotary_factor by layer type (0.5 on full,
+	// 1.0 on sliding), so their two layer types differ in base, scaling, AND rotated
+	// width at once. Every other family leaves it 0 and is unaffected.
+	RotaryDimLocal int
 	// MRopeSection is Qwen2.5-VL's m-RoPE head_dim/2 split over the (temporal,
 	// height, width) position components; nil = plain scalar RoPE. For text tokens
 	// the 3 components are equal so m-RoPE ≡ scalar RoPE; it only diverges over
@@ -82,6 +89,11 @@ type Architecture struct {
 	// global/full layers differ from the local/sliding ones). nil for every
 	// other family — they keep the uniform HeadDim/NumKVHeads/full-rotary path.
 	gemma4 *gemma4Params
+
+	// laguna, when non-nil, carries Laguna's two departures from a Qwen2-MoE-shaped
+	// decoder: softplus output gating before o_proj, and a per-layer QUERY head
+	// count. nil for every other family. See lagunaParams.
+	laguna *lagunaParams
 
 	// qwen35, when non-nil, marks a qwen3_5_moe hybrid: most layers are Gated
 	// DeltaNet (linear attention with a recurrent matrix state), the rest softmax.
@@ -228,6 +240,53 @@ func (a *Architecture) headDimAt(i int) int {
 		return a.gemma4.GlobalHeadDim
 	}
 	return a.HeadDim
+}
+
+// lagunaParams describes how Laguna (poolside) departs from an otherwise
+// Qwen2-MoE-shaped decoder. Both fields are read straight from the released
+// configs; see docs/task-laguna.md for the Phase 0 verification.
+type lagunaParams struct {
+	// HeadsPerLayer is num_attention_heads_per_layer: layer i's QUERY head count,
+	// which varies with the layer's attention type on the XS generations (48 on
+	// full_attention, 64 on sliding_attention). nil ⇒ uniform Architecture.NumHeads
+	// (M.1, whose config omits the field). KV heads stay uniform at 8 either way, so
+	// the GQA group size — not just the head count — changes per layer.
+	HeadsPerLayer []int
+	// GatePerHead selects the gate's granularity: true ⇒ g_proj emits one gate per
+	// HEAD, broadcast across head_dim (config gating "per-head"); false ⇒ one gate
+	// per (head, head_dim) CHANNEL (config gating true or "per-element").
+	//
+	// Three released spellings map onto this one bool exactly as the vendor code
+	// does — self.gate_per_head = (gating == "per-head") — so `true` and
+	// "per-element" are the same path and only "per-head" differs.
+	GatePerHead bool
+}
+
+// headsAt gives layer i's QUERY head count. Laguna's XS generations vary it by
+// attention type; for every other family this collapses to Architecture.NumHeads.
+// Note this is the query side only — kvHeadsAt is separate and stays uniform on
+// Laguna, so the GQA group size (heads/kvHeads) is also per-layer.
+func (a *Architecture) headsAt(i int) int {
+	if a.laguna != nil && i >= 0 && i < len(a.laguna.HeadsPerLayer) {
+		if n := a.laguna.HeadsPerLayer[i]; n > 0 {
+			return n
+		}
+	}
+	return a.NumHeads
+}
+
+// maxHeads is the largest per-layer query-head count, which is what attention
+// scratch must be sized for. Equal to NumHeads unless a family varies it.
+func (a *Architecture) maxHeads() int {
+	n := a.NumHeads
+	if a.laguna != nil {
+		for _, h := range a.laguna.HeadsPerLayer {
+			if h > n {
+				n = h
+			}
+		}
+	}
+	return n
 }
 
 func (a *Architecture) kvHeadsAt(i int) int {
@@ -442,13 +501,20 @@ func (a *Architecture) finalizeRoPE() {
 	}
 	rd := a.rotaryDim()
 	a.ropeInvFreqGlobal = computeInvFreq(a.RoPEGlobalBase, rd, a.ropeScaling)
-	// Share the table only when the local layers use the SAME base AND scaling
-	// (single-base, single-scaling families). Gemma differs by base; Mellum
-	// differs by scaling (YaRN global vs plain local) at the same base.
-	if a.RoPELocalBase == a.RoPEGlobalBase && a.ropeScalingLocal == a.ropeScaling {
+	// Share the table only when the local layers use the SAME base AND scaling AND
+	// rotated width (single-base, single-scaling families). Gemma differs by base;
+	// Mellum differs by scaling (YaRN global vs plain local) at the same base;
+	// Laguna differs by all three at once. The width matters because applyRoPE reads
+	// the rotated half-width as len(invFreq) — a shorter local table IS partial
+	// rotary on the local layers, with no other plumbing.
+	rdLocal := rd
+	if a.RotaryDimLocal > 0 {
+		rdLocal = a.RotaryDimLocal
+	}
+	if a.RoPELocalBase == a.RoPEGlobalBase && a.ropeScalingLocal == a.ropeScaling && rdLocal == rd {
 		a.ropeInvFreqLocal = a.ropeInvFreqGlobal
 	} else {
-		a.ropeInvFreqLocal = computeInvFreq(a.RoPELocalBase, rd, a.ropeScalingLocal)
+		a.ropeInvFreqLocal = computeInvFreq(a.RoPELocalBase, rdLocal, a.ropeScalingLocal)
 	}
 }
 

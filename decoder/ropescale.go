@@ -99,6 +99,11 @@ func parseRopeScaling(raw json.RawMessage) (*ropeScaling, error) {
 type ropeLayerSpec struct {
 	base    float64
 	scaling *ropeScaling
+	// partial is this attention type's partial_rotary_factor, read from the SAME
+	// inner object (Laguna keys it per layer type: 0.5 on full_attention, 1.0 on
+	// sliding_attention, so the two types rotate different widths). 0 ⇒ absent;
+	// the caller falls back to the top-level config field. Mellum leaves it 0.
+	partial float64
 }
 
 // parseRopeParameters reads the per-attention-type rope_parameters object
@@ -106,6 +111,12 @@ type ropeLayerSpec struct {
 // inner object carries rope_theta plus a rope_scaling-style rope_type + params.
 // Returns the full (global) and sliding (local) specs. A missing rope_parameters
 // is (nil, nil, nil) — the caller falls back to the flat rope_theta/rope_scaling.
+//
+// A MISSING sliding_attention returns (full, nil, nil) rather than an error: a
+// family whose config drops layer_types entirely is all-full-attention and ships
+// only the one key (Laguna M.1 does exactly this, where the XS generations ship
+// both). Callers that REQUIRE both — mellum — already check for a nil sliding
+// themselves and say so in their own error, so relaxing it here cannot loosen them.
 func parseRopeParameters(raw json.RawMessage) (full, sliding *ropeLayerSpec, err error) {
 	if len(raw) == 0 || string(raw) == "null" {
 		return nil, nil, nil
@@ -119,6 +130,9 @@ func parseRopeParameters(raw json.RawMessage) (full, sliding *ropeLayerSpec, err
 	}
 	if full, err = parseRopeSpec("full_attention", obj.Full); err != nil {
 		return nil, nil, err
+	}
+	if len(obj.Sliding) == 0 {
+		return full, nil, nil
 	}
 	if sliding, err = parseRopeSpec("sliding_attention", obj.Sliding); err != nil {
 		return nil, nil, err
@@ -135,6 +149,7 @@ func parseRopeSpec(name string, raw json.RawMessage) (*ropeLayerSpec, error) {
 	var head struct {
 		RopeType  string  `json:"rope_type"`
 		RopeTheta float64 `json:"rope_theta"`
+		Partial   float64 `json:"partial_rotary_factor"`
 	}
 	if err := json.Unmarshal(raw, &head); err != nil {
 		return nil, fmt.Errorf("rope_parameters(%s): %w", name, err)
@@ -142,7 +157,7 @@ func parseRopeSpec(name string, raw json.RawMessage) (*ropeLayerSpec, error) {
 	if head.RopeTheta <= 0 {
 		return nil, fmt.Errorf("rope_parameters(%s): rope_theta must be >0", name)
 	}
-	spec := &ropeLayerSpec{base: head.RopeTheta}
+	spec := &ropeLayerSpec{base: head.RopeTheta, partial: head.Partial}
 	switch head.RopeType {
 	case "", "default":
 		// plain RoPE, no scaling

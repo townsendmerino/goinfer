@@ -50,6 +50,7 @@ const (
 	FeatMLA               ResidentFeature = "mla"                 // latent-KV attention (DeepSeek, Kimi)
 	FeatSSM               ResidentFeature = "ssm"                 // Mamba-2 mixer (Granite-4.0-H, Nemotron-H)
 	FeatAttnSink          ResidentFeature = "attn-sink"           // learned per-head attention sink in the softmax denominator + clamped interleaved-SwiGLU experts (gpt-oss). CPU-only — no resident backend implements it, so CUDA/Metal/WebGPU all decline.
+	FeatAttnOutputGate    ResidentFeature = "attn-output-gate"    // Laguna: ctx *= softplus(g_proj·h) applied BEFORE o_proj, plus a per-layer QUERY head count. CPU-only — no resident backend implements either, so CUDA/Metal/WebGPU all decline. Without this the family needs nothing CUDA lacks and would be ADMITTED-but-mis-run: the resident path would skip the gate entirely and still produce plausible logits.
 	FeatGemma4EModel      ResidentFeature = "gemma4-e-model"      // Gemma-4 E2B/E4B shape: per-layer embeddings (PLE, hidden_size_per_layer_input>0) + cross-layer shared-KV + variable per-layer FFN. runLayersGemma4 injects PLE per layer; the resident bridges (built for the PLE-free dense 12B/26B) implement NONE of it, so a resident runner would SKIP the PLE branch and silently mis-run. No resident backend declares it ⇒ all decline (CPU-only) until an E-model bridge lands.
 )
 
@@ -128,6 +129,10 @@ func (a *Architecture) residentFeatures() []ResidentFeature {
 	add(a.mla != nil, FeatMLA)
 	add(a.granite != nil || a.nemotron != nil, FeatSSM)
 	add(a.gptoss != nil, FeatAttnSink)
+	// Laguna's attention output gate AND its per-layer query-head count. Both live on
+	// arch.laguna and neither has a resident implementation; either one alone would be
+	// silently skipped by a resident runner, so the whole family is CPU-only for now.
+	add(a.laguna != nil, FeatAttnOutputGate)
 	// Gemma-4 E-model (E2B/E4B) shape: PLE, cross-layer shared-KV, variable per-layer FFN — all
 	// co-present and NONE ported to the resident bridges (built/validated on the PLE-free dense 12B and
 	// 26B-A4B). Without this, an E-model needs no feature CUDA lacks ⇒ admitted-but-mis-run (the PLE

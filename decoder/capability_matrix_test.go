@@ -196,6 +196,24 @@ func representativeConfig(modelType string) *Config {
 			FirstKDenseReplace: 1, RoutedScalingFactor: 1.0, UseQKNorm: true, PartialRotaryFactor: 0.5,
 			RopeParameters: json.RawMessage(`{"rope_type":"default","rope_theta":10000.0,"partial_rotary_factor":0.5}`),
 		}
+	case "laguna":
+		// Mirrors the real XS shape in miniature: a 4-layer full/sliding interleave with
+		// PER-LAYER query heads (4 on full, 8 on sliding), sigmoid routing + an ungated
+		// shared expert, and rope_parameters keyed BY LAYER TYPE (YaRN + partial rotary
+		// on full, plain full-width on sliding) — the combination the adapter resolves.
+		return &Config{
+			ModelType: "laguna", HiddenDim: 64, NumLayers: 4, NumHeads: 4, NumKVHeads: 2,
+			HeadDim: 16, VocabSize: 256, IntermediateDim: 128, RMSNormEps: 1e-6,
+			NumExperts: 8, NumExpertsPerTok: 2, MoeIntermediateSize: 32,
+			SharedExpertIntermediateSize: 32, MoeRoutedScalingFactor: 2.5,
+			SlidingWindow: 16, MlpOnlyLayers: []int{0},
+			LayerTypes:                []string{"full_attention", "sliding_attention", "sliding_attention", "sliding_attention"},
+			NumAttentionHeadsPerLayer: []int{4, 8, 8, 8},
+			Gating:                    json.RawMessage(`"per-head"`),
+			RopeParameters: json.RawMessage(`{"full_attention":{"rope_type":"yarn","rope_theta":500000.0,"factor":32.0,` +
+				`"original_max_position_embeddings":8192,"beta_fast":64.0,"beta_slow":1.0,"partial_rotary_factor":0.5},` +
+				`"sliding_attention":{"rope_type":"default","rope_theta":10000.0,"partial_rotary_factor":1.0}}`),
+		}
 	case "granitemoehybrid":
 		return &Config{
 			ModelType: "granitemoehybrid", HiddenDim: 64, NumLayers: 4, NumHeads: 4, NumKVHeads: 2,
@@ -319,6 +337,7 @@ var familyDocs = map[string]familyDoc{
 	"qwen3_5_moe":         {"Qwen3.5-MoE", "Qwen3.5/3.6 hybrid: Gated DeltaNet + softmax + MoE", "safetensors, GGUF", "text"},
 	"qwen3_5_moe_text":    {"Qwen3.5-MoE", "Qwen3.5/3.6 hybrid: Gated DeltaNet + softmax + MoE", "safetensors, GGUF", "text"},
 	"glm4_moe":            {"GLM-4.5/4.6", "Zhipu GLM-4.5/4.6 DeepSeek-style MoE (sigmoid routing + dense prefix)", "safetensors, GGUF", "text"},
+	"laguna":              {"Laguna", "poolside Laguna XS-2.1 / XS.2 / M.1: sigmoid-routed MoE + softplus attention output gating + per-layer query heads", "safetensors", "text"},
 	"granitemoehybrid":    {"Granite-4.0-H", "IBM Granite-4.0-H: Mamba-2 + attention hybrid + MoE-on-every-layer", "safetensors, GGUF", "text"},
 	"nemotron_h":          {"Nemotron-H", "NVIDIA Nemotron-H/Nemotron 3 Nano single-op-per-block hybrid (mamba | attention | relu² MLP | MoE-FFN)", "safetensors, GGUF", "text"},
 	"deepseek_v2":         {"DeepSeek-V2", "DeepSeek-V2/V2-Lite: MLA + DeepSeekMoE (softmax routing)", "safetensors, GGUF", "text"},

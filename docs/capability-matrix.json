@@ -204,6 +204,26 @@
     "parity": "full-oracle 100.0%/0.99128"
   },
   {
+    "name": "laguna",
+    "model_types": [
+      "laguna"
+    ],
+    "display_name": "Laguna",
+    "description": "poolside Laguna XS-2.1 / XS.2 / M.1: sigmoid-routed MoE + softplus attention output gating + per-layer query heads",
+    "coverage_axis": "softmax-GQA",
+    "moe": "sparse +shared",
+    "sliding_window": "interleave",
+    "qk_norm": true,
+    "rope_style": "partial",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors",
+    "modality": "text",
+    "gpu_residency_eligible": false,
+    "parity": "experimental: config-only 0.0%/0.00000"
+  },
+  {
     "name": "llama",
     "model_types": [
       "llama"
