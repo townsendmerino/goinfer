@@ -5,6 +5,7 @@ package cuda
 import (
 	"context"
 	"os"
+	"strconv"
 	"testing"
 	"time"
 
@@ -51,7 +52,12 @@ func TestGenerateBlockSpec_production(t *testing.T) {
 	if err != nil {
 		t.Fatalf("encode: %v", err)
 	}
-	const maxNew = 96
+	maxNew := 96
+	if v := os.Getenv("GOINFER_TEST_MAXNEW"); v != "" {
+		if n, e := strconv.Atoi(v); e == nil {
+			maxNew = n
+		}
+	}
 
 	// Attach ONCE — the weight upload is a per-process cost, not a per-request one. Timing the
 	// attach inside the generation is what made the first version of this path measure 0.17x.
@@ -66,26 +72,21 @@ func TestGenerateBlockSpec_production(t *testing.T) {
 	}
 	specMs := float64(time.Since(t0).Milliseconds())
 
-	// plain greedy on the same resident, same token count
-	r := mc.ResidentForwardForTest().(*cudaResident)
+	// THE BASELINE IS Model.Generate — the path a server actually takes.
+	//
+	// An earlier version used a PrefillLastNArgmax(M=1) loop, which downloads the full 608 KB
+	// logit row per token; Generate uses launchToken with the GPU argmax fast-path (a 4-byte
+	// readback). That made the baseline slower than production and flattered every speedup
+	// measured against it. Comparing against anything but the real path is measuring the wrong
+	// thing.
 	t1 := time.Now()
-	embs := make([][]float32, len(prompt))
-	for i, id := range prompt {
-		embs[i] = mc.EmbedResidentForTest(id)
+	ch, gen := mc.Generate(context.Background(), prompt, len(got), decoder.SamplingParams{})
+	var want []int
+	for id := range ch {
+		want = append(want, id)
 	}
-	ids, err := r.PrefillLastNArgmax(embs, 0)
-	if err != nil {
-		t.Fatalf("greedy prefill: %v", err)
-	}
-	tok := ids[len(ids)-1]
-	want := []int{tok}
-	for p := len(prompt); len(want) < len(got); p++ {
-		one, e := r.PrefillLastNArgmax([][]float32{mc.EmbedResidentForTest(tok)}, p)
-		if e != nil {
-			t.Fatalf("greedy step: %v", e)
-		}
-		tok = one[0]
-		want = append(want, tok)
+	if e := gen.Err(); e != nil {
+		t.Fatalf("greedy: %v", e)
 	}
 	greedyMs := float64(time.Since(t1).Milliseconds())
 

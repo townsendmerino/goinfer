@@ -8,6 +8,7 @@ package decoder
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/chat"
@@ -238,6 +239,12 @@ func EncodeChatForTest(tk *tokenizer.Tokenizer, prompt string) ([]int, error) {
 	ids, err := tk.EncodeSegments(tmpl.RenderSegments("", []chat.Turn{{Role: "user", Content: prompt}}), false)
 	if err != nil {
 		return nil, err
+	}
+	if noThink := os.Getenv("GOINFER_TEST_NOTHINK") != "0"; !noThink {
+		// GOINFER_TEST_NOTHINK=0 reproduces what the SERVER renders: Qwen3's template with
+		// thinking left ON. The drafter was trained on non-thinking output, so this is the
+		// off-distribution case, and it is worth being able to measure deliberately.
+		return ids, nil
 	}
 	if _, ok := tk.TokenID("<think>"); ok {
 		sfx, e := tk.Encode("<think>\n\n</think>\n\n", false)

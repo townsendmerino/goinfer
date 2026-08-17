@@ -204,9 +204,36 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 	}
 
 	maskID := dw.MaskTokenID()
+	var guard acceptanceGuard
+	seamOff := false
 	for opt.MaxTokens <= 0 || len(out) < opt.MaxTokens {
 		if eos[anchor] {
 			break
+		}
+		if guard.stopped {
+			// The drafter is not paying for itself on this generation. Finish with plain
+			// resident decoding rather than continuing to lose ~20% invisibly.
+			//
+			// DISARM THE CAPTURE SEAM FIRST. Leaving it armed makes every fallback token pay
+			// five tap downloads for hidden states nothing will read — measured turning a
+			// 0.98x generation into 0.87x, i.e. the guard made things WORSE than not guarding.
+			if !seamOff {
+				if e := host.SetBatchedCapture(nil); e != nil {
+					return out, rounds, e
+				}
+				seamOff = true
+			}
+			one, e := host.PrefillLastNArgmax([][]float32{m.embedResident(anchor)}, pos)
+			if e != nil {
+				return out, rounds, e
+			}
+			pos++
+			anchor = one[0]
+			out = append(out, anchor)
+			if emit != nil && !emit([]int{anchor}) {
+				return out, rounds, nil
+			}
+			continue
 		}
 		blockIn := make([][]float32, width)
 		blockIn[0] = m.embedResident(anchor)
@@ -253,6 +280,7 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 			return out, rounds, e
 		}
 		anchor = next
+		guard.observe(1 + accepted)
 	}
 	return out, rounds, nil
 }
@@ -310,4 +338,55 @@ func (s *BlockSpec) GenerateStream(ctx context.Context, prompt []int, maxTokens 
 		}
 	}()
 	return out, g, nil
+}
+
+// breakEvenTokensPerRound is the acceptance below which block drafting LOSES.
+//
+// A round costs draft + batched verify + the capture seam whatever it accepts; plain decoding
+// costs one target forward per token. So the drafter pays only when it commits more tokens per
+// round than the round costs in decode-equivalents. On the measured 4B/2070S pairing that is
+// ~39 ms per round against an 11.1 ms decode — about 3.5.
+//
+// This is not a tuning knob, it is a break-even, and the two measurements that motivated it
+// straddle it exactly: non-thinking Qwen3 accepts 5.76/round and runs 1.77x, while the SAME
+// model in thinking mode accepts 3.00 and runs 0.98x. The margin below is deliberate: disabling
+// a drafter that is merely breaking even costs nothing, while leaving one running that is losing
+// costs 20% and is INVISIBLE, because block drafting is lossless — the output is identical
+// either way, so an operator sees correct responses at reduced speed and has nothing to look at.
+const breakEvenTokensPerRound = 3.8
+
+// guardWindow is how many rounds to observe before judging. Long enough that a hard opening
+// (the first block of a response is often unpredictable) does not disable a drafter that would
+// have paid, short enough that a losing one is switched off within a fraction of a response.
+const guardWindow = 12
+
+// acceptanceGuard disables a drafter that is not paying for itself, per generation.
+//
+// It exists because the failure it catches is SILENT. A mis-paired drafter, a target in a mode
+// the drafter was not trained for, or an out-of-domain workload all produce correct output at
+// reduced speed — losslessness guarantees the tokens are right. Without this, `--drafter` on a
+// thinking-mode Qwen3 serves at 0.83x and nothing anywhere says so.
+type acceptanceGuard struct {
+	rounds  int
+	tokens  int
+	stopped bool
+}
+
+// observe records a round and reports whether block drafting should continue.
+func (g *acceptanceGuard) observe(committed int) bool {
+	if g.stopped {
+		return false
+	}
+	g.rounds++
+	g.tokens += committed
+	if g.rounds >= guardWindow {
+		if float64(g.tokens)/float64(g.rounds) < breakEvenTokensPerRound {
+			g.stopped = true
+			return false
+		}
+		// Passed the check: keep going, and re-judge over the next window rather than
+		// letting an early good stretch license an arbitrarily long bad one.
+		g.rounds, g.tokens = 0, 0
+	}
+	return true
 }

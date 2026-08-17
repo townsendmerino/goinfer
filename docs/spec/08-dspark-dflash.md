@@ -2227,3 +2227,50 @@ comparison:
 **The gap a perfect router can close is 4 percentage points on one traffic class.** Worth having
 eventually; not worth blocking a ship on, and definitely not the "mandatory or the feature is
 harmful" framing the width-16 numbers implied.
+
+## CORRECTION: gate 3's baseline was wrong, and the served default is a LOSS
+
+Two findings, and the second is a shipping problem.
+
+### 1. The baseline was slower than production, inflating every speedup ~10%
+
+Gate 3 compared block-speculative generation against a `PrefillLastNArgmax(M=1)` loop. That is
+not what a server does. `Model.Generate` uses `launchToken` with the **GPU argmax fast-path — a
+4-byte readback** — where the M=1 batched call downloads the **full 608 KB logit row per token**.
+So the baseline was slower than production, and every ratio measured against it was flattered.
+
+| | old baseline | **real baseline (`Model.Generate`)** |
+|---|---|---|
+| non-thinking | 1.71× | **1.56×** |
+| thinking | 0.98× | **0.82×** |
+
+The corrected thinking figure **matches the served A/B (0.83×) exactly**, which is what confirms
+the correction rather than merely asserting it. **Gate 3 still passes** — 1.56× against a ≥1.3×
+bar — but the recorded 1.60×/1.79× were measured the wrong way and should be read as ~1.56× and
+proportionally lower until re-run against `Generate`.
+
+### 2. `--drafter` is a NET LOSS on Qwen3's default serving configuration
+
+The server renders Qwen3 with **thinking mode ON**. The drafter was trained on **non-thinking**
+output, so acceptance halves — 5.76 → 3.00 tok/round — and the result is **0.82×**.
+
+| template | tok/round | vs `Model.Generate` |
+|---|---|---|
+| non-thinking | 5.76 | **1.56×** |
+| **thinking (server default)** | **3.00** | **0.82×** |
+
+This is the sixth input-distribution finding in this workstream and by far the most expensive,
+because it survives to production: block drafting is **lossless**, so an operator sees correct
+responses at reduced speed with nothing in any log to look at.
+
+**An acceptance guard is now implemented** (`breakEvenTokensPerRound`, `guardWindow`): the loop
+watches committed-tokens-per-round and stops drafting when it falls below break-even. It bounds
+the damage but does **not** rescue this case, for a reason worth recording — **its fallback path
+uses `PrefillLastNArgmax(M=1)`, the same slow primitive that caused finding 1.** The fast greedy
+step exists on the resident (`argmax_reduce`, 4-byte readback) but is not on the interface the
+loop drives. Until that is fixed the guard converts a 0.82× into roughly 0.82×.
+
+**So the honest status of `--drafter`: it is a 1.56× win where the target runs non-thinking, and
+a ~0.8× loss on Qwen3's default chat template.** That is not a shippable default, and the fix is
+one of: put the fast greedy step on the interface so the guard's fallback actually costs plain
+decode; warn at startup when a thinking-mode template is detected; or both.
