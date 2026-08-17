@@ -449,7 +449,7 @@
       "nemotron_h"
     ],
     "display_name": "Nemotron-H",
-    "description": "NVIDIA Nemotron-H single-op-per-block hybrid (mamba | attention | relu² MLP)",
+    "description": "NVIDIA Nemotron-H/Nemotron 3 Nano single-op-per-block hybrid (mamba | attention | relu² MLP | MoE-FFN)",
     "coverage_axis": "state-space hybrid (Mamba-2, single-op)",
     "moe": "dense",
     "sliding_window": "none",

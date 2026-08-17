@@ -17,8 +17,40 @@ Parity, numerics, goldens, quantization, model families. Anything whose success 
 
 ## Queued
 
-**G4 · Nemotron 3 Nano (30B-A3B) as a new family — Phase 0/1 + real T1 golden + GGUF loader
-DONE (`mac`, 2026-08-17); T3 handed off to `linux`** — `linux`
+**G4 · Nemotron 3 Nano (30B-A3B) as a new family — Phase 0/1 + T1 + **T3 DONE**
+(`mac` then `linux-62gb`, 2026-08-17)** — `linux`
+
+**T3 PASSED on the real 30B-A3B checkpoint (`linux-62gb`, 2026-08-17): argmax exact, cosine
+0.997668, and all 6 continuation tokens exact** against an HF bf16 oracle of the same weights
+(`nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16`, 63 GB). Recorded on the existing `nemotron_h`
+manifest row rather than a sibling — the manifest is keyed by REGISTRY model_type and the
+registry dispatches both the dense and MoE variants on `nemotron_h`, unlike deepseek_v2/v3 which
+are genuinely separate keys. Test: `decoder/nemotron3nano_real_test.go`; oracle pin:
+`scripts/pin_nemotron3nano_real.py`; asset `GOINFER_NEMOTRON3NANO_HF`. The adapter needed NO
+changes — config parsing, the 52-block MEMEM* pattern (23 mamba / 23 moe / 6 attn), the
+noaux_tc router and the non-gated relu² experts were all correct on released weights.
+
+**The one real finding: this variant must NOT be run with int8 ACTIVATIONS.** The first T3 run
+failed at cosine 0.978086 with a degenerate continuation, and the cause was not a bug — it is
+router sensitivity. Measured on the same forward:
+
+| quant | cosine |
+|---|---|
+| `int8int8` (int8 weights + int8 activations) | 0.978086 |
+| `int8` (int8 weights, f32 activations) | **0.997668** |
+
+The model routes **6 of 128 experts (4.7%)** — far sparser than deepseek_v3 (0.99951),
+qwen3_5_moe (0.99333) or granitemoehybrid (0.99566), all measured at int8int8 — and its own
+DENSE parent scores 0.99574 at int8int8. Quantizing activations perturbs the router enough to
+flip which experts run, a discrete change no averaging smooths (the expert-flip cliff already
+recorded for granite's MoE stack). Comparing against the repo's other MoE rows is what
+distinguished "sensitive" from "broken" cheaply, before any hunt for a forward bug.
+
+**Remaining for "supported" to be a fully backed claim:** T2 (add to the sweep list). The
+capability-matrix row is done (the `nemotron_h` entry now names both variants). GPU residency is
+still correctly DECLINED for this family on both cuda and metal, so it is CPU-only for now.
+
+*Original handoff below, kept for the record.*
 
 **T3 handoff prompt: `docs/prompts/nemotron3nano-t3.md`.** Real-checkpoint parity — needs the
 actual weights (20GB+), which doesn't fit this Mac's disk/RAM headroom alongside a reference

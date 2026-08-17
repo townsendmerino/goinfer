@@ -28,6 +28,15 @@ import (
 // The parity row is emitted here, not by the caller, so that a family cannot record a
 // row without having run these checks — emitParityRow is a no-op if any of them failed.
 func realLogitOracle(t *testing.T, ckpt, golden, wantArch, family, reference string) {
+	realLogitOracleQuant(t, ckpt, golden, wantArch, family, reference, "int8int8")
+}
+
+// realLogitOracleQuant is realLogitOracle with the load precision named. Most families use
+// int8int8 (weights AND activations int8), which is what the resident GPU paths run. A family
+// whose routing is too sensitive for int8 ACTIVATIONS passes its own quant — see
+// nemotron3nano_real_test.go, where 6-of-128 sparse routing costs 0.978 at int8int8 and 0.9977
+// with f32 activations, on a forward that is otherwise correct.
+func realLogitOracleQuant(t *testing.T, ckpt, golden, wantArch, family, reference, quant string) {
 	t.Helper()
 	raw, err := os.ReadFile(golden)
 	if err != nil {
@@ -44,7 +53,7 @@ func realLogitOracle(t *testing.T, ckpt, golden, wantArch, family, reference str
 		t.Fatalf("parse golden: %v", err)
 	}
 
-	m, err := Load(ckpt, Options{Quant: "int8int8"})
+	m, err := Load(ckpt, Options{Quant: quant})
 	if err != nil {
 		t.Fatalf("Load(%s): %v", ckpt, err)
 	}

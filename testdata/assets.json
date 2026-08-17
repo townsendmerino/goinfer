@@ -310,6 +310,24 @@
         "TestDFlash_pairingDialects"
       ],
       "note": "z-lab/gemma-4-26B-A4B-it-DFlash (apache-2.0, 0.86 GB) \u2014 pairs with our local gemma-4-26b-a4b-it (hidden 2816, 30 layers, vocab 262144, all exact)."
+    },
+    {
+      "env": "GOINFER_NEMOTRON3NANO_HF",
+      "kind": "dir",
+      "members": [
+        "config.json"
+      ],
+      "members_any": [
+        "model.safetensors.index.json",
+        "model.safetensors"
+      ],
+      "candidates": [
+        "$MODELS/nemotron3nano-30b-bf16"
+      ],
+      "used_by": [
+        "TestNemotron3NanoReal_oracle"
+      ],
+      "note": "NVIDIA-Nemotron-3-Nano-30B-A3B-BF16 (63 GB safetensors) \u2014 the MoE variant's T3 oracle. BF16 and not the -FP8 release: goinfer has no fp8 reader anywhere in the tree (the blocker that stopped DeepSeek V4-Flash scoping), so the FP8 repo is unusable here regardless of its smaller size."
     }
   ]
 }

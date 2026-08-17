@@ -98,7 +98,7 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 
 ## state-space hybrid (Mamba-2, single-op)
 
-> **Nemotron-H** — NVIDIA Nemotron-H single-op-per-block hybrid (mamba | attention | relu² MLP)
+> **Nemotron-H** — NVIDIA Nemotron-H/Nemotron 3 Nano single-op-per-block hybrid (mamba | attention | relu² MLP | MoE-FFN)
 
 | Family | model_type(s) | MoE | Sliding window | QK-norm | RoPE | Norm | Activation | Tied head | Loaders | Modality | GPU-resident | Parity |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|

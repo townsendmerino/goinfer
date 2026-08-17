@@ -268,7 +268,7 @@
       "status": "validated",
       "validated_at": "b067007",
       "date": "2026-08-05",
-      "reference": "rides deepseek_v3's real-model oracle (HF bf16 Moonlight-16B-A3B; int8 resident) — same forward_deepseek.go, same deps_hash. Kimi's config-delta (64 heads, 384 experts top-8, sigmoid noaux_tc routing default) is covered by TestKimi_descriptor / TestKimi_routingDefault / TestKimi_textParity (tiny golden, cosine 1.000000)",
+      "reference": "rides deepseek_v3's real-model oracle (HF bf16 Moonlight-16B-A3B; int8 resident) \u2014 same forward_deepseek.go, same deps_hash. Kimi's config-delta (64 heads, 384 experts top-8, sigmoid noaux_tc routing default) is covered by TestKimi_descriptor / TestKimi_routingDefault / TestKimi_textParity (tiny golden, cosine 1.000000)",
       "machine": "linux-62gb",
       "method": "shared-path (via deepseek_v3)",
       "metrics": null
@@ -392,14 +392,18 @@
       "status": "validated",
       "validated_at": "c3e43c8",
       "date": "2026-08-15",
-      "reference": "HF bf16 (NVIDIA-Nemotron-Nano-9B-v2; int8 resident)",
+      "reference": "HF bf16 \u2014 dense NVIDIA-Nemotron-Nano-9B-v2 (int8 resident) AND MoE NVIDIA-Nemotron-3-Nano-30B-A3B (int8 weights, f32 activations)",
       "machine": "linux-62gb",
       "method": "real-model-oracle",
       "metrics": {
         "argmax_pct": 100.0,
         "cosine_min": 0.99574,
-        "cosine_mean": 0.99574
-      }
+        "cosine_mean": 0.99574,
+        "moe_cosine_min": 0.997668,
+        "moe_argmax_pct": 100.0,
+        "moe_continuation_exact": true
+      },
+      "note": "Two real-checkpoint oracles back this family, because nemotron_h covers two architectures under one model_type: the DENSE 9B (cosine 0.99574, int8int8) and the MoE 30B-A3B Nemotron 3 Nano (cosine 0.997668, continuation exact). One row and not a sibling because the manifest is keyed by REGISTRY model_type and the registry dispatches both on nemotron_h -- unlike deepseek_v2/deepseek_v3, which are genuinely separate keys.\nThe MoE oracle runs at int8 WEIGHTS with f32 ACTIVATIONS, and that is a measured requirement, not a threshold dodge: int8int8 gives 0.978086 on the same forward. This model routes 6 of 128 experts (4.7%), far sparser than deepseek_v3 (0.99951), qwen3_5_moe (0.99333) or granitemoehybrid (0.99566) -- all at int8int8 -- and its own dense parent scores 0.99574 at int8int8. Quantizing activations perturbs the router enough to flip which experts run, a discrete change no averaging smooths. DEPLOYMENT FACT: do not run the MoE variant with int8 activations."
     },
     "phi3": {
       "uses": [
@@ -452,7 +456,7 @@
       "status": "experimental",
       "validated_at": "2f26643",
       "date": "2026-08-04",
-      "reference": "HF (qwen2.5-VL-tiny seeded fixture, e2e encoder→decoder)",
+      "reference": "HF (qwen2.5-VL-tiny seeded fixture, e2e encoder\u2192decoder)",
       "machine": "linux-62gb",
       "method": "tiny-golden",
       "metrics": {
@@ -518,7 +522,7 @@
       "status": "validated",
       "validated_at": "b62ba30",
       "date": "2026-06-20",
-      "reference": "HF bf16 (Qwen3.6-35B-A3B text decoder; int8-vs-bf16). v0.8.0 re-run at HEAD: argmax 66/80, cosine_min 0.99333 (>=0.98 floor), all divergences near-ties (worst gap 0.0045). Down from the e3eb033 run (74/80, 0.99466) with the forward_qwen35.go refactors (demand-paging / WeightMat migration / scratch-reuse) — benign: mean ~unchanged (0.99837), no forward error.",
+      "reference": "HF bf16 (Qwen3.6-35B-A3B text decoder; int8-vs-bf16). v0.8.0 re-run at HEAD: argmax 66/80, cosine_min 0.99333 (>=0.98 floor), all divergences near-ties (worst gap 0.0045). Down from the e3eb033 run (74/80, 0.99466) with the forward_qwen35.go refactors (demand-paging / WeightMat migration / scratch-reuse) \u2014 benign: mean ~unchanged (0.99837), no forward error.",
       "machine": "linux-62gb",
       "method": "full-forward-oracle",
       "metrics": {
