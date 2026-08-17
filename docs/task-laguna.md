@@ -233,3 +233,40 @@ weights, which is a genuinely different and weaker claim, so the row stays `expe
 method `tiny-golden` and the real gate described in its note. A true T3 would need a bf16 forward
 of a 33B model alongside the int4 one; 62GB of RAM does not hold both, so it would have to be a
 layer-slice oracle. That is the one open item for this family, and it is a nice-to-have.
+
+
+## Correction: Laguna GGUFs DO exist, and llama.cpp supports the family natively
+
+Increment 3's write-up said no Laguna GGUFs existed. That was wrong and is worth recording,
+because it would have parked a tractable, high-value task indefinitely.
+
+`general.architecture` in these files is literally **`laguna`** — llama.cpp has first-class
+support — and official `poolside/Laguna-XS-2.1-GGUF` and `poolside/Laguna-S-2.1-GGUF` exist
+alongside many community conversions (bartowski, lmstudio-community, mradermacher, and
+`Lucebox/Laguna-XS.2-GGUF`).
+
+The metadata carries everything the adapter needs, in some places more cleanly than the
+safetensors config:
+
+| GGUF key | value (XS-2.1) | maps to |
+|---|---|---|
+| `laguna.attention.head_count` | **array[40]** `[48,64,64,64,…]` | per-layer QUERY heads |
+| `laguna.rope.dimension_count` / `_swa` | 64 / 128 | `RotaryDim` / `RotaryDimLocal` |
+| `laguna.rope.freq_base` / `_swa` | 500000 / 10000 | `RoPEGlobalBase` / `RoPELocalBase` |
+| `laguna.rope.scaling.*` | yarn, factor 32, orig 8192 | `ropeScaling` (full layers only) |
+| `laguna.expert_gating_func` | 2 | `RouterSigmoid` |
+| `laguna.expert_weights_norm` / `_scale` | 1 / 2.5 | `NormTopKProb` / `RoutedScale` |
+| `laguna.leading_dense_block_count` | 1 | `FirstKDense` |
+| `laguna.attention.sliding_window` | 512 | `SlidingWindow` |
+| `tokenizer.chat_template` | laguna_glm_thinking_v8 | **the template the safetensors dir does NOT carry** |
+
+Tensors are standard llama.cpp naming and land on machinery goinfer already has (stacked
+`ffn_*_exps`, `*_shexp`, `exp_probs_b` — the GLM spelling), plus one new one:
+**`blk.N.attn_gate.weight`**, stored `[2048, 48]` (GGUF's transposed convention), i.e. per-head
+at that layer's own head count. Note there is NO gating-granularity key — so the GGUF path must
+read granularity from the tensor shape too, which is what the safetensors path already does.
+
+**One open question for the loader:** the GGUF has no `layer_types` and no sliding-window
+PATTERN key, so which layers are full must be derived. The head-count array encodes it (48 on
+full, 64 on sliding), which is derivable but an inference — the loader should assert the
+resulting 10/30 split rather than trust it silently.

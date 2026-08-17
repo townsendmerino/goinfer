@@ -218,9 +218,19 @@ two more — batched prefill sized `q`/`ctx` from `NumHeads`, and never applied 
 
 **Open, all nice-to-have:** a true T3 layer-slice oracle (a bf16 33B will not co-reside with
 the int4 model in 62GB); an XS-2.1 real gate (another 63GB download; its per-head path is
-covered by a tiny golden); GGUF (no Laguna GGUFs exist yet); and the **DFlash drafter pairing**
+covered by a tiny golden); **GGUF** (CORRECTION: I wrote "none exist yet" — wrong. llama.cpp has FIRST-CLASS `laguna`
+support and official `poolside/Laguna-XS-2.1-GGUF` / `-S-2.1-GGUF` exist, plus many community
+ones. The GGUF carries per-layer head counts as an ARRAY (`laguna.attention.head_count`),
+separate `rope.dimension_count` 64 / `dimension_count_swa` 128, `expert_gating_func` 2
+(sigmoid), `expert_weights_scale` 2.5, `leading_dense_block_count` 1, an `attn_gate` tensor,
+and the chat template the safetensors dir lacks. This is a real, tractable loader task on top
+of the existing stacked-expert/`exp_probs_b` machinery); and the **DFlash drafter pairing**
 — `poolside/Laguna-XS.2-speculator.dflash` is downloaded and P10's block drafting shipped, so
-this is the first vendor-blessed pairing available. M.1 gets no real gate on this box (~220B).
+this is the first vendor-blessed pairing available. **It is NOT a drop-in**: it ships its own
+`embed_tokens`, a REDUCED-vocab `lm_head [32000, 2048]` and `d2t`/`t2d` translation tables,
+whereas goinfer's DFlash path assumes the drafter borrows the target's embedding and head.
+goinfer's EAGLE path already implements `d2t`, so the work is joining the two — a feature, not
+a leftover. (5 taps at `aux_hidden_state_layer_ids` [1,9,17,36,39], block_size 8, mask token 12.) M.1 gets no real gate on this box (~220B).
 
 Full record: `docs/task-laguna.md`.
 
