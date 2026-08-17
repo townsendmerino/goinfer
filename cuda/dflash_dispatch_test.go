@@ -133,3 +133,89 @@ func TestDFlashDispatchAmortization(t *testing.T) {
 	t.Logf("=> drafter (5 layers + fc) at M=16: %.2f ms  (the 6.6 ms projection assumes %.2f)",
 		5.33*short.pl16, 5.33*long.pl16)
 }
+
+// TestDFlashCaptureSeamCost measures a composition cost the gate-3 arithmetic omits entirely.
+//
+// The projection composes draft + verify, where verify is the measured `W + C*k` curve. But that
+// curve was measured with the HIDDEN-STATE SEAM OFF. In the real loop the drafter needs the
+// target's residual at 5 tap layers for every token the target commits, and `capVec` implements
+// that as a full `r.stream.Sync()` followed by a device->host `Download` — **per tap**. Five taps
+// is five pipeline stalls per token, mid-forward.
+//
+// That is not a hypothetical cost: it is the difference between the verify the projection prices
+// and the verify the loop would actually run. If it is large, every speedup figure is optimistic
+// by that margin, and the fix (capture into a device buffer, download once, or overlap on a
+// second stream) becomes a prerequisite rather than an optimization.
+//
+//	GOINFER_HEAVY_TESTS=1 GOINFER_CUDA_MODEL=$HOME/models/qwen3-4b \
+//	  go test -tags 'cuda goinfer_testhooks' -run TestDFlashCaptureSeamCost -v
+func TestDFlashCaptureSeamCost(t *testing.T) {
+	requireHeavyModel(t)
+	path := os.Getenv("GOINFER_CUDA_MODEL")
+	if path == "" {
+		path = os.ExpandEnv("$HOME/models/qwen3-4b")
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Skipf("no model at %s", path)
+	}
+	mc, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "int4"})
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	defer mc.Close()
+	r, ok := mc.ResidentForwardForTest().(*cudaResident)
+	if !ok {
+		t.Fatal("resident did not engage")
+	}
+	_, _, _, _, _, _, vocab := mc.Dims()
+	emb := mc.EmbedResidentForTest(1234 % (vocab - 1))
+	const depth = 1024
+	warm := make([][]float32, depth)
+	for i := range warm {
+		warm[i] = mc.EmbedResidentForTest((i*2654435761 + 1) % (vocab - 1))
+	}
+	if _, e := r.PrefillLast(warm, 0); e != nil {
+		t.Fatalf("warm: %v", e)
+	}
+	defer func() { _ = r.SetHiddenCapture(nil) }()
+
+	best := func() float64 {
+		b := time.Hour
+		for range 7 {
+			t0 := time.Now()
+			err := r.do(func() error {
+				if e := r.launchToken(emb, depth, true); e != nil {
+					return e
+				}
+				return r.stream.Sync()
+			})
+			if err != nil {
+				t.Fatalf("launchToken: %v", err)
+			}
+			if d := time.Since(t0); d < b {
+				b = d
+			}
+		}
+		return float64(b.Microseconds()) / 1000
+	}
+
+	if e := r.SetHiddenCapture(nil); e != nil {
+		t.Fatalf("capture off: %v", e)
+	}
+	off := best()
+	// The 4B DFlash drafter's real taps.
+	taps := []int{1, 9, 17, 25, 33}
+	if e := r.SetHiddenCapture(taps); e != nil {
+		t.Fatalf("capture on: %v", e)
+	}
+	on := best()
+	_ = r.SetHiddenCapture(nil)
+
+	t.Logf("M=1 decode @depth %d: capture OFF %.3f ms | ON (%d taps) %.3f ms | overhead %.3f ms (%.0f%%)",
+		depth, off, len(taps), on, on-off, 100*(on-off)/off)
+	t.Logf("per tap: %.3f ms — capVec does stream.Sync() + Download for EACH tap", (on-off)/float64(len(taps)))
+	// Cost per verify round: the seam runs on every token the target commits (anchor + accepted).
+	for _, acc := range []float64{3.97, 4.24} {
+		t.Logf("  at %.2f accepted/round: +%.2f ms per round of seam overhead", acc, (on-off)*(acc+1))
+	}
+}

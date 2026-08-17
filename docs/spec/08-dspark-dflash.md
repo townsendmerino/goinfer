@@ -1834,3 +1834,46 @@ measured**: acceptance (7-width sweep, two pairings), the verify curve (`8.77 + 
 (11.12 ms), and now the draft (8.82 ms). What remains unmeasured is only the composition itself —
 an end-to-end wall-clock run, which needs the resident trunk built. That is gate 3 proper, and it
 is now the *only* thing standing between this projection and a measurement.
+
+### The capture seam's cost — small, but it is a real term the arithmetic omitted
+
+The verify curve `W + C*k` was measured with the **hidden-state seam off**. The real loop cannot
+run that way: the drafter needs the target's residual at 5 tap layers for every token the target
+commits. `capVec` implements each tap as a full `r.stream.Sync()` plus a device→host `Download`,
+so five taps is five pipeline stalls per token, mid-forward — the shape of a serious cost.
+
+Measured (`TestDFlashCaptureSeamCost`, 4B int4, depth 1024, M=1):
+
+| | ms |
+|---|---|
+| decode, capture OFF | 11.103 |
+| decode, capture ON (5 taps) | 11.568 |
+| **overhead** | **0.465 (4%)** |
+| per tap | 0.093 |
+
+**Small — the sync is cheap because the stream is already near-drained at that point in the
+forward.** But it applies to every committed token, so at ~4 accepted per round it is +2.3 ms
+against a ~34 ms round:
+
+| suite | k | seam ignored | **seam per token** |
+|---|---|---|---|
+| math | 8 | 2.11× | **1.94×** |
+| code | 7 | 1.62× | **1.52×** |
+| chat | 4 | 0.84× | 0.81× |
+
+**An architectural gap this exposes, worth more than the number.** The seam is wired in
+`launchToken` — the **M=1** path. The composed loop verifies with `PrefillLast` at **M=k**, and
+the accepted tokens' hidden states have to come from that batched pass. **A batched verify that
+also captures does not exist yet.** So the figures above assume per-token capture, which is the
+*sequential* path; a batched implementation would plausibly amortize to one sync per block rather
+than one per token, costing far less.
+
+**Read 1.52× / 1.94× as the floor and 1.62× / 2.11× as the ceiling for code and math**, with the
+true value depending on a capture implementation that is part of increment 4's build. Both ends
+clear the ≥1.3× bar, so this does not change the go/no-go — but it does add "batched capture" to
+what increment 4 must build, alongside "use `DraftBlockCtx`".
+
+Cumulative honesty check: the original projection was **1.74× code / 2.25× math**, both composed
+from modelled terms. With the draft measured (8.82 ms) and the seam measured (0.465 ms/token),
+the floor is **1.52× / 1.94×** — a **13–14% erosion**, entirely from terms that had been assumed
+rather than measured, and none of it reversing a conclusion.
