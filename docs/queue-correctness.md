@@ -195,7 +195,55 @@ in goinfer's strongest family. **80B total does not fit the M1 Pro 16 GB rig eve
 is a WebGPU/CUDA-streaming showcase, tagged `linux` for that reason; scope the residency story
 before estimating total effort.
 
-**G6 · Laguna XS 2.1 (33B-A3B) / S 2.1 (118B-A8.5B) as a new family** — `any`
+**G6 · Laguna (poolside) as a new family — PHASE 0 CONFIG-VERIFIED (`linux-62gb`, 2026-08-17)** — `any`
+
+**Verified against the real released configs before estimating**, per the discipline G4 earned.
+`model_type: "laguna"`, `LagunaForCausalLM`, custom `auto_map` code. XS: hidden 2048, 40 layers,
+48/8 heads at head_dim 128, **256 experts top-8**, `moe_intermediate_size` 512, shared expert 512,
+`moe_routed_scaling_factor` 2.5, vocab 100352, sliding_window 512.
+
+**THE SCOPING WAS RIGHT ABOUT THE SHAPE AND MISSED TWO THINGS.** Confirmed: the 3:1 interleave is
+real (30 `sliding_attention` / 10 `full_attention`, pattern `full,slide,slide,slide,…`), and
+softplus gating + per-layer RoPE are the new primitives. Not in the scoping:
+
+1. **Per-layer QUERY head count.** `num_attention_heads_per_layer` = `[48,64,64,64,48,…]` — full
+   layers use 48 heads, sliding layers 64. goinfer has `headDimAt`/`kvHeadsAt`/`ffnAt` per layer
+   (gemma4) but **no per-layer query-head count**; that is a new accessor plus every place that
+   derives `qDim` from a scalar.
+2. **Generation schema drift, same `model_type`.** XS-2.1 spells `gating: "per-head"` with a
+   `gating_types[]` array; **XS.2 spells `gating: true`, which the vendor code maps to
+   PER-ELEMENT** (`num_heads*head_dim` gates, not `num_heads`). Same field, different granularity,
+   different tensor shape. XS.2 also adds `partial_rotary_factor: 0.5` and drops `norm_topk_prob`,
+   `mlp_only_layers`, `decoder_sparse_step`. This is G4's lesson repeating — a family's own
+   releases disagree on schema — so the loader must accept both spellings from the start.
+
+**The one genuinely new primitive, exactly** (from the vendor's `modeling_laguna.py`, which says
+Laguna attention *"is identical to Qwen2MoE attention except"*): an extra per-layer projection
+`g_proj: [hidden → num_heads]` (per-head) or `[hidden → num_heads*head_dim]` (per-element), with
+
+    attn_output *= softplus(g_proj(hidden_states))     # BEFORE o_proj
+
+**Everything else reuses shipped primitives:** SWA/global interleave (gemma3/gemma4/mellum2),
+MoE + shared expert + `norm_topk_prob` + routed scaling (deepseek/glm4_moe), YaRN (deepseek),
+partial rotary (glm4/phi3), per-layer RoPE base (gemma4's local/global). `rope_parameters` is
+keyed BY LAYER TYPE — full: YaRN theta 500k factor 32 partial 0.5; sliding: default theta 10k
+partial 1.0 — which is gemma4's local/global split with YaRN on one side, i.e. config plumbing
+rather than new math. **Attention sinks are NOT enabled** in either release
+(`swa_attention_sink_enabled` absent), so that branch of the vendor code is dead weight here.
+
+**Estimate stands as "otherwise cheap"** — two new primitives (softplus gating at two
+granularities, per-layer query heads) on an otherwise-familiar softmax-GQA MoE.
+
+**The strategic tie-in is now real, not prospective:** `poolside/Laguna-S-2.1-DFlash` and
+`poolside/Laguna-XS.2-speculator.dflash` are published, and P10's block-drafting path SHIPPED
+today (`serve --drafter`, gate 3 measured). Laguna would be the first pairing with a
+VENDOR-BLESSED drafter rather than a third-party one.
+
+**Note a newer generation exists:** `Laguna-XS.2` (320 likes) and `Laguna-M.1` are out, ahead of
+the XS-2.1/S-2.1 this entry was filed against. Target XS.2 or support both — the config delta is
+small but real, and XS.2's per-element gating is the more demanding of the two.
+
+*Original entry:*
 
 Full scoping and reasoning: `docs/post-v1.0-models.md` "Next up" §3. Softmax-GQA territory (mixed
 SWA/global attention 3:1, the interleave pattern already handled for Gemma/Mellum2/gpt-oss) —
