@@ -1917,3 +1917,48 @@ block, which would move the optimum away from 7.
 **What has not changed:** math clears comfortably at every stage, chat still needs the router,
 and the optimum widths were measured against acceptance rather than against these constants. What
 has changed is the margin on code, which is now thin enough that the residual matters.
+
+### ROOT CAUSE of the composition residual: the verify curve prices the wrong primitive
+
+The +4.27 ms/round residual decomposes as: host argmax **1.11 ms** (real, GPU-recoverable),
+per-round `SetHiddenCapture` **0.05 ms** (negligible — the "test artifact" I blamed was not one),
+and **3.09 ms unexplained in the bare GPU sequence**. That last part has a specific cause.
+
+**`T(M) = W + C·M` was measured with `PrefillLast`, which applies the LM head to the LAST row
+only. The spec-decode loop needs `PrefillLastN`** — logits at *all* M positions, because every
+drafted token must be compared against the target's own argmax *at its own position*. That is M
+head applications, not one, and the head is 8% of an M=1 decode.
+
+| k | `PrefillLast` (1 head) | `PrefillLastN` (k heads) | extra | curve `W+Ck` |
+|---|---|---|---|---|
+| 4 | 17.70 | 21.19 | +3.49 | 18.17 |
+| 6 | 21.53 | 27.55 | +6.02 | 22.87 |
+| 7 | 23.94 | **31.26** | +7.32 | 25.22 |
+| 8 | 26.36 | 34.69 | +8.33 | 27.57 |
+| 10 | 30.51 | 41.47 | +10.96 | 32.27 |
+| 12 | 36.16 | 49.54 | +13.38 | 36.97 |
+| 16 | 46.37 | **64.17** | +17.80 | 46.37 |
+
+**The curve matches `PrefillLast` exactly at k=16 (46.37 = 46.37) — that is how it was fitted.**
+It has been pricing a verify the loop cannot use, by up to **38%**. The correction closes the
+composition gap completely: predicted round at k=7 = draft 8.82 + LastN 31.26 + argmax 1.11 +
+seam 0.47 = **41.66 ms** against **41.01 measured**. Nothing is unaccounted any more.
+
+**Re-derived optima with the real primitive:**
+
+| suite | k=16 | k=8 | k=7 | k=6 | k=4 | **optimum** |
+|---|---|---|---|---|---|---|
+| **math** | 1.06× | **1.70×** | — | 1.41× | 1.35× | **k=8 → 1.70×** |
+| **code** | 0.89× | 1.29× | **1.33×** | 1.30× | 1.23× | **k=7 → 1.33×** |
+| chat | 0.32× | 0.53× | — | 0.62× | 0.73× | k=4 → 0.73× |
+
+**The width lever matters far MORE than first measured, not less.** At the drafter's native k=16
+the real verify makes code a **0.89× LOSS**; the narrow block is what makes it a win at all. The
+optimum widths are unchanged (8 / 7 / 4) because the head cost scales with k much as the
+per-row term does.
+
+**Final honest position for gate 3: code 1.33×, math 1.70×, chat routed to 1.0×** — every term
+measured, the composition verified to within 1.6%, and the only remaining modelled element the
+drafter kernel's own efficiency (stood in for by a 5-layer truncation of the target, which is the
+right shape and the right cost). Code clears its bar by 2%; math clears comfortably. The
+GPU-side argmax is worth ~1.11 ms/round (about +0.04× on code) and is the cheapest remaining win.

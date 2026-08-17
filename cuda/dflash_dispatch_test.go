@@ -330,3 +330,199 @@ func TestDFlashRoundComposition(t *testing.T) {
 		perRound, perRound/predicted, perRound-predicted)
 	t.Logf("  => composition overhead is %.0f%% of the round", 100*(perRound-predicted)/perRound)
 }
+
+// TestDFlashCompositionResidual decomposes the +4.37 ms/round that TestDFlashRoundComposition
+// found unaccounted, because how much of it is REAL decides two things: whether code clears the
+// 1.3x bar, and whether the optimum verify width shifts.
+//
+// A fixed per-round cost is amortized better by a WIDER block — so if the residual is genuinely
+// fixed, the optimum moves away from the k=7 the acceptance sweep found, and increment 4 should
+// be built for a different width. That is why this belongs before the kernel work.
+//
+// Four variants, differing only in what the round does around the same GPU calls:
+//
+//	full     draft + verify + per-round SetHiddenCapture + host argmax   (what was measured)
+//	noArgmax same, minus the host-side argmax over k x vocab logits
+//	noSet    same as full, but capture configured ONCE outside the loop
+//	bare     neither
+//
+// argmax is REAL work the loop must do (it is how accept is decided) but is recoverable on the
+// GPU. The per-round SetHiddenCapture is a TEST ARTIFACT — it reallocates every round and the
+// real loop would configure the seam once.
+//
+//	GOINFER_HEAVY_TESTS=1 GOINFER_CUDA_MODEL=$HOME/models/qwen3-4b \
+//	  go test -tags 'cuda goinfer_testhooks' -run TestDFlashCompositionResidual -v
+func TestDFlashCompositionResidual(t *testing.T) {
+	requireHeavyModel(t)
+	path := os.Getenv("GOINFER_CUDA_MODEL")
+	if path == "" {
+		path = os.ExpandEnv("$HOME/models/qwen3-4b")
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Skipf("no model at %s", path)
+	}
+	mc, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "int4"})
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	defer mc.Close()
+	r, ok := mc.ResidentForwardForTest().(*cudaResident)
+	if !ok {
+		t.Fatal("resident did not engage")
+	}
+	_, _, _, _, _, _, vocab := mc.Dims()
+	const depth = 1024
+	warm := make([][]float32, depth)
+	for i := range warm {
+		warm[i] = mc.EmbedResidentForTest((i*2654435761 + 1) % (vocab - 1))
+	}
+	if _, e := r.PrefillLast(warm, 0); e != nil {
+		t.Fatalf("warm: %v", e)
+	}
+	full := r.nLayers
+	defer func() { r.nLayers = full; _ = r.SetHiddenCapture(nil) }()
+
+	mkrows := func(n int) [][]float32 {
+		out := make([][]float32, n)
+		for i := range out {
+			out[i] = mc.EmbedResidentForTest((i*7919 + 13) % (vocab - 1))
+		}
+		return out
+	}
+	taps := []int{1, 9, 17, 25, 33}
+	block16 := mkrows(16)
+
+	run := func(k int, perRoundSet, doArgmax bool) float64 {
+		verifyRows := mkrows(k)
+		const rounds = 12
+		if !perRoundSet {
+			_ = r.SetHiddenCapture(taps)
+		}
+		best := time.Hour
+		for range 5 {
+			t0 := time.Now()
+			for range rounds {
+				r.nLayers = 5
+				if perRoundSet {
+					_ = r.SetHiddenCapture(nil)
+				}
+				if _, e := r.PrefillLast(block16, depth); e != nil {
+					t.Fatalf("draft: %v", e)
+				}
+				r.nLayers = full
+				if perRoundSet {
+					_ = r.SetHiddenCapture(taps)
+				}
+				outs, e := r.PrefillLastN(verifyRows, depth)
+				if e != nil {
+					t.Fatalf("verify: %v", e)
+				}
+				if doArgmax {
+					for _, lg := range outs {
+						bi, bv := 0, lg[0]
+						for i, v := range lg {
+							if v > bv {
+								bi, bv = i, v
+							}
+						}
+						_ = bi
+					}
+				}
+			}
+			if d := time.Since(t0); d < best {
+				best = d
+			}
+		}
+		r.nLayers = full
+		_ = r.SetHiddenCapture(nil)
+		return float64(best.Microseconds()) / 1000 / rounds
+	}
+
+	const k = 7
+	fullMs := run(k, true, true)
+	noArg := run(k, true, false)
+	noSet := run(k, false, true)
+	bare := run(k, false, false)
+	const draftMs, W, C, seam = 8.273, 8.77, 2.35, 0.465
+	predicted := draftMs + (W + C*k) + seam*k
+
+	t.Logf("k=%d, predicted %.2f ms/round", k, predicted)
+	t.Logf("  full (as measured before)   %.2f ms   residual %+.2f", fullMs, fullMs-predicted)
+	t.Logf("  minus host argmax           %.2f ms   (argmax costs %.2f)", noArg, fullMs-noArg)
+	t.Logf("  minus per-round SetCapture  %.2f ms   (SetCapture costs %.2f)", noSet, fullMs-noSet)
+	t.Logf("  neither (bare GPU sequence) %.2f ms   residual %+.2f", bare, bare-predicted)
+	t.Logf("")
+	t.Logf("=> REAL per-round overhead (argmax kept, test artifact removed): %.2f ms", noSet-predicted)
+	tpr := 4.97
+	t.Logf("=> code @k=7 speedup: full %.2fx | artifact-free %.2fx | bare %.2fx",
+		11.12/((fullMs+0.55)/tpr), 11.12/((noSet+0.55)/tpr), 11.12/((bare+0.55)/tpr))
+}
+
+// TestDFlashVerifyHeadCost isolates the 3.09 ms the residual decomposition could not explain.
+//
+// HYPOTHESIS: the verify curve `T(M) = W + C*M` was measured with `PrefillLast`, which applies
+// the LM head to the LAST row only. The spec-decode loop needs `PrefillLastN` — logits at ALL M
+// positions, because every drafted token must be compared against the target's own argmax there.
+// That is M head applications, not one, and the head is 8% of an M=1 decode. The curve therefore
+// prices a verify the loop cannot use.
+//
+//	GOINFER_HEAVY_TESTS=1 GOINFER_CUDA_MODEL=$HOME/models/qwen3-4b \
+//	  go test -tags 'cuda goinfer_testhooks' -run TestDFlashVerifyHeadCost -v
+func TestDFlashVerifyHeadCost(t *testing.T) {
+	requireHeavyModel(t)
+	path := os.Getenv("GOINFER_CUDA_MODEL")
+	if path == "" {
+		path = os.ExpandEnv("$HOME/models/qwen3-4b")
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Skipf("no model at %s", path)
+	}
+	mc, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "int4"})
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	defer mc.Close()
+	r, ok := mc.ResidentForwardForTest().(*cudaResident)
+	if !ok {
+		t.Fatal("resident did not engage")
+	}
+	_, _, _, _, _, _, vocab := mc.Dims()
+	const depth = 1024
+	warm := make([][]float32, depth)
+	for i := range warm {
+		warm[i] = mc.EmbedResidentForTest((i*2654435761 + 1) % (vocab - 1))
+	}
+	if _, e := r.PrefillLast(warm, 0); e != nil {
+		t.Fatalf("warm: %v", e)
+	}
+	mkrows := func(n int) [][]float32 {
+		out := make([][]float32, n)
+		for i := range out {
+			out[i] = mc.EmbedResidentForTest((i*7919 + 13) % (vocab - 1))
+		}
+		return out
+	}
+	best := func(f func() error) float64 {
+		b := time.Hour
+		for range 7 {
+			t0 := time.Now()
+			if err := f(); err != nil {
+				t.Fatalf("run: %v", err)
+			}
+			if d := time.Since(t0); d < b {
+				b = d
+			}
+		}
+		return float64(b.Microseconds()) / 1000
+	}
+	const W, C = 8.77, 2.35
+	t.Logf("%3s | %10s %10s | %8s | %10s", "k", "Last(1 hd)", "LastN(k hd)", "extra", "curve W+Ck")
+	for _, k := range []int{4, 6, 7, 8, 10, 12, 16} {
+		rows := mkrows(k)
+		one := best(func() error { _, e := r.PrefillLast(rows, depth); return e })
+		all := best(func() error { _, e := r.PrefillLastN(rows, depth); return e })
+		t.Logf("%3d | %10.2f %10.2f | %8.2f | %10.2f", k, one, all, all-one, W+C*float64(k))
+	}
+	t.Logf("")
+	t.Logf("the projection used W+Ck (one head). The loop needs LastN (k heads).")
+}
