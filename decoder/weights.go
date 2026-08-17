@@ -1732,6 +1732,44 @@ func buildNemotronWeights(cfg *Config, arch *Architecture, st *embed.Safetensors
 				return e
 			}
 			lw.UpProj, lw.DownProj = quantizeWM(lw.UpProj, quant), quantizeWM(lw.DownProj, quant)
+		case nemoMoE:
+			// Nemotron 3 Nano's MoE FFN. Tensor names verified against the real safetensors
+			// index (nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16), not assumed from the
+			// generic MoE schema: "mixer.gate.weight" (router), "mixer.gate.
+			// e_score_correction_bias" (selection bias), "mixer.experts.{i}.
+			// {up,down}_proj.weight" (per-expert, NO gate_proj — non-gated relu²) and
+			// "mixer.shared_experts.{up,down}_proj.weight" (the always-on shared expert,
+			// also non-gated). Router stays f32/unquantized like every other family
+			// (logit-critical); experts and the shared expert quantize like the plain
+			// nemoMLP case above.
+			moe := arch.MoE
+			if lw.Router, e = loadMat(st, tn("mixer.gate.weight"), moe.NumExperts, hidden); e != nil {
+				return e
+			}
+			if lw.RouterBias, e = st.TensorF32(tn("mixer.gate.e_score_correction_bias"), moe.NumExperts); e != nil {
+				return e
+			}
+			lw.Experts = make([]expertWeights, moe.NumExperts)
+			for ei := range lw.Experts {
+				ex := &lw.Experts[ei]
+				if ex.Up, e = loadMat(st, tn(fmt.Sprintf("mixer.experts.%d.up_proj.weight", ei)), moe.IntermediateDim, hidden); e != nil {
+					return e
+				}
+				if ex.Down, e = loadMat(st, tn(fmt.Sprintf("mixer.experts.%d.down_proj.weight", ei)), hidden, moe.IntermediateDim); e != nil {
+					return e
+				}
+				ex.Up, ex.Down = quantizeWM(ex.Up, quant), quantizeWM(ex.Down, quant)
+			}
+			if moe.SharedIntermediateDim > 0 {
+				se := &lw.SharedExpert
+				if se.Up, e = loadMat(st, tn("mixer.shared_experts.up_proj.weight"), moe.SharedIntermediateDim, hidden); e != nil {
+					return e
+				}
+				if se.Down, e = loadMat(st, tn("mixer.shared_experts.down_proj.weight"), hidden, moe.SharedIntermediateDim); e != nil {
+					return e
+				}
+				se.Up, se.Down = quantizeWM(se.Up, quant), quantizeWM(se.Down, quant)
+			}
 		}
 		return nil
 	}

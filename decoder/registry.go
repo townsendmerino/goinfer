@@ -1124,14 +1124,64 @@ func nemotronhArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	}
 	hd := cfg.headDim()
 	kind := make([]uint8, cfg.NumLayers)
+	hasMoE := false
 	for i, t := range cfg.LayersBlockType {
 		switch t {
-		case "attention":
+		case "attention", "full_attention":
+			// "full_attention" is transformers' own canonicalized spelling
+			// (configuration_nemotron_h.py's remap_legacy_layer_types /
+			// _pattern_to_list) — a checkpoint saved through a current transformers
+			// version carries this, NOT "attention", even when "attention" is what
+			// was originally passed in (confirmed empirically generating this
+			// family's own MoE test fixture: layers_block_type came back
+			// ["linear_attention","moe","full_attention",...] from an input of
+			// ["mamba","moe","attention",...]). The real NVIDIA-released checkpoint
+			// is unaffected today (it ships hybrid_override_pattern, parsed
+			// independently by normalizeNemotronBlocks, not layers_block_type
+			// directly) — but any checkpoint re-saved through transformers would hit
+			// this, so it's handled as a real alias, not a fixture-only workaround.
 			kind[i] = nemoAttn
 		case "mlp":
 			kind[i] = nemoMLP
-		default: // "mamba"
+		case "moe":
+			kind[i] = nemoMoE
+			hasMoE = true
+		case "mamba", "linear_attention": // "linear_attention" is the same canonicalization, for Mamba-2 blocks
 			kind[i] = nemoMamba
+		default:
+			return nil, nil, fmt.Errorf("decoder(nemotron_h): layers_block_type[%d] = %q unrecognized (want mamba/linear_attention, attention/full_attention, mlp, or moe)", i, t)
+		}
+	}
+	// Nemotron 3 Nano's MoE FFN (model_type still "nemotron_h" — only the pattern's
+	// "E" blocks distinguish it from plain Nemotron-H, which never sets hasMoE).
+	// Routing verified against NVIDIA's own modeling_nemotron_h.py NemotronHTopkRouter,
+	// not inferred from config-field-name similarity to DeepSeek-V3 alone: sigmoid
+	// scores + e_score_correction_bias + group-limited top-k (n_group/topk_group) +
+	// routed_scaling_factor on the selected weights + an UNGATED additive shared
+	// expert ("hidden_states = hidden_states + self.shared_experts(residuals)", no
+	// scoring_func key at all — sigmoid is unconditional for this family, not
+	// config-driven the way DeepSeek's is). The expert FFN itself is non-gated relu²
+	// (up_proj/down_proj only, no gate_proj — confirmed from the real safetensors
+	// index), which routeExperts' selection is agnostic to but moeMLP's SwiGLU-only
+	// expert evaluator cannot run — see nemotronMoE in forward_nemotron.go, a small
+	// LOCAL function, not a change to the shared moeMLP path other families use.
+	var moe *MoEConfig
+	if hasMoE {
+		normTopK := true
+		if cfg.NormTopKProb != nil {
+			normTopK = *cfg.NormTopKProb
+		}
+		moe = &MoEConfig{
+			NumExperts:            cfg.NRoutedExperts,
+			TopK:                  cfg.NumExpertsPerTok,
+			NormTopKProb:          normTopK,
+			IntermediateDim:       cfg.MoeIntermediateSize,
+			SharedIntermediateDim: cfg.MoeSharedExpertIntermediateSize, // NOT NSharedExperts*MoeIntermediateSize — verified not derivable that way for this family
+			RouterSigmoid:         true,                                // unconditional for nemotron_h's router; no scoring_func key exists to check
+			RoutedScale:           cfg.RoutedScalingFactor,
+			SharedUngated:         true,
+			NGroup:                cfg.NGroup,
+			TopkGroup:             cfg.TopkGroup,
 		}
 	}
 	return &Architecture{
@@ -1154,6 +1204,7 @@ func nemotronhArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		RotaryDim:       0,                           // no RoPE
 		EmbedScale:      0,
 		TiedLMHead:      false,
+		MoE:             moe, // nil for plain Nemotron-H; set only when the pattern has an "moe" block
 		nemotron: &nemotronParams{
 			NHeads: cfg.MambaNumHeads, HeadDim: cfg.MambaHeadDim, DState: cfg.SSMStateSize,
 			NGroups: cfg.NGroups, DConv: cfg.ConvKernel, blockKind: kind,

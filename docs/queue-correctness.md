@@ -17,6 +17,159 @@ Parity, numerics, goldens, quantization, model families. Anything whose success 
 
 ## Queued
 
+**G4 · Nemotron 3 Nano (30B-A3B) as a new family — Phase 0/1 + real T1 golden + GGUF loader
+DONE (`mac`, 2026-08-17); T3 handed off to `linux`** — `linux`
+
+**T3 handoff prompt: `docs/prompts/nemotron3nano-t3.md`.** Real-checkpoint parity — needs the
+actual weights (20GB+), which doesn't fit this Mac's disk/RAM headroom alongside a reference
+oracle load. Self-contained; has every gotcha found so far (no fp8 support — don't grab the
+`-FP8` release variant, use `-BF16` or a GGUF quant instead) and exactly what's already verified
+vs still open.
+
+Phase 0 (config-verified, not assumed): pulled the real `config.json` + NVIDIA's
+`modeling_nemotron_h.py` (`nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-{BF16,FP8}`). `model_type` is
+literally `"nemotron_h"` — the SAME string as plain Nemotron-H, distinguished only by a new `E`
+character in `hybrid_override_pattern` (MoE-FFN, alongside `M`/`*`/`-`), which the old parser
+correctly hard-rejected rather than silently mis-loading. Router is byte-for-byte DeepSeek-V3's
+`noaux_tc` (sigmoid + `e_score_correction_bias` + group-limited top-k + `routed_scaling_factor`,
+shared expert added ungated) — fully reusable via `routeExperts`. But the experts are NON-GATED
+relu² (`up_proj`/`down_proj` only, no `gate_proj` — confirmed against the real safetensors index),
+which `moeMLP` hard-rejects (SwiGLU only); Nemotron-H has its own dedicated forward loop anyway
+(`runLayersNemotron`), never touches the shared `moeMLP` other MoE families use. One field gotcha
+caught by verifying rather than assuming: `moe_shared_expert_intermediate_size` (3712) is NOT
+`n_shared_experts * moe_intermediate_size` (1*1856=1856) — needed its own Config field.
+
+Phase 1 (implemented, `go test ./decoder/...` green, `TestNemotron_textParity` still cosine
+1.000000 across two separate shared-file edits — the safetensors loader change and the later
+`gguf.go` change — each independently proven inert for every existing family via
+`scripts/refresh_parity_hashes.sh`'s goldens gate, not asserted): new `nemoMoE` block-kind threaded
+through the pattern parser, `arch.go`, `nemotronhArchitecture`, `runLayersNemotron` (new
+`nemotronMoE`/`nemotronExpertFFN`, non-gated relu² experts), and the safetensors loader
+(`backbone.layers.N.mixer.{gate,experts.I,shared_experts}.*`, matching the real tensor index).
+
+**Real T1 golden landed, not just hand-computed units.** Installed `torch`+`transformers` into a
+fresh venv (`~/.venv-nemotron3`, ~845 MB — no `trust_remote_code` needed, mainline `transformers`
+5.15.0 already ships `NemotronHConfig`/`NemotronHForCausalLM` with the MoE fields natively).
+`scripts/pin_nemotron3nano_tiny.py` builds a tiny random-weight checkpoint (mamba+attention+moe,
+no plain dense-mlp — matching the real family's own pattern shape) and runs the real HF forward.
+`TestNemotron3NanoMoE_textParity`: **cosine 1.000000, exact argmax match.** Caught one real bug
+along the way: current `transformers` canonicalizes `layers_block_type` entries to
+`"linear_attention"`/`"full_attention"` regardless of input spelling (confirmed empirically, not
+assumed) — goinfer's switch had a bare `default: // "mamba"` that would have silently
+misclassified those as Mamba layers. Fixed to accept both spellings and error on anything truly
+unrecognized instead of assuming mamba. The real NVIDIA-released checkpoint is unaffected (it
+ships `hybrid_override_pattern`, parsed independently), but this is now real, not
+theoretical, protection for anything re-saved through a current transformers version.
+
+**GGUF loader also landed**, verified against a real file's header (fetched via HTTP Range — first
+30 MB of `bartowski/nvidia_Nemotron-3-Nano-30B-A3B-GGUF`'s Q4_K_M, parsed with goinfer's own
+`embed.GGUFFile` reader — ground truth, not a paraphrase of the llama.cpp PR that added support).
+Real findings from that: llama.cpp's GGUF arch string is `nemotron_h_moe` (different from HF's
+`model_type`, which stays `nemotron_h` — normalized on load), the MoE metadata keys are
+`expert_count`/`expert_used_count`/`expert_feed_forward_length`/
+`expert_shared_feed_forward_length`/`expert_shared_count`/`expert_weights_norm`/
+`expert_weights_scale`/`expert_group_count`/`expert_group_used_count` (all confirmed present,
+including the `topk_group` equivalent an early secondhand PR summary claimed was absent — it
+wasn't, which is exactly why this got verified against a real file instead of trusted), and
+experts are FUSED per-projection (`blk.N.ffn_up_exps.weight`/`ffn_down_exps.weight`, one 3-D
+tensor each) unlike the safetensors path's one-tensor-per-expert layout — reuses the existing
+`stackedExperts` helper other GGUF MoE families already use. `TestNemotron3NanoMoE_ggufConfig`
+validates the config/layer-classification parsing against the real captured metadata (not a
+hand-crafted fixture).
+
+**Tensor-loading side also spot-checked against real data (2026-08-17), not left as "provably
+additive" alone.** Fetched the first 3 GB of the same real Q4_K_M GGUF file (HTTP Range, well
+under the 24 GB free budget — the full file is 20GB+) and directly exercised the actual
+dequantization path (`g.Tensor`/`g.RowDequantizer`, the same calls `buildWeightsFromGGUF`'s new
+`nemoMoE` case makes) against one full real MoE layer's six tensor kinds: router, correction bias,
+shared-expert up/down, and BOTH fused fully-quantized 3-D expert tensors — checked expert 0,
+expert 1, AND expert 127 (the last index, not just the easy-to-get-right first one) for both
+up_exps and down_exps. Every dimension matched what the loader code expects exactly; every
+dequantized value was sane (small-magnitude, symmetric around zero for the weights; the
+correction bias came back a real, non-trivial ~56.7-56.8 uniformly — notably NOT near-zero the way
+an untrained/synthetic bias would be, which is itself a small confirmation this is real trained
+data, not a placeholder) with zero NaN/Inf across every tensor. This is real structural/dequant
+verification, not a full model forward — that still needs the whole checkpoint (T3, below).
+Partial-download files deleted after verification; disk back to the ~24 GB baseline.
+
+**Also fixed, not just implemented:** `decoder/residency.go`'s `decodeRunnerEligible` had an
+unconditional `if a.nemotron != nil { return true }` — admitting ANY Nemotron-H model to every GPU
+resident backend. `gpu/residency.go`'s WebGPU builder switches on block-kind with cases 0/1/2 and NO
+default; an unhandled `nemoMoE` (kind 3) would silently leave that layer's op buffers nil rather
+than erroring. Changed to `return a.MoE == nil` — declines GPU residency for MoE Nemotron-H until a
+backend actually implements it (verified against its dispatch, not assumed).
+
+**Follow-up (2026-08-17): the "may already be GPU-accelerated via the staged path" question above
+is now resolved — no.** Checked `metal/backend.go` directly: `metalBackend.MatmulBT` is literally
+`linalg.MatmulBT`, the SAME shared CPU SIMD kernel `cpuBackend` uses, and `*metalBackend` doesn't
+implement `QuantBackend` (the interface a backend needs to get a specialized int8 dispatch in
+`decoder/weightmat.go`'s `matmul()`) at all. Int4 weights bypass any backend hook entirely
+(`matmul()`'s int4 branch calls `linalg.MatmulBTW4A8Into` unconditionally, no `Backend`-specific
+dispatch exists in the generic path for any family). So `runLayersNemotron`'s `matmul(m.be, ...)`
+calls, when `m.be` is `*metalBackend` but residency is declined (true for MoE Nemotron-H, and
+would also be true for plain Nemotron-H if `GOINFER_SSM_RESIDENT` weren't set), run on CPU
+regardless — **`--backend metal` currently gives this family zero speed benefit over `--backend
+cpu`.** Real Metal acceleration would need either a Metal `QuantBackend` implementation (moderate,
+reusable scope) or a genuine resident-path Metal kernel port of the single-op-per-block dispatch
+(substantial — a different shape of work than any Metal kernel work landed so far this session,
+which targeted dense mixer+FFN families, not Nemotron-H's structure). Neither is in scope for `G4`
+as currently filed; noting it here so a future GPU-residency pass starts from a confirmed
+baseline, not the open question this used to be.
+
+**Remaining: T3 real-checkpoint parity, handed off — see `docs/prompts/nemotron3nano-t3.md`.** A
+full forward pass through the actual model, safetensors or GGUF, compared to a real oracle. Needs
+downloading the full checkpoint (20GB+ GGUF or a comparable safetensors quant) — this Mac's ~24 GB
+free (as of 2026-08-17) can't absorb that alongside a reference-oracle load; the CUDA box has more
+headroom for exactly this kind of validation, which is why it's filed there. (The
+partial-download-plus-cleanup technique used above for the GGUF tensor spot-check remains
+available on the Mac if more of the loader ever needs checking without a full download — noted in
+the handoff prompt too.) Full scoping: `docs/post-v1.0-models.md` "Next up" §1.
+
+**G5 · Qwen3-Next / Qwen3-Coder-Next (80B-A3B) as a new family** — `linux`
+
+Full scoping and reasoning: `docs/post-v1.0-models.md` "Next up" §2. Expected to be a
+config-mapping delta on `qwen35Architecture` (`decoder/forward_qwen35.go`) — Qwen3-Next is that
+architecture's direct ancestor — but config-verify before estimating, same discipline as `G4`.
+Qwen3-Coder-Next is the recommended agentic coding model for 64GB-class systems; closes a real gap
+in goinfer's strongest family. **80B total does not fit the M1 Pro 16 GB rig even at int4** — this
+is a WebGPU/CUDA-streaming showcase, tagged `linux` for that reason; scope the residency story
+before estimating total effort.
+
+**G6 · Laguna XS 2.1 (33B-A3B) / S 2.1 (118B-A8.5B) as a new family** — `any`
+
+Full scoping and reasoning: `docs/post-v1.0-models.md` "Next up" §3. Softmax-GQA territory (mixed
+SWA/global attention 3:1, the interleave pattern already handled for Gemma/Mellum2/gpt-oss) —
+softplus attention gating and per-layer RoPE scales are the genuinely new primitives, otherwise
+cheap. Strategic tie-in: ships with **official DFlash draft models**, which makes it the natural
+flagship demo for P10 (`P10`, `docs/queue-performance.md:1135`) once that lands — vendor-blessed
+drafters instead of self-trained ones. XS 2.1 is the consumer-hardware entry point (33B/3B
+active); S 2.1 targets the 96-128 GB Mac crowd.
+
+**G7 · gpt-oss residency upgrade (safetensors + MXFP4 loader, GPU residency)** — `any`
+
+Full scoping and reasoning: `docs/post-v1.0-models.md` "Next up" §4. Not a new family — `gpt_oss`
+already has real-oracle parity (`docs/capability-matrix.md:89`) — but it is **GGUF-only,
+CPU-only** today. The MXFP4 *reader* already exists (`decoder/mxfp4.go`, verified bit-for-bit
+against the reference `gguf` Python library) but was built for the GGUF path only. Two pieces: (a)
+a safetensors loader for gpt-oss's native MXFP4-packed weights, (b) Metal/CUDA GPU residency.
+gpt-oss-20b is one of the most-run local models in 2026 guides — an upgrade to an already-popular
+family plausibly moves more real users than a new family would; weigh against `G4`-`G6` on that
+basis, not just novelty.
+
+**G8 · DeepSeek V4-Flash as a new family — blocked on fp8 support, post-1.0** — `any`
+
+Scoping already done: `docs/completed/task-model-family-deepseek-v4-kimi-k3.md`'s Phase 0 verdict.
+**Not** a `deepseekArchitecture` alias — eight new primitives (DSA sparse attention over a learned
+Indexer, strided KV compression, sliding-window + attention sink, grouped low-rank output
+projection, hash routing, `sqrtsoftplus` router scoring, hyper-connections, clamped SwiGLU).
+**Hard prerequisite, not a subtask:** V4-Flash ships fp8 e4m3 blockwise-quantized weights and
+**there is no fp8 support anywhere in the tree today** — file/estimate the fp8 reader as its own
+piece of work before scoping the primitive additions. MIT license, DeepSeek's brand pulls the
+whole local community, and native sparse attention is where the field (V3.2, GLM-5.1, V4) is
+converging — building the DSA/compressor path once plausibly buys the next several Chinese
+frontier releases, which is the strategic case for filing this now even though it's not a
+near-term ship. Lowest priority of the five items filed alongside this one (`G4`-`G7`).
+
 **G1 · LFM2.5-2.6B as an experimental family** — `linux`
 
 Scoping prompt written. A fifth sequence-mixing family: interleaved gated short-convolution blocks

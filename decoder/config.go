@@ -59,6 +59,14 @@ type Config struct {
 	// SharedExpertIntermediateSize is the always-on shared expert's FFN width
 	// (Qwen-MoE/Qwen2-MoE). 0/absent ⇒ no shared expert.
 	SharedExpertIntermediateSize int `json:"shared_expert_intermediate_size"`
+	// MoeSharedExpertIntermediateSize (Nemotron-H MoE, e.g. Nemotron 3 Nano) is its
+	// OWN explicit shared-expert width — verified NOT derivable as
+	// NSharedExperts*MoeIntermediateSize the way DeepSeek's is (Nano ships
+	// n_shared_experts=1, moe_intermediate_size=1856, but
+	// moe_shared_expert_intermediate_size=3712 — the shared expert is 2x a routed
+	// expert's width, not 1x). A distinct field, not reused, to avoid silently
+	// mis-deriving it for this family.
+	MoeSharedExpertIntermediateSize int `json:"moe_shared_expert_intermediate_size"`
 
 	// DeepSeek-style MoE (GLM-4.5/4.6, model_type glm4_moe). NRoutedExperts is the
 	// routed expert count (the n_routed_experts spelling, vs num_experts); each
@@ -530,8 +538,14 @@ func (c *Config) normalizeNemotronBlocks() error {
 			types = append(types, "attention")
 		case '-':
 			types = append(types, "mlp")
+		case 'E':
+			// Nemotron 3 Nano's MoE FFN layer (sparse routed + shared expert, replacing
+			// the plain "-" dense-MLP block at this position). Verified against the real
+			// checkpoint's hybrid_override_pattern, not assumed from the "M"/"*"/"-"
+			// alphabet documented for plain Nemotron-H.
+			types = append(types, "moe")
 		default:
-			return fmt.Errorf("decoder(nemotron_h): hybrid_override_pattern has unknown block %q (want M, * or -)", r)
+			return fmt.Errorf("decoder(nemotron_h): hybrid_override_pattern has unknown block %q (want M, *, - or E)", r)
 		}
 	}
 	c.LayersBlockType = types
@@ -539,8 +553,9 @@ func (c *Config) normalizeNemotronBlocks() error {
 }
 
 // validateNemotron pins the Nemotron-H (nemotron_h) assumptions: a layers_block_type
-// covering every layer (mamba | attention | mlp), a valid Mamba-2 geometry, and a
-// usable mlp width + layer-norm eps.
+// covering every layer (mamba | attention | mlp | moe), a valid Mamba-2 geometry, a
+// usable mlp width + layer-norm eps, and — only when the pattern actually contains an
+// "moe" block (Nemotron 3 Nano; plain Nemotron-H never does) — a usable MoE shape.
 func (c *Config) validateNemotron() error {
 	switch {
 	case len(c.LayersBlockType) != c.NumLayers:
@@ -553,6 +568,28 @@ func (c *Config) validateNemotron() error {
 		return fmt.Errorf("decoder(nemotron_h): intermediate_size must be >0")
 	case c.LayerNormEpsilon <= 0:
 		return fmt.Errorf("decoder(nemotron_h): layer_norm_epsilon must be >0")
+	}
+	hasMoE := false
+	for _, t := range c.LayersBlockType {
+		if t == "moe" {
+			hasMoE = true
+			break
+		}
+	}
+	if !hasMoE {
+		return nil
+	}
+	switch {
+	case c.NRoutedExperts <= 0:
+		return fmt.Errorf("decoder(nemotron_h): n_routed_experts must be >0, got %d", c.NRoutedExperts)
+	case c.NumExpertsPerTok <= 0 || c.NumExpertsPerTok > c.NRoutedExperts:
+		return fmt.Errorf("decoder(nemotron_h): num_experts_per_tok %d out of range (1..%d)", c.NumExpertsPerTok, c.NRoutedExperts)
+	case c.MoeIntermediateSize <= 0:
+		return fmt.Errorf("decoder(nemotron_h): moe_intermediate_size must be >0, got %d", c.MoeIntermediateSize)
+	case c.NSharedExperts > 0 && c.MoeSharedExpertIntermediateSize <= 0:
+		return fmt.Errorf("decoder(nemotron_h): n_shared_experts=%d but moe_shared_expert_intermediate_size is unset", c.NSharedExperts)
+	case c.NGroup > 0 && c.NRoutedExperts%c.NGroup != 0:
+		return fmt.Errorf("decoder(nemotron_h): n_routed_experts %d not divisible by n_group %d", c.NRoutedExperts, c.NGroup)
 	}
 	return nil
 }

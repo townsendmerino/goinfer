@@ -1367,7 +1367,7 @@ bit-identity-preserving (pure buffer/traffic reuse).
   intrinsic KV traffic; ~10-15% of per-token traffic at 4k+ ctx, all mainstream CPU families). Needs a
   row-pitch arg on aikit `MatmulBTAcc64` + a per-layer persistent transposed-V cache layout. Highest
   lift, biggest broad CPU win — the headline unfreeze item.
-- **embedResident host-scratch reuse.** `embedResident` (`decoder/residency.go:677`, itself freeze-safe) does
+- **embedResident host-scratch reuse.** `embedResident` (`decoder/residency.go:685`, itself freeze-safe) does
   `make([]float32, HiddenDim)` per token, then H2D. The decode-hot-path call sites (`decoder/model.go:979/977`)
   are frozen — can't reroute; and reusing in place breaks the batch caller `decoder/model.go:831`
   (`embs[i]=embedResident(id)` collection would alias). Small (~6-14 KB/token). Bigger follow-on: an

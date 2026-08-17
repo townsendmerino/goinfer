@@ -155,13 +155,14 @@ type llama4Params struct {
 // Granite-style multipliers. forward_nemotron.go consumes this.
 type nemotronParams struct {
 	NHeads, HeadDim, DState, NGroups, DConv int     // Mamba-2 dims
-	blockKind                               []uint8 // per layer: 0 mamba · 1 attention · 2 mlp
+	blockKind                               []uint8 // per layer: 0 mamba · 1 attention · 2 mlp · 3 moe
 }
 
 const (
 	nemoMamba uint8 = iota
 	nemoAttn
 	nemoMLP
+	nemoMoE
 )
 
 // mlaParams carries DeepSeek Multi-head Latent Attention geometry. The cached state

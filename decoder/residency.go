@@ -192,8 +192,16 @@ func (a *Architecture) decodeRunnerEligible() bool {
 	// Nemotron-H resident (dense squared-ReLU hybrid): single-op-per-block Mamba-2 / NoPE-GQA /
 	// relu² MLP, reusing the granite SSM engine. Arch-eligible; the int4-default-vs-int8-opt-in
 	// precision gate is applied at the Model level (DecodeRunnerEligible).
+	//
+	// Nemotron 3 Nano adds a FOURTH block kind (MoE FFN, arch.MoE != nil — plain Nemotron-H never
+	// sets it) that no GPU resident builder knows about yet: gpu/residency.go's per-layer switch on
+	// NemotronBlockKind has cases 0/1/2 (mamba/attn/mlp) and NO default — an unhandled kind 3 would
+	// silently leave that layer's op buffers nil rather than erroring, a crash-or-garbage risk, not
+	// a clean decline. Decline here instead, at the one predicate every backend's admission funnels
+	// through, until a GPU backend actually implements the MoE block (verified against its
+	// dispatch, not assumed from "it's just another case").
 	if a.nemotron != nil {
-		return true
+		return a.MoE == nil
 	}
 	if a.MoE != nil && !a.moeResidentEligible() {
 		return false

@@ -64,6 +64,8 @@ func ggufConfig(g *embed.GGUFFile) (cfg *Config, err error) {
 		return ggufGraniteConfig(g)
 	case "nemotron_h":
 		return ggufNemotronConfig(g)
+	case "nemotron_h_moe": // Nemotron 3 Nano — same HF model_type "nemotron_h", llama.cpp gives it its own GGUF arch string
+		return ggufNemotronConfig(g)
 	case "deepseek2":
 		return ggufDeepseekConfig(g)
 	case "phi3":
@@ -73,7 +75,7 @@ func ggufConfig(g *embed.GGUFFile) (cfg *Config, err error) {
 	case "gpt-oss":
 		return ggufGptOssConfig(g)
 	default:
-		return nil, fmt.Errorf("decoder(gguf): architecture %q unsupported (have: llama, qwen2, qwen3, gemma3, gemma4 [wip], mellum, qwen35moe, glm4moe, granitehybrid, nemotron_h, deepseek2, phi3, gpt-oss)", arch)
+		return nil, fmt.Errorf("decoder(gguf): architecture %q unsupported (have: llama, qwen2, qwen3, gemma3, gemma4 [wip], mellum, qwen35moe, glm4moe, granitehybrid, nemotron_h, nemotron_h_moe, deepseek2, phi3, gpt-oss)", arch)
 	}
 }
 
@@ -629,20 +631,28 @@ func ggufGraniteConfig(g *embed.GGUFFile) (*Config, error) {
 	return cfg, nil
 }
 
-// ggufNemotronConfig builds a Nemotron-H Config from the nemotron_h.* metadata. Per-
-// layer kind comes from two parallel arrays: attention.head_count_kv (>0 ⇒ attention)
-// and feed_forward_length (>0 ⇒ mlp); the rest are mamba. head_dim is attention.
-// key_length (NOT embedding/heads). Attention is NoPE (the rope.* keys are vestigial).
+// ggufNemotronConfig builds a Nemotron-H Config from the nemotron_h.* (or, for
+// Nemotron 3 Nano's MoE variant, nemotron_h_moe.*) metadata. Per-layer kind comes
+// from two parallel arrays: attention.head_count_kv (>0 ⇒ attention) and
+// feed_forward_length (>0 ⇒ mlp for plain nemotron_h, moe for nemotron_h_moe — that
+// architecture string never carries a plain dense-mlp layer, confirmed against a
+// real checkpoint's metadata, not assumed); the rest are mamba. head_dim is
+// attention.key_length (NOT embedding/heads). Attention is NoPE (the rope.* keys are
+// vestigial). ModelType is normalized to "nemotron_h" either way — llama.cpp's GGUF
+// arch string differs from HF's model_type (which stays "nemotron_h" for BOTH the
+// dense and MoE checkpoints), but goinfer's own registry dispatches on the latter.
 func ggufNemotronConfig(g *embed.GGUFFile) (*Config, error) {
+	archStr, _ := g.Str("general.architecture") // "nemotron_h" or "nemotron_h_moe"
+	isMoE := archStr == "nemotron_h_moe"
 	u := func(k string) int {
-		v, _ := g.Uint("nemotron_h." + k)
+		v, _ := g.Uint(archStr + "." + k)
 		return int(v)
 	}
 	gf := func(k string) float64 {
-		if v, ok := g.Float("nemotron_h." + k); ok {
+		if v, ok := g.Float(archStr + "." + k); ok {
 			return v
 		}
-		v, _ := g.Uint("nemotron_h." + k)
+		v, _ := g.Uint(archStr + "." + k)
 		return float64(v)
 	}
 	intAt := func(arr []any, i int) int { // tolerant int read from a metadata array
@@ -665,17 +675,21 @@ func ggufNemotronConfig(g *embed.GGUFFile) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	kvArr, _ := g.Metadata["nemotron_h.attention.head_count_kv"].([]any)
-	ffArr, _ := g.Metadata["nemotron_h.feed_forward_length"].([]any)
+	kvArr, _ := g.Metadata[archStr+".attention.head_count_kv"].([]any)
+	ffArr, _ := g.Metadata[archStr+".feed_forward_length"].([]any)
 	types := make([]string, nLayers)
 	kvHeads, ffLen := 0, 0
+	ffnKind := "mlp"
+	if isMoE {
+		ffnKind = "moe"
+	}
 	for i := range nLayers {
 		switch {
 		case intAt(kvArr, i) > 0:
 			types[i] = "attention"
 			kvHeads = intAt(kvArr, i)
 		case intAt(ffArr, i) > 0:
-			types[i] = "mlp"
+			types[i] = ffnKind
 			ffLen = intAt(ffArr, i)
 		default:
 			types[i] = "mamba"
@@ -704,6 +718,30 @@ func ggufNemotronConfig(g *embed.GGUFFile) (*Config, error) {
 		LayerNormEpsilon: eps,
 		HiddenAct:        "silu",
 		VocabSize:        ggufVocabSize(g),
+	}
+	if isMoE {
+		// Nemotron 3 Nano's MoE fields — key names verified against a real GGUF file's
+		// metadata (bartowski/nvidia_Nemotron-3-Nano-30B-A3B-GGUF), not assumed from the
+		// safetensors config's field names or llama.cpp's convert script alone:
+		// expert_count/expert_used_count/expert_feed_forward_length/
+		// expert_shared_feed_forward_length/expert_shared_count/expert_weights_norm/
+		// expert_weights_scale/expert_group_count/expert_group_used_count — all present,
+		// including expert_group_used_count (the topk_group equivalent), which is easy to
+		// assume absent since the safetensors config's own topk_group has no direct GGUF
+		// key of the same name.
+		normTopK := true
+		if b, ok := g.Metadata[archStr+".expert_weights_norm"].(bool); ok {
+			normTopK = b
+		}
+		cfg.NRoutedExperts = u("expert_count")
+		cfg.NumExpertsPerTok = u("expert_used_count")
+		cfg.MoeIntermediateSize = u("expert_feed_forward_length")
+		cfg.MoeSharedExpertIntermediateSize = u("expert_shared_feed_forward_length")
+		cfg.NSharedExperts = u("expert_shared_count")
+		cfg.NormTopKProb = &normTopK
+		cfg.RoutedScalingFactor = gf("expert_weights_scale")
+		cfg.NGroup = u("expert_group_count")
+		cfg.TopkGroup = u("expert_group_used_count")
 	}
 	ggufEOS(g, cfg)
 	return cfg, nil
@@ -1788,6 +1826,43 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 				}
 				if l.DownProj, e = mat(p+"ffn_down.weight", hidden, inter); e != nil {
 					return e
+				}
+			case nemoMoE:
+				// Nemotron 3 Nano's MoE FFN. Tensor names verified against a real GGUF
+				// file's tensor list (bartowski/nvidia_Nemotron-3-Nano-30B-A3B-GGUF,
+				// fetched directly and parsed with this package's own GGUF reader — not
+				// assumed from llama.cpp's conversion-script source mapping, which names
+				// the SOURCE safetensors tensor, not the output GGUF tensor). Experts are
+				// FUSED per projection (one 3-D [in,out,nExpert] tensor each), unlike the
+				// safetensors path's one-tensor-per-expert layout — stackedExperts is the
+				// existing helper other GGUF MoE families already use for this shape.
+				// exp_probs_b.bias is llama.cpp's name for e_score_correction_bias.
+				moe := arch.MoE
+				if l.Router, e = mat(p+"ffn_gate_inp.weight", moe.NumExperts, hidden); e != nil {
+					return e
+				}
+				if l.RouterBias, e = flat(p+"exp_probs_b.bias", moe.NumExperts); e != nil {
+					return e
+				}
+				upExp, uerr := stackedExperts(p+"ffn_up_exps.weight", moe.IntermediateDim, hidden, moe.NumExperts)
+				if uerr != nil {
+					return uerr
+				}
+				downExp, derr := stackedExperts(p+"ffn_down_exps.weight", hidden, moe.IntermediateDim, moe.NumExperts)
+				if derr != nil {
+					return derr
+				}
+				l.Experts = make([]expertWeights, moe.NumExperts)
+				for ei := range l.Experts {
+					l.Experts[ei].Up, l.Experts[ei].Down = upExp[ei], downExp[ei]
+				}
+				if moe.SharedIntermediateDim > 0 {
+					if l.SharedExpert.Up, e = mat(p+"ffn_up_shexp.weight", moe.SharedIntermediateDim, hidden); e != nil {
+						return e
+					}
+					if l.SharedExpert.Down, e = mat(p+"ffn_down_shexp.weight", hidden, moe.SharedIntermediateDim); e != nil {
+						return e
+					}
 				}
 			}
 			return nil

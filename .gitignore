@@ -129,6 +129,7 @@ testdata/glm-tiny/
 testdata/glm-tiny-bias/
 testdata/granite-tiny/
 testdata/nemotron-tiny/
+testdata/nemotron3nano-tiny/
 testdata/deepseek-tiny/
 testdata/phi3-tiny/
 testdata/kimi-tiny/
