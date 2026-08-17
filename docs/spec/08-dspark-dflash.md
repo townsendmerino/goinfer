@@ -1962,3 +1962,49 @@ measured, the composition verified to within 1.6%, and the only remaining modell
 drafter kernel's own efficiency (stood in for by a 5-layer truncation of the target, which is the
 right shape and the right cost). Code clears its bar by 2%; math clears comfortably. The
 GPU-side argmax is worth ~1.11 ms/round (about +0.04× on code) and is the cheapest remaining win.
+
+### The single biggest remaining win: the verify's LM head is NOT batched
+
+`PrefillLastN` applies the head in a **per-row loop** (`cuda/prefill.go`): for each of the M rows
+it uploads that row, runs the final norm, issues the head as an **M=1 GEMV**, `stream.Sync()`s,
+and downloads all 151936 logits. The head is ~389 M parameters (~195 MB at int4), so **its
+weights are re-read from VRAM once per row.**
+
+The measurement says exactly that:
+
+| | ms |
+|---|---|
+| head at M=1 (measured separately) | 0.934 |
+| `PrefillLastN` marginal cost per row at k=7 | **1.046** |
+
+**The marginal row costs a full head read.** No amortization at all — which is precisely the
+weight-amortization that makes the batched verify worth doing in the first place, simply not
+applied to the head.
+
+**Why it is like this, and it is not an oversight:** the loop's comment is explicit — it copies
+each row into the M=1 scratch and reuses "the exact `Forward` tail, so each row's logits are
+bit-identical to a sequential `Forward`". Bit-identity is what makes greedy accept lossless
+(00-core). A batched head GEMM accumulates in a different order and could flip an argmax in a
+near-tie, breaking the contract. The per-row loop buys correctness, and it was the right default
+before anything depended on its speed.
+
+**Sized, assuming a batched head plus a GPU-side argmax** (one weight read for all k rows, no
+per-row sync, no k×608 KB download, no host argmax):
+
+| suite | k | now | **batched head** |
+|---|---|---|---|
+| code | 7 | 1.33× | **1.62×** |
+| code | 8 | 1.29× | 1.59× |
+| math | 8 | 1.70× | **2.10×** |
+
+**+0.29× on code and +0.40× on math**, which would take code from clearing its bar by 2% to
+clearing it by 25%. That makes it the highest-value item left — larger than the drafter kernel's
+remaining uncertainty, and a self-contained change to one existing function rather than a new
+primitive.
+
+**The constraint is the whole difficulty**: the batched head must produce argmaxes identical to
+the per-row path, or the lossless contract breaks. That is testable directly — run both over the
+same residuals and require identical argmax at every position, which is a stronger and cheaper
+check than bit-identical logits, since only the argmax feeds the accept decision. **A batched
+head whose LOGITS differ in the last ulp but whose ARGMAXES never differ is sufficient**, and
+that distinction is what makes this tractable at all.
