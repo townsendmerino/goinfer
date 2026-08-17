@@ -33,6 +33,11 @@ type BlockDrafterWeights interface {
 	DrafterFinalNorm() []float32
 	// DrafterLayer is layer i's weights, 0 <= i < DrafterGeometry().Layers.
 	DrafterLayer(i int) DrafterLayerWeights
+	// MaskTokenID is the TRAINED token the drafter expects at unfilled block positions. It is
+	// on the interface because getting it wrong is silent and expensive: the drafter still
+	// runs, still produces lossless output, and simply drafts badly. Measured cost of passing
+	// any other id — 1.77 tok/round against a known 4.97, turning a 1.60x speedup into 0.66x.
+	MaskTokenID() int
 	// BlockSize is the trained block width — how many positions the drafter drafts at once.
 	// It lives on the concrete family rather than the shared trunk (the trunk runs whatever
 	// width it is handed), and both families already expose it. How many of those positions

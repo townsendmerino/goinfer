@@ -616,3 +616,17 @@ func (d *residentDrafter) TruncateContext(n int) {
 		d.ctxLen = n
 	}
 }
+
+// AttachBlockDrafter satisfies decoder.ResidentDrafterHost. The concrete AttachDrafter returns
+// *residentDrafter; this returns it through the interface so `decoder` can drive the loop
+// without importing this package.
+func (r *cudaResident) AttachBlockDrafter(w decoder.BlockDrafterWeights) (decoder.ResidentBlockDrafter, error) {
+	return r.AttachDrafter(w)
+}
+
+// Compile-time proof that the CUDA resident is a block-drafting host and its drafter satisfies
+// the trunk interface. A backend that grows one of these and not the other fails here.
+var (
+	_ decoder.ResidentDrafterHost  = (*cudaResident)(nil)
+	_ decoder.ResidentBlockDrafter = (*residentDrafter)(nil)
+)
