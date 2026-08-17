@@ -195,7 +195,36 @@ in goinfer's strongest family. **80B total does not fit the M1 Pro 16 GB rig eve
 is a WebGPU/CUDA-streaming showcase, tagged `linux` for that reason; scope the residency story
 before estimating total effort.
 
-**G6 · Laguna (poolside) as a new family — PHASE 0 CONFIG-VERIFIED (`linux-62gb`, 2026-08-17)** — `any`
+**G6 · Laguna (poolside) — DONE (`linux-62gb`, 2026-08-17): XS-2.1 + XS.2 + M.1 on one adapter** — `any`
+
+**SHIPPED.** One `laguna` adapter serving all three released generations. T1 tiny goldens ×3
+(one per generation, each vs ITS OWN `modeling_laguna.py`) at **cosine 1.000000** on both the
+sequential and batched-prefill paths, plus a **real `poolside/Laguna-XS.2` (33B-A3B @int4)**
+loader/coherence gate that generates *"1. Eiffel Tower / 2. Notre-Dame Cathedral / 3. Louvre
+Museum"*. Manifest row is `experimental` **on purpose** — the real gate is coherence+structure,
+not a T3 logit oracle, and `TestParityManifest_methodTier` correctly rejected the overclaim.
+
+New primitives: softplus attention output gating (both granularities) and per-layer QUERY head
+counts (`headsAt`/`maxHeads`), plus `RotaryDimLocal` completing the local/global RoPE triple.
+Declares `FeatAttnOutputGate`, so every resident backend declines (`laguna → admitted by []`)
+rather than silently skipping the gate.
+
+**Four assumptions the released artifacts overturned**, all caught before they shipped:
+QK-norm is unconditional and appears in no config; XS.2's `g_proj` is per-HEAD despite
+`gating: true` (so granularity is read from the tensor shape); experts ship per-expert, not
+fused; and XS.2 carries `mlp_layer_types` but not `mlp_only_layers`. The real gate then found
+two more — batched prefill sized `q`/`ctx` from `NumHeads`, and never applied the gate at all
+(cosine 0.957, identical to the gate-disabled mutant).
+
+**Open, all nice-to-have:** a true T3 layer-slice oracle (a bf16 33B will not co-reside with
+the int4 model in 62GB); an XS-2.1 real gate (another 63GB download; its per-head path is
+covered by a tiny golden); GGUF (no Laguna GGUFs exist yet); and the **DFlash drafter pairing**
+— `poolside/Laguna-XS.2-speculator.dflash` is downloaded and P10's block drafting shipped, so
+this is the first vendor-blessed pairing available. M.1 gets no real gate on this box (~220B).
+
+Full record: `docs/task-laguna.md`.
+
+*Original scoping entry:*
 
 **Verified against the real released configs before estimating**, per the discipline G4 earned.
 `model_type: "laguna"`, `LagunaForCausalLM`, custom `auto_map` code. XS: hidden 2048, 40 layers,
