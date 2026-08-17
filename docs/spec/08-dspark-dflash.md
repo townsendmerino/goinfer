@@ -1603,3 +1603,82 @@ that skipping would give, so a mispredicted fire costs 8% rather than 55%.
 **Caveat unchanged:** acceptance is measured, wall-clock is not. These compose measured
 acceptance with the measured verify curve and draft cost on one target and one GPU. Gate 3 should
 be run per-suite at these widths.
+
+## Metal — verify curve measured, and the leading finding isn't the numbers
+
+Per `docs/prompts/metal-verify-curve.md` (dispatched to the M1 Pro leg 2026-08-16). Result up
+front: **Metal doesn't currently amortize batched verify at all** — ceiling ~1.13× *even with
+free drafting*, against CUDA's measured 1.74× at k=7. And that ceiling number is arguably the
+second finding, not the first — see below.
+
+**Corrected before measuring: the prompt's harness pointer was wrong.** It said "mirror the
+method on the `gpu/` (Metal) side" and named `gpu/`'s benchmark files as the template. Checked,
+not assumed: `gpu/` is the WebGPU backend (wgpu-native, cgo, `-tags gpu`) — it has **no
+`PrefillLast`** at all, only `ForwardN`. The native cgo-free Metal backend (`metal/`, purego,
+dlopen `Metal.framework` — the one this repo's whole Metal story is actually about) **does** have
+`PrefillLast`, matching CUDA's structure directly. Built the test in `metal/`
+(`metal/spec_verify_curve_test.go`), not `gpu/`.
+
+**The load-bearing finding: `PrefillLast` declines by default on Metal, and forcing it on for
+measurement surfaces why nobody ships it.** `metal/backend.go` refuses batched prefill unless
+`GOINFER_METAL_BATCHED_PREFILL=1` — its own f16-MMA activation kernels are **not bit-identical**
+to decode's int8 path (54% stream divergence measured previously, §A2-Metal). P10's verify step
+needs exact reproduction of sequential greedy (00-core's lossless contract), so **this kernel
+cannot serve as P10's verify oracle on Metal as it stands, independent of its speed** — that gap
+would need closing first, before any of the numbers below mean "shippable."
+
+Measured anyway, because the task asked for the timing shape regardless: qwen2.5-coder-1.5b
+(int4, W4A8 — CUDA's own default fixture in `spec_verify_ceiling_test.go`, not the project's
+headline Qwen3-4B, which isn't on this Mac), depth 1024 (matches the CUDA test), best-of-5 per
+point, `GOINFER_METAL_BATCHED_PREFILL=1` forced on for the batched calls only.
+
+| M | T(M) ms |
+|---|---|
+| 1 | 91.4 |
+| 2 | 91.6 |
+| 4 | 103.6 |
+| 6 | 105.6 |
+| 8 | 119.1 |
+| 10 | 153.4 |
+| 12 | 156.8 |
+| 16 | 169.7 |
+
+Fit: **W = 80.42 ms, C = 5.90 ms** (least-squares over the 8 points).
+
+**Real `decode_ms` = 27.40 ms** (~36.5 tok/s at this depth) — measured *separately* via `Forward`
+(the shipped int8 path), mirroring what `spec_verify_ceiling_test.go` actually does (it computes
+`one` independently, not by extrapolating the batched fit to M=1) rather than what this task's
+prompt said to do ("T(1) is decode_ms"). The two diverge by **3.15×** on Metal specifically
+because `PrefillLast` and `Forward` are different kernel families here — on CUDA the prompt's
+simplification is fair because they're close; on Metal it silently substitutes an
+never-tuned-for-small-M kernel's cost for real decode cost, understating the true ratio the
+speedup formula needs. Use the separately-measured `Forward` number, not the fit's T(1), for
+`decode_ms` on any backend where verify and decode aren't the same kernel family.
+
+**Composed ceiling** (`decode_ms·(1+accepted)/verify_ms(k)`, `draft_ms = 0` — an upper bound, not
+a real number, since actual drafting can only cost more):
+
+| k | accepted (from the acceptance table above) | verify_ms(k) = W+Ck | ceiling speedup |
+|---|---|---|---|
+| 16 | 5.10 | 174.75 | 0.956× |
+| 12 | 5.01 | 151.17 | 1.089× |
+| 10 | 4.64 | 139.38 | 1.109× |
+| **8** | 4.24 | 127.59 | **1.125×** |
+| 7 | 3.97 | 121.69 | 1.119× |
+| 6 | 3.41 | 115.79 | 1.043× |
+| 4 | 2.45 | 104.00 | 0.909× |
+
+Peaks at k=8, **1.125×, essentially flat**, and this is the *best possible* case. `draft_ms` was
+**not measured** — no DFlash checkpoint or torch conversion environment (`~/.venv-vl`, per the
+05-eagle3 precedent) exists on this Mac, and building that pipeline from scratch to get a real
+(necessarily nonzero) number would not change the qualitative answer: any real `draft_ms > 0`
+only lowers every row in the table above. The ceiling already answers the practical question.
+
+**Bottom line for P10's Metal leg:** two independent reasons this path isn't ready, not one —
+(1) the verify kernel is non-bit-identical to decode and would need a real fix before it's a
+legal verify oracle at all, and (2) even ignoring that and assuming it were free to fix, the
+*timing* ceiling tops out at ~1.13× versus CUDA's 1.74×, because `W` (Metal's batched-dispatch
+fixed cost, 80 ms) dwarfs `C` (the per-row marginal cost, 5.9 ms) by a much larger margin than on
+CUDA — the fixed cost is the whole story on this backend, and it is not amortizing at any of the
+tested widths. Not a build target until (1) is resolved, and even then the ceiling says this is
+a marginal win at best on the current kernel, not the ~1.5-1.7× the CUDA leg found.

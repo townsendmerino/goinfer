@@ -1290,3 +1290,13 @@ predict the 05 verdict repeats (~0.5·step verify node, ~2.2× perfect-drafter c
 while the CPU wiring is up, to document rather than assume. Increment 1 (license + checkpoint
 audit) is free — kill there costs nothing. Not release-gating; queues behind the replace-free tag
 (C3) like everything else new.
+
+**Metal leg (`mac`) — MEASURED 2026-08-16, verdict: not ready, two independent blockers.**
+Ceiling ~1.13× even at draft_ms=0 (vs CUDA's 1.74×) — Metal's batched-dispatch fixed cost (W=80ms)
+dwarfs CUDA's (8.77ms) and doesn't amortize at any tested width. Separately, and more
+fundamentally: the batched-verify kernel this needs (`metal.PrefillLast`) is declined by default
+in production because it's not bit-identical to decode (54% divergence, §A2-Metal) — P10's
+lossless contract can't be met on Metal until that's fixed, independent of the timing. Full
+measurement + method in `docs/spec/08-dspark-dflash.md` under "Metal". Also corrects the
+handoff prompt (`docs/prompts/metal-verify-curve.md`): it pointed at `gpu/` (WebGPU, no
+`PrefillLast`), the actual harness lives in `metal/` (native, has `PrefillLast`).
