@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"context"
 	"errors"
 	"fmt"
 )
@@ -136,7 +137,14 @@ func (m *Model) NewBlockSpec(dw BlockDrafterWeights, taps []int) (*BlockSpec, er
 //
 // It declines rather than fails when the backend cannot host block drafting, so a caller can
 // pass a drafter unconditionally and get plain generation where it is unsupported.
-func (s *BlockSpec) Generate(prompt []int, opt BlockSpecOptions) (out []int, rounds int, err error) {
+func (s *BlockSpec) Generate(prompt []int, opt BlockSpecOptions) ([]int, int, error) {
+	return s.generate(prompt, opt, nil)
+}
+
+// generate is the loop. emit, when non-nil, receives each round's committed tokens as they are
+// produced and returns false to stop (cancellation) — that is what lets GenerateStream forward
+// tokens per round instead of at the end.
+func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int) bool) (out []int, rounds int, err error) {
 	m, host, rd, dw := s.m, s.host, s.rd, s.dw
 	width := opt.VerifyWidth
 	if width <= 0 {
@@ -191,6 +199,9 @@ func (s *BlockSpec) Generate(prompt []int, opt BlockSpecOptions) (out []int, rou
 	pos := len(prompt)
 	anchor := ids[len(ids)-1]
 	out = append(out, anchor)
+	if emit != nil && !emit([]int{anchor}) {
+		return out, rounds, nil
+	}
 
 	maskID := dw.MaskTokenID()
 	for opt.MaxTokens <= 0 || len(out) < opt.MaxTokens {
@@ -229,11 +240,14 @@ func (s *BlockSpec) Generate(prompt []int, opt BlockSpecOptions) (out []int, rou
 			}
 			accepted = i + 1
 		}
-		for i := 0; i < accepted; i++ {
-			out = append(out, drafted[i])
-		}
+		burst := make([]int, 0, accepted+1)
+		burst = append(burst, drafted[:accepted]...)
 		next := tgt[accepted] // the target's own token at the first disagreement
-		out = append(out, next)
+		burst = append(burst, next)
+		out = append(out, burst...)
+		if emit != nil && !emit(burst) {
+			return out, rounds, nil
+		}
 		pos += 1 + accepted
 		if e := fuse(capt, 1+accepted); e != nil {
 			return out, rounds, e
@@ -241,4 +255,59 @@ func (s *BlockSpec) Generate(prompt []int, opt BlockSpecOptions) (out []int, rou
 		anchor = next
 	}
 	return out, rounds, nil
+}
+
+// GenerateStream is the serving-shaped entry point: greedy block-drafting speculation as a token
+// channel, matching GenerateEagleSpeculative's signature so a server can swap one for the other.
+//
+// GREEDY ONLY, and the guards are the same ones the EAGLE path carries for the same reason. The
+// verify compares the drafted token against the target's ARGMAX; a temperature, a logit processor
+// or any history-dependent penalty makes "what the target would have produced" depend on state
+// the batched verify does not have, so acceptance would no longer imply losslessness. Refusing is
+// the honest answer — a caller that needs sampling should use Generate.
+func (s *BlockSpec) GenerateStream(ctx context.Context, prompt []int, maxTokens int,
+	sp SamplingParams) (<-chan int, *Generation, error) {
+	if sp.Temperature != 0 || sp.LogitProcessor != nil {
+		return nil, nil, fmt.Errorf("decoder.BlockSpec.GenerateStream: greedy only (no temperature/LogitProcessor)")
+	}
+	if sp.HistoryDependent() {
+		return nil, nil, fmt.Errorf("decoder.BlockSpec.GenerateStream: repetition penalties / logit bias not supported in greedy speculative decoding; use Generate")
+	}
+	if !s.m.specRollbackSafe() {
+		return nil, nil, fmt.Errorf("decoder.BlockSpec.GenerateStream: recurrent family or staged sliding-window unsupported (rollback cannot restore)")
+	}
+	if len(prompt) == 0 {
+		return nil, nil, fmt.Errorf("decoder.BlockSpec.GenerateStream: empty prompt")
+	}
+	out := make(chan int)
+	stats := &SpecStats{}
+	g := &Generation{Spec: stats}
+	go func() {
+		defer close(out)
+		// The loop emits in bursts (anchor plus accepted drafts), so tokens are forwarded as
+		// each round commits rather than at the end — a server streams them straight through.
+		emit := func(ids []int) bool {
+			for _, id := range ids {
+				select {
+				case out <- id:
+				case <-ctx.Done():
+					return false
+				}
+			}
+			return true
+		}
+		toks, rounds, err := s.generate(prompt, BlockSpecOptions{MaxTokens: maxTokens}, emit)
+		stats.Rounds = rounds
+		stats.Emitted = len(toks)
+		// Accepted counts DRAFT tokens the target confirmed, excluding each round's own
+		// correction token — the same convention SpecStats uses for the n-gram path, so the
+		// two acceptance rates are comparable.
+		if a := len(toks) - rounds - 1; a > 0 {
+			stats.Accepted = a
+		}
+		if err != nil {
+			g.err = err
+		}
+	}()
+	return out, g, nil
 }

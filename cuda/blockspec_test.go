@@ -3,6 +3,7 @@
 package cuda
 
 import (
+	"context"
 	"os"
 	"testing"
 	"time"
@@ -103,4 +104,92 @@ func TestGenerateBlockSpec_production(t *testing.T) {
 		t.Errorf("production path only %.2fx — the wiring lost the speedup the loop measures",
 			greedyMs/specMs)
 	}
+}
+
+// TestBlockSpecStream gates the serving-shaped entry point: tokens arrive on a channel, in
+// order, identical to what Generate returns, and cancellation stops the loop.
+//
+// A server consumes this, not Generate — so the streaming wrapper is where a wiring bug would
+// live, and it is worth its own gate rather than trusting that it wraps the loop correctly.
+func TestBlockSpecStream(t *testing.T) {
+	requireHeavyModel(t)
+	tgt := os.Getenv("GOINFER_CUDA_MODEL")
+	if tgt == "" {
+		tgt = os.ExpandEnv("$HOME/models/qwen3-4b")
+	}
+	ddir := decoder.AssetPathForTest(t, "GOINFER_DFLASH_F32")
+	mc, err := decoder.Load(tgt, decoder.Options{Backend: "cuda", Quant: "int4"})
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	defer mc.Close()
+	dr, err := decoder.LoadDFlashDrafter(ddir)
+	if err != nil {
+		t.Fatalf("drafter: %v", err)
+	}
+	defer dr.Close()
+	spec, err := mc.NewBlockSpec(dr, dr.TargetLayerIDs())
+	if err != nil {
+		t.Fatalf("NewBlockSpec: %v", err)
+	}
+	tk, err := decoder.LoadTokenizerForTest(tgt)
+	if err != nil {
+		t.Skipf("tokenizer: %v", err)
+	}
+	prompt, err := decoder.EncodeChatForTest(tk, "Write a Go function that reverses a slice of ints in place.")
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	const maxNew = 48
+
+	// sampling must be refused, not silently ignored: acceptance compares against the target's
+	// ARGMAX, so a temperature would break the losslessness the whole design rests on.
+	if _, _, e := spec.GenerateStream(context.Background(), prompt, maxNew,
+		decoder.SamplingParams{Temperature: 0.7}); e == nil {
+		t.Error("GenerateStream accepted a temperature — greedy-only must be refused, not ignored")
+	}
+
+	ch, g, err := spec.GenerateStream(context.Background(), prompt, maxNew, decoder.SamplingParams{})
+	if err != nil {
+		t.Fatalf("GenerateStream: %v", err)
+	}
+	var streamed []int
+	for id := range ch {
+		streamed = append(streamed, id)
+	}
+	if g.Err() != nil {
+		t.Fatalf("generation: %v", g.Err())
+	}
+	direct, rounds, err := spec.Generate(prompt, decoder.BlockSpecOptions{MaxTokens: maxNew})
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if len(streamed) != len(direct) {
+		t.Fatalf("streamed %d tokens, direct %d", len(streamed), len(direct))
+	}
+	for i := range direct {
+		if streamed[i] != direct[i] {
+			t.Fatalf("token %d: streamed %d, direct %d", i, streamed[i], direct[i])
+		}
+	}
+	t.Logf("stream == direct: %d tokens, %d rounds, spec stats rounds=%d accepted=%d",
+		len(streamed), rounds, g.Spec.Rounds, g.Spec.Accepted)
+
+	// cancellation must stop the loop rather than run to completion
+	cctx, cancel := context.WithCancel(context.Background())
+	ch2, _, err := spec.GenerateStream(cctx, prompt, maxNew, decoder.SamplingParams{})
+	if err != nil {
+		t.Fatalf("GenerateStream(cancel): %v", err)
+	}
+	n := 0
+	for range ch2 {
+		n++
+		if n == 3 {
+			cancel()
+		}
+	}
+	if n >= len(direct) {
+		t.Errorf("cancellation did not stop the loop: got %d tokens of %d", n, len(direct))
+	}
+	t.Logf("cancelled after 3 tokens, stream closed at %d (full run is %d)", n, len(direct))
 }
