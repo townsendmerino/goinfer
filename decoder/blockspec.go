@@ -198,6 +198,9 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 	}
 	pos := len(prompt)
 	anchor := ids[len(ids)-1]
+	if eos[anchor] {
+		return out, rounds, nil // Generate emits nothing when the first token is a stop
+	}
 	out = append(out, anchor)
 	if emit != nil && !emit([]int{anchor}) {
 		return out, rounds, nil
@@ -223,12 +226,31 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 				}
 				seamOff = true
 			}
-			one, e := host.PrefillLastNArgmax([][]float32{m.embedResident(anchor)}, pos)
+			// The FAST greedy step where the backend has one: argmax reduced on-device with a
+			// 4-byte readback, which is what Model.Generate uses. Falling back through
+			// PrefillLastNArgmax(M=1) instead downloads the full logit row per token — the
+			// same slow primitive that made gate 3's baseline wrong, and it left the guard
+			// converting a 0.82x into 0.82x instead of into plain-decode speed.
+			var e error
+			if g, ok := m.resident.(ResidentGreedy); ok {
+				anchor, e = g.ForwardArgmax(m.embedResident(anchor), pos)
+			} else {
+				var one []int
+				one, e = host.PrefillLastNArgmax([][]float32{m.embedResident(anchor)}, pos)
+				if e == nil {
+					anchor = one[0]
+				}
+			}
 			if e != nil {
 				return out, rounds, e
 			}
 			pos++
-			anchor = one[0]
+			// The stop token is NOT emitted here either. The loop-top check breaks on it, but
+			// only AFTER this append ran — so without this the fallback emits one token past
+			// where plain decoding stops, which is exactly the 259-vs-258 mismatch.
+			if eos[anchor] {
+				break
+			}
 			out = append(out, anchor)
 			if emit != nil && !emit([]int{anchor}) {
 				return out, rounds, nil
@@ -271,13 +293,35 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 		burst = append(burst, drafted[:accepted]...)
 		next := tgt[accepted] // the target's own token at the first disagreement
 		burst = append(burst, next)
+		// TRUNCATE BEFORE EOS INSIDE THE BURST. A round commits several tokens at once, so a
+		// stop token can land in the MIDDLE of one; appending the whole burst emits content
+		// AFTER it, which plain decoding never does. And the stop token itself is EXCLUDED,
+		// because Generate breaks on it without emitting (model.go, isStop) — matching that
+		// exactly is what makes the two paths token-identical.
+		//
+		// Caught by a 384-token run where spec emitted 259 tokens against greedy's 258. At 96
+		// tokens neither generation reached EOS, so the bug was invisible — a reminder that a
+		// losslessness gate only covers the lengths it actually runs.
+		stop := false
+		for i, id := range burst {
+			if eos[id] {
+				burst, stop = burst[:i], true
+				break
+			}
+		}
 		out = append(out, burst...)
-		if emit != nil && !emit(burst) {
+		if emit != nil && !stop && !emit(burst) {
 			return out, rounds, nil
 		}
 		pos += 1 + accepted
 		if e := fuse(capt, 1+accepted); e != nil {
 			return out, rounds, e
+		}
+		if stop {
+			if emit != nil && len(burst) > 0 {
+				emit(burst)
+			}
+			break
 		}
 		anchor = next
 		guard.observe(1 + accepted)
@@ -355,10 +399,15 @@ func (s *BlockSpec) GenerateStream(ctx context.Context, prompt []int, maxTokens 
 // either way, so an operator sees correct responses at reduced speed and has nothing to look at.
 const breakEvenTokensPerRound = 3.8
 
-// guardWindow is how many rounds to observe before judging. Long enough that a hard opening
-// (the first block of a response is often unpredictable) does not disable a drafter that would
-// have paid, short enough that a losing one is switched off within a fraction of a response.
-const guardWindow = 12
+// guardWindow is how many rounds to observe before judging.
+//
+// SIX, not twelve, because the rounds spent deciding are pure loss when the answer is "stop":
+// twelve rounds is a third of a 96-token response, and halving the window halves that. The risk
+// of judging early is disabling a drafter that would have paid — and that risk is LOW here in a
+// way worth stating: a response's opening is boilerplate ("Here's a Python function...", a code
+// fence), which is the part a drafter predicts BEST. Early rounds are optimistic, so a short
+// window errs toward keeping a good drafter, not dropping one.
+const guardWindow = 6
 
 // acceptanceGuard disables a drafter that is not paying for itself, per generation.
 //
