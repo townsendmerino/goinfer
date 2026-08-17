@@ -98,6 +98,10 @@ type Config struct {
 	Gating                      json.RawMessage `json:"gating,omitempty"`
 	NumAttentionHeadsPerLayer   []int           `json:"num_attention_heads_per_layer"`
 	MlpOnlyLayers               []int           `json:"mlp_only_layers"`
+	// MlpLayerTypes is the per-layer FFN kind ("dense" | "sparse"). It is the
+	// RELIABLE spelling: all three released configs carry it, whereas
+	// mlp_only_layers is absent from XS.2. Preferred over MlpOnlyLayers.
+	MlpLayerTypes []string `json:"mlp_layer_types"`
 
 	// DeepSeek MLA + DeepSeekMoE (deepseek_v2 / deepseek_v3). MLA splits the
 	// per-head dims: queries route through an optional q_lora_rank bottleneck
@@ -975,11 +979,39 @@ func (c *Config) lagunaGatePerHead() (enabled, perHead bool, err error) {
 	return b, false, nil // true ⇒ per-element (the vendor's string compare fails on a bool)
 }
 
-// lagunaFirstKDense turns mlp_only_layers into goinfer's FirstKDense prefix
-// count. Every released Laguna lists a CONTIGUOUS prefix ([0] on XS, [0,1,2] on
-// M.1), which is what FirstKDense can express; a non-contiguous list would be a
-// different layout and is rejected rather than silently truncated.
+// lagunaFirstKDense turns Laguna's dense-layer declaration into goinfer's
+// FirstKDense prefix count.
+//
+// TWO SPELLINGS, and mlp_layer_types is the reliable one: all three released
+// configs carry mlp_layer_types (["dense","sparse",…]), but XS.2 DROPS
+// mlp_only_layers entirely. Reading only mlp_only_layers yields FirstKDense=0 on
+// XS.2, which would make the loader treat its dense layer 0 as MoE and demand
+// expert tensors that do not exist. So mlp_layer_types wins when present.
+//
+// Either way the dense layers must form a CONTIGUOUS PREFIX — that is what
+// FirstKDense can express, and every released config satisfies it ([0] on the XS
+// line, [0,1,2] on M.1). A non-contiguous layout is rejected rather than silently
+// truncated.
 func (c *Config) lagunaFirstKDense() (int, error) {
+	if len(c.MlpLayerTypes) > 0 {
+		if n := len(c.MlpLayerTypes); n != c.NumLayers {
+			return 0, fmt.Errorf("decoder(laguna): mlp_layer_types has %d entries, want %d (num_hidden_layers)", n, c.NumLayers)
+		}
+		k := 0
+		for i, t := range c.MlpLayerTypes {
+			switch t {
+			case "dense":
+				if i != k {
+					return 0, fmt.Errorf("decoder(laguna): mlp_layer_types has a non-prefix dense layer at %d; FirstKDense cannot express it", i)
+				}
+				k++
+			case "sparse":
+			default:
+				return 0, fmt.Errorf("decoder(laguna): mlp_layer_types[%d]=%q unsupported (dense / sparse)", i, t)
+			}
+		}
+		return k, nil
+	}
 	if len(c.MlpOnlyLayers) == 0 {
 		return 0, nil
 	}

@@ -151,3 +151,14 @@ testdata/gemma4-dense-scaled/
 # Committing the JSONs alone would make the directory "exist" for a dir-only skip guard while
 # holding no model — turning a clean skip into a CI failure (see loadG4MoECache).
 testdata/gemma4-moe-scaled/
+
+# Laguna (G6) tiny fixtures. The WEIGHTS and config.json are tracked (they are
+# ~1.3MB each and goinfer's loader reads only those, so the T1 gate runs in CI
+# like mixtral-tiny's does). poolside's vendored modeling_laguna.py /
+# configuration_laguna.py are NOT redistributed — they are fetched on demand by
+# scripts/pin_laguna_tiny.py, which is the only thing that needs them.
+decoder/testdata/.laguna-code-*/
+decoder/testdata/laguna-*-tiny/*.py
+!decoder/testdata/laguna-xs21-tiny/model.safetensors
+!decoder/testdata/laguna-xs2-tiny/model.safetensors
+!decoder/testdata/laguna-m1-tiny/model.safetensors

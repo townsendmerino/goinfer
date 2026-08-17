@@ -55,7 +55,7 @@ The brief said "QK LayerNorm (not RMSNorm)." The reference `modeling_lfm2.py` us
 per-head** — RMSNorm. **If RMSNorm (confirm directly), LFM2 uses goinfer's existing hardcoded RMSNorm
 QK-norm path (`decoder/attention.go:97-96`) with ZERO new code.** This is exactly the "quiet wrong answer" risk —
 verify before building. Contingency if LayerNorm: the `layerNorm(x, weight, bias, …)` primitive already
-exists and handles bias (`decoder/rmsnorm.go:49`; `decoder/config.go:725-706` flags LayerNorm-QK as a known Phase-2
+exists and handles bias (`decoder/rmsnorm.go:49`; `decoder/config.go:729-706` flags LayerNorm-QK as a known Phase-2
 primitive) → ~25 lines forward-selector + `.bias`-tensor plumbing.
 
 ## F. Computed FFN dim — moot here (stated 10752)

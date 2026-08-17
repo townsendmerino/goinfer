@@ -53,10 +53,11 @@ func TestLagunaArchitecture_realConfigs(t *testing.T) {
 		file: "xs2.json", repo: "poolside/Laguna-XS.2",
 		layers: 40, hidden: 2048, heads: 48, headsAt0: 48, headsAt1: 64,
 		experts: 256, topK: 8, moeInter: 512, sharedDim: 512, routedScl: 2.5,
-		// XS.2 drops mlp_only_layers; its layer 0 is still the dense one on disk
-		// (mlp.gate_proj.weight exists only for layer 0), so FirstKDense comes out 0
-		// from config alone and the loader's per-layer Router presence decides.
-		firstDense: 0, sliding: 512, globalAt0: true, globalAt1: false,
+		// XS.2 DROPS mlp_only_layers, but carries mlp_layer_types like every other
+		// release — so FirstKDense must come from that, not from mlp_only_layers.
+		// Reading only mlp_only_layers gives 0 here, which would make the loader treat
+		// XS.2's dense layer 0 as MoE and demand expert tensors that do not exist.
+		firstDense: 1, sliding: 512, globalAt0: true, globalAt1: false,
 		rotaryDim: 64, rotaryLoc: 128, yarnFactor: 64,
 	}, {
 		file: "m1.json", repo: "poolside/Laguna-M.1",
@@ -263,6 +264,7 @@ func TestLagunaFirstKDense_contiguousOnly(t *testing.T) {
 		wantErr bool
 	}{
 		{name: "absent", layers: nil, want: 0},
+		{name: "mlp_only_layers used when mlp_layer_types absent", layers: []int{0, 1}, want: 2},
 		{name: "XS [0]", layers: []int{0}, want: 1},
 		{name: "M.1 [0,1,2]", layers: []int{0, 1, 2}, want: 3},
 		{name: "unordered but contiguous", layers: []int{2, 0, 1}, want: 3},
@@ -284,6 +286,49 @@ func TestLagunaFirstKDense_contiguousOnly(t *testing.T) {
 			}
 			if got != tc.want {
 				t.Errorf("mlp_only_layers=%v → FirstKDense %d, want %d", tc.layers, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestLagunaFirstKDense_mlpLayerTypes pins the PREFERRED spelling. XS.2 ships
+// mlp_layer_types but NOT mlp_only_layers, so a reader that only knows the latter
+// returns FirstKDense=0 for it and the loader then treats XS.2's dense layer 0 as
+// MoE — demanding expert tensors the checkpoint does not contain. All three
+// released configs carry mlp_layer_types, so it wins whenever present.
+func TestLagunaFirstKDense_mlpLayerTypes(t *testing.T) {
+	dense, sparse := "dense", "sparse"
+	for _, tc := range []struct {
+		name    string
+		types   []string
+		only    []int
+		want    int
+		wantErr bool
+	}{
+		{name: "XS one dense prefix", types: []string{dense, sparse, sparse, sparse}, want: 1},
+		{name: "M.1 three dense prefix", types: []string{dense, dense, dense, sparse}, want: 3},
+		{name: "all sparse", types: []string{sparse, sparse, sparse, sparse}, want: 0},
+		// mlp_layer_types must WIN over a disagreeing mlp_only_layers, since it is the
+		// spelling every release carries.
+		{name: "beats disagreeing mlp_only_layers", types: []string{dense, sparse, sparse, sparse}, only: []int{0, 1, 2}, want: 1},
+		{name: "non-prefix dense rejected", types: []string{sparse, dense, sparse, sparse}, wantErr: true},
+		{name: "unknown kind rejected", types: []string{dense, "moe", sparse, sparse}, wantErr: true},
+		{name: "wrong length rejected", types: []string{dense, sparse}, wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := &Config{NumLayers: 4, MlpLayerTypes: tc.types, MlpOnlyLayers: tc.only}
+			got, err := cfg.lagunaFirstKDense()
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("mlp_layer_types=%v → %d, want an error", tc.types, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("mlp_layer_types=%v: %v", tc.types, err)
+			}
+			if got != tc.want {
+				t.Errorf("mlp_layer_types=%v → FirstKDense %d, want %d", tc.types, got, tc.want)
 			}
 		})
 	}
