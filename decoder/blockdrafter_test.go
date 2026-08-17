@@ -1,8 +1,6 @@
 package decoder
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 )
 
@@ -18,13 +16,7 @@ import (
 // So this cross-checks every field against the trunk's own state, and specifically requires that
 // DIFFERENT LAYERS RETURN DIFFERENT WEIGHTS, which is the assertion an index bug fails.
 func TestBlockDrafterWeights_matchesTrunk(t *testing.T) {
-	dir := os.Getenv("GOINFER_DFLASH_F32")
-	if dir == "" {
-		dir = filepath.Join(os.Getenv("HOME"), "models", "qwen3-4b-dflash-f32")
-	}
-	if _, err := os.Stat(filepath.Join(dir, "model.safetensors")); err != nil {
-		t.Skipf("no drafter weights at %s", dir)
-	}
+	dir := assetPath(t, "GOINFER_DFLASH_F32")
 	d, err := LoadDFlashDrafter(dir)
 	if err != nil {
 		t.Fatalf("LoadDFlashDrafter: %v", err)

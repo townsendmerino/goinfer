@@ -4,7 +4,6 @@ package cuda
 
 import (
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -141,13 +140,7 @@ func TestDFlashLoop_lossless(t *testing.T) {
 	if tgt == "" {
 		tgt = os.ExpandEnv("$HOME/models/qwen3-4b")
 	}
-	ddir := os.Getenv("GOINFER_DFLASH_F32")
-	if ddir == "" {
-		ddir = filepath.Join(os.Getenv("HOME"), "models", "qwen3-4b-dflash-f32")
-	}
-	if _, err := os.Stat(filepath.Join(ddir, "model.safetensors")); err != nil {
-		t.Skipf("no drafter at %s", ddir)
-	}
+	ddir := decoder.AssetPathForTest(t, "GOINFER_DFLASH_F32")
 	mc, err := decoder.Load(tgt, decoder.Options{Backend: "cuda", Quant: "int4"})
 	if err != nil {
 		t.Fatalf("load: %v", err)
@@ -227,13 +220,7 @@ func TestDFlashLoop_gate3(t *testing.T) {
 	if tgt == "" {
 		tgt = os.ExpandEnv("$HOME/models/qwen3-4b")
 	}
-	ddir := os.Getenv("GOINFER_DFLASH_F32")
-	if ddir == "" {
-		ddir = filepath.Join(os.Getenv("HOME"), "models", "qwen3-4b-dflash-f32")
-	}
-	if _, err := os.Stat(filepath.Join(ddir, "model.safetensors")); err != nil {
-		t.Skipf("no drafter at %s", ddir)
-	}
+	ddir := decoder.AssetPathForTest(t, "GOINFER_DFLASH_F32")
 	mc, err := decoder.Load(tgt, decoder.Options{Backend: "cuda", Quant: "int4"})
 	if err != nil {
 		t.Fatalf("load: %v", err)

@@ -313,7 +313,6 @@ type cudaResident struct {
 	dev                                                                                *Device
 	stream                                                                             Queue
 	gemvW4, gemvW8, ropeKV, fRms, fRmsF32, fQ, fAttn, fSw, fRes, fArg, fQKV, fGU, fQKN Pipeline
-	fAttnBlock                                                                         Pipeline // attn_block_full (drafter, non-causal)
 	// Batched (M=len) prefill pipelines (prefill_batched.ptx) — the weight-stationary path that fixes
 	// the ~128-token Ollama crossover. bGemv is the batched W4A8 GEMV; the rest are the M=1 glue
 	// kernels with an M dimension, each bit-identical per row. Loaded once at build (small module).
