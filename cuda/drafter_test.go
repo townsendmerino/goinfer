@@ -266,3 +266,95 @@ func TestResidentDrafter_extendContext(t *testing.T) {
 		t.Errorf("identical input rows produced identical K at positions 0 and 4 — RoPE is not being applied per position")
 	}
 }
+
+// TestResidentDrafter_blockParity is the gate on the whole resident trunk: the drafter's block
+// forward on device against the CPU implementation it was ported from.
+//
+// This is the one that matters. Every earlier gate covered one piece — fc fusion, context K/V,
+// the attention mask — and each could be right while the assembly is wrong: a norm applied with
+// the target's eps, the o-proj accumulating into the wrong buffer, the block written at the
+// wrong absolute position. Those all produce output of exactly the right shape.
+//
+// COSINE, because the device path quantizes activations to int8 at every GEMV where the CPU
+// trunk is f32 throughout — five layers of that, so the bar is looser than the single-projection
+// fusion gate (0.999) and this is the accumulation of the same arithmetic, not a different one.
+func TestResidentDrafter_blockParity(t *testing.T) {
+	requireHeavyModel(t)
+	tgt := os.Getenv("GOINFER_CUDA_MODEL")
+	if tgt == "" {
+		tgt = os.ExpandEnv("$HOME/models/qwen3-4b")
+	}
+	ddir := os.Getenv("GOINFER_DFLASH_F32")
+	if ddir == "" {
+		ddir = filepath.Join(os.Getenv("HOME"), "models", "qwen3-4b-dflash-f32")
+	}
+	if _, err := os.Stat(filepath.Join(ddir, "model.safetensors")); err != nil {
+		t.Skipf("no drafter at %s", ddir)
+	}
+	mc, err := decoder.Load(tgt, decoder.Options{Backend: "cuda", Quant: "int4"})
+	if err != nil {
+		t.Fatalf("load target: %v", err)
+	}
+	defer mc.Close()
+	r := mc.ResidentForwardForTest().(*cudaResident)
+	dr, err := decoder.LoadDFlashDrafter(ddir)
+	if err != nil {
+		t.Fatalf("load drafter: %v", err)
+	}
+	defer dr.Close()
+	rd, err := r.AttachDrafter(dr)
+	if err != nil {
+		t.Fatalf("AttachDrafter: %v", err)
+	}
+	geo := dr.DrafterGeometry()
+
+	const ctxN = 24
+	M := dr.BlockSize()
+	fused := make([][]float32, ctxN)
+	for i := range fused {
+		fused[i] = make([]float32, geo.Hidden)
+		for j := range fused[i] {
+			fused[i][j] = float32(math.Sin(float64(i*geo.Hidden+j) * 0.0017))
+		}
+	}
+	block := make([][]float32, M)
+	for i := range block {
+		block[i] = make([]float32, geo.Hidden)
+		for j := range block[i] {
+			block[i][j] = float32(math.Cos(float64(i*geo.Hidden+j) * 0.0023))
+		}
+	}
+
+	if err := rd.ExtendContext(fused); err != nil {
+		t.Fatalf("ExtendContext: %v", err)
+	}
+	got, err := rd.DraftBlock(block)
+	if err != nil {
+		t.Fatalf("DraftBlock: %v", err)
+	}
+	want, err := decoder.DraftBlockCPUForTest(dr, fused, block)
+	if err != nil {
+		t.Fatalf("CPU reference: %v", err)
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %d rows, want %d", len(got), len(want))
+	}
+	worst := 1.0
+	for i := range want {
+		var dot, na, nb float64
+		for j := range want[i] {
+			dot += float64(want[i][j]) * float64(got[i][j])
+			na += float64(want[i][j]) * float64(want[i][j])
+			nb += float64(got[i][j]) * float64(got[i][j])
+		}
+		cos := dot / (math.Sqrt(na)*math.Sqrt(nb) + 1e-30)
+		if cos < worst {
+			worst = cos
+		}
+		t.Logf("row %2d: cosine %.6f", i, cos)
+	}
+	t.Logf("worst row cosine %.6f over %d rows, ctx=%d, %d layers", worst, len(got), ctxN, geo.Layers)
+	if worst < 0.99 {
+		t.Errorf("worst cosine %.6f < 0.99 — the resident trunk does not reproduce the CPU trunk", worst)
+	}
+}

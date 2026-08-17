@@ -58,6 +58,9 @@ type residentDrafter struct {
 	ctxVB  Buffer
 	extIn  Buffer // ExtendContext's own upload buffer
 	extCap int    // rows the ExtendContext scratch covers
+
+	blk       blockScratch
+	attnBlock Pipeline // attn_block_full — bound HERE, where the consumer now exists
 }
 
 // drafterLayer is one trunk layer on the device. Same projections as a Qwen3 layer, which is why
@@ -96,6 +99,13 @@ func (r *cudaResident) AttachDrafter(w decoder.BlockDrafterWeights) (*residentDr
 		inv := make([]float32, len(geo.InvFreq))
 		for i, v := range geo.InvFreq {
 			inv[i] = float32(v)
+		}
+		bmod, e2 := r.dev.CompileLibrary(attnBlockPTX)
+		if e2 != nil {
+			return e2
+		}
+		if d.attnBlock, e2 = r.dev.NewComputePipeline(bmod, "attn_block_full"); e2 != nil {
+			return e2
 		}
 		d.invF = r.up32(inv)
 		d.rhalf = geo.HeadDim / 2 // full rotary: the drafter rotates every pair
@@ -319,3 +329,176 @@ func (d *residentDrafter) ExtendContext(fused [][]float32) error {
 
 // ContextLen is how many positions the drafter's K/V caches currently hold.
 func (d *residentDrafter) ContextLen() int { return d.ctxLen }
+
+// blockScratch is the per-block working set, sized to the widest block seen.
+type blockScratch struct {
+	cap                int
+	x                  Buffer // [M, hidden] the residual stream
+	aq, mq, cq, dq     Buffer // quantized activations for the four GEMV groups
+	aSc, mSc, cSc, dSc Buffer
+	q, k, v            Buffer
+	cctx               Buffer // attention output, [M, qDim]
+	g, u, dScr         Buffer
+}
+
+// DraftBlock runs the trunk over one block and returns its output rows.
+//
+// The block occupies absolute positions [ctxLen, ctxLen+M), directly after the context
+// ExtendContext wrote — so the attention sees ctx‖block exactly, with attn_block_full's uniform
+// nKeys giving every row all of it (the drafter's block is bidirectional; see attn_block.cu).
+//
+// Every kernel here is the target's own except that one. The drafter is five layers of the same
+// Qwen3 shape, which is the whole reason this is assembly rather than new numerics.
+//
+// THE NORM CONSTANTS ARE THE DRAFTER'S, NOT THE TARGET'S, everywhere. bRmsB/bNormF32B/the
+// prefill qk-norm all read r.eps and r.addOneArg(), and reusing them here would apply the
+// target's normalization to the drafter's weights — silent, plausible, and wrong. Each is
+// launched directly with the drafter's own eps and a plain (addOne=0) norm.
+func (d *residentDrafter) DraftBlock(blockIn [][]float32) ([][]float32, error) {
+	M := len(blockIn)
+	if M == 0 {
+		return nil, fmt.Errorf("cuda drafter: empty block")
+	}
+	geo := d.geo
+	hidden, hd, nH, nKV, inter := geo.Hidden, geo.HeadDim, geo.NumHeads, geo.NumKVHeads, geo.Intermediate
+	qDim, kvDim := nH*hd, nKV*hd
+	for i, row := range blockIn {
+		if len(row) != hidden {
+			return nil, fmt.Errorf("cuda drafter: block row %d is %d wide, want %d", i, len(row), hidden)
+		}
+	}
+	if d.ctxLen == 0 {
+		return nil, fmt.Errorf("cuda drafter: no context — call ExtendContext first")
+	}
+	if d.ctxLen+M > d.kvCap {
+		return nil, fmt.Errorf("cuda drafter: block at %d..%d exceeds K/V capacity %d", d.ctxLen, d.ctxLen+M, d.kvCap)
+	}
+	out := make([][]float32, M)
+	err := d.r.do(func() error {
+		s := &d.blk
+		if M > s.cap {
+			s.x = d.r.af(M * hidden)
+			s.aq, s.aSc = d.r.ai(M*(hidden/4)), d.r.af(M)
+			s.mq, s.mSc = d.r.ai(M*(hidden/4)), d.r.af(M)
+			s.cq, s.cSc = d.r.ai(M*(qDim/4)), d.r.af(M)
+			s.dq, s.dSc = d.r.ai(M*(inter/4)), d.r.af(M)
+			s.q, s.k, s.v = d.r.af(M*qDim), d.r.af(M*kvDim), d.r.af(M*kvDim)
+			s.cctx = d.r.af(M * qDim)
+			s.g, s.u, s.dScr = d.r.af(M*inter), d.r.af(M*inter), d.r.af(M*inter)
+			s.cap = M
+		}
+		flat := make([]float32, 0, M*hidden)
+		for _, row := range blockIn {
+			flat = append(flat, row...)
+		}
+		if e := gpu.Upload(s.x, flat); e != nil {
+			return e
+		}
+		eps := float32(geo.NormEps)
+		ropeN := nH*d.rhalf + nKV*d.rhalf + nKV*(hd-2*d.rhalf)
+		nKeys := d.ctxLen + M
+		for l := range d.layers {
+			L := &d.layers[l]
+			// input_layernorm: the BLOCK only (the context was projected raw).
+			if e := d.r.launch(d.r.bRms, LaunchConfig{GridX: uint32(M), GridY: 1, GridZ: 1,
+				BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((256 + hidden) * 4)},
+				Arg(s.x), Arg(L.inputNorm), gpu.ArgValue(int32(hidden)), gpu.ArgValue(eps),
+				gpu.ArgValue(int32(0)), Arg(s.aq), Arg(s.aSc)); e != nil {
+				return e
+			}
+			if e := d.r.bGemvB(L.q, s.aq, s.aSc, ArgNull(), s.q, M, 0); e != nil {
+				return e
+			}
+			if e := d.r.bGemvB(L.k, s.aq, s.aSc, ArgNull(), s.k, M, 0); e != nil {
+				return e
+			}
+			if e := d.r.bGemvB(L.v, s.aq, s.aSc, ArgNull(), s.v, M, 0); e != nil {
+				return e
+			}
+			if L.kNorm.Len() > 0 {
+				if e := d.r.launch(d.r.bQKN, LaunchConfig{GridX: uint32(nH + nKV), GridY: uint32(M), GridZ: 1,
+					BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: 128 * 8},
+					Arg(s.q), Arg(s.k), Arg(L.qNorm), Arg(L.kNorm),
+					gpu.ArgValue(int32(nH)), gpu.ArgValue(int32(nKV)), gpu.ArgValue(int32(hd)),
+					gpu.ArgValue(eps), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(M))); e != nil {
+					return e
+				}
+			}
+			// rope at the block's absolute positions, and write its K/V after the context's.
+			if e := d.r.launch(d.r.bRopeKV, LaunchConfig{GridX: uint32((ropeN + 255) / 256), GridY: uint32(M), GridZ: 1,
+				BlockX: 256, BlockY: 1, BlockZ: 1},
+				Arg(s.q), Arg(s.k), Arg(s.v), Arg(d.invF), Arg(d.kc[l]), Arg(d.vc[l]),
+				gpu.ArgValue(int32(nH)), gpu.ArgValue(int32(nKV)), gpu.ArgValue(int32(hd)),
+				gpu.ArgValue(int32(d.ctxLen)), gpu.ArgValue(int32(d.rhalf)), gpu.ArgValue(int32(M))); e != nil {
+				return e
+			}
+			// THE one kernel that is not the target's: uniform nKeys, so every block row
+			// attends the whole context AND the whole block.
+			if e := d.r.launch(d.attnBlock, LaunchConfig{GridX: uint32(nH), GridY: uint32(M), GridZ: 1,
+				BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nKeys + 128) * 4)},
+				Arg(s.q), Arg(d.kc[l]), Arg(d.vc[l]),
+				gpu.ArgValue(int32(nH)), gpu.ArgValue(int32(nKV)), gpu.ArgValue(int32(hd)),
+				gpu.ArgValue(int32(d.ctxLen)), gpu.ArgValue(d.r.attnScale),
+				gpu.ArgValue(int32(0)), gpu.ArgValue(int32(M)), Arg(s.cctx)); e != nil {
+				return e
+			}
+			if e := d.r.launch(d.r.bQuant, LaunchConfig{GridX: uint32(M), GridY: 1, GridZ: 1,
+				BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
+				Arg(s.cctx), gpu.ArgValue(int32(qDim)), Arg(s.cq), Arg(s.cSc), gpu.ArgValue(int32(M))); e != nil {
+				return e
+			}
+			// o-proj accumulates straight into the residual (accum=1) — no sandwich norm here.
+			if e := d.r.bGemvB(L.o, s.cq, s.cSc, ArgNull(), s.x, M, 1); e != nil {
+				return e
+			}
+			// post_attention_layernorm → SwiGLU MLP → residual.
+			if e := d.r.launch(d.r.bRms, LaunchConfig{GridX: uint32(M), GridY: 1, GridZ: 1,
+				BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((256 + hidden) * 4)},
+				Arg(s.x), Arg(L.postAttnNorm), gpu.ArgValue(int32(hidden)), gpu.ArgValue(eps),
+				gpu.ArgValue(int32(0)), Arg(s.mq), Arg(s.mSc)); e != nil {
+				return e
+			}
+			if e := d.r.bGemvB(L.gate, s.mq, s.mSc, ArgNull(), s.g, M, 0); e != nil {
+				return e
+			}
+			if e := d.r.bGemvB(L.up, s.mq, s.mSc, ArgNull(), s.u, M, 0); e != nil {
+				return e
+			}
+			// act=1 is SiLU (ACT_SILU in prefill_batched.cu). Passed literally rather than
+			// r.act: that is the TARGET's activation, and a Gemma target would hand a GELU-tanh
+			// to a SwiGLU drafter — the FeatGatedGELU class of bug, silently.
+			if e := d.r.launch(d.r.bSw, LaunchConfig{GridX: uint32(M), GridY: 1, GridZ: 1,
+				BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
+				Arg(s.g), Arg(s.u), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(0)),
+				gpu.ArgValue(int32(inter)), gpu.ArgValue(int32(1)),
+				Arg(s.dq), Arg(s.dSc), Arg(s.dScr), gpu.ArgValue(int32(M))); e != nil {
+				return e
+			}
+			if e := d.r.bGemvB(L.down, s.dq, s.dSc, ArgNull(), s.x, M, 1); e != nil {
+				return e
+			}
+		}
+		// final RMSNorm over the block rows, in place.
+		if e := d.r.launch(d.r.bNormF32, LaunchConfig{GridX: 1, GridY: uint32(M), GridZ: 1,
+			BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
+			Arg(s.x), Arg(d.finalNorm), gpu.ArgValue(int32(hidden)), gpu.ArgValue(eps),
+			gpu.ArgValue(int32(0)), gpu.ArgValue(int32(M))); e != nil {
+			return e
+		}
+		if e := d.r.stream.Sync(); e != nil {
+			return e
+		}
+		host := make([]float32, M*hidden)
+		if e := gpu.Download(s.x, host); e != nil {
+			return e
+		}
+		for i := 0; i < M; i++ {
+			out[i] = append([]float32(nil), host[i*hidden:(i+1)*hidden]...)
+		}
+		return d.r.launchErr
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}

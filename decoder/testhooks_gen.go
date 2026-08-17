@@ -6,7 +6,11 @@
 
 package decoder
 
-import "github.com/townsendmerino/aikit/linalg"
+import (
+	"fmt"
+
+	"github.com/townsendmerino/aikit/linalg"
+)
 
 // FinalNormForTest applies the model's final normalization to a copy of h — the CPU reference
 // for the last step of a resident bisect (the seam between the trunk and the LM head, where the
@@ -191,3 +195,29 @@ func SetSSMForceF32(v bool) { ssmForceF32 = v }
 // SetMambaCapHook installs/clears the capture hook (the gpu package can't import decoder-internal
 // state directly, so it drives this via the export, like SetSSMQ8CPU).
 func SetMambaCapHook(f func(proj, gated []float32)) { mambaCapHook = f }
+
+// DraftBlockCPUForTest runs a block drafter's trunk on the CPU backend, for a GPU backend's
+// parity gate. The trunk's own DraftBlock takes a Backend, and cpuBackend is unexported — so a
+// backend package (cuda/metal/gpu) cannot drive the reference implementation it must match
+// without this. Test-hook-gated for the same reason the rest of this file is: it is a seam for
+// gates, not API.
+func DraftBlockCPUForTest(d BlockDrafterWeights, fused, blockIn [][]float32) ([][]float32, error) {
+	t, ok := d.(interface {
+		DraftBlock(Backend, [][]float32, [][]float32) ([][]float32, error)
+	})
+	if !ok {
+		return nil, fmt.Errorf("decoder: %T has no DraftBlock", d)
+	}
+	return t.DraftBlock(&cpuBackend{}, fused, blockIn)
+}
+
+// FuseContextCPUForTest is the same seam for the fusion step.
+func FuseContextCPUForTest(d BlockDrafterWeights, ctxCat [][]float32) ([][]float32, error) {
+	t, ok := d.(interface {
+		FuseContext(Backend, [][]float32) ([][]float32, error)
+	})
+	if !ok {
+		return nil, fmt.Errorf("decoder: %T has no FuseContext", d)
+	}
+	return t.FuseContext(&cpuBackend{}, ctxCat)
+}
