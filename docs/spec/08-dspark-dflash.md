@@ -2051,3 +2051,47 @@ logits would need a batched argmax kernel or M single-row buffers. That is worth
 (~+0.04× on code) and it is a separate, small kernel — the ~6.4 ms of head weight-reads was the
 win worth chasing first, and the host argmax rides along inside the measured `batched` column
 above.
+
+### BUILT: `attn_block_full`, and the stand-in it validates
+
+The one primitive increment 4 needs that did not exist. `attn_batched` masks row m at
+`nKeys = startPos+m+1`; the drafter's block is bidirectional, so `attn_block_full` is a **verbatim
+copy with one line changed** — `nKeys = startPos+M` for every row. With context at cache positions
+`[0, startPos)` and the block's K/V at `[startPos, startPos+M)`, that is exactly `ctx‖block`.
+
+Its own `.cu`/`.ptx`, following this repo's isolation pattern (`argmax_reduce` out of `glue.ptx`,
+`router_f32` out of `moe.ptx`): adding a kernel to `prefill_batched.cu` would regenerate that PTX
+and risk shifting codegen for kernels every batched-prefill gate rests on. **Verified byte-unchanged
+by md5** after `./build_ptx.sh attn_block`.
+
+**The gate needs no CPU reference and cannot pass by accident.** At m = M−1 the causal bound
+`startPos+(M-1)+1` *equals* the non-causal `startPos+M`, so the two kernels see identical keys
+there and must agree bit-for-bit — **256/256 values identical**, which proves the copy changed
+nothing but the mask. And **every earlier row differs**, which proves the mask actually widened;
+without that second check, a kernel that silently kept the causal bound would pass the first.
+
+**It also closes the last substitution in the gate-3 composition.** The round measurement stood in
+for the drafter with the target's stack truncated to 5 layers — right shape and weights, but
+*causal* attention. Non-causal is strictly more work, so the stand-in could only have understated
+the draft. Measured at the drafter's real geometry:
+
+| ctx | nKeys | causal | non-causal | delta | over 5 layers |
+|---|---|---|---|---|---|
+| 256 | 272 | 0.1760 ms | 0.1790 ms | +2% | +0.015 ms |
+| 1024 | 1040 | 0.7170 ms | 0.7210 ms | +1% | **+0.020 ms** |
+
+**+0.020 ms on an 8.82 ms draft — 0.2%.** Mechanically unsurprising: at M=16 over ~1040 keys,
+causal row m already sees 1025+m, so the extra is ~7.5 keys out of ~1032. **The stand-in was
+representative, and the 8.82 ms draft stands.**
+
+So every element of the gate-3 projection is now measured directly or measured through a
+substitution proven to cost under 0.3%. **The standing figures are code 1.55× / math 1.99× at
+k=7/8**, with only the end-to-end composition of a not-yet-built serving path unmeasured.
+
+**Two lints caught real defects in this work and both were fixed rather than exempted:**
+`attn_block.cu` had to join `lintedKernels` (it is bit-identity contracted — that is its entire
+purpose, and shipping contracted PTX outside the FMA lint is audit C-16), and the pipeline lint
+flagged the new field as **bound-and-dead** — correctly, since it was NVRTC-compiled into every
+model load with no production consumer, which is `gemv_w4a8_batched`'s exact documented history.
+The binding and field are removed; the gate compiles the module on demand, and the drafter path
+will bind it when it exists.

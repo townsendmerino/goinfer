@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"testing"
+	"time"
 
 	gpu "github.com/townsendmerino/aikit/gpu"
 	"github.com/townsendmerino/goinfer/decoder"
@@ -153,4 +154,104 @@ func TestAttnBlockFull_nonCausal(t *testing.T) {
 		}
 	}
 	t.Logf("rows 0..%d all differ from causal — every block row now attends all %d keys", last-1, nKeys)
+}
+
+// TestAttnBlockFull_cost closes the last substitution in the gate-3 composition.
+//
+// The round-composition measurement stood in for the drafter with the target's stack truncated
+// to 5 layers — right shape, right weights-per-layer, but its attention is CAUSAL where the
+// drafter's is non-causal. Every row attending ALL keys is strictly more work than row m
+// attending m+1 of them, so the stand-in could only have UNDERSTATED the draft.
+//
+// This times both kernels at the drafter's real geometry, which is the only remaining way the
+// 8.82 ms draft could be wrong in the optimistic direction.
+//
+//	GOINFER_HEAVY_TESTS=1 GOINFER_CUDA_MODEL=$HOME/models/qwen3-4b \
+//	  go test -tags 'cuda goinfer_testhooks' -run TestAttnBlockFull_cost -v
+func TestAttnBlockFull_cost(t *testing.T) {
+	requireHeavyModel(t)
+	path := os.Getenv("GOINFER_CUDA_MODEL")
+	if path == "" {
+		path = os.ExpandEnv("$HOME/models/qwen3-4b")
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Skipf("no model at %s", path)
+	}
+	mc, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "int4"})
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	defer mc.Close()
+	r, ok := mc.ResidentForwardForTest().(*cudaResident)
+	if !ok {
+		t.Fatal("resident did not engage")
+	}
+	// Qwen3-4B's real per-layer attention geometry, which the drafter shares exactly.
+	nH := r.nH
+	nKV, hd := r.layers[0].nKV, r.layers[0].hd // per-layer geometry; the drafter shares layer 0's
+	const M = 16
+	for _, ctxLen := range []int{256, 1024} {
+		nKeys := ctxLen + M
+		qDim, kvDim := nH*hd, nKV*hd
+		q := make([]float32, M*qDim)
+		kc := make([]float32, nKeys*kvDim)
+		for i := range q {
+			q[i] = float32(math.Sin(float64(i) * 0.37))
+		}
+		for i := range kc {
+			kc[i] = float32(math.Cos(float64(i) * 0.21))
+		}
+		var causalMs, fullMs float64
+		err = r.do(func() error {
+			qb, kb, vb := r.af(len(q)), r.af(len(kc)), r.af(len(kc))
+			out := r.af(M * qDim)
+			if e := gpu.Upload(qb, q); e != nil {
+				return e
+			}
+			if e := gpu.Upload(kb, kc); e != nil {
+				return e
+			}
+			if e := gpu.Upload(vb, kc); e != nil {
+				return e
+			}
+			bmod, e := r.dev.CompileLibrary(attnBlockPTX)
+			if e != nil {
+				return e
+			}
+			pipe, e := r.dev.NewComputePipeline(bmod, "attn_block_full")
+			if e != nil {
+				return e
+			}
+			cfg := LaunchConfig{GridX: uint32(nH), GridY: M, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1,
+				SharedMemBytes: uint32((nKeys + 128) * 4)}
+			args := []gpu.KernelArg{Arg(qb), Arg(kb), Arg(vb),
+				gpu.ArgValue(int32(nH)), gpu.ArgValue(int32(nKV)), gpu.ArgValue(int32(hd)),
+				gpu.ArgValue(int32(ctxLen)), gpu.ArgValue(r.attnScale),
+				gpu.ArgValue(int32(0)), gpu.ArgValue(int32(M)), Arg(out)}
+			best := func(p Pipeline) float64 {
+				b := math.MaxFloat64
+				for range 20 {
+					t0 := time.Now()
+					if e := r.launch(p, cfg, args...); e != nil {
+						return -1
+					}
+					if e := r.stream.Sync(); e != nil {
+						return -1
+					}
+					if d := float64(time.Since(t0).Microseconds()) / 1000; d < b {
+						b = d
+					}
+				}
+				return b
+			}
+			causalMs, fullMs = best(r.bAttn), best(pipe)
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("ctx=%d: %v", ctxLen, err)
+		}
+		t.Logf("ctx=%4d nKeys=%4d M=%d: causal %.4f ms | NON-CAUSAL %.4f ms | %+.4f ms (%.0f%%) per layer",
+			ctxLen, nKeys, M, causalMs, fullMs, fullMs-causalMs, 100*(fullMs-causalMs)/causalMs)
+		t.Logf("   over 5 drafter layers: %+.3f ms on the 8.82 ms draft", 5*(fullMs-causalMs))
+	}
 }
