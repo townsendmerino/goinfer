@@ -33,12 +33,12 @@ pattern; the serve/chat/constrain/tooling surface inherits automatically.
 
 ## What already exists to build on
 
-- **VL config flattening** — `decoder/config.go:912` decodes `text_config` (the nested
+- **VL config flattening** — `decoder/config.go:932` decodes `text_config` (the nested
   text-decoder dims of a `*ForConditionalGeneration`), so VL `config.json`s
   already parse.
 - **Text decoders at parity** for the natural first targets: `gemma3`, `qwen2`,
   `qwen3_5_moe` (the Qwen3.6-VL text side is already loaded, ignoring
-  `model.visual.*` / MTP — `decoder/weights.go:344`).
+  `model.visual.*` / MTP — `decoder/weights.go:355`).
 - **m-RoPE stubs** — `decoder/gguf_qwen35.go:77` already notes the image/video mrope
   sections (currently unused).
 - **Serve content-array parsing** — `contentText`/`responseInputToMessages`

@@ -1362,7 +1362,7 @@ These require editing parity-manifest "core"/hashed `decoder/` files (`model.go`
 `attention.go`, `mlp.go`, `weightmat.go`), which re-stales every family's `deps_hash`. Held under the
 pre-1.0 core-numerics freeze; **batch them when v1.0 lands so the manifest re-validates once.** All are
 bit-identity-preserving (pure buffer/traffic reuse).
-- **KV re-gather / V re-transpose every token (the big one).** `decoder/forwardn.go:378` (`attendBatchedHeads`)
+- **KV re-gather / V re-transpose every token (the big one).** `decoder/forwardn.go:381` (`attendBatchedHeads`)
   re-gathers the whole K history and re-transposes all of V into scratch each decode token (~2-3× the
   intrinsic KV traffic; ~10-15% of per-token traffic at 4k+ ctx, all mainstream CPU families). Needs a
   row-pitch arg on aikit `MatmulBTAcc64` + a per-layer persistent transposed-V cache layout. Highest
