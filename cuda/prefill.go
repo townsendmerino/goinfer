@@ -76,7 +76,7 @@ func (r *cudaResident) profToc(cat profCat, t0 time.Time) {
 // layer 0; a non-uniform family trips the guard and declines rather than reading a wrong stride.
 // PrefillLast ingests a whole prompt in one batched pass, returning the last token's logits.
 func (r *cudaResident) PrefillLast(embeddings [][]float32, startPos int) ([]float32, error) {
-	outs, err := r.prefillCore(embeddings, startPos, false)
+	outs, _, err := r.prefillCore(embeddings, startPos, tailLastLogits)
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +89,26 @@ func (r *cudaResident) PrefillLast(embeddings [][]float32, startPos int) ([]floa
 // final norm + LM head is applied per row exactly as PrefillLast applies it to the last — so each
 // row's logits equal a sequential Forward's, which is what makes greedy accept lossless.
 func (r *cudaResident) PrefillLastN(embeddings [][]float32, startPos int) ([][]float32, error) {
-	return r.prefillCore(embeddings, startPos, true)
+	outs, _, err := r.prefillCore(embeddings, startPos, tailAllLogits)
+	return outs, err
+}
+
+// PrefillLastNArgmax is the spec-decode VERIFY primitive: the same batched pass, returning only
+// each row's argmax token id — which is all the accept decision needs.
+//
+// It exists because PrefillLastN's per-row tail re-reads the LM head's weights ONCE PER ROW
+// (~389 M params, ~195 MB at int4), measured at 1.046 ms marginal per row against a 0.934 ms
+// single-row head — no amortization at all, in the one place the batched pass exists to provide
+// it. This tail instead runs ONE batched final-norm, ONE batched head GEMV over all M rows, and M
+// argmax reductions, then reads back 4 bytes per row instead of 608 KB.
+//
+// LOSSLESSNESS: the accept decision compares the drafted token against the target's argmax, so
+// only the ARGMAX must match the sequential path — not the logits bit-for-bit. That is a strictly
+// weaker requirement than PrefillLastN's, and it is what makes batching the head admissible at
+// all. TestPrefillLastNArgmax_matchesPerRow gates it.
+func (r *cudaResident) PrefillLastNArgmax(embeddings [][]float32, startPos int) ([]int, error) {
+	_, ids, err := r.prefillCore(embeddings, startPos, tailAllArgmax)
+	return ids, err
 }
 
 // prefillStaticDecline reports why the batched path can't run for THIS model, or nil when it can. It
@@ -167,22 +186,30 @@ func (r *cudaResident) PrefillPath() (bool, string) {
 
 // prefillCore runs the batched (M=len) forward. allLogits=false heads only the last row (PrefillLast);
 // allLogits=true heads every row (PrefillLastN, spec-decode verify).
-func (r *cudaResident) prefillCore(embeddings [][]float32, startPos int, allLogits bool) ([][]float32, error) {
+// prefill tail modes: what the batched pass does after the layer stack.
+const (
+	tailLastLogits = iota // head the LAST row only (PrefillLast)
+	tailAllLogits         // head every row, per-row loop, full logits (PrefillLastN)
+	tailAllArgmax         // batched head over all rows, return argmax ids (PrefillLastNArgmax)
+)
+
+func (r *cudaResident) prefillCore(embeddings [][]float32, startPos int, tail int) ([][]float32, []int, error) {
 	M := len(embeddings)
 	if M == 0 {
-		return nil, fmt.Errorf("cuda prefill: empty prompt")
+		return nil, nil, fmt.Errorf("cuda prefill: empty prompt")
 	}
 	if e := r.prefillStaticDecline(); e != nil {
-		return nil, e
+		return nil, nil, e
 	}
 	if e := r.checkCap(startPos, M); e != nil {
-		return nil, e
+		return nil, nil, e
 	}
 	L0 := &r.layers[0]
 	hd, nKV, qDim, kvDim, rhalf := L0.hd, L0.nKV, L0.qDim, L0.kvDim, L0.rhalf
 	hidden, inter := r.hidden, r.inter
 
 	var outs [][]float32
+	var ids []int
 	err := r.do(func() error {
 		r.launchErr = nil // N-04: clear the sticky accumulator first (like launchToken), so a prior
 		// decode's discarded launch error isn't re-reported by this prefill.
@@ -371,8 +398,11 @@ func (r *cudaResident) prefillCore(embeddings [][]float32, startPos int, allLogi
 		if e := gpu.Download(xB, xhost); e != nil {
 			return e
 		}
+		if tail == tailAllArgmax {
+			return r.batchedHeadArgmax(xB, aqB, aScB, M, &ids)
+		}
 		first := M - 1
-		if allLogits {
+		if tail == tailAllLogits {
 			first = 0
 		}
 		outs = make([][]float32, M)
@@ -405,16 +435,69 @@ func (r *cudaResident) prefillCore(embeddings [][]float32, startPos int, allLogi
 		// ~9×-slower sequential path. Errors that are already declines (static guards, checkCap) keep
 		// their own wrapping.
 		if strings.Contains(err.Error(), "device allocation failed") && !errors.Is(err, errPrefillDeclined) {
-			return nil, fmt.Errorf("cuda prefill: out of device memory for M=%d scratch (%w): %v", M, errPrefillDeclined, err)
+			return nil, nil, fmt.Errorf("cuda prefill: out of device memory for M=%d scratch (%w): %v", M, errPrefillDeclined, err)
 		}
-		return nil, err
+		return nil, nil, err
 	}
 	// Final-logit softcap (Gemma) — host-side, exactly as step(). No-op (0) for the dense families
 	// this path serves, but kept so the contract matches Forward if a softcapped dense arch appears.
 	for _, out := range outs {
 		applySoftcap(out, r.finalSoftcap)
 	}
-	return outs, nil
+	return outs, ids, nil
+}
+
+// batchedHeadArgmax is tailAllArgmax's tail: ONE batched final-norm, ONE batched head GEMV over
+// all M rows, M argmax reductions, then a 4-bytes-per-row readback.
+//
+// The win it exists for: the per-row tail issues the head as an M=1 GEMV per row, so the head's
+// ~389 M parameters are re-read from VRAM M times. Measured, that marginal row costs 1.046 ms
+// against a 0.934 ms single-row head — no amortization whatsoever, in the one place the batched
+// pass exists to provide it.
+//
+// Buffers are allocated lazily HERE because af/ai need r.dev's context current, which holds on
+// the executor thread this runs on. They are sized to M and reused; a wider block reallocates
+// once. The old buffers are left to the device ledger rather than freed mid-job, which is the
+// same lifetime the rest of the resident scratch has.
+func (r *cudaResident) batchedHeadArgmax(xB, aqB, aScB Buffer, M int, out *[]int) error {
+	if M > r.logitsBCap {
+		r.logitsB = r.af(M * r.vocab)
+		r.logitsBCap = M
+	}
+	// Batched final norm + quant over all M rows, exactly as the layer loop norms its input.
+	if e := r.bRmsB(xB, r.finalNorm, r.hidden, aqB, aScB, M); e != nil {
+		return e
+	}
+	// ONE head GEMV for all M rows: the weights are read once instead of M times.
+	if e := r.bGemvB(r.lmW, aqB, aScB, ArgNull(), r.logitsB, M, 0); e != nil {
+		return e
+	}
+	// The argmax is taken on the HOST, not by M launches of argmax_reduce over slices of the
+	// batched logits. gocudrv exposes no buffer view or offset (the same limitation noted for the
+	// SwiGLU halves at resident.go), so a per-row reduction would need either a batched argmax
+	// kernel or M single-row buffers. Neither is worth it here: the win being chased is the M
+	// weight READS of a 195 MB head, and a host argmax over M x vocab costs ~1.1 ms against the
+	// ~6.4 ms that recovers. A batched argmax kernel is a later, separate ~1 ms.
+	if e := r.stream.Sync(); e != nil {
+		return e
+	}
+	host := make([]float32, M*r.vocab)
+	if e := gpu.Download(r.logitsB, host); e != nil {
+		return e
+	}
+	ids := make([]int, M)
+	for m := 0; m < M; m++ {
+		row := host[m*r.vocab : (m+1)*r.vocab]
+		bi, bv := 0, row[0]
+		for i, v := range row {
+			if v > bv {
+				bi, bv = i, v
+			}
+		}
+		ids[m] = bi
+	}
+	*out = ids
+	return r.launchErr
 }
 
 // bRmsB launches rmsnorm_quant_batched over M rows (shared = [blockDim]+[hidden]).

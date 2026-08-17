@@ -364,7 +364,12 @@ type cudaResident struct {
 	// without an extra copy. Reused across calls (decode consumes each before the next).
 	logitsPinned *HostBuffer[float32]
 	logitsHost   []float32 // zero-copy view of logitsPinned
-	setupErr     error     // first alloc/upload error during BuildResident's setup job
+	// Batched-head verify scratch (PrefillLastNArgmax). Allocated lazily INSIDE the executor
+	// job — af/ai require r.dev's context current — and reused across rounds. logitsBCap is the
+	// row count the current allocation covers; a wider block reallocates once and then holds.
+	logitsB    Buffer
+	logitsBCap int
+	setupErr   error // first alloc/upload error during BuildResident's setup job
 	// A1 instrument, RECORDING ONLY — never read by production logic. Free device VRAM immediately
 	// before and after allocSlots in the SAME process, so consumption is measured without the
 	// cross-run assumption the earlier sweep depended on.
@@ -1012,7 +1017,7 @@ func (r *cudaResident) ForwardN(embeddings [][]float32, startPos int) ([][]float
 	// doesn't cover (MoE / K=V / non-int4 / non-uniform geometry) — errPrefillDeclined only; a real
 	// compute error propagates. spec verify runs M≤9, so batched allocation is tiny (no OOM concern).
 	if r.prefillReady {
-		if outs, err := r.prefillCore(embeddings, startPos, true); err == nil {
+		if outs, _, err := r.prefillCore(embeddings, startPos, tailAllLogits); err == nil {
 			return outs, nil
 		} else if !errors.Is(err, errPrefillDeclined) {
 			return nil, err

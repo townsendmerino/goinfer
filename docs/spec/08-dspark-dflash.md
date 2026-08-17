@@ -2008,3 +2008,46 @@ same residuals and require identical argmax at every position, which is a strong
 check than bit-identical logits, since only the argmax feeds the accept decision. **A batched
 head whose LOGITS differ in the last ulp but whose ARGMAXES never differ is sufficient**, and
 that distinction is what makes this tractable at all.
+
+### BUILT: `PrefillLastNArgmax` — the batched head, gated on argmax equality
+
+Implemented as a **new, additive** verify primitive. `PrefillLast` and `PrefillLastN` are
+untouched; `prefillCore` gained a tail mode. The new tail runs ONE batched final-norm, ONE
+batched head GEMV over all M rows (reusing the layer loop's own `gemv_w4a8_batched`), then one
+download and a host argmax — returning only the token ids, which is all the accept decision reads.
+
+**The lossless gate is argmax equality, not bit-identity** (`TestPrefillLastNArgmax_matchesPerRow`):
+
+> M = 2, 4, 7, 8, 16 — **every argmax identical** to the per-row path.
+
+That weaker bar is what makes batching the head admissible at all. The head's output feeds only
+the accept comparison, so a last-ulp difference in logits is harmless; the layer matmuls could
+never use this bar, because their output feeds the residual forward and any divergence compounds.
+
+**Measured (4B int4, depth 1024):**
+
+| k | `PrefillLast` | `PrefillLastN` | **batched** | saved |
+|---|---|---|---|---|
+| 4 | 17.69 | 21.21 | **19.10** | 2.12 |
+| 7 | 24.13 | 31.30 | **26.44** | 4.86 |
+| 8 | 26.39 | 34.82 | **29.44** | 5.38 |
+| 16 | 46.71 | 64.70 | **56.06** | 8.64 |
+
+**Re-derived projection:**
+
+| suite | k | per-row head | **batched head** |
+|---|---|---|---|
+| **math** | 8 | 1.70× | **1.99×** |
+| **code** | 7 | 1.33× | **1.55×** |
+| chat | 4 | 0.73× | 0.80× |
+
+**Code goes from clearing its bar by 2% to clearing by 19%; math approaches 2×.** The batched
+head recovers most — not all — of what measuring the assumptions cost: the chain now reads
+1.74× (all modelled) → 1.33× (all measured) → **1.55× (measured, with the head batched)**.
+
+**Remaining on the table, deliberately not taken:** the argmax is still on the host, because
+gocudrv exposes no buffer view or offset, so a per-row `argmax_reduce` over slices of the batched
+logits would need a batched argmax kernel or M single-row buffers. That is worth ~1.1 ms/round
+(~+0.04× on code) and it is a separate, small kernel — the ~6.4 ms of head weight-reads was the
+win worth chasing first, and the host argmax rides along inside the measured `batched` column
+above.

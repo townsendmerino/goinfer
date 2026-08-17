@@ -516,13 +516,88 @@ func TestDFlashVerifyHeadCost(t *testing.T) {
 		return float64(b.Microseconds()) / 1000
 	}
 	const W, C = 8.77, 2.35
-	t.Logf("%3s | %10s %10s | %8s | %10s", "k", "Last(1 hd)", "LastN(k hd)", "extra", "curve W+Ck")
+	t.Logf("%3s | %10s %10s %10s | %10s %9s", "k", "Last(1hd)", "LastN(khd)", "BATCHED", "curve W+Ck", "saved")
 	for _, k := range []int{4, 6, 7, 8, 10, 12, 16} {
 		rows := mkrows(k)
 		one := best(func() error { _, e := r.PrefillLast(rows, depth); return e })
 		all := best(func() error { _, e := r.PrefillLastN(rows, depth); return e })
-		t.Logf("%3d | %10.2f %10.2f | %8.2f | %10.2f", k, one, all, all-one, W+C*float64(k))
+		bat := best(func() error { _, e := r.PrefillLastNArgmax(rows, depth); return e })
+		t.Logf("%3d | %10.2f %10.2f %10.2f | %10.2f %8.2f", k, one, all, bat, W+C*float64(k), all-bat)
 	}
 	t.Logf("")
-	t.Logf("the projection used W+Ck (one head). The loop needs LastN (k heads).")
+	t.Logf("BATCHED = PrefillLastNArgmax: one head GEMV for all k rows + host argmax.")
+}
+
+// TestPrefillLastNArgmax_matchesPerRow is the lossless gate on the batched head.
+//
+// The batched path runs ONE head GEMV over all M rows where PrefillLastN runs M single-row
+// GEMVs. A batched accumulation can differ in the last ulp, so this does NOT require identical
+// logits — it requires identical ARGMAX at every position, which is the only thing the accept
+// decision reads. That weaker bar is exactly what makes batching the head admissible; the layer
+// matmuls could not use it, because their output feeds the residual forward.
+//
+//	GOINFER_HEAVY_TESTS=1 GOINFER_CUDA_MODEL=$HOME/models/qwen3-4b \
+//	  go test -tags 'cuda goinfer_testhooks' -run TestPrefillLastNArgmax -v
+func TestPrefillLastNArgmax_matchesPerRow(t *testing.T) {
+	requireHeavyModel(t)
+	path := os.Getenv("GOINFER_CUDA_MODEL")
+	if path == "" {
+		path = os.ExpandEnv("$HOME/models/qwen3-4b")
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Skipf("no model at %s", path)
+	}
+	mc, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "int4"})
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	defer mc.Close()
+	r, ok := mc.ResidentForwardForTest().(*cudaResident)
+	if !ok {
+		t.Fatal("resident did not engage")
+	}
+	_, _, _, _, _, _, vocab := mc.Dims()
+	const depth = 1024
+	warm := make([][]float32, depth)
+	for i := range warm {
+		warm[i] = mc.EmbedResidentForTest((i*2654435761 + 1) % (vocab - 1))
+	}
+	if _, e := r.PrefillLast(warm, 0); e != nil {
+		t.Fatalf("warm: %v", e)
+	}
+	for _, M := range []int{2, 4, 7, 8, 16} {
+		rows := make([][]float32, M)
+		for i := range rows {
+			rows[i] = mc.EmbedResidentForTest((i*7919 + 13) % (vocab - 1))
+		}
+		perRow, e := r.PrefillLastN(rows, depth)
+		if e != nil {
+			t.Fatalf("M=%d PrefillLastN: %v", M, e)
+		}
+		batched, e := r.PrefillLastNArgmax(rows, depth)
+		if e != nil {
+			t.Fatalf("M=%d PrefillLastNArgmax: %v", M, e)
+		}
+		if len(batched) != M {
+			t.Fatalf("M=%d: got %d ids", M, len(batched))
+		}
+		bad := 0
+		for m, lg := range perRow {
+			bi, bv := 0, lg[0]
+			for i, v := range lg {
+				if v > bv {
+					bi, bv = i, v
+				}
+			}
+			if batched[m] != bi {
+				bad++
+				if bad <= 3 {
+					t.Errorf("M=%d row %d: batched argmax %d, per-row %d", M, m, batched[m], bi)
+				}
+			}
+		}
+		if bad == 0 {
+			t.Logf("M=%2d: %d/%d argmaxes identical", M, M, M)
+		}
+	}
 }
