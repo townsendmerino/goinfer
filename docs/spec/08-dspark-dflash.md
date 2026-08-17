@@ -1604,6 +1604,40 @@ that skipping would give, so a mispredicted fire costs 8% rather than 55%.
 acceptance with the measured verify curve and draft cost on one target and one GPU. Gate 3 should
 be run per-suite at these widths.
 
+### The second pairing CORRECTS the front-loading claim — and the practical answer improves
+
+The width sweep above was run on the 4B only, and it concluded that "acceptance is FRONT-LOADED,
+not position-independent." Repeating it on Qwen3.6-35B-A3B shows **that is a property of the
+pairing, not of block drafting.**
+
+| | Qwen3-4B | Qwen3.6-35B-A3B |
+|---|---|---|
+| α fitted at k=16 | 0.848 | 0.866 |
+| measured vs geometric, narrow k | **+7.5% … +13.4%** (above) | **−3.4% … −5.8%** (below) |
+| shape | clear peak, **k=7 → 1.74×** | **flat plateau, ~1.58×** across k=6–10 |
+
+The 35B's k=16 control reproduces 6.78 exactly, so the sweep is anchored. Its measured acceptance
+(5.71 / 4.53 / 3.86 / 3.19 at k=16/10/8/6) sits slightly *below* its own geometric fit at every
+narrow width, where the 4B sat consistently above. **The 4B's early positions out-accept its
+fitted α; the 35B's do not.**
+
+**So the corrected claim is:** narrowing the verify width is a large win on both pairings, but
+*how much* the tail costs you is pairing-specific, and a single fitted α is not reliably
+conservative — it under-predicted the 4B by up to 13% and over-predicted the 35B by up to 6%.
+
+**The practical consequence is better than a per-pairing rule, not worse.** The 35B's curve is
+*flat* across k=6–10, so width choice barely matters for it, while the 4B peaks at 7 and is
+within 2% of peak at 8. **A single default of k≈8 serves both** — 4B 1.71× against its 1.74×
+optimum, 35B 1.58× on its plateau. No per-pairing calibration step is needed for increment 4;
+width can default to 8 and be refined per traffic class, which is the axis that actually moved
+the number (math 8 / code 7 / chat 4).
+
+**Caveat specific to this table:** the 35B speedups compose its *measured* acceptance with the
+*4B's* verify curve and draft cost, because the 35B's own constants have never been measured.
+The acceptance column is real; the speedup column is illustrative, and the flatness in particular
+is partly an artifact of borrowed constants. What is robustly measured here is the **acceptance
+profile** — near-geometric for the 35B, front-loaded for the 4B.
+
 ## Metal — verify curve measured, and the leading finding isn't the numbers
 
 Per `docs/prompts/metal-verify-curve.md` (dispatched to the M1 Pro leg 2026-08-16). Result up
