@@ -1877,3 +1877,43 @@ Cumulative honesty check: the original projection was **1.74× code / 2.25× mat
 from modelled terms. With the draft measured (8.82 ms) and the seam measured (0.465 ms/token),
 the floor is **1.52× / 1.94×** — a **13–14% erosion**, entirely from terms that had been assumed
 rather than measured, and none of it reversing a conclusion.
+
+### The composition itself, measured: +11% per round, and code lands ON the bar
+
+Every *term* was measured. The remaining arithmetic was the **composition** — the claim that a
+round costs draft + verify + seam and nothing else. `TestDFlashRoundComposition` runs the round
+STRUCTURE with the target's stack truncated to 5 layers standing in for the drafter (meaningless
+output, right cost — 8.273 ms, as separately measured), verify at M=7 with capture live, and the
+host-side argmax/accept, 12 rounds × 5, best-of:
+
+| | ms/round |
+|---|---|
+| predicted (draft 8.27 + verify 25.22 + seam 3.25) | 36.75 |
+| **measured** | **41.12** |
+| unaccounted | **+4.37 (11%)** |
+
+**The erosion chain for code at k=7, every step replacing an assumption with a measurement:**
+
+| | speedup |
+|---|---|
+| original projection (all terms modelled) | 1.74× |
+| + measured draft (8.82 ms, 1.28× per-layer premium) | 1.62× |
+| + measured capture seam (0.465 ms/token) | 1.52× |
+| + measured composition (+4.37 ms/round) | **1.33×** |
+
+**Code now sits ON the 1.3× bar rather than comfortably over it** — the same place gate 3's
+original 1.29× put it, arrived at from the opposite direction. Math retains more headroom
+(higher acceptance amortizes the same fixed overhead over more tokens).
+
+**What the +4.37 ms is, and how much is real.** Not yet decomposed, but two known contributors:
+the **host-side argmax over 7 × 151936 logits** (~1 M float comparisons per round — real, and
+recoverable by doing it on the GPU), and a **per-round `SetHiddenCapture` call** that reallocates
+(a test artifact, not a cost the real loop pays). So 1.33× is a **pessimistic** bound and the
+true figure sits between it and 1.52×. Decomposing that residual is the obvious next
+measurement, and it is worth doing *before* the kernel work, because it decides whether the
+optimum width should shift wider — a fixed per-round overhead is amortized better by a larger
+block, which would move the optimum away from 7.
+
+**What has not changed:** math clears comfortably at every stage, chat still needs the router,
+and the optimum widths were measured against acceptance rather than against these constants. What
+has changed is the margin on code, which is now thin enough that the residual matters.

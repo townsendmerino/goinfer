@@ -219,3 +219,114 @@ func TestDFlashCaptureSeamCost(t *testing.T) {
 		t.Logf("  at %.2f accepted/round: +%.2f ms per round of seam overhead", acc, (on-off)*(acc+1))
 	}
 }
+
+// TestDFlashRoundComposition measures the LOOP, not its parts.
+//
+// Every term in gate 3's projection is now measured — acceptance, the verify curve, decode, the
+// draft (8.82 ms), the capture seam (0.465 ms/token). What is still arithmetic is the
+// COMPOSITION: that a round costs draft + verify + seam and nothing else. Real loops have costs
+// between their operations — host round-trips, stream syncs at the boundaries, the argmax and
+// accept comparison, cache rollback — that a sum of independently-timed parts cannot show.
+//
+// The real drafter kernel does not exist yet, so this substitutes the TARGET's stack truncated to
+// 5 layers as a timing stand-in. Its OUTPUT is meaningless — a truncated stack is not the
+// drafter — but its COST is the right shape: 5 layers at M=16 over the same geometry, which is
+// exactly what TestDFlashDispatchAmortization measured at 8.273 ms. What this adds is the
+// sequencing: draft, then verify at M=k with capture live, then the host-side accept, per round.
+//
+// Reading: if measured/round ≈ predicted/round, the arithmetic composes and the projection's only
+// remaining risk is the drafter kernel's own efficiency. If it exceeds the prediction, there is
+// per-round overhead the projection never priced.
+//
+//	GOINFER_HEAVY_TESTS=1 GOINFER_CUDA_MODEL=$HOME/models/qwen3-4b \
+//	  go test -tags 'cuda goinfer_testhooks' -run TestDFlashRoundComposition -v
+func TestDFlashRoundComposition(t *testing.T) {
+	requireHeavyModel(t)
+	path := os.Getenv("GOINFER_CUDA_MODEL")
+	if path == "" {
+		path = os.ExpandEnv("$HOME/models/qwen3-4b")
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Skipf("no model at %s", path)
+	}
+	mc, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "int4"})
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	defer mc.Close()
+	r, ok := mc.ResidentForwardForTest().(*cudaResident)
+	if !ok {
+		t.Fatal("resident did not engage")
+	}
+	_, _, _, _, _, _, vocab := mc.Dims()
+	const depth = 1024
+	warm := make([][]float32, depth)
+	for i := range warm {
+		warm[i] = mc.EmbedResidentForTest((i*2654435761 + 1) % (vocab - 1))
+	}
+	if _, e := r.PrefillLast(warm, 0); e != nil {
+		t.Fatalf("warm: %v", e)
+	}
+	full := r.nLayers
+	defer func() { r.nLayers = full; _ = r.SetHiddenCapture(nil) }()
+
+	rows := func(n int) [][]float32 {
+		out := make([][]float32, n)
+		for i := range out {
+			out[i] = mc.EmbedResidentForTest((i*7919 + 13) % (vocab - 1))
+		}
+		return out
+	}
+	const kVerify = 7 // code's optimum
+	block16, verifyRows := rows(16), rows(kVerify)
+	taps := []int{1, 9, 17, 25, 33}
+
+	const rounds = 12
+	best := time.Hour
+	for range 5 {
+		t0 := time.Now()
+		for range rounds {
+			// --- draft: 5 layers at M=16, capture OFF (the drafter has no seam) ---
+			r.nLayers = 5
+			_ = r.SetHiddenCapture(nil)
+			if _, e := r.PrefillLast(block16, depth); e != nil {
+				t.Fatalf("draft: %v", e)
+			}
+			// --- verify: full stack at M=k, capture LIVE (the drafter needs the taps) ---
+			r.nLayers = full
+			if e := r.SetHiddenCapture(taps); e != nil {
+				t.Fatalf("capture on: %v", e)
+			}
+			outs, e := r.PrefillLastN(verifyRows, depth)
+			if e != nil {
+				t.Fatalf("verify: %v", e)
+			}
+			// --- host-side accept: argmax per row, the comparison the loop actually does ---
+			for _, lg := range outs {
+				bi, bv := 0, lg[0]
+				for i, v := range lg {
+					if v > bv {
+						bi, bv = i, v
+					}
+				}
+				_ = bi
+			}
+		}
+		if d := time.Since(t0); d < best {
+			best = d
+		}
+	}
+	r.nLayers = full
+	_ = r.SetHiddenCapture(nil)
+
+	perRound := float64(best.Microseconds()) / 1000 / rounds
+	// The arithmetic the projection uses, with every term as measured elsewhere.
+	const draftMs, W, C, seamPerTok = 8.273, 8.77, 2.35, 0.465
+	predicted := draftMs + (W + C*kVerify) + seamPerTok*kVerify
+	t.Logf("k=%d, %d rounds x5, best-of:", kVerify, rounds)
+	t.Logf("  predicted/round = draft %.2f + verify %.2f + seam %.2f = %.2f ms",
+		draftMs, W+C*kVerify, seamPerTok*kVerify, predicted)
+	t.Logf("  MEASURED/round  = %.2f ms   (%.2fx the prediction, %+.2f ms unaccounted)",
+		perRound, perRound/predicted, perRound-predicted)
+	t.Logf("  => composition overhead is %.0f%% of the round", 100*(perRound-predicted)/perRound)
+}
