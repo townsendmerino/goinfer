@@ -25,3 +25,10 @@ func TestAttachBlockDrafter_declinesWithoutResident(t *testing.T) {
 		t.Error("blockSpec set despite the decline")
 	}
 }
+
+// TestWarnThinkingTemplate covers the branch, since the warning is the only signal an operator
+// gets for a configuration that is otherwise completely silent — correct output, reduced speed,
+// nothing in any log.
+func TestWarnThinkingTemplate_noTokenizer(t *testing.T) {
+	warnThinkingTemplate(&loadedModel{name: "x"}) // nil tokenizer must not panic
+}
