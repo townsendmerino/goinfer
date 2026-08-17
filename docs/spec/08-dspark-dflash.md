@@ -1716,3 +1716,49 @@ fixed cost, 80 ms) dwarfs `C` (the per-row marginal cost, 5.9 ms) by a much larg
 CUDA — the fixed cost is the whole story on this backend, and it is not amortizing at any of the
 tested widths. Not a build target until (1) is resolved, and even then the ceiling says this is
 a marginal win at best on the current kernel, not the ~1.5-1.7× the CUDA leg found.
+
+### The draft term's omitted half: context work, and a hard requirement for increment 4
+
+The 6.6 ms draft is derived by scaling the target's per-layer GPU cost across the drafter's 5
+layers, and `cuda/dflash_draftcost_test.go` states its own limit: it excludes "the drafter's
+non-causal attention over `[ctx‖block]`… a floor with a named omission, not a prediction." This
+measures the omission's **shape** (`TestDFlashDraftScaling`).
+
+There are two draft paths, asymptotically different **per round**:
+
+| | what it does | per round |
+|---|---|---|
+| `DraftBlock(fused, block)` | `NewContext` + `ExtendContext` over the WHOLE fused context, then draft | **O(ctx)** |
+| `DraftBlockCtx(ctx, block)` | caller keeps the context; only newly accepted rows are projected in | **O(new)** |
+
+Measured on CPU (Qwen3-4B DFlash, 5 layers, hidden 2560, block 16, 5 new rows per round, warm-up
+discarded):
+
+| ctx | rebuild ms | incremental ms | ratio |
+|---|---|---|---|
+| 64 | 1708 | 1492 | 1.1× |
+| 128 | 2073 | 1576 | 1.3× |
+| 256 | 2682 | 1710 | 1.6× |
+| 512 | 3974 | 1980 | 2.0× |
+| 1024 | 6635 | 2709 | **2.4×** |
+
+**Two findings, with different confidence.**
+
+**1. Architectural, and it transfers: increment 4 MUST use `DraftBlockCtx`.** The rebuild path
+costs 2.4× the incremental one at a 1024-token context and the gap widens with length — it
+re-runs a full drafter-prefill of the entire context on *every block*. The acceptance harness
+uses `DraftBlock`, which is correct there (identical numerics, and acceptance is all it measures)
+but would be a serious defect in a serving path. This is now measured rather than assumed.
+
+**2. Quantitative, and it does NOT transfer: the draft has a context-dependent term the floor
+omits.** Even incremental, cost rises 1492 → 2709 ms from ctx 64 → 1024 — roughly half the draft
+at a long context is attention over the context, which the 6.6 ms figure does not include. **The
+CPU ratio must not be carried to the GPU**: attention over 1024 keys is bandwidth-cheap on a GPU
+and expensive on this CPU path (f32, allocate-per-call), so the GPU magnitude could be far
+smaller. What is established is that the term **exists and grows with context**, not how big it
+is on CUDA.
+
+**So the 1.74× projection still rests on an unmeasured draft**, and it is the term most likely to
+move. For scale: if the GPU draft doubled to 13.2 ms, code at k=7 falls 1.74× → 1.44× — still
+over the bar, but the headline changes. Measuring the resident draft remains the gate on
+increment 4; this narrows *where* to look rather than settling it.
