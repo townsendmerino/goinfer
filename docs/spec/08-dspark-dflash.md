@@ -2313,3 +2313,37 @@ conversational traffic and one that is safe to leave on.** That is the third tim
 workstream a conclusion moved because the baseline or the input distribution was wrong, and the
 common thread is the same: block drafting's losslessness means every one of these failures
 returns correct output, so only a measurement ever reveals them.
+
+### The guard measured on the case it exists for: chat 0.61× → **0.92×**, not break-even
+
+The previous entry said the guard makes chat "safe to leave on" and put it at roughly
+break-even. That was an inference from a DIFFERENT losing case (thinking mode at 384 tokens,
+0.99×), not a measurement of chat. Measured directly, on the guarded production path:
+
+| chat prompt | rounds before the guard tripped | guarded |
+|---|---|---|
+| "Explain what a hash table is, in two sentences." | 6 | **0.91×** |
+| "Give me three tips for keeping houseplants alive." | 6 | **0.94×** |
+
+**So the guard turns a 39% loss into a ~7% one — real, and not the break-even I claimed.**
+
+Both runs tripped at exactly the 6-round window, which is the guard working as designed. The
+residual loss is the window itself: six rounds of unprofitable drafting is a large fraction of a
+short chat answer, and cannot be recovered afterwards. It amortizes with length — the same guard
+on a 384-token generation measures 0.99× — so the cost is worst precisely where chat answers
+usually sit.
+
+**The honest picture of what ships:**
+
+| workload | unguarded | **guarded (what runs)** |
+|---|---|---|
+| code | 1.44× | 1.44× |
+| math | 1.58× | 1.58× |
+| chat (short) | 0.61× | **~0.92×** |
+| thinking-mode target (long) | 0.82× | 0.99× |
+
+The guard is doing most of the work it was built for and not all of it. Closing the remaining
+~7% needs either a cheaper decision (fewer than six rounds, at the cost of occasionally dropping
+a drafter that would have paid) or a predictor that decides BEFORE drafting rather than after —
+which is gate 4's router in its original sense, now with a measured 7% to justify it rather than
+the 4% the earlier wrong baseline suggested.

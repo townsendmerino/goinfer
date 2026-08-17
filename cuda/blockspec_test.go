@@ -48,7 +48,15 @@ func TestGenerateBlockSpec_production(t *testing.T) {
 	if err != nil {
 		t.Skipf("tokenizer: %v", err)
 	}
-	prompt, err := decoder.EncodeChatForTest(tk, "Write a Python function that returns the nth Fibonacci number.")
+	// GOINFER_TEST_PROMPT selects the workload. Chat is the case the acceptance guard EXISTS
+	// for: unguarded it measures 0.61x (1.96 accepted/round against a ~3.0 break-even), and
+	// "the guard makes that safe" has so far been an inference from a different losing case
+	// (thinking mode) rather than a measurement of this one.
+	promptText := "Write a Python function that returns the nth Fibonacci number."
+	if v := os.Getenv("GOINFER_TEST_PROMPT"); v != "" {
+		promptText = v
+	}
+	prompt, err := decoder.EncodeChatForTest(tk, promptText)
 	if err != nil {
 		t.Fatalf("encode: %v", err)
 	}
