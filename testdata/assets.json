@@ -356,6 +356,18 @@
     "TestLagunaReal_gate"
    ],
    "note": "Real poolside Laguna-XS.2 (33B-A3B, bf16 safetensors, 14 shards, ~63GB). members lists the three files the gate actually reads besides the shards: config.json (the adapter), the shard INDEX (the loader resolves tensors through it, so a dir with shards but no index is not this asset), and tokenizer.json. Loaded at int4 -- bf16 would not fit alongside f32 activations in 62GB. There is deliberately NO M.1 entry: it is ~220B / ~400GB and not runnable here."
+  },
+  {
+   "env": "GOINFER_LAGUNA_GGUF",
+   "kind": "file",
+   "min_bytes": 1048576,
+   "candidates": [
+    "$MODELS/laguna-xs21-gguf/Laguna-XS-2.1-Q4_K_M.gguf"
+   ],
+   "used_by": [
+    "TestLagunaGGUF_gate"
+   ],
+   "note": "poolside's OWN Laguna-XS-2.1 Q4_K_M GGUF. llama.cpp has first-class laguna support (general.architecture == 'laguna'), so this is a released file rather than a local conversion. It exercises the fused+stacked expert layout, the per-layer head-count ARRAY, and the derived full/sliding split -- none of which the safetensors gate covers."
   }
  ]
 }

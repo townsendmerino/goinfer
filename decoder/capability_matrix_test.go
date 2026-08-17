@@ -337,7 +337,7 @@ var familyDocs = map[string]familyDoc{
 	"qwen3_5_moe":         {"Qwen3.5-MoE", "Qwen3.5/3.6 hybrid: Gated DeltaNet + softmax + MoE", "safetensors, GGUF", "text"},
 	"qwen3_5_moe_text":    {"Qwen3.5-MoE", "Qwen3.5/3.6 hybrid: Gated DeltaNet + softmax + MoE", "safetensors, GGUF", "text"},
 	"glm4_moe":            {"GLM-4.5/4.6", "Zhipu GLM-4.5/4.6 DeepSeek-style MoE (sigmoid routing + dense prefix)", "safetensors, GGUF", "text"},
-	"laguna":              {"Laguna", "poolside Laguna XS-2.1 / XS.2 / M.1: sigmoid-routed MoE + softplus attention output gating + per-layer query heads", "safetensors", "text"},
+	"laguna":              {"Laguna", "poolside Laguna XS-2.1 / XS.2 / M.1: sigmoid-routed MoE + softplus attention output gating + per-layer query heads", "safetensors, GGUF", "text"},
 	"granitemoehybrid":    {"Granite-4.0-H", "IBM Granite-4.0-H: Mamba-2 + attention hybrid + MoE-on-every-layer", "safetensors, GGUF", "text"},
 	"nemotron_h":          {"Nemotron-H", "NVIDIA Nemotron-H/Nemotron 3 Nano single-op-per-block hybrid (mamba | attention | relu² MLP | MoE-FFN)", "safetensors, GGUF", "text"},
 	"deepseek_v2":         {"DeepSeek-V2", "DeepSeek-V2/V2-Lite: MLA + DeepSeekMoE (softmax routing)", "safetensors, GGUF", "text"},

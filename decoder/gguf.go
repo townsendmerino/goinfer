@@ -58,6 +58,8 @@ func ggufConfig(g *embed.GGUFFile) (cfg *Config, err error) {
 		return ggufMellumConfig(g)
 	case "qwen35moe":
 		return ggufQwen35Config(g)
+	case "laguna":
+		return ggufLagunaConfig(g)
 	case "glm4moe":
 		return ggufGlm4MoeConfig(g)
 	case "granitehybrid":
@@ -75,7 +77,7 @@ func ggufConfig(g *embed.GGUFFile) (cfg *Config, err error) {
 	case "gpt-oss":
 		return ggufGptOssConfig(g)
 	default:
-		return nil, fmt.Errorf("decoder(gguf): architecture %q unsupported (have: llama, qwen2, qwen3, gemma3, gemma4 [wip], mellum, qwen35moe, glm4moe, granitehybrid, nemotron_h, nemotron_h_moe, deepseek2, phi3, gpt-oss)", arch)
+		return nil, fmt.Errorf("decoder(gguf): architecture %q unsupported (have: llama, qwen2, qwen3, gemma3, gemma4 [wip], mellum, qwen35moe, glm4moe, laguna, granitehybrid, nemotron_h, nemotron_h_moe, deepseek2, phi3, gpt-oss)", arch)
 	}
 }
 
@@ -423,6 +425,165 @@ func ggufMellumConfig(g *embed.GGUFFile) (*Config, error) {
 		base, gf("rope.scaling.factor"), gf("rope.scaling.original_context_length"),
 		gf("rope.scaling.yarn_beta_fast"), gf("rope.scaling.yarn_beta_slow"),
 		gf("rope.scaling.yarn_attn_factor"), baseSwa))
+	ggufEOS(g, cfg)
+	return cfg, nil
+}
+
+// ggufLagunaConfig builds a Laguna Config from the laguna.* metadata. llama.cpp
+// has FIRST-CLASS laguna support (general.architecture == "laguna"), and the GGUF
+// carries the family's two awkward parts more cleanly than the safetensors config
+// does: the per-layer QUERY head counts arrive as an ARRAY
+// (laguna.attention.head_count), and the two layer types' rotary widths as separate
+// rope.dimension_count / rope.dimension_count_swa scalars.
+//
+// THREE THINGS THE GGUF DOES NOT SAY, each handled explicitly:
+//
+//  1. WHICH LAYERS ARE FULL. There is no layer_types and no sliding-window PATTERN
+//     key, so it must be derived. The head-count array encodes it (48 on
+//     full_attention, 64 on sliding on the XS line) and layer 0 is full in every
+//     released config, so layers matching heads[0] are the full ones. That is an
+//     INFERENCE, so it is validated: at most two distinct counts, and the derived
+//     split is reported to the caller through LayerTypes for the gate to assert.
+//
+//  2. THE GATE'S GRANULARITY. There is no gating key at all — matching the
+//     safetensors path, where the declared value is unreliable anyway (XS.2 says
+//     `gating: true` and ships a per-HEAD tensor). The loader reads it from
+//     blk.0.attn_gate.weight's shape, which is the authority in both formats.
+//
+//  3. YARN'S attention_factor. llama.cpp writes rope.scaling.yarn_attn_factor = 1.0
+//     as its "unset" sentinel and computes the mscale itself. Passing 1.0 through
+//     would REPLACE YaRN's mscale with a no-op: goinfer's attention_factor is a
+//     *float64 whose nil means "compute get_mscale(factor) = 0.1·ln(factor)+1", which
+//     for factor 32 is 1.3465735902799727 — exactly what the safetensors config
+//     states. So the field is OMITTED at the sentinel and passed through otherwise.
+func ggufLagunaConfig(g *embed.GGUFFile) (*Config, error) {
+	u := func(k string) int {
+		v, _ := g.Uint("laguna." + k)
+		return int(v)
+	}
+	gf := func(k string) float64 {
+		if v, ok := g.Float("laguna." + k); ok {
+			return v
+		}
+		v, _ := g.Uint("laguna." + k)
+		return float64(v)
+	}
+	headDim := u("attention.key_length")
+	numLayers := u("block_count")
+	if headDim <= 0 || numLayers <= 0 {
+		return nil, fmt.Errorf("decoder(gguf-laguna): missing attention.key_length / block_count")
+	}
+	// Sigmoid routing is not optional in this family; llama.cpp encodes it as
+	// expert_gating_func 2 (softmax is 1). Fail loudly rather than route by softmax.
+	if gfn := u("expert_gating_func"); gfn != 0 && gfn != 2 {
+		return nil, fmt.Errorf("decoder(gguf-laguna): expert_gating_func=%d unsupported (2 = sigmoid)", gfn)
+	}
+	normTopK := true
+	switch v := g.Metadata["laguna.expert_weights_norm"].(type) {
+	case bool:
+		normTopK = v
+	case uint32:
+		normTopK = v != 0
+	case uint64:
+		normTopK = v != 0
+	}
+	scale := gf("expert_weights_scale")
+	if scale == 0 {
+		scale = 1
+	}
+	cfg := &Config{
+		ModelType:                    "laguna",
+		HiddenDim:                    u("embedding_length"),
+		NumLayers:                    numLayers,
+		NumHeads:                     u("attention.head_count"), // scalar fallback; the array overrides below
+		NumKVHeads:                   u("attention.head_count_kv"),
+		HeadDim:                      headDim,
+		IntermediateDim:              u("feed_forward_length"),
+		MoeIntermediateSize:          u("expert_feed_forward_length"),
+		SharedExpertIntermediateSize: u("expert_shared_feed_forward_length"),
+		NumExperts:                   u("expert_count"),
+		NumExpertsPerTok:             u("expert_used_count"),
+		SlidingWindow:                u("attention.sliding_window"),
+		MoeRoutedScalingFactor:       scale,
+		NormTopKProb:                 &normTopK,
+		HiddenAct:                    "silu",
+		VocabSize:                    ggufVocabSize(g),
+		RMSNormEps:                   gf("attention.layer_norm_rms_epsilon"),
+	}
+	// Per-layer QUERY heads. Absent (M.1, all-full uniform) ⇒ leave nil and the
+	// scalar head_count applies to every layer.
+	heads := ggufIntArray(g.Metadata["laguna.attention.head_count"])
+	if len(heads) > 0 {
+		if len(heads) != numLayers {
+			return nil, fmt.Errorf("decoder(gguf-laguna): attention.head_count has %d entries, want %d", len(heads), numLayers)
+		}
+		cfg.NumAttentionHeadsPerLayer = heads
+		cfg.NumHeads = heads[0]
+	}
+	// Derive layer_types (see 1 above). Only when the model actually has a window.
+	if cfg.SlidingWindow > 0 && len(heads) > 0 {
+		distinct := map[int]bool{}
+		for _, h := range heads {
+			distinct[h] = true
+		}
+		if len(distinct) > 2 {
+			return nil, fmt.Errorf("decoder(gguf-laguna): attention.head_count has %d distinct values; "+
+				"cannot derive full/sliding layer types from it", len(distinct))
+		}
+		cfg.LayerTypes = make([]string, numLayers)
+		for i, h := range heads {
+			if h == heads[0] {
+				cfg.LayerTypes[i] = "full_attention"
+			} else {
+				cfg.LayerTypes[i] = "sliding_attention"
+			}
+		}
+	}
+	// leading_dense_block_count → the mlp_layer_types spelling lagunaFirstKDense reads,
+	// so the GGUF and safetensors paths converge on one code path.
+	if k := u("leading_dense_block_count"); k > 0 {
+		cfg.MlpLayerTypes = make([]string, numLayers)
+		for i := range cfg.MlpLayerTypes {
+			if i < k {
+				cfg.MlpLayerTypes[i] = "dense"
+			} else {
+				cfg.MlpLayerTypes[i] = "sparse"
+			}
+		}
+	}
+	// rope_parameters, keyed by layer type exactly as the safetensors config is.
+	base := gf("rope.freq_base")
+	baseSwa := gf("rope.freq_base_swa")
+	if baseSwa == 0 {
+		baseSwa = base
+	}
+	partial := func(k string) float64 {
+		rot := u(k)
+		if rot <= 0 || headDim <= 0 {
+			return 1
+		}
+		return float64(rot) / float64(headDim)
+	}
+	attnFactor := ""
+	if af := gf("rope.scaling.yarn_attn_factor"); af != 0 && af != 1 {
+		attnFactor = fmt.Sprintf(`,"attention_factor":%g`, af)
+	}
+	full := fmt.Sprintf(`{"rope_type":"yarn","rope_theta":%g,"factor":%g,"original_max_position_embeddings":%g,`+
+		`"beta_fast":%g,"beta_slow":%g,"partial_rotary_factor":%g%s}`,
+		base, gf("rope.scaling.factor"), gf("rope.scaling.original_context_length"),
+		gf("rope.scaling.yarn_beta_fast"), gf("rope.scaling.yarn_beta_slow"),
+		partial("rope.dimension_count"), attnFactor)
+	if gf("rope.scaling.factor") == 0 {
+		full = fmt.Sprintf(`{"rope_type":"default","rope_theta":%g,"partial_rotary_factor":%g}`,
+			base, partial("rope.dimension_count"))
+	}
+	if cfg.SlidingWindow > 0 {
+		cfg.RopeParameters = json.RawMessage(fmt.Sprintf(
+			`{"full_attention":%s,"sliding_attention":{"rope_type":"default","rope_theta":%g,"partial_rotary_factor":%g}}`,
+			full, baseSwa, partial("rope.dimension_count_swa")))
+	} else {
+		cfg.RopeParameters = json.RawMessage(fmt.Sprintf(`{"full_attention":%s}`, full))
+	}
 	ggufEOS(g, cfg)
 	return cfg, nil
 }
@@ -1617,6 +1778,122 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 	// qwen35): ssm_a stores −exp(A_log) directly (reversed to A_log via log(−a) so the
 	// shared mamba2Step works), conv1d is [convDim, K], ssm_norm raw. Mixer stays f32
 	// (parity-first); experts/attention/embeddings quantize. NEOX rope ⇒ no q/k permute.
+	// Laguna (poolside). llama.cpp names its tensors the way every other MoE family
+	// here is named, so the only genuinely new one is blk.N.attn_gate.weight — the
+	// softplus output gate. Two shape details drive the rest:
+	//
+	//   * qDim is PER LAYER (arch.headsAt(i)): full-attention layers project 48 heads
+	//     and sliding layers 64 on the XS line, so attn_q/attn_output differ by layer.
+	//   * the gate's granularity is read from attn_gate's ROW COUNT, exactly as the
+	//     safetensors loader does, because neither format carries a trustworthy
+	//     declaration of it (XS.2's config says per-element and ships per-head).
+	//
+	// Experts are FUSED+STACKED per projection (ffn_*_exps), the shared expert is
+	// *_shexp, and the router bias is exp_probs_b — all shapes goinfer already reads
+	// for GLM/DeepSeek/Granite. Layers below FirstKDense are plain dense FFNs.
+	if arch.laguna != nil {
+		kvDim := arch.NumKVHeads * arch.HeadDim
+		// exp_probs_b is 1-D; the shared `mat` helper wants 2-D, so read it as a flat
+		// vector the same way the other MoE GGUF loaders do.
+		flat := func(name string, n int) ([]float32, error) { // 1-D or [1,n]/[n,1] → n floats
+			_, data, derr := g.Tensor(name)
+			if derr != nil {
+				return nil, derr
+			}
+			if len(data) != n {
+				return nil, fmt.Errorf("decoder(gguf-laguna): %q has %d elems, want %d", name, len(data), n)
+			}
+			return data, nil
+		}
+		loadLaguna := func(i int) error {
+			l := &w.Layers[i]
+			p := fmt.Sprintf("blk.%d.", i)
+			lqDim := arch.headsAt(i) * arch.HeadDim
+			var e error
+			if l.PreAttnNorm, e = vnorm(p+"attn_norm.weight", hidden); e != nil {
+				return e
+			}
+			if l.PreMLPNorm, e = vnorm(p+"ffn_norm.weight", hidden); e != nil {
+				return e
+			}
+			if l.QProj, e = mat(p+"attn_q.weight", lqDim, hidden); e != nil {
+				return e
+			}
+			if l.KProj, e = mat(p+"attn_k.weight", kvDim, hidden); e != nil {
+				return e
+			}
+			if l.VProj, e = mat(p+"attn_v.weight", kvDim, hidden); e != nil {
+				return e
+			}
+			if l.OProj, e = mat(p+"attn_output.weight", hidden, lqDim); e != nil {
+				return e
+			}
+			if l.QNorm, e = vnorm(p+"attn_q_norm.weight", arch.HeadDim); e != nil {
+				return e
+			}
+			if l.KNorm, e = vnorm(p+"attn_k_norm.weight", arch.HeadDim); e != nil {
+				return e
+			}
+			// The gate: per-head (headsAt rows) or per-element (headsAt*headDim). Try the
+			// per-head shape first and fall back, so both are accepted and anything else
+			// is a hard error rather than a silently mis-shaped gate.
+			if l.GProj, e = mat(p+"attn_gate.weight", arch.headsAt(i), hidden); e != nil {
+				if l.GProj, e = mat(p+"attn_gate.weight", lqDim, hidden); e != nil {
+					return fmt.Errorf("decoder(gguf-laguna): layer %d attn_gate is neither per-head [%d,%d] nor per-element [%d,%d]: %w",
+						i, arch.headsAt(i), hidden, lqDim, hidden, e)
+				}
+			}
+			if i < arch.FirstKDense {
+				// Dense prefix layer: a plain SwiGLU at the model's feed_forward_length.
+				if l.GateProj, e = mat(p+"ffn_gate.weight", arch.IntermediateDim, hidden); e != nil {
+					return e
+				}
+				if l.UpProj, e = mat(p+"ffn_up.weight", arch.IntermediateDim, hidden); e != nil {
+					return e
+				}
+				if l.DownProj, e = mat(p+"ffn_down.weight", hidden, arch.IntermediateDim); e != nil {
+					return e
+				}
+				return nil
+			}
+			moe := arch.MoE
+			if l.Router, e = mat(p+"ffn_gate_inp.weight", moe.NumExperts, hidden); e != nil {
+				return e
+			}
+			// exp_probs_b is llama.cpp's name for e_score_correction_bias.
+			if l.RouterBias, e = flat(p+"exp_probs_b.bias", moe.NumExperts); e != nil {
+				return e
+			}
+			expInter := moe.IntermediateDim
+			gate, ge := stackedExperts(p+"ffn_gate_exps.weight", expInter, hidden, moe.NumExperts)
+			up, ue := stackedExperts(p+"ffn_up_exps.weight", expInter, hidden, moe.NumExperts)
+			down, de := stackedExperts(p+"ffn_down_exps.weight", hidden, expInter, moe.NumExperts)
+			if ge != nil || ue != nil || de != nil {
+				return fmt.Errorf("decoder(gguf-laguna): experts layer %d: %v / %v / %v", i, ge, ue, de)
+			}
+			l.Experts = make([]expertWeights, moe.NumExperts)
+			for ei := range moe.NumExperts {
+				l.Experts[ei] = expertWeights{Gate: gate[ei], Up: up[ei], Down: down[ei]}
+			}
+			if sInter := moe.SharedIntermediateDim; sInter > 0 {
+				if l.SharedExpert.Gate, e = mat(p+"ffn_gate_shexp.weight", sInter, hidden); e != nil {
+					return e
+				}
+				if l.SharedExpert.Up, e = mat(p+"ffn_up_shexp.weight", sInter, hidden); e != nil {
+					return e
+				}
+				if l.SharedExpert.Down, e = mat(p+"ffn_down_shexp.weight", hidden, sInter); e != nil {
+					return e
+				}
+			}
+			return nil
+		}
+		if err := parallelLayers(arch.NumLayers, loadLaguna); err != nil {
+			return nil, err
+		}
+		return w, nil
+	}
+
 	if gp := arch.granite; gp != nil {
 		dInner := gp.NHeads * gp.HeadDim
 		convDim := dInner + 2*gp.NGroups*gp.DState
