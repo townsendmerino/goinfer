@@ -59,6 +59,22 @@ with the full asset set" already requires.
 continuation (max |Δ| 3.06e-07 on the raw logits — float32 rounding). The Mac's golden was kept
 rather than churned.
 
+**The GGUF path is now proven end-to-end too** (`decoder/nemotron_moe_real_test.go`, Q4_K_M
+24.7 GB): 23 mamba / 23 moe / 6 attn survive the metadata round-trip, 128 experts / top-6 and the
+shared width 3712 all resolve, and the model generates coherently through its real chat template
+— distinct-trigram 0.843, *"Eiffel Tower, Louvre Museum, Notre-Dame Cathedral"*. That was a
+genuine hole: T3 loads SAFETENSORS, and GGUF is a different loader with a different expert layout
+(one tensor per expert vs ALL experts fused into one 3-D tensor per projection). It had been
+verified by reading a real header and hand-dequantizing one layer — correct dims and sane values,
+which is not the same as a model that runs. A fused expert stack read with the wrong stride gives
+finite values, correct shapes and confident nonsense.
+
+The new gate uses the chat template + distinct-trigram bar rather than the raw-completion +
+distinct-token floor the DENSE gate uses — following the audit note on
+`TestNemotronReal_gate` itself, which records that its own pattern measures "did the forward
+avoid TOTAL collapse", not coherence, and that on gemma-4-26b that manufactured a false "int4 is
+broken" signal surviving a week.
+
 GPU residency is still correctly DECLINED for this family on both cuda and metal, so it is
 CPU-only for now — the one remaining limitation, and not a correctness one.
 

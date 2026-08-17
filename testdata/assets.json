@@ -328,6 +328,18 @@
         "TestNemotron3NanoReal_oracle"
       ],
       "note": "NVIDIA-Nemotron-3-Nano-30B-A3B-BF16 (63 GB safetensors) \u2014 the MoE variant's T3 oracle. BF16 and not the -FP8 release: goinfer has no fp8 reader anywhere in the tree (the blocker that stopped DeepSeek V4-Flash scoping), so the FP8 repo is unusable here regardless of its smaller size."
+    },
+    {
+      "env": "GOINFER_NEMOTRON3NANO_GGUF",
+      "kind": "file",
+      "min_bytes": 1048576,
+      "candidates": [
+        "$MODELS/nemotron3nano-gguf/nvidia_Nemotron-3-Nano-30B-A3B-Q4_K_M.gguf"
+      ],
+      "used_by": [
+        "TestNemotron3NanoMoEReal_gate"
+      ],
+      "note": "Q4_K_M (24.7 GB) \u2014 the SAME quant the loader's expert dequantization was spot-checked against by hand, so the gate closes exactly the gap that check left open: correct dims and sane values are not a forward pass."
     }
   ]
 }
