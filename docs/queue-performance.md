@@ -1161,6 +1161,21 @@ and a matched control at a single length that the next length reversed (the two 
 opposite orders at maxNew 16 vs 48). Plus a killed-healthy-run caused by an unbuffered `grep`.
 The harness now hard-errors on a too-short `maxNew` and on an undetected chat template.
 
+**BIGGEST LEVER, MEASURED 2026-08-16 (`linux-62gb`): cap the VERIFY WIDTH, not the block.**
+Gate 3's 1.29×-on-code (under its own bar) verified all 16 drafted positions. It did not have to.
+Capping how many the TARGET verifies — drafter untouched, still drafting its full trained block —
+measures **code 1.74× at width 7, math 2.25× at 8, chat 0.92× at 4**, against 1.29× / 1.54× /
+0.46× at 16. Every k=16 row reproduces its recorded figure, anchoring the sweep. **Gate 3 goes
+from "pass on math only" to clearing on code AND math.** Mechanism: positions 12–15 gain **0.09
+accepted tokens between them** while costing 9.4 ms of verify per round. **This kills DSpark's
+rationale** — the doc projected DSpark 1.75× vs DFlash 1.29× on code and treated that as the
+pivot's justification; measured DFlash-at-7 is **1.74×**, so the advantage was block width, not
+DSpark, and DFlash is the LICENSED one. Also found: a single fitted α understates narrow-width
+acceptance by 7.5–13.4% (acceptance is FRONT-LOADED, not position-independent), and the optimum
+width TRACKS acceptance (8/7/4) — so gate 4's router should select WIDTH, not just fire/skip,
+from the α̂ signal it already computes. Still a projection: acceptance measured, wall-clock not;
+**gate 3 should run per-suite at these widths.**
+
 **The process finding is worth more than the number:** three separate harness errors each
 produced a confident wrong result first (raw-vs-chat prompt, 32-vs-160 tokens, and
 thinking-mode template), all input-distribution mistakes with gate 1 green throughout. See

@@ -490,7 +490,7 @@ and we import no Python either way. Record the decision in the PR as 05 did.
    get worse: this still excludes the drafter's non-causal attention over `[ctx‖block]`,
    which has no counterpart in the target's per-token path.
 
-   **Gate 3 therefore projects to PASS ON MATH ONLY (~1.5×), with code missing.** The bar is
+   **Gate 3 therefore projects to PASS ON MATH ONLY (~1.5×), with code missing.** **[SUPERSEDED — see "All three suites swept" at the end: those figures all verify 16 positions. At each suite's own optimum width DFlash measures 1.74× code / 2.25× math / 0.92× chat, so code clears the bar and DSpark's margin closes.]** The bar is
    ≥1.3× on ≥1 real workload, so the trunk remains fundable — but the claim it can support
    has narrowed twice: from "1.3–1.7× on structured traffic" to **"~1.5× on math-like
    traffic, break-even on code, 2× loss on open chat"**. Fund the kernel work against that
@@ -738,7 +738,8 @@ correct, coherent Python.
 ## Performance levers and the DSpark pivot (2026-08-15, post gate 2/3)
 
 DFlash cleared gates 1–2 (parity 1.0; acceptance 6.14 code / 7.32 math / 2.18 chat
-tok-per-verify); gate 3 projects 1.29× code / 1.54× math / 0.46× chat; gate 4 (router) is
+tok-per-verify); gate 3 projects 1.29× code / 1.54× math / 0.46× chat **[at verify width 16;
+measured optima are 1.74× / 2.25× / 0.92× — see the end of this document]**; gate 4 (router) is
 now mandatory. **Decision (2026-08-15, Francis): explore the DSpark path — `license=None`
 accepted for exploration.** The work originally pivoted to DFlash only for licensing; with
 that constraint lifted for a spike, DSpark's structural advantages come back into play, and
@@ -849,7 +850,10 @@ to a 7-token block:
 | math | 7.32 | 0.882 | 5.36 | 1.54× | **1.94×** |
 | chat | 2.18 | 0.541 | 2.16 | 0.46× | **0.78×** |
 
-**Code clears the 1.3× bar with room, where DFlash missed it.** And chat's un-routed floor rises
+**Code clears the 1.3× bar with room, where DFlash missed it.** **[SUPERSEDED — this compares
+DSpark's 7-wide block against DFlash at 16. Measured DFlash at a 7-wide VERIFY is 1.74× vs
+DSpark's projected 1.75×: the advantage was block width, not DSpark. See the end of this
+document.]** And chat's un-routed floor rises
 0.46× → 0.78× before the confidence head gates anything — reason 2 of the pivot, quantified: a
 7-wide block wastes less verify when acceptance is low. Under gate 4's routing both floor at 1.0×,
 so the routed picture is **1.75× / 1.94× / 1.0×**.
