@@ -2140,3 +2140,49 @@ seam measured properly as a flat ~1.09 ms per block:
 So the standing figures are **code 1.52× / math 1.96×**, not the 1.55×/1.99× recorded earlier —
 a ~2% overstatement from mis-scaling my own measurement, corrected here rather than left to be
 found by whoever runs gate 3.
+
+## GATE 3 — MEASURED, END TO END, AND CLEARED
+
+The resident block-drafting loop, run against plain greedy on the same resident, same prompts,
+same device. No stand-ins, no arithmetic: the drafter drafts, the target verifies in one batched
+pass with batched capture, the accepted prefix commits, and the clock runs over the whole thing.
+
+| suite | k | tok/round | spec | greedy | **measured** | projected |
+|---|---|---|---|---|---|---|
+| **code** | 7 | 4.71 | 1250 ms | 2004 ms | **1.60×** | 1.52× |
+| **math** | 8 | 5.88 | 1431 ms | 2141 ms | **1.50×** | 1.96× |
+
+**Both clear the ≥1.3× bar. Gate 3 passes.** This is the first speedup in this document that is
+measured rather than composed.
+
+**How the projection did.** Code came in **5% ABOVE** projection (1.60 vs 1.52) — the first time
+in this program a projection was pessimistic. Math came in **23% BELOW** (1.50 vs 1.96), and the
+acceptance column says why: 5.88 tok/round against the CPU sweep's 6.92 at width 8, a 15% drop
+the projection did not carry. Code's acceptance transferred almost exactly (4.71 vs 4.97). The
+likely cause is the drafter's own weights now being int8 where the CPU sweep ran an f32 drafter —
+which would explain why the suite with the higher acceptance loses more, since it has more
+accepted positions to lose.
+
+### The mask token cost a 2.4× swing
+
+First run of this gate measured **0.66× on code** — a loss. The cause was one line in the loop:
+
+```go
+maskID := 0 // any id: masked positions carry no information, only the anchor does
+```
+
+**That is false. The mask token is TRAINED.** DFlash learned to see one specific embedding at
+unfilled block positions; any other id puts the drafter off-distribution. It still ran, still
+produced lossless output, still committed tokens — it simply drafted badly. Acceptance read
+**1.77 tok/round against the CPU sweep's 4.97**, and the fix moved the measurement from **0.66×
+to 1.60×**.
+
+That is the fifth input-distribution error in this workstream — after raw-vs-chat prompts,
+thinking-vs-non-thinking, truncation length, and the retired baseline. All five had the same
+signature: **everything runs, nothing errors, the number is simply wrong**, and the tell was
+always acceptance far below what the same drafter achieved elsewhere. The lossless gate cannot
+catch this class, by construction: correctness is preserved precisely because the target decides.
+
+**The practical rule this earns:** when a block drafter's measured acceptance is far below its
+known value, suspect the drafter's INPUT before its implementation. Four of the five were prompt
+or token construction; none was a numerics bug.

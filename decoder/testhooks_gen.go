@@ -10,6 +10,8 @@ import (
 	"fmt"
 
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/chat"
+	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
 // FinalNormForTest applies the model's final normalization to a copy of h — the CPU reference
@@ -220,4 +222,29 @@ func FuseContextCPUForTest(d BlockDrafterWeights, ctxCat [][]float32) ([][]float
 		return nil, fmt.Errorf("decoder: %T has no FuseContext", d)
 	}
 	return t.FuseContext(&cpuBackend{}, ctxCat)
+}
+
+// LoadTokenizerForTest / EncodeChatForTest give a backend package the same chat-templated token
+// ids the CPU acceptance sweep used, so a GPU wall-clock number is comparable to it. Without
+// them a backend test would have to re-implement the template, and the non-thinking suffix in
+// particular has already cost this program one wrong measurement.
+func LoadTokenizerForTest(dir string) (*tokenizer.Tokenizer, error) { return tokenizer.Load(dir) }
+
+func EncodeChatForTest(tk *tokenizer.Tokenizer, prompt string) ([]int, error) {
+	tmpl, err := chat.Detect(chat.Meta{ChatTemplate: tk.ChatTemplate(), HasToken: tk.Has})
+	if err != nil {
+		return nil, err
+	}
+	ids, err := tk.EncodeSegments(tmpl.RenderSegments("", []chat.Turn{{Role: "user", Content: prompt}}), false)
+	if err != nil {
+		return nil, err
+	}
+	if _, ok := tk.TokenID("<think>"); ok {
+		sfx, e := tk.Encode("<think>\n\n</think>\n\n", false)
+		if e != nil {
+			return nil, e
+		}
+		ids = append(ids, sfx...)
+	}
+	return ids, nil
 }

@@ -20,7 +20,7 @@ import (
 // emitted instead. So the output is token-identical to plain greedy decoding whatever the
 // drafter does — a broken drafter costs speed, never correctness.
 func dflashLoop(t *testing.T, mc *decoder.Model, r *cudaResident, rd *residentDrafter,
-	taps []int, prompt []int, maxNew, verifyWidth int) (out []int, rounds int, ms float64) {
+	taps []int, prompt []int, maxNew, verifyWidth, maskTok int) (out []int, rounds int, ms float64) {
 	t.Helper()
 	hidden := rd.geo.Hidden
 	blockW := rd.geo.Layers // placeholder; replaced below
@@ -64,7 +64,11 @@ func dflashLoop(t *testing.T, mc *decoder.Model, r *cudaResident, rd *residentDr
 	}
 	fuse(cap0, len(prompt))
 
-	maskID := 0 // any id: masked positions carry no information, only the anchor does
+	// THE MASK TOKEN IS TRAINED, not a placeholder. DFlash learned to see this specific
+	// embedding at unfilled block positions; feeding any other id puts the drafter
+	// off-distribution and it drafts badly while everything still runs. Measured cost of
+	// getting this wrong: 1.77 tok/round against the CPU sweep's 4.97 at the same width.
+	maskID := maskTok
 	for len(out) < maxNew {
 		// --- draft ---
 		ids := make([]int, verifyWidth)
@@ -167,7 +171,7 @@ func TestDFlashLoop_lossless(t *testing.T) {
 	}
 	const maxNew = 24
 
-	got, rounds, ms := dflashLoop(t, mc, r, rd, taps, prompt, maxNew, 7)
+	got, rounds, ms := dflashLoop(t, mc, r, rd, taps, prompt, maxNew, 7, dr.MaskTokenID())
 	t.Logf("spec loop: %d tokens in %d rounds, %.0f ms (%.2f tok/round)", len(got), rounds, ms,
 		float64(len(got))/float64(rounds))
 
@@ -201,4 +205,109 @@ func TestDFlashLoop_lossless(t *testing.T) {
 		}
 	}
 	t.Logf("LOSSLESS: %d tokens identical to plain greedy", len(want))
+}
+
+// TestDFlashLoop_gate3 is GATE 3: the end-to-end wall-clock the whole projection has been
+// standing in for.
+//
+// docs/spec/08 projects code 1.52x / math 1.96x at verify widths 7/8, composed from separately
+// measured terms — draft 8.82 ms, the batched-head verify curve, a 1.09 ms batched seam,
+// acceptance from a 7-width CPU sweep. Every term is measured; the COMPOSITION was arithmetic.
+// This runs the real loop against plain greedy on the same resident and divides.
+//
+// REAL PROMPTS, chat-templated, because acceptance is a property of real text: the lossless gate
+// above reads 1.56 tok/round on random ids, which says nothing about anything. The suite is the
+// same one the CPU acceptance sweep used, so the numbers are comparable.
+//
+//	GOINFER_HEAVY_TESTS=1 GOINFER_CUDA_MODEL=$HOME/models/qwen3-4b \
+//	  go test -tags 'cuda goinfer_testhooks' -run TestDFlashLoop_gate3 -v -timeout 2h
+func TestDFlashLoop_gate3(t *testing.T) {
+	requireHeavyModel(t)
+	tgt := os.Getenv("GOINFER_CUDA_MODEL")
+	if tgt == "" {
+		tgt = os.ExpandEnv("$HOME/models/qwen3-4b")
+	}
+	ddir := os.Getenv("GOINFER_DFLASH_F32")
+	if ddir == "" {
+		ddir = filepath.Join(os.Getenv("HOME"), "models", "qwen3-4b-dflash-f32")
+	}
+	if _, err := os.Stat(filepath.Join(ddir, "model.safetensors")); err != nil {
+		t.Skipf("no drafter at %s", ddir)
+	}
+	mc, err := decoder.Load(tgt, decoder.Options{Backend: "cuda", Quant: "int4"})
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	defer mc.Close()
+	r := mc.ResidentForwardForTest().(*cudaResident)
+	dr, err := decoder.LoadDFlashDrafter(ddir)
+	if err != nil {
+		t.Fatalf("load drafter: %v", err)
+	}
+	defer dr.Close()
+	rd, err := r.AttachDrafter(dr)
+	if err != nil {
+		t.Fatalf("AttachDrafter: %v", err)
+	}
+	taps := dr.TargetLayerIDs()
+
+	tk, err := decoder.LoadTokenizerForTest(tgt)
+	if err != nil {
+		t.Skipf("tokenizer: %v", err)
+	}
+	// The same prompts and the same non-thinking template the CPU acceptance sweep used, so
+	// tok/round here is comparable to the 4.97 that sweep measured at width 7.
+	prompts := map[string][]string{
+		"code": {
+			"Write a Python function that returns the nth Fibonacci number.",
+			"Write a Go function that reverses a slice of ints in place.",
+		},
+		"math": {
+			"What is 17 * 23? Show your working.",
+			"A train travels 120 km in 1.5 hours. What is its average speed in km/h?",
+		},
+	}
+	widths := map[string]int{"code": 7, "math": 8}
+	const maxNew = 96
+
+	for _, suite := range []string{"code", "math"} {
+		w := widths[suite]
+		var specMs, greedyMs float64
+		var specToks, rounds int
+		for _, p := range prompts[suite] {
+			ids, e := decoder.EncodeChatForTest(tk, p)
+			if e != nil {
+				t.Fatalf("encode: %v", e)
+			}
+			got, rd2, ms := dflashLoop(t, mc, r, rd, taps, ids, maxNew, w, dr.MaskTokenID())
+			specMs += ms
+			specToks += len(got)
+			rounds += rd2
+			rd.TruncateContext(0)
+
+			// plain greedy, same resident, same token count — the baseline this must beat.
+			t0 := time.Now()
+			embs := make([][]float32, len(ids))
+			for i, id := range ids {
+				embs[i] = mc.EmbedResidentForTest(id)
+			}
+			out, e := r.PrefillLastNArgmax(embs, 0)
+			if e != nil {
+				t.Fatalf("greedy prefill: %v", e)
+			}
+			tok := out[len(out)-1]
+			for n, pos := 1, len(ids); n < len(got); n, pos = n+1, pos+1 {
+				one, e := r.PrefillLastNArgmax([][]float32{mc.EmbedResidentForTest(tok)}, pos)
+				if e != nil {
+					t.Fatalf("greedy step: %v", e)
+				}
+				tok = one[0]
+			}
+			greedyMs += float64(time.Since(t0).Milliseconds())
+		}
+		tpr := float64(specToks) / float64(rounds)
+		speed := greedyMs / specMs
+		t.Logf("%-4s k=%d: %d tokens, %d rounds (%.2f tok/round) | spec %.0f ms vs greedy %.0f ms => %.2fx",
+			suite, w, specToks, rounds, tpr, specMs, greedyMs, speed)
+	}
 }
