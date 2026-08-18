@@ -14,7 +14,11 @@
 //	  go test -tags realckpt ./decoder/ -run TestLagunaDFlash -v
 package decoder
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/townsendmerino/goinfer/tokenizer"
+)
 
 func TestLagunaDFlash_load(t *testing.T) {
 	requireHeavyModel(t)
@@ -79,4 +83,148 @@ func TestLagunaDFlash_load(t *testing.T) {
 	}
 	t.Logf("laguna DFlash: %d layers, taps %v, block %d, mask %d, draft vocab %d (%d non-identity d2t entries)",
 		g.Layers, d.TargetLayerIDs(), d.BlockSize(), d.MaskTokenID(), d.draftVocab, nonZero)
+}
+
+// TestLagunaDFlash_acceptance measures what the pairing is actually worth: how many
+// tokens per round the target ACCEPTS from the drafter.
+//
+// WHY ACCEPTANCE AND NOT SPEEDUP. Block drafting is lossless by construction — every
+// emitted token is one the target's own argmax produced — so no correctness test can
+// tell a good drafter from a bad one. Acceptance is the only signal, and P10 learned
+// that the hard way twice (a wrong mask token turned 1.60x into 0.66x while output
+// stayed perfectly valid; a drafter fed the wrong embeddings would do the same).
+//
+// This deliberately does NOT report a speedup. Laguna is CPU-only in goinfer today
+// (FeatAttnOutputGate makes every resident backend decline it), and P10's own
+// kill-gate found the DRAFT, not the verify, was the wall — a CPU draft against a
+// CPU target is a different regime from the GPU-resident numbers gate 3 reported.
+// Measuring wall-clock here would produce a number that says more about this box
+// than about the pairing.
+//
+//	GOINFER_HEAVY_TESTS=1 GOINFER_LAGUNA_XS2=~/models/laguna-xs2 \
+//	  GOINFER_LAGUNA_DFLASH=~/models/laguna-xs2-dflash \
+//	  go test -tags realckpt ./decoder/ -run TestLagunaDFlash_acceptance -v -timeout 180m
+func TestLagunaDFlash_acceptance(t *testing.T) {
+	requireHeavyModel(t)
+	ckpt := assetPath(t, "GOINFER_LAGUNA_XS2")
+	ddir := assetPath(t, "GOINFER_LAGUNA_DFLASH")
+
+	m, err := Load(ckpt, Options{Quant: "int4"})
+	if err != nil {
+		t.Fatalf("Load target: %v", err)
+	}
+	defer m.Close()
+	d, err := LoadDFlashDrafter(ddir)
+	if err != nil {
+		t.Fatalf("LoadDFlashDrafter: %v", err)
+	}
+	defer d.Close()
+
+	if g := d.DrafterGeometry(); g.Hidden != m.w.arch.HiddenDim {
+		t.Fatalf("drafter hidden %d != target hidden %d — the trunk consumes the target's "+
+			"hidden states directly, with no projection between them", g.Hidden, m.w.arch.HiddenDim)
+	}
+	for _, l := range d.TargetLayerIDs() {
+		if l < 0 || l >= m.w.arch.NumLayers {
+			t.Fatalf("tap layer %d outside the target's %d layers", l, m.w.arch.NumLayers)
+		}
+	}
+
+	const prompt = "〈|EOS|〉<system>\n\nYou are a helpful, conversationally-fluent assistant made by " +
+		"Poolside. You are here to be helpful to users through natural language conversations.\n</system>\n" +
+		"<user>\nWrite a Python function that reverses a linked list.\n</user>\n<assistant>\n</think>"
+	tk, err := tokenizer.Load(ckpt)
+	if err != nil {
+		t.Fatalf("tokenizer: %v", err)
+	}
+	ids, err := tk.Encode(prompt, false)
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+
+	const maxNew = 64
+	B := d.BlockSize()
+	cache := m.NewCache(len(ids) + maxNew + B + 2)
+	layers := d.TargetLayerIDs()
+	var ctxCat [][]float32
+	var logits []float32
+	feed := func(id int) {
+		lg, hidden, ferr := m.ForwardCapture(id, cache, layers)
+		if ferr != nil {
+			t.Fatalf("ForwardCapture: %v", ferr)
+		}
+		row := make([]float32, 0, len(hidden)*d.hidden)
+		for _, h := range hidden {
+			row = append(row, h...)
+		}
+		ctxCat = append(ctxCat, row)
+		logits = lg
+	}
+	for _, id := range ids {
+		feed(id)
+	}
+
+	eos := map[int]bool{}
+	for _, e := range m.w.Cfg.EOSIDs() {
+		eos[e] = true
+	}
+	rounds, acceptedTotal, generated := 0, 0, 1
+	anchor := argmax(logits)
+	emitted := []int{anchor}
+	for generated < maxNew {
+		fused, ferr := d.FuseContext(m.be, ctxCat)
+		if ferr != nil {
+			t.Fatalf("FuseContext: %v", ferr)
+		}
+		blk := make([]int, B)
+		for i := range blk {
+			blk[i] = d.MaskTokenID()
+		}
+		blk[0] = anchor
+		trunk, derr := d.DraftBlock(m.be, fused, d.EmbedBlock(m, blk))
+		if derr != nil {
+			t.Fatalf("DraftBlock: %v", derr)
+		}
+		drafted := d.DraftIDs(m, trunk[1:])
+
+		mark, markCtx := cache.Pos(), len(ctxCat)
+		feed(anchor)
+		accepted := 0
+		next := argmax(logits)
+		for i, tok := range drafted {
+			if tok != next {
+				break
+			}
+			feed(tok)
+			accepted = i + 1
+			next = argmax(logits)
+		}
+		cache.TruncateTo(mark + 1 + accepted)
+		ctxCat = ctxCat[:markCtx+1+accepted]
+
+		rounds++
+		acceptedTotal += accepted
+		emitted = append(emitted, drafted[:accepted]...)
+		generated += accepted + 1
+		anchor = next
+		emitted = append(emitted, anchor)
+		if eos[anchor] {
+			break
+		}
+	}
+
+	perRound := float64(acceptedTotal+rounds) / float64(rounds) // accepted drafts + the target's own token
+	text, _ := tk.Decode(emitted)
+	t.Logf("laguna DFlash acceptance: %d rounds, %d accepted drafts, %.2f tok/round "+
+		"(block %d, verify width %d)", rounds, acceptedTotal, perRound, B, B)
+	t.Logf("output: %q", text)
+
+	// A pairing that accepts nothing is indistinguishable from a broken one, and both
+	// look fine in the output. 1.0 tok/round means every draft was rejected — the
+	// target is doing all the work and the drafter is pure overhead.
+	if perRound <= 1.0 {
+		t.Errorf("%.2f tok/round — no draft was EVER accepted. Losslessness hides this: the "+
+			"output is still correct, so only this number can show the pairing is not working",
+			perRound)
+	}
 }

@@ -86,6 +86,42 @@ func (d *DFlashDrafter) DraftTokenID(be Backend, h []float32) int {
 // without their own embedding use the target's (Model.embedResident).
 func (d *DFlashDrafter) EmbedDraft(id int, dst []float32) { d.embed.Row(id, dst) }
 
+// EmbedBlock builds the trunk's block input for ids, using the DRAFTER's own
+// embedding when it has one and falling back to the target's otherwise.
+//
+// The fallback is not cosmetic. A drafter that ships embed_tokens was trained
+// against THOSE vectors; feeding it the target's instead is a silent
+// off-distribution input — the trunk still runs, still emits ids, and the pairing
+// still produces lossless output, so the only symptom is acceptance quietly landing
+// below what the pairing is worth. Same failure shape as the mask token.
+func (d *DFlashDrafter) EmbedBlock(m *Model, ids []int) [][]float32 {
+	if d.embed.Rows() == 0 {
+		return m.DrafterEmbedBlock(ids)
+	}
+	rows := make([][]float32, len(ids))
+	for i, id := range ids {
+		rows[i] = make([]float32, d.hidden)
+		d.EmbedDraft(id, rows[i])
+	}
+	return rows
+}
+
+// DraftIDs turns the trunk's block output rows into TARGET token ids, using the
+// drafter's own reduced-vocab head when present and the target's LM head otherwise.
+// One call site for both drafter shapes, so a pairing cannot silently take the wrong
+// output path.
+func (d *DFlashDrafter) DraftIDs(m *Model, rows [][]float32) []int {
+	out := make([]int, len(rows))
+	for i, h := range rows {
+		if d.HasOwnHead() {
+			out[i] = d.DraftTokenID(m.be, h)
+		} else {
+			out[i] = argmax(m.DrafterHeadLogits(h))
+		}
+	}
+	return out
+}
+
 // blockTrunk is the non-causal block trunk shared by DFlash and DSpark.
 //
 // Shared because they compute it IDENTICALLY, which was established from first-party source
