@@ -63,6 +63,17 @@ var prefillBatchedPTX []byte
 //go:embed testdata/decode_splitkv.ptx
 var decodeSplitKVPTX []byte
 
+// gptOssActPTX: glu_quant_gptoss — gpt-oss's clamped interleaved-SwiGLU expert epilogue
+// (per-expert biases, an asymmetric clamp, an alpha-scaled sigmoid gate and a +1 on the linear
+// branch). glue.cu's glu_quant serves every other family; this one is family-specific and would
+// otherwise have to live there. OWN FILE for the same reason decode_splitkv.cu is: glue.ptx and
+// moe.ptx are AUDITED artifacts, and a self-contained activation kernel should not drag a
+// re-audit with it. Everything after the activation — max-reduce, symmetric int8 quant, packed
+// store — is glu_quant's unchanged, so the down-projection GEMV consumes an identical format.
+//
+//go:embed testdata/gptoss_act.ptx
+var gptOssActPTX []byte
+
 // gemvStagedPTX: gemv_w4a8_staged — the activation-staged batched GEMV. Bit-identical to
 // gemv_w4a8_fwd (facc live in registers across all K-chunks, single warp-reduce), but stages the
 // [MT,KC] activation tile in shared memory so it is read once per block instead of once per output
