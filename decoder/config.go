@@ -193,6 +193,16 @@ type Config struct {
 	LinearValueHeadDim  int `json:"linear_value_head_dim"`
 	LinearNumKeyHeads   int `json:"linear_num_key_heads"`
 	LinearNumValueHeads int `json:"linear_num_value_heads"`
+	// FullAttentionInterval (Qwen3-Next only — qwen3_5_moe ships the per-layer
+	// pattern explicitly via LayerTypes instead). The real released config has
+	// NO layer_types field at all; the pattern is COMPUTED: layer i (0-indexed)
+	// is full_attention when (i+1)%FullAttentionInterval==0, else
+	// linear_attention — verified against transformers'
+	// configuration_qwen3_next.py __post_init__ directly, not assumed from the
+	// qwen3_5_moe precedent. normalizeQwen3NextLayerTypes turns this into the
+	// same LayerTypes list every other consumer already reads, so it's the
+	// ONLY place that needs to know this family computes rather than states.
+	FullAttentionInterval int `json:"full_attention_interval"`
 
 	// RopeScaling is HF's rope_scaling object (llama3 / linear / yarn / …).
 	// Plain Llama-3.0 and Qwen3 leave it null; Llama-3.1+/3.2 set it. Kept raw
@@ -549,6 +559,39 @@ func (c *Config) validateGranite() error {
 // An unrecognized character is an ERROR, not a mamba block: nemotronhArchitecture's kind
 // switch defaults unknown strings to mamba, and inheriting that here would turn one typo
 // in a 56-character string into a silently different model that still generates text.
+// normalizeQwen3NextLayerTypes synthesizes LayerTypes from FullAttentionInterval
+// for Qwen3-Next, whose real released config.json has no layer_types field at
+// all (unlike qwen3_5_moe, which states the pattern explicitly). Formula
+// verified against transformers' configuration_qwen3_next.py __post_init__:
+//
+//	"linear_attention" if (i+1)%interval else "full_attention"
+//
+// 0-indexed i, so layer 3 (not layer 4) is the first full-attention layer at
+// the default interval=4. A no-op if LayerTypes is already populated (a
+// transformers-instantiated config carries it directly, same asymmetry
+// normalizeNemotronBlocks handles for that family).
+func (c *Config) normalizeQwen3NextLayerTypes() error {
+	if len(c.LayerTypes) > 0 || c.FullAttentionInterval == 0 {
+		return nil
+	}
+	if c.FullAttentionInterval < 0 {
+		return fmt.Errorf("decoder(qwen3_next): full_attention_interval must be >0, got %d", c.FullAttentionInterval)
+	}
+	if c.NumLayers <= 0 {
+		return fmt.Errorf("decoder(qwen3_next): num_hidden_layers must be >0 before layer_types can be derived")
+	}
+	types := make([]string, c.NumLayers)
+	for i := range types {
+		if (i+1)%c.FullAttentionInterval == 0 {
+			types[i] = "full_attention"
+		} else {
+			types[i] = "linear_attention"
+		}
+	}
+	c.LayerTypes = types
+	return nil
+}
+
 func (c *Config) normalizeNemotronBlocks() error {
 	if len(c.LayersBlockType) > 0 || c.HybridOverridePattern == "" {
 		return nil
@@ -668,6 +711,40 @@ func (c *Config) validateQwen35() error {
 		return fmt.Errorf("decoder(qwen3_5_moe): rope_parameters required")
 	case c.RMSNormEps <= 0:
 		return fmt.Errorf("decoder(qwen3_5_moe): rms_norm_eps must be >0")
+	}
+	return nil
+}
+
+// validateQwen3Next pins the same shape assumptions as validateQwen35 — this
+// family shares every other dimension field-for-field with qwen3_5_moe,
+// verified against the real config, not assumed — EXCEPT the RoPE check: the
+// real released config never carries a rope_parameters object at all (flat
+// rope_theta instead), so requiring it unconditionally (validateQwen35's own
+// check) would reject every real Qwen3-Next checkpoint. Accepts either shape,
+// matching qwen3NextArchitecture's own dual-path RoPE resolution.
+func (c *Config) validateQwen3Next() error {
+	switch {
+	case c.HiddenDim == 0 || c.NumLayers == 0 || c.NumHeads == 0 || c.HeadDim == 0:
+		return fmt.Errorf("decoder(qwen3_next): missing core dims (hidden=%d layers=%d heads=%d headDim=%d)",
+			c.HiddenDim, c.NumLayers, c.NumHeads, c.HeadDim)
+	case c.NumKVHeads == 0 || c.NumHeads%c.NumKVHeads != 0:
+		return fmt.Errorf("decoder(qwen3_next): num_heads %d not a multiple of num_kv_heads %d (GQA)", c.NumHeads, c.NumKVHeads)
+	case len(c.LayerTypes) != c.NumLayers:
+		return fmt.Errorf("decoder(qwen3_next): layer_types has %d entries, want %d (full_attention_interval unset or invalid?)", len(c.LayerTypes), c.NumLayers)
+	case c.LinearConvKernelDim <= 0 || c.LinearKeyHeadDim <= 0 || c.LinearValueHeadDim <= 0:
+		return fmt.Errorf("decoder(qwen3_next): missing linear (DeltaNet) dims (conv=%d kHead=%d vHead=%d)",
+			c.LinearConvKernelDim, c.LinearKeyHeadDim, c.LinearValueHeadDim)
+	case c.LinearNumKeyHeads <= 0 || c.LinearNumValueHeads <= 0 || c.LinearNumValueHeads%c.LinearNumKeyHeads != 0:
+		return fmt.Errorf("decoder(qwen3_next): linear_num_value_heads %d not a multiple of linear_num_key_heads %d (GVA)",
+			c.LinearNumValueHeads, c.LinearNumKeyHeads)
+	case c.NumExperts <= 0 || c.NumExpertsPerTok <= 0 || c.NumExpertsPerTok > c.NumExperts:
+		return fmt.Errorf("decoder(qwen3_next): bad MoE (experts=%d top_k=%d)", c.NumExperts, c.NumExpertsPerTok)
+	case c.MoeIntermediateSize <= 0:
+		return fmt.Errorf("decoder(qwen3_next): moe_intermediate_size must be >0")
+	case len(c.RopeParameters) == 0 && c.RoPEGlobalBase <= 0:
+		return fmt.Errorf("decoder(qwen3_next): need either rope_parameters or a top-level rope_theta")
+	case c.RMSNormEps <= 0:
+		return fmt.Errorf("decoder(qwen3_next): rms_norm_eps must be >0")
 	}
 	return nil
 }

@@ -212,6 +212,14 @@ type qwen35Params struct {
 	ValueHeadDim  int // per-head value dim (linear_value_head_dim)
 	NumKeyHeads   int // linear_num_key_heads
 	NumValueHeads int // linear_num_value_heads (GVA: a multiple of NumKeyHeads)
+
+	// FusedDeltaNetProj: qwen3_5_moe's checkpoint stores in_proj_qkv/in_proj_z/
+	// in_proj_b/in_proj_a as four separate tensors; qwen3_next's checkpoint fuses
+	// them into in_proj_qkvz/in_proj_ba instead (same math, different packing —
+	// verified against modular_qwen3_next.py's Qwen3NextGatedDeltaNet.torch_forward).
+	// loadQwen35Attn splits the fused tensors into the same four deltaNetWeights
+	// fields so the rest of the pipeline (forward, gguf, serialize) is untouched.
+	FusedDeltaNetProj bool
 }
 
 // gemma4Params describes how Gemma 4's global (full-attention) layers diverge

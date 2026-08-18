@@ -1,5 +1,25 @@
 [
   {
+    "name": "qwen3_next",
+    "model_types": [
+      "qwen3_next"
+    ],
+    "display_name": "Qwen3-Next",
+    "description": "Qwen3-Next 80B-A3B: same DeltaNet/softmax/MoE hybrid shape as Qwen3.5, computed (not stated) layer pattern",
+    "coverage_axis": "gated-linear hybrid (Gated DeltaNet)",
+    "moe": "sparse +shared",
+    "sliding_window": "none",
+    "qk_norm": true,
+    "rope_style": "partial",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors",
+    "modality": "text",
+    "gpu_residency_eligible": false,
+    "parity": "experimental: tiny-oracle 100.0%/1.00000"
+  },
+  {
     "name": "qwen3_5_moe",
     "model_types": [
       "qwen3_5_moe",

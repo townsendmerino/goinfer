@@ -39,11 +39,16 @@ var archFeatureProfile = map[string][]ResidentFeature{
 	// layers, and the family-specific output gate. The XS generations carry all of
 	// these; M.1 drops the sliding-window half, but this table states the family's
 	// BASE profile and RequiredResidentFeatures derives the per-model truth.
-	"laguna":           {FeatAttnOutputGate, FeatMoE, FeatPartialRotary, FeatPerLayerRoPE, FeatQKNorm, FeatRopeMscale, FeatSlidingWindow},
-	"deepseek_v2":      {FeatMLA, FeatMoE},
-	"deepseek_v3":      {FeatMLA, FeatMoE},
-	"kimi_k2":          {FeatMLA, FeatMoE},
-	"qwen3_5_moe":      {FeatMoE, FeatMoEGatedShared, FeatPartialRotary, FeatQKNorm, FeatRMSAddOne},
+	"laguna":      {FeatAttnOutputGate, FeatMoE, FeatPartialRotary, FeatPerLayerRoPE, FeatQKNorm, FeatRopeMscale, FeatSlidingWindow},
+	"deepseek_v2": {FeatMLA, FeatMoE},
+	"deepseek_v3": {FeatMLA, FeatMoE},
+	"kimi_k2":     {FeatMLA, FeatMoE},
+	"qwen3_5_moe": {FeatMoE, FeatMoEGatedShared, FeatPartialRotary, FeatQKNorm, FeatRMSAddOne},
+	// Qwen3-Next: same profile as qwen3_5_moe (verified, not assumed — its MoE block
+	// (Qwen3NextSparseMoeBlock(Qwen2MoeSparseMoeBlock): pass) directly inherits
+	// Qwen2-MoE's gated-shared-expert combination, and its RMSNorm
+	// (Qwen3NextRMSNorm(Gemma3RMSNorm): pass) inherits Gemma's (1+w)).
+	"qwen3_next":       {FeatMoE, FeatMoEGatedShared, FeatPartialRotary, FeatQKNorm, FeatRMSAddOne},
 	"llama4_text":      {FeatMoE},
 	"gpt_oss":          {FeatAttnSink, FeatMoE, FeatOutBias, FeatRopeMscale, FeatSlidingWindow},
 	"nemotron_h":       {FeatNonGatedMLP, FeatSSM},
@@ -135,6 +140,7 @@ var admissionGolden = map[string][]string{
 	"qwen3":            {"cuda", "metal", "webgpu"},
 	"qwen3_5_moe":      {"metal", "webgpu"},
 	"qwen3_5_moe_text": {"metal", "webgpu"},
+	"qwen3_next":       {"metal", "webgpu"}, // same arch.qwen35 != nil bridge qwen3_5_moe uses — reused directly, not a new one
 }
 
 func TestResidentAdmission_matrix(t *testing.T) {

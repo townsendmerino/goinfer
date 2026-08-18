@@ -188,6 +188,19 @@ func representativeConfig(modelType string) *Config {
 			NumExperts: 4, NumExpertsPerTok: 2, MoeIntermediateSize: 32, SharedExpertIntermediateSize: 32,
 			RopeParameters: json.RawMessage(`{"rope_type":"default","rope_theta":1000000.0,"partial_rotary_factor":0.25}`),
 		}
+	case "qwen3_next":
+		// Deliberately exercises the flat (non-nested) rope path and the
+		// computed layer-types delta — the real released config never carries
+		// rope_parameters or layer_types at all, only full_attention_interval
+		// plus top-level rope_theta/partial_rotary_factor.
+		return &Config{
+			ModelType: "qwen3_next", VocabSize: 256, HiddenDim: 64, NumLayers: 4, NumHeads: 4,
+			NumKVHeads: 2, HeadDim: 16, IntermediateDim: 32, HiddenAct: "silu", RMSNormEps: 1e-6,
+			RoPEGlobalBase: 10000000, PartialRotaryFactor: 0.25, FullAttentionInterval: 4,
+			LinearConvKernelDim: 4, LinearKeyHeadDim: 16, LinearValueHeadDim: 16,
+			LinearNumKeyHeads: 2, LinearNumValueHeads: 4,
+			NumExperts: 4, NumExpertsPerTok: 2, MoeIntermediateSize: 32, SharedExpertIntermediateSize: 32,
+		}
 	case "glm4_moe":
 		return &Config{
 			ModelType: "glm4_moe", HiddenDim: 64, NumLayers: 3, NumHeads: 4, NumKVHeads: 2,
@@ -336,6 +349,7 @@ var familyDocs = map[string]familyDoc{
 	"mellum":              {"Mellum2", "JetBrains Mellum2 code model (MoE + sliding/full interleave + YaRN)", "safetensors, GGUF", "text"},
 	"qwen3_5_moe":         {"Qwen3.5-MoE", "Qwen3.5/3.6 hybrid: Gated DeltaNet + softmax + MoE", "safetensors, GGUF", "text"},
 	"qwen3_5_moe_text":    {"Qwen3.5-MoE", "Qwen3.5/3.6 hybrid: Gated DeltaNet + softmax + MoE", "safetensors, GGUF", "text"},
+	"qwen3_next":          {"Qwen3-Next", "Qwen3-Next 80B-A3B: same DeltaNet/softmax/MoE hybrid shape as Qwen3.5, computed (not stated) layer pattern", "safetensors", "text"},
 	"glm4_moe":            {"GLM-4.5/4.6", "Zhipu GLM-4.5/4.6 DeepSeek-style MoE (sigmoid routing + dense prefix)", "safetensors, GGUF", "text"},
 	"laguna":              {"Laguna", "poolside Laguna XS-2.1 / XS.2 / M.1: sigmoid-routed MoE + softplus attention output gating + per-layer query heads", "safetensors, GGUF", "text"},
 	"granitemoehybrid":    {"Granite-4.0-H", "IBM Granite-4.0-H: Mamba-2 + attention hybrid + MoE-on-every-layer", "safetensors, GGUF", "text"},

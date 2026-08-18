@@ -861,17 +861,31 @@ func loadQwen35Attn(st *embed.SafetensorsFile, i int, l *LayerWeights, arch *Arc
 		keyDim, valueDim := g.KeyHeadDim*g.NumKeyHeads, g.ValueHeadDim*g.NumValueHeads
 		convDim := 2*keyDim + valueDim
 		d := &deltaNetWeights{}
-		if d.inProjQKV, err = st.TensorF32(nm("linear_attn.in_proj_qkv.weight"), convDim, hidden); err != nil {
-			return err
-		}
-		if d.inProjZ, err = st.TensorF32(nm("linear_attn.in_proj_z.weight"), valueDim, hidden); err != nil {
-			return err
-		}
-		if d.inProjB, err = st.TensorF32(nm("linear_attn.in_proj_b.weight"), g.NumValueHeads, hidden); err != nil {
-			return err
-		}
-		if d.inProjA, err = st.TensorF32(nm("linear_attn.in_proj_a.weight"), g.NumValueHeads, hidden); err != nil {
-			return err
+		if g.FusedDeltaNetProj {
+			qkvzRows := 2*keyDim + 2*valueDim
+			qkvz, e := st.TensorF32(nm("linear_attn.in_proj_qkvz.weight"), qkvzRows, hidden)
+			if e != nil {
+				return e
+			}
+			ba, e := st.TensorF32(nm("linear_attn.in_proj_ba.weight"), 2*g.NumValueHeads, hidden)
+			if e != nil {
+				return e
+			}
+			d.inProjQKV, d.inProjZ = splitQwen3NextQKVZ(qkvz, g, hidden)
+			d.inProjB, d.inProjA = splitQwen3NextBA(ba, g, hidden)
+		} else {
+			if d.inProjQKV, err = st.TensorF32(nm("linear_attn.in_proj_qkv.weight"), convDim, hidden); err != nil {
+				return err
+			}
+			if d.inProjZ, err = st.TensorF32(nm("linear_attn.in_proj_z.weight"), valueDim, hidden); err != nil {
+				return err
+			}
+			if d.inProjB, err = st.TensorF32(nm("linear_attn.in_proj_b.weight"), g.NumValueHeads, hidden); err != nil {
+				return err
+			}
+			if d.inProjA, err = st.TensorF32(nm("linear_attn.in_proj_a.weight"), g.NumValueHeads, hidden); err != nil {
+				return err
+			}
 		}
 		if d.convW, err = st.TensorF32(nm("linear_attn.conv1d.weight"), convDim, 1, g.ConvKernel); err != nil {
 			return err

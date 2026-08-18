@@ -185,15 +185,50 @@ partial-download-plus-cleanup technique used above for the GGUF tensor spot-chec
 available on the Mac if more of the loader ever needs checking without a full download — noted in
 the handoff prompt too.) Full scoping: `docs/post-v1.0-models.md` "Next up" §1.
 
-**G5 · Qwen3-Next / Qwen3-Coder-Next (80B-A3B) as a new family** — `linux`
+**G5 · Qwen3-Next / Qwen3-Coder-Next (80B-A3B) as a new family** — Phase 0/1 + real T1 golden DONE
+(`mac`, 2026-08-17); **T3 real-checkpoint parity remains, tagged `linux`**
 
-Full scoping and reasoning: `docs/post-v1.0-models.md` "Next up" §2. Expected to be a
-config-mapping delta on `qwen35Architecture` (`decoder/forward_qwen35.go`) — Qwen3-Next is that
-architecture's direct ancestor — but config-verify before estimating, same discipline as `G4`.
-Qwen3-Coder-Next is the recommended agentic coding model for 64GB-class systems; closes a real gap
-in goinfer's strongest family. **80B total does not fit the M1 Pro 16 GB rig even at int4** — this
-is a WebGPU/CUDA-streaming showcase, tagged `linux` for that reason; scope the residency story
-before estimating total effort.
+Full scoping and reasoning: `docs/post-v1.0-models.md` "Next up" §2. Confirmed against the real
+`Qwen/Qwen3-Next-80B-A3B-Instruct` config and `modular_qwen3_next.py` (not assumed) to be a
+config-mapping delta on `qwen35Architecture`, as expected — but with three real deltas, one of them
+a checkpoint-layout difference rather than a config field:
+
+1. No `layer_types`; a `full_attention_interval` stride instead (`"linear_attention" if
+   (i+1) % interval else "full_attention"`, 0-indexed) — `normalizeQwen3NextLayerTypes`
+   (`decoder/config.go`) synthesizes `LayerTypes` from it.
+2. `partial_rotary_factor` is a top-level field with no `rope_parameters` object at all (unlike
+   `qwen3_5_moe`, which always carries one) — `parseRopeSpec`/`validateQwen35` both hard-required
+   `rope_parameters`, so `qwen3NextArchitecture` (`decoder/registry.go`) resolves RoPE via a
+   dual-path (nested-if-present, else flat) mirroring `deepseekArchitecture`'s pattern, and a new
+   `validateQwen3Next` (`decoder/config.go`) accepts either.
+3. **The real checkpoint fuses the Gated DeltaNet input projections**: `linear_attn.in_proj_qkvz`
+   and `linear_attn.in_proj_ba`, not the four separate tensors (`in_proj_qkv`/`z`/`b`/`a`)
+   `loadQwen35Attn` (`decoder/weights.go`) already reads for `qwen3_5_moe`. Verified the exact split
+   against `modular_qwen3_next.py`'s `Qwen3NextGatedDeltaNet.torch_forward` (per-key-head-group
+   `torch.split`, order q/k/v/z and b/a) and against the tiny fixture's actual tensor shapes. Fixed
+   with a **splitter, not a joiner**: `decoder/qwen3next.go`'s `splitQwen3NextQKVZ`/`splitQwen3NextBA`
+   un-fuse the two tensors into the same four `deltaNetWeights` fields at load time (one new
+   `qwen35Params.FusedDeltaNetProj` flag branches `loadQwen35Attn`) — the shared forward/gguf/serialize
+   pipeline is untouched. (A joiner — refactoring `qwen3_5_moe` and the forward path onto the fused
+   layout instead — would have touched validated/frozen-adjacent code for zero benefit; this is a
+   load-time reshape, off the decode hot path, so there's no performance difference between the two,
+   only blast-radius.)
+
+Real T1 golden (`scripts/pin_qwen3next_tiny.py`, transformers 5.15.0 `Qwen3NextForCausalLM`,
+deliberately rewritten post-save to the release's flat config shape so the fixture actually
+exercises deltas 1–2, not just what `qwen3_5_moe`'s fixture already covers) passes at **cosine
+1.000000**, exact argmax, exact greedy continuation, both `forward` and `Generate` paths.
+`parity_manifest.json` row added (`status: experimental`, `method: tiny-golden`, matching the `G6`
+precedent for a tiny-golden-backed but not-yet-real-checkpoint family). Full onboarding-gate suite
+green (`representativeConfig`, `familyDoc`, `archFeatureProfile`, `admissionGolden`,
+`TestParityManifest_fresh`) except the pre-existing, unrelated `TestDispatchCensus` failure on a
+Laguna GGUF metadata switch (confirmed via `git stash -u` against clean origin/main — not this
+family's issue).
+
+**Remaining: T3 real-checkpoint parity, GGUF loader.** Qwen3-Coder-Next is the recommended agentic
+coding model for 64GB-class systems; closes a real gap in goinfer's strongest family. **80B total
+does not fit the M1 Pro 16 GB rig even at int4** — this is a WebGPU/CUDA-streaming showcase, tagged
+`linux` for that reason; scope the residency story before estimating total effort.
 
 **G6 · Laguna (poolside) — DONE (`linux-62gb`, 2026-08-17): XS-2.1 + XS.2 + M.1 on one adapter** — `any`
 
