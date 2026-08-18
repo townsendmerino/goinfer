@@ -502,7 +502,7 @@
     "tied_lm_head": false,
     "loaders": "GGUF",
     "modality": "text",
-    "gpu_residency_eligible": false,
+    "gpu_residency_eligible": true,
     "parity": "real-oracle 100.0%/0.99843"
   },
   {

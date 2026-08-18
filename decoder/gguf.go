@@ -1740,8 +1740,13 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			if l.AttnSinks, e = vec(p+"attn_sinks.weight", nH); e != nil {
 				return e
 			}
-			// MoE: router (+ logit bias) + stacked routed experts (+ per-expert biases).
-			if l.Router, e = mat(p+"ffn_gate_inp.weight", nExp, hidden); e != nil {
+			// MoE: router (+ logit bias) + stacked routed experts (+ per-expert biases). Router
+			// stays f32 regardless of the ambient quant mode (matching gptoss_safetensors.go and
+			// qwen35's streamMat(..., quantNone, ...) below) — top-k selection is discrete, so
+			// quantizing it flips which experts win rather than adding rounding noise. Plain mat()
+			// here was a latent bug: it had never been exercised at a non-f32 quant until Metal
+			// residency's f32Mat(router) panic caught it.
+			if l.Router, e = streamMat(p+"ffn_gate_inp.weight", nExp, hidden, quantNone, func(r int) int { return r * hidden }); e != nil {
 				return e
 			}
 			if l.RouterBias, e = vec(p+"ffn_gate_inp.bias", nExp); e != nil {

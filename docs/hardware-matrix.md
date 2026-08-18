@@ -25,7 +25,7 @@ Regenerate with `go test ./decoder -run HardwareMatrix -update`.
 | Laguna | ✅ | CPU | CPU | CPU |
 | Llama | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Llama 4 | ✅ | CPU | CPU | CPU |
-| Mellum2 | ✅ | ✅ resident | CPU | CPU |
+| Mellum2 | ✅ | ✅ resident | CPU | ✅ resident |
 | Mistral | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Mixtral | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Nemotron-H | ✅ | ✅ resident | CPU | CPU |
@@ -37,7 +37,7 @@ Regenerate with `go test ./decoder -run HardwareMatrix -update`.
 | Qwen3-Next | ✅ | CPU | CPU | CPU |
 | Qwen3.5-MoE | ✅ | CPU | CPU | CPU |
 | Qwen3.8 | ✅ | CPU | CPU | CPU |
-| gpt-oss | ✅ | CPU | CPU | CPU |
+| gpt-oss | ✅ | CPU | CPU | ✅ resident |
 
 Resident acceleration above is CAPABILITY (does the backend implement the family's
 features). Two load-time notes the taxonomy does not encode:

@@ -51,16 +51,23 @@ const (
 	FeatSSM               ResidentFeature = "ssm"                 // Mamba-2 mixer (Granite-4.0-H, Nemotron-H)
 	// FeatAttnSink bundles gpt-oss's THREE departures: the learned per-head sink in the softmax
 	// denominator, the clamped interleaved-SwiGLU expert, and a router whose bias reaches the
-	// WEIGHT rather than only the selection. CPU-only: no resident backend DECLARES it, so
-	// CUDA/Metal/WebGPU all decline.
+	// WEIGHT rather than only the selection. No resident backend DECLARES it yet, so CUDA/Metal/
+	// WebGPU all decline (TestGptOss_cudaWebgpuDecline).
 	//
-	// CUDA now has all three as gated KERNELS (cuda/gptoss_act.cu, plus the sink argument on
-	// both attention kernels) — and still does not declare this, deliberately. Declaring it was
-	// tried and reverted: TestGptOss_backendsDecline treats the DECLARATION itself as the line,
-	// which is correct, because kernel-level parity is not end-to-end parity. Nothing has run a
-	// whole gpt-oss forward on the resident path, and two further capabilities (FeatOutBias for
-	// the o_proj bias, FeatRopeMscale for YaRN) are still missing — so a model admitted on this
-	// feature alone would silently drop its output bias and its YaRN scaling.
+	// Metal HAS all three as end-to-end PROVEN kernels (2026-08-18: kernels.go's `attention`
+	// sink term, moe.go's route_gptoss/swiglu_quant_gptoss/gemv_w4a8_moe_wacc_bias, the moe.go
+	// isGptOss dispatch split — TestGptOssResidentParity, 8/8 argmax-exact, min cosine 0.9989 on
+	// the tiny fixture) but still does not declare this: gpt-oss also needs FeatRopeMscale
+	// (YaRN), which is held pending Mellum's own end-to-end gate — see the FeatRopeMscale note on
+	// metal's residentBackendFeatures entry. Declaring FeatAttnSink alone would still correctly
+	// decline gpt-oss via the missing FeatRopeMscale check, but the two are declared together
+	// once Mellum unblocks it, so a reader sees one coherent "gpt-oss shipped" commit rather than
+	// a half-declared feature set.
+	//
+	// CUDA has all three as gated KERNELS (cuda/gptoss_act.cu, plus the sink argument on both
+	// attention kernels) but does not declare this either: those kernels are LOADED
+	// (cuda/backend.go's gptOssSw/gptOssSinks/gptOssExpBias) but never DISPATCHED into a forward
+	// pass yet — kernel-level parity is not end-to-end parity. WebGPU has none of this.
 	FeatAttnSink       ResidentFeature = "attn-sink"        // see above: CPU-only until the bridge and an end-to-end gate exist
 	FeatAttnOutputGate ResidentFeature = "attn-output-gate" // Laguna: ctx *= softplus(g_proj·h) applied BEFORE o_proj, plus a per-layer QUERY head count. CPU-only — no resident backend implements either, so CUDA/Metal/WebGPU all decline. Without this the family needs nothing CUDA lacks and would be ADMITTED-but-mis-run: the resident path would skip the gate entirely and still produce plausible logits.
 	FeatGemma4EModel   ResidentFeature = "gemma4-e-model"   // Gemma-4 E2B/E4B shape: per-layer embeddings (PLE, hidden_size_per_layer_input>0) + cross-layer shared-KV + variable per-layer FFN. runLayersGemma4 injects PLE per layer; the resident bridges (built for the PLE-free dense 12B/26B) implement NONE of it, so a resident runner would SKIP the PLE branch and silently mis-run. No resident backend declares it ⇒ all decline (CPU-only) until an E-model bridge lands.
@@ -363,12 +370,29 @@ var residentBackendFeatures = map[string]map[ResidentFeature]bool{
 
 	// cgo-free Metal (metal/): dense Qwen2/Llama plus qk-norm, sliding-window, partial-rotary,
 	// MoE (router + stacked experts + shared expert; metal/moe.go), the full Gemma set —
-	// sandwich norms, GeGLU, (1+w) RMS, √hidden embed scale, per-layer RoPE base — and GPT-2's
+	// sandwich norms, GeGLU, (1+w) RMS, √hidden embed scale, per-layer RoPE base — GPT-2's
 	// LayerNorm/non-gated-MLP/learned-pos/out-bias (2026-08-18: layernorm_quant, act_quant,
 	// gemv_w4a8_resid_bias/gemv_w4a8_sa_bias_resid, encodeLayer/encodeAttention wiring, the
 	// ForwardArgmax V%8!=0 fallback for GPT-2's 50257 vocab — TestGPT2ResidentParity, min cosine
-	// 0.999). Gemma parity was gated on the GELU-tanh overflow fix (glu_act clamp, 38a2b7c): logit
-	// cosine 0.818→0.994. Still declines YaRN mscale, MLA and SSM.
+	// 0.999) — and gpt-oss's attention sink + clamped-SwiGLU MoE + custom router (2026-08-18:
+	// kernels.go's `attention` sink term, moe.go's route_gptoss/swiglu_quant_gptoss/
+	// gemv_w4a8_moe_wacc_bias, the moe.go isGptOss dispatch split, gpt-oss's YaRN rope mscale
+	// riding the already-wired-everywhere rope kernel param — TestGptOssResidentParity, 8/8
+	// argmax-exact, min cosine 0.9989 on the tiny fixture). Gemma parity was gated on the
+	// GELU-tanh overflow fix (glu_act clamp, 38a2b7c): logit cosine 0.818→0.994. Still declines
+	// MLA and SSM.
+	//
+	// FeatRopeMscale is SHARED with Mellum (same required-feature set minus
+	// FeatAttnSink/FeatOutBias) — declaring it for gpt-oss's YaRN ALSO admits Mellum on Metal, a
+	// path with ZERO end-to-end validation here: no real Mellum checkpoint on this box (~24GB),
+	// and a synthetic-random-weight structural test was tried and abandoned as inconclusive (even
+	// a plain dense qwen2 with NO QK-norm fails the same cosine bar against fully-random untrained
+	// weights at realistic dims — the methodology can't discriminate a real bug from quantization
+	// noise on unstructured weights, so it proves nothing either way). Declared anyway (explicit
+	// user call, 2026-08-18): Mellum already has a trusted GPU path on WebGPU, this only adds an
+	// unvalidated SECOND path on Metal, and the flag is one boolean — trivially reversible if a
+	// real Mellum checkpoint later surfaces a problem. If you're chasing a Mellum-on-Metal bug,
+	// start here.
 	"metal": {
 		FeatQKNorm:            true, // qk_norm kernels
 		FeatSlidingWindow:     true, // attention window uniform
@@ -385,5 +409,7 @@ var residentBackendFeatures = map[string]map[ResidentFeature]bool{
 		FeatNonGatedMLP:       true, // act_quant — up→act→down, no gate (GPT-2)
 		FeatLearnedPos:        true, // addLearnedPos — host-side wpe[pos] add, RoPE dispatch skipped (GPT-2)
 		FeatOutBias:           true, // gemv_w4a8_sa_bias_resid (o-proj) — GPT-2's attention output bias
+		FeatRopeMscale:        true, // rope kernel's scale param (kernels.go), proven in isolation (TestRope_mscale) and end-to-end via gpt-oss's YaRN (TestGptOssResidentParity) — ALSO admits Mellum, see note above
+		FeatAttnSink:          true, // attention sink term + clamped-SwiGLU MoE + custom router (gpt-oss) — TestGptOssResidentParity
 	},
 }

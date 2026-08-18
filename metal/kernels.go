@@ -365,10 +365,16 @@ kernel void kv_store_f32(device const float* k[[buffer(0)]], device const float*
 // window>0 (Mistral) restricts the query to the last window keys: keys[winStart..nKeys),
 // winStart = max(0, nKeys-window). window==0 is full causal. Derived from nKeys in-kernel, so
 // no per-token uniform. (Mistral is all-local; a hypothetical global layer binds window=0.)
+// sinks/hasSink: gpt-oss's per-head learned attention sink — an extra logit with NO key and NO
+// value, competing for the softmax MAX and joining the DENOMINATOR only (verified standalone,
+// metal/gptoss_kernels_test.go's TestGptOssAttnSink_metal, including the sink-DOMINATES case a
+// post-hoc denominator patch would get wrong). hasSink==0 is a true no-op for every other family
+// (uniform across the threadgroup, so no divergence cost).
 kernel void attention(device const float* q[[buffer(0)]], device const half* kc[[buffer(1)]],
     device const half* vc[[buffer(2)]], device float* out[[buffer(3)]], constant uint& nH[[buffer(4)]],
     constant uint& nKV[[buffer(5)]], constant uint& hd[[buffer(6)]], constant uint& nKeys[[buffer(7)]],
     constant float& scale[[buffer(8)]], constant uint& window[[buffer(9)]],
+    device const float* sinks[[buffer(10)]], constant uint& hasSink[[buffer(11)]],
     uint qh[[threadgroup_position_in_grid]],
     uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]]) {
     uint kvDim = nKV*hd; uint kvh = qh/(nH/nKV);
@@ -392,6 +398,8 @@ kernel void attention(device const float* q[[buffer(0)]], device const half* kc[
     red[tid]=m; threadgroup_barrier(mem_flags::mem_threadgroup);
     for (uint st=tgs/2; st>0; st>>=1){ if(tid<st) red[tid]=max(red[tid],red[tid+st]); threadgroup_barrier(mem_flags::mem_threadgroup); }
     float mx=red[0]; threadgroup_barrier(mem_flags::mem_threadgroup);
+    float sink=0.0f; bool hasS = hasSink != 0u;
+    if (hasS) { sink = sinks[qh]; mx = max(mx, sink); }
     float ls=0; for (uint s=winStart+tid;s<nKeys;s+=tgs){ float p=exp(sc[s]-mx); sc[s]=p; ls+=p; }
     red[tid]=ls; threadgroup_barrier(mem_flags::mem_threadgroup);
     // DENOMINATOR SUM — float-add is non-associative, so this result is coupled to tgs (the reduction
@@ -399,7 +407,9 @@ kernel void attention(device const float* q[[buffer(0)]], device const half* kc[
     // alternate attention kernel MUST reduce at the same width or it diverges byte-exactly (past
     // nKeys>width). No existing gate catches this. See ollama-chase §A2-Metal.
     for (uint st=tgs/2; st>0; st>>=1){ if(tid<st) red[tid]+=red[tid+st]; threadgroup_barrier(mem_flags::mem_threadgroup); }
-    float sum=red[0]; threadgroup_barrier(mem_flags::mem_threadgroup);
+    float sum=red[0];
+    if (hasS) sum += exp(sink-mx); // sink joins the denominator only — no value vector, numerator untouched
+    threadgroup_barrier(mem_flags::mem_threadgroup);
     for (uint d=tid; d<hd; d+=tgs){ float a=0; for(uint s=winStart;s<nKeys;s++) a += sc[s]*float(vb[s*kvDim+d]); out[qh*hd+d]=a/sum; }
 }
 // attention_f32 — identical to attention but reads an f32 KV cache (Gemma sandwich path). Same

@@ -40,7 +40,7 @@ func (a *metalResident) Close() error { a.r.stopExec(); return nil }
 ```
 
 ```go
-// metal/model.go:367
+// metal/model.go:374
 func (r *Resident) stopExec() {
 	if r.execReq != nil {
 		close(r.execReq)

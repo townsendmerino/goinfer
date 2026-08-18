@@ -161,6 +161,10 @@ func (a *Architecture) decodeRunnerEligible() bool {
 	// one line to a conditional admit and it silently skips every check below it. Structuring the
 	// bridged case as a fall-through makes that mistake un-writable (cf. the geometry port).
 	switch {
+	case a.gptoss != nil:
+		// gpt-oss falls through to the common checks below, same discipline as gemma4: the sink
+		// (FeatAttnSink) and the MoE bias-in-combine kernels are backend feature gates, not an
+		// arch-level decline, so a backend without them declines there instead of here.
 	case a.gemma4 != nil:
 		// Gemma 4 is admitted UNCONDITIONALLY as of the Check-A backfill. It sat behind
 		// GOINFER_GEMMA4_RESIDENT through the Split-A/B bring-up (granite's GOINFER_SSM_RESIDENT
@@ -180,7 +184,7 @@ func (a *Architecture) decodeRunnerEligible() bool {
 		// HasGemma4MoEResident. Both dense and MoE fall through to the common checks below (softcap
 		// is handled by the per-backend feature gate, so WebGPU still declines on its own terms).
 		// E-models (PLE) decline via the feature gate regardless — TestGemma4EModel_realDeclinesResident.
-	case a.qwen35 != nil || a.llama4 != nil || a.gptoss != nil:
+	case a.qwen35 != nil || a.llama4 != nil:
 		return false // own forward, not yet bridged
 	}
 	// Granite-4.0-H resident SSM hybrid (P5b): its own mixer-kind path (Mamba-2 ⊕
@@ -796,6 +800,28 @@ func (m *Model) GptOssExpertBiasResident(l int) []float32 {
 	for e := range lw.Experts {
 		copy(out[e*2*inter:], lw.Experts[e].GateBias)
 		copy(out[e*2*inter+inter:], lw.Experts[e].UpBias)
+	}
+	return out
+}
+
+// GptOssExpertDownBiasResident returns layer l's per-expert down-projection bias table,
+// expert-major (biasRow = idx[slot]*hidden), matching gemv_w4a8_moe_wacc_bias's addressing —
+// the down-combine kernel adds this INSIDE the expert before the router weight scales the
+// result (decoder/forward_gptoss.go's gptOssExpert: dst = Down·h + downBias; gptOssMoE then
+// combines out += w·dst), unlike GPT-2's plain post-hoc += bias[row]. nil for every family
+// without per-expert down biases.
+func (m *Model) GptOssExpertDownBiasResident(l int) []float32 {
+	if m.w.arch.gptoss == nil || m.w.arch.MoE == nil || l < 0 || l >= len(m.w.Layers) {
+		return nil
+	}
+	lw := &m.w.Layers[l]
+	if len(lw.Experts) == 0 || lw.Experts[0].DownBias == nil {
+		return nil
+	}
+	hidden := m.w.arch.HiddenDim
+	out := make([]float32, len(lw.Experts)*hidden)
+	for e := range lw.Experts {
+		copy(out[e*hidden:], lw.Experts[e].DownBias)
 	}
 	return out
 }

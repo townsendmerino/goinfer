@@ -84,7 +84,10 @@ type residLayer struct {
 	preNormBias, postNormBias Buffer
 	upW, upS                  Buffer
 	oBias, upBias, downBias   Buffer
-	geom                      *attnGeom // per-layer attention geometry (hd/nKV/half/kEqV + uniforms); see geom.go
+	// gpt-oss (FeatAttnSink, not yet declared): attnSinks is the per-head learned sink logit
+	// [nH]; uHasSink is a 0/1 flag mirroring layerNormBias's pattern. Unused for every other family.
+	attnSinks, uHasSink Buffer
+	geom                *attnGeom // per-layer attention geometry (hd/nKV/half/kEqV + uniforms); see geom.go
 }
 
 // resident is a Metal-resident dense decoder. Weights uploaded once in BuildResident;
@@ -113,6 +116,10 @@ type resident struct {
 	nonGatedMLP, outBias, learnedPos bool              // arch.NonGatedMLP / arch.OutBias / arch.LearnedPosEmbed
 	posEmbed                         *linalg.WeightMat // [MaxPositions, H] learned position embedding table (learnedPos only)
 	uLNHasBias                       Buffer            // layernorm_quant's hasBias uniform (r.layerNormBias as 0/1)
+
+	// gpt-oss (FeatAttnSink, not yet declared — kernels exist, not wired end-to-end).
+	attnSink                 bool    // arch.gptoss != nil
+	gptossAlpha, gptossLimit float64 // clamped-SwiGLU constants (0 for every other family)
 
 	qkv, gu Buffer // fused QKV out, fused gate/up out
 
@@ -440,6 +447,10 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	r.nonGatedMLP = m.NonGatedMLPResident()
 	r.outBias = m.OutBiasResident()
 	r.learnedPos = m.LearnedPosResident()
+	if alpha, limit, isGptOss := m.GptOssActResident(); isGptOss {
+		r.attnSink = true
+		r.gptossAlpha, r.gptossLimit = float64(alpha), float64(limit)
+	}
 	// f32 KV path (kv_store_f32/attention_f32) exists but is DISABLED: the matched-input confirmer
 	// proved f16-vs-f32 KV storage is NOT the Gemma crater. The whole crater is Metal's BOS
 	// (position-0) K/V being computed wrong (cos 0.40 vs goinfer); overwriting just that recovers
@@ -520,6 +531,14 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		if r.outBias {
 			L.oBias = d.NewBufferFloats(lw.OBias)
 		}
+		// attention always dispatches L.attnSinks/L.uHasSink (unlike L.invf, which is only bound
+		// when the rope dispatch itself runs) — every family needs a VALID buffer bound, gated by
+		// the flag, so non-gpt-oss gets a real but unused 1-element dummy, not a zero Buffer.
+		if r.attnSink {
+			L.attnSinks, L.uHasSink = d.NewBufferFloats(lw.AttnSinks), d.NewBufferU32(1)
+		} else {
+			L.attnSinks, L.uHasSink = d.NewBufferFloats([]float32{0}), d.NewBufferU32(0)
+		}
 		g4b, isG4MoE := decoder.Gemma4MoEResidentBundle{}, false
 		if r.g4moe != nil {
 			g4b, isG4MoE = m.Gemma4MoEResidentLayer(l)
@@ -528,7 +547,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		case isG4MoE: // Gemma-4 enable_moe_block: parallel dense‖MoE FFN (its own norms/router/experts)
 			L.g4moe = buildGemma4MoELayer(d, m, &g4b, r.g4moe)
 		case r.moe != nil && len(lw.Experts) > 0: // generic MoE layer: stacked experts instead of a dense FFN
-			L.moe = buildMoELayer(d, lw, r.moe)
+			L.moe = buildMoELayer(d, m, l, lw, r.moe)
 		case r.nonGatedMLP: // GPT-2/Nemotron relu²: single up-proj (no gate) + biases
 			L.upW, L.upS = mk(&lw.UpProj)
 			L.dW, L.dS = mk(&lw.DownProj)
@@ -1192,7 +1211,7 @@ func (r *resident) forwardSubCaptureForTest(emb []float32, pos int) (attn, mlp, 
 		e.Dispatch(r.pRope, r.nH*g.half, 64, r.qkv, L.invf, g.uHd, r.uPos, g.uQtotal, g.uHalf, L.mscale)
 		e.Dispatch(r.pRope, g.nKV*g.half, 64, r.qkv.At(kOff), L.invf, g.uHd, r.uPos, g.uKtotal, g.uHalf, L.mscale)
 		e.Dispatch(r.pKv, g.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[l], r.vc[l], g.uKvDim, r.uPos)
-		e.Dispatch(r.pAttn, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[l], r.vc[l], r.ctx, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow)
+		e.Dispatch(r.pAttn, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[l], r.vc[l], r.ctx, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow, L.attnSinks, L.uHasSink)
 		e.Dispatch(r.pQv, 256, 256, r.ctx, r.cq, r.cSc, g.uNHhd)
 		e.DispatchTG(r.pSA, r.H*32, 256, r.nH*g.hd*2, L.oW, L.oS, r.cq, r.cSc, r.oO, g.uNHhd)
 		e.Dispatch(r.pRmsF32, tgReduceNorm, tgReduceNorm, r.oO, L.postAttnNorm, r.uH, r.uEps, r.uAddOne)
@@ -1254,7 +1273,7 @@ func (r *resident) l0GegluForTest(emb []float32, pos int) (gateUp, geglu8 []floa
 	e.Dispatch(r.pRope, r.nH*g.half, 64, r.qkv, L.invf, g.uHd, r.uPos, g.uQtotal, g.uHalf, L.mscale)
 	e.Dispatch(r.pRope, g.nKV*g.half, 64, r.qkv.At(kOff), L.invf, g.uHd, r.uPos, g.uKtotal, g.uHalf, L.mscale)
 	e.Dispatch(r.pKv, g.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[0], r.vc[0], g.uKvDim, r.uPos)
-	e.Dispatch(r.pAttn, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[0], r.vc[0], r.ctx, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow)
+	e.Dispatch(r.pAttn, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[0], r.vc[0], r.ctx, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow, L.attnSinks, L.uHasSink)
 	e.Dispatch(r.pQv, 256, 256, r.ctx, r.cq, r.cSc, g.uNHhd)
 	e.DispatchTG(r.pSA, r.H*32, 256, r.nH*g.hd*2, L.oW, L.oS, r.cq, r.cSc, r.oO, g.uNHhd)
 	e.Dispatch(r.pRmsF32, tgReduceNorm, tgReduceNorm, r.oO, L.postAttnNorm, r.uH, r.uEps, r.uAddOne)
@@ -1324,7 +1343,7 @@ func (r *resident) attnConfirmForTest(resid, kHist, vHist []float32, layer, pos 
 		e.Dispatch(r.pRope, g.nKV*g.half, 64, r.qkv.At(kOff), L.invf, g.uHd, r.uPos, g.uKtotal, g.uHalf, L.mscale)
 		e.Dispatch(r.pKv, g.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[layer], r.vc[layer], g.uKvDim, r.uPos)
 	}
-	e.Dispatch(r.pAttn, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[layer], r.vc[layer], r.ctx, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow)
+	e.Dispatch(r.pAttn, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[layer], r.vc[layer], r.ctx, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow, L.attnSinks, L.uHasSink)
 	e.End()
 	return append([]float32(nil), r.ctx.Floats()[:nHhd]...)
 }
@@ -1445,7 +1464,7 @@ func (r *resident) encodeAttention(e *Encoder, l int) {
 		e.Dispatch(r.pRope, g.nKV*g.half, 64, r.qkv.At(kOff), L.invf, g.uHd, r.uPos, g.uKtotal, g.uHalf, L.mscale) // k (V slot at vOff is NOT roped)
 	}
 	e.Dispatch(r.pKv, g.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[l], r.vc[l], g.uKvDim, r.uPos)
-	e.Dispatch(r.pAttn, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[l], r.vc[l], r.ctx, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow)
+	e.Dispatch(r.pAttn, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[l], r.vc[l], r.ctx, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow, L.attnSinks, L.uHasSink)
 	e.Dispatch(r.pQv, 256, 256, r.ctx, r.cq, r.cSc, g.uNHhd)
 	if r.sandwich {
 		// Gemma: the sublayer OUTPUT is normed BEFORE the residual add, which the fused

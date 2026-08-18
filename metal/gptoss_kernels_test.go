@@ -1,21 +1,18 @@
 //go:build darwin
 
-// gpt-oss's three resident departures, ported to Metal and gated standalone — the same phase
-// CUDA's own gpt-oss residency work is currently at (cuda/gptoss_act.cu, cuda/attn_sink_test.go,
-// cuda/gptoss_act_test.go): kernels exist and are checked against the CPU reference
-// (decoder/forward_gptoss.go), but nothing here is wired into model.go's resident dispatch, and
-// FeatAttnSink is NOT declared for Metal. Two more capabilities gpt-oss needs (FeatOutBias for
-// the o_proj bias, FeatRopeMscale for YaRN) are still missing on BOTH CUDA and Metal — CUDA's own
-// FeatAttnSink declaration was tried and reverted for exactly this reason (2224441): kernel-level
-// parity is not end-to-end parity. See docs/task-mxfp4-gptoss.md.
-//
-// Each kernel compiles its own isolated MSL source (the swiglu_test.go pattern), not
-// allKernels/moeKernels — so this touches zero shipped call sites and carries zero regression
-// risk to any resident family already running on Metal.
+// gpt-oss's three resident departures, checked against the CPU reference (decoder/forward_gptoss.go):
+// the attention sink (promoted in-place into kernels.go's shared `attention`, mirroring the
+// rope mscale precedent), and the clamped-SwiGLU expert + custom router (promoted into
+// moe.go's moeKernels as swiglu_quant_gptoss/route_gptoss). All three tests here compile the
+// REAL shared library (allKernels[+moeKernels]), not an isolated copy, so they gate what
+// actually ships. FeatAttnSink is still not declared for Metal — the kernels/promotion are done,
+// but nothing is wired into model.go's per-layer resident dispatch yet (own-forward bridging,
+// docs/queue-correctness.md G7/G10).
 package metal
 
 import (
 	"math"
+	"math/rand"
 	"testing"
 )
 
@@ -29,50 +26,21 @@ import (
 // It cannot be folded in as a post-hoc denominator correction (that would need every exponent
 // re-based on a new max), so the dominates-the-max case is the one that actually exercises the
 // ordering — most random inputs would pass a wrong post-hoc version too.
+//
+// Compiles allKernels (kernels.go's REAL, shipped `attention`) rather than an isolated copy —
+// that kernel is the one every family's decode path actually dispatches (f16 KV; gpt-oss uses
+// this exact path, not attention_f32, which stays Gemma-sandwich-only and disabled), so this
+// gates what will actually run, not a copy that could silently drift from it.
 func TestGptOssAttnSink_metal(t *testing.T) {
 	d, err := CreateSystemDefaultDevice()
 	if err != nil {
 		t.Skipf("device: %v", err)
 	}
-	const src = `
-#include <metal_stdlib>
-using namespace metal;
-kernel void attention_f32_sink(device const float* q[[buffer(0)]], device const float* kc[[buffer(1)]],
-    device const float* vc[[buffer(2)]], device float* out[[buffer(3)]], constant uint& nH[[buffer(4)]],
-    constant uint& nKV[[buffer(5)]], constant uint& hd[[buffer(6)]], constant uint& nKeys[[buffer(7)]],
-    constant float& scale[[buffer(8)]], device const float* sinks[[buffer(9)]], constant uint& hasSink[[buffer(10)]],
-    uint qh[[threadgroup_position_in_grid]],
-    uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]]) {
-    uint kvDim = nKV*hd; uint kvh = qh/(nH/nKV);
-    device const float* qr = q + qh*hd;
-    device const float* kb = kc + kvh*hd;
-    device const float* vb = vc + kvh*hd;
-    threadgroup float sc[4096];
-    threadgroup float red[128];
-    for (uint s=tid; s<nKeys; s+=tgs) {
-        float a=0; device const float* k=kb+s*kvDim;
-        for (uint d=0u; d<hd; d++) a += qr[d]*k[d];
-        sc[s]=a*scale;
-    }
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    float m=-INFINITY; for (uint s=tid;s<nKeys;s+=tgs) m=max(m,sc[s]);
-    red[tid]=m; threadgroup_barrier(mem_flags::mem_threadgroup);
-    for (uint st=tgs/2; st>0; st>>=1){ if(tid<st) red[tid]=max(red[tid],red[tid+st]); threadgroup_barrier(mem_flags::mem_threadgroup); }
-    float mx=red[0]; threadgroup_barrier(mem_flags::mem_threadgroup);
-    float sink=0.0f; bool hasS = hasSink != 0u;
-    if (hasS) { sink = sinks[qh]; mx = max(mx, sink); }
-    float ls=0; for (uint s=tid;s<nKeys;s+=tgs){ float p=exp(sc[s]-mx); sc[s]=p; ls+=p; }
-    red[tid]=ls; threadgroup_barrier(mem_flags::mem_threadgroup);
-    for (uint st=tgs/2; st>0; st>>=1){ if(tid<st) red[tid]+=red[tid+st]; threadgroup_barrier(mem_flags::mem_threadgroup); }
-    float sum=red[0];
-    if (hasS) sum += exp(sink-mx);
-    for (uint d=tid; d<hd; d+=tgs){ float a=0; for(uint s=0u;s<nKeys;s++) a += sc[s]*vb[s*kvDim+d]; out[qh*hd+d]=a/sum; }
-}`
-	lib, err := d.CompileLibrary(src, MSL3_1)
+	lib, err := d.CompileLibrary(allKernels, MSL3_1)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
-	pipe, err := d.NewComputePipeline(lib, "attention_f32_sink")
+	pipe, err := d.NewComputePipeline(lib, "attention")
 	if err != nil {
 		t.Fatalf("pipeline: %v", err)
 	}
@@ -92,8 +60,15 @@ kernel void attention_f32_sink(device const float* q[[buffer(0)]], device const 
 		kc[i] = float32(math.Cos(float64(i)*0.31)) * 0.9
 		vc[i] = float32(math.Sin(float64(i)*0.13)) * 1.1
 	}
+	kcH := make([]uint16, len(kc))
+	vcH := make([]uint16, len(vc))
+	for i := range kc {
+		kcH[i], vcH[i] = f32ToF16(kc[i]), f32ToF16(vc[i])
+	}
 
-	// CPU reference — the same math forward_gptoss.go implements.
+	// CPU reference — the same math forward_gptoss.go implements. Runs on the f16-rounded KV
+	// (kcH/vcH dequantized back), so it compares against what the kernel ACTUALLY reads, not the
+	// pre-rounding f32 source — the same convention every other f16-KV test in this package uses.
 	ref := func(sinks []float32) []float32 {
 		out := make([]float32, qDim)
 		group := nH / nKV
@@ -104,7 +79,7 @@ kernel void attention_f32_sink(device const float* q[[buffer(0)]], device const 
 			for s := range nKeys {
 				var dot float64
 				for dd := range hd {
-					dot += float64(q[h*hd+dd]) * float64(kc[s*kvDim+kvh*hd+dd])
+					dot += float64(q[h*hd+dd]) * float64(f16ToF32(kcH[s*kvDim+kvh*hd+dd]))
 				}
 				sc[s] = dot * float64(scale)
 				mx = math.Max(mx, sc[s])
@@ -123,7 +98,7 @@ kernel void attention_f32_sink(device const float* q[[buffer(0)]], device const 
 			for dd := range hd {
 				acc := 0.0
 				for s := range nKeys {
-					acc += sc[s] * float64(vc[s*kvDim+kvh*hd+dd])
+					acc += sc[s] * float64(f16ToF32(vcH[s*kvDim+kvh*hd+dd]))
 				}
 				out[h*hd+dd] = float32(acc / denom)
 			}
@@ -133,10 +108,10 @@ kernel void attention_f32_sink(device const float* q[[buffer(0)]], device const 
 
 	q_ := d.NewCommandQueue()
 	dQ := d.NewBufferFloats(q)
-	dK := d.NewBufferFloats(kc)
-	dV := d.NewBufferFloats(vc)
+	dK := d.NewBufferU16s(kcH)
+	dV := d.NewBufferU16s(vcH)
 	uNH, uNKV, uHd, uNKeys := d.NewBufferU32(uint32(nH)), d.NewBufferU32(uint32(nKV)), d.NewBufferU32(uint32(hd)), d.NewBufferU32(uint32(nKeys))
-	uScale := d.NewBufferFloats([]float32{scale})
+	uScale, uWindow0 := d.NewBufferFloats([]float32{scale}), d.NewBufferU32(0)
 
 	run := func(sinks []float32) []float32 {
 		dOut := d.NewBufferLen(qDim)
@@ -148,7 +123,7 @@ kernel void attention_f32_sink(device const float* q[[buffer(0)]], device const 
 		} else {
 			dSink = d.NewBufferLen(nH) // unused placeholder — hasSink=0 means the kernel never reads it
 		}
-		q_.Run1D(pipe, nH*tgs, tgs, dQ, dK, dV, dOut, uNH, uNKV, uHd, uNKeys, uScale, dSink, d.NewBufferU32(hasSink))
+		q_.Run1D(pipe, nH*tgs, tgs, dQ, dK, dV, dOut, uNH, uNKV, uHd, uNKeys, uScale, uWindow0, dSink, d.NewBufferU32(hasSink))
 		return dOut.Floats()
 	}
 
@@ -203,46 +178,14 @@ kernel void attention_f32_sink(device const float* q[[buffer(0)]], device const 
 // never crosses ±limit cannot tell the two apart. Per-expert biases are looked up via
 // idx[slot]*2*I, matching the on-device addressing gpt-oss's real MoE dispatch needs (the
 // router decides which expert runs; the launch geometry stays static).
+// Compiles allKernels (the REAL, shipped swiglu_quant_gptoss) rather than an
+// isolated copy — same rationale as TestGptOssAttnSink_metal above.
 func TestGptOssSwigluQuant_metal(t *testing.T) {
 	d, err := CreateSystemDefaultDevice()
 	if err != nil {
 		t.Skipf("device: %v", err)
 	}
-	const src = `
-#include <metal_stdlib>
-using namespace metal;
-inline float gptoss_glu(float gx, float ux, float alpha, float limit) {
-    gx = min(gx, limit);
-    ux = clamp(ux, -limit, limit);
-    float glu = gx/(1.0f+exp(-alpha*gx));
-    return (ux+1.0f)*glu;
-}
-kernel void swiglu_quant_gptoss(device const float* g[[buffer(0)]], device const float* u[[buffer(1)]],
-    device char* dq[[buffer(2)]], device float* ds[[buffer(3)]], constant uint& I[[buffer(4)]],
-    device const float* biasGU[[buffer(5)]], device const uint* idx[[buffer(6)]], constant uint& slot[[buffer(7)]],
-    constant uint& hasBias[[buffer(8)]], constant float& alpha[[buffer(9)]], constant float& limit[[buffer(10)]],
-    uint tid[[thread_position_in_threadgroup]], uint tgs[[threads_per_threadgroup]]) {
-    threadgroup float red[256];
-    uint biasOff = hasBias != 0u ? idx[slot]*2u*I : 0u;
-    float mx=0;
-    for (uint i=tid;i<I;i+=tgs) {
-        float gx=g[i], ux=u[i];
-        if (hasBias!=0u) { gx += biasGU[biasOff+i]; ux += biasGU[biasOff+I+i]; }
-        float dd = gptoss_glu(gx, ux, alpha, limit);
-        mx = max(mx, fabs(dd));
-    }
-    red[tid]=mx; threadgroup_barrier(mem_flags::mem_threadgroup);
-    for(uint s=tgs/2;s>0;s>>=1){ if(tid<s) red[tid]=max(red[tid],red[tid+s]); threadgroup_barrier(mem_flags::mem_threadgroup);}
-    float sc=red[0]/127.0f; if(sc==0)sc=1; if(tid==0)ds[0]=sc; float inv=1/sc;
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    for (uint i=tid;i<I;i+=tgs) {
-        float gx=g[i], ux=u[i];
-        if (hasBias!=0u) { gx += biasGU[biasOff+i]; ux += biasGU[biasOff+I+i]; }
-        float dd = gptoss_glu(gx, ux, alpha, limit);
-        dq[i]=char(clamp(int(round(dd*inv)),-127,127));
-    }
-}`
-	lib, err := d.CompileLibrary(src, MSL3_1)
+	lib, err := d.CompileLibrary(allKernels, MSL3_1)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
@@ -341,39 +284,14 @@ kernel void swiglu_quant_gptoss(device const float* g[[buffer(0)]], device const
 // model's — invisible to any check that only asks whether the output is finite or normalized.
 // The test asserts the WEIGHTS, and includes a bias that changes WHICH experts win, since a
 // router ignoring the bias would still look like a valid softmax otherwise.
+// Compiles allKernels (the REAL, shipped route_gptoss) rather than an isolated
+// copy — same rationale as TestGptOssAttnSink_metal above.
 func TestGptOssRoute_metal(t *testing.T) {
 	d, err := CreateSystemDefaultDevice()
 	if err != nil {
 		t.Skipf("device: %v", err)
 	}
-	const src = `
-#include <metal_stdlib>
-using namespace metal;
-kernel void route_gptoss(device const float* logits[[buffer(0)]], device const float* bias[[buffer(1)]],
-    device uint* outIdx[[buffer(2)]], device float* outWgt[[buffer(3)]], constant uint& nE[[buffer(4)]],
-    constant uint& k[[buffer(5)]],
-    uint tid[[thread_position_in_grid]]) {
-    if (tid != 0u) return;
-    float sc[256];
-    for (uint i=0u;i<nE;i++) sc[i] = logits[i] + bias[i];
-    bool taken[256];
-    for (uint i=0u;i<nE;i++) taken[i]=false;
-    float chosen[256];
-    for (uint j=0u;j<k;j++) {
-        int best=-1; float bv=-INFINITY;
-        for (uint i=0u;i<nE;i++) if (!taken[i] && sc[i]>bv) { bv=sc[i]; best=int(i); }
-        taken[uint(best)]=true;
-        outIdx[j]=uint(best);
-        chosen[j]=bv;
-    }
-    float mx=chosen[0];
-    for (uint j=1u;j<k;j++) mx=max(mx,chosen[j]);
-    float sum=0.0f;
-    for (uint j=0u;j<k;j++) { chosen[j]=exp(chosen[j]-mx); sum+=chosen[j]; }
-    float inv=1.0f/sum;
-    for (uint j=0u;j<k;j++) outWgt[j]=chosen[j]*inv;
-}`
-	lib, err := d.CompileLibrary(src, MSL3_1)
+	lib, err := d.CompileLibrary(allKernels, MSL3_1)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
@@ -450,4 +368,121 @@ kernel void route_gptoss(device const float* logits[[buffer(0)]], device const f
 	if math.Abs(tot-1) > 1e-5 {
 		t.Errorf("weights sum to %v, want 1", tot)
 	}
+}
+
+// TestGptOssMoEDownBias_metal gates gemv_w4a8_moe_wacc_bias — gpt-oss's MoE down-projection
+// combine. Unlike GPT-2's o-proj/down-proj bias (a plain += bias, no router weight involved),
+// gpt-oss's expert bias is added INSIDE the expert before the router weight scales the result
+// (decoder/forward_gptoss.go: dst = Down·h + downBias; gptOssMoE combines out += w·dst), so the
+// kernel must compute out[row] += wgt[slot]*(acc*asc[0] + bias[row]), not wgt[slot]*acc*asc[0] +
+// bias[row]. Two-expert setup (like TestSAGemvBiasResid) so the test also exercises the
+// idx[slot]*rowsPerExpert addressing, not just the math.
+func TestGptOssMoEDownBias_metal(t *testing.T) {
+	d, err := CreateSystemDefaultDevice()
+	if err != nil {
+		t.Skipf("device: %v", err)
+	}
+	lib, err := d.CompileLibrary(allKernels, MSL3_1)
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	pipe, err := d.NewComputePipeline(lib, "gemv_w4a8_moe_wacc_bias")
+	if err != nil {
+		t.Fatalf("pipeline: %v", err)
+	}
+
+	const nExp, N, K = 2, 64, 512 // N = rowsPerExpert (down-proj output = hidden)
+	const slot = 0
+	rng := rand.New(rand.NewSource(53))
+
+	a := make([]float32, K)
+	for i := range a {
+		a[i] = rng.Float32()*2 - 1
+	}
+	amx := float32(0)
+	for _, v := range a {
+		if x := float32(math.Abs(float64(v))); x > amx {
+			amx = x
+		}
+	}
+	aSc := amx / 127
+	aq := make([]int8, K)
+	for i, v := range a {
+		aq[i] = int8(math.Max(-127, math.Min(127, math.Round(float64(v/aSc)))))
+	}
+
+	wgt := []float32{0.37} // this slot's router weight
+	resid0 := make([]float32, N)
+	bias := make([]float32, nExp*N) // per-expert down bias, decoy on expert 0
+	for i := range resid0 {
+		resid0[i] = rng.Float32()*4 - 2
+	}
+	for i := range N {
+		bias[i] = 999                   // expert 0: decoy, would be visibly wrong if the addressing picked it
+		bias[N+i] = rng.Float32()*2 - 1 // expert 1: the one idx selects
+	}
+
+	words := make([]uint32, nExp*N*(K/8))
+	scalesH := make([]uint16, nExp*N*(K/32))
+	ref := make([]float32, N)
+	for row := range N {
+		wrow := 1*N + row // expert 1 (idx selects 1), matching idx[slot]*rowsPerExpert+row
+		rowVals := make([]float32, K)
+		for k := range rowVals {
+			rowVals[k] = rng.Float32()*2 - 1
+		}
+		w, s := packW4A8Row(rowVals)
+		copy(words[wrow*(K/8):(wrow+1)*(K/8)], w)
+		var acc float64
+		for g := range K / 32 {
+			scalesH[wrow*(K/32)+g] = f32ToF16(s[g])
+			sc := float64(f16ToF32(scalesH[wrow*(K/32)+g]))
+			for e := range 32 {
+				k := g*32 + e
+				nib := int((w[k/8]>>(4*uint(k%8)))&0xF) - 8
+				acc += float64(nib) * float64(aq[k]) * sc
+			}
+		}
+		ref[row] = resid0[row] + wgt[slot]*(float32(acc)*aSc+bias[wrow])
+	}
+	// Fill expert 0's (unselected) weight rows too, so a wrong idx would read something real
+	// rather than zeros — zeros could accidentally look "close enough" on a small K.
+	for row := range N {
+		rowVals := make([]float32, K)
+		for k := range rowVals {
+			rowVals[k] = rng.Float32()*2 - 1
+		}
+		w, s := packW4A8Row(rowVals)
+		copy(words[row*(K/8):(row+1)*(K/8)], w)
+		for g := range K / 32 {
+			scalesH[row*(K/32)+g] = f32ToF16(s[g])
+		}
+	}
+
+	q := d.NewCommandQueue()
+	out := d.NewBufferFloats(resid0)
+	q.Run1DTG(pipe, N*32, 256, K*2,
+		d.NewBufferUint32s(words), d.NewBufferU16s(scalesH), d.NewBufferInt8(aq),
+		d.NewBufferFloats([]float32{aSc}), out,
+		d.NewBufferU32(uint32(K)), d.NewBufferUint32s([]uint32{1}), d.NewBufferFloats(wgt),
+		d.NewBufferU32(uint32(slot)), d.NewBufferU32(uint32(N)), d.NewBufferFloats(bias))
+	got := out.Floats()
+
+	var dot, na, nb, maxRel float64
+	for n := range N {
+		dot += float64(got[n]) * float64(ref[n])
+		na += float64(got[n]) * float64(got[n])
+		nb += float64(ref[n]) * float64(ref[n])
+		if dd := math.Abs(float64(got[n] - ref[n])); dd > 1e-3 {
+			if rel := dd / (math.Abs(float64(ref[n])) + 1e-3); rel > maxRel {
+				maxRel = rel
+			}
+		}
+	}
+	cos := dot / (math.Sqrt(na) * math.Sqrt(nb))
+	mustFinite(t, "gpt-oss MoE down-bias cosine", cos)
+	if cos < 0.9999 || maxRel > 5e-3 {
+		t.Fatalf("gemv_w4a8_moe_wacc_bias parity FAIL: cos=%.7f maxRel=%.4f", cos, maxRel)
+	}
+	t.Logf("gemv_w4a8_moe_wacc_bias N=%d K=%d vs CPU: cos=%.7f maxRel=%.4f — PARITY ✓", N, K, cos, maxRel)
 }

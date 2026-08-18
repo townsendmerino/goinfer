@@ -140,14 +140,17 @@ var admissionGolden = map[string][]string{
 	// mis-shapes q/o). CPU-only until a bridge lands.
 	"laguna":           {},
 	"gpt2":             {"metal"},
-	"gpt_oss":          {},
+	"gpt_oss":          {"metal"},
 	"granitemoehybrid": {"webgpu"},
 	"kimi_k2":          {"webgpu"},
 	"llama":            {"cuda", "metal", "webgpu"},
 	"internlm2":        {"cuda", "metal", "webgpu"},
 	"internlm3":        {"cuda", "metal", "webgpu"},
 	"llama4_text":      {"cuda", "metal", "webgpu"},
-	"mellum":           {"webgpu"},
+	// mellum's Metal admission is a documented SIDE EFFECT of gpt-oss's FeatRopeMscale (G10), not
+	// its own gate — G11 (docs/queue-correctness.md) tracks getting Mellum a real-weight Metal
+	// proof; until then this is here because it IS what the code does, not because it's trusted.
+	"mellum":           {"metal", "webgpu"},
 	"mistral":          {"cuda", "metal", "webgpu"},
 	"mixtral":          {"cuda", "metal", "webgpu"},
 	"nemotron_h":       {"webgpu"},
@@ -227,11 +230,15 @@ func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 		// GPT-2 (2026-08-18): LayerNorm/non-gated-MLP/learned-pos/out-bias all landed as real
 		// kernels + full BuildResident/encodeLayer/encodeAttention wiring, validated end-to-end
 		// against the real checkpoint (TestGPT2ResidentParity, min cosine 0.999) — not a
-		// declaration ahead of the evidence.
+		// declaration ahead of the evidence. gpt-oss's attention sink + clamped-SwiGLU MoE +
+		// custom router + YaRN rope mscale also landed (TestGptOssResidentParity, min cosine
+		// 0.9989 on the tiny fixture) — FeatRopeMscale ALSO admits Mellum as a documented side
+		// effect (see docs/queue-correctness.md G10/G11): declared anyway on explicit user call,
+		// Mellum's own real-weight Metal gate is tracked as G11, not yet landed.
 		"metal": {
 			FeatQKNorm, FeatSlidingWindow, FeatPartialRotary, FeatMoE, FeatMoEGatedShared, FeatSandwichNorm,
 			FeatGatedGELU, FeatRMSAddOne, FeatEmbedScale, FeatPerLayerRoPE, FeatFinalLogitSoftcap,
-			FeatLayerNorm, FeatNonGatedMLP, FeatLearnedPos, FeatOutBias,
+			FeatLayerNorm, FeatNonGatedMLP, FeatLearnedPos, FeatOutBias, FeatRopeMscale, FeatAttnSink,
 		},
 	}
 	for be, exp := range want {

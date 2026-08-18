@@ -83,6 +83,38 @@ kernel void moe_route(device const float* logits[[buffer(0)]], device const floa
     if (norm != 0u && wsum > 0.0f) for (uint j=0u; j<k; j++) outWgt[j] /= wsum;
     if (scale != 0.0f && scale != 1.0f) for (uint j=0u; j<k; j++) outWgt[j] *= scale;
 }
+// route_gptoss — gpt-oss's MoE router. moe_route's contract (sel=score+bias; top-k on sel;
+// weight=score[best]) has the bias steer SELECTION only, which is right for DeepSeek/GLM/
+// Qwen-MoE but wrong for gpt-oss: its bias reaches the logits BEFORE top-k, and the weight is
+// softmax over the SELECTED biased logits, not the unbiased score. Verified standalone
+// (metal/gptoss_kernels_test.go's TestGptOssRoute_metal: a case where the bias changes WHICH
+// experts win, not just a valid-looking-but-wrong softmax). Softmax-over-selected-only equals
+// softmax-over-all-then-renormalize (the shared normalizer cancels), matching HF's
+// GptOssTopKRouter exactly.
+kernel void route_gptoss(device const float* logits[[buffer(0)]], device const float* bias[[buffer(1)]],
+    device uint* outIdx[[buffer(2)]], device float* outWgt[[buffer(3)]], constant uint& nE[[buffer(4)]],
+    constant uint& k[[buffer(5)]],
+    uint tid[[thread_position_in_grid]]) {
+    if (tid != 0u) return;
+    float sc[256];
+    for (uint i=0u;i<nE;i++) sc[i] = logits[i] + bias[i];
+    bool taken[256];
+    for (uint i=0u;i<nE;i++) taken[i]=false;
+    float chosen[256];
+    for (uint j=0u;j<k;j++) {
+        int best=-1; float bv=-INFINITY;
+        for (uint i=0u;i<nE;i++) if (!taken[i] && sc[i]>bv) { bv=sc[i]; best=int(i); }
+        taken[uint(best)]=true;
+        outIdx[j]=uint(best);
+        chosen[j]=bv;
+    }
+    float mx=chosen[0];
+    for (uint j=1u;j<k;j++) mx=max(mx,chosen[j]);
+    float sum=0.0f;
+    for (uint j=0u;j<k;j++) { chosen[j]=exp(chosen[j]-mx); sum+=chosen[j]; }
+    float inv=1.0f/sum;
+    for (uint j=0u;j<k;j++) outWgt[j]=chosen[j]*inv;
+}
 
 // Indexed Stage-A W4A8 expert GEMV, mode-0 OVERWRITE (fused gate|up). Same body as
 // gemv_w4a8_sa but the WEIGHT row is idx[slot]*rowsPerExpert + outRow (the stacked
@@ -138,11 +170,85 @@ kernel void gemv_w4a8_moe_wacc(device const uint4* wq[[buffer(0)]], device const
     acc = simd_sum(acc);
     if (lane==0) out[row] += wgt[slot]*acc*asc[0];
 }
+// gemv_w4a8_moe_wacc_bias: gpt-oss's down-projection combine. Its bias is added INSIDE the
+// expert, before the router weight scales the result (decoder/forward_gptoss.go's
+// gptOssExpert: dst = Down·h + downBias; then gptOssMoE combines out += w·dst) — so the bias
+// is wgt[slot]*bias[row], NOT a plain += bias[row] the way GPT-2's o-proj/down-proj bias is
+// (those have no router weight to fold into). gemv_w4a8_moe_wacc has no bias epilogue at all,
+// so this is a genuinely new kernel, not a parameter added to an existing one.
+kernel void gemv_w4a8_moe_wacc_bias(device const uint4* wq[[buffer(0)]], device const half* sct[[buffer(1)]],
+    device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
+    constant uint& K[[buffer(5)]], device const uint* idx[[buffer(6)]], device const float* wgt[[buffer(7)]],
+    constant uint& slot[[buffer(8)]], constant uint& rowsPerExpert[[buffer(9)]], device const float* bias[[buffer(10)]],
+    threadgroup short* As[[threadgroup(0)]],
+    uint tgid[[threadgroup_position_in_grid]], uint tid[[thread_index_in_threadgroup]],
+    uint tgs[[threads_per_threadgroup]], uint sgid[[simdgroup_index_in_threadgroup]],
+    uint lane[[thread_index_in_simdgroup]]) {
+    for (uint i=tid;i<K;i+=tgs) As[i]=short(aq[i]);
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    uint G = K>>5u;
+    uint row = tgid*(tgs>>5u) + sgid;
+    uint wrow = idx[slot]*rowsPerExpert + row;
+    device const uint4* wr = wq  + (uint)wrow*G;
+    device const half*  sr = sct + (uint)wrow*G;
+    float acc = 0.0f;
+    for (uint g=lane; g<G; g+=32u) {
+        uint4 w = wr[g]; threadgroup const short* a = As + g*32u;
+        int gi = UNP8(w.x,a) + UNP8(w.y,a+8) + UNP8(w.z,a+16) + UNP8(w.w,a+24);
+        acc += float(gi) * float(sr[g]);
+    }
+    acc = simd_sum(acc);
+    if (lane==0) out[row] += wgt[slot]*(acc*asc[0] + bias[idx[slot]*rowsPerExpert + row]);
+}
 
 // shared_gate_combine: qwen2_moe gated shared expert — x[i] += sigmoid(gl[0])*src[i].
 kernel void shared_gate_combine(device float* x[[buffer(0)]], device const float* src[[buffer(1)]],
     device const float* gl[[buffer(2)]], uint i[[thread_position_in_grid]]) {
     x[i] += (1.0f/(1.0f+exp(-gl[0]))) * src[i];
+}
+// gptoss_glu: clamp(gate,max=limit)·sigmoid(alpha·clamp(gate)) · (clamp(up,[-limit,limit])+1) —
+// gpt-oss's clamped interleaved-SwiGLU, verified against decoder/forward_gptoss.go's
+// gptOssExpert. THE ASYMMETRY IS REAL: gate clamps only from ABOVE, up clamps BOTH sides —
+// clamping both symmetrically is the tidy-looking mistake, and it only differs from the
+// correct math where the activation saturates, which is exactly where a clamp exists to
+// matter (metal/gptoss_kernels_test.go's TestGptOssSwigluQuant_metal drives inputs well past
+// ±limit on both branches for that reason).
+inline float gptoss_glu(float gx, float ux, float alpha, float limit) {
+    gx = min(gx, limit);
+    ux = clamp(ux, -limit, limit);
+    float glu = gx/(1.0f+exp(-alpha*gx));
+    return (ux+1.0f)*glu;
+}
+// swiglu_quant_gptoss: fused activation+quant for gpt-oss's MoE expert, taking gemv_w4a8_moe's
+// RAW (bias-free) gate|up output and adding the per-expert bias itself — biasOff =
+// idx[slot]*2*I, matching gate‖up's packing, mirrors how the router decides which expert runs
+// while the launch geometry stays static (the whole point of the indexed-stacked-expert
+// design). hasBias lets the same kernel serve a bias-free caller (none exist yet, kept for
+// symmetry with layernorm_quant's hasBias).
+kernel void swiglu_quant_gptoss(device const float* g[[buffer(0)]], device const float* u[[buffer(1)]],
+    device char* dq[[buffer(2)]], device float* ds[[buffer(3)]], constant uint& I[[buffer(4)]],
+    device const float* biasGU[[buffer(5)]], device const uint* idx[[buffer(6)]], constant uint& slot[[buffer(7)]],
+    constant uint& hasBias[[buffer(8)]], constant float& alpha[[buffer(9)]], constant float& limit[[buffer(10)]],
+    uint tid[[thread_position_in_threadgroup]], uint tgs[[threads_per_threadgroup]]) {
+    threadgroup float red[256];
+    uint biasOff = hasBias != 0u ? idx[slot]*2u*I : 0u;
+    float mx=0;
+    for (uint i=tid;i<I;i+=tgs) {
+        float gx=g[i], ux=u[i];
+        if (hasBias!=0u) { gx += biasGU[biasOff+i]; ux += biasGU[biasOff+I+i]; }
+        float dd = gptoss_glu(gx, ux, alpha, limit);
+        mx = max(mx, fabs(dd));
+    }
+    red[tid]=mx; threadgroup_barrier(mem_flags::mem_threadgroup);
+    for(uint s=tgs/2;s>0;s>>=1){ if(tid<s) red[tid]=max(red[tid],red[tid+s]); threadgroup_barrier(mem_flags::mem_threadgroup);}
+    float sc=red[0]/127.0f; if(sc==0)sc=1; if(tid==0)ds[0]=sc; float inv=1/sc;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    for (uint i=tid;i<I;i+=tgs) {
+        float gx=g[i], ux=u[i];
+        if (hasBias!=0u) { gx += biasGU[biasOff+i]; ux += biasGU[biasOff+I+i]; }
+        float dd = gptoss_glu(gx, ux, alpha, limit);
+        dq[i]=char(clamp(int(round(dd*inv)),-127,127));
+    }
 }
 `
 
@@ -160,12 +266,25 @@ type moeLayer struct {
 	shGuW, shGuS Buffer // dense fused gate|up: rows 2*sharedInter
 	shDW, shDS   Buffer // dense down: rows H
 	shGateW      Buffer // f32 [1, H] sigmoid gate (gated variant only; zero if ungated)
+	// gpt-oss: per-expert stacked biases, packed to match the weight addressing swiglu_quant_gptoss
+	// / gemv_w4a8_moe_wacc_bias read (biasOff = idx[slot]*2*inter / idx[slot]*H). Zero-value Buffer
+	// for every other family — the gpt-oss dispatch path in encodeMoEFFN is the only reader.
+	expGuBias, expDBias Buffer
 }
 
 // moeResident holds the MoE pipelines, config, constant uniforms and scratch shared across
 // all MoE layers (config is uniform per model). rIdx/rWgt are the on-GPU router outputs.
 type moeResident struct {
 	pRouter, pRoute, pGU, pDownWacc, pSharedGate Pipeline
+
+	// gpt-oss: its own router/activation/down-combine kernels (route_gptoss,
+	// swiglu_quant_gptoss, gemv_w4a8_moe_wacc_bias) replace pRoute/pGU+pSw/pDownWacc in
+	// encodeMoEFFN — the bias semantics genuinely differ (see the kernel docs in moeKernels),
+	// not just an added parameter. Zero-value Pipelines/Buffers for every other family.
+	isGptOss                 bool
+	pRouteGptOss, pActGptOss Pipeline
+	pDownWaccBias            Pipeline
+	uAlpha, uLimit, uHasBias Buffer
 
 	nE, k, inter, sharedInter     int
 	sharedUngated                 bool
@@ -209,15 +328,25 @@ func buildMoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H int) (*
 	if nGroup > 64 {
 		return nil, fmt.Errorf("metal MoE: nGroup=%d exceeds cap 64", nGroup)
 	}
+	_, _, isGptOss := m.GptOssActResident()
 	mo := &moeResident{
 		pRouter: pipe("gemv_wf32_a8"), pRoute: pipe("moe_route"),
 		pGU: pipe("gemv_w4a8_moe"), pDownWacc: pipe("gemv_w4a8_moe_wacc"),
 		pSharedGate:   pipe("shared_gate_combine"),
+		isGptOss:      isGptOss,
 		nE:            nE,
 		k:             k,
 		inter:         inter,
 		sharedInter:   sharedInter,
 		sharedUngated: sharedUngated,
+	}
+	if isGptOss {
+		alpha, limit, _ := m.GptOssActResident()
+		mo.pRouteGptOss = pipe("route_gptoss")
+		mo.pActGptOss = pipe("swiglu_quant_gptoss")
+		mo.pDownWaccBias = pipe("gemv_w4a8_moe_wacc_bias")
+		mo.uAlpha, mo.uLimit = d.NewBufferFloats([]float32{alpha}), d.NewBufferFloats([]float32{limit})
+		mo.uHasBias = d.NewBufferU32(1)
 	}
 	b1 := func(b bool) uint32 {
 		if b {
@@ -246,7 +375,7 @@ func buildMoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H int) (*
 // projection via the existing int4Concat (all-E gate|up interleaved gate_e,up_e; all-E down),
 // so expert e lives at weight row e*2*inter (gate|up) / e*H (down). The router (+bias) stays
 // f32; the shared expert is packed like the dense FFN.
-func buildMoELayer(d *Device, lw *decoder.LayerWeights, mo *moeResident) *moeLayer {
+func buildMoELayer(d *Device, m *decoder.Model, l int, lw *decoder.LayerWeights, mo *moeResident) *moeLayer {
 	ml := &moeLayer{}
 	ml.routerW = f32Mat(d, &lw.Router)
 	if len(lw.RouterBias) > 0 {
@@ -274,6 +403,10 @@ func buildMoELayer(d *Device, lw *decoder.LayerWeights, mo *moeResident) *moeLay
 			ml.shGateW = f32Mat(d, &lw.SharedGate)
 		}
 	}
+	if mo.isGptOss {
+		ml.expGuBias = d.NewBufferFloats(m.GptOssExpertBiasResident(l))
+		ml.expDBias = d.NewBufferFloats(m.GptOssExpertDownBiasResident(l))
+	}
 	return ml
 }
 
@@ -297,14 +430,30 @@ func (r *resident) encodeMoEFFN(e *Encoder, L *residLayer) {
 	e.Dispatch(r.pRms, 256, 256, r.x, L.postNorm, r.mq, r.mSc, r.uH, r.uEps, r.uAddOne)
 	// router logits: routerW[nE,H] × mq → rLogits[nE]
 	e.Dispatch(mo.pRouter, mo.nE*32, 32, ml.routerW, r.mq, r.mSc, mo.rLogits, r.uH)
-	// on-GPU top-k → rIdx[k], rWgt[k]
-	e.Dispatch(mo.pRoute, 1, 1, mo.rLogits, ml.routerBias, mo.rIdx, mo.rWgt,
-		mo.uNE, mo.uK, mo.uSigmoid, mo.uNorm, mo.uScale, mo.uNGroup, mo.uTopkGroup)
-	// k selected experts: fused gate|up (overwrite) → swiglu → down (weighted-accumulate into x).
+	// on-GPU top-k → rIdx[k], rWgt[k]. gpt-oss's router bias reaches the logits BEFORE top-k and
+	// the weight is softmax over the SELECTED biased logits — a genuinely different kernel from
+	// the generic DeepSeek/GLM/Qwen-MoE shape (moe_route), not a parameter swap (see route_gptoss).
+	if mo.isGptOss {
+		e.Dispatch(mo.pRouteGptOss, 1, 1, mo.rLogits, ml.routerBias, mo.rIdx, mo.rWgt, mo.uNE, mo.uK)
+	} else {
+		e.Dispatch(mo.pRoute, 1, 1, mo.rLogits, ml.routerBias, mo.rIdx, mo.rWgt,
+			mo.uNE, mo.uK, mo.uSigmoid, mo.uNorm, mo.uScale, mo.uNGroup, mo.uTopkGroup)
+	}
+	// k selected experts: fused gate|up (overwrite) → clamped-swiglu/swiglu → down (weighted-
+	// accumulate into x). gpt-oss fuses its per-expert gate‖up bias into the activation step and
+	// its per-expert down bias into the combine step (both INSIDE the router-weight scale — see
+	// swiglu_quant_gptoss / gemv_w4a8_moe_wacc_bias's docs), so it swaps both dispatches, not just
+	// the router.
 	for j := 0; j < mo.k; j++ {
 		e.DispatchTG(mo.pGU, (2*mo.inter)*32, 256, r.H*2, ml.expGuW, ml.expGuS, r.mq, r.mSc, r.gu, r.uH, mo.rIdx, mo.uSlot[j], mo.uInter2)
-		e.Dispatch(r.pSw, 256, 256, r.gu, r.gu.At(mo.inter*4), r.dq, r.dSc, mo.uInter, r.uAct)
-		e.DispatchTG(mo.pDownWacc, r.H*32, 256, mo.inter*2, ml.expDW, ml.expDS, r.dq, r.dSc, r.x, mo.uInter, mo.rIdx, mo.rWgt, mo.uSlot[j], r.uH)
+		if mo.isGptOss {
+			e.Dispatch(mo.pActGptOss, 256, 256, r.gu, r.gu.At(mo.inter*4), r.dq, r.dSc, mo.uInter,
+				ml.expGuBias, mo.rIdx, mo.uSlot[j], mo.uHasBias, mo.uAlpha, mo.uLimit)
+			e.DispatchTG(mo.pDownWaccBias, r.H*32, 256, mo.inter*2, ml.expDW, ml.expDS, r.dq, r.dSc, r.x, mo.uInter, mo.rIdx, mo.rWgt, mo.uSlot[j], r.uH, ml.expDBias)
+		} else {
+			e.Dispatch(r.pSw, 256, 256, r.gu, r.gu.At(mo.inter*4), r.dq, r.dSc, mo.uInter, r.uAct)
+			e.DispatchTG(mo.pDownWacc, r.H*32, 256, mo.inter*2, ml.expDW, ml.expDS, r.dq, r.dSc, r.x, mo.uInter, mo.rIdx, mo.rWgt, mo.uSlot[j], r.uH)
+		}
 	}
 	// shared always-on expert (Qwen2-MoE gated / GLM ungated).
 	if mo.sharedInter > 0 {

@@ -499,6 +499,25 @@ RoPE-skip in `encodeAttention`, the non-gated MLP branch in `encodeLayer`, and t
    not done** — out of scope here since nothing GPT-2 needs touches those kernels with a non-%8
    width; remains open for any future family whose hidden/intermediate dims aren't %8.
 
+**Scoped the general fix on request (2026-08-19) — DEFERRED, deliberately, not forgotten.**
+Checked whether the vocab fix's trick (pad the buffer, dispatch the padded count, never read the
+padding) generalizes to `hidden`/`intermediate`: it does not, and the reason is real, not
+theoretical. Vocab-width data (logits) is TERMINAL — computed once, read once, discarded — so
+padding it is inert. Hidden/intermediate-width data is the RESIDUAL STREAM, flowing through every
+subsequent layer, and multiple call sites read it unboundedly rather than to an explicit `H`
+(`addLearnedPos`'s `for i := range dst`, `loadEmbedRow`'s `dst := r.x.Floats()`), while
+`aikit/linalg.WeightMat.Row` only fills the true-width elements of `dst` and leaves any padding as
+untouched garbage — checked directly in aikit's source, not assumed. Padding `H`/`I` the way the
+vocab fix did would let that garbage silently enter every norm/GEMV downstream. The only fully
+general fix is what the kernel comment already said: real `N` param + `row >= N` guards across
+every SA-family/MoE dispatch site — genuinely invasive, touches every currently-working dense/MoE
+family's hot path, and has no current beneficiary (every shipped and realistically-near-term
+family's hidden/intermediate dims are %8). Decision: leave `bad8()`'s decline as the permanent,
+correct behavior — it is sound, just untested (no test constructs a synthetic non-%8-hidden
+config to confirm the decline fires cleanly rather than corrupting; a real but low-priority gap,
+not fixed here). Revisit only if a real family with non-%8 hidden/intermediate dims actually shows
+up.
+
 **Third bug, caught the same way as the first:** `r.invf = d.NewBufferFloats(m.RopeInvFreq())` (the
 model-level RoPE table used only by the prefill path) ALSO panicked on GPT-2's empty inv-freq
 table — a second call site with the identical empty-slice hazard as `L.invf`, found only because
@@ -520,6 +539,146 @@ cosine 0.9999999999998812 / exact argmax against it. `TestResidentBackendFeature
 (11→15 features) and `admissionGolden` (`gpt2` → `[metal]`) updated deliberately, not silently;
 `docs/capability-matrix.md`/`docs/hardware-matrix.md` regenerated. Full `go test ./decoder/...` and
 `go test -tags goinfer_testhooks ./metal/...` clean.
+
+**G10 · gpt-oss Metal residency bridge — kernels wired end-to-end and PROVEN, declaration held
+pending Mellum's own gate (2026-08-18)** — `mac`
+
+Continuing `G7`. Extended the GENERIC MoE machinery (`metal/moe.go`'s `moeLayer`/`moeResident`/
+`buildMoE`/`buildMoELayer`/`encodeMoEFFN`) with an `isGptOss` split rather than duplicating a whole
+bridge file (Gemma-4's precedent) — gpt-oss's MoE (routed-only top-4/32, no shared expert) is much
+closer to the existing Mixtral/Qwen-MoE shape than Gemma-4's parallel dense‖MoE. Added per-expert
+stacked bias buffers (`expGuBias`/`expDBias`, addressed `idx[slot]*2*inter`/`idx[slot]*H` matching
+the kernels' own convention) and two new decoder-side accessors, `GptOssExpertDownBiasResident`
+(mirroring the existing `GptOssExpertBiasResident` for gate‖up) — the down-bias accessor didn't
+exist yet, everything else (`GptOssActResident`/`GptOssSinksResident`) was already there from
+CUDA's own in-progress bring-up (`cuda/backend.go` loads `gptOssSw`/`gptOssSinks`/`gptOssExpBias`
+but never dispatches them — dead code today, first real consumer). Relaxed
+`decodeRunnerEligible()`'s hard `case a.gptoss != nil: return false` to fall through to the common
+checks (mirroring gemma4's precedent) — safe on its own: `metal.BuildResident`/`cuda.BuildResident`
+both check `MissingResidentFeatures` BEFORE building anything, so an arch-shape admit with an
+undeclared feature still declines cleanly, never half-builds.
+
+**Consolidated a real duplication before it shipped:** initially added `AttnSinkResident`/
+`GptOssSwigluResident` accessors to `decoder/residency.go`, not realizing `GptOssActResident`
+(alpha/limit + ok) already existed and was already CUDA's convention. Removed the duplicates,
+switched `metal/model.go` to the existing accessor — one source of truth for "is this gpt-oss"
+across both backends, not two.
+
+**Got a genuine end-to-end pass, then hit the pre-1.0 core freeze.** With two real bugs fixed —
+(1) `decoder/gguf.go`'s gpt-oss router load used the AMBIENT quant mode (`mat(...)`) instead of
+staying f32 like every other family's router (`gptoss_safetensors.go`'s own comment: "top-k
+selection is discrete and quantizing it flips experts"); latent since nothing had ever loaded
+gpt-oss at a non-f32 quant before Metal residency's `f32Mat(router)` panic caught it; fixed with
+`streamMat(..., quantNone, ...)`, matching qwen35's own precedent three lines below it in the same
+file — (2) `decoder/forward_gptoss.go`'s `runLayersGptOss` never set `cache.scr`, unlike every
+other own-forward family (`forward_llama4.go`/`forward_deepseek.go`/`forward_qwen35.go`/
+`forward_granite.go`/`forward_nemotron.go` all guard `if cache.scr == nil` at entry); invisible
+because every existing gpt-oss golden goes through `Model.NewCache` (which sets it), so only a
+raw-`NewKVCache` caller (Metal's own `residentParity` harness) ever hit the nil-deref — the tiny
+fixture ran resident on Metal and matched CPU: 8/8 argmax-exact, min cosine 0.998901.
+
+Both fixes touch `decoder/gguf.go`/`forward_gptoss.go`, explicitly named in the standing pre-1.0
+core-numerics freeze (`TestParityManifest_fresh` confirmed it, going stale for 25 families).
+Reverted both, verified the freeze tripwire green again, and surfaced the conflict rather than
+push through it. Got an explicit scoped exception for exactly these two diffs — both provably
+non-numeric for every currently-pinned golden (the router fix is a no-op under the default f32
+quant every gpt-oss golden uses; the `cache.scr` guard is dead code for every `Model.NewCache`
+caller, which is every existing golden) — confirmed via `scripts/refresh_parity_hashes.sh`'s
+auditable goldens-gated refresh (26 passed / 0 failed / 19 skipped for want of fixtures) plus a
+direct run of `TestGptOssGGUF_parity` (cosine 1.000000 exact, since that specific test isn't
+matched by the refresh script's `GOLDEN_RE` pattern — `TestGptOssGGUF_parity` doesn't end in
+`_forwardParity`/`_logitParity`/`_textParity` nor match `TestGGUF_.*_parity`, a real gap in that
+script's coverage worth fixing separately).
+
+**Declaring `FeatAttnSink` turned out to need declaring `FeatRopeMscale` too (YaRN), and THAT flag
+is shared with Mellum** — `mellumArchitecture` requires exactly `{FeatMoE, FeatPerLayerRoPE,
+FeatQKNorm, FeatRopeMscale, FeatSlidingWindow}`, all of which Metal already has except
+`FeatRopeMscale`. Declaring it for gpt-oss would have silently admitted Mellum too, with ZERO
+Metal validation (no real ~24GB Mellum checkpoint on this box). Tried building a synthetic
+structural test (`TestMoE_assemblyVsDense`'s pattern: a tiny safetensors fixture through the real
+loader) to at least prove the QK-norm+RopeMscale+MoE+sliding-window COMPOSITION wires correctly
+without needing real weights — it failed, but the failure was a methodology artifact, not a real
+bug: bisecting down (identical experts → real vs identity QK-norm → a plain dense qwen2 control
+with NO QK-norm at all) showed even the QK-norm-free control fails the same 0.95 cosine bar
+against fully-random untrained weights at realistic dims (0.898). Random synthetic weights lack
+the structure real checkpoints have (dominant outlier dimensions that make quantization error
+small relative to signal), so int4/int8 quantization noise dominates regardless of which features
+are in play — `TestMoE_assemblyVsDense` only avoids this by forcing EXACT mathematical equivalence
+(identical experts, same underlying int4 GEMV kernels cancel), not by achieving a high cosine on
+independent random weights. Abandoned the synthetic-test approach; debug files removed.
+
+**Net state — DECLARED (explicit user call, overriding the initial "hold" decision above): no
+Mellum checkpoint is reachable on this box, so waiting was not actually available as an option
+right now.** `FeatAttnSink`+`FeatRopeMscale` are both `true` for Metal; `TestGptOssResidentParity`
+(new: `metal/gptoss_real_test.go`, uses the existing tiny fixture
+`decoder/testdata/gptoss_tiny.gguf`) is live and green (8/8 argmax-exact, min cosine 0.9989).
+`docs/capability-matrix.md`'s `GPUResident` column for `gpt_oss` reads "yes". Full
+`go test ./decoder/...` and `go test -tags goinfer_testhooks ./metal/...` clean.
+
+**Known consequence, tracked as `G11` below: Mellum is now `ResidentEligible` on Metal with ZERO
+validation there.** Not a theoretical risk — it is the literal reason `FeatRopeMscale` was held in
+the first place, and the hold was lifted by explicit choice, not because the risk resolved. Mellum
+already has a trusted GPU path (WebGPU), so this is a second, unvalidated path on one backend, not
+a new failure mode for the family overall — but it needs closing out before the next tag, with a
+REAL trained-weight gate (`G11`), not another synthetic-random-weight attempt (proven inconclusive
+above).
+
+**G11 · Mellum-on-Metal real-weight validation — ASAP, before the next tag** — `linux`
+
+`G10` declared `FeatRopeMscale` for Metal to unblock gpt-oss's YaRN, which — as a documented,
+accepted side effect — also admits Mellum (`decoder/registry.go`'s `mellumArchitecture` needs
+exactly `{FeatMoE, FeatPerLayerRoPE, FeatQKNorm, FeatRopeMscale, FeatSlidingWindow}`, all of which
+Metal already had except this one) onto the Metal resident path with **zero end-to-end
+validation there**. This is the one open correctness gap from that work and should close before
+the next tag ships a Metal build that will actually run Mellum checkpoints.
+
+**Do NOT repeat the synthetic-random-weight approach — it is proven inconclusive, not just
+unlucky.** `G10` tried building a tiny hand-rolled safetensors fixture (random independent
+weights) through `metal.residentParity` and got a false-positive "QK-norm is broken" signal that
+bisected down to: even a plain dense qwen2 control with **no QK-norm at all**, at realistic dims
+(hidden=256), fails the SAME 0.95 cosine bar against fully-random untrained weights (0.898). Random
+weights lack the structure a real checkpoint has (dominant outlier dimensions that keep
+quantization error small relative to signal), so int4/int8 noise swamps everything regardless of
+which features are in play. A synthetic fixture cannot discriminate a real Metal bug from this
+noise floor — don't spend time on it again.
+
+**The right tool already exists and is generic:** `scripts/pin_slice_oracle.py` — "Tiny goldens use
+random weights, where the router is near-uniform... A real slice exercises the same code on the
+distributions the model actually produces" (its own docstring, written for exactly this class of
+problem on Laguna/qwen3_next). It slices the first N REAL layers out of a real safetensors
+checkpoint (partial-download-friendly: only the shards holding those layers + embed/norm/head),
+truncates every per-layer config list generically (by length match against the original layer
+count, not by field name), and writes a small, git-trackable `<prefix>_<tag>_slice_golden.json` +
+sliced checkpoint dir. `scripts/pin_mellum2.py` already names the real checkpoint path
+(`~/models/mellum2-unq`, ~24GB, "fits the 64GB box" — this box).
+
+**Concrete steps for the Linux box:**
+1. `SLICE_SRC=~/models/mellum2-unq SLICE_TAG=mellum2 SLICE_LAYERS=4 SLICE_PREFIX=mellum
+   ~/g4venv/bin/python scripts/pin_slice_oracle.py` (or whichever venv has `transformers`/`torch`/
+   `safetensors` — see `scripts/pin_mellum2.py`'s shebang comment). `SLICE_LAYERS=4` mirrors
+   Laguna's own reasoning: Mellum's 3:1 sliding/full interleave needs at least 4 layers to cover
+   BOTH attention types (3 sliding + 1 full/YaRN) — the same coverage floor, not copied blindly;
+   confirm layer 3 (0-indexed) is genuinely `full_attention` in Mellum2's real `layer_types` before
+   trusting a 4-layer slice covers YaRN at all.
+2. Verify the script's generic per-layer-list truncation actually catches everything Mellum's
+   config carries per-layer (`layer_types` is the one that matters here) — it truncates by length
+   match against `num_hidden_layers`, which should catch it automatically, but confirm rather than
+   assume (this script's own header names Laguna's `layer_types`/`num_attention_heads_per_layer`/
+   `mlp_layer_types` explicitly as the reason it went generic — a new family is exactly the case
+   that pattern exists to protect).
+3. Write `decoder/mellum_slice_test.go` mirroring `decoder/laguna_slice_test.go` /
+   `decoder/qwen3next_slice_test.go` (both ~130-160 lines, same shape) — the decoder-CPU-only gate
+   proving goinfer's OWN forward matches the real HF reference on the slice. Commit the golden +
+   sliced checkpoint (small — a handful of MoE layers' worth of real weights, not the full 24GB).
+4. Hand the committed slice back to `mac`: build `metal/mellum_real_test.go` (the REAL-weight
+   successor to the abandoned `metal/mellum_wiring_test.go`) using `residentParity` against the
+   sliced checkpoint directory directly — same harness `TestGPT2ResidentParity`/
+   `TestGptOssResidentParity` use, just pointed at `decoder/testdata/mellum-mellum2-slice/`. This
+   is the test that actually closes the gap `G10` opened; nothing else needs to change in
+   `decoder/features.go` (the flags are already declared) — this only adds the missing PROOF.
+5. If the slice test finds a REAL bug (not noise — a real slice won't have the noise-floor problem
+   the synthetic attempt did), that's real information either way: fix it, or if it can't be fixed
+   quickly, revert `FeatRopeMscale`/`FeatAttnSink` for Metal and reopen the `G10`/`G11` split.
 
 **G8 · DeepSeek V4-Flash as a new family — blocked on fp8 support, post-1.0** — `any`
 

@@ -40,7 +40,7 @@ ceiling. One consolidated doc under `docs/` for all phases.
 **Repo:** `~/tmcode/goinfer`. Prior context: `docs/ollama-chase.md` §A2-Metal,
 `docs/task-int4-int8-exact-mma.md` (MMA route killed: decode's `simd_sum` combine order
 unpinnable; this hoist is the surviving bit-identical path). **Recon already done — build on it,
-don't redo it:** the dense per-layer sequence is 12 dispatches (`metal/model.go:1215-1315`);
+don't redo it:** the dense per-layer sequence is 12 dispatches (`metal/model.go:1234-1315`);
 Stage-A kernels (`pSA`/`pSABias`/`pSAResid`, K≤1536) stage via `DispatchTG` with `tgBytes=H*2`;
 `pGemvResid` (down-proj, K=8960) doesn't stage; threadgroup limit is
 `d.MaxThreadgroupMemoryLength()` (~32,768, asserted in `metal/tgbudget_test.go`), and
@@ -68,7 +68,7 @@ at the largest full-staging value (M=8 at H=1536 f16), (b) K-tiled staging in as
 order, (c) non-staged batched variant reusing the `pGemvResid` structure. Also estimate per-lane
 register/accumulator growth with M and the occupancy knee on the M1 Pro. Pick a design, justify
 it, size `tgBytes` the way `BuildResident` does (`maxThreadgroupStageBytes` pattern,
-`metal/model.go:291-`, checked against `MaxThreadgroupMemoryLength`).
+`metal/model.go:298-`, checked against `MaxThreadgroupMemoryLength`).
 
 **Phase 2 — prototype.** New kernels + a batched encode path alongside the existing ones, behind
 a flag or build tag; **do not modify the existing decode kernels or dispatch path.** The resident

@@ -51,7 +51,7 @@ boundary, not only the one everyone thinks to check.**
 **Threadgroup-memory ceiling (real, model-shape-dependent).** The SA-style batched kernels
 (`gemv_w4a8_bvk_bias`/`_plain`/`_plain_resid`) stage all M activation rows into threadgroup memory
 up front (`2*K*M` bytes), the same convention `maxThreadgroupStageBytes` already uses for M=1
-(`metal/model.go:297`, M-11). Apple's per-threadgroup limit is ~32 KiB
+(`metal/model.go:304`, M-11). Apple's per-threadgroup limit is ~32 KiB
 (`d.MaxThreadgroupMemoryLength()`, empirically 32768 on this M1 Pro). At the widest staged K in a
 model (`max(H, nH·hd)`), M=16 fits only for narrower models:
 

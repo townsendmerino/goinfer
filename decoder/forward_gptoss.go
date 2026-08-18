@@ -24,6 +24,9 @@ func (m *Model) runLayersGptOss(id int, cache *KVCache) ([]float32, error) {
 	if m.w.Embed.Rows() == 0 {
 		return nil, fmt.Errorf("decoder.forward(gptoss): weights not loaded %w [M1]", errNotImplemented)
 	}
+	if cache.scr == nil { // caches from NewKVCache directly (tests); Model.NewCache sets it
+		cache.scr = newDecodeScratch(arch)
+	}
 	hidden := arch.HiddenDim
 	h := make([]float32, hidden)
 	m.w.Embed.Row(id, h) // no embedding scale, no learned positions (gpt-oss is RoPE)
