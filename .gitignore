@@ -163,3 +163,9 @@ decoder/testdata/laguna-*-tiny/*.py
 !decoder/testdata/laguna-xs21-tiny/model.safetensors
 !decoder/testdata/laguna-xs2-tiny/model.safetensors
 !decoder/testdata/laguna-m1-tiny/model.safetensors
+
+# Laguna real-weight SLICE fixtures (scripts/pin_laguna_slice.py). ~6GB each: real
+# checkpoint layers, regenerable from a local XS.2/XS-2.1 copy. Only the goldens
+# (decoder/testdata/laguna_*_slice_golden.json) are tracked — unlike the ~1.3MB tiny
+# fixtures, these are far too large to ship, so the slice gates skip without them.
+decoder/testdata/laguna-*-slice/
