@@ -747,3 +747,29 @@ func (m *Model) GptOssSinksResident(l int) []float32 {
 	}
 	return m.w.Layers[l].AttnSinks
 }
+
+// GptOssExpertBiasResident returns layer l's per-expert gate‖up bias table, packed the same
+// way the resident expert WEIGHTS are — expert-major, gate then up:
+//
+//	[e*2*inter + 0 .. +inter)      expert e's gate bias
+//	[e*2*inter + inter .. +2inter) expert e's up bias
+//
+// Packing it to match the weight layout is what lets the kernel use the identical addressing
+// (biasRow = idx[slot]*2*inter) instead of a second convention that could drift from it.
+// nil for every family without per-expert biases.
+func (m *Model) GptOssExpertBiasResident(l int) []float32 {
+	if m.w.arch.gptoss == nil || m.w.arch.MoE == nil || l < 0 || l >= len(m.w.Layers) {
+		return nil
+	}
+	lw := &m.w.Layers[l]
+	if len(lw.Experts) == 0 || lw.Experts[0].GateBias == nil {
+		return nil
+	}
+	inter := m.w.arch.MoE.IntermediateDim
+	out := make([]float32, len(lw.Experts)*2*inter)
+	for e := range lw.Experts {
+		copy(out[e*2*inter:], lw.Experts[e].GateBias)
+		copy(out[e*2*inter+inter:], lw.Experts[e].UpBias)
+	}
+	return out
+}

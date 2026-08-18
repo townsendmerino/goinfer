@@ -695,11 +695,28 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		}
 		r.stream = r.dev.NewCommandQueue()
 
+		// gpt-oss per-layer device state: the attention sinks and the per-expert gate‖up
+		// bias table. Uploaded once here rather than per token — they are weights, not
+		// activations. Both are nil for every other family, and r.af/r.up32 are not called
+		// at all in that case (Alloc(0) is an error, not a no-op).
+		if _, _, isGptOss := m.GptOssActResident(); isGptOss {
+			r.gptOssSinks = make([]Buffer, nLayers)
+			r.gptOssExpBias = make([]Buffer, nLayers)
+			for l := range nLayers {
+				if sk := m.GptOssSinksResident(l); len(sk) > 0 {
+					r.gptOssSinks[l] = r.up32(sk)
+				}
+				if gb := m.GptOssExpertBiasResident(l); len(gb) > 0 {
+					r.gptOssExpBias[l] = r.up32(gb)
+				}
+			}
+		}
 		r.layers = make([]cudaLayer, nLayers)
 		for l := range nLayers {
 			h := &hls[l]
 			L := cudaLayer{
-				q: r.upW(h.q), k: r.upW(h.k), o: r.upW(h.o), // v uploaded below only for non-K=V layers
+				idx: l,
+				q:   r.upW(h.q), k: r.upW(h.k), o: r.upW(h.o), // v uploaded below only for non-K=V layers
 				preNorm: r.up32(h.preNorm), postNorm: r.up32(h.postNorm),
 				invF: r.up32(h.invFreq),
 			}

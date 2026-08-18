@@ -172,6 +172,7 @@ type cudaWQ struct {
 }
 
 type cudaLayer struct {
+	idx                 int // this layer's index, for per-layer side tables (gpt-oss sinks / expert biases)
 	q, k, v, o, g, u, d cudaWQ
 	qb, kb, vb          Buffer // QKV bias (absent ⇒ none)
 	qNorm, kNorm        Buffer // per-head QK-norm weights (absent ⇒ arch has none)
@@ -1313,7 +1314,7 @@ func (r *cudaResident) splitKVAttnDecode(l, pos int) error {
 		// ArgNull: no attention sink. gpt-oss is the only family with one, and it is not
 		// resident-eligible yet (its clamped-SwiGLU expert kernel does not exist), so every
 		// caller today passes null and the kernel stays bit-identical to before.
-		Arg(r.skScoreBuf), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(nWin)), Arg(r.skInvBuf), ArgNull()); e != nil {
+		Arg(r.skScoreBuf), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(nWin)), Arg(r.skInvBuf), r.sinkArg(l)); e != nil {
 		return e
 	}
 	// 3. V-sum → r.cctx (each thread the whole ascending-s fold for one output dim).
@@ -1421,6 +1422,28 @@ func (r *cudaResident) launchGluSplit(gu Buffer, inter int, outQ, outSc, outScr 
 	return r.launchGluSplitExpert(gu, inter, outQ, outSc, outScr, Buffer{}, -1)
 }
 
+// expBiasArg returns this layer's per-expert gate‖up bias table, or the zero Buffer when the
+// family has none. Keyed off cudaLayer.idx because moeMLPPost works from *cudaLayer; threading
+// a separate index alongside it would be one more thing that can fall out of step with the
+// weights the bias must match.
+func (r *cudaResident) expBiasArg(Ly *cudaLayer) Buffer {
+	if l := Ly.idx; l >= 0 && l < len(r.gptOssExpBias) {
+		return r.gptOssExpBias[l]
+	}
+	return Buffer{}
+}
+
+// sinkArg returns layer l's attention-sink argument, or null when the family has none.
+// Centralized so the DECODE and PREFILL attention launches cannot disagree — a sink applied
+// on one path and not the other presents as drift partway through a sequence, which is much
+// harder to attribute than a missing term everywhere.
+func (r *cudaResident) sinkArg(l int) gpu.KernelArg {
+	if l >= 0 && l < len(r.gptOssSinks) && r.gptOssSinks[l] != (Buffer{}) {
+		return Arg(r.gptOssSinks[l])
+	}
+	return ArgNull()
+}
+
 // launchGluSplitExpert is launchGluSplit with the routed-expert context the gpt-oss epilogue
 // needs. bias is that layer's [nExpert·2·inter] gate‖up table and slot is the top-k position
 // whose expert is running; the KERNEL does biasRow = idx[slot]*2*inter, because which expert
@@ -1475,7 +1498,7 @@ func (r *cudaResident) moeMLPPost(Ly *cudaLayer) error {
 		}
 		// SwiGLU over the halves of that one buffer. gocudrv exposes no buffer view/offset, so
 		// the split is the kernel's gOff/uOff rather than Go-side pointer arithmetic.
-		if e := r.launchGluSplit(r.moeGU, r.moeInter, r.moeQ, r.moeSc, r.moeScr); e != nil {
+		if e := r.launchGluSplitExpert(r.moeGU, r.moeInter, r.moeQ, r.moeSc, r.moeScr, r.expBiasArg(Ly), j); e != nil {
 			return e
 		}
 		// down-proj, weight-accumulating into the residual: x += wgt[j] * (Down_e · act).
@@ -1591,7 +1614,7 @@ func (r *cudaResident) gemma4MoeMLPPost(Ly *cudaLayer, l int) error {
 			gpu.ArgValue(int32(r.hidden/8)), gpu.ArgValue(int32(r.hidden/32)), Arg(r.moeGU)); e != nil {
 			return e
 		}
-		if e := r.launchGluSplit(r.moeGU, r.moeInter, r.moeQ, r.moeSc, r.moeScr); e != nil {
+		if e := r.launchGluSplitExpert(r.moeGU, r.moeInter, r.moeQ, r.moeSc, r.moeScr, r.expBiasArg(Ly), j); e != nil {
 			return e
 		}
 		if e := r.launch(r.fMoEWacc, LaunchConfig{GridX: uint32((r.hidden + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
@@ -1902,7 +1925,7 @@ func (r *cudaResident) launchToken(emb []float32, pos int, head bool) error {
 			// startPos=pos, M=1 → nKeys = pos+1; same GridX/block/shared/ctx-layout as the glue launch, so
 			// decode stays byte-identical. glue `attention` (audited) is UNTOUCHED and is the fallback below.
 			if err := r.launch(r.bAttn, LaunchConfig{GridX: uint32(r.nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nWin + 128) * 4)},
-				Arg(r.qB), Arg(r.kc[l]), Arg(r.vc[l]), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)), gpu.ArgValue(int32(pos)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window), gpu.ArgValue(int32(1)), Arg(r.cctx), ArgNull()); err != nil {
+				Arg(r.qB), Arg(r.kc[l]), Arg(r.vc[l]), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)), gpu.ArgValue(int32(pos)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window), gpu.ArgValue(int32(1)), Arg(r.cctx), r.sinkArg(l)); err != nil {
 				return err
 			}
 		} else {
