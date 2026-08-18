@@ -310,8 +310,10 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `9e5f8fa` | fix(quant): reject --quant that conflicts with a prequant .giw at startup (T1-7) |
 | `a15a394` | cuda+docs: decline floor, slot-cap gate, driver allocation facts, and seven rules |
 | `a6c5b57` | fix(parity): the goldens refresh runs quantized goldens, and reports the split |
+| `ada417e` | [aikit] scripts: ptx-repro is n/a on darwin, keyed on the PLATFORM not on NVRTC's absence |
 | `bacc04c` | feat(serve): --moe-cache-experts / --moe-cache-slots — PARKED on the freeze |
 | `bd08936` | fix(gate): cannot-search is not not-found; cross-gate composition; B7 sweep |
+| `be049df` | [aikit] gpu(gemv): explicit __fmaf_rn in the quantized GEMV — the bit-identity contraction rule |
 | `c3e43c8` | E2: the four pending families get real oracles — and two of them were decoding released checkpoints wrong |
 | `ca29d6c` | cuda: resident context cap becomes configuration-derived (-ctx), VRAM-checked at load |
 | `cc238c6` | cleanup: consolidate GINFER_ env vars to GOINFER_ + add env-var registry |
@@ -324,8 +326,6 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `f33fcaf` | chore(deps): aikit v1.16.0 -> v1.17.0, aikit/gpu v0.27.0 -> v0.28.0 |
 | `f340d4e` | metal(9c Step 4): argmax-primary gate + f16-scale confound diagnostic (finding recorded) |
 | `f9d5d07` | feat(decoder): dispatch census (B6); close the GGUF-quant gap; reopen B4 |
-| `ada417e` | **UNRESOLVED** |
-| `be049df` | **UNRESOLVED** |
 
 ## Path index
 
