@@ -261,7 +261,8 @@
    ],
    "used_by": [
     "TestDFlash_targetEndToEnd",
-    "TestDSpark_targetEndToEnd"
+    "TestDSpark_targetEndToEnd",
+    "TestCPUBlockSpec_lossless"
    ],
    "note": "Qwen/Qwen3-4B (apache-2.0) \u2014 the TARGET z-lab/Qwen3-4B-DFlash-b16 is trained against. DFlash ships no embedding and no LM head, so the drafter cannot produce a token without it."
   },
@@ -277,7 +278,8 @@
    ],
    "used_by": [
     "TestDFlash_referenceParity",
-    "TestDFlash_targetEndToEnd"
+    "TestDFlash_targetEndToEnd",
+    "TestCPUBlockSpec_lossless"
    ],
    "note": "The f32 CONVERSION of z-lab/Qwen3-4B-DFlash-b16 (MIT), produced by scripts/convert_dflash_f32.py from $MODELS/qwen3-4b-dflash. The parity gate runs at f32 because the reference dump is f32; the bf16 original is not interchangeable here."
   },
