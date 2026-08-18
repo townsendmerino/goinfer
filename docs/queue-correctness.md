@@ -353,6 +353,44 @@ gpt-oss-20b is one of the most-run local models in 2026 guides — an upgrade to
 family plausibly moves more real users than a new family would; weigh against `G4`-`G6` on that
 basis, not just novelty.
 
+**GPU residency progress (2026-08-18) — kernels built and gated on BOTH CUDA and Metal, neither
+declared yet.** `FeatAttnSink` bundles gpt-oss's three departures from every other resident
+family: the learned per-head softmax sink, the clamped interleaved-SwiGLU expert (per-expert
+biases, asymmetric clamp, α-scaled sigmoid, +1 linear branch), and a router whose bias reaches the
+selection WEIGHT, not just the selection itself (`moe_route`'s bias-steers-selection-only contract
+is wrong for this family).
+
+- **CUDA** (`linux-62gb`) has all three as real kernels (`cuda/gptoss_act.cu`'s `glu_quant_gptoss` +
+  `route_gptoss`, plus the sink argument threaded through `decode_splitkv.cu`'s attention kernels),
+  each gated against the CPU reference. Declaring `FeatAttnSink` was tried and **reverted**
+  (`2224441`): CI correctly caught that kernel-level parity is not end-to-end parity — nothing has
+  run a whole gpt-oss forward on the resident path — and two MORE capabilities are still missing,
+  `FeatOutBias` (o_proj bias) and `FeatRopeMscale` (YaRN), neither of which any resident backend
+  declares for ANY family yet.
+- **Metal** (`mac`) now has the same three kernels ported and gated the same way —
+  `metal/gptoss_kernels_test.go`: `attention_f32_sink` (sink term added to the max-shift and
+  denominator, verified including the case where the sink DOMINATES the max — the case a
+  post-hoc denominator patch gets wrong), `swiglu_quant_gptoss` (clamp coverage asserted on both
+  branches, not just present), `route_gptoss` (bias asserted to actually change which experts win,
+  not just that the output is finite). Each compiles its own isolated MSL source, touching neither
+  `allKernels` nor `moeKernels` — zero risk to any family already resident on Metal. Full
+  `go test ./metal/...` still green. Metal is at the exact same phase CUDA is: kernels exist,
+  nothing wired into `model.go`'s resident dispatch, `FeatAttnSink` not declared, and `FeatOutBias`/
+  `FeatRopeMscale` still missing here too.
+- **Not yet attempted on either backend:** the resident-bridge wiring CUDA's own commits show is a
+  separate, non-trivial phase even after the kernels exist (`cuda/resident.go` needed three
+  "wiring" commits — activation dispatch + resident fields, loading the pipeline, uploading sinks
+  and per-expert biases into the launches). `FeatOutBias`/`FeatRopeMscale` wiring is itself
+  reusable beyond gpt-oss (GPT-2, Mellum/long-context YaRN) but touches the shared resident bridge
+  for every family that would opt into it, so it's a bigger, more careful piece of work than the
+  gpt-oss-specific kernels were.
+- **Real-checkpoint end-to-end validation is blocked on both machines for different reasons:**
+  gpt-oss-20b MXFP4 is ~13.8GB against the CUDA box's 8GB VRAM (testable there only via the
+  host↔VRAM MoE-streaming path, coupling two hard things at once); this Mac has 16GB total RAM but
+  only ~12GB free DISK as of 2026-08-18 — the checkpoint cannot even be downloaded here right now,
+  a harder blocker than the RAM tightness itself. Neither box can currently reach the real
+  end-to-end gate without freeing real resources first.
+
 **G8 · DeepSeek V4-Flash as a new family — blocked on fp8 support, post-1.0** — `any`
 
 Scoping already done: `docs/completed/task-model-family-deepseek-v4-kimi-k3.md`'s Phase 0 verdict.
