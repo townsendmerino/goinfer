@@ -30,9 +30,11 @@ package decoder
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
@@ -167,7 +169,30 @@ func TestQwen38Real_gate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("encode: %v", err)
 	}
-	t.Logf("prompt encoded to %d ids", len(ids))
+	// ID PARITY, not a length check. These are the exact ids transformers 5.12's
+	// AutoTokenizer produces for the string above on this checkpoint (vocab 248320,
+	// byte-level BPE). A length-only check passes when a special token splits into
+	// pieces that happen to sum to the same count, and a coherence gate downstream
+	// cannot tell "the loader is wrong" from "the model was fed a different prompt".
+	wantIDs := []int{
+		248045, 8678, 198, 2523, 513, 264, 10631, 17313, 13, 248046, 198,
+		248045, 846, 198, 657, 2250, 57902, 303, 11751, 13, 248046, 198,
+		248045, 74455, 198, 248068, 271, 248069, 271,
+	}
+	if !slices.Equal(ids, wantIDs) {
+		t.Errorf("prompt ids = %v,\nwant %v (transformers 5.12)", ids, wantIDs)
+	}
+
+	// The chat template is plain ChatML despite the multimodal wrapper, so Detect
+	// resolves it with no new template — asserted rather than assumed, because the
+	// vision markers (<|vision_start|>) and the reasoning-effort preamble in the
+	// jinja would be equally consistent with a family-specific renderer.
+	tmpl, err := chat.Detect(chat.Meta{ChatTemplate: tk.ChatTemplate(), HasToken: tk.Has})
+	if err != nil {
+		t.Errorf("chat.Detect: %v", err)
+	} else if tmpl.Name() != "chatml" {
+		t.Errorf("chat template detected as %q, want chatml", tmpl.Name())
+	}
 
 	out, _ := m.Generate(context.Background(), ids, 96, SamplingParams{})
 	gen := make([]int, 0, 96)
