@@ -91,7 +91,7 @@ func TestAttnBlockFull_nonCausal(t *testing.T) {
 			return []gpu.KernelArg{Arg(qb), Arg(kb), Arg(vb),
 				gpu.ArgValue(int32(nH)), gpu.ArgValue(int32(nKV)), gpu.ArgValue(int32(hd)),
 				gpu.ArgValue(int32(startPos)), gpu.ArgValue(float32(scale)),
-				gpu.ArgValue(int32(window)), gpu.ArgValue(int32(M)), Arg(dst)}
+				gpu.ArgValue(int32(window)), gpu.ArgValue(int32(M)), Arg(dst), ArgNull()}
 		}
 		if e := r.launch(r.bAttn, cfg, args(outA)...); e != nil {
 			return e

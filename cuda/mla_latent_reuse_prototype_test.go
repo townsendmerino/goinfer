@@ -107,7 +107,7 @@ func TestMLALatentReuse_prototype(t *testing.T) {
 			gc.Arg(dQ), gc.Arg(dK), gc.Arg(vbuf),
 			gc.ArgValue(int32(nH)), gc.ArgValue(int32(nKV)), gc.ArgValue(int32(latDim)),
 			gc.ArgValue(int32(nKeys-1)), gc.ArgValue(scale), gc.ArgValue(int32(window)),
-			gc.ArgValue(int32(M)), gc.Arg(dCtx)); e != nil {
+			gc.ArgValue(int32(M)), gc.Arg(dCtx), gc.ArgDevicePtr(0)); e != nil {
 			t.Fatalf("launch: %v", e)
 		}
 		if e := stream.Synchronize(bg); e != nil {
@@ -209,7 +209,7 @@ func TestMLALatentReuse_prototype(t *testing.T) {
 			_ = fn.LaunchOn(bg, stream, cfg, gc.Arg(dQ), gc.Arg(dK), gc.Arg(dV),
 				gc.ArgValue(int32(nH)), gc.ArgValue(int32(nKV)), gc.ArgValue(int32(hd)),
 				gc.ArgValue(int32(nKeys-1)), gc.ArgValue(scale), gc.ArgValue(int32(window)),
-				gc.ArgValue(int32(M)), gc.Arg(dCtx))
+				gc.ArgValue(int32(M)), gc.Arg(dCtx), gc.ArgDevicePtr(0))
 		}
 		for range 200 {
 			run()

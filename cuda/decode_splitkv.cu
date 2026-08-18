@@ -47,8 +47,17 @@ extern "C" __global__ void splitkv_scores(
 // splitkv_softmax: grid nH, block 128 — replicates attn_batched's max+exp+denom EXACTLY (same strided
 // partition thread t → {t, t+128, …}, same tree), so the max and denominator sum are byte-identical.
 // In place: scStore[h][i] ← exp(sc-mx); invStore[h] = 1/Σ.
+// `sinks` is gpt-oss's per-head learned attention sink: an extra logit with NO key and NO
+// value. It joins the softmax MAX as well as the denominator —
+//     m     = max(max_s score_s, sink_h)
+//     denom = Sum_s exp(score_s - m) + exp(sink_h - m)
+// — which is why it cannot be folded in afterwards as a denominator correction: shifting the
+// max after the exp pass would need every exp recomputed. NULL for every other family, and
+// the kernel is then bit-identical to before (the branch is uniform across the block, so it
+// costs no divergence).
 extern "C" __global__ void splitkv_softmax(
-    float* __restrict__ scStore, int nH, int nWin, float* __restrict__ invStore) {
+    float* __restrict__ scStore, int nH, int nWin, float* __restrict__ invStore,
+    const float* __restrict__ sinks) {
     int h = blockIdx.x; if (h >= nH) return;
     extern __shared__ float red[];
     int t = threadIdx.x, nt = blockDim.x;
@@ -58,11 +67,16 @@ extern "C" __global__ void splitkv_softmax(
     red[t] = lm; __syncthreads();
     for (int o = nt >> 1; o > 0; o >>= 1) { if (t < o) red[t] = fmaxf(red[t], red[t + o]); __syncthreads(); }
     float mx = red[0]; __syncthreads();
+    float sink = 0.f; bool hasSink = (sinks != nullptr);
+    if (hasSink) { sink = sinks[h]; mx = fmaxf(mx, sink); }  // the sink competes for the max
     float ls = 0.f;
     for (int i = t; i < nWin; i += nt) { float e = __expf(sc[i] - mx); sc[i] = e; ls += e; }
     red[t] = ls; __syncthreads();
     for (int o = nt >> 1; o > 0; o >>= 1) { if (t < o) red[t] += red[t + o]; __syncthreads(); }
-    if (t == 0) invStore[h] = 1.f / red[0];
+    // The sink's term is added ONCE, after the tree reduction, so it cannot be double-counted
+    // across the strided partition — and it is added to the DENOMINATOR only: it has no value
+    // vector, so splitkv_vsum's numerator is untouched.
+    if (t == 0) { float denom = red[0]; if (hasSink) denom += __expf(sink - mx); invStore[h] = 1.f / denom; }
 }
 
 // splitkv_vsum: each thread owns one output dim d and folds Σ_s sc[s]·v[s][d] in ascending s — the

@@ -142,9 +142,14 @@ __global__ void rope_kv_batched(
 // attn_batched: grid.x = head, grid.y = query row m. Each block runs the M=1 attention math for
 // query m with nKeys = startPos+m+1 (CAUSAL) and its own window. Shared mem sized to the largest
 // row's window by the host (maxNWin + blockDim). Bit-identical to attention() per row.
+// `sinks` (gpt-oss) is a per-head logit with no key and no value: it joins the softmax MAX
+// and the DENOMINATOR, never the numerator. NULL elsewhere, leaving the kernel bit-identical.
+// It must match splitkv_softmax exactly — a sink applied at decode but not at prefill would
+// present as drift partway through a sequence rather than as a missing term.
 __global__ void attn_batched(const float* __restrict__ q, const float* __restrict__ kc,
                              const float* __restrict__ vc, int nH, int nKV, int hd, int startPos,
-                             float scale, int window, int M, float* __restrict__ ctx) {
+                             float scale, int window, int M, float* __restrict__ ctx,
+                             const float* __restrict__ sinks) {
     int h = blockIdx.x; if (h >= nH) return;
     int m = blockIdx.y; if (m >= M) return;
     int nKeys = startPos + m + 1;
@@ -182,11 +187,15 @@ __global__ void attn_batched(const float* __restrict__ q, const float* __restric
     red[t] = lm; __syncthreads();
     for (int o = nt >> 1; o > 0; o >>= 1) { if (t < o) red[t] = fmaxf(red[t], red[t + o]); __syncthreads(); }
     float mx = red[0]; __syncthreads();
+    float sink = 0.f; bool hasSink = (sinks != nullptr);
+    if (hasSink) { sink = sinks[h]; mx = fmaxf(mx, sink); }  // the sink competes for the max
     float ls = 0.f;
     for (int s = winStart + t; s < nKeys; s += nt) { float e = __expf(sc[s - winStart] - mx); sc[s - winStart] = e; ls += e; }
     red[t] = ls; __syncthreads();
     for (int o = nt >> 1; o > 0; o >>= 1) { if (t < o) red[t] += red[t + o]; __syncthreads(); }
-    float inv = 1.f / red[0]; __syncthreads();
+    // Added once, after the reduction, to the DENOMINATOR only — the sink has no value vector.
+    float denom = red[0]; if (hasSink) denom += __expf(sink - mx);
+    float inv = 1.f / denom; __syncthreads();
     for (int d = t; d < hd; d += nt) {
         float acc = 0.f;
         for (int s = winStart; s < nKeys; s++) acc = __fmaf_rn(sc[s - winStart], vc[(long)s * kvDim + kvh * hd + d], acc);

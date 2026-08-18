@@ -1303,7 +1303,10 @@ func (r *cudaResident) splitKVAttnDecode(l, pos int) error {
 	}
 	// 2. softmax in place (block 128 — MUST match attn_batched for byte-identical max/denominator).
 	if e := r.launch(r.skSoftmax, LaunchConfig{GridX: uint32(r.nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: 128 * 4},
-		Arg(r.skScoreBuf), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(nWin)), Arg(r.skInvBuf)); e != nil {
+		// ArgNull: no attention sink. gpt-oss is the only family with one, and it is not
+		// resident-eligible yet (its clamped-SwiGLU expert kernel does not exist), so every
+		// caller today passes null and the kernel stays bit-identical to before.
+		Arg(r.skScoreBuf), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(nWin)), Arg(r.skInvBuf), ArgNull()); e != nil {
 		return e
 	}
 	// 3. V-sum → r.cctx (each thread the whole ascending-s fold for one output dim).
@@ -1861,7 +1864,7 @@ func (r *cudaResident) launchToken(emb []float32, pos int, head bool) error {
 			// startPos=pos, M=1 → nKeys = pos+1; same GridX/block/shared/ctx-layout as the glue launch, so
 			// decode stays byte-identical. glue `attention` (audited) is UNTOUCHED and is the fallback below.
 			if err := r.launch(r.bAttn, LaunchConfig{GridX: uint32(r.nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nWin + 128) * 4)},
-				Arg(r.qB), Arg(r.kc[l]), Arg(r.vc[l]), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)), gpu.ArgValue(int32(pos)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window), gpu.ArgValue(int32(1)), Arg(r.cctx)); err != nil {
+				Arg(r.qB), Arg(r.kc[l]), Arg(r.vc[l]), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)), gpu.ArgValue(int32(pos)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window), gpu.ArgValue(int32(1)), Arg(r.cctx), ArgNull()); err != nil {
 				return err
 			}
 		} else {

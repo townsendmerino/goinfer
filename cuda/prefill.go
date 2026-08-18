@@ -319,7 +319,7 @@ func (r *cudaResident) prefillCore(embeddings [][]float32, startPos int, tail in
 				SharedMemBytes: uint32((maxNWin + 128) * 4)},
 				Arg(qBb), Arg(r.kc[l]), Arg(r.vc[l]), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(nKV)),
 				gpu.ArgValue(int32(hd)), gpu.ArgValue(int32(startPos)), gpu.ArgValue(r.attnScale),
-				gpu.ArgValue(Ly.window), gpu.ArgValue(int32(M)), Arg(cctxB)); e != nil {
+				gpu.ArgValue(Ly.window), gpu.ArgValue(int32(M)), Arg(cctxB), ArgNull()); e != nil {
 				return e
 			}
 			r.profToc(attnCat, t)

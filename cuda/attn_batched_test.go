@@ -148,7 +148,7 @@ func TestAttnBatched_bitIdentical(t *testing.T) {
 		if e := fnBat.LaunchOn(bg, stream, cfg,
 			gc.Arg(dQ), gc.Arg(dKc), gc.Arg(dVc),
 			gc.ArgValue(int32(nH)), gc.ArgValue(int32(nKV)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(startPos)),
-			gc.ArgValue(scale), gc.ArgValue(int32(window)), gc.ArgValue(int32(M)), gc.Arg(dCtx)); e != nil {
+			gc.ArgValue(scale), gc.ArgValue(int32(window)), gc.ArgValue(int32(M)), gc.Arg(dCtx), gc.ArgDevicePtr(0)); e != nil {
 			t.Fatalf("batched launch sp=%d: %v", startPos, e)
 		}
 		if e := stream.Synchronize(bg); e != nil {
