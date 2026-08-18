@@ -170,3 +170,4 @@ decoder/testdata/laguna-*-tiny/*.py
 # fixtures, these are far too large to ship, so the slice gates skip without them.
 decoder/testdata/laguna-*-slice/
 decoder/testdata/qwen3next-*-slice/
+decoder/testdata/gptoss120-slice/

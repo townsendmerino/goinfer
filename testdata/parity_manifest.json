@@ -197,15 +197,16 @@
       ],
       "own": [
         "decoder/forward_gptoss.go",
+        "decoder/gptoss120_test.go",
         "decoder/gptoss_safetensors.go",
         "decoder/gptoss_safetensors_test.go",
         "decoder/mxfp4.go"
       ],
-      "deps_hash": "sha256:cebb39e4e57e3ca2165fe03a30c40bfc3a7cb559228ced6274fb64cfcb91ff4c",
+      "deps_hash": "sha256:23209c9aa3429d1302512af592bd861e675ca39bbd833379aa8aa43b221d0137",
       "status": "validated",
       "validated_at": "25a4711",
       "date": "2026-07-27",
-      "reference": "tiny HF f32 gpt-oss golden (attention sinks + clamped-SwiGLU MoE + sliding/full + YaRN): argmax-exact, logit cosine 1.0. Real gpt-oss:20b MXFP4 (int8 resident, ~20 GB) vs HF bf16 (scripts/gptoss_hf_oracle.py): argmax-exact (\" Paris\") and coherent generation. Reproduced on main once the root go.mod pinned aikit v1.12.0, whose ggml type-39 dequant the MXFP4 experts need. | SAFETENSORS loader (2026-08-18) diffed against this same GGUF path at identical int8: argmax identical, logit cosine 0.999121; residual attributable to the GGUF's Q8_0 attention vs safetensors BF16 (experts are MXFP4 ggml_type 39 in BOTH, so the expert path agrees exactly). A wrong nibble order or mis-split gate_up measured 0.081, so the threshold separates right from wrong by three orders of magnitude.",
+      "reference": "tiny HF f32 gpt-oss golden (attention sinks + clamped-SwiGLU MoE + sliding/full + YaRN): argmax-exact, logit cosine 1.0. Real gpt-oss:20b MXFP4 (int8 resident, ~20 GB) vs HF bf16 (scripts/gptoss_hf_oracle.py): argmax-exact (\" Paris\") and coherent generation. Reproduced on main once the root go.mod pinned aikit v1.12.0, whose ggml type-39 dequant the MXFP4 experts need. | SAFETENSORS loader (2026-08-18) diffed against this same GGUF path at identical int8: argmax identical, logit cosine 0.999121; residual attributable to the GGUF's Q8_0 attention vs safetensors BF16 (experts are MXFP4 ggml_type 39 in BOTH, so the expert path agrees exactly). A wrong nibble order or mis-split gate_up measured 0.081, so the threshold separates right from wrong by three orders of magnitude. The loader also generalizes to gpt-oss-120b (4-layer slice: 128 experts, distinct across indices 0/63/127, all logits finite) -- shape coverage only, since 4 layers of 120b dequantize to ~51GB in f32 and no reference forward fits.",
       "machine": "linux-62gb",
       "method": "real-model-oracle",
       "metrics": {
