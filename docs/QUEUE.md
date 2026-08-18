@@ -310,10 +310,8 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `9e5f8fa` | fix(quant): reject --quant that conflicts with a prequant .giw at startup (T1-7) |
 | `a15a394` | cuda+docs: decline floor, slot-cap gate, driver allocation facts, and seven rules |
 | `a6c5b57` | fix(parity): the goldens refresh runs quantized goldens, and reports the split |
-| `ada417e` | [aikit] scripts: ptx-repro is n/a on darwin, keyed on the PLATFORM not on NVRTC's absence |
 | `bacc04c` | feat(serve): --moe-cache-experts / --moe-cache-slots — PARKED on the freeze |
 | `bd08936` | fix(gate): cannot-search is not not-found; cross-gate composition; B7 sweep |
-| `be049df` | [aikit] gpu(gemv): explicit __fmaf_rn in the quantized GEMV — the bit-identity contraction rule |
 | `c3e43c8` | E2: the four pending families get real oracles — and two of them were decoding released checkpoints wrong |
 | `ca29d6c` | cuda: resident context cap becomes configuration-derived (-ctx), VRAM-checked at load |
 | `cc238c6` | cleanup: consolidate GINFER_ env vars to GOINFER_ + add env-var registry |
@@ -326,6 +324,8 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `f33fcaf` | chore(deps): aikit v1.16.0 -> v1.17.0, aikit/gpu v0.27.0 -> v0.28.0 |
 | `f340d4e` | metal(9c Step 4): argmax-primary gate + f16-scale confound diagnostic (finding recorded) |
 | `f9d5d07` | feat(decoder): dispatch census (B6); close the GGUF-quant gap; reopen B4 |
+| `ada417e` | **UNRESOLVED** |
+| `be049df` | **UNRESOLVED** |
 
 ## Path index
 
@@ -357,7 +357,7 @@ supports.
 | `docs/how-inference-works.md|decoder/session.go:71` | goinfer | `// stale history. Callers must skip it (and reconcile) for an empty prompt, so a rejecte` |
 | `docs/ideas-weight-memory.md|decoder/mlp.go:69` | goinfer | `anchor: func mlp(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend, scr` |
 | `docs/measurements/c3-metal-consumer-window.md|decoder/model.go:301` | goinfer | `switch o.Backend {` |
-| `docs/measurements/c3-metal-consumer-window.md|decoder/residency.go:525` | goinfer | `func (m *Model) withResidency() *Model {` |
+| `docs/measurements/c3-metal-consumer-window.md|decoder/residency.go:551` | goinfer | `func (m *Model) withResidency() *Model {` |
 | `docs/measurements/c3-metal-consumer-window.md|metal/gemma_parity_test.go:84` | goinfer | `t.Fatal("metal resident DECLINED — admission says it should be admitted")` |
 | `docs/multimodal.md|decoder/config.go:1013` | goinfer | `if json.Unmarshal(b, &nest) == nil && len(nest.TextConfig) > 0 {` |
 | `docs/multimodal.md|decoder/gguf_qwen35.go:77` | goinfer | `anchor: func ggufQwen35Config(g *embed.GGUFFile) (*Config, error) {` |
@@ -370,7 +370,7 @@ supports.
 | `docs/ollama-chase.md|decoder/mlp.go:82` | goinfer | `func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend, pager *expert` |
 | `docs/ollama-chase.md|decoder/model.go:831` | goinfer | `// logits. On the batched archs this runs the layers at M=len in one pass (each` |
 | `docs/ollama-chase.md|decoder/model.go:979` | goinfer | `// sample. Identical to the logits path — guarded by ArgmaxEquivalent/GreedyEquivalent.` |
-| `docs/ollama-chase.md|decoder/residency.go:685` | goinfer | `return false, "sequential — this backend has no batched prefill (per-token resident forw` |
+| `docs/ollama-chase.md|decoder/residency.go:711` | goinfer | `return false, "sequential — this backend has no batched prefill (per-token resident forw` |
 | `docs/ollama-chase.md|decoder/weightmat.go:202` | goinfer | `var ws linalg.Workspace` |
 | `docs/parity-coverage-policy.md|cuda/resident.go:940` | goinfer | `// always been allocated without one, and a hard failure here would regress every driver` |
 | `docs/parity-coverage-policy.md|linalg/dot.go:25` | aikit | `sum += a[k] * b[k]` |
@@ -381,10 +381,10 @@ supports.
 | `docs/post-v1.0-models.md|decoder/registry.go:409` | goinfer | `// cohere2Architecture expresses Cohere2 / Command-R7B (model_type "cohere2":` |
 | `docs/post-v1.0-models.md|decoder/registry.go:48` | goinfer | `"gpt_oss":             gptOssArchitecture,     // gpt-oss (20b/120b): sparse MoE + per-h` |
 | `docs/post-v1.0-models.md|decoder/registry.go:719` | goinfer | `Name:            "qwen3_5_moe",` |
-| `docs/prompts/metal-batched-verify.md|metal/model.go:1263` | goinfer | `e.Dispatch(r.pRms, tgReduceNorm, tgReduceNorm, r.x, L.postNorm, r.mq, r.mSc, r.uH, r.uEp` |
-| `docs/prompts/metal-batched-verify.md|metal/model.go:274` | goinfer | `// maxThreadgroupStageBytes returns the largest threadgroup staging allocation (bytes) a` |
+| `docs/prompts/metal-batched-verify.md|metal/model.go:1171` | goinfer | `e.Dispatch(r.pRms, tgReduceNorm, tgReduceNorm, r.x, L.postNorm, r.mq, r.mSc, r.uH, r.uEp` |
+| `docs/prompts/metal-batched-verify.md|metal/model.go:291` | goinfer | `// maxThreadgroupStageBytes returns the largest threadgroup staging allocation (bytes) a` |
 | `docs/prompts/metal-close-leak-check.md|metal/backend.go:211` | goinfer | `// Close stops the pipelined executor (waiting for it) and frees every MTLBuffer this re` |
-| `docs/prompts/metal-close-leak-check.md|metal/model.go:350` | goinfer | `// expert weights, buffer OOM — model.go/moe.go/gemma4_moe.go) into the error this signa` |
+| `docs/prompts/metal-close-leak-check.md|metal/model.go:367` | goinfer | `// expert weights, buffer OOM — model.go/moe.go/gemma4_moe.go) into the error this signa` |
 | `docs/prompts/metal-close-leak-check.md|metal/model.go:46` | goinfer | `// same-op kernel inherit it. A byte-exact fixture for such an op MUST use context > the` |
 | `docs/queue-engineering.md|cuda/argmax_tiebreak_test.go:19` | goinfer | `func TestArgmaxTieBreak(t *testing.T) {` |
 | `docs/queue-engineering.md|cuda/backend.go:873` | goinfer | `// cache, so the cap is correct by construction rather than covered by a margin.` |
@@ -404,8 +404,8 @@ supports.
 | `docs/queue-engineering.md|internal/serveapp/embeddings.go:26` | goinfer | `// Embedding request bounds (audit C-21). /v1/embeddings is deliberately un-queued (the ` |
 | `docs/queue-engineering.md|internal/serveapp/main.go:516` | goinfer | `// A SECOND signal during the drain force-exits instead of being swallowed by the buffer` |
 | `docs/queue-engineering.md|linalg/quant.go:136` | aikit | `dequantRowInt8(deq, bq, 1.0)` |
-| `docs/queue-engineering.md|metal/model.go:728` | goinfer | `r.residencyBufs = pinned` |
-| `docs/queue-engineering.md|metal/model.go:827` | goinfer | `r.logitsHost[j] = sc * float32(math.Tanh(float64(v/sc)))` |
+| `docs/queue-engineering.md|metal/model.go:784` | goinfer | `r.residencyBufs = pinned` |
+| `docs/queue-engineering.md|metal/model.go:902` | goinfer | `r.logitsHost[j] = sc * float32(math.Tanh(float64(v/sc)))` |
 | `docs/queue-engineering.md|metal/snapshot_golden_test.go:77` | goinfer | `func TestMetalEmbedScale_forwardMatchesForwardEmb(t *testing.T) {` |
 | `docs/queue-performance.md|cuda/backend.go:463` | goinfer | `if r.dev, e = CreateSystemDefaultDevice(); e != nil {` |
 | `docs/queue-performance.md|cuda/backend.go:591` | goinfer | `load(&r.bRopeKV, pbmod, "rope_kv_batched")` |
@@ -425,24 +425,24 @@ supports.
 | `docs/scoping-lfm2.md|decoder/mamba2_chunked.go:60` | goinfer | `// Depthwise causal conv over xBC (+bias, +SiLU), then split into x/B/C.` |
 | `docs/scoping-lfm2.md|decoder/rmsnorm.go:49` | goinfer | `func layerNorm(x, weight, bias []float32, rows, dim int, eps float64) {` |
 | `docs/task-gpu-batched-prefill.md|decoder/residency.go:54` | goinfer | `// ResidentGreedy is an optional capability on a ResidentForward: compute the token's gr` |
-| `docs/task-int4-int8-exact-mma.md|metal/kernels.go:101` | goinfer | `if (lid == 0) out[gid] = acc * asc[0];` |
-| `docs/task-int4-int8-exact-mma.md|metal/kernels.go:130` | goinfer | `#define SA_BODY \` |
-| `docs/task-int4-int8-exact-mma.md|metal/kernels.go:133` | goinfer | `uint G = K>>5u; \` |
-| `docs/task-int4-int8-exact-mma.md|metal/kernels.go:136` | goinfer | `device const half*  sr = sct + (uint)row*G; \` |
-| `docs/task-int4-int8-exact-mma.md|metal/kernels.go:144` | goinfer | `kernel void gemv_w4a8_sa(device const uint4* wq[[buffer(0)]], device const half* sct[[bu` |
-| `docs/task-int4-int8-exact-mma.md|metal/kernels.go:150` | goinfer | `if (lane==0) out[row] = acc*asc[0];` |
+| `docs/task-int4-int8-exact-mma.md|metal/kernels.go:106` | goinfer | `#define W4A8_BODY \` |
+| `docs/task-int4-int8-exact-mma.md|metal/kernels.go:109` | goinfer | `device const half*  srow = bsc + (uint)gid*(K/32u); \` |
+| `docs/task-int4-int8-exact-mma.md|metal/kernels.go:117` | goinfer | `acc += float(gi) * float(srow[wi>>2]); \` |
+| `docs/task-int4-int8-exact-mma.md|metal/kernels.go:123` | goinfer | `kernel void gemv_w4a8_coal(device const uint* bq[[buffer(0)]], device const half* bsc[[b` |
+| `docs/task-int4-int8-exact-mma.md|metal/kernels.go:127` | goinfer | `if (lid == 0) out[gid] = acc * asc[0];` |
+| `docs/task-int4-int8-exact-mma.md|metal/kernels.go:168` | goinfer | `#define SA_BODY \` |
+| `docs/task-int4-int8-exact-mma.md|metal/kernels.go:171` | goinfer | `uint G = K>>5u; \` |
+| `docs/task-int4-int8-exact-mma.md|metal/kernels.go:174` | goinfer | `device const half*  sr = sct + (uint)row*G; \` |
+| `docs/task-int4-int8-exact-mma.md|metal/kernels.go:182` | goinfer | `kernel void gemv_w4a8_sa(device const uint4* wq[[buffer(0)]], device const half* sct[[bu` |
+| `docs/task-int4-int8-exact-mma.md|metal/kernels.go:188` | goinfer | `if (lane==0) out[row] = acc*asc[0];` |
 | `docs/task-int4-int8-exact-mma.md|metal/kernels.go:28` | goinfer | `float sc=red[0]/127.0f; if(sc==0)sc=1; if(tid==0)asc[0]=sc; float inv=1/sc;` |
-| `docs/task-int4-int8-exact-mma.md|metal/kernels.go:80` | goinfer | `#define W4A8_BODY \` |
-| `docs/task-int4-int8-exact-mma.md|metal/kernels.go:83` | goinfer | `device const half*  srow = bsc + (uint)gid*(K/32u); \` |
-| `docs/task-int4-int8-exact-mma.md|metal/kernels.go:91` | goinfer | `acc += float(gi) * float(srow[wi>>2]); \` |
-| `docs/task-int4-int8-exact-mma.md|metal/kernels.go:97` | goinfer | `kernel void gemv_w4a8_coal(device const uint* bq[[buffer(0)]], device const half* bsc[[b` |
-| `docs/task-int4-int8-exact-mma.md|metal/model.go:1068` | goinfer | `e.DispatchTG(r.pSABias, qkvRows*32, 256, r.H*2, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv, L.qk` |
-| `docs/task-int4-int8-exact-mma.md|metal/model.go:1098` | goinfer | `e.Dispatch(r.pGemv, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.dO, r.uI)` |
-| `docs/task-int4-int8-exact-mma.md|metal/model.go:406` | goinfer | `r.pRms, r.pQv, r.pGemv = pipe("rmsnorm_quant"), pipe("quant_vec"), pipe("gemv_w4a8_coal"` |
-| `docs/task-int4-int8-exact-mma.md|metal/model.go:408` | goinfer | `r.pSA, r.pSABias, r.pSAResid = pipe("gemv_w4a8_sa"), pipe("gemv_w4a8_sa_bias"), pipe("ge` |
-| `docs/task-metal-batched-verify-kernel.md|metal/kernels.go:130` | goinfer | `#define SA_BODY \` |
-| `docs/task-metal-batched-verify-kernel.md|metal/kernels.go:80` | goinfer | `#define W4A8_BODY \` |
-| `docs/task-metal-batched-verify-kernel.md|metal/model.go:280` | goinfer | `func maxThreadgroupStageBytes(hidden, qWidth, moeInter, g4moeInter int) int {` |
+| `docs/task-int4-int8-exact-mma.md|metal/model.go:1144` | goinfer | `e.DispatchTG(r.pSABias, qkvRows*32, 256, r.H*2, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv, L.qk` |
+| `docs/task-int4-int8-exact-mma.md|metal/model.go:1174` | goinfer | `e.Dispatch(r.pGemv, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.dO, r.uI)` |
+| `docs/task-int4-int8-exact-mma.md|metal/model.go:423` | goinfer | `r.pRms, r.pQv, r.pGemv = pipe("rmsnorm_quant"), pipe("quant_vec"), pipe("gemv_w4a8_coal"` |
+| `docs/task-int4-int8-exact-mma.md|metal/model.go:425` | goinfer | `r.pSA, r.pSABias, r.pSAResid = pipe("gemv_w4a8_sa"), pipe("gemv_w4a8_sa_bias"), pipe("ge` |
+| `docs/task-metal-batched-verify-kernel.md|metal/kernels.go:106` | goinfer | `#define W4A8_BODY \` |
+| `docs/task-metal-batched-verify-kernel.md|metal/kernels.go:168` | goinfer | `#define SA_BODY \` |
+| `docs/task-metal-batched-verify-kernel.md|metal/model.go:297` | goinfer | `func maxThreadgroupStageBytes(hidden, qWidth, moeInter, g4moeInter int) int {` |
 | `docs/task-moe-streaming.md|decoder/forwardn.go:14` | goinfer | `// MoE FFN itself stays per-row (router picks different experts per token).` |
 | `docs/task-moe-streaming.md|decoder/forwardn.go:259` | goinfer | `// Sequential: add the attention residual, then re-norm the updated stream for the MLP.` |
 | `docs/task-moe-streaming.md|decoder/mlp.go:81` | goinfer | `// Only the chosen experts are evaluated — the point of MoE.` |

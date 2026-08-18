@@ -14,8 +14,8 @@ while it's resident. This task builds and verifies that kernel.
 ## Phase 0 — does the hoist preserve order?
 
 Decode's dense per-token projections dispatch through the `gemv_w4a8_sa` family (QKV/O/gate-up,
-`SA_BODY` macro, `metal/kernels.go:130-143`) and `gemv_w4a8_coal`/`_resid` (down-proj,
-`W4A8_BODY` macro, `metal/kernels.go:80-93`) — documented precisely in
+`SA_BODY` macro, `metal/kernels.go:168-143`) and `gemv_w4a8_coal`/`_resid` (down-proj,
+`W4A8_BODY` macro, `metal/kernels.go:106-93`) — documented precisely in
 `docs/task-int4-int8-exact-mma.md`. An M-row hoist keeps every element of that reduction
 identical — same per-lane strided block iteration, same per-block exact-integer dot, same
 `acc += float(gi) * scale` accumulation order within a lane, same `simd_sum` cross-lane
@@ -51,7 +51,7 @@ boundary, not only the one everyone thinks to check.**
 **Threadgroup-memory ceiling (real, model-shape-dependent).** The SA-style batched kernels
 (`gemv_w4a8_bvk_bias`/`_plain`/`_plain_resid`) stage all M activation rows into threadgroup memory
 up front (`2*K*M` bytes), the same convention `maxThreadgroupStageBytes` already uses for M=1
-(`metal/model.go:280`, M-11). Apple's per-threadgroup limit is ~32 KiB
+(`metal/model.go:297`, M-11). Apple's per-threadgroup limit is ~32 KiB
 (`d.MaxThreadgroupMemoryLength()`, empirically 32768 on this M1 Pro). At the widest staged K in a
 model (`max(H, nH·hd)`), M=16 fits only for narrower models:
 
