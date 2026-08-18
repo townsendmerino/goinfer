@@ -316,12 +316,19 @@ type cudaResident struct {
 	// Batched (M=len) prefill pipelines (prefill_batched.ptx) — the weight-stationary path that fixes
 	// the ~128-token Ollama crossover. bGemv is the batched W4A8 GEMV; the rest are the M=1 glue
 	// kernels with an M dimension, each bit-identical per row. Loaded once at build (small module).
-	bRN, bRms, bRopeKV, bAttn, bQuant, bSw, bRes            Pipeline
-	bW8                                                     Pipeline     // batched W8A8 GEMV (int8 bundles); §C6. nil ⇒ int8 prefill declines
-	bQKN                                                    Pipeline     // batched per-head Q/K RMSNorm (qwen3 etc.); loaded with the batched set
-	bNormF32                                                Pipeline     // batched plain f32 RMSNorm for Gemma sandwich post-norms; loaded with the batched set
-	skScores, skSoftmax, skVsum                             Pipeline     // Campaign-A split-KV decode attention (high-occupancy, bit-identical)
-	skScoreBuf, skInvBuf                                    Buffer       // split-KV scratch: [nH·ctxCap] raw/exp scores, [nH] inverse denominators
+	bRN, bRms, bRopeKV, bAttn, bQuant, bSw, bRes Pipeline
+	bW8                                          Pipeline // batched W8A8 GEMV (int8 bundles); §C6. nil ⇒ int8 prefill declines
+	bQKN                                         Pipeline // batched per-head Q/K RMSNorm (qwen3 etc.); loaded with the batched set
+	bNormF32                                     Pipeline // batched plain f32 RMSNorm for Gemma sandwich post-norms; loaded with the batched set
+	skScores, skSoftmax, skVsum                  Pipeline // Campaign-A split-KV decode attention (high-occupancy, bit-identical)
+	skScoreBuf, skInvBuf                         Buffer   // split-KV scratch: [nH·ctxCap] raw/exp scores, [nH] inverse denominators
+	// gpt-oss only (nil elsewhere, and every other family's launches pass ArgNull so the
+	// kernels stay bit-identical): the clamped interleaved-SwiGLU expert epilogue, plus the
+	// per-layer attention sinks and the per-expert gate‖up bias table it needs.
+	gptOssSw                                                Pipeline // glu_quant_gptoss (own module — audited glue.ptx/moe.ptx untouched)
+	gptOssAlpha, gptOssLimit                                float32
+	gptOssSinks                                             []Buffer     // [layer] → [nH] learned per-head attention sink logits
+	gptOssExpBias                                           []Buffer     // [layer] → [nExpert·2·moeInter] gate‖up biases, indexed on-device by the router
 	splitkvAttn                                             bool         // GOINFER_SPLITKV_ATTN: use the split-KV decode attention (else the A1 attn_batched(M=1))
 	skMinKeys                                               int          // GOINFER_SPLITKV_MIN_KEYS: -1 ⇒ per-geometry table; ≥0 overrides it (0 ⇒ always split)
 	prefillReady                                            bool         // batched kernels loaded; PrefillLast usable
@@ -1411,6 +1418,37 @@ func (r *cudaResident) moeMLPPre(Ly *cudaLayer) error {
 // the final-logit near-tie washout) — so TestMoeSwigluWiring exercises this exact helper with crafted
 // gate≠up and asserts gate-first (audit C-15, bug B). Keep this the sole gate/up-split dispatch.
 func (r *cudaResident) launchGluSplit(gu Buffer, inter int, outQ, outSc, outScr Buffer) error {
+	return r.launchGluSplitExpert(gu, inter, outQ, outSc, outScr, Buffer{}, -1)
+}
+
+// launchGluSplitExpert is launchGluSplit with the routed-expert context the gpt-oss epilogue
+// needs. bias is that layer's [nExpert·2·inter] gate‖up table and slot is the top-k position
+// whose expert is running; the KERNEL does biasRow = idx[slot]*2*inter, because which expert
+// runs is a device-side routing decision and the launch geometry must not depend on it.
+//
+// Families other than gpt-oss route through the nil/-1 path and land on glu_quant exactly as
+// before — same kernel, same arguments, bit-identical. gpt-oss is the only family whose
+// activation is not act(g)*u, so branching here rather than adding a mode to glu_quant keeps
+// the clamped variant out of the audited glue.ptx.
+func (r *cudaResident) launchGluSplitExpert(gu Buffer, inter int, outQ, outSc, outScr Buffer, bias Buffer, slot int) error {
+	// Buffer and Pipeline are STRUCTS here, not interfaces, so "absent" is the zero value
+	// rather than nil — the same test resident.go already uses for the optional split-KV
+	// pipelines (r.skScores != (Pipeline{})).
+	if r.gptOssSw != (Pipeline{}) {
+		idx := Arg(r.expIdx())
+		bArg := ArgNull()
+		if bias != (Buffer{}) {
+			bArg = Arg(bias)
+		}
+		if slot < 0 {
+			slot = 0 // the shared/dense caller has no routing slot; gpt-oss has no shared expert
+		}
+		return r.launch(r.gptOssSw, onecfg(256, 256*4),
+			Arg(gu), Arg(gu), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(inter)),
+			gpu.ArgValue(int32(inter)), bArg, idx, gpu.ArgValue(int32(slot)),
+			gpu.ArgValue(r.gptOssAlpha), gpu.ArgValue(r.gptOssLimit),
+			Arg(outQ), Arg(outSc), Arg(outScr))
+	}
 	return r.launch(r.fSw, onecfg(256, 256*4),
 		Arg(gu), Arg(gu), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(inter)),
 		gpu.ArgValue(int32(inter)), gpu.ArgValue(r.act),
