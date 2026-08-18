@@ -20,6 +20,7 @@ Regenerate with `go test ./decoder -run HardwareMatrix -update`.
 | Gemma 3 | ✅ | CPU | ✅ resident | ✅ resident |
 | Gemma 4 | ✅ | CPU | ✅ resident | ✅ resident |
 | Granite-4.0-H | ✅ | CPU | CPU | CPU |
+| InternLM2 | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Kimi K2 | ✅ | ✅ resident | CPU | CPU |
 | Laguna | ✅ | CPU | CPU | CPU |
 | Llama | ✅ | ✅ resident | ✅ resident | ✅ resident |

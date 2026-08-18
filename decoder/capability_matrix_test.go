@@ -127,6 +127,16 @@ func representativeConfig(modelType string) *Config {
 			NumKVHeads: 2, IntermediateDim: 32, RMSNormEps: 1e-5, RoPEGlobalBase: 500000,
 			HiddenAct: "silu",
 		}
+	case "internlm2":
+		// groups = NumHeads/NumKVHeads = 2 (>1) on purpose: at groups == 1 the grouped wqkv
+		// layout and a plain concat coincide, and the matrix would stop describing the thing
+		// that makes this family its own adapter rather than an alias.
+		return &Config{
+			ModelType: "internlm2", VocabSize: 128, HiddenDim: 16, NumLayers: 2, NumHeads: 4,
+			NumKVHeads: 2, IntermediateDim: 32, RMSNormEps: 1e-5, RoPEGlobalBase: 1000000,
+			HiddenAct:   "silu",
+			RopeScaling: json.RawMessage(`{"type":"dynamic","factor":2.0}`),
+		}
 	case "internlm3":
 		// llama-shaped, plus the one thing that makes it its own model_type here: a
 		// rope_scaling of type "dynamic". Included in the representative config precisely so
@@ -357,6 +367,7 @@ var familyDocs = map[string]familyDoc{
 	// "Llama: llama, internlm3" rather than open a second row that competes for the same
 	// description. Giving it its own doc name renamed llama's row to "InternLM3" and handed
 	// internlm3 llama's full-oracle status, which it had not earned.
+	"internlm2":        {"InternLM2", "InternLM2 dense — llama math, renamed tensors + grouped fused wqkv", "safetensors", "text"},
 	"internlm3":        {"Llama", "Meta Llama 2/3 dense (single-base RoPE)", "safetensors, GGUF, GPTQ, AWQ", "text"},
 	"mistral":          {"Mistral", "Mistral dense (all-layer sliding window)", "safetensors, GGUF", "text"},
 	"gpt2":             {"GPT-2", "GPT-2/NeoX (LayerNorm, learned positions, non-gated GELU)", "safetensors, GGUF", "text"},

@@ -342,7 +342,7 @@ supports.
 | `docs/cuda-megakernel-spec.md|gpu/decoderunner.go:835` | goinfer | `// relu²→int8 → down + residual into xd. The other kinds fall through to the mixer.` |
 | `docs/cuda-megakernel-spec.md|gpu/forward_parity_test.go:36` | goinfer | `func TestWebGPU_forwardParity(t *testing.T) {` |
 | `docs/cuda-megakernel-spec.md|gpu/gemv.go:41` | goinfer | `@compute @workgroup_size(64)` |
-| `docs/gpu-residency-coverage.md|decoder/registry.go:143` | goinfer | `IntermediateDim:   cfg.IntermediateDim,` |
+| `docs/gpu-residency-coverage.md|decoder/registry.go:144` | goinfer | `IntermediateDim:   cfg.IntermediateDim,` |
 | `docs/how-inference-works.md|decoder/attention.go:107` | goinfer | `if !arch.LearnedPosEmbed && !arch.isNoPELayer(layer) {` |
 | `docs/how-inference-works.md|decoder/attention.go:147` | goinfer | `cache.Append(layer, k, v)` |
 | `docs/how-inference-works.md|decoder/attention.go:59` | goinfer | `nH, nKV, hd := arch.headsAt(layer), arch.NumKVHeads, arch.HeadDim` |
@@ -374,13 +374,13 @@ supports.
 | `docs/ollama-chase.md|decoder/weightmat.go:202` | goinfer | `var ws linalg.Workspace` |
 | `docs/parity-coverage-policy.md|cuda/resident.go:940` | goinfer | `// always been allocated without one, and a hard failure here would regress every driver` |
 | `docs/parity-coverage-policy.md|linalg/dot.go:25` | aikit | `sum += a[k] * b[k]` |
-| `docs/plan-cpubrrr-steal-and-bindings.md|decoder/registry.go:48` | goinfer | `"nemotron_h":       nemotronhArchitecture, // Nemotron-H: single-op-per-block hybrid (ma` |
+| `docs/plan-cpubrrr-steal-and-bindings.md|decoder/registry.go:49` | goinfer | `"nemotron_h":       nemotronhArchitecture, // Nemotron-H: single-op-per-block hybrid (ma` |
 | `docs/plan-cpubrrr-steal-and-bindings.md|linalg/quant.go:412` | aikit | `func QuantizeGroupInt4Row(row []float32, cols, group int, packed []byte, scales []float3` |
-| `docs/post-v1.0-models.md|decoder/registry.go:1212` | goinfer | `func nemotronhArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {` |
-| `docs/post-v1.0-models.md|decoder/registry.go:1328` | goinfer | `func deepseekArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {` |
-| `docs/post-v1.0-models.md|decoder/registry.go:415` | goinfer | `// cohere2Architecture expresses Cohere2 / Command-R7B (model_type "cohere2":` |
-| `docs/post-v1.0-models.md|decoder/registry.go:48` | goinfer | `"nemotron_h":       nemotronhArchitecture, // Nemotron-H: single-op-per-block hybrid (ma` |
-| `docs/post-v1.0-models.md|decoder/registry.go:725` | goinfer | `Name:            "qwen3_5_moe",` |
+| `docs/post-v1.0-models.md|decoder/registry.go:1213` | goinfer | `func nemotronhArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {` |
+| `docs/post-v1.0-models.md|decoder/registry.go:1329` | goinfer | `func deepseekArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {` |
+| `docs/post-v1.0-models.md|decoder/registry.go:416` | goinfer | `// cohere2Architecture expresses Cohere2 / Command-R7B (model_type "cohere2":` |
+| `docs/post-v1.0-models.md|decoder/registry.go:49` | goinfer | `"nemotron_h":       nemotronhArchitecture, // Nemotron-H: single-op-per-block hybrid (ma` |
+| `docs/post-v1.0-models.md|decoder/registry.go:726` | goinfer | `Name:            "qwen3_5_moe",` |
 | `docs/prompts/metal-batched-verify.md|metal/model.go:1215` | goinfer | `e.Dispatch(r.pRms, tgReduceNorm, tgReduceNorm, r.x, L.postNorm, r.mq, r.mSc, r.uH, r.uEp` |
 | `docs/prompts/metal-batched-verify.md|metal/model.go:291` | goinfer | `// maxThreadgroupStageBytes returns the largest threadgroup staging allocation (bytes) a` |
 | `docs/prompts/metal-close-leak-check.md|metal/backend.go:211` | goinfer | `// Close stops the pipelined executor (waiting for it) and frees every MTLBuffer this re` |
@@ -391,7 +391,7 @@ supports.
 | `docs/queue-engineering.md|cuda/prefill.go:227` | goinfer | `defer func() {` |
 | `docs/queue-engineering.md|cuda/resident.go:245` | goinfer | `// backend.go locals; the per-layer KV cache and UploadKV read r.layers[l].kvDim.` |
 | `docs/queue-engineering.md|cuda/resident.go:427` | goinfer | `func (r *cudaResident) recordUpload(e error) {` |
-| `docs/queue-engineering.md|decoder/features_test.go:169` | goinfer | `want, ok := admissionGolden[name]` |
+| `docs/queue-engineering.md|decoder/features_test.go:174` | goinfer | `want, ok := admissionGolden[name]` |
 | `docs/queue-engineering.md|decoder/forwardn.go:560` | goinfer | `logits[j] = sc * float32(math.Tanh(float64(val/sc)))` |
 | `docs/queue-engineering.md|decoder/kvsnapshot_gemma4_test.go:10` | goinfer | `func TestSnapshot_refusesNonUniformKVWidth_C05(t *testing.T) {` |
 | `docs/queue-engineering.md|decoder/layerpaging.go:42` | goinfer | `// mu guards the mutable paging state below (audit C-30). The pager lives on *Model, sha` |

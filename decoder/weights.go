@@ -453,6 +453,9 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 		}
 		return buildPhi3Weights(cfg, arch, st, quant) // split fused qkv_proj + gate_up_proj → generic forward
 	}
+	if arch.Name == "internlm2" {
+		return buildInternLM2Weights(cfg, arch, st, quant) // renamed tensors + GROUPED fused wqkv
+	}
 	if arch.llama4 != nil {
 		if lora != nil {
 			return nil, fmt.Errorf("decoder: LoRA merge unsupported for the llama4_text (iRoPE + fused-expert) layout")
@@ -1448,6 +1451,23 @@ var deepseekTensorSchema = tensorSchema{
 // schema, so buildGraniteWeights loads them directly. Kept non-empty for a valid
 // (unused) schema return.
 var graniteTensorSchema = tensorSchema{Embed: "model.embed_tokens.weight"}
+
+// internlm2TensorSchema is a MARKER, like phi3's: InternLM2's fused, GROUPED wqkv cannot be
+// expressed as per-tensor suffixes, so buildInternLM2Weights loads this family directly and
+// the generic schema-driven path is never used. The names are recorded here anyway so the
+// family's layout is discoverable from the same place every other family's is.
+var internlm2TensorSchema = tensorSchema{
+	Embed:       "model.tok_embeddings.weight",
+	LMHead:      "output.weight",
+	FinalNorm:   "model.norm.weight",
+	OProj:       "attention.wo.weight",
+	PreAttnNorm: "attention_norm.weight",
+	PreMLPNorm:  "ffn_norm.weight",
+	GateProj:    "feed_forward.w1.weight", // llama's original naming: w1 gate, w3 up, w2 down
+	UpProj:      "feed_forward.w3.weight",
+	DownProj:    "feed_forward.w2.weight",
+	// QProj/KProj/VProj intentionally empty: they live inside attention.wqkv.
+}
 
 // phi3TensorSchema is a marker — Phi-3/Phi-4's fused qkv_proj + gate_up_proj are split by
 // buildPhi3Weights into the standard fields, after which the generic llama forward runs.

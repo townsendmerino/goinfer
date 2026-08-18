@@ -21,6 +21,10 @@ var archFeatureProfile = map[string][]ResidentFeature{
 	// InternLM3 is a llama alias: same descriptor, so the same (empty) feature profile.
 	// Its dynamic-NTK rope resolves to no scaling at all in-window, so it does not even
 	// need FeatRopeMscale.
+	// InternLM2 needs no resident FEATURE the others lack: its differences are all in the
+	// loader (renamed tensors + the grouped wqkv split), so by the time a descriptor exists it
+	// is a llama. Same empty profile, same backends.
+	"internlm2": {},
 	"internlm3": {},
 	// NOTE phi3 is config-DEPENDENT: Phi-4 and the released GGUFs are plain dense, while the
 	// Phi-3-mini-4k safetensors declares sliding_window: 2047 and so also needs
@@ -132,6 +136,7 @@ var admissionGolden = map[string][]string{
 	"granitemoehybrid": {"webgpu"},
 	"kimi_k2":          {"webgpu"},
 	"llama":            {"cuda", "metal", "webgpu"},
+	"internlm2":        {"cuda", "metal", "webgpu"},
 	"internlm3":        {"cuda", "metal", "webgpu"},
 	"llama4_text":      {"cuda", "metal", "webgpu"},
 	"mellum":           {"webgpu"},
