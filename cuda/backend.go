@@ -602,6 +602,26 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		// -1 ⇒ use the per-geometry table. Set before the load so a partial split-KV load can never
 		// leave the zero value (0) sitting here meaning "always split".
 		r.skMinKeys = -1
+		// gpt-oss's clamped interleaved-SwiGLU expert epilogue, from its own module so the
+		// audited glue.ptx/moe.ptx stay untouched. Loaded only for that family: every other
+		// one keeps glu_quant, and launchGluSplitExpert branches on this pipeline being
+		// populated. A load failure is not fatal — it simply leaves gpt-oss on the CPU path,
+		// which is where it is today anyway.
+		if alpha, limit, isGptOss := m.GptOssActResident(); isGptOss {
+			if gmod, ge := r.dev.CompileLibrary(gptOssActPTX); ge == nil {
+				// &r.field via a loader closure, matching every other pipeline here — the
+				// pipeline lint keys on that form (`&r.<field>`), and a plain assignment
+				// reads to it as a launch with no binding. That is not pedantry: an unbound
+				// launch is a null-pipeline dispatch, which is what the lint exists to stop.
+				loadG := func(dst *Pipeline, name string) {
+					if pl, pe := r.dev.NewComputePipeline(gmod, name); pe == nil {
+						*dst = pl
+					}
+				}
+				loadG(&r.gptOssSw, "glu_quant_gptoss")
+				r.gptOssAlpha, r.gptOssLimit = alpha, limit
+			}
+		}
 		if r.prefillReady {
 			if skmod, e2 := r.dev.CompileLibrary(decodeSplitKVPTX); e2 == nil {
 				skOK := true

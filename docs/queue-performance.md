@@ -316,7 +316,7 @@ cost — a new kernel with per-thread scratch, a driver that reserves differentl
 
 **Structural fix: pay the deferred reservation BEFORE taking the free reading that sizes the cache.**
 Force the flagged kernels to launch once during `BuildResident`, ahead of `allocSlots` at
-`cuda/backend.go:836`. The cap is then correct **by construction**, because the free reading it is
+`cuda/backend.go:856`. The cap is then correct **by construction**, because the free reading it is
 computed from already includes every fixed cost that will ever be paid.
 
 **Known-unbounded, recorded rather than filed as a defect.** Module load is **resident-zero and
@@ -705,7 +705,7 @@ It is **additive with the rounding shortfall, not an alternative to it**: roundi
 headroom the 384 MiB margin was sized to provide, and the module load then spends from what remains.
 
 **Mechanism, now located precisely.** `CompileLibrary(moePTX)` runs at `cuda/backend.go:591`;
-`allocSlots` runs at `cuda/backend.go:836`. Under lazy loading the module's *device* memory is not
+`allocSlots` runs at `cuda/backend.go:856`. Under lazy loading the module's *device* memory is not
 taken at 591 — it is taken at the first launch of one of its kernels, which is `fRoute`, long after
 the cap was computed from the free reading at 793. Corroborating: the failed attempt released
 exactly 2^26 B while unwinding, which reads as a driver-side code/constant block rather than as

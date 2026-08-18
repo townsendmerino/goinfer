@@ -723,3 +723,27 @@ func (m *Model) SandwichNormResident() bool { return m.w.arch.NormPlacement == N
 // GatedActResident returns the gated-MLP activation as its ActKind ordinal, for backends that
 // pass it straight to a kernel (0 = GELU-tanh, 1 = SiLU). Meaningless for non-gated archs.
 func (m *Model) GatedActResident() int { return int(m.w.arch.Act) }
+
+// GptOssActResident exposes gpt-oss's clamped interleaved-SwiGLU constants to a resident
+// backend, and whether this model is that family at all. ok=false for every other family,
+// which is what a backend branches on to keep using the shared glu_quant path.
+//
+// Exported here rather than reached through arch.gptoss because the backends live in other
+// modules and cannot see unexported descriptor fields — the same reason GatedActResident and
+// FinalLogitSoftcapResident exist.
+func (m *Model) GptOssActResident() (alpha, limit float32, ok bool) {
+	gp := m.w.arch.gptoss
+	if gp == nil {
+		return 0, 0, false
+	}
+	return float32(gp.SwigluAlpha), float32(gp.SwigluLimit), true
+}
+
+// GptOssSinksResident returns layer l's per-head attention sink logits ([NumHeads]), or nil
+// when the family has none. A resident backend uploads these once at attach time.
+func (m *Model) GptOssSinksResident(l int) []float32 {
+	if m.w.arch.gptoss == nil || l < 0 || l >= len(m.w.Layers) {
+		return nil
+	}
+	return m.w.Layers[l].AttnSinks
+}
