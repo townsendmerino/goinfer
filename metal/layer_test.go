@@ -130,7 +130,8 @@ func TestLayerB_fullLayerForward(t *testing.T) {
 	uScale, uEps := d.NewBufferFloats([]float32{scale}), d.NewBufferFloats([]float32{eps})
 	uInvf := d.NewBufferFloats(invf)
 	uQtotal, uKtotal := d.NewBufferU32(uint32(nH*half)), d.NewBufferU32(uint32(nKV*half))
-	uHalf := d.NewBufferU32(uint32(half)) // rope rhalf (buffer 5): rotaryDim/2, full rotary here
+	uHalf := d.NewBufferU32(uint32(half))           // rope rhalf (buffer 5): rotaryDim/2, full rotary here
+	uRopeScale := d.NewBufferFloats([]float32{1.0}) // rope mscale (buffer 6): no YaRN here
 
 	q := d.NewCommandQueue()
 	enc := q.Begin()
@@ -138,8 +139,8 @@ func TestLayerB_fullLayerForward(t *testing.T) {
 	enc.Dispatch(pGemv, nH*hd, 64, aq, aSc, qqW, qqS, qB, uH)
 	enc.Dispatch(pGemv, kvDim, 64, aq, aSc, kqW, kqS, kB, uH)
 	enc.Dispatch(pGemv, kvDim, 64, aq, aSc, vqW, vqS, vB, uH)
-	enc.Dispatch(pRope, nH*half, 64, qB, uInvf, uHd, uPos, uQtotal, uHalf)
-	enc.Dispatch(pRope, nKV*half, 64, kB, uInvf, uHd, uPos, uKtotal, uHalf)
+	enc.Dispatch(pRope, nH*half, 64, qB, uInvf, uHd, uPos, uQtotal, uHalf, uRopeScale)
+	enc.Dispatch(pRope, nKV*half, 64, kB, uInvf, uHd, uPos, uKtotal, uHalf, uRopeScale)
 	enc.Dispatch(pKv, kvDim, 64, kB, vB, kc, vc, uKvDim, uPos)
 	enc.Dispatch(pAttn, nH*128, 128, qB, kc, vc, ctx, uNH, uNKV, uHd, uNKeys, uScale, uWindow0) // threadgroup-per-head
 	enc.Dispatch(pQv, 256, 256, ctx, cq, cSc, uHH)

@@ -91,3 +91,98 @@ kernel void rope(device float*        x    [[buffer(0)]],  // [nH*hd] in place
 	}
 	t.Logf("RoPE nH=%d hd=%d pos=%d on Metal GPU (cgo-free) vs CPU: cosine=%.9f — PARITY", nH, hd, pos, cos)
 }
+
+// TestRope_mscale gates the shipped rope kernel's scale parameter (kernels.go, added for
+// FeatRopeMscale — YaRN's attention_factor) against decoder/rope.go's applyRoPE, which applies
+// it to cos/sin BEFORE the rotation (c := cos(theta)*scale; s := sin(theta)*scale), not to the
+// rotated output afterward — those are numerically different for anything but a pure scalar
+// multiple of the whole vector, so the test checks the exact per-component values, not just a
+// cosine similarity that a wrong-but-close placement could still pass. Uses the ACTUAL kernels.go
+// source (not an isolated copy), so a change to the shipped kernel is what this gates.
+func TestRope_mscale(t *testing.T) {
+	d, err := CreateSystemDefaultDevice()
+	if err != nil {
+		t.Fatalf("device: %v", err)
+	}
+	lib, err := d.CompileLibrary(allKernels, MSL3_1)
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	pipe, err := d.NewComputePipeline(lib, "rope")
+	if err != nil {
+		t.Fatalf("pipeline: %v", err)
+	}
+
+	const nH, hd, pos = 4, 16, 11
+	half := hd / 2
+	rng := rand.New(rand.NewSource(23))
+	invf := make([]float32, half)
+	for i := range invf {
+		invf[i] = float32(1.0 / math.Pow(10000, float64(2*i)/float64(hd)))
+	}
+
+	ref := func(x0 []float32, scale float32) []float32 {
+		x := append([]float32(nil), x0...)
+		for head := range nH {
+			for dd := range half {
+				b := head * hd
+				th := float64(pos) * float64(invf[dd])
+				c := float32(math.Cos(th)) * scale
+				s := float32(math.Sin(th)) * scale
+				a, bb := x[b+dd], x[b+half+dd]
+				x[b+dd] = a*c - bb*s
+				x[b+half+dd] = a*s + bb*c
+			}
+		}
+		return x
+	}
+
+	q := d.NewCommandQueue()
+	run := func(x0 []float32, scale float32) []float32 {
+		xb := d.NewBufferFloats(x0)
+		q.Run1D(pipe, nH*half, 64,
+			xb, d.NewBufferFloats(invf),
+			d.NewBufferU32(uint32(hd)), d.NewBufferU32(uint32(pos)), d.NewBufferU32(uint32(nH*half)),
+			d.NewBufferU32(uint32(half)), d.NewBufferFloats([]float32{scale}))
+		return xb.Floats()
+	}
+
+	x := make([]float32, nH*hd)
+	for i := range x {
+		x[i] = rng.Float32()*2 - 1
+	}
+
+	cmp := func(name string, got, want []float32) {
+		var worst float64
+		for i := range want {
+			if diff := math.Abs(float64(got[i] - want[i])); diff > worst {
+				worst = diff
+			}
+		}
+		t.Logf("%s: max|diff| = %.3e", name, worst)
+		if worst > 1e-5 {
+			t.Errorf("%s: max|diff| %.3e exceeds tolerance (got %v want %v)", name, worst, got, want)
+		}
+	}
+
+	// scale=1.0 must be EXACTLY the pre-existing (no-scale) behaviour — every family but YaRN
+	// dispatches this every layer, every token, so a no-op regression here is not hypothetical.
+	cmp("scale=1 (no-op)", run(x, 1.0), ref(x, 1.0))
+
+	// A real YaRN mscale (values HF's yarn_get_mscale typically produces, e.g. Mellum-class
+	// long-context configs) must differ from the unscaled rotation, not just from itself.
+	const realScale = float32(0.85)
+	got := run(x, realScale)
+	cmp("scale=0.85", got, ref(x, realScale))
+	unscaled := ref(x, 1.0)
+	var sameAsUnscaled = true
+	for i := range got {
+		if math.Abs(float64(got[i]-unscaled[i])) > 1e-4 {
+			sameAsUnscaled = false
+			break
+		}
+	}
+	if sameAsUnscaled {
+		t.Error("scale=0.85 output is indistinguishable from scale=1 — the scale parameter is not being applied")
+	}
+}

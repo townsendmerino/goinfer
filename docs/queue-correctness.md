@@ -384,6 +384,23 @@ is wrong for this family).
   reusable beyond gpt-oss (GPT-2, Mellum/long-context YaRN) but touches the shared resident bridge
   for every family that would opt into it, so it's a bigger, more careful piece of work than the
   gpt-oss-specific kernels were.
+- **`FeatRopeMscale` groundwork landed on Metal (2026-08-18) — kernel capability only, still not
+  declared.** `decoder.Model.RopeMscaleLayer` already existed and is already used by WebGPU
+  (`gpu/residency.go`), so no decoder-side work was needed — only Metal's `rope` kernel
+  (`kernels.go`, used by every resident family's decode path, 8 dispatch sites in `model.go`)
+  was missing the `scale` multiply `decoder/rope.go`'s `applyRoPE` applies to cos/sin. Added as a
+  new trailing buffer parameter, defaulting to 1.0 (a true no-op) everywhere via
+  `residLayer.mscale = m.RopeMscaleLayer(l)`. **Caught a real regression from the change itself,
+  not the pre-existing flake:** two OTHER test files (`layer_test.go`, `rope_partial_test.go`)
+  independently dispatch the same shared `rope` pipeline outside `model.go` and were missed on
+  the first pass — the full suite correctly went red (`TestLayerB_fullLayerForward` cosine 0.229,
+  `TestRopePartial` maxAbs 1.31), not the known fault-0x10 crash, a clean assertion failure from
+  an unbound buffer. Fixed by adding `scale=1.0` to both; two full `go test ./metal/...` runs
+  since are clean. New gate: `TestRope_mscale` (`metal/rope_test.go`), checking exact
+  per-component values (not just cosine similarity) against `applyRoPE`'s cos/sin-scaling
+  placement, since scaling the ROTATED OUTPUT instead is a different, wrong result that a loose
+  tolerance could miss. Not declared for Metal (same discipline as `FeatAttnSink` above — no
+  family exercises `scale != 1.0` end-to-end here yet).
 - **Real-checkpoint end-to-end validation is blocked on both machines for different reasons:**
   gpt-oss-20b MXFP4 is ~13.8GB against the CUDA box's 8GB VRAM (testable there only via the
   host↔VRAM MoE-streaming path, coupling two hard things at once); this Mac has 16GB total RAM but

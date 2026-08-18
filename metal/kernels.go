@@ -279,11 +279,18 @@ kernel void argmax_finish(device const AmaxPart* part[[buffer(0)]], device uint*
 // rope: NeoX half-split. Rotates pairs (d, half+d) for d in [0,half) within each head (stride
 // hd), where half = rotaryDim/2 = len(invf). half<hd/2 is PARTIAL rotary (Phi): dims
 // [2*half, hd) pass through unrotated. total = nHeads*half (the rotate-pair count).
+// scale is YaRN's mscale (attention_factor), applied to cos/sin exactly like
+// decoder/rope.go's applyRoPE (c := cos(theta)*scale; s := sin(theta)*scale) — NOT to the
+// rotated output afterward, which is a different (and wrong) place to apply it. 1.0 for
+// every family without YaRN, so this is a no-op multiply, not a new branch. FeatRopeMscale
+// (decoder/features.go) is not yet declared for Metal — nothing resident here exercises
+// scale != 1.0 end-to-end — but the kernel needs to accept it before wiring can proceed, and
+// a no-op multiply on every existing dispatch is the lowest-risk way to add the parameter.
 kernel void rope(device float* x[[buffer(0)]], device const float* invf[[buffer(1)]],
     constant uint& hd[[buffer(2)]], constant uint& pos[[buffer(3)]], constant uint& total[[buffer(4)]],
-    constant uint& rhalf[[buffer(5)]], uint gid[[thread_position_in_grid]]) {
+    constant uint& rhalf[[buffer(5)]], constant float& scale[[buffer(6)]], uint gid[[thread_position_in_grid]]) {
     if(gid>=total) return; uint head=gid/rhalf; uint dd=gid%rhalf; uint base=head*hd;
-    float th=float(pos)*invf[dd]; float c=cos(th),s=sin(th);
+    float th=float(pos)*invf[dd]; float c=cos(th)*scale,s=sin(th)*scale;
     float x0=x[base+dd],x1=x[base+rhalf+dd]; x[base+dd]=x0*c-x1*s; x[base+rhalf+dd]=x0*s+x1*c;
 }
 kernel void kv_store(device const float* k[[buffer(0)]], device const float* v[[buffer(1)]],
