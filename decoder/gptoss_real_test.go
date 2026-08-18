@@ -19,7 +19,6 @@ import (
 	"errors"
 	"io/fs"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -28,14 +27,10 @@ import (
 
 func TestGptOssReal_gate(t *testing.T) {
 	requireHeavyModel(t)
-	home, _ := os.UserHomeDir()
-	gguf := os.Getenv("GOINFER_GPTOSS_GGUF")
-	if gguf == "" {
-		gguf = filepath.Join(home, "models", "gpt-oss-20b-MXFP4.gguf")
-	}
-	if _, err := os.Stat(gguf); err != nil {
-		t.Skipf("no gpt-oss GGUF at %s: %v", gguf, err)
-	}
+	// assetPath, not a hand-rolled env+fallback: the asset registry is what makes the
+	// gate and the sweep preflight apply the SAME predicate to the same candidate paths
+	// (testdata/assets.json). This file predated GOINFER_GPTOSS_GGUF being registered.
+	gguf := assetPath(t, "GOINFER_GPTOSS_GGUF")
 	m, err := Load(gguf, Options{Quant: "int8"})
 	if err != nil {
 		t.Fatalf("Load(%s): %v", gguf, err)
@@ -113,14 +108,10 @@ func TestGptOssReal_logitParity(t *testing.T) {
 		t.Fatalf("parse golden: %v", err)
 	}
 
-	home, _ := os.UserHomeDir()
-	gguf := os.Getenv("GOINFER_GPTOSS_GGUF")
-	if gguf == "" {
-		gguf = filepath.Join(home, "models", "gpt-oss-20b-MXFP4.gguf")
-	}
-	if _, err := os.Stat(gguf); err != nil {
-		t.Skipf("no gpt-oss GGUF at %s: %v", gguf, err)
-	}
+	// assetPath, not a hand-rolled env+fallback: the asset registry is what makes the
+	// gate and the sweep preflight apply the SAME predicate to the same candidate paths
+	// (testdata/assets.json). This file predated GOINFER_GPTOSS_GGUF being registered.
+	gguf := assetPath(t, "GOINFER_GPTOSS_GGUF")
 	m, err := Load(gguf, Options{Quant: "int8"})
 	if err != nil {
 		t.Fatalf("Load: %v", err)

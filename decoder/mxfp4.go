@@ -86,17 +86,40 @@ func mxfp4DequantSplit(blocks, scales []byte, nBlocks int) ([]float32, error) {
 		return nil, fmt.Errorf("decoder(mxfp4): %d block bytes for %d blocks (want %d)", len(blocks), nBlocks, nBlocks*16)
 	}
 	out := make([]float32, nBlocks*mxfp4BlockElems)
+	if err := mxfp4DequantSplitInto(blocks, scales, nBlocks, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// mxfp4DequantSplitInto is mxfp4DequantSplit writing into a caller-owned buffer.
+//
+// It exists for the loader's sake, not for tidiness: gpt-oss-20b's experts are ~76GB
+// dequantized to f32 across all layers, so they are streamed ROW AT A TIME into a
+// quantized WeightMat (streamQuantized) and never materialized. A per-row allocation
+// there would be 24 layers x 32 experts x 8640 rows of garbage.
+func mxfp4DequantSplitInto(blocks, scales []byte, nBlocks int, dst []float32) error {
+	if len(scales) != nBlocks {
+		return fmt.Errorf("decoder(mxfp4): %d scale bytes for %d blocks", len(scales), nBlocks)
+	}
+	if len(blocks) != nBlocks*16 {
+		return fmt.Errorf("decoder(mxfp4): %d block bytes for %d blocks (want %d)", len(blocks), nBlocks, nBlocks*16)
+	}
+	if len(dst) != nBlocks*mxfp4BlockElems {
+		return fmt.Errorf("decoder(mxfp4): dst has %d elements for %d blocks (want %d)", len(dst), nBlocks, nBlocks*mxfp4BlockElems)
+	}
+	out := dst
 	for b := range nBlocks {
 		d := e8m0ToF32Half(scales[b])
 		qs := blocks[b*16 : b*16+16]
-		dst := out[b*mxfp4BlockElems : (b+1)*mxfp4BlockElems]
+		row := out[b*mxfp4BlockElems : (b+1)*mxfp4BlockElems]
 		for j := range 16 {
 			v := qs[j]
-			dst[2*j] = d * float32(mxfp4KValues[v&0x0F])
-			dst[2*j+1] = d * float32(mxfp4KValues[v>>4])
+			row[2*j] = d * float32(mxfp4KValues[v&0x0F])
+			row[2*j+1] = d * float32(mxfp4KValues[v>>4])
 		}
 	}
-	return out, nil
+	return nil
 }
 
 // mxfp4Dequant dequantizes n contiguous MXFP4 blocks (n*17 bytes) into n*32 float32 weights.

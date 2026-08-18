@@ -459,6 +459,14 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 		}
 		return buildLlama4Weights(cfg, arch, st, quant) // per-layer dense/MoE + transposed fused experts
 	}
+	if arch.gptoss != nil {
+		// gpt-oss safetensors: MXFP4 experts as paired U8 *_blocks/*_scales tensors with
+		// an INTERLEAVED gate_up, per-expert biases, and per-head attention sinks. The
+		// GGUF path reads the same family through a different layout entirely (llama.cpp's
+		// converter separates gate/up and re-packs the nibbles), so it gets its own loader
+		// rather than a shared one with branches.
+		return buildGptOssWeights(cfg, arch, st, quant)
+	}
 	// LoRA merge-at-load validation is deferred until after tn is defined (below) so it validates
 	// against the SAME prefixed names merge actually looks up (M18).
 	hd := cfg.HiddenDim
