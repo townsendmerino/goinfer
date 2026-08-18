@@ -294,3 +294,37 @@ Better next candidates, in the same spirit of "what do users hit first":
 If residency is wanted anyway, do it as its own task with the attention sink FIRST (small,
 non-audited PTX, independently gateable on a dense gpt-oss-shaped fixture) and the expert
 kernel second, rather than both at once.
+
+
+### CORRECTION: residency needs THREE kernels, not two — and a bridge decision
+
+Phase 2 scoping said "two kernel changes". Wiring the third revealed a third, found by reading
+`moe_route`'s contract against `gptOssMoE` rather than by assuming the router was generic.
+
+**The router semantics differ, and not cosmetically:**
+
+| | gpt-oss (`gptOssMoE`) | `moe_route` (audited `moe.ptx`) |
+|---|---|---|
+| bias | added to the logits — affects **selection AND the emitted weight** | `sel = score + bias`, but the weight is `score[best]` — **selection only** |
+| weights | **softmax over the top-k logits** | the selected score, then optional renormalize |
+
+`moe_route`'s own comment is explicit that the bias "steers SELECTION only, never the weight",
+which is right for DeepSeek/GLM and wrong for gpt-oss. Running gpt-oss through it would produce
+plausible mixing weights that are simply not this model's — a silent quality loss, not a crash.
+
+**This does NOT force an audited-PTX change.** The same escape used for the activation applies:
+a `route_gptoss` kernel alongside `glu_quant_gptoss` in `gptoss_act.cu`, leaving `moe.ptx`
+untouched. Three family-specific kernels in one family-specific module is a coherent boundary.
+
+**The other open question is the bridge.** `decodeRunnerEligible` lists gpt-oss with
+qwen35/llama4 as "own forward, not yet bridged". But `forward_gptoss.go` says its layer
+skeleton is "otherwise plain pre-norm (NormPre2): everything else — embedding, norms,
+residuals, final head — is the shared path", so the ONLY departures are the sink, the clamped
+activation and the router. With all three as kernels, gpt-oss looks bridgeable in a way
+qwen35 (Gated DeltaNet) and llama4 (iRoPE) are not — but "looks bridgeable" is a hypothesis,
+and the flip that admits it must not land before a gate that runs it end to end.
+
+**Sequencing that follows from this:** the router kernel, then a tiny-fixture parity gate with
+admission behind an opt-in, then the admission decision on that gate's evidence. The repo's own
+warning applies and is worth quoting: *"Do not re-gate a family on an env var without a gate
+behind it; the flag reads as caution and functions as a coverage hole."*
