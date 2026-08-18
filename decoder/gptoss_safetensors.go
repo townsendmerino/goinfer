@@ -87,9 +87,11 @@ func buildGptOssWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsFi
 		}, nil
 	}
 
-	// bf16Rows reads a BF16 tensor as f32 once (biases and router are small).
-	bf16Rows := func(name string, want int) ([]float32, error) {
-		return st.TensorF32(name, want)
+	// bf16Rows reads a BF16 tensor as f32 once (biases and router are small). `dims` are
+	// the tensor's SHAPE, not its element count — TensorF32 validates them dimension by
+	// dimension, so passing a flattened product is rejected rather than silently accepted.
+	bf16Rows := func(name string, dims ...int) ([]float32, error) {
+		return st.TensorF32(name, dims...)
 	}
 
 	for i := range arch.NumLayers {
@@ -144,11 +146,11 @@ func buildGptOssWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsFi
 		if dErr != nil {
 			return nil, dErr
 		}
-		guBias, guBErr := bf16Rows(p+"mlp.experts.gate_up_proj_bias", nE*2*expInter)
+		guBias, guBErr := bf16Rows(p+"mlp.experts.gate_up_proj_bias", nE, 2*expInter)
 		if guBErr != nil {
 			return nil, guBErr
 		}
-		dBias, dBErr := bf16Rows(p+"mlp.experts.down_proj_bias", nE*hidden)
+		dBias, dBErr := bf16Rows(p+"mlp.experts.down_proj_bias", nE, hidden)
 		if dBErr != nil {
 			return nil, dBErr
 		}

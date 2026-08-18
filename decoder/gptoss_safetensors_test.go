@@ -87,9 +87,15 @@ func TestGptOssSafetensors_vsGGUF(t *testing.T) {
 	if as != ag {
 		t.Errorf("argmax differs: safetensors=%d gguf=%d — the loaders disagree about the weights", as, ag)
 	}
-	// Not bit-identical by construction: the two files quantize from independently-rounded
-	// MXFP4 sources through the same int8 path, so tiny differences are expected. A wrong
-	// nibble order or a mis-split gate/up does not land near 1.0 — it lands near zero.
+	// Not bit-identical, and the residual is fully accounted for: the GGUF's ATTENTION
+	// weights are Q8_0 (ggml_type 8) — llama.cpp's converter quantized them — while
+	// safetensors ships them BF16. So attention is BF16→int8 on one side and
+	// Q8_0→dequant→int8 on the other. The EXPERTS are ggml_type 39 (MXFP4) in both files,
+	// i.e. the same source bytes, so the part these layout facts govern agrees exactly and
+	// the ~1e-3 gap is attention-only.
+	//
+	// A wrong nibble order or a mis-split gate/up does not land near 1.0 — it lands near
+	// zero (measured 0.081 during Phase 1a), so this threshold separates them with room.
 	if cos < 0.999 {
 		t.Errorf("logit cosine %.6f < 0.999 — too far apart for the same weights read two ways", cos)
 	}
