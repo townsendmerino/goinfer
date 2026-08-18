@@ -185,8 +185,13 @@ partial-download-plus-cleanup technique used above for the GGUF tensor spot-chec
 available on the Mac if more of the loader ever needs checking without a full download — noted in
 the handoff prompt too.) Full scoping: `docs/post-v1.0-models.md` "Next up" §1.
 
-**G5 · Qwen3-Next / Qwen3-Coder-Next (80B-A3B) as a new family** — Phase 0/1 + real T1 golden DONE
-(`mac`, 2026-08-17); **T3 real-checkpoint parity remains, tagged `linux`**
+**G5 · Qwen3-Next / Qwen3-Coder-Next (80B-A3B)** — Phase 0/1 + T1 golden DONE (`mac`, 2026-08-17);
+**real-weight SLICE oracle DONE (`linux-62gb`, 2026-08-17): cosine 1.00000000**, argmax and greedy
+continuation exact on 3 Gated DeltaNet layers + 1 full-attention layer of the real
+`Qwen3-Next-80B-A3B-Instruct`. Row stays `experimental`: a slice is not full-model T3, and no full
+reference forward of a 163GB bf16 model fits 62GB. Four layers is the MINIMUM that spans the hybrid
+(`full_attention_interval: 4` ⇒ layers 0-2 linear, layer 3 full), and the slice needs only 6 of the
+41 shards (~24GB). Remaining nice-to-have: GGUF, and a full-model T3 on a bigger box.
 
 Full scoping and reasoning: `docs/post-v1.0-models.md` "Next up" §2. Confirmed against the real
 `Qwen/Qwen3-Next-80B-A3B-Instruct` config and `modular_qwen3_next.py` (not assumed) to be a

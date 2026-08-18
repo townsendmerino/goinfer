@@ -1,6 +1,6 @@
 #!/usr/bin/env python
-"""Build a REAL-WEIGHT layer-slice oracle for Laguna-XS.2 — the strongest numeric
-gate this box can hold for a 33B model.
+"""Build a REAL-WEIGHT layer-slice oracle from a released checkpoint — the strongest
+numeric gate this box can hold for a model whose full reference forward will not fit.
 
 WHY A SLICE. T3 means cosine/argmax against a full reference forward of a released
 checkpoint. Laguna-XS.2 is ~63GB in bf16; a reference forward alongside goinfer's
@@ -14,9 +14,14 @@ The slice is layers [0, N): the dense prefix layer PLUS enough MoE layers to cov
 both attention types (layer 0 full_attention, layers 1..3 sliding_attention), which
 is exactly the geometry that made per-layer query heads necessary.
 
-    ~/.venv-vl/bin/python scripts/pin_laguna_slice.py
-    -> decoder/testdata/laguna_xs2_slice_golden.json   (tracked)
-    -> decoder/testdata/laguna-xs2-slice/              (gitignored, ~7GB)
+Works on any family whose checkpoint is plain safetensors + an index. It also works on a
+PARTIAL download: only the shards holding layers [0,N) plus the embeddings/norm/head are
+read, which for Qwen3-Next-80B is 6 of 41 shards (~24GB instead of 163GB).
+
+    SLICE_TAG=laguna-xs2 SLICE_SRC=~/models/laguna-xs2 SLICE_LAYERS=4 \
+      ~/.venv-vl/bin/python scripts/pin_slice_oracle.py
+    -> decoder/testdata/<tag>_slice_golden.json   (tracked)
+    -> decoder/testdata/<tag>-slice/              (gitignored, several GB)
 """
 import json
 import os
@@ -31,14 +36,19 @@ from safetensors.torch import save_file
 # per-head gating (XS.2 declares per-element and ships per-head) and uses a
 # different YaRN factor (32 vs 64) — both config-driven paths that only real
 # weights exercise end to end.
-TAG = os.environ.get("LAGUNA_SLICE_TAG", "xs2")
-SRC = os.environ.get("LAGUNA_SLICE_SRC", f"/home/francis/models/laguna-{TAG}")
+TAG = os.environ.get("SLICE_TAG", os.environ.get("LAGUNA_SLICE_TAG", "xs2"))
+SRC = os.environ.get("SLICE_SRC", os.environ.get("LAGUNA_SLICE_SRC", f"/home/francis/models/laguna-{TAG}"))
 HERE = os.path.dirname(os.path.abspath(__file__))
 TESTDATA = os.path.join(HERE, "..", "decoder", "testdata")
-OUT_CKPT = os.path.join(TESTDATA, f"laguna-{TAG}-slice")
-OUT_GOLDEN = os.path.join(TESTDATA, f"laguna_{TAG}_slice_golden.json")
+PREFIX = os.environ.get("SLICE_PREFIX", "laguna")   # fixture naming; historical default
+OUT_CKPT = os.path.join(TESTDATA, f"{PREFIX}-{TAG}-slice")
+OUT_GOLDEN = os.path.join(TESTDATA, f"{PREFIX}_{TAG}_slice_golden.json")
 
-N_LAYERS = 4          # layer 0 = dense + full_attention; 1..3 = MoE + sliding
+# How many leading layers to keep. The floor is family-specific and is about COVERAGE, not
+# size: the slice must span every layer KIND the family interleaves, or it gates half the
+# model. Laguna needs 4 (dense+full at 0, MoE+sliding at 1-3); Qwen3-Next needs 4 because
+# full_attention_interval=4 puts its first full-attention layer at index 3, with 0-2 linear.
+N_LAYERS = int(os.environ.get("SLICE_LAYERS", "4"))
 PROMPT = [2, 1547, 913, 24, 88, 7, 100, 2001]
 N_NEW = 4
 
@@ -62,17 +72,23 @@ def main():
         print(f"  read {len(names):4d} tensors from {shard}")
 
     cfg = json.load(open(os.path.join(SRC, "config.json")))
+    orig_layers = cfg["num_hidden_layers"]
     cfg["num_hidden_layers"] = N_LAYERS
-    for k in ("layer_types", "num_attention_heads_per_layer", "mlp_layer_types"):
-        if isinstance(cfg.get(k), list):
-            cfg[k] = cfg[k][:N_LAYERS]
+    # Truncate every PER-LAYER list generically, by length rather than by name: a config
+    # list whose length equals the original layer count is per-layer by construction
+    # (laguna's layer_types / num_attention_heads_per_layer / mlp_layer_types, and whatever
+    # the next family spells differently). Naming them individually is how a new family
+    # silently keeps a 48-entry list against a 4-layer slice.
+    for k, v in list(cfg.items()):
+        if isinstance(v, list) and len(v) == orig_layers:
+            cfg[k] = v[:N_LAYERS]
     cfg.pop("_source_repo", None)
 
     os.makedirs(OUT_CKPT, exist_ok=True)
     save_file(tensors, os.path.join(OUT_CKPT, "model.safetensors"), metadata={"format": "pt"})
     json.dump(cfg, open(os.path.join(OUT_CKPT, "config.json"), "w"), indent=1)
     for fn in ("configuration_laguna.py", "modeling_laguna.py", "tokenizer.json",
-               "tokenizer_config.json", "special_tokens_map.json"):
+               "tokenizer_config.json", "special_tokens_map.json", "chat_template.jinja"):
         src = os.path.join(SRC, fn)
         if os.path.exists(src):
             shutil.copyfile(src, os.path.join(OUT_CKPT, fn))
@@ -91,9 +107,17 @@ def main():
             cont.append(int(o.logits[0, -1].argmax()))
             cur.append(cont[-1])
 
-    g0 = model.model.layers[0].self_attn.g_proj.weight.shape[0]
+    # Optional family-specific probe: Laguna's attention output gate, whose ROW COUNT is
+    # what the loader keys granularity on. Absent on families without one (Qwen3-Next's
+    # layer 0 is a Gated DeltaNet block with no self_attn at all), so it is probed rather
+    # than assumed — an unconditional attribute read here failed the whole run AFTER the
+    # slice and the reference forward had already been computed.
+    g0 = 0
+    l0 = model.model.layers[0]
+    if hasattr(l0, "self_attn") and hasattr(l0.self_attn, "g_proj"):
+        g0 = l0.self_attn.g_proj.weight.shape[0]
     golden = {
-        "note": f"REAL Laguna {TAG} weights, first {N_LAYERS} layers, CPU fp32 reference",
+        "note": f"REAL {TAG} weights, first {N_LAYERS} layers, CPU fp32 reference",
         "source": SRC, "n_layers": N_LAYERS,
         "prompt_ids": PROMPT, "n_new": N_NEW,
         "argmax": int(last.argmax()),

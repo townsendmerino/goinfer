@@ -286,9 +286,9 @@
         "decoder/laguna_slice_test.go",
         "decoder/laguna_gguf_test.go",
         "scripts/pin_laguna_tiny.py",
-        "scripts/pin_laguna_slice.py"
+        "scripts/pin_slice_oracle.py"
       ],
-      "deps_hash": "sha256:d6899f8a524682300b76e4bc3505d3dfeb0da798c598351b6469935aa31fe57e",
+      "deps_hash": "sha256:507a1f4ff2b2061cd9fa15dc43b0ab2619f578d350862ddefee000c3a7f317d1",
       "status": "experimental",
       "validated_at": "41673f7",
       "date": "2026-08-17",
@@ -569,15 +569,17 @@
       "own": [
         "decoder/forward_qwen35.go",
         "decoder/qwen3next.go",
-        "decoder/qwen3next_test.go",
         "decoder/qwen3next_real_test.go",
-        "scripts/pin_qwen3next_tiny.py"
+        "decoder/qwen3next_slice_test.go",
+        "decoder/qwen3next_test.go",
+        "scripts/pin_qwen3next_tiny.py",
+        "scripts/pin_slice_oracle.py"
       ],
-      "deps_hash": "sha256:2ab91c7fd82159b01edf506047d9c29aa898b61ff4e2f23e06450449a2618590",
+      "deps_hash": "sha256:23a5649fc85b2874324da1b21628bae352bfcfb94cb0fadcaa2841921f1a6b7f",
       "status": "experimental",
       "validated_at": "10751bf",
       "date": "2026-08-17",
-      "reference": "HF f32 tiny golden (transformers 5.15.0 Qwen3NextForCausalLM, real forward, seed 0) \u2014 rides qwen3_5_moe's own forward_qwen35.go/deltanet.go unchanged; the two real config deltas (computed layer_types via full_attention_interval, top-level partial_rotary_factor with no rope_parameters) and the fused DeltaNet in_proj_qkvz/in_proj_ba tensor packing are each exercised by the fixture and split at load in decoder/qwen3next.go.",
+      "reference": "HF f32 tiny golden (transformers 5.15.0 Qwen3NextForCausalLM, real forward, seed 0) + a REAL-WEIGHT 4-layer slice of Qwen/Qwen3-Next-80B-A3B-Instruct (cosine 1.00000000, argmax and greedy continuation exact) \u2014 rides qwen3_5_moe's own forward_qwen35.go/deltanet.go unchanged; the two real config deltas (computed layer_types via full_attention_interval, top-level partial_rotary_factor with no rope_parameters) and the fused DeltaNet in_proj_qkvz/in_proj_ba tensor packing are each exercised by the fixture and split at load in decoder/qwen3next.go.",
       "machine": "mac-m1pro",
       "method": "tiny-golden",
       "metrics": {

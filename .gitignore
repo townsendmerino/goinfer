@@ -169,3 +169,4 @@ decoder/testdata/laguna-*-tiny/*.py
 # (decoder/testdata/laguna_*_slice_golden.json) are tracked — unlike the ~1.3MB tiny
 # fixtures, these are far too large to ship, so the slice gates skip without them.
 decoder/testdata/laguna-*-slice/
+decoder/testdata/qwen3next-*-slice/
