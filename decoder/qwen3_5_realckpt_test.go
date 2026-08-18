@@ -105,15 +105,35 @@ func TestQwen38Real_gate(t *testing.T) {
 	}
 
 	// The DOUBLE-WIDTH gated q_proj, on real weights: attn_output_gate is true, so the
-	// projection carries query ‖ gate at 2·nH·hd. Reading it at nH·hd would take the
-	// query half only and silently drop the gate — fluent, wrong, and invisible to a
-	// shape check that used hidden.
-	l3 := &m.w.Layers[3] // first full_attention layer
-	if got, want := l3.QProj.Rows(), 2*a.NumHeads*a.HeadDim; got != want {
-		t.Errorf("layer 3 q_proj rows = %d, want %d (query ‖ gate)", got, want)
+	// projection carries query ‖ gate at 2·nH·hd. Reading it at nH·hd would take the query
+	// half only and silently drop the gate.
+	//
+	// This family holds attention in l.qattn / l.delta (f32, parity-first) rather than in the
+	// generic QProj/KProj WeightMats, which stay ZERO-ROW here — so the load itself is the
+	// shape assertion: st.TensorF32 is given the expected dims and errors on a mismatch.
+	// Restating the lengths keeps that implicit contract visible at the gate.
+	l3 := m.w.Layers[3] // first full_attention layer
+	if l3.qattn == nil || l3.delta != nil {
+		t.Fatalf("layer 3 mixer = (qattn=%v, delta=%v), want the softmax set", l3.qattn != nil, l3.delta != nil)
 	}
-	if got, want := l3.KProj.Rows(), a.NumKVHeads*a.HeadDim; got != want {
-		t.Errorf("layer 3 k_proj rows = %d, want %d", got, want)
+	if got, want := len(l3.qattn.qProj), 2*a.NumHeads*a.HeadDim*a.HiddenDim; got != want {
+		t.Errorf("layer 3 q_proj = %d floats, want %d (query ‖ gate: 2·24·256 × 5120)", got, want)
+	}
+	if got, want := len(l3.qattn.kProj), a.NumKVHeads*a.HeadDim*a.HiddenDim; got != want {
+		t.Errorf("layer 3 k_proj = %d floats, want %d", got, want)
+	}
+	// Layer 0 is the other mixer, and its projections carry the DeltaNet's own geometry:
+	// in_proj_qkv is [2·keyDim + valueDim, hidden] — one FUSED tensor, unlike in_proj_z.
+	l0 := m.w.Layers[0]
+	if l0.delta == nil || l0.qattn != nil {
+		t.Fatalf("layer 0 mixer = (qattn=%v, delta=%v), want the DeltaNet set", l0.qattn != nil, l0.delta != nil)
+	}
+	keyDim, valueDim := g.KeyHeadDim*g.NumKeyHeads, g.ValueHeadDim*g.NumValueHeads
+	if got, want := len(l0.delta.inProjQKV), (2*keyDim+valueDim)*a.HiddenDim; got != want {
+		t.Errorf("layer 0 in_proj_qkv = %d floats, want %d (q‖k‖v fused)", got, want)
+	}
+	if got, want := len(l0.delta.inProjZ), valueDim*a.HiddenDim; got != want {
+		t.Errorf("layer 0 in_proj_z = %d floats, want %d (SEPARATE from qkv on this family)", got, want)
 	}
 	// Dense FFN everywhere, including on the DeltaNet layers.
 	for _, i := range []int{0, 3, 63} {

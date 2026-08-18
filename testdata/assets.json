@@ -1,417 +1,433 @@
 {
- "_comment": [
-  "THE SHARED ASSET REGISTRY. One table naming every heavy test asset: where to look for it, and",
-  "-- the part that matters -- WHAT MAKES IT USABLE. Read by scripts/asset_registry.py (the sweep's",
-  "preflight) and by decoder/asset_registry_test.go (the gates). Both apply the SAME predicate to",
-  "the SAME candidate paths, because both read this file.",
-  "",
-  "WHY IT EXISTS. The preflight reimplemented 'is this asset present' as `[ -e $path ]` while each",
-  "gate wrote its own resolution inline. Three consequences, all observed:",
-  "  1. A directory satisfies `-e` -- so three preflight entries pointed at a DIRECTORY while the",
-  "     loader wanted a .gguf FILE inside it, and preflight reported them resolved. Four gates were",
-  "     costed by that.",
-  "  2. GOINFER_QWEN35_GOLDEN's real requirement is a READABLE manifest.json INSIDE the directory.",
-  "     `-e` on the directory cannot express that, so preflight said present and the gate skipped.",
-  "  3. GOINFER_PREQUANT_GGUF had THREE different fallbacks across four call sites, and one site",
-  "     (loadInt4Model) had none at all -- so the same box ran different gates against different",
-  "     files, or skipped, with nothing in any output naming the difference.",
-  "",
-  "THE PREDICATE, stated once so it cannot be reimplemented differently:",
-  "  kind=file  -- resolves to a regular file (symlinks followed) of at least min_bytes.",
-  "  kind=dir   -- resolves to a directory containing EVERY name in `members` and AT LEAST ONE",
-  "                name in `members_any`.",
-  "The first candidate that satisfies the predicate wins. An `env` value set by the operator ALWAYS",
-  "wins over the candidates, and is checked by the same predicate -- an explicit path that does not",
-  "satisfy it is an error worth naming, not a silent fallback to something else.",
-  "",
-  "$MODELS is $GOINFER_MODELS, defaulting to ~/models. $REPO is the goinfer checkout root.",
-  "",
-  "used_by IS NOT DECORATION: TestAssetRegistry_usedByExists fails when a named gate does not exist,",
-  "so a renamed or deleted gate cannot leave a stale entry behind claiming coverage."
- ],
- "assets": [
-  {
-   "env": "GOINFER_PREQUANT_GGUF",
-   "kind": "file",
-   "min_bytes": 1048576,
-   "candidates": [
-    "$REPO/testdata/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf",
-    "$MODELS/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"
-   ],
-   "used_by": [
-    "TestDecodeParityInt4",
-    "TestSerializeWeightsTo_matchesBuffer",
-    "TestNgramSpecHarness"
-   ],
-   "note": "q4_k_m GGUF; the loader dequantizes and re-quantizes, so no prebuilt .giw is needed. The $REPO candidate is a gitignored local drop and is tried FIRST so a developer copy beats the shared one."
-  },
-  {
-   "env": "GOINFER_QWEN35_GGUF",
-   "kind": "file",
-   "min_bytes": 1048576,
-   "candidates": [
-    "$MODELS/qwen3.6-35b-a3b-Q8_0.gguf"
-   ],
-   "used_by": [
-    "TestQwen35GGUF_gate",
-    "TestQwen35GGUF_vsSafetensors",
-    "TestQwen35GGUF_weightDiff"
-   ]
-  },
-  {
-   "env": "GOINFER_QWEN35_GOLDEN",
-   "kind": "dir",
-   "members": [
-    "manifest.json"
-   ],
-   "candidates": [
-    "$MODELS/qwen35_real_golden"
-   ],
-   "used_by": [
-    "TestQwen35Real_gate2FullModel",
-    "TestQwen35GGUF_gate",
-    "TestQwen35GGUF_vsSafetensors"
-   ],
-   "note": "members is the WHOLE point here: every consumer reads manifest.json out of this directory, so a directory that exists without one is NOT this asset."
-  },
-  {
-   "env": "GOINFER_QWEN35_REAL",
-   "kind": "dir",
-   "members": [
-    "config.json"
-   ],
-   "members_any": [
-    "model.safetensors.index.json",
-    "model.safetensors"
-   ],
-   "candidates": [
-    "$MODELS/qwen3.6-35b-a3b"
-   ],
-   "used_by": [
-    "TestQwen35GGUF_vsSafetensors",
-    "TestQwen35GGUF_weightDiff"
-   ],
-   "note": "Resolved in a file-level helper (realQwen35Dir) rather than in a test body, which is why the selector census attributed it inconsistently -- see B13's 42-vs-41 count. It was NOT in the sweep preflight before this registry."
-  },
-  {
-   "env": "GOINFER_DEEPSEEK_V2LITE",
-   "kind": "dir",
-   "members": [
-    "config.json"
-   ],
-   "members_any": [
-    "model.safetensors.index.json",
-    "model.safetensors"
-   ],
-   "candidates": [
-    "$MODELS/deepseek-v2-lite"
-   ],
-   "used_by": [
-    "TestDeepseekV2LiteReal_gate",
-    "TestMLAAbsorb_speed"
-   ]
-  },
-  {
-   "env": "GOINFER_DEEPSEEK_MOONLIGHT",
-   "kind": "dir",
-   "members": [
-    "config.json"
-   ],
-   "members_any": [
-    "model.safetensors.index.json",
-    "model.safetensors"
-   ],
-   "candidates": [
-    "$MODELS/moonlight-16b"
-   ],
-   "used_by": [
-    "TestDeepseekMoonlightReal_gate"
-   ]
-  },
-  {
-   "env": "GOINFER_DEEPSEEK_GGUF",
-   "kind": "file",
-   "min_bytes": 1048576,
-   "candidates": [
-    "$MODELS/deepseek-v2-lite-gguf/DeepSeek-V2-Lite-Chat-Q4_K_M.gguf"
-   ],
-   "used_by": [
-    "TestDeepseekGGUFReal_gate",
-    "TestNgramSpecMLA_parity"
-   ]
-  },
-  {
-   "env": "GOINFER_PHI3_MINI",
-   "kind": "dir",
-   "members": [
-    "config.json"
-   ],
-   "members_any": [
-    "model.safetensors.index.json",
-    "model.safetensors"
-   ],
-   "candidates": [
-    "$MODELS/phi3-mini-4k"
-   ],
-   "used_by": [
-    "TestPhi3MiniReal_gate"
-   ]
-  },
-  {
-   "env": "GOINFER_PHI3_GGUF",
-   "kind": "file",
-   "min_bytes": 1048576,
-   "candidates": [
-    "$MODELS/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf"
-   ],
-   "used_by": [
-    "TestPhi3GGUFReal_gate"
-   ]
-  },
-  {
-   "env": "GOINFER_LLAMA4_GGUF",
-   "kind": "file",
-   "min_bytes": 1048576,
-   "candidates": [
-    "$MODELS/llama4-scout-gguf/Llama-4-Scout-17B-16E-Instruct-Q2_K.gguf"
-   ],
-   "used_by": [
-    "TestLlama4Real_gate"
-   ]
-  },
-  {
-   "env": "GOINFER_GRANITE_HF",
-   "kind": "dir",
-   "members": [
-    "config.json"
-   ],
-   "members_any": [
-    "model.safetensors.index.json",
-    "model.safetensors"
-   ],
-   "candidates": [
-    "$MODELS/granite-hf"
-   ],
-   "used_by": [
-    "TestGraniteReal_oracle"
-   ],
-   "note": "The bf16 SAFETENSORS release, NOT the Q8_0 GGUF the coherence gate uses (GOINFER_GRANITE_GGUF, still unregistered). The T3 oracle must load the same weights the HF reference forward ran on, so these are two assets, not two paths to one."
-  },
-  {
-   "env": "GOINFER_NEMOTRON_HF",
-   "kind": "dir",
-   "members": [
-    "config.json"
-   ],
-   "members_any": [
-    "model.safetensors.index.json",
-    "model.safetensors"
-   ],
-   "candidates": [
-    "$MODELS/nemotron-hf"
-   ],
-   "used_by": [
-    "TestNemotronReal_oracle"
-   ],
-   "note": "The bf16 SAFETENSORS release, NOT the Q8_0 GGUF the coherence gate uses (GOINFER_NEMOTRON_GGUF, still unregistered)."
-  },
-  {
-   "env": "GOINFER_DFLASH_35B",
-   "kind": "dir",
-   "members": [
-    "config.json",
-    "model.safetensors"
-   ],
-   "candidates": [
-    "$MODELS/qwen36-35b-dflash"
-   ],
-   "used_by": [
-    "TestDFlash_pairingDialects"
-   ],
-   "note": "z-lab/Qwen3.6-35B-A3B-DFlash (apache-2.0, 0.77 GB) \u2014 the OUTLIER dialect: block_size NESTED in dflash_config and rope as nested rope_parameters, where the other three drafters use the top-level/flat spellings. Kept because it is the row of TestDFlash_pairingDialects that exercises those two spellings."
-  },
-  {
-   "env": "GOINFER_DSPARK_F32",
-   "kind": "dir",
-   "members": [
-    "config.json",
-    "model.safetensors"
-   ],
-   "candidates": [
-    "$MODELS/dspark-qwen3-4b-f32"
-   ],
-   "used_by": [
-    "TestDSpark_referenceParity",
-    "TestDSpark_targetEndToEnd"
-   ],
-   "note": "f32 conversion of deepseek-ai/dspark_qwen3_4b_block7 (license=None; accepted for exploration 2026-08-15, see docs/prompts/dspark-license-issue.md), via scripts/convert_dflash_f32.py from $MODELS/dspark-qwen3-4b."
-  },
-  {
-   "env": "GOINFER_QWEN3_4B",
-   "kind": "dir",
-   "members": [
-    "config.json"
-   ],
-   "members_any": [
-    "model.safetensors.index.json",
-    "model.safetensors"
-   ],
-   "candidates": [
-    "$MODELS/qwen3-4b"
-   ],
-   "used_by": [
-    "TestDFlash_targetEndToEnd",
-    "TestDSpark_targetEndToEnd",
-    "TestCPUBlockSpec_lossless"
-   ],
-   "note": "Qwen/Qwen3-4B (apache-2.0) \u2014 the TARGET z-lab/Qwen3-4B-DFlash-b16 is trained against. DFlash ships no embedding and no LM head, so the drafter cannot produce a token without it."
-  },
-  {
-   "env": "GOINFER_DFLASH_F32",
-   "kind": "dir",
-   "members": [
-    "config.json",
-    "model.safetensors"
-   ],
-   "candidates": [
-    "$MODELS/qwen3-4b-dflash-f32"
-   ],
-   "used_by": [
-    "TestDFlash_referenceParity",
-    "TestDFlash_targetEndToEnd",
-    "TestCPUBlockSpec_lossless"
-   ],
-   "note": "The f32 CONVERSION of z-lab/Qwen3-4B-DFlash-b16 (MIT), produced by scripts/convert_dflash_f32.py from $MODELS/qwen3-4b-dflash. The parity gate runs at f32 because the reference dump is f32; the bf16 original is not interchangeable here."
-  },
-  {
-   "env": "GOINFER_DFLASH_GPTOSS",
-   "kind": "dir",
-   "members": [
-    "config.json",
-    "model.safetensors"
-   ],
-   "candidates": [
-    "$MODELS/gptoss-20b-dflash"
-   ],
-   "used_by": [
-    "TestDFlash_pairingDialects"
-   ],
-   "note": "z-lab/gpt-oss-20b-DFlash (MIT, 1.57 GB) \u2014 pairs with our local gpt-oss-20b (hidden 2880, 24 layers, vocab 201088, all exact). NOTE the depth ratio: an 8-layer trunk against a 24-layer target is 0.33, far worse than the 4B's 5/32 = 0.156, and probe A established depth ratio is the mechanism \u2014 price this pairing as the expensive one."
-  },
-  {
-   "env": "GOINFER_DFLASH_GEMMA4",
-   "kind": "dir",
-   "members": [
-    "config.json",
-    "model.safetensors"
-   ],
-   "candidates": [
-    "$MODELS/gemma4-26b-dflash"
-   ],
-   "used_by": [
-    "TestDFlash_pairingDialects"
-   ],
-   "note": "z-lab/gemma-4-26B-A4B-it-DFlash (apache-2.0, 0.86 GB) \u2014 pairs with our local gemma-4-26b-a4b-it (hidden 2816, 30 layers, vocab 262144, all exact)."
-  },
-  {
-   "env": "GOINFER_NEMOTRON3NANO_HF",
-   "kind": "dir",
-   "members": [
-    "config.json"
-   ],
-   "members_any": [
-    "model.safetensors.index.json",
-    "model.safetensors"
-   ],
-   "candidates": [
-    "$MODELS/nemotron3nano-30b-bf16"
-   ],
-   "used_by": [
-    "TestNemotron3NanoReal_oracle"
-   ],
-   "note": "NVIDIA-Nemotron-3-Nano-30B-A3B-BF16 (63 GB safetensors) \u2014 the MoE variant's T3 oracle. BF16 and not the -FP8 release: goinfer has no fp8 reader anywhere in the tree (the blocker that stopped DeepSeek V4-Flash scoping), so the FP8 repo is unusable here regardless of its smaller size."
-  },
-  {
-   "env": "GOINFER_NEMOTRON3NANO_GGUF",
-   "kind": "file",
-   "min_bytes": 1048576,
-   "candidates": [
-    "$MODELS/nemotron3nano-gguf/nvidia_Nemotron-3-Nano-30B-A3B-Q4_K_M.gguf"
-   ],
-   "used_by": [
-    "TestNemotron3NanoMoEReal_gate"
-   ],
-   "note": "Q4_K_M (24.7 GB) \u2014 the SAME quant the loader's expert dequantization was spot-checked against by hand, so the gate closes exactly the gap that check left open: correct dims and sane values are not a forward pass."
-  },
-  {
-   "env": "GOINFER_LAGUNA_XS2",
-   "kind": "dir",
-   "members": [
-    "config.json",
-    "model.safetensors.index.json",
-    "tokenizer.json"
-   ],
-   "candidates": [
-    "$MODELS/laguna-xs2"
-   ],
-   "used_by": [
-    "TestLagunaReal_gate"
-   ],
-   "note": "Real poolside Laguna-XS.2 (33B-A3B, bf16 safetensors, 14 shards, ~63GB). members lists the three files the gate actually reads besides the shards: config.json (the adapter), the shard INDEX (the loader resolves tensors through it, so a dir with shards but no index is not this asset), and tokenizer.json. Loaded at int4 -- bf16 would not fit alongside f32 activations in 62GB. There is deliberately NO M.1 entry: it is ~220B / ~400GB and not runnable here."
-  },
-  {
-   "env": "GOINFER_LAGUNA_GGUF",
-   "kind": "file",
-   "min_bytes": 1048576,
-   "candidates": [
-    "$MODELS/laguna-xs21-gguf/Laguna-XS-2.1-Q4_K_M.gguf"
-   ],
-   "used_by": [
-    "TestLagunaGGUF_gate"
-   ],
-   "note": "poolside's OWN Laguna-XS-2.1 Q4_K_M GGUF. llama.cpp has first-class laguna support (general.architecture == 'laguna'), so this is a released file rather than a local conversion. It exercises the fused+stacked expert layout, the per-layer head-count ARRAY, and the derived full/sliding split -- none of which the safetensors gate covers."
-  },
-  {
-   "env": "GOINFER_LAGUNA_DFLASH",
-   "kind": "dir",
-   "members": [
-    "config.json",
-    "model.safetensors"
-   ],
-   "candidates": [
-    "$MODELS/laguna-xs2-dflash"
-   ],
-   "used_by": [
-    "TestLagunaDFlash_load"
-   ],
-   "note": "poolside/Laguna-XS.2-speculator.dflash -- the first VENDOR-BLESSED block drafter goinfer pairs with. Ships its own embed_tokens + reduced-vocab lm_head (32000 rows) + d2t, unlike z-lab's which borrow the target's head."
-  },
-  {
-   "env": "GOINFER_GPTOSS_ST",
-   "kind": "dir",
-   "members": [
-    "config.json",
-    "model.safetensors.index.json"
-   ],
-   "candidates": [
-    "$MODELS/gpt-oss-20b-hf"
-   ],
-   "used_by": [
-    "TestGptOssSafetensors_vsGGUF"
-   ],
-   "note": "openai/gpt-oss-20b SAFETENSORS (MXFP4 experts as paired U8 *_blocks/*_scales, interleaved gate_up). Diffed against the GGUF of the same model, whose path is already T3-validated."
-  },
-  {
-   "env": "GOINFER_GPTOSS_GGUF",
-   "kind": "file",
-   "min_bytes": 1048576,
-   "candidates": [
-    "$MODELS/gpt-oss-20b-MXFP4.gguf"
-   ],
-   "used_by": [
-    "TestGptOssSafetensors_vsGGUF"
-   ],
-   "note": "The validated-reader side of the safetensors diff. Same weights: its attn_norm matches the safetensors input_layernorm at max|diff| = 0."
-  }
- ]
+  "_comment": [
+    "THE SHARED ASSET REGISTRY. One table naming every heavy test asset: where to look for it, and",
+    "-- the part that matters -- WHAT MAKES IT USABLE. Read by scripts/asset_registry.py (the sweep's",
+    "preflight) and by decoder/asset_registry_test.go (the gates). Both apply the SAME predicate to",
+    "the SAME candidate paths, because both read this file.",
+    "",
+    "WHY IT EXISTS. The preflight reimplemented 'is this asset present' as `[ -e $path ]` while each",
+    "gate wrote its own resolution inline. Three consequences, all observed:",
+    "  1. A directory satisfies `-e` -- so three preflight entries pointed at a DIRECTORY while the",
+    "     loader wanted a .gguf FILE inside it, and preflight reported them resolved. Four gates were",
+    "     costed by that.",
+    "  2. GOINFER_QWEN35_GOLDEN's real requirement is a READABLE manifest.json INSIDE the directory.",
+    "     `-e` on the directory cannot express that, so preflight said present and the gate skipped.",
+    "  3. GOINFER_PREQUANT_GGUF had THREE different fallbacks across four call sites, and one site",
+    "     (loadInt4Model) had none at all -- so the same box ran different gates against different",
+    "     files, or skipped, with nothing in any output naming the difference.",
+    "",
+    "THE PREDICATE, stated once so it cannot be reimplemented differently:",
+    "  kind=file  -- resolves to a regular file (symlinks followed) of at least min_bytes.",
+    "  kind=dir   -- resolves to a directory containing EVERY name in `members` and AT LEAST ONE",
+    "                name in `members_any`.",
+    "The first candidate that satisfies the predicate wins. An `env` value set by the operator ALWAYS",
+    "wins over the candidates, and is checked by the same predicate -- an explicit path that does not",
+    "satisfy it is an error worth naming, not a silent fallback to something else.",
+    "",
+    "$MODELS is $GOINFER_MODELS, defaulting to ~/models. $REPO is the goinfer checkout root.",
+    "",
+    "used_by IS NOT DECORATION: TestAssetRegistry_usedByExists fails when a named gate does not exist,",
+    "so a renamed or deleted gate cannot leave a stale entry behind claiming coverage."
+  ],
+  "assets": [
+    {
+      "env": "GOINFER_PREQUANT_GGUF",
+      "kind": "file",
+      "min_bytes": 1048576,
+      "candidates": [
+        "$REPO/testdata/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf",
+        "$MODELS/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"
+      ],
+      "used_by": [
+        "TestDecodeParityInt4",
+        "TestSerializeWeightsTo_matchesBuffer",
+        "TestNgramSpecHarness"
+      ],
+      "note": "q4_k_m GGUF; the loader dequantizes and re-quantizes, so no prebuilt .giw is needed. The $REPO candidate is a gitignored local drop and is tried FIRST so a developer copy beats the shared one."
+    },
+    {
+      "env": "GOINFER_QWEN35_GGUF",
+      "kind": "file",
+      "min_bytes": 1048576,
+      "candidates": [
+        "$MODELS/qwen3.6-35b-a3b-Q8_0.gguf"
+      ],
+      "used_by": [
+        "TestQwen35GGUF_gate",
+        "TestQwen35GGUF_vsSafetensors",
+        "TestQwen35GGUF_weightDiff"
+      ]
+    },
+    {
+      "env": "GOINFER_QWEN35_GOLDEN",
+      "kind": "dir",
+      "members": [
+        "manifest.json"
+      ],
+      "candidates": [
+        "$MODELS/qwen35_real_golden"
+      ],
+      "used_by": [
+        "TestQwen35Real_gate2FullModel",
+        "TestQwen35GGUF_gate",
+        "TestQwen35GGUF_vsSafetensors"
+      ],
+      "note": "members is the WHOLE point here: every consumer reads manifest.json out of this directory, so a directory that exists without one is NOT this asset."
+    },
+    {
+      "env": "GOINFER_QWEN35_REAL",
+      "kind": "dir",
+      "members": [
+        "config.json"
+      ],
+      "members_any": [
+        "model.safetensors.index.json",
+        "model.safetensors"
+      ],
+      "candidates": [
+        "$MODELS/qwen3.6-35b-a3b"
+      ],
+      "used_by": [
+        "TestQwen35GGUF_vsSafetensors",
+        "TestQwen35GGUF_weightDiff"
+      ],
+      "note": "Resolved in a file-level helper (realQwen35Dir) rather than in a test body, which is why the selector census attributed it inconsistently -- see B13's 42-vs-41 count. It was NOT in the sweep preflight before this registry."
+    },
+    {
+      "env": "GOINFER_DEEPSEEK_V2LITE",
+      "kind": "dir",
+      "members": [
+        "config.json"
+      ],
+      "members_any": [
+        "model.safetensors.index.json",
+        "model.safetensors"
+      ],
+      "candidates": [
+        "$MODELS/deepseek-v2-lite"
+      ],
+      "used_by": [
+        "TestDeepseekV2LiteReal_gate",
+        "TestMLAAbsorb_speed"
+      ]
+    },
+    {
+      "env": "GOINFER_DEEPSEEK_MOONLIGHT",
+      "kind": "dir",
+      "members": [
+        "config.json"
+      ],
+      "members_any": [
+        "model.safetensors.index.json",
+        "model.safetensors"
+      ],
+      "candidates": [
+        "$MODELS/moonlight-16b"
+      ],
+      "used_by": [
+        "TestDeepseekMoonlightReal_gate"
+      ]
+    },
+    {
+      "env": "GOINFER_DEEPSEEK_GGUF",
+      "kind": "file",
+      "min_bytes": 1048576,
+      "candidates": [
+        "$MODELS/deepseek-v2-lite-gguf/DeepSeek-V2-Lite-Chat-Q4_K_M.gguf"
+      ],
+      "used_by": [
+        "TestDeepseekGGUFReal_gate",
+        "TestNgramSpecMLA_parity"
+      ]
+    },
+    {
+      "env": "GOINFER_PHI3_MINI",
+      "kind": "dir",
+      "members": [
+        "config.json"
+      ],
+      "members_any": [
+        "model.safetensors.index.json",
+        "model.safetensors"
+      ],
+      "candidates": [
+        "$MODELS/phi3-mini-4k"
+      ],
+      "used_by": [
+        "TestPhi3MiniReal_gate"
+      ]
+    },
+    {
+      "env": "GOINFER_PHI3_GGUF",
+      "kind": "file",
+      "min_bytes": 1048576,
+      "candidates": [
+        "$MODELS/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf"
+      ],
+      "used_by": [
+        "TestPhi3GGUFReal_gate"
+      ]
+    },
+    {
+      "env": "GOINFER_LLAMA4_GGUF",
+      "kind": "file",
+      "min_bytes": 1048576,
+      "candidates": [
+        "$MODELS/llama4-scout-gguf/Llama-4-Scout-17B-16E-Instruct-Q2_K.gguf"
+      ],
+      "used_by": [
+        "TestLlama4Real_gate"
+      ]
+    },
+    {
+      "env": "GOINFER_GRANITE_HF",
+      "kind": "dir",
+      "members": [
+        "config.json"
+      ],
+      "members_any": [
+        "model.safetensors.index.json",
+        "model.safetensors"
+      ],
+      "candidates": [
+        "$MODELS/granite-hf"
+      ],
+      "used_by": [
+        "TestGraniteReal_oracle"
+      ],
+      "note": "The bf16 SAFETENSORS release, NOT the Q8_0 GGUF the coherence gate uses (GOINFER_GRANITE_GGUF, still unregistered). The T3 oracle must load the same weights the HF reference forward ran on, so these are two assets, not two paths to one."
+    },
+    {
+      "env": "GOINFER_NEMOTRON_HF",
+      "kind": "dir",
+      "members": [
+        "config.json"
+      ],
+      "members_any": [
+        "model.safetensors.index.json",
+        "model.safetensors"
+      ],
+      "candidates": [
+        "$MODELS/nemotron-hf"
+      ],
+      "used_by": [
+        "TestNemotronReal_oracle"
+      ],
+      "note": "The bf16 SAFETENSORS release, NOT the Q8_0 GGUF the coherence gate uses (GOINFER_NEMOTRON_GGUF, still unregistered)."
+    },
+    {
+      "env": "GOINFER_DFLASH_35B",
+      "kind": "dir",
+      "members": [
+        "config.json",
+        "model.safetensors"
+      ],
+      "candidates": [
+        "$MODELS/qwen36-35b-dflash"
+      ],
+      "used_by": [
+        "TestDFlash_pairingDialects"
+      ],
+      "note": "z-lab/Qwen3.6-35B-A3B-DFlash (apache-2.0, 0.77 GB) \u2014 the OUTLIER dialect: block_size NESTED in dflash_config and rope as nested rope_parameters, where the other three drafters use the top-level/flat spellings. Kept because it is the row of TestDFlash_pairingDialects that exercises those two spellings."
+    },
+    {
+      "env": "GOINFER_DSPARK_F32",
+      "kind": "dir",
+      "members": [
+        "config.json",
+        "model.safetensors"
+      ],
+      "candidates": [
+        "$MODELS/dspark-qwen3-4b-f32"
+      ],
+      "used_by": [
+        "TestDSpark_referenceParity",
+        "TestDSpark_targetEndToEnd"
+      ],
+      "note": "f32 conversion of deepseek-ai/dspark_qwen3_4b_block7 (license=None; accepted for exploration 2026-08-15, see docs/prompts/dspark-license-issue.md), via scripts/convert_dflash_f32.py from $MODELS/dspark-qwen3-4b."
+    },
+    {
+      "env": "GOINFER_QWEN3_4B",
+      "kind": "dir",
+      "members": [
+        "config.json"
+      ],
+      "members_any": [
+        "model.safetensors.index.json",
+        "model.safetensors"
+      ],
+      "candidates": [
+        "$MODELS/qwen3-4b"
+      ],
+      "used_by": [
+        "TestDFlash_targetEndToEnd",
+        "TestDSpark_targetEndToEnd",
+        "TestCPUBlockSpec_lossless"
+      ],
+      "note": "Qwen/Qwen3-4B (apache-2.0) \u2014 the TARGET z-lab/Qwen3-4B-DFlash-b16 is trained against. DFlash ships no embedding and no LM head, so the drafter cannot produce a token without it."
+    },
+    {
+      "env": "GOINFER_DFLASH_F32",
+      "kind": "dir",
+      "members": [
+        "config.json",
+        "model.safetensors"
+      ],
+      "candidates": [
+        "$MODELS/qwen3-4b-dflash-f32"
+      ],
+      "used_by": [
+        "TestDFlash_referenceParity",
+        "TestDFlash_targetEndToEnd",
+        "TestCPUBlockSpec_lossless"
+      ],
+      "note": "The f32 CONVERSION of z-lab/Qwen3-4B-DFlash-b16 (MIT), produced by scripts/convert_dflash_f32.py from $MODELS/qwen3-4b-dflash. The parity gate runs at f32 because the reference dump is f32; the bf16 original is not interchangeable here."
+    },
+    {
+      "env": "GOINFER_DFLASH_GPTOSS",
+      "kind": "dir",
+      "members": [
+        "config.json",
+        "model.safetensors"
+      ],
+      "candidates": [
+        "$MODELS/gptoss-20b-dflash"
+      ],
+      "used_by": [
+        "TestDFlash_pairingDialects"
+      ],
+      "note": "z-lab/gpt-oss-20b-DFlash (MIT, 1.57 GB) \u2014 pairs with our local gpt-oss-20b (hidden 2880, 24 layers, vocab 201088, all exact). NOTE the depth ratio: an 8-layer trunk against a 24-layer target is 0.33, far worse than the 4B's 5/32 = 0.156, and probe A established depth ratio is the mechanism \u2014 price this pairing as the expensive one."
+    },
+    {
+      "env": "GOINFER_DFLASH_GEMMA4",
+      "kind": "dir",
+      "members": [
+        "config.json",
+        "model.safetensors"
+      ],
+      "candidates": [
+        "$MODELS/gemma4-26b-dflash"
+      ],
+      "used_by": [
+        "TestDFlash_pairingDialects"
+      ],
+      "note": "z-lab/gemma-4-26B-A4B-it-DFlash (apache-2.0, 0.86 GB) \u2014 pairs with our local gemma-4-26b-a4b-it (hidden 2816, 30 layers, vocab 262144, all exact)."
+    },
+    {
+      "env": "GOINFER_NEMOTRON3NANO_HF",
+      "kind": "dir",
+      "members": [
+        "config.json"
+      ],
+      "members_any": [
+        "model.safetensors.index.json",
+        "model.safetensors"
+      ],
+      "candidates": [
+        "$MODELS/nemotron3nano-30b-bf16"
+      ],
+      "used_by": [
+        "TestNemotron3NanoReal_oracle"
+      ],
+      "note": "NVIDIA-Nemotron-3-Nano-30B-A3B-BF16 (63 GB safetensors) \u2014 the MoE variant's T3 oracle. BF16 and not the -FP8 release: goinfer has no fp8 reader anywhere in the tree (the blocker that stopped DeepSeek V4-Flash scoping), so the FP8 repo is unusable here regardless of its smaller size."
+    },
+    {
+      "env": "GOINFER_NEMOTRON3NANO_GGUF",
+      "kind": "file",
+      "min_bytes": 1048576,
+      "candidates": [
+        "$MODELS/nemotron3nano-gguf/nvidia_Nemotron-3-Nano-30B-A3B-Q4_K_M.gguf"
+      ],
+      "used_by": [
+        "TestNemotron3NanoMoEReal_gate"
+      ],
+      "note": "Q4_K_M (24.7 GB) \u2014 the SAME quant the loader's expert dequantization was spot-checked against by hand, so the gate closes exactly the gap that check left open: correct dims and sane values are not a forward pass."
+    },
+    {
+      "env": "GOINFER_LAGUNA_XS2",
+      "kind": "dir",
+      "members": [
+        "config.json",
+        "model.safetensors.index.json",
+        "tokenizer.json"
+      ],
+      "candidates": [
+        "$MODELS/laguna-xs2"
+      ],
+      "used_by": [
+        "TestLagunaReal_gate"
+      ],
+      "note": "Real poolside Laguna-XS.2 (33B-A3B, bf16 safetensors, 14 shards, ~63GB). members lists the three files the gate actually reads besides the shards: config.json (the adapter), the shard INDEX (the loader resolves tensors through it, so a dir with shards but no index is not this asset), and tokenizer.json. Loaded at int4 -- bf16 would not fit alongside f32 activations in 62GB. There is deliberately NO M.1 entry: it is ~220B / ~400GB and not runnable here."
+    },
+    {
+      "env": "GOINFER_LAGUNA_GGUF",
+      "kind": "file",
+      "min_bytes": 1048576,
+      "candidates": [
+        "$MODELS/laguna-xs21-gguf/Laguna-XS-2.1-Q4_K_M.gguf"
+      ],
+      "used_by": [
+        "TestLagunaGGUF_gate"
+      ],
+      "note": "poolside's OWN Laguna-XS-2.1 Q4_K_M GGUF. llama.cpp has first-class laguna support (general.architecture == 'laguna'), so this is a released file rather than a local conversion. It exercises the fused+stacked expert layout, the per-layer head-count ARRAY, and the derived full/sliding split -- none of which the safetensors gate covers."
+    },
+    {
+      "env": "GOINFER_LAGUNA_DFLASH",
+      "kind": "dir",
+      "members": [
+        "config.json",
+        "model.safetensors"
+      ],
+      "candidates": [
+        "$MODELS/laguna-xs2-dflash"
+      ],
+      "used_by": [
+        "TestLagunaDFlash_load"
+      ],
+      "note": "poolside/Laguna-XS.2-speculator.dflash -- the first VENDOR-BLESSED block drafter goinfer pairs with. Ships its own embed_tokens + reduced-vocab lm_head (32000 rows) + d2t, unlike z-lab's which borrow the target's head."
+    },
+    {
+      "env": "GOINFER_GPTOSS_ST",
+      "kind": "dir",
+      "members": [
+        "config.json",
+        "model.safetensors.index.json"
+      ],
+      "candidates": [
+        "$MODELS/gpt-oss-20b-hf"
+      ],
+      "used_by": [
+        "TestGptOssSafetensors_vsGGUF"
+      ],
+      "note": "openai/gpt-oss-20b SAFETENSORS (MXFP4 experts as paired U8 *_blocks/*_scales, interleaved gate_up). Diffed against the GGUF of the same model, whose path is already T3-validated."
+    },
+    {
+      "env": "GOINFER_GPTOSS_GGUF",
+      "kind": "file",
+      "min_bytes": 1048576,
+      "candidates": [
+        "$MODELS/gpt-oss-20b-MXFP4.gguf"
+      ],
+      "used_by": [
+        "TestGptOssSafetensors_vsGGUF"
+      ],
+      "note": "The validated-reader side of the safetensors diff. Same weights: its attn_norm matches the safetensors input_layernorm at max|diff| = 0."
+    },
+    {
+      "env": "GOINFER_QWEN38",
+      "kind": "dir",
+      "members": [
+        "config.json",
+        "model.safetensors.index.json",
+        "tokenizer.json"
+      ],
+      "candidates": [
+        "$MODELS/qwen3.8-27b"
+      ],
+      "used_by": [
+        "TestQwen38Real_gate"
+      ],
+      "note": "Qwen/Qwen3.8-27B, 18 bf16 shards / 55.6 GB. The whole multimodal repo is downloaded because the text decoder's shards are interleaved with the vision tower's; the loader requests neither model.visual.* nor mtp.*. Loaded at int4 -- Options{} would ask for the f32 dequant of a 27.8B model."
+    }
+  ]
 }

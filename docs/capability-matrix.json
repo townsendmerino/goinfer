@@ -59,7 +59,7 @@
     "loaders": "safetensors",
     "modality": "text",
     "gpu_residency_eligible": false,
-    "parity": "experimental: tiny-oracle 100.0%/1.00000"
+    "parity": "experimental: tiny-oracle 100.0%/1.00000 +coherent"
   },
   {
     "name": "deepseek_v2",

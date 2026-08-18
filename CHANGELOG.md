@@ -44,8 +44,17 @@ pre-1.0 and may change as new model families and quant formats land.
   argmax exact, logit cosine 1.000000, greedy continuation exact. The fixture keeps the
   released model's *shape character* rather than its size — head_dim independent of
   hidden/heads, 3:1 `layer_types` so both mixers run, GVA value/key head ratio, and
-  `mrope_section` present. **Admission: CPU-only**, the same posture as every DeltaNet
-  hybrid (no backend implements the mixer). GGUF and vision are follow-ons.
+  `mrope_section` present.
+
+  **And the real 27.8B runs.** `TestQwen38Real_gate` loads Qwen/Qwen3.8-27B (18 bf16 shards,
+  55.6 GB) at int4 on a 62 GB linux/amd64 box, asserts the geometry and BOTH mixers' tensor
+  sets against the released index, and generates 96 greedy tokens: distinct-trigram 0.770,
+  three correct Paris landmarks with correct detail (Champ de Mars, the 1889 World's Fair,
+  the *Mona Lisa*). That is **coherence, not an oracle** — no bf16 reference forward was run
+  against it — so the family stays `experimental` rather than claiming a validated tier.
+
+  **Admission: CPU-only**, the same posture as every DeltaNet hybrid (no backend implements
+  the mixer). GGUF and vision are follow-ons.
 
 ## [v0.13.0] — 2026-08-14
 
