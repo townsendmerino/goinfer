@@ -33,7 +33,7 @@ pattern; the serve/chat/constrain/tooling surface inherits automatically.
 
 ## What already exists to build on
 
-- **VL config flattening** — `decoder/config.go:1013` decodes `text_config` (the nested
+- **VL config flattening** — `decoder/config.go:1044` decodes `text_config` (the nested
   text-decoder dims of a `*ForConditionalGeneration`), so VL `config.json`s
   already parse.
 - **Text decoders at parity** for the natural first targets: `gemma3`, `qwen2`,

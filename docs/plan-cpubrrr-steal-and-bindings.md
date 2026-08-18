@@ -15,7 +15,7 @@ fallback is chosen.
 | task | state | where |
 |---|---|---|
 | **A1** Q8_K integer-accum kernel | ◐ **built, measured, DECLINED for Q6_K — Q4_K left open** | aikit `linalg/kquant.go` |
-| **A2** MXFP4 + gpt-oss | ✅ **shipped** | `decoder/mxfp4.go`, `gpt_oss` in `decoder/registry.go:49`, GGUF loader + parity + decline |
+| **A2** MXFP4 + gpt-oss | ✅ **shipped** | `decoder/mxfp4.go`, `gpt_oss` in `decoder/registry.go:57`, GGUF loader + parity + decline |
 | **A3** yielding spin-barrier | ☐ not started | — |
 | **B** bindings (sidecar + c-archive) | ☐ not started | `docs/task-bindings.md` still reads *Status: NOT STARTED* |
 | A2 deliverable §6.6 — gpt-oss tok/s row | ☐ not published | `docs/benchmarks.md` has no gpt-oss entry |

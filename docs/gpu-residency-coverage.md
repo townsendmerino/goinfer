@@ -99,7 +99,7 @@ elsewhere in the codebase; only the *combination* is new to the resident path:
 `registry.go` `gemma3Architecture`). Sliding window and per-layer dual-base RoPE
 are now handled (C6/C7); the remaining deltas are all expressible primitives:
 - **`NormSandwich4`** — post-attention and post-FFN norms in addition to the two
-  pre-norms (`decoder/registry.go:144`). The runner does Pre2 only; this needs 2
+  pre-norms (`decoder/registry.go:146`). The runner does Pre2 only; this needs 2
   extra RMSNorm dispatches/weights per layer and a norm-placement branch.
 - **GeGLU** (gelu activation in the gated MLP) instead of SwiGLU(silu) — a
   one-line activation variant of the existing `swigluQuant` fuse.
