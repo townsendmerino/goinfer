@@ -381,7 +381,7 @@ supports.
 | `docs/post-v1.0-models.md|decoder/registry.go:409` | goinfer | `// cohere2Architecture expresses Cohere2 / Command-R7B (model_type "cohere2":` |
 | `docs/post-v1.0-models.md|decoder/registry.go:48` | goinfer | `"gpt_oss":             gptOssArchitecture,     // gpt-oss (20b/120b): sparse MoE + per-h` |
 | `docs/post-v1.0-models.md|decoder/registry.go:719` | goinfer | `Name:            "qwen3_5_moe",` |
-| `docs/prompts/metal-batched-verify.md|metal/model.go:1171` | goinfer | `e.Dispatch(r.pRms, tgReduceNorm, tgReduceNorm, r.x, L.postNorm, r.mq, r.mSc, r.uH, r.uEp` |
+| `docs/prompts/metal-batched-verify.md|metal/model.go:1215` | goinfer | `e.Dispatch(r.pRms, tgReduceNorm, tgReduceNorm, r.x, L.postNorm, r.mq, r.mSc, r.uH, r.uEp` |
 | `docs/prompts/metal-batched-verify.md|metal/model.go:291` | goinfer | `// maxThreadgroupStageBytes returns the largest threadgroup staging allocation (bytes) a` |
 | `docs/prompts/metal-close-leak-check.md|metal/backend.go:211` | goinfer | `// Close stops the pipelined executor (waiting for it) and frees every MTLBuffer this re` |
 | `docs/prompts/metal-close-leak-check.md|metal/model.go:367` | goinfer | `// expert weights, buffer OOM — model.go/moe.go/gemma4_moe.go) into the error this signa` |
@@ -404,8 +404,8 @@ supports.
 | `docs/queue-engineering.md|internal/serveapp/embeddings.go:26` | goinfer | `// Embedding request bounds (audit C-21). /v1/embeddings is deliberately un-queued (the ` |
 | `docs/queue-engineering.md|internal/serveapp/main.go:516` | goinfer | `// A SECOND signal during the drain force-exits instead of being swallowed by the buffer` |
 | `docs/queue-engineering.md|linalg/quant.go:136` | aikit | `dequantRowInt8(deq, bq, 1.0)` |
-| `docs/queue-engineering.md|metal/model.go:784` | goinfer | `r.residencyBufs = pinned` |
-| `docs/queue-engineering.md|metal/model.go:902` | goinfer | `r.logitsHost[j] = sc * float32(math.Tanh(float64(v/sc)))` |
+| `docs/queue-engineering.md|metal/model.go:798` | goinfer | `r.residencyBufs = pinned` |
+| `docs/queue-engineering.md|metal/model.go:916` | goinfer | `r.logitsHost[j] = sc * float32(math.Tanh(float64(v/sc)))` |
 | `docs/queue-engineering.md|metal/snapshot_golden_test.go:77` | goinfer | `func TestMetalEmbedScale_forwardMatchesForwardEmb(t *testing.T) {` |
 | `docs/queue-performance.md|cuda/backend.go:463` | goinfer | `if r.dev, e = CreateSystemDefaultDevice(); e != nil {` |
 | `docs/queue-performance.md|cuda/backend.go:591` | goinfer | `load(&r.bRopeKV, pbmod, "rope_kv_batched")` |
@@ -436,8 +436,8 @@ supports.
 | `docs/task-int4-int8-exact-mma.md|metal/kernels.go:182` | goinfer | `kernel void gemv_w4a8_sa(device const uint4* wq[[buffer(0)]], device const half* sct[[bu` |
 | `docs/task-int4-int8-exact-mma.md|metal/kernels.go:188` | goinfer | `if (lane==0) out[row] = acc*asc[0];` |
 | `docs/task-int4-int8-exact-mma.md|metal/kernels.go:28` | goinfer | `float sc=red[0]/127.0f; if(sc==0)sc=1; if(tid==0)asc[0]=sc; float inv=1/sc;` |
-| `docs/task-int4-int8-exact-mma.md|metal/model.go:1144` | goinfer | `e.DispatchTG(r.pSABias, qkvRows*32, 256, r.H*2, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv, L.qk` |
-| `docs/task-int4-int8-exact-mma.md|metal/model.go:1174` | goinfer | `e.Dispatch(r.pGemv, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.dO, r.uI)` |
+| `docs/task-int4-int8-exact-mma.md|metal/model.go:1188` | goinfer | `e.DispatchTG(r.pSABias, qkvRows*32, 256, r.H*2, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv, L.qk` |
+| `docs/task-int4-int8-exact-mma.md|metal/model.go:1218` | goinfer | `e.Dispatch(r.pGemv, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.dO, r.uI)` |
 | `docs/task-int4-int8-exact-mma.md|metal/model.go:423` | goinfer | `r.pRms, r.pQv, r.pGemv = pipe("rmsnorm_quant"), pipe("quant_vec"), pipe("gemv_w4a8_coal"` |
 | `docs/task-int4-int8-exact-mma.md|metal/model.go:425` | goinfer | `r.pSA, r.pSABias, r.pSAResid = pipe("gemv_w4a8_sa"), pipe("gemv_w4a8_sa_bias"), pipe("ge` |
 | `docs/task-metal-batched-verify-kernel.md|metal/kernels.go:106` | goinfer | `#define W4A8_BODY \` |
