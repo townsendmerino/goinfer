@@ -84,24 +84,38 @@ func TestGptOssAct_matchesReference(t *testing.T) {
 
 	dG := mustAlloc[float32](t, cx, I)
 	dU := mustAlloc[float32](t, cx, I)
-	dGB := mustAlloc[float32](t, cx, I)
-	dUB := mustAlloc[float32](t, cx, I)
+	// Bias table for TWO experts, and the routing index selects expert 1 — so the test
+	// exercises the on-device biasRow = idx[slot]*2*I arithmetic rather than only the
+	// activation. Expert 0 is filled with a decoy that would be visibly wrong if used.
+	const nExp, slot = 2, 0
+	biasGU := make([]float32, nExp*2*I)
+	for k := range I {
+		biasGU[k] = 99        // expert 0 gate bias: decoy
+		biasGU[I+k] = -99     // expert 0 up bias: decoy
+		biasGU[2*I+k] = gb[k] // expert 1 gate bias (the one idx selects)
+		biasGU[3*I+k] = ub[k] // expert 1 up bias
+	}
+	dBias := mustAlloc[float32](t, cx, len(biasGU))
+	dIdx := mustAlloc[int32](t, cx, 1)
 	dQ := mustAlloc[int32](t, cx, I/4)
 	dScale := mustAlloc[float32](t, cx, 1)
 	dScratch := mustAlloc[float32](t, cx, I)
 	for _, cp := range []struct {
 		d *gc.Buffer[float32]
 		h []float32
-	}{{dG, g}, {dU, u}, {dGB, gb}, {dUB, ub}} {
+	}{{dG, g}, {dU, u}, {dBias, biasGU}} {
 		if e := gc.CopyHtoD(bg, cp.d, cp.h); e != nil {
 			t.Fatalf("H2D: %v", e)
 		}
+	}
+	if e := gc.CopyHtoD(bg, dIdx, []int32{1}); e != nil { // select expert 1
+		t.Fatalf("H2D idx: %v", e)
 	}
 
 	cfg := gc.LaunchConfig{GridX: 1, GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: 128 * 4}
 	if e := fn.LaunchOn(bg, stream, cfg,
 		gc.Arg(dG), gc.Arg(dU), gc.ArgValue(int32(0)), gc.ArgValue(int32(0)), gc.ArgValue(int32(I)),
-		gc.Arg(dGB), gc.Arg(dUB), gc.ArgValue(alpha), gc.ArgValue(limit),
+		gc.Arg(dBias), gc.Arg(dIdx), gc.ArgValue(int32(slot)), gc.ArgValue(alpha), gc.ArgValue(limit),
 		gc.Arg(dQ), gc.Arg(dScale), gc.Arg(dScratch)); e != nil {
 		t.Fatalf("launch: %v", e)
 	}

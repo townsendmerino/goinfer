@@ -29,12 +29,20 @@
 // the packed store — is glu_quant's, unchanged, so the down-projection GEMV consumes an
 // identical format.
 
+// THE BIASES ARE PER-EXPERT and selected on the DEVICE, so they cannot be passed as a row
+// pointer: which expert runs is decided by the router, and the launch geometry must stay
+// identical regardless (that is what makes the MoE path graph-static). So the kernel takes
+// the whole [nExpert][2*I] table plus the routing index and does the same arithmetic
+// gemv_w4a8_moe does — biasRow = idx[slot] * 2*I — with gate at +0 and up at +I, matching
+// the gate‖up packing the weights already use. Passing biasGU == nullptr disables biases.
 extern "C" __global__ void glu_quant_gptoss(const float* __restrict__ g, const float* __restrict__ u,
                                  int gOff, int uOff, int I,
-                                 const float* __restrict__ gateBias, const float* __restrict__ upBias,
+                                 const float* __restrict__ biasGU, const int* __restrict__ idx, int slot,
                                  float alpha, float limit,
                                  int* __restrict__ q, float* __restrict__ scale,
                                  float* __restrict__ dscratch) {
+    const float* gateBias = nullptr; const float* upBias = nullptr;
+    if (biasGU) { const float* b = biasGU + (long)idx[slot] * 2 * I; gateBias = b; upBias = b + I; }
     extern __shared__ float red[];
     int t = threadIdx.x, nt = blockDim.x;
     float ma = 0.f;
