@@ -396,3 +396,57 @@ already existed in `dflash_accept_test.go` from the P10 sweeps. I had looked at 
 INTERFACES, seen only a CUDA implementation, and concluded no CPU path existed — when what
 was missing was a CPU path *exposed through those interfaces*. That distinction is the whole
 of the remaining work.
+
+
+## DFlash pairing — the end-to-end verdict: DO NOT SHIP (0.82x on CPU)
+
+With the CPU BlockSpec doing a real BATCHED verify, the full pairing on real Laguna-XS.2
+@int4:
+
+| | value |
+|---|---|
+| acceptance | **3.20 tok/round** (15 rounds, 48 tokens) |
+| break-even constant | 2.5 (`breakEvenTokensPerRound`) |
+| speculative wall-clock | 5m58.7s |
+| plain greedy wall-clock | 4m54.8s |
+| **speedup** | **0.82× — SLOWER** |
+
+Output was token-identical to plain greedy, so the path is correct. It is simply not worth
+running.
+
+### Why acceptance above break-even still loses
+
+`breakEvenTokensPerRound = 2.5` was calibrated in P10 for the GPU-resident regime. It does
+not transfer here, for a reason that is specific and worth stating: **a batched verify over a
+sparse MoE does not amortize the way a dense one does.** Each of the 8 verified rows routes
+to its OWN top-8 of 256 experts, so an 8-row verify touches far more expert weight than one
+decode step does — approaching 8× the expert traffic rather than the near-free extra rows a
+dense model gives you. Laguna is A3B: a single decode step activates ~3B parameters, and the
+batching that makes speculation pay elsewhere is exactly what MoE routing defeats.
+
+Working backwards from the measurement, the real break-even on this target is ≈ 3.9
+tok/round (3.20 / 0.82), not 2.5.
+
+### The guard would NOT have caught this
+
+This is the part that matters beyond Laguna. P10's runtime acceptance guard disables
+drafting when tok/round falls below `breakEvenTokensPerRound`. At 3.20 observed against a
+2.5 constant, **the guard would have happily kept a configuration running that loses 18%**.
+The guard is sound in shape and wrong in calibration for a CPU MoE target — its constant
+encodes an economics that this regime does not share.
+
+So the honest conclusion is threefold:
+
+1. **The pairing works.** Loads, drafts, accepts at 3.20 tok/round, lossless.
+2. **It must not be wired into `serve --drafter` for CPU MoE targets**, which is why that
+   wiring is deliberately absent rather than merely unfinished.
+3. **`breakEvenTokensPerRound` should be measured per (target, backend), not a constant** —
+   or the guard should compare wall-clock directly rather than inferring from a rate. Filed
+   here rather than fixed, because changing a shipped guard's semantics on the strength of
+   one target's measurement would be the same over-generalization that put a GPU-calibrated
+   constant in the CPU path to begin with.
+
+The CPU BlockSpec itself is still worth having: it is the first non-CUDA implementation of
+those interfaces, it is gated lossless (6.67 tok/round on Qwen3-4B, token-identical), and it
+makes block drafting available to CPU-only families whose economics may differ — a DENSE
+CPU-only target is precisely the case where batched verify should amortize.

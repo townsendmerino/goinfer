@@ -15,7 +15,9 @@
 package decoder
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
@@ -226,5 +228,93 @@ func TestLagunaDFlash_acceptance(t *testing.T) {
 		t.Errorf("%.2f tok/round — no draft was EVER accepted. Losslessness hides this: the "+
 			"output is still correct, so only this number can show the pairing is not working",
 			perRound)
+	}
+}
+
+// TestLagunaDFlash_cpuBlockSpec is the pairing end to end: real Laguna-XS.2 target, real
+// poolside drafter, driven through the CPU BlockSpec with BATCHED verify.
+//
+// This is the one that can show a speedup. The acceptance test above verifies
+// sequentially, which measures acceptance honestly but performs exactly as many target
+// forwards as plain decoding; here the whole drafted block is verified in one pass, so
+// accepted drafts actually cost less than the tokens they replace.
+//
+// It still asserts LOSSLESSNESS first. On a 33B CPU target the timing is noisy and
+// machine-specific, but token-identity is exact and is the property that makes the
+// speedup meaningful rather than a different (faster, worse) model.
+//
+//	GOINFER_HEAVY_TESTS=1 GOINFER_LAGUNA_XS2=~/models/laguna-xs2 \
+//	  GOINFER_LAGUNA_DFLASH=~/models/laguna-xs2-dflash \
+//	  go test -tags realckpt ./decoder/ -run TestLagunaDFlash_cpuBlockSpec -v -timeout 180m
+func TestLagunaDFlash_cpuBlockSpec(t *testing.T) {
+	requireHeavyModel(t)
+	ckpt := assetPath(t, "GOINFER_LAGUNA_XS2")
+	ddir := assetPath(t, "GOINFER_LAGUNA_DFLASH")
+
+	m, err := Load(ckpt, Options{Quant: "int4"})
+	if err != nil {
+		t.Fatalf("Load target: %v", err)
+	}
+	defer m.Close()
+	d, err := LoadDFlashDrafter(ddir)
+	if err != nil {
+		t.Fatalf("LoadDFlashDrafter: %v", err)
+	}
+	defer d.Close()
+
+	tk, err := tokenizer.Load(ckpt)
+	if err != nil {
+		t.Fatalf("tokenizer: %v", err)
+	}
+	const prompt = "〈|EOS|〉<system>\n\nYou are a helpful, conversationally-fluent assistant made by " +
+		"Poolside. You are here to be helpful to users through natural language conversations.\n</system>\n" +
+		"<user>\nWrite a Python function that reverses a linked list.\n</user>\n<assistant>\n</think>"
+	ids, err := tk.Encode(prompt, false)
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+
+	const maxNew = 48
+	base := make([]int, 0, maxNew)
+	tPlain := time.Now()
+	out, _ := m.Generate(context.Background(), ids, maxNew, SamplingParams{})
+	for id := range out {
+		base = append(base, id)
+	}
+	plainDur := time.Since(tPlain)
+	if len(base) == 0 {
+		t.Fatal("plain generation produced nothing")
+	}
+
+	spec, err := m.NewCPUBlockSpec(d, len(ids)+maxNew+d.BlockSize()+2)
+	if err != nil {
+		t.Fatalf("NewCPUBlockSpec: %v", err)
+	}
+	tSpec := time.Now()
+	got, rounds, err := spec.Generate(ids, BlockSpecOptions{MaxTokens: maxNew})
+	if err != nil {
+		t.Fatalf("BlockSpec.Generate: %v", err)
+	}
+	specDur := time.Since(tSpec)
+
+	perRound := 0.0
+	if rounds > 0 {
+		perRound = float64(len(got)) / float64(rounds)
+	}
+	speedup := float64(plainDur) / float64(specDur) * float64(len(base)) / float64(max(len(got), 1))
+	t.Logf("laguna CPU block spec: %d tok in %d rounds (%.2f tok/round) | %v vs plain %v for %d tok | ~%.2fx",
+		len(got), rounds, perRound, specDur.Round(time.Millisecond), plainDur.Round(time.Millisecond), len(base), speedup)
+	text, _ := tk.Decode(got)
+	t.Logf("output: %q", text)
+
+	n := min(len(base), len(got))
+	for i := range n {
+		if got[i] != base[i] {
+			t.Fatalf("DIVERGED at token %d: spec=%d plain=%d — wrong positions or a missed cache "+
+				"rollback, not a bad draft (block drafting is lossless by construction)", i, got[i], base[i])
+		}
+	}
+	if rounds > 0 && perRound <= 1.0 {
+		t.Errorf("%.2f tok/round — no draft accepted", perRound)
 	}
 }
