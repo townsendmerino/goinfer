@@ -216,6 +216,20 @@ kernel void gemv_w4a8_sa_resid(device const uint4* wq[[buffer(0)]], device const
     SA_BODY
     if (lane==0) out[row] += acc*asc[0];
 }
+// gemv_w4a8_sa_bias_resid: FeatOutBias's kernel — the o-proj GEMV needs BOTH an additive
+// per-row bias AND direct residual accumulation (gemv_w4a8_sa_resid has no bias epilogue,
+// gemv_w4a8_sa_bias overwrites instead of accumulating; neither alone is o-proj's shape for a
+// family with OutBias, e.g. GPT-2/gpt-oss). Not currently dispatched anywhere — no family
+// resident on Metal declares FeatOutBias yet — gated standalone (gptoss_kernels_test.go-style)
+// against a hand-computed reference until a real family wires it in.
+kernel void gemv_w4a8_sa_bias_resid(device const uint4* wq[[buffer(0)]], device const half* sct[[buffer(1)]],
+    device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
+    device const float* bias[[buffer(5)]], constant uint& K[[buffer(6)]], threadgroup short* As [[threadgroup(0)]], uint tgid[[threadgroup_position_in_grid]],
+    uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]],
+    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
+    SA_BODY
+    if (lane==0) out[row] += acc*asc[0] + bias[row];
+}
 
 // Fused block-argmax lm-head (Fable): computes the SAME logits as gemv_w4a8_sa but never
 // materializes them — each threadgroup emits (maxLogit, rowIndex) over its 8 rows; a tiny

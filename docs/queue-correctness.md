@@ -401,6 +401,22 @@ is wrong for this family).
   placement, since scaling the ROTATED OUTPUT instead is a different, wrong result that a loose
   tolerance could miss. Not declared for Metal (same discipline as `FeatAttnSink` above — no
   family exercises `scale != 1.0` end-to-end here yet).
+- **`FeatOutBias`'s kernel landed too (2026-08-18) — the last of the two missing capabilities is
+  now scoped and built.** Unlike mscale, no existing SA-family GEMV combines bias-add with
+  residual-accumulate (`gemv_w4a8_sa_bias` overwrites, `gemv_w4a8_sa_resid` accumulates, neither
+  does both — checked directly rather than assumed cheap), so this needed a genuinely new kernel:
+  `gemv_w4a8_sa_bias_resid` (`kernels.go`). Purely additive — no pipeline is instantiated in
+  `model.go` for it (no family resident on Metal declares `FeatOutBias` yet, same as
+  `gemv_w4a8_sa_amax`'s existing "created but never dispatched" precedent, N-09), so this carries
+  even less regression risk than the mscale change: nothing existing was touched, only a new
+  kernel added to the shared library. Gated standalone (`TestSAGemvBiasResid`,
+  `metal/gemv_w4a8_sa_bias_resid_test.go`) against a CPU dequant reference of the same packed
+  int4 weights, with two explicit negative checks — the output must NOT match a bias-dropped or a
+  residual-dropped reference — so a regression that silently drops one epilogue term would fail
+  loudly instead of passing on a coincidental near-match. Full `go test ./metal/...` clean.
+  **Both of gpt-oss's non-family-specific prerequisites now have a Metal kernel; wiring either
+  into `model.go`'s real per-layer dispatch (for GPT-2's `FeatOutBias` or a resident YaRN family's
+  `FeatRopeMscale`) is the next piece, and is itself independent of gpt-oss ever landing.**
 - **Real-checkpoint end-to-end validation is blocked on both machines for different reasons:**
   gpt-oss-20b MXFP4 is ~13.8GB against the CUDA box's 8GB VRAM (testable there only via the
   host↔VRAM MoE-streaming path, coupling two hard things at once); this Mac has 16GB total RAM but
