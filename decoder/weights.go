@@ -1334,6 +1334,26 @@ var qwen2TensorSchema = tensorSchema{
 // those — and pinning the exact fused-expert tensor names against a real
 // checkpoint — is Phase 4 (see docs/qwen3_5_moe.md). Used today only for
 // descriptor resolution.
+// qwen35DenseTensorSchema is Qwen3.8's (model_type qwen3_5): identical to the MoE sibling's
+// except the router/expert names give way to a plain SwiGLU. Kept as its own value rather
+// than mutating the MoE schema, so the MoE families are untouched by this addition.
+var qwen35DenseTensorSchema = tensorSchema{
+	Embed:       "model.embed_tokens.weight",
+	LMHead:      "lm_head.weight",
+	FinalNorm:   "model.norm.weight",
+	QProj:       "self_attn.q_proj.weight",
+	KProj:       "self_attn.k_proj.weight",
+	VProj:       "self_attn.v_proj.weight",
+	OProj:       "self_attn.o_proj.weight",
+	QNorm:       "self_attn.q_norm.weight",
+	KNorm:       "self_attn.k_norm.weight",
+	PreAttnNorm: "input_layernorm.weight",
+	PreMLPNorm:  "post_attention_layernorm.weight",
+	GateProj:    "mlp.gate_proj.weight",
+	UpProj:      "mlp.up_proj.weight",
+	DownProj:    "mlp.down_proj.weight",
+}
+
 var qwen35TensorSchema = tensorSchema{
 	Embed:            "model.embed_tokens.weight",
 	LMHead:           "lm_head.weight",

@@ -41,6 +41,27 @@
     "parity": "full-oracle 82.5%/0.99333"
   },
   {
+    "name": "qwen3_5",
+    "model_types": [
+      "qwen3_5",
+      "qwen3_5_text"
+    ],
+    "display_name": "Qwen3.8",
+    "description": "Qwen3.8 dense: the same Gated DeltaNet + softmax 3:1 hybrid as Qwen3.5-MoE, with a plain SwiGLU in place of the router",
+    "coverage_axis": "gated-linear hybrid (Gated DeltaNet)",
+    "moe": "dense",
+    "sliding_window": "none",
+    "qk_norm": true,
+    "rope_style": "partial",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors",
+    "modality": "text",
+    "gpu_residency_eligible": false,
+    "parity": "experimental: tiny-oracle 100.0%/1.00000"
+  },
+  {
     "name": "deepseek_v2",
     "model_types": [
       "deepseek_v2"

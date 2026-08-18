@@ -36,10 +36,23 @@ func (m *Model) runLayersQwen35(id int, cache *KVCache) ([]float32, error) {
 			h[i] += attn[i]
 		}
 
-		// MoE FFN sub-block (Pre2). post_attention_layernorm is the pre-MLP norm.
+		// FFN sub-block (Pre2). post_attention_layernorm is the pre-MLP norm.
+		//
+		// The DENSE branch is Qwen3.8 (model_type qwen3_5): the same Gated-DeltaNet/softmax
+		// 3:1 hybrid as its MoE siblings, with a plain SwiGLU where they have a router. It is
+		// the ONLY structural difference in this forward — the DeltaNet step, the gated
+		// attention, the hybrid cache and the sequential prefill are all untouched — so it
+		// branches here rather than getting a forward of its own.
 		n2 := append([]float32(nil), h...)
 		rmsNorm(n2, lw.PreMLPNorm, 1, hidden, eps, arch.RMSAddOne)
-		ffn, err := moeMLP(n2, lw, arch, m.be, m.pager)
+		var ffn []float32
+		var err error
+		if arch.MoE == nil {
+			ffn = make([]float32, hidden)
+			err = gatedMLP(n2, ffn, lw, arch, m.be, cache.scr, nil) // scr.gate/up are sized from IntermediateDim, which the dense validator requires
+		} else {
+			ffn, err = moeMLP(n2, lw, arch, m.be, m.pager)
+		}
 		if err != nil {
 			return nil, err
 		}

@@ -209,6 +209,19 @@ func representativeConfig(modelType string) *Config {
 			NumExperts: 4, NumExpertsPerTok: 2, MoeIntermediateSize: 32, SharedExpertIntermediateSize: 32,
 			RopeParameters: json.RawMessage(`{"rope_type":"default","rope_theta":1000000.0,"partial_rotary_factor":0.25}`),
 		}
+	case "qwen3_5", "qwen3_5_text":
+		// Qwen3.8 dense: the qwen3_5_moe geometry with the router replaced by a plain
+		// SwiGLU. head_dim is deliberately NOT hidden/num_heads (the released 27B is
+		// hd 256 at hidden 5120 with 24 heads), and mrope_section is carried because the
+		// released config carries it — the text path must still reduce to partial RoPE.
+		return &Config{
+			ModelType: modelType, VocabSize: 256, HiddenDim: 64, NumLayers: 4, NumHeads: 4,
+			NumKVHeads: 2, HeadDim: 32, IntermediateDim: 128, HiddenAct: "silu", RMSNormEps: 1e-6,
+			LayerTypes:          []string{"linear_attention", "linear_attention", "linear_attention", "full_attention"},
+			LinearConvKernelDim: 4, LinearKeyHeadDim: 16, LinearValueHeadDim: 16,
+			LinearNumKeyHeads: 2, LinearNumValueHeads: 4,
+			RopeParameters: json.RawMessage(`{"rope_type":"default","rope_theta":10000000.0,"partial_rotary_factor":0.25,"mrope_interleaved":true,"mrope_section":[3,3,2]}`),
+		}
 	case "qwen3_next":
 		// Deliberately exercises the flat (non-nested) rope path and the
 		// computed layer-types delta — the real released config never carries
@@ -377,6 +390,8 @@ var familyDocs = map[string]familyDoc{
 	"mellum":           {"Mellum2", "JetBrains Mellum2 code model (MoE + sliding/full interleave + YaRN)", "safetensors, GGUF", "text"},
 	"qwen3_5_moe":      {"Qwen3.5-MoE", "Qwen3.5/3.6 hybrid: Gated DeltaNet + softmax + MoE", "safetensors, GGUF", "text"},
 	"qwen3_5_moe_text": {"Qwen3.5-MoE", "Qwen3.5/3.6 hybrid: Gated DeltaNet + softmax + MoE", "safetensors, GGUF", "text"},
+	"qwen3_5":          {"Qwen3.8", "Qwen3.8 dense: the same Gated DeltaNet + softmax 3:1 hybrid as Qwen3.5-MoE, with a plain SwiGLU in place of the router", "safetensors", "text"},
+	"qwen3_5_text":     {"Qwen3.8", "Qwen3.8 dense: the same Gated DeltaNet + softmax 3:1 hybrid as Qwen3.5-MoE, with a plain SwiGLU in place of the router", "safetensors", "text"},
 	"qwen3_next":       {"Qwen3-Next", "Qwen3-Next 80B-A3B: same DeltaNet/softmax/MoE hybrid shape as Qwen3.5, computed (not stated) layer pattern", "safetensors", "text"},
 	"glm4_moe":         {"GLM-4.5/4.6", "Zhipu GLM-4.5/4.6 DeepSeek-style MoE (sigmoid routing + dense prefix)", "safetensors, GGUF", "text"},
 	"laguna":           {"Laguna", "poolside Laguna XS-2.1 / XS.2 / M.1: sigmoid-routed MoE + softplus attention output gating + per-layer query heads", "safetensors, GGUF", "text"},

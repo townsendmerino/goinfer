@@ -8,6 +8,45 @@ The forward-pass and quantization numerics are parity-gated against HuggingFace
 and are the stable contract. The loader and architecture-descriptor surface is
 pre-1.0 and may change as new model families and quant formats land.
 
+## [Unreleased]
+
+### Added
+
+- **Qwen3.8 (`qwen3_5`) — the dense member of the Gated-DeltaNet/softmax hybrid family.**
+  Alibaba's Qwen3.8-27B (2026-08-14, Apache 2.0) is the same 3:1 hybrid goinfer already runs
+  as `qwen3_5_moe` and `qwen3_next`, with a plain SwiGLU where they have a router. The
+  checkpoint is multimodal; **this is the text decoder only** — the vision tower
+  (`model.visual.*`, 333 tensors) and the MTP head (`mtp.*`) are never requested.
+
+  The structural change in the forward is one FFN branch; everything else — the DeltaNet
+  step, the gated softmax attention, the hybrid cache, the sequential prefill — is the
+  existing path untouched. Registered as both `qwen3_5` and `qwen3_5_text` (the released
+  config nests the text dims under `text_config` and states each spelling at a different
+  level).
+
+  Three things were read off the released checkpoint rather than inherited by resemblance,
+  and each would have been a silent wrong answer:
+
+  - `head_dim` is **256** at `hidden_size` 5120 with 24 heads, so **nH·hd = 6144 ≠ hidden**.
+    Deriving head_dim (or the query projection width) from hidden is wrong for this family.
+  - `attn_output_gate` is true, so `q_proj` is **double width** (query ‖ gate, 12288 rows).
+  - The DeltaNet projections ship as `in_proj_qkv` / `in_proj_z` / `in_proj_a` / `in_proj_b`
+    — qkv fused, z separate — which is **neither** `qwen3_next`'s fused pair
+    (`in_proj_qkvz` + `in_proj_ba`) **nor** four fully-separate tensors. The existing split
+    reader is the right one; the index is what says so.
+
+  The config carries `mrope_section [11, 11, 10]` with `mrope_interleaved: true`. For
+  **text** input this reduces exactly to standard partial RoPE — `position_ids` arrive 2-D
+  and are expanded to three identical components, so the interleaved overwrite is a no-op —
+  which is why no m-RoPE code was added. Image input is a follow-on, not a silent gap.
+
+  **Parity: tiny-oracle.** HF f32 tiny golden (tiny-random `Qwen3_5ForCausalLM`, text path):
+  argmax exact, logit cosine 1.000000, greedy continuation exact. The fixture keeps the
+  released model's *shape character* rather than its size — head_dim independent of
+  hidden/heads, 3:1 `layer_types` so both mixers run, GVA value/key head ratio, and
+  `mrope_section` present. **Admission: CPU-only**, the same posture as every DeltaNet
+  hybrid (no backend implements the mixer). GGUF and vision are follow-ons.
+
 ## [v0.13.0] — 2026-08-14
 
 ### Security

@@ -52,6 +52,14 @@ var archFeatureProfile = map[string][]ResidentFeature{
 	"deepseek_v3": {FeatMLA, FeatMoE},
 	"kimi_k2":     {FeatMLA, FeatMoE},
 	"qwen3_5_moe": {FeatMoE, FeatMoEGatedShared, FeatPartialRotary, FeatQKNorm, FeatRMSAddOne},
+	// Qwen3.8 dense (qwen3_5): the MoE sibling's profile MINUS the two MoE features. The
+	// remaining three are unchanged and each was checked against the released 27B rather
+	// than inherited — partial rotary (0.25 × head_dim 256 = 64 < 256), q_norm/k_norm on
+	// every softmax layer, and Gemma-style (1+w) RMSNorm. The DeltaNet mixer itself needs
+	// no feature here because decodeRunnerEligible refuses the whole arch.qwen35 family
+	// upstream (own forward, not yet bridged) — the same posture qwen3_5_moe has.
+	"qwen3_5":      {FeatPartialRotary, FeatQKNorm, FeatRMSAddOne},
+	"qwen3_5_text": {FeatPartialRotary, FeatQKNorm, FeatRMSAddOne},
 	// Qwen3-Next: same profile as qwen3_5_moe (verified, not assumed — its MoE block
 	// (Qwen3NextSparseMoeBlock(Qwen2MoeSparseMoeBlock): pass) directly inherits
 	// Qwen2-MoE's gated-shared-expert combination, and its RMSNorm
@@ -148,6 +156,15 @@ var admissionGolden = map[string][]string{
 	"qwen2_5_vl":       {"cuda", "metal", "webgpu"},
 	"qwen2_moe":        {"metal", "webgpu"},
 	"qwen3":            {"cuda", "metal", "webgpu"},
+	// Qwen3.8 dense admits on FEATURES alone where its MoE sibling does not — dropping
+	// FeatMoE/FeatMoEGatedShared removes CUDA's only objection. This row is the feature
+	// verdict, NOT "CUDA runs Qwen3.8 resident": decodeRunnerEligible refuses every
+	// arch.qwen35 family upstream (own forward, no backend implements Gated DeltaNet), so
+	// ResidentEligible is false on all three and the hardware matrix says CPU. Recording
+	// the wider row honestly is the point — it says exactly what would change if the
+	// DeltaNet mixer were ever bridged.
+	"qwen3_5":          {"cuda", "metal", "webgpu"},
+	"qwen3_5_text":     {"cuda", "metal", "webgpu"},
 	"qwen3_5_moe":      {"metal", "webgpu"},
 	"qwen3_5_moe_text": {"metal", "webgpu"},
 	"qwen3_next":       {"metal", "webgpu"}, // same arch.qwen35 != nil bridge qwen3_5_moe uses — reused directly, not a new one
