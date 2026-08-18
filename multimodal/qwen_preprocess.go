@@ -97,6 +97,26 @@ const qwenMaxInputPixels = 32 * 1024 * 1024
 // QwenPreprocess turns image bytes into the Qwen2.5-VL vision input. Returns the
 // flattened pixel_values and grid_thw = (1, grid_h, grid_w) for a single image.
 func QwenPreprocess(data []byte, cfg QwenPreprocessConfig) ([]float32, [3]int, error) {
+	// Peek the declared dimensions from the header BEFORE decoding pixels.
+	// image.DecodeConfig only parses the header (PNG's IHDR chunk / JPEG's SOF
+	// marker) — unlike image.Decode, it never allocates or fills a pixel buffer.
+	// A decompression bomb (a few KB of highly-compressible data declaring a huge
+	// canvas) must be rejected here: image.Decode itself allocates the full
+	// decoded pixel buffer (e.g. ~1.2 GB for a 10000×10000 PNG) as part of
+	// decoding, before any check on img.Bounds() could run (audit M-15 originally
+	// only guarded the later qwenExtractRGB/qwenBicubicU8 allocations, missing
+	// this earlier and larger one).
+	ic, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return nil, [3]int{}, fmt.Errorf("multimodal(qwen): decode image header: %w", err)
+	}
+	if ic.Width <= 0 || ic.Height <= 0 {
+		return nil, [3]int{}, fmt.Errorf("multimodal(qwen): empty image")
+	}
+	if int64(ic.Height)*int64(ic.Width) > qwenMaxInputPixels {
+		return nil, [3]int{}, fmt.Errorf("multimodal(qwen): image %dx%d exceeds %d-pixel input limit", ic.Width, ic.Height, qwenMaxInputPixels)
+	}
+
 	img, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
 		return nil, [3]int{}, fmt.Errorf("multimodal(qwen): decode image: %w", err)
@@ -106,11 +126,8 @@ func QwenPreprocess(data []byte, cfg QwenPreprocessConfig) ([]float32, [3]int, e
 	if h == 0 || w == 0 {
 		return nil, [3]int{}, fmt.Errorf("multimodal(qwen): empty image")
 	}
-	// Reject oversized INPUT dimensions before allocating. cfg.MaxPixels caps only the
-	// resized OUTPUT; qwenExtractRGB/qwenBicubicU8 allocate on the raw h*w, so a ~10 MB
-	// compressible PNG decoding to 10000×10000 costs ~1.2 GB here, per concurrent request,
-	// and this runs before lm.enter serializes the model (audit M-15). The ceiling sits well
-	// above any real photo (~33.5 MP ≈ 5792²) but bounds a decompression bomb.
+	// Re-check the decoded bounds too: cheap, and guards against a decoder whose
+	// DecodeConfig and Decode paths ever disagree.
 	if int64(h)*int64(w) > qwenMaxInputPixels {
 		return nil, [3]int{}, fmt.Errorf("multimodal(qwen): image %dx%d exceeds %d-pixel input limit", w, h, qwenMaxInputPixels)
 	}
