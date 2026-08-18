@@ -240,6 +240,26 @@ func orInt(p *int, def int) int {
 	return def
 }
 
+// addrIsLoopback reports whether a -addr value binds ONLY the loopback
+// interface — never reachable from another machine, so unauthenticated and
+// unencrypted are the local-desktop default rather than a network exposure.
+// A bare port (":8080") and 0.0.0.0/[::] bind every interface and don't count,
+// nor does any other hostname (it might resolve off-box on some networks).
+func addrIsLoopback(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr // no port separator; treat the whole string as the host
+	}
+	if host == "" {
+		return false
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
 // config is the resolved command line for newServer (the flag set outgrew a
 // positional signature once embeddings landed).
 type config struct {
@@ -283,9 +303,11 @@ type config struct {
 
 func Main() {
 	var (
-		cfg    config
-		addr   = flag.String("addr", "127.0.0.1:8080", "listen address (defaults to loopback; use 0.0.0.0:8080 to expose, and set -api-key when you do)")
-		apiKey = flag.String("api-key", "", "optional shared secret; when set, every request must send it as `Authorization: Bearer <key>` or `x-api-key: <key>`. Falls back to $GOINFER_API_KEY. REQUIRED with -allow-admin.")
+		cfg     config
+		addr    = flag.String("addr", "127.0.0.1:8080", "listen address (defaults to loopback; use 0.0.0.0:8080 to expose, and set -api-key and -tls-cert/-tls-key — or put a TLS-terminating reverse proxy in front — when you do)")
+		apiKey  = flag.String("api-key", "", "optional shared secret; when set, every request must send it as `Authorization: Bearer <key>` or `x-api-key: <key>`. Falls back to $GOINFER_API_KEY. REQUIRED with -allow-admin.")
+		tlsCert = flag.String("tls-cert", "", "PEM certificate file; with -tls-key, serves HTTPS instead of plaintext HTTP. Without it, -api-key and every prompt/completion travel in cleartext — fine on loopback, not on a shared network. For ACME/auto-renewal, put a reverse proxy (Caddy, nginx, Traefik) in front instead and leave this unset.")
+		tlsKey  = flag.String("tls-key", "", "PEM private key file, paired with -tls-cert")
 	)
 	flag.StringVar(&cfg.sessionDir, "session-dir", "", "optional dir to persist/restore KV sessions across restarts (.giw-kv snapshots)")
 	flag.BoolVar(&cfg.allowAdmin, "allow-admin", false, "enable POST /admin/models/{load,unload} (loads attacker-named paths — deliberate opt-in; requires -api-key)")
@@ -365,6 +387,19 @@ func Main() {
 	}
 	if cfg.allowAdmin && authKey == "" {
 		fmt.Fprintln(os.Stderr, "error: -allow-admin requires -api-key (or $GOINFER_API_KEY) — admin load/unload must be authenticated")
+		os.Exit(2)
+	}
+	// Mirrors the -allow-admin check above: the -addr help text itself invites
+	// 0.0.0.0 exposure with "set -api-key when you do", but nothing previously
+	// enforced the second half — a non-loopback bind with no key started up fully
+	// open to the network. Loopback stays key-free by default (no auth friction
+	// for the common single-user desktop case).
+	if !addrIsLoopback(*addr) && authKey == "" {
+		fmt.Fprintf(os.Stderr, "error: -addr %s is not loopback-only — requires -api-key (or $GOINFER_API_KEY), or bind to 127.0.0.1 instead\n", *addr)
+		os.Exit(2)
+	}
+	if (*tlsCert == "") != (*tlsKey == "") {
+		fmt.Fprintln(os.Stderr, "error: -tls-cert and -tls-key must be set together")
 		os.Exit(2)
 	}
 	if err := sessionDirOK(cfg.sessionDir); err != nil {
@@ -507,7 +542,12 @@ func Main() {
 		}
 	}()
 
-	fmt.Fprintf(os.Stderr, "goinfer serving on %s [%s]\n", *addr, srv.endpointSummary())
+	useTLS := *tlsCert != ""
+	scheme := "http"
+	if useTLS {
+		scheme = "https"
+	}
+	fmt.Fprintf(os.Stderr, "goinfer serving on %s://%s [%s]\n", scheme, *addr, srv.endpointSummary())
 	// No -api-key: every route above is unauthenticated. Binding to loopback keeps
 	// other MACHINES out, but not other TABS — any page open in a browser on this
 	// machine can still fetch()/POST to it while it's running (the request is sent
@@ -519,13 +559,27 @@ func Main() {
 	if authKey == "" {
 		fmt.Fprintln(os.Stderr, "warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.")
 	}
+	// A non-loopback bind with no TLS sends -api-key (a bearer token, every request)
+	// and every prompt/completion in cleartext to anyone on the network path between
+	// client and server — the -addr help text itself invites 0.0.0.0 exposure, so
+	// this needs to be loud, not just in -h. Loopback is exempt: traffic never
+	// leaves the machine, so there is no network path to sniff.
+	if !useTLS && !addrIsLoopback(*addr) {
+		fmt.Fprintln(os.Stderr, "warning: serving non-loopback with no TLS — -api-key and every prompt/completion travel in cleartext on the network. Set -tls-cert/-tls-key, or put a TLS-terminating reverse proxy in front.")
+	}
 	capSrc := "derived from context window"
 	if cfg.maxBodyBytes > 0 {
 		capSrc = "-max-body-bytes"
 	}
 	fmt.Fprintf(os.Stderr, "request body cap: %s (text) / %s (vision) / %s (embeddings) [%s]\n", humanBytes(textCap), humanBytes(visionCap), humanBytes(embedCap), capSrc)
-	if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		fmt.Fprintf(os.Stderr, "server: %v\n", err)
+	var listenErr error
+	if useTLS {
+		listenErr = httpSrv.ListenAndServeTLS(*tlsCert, *tlsKey)
+	} else {
+		listenErr = httpSrv.ListenAndServe()
+	}
+	if listenErr != nil && !errors.Is(listenErr, http.ErrServerClosed) {
+		fmt.Fprintf(os.Stderr, "server: %v\n", listenErr)
 		os.Exit(1)
 	}
 	<-done // let the shutdown handler finish checkpointing before we exit

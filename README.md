@@ -237,15 +237,24 @@ streaming (SSE); the sampling knobs (`temperature`/`top_p`/`top_k`/`seed`/
 output the model cannot violate (the same grammar as above). The chat template is
 auto-detected per model.
 
-> **No auth by default.** `--addr` defaults to loopback, but that only keeps other
-> *machines* out — not other browser *tabs* on yours. With no `--api-key` set, any web
-> page open in your browser while `serve` is running can silently `fetch()`/`POST` to
-> this API (the request is sent regardless of CORS; CORS only gates whether the page
-> can *read* the response back). This is the deliberate default for the common
-> single-user desktop case — no friction for `curl`/local tools — but if that's not
-> the threat model you want, pass `--api-key <secret>` (or set `$GOINFER_API_KEY`):
-> every route then requires `Authorization: Bearer <key>` or `x-api-key: <key>`. The
-> server prints a startup warning whenever it's running unauthenticated.
+> **No auth by default — on loopback only.** `--addr` defaults to loopback, and there
+> that only keeps other *machines* out, not other browser *tabs* on yours: any web page
+> open while `serve` is running can silently `fetch()`/`POST` to this API (the request
+> is sent regardless of CORS; CORS only gates whether the page can *read* the response
+> back). That's the deliberate default for the common single-user desktop case — no
+> friction for `curl`/local tools — but if it's not the threat model you want, pass
+> `--api-key <secret>` (or set `$GOINFER_API_KEY`): every route then requires
+> `Authorization: Bearer <key>` or `x-api-key: <key>`, and the server prints a startup
+> warning whenever it's running without one.
+>
+> **A non-loopback `--addr` (e.g. `0.0.0.0:8080`) requires `--api-key`** — `serve`
+> refuses to start otherwise, the same hard-fail `--allow-admin` already gets. Even
+> with a key, the connection is plaintext by default: the bearer token and every
+> prompt/completion travel unencrypted to anyone on the network path. Pass
+> `--tls-cert <cert.pem> --tls-key <key.pem>` for plain stdlib HTTPS, or put a
+> TLS-terminating reverse proxy (Caddy, nginx, Traefik) in front instead — the better
+> answer if you want ACME/auto-renewal. `serve` warns at startup if it's serving
+> non-loopback without TLS either way.
 
 **Multi-model.** `--model` is repeatable as `name=path` to serve a model zoo from
 one process; requests route on the OpenAI `model` field, `/v1/models` lists all,
