@@ -478,14 +478,15 @@ func ggufLagunaConfig(g *embed.GGUFFile) (*Config, error) {
 	if gfn := u("expert_gating_func"); gfn != 0 && gfn != 2 {
 		return nil, fmt.Errorf("decoder(gguf-laguna): expert_gating_func=%d unsupported (2 = sigmoid)", gfn)
 	}
+	// expert_weights_norm is a GGUF bool, but writers have spelled it as an integer
+	// too. Read both with plain assertions rather than a type switch — the decoder
+	// dispatch census (TestDispatchCensus) exists to stop type switches on a VALUE'S
+	// ENCODING creeping into this package, and that is exactly what this would be.
 	normTopK := true
-	switch v := g.Metadata["laguna.expert_weights_norm"].(type) {
-	case bool:
-		normTopK = v
-	case uint32:
-		normTopK = v != 0
-	case uint64:
-		normTopK = v != 0
+	if b, ok := g.Metadata["laguna.expert_weights_norm"].(bool); ok {
+		normTopK = b
+	} else if n, ok := g.Uint("laguna.expert_weights_norm"); ok {
+		normTopK = n != 0
 	}
 	scale := gf("expert_weights_scale")
 	if scale == 0 {

@@ -270,3 +270,95 @@ read granularity from the tensor shape too, which is what the safetensors path a
 PATTERN key, so which layers are full must be derived. The head-count array encodes it (48 on
 full, 64 on sliding), which is derivable but an inference — the loader should assert the
 resulting 10/30 split rather than trust it silently.
+
+
+## The DFlash drafter pairing — specified, NOT built
+
+`poolside/Laguna-XS.2-speculator.dflash` is downloaded and inspected. It is **not** a
+drop-in for goinfer's shipped DFlash path, and the reasons are specific enough to write down
+so this can start cold.
+
+### What the drafter actually is
+
+62 tensors, 5 layers, Qwen3-shaped (q/k/v/o + gate/up/down + per-head `q_norm`/`k_norm`):
+
+| tensor | shape | note |
+|---|---|---|
+| `fc.weight` | `[2048, 10240]` | 5 taps × hidden — matches `blockTrunk`'s fusion projection |
+| `hidden_norm.weight` / `norm.weight` | `[2048]` | context norm / final norm |
+| `embed_tokens.weight` | `[100352, 2048]` | **its OWN embedding** (target vocab) |
+| `lm_head.weight` | `[32000, 2048]` | **its own REDUCED-vocab head** |
+| `d2t` / `t2d` | `[32000]` / `[100352]` | draft↔target id translation |
+
+`block_size: 8`, `mask_token_id: 12`, `aux_hidden_state_layer_ids: [1, 9, 17, 36, 39]`.
+
+### The two mismatches
+
+1. **Head/embedding ownership.** goinfer's DFlash drafters carry no `lm_head` and borrow the
+   target's (`DrafterHeadLogits` exists precisely for that). This one ships both an embedding
+   and a reduced-vocab head, so drafted ids come out in DRAFT space and must be mapped with
+   `target = i + d2t[i]`. **goinfer already implements exactly that** — in `decoder/eagle.go`
+   (`d2t`, `DraftVocabSize`). So the work is joining two existing paths, not inventing one.
+
+2. **Config schema.** goinfer's DFlash loader reads a nested `dflash_config`
+   (`block_size` / `mask_token_id` / `target_layer_ids`). This file is in vLLM's
+   **speculators v0.5** format: `speculators_config` (algorithm `dflash`, proposal method,
+   `verifier.name_or_path`), `transformer_layer_config` for the layer geometry
+   (`model_type: llama`, 5 layers, 16 heads / 8 KV, head_dim 128, hidden 2048, inter 8192),
+   and the block fields at top level under different names
+   (`aux_hidden_state_layer_ids` rather than `target_layer_ids`).
+
+### Why it is worth doing, and the honest caveat
+
+It would be the first **vendor-blessed** pairing for the block drafting that shipped in P10
+(every prior pairing was third-party). The caveat: the Laguna target is CPU-only in goinfer
+today — `FeatAttnOutputGate` makes every resident backend decline — so any speedup measured
+now is CPU-side. P10's own kill-gate lesson was that **the draft, not the verify, was the
+wall**, and a CPU draft against a CPU target is a different regime from the GPU-resident
+numbers gate 3 reported. Measure before believing.
+
+**Estimated: a few hours.** It is a feature, not a leftover, and is deliberately left unbuilt
+rather than half-built.
+
+
+## Leftovers — results
+
+**GGUF (poolside's own `Laguna-XS-2.1-Q4_K_M.gguf`, 20GB): PASSES.** Real generation:
+
+> Here are three iconic landmarks in Paris: **1. Eiffel Tower (Tour Eiffel)** … **2. Louvre
+> Museum (Musée du Louvre)** … **3. Notre-Dame Cathedral** …
+
+Two of my own test bugs had to be cleared first, and both are worth recording because neither
+was a loader fault:
+
+- `Options{}` on a Q4_K_M file makes goinfer **dequantize to f32** — ~132GB for a 33B model,
+  so the process was OOM-killed with only `signal: killed` to show for it. The safetensors
+  gate had used `Quant: "int4"`; this one had not. Loading a quantized file does not imply a
+  quantized load.
+- The first passing run then failed my own landmark assertion: XS-2.1 answers as a verbose
+  numbered list with a paragraph per entry, so a 48-token budget stopped inside item 1. Fixed
+  by raising the budget to 160, **not** by lowering the bar to one landmark — that check
+  exists precisely to separate a right answer from a fluent wrong one.
+
+**Layer-slice oracle now covers BOTH locally-available generations** (XS.2 and XS-2.1), each at
+**cosine 1.00000000** on the sequential and batched-prefill paths. Worth having both: XS-2.1
+DECLARES per-head gating where XS.2 declares per-element and ships per-head, and their YaRN
+factors differ (32 vs 64 ⇒ different mscale and inv_freq). Those are config-driven paths that
+only real weights exercise end to end.
+
+**CI went red on the GGUF loader commit** — `TestDispatchCensus` caught
+`switch v := g.Metadata["laguna.expert_weights_norm"].(type)`, a type switch on a value's
+ENCODING, which is exactly what that census exists to stop. Replaced with plain assertions in
+glm4moe's existing style. The process failure was mine: after that commit I ran only targeted
+tests instead of CI's own command. Since then every push is preceded by
+`go test -race -timeout 25m -tags goinfer_testhooks ./...` locally — the same combination CI
+runs, including `-race`, which I had not been using at all.
+
+**The DFlash pairing is NOT done, and it is bigger than first estimated.** Beyond the
+speculators-v0.5 config dialect and the reduced-vocab `d2t` head, there is a structural gap:
+**only CUDA implements `ResidentBlockDrafter` / `ResidentDrafterHost`.** There is no CPU
+block-drafting orchestration, and Laguna is CPU-only by construction (`FeatAttnOutputGate`
+makes every resident backend decline it). So a pairing needs a CPU BlockSpec — draft through
+`blockTrunk.DraftBlock` (which already works on CPU), verify through the existing batched
+`forwardN`, plus the accept/burst and guard logic. Realistically 4–5h if clean, 6–7h with the
+debug loop, since each real-model iteration costs ~5 minutes of load before it can fail.

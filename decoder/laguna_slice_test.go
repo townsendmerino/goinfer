@@ -1,6 +1,6 @@
 //go:build realckpt
 
-// REAL-WEIGHT layer-slice oracle for Laguna-XS.2 — the strongest numeric gate this
+// REAL-WEIGHT layer-slice oracles for Laguna (XS.2 and XS-2.1) — the strongest numeric gate this
 // box can hold for a 33B model.
 //
 // WHY A SLICE, AND WHAT IT IS AND IS NOT. T3 means cosine/argmax against a full
@@ -37,8 +37,18 @@ import (
 
 func TestLagunaSlice_realWeightOracle(t *testing.T) {
 	requireHeavyModel(t)
-	const golden = "testdata/laguna_xs2_slice_golden.json"
-	const ckpt = "testdata/laguna-xs2-slice"
+	// BOTH locally-available generations get a slice. They differ in two
+	// config-driven ways that only real weights exercise end to end: XS-2.1 DECLARES
+	// per-head gating while XS.2 declares per-element and ships per-head, and their
+	// YaRN factors differ (32 vs 64, so different mscale and different inv_freq).
+	for _, tag := range []string{"xs2", "xs21"} {
+		t.Run(tag, func(t *testing.T) { lagunaSliceOracle(t, tag) })
+	}
+}
+
+func lagunaSliceOracle(t *testing.T, tag string) {
+	golden := "testdata/laguna_" + tag + "_slice_golden.json"
+	ckpt := "testdata/laguna-" + tag + "-slice"
 
 	raw, err := os.ReadFile(golden)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -97,8 +107,8 @@ func TestLagunaSlice_realWeightOracle(t *testing.T) {
 	}
 	gotArg := argmax(logits)
 	cos := logitCosine(logits, g.LastLogits)
-	t.Logf("laguna slice (REAL weights, %d layers): argmax got=%d want=%d | logit cosine=%.8f",
-		g.NLayers, gotArg, g.Argmax, cos)
+	t.Logf("laguna/%s slice (REAL weights, %d layers): argmax got=%d want=%d | logit cosine=%.8f",
+		tag, g.NLayers, gotArg, g.Argmax, cos)
 	if gotArg != g.Argmax {
 		t.Errorf("last argmax = %d, want %d", gotArg, g.Argmax)
 	}
@@ -119,7 +129,7 @@ func TestLagunaSlice_realWeightOracle(t *testing.T) {
 			t.Fatalf("prefillLogits: %v", err)
 		}
 		bcos := logitCosine(bl, g.LastLogits)
-		t.Logf("laguna slice batched prefill: argmax=%d cosine=%.8f", argmax(bl), bcos)
+		t.Logf("laguna/%s slice batched prefill: argmax=%d cosine=%.8f", tag, argmax(bl), bcos)
 		if argmax(bl) != g.Argmax {
 			t.Errorf("batched-prefill argmax = %d, want %d", argmax(bl), g.Argmax)
 		}

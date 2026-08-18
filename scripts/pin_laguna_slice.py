@@ -26,11 +26,17 @@ import torch
 from safetensors import safe_open
 from safetensors.torch import save_file
 
-SRC = "/home/francis/models/laguna-xs2"
+# Which released checkpoint to slice. XS.2 is the default; XS-2.1 is the other
+# generation available locally and is worth its own slice because it DECLARES
+# per-head gating (XS.2 declares per-element and ships per-head) and uses a
+# different YaRN factor (32 vs 64) — both config-driven paths that only real
+# weights exercise end to end.
+TAG = os.environ.get("LAGUNA_SLICE_TAG", "xs2")
+SRC = os.environ.get("LAGUNA_SLICE_SRC", f"/home/francis/models/laguna-{TAG}")
 HERE = os.path.dirname(os.path.abspath(__file__))
 TESTDATA = os.path.join(HERE, "..", "decoder", "testdata")
-OUT_CKPT = os.path.join(TESTDATA, "laguna-xs2-slice")
-OUT_GOLDEN = os.path.join(TESTDATA, "laguna_xs2_slice_golden.json")
+OUT_CKPT = os.path.join(TESTDATA, f"laguna-{TAG}-slice")
+OUT_GOLDEN = os.path.join(TESTDATA, f"laguna_{TAG}_slice_golden.json")
 
 N_LAYERS = 4          # layer 0 = dense + full_attention; 1..3 = MoE + sliding
 PROMPT = [2, 1547, 913, 24, 88, 7, 100, 2001]
@@ -87,10 +93,13 @@ def main():
 
     g0 = model.model.layers[0].self_attn.g_proj.weight.shape[0]
     golden = {
-        "note": f"REAL Laguna-XS.2 weights, first {N_LAYERS} layers, CPU fp32 reference",
+        "note": f"REAL Laguna {TAG} weights, first {N_LAYERS} layers, CPU fp32 reference",
         "source": SRC, "n_layers": N_LAYERS,
         "prompt_ids": PROMPT, "n_new": N_NEW,
-        "argmax": int(last.argmax()), "last_logits": last.tolist(),
+        "argmax": int(last.argmax()),
+        # 5dp: |logit| ~ 20, so ~1e-6 relative — far below the 1e-4 cosine gate, and
+        # it keeps the tracked golden under 1MB instead of 2MB.
+        "last_logits": [round(x, 5) for x in last.tolist()],
         "continuation_ids": cont, "g_proj_rows_layer0": g0,
     }
     json.dump(golden, open(OUT_GOLDEN, "w"))

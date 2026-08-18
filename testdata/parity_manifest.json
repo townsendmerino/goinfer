@@ -288,11 +288,11 @@
         "scripts/pin_laguna_tiny.py",
         "scripts/pin_laguna_slice.py"
       ],
-      "deps_hash": "sha256:e33d0c51a18a66c2a2261e8f700552e1fec65406c8baed8917f10ce4f86db32f",
+      "deps_hash": "sha256:62d6105e79fc131e9f68166f0b623ef5a3f9277f555ea0ad61b06e79e366be09",
       "status": "experimental",
       "validated_at": "41673f7",
       "date": "2026-08-17",
-      "reference": "HF f32 tiny goldens x3 + a REAL-WEIGHT 4-layer slice of Laguna-XS.2 (cosine 1.0) + real XS.2 and XS-2.1-GGUF coherence gates",
+      "reference": "HF f32 tiny goldens x3 + REAL-WEIGHT 4-layer slices of BOTH XS.2 and XS-2.1 (cosine 1.0) + real XS.2 safetensors and poolside XS-2.1 GGUF coherence gates",
       "machine": "linux-62gb",
       "method": "tiny-golden",
       "metrics": {
@@ -577,7 +577,7 @@
       "status": "experimental",
       "validated_at": "10751bf",
       "date": "2026-08-17",
-      "reference": "HF f32 tiny golden (transformers 5.15.0 Qwen3NextForCausalLM, real forward, seed 0) — rides qwen3_5_moe's own forward_qwen35.go/deltanet.go unchanged; the two real config deltas (computed layer_types via full_attention_interval, top-level partial_rotary_factor with no rope_parameters) and the fused DeltaNet in_proj_qkvz/in_proj_ba tensor packing are each exercised by the fixture and split at load in decoder/qwen3next.go.",
+      "reference": "HF f32 tiny golden (transformers 5.15.0 Qwen3NextForCausalLM, real forward, seed 0) \u2014 rides qwen3_5_moe's own forward_qwen35.go/deltanet.go unchanged; the two real config deltas (computed layer_types via full_attention_interval, top-level partial_rotary_factor with no rope_parameters) and the fused DeltaNet in_proj_qkvz/in_proj_ba tensor packing are each exercised by the fixture and split at load in decoder/qwen3next.go.",
       "machine": "mac-m1pro",
       "method": "tiny-golden",
       "metrics": {

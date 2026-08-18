@@ -41,7 +41,11 @@ func TestLagunaGGUF_gate(t *testing.T) {
 	requireHeavyModel(t)
 	path := assetPath(t, "GOINFER_LAGUNA_GGUF")
 
-	m, err := Load(path, Options{})
+	// int4, NOT the default. goinfer's GGUF loader DEQUANTIZES to f32 unless asked
+	// otherwise, so Options{} on a 33B Q4_K_M asks for ~132GB and the process is
+	// OOM-killed — which surfaces only as "signal: killed", with no hint that the
+	// option was the cause. The file is Q4_K_M on disk; int4 keeps it near that.
+	m, err := Load(path, Options{Quant: "int4"})
 	if err != nil {
 		t.Fatalf("Load(%s): %v", path, err)
 	}
@@ -155,8 +159,14 @@ func TestLagunaGGUF_gate(t *testing.T) {
 			"been recognized as single ids", len(ids))
 	}
 
-	out, _ := m.Generate(context.Background(), ids, 48, SamplingParams{})
-	gen := make([]int, 0, 48)
+	// 160, not 48. XS-2.1 answers this prompt as a VERBOSE numbered list with a
+	// paragraph of description per entry, so a 48-token budget stops partway through
+	// item 1 — the landmark assertion below then fails on a model that was answering
+	// correctly. Raising the budget is the honest fix; lowering the bar to one
+	// landmark would have made the check unable to distinguish a right answer from a
+	// fluent wrong one, which is the only thing it is there for.
+	out, _ := m.Generate(context.Background(), ids, 160, SamplingParams{})
+	gen := make([]int, 0, 160)
 	for id := range out {
 		gen = append(gen, id)
 	}
