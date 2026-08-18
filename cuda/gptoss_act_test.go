@@ -165,3 +165,129 @@ func TestGptOssAct_matchesReference(t *testing.T) {
 			"not rounding", worst, at, 1.5*step)
 	}
 }
+
+// TestRouteGptOss_matchesReference gates the third gpt-oss-specific kernel: its MoE router.
+//
+// The bug this exists to prevent is NOT a crash. moe.cu's moe_route emits score[best] with the
+// bias steering selection only; gpt-oss's router folds the bias into the logits and softmaxes
+// over the selected top-k. Feeding gpt-oss through moe_route yields well-formed weights that
+// sum to 1 and simply are not this model's — invisible to any check that asks whether the
+// output is finite or normalized.
+//
+// So the reference here is decoder's gptOssMoE arithmetic, and the test asserts the WEIGHTS,
+// not just the selection. It also includes a case where the bias CHANGES WHICH EXPERTS WIN,
+// since a router that ignored the bias entirely would still produce a valid-looking softmax.
+func TestRouteGptOss_matchesReference(t *testing.T) {
+	const nE, k = 32, 4
+
+	if err := gc.Init(); err != nil {
+		t.Skipf("cuInit: %v", err)
+	}
+	dev, err := gc.GetDevice(0)
+	if err != nil {
+		t.Skipf("no device: %v", err)
+	}
+	cx, err := dev.Primary()
+	if err != nil {
+		t.Skipf("primary ctx: %v", err)
+	}
+	defer cx.Close()
+	bg := context.Background()
+	mod, err := cx.LoadModule(gptOssActPTX)
+	if err != nil {
+		t.Fatalf("LoadModule: %v", err)
+	}
+	fn, err := mod.Function("route_gptoss")
+	if err != nil {
+		t.Fatalf("Function(route_gptoss): %v", err)
+	}
+	stream := mustStream(t, cx)
+
+	logits := make([]float32, nE)
+	bias := make([]float32, nE)
+	for i := range logits {
+		logits[i] = float32(math.Sin(float64(i)*0.9)) * 2
+	}
+	// Bias chosen so it REORDERS the winners: experts 30/31 have low logits and large biases.
+	bias[30], bias[31] = 5, 4.5
+
+	dL := mustAlloc[float32](t, cx, nE)
+	dB := mustAlloc[float32](t, cx, nE)
+	dIdx := mustAlloc[uint32](t, cx, k)
+	dW := mustAlloc[float32](t, cx, k)
+	if e := gc.CopyHtoD(bg, dL, logits); e != nil {
+		t.Fatalf("H2D logits: %v", e)
+	}
+	if e := gc.CopyHtoD(bg, dB, bias); e != nil {
+		t.Fatalf("H2D bias: %v", e)
+	}
+	if e := fn.LaunchOn(bg, stream, gc.LaunchConfig{GridX: 1, GridY: 1, GridZ: 1, BlockX: 1, BlockY: 1, BlockZ: 1},
+		gc.Arg(dL), gc.Arg(dB), gc.Arg(dIdx), gc.Arg(dW),
+		gc.ArgValue(int32(nE)), gc.ArgValue(int32(k))); e != nil {
+		t.Fatalf("launch: %v", e)
+	}
+	if e := stream.Synchronize(bg); e != nil {
+		t.Fatalf("sync: %v", e)
+	}
+	gotIdx := make([]uint32, k)
+	gotW := make([]float32, k)
+	if e := gc.CopyDtoH(bg, gotIdx, dIdx); e != nil {
+		t.Fatalf("D2H idx: %v", e)
+	}
+	if e := gc.CopyDtoH(bg, gotW, dW); e != nil {
+		t.Fatalf("D2H wgt: %v", e)
+	}
+
+	// Reference: bias into the logits, top-k (ties → lowest index), softmax over the selected.
+	ref := make([]float64, nE)
+	for i := range ref {
+		ref[i] = float64(logits[i]) + float64(bias[i])
+	}
+	taken := make([]bool, nE)
+	wantIdx := make([]int, k)
+	sel := make([]float64, k)
+	for j := range k {
+		best, bv := -1, math.Inf(-1)
+		for i := range nE {
+			if !taken[i] && ref[i] > bv {
+				bv, best = ref[i], i
+			}
+		}
+		taken[best] = true
+		wantIdx[j], sel[j] = best, bv
+	}
+	mx := sel[0]
+	for _, v := range sel {
+		mx = math.Max(mx, v)
+	}
+	sum := 0.0
+	for j := range sel {
+		sel[j] = math.Exp(sel[j] - mx)
+		sum += sel[j]
+	}
+
+	// The bias must have actually changed the outcome, or this test would also pass against a
+	// router that ignored it.
+	if wantIdx[0] != 30 && wantIdx[1] != 30 {
+		t.Fatalf("test setup no longer exercises bias-driven selection: winners %v", wantIdx)
+	}
+	t.Logf("route_gptoss: idx %v (bias promoted expert 30/31), weights %v", gotIdx, gotW)
+
+	for j := range k {
+		if int(gotIdx[j]) != wantIdx[j] {
+			t.Fatalf("idx[%d] = %d, want %d (full got %v want %v)", j, gotIdx[j], wantIdx[j], gotIdx, wantIdx)
+		}
+		want := sel[j] / sum
+		if d := math.Abs(float64(gotW[j]) - want); d > 1e-6 {
+			t.Errorf("weight[%d] = %v, want %v (|diff| %.2e) — softmax must be over the SELECTED "+
+				"top-k biased logits, not the unbiased scores", j, gotW[j], want, d)
+		}
+	}
+	tot := 0.0
+	for _, w := range gotW {
+		tot += float64(w)
+	}
+	if math.Abs(tot-1) > 1e-5 {
+		t.Errorf("weights sum to %v, want 1", tot)
+	}
+}

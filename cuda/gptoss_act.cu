@@ -68,3 +68,56 @@ extern "C" __global__ void glu_quant_gptoss(const float* __restrict__ g, const f
         q[j] = packed;
     }
 }
+
+// route_gptoss — gpt-oss's MoE router. A separate kernel from moe.cu's moe_route because the
+// two disagree on what the bias means, and moe_route's contract is the RIGHT one for the
+// families it serves:
+//
+//   moe_route (DeepSeek/GLM):  sel = score + bias; top-k on sel; weight = score[best]
+//                              — "the bias steers SELECTION only, never the weight".
+//   route_gptoss:              logits += bias; top-k on the BIASED logits; weight =
+//                              softmax over the SELECTED top-k logits (bias included).
+//
+// Running gpt-oss through moe_route would therefore emit plausible mixing weights that are
+// simply not this model's — a silent quality loss, not a crash, and invisible to any check
+// that only asks whether the output is finite.
+//
+// Softmax over ONLY the top-k is identical to softmax-over-all followed by renormalizing the
+// survivors (the shared normalizer cancels), which is what makes this match HF's
+// GptOssTopKRouter exactly rather than approximately.
+//
+// Single-threaded like moe_route, and for the same reason: nE is small (32-128), the work is a
+// top-k plus a softmax, and a one-thread kernel keeps the selection order — and therefore
+// tie-breaking — identical to the CPU's. Ties take the LOWEST index (strict >), matching both
+// moe_route and decoder's topK.
+#define GPTOSS_MAX_E 512
+
+extern "C" __global__ void route_gptoss(const float* __restrict__ logits, const float* __restrict__ bias,
+                                        unsigned int* __restrict__ outIdx, float* __restrict__ outWgt,
+                                        int nE, int k) {
+    if (threadIdx.x != 0 || blockIdx.x != 0) return;
+    if (nE > GPTOSS_MAX_E) return;
+    float sc[GPTOSS_MAX_E];
+    for (int i = 0; i < nE; i++) sc[i] = logits[i] + (bias ? bias[i] : 0.f);
+
+    // top-k by repeated max, strict > so ties keep the LOWEST index.
+    bool taken[GPTOSS_MAX_E];
+    for (int i = 0; i < nE; i++) taken[i] = false;
+    float chosen[GPTOSS_MAX_E];
+    for (int j = 0; j < k; j++) {
+        int best = -1; float bv = -1e30f;
+        for (int i = 0; i < nE; i++) {
+            if (!taken[i] && sc[i] > bv) { bv = sc[i]; best = i; }
+        }
+        taken[best] = true;
+        outIdx[j] = (unsigned int)best;
+        chosen[j] = bv;
+    }
+    // softmax over the selected logits only (the shared normalizer cancels).
+    float mx = chosen[0];
+    for (int j = 1; j < k; j++) mx = fmaxf(mx, chosen[j]);
+    float sum = 0.f;
+    for (int j = 0; j < k; j++) { chosen[j] = __expf(chosen[j] - mx); sum += chosen[j]; }
+    float inv = 1.f / sum;
+    for (int j = 0; j < k; j++) outWgt[j] = chosen[j] * inv;
+}
