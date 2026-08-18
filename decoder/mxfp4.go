@@ -42,13 +42,61 @@ func e8m0ToF32Half(x uint8) float32 {
 // element order: element j (j<16) is the LOW nibble of byte j, element j+16 the HIGH nibble —
 // matching gguf/quants.py's reshape((n,2,16)) split. dst must have length >= 32.
 func mxfp4DequantBlock(block []byte, dst []float32) {
-	d := e8m0ToF32Half(block[0])
-	qs := block[1:mxfp4BlockBytes] // 16 bytes
+	mxfp4Block(block[0], block[1:mxfp4BlockBytes], dst)
+}
+
+// mxfp4Block is the GGML arithmetic core: one E8M0 scale byte plus 16 packed-nibble bytes
+// into 32 floats, with GGML's j / j+16 nibble split. The safetensors layout uses a DIFFERENT
+// intra-block order and therefore does NOT route through here — see mxfp4DequantSplit, which
+// documents the measurement that established the difference.
+func mxfp4Block(scale byte, qs []byte, dst []float32) {
+	d := e8m0ToF32Half(scale)
 	for j := range 16 {
 		b := qs[j]
 		dst[j] = d * float32(mxfp4KValues[b&0x0F])
 		dst[j+16] = d * float32(mxfp4KValues[b>>4])
 	}
+}
+
+// mxfp4DequantSplit dequantizes the SAFETENSORS layout, where the packed nibbles and the
+// scales live in two different tensors rather than interleaved 17-byte blocks:
+//
+//	*_blocks  U8 [..., nBlocks, 16]   the packed nibbles
+//	*_scales  U8 [..., nBlocks]       one E8M0 exponent per block
+//
+// THE NIBBLE ORDER IS NOT GGML'S, and that is the whole reason this cannot just call
+// mxfp4Block. GGML packs elements j and j+16 into byte j (low nibble = j, high = j+16);
+// safetensors packs elements 2j and 2j+1 (low = 2j, high = 2j+1) — sequential.
+//
+// This was VERIFIED, not assumed, and the assumption it replaced was wrong: Phase 0 recorded
+// "no new numerics, only the addressing differs". Dequantizing a real gpt-oss expert both
+// ways and diffing against the same weight read through the already-validated GGUF path gave
+// cosine 0.081 for GGML order and 1.000000 for sequential. Same block size, same E8M0 scale,
+// same kvalues table — different intra-block order. Reusing the GGML core here would have
+// produced finite, plausibly-scaled, completely wrong weights.
+//
+// Returns an error rather than panicking on a short or mismatched pair, since these are two
+// independently-shaped tensors and a mismatch between them is exactly the corruption worth
+// refusing loudly.
+func mxfp4DequantSplit(blocks, scales []byte, nBlocks int) ([]float32, error) {
+	if len(scales) != nBlocks {
+		return nil, fmt.Errorf("decoder(mxfp4): %d scale bytes for %d blocks", len(scales), nBlocks)
+	}
+	if len(blocks) != nBlocks*16 {
+		return nil, fmt.Errorf("decoder(mxfp4): %d block bytes for %d blocks (want %d)", len(blocks), nBlocks, nBlocks*16)
+	}
+	out := make([]float32, nBlocks*mxfp4BlockElems)
+	for b := range nBlocks {
+		d := e8m0ToF32Half(scales[b])
+		qs := blocks[b*16 : b*16+16]
+		dst := out[b*mxfp4BlockElems : (b+1)*mxfp4BlockElems]
+		for j := range 16 {
+			v := qs[j]
+			dst[2*j] = d * float32(mxfp4KValues[v&0x0F])
+			dst[2*j+1] = d * float32(mxfp4KValues[v>>4])
+		}
+	}
+	return out, nil
 }
 
 // mxfp4Dequant dequantizes n contiguous MXFP4 blocks (n*17 bytes) into n*32 float32 weights.

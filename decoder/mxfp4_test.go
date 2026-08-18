@@ -105,3 +105,66 @@ func TestMXFP4_bitExactGolden(t *testing.T) {
 	}
 	t.Logf("bit-exact vs gguf on %q: %d blocks / %d values, 0 mismatches", g.Tensor, g.NBlocks, len(g.WantBits))
 }
+
+// TestMXFP4_splitIsSequentialNotGGML pins the intra-block nibble order of the SAFETENSORS
+// layout, which is NOT GGML's.
+//
+// This test exists because the opposite was assumed and written down. Phase 0 recorded that
+// safetensors MXFP4 differed from GGUF "only in addressing — no new numerics", and the first
+// implementation reused the GGML core. Dequantizing a real gpt-oss expert both ways and
+// diffing against the same weight through the already-validated GGUF reader settled it:
+// cosine 0.081 for GGML order, 1.000000 for sequential. The bug it would have shipped is the
+// worst kind — finite values, correct shapes, plausible magnitudes, entirely wrong weights.
+//
+// So this asserts the two orders DISAGREE in exactly the documented way, rather than
+// asserting they agree (which the earlier version of this test did, and passed, because the
+// implementation shared their shared mistake).
+func TestMXFP4_splitIsSequentialNotGGML(t *testing.T) {
+	// One block: byte j holds low nibble = code (j % 15), high nibble = code ((j + 7) % 15).
+	// Codes stay < 15 so every value is distinct and non-zero under mxfp4KValues.
+	blocks := make([]byte, 16)
+	for j := range 16 {
+		blocks[j] = byte((j%15)&0x0F | (((j+7)%15)&0x0F)<<4)
+	}
+	scales := []byte{127} // e8m0 127 -> a clean power of two, so the codes are readable
+
+	got, err := mxfp4DequantSplit(blocks, scales, 1)
+	if err != nil {
+		t.Fatalf("split: %v", err)
+	}
+	d := e8m0ToF32Half(127)
+	for j := range 16 {
+		wantLo := d * float32(mxfp4KValues[blocks[j]&0x0F])
+		wantHi := d * float32(mxfp4KValues[blocks[j]>>4])
+		// SEQUENTIAL: byte j carries elements 2j and 2j+1.
+		if got[2*j] != wantLo || got[2*j+1] != wantHi {
+			t.Fatalf("byte %d: got (%v,%v) at [2j,2j+1], want (%v,%v) — safetensors packs "+
+				"elements 2j/2j+1, not GGML's j/j+16", j, got[2*j], got[2*j+1], wantLo, wantHi)
+		}
+	}
+
+	// And the GGML core on the same bytes must produce a DIFFERENT vector. If these ever
+	// agree, one of the two orders has been silently changed to match the other.
+	ggml := make([]float32, mxfp4BlockElems)
+	mxfp4Block(scales[0], blocks, ggml)
+	same := true
+	for i := range ggml {
+		if ggml[i] != got[i] {
+			same = false
+			break
+		}
+	}
+	if same {
+		t.Error("GGML and safetensors orders produced identical output — they must differ; " +
+			"the real checkpoint measurement says 0.081 vs 1.000000 cosine")
+	}
+
+	// Mismatched pairs are corruption, not something to interpret: these are two
+	// independently-shaped tensors, so a length disagreement between them must be refused.
+	if _, err := mxfp4DequantSplit(blocks, nil, 1); err == nil {
+		t.Error("missing scales accepted; want an error")
+	}
+	if _, err := mxfp4DequantSplit(blocks[:8], scales, 1); err == nil {
+		t.Error("short blocks accepted; want an error")
+	}
+}

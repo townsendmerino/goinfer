@@ -209,3 +209,37 @@ Three constraints, none of which the loader work touches:
 **Recommendation: do the loader now, decide residency on its own evidence afterwards.** The
 loader is bounded, strongly gated, and delivers format coverage users hit first; residency is a
 multi-part kernel effort whose own Phase 0 should be written separately.
+
+
+### CORRECTION to the Phase 0 verdict above (same day, before any loader shipped)
+
+Phase 0 said the safetensors difference was "**no new numerics**, only the addressing differs",
+and that the existing bit-exactness golden would therefore transitively cover it. **Both halves
+of that were wrong**, and diffing against the already-validated GGUF reader is what caught it.
+
+Two layout facts, each measured at cosine **1.000000** against the same weight read through the
+GGUF path (and ~0.08 — noise — for the assumed alternative):
+
+1. **Intra-block nibble order is SEQUENTIAL, not GGML's.** GGML packs elements *j* and *j+16*
+   into byte *j*; safetensors packs *2j* and *2j+1*. So `mxfp4DequantSplit` cannot reuse the
+   GGML core, and the GGUF-captured golden does NOT cover the safetensors path.
+2. **`gate_up_proj` is INTERLEAVED, not concatenated.** Row 0 is gate row 0 and **row 1 is UP
+   row 0** — not rows 0..2879 = gate, 2880..5759 = up. (This is what "clamped *interleaved*
+   SwiGLU" was naming all along; the GGUF path never sees it because llama.cpp's converter
+   already separates the two into `ffn_gate_exps` / `ffn_up_exps`.)
+
+Either mistake alone produces finite values, correct shapes and plausible magnitudes — and
+completely wrong weights. Neither is visible in a shape check.
+
+**How it was caught, and the near-miss worth noting.** The first cross-check compared a
+dequantized safetensors expert against the GGUF and got cosine 0.081, which is equally
+consistent with "wrong unpacking" and "different model". Resolving that ambiguity needed a
+tensor unquantized in BOTH files: `input_layernorm` vs `attn_norm` matched at max|diff| = 0,
+proving same weights and forcing the conclusion onto the unpacking. Without that step the
+honest reading would have been "these files differ, gate unavailable" — and the real bug would
+have survived.
+
+The tests now pin the DIFFERENCE (`TestMXFP4_splitIsSequentialNotGGML`) rather than an
+equivalence. The earlier version of that test asserted the two orders AGREE and passed, because
+the implementation shared its mistake — a test and an implementation derived from the same wrong
+assumption cannot check each other.
