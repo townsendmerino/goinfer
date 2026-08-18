@@ -1,11 +1,21 @@
 # Task: a pure-Go reference-forward oracle (`oracle/`) — the torch-replacement research for E7 item 7
 
-> **Status: SCOPING PLAN (not funded).** This is the "torch/reference-tensor replacement research"
-> that E7 item 7 is blocked on. It resolves the *design* questions — is it possible, where does it
-> live, what stays Python — and defines a phased build. It does **not** start the build: Francis owns
-> the go/no-go, and no migration begins before the v0.13.0 tag (§C1 + the CUDA gate come first, same
-> gate as E7). Drafted 2026-08-12 from the E7 inventory (67 tracked `.py`; the 57 torch/HF scripts are
-> the surface this replaces).
+> **Status: PARKED, 2026-08-18 (Francis).** The v0.13.0 freeze this plan was gated behind has cleared,
+> but Francis reviewed the plan and explicitly declined to fund it now — not rejected, just not a
+> priority: may be picked up someday as a low-priority item, no active trigger. Do not restart Phase 0
+> or any part of the build without a fresh go-ahead; this status line is the record of that decision,
+> not a stale gate waiting to open. The design below (scoping, phases, open decisions) stays as
+> reference for whoever picks it up later — nothing about the analysis changed, only the funding call.
+>
+> Also folded into this decision: aikit carries its own, separate ~23-file torch-oracle cluster
+> (`aikit/scripts/oracle/*.py`, the BERT/SPLADE/cross-encoder/SigLIP/Qwen2.5-VL-vision parity
+> generators) — conceptually the same problem, one repo over. Any future revisit should treat the two
+> as one joint Phase-0 clustering exercise (goinfer's 57 decoder scripts + aikit's 23 encoder/vision
+> ones) rather than two separate plans, since the independence argument and the phase structure above
+> apply to both without change. See `aikit/docs/internal/roadmap.md` §2 for aikit's side of this note.
+>
+> Original scoping below, unchanged from when it was drafted 2026-08-12 from the E7 inventory (67
+> tracked `.py`; the 57 torch/HF scripts are the surface this replaces):
 
 ## 1. What this replaces, and what it does not
 
