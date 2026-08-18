@@ -41,8 +41,50 @@ type DFlashDrafter struct {
 	blockSize, maskTokenID int
 	targetLayerIDs         []int
 
+	// OWN head + embedding, present only on drafters that ship them (poolside's
+	// Laguna speculators do; z-lab's do not and borrow the target's — see
+	// DrafterHeadLogits). When lmHead is set the drafter emits ids in its OWN
+	// REDUCED vocabulary, which d2t maps back to target ids:
+	//
+	//	target_id = i + d2t[i]   for draft index i
+	//
+	// That is the same scheme EagleHead already implements; the mapping table is
+	// identical in meaning, so the arithmetic is kept identical too rather than
+	// re-derived. embed is the drafter's own token embedding over the TARGET vocab
+	// (it is fed target ids and produces the trunk's block input).
+	lmHead     linalg.WeightMat // [draftVocab, hidden]; zero-valued when the drafter borrows the target's
+	embed      linalg.WeightMat // [vocab, hidden]; zero-valued when it borrows the target's
+	d2t        []int32          // draft index → target id OFFSET
+	draftVocab int
+
 	st *embed.SafetensorsFile // retained: the WeightMats alias its mmap
 }
+
+// HasOwnHead reports whether this drafter emits ids from its own reduced vocabulary
+// (and therefore must map them through d2t) rather than borrowing the target's LM
+// head. Callers use it to pick between DraftTokenID and DrafterHeadLogits.
+func (d *DFlashDrafter) HasOwnHead() bool { return d.lmHead.Rows() > 0 }
+
+// DraftTokenID turns one already-normed trunk hidden row into a TARGET token id
+// using the drafter's own reduced-vocab head, mapping the argmax back through d2t.
+//
+// The reduced vocab is the whole point of the design — a 32000-row head over a
+// 100352-token target vocab is ~3x less work per drafted position — but it means an
+// unmapped argmax is a VALID-LOOKING id in the wrong space. Drafting is lossless by
+// construction (the target re-verifies every token), so a missed mapping would not
+// corrupt output; it would silently destroy acceptance and read as "this pairing is
+// just bad", which is exactly the failure P10 spent a day chasing on a wrong mask
+// token. Hence the mapping lives here, next to the argmax, rather than in the caller.
+func (d *DFlashDrafter) DraftTokenID(be Backend, h []float32) int {
+	logits := make([]float32, d.draftVocab)
+	matmul(be, &d.lmHead, h, logits, 1)
+	i := argmax(logits)
+	return i + int(d.d2t[i])
+}
+
+// EmbedDraft writes the drafter's OWN embedding row for a target token id. Drafters
+// without their own embedding use the target's (Model.embedResident).
+func (d *DFlashDrafter) EmbedDraft(id int, dst []float32) { d.embed.Row(id, dst) }
 
 // blockTrunk is the non-causal block trunk shared by DFlash and DSpark.
 //
@@ -120,6 +162,26 @@ type dflashConfig struct {
 		MaskTokenID    int   `json:"mask_token_id"`
 		TargetLayerIDs []int `json:"target_layer_ids"`
 	} `json:"dflash_config"`
+
+	// vLLM "speculators" dialect (v0.5), which poolside's Laguna drafters ship —
+	// a FOURTH config spelling for the same model. It differs from z-lab's in three
+	// ways, all handled in LoadDFlashDrafter:
+	//
+	//   * the layer geometry is nested under transformer_layer_config (whose
+	//     model_type says "llama" even though the layers carry Qwen3-style per-head
+	//     q_norm/k_norm),
+	//   * the taps are aux_hidden_state_layer_ids rather than target_layer_ids,
+	//   * mask_token_id is top-level rather than inside dflash_config.
+	//
+	// DraftVocabSize marks the OTHER structural difference: this drafter ships its
+	// own embed_tokens and a REDUCED-vocab lm_head plus d2t/t2d, where z-lab's
+	// borrow the target's. See the drafter head fields on DFlashDrafter.
+	MaskTokenIDTop         *int            `json:"mask_token_id"`
+	AuxHiddenStateLayerIDs []int           `json:"aux_hidden_state_layer_ids"`
+	DraftVocabSize         int             `json:"draft_vocab_size"`
+	VocabSize              int             `json:"vocab_size"`
+	TransformerLayerConfig json.RawMessage `json:"transformer_layer_config"`
+	SpeculatorsModelType   string          `json:"speculators_model_type"`
 }
 
 // LoadDFlashDrafter loads a DFlash drafter from dir (config.json + model.safetensors, the
@@ -134,11 +196,27 @@ func LoadDFlashDrafter(dir string) (*DFlashDrafter, error) {
 	if err := json.Unmarshal(cfgBytes, &c); err != nil {
 		return nil, fmt.Errorf("dflash: parse config: %w", err)
 	}
+	// speculators dialect: the layer geometry lives one level down. Decode it into
+	// the SAME struct so every field below is read once, from one place, whichever
+	// dialect the checkpoint used. Top-level keys already parsed (block_size,
+	// mask_token_id, the tap list) are not repeated there, so this cannot clobber them.
+	if len(c.TransformerLayerConfig) > 0 && c.HiddenSize == 0 {
+		if err := json.Unmarshal(c.TransformerLayerConfig, &c); err != nil {
+			return nil, fmt.Errorf("dflash: parse transformer_layer_config: %w", err)
+		}
+	}
 	if c.HeadDim == 0 {
 		c.HeadDim = c.HiddenSize / c.NumAttentionHeads
 	}
 	if c.BlockSize == 0 {
 		c.BlockSize = c.DFlash.BlockSize
+	}
+	// Taps and mask token in whichever spelling this checkpoint uses.
+	if len(c.DFlash.TargetLayerIDs) == 0 {
+		c.DFlash.TargetLayerIDs = c.AuxHiddenStateLayerIDs
+	}
+	if c.MaskTokenIDTop != nil && c.DFlash.MaskTokenID == 0 {
+		c.DFlash.MaskTokenID = *c.MaskTokenIDTop
 	}
 	switch {
 	case c.HiddenSize <= 0 || c.NumHiddenLayers <= 0 || c.NumAttentionHeads <= 0:
@@ -146,7 +224,7 @@ func LoadDFlashDrafter(dir string) (*DFlashDrafter, error) {
 	case c.BlockSize < 2:
 		return nil, fmt.Errorf("dflash: block_size must be >= 2, got %d", c.BlockSize)
 	case len(c.DFlash.TargetLayerIDs) == 0:
-		return nil, fmt.Errorf("dflash: dflash_config.target_layer_ids is required")
+		return nil, fmt.Errorf("dflash: no taps — need dflash_config.target_layer_ids or aux_hidden_state_layer_ids")
 	case c.RopeTheta <= 0 && len(c.RopeParameters) == 0:
 		return nil, fmt.Errorf("dflash: no rope_theta and no rope_parameters")
 	}
@@ -213,6 +291,46 @@ func LoadDFlashDrafter(dir string) (*DFlashDrafter, error) {
 	}
 	if err := vec(&d.finalNorm, "norm.weight", h); err != nil {
 		return nil, err
+	}
+	// OWN head + embedding + d2t, when this drafter ships them (draft_vocab_size).
+	// Loaded together and validated against each other: a reduced-vocab head with a
+	// mismatched d2t maps argmaxes into the wrong ids, which is invisible in output
+	// (drafting is lossless — the target re-verifies) and shows up only as acceptance
+	// collapsing to noise.
+	if c.DraftVocabSize > 0 {
+		d.draftVocab = c.DraftVocabSize
+		if err := mat(&d.lmHead, "lm_head.weight", c.DraftVocabSize, h); err != nil {
+			return nil, err
+		}
+		if c.VocabSize > 0 {
+			if err := mat(&d.embed, "embed_tokens.weight", c.VocabSize, h); err != nil {
+				return nil, err
+			}
+		}
+		t, terr := st.Tensor("d2t")
+		if terr != nil {
+			return nil, fmt.Errorf("dflash: draft_vocab_size=%d but no d2t: %w", c.DraftVocabSize, terr)
+		}
+		i64, ierr := t.Int64s()
+		if ierr != nil {
+			return nil, fmt.Errorf("dflash: d2t as i64: %w", ierr)
+		}
+		if len(i64) != c.DraftVocabSize {
+			return nil, fmt.Errorf("dflash: d2t len %d, want draft_vocab_size %d", len(i64), c.DraftVocabSize)
+		}
+		d.d2t = make([]int32, len(i64))
+		for i, v := range i64 {
+			d.d2t[i] = int32(v)
+		}
+		// Every mapped id must land inside the TARGET vocab; an out-of-range one would
+		// index the target's embedding out of bounds at verify time.
+		if c.VocabSize > 0 {
+			for i, off := range d.d2t {
+				if tid := i + int(off); tid < 0 || tid >= c.VocabSize {
+					return nil, fmt.Errorf("dflash: d2t[%d] maps to target id %d, outside vocab %d", i, tid, c.VocabSize)
+				}
+			}
+		}
 	}
 	for i := range d.layers {
 		l := &d.layers[i]

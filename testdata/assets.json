@@ -368,6 +368,21 @@
     "TestLagunaGGUF_gate"
    ],
    "note": "poolside's OWN Laguna-XS-2.1 Q4_K_M GGUF. llama.cpp has first-class laguna support (general.architecture == 'laguna'), so this is a released file rather than a local conversion. It exercises the fused+stacked expert layout, the per-layer head-count ARRAY, and the derived full/sliding split -- none of which the safetensors gate covers."
+  },
+  {
+   "env": "GOINFER_LAGUNA_DFLASH",
+   "kind": "dir",
+   "members": [
+    "config.json",
+    "model.safetensors"
+   ],
+   "candidates": [
+    "$MODELS/laguna-xs2-dflash"
+   ],
+   "used_by": [
+    "TestLagunaDFlash_load"
+   ],
+   "note": "poolside/Laguna-XS.2-speculator.dflash -- the first VENDOR-BLESSED block drafter goinfer pairs with. Ships its own embed_tokens + reduced-vocab lm_head (32000 rows) + d2t, unlike z-lab's which borrow the target's head."
   }
  ]
 }
