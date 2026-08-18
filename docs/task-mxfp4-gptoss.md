@@ -142,3 +142,70 @@ in an hour.
 Ollama copy without copying weights. Pull `gpt-oss:20b`, write the unpacker, and get the
 bit-exactness test against `gguf` green. That single test de-risks the whole task — it is
 the step that let cpubrrr's forward pass work on the first run.
+
+---
+
+## Phase 0 for the gpt-oss UPGRADE (safetensors/MXFP4 + residency) — `linux-62gb`, 2026-08-18
+
+§7 above listed "MXFP4 on CUDA or Metal … GPU residency is a follow-up once the CPU path is
+parity-gated" as a non-goal. That CPU path is now T3 (`real-model-oracle`, argmax-exact vs HF
+bf16), so this is that follow-up. Verified against the real `openai/gpt-oss-20b` before
+estimating.
+
+### What is already free
+
+**Config routing costs nothing.** `model_type` is `gpt_oss`, which is ALREADY in the registry
+mapping to `gptOssArchitecture` — the same adapter the GGUF path resolves through. The real
+config carries `sliding_window: 128`, `swiglu_limit: 7.0`, YaRN (`factor 32`,
+`original_max_position_embeddings 4096`, `truncate: false`), `rope_theta 150000`, 24 layers,
+2880 hidden, 64/8 heads at head_dim 64, 32 experts top-4 — all fields the adapter reads today.
+So this is a **weight-loader** task, not a family task.
+
+**The dequant math is already written and bit-exact.** `decoder/mxfp4.go` carries goinfer's own
+MXFP4 unpacker, verified bit-for-bit against the reference `gguf` library on a real checkpoint
+(`scripts/extract_mxfp4_golden.py`).
+
+### The one real difference: how the bytes are SOURCED
+
+| | GGUF (shipped) | safetensors (new) |
+|---|---|---|
+| layout | 17-byte blocks, scale ‖ 16 data, contiguous | **two tensors**, split |
+| data | — | `*_blocks` U8 `[32, 5760, 90, 16]` |
+| scales | — | `*_scales` U8 `[32, 5760, 90]` |
+
+Block size is 32 either way (16 bytes = 32 nibbles; 90 × 32 = 2880 = hidden), and the scale is
+the same E8M0 exponent byte. So `mxfp4DequantBlock` already does the arithmetic; what it cannot
+do is read a scale that lives in a different tensor. The change is a split-source variant
+sharing the same table and `e8m0ToF32Half` — **no new numerics**, which means the existing
+golden keeps covering the math.
+
+Also present and NOT in the GGUF path's shape: **per-expert bias tensors**
+(`gate_up_proj_bias` / `down_proj_bias`, BF16 `[32, 5760]` / `[32, 2880]`). gguf.go already has
+`stackedExpertBias`, so the concept is loaded today — the safetensors names differ, that is all.
+
+`self_attn.sinks` is BF16 `[64]` per layer — one per attention head, exactly what
+`gptOssParams` expects.
+
+### The gate this gets for free — and it is unusually strong
+
+gpt-oss's GGUF path is already **T3-validated**. So the safetensors loader can be gated against
+*the same model through an already-validated reader* — weightDiff plus a logit compare — rather
+than needing a fresh HF oracle. Almost nothing else in the queue has a validated reference
+sitting in-tree to diff against. **Estimate: 2–3h including that gate.**
+
+### Residency is a separate go/no-go, and it is NOT small
+
+Three constraints, none of which the loader work touches:
+
+1. **It is a kernel change.** `FeatAttnSink` exists precisely because no resident backend
+   implements the per-head sink in the softmax denominator; it declines CUDA, Metal AND WebGPU
+   together. The clamped interleaved-SwiGLU expert with per-expert biases is a second kernel.
+2. **This box cannot hold it plainly.** 20b MXFP4 is ~13.8GB against the 2070's 8GB. It is
+   testable here only via the host↔VRAM MoE streaming path (which has done a resident 26B-A4B
+   decode), which couples two hard things at once.
+3. **Metal is unverifiable here** — that is the macbook's side, so it needs coordinating rather
+   than assuming.
+
+**Recommendation: do the loader now, decide residency on its own evidence afterwards.** The
+loader is bounded, strongly gated, and delivers format coverage users hit first; residency is a
+multi-part kernel effort whose own Phase 0 should be written separately.
