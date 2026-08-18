@@ -207,16 +207,22 @@ func (a *Architecture) decodeRunnerEligible() bool {
 		return false
 	}
 	// FFN / norm / head constraints common to both attention paths. Sandwich norms (Gemma's
-	// 4-norm block) AND logit softcap are representable now — a backend that hasn't implemented
-	// them declines via the feature gate (FeatSandwichNorm / FeatAttnLogitSoftcap /
-	// FeatFinalLogitSoftcap), not here, so this stays an ARCH-shape predicate and the per-backend
-	// answer lives in one place (decoder/features.go). Softcap was moved OUT of this decline in
-	// 9a-P2: it is a per-backend capability (CUDA ships the host-side final tanh), not an arch
-	// shape — leaving it here would have blocked Gemma 4 for a feature it uses and a backend
-	// implements.
-	if a.NonGatedMLP || a.LearnedPosEmbed || a.OutBias {
-		return false
-	}
+	// 4-norm block), logit softcap, NonGatedMLP, LearnedPosEmbed and OutBias are all
+	// representable now — a backend that hasn't implemented one declines via the feature gate
+	// (FeatSandwichNorm / FeatAttnLogitSoftcap / FeatFinalLogitSoftcap / FeatNonGatedMLP /
+	// FeatLearnedPos / FeatOutBias), not here, so this stays an ARCH-shape predicate and the
+	// per-backend answer lives in one place (decoder/features.go). Softcap was moved OUT of this
+	// decline in 9a-P2 for the same reason Gemma 4 needed it: a per-backend capability blocked
+	// here for everyone is a family blocked for a backend that already implements it.
+	//
+	// NonGatedMLP/LearnedPosEmbed/OutBias's hard decline came off 2026-08-18 once Metal built the
+	// three matching kernels (layernorm_quant, act_quant, gemv_w4a8_sa_bias_resid/
+	// gemv_w4a8_resid_bias) for GPT-2 — the only family this reaches in practice: Nemotron-H's
+	// NonGatedMLP and gpt-oss's OutBias both short-circuit at the switch above before ever
+	// reaching here, and no arch sets LearnedPosEmbed but GPT-2. GPT-2 has no RoPE at all
+	// (finalizeRoPE returns early on LearnedPosEmbed, leaving BOTH ropeInvFreqLocal/Global nil),
+	// so it falls through to ropeResidentCompatible() below and passes vacuously (0==0) — no
+	// extra bypass needed for that check either.
 	// MLA (DeepSeek/Kimi) runs its own latent-attention path on the resident runner
 	// (Lever C4 — gpu/mla.go), so the standard GQA/RoPE/QK-norm/sliding-window checks
 	// don't apply; its decoupled RoPE rides a separate qk_rope slice, not HeadDim.
@@ -497,6 +503,26 @@ func (m *Model) AttnScale() float32 {
 
 // RMSAddOne reports the Gemma (1+w) RMSNorm offset (false for Qwen/Llama).
 func (m *Model) RMSAddOne() bool { return m.w.arch.RMSAddOne }
+
+// LayerNormResident reports whether this arch normalizes with mean-centered LayerNorm
+// (GPT-2, Cohere) rather than RMSNorm — FeatLayerNorm.
+func (m *Model) LayerNormResident() bool { return m.w.arch.Norm == NormLayer }
+
+// NonGatedMLPResident reports whether the FFN is a plain up→act→down, no gate
+// (GPT-2, Nemotron relu²) — FeatNonGatedMLP.
+func (m *Model) NonGatedMLPResident() bool { return m.w.arch.NonGatedMLP }
+
+// OutBiasResident reports an additive bias on the attention output projection
+// (GPT-2, gpt-oss) — FeatOutBias.
+func (m *Model) OutBiasResident() bool { return m.w.arch.OutBias }
+
+// LearnedPosResident reports learned absolute position embeddings with no RoPE at
+// all (GPT-2) — FeatLearnedPos.
+func (m *Model) LearnedPosResident() bool { return m.w.arch.LearnedPosEmbed }
+
+// PosEmbedResident returns the learned position-embedding table (GPT-2's wpe) —
+// nil/zero-value WeightMat for any family without LearnedPosResident.
+func (m *Model) PosEmbedResident() *linalg.WeightMat { return &m.w.PosEmbed }
 
 // Dims returns the model shape from the resolved Architecture — authoritative,
 // unlike Config() (Cfg), which a GGUF-loaded or .giw model may leave partly

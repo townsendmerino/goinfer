@@ -76,7 +76,15 @@ type residLayer struct {
 	invf                                 Buffer          // per-layer RoPE inv-freq (Gemma local 10k vs global 1M base)
 	mscale                               Buffer          // per-layer YaRN mscale (RopeMscaleLayer; 1.0 = no-op for every family without it)
 	uWindow                              Buffer          // per-layer attention window (0 = full causal; Gemma mixes local/global)
-	geom                                 *attnGeom       // per-layer attention geometry (hd/nKV/half/kEqV + uniforms); see geom.go
+	// GPT-2 (FeatLayerNorm/FeatNonGatedMLP/FeatOutBias): preNormBias/postNormBias are LayerNorm's
+	// bias (unused for RMS families — layernorm_quant only dispatches when arch.Norm==NormLayer).
+	// upW/upS is the SEPARATE (not gate-fused) up-projection a non-gated MLP uses instead of
+	// guW/guS; oBias/upBias/downBias are the three projection biases FeatOutBias/FeatNonGatedMLP
+	// need. All zero-value (unused, never dispatched) for every other family.
+	preNormBias, postNormBias Buffer
+	upW, upS                  Buffer
+	oBias, upBias, downBias   Buffer
+	geom                      *attnGeom // per-layer attention geometry (hd/nKV/half/kEqV + uniforms); see geom.go
 }
 
 // resident is a Metal-resident dense decoder. Weights uploaded once in BuildResident;
@@ -98,6 +106,14 @@ type resident struct {
 	uZero                                                      Buffer   // constant 0 (nH=0 / nHhd=0 / addOne=0 for the scale-less v_norm dispatch)
 	vNormUnit                                                  Buffer   // [maxHd] of 1.0 — unit weight so qk_norm (x·rms·w, addOne=0) = scale-less v_norm for K=V layers
 
+	// GPT-2 (FeatLayerNorm/FeatNonGatedMLP/FeatLearnedPos/FeatOutBias).
+	pLayerNorm, pActQuant            Pipeline          // layernorm_quant, act_quant
+	pSABiasResid, pCoalBiasResid     Pipeline          // gemv_w4a8_sa_bias_resid (o-proj), gemv_w4a8_resid_bias (down-proj, K>1536)
+	layerNorm, layerNormBias         bool              // arch.Norm==NormLayer; whether it carries a bias (GPT-2 yes, Cohere no)
+	nonGatedMLP, outBias, learnedPos bool              // arch.NonGatedMLP / arch.OutBias / arch.LearnedPosEmbed
+	posEmbed                         *linalg.WeightMat // [MaxPositions, H] learned position embedding table (learnedPos only)
+	uLNHasBias                       Buffer            // layernorm_quant's hasBias uniform (r.layerNormBias as 0/1)
+
 	qkv, gu Buffer // fused QKV out, fused gate/up out
 
 	// Model-level (constant across a family's layers). Per-layer attention geometry —
@@ -113,12 +129,12 @@ type resident struct {
 	embedScale float32
 	embed      *linalg.WeightMat
 
-	layers    []residLayer
-	finalNorm Buffer
-	lmW, lmS  Buffer
-	kc, vc    []Buffer
-	moe       *moeResident       // non-nil ⇒ MoE model (router + stacked experts); see moe.go
-	g4moe     *gemma4MoeResident // non-nil ⇒ Gemma-4 enable_moe_block (parallel dense‖MoE); see gemma4_moe.go
+	layers                   []residLayer
+	finalNorm, finalNormBias Buffer // finalNormBias: GPT-2 ln_f's LayerNorm bias (unused for RMS families)
+	lmW, lmS                 Buffer
+	kc, vc                   []Buffer
+	moe                      *moeResident       // non-nil ⇒ MoE model (router + stacked experts); see moe.go
+	g4moe                    *gemma4MoeResident // non-nil ⇒ Gemma-4 enable_moe_block (parallel dense‖MoE); see gemma4_moe.go
 
 	// prefillOK reports whether the f16 MMA prefill kernels (prefill.go) actually implement
 	// this model's shape. They run a DENSE FFN out of L.guW/L.dW with a model-level rope +
@@ -418,6 +434,12 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	r.pQKNorm, r.pRmsF32 = pipe("qk_norm"), pipe("rmsnorm_f32")
 	r.qkNorm = m.HasQKNorm()
 	r.sandwich = m.SandwichNormResident()
+	r.pLayerNorm, r.pActQuant = pipe("layernorm_quant"), pipe("act_quant")
+	r.pSABiasResid, r.pCoalBiasResid = pipe("gemv_w4a8_sa_bias_resid"), pipe("gemv_w4a8_resid_bias")
+	r.layerNorm = m.LayerNormResident()
+	r.nonGatedMLP = m.NonGatedMLPResident()
+	r.outBias = m.OutBiasResident()
+	r.learnedPos = m.LearnedPosResident()
 	// f32 KV path (kv_store_f32/attention_f32) exists but is DISABLED: the matched-input confirmer
 	// proved f16-vs-f32 KV storage is NOT the Gemma crater. The whole crater is Metal's BOS
 	// (position-0) K/V being computed wrong (cos 0.40 vs goinfer); overwriting just that recovers
@@ -453,6 +475,19 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 
 	w := m.Weights()
 	r.embed = &w.Embed
+	if r.learnedPos {
+		r.posEmbed = m.PosEmbedResident()
+	}
+	// Whether THIS family's LayerNorm carries a bias (GPT-2) or not (Cohere) — a per-arch
+	// constant, so layer 0's presence/absence decides it for every layer.
+	if r.layerNorm && len(w.Layers) > 0 {
+		r.layerNormBias = len(w.Layers[0].PreAttnNormBias) > 0
+	}
+	if r.layerNormBias {
+		r.uLNHasBias = d.NewBufferU32(1)
+	} else {
+		r.uLNHasBias = d.NewBufferU32(0)
+	}
 	mk := func(wm *linalg.WeightMat) (Buffer, Buffer) {
 		q, s, e := int4Buf(d, wm)
 		if e != nil {
@@ -482,6 +517,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			L.qkvW, L.qkvS = int4Concat(d, &lw.QProj, &lw.KProj, &lw.VProj) // fused QKV
 		}
 		L.oW, L.oS = mk(&lw.OProj)
+		if r.outBias {
+			L.oBias = d.NewBufferFloats(lw.OBias)
+		}
 		g4b, isG4MoE := decoder.Gemma4MoEResidentBundle{}, false
 		if r.g4moe != nil {
 			g4b, isG4MoE = m.Gemma4MoEResidentLayer(l)
@@ -491,6 +529,11 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			L.g4moe = buildGemma4MoELayer(d, m, &g4b, r.g4moe)
 		case r.moe != nil && len(lw.Experts) > 0: // generic MoE layer: stacked experts instead of a dense FFN
 			L.moe = buildMoELayer(d, lw, r.moe)
+		case r.nonGatedMLP: // GPT-2/Nemotron relu²: single up-proj (no gate) + biases
+			L.upW, L.upS = mk(&lw.UpProj)
+			L.dW, L.dS = mk(&lw.DownProj)
+			L.upBias = d.NewBufferFloats(lw.UpBias)
+			L.downBias = d.NewBufferFloats(lw.DownBias)
 		default: // dense FFN (also GLM/DeepSeek's FirstKDense prefix layers, and gemma4 dense layers)
 			L.guW, L.guS = int4Concat(d, &lw.GateProj, &lw.UpProj) // fused gate/up
 			L.dW, L.dS = mk(&lw.DownProj)
@@ -498,6 +541,12 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		L.preNorm = d.NewBufferFloats(lw.PreAttnNorm)
 		if L.g4moe == nil { // dense/generic FFN entry norm (PreMLPNorm); g4moe carries its five norms in the bundle
 			L.postNorm = d.NewBufferFloats(lw.PreMLPNorm)
+		}
+		if r.layerNorm && r.layerNormBias {
+			L.preNormBias = d.NewBufferFloats(lw.PreAttnNormBias)
+			if L.g4moe == nil {
+				L.postNormBias = d.NewBufferFloats(lw.PreMLPNormBias)
+			}
 		}
 		if r.qkNorm { // Qwen3 per-head Q/K norm weights [hd]
 			L.qNorm, L.kNorm = d.NewBufferFloats(lw.QNorm), d.NewBufferFloats(lw.KNorm)
@@ -528,8 +577,10 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		// RopeInvFreqLayer for every uniform family; Gemma 4's global proportional-rotary tail is
 		// what makes it differ). Its length is this layer's rhalf (rotated pairs/head).
 		invf := m.RopeInvFreqLayerResident(l)
-		L.invf = d.NewBufferFloats(invf)
-		L.mscale = d.NewBufferFloats([]float32{float32(m.RopeMscaleLayer(l))}) // 1.0 for every family without YaRN
+		if len(invf) > 0 { // GPT-2 (FeatLearnedPos): no RoPE at all, invf is empty — NewBufferFloats panics on empty; L.invf stays unused (rope dispatch is skipped)
+			L.invf = d.NewBufferFloats(invf)
+			L.mscale = d.NewBufferFloats([]float32{float32(m.RopeMscaleLayer(l))}) // 1.0 for every family without YaRN
+		}
 		// Per-layer attention geometry — the whole point of the 9c seam. Uniform families resolve
 		// every layer to the same {hd, nKV, half, kEqV}; Gemma 4 varies hd/nKV/kEqV between its
 		// local and global layers. geomFor dedups by value so a uniform model shares one geom.
@@ -563,6 +614,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		r.vc[l] = byteBuf(d, kvBytes)
 	}
 	r.finalNorm = d.NewBufferFloats(w.FinalNorm)
+	if r.layerNorm && r.layerNormBias {
+		r.finalNormBias = d.NewBufferFloats(w.FinalNormBias)
+	}
 	lm := &w.LMHead
 	if lm.Rows() == 0 {
 		lm = &w.Embed // tied
@@ -757,13 +811,31 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 // to the embed→layer-0 seam was therefore invisible to the one absolute gate in the Metal suite.
 //
 // The scale is a no-op (≤1) for every non-Gemma family, so this is inert on the dense archs.
-func (r *resident) loadEmbedRow(id int) {
+func (r *resident) loadEmbedRow(id, pos int) {
 	dst := r.x.Floats()
 	r.embed.Row(id, dst) // CPU dequant embedding into the shared buffer
 	if r.embedScale > 1 {
 		for i := range dst {
 			dst[i] *= r.embedScale
 		}
+	}
+	r.addLearnedPos(pos)
+}
+
+// addLearnedPos adds wpe[pos] to the input embedding already in r.x — GPT-2's learned absolute
+// position embedding, host-side (CPU dequant straight into the shared buffer, same as the token
+// embedding lookup) since it happens once per token before any GPU dispatch, mirroring
+// decoder/model.go's ResidentForward (arch.LearnedPosEmbed: h[i] += wpe[pos][i]). A no-op for
+// every family without FeatLearnedPos.
+func (r *resident) addLearnedPos(pos int) {
+	if !r.learnedPos {
+		return
+	}
+	dst := r.x.Floats()
+	pe := make([]float32, len(dst))
+	r.posEmbed.Row(pos, pe)
+	for i := range dst {
+		dst[i] += pe[i]
 	}
 }
 
@@ -776,7 +848,7 @@ func (r *resident) Forward(id, pos int) []float32 {
 	// the CUDA backend's LockOSThread executor uses.
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	r.loadEmbedRow(id)
+	r.loadEmbedRow(id, pos)
 	return r.forwardLogits(pos)
 }
 
@@ -794,6 +866,7 @@ func (r *resident) ForwardEmb(emb []float32, pos int) []float32 {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	copy(r.x.Floats(), emb)
+	r.addLearnedPos(pos)
 	if r.g4moe != nil && r.g4moe.paged { // synchronous expert paging: per-layer submit+wait, staged experts
 		return r.forwardLogitsPaged(pos)
 	}
@@ -878,6 +951,7 @@ func (r *resident) execLoop() {
 			cur = r.encodeLogitsCB()
 		}
 		copy(r.x.Floats(), job.emb) // this token's embedding + pos (set at commit time, not encode)
+		r.addLearnedPos(job.pos)    // GPT-2: += wpe[pos], same commit-time placement as the copy above
 		r.uPos.SetU32(uint32(job.pos))
 		r.uNKeys.SetU32(uint32(job.pos + 1))
 		cur.Commit()
@@ -1005,7 +1079,7 @@ func (r *resident) LastGPUTimes() (gpuBusy, kernTotal float64) {
 func (r *resident) ForwardArgmax(id, pos int) uint32 {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	r.loadEmbedRow(id) // includes the arch embed scale — see loadEmbedRow (G-02)
+	r.loadEmbedRow(id, pos) // includes the arch embed scale — see loadEmbedRow (G-02)
 	r.uPos.SetU32(uint32(pos))
 	r.uNKeys.SetU32(uint32(pos + 1))
 	e := r.q.Begin()
@@ -1244,7 +1318,20 @@ func (r *resident) encodeTrunkInto(e *Encoder) {
 	for l := 0; l < r.nL; l++ {
 		r.encodeLayer(e, l)
 	}
-	e.Dispatch(r.pRms, tgReduceNorm, tgReduceNorm, r.x, r.finalNorm, r.aq, r.aSc, r.uH, r.uEps, r.uAddOne)
+	r.encodeNorm(e, r.x, r.finalNorm, r.finalNormBias, r.aq, r.aSc)
+}
+
+// encodeNorm dispatches the family's pre-GEMV norm+quant into aq/aSc — layernorm_quant (GPT-2's
+// mean-centered LayerNorm, with bias) when r.layerNorm, else the default rmsnorm_quant —
+// mirroring decoder/model.go's normalize() dispatch on arch.Norm. Used at every norm site that
+// feeds a GEMV (pre-attn, pre-MLP, final); the Gemma sandwich post-norms are a different
+// contract (rmsnorm_f32, in-place on the residual, RMS-only families) and don't route through here.
+func (r *resident) encodeNorm(e *Encoder, x, w, bias, aq, aSc Buffer) {
+	if r.layerNorm {
+		e.Dispatch(r.pLayerNorm, tgReduceNorm, tgReduceNorm, x, w, bias, aq, aSc, r.uH, r.uEps, r.uLNHasBias)
+	} else {
+		e.Dispatch(r.pRms, tgReduceNorm, tgReduceNorm, x, w, aq, aSc, r.uH, r.uEps, r.uAddOne)
+	}
 }
 
 // encodeLayer encodes one decoder layer (attention block + FFN block) into e. Factored out of
@@ -1261,8 +1348,17 @@ func (r *resident) encodeLayer(e *Encoder, l int) {
 		r.encodeGemma4MoEFFN(e, L)
 	} else if L.moe != nil {
 		r.encodeMoEFFN(e, L)
+	} else if r.nonGatedMLP {
+		// GPT-2: up→act→down, no gate — a single up-proj (K=hidden, within the SA cap for
+		// GPT-2 small/medium/large; XL's 1600 would exceed it, not covered here) feeding
+		// act_quant (glu_act with no multiply), then the coal-family down-proj (K=intermediate,
+		// always past the SA cap) fused with its bias and the residual add.
+		r.encodeNorm(e, r.x, L.postNorm, L.postNormBias, r.mq, r.mSc)
+		e.DispatchTG(r.pSABias, r.I*32, 256, r.H*2, L.upW, L.upS, r.mq, r.mSc, r.gu, L.upBias, r.uH)
+		e.Dispatch(r.pActQuant, 256, 256, r.gu, r.dq, r.dSc, r.uI, r.uAct)
+		e.Dispatch(r.pCoalBiasResid, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.x, L.downBias, r.uI)
 	} else {
-		e.Dispatch(r.pRms, tgReduceNorm, tgReduceNorm, r.x, L.postNorm, r.mq, r.mSc, r.uH, r.uEps, r.uAddOne)
+		r.encodeNorm(e, r.x, L.postNorm, L.postNormBias, r.mq, r.mSc)
 		e.DispatchTG(r.pSA, (2*r.I)*32, 256, r.H*2, L.guW, L.guS, r.mq, r.mSc, r.gu, r.uH) // fused gate|up
 		e.Dispatch(r.pSw, 256, 256, r.gu, r.gu.At(r.I*4), r.dq, r.dSc, r.uI, r.uAct)       // gate @0, up @I
 		if r.sandwich {
@@ -1286,7 +1382,7 @@ func (r *resident) encodeAttention(e *Encoder, l int) {
 	qkvRows := nHhd + 2*g.kvDim
 	kOff, vOff := nHhd*4, (nHhd+g.kvDim)*4 // byte offsets of k, v within the fused qkv buffer
 	// --- attention block (12 dispatches vs 19: QKV fused +bias, residual fused) ---
-	e.Dispatch(r.pRms, tgReduceNorm, tgReduceNorm, r.x, L.preNorm, r.aq, r.aSc, r.uH, r.uEps, r.uAddOne)
+	r.encodeNorm(e, r.x, L.preNorm, L.preNormBias, r.aq, r.aSc)
 	e.DispatchTG(r.pSABias, qkvRows*32, 256, r.H*2, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv, L.qkvBias, r.uH)
 	if r.qkNorm { // Qwen3: per-head Q/K RMSNorm before RoPE
 		e.Dispatch(r.pQKNorm, (r.nH+g.nKV)*tgReduceAttn, tgReduceAttn, r.qkv, L.qNorm, L.kNorm, r.uNH, g.uNKV, g.uHd, g.uNHhd, r.uEps, r.uAddOne)
@@ -1300,8 +1396,10 @@ func (r *resident) encodeAttention(e *Encoder, l int) {
 		// rmsNormNoWeight(v)). See TestVNorm_scaleless.
 		e.Dispatch(r.pQKNorm, g.nKV*tgReduceAttn, tgReduceAttn, r.qkv.At(vOff), r.vNormUnit, r.vNormUnit, r.uZero, g.uNKV, g.uHd, r.uZero, r.uEps, r.uZero)
 	}
-	e.Dispatch(r.pRope, r.nH*g.half, 64, r.qkv, L.invf, g.uHd, r.uPos, g.uQtotal, g.uHalf, L.mscale)           // q @ off 0
-	e.Dispatch(r.pRope, g.nKV*g.half, 64, r.qkv.At(kOff), L.invf, g.uHd, r.uPos, g.uKtotal, g.uHalf, L.mscale) // k (V slot at vOff is NOT roped)
+	if !r.learnedPos { // GPT-2: no RoPE at all — position rides the learned embedding added at input
+		e.Dispatch(r.pRope, r.nH*g.half, 64, r.qkv, L.invf, g.uHd, r.uPos, g.uQtotal, g.uHalf, L.mscale)           // q @ off 0
+		e.Dispatch(r.pRope, g.nKV*g.half, 64, r.qkv.At(kOff), L.invf, g.uHd, r.uPos, g.uKtotal, g.uHalf, L.mscale) // k (V slot at vOff is NOT roped)
+	}
 	e.Dispatch(r.pKv, g.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[l], r.vc[l], g.uKvDim, r.uPos)
 	e.Dispatch(r.pAttn, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[l], r.vc[l], r.ctx, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow)
 	e.Dispatch(r.pQv, 256, 256, r.ctx, r.cq, r.cSc, g.uNHhd)
@@ -1312,6 +1410,8 @@ func (r *resident) encodeAttention(e *Encoder, l int) {
 		e.DispatchTG(r.pSA, r.H*32, 256, r.nH*g.hd*2, L.oW, L.oS, r.cq, r.cSc, r.oO, g.uNHhd)
 		e.Dispatch(r.pRmsF32, tgReduceNorm, tgReduceNorm, r.oO, L.postAttnNorm, r.uH, r.uEps, r.uAddOne)
 		e.Dispatch(r.pRes, r.H, 256, r.x, r.oO)
+	} else if r.outBias { // GPT-2/gpt-oss: o-proj carries an additive bias, fused with the residual add
+		e.DispatchTG(r.pSABiasResid, r.H*32, 256, r.nH*g.hd*2, L.oW, L.oS, r.cq, r.cSc, r.x, L.oBias, g.uNHhd)
 	} else {
 		e.DispatchTG(r.pSAResid, r.H*32, 256, r.nH*g.hd*2, L.oW, L.oS, r.cq, r.cSc, r.x, g.uNHhd) // o-proj + residual
 	}

@@ -424,6 +424,77 @@ is wrong for this family).
   a harder blocker than the RAM tightness itself. Neither box can currently reach the real
   end-to-end gate without freeing real resources first.
 
+**G9 · GPT-2 GPU residency on Metal — kernels/wiring DONE, blocked on a pre-existing safety gate
+(2026-08-18)** — `mac`
+
+Follow-on from `G7`'s two shared kernels (`FeatOutBias`, `FeatRopeMscale`): GPT-2 needed all four
+of `FeatLayerNorm`/`FeatNonGatedMLP`/`FeatLearnedPos`/`FeatOutBias`, since it's the one admitted
+family that departs from RMSNorm/gated-SwiGLU/RoPE entirely — checked directly against
+`decoder/registry.go`'s `gpt2Architecture` and `decoder/mlp.go`'s `nonGatedMLP`/`decoder/rmsnorm.go`'s
+`layerNorm`, not assumed. Real work, not just re-flagging: `layernorm_quant` (mean-subtract, generalized
+with a `hasBias` flag since Cohere's LayerNorm has none, GPT-2's does) and `act_quant` (the
+non-gated activation-only counterpart to `swiglu_quant`) are two more genuinely new kernels, plus
+`gemv_w4a8_resid_bias` (the coal-family counterpart to `G7`'s `gemv_w4a8_sa_bias_resid`, needed
+because GPT-2's FFN down-proj K=3072 exceeds the SA family's 1536 cap) — all three gated
+standalone the same way (`metal/gpt2_kernels_test.go`, `TestCoalGemvBiasResid` in
+`gemv_w4a8_sa_bias_resid_test.go`).
+
+**A genuine cross-backend finding, not Metal-specific:** `decoder/residency.go`'s
+`decodeRunnerEligible()` had a HARD, backend-agnostic decline —
+`if a.NonGatedMLP || a.LearnedPosEmbed || a.OutBias { return false }` — sitting BEFORE the
+per-backend feature-flag check every other capability (sandwich norms, softcap) already routes
+through. This blocked GPT-2 on EVERY backend regardless of what kernels existed, and explains why
+WebGPU's own `FeatNonGatedMLP: true` (declared for Nemotron-H, which bypasses this check via its
+own early-return) was reachable for Nemotron-H but not GPT-2. Relaxed to match the sandwich-norm
+precedent (verified affects ONLY GPT-2 in practice — Nemotron-H and gpt-oss both short-circuit
+before reaching this line; full `go test ./decoder/...` clean, `TestParityManifest_fresh` clean —
+`residency.go` isn't in the hashed dependency set). **Side finding, material to `G7`:** gpt-oss
+hits an EARLIER, deeper decline in the same function — `case a.qwen35 != nil || a.llama4 != nil ||
+a.gptoss != nil: return false // own forward, not yet bridged` — meaning gpt-oss's own non-uniform
+forward path (`runLayersGptOss`) has NO bridge to the generic resident dispatch on ANY backend yet.
+Building gpt-oss's three kernels (this session, both backends) is necessary but not sufficient:
+even a fully-declared `FeatAttnSink` would still hit this earlier block. That bridging work — a
+dedicated resident forward function mirroring Gemma-4's own-forward bridge — is a separate,
+larger piece nothing built so far addresses. GPT-2 does NOT hit this (it rides the generic
+uniform-layer dispatch), which is why it was reachable and gpt-oss, so far, is not.
+
+**Full wiring landed and builds/runs correctly** — `resident`/`residLayer` struct fields, per-layer
+weight+bias loading in `BuildResident` (including the position-embedding table via
+`PosEmbedResident`), the `encodeNorm` helper routing LayerNorm vs RMSNorm at every norm site, the
+RoPE-skip in `encodeAttention`, the non-gated MLP branch in `encodeLayer`, and the host-side
+`addLearnedPos` add at every production embedding entry point (`Forward`, `ForwardEmb`,
+`ForwardEmbPipe`'s pipelined executor). Two real bugs, both caught before landing on main:
+
+1. `L.invf = d.NewBufferFloats(invf)` panicked on GPT-2's genuinely-empty inv-freq table (no RoPE
+   at all) — `aikit/gpu.Device.NewBufferFloats` doesn't handle a zero-length slice. Guarded on
+   `len(invf) > 0`; `L.invf`/`L.mscale` simply stay unused for a learned-pos family, matching the
+   RoPE dispatch already being skipped there.
+2. **The real blocker, not yet resolved:** `BuildResident` declines with `metal: vocab width 50257
+   is not a multiple of 8 — SA-GEMV tail-write hazard (audit C-10); use the CPU path`. This is a
+   real, deliberate, pre-existing safety gate — the `gemv_w4a8_sa`-family decode kernels have no
+   `row >= N` bounds guard, so a non-%8 output width risks a silent tail-write into
+   already-written or uninitialized rows (plausible-looking wrong logits, not a crash). GPT-2
+   small's real vocab (50257 — 50000 BPE merges + 256 byte tokens + 1 endoftext, a HF-historical
+   artifact never padded to %8) trips exactly the case this check exists for. The comment on it
+   already flags the real fix as its own deferred, "device-validation-gated" task (an `N` param +
+   `row >= N` guard across seven kernel call sites) — unrelated to anything built today, and out
+   of scope for this pass.
+
+Verified with a REAL checkpoint, not synthetic: `testdata/gpt2` (GPT-2 small, 124M, downloaded via
+`huggingface_hub.snapshot_download('gpt2', ...)` — `HF_HUB_DISABLE_XET=1` needed, the default xet
+transport 404'd), `scripts/pin_gpt2_real.py` regenerated `testdata/gpt2_forward_golden.json`
+(benign float32 noise in the last few digits vs the previously-committed golden — same real
+checkpoint, different torch/hardware build), and `decoder`'s own `TestGPT2_forwardParity` confirms
+cosine 0.9999999999998812 / exact argmax against it. `metal/gpt2_real_test.go`
+(`TestGPT2ResidentParity`) reuses `TestDenseResidentParity`/`TestGemma3ResidentParity`'s existing
+generic harness (`residentParity`/`assertParity`) and is dormant the same way
+`TestGemma3ResidentParity` is — skips until all four features are declared, `t.Fatal`s on a silent
+CPU-fallback decline once they are, so it can't quietly pass by not actually running. Declaring the
+features was tried (temporarily, to prove the wiring against the real checkpoint) and reverted once
+the C-10 decline surfaced, matching `G7`'s `FeatAttnSink` revert precedent exactly: kernel/wiring
+readiness is not end-to-end readiness, and declaring ahead of that evidence is the overclaim this
+whole feature system exists to prevent.
+
 **G8 · DeepSeek V4-Flash as a new family — blocked on fp8 support, post-1.0** — `any`
 
 Scoping already done: `docs/completed/task-model-family-deepseek-v4-kimi-k3.md`'s Phase 0 verdict.

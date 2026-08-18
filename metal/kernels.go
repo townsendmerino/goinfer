@@ -42,6 +42,32 @@ kernel void rmsnorm_f32(device float* x[[buffer(0)]], device const float* w[[buf
     float rms=rsqrt(red[0]/float(H)+eps); threadgroup_barrier(mem_flags::mem_threadgroup);
     for(uint i=tid;i<H;i+=tgs){ float g=addOne!=0u?(1.0f+w[i]):w[i]; x[i]=x[i]*rms*g; }
 }
+// layernorm_quant: FeatLayerNorm's fused norm+quant, mirroring rmsnorm_quant's contract but
+// mean-centered (decoder/rmsnorm.go's layerNorm): y = (x-mean)/sqrt(var+eps)*w + b, then
+// quantized. hasBias selects GPT-2's weight+bias LayerNorm vs Cohere's bias-free variant (both
+// declare Norm==NormLayer; the CPU reference branches on a nil bias the same way). Three
+// reduction passes (mean, variance, maxabs) vs rmsnorm_quant's two — LayerNorm needs the mean
+// subtracted before anything else can be computed, which RMSNorm has no equivalent of.
+kernel void layernorm_quant(device const float* x[[buffer(0)]], device const float* w[[buffer(1)]],
+    device const float* b[[buffer(2)]], device char* aq[[buffer(3)]], device float* asc[[buffer(4)]],
+    constant uint& H[[buffer(5)]], constant float& eps[[buffer(6)]], constant uint& hasBias[[buffer(7)]],
+    uint tid[[thread_position_in_threadgroup]], uint tgs[[threads_per_threadgroup]]) {
+    threadgroup float red[256];
+    float s=0; for(uint i=tid;i<H;i+=tgs) s+=x[i];
+    red[tid]=s; threadgroup_barrier(mem_flags::mem_threadgroup);
+    for(uint st=tgs/2;st>0;st>>=1){ if(tid<st) red[tid]+=red[tid+st]; threadgroup_barrier(mem_flags::mem_threadgroup);}
+    float mean=red[0]/float(H); threadgroup_barrier(mem_flags::mem_threadgroup);
+    float ss=0; for(uint i=tid;i<H;i+=tgs){ float d=x[i]-mean; ss+=d*d; }
+    red[tid]=ss; threadgroup_barrier(mem_flags::mem_threadgroup);
+    for(uint st=tgs/2;st>0;st>>=1){ if(tid<st) red[tid]+=red[tid+st]; threadgroup_barrier(mem_flags::mem_threadgroup);}
+    float inv=rsqrt(red[0]/float(H)+eps); threadgroup_barrier(mem_flags::mem_threadgroup);
+    float mx=0;
+    for(uint i=tid;i<H;i+=tgs){ float y=(x[i]-mean)*inv*w[i]; if(hasBias!=0u) y+=b[i]; mx=max(mx,fabs(y)); }
+    red[tid]=mx; threadgroup_barrier(mem_flags::mem_threadgroup);
+    for(uint st=tgs/2;st>0;st>>=1){ if(tid<st) red[tid]=max(red[tid],red[tid+st]); threadgroup_barrier(mem_flags::mem_threadgroup);}
+    float sc=red[0]/127.0f; if(sc==0)sc=1; if(tid==0)asc[0]=sc; float invsc=1/sc;
+    for(uint i=tid;i<H;i+=tgs){ float y=(x[i]-mean)*inv*w[i]; if(hasBias!=0u) y+=b[i]; aq[i]=char(clamp(int(round(y*invsc)),-127,127)); }
+}
 kernel void quant_vec(device const float* x[[buffer(0)]], device char* aq[[buffer(1)]],
     device float* asc[[buffer(2)]], constant uint& H[[buffer(3)]],
     uint tid[[thread_position_in_threadgroup]], uint tgs[[threads_per_threadgroup]]) {
@@ -106,6 +132,18 @@ kernel void gemv_w4a8_bias(device const uint* bq[[buffer(0)]], device const half
     uint gid[[threadgroup_position_in_grid]], uint lid[[thread_index_in_threadgroup]]) {
     W4A8_BODY
     if (lid == 0) out[gid] = acc*asc[0] + bias[gid];
+}
+// gemv_w4a8_resid_bias: the coal-family counterpart to gemv_w4a8_sa_bias_resid — needed for any
+// bias+residual projection whose K exceeds the SA family's 1536 cap (GPT-2's FFN down-proj:
+// K=intermediate=4*hidden, e.g. 3072 for GPT-2 small — gemv_w4a8_resid has no bias epilogue,
+// gemv_w4a8_bias overwrites instead of accumulating; neither is down-proj's shape for a family
+// with a down-proj bias). Not currently dispatched anywhere — gated standalone until wired.
+kernel void gemv_w4a8_resid_bias(device const uint* bq[[buffer(0)]], device const half* bsc[[buffer(1)]],
+    device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
+    device const float* bias[[buffer(5)]], constant uint& K[[buffer(6)]],
+    uint gid[[threadgroup_position_in_grid]], uint lid[[thread_index_in_threadgroup]]) {
+    W4A8_BODY
+    if (lid == 0) out[gid] += acc*asc[0] + bias[gid];
 }
 kernel void gemv_w4a8_resid(device const uint* bq[[buffer(0)]], device const half* bsc[[buffer(1)]],
     device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
@@ -424,6 +462,21 @@ kernel void swiglu_quant(device const float* g[[buffer(0)]], device const float*
     for(uint s=tgs/2;s>0;s>>=1){ if(tid<s) red[tid]=max(red[tid],red[tid+s]); threadgroup_barrier(mem_flags::mem_threadgroup);}
     float sc=red[0]/127.0f; if(sc==0)sc=1; if(tid==0)ds[0]=sc; float inv=1/sc;
     for(uint i=tid;i<I;i+=tgs){ float s=glu_act(g[i],act)*u[i]; dq[i]=char(clamp(int(round(s*inv)),-127,127)); }
+}
+// act_quant: FeatNonGatedMLP's fused activation+quant — up->act->down (GPT-2, Nemotron relu²),
+// no gate multiply, unlike swiglu_quant. Reuses glu_act (same ordinals), so it inherits the
+// GELU-tanh clamp fix for free. Only ACT_GELU_TANH/ACT_SILU are wired (glu_act's only branches);
+// exact-erf GELU (decoder's ActGelu, HF's plain "gelu") is NOT implemented — GPT-2's real
+// released checkpoints use "gelu_new" (ActGeluTanh), which this covers.
+kernel void act_quant(device const float* u[[buffer(0)]], device char* dq[[buffer(1)]],
+    device float* ds[[buffer(2)]], constant uint& I[[buffer(3)]], constant uint& act[[buffer(4)]],
+    uint tid[[thread_position_in_threadgroup]], uint tgs[[threads_per_threadgroup]]) {
+    threadgroup float red[256]; float mx=0;
+    for(uint i=tid;i<I;i+=tgs){ float s=glu_act(u[i],act); mx=max(mx,fabs(s)); }
+    red[tid]=mx; threadgroup_barrier(mem_flags::mem_threadgroup);
+    for(uint s=tgs/2;s>0;s>>=1){ if(tid<s) red[tid]=max(red[tid],red[tid+s]); threadgroup_barrier(mem_flags::mem_threadgroup);}
+    float sc=red[0]/127.0f; if(sc==0)sc=1; if(tid==0)ds[0]=sc; float inv=1/sc;
+    for(uint i=tid;i<I;i+=tgs){ float s=glu_act(u[i],act); dq[i]=char(clamp(int(round(s*inv)),-127,127)); }
 }
 kernel void residual(device float* x[[buffer(0)]], device const float* y[[buffer(1)]], uint i[[thread_position_in_grid]]) { x[i]+=y[i]; }
 
