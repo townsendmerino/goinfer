@@ -2,7 +2,34 @@ package decoder
 
 import "fmt"
 
-// CPU block drafting.
+// CPU block drafting — MEASURED NEGATIVE. Do not wire this into serving.
+//
+// Two targets, both LOSSES, and the second one is the decisive measurement:
+//
+//	Laguna-XS.2  (sparse MoE, 33B-A3B)  3.20 tok/round  ->  0.82x
+//	Qwen3-4B     (DENSE)                6.67 tok/round  ->  0.75x
+//
+// The dense number kills it, because dense was the case that should have worked: the sparse
+// result was explainable (each verified row routes to its own top-8 of 256 experts, so an
+// 8-row verify touches ~8x the expert weight instead of amortizing), and dense has no such
+// excuse — every row reads the same weights.
+//
+// THE ARITHMETIC IS TERMINAL, not merely discouraging. At 6.67 tok/round measured at 0.75x,
+// break-even needs 6.67/0.75 = 8.89 tok/round. The CEILING at block_size 8 is 8.00
+// (the anchor plus 7 drafts). Break-even EXCEEDS the maximum achievable acceptance, so no
+// drafter, however good, can make this pay on this target — the gap is not an acceptance
+// problem to tune away.
+//
+// WHY, GENERALLY: speculation pays when verifying N rows costs far less than N sequential
+// decodes. That is a GPU property — decode there is memory-bandwidth bound (weights stream
+// per token), so extra rows ride along nearly free. On CPU the same batched verify costs
+// close to N times a decode step, so the drafter's work is pure addition. P10's kill-gate
+// found "the DRAFT was the wall, not the verify" on GPU; on CPU the VERIFY is the wall too.
+//
+// It is kept, unwired, because it is the only non-CUDA implementation of these interfaces
+// and because the measurement above is worth more than the code: the next person to propose
+// CPU speculation should read this comment first. `NewCPUBlockSpec` has no production caller
+// by design.
 //
 // WHY THIS EXISTS. BlockSpec's orchestration — draft a block, verify it in ONE batched
 // pass, accept the agreeing prefix, roll back — is backend-agnostic, but until now the

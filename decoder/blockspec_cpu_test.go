@@ -23,6 +23,7 @@ package decoder
 import (
 	"context"
 	"testing"
+	"time"
 )
 
 func TestCPUBlockSpec_lossless(t *testing.T) {
@@ -46,12 +47,14 @@ func TestCPUBlockSpec_lossless(t *testing.T) {
 
 	// Plain greedy, the reference.
 	base := make([]int, 0, maxNew)
+	tPlain := time.Now()
 	{
 		out, _ := m.Generate(context.Background(), prompt, maxNew, SamplingParams{})
 		for id := range out {
 			base = append(base, id)
 		}
 	}
+	plainDur := time.Since(tPlain)
 	if len(base) == 0 {
 		t.Fatal("plain generation produced nothing")
 	}
@@ -60,16 +63,26 @@ func TestCPUBlockSpec_lossless(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewCPUBlockSpec: %v", err)
 	}
+	tSpec := time.Now()
 	got, rounds, err := spec.Generate(prompt, BlockSpecOptions{MaxTokens: maxNew})
 	if err != nil {
 		t.Fatalf("BlockSpec.Generate: %v", err)
 	}
+	specDur := time.Since(tSpec)
 	perRound := 0.0
 	if rounds > 0 {
 		perRound = float64(len(got)) / float64(rounds)
 	}
-	t.Logf("cpu block spec: %d tokens in %d rounds (%.2f tok/round); plain produced %d",
+	// THE COUNTERFACTUAL TO LAGUNA. Block drafting measured 0.82x on Laguna-XS.2, a SPARSE
+	// MoE: each verified row routes to its own top-8 of 256 experts, so an 8-row batched
+	// verify touches ~8x the expert weight instead of amortizing. Qwen3-4B is DENSE, where
+	// every row reads the same weights — the case where batched verify should actually pay.
+	// Reporting the ratio per token, since the two runs may emit different counts.
+	speedup := float64(plainDur) / float64(specDur) * float64(len(base)) / float64(max(len(got), 1))
+	t.Logf("cpu block spec (DENSE target): %d tokens in %d rounds (%.2f tok/round); plain produced %d",
 		len(got), rounds, perRound, len(base))
+	t.Logf("  wall clock: spec %v vs plain %v -> ~%.2fx",
+		specDur.Round(time.Millisecond), plainDur.Round(time.Millisecond), speedup)
 
 	n := min(len(base), len(got))
 	if n == 0 {
