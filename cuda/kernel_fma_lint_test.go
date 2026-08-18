@@ -22,7 +22,7 @@ import (
 var lintedKernels = []string{
 	"fused_qkv.cu", "glue.cu", "prefill_batched.cu", "decode_splitkv.cu",
 	"gemv_w4a8_rn.cu", "gemv_w4a8_batched.cu", "gemv_w8a8_batched.cu", "gemv_w4a8_staged.cu", "gemv_fwd.cu",
-	"router_f32.cu", "argmax.cu", "attn_block.cu",
+	"router_f32.cu", "argmax.cu", "attn_block.cu", "gptoss_act.cu",
 }
 
 // fmaLintExempt lists embedded PTX deliberately outside the lint, with the reason. Anything else
