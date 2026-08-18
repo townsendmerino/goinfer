@@ -424,8 +424,8 @@ is wrong for this family).
   a harder blocker than the RAM tightness itself. Neither box can currently reach the real
   end-to-end gate without freeing real resources first.
 
-**G9 · GPT-2 GPU residency on Metal — kernels/wiring DONE, blocked on a pre-existing safety gate
-(2026-08-18)** — `mac`
+**G9 · GPT-2 GPU residency on Metal — SHIPPED (2026-08-18): admitted end-to-end, min cosine
+0.999094** — `mac`
 
 Follow-on from `G7`'s two shared kernels (`FeatOutBias`, `FeatRopeMscale`): GPT-2 needed all four
 of `FeatLayerNorm`/`FeatNonGatedMLP`/`FeatLearnedPos`/`FeatOutBias`, since it's the one admitted
@@ -469,31 +469,57 @@ RoPE-skip in `encodeAttention`, the non-gated MLP branch in `encodeLayer`, and t
    at all) — `aikit/gpu.Device.NewBufferFloats` doesn't handle a zero-length slice. Guarded on
    `len(invf) > 0`; `L.invf`/`L.mscale` simply stay unused for a learned-pos family, matching the
    RoPE dispatch already being skipped there.
-2. **The real blocker, not yet resolved:** `BuildResident` declines with `metal: vocab width 50257
-   is not a multiple of 8 — SA-GEMV tail-write hazard (audit C-10); use the CPU path`. This is a
-   real, deliberate, pre-existing safety gate — the `gemv_w4a8_sa`-family decode kernels have no
-   `row >= N` bounds guard, so a non-%8 output width risks a silent tail-write into
-   already-written or uninitialized rows (plausible-looking wrong logits, not a crash). GPT-2
-   small's real vocab (50257 — 50000 BPE merges + 256 byte tokens + 1 endoftext, a HF-historical
-   artifact never padded to %8) trips exactly the case this check exists for. The comment on it
-   already flags the real fix as its own deferred, "device-validation-gated" task (an `N` param +
-   `row >= N` guard across seven kernel call sites) — unrelated to anything built today, and out
-   of scope for this pass.
+2. **C-10, resolved for the vocab case specifically (not the general SA-family fix).**
+   `BuildResident` declined with `metal: vocab width 50257 is not a multiple of 8 — SA-GEMV
+   tail-write hazard (audit C-10); use the CPU path` — a real, deliberate, pre-existing safety
+   gate (the `gemv_w4a8_sa`-family decode kernels have no `row >= N` bounds guard, so a non-%8
+   output width risks a silent tail-write into already-written or uninitialized rows). Traced the
+   exact mechanism rather than assuming: Metal's `dispatchThreads:` makes the LAST threadgroup
+   non-uniform (fewer than 256 threads) whenever the dispatch total isn't a multiple of the
+   threadgroup size, and `row = tgid*(tgs>>5)+sgid` silently miscomputes for that non-uniform
+   group (`tgs` shrinks, so the formula recomputes an EARLIER row instead of the true tail row).
+   **The LM head only ever touches vocab width through two kernels, and only one has the hazard:**
+   `gemv_w8a8_coal` (`forwardLogits`, the full-logits path) addresses its row directly via
+   `threadgroup_position_in_grid`, which Metal guarantees correct regardless of a threadgroup's
+   uniformity — no hazard, %8 or not. `gemv_w8a8_amax` (`ForwardArgmax`'s fused fast-decode path)
+   uses the same hazardous `tgs`-derived formula as the SA family. Considered and rejected padding
+   the weight/output to a safe multiple of 8 (the low-risk fix that worked for `G7`'s bias+resid
+   kernels): a padding row's score depends on the real, unknown-at-load-time activation, so it
+   cannot be guaranteed to lose the argmax against real logits — it could just as easily win it,
+   silently returning the wrong token. Routed around the kernel instead: `ForwardArgmax` now
+   detects `V%8 != 0` and falls back to the full-logits path + host `argmaxF32`, which is already
+   safe. Slower for a non-%8-vocab family (materializes the whole vocab instead of the fused
+   reduction) but correct always beats fast-but-wrong, and GPT-2's vocab is cheap to materialize.
+   `bad8("vocab", V)` dropped from `BuildResident`'s width checks accordingly — `hidden`/
+   `intermediate` stay checked, since those still feed the SA-family kernels this doesn't touch.
+   Gated directly (`TestGPT2ForwardArgmax_matchesFullLogits`): `ForwardArgmax` must equal
+   `argmax(Forward)` at every position, since `residentParity`/`TestGPT2ResidentParity` only
+   exercises the full-logits path and would have stayed green even with a broken fallback.
+   **The general fix (an `N` param + `row >= N` guard across the SA family/MoE variants) is still
+   not done** — out of scope here since nothing GPT-2 needs touches those kernels with a non-%8
+   width; remains open for any future family whose hidden/intermediate dims aren't %8.
 
-Verified with a REAL checkpoint, not synthetic: `testdata/gpt2` (GPT-2 small, 124M, downloaded via
+**Third bug, caught the same way as the first:** `r.invf = d.NewBufferFloats(m.RopeInvFreq())` (the
+model-level RoPE table used only by the prefill path) ALSO panicked on GPT-2's empty inv-freq
+table — a second call site with the identical empty-slice hazard as `L.invf`, found only because
+getting past the vocab decline exposed it. Guarded the same way; `prefillOK` is already `false` for
+a learned-pos family (`prefillFeatures` doesn't include `FeatLearnedPos`), so `r.invf` is
+confirmed genuinely unused.
+
+**Declared for real this time, evidence in hand:** `FeatLayerNorm`/`FeatNonGatedMLP`/
+`FeatLearnedPos`/`FeatOutBias` are now permanently declared for Metal — unlike the earlier
+temporary declaration (tried, reverted when C-10 first surfaced, matching `G7`'s `FeatAttnSink`
+precedent), this one has `TestGPT2ResidentParity` (min cosine 0.999094, 17/24 argmax-exact) and
+`TestGPT2ForwardArgmax_matchesFullLogits` actually green, not just building. Verified with a REAL
+checkpoint, not synthetic: `testdata/gpt2` (GPT-2 small, 124M, downloaded via
 `huggingface_hub.snapshot_download('gpt2', ...)` — `HF_HUB_DISABLE_XET=1` needed, the default xet
 transport 404'd), `scripts/pin_gpt2_real.py` regenerated `testdata/gpt2_forward_golden.json`
 (benign float32 noise in the last few digits vs the previously-committed golden — same real
 checkpoint, different torch/hardware build), and `decoder`'s own `TestGPT2_forwardParity` confirms
-cosine 0.9999999999998812 / exact argmax against it. `metal/gpt2_real_test.go`
-(`TestGPT2ResidentParity`) reuses `TestDenseResidentParity`/`TestGemma3ResidentParity`'s existing
-generic harness (`residentParity`/`assertParity`) and is dormant the same way
-`TestGemma3ResidentParity` is — skips until all four features are declared, `t.Fatal`s on a silent
-CPU-fallback decline once they are, so it can't quietly pass by not actually running. Declaring the
-features was tried (temporarily, to prove the wiring against the real checkpoint) and reverted once
-the C-10 decline surfaced, matching `G7`'s `FeatAttnSink` revert precedent exactly: kernel/wiring
-readiness is not end-to-end readiness, and declaring ahead of that evidence is the overclaim this
-whole feature system exists to prevent.
+cosine 0.9999999999998812 / exact argmax against it. `TestResidentBackendFeatures_noOverclaim`
+(11→15 features) and `admissionGolden` (`gpt2` → `[metal]`) updated deliberately, not silently;
+`docs/capability-matrix.md`/`docs/hardware-matrix.md` regenerated. Full `go test ./decoder/...` and
+`go test -tags goinfer_testhooks ./metal/...` clean.
 
 **G8 · DeepSeek V4-Flash as a new family — blocked on fp8 support, post-1.0** — `any`
 

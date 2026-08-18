@@ -123,7 +123,7 @@ var admissionGolden = map[string][]string{
 	// skipped (the gate multiplies the whole attention context; a wrong head count
 	// mis-shapes q/o). CPU-only until a bridge lands.
 	"laguna":           {},
-	"gpt2":             {},
+	"gpt2":             {"metal"},
 	"gpt_oss":          {},
 	"granitemoehybrid": {"webgpu"},
 	"kimi_k2":          {"webgpu"},
@@ -197,7 +197,15 @@ func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 			FeatQKNorm, FeatPartialRotary, FeatSlidingWindow, FeatPerLayerRoPE, FeatRopeMscale,
 			FeatMoE, FeatMoEGatedShared, FeatMLA, FeatSSM, FeatNonGatedMLP, FeatLogitScale, FeatRMSAddOne,
 		},
-		"metal": {FeatQKNorm, FeatSlidingWindow, FeatPartialRotary, FeatMoE, FeatMoEGatedShared, FeatSandwichNorm, FeatGatedGELU, FeatRMSAddOne, FeatEmbedScale, FeatPerLayerRoPE, FeatFinalLogitSoftcap},
+		// GPT-2 (2026-08-18): LayerNorm/non-gated-MLP/learned-pos/out-bias all landed as real
+		// kernels + full BuildResident/encodeLayer/encodeAttention wiring, validated end-to-end
+		// against the real checkpoint (TestGPT2ResidentParity, min cosine 0.999) — not a
+		// declaration ahead of the evidence.
+		"metal": {
+			FeatQKNorm, FeatSlidingWindow, FeatPartialRotary, FeatMoE, FeatMoEGatedShared, FeatSandwichNorm,
+			FeatGatedGELU, FeatRMSAddOne, FeatEmbedScale, FeatPerLayerRoPE, FeatFinalLogitSoftcap,
+			FeatLayerNorm, FeatNonGatedMLP, FeatLearnedPos, FeatOutBias,
+		},
 	}
 	for be, exp := range want {
 		got := residentBackendFeatures[be]

@@ -644,11 +644,21 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	// no `row >= N` guard. So an output width N%8 != 0 makes the tail threadgroup rewrite an
 	// already-written row while the true tail rows stay uninitialised scratch: plausible-looking
 	// wrong logits, no error. The attention widths (qDim = nH·hd, kvDim = nKV·hd) are structurally
-	// %8 (hd is 64/128), so the risk is the model-level FFN/vocab widths below. Decline any that
-	// isn't a multiple of 8 → the correct CPU path. Every shipped metal-eligible arch is %8 today,
-	// so this declines nothing now; it guards a future odd-width model from the silent corruption.
-	// (The deeper fix — an N param + `row >= N` guard in all seven kernels — touches every dispatch
-	// binding and is deferred as device-validation-gated; this build-time decline is the safe half.)
+	// %8 (hd is 64/128), so the risk is the model-level FFN widths below. Decline any that isn't a
+	// multiple of 8 → the correct CPU path. Every shipped metal-eligible arch is %8 today, so this
+	// declines nothing now; it guards a future odd-width model from the silent corruption.
+	// (The deeper fix — an N param + `row >= N` guard in the SA-family/MoE kernels — touches every
+	// dispatch binding and is deferred as device-validation-gated; this build-time decline is the
+	// safe half for THOSE kernels.)
+	//
+	// Vocab is NOT checked here (2026-08-18): it never routes through an SA-family kernel — the LM
+	// head is pinned int8 (line ~624) and only ever dispatches gemv_w8a8_coal (forwardLogits) or
+	// gemv_w8a8_amax (ForwardArgmax). gemv_w8a8_coal addresses its row directly via
+	// threadgroup_position_in_grid, which Metal guarantees correct regardless of a threadgroup's
+	// uniformity — no hazard, %8 or not. gemv_w8a8_amax uses the SAME hazardous tgs-derived
+	// formula as the SA family, but ForwardArgmax now routes a non-%8 vocab around it (full logits
+	// + host argmax) rather than declining the whole family — see ForwardArgmax. GPT-2 (50257) is
+	// the first family this reaches.
 	bad8 := func(name string, n int) error {
 		if n%8 != 0 {
 			return fmt.Errorf("metal: %s width %d is not a multiple of 8 — SA-GEMV tail-write hazard (audit C-10); use the CPU path", name, n)
@@ -659,7 +669,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	// (nH·hd + 2·nKV·hd) rows through pSABias, so both the q-width (nH·hd) and kv-width (nKV·hd) — and
 	// hence their sum — must be %8. C-10 exempted them on the "hd is 64/128" assumption; check them
 	// explicitly so an admitted arch with hd%8 != 0 declines instead of corrupting.
-	widthChecks := []error{bad8("hidden", H), bad8("intermediate", I), bad8("vocab", V)}
+	widthChecks := []error{bad8("hidden", H), bad8("intermediate", I)}
 	// Check EACH layer geom, not the maxima: a two-geom arch (Gemma-4 local/global) whose SMALLER
 	// q/kv width is non-%8 while the larger is %8 would pass a max-only check yet corrupt that layer's
 	// SA-GEMV (audit F-04). Duplicate widths across uniform layers are harmless.
@@ -713,7 +723,11 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	nTiles := (V + 7) / 8 // one (maxLogit,rowIdx) partial per threadgroup (8 rows)
 	r.part, r.tok, r.uP = d.NewBufferLen(nTiles*2), d.NewBufferLen(1), d.NewBufferU32(uint32(nTiles))
 	// Model-level rope table for the (uniform-only) prefill path; decode uses each layer's L.invf.
-	r.invf = d.NewBufferFloats(m.RopeInvFreq())
+	// GPT-2 (FeatLearnedPos): no RoPE at all, so this is empty — NewBufferFloats panics on empty;
+	// r.invf stays unused (prefillOK is false for a learned-pos family — see prefillFeatures).
+	if invf0 := m.RopeInvFreq(); len(invf0) > 0 {
+		r.invf = d.NewBufferFloats(invf0)
+	}
 	r.uH, r.uI = d.NewBufferU32(uint32(H)), d.NewBufferU32(uint32(I))
 	r.uNH = d.NewBufferU32(uint32(nH)) // query heads: constant across a family, so model-level
 	r.uScale, r.uEps = d.NewBufferFloats([]float32{m.AttnScale()}), d.NewBufferFloats([]float32{m.NormEps()})
@@ -1080,6 +1094,23 @@ func (r *resident) ForwardArgmax(id, pos int) uint32 {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	r.loadEmbedRow(id, pos) // includes the arch embed scale — see loadEmbedRow (G-02)
+	if r.V%8 != 0 {
+		// gemv_w8a8_amax (like the SA-family decode kernels, C-10) derives its output row from
+		// tgid*(tgs>>5)+sgid: Metal's dispatchThreads: makes the LAST threadgroup non-uniform
+		// (fewer than 256 threads) whenever the dispatch total isn't a multiple of the
+		// threadgroup size, and that formula silently miscomputes for a non-uniform group —
+		// rewriting an already-written row while the true tail row is never computed. Padding
+		// the weight/output isn't a safe workaround here the way it is for a plain overwrite
+		// kernel: a padding row's score depends on the (unknown at load time) real activation,
+		// so it cannot be guaranteed to lose the argmax against real logits — it could just as
+		// easily win it. Route around the kernel entirely for a non-%8 vocab (GPT-2: 50257 —
+		// the first family this reaches) via the full-logits path instead: gemv_w8a8_coal
+		// (forwardLogits) addresses its row directly from threadgroup_position_in_grid, which
+		// Metal guarantees correct regardless of a threadgroup's uniformity, so it never had
+		// this hazard. Slower (materializes the whole vocab instead of the fused reduction),
+		// correct always beats fast-but-wrong, and GPT-2's vocab is cheap to materialize.
+		return uint32(argmaxF32(r.forwardLogits(pos)))
+	}
 	r.uPos.SetU32(uint32(pos))
 	r.uNKeys.SetU32(uint32(pos + 1))
 	e := r.q.Begin()
@@ -1089,6 +1120,19 @@ func (r *resident) ForwardArgmax(id, pos int) uint32 {
 	e.End()
 	r.recordExecErr(e.Err()) // C-09
 	return r.tok.U32()
+}
+
+// argmaxF32 is decoder/sampler.go's argmax, mirrored here to avoid a package dependency for one
+// function: first-max-wins (strict >), the same tie-break metal's own argmax_finish kernel uses
+// (cv>v||(cv==v&&ci<idx) — lower index wins a tie) and decoder's CPU path uses.
+func argmaxF32(v []float32) int {
+	best, bi := v[0], 0
+	for i, x := range v[1:] {
+		if x > best {
+			best, bi = x, i+1
+		}
+	}
+	return bi
 }
 
 // forwardTrunkForTest runs the trunk over the first nLayers layers ONLY and returns the residual

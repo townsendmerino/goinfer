@@ -362,10 +362,13 @@ var residentBackendFeatures = map[string]map[ResidentFeature]bool{
 	},
 
 	// cgo-free Metal (metal/): dense Qwen2/Llama plus qk-norm, sliding-window, partial-rotary,
-	// MoE (router + stacked experts + shared expert; metal/moe.go), and the full Gemma set —
-	// sandwich norms, GeGLU, (1+w) RMS, √hidden embed scale, per-layer RoPE base. Gemma parity
-	// was gated on the GELU-tanh overflow fix (glu_act clamp, 38a2b7c): logit cosine 0.818→0.994.
-	// Still declines YaRN mscale, MLA and SSM.
+	// MoE (router + stacked experts + shared expert; metal/moe.go), the full Gemma set —
+	// sandwich norms, GeGLU, (1+w) RMS, √hidden embed scale, per-layer RoPE base — and GPT-2's
+	// LayerNorm/non-gated-MLP/learned-pos/out-bias (2026-08-18: layernorm_quant, act_quant,
+	// gemv_w4a8_resid_bias/gemv_w4a8_sa_bias_resid, encodeLayer/encodeAttention wiring, the
+	// ForwardArgmax V%8!=0 fallback for GPT-2's 50257 vocab — TestGPT2ResidentParity, min cosine
+	// 0.999). Gemma parity was gated on the GELU-tanh overflow fix (glu_act clamp, 38a2b7c): logit
+	// cosine 0.818→0.994. Still declines YaRN mscale, MLA and SSM.
 	"metal": {
 		FeatQKNorm:            true, // qk_norm kernels
 		FeatSlidingWindow:     true, // attention window uniform
@@ -378,5 +381,9 @@ var residentBackendFeatures = map[string]map[ResidentFeature]bool{
 		FeatEmbedScale:        true, // √hidden embedding multiplier (embedResident)
 		FeatPerLayerRoPE:      true, // per-layer invFreq (Gemma local 10k vs global 1M base)
 		FeatFinalLogitSoftcap: true, // softcap·tanh(logits/softcap) host-side after readback (metal/model.go finalizeLogits)
+		FeatLayerNorm:         true, // layernorm_quant — mean-centered norm+quant (GPT-2, generalized with a hasBias flag for Cohere)
+		FeatNonGatedMLP:       true, // act_quant — up→act→down, no gate (GPT-2)
+		FeatLearnedPos:        true, // addLearnedPos — host-side wpe[pos] add, RoPE dispatch skipped (GPT-2)
+		FeatOutBias:           true, // gemv_w4a8_sa_bias_resid (o-proj) — GPT-2's attention output bias
 	},
 }
