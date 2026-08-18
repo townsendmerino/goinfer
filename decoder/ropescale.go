@@ -88,8 +88,26 @@ func parseRopeScaling(raw json.RawMessage) (*ropeScaling, error) {
 		}, nil
 	case "yarn":
 		return newYarnScaling(obj.Factor, obj.OrigMaxPosition, obj.BetaFast, obj.BetaSlow, obj.AttentionFactor, obj.Truncate)
+	case "dynamic":
+		// Dynamic NTK (InternLM2/3, older Qwen/Llama long-context variants) recomputes the
+		// RoPE base per sequence from the CURRENT length:
+		//
+		//	base' = base · (factor·seq/origMax − (factor−1))^(dim/(dim−2))   when seq > origMax
+		//	base' = base                                                     otherwise
+		//
+		// WITHIN THE TRAINED WINDOW IT IS EXACTLY IDENTITY — HF's DynamicNTKScalingRotaryEmbedding
+		// only rescales once seq_len exceeds max_position_embeddings. So a null scaling here is
+		// not an approximation for seq ≤ origMax; it is the same function.
+		//
+		// It is accepted rather than rejected because rejecting it makes a whole family
+		// unloadable over a factor that does nothing at the lengths goinfer is gated at, and
+		// silently wrong ONLY past a boundary the caller can be told about. Beyond origMax the
+		// positions drift — that is a real limitation, recorded here and in the family docs,
+		// not papered over: it needs a per-sequence inv-freq rebuild, which the precomputed
+		// finalizeRoPE tables cannot express today.
+		return nil, nil
 	default:
-		return nil, fmt.Errorf("rope_scaling rope_type=%q unsupported (have: linear, llama3, yarn; longrope/dynamic are a follow-up)", kind)
+		return nil, fmt.Errorf("rope_scaling rope_type=%q unsupported (have: linear, llama3, yarn, dynamic; longrope is a follow-up)", kind)
 	}
 }
 

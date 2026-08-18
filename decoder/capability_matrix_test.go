@@ -127,6 +127,17 @@ func representativeConfig(modelType string) *Config {
 			NumKVHeads: 2, IntermediateDim: 32, RMSNormEps: 1e-5, RoPEGlobalBase: 500000,
 			HiddenAct: "silu",
 		}
+	case "internlm3":
+		// llama-shaped, plus the one thing that makes it its own model_type here: a
+		// rope_scaling of type "dynamic". Included in the representative config precisely so
+		// the matrix exercises the accept-as-in-window-identity path rather than only the
+		// tensor shape.
+		return &Config{
+			ModelType: "internlm3", VocabSize: 128, HiddenDim: 16, NumLayers: 2, NumHeads: 4,
+			NumKVHeads: 2, HeadDim: 4, IntermediateDim: 32, RMSNormEps: 1e-5, RoPEGlobalBase: 50000000,
+			HiddenAct:   "silu",
+			RopeScaling: json.RawMessage(`{"rope_type":"dynamic","factor":6.0}`),
+		}
 	case "mistral":
 		return &Config{
 			ModelType: "mistral", VocabSize: 128, HiddenDim: 16, NumLayers: 2, NumHeads: 4,
@@ -341,25 +352,31 @@ var familyDocs = map[string]familyDoc{
 	"qwen2_5_vl":          {"Qwen2.5-VL", "Qwen2.5-VL text decoder (qwen2 + m-RoPE)", "safetensors", "text (+ vision tower)"},
 	"qwen2_moe":           {"Qwen2-MoE", "Qwen1.5/2 MoE (sparse + always-on shared expert)", "safetensors, GGUF", "text"},
 	"llama":               {"Llama", "Meta Llama 2/3 dense (single-base RoPE)", "safetensors, GGUF, GPTQ, AWQ", "text"},
-	"mistral":             {"Mistral", "Mistral dense (all-layer sliding window)", "safetensors, GGUF", "text"},
-	"gpt2":                {"GPT-2", "GPT-2/NeoX (LayerNorm, learned positions, non-gated GELU)", "safetensors, GGUF", "text"},
-	"cohere":              {"Command-R", "Cohere Command-R / Aya (bias-free LayerNorm + parallel attn/MLP block + logit-scale + GPT-J RoPE)", "safetensors", "text"},
-	"cohere2":             {"Command-R7B", "Cohere2 Command-R7B / Command-A (cohere1 stack + interleaved sliding-window + NoPE on the global layers, no QK-norm)", "safetensors", "text"},
-	"mixtral":             {"Mixtral", "Mistral + sparse MoE FFN (router + top-k experts)", "safetensors, GGUF", "text"},
-	"mellum":              {"Mellum2", "JetBrains Mellum2 code model (MoE + sliding/full interleave + YaRN)", "safetensors, GGUF", "text"},
-	"qwen3_5_moe":         {"Qwen3.5-MoE", "Qwen3.5/3.6 hybrid: Gated DeltaNet + softmax + MoE", "safetensors, GGUF", "text"},
-	"qwen3_5_moe_text":    {"Qwen3.5-MoE", "Qwen3.5/3.6 hybrid: Gated DeltaNet + softmax + MoE", "safetensors, GGUF", "text"},
-	"qwen3_next":          {"Qwen3-Next", "Qwen3-Next 80B-A3B: same DeltaNet/softmax/MoE hybrid shape as Qwen3.5, computed (not stated) layer pattern", "safetensors", "text"},
-	"glm4_moe":            {"GLM-4.5/4.6", "Zhipu GLM-4.5/4.6 DeepSeek-style MoE (sigmoid routing + dense prefix)", "safetensors, GGUF", "text"},
-	"laguna":              {"Laguna", "poolside Laguna XS-2.1 / XS.2 / M.1: sigmoid-routed MoE + softplus attention output gating + per-layer query heads", "safetensors, GGUF", "text"},
-	"granitemoehybrid":    {"Granite-4.0-H", "IBM Granite-4.0-H: Mamba-2 + attention hybrid + MoE-on-every-layer", "safetensors, GGUF", "text"},
-	"nemotron_h":          {"Nemotron-H", "NVIDIA Nemotron-H/Nemotron 3 Nano single-op-per-block hybrid (mamba | attention | relu² MLP | MoE-FFN)", "safetensors, GGUF", "text"},
-	"deepseek_v2":         {"DeepSeek-V2", "DeepSeek-V2/V2-Lite: MLA + DeepSeekMoE (softmax routing)", "safetensors, GGUF", "text"},
-	"deepseek_v3":         {"DeepSeek-V3", "DeepSeek-V3: MLA + DeepSeekMoE (sigmoid + group-limited routing)", "safetensors, GGUF", "text"},
-	"kimi_k2":             {"Kimi K2", "Moonshot Kimi K2 / K2.5 / K2.6 / K2.7-Code (DeepseekV3 arch: MLA + DeepSeekMoE — same arch across the K2.x line)", "safetensors, GGUF", "text"},
-	"phi3":                {"Phi-3 / Phi-4", "Microsoft Phi-3/Phi-4 dense (fused qkv/gate-up, partial rotary)", "safetensors, GGUF", "text"},
-	"llama4_text":         {"Llama 4", "Meta Llama 4 (Scout/Maverick) text decoder: iRoPE (RoPE/NoPE interleave) + L2 QK-norm + attn-temp + dense/MoE interleave (top-1 sigmoid + shared)", "safetensors, GGUF", "text"},
-	"gpt_oss":             {"gpt-oss", "OpenAI gpt-oss 20b/120b sparse MoE: per-head attention sinks + clamped interleaved-SwiGLU + alternating sliding/full + YaRN (MXFP4 experts, CPU-only)", "GGUF", "text"},
+	// InternLM3 shares Llama's ROW deliberately. It is not a family riding llama's code with
+	// its own shape — it IS a llama, down to the tensor names, so the matrix should say
+	// "Llama: llama, internlm3" rather than open a second row that competes for the same
+	// description. Giving it its own doc name renamed llama's row to "InternLM3" and handed
+	// internlm3 llama's full-oracle status, which it had not earned.
+	"internlm3":        {"Llama", "Meta Llama 2/3 dense (single-base RoPE)", "safetensors, GGUF, GPTQ, AWQ", "text"},
+	"mistral":          {"Mistral", "Mistral dense (all-layer sliding window)", "safetensors, GGUF", "text"},
+	"gpt2":             {"GPT-2", "GPT-2/NeoX (LayerNorm, learned positions, non-gated GELU)", "safetensors, GGUF", "text"},
+	"cohere":           {"Command-R", "Cohere Command-R / Aya (bias-free LayerNorm + parallel attn/MLP block + logit-scale + GPT-J RoPE)", "safetensors", "text"},
+	"cohere2":          {"Command-R7B", "Cohere2 Command-R7B / Command-A (cohere1 stack + interleaved sliding-window + NoPE on the global layers, no QK-norm)", "safetensors", "text"},
+	"mixtral":          {"Mixtral", "Mistral + sparse MoE FFN (router + top-k experts)", "safetensors, GGUF", "text"},
+	"mellum":           {"Mellum2", "JetBrains Mellum2 code model (MoE + sliding/full interleave + YaRN)", "safetensors, GGUF", "text"},
+	"qwen3_5_moe":      {"Qwen3.5-MoE", "Qwen3.5/3.6 hybrid: Gated DeltaNet + softmax + MoE", "safetensors, GGUF", "text"},
+	"qwen3_5_moe_text": {"Qwen3.5-MoE", "Qwen3.5/3.6 hybrid: Gated DeltaNet + softmax + MoE", "safetensors, GGUF", "text"},
+	"qwen3_next":       {"Qwen3-Next", "Qwen3-Next 80B-A3B: same DeltaNet/softmax/MoE hybrid shape as Qwen3.5, computed (not stated) layer pattern", "safetensors", "text"},
+	"glm4_moe":         {"GLM-4.5/4.6", "Zhipu GLM-4.5/4.6 DeepSeek-style MoE (sigmoid routing + dense prefix)", "safetensors, GGUF", "text"},
+	"laguna":           {"Laguna", "poolside Laguna XS-2.1 / XS.2 / M.1: sigmoid-routed MoE + softplus attention output gating + per-layer query heads", "safetensors, GGUF", "text"},
+	"granitemoehybrid": {"Granite-4.0-H", "IBM Granite-4.0-H: Mamba-2 + attention hybrid + MoE-on-every-layer", "safetensors, GGUF", "text"},
+	"nemotron_h":       {"Nemotron-H", "NVIDIA Nemotron-H/Nemotron 3 Nano single-op-per-block hybrid (mamba | attention | relu² MLP | MoE-FFN)", "safetensors, GGUF", "text"},
+	"deepseek_v2":      {"DeepSeek-V2", "DeepSeek-V2/V2-Lite: MLA + DeepSeekMoE (softmax routing)", "safetensors, GGUF", "text"},
+	"deepseek_v3":      {"DeepSeek-V3", "DeepSeek-V3: MLA + DeepSeekMoE (sigmoid + group-limited routing)", "safetensors, GGUF", "text"},
+	"kimi_k2":          {"Kimi K2", "Moonshot Kimi K2 / K2.5 / K2.6 / K2.7-Code (DeepseekV3 arch: MLA + DeepSeekMoE — same arch across the K2.x line)", "safetensors, GGUF", "text"},
+	"phi3":             {"Phi-3 / Phi-4", "Microsoft Phi-3/Phi-4 dense (fused qkv/gate-up, partial rotary)", "safetensors, GGUF", "text"},
+	"llama4_text":      {"Llama 4", "Meta Llama 4 (Scout/Maverick) text decoder: iRoPE (RoPE/NoPE interleave) + L2 QK-norm + attn-temp + dense/MoE interleave (top-1 sigmoid + shared)", "safetensors, GGUF", "text"},
+	"gpt_oss":          {"gpt-oss", "OpenAI gpt-oss 20b/120b sparse MoE: per-head attention sinks + clamped interleaved-SwiGLU + alternating sliding/full + YaRN (MXFP4 experts, CPU-only)", "GGUF", "text"},
 }
 
 // capabilityRow is one family's row in the matrix (alias group → one row). All

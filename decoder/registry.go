@@ -27,25 +27,31 @@ var registry = map[string]archAdapter{
 	"qwen2_5_vl":          qwen2_5_vlArchitecture, // Qwen2.5-VL text decoder (qwen2 + m-RoPE; nested rope_parameters)
 	"qwen2_moe":           qwen2MoeArchitecture,   // Qwen-MoE/Qwen2-MoE (qwen2 + sparse MoE + shared expert)
 	"llama":               llamaArchitecture,      // Llama-2/3 dense (single-base RoPE, no QK-norm)
-	"mistral":             mistralArchitecture,    // Llama + all-layer sliding-window attention
-	"gpt2":                gpt2Architecture,       // GPT-2: LayerNorm, learned pos, non-gated GELU MLP, fused QKV
-	"cohere":              cohereArchitecture,     // Cohere / Command-R (+ Aya): bias-free LayerNorm + parallel attn/MLP block + logit_scale + GPT-J interleaved RoPE
-	"cohere2":             cohere2Architecture,    // Cohere2 / Command-R7B (+ Command-A): cohere1 stack + interleaved sliding-window + NoPE on the global layers, no QK-norm
-	"mixtral":             mixtralArchitecture,    // Llama + sparse MoE FFN (router + top-k experts)
-	"mellum":              mellumArchitecture,     // JetBrains Mellum2: MoE + sliding/full interleave + YaRN
-	"qwen3_5_moe":         qwen35Architecture,     // Qwen3.5/3.6-MoE: Gated DeltaNet (linear) + softmax hybrid + MoE
-	"qwen3_5_moe_text":    qwen35Architecture,     // the text-only checkpoint's model_type
-	"qwen3_next":          qwen3NextArchitecture,  // Qwen3-Next: same DeltaNet/softmax/MoE hybrid shape as qwen3_5_moe, but layer_types is COMPUTED (full_attention_interval) and partial_rotary_factor is a top-level field, not nested
-	"glm4_moe":            glm4moeArchitecture,    // GLM-4.5/4.6: DeepSeek-style MoE (sigmoid routing + bias) + dense prefix + QK-norm + partial RoPE
-	"laguna":              lagunaArchitecture,     // Laguna (poolside) XS-2.1 / XS.2 / M.1: sigmoid-routed MoE + shared expert + softplus attention output gating + per-layer query heads
-	"granitemoehybrid":    graniteArchitecture,    // Granite-4.0-H: Mamba-2 + attention hybrid + MoE-on-every-layer + Granite multipliers
-	"nemotron_h":          nemotronhArchitecture,  // Nemotron-H: single-op-per-block hybrid (mamba | NoPE-attention | relu² MLP)
-	"deepseek_v2":         deepseekArchitecture,   // DeepSeek-V2 (MLA + DeepSeekMoE; softmax routing, V2-Lite has no q-LoRA)
-	"deepseek_v3":         deepseekArchitecture,   // DeepSeek-V3 (MLA + DeepSeekMoE; sigmoid + e_score_correction_bias group-limited routing)
-	"kimi_k2":             deepseekArchitecture,   // Kimi K2/K2.x (architectures=DeepseekV3ForCausalLM): MLA + DeepSeekMoE, "basically V3" — 64 heads / 384 experts, config scalars only
-	"phi3":                phi3Architecture,       // Phi-3 / Phi-4 dense: llama skeleton + fused qkv_proj / gate_up_proj (split at load) + partial rotary
-	"llama4_text":         llama4Architecture,     // Llama 4 (Scout/Maverick) text decoder: iRoPE (RoPE/NoPE interleave) + L2 QK-norm + attn-temp + dense/MoE interleave (top-1 sigmoid + shared)
-	"gpt_oss":             gptOssArchitecture,     // gpt-oss (20b/120b): sparse MoE + per-head attention sinks + clamped interleaved-SwiGLU + alternating sliding/full + YaRN (MXFP4 experts; CPU-only)
+	// InternLM3 is llama-shaped to the tensor name: self_attn.{q,k,v,o}_proj, mlp.{gate,up,down}_proj,
+	// input_layernorm/post_attention_layernorm, embed_tokens/lm_head, no biases, no QK-norm. Its only
+	// config departure is rope_scaling type "dynamic", which is exactly identity within the trained
+	// window (see parseRopeScaling). So it is a registry ALIAS, not an adapter — the honest expression
+	// of "this is a llama". InternLM2 is NOT an alias: it renames every tensor and fuses qkv.
+	"internlm3":        llamaArchitecture,     // InternLM3 (llama-shaped; dynamic-NTK rope is in-window identity)
+	"mistral":          mistralArchitecture,   // Llama + all-layer sliding-window attention
+	"gpt2":             gpt2Architecture,      // GPT-2: LayerNorm, learned pos, non-gated GELU MLP, fused QKV
+	"cohere":           cohereArchitecture,    // Cohere / Command-R (+ Aya): bias-free LayerNorm + parallel attn/MLP block + logit_scale + GPT-J interleaved RoPE
+	"cohere2":          cohere2Architecture,   // Cohere2 / Command-R7B (+ Command-A): cohere1 stack + interleaved sliding-window + NoPE on the global layers, no QK-norm
+	"mixtral":          mixtralArchitecture,   // Llama + sparse MoE FFN (router + top-k experts)
+	"mellum":           mellumArchitecture,    // JetBrains Mellum2: MoE + sliding/full interleave + YaRN
+	"qwen3_5_moe":      qwen35Architecture,    // Qwen3.5/3.6-MoE: Gated DeltaNet (linear) + softmax hybrid + MoE
+	"qwen3_5_moe_text": qwen35Architecture,    // the text-only checkpoint's model_type
+	"qwen3_next":       qwen3NextArchitecture, // Qwen3-Next: same DeltaNet/softmax/MoE hybrid shape as qwen3_5_moe, but layer_types is COMPUTED (full_attention_interval) and partial_rotary_factor is a top-level field, not nested
+	"glm4_moe":         glm4moeArchitecture,   // GLM-4.5/4.6: DeepSeek-style MoE (sigmoid routing + bias) + dense prefix + QK-norm + partial RoPE
+	"laguna":           lagunaArchitecture,    // Laguna (poolside) XS-2.1 / XS.2 / M.1: sigmoid-routed MoE + shared expert + softplus attention output gating + per-layer query heads
+	"granitemoehybrid": graniteArchitecture,   // Granite-4.0-H: Mamba-2 + attention hybrid + MoE-on-every-layer + Granite multipliers
+	"nemotron_h":       nemotronhArchitecture, // Nemotron-H: single-op-per-block hybrid (mamba | NoPE-attention | relu² MLP)
+	"deepseek_v2":      deepseekArchitecture,  // DeepSeek-V2 (MLA + DeepSeekMoE; softmax routing, V2-Lite has no q-LoRA)
+	"deepseek_v3":      deepseekArchitecture,  // DeepSeek-V3 (MLA + DeepSeekMoE; sigmoid + e_score_correction_bias group-limited routing)
+	"kimi_k2":          deepseekArchitecture,  // Kimi K2/K2.x (architectures=DeepseekV3ForCausalLM): MLA + DeepSeekMoE, "basically V3" — 64 heads / 384 experts, config scalars only
+	"phi3":             phi3Architecture,      // Phi-3 / Phi-4 dense: llama skeleton + fused qkv_proj / gate_up_proj (split at load) + partial rotary
+	"llama4_text":      llama4Architecture,    // Llama 4 (Scout/Maverick) text decoder: iRoPE (RoPE/NoPE interleave) + L2 QK-norm + attn-temp + dense/MoE interleave (top-1 sigmoid + shared)
+	"gpt_oss":          gptOssArchitecture,    // gpt-oss (20b/120b): sparse MoE + per-head attention sinks + clamped interleaved-SwiGLU + alternating sliding/full + YaRN (MXFP4 experts; CPU-only)
 }
 
 // resolveArchitecture picks the adapter for cfg.ModelType and builds the

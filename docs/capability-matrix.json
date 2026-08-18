@@ -246,6 +246,7 @@
   {
     "name": "llama",
     "model_types": [
+      "internlm3",
       "llama"
     ],
     "display_name": "Llama",
