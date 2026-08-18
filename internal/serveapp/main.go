@@ -508,6 +508,17 @@ func Main() {
 	}()
 
 	fmt.Fprintf(os.Stderr, "goinfer serving on %s [%s]\n", *addr, srv.endpointSummary())
+	// No -api-key: every route above is unauthenticated. Binding to loopback keeps
+	// other MACHINES out, but not other TABS — any page open in a browser on this
+	// machine can still fetch()/POST to it while it's running (the request is sent
+	// regardless of CORS; CORS only gates whether the page can READ the response),
+	// the classic "localhost drive-by" pattern. This is a deliberate product default
+	// (no auth friction for the common single-user desktop case), not an oversight —
+	// but it needs to be visible, not just documented, since most users never read
+	// -h before running the one-liner from the README.
+	if authKey == "" {
+		fmt.Fprintln(os.Stderr, "warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.")
+	}
 	capSrc := "derived from context window"
 	if cfg.maxBodyBytes > 0 {
 		capSrc = "-max-body-bytes"

@@ -237,6 +237,16 @@ streaming (SSE); the sampling knobs (`temperature`/`top_p`/`top_k`/`seed`/
 output the model cannot violate (the same grammar as above). The chat template is
 auto-detected per model.
 
+> **No auth by default.** `--addr` defaults to loopback, but that only keeps other
+> *machines* out — not other browser *tabs* on yours. With no `--api-key` set, any web
+> page open in your browser while `serve` is running can silently `fetch()`/`POST` to
+> this API (the request is sent regardless of CORS; CORS only gates whether the page
+> can *read* the response back). This is the deliberate default for the common
+> single-user desktop case — no friction for `curl`/local tools — but if that's not
+> the threat model you want, pass `--api-key <secret>` (or set `$GOINFER_API_KEY`):
+> every route then requires `Authorization: Bearer <key>` or `x-api-key: <key>`. The
+> server prints a startup warning whenever it's running unauthenticated.
+
 **Multi-model.** `--model` is repeatable as `name=path` to serve a model zoo from
 one process; requests route on the OpenAI `model` field, `/v1/models` lists all,
 and distinct models run in parallel (per-model mutex). Resident int8 models are
