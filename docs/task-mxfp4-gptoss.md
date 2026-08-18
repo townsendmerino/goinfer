@@ -243,3 +243,54 @@ The tests now pin the DIFFERENCE (`TestMXFP4_splitIsSequentialNotGGML`) rather t
 equivalence. The earlier version of that test asserted the two orders AGREE and passed, because
 the implementation shared its mistake — a test and an implementation derived from the same wrong
 assumption cannot check each other.
+
+## Phase 2 scoping — GPU residency: NOT recommended as the next step
+
+Phase 1 made the CPU path format-complete (GGUF **and** safetensors, the latter diffed against
+the former at cosine 0.999121 with identical argmax). Residency was always the other half of
+the "gpt-oss upgrade", so here is what it actually costs, read from the kernels rather than
+estimated.
+
+### It is TWO kernel changes, not one
+
+1. **The attention sink is the easy one.** `FeatAttnSink` names a learned per-head logit that
+   joins the softmax DENOMINATOR without being a key. In `cuda/decode_splitkv.cu` that is one
+   extra term in `splitkv_softmax`'s `max + exp + denom` fold, plus getting the per-head sink
+   array to the kernel. The math is small; the same term has to appear in every attention
+   kernel that path can take (`decode_splitkv`, `attn_block`, `prefill_batched`), or the
+   sink applies at decode and vanishes at prefill — a discrepancy that would read as drift.
+
+2. **The expert kernel is the hard one, and it is the AUDITED one.** gpt-oss's expert is not
+   the SwiGLU `gemv_w4a8_moe` implements: it is *clamped interleaved* SwiGLU,
+   `gate·sigmoid(α·gate) · (up+1)`, clamped, **with per-expert biases**. `gemv_w4a8_moe` has
+   no bias epilogue, no α and no clamp. That is a real kernel, and it lands in `moe.cu` —
+   whose `moe.ptx` is the frozen, audited artifact. Changing it means the PTX-regeneration
+   ritual (reproducible at nvrtc 12.6.85 via a pinned pip venv, per the CUDA notes) and
+   re-auditing.
+
+### And two environment constraints
+
+3. **It does not fit this box.** gpt-oss-20b is ~13.8GB against the 2070's 8GB. Testing
+   residency here means coupling it to the host↔VRAM expert-streaming path
+   (`GOINFER_MOE_CACHE_EXPERTS`) — two hard, independent things at once, which is exactly how
+   a failure becomes unattributable.
+4. **Metal cannot be validated here at all.** That is the macbook's side, so the work needs
+   coordinating rather than assuming.
+
+### Recommendation
+
+**Do not start residency as the next step.** The user-visible half — "gpt-oss is GGUF-only" —
+is now closed, and it closed cheaply. What remains is a multi-part kernel effort against the
+audited PTX, on a box that cannot hold the model without a second subsystem, for a backend
+whose other target cannot be tested here.
+
+Better next candidates, in the same spirit of "what do users hit first":
+- **gpt-oss-120b** through the new safetensors path (36 layers, 128 experts) — the loader is
+  written; this is a download and a run, and the layer-slice trick makes even a 120b oracle
+  affordable (6 of 41 shards sufficed for Qwen3-Next-80B).
+- **A dense CPU-only target for the CPU BlockSpec**, where batched verify should actually
+  amortize — the Laguna measurement (0.82×) was specifically a sparse-MoE result.
+
+If residency is wanted anyway, do it as its own task with the attention sink FIRST (small,
+non-audited PTX, independently gateable on a dense gpt-oss-shaped fixture) and the expert
+kernel second, rather than both at once.
