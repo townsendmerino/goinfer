@@ -362,3 +362,37 @@ makes every resident backend decline it). So a pairing needs a CPU BlockSpec —
 `blockTrunk.DraftBlock` (which already works on CPU), verify through the existing batched
 `forwardN`, plus the accept/burst and guard logic. Realistically 4–5h if clean, 6–7h with the
 debug loop, since each real-model iteration costs ~5 minutes of load before it can fail.
+
+
+## DFlash pairing — measured
+
+`poolside/Laguna-XS.2-speculator.dflash` against real `Laguna-XS.2` at int4:
+
+**2.86 tokens/round** — 22 rounds, 41 accepted drafts, on a code prompt ("reverse a linked
+list"), producing coherent Python. P10's calibrated break-even is **2.5** tok/round
+(`breakEvenTokensPerRound`, blockspec.go), so the pairing clears it.
+
+That number is the only thing that can tell a good drafter from a broken one here: block
+drafting is lossless by construction, so the output looks identical either way. P10 learned
+this twice — a wrong mask token turned a 1.60× pairing into 0.66× while the text stayed
+perfectly valid.
+
+### What 2.86 does and does not buy
+
+It does NOT yet buy a speedup, and the reason is structural rather than a tuning problem.
+The measurement harness **verifies sequentially** — it feeds the anchor and each drafted
+token through `ForwardCapture` one at a time. That is the right instrument for acceptance
+(it is exactly what the target would do) but it does no fewer target forwards than plain
+decoding, so it can only ever measure whether drafts are accepted, never save time.
+
+A real speedup needs the drafted block verified in ONE batched pass — the CPU analogue of
+`PrefillLastNArgmax`, which today exists only on the resident (CUDA) interface. goinfer has
+the batched machinery (`runLayersFromEmbedN` / `forwardN`); what is missing is a CPU host
+exposing `ResidentDrafterHost` / `ResidentBlockDrafter` so `BlockSpec` can drive it.
+
+**So the corrected picture of my own earlier estimate:** I said step 2 was "build a CPU
+BlockSpec, ~2h" and it turned out to be two small seams, because the CPU draft/verify loop
+already existed in `dflash_accept_test.go` from the P10 sweeps. I had looked at the
+INTERFACES, seen only a CUDA implementation, and concluded no CPU path existed — when what
+was missing was a CPU path *exposed through those interfaces*. That distinction is the whole
+of the remaining work.
