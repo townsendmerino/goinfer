@@ -49,9 +49,21 @@ const (
 	FeatMoEGatedShared    ResidentFeature = "moe-gated-shared"    // sigmoid-GATED always-on shared expert (Qwen2-MoE); ungated (GLM/DeepSeek) needs only FeatMoE
 	FeatMLA               ResidentFeature = "mla"                 // latent-KV attention (DeepSeek, Kimi)
 	FeatSSM               ResidentFeature = "ssm"                 // Mamba-2 mixer (Granite-4.0-H, Nemotron-H)
-	FeatAttnSink          ResidentFeature = "attn-sink"           // learned per-head attention sink in the softmax denominator + clamped interleaved-SwiGLU experts + a router bias that reaches the WEIGHT (gpt-oss). CUDA implements all three (cuda/gptoss_act.cu); Metal and WebGPU do not and decline.
-	FeatAttnOutputGate    ResidentFeature = "attn-output-gate"    // Laguna: ctx *= softplus(g_proj·h) applied BEFORE o_proj, plus a per-layer QUERY head count. CPU-only — no resident backend implements either, so CUDA/Metal/WebGPU all decline. Without this the family needs nothing CUDA lacks and would be ADMITTED-but-mis-run: the resident path would skip the gate entirely and still produce plausible logits.
-	FeatGemma4EModel      ResidentFeature = "gemma4-e-model"      // Gemma-4 E2B/E4B shape: per-layer embeddings (PLE, hidden_size_per_layer_input>0) + cross-layer shared-KV + variable per-layer FFN. runLayersGemma4 injects PLE per layer; the resident bridges (built for the PLE-free dense 12B/26B) implement NONE of it, so a resident runner would SKIP the PLE branch and silently mis-run. No resident backend declares it ⇒ all decline (CPU-only) until an E-model bridge lands.
+	// FeatAttnSink bundles gpt-oss's THREE departures: the learned per-head sink in the softmax
+	// denominator, the clamped interleaved-SwiGLU expert, and a router whose bias reaches the
+	// WEIGHT rather than only the selection. CPU-only: no resident backend DECLARES it, so
+	// CUDA/Metal/WebGPU all decline.
+	//
+	// CUDA now has all three as gated KERNELS (cuda/gptoss_act.cu, plus the sink argument on
+	// both attention kernels) — and still does not declare this, deliberately. Declaring it was
+	// tried and reverted: TestGptOss_backendsDecline treats the DECLARATION itself as the line,
+	// which is correct, because kernel-level parity is not end-to-end parity. Nothing has run a
+	// whole gpt-oss forward on the resident path, and two further capabilities (FeatOutBias for
+	// the o_proj bias, FeatRopeMscale for YaRN) are still missing — so a model admitted on this
+	// feature alone would silently drop its output bias and its YaRN scaling.
+	FeatAttnSink       ResidentFeature = "attn-sink"        // see above: CPU-only until the bridge and an end-to-end gate exist
+	FeatAttnOutputGate ResidentFeature = "attn-output-gate" // Laguna: ctx *= softplus(g_proj·h) applied BEFORE o_proj, plus a per-layer QUERY head count. CPU-only — no resident backend implements either, so CUDA/Metal/WebGPU all decline. Without this the family needs nothing CUDA lacks and would be ADMITTED-but-mis-run: the resident path would skip the gate entirely and still produce plausible logits.
+	FeatGemma4EModel   ResidentFeature = "gemma4-e-model"   // Gemma-4 E2B/E4B shape: per-layer embeddings (PLE, hidden_size_per_layer_input>0) + cross-layer shared-KV + variable per-layer FFN. runLayersGemma4 injects PLE per layer; the resident bridges (built for the PLE-free dense 12B/26B) implement NONE of it, so a resident runner would SKIP the PLE branch and silently mis-run. No resident backend declares it ⇒ all decline (CPU-only) until an E-model bridge lands.
 )
 
 // residentFeatures derives the features this architecture actually needs from its own flags.
@@ -331,16 +343,6 @@ var residentBackendFeatures = map[string]map[ResidentFeature]bool{
 		FeatFinalLogitSoftcap: true, // softcap·tanh(logits/softcap) host-side after readback (finalSoftcap)
 		FeatPerLayerRoPE:      true, // per-layer invFreq buffer (Gemma local 10k vs global 1M base)
 		FeatMoE:               true, // moe_route + indexed stacked experts + ungated shared expert
-		// gpt-oss's three departures, all in cuda/gptoss_act.cu + the sink argument on the two
-		// attention kernels: the per-head softmax sink, the clamped interleaved-SwiGLU expert
-		// (per-expert biases, asymmetric clamp, alpha-scaled gate, +1 linear branch), and a
-		// router whose bias reaches the WEIGHT rather than only the selection. Each is gated
-		// against the CPU reference at kernel level (TestAttnSink/TestGptOssAct/TestRouteGptOss).
-		//
-		// DECLARING THE FEATURE IS NOT ADMITTING THE FAMILY. decodeRunnerEligible still declines
-		// gpt-oss unless GOINFER_GPTOSS_RESIDENT is set, because kernel-level parity is not
-		// end-to-end parity: nothing has yet run a whole gpt-oss forward on this path.
-		FeatAttnSink: true,
 	},
 
 	// WebGPU (gpu/): the richest runner — the levers in docs/gpu-residency-coverage.md.
