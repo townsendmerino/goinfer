@@ -92,6 +92,20 @@ func canSerialize(a *Architecture) *SerializeError {
 		return &SerializeError{"Mamba-2 SSM state (Granite/Nemotron) is not representable in .giw"}
 	case a.llama4 != nil:
 		return &SerializeError{"Llama-4 is not yet supported by .giw serialization"}
+	case a.gptoss != nil:
+		// MEASURED, not inferred (2026-08-19): a gpt-oss bundle round-tripped with AttnSinks 8 -> 0
+		// and LOADED CLEAN. Per-head attention sinks are per-layer state this writer has no field
+		// for, so the bundle is CRC-valid, silently sink-free, and generates confidently wrong text
+		// — the exact failure class this function exists to refuse. Representing them is a format
+		// bump (v6), not a patch; until then, refuse.
+		return &SerializeError{"gpt-oss attention sinks are not representable in .giw (v5)"}
+	case a.laguna != nil:
+		// Also measured: canSerialize accepted Laguna, the writer emitted a bundle, and the READER
+		// rejected it — "layer 1 QProj: 128 rows, arch expects 64". Laguna has PER-LAYER query-head
+		// counts and a per-layer attention output gate (GProj); the writer stores neither, and the
+		// reader validates against a uniform NumHeads*HeadDim. Fail-loud rather than silent, but a
+		// bundle that cannot be loaded is still a broken artifact produced without a warning.
+		return &SerializeError{"Laguna per-layer query heads + attention output gate are not representable in .giw (v5)"}
 	}
 	return nil
 }

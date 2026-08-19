@@ -541,6 +541,13 @@ func TestCanSerialize_refusesUnrepresentable(t *testing.T) {
 		"deepseek_v2": "MLA", "deepseek_v3": "MLA", "kimi_k2": "MLA",
 		"granitemoehybrid": "Mamba-2", "nemotron_h": "Mamba-2",
 		"llama4_text": "unsupported",
+		// Added 2026-08-19 after MEASURING both, because this table was ENFORCING the false claim
+		// that they are representable (its second branch errors if canSerialize refuses anything
+		// not listed here — so the gate would have blocked the fix):
+		//   gpt_oss — AttnSinks 8 -> 0 across a round-trip, and the bundle LOADED CLEAN. Silent.
+		//   laguna  — writer accepted, reader rejected: "layer 1 QProj: 128 rows, arch expects 64"
+		//             (per-layer query heads; GProj is not stored either).
+		"gpt_oss": "attention sinks", "laguna": "per-layer query heads + output gate",
 		// gemma4 / gemma4_text / gemma4_unified_text ARE representable as of .giw v4
 		// (the gemma4 tail: PLE + layer_scalar + KV-share flags + the gemma4moe sub-block).
 	}

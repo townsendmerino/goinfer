@@ -17,6 +17,51 @@ Release gates, tagging, versioning, the v1.0 criteria, capability claims, and th
 
 ## Queued
 
+**R3 · `.giw` claims coverage it does not have — one SILENT wrong-answer path, one broken artifact**
+— `linux`, **refusals landed 2026-08-19; format extension (v6) still open**
+
+Asked while sizing the v1.0 gate's `.giw` promise ("how safe is it?"). The frame is healthier than
+the gate doc implies — but the CLAIM was wrong, and two families proved it. **Measured, not read:**
+
+| family | `canSerialize` | round-trip result |
+|---|---|---|
+| `gpt_oss` | **accepted** | `AttnSinks 8 -> 0`, **bundle LOADED CLEAN** — silent |
+| `laguna` | **accepted** | writer emitted; **reader rejected**: `layer 1 QProj: 128 rows, arch expects 64` |
+
+`gpt-oss` is the dangerous one: per-head attention sinks are per-layer state the writer has no
+field for, so `prequant` (or `serve --stream-weights`) yields a CRC-valid, sink-free bundle that
+generates confidently wrong text with no error anywhere. Laguna fails loud at load — per-layer
+query heads and the `GProj` output gate are likewise unstored — but a bundle that cannot be loaded
+is still a broken artifact produced without a warning at write time.
+
+**`TestCanSerialize_refusesUnrepresentable` was ENFORCING the false claim.** Its `refused` map
+listed only MLA / Mamba-2 / Llama-4, and its second branch errors when `canSerialize` refuses
+anything *not* in the map — so the gate would have blocked the fix. Both the function and the map
+are now updated together.
+
+**Landed:** both families refused, with the measurements in the code comments so the next reader
+does not have to re-derive them.
+
+**Open (v6):** representing them properly — `AttnSinks` per layer, `GProj`, and per-layer query
+heads (which also means the reader's uniform `NumHeads*HeadDim` validation has to learn `headsAt`).
+That is a format bump, not a patch.
+
+**What this means for the v1.0 §3 promise**, which was the question:
+
+- The **frame already reads back**: outer `GINFB` v1+v2, inner `GINFW` `giwMinReadV=3 .. giwVersion=5`.
+  Every bump so far has been strictly ADDITIVE (v2 hybrid tail, v3 RouterBias, v4 gemma4 tail, v5
+  quant label), and older bundles keep loading.
+- **Bump rate: 4 bumps, none since v0.10.2** — through v0.11-v0.14, while six families landed. But
+  that stability is partly BECAUSE unrepresentable families are refused rather than represented, so
+  it overstates the format's reach.
+- Therefore the honest promise is **documented rebuild-on-minor with best-effort read-back to N-2**,
+  NOT forward-compat. A stale or unsupported bundle must fail LOUD (it does: magic/version/CRC
+  checks plus the arch-shape validation that caught Laguna) and be rebuildable from source.
+- **State the caveat with it:** rebuild requires the SOURCE checkpoint. A `.giw` is a derived cache,
+  and anyone keeping only the bundle (they are 8-26 GB; it is tempting) cannot regenerate it. That
+  is the sentence the README and the code comment should share.
+
+
 **R2 · The v0.14.0 sweep: 47/48 gates PASS, one BLOCKER — a required gate DID NOT RUN, caused by my
 own diagnostics** — `linux`, **fixed 2026-08-19, re-run owed**
 
