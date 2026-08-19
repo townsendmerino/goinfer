@@ -154,7 +154,20 @@ below is declaring it (§3), not proving it.
 
 ## 3. API freeze and compatibility — the declaration §0 says is owed
 
-- [ ] **REQUIRED · The tier declaration.** A `docs/` page (aikit's Hard/Experimental pattern)
+- [~] **REQUIRED · The tier declaration — DRAFTED 2026-08-18 as `docs/api-tiers.md`, awaiting
+  sign-off (decider: Francis).** Written from the ACTUAL exported surface enumerated with `go doc`,
+  not from memory. Hard = `Load`/`LoadGGUFBytes`/`Options`/`Model.{Close,Config,Dims,Quant,NewCache,
+  NewSession,Generate}`/`Session`/`SamplingParams`/`Generation`, all four `tokenizer` loaders + the
+  `Tokenizer` methods, `chat`'s `Detect`/`Template`/constructors, `constrain`'s `Masker` surface,
+  `cmd/serve`'s HTTP routes + operator flags, and the env-var registry's OPERATOR rows.
+  Experimental is named in categories rather than by omission: the backend/residency seam and every
+  `*Resident*` method, family descriptors/`Weights`, all drafters + speculative entry points,
+  multimodal, compute-time adapters, capture/diagnostics, serialization plumbing, and the
+  `Options`/flag fields that reach them. It deliberately does NOT decide the three items that are
+  their own lines (submodule posture, the `.giw` promise, the apidiff baseline). **Sign-off flips
+  this to `[x]`; the §3 "docs stop saying may change" rewrite follows it, not the other way round.**
+
+  Original wording: A `docs/` page (aikit's Hard/Experimental pattern)
   naming what v1.0 semver-binds: the `decoder` load/generate surface (`Load`, `Options`,
   `Generate`, `Session`, sampler params), `tokenizer`, `constrain`, `chat`, `cmd/serve`'s flag +
   HTTP surface, and the env-var registry (`docs/env-vars.md` becomes contract, not
