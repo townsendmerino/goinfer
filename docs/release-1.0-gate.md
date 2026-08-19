@@ -33,13 +33,27 @@ below is declaring it (§3), not proving it.
   bug) and `TestSerializeWeightsTo_matchesBuffer` (B11). A 1.0 does not tag over standing red
   parity-adjacent tests. "Reclassified" means a recorded decision with a decider, not a floor
   adjustment to make red green.
-- [ ] **REQUIRED · The w4a8 coverage gap closed by building the asset.** `TestW4A8DecodeParity`
-  has been `ASSET_NEVER_BUILT` (the matched int8 `.giw` was never produced) since the sweep
-  learned to say so. The sweep's own rule applies: the only correct way off that list is to build
-  the asset. int4 is the documented default quant; its decode-parity gate must actually run at 1.0.
-- [ ] **REQUIRED · B15 manifest-emission defect fixed** (`EMIT_MANIFEST=1` flips
-  `experimental → validated` while leaving `method: tiny-golden`, and mangles mellum's method).
-  Until fixed, every stamp is manual — fine for a minor, not for the 1.0 stamp.
+- [x] **REQUIRED · The w4a8 coverage gap closed by building the asset** (2026-08-18). Both halves
+  built from the SAME source GGUF — the 1.5B the test's own docstring names — so "matched" is by
+  construction: `prequant -quant int4` and `-quant int8int8` over
+  `qwen2.5-coder-1.5b-instruct-q4_k_m.gguf`. **`TestW4A8DecodeParity` passed on first invocation:
+  16/16 greedy-token agreement, identical decoded text on both halves.** `ASSET_NEVER_BUILT` is now
+  EMPTY and got there the only correct way; the classification machinery stays for the next such
+  gate. Both paths are registered in `testdata/assets.json` and the gate reads them through
+  `assetPath`, so the sweep preflight and the gate apply one predicate (the registry's own
+  `noDirectReads` gate required that, and was right to).
+- [x] **REQUIRED · B15 manifest-emission defect fixed** (2026-08-18). Both halves, at the source
+  rather than only in the reader: (1) the merge **derives status from the method** instead of
+  asserting `validated` — T3 ⇒ validated, anything else ⇒ experimental, which also lets a row
+  DEMOTE a family whose evidence was downgraded; (2) `method` is a **closed vocabulary** checked by
+  `emitParityRow` itself, and mellum's call site now says `real-model-oracle` rather than the
+  one-word-short `real-oracle` that reached the manifest verbatim. The merge loop was extracted to
+  `applyParityRows` so the regression test drives the REAL code path, not a copy of it. Two new
+  gates, both running in plain CI where the emitter never does:
+  `TestParityEmit_methodVocabulary` (a source census over all 18 call sites — this is the one that
+  would have caught mellum's typo without a heavy run) and
+  `TestParityMerge_noPromotionWithoutMethod` (tiny-golden stays experimental; T3 validates;
+  downgrade demotes; `real-oracle` and unknown families are rejected).
 - [ ] **REQUIRED · Every registered family has a manifest row at its honest tier at the RC
   commit**, tripwire green at N/N. New since the backfill closed and to confirm on the RC:
   `qwen3_5` (real-checkpoint gate `4d1a7f2`, token-id parity `e3674aa`), the InternLM2/3

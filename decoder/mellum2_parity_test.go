@@ -74,10 +74,12 @@ func runMellum2Golden(t *testing.T, goldenPath string, cosFloor float64, emit bo
 		t.Errorf("sample cosine %.5f < %.2f", cos, cosFloor)
 	}
 	// Record the validated metrics (no-op unless GOINFER_MANIFEST_EMIT; skipped if any check
-	// above failed). int8int8 (serve default) vs HF bf16 → real-oracle; argmax exact when green.
+	// above failed). int8int8 (serve default) vs HF bf16 → real-model-oracle; argmax exact when green.
+	// The method string is the T3 vocabulary name, checked by emitParityRow: "real-oracle" was
+	// written here for months and reached the manifest verbatim (B15).
 	// Emit only from the forward gate (not the window gate) to avoid a double row.
 	if emit {
-		emitParityRow(t, "mellum", "real-oracle", "HF bf16 (Mellum2-12B-A2.5B-Instruct)", 100.0, cos, cos)
+		emitParityRow(t, "mellum", "real-model-oracle", "HF bf16 (Mellum2-12B-A2.5B-Instruct)", 100.0, cos, cos)
 	}
 }
 

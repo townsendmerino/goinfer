@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -35,6 +36,16 @@ func emitParityRow(t *testing.T, family, method, reference string, argmaxPct, co
 	if os.Getenv("GOINFER_MANIFEST_EMIT") == "" || t.Failed() {
 		return
 	}
+	// THE METHOD IS VOCABULARY, NOT FREE TEXT (B15). mellum's gate emitted "real-oracle" —
+	// one word short of the T3 name "real-model-oracle" — and the merge wrote it into the
+	// manifest verbatim, where it read as a method no tier rule recognises. A string typed
+	// at ~20 call sites and never compared to a list is a defect waiting for a rename, so
+	// it is checked HERE, at the source, rather than only by the tier gate downstream.
+	if !knownParityMethod(method) {
+		t.Fatalf("emitParityRow(%q): method %q is not in the manifest vocabulary %v — "+
+			"a row with an unrecognised method corrupts the manifest and no tier rule can "+
+			"classify it", family, method, sortedKeys(parityMethods))
+	}
 	// Fixed-precision metrics keep the JSON readable + the merge deterministic (Go's
 	// float marshaling would print 1.0 as "1"). Strings go through json.Marshal for
 	// correct quoting/escaping.
@@ -43,4 +54,24 @@ func emitParityRow(t *testing.T, family, method, reference string, argmaxPct, co
 	meth, _ := json.Marshal(method)
 	ref, _ := json.Marshal(reference)
 	fmt.Printf("PARITY_ROW {\"family\":%s,\"method\":%s,\"reference\":%s,\"metrics\":%s}\n", fam, meth, ref, metrics)
+}
+
+// parityMethods is the closed vocabulary of manifest `method` values: the T3 methods that can
+// carry status "validated" (t3Methods, in parity_manifest_test.go, which is the authority the
+// tier gate reads) plus the sub-T3 methods that are honest evidence at status "experimental".
+// Keeping BOTH sets in one place is the point — the emitter must accept a tiny-golden row (it
+// is real evidence) while the merge must not let one become "validated".
+var parityMethods = map[string]bool{
+	"full-forward-oracle":  true, // T3
+	"real-model-oracle":    true, // T3
+	"weightDiff":           true, // T3
+	"tiny-golden":          true, // sub-T3
+	"tiny-golden+coherent": true, // sub-T3
+	"layer-slice":          true, // sub-T3: real weights, partial depth
+}
+
+// knownParityMethod reports whether m is in the vocabulary. "shared-path (via X)" is accepted
+// by prefix the same way isT3Method accepts it, since X is a family name.
+func knownParityMethod(m string) bool {
+	return parityMethods[m] || strings.HasPrefix(m, "shared-path (via ")
 }

@@ -428,6 +428,28 @@
         "TestQwen38Real_gate"
       ],
       "note": "Qwen/Qwen3.8-27B, 18 bf16 shards / 55.6 GB. The whole multimodal repo is downloaded because the text decoder's shards are interleaved with the vision tower's; the loader requests neither model.visual.* nor mtp.*. Loaded at int4 -- Options{} would ask for the f32 dequant of a 27.8B model."
+    },
+    {
+      "env": "GOINFER_W4A8_INT4",
+      "kind": "file",
+      "candidates": [
+        "$MODELS/qwen15-w4a8-int4.giw"
+      ],
+      "used_by": [
+        "TestW4A8DecodeParity"
+      ],
+      "note": "The MATCHED half of the W4A8 decode-parity pair. Both halves are built from the SAME source GGUF (~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, the model the test's own docstring names) so the pair is matched by construction: `go run ./cmd/prequant -quant int4 -o ~/models/qwen15-w4a8-int4.giw <src>` and the same with `-quant int8int8 -o ~/models/qwen15-w4a8-int8.giw`. Built 2026-08-18 to close the v1.0 gate's w4a8 coverage line; the gate passed 16/16 on first run. Rebuild both together or not at all -- an int4 half paired with an int8 half from a different source measures nothing."
+    },
+    {
+      "env": "GOINFER_W4A8_INT8",
+      "kind": "file",
+      "candidates": [
+        "$MODELS/qwen15-w4a8-int8.giw"
+      ],
+      "used_by": [
+        "TestW4A8DecodeParity"
+      ],
+      "note": "The MATCHED half of the W4A8 decode-parity pair. Both halves are built from the SAME source GGUF (~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, the model the test's own docstring names) so the pair is matched by construction: `go run ./cmd/prequant -quant int4 -o ~/models/qwen15-w4a8-int4.giw <src>` and the same with `-quant int8int8 -o ~/models/qwen15-w4a8-int8.giw`. Built 2026-08-18 to close the v1.0 gate's w4a8 coverage line; the gate passed 16/16 on first run. Rebuild both together or not at all -- an int4 half paired with an int8 half from a different source measures nothing."
     }
   ]
 }

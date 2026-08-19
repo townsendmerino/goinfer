@@ -149,37 +149,9 @@ func TestParityManifest_merge(t *testing.T) {
 		machine = "linux-62gb"
 	}
 
-	applied := []string{}
-	for line := range strings.SplitSeq(string(rowsRaw), "\n") {
-		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "PARITY_ROW ") {
-			continue
-		}
-		var row struct {
-			Family    string          `json:"family"`
-			Method    string          `json:"method"`
-			Reference string          `json:"reference"`
-			Metrics   json.RawMessage `json:"metrics"`
-		}
-		if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "PARITY_ROW ")), &row); err != nil {
-			t.Fatalf("bad PARITY_ROW line %q: %v", line, err)
-		}
-		f, ok := m.Families[row.Family]
-		if !ok {
-			t.Fatalf("PARITY_ROW for unknown family %q (not in %s)", row.Family, parityManifestPath)
-		}
-		f.Status = "validated"
-		f.Method = rawString(row.Method)
-		f.Reference = rawString(row.Reference)
-		f.Metrics = row.Metrics
-		f.ValidatedAt = rawString(sha)
-		f.Date = rawString(date)
-		f.Machine = rawString(machine)
-		m.Families[row.Family] = f
-		applied = append(applied, row.Family)
-	}
-	if len(applied) == 0 {
-		t.Fatalf("no PARITY_ROW lines in %s", *mergeRowsPath)
+	applied, err := applyParityRows(&m, string(rowsRaw), sha, date, machine)
+	if err != nil {
+		t.Fatal(err)
 	}
 
 	// Recompute every deps_hash (same as -update) so the freshness gate stays green.
@@ -436,4 +408,62 @@ func sortedKeys[V any](m map[string]V) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// applyParityRows folds PARITY_ROW lines into m and returns the families it touched. It is a
+// FUNCTION rather than inline loop body so the B15 regression test can drive the real merge
+// instead of a re-implementation of it — the defect it guards against (status promoted without
+// the method to support it) was exactly the kind a parallel test-only copy would have missed.
+func applyParityRows(m *parityManifest, rows, sha, date, machine string) ([]string, error) {
+	var applied []string
+	for line := range strings.SplitSeq(rows, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "PARITY_ROW ") {
+			continue
+		}
+		var row struct {
+			Family    string          `json:"family"`
+			Method    string          `json:"method"`
+			Reference string          `json:"reference"`
+			Metrics   json.RawMessage `json:"metrics"`
+		}
+		if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "PARITY_ROW ")), &row); err != nil {
+			return nil, fmt.Errorf("bad PARITY_ROW line %q: %w", line, err)
+		}
+		if !knownParityMethod(row.Method) {
+			return nil, fmt.Errorf("PARITY_ROW for %q carries method %q, which is not in the "+
+				"manifest vocabulary %v", row.Family, row.Method, sortedKeys(parityMethods))
+		}
+		f, ok := m.Families[row.Family]
+		if !ok {
+			return nil, fmt.Errorf("PARITY_ROW for unknown family %q (not in %s)", row.Family, parityManifestPath)
+		}
+		// STATUS IS DERIVED FROM THE METHOD, NOT ASSERTED (B15). This used to read
+		// `f.Status = "validated"` unconditionally, so one sweep with EMIT_MANIFEST=1 promoted
+		// glm4_moe, mixtral, qwen2_5_vl and qwen2_moe to *supported* on tiny-golden evidence —
+		// the published capability matrix's "supported" count, upgraded by a tool, from rows
+		// that said tiny-golden right next to the promotion. TestParityManifest_methodTier
+		// caught it, which is the gate working; but a writer that produces claims a reader has
+		// to reject is the wrong shape. The rule the tier gate enforces is now the rule the
+		// writer applies: T3 method ⇒ validated, anything else ⇒ experimental. A row can
+		// therefore DEMOTE a family whose evidence was downgraded, instead of leaving a stale
+		// "validated" standing over a weaker method.
+		if isT3Method(row.Method) {
+			f.Status = "validated"
+		} else {
+			f.Status = "experimental"
+		}
+		f.Method = rawString(row.Method)
+		f.Reference = rawString(row.Reference)
+		f.Metrics = row.Metrics
+		f.ValidatedAt = rawString(sha)
+		f.Date = rawString(date)
+		f.Machine = rawString(machine)
+		m.Families[row.Family] = f
+		applied = append(applied, row.Family)
+	}
+	if len(applied) == 0 {
+		return nil, fmt.Errorf("no PARITY_ROW lines found")
+	}
+	return applied, nil
 }

@@ -21,11 +21,11 @@ import (
 //	GOINFER_W4A8_INT4=/tmp/qwen1.5b-int4.giw GOINFER_W4A8_INT8=/tmp/qwen15-int8.giw \
 //	  go test ./decoder/ -run TestW4A8DecodeParity -v
 func TestW4A8DecodeParity(t *testing.T) {
-	int4 := os.Getenv("GOINFER_W4A8_INT4")
-	int8p := os.Getenv("GOINFER_W4A8_INT8")
-	if int4 == "" || int8p == "" {
-		t.Skip("set GOINFER_W4A8_INT4 and GOINFER_W4A8_INT8")
-	}
+	// Through the shared registry, not os.Getenv: the gate and the sweep preflight then apply
+	// the SAME predicate to the same candidate paths (testdata/assets.json), which is what keeps
+	// "the sweep says this asset is present" and "the gate can actually load it" the same claim.
+	int4 := assetPath(t, "GOINFER_W4A8_INT4")
+	int8p := assetPath(t, "GOINFER_W4A8_INT8")
 
 	data, err := os.ReadFile(int4)
 	if err != nil {

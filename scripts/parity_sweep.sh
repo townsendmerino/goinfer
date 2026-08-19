@@ -194,20 +194,34 @@ classify() {
 # thing -- no invocation on any machine can make it green, so calling it a blocker calls the release
 # broken for a coverage gap, at every tag, forever.
 #
-# Concretely: TestW4A8DecodeParity needs a MATCHED int4+int8 .giw pair, and only int4 bundles have
-# ever been produced. It skipped on 2026-08-12 and again on 2026-08-13, and it will skip at every tag
-# until someone builds the int8 half.
-#
 # It is still REPORTED, on its own line, and counted -- as what it is, a coverage gap, rather than as
 # an obstruction someone is expected to clear before tagging. A permanent blocker is not a gate; it
 # is a thing people learn to override, and an override habit is worse than an honest gap.
 #
 # TO REMOVE A NAME FROM HERE: build the asset. That is the only correct way off this list.
-ASSET_NEVER_BUILT=(
-  "TestW4A8DecodeParity"   # int8 .giw half has never been produced; only int4 bundles exist
-)
+#
+# THE LIST IS EMPTY, AND IT GOT THERE THE ONLY CORRECT WAY (2026-08-18, v1.0 gate 1.3).
+# TestW4A8DecodeParity was the sole entry: it needs a MATCHED int4+int8 .giw pair and only int4
+# bundles had ever been produced, so it skipped at every tag from 2026-08-12 on. The pair now
+# exists -- built from the 1.5B the test's own docstring names, both halves from the SAME source
+# GGUF so "matched" is by construction rather than by belief:
+#
+#   go run ./cmd/prequant -quant int4     -o ~/models/qwen15-w4a8-int4.giw \
+#     ~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+#   go run ./cmd/prequant -quant int8int8 -o ~/models/qwen15-w4a8-int8.giw \
+#     ~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+#
+# The gate then ran GREEN on first invocation: 16/16 greedy-token agreement, identical decoded
+# text on both halves. Registered as GOINFER_W4A8_INT4/GOINFER_W4A8_INT8 in testdata/assets.json,
+# so a box without them reports a missing ASSET, which is a fixable provisioning fact -- not the
+# unfixable "no invocation on any machine can make this green" this list exists for.
+#
+# Keep the machinery: the next gate whose asset has never been built belongs here, and the empty
+# array is the honest current state rather than a reason to delete the classification.
+ASSET_NEVER_BUILT=()
 asset_gap() {
   local n
+  [ ${#ASSET_NEVER_BUILT[@]} -eq 0 ] && return 1
   for n in "${ASSET_NEVER_BUILT[@]}"; do [ "$n" = "$1" ] && return 0; done
   return 1
 }
