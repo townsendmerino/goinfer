@@ -5,8 +5,13 @@ All notable changes to goinfer are documented here. The format follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 The forward-pass and quantization numerics are parity-gated against HuggingFace
-and are the stable contract. The loader and architecture-descriptor surface is
-pre-1.0 and may change as new model families and quant formats land.
+and are the stable contract. **Which API surfaces v1.0 will semver-bind is now
+declared in [`docs/api-tiers.md`](docs/api-tiers.md)** (signed off 2026-08-18):
+the load/generate, tokenizer, chat, constrain and `serve` surfaces are the Hard
+tier; the backend/residency seam, family descriptors, drafters, multimodal and
+serialization plumbing are named Experimental — explicitly, not by omission.
+**That split takes effect at the v1.0 tag.** Until then goinfer is pre-1.0 and
+any surface may still change.
 
 ## [Unreleased]
 

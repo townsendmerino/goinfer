@@ -246,6 +246,9 @@ cgo-free — see `docs/roadmap.md`.)
 
 Numerics — the forward pass and quantization — are **parity-gated against
 HuggingFace** and are the stable surface. The loader and `Architecture`
-descriptor are pre-1.0 and move as new model families and quant formats land;
-that's why the `.giw` format carries a version guard (a stale bundle triggers a
-safe rebuild via the GGUF path, never a crash).
+descriptor move as new model families and quant formats land, and **v1.0 will not
+freeze them**: `docs/api-tiers.md` (signed off 2026-08-18) names the descriptor,
+the loader internals and the residency seam as Experimental *explicitly*, so
+"still moving" is a stated exclusion rather than an unstated risk. That is also
+why the `.giw` format carries a version guard (a stale bundle triggers a safe
+rebuild via the GGUF path, never a crash).

@@ -154,8 +154,8 @@ below is declaring it (§3), not proving it.
 
 ## 3. API freeze and compatibility — the declaration §0 says is owed
 
-- [~] **REQUIRED · The tier declaration — DRAFTED 2026-08-18 as `docs/api-tiers.md`, awaiting
-  sign-off (decider: Francis).** Written from the ACTUAL exported surface enumerated with `go doc`,
+- [x] **REQUIRED · The tier declaration — `docs/api-tiers.md`, SIGNED OFF 2026-08-18 (decider:
+  Francis).** Written from the ACTUAL exported surface enumerated with `go doc`,
   not from memory. Hard = `Load`/`LoadGGUFBytes`/`Options`/`Model.{Close,Config,Dims,Quant,NewCache,
   NewSession,Generate}`/`Session`/`SamplingParams`/`Generation`, all four `tokenizer` loaders + the
   `Tokenizer` methods, `chat`'s `Detect`/`Template`/constructors, `constrain`'s `Masker` surface,
@@ -164,8 +164,10 @@ below is declaring it (§3), not proving it.
   `*Resident*` method, family descriptors/`Weights`, all drafters + speculative entry points,
   multimodal, compute-time adapters, capture/diagnostics, serialization plumbing, and the
   `Options`/flag fields that reach them. It deliberately does NOT decide the three items that are
-  their own lines (submodule posture, the `.giw` promise, the apidiff baseline). **Sign-off flips
-  this to `[x]`; the §3 "docs stop saying may change" rewrite follows it, not the other way round.**
+  their own lines (submodule posture, the `.giw` promise, the apidiff baseline). The
+  sign-off unblocked the §3 docs rewrite (done, same day) and gives the apidiff baseline something
+  to check against. **The split takes effect AT the v1.0 tag, not at sign-off** — until then the
+  project is still pre-1.0 and the docs say so.
 
   Original wording: A `docs/` page (aikit's Hard/Experimental pattern)
   naming what v1.0 semver-binds: the `decoder` load/generate surface (`Load`, `Options`,

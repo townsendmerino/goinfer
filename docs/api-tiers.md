@@ -1,10 +1,13 @@
 # API stability tiers — what v1.0 semver-binds
 
-> **STATUS: PROPOSED, awaiting sign-off (decider: Francis).** This is the v1.0 gate's §3
-> deliverable — the declaration §0 of `release-1.0-gate.md` says is owed. It is written from the
-> **actual exported surface at HEAD**, enumerated with `go doc`, not from memory. Nothing here
-> takes effect until it is signed off and the docs in §3's "stop saying may change" line are
-> rewritten to match. Open questions it deliberately does NOT decide are listed at the bottom.
+> **STATUS: SIGNED OFF 2026-08-18 (decider: Francis).** This is the v1.0 gate's §3 deliverable —
+> the declaration §0 of `release-1.0-gate.md` says is owed. It is written from the **actual
+> exported surface at HEAD**, enumerated with `go doc`, not from memory.
+>
+> **The split takes effect AT the v1.0 tag, not at this sign-off.** Until then goinfer is still
+> pre-1.0 and everything can move; what is settled now is *which* surfaces v1.0 will bind, so the
+> apidiff baseline has something to check against and the RC's docs have something to cite. The
+> three open questions at the bottom are their own gate lines and are NOT decided here.
 
 Two tiers, following aikit's precedent (its README §"Stability tiers"), for one reason: a 1.0 that
 promises everything promises nothing, and a 1.0 that promises nothing is not a 1.0. The split says

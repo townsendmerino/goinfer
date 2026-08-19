@@ -360,6 +360,13 @@ Pre-1.0; the forward-pass / quantization contract is parity-gated and stable, th
 loader and architecture-descriptor surface is still moving as new model families
 land. See `CHANGELOG.md`.
 
+**Which surfaces v1.0 will semver-bind is already decided** — see
+[`docs/api-tiers.md`](docs/api-tiers.md) (signed off 2026-08-18). The Hard tier is
+what the demos and `serve` use: load a model, tokenize, render a chat prompt,
+generate, optionally constrain. The backend/residency seam, family descriptors,
+drafters, multimodal and serialization plumbing are named Experimental and stay
+outside the promise. The split takes effect at the v1.0 tag, not before.
+
 ## Install
 
 ```bash
