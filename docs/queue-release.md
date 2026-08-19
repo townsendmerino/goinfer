@@ -624,6 +624,46 @@ problem in the list, not evidence about C1a.
 So **three** genuine standing failures, not one. This is a **denominator, not a campaign** — the
 campaign is [[B13]] and it is budgeted for after the release. Nothing here is to be fixed now.
 
+**Update 2026-08-18 (v1.0 gate work): ONE, not two — and the survivor has its diagnosis.**
+
+`TestSerializeWeightsTo_matchesBuffer` is **GREEN** (`streamed 632821831 bytes, byte-identical to
+buffered`). [[B11]]'s 2026-08-14 fix resolved it; the entry below and `docs/release-1.0-gate.md`
+both still listed it as standing because they were read from queue text rather than re-run. Struck
+by re-running it, not by reasoning about it.
+
+`TestQwen35GGUF_vsSafetensors` **reproduces exactly** — min cosine 0.987835 at step 63, mean
+0.998114 over 80 teacher-forced steps, the same figure as 2026-08-12, so it is deterministic rather
+than flaky. **Three pieces of evidence now say the label "loader bug" is wrong**, and the decision
+of what to do about it is Francis's (below):
+
+1. **`TestQwen35GGUF_weightDiff` is clean.** Every transform-bearing tensor in layers 0-3 — the V
+   un-tile, the fused q‖gate, `−exp(A_log)`, the norm un-bake, conv1d, q/k_norm — is either
+   BIT-EXACT (`cos=1.000000, maxAbs=0`) or sits at a **uniform** `relL2 ≈ 0.0057`, the Q8_0-vs-bf16
+   dequant floor. Worst tensor 0.999980. A transform bug craters ONE tensor; nothing stands out.
+2. **The divergence curve has no step** (`TestQwen35GGUF_locateDivergence`, new). Residuals
+   captured after all 40 layers from both containers on identical input: divergence is already
+   present at layer 0 (0.99978) and decays smoothly and NON-MONOTONICALLY to 0.99835 by layer 39,
+   final logits 0.99792. The per-layer delta oscillates in BOTH directions (−0.00087 at 16 then
+   +0.00030/+0.00031; −0.00192 at 37 then +0.00097/+0.00037). **A localized defect cannot recover** —
+   a wrong tensor keeps being wrong at every subsequent layer. Repeated recovery is what a small
+   random perturbation looks like as downstream normalization re-aligns it. The biggest single
+   drop is ~2.5× the median wobble and is gone two layers later.
+3. **The floor is a statistical impossibility as written.** It requires `min` over 80 steps ≥ 0.998
+   while the MEAN is 0.998114 — i.e. every step must be at least as good as the average. For a
+   MoE, the spread has an obvious mechanism: a ~0.5% weight delta flips borderline top-k router
+   choices at a few positions, and a flipped expert moves one step's logits far more than the
+   noise floor. That is the same near-tie story the sibling bf16 gate already recorded (argmax
+   68/80, divergences rank-2 near-ties).
+
+**DECISION OWED (decider: Francis), and deliberately NOT taken here.** The gate's own doc-comment
+says "loader bug (not Q8_0 quant)"; the evidence says the opposite. The honest options are (a)
+re-express the gate on the statistic that is stable — a MEAN floor plus an argmax/near-tie check —
+with the min floor set from measured evidence, or (b) leave it red and carry it. **What must NOT
+happen is the min floor being nudged to 0.987 so the red goes away**, which is the move the v1.0
+gate names as forbidden. One further experiment would settle mechanism rather than infer it:
+instrument the two containers' router top-k choices at step 63 and show the flip. ~35 min, not yet
+run.
+
 **Update 2026-08-15: two, not three.** `TestDecodeParityInt4` was carved out of B13 and closed
 (above) because it turned out to have a *decidable* answer — a stale golden pinning a superseded
 kernel — where the other two are still open questions. **The carve-out rule that produced that

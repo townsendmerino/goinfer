@@ -28,11 +28,23 @@ below is declaring it (§3), not proving it.
 - [x] **Parity backfill complete** — zero `pending` rows; staleness tripwire enforces every
   family (23/23 at `c3e43c8`, 2026-08-15; the count grows with the registry). Nothing was
   demoted; two real loader bugs were fixed instead (granite NoPE roping, nemotron_h schema).
-- [ ] **REQUIRED · B13's standing reds resolved or formally reclassified.** Two remain:
-  `TestQwen35GGUF_vsSafetensors` (cosine 0.987835 vs a 0.998 floor — self-described as a loader
-  bug) and `TestSerializeWeightsTo_matchesBuffer` (B11). A 1.0 does not tag over standing red
-  parity-adjacent tests. "Reclassified" means a recorded decision with a decider, not a floor
-  adjustment to make red green.
+- [ ] **REQUIRED · B13's standing reds resolved or formally reclassified.** **ONE remains, not
+  two, and it has a diagnosis awaiting a decision** (2026-08-18; full evidence in
+  `docs/queue-release.md`).
+  - `TestSerializeWeightsTo_matchesBuffer` — **GREEN, struck by re-running it.** B11's 2026-08-14
+    fix resolved it; this line listed it as red because it was read from queue text rather than
+    re-run. Exactly what this document's own **VERIFY** caveat is for.
+  - `TestQwen35GGUF_vsSafetensors` — reproduces deterministically (min 0.987835 @ step 63, mean
+    0.998114 over 80 steps). **The evidence contradicts its "loader bug" label**: `weightDiff` is
+    clean (every transform bit-exact or at a uniform `relL2 ≈ 0.0057` Q8_0 floor, worst 0.999980),
+    and the new `TestQwen35GGUF_locateDivergence` shows divergence entering at layer 0 and decaying
+    smoothly and NON-MONOTONICALLY with no step — the per-layer delta recovers repeatedly, which a
+    localized defect cannot do. The floor also demands `min` ≥ the mean over 80 steps, which is not
+    achievable for any spread. **Decision owed (Francis):** re-express the gate on the stable
+    statistic (mean floor + argmax/near-tie check, min floor set from measurement), or carry it
+    red. Nudging the min floor to 0.987 is the forbidden move and is not proposed. One experiment
+    would prove mechanism rather than infer it — instrument both containers' router top-k at step
+    63 to show the expert flip (~35 min, not yet run).
 - [x] **REQUIRED · The w4a8 coverage gap closed by building the asset** (2026-08-18). Both halves
   built from the SAME source GGUF — the 1.5B the test's own docstring names — so "matched" is by
   construction: `prequant -quant int4` and `-quant int8int8` over
