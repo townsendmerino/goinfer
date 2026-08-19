@@ -1,0 +1,67 @@
+
+[1m== provenance ==[0m
+  repo        4d91858
+  date (UTC)  2026-08-19T20:56:58Z
+  host        Darwin arm64
+  backend     metal
+  models      /Users/francistownsend-merino/models
+  gpu         Apple M1 Pro
+
+[1m== 0. clean GPU ==[0m
+  [33mSKIP[0m  clean-GPU check (no nvidia-smi; on Metal check Activity Monitor by hand)
+
+[1m== 1. seam (runs anywhere — no GPU, no model download) ==[0m
+  [32mPASS[0m  serve↔decoder↔backend seam: residency is actually reached, backend names validate
+
+[1m== 2. Metal suite ==[0m
+  [32mPASS[0m  full metal suite
+      ok  	github.com/townsendmerino/goinfer/metal	116.634s
+
+[1m== 3. cgo-free ==[0m
+  [32mPASS[0m  serve builds CGO_ENABLED=0 (Metal is dlopen'd via purego-objc)
+
+[1m== 4. lifecycle ==[0m
+  [32mPASS[0m  Close() frees — sawtooth not staircase, and frees with a second model resident
+
+[1m== 4b. prefill (f16-MMA TTFT — a shipped path, and it shipped NaN) ==[0m
+  [32mPASS[0m  prefill matches sequential decode and emits finite logits (no NaN)
+
+[1m== 5. repo hygiene (derived from .github/workflows/ci.yml) ==[0m
+  [31mFAIL[0m  docs/QUEUE.md SHA citations
+      queue_citation_lint: docs/QUEUE.md citations are not sound:
+        c8b65ba  ORPHANED — it resolves in this local object store but is reachable from NO ref.
+            An amended, rebased or deleted-branch commit. It survives here in the reflog until gc, and is a hard failure in any fresh clone, so a green on this machine would not travel.
+            Re-point the citation at the commit that replaced it.
+grep: unknown --directories option
+grep: unknown --directories option
+grep: unknown --directories option
+grep: unknown --directories option
+grep: unknown --directories option
+grep: unknown --directories option
+grep: unknown --directories option
+grep: unknown --directories option
+grep: unknown --directories option
+grep: unknown --directories option
+grep: unknown --directories option
+grep: unknown --directories option
+grep: unknown --directories option
+grep: unknown --directories option
+grep: unknown --directories option
+grep: unknown --directories option
+grep: unknown --directories option
+grep: unknown --directories option
+grep: unknown --directories option
+grep: unknown --directories option
+grep: unknown --directories option
+grep: unknown --directories option
+  [33mSKIP[0m  22 linux-only CI hygiene step(s) — wrong platform for this host
+  [32mPASS[0m  0 CI hygiene check(s) reproduced locally, derived from ci.yml
+
+[1m== verdict ==[0m
+  check groups: 7 declared -> 7 reported   |   verdicts within them: 6 pass, 2 skip, 1 fail
+
+  [33mSkipped — a skip is not a pass; this gate does NOT cover:[0m
+    - SKIPPED: clean-GPU check (no nvidia-smi; on Metal check Activity Monitor by hand)
+    - SKIPPED: 22 linux-only CI hygiene step(s) — wrong platform for this host
+
+  [31mFAIL[0m — metal on Darwin @ 4d91858. Do not tag.

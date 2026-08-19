@@ -99,7 +99,7 @@ groups were seeded from conversation, and **the rate is much lower**, which is t
 |---|---|---|
 | C1 drain fix — CUDA verification | **open** | no CUDA unload/drain test found |
 | C2 out-of-tree consumer audit | **open** | needs a fresh no-repo session by design |
-| C3 Metal consumer window | **RUN + fixes 2026-08-15 (metal/v0.13.0)** | cgo-free/no-Xcode build ✅ (otool-confirmed); resident decode ✅ drivable via `Load(Backend:"metal")`+blank-import, **65.2 tok/s out-of-tree** (my "not drivable" claim was a stale-doc mis-read, corrected); `go install …@v0.13.0` was BROKEN by committed `replace` → **replaces removed from all 4 submodule go.mods 2026-08-15**, RELEASING.md updated. **cuda verified replace-free on the box** (`BUILD_OK` + serve/chat entrypoints, `GOWORK=off -tags cuda`, 2026-08-15); **box go.work now covers `./demo/agent`.** **Remaining: cut a replace-free tag (v0.13.1/v0.14.0)** so consumers get the `go install` fix. Full note: `docs/measurements/c3-metal-consumer-window.md` |
+| C3 Metal consumer window | **RUN + CLOSED 2026-08-19 (metal/v0.14.0)** | v0.13.0 run (2026-08-15) found `go install …@v0.13.0` BROKEN by the committed `replace`; replaces removed from all 4 submodule go.mods, RELEASING.md updated. **v0.14.0 re-run (2026-08-19) verifies the fix reached consumers for real:** `go install …/metal/cmd/serve@v0.14.0` builds (13.7 MB, clean GOPATH); resident decode via `Load(Backend:"metal")`+blank-import at **65.4 tok/s out-of-tree** (was 65.2 at v0.13.0 — no regression); cgo-free otool-confirmed both paths. Full note: `docs/measurements/c3-metal-consumer-window-v0.14.0.md` (supersedes the v0.13.0 note, kept as history). |
 | C4 soak testing | **open** | `internal/serveapp/fuzz_test.go` and `internal/serveapp/chaos_test.go` exist; neither is an hours-long soak |
 | D1 trace tap + launch-site table | **open** | no coverage table in `docs/` |
 | D2 launch-wrapper commit 1 | **open** | no `cuda/internal/gen` |
@@ -180,6 +180,19 @@ committed `replace github.com/townsendmerino/goinfer => ../` in the tagged `meta
 resident-metal decode isn't drivable via the public API (needs the serve binary, which `go install`
 can't build). Full findings + the resolved dep set in `docs/measurements/c3-metal-consumer-window.md`.
 **Follow-up worth queuing:** tag `metal/` from a replace-free tree so `go install` works.
+
+**C3 RE-RUN 2026-08-19, CLOSED for real** (auto-pickup fired again — aikit v1.17.1 → v1.21.0 — on
+the `v0.14.0`/`metal/v0.14.0` tags). The follow-up above is done: `go install
+…/metal/cmd/serve@v0.14.0` now **WORKS** from a clean GOPATH (13.7 MB binary, no checkout) — the
+replace-free fix reaching consumers for the first time. Resident-metal decode via the public API
+also verified out-of-tree: 65.4 tok/s decode-only, consistent with v0.13.0's 65.2 (no regression
+across the aikit bump). RELEASING.md Step 2's two Mac gates (`GOWORK=off go build -tags metal ./...`
+standalone build; `scripts/gpu_gate.sh` device gate — needs Homebrew bash, macOS's stock `/bin/bash`
+3.2 can't run its `declare -A`) both passed clean on a committed tree; the gate's only finding was
+the pre-existing, already-documented `c8b65ba` local-reflog artifact (allowlisted 2026-08-12,
+CI-invisible), unrelated to this release. Full findings in
+`docs/measurements/c3-metal-consumer-window-v0.14.0.md`; gate log archived at
+`docs/measurements/gpu_gate_metal_v0.14.0_4d91858_FAIL-c8b65ba-only.log`.
 
 ## Draft: contents of the next release
 
@@ -262,6 +275,7 @@ of generation. Regenerate with `scripts/queue_citation_lint.py --update`.
 | `98936cf` | test(goldens): strengthen mamba-2 + deltanet parity fixtures (kill identity weights) |
 | `99b3f95` | chore(deps): pin aikit v1.12.0 — gpt-oss MXFP4 reproducible on main |
 | `9e5f8fa` | fix(quant): reject --quant that conflicts with a prequant .giw at startup (T1-7) |
+| `ada417e` | [aikit] scripts: ptx-repro is n/a on darwin, keyed on the PLATFORM not on NVRTC's absence |
 | `bd08936` | fix(gate): cannot-search is not not-found; cross-gate composition; B7 sweep |
 | `be049df` | [aikit] gpu(gemv): explicit __fmaf_rn in the quantized GEMV — the bit-identity contraction rule |
 | `c8b65ba` | feat(serve): --moe-cache-experts / --moe-cache-slots — PARKED on the freeze |
@@ -356,6 +370,7 @@ supports.
 | `docs/how-inference-works.md|decoder/sampler.go:118` | goinfer | `// distribution restricted to ONE token is deterministic regardless of that token's prob` |
 | `docs/how-inference-works.md|decoder/session.go:71` | goinfer | `// stale history. Callers must skip it (and reconcile) for an empty prompt, so a rejecte` |
 | `docs/ideas-weight-memory.md|decoder/mlp.go:69` | goinfer | `anchor: func mlp(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend, scr` |
+| `docs/measurements/c3-metal-consumer-window-v0.14.0.md|metal/gemma_parity_test.go:84` | goinfer | `t.Fatal("metal resident DECLINED — admission says it should be admitted")` |
 | `docs/measurements/c3-metal-consumer-window.md|decoder/model.go:301` | goinfer | `switch o.Backend {` |
 | `docs/measurements/c3-metal-consumer-window.md|decoder/residency.go:555` | goinfer | `func (m *Model) withResidency() *Model {` |
 | `docs/measurements/c3-metal-consumer-window.md|metal/gemma_parity_test.go:84` | goinfer | `t.Fatal("metal resident DECLINED — admission says it should be admitted")` |
@@ -462,6 +477,7 @@ than papered over.
 | `internal/serveapp/fuzz_test.go` | goinfer |
 | `scripts/bench_compare.sh` | goinfer |
 | `scripts/bench_peer.py` | goinfer |
+| `scripts/gpu_gate.sh` | goinfer |
 | `scripts/heavy_gate.sh` | goinfer |
 | `scripts/queue_citation_lint.py` | goinfer |
 | `scripts/refresh_parity_hashes.sh` | goinfer |
