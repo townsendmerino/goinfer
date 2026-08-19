@@ -72,12 +72,41 @@ below is declaring it (§3), not proving it.
   `f9d5d07`.
 - [x] Manifest method-tier validation enforced (`TestParityManifest_methodTier`) — `tiny-golden`
   can no longer sit silently in a T3 slot.
-- [ ] **REQUIRED · Tautological-gate hunt, run as a census.** The shape: a gate that compares
-  A-on vs A-off **without asserting A was admitted** cannot fail when A silently declines. Found
-  on CUDA (four graph tests, 2026-08-12 — **VERIFY** fixed) and suspected on Metal
-  (`TestMetalSnapshotGolden` drives `Forward`/`ForwardArgmax`, which apply no embed scale where
-  production applies √hidden — a gate that cannot fail). Census every `*_test.go` that guards a
-  resident/optimized path; each must assert admission before comparing.
+- [x] **REQUIRED · Tautological-gate hunt, run as a census** (2026-08-18). Run over `cuda/`,
+  `metal/`, `gpu/` and `decoder/` in three passes — every A-on/A-off **env toggle** (all 14 that
+  any test flips), every `ResidentForwardForTest()` acquisition, and every
+  `residentParity`/`BuildResident` call. **Two real holes found, both on CUDA, both now guarded
+  and mutation-verified on the hardware:**
+
+  - `loadG4MoECache` (4 gates: `cacheExpertsBitExact_tiny`/`_scaled`, `cacheReuse_tiny`/`_scaled`)
+    asserted residency but never that the **expert cache engaged**. That is not hypothetical:
+    `allocSlots` CLEARS `r.cacheExperts` when the first routed layer reports a zero per-expert
+    stride (audit R-25), and both arms would then run fully-resident and report
+    "DMA'd-into-slots == fully-resident, BIT-IDENTICAL" having compared nothing. Guard added
+    (reads the flag AFTER the build); mutating the env to simulate the decline makes it fail with
+    that exact message, and the unmutated gates stay green.
+  - `TestGreedyFastPathIdentical` asserted residency but not `ResidentGreedy`, which is the
+    interface assertion — not the env var — that actually routes decode to the on-device argmax.
+    Guarded; green on the 1.5B (token-identical over 24 tokens).
+
+  **Everything else was already sound, including both named suspects.** The four CUDA graph tests
+  carry an explicit tautology guard that SKIPS when `admitGraphs` declines under DEFAULT compute
+  mode (declining is correct production behaviour; reporting it as a pass is not) — the **VERIFY**
+  is discharged. `TestKVOnlyPrefill_byteIdentical_tiny` asserts its `ResidentPrefillKV`
+  precondition. Metal's `residentParity` helper carries the assertion itself
+  (`gemma_parity_test.go`: "without this, a silent CPU fallback would pass every assertion
+  trivially"), which covers every gate that goes through it. The Metal batched-prefill toggles are
+  measurement-only or negative tests (`moe_model_test.go` asserts prefill is REFUSED), not
+  comparisons that could pass vacuously.
+
+  **`TestMetalSnapshotGolden`'s embed-scale defect is already FIXED in code** (audit G-02, fixed on
+  Linux where the suite cannot run): the checkpoint call drives `ForwardEmb` with the
+  production-scaled row, and `Forward`/`ForwardArgmax` apply the arch embed scale. **A re-bake is
+  owed on the Mac and the gate is EXPECTED RED there until it happens** —
+  `GOINFER_UPDATE_GOLDENS=1`. The safety condition is in the test's own header and must be honoured
+  at the RC: `gemma4-dense-scaled` entries SHOULD move (√hidden now applied), `mixtral-tiny`
+  entries must NOT — if they do, something other than G-02 changed and the re-bake is refused
+  pending investigation.
 - [ ] **REQUIRED · The Metal manual gate written into `RELEASING.md`.** The Metal device suite
   does not run in GitHub CI (the runner's paravirtual objc layer SIGSEGVs inside purego), so
   Metal's device coverage is a manual box run. At 1.0 that run must be a written ritual — exact

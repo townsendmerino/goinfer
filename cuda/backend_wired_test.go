@@ -223,6 +223,16 @@ func TestGreedyFastPathIdentical(t *testing.T) {
 		}
 		return got
 	}
+	// TAUTOLOGY GUARD (v1.0 gate §2 census). Both arms below are one build with one env var
+	// flipped; the fast arm only DIFFERS if the resident implements ResidentGreedy, since that
+	// interface assertion — not the env var — is what routes decode to the on-device argmax. If
+	// cudaResident stopped satisfying it, both arms would take the logits path and this gate would
+	// report "token-identical" having compared the logits path to itself. The kv-only sibling
+	// (kvonly_prefill_test.go) already asserts its ResidentPrefillKV precondition this way.
+	if _, ok := m.ResidentForwardForTest().(decoder.ResidentGreedy); !ok {
+		t.Fatal("cuda resident does not implement ResidentGreedy — the fast arm would take the " +
+			"logits path and this gate would compare it to itself")
+	}
 	t.Setenv("GOINFER_NO_GREEDY_FASTPATH", "1")
 	slow := gen()
 	t.Setenv("GOINFER_NO_GREEDY_FASTPATH", "")

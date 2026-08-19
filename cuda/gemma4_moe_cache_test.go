@@ -47,6 +47,27 @@ func loadG4MoECache(t *testing.T, dir string, cache bool) (*decoder.Model, decod
 			"sized so both arms fit (see scripts/pin_gemma4_moe_scaled.py). The runtime prints the "+
 			"decline reason unconditionally — check stderr above for the actual cause.", cache)
 	}
+	// TAUTOLOGY GUARD, the sibling of the one in gemma4_graphs_test.go and added for the same
+	// reason (v1.0 gate §2's census). This gate compares a cache-ON build against a cache-OFF
+	// build; if the ON build did not actually engage the cache, BOTH arms run the fully-resident
+	// path and the comparison is resident-vs-resident — it passes having tested nothing, while
+	// logging "DMA'd-into-slots == fully-resident, BIT-IDENTICAL". Nothing in the arm above
+	// observes whether the cache was admitted: r.cacheExperts is set from MoECacheExperts() and
+	// the slot allocator can still cap or decline underneath it — allocSlots CLEARS cacheExperts
+	// outright when the first routed layer reports a zero per-expert stride (resident.go, audit
+	// R-25) — so "I set the env var" is not the same claim as "the slot path ran". The flag is
+	// read AFTER the build for that reason.
+	//
+	// Fail rather than skip, unlike the graphs guard. Declining CUDA graphs under DEFAULT compute
+	// mode is correct production behaviour on any box; the expert cache has no such tenancy
+	// precondition — asked for, on a fixture sized for it, it should engage, so not engaging is a
+	// defect to surface and not a condition to tolerate.
+	if cache && !rf.(*cudaResident).cacheExperts {
+		mc.Close()
+		t.Fatal("GOINFER_MOE_CACHE_EXPERTS=1 but the resident runner did not engage the expert " +
+			"cache — both arms of this gate would run the fully-resident path and it would report " +
+			"BIT-IDENTICAL having compared nothing")
+	}
 	return mc, rf
 }
 
