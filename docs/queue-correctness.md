@@ -623,7 +623,7 @@ a new failure mode for the family overall — but it needs closing out before th
 REAL trained-weight gate (`G11`), not another synthetic-random-weight attempt (proven inconclusive
 above).
 
-**G11 · Mellum-on-Metal real-weight validation — LINUX HALF DONE, Metal half open** — `mac`
+**G11 · Mellum-on-Metal real-weight validation — CLOSED 2026-08-18: both halves green** — `mac`
 
 **Status 2026-08-18: steps 1-3 are done and green on the Linux box.** The real-weight slice
 exists and goinfer's own CPU forward matches the HF f32 reference on it EXACTLY:
@@ -668,6 +668,30 @@ bit-identically instead, and the tracked golden is what pins both boxes to the S
 5. If it finds a REAL bug (a real slice does not have the synthetic noise floor): fix it, or if
    it cannot be fixed quickly, revert `FeatRopeMscale`/`FeatAttnSink` for Metal and reopen the
    `G10`/`G11` split.
+
+**Steps 4-5, done on the mac (2026-08-18).** Regenerated the slice locally per the recipe above
+(two shards, ~8.7 GB download; the venv had none of transformers/torch/safetensors/huggingface_hub
+preinstalled, so those were installed fresh first). The golden check passed: `git diff` on
+`decoder/testdata/mellum_mellum2_slice_golden.json` showed only the machine-local `source` path and
+benign float32 build noise (max abs diff 4e-05, cosine 0.9999999999957 — the same class of harmless
+noise GPT-2's own golden regeneration hit) — the two boxes' references AGREE, so the regenerated
+file was discarded in favor of the tracked one rather than committing a no-op diff. The cross-box
+control (`GOINFER_HEAVY_TESTS=1 go test -tags realckpt ./decoder/ -run TestMellumSlice -v`)
+reproduced argmax 417 / cosine 1.00000000 exactly, as required before touching Metal.
+
+`metal/mellum_real_test.go` (new): `residentParity` against the regenerated slice, gated on
+`requireHeavyModel` + `FeatRopeMscale` being declared (same double-guard convention as the other
+heavy Metal tests). Result: **9/12 argmax-exact, min cosine 0.972006** — comfortably clears the
+0.95 int4-noise floor every other resident gate (GPT-2, gpt-oss, the dense control) uses, and is
+NOT the tighter 0.9999 bar `TestMellumSlice_realWeightOracle` uses, because that one compares
+f32-vs-f32 (goinfer CPU vs HF reference) while this one compares int4/int8-quantized Metal against
+int8 CPU — the same reason `TestGPT2ResidentParity`/`TestGptOssResidentParity` also gate at 0.95,
+not 0.9999. No real bug found — `FeatRopeMscale`/`FeatAttnSink` stay declared for Metal, now with
+a genuine trained-weight proof behind Mellum's admission instead of an accepted-but-unverified
+side effect. Full `go test ./decoder/...` and `go test -tags goinfer_testhooks ./metal/...` clean
+throughout. The downloaded shards (`~/models/mellum2-unq`, ~8.7 GB) and the regenerated slice
+checkpoint (`decoder/testdata/mellum-mellum2-slice/`, 4.0 GB, gitignored) were left on disk at the
+user's direction rather than cleaned up — available for reuse if this needs re-running.
 
 **Original entry, for the reasoning behind all of the above:**
 
