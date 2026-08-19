@@ -55,9 +55,10 @@ import (
 
 const (
 	giwMagic    = "GINFW"
-	giwVersion  = 5 // v5: header records the resolved quant label (int4/int4mix/int8int8/int8/native) so the reader need not infer it
+	giwVersion  = 6 // v6: the completeness tail — GProj, AttnSinks, per-expert biases, and the MLA / Mamba-2 sub-structs, so every registered family is representable
 	giwMinReadV = 3 // read v3/v4 too (each version only ADDS: v4 the gemma4-gated tail, v5 the quant-label field; older bundles stay valid and fall back to inference)
 	giwV4Gemma4 = 4 // the version at/after which the gemma4 tail is present
+	giwV6Tail   = 6 // the version at/after which the completeness tail is present (GProj / AttnSinks / expert biases / MLA / Mamba-2)
 	// v3: per-layer RouterBias (DeepSeek/GLM e_score_correction_bias); v2: qwen3_5_moe hybrid tail
 	// Sanity ceilings on the count fields, generous vs any real checkpoint
 	// (largest models: ~120 layers, a few hundred experts) but low enough that a
@@ -83,30 +84,19 @@ func (e *SerializeError) Error() string { return "decoder: serialized weights: "
 // nil-derefs at the first forward. Refuse those families up front rather than emit silent
 // garbage (C2).
 func canSerialize(a *Architecture) *SerializeError {
-	switch {
-	case a == nil:
-		return nil
-	case a.mla != nil:
-		return &SerializeError{"MLA latent attention (DeepSeek/Kimi) is not representable in .giw"}
-	case a.granite != nil || a.nemotron != nil:
-		return &SerializeError{"Mamba-2 SSM state (Granite/Nemotron) is not representable in .giw"}
-	case a.llama4 != nil:
-		return &SerializeError{"Llama-4 is not yet supported by .giw serialization"}
-	case a.gptoss != nil:
-		// MEASURED, not inferred (2026-08-19): a gpt-oss bundle round-tripped with AttnSinks 8 -> 0
-		// and LOADED CLEAN. Per-head attention sinks are per-layer state this writer has no field
-		// for, so the bundle is CRC-valid, silently sink-free, and generates confidently wrong text
-		// — the exact failure class this function exists to refuse. Representing them is a format
-		// bump (v6), not a patch; until then, refuse.
-		return &SerializeError{"gpt-oss attention sinks are not representable in .giw (v5)"}
-	case a.laguna != nil:
-		// Also measured: canSerialize accepted Laguna, the writer emitted a bundle, and the READER
-		// rejected it — "layer 1 QProj: 128 rows, arch expects 64". Laguna has PER-LAYER query-head
-		// counts and a per-layer attention output gate (GProj); the writer stores neither, and the
-		// reader validates against a uniform NumHeads*HeadDim. Fail-loud rather than silent, but a
-		// bundle that cannot be loaded is still a broken artifact produced without a warning.
-		return &SerializeError{"Laguna per-layer query heads + attention output gate are not representable in .giw (v5)"}
-	}
+	// EMPTY AS OF v6 (2026-08-19), and that is the point: every registered family is representable.
+	//
+	// This used to be a hand-maintained blocklist of families the writer could not express — and it
+	// DRIFTED, twice, silently: gpt-oss rode it while dropping its attention sinks (bundles loaded
+	// clean and generated wrong text) and Laguna rode it while producing bundles the reader refused.
+	// The v6 completeness tail writes GProj, AttnSinks, per-expert biases, and the MLA / Mamba-2
+	// sub-structs, so there is nothing left to list.
+	//
+	// KEEP THE FUNCTION. A future family may genuinely be unrepresentable (a new per-layer state
+	// with no field here), and refusing is the correct answer for it — an empty list is today's
+	// truth, not a reason to delete the mechanism. What guards against the drift returning is
+	// TestSerializeCensus_noSilentFieldDrop, which asks the STRUCT whether a round-trip lost
+	// anything rather than asking a human whether they remembered to update this.
 	return nil
 }
 
@@ -385,7 +375,12 @@ func validateShapes(w *Weights, arch *Architecture) *SerializeError {
 	for i := range w.Layers {
 		lw := &w.Layers[i]
 		hd := arch.headDimAt(i)
-		qDim, kvDim, ffn := arch.NumHeads*hd, arch.kvHeadsAt(i)*hd, arch.ffnAt(i)
+		// headsAt(i), not NumHeads: Laguna varies the QUERY head count per layer (48 on its
+		// full-attention layers, 64 on the sliding ones), and this line was the last uniform-geometry
+		// assumption in the reader — it rejected a correctly-written Laguna bundle with
+		// "layer 1 QProj: 128 rows, arch expects 64". headDimAt/kvHeadsAt/ffnAt were already
+		// per-layer here; this one was missed because no serializable family had needed it yet.
+		qDim, kvDim, ffn := arch.headsAt(i)*hd, arch.kvHeadsAt(i)*hd, arch.ffnAt(i)
 		for _, c := range []struct {
 			name string
 			got  int
@@ -404,6 +399,14 @@ func validateShapes(w *Weights, arch *Architecture) *SerializeError {
 					return e
 				}
 			}
+		}
+		// GProj (Laguna's attention output gate) is legal at EITHER width — per-head (one scalar per
+		// query head) or per-element (the full qDim) — and which one ships is decided by the tensor,
+		// not the config (XS.2 declares per-element and ships per-head). So both are accepted and
+		// anything else is rejected, rather than leaving the field unchecked.
+		if g := lw.GProj.Rows(); g > 0 && g != arch.headsAt(i) && g != qDim {
+			return &SerializeError{fmt.Sprintf("layer %d GProj: %d rows, arch expects %d (per-head) or %d (per-element)",
+				i, g, arch.headsAt(i), qDim)}
 		}
 		// Per-layer f32 vectors: biases feed addBias over the projection output, norm weights feed
 		// rmsNorm at their consumed width (QK-norm is per-head-dim hd; the block norms are hidden).
@@ -825,6 +828,60 @@ func (w *giwWriter) layer(l *LayerWeights) {
 	if w.arch != nil && w.arch.gemma4 != nil { // v4 gemma4 per-layer tail
 		w.gemma4Layer(l)
 	}
+	w.v6Layer(l) // v6 completeness tail — see below
+}
+
+// v6Layer writes the state that made five families unrepresentable, in one unconditional tail.
+//
+// WHY UNCONDITIONAL RATHER THAN ARCH-GATED like the gemma4 tail: every field here is empty on the
+// families that do not use it, so the cost is a handful of zero lengths per layer, and an
+// arch-gated tail is precisely how gpt-oss's sinks went missing — the gate is another place to
+// remember. A tail that always writes what the struct holds cannot be forgotten for the next
+// family, and TestSerializeCensus_noSilentFieldDrop checks that claim against the struct itself.
+func (w *giwWriter) v6Layer(l *LayerWeights) {
+	w.weightMat(&l.GProj) // Laguna's attention output gate (per-head or per-element)
+	w.f32(l.AttnSinks)    // gpt-oss per-head attention sinks
+	// gpt-oss per-expert biases. The expert loop above writes only the three matrices; these are
+	// nil for every other family, so this is three zero lengths per expert elsewhere.
+	for e := range l.Experts {
+		w.f32(l.Experts[e].GateBias)
+		w.f32(l.Experts[e].UpBias)
+		w.f32(l.Experts[e].DownBias)
+	}
+	w.f32(l.SharedExpert.GateBias)
+	w.f32(l.SharedExpert.UpBias)
+	w.f32(l.SharedExpert.DownBias)
+	// MLA (DeepSeek / Kimi): presence byte then the eight tensors.
+	if l.mla == nil {
+		w.raw([]byte{0})
+	} else {
+		w.raw([]byte{1})
+		m := l.mla
+		w.f32(m.qAProj)
+		w.f32(m.qALayernorm)
+		w.f32(m.qBProj)
+		w.f32(m.qProj)
+		w.f32(m.kvAProj)
+		w.f32(m.kvALayernorm)
+		w.f32(m.kvBProj)
+		w.f32(m.oProj)
+	}
+	// Mamba-2 (Granite / Nemotron): presence byte then the eight tensors. The recurrent STATE is
+	// not written and must not be — it is per-sequence, rebuilt at load; only the weights are here.
+	if l.mamba == nil {
+		w.raw([]byte{0})
+	} else {
+		w.raw([]byte{1})
+		m := l.mamba
+		w.f32(m.inProj)
+		w.f32(m.convW)
+		w.f32(m.convB)
+		w.f32(m.aLog)
+		w.f32(m.d)
+		w.f32(m.dtBias)
+		w.f32(m.normW)
+		w.f32(m.outProj)
+	}
 }
 
 // gemma4Layer writes the v4 Gemma 4 per-layer tail: the PLE branch, the per-layer
@@ -893,10 +950,8 @@ func (w *giwWriter) hybridLayer(l *LayerWeights) {
 		w.f32(q.qNorm)
 		w.f32(q.kNorm)
 	default:
-		if l.mla != nil || l.mamba != nil {
-			w.fail("layer has MLA / Mamba-2 state not representable in .giw")
-			return
-		}
+		// MLA / Mamba-2 used to be refused here. They are written by v6Layer below (the
+		// completeness tail), so this stays the "no hybrid extras" marker it was named for.
 		w.raw([]byte{0})
 	}
 }
@@ -1099,6 +1154,49 @@ func (r *giwReader) layer(l *LayerWeights) {
 	r.hybridLayer(l)
 	if r.version >= giwV4Gemma4 && r.arch != nil && r.arch.gemma4 != nil { // v4 gemma4 tail
 		r.gemma4Layer(l)
+	}
+	if r.version >= giwV6Tail { // v6 completeness tail
+		r.v6Layer(l)
+	}
+}
+
+// v6Layer mirrors giwWriter.v6Layer: the state that made five families unrepresentable before v6.
+// Bundles written at v3-v5 simply do not carry it, which is why it is version-gated rather than
+// probed — an older bundle's layer block ends where it always did.
+func (r *giwReader) v6Layer(l *LayerWeights) {
+	l.GProj = r.weightMat()
+	l.AttnSinks = r.f32()
+	for e := range l.Experts {
+		l.Experts[e].GateBias = r.f32()
+		l.Experts[e].UpBias = r.f32()
+		l.Experts[e].DownBias = r.f32()
+	}
+	l.SharedExpert.GateBias = r.f32()
+	l.SharedExpert.UpBias = r.f32()
+	l.SharedExpert.DownBias = r.f32()
+	if r.u8() != 0 {
+		m := &mlaWeights{}
+		m.qAProj = r.f32()
+		m.qALayernorm = r.f32()
+		m.qBProj = r.f32()
+		m.qProj = r.f32()
+		m.kvAProj = r.f32()
+		m.kvALayernorm = r.f32()
+		m.kvBProj = r.f32()
+		m.oProj = r.f32()
+		l.mla = m
+	}
+	if r.u8() != 0 {
+		m := &mamba2Weights{}
+		m.inProj = r.f32()
+		m.convW = r.f32()
+		m.convB = r.f32()
+		m.aLog = r.f32()
+		m.d = r.f32()
+		m.dtBias = r.f32()
+		m.normW = r.f32()
+		m.outProj = r.f32()
+		l.mamba = m
 	}
 }
 

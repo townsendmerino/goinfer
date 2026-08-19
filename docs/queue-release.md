@@ -17,7 +17,7 @@ Release gates, tagging, versioning, the v1.0 criteria, capability claims, and th
 
 ## Queued
 
-**R3 · `.giw` claims coverage it does not have — one SILENT wrong-answer path, one broken artifact**
+**R3 · `.giw` claims coverage it does not have — CLOSED 2026-08-19 by v6 (complete coverage) — one SILENT wrong-answer path, one broken artifact**
 — `linux`, **refusals landed 2026-08-19; format extension (v6) still open**
 
 Asked while sizing the v1.0 gate's `.giw` promise ("how safe is it?"). The frame is healthier than
@@ -42,7 +42,26 @@ are now updated together.
 **Landed:** both families refused, with the measurements in the code comments so the next reader
 does not have to re-derive them.
 
-**Open (v6):** representing them properly — `AttnSinks` per layer, `GProj`, and per-layer query
+**DONE — .giw v6 (2026-08-19): every registered family is representable, `canSerialize` is EMPTY.**
+The tail writes `GProj` (Laguna), `AttnSinks` + per-expert biases (gpt-oss), the `*mlaWeights`
+sub-struct (DeepSeek/Kimi) and the `*mamba2Weights` sub-struct (Granite/Nemotron); Llama-4 needed
+nothing, its refusal was caution. The reader's last uniform-geometry assumption — `qDim` from the
+model-level `NumHeads` — now uses `headsAt(i)`, which is what rejected a correctly-written Laguna
+bundle. `GProj` is validated at either legal width (per-head or per-element), since the tensor and
+not the config decides which ships.
+
+**The tail is UNCONDITIONAL, not arch-gated like the gemma4 one.** Arch-gating is precisely how
+gpt-oss's sinks went missing — it is one more place to remember — and the cost of always writing is
+a few zero lengths per layer on families that do not use the fields.
+
+**Verified**: the census now covers **21 fixtures** across both testdata roots, field-by-field AND
+by decode identity (greedy 6 tokens through each family's forward, requiring identical tokens).
+Mutation-verified twice over: perturbing ONE float of the MLA output projection did NOT fire (too
+small to flip an argmax), zeroing the whole projection failed `deepseek-tiny` and `kimi-tiny` with
+`CHANGED THE DECODE`. That is the honest sensitivity — structural damage, not precision drift — and
+it was confirmed by printing the actual decoded tokens rather than trusting a pass.
+
+**Superseded (kept for the record):** representing them properly — `AttnSinks` per layer, `GProj`, and per-layer query
 heads (which also means the reader's uniform `NumHeads*HeadDim` validation has to learn `headsAt`).
 That is a format bump, not a patch. **Nothing here is hard**: gpt-oss needed ONE `[]float32` field
 written. The gap was never difficulty, it was that adding a field to `LayerWeights` and forgetting

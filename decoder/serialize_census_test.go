@@ -52,15 +52,31 @@ func populated(v reflect.Value) (bool, int) {
 }
 
 func TestSerializeCensus_noSilentFieldDrop(t *testing.T) {
-	fixtures := []string{"laguna-xs2-tiny", "qwen3_5-tiny", "internlm2-tiny", "internlm3-tiny",
-		"laguna-m1-tiny", "laguna-xs21-tiny", "gptoss_tiny.gguf"}
+	// Both fixture roots: decoder/testdata holds the families brought up in this package, and the
+	// repo-root testdata holds the older ones. The MLA and Mamba-2 families live in the latter, and
+	// they are the whole point of the v6 tail — a census that could not reach them would have
+	// "passed" while the new code went unexercised.
+	fixtures := []string{
+		"testdata/laguna-xs2-tiny", "testdata/qwen3_5-tiny", "testdata/internlm2-tiny",
+		"testdata/internlm3-tiny", "testdata/laguna-m1-tiny", "testdata/laguna-xs21-tiny",
+		"testdata/gptoss_tiny.gguf",
+		"../testdata/deepseek-tiny", // MLA (q-LoRA + latent KV)
+		"../testdata/kimi-tiny",     // MLA, the 384-expert shape
+		"../testdata/granite-tiny",  // Mamba-2 + attention hybrid
+		"../testdata/nemotron-tiny", // Mamba-2, single-op-per-block
+		"../testdata/nemotron3nano-tiny",
+		"../testdata/llama4-tiny", // iRoPE + dense/MoE interleave
+		"../testdata/glm-tiny", "../testdata/mixtral-tiny", "../testdata/phi3-tiny",
+		"../testdata/cohere-tiny", "../testdata/qwen35-tiny", "../testdata/qwen3next-tiny",
+		"../testdata/gemma4-moe-tiny", "../testdata/tiny-qwen2-moe",
+	}
 	checked := 0
 	for _, fx := range fixtures {
-		path := filepath.Join("testdata", fx)
+		path := fx
 		if _, err := os.Stat(path); err != nil {
 			continue
 		}
-		t.Run(fx, func(t *testing.T) {
+		t.Run(filepath.Base(fx), func(t *testing.T) {
 			m, err := Load(path, Options{})
 			if err != nil {
 				t.Skipf("load: %v", err)
@@ -80,6 +96,21 @@ func TestSerializeCensus_noSilentFieldDrop(t *testing.T) {
 				t.Fatalf("canSerialize ACCEPTED this family but the bundle does not load: %v", err)
 			}
 			checked++
+			// DECODE IDENTITY, not just field presence. A field can survive a round-trip and still
+			// be wrong — restored at the wrong offset, or restored while some sibling it depends on
+			// was not. Greedy-decoding both models and requiring the SAME tokens is what turns "the
+			// tail is written" into "the model that comes back is the model that went in". This is
+			// the check the qwen3_5_moe and gemma4 round-trip tests already made by hand; here it
+			// runs for every family the census reaches.
+			m2, err := NewModel(w2, "cpu")
+			if err != nil {
+				t.Fatalf("new model from round-tripped weights: %v", err)
+			}
+			prompt := []int{1, 2, 3, 4, 5, 6, 7, 8}
+			a, b := greedyN(t, m, prompt, 6), greedyN(t, m2, prompt, 6)
+			if !slicesEqualInt(a, b) {
+				t.Errorf(".giw round-trip CHANGED THE DECODE:\n direct:     %v\n round-trip: %v", a, b)
+			}
 			lt := reflect.TypeOf(m.w.Layers[0])
 			for li := range m.w.Layers {
 				if li >= len(w2.Layers) {

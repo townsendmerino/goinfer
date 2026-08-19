@@ -537,20 +537,16 @@ func aliasesF32(s []float32, blob []byte) bool {
 // (MLA / Mamba-2 / Gemma-4 PLE / Llama-4) must be REFUSED — else they produce a CRC-valid bundle
 // that nil-derefs at the first forward. Table-driven per registered arch; hardware-free.
 func TestCanSerialize_refusesUnrepresentable(t *testing.T) {
-	refused := map[string]string{
-		"deepseek_v2": "MLA", "deepseek_v3": "MLA", "kimi_k2": "MLA",
-		"granitemoehybrid": "Mamba-2", "nemotron_h": "Mamba-2",
-		"llama4_text": "unsupported",
-		// Added 2026-08-19 after MEASURING both, because this table was ENFORCING the false claim
-		// that they are representable (its second branch errors if canSerialize refuses anything
-		// not listed here — so the gate would have blocked the fix):
-		//   gpt_oss — AttnSinks 8 -> 0 across a round-trip, and the bundle LOADED CLEAN. Silent.
-		//   laguna  — writer accepted, reader rejected: "layer 1 QProj: 128 rows, arch expects 64"
-		//             (per-layer query heads; GProj is not stored either).
-		"gpt_oss": "attention sinks", "laguna": "per-layer query heads + output gate",
-		// gemma4 / gemma4_text / gemma4_unified_text ARE representable as of .giw v4
-		// (the gemma4 tail: PLE + layer_scalar + KV-share flags + the gemma4moe sub-block).
-	}
+	// EMPTY AS OF .giw v6 (2026-08-19): every registered family is representable, so nothing should
+	// be refused. The map stays because the mechanism stays — a future family with per-layer state
+	// the writer has no field for MUST be refused, and this is where that gets recorded.
+	//
+	// It is worth remembering what this table used to do wrong. It listed MLA / Mamba-2 / Llama-4
+	// and asserted (second branch below) that ANYTHING ELSE must be accepted — so when gpt-oss began
+	// silently dropping its attention sinks and Laguna began emitting unloadable bundles, this gate
+	// was actively enforcing the claim that they were fine. A blocklist checked against a blocklist
+	// proves nothing; the real guard is TestSerializeCensus_noSilentFieldDrop, which asks the struct.
+	refused := map[string]string{}
 	for name := range archFeatureProfile {
 		cfg := representativeConfig(name)
 		if cfg == nil {
