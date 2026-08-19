@@ -91,10 +91,38 @@ Verified after the move: `-bench` reports 200.2 tok/s / 366 launches per token, 
 `go test -run TestRealE2E` reports "no tests to run". Coverage lost: none — token identity was
 already `TestBackendResidentWired`'s, throughput on the production path is `TestProdThroughput`'s.
 
-**Decision still owed on (a) (release owner):** tag v0.14.0 with the `TestMoERouteDemandThreshold`
-failure recorded as a known pre-existing deterministic tripwire, or hold until A9 is re-derived.
-RELEASING.md's §C1 precedent applies: *"either way it gets written down as a decision rather than
-skipped as a step."*
+**(a) RESOLVED 2026-08-19 — RE-DERIVED, not edited.** The old assertion pinned a SUM whose value
+depends on a precondition the test does not control: whether another CUDA context is alive on the
+device while the child launches. Measured both ways on one box, one commit, minutes apart:
+
+| child driven by | `leave` | freeBefore | launch |
+|---|---|---|---|
+| this test (parent holds a context) | 141,819,904 | 141,557,760 | **ok** |
+| a bare shell (nothing else on the card) | 141,819,904 | 140,050,432 | **fails** |
+| a bare shell | 289,603,584 | 288,948,224 | **ok** |
+
+So the requirement differs by exactly the device-wide reserve the FIRST context pays:
+
+- **WARM** (another context alive) → demand = residual ≈ 138.4 MiB
+- **COLD** (this is the first) → demand = floor + residual = **289,603,584** — the old pin
+
+The residual held **bit-for-bit** (138,412,032) in every measurement and the floor is the same
+151,191,552 `TestAllocFloor` reports. Nothing about the kernel or the machine moved: the pin
+recorded the COLD sum, and the test now runs WARM because `e39c0fb` moved it into the drain group's
+own process, where the preceding A10 tests leave a context on the card. **A pin that flips with its
+neighbours is measuring the neighbourhood.**
+
+The fix pins the COMPONENTS — each already gated by its own test — and asserts the IDENTITY against
+the regime actually observed, to a 6 MiB window (the bisection quantum plus the launch's transient;
+the measured figure moved 141,557,760 → 142,147,584 between two runs, which is why byte-exactness
+was the wrong instrument). **Mutation-verified**: a wrong residual constant makes it report
+`demand identity BROKEN` and fail.
+
+The safety check is now **regime-independent**: it asserts `slotMarginBytes` against
+`max(measured, cold)` rather than the measured figure alone, because the margin must cover a box
+where goinfer's is the first context on the card. It clears by 107.8 MiB against the cold demand.
+
+**Both gate failures are now resolved.** Re-run the CUDA gate before tagging.
 
 
 **C1 · Drain fix — CUDA verification** — `linux`

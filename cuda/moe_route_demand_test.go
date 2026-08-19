@@ -340,12 +340,57 @@ func TestMoERouteDemandThreshold(t *testing.T) {
 	// The new values are therefore the DERIVED ones, and the identity is what justifies them. If
 	// these ever move again, check the identity first: if floor + residual still equals the demand,
 	// the components are what moved and this pin is downstream of them.
-	const pinnedFail, pinnedPass = 287506432, 289603584
-	if lastFail.freeBefore != pinnedFail || firstPass.freeBefore != pinnedPass {
-		t.Errorf("demand threshold moved: FAIL at %d (pinned %d), PASS at %d (pinned %d). "+
-			"moe_route's peak launch demand is what makes the 34-slot cap unsafe and the 33-slot "+
-			"cap safe; if it has moved, docs/QUEUE.md A1/A5/A7/A9 need re-deriving, not editing",
-			lastFail.freeBefore, int64(pinnedFail), firstPass.freeBefore, int64(pinnedPass))
+	// RE-DERIVED 2026-08-19, because the old pin (287,506,432 / 289,603,584) failed — and it failed
+	// for a reason worth more than the number it was guarding.
+	//
+	// THE OLD PIN WAS A SUM WHOSE VALUE DEPENDS ON A PRECONDITION THIS TEST DOES NOT CONTROL:
+	// whether another CUDA context is alive on the device while the child launches. Measured both
+	// ways on one box, one commit, minutes apart:
+	//
+	//	child driven by this test (parent process holds a context):
+	//	  leave 141,819,904 -> freeBefore 141,557,760  ok=TRUE
+	//	child driven straight from a shell (nothing else on the card):
+	//	  leave 141,819,904 -> freeBefore 140,050,432  ok=FALSE
+	//	  leave 289,603,584 -> freeBefore 288,948,224  ok=TRUE
+	//
+	// So there are two regimes, and the launch's requirement differs by exactly the device-wide
+	// reserve that the FIRST context on the card pays:
+	//
+	//	WARM (another context alive)  demand = residual                     ~= 138.4 MiB
+	//	COLD (this is the first)      demand = deviceFloor + residual        = 289,603,584
+	//
+	// The RESIDUAL held bit-for-bit across every measurement (138,412,032), and the floor is the
+	// same 151,191,552 TestAllocFloor reports. Nothing about the kernel or the machine moved; the
+	// pin recorded the COLD sum and the test now runs WARM (it was moved into the drain group's own
+	// process, where the preceding A10 tests leave a context on the device). A pin that flips with
+	// its neighbours is measuring the neighbourhood.
+	//
+	// So pin the COMPONENTS, which are stable, and assert the IDENTITY against the regime actually
+	// observed. That is the re-derivation the old assertion demanded ("re-deriving, not editing") —
+	// and it now fails for a moved KERNEL rather than for a moved test-ordering.
+	const (
+		pinnedResidual    = 138412032 // moe_route's steady-state reservation (TestMoERouteFirstLaunchReservation)
+		pinnedDeviceFloor = 151191552 // the device-wide reserve the first context pays (TestAllocFloor)
+		// The bisection stops at a 2 MiB quantum and the launch's peak is a further ~1-3 MiB above
+		// its residual (the transient the log below names), so the identity is asserted to a window
+		// rather than to the byte. A byte-exact pin here is what made the old one brittle.
+		demandWindow = 6 << 20
+	)
+	warm := firstPass.freeBefore < int64(pinnedDeviceFloor)
+	wantDemand, regime := int64(pinnedResidual), "WARM (another CUDA context alive — the device reserve is already paid)"
+	if !warm {
+		wantDemand = int64(pinnedDeviceFloor) + int64(pinnedResidual)
+		regime = "COLD (this launch is the first context on the device and pays the reserve itself)"
+	}
+	t.Logf("REGIME: %s — expected demand %d B, measured %d B", regime, wantDemand, firstPass.freeBefore)
+	if firstPass.freeBefore < wantDemand || firstPass.freeBefore > wantDemand+demandWindow {
+		t.Errorf("demand identity BROKEN in the %s regime: measured %d B, expected %d..%d B "+
+			"(residual %d + floor %d when cold). The residual and the floor are each pinned by "+
+			"their own gate, so a break here means the KERNEL's launch requirement moved — which is "+
+			"what makes the 34-slot cap unsafe and the 33-slot cap safe. docs/QUEUE.md A1/A5/A7/A9 "+
+			"need re-deriving, not editing.",
+			regime, firstPass.freeBefore, wantDemand, wantDemand+int64(demandWindow),
+			int64(pinnedResidual), int64(pinnedDeviceFloor))
 	}
 
 	// ---- the RELATIONSHIP, not just the figures (item 2) ----
@@ -366,6 +411,19 @@ func TestMoERouteDemandThreshold(t *testing.T) {
 	// kernels in flight may each need their own backing store — and this assertion would then be
 	// wrong WITHOUT FAILING, which is the worse of the two ways to be wrong. If goinfer gains
 	// concurrent streams or multi-model residency on one context, re-measure before trusting this.
+	// AGAINST THE WORST REGIME, not the measured one (2026-08-19). The measurement above may be
+	// WARM, where the launch does not pay the device reserve — but the margin's job is to be
+	// sufficient whatever the card's state, and asserting it against the smaller warm figure would
+	// let the cold requirement exceed the margin without failing. So the safety check uses
+	// max(measured, cold), which is regime-independent by construction.
+	coldDemand := int64(pinnedDeviceFloor) + int64(pinnedResidual)
+	worstDemand := max(firstPass.freeBefore, coldDemand)
+	if int64(slotMarginBytes) < worstDemand {
+		t.Errorf("slotMarginBytes (%d) is BELOW the WORST-REGIME launch demand (%d = max of measured "+
+			"%d and cold floor+residual %d). The margin must cover the cold case too: a box where "+
+			"goinfer's is the first context on the card pays the device reserve inside the launch.",
+			int64(slotMarginBytes), worstDemand, firstPass.freeBefore, coldDemand)
+	}
 	if int64(slotMarginBytes) < firstPass.freeBefore {
 		t.Errorf("slotMarginBytes (%d) is BELOW the measured peak launch demand (%d). The margin's "+
 			"whole job is to leave room for deferred first-launch costs, so the expert-cache cap "+
@@ -376,9 +434,10 @@ func TestMoERouteDemandThreshold(t *testing.T) {
 			"then a lower bound rather than the requirement",
 			int64(slotMarginBytes), firstPass.freeBefore)
 	}
-	t.Logf("margin check: slotMarginBytes %d >= peak demand %d, clear by %d B (%.1f MiB)",
-		int64(slotMarginBytes), firstPass.freeBefore, int64(slotMarginBytes)-firstPass.freeBefore,
-		float64(int64(slotMarginBytes)-firstPass.freeBefore)/(1<<20))
+	t.Logf("margin check: slotMarginBytes %d >= worst-regime demand %d (measured %d, cold %d), "+
+		"clear by %d B (%.1f MiB)", int64(slotMarginBytes), worstDemand, firstPass.freeBefore,
+		coldDemand, int64(slotMarginBytes)-worstDemand,
+		float64(int64(slotMarginBytes)-worstDemand)/(1<<20))
 
 	// Capacity or contiguity? Repeat the boundary. A threshold that moves between identical runs is
 	// not a capacity threshold.
