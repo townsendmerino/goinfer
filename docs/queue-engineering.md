@@ -18,7 +18,43 @@ Gates, lints, censuses, tooling, process rules, and the audit sweeps. Anything w
 ## In flight
 
 **A12 · The CUDA heavy tier does not fit in 8 GB in one process — the gate cannot pass here** —
-`linux`, **open, found 2026-08-12**
+`linux`, **CLOSED `e682eb2` (2026-08-13). No capacity/leak issue ever existed — see the resolution
+block immediately below before reading the investigation.**
+
+**RESOLUTION (the actual final word — `e682eb2`, 2026-08-13 09:58:30, 30-50 min after every
+"below" section, which none of them incorporate; this doc was never updated to say so until
+2026-08-19).** The four failures had **four independent causes**, not one shared mechanism:
+
+1. `TestSplitKV_bitIdentical_gemma3` — a test defect. It panicked on a CORRECT resident decline
+   (context didn't fit) via an unchecked type assertion; now skips with the decline named.
+2. `TestResidentLaunchVRAMProbe` — a test defect. It already printed "the launch path was never
+   reached" and still reported FAIL; now reports SKIP, matching its own words (B8's rule).
+3. `TestMoERouteFirstLaunchReservation` — a test defect. It required being the FIRST test in the
+   process to launch a given kernel (a context-level reservation only exists on first launch) with
+   nothing asserting or declaring that precondition; now asserted, with instructions to run alone.
+4. `TestAttention_HeadDimWidths` — the one REAL bug, and not a capacity/leak issue: every CUDA call
+   in the block discarded its error (`_ = ...`), so a resource failure left the output buffer
+   untouched (all zeros), which the assertion reported as `cosine 0.000000` — a dropped-error bug
+   wearing a numerics bug's clothes. Errors are now checked and named per call.
+
+All four pass alone AND in the tier after the fixes. **The meta-lesson, stated in the fix commit:
+"SHARED PRECONDITION IS NOT SHARED MECHANISM."** `scripts/gpu_gate.sh`'s own header supplied a
+mechanism for one symptom (VRAM contention → bogus `cosine 0.000000`) from a real past incident, and
+it was inherited as the explanation for these four rather than measured — framing every candidate
+below for most of a day before anyone actually grepped for a dropped CUDA error. The "does the tier
+fit in 8 GB" question this entry opened with, the "no leak" retraction, and the "Close() leaks on
+the 7B path, this selects option (b)" verdict below are all superseded by this: there was no
+capacity question to answer and no leak to hunt. **Confirmed empirically, not just by the fix
+commit's own claim:** the archived GREEN CUDA gate for `v0.14.0` at `c6760d7`
+(`docs/measurements/gpu_gate_cuda_v0.14.0_c6760d7_PASS.log`) shows the full heavy tier passing
+clean — `TestB2DenseFlagship` PASS, `TestRealForwardParity` PASS, "heavy tier (real models) — 2325s"
+PASS — and the suite now includes `cuda/zz_a12_baseline_test.go`'s `TestZZ_A12ContextBaseline`, the
+per-context-reservation bound `e682eb2` added as this investigation's lasting instrument.
+
+**Below is the investigation as it happened, kept for the reasoning** (the "STILL OPEN" candidate
+list, the retraction, the later "declining ceiling" re-measurement, and the three-option decision
+with "the tag is blocked on this" are ALL superseded by the resolution above, not just the sections
+already marked "Superseded" — none of them had seen `e682eb2` yet).
 
 `scripts/gpu_gate.sh` is red, and after A11 and the two leak fixes the remaining failures are **all
 VRAM exhaustion presenting as something else**:
