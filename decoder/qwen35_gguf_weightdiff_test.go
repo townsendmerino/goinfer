@@ -149,21 +149,21 @@ func TestQwen35GGUF_weightDiff(t *testing.T) {
 		}
 		if lr.delta != nil && lg.delta != nil {
 			dr, dg := lr.delta, lg.delta
-			check("in_proj_qkv", dg.inProjQKV, dr.inProjQKV) // V-block un-tile
-			check("in_proj_z", dg.inProjZ, dr.inProjZ)       // full un-tile
+			check("in_proj_qkv", wmF32(t, &dg.inProjQKV), wmF32(t, &dr.inProjQKV)) // V-block un-tile
+			check("in_proj_z", wmF32(t, &dg.inProjZ), wmF32(t, &dr.inProjZ))       // full un-tile
 			check("in_proj_a", dg.inProjA, dr.inProjA)
 			check("in_proj_b", dg.inProjB, dr.inProjB)
 			check("conv1d", dg.convW, dr.convW) // V-channel un-tile
 			check("dt_bias", dg.dtBias, dr.dtBias)
-			check("negExpA", dg.negExpA, dr.negExpA)  // −exp(A_log) bake vs computed
-			check("ssm_norm", dg.normW, dr.normW)     // NOT (1+w)'d — raw load
-			check("out_proj", dg.outProj, dr.outProj) // column un-tile
+			check("negExpA", dg.negExpA, dr.negExpA)                        // −exp(A_log) bake vs computed
+			check("ssm_norm", dg.normW, dr.normW)                           // NOT (1+w)'d — raw load
+			check("out_proj", wmF32(t, &dg.outProj), wmF32(t, &dr.outProj)) // column un-tile
 		} else if lr.qattn != nil && lg.qattn != nil {
 			ar, ag := lr.qattn, lg.qattn
-			check("q_proj(query‖gate)", ag.qProj, ar.qProj) // fused double-width — prime suspect
-			check("k_proj", ag.kProj, ar.kProj)
-			check("v_proj", ag.vProj, ar.vProj)
-			check("o_proj", ag.oProj, ar.oProj)
+			check("q_proj(query‖gate)", wmF32(t, &ag.qProj), wmF32(t, &ar.qProj)) // fused double-width — prime suspect
+			check("k_proj", wmF32(t, &ag.kProj), wmF32(t, &ar.kProj))
+			check("v_proj", wmF32(t, &ag.vProj), wmF32(t, &ar.vProj))
+			check("o_proj", wmF32(t, &ag.oProj), wmF32(t, &ar.oProj))
 			check("q_norm", ag.qNorm, ar.qNorm)
 			check("k_norm", ag.kNorm, ar.kNorm)
 		} else {

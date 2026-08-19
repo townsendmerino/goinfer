@@ -38,7 +38,7 @@
     "loaders": "safetensors, GGUF",
     "modality": "text",
     "gpu_residency_eligible": false,
-    "parity": "full-oracle 82.5%/0.99333"
+    "parity": "full-oracle 77.5%/0.99069"
   },
   {
     "name": "qwen3_5",

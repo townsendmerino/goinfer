@@ -923,22 +923,22 @@ func (w *giwWriter) hybridLayer(l *LayerWeights) {
 	case l.delta != nil:
 		w.raw([]byte{1})
 		d := l.delta
-		w.f32(d.inProjQKV)
-		w.f32(d.inProjZ)
+		w.weightMat(&d.inProjQKV)
+		w.weightMat(&d.inProjZ)
 		w.f32(d.inProjB)
 		w.f32(d.inProjA)
 		w.f32(d.convW)
 		w.f32(d.dtBias)
 		w.f32(d.negExpA) // the precomputed −exp(A_log); stored as-is, no recompute on load
 		w.f32(d.normW)
-		w.f32(d.outProj)
+		w.weightMat(&d.outProj)
 	case l.qattn != nil:
 		w.raw([]byte{2})
 		q := l.qattn
-		w.f32(q.qProj)
-		w.f32(q.kProj)
-		w.f32(q.vProj)
-		w.f32(q.oProj)
+		w.weightMat(&q.qProj)
+		w.weightMat(&q.kProj)
+		w.weightMat(&q.vProj)
+		w.weightMat(&q.oProj)
 		w.f32(q.qNorm)
 		w.f32(q.kNorm)
 	default:
@@ -1245,26 +1245,29 @@ func (r *giwReader) hybridLayer(l *LayerWeights) {
 	case 0:
 		// no hybrid extras (every non-qwen3_5_moe family)
 	case 1:
-		l.delta = &deltaNetWeights{
-			inProjQKV: r.f32(),
-			inProjZ:   r.f32(),
-			inProjB:   r.f32(),
-			inProjA:   r.f32(),
-			convW:     r.f32(),
-			dtBias:    r.f32(),
-			negExpA:   r.f32(),
-			normW:     r.f32(),
-			outProj:   r.f32(),
-		}
+		// FIELD ORDER IS THE WIRE ORDER: the three projections are WeightMats as of the
+		// quantization change, and a struct literal evaluates its fields in source order, so these
+		// must be read in exactly the order hybridLayer writes them.
+		d := &deltaNetWeights{}
+		d.inProjQKV = r.weightMat()
+		d.inProjZ = r.weightMat()
+		d.inProjB = r.f32()
+		d.inProjA = r.f32()
+		d.convW = r.f32()
+		d.dtBias = r.f32()
+		d.negExpA = r.f32()
+		d.normW = r.f32()
+		d.outProj = r.weightMat()
+		l.delta = d
 	case 2:
-		l.qattn = &qwenAttnWeights{
-			qProj: r.f32(),
-			kProj: r.f32(),
-			vProj: r.f32(),
-			oProj: r.f32(),
-			qNorm: r.f32(),
-			kNorm: r.f32(),
-		}
+		a := &qwenAttnWeights{}
+		a.qProj = r.weightMat()
+		a.kProj = r.weightMat()
+		a.vProj = r.weightMat()
+		a.oProj = r.weightMat()
+		a.qNorm = r.f32()
+		a.kNorm = r.f32()
+		l.qattn = a
 	default:
 		r.fail("unknown per-layer hybrid kind")
 	}

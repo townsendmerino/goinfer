@@ -15,6 +15,52 @@ Throughput, latency, kernels, residency, memory. Anything whose success criterio
 > so a citation to an ID still finds it.
 
 
+
+## P12 — the qwen35 family's projections were f32 at every quant (FIXED 2026-08-19)
+
+**Found by benchmarking Qwen3.8-27B against Ollama on the same box**, which goinfer lost 4.07x. The
+cause was not kernel quality, it was BYTES.
+
+`deltaNetWeights` and `qwenAttnWeights` held `[]float32` and went through `linalg.MatmulBT`
+regardless of `Options.Quant` — "parity-first", from the qwen3_5_moe bring-up, inherited by every
+family on that path (Qwen3.5-MoE, Qwen3-Next, Qwen3.8) and never revisited. So a 27.8B Qwen3.8 at
+`Quant:"int4"` streamed **~29 GB of f32 attention weights per token** (22.1 GB across 48 DeltaNet
+layers + 6.7 GB across 16 softmax layers) while its FFN was a tidy ~9.5 GB of int4. Decode at this
+size is memory-bandwidth-bound, so that WAS the speed.
+
+| Qwen3.8-27B, CPU, 32 tokens | before | after | |
+|---|---|---|---|
+| decode | 0.411 tok/s | **0.656 tok/s** | **1.60x** |
+| TTFT (7-token prompt) | 73.2 s | **9.9 s** | **7.4x** |
+| load (bf16 safetensors → int4) | 145.2 s | **68.0 s** | 2.1x |
+
+Decode gained 1.60x rather than the ~2.4x the byte count predicts: the DeltaNet recurrence is scalar
+work that did not change, and W4A8 pays an activation-quantization cost f32 SIMD does not. TTFT
+gained 7.4x because prefill is almost pure matmul.
+
+**Design: quantize only when asked.** `WeightMat` stays f32 when `Options.Quant` is unset, so every
+unquantized parity gate is bit-unchanged — the DeltaNet golden, qwen3_5_moe forward parity and the
+Qwen3.8 tiny golden all pass untouched, which is what made this safe to do at all.
+
+**What it costs, recorded rather than glossed:** the family's T3 oracle moved, because more of the
+model is now quantized. `TestQwen35Real_gate2FullModel` (int8 vs bf16) went 66/80 -> **62/80**
+argmax, cosine min 0.99333 -> **0.99069**, mean 0.99837 -> **0.99644**, worst divergence gap 0.0045
+-> **0.0073** of range. Still inside the >=0.98 floor with every divergence a near-tie, re-run green
+on the real 35B, and the manifest says so in those words.
+
+**Evidence the new int4 numbers are RIGHT and not merely different**: int4-vs-f32 on qwen35-tiny is
+cosine **0.997923** with matching argmax — BETTER than mixtral (0.987977) and phi3 (0.992787), both
+long-shipping int4 families. The real 27.8B still answers correctly at int4 (trigram 0.797, three
+correct Paris landmarks with correct detail). The int4 golden was re-baked on that evidence; the
+diff changed `qwen35-tiny` ONLY, which is independent confirmation the change is scoped.
+
+**Still open (the remaining 2.55x to Ollama):** the DeltaNet recurrence is scalar Go, llama.cpp's
+k-quant kernels use hand-tuned AVX2, and goinfer cannot read this family's GGUF at all
+(`architecture "qwen35" unsupported` — the dense loader was deferred at bring-up, so it re-quantizes
+55.6 GB of bf16 on every load against Ollama's 0.7 s mmap). The CUDA DeltaNet kernel is the next
+track, and this change is its prerequisite: resident runners consume `WeightMat` + the W4A8/W8A8
+kernels, which f32 slices would have had to become anyway.
+
 ## In flight
 
 **A11 · moe_route's demand threshold — RESOLVED 2026-08-12. The identity now CLOSES; the old pin was

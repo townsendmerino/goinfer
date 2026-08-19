@@ -25,7 +25,7 @@ Differences vs LFM2-2.6B are **scale/hyperparameter only** — and two contradic
 ## B. Mamba conv reusable? — Composition in design, a new copy in code
 
 Mamba-2's causal depthwise conv1d is **inlined, not factored out**: three verbatim copies —
-`decoder/mamba2.go:89-105` (decode), `decoder/mamba2_chunked.go:60-75` (prefill oracle, not wired), `decoder/deltanet.go:99-117`
+`decoder/mamba2.go:89-105` (decode), `decoder/mamba2_chunked.go:60-75` (prefill oracle, not wired), `decoder/deltanet.go:118-117`
 (bias-free). DeltaNet reusing the identical loop against a **non-SSM** recurrence proves the conv is
 algorithmically SSM-independent and its rolling-state prefill/decode boundary is solved. `conv_bias=false`
 matches DeltaNet's bias-free form. **New: ~15 lines** (a 4th copy, or extract a shared

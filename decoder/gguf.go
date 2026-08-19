@@ -1524,9 +1524,9 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 		hkd, hvd := q.KeyHeadDim, q.ValueHeadDim
 		keyDim, valueDim := hkd*numK, hvd*numV
 		convDim := 2*keyDim + valueDim
-		// f32mat dequantizes a [out, in] tensor to a row-major f32 slice — the
-		// DeltaNet/softmax projections stay f32 (parity-first), matching the
-		// safetensors qwen35 path (loadQwen35Attn), so only experts/embeddings quantize.
+		// f32mat dequantizes a [out, in] tensor to a row-major f32 slice. Some of these need a
+		// layout transform (untileVHeads) before they can be used, so the f32 form is still the
+		// working intermediate; wmQ below wraps the result and applies Options.Quant.
 		f32mat := func(name string, out, in int) ([]float32, error) {
 			dims, data, derr := g.Tensor(name)
 			if derr != nil {
@@ -1536,6 +1536,21 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 				return nil, fmt.Errorf("decoder(gguf-qwen35): %q dims %v, want [in=%d, out=%d]", name, dims, in, out)
 			}
 			return data, nil
+		}
+		// wmQ is f32mat + Options.Quant, for the projections that dominate decode bandwidth. Until
+		// 2026-08-19 this path (like its safetensors twin) kept them f32 regardless of the requested
+		// quant — "parity-first" from the bring-up — which on a 27.8B Qwen3.8 meant ~29 GB of f32
+		// weights streamed per token while the FFN was int4. Transform-then-quantize: the untile
+		// below has to see f32.
+		wmQ := func(name string, out, in int) (linalg.WeightMat, error) {
+			f, e := f32mat(name, out, in)
+			if e != nil {
+				return linalg.WeightMat{}, e
+			}
+			return quantizeWM(linalg.WrapF32(f, out, in), quant), nil
+		}
+		wrapQ := func(f []float32, out, in int) linalg.WeightMat {
+			return quantizeWM(linalg.WrapF32(f, out, in), quant)
 		}
 		loadQ35 := func(i int) error {
 			l := &w.Layers[i]
@@ -1558,13 +1573,13 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 				}
 				vOff := 2 * keyDim * hidden
 				copy(qkv[vOff:], untileVHeads(qkv[vOff:], 1, numK, vpk, hvd, hidden))
-				d.inProjQKV = qkv
+				d.inProjQKV = wrapQ(qkv, convDim, hidden)
 				// in_proj_z (attn_gate): all rows tiled.
 				z, err := f32mat(p+"attn_gate.weight", valueDim, hidden)
 				if err != nil {
 					return err
 				}
-				d.inProjZ = untileVHeads(z, 1, numK, vpk, hvd, hidden)
+				d.inProjZ = wrapQ(untileVHeads(z, 1, numK, vpk, hvd, hidden), valueDim, hidden)
 				// in_proj_a / in_proj_b (ssm_alpha/ssm_beta): one row per value head (hd=1).
 				a, err := f32mat(p+"ssm_alpha.weight", numV, hidden)
 				if err != nil {
@@ -1606,7 +1621,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 				if err != nil {
 					return err
 				}
-				d.outProj = untileVHeads(op, hidden, numK, vpk, hvd, 1)
+				d.outProj = wrapQ(untileVHeads(op, hidden, numK, vpk, hvd, 1), hidden, valueDim)
 				l.delta = d
 			} else {
 				// Gated softmax layer: double-width q_proj (query ‖ gate per head, kept
@@ -1614,16 +1629,16 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 				a := &qwenAttnWeights{}
 				shd := arch.HeadDim
 				kvDim := arch.NumKVHeads * shd
-				if a.qProj, e = f32mat(p+"attn_q.weight", arch.NumHeads*shd*2, hidden); e != nil {
+				if a.qProj, e = wmQ(p+"attn_q.weight", arch.NumHeads*shd*2, hidden); e != nil {
 					return e
 				}
-				if a.kProj, e = f32mat(p+"attn_k.weight", kvDim, hidden); e != nil {
+				if a.kProj, e = wmQ(p+"attn_k.weight", kvDim, hidden); e != nil {
 					return e
 				}
-				if a.vProj, e = f32mat(p+"attn_v.weight", kvDim, hidden); e != nil {
+				if a.vProj, e = wmQ(p+"attn_v.weight", kvDim, hidden); e != nil {
 					return e
 				}
-				if a.oProj, e = f32mat(p+"attn_output.weight", hidden, arch.NumHeads*shd); e != nil {
+				if a.oProj, e = wmQ(p+"attn_output.weight", hidden, arch.NumHeads*shd); e != nil {
 					return e
 				}
 				if a.qNorm, e = vnorm(p+"attn_q_norm.weight", shd); e != nil {

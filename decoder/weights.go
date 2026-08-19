@@ -113,12 +113,15 @@ type LayerWeights struct {
 // q_proj is DOUBLE-WIDTH — per head it emits [query ‖ gate]; the forward splits
 // it and gates the attention output by sigmoid(gate). See docs/qwen3_5_moe.md.
 type qwenAttnWeights struct {
-	qProj []float32 // [numHeads*headDim*2, hidden]  (query ‖ gate per head)
-	kProj []float32 // [numKVHeads*headDim, hidden]
-	vProj []float32 // [numKVHeads*headDim, hidden]
-	oProj []float32 // [hidden, numHeads*headDim]
-	qNorm []float32 // [headDim]
-	kNorm []float32 // [headDim]
+	// Quantizable as of 2026-08-19 — same reason as deltaNetWeights: these were f32 regardless of
+	// Options.Quant, so the 16 softmax layers of a 27.8B Qwen3.8 streamed 6.7 GB per token that
+	// int4 should have made ~1.7 GB. WeightMat stays f32 when no quant is requested.
+	qProj linalg.WeightMat // [numHeads*headDim*2, hidden]  (query ‖ gate per head)
+	kProj linalg.WeightMat // [numKVHeads*headDim, hidden]
+	vProj linalg.WeightMat // [numKVHeads*headDim, hidden]
+	oProj linalg.WeightMat // [hidden, numHeads*headDim]
+	qNorm []float32        // [headDim]
+	kNorm []float32        // [headDim]
 }
 
 // mlaWeights holds one DeepSeek MLA layer's projections, stored f32 (parity-first,
@@ -633,7 +636,7 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 		// DeltaNet vs gated softmax); both share the MoE FFN loaded below. Stored
 		// f32 (parity-first forward). Other families take the generic path.
 		if arch.qwen35 != nil {
-			if err = loadQwen35Attn(st, i, l, arch, hd, tn); err != nil {
+			if err = loadQwen35Attn(st, i, l, arch, hd, tn, loadMatQ, quant); err != nil {
 				return err
 			}
 		} else if arch.mla != nil {
@@ -864,7 +867,11 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 // layers (linear_attn.*), the gated-softmax set on the rest (self_attn.*, with a
 // double-width q_proj — query ‖ gate per head). The MoE FFN is loaded by the
 // shared path. See docs/qwen3_5_moe.md.
-func loadQwen35Attn(st *embed.SafetensorsFile, i int, l *LayerWeights, arch *Architecture, hidden int, tn func(int, string) string) error {
+// mkQ builds a quantized-if-requested WeightMat, so this loader honours Options.Quant like every
+// other family. Passed in rather than rebuilt here because the quant resolution lives in
+// buildWeights with the rest of the load.
+func loadQwen35Attn(st *embed.SafetensorsFile, i int, l *LayerWeights, arch *Architecture, hidden int,
+	tn func(int, string) string, mkQ func(string, int, int) (linalg.WeightMat, error), quant quantMode) error {
 	g := arch.qwen35
 	var err error
 	nm := func(suf string) string { return tn(i, suf) }
@@ -882,13 +889,15 @@ func loadQwen35Attn(st *embed.SafetensorsFile, i int, l *LayerWeights, arch *Arc
 			if e != nil {
 				return e
 			}
-			d.inProjQKV, d.inProjZ = splitQwen3NextQKVZ(qkvz, g, hidden)
+			qkvF, zF := splitQwen3NextQKVZ(qkvz, g, hidden)
+			d.inProjQKV = quantizeWM(linalg.WrapF32(qkvF, convDim, hidden), quant)
+			d.inProjZ = quantizeWM(linalg.WrapF32(zF, valueDim, hidden), quant)
 			d.inProjB, d.inProjA = splitQwen3NextBA(ba, g, hidden)
 		} else {
-			if d.inProjQKV, err = st.TensorF32(nm("linear_attn.in_proj_qkv.weight"), convDim, hidden); err != nil {
+			if d.inProjQKV, err = mkQ(nm("linear_attn.in_proj_qkv.weight"), convDim, hidden); err != nil {
 				return err
 			}
-			if d.inProjZ, err = st.TensorF32(nm("linear_attn.in_proj_z.weight"), valueDim, hidden); err != nil {
+			if d.inProjZ, err = mkQ(nm("linear_attn.in_proj_z.weight"), valueDim, hidden); err != nil {
 				return err
 			}
 			if d.inProjB, err = st.TensorF32(nm("linear_attn.in_proj_b.weight"), g.NumValueHeads, hidden); err != nil {
@@ -912,7 +921,7 @@ func loadQwen35Attn(st *embed.SafetensorsFile, i int, l *LayerWeights, arch *Arc
 		if d.normW, err = st.TensorF32(nm("linear_attn.norm.weight"), g.ValueHeadDim); err != nil {
 			return err
 		}
-		if d.outProj, err = st.TensorF32(nm("linear_attn.out_proj.weight"), hidden, valueDim); err != nil {
+		if d.outProj, err = mkQ(nm("linear_attn.out_proj.weight"), hidden, valueDim); err != nil {
 			return err
 		}
 		l.delta = d
@@ -921,16 +930,16 @@ func loadQwen35Attn(st *embed.SafetensorsFile, i int, l *LayerWeights, arch *Arc
 	hd := arch.HeadDim
 	kvd := arch.NumKVHeads * hd
 	a := &qwenAttnWeights{}
-	if a.qProj, err = st.TensorF32(nm("self_attn.q_proj.weight"), arch.NumHeads*hd*2, hidden); err != nil {
+	if a.qProj, err = mkQ(nm("self_attn.q_proj.weight"), arch.NumHeads*hd*2, hidden); err != nil {
 		return err
 	}
-	if a.kProj, err = st.TensorF32(nm("self_attn.k_proj.weight"), kvd, hidden); err != nil {
+	if a.kProj, err = mkQ(nm("self_attn.k_proj.weight"), kvd, hidden); err != nil {
 		return err
 	}
-	if a.vProj, err = st.TensorF32(nm("self_attn.v_proj.weight"), kvd, hidden); err != nil {
+	if a.vProj, err = mkQ(nm("self_attn.v_proj.weight"), kvd, hidden); err != nil {
 		return err
 	}
-	if a.oProj, err = st.TensorF32(nm("self_attn.o_proj.weight"), hidden, arch.NumHeads*hd); err != nil {
+	if a.oProj, err = mkQ(nm("self_attn.o_proj.weight"), hidden, arch.NumHeads*hd); err != nil {
 		return err
 	}
 	if a.qNorm, err = st.TensorF32(nm("self_attn.q_norm.weight"), hd); err != nil {

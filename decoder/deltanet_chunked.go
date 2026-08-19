@@ -25,7 +25,7 @@ import "math"
 // using the chunked scan, returning the same [hidden] output per position as
 // gatedDeltaNet. chunk is the scan block size (chunk ≤ 0 ⇒ the whole sequence;
 // chunk == 1 reduces exactly to the sequential step).
-func gatedDeltaNetChunked(h [][]float32, w *deltaNetWeights, p qwen35Params, hidden int, eps float64, chunk int) [][]float32 {
+func gatedDeltaNetChunked(be Backend, h [][]float32, w *deltaNetWeights, p qwen35Params, hidden int, eps float64, chunk int) [][]float32 {
 	n := len(h)
 	if n == 0 {
 		return nil
@@ -46,7 +46,7 @@ func gatedDeltaNetChunked(h [][]float32, w *deltaNetWeights, p qwen35Params, hid
 	// Projection (mixed_qkv) per position, then the depthwise causal conv + SiLU.
 	mixed := make([][]float32, n)
 	for t := range h {
-		mixed[t] = matvec(w.inProjQKV, convDim, hidden, h[t])
+		mixed[t] = matvecWM(be, &w.inProjQKV, h[t])
 	}
 	conv := make([][]float32, n)
 	for t := range n {
@@ -70,7 +70,7 @@ func gatedDeltaNetChunked(h [][]float32, w *deltaNetWeights, p qwen35Params, hid
 	for t := range n {
 		bt := matvec(w.inProjB, nv, hidden, h[t])
 		at := matvec(w.inProjA, nv, hidden, h[t])
-		z[t] = matvec(w.inProjZ, valueDim, hidden, h[t])
+		z[t] = matvecWM(be, &w.inProjZ, h[t])
 		gtt := make([]float32, nv)
 		btt := make([]float32, nv)
 		for hd := range nv {
@@ -111,7 +111,7 @@ func gatedDeltaNetChunked(h [][]float32, w *deltaNetWeights, p qwen35Params, hid
 				seg[vd] = seg[vd] * inv * w.normW[vd] * silu(zt[vd])
 			}
 		}
-		out[t] = matvec(w.outProj, hidden, valueDim, core[t])
+		out[t] = matvecWM(be, &w.outProj, core[t])
 	}
 	return out
 }

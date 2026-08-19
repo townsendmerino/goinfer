@@ -3,6 +3,7 @@ package decoder
 import (
 	"encoding/json"
 	"errors"
+	"github.com/townsendmerino/aikit/linalg"
 	"io/fs"
 	"math"
 	"os"
@@ -40,23 +41,25 @@ func TestGatedDeltaNet_parity(t *testing.T) {
 		NumKeyHeads:   d("num_k_heads"),
 		NumValueHeads: d("num_v_heads"),
 	}
+	keyDim, valueDim := p.KeyHeadDim*p.NumKeyHeads, p.ValueHeadDim*p.NumValueHeads
+	convDim := 2*keyDim + valueDim
 	w := &deltaNetWeights{
-		inProjQKV: g.W["in_proj_qkv"],
-		inProjZ:   g.W["in_proj_z"],
+		inProjQKV: linalg.WrapF32(g.W["in_proj_qkv"], convDim, hidden),
+		inProjZ:   linalg.WrapF32(g.W["in_proj_z"], valueDim, hidden),
 		inProjB:   g.W["in_proj_b"],
 		inProjA:   g.W["in_proj_a"],
 		convW:     g.W["conv1d_weight"],
 		dtBias:    g.W["dt_bias"],
 		negExpA:   negExpAFromLog(g.W["A_log"]),
 		normW:     g.W["norm_weight"],
-		outProj:   g.W["out_proj"],
+		outProj:   linalg.WrapF32(g.W["out_proj"], hidden, valueDim),
 	}
 
 	h := make([][]float32, seq)
 	for t := range seq {
 		h[t] = g.In[t*hidden : (t+1)*hidden]
 	}
-	out := gatedDeltaNet(h, w, p, hidden, g.Dims["rms_eps"])
+	out := gatedDeltaNet(&cpuBackend{}, h, w, p, hidden, g.Dims["rms_eps"])
 
 	// Compare flattened output: max abs diff + cosine. (chunk vs recurrent fp
 	// drift is removed by the golden, so the tolerance is tight.)

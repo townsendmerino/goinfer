@@ -1,5 +1,22 @@
 # The v1.0 gate — criteria, evidence, and the run plan
 
+> ## ⏸ DEFERRED 2026-08-19 (decider: Francis): **v1.0 comes after v0.16.0**, not next.
+>
+> The reason is the honest one — there is too much real work still in front of it. This is not a
+> retraction of anything below: the criteria stand, the evidence gathered so far stands (§1 and §2
+> are green, §3's tier declaration is signed and machine-checked by apidiff, §4's replace-free line
+> was discharged by the real v0.14.0 tag), and the remaining lines stay the definition of done.
+>
+> **What changes is what the document DOES.** Until this deferral, §7's "explicitly NOT blocking
+> v1.0" list also functioned as a scope fence for near-term work — DeltaNet residency, continuous
+> batching, further families were all "later" partly because 1.0 was imminent. With 1.0 moved past
+> v0.16.0, that fence is gone: those items are ordinary queue work again, prioritised on their own
+> merits rather than deferred by a release date.
+>
+> The gate is picked back up when v0.16.0 is out. Nothing here needs re-deriving at that point
+> except the lines that say **VERIFY** and anything whose evidence names a stale commit.
+
+
 > **This is E1's deliverable** (`queue-release.md` §E1: "write that as a checklist so 1.0 is a
 > decision against criteria rather than a feeling"). Close E1 by pointing it at this file.
 >

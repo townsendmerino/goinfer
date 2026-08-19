@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"github.com/townsendmerino/aikit/linalg"
 	"math"
 	"math/rand"
 	"testing"
@@ -35,15 +36,15 @@ func TestGatedDeltaNet_chunkedMatchesSequential(t *testing.T) {
 		aLog[i] = -2 * rng.Float32() // A_log in [-2,0] → gt = exp(g) in (0,1), stable
 	}
 	w := &deltaNetWeights{
-		inProjQKV: uni(convDim * hidden),
-		inProjZ:   uni(valueDim * hidden),
+		inProjQKV: linalg.WrapF32(uni(convDim*hidden), convDim, hidden),
+		inProjZ:   linalg.WrapF32(uni(valueDim*hidden), valueDim, hidden),
 		inProjB:   uni(nv * hidden),
 		inProjA:   uni(nv * hidden),
 		convW:     uni(convDim * p.ConvKernel),
 		dtBias:    uni(nv),
 		negExpA:   negExpAFromLog(aLog),
 		normW:     uni(hv),
-		outProj:   uni(hidden * valueDim),
+		outProj:   linalg.WrapF32(uni(hidden*valueDim), hidden, valueDim),
 	}
 
 	for _, seq := range []int{1, 5, 17, 40} {
@@ -51,10 +52,10 @@ func TestGatedDeltaNet_chunkedMatchesSequential(t *testing.T) {
 		for t := range h {
 			h[t] = uni(hidden)
 		}
-		want := gatedDeltaNet(h, w, p, hidden, eps) // sequential reference
+		want := gatedDeltaNet(&cpuBackend{}, h, w, p, hidden, eps) // sequential reference
 
 		for _, chunk := range []int{1, 2, 3, 8, seq, seq + 5} {
-			got := gatedDeltaNetChunked(h, w, p, hidden, eps, chunk)
+			got := gatedDeltaNetChunked(&cpuBackend{}, h, w, p, hidden, eps, chunk)
 			var maxAbs, dot, na, nb float64
 			for t := range seq {
 				for j := range hidden {

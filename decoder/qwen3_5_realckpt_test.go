@@ -118,11 +118,11 @@ func TestQwen38Real_gate(t *testing.T) {
 	if l3.qattn == nil || l3.delta != nil {
 		t.Fatalf("layer 3 mixer = (qattn=%v, delta=%v), want the softmax set", l3.qattn != nil, l3.delta != nil)
 	}
-	if got, want := len(l3.qattn.qProj), 2*a.NumHeads*a.HeadDim*a.HiddenDim; got != want {
-		t.Errorf("layer 3 q_proj = %d floats, want %d (query ‖ gate: 2·24·256 × 5120)", got, want)
+	if got, want := l3.qattn.qProj.Rows(), 2*a.NumHeads*a.HeadDim; got != want {
+		t.Errorf("layer 3 q_proj = %d rows, want %d (query ‖ gate: 2·24·256)", got, want)
 	}
-	if got, want := len(l3.qattn.kProj), a.NumKVHeads*a.HeadDim*a.HiddenDim; got != want {
-		t.Errorf("layer 3 k_proj = %d floats, want %d", got, want)
+	if got, want := l3.qattn.kProj.Rows(), a.NumKVHeads*a.HeadDim; got != want {
+		t.Errorf("layer 3 k_proj = %d rows, want %d", got, want)
 	}
 	// Layer 0 is the other mixer, and its projections carry the DeltaNet's own geometry:
 	// in_proj_qkv is [2·keyDim + valueDim, hidden] — one FUSED tensor, unlike in_proj_z.
@@ -131,11 +131,11 @@ func TestQwen38Real_gate(t *testing.T) {
 		t.Fatalf("layer 0 mixer = (qattn=%v, delta=%v), want the DeltaNet set", l0.qattn != nil, l0.delta != nil)
 	}
 	keyDim, valueDim := g.KeyHeadDim*g.NumKeyHeads, g.ValueHeadDim*g.NumValueHeads
-	if got, want := len(l0.delta.inProjQKV), (2*keyDim+valueDim)*a.HiddenDim; got != want {
-		t.Errorf("layer 0 in_proj_qkv = %d floats, want %d (q‖k‖v fused)", got, want)
+	if got, want := l0.delta.inProjQKV.Rows(), 2*keyDim+valueDim; got != want {
+		t.Errorf("layer 0 in_proj_qkv = %d rows, want %d (q‖k‖v fused)", got, want)
 	}
-	if got, want := len(l0.delta.inProjZ), valueDim*a.HiddenDim; got != want {
-		t.Errorf("layer 0 in_proj_z = %d floats, want %d (SEPARATE from qkv on this family)", got, want)
+	if got, want := l0.delta.inProjZ.Rows(), valueDim; got != want {
+		t.Errorf("layer 0 in_proj_z = %d rows, want %d (SEPARATE from qkv on this family)", got, want)
 	}
 	// Dense FFN everywhere, including on the DeltaNet layers.
 	for _, i := range []int{0, 3, 63} {

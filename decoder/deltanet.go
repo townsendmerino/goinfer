@@ -21,15 +21,24 @@ import (
 // deltaNetWeights holds one Gated DeltaNet layer's parameters, row-major, as HF
 // stores them. All projections are bias-free; the depthwise conv is bias-free too.
 type deltaNetWeights struct {
-	inProjQKV []float32 // [convDim, hidden]   → [q;k;v]
-	inProjZ   []float32 // [valueDim, hidden]  → output gate z
-	inProjB   []float32 // [numV, hidden]      → write-gate logits β
-	inProjA   []float32 // [numV, hidden]      → decay-gate input a
-	convW     []float32 // [convDim, K]        depthwise causal conv ([convDim,1,K] flattened)
-	dtBias    []float32 // [numV]
-	negExpA   []float32 // [numV]              −exp(A_log), precomputed (see negExpAFromLog)
-	normW     []float32 // [headVDim]          gated RMSNorm weight
-	outProj   []float32 // [hidden, valueDim]
+	// THE THREE DOMINANT PROJECTIONS ARE QUANTIZABLE (2026-08-19). They were []float32 —
+	// "parity-first", from the qwen3_5_moe bring-up — which meant a 27.8B Qwen3.8 at Quant:"int4"
+	// still streamed them as f32: 22.1 GB per token across 48 DeltaNet layers, against ~9.5 GB for
+	// the whole int4 FFN. Decode at this size is memory-bandwidth-bound, so that WAS the speed.
+	// WeightMat keeps f32 when the caller asks for no quant (the tiny goldens still match HF
+	// exactly), and carries int8/int4 when they do.
+	inProjQKV linalg.WeightMat // [convDim, hidden]   → [q;k;v]
+	inProjZ   linalg.WeightMat // [valueDim, hidden]  → output gate z
+	// A and B stay f32: [48, 5120] each is ~1 MB per layer (~94 MB total on the 27B) against the
+	// 22 GB above, and they feed the write/decay gates, where the recurrence is most sensitive to
+	// precision. Quantizing them would buy ~0.2% of the bytes for real numerical risk.
+	inProjB []float32        // [numV, hidden]      → write-gate logits β
+	inProjA []float32        // [numV, hidden]      → decay-gate input a
+	convW   []float32        // [convDim, K]        depthwise causal conv ([convDim,1,K] flattened)
+	dtBias  []float32        // [numV]
+	negExpA []float32        // [numV]              −exp(A_log), precomputed (see negExpAFromLog)
+	normW   []float32        // [headVDim]          gated RMSNorm weight
+	outProj linalg.WeightMat // [hidden, valueDim]
 }
 
 // negExpAFromLog precomputes the DeltaNet decay coefficient −exp(A_log) that the
@@ -55,6 +64,16 @@ func negExpAFromLog(aLog []float32) []float32 {
 func matvec(w []float32, rows, cols int, x []float32) []float32 {
 	y := make([]float32, rows)
 	linalg.MatmulBT(x, w, y, 1, cols, rows)
+	return y
+}
+
+// matvecWM is matvec for a WeightMat: the same M=1 projection, but routed through the shared
+// quantization-aware matmul so an int4/int8 weight uses the W4A8/W8A8 integer kernel instead of
+// being dequantized. f32 WeightMats land on the same MatmulBT path matvec uses, so the no-quant
+// numerics are unchanged — which is what keeps the tiny goldens exact.
+func matvecWM(be Backend, w *linalg.WeightMat, x []float32) []float32 {
+	y := make([]float32, w.Rows())
+	matmul(be, w, x, y, 1)
 	return y
 }
 
@@ -87,7 +106,7 @@ func newDeltaState(p qwen35Params) *deltaState {
 // gatedDeltaNetStep advances one token through the Gated DeltaNet layer, reading
 // and updating st, and returns the layer output [hidden]. Driven per token by
 // both prefill and decode (the recurrence is inherently sequential).
-func gatedDeltaNetStep(h []float32, w *deltaNetWeights, p qwen35Params, hidden int, eps float64, st *deltaState) []float32 {
+func gatedDeltaNetStep(be Backend, h []float32, w *deltaNetWeights, p qwen35Params, hidden int, eps float64, st *deltaState) []float32 {
 	nk, nv := p.NumKeyHeads, p.NumValueHeads
 	hk, hv := p.KeyHeadDim, p.ValueHeadDim
 	keyDim, valueDim := hk*nk, hv*nv
@@ -98,7 +117,7 @@ func gatedDeltaNetStep(h []float32, w *deltaNetWeights, p qwen35Params, hidden i
 
 	// 1. Projection + depthwise causal conv (+ SiLU). Taps t-K+1..t: the last K-1
 	// come from convWin (zero-padded early), the K-th is this token.
-	mixed := matvec(w.inProjQKV, convDim, hidden, h)
+	mixed := matvecWM(be, &w.inProjQKV, h)
 	conv := make([]float32, convDim)
 	win := st.convWin
 	for c := range convDim {
@@ -119,7 +138,7 @@ func gatedDeltaNetStep(h []float32, w *deltaNetWeights, p qwen35Params, hidden i
 	// 2. Gates + output gate.
 	bt := matvec(w.inProjB, nv, hidden, h)
 	at := matvec(w.inProjA, nv, hidden, h)
-	z := matvec(w.inProjZ, valueDim, hidden, h)
+	z := matvecWM(be, &w.inProjZ, h)
 
 	// 3. Gated delta-rule recurrence, per value head; state persists in st.s.
 	core := make([]float32, valueDim)
@@ -165,17 +184,17 @@ func gatedDeltaNetStep(h []float32, w *deltaNetWeights, p qwen35Params, hidden i
 			seg[vd] = seg[vd] * inv * w.normW[vd] * silu(zt[vd])
 		}
 	}
-	return matvec(w.outProj, hidden, valueDim, core)
+	return matvecWM(be, &w.outProj, core)
 }
 
 // gatedDeltaNet runs the layer over a whole sequence from a fresh state — a thin
 // loop over gatedDeltaNetStep, so the streaming path is what the parity test
 // exercises (the forward path uses the same step with a cached state).
-func gatedDeltaNet(h [][]float32, w *deltaNetWeights, p qwen35Params, hidden int, eps float64) [][]float32 {
+func gatedDeltaNet(be Backend, h [][]float32, w *deltaNetWeights, p qwen35Params, hidden int, eps float64) [][]float32 {
 	st := newDeltaState(p)
 	out := make([][]float32, len(h))
 	for t := range h {
-		out[t] = gatedDeltaNetStep(h[t], w, p, hidden, eps, st)
+		out[t] = gatedDeltaNetStep(be, h[t], w, p, hidden, eps, st)
 	}
 	return out
 }

@@ -28,7 +28,7 @@ func (m *Model) runLayersQwen35(id int, cache *KVCache) ([]float32, error) {
 		rmsNorm(n, lw.PreAttnNorm, 1, hidden, eps, arch.RMSAddOne)
 		var attn []float32
 		if arch.isLinearLayer(l) {
-			attn = gatedDeltaNetStep(n, lw.delta, *g, hidden, eps, cache.delta[l])
+			attn = gatedDeltaNetStep(m.be, n, lw.delta, *g, hidden, eps, cache.delta[l])
 		} else {
 			attn = m.qwen35Attention(n, lw, arch, cache, l, pos)
 		}
@@ -71,18 +71,18 @@ func (m *Model) runLayersQwen35(id int, cache *KVCache) ([]float32, error) {
 func (m *Model) qwen35Attention(n []float32, lw *LayerWeights, arch *Architecture, cache *KVCache, layer, pos int) []float32 {
 	a := lw.qattn
 	nH, nKV, hd := arch.NumHeads, arch.NumKVHeads, arch.HeadDim
-	hidden, eps := arch.HiddenDim, arch.NormEps
+	eps := arch.NormEps
 
 	// q_proj emits [query ‖ gate] per head; split them.
-	qg := matvec(a.qProj, nH*hd*2, hidden, n)
+	qg := matvecWM(m.be, &a.qProj, n)
 	q := make([]float32, nH*hd)
 	gate := make([]float32, nH*hd)
 	for hh := range nH {
 		copy(q[hh*hd:hh*hd+hd], qg[hh*2*hd:hh*2*hd+hd])
 		copy(gate[hh*hd:hh*hd+hd], qg[hh*2*hd+hd:hh*2*hd+2*hd])
 	}
-	k := matvec(a.kProj, nKV*hd, hidden, n)
-	v := matvec(a.vProj, nKV*hd, hidden, n)
+	k := matvecWM(m.be, &a.kProj, n)
+	v := matvecWM(m.be, &a.vProj, n)
 
 	// QK-norm (query half only) then partial RoPE.
 	rmsNorm(q, a.qNorm, nH, hd, eps, arch.RMSAddOne)
@@ -101,5 +101,5 @@ func (m *Model) qwen35Attention(n []float32, lw *LayerWeights, arch *Architectur
 	for i := range ctx {
 		ctx[i] *= sigmoidf(gate[i])
 	}
-	return matvec(a.oProj, hidden, nH*hd, ctx)
+	return matvecWM(m.be, &a.oProj, ctx)
 }
