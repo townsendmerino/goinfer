@@ -17,6 +17,45 @@ Release gates, tagging, versioning, the v1.0 criteria, capability claims, and th
 
 ## Queued
 
+**R2 · The v0.14.0 sweep: 47/48 gates PASS, one BLOCKER — a required gate DID NOT RUN, caused by my
+own diagnostics** — `linux`, **fixed 2026-08-19, re-run owed**
+
+`scripts/parity_sweep.sh` at `94c3ffd`: every gate green except
+
+```
+qwen3.6-weightdiff   TestQwen35GGUF_weightDiff   ⛔ DID NOT RUN (blocker)
+```
+
+Not a numerics failure. Phase 2 (`-tags realckpt -run 'Qwen35|Real_gate'`, **120m timeout**) ran out
+of time *inside* another test:
+
+```
+panic: test timed out after 2h0m0s
+        TestQwen35GGUF_routeFlipAtOutlier (28m47s)
+```
+
+**The budget was eaten by the two B13 DIAGNOSTICS added earlier the same day** —
+`locateDivergence` (710 s) + `routeFlipAtOutlier` (1727 s) ≈ **41 minutes** — both of which match
+the sweep's `Qwen35` pattern by name. So instruments that deliberately assert almost nothing
+displaced `weightDiff`, a required 40-SECOND gate, off the end of the run. By the sweep's own rule a
+gate that did not run is a blocker, which is the correct call: "it would have passed" is not
+evidence.
+
+**Fixed**: both diagnostics now skip unless `GOINFER_DIAG=1`. Gated by ENV rather than renamed
+deliberately — Go's `-run` matches substrings, so excluding them by name would mean stripping
+`Qwen35` from a qwen3.5 test, trading discoverability for a scheduling workaround. The sweep now
+reports them as honest SKIPs and gets its 41 minutes back.
+
+**Owed**: re-run phase 2 (~50 min without the diagnostics) so `weightDiff` actually executes. The
+full phase 1 (340 PASS / 0 FAIL / 12 SKIP, 87.6 min) does not need repeating — nothing in this fix
+touches it.
+
+**The lesson generalises past this test**: a diagnostic and a gate look identical to a `-run`
+pattern. If a probe is added to a family whose name the release sweep matches, it joins the release
+ritual silently — and the first symptom is not "the sweep is slower", it is "a different, required
+gate stopped running".
+
+
 **R1 · The v0.14.0 pre-tag CUDA gate is RED — two failures, classified, neither caused by this
 release** — `linux`, **decision owed before the tag**
 

@@ -1,0 +1,126 @@
+== asset preflight — 28 registered asset(s), models root /home/francis/models ==
+   predicate: testdata/assets.json (kind/members/min_bytes) — the SAME one the gates apply
+   GOINFER_PREQUANT_GGUF        resolved  /home/francis/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
+   GOINFER_QWEN35_GGUF          resolved  /home/francis/models/qwen3.6-35b-a3b-Q8_0.gguf
+   GOINFER_QWEN35_GOLDEN        resolved  /home/francis/models/qwen35_real_golden
+   GOINFER_QWEN35_REAL          resolved  /home/francis/models/qwen3.6-35b-a3b
+   GOINFER_DEEPSEEK_V2LITE      resolved  /home/francis/models/deepseek-v2-lite
+   GOINFER_DEEPSEEK_MOONLIGHT   resolved  /home/francis/models/moonlight-16b
+   GOINFER_DEEPSEEK_GGUF        resolved  /home/francis/models/deepseek-v2-lite-gguf/DeepSeek-V2-Lite-Chat-Q4_K_M.gguf
+   GOINFER_PHI3_MINI            resolved  /home/francis/models/phi3-mini-4k
+   GOINFER_PHI3_GGUF            resolved  /home/francis/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf
+   GOINFER_LLAMA4_GGUF          resolved  /home/francis/models/llama4-scout-gguf/Llama-4-Scout-17B-16E-Instruct-Q2_K.gguf
+   GOINFER_GRANITE_HF           resolved  /home/francis/models/granite-hf
+   GOINFER_NEMOTRON_HF          resolved  /home/francis/models/nemotron-hf
+   GOINFER_DFLASH_35B           resolved  /home/francis/models/qwen36-35b-dflash
+   GOINFER_DSPARK_F32           resolved  /home/francis/models/dspark-qwen3-4b-f32
+   GOINFER_QWEN3_4B             resolved  /home/francis/models/qwen3-4b
+   GOINFER_DFLASH_F32           resolved  /home/francis/models/qwen3-4b-dflash-f32
+   GOINFER_DFLASH_GPTOSS        resolved  /home/francis/models/gptoss-20b-dflash
+   GOINFER_DFLASH_GEMMA4        resolved  /home/francis/models/gemma4-26b-dflash
+   GOINFER_NEMOTRON3NANO_HF     resolved  /home/francis/models/nemotron3nano-30b-bf16
+   GOINFER_NEMOTRON3NANO_GGUF   resolved  /home/francis/models/nemotron3nano-gguf/nvidia_Nemotron-3-Nano-30B-A3B-Q4_K_M.gguf
+   GOINFER_LAGUNA_XS2           resolved  /home/francis/models/laguna-xs2
+   GOINFER_LAGUNA_GGUF          resolved  /home/francis/models/laguna-xs21-gguf/Laguna-XS-2.1-Q4_K_M.gguf
+   GOINFER_LAGUNA_DFLASH        resolved  /home/francis/models/laguna-xs2-dflash
+   GOINFER_GPTOSS_ST            resolved  /home/francis/models/gpt-oss-20b-hf
+   GOINFER_GPTOSS_GGUF          resolved  /home/francis/models/gpt-oss-20b-MXFP4.gguf
+   GOINFER_QWEN38               resolved  /home/francis/models/qwen3.8-27b
+   GOINFER_W4A8_INT4            resolved  /home/francis/models/qwen15-w4a8-int4.giw
+   GOINFER_W4A8_INT8            resolved  /home/francis/models/qwen15-w4a8-int8.giw
+   all 28 registered assets resolved — a blocker below is about the TREE, not the invocation
+   GOINFER_HEAVY_TESTS=1 set by this script — the release sweep loads real checkpoints
+
+== parity sweep on 94c3ffd (demo/agent/v0.13.0-191-g94c3ffd) ==
+  COMPOSITION of the release gate — 41 gates over 41 family labels
+    quant :  f32=25  int4/int8=11  int8int8=5
+    loader:  gguf=12  safetensors=29
+
+  CROSS-GATE quant coverage (release gate vs the freeze-exception goldens):
+    parity_sweep.sh   : f32 int4 int8 int8int8
+    forward goldens   : f32 int4 int8 int8int8
+    -> the two gates span the same quantizations.
+
+  CROSS-GATE loader coverage:
+    parity_sweep.sh   : gguf safetensors
+    forward goldens   : gguf safetensors
+    -> the two gates span the same loaders.
+-- running ./decoder/ ./tokenizer/ (verbose) ...
+-- running -tags realckpt real-model gates ...
+
+FAMILY               GATE                               RESULT
+------------------------------------------------------------------------
+gemma3               TestGGUF_gemma3_parity             ✅ pass
+gemma3-forward       TestForward_logitParity            ✅ pass
+gemma3-sliding       TestForward_slidingWindowParity    ✅ pass
+gemma4-E2B/E4B       TestGemma4_logitParity             ✅ pass
+gemma4-12B           TestGemma4_12B_logitParity         ✅ pass
+qwen2                TestQwen2_forwardParity            ✅ pass
+qwen2-gguf           TestGGUF_qwen2_parity              ✅ pass
+qwen3                TestQwen3_forwardParity            ✅ pass
+qwen3-gguf           TestGGUF_qwen3_parity              ✅ pass
+qwen2moe             TestQwen2Moe_forwardParity         ✅ pass
+llama                TestLlama_forwardParity            ✅ pass
+llama3.2             TestLlama32_forwardParity          ✅ pass
+mistral              TestMistral_forwardParity          ✅ pass
+mixtral              TestMixtral_forwardParity          ✅ pass
+mellum2              TestMellum2_logitParity            ✅ pass
+mellum2-window       TestMellum2_windowParity           ✅ pass
+gpt2                 TestGPT2_forwardParity             ✅ pass
+qwen3_5_moe-tiny     TestQwen35_forwardParity           ✅ pass
+deltanet             TestGatedDeltaNet_parity           ✅ pass
+deepseek-tiny        TestDeepseek_textParity            ✅ pass
+kimi-tiny            TestKimi_textParity                ✅ pass
+phi3-tiny            TestPhi3_textParity                ✅ pass
+llama4-tiny          TestLlama4_textParity              ✅ pass
+nemotron-tiny        TestNemotron_textParity            ✅ pass
+nemotron3nano-tiny   TestNemotron3NanoMoE_textParity    ✅ pass
+gguf-Q8_0            TestGGUF_Q8_0_parity               ✅ pass
+gguf-Q4_0            TestGGUF_Q4_0_parity               ✅ pass
+gguf-Q4_K_M          TestGGUF_Q4_K_M_parity             ✅ pass
+gguf-Q4_K_S          TestGGUF_Q4_K_S_parity             ✅ pass
+gguf-Q5_K_M          TestGGUF_Q5_K_M_parity             ✅ pass
+gguf-Q6_K            TestGGUF_Q6_K_parity               ✅ pass
+gguf-Q3_K_M          TestGGUF_Q3_K_M_parity             ✅ pass
+gguf-Q2_K            TestGGUF_Q2_K_parity               ✅ pass
+gptq                 TestGPTQ_parity                    ✅ pass
+awq                  TestAWQ_parity                     ✅ pass
+w4a8-int4            TestW4A8DecodeParity               ✅ pass
+tok-gemma            TestEncodeDecode_goldenParity      ✅ pass
+tok-qwen3            TestByteLevel_qwen3GoldenParity    ✅ pass
+tok-llama3           TestByteLevel_llama3GoldenParity   ✅ pass
+tok-mellum2          TestByteLevel_mellum2GoldenParity  ✅ pass
+tok-tinyllama        TestLoadGGUF_tinyllamaParity       ✅ pass
+qwen3.6-gguf-gate    TestQwen35GGUF_gate                ✅ pass
+qwen3.6-weightdiff   TestQwen35GGUF_weightDiff          ⛔ DID NOT RUN (blocker)
+qwen3.6-gate2        TestQwen35Real_gate2FullModel      ✅ pass
+deepseek-v2lite      TestDeepseekV2LiteReal_gate        ✅ pass
+deepseek-moonlight   TestDeepseekMoonlightReal_gate     ✅ pass
+deepseek-gguf        TestDeepseekGGUFReal_gate          ✅ pass
+phi3-mini-oracle     TestPhi3MiniReal_gate              ✅ pass
+phi3-gguf            TestPhi3GGUFReal_gate              ✅ pass
+llama4-scout-gguf    TestLlama4Real_gate                ✅ pass
+
+-- catch-all: other *Parity / *gate tests that SKIPPED (review) --
+   skipped: TestParityManifest_merge 
+   skipped: TestSpeculativeGreedyParity_draftTarget 
+
+  gate ledger: 47 confirmed entr(ies) — testdata/gate_ledger.json
+    FIRST-RUN (3): no confirmed prior result, so a failure here has no delta to compute — reported, never a blocker
+      TestNemotron3NanoMoE_textParity
+      TestNemotron_textParity
+      TestW4A8DecodeParity
+    CONFIRMED BEFORE THE GATE LAST CHANGED (10) — WARNING, does not block.
+      The assertion moved since the confirming commit, so the recorded value may be a confirmation of different semantics.
+      TestDeepseekGGUFReal_gate  (confirmed at 679c9e5)
+      TestDeepseekMoonlightReal_gate  (confirmed at 679c9e5)
+      TestDeepseekV2LiteReal_gate  (confirmed at 679c9e5)
+      TestGPT2_forwardParity  (confirmed at 679c9e5)
+      TestLlama4Real_gate  (confirmed at 679c9e5)
+      TestPhi3GGUFReal_gate  (confirmed at 679c9e5)
+      TestPhi3MiniReal_gate  (confirmed at 679c9e5)
+      TestQwen35GGUF_gate  (confirmed at 679c9e5)
+      TestQwen35GGUF_weightDiff  (confirmed at 679c9e5)
+      TestQwen35Real_gate2FullModel  (confirmed at 679c9e5)
+== 94c3ffd: 1 BLOCKER(S) ==
+full log: /tmp/parity_sweep.DfIRHn

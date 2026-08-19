@@ -39,6 +39,21 @@ import (
 
 func TestQwen35GGUF_routeFlipAtOutlier(t *testing.T) {
 	requireHeavyModel(t)
+	// DIAGNOSTIC, NOT A GATE — and it must not sit in the release sweep's path (2026-08-19).
+	// scripts/parity_sweep.sh phase 2 runs `-run 'Qwen35|Real_gate'` under a 120m timeout, and this
+	// test's name matches. On the v0.14.0 prep sweep the two B13 diagnostics together burned ~41
+	// minutes of that budget and the run TIMED OUT inside this one — which pushed
+	// TestQwen35GGUF_weightDiff, a required 40-second gate, off the end of the run entirely. A gate
+	// that DID NOT RUN is a blocker by the sweep's own rule, so an instrument that asserts almost
+	// nothing took a real gate down with it.
+	//
+	// Gated by env rather than renamed on purpose: Go's -run matches substrings, so excluding it by
+	// name would mean stripping "Qwen35" from a qwen3.5 test — worse discoverability to work around
+	// a scheduling problem. This way the name stays, and the sweep reports an honest SKIP.
+	if os.Getenv("GOINFER_DIAG") == "" {
+		t.Skip("DIAGNOSTIC (set GOINFER_DIAG=1): prints evidence for a judgement, asserts only what " +
+			"holds under either story. Not a gate — see B13 in docs/queue-release.md")
+	}
 	gguf := assetPath(t, "GOINFER_QWEN35_GGUF")
 	dir := realQwen35Dir(t)
 	goldenDir := assetPath(t, "GOINFER_QWEN35_GOLDEN")
