@@ -22,8 +22,10 @@ From v1.0 these follow semver: no breaking change before a v2.0.
 ### `decoder` — load and generate
 
 - `decoder.Load`, `decoder.LoadGGUFBytes`
-- `decoder.Options` — the field SET is Hard; **individual fields that name an Experimental
-  subsystem are Experimental** (see below), because the option exists only to reach it.
+- `decoder.Options` — the field SET is Hard, and specifically **`Options.Quant`** (with its
+  values `""`, `int8`, `int8int8`, `int4`; new values may be ADDED) and **`Options.LoRA`** (the
+  load-time adapter path). **Individual fields that name an Experimental subsystem are
+  Experimental** (see below), because the option exists only to reach it.
 - `decoder.Model`: `Close`, `Config`, `Dims`, `Quant`, `NewCache`, `NewSession`, `Generate`
 - `decoder.Session`: `Generate`, `Reset`, `Tokens`, `Snapshot`, and `Model.LoadSession`
 - `decoder.SamplingParams`, `decoder.Generation` (`Err`), `decoder.KVCache` as an opaque handle
@@ -107,8 +109,8 @@ patch. Pin a version if you depend on them. Each graduates when it settles.
   `MoECacheExperts`, `MoECacheSlots`, `StreamWeights`, `WeightCacheBytes` and their `serve` flag
   twins (`--backend`'s non-cpu values, `--kv-prec`, `--kv-quant`, `--moe-cache-*`,
   `--stream-weights`, `--drafter`, `--spec`, `--adapter`, `--vision-*`, `--metal-fast-prefill`,
-  `--embed-*`, `--require-be`, `--allow-admin` bodies). `Options.Quant`'s VALUES (`""`, `int8`,
-  `int8int8`, `int4`) are Hard; new values may be added.
+  `--embed-*`, `--require-be`, `--allow-admin` bodies). `Options.Quant` and `Options.LoRA` are
+  Hard and listed above.
 - **The submodules themselves** — `gpu/`, `cuda/`, `metal/`, `demo/agent` — are Experimental as
   packages regardless of their tag numbers (see Open questions on posture).
 

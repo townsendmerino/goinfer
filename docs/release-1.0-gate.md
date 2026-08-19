@@ -175,9 +175,25 @@ below is declaring it (§3), not proving it.
   HTTP surface, and the env-var registry (`docs/env-vars.md` becomes contract, not
   documentation). Everything else — including the residency/backend seams and `qwen35Params`-class
   internals — is named Experimental explicitly, not by omission.
-- [ ] **REQUIRED · apidiff baseline, clean across at least one minor before the tag.** aikit's
-  precedent was two consecutive minors verified before freezing; goinfer should meet at least
-  one, in CI, against the declared Hard tier.
+- [~] **REQUIRED · apidiff baseline — MACHINERY LANDED AND GREEN 2026-08-18; the "one minor"
+  clock starts at the v0.14.0 tag.** `scripts/apidiff_check.sh` compares a baseline TAG against
+  HEAD for `decoder`/`tokenizer`/`chat`/`constrain` and **fails only on incompatible changes to
+  HARD-TIER names**, read from `testdata/apidiff/hard_tier.txt` — the machine-checkable half of
+  `docs/api-tiers.md`. Experimental breaks are reported, not fatal, because the residency seam and
+  family descriptors move by design and a gate that failed on those would be switched off within a
+  minor.
+  - **v0.13.0 → HEAD is CLEAN: zero incompatible changes in all four packages.**
+  - **Mutation-verified**: reordering `constrain.TokenBytes`'s parameters makes it report
+    `constrain: HARD-TIER BREAK` and exit non-zero; reverting returns it to PASS.
+  - Wired into CI on the `root` job (the one that already needs `fetch-depth: 0` — a baseline tag
+    a shallow clone cannot see exits non-zero rather than passing, so "could not compare" never
+    reads as "nothing changed").
+  - `TestAPITiers_hardListMatchesDoc` keeps the list and the document from drifting. **It caught a
+    real disagreement on its first run** — the list promised `Options.Quant`/`Options.LoRA` while
+    the document named them only under Experimental — which is precisely the failure mode of
+    having a prose promise and a machine gate that nobody reconciles.
+  - **What remains is time, not work**: the baseline must be clean across a released minor, so the
+    v0.14.0 tag starts that clock and the check at the RC discharges the line.
 - [ ] **REQUIRED · The serialized-format promises written**: `.giw` (and the `.giw-kv` snapshot
   fingerprint) currently carry "rebuild per minor" + a version guard that fails loud. 1.0 states
   the actual promise — read-N−1, or reserved-header forward-compat, or documented

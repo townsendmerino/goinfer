@@ -48,6 +48,18 @@ jobs:
       - name: staticcheck
         run: go run honnef.co/go/tools/cmd/staticcheck@2025.1.1 ./...
 
+      # API compatibility against the SIGNED-OFF Hard tier (docs/api-tiers.md, v1.0 gate §3).
+      # It runs on THIS job because it needs the full history the citation lint already requires:
+      # the baseline is a git TAG, and a shallow clone has none. A missing tag exits non-zero
+      # rather than passing — "could not compare" must never read as "nothing changed".
+      #
+      # It fails ONLY on incompatible changes to Hard-tier names. The residency seam, family
+      # descriptors and drafters are named Experimental in that document precisely because they
+      # move as families land; a gate that failed on those would be switched off within a minor,
+      # and a switched-off gate is worse than none.
+      - name: apidiff (Hard tier vs the last release)
+        run: scripts/apidiff_check.sh v0.13.0
+
       # The lint resolves aikit/gpu path citations against cuda/go.mod's required version (B10:
       # aikit and aikit/gpu are separate modules with separate tag series). The root module's
       # go.mod does NOT require aikit/gpu (M-19 — only cuda/gpu/metal do), so root's own

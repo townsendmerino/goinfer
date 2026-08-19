@@ -1,0 +1,94 @@
+# The HARD-TIER API surface, in apidiff's own naming, one identifier per line.
+#
+# This file is the MACHINE-CHECKABLE half of docs/api-tiers.md: scripts/apidiff_check.sh fails the
+# build when apidiff reports an INCOMPATIBLE change to any name here, and reports incompatible
+# changes to everything else as informational (those surfaces are named Experimental in the doc,
+# explicitly and on purpose).
+#
+# TestAPITiers_hardListMatchesDoc keeps the two from drifting: every name here must appear in
+# docs/api-tiers.md. A name added to one and not the other is the failure this pair exists to stop —
+# a promise in prose that no gate checks, or a gate checking a promise nobody documented.
+#
+# Format: <pkg> <apidiff-name>.  Comments and blank lines ignored.
+
+# --- decoder: load and generate -------------------------------------------------------------
+decoder Load
+decoder LoadGGUFBytes
+decoder Options
+decoder Options.Quant
+decoder Options.LoRA
+decoder Model
+decoder (*Model).Close
+decoder (*Model).Config
+decoder (*Model).Dims
+decoder (*Model).Quant
+decoder (*Model).NewCache
+decoder (*Model).NewSession
+decoder (*Model).Generate
+decoder (*Model).LoadSession
+decoder Session
+decoder (*Session).Generate
+decoder (*Session).Reset
+decoder (*Session).Tokens
+decoder (*Session).Snapshot
+decoder SamplingParams
+decoder Generation
+decoder (*Generation).Err
+decoder KVCache
+decoder Config
+
+# --- tokenizer ------------------------------------------------------------------------------
+tokenizer Load
+tokenizer LoadGGUF
+tokenizer LoadGGUFBytes
+tokenizer LoadJSONBytes
+tokenizer Tokenizer
+tokenizer (*Tokenizer).Encode
+tokenizer (*Tokenizer).EncodeSegments
+tokenizer (*Tokenizer).Decode
+tokenizer (*Tokenizer).DecodePiece
+tokenizer (*Tokenizer).TokenText
+tokenizer (*Tokenizer).TokenID
+tokenizer (*Tokenizer).Has
+tokenizer (*Tokenizer).Special
+tokenizer (*Tokenizer).ChatTemplate
+tokenizer Segment
+tokenizer SpecialTokens
+
+# --- chat -----------------------------------------------------------------------------------
+chat Detect
+chat Meta
+chat ErrUnknownTemplate
+chat Template
+chat (*Template).Name
+chat (*Template).Render
+chat (*Template).RenderSegments
+chat (*Template).ParseToolCalls
+chat ChatML
+chat Gemma3
+chat Gemma4
+chat Harmony
+chat Llama3
+chat Mellum2
+chat Mistral
+chat Turn
+chat Tool
+chat ToolCall
+chat Stops
+chat Segment
+
+# --- constrain ------------------------------------------------------------------------------
+constrain Grammar
+constrain NewMasker
+constrain Masker
+constrain (*Masker).Process
+constrain (*Masker).MaskAt
+constrain (*Masker).Commit
+constrain (*Masker).Reset
+constrain (*Masker).CanEnd
+constrain (*Masker).StopWhenComplete
+constrain (*Masker).ForcedRun
+constrain (*Masker).ForcedBytesRun
+constrain (*Masker).GrammarClone
+constrain TokenBytes
+constrain SchemaFromStruct
