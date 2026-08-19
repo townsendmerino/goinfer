@@ -1687,6 +1687,47 @@ The 42, and the test count behind them (47 test functions), are reproduced by
 Seven non-`GOINFER_` variables also gate unselected tests and are excluded as out of scope:
 `G4_TRACE`, `GEMMA3_4B`, `GOMEMLIMIT`, `HOME`, `NOISE_FLOOR_CKPT`, `ROUTER_CAPTURE_OUT`, `ZZBASE`.
 
+## B19 — the parity sweep is UNOBSERVABLE for its first 30-60 minutes (post-1.0)
+
+**Found 2026-08-19 during the v0.14.0 release prep**, while trying to answer "how far along is it?"
+and having nothing but RSS to go on.
+
+`scripts/parity_sweep.sh` phase 1 is one command:
+
+```sh
+go test -v -timeout "$TIMEOUT" ./decoder/ ./tokenizer/ >>"$LOG" 2>&1
+```
+
+**`go test -v` BUFFERS PER PACKAGE when it is given more than one package.** Nothing reaches `$LOG`
+until `./decoder/` completes in full — measured: the log sat at **0 bytes for 30+ minutes** while
+the binary ran at 595% CPU and ~78 GB RSS. The run is healthy and completely opaque, which is the
+combination that makes a watcher wonder whether to kill it.
+
+`scripts/gpu_gate.sh` does not have this problem, and the reason is instructive: it runs a SINGLE
+package (`./cuda/`) per invocation and streams one line per test. Same tool, different arity.
+
+**The fix (small, and NOT to be applied while a sweep is running — bash reads a script lazily by
+byte offset, so editing an executing one can corrupt it mid-flight):**
+
+```sh
+for pkg in ./decoder/ ./tokenizer/; do
+  go test -v -timeout "$TIMEOUT" "$pkg" 2>&1 | tee -a "$LOG" | grep --line-buffered -E '^(--- |ok |FAIL)'
+done
+```
+
+One package per invocation restores streaming; `tee` keeps the full log the classifier already
+parses; the `grep` gives the operator the same one-line-per-test view the GPU gate has. Check the
+exit status via `PIPESTATUS`/`set -o pipefail` so a pipe does not swallow a failure — that is the
+one trap in this change.
+
+**Why it is worth doing rather than tolerating:** a release ritual that cannot be watched gets
+watched by proxy — `ps`, `free`, `/proc/PID/maps` — and the fallback for "is it stuck?" becomes
+"kill it and re-run", which on a 2-3 hour sweep is the most expensive possible answer. It also
+makes a HANG indistinguishable from a slow real-model gate for the first hour.
+
+**Deferred to post-1.0 deliberately** (the v1.0 gate's §7 scope discipline): it changes the release
+tool during a release. File, do not touch mid-flight.
+
 ## B15 — the manifest EMITTER promotes experimental → validated on tiny-golden evidence
 
 **Found 2026-08-13 by running the sweep with `EMIT_MANIFEST=1`.** The merge wrote:
