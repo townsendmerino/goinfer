@@ -1,0 +1,210 @@
+=== RUN   TestCohere2R7bReal_gate
+    cohere2_r7b_real_test.go:71: command-r7b: 32 layers (8 global/NoPE, 8 sliding/RoPE), H=32 kv=8 headDim=128 window=4096 logitScale(recip)=4.0000
+    cohere2_r7b_real_test.go:86: command-r7b parity: argmax got=5641 want=5641 | logit cosine=1.000000
+    cohere2_r7b_real_test.go:102: command-r7b continuation got=[5641 19 1671 5079 4376 1794 2517 3015] want=[5641 19 1671 5079 4376 1794 2517 3015]
+--- PASS: TestCohere2R7bReal_gate (279.78s)
+=== RUN   TestCohereAyaReal_gate
+    cohere_aya_real_test.go:57: aya-expanse-8b: 32 layers, H=32 kv=8 headDim=128 inter=14336 logitScale(recip)=8.0000 tied=true
+    cohere_aya_real_test.go:69: aya-expanse parity: argmax got=5641 want=5641 | logit cosine=1.000000
+    cohere_aya_real_test.go:85: aya-expanse continuation got=[5641 21 2332 1801 6090 1709 1690 6427] want=[5641 21 2332 1801 6090 1709 1690 6427]
+--- PASS: TestCohereAyaReal_gate (33.83s)
+=== RUN   TestDeepseekV2LiteReal_gate
+    deepseek_real_test.go:68: deepseek_v2: 27 layers, H=16, q_lora=0 kv_lora=512 qk=192 v=128, experts=64 top6 firstKDense=1 sigmoid=false nGroup=1 routedScale=1.000 attnScale=0.072169 ropeMscale=1.0000
+    deepseek_real_test.go:84: deepseek_v2 parity: argmax got=8913 want=8913 | logit cosine=0.999243
+    deepseek_real_test.go:100: deepseek_v2 continuation got=[8913 13 185 549 6077 280] want=[8913 13 185 549 6077 280]
+--- PASS: TestDeepseekV2LiteReal_gate (45.03s)
+=== RUN   TestDeepseekMoonlightReal_gate
+    deepseek_real_test.go:68: deepseek_v3: 27 layers, H=16, q_lora=0 kv_lora=512 qk=192 v=128, experts=64 top6 firstKDense=1 sigmoid=true nGroup=1 routedScale=2.446 attnScale=0.072169 ropeMscale=1.0000
+    deepseek_real_test.go:84: deepseek_v3 parity: argmax got=17374 want=17374 | logit cosine=0.999508
+    deepseek_real_test.go:100: deepseek_v3 continuation got=[17374 11 1155 387 7081 306] want=[17374 11 1155 387 7081 306]
+--- PASS: TestDeepseekMoonlightReal_gate (47.71s)
+=== RUN   TestDeepseekGGUFReal_gate
+    deepseek_real_test.go:202: GGUF deepseek_v2: 27 layers, q_lora=0 kv_lora=512 qk=192 v=128, experts=64 top6 firstKDense=1 sigmoid=false ropeMscale=1.0000
+    deepseek_real_test.go:225: GGUF gen: " Paris.\nThe official language is French.\nThe currency is the Euro (€).\nFrance is in Western Europe"
+--- PASS: TestDeepseekGGUFReal_gate (37.02s)
+=== RUN   TestGemma3Real_gate
+    gemma3_real_test.go:56: gemma-3-4b: 34 layers, H=8 kv=4 headDim=256 sandwich=sandwich qkNorm=true
+    gemma3_real_test.go:68: gemma-3-4b parity: argmax got=1131 want=1131 | logit cosine=0.999717
+    gemma3_real_test.go:89: gemma-3-4b continuation got=[1131 506 2436 236761 108 818] want=[1131 506 2436 236761 108 818]
+--- PASS: TestGemma3Real_gate (16.65s)
+=== RUN   TestGptOssReal_gate
+    gptoss_real_test.go:54: gpt-oss:20b loaded int8: 24 layers, H=64 kv=8 headDim=64 experts=32 top4 window=128
+    gptoss_real_test.go:76: gpt-oss:20b gen: " Paris.\"\n\nSure! Here's a simple example of a function that takes a string"
+--- PASS: TestGptOssReal_gate (49.93s)
+=== RUN   TestGraniteReal_gate
+    granite_real_test.go:61: granite-4.0-h-tiny: 40 layers (36 mamba, 4 attention)
+    granite_real_test.go:106: granite real gate OK.
+          prompt: "The capital of France is"
+          cont:   " Paris. Paris is the largest city in France and is known for its iconic landmarks such as the Eiffel Tower,"
+    granite_real_test.go:117: granite GGUF vs bf16 oracle: argmax got=12366 want=12366 | cosine=0.995758
+--- PASS: TestGraniteReal_gate (36.30s)
+=== RUN   TestLagunaReal_gate
+    laguna_real_test.go:181: laguna XS.2 int4: 21 tokens, distinct-trigram 1.000: "1. Eiffel Tower\n2. Notre-Dame Cathedral\n3. Louvre Museum"
+--- PASS: TestLagunaReal_gate (209.89s)
+=== RUN   TestLlama4Real_gate
+    llama4_real_test.go:45: Scout: 48 layers (48 MoE, 12 NoPE), H=40 kv=8 headDim=128 experts=16 top1 qknorm=true attnTemp=true
+    llama4_real_test.go:67: Scout gen: " Paris. The capital of Germany is Berlin. The capital of Italy is Rome."
+--- PASS: TestLlama4Real_gate (360.92s)
+=== RUN   TestLlamaReal_gate
+    llama_real_test.go:56: TinyLlama-1.1B: 22 layers, H=32 kv=4 headDim=64 inter=5632 qkvBias tied=false
+    llama_real_test.go:68: TinyLlama-1.1B parity: argmax got=3681 want=3681 | logit cosine=1.000000
+    llama_real_test.go:84: TinyLlama-1.1B continuation got=[3681 29889 13 13 29906 29889] want=[3681 29889 13 13 29906 29889]
+--- PASS: TestLlamaReal_gate (3.86s)
+=== RUN   TestMistralReal_gate
+    mistral_real_test.go:56: TinyMistral-248M: 12 layers, H=32 kv=8 headDim=32 inter=4096 qkvBias tied=false
+    mistral_real_test.go:68: TinyMistral-248M parity: argmax got=272 want=272 | logit cosine=1.000000
+    mistral_real_test.go:84: TinyMistral-248M continuation got=[272 5565 302 4843 28723 13] want=[272 5565 302 4843 28723 13]
+--- PASS: TestMistralReal_gate (1.38s)
+=== RUN   TestNemotron3NanoMoEReal_gate
+    nemotron_moe_real_test.go:68: blocks: mamba=23 attn=6 moe=23 mlp=0 (of 52)
+    nemotron_moe_real_test.go:109: generated 48 tokens, distinct-trigram 0.843: "The user asks: \"Name three landmarks in Paris.\" This is a straightforward request for factual information. It's allowed. Provide three landmarks: Eiffel Tower, Louvre Museum, Notre-Dame Cathedral, etc. Provide answer.\n</think>\nSure"
+--- PASS: TestNemotron3NanoMoEReal_gate (99.72s)
+=== RUN   TestNemotronReal_gate
+    nemotron_real_test.go:56: nemotron-nano-9b: 56 layers (27 mamba, 4 attn, 25 mlp), n_groups=8
+    nemotron_real_test.go:100: nemotron real gate OK.
+          prompt: "The capital of France is"
+          cont:   " Paris. The capital of Italy is Rome. The capital of Spain is Madrid. The capital of Germany is Berlin. The"
+--- PASS: TestNemotronReal_gate (47.94s)
+=== RUN   TestPhi3MiniReal_gate
+    phi3_real_test.go:47: phi3-mini: 32 layers, H=32 kv=32 headDim=96 inter=8192 rotaryDim=0 tied=false
+    phi3_real_test.go:59: phi3-mini parity: argmax got=3681 want=3681 | logit cosine=1.000000
+    phi3_real_test.go:75: phi3-mini continuation got=[3681 29889 13 13 13 2277] want=[3681 29889 13 13 13 2277]
+--- PASS: TestPhi3MiniReal_gate (14.90s)
+=== RUN   TestPhi3GGUFReal_gate
+    phi3_real_test.go:130: phi3 GGUF parity: argmax got=3681 want=3681 | cosine=0.7324 (logged; Q4 + earlier snapshot)
+    phi3_real_test.go:142: phi3 GGUF continuation got=[3681 29889 13 13 13 2277] want=[3681 29889 13 13 13 2277]
+--- PASS: TestPhi3GGUFReal_gate (7.22s)
+=== RUN   TestQwen2Real_gate
+    qwen2_real_test.go:56: qwen2-0.5B: 24 layers, H=14 kv=2 headDim=64 inter=4864 qkvBias tied=true
+    qwen2_real_test.go:68: qwen2-0.5B parity: argmax got=12095 want=12095 | logit cosine=1.000000
+    qwen2_real_test.go:84: qwen2-0.5B continuation got=[12095 13 1084 374 279 7772] want=[12095 13 1084 374 279 7772]
+--- PASS: TestQwen2Real_gate (1.82s)
+=== RUN   TestQwen35_forwardParity
+    qwen35_forward_test.go:71: qwen3_5_moe prefill: argmax=162 cosine=1.00000000
+    qwen35_forward_test.go:92: greedy continuation matches HF: [162 127 171 212 161 226]
+--- PASS: TestQwen35_forwardParity (0.01s)
+=== RUN   TestQwen35Real_gate2FullModel
+    qwen35_gate2_test.go:191:            div @step 1: golden tok 11 is goinfer rank 2, gap 0.0007 of range (near-tie)
+    qwen35_gate2_test.go:213: prompt  0 "The capital of France is"             | argmax 1/8 (1st div @step 1) | gen=[11751 13 198 760 6511 314 9338 369] want=[11751 11 264 3177 34756 364 1141 8807]
+    qwen35_gate2_test.go:213: prompt  1 "Water boils at a temperature of"      | argmax 8/8 | gen=[220 17 16 17 56498 13 3437 369] want=[220 17 16 17 56498 13 3437 369]
+    qwen35_gate2_test.go:218:            continuation reproduces golden: " 212°F. What is"
+    qwen35_gate2_test.go:213: prompt  2 "def fibonacci(n):\\n    if n < 2:\\n  " | argmax 8/8 | gen=[73111 1393 471 220 16 8 478 73111] want=[73111 1393 471 220 16 8 478 73111]
+    qwen35_gate2_test.go:218:            continuation reproduces golden: " fibonacci(n - 1) + fibonacci"
+    qwen35_gate2_test.go:213: prompt  3 "The three primary colors are red, bl" | argmax 8/8 | gen=[13358 13 3095 1330 5839 7736 513 9238] want=[13358 13 3095 1330 5839 7736 513 9238]
+    qwen35_gate2_test.go:218:            continuation reproduces golden: " yellow. When two primary colors are mixed"
+    qwen35_gate2_test.go:213: prompt  4 "In 1969, the first humans landed on " | argmax 8/8 | gen=[17257 13 3437 557 279 803 314 279] want=[17257 13 3437 557 279 803 314 279]
+    qwen35_gate2_test.go:218:            continuation reproduces golden: " moon. What was the name of the"
+    qwen35_gate2_test.go:213: prompt  5 "The chemical symbol for gold is"      | argmax 8/8 | gen=[30994 13 3437 369 279 23735 1324 314] want=[30994 13 3437 369 279 23735 1324 314]
+    qwen35_gate2_test.go:218:            continuation reproduces golden: " Au. What is the atomic number of"
+    qwen35_gate2_test.go:191:            div @step 1: golden tok 13 is goinfer rank 2, gap 0.0029 of range (near-tie)
+    qwen35_gate2_test.go:213: prompt  6 "To make a cup of tea, first you boil" | argmax 6/8 (1st div @step 1) | gen=[2919 11 1179 488 884 279 14799 8697] want=[2919 13 4844 488 884 279 14799 8697]
+    qwen35_gate2_test.go:213: prompt  7 "The opposite of 'hot' is"             | argmax 8/8 | gen=[359 84068 4282 198 32 13 2912 198] want=[359 84068 4282 198 32 13 2912 198]
+    qwen35_gate2_test.go:218:            continuation reproduces golden: " 'cold'.\nA. True\n"
+    qwen35_gate2_test.go:213: prompt  8 "Once upon a time, in a land far away" | argmax 8/8 | gen=[3777 95704 6725 8254 13 8254 557 264] want=[3777 95704 6725 8254 13 8254 557 264]
+    qwen35_gate2_test.go:218:            continuation reproduces golden: " young adventurer named Alex. Alex was a"
+    qwen35_gate2_test.go:191:            div @step 3: golden tok 11 is goinfer rank 2, gap 0.0045 of range (near-tie)
+    qwen35_gate2_test.go:213: prompt  9 "The square root of 144 is"            | argmax 3/8 (1st div @step 3) | gen=[220 16 17 13 1061 369 1521 220] want=[220 16 17 11 321 279 9057 3578]
+    qwen35_gate2_test.go:226: === Gate 2 (int8 vs bf16): argmax 66/80 (82.5%) | 7/10 prompts coherent | full-vocab cosine min=0.99333 mean=0.99837 | worst div gap=0.0045 of range (aligned steps) ===
+--- PASS: TestQwen35Real_gate2FullModel (1048.59s)
+=== RUN   TestQwen35GGUF_gate
+    qwen35_gguf_gate_test.go:106:            div @step 1: golden tok 11 is goinfer rank 2, gap 0.0033 of range
+    qwen35_gguf_gate_test.go:127: prompt  0 "The capital of France is"             | argmax 1/8 | gen=[11751 13 198 760 6511 314 9338 369] want=[11751 11 264 3177 34756 364 1141 8807]
+    qwen35_gguf_gate_test.go:127: prompt  1 "Water boils at a temperature of"      | argmax 8/8 | gen=[220 17 16 17 56498 13 3437 369] want=[220 17 16 17 56498 13 3437 369]
+    qwen35_gguf_gate_test.go:127: prompt  2 "def fibonacci(n):\\n    if n < 2:\\n  " | argmax 8/8 | gen=[73111 1393 471 220 16 8 478 73111] want=[73111 1393 471 220 16 8 478 73111]
+    qwen35_gguf_gate_test.go:127: prompt  3 "The three primary colors are red, bl" | argmax 8/8 | gen=[13358 13 3095 1330 5839 7736 513 9238] want=[13358 13 3095 1330 5839 7736 513 9238]
+    qwen35_gguf_gate_test.go:127: prompt  4 "In 1969, the first humans landed on " | argmax 8/8 | gen=[17257 13 3437 557 279 803 314 279] want=[17257 13 3437 557 279 803 314 279]
+    qwen35_gguf_gate_test.go:127: prompt  5 "The chemical symbol for gold is"      | argmax 8/8 | gen=[30994 13 3437 369 279 23735 1324 314] want=[30994 13 3437 369 279 23735 1324 314]
+    qwen35_gguf_gate_test.go:127: prompt  6 "To make a cup of tea, first you boil" | argmax 8/8 | gen=[2919 13 4844 488 884 279 14799 8697] want=[2919 13 4844 488 884 279 14799 8697]
+    qwen35_gguf_gate_test.go:127: prompt  7 "The opposite of 'hot' is"             | argmax 8/8 | gen=[359 84068 4282 198 32 13 2912 198] want=[359 84068 4282 198 32 13 2912 198]
+    qwen35_gguf_gate_test.go:127: prompt  8 "Once upon a time, in a land far away" | argmax 8/8 | gen=[3777 95704 6725 8254 13 8254 557 264] want=[3777 95704 6725 8254 13 8254 557 264]
+    qwen35_gguf_gate_test.go:106:            div @step 4: golden tok 321 is goinfer rank 2, gap 0.0039 of range
+    qwen35_gguf_gate_test.go:127: prompt  9 "The square root of 144 is"            | argmax 4/8 | gen=[220 16 17 11 1521 220 16 17] want=[220 16 17 11 321 279 9057 3578]
+    qwen35_gguf_gate_test.go:134: === Qwen3.6 GGUF gate (Q8_0 vs bf16): argmax 69/80 (86.2%) | 8/10 prompts coherent | cosine min=0.99298 mean=0.99846 | worst div gap=0.0039 ===
+--- PASS: TestQwen35GGUF_gate (820.27s)
+=== RUN   TestQwen35GGUF_locateDivergence
+    qwen35_gguf_locate_test.go:56: DIAGNOSTIC (set GOINFER_DIAG=1): prints evidence for a judgement, asserts only what holds under either story. Not a gate — see B13 in docs/queue-release.md
+--- SKIP: TestQwen35GGUF_locateDivergence (0.00s)
+=== RUN   TestQwen35GGUF_vsSafetensors
+    qwen35_gguf_oracle_test.go:98: === GGUF int8 vs SAFETENSORS int8 (teacher-forced, 80 steps): cosine min=0.987835 (step 63) mean=0.998114 ===
+--- PASS: TestQwen35GGUF_vsSafetensors (1868.90s)
+=== RUN   TestQwen35GGUF_routeFlipAtOutlier
+    qwen35_gguf_routeflip_test.go:54: DIAGNOSTIC (set GOINFER_DIAG=1): prints evidence for a judgement, asserts only what holds under either story. Not a gate — see B13 in docs/queue-release.md
+--- SKIP: TestQwen35GGUF_routeFlipAtOutlier (0.00s)
+=== RUN   TestQwen35GGUF_weightDiff
+    qwen35_gguf_weightdiff_test.go:128: --- layer 0 (DeltaNet/linear) ---
+    qwen35_gguf_weightdiff_test.go:118:   attn_norm                    len=2048      cos=1.000000 maxAbs=0 relL2=0
+    qwen35_gguf_weightdiff_test.go:118:   post_attention_norm          len=2048      cos=1.000000 maxAbs=0 relL2=0
+    qwen35_gguf_weightdiff_test.go:118:   router(mlp.gate)             len=524288    cos=1.000000 maxAbs=0 relL2=0
+    qwen35_gguf_weightdiff_test.go:118:   in_proj_qkv                  len=16777216  cos=0.999986 maxAbs=0.001457 relL2=0.005377
+    qwen35_gguf_weightdiff_test.go:118:   in_proj_z                    len=8388608   cos=0.999985 maxAbs=0.001106 relL2=0.005433
+    qwen35_gguf_weightdiff_test.go:118:   in_proj_a                    len=65536     cos=1.000000 maxAbs=0 relL2=0
+    qwen35_gguf_weightdiff_test.go:118:   in_proj_b                    len=65536     cos=1.000000 maxAbs=0 relL2=0
+    qwen35_gguf_weightdiff_test.go:118:   conv1d                       len=32768     cos=1.000000 maxAbs=0 relL2=0
+    qwen35_gguf_weightdiff_test.go:118:   dt_bias                      len=32        cos=1.000000 maxAbs=0 relL2=0
+    qwen35_gguf_weightdiff_test.go:118:   negExpA                      len=32        cos=1.000000 maxAbs=0 relL2=0
+    qwen35_gguf_weightdiff_test.go:118:   ssm_norm                     len=128       cos=1.000000 maxAbs=0 relL2=0
+    qwen35_gguf_weightdiff_test.go:118:   out_proj                     len=8388608   cos=0.999983 maxAbs=0.00169 relL2=0.005821
+    qwen35_gguf_weightdiff_test.go:128: --- layer 1 (DeltaNet/linear) ---
+    qwen35_gguf_weightdiff_test.go:118:   attn_norm                    len=2048      cos=1.000000 maxAbs=0 relL2=0
+    qwen35_gguf_weightdiff_test.go:118:   post_attention_norm          len=2048      cos=1.000000 maxAbs=0 relL2=0
+    qwen35_gguf_weightdiff_test.go:118:   router(mlp.gate)             len=524288    cos=1.000000 maxAbs=0 relL2=0
+    qwen35_gguf_weightdiff_test.go:118:   in_proj_qkv                  len=16777216  cos=0.999984 maxAbs=0.001099 relL2=0.005607
+    qwen35_gguf_weightdiff_test.go:118:   in_proj_z                    len=8388608   cos=0.999984 maxAbs=0.001139 relL2=0.005663
+    qwen35_gguf_weightdiff_test.go:118:   in_proj_a                    len=65536     cos=1.000000 maxAbs=0 relL2=0
+    qwen35_gguf_weightdiff_test.go:118:   in_proj_b                    len=65536     cos=1.000000 maxAbs=0 relL2=0
+    qwen35_gguf_weightdiff_test.go:118:   conv1d                       len=32768     cos=1.000000 maxAbs=0 relL2=0
+    qwen35_gguf_weightdiff_test.go:118:   dt_bias                      len=32        cos=1.000000 maxAbs=0 relL2=0
+    qwen35_gguf_weightdiff_test.go:118:   negExpA                      len=32        cos=1.000000 maxAbs=5.96e-08 relL2=1.781e-09
+    qwen35_gguf_weightdiff_test.go:118:   ssm_norm                     len=128       cos=1.000000 maxAbs=0 relL2=0
+    qwen35_gguf_weightdiff_test.go:118:   out_proj                     len=8388608   cos=0.999984 maxAbs=0.002335 relL2=0.0057
+    qwen35_gguf_weightdiff_test.go:128: --- layer 2 (DeltaNet/linear) ---
+    qwen35_gguf_weightdiff_test.go:118:   attn_norm                    len=2048      cos=1.000000 maxAbs=0 relL2=0
+    qwen35_gguf_weightdiff_test.go:118:   post_attention_norm          len=2048      cos=1.000000 maxAbs=0 relL2=0
+    qwen35_gguf_weightdiff_test.go:118:   router(mlp.gate)             len=524288    cos=1.000000 maxAbs=0 relL2=0
+    qwen35_gguf_weightdiff_test.go:118:   in_proj_qkv                  len=16777216  cos=0.999984 maxAbs=0.00102 relL2=0.005727
+    qwen35_gguf_weightdiff_test.go:118:   in_proj_z                    len=8388608   cos=0.999983 maxAbs=0.001141 relL2=0.005759
+    qwen35_gguf_weightdiff_test.go:118:   in_proj_a                    len=65536     cos=1.000000 maxAbs=0 relL2=0
+    qwen35_gguf_weightdiff_test.go:118:   in_proj_b                    len=65536     cos=1.000000 maxAbs=0 relL2=0
+    qwen35_gguf_weightdiff_test.go:118:   conv1d                       len=32768     cos=1.000000 maxAbs=0 relL2=0
+    qwen35_gguf_weightdiff_test.go:118:   dt_bias                      len=32        cos=1.000000 maxAbs=0 relL2=0
+    qwen35_gguf_weightdiff_test.go:118:   negExpA                      len=32        cos=1.000000 maxAbs=0 relL2=0
+    qwen35_gguf_weightdiff_test.go:118:   ssm_norm                     len=128       cos=1.000000 maxAbs=0 relL2=0
+    qwen35_gguf_weightdiff_test.go:118:   out_proj                     len=8388608   cos=0.999983 maxAbs=0.002609 relL2=0.005803
+    qwen35_gguf_weightdiff_test.go:128: --- layer 3 (softmax) ---
+    qwen35_gguf_weightdiff_test.go:118:   attn_norm                    len=2048      cos=1.000000 maxAbs=0 relL2=0
+    qwen35_gguf_weightdiff_test.go:118:   post_attention_norm          len=2048      cos=1.000000 maxAbs=0 relL2=0
+    qwen35_gguf_weightdiff_test.go:118:   router(mlp.gate)             len=524288    cos=1.000000 maxAbs=0 relL2=0
+    qwen35_gguf_weightdiff_test.go:118:   q_proj(query‖gate)           len=16777216  cos=0.999984 maxAbs=0.001318 relL2=0.005651
+    qwen35_gguf_weightdiff_test.go:118:   k_proj                       len=1048576   cos=0.999984 maxAbs=0.0007057 relL2=0.005666
+    qwen35_gguf_weightdiff_test.go:118:   v_proj                       len=1048576   cos=0.999980 maxAbs=0.0005627 relL2=0.006298
+    qwen35_gguf_weightdiff_test.go:118:   o_proj                       len=8388608   cos=0.999983 maxAbs=0.002235 relL2=0.005775
+    qwen35_gguf_weightdiff_test.go:118:   q_norm                       len=256       cos=1.000000 maxAbs=0 relL2=0
+    qwen35_gguf_weightdiff_test.go:118:   k_norm                       len=256       cos=1.000000 maxAbs=0 relL2=0
+    qwen35_gguf_weightdiff_test.go:174: === weightDiff: worst tensor cosine 0.999980 (v_proj) over layers 0-3 ===
+--- PASS: TestQwen35GGUF_weightDiff (41.71s)
+=== RUN   TestQwen35Real_loaderSlice
+    qwen35_realckpt_test.go:157: Gate-1 loader probe GREEN: 4-layer slice loaded + forwarded on real checkpoint; post-layer-3 hidden ‖h‖=1.3515, h[:4]=[0.004982489 -0.01127643 0.021736592 0.012008688]
+--- PASS: TestQwen35Real_loaderSlice (10.81s)
+=== RUN   TestQwen35Real_gate1SliceParity
+    qwen35_realckpt_test.go:219: after layer 0: cosine=1.0000000000 (‖goinfer‖=0.7140 ‖HF‖=0.7140)
+    qwen35_realckpt_test.go:219: after layer 1: cosine=1.0000000000 (‖goinfer‖=0.9128 ‖HF‖=0.9128)
+    qwen35_realckpt_test.go:219: after layer 2: cosine=1.0000000000 (‖goinfer‖=1.2667 ‖HF‖=1.2667)
+    qwen35_realckpt_test.go:219: after layer 3: cosine=1.0000000000 (‖goinfer‖=1.3515 ‖HF‖=1.3515)
+--- PASS: TestQwen35Real_gate1SliceParity (27.98s)
+=== RUN   TestResolveQwen35
+--- PASS: TestResolveQwen35 (0.00s)
+=== RUN   TestResolveQwen35_rejectsBadConfig
+--- PASS: TestResolveQwen35_rejectsBadConfig (0.00s)
+=== RUN   TestQwen38Real_gate
+    qwen3_5_realckpt_test.go:207: qwen3.8-27b int4: 96 tokens, distinct-trigram 0.770: "Here are three famous landmarks in Paris:\n\n1. **The Eiffel Tower** – An iconic iron lattice tower located on the Champ de Mars, built for the 1889 World's Fair.\n2. **The Louvre Museum** – The world's largest art museum and a historic monument, housing thousands of works of art, including the *Mona Lisa*.\n3. **Notre-Dame Cathedral** – A medieval Catholic cathedral on the Île"
+--- PASS: TestQwen38Real_gate (421.97s)
+=== RUN   TestQwen3Real_gate
+    qwen3_real_test.go:56: qwen3-1.7B: 28 layers, H=16 kv=8 headDim=128 inter=6144 qkNorm=true tied=false
+    qwen3_real_test.go:68: qwen3-1.7B parity: argmax got=12095 want=12095 | logit cosine=1.000000
+    qwen3_real_test.go:84: qwen3-1.7B continuation got=[12095 13 576 6722 315 15344] want=[12095 13 576 6722 315 15344]
+--- PASS: TestQwen3Real_gate (7.81s)
+=== RUN   TestSerializeQwen35_roundTrip
+    serialize_test.go:282: qwen3_5_moe round-trips: 3 delta + 1 qattn layers, decode byte-identical
+--- PASS: TestSerializeQwen35_roundTrip (0.01s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	5545.984s

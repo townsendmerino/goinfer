@@ -13,7 +13,7 @@ serialization plumbing are named Experimental — explicitly, not by omission.
 **That split takes effect at the v1.0 tag.** Until then goinfer is pre-1.0 and
 any surface may still change.
 
-## [v0.14.0] — 2026-08-18
+## [v0.14.0] — 2026-08-19
 
 **Six new model families, gpt-oss on Metal, and the v1.0 API tiers declared.** 188 commits since
 v0.13.0. The headline for consumers is smaller and more boring than any of that: **the tagged
