@@ -13,11 +13,111 @@ serialization plumbing are named Experimental — explicitly, not by omission.
 **That split takes effect at the v1.0 tag.** Until then goinfer is pre-1.0 and
 any surface may still change.
 
-## [Unreleased]
+## [v0.14.0] — 2026-08-18
+
+**Six new model families, gpt-oss on Metal, and the v1.0 API tiers declared.** 188 commits since
+v0.13.0. The headline for consumers is smaller and more boring than any of that: **the tagged
+submodules are `replace`-free**, so `go install github.com/townsendmerino/goinfer/...@v0.14.0`
+works from outside a checkout for the first time (v0.13.0's `gpu`/`cuda`/`metal` tags each carried
+`replace … => ../`, which `go install pkg@version` applies because that module becomes the main
+module — and `../` does not exist).
 
 ### Added
 
-- **Qwen3.8 (`qwen3_5`) — the dense member of the Gated-DeltaNet/softmax hybrid family.**
+#### Model families
+
+- **Qwen3-Next (`qwen3_next`)** — the 80B-A3B Gated-DeltaNet/softmax hybrid, gated by a real-weight
+  layer-slice oracle at **cosine 1.00000000**.
+- **Nemotron 3 Nano (`nemotron_h` MoE)** — T3 real oracle **cosine 0.997668**, continuation exact,
+  plus a real Q4_K_M GGUF gate (coherent, 0.843 distinct-trigram).
+- **Laguna (poolside) XS-2.1 / XS.2 / M.1** — safetensors **and** GGUF (llama.cpp's own arch),
+  tiny goldens at cosine 1.000000 for all three generations, a real 33B-A3B gate, and a
+  real-weight slice oracle at cosine 1.00000000. Softplus attention output gating and **per-layer
+  query-head counts** are new axes; the real gate found two per-layer-head bugs a tiny fixture
+  could not.
+- **InternLM2** (adapter: renamed tensors + a GROUPED fused `wqkv` de-interleave) and **InternLM3**
+  (a llama ALIAS — its dynamic-NTK rope is in-window identity).
+- **Qwen3.8 (`qwen3_5`)** — the dense member of the DeltaNet/softmax hybrid; see below.
+
+#### gpt-oss
+
+- **safetensors/MXFP4 loader** for `gpt-oss-20b` and `-120b`, gated against the GGUF path
+  (argmax identical, cosine 0.999121).
+- **The `harmony` chat template** — without it the family was unreachable through `chat.Detect`.
+- **GPU residency on Metal (G10): SHIPPED and admitted end-to-end** — attention sinks, the
+  clamped-SwiGLU MoE expert kernel, and a custom router. The CUDA kernels landed too, **without
+  touching the audited PTX**.
+
+#### Elsewhere
+
+- **GPT-2 GPU residency on Metal (G9)** — shipped, admitted end-to-end.
+- **Block-drafting speculation as a production API**: `serve --drafter`, `BlockSpec.GenerateStream`,
+  a resident block trunk, batched hidden-state capture, and `PrefillLastNArgmax` (batching the
+  verify's LM head).
+- **Metal batched prefill behind `--metal-fast-prefill`** (P11) — a 3.9–4.6× TTFT lever, opt-in
+  because it is not bit-exact.
+- **`serve`: optional native TLS** (`-tls-cert`/`-tls-key`), and a **hard failure when `-addr` is
+  non-loopback with no `-api-key`** — the unauthenticated-by-default posture is now enforced, not
+  merely documented.
+- **The v1.0 API tier declaration** (`docs/api-tiers.md`, signed off 2026-08-18) and the
+  **apidiff gate** that enforces it (`scripts/apidiff_check.sh`, wired into CI). v0.13.0 → this
+  release is **clean: zero incompatible changes** to any Hard-tier name.
+- **`docs/release-1.0-gate.md`** — v1.0 as a decision against criteria, each line naming its
+  evidence.
+
+### Changed
+
+- **`aikit` v1.17.1 → v1.21.0** (root module).
+- **GPT-2's `"gelu"` now runs the exact-erf form.** It had been silently running the tanh
+  approximation — a different function, not a different rounding.
+
+### Fixed
+
+- **Qwen3.8's two `pos>0` bugs**, the Laguna per-layer-head pair, and the batched-prefill path that
+  never applied the attention gate (it read as a plausible cosine 0.957, not as a failure).
+- **`multimodal`: oversized Qwen vision inputs are rejected before the pixels are decoded**, not
+  after.
+- **The w4a8 decode-parity gate now RUNS** — its matched int8 `.giw` half had never been built, so
+  it had skipped at every tag since 2026-08-12. Built from the same source GGUF as the int4 half;
+  **16/16 greedy-token agreement** on first invocation.
+- **The parity-manifest emitter no longer promotes on evidence it does not have.** `EMIT_MANIFEST=1`
+  used to write `status: validated` beside `method: tiny-golden` for four families, and mangled
+  `real-model-oracle` into a name no tier rule recognises. Status is now DERIVED from the method,
+  the method is a closed vocabulary, and a source census over all 18 call sites runs in plain CI —
+  where the emitter itself never does, which is why the typo survived for months.
+- **Two tautological CUDA gates**: the expert-cache bit-exactness tests never checked the cache was
+  engaged (and `allocSlots` really does clear it silently), and the greedy fast-path test never
+  checked `ResidentGreedy`. Both would have compared a path to itself and reported success. Guarded
+  and mutation-verified on the hardware.
+
+### Measured and NOT shipped
+
+Recorded because a negative result costs the same to obtain and is worth as much:
+
+- **CPU block drafting is a loss** — 0.75× on dense, and break-even (8.89 tok/round) exceeds the
+  ceiling (8.00). Implemented, measured, unwired.
+- **DFlash pairing on CPU MoE: 0.82×** — works, lossless, and still a loss. Do not ship.
+- **Metal's batched small-M verify kernel: bit-identity holds, the ceiling does not** (NO-GO).
+- **`--drafter` is a loss on the served default.** The published 1.60×/1.50× figures rested on a
+  wrong baseline; re-measured, code is 1.44× and math 1.58× while **chat is 0.61× unguarded**.
+  Corrected in place rather than quietly dropped.
+
+### Parity and evidence
+
+- **Mellum2 real-weight slice oracle (G11)** — the CPU half at **cosine 1.00000000** on both the
+  sequential and batched-prefill paths, and the Metal resident half at 9/12 argmax-exact,
+  cosine 0.972006. This closes the one open correctness gap G10 opened by admitting Mellum to
+  Metal's resident path with no end-to-end validation there.
+- **B13's standing reds are closed.** `TestSerializeWeightsTo_matchesBuffer` was already green.
+  `TestQwen35GGUF_vsSafetensors` was **reclassified on measured mechanism, not on a moved floor**:
+  the router is bit-identical between containers, every transform-bearing tensor sits at a uniform
+  Q8_0 noise floor, the per-layer divergence curve has no step, and the two containers pick
+  different top-8 experts in 779 of 3200 decisions — quant noise at a routing decision boundary,
+  not a loader defect. The gate now floors the MEAN with a measured min.
+
+### Qwen3.8 (`qwen3_5`), in full
+
+- **The dense member of the Gated-DeltaNet/softmax hybrid family.**
   Alibaba's Qwen3.8-27B (2026-08-14, Apache 2.0) is the same 3:1 hybrid goinfer already runs
   as `qwen3_5_moe` and `qwen3_next`, with a plain SwiGLU where they have a router. The
   checkpoint is multimodal; **this is the text decoder only** — the vision tower

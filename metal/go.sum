@@ -2,8 +2,8 @@ github.com/ebitengine/purego v0.10.1 h1:dewVBCBT2GaMu1SrNTYxQhgQBethzfhiwvZiLGP/
 github.com/ebitengine/purego v0.10.1/go.mod h1:iIjxzd6CiRiOG0UyXP+V1+jWqUXVjPKLAI0mRfJZTmQ=
 github.com/eitamring/gocudrv v0.3.2 h1:zjRj3gRSfmbxbQkt1jXSTdGKHPwL1R912qovXnOPUlE=
 github.com/eitamring/gocudrv v0.3.2/go.mod h1:nA+ytiB8A1YvVSHzBQbn+Be+BGR4gAGVIP+7chLn+O4=
-github.com/townsendmerino/aikit v1.19.0 h1:KKqRND7R/zrM3Mp8me+nkvhi7eEX3f40hSv0f+3j0cc=
-github.com/townsendmerino/aikit v1.19.0/go.mod h1:nDHW5QeteJ5WD2JnpUeSIe9VpVN7TidgBv0bAmu9d8g=
+github.com/townsendmerino/aikit v1.21.0 h1:FX2bdnFeaqP85j6F6SDfcC0zZRkPAwZALNd71qEKhOg=
+github.com/townsendmerino/aikit v1.21.0/go.mod h1:nDHW5QeteJ5WD2JnpUeSIe9VpVN7TidgBv0bAmu9d8g=
 github.com/townsendmerino/aikit/gpu v0.28.0 h1:C/Zak9FRixoLklmuu6lMIygaXlp+eRgl9wLOWpLCFAs=
 github.com/townsendmerino/aikit/gpu v0.28.0/go.mod h1:FgsA/EvrtR8jcGAtWLzKRHgSdpbB5q4PHmMReEfFBPA=
 github.com/townsendmerino/goinfer v0.13.0 h1:0tWd/byqIo6+6TGCl1QIFQ874mFIteExvlzpHSJiZRY=
