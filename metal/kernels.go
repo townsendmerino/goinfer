@@ -345,6 +345,28 @@ kernel void rope(device float* x[[buffer(0)]], device const float* invf[[buffer(
     float th=float(pos)*invf[dd]; float c=cos(th)*scale,s=sin(th)*scale;
     float x0=x[base+dd],x1=x[base+rhalf+dd]; x[base+dd]=x0*c-x1*s; x[base+rhalf+dd]=x0*s+x1*c;
 }
+// rope2: merges the Q and K rope dispatches for one layer into ONE dispatch — every production
+// call site launches rope twice per layer back-to-back, once for Q (buffer offset 0 into the
+// fused qkv buffer) and once for K (bound at a Metal buffer-offset kOff via aikit/gpu's
+// Buffer.At). Bind-time buffer offsets can't express "two ranges of the SAME dispatch", so this
+// takes the UNOFFSET base buffer and does the offset itself: gid in [0,qTotal) addresses Q at
+// x[dd..], gid in [qTotal,qTotal+kTotal) addresses K at x[kOff+dd..]. kOff is in ELEMENTS
+// (floats), matching how the kernel indexes x — reuse geom's existing uNHhd (= nH*hd) buffer
+// unchanged rather than adding a new one, since it is already exactly that value. Same math as
+// rope otherwise (verified bit-identical to running rope twice — TestRope2_matchesTwoRope,
+// metal/rope2_test.go); rope itself is untouched and kept for its own standalone kernel tests.
+kernel void rope2(device float* x[[buffer(0)]], device const float* invf[[buffer(1)]],
+    constant uint& hd[[buffer(2)]], constant uint& pos[[buffer(3)]], constant uint& qTotal[[buffer(4)]],
+    constant uint& kTotal[[buffer(5)]], constant uint& rhalf[[buffer(6)]], constant float& scale[[buffer(7)]],
+    constant uint& kOff[[buffer(8)]], uint gid[[thread_position_in_grid]]) {
+    uint total = qTotal + kTotal;
+    if (gid >= total) return;
+    uint g = gid; uint off = 0u;
+    if (gid >= qTotal) { g = gid - qTotal; off = kOff; }
+    uint head = g/rhalf; uint dd = g%rhalf; uint base = off + head*hd;
+    float th=float(pos)*invf[dd]; float c=cos(th)*scale,s=sin(th)*scale;
+    float x0=x[base+dd],x1=x[base+rhalf+dd]; x[base+dd]=x0*c-x1*s; x[base+rhalf+dd]=x0*s+x1*c;
+}
 kernel void kv_store(device const float* k[[buffer(0)]], device const float* v[[buffer(1)]],
     device half* kc[[buffer(2)]], device half* vc[[buffer(3)]], constant uint& kvDim[[buffer(4)]],
     constant uint& pos[[buffer(5)]], uint i[[thread_position_in_grid]]) {

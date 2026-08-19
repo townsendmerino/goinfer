@@ -93,21 +93,21 @@ type residLayer struct {
 // resident is a Metal-resident dense decoder. Weights uploaded once in BuildResident;
 // per token only the embedding + pos uniforms change.
 type resident struct {
-	d                                                          *Device
-	q                                                          Queue
-	pRms, pQv, pGemv, pGemvResid, pRope, pKv, pAttn, pSw, pRes Pipeline
-	pSA, pSABias, pSAResid                                     Pipeline // Stage A gemv (K<=1536)
-	pArgFinish                                                 Pipeline // fused block-argmax lm head reduce
-	pQKNorm                                                    Pipeline // per-head QK-RMSNorm (Qwen3)
-	pRmsF32                                                    Pipeline // Gemma sandwich: in-place RMSNorm of a sublayer output
-	pGemvW8, pGemvW8Amax                                       Pipeline // int8 GEMV + fused block-argmax — the logit-critical LM head (see lmW)
-	qkNorm                                                     bool     // arch has QK-norm
-	sandwich                                                   bool     // Gemma NormSandwich4: norm each sublayer output before the residual add
-	kvF32                                                      bool     // f32 KV cache (Gemma sandwich path) — f16 rounding craters Gemma's sensitive contexts
-	uAct                                                       Buffer   // gated-MLP activation ordinal (decoder.ActKind: 0=GELU-tanh, 1=SiLU)
-	uAddOne, uWindow                                           Buffer   // qk_norm + sliding-window uniforms
-	uZero                                                      Buffer   // constant 0 (nH=0 / nHhd=0 / addOne=0 for the scale-less v_norm dispatch)
-	vNormUnit                                                  Buffer   // [maxHd] of 1.0 — unit weight so qk_norm (x·rms·w, addOne=0) = scale-less v_norm for K=V layers
+	d                                                                  *Device
+	q                                                                  Queue
+	pRms, pQv, pGemv, pGemvResid, pRope, pRope2, pKv, pAttn, pSw, pRes Pipeline
+	pSA, pSABias, pSAResid                                             Pipeline // Stage A gemv (K<=1536)
+	pArgFinish                                                         Pipeline // fused block-argmax lm head reduce
+	pQKNorm                                                            Pipeline // per-head QK-RMSNorm (Qwen3)
+	pRmsF32                                                            Pipeline // Gemma sandwich: in-place RMSNorm of a sublayer output
+	pGemvW8, pGemvW8Amax                                               Pipeline // int8 GEMV + fused block-argmax — the logit-critical LM head (see lmW)
+	qkNorm                                                             bool     // arch has QK-norm
+	sandwich                                                           bool     // Gemma NormSandwich4: norm each sublayer output before the residual add
+	kvF32                                                              bool     // f32 KV cache (Gemma sandwich path) — f16 rounding craters Gemma's sensitive contexts
+	uAct                                                               Buffer   // gated-MLP activation ordinal (decoder.ActKind: 0=GELU-tanh, 1=SiLU)
+	uAddOne, uWindow                                                   Buffer   // qk_norm + sliding-window uniforms
+	uZero                                                              Buffer   // constant 0 (nH=0 / nHhd=0 / addOne=0 for the scale-less v_norm dispatch)
+	vNormUnit                                                          Buffer   // [maxHd] of 1.0 — unit weight so qk_norm (x·rms·w, addOne=0) = scale-less v_norm for K=V layers
 
 	// GPT-2 (FeatLayerNorm/FeatNonGatedMLP/FeatLearnedPos/FeatOutBias).
 	pLayerNorm, pActQuant            Pipeline          // layernorm_quant, act_quant
@@ -435,7 +435,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	// (ForwardArgmax uses the int8 pGemvW8Amax head; the profiler builds gemv_w4a8_bias locally).
 	// Dropped. If gemv_w4a8_sa_amax is wired later, it needs an N/row>=N guard — see the note on the
 	// kernel in kernels.go (it's a reduction, so mask the logit to -INF, don't early-return past the barrier).
-	r.pRope, r.pKv, r.pAttn = pipe("rope"), pipe("kv_store"), pipe("attention")
+	r.pRope, r.pRope2, r.pKv, r.pAttn = pipe("rope"), pipe("rope2"), pipe("kv_store"), pipe("attention")
 	r.pSw, r.pRes = pipe("swiglu_quant"), pipe("residual")
 	r.pGemvW8, r.pGemvW8Amax = pipe("gemv_w8a8_coal"), pipe("gemv_w8a8_amax")
 	r.pQKNorm, r.pRmsF32 = pipe("qk_norm"), pipe("rmsnorm_f32")
@@ -1208,8 +1208,7 @@ func (r *resident) forwardSubCaptureForTest(emb []float32, pos int) (attn, mlp, 
 		if r.qkNorm {
 			e.Dispatch(r.pQKNorm, (r.nH+g.nKV)*tgReduceAttn, tgReduceAttn, r.qkv, L.qNorm, L.kNorm, r.uNH, g.uNKV, g.uHd, g.uNHhd, r.uEps, r.uAddOne)
 		}
-		e.Dispatch(r.pRope, r.nH*g.half, 64, r.qkv, L.invf, g.uHd, r.uPos, g.uQtotal, g.uHalf, L.mscale)
-		e.Dispatch(r.pRope, g.nKV*g.half, 64, r.qkv.At(kOff), L.invf, g.uHd, r.uPos, g.uKtotal, g.uHalf, L.mscale)
+		e.Dispatch(r.pRope2, r.nH*g.half+g.nKV*g.half, 64, r.qkv, L.invf, g.uHd, r.uPos, g.uQtotal, g.uKtotal, g.uHalf, L.mscale, g.uNHhd)
 		e.Dispatch(r.pKv, g.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[l], r.vc[l], g.uKvDim, r.uPos)
 		e.Dispatch(r.pAttn, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[l], r.vc[l], r.ctx, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow, L.attnSinks, L.uHasSink)
 		e.Dispatch(r.pQv, 256, 256, r.ctx, r.cq, r.cSc, g.uNHhd)
@@ -1270,8 +1269,7 @@ func (r *resident) l0GegluForTest(emb []float32, pos int) (gateUp, geglu8 []floa
 	if r.qkNorm {
 		e.Dispatch(r.pQKNorm, (r.nH+g.nKV)*tgReduceAttn, tgReduceAttn, r.qkv, L.qNorm, L.kNorm, r.uNH, g.uNKV, g.uHd, g.uNHhd, r.uEps, r.uAddOne)
 	}
-	e.Dispatch(r.pRope, r.nH*g.half, 64, r.qkv, L.invf, g.uHd, r.uPos, g.uQtotal, g.uHalf, L.mscale)
-	e.Dispatch(r.pRope, g.nKV*g.half, 64, r.qkv.At(kOff), L.invf, g.uHd, r.uPos, g.uKtotal, g.uHalf, L.mscale)
+	e.Dispatch(r.pRope2, r.nH*g.half+g.nKV*g.half, 64, r.qkv, L.invf, g.uHd, r.uPos, g.uQtotal, g.uKtotal, g.uHalf, L.mscale, g.uNHhd)
 	e.Dispatch(r.pKv, g.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[0], r.vc[0], g.uKvDim, r.uPos)
 	e.Dispatch(r.pAttn, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[0], r.vc[0], r.ctx, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow, L.attnSinks, L.uHasSink)
 	e.Dispatch(r.pQv, 256, 256, r.ctx, r.cq, r.cSc, g.uNHhd)
@@ -1444,7 +1442,7 @@ func (r *resident) encodeAttention(e *Encoder, l int) {
 	nHhd := r.nH * g.hd
 	qkvRows := nHhd + 2*g.kvDim
 	kOff, vOff := nHhd*4, (nHhd+g.kvDim)*4 // byte offsets of k, v within the fused qkv buffer
-	// --- attention block (12 dispatches vs 19: QKV fused +bias, residual fused) ---
+	// --- attention block (11 dispatches vs 19: QKV fused +bias, residual fused, Q+K RoPE merged) ---
 	r.encodeNorm(e, r.x, L.preNorm, L.preNormBias, r.aq, r.aSc)
 	e.DispatchTG(r.pSABias, qkvRows*32, 256, r.H*2, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv, L.qkvBias, r.uH)
 	if r.qkNorm { // Qwen3: per-head Q/K RMSNorm before RoPE
@@ -1460,8 +1458,10 @@ func (r *resident) encodeAttention(e *Encoder, l int) {
 		e.Dispatch(r.pQKNorm, g.nKV*tgReduceAttn, tgReduceAttn, r.qkv.At(vOff), r.vNormUnit, r.vNormUnit, r.uZero, g.uNKV, g.uHd, r.uZero, r.uEps, r.uZero)
 	}
 	if !r.learnedPos { // GPT-2: no RoPE at all — position rides the learned embedding added at input
-		e.Dispatch(r.pRope, r.nH*g.half, 64, r.qkv, L.invf, g.uHd, r.uPos, g.uQtotal, g.uHalf, L.mscale)           // q @ off 0
-		e.Dispatch(r.pRope, g.nKV*g.half, 64, r.qkv.At(kOff), L.invf, g.uHd, r.uPos, g.uKtotal, g.uHalf, L.mscale) // k (V slot at vOff is NOT roped)
+		// One merged dispatch for both Q and K (rope2, kernels.go) instead of two: gid<qTotal
+		// addresses Q at offset 0, gid>=qTotal addresses K at offset g.uNHhd (the fused qkv
+		// buffer's kOff, in elements) — V (at vOff) is untouched either way.
+		e.Dispatch(r.pRope2, r.nH*g.half+g.nKV*g.half, 64, r.qkv, L.invf, g.uHd, r.uPos, g.uQtotal, g.uKtotal, g.uHalf, L.mscale, g.uNHhd)
 	}
 	e.Dispatch(r.pKv, g.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[l], r.vc[l], g.uKvDim, r.uPos)
 	e.Dispatch(r.pAttn, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[l], r.vc[l], r.ctx, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow, L.attnSinks, L.uHasSink)
