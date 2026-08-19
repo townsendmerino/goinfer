@@ -25,6 +25,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/aikit/embed"
+	"github.com/townsendmerino/aikit/linalg"
 )
 
 // loadQwen35GGUFSlice loads embed + the first nLayer layers of the qwen35moe GGUF
@@ -128,6 +129,24 @@ func TestQwen35GGUF_weightDiff(t *testing.T) {
 		lr, lg := &wRef.Layers[i], &gW.Layers[i]
 		check("attn_norm", lg.PreAttnNorm, lr.PreAttnNorm)
 		check("post_attention_norm", lg.PreMLPNorm, lr.PreMLPNorm)
+		// THE ROUTER, added 2026-08-18 and the reason is worth keeping. This probe was written to
+		// disambiguate loader-vs-quant for the oracle's cosine gap and it checked every
+		// transform-bearing tensor EXCEPT the one that decides which experts run. Then the
+		// mechanism experiment (qwen35_gguf_routeflip_test.go) measured routing directly and found
+		// the two containers choosing DIFFERENT top-8 sets in 779 of 3200 (step,layer) pairs — 79
+		// of 80 steps affected. Pervasive routing divergence with an undiffed router is exactly
+		// where a real loader defect could still hide, so the blind spot gets closed here.
+		//
+		// Both loaders keep the router at f32 on purpose ("the router is logit-critical", no
+		// quant), so this is a straight comparison: agreement at the same ~0.0057 Q8_0 floor as
+		// every other tensor means the flips are quant noise on near-tied experts; anything worse
+		// means the router itself is mis-read and the flips are a defect.
+		if lr.Router.Rows() > 0 || lg.Router.Rows() > 0 {
+			check("router(mlp.gate)", wmF32(t, &lg.Router), wmF32(t, &lr.Router))
+		}
+		if lr.RouterBias != nil || lg.RouterBias != nil {
+			check("router_bias", lg.RouterBias, lr.RouterBias)
+		}
 		if lr.delta != nil && lg.delta != nil {
 			dr, dg := lr.delta, lg.delta
 			check("in_proj_qkv", dg.inProjQKV, dr.inProjQKV) // V-block un-tile
@@ -160,4 +179,18 @@ func layerKind(arch *Architecture, i int) string {
 		return "DeltaNet/linear"
 	}
 	return "softmax"
+}
+
+// wmF32 exposes a WeightMat's values as f32 for comparison. The router is loaded unquantized by
+// both paths, so this is a read rather than a dequant; it fails loudly if that ever changes,
+// because comparing a quantized router against an f32 one would manufacture a difference this
+// probe would report as a loader bug.
+func wmF32(t *testing.T, w *linalg.WeightMat) []float32 {
+	t.Helper()
+	f, ok := w.F32()
+	if !ok {
+		t.Fatalf("router is not f32 (kind changed) — this probe compares raw values and would "+
+			"otherwise report a quantization delta as a transform bug; rows=%d", w.Rows())
+	}
+	return f
 }

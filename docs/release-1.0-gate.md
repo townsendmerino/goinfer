@@ -28,9 +28,9 @@ below is declaring it (§3), not proving it.
 - [x] **Parity backfill complete** — zero `pending` rows; staleness tripwire enforces every
   family (23/23 at `c3e43c8`, 2026-08-15; the count grows with the registry). Nothing was
   demoted; two real loader bugs were fixed instead (granite NoPE roping, nemotron_h schema).
-- [ ] **REQUIRED · B13's standing reds resolved or formally reclassified.** **ONE remains, not
-  two, and it has a diagnosis awaiting a decision** (2026-08-18; full evidence in
-  `docs/queue-release.md`).
+- [x] **REQUIRED · B13's standing reds resolved or formally reclassified** (2026-08-18; full
+  evidence in `docs/queue-release.md`). **Both are closed: one was already green, one was
+  reclassified on measured evidence with the decision recorded.**
   - `TestSerializeWeightsTo_matchesBuffer` — **GREEN, struck by re-running it.** B11's 2026-08-14
     fix resolved it; this line listed it as red because it was read from queue text rather than
     re-run. Exactly what this document's own **VERIFY** caveat is for.
@@ -39,12 +39,22 @@ below is declaring it (§3), not proving it.
     clean (every transform bit-exact or at a uniform `relL2 ≈ 0.0057` Q8_0 floor, worst 0.999980),
     and the new `TestQwen35GGUF_locateDivergence` shows divergence entering at layer 0 and decaying
     smoothly and NON-MONOTONICALLY with no step — the per-layer delta recovers repeatedly, which a
-    localized defect cannot do. The floor also demands `min` ≥ the mean over 80 steps, which is not
-    achievable for any spread. **Decision owed (Francis):** re-express the gate on the stable
-    statistic (mean floor + argmax/near-tie check, min floor set from measurement), or carry it
-    red. Nudging the min floor to 0.987 is the forbidden move and is not proposed. One experiment
-    would prove mechanism rather than infer it — instrument both containers' router top-k at step
-    63 to show the expert flip (~35 min, not yet run).
+    localized defect cannot do. The floor also demanded `min` ≥ the mean over 80 steps, which no
+    spread can satisfy.
+    **The mechanism was then MEASURED, not inferred** (Francis chose "prove it first"), and it
+    corrected the guess: routing flips are not rare near-ties but PERVASIVE — 779 of 3200
+    (step,layer) pairs, 79 of 80 steps. That result exposed a blind spot the probes had left:
+    `weightDiff` never compared the ROUTER. It does now, and **the router is BIT-IDENTICAL**
+    (`maxAbs=0`; llama.cpp keeps `ffn_gate_inp` at f32, so it takes no Q8_0 rounding). With an
+    identical router, the flips come from its INPUT differing by quant noise at a top-8-of-128
+    decision boundary — each flip a legitimate alternative expert, which is also why flip COUNT
+    does not predict cosine.
+    **DECIDED (Francis):** the gate floors the MEAN (0.997, measured 0.998114) plus a measured min
+    (0.980, measured 0.987835) for catastrophic single steps, with the three measurements cited in
+    the test body. **The forbidden move — nudging the min to 0.987 so the red goes away — was not
+    made**; the min bar sits ~0.008 below the observed value so it retains room to catch a real
+    regression, and the mean now carries the systematic-drift duty. Green on the re-run, with
+    numbers identical to six decimals across three independent reproductions.
 - [x] **REQUIRED · The w4a8 coverage gap closed by building the asset** (2026-08-18). Both halves
   built from the SAME source GGUF — the 1.5B the test's own docstring names — so "matched" is by
   construction: `prequant -quant int4` and `-quant int8int8` over
@@ -70,6 +80,13 @@ below is declaring it (§3), not proving it.
   commit**, tripwire green at N/N. New since the backfill closed and to confirm on the RC:
   `qwen3_5` (real-checkpoint gate `4d1a7f2`, token-id parity `e3674aa`), the InternLM2/3
   llama-dialect rows, `laguna`. **VERIFY** the regenerated matrix carries them at the RC sha.
+  **Pre-verified at HEAD 2026-08-18** (the RE-check at the RC sha is what remains): tripwire green
+  at **27/27**, `qwen3_5` = experimental/tiny-golden+coherent, `laguna` and `internlm2` =
+  experimental/tiny-golden, `gpt-oss` = validated/real-model-oracle. **`internlm3` has no row of
+  its own ON PURPOSE and must not be given one** — it is a registry ALIAS of `llama` (same
+  descriptor, dynamic-NTK rope being in-window identity), so it rides llama's row and the
+  coverage gate agrees; adding a separate row would claim independent evidence that does not
+  exist.
 - [ ] **RECOMMENDED · Upgrade four of the five `experimental` rows.** The backfill doc already
   assigned each its method; this is run-and-record: `glm4_moe` → weightDiff + layer-slice
   (`glm4moe_gguf_test.go` *is* the test), `qwen2_5_vl` → full-forward-oracle (Bucket A),
@@ -161,6 +178,20 @@ below is declaring it (§3), not proving it.
   `go install …@v0.13.0` is broken from outside. The removal landed on main 2026-08-15
   (RELEASING.md updated, cuda verified replace-free on the box); **the fix reaches nobody until
   it is tagged** (v0.13.1 or v0.14.0). Verify `go install` from a clean machine, not a checkout.
+  **Measured 2026-08-18 from OUTSIDE the checkout** (isolated GOPATH, module proxy, no local
+  source):
+  - The `v0.13.0` breakage is confirmed and precisely scoped: the `gpu/`, `cuda/` and `metal/`
+    tags each carry `replace github.com/townsendmerino/goinfer => ../`; the ROOT `v0.13.0` go.mod
+    is clean. (A `replace` in a dependency is ignored, but `go install pkg@version` makes that
+    module the MAIN module, so the directive applies and `../` does not exist.)
+  - main is replace-free in **all five** go.mods.
+  - `go install github.com/townsendmerino/goinfer/cmd/serve@main` **succeeds from a clean GOPATH**
+    — resolves through the proxy, pulls aikit v1.21.0, produces a 13.9 MB binary.
+  - All four submodules resolve at `@main` (`go list -m` returns the pseudo-version for `gpu`,
+    `cuda`, `metal`, `demo/agent`).
+
+  The fix is therefore real and proven on the tree; **what remains is the tagging**, plus re-running
+  the same probe against the TAG — a pseudo-version proves the tree, not the tag.
 - [ ] **REQUIRED · C2, the blind out-of-tree audit, against the RC tag.** Fresh session, no repo
   access, prompt already written, known-findings list carried. Tier 1 is the claim-by-claim README
   check — claim-discipline rule 7 tested from the position the rule is about. A clean C2 is the

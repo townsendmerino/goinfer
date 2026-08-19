@@ -655,7 +655,42 @@ of what to do about it is Francis's (below):
    noise floor. That is the same near-tie story the sibling bf16 gate already recorded (argmax
    68/80, divergences rank-2 near-ties).
 
-**DECISION OWED (decider: Francis), and deliberately NOT taken here.** The gate's own doc-comment
+**MECHANISM MEASURED 2026-08-18 — and it corrected the inference above.** The prediction written
+before the run was "flips are rare near-ties at a few positions". **Two of its three clauses are
+refuted**, which is why it was measured rather than asserted:
+
+| prediction | result |
+|---|---|
+| most steps have ZERO flipped layers | **refuted** — only **1 of 80**; 779 of 3200 (step,layer) pairs differ |
+| step 63 near the top of the flip ranking | **no** — 16/40 flips, outside the top ten (26…20) |
+| worst cosine ⇒ most flips | **weak** — step 74 has 26 flips at cosine 0.998497; step 58 has 4 at 0.996661 |
+
+The one directional signal held: the single flip-free step scores **0.999778** against **0.998093**
+mean for flipped steps (n=1, so suggestive only).
+
+**That result exposed a blind spot this probe set had left open: `weightDiff` never compared the
+ROUTER.** Pervasive routing divergence with an undiffed router is exactly where a real defect could
+hide, so the router was added to it — and **the router is BIT-IDENTICAL** across the two containers
+(`cos=1.000000, maxAbs=0, relL2=0` at every sliced layer; llama.cpp keeps `ffn_gate_inp` at f32, so
+it takes no Q8_0 rounding at all).
+
+**The corrected, coherent account:** the router is byte-for-byte the same, so the flips come from
+its INPUT differing by quant noise. A top-8-of-128 selection over near-tied scores is very
+sensitive to a ~0.5% perturbation, so flips are PERVASIVE rather than rare — and each is a
+legitimate alternative expert, not a wrong one. It also explains why flip COUNT does not predict
+cosine (the flipped expert's weight is what matters, not how many flipped) and why a min-over-80
+statistic is the wrong quantity to put a floor on.
+
+**DECISION TAKEN 2026-08-18 (decider: Francis, who chose "prove the mechanism first, then
+re-express").** The gate now floors the MEAN (0.997, measured 0.998114) and keeps a measured min
+floor (0.980, measured 0.987835) for catastrophic single steps, with the three measurements cited
+in the test body. Both bars come from two independent reproductions of the same numbers
+(2026-08-12 and 2026-08-18). **The forbidden move — nudging the min floor to 0.987 so the red goes
+away — was not made**; the min bar sits ~0.008 BELOW the observed value precisely so it still has
+room to catch a real regression, and the mean bar is the one that now carries the systematic-drift
+duty. The original wording is preserved below.
+
+**DECISION OWED (superseded by the above; kept for the record) — decider: Francis.** The gate's own doc-comment
 says "loader bug (not Q8_0 quant)"; the evidence says the opposite. The honest options are (a)
 re-express the gate on the statistic that is stable — a MEAN floor plus an argmax/near-tie check —
 with the min floor set from measured evidence, or (b) leave it red and carry it. **What must NOT
