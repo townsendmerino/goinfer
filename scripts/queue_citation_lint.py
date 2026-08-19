@@ -139,10 +139,17 @@ def sibling_repos():
             out.append(str(pp))
         return out
     # The DEFAULT sibling is best-effort: its absence is a property of the machine, not of the queue.
+    # Two plausible layouts exist across machines that have both hit this script's "one level off"
+    # failure mode before (see the comment above): `<parent>/aikit` (a flat sibling checkout) and
+    # `<parent>/aikit/aikit` (a nested one, e.g. an `aikit/` workspace dir containing the `aikit`
+    # repo itself). Try both rather than guessing one — this repo's own machine has the flat layout,
+    # and getting it wrong here reproduces the exact ada417e/be049df false-fabricated report the
+    # explicit-override path above exists to prevent, just for the default case instead.
     out = [str(root)]
-    dflt = (root / ".." / "aikit" / "aikit").resolve()
-    if (dflt / ".git").exists():
-        out.append(str(dflt))
+    for candidate in ((root / ".." / "aikit").resolve(), (root / ".." / "aikit" / "aikit").resolve()):
+        if (candidate / ".git").exists():
+            out.append(str(candidate))
+            break
     return out
 
 

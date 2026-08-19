@@ -1610,7 +1610,7 @@ needlessly dropping a field the buffered path wrote.
 
 **Fixed by testing the real thing:** `hasPopulatedLayers()` checks whether any body matmul weight
 actually has `Rows() > 0`, and `writeHeadGlobals` gates the label on that instead of on which
-writer is in use. `decoder/serialize.go:611` (`hasPopulatedLayers`).
+writer is in use. `decoder/serialize.go:603` (`hasPopulatedLayers`).
 
 **The other half mattered more than the byte count.** `quantLabel()`'s own "nothing matched" case
 returns `"native"` — a real, valid quant mode, not an empty string. Measured directly on an

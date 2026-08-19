@@ -100,14 +100,6 @@ func canSerialize(a *Architecture) *SerializeError {
 	return nil
 }
 
-// fail records the first serialization refusal (the writer's belt-and-suspenders to canSerialize:
-// a per-layer field the arch-level check missed still stops the bundle rather than dropping state).
-func (w *giwWriter) fail(reason string) {
-	if w.err == nil {
-		w.err = &SerializeError{reason}
-	}
-}
-
 // SerializeWeights writes the resident weight bundle (already quantized to its
 // current precision) to a flat little-endian blob suitable for embedding. id is
 // an opaque model-identity string (e.g. the source filename) stored for tooling.
