@@ -44,7 +44,21 @@ does not have to re-derive them.
 
 **Open (v6):** representing them properly — `AttnSinks` per layer, `GProj`, and per-layer query
 heads (which also means the reader's uniform `NumHeads*HeadDim` validation has to learn `headsAt`).
-That is a format bump, not a patch.
+That is a format bump, not a patch. **Nothing here is hard**: gpt-oss needed ONE `[]float32` field
+written. The gap was never difficulty, it was that adding a field to `LayerWeights` and forgetting
+`serialize.go` produces no error anywhere.
+
+**So the recurrence guard landed first** (`TestSerializeCensus_noSilentFieldDrop`): it reflects over
+EVERY `LayerWeights` field, round-trips each committed tiny fixture, and fails when a field that was
+populated comes back empty — whatever family introduced it and whoever forgot it. Refused families
+skip (refusing is a correct answer; dropping is not). **Mutation-verified**: making the reader
+discard `PreAttnNorm` produces `SILENT DROP: layer 0 field PreAttnNorm was populated (64) and is
+empty after a .giw round-trip`. It also fails a family that `canSerialize` accepts but the reader
+cannot load — the Laguna shape.
+
+Order matters here: adding the two fields without this test would fix today's two families and
+leave the next one to be found by a user. `canSerialize` is a blocklist maintained by memory, and
+memory is what failed.
 
 **What this means for the v1.0 §3 promise**, which was the question:
 
