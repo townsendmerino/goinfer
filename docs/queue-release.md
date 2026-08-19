@@ -69,10 +69,32 @@ landed the same day. That was wrong — `HEAD` with the bump passes in isolation
 that produced the claim set a sweep-run failure against isolated runs, which is not a comparison at
 all.
 
-**Decision owed (release owner):** tag v0.14.0 with (a) recorded as a known pre-existing
-deterministic failure and (b) as an open intermittent, or hold the tag until A9 is re-derived.
-RELEASING.md's own precedent for the §C1 stamp applies to the shape of this: *"either way it gets
-written down as a decision rather than skipped as a step."*
+**(b) RESOLVED 2026-08-19 — RETIRED TO A BENCHMARK, not fixed and not deleted.**
+`TestRealE2EDecodeThroughput` is now `BenchmarkRealE2EDecode`. The reasoning, in order:
+
+1. **It could not indict the product.** In the very run where its hand-rolled sequence diverged at
+   28.835%, `TestBackendResidentWired` — the same argmax comparison against the same CPU reference,
+   on the PRODUCTION resident path — passed at 7/8 exact, worst near-tie 0.087%, zero hard fails.
+   The anomaly was in the test's duplicate forward.
+2. **A test whose failure cannot indict the product does not belong in a correctness gate.** It
+   spends the gate's credibility, and a red meaning "the harness wobbled" teaches people to re-run
+   reds — which is how a real red gets re-run too.
+3. **Deleting it would have thrown away the instrument.** The throughput headline and the launch
+   decomposition (366 launches/token, CPU issue vs GPU exec, GEMV vs glue bandwidth) are the reason
+   the file exists, and nothing else measures them. A benchmark keeps them: it runs only under
+   `-bench`, so it is out of `go test ./...` and out of `gpu_gate.sh`.
+4. **Its correctness check is KEPT and still fails the run.** A throughput number for a forward that
+   does not reproduce production is worse than no number — that check is what caught this file's
+   last real drift (`rope_kv` missing `rhalf`). Its failures now cost a benchmark run, not a tag.
+
+Verified after the move: `-bench` reports 200.2 tok/s / 366 launches per token, and
+`go test -run TestRealE2E` reports "no tests to run". Coverage lost: none — token identity was
+already `TestBackendResidentWired`'s, throughput on the production path is `TestProdThroughput`'s.
+
+**Decision still owed on (a) (release owner):** tag v0.14.0 with the `TestMoERouteDemandThreshold`
+failure recorded as a known pre-existing deterministic tripwire, or hold until A9 is re-derived.
+RELEASING.md's §C1 precedent applies: *"either way it gets written down as a decision rather than
+skipped as a step."*
 
 
 **C1 · Drain fix — CUDA verification** — `linux`

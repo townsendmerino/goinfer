@@ -175,6 +175,9 @@ coalescing bought 1.34×, so the redundant-re-read / latency residual remains �
 (KV layout)** and a query-tiled decode path would attack next. Campaign A is *open*, not closed.
 
 Gates that held: decode byte-identical; parity manifest green; `TestRealE2EDecodeThroughput` / `TestBackendResidentWired`.
+(`TestRealE2EDecodeThroughput` became `BenchmarkRealE2EDecode` on 2026-08-19 — see
+`docs/parity-coverage-policy.md`; the token-identity assertion this line credits it with now rests
+on `TestBackendResidentWired` alone, which is the one running on the production path.)
 (`TestE2EDecode` was cited here as a gate, but it asserted nothing — synthetic weights, throughput
 only. Renamed `TestE2EDecodeThroughput_synthetic`; `TestRealE2EDecodeThroughput` / `TestBackendResidentWired` now carries the token-identity
 assertion vs the CPU reference. See audit G-01.)

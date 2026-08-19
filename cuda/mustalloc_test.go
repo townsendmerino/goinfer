@@ -45,7 +45,7 @@ func requireDeviceAndFixture(t *testing.T, dir string) {
 // The rule this encodes: a RESOURCE failure must say it is a resource failure. Tests may
 // legitimately skip when a GPU is absent or too small — but they must never silently
 // compute on nothing and report the result as a correctness verdict.
-func mustAlloc[T gc.Supported](t *testing.T, cx *gc.Context, n int) *gc.Buffer[T] {
+func mustAlloc[T gc.Supported](t testing.TB, cx *gc.Context, n int) *gc.Buffer[T] {
 	t.Helper()
 	b, err := gc.Alloc[T](cx, n)
 	if err != nil {

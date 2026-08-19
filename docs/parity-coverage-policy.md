@@ -245,7 +245,12 @@ and the cost of that is that the next one was also found as a one-off.
   `rhalf` argument (added when partial rotary landed). The kernel read garbage for the rotary
   half-width and corrupted K/V, and the test reported a throughput number for a broken forward
   for as long as partial rotary has existed. The CUDA launch API does not arity-check, so nothing
-  failed (`f5ec7a2`; see the production-side note below).
+  failed (`f5ec7a2`; see the production-side note below). **Retired to a benchmark 2026-08-19**
+  (`BenchmarkRealE2EDecode`): the same property that let it drift silently — a hand-rolled forward
+  duplicating the shipped path — also made it flake in the pre-tag gate, once in ~200 tests at a
+  28.8% margin, while `TestBackendResidentWired` passed the identical comparison on the PRODUCTION
+  path in that same run. Its correctness check is kept and still fails the run; it just no longer
+  spends a release gate's credibility.
 - **`bench_compare.sh` measured goinfer with in-process Go benchmarks while the peer ran over
   HTTP** — a published ratio dividing a kernel throughput by an end-to-end one. Same class,
   across a process boundary rather than a code path.
