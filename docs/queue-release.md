@@ -55,6 +55,14 @@ pattern. If a probe is added to a family whose name the release sweep matches, i
 ritual silently — and the first symptom is not "the sweep is slower", it is "a different, required
 gate stopped running".
 
+**AND THE MARGIN IS STILL THIN, so reclaiming the 41 minutes is not the whole fix.** Measured on the
+re-run: even with both diagnostics gated, phase 2 needs **~95 of its 120-minute budget**
+(`gate2FullModel` ~17 min + `GGUF_gate` ~14 min + `vsSafetensors` ~31 min + the rest). Its single
+longest gate is 31 minutes, so ~25 minutes of headroom is about one slow checkpoint — and the
+failure mode is not a clean timeout error against the slow test, it is a DIFFERENT, faster gate
+never running. Raise phase 2's timeout (or split it per-gate so one long test cannot starve the
+others) before the next family lands a real-model gate.
+
 
 **R1 · The v0.14.0 pre-tag CUDA gate is RED — two failures, classified, neither caused by this
 release** — `linux`, **decision owed before the tag**
