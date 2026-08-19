@@ -17,6 +17,64 @@ Release gates, tagging, versioning, the v1.0 criteria, capability claims, and th
 
 ## Queued
 
+**R1 · The v0.14.0 pre-tag CUDA gate is RED — two failures, classified, neither caused by this
+release** — `linux`, **decision owed before the tag**
+
+`scripts/gpu_gate.sh` at `f7d8dd9`: **9 groups declared / 9 reported, 9 pass, 1 skip, 2 fail** →
+`FAIL — cuda on Linux @ f7d8dd9. Do not tag.` Both failures were run down rather than retried, and
+they are different animals.
+
+**(a) `TestMoERouteDemandThreshold` — DETERMINISTIC and PRE-EXISTING. It fails identically at the
+`v0.13.0` TAG**, same bytes: FAIL at 139,460,608 / PASS at 141,557,760 against a pin of
+287,506,432 / 289,603,584. So it is not a regression from anything in this release.
+
+Following the pin's OWN instruction ("check the identity first: if floor + residual still equals
+the demand, the components are what moved and this pin is downstream of them"):
+
+| component | pinned | measured now |
+|---|---|---|
+| `moe_route` residual | 138,412,032 | **138,412,032 — held exactly** |
+| device-wide floor | 151,191,552 | **absent from the measurement** |
+| demand (= floor + residual) | 289,603,584 | 141,557,760 (= residual + 3 MiB) |
+
+The residual is bit-for-bit what it was; the FLOOR is not being charged to the launch. It is not a
+test-ordering artifact — it reproduces with the test run alone in its own process — and it is not
+the parent's device handle, which the pin commit (`ab5d6e9`, 2026-08-13) already created. That
+leaves an environmental change on this box since the pin was derived.
+
+**The move is in the SAFE direction and the margin still clears**: `slotMarginBytes 402,653,184 >=
+peak demand 141,557,760, clear by 261,095,424 B (249.0 MiB)`. Lower measured demand makes the
+33-slot cap *more* conservative, not less.
+
+**What it must NOT get is a nudged pin.** The test says so itself — "if it has moved, A1/A5/A7/A9
+need re-deriving, not editing" — and it is right: the pin is downstream of a derivation, so editing
+it to match would erase the only signal that the derivation's basis moved. Re-deriving A9 is real
+work and does not belong in a release window.
+
+**(b) `TestRealE2EDecodeThroughput` — INTERMITTENT, and that is the more interesting one.** In the
+gate's heavy tier it failed the teacher-forced argmax guard: 2/5 exact, hard fails at **28.835%**
+and **7.109%** margins — *not* near-ties, so not float noise. It then passed:
+
+- run alone (4/5 exact, 0 hard fails);
+- run after its immediate predecessors (`TestPrefillTTFT`, every `TestPrefillPath_*`);
+- **and on a full re-run of the identical heavy tier — 2241 s, ZERO failures.**
+
+So one occurrence in ~200 tests, not reproduced. **"Passed on re-run" does not clear it**: an
+argmax divergence at a 28.8% margin is a real anomaly whichever way it arrived — cross-test device
+state, or an intermittent fault in the resident decode path. It needs a characterization run
+(repeat the heavy tier N times and count), not a shrug.
+
+**A correction belongs in the record**: this was first attributed to the aikit v1.19.0→v1.21.0 bump
+landed the same day. That was wrong — `HEAD` with the bump passes in isolation, and the comparison
+that produced the claim set a sweep-run failure against isolated runs, which is not a comparison at
+all.
+
+**Decision owed (release owner):** tag v0.14.0 with (a) recorded as a known pre-existing
+deterministic failure and (b) as an open intermittent, or hold the tag until A9 is re-derived.
+RELEASING.md's own precedent for the §C1 stamp applies to the shape of this: *"either way it gets
+written down as a decision rather than skipped as a step."*
+
+
 **C1 · Drain fix — CUDA verification** — `linux`
 
 Prompt already written. The admin-unload drain (`588052b`) is verified on Metal: unload freed
