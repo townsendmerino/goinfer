@@ -379,12 +379,15 @@
         "quant",
         "moe"
       ],
-      "own": [],
-      "deps_hash": "sha256:72083d3cd387a3282c65316f89e8eab83d3b7fbf2547cb7e819c41c1a472dff6",
+      "own": [
+        "decoder/mellum_slice_test.go",
+        "scripts/pin_slice_oracle.py"
+      ],
+      "deps_hash": "sha256:c559a90d9578960ef7d40b58cb198c32fb929ac7ea5c9f7a69645d65324693bd",
       "status": "validated",
       "validated_at": "f0e83ed",
       "date": "2026-08-04",
-      "reference": "HF bf16 (Mellum2-12B-A2.5B-Instruct)",
+      "reference": "HF bf16 (Mellum2-12B-A2.5B-Instruct) full-model forward goldens (scripts/pin_mellum2.py), PLUS a REAL-WEIGHT 4-layer slice oracle added for G11 (decoder/mellum_slice_test.go): HF f32 reference on the first 4 layers of the released checkpoint -- argmax exact, logit cosine 1.00000000 on BOTH the sequential and the batched-prefill path, greedy continuation exact. The slice spans both attention kinds (3 sliding + the first full_attention layer at index 3, which is the one carrying YaRN mscale 1.2772588722239782), so it is the real-weight evidence Metal residency was missing.",
       "machine": "linux-62gb",
       "method": "real-model-oracle",
       "metrics": {

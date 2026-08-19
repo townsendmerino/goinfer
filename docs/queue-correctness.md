@@ -623,7 +623,53 @@ a new failure mode for the family overall — but it needs closing out before th
 REAL trained-weight gate (`G11`), not another synthetic-random-weight attempt (proven inconclusive
 above).
 
-**G11 · Mellum-on-Metal real-weight validation — ASAP, before the next tag** — `linux`
+**G11 · Mellum-on-Metal real-weight validation — LINUX HALF DONE, Metal half open** — `mac`
+
+**Status 2026-08-18: steps 1-3 are done and green on the Linux box.** The real-weight slice
+exists and goinfer's own CPU forward matches the HF f32 reference on it EXACTLY:
+
+```
+mellum2 slice (REAL weights, 4 layers): argmax got=417 want=417 | logit cosine=1.00000000
+mellum2 slice batched prefill:          argmax=417              | cosine=1.00000000
+```
+
+`decoder/mellum_slice_test.go` (tag `realckpt`) also pins, on real weights, the things G10
+actually changed: the 3-sliding/1-full interleave survived slicing, `SlidingWindow` 1024, and
+**YaRN mscale 1.2772588722239782 on layer 3 with 1.0 on the sliding layers** — the exact scalar
+`FeatRopeMscale` is about. The doc's step-2 worry was checked rather than assumed: the generic
+by-length truncation caught BOTH per-layer lists this family carries (`layer_types` and
+`mlp_layer_types`), and `full_attention` really is at index 3 in the released config, so a
+4-layer slice does cover YaRN.
+
+**The step-4 handoff needs one correction: the slice CANNOT be committed.** It is 4.0 GB (four
+layers of a 64-expert MoE), so it is gitignored like every other slice fixture
+(`decoder/testdata/mellum-*-slice/`); only the golden
+(`decoder/testdata/mellum_mellum2_slice_golden.json`, tracked) ships. The mac regenerates it
+bit-identically instead, and the tracked golden is what pins both boxes to the SAME reference:
+
+1. Fetch **two of the five shards** — `model-00001-of-00005.safetensors` (5.0 GB) and
+   `model-00005-of-00005.safetensors` (4.3 GB) — plus `config.json`,
+   `model.safetensors.index.json` and the tokenizer files from
+   `JetBrains/Mellum2-12B-A2.5B-Instruct`. Those two shards hold layers 0-3 and the
+   embed/norm/head; the slice script is partial-download-friendly and reads nothing else.
+   ~9.3 GB instead of 23 GB.
+2. `SLICE_SRC=<dir> SLICE_TAG=mellum2 SLICE_LAYERS=4 SLICE_PREFIX=mellum python scripts/pin_slice_oracle.py`
+   (transformers 5.10.2 / torch 2.12 was used here). It writes the same 4.0 GB
+   `decoder/testdata/mellum-mellum2-slice/` and would overwrite the golden — **check `git diff`
+   on the golden afterwards: it must be unchanged.** A changed golden means the two boxes'
+   references disagree, and that is the finding, not a nuisance.
+3. Run the decoder gate first as a cross-box control:
+   `GOINFER_HEAVY_TESTS=1 go test -tags realckpt ./decoder/ -run TestMellumSlice -v`.
+   It must reproduce argmax 417 / cosine 1.0 on the mac before Metal is asked anything.
+4. Then `metal/mellum_real_test.go`: `residentParity` against
+   `decoder/testdata/mellum-mellum2-slice/`, the same harness `TestGPT2ResidentParity` /
+   `TestGptOssResidentParity` use. Nothing in `decoder/features.go` changes — the flags are
+   already declared; this only adds the missing PROOF.
+5. If it finds a REAL bug (a real slice does not have the synthetic noise floor): fix it, or if
+   it cannot be fixed quickly, revert `FeatRopeMscale`/`FeatAttnSink` for Metal and reopen the
+   `G10`/`G11` split.
+
+**Original entry, for the reasoning behind all of the above:**
 
 `G10` declared `FeatRopeMscale` for Metal to unblock gpt-oss's YaRN, which — as a documented,
 accepted side effect — also admits Mellum (`decoder/registry.go`'s `mellumArchitecture` needs
