@@ -209,6 +209,53 @@ path, gemma4_text merges) and the audit fixes touched hashed-core files. Before 
     is **not** legitimate is proceeding quietly: either way it gets **written down as a decision**
     rather than skipped as a step.
 
+## §C1-M — the Metal device gate (manual, and what "green" means)
+
+**CI cannot run it, and that is a property of the runner, not a choice.** `macos-latest`'s
+paravirtual Metal/objc layer SIGSEGVs inside purego's `objc_msgSend` the moment a test touches the
+device (measured: a near-null crash in `objc.ID.Send`), and the abort takes the whole test binary
+down — so the package's device tests cannot even attempt-and-skip. `.github/workflows/ci.yml`'s
+`metal-darwin` job therefore runs **build + vet + one device-free test**
+(`TestParity_NaNCosineFailsTheGate`) and nothing else. Everything device-bound rests on a human
+running it on a real Metal box. Writing that down is the point of this section: at 1.0 the run is a
+ritual with a stated meaning, not a habit someone remembers.
+
+**The exact command**, on a Mac with the checkpoints in `$HOME/models`:
+
+```
+scripts/gpu_gate.sh                          # auto-detects darwin ⇒ metal
+GOINFER_GATE_BACKEND=metal scripts/gpu_gate.sh   # explicit
+GOINFER_GATE_MODELS=/path/to/models scripts/gpu_gate.sh
+```
+
+**What green means — all four, or it is not green:**
+
+1. **All 7 declared check groups report a verdict.** Metal declares
+   `cleangpu seam suite cgofree lifecycle prefill repo`. The script reconciles declared against
+   emitted, because a block that died mid-run used to vanish and still report PASS (audit G-01). A
+   group that emits nothing is itself a FAIL.
+2. **Zero FAIL**, and the verdict line names the commit. A dirty tree is reported as a
+   PROVENANCE failure even when every check passed — the verdict names a commit, and an
+   uncommitted edit means it does not describe what that commit contains.
+3. **A SKIP IS NOT A PASS.** Go prints `ok` for a package whose tests all skipped, so the script
+   counts real runs and lists every skip under "this gate does NOT cover". Read that list; it is
+   the honest scope of the run. `RAN == 0` prints `NO GATE` and exits non-zero.
+4. **The log is archived, not `mktemp`'d.** C1a's lesson: a verdict nobody can re-check is not
+   evidence. Paste or commit the output with the tag record.
+
+**What the Metal run vouches for has WIDENED, so re-read it rather than assuming the old scope:**
+gpt-oss Metal residency (G10) and the Mellum2 real-weight resident-parity gate (G11) both landed
+after the last ritual was written.
+
+**Known-red at the time of writing, with a safety condition — do not "fix" it by re-baking blind.**
+`TestMetalSnapshotGolden` is EXPECTED to fail on the Mac until its goldens are re-baked
+(`GOINFER_UPDATE_GOLDENS=1 go test -run TestMetalSnapshotGolden ./metal/`). The cause is audit
+G-02, fixed on Linux where the suite cannot run: the checkpoint call now drives `ForwardEmb` with
+the production-scaled embedding row and `Forward`/`ForwardArgmax` apply the arch embed scale. The
+re-bake is only legitimate if **`gemma4-dense-scaled` entries move** (it has `EmbedScale = √hidden`)
+**and `mixtral-tiny` entries do NOT** (it has no embed scale). If mixtral-tiny moves, something
+other than G-02 changed and the re-bake must be refused pending investigation.
+
 ## Test hooks build tag (`goinfer_testhooks`)
 
 Cross-module test-only hooks (the `*ForTest` / `Set*ForTest` seams a backend's tests use to

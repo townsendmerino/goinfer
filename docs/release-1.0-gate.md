@@ -136,11 +136,16 @@ below is declaring it (§3), not proving it.
   at the RC: `gemma4-dense-scaled` entries SHOULD move (√hidden now applied), `mixtral-tiny`
   entries must NOT — if they do, something other than G-02 changed and the re-bake is refused
   pending investigation.
-- [ ] **REQUIRED · The Metal manual gate written into `RELEASING.md`.** The Metal device suite
-  does not run in GitHub CI (the runner's paravirtual objc layer SIGSEGVs inside purego), so
-  Metal's device coverage is a manual box run. At 1.0 that run must be a written ritual — exact
-  suite, box, and what green means — not a habit. gpt-oss Metal residency (`1c0a9ed`) just
-  widened what that run vouches for.
+- [x] **REQUIRED · The Metal manual gate written into `RELEASING.md`** (2026-08-18, new section
+  **§C1-M**). Names the exact command (`scripts/gpu_gate.sh`, `GOINFER_GATE_BACKEND=metal`), the
+  box (a real Mac — CI's `macos-latest` SIGSEGVs inside purego's `objc_msgSend` on first device
+  touch, so its job is build + vet + the one device-free falsifiability test), and **what green
+  means in four parts**: all 7 declared check groups emit a verdict (declared-vs-emitted
+  reconciliation, audit G-01), zero FAIL with a clean-tree provenance line, **a skip is not a
+  pass** (the run's honest scope is the skip list), and the log archived rather than `mktemp`'d
+  (C1a). It also records that G10/G11 widened what the run vouches for, and carries
+  `TestMetalSnapshotGolden`'s known-red + re-bake safety condition (`gemma4-dense-scaled` entries
+  MUST move, `mixtral-tiny` MUST NOT) so the re-bake cannot be done blind.
 - [ ] **REQUIRED · Sweep discipline holds at the RC**: `scripts/parity_sweep.sh` zero blockers,
   coverage gaps on their own line (none silently absorbed), composition printed
   (`scripts/sweep_composition.py`), and the heavy tier (`scripts/heavy_gate.sh`) run on the RC
