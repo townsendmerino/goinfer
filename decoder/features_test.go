@@ -150,15 +150,15 @@ var admissionGolden = map[string][]string{
 	// mellum's Metal admission is a documented SIDE EFFECT of gpt-oss's FeatRopeMscale (G10), not
 	// its own gate — G11 (docs/queue-correctness.md) tracks getting Mellum a real-weight Metal
 	// proof; until then this is here because it IS what the code does, not because it's trusted.
-	"mellum":           {"metal", "webgpu"},
-	"mistral":          {"cuda", "metal", "webgpu"},
-	"mixtral":          {"cuda", "metal", "webgpu"},
-	"nemotron_h":       {"webgpu"},
-	"phi3":             {"cuda", "metal", "webgpu"},
-	"qwen2":            {"cuda", "metal", "webgpu"},
-	"qwen2_5_vl":       {"cuda", "metal", "webgpu"},
-	"qwen2_moe":        {"metal", "webgpu"},
-	"qwen3":            {"cuda", "metal", "webgpu"},
+	"mellum":     {"metal", "webgpu"},
+	"mistral":    {"cuda", "metal", "webgpu"},
+	"mixtral":    {"cuda", "metal", "webgpu"},
+	"nemotron_h": {"webgpu"},
+	"phi3":       {"cuda", "metal", "webgpu"},
+	"qwen2":      {"cuda", "metal", "webgpu"},
+	"qwen2_5_vl": {"cuda", "metal", "webgpu"},
+	"qwen2_moe":  {"metal", "webgpu"},
+	"qwen3":      {"cuda", "metal", "webgpu"},
 	// Qwen3.8 dense admits on FEATURES alone where its MoE sibling does not — dropping
 	// FeatMoE/FeatMoEGatedShared removes CUDA's only objection. This row is the feature
 	// verdict, NOT "CUDA runs Qwen3.8 resident": decodeRunnerEligible refuses every
