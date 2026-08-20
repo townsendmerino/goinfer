@@ -3,7 +3,10 @@
 package gpu
 
 import (
+	"fmt"
 	"math"
+	"strconv"
+	"strings"
 
 	"github.com/cogentcore/webgpu/wgpu"
 )
@@ -38,12 +41,31 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 `
 
-// attnMaxHeadDim is the largest head_dim the single-query attention kernels support: they run
-// at @workgroup_size(128) with a 128-entry `red` reduction array (one lane per dim), so a
-// head_dim above this would leave the tail dims un-dotted. newDecodeRunner declines any resident
-// arch/layer above it (audit M-12). It MUST stay equal to the @workgroup_size(128) below and the
-// `red: array<f32, 128>` widths in both single-query kernels.
-const attnMaxHeadDim = 128
+// attnWG is the single-query attention kernels' NARROW workgroup width, and attnWGWide the wide
+// one. The kernels put one lane on each head dim, so the workgroup width IS the largest head_dim
+// they can dot: above it the tail dims go un-dotted and the o-projection consumes half-zero
+// context — plausible-looking WRONG output, no error (audit M-12).
+//
+// 128 covered every family until the Gated-DeltaNet hybrids, whose RELEASED checkpoints all use
+// head_dim 256 (Qwen3.8-27B, Qwen3.6-35B-A3B, Qwen3-Next-80B — verified from their configs, not
+// assumed). Their tiny fixtures use 32, so the limit was invisible until a real-width fixture met
+// it, and Gemma 4's global layers at head_dim 512 would have met it again.
+//
+// The wide kernel (attnWideTemplateWGSL, below) gives each lane a STRIDE of dims rather than one
+// dim, so head_dim stopped being a reason to decline at all. The narrow kernels are untouched and
+// still serve head_dim <= attnWG: striding costs a per-lane array and two extra loops, and every
+// ordinary model would pay that for nothing.
+//
+// attnWG MUST stay equal to the @workgroup_size(128) and `red: array<f32, 128>` in the three
+// narrow single-query kernels below.
+const (
+	attnWG         = 128 // shipped narrow kernels: one lane per dim
+	attnWGWide     = 256 // wide kernel workgroup — WebGPU's guaranteed max invocations
+	attnMaxPerLane = 8   // dims each wide lane strides over
+	// attnMaxHeadDim is therefore 2048, which no model is near. That is the point: head_dim
+	// stopped being a reason to decline, rather than the wall moving up one notch to 256.
+	attnMaxHeadDim = attnWGWide * attnMaxPerLane
+)
 
 // Single-query attention (decode): one workgroup per query head, an online
 // (FlashAttention-style) softmax over keys [start, nKeys) so it is numerically
@@ -606,3 +628,196 @@ func (c *Context) Attention(q, keys, vals []float32, nH, nKV, hd, nKeys, start i
 }
 
 func f32bits(f float32) uint32 { return math.Float32bits(f) }
+
+// The WIDE single-query attention kernel: one template, STRIDED lanes.
+//
+// The shipped narrow kernels put one lane on each head dim, which makes the workgroup width a
+// hard ceiling on head_dim — 128, and 256 is as far as that idea can go because 256 is WebGPU's
+// guaranteed maxComputeInvocationsPerWorkgroup. That is a higher wall, not the absence of one,
+// and the wall is real: this family's released checkpoints are head_dim 256 and Gemma 4's global
+// layers are 512.
+//
+// So the wide variant gives each lane a STRIDE of dims — d0, d0+WG, d0+2·WG, … — and any
+// head_dim up to attnWGWide·attnMaxPerLane works with a fixed workgroup. The narrow kernels are
+// left untouched and still serve head_dim ≤ attnWG, because striding costs a per-lane array and
+// two extra loops that every ordinary model would pay for nothing.
+//
+// One template rather than three near-identical copies: the algorithm (online softmax, the
+// tree-reduce, the rescale) is the part that is easy to get subtly wrong and hard to notice, and
+// three copies of it is three places for a fix to land in two. The three variants differ ONLY in
+// how a K/V element is fetched, which is the part that is obvious on sight.
+const attnWideTemplateWGSL = `
+struct P { nH: u32, nKV: u32, hd: u32, nKeys: u32, start: u32, group: u32, scale: f32, _p: u32 };
+@group(0) @binding(0) var<storage, read> q: array<f32>;  // [nH*hd] (RoPE'd, f32)
+__BINDINGS__
+__HELPERS__
+var<workgroup> red: array<f32, __WG__>;
+@compute @workgroup_size(__WG__)
+fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid: vec3<u32>) {
+    let qh = wid.x;
+    if (qh >= p.nH) { return; }
+    let d0 = lid.x;
+    let hd = p.hd;
+    let kvDim = p.nKV * hd;
+    let kvh = qh / p.group;
+    let qbase = qh * hd;
+    let kvbase = kvh * hd;
+    // This lane owns dims d0, d0+WG, … — nper of them. A lane past hd owns none and simply
+    // contributes 0 to every reduction, which keeps the tree-reduce below unconditional.
+    let nper = (hd + __WG__u - 1u) / __WG__u;
+    var qd:  array<f32, __MAXPER__>;
+    var acc: array<f32, __MAXPER__>;
+    for (var j = 0u; j < nper; j = j + 1u) {
+        qd[j] = 0.0;
+        acc[j] = 0.0;
+        let d = d0 + j * __WG__u;
+        if (d < hd) { qd[j] = q[qbase + d]; }
+    }
+    var m: f32 = -1e30;
+    var l: f32 = 0.0;
+    for (var s: u32 = p.start; s < p.nKeys; s = s + 1u) {
+        let kbase = s * kvDim + kvbase;
+        let sci = s * p.nKV + kvh;
+        var prod: f32 = 0.0;
+        for (var j = 0u; j < nper; j = j + 1u) {
+            let d = d0 + j * __WG__u;
+            if (d < hd) {
+                let ki = kbase + d;
+                prod = prod + qd[j] * (__KREAD__);
+            }
+        }
+        red[d0] = prod;
+        workgroupBarrier();
+        var stride: u32 = __HALFWG__u;
+        loop {
+            if (stride == 0u) { break; }
+            if (d0 < stride) { red[d0] = red[d0] + red[d0 + stride]; }
+            workgroupBarrier();
+            stride = stride / 2u;
+        }
+        let x = red[0] * p.scale;
+        let mnew = max(m, x);
+        let corr = exp(m - mnew);
+        let pe = exp(x - mnew);
+        for (var j = 0u; j < nper; j = j + 1u) {
+            let d = d0 + j * __WG__u;
+            if (d < hd) {
+                let ki = kbase + d;
+                acc[j] = acc[j] * corr + pe * (__VREAD__);
+            }
+        }
+        l = l * corr + pe;
+        m = mnew;
+        workgroupBarrier();  // all lanes done reading red[0] before the next key overwrites red[d0]
+    }
+    for (var j = 0u; j < nper; j = j + 1u) {
+        let d = d0 + j * __WG__u;
+        if (d < hd) { ctx[qbase + d] = acc[j] / l; }
+    }
+}
+`
+
+// attnWideVariant is the per-precision half of the template above: the K/V bindings and the two
+// fetch expressions, in terms of `ki` (the logical element index) and `sci` (the per-(pos,head)
+// scale index the int8 cache needs).
+type attnWideVariant struct {
+	name         string
+	bindings     string
+	helpers      string
+	kRead, vRead string
+}
+
+var attnWideVariants = []attnWideVariant{
+	{
+		name: "attn-wide",
+		bindings: `@group(0) @binding(1) var<storage, read>       keys: array<f32>;
+@group(0) @binding(2) var<storage, read>       vals: array<f32>;
+@group(0) @binding(3) var<storage, read_write> ctx:  array<f32>;
+@group(0) @binding(4) var<uniform>             p:    P;`,
+		kRead: "keys[ki]",
+		vRead: "vals[ki]",
+	},
+	{
+		name: "attn-f16-wide",
+		bindings: `@group(0) @binding(1) var<storage, read>       keys: array<u32>;
+@group(0) @binding(2) var<storage, read>       vals: array<u32>;
+@group(0) @binding(3) var<storage, read_write> ctx:  array<f32>;
+@group(0) @binding(4) var<uniform>             p:    P;`,
+		helpers: `fn f16at(w: u32, e: u32) -> f32 {
+    let pair = unpack2x16float(w);
+    return select(pair.x, pair.y, (e & 1u) == 1u);
+}`,
+		kRead: "f16at(keys[ki >> 1u], ki)",
+		vRead: "f16at(vals[ki >> 1u], ki)",
+	},
+	{
+		name: "attn-i8-wide",
+		bindings: `@group(0) @binding(1) var<storage, read>       keys:   array<u32>;
+@group(0) @binding(2) var<storage, read>       vals:   array<u32>;
+@group(0) @binding(3) var<storage, read>       kScale: array<f32>;
+@group(0) @binding(4) var<storage, read>       vScale: array<f32>;
+@group(0) @binding(5) var<storage, read_write> ctx:    array<f32>;
+@group(0) @binding(6) var<uniform>             p:      P;`,
+		helpers: `fn unpacki8(w: u32, e: u32) -> f32 {
+    let b = (e & 3u) * 8u;
+    return f32(i32(w << (24u - b)) >> 24u);
+}`,
+		kRead: "unpacki8(keys[ki >> 2u], ki) * kScale[sci]",
+		vRead: "unpacki8(vals[ki >> 2u], ki) * vScale[sci]",
+	},
+}
+
+// buildWideAttnWGSL instantiates the template for one variant. It leaves no placeholder behind:
+// an unsubstituted __TOKEN__ would be a WGSL compile error rather than a silently wrong kernel,
+// but the check is here anyway so the failure names the token instead of a parser column.
+func buildWideAttnWGSL(v attnWideVariant) (string, error) {
+	src := strings.NewReplacer(
+		"__BINDINGS__", v.bindings,
+		"__HELPERS__", v.helpers,
+		"__KREAD__", v.kRead,
+		"__VREAD__", v.vRead,
+		"__MAXPER__", strconv.Itoa(attnMaxPerLane),
+		"__HALFWG__", strconv.Itoa(attnWGWide/2),
+		"__WG__", strconv.Itoa(attnWGWide),
+	).Replace(attnWideTemplateWGSL)
+	if i := strings.Index(src, "__"); i >= 0 {
+		return "", fmt.Errorf("gpu: %s wide attention shader has an unsubstituted placeholder near %q",
+			v.name, src[i:min(i+24, len(src))])
+	}
+	return src, nil
+}
+
+// ensureAttnWide compiles the 256-lane variants. Separate from ensureAttn and called only when a
+// plan actually has head_dim > attnWG, so every existing family pays nothing — no extra shader
+// compiles, no behaviour change, and no dependence on a device limit it does not need.
+func (c *Context) ensureAttnWide() error {
+	if c.attnWidePipeline != nil {
+		return nil
+	}
+	// maxComputeInvocationsPerWorkgroup is 256 in the WebGPU default limits, but "default" is a
+	// floor for conformant implementations, not a promise from this adapter. Check it: a decline
+	// here falls back to the staged path, whereas compiling past it is a device error mid-build.
+	if lim := c.device.GetLimits().Limits.MaxComputeInvocationsPerWorkgroup; lim < attnWGWide {
+		return fmt.Errorf("gpu: device maxComputeInvocationsPerWorkgroup=%d < %d — cannot run the "+
+			"wide attention kernel needed for head_dim > %d", lim, attnWGWide, attnWG)
+	}
+	dst := [][3]any{
+		{&c.attnWideShader, &c.attnWidePipeline, &c.attnWideLayout},
+		{&c.attnF16WideShader, &c.attnF16WidePipeline, &c.attnF16WideLayout},
+		{&c.attnI8WideShader, &c.attnI8WidePipeline, &c.attnI8WideLayout},
+	}
+	for i, v := range attnWideVariants {
+		src, err := buildWideAttnWGSL(v)
+		if err != nil {
+			return err
+		}
+		sh, pl, ly, err := c.mkPipeline(v.name, src)
+		if err != nil {
+			return err
+		}
+		*dst[i][0].(**wgpu.ShaderModule) = sh
+		*dst[i][1].(**wgpu.ComputePipeline) = pl
+		*dst[i][2].(**wgpu.BindGroupLayout) = ly
+	}
+	return nil
+}

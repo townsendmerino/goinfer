@@ -139,9 +139,23 @@ type Context struct {
 	qkvFinShader   *wgpu.ShaderModule
 	qkvFinPipeline *wgpu.ComputePipeline
 	qkvFinLayout   *wgpu.BindGroupLayout
-	attnShader     *wgpu.ShaderModule
-	attnPipeline   *wgpu.ComputePipeline
-	attnLayout     *wgpu.BindGroupLayout
+	// 256-lane variants of the three single-query attention kernels, generated from the same
+	// source by widenAttnWGSL and compiled lazily (ensureAttnWide) only for a plan whose
+	// head_dim exceeds attnWG — the Gated-DeltaNet hybrids, whose released checkpoints are all
+	// head_dim 256. Nil for every other model.
+	attnWideShader      *wgpu.ShaderModule
+	attnWidePipeline    *wgpu.ComputePipeline
+	attnWideLayout      *wgpu.BindGroupLayout
+	attnF16WideShader   *wgpu.ShaderModule
+	attnF16WidePipeline *wgpu.ComputePipeline
+	attnF16WideLayout   *wgpu.BindGroupLayout
+	attnI8WideShader    *wgpu.ShaderModule
+	attnI8WidePipeline  *wgpu.ComputePipeline
+	attnI8WideLayout    *wgpu.BindGroupLayout
+
+	attnShader   *wgpu.ShaderModule
+	attnPipeline *wgpu.ComputePipeline
+	attnLayout   *wgpu.BindGroupLayout
 
 	// KV-cache writers (ensureAttn): rope-and-store K into KCache, store V into
 	// VCache — both at pos*kvDim via a per-token uniform base, so the decode token

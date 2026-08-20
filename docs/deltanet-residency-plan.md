@@ -1,8 +1,9 @@
 # Gated-DeltaNet residency — the plan, and why WebGPU proves it first
 
-**Status: PHASES 2, 3 AND 4 DONE — 2026-08-19.** The family is RESIDENT on WebGPU and gated
-end-to-end against the CPU forward for BOTH siblings. Phase 1 (the scaled fixture) turned out not
-to be a prerequisite and is reframed below. Written at Phase 0 so the phases, the reuse claims and the kill criteria were on record
+**Status: DONE AND MEASURED — 2026-08-19.** The family is RESIDENT on WebGPU, gated end-to-end
+against the CPU forward for both siblings AND at the released head geometry, at **11.4–12.2×
+CPU decode**. Getting a real-width number surfaced a blocker that the tiny fixtures had hidden
+completely — see "The head_dim 256 wall" below. Written at Phase 0 so the phases, the reuse claims and the kill criteria were on record
 before any shader was.
 
 ## Why this, why now
@@ -152,19 +153,81 @@ the DRIFT bound, several of them while still above the cosine floor.
 the admission tests and the hardware matrix regenerate themselves.** The admission tests and both
 matrices did regenerate themselves, as scoped.
 
+## The head_dim 256 wall — what asking for tok/s found
+
+Chasing the speed number produced a 4-layer fixture at fully released width, and it declined
+residency on the first run:
+
+    gpu: resident decode declines head_dim=256 > 128 (attention kernel workgroup is 128-wide)
+
+**Every released model in this family is head_dim 256** — Qwen3.8-27B, Qwen3.6-35B-A3B and
+Qwen3-Next-80B, read from their configs. The single-query attention kernels put one lane on each
+head dim at `@workgroup_size(128)`, and `attnHeadDimSupported` correctly refuses anything wider
+rather than dot only the first half. So the residency landed above was real, gated, and unable to
+run a single released checkpoint — for a reason with nothing to do with DeltaNet.
+
+The tiny fixtures use head_dim 32. Nothing in the correctness work could have found this; only
+asking a performance question at real width did. **That is the argument for the real-width fixture,
+and it is a different argument than the one Phase 1 originally made** (which was about numerics).
+
+**Fixed properly, not raised one notch.** The first cut widened the workgroup to 256, which would
+have covered this family and hit the same wall again at Gemma 4's head_dim-512 global layers —
+and 256 is WebGPU's guaranteed `maxComputeInvocationsPerWorkgroup`, so one-lane-per-dim has
+nowhere further to go. The shipped version instead gives each lane a **stride** of dims (`d0`,
+`d0+WG`, `d0+2·WG`, …), so a fixed 256-wide workgroup covers any head_dim up to
+`attnWGWide × attnMaxPerLane` = 2048. head_dim stopped being a reason to decline.
+
+The narrow kernels are untouched and still serve head_dim ≤ 128: striding costs a per-lane array
+and two extra loops, and every ordinary model would pay that for nothing. The wide variants are
+built from ONE template (`attnWideTemplateWGSL`) with three small per-precision fetch expressions
+(f32 / f16-unpack / int8-unpack-and-scale) — the online-softmax algorithm is the part that is easy
+to get subtly wrong and hard to notice, and three copies of it is three places for a fix to land
+in two.
+
+Gated against `refAttn`, the same Go reference `TestAttnBlock_parity` already uses, at head_dim
+64, 128, 256, **257**, 512 and 1024 — cosine 1.000000000 at every one. The list is chosen for the
+striding boundaries, not for the model: 256 is `nper=1`, the degenerate case where a stride bug
+hides completely, and 257 is the ragged case where lane 0 owns two dims and the rest own one. A
+test that ran only 256 would pass with the stride loop entirely broken. It also asserts no output
+element is exactly 0, because a lane that stops early leaves whole dim ranges untouched and a
+cosine over a mostly-correct vector will not notice.
+
+## Measured: 11.4–12.2× CPU decode at released width
+
+`TestQwen35ResidentDecodeRate`, same box, matched weight quant, warm:
+
+| fixture | quant | resident | CPU | ratio |
+|---|---|---|---|---|
+| 4 layers @ released width (hidden 5120, hd 256, inter 17408) | int8int8 | 177.3 tok/s (1.410 ms/layer) | 14.6 tok/s (17.172 ms/layer) | **12.18×** |
+| same | int4 | 235.1 tok/s (1.06 ms/layer) | 20.6 tok/s (12.12 ms/layer) | **11.40×** |
+| `qwen3_5-tiny` (hidden 64) | int8int8 | 2529 tok/s | 5746 tok/s | 0.44× |
+| `qwen3_5_moe-tiny` (hidden 64) | int8int8 | 1283 tok/s | 3764 tok/s | 0.34× |
+
+The tiny rows are in the table on purpose. They are dispatch-bound — roughly 20 GPU dispatches per
+DeltaNet layer against microseconds of arithmetic — and they are what a casual "run the benchmark"
+would have reported. Publishing only the flattering row is how a 0.34× becomes a footnote.
+
+**The kill criterion is answered.** This is not the CUDA-graphs 1.01× that had to be relabelled a
+safety improvement; residency is a real decode win for this family.
+
+**Quote the RATIO, not an extrapolated absolute.** ms/layer × 64 gives ~15 tok/s resident and
+~1.3 tok/s CPU for the 27B, but the CPU half of that is about 2× faster than the 0.656 tok/s
+actually measured on the real 27B — the fixture omits the 248320-row LM head (~5% of real
+per-token MACs) and runs a short context. The ratio is robust because both arms omit the same
+things; the absolute is not.
+
 ## What is NOT done
 
-- **No speed number.** Residency is a capability here, not a measured win. The CUDA-graphs
-  precedent applies and the kill criterion below still stands unanswered: measure decode
-  resident-vs-CPU before calling this a speedup. No model in this family fits 8 GB, so that
-  measurement wants either the scaled fixture or a bigger card.
-- **Quantization at width is unproven.** The gates run at hidden 64 and 2048-wide DeltaNet
-  projections; the real model is hidden 5120 with a [10240, 5120] `in_proj_qkv`. Separately, the
-  resident path quantizes `in_proj_b`/`in_proj_a` to W8A8 where the CPU deliberately keeps them f32
-  (they feed the write/decay gates, where the recurrence is most precision-sensitive). At tiny
-  width that costs nothing measurable. Whether it costs anything at 27B is untested.
+- **The released 27B has not been run resident, and cannot be on this box.** It needs 15.3 GB at
+  int4 against 8 GB of VRAM. Everything above is real geometry at reduced DEPTH.
+- **Quantization at width is measured for speed, not quality.** The parity gate at released width
+  (4 layers, int8int8) holds cosine 0.995 with drift 0.0015, which is reassuring but is 4 layers,
+  not 64 — and error in a recurrent stack compounds with depth. Separately the resident path
+  quantizes `in_proj_b`/`in_proj_a` to W8A8 where the CPU deliberately keeps them f32 (they feed
+  the write/decay gates, where the recurrence is most precision-sensitive).
 - **CUDA and Metal.** Both decline at the feature gate, correctly. CUDA is the next step and now
-  has a settled design to port rather than one to invent.
+  has a settled design to port rather than one to invent — including the head_dim 256 question,
+  which CUDA will meet too.
 
 ## Kill criteria, stated up front
 

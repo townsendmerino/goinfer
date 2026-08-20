@@ -20,7 +20,7 @@
 
 The gate is **argmax-match to the pinned CPU golden**, NOT bit-identical logits. GPU
 attention/RoPE run f32 while the CPU oracle accumulates in f64 → logits are cosine
-≈1.0, not bit-exact (`gpu/attention.go:14`). The existing `TestWebGPU_forwardParity`
+≈1.0, not bit-exact (`gpu/attention.go:17`). The existing `TestWebGPU_forwardParity`
 (`gpu/forward_parity_test.go:36`) asserts the greedy next-token **argmax equals
 `testdata/gemma_forward_golden.json` `Argmax`**. The CUDA backend reuses that harness
 with `Backend:"cuda"` and must clear the same token-identical bar. **Match the token,
@@ -42,11 +42,11 @@ in `decoder/` changes:
 
 `BuildResident` uploads weights **once**; `Forward` rewrites only the input embedding
 + the position-dependent uniforms (rope pos, KV-store base `pos*kvDim`, `nKeys=pos+1`)
-per token — the same static-plan/per-token-delta split as `gpu/decoderunner.go:905`.
+per token — the same static-plan/per-token-delta split as `gpu/decoderunner.go:912`.
 
 ## 2. The per-layer op-DAG (what the megakernel fuses)
 
-One dense layer today = **~13 WGSL dispatches** (`gpu/decoderunner.go:800-822`). Ordered
+One dense layer today = **~13 WGSL dispatches** (`gpu/decoderunner.go:807-822`). Ordered
 stages (H=hidden, I=intermediate, hd=headDim, nH/nKV heads, kvDim=nKV·hd, half=rotaryDim/2):
 
 | # | stage | in→out | notes |

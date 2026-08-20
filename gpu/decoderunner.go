@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"slices"
 	"strconv"
 	"time"
 
@@ -315,6 +316,12 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 	}
 	if m.mamba != nil {
 		ensures = append(ensures, c.ensureMambaConv, c.ensureMambaSSM, c.ensureMambaGNorm, c.ensureMambaF16, c.ensureRelu2)
+	}
+	if hd > attnWG || slices.ContainsFunc(m.layers, func(l runLayer) bool { return l.ghd > attnWG }) {
+		// Only now, and only for a plan that needs it. A device that cannot do 256-invocation
+		// workgroups errors here, which the caller turns into a staged fallback — the same
+		// treatment the old hard head_dim decline gave, but reached only by models that need it.
+		ensures = append(ensures, c.ensureAttnWide)
 	}
 	if m.dnet != nil {
 		// mambaConv is shared with the SSM engine (DeltaNet's causal conv is the same op); the
@@ -1034,13 +1041,27 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			if lw.isLocal {
 				aUni = g.attnUniLocal
 			}
+			// head_dim > attnWG needs the 256-lane variants: the kernels put one lane per dim,
+			// so the narrow ones would dot 0..127 and leave the tail zeroed. Chosen PER LAYER
+			// off this layer's resolved geometry, not the model's, because Gemma 4 already
+			// proves per-layer head_dim is a real thing here.
+			wide := g.hd > attnWG
 			if m.kvI8 {
 				// attnI8 reads packed int8 K/V + the per-(pos,head) scale side buffers.
-				add(c.attnI8Pipeline, bind(c.attnI8Layout, q, lw.kCache, lw.vCache, lw.kScale, lw.vScale, ctxv, aUni), uint32(nH), 1)
+				pl, ly := c.attnI8Pipeline, c.attnI8Layout
+				if wide {
+					pl, ly = c.attnI8WidePipeline, c.attnI8WideLayout
+				}
+				add(pl, bind(ly, q, lw.kCache, lw.vCache, lw.kScale, lw.vScale, ctxv, aUni), uint32(nH), 1)
 			} else {
 				attnPl, attnLy := c.attnPipeline, c.attnLayout
-				if m.kvF16 {
+				switch {
+				case m.kvF16 && wide:
+					attnPl, attnLy = c.attnF16WidePipeline, c.attnF16WideLayout
+				case m.kvF16:
 					attnPl, attnLy = c.attnF16Pipeline, c.attnF16Layout
+				case wide:
+					attnPl, attnLy = c.attnWidePipeline, c.attnWideLayout
 				}
 				add(attnPl, bind(attnLy, q, lw.kCache, lw.vCache, ctxv, aUni), uint32(nH), 1)
 			}
