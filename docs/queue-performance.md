@@ -16,6 +16,78 @@ Throughput, latency, kernels, residency, memory. Anything whose success criterio
 
 
 
+
+
+## P14 — the CPU gap to llama.cpp is KERNEL ARITHMETIC, not threading and not quant format (2026-08-19)
+
+aikit pushed back on "kernel quality" as too vague and proposed a specific, well-founded
+alternative: the `int4ParThreshold` bug class that cost gemma4-26B a measured 2.3x when decode-time
+M=1 matmuls fell under aikit's 16.78M-MAC serial default. Close enough to this 2.55x to be worth
+ruling out properly. **Measured on Qwen3.8-27B; it is ruled out.**
+
+**Every projection is far above the threshold.** hidden 5120, key/value_head_dim 128/128,
+num_key/value_heads 16/48, head_dim 256, 24q/4kv, ffn 17408, vocab 248320:
+
+| projection | MACs | vs `int4ParThreshold` (1<<20) |
+|---|---|---|
+| DeltaNet `in_proj_qkv` [10240,5120] | 52.4M | x50 |
+| DeltaNet `in_proj_z` / `out_proj` | 31.5M | x30 |
+| softmax `q_proj` [12288,5120] | 62.9M | x60 |
+| softmax `k`/`v_proj` [1024,5120] | 5.24M | x5 |
+| FFN gate/up/down [17408,5120] | 89.1M | x85 |
+| LM head [248320,5120] | 1271M | x1212 |
+| `in_proj_a`/`b` [48,5120] | 0.25M | BELOW — but f32, and 0.002% of per-token MACs |
+
+**And the profile shows the opposite of the gemma4 signature**: 832% CPU (the fan-out IS firing),
+`runtime.park_m` 1.22%, no `chanrecv` in the top 60 cumulative. Time is in `dotW4A8FoldAVX2` (58.3%
+flat), `dequantI8AVX2` (2.9%), `dotFMA` (1.0%).
+
+**What the numbers say instead.** 25.62 GMAC per token, 16.8 GMAC/s achieved:
+
+```
+goinfer  17.9 GB heap / 1.524 s = 11.7 GB/s   at 832% CPU
+ollama   16.5 GB      / 0.597 s = 27.6 GB/s
+DDR4-3200 dual-channel peak     ~51   GB/s
+```
+
+Neither engine saturates memory bandwidth, so neither is bandwidth-bound — the kernel is
+COMPUTE-limited and doing ~2.4x more work per weight byte. aikit's own byte-count analysis supports
+this from the other side: int4's 5.0 bits/weight (one f32 scale per 32) against Q4_K_M's ~4.5
+(6-bit scales shared across a 256-weight superblock) is ~11%, nowhere near 2.55x. But that superblock
+layout also means far FEWER scale loads per weight, which is an arithmetic difference, not a byte one.
+
+**Agreed conclusion: do NOT start a Q4_K-style kernel rewrite.** The next step is a micro-benchmark
+of `dotW4A8FoldAVX2` on ONE projection shape against its own theoretical ops/byte — per-group scale
+handling, nibble unpack, accumulator width — before anyone redesigns a format. A format change is
+the expensive answer to a question that has not been asked yet.
+
+## P13 — the safetensors loader keeps the whole source mapping resident (FOUND 2026-08-19)
+
+**Measured while adding the Qwen3.8 GGUF loader**, by loading the SAME model both ways and reading
+`/proc/self/status`:
+
+| path | Go heap | **RSS** | decode |
+|---|---|---|---|
+| safetensors (55.6 GB bf16) | 17.9 GB | **46.8 GB** | 0.656 tok/s |
+| GGUF (16.5 GB Q4_K_M) | **17.9 GB** | **24.5 GB** | **1.109 tok/s** |
+
+**The Go heap is IDENTICAL** — the quantized model is the same size either way, so this is not a
+representation difference. The ~22 GB gap is the mmap'd SOURCE file staying resident: the
+safetensors loader maps 55.6 GB of bf16, touches all of it to quantize, and never releases it. On a
+62 GB box that leaves almost no headroom, and the dead bf16 pages compete with the hot quantized
+weights for cache — which is the most plausible reading of the 1.69x decode difference between two
+paths holding an identical heap.
+
+**The fix is to drop the mapping once the weights are copied** (`madvise(MADV_DONTNEED)` on the
+source range, or close the mapping outright), which needs one check first: whether any tensor still
+ALIASES the mapping rather than owning a copy. The f32 vectors (norms, biases, the small DeltaNet
+gates) are the candidates — if they alias, they must be copied before the mapping goes, and they are
+small enough that copying them is free.
+
+**Do not assume the 1.69x transfers**: it was measured on a box where 46.8 GB of 62 GB was resident.
+On a machine with room to spare, the dead mapping costs address space and page-cache pressure but
+may cost little wall-clock. Re-measure after the fix rather than claiming the number.
+
 ## P12 — the qwen35 family's projections were f32 at every quant (FIXED 2026-08-19)
 
 **Found by benchmarking Qwen3.8-27B against Ollama on the same box**, which goinfer lost 4.07x. The

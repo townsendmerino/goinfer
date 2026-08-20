@@ -93,6 +93,83 @@ func ggufQwen35Config(g *embed.GGUFFile) (*Config, error) {
 	return cfg, nil
 }
 
+// ggufQwen35DenseConfig reads the DENSE hybrid (llama.cpp arch "qwen35" — Qwen3.8), the sibling of
+// "qwen35moe" above. Same Gated-DeltaNet/softmax 3:1 interleave, same SSM geometry keys; the only
+// structural difference is a plain SwiGLU where the MoE sibling has a router, so the expert keys are
+// replaced by feed_forward_length. It resolves to the qwen3_5 adapter, which is the dense descriptor
+// the safetensors bring-up added.
+//
+// WHY IT IS WORTH HAVING at all, given the safetensors loader already works: the 27.8B ships as
+// 55.6 GB of bf16, which goinfer re-quantizes on EVERY load (68 s measured), against 16.5 GB of
+// pre-quantized GGUF that mmaps in about a second. Same model, 3.4x less disk and a load that stops
+// dominating short runs.
+func ggufQwen35DenseConfig(g *embed.GGUFFile) (*Config, error) {
+	u := func(k string) int {
+		v, _ := g.Uint("qwen35." + k)
+		return int(v)
+	}
+	blocks := u("block_count")
+	// Same MTP tail as the MoE sibling: block_count counts the NextN/multi-token-prediction block
+	// this decoder does not run, so subtract it or every per-layer loop walks off the end.
+	numLayers := blocks - u("nextn_predict_layers")
+	if numLayers <= 0 || numLayers > maxGGUFLayers {
+		return nil, fmt.Errorf("decoder(gguf-qwen35-dense): bad block_count=%d (nextn=%d)", blocks, u("nextn_predict_layers"))
+	}
+	headDim := u("attention.key_length")
+	numV := u("ssm.time_step_rank") // linear_num_value_heads
+	valueHeadDim := 0
+	if numV > 0 {
+		valueHeadDim = u("ssm.inner_size") / numV
+	}
+	interval := u("full_attention_interval")
+	if interval <= 0 {
+		interval = 4
+	}
+	cfg := &Config{
+		ModelType:           "qwen3_5", // the DENSE adapter (qwen35DenseArchitecture)
+		HiddenDim:           u("embedding_length"),
+		NumLayers:           numLayers,
+		NumHeads:            u("attention.head_count"),
+		NumKVHeads:          u("attention.head_count_kv"),
+		HeadDim:             headDim,
+		IntermediateDim:     u("feed_forward_length"), // dense SwiGLU width; load-bearing for this adapter
+		LinearConvKernelDim: u("ssm.conv_kernel"),
+		LinearKeyHeadDim:    u("ssm.state_size"),
+		LinearValueHeadDim:  valueHeadDim,
+		LinearNumKeyHeads:   u("ssm.group_count"),
+		LinearNumValueHeads: numV,
+		HiddenAct:           "silu",
+		VocabSize:           ggufVocabSize(g),
+	}
+	if eps, ok := g.Float("qwen35.attention.layer_norm_rms_epsilon"); ok {
+		cfg.RMSNormEps = eps
+	}
+	// layer_types is COMPUTED here, exactly as in qwen3_next: llama.cpp writes
+	// full_attention_interval rather than a per-layer list.
+	for i := range numLayers {
+		if (i+1)%interval == 0 {
+			cfg.LayerTypes = append(cfg.LayerTypes, "full_attention")
+		} else {
+			cfg.LayerTypes = append(cfg.LayerTypes, "linear_attention")
+		}
+	}
+	base := 1e7
+	if b, ok := g.Float("qwen35.rope.freq_base"); ok {
+		base = b
+	}
+	partial := 0.25
+	if dc := u("rope.dimension_count"); dc > 0 && headDim > 0 {
+		partial = float64(dc) / float64(headDim)
+	}
+	// rope.dimension_sections ([11,11,10,0]) is the m-RoPE split and is deliberately IGNORED: for
+	// TEXT the three position components are identical, so interleaved m-RoPE reduces exactly to
+	// standard partial RoPE (verified against modeling_qwen3_5.py during the safetensors bring-up).
+	cfg.RopeParameters = json.RawMessage(fmt.Sprintf(
+		`{"rope_type":"default","rope_theta":%g,"partial_rotary_factor":%g}`, base, partial))
+	ggufEOS(g, cfg)
+	return cfg, nil
+}
+
 // reorderVHeads swaps the (outer, inner) factorization of the reordered axis of a
 // [lead, outer*inner*hd, trail] row-major buffer: the element at (outer=o,
 // inner=i, ...) moves to (outer=i, inner=o, ...). hd is the contiguous head block

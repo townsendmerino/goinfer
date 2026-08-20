@@ -58,6 +58,8 @@ func ggufConfig(g *embed.GGUFFile) (cfg *Config, err error) {
 		return ggufMellumConfig(g)
 	case "qwen35moe":
 		return ggufQwen35Config(g)
+	case "qwen35":
+		return ggufQwen35DenseConfig(g)
 	case "laguna":
 		return ggufLagunaConfig(g)
 	case "glm4moe":
@@ -77,7 +79,7 @@ func ggufConfig(g *embed.GGUFFile) (cfg *Config, err error) {
 	case "gpt-oss":
 		return ggufGptOssConfig(g)
 	default:
-		return nil, fmt.Errorf("decoder(gguf): architecture %q unsupported (have: llama, qwen2, qwen3, gemma3, gemma4 [wip], mellum, qwen35moe, glm4moe, laguna, granitehybrid, nemotron_h, nemotron_h_moe, deepseek2, phi3, gpt-oss)", arch)
+		return nil, fmt.Errorf("decoder(gguf): architecture %q unsupported (have: llama, qwen2, qwen3, gemma3, gemma4 [wip], mellum, qwen35moe, qwen35, glm4moe, laguna, granitehybrid, nemotron_h, nemotron_h_moe, deepseek2, phi3, gpt-oss)", arch)
 	}
 }
 
@@ -1648,6 +1650,22 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 					return e
 				}
 				l.qattn = a
+			}
+			// DENSE (Qwen3.8, llama.cpp arch "qwen35"): a plain SwiGLU where the MoE sibling has a
+			// router. Exactly the same one-branch difference the safetensors bring-up had, so the
+			// rest of this loader — the V un-tile, the −exp(A_log) un-bake, the (1+w) norms — is
+			// shared verbatim rather than copied.
+			if arch.MoE == nil {
+				if l.GateProj, e = mat(p+"ffn_gate.weight", arch.IntermediateDim, hidden); e != nil {
+					return e
+				}
+				if l.UpProj, e = mat(p+"ffn_up.weight", arch.IntermediateDim, hidden); e != nil {
+					return e
+				}
+				if l.DownProj, e = mat(p+"ffn_down.weight", hidden, arch.IntermediateDim); e != nil {
+					return e
+				}
+				return nil
 			}
 			// MoE FFN (every layer): router f32 (matching safetensors), 256 stacked
 			// experts quantized, shared expert quantized + f32 sigmoid gate.

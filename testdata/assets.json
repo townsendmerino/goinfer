@@ -450,6 +450,17 @@
         "TestW4A8DecodeParity"
       ],
       "note": "The MATCHED half of the W4A8 decode-parity pair. Both halves are built from the SAME source GGUF (~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, the model the test's own docstring names) so the pair is matched by construction: `go run ./cmd/prequant -quant int4 -o ~/models/qwen15-w4a8-int4.giw <src>` and the same with `-quant int8int8 -o ~/models/qwen15-w4a8-int8.giw`. Built 2026-08-18 to close the v1.0 gate's w4a8 coverage line; the gate passed 16/16 on first run. Rebuild both together or not at all -- an int4 half paired with an int8 half from a different source measures nothing."
+    },
+    {
+      "env": "GOINFER_QWEN38_GGUF",
+      "kind": "file",
+      "candidates": [
+        "$MODELS/qwen38-gguf/Qwen3.8-27B-UD-Q4_K_M.gguf"
+      ],
+      "used_by": [
+        "TestQwen38GGUF_gate"
+      ],
+      "note": "unsloth/Qwen3.8-27B-GGUF UD-Q4_K_M, 16.5 GB \u2014 the dense qwen35 GGUF. 3.4x smaller than the 55.6 GB bf16 safetensors the same model ships as, and it loads without re-quantizing."
     }
   ]
 }
