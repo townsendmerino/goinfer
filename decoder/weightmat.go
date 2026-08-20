@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"strings"
+	"sync"
 
 	"github.com/townsendmerino/aikit/linalg"
 )
@@ -184,6 +185,16 @@ func isW8A8(w *linalg.WeightMat) bool {
 func wmInt8(w *linalg.WeightMat) []int8      { q8, _, _, _ := w.Int8(); return q8 }
 func wmScales(w *linalg.WeightMat) []float32 { _, s, _, _ := w.Int8(); return s }
 
+// matmulWSPool recycles the Workspace matmul() falls back to when the caller has no
+// decodeScratch to hand in (dflash/dspark/eagle, and every forward_*.go family that
+// hasn't been threaded onto matmulInto). A fresh `var ws linalg.Workspace` per call
+// starts with nil i8/f32 scratch, so Into() reallocates BOTH the Workspace and its
+// internal quant buffers on every single matmul (P8-class allocation, same shape as
+// moeMLP's — see scratch.go). Pooling reuses the grown i8/f32 backing arrays across
+// calls; sync.Pool's own GC-driven eviction keeps a workspace that briefly saw one
+// huge call (e.g. the vocab-sized LM head) from pinning that size forever.
+var matmulWSPool = sync.Pool{New: func() any { return new(linalg.Workspace) }}
+
 // matmul computes dst[M, rows] = a[M, cols] · wᵀ, dispatching on w's precision
 // with goinfer's backend routing: the f32 and W8A8 paths can run on a GPU backend
 // (be.MatmulBT / QuantBackend.MatmulW8A8); int4 (W4A8) and weight-only int8 (Q8)
@@ -195,13 +206,15 @@ func matmul(be Backend, w *linalg.WeightMat, a, dst []float32, M int) {
 		// faster than the dequant-to-f32 Q4 path at every M, and its per-output result
 		// is M-independent so batched prefill is bit-identical to sequential decode.
 		//
-		// The local Workspace lowers the fan-out threshold below aikit's default so the
+		// The pooled Workspace lowers the fan-out threshold below aikit's default so the
 		// small int4 DECODE matmuls parallelize instead of running serial — see
-		// int4ParThreshold. Same cost as MatmulBTW4A8 (which also fresh-Workspaces), just
-		// with the threshold set; per-call ws so it's race-free across decode streams.
-		var ws linalg.Workspace
+		// int4ParThreshold. Each Get is exclusive to this call (Put deferred until
+		// return), so concurrent decode streams never share one — same race-freedom as
+		// the old per-call ws, just with its buffers surviving between calls.
+		ws := matmulWSPool.Get().(*linalg.Workspace)
+		defer matmulWSPool.Put(ws)
 		ws.SetThreshold(int4ParThreshold)
-		linalg.MatmulBTW4A8Into(&ws, a, q4, q4s, dst, M, w.Cols(), w.Rows(), group)
+		linalg.MatmulBTW4A8Into(ws, a, q4, q4s, dst, M, w.Cols(), w.Rows(), group)
 		return
 	}
 	if q8, scales, w8a8, ok := w.Int8(); ok {
@@ -209,16 +222,17 @@ func matmul(be Backend, w *linalg.WeightMat, a, dst []float32, M int) {
 			if qb, ok := be.(QuantBackend); ok && qb.MatmulW8A8(a, q8, scales, dst, M, w.Cols(), w.Rows()) {
 				return
 			}
-			// Per-call Workspace with the int8 decode threshold — the free-matmul path
+			// Pooled Workspace with the int8 decode threshold — the free-matmul path
 			// (e.g. gemma4's own forward) has no scratch Workspace, so without this its
 			// W8A8 decode matmuls would run at aikit's conservative 16.78M default. Same
-			// mechanism as the int4 branch above; race-free (local ws). matmulInto() gets
-			// this via the decodeScratch Workspace instead. Threshold differs from int4's
-			// (300K vs 1<<20) — the crossover is kernel- and model-specific, measured
-			// separately; see DefaultDecodeParallelThreshold + int4ParThreshold.
-			var ws linalg.Workspace
+			// mechanism as the int4 branch above. matmulInto() gets this via the
+			// decodeScratch Workspace instead. Threshold differs from int4's (300K vs
+			// 1<<20) — the crossover is kernel- and model-specific, measured separately;
+			// see DefaultDecodeParallelThreshold + int4ParThreshold.
+			ws := matmulWSPool.Get().(*linalg.Workspace)
+			defer matmulWSPool.Put(ws)
 			ws.SetThreshold(DefaultDecodeParallelThreshold)
-			linalg.MatmulBTW8A8Into(&ws, a, q8, scales, dst, M, w.Cols(), w.Rows())
+			linalg.MatmulBTW8A8Into(ws, a, q8, scales, dst, M, w.Cols(), w.Rows())
 			return
 		}
 		linalg.MatmulBTQ8(a, q8, scales, dst, M, w.Cols(), w.Rows())
