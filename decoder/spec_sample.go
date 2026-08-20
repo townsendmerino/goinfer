@@ -34,7 +34,7 @@ func (s *Sampler) distVectorFrom(logits []float32) []float64 {
 	}
 	// Same canonical selection the plain sampler uses (topFilterLogits), so the
 	// speculative residual stays lossless against the target distribution.
-	kept := topFilterLogits(logits, s.p.Temperature, s.p.TopK, s.p.TopP, s.p.MinP) // renormalized support
+	kept := topFilterLogits(logits, s.p.Temperature, s.p.TopK, s.p.TopP, s.p.MinP, s.vocabBufN(len(logits))) // renormalized support
 	v := make([]float64, len(logits))
 	for _, ip := range kept {
 		v[ip.id] = ip.p

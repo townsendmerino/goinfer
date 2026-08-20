@@ -67,14 +67,27 @@ type SampleInfo struct {
 // Sampler turns a logit vector into a token id. It owns its RNG so a run is
 // reproducible from Seed, and tracks the token history the penalties read.
 type Sampler struct {
-	p       SamplingParams
-	rng     *rand.Rand
-	history []int // tokens seen so far: prompt (via Observe) + each drawn token
+	p        SamplingParams
+	rng      *rand.Rand
+	history  []int     // tokens seen so far: prompt (via Observe) + each drawn token
+	vocabBuf []float64 // [vocab] scratch shared by sampleChunked's e and chunkedZ's tmp — one full-vocab
+	// allocation reused every token instead of a fresh make() each draw; the two are never live
+	// simultaneously (Sample's branches are mutually exclusive per call, so one buffer covers both).
 }
 
 // NewSampler builds a sampler from params.
 func NewSampler(p SamplingParams) *Sampler {
 	return &Sampler{p: p, rng: rand.New(rand.NewSource(p.Seed))}
+}
+
+// vocabBufN returns a length-n float64 scratch buffer, reusing the backing array when it is
+// already large enough and growing it (once) otherwise — the sampler_chunked.go grow-on-demand
+// pattern (mirrors decoder/scratch.go's scoresBuf).
+func (s *Sampler) vocabBufN(n int) []float64 {
+	if cap(s.vocabBuf) < n {
+		s.vocabBuf = make([]float64, n)
+	}
+	return s.vocabBuf[:n]
 }
 
 // Observe seeds the penalty history with already-seen tokens (the generation
@@ -156,7 +169,7 @@ func (s *Sampler) SampleWithInfo(logits []float32) (SampleInfo, error) {
 		// Bounded selection in logit space — no softmax over the whole vocabulary
 		// (amendment 3). The old path softmaxed all V then full-sorted all V; both
 		// are gone for the filtered case, replaced by topFilterLogits below.
-		info.ID = s.drawFiltered(topFilterLogits(work, s.p.Temperature, s.p.TopK, s.p.TopP, s.p.MinP))
+		info.ID = s.drawFiltered(topFilterLogits(work, s.p.Temperature, s.p.TopK, s.p.TopP, s.p.MinP, s.vocabBufN(len(work))))
 	} else if s.p.Logprobs {
 		// Logprobs needs the full normalized distribution anyway, so the exact path costs nothing extra.
 		info.ID = s.drawFull(softmaxStable(work, s.p.Temperature))
@@ -394,7 +407,7 @@ type indexedProb struct {
 // the NORMALIZED mass, so it needs the full-vocab softmax denominator Z — computed as a
 // single O(V) exp-sum, with no full probability array and no O(V·log V) sort. That Z
 // pass is irreducible for an exact nucleus; the sort it replaces is not.
-func topFilterLogits(logits []float32, temperature float64, topK int, topP, minP float64) []indexedProb {
+func topFilterLogits(logits []float32, temperature float64, topK int, topP, minP float64, vocabScratch []float64) []indexedProb {
 	texp := temperature
 	if texp <= 0 {
 		texp = 1 // defensive; SampleWithInfo only reaches here for temperature > 0
@@ -412,7 +425,7 @@ func topFilterLogits(logits []float32, temperature float64, topK int, topP, minP
 		// P2b step 3: the same fixed-chunk fold as the temperature-only path. This Z feeds the
 		// nucleus cut, so regrouping it also moves boundary draws — which is exactly why it lands in
 		// the SAME release rather than dribbling out later as a second seed change.
-		Z = chunkedZ(logits, maxL, texp)
+		Z = chunkedZ(logits, maxL, texp, vocabScratch)
 	}
 
 	// Candidate set: a bounded SUPERSET of the retained set, trimmed by the min-p /

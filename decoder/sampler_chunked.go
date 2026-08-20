@@ -182,7 +182,7 @@ func (s *Sampler) sampleChunked(logits []float32, temperature, r float64) int {
 		}
 		return len(probs) - 1
 	}
-	e := make([]float64, len(logits))
+	e := s.vocabBufN(len(logits))
 	sums := expChunked(logits, e, maxv, temperature)
 	z := foldChunkSums(sums)
 	return drawChunked(e, sums, z, r)
@@ -190,7 +190,8 @@ func (s *Sampler) sampleChunked(logits []float32, temperature, r float64) int {
 
 // chunkedZ is the top-p denominator (step 3), given the same fixed-chunk treatment so the nucleus
 // cut shifts in the SAME release as the temperature-only change rather than dribbling out later.
-func chunkedZ(logits []float32, maxv, temperature float64) float64 {
-	tmp := make([]float64, len(logits))
-	return foldChunkSums(expChunked(logits, tmp, maxv, temperature))
+// scratch is the caller's reused vocab-sized buffer (Sampler.vocabBuf via vocabBufN) — expChunked's
+// per-id `e` output is discarded here (only the folded sum matters), so scratch just needs len(logits).
+func chunkedZ(logits []float32, maxv, temperature float64, scratch []float64) float64 {
+	return foldChunkSums(expChunked(logits, scratch, maxv, temperature))
 }

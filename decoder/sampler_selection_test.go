@@ -220,7 +220,7 @@ func TestTopFilterLogits_MatchesReference(t *testing.T) {
 
 func assertSameFilter(t *testing.T, logits []float32, temp float64, topK int, topP, minP float64, seed int) {
 	t.Helper()
-	got := topFilterLogits(logits, temp, topK, topP, minP)
+	got := topFilterLogits(logits, temp, topK, topP, minP, make([]float64, len(logits)))
 	want := refTopFilter(logits, temp, topK, topP, minP)
 	if len(got) != len(want) {
 		t.Fatalf("seed %d temp=%v k=%d p=%v minp=%v: len=%d, want %d", seed, temp, topK, topP, minP, len(got), len(want))
@@ -250,7 +250,7 @@ func TestSample_DrawIdentity(t *testing.T) {
 			for seed := range int64(64) {
 				optSampler := &Sampler{rng: rand.New(rand.NewSource(seed))}
 				refDraw := drawFromRef(refTopFilter(logits, temp, c.k, c.p, c.m), rand.New(rand.NewSource(seed)))
-				optDraw := optSampler.drawFiltered(topFilterLogits(logits, temp, c.k, c.p, c.m))
+				optDraw := optSampler.drawFiltered(topFilterLogits(logits, temp, c.k, c.p, c.m, optSampler.vocabBufN(len(logits))))
 				if optDraw != refDraw {
 					t.Fatalf("temp=%v k=%d p=%v m=%v seed=%d: opt drew %d, ref drew %d", temp, c.k, c.p, c.m, seed, optDraw, refDraw)
 				}
@@ -334,12 +334,13 @@ func benchSample(logits []float32, p SamplingParams) int64 {
 func benchFilter(b *testing.B, V int, useRef bool) {
 	r := rand.New(rand.NewSource(1))
 	logits := randLogits(V, r)
+	scratch := make([]float64, V) // reused across iterations, matching the real per-stream Sampler.vocabBuf
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		if useRef {
 			_ = refTopFilter(logits, 0.8, 0, 0.95, 0)
 		} else {
-			_ = topFilterLogits(logits, 0.8, 0, 0.95, 0)
+			_ = topFilterLogits(logits, 0.8, 0, 0.95, 0, scratch)
 		}
 	}
 }
