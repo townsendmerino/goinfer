@@ -187,6 +187,45 @@ kernel void gemv_w4a8_sa(device const uint4* wq[[buffer(0)]], device const half*
     SA_BODY
     if (lane==0) out[row] = acc*asc[0];
 }
+// gemv_w4a8_sa_qv: quant_vec fused into gemv_w4a8_sa — item #5 of the 9-finding audit.
+// MEASURED (metal/sa_qv_fusion_test.go, interleaved A/B timing at real dims K=N=1536):
+// roughly NEUTRAL, leaning slightly negative (~0.97x — a few percent SLOWER, not faster). NOT
+// wired into any production dispatch site — the dispatch-count argument that motivated this
+// doesn't survive contact with a wall-clock measurement, so it stays a correctness-proven,
+// kept-for-the-record experiment, not a live kernel. Takes the RAW f32 context x directly
+// instead of pre-quantized aq/asc, and does the amax-reduction + quantize step that quant_vec
+// normally does as its own dispatch, INLINE, per-threadgroup, writing straight into As instead
+// of reading pre-quantized aq. Why it doesn't win: quant_vec's amax reduction is a single O(K)
+// pass done ONCE; every threadgroup gemv_w4a8_sa launches (~N/8 of them, N = output rows) redoes
+// that SAME O(K) reduction independently here, since Metal has no cheap way for one threadgroup
+// to hand a computed scale to another within one dispatch — and that redundant cost roughly
+// cancels the removed dispatch launch + the aq/asc device-memory round-trip it saves.
+kernel void gemv_w4a8_sa_qv(device const uint4* wq[[buffer(0)]], device const half* sct[[buffer(1)]],
+    device const float* x[[buffer(2)]], device float* out[[buffer(3)]],
+    constant uint& K[[buffer(4)]], threadgroup short* As [[threadgroup(0)]], uint tgid[[threadgroup_position_in_grid]],
+    uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]],
+    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
+    threadgroup float red[256];
+    float mx = 0.0f;
+    for (uint i=tid; i<K; i+=tgs) mx = max(mx, fabs(x[i]));
+    red[tid] = mx; threadgroup_barrier(mem_flags::mem_threadgroup);
+    for (uint s=tgs/2; s>0; s>>=1) { if (tid<s) red[tid]=max(red[tid],red[tid+s]); threadgroup_barrier(mem_flags::mem_threadgroup); }
+    float sc = red[0]/127.0f; if (sc==0) sc=1; float inv=1/sc;
+    for (uint i=tid;i<K;i+=tgs) As[i]=short(clamp(int(round(x[i]*inv)),-127,127));
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    uint G = K>>5u;
+    uint row = tgid*(tgs>>5u) + sgid;
+    device const uint4* wr = wq  + (uint)row*G;
+    device const half*  sr = sct + (uint)row*G;
+    float acc = 0.0f;
+    for (uint g=lane; g<G; g+=32u) {
+        uint4 w = wr[g]; threadgroup const short* a = As + g*32u;
+        int gi = UNP8(w.x,a) + UNP8(w.y,a+8) + UNP8(w.z,a+16) + UNP8(w.w,a+24);
+        acc += float(gi) * float(sr[g]);
+    }
+    acc = simd_sum(acc);
+    if (lane==0) out[row] = acc*sc;
+}
 
 // BATCH-K W4A8 GEMM (the speculation lever): one weight matrix × KK token activations in ONE
 // pass. Each simdgroup owns one output row; it unpacks each weight group's 32 nibbles ONCE and
