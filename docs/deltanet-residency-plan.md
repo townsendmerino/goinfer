@@ -82,9 +82,23 @@ overwrites in place.
   the state row each fail the gate. Dropping the l2-norm epsilon does NOT — at ordinary magnitudes
   1e-6 is below f32 resolution — so `TestDeltaNorm_cpuParity` covers that case separately with an
   all-zero head, where `inverseSqrt(0)` poisons the state with NaN and the reference does not.
-- **The gated norm needs no shader variant.** Mamba's `ensureMambaGNorm` is already the right
-  computation with `nGroups=nv, groupSize=hv`; DeltaNet's `[hv]` weight is shared across heads, so
-  Phase 3 tiles it to `[nv*hv]` ONCE at load. Zero per-token cost, one fewer kernel to maintain.
+- **The gated norm DOES need its own kernel** — `ensureMambaGNorm` is not reusable, and the
+  first version of this line said it was. The two spell the same words and compute different
+  functions: mamba normalizes the GATED PRODUCT (`g = y·silu(z); out = w·g/rms(g)`), DeltaNet
+  normalizes the recurrence output and gates AFTERWARDS (`out = core/rms(core)·w·silu(z)`).
+  Substituting one measures cosine 0.986 and 12× RMS error — a plausible tensor of the right shape
+  with the wrong values, which is exactly the failure a shape-only reuse argument cannot see.
+  `deltaGNorm` is ~20 lines and, because DeltaNet's `[hv]` weight is indexed by `vd`, needs no
+  load-time tiling either — so the correction costs less than the reuse would have.
+- **Four kernels, not two, and they are gated CHAINED.** `deltaGates` (β and the decay, on device —
+  the alternative is a round-trip per layer per token) and `deltaGNorm` join the two above. The gate
+  runs them composed, each consuming the previous one's real GPU output, per the A′ post-mortem's
+  "isolation proves the primitive, never the composition"; each stage is scored separately so a
+  failure names the culprit. Worst over 64 steps: gates 2.3e-7, rule 6.0e-6, gnorm 1.3e-5 maxAbs/rms,
+  all at cosine 1.000000000.
+- **Still reused, unchanged:** `ensureMambaConv` covers the causal conv exactly — same shape, same
+  SiLU, same ring window; DeltaNet is bias-free, so it binds an all-zero `convB` (the `moeZeroBias`
+  precedent).
 
 **Phase 3 — wire it.** `lw.isDeltaNet` beside `lw.isMamba` in `encodeLayer`, per-layer state
 allocation, the conv window, and `FeatDeltaNet` declared for webgpu only. `decodeRunnerEligible`'s

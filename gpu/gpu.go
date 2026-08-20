@@ -211,6 +211,12 @@ type Context struct {
 	deltaNormShader    *wgpu.ShaderModule
 	deltaNormPipeline  *wgpu.ComputePipeline
 	deltaNormLayout    *wgpu.BindGroupLayout
+	deltaGatesShader   *wgpu.ShaderModule
+	deltaGatesPipeline *wgpu.ComputePipeline
+	deltaGatesLayout   *wgpu.BindGroupLayout
+	deltaGNormShader   *wgpu.ShaderModule
+	deltaGNormPipeline *wgpu.ComputePipeline
+	deltaGNormLayout   *wgpu.BindGroupLayout
 	mambaConvShader    *wgpu.ShaderModule
 	mambaConvPipeline  *wgpu.ComputePipeline
 	mambaConvLayout    *wgpu.BindGroupLayout

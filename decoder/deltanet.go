@@ -171,14 +171,15 @@ func gatedDeltaNetStep(be Backend, h []float32, w *deltaNetWeights, p qwen35Para
 		}
 	}
 
-	if deltaCapHook != nil { // test seam: hand a backend's kernel the exact inputs+output of step 3
-		bg := make([]float32, 2*nv)
+	var capPre, capGate []float32
+	if deltaCapHook != nil { // test seam: step 3's output, before step 4 overwrites it in place
+		capPre = append([]float32(nil), core...)
+		capGate = make([]float32, 2*nv)
 		for headV := range nv {
 			g := w.negExpA[headV] * softplusf(at[headV]+w.dtBias[headV])
-			bg[headV*2+0] = sigmoidf(bt[headV])
-			bg[headV*2+1] = float32(math.Exp(float64(g)))
+			capGate[headV*2+0] = sigmoidf(bt[headV])
+			capGate[headV*2+1] = float32(math.Exp(float64(g)))
 		}
-		deltaCapHook(conv, bg, core)
 	}
 
 	// 4. Gated RMSNorm (over head_v_dim, × SiLU(z)) then out_proj.
@@ -194,16 +195,26 @@ func gatedDeltaNetStep(be Backend, h []float32, w *deltaNetWeights, p qwen35Para
 			seg[vd] = seg[vd] * inv * w.normW[vd] * silu(zt[vd])
 		}
 	}
+	if deltaCapHook != nil {
+		deltaCapHook(conv, append(append([]float32(nil), bt...), at...), capGate, capPre, core, z)
+	}
 	return matvecWM(be, &w.outProj, core)
 }
 
-// deltaCapHook (test seam, gpu/deltanet_test.go) captures each step's post-conv [q|k|v] vector,
-// the per-value-head (beta, decay) pair and the PRE-NORM recurrence output — the exact inputs and
-// output of step 3, which is the only part a backend re-implements as a kernel. It exists for the
-// same reason mambaCapHook does: the recurrence output is a local that step 4 overwrites in place,
-// so a parity gate cannot reach it, and re-deriving it in the backend's test package would be a
-// second unvalidated implementation of the thing under test.
-var deltaCapHook func(conv, betaGate, core []float32)
+// deltaCapHook (test seam, gpu/deltanet_test.go) hands a backend every intermediate its kernels
+// must reproduce, per step:
+//
+//	conv     [convDim]  post-conv, post-SiLU [q|k|v]        — deltaNorm's input
+//	gateIn   [2*nv]     bt ‖ at, the raw gate projections   — deltaGates' input
+//	betaGate [2*nv]     interleaved (beta, decay)           — deltaGates' output
+//	corePre  [valueDim] step 3's output, before step 4      — deltaRule's output
+//	gated    [valueDim] post gated-RMSNorm, pre out_proj    — deltaGNorm's output
+//	z        [valueDim] the output gate, pre-SiLU           — deltaGNorm's input
+//
+// It exists for the same reason mambaCapHook does: these are locals, two of them overwritten in
+// place, so a parity gate cannot otherwise reach them — and re-deriving them in the backend's test
+// package would be a second unvalidated implementation of the thing under test.
+var deltaCapHook func(conv, gateIn, betaGate, corePre, gated, z []float32)
 
 // gatedDeltaNet runs the layer over a whole sequence from a fresh state — a thin
 // loop over gatedDeltaNetStep, so the streaming path is what the parity test

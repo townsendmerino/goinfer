@@ -11,8 +11,18 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestDeltaRule_cpuParity — the Gated-DeltaNet recurrence on the GPU vs the CPU reference, at
-// REAL head geometry, driven for enough tokens that a drifting state shows.
+// TestDeltaRule_cpuParity — the whole Gated-DeltaNet mixer chain on the GPU vs the CPU reference,
+// at REAL head geometry, driven for enough tokens that a drifting state shows.
+//
+// Four kernels, run CHAINED (each consumes the previous one's real GPU output, not the CPU's), so
+// this gates the composition the resident runner will execute rather than four isolated
+// primitives — the A′ zero-copy post-mortem's lesson, recorded as "isolation proves the primitive,
+// never the composition". Each stage is scored separately so a failure names the culprit:
+//
+//	deltaGates → (beta, decay)   deltaNorm → (q̂, k̂)   deltaRule → core   deltaGNorm → gated
+//
+// The two GEMVs and the causal conv are deliberately outside: they are ordinary matmuls and
+// mambaConv, both already gated.
 //
 // WHY REAL GEOMETRY AND NOT THE TINY GOLDEN. testdata/qwen35_deltanet_golden.json pins a real HF
 // layer, but at hk=hv=8, nv=4: 32 threads, and a state row shorter than a cache line. Qwen3.8 runs
@@ -31,16 +41,15 @@ import (
 func TestDeltaRule_cpuParity(t *testing.T) {
 	ctx := newOrSkipHW(t)
 	defer ctx.Close()
-	if err := ctx.ensureDeltaRule(); err != nil {
-		t.Fatal(err)
-	}
-	if err := ctx.ensureDeltaNorm(); err != nil {
-		t.Fatal(err)
+	for _, e := range []func() error{ctx.ensureDeltaRule, ctx.ensureDeltaNorm, ctx.ensureDeltaGates, ctx.ensureDeltaGNorm} {
+		if err := e(); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	// Qwen3.8-27B's real DeltaNet geometry. `hidden` is small on purpose: it sizes only the
-	// projections, which this kernel does not perform (they are ordinary GEMVs), while the head
-	// dims size the recurrence, which it does.
+	// projections, which these kernels do not perform (they are ordinary GEMVs), while the head
+	// dims size the recurrence, which they do.
 	const (
 		hk, hv   = 128, 128
 		nk, nv   = 16, 48
@@ -51,6 +60,7 @@ func TestDeltaRule_cpuParity(t *testing.T) {
 		keyDim   = nk * hk
 		valueDim = nv * hv
 		convDim  = 2*keyDim + valueDim
+		eps      = 1e-5
 	)
 	qScale := float32(1 / math.Sqrt(float64(hk)))
 
@@ -63,15 +73,17 @@ func TestDeltaRule_cpuParity(t *testing.T) {
 		return s
 	}
 
-	// CPU side: a whole DeltaNet layer, so the values reaching the recurrence are the reference's
-	// own — no hand-built intermediate for this test to get wrong.
+	// CPU side: a whole DeltaNet layer, so the values reaching the kernels are the reference's own
+	// — no hand-built intermediate for this test to get wrong. dtBias/negExpA/normW are held
+	// because deltaGates and deltaGNorm read them as weights.
+	dtBias, negExpA, normW := rnd(nv, 0.1), negExpRef(rnd(nv, 0.5)), rnd(hv, 0.1)
 	cw, cst := decoder.NewDeltaNetForTest(convK, hk, hv, nk, nv, hidden,
 		rnd(convDim*hidden, 0.05), rnd(valueDim*hidden, 0.05), rnd(nv*hidden, 0.05), rnd(nv*hidden, 0.05),
-		rnd(convDim*convK, 0.5), rnd(nv, 0.1), negExpRef(rnd(nv, 0.5)), rnd(hv, 0.1), rnd(hidden*valueDim, 0.05))
+		rnd(convDim*convK, 0.5), dtBias, negExpA, normW, rnd(hidden*valueDim, 0.05))
 
-	var capConv, capBG, capCore []float32
-	decoder.SetDeltaCapHook(func(conv, bg, core []float32) {
-		capConv, capBG, capCore = conv, bg, append(capCore[:0], core...) // core is overwritten by step 4
+	var capConv, capGateIn, capBG, capPre, capGated, capZ []float32
+	decoder.SetDeltaCapHook(func(conv, gateIn, bg, pre, gated, z []float32) {
+		capConv, capGateIn, capBG, capPre, capGated, capZ = conv, gateIn, bg, pre, gated, z
 	})
 	defer decoder.SetDeltaCapHook(nil)
 
@@ -84,14 +96,25 @@ func TestDeltaRule_cpuParity(t *testing.T) {
 		}
 		return b
 	}
+	init := func(label string, c []float32) *wgpu.Buffer {
+		b, e := ctx.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: label, Contents: wgpu.ToBytes(c), Usage: wgpu.BufferUsageStorage})
+		if e != nil {
+			t.Fatal(e)
+		}
+		return b
+	}
 	stor := wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst
+	out := wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc
 	convBuf := mk("conv", convDim, stor)
-	qnBuf := mk("qn", keyDim, wgpu.BufferUsageStorage)
-	knBuf := mk("kn", keyDim, wgpu.BufferUsageStorage)
 	vBuf := mk("v", valueDim, stor)
-	headPBuf := mk("headP", nv*2, stor)
+	zBuf := mk("z", valueDim, stor)
+	btBuf, atBuf := mk("bt", nv, stor), mk("at", nv, stor)
+	dtBuf, naBuf, nwBuf := init("dtBias", dtBias), init("negExpA", negExpA), init("normW", normW)
+	qnBuf, knBuf := mk("qn", keyDim, wgpu.BufferUsageStorage), mk("kn", keyDim, wgpu.BufferUsageStorage)
+	headPBuf := mk("headP", nv*2, out)
 	stateBuf := mk("state", nv*hv*hk, stor)
-	yBuf := mk("y", valueDim, wgpu.BufferUsageStorage|wgpu.BufferUsageCopySrc)
+	coreBuf := mk("core", valueDim, out)
+	gatedBuf := mk("gated", valueDim, out)
 	stag := mk("stag", valueDim, wgpu.BufferUsageMapRead|wgpu.BufferUsageCopyDst)
 	ctx.queue.WriteBuffer(stateBuf, 0, wgpu.ToBytes(make([]float32, nv*hv*hk))) // zeroed, like newDeltaState
 
@@ -105,8 +128,10 @@ func TestDeltaRule_cpuParity(t *testing.T) {
 	}
 	normDims := uni("ndims", []uint32{nk, hk, keyDim, 0, math.Float32bits(qScale), 0, 0, 0})
 	ruleDims := uni("rdims", []uint32{nv, nk, hk, hv, rep, 0, 0, 0})
+	gateDims := uni("gdims", []uint32{nv, 0, 0, 0})
+	gnDims := uni("gndims", []uint32{nv, hv, 0, 0, math.Float32bits(eps), 0, 0, 0})
 
-	bg := func(layout *wgpu.BindGroupLayout, bufs ...*wgpu.Buffer) *wgpu.BindGroup {
+	bgOf := func(layout *wgpu.BindGroupLayout, bufs ...*wgpu.Buffer) *wgpu.BindGroup {
 		ents := make([]wgpu.BindGroupEntry, len(bufs))
 		for i, b := range bufs {
 			ents[i] = wgpu.BindGroupEntry{Binding: uint32(i), Buffer: b, Size: b.GetSize()}
@@ -117,89 +142,126 @@ func TestDeltaRule_cpuParity(t *testing.T) {
 		}
 		return g
 	}
-	normBG := bg(ctx.deltaNormLayout, convBuf, qnBuf, knBuf, normDims)
-	ruleBG := bg(ctx.deltaRuleLayout, qnBuf, knBuf, vBuf, headPBuf, stateBuf, yBuf, ruleDims)
+	normBG := bgOf(ctx.deltaNormLayout, convBuf, qnBuf, knBuf, normDims)
+	gateBG := bgOf(ctx.deltaGatesLayout, btBuf, atBuf, dtBuf, naBuf, headPBuf, gateDims)
+	ruleBG := bgOf(ctx.deltaRuleLayout, qnBuf, knBuf, vBuf, headPBuf, stateBuf, coreBuf, ruleDims)
+	gnBG := bgOf(ctx.deltaGNormLayout, coreBuf, zBuf, nwBuf, gatedBuf, gnDims)
 	defer func() {
-		normBG.Release()
-		ruleBG.Release()
-		for _, b := range []*wgpu.Buffer{convBuf, qnBuf, knBuf, vBuf, headPBuf, stateBuf, yBuf, stag, normDims, ruleDims} {
+		for _, g := range []*wgpu.BindGroup{normBG, gateBG, ruleBG, gnBG} {
+			g.Release()
+		}
+		for _, b := range []*wgpu.Buffer{convBuf, vBuf, zBuf, btBuf, atBuf, dtBuf, naBuf, nwBuf,
+			qnBuf, knBuf, headPBuf, stateBuf, coreBuf, gatedBuf, stag, normDims, ruleDims, gateDims, gnDims} {
 			b.Release()
 		}
 	}()
 
-	worstCos, worstRel := 1.0, 0.0
+	read := func(src *wgpu.Buffer, n int) []float32 {
+		e2, _ := ctx.device.CreateCommandEncoder(nil)
+		e2.CopyBufferToBuffer(src, 0, stag, 0, uint64(n*4))
+		c2, _ := e2.Finish(nil)
+		ctx.queue.Submit(c2)
+		c2.Release()
+		e2.Release()
+		st := wgpu.BufferMapAsyncStatusUnknown
+		stag.MapAsync(wgpu.MapModeRead, 0, uint64(n*4), func(s wgpu.BufferMapAsyncStatus) { st = s })
+		ctx.device.Poll(true, nil)
+		if st != wgpu.BufferMapAsyncStatusSuccess {
+			t.Fatalf("map: %v", st)
+		}
+		o := make([]float32, n)
+		copy(o, wgpu.FromBytes[float32](stag.GetMappedRange(0, uint(n*4))))
+		stag.Unmap()
+		return o
+	}
+
+	// Worst-over-steps per stage, so a failure names WHICH kernel drifted rather than only that
+	// the chain did. The stages run chained (deltaRule consumes deltaGates' and deltaNorm's real
+	// GPU output, not the CPU's), so an error in an early kernel reaches the late ones — which is
+	// the composition the resident runner will actually execute.
+	type stage struct {
+		name string
+		cos  float64
+		rel  float64
+	}
+	worst := []stage{{name: "deltaGates", cos: 1}, {name: "deltaRule", cos: 1}, {name: "deltaGNorm", cos: 1}}
 	for step := range steps {
-		decoder.DeltaNetStepForTest(nil, rnd(hidden, 1.0), cw, hidden, 1e-5, cst)
-		if capCore == nil {
+		decoder.DeltaNetStepForTest(nil, rnd(hidden, 1.0), cw, hidden, eps, cst)
+		if capPre == nil {
 			t.Fatal("capture hook never fired — the gate would be vacuous")
 		}
 
 		ctx.queue.WriteBuffer(convBuf, 0, wgpu.ToBytes(capConv))
 		ctx.queue.WriteBuffer(vBuf, 0, wgpu.ToBytes(capConv[2*keyDim:]))
-		ctx.queue.WriteBuffer(headPBuf, 0, wgpu.ToBytes(capBG))
+		ctx.queue.WriteBuffer(zBuf, 0, wgpu.ToBytes(capZ))
+		ctx.queue.WriteBuffer(btBuf, 0, wgpu.ToBytes(capGateIn[:nv]))
+		ctx.queue.WriteBuffer(atBuf, 0, wgpu.ToBytes(capGateIn[nv:]))
 
 		enc, _ := ctx.device.CreateCommandEncoder(nil)
 		pass := enc.BeginComputePass(nil)
-		pass.SetPipeline(ctx.deltaNormPipeline)
-		pass.SetBindGroup(0, normBG, nil)
-		pass.DispatchWorkgroups(uint32((nk+31)/32), 1, 1)
-		pass.SetPipeline(ctx.deltaRulePipeline)
-		pass.SetBindGroup(0, ruleBG, nil)
-		pass.DispatchWorkgroups(uint32((nv*hv+63)/64), 1, 1)
+		for _, d := range []struct {
+			pl *wgpu.ComputePipeline
+			bg *wgpu.BindGroup
+			n  int
+			wg int
+		}{
+			{ctx.deltaGatesPipeline, gateBG, nv, 64},
+			{ctx.deltaNormPipeline, normBG, nk, 32},
+			{ctx.deltaRulePipeline, ruleBG, nv * hv, 64},
+			{ctx.deltaGNormPipeline, gnBG, nv, 64},
+		} {
+			pass.SetPipeline(d.pl)
+			pass.SetBindGroup(0, d.bg, nil)
+			pass.DispatchWorkgroups(uint32((d.n+d.wg-1)/d.wg), 1, 1)
+		}
 		pass.End()
 		pass.Release()
-		enc.CopyBufferToBuffer(yBuf, 0, stag, 0, uint64(valueDim*4))
 		cmd, _ := enc.Finish(nil)
 		ctx.queue.Submit(cmd)
 		cmd.Release()
 		enc.Release()
 
-		st := wgpu.BufferMapAsyncStatusUnknown
-		stag.MapAsync(wgpu.MapModeRead, 0, uint64(valueDim*4), func(s wgpu.BufferMapAsyncStatus) { st = s })
-		ctx.device.Poll(true, nil)
-		if st != wgpu.BufferMapAsyncStatusSuccess {
-			t.Fatalf("map: %v", st)
+		for i, c := range []struct {
+			want []float32
+			got  []float32
+		}{
+			{capBG, read(headPBuf, nv*2)},
+			{capPre, read(coreBuf, valueDim)},
+			{capGated, read(gatedBuf, valueDim)},
+		} {
+			cos, maxAbs := cosSim(c.want, c.got)
+			var ss float64
+			for _, v := range c.want {
+				ss += float64(v) * float64(v)
+			}
+			// Relative to RMS, not absolute: |core| grows with the state, so a fixed absolute
+			// bound would tighten silently over the run.
+			rel := maxAbs / math.Sqrt(ss/float64(len(c.want)))
+			if cos < worst[i].cos {
+				worst[i].cos = cos
+			}
+			if rel > worst[i].rel {
+				worst[i].rel = rel
+			}
 		}
-		got := make([]float32, valueDim)
-		copy(got, wgpu.FromBytes[float32](stag.GetMappedRange(0, uint(valueDim*4))))
-		stag.Unmap()
-
-		cos, maxAbs := cosSim(capCore, got)
-		var ss float64
-		for _, v := range capCore {
-			ss += float64(v) * float64(v)
-		}
-		rms := math.Sqrt(ss / valueDim)
-		rel := maxAbs / rms // absolute error alone says nothing: |core| grows with the state
-		if cos < worstCos {
-			worstCos = cos
-		}
-		if rel > worstRel {
-			worstRel = rel
-		}
-		if step < 3 || (step+1)%16 == 0 {
-			t.Logf("  step %2d: cosine=%.9f maxAbs/rms=%.3g (rms=%.4g)", step+1, cos, rel, rms)
+		if step < 2 || (step+1)%32 == 0 {
+			t.Logf("  step %2d: gates cos=%.9f  rule cos=%.9f rel=%.2g  gnorm cos=%.9f",
+				step+1, worst[0].cos, worst[1].cos, worst[1].rel, worst[2].cos)
 		}
 	}
-	t.Logf("deltaRule vs CPU, %d steps at REAL geometry (nk=%d nv=%d hk=%d hv=%d): worst cosine=%.9f worst maxAbs/rms=%.3g",
-		steps, nk, nv, hk, hv, worstCos, worstRel)
 
-	// f32-vs-f32 on identical summation order: the only legitimate sources of difference are the
-	// CPU's float64 norm accumulator and FMA contraction. The plan's kill criterion says a
-	// recurrence that drifts is worse than no kernel — do NOT loosen these without finding why.
-	if worstCos < 0.999999 || worstRel > 1e-3 {
-		t.Errorf("deltaRule drifts from the CPU recurrence: worst cosine=%.9f worst maxAbs/rms=%.3g",
-			worstCos, worstRel)
+	t.Logf("DeltaNet mixer chain vs CPU, %d steps at REAL geometry (nk=%d nv=%d hk=%d hv=%d):",
+		steps, nk, nv, hk, hv)
+	for _, w := range worst {
+		t.Logf("  %-11s worst cosine=%.9f worst maxAbs/rms=%.3g", w.name, w.cos, w.rel)
+		// f32-vs-f32 on identical summation order: the only legitimate sources of difference are
+		// the CPU's float64 norm accumulators and FMA contraction. The plan's kill criterion says
+		// a recurrence that drifts is worse than no kernel — do NOT loosen these without finding why.
+		if w.cos < 0.999999 || w.rel > 1e-3 {
+			t.Errorf("%s drifts from the CPU reference: worst cosine=%.9f worst maxAbs/rms=%.3g",
+				w.name, w.cos, w.rel)
+		}
 	}
-}
-
-// negExpRef mirrors negExpAFromLog: the CPU weights store −exp(A_log), precomputed at load.
-func negExpRef(aLog []float32) []float32 {
-	out := make([]float32, len(aLog))
-	for i, v := range aLog {
-		out[i] = float32(-math.Exp(float64(v)))
-	}
-	return out
 }
 
 // TestDeltaNorm_cpuParity gates the q/k l2-normalizer on its own, including the degenerate head
@@ -314,4 +376,13 @@ func TestDeltaNorm_cpuParity(t *testing.T) {
 		}
 	}
 	t.Logf("deltaNorm vs l2normScaled over %d heads incl. a zero head and a 1e-7 head: clean", nk)
+}
+
+// negExpRef mirrors negExpAFromLog: the CPU weights store −exp(A_log), precomputed at load.
+func negExpRef(aLog []float32) []float32 {
+	out := make([]float32, len(aLog))
+	for i, v := range aLog {
+		out[i] = float32(-math.Exp(float64(v)))
+	}
+	return out
 }

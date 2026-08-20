@@ -129,20 +129,10 @@ func (c *Context) ensureDeltaRule() error {
 	if c.deltaRulePipeline != nil {
 		return nil
 	}
-	sh, err := c.device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{
-		Label: "deltaRule", WGSLDescriptor: &wgpu.ShaderModuleWGSLDescriptor{Code: deltaRuleShaderWGSL},
-	})
+	sh, pl, err := c.compute("deltaRule", deltaRuleShaderWGSL)
 	if err != nil {
-		return fmt.Errorf("gpu: compile deltaRule: %w", err)
+		return err
 	}
-	pl, err := c.device.CreateComputePipeline(&wgpu.ComputePipelineDescriptor{
-		Label: "deltaRule", Compute: wgpu.ProgrammableStageDescriptor{Module: sh, EntryPoint: "main"},
-	})
-	if err != nil {
-		sh.Release()
-		return fmt.Errorf("gpu: pipeline deltaRule: %w", err)
-	}
-	c.track(sh.Release, pl.Release) // audit C-26: register at creation
 	c.deltaRuleShader, c.deltaRulePipeline, c.deltaRuleLayout = sh, pl, c.bgl(pl)
 	return nil
 }
@@ -151,20 +141,121 @@ func (c *Context) ensureDeltaNorm() error {
 	if c.deltaNormPipeline != nil {
 		return nil
 	}
+	sh, pl, err := c.compute("deltaNorm", deltaNormShaderWGSL)
+	if err != nil {
+		return err
+	}
+	c.deltaNormShader, c.deltaNormPipeline, c.deltaNormLayout = sh, pl, c.bgl(pl)
+	return nil
+}
+
+// deltaGates turns the two small per-value-head projections into the pair the delta rule consumes:
+// beta = sigmoid(b) and the decay gt = exp(negExpA·softplus(a + dt_bias)). nv threads (48 on the
+// real 27.8B) — trivial work, but it has to happen ON DEVICE, because the alternative is a
+// round-trip per layer per token.
+//
+// softplus carries torch's threshold=20 linear branch. Without it exp(a) overflows to +inf for
+// large a and the decay becomes NaN; with the CPU reference doing the same thing, matching it is
+// not optional.
+const deltaGatesShaderWGSL = `
+struct P { nv: u32, _a: u32, _b: u32, _c: u32 };
+@group(0) @binding(0) var<storage, read>       bt:      array<f32>;  // [nv] write-gate logits
+@group(0) @binding(1) var<storage, read>       at:      array<f32>;  // [nv] decay-gate input
+@group(0) @binding(2) var<storage, read>       dtBias:  array<f32>;  // [nv]
+@group(0) @binding(3) var<storage, read>       negExpA: array<f32>;  // [nv] = -exp(A_log)
+@group(0) @binding(4) var<storage, read_write> headP:   array<f32>;  // [nv*2]: beta, gt
+@group(0) @binding(5) var<uniform>             p:       P;
+
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let h = gid.x;
+    if (h >= p.nv) { return; }
+    let x = at[h] + dtBias[h];
+    var sp = x;
+    if (x <= 20.0) { sp = log(1.0 + exp(x)); }
+    headP[h * 2u + 0u] = 1.0 / (1.0 + exp(-bt[h]));
+    headP[h * 2u + 1u] = exp(negExpA[h] * sp);
+}
+`
+
+// deltaGNorm is DeltaNet's gated RMSNorm — and it is NOT mambaGNorm, which is the reusable-looking
+// trap here. Both spell "gated RMSNorm over a head-sized group", but the ORDER differs:
+//
+//	mamba2.go step 5:   g = y·silu(z);  out = w·g/rms(g)
+//	deltanet.go step 4: out = core/rms(core) · w · silu(z)
+//
+// Mamba normalizes the gated product; DeltaNet normalizes the recurrence output and gates
+// afterwards. Feeding one to the other would produce a plausible tensor of the right shape and the
+// wrong values, so this is a separate kernel rather than a flag on a shipped, gated one.
+//
+// One thread per VALUE head. The [hv] weight is shared across heads and indexed by vd, so unlike a
+// mamba-style [dInner] weight it needs no per-head tiling at load.
+const deltaGNormShaderWGSL = `
+struct P { nv: u32, hv: u32, _a: u32, _b: u32, eps: f32, _c: f32, _d: f32, _e: f32 };
+@group(0) @binding(0) var<storage, read>       core:  array<f32>;  // [nv*hv] recurrence output
+@group(0) @binding(1) var<storage, read>       z:     array<f32>;  // [nv*hv] output gate (pre-silu)
+@group(0) @binding(2) var<storage, read>       normW: array<f32>;  // [hv], shared across heads
+@group(0) @binding(3) var<storage, read_write> out:   array<f32>;  // [nv*hv]
+@group(0) @binding(4) var<uniform>             p:     P;
+
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let h = gid.x;
+    if (h >= p.nv) { return; }
+    let base = h * p.hv;
+    var ss = 0.0;
+    for (var i = 0u; i < p.hv; i = i + 1u) {
+        let v = core[base + i];
+        ss = ss + v * v;
+    }
+    let inv = 1.0 / sqrt(ss / f32(p.hv) + p.eps);
+    for (var i = 0u; i < p.hv; i = i + 1u) {
+        let zv = z[base + i];
+        out[base + i] = core[base + i] * inv * normW[i] * (zv / (1.0 + exp(-zv)));
+    }
+}
+`
+
+func (c *Context) ensureDeltaGates() error {
+	if c.deltaGatesPipeline != nil {
+		return nil
+	}
+	sh, pl, err := c.compute("deltaGates", deltaGatesShaderWGSL)
+	if err != nil {
+		return err
+	}
+	c.deltaGatesShader, c.deltaGatesPipeline, c.deltaGatesLayout = sh, pl, c.bgl(pl)
+	return nil
+}
+
+func (c *Context) ensureDeltaGNorm() error {
+	if c.deltaGNormPipeline != nil {
+		return nil
+	}
+	sh, pl, err := c.compute("deltaGNorm", deltaGNormShaderWGSL)
+	if err != nil {
+		return err
+	}
+	c.deltaGNormShader, c.deltaGNormPipeline, c.deltaGNormLayout = sh, pl, c.bgl(pl)
+	return nil
+}
+
+// compute is the ensure* boilerplate these four kernels share: compile, pipeline, register the
+// releases at creation (audit C-26), and wrap both errors with the kernel's name.
+func (c *Context) compute(name, wgsl string) (*wgpu.ShaderModule, *wgpu.ComputePipeline, error) {
 	sh, err := c.device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{
-		Label: "deltaNorm", WGSLDescriptor: &wgpu.ShaderModuleWGSLDescriptor{Code: deltaNormShaderWGSL},
+		Label: name, WGSLDescriptor: &wgpu.ShaderModuleWGSLDescriptor{Code: wgsl},
 	})
 	if err != nil {
-		return fmt.Errorf("gpu: compile deltaNorm: %w", err)
+		return nil, nil, fmt.Errorf("gpu: compile %s: %w", name, err)
 	}
 	pl, err := c.device.CreateComputePipeline(&wgpu.ComputePipelineDescriptor{
-		Label: "deltaNorm", Compute: wgpu.ProgrammableStageDescriptor{Module: sh, EntryPoint: "main"},
+		Label: name, Compute: wgpu.ProgrammableStageDescriptor{Module: sh, EntryPoint: "main"},
 	})
 	if err != nil {
 		sh.Release()
-		return fmt.Errorf("gpu: pipeline deltaNorm: %w", err)
+		return nil, nil, fmt.Errorf("gpu: pipeline %s: %w", name, err)
 	}
 	c.track(sh.Release, pl.Release)
-	c.deltaNormShader, c.deltaNormPipeline, c.deltaNormLayout = sh, pl, c.bgl(pl)
-	return nil
+	return sh, pl, nil
 }
