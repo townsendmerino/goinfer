@@ -350,6 +350,43 @@ of token time. The DMA inside the round trip is ~33%, and the other ~58% is kern
 which is where a further win has to come from. Removing the round trip entirely (device-side slot
 mapping) would buy at most that 5%, and A′ zero-copy is already a recorded dead end.
 
+Splitting that ~58% needed only the dispatch counter the runner already keeps and the
+11.8 µs/launch `TestCUDA_launchCost` measures through the purego FFI: **2555 launches/token**
+(64/layer — the expert loop is topK×3 on its own), ≈ 26% of generation. So the token was
+~26% dispatch, ~28% blocking expert DMA, ~8% stall+LRU, ~38% GPU.
+
+## CUDA graphs for this family: 1.47×, and my decline was wrong
+
+Declining graphs for Gated-DeltaNet models (recorded above) rested on "the mixer's buffers ARE the
+per-token recurrent state, so it cannot be captured". **That is wrong.** A replay reads CURRENT
+buffer contents — which is exactly why the MoE routing, different every token, already flows
+through a captured `segC`. Capture fixes POINTERS and launch geometry, not values. And the mixer
+has no rope, no attention and no positional uniform at all, so it is the most graph-static layer
+kind in the runner, not the least.
+
+`captureGraphs` now takes mixer + FFN-pre as ONE segment for a DeltaNet layer:
+
+    dispatch   2555 → 32 launches/token   (80×; 26% of generation → 1%)
+    throughput 10.67 → 15.69 tok/s        (1.47×)
+
+Parity is bit-identical to the live path (0.999919 dense / 0.991053 MoE, the same figures as
+without graphs), and the continuation is unchanged.
+
+**Two bugs found on the way, both invisible without a recurrent model:**
+
+1. `graphsSelfTest` runs the same token twice and requires identical logits. That premise holds for
+   attention — writing K/V at position 0 is idempotent — and is FALSE for a recurrent mixer, which
+   advances its state on every call. It reported "graph replay diverged from live" for every
+   DeltaNet model and declined graphs on a false positive. It now resets first (a no-op elsewhere).
+2. `Reset` hops to the executor via `r.do`, and `graphsSelfTest` already RUNS on the executor —
+   so the fix above deadlocked instead of failing. Split into `resetState` for on-thread callers.
+
+**THE CAVEAT THAT MATTERS: this is measured under `GOINFER_CUDA_GRAPHS_UNSAFE`.** The tenancy gate
+declines graphs under DEFAULT compute mode because replay is bit-exact only under EXCLUSIVE_PROCESS
+or MPS, and that gate is not being weakened for a speed number. A dedicated inference box can set
+the compute mode and collect the 1.47×; a shared one cannot, and gets 10.67. The self-test still
+runs either way, which is what caught (1).
+
 **MEASUREMENT HYGIENE, learned the hard way here.** One profiled run scored 5.46 tok/s against
 10.74 for identical work (byte-identical hits/misses), because an `rsync --server` was competing
 for memory bandwidth — the expert DMA reads from pinned host RAM, so unrelated I/O load lands

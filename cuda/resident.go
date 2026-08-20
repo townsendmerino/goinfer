@@ -1183,24 +1183,33 @@ func (r *cudaResident) Reset() {
 	if r.dnet == nil {
 		return
 	}
+	_ = r.do(func() error { return r.resetState() })
+}
+
+// resetState is Reset's body WITHOUT the executor hop, for callers already running on the executor
+// thread. graphsSelfTest is one: it runs inside r.do, so calling Reset there posts to reqCh from
+// the goroutine that services reqCh and deadlocks — a hang, not an error, and one that only appears
+// once graphs are actually admitted for a recurrent model.
+func (r *cudaResident) resetState() error {
+	if r.dnet == nil {
+		return nil
+	}
 	dp := r.dnet
 	winZ := make([]float32, (dp.convK-1)*dp.convDim)
 	stZ := make([]float32, dp.stateElems)
-	_ = r.do(func() error {
-		for i := range r.layers {
-			L := &r.layers[i]
-			if !L.isDeltaNet {
-				continue
-			}
-			if e := gpu.Upload(L.dnWin, winZ); e != nil {
-				return e
-			}
-			if e := gpu.Upload(L.dnState, stZ); e != nil {
-				return e
-			}
+	for i := range r.layers {
+		L := &r.layers[i]
+		if !L.isDeltaNet {
+			continue
 		}
-		return nil
-	})
+		if e := gpu.Upload(L.dnWin, winZ); e != nil {
+			return e
+		}
+		if e := gpu.Upload(L.dnState, stZ); e != nil {
+			return e
+		}
+	}
+	return nil
 }
 
 // Close shuts down the executor goroutine (and unpins its OS thread). Device buffers are
@@ -2007,6 +2016,34 @@ func (r *cudaResident) segC(Ly *cudaLayer, l int) error {
 func (r *cudaResident) captureGraphs() error {
 	for l := range r.layers {
 		Ly, ll := &r.layers[l], l
+		if Ly.isDeltaNet {
+			// A Gated-DeltaNet layer is MORE graph-static than an attention one, not less. It has
+			// no rope and no attention, so it has no per-token dynamic uniform at all — the
+			// recurrence's only per-token input is the residual, which is buffer CONTENTS. Replay
+			// reads current contents (TestCUDA_graphReplay), which is exactly why the MoE routing
+			// already flows through a captured segC unchanged.
+			//
+			// So the whole pre-routing half of the layer captures as ONE segment: mixer + FFN-pre.
+			// segB stays nil — there is no attention gap to split around.
+			gM, e := r.stream.Capture(func() error {
+				if err := r.deltaNetMixer(Ly, ll); err != nil {
+					return err
+				}
+				return r.segBFFN(Ly, ll)
+			})
+			if e != nil {
+				return fmt.Errorf("layer %d deltanet mixer+ffn: %w", l, e)
+			}
+			r.layers[l].gSegA = gM
+			if Ly.g4moe || Ly.isMoE {
+				gC, e := r.stream.Capture(func() error { return r.segC(Ly, ll) })
+				if e != nil {
+					return fmt.Errorf("layer %d segC: %w", l, e)
+				}
+				r.layers[l].gSegC = gC
+			}
+			continue
+		}
 		gA, e := r.stream.Capture(func() error { return r.segA(Ly, ll) })
 		if e != nil {
 			return fmt.Errorf("layer %d segA: %w", l, e)
@@ -2049,11 +2086,26 @@ func (r *cudaResident) launchToken(emb []float32, pos int, head bool) error {
 			// cache, no positional anything — the state IS the history). The FFN sub-block and
 			// the router-readback gap below are the ordinary ones, so this rejoins the shared
 			// path at segBFFN and everything after it is unchanged.
-			if e := r.deltaNetMixer(Ly, l); e != nil {
-				return e
-			}
-			if e := r.segBFFN(Ly, l); e != nil {
-				return e
+			//
+			// Captured as ONE segment (gSegA) when graphs are on: with no rope/attention gap there
+			// is nothing dynamic to split around, so this is the most graph-friendly layer kind in
+			// the runner — 64 launches collapsing to one replay.
+			if gA {
+				if e := Ly.gSegA.Replay(); e != nil {
+					return e
+				}
+				if r.graphsSync {
+					if e := r.stream.Sync(); e != nil {
+						return e
+					}
+				}
+			} else {
+				if e := r.deltaNetMixer(Ly, l); e != nil {
+					return e
+				}
+				if e := r.segBFFN(Ly, l); e != nil {
+					return e
+				}
 			}
 			if e := r.layerTail(Ly, l, gC); e != nil {
 				return e

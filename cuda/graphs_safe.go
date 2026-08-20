@@ -64,6 +64,18 @@ func (r *cudaResident) graphsSelfTest() error {
 		emb[i] = float32((i%13)-6) * 0.05 // deterministic, non-trivial
 	}
 	read := func(useGraphs bool) ([]float32, error) {
+		// RESET FIRST, or this comparison is invalid for a recurrent model. The test's premise is
+		// "same input twice ⇒ same logits", which holds for attention because writing K/V at
+		// position 0 is idempotent — but a Gated-DeltaNet mixer ADVANCES {conv ring, matrix state}
+		// on every call, so the second run starts from state the first run left behind and the
+		// logits differ for reasons that have nothing to do with graph capture.
+		//
+		// Without this the self-test reported "graph replay diverged from live" for every DeltaNet
+		// model and graphs were declined on a false positive. Reset is a no-op for every other
+		// family, so the attention path is unchanged.
+		if e := r.resetState(); e != nil { // already ON the executor: no r.do hop (that deadlocks)
+			return nil, e
+		}
 		r.graphs = useGraphs
 		if e := r.launchToken(emb, 0, true); e != nil {
 			return nil, e
@@ -103,16 +115,13 @@ func (r *cudaResident) admitGraphs() error {
 	if !r.graphs {
 		return nil
 	}
-	if r.dnet != nil {
-		// A Gated-DeltaNet layer's mixer runs LIVE — it is not one of the three captured segments,
-		// and the buffers it touches ARE the per-token recurrent state. Capturing around it would
-		// leave the family's 3-in-4 linear layers outside the graph anyway, so the whole benefit
-		// is gone; declining is honest rather than half-capturing. Graphs measured 1.01× on this
-		// backend regardless (they are a safety feature, not a speed one), so nothing is lost.
-		fmt.Fprintf(os.Stderr, "[cuda] CUDA graphs DECLINED: Gated-DeltaNet mixer layers run live (recurrent state)\n")
-		r.graphs = false
-		return nil
-	}
+	// NOTE: this used to decline outright for Gated-DeltaNet models, on the reasoning that the
+	// mixer's buffers ARE the per-token recurrent state and so could not be captured. That was
+	// wrong, and measurably so: a graph replay reads CURRENT buffer contents — which is precisely
+	// why the MoE routing, which changes every token, already flows through a captured segC. What
+	// matters is that the POINTERS and the launch geometry are fixed, and the mixer's are: it has
+	// no rope, no attention and no positional uniform at all. captureGraphs now takes mixer+FFN-pre
+	// as one segment, making a DeltaNet layer the most graph-friendly kind in the runner.
 	unsafe := os.Getenv("GOINFER_CUDA_GRAPHS_UNSAFE") != ""
 	reason, ok := r.graphsTenancySafe()
 	switch {

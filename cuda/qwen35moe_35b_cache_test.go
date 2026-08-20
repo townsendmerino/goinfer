@@ -102,6 +102,7 @@ func TestQwen36_35B_cache(t *testing.T) {
 	t.Logf("prompt: %d tokens via the %q template", len(ids), tmpl.Name())
 
 	nNew := 48
+	r.launchN = 0
 	t1 := time.Now()
 	ch, _ := m.Generate(context.Background(), ids, nNew, decoder.SamplingParams{Temperature: 0})
 	var out []int
@@ -120,6 +121,16 @@ func TestQwen36_35B_cache(t *testing.T) {
 		hitRate = float64(hits) / float64(hits+misses)
 	}
 	t.Logf("generated %d tokens in %s (%.2f tok/s)", len(out), genDur.Round(time.Second), rate)
+	// DISPATCH COST, from the counter the runner already keeps and the 11.8 µs/launch
+	// TestCUDA_launchCost measures through the purego FFI. Reported next to the C′ split so the
+	// token decomposes without a second instrument: whatever stall+host+dma+launch does not
+	// account for is GPU-side.
+	const usPerLaunch = 11.8
+	lpt := float64(r.launchN) / float64(max(len(out), 1))
+	launchMs := lpt * usPerLaunch / 1000 * float64(len(out))
+	t.Logf("dispatch: %d launches / %d tokens = %.0f/token ≈ %.0f ms of host issue "+
+		"at %.1f µs/launch (%.0f%% of generation)", r.launchN, len(out), lpt, launchMs,
+		usPerLaunch, 100*launchMs/float64(genDur.Milliseconds()))
 	if stall, host, dma, calls := r.CacheProfForTest(); calls > 0 {
 		tot := stall + host + dma
 		t.Logf("C′ round trip over %d layer-calls: stall %s (%.0f%%) | host %s (%.0f%%) | dma %s (%.0f%%) "+
