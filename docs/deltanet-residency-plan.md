@@ -226,8 +226,9 @@ things; the absolute is not.
   quantizes `in_proj_b`/`in_proj_a` to W8A8 where the CPU deliberately keeps them f32 (they feed
   the write/decay gates, where the recurrence is most precision-sensitive).
 - **Metal.** Declines at the feature gate, correctly.
-- **Speed on the streaming path.** 6.77 tok/s is staging, not caching — C′ step 2's LRU reuse is
-  untouched, and the routing readback is one D2H per layer per token.
+- **The next bottleneck on the streaming path is NOT expert DMA** — see the slot sweep below. Most
+  likely the 40 per-layer D2H routing readbacks, which serialize the token; that is where to look
+  next, not at more slots.
 
 ## CUDA: DONE for the dense sibling — 15.9× at released width
 
@@ -300,8 +301,25 @@ has. WebGPU can decode this family faster per layer than the CPU but cannot host
 all; the dense Qwen3.8-27B is the mirror image (portable, but 15.3 GB of dense int4 fits nowhere
 here and C′ does nothing for it).
 
-6.77 tok/s is STAGING, not caching: 8 of 256 experts per layer per token, 40 layers, no reuse
-between tokens, plus a routing readback per layer. C′ step 2's LRU is the lever, untouched.
+**C′ step 2's LRU was already implemented — its DEFAULT defeats it.** `cacheSlots` defaults to
+`topK`, so each token's 8 routed experts evict the previous token's 8 and the cache never hits.
+Raising it (`--moe-cache-slots` / `GOINFER_MOE_CACHE_SLOTS`) is the whole lever:
+
+| slots/layer | tok/s | hit rate | expert DMA/token |
+|---|---|---|---|
+| 8 (`topK`, the default) | 6.77 | ~0% | ~630 MB |
+| 48 | **10.09** | 71.1% | 265 MB |
+| 76 (capped from a 112 request) | 10.32 | 77.7% | 205 MB |
+
+**1.49× from the first step and 1.02× from the second, which is the useful part of the result.**
+Cutting DMA 630→265 MB bought half again the throughput; cutting it 265→205 bought nothing. So
+expert streaming stops being the bottleneck around 48 slots, and more VRAM spent on slots is
+wasted — the remaining cost is elsewhere (most likely the 40 per-layer D2H routing readbacks).
+A sweep that stopped at "more slots is faster" would have missed that.
+
+The cap works as designed: a 112-slot request needed 8.0 GB against 5.9 GB free and degraded to
+76 rather than OOM-ing. And the continuation is BYTE-IDENTICAL across all three slot counts, which
+is the property a cache has to have — reuse must not be observable in the output.
 
 **Four obstacles on the way, none of them the mixer:**
 

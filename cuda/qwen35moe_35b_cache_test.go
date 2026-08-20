@@ -50,6 +50,14 @@ func TestQwen36_35B_cache(t *testing.T) {
 		t.Skipf("no 35B checkpoint at %s: %v", path, err)
 	}
 	t.Setenv("GOINFER_MOE_CACHE_EXPERTS", "1")
+	// SLOT COUNT is the whole C′ step-2 lever, and its default defeats it: cacheSlots defaults to
+	// topK, so each token's 8 routed experts evict the previous token's 8 and the LRU never hits.
+	// Raising it trades VRAM for reuse — the allocator caps to what actually fits, so an
+	// over-request degrades to fewer slots rather than an OOM.
+	slots := os.Getenv("GOINFER_MOE_CACHE_SLOTS")
+	if slots != "" {
+		t.Setenv("GOINFER_MOE_CACHE_SLOTS", slots)
+	}
 
 	// The ~20 GB pinned-host allocation happens inside Load (cuMemAllocHost + copy). Time it: a
 	// slow load is expected (non-pageable, large), not a hang.
@@ -103,7 +111,18 @@ func TestQwen36_35B_cache(t *testing.T) {
 	genDur := time.Since(t1)
 	txt, _ := tk.Decode(out)
 	rate := float64(len(out)) / genDur.Seconds()
-	t.Logf("generated %d tokens in %s (%.2f tok/s, staging-bound — see the header)", len(out), genDur.Round(time.Second), rate)
+	// Cache accounting is the point of the slot knob: a miss is one expert's H2D DMA, so the hit
+	// rate IS the fraction of per-token expert bytes reuse saves. Reporting tok/s without it would
+	// leave the reader unable to tell "the DMA got faster" from "there was less DMA".
+	hits, misses := r.CacheStatsForTest()
+	hitRate := 0.0
+	if hits+misses > 0 {
+		hitRate = float64(hits) / float64(hits+misses)
+	}
+	t.Logf("generated %d tokens in %s (%.2f tok/s)", len(out), genDur.Round(time.Second), rate)
+	t.Logf("C′ cache: %d slots/layer of %d experts — %d hits / %d misses (%.1f%% hit rate, "+
+		"~%.0f MB of expert DMA per token)", r.cacheSlots, r.nE, hits, misses, hitRate*100,
+		float64(misses)/float64(max(len(out), 1))*1.97)
 	t.Logf("continuation: %q", txt)
 
 	if len(out) == 0 {
