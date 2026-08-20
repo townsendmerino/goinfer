@@ -108,8 +108,8 @@ func (s *Sampler) drawResidual(p []float64, x int) int {
 			return i
 		}
 	}
-	for i := len(p) - 1; i >= 0; i-- { // float-rounding guard: last token with mass
-		if i != x && p[i] > 0 {
+	for i, v := range slices.Backward(p) { // float-rounding guard: last token with mass
+		if i != x && v > 0 {
 			return i
 		}
 	}

@@ -38,7 +38,7 @@ func populated(v reflect.Value) (bool, int) {
 	switch v.Kind() {
 	case reflect.Slice:
 		return v.Len() > 0, v.Len()
-	case reflect.Ptr:
+	case reflect.Pointer:
 		return !v.IsNil(), 1
 	case reflect.Struct:
 		if v.CanInterface() && v.CanAddr() {

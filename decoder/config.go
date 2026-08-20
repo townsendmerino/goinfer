@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"slices"
 )
 
 // Config captures the Gemma 3 architecture constants the forward pass
@@ -636,13 +637,7 @@ func (c *Config) validateNemotron() error {
 	case c.LayerNormEpsilon <= 0:
 		return fmt.Errorf("decoder(nemotron_h): layer_norm_epsilon must be >0")
 	}
-	hasMoE := false
-	for _, t := range c.LayersBlockType {
-		if t == "moe" {
-			hasMoE = true
-			break
-		}
-	}
+	hasMoE := slices.Contains(c.LayersBlockType, "moe")
 	if !hasMoE {
 		return nil
 	}

@@ -120,8 +120,7 @@ func writeAnthropicErr(w http.ResponseWriter, code int, kind, msg string) {
 // (size-bounded, see maxBytes) body exceeded the limit, else 400. M3.
 func decodeAnthropicJSON(w http.ResponseWriter, r *http.Request, v any) bool {
 	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
-		var mbe *http.MaxBytesError
-		if errors.As(err, &mbe) {
+		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 			writeAnthropicErr(w, http.StatusRequestEntityTooLarge, "invalid_request_error", "request body too large")
 			return false
 		}

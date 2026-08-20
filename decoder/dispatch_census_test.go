@@ -112,7 +112,7 @@ func scanDispatchSites(t *testing.T) (ident, tsw []string) {
 		if err != nil {
 			t.Fatalf("read %s: %v", f, err)
 		}
-		for _, line := range strings.Split(string(raw), "\n") {
+		for line := range strings.SplitSeq(string(raw), "\n") {
 			trimmed := strings.TrimSpace(line)
 			if strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "func is") {
 				continue

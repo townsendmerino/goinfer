@@ -291,12 +291,10 @@ func LoadDFlashDrafter(dir string) (*DFlashDrafter, error) {
 	h, hd := c.HiddenSize, c.HeadDim
 	qDim, kvDim := c.NumAttentionHeads*hd, c.NumKeyValueHeads*hd
 	d := &DFlashDrafter{
-		blockTrunk: blockTrunk{
-			hidden: h, nHeads: c.NumAttentionHeads, nKV: c.NumKeyValueHeads, headDim: hd,
-			inter: c.IntermediateSize, normEps: c.RMSNormEps,
-			invFreq: computeInvFreq(theta, hd, nil),
-			layers:  make([]dflashLayer, c.NumHiddenLayers),
-		},
+		hidden: h, nHeads: c.NumAttentionHeads, nKV: c.NumKeyValueHeads, headDim: hd,
+		inter: c.IntermediateSize, normEps: c.RMSNormEps,
+		invFreq:   computeInvFreq(theta, hd, nil),
+		layers:    make([]dflashLayer, c.NumHiddenLayers),
 		blockSize: c.BlockSize, maskTokenID: c.DFlash.MaskTokenID,
 		targetLayerIDs: c.DFlash.TargetLayerIDs,
 		st:             st,

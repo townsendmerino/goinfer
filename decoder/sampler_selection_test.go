@@ -150,7 +150,7 @@ func TestTopFilterLogits_MatchesReference(t *testing.T) {
 	// (tie-heavy / tie-free, which alternate on seed parity) stay represented. All 15 configs and
 	// all 4 temperatures run for every selected seed either way.
 	var seedList []int
-	for s := 0; s < seeds; s += sweepSeedStride {
+	for s := range seeds {
 		seedList = append(seedList, s)
 	}
 

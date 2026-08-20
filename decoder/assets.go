@@ -82,10 +82,7 @@ func satisfiesAsset(a assetSpec, p string) (bool, string) {
 		if !fi.Mode().IsRegular() {
 			return false, "exists but is not a regular file"
 		}
-		min := a.MinBytes
-		if min < 1 {
-			min = 1
-		}
+		min := max(a.MinBytes, 1)
 		if fi.Size() < min {
 			return false, fmt.Sprintf("only %d bytes (min_bytes %d) — a stub or a truncated copy",
 				fi.Size(), min)

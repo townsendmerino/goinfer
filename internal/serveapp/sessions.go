@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"time"
 
@@ -205,8 +206,8 @@ func (l *sessionLRU) demoteIdle() int {
 	n := 0
 	// Walk coldest→newest and remove in place; tierOut deletes index i, leaving
 	// the lower indices we haven't visited yet unchanged.
-	for i := len(l.order) - 1; i >= 0; i-- {
-		t, ok := l.touched[l.order[i]]
+	for i, v := range slices.Backward(l.order) {
+		t, ok := l.touched[v]
 		if ok && t.After(cutoff) {
 			continue // still warm
 		}

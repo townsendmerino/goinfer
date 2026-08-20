@@ -171,7 +171,7 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 	// concatenated rows, projected and appended.
 	fuse := func(capt [][]float32, n int) error {
 		cat := make([][]float32, n)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			row := make([]float32, 0, len(capt)*hidden)
 			for _, tp := range capt {
 				row = append(row, tp[i*hidden:(i+1)*hidden]...)

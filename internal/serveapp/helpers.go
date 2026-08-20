@@ -121,8 +121,7 @@ func requireAuth(key string, h http.HandlerFunc) http.HandlerFunc {
 // 400. Returns false iff it wrote an error. M3.
 func decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
 	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
-		var mbe *http.MaxBytesError
-		if errors.As(err, &mbe) {
+		if mbe, ok := errors.AsType[*http.MaxBytesError](err); ok {
 			writeErr(w, http.StatusRequestEntityTooLarge,
 				fmt.Sprintf("request body exceeds the %d-byte limit (raise it with -max-body-bytes)", mbe.Limit))
 			return false
@@ -130,8 +129,7 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
 		// Don't echo the raw json error: UnmarshalTypeError's default string leaks the Go struct name
 		// (e.g. "…Go struct field completionReq.logprobs of type bool"), which M-06 exists to prevent.
 		// Report the JSON-side field + expected type instead (audit R-11).
-		var ute *json.UnmarshalTypeError
-		if errors.As(err, &ute) {
+		if ute, ok := errors.AsType[*json.UnmarshalTypeError](err); ok {
 			// ute.Type is a reflect.Type; for a composite field it renders the internal named type
 			// (e.g. "[]serveapp.chatMessage"), re-leaking the Go type names M-06/R-11 exist to hide.
 			// Name the expected type only for scalar kinds (bool/number/string); else stay generic (F-03).
@@ -146,8 +144,7 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
 			}
 			return false
 		}
-		var se *json.SyntaxError
-		if errors.As(err, &se) {
+		if se, ok := errors.AsType[*json.SyntaxError](err); ok {
 			writeErr(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: malformed JSON at byte %d", se.Offset))
 			return false
 		}

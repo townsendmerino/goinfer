@@ -109,7 +109,7 @@ func TestNemotron3NanoMoE_ggufConfig(t *testing.T) {
 	}
 	wantAttn := map[int]bool{5: true, 12: true, 19: true, 26: true, 33: true, 42: true}
 	mismatches := 0
-	for i := 0; i < 52; i++ {
+	for i := range 52 {
 		got := arch.nemotron.blockKind[i]
 		switch {
 		case wantAttn[i] && got != nemoAttn:

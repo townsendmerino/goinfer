@@ -148,12 +148,10 @@ func LoadDSparkDrafter(dir string) (*DSparkDrafter, error) {
 	h, hd := c.HiddenSize, c.HeadDim
 	qDim, kvDim := c.NumAttentionHeads*hd, c.NumKeyValueHeads*hd
 	d := &DSparkDrafter{
-		blockTrunk: blockTrunk{
-			hidden: h, nHeads: c.NumAttentionHeads, nKV: c.NumKeyValueHeads, headDim: hd,
-			inter: c.IntermediateSize, normEps: c.RMSNormEps,
-			invFreq: computeInvFreq(theta, hd, nil),
-			layers:  make([]dflashLayer, c.NumHiddenLayers),
-		},
+		hidden: h, nHeads: c.NumAttentionHeads, nKV: c.NumKeyValueHeads, headDim: hd,
+		inter: c.IntermediateSize, normEps: c.RMSNormEps,
+		invFreq:   computeInvFreq(theta, hd, nil),
+		layers:    make([]dflashLayer, c.NumHiddenLayers),
 		blockSize: c.BlockSize, maskTokenID: c.MaskTokenID,
 		vocab: c.VocabSize, markovRank: c.MarkovRank,
 		targetLayerIDs: c.TargetLayerIDs, confWithMarkov: c.ConfidenceHeadWithMkv,

@@ -3,6 +3,7 @@ package serveapp
 import (
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -21,8 +22,8 @@ const (
 // lastUserTurn returns the index of the last user turn (where v1 attaches the
 // image, per the Gemma 3 convention of the image leading the user content), or -1.
 func lastUserTurn(turns []chat.Turn) int {
-	for i := len(turns) - 1; i >= 0; i-- {
-		if turns[i].Role == "user" {
+	for i, turn := range slices.Backward(turns) {
+		if turn.Role == "user" {
 			return i
 		}
 	}
