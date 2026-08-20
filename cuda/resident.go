@@ -212,6 +212,7 @@ type cudaLayer struct {
 	hasShared bool
 	shGU      cudaWQ // [2*sharedInter, hidden]
 	shDown    cudaWQ // [hidden, sharedInter]
+	shGateW   cudaWQ // [1, hidden] sigmoid gate (Qwen-MoE); zero-value ⇒ ungated combine
 
 	// Gemma-4 enable_moe_block layer (parallel dense‖MoE FFN — its own gemma4MoeMLP, NOT the generic
 	// moeMLP). The dense branch reuses g/u/d; the router reuses routerW (the f32 proj with
@@ -400,6 +401,7 @@ type cudaResident struct {
 	// Shared-expert scratch (allocated only when any layer hasShared). Sized to sharedInter,
 	// which is its own width — distinct from both the dense inter and the routed moeInter.
 	shGUout, shSc, shScr, shDownOut Buffer
+	shGl                            Buffer // [1] the Qwen-MoE shared-gate logit; unused when ungated
 	shQ                             Buffer
 
 	// logitsPinned is PAGE-LOCKED host memory for the per-token logits readback. A pageable
@@ -1601,11 +1603,19 @@ func (r *cudaResident) moeMLPPost(Ly *cudaLayer) error {
 		if e := r.doG(Ly.shDown, r.shQ, r.shSc, nullBias, r.shDownOut, 0); e != nil {
 			return e
 		}
-		// ungated=1: dst[i] += shDown[i]. The gl pointer is unread when ungated, but the kernel
+		// GLM/DeepSeek add the shared output ungated; Qwen-MoE scales it by sigmoid(SharedGate·h)
+		// first. Same kernel either way. When ungated the gl pointer is unread, but the kernel
 		// still takes it, so pass a valid buffer (shSc, spare) rather than a null.
+		gl, ungated := r.shSc, int32(1)
+		if Ly.shGateW.W != (Buffer{}) {
+			if e := r.doG(Ly.shGateW, r.mq, r.mSc, nullBias, r.shGl, 0); e != nil {
+				return e
+			}
+			gl, ungated = r.shGl, 0
+		}
 		if e := r.launch(r.fSharedCombine, g1cfg(r.hidden, 256),
-			Arg(r.x), Arg(r.shDownOut), Arg(r.shSc), gpu.ArgValue(int32(r.hidden)),
-			gpu.ArgValue(int32(1))); e != nil {
+			Arg(r.x), Arg(r.shDownOut), Arg(gl), gpu.ArgValue(int32(r.hidden)),
+			gpu.ArgValue(ungated)); e != nil {
 			return e
 		}
 	}

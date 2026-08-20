@@ -226,12 +226,10 @@ things; the absolute is not.
   quantizes `in_proj_b`/`in_proj_a` to W8A8 where the CPU deliberately keeps them f32 (they feed
   the write/decay gates, where the recurrence is most precision-sensitive).
 - **Metal.** Declines at the feature gate, correctly.
-- **The MoE siblings on CUDA.** They need `FeatMoEGatedShared` (the sigmoid-gated always-on shared
-  expert) as well as `FeatDeltaNet`, and CUDA implements only the ungated combine. That is the next
-  blocker, and it is the one that matters: CUDA's C′ host→VRAM expert streaming is the only path to
-  running Qwen3.6-35B-A3B (19.2 GB at int4) or Qwen3-Next-80B on an 8 GB card, and both are MoE.
-  Qwen3.8 is dense, so C′ does nothing for it — the cheap port has no payoff here and the expensive
-  one has all of it.
+- **C′ expert streaming has not been exercised on this family.** The MoE siblings now admit on
+  CUDA, which is the prerequisite; whether the host→VRAM expert cache actually carries
+  Qwen3.6-35B-A3B (19.2 GB at int4) on an 8 GB card is untested. That is the payoff this whole
+  CUDA track was for, and it is the next thing to measure.
 
 ## CUDA: DONE for the dense sibling — 15.9× at released width
 
@@ -267,6 +265,25 @@ question produced a kernel rewrite on one backend and nothing on the other.
 **CUDA graphs decline for this family**, deliberately: the mixer runs live (its buffers ARE the
 per-token state), so capturing the three static segments would leave 3 of every 4 layers outside
 the graph and the benefit is gone. Graphs measured 1.01× on this backend anyway.
+
+**FeatMoEGatedShared followed (2026-08-20), and it was not a kernel.** `moe.cu`'s
+`shared_gate_combine` has carried an `ungated` flag since it was written, with its comment naming
+the gated case "Qwen-MoE". What CUDA lacked was the `[1,hidden]` gate weight in the build. The
+feature table said "CUDA implements only the ungated combine" — true of the wiring, false of the
+kernel, and nothing reconciled the two. So all three siblings admit on CUDA now, and `qwen2_moe`
+does too as a documented side effect (its MoE block IS the one qwen3_5_moe derives from; no
+qwen2_moe fixture exists here, so that admission rests on the inheritance).
+
+**The fixture had to be fixed before the feature could be declared.** The first attempt gated it
+through `qwen3_5_moe-tiny` and BOTH mutations passed — combining ungated scored cosine 0.983,
+comfortably inside the floor. Default init leaves `shared_expert_gate·h` near zero, so
+`sigmoid(gl) ≈ 0.5`, and at 0.5 the gated and ungated combines differ by a factor of two on a
+contribution already small next to the routed experts and the residual. A fixture that cannot
+distinguish the feature it is the only coverage of is not coverage — this is C-15's recorded
+lesson ("a cosine floor over a RANDOM-weight MoE fixture can't gate gate/up ordering") in a new
+costume. Amplifying the gate weight ×20 in the generator drives `sigmoid` to saturate per token;
+both mutations now fail at 0.9527 with drift 0.0319. Fixing the FIXTURE rather than tightening the
+floor, because a threshold tuned to catch one known bug catches only that bug.
 
 **Two wiring mutations gated:** removing Reset's DeltaNet arm (caught by the replay check, self-cosine
 0.9897 — the CPU comparison does NOT catch it), and never applying the attention output gate

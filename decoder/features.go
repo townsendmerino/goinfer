@@ -365,6 +365,20 @@ var residentBackendFeatures = map[string]map[ResidentFeature]bool{
 		FeatFinalLogitSoftcap: true, // softcap·tanh(logits/softcap) host-side after readback (finalSoftcap)
 		FeatPerLayerRoPE:      true, // per-layer invFreq buffer (Gemma local 10k vs global 1M base)
 		FeatMoE:               true, // moe_route + indexed stacked experts + ungated shared expert
+		// The SIGMOID-GATED always-on shared expert (Qwen-MoE): out += sigmoid(SharedGate·h)·shared(h).
+		// Declared 2026-08-20. The kernel was always here — moe.cu's shared_gate_combine has an
+		// `ungated` flag and its comment names the gated case "Qwen-MoE" — so what this backend
+		// actually lacked was the [1,hidden] gate weight in the build, not any device code. Worth
+		// recording: the feature table said "CUDA implements only the ungated combine", which was
+		// true of the WIRING and false of the kernel, and nothing reconciled the two.
+		//
+		// GATED BY qwen3_5_moe-tiny (cuda.TestQwen35ResidentParityCUDA), whose MoE block IS
+		// Qwen2-MoE's — transformers derives Qwen3_5MoeSparseMoeBlock from it, shared_expert_gate
+		// included. So declaring this ALSO admits qwen2_moe on cuda as a documented side effect,
+		// the same shape as Metal's FeatRopeMscale/Mellum note above: no qwen2_moe fixture exists
+		// in this tree, so that family's CUDA admission rests on the inheritance, not on its own
+		// end-to-end run. Add one if that ever stops being good enough.
+		FeatMoEGatedShared: true,
 		// Gated-DeltaNet: the deltanet.ptx mixer (conv ring + delta rule + gated norm) plus the
 		// family's fused double-width q_proj and sigmoid output gate. Declared 2026-08-20 with
 		// the end-to-end gate, not ahead of it — the same discipline the GPT-2/gpt-oss entries

@@ -31,11 +31,11 @@ Regenerate with `go test ./decoder -run HardwareMatrix -update`.
 | Nemotron-H | ✅ | ✅ resident | CPU | CPU |
 | Phi-3 / Phi-4 | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Qwen2 / Qwen2.5 | ✅ | ✅ resident | ✅ resident | ✅ resident |
-| Qwen2-MoE | ✅ | ✅ resident | CPU | ✅ resident |
+| Qwen2-MoE | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Qwen2.5-VL | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Qwen3 | ✅ | ✅ resident | ✅ resident | ✅ resident |
-| Qwen3-Next | ✅ | ✅ resident | CPU | CPU |
-| Qwen3.5-MoE | ✅ | ✅ resident | CPU | CPU |
+| Qwen3-Next | ✅ | ✅ resident | ✅ resident | CPU |
+| Qwen3.5-MoE | ✅ | ✅ resident | ✅ resident | CPU |
 | Qwen3.8 | ✅ | ✅ resident | ✅ resident | CPU |
 | gpt-oss | ✅ | CPU | CPU | ✅ resident |
 

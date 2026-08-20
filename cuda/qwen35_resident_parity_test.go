@@ -33,27 +33,34 @@ func TestQwen35ResidentParityCUDA(t *testing.T) {
 	if _, err := gc.GetDevice(0); err != nil {
 		t.Skipf("no CUDA device: %v", err)
 	}
-	// DENSE ONLY on CUDA, and deliberately: the MoE siblings need FeatMoEGatedShared (the
-	// sigmoid-gated always-on shared expert), which this backend does not implement, so they
-	// decline at the feature gate and a subtest for them would measure the staged path. WebGPU
-	// gates both. When CUDA gains that feature, add "qwen3_5_moe-tiny" here — the pairing of a
-	// DeltaNet mixer with a sparse FFN is a composition nothing else in this backend covers.
-	for _, fx := range []string{"qwen3_5-tiny"} {
-		t.Run(fx, func(t *testing.T) { qwen35ResidentParityCUDA(t, "../decoder/testdata/"+fx) })
+	// BOTH siblings. The MoE one is load-bearing twice over: it is the only CUDA coverage of a
+	// DeltaNet mixer paired with a sparse FFN in the same layer, AND the only coverage of the
+	// SIGMOID-GATED shared expert (qwen3_5_moe carries shared_expert_gate, inherited from
+	// Qwen2-MoE) that FeatMoEGatedShared claims. That feature is declared on the strength of
+	// this subtest, not ahead of it.
+	// int4 for the MoE one, and that is a real constraint rather than a convenience: this
+	// backend's stacked-expert GEMVs are W4A8 only and decline int8 experts outright. The dense
+	// sibling has no experts, so it runs at the same int8int8 the WebGPU gate uses.
+	for _, fx := range []struct{ name, quant string }{
+		{"qwen3_5-tiny", "int8int8"},
+		{"qwen3_5_moe-tiny", "int4"},
+	} {
+		t.Run(fx.name, func(t *testing.T) {
+			qwen35ResidentParityCUDA(t, "../decoder/testdata/"+fx.name, fx.quant)
+		})
 	}
 	if ck := os.Getenv("GOINFER_DNET_CKPT_CUDA"); ck != "" { // a bigger/real checkpoint, opt-in
-		t.Run("env", func(t *testing.T) { qwen35ResidentParityCUDA(t, ck) })
+		t.Run("env", func(t *testing.T) { qwen35ResidentParityCUDA(t, ck, "int8int8") })
 	}
 }
 
-func qwen35ResidentParityCUDA(t *testing.T, ckpt string) {
+func qwen35ResidentParityCUDA(t *testing.T, ckpt, quant string) {
 	if _, err := os.Stat(ckpt + "/model.safetensors"); err != nil {
 		// stat the WEIGHTS, not the directory: the fixture's config.json is committed while
 		// model.safetensors is gitignored, so a dir-existence guard would flip this skip into a
 		// hard failure on a fresh clone.
 		t.Skipf("no qwen3_5 fixture at %s (run scripts/pin_qwen3_5_forward.py [--moe]): %v", ckpt, err)
 	}
-	quant := "int8int8"
 	if v := os.Getenv("GOINFER_DNET_QUANT_CUDA"); v != "" {
 		quant = v
 	}

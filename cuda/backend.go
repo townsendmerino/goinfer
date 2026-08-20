@@ -99,10 +99,11 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	H, nLayers, nH, _, _, I, vocab := m.Dims() // nKV, hd are per-layer now (KVHeadsAtResident/HeadDimAtResident); model-level unused
 
 	// ---- MoE knobs (ok=false for a dense model; every field then stays zero) ----
-	// sharedUngated is intentionally dropped (_): CUDA admits only the UNGATED shared expert
-	// (the gated one is declined upstream by the FeatMoEGatedShared admission check), so the
-	// build never needs to branch on it.
-	nE, topK, moeInter, sharedInter, moeSig, moeNorm, _, moeScale, nGroup, topkGroup, isMoE := m.MoEResidentParams()
+	// sharedUngated picks which shared-expert combine runs: GLM/DeepSeek add the shared output
+	// straight into the residual, Qwen-MoE scales it by sigmoid(SharedGate·h) first. Both are
+	// the same kernel (shared_gate_combine, `ungated` flag); only the gated one needs the extra
+	// [1,hidden] weight.
+	nE, topK, moeInter, sharedInter, moeSig, moeNorm, sharedUngated, moeScale, nGroup, topkGroup, isMoE := m.MoEResidentParams()
 	// Gemma-4 enable_moe_block sets arch.MoE (so isMoE is true) but is NOT the generic MoE: it runs
 	// gemma4MoeMLP (parallel dense‖MoE + join), so it bypasses the generic-MoE admission checks below
 	// (gelu-tanh act, the attention sandwich norm) and gets its own int4-shape checks. Its nE/topK/
@@ -164,6 +165,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		router, routerBs []float32
 		hasShared        bool
 		shGU, shDown     hostW
+		shGate           hostW // [1, hidden] sigmoid gate (Qwen-MoE); empty ⇒ ungated (GLM/DeepSeek)
 
 		// Gemma-4 enable_moe_block (parallel dense‖MoE). g4moe routes the upload to gemma4MoeMLP's
 		// fields: the dense branch reuses g/u/d (packed from mlpGate/up/down), the router reuses
@@ -372,6 +374,15 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 					return declined(fmt.Errorf("layer %d: shared expert is %q/%q — int4-only", l, hl.shGU.kind, hl.shDown.kind))
 				}
 				hl.hasShared = true
+				if !sharedUngated {
+					// Qwen-MoE's sigmoid-gated shared expert: out += sigmoid(SharedGate·h)·shared(h).
+					// The KERNEL for this has been here all along — shared_gate_combine's ungated=0
+					// branch, documented "gated (Qwen-MoE)" — so the feature was declined for a
+					// missing [1,hidden] weight upload, not a missing kernel.
+					if hl.shGate, e = packWeight(&lw.SharedGate); e != nil {
+						return declined(fmt.Errorf("layer %d shared gate: %w", l, e))
+					}
+				}
 			}
 		}
 		hl.preNorm, hl.postNorm = lw.PreAttnNorm, lw.PreMLPNorm
@@ -860,6 +871,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				if h.hasShared {
 					L.hasShared = true
 					L.shGU, L.shDown = r.upW(h.shGU), r.upW(h.shDown)
+					if h.shGate.N > 0 {
+						L.shGateW = r.upW(h.shGate)
+					}
 				}
 			}
 			if h.g4moe {
@@ -1017,6 +1031,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				r.shGUout = r.af(2 * sharedInter)
 				r.shSc, r.shScr, r.shQ = r.af(1), r.af(sharedInter), r.ai(sharedInter/4)
 				r.shDownOut = r.af(H)
+				r.shGl = r.af(1) // the sigmoid gate logit; allocated unconditionally (one float)
 			}
 		}
 		if r.gemma4Moe { // parallel dense‖MoE branch scratch + the host zero slice to clear x2

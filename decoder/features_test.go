@@ -39,7 +39,7 @@ var archFeatureProfile = map[string][]ResidentFeature{
 	"qwen3":     {FeatQKNorm},
 	"mellum":    {FeatMoE, FeatPerLayerRoPE, FeatQKNorm, FeatRopeMscale, FeatSlidingWindow},
 	"mixtral":   {FeatMoE},
-	"qwen2_moe": {FeatMoE, FeatMoEGatedShared}, // sigmoid-gated always-on shared expert (CUDA declines it)
+	"qwen2_moe": {FeatMoE, FeatMoEGatedShared}, // sigmoid-gated always-on shared expert
 	"glm4_moe":  {FeatMoE, FeatPartialRotary, FeatQKNorm},
 	// Laguna: sigmoid-routed MoE with an UNGATED shared expert (so FeatMoE, not
 	// FeatMoEGatedShared), QK-norm, partial rotary on the full-attention layers, a
@@ -157,13 +157,8 @@ var admissionGolden = map[string][]string{
 	"phi3":       {"cuda", "metal", "webgpu"},
 	"qwen2":      {"cuda", "metal", "webgpu"},
 	"qwen2_5_vl": {"cuda", "metal", "webgpu"},
-	"qwen2_moe":  {"metal", "webgpu"},
+	"qwen2_moe":  {"cuda", "metal", "webgpu"}, // cuda joined 2026-08-20 (the gate weight, not a kernel)
 	"qwen3":      {"cuda", "metal", "webgpu"},
-	// CUDA joins on the DENSE sibling only, and the split is the point: the MoE two need
-	// FeatMoEGatedShared (the sigmoid-gated always-on shared expert) which CUDA does not
-	// implement, so the DeltaNet kernels alone do not admit them. That is a checkable fact about
-	// what is left to build, not an oversight.
-	//
 	// The Gated-DeltaNet family collapses to WEBGPU ONLY once FeatDeltaNet is in the taxonomy,
 	// and that is the whole point of adding it. Before, the rows read {cuda, metal, webgpu} for
 	// the dense one on features alone while decodeRunnerEligible refused all three upstream — an
@@ -172,9 +167,9 @@ var admissionGolden = map[string][]string{
 	// AND the fused attention output gate admits. CUDA and Metal have neither.
 	"qwen3_5":          {"cuda", "webgpu"},
 	"qwen3_5_text":     {"cuda", "webgpu"},
-	"qwen3_5_moe":      {"webgpu"},
-	"qwen3_5_moe_text": {"webgpu"},
-	"qwen3_next":       {"webgpu"}, // same arch.qwen35 != nil bridge qwen3_5_moe uses — reused directly, not a new one
+	"qwen3_5_moe":      {"cuda", "webgpu"},
+	"qwen3_5_moe_text": {"cuda", "webgpu"},
+	"qwen3_next":       {"cuda", "webgpu"}, // same arch.qwen35 != nil bridge qwen3_5_moe uses — reused directly, not a new one
 }
 
 func TestResidentAdmission_matrix(t *testing.T) {
@@ -227,7 +222,8 @@ func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 		// no GATED shared expert (Qwen2-MoE) — now expressed as FeatMoEGatedShared (which CUDA does
 		// NOT declare), so the Qwen2-MoE decline is in the shared taxonomy, not a hand-coded check.
 		"cuda": {FeatQKNorm, FeatSlidingWindow, FeatPartialRotary, FeatRMSAddOne, FeatSandwichNorm,
-			FeatGatedGELU, FeatEmbedScale, FeatPerLayerRoPE, FeatMoE, FeatFinalLogitSoftcap, FeatDeltaNet},
+			FeatGatedGELU, FeatEmbedScale, FeatPerLayerRoPE, FeatMoE, FeatFinalLogitSoftcap,
+			FeatDeltaNet, FeatMoEGatedShared},
 		"webgpu": {
 			FeatQKNorm, FeatPartialRotary, FeatSlidingWindow, FeatPerLayerRoPE, FeatRopeMscale,
 			FeatMoE, FeatMoEGatedShared, FeatMLA, FeatSSM, FeatDeltaNet, FeatNonGatedMLP, FeatLogitScale,

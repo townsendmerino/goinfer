@@ -104,6 +104,21 @@ def main():
     torch.manual_seed(0)
     if moe:
         model = Qwen3_5MoeForCausalLM(Qwen3_5MoeTextConfig(**cfg))
+        # AMPLIFY the shared-expert gate, deliberately. Default init leaves shared_expert_gate·h
+        # small, so sigmoid(gl) sits near 0.5 — and at 0.5 the GATED and UNGATED combines differ
+        # by a factor of two on a contribution that is already small next to the routed experts
+        # and the residual. Measured: a resident backend wired to combine UNGATED still scores
+        # cosine 0.983 against this fixture, comfortably inside any sane floor. A fixture that
+        # cannot distinguish the feature it is the only coverage of is not coverage.
+        #
+        # x20 drives |gl| large enough that sigmoid saturates per token, so the gated and ungated
+        # paths differ unmistakably. Nothing else about the model changes, and the golden below is
+        # recomputed from THIS model, so HF remains the reference either way.
+        with torch.no_grad():
+            for layer in model.model.layers:
+                blk = getattr(layer, "mlp", None)
+                if hasattr(blk, "shared_expert_gate"):
+                    blk.shared_expert_gate.weight.mul_(20.0)
     else:
         model = Qwen3_5ForCausalLM(Qwen3_5TextConfig(**cfg))
     model = model.eval().to(torch.float32)
