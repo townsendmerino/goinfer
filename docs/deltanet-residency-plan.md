@@ -225,9 +225,52 @@ things; the absolute is not.
   not 64 — and error in a recurrent stack compounds with depth. Separately the resident path
   quantizes `in_proj_b`/`in_proj_a` to W8A8 where the CPU deliberately keeps them f32 (they feed
   the write/decay gates, where the recurrence is most precision-sensitive).
-- **CUDA and Metal.** Both decline at the feature gate, correctly. CUDA is the next step and now
-  has a settled design to port rather than one to invent — including the head_dim 256 question,
-  which CUDA will meet too.
+- **Metal.** Declines at the feature gate, correctly.
+- **The MoE siblings on CUDA.** They need `FeatMoEGatedShared` (the sigmoid-gated always-on shared
+  expert) as well as `FeatDeltaNet`, and CUDA implements only the ungated combine. That is the next
+  blocker, and it is the one that matters: CUDA's C′ host→VRAM expert streaming is the only path to
+  running Qwen3.6-35B-A3B (19.2 GB at int4) or Qwen3-Next-80B on an 8 GB card, and both are MoE.
+  Qwen3.8 is dense, so C′ does nothing for it — the cheap port has no payoff here and the expensive
+  one has all of it.
+
+## CUDA: DONE for the dense sibling — 15.9× at released width
+
+Ported 2026-08-20. Seven kernels in `cuda/deltanet.cu` (own module; audited `moe.ptx`/`glue.ptx`
+untouched), wired into the resident runner, `FeatDeltaNet` declared for cuda.
+
+CUDA had NO recurrent state — no SSM, conv-ring or scan among its 24 kernels — so unlike WebGPU
+this could not sit on an existing engine: the causal conv and the state plumbing are new code too.
+What ported for free was the DESIGN: the transposed state layout, the five-stage split, norm-then-gate
+ordering, and the whole mutation-tested gate suite.
+
+| gate | result |
+|---|---|
+| kernel chain vs CPU, 64 steps @ real geometry | cosine 1.000000000 on all five stages |
+| `qwen3_5-tiny` resident vs CPU, 128 tokens | worst cosine 0.999919, drift 0.0001 |
+| 4 layers @ released width, 24 tokens | worst cosine 0.994835, drift 0.0016 |
+| replay after Reset | self-cosine 1.000000000 |
+
+**Decode rate, 4 layers at released width:**
+
+| quant | resident | CPU | ratio | vs WebGPU |
+|---|---|---|---|---|
+| int8int8 | 215.8 tok/s (1.158 ms/layer) | 14.6 tok/s | **14.79×** | 12.18× |
+| int4 | 321.6 tok/s (0.777 ms/layer) | 20.2 tok/s | **15.90×** | 11.40× |
+
+CUDA is 1.37× faster than WebGPU at int4, which is the expected direction (its W4A8 GEMV is the
+more tuned one) but was worth measuring rather than assuming.
+
+**No head_dim wall here.** CUDA never had WebGPU's 128-lane limit — its attention kernels are not
+one-lane-per-dim — so the released geometry ran on first contact. That asymmetry is why the same
+question produced a kernel rewrite on one backend and nothing on the other.
+
+**CUDA graphs decline for this family**, deliberately: the mixer runs live (its buffers ARE the
+per-token state), so capturing the three static segments would leave 3 of every 4 layers outside
+the graph and the benefit is gone. Graphs measured 1.01× on this backend anyway.
+
+**Two wiring mutations gated:** removing Reset's DeltaNet arm (caught by the replay check, self-cosine
+0.9897 — the CPU comparison does NOT catch it), and never applying the attention output gate
+(0.9225, caught by the drift bound).
 
 ## Kill criteria, stated up front
 

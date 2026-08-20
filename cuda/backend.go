@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"runtime"
 	"strconv"
@@ -171,7 +172,30 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		g4preFFN, g4postFFN1, g4preFFN2, g4postFFN2, g4post []float32
 		perExpertScale                                      []float32
 		layerScalar                                         float32
+
+		// Gated-DeltaNet (qwen3_5_moe / qwen3_next / qwen3_5). isDeltaNet layers carry NO
+		// q/k/v/o and no KV cache — the recurrence's fixed-size state is the whole history.
+		// qGate marks the family's SOFTMAX layers, whose q_proj is double width.
+		isDeltaNet                            bool
+		qGate                                 bool
+		dnQKV, dnZ, dnOut, dnB, dnA           hostW
+		dnConvW, dnDtBias, dnNegExpA, dnNormW []float32
 	}
+	// Gated-DeltaNet hybrid geometry. Resolved before the per-layer pack because BOTH layer kinds
+	// branch on it: the linear layers take the recurrence, and the softmax ones carry the fused
+	// double-width q_proj that no other family has.
+	dnConvK, dnHK, dnHV, dnNK, dnNV, dnAttnGate, dnetOK := m.Qwen35ResidentParams()
+	var dnetP *dnetParams
+	if dnetOK {
+		keyDim, valueDim := dnNK*dnHK, dnNV*dnHV
+		dnetP = &dnetParams{
+			convK: dnConvK, hk: dnHK, hv: dnHV, nk: dnNK, nv: dnNV, rep: dnNV / dnNK,
+			keyDim: keyDim, valueDim: valueDim, convDim: 2*keyDim + valueDim,
+			stateElems: dnNV * dnHV * dnHK,
+			qScale:     float32(1 / math.Sqrt(float64(dnHK))),
+		}
+	}
+
 	sandwich := m.SandwichNormResident()
 	hls := make([]hlayer, nLayers)
 	for l := range nLayers {
@@ -180,17 +204,39 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		hl.isMoE = isMoE && lw.Experts != nil // same key as decoder/mlp.go; false on dense prefix layers
 		g4b, isG4 := m.Gemma4MoEResidentLayer(l)
 		hl.g4moe = isG4
-		proj := []struct {
+		var proj []struct {
 			dst *hostW
 			src *linalg.WeightMat
-		}{
-			{&hl.q, &lw.QProj}, {&hl.k, &lw.KProj}, {&hl.o, &lw.OProj},
 		}
-		if !m.VFromKResident(l) { // K=V (attention_k_eq_v) global layers carry NO v_proj — V=v_norm(k)
-			proj = append(proj, struct {
-				dst *hostW
-				src *linalg.WeightMat
-			}{&hl.v, &lw.VProj})
+		type projEnt = struct {
+			dst *hostW
+			src *linalg.WeightMat
+		}
+		switch {
+		case dnetOK && m.Qwen35LinearLayer(l):
+			// Gated-DeltaNet mixer layer: no attention projections at all. The three dominant
+			// projections carry the model's quant; inB/inA are f32 on the CPU by deliberate
+			// choice (they feed the write/decay gates) and packWeight quantizes them to int8
+			// here — the one place this port is knowingly coarser than the reference.
+			hl.isDeltaNet = true
+			qkv, z, outP, inB, inA, cW, dtB, negA, nW := m.Qwen35DeltaWeights(l)
+			hl.dnConvW, hl.dnDtBias, hl.dnNegExpA, hl.dnNormW = cW, dtB, negA, nW
+			bWM := linalg.WrapF32(inB, len(dtB), H)
+			aWM := linalg.WrapF32(inA, len(dtB), H)
+			proj = []projEnt{{&hl.dnQKV, qkv}, {&hl.dnZ, z}, {&hl.dnOut, outP},
+				{&hl.dnB, &bWM}, {&hl.dnA, &aWM}}
+		case dnetOK:
+			// The same family's SOFTMAX layer. Its weights live off lw.QProj (the family keeps
+			// them in its own struct), and q_proj is DOUBLE WIDTH — [query ‖ gate] per head.
+			hl.qGate = dnAttnGate
+			qP, kP, vP, oP, qN, kN := m.Qwen35AttnWeights(l)
+			hl.qNorm, hl.kNorm = qN, kN
+			proj = []projEnt{{&hl.q, qP}, {&hl.k, kP}, {&hl.v, vP}, {&hl.o, oP}}
+		default:
+			proj = []projEnt{{&hl.q, &lw.QProj}, {&hl.k, &lw.KProj}, {&hl.o, &lw.OProj}}
+			if !m.VFromKResident(l) { // K=V (attention_k_eq_v) global layers carry NO v_proj — V=v_norm(k)
+				proj = append(proj, projEnt{&hl.v, &lw.VProj})
+			}
 		}
 		if hl.g4moe {
 			// Gemma-4 MoE dense branch: lw.GateProj/UpProj/DownProj are EMPTY (the dense MLP lives in
@@ -329,7 +375,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			}
 		}
 		hl.preNorm, hl.postNorm = lw.PreAttnNorm, lw.PreMLPNorm
-		hl.qNorm, hl.kNorm = lw.QNorm, lw.KNorm
+		if !dnetOK { // this family keeps its QK-norm weights off lw, packed with its projections above
+			hl.qNorm, hl.kNorm = lw.QNorm, lw.KNorm
+		}
 		// Gemma sandwich: the extra post-attn / post-MLP norms. Required to be present when
 		// the arch declares them — a silently-missing one would drop the norm, not error.
 		if sandwich {
@@ -341,10 +389,22 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		}
 		// Per-layer RoPE table (Gemma's local 10k vs global 1M base; Mellum's YaRN-on-global).
 		// Uniform-rope families hand back the same slice for every layer.
-		hl.invFreq = m.RopeInvFreqLayerResident(l) // Gemma 4: real per-layer table (gemma4InvFreq), not the generic one
+		if !hl.isDeltaNet {
+			hl.invFreq = m.RopeInvFreqLayerResident(l) // Gemma 4: real per-layer table, not the generic one
+		}
 		// Per-layer window: only LOCAL layers are windowed; global layers stay full causal.
 		if m.LayerIsLocalResident(l) {
 			hl.window = int32(m.SlidingWindowResident())
+		}
+		if hl.isDeltaNet {
+			// A DeltaNet layer has no attention geometry, no QK-norm and no rope table; the
+			// checks below all read those. Its own shapes are validated at upload, where the
+			// state buffers are sized from dnetParams.
+			if len(hl.preNorm) == 0 || len(hl.postNorm) == 0 {
+				return declined(fmt.Errorf("layer %d missing pre/pre-MLP norm", l))
+			}
+			hls[l] = hl
+			continue
 		}
 		if hdL := m.HeadDimAtResident(l); m.HasQKNorm() && (len(hl.qNorm) != hdL || len(hl.kNorm) != hdL) {
 			// Per-layer head_dim: Gemma 4's global layers have q_norm/k_norm of GlobalHeadDim (512),
@@ -381,6 +441,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		// C′: DMA the routed int4 experts host→VRAM slots per token (device read, correct). The
 		// path to running a model whose experts exceed VRAM. Off by default; byte-identical when off.
 		cacheExperts: m.MoECacheExperts(),
+		dnet:         dnetP,
 		// Resolve the resident KV capacity HERE, at construction, not at the KV allocation site:
 		// several buffers are sized from it earlier (the split-KV score scratch among them), and a
 		// zero-value ctxCap makes those 0-byte allocations that fail the whole resident build.
@@ -711,14 +772,70 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				}
 			}
 		}
+		if dnetP != nil {
+			// Gated-DeltaNet: its own module (nothing else here is recurrent) and its own
+			// per-token scratch. convDim is 2*nk*hk + nv*hv and bears no relation to
+			// qDim/kvDim, so none of the attention scratch can be reused for it.
+			dmod, de := r.dev.CompileLibrary(deltaNetPTX)
+			if de != nil {
+				return fmt.Errorf("cuda: JIT deltanet.ptx: %w", de)
+			}
+			var lerr error
+			loadD := func(dst *Pipeline, name string) {
+				// &r.field via a loader closure, matching every other pipeline here — the
+				// pipeline lint keys on that form, and a plain assignment reads to it as a
+				// launch with no binding.
+				pl, pe := r.dev.NewComputePipeline(dmod, name)
+				if pe != nil {
+					lerr = fmt.Errorf("cuda: deltanet kernel %q: %w", name, pe)
+					return
+				}
+				*dst = pl
+			}
+			loadD(&r.dnConv, "delta_conv")
+			loadD(&r.dnGates, "delta_gates")
+			loadD(&r.dnNorm, "delta_norm")
+			loadD(&r.dnRule, "delta_rule")
+			loadD(&r.dnGNorm, "delta_gnorm")
+			loadD(&r.dnQSplit, "delta_qsplit")
+			loadD(&r.dnAttnGate, "delta_attn_gate")
+			if lerr != nil {
+				// Hard error, not a silent degrade: unlike gpt-oss's optional epilogue, every
+				// linear layer of this family NEEDS these. A missing pipeline would dispatch
+				// null and produce garbage rather than fall back to anything.
+				return lerr
+			}
+			dp := dnetP
+			r.dnMixed, r.dnConvOut = r.af(dp.convDim), r.af(dp.convDim)
+			r.dnQn, r.dnKn = r.af(dp.keyDim), r.af(dp.keyDim)
+			r.dnHeadP, r.dnBt, r.dnAt = r.af(dp.nv*2), r.af(dp.nv), r.af(dp.nv)
+			r.dnZOut, r.dnCore, r.dnGated = r.af(dp.valueDim), r.af(dp.valueDim), r.af(dp.valueDim)
+			r.dnGq, r.dnGSc = r.ai(dp.valueDim/4), r.af(1)
+		}
 		r.layers = make([]cudaLayer, nLayers)
 		for l := range nLayers {
 			h := &hls[l]
 			L := cudaLayer{
-				idx: l,
-				q:   r.upW(h.q), k: r.upW(h.k), o: r.upW(h.o), // v uploaded below only for non-K=V layers
+				idx:     l,
 				preNorm: r.up32(h.preNorm), postNorm: r.up32(h.postNorm),
-				invF: r.up32(h.invFreq),
+			}
+			if h.isDeltaNet {
+				// Gated-DeltaNet mixer layer: no q/k/v/o, no rope table, no KV cache. Two
+				// persistent state buffers instead, both zeroed at build and re-zeroed per
+				// generation — the recurrence COMPOUNDS, so unlike a KV cache the next sequence
+				// cannot simply overwrite it.
+				dp := r.dnet
+				L.isDeltaNet = true
+				L.dnQKV, L.dnZ, L.dnOut = r.upW(h.dnQKV), r.upW(h.dnZ), r.upW(h.dnOut)
+				L.dnB, L.dnA = r.upW(h.dnB), r.upW(h.dnA)
+				L.dnConvW, L.dnDtBias = r.up32(h.dnConvW), r.up32(h.dnDtBias)
+				L.dnNegExpA, L.dnNormW = r.up32(h.dnNegExpA), r.up32(h.dnNormW)
+				L.dnWin = r.up32(make([]float32, (dp.convK-1)*dp.convDim))
+				L.dnState = r.up32(make([]float32, dp.stateElems))
+			} else {
+				L.q, L.k, L.o = r.upW(h.q), r.upW(h.k), r.upW(h.o) // v below (K=V layers have none)
+				L.invF = r.up32(h.invFreq)
+				L.qGate = h.qGate
 			}
 			if !h.isMoE {
 				// A routed layer has no dense FFN to upload: its hostW's are empty, and
@@ -728,10 +845,12 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			if r.sandwich {
 				L.postAttnNorm, L.postMLPNorm = r.up32(h.postAttnNorm), r.up32(h.postMLPNorm)
 			}
-			if h.hasBias {
+			// Both of these are ATTENTION side tables: a DeltaNet mixer layer has neither, and
+			// its nil slices would become 0-byte allocations (a hard error, not a no-op).
+			if h.hasBias && !h.isDeltaNet {
 				L.qb, L.kb, L.vb, L.hasBias = r.up32(h.qb), r.up32(h.kb), r.up32(h.vb), true
 			}
-			if r.qkNorm {
+			if r.qkNorm && !h.isDeltaNet {
 				L.qNorm, L.kNorm = r.up32(h.qNorm), r.up32(h.kNorm)
 			}
 			if h.isMoE {
@@ -762,6 +881,15 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			// head / fewer KV heads / partial rotary.
 			L.hd, L.nKV, L.rhalf = m.HeadDimAtResident(l), m.KVHeadsAtResident(l), m.RotaryDimAtResident(l)/2
 			L.qDim, L.kvDim = nH*L.hd, L.nKV*L.hd
+			if h.isDeltaNet {
+				// A DeltaNet layer has no attention geometry to validate and no rope table to
+				// bind. Leaving kvDim non-zero here would make the KV allocator below size a
+				// cache this layer never reads — real VRAM, silently wasted, on the one family
+				// that most needs it.
+				L.hd, L.nKV, L.rhalf, L.qDim, L.kvDim = 0, 0, 0, 0, 0
+				r.layers[l] = L
+				continue
+			}
 			L.kEqV = m.VFromKResident(l)
 			if !L.kEqV {
 				L.v = r.upW(h.v) // non-K=V layers have a real v_proj weight; K=V derives V from k
@@ -799,6 +927,34 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		// maxQDim (from per-layer qDim) against nH*maxHd (from the accessors independently): a
 		// mismatch means the per-layer geometry drifted from its source. GPU OOB writes don't
 		// reliably fault, so assert at plan time rather than wait for a parity red.
+		if dnetP != nil {
+			// A DeltaNet layer reports zero attention geometry, so it must not drag maxQDim/maxHd
+			// to zero for the SOFTMAX layers that share this scratch. Recompute over the
+			// attention layers only, and check the invariant against those.
+			maxQDim, maxKVDim, maxHd = 0, 0, 0
+			for l := range r.layers {
+				if r.layers[l].isDeltaNet {
+					continue
+				}
+				if q := r.layers[l].qDim; q > maxQDim {
+					maxQDim = q
+				}
+				if k := r.layers[l].kvDim; k > maxKVDim {
+					maxKVDim = k
+				}
+				if d := m.HeadDimAtResident(l); d > maxHd {
+					maxHd = d
+				}
+			}
+			if maxQDim == 0 {
+				return fmt.Errorf("cuda: every layer is a DeltaNet mixer — no softmax layer to size attention scratch from; this family is 3:1, so a model with none is a loader bug, not a valid shape")
+			}
+			if dnAttnGate {
+				// The softmax layers' fused q_proj is double width; both halves live in dnQg
+				// until delta_qsplit separates them into qB and the gate.
+				r.dnQg, r.dnAGate = r.af(2*maxQDim), r.af(maxQDim)
+			}
+		}
 		if maxQDim != nH*maxHd {
 			return fmt.Errorf("cuda: scratch maxQDim=%d != nH*maxHd=%d*%d=%d — per-layer geometry inconsistent with the accessors", maxQDim, nH, maxHd, nH*maxHd)
 		}
@@ -819,6 +975,11 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			// accessors derive and launchToken INDEXES with. A future edit that sized from a stale
 			// model-level kvDim while the launch indexed per-layer would index off the end into
 			// garbage output, not a panic — so fail loudly at plan time.
+			if r.layers[l].isDeltaNet {
+				// No KV cache for a recurrent mixer. Allocating one would be pure waste on the
+				// family least able to afford it: 3 of every 4 layers are this kind.
+				continue
+			}
 			if want := m.KVHeadsAtResident(l) * m.HeadDimAtResident(l); r.layers[l].kvDim != want {
 				return fmt.Errorf("cuda: layer %d KV cache kvDim=%d != nKV*hd=%d (accessor-derived) — geometry/cache-size mismatch", l, r.layers[l].kvDim, want)
 			}

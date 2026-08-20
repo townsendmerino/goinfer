@@ -1419,16 +1419,16 @@ parity discipline still applies per-change: goldens, `TestParityManifest_fresh`,
   parallel-for on `cuda/resident.go`'s serial tanh loop; bit-identical; needs Linux to build/measure.
 - **CUDA g4x2 accumulator clear: H2D per MoE layer per token** (Cursor audit, verified). `cudaResident`
   clears the `g4x2` expert accumulator by uploading host zeros (`g4zero`, "no D2D helper" —
-  cuda/resident.go:365,1182) every MoE layer. An on-stream memset/zero kernel removes an H2D (and its
+  cuda/resident.go:397,1182) every MoE layer. An on-stream memset/zero kernel removes an H2D (and its
   implicit null-stream sync) per MoE layer per token. cuda/ not frozen; bit-identical (a zero is a zero).
 
 ### Medium / larger — verify + measure before funding
-- **MoE expert-cache host round-trip.** `loadRoutedExperts` (cuda/resident.go:613) does Sync → D2H routing
+- **MoE expert-cache host round-trip.** `loadRoutedExperts` (cuda/resident.go:645) does Sync → D2H routing
   indices → H2D expert misses; the Metal paged path is worse (submit/wait per layer, `metal/gemma4_moe.go`).
   A device-side gather or async overlap matters whenever experts are paged — see the standing verdict that
   synchronous MoE paging is dead and *speculative prefetch* is the path (memory: Metal MoE paging needs
   speculation). cuda/metal not frozen.
-- **Parallel top-k expert GEMVs.** `moeMLPPost` (cuda/resident.go:1096) runs the selected experts
+- **Parallel top-k expert GEMVs.** `moeMLPPost` (cuda/resident.go:1171) runs the selected experts
   sequentially. Concurrent launches need separate per-expert scratch + an ORDERED combine, or the FMA
   association changes and the bit-identity gate fails. Real but bit-identity-delicate; measure the win
   against the added scratch VRAM.

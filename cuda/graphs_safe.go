@@ -103,6 +103,16 @@ func (r *cudaResident) admitGraphs() error {
 	if !r.graphs {
 		return nil
 	}
+	if r.dnet != nil {
+		// A Gated-DeltaNet layer's mixer runs LIVE — it is not one of the three captured segments,
+		// and the buffers it touches ARE the per-token recurrent state. Capturing around it would
+		// leave the family's 3-in-4 linear layers outside the graph anyway, so the whole benefit
+		// is gone; declining is honest rather than half-capturing. Graphs measured 1.01× on this
+		// backend regardless (they are a safety feature, not a speed one), so nothing is lost.
+		fmt.Fprintf(os.Stderr, "[cuda] CUDA graphs DECLINED: Gated-DeltaNet mixer layers run live (recurrent state)\n")
+		r.graphs = false
+		return nil
+	}
 	unsafe := os.Getenv("GOINFER_CUDA_GRAPHS_UNSAFE") != ""
 	reason, ok := r.graphsTenancySafe()
 	switch {

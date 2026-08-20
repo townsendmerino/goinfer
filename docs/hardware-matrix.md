@@ -36,7 +36,7 @@ Regenerate with `go test ./decoder -run HardwareMatrix -update`.
 | Qwen3 | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Qwen3-Next | ✅ | ✅ resident | CPU | CPU |
 | Qwen3.5-MoE | ✅ | ✅ resident | CPU | CPU |
-| Qwen3.8 | ✅ | ✅ resident | CPU | CPU |
+| Qwen3.8 | ✅ | ✅ resident | ✅ resident | CPU |
 | gpt-oss | ✅ | CPU | CPU | ✅ resident |
 
 Resident acceleration above is CAPABILITY (does the backend implement the family's

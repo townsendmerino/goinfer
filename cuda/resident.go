@@ -222,6 +222,24 @@ type cudaLayer struct {
 	perExpertScaleB                                        Buffer  // [nE] learned scale on the renormalized top-k weights
 	layerScalar                                            float32 // per-layer output scalar (out = (h+combined)*layerScalar)
 
+	// Gated-DeltaNet mixer layer (Qwen3.5/3.6-MoE, Qwen3-Next, Qwen3.8). When isDeltaNet this
+	// layer's sequence mixer is the recurrent delta rule (deltanet.cu) instead of attention: no
+	// KV cache, no q/k/v/o, and TWO persistent state buffers updated in place per token.
+	//
+	// dnState is [nv*hv*hk] and stored TRANSPOSED relative to the CPU's [hk,hv] so each thread
+	// owns a contiguous row. dnWin is the causal-conv ring, [(K-1)*convDim]. Both COMPOUND, so
+	// both are re-zeroed per generation (Reset) — unlike a KV cache, which the next sequence
+	// simply overwrites.
+	isDeltaNet                   bool
+	dnQKV, dnZ, dnOut, dnB, dnA  cudaWQ // the five DeltaNet projections
+	dnConvW, dnDtBias, dnNegExpA Buffer // conv taps, dt bias, precomputed -exp(A_log)
+	dnNormW                      Buffer // [hv] gated-RMSNorm weight, shared across heads
+	dnWin, dnState               Buffer // persistent: conv ring, recurrent matrix state
+	// qGate marks a SOFTMAX layer of the same family: q_proj is double width ([query ‖ gate] per
+	// head) and the context is scaled by sigmoid(gate) before o_proj. The weight stays fused
+	// because it is quantized; the split happens on the activation.
+	qGate bool
+
 	// CUDA-graph capture of this layer's three STATIC launch segments (r.graphs). segA = QKV proj +
 	// qk/v-norm (pre-RoPE); segB = ctx-quant + o-proj + the MLP up to the router readback; segC =
 	// the expert loop + join (nil for a dense layer — no readback gap). rope_kv, attention, the g4x2
@@ -326,6 +344,12 @@ type cudaResident struct {
 	// gpt-oss only (nil elsewhere, and every other family's launches pass ArgNull so the
 	// kernels stay bit-identical): the clamped interleaved-SwiGLU expert epilogue, plus the
 	// per-layer attention sinks and the per-expert gate‖up bias table it needs.
+	// Gated-DeltaNet mixer (deltanet.ptx — own module; nothing else here is recurrent).
+	// Loaded only for that family; every other model leaves these zero and never dispatches them.
+	dnConv, dnGates, dnNorm, dnRule, dnGNorm Pipeline
+	dnQSplit, dnAttnGate                     Pipeline // the family's fused double-width q_proj + output gate
+	dnet                                     *dnetParams
+
 	gptOssSw                                                Pipeline // glu_quant_gptoss (own module — audited glue.ptx/moe.ptx untouched)
 	gptOssAlpha, gptOssLimit                                float32
 	gptOssSinks                                             []Buffer     // [layer] → [nH] learned per-head attention sink logits
@@ -356,7 +380,15 @@ type cudaResident struct {
 	// reusing gO/uO/dq here would overrun on some archs and silently under-read on others.
 	rLogits, rWgt, moeGU, moeSc, moeScr Buffer
 	rIdx                                Buffer
-	moeQ                                Buffer
+
+	// Gated-DeltaNet per-token scratch (allocated only when any layer isDeltaNet). Sized from
+	// dnetParams, which is NOT the attention geometry: convDim is 2*nk*hk + nv*hv and has no
+	// relation to qDim/kvDim, so none of the buffers above can be reused for it.
+	dnMixed, dnConvOut, dnQn, dnKn, dnHeadP, dnBt, dnAt, dnZOut, dnCore, dnGated Buffer
+	dnQq, dnSc, dnGq, dnGSc                                                      Buffer // int8 activation + scale for the two quantized GEMV inputs
+	dnQg                                                                         Buffer // [2*qDim] the fused [query ‖ gate] q_proj output, before the split
+	dnAGate                                                                      Buffer // [qDim] attention output gate (qGate layers)
+	moeQ                                                                         Buffer
 
 	// Gemma-4 MoE branch scratch [hidden] (allocated only when gemma4Moe). x1 = dense branch, x2 =
 	// expert-sum branch, rn = the router's weightless-normed raw-h input. Kept SEPARATE from r.x
@@ -985,6 +1017,11 @@ func (r *cudaResident) Forward(embedding []float32, pos int) ([]float32, error) 
 	if e := r.checkCap(pos, 1); e != nil {
 		return nil, e
 	}
+	if pos == 0 {
+		// Fresh sequence: re-zero the compounding Gated-DeltaNet state so it does not carry over
+		// from a prior Generate on this *Model (audit C-01). No-op for every other family.
+		r.Reset()
+	}
 	var out []float32
 	err := r.do(func() error {
 		o, e := r.step(embedding, pos)
@@ -1001,6 +1038,9 @@ func (r *cudaResident) Forward(embedding []float32, pos int) ([]float32, error) 
 func (r *cudaResident) ForwardNoLogits(embedding []float32, pos int) error {
 	if e := r.checkCap(pos, 1); e != nil {
 		return e
+	}
+	if pos == 0 {
+		r.Reset() // prefill from 0 is also a fresh sequence — same reason as Forward
 	}
 	return r.do(func() error {
 		if e := r.launchToken(embedding, pos, false); e != nil {
@@ -1028,12 +1068,19 @@ func (r *cudaResident) ForwardN(embeddings [][]float32, startPos int) ([][]float
 	// lossless-vs-sequential check). Falls back to the per-token loop for archs the batched path
 	// doesn't cover (MoE / K=V / non-int4 / non-uniform geometry) — errPrefillDeclined only; a real
 	// compute error propagates. spec verify runs M≤9, so batched allocation is tiny (no OOM concern).
-	if r.prefillReady {
+	// The BATCHED (weight-stationary) path has no notion of recurrent state: it runs M rows in one
+	// pass over the weights, while a Gated-DeltaNet layer's conv ring and matrix state must advance
+	// strictly one token at a time and in order. Take the sequential loop below, which is the same
+	// r.step this family's decode uses, so prefill and decode see the same state evolution.
+	if r.prefillReady && r.dnet == nil {
 		if outs, _, err := r.prefillCore(embeddings, startPos, tailAllLogits); err == nil {
 			return outs, nil
 		} else if !errors.Is(err, errPrefillDeclined) {
 			return nil, err
 		}
+	}
+	if startPos == 0 {
+		r.Reset() // fresh sequence — the recurrent state compounds and is not positional
 	}
 	out := make([][]float32, len(embeddings))
 	err := r.do(func() error {
@@ -1070,7 +1117,35 @@ func (r *cudaResident) UploadKV(layer int, keys, vals []float32) error {
 func (r *cudaResident) TruncateTo(pos int) {}
 
 // Reset clears resident KV for a fresh generation (positions are overwritten on write).
-func (r *cudaResident) Reset() {}
+// Reset re-zeroes the compounding recurrent state for a fresh generation. A KV cache needs no
+// reset — the next sequence overwrites it positionally, which is why this was empty — but a
+// Gated-DeltaNet layer's {conv ring, matrix state} is NOT positional: it accumulates, and without
+// this the next Generate on the same *Model decodes from the previous one's state (audit C-01's
+// shape). The state buffers are allocated zeroed, so the FIRST generation is correct either way,
+// which is exactly what makes the omission invisible to a single-sequence test.
+func (r *cudaResident) Reset() {
+	if r.dnet == nil {
+		return
+	}
+	dp := r.dnet
+	winZ := make([]float32, (dp.convK-1)*dp.convDim)
+	stZ := make([]float32, dp.stateElems)
+	_ = r.do(func() error {
+		for i := range r.layers {
+			L := &r.layers[i]
+			if !L.isDeltaNet {
+				continue
+			}
+			if e := gpu.Upload(L.dnWin, winZ); e != nil {
+				return e
+			}
+			if e := gpu.Upload(L.dnState, stZ); e != nil {
+				return e
+			}
+		}
+		return nil
+	})
+}
 
 // Close shuts down the executor goroutine (and unpins its OS thread). Device buffers are
 // freed by primary-context teardown at process exit; a per-buffer free is unnecessary for
@@ -1696,7 +1771,20 @@ func (r *cudaResident) segA(Ly *cudaLayer, l int) error {
 		if e := r.rms(r.x, Ly.preNorm, r.aq, r.aSc); e != nil {
 			return e
 		}
-		if e := r.doG(Ly.q, r.aq, r.aSc, qb, r.qB, 0); e != nil {
+		if Ly.qGate {
+			// attn_output_gate: q_proj emits [query ‖ gate] PER HEAD at double width. Project into
+			// a 2*qDim scratch and split on the ACTIVATION — the weight stays fused because it is
+			// quantized, and slicing rows out of an int4 bundle with its per-group scales is real
+			// surgery. Interleaved per head, NOT two concatenated blocks.
+			if e := r.doG(Ly.q, r.aq, r.aSc, qb, r.dnQg, 0); e != nil {
+				return e
+			}
+			if e := r.launch(r.dnQSplit, g1cfg(Ly.qDim, 256),
+				Arg(r.dnQg), Arg(r.qB), Arg(r.dnAGate),
+				gpu.ArgValue(int32(Ly.qDim)), gpu.ArgValue(int32(Ly.hd))); e != nil {
+				return e
+			}
+		} else if e := r.doG(Ly.q, r.aq, r.aSc, qb, r.qB, 0); e != nil {
 			return e
 		}
 		if err := r.doG(Ly.k, r.aq, r.aSc, kb, r.kB, 0); err != nil {
@@ -1743,6 +1831,12 @@ func (r *cudaResident) segA(Ly *cudaLayer, l int) error {
 // MoE pre-readback half (moeMLPPre / gemma4MoeMLPPre) for a routed layer.
 func (r *cudaResident) segB(Ly *cudaLayer, l int) error {
 	nullBias := ArgNull()
+	if Ly.qGate { // ctx *= sigmoid(gate), before o_proj (matches the CPU qwen35Attention)
+		if err := r.launch(r.dnAttnGate, g1cfg(Ly.qDim, 256),
+			Arg(r.cctx), Arg(r.dnAGate), gpu.ArgValue(int32(Ly.qDim))); err != nil {
+			return err
+		}
+	}
 	if err := r.launch(r.fQ, onecfg(256, 256*4), Arg(r.cctx), gpu.ArgValue(int32(Ly.qDim)), Arg(r.cq), Arg(r.cSc)); err != nil {
 		return err
 	}
@@ -1764,6 +1858,15 @@ func (r *cudaResident) segB(Ly *cudaLayer, l int) error {
 			return err
 		}
 	}
+	return r.segBFFN(Ly, l)
+}
+
+// segBFFN is segB's FFN half, split out so the Gated-DeltaNet mixer can reuse it. The mixer
+// replaces everything segB does BEFORE this point (ctx-quant, o-proj, residual) and nothing after
+// it: a DeltaNet layer's FFN sub-block is the ordinary one, dense or MoE, and the router readback
+// gap + segC that follow in launchToken are likewise unchanged.
+func (r *cudaResident) segBFFN(Ly *cudaLayer, l int) error {
+	nullBias := ArgNull()
 	if Ly.g4moe {
 		return r.gemma4MoeMLPPre(Ly, l)
 	}
@@ -1877,6 +1980,22 @@ func (r *cudaResident) launchToken(emb []float32, pos int, head bool) error {
 	gC := useGraphs && (r.graphMask == "" || strings.Contains(r.graphMask, "C"))
 	for l := 0; l < r.nLayers; l++ {
 		Ly := &r.layers[l]
+		if Ly.isDeltaNet {
+			// Gated-DeltaNet mixer: replaces segA + rope + attention + o-proj entirely (no KV
+			// cache, no positional anything — the state IS the history). The FFN sub-block and
+			// the router-readback gap below are the ordinary ones, so this rejoins the shared
+			// path at segBFFN and everything after it is unchanged.
+			if e := r.deltaNetMixer(Ly, l); e != nil {
+				return e
+			}
+			if e := r.segBFFN(Ly, l); e != nil {
+				return e
+			}
+			if e := r.layerTail(Ly, l, gC); e != nil {
+				return e
+			}
+			continue
+		}
 		// segA: QKV proj + qk/v-norm (pre-RoPE, static).
 		if gA {
 			if e := Ly.gSegA.Replay(); e != nil {
@@ -1953,58 +2072,8 @@ func (r *cudaResident) launchToken(emb []float32, pos int, head bool) error {
 		// --- dynamic gap: clear the g4moe accumulator (H2D), then, if caching, read the routing back
 		// to the host and DMA the routed experts into their VRAM slots (D2H+H2D). Host copies, not
 		// graph-capturable; synchronous, so the slots are filled before segC replays.
-		if Ly.g4moe {
-			// segC(l-1) writes AND reads g4x2 on r.stream (CU_STREAM_NON_BLOCKING); gpu.Upload runs the
-			// zero-fill copy on the context's legacy null stream, which has NO ordering vs r.stream
-			// (aikit gpu/cuda.go) — its full sync fixes upload→next-launch, not pending-launch→upload.
-			// Without this, the DMA can land mid-segC(l-1) and zero the previous layer's expert
-			// contribution before the join reads it: a data race on every g4moe layer after the first.
-			// Sync r.stream so the clear is ordered after the prior layer's kernels (audit R-03).
-			if e := r.stream.Sync(); e != nil {
-				return e
-			}
-			if e := gpu.Upload(r.g4x2, r.g4zero); e != nil {
-				return e
-			}
-		}
-		if (Ly.g4moe || Ly.isMoE) && r.cacheExperts {
-			if e := r.loadRoutedExperts(Ly); e != nil {
-				return e
-			}
-		}
-		// segC: the post-readback MoE half (expert loop + join). Dense layers have none.
-		if Ly.g4moe || Ly.isMoE {
-			if gC {
-				if e := Ly.gSegC.Replay(); e != nil {
-					return e
-				}
-				if r.graphsSync {
-					if err := r.stream.Sync(); err != nil {
-						return err
-					}
-				}
-			} else if e := r.segC(Ly, l); e != nil {
-				return e
-			}
-		}
-		// hidden-state seam: this layer's OUTPUT residual, for a drafter that taps it.
-		if len(r.hidCapTaps) > 0 {
-			for slot, tap := range r.hidCapTaps {
-				if tap == l {
-					r.capVec(r.x, r.hidCapOut, slot, r.hidden)
-					break
-				}
-			}
-		}
-		if r.layerCap { // DEBUG: snapshot the residual after this layer (divergence-localization probe)
-			if err := r.stream.Sync(); err != nil {
-				return err
-			}
-			h := make([]float32, r.hidden)
-			if err := gpu.Download(r.x, h); err != nil {
-				return err
-			}
-			r.layerCapBuf = append(r.layerCapBuf, h)
+		if e := r.layerTail(Ly, l, gC); e != nil {
+			return e
 		}
 	}
 	// Final norm + LM head — skipped for KV-only prefill (head=false): prompt[:-1] tokens need only
@@ -2197,3 +2266,152 @@ func (r *cudaResident) SetHiddenCapture(taps []int) error {
 // HiddenCapture returns the most recent token's captured layer outputs, one row per tap in
 // SetHiddenCapture order. The rows are owned by the caller (capVec allocates per token).
 func (r *cudaResident) HiddenCapture() [][]float32 { return r.hidCapOut }
+
+// dnetParams carries the model-level Gated-DeltaNet geometry (uniform across the linear layers).
+// keyDim/valueDim/convDim are derived once rather than at every dispatch because the three are
+// easy to conflate: convDim is 2*keyDim+valueDim (the conv runs over [q|k|v] together), and
+// rep = nv/nk is the GVA factor mapping value heads to key heads.
+type dnetParams struct {
+	convK      int
+	hk, hv     int
+	nk, nv     int
+	rep        int
+	keyDim     int
+	valueDim   int
+	convDim    int
+	stateElems int
+	qScale     float32
+}
+
+// deltaNetMixer runs one Gated-DeltaNet layer's sequence mixer and folds its output into the
+// residual — the recurrent replacement for segA + rope + attention + o-proj.
+//
+//	norm → in_proj_qkv → conv(ring) → l2norm(q,k) → gates → delta rule(state) → gated norm × silu(z)
+//	     → out_proj + residual
+//
+// NOT GRAPH-CAPTURED. The three static segments exist so CUDA graphs can replay them; this path
+// runs live. That costs nothing real — graphs measured 1.01× on this backend and are off by
+// default — and it avoids capturing launches over buffers whose contents ARE the per-token state.
+//
+// The two small gate projections (dnB/dnA) run off the SAME quantized activation as the big ones.
+// On the CPU they are f32 by deliberate choice: deltaNetWeights keeps inProjB/inProjA unquantized
+// because they feed the write/decay gates, where the recurrence is most precision-sensitive. This
+// is the one place the resident path is knowingly coarser than the reference, and the parity gate
+// scores the gates as their own stage so the cost of that choice is visible rather than assumed.
+func (r *cudaResident) deltaNetMixer(Ly *cudaLayer, l int) error {
+	dp := r.dnet
+	nullBias := ArgNull()
+	if e := r.rms(r.x, Ly.preNorm, r.aq, r.aSc); e != nil {
+		return e
+	}
+	if e := r.doG(Ly.dnQKV, r.aq, r.aSc, nullBias, r.dnMixed, 0); e != nil {
+		return e
+	}
+	if e := r.doG(Ly.dnB, r.aq, r.aSc, nullBias, r.dnBt, 0); e != nil {
+		return e
+	}
+	if e := r.doG(Ly.dnA, r.aq, r.aSc, nullBias, r.dnAt, 0); e != nil {
+		return e
+	}
+	if e := r.doG(Ly.dnZ, r.aq, r.aSc, nullBias, r.dnZOut, 0); e != nil {
+		return e
+	}
+	if e := r.launch(r.dnConv, g1cfg(dp.convDim, 256),
+		Arg(r.dnMixed), Arg(Ly.dnConvW), Arg(Ly.dnWin), Arg(r.dnConvOut),
+		gpu.ArgValue(int32(dp.convDim)), gpu.ArgValue(int32(dp.convK))); e != nil {
+		return e
+	}
+	if e := r.launch(r.dnGates, g1cfg(dp.nv, 64),
+		Arg(r.dnBt), Arg(r.dnAt), Arg(Ly.dnDtBias), Arg(Ly.dnNegExpA), Arg(r.dnHeadP),
+		gpu.ArgValue(int32(dp.nv))); e != nil {
+		return e
+	}
+	if e := r.launch(r.dnNorm, LaunchConfig{GridX: uint32(dp.nk), GridY: 1, GridZ: 1,
+		BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: 2 * 128 * 4},
+		Arg(r.dnConvOut), Arg(r.dnQn), Arg(r.dnKn),
+		gpu.ArgValue(int32(dp.nk)), gpu.ArgValue(int32(dp.hk)), gpu.ArgValue(int32(dp.keyDim)),
+		gpu.ArgValue(dp.qScale)); e != nil {
+		return e
+	}
+	// v is the conv output's third slice; vBase points at it rather than copying it out.
+	if e := r.launch(r.dnRule, g1cfg(dp.valueDim, 128),
+		Arg(r.dnQn), Arg(r.dnKn), Arg(r.dnConvOut), Arg(r.dnHeadP), Arg(Ly.dnState), Arg(r.dnCore),
+		gpu.ArgValue(int32(dp.nv)), gpu.ArgValue(int32(dp.hk)), gpu.ArgValue(int32(dp.hv)),
+		gpu.ArgValue(int32(dp.rep)), gpu.ArgValue(int32(2*dp.keyDim))); e != nil {
+		return e
+	}
+	if e := r.launch(r.dnGNorm, LaunchConfig{GridX: uint32(dp.nv), GridY: 1, GridZ: 1,
+		BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: 128 * 4},
+		Arg(r.dnCore), Arg(r.dnZOut), Arg(Ly.dnNormW), Arg(r.dnGated),
+		gpu.ArgValue(int32(dp.nv)), gpu.ArgValue(int32(dp.hv)), gpu.ArgValue(r.eps)); e != nil {
+		return e
+	}
+	// Quantize the gated output, then out_proj straight into the residual (accum=1), exactly as
+	// the attention path's o-proj does.
+	if e := r.launch(r.fQ, onecfg(256, 256*4),
+		Arg(r.dnGated), gpu.ArgValue(int32(dp.valueDim)), Arg(r.dnGq), Arg(r.dnGSc)); e != nil {
+		return e
+	}
+	return r.doG(Ly.dnOut, r.dnGq, r.dnGSc, nullBias, r.x, 1)
+}
+
+// layerTail is everything launchToken does AFTER the FFN pre-half: the g4moe accumulator clear,
+// the C′ expert DMA, segC, and the two capture seams. Split out so the Gated-DeltaNet mixer path
+// rejoins it instead of duplicating it — a DeltaNet layer's FFN can be MoE (qwen3_5_moe,
+// qwen3_next) and would otherwise skip the router readback entirely.
+func (r *cudaResident) layerTail(Ly *cudaLayer, l int, gC bool) error {
+	if Ly.g4moe {
+		// segC(l-1) writes AND reads g4x2 on r.stream (CU_STREAM_NON_BLOCKING); gpu.Upload runs the
+		// zero-fill copy on the context's legacy null stream, which has NO ordering vs r.stream
+		// (aikit gpu/cuda.go) — its full sync fixes upload→next-launch, not pending-launch→upload.
+		// Without this, the DMA can land mid-segC(l-1) and zero the previous layer's expert
+		// contribution before the join reads it: a data race on every g4moe layer after the first.
+		// Sync r.stream so the clear is ordered after the prior layer's kernels (audit R-03).
+		if e := r.stream.Sync(); e != nil {
+			return e
+		}
+		if e := gpu.Upload(r.g4x2, r.g4zero); e != nil {
+			return e
+		}
+	}
+	if (Ly.g4moe || Ly.isMoE) && r.cacheExperts {
+		if e := r.loadRoutedExperts(Ly); e != nil {
+			return e
+		}
+	}
+	// segC: the post-readback MoE half (expert loop + join). Dense layers have none.
+	if Ly.g4moe || Ly.isMoE {
+		if gC {
+			if e := Ly.gSegC.Replay(); e != nil {
+				return e
+			}
+			if r.graphsSync {
+				if err := r.stream.Sync(); err != nil {
+					return err
+				}
+			}
+		} else if e := r.segC(Ly, l); e != nil {
+			return e
+		}
+	}
+	// hidden-state seam: this layer's OUTPUT residual, for a drafter that taps it.
+	if len(r.hidCapTaps) > 0 {
+		for slot, tap := range r.hidCapTaps {
+			if tap == l {
+				r.capVec(r.x, r.hidCapOut, slot, r.hidden)
+				break
+			}
+		}
+	}
+	if r.layerCap { // DEBUG: snapshot the residual after this layer (divergence-localization probe)
+		if err := r.stream.Sync(); err != nil {
+			return err
+		}
+		h := make([]float32, r.hidden)
+		if err := gpu.Download(r.x, h); err != nil {
+			return err
+		}
+		r.layerCapBuf = append(r.layerCapBuf, h)
+	}
+	return nil
+}

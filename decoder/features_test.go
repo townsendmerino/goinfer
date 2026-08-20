@@ -159,14 +159,19 @@ var admissionGolden = map[string][]string{
 	"qwen2_5_vl": {"cuda", "metal", "webgpu"},
 	"qwen2_moe":  {"metal", "webgpu"},
 	"qwen3":      {"cuda", "metal", "webgpu"},
+	// CUDA joins on the DENSE sibling only, and the split is the point: the MoE two need
+	// FeatMoEGatedShared (the sigmoid-gated always-on shared expert) which CUDA does not
+	// implement, so the DeltaNet kernels alone do not admit them. That is a checkable fact about
+	// what is left to build, not an oversight.
+	//
 	// The Gated-DeltaNet family collapses to WEBGPU ONLY once FeatDeltaNet is in the taxonomy,
 	// and that is the whole point of adding it. Before, the rows read {cuda, metal, webgpu} for
 	// the dense one on features alone while decodeRunnerEligible refused all three upstream — an
 	// honest-but-inert record. Now the arch-level refusal is gone (the mixer IS bridged) and the
 	// decline moved to the feature gate, where only the backend that implements the recurrence
 	// AND the fused attention output gate admits. CUDA and Metal have neither.
-	"qwen3_5":          {"webgpu"},
-	"qwen3_5_text":     {"webgpu"},
+	"qwen3_5":          {"cuda", "webgpu"},
+	"qwen3_5_text":     {"cuda", "webgpu"},
 	"qwen3_5_moe":      {"webgpu"},
 	"qwen3_5_moe_text": {"webgpu"},
 	"qwen3_next":       {"webgpu"}, // same arch.qwen35 != nil bridge qwen3_5_moe uses — reused directly, not a new one
@@ -221,7 +226,8 @@ func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 		// mscale, no ATTENTION softcap (FeatAttnLogitSoftcap — a per-layer kernel), no MLA/SSM, and
 		// no GATED shared expert (Qwen2-MoE) — now expressed as FeatMoEGatedShared (which CUDA does
 		// NOT declare), so the Qwen2-MoE decline is in the shared taxonomy, not a hand-coded check.
-		"cuda": {FeatQKNorm, FeatSlidingWindow, FeatPartialRotary, FeatRMSAddOne, FeatSandwichNorm, FeatGatedGELU, FeatEmbedScale, FeatPerLayerRoPE, FeatMoE, FeatFinalLogitSoftcap},
+		"cuda": {FeatQKNorm, FeatSlidingWindow, FeatPartialRotary, FeatRMSAddOne, FeatSandwichNorm,
+			FeatGatedGELU, FeatEmbedScale, FeatPerLayerRoPE, FeatMoE, FeatFinalLogitSoftcap, FeatDeltaNet},
 		"webgpu": {
 			FeatQKNorm, FeatPartialRotary, FeatSlidingWindow, FeatPerLayerRoPE, FeatRopeMscale,
 			FeatMoE, FeatMoEGatedShared, FeatMLA, FeatSSM, FeatDeltaNet, FeatNonGatedMLP, FeatLogitScale,

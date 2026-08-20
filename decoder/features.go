@@ -365,6 +365,12 @@ var residentBackendFeatures = map[string]map[ResidentFeature]bool{
 		FeatFinalLogitSoftcap: true, // softcap·tanh(logits/softcap) host-side after readback (finalSoftcap)
 		FeatPerLayerRoPE:      true, // per-layer invFreq buffer (Gemma local 10k vs global 1M base)
 		FeatMoE:               true, // moe_route + indexed stacked experts + ungated shared expert
+		// Gated-DeltaNet: the deltanet.ptx mixer (conv ring + delta rule + gated norm) plus the
+		// family's fused double-width q_proj and sigmoid output gate. Declared 2026-08-20 with
+		// the end-to-end gate, not ahead of it — the same discipline the GPT-2/gpt-oss entries
+		// record. This admits the DENSE sibling only: qwen3_5_moe and qwen3_next additionally
+		// need FeatMoEGatedShared, which CUDA still does not implement.
+		FeatDeltaNet: true,
 	},
 
 	// WebGPU (gpu/): the richest runner — the levers in docs/gpu-residency-coverage.md.
