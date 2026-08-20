@@ -46,7 +46,7 @@ jobs:
       # staticcheck (incl. the unused/U1000 check) — mirrors the go vet tag matrix
       # across the three module jobs (no-tag / gpu / cuda). Pinned like fin/ken.
       - name: staticcheck
-        run: go run honnef.co/go/tools/cmd/staticcheck@2025.1.1 ./...
+        run: go run honnef.co/go/tools/cmd/staticcheck@v0.8.0 ./...
 
       # API compatibility against the SIGNED-OFF Hard tier (docs/api-tiers.md, v1.0 gate §3).
       # It runs on THIS job because it needs the full history the citation lint already requires:
@@ -170,7 +170,7 @@ jobs:
         run: go vet -tags 'gpu goinfer_testhooks' ./gpu/...
 
       - name: staticcheck -tags gpu
-        run: go run honnef.co/go/tools/cmd/staticcheck@2025.1.1 -tags 'gpu goinfer_testhooks' ./gpu/...
+        run: go run honnef.co/go/tools/cmd/staticcheck@v0.8.0 -tags 'gpu goinfer_testhooks' ./gpu/...
 
       # GPU tests skip cleanly with no adapter (headless runner); this confirms
       # they compile and the resident-matmul path is exercised where possible.
@@ -206,7 +206,7 @@ jobs:
         run: go vet -tags 'cuda goinfer_testhooks' ./cuda/...
 
       - name: staticcheck -tags cuda
-        run: CGO_ENABLED=0 go run honnef.co/go/tools/cmd/staticcheck@2025.1.1 -tags 'cuda goinfer_testhooks' ./cuda/...
+        run: CGO_ENABLED=0 go run honnef.co/go/tools/cmd/staticcheck@v0.8.0 -tags 'cuda goinfer_testhooks' ./cuda/...
 
       # Compile + skip cleanly on the GPU-less runner (tests t.Skip without a device).
       - name: test -tags cuda
