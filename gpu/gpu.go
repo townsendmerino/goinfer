@@ -217,12 +217,19 @@ type Context struct {
 	deltaGNormShader   *wgpu.ShaderModule
 	deltaGNormPipeline *wgpu.ComputePipeline
 	deltaGNormLayout   *wgpu.BindGroupLayout
-	mambaConvShader    *wgpu.ShaderModule
-	mambaConvPipeline  *wgpu.ComputePipeline
-	mambaConvLayout    *wgpu.BindGroupLayout
-	mambaGNormShader   *wgpu.ShaderModule
-	mambaGNormPipeline *wgpu.ComputePipeline
-	mambaGNormLayout   *wgpu.BindGroupLayout
+
+	deltaQSplitShader     *wgpu.ShaderModule
+	deltaQSplitPipeline   *wgpu.ComputePipeline
+	deltaQSplitLayout     *wgpu.BindGroupLayout
+	deltaAttnGateShader   *wgpu.ShaderModule
+	deltaAttnGatePipeline *wgpu.ComputePipeline
+	deltaAttnGateLayout   *wgpu.BindGroupLayout
+	mambaConvShader       *wgpu.ShaderModule
+	mambaConvPipeline     *wgpu.ComputePipeline
+	mambaConvLayout       *wgpu.BindGroupLayout
+	mambaGNormShader      *wgpu.ShaderModule
+	mambaGNormPipeline    *wgpu.ComputePipeline
+	mambaGNormLayout      *wgpu.BindGroupLayout
 	// f16 Mamba in/out_proj GEMV (mamba_f16.go): f16 weight × f32 activation — the
 	// mixed-precision quality fix (granite int8 loss localized to the SSM projections).
 	mambaF16Shader   *wgpu.ShaderModule

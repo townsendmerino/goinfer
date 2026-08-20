@@ -50,7 +50,7 @@ but the **tagged go.mod still ships it**.
 **An earlier draft of this note claimed the resident path "is not drivable via the public API." That
 was WRONG — it was read off the *stale doc comment* on `decoder.Options.Backend` ("cpu/webgpu"), not
 the code.** `Options.Backend` actually accepts `cpu | webgpu | cuda | metal` (`decoder/model.go:301-309`),
-and `Load` calls `withResidency()` (`decoder/residency.go:555`) which runs `NewBackend` → `BuildResident`
+and `Load` calls `withResidency()` (`decoder/residency.go:564`) which runs `NewBackend` → `BuildResident`
 → attaches the resident **automatically**. So the full consumer path is:
 
     import _ "github.com/townsendmerino/goinfer/metal"          // registers the backend (darwin)

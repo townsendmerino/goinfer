@@ -20,14 +20,30 @@ The fixture keeps the released model's SHAPE CHARACTER, not its size:
 """
 import json
 import os
+import sys
 
 import torch
-from transformers import Qwen3_5ForCausalLM, Qwen3_5TextConfig
+from transformers import (Qwen3_5ForCausalLM, Qwen3_5MoeForCausalLM,
+                          Qwen3_5MoeTextConfig, Qwen3_5TextConfig)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TD = os.path.join(HERE, "..", "decoder", "testdata")
 OUT = os.path.join(TD, "qwen3_5_tiny_text_golden.json")
 CKPT = os.path.join(TD, "qwen3_5-tiny")
+
+# --moe writes a SECOND fixture, the MoE sibling — Qwen3_5MoeForCausalLM, its own model_type
+# (goinfer's dense adapter rejects a num_experts config outright, and correctly so). It exists for one reason: the WebGPU resident
+# bridge composes a DeltaNet mixer with a sparse-MoE FFN in the same layer, and nothing gated
+# that pairing. The mixer alone is gated by the dense fixture, and mixer+MoE is gated for
+# Mamba-2 (Granite) — but "two proven halves" is the argument that has been wrong here before
+# (the A' zero-copy post-mortem: isolation proves the primitive, never the composition).
+MOE_OUT = os.path.join(TD, "qwen3_5_moe_tiny_text_golden.json")
+MOE_CKPT = os.path.join(TD, "qwen3_5_moe-tiny")
+MOE_CFG = dict(
+    num_experts=4, num_experts_per_tok=2, moe_intermediate_size=64,
+    shared_expert_intermediate_size=64, norm_topk_prob=True, decoder_sparse_step=1,
+    mlp_only_layers=[],
+)
 
 CFG = dict(
     vocab_size=256, hidden_size=64, intermediate_size=128, num_hidden_layers=4,
@@ -46,8 +62,15 @@ N_NEW = 6
 
 
 def main():
+    moe = "--moe" in sys.argv
+    cfg = dict(CFG, **MOE_CFG) if moe else CFG
+    out, ckpt = (MOE_OUT, MOE_CKPT) if moe else (OUT, CKPT)
     torch.manual_seed(0)
-    model = Qwen3_5ForCausalLM(Qwen3_5TextConfig(**CFG)).eval().to(torch.float32)
+    if moe:
+        model = Qwen3_5MoeForCausalLM(Qwen3_5MoeTextConfig(**cfg))
+    else:
+        model = Qwen3_5ForCausalLM(Qwen3_5TextConfig(**cfg))
+    model = model.eval().to(torch.float32)
     with torch.no_grad():
         ids = torch.tensor([PROMPT], dtype=torch.long)
         last = model(input_ids=ids, use_cache=False).logits[0, -1].float().tolist()
@@ -60,14 +83,14 @@ def main():
     json.dump({
         "note": "tiny-random Qwen3_5ForCausalLM (dense DeltaNet/softmax hybrid), CPU fp32, "
                 "transformers 5.12.0 torch fallback kernels",
-        "config": {k: v for k, v in CFG.items()},
+        "config": {k: v for k, v in cfg.items()},
         "prompt_ids": PROMPT, "n_new": N_NEW,
         "argmax": int(torch.tensor(last).argmax()), "last_logits": last,
         "continuation_ids": cont,
-    }, open(OUT, "w"))
-    model.save_pretrained(CKPT, safe_serialization=True)
+    }, open(out, "w"))
+    model.save_pretrained(ckpt, safe_serialization=True)
     print(f"argmax={int(torch.tensor(last).argmax())} cont={cont}")
-    print(f" -> {OUT}\n -> {CKPT}")
+    print(f" -> {out}\n -> {ckpt}")
 
 
 if __name__ == "__main__":

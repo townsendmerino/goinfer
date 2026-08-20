@@ -51,25 +51,25 @@ var archFeatureProfile = map[string][]ResidentFeature{
 	"deepseek_v2": {FeatMLA, FeatMoE},
 	"deepseek_v3": {FeatMLA, FeatMoE},
 	"kimi_k2":     {FeatMLA, FeatMoE},
-	"qwen3_5_moe": {FeatMoE, FeatMoEGatedShared, FeatPartialRotary, FeatQKNorm, FeatRMSAddOne},
+	"qwen3_5_moe": {FeatMoE, FeatMoEGatedShared, FeatPartialRotary, FeatQKNorm, FeatRMSAddOne, FeatDeltaNet},
 	// Qwen3.8 dense (qwen3_5): the MoE sibling's profile MINUS the two MoE features. The
 	// remaining three are unchanged and each was checked against the released 27B rather
 	// than inherited — partial rotary (0.25 × head_dim 256 = 64 < 256), q_norm/k_norm on
 	// every softmax layer, and Gemma-style (1+w) RMSNorm. The DeltaNet mixer itself needs
 	// no feature here because decodeRunnerEligible refuses the whole arch.qwen35 family
 	// upstream (own forward, not yet bridged) — the same posture qwen3_5_moe has.
-	"qwen3_5":      {FeatPartialRotary, FeatQKNorm, FeatRMSAddOne},
-	"qwen3_5_text": {FeatPartialRotary, FeatQKNorm, FeatRMSAddOne},
+	"qwen3_5":      {FeatPartialRotary, FeatQKNorm, FeatRMSAddOne, FeatDeltaNet},
+	"qwen3_5_text": {FeatPartialRotary, FeatQKNorm, FeatRMSAddOne, FeatDeltaNet},
 	// Qwen3-Next: same profile as qwen3_5_moe (verified, not assumed — its MoE block
 	// (Qwen3NextSparseMoeBlock(Qwen2MoeSparseMoeBlock): pass) directly inherits
 	// Qwen2-MoE's gated-shared-expert combination, and its RMSNorm
 	// (Qwen3NextRMSNorm(Gemma3RMSNorm): pass) inherits Gemma's (1+w)).
-	"qwen3_next":       {FeatMoE, FeatMoEGatedShared, FeatPartialRotary, FeatQKNorm, FeatRMSAddOne},
+	"qwen3_next":       {FeatMoE, FeatMoEGatedShared, FeatPartialRotary, FeatQKNorm, FeatRMSAddOne, FeatDeltaNet},
 	"llama4_text":      {FeatMoE},
 	"gpt_oss":          {FeatAttnSink, FeatMoE, FeatOutBias, FeatRopeMscale, FeatSlidingWindow},
 	"nemotron_h":       {FeatNonGatedMLP, FeatSSM},
 	"granitemoehybrid": {FeatLogitScale, FeatMoE, FeatSSM},
-	"qwen3_5_moe_text": {FeatMoE, FeatMoEGatedShared, FeatPartialRotary, FeatQKNorm, FeatRMSAddOne},
+	"qwen3_5_moe_text": {FeatMoE, FeatMoEGatedShared, FeatPartialRotary, FeatQKNorm, FeatRMSAddOne, FeatDeltaNet},
 	// Gemma — VERIFIED against the real checkpoints via RequiredResidentFeatures (an earlier
 	// hand-written guess here was wrong on three counts: it missed per-layer-rope / qk-norm /
 	// sliding-window, and claimed rms-add-one for gemma4, which has RMSAddOne=false).
@@ -159,18 +159,17 @@ var admissionGolden = map[string][]string{
 	"qwen2_5_vl": {"cuda", "metal", "webgpu"},
 	"qwen2_moe":  {"metal", "webgpu"},
 	"qwen3":      {"cuda", "metal", "webgpu"},
-	// Qwen3.8 dense admits on FEATURES alone where its MoE sibling does not — dropping
-	// FeatMoE/FeatMoEGatedShared removes CUDA's only objection. This row is the feature
-	// verdict, NOT "CUDA runs Qwen3.8 resident": decodeRunnerEligible refuses every
-	// arch.qwen35 family upstream (own forward, no backend implements Gated DeltaNet), so
-	// ResidentEligible is false on all three and the hardware matrix says CPU. Recording
-	// the wider row honestly is the point — it says exactly what would change if the
-	// DeltaNet mixer were ever bridged.
-	"qwen3_5":          {"cuda", "metal", "webgpu"},
-	"qwen3_5_text":     {"cuda", "metal", "webgpu"},
-	"qwen3_5_moe":      {"metal", "webgpu"},
-	"qwen3_5_moe_text": {"metal", "webgpu"},
-	"qwen3_next":       {"metal", "webgpu"}, // same arch.qwen35 != nil bridge qwen3_5_moe uses — reused directly, not a new one
+	// The Gated-DeltaNet family collapses to WEBGPU ONLY once FeatDeltaNet is in the taxonomy,
+	// and that is the whole point of adding it. Before, the rows read {cuda, metal, webgpu} for
+	// the dense one on features alone while decodeRunnerEligible refused all three upstream — an
+	// honest-but-inert record. Now the arch-level refusal is gone (the mixer IS bridged) and the
+	// decline moved to the feature gate, where only the backend that implements the recurrence
+	// AND the fused attention output gate admits. CUDA and Metal have neither.
+	"qwen3_5":          {"webgpu"},
+	"qwen3_5_text":     {"webgpu"},
+	"qwen3_5_moe":      {"webgpu"},
+	"qwen3_5_moe_text": {"webgpu"},
+	"qwen3_next":       {"webgpu"}, // same arch.qwen35 != nil bridge qwen3_5_moe uses — reused directly, not a new one
 }
 
 func TestResidentAdmission_matrix(t *testing.T) {
@@ -225,7 +224,8 @@ func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 		"cuda": {FeatQKNorm, FeatSlidingWindow, FeatPartialRotary, FeatRMSAddOne, FeatSandwichNorm, FeatGatedGELU, FeatEmbedScale, FeatPerLayerRoPE, FeatMoE, FeatFinalLogitSoftcap},
 		"webgpu": {
 			FeatQKNorm, FeatPartialRotary, FeatSlidingWindow, FeatPerLayerRoPE, FeatRopeMscale,
-			FeatMoE, FeatMoEGatedShared, FeatMLA, FeatSSM, FeatNonGatedMLP, FeatLogitScale, FeatRMSAddOne,
+			FeatMoE, FeatMoEGatedShared, FeatMLA, FeatSSM, FeatDeltaNet, FeatNonGatedMLP, FeatLogitScale,
+			FeatRMSAddOne,
 		},
 		// GPT-2 (2026-08-18): LayerNorm/non-gated-MLP/learned-pos/out-bias all landed as real
 		// kernels + full BuildResident/encodeLayer/encodeAttention wiring, validated end-to-end
@@ -261,7 +261,7 @@ func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 		FeatSandwichNorm: true, FeatGatedGELU: true, FeatNonGatedMLP: true, FeatLearnedPos: true,
 		FeatOutBias: true, FeatLogitScale: true, FeatMoE: true, FeatMoEGatedShared: true,
 		FeatMLA: true, FeatSSM: true, FeatLayerNorm: true, FeatParallelBlock: true, FeatNoPE: true,
-		FeatAttnSink: true, FeatGemma4EModel: true, // N-12: were omitted, so declaring either failed with a misleading "unknown feature"
+		FeatAttnSink: true, FeatGemma4EModel: true, FeatDeltaNet: true, // N-12: were omitted, so declaring either failed with a misleading "unknown feature"
 	}
 	for be, set := range residentBackendFeatures {
 		for f := range set {

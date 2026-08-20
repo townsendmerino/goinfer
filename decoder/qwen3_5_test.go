@@ -26,9 +26,19 @@ import (
 //     text position_ids arrive 2-D and are expanded to three IDENTICAL components, so the
 //     interleaved overwrite is a no-op). If that reduction were wrong, this diverges.
 func TestQwen3_5_textParity(t *testing.T) {
-	const golden = "testdata/qwen3_5_tiny_text_golden.json"
-	const ckpt = "testdata/qwen3_5-tiny"
+	// Both siblings against the same oracle. They share one forward (runLayersQwen35 branches
+	// only at the FFN), so a regression in the shared 90% shows in either — but the FFN branch
+	// itself, and the descriptor assertions that keep the two adapters from swapping, need one
+	// case each.
+	t.Run("dense", func(t *testing.T) {
+		qwen35TextParity(t, "testdata/qwen3_5-tiny", "testdata/qwen3_5_tiny_text_golden.json", "qwen3_5", false)
+	})
+	t.Run("moe", func(t *testing.T) {
+		qwen35TextParity(t, "testdata/qwen3_5_moe-tiny", "testdata/qwen3_5_moe_tiny_text_golden.json", "qwen3_5_moe", true)
+	})
+}
 
+func qwen35TextParity(t *testing.T, ckpt, golden, wantArch string, wantMoE bool) {
 	raw, err := os.ReadFile(golden)
 	if errors.Is(err, fs.ErrNotExist) {
 		t.Skipf("no golden — run scripts/pin_qwen3_5_forward.py")
@@ -57,11 +67,13 @@ func TestQwen3_5_textParity(t *testing.T) {
 	defer m.Close()
 
 	a := m.w.arch
-	if a.Name != "qwen3_5" {
-		t.Fatalf("arch = %q, want qwen3_5", a.Name)
+	if a.Name != wantArch {
+		t.Fatalf("arch = %q, want %q", a.Name, wantArch)
 	}
-	if a.MoE != nil {
-		t.Fatal("arch.MoE != nil — this is the DENSE variant; a router here means the wrong adapter ran")
+	if (a.MoE != nil) != wantMoE {
+		// The two adapters are one config field apart, and swapping them produces a model that
+		// loads and generates — just not this one's numbers.
+		t.Fatalf("arch.MoE != nil is %v, want %v — the wrong adapter ran for %s", a.MoE != nil, wantMoE, ckpt)
 	}
 	if a.qwen35 == nil {
 		t.Fatal("arch.qwen35 is nil — the DeltaNet geometry must be carried, dense or not")
@@ -93,8 +105,8 @@ func TestQwen3_5_textParity(t *testing.T) {
 	}
 	gotArg := argmax(logits)
 	cos := logitCosine(logits, g.LastLogits)
-	t.Logf("qwen3_5 text parity (%d linear / %d full): argmax got=%d want=%d | logit cosine=%.6f",
-		lin, full, gotArg, g.Argmax, cos)
+	t.Logf("%s text parity (%d linear / %d full): argmax got=%d want=%d | logit cosine=%.6f",
+		wantArch, lin, full, gotArg, g.Argmax, cos)
 	if gotArg != g.Argmax {
 		t.Errorf("last argmax = %d, want %d", gotArg, g.Argmax)
 	}

@@ -330,6 +330,25 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 			vHead: vHead, interleave: interleave, ropeScale: float32(mlaRopeScale),
 		}
 	}
+	// Gated-DeltaNet hybrid (Qwen3.5/3.6-MoE, Qwen3-Next, Qwen3.8). Two things make this family
+	// its own branch rather than a flag on the generic one: most layers are the recurrent delta
+	// rule instead of attention, and its FULL-attention layers carry a per-head output gate fused
+	// into a double-width q_proj. Its attention weights also live off lw.QProj (the family's own
+	// forward keeps them in its own struct), so the generic q/k/v/o build below cannot see them.
+	dnConvK, dnHK, dnHV, dnNK, dnNV, dnAttnGate, dnetOK := m.Qwen35ResidentParams()
+	var dnZeroConvB *wgpu.Buffer // DeltaNet's causal conv is bias-free; mambaConv binds a bias
+	if dnetOK {
+		keyDim, valueDim := dnNK*dnHK, dnNV*dnHV
+		rd.rm.dnet = &dnetRunParams{
+			convK: dnConvK, hk: dnHK, hv: dnHV, nk: dnNK, nv: dnNV, rep: dnNV / dnNK,
+			keyDim: keyDim, valueDim: valueDim, convDim: 2*keyDim + valueDim,
+			stateElems: dnNV * dnHV * dnHK, eps: float32(eps),
+		}
+		var ze error
+		if dnZeroConvB, ze = up32(make([]float32, rd.rm.dnet.convDim)); ze != nil {
+			return fail(ze)
+		}
+	}
 	// buildStacked packs one projection (gate/up/down) across all nE experts into a
 	// resident stacked int8 buffer the indexed expert GEMV reads. int8 only — int4
 	// experts aren't stacked yet (returns an error → silent staged fallback).
@@ -513,7 +532,88 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 		if rl.invFreq, e = ropeInvBuf(m.LayerRopeGlobal(i), i); e != nil {
 			return fail(e)
 		}
-		if granOK && m.GraniteMambaLayer(i) {
+		if dnetOK && m.Qwen35LinearLayer(i) {
+			// Gated-DeltaNet mixer layer. No KV cache and no q/k/v/o: the recurrence's state is
+			// the whole history, fixed-size and NOT position-truncatable (which is also why this
+			// family declines prefix reuse and batched ForwardN — see ResetState below).
+			//
+			// The conv reuses the Mamba-2 ring window verbatim; the only difference is that
+			// DeltaNet's conv is bias-free, so every layer binds one shared zeroed convB rather
+			// than allocating an all-zero bias per layer.
+			rl.isDeltaNet = true
+			dp := rd.rm.dnet
+			qkv, z, outP, inB, inA, cW, dtB, negA, nW := m.Qwen35DeltaWeights(i)
+			if rl.dnQKV, e = proj(qkv); e != nil {
+				return fail(e)
+			}
+			if rl.dnZ, e = proj(z); e != nil {
+				return fail(e)
+			}
+			if rl.dnOut, e = proj(outP); e != nil {
+				return fail(e)
+			}
+			// inB/inA are f32 on the CPU by deliberate choice (they feed the write/decay gates,
+			// where the recurrence is most precision-sensitive). projF32 quantizes them to W8A8
+			// for the resident path — the one place this port is coarser than the reference, and
+			// the reason the parity gate scores the gates as their own stage.
+			if rl.dnB, e = projF32(inB, dp.nv, hidden); e != nil {
+				return fail(e)
+			}
+			if rl.dnA, e = projF32(inA, dp.nv, hidden); e != nil {
+				return fail(e)
+			}
+			rl.mambaConvB = dnZeroConvB
+			if rl.mambaConvW, e = up32(cW); e != nil {
+				return fail(e)
+			}
+			if rl.dnDtBias, e = up32(dtB); e != nil {
+				return fail(e)
+			}
+			if rl.dnNegExpA, e = up32(negA); e != nil { // ALREADY -exp(A_log); do not re-exp
+				return fail(e)
+			}
+			if rl.dnNormW, e = up32(nW); e != nil {
+				return fail(e)
+			}
+			if rl.mambaWin, e = stateBuf((dp.convK - 1) * dp.convDim); e != nil {
+				return fail(e)
+			}
+			if rl.dnState, e = stateBuf(dp.stateElems); e != nil {
+				return fail(e)
+			}
+		} else if dnetOK {
+			// Gated SOFTMAX attention layer of the same family: ordinary GQA + per-head QK-norm
+			// + partial RoPE, plus the output gate. q_proj stays fused at double width because it
+			// is quantized; the runner splits the activation (runLayer.qGate).
+			rl.qGate = dnAttnGate
+			kc, e1 := c.NewKVCache(nil, ctxCap*kvDim)
+			vc, e2 := c.NewKVCache(nil, ctxCap*kvDim)
+			if e1 != nil || e2 != nil {
+				return fail(fmt.Errorf("gpu: qwen35 KV alloc (layer %d): %v %v", i, e1, e2))
+			}
+			keepF(kc.Release)
+			keepF(vc.Release)
+			rl.kCache, rl.vCache = kc.buf, vc.buf
+			qP, kP, vP, oP, qN, kN := m.Qwen35AttnWeights(i)
+			if rl.q, e = proj(qP); e != nil {
+				return fail(e)
+			}
+			if rl.k, e = proj(kP); e != nil {
+				return fail(e)
+			}
+			if rl.v, e = proj(vP); e != nil {
+				return fail(e)
+			}
+			if rl.o, e = proj(oP); e != nil {
+				return fail(e)
+			}
+			if rl.qNorm, e = up32(qN); e != nil {
+				return fail(e)
+			}
+			if rl.kNorm, e = up32(kN); e != nil {
+				return fail(e)
+			}
+		} else if granOK && m.GraniteMambaLayer(i) {
 			// Mamba-2 SSM mixer layer (P5b): in/out_proj W8A8, conv/headP/normW f32, build-once
 			// {win, ssm} state. headP interleaves the per-head [Aexp=-exp(aLog), dtBias, D].
 			// ResidMul folds into out_proj. No KV cache, no q/k/v/o (the plan branches on isMamba).
@@ -824,8 +924,8 @@ func (rd *residentDecoder) ForwardN(embeddings [][]float32, startPos int) ([][]f
 	// another package that a future "re-enable recurrent speculation" change would relax without
 	// ever reading this function. Decline (the callers fall back to plain decode); do not
 	// silently advance. n==1 is the ordinary single-step case and stays allowed.
-	if n > 1 && rd.rm.mamba != nil {
-		return nil, fmt.Errorf("gpu: batched ForwardN (K=%d) declines on a recurrent (Mamba-2) model — its {win,ssm} state is not positional and cannot be rolled back after a partial accept", n)
+	if n > 1 && (rd.rm.mamba != nil || rd.rm.dnet != nil) {
+		return nil, fmt.Errorf("gpu: batched ForwardN (K=%d) declines on a recurrent model — its mixer state is not positional and cannot be rolled back after a partial accept", n)
 	}
 	if startPos == 0 {
 		rd.Reset() // fresh sequence (prefill from 0): re-zero Mamba {win,ssm} (audit C-01)
@@ -891,19 +991,28 @@ func (rd *residentDecoder) UploadKV(layer int, keys, vals []float32) error {
 }
 
 // Reset clears resident state for a fresh generation. KV positions are overwritten
-// (caller tracks pos), but Mamba {win, ssm} state COMPOUNDS, so it must be re-zeroed
-// each generation or the recurrence carries over from the prior sequence.
+// (caller tracks pos), but the RECURRENT state COMPOUNDS — Mamba's {win, ssm} and
+// DeltaNet's {win, dnState} alike — so it must be re-zeroed each generation or the
+// recurrence carries over from the prior sequence.
 func (rd *residentDecoder) Reset() {
-	if rd.rm.mamba == nil {
-		return
+	if mp := rd.rm.mamba; mp != nil {
+		winZ := make([]float32, (mp.dConv-1)*mp.convDim)
+		ssmZ := make([]float32, mp.nHeads*mp.hp*mp.dn)
+		for i := range rd.rm.layers {
+			if lw := &rd.rm.layers[i]; lw.isMamba {
+				rd.c.queue.WriteBuffer(lw.mambaWin, 0, wgpu.ToBytes(winZ))
+				rd.c.queue.WriteBuffer(lw.mambaSSM, 0, wgpu.ToBytes(ssmZ))
+			}
+		}
 	}
-	mp := rd.rm.mamba
-	winZ := make([]float32, (mp.dConv-1)*mp.convDim)
-	ssmZ := make([]float32, mp.nHeads*mp.hp*mp.dn)
-	for i := range rd.rm.layers {
-		if lw := &rd.rm.layers[i]; lw.isMamba {
-			rd.c.queue.WriteBuffer(lw.mambaWin, 0, wgpu.ToBytes(winZ))
-			rd.c.queue.WriteBuffer(lw.mambaSSM, 0, wgpu.ToBytes(ssmZ))
+	if dp := rd.rm.dnet; dp != nil {
+		winZ := make([]float32, (dp.convK-1)*dp.convDim)
+		stZ := make([]float32, dp.stateElems)
+		for i := range rd.rm.layers {
+			if lw := &rd.rm.layers[i]; lw.isDeltaNet {
+				rd.c.queue.WriteBuffer(lw.mambaWin, 0, wgpu.ToBytes(winZ))
+				rd.c.queue.WriteBuffer(lw.dnState, 0, wgpu.ToBytes(stZ))
+			}
 		}
 	}
 }

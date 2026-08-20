@@ -184,7 +184,16 @@ func (a *Architecture) decodeRunnerEligible() bool {
 		// HasGemma4MoEResident. Both dense and MoE fall through to the common checks below (softcap
 		// is handled by the per-backend feature gate, so WebGPU still declines on its own terms).
 		// E-models (PLE) decline via the feature gate regardless — TestGemma4EModel_realDeclinesResident.
-	case a.qwen35 != nil || a.llama4 != nil:
+	case a.qwen35 != nil:
+		// Gated-DeltaNet hybrids fall through, same discipline as gemma4/gpt-oss above: the
+		// recurrence and the fused attention output gate are a BACKEND capability (FeatDeltaNet),
+		// so a backend without them declines at the feature gate rather than here. Falling
+		// through — rather than admitting early — is what keeps the checks below composing; see
+		// the note at the top of this switch.
+		//
+		// Note this covers all three siblings (qwen3_5_moe, qwen3_next, qwen3_5). The MoE ones
+		// additionally need FeatMoE, which they get from the ordinary MoE checks below.
+	case a.llama4 != nil:
 		return false // own forward, not yet bridged
 	}
 	// Granite-4.0-H resident SSM hybrid (P5b): its own mixer-kind path (Mamba-2 ⊕
@@ -824,4 +833,52 @@ func (m *Model) GptOssExpertDownBiasResident(l int) []float32 {
 		copy(out[e*hidden:], lw.Experts[e].DownBias)
 	}
 	return out
+}
+
+// Qwen3.5/3.6-MoE / Qwen3-Next / Qwen3.8 resident bridge (Gated-DeltaNet hybrid). The family's
+// forward is its own (runLayersQwen35) because two things in it are not the uniform-layer shape:
+// most layers replace softmax attention with a recurrent delta rule, and the full-attention layers
+// carry a per-head output gate fused into a double-width q_proj. These accessors expose both to a
+// backend without exporting the family's internals.
+
+// Qwen35ResidentParams returns the Gated-DeltaNet geometry (ok=false for every other family).
+// rotaryDim/attnGate describe the SOFTMAX layers, which are as much a part of this family's
+// residency as the recurrence: attnGate=true means q_proj emits [query ‖ gate] per head and the
+// attention context is multiplied by sigmoid(gate) before o_proj.
+func (m *Model) Qwen35ResidentParams() (convKernel, keyHeadDim, valueHeadDim, numKeyHeads, numValueHeads int, attnGate, ok bool) {
+	g := m.w.arch.qwen35
+	if g == nil {
+		return 0, 0, 0, 0, 0, false, false
+	}
+	return g.ConvKernel, g.KeyHeadDim, g.ValueHeadDim, g.NumKeyHeads, g.NumValueHeads, true, true
+}
+
+// Qwen35LinearLayer reports whether layer i is a Gated-DeltaNet mixer (vs gated softmax attention).
+func (m *Model) Qwen35LinearLayer(i int) bool { return m.w.arch.isLinearLayer(i) }
+
+// Qwen35DeltaWeights returns layer i's DeltaNet parameters. The three dominant projections come
+// back as *linalg.WeightMat because they carry the model's quant (int4/int8/f32) — a backend
+// uploads them through the same path as any other projection. The rest are small f32 tensors:
+// inB/inA are the two gate projections (kept f32 in the CPU path for precision — see
+// deltaNetWeights), convW is the depthwise causal conv, and negExpA is the PRECOMPUTED −exp(A_log)
+// the recurrence multiplies by softplus(a+dt_bias), not the raw A_log a Mamba-2 path would expect.
+func (m *Model) Qwen35DeltaWeights(i int) (inQKV, inZ, outProj *linalg.WeightMat, inB, inA, convW, dtBias, negExpA, normW []float32) {
+	w := m.w.Layers[i].delta
+	if w == nil {
+		return
+	}
+	return &w.inProjQKV, &w.inProjZ, &w.outProj, w.inProjB, w.inProjA, w.convW, w.dtBias, w.negExpA, w.normW
+}
+
+// Qwen35AttnWeights returns a full-attention layer's projections and QK-norm weights. qProj is
+// DOUBLE WIDTH — [NumHeads*2*HeadDim, HiddenDim], query and gate interleaved PER HEAD, not
+// concatenated as two blocks. A backend that treats it as an ordinary q_proj gets the first
+// NumHeads/2 heads' query and gate as its "queries", which is wrong in a way that still produces
+// plausible logits.
+func (m *Model) Qwen35AttnWeights(i int) (qProj, kProj, vProj, oProj *linalg.WeightMat, qNorm, kNorm []float32) {
+	a := m.w.Layers[i].qattn
+	if a == nil {
+		return
+	}
+	return &a.qProj, &a.kProj, &a.vProj, &a.oProj, a.qNorm, a.kNorm
 }

@@ -4,6 +4,7 @@ package gpu
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"strconv"
 	"time"
@@ -154,6 +155,23 @@ type runLayer struct {
 	mambaInProjF16, mambaOutProjF16                *wgpu.Buffer // f16 path (default); nil ⇒ int8
 	mambaConvW, mambaConvB, mambaHeadP, mambaNormW *wgpu.Buffer
 	mambaWin, mambaSSM                             *wgpu.Buffer
+
+	// Gated-DeltaNet mixer (Qwen3.5/3.6-MoE, Qwen3-Next, Qwen3.8). When isDeltaNet, this
+	// layer's mixer is the recurrent delta rule (deltanet.go kernels) instead of attention.
+	// The causal conv is Mamba-2's — same shape, same SiLU, same ring window — so it reuses
+	// mambaConvW/mambaWin and binds an all-zero convB (DeltaNet's conv is bias-free).
+	// dnState is the [nv*hv*hk] recurrent state, TRANSPOSED relative to the CPU's [hk,hv]
+	// so each thread owns a contiguous row; build-once, updated in place, reset per
+	// generation alongside mambaWin.
+	isDeltaNet                            bool
+	dnQKV, dnZ, dnOut                     decodeWeight // the three dominant projections, quantized
+	dnB, dnA                              decodeWeight // the two small gate projections
+	dnDtBias, dnNegExpA, dnNormW, dnState *wgpu.Buffer
+
+	// qGate marks a full-attention layer whose q_proj is DOUBLE WIDTH — [query ‖ gate] per
+	// head — with the context scaled by sigmoid(gate) before o_proj (attn_output_gate). The
+	// weight stays fused because it is quantized; the split happens on the activation.
+	qGate bool
 }
 
 type runModel struct {
@@ -165,6 +183,7 @@ type runModel struct {
 	moe           *moeRunParams   // non-nil ⇒ the model has MoE layers (runLayer.isMoE picks which)
 	mla           *mlaRunParams   // non-nil ⇒ MLA latent attention replaces the q/k/v/o block
 	mamba         *mambaRunParams // non-nil ⇒ hybrid: some layers (runLayer.isMamba) are SSM mixers
+	dnet          *dnetRunParams  // non-nil ⇒ hybrid: some layers (runLayer.isDeltaNet) are DeltaNet mixers
 	ropeHalf      int             // rotated pairs per head = rotaryDim/2 (Lever C5 partial RoPE); 0 ⇒ HeadDim/2
 	slidingWindow int             // >0 ⇒ local layers attend only the last N positions (Lever C6)
 }
@@ -296,6 +315,13 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 	}
 	if m.mamba != nil {
 		ensures = append(ensures, c.ensureMambaConv, c.ensureMambaSSM, c.ensureMambaGNorm, c.ensureMambaF16, c.ensureRelu2)
+	}
+	if m.dnet != nil {
+		// mambaConv is shared with the SSM engine (DeltaNet's causal conv is the same op); the
+		// other four are DeltaNet's own. deltaQSplit/deltaAttnGate serve the family's SOFTMAX
+		// layers, which are part of the same admission and so are compiled unconditionally with it.
+		ensures = append(ensures, c.ensureMambaConv, c.ensureDeltaRule, c.ensureDeltaNorm,
+			c.ensureDeltaGates, c.ensureDeltaGNorm, c.ensureDeltaQSplit, c.ensureDeltaAttnGate)
 	}
 	for _, e := range ensures {
 		if err := e(); err != nil {
@@ -516,6 +542,50 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			es := []bgEnt{{y, 0, 0}, {proj, 0, 0}, {normW, 0, 0}, {gated, 0, 0}, {dG, 0, 0}}
 			add(c.mambaGNormPipeline, bindOff(c.mambaGNormLayout, es), uint32(mp.normGroups), 1)
 		}
+	}
+	// Gated-DeltaNet op builders. The causal conv is mambaConv's — DeltaNet's conv has the same
+	// shape, the same SiLU and the same ring window, differing only in being bias-free, so it
+	// binds an all-zero convB and xbcBase 0. Everything after it is DeltaNet's own.
+	var dnConvOp func(mixed, convW, convB, win, conv *wgpu.Buffer)
+	var dnGatesOp func(bt, at, dtBias, negExpA, headP *wgpu.Buffer)
+	var dnNormOp func(conv, qn, kn *wgpu.Buffer)
+	var dnRuleOp func(qn, kn, v, headP, state, core *wgpu.Buffer)
+	var dnGNormOp func(core, z, normW, gated *wgpu.Buffer)
+	if m.dnet != nil {
+		dp := m.dnet
+		dC := uni([]uint32{uint32(dp.convDim), uint32(dp.convK), 0, 0})
+		dGate := uni([]uint32{uint32(dp.nv), 0, 0, 0})
+		dNorm := uni([]uint32{uint32(dp.nk), uint32(dp.hk), uint32(dp.keyDim), 0, f32bits(float32(1 / math.Sqrt(float64(dp.hk)))), 0, 0, 0})
+		dRule := uni([]uint32{uint32(dp.nv), uint32(dp.nk), uint32(dp.hk), uint32(dp.hv), uint32(dp.rep), uint32(2 * dp.keyDim), 0, 0})
+		dGN := uni([]uint32{uint32(dp.nv), uint32(dp.hv), 0, 0, f32bits(dp.eps), 0, 0, 0})
+		dnConvOp = func(mixed, convW, convB, win, conv *wgpu.Buffer) {
+			add(c.mambaConvPipeline, bind(c.mambaConvLayout, mixed, convW, convB, win, conv, dC), uint32(dp.convDim+63)/64, 1)
+		}
+		dnGatesOp = func(bt, at, dtBias, negExpA, headP *wgpu.Buffer) {
+			add(c.deltaGatesPipeline, bind(c.deltaGatesLayout, bt, at, dtBias, negExpA, headP, dGate), uint32(dp.nv+63)/64, 1)
+		}
+		dnNormOp = func(conv, qn, kn *wgpu.Buffer) {
+			add(c.deltaNormPipeline, bind(c.deltaNormLayout, conv, qn, kn, dNorm), uint32(dp.nk+31)/32, 1)
+		}
+		dnRuleOp = func(qn, kn, v, headP, state, core *wgpu.Buffer) {
+			add(c.deltaRulePipeline, bind(c.deltaRuleLayout, qn, kn, v, headP, state, core, dRule), uint32(dp.valueDim+63)/64, 1)
+		}
+		dnGNormOp = func(core, z, normW, gated *wgpu.Buffer) {
+			add(c.deltaGNormPipeline, bind(c.deltaGNormLayout, core, z, normW, gated, dGN), uint32(dp.nv+63)/64, 1)
+		}
+	}
+	// qSplit unpacks a double-width [query ‖ gate]-per-head q_proj output; attnGate applies
+	// ctx *= sigmoid(gate) after attention. Both are no-ops for every family without
+	// attn_output_gate (runLayer.qGate false ⇒ never dispatched).
+	qSplit := func(qg *wgpu.Buffer, n, headDim int) (*wgpu.Buffer, *wgpu.Buffer) {
+		q, gate := storF(n), storF(n)
+		p := uni([]uint32{uint32(n), uint32(headDim), 0, 0})
+		add(c.deltaQSplitPipeline, bind(c.deltaQSplitLayout, qg, q, gate, p), uint32(n+63)/64, 1)
+		return q, gate
+	}
+	attnGate := func(ctxv, gate *wgpu.Buffer, n int) {
+		p := uni([]uint32{uint32(n), 0, 0, 0})
+		add(c.deltaAttnGatePipeline, bind(c.deltaAttnGateLayout, ctxv, gate, p), uint32(n+63)/64, 1)
 	}
 	// f16 mamba projections (quality fix): plain f32 rmsnorm activation + f16 weight GEMV.
 	rmsnormF32 := func(in, weight *wgpu.Buffer, n int) *wgpu.Buffer {
@@ -867,6 +937,33 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 				gq, gs := quant(gated, mp.dInner)
 				gemvAdd(gq, gs, lw.mambaOutProj, r.xd)
 			}
+		} else if lw.isDeltaNet {
+			// Gated-DeltaNet mixer: norm → in_proj_qkv → conv(ring) → l2norm(q,k) → delta rule
+			// (state) → gated RMSNorm × silu(z) → out_proj + residual. The {win, dnState} pair
+			// persists in lw and is updated in place per token, like Mamba's {win, ssm}.
+			//
+			// The two gate projections run off the SAME quantized activation as the big ones.
+			// On the CPU they are f32 (deltaNetWeights keeps inProjB/inProjA unquantized because
+			// they feed the write/decay gates, where the recurrence is most precision-sensitive)
+			// — so this is the one place the resident path is deliberately coarser than the
+			// reference, and the parity gate is what says whether that is affordable.
+			dp := m.dnet
+			aq, as := rmsQuant(r.xd, lw.attnNorm, hidden)
+			mixed := gemv(aq, as, lw.dnQKV)
+			conv := storF(dp.convDim)
+			dnConvOp(mixed, lw.mambaConvW, lw.mambaConvB, lw.mambaWin, conv)
+			qn, kn := storF(dp.keyDim), storF(dp.keyDim)
+			dnNormOp(conv, qn, kn)
+			headP := storF(dp.nv * 2)
+			dnGatesOp(gemv(aq, as, lw.dnB), gemv(aq, as, lw.dnA), lw.dnDtBias, lw.dnNegExpA, headP)
+			core := storF(dp.valueDim)
+			// v is conv[2*keyDim:] — bound as an offset view rather than copied, the same
+			// alignment-free trick mambaSSMOp uses for its in_proj slices.
+			dnRuleOp(qn, kn, conv, headP, lw.dnState, core)
+			gated := storF(dp.valueDim)
+			dnGNormOp(core, gemv(aq, as, lw.dnZ), lw.dnNormW, gated)
+			gq, gs := quant(gated, dp.valueDim)
+			gemvAdd(gq, gs, lw.dnOut, r.xd)
 		} else if m.mla != nil {
 			// MLA latent attention (Lever C4c): input-norm → q (LoRA/direct) + kv-down →
 			// latent store → W_UK-absorb + qRope → rank-space attend → W_UV-lift → o-proj.
@@ -903,7 +1000,7 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 				ghd, gnKV, ghalf = lw.ghd, lw.gnKV, lw.ghalf
 			}
 			g := geomFor(ghd, gnKV, ghalf, lw.gKEqV)
-			var q, k, v *wgpu.Buffer
+			var q, k, v, aGate *wgpu.Buffer
 			_, w8 := lw.q.(*ResidentW8A8)
 			if lw.qBias != nil && w8 { // Qwen2 q/k/v bias folded into the GEMV epilogue (W8A8)
 				q = gemvBias(aq, as, lw.q, lw.qBias)
@@ -916,6 +1013,9 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 					biasAdd(k, lw.kBias, g.kvDim)
 					biasAdd(v, lw.vBias, g.kvDim)
 				}
+			}
+			if lw.qGate { // attn_output_gate: q_proj emitted [query ‖ gate] per head
+				q, aGate = qSplit(q, nH*g.hd, g.hd)
 			}
 			if lw.qNorm != nil { // Qwen3/GLM per-head QK-norm, after bias, before RoPE (matches CPU)
 				qkNorm(q, lw.qNorm, nH)
@@ -943,6 +1043,9 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 					attnPl, attnLy = c.attnF16Pipeline, c.attnF16Layout
 				}
 				add(attnPl, bind(attnLy, q, lw.kCache, lw.vCache, ctxv, aUni), uint32(nH), 1)
+			}
+			if aGate != nil { // ctx *= sigmoid(gate), before o_proj (matches CPU)
+				attnGate(ctxv, aGate, nH*g.hd)
 			}
 			cq, cs := quant(ctxv, nH*g.hd)
 			gemvAdd(cq, cs, lw.o, r.xd) // o-proj + residual into xd
@@ -1214,3 +1317,19 @@ func (r *DecodeRunner) release() {
 
 // Release frees the runner's scratch (not the resident model).
 func (r *DecodeRunner) Close() error { r.release(); return nil }
+
+// dnetRunParams carries the model-level Gated-DeltaNet geometry (uniform across the linear
+// layers). keyDim/valueDim/convDim are derived once here rather than at every dispatch, because
+// the three of them are easy to conflate: convDim is 2*keyDim+valueDim (the conv runs over
+// [q|k|v] together), and rep = nv/nk is the GVA factor mapping value heads to key heads.
+type dnetRunParams struct {
+	convK      int // depthwise causal conv width
+	hk, hv     int // per-head key/query and value dims
+	nk, nv     int // key-head and value-head counts
+	rep        int // nv/nk — value heads sharing one key head
+	keyDim     int // nk*hk
+	valueDim   int // nv*hv
+	convDim    int // 2*keyDim + valueDim
+	stateElems int // nv*hv*hk, the per-layer recurrent state
+	eps        float32
+}

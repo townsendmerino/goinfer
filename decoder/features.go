@@ -49,6 +49,20 @@ const (
 	FeatMoEGatedShared    ResidentFeature = "moe-gated-shared"    // sigmoid-GATED always-on shared expert (Qwen2-MoE); ungated (GLM/DeepSeek) needs only FeatMoE
 	FeatMLA               ResidentFeature = "mla"                 // latent-KV attention (DeepSeek, Kimi)
 	FeatSSM               ResidentFeature = "ssm"                 // Mamba-2 mixer (Granite-4.0-H, Nemotron-H)
+	// FeatDeltaNet bundles the TWO departures of the Gated-DeltaNet hybrids (qwen3_5_moe,
+	// qwen3_next, qwen3_5), for the same reason FeatAttnSink bundles gpt-oss's three: they always
+	// co-occur, and a backend that implemented one without the other would be admitted and then
+	// silently run half the model wrong.
+	//
+	//  1. the recurrent delta rule replacing softmax attention on 3 of every 4 layers, with a
+	//     fixed-size per-head matrix state (no KV cache, not position-truncatable); and
+	//  2. attn_output_gate on the REMAINING layers — q_proj emits [query ‖ gate] per head at
+	//     double width and the context is scaled by sigmoid(gate) before o_proj.
+	//
+	// (2) is spelled differently from Laguna's FeatAttnOutputGate — a separate g_proj through
+	// softplus, not a fused double-width q through sigmoid — so the two are NOT interchangeable
+	// and declaring one must not admit the other.
+	FeatDeltaNet ResidentFeature = "deltanet" // Gated-DeltaNet mixer + fused attn output gate
 	// FeatAttnSink bundles gpt-oss's THREE departures: the learned per-head sink in the softmax
 	// denominator, the clamped interleaved-SwiGLU expert, and a router whose bias reaches the
 	// WEIGHT rather than only the selection. No resident backend DECLARES it yet, so CUDA/Metal/
@@ -147,6 +161,7 @@ func (a *Architecture) residentFeatures() []ResidentFeature {
 	add(a.MoE != nil && a.MoE.SharedIntermediateDim > 0 && !a.MoE.SharedUngated, FeatMoEGatedShared)
 	add(a.mla != nil, FeatMLA)
 	add(a.granite != nil || a.nemotron != nil, FeatSSM)
+	add(a.qwen35 != nil, FeatDeltaNet)
 	add(a.gptoss != nil, FeatAttnSink)
 	// Laguna's attention output gate AND its per-layer query-head count. Both live on
 	// arch.laguna and neither has a resident implementation; either one alone would be
@@ -363,6 +378,7 @@ var residentBackendFeatures = map[string]map[ResidentFeature]bool{
 		FeatMoEGatedShared: true, // sharedGatedCombine — sigmoid-gated shared expert (gpu/moe.go)
 		FeatMLA:            true, // C4a-d latent-KV attention
 		FeatSSM:            true, // Mamba-2 engine (Granite-4.0-H, Nemotron-H)
+		FeatDeltaNet:       true, // Gated-DeltaNet engine + fused attn output gate (gpu/deltanet.go)
 		FeatNonGatedMLP:    true, // relu2Quant (Nemotron-H squared-ReLU)
 		FeatLogitScale:     true, // Granite logits_scaling
 		FeatRMSAddOne:      true, // (1+w) RMS offset

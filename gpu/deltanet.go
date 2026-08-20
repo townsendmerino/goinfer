@@ -37,13 +37,17 @@ import (
 //	S[kd] += k[kd]·delta ; o += S[kd]·q[kd]
 //	out[headV*hv+vd] = o
 //
+// vBase lets the caller bind the WHOLE post-conv [q|k|v] buffer and point at its v slice, the
+// alignment-free trick mambaSSMOp uses for its in_proj slices — a byte offset of 2*keyDim*4 is not
+// guaranteed to satisfy minStorageBufferOffsetAlignment at every geometry.
+//
 // q and k arrive ALREADY l2-normalized (deltaNorm below): the norms are per KEY head, so computing
 // them inside this kernel would repeat each one hv times — the same work as the recurrence itself.
 const deltaRuleShaderWGSL = `
-struct P { nv: u32, nk: u32, hk: u32, hv: u32, rep: u32, _a: u32, _b: u32, _c: u32 };
+struct P { nv: u32, nk: u32, hk: u32, hv: u32, rep: u32, vBase: u32, _b: u32, _c: u32 };
 @group(0) @binding(0) var<storage, read>       qn:    array<f32>;  // [nk*hk] l2-normalized, scaled
 @group(0) @binding(1) var<storage, read>       kn:    array<f32>;  // [nk*hk] l2-normalized
-@group(0) @binding(2) var<storage, read>       v:     array<f32>;  // [nv*hv]
+@group(0) @binding(2) var<storage, read>       v:     array<f32>;  // [nv*hv] at vBase
 @group(0) @binding(3) var<storage, read>       headP: array<f32>;  // [nv*2]: beta, gt
 @group(0) @binding(4) var<storage, read_write> state: array<f32>;  // [nv*hv*hk], in place, [hv,hk]
 @group(0) @binding(5) var<storage, read_write> yout:  array<f32>;  // [nv*hv]
@@ -70,7 +74,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         state[sBase + kd] = s;
         kv = kv + s * kn[kBase + kd];
     }
-    let delta = (v[headV * p.hv + vd] - kv) * beta;
+    let delta = (v[p.vBase + headV * p.hv + vd] - kv) * beta;
 
     var o = 0.0;
     for (var kd = 0u; kd < p.hk; kd = kd + 1u) {
@@ -237,6 +241,74 @@ func (c *Context) ensureDeltaGNorm() error {
 		return err
 	}
 	c.deltaGNormShader, c.deltaGNormPipeline, c.deltaGNormLayout = sh, pl, c.bgl(pl)
+	return nil
+}
+
+// The SOFTMAX layers of this family are not ordinary GQA either, and that is easy to miss: with
+// attn_output_gate, q_proj emits [query ‖ gate] PER HEAD at double width, and the attention
+// context is scaled by sigmoid(gate) before o_proj. Two small kernels rather than a load-time
+// weight split, because the weight is quantized — slicing rows out of an int4 WeightMat with its
+// per-group scales is real surgery, while splitting the [nH*2*hd] activation is 6144 threads of
+// copy.
+//
+// deltaQSplit: qg[head*2*hd .. ] → q[head*hd ..] and gate[head*hd ..]. Interleaved PER HEAD, not
+// two concatenated blocks; reading it as two blocks measures cosine 0.90 with a DRIFTING
+// signature (TestQwen35ResidentParity mutation W1b) — plausible logits from the wrong tensor.
+const deltaQSplitShaderWGSL = `
+struct P { n: u32, hd: u32, _a: u32, _b: u32 };
+@group(0) @binding(0) var<storage, read>       qg:   array<f32>;  // [nH*2*hd]
+@group(0) @binding(1) var<storage, read_write> q:    array<f32>;  // [nH*hd]
+@group(0) @binding(2) var<storage, read_write> gate: array<f32>;  // [nH*hd]
+@group(0) @binding(3) var<uniform>             p:    P;
+
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let t = gid.x;
+    if (t >= p.n) { return; }
+    let h = t / p.hd;
+    let d = t % p.hd;
+    let base = h * 2u * p.hd + d;
+    q[t]    = qg[base];
+    gate[t] = qg[base + p.hd];
+}
+`
+
+// deltaAttnGate: ctx *= sigmoid(gate), in place, after attention and before o_proj.
+const deltaAttnGateShaderWGSL = `
+struct P { n: u32, _a: u32, _b: u32, _c: u32 };
+@group(0) @binding(0) var<storage, read_write> ctx:  array<f32>;
+@group(0) @binding(1) var<storage, read>       gate: array<f32>;
+@group(0) @binding(2) var<uniform>             p:    P;
+
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let t = gid.x;
+    if (t >= p.n) { return; }
+    ctx[t] = ctx[t] / (1.0 + exp(-gate[t]));
+}
+`
+
+func (c *Context) ensureDeltaQSplit() error {
+	if c.deltaQSplitPipeline != nil {
+		return nil
+	}
+	sh, pl, err := c.compute("deltaQSplit", deltaQSplitShaderWGSL)
+	if err != nil {
+		return err
+	}
+	c.deltaQSplitShader, c.deltaQSplitPipeline, c.deltaQSplitLayout = sh, pl, c.bgl(pl)
+	return nil
+}
+
+func (c *Context) ensureDeltaAttnGate() error {
+	if c.deltaAttnGatePipeline != nil {
+		return nil
+	}
+	sh, pl, err := c.compute("deltaAttnGate", deltaAttnGateShaderWGSL)
+	if err != nil {
+		return err
+	}
+	c.deltaAttnGateShader, c.deltaAttnGatePipeline, c.deltaAttnGateLayout = sh, pl, c.bgl(pl)
 	return nil
 }
 
