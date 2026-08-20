@@ -296,10 +296,16 @@ floor, because a threshold tuned to catch one known bug catches only that bug.
      of Paris and one of the most"
 
 ~20 GB of int4 experts against 8 GB of VRAM. It needed three things that did not exist the day
-before — the DeltaNet kernels, their wiring, and FeatMoEGatedShared — plus C′, which CUDA alone
-has. WebGPU can decode this family faster per layer than the CPU but cannot host this model at
-all; the dense Qwen3.8-27B is the mirror image (portable, but 15.3 GB of dense int4 fits nowhere
-here and C′ does nothing for it).
+before — the DeltaNet kernels, their wiring, and FeatMoEGatedShared — plus C′ expert staging.
+WebGPU can decode this family faster per layer than the CPU but cannot host this model at all; the
+dense Qwen3.8-27B is the mirror image (portable, but 15.3 GB of dense int4 fits nowhere here and
+C′ does nothing for it).
+
+**CORRECTION (2026-08-20):** this section originally said C′ is a capability "CUDA alone has". That
+is wrong about Metal, which ships its own per-layer LRU expert pager (`metal/expertpool.go`) built
+for the same gemma4-26B problem — currently wired to the `g4moe` path rather than generic MoE, so a
+qwen3_5_moe model would not use it as-is, but the mechanism exists and generalizing it is a smaller
+job than inventing one. WebGPU is the backend with no equivalent.
 
 **C′ step 2's LRU was already implemented — its DEFAULT defeats it.** `cacheSlots` defaults to
 `topK`, so each token's 8 routed experts evict the previous token's 8 and the cache never hits.

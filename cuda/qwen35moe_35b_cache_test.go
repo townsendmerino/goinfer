@@ -21,9 +21,14 @@ import (
 //
 // WHY THIS MODEL AND NOT THE DENSE ONE. Qwen3.8-27B is dense: C′ streams EXPERTS, so it does
 // nothing for a model with none, and 15.3 GB of int4 dense weights simply do not fit. The MoE
-// siblings are the only members of this family that an 8 GB card can host at all, and CUDA is the
-// only backend with the streaming path — WebGPU has no equivalent. So this is the one combination
-// where residency for this family is not merely faster but POSSIBLE.
+// siblings are the only members of this family an 8 GB card can host at all, so this is the one
+// combination where residency for this family is not merely faster but POSSIBLE.
+//
+// CORRECTION (2026-08-20): an earlier version of this comment said CUDA is "the only backend with
+// the streaming path". That is wrong about Metal, which has its own shipped per-layer LRU expert
+// pager (metal/expertpool.go, built for the same gemma4-26B problem) — today wired to the g4moe
+// path rather than generic MoE, so it would need generalizing, but the mechanism is there. WebGPU
+// is the one with no equivalent.
 //
 // It needed three things that did not exist a day ago: the DeltaNet mixer kernels, their wiring,
 // and FeatMoEGatedShared (the sigmoid-gated shared expert this family carries). Any one missing
