@@ -39,6 +39,30 @@ CKPT = os.path.join(TD, "qwen3_5-tiny")
 # (the A' zero-copy post-mortem: isolation proves the primitive, never the composition).
 MOE_OUT = os.path.join(TD, "qwen3_5_moe_tiny_text_golden.json")
 MOE_CKPT = os.path.join(TD, "qwen3_5_moe-tiny")
+# --scaled writes a THIRD fixture: 4 layers at FULLY REAL width. Not a correctness fixture — the
+# tiny ones gate that — but the only way to get a defensible tok/s number for a 27B model that
+# does not fit 8 GB of VRAM. Everything the decode cost depends on is the released value
+# (hidden 5120, intermediate 17408, head_dim 256, 24/4 heads, DeltaNet 128/128 with 16/48 heads,
+# partial rotary 0.25) and the layer mix is the real 3:1, so ms/LAYER extrapolates. Only the
+# layer count and the vocab shrink; the released vocab is 248320, whose LM head is ~5% of the
+# real model's per-token MACs and must be added back by hand, not assumed away.
+SCALED_CKPT = os.path.join(os.path.expanduser("~"), "models", "qwen3_5-scaled4")
+# The note lives WITH the checkpoint, not in testdata/: every JSON in testdata/ is a parity
+# golden, and a timing artifact filed among them would be read as one.
+SCALED_OUT = os.path.join(SCALED_CKPT, "goinfer_timing_note.json")
+SCALED_CFG = dict(
+    vocab_size=4096, hidden_size=5120, intermediate_size=17408, num_hidden_layers=4,
+    num_attention_heads=24, num_key_value_heads=4, head_dim=256,
+    layer_types=["linear_attention", "linear_attention", "linear_attention", "full_attention"],
+    linear_conv_kernel_dim=4, linear_key_head_dim=128, linear_value_head_dim=128,
+    linear_num_key_heads=16, linear_num_value_heads=48,
+    rms_norm_eps=1e-6, max_position_embeddings=4096, tie_word_embeddings=False,
+    hidden_act="silu", attention_bias=False, attn_output_gate=True,
+    rope_parameters={"rope_type": "default", "rope_theta": 10000000.0,
+                     "partial_rotary_factor": 0.25,
+                     "mrope_section": [11, 11, 10], "mrope_interleaved": True},
+)
+
 MOE_CFG = dict(
     num_experts=4, num_experts_per_tok=2, moe_intermediate_size=64,
     shared_expert_intermediate_size=64, norm_topk_prob=True, decoder_sparse_step=1,
@@ -62,6 +86,18 @@ N_NEW = 6
 
 
 def main():
+    if "--scaled" in sys.argv:
+        # No golden: this fixture exists for TIMING, and running an HF forward at this width
+        # would cost minutes to produce a number nothing reads. Correctness is the tiny
+        # fixtures' job; conflating the two would make this look like a parity artifact.
+        torch.manual_seed(0)
+        m = Qwen3_5ForCausalLM(Qwen3_5TextConfig(**SCALED_CFG)).eval().to(torch.bfloat16)
+        m.save_pretrained(SCALED_CKPT, safe_serialization=True)
+        n = sum(p.numel() for p in m.parameters())
+        json.dump({"note": "TIMING fixture, NOT a parity golden — 4 layers at real Qwen3.8 width",
+                   "config": SCALED_CFG, "params": n}, open(SCALED_OUT, "w"), indent=1)
+        print(f"{n/1e9:.2f}B params -> {SCALED_CKPT}")
+        return
     moe = "--moe" in sys.argv
     cfg = dict(CFG, **MOE_CFG) if moe else CFG
     out, ckpt = (MOE_OUT, MOE_CKPT) if moe else (OUT, CKPT)
