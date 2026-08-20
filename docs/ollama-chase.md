@@ -1377,9 +1377,12 @@ bit-identity-preserving (pure buffer/traffic reuse).
   **on-device embed table** (GPU looks the row up from the id — Metal's `loadEmbedRow` already does).
 - **MoE `moeMLP` allocates MB/token.** `decoder/mlp.go:91` skips the `*decodeScratch` invariant the dense
   `gatedMLP` honors → ~7-8 MB garbage/token (Mixtral-class). Thread `*decodeScratch` through.
-- **int4 W4A8 `Workspace` alloc/token.** `decoder/weightmat.go:202` int4 branch of `matmul()` uses a cap-0
-  `linalg.Workspace` (the W8A8 sibling was fixed, int4 missed) → make() per projection per token. Add an
-  int4 case to `matmulInto` with a persistent per-stream Workspace.
+- ~~**int4 W4A8 `Workspace` alloc/token.**~~ **DONE (2026-08-19, P9)** — and not by the fix proposed
+  here. The item asked for an int4 case in `matmulInto`; what shipped instead pools the `Workspace` in
+  `matmul()` itself (`decoder/weightmat.go:196` `matmulWSPool`), which covers the free-matmul callers
+  `matmulInto` never sees. The `Get` is exclusive for the call's duration, so concurrent decode streams
+  keep the old per-call race freedom. Note this landed while the freeze was still nominally on — the
+  v1.0 deferral (post-0.16.0) is what unblocked it.
 
 ### Measured negative — not the win the audit claimed
 - **PGO (profile-guided optimization) on the pure-Go CPU path.** Prototyped end-to-end (2026-08-11):
