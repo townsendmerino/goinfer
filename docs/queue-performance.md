@@ -852,7 +852,7 @@ makes 34 unreachable. A9 ran **before A5 landed**, so no override was needed. Re
 at the new cap would simply pass and look like confirmation, leaving no trace of the loss.
 
 **P1 · KV re-gather and V re-transpose on every decode token** — **LANDED `97f824a`, 2026-08-15**.
-Was `decoder/forwardn.go:412`.
+Was `decoder/forwardn.go:415`.
 
 Was estimated ~10–15% of per-token traffic at 4k+ context — the largest single item in the group.
 
@@ -1007,7 +1007,7 @@ worth a standalone build for a tok/s win. Only reconsider inside a **megakernel 
 dispatches at once), which is the actual Metal-decode lever (with int4 unpack / bandwidth). If ever
 built, A/B it — do not assume the estimate.
 
-**P6 · `moeMLP` allocates ~7–8 MB/token** — **DONE `eea7f29`** (`decoder/mlp.go:82`)
+**P6 · `moeMLP` allocates ~7–8 MB/token** — **DONE `eea7f29`** (`decoder/mlp.go:91`)
 
 By skipping the `decodeScratch` invariant its dense sibling honours. **See B6.**
 

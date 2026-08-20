@@ -381,8 +381,8 @@ supports.
 | `docs/ollama-chase.md|cuda/resident.go:365` | goinfer | `g4x1, g4x2, g4rn Buffer` |
 | `docs/ollama-chase.md|cuda/resident.go:41` | goinfer | `anchor: const ctxCapMarginBytes = 384 << 20` |
 | `docs/ollama-chase.md|cuda/resident.go:613` | goinfer | `// declined to the staged/CPU path upstream.` |
-| `docs/ollama-chase.md|decoder/forwardn.go:412` | goinfer | `for kvh := range nKV {` |
-| `docs/ollama-chase.md|decoder/mlp.go:82` | goinfer | `func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend, pager *expert` |
+| `docs/ollama-chase.md|decoder/forwardn.go:415` | goinfer | `for kvh := range nKV {` |
+| `docs/ollama-chase.md|decoder/mlp.go:91` | goinfer | `func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend, scr *decodeSc` |
 | `docs/ollama-chase.md|decoder/model.go:831` | goinfer | `// logits. On the batched archs this runs the layers at M=len in one pass (each` |
 | `docs/ollama-chase.md|decoder/model.go:979` | goinfer | `// sample. Identical to the logits path — guarded by ArgmaxEquivalent/GreedyEquivalent.` |
 | `docs/ollama-chase.md|decoder/residency.go:715` | goinfer | `return false, "sequential — this backend has no batched prefill (per-token resident forw` |
@@ -407,7 +407,7 @@ supports.
 | `docs/queue-engineering.md|cuda/resident.go:245` | goinfer | `// backend.go locals; the per-layer KV cache and UploadKV read r.layers[l].kvDim.` |
 | `docs/queue-engineering.md|cuda/resident.go:427` | goinfer | `func (r *cudaResident) recordUpload(e error) {` |
 | `docs/queue-engineering.md|decoder/features_test.go:194` | goinfer | `want, ok := admissionGolden[name]` |
-| `docs/queue-engineering.md|decoder/forwardn.go:560` | goinfer | `logits[j] = sc * float32(math.Tanh(float64(val/sc)))` |
+| `docs/queue-engineering.md|decoder/forwardn.go:563` | goinfer | `logits[j] = sc * float32(math.Tanh(float64(val/sc)))` |
 | `docs/queue-engineering.md|decoder/kvsnapshot_gemma4_test.go:10` | goinfer | `func TestSnapshot_refusesNonUniformKVWidth_C05(t *testing.T) {` |
 | `docs/queue-engineering.md|decoder/layerpaging.go:42` | goinfer | `// mu guards the mutable paging state below (audit C-30). The pager lives on *Model, sha` |
 | `docs/queue-engineering.md|decoder/model.go:731` | goinfer | `// Diagnostic — same byte-identical-output contract as ForwardCapture. Not wired for own` |
@@ -425,8 +425,8 @@ supports.
 | `docs/queue-performance.md|cuda/backend.go:463` | goinfer | `if r.dev, e = CreateSystemDefaultDevice(); e != nil {` |
 | `docs/queue-performance.md|cuda/backend.go:591` | goinfer | `load(&r.bRopeKV, pbmod, "rope_kv_batched")` |
 | `docs/queue-performance.md|cuda/backend.go:873` | goinfer | `// cache, so the cap is correct by construction rather than covered by a margin.` |
-| `docs/queue-performance.md|decoder/forwardn.go:412` | goinfer | `for kvh := range nKV {` |
-| `docs/queue-performance.md|decoder/mlp.go:82` | goinfer | `func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend, pager *expert` |
+| `docs/queue-performance.md|decoder/forwardn.go:415` | goinfer | `for kvh := range nKV {` |
+| `docs/queue-performance.md|decoder/mlp.go:91` | goinfer | `func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend, scr *decodeSc` |
 | `docs/queue-performance.md|decoder/sampler_chunked.go:188` | goinfer | `return drawChunked(e, sums, z, r)` |
 | `docs/queue-performance.md|decoder/scratch.go:39` | goinfer | `ws        *linalg.Workspace // W8A8 activation-quant scratch (zero-alloc Into/Batch)` |
 | `docs/queue-performance.md|linalg/quant.go:136` | aikit | `dequantRowInt8(deq, bq, 1.0)` |
