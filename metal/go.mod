@@ -1,6 +1,6 @@
 module github.com/townsendmerino/goinfer/metal
 
-go 1.26.6
+go 1.27.0
 
 require github.com/townsendmerino/goinfer v0.14.0
 

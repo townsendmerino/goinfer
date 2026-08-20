@@ -4,7 +4,7 @@
 // and cmd/agent-web (browser chat).
 module github.com/townsendmerino/goinfer/demo/agent
 
-go 1.26.6
+go 1.27.0
 
 require (
 	github.com/modelcontextprotocol/go-sdk v1.6.1

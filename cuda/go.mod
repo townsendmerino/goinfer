@@ -1,6 +1,6 @@
 module github.com/townsendmerino/goinfer/cuda
 
-go 1.26.6
+go 1.27.0
 
 require (
 	github.com/eitamring/gocudrv v0.3.2
