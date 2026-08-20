@@ -159,17 +159,17 @@ var admissionGolden = map[string][]string{
 	"qwen2_5_vl": {"cuda", "metal", "webgpu"},
 	"qwen2_moe":  {"cuda", "metal", "webgpu"}, // cuda joined 2026-08-20 (the gate weight, not a kernel)
 	"qwen3":      {"cuda", "metal", "webgpu"},
-	// The Gated-DeltaNet family collapses to WEBGPU ONLY once FeatDeltaNet is in the taxonomy,
-	// and that is the whole point of adding it. Before, the rows read {cuda, metal, webgpu} for
-	// the dense one on features alone while decodeRunnerEligible refused all three upstream — an
-	// honest-but-inert record. Now the arch-level refusal is gone (the mixer IS bridged) and the
-	// decline moved to the feature gate, where only the backend that implements the recurrence
-	// AND the fused attention output gate admits. CUDA and Metal have neither.
-	"qwen3_5":          {"cuda", "webgpu"},
-	"qwen3_5_text":     {"cuda", "webgpu"},
-	"qwen3_5_moe":      {"cuda", "webgpu"},
-	"qwen3_5_moe_text": {"cuda", "webgpu"},
-	"qwen3_next":       {"cuda", "webgpu"}, // same arch.qwen35 != nil bridge qwen3_5_moe uses — reused directly, not a new one
+	// The Gated-DeltaNet family collapses to the backends that implement BOTH the recurrence AND
+	// the fused attention output gate (FeatDeltaNet) — the whole point of adding it as one taxon
+	// bundling both departures rather than two. CUDA and WebGPU landed it first (2026-08-19/20);
+	// Metal landed the recurrence kernels + the qGate softmax-layer wiring + a whole-model gate
+	// against qwen3_5-tiny (worst cosine 0.9886, drift 0.0081, replay-after-Reset self-cosine
+	// 1.0 — TestQwen35ResidentParityMetal) and now admits too. CUDA still lacks it.
+	"qwen3_5":          {"cuda", "metal", "webgpu"},
+	"qwen3_5_text":     {"cuda", "metal", "webgpu"},
+	"qwen3_5_moe":      {"cuda", "metal", "webgpu"},
+	"qwen3_5_moe_text": {"cuda", "metal", "webgpu"},
+	"qwen3_next":       {"cuda", "metal", "webgpu"}, // same arch.qwen35 != nil bridge qwen3_5_moe uses — reused directly, not a new one
 }
 
 func TestResidentAdmission_matrix(t *testing.T) {
@@ -236,11 +236,15 @@ func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 		// custom router + YaRN rope mscale also landed (TestGptOssResidentParity, min cosine
 		// 0.9989 on the tiny fixture) — FeatRopeMscale ALSO admits Mellum as a documented side
 		// effect (see docs/queue-correctness.md G10/G11): declared anyway on explicit user call,
-		// Mellum's own real-weight Metal gate is tracked as G11, not yet landed.
+		// Mellum's own real-weight Metal gate is tracked as G11, not yet landed. Gated-DeltaNet
+		// mixer + fused attn output gate (deltanet.go/deltanet_kernels.go) landed with its own
+		// end-to-end whole-model gate (TestQwen35ResidentParityMetal, qwen3_5-tiny: worst cosine
+		// 0.9886, drift 0.0081, replay-after-Reset self-cosine 1.0) — not ahead of it.
 		"metal": {
 			FeatQKNorm, FeatSlidingWindow, FeatPartialRotary, FeatMoE, FeatMoEGatedShared, FeatSandwichNorm,
 			FeatGatedGELU, FeatRMSAddOne, FeatEmbedScale, FeatPerLayerRoPE, FeatFinalLogitSoftcap,
 			FeatLayerNorm, FeatNonGatedMLP, FeatLearnedPos, FeatOutBias, FeatRopeMscale, FeatAttnSink,
+			FeatDeltaNet,
 		},
 	}
 	for be, exp := range want {

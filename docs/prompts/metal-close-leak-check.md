@@ -33,14 +33,14 @@ it without tracking each buffer. Result: **13 failures → 0**, VRAM sawtooths (
 Reading `metal/` from here — please confirm on your box, we may be wrong:
 
 ```go
-// metal/backend.go:211
+// metal/backend.go:221
 // Close stops the pipelined executor goroutine (if started). Metal buffers are freed at process
 // exit (single-model lifetime).
 func (a *metalResident) Close() error { a.r.stopExec(); return nil }
 ```
 
 ```go
-// metal/model.go:374
+// metal/model.go:400
 func (r *Resident) stopExec() {
 	if r.execReq != nil {
 		close(r.execReq)

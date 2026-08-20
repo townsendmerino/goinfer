@@ -117,6 +117,11 @@ func (a *metalResident) Forward(embedding []float32, pos int) ([]float32, error)
 	if e := a.checkCap(pos, 1); e != nil {
 		return nil, e
 	}
+	if pos == 0 {
+		// Fresh sequence: re-zero any Gated-DeltaNet state before it carries over from a prior
+		// Generate on this resident (audit C-01's CUDA analogue). No-op for every other family.
+		a.Reset()
+	}
 	logits := a.r.ForwardEmbPipe(embedding, pos) // pipelined executor (encode-ahead)
 	if err := a.r.takeExecErr(); err != nil {
 		return nil, err // C-09: a command buffer aborted — surface it, do NOT return stale logits
@@ -203,10 +208,15 @@ func (a *metalResident) UploadKV(layer int, keys, vals []float32) error {
 	return fmt.Errorf("metal: UploadKV not supported (re-run the prefix through Forward)")
 }
 
-// TruncateTo / Reset are no-ops: KV positions are overwritten on write, and attention only
-// reads keys[0..pos], so stale positions past the current one are never observed.
+// TruncateTo is a no-op: KV positions are overwritten on write, and attention only reads
+// keys[0..pos], so stale positions past the current one are never observed.
 func (a *metalResident) TruncateTo(pos int) {}
-func (a *metalResident) Reset()             {}
+
+// Reset zeroes every Gated-DeltaNet layer's causal-conv ring and recurrent matrix state (no-op
+// for every other family — a.r.dnet is nil). Unlike KV positions, this state COMPOUNDS: a fresh
+// Generate on the same resident without this would continue decaying stale state from the PRIOR
+// sequence (audit C-01's CUDA analogue). See resetDeltaNet (deltanet.go).
+func (a *metalResident) Reset() { a.r.resetDeltaNet() }
 
 // Close stops the pipelined executor (waiting for it) and frees every MTLBuffer this resident
 // allocated. Metal buffers are unified/system memory and purego has no ARC, so without this a
