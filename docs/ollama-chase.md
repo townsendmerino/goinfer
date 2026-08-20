@@ -1360,29 +1360,33 @@ generations, not steady-state tok/s. Recording them here so nothing gets re-prop
   (Cursor, 2026-08-10) listed this as its #1 "easy win / first cut" on the CUDA-analogy — measurement
   refutes it on Metal. Do not re-open without the pipelined-executor variant AND a fresh A/B.
 
-### Freeze-blocked — deferred to the v1.0 unfreeze
-These require editing parity-manifest "core"/hashed `decoder/` files (`model.go`, `forwardn.go`,
-`attention.go`, `mlp.go`, `weightmat.go`), which re-stales every family's `deps_hash`. Held under the
-pre-1.0 core-numerics freeze; **batch them when v1.0 lands so the manifest re-validates once.** All are
-bit-identity-preserving (pure buffer/traffic reuse).
-- **KV re-gather / V re-transpose every token (the big one).** `decoder/forwardn.go:415` (`attendBatchedHeads`)
-  re-gathers the whole K history and re-transposes all of V into scratch each decode token (~2-3× the
-  intrinsic KV traffic; ~10-15% of per-token traffic at 4k+ ctx, all mainstream CPU families). Needs a
-  row-pitch arg on aikit `MatmulBTAcc64` + a per-layer persistent transposed-V cache layout. Highest
-  lift, biggest broad CPU win — the headline unfreeze item.
-- **embedResident host-scratch reuse.** `embedResident` (`decoder/residency.go:715`, itself freeze-safe) does
+### Formerly freeze-blocked — freeze LIFTED 2026-08-18/19
+These edit parity-manifest "core"/hashed `decoder/` files (`model.go`, `forwardn.go`, `attention.go`,
+`mlp.go`, `weightmat.go`), which re-stales every family's `deps_hash`. Was held under the pre-1.0
+core-numerics freeze; the freeze itself is gone now (explicit instruction, not a v1.0 landing — ordinary
+parity discipline still applies per-change: goldens, `TestParityManifest_fresh`,
+`scripts/refresh_parity_hashes.sh`). All four are bit-identity-preserving (pure buffer/traffic reuse).
+- **KV re-gather / V re-transpose every token (the big one) — DONE, `97f824a`.** Every live decode
+  caller of `attendBatchedHeads` (`decoder/forwardn.go`) now passes `useAcc64=true`, which reads
+  `keys`/`vals` directly via aikit's strided `MatmulBTAcc64` instead of gathering+transposing into
+  scratch. The old gather survives only as the f32 fallback exercised by tests, not on the real decode
+  path.
+- **embedResident host-scratch reuse — still open.** `embedResident` (`decoder/residency.go:715`) does
   `make([]float32, HiddenDim)` per token, then H2D. The decode-hot-path call sites (`decoder/model.go:979/977`)
-  are frozen — can't reroute; and reusing in place breaks the batch caller `decoder/model.go:831`
+  can't reroute without breaking the batch caller `decoder/model.go:831`
   (`embs[i]=embedResident(id)` collection would alias). Small (~6-14 KB/token). Bigger follow-on: an
   **on-device embed table** (GPU looks the row up from the id — Metal's `loadEmbedRow` already does).
-- **MoE `moeMLP` allocates MB/token.** `decoder/mlp.go:91` skips the `*decodeScratch` invariant the dense
-  `gatedMLP` honors → ~7-8 MB garbage/token (Mixtral-class). Thread `*decodeScratch` through.
-- ~~**int4 W4A8 `Workspace` alloc/token.**~~ **DONE (2026-08-19, P9)** — and not by the fix proposed
-  here. The item asked for an int4 case in `matmulInto`; what shipped instead pools the `Workspace` in
-  `matmul()` itself (`decoder/weightmat.go:196` `matmulWSPool`), which covers the free-matmul callers
-  `matmulInto` never sees. The `Get` is exclusive for the call's duration, so concurrent decode streams
-  keep the old per-call race freedom. Note this landed while the freeze was still nominally on — the
-  v1.0 deferral (post-0.16.0) is what unblocked it.
+- **MoE `moeMLP` allocates MB/token — DONE, P8.** `moeMLP` now takes an optional `*decodeScratch`,
+  backing its router-logits/accumulator/expert-gate-up buffers with reused per-stream scratch at the
+  three real single-token decode call sites; the batched-prefill call site (no `cache.scr` in scope)
+  still allocates, amortized over its K-token batch. All MoE-family int4 goldens pass bit-identical.
+- **int4 W4A8 `Workspace` alloc/token — DONE, P9, not via the fix this item originally proposed.** The
+  item asked for an int4 case in `matmulInto`; what shipped instead pools the `Workspace` in `matmul()`
+  itself (`decoder/weightmat.go:196` `matmulWSPool`), which also covers the free-matmul callers
+  `matmulInto` never sees — `matmul()`'s int4 and W8A8-fallback branches now pull their
+  `linalg.Workspace` from the pool instead of declaring one fresh per call, so the Workspace's own
+  lazily-grown `i8`/`f32` quant scratch survives across calls instead of reallocating
+  every projection every token. Full decoder suite green under `-race`; int4 goldens bit-identical.
 
 ### Measured negative — not the win the audit claimed
 - **PGO (profile-guided optimization) on the pure-Go CPU path.** Prototyped end-to-end (2026-08-11):

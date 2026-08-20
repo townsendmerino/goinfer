@@ -381,8 +381,6 @@ supports.
 | `docs/ollama-chase.md|cuda/resident.go:365` | goinfer | `g4x1, g4x2, g4rn Buffer` |
 | `docs/ollama-chase.md|cuda/resident.go:41` | goinfer | `anchor: const ctxCapMarginBytes = 384 << 20` |
 | `docs/ollama-chase.md|cuda/resident.go:613` | goinfer | `// declined to the staged/CPU path upstream.` |
-| `docs/ollama-chase.md|decoder/forwardn.go:415` | goinfer | `for kvh := range nKV {` |
-| `docs/ollama-chase.md|decoder/mlp.go:91` | goinfer | `func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend, scr *decodeSc` |
 | `docs/ollama-chase.md|decoder/model.go:831` | goinfer | `// logits. On the batched archs this runs the layers at M=len in one pass (each` |
 | `docs/ollama-chase.md|decoder/model.go:979` | goinfer | `// sample. Identical to the logits path — guarded by ArgmaxEquivalent/GreedyEquivalent.` |
 | `docs/ollama-chase.md|decoder/residency.go:715` | goinfer | `return false, "sequential — this backend has no batched prefill (per-token resident forw` |
