@@ -385,7 +385,7 @@ type cudaResident struct {
 	// dnetParams, which is NOT the attention geometry: convDim is 2*nk*hk + nv*hv and has no
 	// relation to qDim/kvDim, so none of the buffers above can be reused for it.
 	dnMixed, dnConvOut, dnQn, dnKn, dnHeadP, dnBt, dnAt, dnZOut, dnCore, dnGated Buffer
-	dnQq, dnSc, dnGq, dnGSc                                                      Buffer // int8 activation + scale for the two quantized GEMV inputs
+	dnGq, dnGSc                                                                  Buffer // int8 activation + scale for the gated output's out_proj GEMV
 	dnQg                                                                         Buffer // [2*qDim] the fused [query ‖ gate] q_proj output, before the split
 	dnAGate                                                                      Buffer // [qDim] attention output gate (qGate layers)
 	moeQ                                                                         Buffer
