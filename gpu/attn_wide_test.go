@@ -5,6 +5,7 @@ package gpu
 import (
 	"math"
 	"math/rand"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -37,7 +38,7 @@ func TestAttnWide_refParity(t *testing.T) {
 		{512, 4, 2, 11}, // two full strides
 		{1024, 2, 1, 6}, // four
 	} {
-		name := "hd" + itoa(tc.hd)
+		name := "hd" + strconv.Itoa(tc.hd)
 		t.Run(name, func(t *testing.T) {
 			rng := rand.New(rand.NewSource(int64(tc.hd)))
 			rnd := func(n int) []float32 {
@@ -127,17 +128,6 @@ func TestAttnWide_refParity(t *testing.T) {
 			}
 		})
 	}
-}
-
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	var b []byte
-	for ; n > 0; n /= 10 {
-		b = append([]byte{byte('0' + n%10)}, b...)
-	}
-	return string(b)
 }
 
 // The wide kernel is built from a template, so the failure with no symptom is a placeholder that
