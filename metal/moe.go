@@ -12,6 +12,8 @@ package metal
 
 import (
 	"fmt"
+	"os"
+	"strconv"
 
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/decoder"
@@ -270,6 +272,12 @@ type moeLayer struct {
 	// / gemv_w4a8_moe_wacc_bias read (biasOff = idx[slot]*2*inter / idx[slot]*H). Zero-value Buffer
 	// for every other family — the gpt-oss dispatch path in encodeMoEFFN is the only reader.
 	expGuBias, expDBias Buffer
+	// pool is non-nil when mo.paged: a bounded LRU slot pool + on-demand staging (expertpool.go),
+	// generalized from the gemma4-only path (gemma4_moe.go) — same mechanism, no gemma4-specific
+	// assumptions in expertPool itself, so this file supplies the stageFn instead of inventing one.
+	// expGuW/expGuS/expDW/expDS stay zero-value when paged (the stacked all-E buffer is exactly the
+	// 11.96 GB/19.2 GB this exists to avoid).
+	pool *expertPool
 }
 
 // moeResident holds the MoE pipelines, config, constant uniforms and scratch shared across
@@ -296,6 +304,16 @@ type moeResident struct {
 
 	rLogits, rIdx, rWgt Buffer // router scratch: logits[nE], idx[k] (u32), wgt[k]
 	shGl, shDown        Buffer // shared-expert scratch: gate logit[1], down out[H]
+
+	// Synchronous paging (GOINFER_METAL_MOE_SLOTS=N>0): generalizes gemma4_moe.go's paging to this
+	// generic MoE shape (Mixtral/Qwen/GLM/gpt-oss/qwen3_5_moe/qwen3_next) — same env var, same
+	// mechanism, same expertPool. N must be >= k (a token's own top-k must fit); N==0/unset ⇒ all
+	// experts resident (today's behavior, unchanged). idxZeros lets the paged expert GEMVs read row
+	// 0 of a single-expert slot buffer while rWgt is still indexed by the selection slot — the
+	// reused gemv_w4a8_moe(_wacc[_bias]) kernels compute byte-identically to the stacked path.
+	paged    bool
+	slots    int
+	idxZeros Buffer
 }
 
 // buildMoE builds the resident-level MoE state (pipelines, config, uniforms, scratch) from a
@@ -368,6 +386,20 @@ func buildMoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H int) (*
 	mo.rIdx = d.NewBufferUint32s(make([]uint32, k))
 	mo.rWgt = d.NewBufferLen(k)
 	mo.shGl, mo.shDown = d.NewBufferLen(1), d.NewBufferLen(H)
+	// Synchronous paging: GOINFER_METAL_MOE_SLOTS=N keeps only N experts/layer resident and stages
+	// the routed top-k in per token — same knob and semantics as gemma4_moe.go's (shared env var
+	// deliberately: it is the same underlying mechanism, generalized). N==0/unset ⇒ all experts
+	// resident (today's behavior).
+	if s := os.Getenv("GOINFER_METAL_MOE_SLOTS"); s != "" {
+		n, err := strconv.Atoi(s)
+		if err != nil || n < k {
+			return nil, fmt.Errorf("GOINFER_METAL_MOE_SLOTS=%q invalid (need integer >= topK=%d)", s, k)
+		}
+		if n < nE { // n>=nE would hold every expert — no paging, just build the stacked path
+			mo.paged, mo.slots = true, n
+			mo.idxZeros = d.NewBufferUint32s(make([]uint32, k))
+		}
+	}
 	return mo, nil
 }
 
@@ -383,16 +415,44 @@ func buildMoELayer(d *Device, m *decoder.Model, l int, lw *decoder.LayerWeights,
 	} else {
 		ml.routerBias = d.NewBufferFloats(make([]float32, mo.nE)) // zeros → sel = score
 	}
-	guMats := make([]*linalg.WeightMat, 0, 2*len(lw.Experts))
-	for e := range lw.Experts {
-		guMats = append(guMats, &lw.Experts[e].Gate, &lw.Experts[e].Up)
+	if mo.paged {
+		// Paged: don't stack the experts (that is the multi-GB set this exists to avoid). Build a
+		// bounded LRU slot pool + a stage fn reading expert e's W4A8 bytes from the layer's own
+		// WeightMats on demand. Per-expert buffer sizes come from expert 0. Mirrors
+		// buildGemma4MoELayer's paged branch exactly (byte-copy staging; no pread fast path here —
+		// that was a later, separately-measured refinement on top of a working paged baseline).
+		gw0, gs0, ok1 := int4DirectWords(&lw.Experts[0].Gate)
+		uw0, us0, ok1u := int4DirectWords(&lw.Experts[0].Up)
+		dw0, ds0, ok2 := int4DirectWords(&lw.Experts[0].Down)
+		if !ok1 || !ok1u || !ok2 {
+			panic("metal MoE paging: experts are not int4-direct (group-32) — cannot stage without a re-quant")
+		}
+		nGuW, nGuS := len(gw0)+len(uw0), len(gs0)+len(us0)
+		experts := lw.Experts // capture (aliases the model's own weights; kept alive by the Model)
+		stage := func(e int) ([]byte, []uint16, []byte, []uint16) {
+			gw, gs, _ := int4DirectBytes(&experts[e].Gate)
+			uw, us, _ := int4DirectBytes(&experts[e].Up)
+			dw, ds, _ := int4DirectBytes(&experts[e].Down)
+			// gate|up fused per row-block: the stacked (non-paged) layout is gate rows THEN up rows
+			// per expert (int4Concat(gate,up) order), so a slot must reproduce that concatenation —
+			// gemv_w4a8_moe reads row r < inter as gate, r >= inter as up, off the SAME buffer.
+			guBytes := append(append([]byte(nil), gw...), uw...)
+			guScales := append(append([]uint16(nil), gs...), us...)
+			return guBytes, guScales, dw, ds
+		}
+		ml.pool = newExpertPool(d, mo.slots, nGuW, nGuS, len(dw0), len(ds0), stage)
+	} else {
+		guMats := make([]*linalg.WeightMat, 0, 2*len(lw.Experts))
+		for e := range lw.Experts {
+			guMats = append(guMats, &lw.Experts[e].Gate, &lw.Experts[e].Up)
+		}
+		ml.expGuW, ml.expGuS = int4Concat(d, guMats...)
+		downMats := make([]*linalg.WeightMat, 0, len(lw.Experts))
+		for e := range lw.Experts {
+			downMats = append(downMats, &lw.Experts[e].Down)
+		}
+		ml.expDW, ml.expDS = int4Concat(d, downMats...)
 	}
-	ml.expGuW, ml.expGuS = int4Concat(d, guMats...)
-	downMats := make([]*linalg.WeightMat, 0, len(lw.Experts))
-	for e := range lw.Experts {
-		downMats = append(downMats, &lw.Experts[e].Down)
-	}
-	ml.expDW, ml.expDS = int4Concat(d, downMats...)
 	if mo.sharedInter > 0 {
 		ml.shGuW, ml.shGuS = int4Concat(d, &lw.SharedExpert.Gate, &lw.SharedExpert.Up)
 		var e error
@@ -424,6 +484,14 @@ func f32Mat(d *Device, w *linalg.WeightMat) Buffer {
 // gate|up/swiglu/weighted-down → optional shared expert. Value-independent (idx/wgt read at
 // kernel-execution time), so the encode-ahead executor still pre-encodes it.
 func (r *resident) encodeMoEFFN(e *Encoder, L *residLayer) {
+	r.encodeMoERouter(e, L)
+	r.encodeMoEExperts(e, L)
+}
+
+// encodeMoERouter is the value-INDEPENDENT head of the FFN: post-attn norm → router logits →
+// on-GPU top-k, ending with rIdx[k]/rWgt[k] written on-device. In the paged forward this is the
+// first command buffer; the host then reads rIdx and stages the routed experts before the second.
+func (r *resident) encodeMoERouter(e *Encoder, L *residLayer) {
 	mo := r.moe
 	ml := L.moe
 	// post-attn RMSNorm → quantized activation mq/mSc (same as the dense FFN entry).
@@ -439,6 +507,13 @@ func (r *resident) encodeMoEFFN(e *Encoder, L *residLayer) {
 		e.Dispatch(mo.pRoute, 1, 1, mo.rLogits, ml.routerBias, mo.rIdx, mo.rWgt,
 			mo.uNE, mo.uK, mo.uSigmoid, mo.uNorm, mo.uScale, mo.uNGroup, mo.uTopkGroup)
 	}
+}
+
+// encodeMoEExperts runs the k selected experts out of the STACKED all-E buffer (ml.expGuW/expDW,
+// indexed by rIdx at kernel-execution time) plus the optional shared expert. The non-paged path.
+func (r *resident) encodeMoEExperts(e *Encoder, L *residLayer) {
+	mo := r.moe
+	ml := L.moe
 	// k selected experts: fused gate|up (overwrite) → clamped-swiglu/swiglu → down (weighted-
 	// accumulate into x). gpt-oss fuses its per-expert gate‖up bias into the activation step and
 	// its per-expert down bias into the combine step (both INSIDE the router-weight scale — see
@@ -455,7 +530,39 @@ func (r *resident) encodeMoEFFN(e *Encoder, L *residLayer) {
 			e.DispatchTG(mo.pDownWacc, r.H*32, 256, mo.inter*2, ml.expDW, ml.expDS, r.dq, r.dSc, r.x, mo.uInter, mo.rIdx, mo.rWgt, mo.uSlot[j], r.uH)
 		}
 	}
-	// shared always-on expert (Qwen2-MoE gated / GLM ungated).
+	r.encodeMoESharedExpert(e, L)
+}
+
+// encodeMoEExpertsPaged is encodeMoEExperts' paged twin: the k selected experts run out of their
+// STAGED SLOT buffers (one expert per slot) instead of the stacked all-E buffer. idxZeros makes
+// each GEMV read row 0 of its single-expert slot (idxZeros[j]==0) while rWgt is still indexed by
+// the selection slot uSlot[j], so the reused gemv_w4a8_moe(_wacc[_bias]) kernels compute
+// byte-identically to the stacked path (slot bytes == the stacked buffer's rows for that expert —
+// see buildMoELayer's paged stage fn). Mirrors gemma4_moe.go's encodeG4Phase2Paged.
+func (r *resident) encodeMoEExpertsPaged(e *Encoder, L *residLayer, slots []expertSlot) {
+	mo := r.moe
+	ml := L.moe
+	for j := 0; j < mo.k; j++ {
+		s := slots[j]
+		e.DispatchTG(mo.pGU, (2*mo.inter)*32, 256, r.H*2, s.guW, s.guS, r.mq, r.mSc, r.gu, r.uH, mo.idxZeros, mo.uSlot[j], mo.uInter2)
+		if mo.isGptOss {
+			e.Dispatch(mo.pActGptOss, 256, 256, r.gu, r.gu.At(mo.inter*4), r.dq, r.dSc, mo.uInter,
+				ml.expGuBias, mo.idxZeros, mo.uSlot[j], mo.uHasBias, mo.uAlpha, mo.uLimit)
+			e.DispatchTG(mo.pDownWaccBias, r.H*32, 256, mo.inter*2, s.dW, s.dS, r.dq, r.dSc, r.x, mo.uInter, mo.idxZeros, mo.rWgt, mo.uSlot[j], r.uH, ml.expDBias)
+		} else {
+			e.Dispatch(r.pSw, 256, 256, r.gu, r.gu.At(mo.inter*4), r.dq, r.dSc, mo.uInter, r.uAct)
+			e.DispatchTG(mo.pDownWacc, r.H*32, 256, mo.inter*2, s.dW, s.dS, r.dq, r.dSc, r.x, mo.uInter, mo.idxZeros, mo.rWgt, mo.uSlot[j], r.uH)
+		}
+	}
+	r.encodeMoESharedExpert(e, L)
+}
+
+// encodeMoESharedExpert is the always-on shared expert (Qwen2-MoE gated / GLM ungated) — never
+// paged (it is one dense expert, always resident), so identical in both the paged and non-paged
+// tail.
+func (r *resident) encodeMoESharedExpert(e *Encoder, L *residLayer) {
+	mo := r.moe
+	ml := L.moe
 	if mo.sharedInter > 0 {
 		e.DispatchTG(r.pSA, (2*mo.sharedInter)*32, 256, r.H*2, ml.shGuW, ml.shGuS, r.mq, r.mSc, r.gu, r.uH)
 		e.Dispatch(r.pSw, 256, 256, r.gu, r.gu.At(mo.sharedInter*4), r.dq, r.dSc, mo.uSharedInter, r.uAct)
@@ -467,4 +574,66 @@ func (r *resident) encodeMoEFFN(e *Encoder, L *residLayer) {
 			e.Dispatch(mo.pSharedGate, r.H, 256, r.x, mo.shDown, mo.shGl)                              // x += sigmoid(gl)*down
 		}
 	}
+}
+
+// forwardLogitsMoEPaged is the SYNCHRONOUS expert-paging decode for the generic MoE shape (the
+// mechanism gemma4_moe.go's forwardLogitsPaged pioneered, generalized here to also cover a
+// DeltaNet mixer layer's FFN half — qwen3_5_moe/qwen3_next pair a recurrent mixer with THIS FFN
+// shape, not gemma4's). Per layer: dense/attention-only layers (including a DeltaNet layer whose
+// FFN isn't paged, or when GOINFER_METAL_MOE_SLOTS is unset) encode in one command buffer via the
+// existing encodeLayer; a paged MoE layer is torn at the router — the value-dependent seam —
+// [mixer/attention + router] -> submit+wait -> read rIdx -> stage the routed top-k into the
+// layer's LRU slot pool -> [experts-from-slots] -> submit+wait. Assumes the caller filled r.x with
+// the embedding and holds the OS thread (ForwardEmb does both).
+func (r *resident) forwardLogitsMoEPaged(pos int) (logits []float32) {
+	// Same abort discipline as forwardLogitsPaged (audit R-02/C-09): a transient staging error or
+	// OOM deep inside expertPool.ensureResident at decode time must not crash the process.
+	defer func() {
+		if p := recover(); p != nil {
+			r.recordExecErr(fmt.Errorf("metal: paged MoE forward aborted: %v", p))
+			logits = nil
+		}
+	}()
+	r.uPos.SetU32(uint32(pos))
+	r.uNKeys.SetU32(uint32(pos + 1))
+	mo := r.moe
+	for l := 0; l < r.nL; l++ {
+		L := &r.layers[l]
+		if L.moe != nil && L.moe.pool != nil {
+			e := r.q.Begin() // phase 1: mixer/attention + router -> rIdx/rWgt
+			if L.delta != nil {
+				r.encodeDeltaNetMixer(e, L)
+			} else {
+				r.encodeAttention(e, l)
+			}
+			r.encodeMoERouter(e, L)
+			e.End()
+			r.recordExecErr(e.Err())
+			idx := mo.rIdx.U32s()
+			ids := make([]int, mo.k)
+			for j := 0; j < mo.k; j++ {
+				ids[j] = int(idx[j])
+			}
+			slots := make([]expertSlot, mo.k)
+			for j := 0; j < mo.k; j++ {
+				slots[j] = L.moe.pool.ensureResident(ids[j]) // stage on miss, evict LRU
+			}
+			e2 := r.q.Begin() // phase 2: experts from slots (+ shared expert)
+			r.encodeMoEExpertsPaged(e2, L, slots)
+			e2.End()
+			r.recordExecErr(e2.Err())
+			continue
+		}
+		e := r.q.Begin()
+		r.encodeLayer(e, l)
+		e.End()
+		r.recordExecErr(e.Err())
+	}
+	e := r.q.Begin()
+	e.Dispatch(r.pRms, 256, 256, r.x, r.finalNorm, r.aq, r.aSc, r.uH, r.uEps, r.uAddOne)
+	e.Dispatch(r.pGemvW8, (r.V)*32, 32, r.aq, r.aSc, r.lmW, r.lmS, r.logits, r.uH)
+	e.End()
+	r.recordExecErr(e.Err())
+	r.finalizeLogits()
+	return r.logitsHost
 }

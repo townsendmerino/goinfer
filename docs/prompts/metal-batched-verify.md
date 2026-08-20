@@ -40,7 +40,7 @@ ceiling. One consolidated doc under `docs/` for all phases.
 **Repo:** `~/tmcode/goinfer`. Prior context: `docs/ollama-chase.md` §A2-Metal,
 `docs/task-int4-int8-exact-mma.md` (MMA route killed: decode's `simd_sum` combine order
 unpinnable; this hoist is the surviving bit-identical path). **Recon already done — build on it,
-don't redo it:** the dense per-layer sequence is 12 dispatches (`metal/model.go:1343-1425`);
+don't redo it:** the dense per-layer sequence is 12 dispatches (`metal/model.go:1349-1431`);
 Stage-A kernels (`pSA`/`pSABias`/`pSAResid`, K≤1536) stage via `DispatchTG` with `tgBytes=H*2`;
 `pGemvResid` (down-proj, K=8960) doesn't stage; threadgroup limit is
 `d.MaxThreadgroupMemoryLength()` (~32,768, asserted in `metal/tgbudget_test.go`), and

@@ -1013,6 +1013,9 @@ func (r *resident) ForwardEmb(emb []float32, pos int) []float32 {
 	if r.g4moe != nil && r.g4moe.paged { // synchronous expert paging: per-layer submit+wait, staged experts
 		return r.forwardLogitsPaged(pos)
 	}
+	if r.moe != nil && r.moe.paged { // generic MoE's twin (moe.go) — same mechanism, generalized
+		return r.forwardLogitsMoEPaged(pos)
+	}
 	return r.forwardLogits(pos)
 }
 
@@ -1056,6 +1059,9 @@ func (r *resident) ForwardEmbPipe(emb []float32, pos int) []float32 {
 		// Paging tears each MoE layer into two submits with a host readback between — the encode-ahead
 		// executor (one static command buffer/token) cannot express it. Fall back to the synchronous
 		// paged path; there is no pipelining to lose (Step-0: paging is submit-bound, not encode-bound).
+		return r.ForwardEmb(emb, pos)
+	}
+	if r.moe != nil && r.moe.paged { // generic MoE's twin — same reasoning, same fallback
 		return r.ForwardEmb(emb, pos)
 	}
 	r.execOnce.Do(func() {
