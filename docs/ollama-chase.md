@@ -96,6 +96,29 @@ Carried from the prefill campaign, where five attributions were made and four we
   future kernels automatically). Same family as the Metal reduction-width rule above: **a numerical
   property silently coupled to a compiler or tuning decision.** aikit's `gemv_quant.cu` (the decode
   GEMV) carries the same rule in its own repo — the pair must agree, so both must follow it.
+- **THE SAME FMA RULE IS UNENFORCED IN OUR OWN GO CODE, and the CPU forward is already
+  arch-divergent because of it** (found 2026-08-20 while assessing the Go 1.27 SIMD audit).
+  The rule above is enforced on CUDA (`TestKernelFMALint`) and Metal. Go has no such lint, and
+  Go's compiler **contracts a bare `a*b + c` on arm64 and not on amd64**. Measured by building
+  the SAME source for both:
+
+      GOARCH=arm64 go build -gcflags=-S ./decoder/   ->  90 fused MACs (49 FMADDS, 39 FMADDD, 2 FMSUBS)
+      GOARCH=amd64 go build -gcflags=-S ./decoder/   ->  0
+
+  Spread over the hot paths, not a corner: `scanChunk` 10, `gatedDeltaNetStep` 7,
+  `mamba2Chunked` 7, `mlaAttentionAbsorb` 5, `mamba2Step` 5, `attendQuery` 2, plus
+  `runLayersGemma4`, `llama4Attention`, `EagleHead.attend` and others.
+
+  Note the 39 **FMADDD**: the f64 accumulators chosen "for parity" (`attendQuery`'s q·K dot,
+  `rmsNorm`) are contracted on arm64 too. Picking f64 widens the gap between the two arches'
+  results; it does not close it.
+
+  This is not currently BREAKING anything — CI runs both arches green — because the CPU parity
+  gates are tolerance-based (cosine floors), not byte-comparisons, and the manifest records
+  `arch=amd64`. But it is precisely the property the GPU rule exists to forbid, it has never
+  been byte-compared cross-arch on a real model, and our own doctrine says this class is
+  "invisible on uniform random fixtures but an 84% token-stream divergence on real weights".
+  Anyone reasoning about CPU bit-identity across arches should start here.
 - **Thermal control on the Mac** (±700 ms drift): interleaved repeats, session-start run
   dropped. Single-run rankings are unreliable.
 - **Peer version is part of the measurement.** The whole §B2 correction happened because a
