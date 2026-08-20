@@ -1250,6 +1250,34 @@ which is where the guesses point and precisely why they are not written down as 
 **What would make this landable:** measure the jitter P8 exists to reduce, so the trade has two
 numbers rather than one. Until then the allocation stays.
 
+**P15 · DFlash 2 — P10's successor upstream, aimed at P10's two measured weaknesses** — `linux`,
+filed 2026-08-20 from [inco.ai/blog/dflash2](https://inco.ai/blog/dflash2/); **gates before code**.
+Upstream adds two modules to the v1 drafter P10 shipped: a two-tap dynamic depthwise convolution
+against **suffix decay** (the cause behind our measured front-loaded acceptance — positions 12–15
+bought 0.09 tokens for 9.4 ms, which P10 mitigated by capping verify width at 7–8; upstream's v2
+block width lands at 7–8, convergent with our sweep) and a **2.0 M-param path-selection head**
+(top-16 candidates per position, pairwise bilinear scoring, one serial walk) — the licensed
+analogue of the DSpark Markov head whose +41% chat α was the DSpark path's surviving rationale.
+Claims, theirs until reproduced: mean acceptance **+21% over v1**, DSpark beaten by 1+ tokens,
+MT-Bench 4.10 on the Qwen3.8-27B pair — which, if it transfers to our chat suite, clears the ~3.0
+break-even the acceptance guard polices and turns chat from bounded-loss to a win. **If gate 2
+confirms, the DSpark exploration path is mooted, license issue included.** Verify stays lossless;
+the P10 substrate (capture seam, `attn_block_full`, batched verify, `DFlashContext`, resident
+trunk, guard, harness) carries over; claimed overhead is 1.3%/cycle. **Order of work:** (0)
+per-repo license audit of `incoai/Qwen3.8-27B-DFlash2` + `Muse-Glimmer-30B-DFlash2` — the post
+states none, and the HF list endpoint has already lied to this program once — plus a sweep for a
+resident-capable v2 pair (the post's Qwen3.5-4B table implies a small checkpoint exists); (1)
+reference-loop acceptance on a released pair, their code first, ours second, agreement required;
+(2) tensor dump accounted to the byte — settles v1↔v2 trunk compatibility and where the dynamic
+conv kernels come from; (3) wall-clock on whatever venue survives (0) — both released targets are
+too big for the 2070S, and the CPU re-run stays pre-registered as a predicted **no** with one term
+moved by P14. **Sequencing: lands BEFORE gate 4's width router**, which would otherwise be
+calibrated to v1's acceptance curve and rebuilt. Design page:
+[`docs/spec/08-dspark-dflash.md` §"DFlash 2"](spec/08-dspark-dflash.md) — context there, this
+entry is the claimable work. Training code is not released, so thinking-mode targets have no
+re-finetune escape this time; the harness's existing hard-errors stand guard on the two known
+input-distribution traps.
+
 **P10 · DSpark / DFlash block drafters — the α lever 05/06 named, arriving pretrained** — `linux`
 next (resident CUDA go/no-go), then `mac`, **increments 1–2 DONE 2026-08-15 (`linux-62gb`)**.
 Increment 2 landed against **DFlash, not DSpark** — every DSpark drafter checkpoint is unlicensed

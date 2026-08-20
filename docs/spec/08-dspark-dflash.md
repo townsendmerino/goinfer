@@ -2391,3 +2391,103 @@ negative costs ~40% on a paying workload, a false positive ~10-19% on a losing o
 recovering 0.46× outweighs chat giving up 0.10×, and the feature exists to speed up the
 profitable case. **Losing workloads are bounded at ~0.8-0.9× rather than made free** — that is
 the honest claim, replacing the earlier "safe to leave on at break-even".
+
+## DFlash 2 (2026-08-20) — proposal, not built; queued as **P15**
+
+> Source: [inco.ai/blog/dflash2](https://inco.ai/blog/dflash2/), published 2026-08-20. Every
+> number in this section is **their claim on their hardware** until reproduced on ours — the
+> same rule the top of this page applies to v1, and this program has now three times measured
+> why it exists. Filed same-day because the two additions land exactly on the two weaknesses
+> this page measured by hand.
+
+### What it is, relative to what we shipped
+
+DFlash 2 keeps v1's shape — a small trunk over the target's captured hidden states, the
+target's own embed + lm_head, one parallel pass per block, lossless under the standard
+verify — and adds two modules:
+
+1. **A two-tap dynamic depthwise convolution**, `Conv_k(x)_t = k_{t,0}⊙x_t + k_{t,1}⊙x_{t−1}`,
+   inserted before and after each attention and FFN sublayer. Each position mixes its own
+   representation with its predecessor's — sequential information flow without sequential
+   compute. Stated purpose: **suffix decay**, declining accuracy toward the block's end.
+   +16.5 M params (~3%), claimed +0.7% draft latency.
+2. **A path-selection head.** The drafter keeps the **top-16 candidates per position** and
+   scores adjacent pairs with `S_t(a,b) = U_t(b) + ⟨A(a)⊙H(h_t), B(b)⟩` — drafter logit plus a
+   low-rank bilinear term — then walks one coherent path through the candidates. Scoring is
+   parallel; only the final walk over precomputed scores is sequential. **2.0 M params**
+   against the 77.8 M the post attributes to DSpark's equivalent machinery; claimed +0.6%
+   latency. Verification is unchanged — the path is still one drafted block, the target still
+   gates every token, rejection sampling restores the exact target distribution.
+
+Claimed results: mean acceptance **+21% over v1**, ahead of DSpark by 1+ tokens, 2.7–3.4×
+end-to-end on Qwen3.8-27B, block width **7–8 on the Qwen pairs** (v1 shipped 16). Per-suite
+acceptance for the Qwen3.8-27B pair: GSM8K 5.46 / MATH-500 5.28 / HumanEval 4.39 / MBPP 4.79 /
+**MT-Bench 4.10**, mean 4.80.
+
+### Why this page predicts it matters here — two measured weaknesses, two additions
+
+- **The convolution attacks what the width cap trims.** This page measured acceptance as
+  front-loaded — positions 12–15 bought **0.09 accepted tokens for 9.4 ms of verify** — and
+  shipped the fix as capping verify width at 7–8. That is symptom management; suffix decay is
+  the cause, and the convolution is aimed at it. Upstream's own v2 block width landing at 7–8
+  is convergent with our sweep, which is mild evidence their measurement and ours see the same
+  curve.
+- **The selector is the licensed analogue of the Markov head.** The DSpark pivot's surviving
+  rationale (post the width finding, which killed the block-width reason) was the confidence
+  head plus the Markov head's chat advantage — measured here at **α 3.04 vs 2.18, +41% on
+  chat**, on checkpoints that ship **no license**. The path-selection head is the same class of
+  fix inside the DFlash line, whose v1 checkpoint was the one licensed drafter of either
+  family. If MT-Bench 4.10 transfers to our chat suite, chat clears the ~3.0 break-even the
+  acceptance guard exists to police — the guard's residual ~7-10% loss bound on chat becomes
+  headroom instead. **If gate 2 confirms, the DSpark exploration path is mooted**, upstream
+  license issue included.
+
+### What the build inherits, and what is new
+
+Everything expensive already exists and is gated: the capture seam (CPU + resident), `fc` +
+`hidden_norm` fusion, `attn_block_full`, batched verify + `PrefillLastNArgmax`, `DFlashContext`
+K/V, the resident trunk, the acceptance guard, the kill-gate harness, and the reference-loop
+pattern (`scripts/ref_dspark_accept.py`). New work, if the gates pass:
+
+- the two-tap conv — elementwise, two taps; the open question is where `k_{t,0}/k_{t,1}` come
+  from ("dynamic" implies generated per position, presumably from the hidden state — read the
+  reference, do not guess);
+- the selector head — top-16 retention, pairwise bilinear scoring, one cheap serial walk;
+- loader deltas, and whatever `BlockDrafterWeights` needs so Metal still only implements two
+  interfaces.
+
+Inference support is stated for SGLang, vLLM and llama.cpp, so a runnable oracle exists for
+gate 1 regardless of whether inco publishes a first-party repo; training code is **not**
+released, so we are limited to released pairs — no re-finetune escape hatch for thinking-mode
+targets this time.
+
+### Pre-registered unknowns (in the order they can kill it)
+
+1. **License.** The post names `incoai/Qwen3.8-27B-DFlash2` and
+   `incoai/Muse-Glimmer-30B-DFlash2` and states no license for either. After the DSpark
+   audit — and the HF list-endpoint artifact that mislabeled the 8b/14b as MIT — this is
+   checked per-repo, on the repo page, before any weights move.
+2. **Checkpoint↔target fit.** Both released drafters pair with targets that cannot sit
+   resident on the 2070S 8 GB, which is where every wall-clock number in this program lives.
+   Qwen3.8-27B runs here today on **CPU** (P12–P14). So gate 3 needs one of: a v2 drafter for
+   a resident-capable target (the post's tables include Qwen3.5-4B acceptance, which implies a
+   small checkpoint exists somewhere — the audit should look); or the pre-registered CPU
+   kill-gate re-run once, since P14 moved one term (the CPU kernel is compute-limited, and an
+   M=8 batched verify reuses every weight byte 8×) — prediction stays **no**, but it is one
+   measured run to document, same as v1's.
+3. **v1↔v2 checkpoint compatibility.** The post reads as trunk-plus-modules, which would mean
+   `decoder/dflash.go` survives with additions; the tensor dump decides, not the prose. Dump
+   and account for the file to the byte, as increment 2 did — that is also what settles the
+   conv-kernel question.
+4. **Transfer.** v1's acceptance survived our harness only after three input-distribution
+   errors were found; the same harness now hard-errors on two of the three. Gate 2 runs the
+   reference loop first (their code, their template), then ours, and the two must agree before
+   any number is quoted — the v1 sequence, kept.
+
+### Sequencing note — this goes BEFORE gate 4's router
+
+The width-selecting router (gate 4, still open) would be tuned to v1's front-loaded acceptance
+curve. Both v2 additions reshape that curve — the conv flattens the position falloff, the
+selector lifts the low-acceptance traffic the router exists to protect. Building the router
+first means calibrating it twice. The 7% short-chat residual stays parked until gate 2 here
+says which drafter the router is routing.
