@@ -381,6 +381,29 @@ without graphs), and the continuation is unchanged.
 2. `Reset` hops to the executor via `r.do`, and `graphsSelfTest` already RUNS on the executor —
    so the fix above deadlocked instead of failing. Split into `resetState` for on-thread callers.
 
+## Where it stops: ~15.7 tok/s is near the structural ceiling on this card
+
+With dispatch collapsed, the token is ~48% expert DMA, ~26% stall (GPU work surfacing behind the
+routing sync), ~20% GPU, ~6% LRU host. The DMA is the only large item, and it is **transfer-bound,
+not overhead-bound**:
+
+    236 MB/token in 30.5 ms   = 7.56 GB/s effective
+    PCIe 3.0 x16 practical    ≈ 11–12 GB/s
+    240 Upload calls/token    ≈ 3.6 ms of sync overhead (5.6% of a 64 ms token)
+
+Even at a perfect 11 GB/s the whole token goes 64 → 54.5 ms, i.e. **1.18×**. And the transfer
+VOLUME is set by the cache hit rate, which is VRAM-bound — the slot sweep already showed that lever
+saturating. So the remaining levers are small, and the honest reading is that this model on this
+card is close to done.
+
+The one identified inefficiency is real but modest and lives in a dependency: aikit's
+`Buffer.upload` ends in a FULL DEVICE SYNC, so C′ pays ~240 of them per token. aikit's own comment
+predicted this exact request ("worth doing if profiling ever shows this on a hot path") and both
+preconditions it names — pinned source, queue-aware caller — are already met. gocudrv's existing
+`CopyFromHostAsync` cannot express it because it is whole-buffer and an expert slot load is a
+sub-range on both sides. Written up with the measurement and the 1.18× ceiling in
+`docs/prompts/aikit-subrange-async-upload.md`, including the case for declining it.
+
 **THE CAVEAT THAT MATTERS: this is measured under `GOINFER_CUDA_GRAPHS_UNSAFE`.** The tenancy gate
 declines graphs under DEFAULT compute mode because replay is bit-exact only under EXCLUSIVE_PROCESS
 or MPS, and that gate is not being weakened for a speed number. A dedicated inference box can set
