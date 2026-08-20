@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/aikit/embed"
+	"path/filepath"
+	"strings"
 )
 
 // P10 kill-gate 1 (docs/spec/08): the Go DFlash trunk must match the upstream reference
@@ -275,5 +277,60 @@ func TestDFlash_targetEndToEnd(t *testing.T) {
 				t.Errorf("drafted ids differ from the reference (%d/%d match)", match, len(tr.DraftedIDs))
 			}
 		})
+	}
+}
+
+// TestDFlash_refusesV2 pins the refusal added after the P15 step-(0)/(2) audit.
+//
+// It is a CONFIG-ONLY fixture on purpose: the danger this guards is that a DFlash 2 checkpoint
+// is field-compatible with the v1 loader, so the check has to fire before any tensor is read.
+// Measured on the real incoai/Qwen3.8-27B-DFlash2 (2026-08-20): 76.2% of its tensors are
+// v1-shaped and every config key this loader reads is present, so it loaded WITHOUT ERROR and
+// silently discarded 914,309,120 bytes of dynamic-conv + candidate-selector weights.
+//
+// Why that mattered enough to gate: DFlash verify is lossless, so the failure produces correct
+// tokens at a worse acceptance rate — slower than v1, with nothing in the logs. A wrong answer
+// gets noticed; a silent 20% throughput loss does not.
+func TestDFlash_refusesV2(t *testing.T) {
+	dir := t.TempDir()
+	// The released v2 config's shape, trimmed to what the loader reads. conv_kernel_size and
+	// selector_rank are the markers; everything else here is what makes it LOOK like v1.
+	cfg := `{
+	  "architectures": ["DFlash2DraftModel"],
+	  "hidden_size": 5120, "num_hidden_layers": 5, "num_attention_heads": 32,
+	  "num_key_value_heads": 8, "head_dim": 128, "intermediate_size": 17408,
+	  "rms_norm_eps": 1e-06, "vocab_size": 248320,
+	  "rope_parameters": {"rope_theta": 10000000, "rope_type": "default"},
+	  "dflash_config": {"block_size": 8, "mask_token_id": 248070,
+	    "target_layer_ids": [5,19,33,47,61],
+	    "conv_kernel_size": 2, "conv_group_size": 16,
+	    "selector_rank": 256, "selector_top_k": 16}
+	}`
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// No model.safetensors: the refusal must happen from config alone. If this ever fails with a
+	// "read weights" error instead, the check has drifted after the tensor load and a real v2
+	// checkpoint would get 3.8 GB of the way in before being told no.
+	_, err := LoadDFlashDrafter(dir)
+	if err == nil {
+		t.Fatal("v1 loader ACCEPTED a DFlash 2 config — it would silently drop the conv and " +
+			"selector weights and draft worse than v1, with no error anywhere")
+	}
+	for _, want := range []string{"DFlash 2", "conv_kernel_size=2", "selector_rank=256", "P15"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("refusal should name %q so the reader knows WHICH checkpoint and where the\n"+
+				"work is tracked; got: %v", want, err)
+		}
+	}
+	// And a v1 config (same file minus the two markers) must still get PAST this check — a
+	// refusal that also rejects v1 would be a worse bug than the one it fixes.
+	v1 := strings.Replace(cfg, `"conv_kernel_size": 2, "conv_group_size": 16,`, "", 1)
+	v1 = strings.Replace(v1, `"selector_rank": 256, "selector_top_k": 16`, `"unused": 0`, 1)
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(v1), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadDFlashDrafter(dir); err != nil && strings.Contains(err.Error(), "DFlash 2") {
+		t.Errorf("a v1 config was refused as v2 — the marker check is too broad: %v", err)
 	}
 }

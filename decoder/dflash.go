@@ -197,6 +197,13 @@ type dflashConfig struct {
 		BlockSize      int   `json:"block_size"`
 		MaskTokenID    int   `json:"mask_token_id"`
 		TargetLayerIDs []int `json:"target_layer_ids"`
+		// DFlash 2 markers. This loader implements v1, and a v2 checkpoint is field-compatible
+		// with it — same trunk tensor names, same config keys — so without these it LOADS, which
+		// is the whole problem. See the refusal in LoadDFlashDrafter.
+		ConvKernelSize int `json:"conv_kernel_size"`
+		ConvGroupSize  int `json:"conv_group_size"`
+		SelectorRank   int `json:"selector_rank"`
+		SelectorTopK   int `json:"selector_top_k"`
 	} `json:"dflash_config"`
 
 	// vLLM "speculators" dialect (v0.5), which poolside's Laguna drafters ship —
@@ -231,6 +238,28 @@ func LoadDFlashDrafter(dir string) (*DFlashDrafter, error) {
 	var c dflashConfig
 	if err := json.Unmarshal(cfgBytes, &c); err != nil {
 		return nil, fmt.Errorf("dflash: parse config: %w", err)
+	}
+	// REFUSE DFlash 2. Measured on the real checkpoint (incoai/Qwen3.8-27B-DFlash2, 2026-08-20):
+	// v2's config carries every field this loader reads, and 76.2% of its tensors are v1-shaped,
+	// so it loads WITHOUT ERROR and silently drops 914,309,120 bytes — 23.8% of the file — of
+	// two-tap dynamic convolutions (`layers.N.{attention,mlp}_conv.*`) and the candidate selector
+	// (`candidate_selector.*`).
+	//
+	// The convs are inserted before AND after every attention and FFN sublayer, so dropping them
+	// changes every layer's output. The failure is not wrong tokens — DFlash verify is lossless,
+	// so the target still gates everything — it is a drafter that drafts badly: LOWER acceptance,
+	// slower than v1, and no diagnostic anywhere. Exactly the silent-degradation shape this
+	// program keeps paying for.
+	//
+	// Detected from config rather than tensor names because it is cheaper and it is what the
+	// publisher controls; a v2 checkpoint that omitted these keys would still be caught by the
+	// missing-tensor path, since v1 requires nothing v2 lacks. Revisit when P15 implements v2.
+	if c.DFlash.ConvKernelSize > 0 || c.DFlash.SelectorRank > 0 {
+		return nil, fmt.Errorf("dflash: %s is a DFlash 2 checkpoint (conv_kernel_size=%d, "+
+			"selector_rank=%d) and this loader implements v1 — it would load and silently ignore "+
+			"the dynamic-conv and candidate-selector weights (23.8%% of the file on the released "+
+			"Qwen3.8-27B pair), giving a drafter that verifies losslessly but drafts worse than v1. "+
+			"DFlash 2 support is queued as P15", dir, c.DFlash.ConvKernelSize, c.DFlash.SelectorRank)
 	}
 	// speculators dialect: the layer geometry lives one level down. Decode it into
 	// the SAME struct so every field below is read once, from one place, whichever

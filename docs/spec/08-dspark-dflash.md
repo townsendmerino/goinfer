@@ -2394,6 +2394,69 @@ the honest claim, replacing the earlier "safe to leave on at break-even".
 
 ## DFlash 2 (2026-08-20) — proposal, not built; queued as **P15**
 
+### P15 step (0) + (2) RUN — 2026-08-20, `nvidia-rtx2070s`
+
+The entry's own order of work was followed: licence audit first, then the tensor dump. Steps (1)
+and (3) are **blocked on this box**, and (0) is why.
+
+**(0a) Licence audit — both official repos are clean.** Neither ships a `LICENSE` file (card
+metadata only), so each base was checked rather than the tag trusted:
+
+| repo | card | base | verdict |
+|---|---|---|---|
+| `incoai/Qwen3.8-27B-DFlash2` | apache-2.0 | `Qwen/Qwen3.8-27B` (apache-2.0) | consistent |
+| `incoai/Muse-Glimmer-30B-DFlash2` | apache-2.0 | finetuned from `meta-models/Muse-Glimmer-30B-assistant` (apache-2.0) | consistent |
+
+The Muse one was the expected problem — it is finetuned from a Meta-shipped drafter, and that
+family usually carries a custom community licence. It does not; the assistant model is apache-2.0.
+The suspicion was wrong, and checking cost one request.
+
+**(0b) Sweep for a resident-capable v2 pair — NONE USABLE.** 24 dflash2 repos exist; exactly one
+is small enough for an 8 GB card, **`mgoin/Qwen3-4B-speculator.dflash2`**, and it carries **no
+licence at all** (`license: None` — no grant under default copyright). It is also a third-party
+3-epoch experimental run from `vllm-project/speculators#1006`, so even licensed it would validate
+that run rather than upstream's claims. Every other repo is a 27B/30B variant or a quantization of
+one. **Steps (1) and (3) therefore have no venue here**, exactly as the entry predicted.
+
+Its published `val_metrics.json` is readable without downloading anything, and is the first
+independent v2 number this program has seen: accepted length **3.82** (self-conditioned path
+4.08), position accuracy **0.847 → 0.320** across positions 1→7. **Suffix decay is still plainly
+present** — which is what v2's two-tap conv is pitched at eliminating. Weak evidence (different
+model, different implementation, different training) but it does not obviously support "+21%".
+
+**(2) Tensor dump, accounted to the byte** (`incoai/Qwen3.8-27B-DFlash2`, 3,848,817,896 B):
+
+    file bytes    3,848,817,896
+    header bytes          8,936
+    tensor bytes  3,848,808,960   81 tensors
+    accounted     3,848,817,896   delta 0
+
+    v1-shaped trunk                    2,934,499,840   76.2%
+    NEW: attention_conv + mlp_conv       657,408,000   17.1%
+    NEW: candidate_selector              256,901,120    6.7%
+
+**v1↔v2 trunk compatibility: the trunk carries over.** Every v1 tensor name is present with v1
+shapes — `layers.N.{mlp.{gate,up,down}_proj, self_attn.{q,k,v,o}_proj, self_attn.{q,k}_norm,
+input_layernorm, post_attention_layernorm}`, plus `fc`, `hidden_norm`, `norm`. No `embed_tokens`
+and no `lm_head`, so v2 borrows the target's exactly as v1 does. The dynamic conv kernels are
+**per-layer, learned, and generated**: `attention_conv`/`mlp_conv` each carry a `base_kernel`
+(5×204,800 B) plus a `kernel_projection.weight` (5×65,536,000 B) — the "dynamic" in dynamic
+depthwise convolution is a projection from the hidden state to the kernel, not a fixed filter.
+
+**The config is v1-field-compatible, and that turned out to be a shipped bug.** v2's `config.json`
+carries every key `dflashConfig` reads, and 76% of the tensors match by name — so
+`LoadDFlashDrafter` **accepted the real v2 checkpoint** and silently discarded 914,309,120 B of
+conv + selector weights. The convs sit before AND after every attention and FFN sublayer, so
+dropping them changes every layer's output. The failure is not wrong tokens (verify is lossless —
+the target still gates everything) but a drafter that drafts WORSE than v1, slower, with no
+diagnostic. Now refused, gated by `TestDFlash_refusesV2` from config alone.
+
+**What (2) settles for the P15 build:** the v1 substrate carries over as the entry hoped — 76% of
+the weights and all of the trunk plumbing — and the new work is two modules whose shapes are now
+known to the byte. The conv is the larger of the two by 2.6×.
+
+
+
 > Source: [inco.ai/blog/dflash2](https://inco.ai/blog/dflash2/), published 2026-08-20. Every
 > number in this section is **their claim on their hardware** until reproduced on ours — the
 > same rule the top of this page applies to v1, and this program has now three times measured
