@@ -200,9 +200,17 @@ type Context struct {
 	// Resident Mamba-2 SSM decode (mamba.go): the hybrid mixer as a bounded per-token
 	// recurrence — mambaConv (causal-conv ring), mambaSSM (selective state update),
 	// mambaGatedNorm (gated grouped RMSNorm). Granite-4.0-H / Nemotron-H.
-	mambaSSMShader     *wgpu.ShaderModule
-	mambaSSMPipeline   *wgpu.ComputePipeline
-	mambaSSMLayout     *wgpu.BindGroupLayout
+	mambaSSMShader   *wgpu.ShaderModule
+	mambaSSMPipeline *wgpu.ComputePipeline
+	mambaSSMLayout   *wgpu.BindGroupLayout
+
+	// Gated-DeltaNet (gpu/deltanet.go): the recurrence that keeps every DeltaNet hybrid CPU-only.
+	deltaRuleShader    *wgpu.ShaderModule
+	deltaRulePipeline  *wgpu.ComputePipeline
+	deltaRuleLayout    *wgpu.BindGroupLayout
+	deltaNormShader    *wgpu.ShaderModule
+	deltaNormPipeline  *wgpu.ComputePipeline
+	deltaNormLayout    *wgpu.BindGroupLayout
 	mambaConvShader    *wgpu.ShaderModule
 	mambaConvPipeline  *wgpu.ComputePipeline
 	mambaConvLayout    *wgpu.BindGroupLayout

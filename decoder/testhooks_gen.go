@@ -255,3 +255,70 @@ func EncodeChatForTest(tk *tokenizer.Tokenizer, prompt string) ([]int, error) {
 	}
 	return ids, nil
 }
+
+// DeltaNetStepForTest runs ONE Gated-DeltaNet decode step on the CPU reference and returns the
+// layer output — the parity target for a backend's DeltaNet kernel (gpu/deltanet_test.go).
+//
+// Why a hook rather than a reimplementation in the backend's test: the CPU recurrence is already
+// gated against HF (TestGatedDeltaNet_parity, against transformers'
+// torch_recurrent_gated_delta_rule), so comparing a kernel to THIS makes the chain
+// kernel ≡ CPU ≡ HF. A reference re-written inside the gpu package would be a second unvalidated
+// implementation, which is the shape that let a hand-rolled forward drift for months
+// (docs/parity-coverage-policy.md).
+//
+// The caller supplies the weights and the state; `st` is mutated in place across calls, so a
+// multi-token drift test just calls this in a loop.
+// A nil backend means the CPU one, which is unexported — the same accommodation
+// DraftBlockCPUForTest makes, and necessary because matmul dereferences it unconditionally.
+func DeltaNetStepForTest(be Backend, h []float32, w *DeltaNetWeightsForTest, hidden int, eps float64, st *DeltaStateForTest) []float32 {
+	if be == nil {
+		be = &cpuBackend{}
+	}
+	return gatedDeltaNetStep(be, h, w.w, w.p, hidden, eps, st.s)
+}
+
+// DeltaNetWeightsForTest builds the CPU weight struct from plain slices, so a backend test can
+// construct one without the decoder package's unexported types.
+type DeltaNetWeightsForTest struct {
+	w *deltaNetWeights
+	p qwen35Params
+}
+
+// DeltaStateForTest wraps the per-layer recurrent state (conv window + delta state).
+type DeltaStateForTest struct{ s *deltaState }
+
+// NewDeltaNetForTest assembles the CPU DeltaNet layer + a zeroed state at the given geometry.
+// convW/dtBias/negExpA/normW and the projections are caller-supplied so the test controls every
+// value the kernel will see.
+func NewDeltaNetForTest(convKernel, keyHeadDim, valueHeadDim, numKeyHeads, numValueHeads, hidden int,
+	inProjQKV, inProjZ, inProjB, inProjA, convW, dtBias, negExpA, normW, outProj []float32,
+) (*DeltaNetWeightsForTest, *DeltaStateForTest) {
+	p := qwen35Params{
+		ConvKernel: convKernel, KeyHeadDim: keyHeadDim, ValueHeadDim: valueHeadDim,
+		NumKeyHeads: numKeyHeads, NumValueHeads: numValueHeads,
+	}
+	keyDim, valueDim := keyHeadDim*numKeyHeads, valueHeadDim*numValueHeads
+	convDim := 2*keyDim + valueDim
+	w := &deltaNetWeights{
+		inProjQKV: linalg.WrapF32(inProjQKV, convDim, hidden),
+		inProjZ:   linalg.WrapF32(inProjZ, valueDim, hidden),
+		inProjB:   inProjB,
+		inProjA:   inProjA,
+		convW:     convW,
+		dtBias:    dtBias,
+		negExpA:   negExpA,
+		normW:     normW,
+		outProj:   linalg.WrapF32(outProj, hidden, valueDim),
+	}
+	return &DeltaNetWeightsForTest{w: w, p: p}, &DeltaStateForTest{s: newDeltaState(p)}
+}
+
+// SetDeltaCapHook installs/clears the DeltaNet step-3 capture seam. A backend package cannot
+// reach deltaCapHook directly (it is decoder-internal), so it drives it through here — the same
+// arrangement SetMambaCapHook has for the Mamba-2 kernel gate.
+func SetDeltaCapHook(f func(conv, betaGate, core []float32)) { deltaCapHook = f }
+
+// L2NormScaledForTest exposes the DeltaNet q/k normalizer (FLA's l2norm, eps 1e-6) so a backend's
+// norm kernel is gated against the reference rather than against a five-line reimplementation of
+// it. The epsilon is load-bearing for a zero-magnitude head, which is the case worth gating.
+func L2NormScaledForTest(x []float32, s float32) []float32 { return l2normScaled(x, s) }

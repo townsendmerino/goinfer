@@ -171,6 +171,16 @@ func gatedDeltaNetStep(be Backend, h []float32, w *deltaNetWeights, p qwen35Para
 		}
 	}
 
+	if deltaCapHook != nil { // test seam: hand a backend's kernel the exact inputs+output of step 3
+		bg := make([]float32, 2*nv)
+		for headV := range nv {
+			g := w.negExpA[headV] * softplusf(at[headV]+w.dtBias[headV])
+			bg[headV*2+0] = sigmoidf(bt[headV])
+			bg[headV*2+1] = float32(math.Exp(float64(g)))
+		}
+		deltaCapHook(conv, bg, core)
+	}
+
 	// 4. Gated RMSNorm (over head_v_dim, × SiLU(z)) then out_proj.
 	for headV := range nv {
 		seg := core[headV*hv : headV*hv+hv]
@@ -186,6 +196,14 @@ func gatedDeltaNetStep(be Backend, h []float32, w *deltaNetWeights, p qwen35Para
 	}
 	return matvecWM(be, &w.outProj, core)
 }
+
+// deltaCapHook (test seam, gpu/deltanet_test.go) captures each step's post-conv [q|k|v] vector,
+// the per-value-head (beta, decay) pair and the PRE-NORM recurrence output — the exact inputs and
+// output of step 3, which is the only part a backend re-implements as a kernel. It exists for the
+// same reason mambaCapHook does: the recurrence output is a local that step 4 overwrites in place,
+// so a parity gate cannot reach it, and re-deriving it in the backend's test package would be a
+// second unvalidated implementation of the thing under test.
+var deltaCapHook func(conv, betaGate, core []float32)
 
 // gatedDeltaNet runs the layer over a whole sequence from a fresh state — a thin
 // loop over gatedDeltaNetStep, so the streaming path is what the parity test

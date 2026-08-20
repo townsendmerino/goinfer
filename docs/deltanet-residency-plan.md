@@ -1,7 +1,9 @@
 # Gated-DeltaNet residency — the plan, and why WebGPU proves it first
 
-**Status: PHASE 0 (scoping) — 2026-08-19.** No kernel written yet. This file exists so the phases,
-the reuse claims and the kill criteria are on record before any shader is.
+**Status: PHASE 2 DONE — 2026-08-19.** The delta-rule and norm kernels exist and are gated against
+the CPU reference at real head geometry (`gpu/deltanet.go`, `gpu/deltanet_test.go`). Phases 1/3/4
+are open. Written at Phase 0 so the phases, the reuse claims and the kill criteria were on record
+before any shader was.
 
 ## Why this, why now
 
@@ -67,11 +69,22 @@ dim 128, 16 key heads, 48 value heads, conv 4, head_dim 256), reduced layers and
 kinds present (3 linear + 1 full at minimum), seeded weights, CPU golden. Nothing downstream can be
 gated without it.
 
-**Phase 2 — the kernel, unit-tested before it is wired.** The delta-rule WGSL modelled on
-`mambaSSMShaderWGSL`, plus whatever the gated norm needs (mamba normalizes within `groupSize` with a
-`[dInner]` weight; DeltaNet normalizes over `hv` per head with a `[hv]` weight shared across heads —
-either a shader variant or a host-side tiled weight, decide by measurement not by taste). Gated
-against the CPU `gatedDeltaNetStep` on synthetic state, in `gpu/`, no model required.
+**Phase 2 — the kernel, unit-tested before it is wired. DONE.** `deltaRuleShaderWGSL` (thread owns
+a contiguous transposed state row) + `deltaNormShaderWGSL` (per key head, one pass). Gated in
+`gpu/deltanet_test.go` against the CPU `gatedDeltaNetStep` through a new `deltaCapHook` seam — the
+same arrangement `mambaCapHook` has, because the recurrence output is a local that the gated norm
+overwrites in place.
+
+- **Result:** cosine 1.000000000, worst maxAbs/rms 6.2e-6 over 64 tokens at hk=hv=128, nk=16,
+  nv=48. The error does not grow with step count (2.2e-6 at step 1, 3.2e-6 at step 64), which is
+  the signature of reassociation noise rather than state drift.
+- **Non-vacuity, by mutation:** breaking the GVA head mapping, dropping the decay, and un-transposing
+  the state row each fail the gate. Dropping the l2-norm epsilon does NOT — at ordinary magnitudes
+  1e-6 is below f32 resolution — so `TestDeltaNorm_cpuParity` covers that case separately with an
+  all-zero head, where `inverseSqrt(0)` poisons the state with NaN and the reference does not.
+- **The gated norm needs no shader variant.** Mamba's `ensureMambaGNorm` is already the right
+  computation with `nGroups=nv, groupSize=hv`; DeltaNet's `[hv]` weight is shared across heads, so
+  Phase 3 tiles it to `[nv*hv]` ONCE at load. Zero per-token cost, one fewer kernel to maintain.
 
 **Phase 3 — wire it.** `lw.isDeltaNet` beside `lw.isMamba` in `encodeLayer`, per-layer state
 allocation, the conv window, and `FeatDeltaNet` declared for webgpu only. `decodeRunnerEligible`'s
