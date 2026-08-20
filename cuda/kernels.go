@@ -63,6 +63,18 @@ var prefillBatchedPTX []byte
 //go:embed testdata/decode_splitkv.ptx
 var decodeSplitKVPTX []byte
 
+// deltaNetPTX: the Gated-DeltaNet decode mixer (delta_conv / delta_gates / delta_norm /
+// delta_rule / delta_gnorm / delta_qsplit / delta_attn_gate) — Qwen3.5/3.6-MoE, Qwen3-Next,
+// Qwen3.8.
+//
+// OWN MODULE for the decode_splitkv.cu / gptoss_act.cu reason and one more: nothing else in this
+// directory carries recurrent state. There is no SSM, conv-ring or scan kernel here to extend, so
+// the conv and the state plumbing are new code rather than a reuse — unlike the WebGPU port, which
+// sat on its Mamba-2 engine. Loaded only for that family; a load failure leaves it on the CPU path.
+//
+//go:embed testdata/deltanet.ptx
+var deltaNetPTX []byte
+
 // gptOssActPTX: glu_quant_gptoss — gpt-oss's clamped interleaved-SwiGLU expert epilogue
 // (per-expert biases, an asymmetric clamp, an alpha-scaled sigmoid gate and a +1 on the linear
 // branch). glue.cu's glu_quant serves every other family; this one is family-specific and would

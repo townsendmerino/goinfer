@@ -82,7 +82,7 @@ func TestDeltaRule_cpuParity(t *testing.T) {
 		rnd(convDim*convK, 0.5), dtBias, negExpA, normW, rnd(hidden*valueDim, 0.05))
 
 	var capConv, capGateIn, capBG, capPre, capGated, capZ []float32
-	decoder.SetDeltaCapHook(func(conv, gateIn, bg, pre, gated, z []float32) {
+	decoder.SetDeltaCapHook(func(_, conv, gateIn, bg, pre, gated, z []float32) {
 		capConv, capGateIn, capBG, capPre, capGated, capZ = conv, gateIn, bg, pre, gated, z
 	})
 	defer decoder.SetDeltaCapHook(nil)

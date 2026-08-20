@@ -196,7 +196,7 @@ func gatedDeltaNetStep(be Backend, h []float32, w *deltaNetWeights, p qwen35Para
 		}
 	}
 	if deltaCapHook != nil {
-		deltaCapHook(conv, append(append([]float32(nil), bt...), at...), capGate, capPre, core, z)
+		deltaCapHook(mixed, conv, append(append([]float32(nil), bt...), at...), capGate, capPre, core, z)
 	}
 	return matvecWM(be, &w.outProj, core)
 }
@@ -204,6 +204,7 @@ func gatedDeltaNetStep(be Backend, h []float32, w *deltaNetWeights, p qwen35Para
 // deltaCapHook (test seam, gpu/deltanet_test.go) hands a backend every intermediate its kernels
 // must reproduce, per step:
 //
+//	mixed    [convDim]  the in_proj_qkv output, PRE-conv    — the conv kernel's input
 //	conv     [convDim]  post-conv, post-SiLU [q|k|v]        — deltaNorm's input
 //	gateIn   [2*nv]     bt ‖ at, the raw gate projections   — deltaGates' input
 //	betaGate [2*nv]     interleaved (beta, decay)           — deltaGates' output
@@ -211,10 +212,14 @@ func gatedDeltaNetStep(be Backend, h []float32, w *deltaNetWeights, p qwen35Para
 //	gated    [valueDim] post gated-RMSNorm, pre out_proj    — deltaGNorm's output
 //	z        [valueDim] the output gate, pre-SiLU           — deltaGNorm's input
 //
+// `mixed` is here for CUDA rather than WebGPU: WebGPU's causal conv is Mamba-2's, already gated,
+// so its test could start from `conv`. CUDA has no SSM engine to reuse, so its conv is new code
+// and has to be gated from its own input.
+//
 // It exists for the same reason mambaCapHook does: these are locals, two of them overwritten in
 // place, so a parity gate cannot otherwise reach them — and re-deriving them in the backend's test
 // package would be a second unvalidated implementation of the thing under test.
-var deltaCapHook func(conv, gateIn, betaGate, corePre, gated, z []float32)
+var deltaCapHook func(mixed, conv, gateIn, betaGate, corePre, gated, z []float32)
 
 // gatedDeltaNet runs the layer over a whole sequence from a fresh state — a thin
 // loop over gatedDeltaNetStep, so the streaming path is what the parity test

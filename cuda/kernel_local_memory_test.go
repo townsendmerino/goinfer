@@ -45,6 +45,7 @@ func ptxModules() []struct {
 		{"gemv_w4a8_staged.ptx", gemvStagedPTX},
 		{"gemv_w4a8_rn.ptx", gemvRNPTX},
 		{"fused_qkv.ptx", fusedQKVPTX},
+		{"deltanet.ptx", deltaNetPTX},
 	}
 }
 

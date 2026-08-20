@@ -316,7 +316,9 @@ func NewDeltaNetForTest(convKernel, keyHeadDim, valueHeadDim, numKeyHeads, numVa
 // SetDeltaCapHook installs/clears the DeltaNet step-3 capture seam. A backend package cannot
 // reach deltaCapHook directly (it is decoder-internal), so it drives it through here — the same
 // arrangement SetMambaCapHook has for the Mamba-2 kernel gate.
-func SetDeltaCapHook(f func(conv, gateIn, betaGate, corePre, gated, z []float32)) { deltaCapHook = f }
+func SetDeltaCapHook(f func(mixed, conv, gateIn, betaGate, corePre, gated, z []float32)) {
+	deltaCapHook = f
+}
 
 // L2NormScaledForTest exposes the DeltaNet q/k normalizer (FLA's l2norm, eps 1e-6) so a backend's
 // norm kernel is gated against the reference rather than against a five-line reimplementation of
