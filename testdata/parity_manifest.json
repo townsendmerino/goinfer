@@ -576,7 +576,7 @@
         "decoder/qwen3_5_test.go",
         "scripts/pin_qwen3_5_forward.py"
       ],
-      "deps_hash": "sha256:198741684ef11f6b2a704baf03d0d062b88b032af748dbbf253d91832f0c95c6",
+      "deps_hash": "sha256:b2222365d5a53de3ccfce49da20f9882e2ca7cf5edb907602df3e613e483d22f",
       "status": "experimental",
       "validated_at": "e295fcd",
       "date": "2026-08-18",
