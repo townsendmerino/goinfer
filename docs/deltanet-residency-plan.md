@@ -226,10 +226,8 @@ things; the absolute is not.
   quantizes `in_proj_b`/`in_proj_a` to W8A8 where the CPU deliberately keeps them f32 (they feed
   the write/decay gates, where the recurrence is most precision-sensitive).
 - **Metal.** Declines at the feature gate, correctly.
-- **C′ expert streaming has not been exercised on this family.** The MoE siblings now admit on
-  CUDA, which is the prerequisite; whether the host→VRAM expert cache actually carries
-  Qwen3.6-35B-A3B (19.2 GB at int4) on an 8 GB card is untested. That is the payoff this whole
-  CUDA track was for, and it is the next thing to measure.
+- **Speed on the streaming path.** 6.77 tok/s is staging, not caching — C′ step 2's LRU reuse is
+  untouched, and the routing readback is one D2H per layer per token.
 
 ## CUDA: DONE for the dense sibling — 15.9× at released width
 
@@ -284,6 +282,47 @@ lesson ("a cosine floor over a RANDOM-weight MoE fixture can't gate gate/up orde
 costume. Amplifying the gate weight ×20 in the generator drives `sigmoid` to saturate per token;
 both mutations now fail at 0.9527 with drift 0.0319. Fixing the FIXTURE rather than tightening the
 floor, because a threshold tuned to catch one known bug catches only that bug.
+
+## THE PAYOFF: Qwen3.6-35B-A3B decodes on an 8 GB card
+
+2026-08-20. The whole CUDA track was for this one combination, and it lands:
+
+    loaded 35B resident + C′ staging in 9m18s (decode path cuda-resident (int4))
+    prompt: 22 tokens via the "chatml" template
+    generated 48 tokens in 7s (6.77 tok/s)
+    "The capital of France is **Paris**. Paris is famous for numerous cultural, historical,
+     and architectural landmarks, including: 1. **The Eiffel Tower**: The most iconic symbol
+     of Paris and one of the most"
+
+~20 GB of int4 experts against 8 GB of VRAM. It needed three things that did not exist the day
+before — the DeltaNet kernels, their wiring, and FeatMoEGatedShared — plus C′, which CUDA alone
+has. WebGPU can decode this family faster per layer than the CPU but cannot host this model at
+all; the dense Qwen3.8-27B is the mirror image (portable, but 15.3 GB of dense int4 fits nowhere
+here and C′ does nothing for it).
+
+6.77 tok/s is STAGING, not caching: 8 of 256 experts per layer per token, 40 layers, no reuse
+between tokens, plus a routing readback per layer. C′ step 2's LRU is the lever, untouched.
+
+**Four obstacles on the way, none of them the mixer:**
+
+1. Both prebuilt `.giw` bundles are unusable — one is inner-version 2 (this build reads 3..6),
+   the other is TRUNCATED. The "rebuild per minor" policy, biting.
+2. The 67 GB bf16 safetensors path ran the box to 59/62 GB with VRAM still untouched (P13's
+   resident-mapping problem at 35B scale) and had to be killed. The Q8_0 GGUF is mmap-backed and
+   loads in ~9 min.
+3. `qwen35` cannot use the streaming GGUF→.giw transcode — the code says "dedicated-loader
+   families can't stream; they fit resident", which is true on a big box and false here.
+4. **The actual blocker was one line, and it had nothing to do with this family's mixer.**
+   `r.gO, r.uO = r.af(I), r.af(I)` allocates DENSE-FFN scratch unconditionally, and a model whose
+   every layer is routed reports `intermediate_size` 0 — Qwen3.6's config omits the key entirely.
+   A 0-byte device allocation, which the driver rejects. No previously-resident MoE hit it
+   (Mixtral/GLM/Mellum all have a real dense width), and the tiny `qwen3_5_moe` fixture does not
+   either, because HF defaults `intermediate_size` in — so the fixture is LESS pure-MoE than the
+   model it stands for. Recorded in the code as a fixture-fidelity gap rather than papered over.
+
+Localizing (4) took four ~9-minute load cycles against "device allocation failed (0 bytes)" with
+no frame, so the executor's recovered panic now carries `debug.Stack()`. A decline printed once
+per model load can afford a few KB.
 
 **Two wiring mutations gated:** removing Reset's DeltaNet arm (caught by the replay check, self-cosine
 0.9897 — the CPU comparison does NOT catch it), and never applying the attention output gate

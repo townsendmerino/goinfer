@@ -983,9 +983,9 @@ property:
 **No gate remains position-keyed.** The residual surface is **14 `file:line` citations in this file's
 prose**, which no lint covers and which drift silently. Already stale, checked:
 
-- `cuda/backend.go:1049` — cited as `allocSlots`'s call site; now points at a bare `//` (A9-FIX
+- `cuda/backend.go:1087` — cited as `allocSlots`'s call site; now points at a bare `//` (A9-FIX
   inserted the warm-up above it).
-- `cuda/resident.go:264` — cited for audit C-08's `_ = gpu.Upload`; now a comment about backend locals.
+- `cuda/resident.go:265` — cited for audit C-08's `_ = gpu.Upload`; now a comment about backend locals.
 - two citations were **unresolvable**, because they omitted the repo — an aikit `linalg/quant.go`
   line and a bare `decoder/weightmat.go` one. Both
   are aikit paths written as if they were local ones; the SHA lint learned this distinction for
@@ -1000,7 +1000,7 @@ time — the scalar `int8→f32` widen loop this citation was making the point a
 replaced by the SIMD widen at `linalg/quant.go:136` once aikit v1.18.0/P2 landed and goinfer bumped
 to v1.19.0, 2026-08-15 — retargeted so the citation still resolves).
 
-**And one turned out not to be a line drift at all.** `cuda/resident.go:264` was cited for audit
+**And one turned out not to be a line drift at all.** `cuda/resident.go:265` was cited for audit
 C-08 — `_ = gpu.Upload(...)` discarding errors. That code is **gone**: `recordUpload` captures the
 first error into `r.setupErr` and the build declines gracefully. The citation was stale because the
 CLAIM was stale, and F2 had been listing a fixed critical as open. A line-number check would have
@@ -1298,7 +1298,7 @@ rather than struck, because "substantially fixed" is a different state from "fix
 |---|---|---|
 | C-05 gemma-4 stride on snapshot restore | **fixed**, with a gate | `decoder/kvsnapshot_gemma4_test.go:10` |
 | C-06 unvalidated tensor shapes | **fixed**, break-it-first gate | `decoder/serialize_shapecheck_test.go:15` |
-| C-08 `_ = gpu.Upload` over zeroed weights | **fixed** — `recordUpload` → `setupErr` → graceful decline | `cuda/resident.go:461` |
+| C-08 `_ = gpu.Upload` over zeroed weights | **fixed** — `recordUpload` → `setupErr` → graceful decline | `cuda/resident.go:462` |
 | C-14 CUDA argmax has no index tie-break | **fixed** at `c6600fc`, gated | `cuda/argmax_tiebreak_test.go:19` |
 | C-31 `make([]byte, u32)` unbounded | **fixed** — bounded against the remaining file size before the allocation | `internal/giw/bundle.go:114` |
 | C-21 embeddings batch cap, un-queued | **fixed** — `checkEmbedInputBounds` caps the input count, gated at the boundary and at +1; the un-queued half is a *documented deliberate decision*, not an omission. The body-cap tests are a different concern (bytes, not count) — covered-by-something-else, which is why they did not answer this | `internal/serveapp/embeddings.go:26` |

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"runtime/debug"
 	"sort"
 	"strings"
 	"unsafe"
@@ -937,7 +938,12 @@ func (r *cudaResident) do(j func() error) error { r.reqCh <- j; return <-r.ackCh
 func runJob(j func() error) (err error) {
 	defer func() {
 		if p := recover(); p != nil {
-			err = fmt.Errorf("cuda: executor job panicked: %v", p)
+			// The STACK, not just the value. A recovered executor panic becomes a resident
+			// DECLINE, printed once to stderr — and "device allocation failed (0 bytes)" with no
+			// frame is unactionable: it took four ~9-minute 35B load cycles to localize one to a
+			// dense-FFN scratch buffer that a pure-MoE model has no width for. The stack is a few
+			// KB on a path that runs at most once per model load.
+			err = fmt.Errorf("cuda: executor job panicked: %v\n%s", p, debug.Stack())
 		}
 	}()
 	return j()

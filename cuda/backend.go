@@ -223,6 +223,19 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			hl.isDeltaNet = true
 			qkv, z, outP, inB, inA, cW, dtB, negA, nW := m.Qwen35DeltaWeights(l)
 			hl.dnConvW, hl.dnDtBias, hl.dnNegExpA, hl.dnNormW = cW, dtB, negA, nW
+			// Name the missing tensor. Every one of these becomes a device up32, and an empty
+			// slice there is a 0-byte allocation — which this driver reports as "invalid length"
+			// with no hint at WHICH of the four (or which loader) produced it. Two different
+			// checkpoints have already failed exactly that way during this bring-up.
+			for _, chk := range []struct {
+				name string
+				n    int
+			}{{"conv_w", len(cW)}, {"dt_bias", len(dtB)}, {"neg_exp_a", len(negA)}, {"norm_w", len(nW)}} {
+				if chk.n == 0 {
+					return declined(fmt.Errorf("layer %d: DeltaNet %s is empty — the loader did not "+
+						"populate it for this container", l, chk.name))
+				}
+			}
 			bWM := linalg.WrapF32(inB, len(dtB), H)
 			aWM := linalg.WrapF32(inA, len(dtB), H)
 			proj = []projEnt{{&hl.dnQKV, qkv}, {&hl.dnZ, z}, {&hl.dnOut, outP},
@@ -233,6 +246,12 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			hl.qGate = dnAttnGate
 			qP, kP, vP, oP, qN, kN := m.Qwen35AttnWeights(l)
 			hl.qNorm, hl.kNorm = qN, kN
+			// Same reason as the DeltaNet check below: these become device uploads, and an empty
+			// one is an "invalid length" with no indication of which.
+			if len(qN) == 0 || len(kN) == 0 {
+				return declined(fmt.Errorf("layer %d: qwen35 softmax layer has empty q_norm/k_norm "+
+					"(%d/%d) — the loader did not populate them for this container", l, len(qN), len(kN)))
+			}
 			proj = []projEnt{{&hl.q, qP}, {&hl.k, kP}, {&hl.v, vP}, {&hl.o, oP}}
 		default:
 			proj = []projEnt{{&hl.q, &lw.QProj}, {&hl.k, &lw.KProj}, {&hl.o, &lw.OProj}}
@@ -379,6 +398,10 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 					// The KERNEL for this has been here all along — shared_gate_combine's ungated=0
 					// branch, documented "gated (Qwen-MoE)" — so the feature was declined for a
 					// missing [1,hidden] weight upload, not a missing kernel.
+					if lw.SharedGate.Rows() == 0 {
+						return declined(fmt.Errorf("layer %d: arch declares a GATED shared expert "+
+							"but SharedGate is empty — this loader did not populate it", l))
+					}
 					if hl.shGate, e = packWeight(&lw.SharedGate); e != nil {
 						return declined(fmt.Errorf("layer %d shared gate: %w", l, e))
 					}
@@ -1014,8 +1037,23 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		}
 		r.oO = r.af(H)
 		r.mSc, r.mq = r.af(1), r.ai(H/4)
-		r.gO, r.uO = r.af(I), r.af(I)
-		r.dSc, r.dScr, r.dq = r.af(1), r.af(I), r.ai(I/4)
+		// DENSE-FFN scratch, and only if the model HAS a dense FFN. A model whose every layer is
+		// routed reports intermediate_size 0 — Qwen3.6-35B-A3B's config omits the key entirely —
+		// and these become 0-byte allocations, which this driver rejects as "invalid length". The
+		// dense branch of segBFFN is unreachable for such a model, so the buffers are simply never
+		// needed; allocating them anyway was the only thing standing between it and residency.
+		//
+		// Nothing hit this before because every previously-resident MoE (Mixtral, GLM, Mellum) has
+		// a real intermediate_size — dense prefix layers or a genuine dense width. Note that the
+		// tiny qwen3_5_moe fixture does NOT reproduce it either: it carries intermediate_size 128
+		// because HF's config defaults one in, so the fixture is less pure-MoE than the model it
+		// stands for. That is a fixture-fidelity gap, recorded rather than silently fixed here.
+		if I > 0 {
+			r.gO, r.uO = r.af(I), r.af(I)
+			r.dSc, r.dScr, r.dq = r.af(1), r.af(I), r.ai(I/4)
+		} else if !isMoE {
+			return fmt.Errorf("cuda: intermediate_size is 0 on a DENSE model — no FFN to run")
+		}
 		if r.moe {
 			// Sized to the MoE expert width, not the dense one (Mellum's moe_intermediate_size
 			// differs from intermediate_size).
