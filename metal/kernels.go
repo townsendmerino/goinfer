@@ -571,4 +571,4 @@ kernel void qk_norm(device float* qkv[[buffer(0)]], device const float* qn[[buff
     float rms=rsqrt(red[0]/float(hd)+eps);
     for(uint i=tid;i<hd;i+=tgs){ float wt = addOne!=0u ? (1.0f+w[i]) : w[i]; x[i]=x[i]*rms*wt; }
 }
-` + moeKernels + gemma4MoeKernels
+` + moeKernels + gemma4MoeKernels + deltaNetKernels
