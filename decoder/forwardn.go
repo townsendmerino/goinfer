@@ -280,7 +280,10 @@ func (m *Model) runLayersFromEmbedN(h []float32, cache *KVCache) ([]float32, err
 			// hotspot (attention) is already batched above; this is the residual ~17%.
 			// GLM's dense prefix layers (Experts nil) fall through to the dense FFN below.
 			for i := range K {
-				ff, err := moeMLP(row(norm, i, hidden), lw, arch, be, m.pager)
+				// nil scr: this batched-prefill path builds its own per-K-batch scratch
+				// above and has no cache.scr in scope; moeMLP falls back to allocating,
+				// amortized over K tokens (not the flagged single-token decode hot path).
+				ff, err := moeMLP(row(norm, i, hidden), lw, arch, be, nil, m.pager)
 				if err != nil {
 					return nil, err
 				}

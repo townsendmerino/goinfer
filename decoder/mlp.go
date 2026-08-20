@@ -51,7 +51,7 @@ func mlp(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend, scr
 	case arch.MoE != nil && lw.Experts != nil:
 		// Per-layer: GLM's first_k_dense_replace dense layers carry no experts and
 		// fall through to gatedMLP; Mixtral/Qwen-MoE have experts on every layer.
-		g, err := moeMLP(h, lw, arch, be, pager) // compute-time LoRA on experts not wired — LoadAdapter rejects MoE
+		g, err := moeMLP(h, lw, arch, be, scr, pager) // compute-time LoRA on experts not wired — LoadAdapter rejects MoE
 		if err != nil {
 			return err
 		}
@@ -79,7 +79,16 @@ func mlp(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend, scr
 //	out     = Σ_j w[j] · expert_{e[j]}(h)    // expert = down(silu(gate(h)) ⊙ up(h))
 //
 // Only the chosen experts are evaluated — the point of MoE.
-func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend, pager *expertPager) ([]float32, error) {
+//
+// scr, when non-nil, backs the router-logits/accumulator/expert-gate-up buffers with
+// per-stream scratch instead of allocating them fresh — the dominant share of MoE
+// decode's per-token allocation (P8). The single-token decode call sites always pass
+// their cache's scr; the batched-prefill call site (forwardn.go) has no cache.scr in
+// scope and passes nil, falling back to the original per-call allocation (amortized
+// over the K-token batch, not the flagged decode hot path). routeExperts/topK's own
+// small (NumExperts/TopK-sized) internal allocations are untouched — negligible next
+// to the hidden/intermediate-sized buffers below.
+func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend, scr *decodeScratch, pager *expertPager) ([]float32, error) {
 	moe := arch.MoE
 	nE, k := moe.NumExperts, moe.TopK
 	if arch.Act != ActSiLU {
@@ -88,7 +97,12 @@ func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend, pager
 
 	// Router logits → top-k experts + weights. softmax-topk (Mixtral/Qwen2-MoE) or
 	// the DeepSeek/GLM sigmoid-score + selection-bias path — routeExperts unifies both.
-	logits := make([]float32, nE)
+	var logits []float32
+	if scr != nil {
+		logits = scr.moeLogits
+	} else {
+		logits = make([]float32, nE)
+	}
 	matmul(be, &lw.Router, h, logits, 1)
 	var idx []int
 	var wts []float32
@@ -115,13 +129,21 @@ func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend, pager
 	// Weighted sum of the chosen experts (each a SwiGLU MLP). Experts use the
 	// MoE expert width (Mellum's moe_intermediate_size), not the dense one.
 	hidden := arch.HiddenDim
-	out := make([]float32, hidden)
-	expOut := make([]float32, hidden)
 	// One gate/up pair for the whole token. The experts run sequentially, so k pairs were never
 	// simultaneously live — this was 2*k allocations per token where 2 suffice, and at top-k 8 with
 	// a large moe_intermediate that is the bulk of moeMLP's per-token allocation.
 	sc := max(moe.SharedIntermediateDim, moe.IntermediateDim)
-	egate, eup := make([]float32, sc), make([]float32, sc)
+	var out, expOut, egate, eup []float32
+	if scr != nil {
+		out, expOut = scr.moeOut, scr.moeExpOut
+		egate, eup = scr.moeGate[:sc], scr.moeUp[:sc]
+	} else {
+		out, expOut = make([]float32, hidden), make([]float32, hidden)
+		egate, eup = make([]float32, sc), make([]float32, sc)
+	}
+	for i := range out {
+		out[i] = 0
+	}
 	for j, e := range idx {
 		ex := &lw.Experts[e]
 		swiGLUExpert(ex, h, expOut, moe.IntermediateDim, be, egate, eup)

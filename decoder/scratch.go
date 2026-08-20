@@ -41,6 +41,16 @@ type decodeScratch struct {
 	gateUpOps [2]linalg.W8A8Op  // reused gate/up batch ops
 
 	loraTmp []float32 // [>=r] compute-time LoRA A·x scratch (#7); nil until an adapter is active
+
+	// MoE decode scratch (mlp.go moeMLP): eliminates the router-logits/accumulator/
+	// expert-gate-up allocations moeMLP otherwise makes every call, layer after
+	// layer — nE+2·hidden+2·sc floats per call, the bulk of decode's per-token
+	// allocation on MoE families. nil for non-MoE architectures. moeMLP falls back
+	// to allocating when passed a nil scr (the batched-prefill call site in
+	// forwardn.go, which builds its own per-K-batch scratch and has no cache.scr).
+	moeLogits         []float32 // [NumExperts]
+	moeOut, moeExpOut []float32 // [HiddenDim]
+	moeGate, moeUp    []float32 // [max(IntermediateDim, SharedIntermediateDim)]
 }
 
 // loraBuf returns a length-r scratch for the compute-time LoRA A·x intermediate,
@@ -67,7 +77,7 @@ func newDecodeScratch(a *Architecture) *decodeScratch {
 	// per-call (weightmat.go int4ParThreshold). See tune.go DefaultDecodeParallelThreshold.
 	ws := &linalg.Workspace{}
 	ws.SetThreshold(DefaultDecodeParallelThreshold)
-	return &decodeScratch{
+	s := &decodeScratch{
 		h:      make([]float32, a.HiddenDim),
 		norm:   make([]float32, a.HiddenDim),
 		sub:    make([]float32, a.HiddenDim),
@@ -81,6 +91,15 @@ func newDecodeScratch(a *Architecture) *decodeScratch {
 		logits: make([]float32, a.VocabSize),
 		ws:     ws,
 	}
+	if a.MoE != nil {
+		sc := max(a.MoE.SharedIntermediateDim, a.MoE.IntermediateDim)
+		s.moeLogits = make([]float32, a.MoE.NumExperts)
+		s.moeOut = make([]float32, a.HiddenDim)
+		s.moeExpOut = make([]float32, a.HiddenDim)
+		s.moeGate = make([]float32, sc)
+		s.moeUp = make([]float32, sc)
+	}
+	return s
 }
 
 // scoresBuf returns a length-n scores buffer, reusing the backing array when it

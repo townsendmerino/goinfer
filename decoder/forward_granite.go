@@ -78,7 +78,7 @@ func (m *Model) runLayersGranite(id int, cache *KVCache) ([]float32, error) {
 		if !ssmSkipFFN {
 			n2 := append([]float32(nil), h...)
 			rmsNorm(n2, lw.PreMLPNorm, 1, hidden, eps, arch.RMSAddOne)
-			ffn, err := moeMLP(n2, lw, arch, m.be, m.pager)
+			ffn, err := moeMLP(n2, lw, arch, m.be, cache.scr, m.pager)
 			if err != nil {
 				return nil, err
 			}

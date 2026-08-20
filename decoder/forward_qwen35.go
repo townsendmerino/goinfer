@@ -51,7 +51,7 @@ func (m *Model) runLayersQwen35(id int, cache *KVCache) ([]float32, error) {
 			ffn = make([]float32, hidden)
 			err = gatedMLP(n2, ffn, lw, arch, m.be, cache.scr, nil) // scr.gate/up are sized from IntermediateDim, which the dense validator requires
 		} else {
-			ffn, err = moeMLP(n2, lw, arch, m.be, m.pager)
+			ffn, err = moeMLP(n2, lw, arch, m.be, cache.scr, m.pager)
 		}
 		if err != nil {
 			return nil, err
