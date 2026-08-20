@@ -10,6 +10,7 @@ import (
 	"runtime/debug"
 	"sort"
 	"strings"
+	"time"
 	"unsafe"
 
 	gpu "github.com/townsendmerino/aikit/gpu"
@@ -272,10 +273,15 @@ type cudaResident struct {
 	act            int32   // gated MLP activation, decoder.ActKind (0=gelu-tanh, 1=silu)
 	sandwich       bool    // Gemma 4-norm sandwich: extra post-attn / post-MLP norms
 	cacheExperts   bool    // C′: routed experts DMA'd host→VRAM slots per token (device read; correct)
-	graphs         bool    // CUDA graphs: replay each layer's static segments instead of re-issuing launches (off ⇒ byte-identical)
-	graphsSync     bool    // DEBUG probe: r.stream.Sync() after each segment replay (bisects inter- vs intra-segment ordering hazards)
-	graphMask      string  // DEBUG probe: if non-empty, replay ONLY the named segments (e.g. "A","B","C","AB") and issue the rest live — localizes a replay hazard to a segment
-	layerCap       bool    // DEBUG probe: snapshot the residual r.x after every layer (localizes where a full-forward divergence first appears)
+	cacheProf      bool    // GOINFER_MOE_CACHE_PROF: time the per-layer routing round trip
+	profStall      time.Duration
+	profHost       time.Duration
+	profDMA        time.Duration
+	profCalls      uint64
+	graphs         bool   // CUDA graphs: replay each layer's static segments instead of re-issuing launches (off ⇒ byte-identical)
+	graphsSync     bool   // DEBUG probe: r.stream.Sync() after each segment replay (bisects inter- vs intra-segment ordering hazards)
+	graphMask      string // DEBUG probe: if non-empty, replay ONLY the named segments (e.g. "A","B","C","AB") and issue the rest live — localizes a replay hazard to a segment
+	layerCap       bool   // DEBUG probe: snapshot the residual r.x after every layer (localizes where a full-forward divergence first appears)
 	layerCapBuf    [][]float32
 
 	// hidCap is the PRODUCTION hidden-state seam (P10 / docs/spec/08): the resident
@@ -860,8 +866,30 @@ func (r *cudaResident) loadExpertSlot(w *cudaWQ, e, slot int) error {
 // admits each routed expert into the layer's slot cache (DMAing only cache misses), and uploads the
 // per-token slot ids the GEMV binds as `idx` (slot j ← the slot now holding routed expert j).
 func (r *cudaResident) loadRoutedExperts(L *cudaLayer) error {
+	// C′ TIMING SEAM (GOINFER_MOE_CACHE_PROF). This function is the only host round trip on the
+	// decode path, and it happens once per MoE layer per token — 40 times for the 35B. It splits
+	// into three costs that call for completely different fixes, and tok/s alone cannot separate
+	// them:
+	//
+	//   stall  the stream drain, waiting for the router kernel. Fixing this means removing the
+	//          round trip (device-side slot mapping), not making it faster.
+	//   host   the LRU bookkeeping. Pure CPU; fixing it is ordinary optimization.
+	//   dma    the H2D of missed experts. Fixing this means more slots or fewer bytes — and the
+	//          slot sweep already showed that lever saturating, so if dma is small the knee is
+	//          explained and more slots really are pointless.
+	//
+	// Off by default and zero cost when off (one branch); it adds no syncs of its own, because the
+	// stall it measures is a sync that already exists.
+	var t0 time.Time
+	if r.cacheProf {
+		t0 = time.Now()
+	}
 	if e := r.stream.Sync(); e != nil {
 		return e
+	}
+	if r.cacheProf {
+		r.profStall += time.Since(t0)
+		t0 = time.Now()
 	}
 	if e := gpu.Download(r.rIdx, r.hostIdx[:r.topK]); e != nil {
 		return e
@@ -872,15 +900,35 @@ func (r *cudaResident) loadRoutedExperts(L *cudaLayer) error {
 		slot, hit := c.admit(e)
 		r.hostSlot[j] = uint32(slot)
 		if !hit {
+			var td time.Time
+			if r.cacheProf {
+				r.profHost += time.Since(t0)
+				td = time.Now()
+			}
 			if err := r.loadExpertSlot(&L.expGU, int(e), slot); err != nil {
 				return err
 			}
 			if err := r.loadExpertSlot(&L.expDown, int(e), slot); err != nil {
 				return err
 			}
+			if r.cacheProf {
+				r.profDMA += time.Since(td)
+				t0 = time.Now()
+			}
 		}
 	}
-	return gpu.Upload(r.slotIdx, r.hostSlot[:r.topK])
+	e := gpu.Upload(r.slotIdx, r.hostSlot[:r.topK])
+	if r.cacheProf {
+		r.profHost += time.Since(t0)
+		r.profCalls++
+	}
+	return e
+}
+
+// CacheProfForTest reports the C′ round-trip decomposition (stall / host / dma) and the call
+// count. Zero unless GOINFER_MOE_CACHE_PROF is set.
+func (r *cudaResident) CacheProfForTest() (stall, host, dma time.Duration, calls uint64) {
+	return r.profStall, r.profHost, r.profDMA, r.profCalls
 }
 
 // expIdx is the idx argument the expert GEMVs bind: the constant slot ids [0..topK-1] when caching

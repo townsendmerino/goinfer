@@ -226,9 +226,9 @@ things; the absolute is not.
   quantizes `in_proj_b`/`in_proj_a` to W8A8 where the CPU deliberately keeps them f32 (they feed
   the write/decay gates, where the recurrence is most precision-sensitive).
 - **Metal.** Declines at the feature gate, correctly.
-- **The next bottleneck on the streaming path is NOT expert DMA** — see the slot sweep below. Most
-  likely the 40 per-layer D2H routing readbacks, which serialize the token; that is where to look
-  next, not at more slots.
+- **The next lever is compute/launch, not the routing readback.** Measured (below): the round trip
+  is 42% of generation and is 78% DMA, ~5% stall. The readback SYNC costs almost nothing; the
+  remaining ~58% of the token is kernels and launches.
 
 ## CUDA: DONE for the dense sibling — 15.9× at released width
 
@@ -320,6 +320,42 @@ A sweep that stopped at "more slots is faster" would have missed that.
 The cap works as designed: a 112-slot request needed 8.0 GB against 5.9 GB free and degraded to
 76 rather than OOM-ing. And the continuation is BYTE-IDENTICAL across all three slot counts, which
 is the property a cache has to have — reuse must not be observable in the output.
+
+**THE DEFAULT WAS RAISED (2026-08-20) to `min(nE, 8*topK)`** — the "change about defaults" the code
+had parked once its safety precondition (fix the margin, prove it on the 26B) was met by A5/A7.
+Bounded rather than the documented "ask for all, cap to VRAM", because the sweep shows the knee and
+because "all" caps to the largest thing the margin thinks fits — which is precisely the edge the
+previous attempt died on (it capped 128→34 at 3.4 GB of 3.8 GB free, then OOM'd in the warm
+forward).
+
+    35B, no env var:  64 slots   10.74 tok/s   75.5% hit    (was 6.77 at the topK default)
+    26B, no env var:  64 → capped to 32 (3.3 GB of 3.8 GB)  12.91 tok/s  77.5% hit  — PASSES
+
+The 26B is the test that binds, and note how close 3.3 GB sits to the 3.4 GB that failed before:
+what makes it safe is the margin fix, and the passing run is the evidence. Asking for "all" would
+land back on that edge.
+
+## Where the remaining time actually goes — and a hypothesis that was wrong
+
+`GOINFER_MOE_CACHE_PROF` times the one host round trip on the decode path (once per MoE layer per
+token — 2800 calls for a 48-token 35B run), split three ways because each implies a different fix:
+
+    stall 226ms (12% of the round trip)   the stream drain waiting for the router
+    host  185ms (10%)                     LRU bookkeeping
+    dma   1.457s (78%)                    H2D of missed experts
+    total 1.867s of 4.498s generation (42%)
+
+**The prediction that the 40 per-layer readbacks serialize the token was WRONG.** The sync is ~5%
+of token time. The DMA inside the round trip is ~33%, and the other ~58% is kernels and launches —
+which is where a further win has to come from. Removing the round trip entirely (device-side slot
+mapping) would buy at most that 5%, and A′ zero-copy is already a recorded dead end.
+
+**MEASUREMENT HYGIENE, learned the hard way here.** One profiled run scored 5.46 tok/s against
+10.74 for identical work (byte-identical hits/misses), because an `rsync --server` was competing
+for memory bandwidth — the expert DMA reads from pinned host RAM, so unrelated I/O load lands
+squarely on the thing being measured. Re-run clean it was 10.67. Every single-run number in the
+slot sweep above carries that same uncertainty; treat the 1.49× as real (it is far outside the
+spread) and the 1.02× as indistinguishable from noise.
 
 **Four obstacles on the way, none of them the mixer:**
 

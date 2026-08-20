@@ -475,6 +475,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		// C′: DMA the routed int4 experts host→VRAM slots per token (device read, correct). The
 		// path to running a model whose experts exceed VRAM. Off by default; byte-identical when off.
 		cacheExperts: m.MoECacheExperts(),
+		cacheProf:    os.Getenv("GOINFER_MOE_CACHE_PROF") != "",
 		dnet:         dnetP,
 		// Resolve the resident KV capacity HERE, at construction, not at the KV allocation site:
 		// several buffers are sized from it earlier (the split-KV score scratch among them), and a
@@ -516,12 +517,39 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	//     GOINFER_MOE_CACHE_SLOTS=8  (this default) -> PASS 305s
 	//     unset -> 128, capped to 34               -> FAIL 477s (OOM)
 	//
-	// topK is still a poor default — it degenerates to fresh-loading every routed expert every
-	// token (~5 tok/s against ~17 at 38 slots) — but a slow default beats one that cannot run the
-	// model at all. Raising it again requires fixing the margin FIRST and proving it on the 26B,
-	// which is the test that binds; no fixture is large enough for the cap to engage.
+	// RAISED (2026-08-20) to a BOUNDED multiple of topK. This is the "change about defaults" the
+	// note above parked — its safety precondition (fix the margin, prove it on the 26B) was met by
+	// A5/A7, and what remained was only that a default change should not ride along inside an
+	// unrelated commit.
+	//
+	// WHY A BOUND AND NOT THE "ask for all, cap to VRAM" THE ACCESSOR DOCUMENTS. Measured on the
+	// real Qwen3.6-35B-A3B (nE=256, topK=8), sweeping slots/layer:
+	//
+	//     8 (topK)      6.77 tok/s   ~0% hit   ~630 MB expert DMA/token
+	//     48           10.09 tok/s   71.1%      265 MB
+	//     76           10.32 tok/s   77.7%      205 MB
+	//
+	// The knee is around 48: cutting DMA 630→265 MB bought 1.49x, cutting it 265→205 bought 1.02x.
+	// Past the knee, slots consume GB of VRAM for nothing — and every extra GB is more exposure to
+	// the deferred local-memory reservations that made the previous "ask for all" attempt OOM after
+	// allocSlots had already capped. A bound gets the whole win with a fraction of the risk, which
+	// "all" cannot claim.
+	//
+	// 8*topK sits just above the measured knee. It is a HEURISTIC from one sweep (plus the 26B's
+	// "~17 tok/s at the 38 slots that fit"), not a derived constant: where the knee falls depends on
+	// the model's routing entropy. Erring above it costs VRAM the cap will reclaim if it is short;
+	// erring below it costs throughput nothing reclaims.
+	//
+	// The floor stays topK — one token's routed set must be simultaneously resident — and allocSlots
+	// still caps to measured free VRAM, so this can only ever ask for less than the reverted default.
 	r.cacheSlots = topK
 	r.cacheSlotsReq = topK
+	if r.cacheExperts && nE > 0 {
+		if d := 8 * topK; d > topK {
+			r.cacheSlots = min(d, nE)
+			r.cacheSlotsReq = r.cacheSlots
+		}
+	}
 	if r.cacheExperts {
 		// The request now comes from Options (--moe-cache-slots), and MoECacheSlotsRequest still
 		// honours GOINFER_MOE_CACHE_SLOTS, so nothing that set the env var breaks.

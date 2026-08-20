@@ -120,6 +120,15 @@ func TestQwen36_35B_cache(t *testing.T) {
 		hitRate = float64(hits) / float64(hits+misses)
 	}
 	t.Logf("generated %d tokens in %s (%.2f tok/s)", len(out), genDur.Round(time.Second), rate)
+	if stall, host, dma, calls := r.CacheProfForTest(); calls > 0 {
+		tot := stall + host + dma
+		t.Logf("C′ round trip over %d layer-calls: stall %s (%.0f%%) | host %s (%.0f%%) | dma %s (%.0f%%) "+
+			"= %s of %s generation (%.0f%%)", calls,
+			stall.Round(time.Millisecond), 100*float64(stall)/float64(tot),
+			host.Round(time.Millisecond), 100*float64(host)/float64(tot),
+			dma.Round(time.Millisecond), 100*float64(dma)/float64(tot),
+			tot.Round(time.Millisecond), genDur.Round(time.Millisecond), 100*float64(tot)/float64(genDur))
+	}
 	t.Logf("C′ cache: %d slots/layer of %d experts — %d hits / %d misses (%.1f%% hit rate, "+
 		"~%.0f MB of expert DMA per token)", r.cacheSlots, r.nE, hits, misses, hitRate*100,
 		float64(misses)/float64(max(len(out), 1))*1.97)

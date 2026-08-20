@@ -434,7 +434,7 @@ cost — a new kernel with per-thread scratch, a driver that reserves differentl
 
 **Structural fix: pay the deferred reservation BEFORE taking the free reading that sizes the cache.**
 Force the flagged kernels to launch once during `BuildResident`, ahead of `allocSlots` at
-`cuda/backend.go:1087`. The cap is then correct **by construction**, because the free reading it is
+`cuda/backend.go:1115`. The cap is then correct **by construction**, because the free reading it is
 computed from already includes every fixed cost that will ever be paid.
 
 **Known-unbounded, recorded rather than filed as a defect.** Module load is **resident-zero and
@@ -574,7 +574,7 @@ silently carried ~832 KiB of *instrument disagreement* as if it were context cos
 measurement-shape class: the number was real and the comparison was not like-for-like.
 
 **Why the derivation holds for goinfer regardless: it creates exactly ONE context, and cannot create
-a second.** `cuda/backend.go:558` is the only production call of `CreateSystemDefaultDevice`, aikit
+a second.** `cuda/backend.go:586` is the only production call of `CreateSystemDefaultDevice`, aikit
 retains the **primary** context (`cuDevicePrimaryCtxRetain`, refcounted per device per process, so
 repeat calls do not make a second), and **`cuCtxCreate` is not bound by gocudrv at all**. The
 single-context premise is therefore enforced by the dependency, not merely by current usage.
@@ -822,8 +822,8 @@ delta, because it does not scale with slots.
 It is **additive with the rounding shortfall, not an alternative to it**: rounding eats into the
 headroom the 384 MiB margin was sized to provide, and the module load then spends from what remains.
 
-**Mechanism, now located precisely.** `CompileLibrary(moePTX)` runs at `cuda/backend.go:686`;
-`allocSlots` runs at `cuda/backend.go:1087`. Under lazy loading the module's *device* memory is not
+**Mechanism, now located precisely.** `CompileLibrary(moePTX)` runs at `cuda/backend.go:714`;
+`allocSlots` runs at `cuda/backend.go:1115`. Under lazy loading the module's *device* memory is not
 taken at 591 — it is taken at the first launch of one of its kernels, which is `fRoute`, long after
 the cap was computed from the free reading at 793. Corroborating: the failed attempt released
 exactly 2^26 B while unwinding, which reads as a driver-side code/constant block rather than as

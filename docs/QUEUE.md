@@ -350,7 +350,7 @@ supports.
 
 | doc \| path:line | repo | line content |
 |---|---|---|
-| `docs/benchmarks.md|cuda/resident.go:28` | goinfer | `anchor: var (` |
+| `docs/benchmarks.md|cuda/resident.go:28` | goinfer | `_ decoder.ResidentGreedy  = (*cudaResident)(nil)` |
 | `docs/cuda-megakernel-spec.md|gpu/attention.go:17` | goinfer | `// uses f64 accumulation; the GPU f32 — cosine ~1.0, not bit-exact).` |
 | `docs/cuda-megakernel-spec.md|gpu/decoderunner.go:807` | goinfer | `// moeExpert records one indexed sparse-expert GEMV: dst[n] = expert[idx[slot]]·aq` |
 | `docs/cuda-megakernel-spec.md|gpu/decoderunner.go:912` | goinfer | `// relu²→int8 → down + residual into xd. The other kinds fall through to the mixer.` |
@@ -377,15 +377,15 @@ supports.
 | `docs/multimodal.md|decoder/config.go:1044` | goinfer | `if json.Unmarshal(b, &nest) == nil && len(nest.TextConfig) > 0 {` |
 | `docs/multimodal.md|decoder/gguf_qwen35.go:77` | goinfer | `anchor: func ggufQwen35Config(g *embed.GGUFFile) (*Config, error) {` |
 | `docs/multimodal.md|decoder/weights.go:358` | goinfer | `const shardIndexFile = "model.safetensors.index.json"` |
-| `docs/ollama-chase.md|cuda/resident.go:1179` | goinfer | `// All of it runs ON the executor thread — that thread made the context current — and th` |
-| `docs/ollama-chase.md|cuda/resident.go:399` | goinfer | `g4x1, g4x2, g4rn Buffer` |
-| `docs/ollama-chase.md|cuda/resident.go:41` | goinfer | `// resolveCtxCap turns a request into the effective resident KV capacity:` |
-| `docs/ollama-chase.md|cuda/resident.go:648` | goinfer | `// declined to the staged/CPU path upstream.` |
+| `docs/ollama-chase.md|cuda/resident.go:1227` | goinfer | `// All of it runs ON the executor thread — that thread made the context current — and th` |
+| `docs/ollama-chase.md|cuda/resident.go:405` | goinfer | `g4x1, g4x2, g4rn Buffer` |
+| `docs/ollama-chase.md|cuda/resident.go:42` | goinfer | `// resolveCtxCap turns a request into the effective resident KV capacity:` |
+| `docs/ollama-chase.md|cuda/resident.go:654` | goinfer | `// declined to the staged/CPU path upstream.` |
 | `docs/ollama-chase.md|decoder/model.go:831` | goinfer | `// logits. On the batched archs this runs the layers at M=len in one pass (each` |
 | `docs/ollama-chase.md|decoder/model.go:979` | goinfer | `// sample. Identical to the logits path — guarded by ArgmaxEquivalent/GreedyEquivalent.` |
 | `docs/ollama-chase.md|decoder/residency.go:724` | goinfer | `return false, "sequential — this backend has no batched prefill (per-token resident forw` |
 | `docs/ollama-chase.md|decoder/weightmat.go:196` | goinfer | `var matmulWSPool = sync.Pool{New: func() any { return new(linalg.Workspace) }}` |
-| `docs/parity-coverage-policy.md|cuda/resident.go:980` | goinfer | `// always been allocated without one, and a hard failure here would regress every driver` |
+| `docs/parity-coverage-policy.md|cuda/resident.go:1028` | goinfer | `// always been allocated without one, and a hard failure here would regress every driver` |
 | `docs/parity-coverage-policy.md|linalg/dot.go:25` | aikit | `sum += a[k] * b[k]` |
 | `docs/plan-cpubrrr-steal-and-bindings.md|decoder/registry.go:57` | goinfer | `"gpt_oss":          gptOssArchitecture,      // gpt-oss (20b/120b): sparse MoE + per-hea` |
 | `docs/plan-cpubrrr-steal-and-bindings.md|linalg/quant.go:412` | aikit | `func QuantizeGroupInt4Row(row []float32, cols, group int, packed []byte, scales []float3` |
@@ -400,10 +400,10 @@ supports.
 | `docs/prompts/metal-close-leak-check.md|metal/model.go:374` | goinfer | `// expert weights, buffer OOM — model.go/moe.go/gemma4_moe.go) into the error this signa` |
 | `docs/prompts/metal-close-leak-check.md|metal/model.go:46` | goinfer | `// same-op kernel inherit it. A byte-exact fixture for such an op MUST use context > the` |
 | `docs/queue-engineering.md|cuda/argmax_tiebreak_test.go:19` | goinfer | `func TestArgmaxTieBreak(t *testing.T) {` |
-| `docs/queue-engineering.md|cuda/backend.go:1087` | goinfer | `// cache, so the cap is correct by construction rather than covered by a margin.` |
+| `docs/queue-engineering.md|cuda/backend.go:1115` | goinfer | `// cache, so the cap is correct by construction rather than covered by a margin.` |
 | `docs/queue-engineering.md|cuda/prefill.go:227` | goinfer | `defer func() {` |
-| `docs/queue-engineering.md|cuda/resident.go:265` | goinfer | `// backend.go locals; the per-layer KV cache and UploadKV read r.layers[l].kvDim.` |
-| `docs/queue-engineering.md|cuda/resident.go:462` | goinfer | `func (r *cudaResident) recordUpload(e error) {` |
+| `docs/queue-engineering.md|cuda/resident.go:266` | goinfer | `// backend.go locals; the per-layer KV cache and UploadKV read r.layers[l].kvDim.` |
+| `docs/queue-engineering.md|cuda/resident.go:468` | goinfer | `func (r *cudaResident) recordUpload(e error) {` |
 | `docs/queue-engineering.md|decoder/features_test.go:193` | goinfer | `want, ok := admissionGolden[name]` |
 | `docs/queue-engineering.md|decoder/forwardn.go:563` | goinfer | `logits[j] = sc * float32(math.Tanh(float64(val/sc)))` |
 | `docs/queue-engineering.md|decoder/kvsnapshot_gemma4_test.go:10` | goinfer | `func TestSnapshot_refusesNonUniformKVWidth_C05(t *testing.T) {` |
@@ -420,9 +420,9 @@ supports.
 | `docs/queue-engineering.md|metal/model.go:817` | goinfer | `r.residencyBufs = pinned` |
 | `docs/queue-engineering.md|metal/model.go:935` | goinfer | `r.logitsHost[j] = sc * float32(math.Tanh(float64(v/sc)))` |
 | `docs/queue-engineering.md|metal/snapshot_golden_test.go:77` | goinfer | `func TestMetalEmbedScale_forwardMatchesForwardEmb(t *testing.T) {` |
-| `docs/queue-performance.md|cuda/backend.go:1087` | goinfer | `// cache, so the cap is correct by construction rather than covered by a margin.` |
-| `docs/queue-performance.md|cuda/backend.go:558` | goinfer | `if r.dev, e = CreateSystemDefaultDevice(); e != nil {` |
-| `docs/queue-performance.md|cuda/backend.go:686` | goinfer | `load(&r.bRopeKV, pbmod, "rope_kv_batched")` |
+| `docs/queue-performance.md|cuda/backend.go:1115` | goinfer | `// cache, so the cap is correct by construction rather than covered by a margin.` |
+| `docs/queue-performance.md|cuda/backend.go:586` | goinfer | `if r.dev, e = CreateSystemDefaultDevice(); e != nil {` |
+| `docs/queue-performance.md|cuda/backend.go:714` | goinfer | `load(&r.bRopeKV, pbmod, "rope_kv_batched")` |
 | `docs/queue-performance.md|decoder/forwardn.go:415` | goinfer | `for kvh := range nKV {` |
 | `docs/queue-performance.md|decoder/mlp.go:91` | goinfer | `func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend, scr *decodeSc` |
 | `docs/queue-performance.md|decoder/sampler_chunked.go:188` | goinfer | `return drawChunked(e, sums, z, r)` |
