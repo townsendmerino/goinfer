@@ -93,8 +93,24 @@ kernel void gemv_w8a8_coal(device const char* aq[[buffer(0)]], device const floa
     device const char* bq[[buffer(2)]], device const float* bsc[[buffer(3)]], device float* out[[buffer(4)]],
     constant uint& K[[buffer(5)]], uint gid[[threadgroup_position_in_grid]], uint lid[[thread_index_in_threadgroup]]) {
     device const char* brow = bq + (uint)gid*K;
+    // CANDIDATE: vectorized 32-bit (4-packed-byte) loads instead of scalar per-byte loads. This is
+    // a DIFFERENT lever than round 2's ILP-unroll (which found no win, confirming the kernel is
+    // bandwidth-bound, not ILP-bound) -- reducing the LOAD INSTRUCTION COUNT 4x (same total bytes,
+    // fewer/wider transactions) is the lever a bandwidth-bound kernel should actually respond to.
+    // Same coalescing shape as before, just 4 bytes/lane/iteration instead of 1 (lane l reads word
+    // l, l+32, ... -- adjacent lanes still hit adjacent memory). Exact integer math either way, so
+    // still bit-identical regardless of grouping.
+    device const uint* aq4 = (device const uint*)aq;
+    device const uint* brow4 = (device const uint*)brow;
+    uint G = K >> 2u;
     int acc = 0;
-    for (uint k = lid; k < K; k += 32u) acc += int(aq[k]) * int(brow[k]);
+    for (uint g = lid; g < G; g += 32u) {
+        uint aw = aq4[g], bw = brow4[g];
+        acc += int(char(aw & 0xFFu))         * int(char(bw & 0xFFu));
+        acc += int(char((aw >> 8) & 0xFFu))  * int(char((bw >> 8) & 0xFFu));
+        acc += int(char((aw >> 16) & 0xFFu)) * int(char((bw >> 16) & 0xFFu));
+        acc += int(char((aw >> 24) & 0xFFu)) * int(char((bw >> 24) & 0xFFu));
+    }
     acc = simd_sum(acc);
     if (lid == 0) out[gid] = float(acc) * asc[0] * bsc[gid];
 }
