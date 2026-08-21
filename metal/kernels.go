@@ -91,8 +91,16 @@ kernel void layernorm_quant(device const float* x[[buffer(0)]], device const flo
         mx=max(mx, max(max(av.x,av.y), max(av.z,av.w)));
     }
     for (uint i=(H4<<2u)+tid; i<H; i+=tgs) { float y=(x[i]-mean)*inv*w[i]; if(hasBias!=0u) y+=b[i]; mx=max(mx,fabs(y)); }
-    red[tid]=mx; threadgroup_barrier(mem_flags::mem_threadgroup);
-    for(uint st=tgs/2;st>0;st>>=1){ if(tid<st) red[tid]=max(red[tid],red[tid+st]); threadgroup_barrier(mem_flags::mem_threadgroup);}
+    // 2-level SIMD-shuffle reduction instead of the 8-step threadgroup-barrier tree -- max is
+    // exact/order-independent regardless of reduction structure (unlike the mean/variance sums
+    // above, which stay untouched). Cuts barrier count from 8 to 2 (verified safe on quant_vec).
+    mx = simd_max(mx);
+    uint sgid = tid >> 5u, lane = tid & 31u;
+    if (lane == 0) red[sgid] = mx;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    uint nsg = tgs >> 5u;
+    if (tid == 0) { float v = red[0]; for (uint k=1; k<nsg; k++) v = max(v, red[k]); red[0] = v; }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
     float sc=red[0]/127.0f; if(sc==0)sc=1; if(tid==0)asc[0]=sc; float invsc=1/sc;
     device char4* aq4 = (device char4*)aq;
     for (uint i4=tid; i4<H4; i4+=tgs) {
