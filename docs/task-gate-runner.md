@@ -215,13 +215,39 @@ byte-for-byte. Two intended differences, both away from naming a deleted file or
 artefact: the cross-gate label reads `gate parity` rather than `parity_sweep.sh`, and the catch-all
 no longer emits the trailing space `sed -E 's/\(.*//'` left behind.
 
-**What the run found — a real red that is NOT E8's:** `TestQwen35GGUF_gate` and
-`TestQwen35GGUF_weightDiff` fail on this tree, identically under the unmodified shell script, so the
-migration neither caused nor masks them. The gate measures **argmax 68/80 (85.0%), min cosine
-0.98740 against a 0.992 floor**, where the value recorded in the test's own comment for this box is
-**0.99298**. The ledger classifies both as *confirmed before this gate last changed*. Owner's call;
-recorded here because a migration that quietly absorbed a red would be the worst possible outcome
-for a gate whose entire job is to refuse one.
+**What the run found — a real red that is NOT E8's, now BISECTED to one commit:**
+`TestQwen35GGUF_gate` and `TestQwen35GGUF_weightDiff` fail on this tree, identically under the
+unmodified shell script, so the migration neither caused nor masks them.
+
+**Culprit: `6d4fc79` "qwen35 family: quantize the projections that were f32 at every quant".**
+Adjacent pair, same box, same assets, same toolchain on both sides:
+
+| | argmax | min cosine | mean | worst gap | verdict |
+|---|---|---|---|---|---|
+| `33879dd` (parent) | 69/80 (86.2%) | **0.99298** | 0.99846 | 0.0039 | PASS |
+| `6d4fc79` | 68/80 (85.0%) | **0.98740** | 0.99608 | 0.0080 | FAIL (floor 0.992) |
+
+**A hypothesis worth recording because it was WRONG:** the Go 1.27 bump looked like the obvious
+suspect — the right size of effect, the right era, and this repo has a documented arm64/amd64 FMA
+divergence. It is refuted: the gate produces the **bit-identical** 0.98740 at `go 1.26.6`
+(`357b7db`) and at `go 1.27.0` (`d7c41c4`). Two probes, ~30 minutes, and the plausible story died.
+
+**This is not an unnoticed regression — it is a deliberate trade whose blast radius was measured on
+the wrong gate.** `6d4fc79` made the DeltaNet and attention projections honour `Options.Quant`
+instead of staying f32 (1.60× decode, 7.4× TTFT), and its message records the accuracy cost in those
+words — but for `TestQwen35Real_gate2FullModel` (int8 vs bf16, floor ≥0.98, 0.99333 → 0.99069, still
+green), whose manifest entry it re-baked. Its SIBLING, this gate, carries a hard-coded **0.992**
+floor set at `2583a2b` and never revisited, and the same trade moved it **0.99298 → 0.98740**,
+crossing that floor by 0.0046. Coherent prompts also went 8/10 → 7/10.
+
+**Why it shipped silently:** the gate is `//go:build realckpt` and heavy, so CI never builds it and
+only the release sweep runs it. The trade landed between sweeps.
+
+**The remedy is a judgement call and is NOT taken here.** Re-baselining the floor to match the
+deliberate trade is the cheapest option and is consistent with what the commit already did for the
+sibling gate — but `6d4fc79`'s own stated standard was "evidence the new path is RIGHT, not merely
+different, because re-baking a golden on *it changed* is how a regression gets blessed", and that
+evidence does not yet exist for the Q8_0 path.
 
 ## 10. Step 3 — the GPU gate, the last of the six
 
