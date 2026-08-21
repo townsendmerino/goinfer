@@ -43,7 +43,7 @@ The smallest published checkpoint per family (e.g. `gemma-3-270m`, Qwen2.5-0.5B,
 a small Llama/Mistral/Mixtral, Mellum): load → generate → assert a recorded
 continuation. Not full parity — the broad, cheap net that catches "this family's
 loader segfaults / emits garbage" across the whole claimed matrix. Drives
-`parity_sweep.sh`.
+the parity sweep (`go run ./cmd/gate parity`).
 
 **T3 — release-gate, asset-gated, on the big box (or `weightDiff` when the
 oracle won't fit).** Full argmax-exact + logit-cosine vs the HF bf16 reference on
@@ -630,12 +630,12 @@ tell from the output alone what values it actually covered?**
 
 Audited 2026-08-12. Reporting the composition: the goldens refresh (quantization), `gpu_gate.sh`'s
 skip census (run-vs-skipped) and its derived hygiene group (platform), `TestInt4_forwardParity`
-(fixture), `TestKernelLocalMemoryCensus` (kernel). **Not reporting it:** `parity_sweep.sh` (family ×
+(fixture), `TestKernelLocalMemoryCensus` (kernel). **Not reporting it:** the parity sweep (family ×
 quant × loader — pass/fail per gate, no quant column), `TestSlotAllocation_matchesGranularityForm`
 (slot count — one per run, absent from the verdict), `TestApplySoftcap_bitIdentical` (size ×
 GOMAXPROCS — loops both, prints neither), `TestMoERouteDemandThreshold` (balloon shape — an env var
 absent from the verdict line). The capability matrix (family × backend) is unread. Listed rather than
-fixed: the audit is the deliverable, and `parity_sweep.sh` is the one that matters most, because it
+fixed: the audit is the deliverable, and the parity sweep is the one that matters most, because it
 is the release gate.
 
 State what a fixture does **not** cover, in the fixture's own docs — host-buffer ratio, depth,

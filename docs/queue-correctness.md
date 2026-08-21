@@ -46,7 +46,7 @@ flip which experts run, a discrete change no averaging smooths (the expert-flip 
 recorded for granite's MoE stack). Comparing against the repo's other MoE rows is what
 distinguished "sensitive" from "broken" cheaply, before any hunt for a forward bug.
 
-**T2 DONE too — G4 IS COMPLETE.** Both tiny gates are now in `scripts/parity_sweep.sh`'s required
+**T2 DONE too — G4 IS COMPLETE.** Both tiny gates are now in the parity sweep's required
 list: `nemotron3nano-tiny|TestNemotron3NanoMoE_textParity` and, closing a pre-existing hole found
 in the same pass, `nemotron-tiny|TestNemotron_textParity` — **the DENSE variant had never been in
 the sweep either**, despite being T3-validated since 2026-08-15. Its fixture is pin-generated and
@@ -782,7 +782,7 @@ Answer that before estimating.
 **Q2 · The GGUF-quant cross-gate gap — CLOSED, and it was unplumbed too** — `linux`, `bd08936`→
 
 The cross-gate check showed `scripts/parity_sweep.sh` covering the GGUF quant formats while the goldens
-refresh did not. **(a) Exposure: a LAG, not a hole.** `scripts/parity_sweep.sh` is not in CI — it is
+refresh did not. **(a) Exposure: a LAG, not a hole.** The parity sweep is not in CI — it is
 release-only, run by hand on the box (`RELEASING.md` §C1). So the formats are covered at release and
 **not between releases**, which is exactly when a frozen-core edit gets only the goldens refresh.
 

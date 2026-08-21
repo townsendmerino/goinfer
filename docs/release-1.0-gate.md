@@ -163,9 +163,9 @@ below is declaring it (§3), not proving it.
   (C1a). It also records that G10/G11 widened what the run vouches for, and carries
   `TestMetalSnapshotGolden`'s known-red + re-bake safety condition (`gemma4-dense-scaled` entries
   MUST move, `mixtral-tiny` MUST NOT) so the re-bake cannot be done blind.
-- [ ] **REQUIRED · Sweep discipline holds at the RC**: `scripts/parity_sweep.sh` zero blockers,
+- [ ] **REQUIRED · Sweep discipline holds at the RC**: `go run ./cmd/gate parity` zero blockers,
   coverage gaps on their own line (none silently absorbed), composition printed
-  (`scripts/sweep_composition.py`), and the heavy tier (`go run ./cmd/gate heavy`, E8's successor
+  (`go run ./cmd/gate composition`), and the heavy tier (`go run ./cmd/gate heavy`, E8's successor
   to `scripts/heavy_gate.sh`) run on the RC with its log **committed or archived** — C1a's lesson: a `mktemp` log is a verdict nobody can
   re-check.
 

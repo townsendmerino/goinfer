@@ -54,8 +54,8 @@ fi
 # numeric change to the forward breaks them. (Deliberately NOT the spec-decode / session /
 # KV / vision parity tests — those gate features, not the forward numerics.)
 # ^TestGGUF_.*_parity$ is included deliberately, and it cost nothing to add. The cross-gate check
-# (scripts/sweep_composition.py) showed parity_sweep.sh covering the GGUF quant formats while these
-# goldens did not — and parity_sweep.sh is RELEASE-ONLY, run by hand on the box, so between releases
+# (`go run ./cmd/gate composition`) showed the parity sweep covering the GGUF quant formats while
+# these goldens did not — and the sweep is RELEASE-ONLY, run by hand on the box, so between releases
 # a frozen-core edit got no GGUF-quant proof at all. The gates already existed and already passed;
 # they were simply outside the selector. 11 gates, 26.8 s measured. Same shape as the int8int8
 # goldens that skipped for want of an env var: unplumbed coverage, not missing coverage, and far

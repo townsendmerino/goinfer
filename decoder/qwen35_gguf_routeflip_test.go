@@ -40,7 +40,7 @@ import (
 func TestQwen35GGUF_routeFlipAtOutlier(t *testing.T) {
 	requireHeavyModel(t)
 	// DIAGNOSTIC, NOT A GATE — and it must not sit in the release sweep's path (2026-08-19).
-	// scripts/parity_sweep.sh phase 2 runs `-run 'Qwen35|Real_gate'` under a 120m timeout, and this
+	// the parity sweep's realckpt cell runs `-run 'Qwen35|Real_gate'` under a 120m timeout, and this
 	// test's name matches. On the v0.14.0 prep sweep the two B13 diagnostics together burned ~41
 	// minutes of that budget and the run TIMED OUT inside this one — which pushed
 	// TestQwen35GGUF_weightDiff, a required 40-second gate, off the end of the run entirely. A gate

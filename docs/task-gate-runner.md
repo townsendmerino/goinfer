@@ -1,9 +1,10 @@
 # Task: one Go gate-runner over `go test -json` — collapse the tallying shell + census Python
 
-> **Status: IN PROGRESS — the runner and its first two configs have LANDED (2026-08-20).**
-> `cmd/gate` exists; `heavy` and `census` are migrated and `scripts/heavy_gate.sh` +
-> `scripts/skip_census.py` are deleted. `parity_sweep` and `gpu_gate` (and the two remaining census
-> scripts) are still to come — see §8 for what is done and what the migration found.
+> **Status: IN PROGRESS — FIVE of the six are migrated (2026-08-20/21).** `cmd/gate` carries
+> `census`, `heavy`, `parity`, `composition` and `selector`; `scripts/skip_census.py`,
+> `heavy_gate.sh`, `parity_sweep.sh`, `sweep_composition.py` and `selector_coverage.py` are deleted.
+> **`gpu_gate.sh` is the one that remains** (it needs the GPU box and derives its check set from
+> `ci_checks.py`). See §8 for what each migration found.
 >
 > Tracked as QUEUE **E8**. Sibling of E7 (no-Python) but a distinct idea: E7 migrates scripts
 > one-for-one; **E8 recognizes that several scripts are one program** and consolidates them.
@@ -181,3 +182,43 @@ missing models dir REFUSES with exit 2 rather than reporting a verdict.
 
 **Acceptance (d) — the scope line survives**, and gained provenance: every gate now prints commit,
 dirty flag, UTC date, host and its own matrix before the verdict, which only `heavy_gate.sh` did.
+
+## 9. Step 2 — the parity sweep, and the two censuses that had to come with it
+
+**Landed 2026-08-21:** `gate parity`, `gate composition`, `gate selector`, replacing
+`scripts/parity_sweep.sh`, `scripts/sweep_composition.py` and `scripts/selector_coverage.py`, all
+deleted in the same commit.
+
+**The two censuses were NOT optional here, and §6's "fold in as the matching gate lands" understated
+it.** Both of them *parsed the shell script*: `sweep_composition.py` regexped the `GATES=(…)` array
+out of `parity_sweep.sh`, and `selector_coverage.py` did the same to derive the sweep half of its
+selector. Deleting the sweep would have broken both outright — so this was a hard dependency, not a
+convergence. Both now read the same Go gate list the sweep checks, which removes the second copy
+rather than reimplementing the parse.
+
+**The sweep is a CHECKSET, not a tally, and that is why it needed its own decision.** `gate heavy`
+asks "did anything fail?"; the sweep asks, of each NAMED gate, "is this one green?" — which makes
+**MISSING** (the gate produced no result at all: a renamed test, a `-run` filter that stopped
+matching, a package that failed to build) a distinct and worse outcome than a failure, because a
+pass/skip/fail tally cannot see it. Four outcomes, three of them blocking, plus two deliberate
+non-blocking classifications preserved exactly: a FAIL the ledger calls FIRST-RUN is an ITEM (it
+asserts a delta with no second point to compute it from), and a SKIP in `assetNeverBuilt` is a
+COVERAGE GAP (no invocation on any machine could clear it, and a permanent blocker is not a gate —
+it is an override habit).
+
+**Acceptance (a): both sides run, EMIT_MANIFEST=1, with the mutated files reverted between them** so
+each started from the same committed baseline and its diff was attributable. Identical verdict
+(**2 BLOCKER(S), rc 1**), all **50 per-gate rows identical**, emitter-coverage section identical,
+and the manifest+matrix mutation **byte-identical (11 028 bytes both sides)**. The composition
+census agrees byte-for-byte in both its plain and `-v` forms; the selector census agrees
+byte-for-byte. Two intended differences, both away from naming a deleted file or from a shell
+artefact: the cross-gate label reads `gate parity` rather than `parity_sweep.sh`, and the catch-all
+no longer emits the trailing space `sed -E 's/\(.*//'` left behind.
+
+**What the run found — a real red that is NOT E8's:** `TestQwen35GGUF_gate` and
+`TestQwen35GGUF_weightDiff` fail on this tree, identically under the unmodified shell script, so the
+migration neither caused nor masks them. The gate measures **argmax 68/80 (85.0%), min cosine
+0.98740 against a 0.992 floor**, where the value recorded in the test's own comment for this box is
+**0.99298**. The ledger classifies both as *confirmed before this gate last changed*. Owner's call;
+recorded here because a migration that quietly absorbed a red would be the worst possible outcome
+for a gate whose entire job is to refuse one.

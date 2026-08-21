@@ -78,6 +78,12 @@ type results struct {
 	// cur is the cell currently being consumed; it stamps every key so cells cannot collide.
 	cur string
 
+	// parityRows are `PARITY_ROW {json}` lines in stream order. The real-oracle gates emit them
+	// with fmt.Printf under GOINFER_MANIFEST_EMIT, so they arrive as ordinary output events; the
+	// sweep folds them into testdata/parity_manifest.json. Collected during the single parse rather
+	// than by re-grepping a log, which is the whole point of consuming events.
+	parityRows []string
+
 	// runLines counts top-level `=== RUN` lines. heavy_gate reported this next to its tally so
 	// that "0 passed" could be told apart from "0 attempted", which are different bugs.
 	runLines int
@@ -122,6 +128,7 @@ func (r *results) add(ev testEvent) {
 			if strings.HasPrefix(ev.Output, "=== RUN ") {
 				r.runLines++
 			}
+			r.noteParityRow(ev.Output)
 		case "fail":
 			if !r.pkgSeen[ev.Package] {
 				r.pkgSeen[ev.Package] = true
@@ -138,12 +145,39 @@ func (r *results) add(ev testEvent) {
 			r.noteOrder(key)
 		}
 		r.out[key] = append(r.out[key], ev.Output)
+		r.noteParityRow(ev.Output)
 	case "pass", "fail", "skip":
 		if _, ok := r.out[key]; !ok && r.final[key] == "" {
 			r.noteOrder(key)
 		}
 		r.final[key] = ev.Action
 	}
+}
+
+func (r *results) noteParityRow(out string) {
+	if strings.HasPrefix(out, "PARITY_ROW ") {
+		r.parityRows = append(r.parityRows, strings.TrimRight(out, "\n"))
+	}
+}
+
+// lookupTop returns the LAST terminal action recorded for a TOP-LEVEL test of this exact name,
+// across every cell and package, and whether it was seen at all.
+//
+// "Last" and "exact" both reproduce `grep -E "^--- (PASS|FAIL|SKIP): NAME \(" | tail -1`: the sweep
+// runs some gates twice (the plain cell and the realckpt cell), and the trailing `(` in that grep is
+// what stops TestFoo from matching TestFooBar. Not-seen is a FOURTH outcome, not a flavour of skip —
+// a required gate that never ran is the one case where the sweep learned nothing at all.
+func (r *results) lookupTop(name string) (string, bool) {
+	act, found := "", false
+	for _, k := range r.order {
+		if k.Test != name || isSubtest(k) {
+			continue
+		}
+		if a, ok := r.final[k]; ok {
+			act, found = a, true
+		}
+	}
+	return act, found
 }
 
 func (r *results) noteOrder(key testKey) {

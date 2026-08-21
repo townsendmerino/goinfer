@@ -3,7 +3,7 @@ package decoder
 // Canonical parity-row emitter (docs/task-parity-coverage.md Item 1d). The
 // real-checkpoint gates (decoder/*real_test.go, qwen35 gates) that measure argmax/
 // cosine against a real oracle call emitParityRow at the end of a passing run; the
-// parity sweep (scripts/parity_sweep.sh EMIT_MANIFEST=1) captures the PARITY_ROW
+// parity sweep (EMIT_MANIFEST=1 go run ./cmd/gate parity) captures the PARITY_ROW
 // lines and merges them into testdata/parity_manifest.json (the -merge-rows mode in
 // parity_manifest_test.go) — so validating a family records its metrics instead of a
 // hand-edit. This file carries NO build tag so the realckpt gates can call it.

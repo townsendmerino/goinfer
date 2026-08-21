@@ -2,7 +2,7 @@
 
 > **Audience:** implementation plan for the contract in
 > `parity-coverage-policy.md`. Four work items, ordered by leverage; each builds
-> on scaffolding that already exists (`parity_sweep.sh`, the `pin_*.py` oracle
+> on scaffolding that already exists (the parity sweep, the `pin_*.py` oracle
 > scripts, the `weightDiff` pattern, the `gemma-3-270m` small-model precedent).
 > None requires running a multi-GB checkpoint in CI.
 
@@ -58,7 +58,7 @@ dropped — see 1c for why it leaked):
 For each family: resolve its `uses` sets to file lists, union with `own`, hash
 that set's contents plus the recorded `aikit_version`; if it differs from
 `deps_hash`, **fail** with `"parity stale for <family>: numerics changed since
-<validated_at> — re-run T3 (scripts/parity_sweep.sh) and update
+<validated_at> — re-run T3 (go run ./cmd/gate parity) and update
 parity_manifest.json"`. Pure hashing + JSON read; needs no assets, runs every push.
 
 **1c. The hashing rule — a per-family dependency set, NOT a two-bucket core (this
@@ -103,7 +103,7 @@ more than needed). Only narrow (AST-of-the-adapter-func) if the over-trip is
 actually noisy. The forbidden direction is under-trip, which the dependency set
 eliminates.
 
-**1d. `parity_sweep.sh` emits the manifest rows** it validates (commit, metrics,
+**1d. the parity sweep emits the manifest rows** it validates (commit, metrics,
 method, hashes), so a T3 run *updates the truth* rather than printing to a log
 that drifts. The roadmap's hand-recorded numbers (the qwen3.6 92.5%/0.99466 etc.)
 become the seed data.
@@ -126,7 +126,7 @@ downloadable by `huggingface-cli` (the `gemma-3-270m` pattern already in
 Mistral, a tiny Mixtral, Mellum, GPT-2. One per family is enough — this tier is
 "does the pipeline run," not per-quant numerics.
 
-**2b. Harness** — extend `parity_sweep.sh` / a `TestSmallModelSweep` (asset-gated
+**2b. Harness** — extend the parity sweep / a `TestSmallModelSweep` (asset-gated
 on a sweep dir): for each model, load → generate N greedy tokens → assert against
 a **recorded continuation** (pinned by a new `scripts/pin_smallmodel_continuations.py`,
 committed). Runs on CPU, fits any box.

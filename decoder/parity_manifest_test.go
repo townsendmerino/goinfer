@@ -38,7 +38,7 @@ import (
 // mergeRowsPath, when set, makes TestParityManifest_merge fold the collected
 // PARITY_ROW lines (emitted by the real-checkpoint gates under GOINFER_MANIFEST_EMIT)
 // from that file into the manifest — the machine-written alternative to hand-editing
-// validation fields. Driven by scripts/parity_sweep.sh EMIT_MANIFEST=1.
+// validation fields. Driven by EMIT_MANIFEST=1 go run ./cmd/gate parity.
 var mergeRowsPath = flag.String("merge-rows", "", "merge collected PARITY_ROW lines from this file into the parity manifest")
 
 // parityManifest mirrors testdata/parity_manifest.json. familyParity uses
@@ -315,7 +315,7 @@ func TestParityManifest_fresh(t *testing.T) {
 	// each stale hash covers) makes the cause — the one changed shared file — a glance away.
 	if len(stale) > 0 {
 		t.Fatalf("parity stale for %d validated family(ies) — numerics changed since the noted commit:\n%s\n"+
-			"Fix: re-run T3 (scripts/parity_sweep.sh) then -update; or, for a provably non-numeric core edit "+
+			"Fix: re-run T3 (go run ./cmd/gate parity) then -update; or, for a provably non-numeric core edit "+
 			"(a guarded diagnostic seam, comment, rename), scripts/refresh_parity_hashes.sh.",
 			len(stale), strings.Join(stale, "\n"))
 	}
