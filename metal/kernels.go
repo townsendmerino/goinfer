@@ -40,7 +40,18 @@ kernel void rmsnorm_f32(device float* x[[buffer(0)]], device const float* w[[buf
     red[tid]=ss; threadgroup_barrier(mem_flags::mem_threadgroup);
     for(uint s=tgs/2;s>0;s>>=1){ if(tid<s) red[tid]+=red[tid+s]; threadgroup_barrier(mem_flags::mem_threadgroup);}
     float rms=rsqrt(red[0]/float(H)+eps); threadgroup_barrier(mem_flags::mem_threadgroup);
-    for(uint i=tid;i<H;i+=tgs){ float g=addOne!=0u?(1.0f+w[i]):w[i]; x[i]=x[i]*rms*g; }
+    // Vectorized float4 in-place read/write -- no reduction at all, each x[i] is computed fully
+    // independently, so batching 4 elements per iteration is mathematically identical regardless
+    // of grouping (same argument verified safe for quant_vec/layernorm_quant this session).
+    uint H4 = H >> 2u;
+    device float4* x4 = (device float4*)x;
+    device const float4* w4 = (device const float4*)w;
+    for (uint i4=tid; i4<H4; i4+=tgs) {
+        float4 xv=x4[i4], wv=w4[i4];
+        float4 gv = addOne!=0u ? (float4(1.0f)+wv) : wv;
+        x4[i4] = xv*rms*gv;
+    }
+    for (uint i=(H4<<2u)+tid; i<H; i+=tgs) { float g=addOne!=0u?(1.0f+w[i]):w[i]; x[i]=x[i]*rms*g; }
 }
 // layernorm_quant: FeatLayerNorm's fused norm+quant, mirroring rmsnorm_quant's contract but
 // mean-centered (decoder/rmsnorm.go's layerNorm): y = (x-mean)/sqrt(var+eps)*w + b, then

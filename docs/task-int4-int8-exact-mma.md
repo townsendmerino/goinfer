@@ -23,12 +23,12 @@ reason is a complete, successful outcome — not a failure to push past.
 ### Which kernels
 
 Decode's dense per-token projections dispatch through the `gemv_w4a8_sa` family
-(`metal/kernels.go:244-280`, wired at `metal/model.go:458`, called at `metal/model.go:1323,
+(`metal/kernels.go:255-291`, wired at `metal/model.go:458`, called at `metal/model.go:1323,
 1077, 1096, 1130, 1139, 1143, 1196, 1264, 1288, 1310, 1314` for QKV/O-proj/gate-up), plus
-`gemv_w4a8_coal` (`metal/kernels.go:185-164`, wired at `metal/model.go:456`, called at
+`gemv_w4a8_coal` (`metal/kernels.go:196-175`, wired at `metal/model.go:456`, called at
 `metal/model.go:1352, 1383` for the down-projection). Both share the identical numeric structure
-below — `gemv_w4a8_sa`'s `SA_BODY` macro (`metal/kernels.go:230-205`) and `gemv_w4a8_coal`'s
-`W4A8_BODY` macro (`metal/kernels.go:168-139`) differ only in memory-access pattern (uint4-staged
+below — `gemv_w4a8_sa`'s `SA_BODY` macro (`metal/kernels.go:241-216`) and `gemv_w4a8_coal`'s
+`W4A8_BODY` macro (`metal/kernels.go:179-150`) differ only in memory-access pattern (uint4-staged
 vs per-word), not in arithmetic order or precision. This is decode's real, shipped contract for
 every dense int4×int8 weight matrix in the model — the thing the new kernel needs to match.
 
@@ -68,15 +68,15 @@ is not guaranteed stable across GPU generations/driver versions).
 - **Activation scale** (`asc[0]`, f32, one value per token — set once by `rmsnorm_quant` /
   `quant_vec`, `metal/kernels.go:28,52`): applied **exactly once**, after the full K-reduction
   and the cross-lane `simd_sum`, at the final store: `out[gid] = acc * asc[0]` (`gemv_w4a8_coal`,
-  `metal/kernels.go:189`) / `out[row] = acc*asc[0]` (`gemv_w4a8_sa`, `metal/kernels.go:250`).
+  `metal/kernels.go:200`) / `out[row] = acc*asc[0]` (`gemv_w4a8_sa`, `metal/kernels.go:261`).
 
 ### (d) Quant block size and scale layout
 
 Block size is **exactly 32** along K, confirmed from source both ways: `gemv_w4a8_sa`'s
-`G = K>>5u` (`metal/kernels.go:233`) and `gemv_w4a8_coal`'s 4-word (32-nibble) groups indexed by
-`wi>>2` (`metal/kernels.go:179`). Scale layout is one half-precision scale per (output row, 32-K
-block) — row-major, `sct`/`bsc` indexed by `row*G + g` (`metal/kernels.go:236,235` /
-`(K/32u)` stride at `metal/kernels.go:171`). This confirms the task's "presumably 32" guess.
+`G = K>>5u` (`metal/kernels.go:244`) and `gemv_w4a8_coal`'s 4-word (32-nibble) groups indexed by
+`wi>>2` (`metal/kernels.go:190`). Scale layout is one half-precision scale per (output row, 32-K
+block) — row-major, `sct`/`bsc` indexed by `row*G + g` (`metal/kernels.go:247,246` /
+`(K/32u)` stride at `metal/kernels.go:182`). This confirms the task's "presumably 32" guess.
 
 ### Phase 0 verdict
 
