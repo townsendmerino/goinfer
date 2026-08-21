@@ -284,8 +284,15 @@ Only two lines differ, and one of them was a defect I introduced and had to fix:
 **What the run found — two reds, neither E8's, and both reported identically by the script:**
 
 - **`TestQwen36_35B_cache`** — `serialized weights: format version 2, this build reads 3..6`. The
-  35B `.giw` on this box predates a format bump. A stale ASSET, not a code defect; regenerating the
-  bundle fixes it.
+  35B `.giw` on this box predated a format bump. **FIXED 2026-08-21:** regenerated from the Q8_0
+  GGUF via `cmd/prequant -quant int4` (2m25s, 21 120 MB, peak RSS 43 GB, weights blob now GINFW v6).
+  It is 26.4 GB → 22.1 GB smaller than the bundle it replaces, which is `6d4fc79` again — the
+  projections that used to be stored f32 are now int4 in the bundle too. Regenerating then exposed a
+  SECOND defect behind it: the test's tokenizer step handled a directory and a `.gguf` but not a
+  `.giw`, which is its own DEFAULT path, so the default invocation could never reach the decode it
+  exists to measure (it died as `parse …int4.giw: invalid character 'G'` — the bundle magic read as
+  JSON). Every passing run had set `GOINFER_QWEN36_35B` to the `.gguf`. Both fixed; the test now
+  passes at 14.09 tok/s, 75.5% expert-cache hit rate, naming Paris and the Eiffel Tower.
 - **`TestMoERouteDemandThreshold`** — the demand identity is broken in the COLD regime: measured
   192 675 840 B against an expected 289 603 584..295 895 040 B. An older drain log on this box shows
   the same test failing with *different* numbers (threshold 141 557 760 B, peak/residual 1.02× where

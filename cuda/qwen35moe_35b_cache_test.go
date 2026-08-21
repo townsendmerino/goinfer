@@ -12,6 +12,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/giw"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
@@ -87,13 +88,30 @@ func TestQwen36_35B_cache(t *testing.T) {
 	}
 	t.Logf("loaded 35B resident + C′ staging in %s (decode path %s)", loadDur.Round(time.Second), m.DecodePath())
 
-	// tokenizer.Load takes a DIRECTORY; a .gguf carries its tokenizer inside the container.
-	tk, err := tokenizer.Load(path)
-	if strings.HasSuffix(path, ".gguf") {
+	// THREE CONTAINERS, THREE LOADERS — and the .giw arm was missing while .giw is this test's
+	// DEFAULT path, so the default invocation could not reach the decode it exists to measure. It
+	// failed as `parse …int4.giw: invalid character 'G'`, i.e. tokenizer.Load reading the bundle
+	// magic as JSON, which reads like a corrupt checkpoint rather than a missing case. The runs that
+	// passed all set GOINFER_QWEN36_35B to the .gguf, which took the arm that existed.
+	//
+	//   directory  HF tokenizer.json on disk
+	//   .gguf      tokenizer lives in the container's metadata
+	//   .giw       the bundle carries the source GGUF's metadata half; hand those bytes to the
+	//              same GGUF tokenizer parser
+	var tk *tokenizer.Tokenizer
+	switch {
+	case strings.HasSuffix(path, ".giw"):
+		var tokBytes []byte
+		if tokBytes, err = giw.ReadTokFile(path); err == nil {
+			tk, err = tokenizer.LoadGGUFBytes(tokBytes)
+		}
+	case strings.HasSuffix(path, ".gguf"):
 		tk, err = tokenizer.LoadGGUF(path)
+	default:
+		tk, err = tokenizer.Load(path)
 	}
 	if err != nil {
-		t.Fatalf("tokenizer: %v", err)
+		t.Fatalf("tokenizer (%s): %v", filepath.Ext(path), err)
 	}
 	tmpl, err := chat.Detect(chat.Meta{ChatTemplate: tk.ChatTemplate(), HasToken: tk.Has})
 	if err != nil {
