@@ -241,8 +241,13 @@ kernel void swiglu_quant_gptoss(device const float* g[[buffer(0)]], device const
         float dd = gptoss_glu(gx, ux, alpha, limit);
         mx = max(mx, fabs(dd));
     }
-    red[tid]=mx; threadgroup_barrier(mem_flags::mem_threadgroup);
-    for(uint s=tgs/2;s>0;s>>=1){ if(tid<s) red[tid]=max(red[tid],red[tid+s]); threadgroup_barrier(mem_flags::mem_threadgroup);}
+    mx = simd_max(mx);
+    uint sgid = tid >> 5u, lane = tid & 31u;
+    if (lane == 0) red[sgid] = mx;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    uint nsg = tgs >> 5u;
+    if (tid == 0) { float v = red[0]; for (uint k=1; k<nsg; k++) v = max(v, red[k]); red[0] = v; }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
     float sc=red[0]/127.0f; if(sc==0)sc=1; if(tid==0)ds[0]=sc; float inv=1/sc;
     threadgroup_barrier(mem_flags::mem_threadgroup);
     for (uint i=tid;i<I;i+=tgs) {
