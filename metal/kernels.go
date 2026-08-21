@@ -632,8 +632,20 @@ kernel void swiglu_quant(device const float* g[[buffer(0)]], device const float*
     uint tid[[thread_position_in_threadgroup]], uint tgs[[threads_per_threadgroup]]) {
     threadgroup float red[256]; float mx=0;
     for(uint i=tid;i<I;i+=tgs){ float s=glu_act(g[i],act)*u[i]; mx=max(mx,fabs(s)); }
-    red[tid]=mx; threadgroup_barrier(mem_flags::mem_threadgroup);
-    for(uint s=tgs/2;s>0;s>>=1){ if(tid<s) red[tid]=max(red[tid],red[tid+s]); threadgroup_barrier(mem_flags::mem_threadgroup);}
+    // 2-level SIMD-shuffle reduction instead of the 8-step threadgroup-barrier tree -- max is
+    // exact/order-independent regardless of reduction structure (verified safe on
+    // quant_vec/layernorm_quant/act_quant this session). Deliberately does NOT touch the maxabs-
+    // scan/quantize-write loops' glu_act call sites at all (scalar, one call per iteration,
+    // unchanged) -- an earlier attempt THAT vectorized the load around glu_act drifted on Gemma's
+    // GELU-tanh path (see scripts/autoresearch_swiglu_results.tsv); this isolates whether the
+    // reduction mechanism alone is safe, independent of that.
+    mx = simd_max(mx);
+    uint sgid = tid >> 5u, lane = tid & 31u;
+    if (lane == 0) red[sgid] = mx;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    uint nsg = tgs >> 5u;
+    if (tid == 0) { float v = red[0]; for (uint k=1; k<nsg; k++) v = max(v, red[k]); red[0] = v; }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
     float sc=red[0]/127.0f; if(sc==0)sc=1; if(tid==0)ds[0]=sc; float inv=1/sc;
     for(uint i=tid;i<I;i+=tgs){ float s=glu_act(g[i],act)*u[i]; dq[i]=char(clamp(int(round(s*inv)),-127,127)); }
 }
