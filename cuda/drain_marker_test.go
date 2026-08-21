@@ -11,7 +11,7 @@ import (
 // convention or a hand-kept -run list for one reason: a list of names is a constant that restates a
 // property, and it drifts silently. The census-denominator work made that shape visible four times
 // over — a check reports its numerator and stays green while its universe shrinks. A `-run
-// 'TestAllocFloor|TestA10ReportingGap|…'` in gpu_gate.sh is exactly that constant. This is the
+// 'TestAllocFloor|TestA10ReportingGap|…'` in the GPU gate is exactly that constant. This is the
 // property itself, in the code that has it.
 //
 // WHAT IT MARKS. A test that deliberately drives the device to REFUSAL — allocates until even a
@@ -39,13 +39,13 @@ import (
 // The child processes spawned by TestA10FloorIsPerProcessOrPerDevice inherit the environment
 // (cmd.Env = append(os.Environ(), …)), so they inherit the flag with it.
 //
-// TO ADD A DRAINER: call this first thing in the test. Nothing else. gpu_gate.sh derives the group
+// TO ADD A DRAINER: call this first thing in the test. Nothing else. `gate gpu` derives the group
 // by scanning for calls to this function, so there is no second place to update and no list to
 // forget.
 func drainsDevice(t *testing.T, why string) {
 	t.Helper()
 	if os.Getenv("GOINFER_DRAIN_GROUP") == "" {
-		// The exact token DRAIN-GROUP-SKIP is what gpu_gate.sh counts to reconcile the split. Keep
+		// The exact token DRAIN-GROUP-SKIP is what `gate gpu` counts to reconcile the split. Keep
 		// it, and keep it greppable; the gate fails loudly rather than silently if it disappears.
 		t.Skipf("DRAIN-GROUP-SKIP: %s — deferred to the drain tier (GOINFER_DRAIN_GROUP=1), which "+
 			"runs in its own process so an exhausted device cannot reach the main tier. See A13.", why)

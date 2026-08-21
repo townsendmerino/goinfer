@@ -223,9 +223,9 @@ ritual with a stated meaning, not a habit someone remembers.
 **The exact command**, on a Mac with the checkpoints in `$HOME/models`:
 
 ```
-scripts/gpu_gate.sh                          # auto-detects darwin ⇒ metal
-GOINFER_GATE_BACKEND=metal scripts/gpu_gate.sh   # explicit
-GOINFER_GATE_MODELS=/path/to/models scripts/gpu_gate.sh
+go run ./cmd/gate gpu                       # auto-detects darwin ⇒ metal
+GOINFER_GATE_BACKEND=metal go run ./cmd/gate gpu   # explicit
+GOINFER_GATE_MODELS=/path/to/models go run ./cmd/gate gpu
 ```
 
 **What green means — all four, or it is not green:**

@@ -3,7 +3,7 @@
 
 B0. CI went red on `staticcheck -tags cuda` and stayed red for three commits, because the local
 sequence (gofmt, build, test) and CI's check set are different and **nothing declares the
-relationship**. `scripts/gpu_gate.sh` group 5 had the identical gap from the other side: it ran
+relationship**. The GPU gate's repo-hygiene group had the identical gap from the other side: it ran
 gofmt and vet but not staticcheck, so running the gate — the thing you run *instead of*
 remembering — would not have caught it either.
 

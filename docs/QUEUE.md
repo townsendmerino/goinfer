@@ -187,8 +187,9 @@ the `v0.14.0`/`metal/v0.14.0` tags). The follow-up above is done: `go install
 replace-free fix reaching consumers for the first time. Resident-metal decode via the public API
 also verified out-of-tree: 65.4 tok/s decode-only, consistent with v0.13.0's 65.2 (no regression
 across the aikit bump). RELEASING.md Step 2's two Mac gates (`GOWORK=off go build -tags metal ./...`
-standalone build; `scripts/gpu_gate.sh` device gate — needs Homebrew bash, macOS's stock `/bin/bash`
-3.2 can't run its `declare -A`) both passed clean on a committed tree; the gate's only finding was
+standalone build; the device gate — then a bash script, which needed Homebrew bash because macOS's
+stock `/bin/bash` 3.2 cannot run `declare -A`; that dependency went away with the script when E8
+replaced it with `go run ./cmd/gate gpu`) both passed clean on a committed tree; the gate's only finding was
 the pre-existing, already-documented `c8b65ba` local-reflog artifact (allowlisted 2026-08-12,
 CI-invisible), unrelated to this release. Full findings in
 `docs/measurements/c3-metal-consumer-window-v0.14.0.md`; gate log archived at
@@ -404,7 +405,6 @@ than papered over.
 | `internal/serveapp/fuzz_test.go` | goinfer |
 | `scripts/bench_compare.sh` | goinfer |
 | `scripts/bench_peer.py` | goinfer |
-| `scripts/gpu_gate.sh` | goinfer |
 | `scripts/refresh_parity_hashes.sh` | goinfer |
 
 <!-- /CITATION-INDEX -->

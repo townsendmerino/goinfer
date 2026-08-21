@@ -347,7 +347,7 @@ func validateGlue(t *testing.T, ctx *gc.Context, stream *gc.Stream, bg context.C
 		// ERRORS ARE CHECKED, NOT DROPPED. Every call here used to be `_ =`, so a failure left `dc`
 		// UNWRITTEN, `got` all zeros, and the assertion reported "attention cosine 0.000000" with no
 		// error text at all — a resource failure wearing a numerics bug's clothes. That is the exact
-		// history in scripts/gpu_gate.sh's header ("the tests DROPPED those errors, and the resulting
+		// history in the GPU gate's own header, now cmd/gate/gpu.go ("the tests DROPPED those errors, and the resulting
 		// zero-filled buffers surfaced as cosine 0.000000"), and it recurred here: four silent zero
 		// cosines in the tier, with zero CUDA errors anywhere in the log.
 		//

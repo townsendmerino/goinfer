@@ -61,6 +61,7 @@ usage:
   gate parity                                      the release-tag parity sweep (named-gate checkset)
   gate composition [-v]                            the sweep's coverage composition (family × quant × loader)
   gate selector                                    tests that EXIST vs tests a selector RUNS
+  gate gpu                                         the pre-tag GPU correctness gate (cuda | metal)
 
 census env:
   GOINFER_REQUIRE_FIXTURES=1   exit 1 if any missing-fixture skip (release ritual)
@@ -68,6 +69,10 @@ parity env:
   REALCKPT=0             skip the real-checkpoint gates
   EMIT_MANIFEST=1        fold measured PARITY_ROW lines into the manifest and re-render the matrix
   TIMEOUT                per-cell timeout (default 120m)
+gpu env:
+  GOINFER_GATE_BACKEND   cuda | metal (default: auto — nvidia-smi ⇒ cuda, darwin ⇒ metal)
+  GOINFER_GATE_SKIP_HEAVY  skip the ~28min real-model tier (reported as a counted SKIP)
+  GOINFER_NVRTC_DIRS     colon-separated NVRTC toolchain dirs for the PTX check (an OVERRIDE)
 heavy env:
   GOINFER_GATE_MODELS    dir holding the real checkpoints (default: $HOME/models)
   GOINFER_HEAVY_RUN      `+"`go test -run`"+` regex to narrow the run (default: all)
@@ -114,6 +119,9 @@ func run(argv []string, w io.Writer) int {
 	// The sweep is a CHECKSET, not a tally: its decision is per-named-gate and it delegates to the
 	// asset registry, the composition census and the gate ledger, so it owns its own entry point
 	// rather than pretending to be a gateConfig with an unusual report.
+	if name == "gpu" {
+		return runGPU(w, *logDir)
+	}
 	if name == "selector" {
 		return selectorCoverage(w)
 	}

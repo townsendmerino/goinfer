@@ -283,7 +283,7 @@ jobs:
   # against the current kernel signatures, the exact class that was silent. The device parity
   # gates need a real adapter and skip without one (real-checkpoint gates also need models); the
   # device-INDEPENDENT falsifiability test (TestParity_NaNCosineFailsTheGate) runs here. The full
-  # correctness gate remains scripts/gpu_gate.sh, hand-run on a Metal box.
+  # correctness gate remains `go run ./cmd/gate gpu`, hand-run on a Metal box.
   metal-darwin:
     runs-on: macos-latest
     steps:
@@ -318,7 +318,7 @@ jobs:
       # near-null crash in objc.ID.Send), and that abort takes the whole test binary down — so we
       # cannot even let the package's device tests attempt-and-skip. We run ONLY the device-FREE
       # falsifiability gate, which asserts the NaN<minCos guard fails on degenerate output using no
-      # GPU and no checkpoint. Everything device-bound is gated by scripts/gpu_gate.sh on a real
+      # GPU and no checkpoint. Everything device-bound is gated by `go run ./cmd/gate gpu` on a real
       # Metal box; build+vet above are the CI compile-check.
       - name: test (device-free falsifiability gate only — the runner's Metal layer SIGSEGVs)
         run: go test -run 'TestParity_NaNCosineFailsTheGate' ./metal/...

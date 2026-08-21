@@ -78,6 +78,18 @@ type results struct {
 	// cur is the cell currently being consumed; it stamps every key so cells cannot collide.
 	cur string
 
+	// outAll is every output line in stream order — the reconstruction of what `go test -v` would
+	// have printed. The GPU gate's failure explainer needs it: a run killed by a signal, an OOM or a
+	// timeout emits neither a "--- FAIL" line nor a "file.go:N:" line, only "FAIL <pkg> <secs>", so
+	// a filter over structured results alone would report an EMPTY explanation for exactly the
+	// failures that are hardest to reproduce.
+	outAll []string
+
+	// stream, when set, is called for each terminal test result as it arrives. Liveness is
+	// load-bearing for a 28-minute group: buffering means a running tier and a HUNG one produce
+	// byte-identical output (none), so progress has to be visible as it happens.
+	stream func(pkg, test, action string)
+
 	// parityRows are `PARITY_ROW {json}` lines in stream order. The real-oracle gates emit them
 	// with fmt.Printf under GOINFER_MANIFEST_EMIT, so they arrive as ordinary output events; the
 	// sweep folds them into testdata/parity_manifest.json. Collected during the single parse rather
@@ -125,10 +137,7 @@ func (r *results) add(ev testEvent) {
 		switch ev.Action {
 		case "output":
 			r.pkgOut[ev.Package] = append(r.pkgOut[ev.Package], ev.Output)
-			if strings.HasPrefix(ev.Output, "=== RUN ") {
-				r.runLines++
-			}
-			r.noteParityRow(ev.Output)
+			r.noteOutput(ev.Output)
 		case "fail":
 			if !r.pkgSeen[ev.Package] {
 				r.pkgSeen[ev.Package] = true
@@ -145,13 +154,33 @@ func (r *results) add(ev testEvent) {
 			r.noteOrder(key)
 		}
 		r.out[key] = append(r.out[key], ev.Output)
-		r.noteParityRow(ev.Output)
+		r.noteOutput(ev.Output)
 	case "pass", "fail", "skip":
 		if _, ok := r.out[key]; !ok && r.final[key] == "" {
 			r.noteOrder(key)
 		}
 		r.final[key] = ev.Action
+		if r.stream != nil && !isSubtest(key) {
+			r.stream(ev.Package, ev.Test, ev.Action)
+		}
 	}
+}
+
+// noteOutput folds one output line into the stream-wide accumulators.
+//
+// runLines counts EVERY `=== RUN` line, top-level and subtest alike. That is deliberate and it is
+// not the same unit as the skip count beside it: go test does NOT indent a subtest's `=== RUN` line
+// (only its `--- PASS` result line is indented), so the shell gate's `grep -cE '^=== RUN'` counted
+// subtests while its `grep -cE '^--- SKIP'` did not. The pair "ran 238 tests, skipped 22" therefore
+// mixes units — 238 tests-and-subtests started against 22 top-level skips. Reproduced exactly,
+// because E8 changes the substrate and not what a gate reports; flagged in docs/task-gate-runner.md
+// §10 as a number that should probably say which unit it is in.
+func (r *results) noteOutput(out string) {
+	if strings.HasPrefix(out, "=== RUN ") {
+		r.runLines++
+	}
+	r.noteParityRow(out)
+	r.outAll = append(r.outAll, out)
 }
 
 func (r *results) noteParityRow(out string) {
@@ -198,3 +227,30 @@ func (r *results) noteOrder(key testKey) {
 // acceptance (a) requires each migrated gate to reproduce ITS OWN tally — so this is a per-config
 // choice (topLevelOnly), not a house style.
 func isSubtest(k testKey) bool { return strings.Contains(k.Test, "/") }
+
+// text reconstructs the `go test -v` output this stream carried.
+func (r *results) text() string { return strings.Join(r.outAll, "") }
+
+// topLevel returns the top-level tests with the given terminal action, in stream order.
+func (r *results) topLevel(action string) []testKey {
+	var out []testKey
+	for _, k := range r.order {
+		if !isSubtest(k) && r.final[k] == action {
+			out = append(out, k)
+		}
+	}
+	return out
+}
+
+// ranCount is how many top-level tests produced a result. ZERO IS A FAILURE, NOT A PASS: a `-run`
+// pattern that matches nothing exits 0 and prints "ok", so renaming a test away silently deletes a
+// check while the gate stays green — the same shape as a skip counted as a pass.
+func (r *results) ranCount() int {
+	n := 0
+	for _, k := range r.order {
+		if !isSubtest(k) && r.final[k] != "" {
+			n++
+		}
+	}
+	return n
+}

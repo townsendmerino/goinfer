@@ -26,7 +26,7 @@ import (
 // opposite causes. Only source can tell them apart, so this is a static lint, in the same family
 // as TestKernelFMALint_coversEmbeddedPTX: fix the class, not the instance.
 //
-// Plain `-tags cuda` (no testhooks, no device) so gpu_gate.sh group 2a runs it.
+// Plain `-tags cuda` (no testhooks, no device) so the GPU gate's group 2a runs it.
 func TestPipelineLint_boundKernelsAreLaunched(t *testing.T) {
 	src := packageSources(t)
 

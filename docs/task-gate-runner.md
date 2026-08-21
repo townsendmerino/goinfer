@@ -1,10 +1,10 @@
 # Task: one Go gate-runner over `go test -json` — collapse the tallying shell + census Python
 
-> **Status: IN PROGRESS — FIVE of the six are migrated (2026-08-20/21).** `cmd/gate` carries
-> `census`, `heavy`, `parity`, `composition` and `selector`; `scripts/skip_census.py`,
-> `heavy_gate.sh`, `parity_sweep.sh`, `sweep_composition.py` and `selector_coverage.py` are deleted.
-> **`gpu_gate.sh` is the one that remains** (it needs the GPU box and derives its check set from
-> `ci_checks.py`). See §8 for what each migration found.
+> **Status: ALL SIX MIGRATED (2026-08-20/21).** `cmd/gate` carries `census`, `heavy`, `parity`,
+> `composition`, `selector` and `gpu`; all six scripts are deleted. **The Metal half of `gate gpu` is
+> ported but NOT yet verified against the script it replaces** — no machine here has a Metal device,
+> so its four groups need one run on the Mac before that half is trustworthy. See §8–§10 for what
+> each migration found.
 >
 > Tracked as QUEUE **E8**. Sibling of E7 (no-Python) but a distinct idea: E7 migrates scripts
 > one-for-one; **E8 recognizes that several scripts are one program** and consolidates them.
@@ -222,3 +222,67 @@ migration neither caused nor masks them. The gate measures **argmax 68/80 (85.0%
 **0.99298**. The ledger classifies both as *confirmed before this gate last changed*. Owner's call;
 recorded here because a migration that quietly absorbed a red would be the worst possible outcome
 for a gate whose entire job is to refuse one.
+
+## 10. Step 3 — the GPU gate, the last of the six
+
+**Landed 2026-08-21:** `gate gpu`, replacing `scripts/gpu_gate.sh` (715 lines, the largest of the
+six), deleted in the same commit. E8 is structurally complete: 6 scripts → 1 runner + configs.
+
+**Acceptance (a), CUDA half, both sides running the FULL gate including the ~28-minute heavy tier,
+sequentially so the card was never shared** (a stray process on the GPU is the one thing this gate's
+own header says invalidates every memory-sensitive result below it):
+
+| | shell | Go |
+|---|---|---|
+| check groups | 9 declared → 9 reported | **identical** |
+| verdicts | 9 pass, 1 skip, 2 fail | **identical** |
+| the 12 per-check verdict lines | — | **identical** |
+| which tests failed | `TestQwen36_35B_cache`, `TestMoERouteDemandThreshold` | **identical** |
+| partition reconciliation | marked=4 skipped-in-main=4 ran-in-drain=4 | **identical** |
+| final verdict | FAIL, rc 1 | **identical** |
+| skip notes block | 4 entries | **identical** |
+
+Only two lines differ, and one of them was a defect I introduced and had to fix:
+
+1. **Heavy-tier wall clock, 2183s vs 2121s.** Inherent; the gate times a 28-minute tier.
+2. **"ran 238 tests" vs "ran 176".** THE SHELL WAS RIGHT AND THE FIRST GO VERSION WAS WRONG, for a
+   reason worth writing down: `go test -v` does **not** indent a subtest's `=== RUN` line (only its
+   `--- PASS` result line is indented), so `grep -cE '^=== RUN'` counts subtests, while
+   `grep -cE '^--- SKIP'` beside it does not. Reproduced exactly, and verified by re-parsing the
+   saved `-json` stream rather than re-running the 35-minute gate: 238 `=== RUN` lines, 22 top-level
+   skips. **Which means the line "ran 238 tests, skipped 22" mixes units** — tests-and-subtests
+   started against top-level skips. Preserved because E8 changes the substrate and not what a gate
+   reports; flagged here because a number whose unit is ambiguous is the denominator problem in
+   miniature, and it should probably say which it is.
+
+**What the run found — two reds, neither E8's, and both reported identically by the script:**
+
+- **`TestQwen36_35B_cache`** — `serialized weights: format version 2, this build reads 3..6`. The
+  35B `.giw` on this box predates a format bump. A stale ASSET, not a code defect; regenerating the
+  bundle fixes it.
+- **`TestMoERouteDemandThreshold`** — the demand identity is broken in the COLD regime: measured
+  192 675 840 B against an expected 289 603 584..295 895 040 B. An older drain log on this box shows
+  the same test failing with *different* numbers (threshold 141 557 760 B, peak/residual 1.02× where
+  this run measured 1.39×), so the quantity it pins is moving between runs. The test's own message is
+  explicit about what that means: `docs/QUEUE.md` A1/A5/A7/A9 need **re-deriving, not editing**.
+  Note the shape — this is a gate that MEASURES THE DEVICE, so it is not byte-deterministic, and
+  agreement for it can only be claimed at the verdict and group level, which is what the table above
+  reports.
+
+**Acceptance (b)** (`cmd/gate/gpu_test.go`): group reconciliation in both directions (a declared
+group that emits nothing is a FAIL; an emitted-but-undeclared group is a FAIL); all four verdict
+states, including that a dirty tree with every check green is INCONCLUSIVE and **not** PASS, and that
+zero checks run is NO GATE; zero-matched-tests is detectable and subtests do not inflate it; the drain
+group derives from its marker and is a set; `detail()` falls back to the raw tail for a failure with
+no assertion line; every skip reaches the notes block; the PTX version comes from the artifact, never
+from the box's default; and `vramNote` states the reading **without naming a mechanism** — asserted
+negatively, because the obvious mechanism is disproven and naming one a gate cannot see is how the
+last three explanations became someone's wasted afternoon.
+
+**One dependency died with the script:** the Mac needed Homebrew bash to run this gate at all, because
+macOS's stock `/bin/bash` 3.2 cannot run `declare -A`. A Go binary has no such requirement.
+
+**Still owed: the Metal half.** Its four groups (suite, cgo-free, lifecycle, prefill) are ported from
+the same source but have never run — this box has no Metal device. Until someone runs
+`go run ./cmd/gate gpu` on the Mac and compares it against the deleted script's last known output,
+that half is code review, not evidence.

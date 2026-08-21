@@ -66,10 +66,10 @@ Nothing quotes a tok/s that didn't come from this run.
 
 ## Make it repeatable, not a one-off
 
-- A **real-model tier of `scripts/gpu_gate.sh`**, hand-run on the real boxes each release —
+- A **real-model tier of the GPU gate**, hand-run on the real boxes each release —
   GitHub CI cannot run device/checkpoint tests (the objc `msgSend` SIGSEGV on macos-latest;
   no GPU runner for CUDA). The device-free gates stay in CI; this is the hardware tier.
-- **One process per cell.** `gpu_gate.sh §2` SIGSEGVs from cumulative model-load exhaustion
+- **One process per cell.** The GPU gate's §2 SIGSEGVs from cumulative model-load exhaustion
   when the whole suite runs in one process — run each family×backend qualification in its own
   process (and it's worth fixing that teardown leak, same family as the `Close()` leak).
 - **Per-peer, same machine only.** Ratios compare an engine to its peer on the *same* box

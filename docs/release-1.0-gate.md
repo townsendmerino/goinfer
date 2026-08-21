@@ -154,7 +154,7 @@ below is declaring it (§3), not proving it.
   entries must NOT — if they do, something other than G-02 changed and the re-bake is refused
   pending investigation.
 - [x] **REQUIRED · The Metal manual gate written into `RELEASING.md`** (2026-08-18, new section
-  **§C1-M**). Names the exact command (`scripts/gpu_gate.sh`, `GOINFER_GATE_BACKEND=metal`), the
+  **§C1-M**). Names the exact command (`go run ./cmd/gate gpu`, `GOINFER_GATE_BACKEND=metal`), the
   box (a real Mac — CI's `macos-latest` SIGSEGVs inside purego's `objc_msgSend` on first device
   touch, so its job is build + vet + the one device-free falsifiability test), and **what green
   means in four parts**: all 7 declared check groups emit a verdict (declared-vs-emitted

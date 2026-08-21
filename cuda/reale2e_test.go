@@ -47,7 +47,7 @@ import (
 // A test whose failure cannot indict the product does not belong in a correctness gate: it spends
 // the gate's credibility, and a red that means "the harness wobbled" trains people to re-run reds.
 // As a benchmark it runs only under `-bench`, so it is out of `go test ./...` and out of
-// gpu_gate.sh, while the instrument it exists for — tok/s, the launch decomposition, GEMV vs glue
+// the GPU gate, while the instrument it exists for — tok/s, the launch decomposition, GEMV vs glue
 // bandwidth — stays available on demand:
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags 'cuda goinfer_testhooks' ./cuda/ \

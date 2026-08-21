@@ -20,7 +20,7 @@ import (
 // is still handing memory back, which reproduces every symptom the CUDA tier shows: passes alone,
 // fails in suite, VRAM signature, and no leak anywhere.
 //
-// Cross-package parallelism is already excluded — gpu_gate.sh passes -p 1 on every CUDA invocation,
+// Cross-package parallelism is already excluded — the GPU gate passes -p 1 on every CUDA invocation,
 // targets the single ./cuda/ package rather than ./cuda/..., and the package contains zero
 // t.Parallel() calls. So the tests ARE sequential, and "sequential" is exactly what makes a
 // non-instant teardown matter: nothing else is running, but the previous test may not be finished.

@@ -260,7 +260,7 @@ and the cost of that is that the next one was also found as a one-off.
 
 *One level up — the mechanism that should have caught it is itself adjacent:*
 
-- **A gate that can only FAIL is ignored exactly like one that can only pass.** `gpu_gate.sh`
+- **A gate that can only FAIL is ignored exactly like one that can only pass.** The GPU gate
   could not reach a green verdict across the whole of v0.10.x and v0.11.0 (it built an
   entrypoint that is a deliberate compile error). Once a gate's red is unremarkable, its red
   stops carrying information — the same end state as G-01's original tautological green, reached
@@ -545,7 +545,7 @@ Instances at time of writing, all 2026-08-12, three readings and one shape:
 
 Each was stated as a fact about the system before the instrument's position was checked.
 
-**A check has a measurement's shape too, and a false RED only by luck.** `scripts/gpu_gate.sh`'s
+**A check has a measurement's shape too, and a false RED only by luck.** The GPU gate's
 repo-hygiene group was rewritten to run CI's checks derived from `ci.yml` rather than a hand-written
 copy (B0). On its first run the module-boundary guard reported a **leak of `cuda`, `gpu` and `webgpu`
 into the root module graph** — a serious-looking red that was entirely an artifact of *where the
@@ -628,7 +628,7 @@ distinguish "the axis is covered" from "the axis collapsed to one value".
 *Recognition test:* **name the axis the gate is supposed to vary over, then read its output — can you
 tell from the output alone what values it actually covered?**
 
-Audited 2026-08-12. Reporting the composition: the goldens refresh (quantization), `gpu_gate.sh`'s
+Audited 2026-08-12. Reporting the composition: the goldens refresh (quantization), the GPU gate's
 skip census (run-vs-skipped) and its derived hygiene group (platform), `TestInt4_forwardParity`
 (fixture), `TestKernelLocalMemoryCensus` (kernel). **Not reporting it:** the parity sweep (family ×
 quant × loader — pass/fail per gate, no quant column), `TestSlotAllocation_matchesGranularityForm`
