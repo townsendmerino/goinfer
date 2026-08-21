@@ -264,7 +264,7 @@ poke the decoder — audit B-08) live in `testhooks_gen.go` files under
 calls one carries the tag too (`//go:build … && goinfer_testhooks`). Consequences:
 
 - **Every test invocation that must exercise those tests passes `-tags goinfer_testhooks`**
-  (combined with `gpu`/`cuda`/`metal` as needed). CI does this; `scripts/skip_census.py`
+  (combined with `gpu`/`cuda`/`metal` as needed). CI does this; `go run ./cmd/gate census`
   defaults to it. A plain `go test ./...` without the tag still compiles — it just *skips* the
   tagged tests (they do not run, and are not a silent failure because CI runs them with the tag).
 - **Shared test helpers must NOT live in a tagged file** — put them in an untagged

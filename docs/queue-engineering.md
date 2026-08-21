@@ -1253,7 +1253,13 @@ blocked on Francis's torch-replacement research — do not attempt it or design 
 
 **PARKED, 2026-08-18 (Francis):** the v0.13.0 freeze cleared, but Francis reviewed the plan and declined to fund it now — not rejected, may be picked up someday as a low-priority item, no active trigger. See the status line at the top of `docs/task-oracle-refforward.md` for the record. A future revisit should also fold in aikit's own ~23-file torch-oracle cluster (`aikit/scripts/oracle/*.py`) as one joint Phase-0 pass across both repos, not two separate plans.
 
-**E8 · One Go gate-runner over `go test -json` — collapse the tallying shell + census Python** — `linux`/`mac`, **PLAN DRAFTED; not started; after v0.13.0 (§C1 + CUDA gate), same freeze as E7.** Decided 2026-08-12 by Francis.
+**E8 · One Go gate-runner over `go test -json` — collapse the tallying shell + census Python** — `linux`/`mac`, **IN PROGRESS — runner + first two configs LANDED 2026-08-20.** Decided 2026-08-12 by Francis.
+
+**Landed:** `cmd/gate` (stdlib-only, no module's graph grew) with the `census` and `heavy` configs; `scripts/skip_census.py` and `scripts/heavy_gate.sh` deleted in the same commit. Acceptance (a) proved by pointing BOTH programs at one captured `go test -json` stream — byte-identical output and identical rc in both modes (PASS 884 / SKIP 79 / FAIL 0 of 963; rc 1 under `GOINFER_REQUIRE_FIXTURES=1`). Acceptance (b) is in-tree (`cmd/gate/gate_test.go`), against the real toolchain over scratch modules.
+
+**Three findings, recorded in `docs/task-gate-runner.md` §8:** (1) the two migrated scripts DISAGREED about whether subtests count — heavy_gate's column-0 grep counted top-level only, skip_census's JSON keying counted them all — so it is a per-config knob, not a house style; (2) keying results on `(Package, Test)` silently UNDERCOUNTS a matrix that runs one package under several tag sets, which is exactly what the two unmigrated gates do — caught by the tally-integrity mutation test, not by review; (3) `skip_census.py` exits 0 on a package-level failure (build error / native crash), preserved for acceptance (a) but now ANNOUNCED — **flipping it is a verdict change and therefore Francis's call.**
+
+**Remaining:** `parity_sweep` (next), then `gpu_gate` (needs the GPU box), then the two census scripts fold in as configs.
 
 Distinct from E7 (which migrates scripts one-for-one): **E8 recognizes that six scripts are one program.** The three tallying shell gates (`scripts/parity_sweep.sh`, `scripts/gpu_gate.sh`, `scripts/heavy_gate.sh`) and the three census Python scripts (`scripts/skip_census.py`, `scripts/sweep_composition.py`, `scripts/selector_coverage.py`) all run `go test -json` across a *package × family × quant × tag* matrix, tally PASS/SKIP/FAIL (SKIPs bucketed by reason), and decide — differing only in matrix and decision. **One runner (`cmd/gate`) + committed configs subsumes all six** (~6 scripts → 1 runner + configs).
 

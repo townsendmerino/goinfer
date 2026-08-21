@@ -1,9 +1,13 @@
 # Task: one Go gate-runner over `go test -json` — collapse the tallying shell + census Python
 
-> **Status: PLAN (not started).** Tracked as QUEUE **E8**. Sibling of E7 (no-Python) but a distinct
-> idea: E7 migrates scripts one-for-one; **E8 recognizes that several scripts are one program** and
-> consolidates them. Same freeze as E7 — docs land now, code after the v0.13.0 tag (§C1 + CUDA gate
-> first). Drafted 2026-08-12 from the E7 inventory + the item-6 shell audit.
+> **Status: IN PROGRESS — the runner and its first two configs have LANDED (2026-08-20).**
+> `cmd/gate` exists; `heavy` and `census` are migrated and `scripts/heavy_gate.sh` +
+> `scripts/skip_census.py` are deleted. `parity_sweep` and `gpu_gate` (and the two remaining census
+> scripts) are still to come — see §8 for what is done and what the migration found.
+>
+> Tracked as QUEUE **E8**. Sibling of E7 (no-Python) but a distinct idea: E7 migrates scripts
+> one-for-one; **E8 recognizes that several scripts are one program** and consolidates them.
+> Drafted 2026-08-12 from the E7 inventory + the item-6 shell audit.
 
 ## 1. The insight — six scripts are one program
 
@@ -105,3 +109,75 @@ not reimplement it. No new dependency; nothing in the main `go.mod`.
   (`docs/task-oracle-refforward.md`) — independent; share nothing with this.
 - Any change to what the gates *decide* — E8 changes the *substrate* (shell → Go over `go test -json`),
   not the pass/fail criteria. A verdict change would violate acceptance (a).
+
+## 8. What has landed, and what building it found
+
+**Landed 2026-08-20:** `cmd/gate` — the event core (`event.go`), the cell runner (`run.go`), the
+skip bucketing (`skips.go`), the two report shapes (`report.go`) and the committed matrix configs
+(`configs.go`) — plus `gate census` and `gate heavy`, replacing `scripts/skip_census.py` and
+`scripts/heavy_gate.sh`, deleted in the same commit (acceptance c). Stdlib only; no module's
+graph grew.
+
+**Acceptance (a) — agreement, and how it was made exact.** The census comparison does not run
+`go test` twice. One `go test -json -tags goinfer_testhooks ./...` stream was captured to a file
+and BOTH programs were pointed at the same bytes (`skip_census.py FILE` / `gate census -stream
+FILE`), so any difference is a difference between the two programs rather than between two runs of
+a suite with asset-gated skips in it. Result: **byte-identical output and identical exit code in
+both modes** — PASS 884 / FAIL 0 / SKIP 79 of 963, buckets `missing-fixture 2 · heavy-model 53 ·
+integration-env 21 · other 3`, rc 0; and with `GOINFER_REQUIRE_FIXTURES=1`, rc 1 with the same two
+fixture skips named. The heavy tier was compared on THREE cells, chosen so that
+agreement could not be free: a real-checkpoint filter (granite / nemotron / mellum — **PASSED 11,
+GREEN, rc 0 from both**, per-cell counts identical), a second real filter (**4, GREEN**), and an
+all-skip filter (**PASSED 0 / SKIPPED 5, RED, rc 1 from both**, same five tests) which is the only
+one that exercises the skip list and the zero-pass rule.
+
+**Three things the migration found, none of them cosmetic:**
+
+1. **The two scripts disagreed about subtests, and neither said so.** `heavy_gate.sh` counted
+   `grep -cE '^--- PASS: '`, anchored at column 0 — top-level tests only, since `go test` indents
+   subtest result lines. `skip_census.py` keyed on `(Package, Test)` straight out of the JSON,
+   which counts every subtest as its own result. Both are defensible and they are not the same
+   number. Preserved as a per-config knob (`TopLevelOnly`), because acceptance (a) is per-gate:
+   each migrated gate reproduces ITS OWN tally, not a newly-imposed house style.
+2. **Keying results on `(Package, Test)` silently undercounts a matrix.** Caught by the
+   tally-integrity mutation test, not by review: two cells running the same package — which is
+   exactly what `parity_sweep` and `gpu_gate` do across tag/quant combinations — collapsed into
+   one key, so N runs of a test reported as one. The key carries the cell now. The bug never
+   reached the census (one cell) but would have landed squarely in the two gates still to migrate.
+3. **The census exits 0 on a package-level failure.** `skip_census.py` computes `rc = 1 if nfail
+   else 0` and prints package-level fails without counting them — so a build error or a native
+   crash in one package exits GREEN today. E8 changes the substrate, not what a gate decides
+   (acceptance a and §7), so the runner reproduces it exactly — behind a `PkgFailIsFailure` bool,
+   and it now PRINTS that it is suppressing one. A suppressed failure nobody is told about is
+   indistinguishable from no failure, which is the defect the census exists to prevent.
+   **Flipping that bool is a verdict change and therefore Francis's call, not a refactor.**
+
+**Acceptance (b) — mutation-checked both ways, in-tree** (`cmd/gate/gate_test.go`, against the real
+toolchain over scratch modules): census RED on a failing test and GREEN with the defect removed;
+the tally-integrity case (a failure in cell 1 must not stop cell 2, and both counts survive into
+the verdict — the property `set -e` would have destroyed); zero-pass is RED; a package that exits
+hard without a per-test failure is RED and named as HIDDEN; an empty stream is RED, not clean; the
+missing models dir REFUSES with exit 2 rather than reporting a verdict.
+
+4. **`heavy_gate.sh`'s skip list printed durations, not reasons.** Its header promised "every skip
+   is listed with its reason so a missing model can't masquerade as coverage", and its verdict
+   printed `TestQwen3Embedding_vectorParity (0.00s)` — the `sed` stripped the `--- SKIP: ` prefix
+   from the result line, and `t.Skipf`'s message is on the NEXT line, which it never captured. So
+   the gate reported WHICH tests skipped but never WHY, which is the half that distinguishes "the
+   checkpoint is absent" from "the gate is misconfigured". The runner prints package, test and
+   reason, because it holds the structured result rather than a grep of it. This is the one place
+   the migration is not behaviour-preserving, and it is strictly in acceptance (d)'s direction.
+
+5. **Deleting a script found a stale second copy of a generated index.** `docs/QUEUE.md` carried
+   TWO SHA indexes: the live `CITATION-INDEX` block, and an orphaned `SHA-INDEX` block whose
+   regenerate instruction named `scripts/queue_sha_lint.py` — a script that no longer exists.
+   `--update` leaves it untouched (verified), it held 35 rows against the live 40, and its
+   `8fecfad` row's subject had DRIFTED from the real one (`ci: scripts/heavy_gate.sh …` vs
+   `ci: heavy_gate.sh …`) — which is how a second source of truth announces itself. It was also
+   inflating the lint's own coverage number, since its index rows were being scanned as prose and
+   counted as citations (40 "validated commit citations" became 16 when it went). Removed rather
+   than allowlisted: the allowlist is for a reference that cannot be made to resolve without
+   falsifying the text around it, and this one could.
+
+**Acceptance (d) — the scope line survives**, and gained provenance: every gate now prints commit,
+dirty flag, UTC date, host and its own matrix before the verdict, which only `heavy_gate.sh` did.
