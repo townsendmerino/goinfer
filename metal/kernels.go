@@ -658,8 +658,17 @@ kernel void act_quant(device const float* u[[buffer(0)]], device char* dq[[buffe
         mx=max(mx,fabs(s0)); mx=max(mx,fabs(s1)); mx=max(mx,fabs(s2)); mx=max(mx,fabs(s3));
     }
     for (uint i=(I4<<2u)+tid; i<I; i+=tgs){ float s=glu_act(u[i],act); mx=max(mx,fabs(s)); }
-    red[tid]=mx; threadgroup_barrier(mem_flags::mem_threadgroup);
-    for(uint s=tgs/2;s>0;s>>=1){ if(tid<s) red[tid]=max(red[tid],red[tid+s]); threadgroup_barrier(mem_flags::mem_threadgroup);}
+    // 2-level SIMD-shuffle reduction instead of the 8-step threadgroup-barrier tree -- max is
+    // exact/order-independent regardless of reduction structure. Cuts barrier count from 8 to 2
+    // (verified safe on quant_vec/layernorm_quant this session). Does not touch glu_act's own
+    // computation at all -- only how the already-computed per-lane mx values combine.
+    mx = simd_max(mx);
+    uint sgid = tid >> 5u, lane = tid & 31u;
+    if (lane == 0) red[sgid] = mx;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    uint nsg = tgs >> 5u;
+    if (tid == 0) { float v = red[0]; for (uint k=1; k<nsg; k++) v = max(v, red[k]); red[0] = v; }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
     float sc=red[0]/127.0f; if(sc==0)sc=1; if(tid==0)ds[0]=sc; float inv=1/sc;
     device char4* dq4 = (device char4*)dq;
     for (uint i4=tid; i4<I4; i4+=tgs) {
