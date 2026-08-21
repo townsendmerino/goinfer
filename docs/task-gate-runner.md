@@ -362,6 +362,19 @@ EXIT INT TERM` covers Ctrl-C; a deferred call does not run on a signal. The Go v
 explicit `signal.Notify` handler that restores and exits 130, because the window between "mutation
 applied" and "restore" is precisely when an impatient operator hits Ctrl-C.
 
+**AND THE MIGRATION IMMEDIATELY FOUND A BUG THE SCRIPT HAD CARRIED ITS WHOLE LIFE.** `sed -i` is not
+portable: GNU sed takes an OPTIONAL suffix attached to the flag (`-i.bak`), BSD sed (macOS) takes a
+REQUIRED separate one — so `sed -i EXPR file` means "backup suffix EXPR, script file" on a Mac and
+dies as `sed: 1: "subject.txt": unterminated substitute pattern`. The shell script had exactly that
+invocation and nobody ever saw it, because it is a hand-run operator tool and nobody hand-ran it
+there. The Go port's unit tests put it under CI's **darwin** job, which went red within one push.
+
+Fixed by dropping `-i` altogether: read sed's **stdout** and let Go write the file, which is portable
+on both and puts the file write on the side of the line that owns state anyway. Pinned by
+`TestMutation_sedInvocationIsPortable` so the flag cannot come back. Note the shape — the migration
+did not introduce a portability bug, it **exposed** one, by moving a tool from "run by a person on
+one machine" to "run by CI on both".
+
 **The do-not-harden-the-condemned rule, vindicated:** the item-6 audit filed a `pipefail` finding
 against this script. It was never fixed, and the finding died with the file. That is the outcome §6
 predicted, recorded here because it is cheap evidence for a sequencing rule that otherwise reads as

@@ -167,3 +167,21 @@ func TestMutation_unstartableVerifyCommandIsNotGreen(t *testing.T) {
 		t.Errorf("expected the baseline step to reject it:\n%s", buf.String())
 	}
 }
+
+// REGRESSION PIN. `sed -i` is not portable: GNU takes an optional suffix attached to the flag, BSD
+// (macOS) takes a required separate one, so `sed -i EXPR file` silently means "backup suffix EXPR,
+// script file" on a Mac. The shell script this replaced carried that bug its whole life unnoticed,
+// because nobody hand-ran it there; CI's darwin job failed on the Go port within one push. Reading
+// stdout is portable on both, and this test exists so the flag cannot come back.
+func TestMutation_sedInvocationIsPortable(t *testing.T) {
+	args := sedArgs("s/a/b/", "some/file.go")
+	for _, a := range args {
+		if a == "-i" || strings.HasPrefix(a, "-i") {
+			t.Fatalf("sed invocation uses %q: GNU and BSD sed disagree about it, and the disagreement "+
+				"is silent until someone runs this on the other platform: %v", a, args)
+		}
+	}
+	if len(args) != 2 || args[0] != "s/a/b/" || args[1] != "some/file.go" {
+		t.Fatalf("sedArgs = %v, want [expr file] so sed writes to stdout", args)
+	}
+}

@@ -127,14 +127,27 @@ func runMutation(argv []string, w io.Writer) int {
 
 	// 2. MUTATE, and assert the mutation actually CHANGED something. A sed expression that matches
 	//    nothing leaves a green run that looks like a verified mutation check.
-	sed := exec.Command("sed", "-i", expr, file)
-	if out, err := sed.CombinedOutput(); err != nil {
-		fmt.Fprintf(w, "  %sFAIL%s: sed failed: %v\n%s\n", red, off, err, strings.TrimSpace(string(out)))
+	//	NO `sed -i`, DELIBERATELY, AND THIS IS NOT A STYLE CHOICE. GNU sed takes an OPTIONAL suffix
+	//	attached to the flag (`-i.bak`), so `sed -i EXPR file` edits in place; BSD sed (macOS) takes a
+	//	REQUIRED separate suffix, so the same argv makes EXPR the backup suffix and `file` the
+	//	expression — "sed: 1: \"subject.txt\": unterminated substitute pattern". The shell script this
+	//	replaces carried that bug for its whole life and nobody saw it, because it is a hand-run
+	//	operator tool that nobody ran on the Mac. Moving it into Go put it under CI's darwin job,
+	//	which failed on it within one push.
+	//
+	//	Reading sed's STDOUT and writing the file from Go is portable across both, and it puts the
+	//	file write on the side of the line that owns state anyway.
+	mutated, err := exec.Command("sed", sedArgs(expr, file)...).Output()
+	if err != nil {
+		msg := err.Error()
+		if ee, ok := err.(*exec.ExitError); ok {
+			msg = strings.TrimSpace(string(ee.Stderr))
+		}
+		fmt.Fprintf(w, "  %sFAIL%s: sed failed: %s\n", red, off, msg)
 		return 1
 	}
-	mutated, err := os.ReadFile(file)
-	if err != nil {
-		fmt.Fprintf(w, "  %sFAIL%s: cannot re-read %s: %v\n", red, off, file, err)
+	if err := os.WriteFile(file, mutated, info.Mode().Perm()); err != nil {
+		fmt.Fprintf(w, "  %sFAIL%s: cannot write %s: %v\n", red, off, file, err)
 		return 1
 	}
 	if bytes.Equal(mutated, original) {
@@ -185,3 +198,9 @@ func repoRoot() (string, error) {
 	}
 	return strings.TrimSpace(string(out)), nil
 }
+
+// sedArgs is the portable invocation: an expression and a filename, output on stdout. Factored out
+// so the "no -i" property can be pinned by a test rather than by a comment — BSD and GNU sed
+// disagree about that flag's argument, and the disagreement is silent until someone runs it on the
+// other platform.
+func sedArgs(expr, file string) []string { return []string{expr, file} }
