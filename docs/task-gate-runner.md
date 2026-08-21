@@ -293,14 +293,24 @@ Only two lines differ, and one of them was a defect I introduced and had to fix:
   exists to measure (it died as `parse …int4.giw: invalid character 'G'` — the bundle magic read as
   JSON). Every passing run had set `GOINFER_QWEN36_35B` to the `.gguf`. Both fixed; the test now
   passes at 14.09 tok/s, 75.5% expert-cache hit rate, naming Paris and the Eiffel Tower.
-- **`TestMoERouteDemandThreshold`** — the demand identity is broken in the COLD regime: measured
-  192 675 840 B against an expected 289 603 584..295 895 040 B. An older drain log on this box shows
-  the same test failing with *different* numbers (threshold 141 557 760 B, peak/residual 1.02× where
-  this run measured 1.39×), so the quantity it pins is moving between runs. The test's own message is
-  explicit about what that means: `docs/QUEUE.md` A1/A5/A7/A9 need **re-deriving, not editing**.
-  Note the shape — this is a gate that MEASURES THE DEVICE, so it is not byte-deterministic, and
-  agreement for it can only be claimed at the verdict and group level, which is what the table above
-  reports.
+- **`TestMoERouteDemandThreshold`** — **DIAGNOSED AND FIXED 2026-08-21, and the gate's own
+  conclusion was wrong.** It failed with "measured 192 675 840, expected 289 603 584..295 895 040"
+  and asserted that a break there means the KERNEL moved. It did not. (a) The value is bit-stable
+  across four runs, so my earlier "it is moving between runs" note was itself wrong — that came from
+  comparing two logs written by *different versions of the test*. (b) It is IDENTICAL at `c6760d7`,
+  the commit that recorded 141 557 760 and pinned against it: same commit, same box, two days apart,
+  so nothing in the tree moved. (c) `TestAllocFloor` now measures the device floor at **54 263 808**,
+  not the 151 191 552 the demand test hardcoded — and the identity then closes to the byte,
+  `54 263 808 + 138 412 032 = 192 675 840`. The model was right; an input changed underneath it.
+  **Why it accused the kernel:** its comment claimed "the residual and the floor are each pinned by
+  their own gate", which is true of the residual and false of the floor — `TestAllocFloor` says in as
+  many words *"Not a threshold assertion: the number is the finding"*, so a floor move could not fail
+  there and surfaced here wearing a kernel move's clothes. Fixed by pinning the floor where the floor
+  lives (to a window, since it is a machine property) and by rewriting the demand test's message to
+  check the components before blaming the kernel. **Safety is unaffected in the safe direction:** a
+  smaller floor means less memory is reported-free-but-unallocatable, so there is more headroom than
+  the cap analysis assumed — the margin clears it by 332.2 MiB. Both new pins mutation-checked with
+  `gate mutation`.
 
 **Acceptance (b)** (`cmd/gate/gpu_test.go`): group reconciliation in both directions (a declared
 group that emits nothing is a FAIL; an emitted-but-undeclared group is a FAIL); all four verdict

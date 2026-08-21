@@ -61,8 +61,43 @@ func TestAllocFloor(t *testing.T) {
 	if floor <= 0 {
 		t.Fatal("free read as zero — the instrument did not run")
 	}
-	// Not a threshold assertion: the number is the finding. What WOULD be a defect is the drain
-	// reaching zero, which would mean there is no floor and the 26B failures need another cause.
+
+	// THE VALUE IS NOW PINNED, AND IT WAS NOT BEFORE. That absence had a consequence worth stating,
+	// because "not a threshold assertion: the number is the finding" was a deliberate and reasonable
+	// choice when nothing depended on the number — and then something did.
+	//
+	// TestMoERouteDemandThreshold asserts demand == floor + residual and hardcoded this floor,
+	// describing it as "pinned by its own gate". It was not: this test reported the floor and
+	// asserted only the margin relation, which a SMALLER floor satisfies more easily. So when the
+	// floor halved on 2026-08-21 (151,191,552 -> 54,263,808, no reboot, no driver change, nothing in
+	// the tree), this gate stayed green and the demand gate went red accusing the KERNEL of moving.
+	// The identity in fact closed to the byte against the new floor. An unpinned number that another
+	// gate depends on does not stop being load-bearing; it just stops being watched.
+	//
+	// Pinned to a WINDOW, not a byte: this is a machine property, and a byte-exact pin on a machine
+	// property is what made the demand pin brittle in the first place. Re-derive on a new box or a
+	// driver change — and when you do, re-check the demand identity, which is downstream of this.
+	const (
+		pinnedFloor = 54263808  // measured 2026-08-21, RTX 2070 SUPER, driver 595.58.03
+		floorWindow = 16 << 20  // generous: the quantity is a driver reserve, not a program's
+		previousPin = 151191552 // what it was until 2026-08-21, kept so a REVERSION is recognisable
+	)
+	if floor < pinnedFloor-floorWindow || floor > pinnedFloor+floorWindow {
+		hint := ""
+		if floor > previousPin-floorWindow && floor < previousPin+floorWindow {
+			hint = " — this is the PREVIOUS pinned value (151,191,552), so the machine has gone back " +
+				"to its pre-2026-08-21 behaviour rather than moving somewhere new"
+		}
+		t.Errorf("the device allocation floor moved: measured %d B, pinned %d±%d B%s. This is a "+
+			"MACHINE property (driver, display stack, device state), not a property of this repo, so "+
+			"the first question is what changed underneath rather than what changed in the tree. "+
+			"TestMoERouteDemandThreshold's identity (demand == floor + residual) is DOWNSTREAM of "+
+			"this number and will go red too; re-derive it from the new floor rather than editing "+
+			"its pin.", floor, int64(pinnedFloor), int64(floorWindow), hint)
+	}
+
+	// What WOULD be a defect is the drain reaching zero, which would mean there is no floor and the
+	// 26B failures need another cause.
 	if floor < (1 << 20) {
 		t.Logf("  => free drains essentially to zero, so there is NO reserve and the 26B allocation " +
 			"failures are not explained by a floor — the ordering/contiguity account must be revisited")

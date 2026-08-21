@@ -368,9 +368,42 @@ func TestMoERouteDemandThreshold(t *testing.T) {
 	// So pin the COMPONENTS, which are stable, and assert the IDENTITY against the regime actually
 	// observed. That is the re-derivation the old assertion demanded ("re-deriving, not editing") —
 	// and it now fails for a moved KERNEL rather than for a moved test-ordering.
+	// RE-DERIVED 2026-08-21, and this time the component that moved was the FLOOR — which the
+	// previous revision could not have discovered, because it asserted the opposite.
+	//
+	// The gate failed with "measured 192,675,840, expected 289,603,584..295,895,040" and concluded
+	// "a break here means the KERNEL's launch requirement moved". IT DID NOT. Three measurements
+	// settle it:
+	//
+	//	1. The value is bit-stable — 192,675,840 on four consecutive runs, not a wobble.
+	//	2. It is IDENTICAL at c6760d7, the commit that recorded 141,557,760 and pinned against it.
+	//	   Same commit, same box, two days apart, different number: nothing in the tree moved.
+	//	3. TestAllocFloor now measures the floor at 54,263,808, not 151,191,552.
+	//
+	// And then the identity closes to the byte:
+	//
+	//	54,263,808 (floor) + 138,412,032 (residual) = 192,675,840 = the measured demand
+	//
+	// So the model is exactly right and one of its INPUTS changed underneath it. The residual is
+	// unchanged (it is also what the launch actually consumes at the threshold: 192,675,840 ->
+	// 54,263,808 leaves precisely 138,412,032). The floor dropped by 96,927,744 B for a reason
+	// outside this repo — same driver, same uptime, no reboot between the two measurements.
+	//
+	// WHY THE GATE BLAMED THE KERNEL: its own comment claimed "the residual and the floor are each
+	// pinned by their own gate". That is TRUE of the residual and FALSE of the floor —
+	// TestAllocFloor says in as many words "Not a threshold assertion: the number is the finding",
+	// so a floor move cannot fail there and surfaces here instead, wearing a kernel move's clothes.
+	// The fix is not this constant; it is the missing pin, now added in TestAllocFloor, so the next
+	// component move fails where the component is.
+	//
+	// SAFETY DIRECTION, checked rather than assumed: a SMALLER floor means less memory is reported
+	// free but unallocatable, so there is MORE headroom than the cap analysis assumed, not less. The
+	// margin clears it by 332.2 MiB (slotMarginBytes 402,653,184 vs floor 54,263,808). A1/A5/A7/A9's
+	// conclusions are unaffected in the safe direction; the 33-slot cap stays safe and the 34-slot
+	// cap stays unsafe for the residual reason, which did not move.
 	const (
 		pinnedResidual    = 138412032 // moe_route's steady-state reservation (TestMoERouteFirstLaunchReservation)
-		pinnedDeviceFloor = 151191552 // the device-wide reserve the first context pays (TestAllocFloor)
+		pinnedDeviceFloor = 54263808  // the reserve a fresh context pays (TestAllocFloor, which now PINS it)
 		// The bisection stops at a 2 MiB quantum and the launch's peak is a further ~1-3 MiB above
 		// its residual (the transient the log below names), so the identity is asserted to a window
 		// rather than to the byte. A byte-exact pin here is what made the old one brittle.
@@ -384,11 +417,21 @@ func TestMoERouteDemandThreshold(t *testing.T) {
 	}
 	t.Logf("REGIME: %s — expected demand %d B, measured %d B", regime, wantDemand, firstPass.freeBefore)
 	if firstPass.freeBefore < wantDemand || firstPass.freeBefore > wantDemand+demandWindow {
+		// CHECK THE COMPONENTS BEFORE BLAMING THE KERNEL. An earlier revision of this message
+		// asserted flatly that a break here means the kernel moved, and it was wrong the first time
+		// it fired: the floor had halved and the identity still closed. So the message now says what
+		// is actually known — the SUM disagrees — and names the two ways that happens, in the order
+		// they should be checked.
 		t.Errorf("demand identity BROKEN in the %s regime: measured %d B, expected %d..%d B "+
-			"(residual %d + floor %d when cold). The residual and the floor are each pinned by "+
-			"their own gate, so a break here means the KERNEL's launch requirement moved — which is "+
-			"what makes the 34-slot cap unsafe and the 33-slot cap safe. docs/QUEUE.md A1/A5/A7/A9 "+
-			"need re-deriving, not editing.",
+			"(residual %d + floor %d when cold). "+
+			"CHECK THE COMPONENTS FIRST, in this order: "+
+			"(1) does floor + residual still equal the MEASURED demand? Run TestAllocFloor and "+
+			"TestMoERouteFirstLaunchReservation. If it closes, a COMPONENT moved and this pin is "+
+			"downstream of it — update the component, not this number. That is what happened on "+
+			"2026-08-21: the floor went 151,191,552 -> 54,263,808 and the sum closed to the byte. "+
+			"(2) ONLY if the identity does not close has the KERNEL's launch requirement moved — "+
+			"which is what makes the 34-slot cap unsafe and the 33-slot cap safe, and then "+
+			"docs/QUEUE.md A1/A5/A7/A9 need re-deriving, not editing.",
 			regime, firstPass.freeBefore, wantDemand, wantDemand+int64(demandWindow),
 			int64(pinnedResidual), int64(pinnedDeviceFloor))
 	}
