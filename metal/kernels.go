@@ -123,8 +123,18 @@ kernel void quant_vec(device const float* x[[buffer(0)]], device char* aq[[buffe
         mx=max(mx, max(max(av.x,av.y), max(av.z,av.w)));
     }
     for (uint i=(H4<<2u)+tid; i<H; i+=tgs) mx=max(mx,fabs(x[i]));
-    red[tid]=mx; threadgroup_barrier(mem_flags::mem_threadgroup);
-    for(uint s=tgs/2;s>0;s>>=1){ if(tid<s) red[tid]=max(red[tid],red[tid+s]); threadgroup_barrier(mem_flags::mem_threadgroup);}
+    // 2-level SIMD-shuffle reduction instead of the 8-step threadgroup-barrier tree -- max is
+    // exact/order-independent regardless of HOW the reduction is structured (unlike a sum, which
+    // is why this technique is scoped to maxabs reductions only, never the sum-of-squares class).
+    // simd_max reduces within each 32-lane simdgroup with no barrier at all; only the nsg=tgs/32
+    // simdgroup leaders write to threadgroup memory, cutting barrier count from 8 to 2.
+    mx = simd_max(mx);
+    uint sgid = tid >> 5u, lane = tid & 31u;
+    if (lane == 0) red[sgid] = mx;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    uint nsg = tgs >> 5u;
+    if (tid == 0) { float v = red[0]; for (uint k=1; k<nsg; k++) v = max(v, red[k]); red[0] = v; }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
     float sc=red[0]/127.0f; if(sc==0)sc=1; if(tid==0)asc[0]=sc; float inv=1/sc;
     device char4* aq4 = (device char4*)aq;
     for (uint i4=tid; i4<H4; i4+=tgs) {
