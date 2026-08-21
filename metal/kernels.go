@@ -261,6 +261,11 @@ kernel void gemv_w4a8_resid(device const uint* bq[[buffer(0)]], device const hal
   + (int(((x)>>8)&0xF)-8)*int((a)[2]) + (int(((x)>>12)&0xF)-8)*int((a)[3]) \
   + (int(((x)>>16)&0xF)-8)*int((a)[4]) + (int(((x)>>20)&0xF)-8)*int((a)[5]) \
   + (int(((x)>>24)&0xF)-8)*int((a)[6]) + (int(((x)>>28)&0xF)-8)*int((a)[7]) )
+#define UNP8V(xw, a4) ( \
+    (int((xw)&0xF)-8)*int((a4)[0].x) + (int(((xw)>>4)&0xF)-8)*int((a4)[0].y) \
+  + (int(((xw)>>8)&0xF)-8)*int((a4)[0].z) + (int(((xw)>>12)&0xF)-8)*int((a4)[0].w) \
+  + (int(((xw)>>16)&0xF)-8)*int((a4)[1].x) + (int(((xw)>>20)&0xF)-8)*int((a4)[1].y) \
+  + (int(((xw)>>24)&0xF)-8)*int((a4)[1].z) + (int(((xw)>>28)&0xF)-8)*int((a4)[1].w) )
 #define SA_BODY \
     for (uint i=tid;i<K;i+=tgs) As[i]=short(aq[i]); \
     threadgroup_barrier(mem_flags::mem_threadgroup); \
@@ -270,8 +275,8 @@ kernel void gemv_w4a8_resid(device const uint* bq[[buffer(0)]], device const hal
     device const half*  sr = sct + (uint)row*G; \
     float acc = 0.0f; \
     for (uint g=lane; g<G; g+=32u) { \
-        uint4 w = wr[g]; threadgroup const short* a = As + g*32u; \
-        int gi = UNP8(w.x,a) + UNP8(w.y,a+8) + UNP8(w.z,a+16) + UNP8(w.w,a+24); \
+        uint4 w = wr[g]; threadgroup const short4* a4 = reinterpret_cast<threadgroup const short4*>(As + g*32u); \
+        int gi = UNP8V(w.x,a4) + UNP8V(w.y,a4+2) + UNP8V(w.z,a4+4) + UNP8V(w.w,a4+6); \
         acc += float(gi) * float(sr[g]); \
     } \
     acc = simd_sum(acc);
