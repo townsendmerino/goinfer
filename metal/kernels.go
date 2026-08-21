@@ -519,6 +519,47 @@ kernel void kv_store(device const float* k[[buffer(0)]], device const float* v[[
     constant uint& pos[[buffer(5)]], uint i[[thread_position_in_grid]]) {
     kc[pos*kvDim+i]=half(k[i]); vc[pos*kvDim+i]=half(v[i]); // f16 KV: half the cache bytes + read BW
 }
+// rope2_kv: fuses rope2 (merged Q+K RoPE) with kv_store (K/V cache write) into ONE dispatch --
+// every production call site launches these back-to-back, RoPE-then-store, and K's cache write
+// needs exactly the ROTATED value RoPE just computed, so storing it inline removes a full
+// device round-trip (rope2 writes rotated K into the qkv buffer, kv_store immediately re-reads
+// those same bytes). Grid: [0,qTotal) rotates Q (no cache write -- Q isn't cached, same as
+// rope2); [qTotal,qTotal+kTotal) rotates K AND stores it into kc; [qTotal+kTotal,qTotal+2*kTotal)
+// copies V (untouched by RoPE) into vc. V shares K's thread count and pairing since kvDim
+// (=nKV*hd) is always exactly 2*kTotal (=2*nKV*half). Same math as running rope2 then kv_store --
+// verified bit-identical on real weights (TestRope2Kv_matchesRope2ThenKv; TestMetalSnapshotGolden
+// and TestGPT2ResidentParityMetal wired against this call site too, also byte-identical).
+// MEASURED (TestQwen35ResidentDecodeRateMetal, 20 samples each way): eliminating one dispatch/
+// layer is a null result at the whole-decode level (~0.6%, within noise) -- consistent with
+// TestLayerA_bindingTax's own finding that per-dispatch marginal cost (~2.2us) is tiny against
+// everything else in a token's critical path. NOT wired into any production dispatch site --
+// correctness-proven, kept for the record, not a live kernel (same status as gemv_w4a8_sa_qv).
+kernel void rope2_kv(device float* x[[buffer(0)]], device const float* invf[[buffer(1)]],
+    constant uint& hd[[buffer(2)]], constant uint& pos[[buffer(3)]], constant uint& qTotal[[buffer(4)]],
+    constant uint& kTotal[[buffer(5)]], constant uint& rhalf[[buffer(6)]], constant float& scale[[buffer(7)]],
+    constant uint& kOff[[buffer(8)]], constant uint& vOff[[buffer(9)]], device half* kc[[buffer(10)]],
+    device half* vc[[buffer(11)]], constant uint& kvDim[[buffer(12)]], uint gid[[thread_position_in_grid]]) {
+    uint total = qTotal + 2u*kTotal;
+    if (gid >= total) return;
+    if (gid < qTotal) {
+        uint head = gid/rhalf; uint dd = gid%rhalf; uint base = head*hd;
+        float th=float(pos)*invf[dd]; float c=cos(th)*scale,s=sin(th)*scale;
+        float x0=x[base+dd],x1=x[base+rhalf+dd];
+        x[base+dd]=x0*c-x1*s; x[base+rhalf+dd]=x0*s+x1*c;
+    } else if (gid < qTotal+kTotal) {
+        uint g = gid - qTotal; uint head = g/rhalf; uint dd = g%rhalf; uint base = kOff + head*hd;
+        float th=float(pos)*invf[dd]; float c=cos(th)*scale,s=sin(th)*scale;
+        float x0=x[base+dd],x1=x[base+rhalf+dd];
+        float k0=x0*c-x1*s, k1=x0*s+x1*c;
+        x[base+dd]=k0; x[base+rhalf+dd]=k1;
+        uint kvi = head*hd;
+        kc[pos*kvDim+kvi+dd]=half(k0); kc[pos*kvDim+kvi+rhalf+dd]=half(k1);
+    } else {
+        uint g = gid - qTotal - kTotal; uint head = g/rhalf; uint dd = g%rhalf; uint base = vOff + head*hd;
+        uint kvi = head*hd;
+        vc[pos*kvDim+kvi+dd]=half(x[base+dd]); vc[pos*kvDim+kvi+rhalf+dd]=half(x[base+rhalf+dd]);
+    }
+}
 // kv_store_f32 / attention_f32 — the FULL-PRECISION KV twins, used on Gemma's sandwich path only
 // (resident.kvF32). Gemma's low-magnitude attention contexts amplify f16-KV rounding into a
 // catastrophic per-layer context error (0.64 vs f32's 0.92 cosine; matched-input confirmer
