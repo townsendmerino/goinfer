@@ -1,7 +1,7 @@
 # Task: one Go gate-runner over `go test -json` — collapse the tallying shell + census Python
 
-> **Status: ALL SIX MIGRATED (2026-08-20/21).** `cmd/gate` carries `census`, `heavy`, `parity`,
-> `composition`, `selector` and `gpu`; all six scripts are deleted. **The Metal half of `gate gpu` is
+> **Status: ALL SIX MIGRATED, PLUS `mutation_check` (2026-08-20/21).** `cmd/gate` carries `census`,
+> `heavy`, `parity`, `composition`, `selector`, `gpu` and `mutation`; all seven scripts are deleted. **The Metal half of `gate gpu` is
 > ported but NOT yet verified against the script it replaces** — no machine here has a Metal device,
 > so its four groups need one run on the Mac before that half is trustworthy. See §8–§10 for what
 > each migration found.
@@ -41,8 +41,8 @@ by discipline:
   "fix." Go has no implicit abort-on-error: run each cell, capture `rc`, append to a results struct,
   never lose the count. The requirement becomes the natural shape of the code.
 - **`PIPESTATUS` capture vanishes.** `os/exec` returns each subprocess's exit code directly.
-- **The silent-skip anti-pattern can't recur.** `command -v staticcheck && staticcheck` (the one
-  `scripts/mutation_check.sh`'s header records fixing) quietly *passes* when the tool is absent; `exec.LookPath`
+- **The silent-skip anti-pattern can't recur.** `command -v staticcheck && staticcheck` (the one the
+  mutation checker's header records fixing — now `cmd/gate/mutation.go`) quietly *passes* when the tool is absent; `exec.LookPath`
   returning not-found is an explicit error. Same for backend detection — "GPU absent → SKIP **with
   reason**" is a decision that belongs in Go, and the reason-bucketing `skip_census` does comes free
   because the runner already holds structured results.
@@ -97,10 +97,10 @@ not reimplement it. No new dependency; nothing in the main `go.mod`.
   `gpu_gate` (needs the GPU box). The three census Python scripts fold in as configs as the matching
   gate lands — so E8 and E7's census migrations converge rather than duplicate.
 - **Do not harden shell you are about to delete.** The item-6 audit's `pipefail` fixes for
-  `scripts/bench_compare.sh` and `scripts/mutation_check.sh` are **moot** if those are on the migration list
-  (`bench_compare` → the bench-peer Go successor; `mutation_check`'s deciding half → Go/this runner).
-  Add `pipefail` only to the survivors — the pure-glue shells in §3. Fix the survivors, not the
-  condemned.
+  `scripts/bench_compare.sh` and `scripts/mutation_check.sh` were **moot** because both were on the
+  migration list. `mutation_check`'s deciding half is now `gate mutation` (§11) and the script is
+  gone, so its `pipefail` finding died with it — vindicating the rule. `bench_compare` still awaits
+  the bench-peer Go successor. Add `pipefail` only to the survivors — the pure-glue shells in §3.
 
 ## 7. Not in scope
 
@@ -319,3 +319,50 @@ macOS's stock `/bin/bash` 3.2 cannot run `declare -A`. A Go binary has no such r
 the same source but have never run — this box has no Metal device. Until someone runs
 `go run ./cmd/gate gpu` on the Mac and compares it against the deleted script's last known output,
 that half is code review, not evidence.
+
+## 11. `gate mutation` — the gate's own gate
+
+**Landed 2026-08-21:** `gate mutation`, replacing `scripts/mutation_check.sh` (99 lines), deleted in
+the same commit. §6 named it as the one remaining candidate; this closes it.
+
+**This is the migration where the argument for Go is strongest, because the script's own header is
+the evidence.** It records two defects that the tool produced *about itself*, both of which reported
+a mutation as verified while nothing had been exercised:
+
+- `command -v staticcheck >/dev/null && staticcheck …` — the binary was absent, the `&&`
+  short-circuited, the whole check evaluated to nothing, and it was reported as clean.
+- `python3 lint.py 2>&1 | head -3; echo "exit=$?"` — `$?` read `head`'s status, not the lint's, so a
+  red mutation printed `exit=0`.
+
+The shell defended against that by *discipline* — "the status path here contains NO PIPES and no
+`&&` chains" — a rule someone has to keep remembering, inside the mechanism built to prevent exactly
+that class. In Go there is no status path to get wrong: `exec.Cmd.Run` returns the command's own
+error, and an absent `sed` is a `LookPath` failure rather than a short-circuit that evaluates to
+success. **A mutation checker that silently reads the wrong status certifies a gate as falsifiable
+when nothing ran: G-01 inside the anti-G-01 mechanism.**
+
+**Acceptance (a):** four scratch scenarios — happy path, vacuous expression, already-red baseline,
+and a gate blind to its own mutation — run against identical scratch git repos with identical
+arguments. **Byte-identical output, identical exit codes, and identical restored file contents** on
+every one, modulo the tool's own name in its header. Then the documented real example
+(`int4-quantizer` over `decoder/weightmat.go` against `TestInt4_forwardParity`, 3 × 35s per side):
+identical transcript, `rc=0`, and `git diff --quiet` confirming both sides put the tree back.
+
+**Acceptance (b)** (`cmd/gate/mutation_test.go`) — the meta-case, since a tool that proves gates are
+falsifiable must itself be falsified: each test is a way this tool could certify a gate while nothing
+was exercised. A vacuous expression is rejected; an already-red baseline is rejected **before the
+file is touched** (asserted, not assumed); a gate that survives its mutation is reported as blind; a
+verify command that cannot START is not a green baseline; misuse is exit 2, distinct from a finding
+(1) and a pass (0); and **the subject file is asserted byte-identical after every failure path**,
+because this tool edits source in place and a failed check that leaves a deliberately broken tree
+behind would make the next unrelated command fail for reasons no one could attribute.
+
+**One property the shell had that a `defer` would have lost:** restore-on-interrupt. `trap restore
+EXIT INT TERM` covers Ctrl-C; a deferred call does not run on a signal. The Go version installs an
+explicit `signal.Notify` handler that restores and exits 130, because the window between "mutation
+applied" and "restore" is precisely when an impatient operator hits Ctrl-C.
+
+**The do-not-harden-the-condemned rule, vindicated:** the item-6 audit filed a `pipefail` finding
+against this script. It was never fixed, and the finding died with the file. That is the outcome §6
+predicted, recorded here because it is cheap evidence for a sequencing rule that otherwise reads as
+a matter of taste.

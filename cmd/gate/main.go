@@ -62,6 +62,7 @@ usage:
   gate composition [-v]                            the sweep's coverage composition (family × quant × loader)
   gate selector                                    tests that EXIST vs tests a selector RUNS
   gate gpu                                         the pre-tag GPU correctness gate (cuda | metal)
+  gate mutation <name> <file> <sed-expr> <cmd...>  prove a gate can FAIL: green -> mutate -> red -> restore -> green
 
 census env:
   GOINFER_REQUIRE_FIXTURES=1   exit 1 if any missing-fixture skip (release ritual)
@@ -96,6 +97,12 @@ func run(argv []string, w io.Writer) int {
 	}
 	name := argv[0]
 	rest := argv[1:]
+
+	// `mutation` takes a verify COMMAND as trailing argv, which carries its own flags (-run, -count)
+	// and must not be parsed as ours. Handled before the flagset sees anything.
+	if name == "mutation" {
+		return runMutation(rest, w)
+	}
 
 	// Split at `--`: everything after it is verbatim `go test` args, not our flags.
 	var passthrough []string
