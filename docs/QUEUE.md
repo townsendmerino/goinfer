@@ -368,23 +368,23 @@ supports.
 | `docs/scoping-lfm2.md|decoder/mamba2_chunked.go:60` | goinfer | `// Depthwise causal conv over xBC (+bias, +SiLU), then split into x/B/C.` |
 | `docs/scoping-lfm2.md|decoder/rmsnorm.go:49` | goinfer | `func layerNorm(x, weight, bias []float32, rows, dim int, eps float64) {` |
 | `docs/task-gpu-batched-prefill.md|decoder/residency.go:54` | goinfer | `// ResidentGreedy is an optional capability on a ResidentForward: compute the token's gr` |
-| `docs/task-int4-int8-exact-mma.md|metal/kernels.go:197` | goinfer | `#define W4A8_BODY \` |
-| `docs/task-int4-int8-exact-mma.md|metal/kernels.go:200` | goinfer | `device const half*  srow = bsc + (uint)gid*(K/32u); \` |
-| `docs/task-int4-int8-exact-mma.md|metal/kernels.go:208` | goinfer | `acc += float(gi) * float(srow[wi>>2]); \` |
-| `docs/task-int4-int8-exact-mma.md|metal/kernels.go:214` | goinfer | `kernel void gemv_w4a8_coal(device const uint* bq[[buffer(0)]], device const half* bsc[[b` |
-| `docs/task-int4-int8-exact-mma.md|metal/kernels.go:218` | goinfer | `if (lid == 0) out[gid] = acc * asc[0];` |
-| `docs/task-int4-int8-exact-mma.md|metal/kernels.go:259` | goinfer | `#define SA_BODY \` |
-| `docs/task-int4-int8-exact-mma.md|metal/kernels.go:262` | goinfer | `uint G = K>>5u; \` |
-| `docs/task-int4-int8-exact-mma.md|metal/kernels.go:265` | goinfer | `device const half*  sr = sct + (uint)row*G; \` |
-| `docs/task-int4-int8-exact-mma.md|metal/kernels.go:273` | goinfer | `kernel void gemv_w4a8_sa(device const uint4* wq[[buffer(0)]], device const half* sct[[bu` |
-| `docs/task-int4-int8-exact-mma.md|metal/kernels.go:279` | goinfer | `if (lane==0) out[row] = acc*asc[0];` |
-| `docs/task-int4-int8-exact-mma.md|metal/kernels.go:28` | goinfer | `float sc=red[0]/127.0f; if(sc==0)sc=1; if(tid==0)asc[0]=sc; float inv=1/sc;` |
+| `docs/task-int4-int8-exact-mma.md|metal/kernels.go:202` | goinfer | `#define W4A8_BODY \` |
+| `docs/task-int4-int8-exact-mma.md|metal/kernels.go:205` | goinfer | `device const half*  srow = bsc + (uint)gid*(K/32u); \` |
+| `docs/task-int4-int8-exact-mma.md|metal/kernels.go:213` | goinfer | `acc += float(gi) * float(srow[wi>>2]); \` |
+| `docs/task-int4-int8-exact-mma.md|metal/kernels.go:219` | goinfer | `kernel void gemv_w4a8_coal(device const uint* bq[[buffer(0)]], device const half* bsc[[b` |
+| `docs/task-int4-int8-exact-mma.md|metal/kernels.go:223` | goinfer | `if (lid == 0) out[gid] = acc * asc[0];` |
+| `docs/task-int4-int8-exact-mma.md|metal/kernels.go:264` | goinfer | `#define SA_BODY \` |
+| `docs/task-int4-int8-exact-mma.md|metal/kernels.go:267` | goinfer | `uint G = K>>5u; \` |
+| `docs/task-int4-int8-exact-mma.md|metal/kernels.go:270` | goinfer | `device const half*  sr = sct + (uint)row*G; \` |
+| `docs/task-int4-int8-exact-mma.md|metal/kernels.go:278` | goinfer | `kernel void gemv_w4a8_sa(device const uint4* wq[[buffer(0)]], device const half* sct[[bu` |
+| `docs/task-int4-int8-exact-mma.md|metal/kernels.go:284` | goinfer | `if (lane==0) out[row] = acc*asc[0];` |
+| `docs/task-int4-int8-exact-mma.md|metal/kernels.go:33` | goinfer | `float sc=red[0]/127.0f; if(sc==0)sc=1; if(tid==0)asc[0]=sc; float inv=1/sc;` |
 | `docs/task-int4-int8-exact-mma.md|metal/model.go:1323` | goinfer | `e.DispatchTG(r.pSABias, qkvRows*32, 256, r.H*2, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv, L.qk` |
 | `docs/task-int4-int8-exact-mma.md|metal/model.go:1352` | goinfer | `e.Dispatch(r.pGemv, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.dO, r.uI)` |
 | `docs/task-int4-int8-exact-mma.md|metal/model.go:456` | goinfer | `r.pRms, r.pQv, r.pGemv = pipe("rmsnorm_quant"), pipe("quant_vec"), pipe("gemv_w4a8_coal"` |
 | `docs/task-int4-int8-exact-mma.md|metal/model.go:458` | goinfer | `r.pSA, r.pSABias, r.pSAResid = pipe("gemv_w4a8_sa"), pipe("gemv_w4a8_sa_bias"), pipe("ge` |
-| `docs/task-metal-batched-verify-kernel.md|metal/kernels.go:197` | goinfer | `#define W4A8_BODY \` |
-| `docs/task-metal-batched-verify-kernel.md|metal/kernels.go:259` | goinfer | `#define SA_BODY \` |
+| `docs/task-metal-batched-verify-kernel.md|metal/kernels.go:202` | goinfer | `#define W4A8_BODY \` |
+| `docs/task-metal-batched-verify-kernel.md|metal/kernels.go:264` | goinfer | `#define SA_BODY \` |
 | `docs/task-metal-batched-verify-kernel.md|metal/model.go:330` | goinfer | `func maxThreadgroupStageBytes(hidden, qWidth, moeInter, g4moeInter int) int {` |
 | `docs/task-moe-streaming.md|decoder/forwardn.go:14` | goinfer | `// MoE FFN itself stays per-row (router picks different experts per token).` |
 | `docs/task-moe-streaming.md|decoder/forwardn.go:259` | goinfer | `// Sequential: add the attention residual, then re-norm the updated stream for the MLP.` |
