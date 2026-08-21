@@ -71,12 +71,32 @@ kernel void layernorm_quant(device const float* x[[buffer(0)]], device const flo
 kernel void quant_vec(device const float* x[[buffer(0)]], device char* aq[[buffer(1)]],
     device float* asc[[buffer(2)]], constant uint& H[[buffer(3)]],
     uint tid[[thread_position_in_threadgroup]], uint tgs[[threads_per_threadgroup]]) {
-    threadgroup float red[256]; float mx=0;
-    for(uint i=tid;i<H;i+=tgs) mx=max(mx,fabs(x[i]));
+    threadgroup float red[256];
+    // Vectorized float4/char4 load/store for both loops -- max is exact/order-independent and
+    // the quantize-write has no reduction at all, so this is mathematically identical regardless
+    // of grouping. Verified against both the isolated unit test AND the whole-model snapshot
+    // golden (unlike rmsnorm_quant's sibling loops, which drift at the whole-model level despite
+    // an identical argument -- see scripts/autoresearch_rmsnorm_results.tsv for that history).
+    uint H4 = H >> 2u;
+    device const float4* x4 = (device const float4*)x;
+    float mx=0;
+    for (uint i4=tid; i4<H4; i4+=tgs) {
+        float4 xv=x4[i4];
+        float4 av=fabs(xv);
+        mx=max(mx, max(max(av.x,av.y), max(av.z,av.w)));
+    }
+    for (uint i=(H4<<2u)+tid; i<H; i+=tgs) mx=max(mx,fabs(x[i]));
     red[tid]=mx; threadgroup_barrier(mem_flags::mem_threadgroup);
     for(uint s=tgs/2;s>0;s>>=1){ if(tid<s) red[tid]=max(red[tid],red[tid+s]); threadgroup_barrier(mem_flags::mem_threadgroup);}
     float sc=red[0]/127.0f; if(sc==0)sc=1; if(tid==0)asc[0]=sc; float inv=1/sc;
-    for(uint i=tid;i<H;i+=tgs) aq[i]=char(clamp(int(round(x[i]*inv)),-127,127));
+    device char4* aq4 = (device char4*)aq;
+    for (uint i4=tid; i4<H4; i4+=tgs) {
+        float4 xv=x4[i4];
+        int4 qv=int4(round(xv*inv));
+        qv=clamp(qv,-127,127);
+        aq4[i4]=char4(qv);
+    }
+    for (uint i=(H4<<2u)+tid; i<H; i+=tgs) aq[i]=char(clamp(int(round(x[i]*inv)),-127,127));
 }
 kernel void gemv_w8a8(device const char* aq[[buffer(0)]], device const float* asc[[buffer(1)]],
     device const char* bq[[buffer(2)]], device const float* bsc[[buffer(3)]], device float* out[[buffer(4)]],

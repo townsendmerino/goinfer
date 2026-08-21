@@ -14,8 +14,8 @@ while it's resident. This task builds and verifies that kernel.
 ## Phase 0 — does the hoist preserve order?
 
 Decode's dense per-token projections dispatch through the `gemv_w4a8_sa` family (QKV/O/gate-up,
-`SA_BODY` macro, `metal/kernels.go:184-159`) and `gemv_w4a8_coal`/`_resid` (down-proj,
-`W4A8_BODY` macro, `metal/kernels.go:122-93`) — documented precisely in
+`SA_BODY` macro, `metal/kernels.go:204-179`) and `gemv_w4a8_coal`/`_resid` (down-proj,
+`W4A8_BODY` macro, `metal/kernels.go:142-113`) — documented precisely in
 `docs/task-int4-int8-exact-mma.md`. An M-row hoist keeps every element of that reduction
 identical — same per-lane strided block iteration, same per-block exact-integer dot, same
 `acc += float(gi) * scale` accumulation order within a lane, same `simd_sum` cross-lane
