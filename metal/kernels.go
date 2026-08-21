@@ -360,8 +360,20 @@ kernel void gemv_w8a8_amax(device const char* aq[[buffer(0)]], device const floa
     uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
     uint row = tgid*(tgs>>5u) + sgid;
     device const char* brow = bq + (uint)row*K;
+    // Vectorized 32-bit (4-packed-byte) loads instead of scalar per-byte loads — the same
+    // technique that won ~11% on gemv_w8a8_coal, applied here since this kernel shares its
+    // exact bandwidth-bound inner-loop shape. Exact integer math either way.
+    device const uint* aq4 = (device const uint*)aq;
+    device const uint* brow4 = (device const uint*)brow;
+    uint G = K >> 2u;
     int acc = 0;
-    for (uint k=lane; k<K; k+=32u) acc += int(aq[k])*int(brow[k]);
+    for (uint g = lane; g < G; g += 32u) {
+        uint aw = aq4[g], bw = brow4[g];
+        acc += int(char(aw & 0xFFu))         * int(char(bw & 0xFFu));
+        acc += int(char((aw >> 8) & 0xFFu))  * int(char((bw >> 8) & 0xFFu));
+        acc += int(char((aw >> 16) & 0xFFu)) * int(char((bw >> 16) & 0xFFu));
+        acc += int(char((aw >> 24) & 0xFFu)) * int(char((bw >> 24) & 0xFFu));
+    }
     acc = simd_sum(acc);
     threadgroup float tv[8]; threadgroup uint ti[8];
     if (lane==0) { tv[sgid] = float(acc)*asc[0]*bsc[row]; ti[sgid] = row; }
