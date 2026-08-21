@@ -61,12 +61,38 @@ kernel void layernorm_quant(device const float* x[[buffer(0)]], device const flo
     red[tid]=ss; threadgroup_barrier(mem_flags::mem_threadgroup);
     for(uint st=tgs/2;st>0;st>>=1){ if(tid<st) red[tid]+=red[tid+st]; threadgroup_barrier(mem_flags::mem_threadgroup);}
     float inv=rsqrt(red[0]/float(H)+eps); threadgroup_barrier(mem_flags::mem_threadgroup);
+    // Vectorized float4/char4 load/store for the maxabs-scan and quantize-write loops ONLY --
+    // the mean/variance reductions above are order-sensitive float sums and stay untouched. max
+    // is exact/order-independent and the quantize-write has no reduction at all, same argument
+    // verified safe for quant_vec (this session) but NOT for rmsnorm_quant's sibling loops
+    // (see scripts/autoresearch_rmsnorm_results.tsv) -- verified here against
+    // TestGPT2ResidentParityMetal, not just the isolated unit test.
+    uint H4 = H >> 2u;
+    device const float4* x4 = (device const float4*)x;
+    device const float4* w4 = (device const float4*)w;
+    device const float4* b4 = (device const float4*)b;
     float mx=0;
-    for(uint i=tid;i<H;i+=tgs){ float y=(x[i]-mean)*inv*w[i]; if(hasBias!=0u) y+=b[i]; mx=max(mx,fabs(y)); }
+    for (uint i4=tid; i4<H4; i4+=tgs) {
+        float4 xv=x4[i4], wv=w4[i4];
+        float4 yv=(xv-mean)*inv*wv;
+        if (hasBias!=0u) yv += b4[i4];
+        float4 av=fabs(yv);
+        mx=max(mx, max(max(av.x,av.y), max(av.z,av.w)));
+    }
+    for (uint i=(H4<<2u)+tid; i<H; i+=tgs) { float y=(x[i]-mean)*inv*w[i]; if(hasBias!=0u) y+=b[i]; mx=max(mx,fabs(y)); }
     red[tid]=mx; threadgroup_barrier(mem_flags::mem_threadgroup);
     for(uint st=tgs/2;st>0;st>>=1){ if(tid<st) red[tid]=max(red[tid],red[tid+st]); threadgroup_barrier(mem_flags::mem_threadgroup);}
     float sc=red[0]/127.0f; if(sc==0)sc=1; if(tid==0)asc[0]=sc; float invsc=1/sc;
-    for(uint i=tid;i<H;i+=tgs){ float y=(x[i]-mean)*inv*w[i]; if(hasBias!=0u) y+=b[i]; aq[i]=char(clamp(int(round(y*invsc)),-127,127)); }
+    device char4* aq4 = (device char4*)aq;
+    for (uint i4=tid; i4<H4; i4+=tgs) {
+        float4 xv=x4[i4], wv=w4[i4];
+        float4 yv=(xv-mean)*inv*wv;
+        if (hasBias!=0u) yv += b4[i4];
+        int4 qv=int4(round(yv*invsc));
+        qv=clamp(qv,-127,127);
+        aq4[i4]=char4(qv);
+    }
+    for (uint i=(H4<<2u)+tid; i<H; i+=tgs) { float y=(x[i]-mean)*inv*w[i]; if(hasBias!=0u) y+=b[i]; aq[i]=char(clamp(int(round(y*invsc)),-127,127)); }
 }
 kernel void quant_vec(device const float* x[[buffer(0)]], device char* aq[[buffer(1)]],
     device float* asc[[buffer(2)]], constant uint& H[[buffer(3)]],
