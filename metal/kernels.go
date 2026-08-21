@@ -628,11 +628,32 @@ kernel void act_quant(device const float* u[[buffer(0)]], device char* dq[[buffe
     device float* ds[[buffer(2)]], constant uint& I[[buffer(3)]], constant uint& act[[buffer(4)]],
     uint tid[[thread_position_in_threadgroup]], uint tgs[[threads_per_threadgroup]]) {
     threadgroup float red[256]; float mx=0;
-    for(uint i=tid;i<I;i+=tgs){ float s=glu_act(u[i],act); mx=max(mx,fabs(s)); }
+    // Vectorized float4/char4 load/store for both loops -- glu_act stays a scalar call per lane
+    // (extracted from the loaded float4), so this is bit-identical to the scalar loop, only
+    // batching the memory traffic. max is exact/order-independent and the quantize-write has no
+    // reduction at all (same argument verified safe for quant_vec/layernorm_quant this session).
+    uint I4 = I >> 2u;
+    device const float4* u4 = (device const float4*)u;
+    for (uint i4=tid; i4<I4; i4+=tgs) {
+        float4 uv=u4[i4];
+        float s0=glu_act(uv.x,act), s1=glu_act(uv.y,act), s2=glu_act(uv.z,act), s3=glu_act(uv.w,act);
+        mx=max(mx,fabs(s0)); mx=max(mx,fabs(s1)); mx=max(mx,fabs(s2)); mx=max(mx,fabs(s3));
+    }
+    for (uint i=(I4<<2u)+tid; i<I; i+=tgs){ float s=glu_act(u[i],act); mx=max(mx,fabs(s)); }
     red[tid]=mx; threadgroup_barrier(mem_flags::mem_threadgroup);
     for(uint s=tgs/2;s>0;s>>=1){ if(tid<s) red[tid]=max(red[tid],red[tid+s]); threadgroup_barrier(mem_flags::mem_threadgroup);}
     float sc=red[0]/127.0f; if(sc==0)sc=1; if(tid==0)ds[0]=sc; float inv=1/sc;
-    for(uint i=tid;i<I;i+=tgs){ float s=glu_act(u[i],act); dq[i]=char(clamp(int(round(s*inv)),-127,127)); }
+    device char4* dq4 = (device char4*)dq;
+    for (uint i4=tid; i4<I4; i4+=tgs) {
+        float4 uv=u4[i4];
+        float s0=glu_act(uv.x,act), s1=glu_act(uv.y,act), s2=glu_act(uv.z,act), s3=glu_act(uv.w,act);
+        char q0=char(clamp(int(round(s0*inv)),-127,127));
+        char q1=char(clamp(int(round(s1*inv)),-127,127));
+        char q2=char(clamp(int(round(s2*inv)),-127,127));
+        char q3=char(clamp(int(round(s3*inv)),-127,127));
+        dq4[i4]=char4(q0,q1,q2,q3);
+    }
+    for (uint i=(I4<<2u)+tid; i<I; i+=tgs){ float s=glu_act(u[i],act); dq[i]=char(clamp(int(round(s*inv)),-127,127)); }
 }
 kernel void residual(device float* x[[buffer(0)]], device const float* y[[buffer(1)]], uint i[[thread_position_in_grid]]) { x[i]+=y[i]; }
 
