@@ -132,8 +132,13 @@ kernel void rmsnorm_quant_f16(device const half* x[[buffer(0)]], device const fl
     for(uint s=tgs/2u;s>0u;s>>=1u){ if(tid<s) red[tid]+=red[tid+s]; threadgroup_barrier(mem_flags::mem_threadgroup);}
     float rms=rsqrt(red[0]/float(H)+eps); threadgroup_barrier(mem_flags::mem_threadgroup);
     float mx=0; for(uint i=tid;i<H;i+=tgs){ float g=addOne!=0u?(1.0f+w[i]):w[i]; mx=max(mx,fabs(float(x[i])*rms*g)); }
-    red[tid]=mx; threadgroup_barrier(mem_flags::mem_threadgroup);
-    for(uint s=tgs/2u;s>0u;s>>=1u){ if(tid<s) red[tid]=max(red[tid],red[tid+s]); threadgroup_barrier(mem_flags::mem_threadgroup);}
+    mx = simd_max(mx);
+    uint sgid = tid >> 5u, lane = tid & 31u;
+    if (lane == 0) red[sgid] = mx;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    uint nsg = tgs >> 5u;
+    if (tid == 0) { float v = red[0]; for (uint k=1; k<nsg; k++) v = max(v, red[k]); red[0] = v; }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
     float sc=red[0]/127.0f; if(sc==0)sc=1; if(tid==0)asc[0]=sc; float inv=1/sc;
     for(uint i=tid;i<H;i+=tgs){ float g=addOne!=0u?(1.0f+w[i]):w[i]; aq[i]=char(clamp(int(round(float(x[i])*rms*g*inv)),-127,127)); }
 }
