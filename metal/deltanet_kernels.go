@@ -141,15 +141,58 @@ kernel void delta_rule(device const float* qn[[buffer(0)]], device const float* 
     device const float* k = kn + headK*hk;
     device const float* q = qn + headK*hk;
 
+    // CANDIDATE: manual 8-wide unroll (grounded in the measured trend: scalar ~409.8k -> 2-wide
+    // ~220k -> 4-wide ~128k ns/dispatch; testing whether the win keeps compounding or plateaus/
+    // regresses on register pressure). Same strictly sequential kd=0,1,...,7,... accumulation
+    // order as the scalar loop (no reassociation) -- just written in groups of 8, bit-identical; a
+    // scalar tail handles a non-multiple-of-8 hk defensively even though every released family's hk
+    // (128) is a clean multiple.
     float kvdot = 0.0f;
-    for (uint kd=0; kd<hk; kd++) {
+    uint kd = 0;
+    for (; kd+7 < hk; kd += 8) {
+        float k0=k[kd],k1=k[kd+1],k2=k[kd+2],k3=k[kd+3],k4=k[kd+4],k5=k[kd+5],k6=k[kd+6],k7=k[kd+7];
+        float s0=S[kd]*gt,s1=S[kd+1]*gt,s2=S[kd+2]*gt,s3=S[kd+3]*gt;
+        float s4=S[kd+4]*gt,s5=S[kd+5]*gt,s6=S[kd+6]*gt,s7=S[kd+7]*gt;
+        S[kd]=s0; S[kd+1]=s1; S[kd+2]=s2; S[kd+3]=s3; S[kd+4]=s4; S[kd+5]=s5; S[kd+6]=s6; S[kd+7]=s7;
+        kvdot = fma(s0, k0, kvdot);
+        kvdot = fma(s1, k1, kvdot);
+        kvdot = fma(s2, k2, kvdot);
+        kvdot = fma(s3, k3, kvdot);
+        kvdot = fma(s4, k4, kvdot);
+        kvdot = fma(s5, k5, kvdot);
+        kvdot = fma(s6, k6, kvdot);
+        kvdot = fma(s7, k7, kvdot);
+    }
+    for (; kd < hk; kd++) {
         float s = S[kd] * gt;
         S[kd] = s;
         kvdot = fma(s, k[kd], kvdot);
     }
     float delta = (v[vBase+headV*hv+vd] - kvdot) * beta;
     float o = 0.0f;
-    for (uint kd=0; kd<hk; kd++) {
+    kd = 0;
+    for (; kd+7 < hk; kd += 8) {
+        float k0=k[kd],k1=k[kd+1],k2=k[kd+2],k3=k[kd+3],k4=k[kd+4],k5=k[kd+5],k6=k[kd+6],k7=k[kd+7];
+        float q0=q[kd],q1=q[kd+1],q2=q[kd+2],q3=q[kd+3],q4=q[kd+4],q5=q[kd+5],q6=q[kd+6],q7=q[kd+7];
+        float s0 = fma(k0, delta, S[kd]);
+        float s1 = fma(k1, delta, S[kd+1]);
+        float s2 = fma(k2, delta, S[kd+2]);
+        float s3 = fma(k3, delta, S[kd+3]);
+        float s4 = fma(k4, delta, S[kd+4]);
+        float s5 = fma(k5, delta, S[kd+5]);
+        float s6 = fma(k6, delta, S[kd+6]);
+        float s7 = fma(k7, delta, S[kd+7]);
+        S[kd]=s0; S[kd+1]=s1; S[kd+2]=s2; S[kd+3]=s3; S[kd+4]=s4; S[kd+5]=s5; S[kd+6]=s6; S[kd+7]=s7;
+        o = fma(s0, q0, o);
+        o = fma(s1, q1, o);
+        o = fma(s2, q2, o);
+        o = fma(s3, q3, o);
+        o = fma(s4, q4, o);
+        o = fma(s5, q5, o);
+        o = fma(s6, q6, o);
+        o = fma(s7, q7, o);
+    }
+    for (; kd < hk; kd++) {
         float s = fma(k[kd], delta, S[kd]);
         S[kd] = s;
         o = fma(s, q[kd], o);
