@@ -27,13 +27,15 @@ kernel) — interactive on a laptop CPU, no GPU required.
 Two size tiers — same program, pick one. Grab the binary for your platform from
 the [latest release](https://github.com/townsendmerino/goinfer/releases/latest):
 
-Speed figures below: Apple M1 Pro, int8int8, `DefaultDecodeParallelThreshold`, median of 5 runs
-(52.3 / 27.8 tok/s measured 2026-08-22 @ `3a27941` — see
-`docs/measurements/demo-chat-macbook-2026-08-22.md`). A desktop CPU (Ryzen 7 3700X) measures
-roughly half (28.1 / 12.1) on the identical harness — see
-`docs/measurements/demo-chat-incumbent-2026-08-22.md`.
+Speed figures below are measured, not estimated: Apple M1 Pro, int8int8,
+`DefaultDecodeParallelThreshold`, median of 5 runs, 2026-08-22 @ `3a27941`
+(`docs/measurements/demo-chat-macbook-2026-08-22.md`). **A desktop CPU is not faster here** — a
+Ryzen 7 3700X measures roughly half on the identical harness, 28.1 / 12.1
+(`docs/measurements/demo-chat-incumbent-2026-08-22.md`), so treat these as Apple Silicon numbers
+rather than a floor.
 
-**0.5B — the headline: tiny + fast** (~617 MB, ~57 tok/s on a laptop CPU):
+**0.5B — the headline: tiny + fast** (~617 MB, **~52 tok/s** on an M1 Pro; the five runs
+spanned 46–58, so treat it as a band rather than a point):
 
 | Platform | Asset |
 |---|---|
@@ -43,8 +45,8 @@ roughly half (28.1 / 12.1) on the identical harness — see
 | Linux (ARM64) | `goinfer-chat-0.5b-linux-arm64` |
 | Windows (x86-64) | `goinfer-chat-0.5b-windows-amd64.exe` |
 
-**1.5B — bigger, smarter, still one file** (~1.7 GB, ~26 tok/s — slower but
-noticeably more capable):
+**1.5B — bigger, smarter, still one file** (~1.7 GB, **~28 tok/s**, runs within 27.6–28.2 —
+slower but noticeably more capable):
 
 | Platform | Asset |
 |---|---|
