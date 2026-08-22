@@ -55,8 +55,9 @@ a different resource than whatever is actually full — the same reading a genui
 memory-bound kernel would give. The probe distinguishes busy-vs-waiting only for the port
 class it injects into; it does not localize which resource, if any, is saturated.
 
-Recorded as a measured dead end, not a re-triable one: aikit's
-`docs/internal/perf-dead-ends.md` §8.9.
+Recorded as a measured dead end, not a re-triable one, in aikit's own internal (gitignored,
+machine-local) dead-ends log, §8.9 — not cited as a concrete path here since a cross-repo
+gitignored file is unverifiable from any other clone or from CI.
 
 ## Second update, same day: the unpack cost isolated and quantified — it's half the story
 
