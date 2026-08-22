@@ -170,6 +170,21 @@ func (g *gpuGate) skipCensus(res *results, indent string) int {
 	return len(sk)
 }
 
+// evidence prints the lines a passing group offered as its own proof — the `ok <pkg> <secs>` line,
+// a lifecycle trajectory, a prefill's argmax comparison. The shell greps these out after a PASS and
+// they are part of the scope line, not decoration: "PASS metal suite" says a verdict, while
+// `ok github.com/…/metal 31.2s` says what actually ran and for how long. Acceptance (d) is that
+// whatever the script printed about what it validated, the runner prints too.
+func (g *gpuGate) evidence(out string, re *regexp.Regexp) {
+	for _, ln := range strings.Split(out, "\n") {
+		if re.MatchString(ln) {
+			fmt.Fprintf(g.w, "      %s\n", strings.TrimRight(ln, "\r"))
+		}
+	}
+}
+
+var okLineRe = regexp.MustCompile(`^ok\s`)
+
 var failLineRe = regexp.MustCompile(`^--- FAIL|\.go:[0-9]+:`)
 var failTestRe = regexp.MustCompile(`^(---|    ---) FAIL|^panic:`)
 
@@ -352,6 +367,7 @@ func (g *gpuGate) cudaSuite() {
 	} else {
 		g.ran++
 		g.ok("cuda kernel-level suite")
+		g.evidence(out, okLineRe)
 	}
 	// Census the skips INSIDE the passing suite. "ok" hides them, and a skip is not a pass.
 	sk := len(res.topLevel("skip"))
@@ -385,6 +401,7 @@ func (g *gpuGate) cudaParity() {
 	}
 	g.ran++
 	g.ok("resident parity gates (gemma4 dense/two-geom/MoE+router, GLM partial-rotary, mixtral MoE, sliding-window, rope-partial)")
+	g.evidence(out, okLineRe)
 }
 
 // drainingTests derives the drain group FROM A MARKER rather than a list.
@@ -502,6 +519,7 @@ func (g *gpuGate) cudaHeavy() {
 	if mainCR.RC == 0 {
 		g.ran++
 		g.ok("heavy tier (real models) — %ds", secs)
+		g.evidence(mainOut, okLineRe)
 	} else {
 		g.bad("heavy tier (real models) — %ds", secs)
 		// Name the failing TESTS first, then their assertion lines. Never a bare "file.go:N:" match,
@@ -793,6 +811,7 @@ func (g *gpuGate) metalSuite() {
 	}
 	g.ran++
 	g.ok("full metal suite")
+	g.evidence(out, okLineRe)
 }
 
 func (g *gpuGate) metalCgoFree() {
@@ -839,6 +858,7 @@ func (g *gpuGate) metalLifecycle() {
 	}
 	g.ran++
 	g.ok("Close() frees — sawtooth not staircase, and frees with a second model resident")
+	g.evidence(out, regexp.MustCompile(`trajectory|A\+B alive`))
 }
 
 // The newest bug that maps to this doctrine. PrefillLast — the f16 simdgroup_matrix TTFT path —
@@ -866,6 +886,7 @@ func (g *gpuGate) metalPrefill() {
 	}
 	g.ran++
 	g.ok("prefill matches sequential decode and emits finite logits (no NaN)")
+	g.evidence(out, regexp.MustCompile(`argmax matches|faster TTFT`))
 }
 
 // ---- 5. repo hygiene: run what CI runs, DERIVED rather than duplicated (B0) ----
