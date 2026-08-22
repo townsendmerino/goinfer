@@ -14,12 +14,12 @@ In `/home/francis/mycode/aikit/aikit` at `aebf27e`, `git status --porcelain` emp
 - `git log --all -S'w4a8_opsperbyte'` → **empty**. No commit on any ref has ever contained that string.
 - No `linalg/w4a8_opsperbyte_bench_test.go` — not tracked, not untracked, not present.
 - No `*fold4*` file anywhere under the repo, and `dotW4A8Fold4AVX2` is not a symbol in `linalg/`.
-- `docs/internal/perf-dead-ends.md` is **tracked and committed** (not gitignored), and its Group 8
-  ends at **§8.8** (MarshalBinary wrapper). There is no §8.9.
-- `grep -rn 'ops-per-byte\|opsperbyte\|ops/byte' docs/internal/*.md` → nothing.
+- aikit's internal perf dead-ends log is **tracked and committed there** (not gitignored), and its
+  Group 8 ends at **§8.8** (MarshalBinary wrapper). There is no §8.9.
+- grepping `ops-per-byte`, `opsperbyte` and `ops/byte` across aikit's internal docs → nothing.
 
 **These citations DO resolve — leave them exactly as they are:** `linalg/dot_w4a8_amd64.s` /
-`dotW4A8FoldAVX2`; `linalg/dot_amd64.s` / `dotI8AVX2`; `docs/internal/priors-microgpt-c.md` §1
+`dotW4A8FoldAVX2`; `linalg/dot_amd64.s` / `dotI8AVX2`; aikit's internal microgpt-c priors note §1
 (which is indeed "Instrument: marginal-FMA injection as an issue-width probe");
 `QuantizeActivationsInto` and `MatmulBTW4A8Into` in `linalg/quant.go`.
 
@@ -57,7 +57,7 @@ The problem is that "Built" implies something a reader could go look at.
 > machine-local) dead-ends log, §8.9 — not cited as a concrete path here since a cross-repo
 > gitignored file is unverifiable from any other clone or from CI.
 
-Two independent errors: (a) `docs/internal/perf-dead-ends.md` is **tracked in aikit**, not
+Two independent errors: (a) that dead-ends log is **tracked in aikit**, not
 gitignored and not machine-local — so the stated *reason* for hedging the citation is false; and
 (b) **§8.9 does not exist** — the entry was never written, so the hedge was hiding a dangling
 reference rather than a merely-unverifiable one. Note the irony to fix, not to editorialize about:
