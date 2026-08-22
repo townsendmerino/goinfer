@@ -221,8 +221,6 @@ func BenchmarkGluQuant11008(b *testing.B) { benchGluQuant(b, 11008) }
 // Same three kernels, one block per row instead of one block total, so GridX is M. Production
 // launches them at BlockX 256 from the drafter path (drafter.go). M=8 is the DFlash block size.
 
-type gcBuf = gc.Buffer[float32]
-
 type gcArg = gc.KernelArg
 
 func benchBatched(b *testing.B, name string, M, N int, args func(dx, dw *gc.Buffer[float32], dq *gc.Buffer[int32], dsc, dscr *gc.Buffer[float32]) []gcArg) {
