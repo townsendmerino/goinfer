@@ -1,5 +1,11 @@
 # Gemma-3 on Metal — localize the mid-channel sign-flip (within-layer bisect)
 
+> **STATUS: DELIVERED — the mechanism was localized and the harness kept.** `metal/bisect_test.go`
+> and `metal/gemma_sublayer_test.go` are the seams this prompt asked for, and the finding is
+> written up in `docs/parity-hunt-playbook.md` (the sign-flipped channels amplified by the final
+> norm). Gemma 3 is resident on Metal. Kept as the worked example the playbook cites.
+
+
 > The Gemma-dense residual bug is localized to a *mechanism*, not yet to an *op*. This
 > bisect names the op. **Gemma stays DORMANT** (declines to CPU) — nothing ships; this is
 > diagnostic. Companions: `gemma3-metal-debug-report.md`, `gemma3-metal-debug-fable.md`,

@@ -1,5 +1,11 @@
 # goinfer spike (cont.): measure the real end-to-end cgo-free CUDA decode
 
+> **STATUS: DELIVERED.** End-to-end cgo-free CUDA decode has been measured repeatedly since; the
+> RTX 2070 SUPER figures live in `docs/benchmarks.md`. Note the warning below is still correct and
+> now doubly so: **every peer number in this file is stale.** Read it as a method record, not as
+> competitive data.
+
+
 > **⚠ Peer numbers below predate the Ollama v0.32.5 re-anchor (2026-08-04).** Competitive figures
 > in this doc (e.g. Ollama-CUDA ~149, Ollama-Metal 83.3, llama.cpp-CUDA 72.8, and any "×Ollama"
 > multiple) were measured against **Ollama 0.5.7 (2025-01) / Ollama-Metal 0.32.0 / llama.cpp as of

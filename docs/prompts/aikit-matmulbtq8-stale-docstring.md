@@ -1,5 +1,11 @@
 # aikit task: fix `MatmulBTQ8`'s stale docstring (says scalar, code is SIMD since P2)
 
+> **STATUS: OBSOLETE — the docstring was fixed upstream.** Verified 2026-08-21 against the aikit
+> version goinfer requires (v1.21.0): `linalg/matmul_blocked_q8.go` no longer describes a scalar
+> widen. Its one remaining "scalar" mention (line 150) is an accurate reference to the N%8≠0
+> correctness tail, not the stale claim. Nothing to send.
+
+
 ## Context
 
 Not a perf task — the perf work here is already DONE. This is a one-comment doc fix,

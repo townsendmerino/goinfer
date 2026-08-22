@@ -1,5 +1,10 @@
 # Prompt: measure the Metal verify curve for P10 (run on the M1 Pro)
 
+> **STATUS: DELIVERED — the curve was measured (2026-08-15/16).** `docs/queue-performance.md`
+> reasons from "the measured verify curve" to the DSpark Gate-2 projections (2.12× / 2.15× /
+> 1.29×), which is this prompt's output being used downstream.
+
+
 Paste the block below into a Claude Code session on the MacBook. Everything above the line is
 context for whoever is dispatching it; the prompt itself is self-contained.
 

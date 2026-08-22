@@ -1,5 +1,13 @@
 # aikit task: a sub-range async upload, because profiling now shows `Buffer.upload` on a hot path
 
+> **STATUS: OPEN and UNANSWERED as of 2026-08-21.** aikit/gpu has cut **v0.29.0** since this was
+> written and `Buffer.upload` there still ends in a full device `Synchronize`; no
+> sub-range async API exists in any cached version. So this has neither been built nor explicitly
+> declined. **Declining is a valid outcome** — the prompt sizes the prize at 1.18× on one workload
+> and says so — but the decision has not been made, and an un-refused ask is not the same as a
+> refused one. (Separately: goinfer pins aikit/gpu v0.28.0 while v0.29.0 exists.)
+
+
 ## Why this task (read first)
 
 `gpu/cuda.go`'s `Buffer.upload` ends with a **full device `Synchronize`**, and its own comment

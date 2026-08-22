@@ -1,5 +1,11 @@
 # goinfer Metal spike — Phase 1: set the GO bar, then Layer A (with the MSL-version landmine pre-armed)
 
+> **STATUS: DELIVERED — Metal shipped.** GPU residency on Metal was admitted end-to-end (G9/G10 in
+> the v0.14.0 CHANGELOG) and the backend has been through several optimization campaigns since.
+> The warning below still holds and matters more with age: **every peer number here is stale.**
+> Read it as the spike's method record.
+
+
 > **⚠ Peer numbers below predate the Ollama v0.32.5 re-anchor (2026-08-04).** Competitive figures
 > in this doc (e.g. Ollama-CUDA ~149, Ollama-Metal 83.3, llama.cpp-CUDA 72.8, and any "×Ollama"
 > multiple) were measured against **Ollama 0.5.7 (2025-01) / Ollama-Metal 0.32.0 / llama.cpp as of

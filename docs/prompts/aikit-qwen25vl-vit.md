@@ -1,5 +1,11 @@
 # aikit task: Qwen2.5-VL vision encoder (second ViT family, dynamic resolution)
 
+> **STATUS: SUPERSEDED — the family shipped without this.** Qwen2.5-VL landed as goinfer's second
+> vision family in v0.7.0 (`decoder/qwen25vl_test.go`, gated against HF). The encoder was built on
+> the goinfer side rather than in aikit, so this ask is moot. Kept for the design discussion of
+> dynamic resolution, not as a task.
+
+
 ## Context
 
 goinfer is adding **Qwen2.5-VL** as its second vision-language family (the first,

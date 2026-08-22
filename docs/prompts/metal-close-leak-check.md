@@ -1,5 +1,11 @@
 # Linux box → Mac: does Metal's resident Close() leak the model, like CUDA's did?
 
+> **STATUS: DELIVERED — and the answer was yes, Metal leaked too.** `metal/close_leak_test.go`
+> (`TestMetal_CloseFreesMemory`, `TestMetal_CloseWithSecondModelAlive`) is the gate that came out
+> of it, and it is now the `lifecycle` group of `gate gpu`. Both conditions are covered, including
+> the second-model-alive case that made CUDA's first fix look correct when it was not.
+
+
 ## What we found on CUDA (d8e81cb)
 
 `go test ./cuda/` had been red for a while — 13 failures. We *both* wrote that off as

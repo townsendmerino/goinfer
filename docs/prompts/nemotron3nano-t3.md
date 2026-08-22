@@ -1,5 +1,10 @@
 # Prompt: Nemotron 3 Nano T3 real-checkpoint parity (run on the CUDA box)
 
+> **STATUS: DELIVERED.** `TestNemotron3NanoMoEReal_gate` (`decoder/nemotron_moe_real_test.go`)
+> exists and the v0.14.0 CHANGELOG records the T3 real oracle at **cosine 0.997668**, continuation
+> exact, plus a real Q4_K_M GGUF gate.
+
+
 Paste the block below into a Claude Code session on the CUDA box (`nvidia-rtx2070s`). Everything
 above the line is context for whoever is dispatching it; the prompt itself is self-contained.
 

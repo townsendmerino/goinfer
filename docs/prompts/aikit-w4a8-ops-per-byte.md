@@ -1,5 +1,11 @@
 # aikit task: measure W4A8's ops-per-byte before anyone redesigns a quant format
 
+> **STATUS: OPEN — no result recorded anywhere.** Checked 2026-08-21: nothing in
+> `docs/queue-performance.md`, `docs/ollama-chase.md` or the benchmarks page records an
+> ops-per-byte or arithmetic-intensity measurement for W4A8. The premise the prompt guards
+> ("measure it before anyone redesigns a quant format") is therefore still unguarded.
+
+
 ## Why this task (read first)
 
 goinfer decodes **Qwen3.8-27B at 0.656 tok/s on CPU** where **Ollama/llama.cpp does 1.674** on the

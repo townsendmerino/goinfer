@@ -1,5 +1,11 @@
 # Upstream issue draft — missing LICENSE on the `dspark_*_block7` drafter checkpoints
 
+> **STATUS: STILL DRAFTED, STILL NOT FILED — and that is the current decision, not an oversight.**
+> Re-checked 2026-08-21. P15 step (0) re-ran the licence audit and reached the same place: filing
+> matters for eventual distribution/ship, not for local research use, and `license=None` was
+> accepted for the latter. Leave drafted until something actually ships that depends on it.
+
+
 **Status: DRAFTED, not filed.** Written 2026-08-15 (Claude app, P10 investigation). Filing is
 for eventual **distribution/ship**, not to unblock work: Francis accepted `license=None` for
 exploration the same day, so the block7 drafters are already in scope for the DSpark spike.
