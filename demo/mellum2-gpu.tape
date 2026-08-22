@@ -5,8 +5,20 @@
 #     -> docs/assets/mellum2-gpu.gif + .mp4   (needs vhs + ttyd + ffmpeg)
 #
 # Prereqs: a prebuilt GPU demo binary + the prequant int4 bundle:
-#   go build -tags gpu -o /tmp/goinfer-chat-gpu ./demo/chat
+#   (cd gpu && go build -tags gpu -o /tmp/goinfer-chat-gpu ./cmd/chat)
 #   go run ./cmd/prequant -quant int4 -o ~/models/mellum2.int4.giw ~/models/mellum2-unq
+#
+# That build line USED to read `go build -tags gpu ... ./demo/chat`, which has been a hard
+# compile error since v0.10.0: demo/chat/backendtag_guard.go refuses a backend tag on the root
+# demo and says to build the submodule entrypoint instead. Corrected 2026-08-22 after following
+# the old line and hitting the guard.
+#
+# ALSO NOT SUFFICIENT TO RENDER, as of 2026-08-22: vhs additionally needs a headless Chrome
+# (it drives ttyd through go-rod), which the dependency list above does not mention. On this box
+# vhs v0.11.0 + ttyd 1.7.7 does NOT complete a render — ttyd exits immediately and vhs waits
+# forever. ttyd serves fine standalone with vhs's own argument list, so the two are individually
+# healthy and jointly broken; root cause not established. Nobody has re-rendered this tape since
+# the assets were produced on 2026-06-20.
 #
 # The Hide block warms the 7 GB .giw page cache and waits out the ~13 s int4 resident
 # load, so the visible recording opens on the ready chat (the load isn't the story — a
