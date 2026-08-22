@@ -997,7 +997,7 @@ line was corrected (it had drifted when A9-FIX inserted the warm-up above it);
 the two bare `decoder/weightmat.go` / `decoder/mlp.go` references repo-qualified or de-numbered; the
 `linalg/quant.go` reference resolves in aikit once the lint searches the sibling set (line 113 at the
 time — the scalar `int8→f32` widen loop this citation was making the point about; that code is gone,
-replaced by the SIMD widen at `linalg/quant.go:136` once aikit v1.18.0/P2 landed and goinfer bumped
+replaced by the SIMD widen at `linalg/quant.go:138` once aikit v1.18.0/P2 landed and goinfer bumped
 to v1.19.0, 2026-08-15 — retargeted so the citation still resolves).
 
 **And one turned out not to be a line drift at all.** `cuda/resident.go:266` was cited for audit

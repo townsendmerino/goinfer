@@ -894,7 +894,7 @@ leading ids where the pinned golden matched 5. The "confirmed not caused by this
 holds, and by a wider margin than the two-point check could show.**
 
 **P2 · Scalar `int8→f32` widen on the LM head** — **DONE, landed via the ordinary aikit release
-cadence.** aikit `linalg/quant.go:136` (`q8Span`).
+cadence.** aikit `linalg/quant.go:138` (`q8Span`).
 
 **Resolved 2026-08-15.** aikit shipped the exact fix this entry specified — `dequantRowInt8(deq, bq,
 1.0)`, the scale-1.0 route below, verbatim — as `2f0c65f perf(linalg): SIMD widen in q8Span — ~2×
