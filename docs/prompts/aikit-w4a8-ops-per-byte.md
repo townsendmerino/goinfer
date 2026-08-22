@@ -1,9 +1,10 @@
 # aikit task: measure W4A8's ops-per-byte before anyone redesigns a quant format
 
-> **STATUS: OPEN — no result recorded anywhere.** Checked 2026-08-21: nothing in
-> `docs/queue-performance.md`, `docs/ollama-chase.md` or the benchmarks page records an
-> ops-per-byte or arithmetic-intensity measurement for W4A8. The premise the prompt guards
-> ("measure it before anyone redesigns a quant format") is therefore still unguarded.
+> **STATUS: ANSWERED 2026-08-22 — `docs/measurements/aikit-w4a8-opsperbyte.md` (commit `f410fe2`).**
+>
+> It was marked OPEN on 2026-08-21 and answered the next day, which is worth leaving visible rather
+> than tidying away: the staleness audit that set that status was a SNAPSHOT, and this directory has
+> two writers. Anyone re-auditing should re-derive from the tree, not trust these headers.
 
 
 ## Why this task (read first)
