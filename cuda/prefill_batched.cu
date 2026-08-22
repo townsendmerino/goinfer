@@ -37,8 +37,22 @@ __global__ void rmsnorm_quant_batched(const float* __restrict__ x, const float* 
         float v = xr[i] * g * inv;
         normed[i] = v; amax = fmaxf(amax, fabsf(v));
     }
-    red[t] = amax; __syncthreads();
-    for (int o = nt >> 1; o > 0; o >>= 1) { if (t < o) red[t] = fmaxf(red[t], red[t + o]); __syncthreads(); }
+    // WARP-SHUFFLE MAXABS — the batched sibling of the glue.cu rewrite (quant_vec, rmsnorm_quant
+    // pass 2, glu_quant). max is exact and order-independent, so the reduction tree may be
+    // restructured freely and the resulting scale is bit-identical. The SUM reductions in this file
+    // (the sum-of-squares above, attn_batched's softmax denominator) keep their ladders.
+    for (int o = 16; o > 0; o >>= 1) amax = fmaxf(amax, __shfl_down_sync(0xffffffff, amax, o));
+    {
+        int lane = t & 31, warp = t >> 5, nWarps = (nt + 31) >> 5;
+        if (lane == 0) red[warp] = amax;
+        __syncthreads();
+        if (warp == 0) {
+            float mv = (lane < nWarps) ? red[lane] : 0.f;
+            for (int o = 16; o > 0; o >>= 1) mv = fmaxf(mv, __shfl_down_sync(0xffffffff, mv, o));
+            if (lane == 0) red[0] = mv;
+        }
+        __syncthreads();
+    }
     float s = red[0] / 127.f; float invs = s > 0.f ? 1.f / s : 0.f;
     if (t == 0) scale[m] = s;
     int* qr = q + (long)m * (N / 4);
@@ -223,8 +237,22 @@ __global__ void glu_quant_batched(const float* __restrict__ g, const float* __re
         else a = 0.5f * x * (1.f + tanhf(0.7978845608028654f * (__fmaf_rn(0.044715f, __fmul_rn(__fmul_rn(x, x), x), x))));
         float d = a * ur[i]; dr[i] = d; amax = fmaxf(amax, fabsf(d));
     }
-    red[t] = amax; __syncthreads();
-    for (int o = nt >> 1; o > 0; o >>= 1) { if (t < o) red[t] = fmaxf(red[t], red[t + o]); __syncthreads(); }
+    // WARP-SHUFFLE MAXABS — the batched sibling of the glue.cu rewrite (quant_vec, rmsnorm_quant
+    // pass 2, glu_quant). max is exact and order-independent, so the reduction tree may be
+    // restructured freely and the resulting scale is bit-identical. The SUM reductions in this file
+    // (the sum-of-squares above, attn_batched's softmax denominator) keep their ladders.
+    for (int o = 16; o > 0; o >>= 1) amax = fmaxf(amax, __shfl_down_sync(0xffffffff, amax, o));
+    {
+        int lane = t & 31, warp = t >> 5, nWarps = (nt + 31) >> 5;
+        if (lane == 0) red[warp] = amax;
+        __syncthreads();
+        if (warp == 0) {
+            float mv = (lane < nWarps) ? red[lane] : 0.f;
+            for (int o = 16; o > 0; o >>= 1) mv = fmaxf(mv, __shfl_down_sync(0xffffffff, mv, o));
+            if (lane == 0) red[0] = mv;
+        }
+        __syncthreads();
+    }
     float s = red[0] / 127.f; float invs = s > 0.f ? 1.f / s : 0.f;
     if (t == 0) scale[m] = s;
     int* qr = q + (long)m * (I / 4);
@@ -248,8 +276,22 @@ __global__ void quant_vec_batched(const float* __restrict__ x, int N, int* __res
     int t = threadIdx.x, nt = blockDim.x;
     float ma = 0.f;
     for (int k = t; k < N; k += nt) ma = fmaxf(ma, fabsf(xr[k]));
-    red[t] = ma; __syncthreads();
-    for (int o = nt >> 1; o > 0; o >>= 1) { if (t < o) red[t] = fmaxf(red[t], red[t + o]); __syncthreads(); }
+    // WARP-SHUFFLE MAXABS — the batched sibling of the glue.cu rewrite (quant_vec, rmsnorm_quant
+    // pass 2, glu_quant). max is exact and order-independent, so the reduction tree may be
+    // restructured freely and the resulting scale is bit-identical. The SUM reductions in this file
+    // (the sum-of-squares above, attn_batched's softmax denominator) keep their ladders.
+    for (int o = 16; o > 0; o >>= 1) ma = fmaxf(ma, __shfl_down_sync(0xffffffff, ma, o));
+    {
+        int lane = t & 31, warp = t >> 5, nWarps = (nt + 31) >> 5;
+        if (lane == 0) red[warp] = ma;
+        __syncthreads();
+        if (warp == 0) {
+            float mv = (lane < nWarps) ? red[lane] : 0.f;
+            for (int o = 16; o > 0; o >>= 1) mv = fmaxf(mv, __shfl_down_sync(0xffffffff, mv, o));
+            if (lane == 0) red[0] = mv;
+        }
+        __syncthreads();
+    }
     float sc = red[0] / 127.f; float inv = sc > 0.f ? 1.f / sc : 0.f;
     if (t == 0) scale[m] = sc;
     int* qr = q + (long)m * (N / 4);

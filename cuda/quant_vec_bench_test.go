@@ -215,3 +215,88 @@ func benchGluQuant(b *testing.B, inter int) {
 
 func BenchmarkGluQuant4096(b *testing.B)  { benchGluQuant(b, 4096) }
 func BenchmarkGluQuant11008(b *testing.B) { benchGluQuant(b, 11008) }
+
+// ---- the BATCHED siblings (prefill_batched.ptx) ----
+//
+// Same three kernels, one block per row instead of one block total, so GridX is M. Production
+// launches them at BlockX 256 from the drafter path (drafter.go). M=8 is the DFlash block size.
+
+type gcBuf = gc.Buffer[float32]
+
+type gcArg = gc.KernelArg
+
+func benchBatched(b *testing.B, name string, M, N int, args func(dx, dw *gc.Buffer[float32], dq *gc.Buffer[int32], dsc, dscr *gc.Buffer[float32]) []gcArg) {
+	b.Helper()
+	dev, err := CreateSystemDefaultDevice()
+	if err != nil {
+		b.Skipf("no CUDA device: %v", err)
+	}
+	bg := context.Background()
+	ctx := dev.Context()
+	mod, err := ctx.LoadModule(prefillBatchedPTX)
+	if err != nil {
+		b.Fatalf("LoadModule(prefillBatchedPTX): %v", err)
+	}
+	fn, err := mod.Function(name)
+	if err != nil {
+		b.Fatalf("%s: %v", name, err)
+	}
+	stream := mustStream(b, ctx)
+	rng := rand.New(rand.NewSource(int64(M * N)))
+	host := make([]float32, 2*M*N)
+	for i := range host {
+		host[i] = float32(rng.NormFloat64())
+	}
+	dx := mustAlloc[float32](b, ctx, 2*M*N)
+	dw := mustAlloc[float32](b, ctx, N)
+	dq := mustAlloc[int32](b, ctx, M*N/4+1)
+	dsc := mustAlloc[float32](b, ctx, M)
+	dscr := mustAlloc[float32](b, ctx, M*N)
+	if err := gc.CopyHtoD(bg, dx, host); err != nil {
+		b.Fatalf("CopyHtoD: %v", err)
+	}
+	if err := gc.CopyHtoD(bg, dw, host[:N]); err != nil {
+		b.Fatalf("CopyHtoD w: %v", err)
+	}
+	cfg := gc.LaunchConfig{GridX: uint32(M), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1,
+		SharedMemBytes: uint32((N + 256) * 4)}
+	a := args(dx, dw, dq, dsc, dscr)
+	launch := func() error { return fn.LaunchOn(bg, stream, cfg, a...) }
+	if err := launch(); err != nil {
+		b.Fatalf("warm launch: %v", err)
+	}
+	if err := stream.Synchronize(bg); err != nil {
+		b.Fatalf("warm sync: %v", err)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := launch(); err != nil {
+			b.Fatalf("launch: %v", err)
+		}
+	}
+	if err := stream.Synchronize(bg); err != nil {
+		b.Fatalf("sync: %v", err)
+	}
+	b.StopTimer()
+}
+
+func BenchmarkRmsnormQuantBatched(b *testing.B) {
+	benchBatched(b, "rmsnorm_quant_batched", 8, 4096, func(dx, dw *gc.Buffer[float32], dq *gc.Buffer[int32], dsc, dscr *gc.Buffer[float32]) []gcArg {
+		return []gcArg{gc.Arg(dx), gc.Arg(dw), gc.ArgValue(int32(4096)), gc.ArgValue(float32(1e-6)),
+			gc.ArgValue(int32(0)), gc.Arg(dq), gc.Arg(dsc)}
+	})
+}
+
+func BenchmarkQuantVecBatched(b *testing.B) {
+	benchBatched(b, "quant_vec_batched", 8, 4096, func(dx, dw *gc.Buffer[float32], dq *gc.Buffer[int32], dsc, dscr *gc.Buffer[float32]) []gcArg {
+		return []gcArg{gc.Arg(dx), gc.ArgValue(int32(4096)), gc.Arg(dq), gc.Arg(dsc), gc.ArgValue(int32(8))}
+	})
+}
+
+func BenchmarkGluQuantBatched(b *testing.B) {
+	benchBatched(b, "glu_quant_batched", 8, 4096, func(dx, dw *gc.Buffer[float32], dq *gc.Buffer[int32], dsc, dscr *gc.Buffer[float32]) []gcArg {
+		return []gcArg{gc.Arg(dx), gc.Arg(dx), gc.ArgValue(int32(0)), gc.ArgValue(int32(4096)),
+			gc.ArgValue(int32(4096)), gc.ArgValue(int32(1)), gc.Arg(dq), gc.Arg(dsc), gc.Arg(dscr),
+			gc.ArgValue(int32(8))}
+	})
+}

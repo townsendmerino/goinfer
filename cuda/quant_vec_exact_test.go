@@ -154,3 +154,64 @@ func TestGluQuant_scaleIsExactMaxabs(t *testing.T) {
 		}
 	}
 }
+
+// TestQuantVecBatched_scaleIsExactMaxabs — the same invariant for the batched sibling, which needs
+// its own gate rather than inheriting one: it reduces PER ROW (one block per m), so a shuffle bug
+// that leaked a partial across rows would leave every non-batched test green while corrupting every
+// row but the first. The oracle is per-row CPU maxabs, and the rows are deliberately given DIFFERENT
+// magnitudes so a cross-row leak changes the answer.
+func TestQuantVecBatched_scaleIsExactMaxabs(t *testing.T) {
+	dev, err := CreateSystemDefaultDevice()
+	if err != nil {
+		t.Skipf("no CUDA device: %v", err)
+	}
+	bg := context.Background()
+	ctx := dev.Context()
+	mod, err := ctx.LoadModule(prefillBatchedPTX)
+	if err != nil {
+		t.Fatalf("LoadModule(prefillBatchedPTX): %v", err)
+	}
+	fn, err := mod.Function("quant_vec_batched")
+	if err != nil {
+		t.Fatalf("quant_vec_batched: %v", err)
+	}
+	stream := mustStream(t, ctx)
+	const M, N = 8, 1024
+	rng := rand.New(rand.NewSource(99))
+	host := make([]float32, M*N)
+	want := make([]float32, M)
+	for m := 0; m < M; m++ {
+		// Row m is scaled by (m+1), so every row's maxabs is distinct and a leak is visible.
+		for i := 0; i < N; i++ {
+			v := float32(rng.NormFloat64()) * float32(m+1)
+			host[m*N+i] = v
+			if a := float32(math.Abs(float64(v))); a > want[m] {
+				want[m] = a
+			}
+		}
+	}
+	dx := mustAlloc[float32](t, ctx, M*N)
+	dq := mustAlloc[int32](t, ctx, M*N/4)
+	dsc := mustAlloc[float32](t, ctx, M)
+	if err := gc.CopyHtoD(bg, dx, host); err != nil {
+		t.Fatalf("CopyHtoD: %v", err)
+	}
+	cfg := gc.LaunchConfig{GridX: M, GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1,
+		SharedMemBytes: uint32((N + 256) * 4)}
+	if e := fn.LaunchOn(bg, stream, cfg, gc.Arg(dx), gc.ArgValue(int32(N)), gc.Arg(dq),
+		gc.Arg(dsc), gc.ArgValue(int32(M))); e != nil {
+		t.Fatalf("launch: %v", e)
+	}
+	if e := stream.Synchronize(bg); e != nil {
+		t.Fatalf("sync: %v", e)
+	}
+	got := make([]float32, M)
+	if e := gc.CopyDtoH(bg, got, dsc); e != nil {
+		t.Fatalf("CopyDtoH: %v", e)
+	}
+	for m := 0; m < M; m++ {
+		if wantScale := want[m] / 127.0; got[m] != wantScale {
+			t.Errorf("row %d: scale %v, want EXACTLY %v (maxabs %v / 127)", m, got[m], wantScale, want[m])
+		}
+	}
+}
