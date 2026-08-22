@@ -11,6 +11,19 @@
 >   existing dense `qwen3_5` adapter with NO loader work; the multimodal wrapper, `text_config`
 >   nesting, `model.language_model.*` prefix and 3:1 `DDDS…` hybrid are all already handled.
 > - **Gate 3**: the template is thinking-capable (11 `think` markers) — needs the non-thinking render.
+> - **Tier 3 BLOCKED on this box, two independent reasons** — neither is a code problem:
+>   1. **`ttyd` is not installed**, and `vhs` cannot render without it. Installing a system package
+>      is an owner decision, not something to do under a demo task.
+>   2. **No runnable v1 DFlash pair on this card.** The only paired target present is
+>      `gemma-4-26b-a4b-it` + `gemma4-26b-dflash` (the gpt-oss-20B target is absent, and
+>      `dflash2-qwen38` is a DFlash **2** checkpoint the v1 loader correctly refuses, per P15).
+>      That pair OOMs on 8 GB — and instructively: the target DOES go resident via C′, then
+>      `C′ cache: 64 slots/layer would need 6.5 GB VRAM but only 3.8 GB free — capping to 32
+>      (3.3 GB)` consumes the headroom, and the drafter fails afterwards on an 11.5 MB allocation
+>      (`cuda/drafter.go:134`). **The C′ slot auto-cap sizes itself against free VRAM at that
+>      moment and does not reserve for a drafter that loads later.** Whether the fix is a reserve,
+>      a lower cap under `--drafter`, or nothing is a design call; recorded, not patched.
+>
 > - **Gate 4 KILL**: 13.5 tok/s against the incumbent 0.5B's 28.1 — **2.08× slower**, and barely
 >   ahead of the 1.5B tier. The doc's own fallback applies: keep the Qwen2.5 tier rather than
 >   replacing it.
