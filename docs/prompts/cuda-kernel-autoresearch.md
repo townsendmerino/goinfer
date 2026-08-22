@@ -1,5 +1,11 @@
 # Linux-box task: autoresearch kernel-optimization loop over cuda/
 
+> **STATUS: OPEN, not started — and it is addressed to THIS box.** Arrived 2026-08-21 from the
+> Mac (`3fadf13`) after the prompts audit had already taken its inventory, which is how it nearly
+> slipped through: an audit is a snapshot, and this directory has two writers. Nothing in `cuda/`
+> has been changed under this method yet.
+
+
 ## What this is
 
 The same harness pattern from `docs/task-autoresearch-loop.md` (E9) — edit one kernel file, gate

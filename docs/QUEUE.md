@@ -324,11 +324,6 @@ supports.
 | `docs/post-v1.0-models.md|decoder/registry.go:418` | goinfer | `// cohere2Architecture expresses Cohere2 / Command-R7B (model_type "cohere2":` |
 | `docs/post-v1.0-models.md|decoder/registry.go:57` | goinfer | `"gpt_oss":          gptOssArchitecture,      // gpt-oss (20b/120b): sparse MoE + per-hea` |
 | `docs/post-v1.0-models.md|decoder/registry.go:728` | goinfer | `Name:            "qwen3_5_moe",` |
-| `docs/prompts/metal-batched-verify.md|metal/model.go:1349` | goinfer | `e.Dispatch(r.pRms, tgReduceNorm, tgReduceNorm, r.x, L.postNorm, r.mq, r.mSc, r.uH, r.uEp` |
-| `docs/prompts/metal-batched-verify.md|metal/model.go:324` | goinfer | `// maxThreadgroupStageBytes returns the largest threadgroup staging allocation (bytes) a` |
-| `docs/prompts/metal-close-leak-check.md|metal/backend.go:221` | goinfer | `// Close stops the pipelined executor (waiting for it) and frees every MTLBuffer this re` |
-| `docs/prompts/metal-close-leak-check.md|metal/model.go:400` | goinfer | `// expert weights, buffer OOM — model.go/moe.go/gemma4_moe.go) into the error this signa` |
-| `docs/prompts/metal-close-leak-check.md|metal/model.go:46` | goinfer | `// same-op kernel inherit it. A byte-exact fixture for such an op MUST use context > the` |
 | `docs/queue-engineering.md|cuda/argmax_tiebreak_test.go:19` | goinfer | `func TestArgmaxTieBreak(t *testing.T) {` |
 | `docs/queue-engineering.md|cuda/backend.go:1115` | goinfer | `// cache, so the cap is correct by construction rather than covered by a margin.` |
 | `docs/queue-engineering.md|cuda/prefill.go:227` | goinfer | `defer func() {` |
