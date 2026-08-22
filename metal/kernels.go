@@ -21,8 +21,26 @@ kernel void rmsnorm_quant(device const float* x[[buffer(0)]], device const float
     // (256, model.go); not a tuning knob. Representative of the norm-class kernels (rmsnorm_f32,
     // rmsnorm_*_f16, qk_norm*) — all share this contract. See ollama-chase §A2-Metal.
     for(uint s=tgs/2;s>0;s>>=1){ if(tid<s) red[tid]+=red[tid+s]; threadgroup_barrier(mem_flags::mem_threadgroup);}
-    float rms=rsqrt(red[0]/float(H)+eps); threadgroup_barrier(mem_flags::mem_threadgroup);
-    float mx=0; for(uint i=tid;i<H;i+=tgs){ float g=addOne!=0u?(1.0f+w[i]):w[i]; mx=max(mx,fabs(x[i]*rms*g)); }
+    float rms=precise::rsqrt(red[0]/float(H)+eps); threadgroup_barrier(mem_flags::mem_threadgroup);
+    // Vectorized LOAD (batch 4 scalar x[i]/w[i] reads into one float4 read). rms is pinned via
+    // precise:: (above) so this is stable regardless of surrounding code shape -- confirmed via
+    // GOINFER_PRECISE_MATH A/B plus a scalar-vs-vectorized cross-check under default fast-math with
+    // rms pinned (both variants byte-identical to each other; argmax unchanged from today's shipped
+    // output at every checkpoint, only deep-mantissa sha bits move -- see the round's own commit).
+    float mx=0;
+    uint H4v = H >> 2u;
+    device const float4* xv4 = (device const float4*)x;
+    device const float4* wv4 = (device const float4*)w;
+    for(uint i4=tid;i4<H4v;i4+=tgs){
+        float4 xv=xv4[i4], wv=wv4[i4];
+        float g0=addOne!=0u?(1.0f+wv.x):wv.x;
+        float g1=addOne!=0u?(1.0f+wv.y):wv.y;
+        float g2=addOne!=0u?(1.0f+wv.z):wv.z;
+        float g3=addOne!=0u?(1.0f+wv.w):wv.w;
+        float p0=xv.x*rms*g0, p1=xv.y*rms*g1, p2=xv.z*rms*g2, p3=xv.w*rms*g3;
+        mx=max(mx,fabs(p0)); mx=max(mx,fabs(p1)); mx=max(mx,fabs(p2)); mx=max(mx,fabs(p3));
+    }
+    for(uint i=(H4v<<2u)+tid;i<H;i+=tgs){ float g=addOne!=0u?(1.0f+w[i]):w[i]; mx=max(mx,fabs(x[i]*rms*g)); }
     mx = simd_max(mx);
     uint sgid = tid >> 5u, lane = tid & 31u;
     if (lane == 0) red[sgid] = mx;
