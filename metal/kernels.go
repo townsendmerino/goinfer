@@ -689,7 +689,12 @@ kernel void swiglu_quant(device const float* g[[buffer(0)]], device const float*
     // scan/quantize-write loops' glu_act call sites at all (scalar, one call per iteration,
     // unchanged) -- an earlier attempt THAT vectorized the load around glu_act drifted on Gemma's
     // GELU-tanh path (see scripts/autoresearch_swiglu_results.tsv); this isolates whether the
-    // reduction mechanism alone is safe, independent of that.
+    // reduction mechanism alone is safe, independent of that. A LATER, narrower attempt tried
+    // vectorizing ONLY the quantize-write loop's g/u load (float4, leaving this scan loop
+    // untouched) and ALSO drifted on TestMetalSnapshotGolden's gemma4-dense-scaled fixture --
+    // so the fragility is not specific to the scan loop's element-to-thread redistribution, it's
+    // any vectorized (float4) read of g/u near Gemma's massive-activation values. Do not retry
+    // vectorizing either g/u load site without a real root-cause fix (needs AIR disassembly).
     mx = simd_max(mx);
     uint sgid = tid >> 5u, lane = tid & 31u;
     if (lane == 0) red[sgid] = mx;
