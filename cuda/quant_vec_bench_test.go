@@ -429,3 +429,78 @@ func benchAttnBlock(b *testing.B, nH, nKV, hd, startPos, M int) {
 }
 
 func BenchmarkAttnBlockFull512(b *testing.B) { benchAttnBlock(b, 32, 8, 128, 512, 8) }
+
+// delta_rule is the Gated-DeltaNet recurrent update: one thread per (value head, value dim), each
+// folding the whole hk-length state row TWICE — once to decay it and accumulate k·S, once to apply
+// the delta and accumulate q·S.
+//
+// BOTH inner loops accumulate SUMS, so multiple accumulators are forbidden (they reorder a
+// float fold). Only a single-accumulator unroll is admissible, and the explicit __fmaf_rn intrinsics
+// are what stop the compiler reassociating anyway.
+//
+// Dims are Qwen3-Next-shaped: 32 value heads over 16 key heads (rep=2), hk=hv=128, so valueDim=4096
+// threads at BlockX 128 — the geometry resident.go launches via g1cfg(dp.valueDim, 128).
+func benchDeltaRule(b *testing.B, nv, nk, hk, hv int) {
+	b.Helper()
+	dev, err := CreateSystemDefaultDevice()
+	if err != nil {
+		b.Skipf("no CUDA device: %v", err)
+	}
+	bg := context.Background()
+	ctx := dev.Context()
+	mod, err := ctx.LoadModule(deltaNetPTX)
+	if err != nil {
+		b.Fatalf("LoadModule(deltaNetPTX): %v", err)
+	}
+	fn, err := mod.Function("delta_rule")
+	if err != nil {
+		b.Fatalf("delta_rule: %v", err)
+	}
+	stream := mustStream(b, ctx)
+	rng := rand.New(rand.NewSource(7))
+	fill := func(n int) []float32 {
+		v := make([]float32, n)
+		for i := range v {
+			v[i] = float32(rng.NormFloat64() * 0.1)
+		}
+		return v
+	}
+	keyDim, valueDim := nk*hk, nv*hv
+	dqn := mustAlloc[float32](b, ctx, keyDim)
+	dkn := mustAlloc[float32](b, ctx, keyDim)
+	dv := mustAlloc[float32](b, ctx, valueDim)
+	dhp := mustAlloc[float32](b, ctx, nv*2)
+	dstate := mustAlloc[float32](b, ctx, nv*hv*hk)
+	dy := mustAlloc[float32](b, ctx, valueDim)
+	for buf, n := range map[*gc.Buffer[float32]]int{dqn: keyDim, dkn: keyDim, dv: valueDim,
+		dhp: nv * 2, dstate: nv * hv * hk} {
+		if err := gc.CopyHtoD(bg, buf, fill(n)); err != nil {
+			b.Fatalf("CopyHtoD: %v", err)
+		}
+	}
+	cfg := gc.LaunchConfig{GridX: uint32((valueDim + 127) / 128), GridY: 1, GridZ: 1,
+		BlockX: 128, BlockY: 1, BlockZ: 1}
+	launch := func() error {
+		return fn.LaunchOn(bg, stream, cfg, gc.Arg(dqn), gc.Arg(dkn), gc.Arg(dv), gc.Arg(dhp),
+			gc.Arg(dstate), gc.Arg(dy), gc.ArgValue(int32(nv)), gc.ArgValue(int32(hk)),
+			gc.ArgValue(int32(hv)), gc.ArgValue(int32(nv/nk)), gc.ArgValue(int32(0)))
+	}
+	if err := launch(); err != nil {
+		b.Fatalf("warm launch: %v", err)
+	}
+	if err := stream.Synchronize(bg); err != nil {
+		b.Fatalf("warm sync: %v", err)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := launch(); err != nil {
+			b.Fatalf("launch: %v", err)
+		}
+	}
+	if err := stream.Synchronize(bg); err != nil {
+		b.Fatalf("sync: %v", err)
+	}
+	b.StopTimer()
+}
+
+func BenchmarkDeltaRule(b *testing.B) { benchDeltaRule(b, 32, 16, 128, 128) }

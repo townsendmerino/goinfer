@@ -167,7 +167,14 @@ extern "C" __global__ void delta_rule(const float* __restrict__ qn,    // [nk*hk
     const float* k = kn + headK * hk;
     const float* q = qn + headK * hk;
 
+    // UNROLL 8-WIDE, SINGLE ACCUMULATOR. The fold order is unchanged: kvdot is still one chain of
+    // __fmaf_rn in ascending kd, which is what keeps this bit-identical. Multiple accumulators would
+    // be the obvious way to expose ILP and are FORBIDDEN here — they reorder a float sum. What the
+    // unroll buys is independent LOADS (S[kd], k[kd]) in flight while the dependent FMA chain
+    // retires, which costs nothing numerically because the explicit intrinsics stop the compiler
+    // reassociating in either direction.
     float kvdot = 0.f;
+#pragma unroll 8
     for (int kd = 0; kd < hk; kd++) {
         float s = __fmul_rn(S[kd], gt);
         S[kd] = s;
@@ -175,6 +182,7 @@ extern "C" __global__ void delta_rule(const float* __restrict__ qn,    // [nk*hk
     }
     float delta = __fmul_rn(__fadd_rn(v[vBase + headV * hv + vd], -kvdot), beta);
     float o = 0.f;
+#pragma unroll 8
     for (int kd = 0; kd < hk; kd++) {
         float s = __fmaf_rn(k[kd], delta, S[kd]);
         S[kd] = s;
