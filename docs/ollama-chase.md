@@ -1395,7 +1395,7 @@ parity discipline still applies per-change: goldens, `TestParityManifest_fresh`,
   scratch. The old gather survives only as the f32 fallback exercised by tests, not on the real decode
   path.
 - **embedResident host-scratch reuse — still open.** `embedResident` (`decoder/residency.go:724`) does
-  `make([]float32, HiddenDim)` per token, then H2D. The decode-hot-path call sites (`decoder/model.go:979/977`)
+  `make([]float32, HiddenDim)` per token, then H2D. The decode-hot-path call sites (`decoder/model.go:994/977`)
   can't reroute without breaking the batch caller `decoder/model.go:831`
   (`embs[i]=embedResident(id)` collection would alias). Small (~6-14 KB/token). Bigger follow-on: an
   **on-device embed table** (GPU looks the row up from the id — Metal's `loadEmbedRow` already does).
@@ -1438,8 +1438,15 @@ parity discipline still applies per-change: goldens, `TestParityManifest_fresh`,
   for perf on the arm64 evidence alone.
 
 ### Outside the freeze — fundable now
-- **CUDA Gemma softcap parallel-for** — the box twin of the Metal item above (Done). Same host
-  parallel-for on `cuda/resident.go`'s serial tanh loop; bit-identical; needs Linux to build/measure.
+- ~~**CUDA Gemma softcap parallel-for**~~ — **DONE, `4c26a58` (2026-08-12), stale bullet corrected
+  2026-08-22.** This was landed and measured on the real RTX 2070 SUPER box the same week this
+  section was written; the "needs Linux to build/measure" line was never updated after it landed.
+  New file `cuda/softcap.go` (both `cuda/resident.go` and `cuda/prefill.go` now share it), gated by
+  `cuda/softcap_test.go` (exact equality vs. the serial reference across sizes straddling the
+  threshold and GOMAXPROCS in {1,3,16}, including non-dividing lengths). Measured, same shape as
+  the Metal twin above: 1.47 ms → 639.8 us at Gemma's 262,144 vocab (2.30x on the loop). Same
+  reasoning as Metal for staying exact `math.Tanh` rather than a float32/device approximation —
+  bit-identity is structural (per-element, no accumulation order to perturb), not merely convenient.
 - **CUDA g4x2 accumulator clear: H2D per MoE layer per token** (Cursor audit, verified). `cudaResident`
   clears the `g4x2` expert accumulator by uploading host zeros (`g4zero`, "no D2D helper" —
   cuda/resident.go:405,1182) every MoE layer. An on-stream memset/zero kernel removes an H2D (and its
