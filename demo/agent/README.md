@@ -70,7 +70,7 @@ full setup below; the stub is just the on-ramp.
 ```bash
 GOWORK=off go build -o /tmp/ken-stub ./cmd/ken-stub
 GOWORK=off go run ./cmd/agent-web \
-    --model ~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf --ken /tmp/ken-stub
+    --model ~/models/gemma-4-E2B-it-Q4_K_M.gguf --ken /tmp/ken-stub
 # → http://127.0.0.1:8484   (swap agent-web → stdlib-agent for the REPL)
 ```
 

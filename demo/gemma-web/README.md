@@ -1,4 +1,4 @@
-# gemma-web — local web chat GUI for the pure-Go Gemma 3 decoder
+# gemma-web — local web chat GUI for the pure-Go Gemma decoder
 
 A single-binary, single-page chat UI over the `decoder` + `tokenizer` packages.
 **Pure Go standard library** — `net/http` + Server-Sent Events, one embedded
@@ -7,12 +7,14 @@ HTML page (`//go:embed`), no external assets/CDNs, no cgo, no new dependencies.
 ## Run
 
 ```bash
-# point --model at any HF-layout Gemma 3 checkpoint dir:
-go run ./demo/gemma-web --model ~/models/gemma-3-270m
+# point --model at any HF-layout Gemma checkpoint dir. Gemma 4 E2B is ungated and
+# Apache-2.0, so it downloads without a HuggingFace account; the Gemma 3 checkpoints
+# this page used to name are `gated=manual` and need access granted first.
+go run ./demo/gemma-web --model ~/models/gemma-4-E2B-it
 # → gemma-web listening on http://127.0.0.1:8080
 
 # int8 weights for a smaller footprint:
-go run ./demo/gemma-web --model ~/models/gemma-3-270m-it --quant int8
+go run ./demo/gemma-web --model ~/models/gemma-4-E2B-it --quant int8
 ```
 
 Then open the printed URL in a browser.
@@ -21,7 +23,7 @@ Flags:
 
 | flag | default | meaning |
 |---|---|---|
-| `--model` | (required) | Gemma 3 checkpoint dir (`config.json` + `model.safetensors` + tokenizer) |
+| `--model` | (required) | Gemma checkpoint dir, 3 or 4 (`config.json` + `model.safetensors` + tokenizer) |
 | `--addr` | `127.0.0.1:8080` | listen address |
 | `--backend` | `cpu` | `cpu` or `webgpu` (webgpu needs `-tags gpu`) |
 | `--quant` | `` | `` (f32) or `int8` (per-row weight quant) |
