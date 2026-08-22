@@ -67,8 +67,8 @@ kernel void vadd(device const float* a [[buffer(0)]],
 		b[i] = float32(2 * i)
 	}
 	q := d.NewCommandQueue()
-	bufA := d.NewBufferFloats(a)
-	bufB := d.NewBufferFloats(b)
+	bufA := NewBufferFloats(d, a)
+	bufB := NewBufferFloats(d, b)
 	bufOut := d.NewBufferLen(n)
 
 	q.Run1D(pipe, n, 256, bufA, bufB, bufOut)

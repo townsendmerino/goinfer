@@ -33,13 +33,13 @@ func TestBatchKAmortization(t *testing.T) {
 	}
 
 	const N, K = 17920, 1536 // gate/up
-	wq := d.NewBufferUint32s(make([]uint32, N*(K/8)))
-	sc := d.NewBufferU16s(make([]uint16, N*(K/32)))
+	wq := NewBufferUint32s(d, make([]uint32, N*(K/8)))
+	sc := NewBufferU16s(d, make([]uint16, N*(K/32)))
 	const kmax = 8
 	aq := byteBuf(d, kmax*K)
-	asc := d.NewBufferFloats(make([]float32, kmax))
+	asc := NewBufferFloats(d, make([]float32, kmax))
 	out := d.NewBufferLen(kmax * N)
-	uK, uN := d.NewBufferU32(K), d.NewBufferU32(N)
+	uK, uN := NewBufferU32(d, K), NewBufferU32(d, N)
 	q := d.NewCommandQueue()
 
 	prof := func(reps int, run func(int)) time.Duration {
@@ -62,7 +62,7 @@ func TestBatchKAmortization(t *testing.T) {
 	t.Logf("single-token Stage A gate/up: %.1f us", float64(sa.Microseconds()))
 
 	for _, k := range []int{1, 2, 4, 8} {
-		uKK := d.NewBufferU32(uint32(k))
+		uKK := NewBufferU32(d, uint32(k))
 		tgBytes := k * K * 2 // k activation vectors × K shorts — only what k needs (occupancy)
 		bk := prof(200, func(r int) { q.Run1DBatchTG(pBK, N*32, 256, r, tgBytes, wq, sc, aq, asc, out, uK, uN, uKK) })
 		loop := time.Duration(k) * sa // what the current loop-over-Forward path costs for k tokens

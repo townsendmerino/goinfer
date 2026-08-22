@@ -87,7 +87,7 @@ kernel void swiglu_quant(device const float* g  [[buffer(0)]],  // [I] gate
 	q := d.NewCommandQueue()
 	dq := d.NewBufferBytes(I)
 	ds := d.NewBufferLen(1)
-	q.Run1D(pipe, 256, 256, d.NewBufferFloats(g), d.NewBufferFloats(u), dq, ds, d.NewBufferU32(uint32(I)))
+	q.Run1D(pipe, 256, 256, NewBufferFloats(d, g), NewBufferFloats(d, u), dq, ds, NewBufferU32(d, uint32(I)))
 	gotQ := dq.Int8s()
 	gotSc := ds.Floats()[0]
 

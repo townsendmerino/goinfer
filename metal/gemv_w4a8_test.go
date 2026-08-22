@@ -117,12 +117,12 @@ kernel void gemv_w4a8(device const uint*  bq  [[buffer(0)]],   // [N*(K/8)] pack
 	q := d.NewCommandQueue()
 	out := d.NewBufferLen(N)
 	q.Run1D(pipe, N, 64,
-		d.NewBufferUint32s(words),
-		d.NewBufferFloats(scales),
-		d.NewBufferInt8(aq),
-		d.NewBufferFloats([]float32{aSc}),
+		NewBufferUint32s(d, words),
+		NewBufferFloats(d, scales),
+		NewBufferInt8(d, aq),
+		NewBufferFloats(d, []float32{aSc}),
 		out,
-		d.NewBufferU32(uint32(K)),
+		NewBufferU32(d, uint32(K)),
 	)
 	got := out.Floats()
 

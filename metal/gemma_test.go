@@ -67,10 +67,10 @@ func TestGemma_rmsnormF32(t *testing.T) {
 			if addOne {
 				a = 1
 			}
-			xBuf := d.NewBufferFloats(x)
+			xBuf := NewBufferFloats(d, x)
 			q := d.NewCommandQueue()
-			q.Run1D(pipe, 256, 256, xBuf, d.NewBufferFloats(w),
-				d.NewBufferU32(H), d.NewBufferFloats([]float32{eps}), d.NewBufferU32(a))
+			q.Run1D(pipe, 256, 256, xBuf, NewBufferFloats(d, w),
+				NewBufferU32(d, H), NewBufferFloats(d, []float32{eps}), NewBufferU32(d, a))
 			got := xBuf.Floats()
 			for i := range want {
 				if dd := math.Abs(float64(got[i] - want[i])); dd > 1e-5 {
@@ -132,8 +132,8 @@ func TestGemma_gluAct(t *testing.T) {
 			dq := byteBuf(d, I)
 			ds := d.NewBufferLen(1)
 			q := d.NewCommandQueue()
-			q.Run1D(pipe, 256, 256, d.NewBufferFloats(g), d.NewBufferFloats(u), dq, ds,
-				d.NewBufferU32(I), d.NewBufferU32(tc.act))
+			q.Run1D(pipe, 256, 256, NewBufferFloats(d, g), NewBufferFloats(d, u), dq, ds,
+				NewBufferU32(d, I), NewBufferU32(d, tc.act))
 			if gotSc := ds.Floats()[0]; math.Abs(float64(gotSc-refSc)) > 1e-5 {
 				t.Fatalf("scale %.7f want %.7f", gotSc, refSc)
 			}
@@ -211,8 +211,8 @@ func TestGemma_rmsnormQuantAddOne(t *testing.T) {
 			aq := byteBuf(d, H)
 			asc := d.NewBufferLen(1)
 			q := d.NewCommandQueue()
-			q.Run1D(pipe, 256, 256, d.NewBufferFloats(x), d.NewBufferFloats(w), aq, asc,
-				d.NewBufferU32(H), d.NewBufferFloats([]float32{eps}), d.NewBufferU32(a))
+			q.Run1D(pipe, 256, 256, NewBufferFloats(d, x), NewBufferFloats(d, w), aq, asc,
+				NewBufferU32(d, H), NewBufferFloats(d, []float32{eps}), NewBufferU32(d, a))
 			if got := asc.Floats()[0]; math.Abs(float64(got-refSc)) > 1e-5 {
 				t.Fatalf("scale %.7f want %.7f", got, refSc)
 			}

@@ -34,17 +34,17 @@ func BenchmarkSwigluQuantGptOss(b *testing.B) {
 		}
 		return s
 	}
-	dG := d.NewBufferFloats(rndf(goI))
-	dU := d.NewBufferFloats(rndf(goI))
+	dG := NewBufferFloats(d, rndf(goI))
+	dU := NewBufferFloats(d, rndf(goI))
 	dDq := d.NewBufferBytes(goI)
 	dDs := d.NewBufferLen(1)
-	uI := d.NewBufferU32(uint32(goI))
-	dBias := d.NewBufferFloats(rndf(nExp * 2 * goI))
-	dIdx := d.NewBufferUint32s([]uint32{0})
-	uSlot := d.NewBufferU32(uint32(slot))
-	uHasBias := d.NewBufferU32(1)
-	uAlpha := d.NewBufferFloats([]float32{1.702})
-	uLimit := d.NewBufferFloats([]float32{7.0})
+	uI := NewBufferU32(d, uint32(goI))
+	dBias := NewBufferFloats(d, rndf(nExp*2*goI))
+	dIdx := NewBufferUint32s(d, []uint32{0})
+	uSlot := NewBufferU32(d, uint32(slot))
+	uHasBias := NewBufferU32(d, 1)
+	uAlpha := NewBufferFloats(d, []float32{1.702})
+	uLimit := NewBufferFloats(d, []float32{7.0})
 
 	q_ := d.NewCommandQueue()
 	const reps = 8

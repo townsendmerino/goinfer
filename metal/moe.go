@@ -368,8 +368,8 @@ func buildMoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H int) (*
 		mo.pRouteGptOss = pipe("route_gptoss")
 		mo.pActGptOss = pipe("swiglu_quant_gptoss")
 		mo.pDownWaccBias = pipe("gemv_w4a8_moe_wacc_bias")
-		mo.uAlpha, mo.uLimit = d.NewBufferFloats([]float32{alpha}), d.NewBufferFloats([]float32{limit})
-		mo.uHasBias = d.NewBufferU32(1)
+		mo.uAlpha, mo.uLimit = NewBufferFloats(d, []float32{alpha}), NewBufferFloats(d, []float32{limit})
+		mo.uHasBias = NewBufferU32(d, 1)
 	}
 	b1 := func(b bool) uint32 {
 		if b {
@@ -377,18 +377,18 @@ func buildMoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H int) (*
 		}
 		return 0
 	}
-	mo.uNE, mo.uK = d.NewBufferU32(uint32(nE)), d.NewBufferU32(uint32(k))
-	mo.uSigmoid, mo.uNorm = d.NewBufferU32(b1(sigmoid)), d.NewBufferU32(b1(norm))
-	mo.uScale = d.NewBufferFloats([]float32{float32(scale)})
-	mo.uNGroup, mo.uTopkGroup = d.NewBufferU32(uint32(nGroup)), d.NewBufferU32(uint32(topkGroup))
-	mo.uInter, mo.uInter2 = d.NewBufferU32(uint32(inter)), d.NewBufferU32(uint32(2*inter))
-	mo.uSharedInter = d.NewBufferU32(uint32(sharedInter))
+	mo.uNE, mo.uK = NewBufferU32(d, uint32(nE)), NewBufferU32(d, uint32(k))
+	mo.uSigmoid, mo.uNorm = NewBufferU32(d, b1(sigmoid)), NewBufferU32(d, b1(norm))
+	mo.uScale = NewBufferFloats(d, []float32{float32(scale)})
+	mo.uNGroup, mo.uTopkGroup = NewBufferU32(d, uint32(nGroup)), NewBufferU32(d, uint32(topkGroup))
+	mo.uInter, mo.uInter2 = NewBufferU32(d, uint32(inter)), NewBufferU32(d, uint32(2*inter))
+	mo.uSharedInter = NewBufferU32(d, uint32(sharedInter))
 	mo.uSlot = make([]Buffer, k)
 	for j := range mo.uSlot {
-		mo.uSlot[j] = d.NewBufferU32(uint32(j))
+		mo.uSlot[j] = NewBufferU32(d, uint32(j))
 	}
 	mo.rLogits = d.NewBufferLen(nE)
-	mo.rIdx = d.NewBufferUint32s(make([]uint32, k))
+	mo.rIdx = NewBufferUint32s(d, make([]uint32, k))
 	mo.rWgt = d.NewBufferLen(k)
 	mo.shGl, mo.shDown = d.NewBufferLen(1), d.NewBufferLen(H)
 	// Synchronous paging: GOINFER_METAL_MOE_SLOTS=N keeps only N experts/layer resident and stages
@@ -402,7 +402,7 @@ func buildMoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H int) (*
 		}
 		if n < nE { // n>=nE would hold every expert — no paging, just build the stacked path
 			mo.paged, mo.slots = true, n
-			mo.idxZeros = d.NewBufferUint32s(make([]uint32, k))
+			mo.idxZeros = NewBufferUint32s(d, make([]uint32, k))
 		}
 	}
 	return mo, nil
@@ -416,9 +416,9 @@ func buildMoELayer(d *Device, m *decoder.Model, l int, lw *decoder.LayerWeights,
 	ml := &moeLayer{}
 	ml.routerW = f32Mat(d, &lw.Router)
 	if len(lw.RouterBias) > 0 {
-		ml.routerBias = d.NewBufferFloats(lw.RouterBias)
+		ml.routerBias = NewBufferFloats(d, lw.RouterBias)
 	} else {
-		ml.routerBias = d.NewBufferFloats(make([]float32, mo.nE)) // zeros → sel = score
+		ml.routerBias = NewBufferFloats(d, make([]float32, mo.nE)) // zeros → sel = score
 	}
 	if mo.paged {
 		// Paged: don't stack the experts (that is the multi-GB set this exists to avoid). Build a
@@ -469,8 +469,8 @@ func buildMoELayer(d *Device, m *decoder.Model, l int, lw *decoder.LayerWeights,
 		}
 	}
 	if mo.isGptOss {
-		ml.expGuBias = d.NewBufferFloats(m.GptOssExpertBiasResident(l))
-		ml.expDBias = d.NewBufferFloats(m.GptOssExpertDownBiasResident(l))
+		ml.expGuBias = NewBufferFloats(d, m.GptOssExpertBiasResident(l))
+		ml.expDBias = NewBufferFloats(d, m.GptOssExpertDownBiasResident(l))
 	}
 	return ml
 }
@@ -481,7 +481,7 @@ func f32Mat(d *Device, w *linalg.WeightMat) Buffer {
 	if !ok {
 		panic(fmt.Sprintf("metal MoE: weight kind %q is not f32 (router/shared-gate must be full precision)", w.Kind()))
 	}
-	return d.NewBufferFloats(f)
+	return NewBufferFloats(d, f)
 }
 
 // encodeMoEFFN records the MoE FFN for one layer, replacing the dense gate/up/swiglu/down

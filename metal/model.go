@@ -234,7 +234,7 @@ func int8Buf(d *Device, w *linalg.WeightMat) (Buffer, Buffer, error) {
 	if !ok {
 		return Buffer{}, Buffer{}, fmt.Errorf("metal: weight kind %q is not int8 (load Options{Quant:\"int8int8\"})", w.Kind())
 	}
-	return d.NewBufferInt8(q8), d.NewBufferFloats(sc), nil
+	return NewBufferInt8(d, q8), NewBufferFloats(d, sc), nil
 }
 
 // int4DirectWords converts a decoder int4 WeightMat's packed nibbles + f32 group scales straight
@@ -340,7 +340,7 @@ func int4Buf(d *Device, w *linalg.WeightMat) (Buffer, Buffer, error) {
 		return Buffer{}, Buffer{}, fmt.Errorf("metal: W4A8 pack needs K%%32==0 (group=32), got K=%d — declining to CPU (audit M-10)", k)
 	}
 	if words, scales, ok := int4DirectWords(w); ok {
-		return d.NewBufferUint32s(words), d.NewBufferU16s(scales), nil
+		return NewBufferUint32s(d, words), NewBufferU16s(d, scales), nil
 	}
 	q8, sc, _, ok := w.Int8()
 	if !ok {
@@ -356,7 +356,7 @@ func int4Buf(d *Device, w *linalg.WeightMat) (Buffer, Buffer, error) {
 			scales[n*(K/32)+g] = f32ToF16(s)
 		}
 	}
-	return d.NewBufferUint32s(words), d.NewBufferU16s(scales), nil
+	return NewBufferUint32s(d, words), NewBufferU16s(d, scales), nil
 }
 
 // int4Concat re-quantizes and row-concatenates several same-K WeightMats into ONE W4A8
@@ -389,7 +389,7 @@ func int4Concat(d *Device, wms ...*linalg.WeightMat) (Buffer, Buffer) {
 			}
 		}
 	}
-	return d.NewBufferUint32s(words), d.NewBufferU16s(scales)
+	return NewBufferUint32s(d, words), NewBufferU16s(d, scales)
 }
 
 // BuildResident builds a Metal resident decoder from an int8-loaded dense Qwen2/Llama
@@ -488,16 +488,16 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	}
 	// Gated-MLP activation: ordinals ARE decoder.ActKind's iota (0=GELU-tanh, 1=SiLU), so this
 	// passes straight through to glu_act. Gemma is GeGLU; everything else admitted is SwiGLU.
-	r.uAct = d.NewBufferU32(uint32(m.GatedActResident()))
+	r.uAct = NewBufferU32(d, uint32(m.GatedActResident()))
 	addOne := uint32(0)
 	if m.RMSAddOne() {
 		addOne = 1
 	}
-	r.uAddOne = d.NewBufferU32(addOne)
+	r.uAddOne = NewBufferU32(d, addOne)
 	win := max(
 		// 0 = full causal; Mistral is all-local with this window
 		m.SlidingWindowResident(), 0)
-	r.uWindow = d.NewBufferU32(uint32(win))
+	r.uWindow = NewBufferU32(d, uint32(win))
 	if r.moe, err = buildMoE(d, m, pipe, H); err != nil { // nil for a dense (or gemma4-MoE) model; error ⇒ decline
 		return nil, err
 	}
@@ -518,12 +518,12 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		r.dnQn, r.dnKn = d.NewBufferLen(dp.keyDim), d.NewBufferLen(dp.keyDim)
 		r.dnCore, r.dnZOut, r.dnGated = d.NewBufferLen(dp.valueDim), d.NewBufferLen(dp.valueDim), d.NewBufferLen(dp.valueDim)
 		r.dnGq, r.dnGSc = d.NewBufferBytes(dp.valueDim), d.NewBufferLen(1)
-		r.uDnConvDim, r.uDnK = d.NewBufferU32(uint32(dp.convDim)), d.NewBufferU32(uint32(dp.convK))
-		r.uDnNv, r.uDnNk = d.NewBufferU32(uint32(dp.nv)), d.NewBufferU32(uint32(dp.nk))
-		r.uDnHk, r.uDnHv = d.NewBufferU32(uint32(dp.hk)), d.NewBufferU32(uint32(dp.hv))
-		r.uDnKeyDim, r.uDnQScale = d.NewBufferU32(uint32(dp.keyDim)), d.NewBufferFloats([]float32{dp.qScale})
-		r.uDnRep, r.uDnVBase = d.NewBufferU32(uint32(dp.rep)), d.NewBufferU32(uint32(2*dp.keyDim))
-		r.uDnValueDim = d.NewBufferU32(uint32(dp.valueDim))
+		r.uDnConvDim, r.uDnK = NewBufferU32(d, uint32(dp.convDim)), NewBufferU32(d, uint32(dp.convK))
+		r.uDnNv, r.uDnNk = NewBufferU32(d, uint32(dp.nv)), NewBufferU32(d, uint32(dp.nk))
+		r.uDnHk, r.uDnHv = NewBufferU32(d, uint32(dp.hk)), NewBufferU32(d, uint32(dp.hv))
+		r.uDnKeyDim, r.uDnQScale = NewBufferU32(d, uint32(dp.keyDim)), NewBufferFloats(d, []float32{dp.qScale})
+		r.uDnRep, r.uDnVBase = NewBufferU32(d, uint32(dp.rep)), NewBufferU32(d, uint32(2*dp.keyDim))
+		r.uDnValueDim = NewBufferU32(d, uint32(dp.valueDim))
 	}
 	// prefillOK, derived rather than hand-listed: the f16 prefill kernels implement exactly the
 	// features below, so ANY model needing more (MoE, Gemma's sandwich/(1+w)/GeGLU/per-layer
@@ -542,9 +542,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		r.layerNormBias = len(w.Layers[0].PreAttnNormBias) > 0
 	}
 	if r.layerNormBias {
-		r.uLNHasBias = d.NewBufferU32(1)
+		r.uLNHasBias = NewBufferU32(d, 1)
 	} else {
-		r.uLNHasBias = d.NewBufferU32(0)
+		r.uLNHasBias = NewBufferU32(d, 0)
 	}
 	mk := func(wm *linalg.WeightMat) (Buffer, Buffer) {
 		q, s, e := int4Buf(d, wm)
@@ -596,7 +596,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			L.dnQw, L.dnQs = mk(qP)
 			L.qkvW, L.qkvS = int4Concat(d, kP, vP) // K‖V fused (Q handled separately above)
 			L.oW, L.oS = mk(oP)
-			L.qNorm, L.kNorm = d.NewBufferFloats(qN), d.NewBufferFloats(kN)
+			L.qNorm, L.kNorm = NewBufferFloats(d, qN), NewBufferFloats(d, kN)
 		} else {
 			// K=V (attention_k_eq_v, Gemma 4 global layers): NO v_proj — V = v_norm(the RAW k_proj
 			// output). Fuse the V slot with k_proj (so the fused proj yields qkv=[Q|K_raw|K_raw]); the
@@ -611,10 +611,10 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			}
 			L.oW, L.oS = mk(&lw.OProj)
 			if r.outBias {
-				L.oBias = d.NewBufferFloats(lw.OBias)
+				L.oBias = NewBufferFloats(d, lw.OBias)
 			}
 			if r.qkNorm { // Qwen3 per-head Q/K norm weights [hd] — qGate layers set these above instead
-				L.qNorm, L.kNorm = d.NewBufferFloats(lw.QNorm), d.NewBufferFloats(lw.KNorm)
+				L.qNorm, L.kNorm = NewBufferFloats(d, lw.QNorm), NewBufferFloats(d, lw.KNorm)
 			}
 		}
 		if !isDelta {
@@ -622,9 +622,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			// when the rope dispatch itself runs) — every family needs a VALID buffer bound, gated by
 			// the flag, so non-gpt-oss gets a real but unused 1-element dummy, not a zero Buffer.
 			if r.attnSink {
-				L.attnSinks, L.uHasSink = d.NewBufferFloats(lw.AttnSinks), d.NewBufferU32(1)
+				L.attnSinks, L.uHasSink = NewBufferFloats(d, lw.AttnSinks), NewBufferU32(d, 1)
 			} else {
-				L.attnSinks, L.uHasSink = d.NewBufferFloats([]float32{0}), d.NewBufferU32(0)
+				L.attnSinks, L.uHasSink = NewBufferFloats(d, []float32{0}), NewBufferU32(d, 0)
 			}
 		}
 		g4b, isG4MoE := decoder.Gemma4MoEResidentBundle{}, false
@@ -639,20 +639,20 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		case r.nonGatedMLP: // GPT-2/Nemotron relu²: single up-proj (no gate) + biases
 			L.upW, L.upS = mk(&lw.UpProj)
 			L.dW, L.dS = mk(&lw.DownProj)
-			L.upBias = d.NewBufferFloats(lw.UpBias)
-			L.downBias = d.NewBufferFloats(lw.DownBias)
+			L.upBias = NewBufferFloats(d, lw.UpBias)
+			L.downBias = NewBufferFloats(d, lw.DownBias)
 		default: // dense FFN (also GLM/DeepSeek's FirstKDense prefix layers, and gemma4 dense layers)
 			L.guW, L.guS = int4Concat(d, &lw.GateProj, &lw.UpProj) // fused gate/up
 			L.dW, L.dS = mk(&lw.DownProj)
 		}
-		L.preNorm = d.NewBufferFloats(lw.PreAttnNorm)
+		L.preNorm = NewBufferFloats(d, lw.PreAttnNorm)
 		if L.g4moe == nil { // dense/generic FFN entry norm (PreMLPNorm); g4moe carries its five norms in the bundle
-			L.postNorm = d.NewBufferFloats(lw.PreMLPNorm)
+			L.postNorm = NewBufferFloats(d, lw.PreMLPNorm)
 		}
 		if r.layerNorm && r.layerNormBias {
-			L.preNormBias = d.NewBufferFloats(lw.PreAttnNormBias)
+			L.preNormBias = NewBufferFloats(d, lw.PreAttnNormBias)
 			if L.g4moe == nil {
-				L.postNormBias = d.NewBufferFloats(lw.PreMLPNormBias)
+				L.postNormBias = NewBufferFloats(d, lw.PreMLPNormBias)
 			}
 		}
 		// (qk-norm weights are set above: inside the isDelta/qGate/default branch, whichever
@@ -669,13 +669,13 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 				return nil, fmt.Errorf("metal: layer %d declares sandwich norms but PostAttnNorm is not len==hidden(%d) (got %d)",
 					l, H, len(lw.PostAttnNorm))
 			}
-			L.postAttnNorm = d.NewBufferFloats(lw.PostAttnNorm)
+			L.postAttnNorm = NewBufferFloats(d, lw.PostAttnNorm)
 			if L.g4moe == nil {
 				if len(lw.PostMLPNorm) != H {
 					return nil, fmt.Errorf("metal: layer %d declares sandwich norms but PostMLPNorm is not len==hidden(%d) (got %d)",
 						l, H, len(lw.PostMLPNorm))
 				}
-				L.postMLPNorm = d.NewBufferFloats(lw.PostMLPNorm)
+				L.postMLPNorm = NewBufferFloats(d, lw.PostMLPNorm)
 			}
 		}
 		if !isDelta {
@@ -688,8 +688,8 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			// block for it: no RoPE table, no geom (L.geom stays nil), no KV cache allocated.
 			invf := m.RopeInvFreqLayerResident(l)
 			if len(invf) > 0 { // GPT-2 (FeatLearnedPos): no RoPE at all, invf is empty — NewBufferFloats panics on empty; L.invf stays unused (rope dispatch is skipped)
-				L.invf = d.NewBufferFloats(invf)
-				L.mscale = d.NewBufferFloats([]float32{float32(m.RopeMscaleLayer(l))}) // 1.0 for every family without YaRN
+				L.invf = NewBufferFloats(d, invf)
+				L.mscale = NewBufferFloats(d, []float32{float32(m.RopeMscaleLayer(l))}) // 1.0 for every family without YaRN
 			}
 			// Per-layer attention geometry — the whole point of the 9c seam. Uniform families resolve
 			// every layer to the same {hd, nKV, half, kEqV}; Gemma 4 varies hd/nKV/kEqV between its
@@ -708,7 +708,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			if m.LayerIsLocalResident(l) {
 				lw2 = uint32(win)
 			}
-			L.uWindow = d.NewBufferU32(lw2)
+			L.uWindow = NewBufferU32(d, lw2)
 			if !L.qGate {
 				// combined qkv bias (zeros where absent) so the fused pSABias GEMV epilogue is
 				// uniform, sized for the full [Q|K|V] concat pSABias expects. qGate's K‖V is only
@@ -720,7 +720,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 				if qb == nil {
 					qb, kb, vb = make([]float32, r.nH*L.geom.hd), make([]float32, L.geom.kvDim), make([]float32, L.geom.kvDim)
 				}
-				L.qkvBias = d.NewBufferFloats(append(append(append([]float32{}, qb...), kb...), vb...))
+				L.qkvBias = NewBufferFloats(d, append(append(append([]float32{}, qb...), kb...), vb...))
 			}
 			kvBytes := metalCtxCap * L.geom.kvDim * 2 // f16 KV: 2 bytes/elem (halves the cache)
 			if r.kvF32 {
@@ -731,9 +731,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		}
 		r.layers[l] = L
 	}
-	r.finalNorm = d.NewBufferFloats(w.FinalNorm)
+	r.finalNorm = NewBufferFloats(d, w.FinalNorm)
 	if r.layerNorm && r.layerNormBias {
-		r.finalNormBias = d.NewBufferFloats(w.FinalNormBias)
+		r.finalNormBias = NewBufferFloats(d, w.FinalNormBias)
 	}
 	lm := &w.LMHead
 	if lm.Rows() == 0 {
@@ -842,26 +842,26 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	// so the greedy token could differ from argmax(Forward) (audit C-11). ceil(V/8) sizes the buffer
 	// for every tile and reduces all of them.
 	nTiles := (V + 7) / 8 // one (maxLogit,rowIdx) partial per threadgroup (8 rows)
-	r.part, r.tok, r.uP = d.NewBufferLen(nTiles*2), d.NewBufferLen(1), d.NewBufferU32(uint32(nTiles))
+	r.part, r.tok, r.uP = d.NewBufferLen(nTiles*2), d.NewBufferLen(1), NewBufferU32(d, uint32(nTiles))
 	// Model-level rope table for the (uniform-only) prefill path; decode uses each layer's L.invf.
 	// GPT-2 (FeatLearnedPos): no RoPE at all, so this is empty — NewBufferFloats panics on empty;
 	// r.invf stays unused (prefillOK is false for a learned-pos family — see prefillFeatures).
 	if invf0 := m.RopeInvFreq(); len(invf0) > 0 {
-		r.invf = d.NewBufferFloats(invf0)
+		r.invf = NewBufferFloats(d, invf0)
 	}
-	r.uH, r.uI = d.NewBufferU32(uint32(H)), d.NewBufferU32(uint32(I))
-	r.uNH = d.NewBufferU32(uint32(nH)) // query heads: constant across a family, so model-level
-	r.uScale, r.uEps = d.NewBufferFloats([]float32{m.AttnScale()}), d.NewBufferFloats([]float32{m.NormEps()})
-	r.uPos, r.uNKeys = d.NewBufferU32(0), d.NewBufferU32(1)
+	r.uH, r.uI = NewBufferU32(d, uint32(H)), NewBufferU32(d, uint32(I))
+	r.uNH = NewBufferU32(d, uint32(nH)) // query heads: constant across a family, so model-level
+	r.uScale, r.uEps = NewBufferFloats(d, []float32{m.AttnScale()}), NewBufferFloats(d, []float32{m.NormEps()})
+	r.uPos, r.uNKeys = NewBufferU32(d, 0), NewBufferU32(d, 1)
 	// Scale-less v_norm plumbing for K=V layers (Gemma 4 globals): a unit-1.0 weight and a shared
 	// zero (nH=0 / nHhd=0 / addOne=0) so qk_norm reduces to x·rms·1 on the V slot. Sized to the
 	// widest head; harmless (a few KB) for models with no K=V layer.
-	r.uZero = d.NewBufferU32(0)
+	r.uZero = NewBufferU32(d, 0)
 	ones := make([]float32, maxHd)
 	for i := range ones {
 		ones[i] = 1
 	}
-	r.vNormUnit = d.NewBufferFloats(ones)
+	r.vNormUnit = NewBufferFloats(d, ones)
 	if r.dnet != nil {
 		// qGate scratch (Gated-DeltaNet family's softmax layers): sized to the widest layer's
 		// qDim, same maxNHhd every other per-token scratch buffer uses — this family's softmax

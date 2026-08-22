@@ -116,12 +116,12 @@ func gemvW4A8CoalDrift(t *testing.T, src string) (worst gemvW4A8CoalResult, skip
 	q := d.NewCommandQueue()
 	out := d.NewBufferLen(gemvW4A8CoalN)
 	q.Run1D(pipe, gemvW4A8CoalN*32, 32,
-		d.NewBufferUint32s(bq),
-		d.NewBufferU16s(bscHalf),
-		d.NewBufferInt8(aq),
-		d.NewBufferFloats([]float32{aSc}),
+		NewBufferUint32s(d, bq),
+		NewBufferU16s(d, bscHalf),
+		NewBufferInt8(d, aq),
+		NewBufferFloats(d, []float32{aSc}),
 		out,
-		d.NewBufferU32(uint32(gemvW4A8CoalK)),
+		NewBufferU32(d, uint32(gemvW4A8CoalK)),
 	)
 	got := out.Floats()
 
@@ -180,12 +180,12 @@ func BenchmarkGemvW4A8Coal(b *testing.B) {
 		}
 		return s
 	}
-	dBq := d.NewBufferUint32s(rndWords(gemvW4A8CoalN * nWords))
-	dBsc := d.NewBufferU16s(rndHalf(gemvW4A8CoalN * nGroups))
-	dAq := d.NewBufferInt8(rnd8(gemvW4A8CoalK))
-	dAsc := d.NewBufferFloats([]float32{0.01})
+	dBq := NewBufferUint32s(d, rndWords(gemvW4A8CoalN*nWords))
+	dBsc := NewBufferU16s(d, rndHalf(gemvW4A8CoalN*nGroups))
+	dAq := NewBufferInt8(d, rnd8(gemvW4A8CoalK))
+	dAsc := NewBufferFloats(d, []float32{0.01})
 	dOut := d.NewBufferLen(gemvW4A8CoalN)
-	uK := d.NewBufferU32(uint32(gemvW4A8CoalK))
+	uK := NewBufferU32(d, uint32(gemvW4A8CoalK))
 
 	q_ := d.NewCommandQueue()
 	const reps = 4

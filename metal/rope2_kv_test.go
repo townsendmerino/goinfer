@@ -59,29 +59,29 @@ func TestRope2Kv_matchesRope2ThenKv(t *testing.T) {
 
 	// (a) rope2 THEN kv_store — the production pattern rope2_kv replaces.
 	twoDispatch := func() (qkv []float32, kc, vc []uint16) {
-		xb := d.NewBufferFloats(src)
-		kcb := d.NewBufferU16s(make([]uint16, cacheLen*kvDim))
-		vcb := d.NewBufferU16s(make([]uint16, cacheLen*kvDim))
+		xb := NewBufferFloats(d, src)
+		kcb := NewBufferU16s(d, make([]uint16, cacheLen*kvDim))
+		vcb := NewBufferU16s(d, make([]uint16, cacheLen*kvDim))
 		q_.Run1D(pRope2, nH*half+nKV*half, 64,
-			xb, d.NewBufferFloats(invf), d.NewBufferU32(uint32(hd)), d.NewBufferU32(uint32(pos)),
-			d.NewBufferU32(uint32(nH*half)), d.NewBufferU32(uint32(nKV*half)),
-			d.NewBufferU32(uint32(half)), d.NewBufferFloats([]float32{scale}), d.NewBufferU32(uint32(kOff)))
+			xb, NewBufferFloats(d, invf), NewBufferU32(d, uint32(hd)), NewBufferU32(d, uint32(pos)),
+			NewBufferU32(d, uint32(nH*half)), NewBufferU32(d, uint32(nKV*half)),
+			NewBufferU32(d, uint32(half)), NewBufferFloats(d, []float32{scale}), NewBufferU32(d, uint32(kOff)))
 		q_.Run1D(pKv, kvDim, 64,
-			xb.At(kOff*4), xb.At(vOff*4), kcb, vcb, d.NewBufferU32(uint32(kvDim)), d.NewBufferU32(uint32(pos)))
+			xb.At(kOff*4), xb.At(vOff*4), kcb, vcb, NewBufferU32(d, uint32(kvDim)), NewBufferU32(d, uint32(pos)))
 		return xb.Floats(), kcb.U16s(), vcb.U16s()
 	}
 
 	// (b) ONE fused dispatch — rope2_kv on the whole, UNOFFSET buffer.
 	oneDispatch := func() (qkv []float32, kc, vc []uint16) {
-		xb := d.NewBufferFloats(src)
-		kcb := d.NewBufferU16s(make([]uint16, cacheLen*kvDim))
-		vcb := d.NewBufferU16s(make([]uint16, cacheLen*kvDim))
+		xb := NewBufferFloats(d, src)
+		kcb := NewBufferU16s(d, make([]uint16, cacheLen*kvDim))
+		vcb := NewBufferU16s(d, make([]uint16, cacheLen*kvDim))
 		q_.Run1D(pFused, nH*half+2*nKV*half, 64,
-			xb, d.NewBufferFloats(invf), d.NewBufferU32(uint32(hd)), d.NewBufferU32(uint32(pos)),
-			d.NewBufferU32(uint32(nH*half)), d.NewBufferU32(uint32(nKV*half)),
-			d.NewBufferU32(uint32(half)), d.NewBufferFloats([]float32{scale}),
-			d.NewBufferU32(uint32(kOff)), d.NewBufferU32(uint32(vOff)),
-			kcb, vcb, d.NewBufferU32(uint32(kvDim)))
+			xb, NewBufferFloats(d, invf), NewBufferU32(d, uint32(hd)), NewBufferU32(d, uint32(pos)),
+			NewBufferU32(d, uint32(nH*half)), NewBufferU32(d, uint32(nKV*half)),
+			NewBufferU32(d, uint32(half)), NewBufferFloats(d, []float32{scale}),
+			NewBufferU32(d, uint32(kOff)), NewBufferU32(d, uint32(vOff)),
+			kcb, vcb, NewBufferU32(d, uint32(kvDim)))
 		return xb.Floats(), kcb.U16s(), vcb.U16s()
 	}
 

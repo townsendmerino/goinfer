@@ -47,13 +47,13 @@ func TestRmsnormF32_cpuParity(t *testing.T) {
 	}
 
 	q := d.NewCommandQueue()
-	xBuf := d.NewBufferFloats(x)
+	xBuf := NewBufferFloats(d, x)
 	q.Run1D(pipe, 256, 256,
 		xBuf,
-		d.NewBufferFloats(w),
-		d.NewBufferU32(uint32(rfH)),
-		d.NewBufferFloats([]float32{eps}),
-		d.NewBufferU32(1), // addOne
+		NewBufferFloats(d, w),
+		NewBufferU32(d, uint32(rfH)),
+		NewBufferFloats(d, []float32{eps}),
+		NewBufferU32(d, 1), // addOne
 	)
 	got := xBuf.Floats()
 
@@ -99,11 +99,11 @@ func BenchmarkRmsnormF32(b *testing.B) {
 		}
 		return s
 	}
-	dX := d.NewBufferFloats(rndf(rfH))
-	dW := d.NewBufferFloats(rndf(rfH))
-	uH := d.NewBufferU32(uint32(rfH))
-	uEps := d.NewBufferFloats([]float32{1e-6})
-	uAddOne := d.NewBufferU32(1)
+	dX := NewBufferFloats(d, rndf(rfH))
+	dW := NewBufferFloats(d, rndf(rfH))
+	uH := NewBufferU32(d, uint32(rfH))
+	uEps := NewBufferFloats(d, []float32{1e-6})
+	uAddOne := NewBufferU32(d, 1)
 
 	q_ := d.NewCommandQueue()
 	const reps = 8

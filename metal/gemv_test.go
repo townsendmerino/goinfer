@@ -105,12 +105,12 @@ kernel void gemv_w8a8(device const char*  aq  [[buffer(0)]],   // [K] int8 activ
 	q := d.NewCommandQueue()
 	out := d.NewBufferLen(N)
 	q.Run1D(pipe, N, 64,
-		d.NewBufferInt8(aq),
-		d.NewBufferFloats([]float32{aSc}),
-		d.NewBufferInt8(bq),
-		d.NewBufferFloats(bSc),
+		NewBufferInt8(d, aq),
+		NewBufferFloats(d, []float32{aSc}),
+		NewBufferInt8(d, bq),
+		NewBufferFloats(d, bSc),
 		out,
-		d.NewBufferU32(uint32(K)),
+		NewBufferU32(d, uint32(K)),
 	)
 	got := out.Floats()
 

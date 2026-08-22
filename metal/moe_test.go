@@ -55,8 +55,8 @@ func TestMoE_routerGEMV(t *testing.T) {
 	const aSc = 0.017
 	out := d.NewBufferLen(rows)
 	q := d.NewCommandQueue()
-	q.Run1D(pipe, rows*32, 32, d.NewBufferFloats(wf), d.NewBufferInt8(aq),
-		d.NewBufferFloats([]float32{aSc}), out, d.NewBufferU32(uint32(K)))
+	q.Run1D(pipe, rows*32, 32, NewBufferFloats(d, wf), NewBufferInt8(d, aq),
+		NewBufferFloats(d, []float32{aSc}), out, NewBufferU32(d, uint32(K)))
 	got := out.Floats()
 	for r := range rows {
 		var acc float64
@@ -93,9 +93,9 @@ func TestMoE_sharedGateCombine(t *testing.T) {
 		src[i] = rng.Float32()*2 - 1
 	}
 	const gl = 0.7
-	xBuf := d.NewBufferFloats(x0)
+	xBuf := NewBufferFloats(d, x0)
 	q := d.NewCommandQueue()
-	q.Run1D(pipe, H, 256, xBuf, d.NewBufferFloats(src), d.NewBufferFloats([]float32{gl}))
+	q.Run1D(pipe, H, 256, xBuf, NewBufferFloats(d, src), NewBufferFloats(d, []float32{gl}))
 	g := float32(1.0 / (1.0 + math.Exp(-gl)))
 	got := xBuf.Floats()
 	for i := range x0 {
@@ -257,15 +257,15 @@ func TestMoE_route(t *testing.T) {
 			}
 			wantIdx, wantWgt := refRoute(logits, bias, c.k, c.sigmoid, c.norm, c.scale, c.nGroup, c.topkGroup)
 
-			idxBuf := d.NewBufferUint32s(make([]uint32, c.k))
+			idxBuf := NewBufferUint32s(d, make([]uint32, c.k))
 			wgtBuf := d.NewBufferLen(c.k)
 			q := d.NewCommandQueue()
 			q.Run1D(pipe, 1, 1,
-				d.NewBufferFloats(logits), d.NewBufferFloats(bias), idxBuf, wgtBuf,
-				d.NewBufferU32(uint32(c.nE)), d.NewBufferU32(uint32(c.k)),
-				d.NewBufferU32(b1(c.sigmoid)), d.NewBufferU32(b1(c.norm)),
-				d.NewBufferFloats([]float32{float32(c.scale)}),
-				d.NewBufferU32(uint32(c.nGroup)), d.NewBufferU32(uint32(c.topkGroup)))
+				NewBufferFloats(d, logits), NewBufferFloats(d, bias), idxBuf, wgtBuf,
+				NewBufferU32(d, uint32(c.nE)), NewBufferU32(d, uint32(c.k)),
+				NewBufferU32(d, b1(c.sigmoid)), NewBufferU32(d, b1(c.norm)),
+				NewBufferFloats(d, []float32{float32(c.scale)}),
+				NewBufferU32(d, uint32(c.nGroup)), NewBufferU32(d, uint32(c.topkGroup)))
 			gotIdx := idxBuf.U32s()
 			gotWgt := wgtBuf.Floats()
 
@@ -312,7 +312,7 @@ func buildStackedExperts(t *testing.T, d *Device, E, N, K int, aq []int8, aSc fl
 			ref[e][n] = float32(acc) * aSc
 		}
 	}
-	return d.NewBufferUint32s(words), d.NewBufferU16s(scalesH), ref
+	return NewBufferUint32s(d, words), NewBufferU16s(d, scalesH), ref
 }
 
 // TestMoE_indexedExpertGEMV validates the indexed addressing (weightRow = idx[slot]*rowsPer
@@ -358,14 +358,14 @@ func TestMoE_indexedExpertGEMV(t *testing.T) {
 
 	// Pick a non-zero expert to prove the idx offset is honored (slot 0 → idx[0]=chosen).
 	const chosen = 5
-	idxBuf := d.NewBufferUint32s([]uint32{chosen, 0, 0, 0})
+	idxBuf := NewBufferUint32s(d, []uint32{chosen, 0, 0, 0})
 	q := d.NewCommandQueue()
 
 	// mode-0 overwrite: out[n] = expert[chosen].row(n)·act
 	out := d.NewBufferLen(N)
 	q.Run1DBatchTG(pGU, N*32, 256, 1, K*2,
-		wq, sct, d.NewBufferInt8(aq), d.NewBufferFloats([]float32{aSc}), out,
-		d.NewBufferU32(uint32(K)), idxBuf, d.NewBufferU32(0), d.NewBufferU32(uint32(N)))
+		wq, sct, NewBufferInt8(d, aq), NewBufferFloats(d, []float32{aSc}), out,
+		NewBufferU32(d, uint32(K)), idxBuf, NewBufferU32(d, 0), NewBufferU32(d, uint32(N)))
 	got := out.Floats()
 	checkClose(t, "gemv_w4a8_moe", got, ref[chosen], 1e-3)
 
@@ -375,11 +375,11 @@ func TestMoE_indexedExpertGEMV(t *testing.T) {
 	for i := range x0 {
 		x0[i] = rng.Float32()*2 - 1
 	}
-	xBuf := d.NewBufferFloats(x0)
+	xBuf := NewBufferFloats(d, x0)
 	q.Run1DBatchTG(pWacc, N*32, 256, 1, K*2,
-		wq, sct, d.NewBufferInt8(aq), d.NewBufferFloats([]float32{aSc}), xBuf,
-		d.NewBufferU32(uint32(K)), idxBuf, d.NewBufferFloats([]float32{wgt, 0, 0, 0}),
-		d.NewBufferU32(0), d.NewBufferU32(uint32(N)))
+		wq, sct, NewBufferInt8(d, aq), NewBufferFloats(d, []float32{aSc}), xBuf,
+		NewBufferU32(d, uint32(K)), idxBuf, NewBufferFloats(d, []float32{wgt, 0, 0, 0}),
+		NewBufferU32(d, 0), NewBufferU32(d, uint32(N)))
 	wantWacc := make([]float32, N)
 	for n := range wantWacc {
 		wantWacc[n] = x0[n] + wgt*ref[chosen][n]

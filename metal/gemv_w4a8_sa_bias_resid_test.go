@@ -80,10 +80,10 @@ func TestSAGemvBiasResid(t *testing.T) {
 	}
 
 	q := d.NewCommandQueue()
-	out := d.NewBufferFloats(resid0)
+	out := NewBufferFloats(d, resid0)
 	q.Run1DTG(pipe, N*32, 256, K*2,
-		d.NewBufferUint32s(words), d.NewBufferU16s(scalesH), d.NewBufferInt8(aq),
-		d.NewBufferFloats([]float32{aSc}), out, d.NewBufferFloats(bias), d.NewBufferU32(K))
+		NewBufferUint32s(d, words), NewBufferU16s(d, scalesH), NewBufferInt8(d, aq),
+		NewBufferFloats(d, []float32{aSc}), out, NewBufferFloats(d, bias), NewBufferU32(d, K))
 	got := out.Floats()
 
 	var dot, na, nb, maxRel float64
@@ -190,10 +190,10 @@ func TestCoalGemvBiasResid(t *testing.T) {
 	}
 
 	q := d.NewCommandQueue()
-	out := d.NewBufferFloats(resid0)
+	out := NewBufferFloats(d, resid0)
 	q.Run1D(pipe, N*32, 32,
-		d.NewBufferUint32s(words), d.NewBufferU16s(scalesH), d.NewBufferInt8(aq),
-		d.NewBufferFloats([]float32{aSc}), out, d.NewBufferFloats(bias), d.NewBufferU32(K))
+		NewBufferUint32s(d, words), NewBufferU16s(d, scalesH), NewBufferInt8(d, aq),
+		NewBufferFloats(d, []float32{aSc}), out, NewBufferFloats(d, bias), NewBufferU32(d, K))
 	got := out.Floats()
 
 	var dot, na, nb, maxRel float64

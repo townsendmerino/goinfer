@@ -120,8 +120,8 @@ func TestPrefillGemmW4(t *testing.T) {
 	}
 	q := d.NewCommandQueue()
 	C := d.NewBufferLen(M * N)
-	q.Run1D(pipe, ((M+31)/32)*(N/8)*32, 256, d.NewBufferU16s(A), d.NewBufferUint32s(words),
-		d.NewBufferU16s(scalesH), C, d.NewBufferU32(M), d.NewBufferU32(N), d.NewBufferU32(K))
+	q.Run1D(pipe, ((M+31)/32)*(N/8)*32, 256, NewBufferU16s(d, A), NewBufferUint32s(d, words),
+		NewBufferU16s(d, scalesH), C, NewBufferU32(d, M), NewBufferU32(d, N), NewBufferU32(d, K))
 	got := C.Floats()
 	var dot, na, nb, maxAbs float64
 	for i := range ref {
@@ -143,12 +143,12 @@ func TestPrefillGemmW4(t *testing.T) {
 	const K2, N2 = 1536, 17920
 	mainLib, _ := d.CompileLibrary(allKernels, MSL3_1)
 	pSA, _ := d.NewComputePipeline(mainLib, "gemv_w4a8_sa")
-	wq := d.NewBufferUint32s(make([]uint32, N2*(K2/8)))
-	scb := d.NewBufferU16s(make([]uint16, N2*(K2/32)))
+	wq := NewBufferUint32s(d, make([]uint32, N2*(K2/8)))
+	scb := NewBufferU16s(d, make([]uint16, N2*(K2/32)))
 	aq := byteBuf(d, K2)
-	asc := d.NewBufferFloats(make([]float32, 1))
+	asc := NewBufferFloats(d, make([]float32, 1))
 	o1 := d.NewBufferLen(N2)
-	uK := d.NewBufferU32(K2)
+	uK := NewBufferU32(d, K2)
 	prof := func(reps int, run func(int)) time.Duration {
 		for range 4 {
 			run(reps)
@@ -164,14 +164,14 @@ func TestPrefillGemmW4(t *testing.T) {
 		return best / time.Duration(reps)
 	}
 	gemv1 := prof(100, func(r int) { q.Run1DBatch(pSA, N2*32, 256, r, wq, scb, aq, asc, o1, uK) })
-	W2 := d.NewBufferUint32s(make([]uint32, N2*(K2/8)))
-	WS2 := d.NewBufferU16s(make([]uint16, N2*(K2/32)))
-	uN2, uK2 := d.NewBufferU32(N2), d.NewBufferU32(K2)
+	W2 := NewBufferUint32s(d, make([]uint32, N2*(K2/8)))
+	WS2 := NewBufferU16s(d, make([]uint16, N2*(K2/32)))
+	uN2, uK2 := NewBufferU32(d, N2), NewBufferU32(d, K2)
 	t.Logf("baseline single-token int4 GEMV gate/up: %.0f us/token", float64(gemv1.Microseconds()))
 	for _, mm := range []int{64, 256, 512} {
-		Ab := d.NewBufferU16s(make([]uint16, mm*K2))
+		Ab := NewBufferU16s(d, make([]uint16, mm*K2))
 		Cb := d.NewBufferLen(mm * N2)
-		uM := d.NewBufferU32(uint32(mm))
+		uM := NewBufferU32(d, uint32(mm))
 		g := prof(20, func(r int) {
 			q.Run1DBatch(pipe, ((mm+31)/32)*(N2/8)*32, 256, r, Ab, W2, WS2, Cb, uM, uN2, uK2)
 		})

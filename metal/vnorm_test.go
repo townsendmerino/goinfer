@@ -59,12 +59,12 @@ func TestVNorm_scaleless(t *testing.T) {
 		unit[i] = 1
 	}
 	run := func(addOne uint32) []float32 {
-		buf := d.NewBufferFloats(append([]float32(nil), in...))
-		uW := d.NewBufferFloats(unit)
-		u0 := d.NewBufferU32(0) // nH=0 and nHhd=0 (V slot addressed at base 0+head*hd within buf)
-		uNKV, uHd := d.NewBufferU32(nKV), d.NewBufferU32(hd)
-		uEps := d.NewBufferFloats([]float32{eps})
-		uAdd := d.NewBufferU32(addOne)
+		buf := NewBufferFloats(d, append([]float32(nil), in...))
+		uW := NewBufferFloats(d, unit)
+		u0 := NewBufferU32(d, 0) // nH=0 and nHhd=0 (V slot addressed at base 0+head*hd within buf)
+		uNKV, uHd := NewBufferU32(d, nKV), NewBufferU32(d, hd)
+		uEps := NewBufferFloats(d, []float32{eps})
+		uAdd := NewBufferU32(d, addOne)
 		cq := d.NewCommandQueue()
 		enc := cq.Begin()
 		enc.Dispatch(pQK, nKV*128, 128, buf, uW, uW, u0, uNKV, uHd, u0, uEps, uAdd)

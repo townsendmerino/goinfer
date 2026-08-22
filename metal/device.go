@@ -26,3 +26,15 @@ var (
 	NewARPool                 = gpu.NewARPool
 	ResidencySetsSupported    = gpu.ResidencySetsSupported
 )
+
+// Thin re-wraps of aikit gpu v0.29.0's type-suffixed-Buffer-API collapse (NewBufferFloats/
+// NewBufferInt8/NewBufferU32/NewBufferUint32s/NewBufferU16s deleted in favor of the generic
+// NewBufferOf[T]). Go has no generic methods, so the aikit replacement is a free function
+// (gpu.NewBufferOf(d, data)); these keep every one of this package's ~500 existing call sites at
+// their original method-call shape (now a free function taking d first) instead of touching each
+// one's argument list.
+func NewBufferFloats(d *Device, data []float32) Buffer { return gpu.NewBufferOf(d, data) }
+func NewBufferInt8(d *Device, data []int8) Buffer      { return gpu.NewBufferOf(d, data) }
+func NewBufferUint32s(d *Device, data []uint32) Buffer { return gpu.NewBufferOf(d, data) }
+func NewBufferU16s(d *Device, data []uint16) Buffer    { return gpu.NewBufferOf(d, data) }
+func NewBufferU32(d *Device, v uint32) Buffer          { return gpu.NewBufferOf(d, []uint32{v}) }

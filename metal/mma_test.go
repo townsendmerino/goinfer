@@ -101,8 +101,8 @@ kernel void mma_gemm_blk(device const half* A[[buffer(0)]], device const half* B
 		}
 		q := d.NewCommandQueue()
 		out := d.NewBufferLen(M * N)
-		q.Run1D(pipe, (M/8)*(N/8)*32, 32, d.NewBufferU16s(A), d.NewBufferU16s(B), out,
-			d.NewBufferU32(M), d.NewBufferU32(N), d.NewBufferU32(K))
+		q.Run1D(pipe, (M/8)*(N/8)*32, 32, NewBufferU16s(d, A), NewBufferU16s(d, B), out,
+			NewBufferU32(d, M), NewBufferU32(d, N), NewBufferU32(d, K))
 		got := out.Floats()
 		var maxErr float64
 		for m := range M {
@@ -125,7 +125,7 @@ kernel void mma_gemm_blk(device const half* A[[buffer(0)]], device const half* B
 
 	// ---- amortization: prefill gate/up shape [M×K]·[K×N], M = prompt length ----
 	const K, N = 1536, 17920 // gate/up: K=H, N=2I
-	B := d.NewBufferU16s(make([]uint16, K*N))
+	B := NewBufferU16s(d, make([]uint16, K*N))
 	q := d.NewCommandQueue()
 	prof := func(reps int, run func(int)) time.Duration {
 		for range 4 {
@@ -147,12 +147,12 @@ kernel void mma_gemm_blk(device const half* A[[buffer(0)]], device const half* B
 		t.Fatalf("main lib: %v", err)
 	}
 	pSA, _ := d.NewComputePipeline(mainLib, "gemv_w4a8_sa")
-	wq := d.NewBufferUint32s(make([]uint32, N*(K/8)))
-	sc := d.NewBufferU16s(make([]uint16, N*(K/32)))
+	wq := NewBufferUint32s(d, make([]uint32, N*(K/8)))
+	sc := NewBufferU16s(d, make([]uint16, N*(K/32)))
 	aq := byteBuf(d, K)
-	asc := d.NewBufferFloats(make([]float32, 1))
+	asc := NewBufferFloats(d, make([]float32, 1))
 	outN := d.NewBufferLen(N)
-	uK := d.NewBufferU32(K)
+	uK := NewBufferU32(d, K)
 	gemv1 := prof(100, func(r int) { q.Run1DBatch(pSA, N*32, 256, r, wq, sc, aq, asc, outN, uK) })
 	t.Logf("single-token int4 GEMV gate/up: %.1f us", float64(gemv1.Microseconds()))
 
@@ -160,11 +160,11 @@ kernel void mma_gemm_blk(device const half* A[[buffer(0)]], device const half* B
 	if err != nil {
 		t.Fatalf("blk pipeline: %v", err)
 	}
-	uN, uKb := d.NewBufferU32(N), d.NewBufferU32(K)
+	uN, uKb := NewBufferU32(d, N), NewBufferU32(d, K)
 	for _, M := range []int{8, 64, 256, 512} {
-		A := d.NewBufferU16s(make([]uint16, M*K))
+		A := NewBufferU16s(d, make([]uint16, M*K))
 		C := d.NewBufferLen(M * N)
-		uM := d.NewBufferU32(uint32(M))
+		uM := NewBufferU32(d, uint32(M))
 		mma := prof(30, func(r int) { q.Run1DBatch(pipe, (M/8)*(N/8)*32, 256, r, A, B, C, uM, uN, uKb) })
 		mrows := (M + 31) / 32 // RPS=4 row-tiles per simdgroup → M/32 blocks
 		blk := prof(30, func(r int) { q.Run1DBatch(pBlk, mrows*(N/8)*32, 256, r, A, B, C, uM, uN, uKb) })

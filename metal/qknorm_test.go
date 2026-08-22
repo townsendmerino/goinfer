@@ -66,10 +66,10 @@ func TestQKNorm(t *testing.T) {
 			ao = 1
 		}
 		q := d.NewCommandQueue()
-		buf := d.NewBufferFloats(qkv)
-		q.Run1D(pipe, (nH+nKV)*128, 128, buf, d.NewBufferFloats(qn), d.NewBufferFloats(kn),
-			d.NewBufferU32(nH), d.NewBufferU32(nKV), d.NewBufferU32(hd), d.NewBufferU32(uint32(nHhd)),
-			d.NewBufferFloats([]float32{eps}), d.NewBufferU32(ao))
+		buf := NewBufferFloats(d, qkv)
+		q.Run1D(pipe, (nH+nKV)*128, 128, buf, NewBufferFloats(d, qn), NewBufferFloats(d, kn),
+			NewBufferU32(d, nH), NewBufferU32(d, nKV), NewBufferU32(d, hd), NewBufferU32(d, uint32(nHhd)),
+			NewBufferFloats(d, []float32{eps}), NewBufferU32(d, ao))
 		got := buf.Floats()
 		var maxAbs float64
 		for i := range ref {

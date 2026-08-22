@@ -71,14 +71,14 @@ func TestLayernormQuant_cpuParity(t *testing.T) {
 	aqBuf := d.NewBufferBytes(lnH)
 	ascBuf := d.NewBufferLen(1)
 	q.Run1D(pipe, 256, 256,
-		d.NewBufferFloats(x),
-		d.NewBufferFloats(w),
-		d.NewBufferFloats(bias),
+		NewBufferFloats(d, x),
+		NewBufferFloats(d, w),
+		NewBufferFloats(d, bias),
 		aqBuf,
 		ascBuf,
-		d.NewBufferU32(uint32(lnH)),
-		d.NewBufferFloats([]float32{eps}),
-		d.NewBufferU32(1), // hasBias
+		NewBufferU32(d, uint32(lnH)),
+		NewBufferFloats(d, []float32{eps}),
+		NewBufferU32(d, 1), // hasBias
 	)
 	gotQ := aqBuf.Int8s()
 	gotSc := ascBuf.Floats()[0]
@@ -128,14 +128,14 @@ func BenchmarkLayernormQuant(b *testing.B) {
 		}
 		return s
 	}
-	dX := d.NewBufferFloats(rndf(lnH))
-	dW := d.NewBufferFloats(rndf(lnH))
-	dB := d.NewBufferFloats(rndf(lnH))
+	dX := NewBufferFloats(d, rndf(lnH))
+	dW := NewBufferFloats(d, rndf(lnH))
+	dB := NewBufferFloats(d, rndf(lnH))
 	dAq := d.NewBufferBytes(lnH)
 	dAsc := d.NewBufferLen(1)
-	uH := d.NewBufferU32(uint32(lnH))
-	uEps := d.NewBufferFloats([]float32{1e-5})
-	uHasBias := d.NewBufferU32(1)
+	uH := NewBufferU32(d, uint32(lnH))
+	uEps := NewBufferFloats(d, []float32{1e-5})
+	uHasBias := NewBufferU32(d, 1)
 
 	q_ := d.NewCommandQueue()
 	const reps = 8

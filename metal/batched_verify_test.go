@@ -98,8 +98,8 @@ func bvkForwardM(r *resident, pipes bvkPipes, embs [][]float32, startPos int) (b
 		copy(bxf[m*H:(m+1)*H], e)
 	}
 
-	uH, uI, u2I := d.NewBufferU32(uint32(H)), d.NewBufferU32(uint32(I)), d.NewBufferU32(uint32(2*I))
-	uKK := d.NewBufferU32(uint32(M))
+	uH, uI, u2I := NewBufferU32(d, uint32(H)), NewBufferU32(d, uint32(I)), NewBufferU32(d, uint32(2*I))
+	uKK := NewBufferU32(d, uint32(M))
 
 	e := r.q.Begin()
 	for l := 0; l < r.nL; l++ {
@@ -108,10 +108,10 @@ func bvkForwardM(r *resident, pipes bvkPipes, embs [][]float32, startPos int) (b
 		nHhd := r.nH * g.hd
 		qkvRows := nHhd + 2*g.kvDim
 		kOff, vOff := nHhd*4, (nHhd+g.kvDim)*4
-		uNHhdOut, uQkvRows := d.NewBufferU32(uint32(nHhd)), d.NewBufferU32(uint32(qkvRows))
+		uNHhdOut, uQkvRows := NewBufferU32(d, uint32(nHhd)), NewBufferU32(d, uint32(qkvRows))
 
 		// --- attention block ---
-		aq, asc := byteBuf(d, M*H), d.NewBufferFloats(make([]float32, M))
+		aq, asc := byteBuf(d, M*H), NewBufferFloats(d, make([]float32, M))
 		for m := 0; m < M; m++ {
 			e.Dispatch(r.pRms, tgReduceNorm, tgReduceNorm, bx.At(m*H*4), L.preNorm, aq.At(m*H), asc.At(m*4), uH, r.uEps, r.uAddOne)
 		}
@@ -132,10 +132,10 @@ func bvkForwardM(r *resident, pipes bvkPipes, embs [][]float32, startPos int) (b
 			}
 		}
 
-		cq, cSc := byteBuf(d, M*nHhd), d.NewBufferFloats(make([]float32, M))
+		cq, cSc := byteBuf(d, M*nHhd), NewBufferFloats(d, make([]float32, M))
 		for m := 0; m < M; m++ {
 			pos := startPos + m
-			uPos, uNKeys := d.NewBufferU32(uint32(pos)), d.NewBufferU32(uint32(pos+1))
+			uPos, uNKeys := NewBufferU32(d, uint32(pos)), NewBufferU32(d, uint32(pos+1))
 			e.Dispatch(r.pRope, r.nH*g.half, 64, qkv.At(m*qkvRows*4), L.invf, g.uHd, uPos, g.uQtotal, g.uHalf)
 			e.Dispatch(r.pRope, g.nKV*g.half, 64, qkv.At(m*qkvRows*4+kOff), L.invf, g.uHd, uPos, g.uKtotal, g.uHalf)
 			e.Dispatch(r.pKv, g.kvDim, 64, qkv.At(m*qkvRows*4+kOff), qkv.At(m*qkvRows*4+vOff), r.kc[l], r.vc[l], g.uKvDim, uPos)
@@ -168,7 +168,7 @@ func bvkForwardM(r *resident, pipes bvkPipes, embs [][]float32, startPos int) (b
 		}
 
 		// --- ffn block (dense SwiGLU/GeGLU only) ---
-		mq, mSc := byteBuf(d, M*H), d.NewBufferFloats(make([]float32, M))
+		mq, mSc := byteBuf(d, M*H), NewBufferFloats(d, make([]float32, M))
 		for m := 0; m < M; m++ {
 			e.Dispatch(r.pRms, tgReduceNorm, tgReduceNorm, bx.At(m*H*4), L.postNorm, mq.At(m*H), mSc.At(m*4), uH, r.uEps, r.uAddOne)
 		}
@@ -178,7 +178,7 @@ func bvkForwardM(r *resident, pipes bvkPipes, embs [][]float32, startPos int) (b
 		guOut := d.NewBufferLen(M * 2 * I)
 		e.DispatchTG(pipes.plain, (2*I)*32, 256, bvkThreadgroupBytes(H, M), L.guW, L.guS, mq, mSc, guOut, uH, u2I, uKK)
 
-		dq, dSc := byteBuf(d, M*I), d.NewBufferFloats(make([]float32, M))
+		dq, dSc := byteBuf(d, M*I), NewBufferFloats(d, make([]float32, M))
 		for m := 0; m < M; m++ {
 			e.Dispatch(r.pSw, 256, 256, guOut.At(m*2*I*4), guOut.At(m*2*I*4+I*4), dq.At(m*I), dSc.At(m*4), uI, r.uAct)
 		}
@@ -202,7 +202,7 @@ func bvkForwardM(r *resident, pipes bvkPipes, embs [][]float32, startPos int) (b
 
 	// --- final norm + LM head (per-token: the int8 LM head is out of scope for this W4A8
 	// investigation, and is decode's own unmodified pipeline either way) ---
-	finalAq, finalAsc := byteBuf(d, M*H), d.NewBufferFloats(make([]float32, M))
+	finalAq, finalAsc := byteBuf(d, M*H), NewBufferFloats(d, make([]float32, M))
 	for m := 0; m < M; m++ {
 		e.Dispatch(r.pRms, tgReduceNorm, tgReduceNorm, bx.At(m*H*4), r.finalNorm, finalAq.At(m*H), finalAsc.At(m*4), uH, r.uEps, r.uAddOne)
 	}
@@ -616,13 +616,13 @@ func TestBatchedVerifyKernelBench(t *testing.T) {
 				// not a bug in the kernels themselves.
 				runtime.LockOSThread()
 				defer runtime.UnlockOSThread()
-				wq := d.NewBufferUint32s(make([]uint32, sh.N*(sh.K/8)))
-				sc := d.NewBufferU16s(make([]uint16, sh.N*(sh.K/32)))
+				wq := NewBufferUint32s(d, make([]uint32, sh.N*(sh.K/8)))
+				sc := NewBufferU16s(d, make([]uint16, sh.N*(sh.K/32)))
 				aq := byteBuf(d, 16*sh.K)
-				asc := d.NewBufferFloats(make([]float32, 16))
+				asc := NewBufferFloats(d, make([]float32, 16))
 				out := d.NewBufferLen(16 * sh.N)
-				bias := d.NewBufferFloats(make([]float32, sh.N))
-				uK, uN := d.NewBufferU32(uint32(sh.K)), d.NewBufferU32(uint32(sh.N))
+				bias := NewBufferFloats(d, make([]float32, sh.N))
+				uK, uN := NewBufferU32(d, uint32(sh.K)), NewBufferU32(d, uint32(sh.N))
 				q := d.NewCommandQueue()
 
 				var single time.Duration
@@ -638,7 +638,7 @@ func TestBatchedVerifyKernelBench(t *testing.T) {
 
 				limit := d.MaxThreadgroupMemoryLength()
 				for _, M := range []int{2, 4, 8, 16} {
-					uMM := d.NewBufferU32(uint32(M))
+					uMM := NewBufferU32(d, uint32(M))
 					var bk time.Duration
 					switch sh.kind {
 					case "bias":

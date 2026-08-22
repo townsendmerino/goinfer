@@ -34,21 +34,21 @@ func TestProfileKernels(t *testing.T) {
 	kvDim := nKV * hd
 	V := 151936
 	// dummy buffers big enough for any kernel here.
-	w := d.NewBufferUint32s(make([]uint32, V*(H/8))) // int4 weights (largest: lm head)
-	sc := d.NewBufferFloats(make([]float32, V*(H/32)))
-	wI := d.NewBufferUint32s(make([]uint32, (2*I)*(H/8))) // gate/up
-	scI := d.NewBufferFloats(make([]float32, (2*I)*(H/32)))
-	wD := d.NewBufferUint32s(make([]uint32, H*(I/8))) // down (K=I)
-	scD := d.NewBufferFloats(make([]float32, H*(I/32)))
+	w := NewBufferUint32s(d, make([]uint32, V*(H/8))) // int4 weights (largest: lm head)
+	sc := NewBufferFloats(d, make([]float32, V*(H/32)))
+	wI := NewBufferUint32s(d, make([]uint32, (2*I)*(H/8))) // gate/up
+	scI := NewBufferFloats(d, make([]float32, (2*I)*(H/32)))
+	wD := NewBufferUint32s(d, make([]uint32, H*(I/8))) // down (K=I)
+	scD := NewBufferFloats(d, make([]float32, H*(I/32)))
 	aqI := byteBuf(d, I)
 	aScB := d.NewBufferLen(1)
-	bias := d.NewBufferFloats(make([]float32, V))
+	bias := NewBufferFloats(d, make([]float32, V))
 	outBig := d.NewBufferLen(V)
-	uHb, uIb := d.NewBufferU32(H), d.NewBufferU32(I)
-	fH, fH2 := d.NewBufferFloats(make([]float32, H)), d.NewBufferFloats(make([]float32, H))
-	fI, fI2 := d.NewBufferFloats(make([]float32, I)), d.NewBufferFloats(make([]float32, I))
+	uHb, uIb := NewBufferU32(d, H), NewBufferU32(d, I)
+	fH, fH2 := NewBufferFloats(d, make([]float32, H)), NewBufferFloats(d, make([]float32, H))
+	fI, fI2 := NewBufferFloats(d, make([]float32, I)), NewBufferFloats(d, make([]float32, I))
 	kc := d.NewBufferLen(64 * kvDim)
-	uNH, uNKV, uHd, uNK, uSc, uEps := d.NewBufferU32(nH), d.NewBufferU32(nKV), d.NewBufferU32(hd), d.NewBufferU32(32), d.NewBufferFloats([]float32{0.08}), d.NewBufferFloats([]float32{1e-6})
+	uNH, uNKV, uHd, uNK, uSc, uEps := NewBufferU32(d, nH), NewBufferU32(d, nKV), NewBufferU32(d, hd), NewBufferU32(d, 32), NewBufferFloats(d, []float32{0.08}), NewBufferFloats(d, []float32{1e-6})
 
 	q := d.NewCommandQueue()
 	prof := func(name string, reps int, run func(reps int)) time.Duration {
@@ -79,7 +79,7 @@ func TestProfileKernels(t *testing.T) {
 	oproj := prof("o gemv (1536xK1536)", 200, func(r int) { q.Run1DBatch(pGemvR, H*32, 32, r, w, sc, aqI, aScB, fH, uHb) })
 	lm := prof("lm head gemv (151936xK1536)", 60, func(r int) { q.Run1DBatch(pGemvC, V*32, 32, r, w, sc, aqI, aScB, outBig, uHb) })
 	// Gemma parameterization: plain w + SwiGLU for this dense profile (see layer_test).
-	uAddOne0, uActSiLU := d.NewBufferU32(0), d.NewBufferU32(1)
+	uAddOne0, uActSiLU := NewBufferU32(d, 0), NewBufferU32(d, 1)
 	rms := prof("rmsnorm_quant (H1536)", 400, func(r int) { q.Run1DBatch(pRms, 256, 256, r, fH, fH2, aqI, aScB, uHb, uEps, uAddOne0) })
 	sw := prof("swiglu_quant (I8960)", 400, func(r int) { q.Run1DBatch(pSw, 256, 256, r, fI, fI2, aqI, aScB, uIb, uActSiLU) })
 	at := prof("attention (nH12,nKeys32)", 400, func(r int) { q.Run1DBatch(pAttn, nH*128, 128, r, fH, kc, kc, fH2, uNH, uNKV, uHd, uNK, uSc) })

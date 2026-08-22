@@ -105,20 +105,20 @@ func deltaNetChainDrift(t *testing.T, src string) (worst []stage, skip bool) {
 	// makes this a drift test rather than 64 independent single-step checks. dWin/dState are the
 	// two that MUST start zeroed (matching newDeltaState); everything else is written before read.
 	dMixed, dConv := d.NewBufferLen(convDim), d.NewBufferLen(convDim)
-	dConvW := d.NewBufferFloats(convW)
-	dWin := d.NewBufferFloats(make([]float32, (convK-1)*convDim))
+	dConvW := NewBufferFloats(d, convW)
+	dWin := NewBufferFloats(d, make([]float32, (convK-1)*convDim))
 	dBt, dAt := d.NewBufferLen(nv), d.NewBufferLen(nv)
-	dDt, dNegA, dNormW := d.NewBufferFloats(dtBias), d.NewBufferFloats(negExpA), d.NewBufferFloats(normW)
+	dDt, dNegA, dNormW := NewBufferFloats(d, dtBias), NewBufferFloats(d, negExpA), NewBufferFloats(d, normW)
 	dHeadP := d.NewBufferLen(nv * 2)
 	dQn, dKn := d.NewBufferLen(keyDim), d.NewBufferLen(keyDim)
-	dState := d.NewBufferFloats(make([]float32, nv*hv*hk))
+	dState := NewBufferFloats(d, make([]float32, nv*hv*hk))
 	dCore, dZ, dGated := d.NewBufferLen(valueDim), d.NewBufferLen(valueDim), d.NewBufferLen(valueDim)
 
-	uConvDim, uK := d.NewBufferU32(uint32(convDim)), d.NewBufferU32(uint32(convK))
-	uNv, uNk, uHk, uHv := d.NewBufferU32(uint32(nv)), d.NewBufferU32(uint32(nk)), d.NewBufferU32(uint32(hk)), d.NewBufferU32(uint32(hv))
-	uKeyDim, uQScale := d.NewBufferU32(uint32(keyDim)), d.NewBufferFloats([]float32{qScale})
-	uRep, uVBase := d.NewBufferU32(uint32(rep)), d.NewBufferU32(uint32(2*keyDim))
-	uEps := d.NewBufferFloats([]float32{eps})
+	uConvDim, uK := NewBufferU32(d, uint32(convDim)), NewBufferU32(d, uint32(convK))
+	uNv, uNk, uHk, uHv := NewBufferU32(d, uint32(nv)), NewBufferU32(d, uint32(nk)), NewBufferU32(d, uint32(hk)), NewBufferU32(d, uint32(hv))
+	uKeyDim, uQScale := NewBufferU32(d, uint32(keyDim)), NewBufferFloats(d, []float32{qScale})
+	uRep, uVBase := NewBufferU32(d, uint32(rep)), NewBufferU32(d, uint32(2*keyDim))
+	uEps := NewBufferFloats(d, []float32{eps})
 
 	q_ := d.NewCommandQueue()
 
@@ -247,10 +247,10 @@ func TestDeltaNorm_zeroHead(t *testing.T) {
 		conv[keyDim+hk+i] = 1e-7
 	}
 
-	dConv := d.NewBufferFloats(conv)
+	dConv := NewBufferFloats(d, conv)
 	dQn, dKn := d.NewBufferLen(keyDim), d.NewBufferLen(keyDim)
-	uNk, uHk, uKeyDim := d.NewBufferU32(uint32(nk)), d.NewBufferU32(uint32(hk)), d.NewBufferU32(uint32(keyDim))
-	uQScale := d.NewBufferFloats([]float32{qScale})
+	uNk, uHk, uKeyDim := NewBufferU32(d, uint32(nk)), NewBufferU32(d, uint32(hk)), NewBufferU32(d, uint32(keyDim))
+	uQScale := NewBufferFloats(d, []float32{qScale})
 
 	q_ := d.NewCommandQueue()
 	e := q_.Begin()

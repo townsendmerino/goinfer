@@ -100,15 +100,15 @@ func TestGemma4Router_residentIdxParity(t *testing.T) {
 
 		// Device: rn (f32, NO quant) → gemv_f32_f32 → moe_route. Exactly the resident router chain.
 		logits := d.NewBufferLen(nE)
-		q.Run1D(pGemv, nE*32, 32, d.NewBufferFloats(proj), d.NewBufferFloats(rn), logits, d.NewBufferU32(uint32(hidden)))
+		q.Run1D(pGemv, nE*32, 32, NewBufferFloats(d, proj), NewBufferFloats(d, rn), logits, NewBufferU32(d, uint32(hidden)))
 		// moe_route: sigmoid=0 (softmax), norm=1 (unconditional renorm), scale=1, nGroup=1, topkGroup=1.
 		// Per-expert scale is applied OUTSIDE the router and does not affect selection.
-		idxBuf := d.NewBufferUint32s(make([]uint32, topK))
+		idxBuf := NewBufferUint32s(d, make([]uint32, topK))
 		wgtBuf := d.NewBufferLen(topK)
-		q.Run1D(pRoute, 1, 1, logits, d.NewBufferFloats(bias), idxBuf, wgtBuf,
-			d.NewBufferU32(uint32(nE)), d.NewBufferU32(uint32(topK)),
-			d.NewBufferU32(0), d.NewBufferU32(1), d.NewBufferFloats([]float32{1}),
-			d.NewBufferU32(1), d.NewBufferU32(1))
+		q.Run1D(pRoute, 1, 1, logits, NewBufferFloats(d, bias), idxBuf, wgtBuf,
+			NewBufferU32(d, uint32(nE)), NewBufferU32(d, uint32(topK)),
+			NewBufferU32(d, 0), NewBufferU32(d, 1), NewBufferFloats(d, []float32{1}),
+			NewBufferU32(d, 1), NewBufferU32(d, 1))
 		gpuIdx := idxBuf.U32s()
 
 		// Binary equality against the CPU selection (order-independent: top-k is a SET).

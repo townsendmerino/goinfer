@@ -44,13 +44,13 @@ func (r *resident) geomFor(cache map[[4]int]*attnGeom, hd, nKV, half int, kEqV b
 	d := r.d
 	g := &attnGeom{
 		hd: hd, nKV: nKV, kvDim: nKV * hd, half: half, kEqV: kEqV,
-		uHd:     d.NewBufferU32(uint32(hd)),
-		uKvDim:  d.NewBufferU32(uint32(nKV * hd)),
-		uNKV:    d.NewBufferU32(uint32(nKV)),
-		uNHhd:   d.NewBufferU32(uint32(r.nH * hd)),
-		uHalf:   d.NewBufferU32(uint32(half)),
-		uQtotal: d.NewBufferU32(uint32(r.nH * half)),
-		uKtotal: d.NewBufferU32(uint32(nKV * half)),
+		uHd:     NewBufferU32(d, uint32(hd)),
+		uKvDim:  NewBufferU32(d, uint32(nKV*hd)),
+		uNKV:    NewBufferU32(d, uint32(nKV)),
+		uNHhd:   NewBufferU32(d, uint32(r.nH*hd)),
+		uHalf:   NewBufferU32(d, uint32(half)),
+		uQtotal: NewBufferU32(d, uint32(r.nH*half)),
+		uKtotal: NewBufferU32(d, uint32(nKV*half)),
 	}
 	cache[key] = g
 	return g

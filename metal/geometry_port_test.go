@@ -61,8 +61,8 @@ func TestGeometryPortIsLive(t *testing.T) {
 	// are replaced. Re-run the last position and compare.
 	orig := r.layers[1].geom
 	poisoned := *orig
-	poisoned.uQtotal = r.d.NewBufferU32(0)
-	poisoned.uKtotal = r.d.NewBufferU32(0)
+	poisoned.uQtotal = NewBufferU32(r.d, 0)
+	poisoned.uKtotal = NewBufferU32(r.d, 0)
 	r.layers[1].geom = &poisoned
 	got := append([]float32(nil), r.ForwardEmb(m.EmbedResidentForTest(ids[len(ids)-1]), len(ids)-1)...)
 	r.layers[1].geom = orig // restore (defensive; the runner is torn down after this test)

@@ -71,8 +71,8 @@ func TestSAGemvLargeK(t *testing.T) {
 	out := d.NewBufferLen(N)
 	// dynamic As of K shorts (2*K bytes) — the fix; reps=1.
 	q.Run1DBatchTG(pipe, N*32, 256, 1, K*2,
-		d.NewBufferUint32s(words), d.NewBufferU16s(scalesH), d.NewBufferInt8(aq),
-		d.NewBufferFloats([]float32{aSc}), out, d.NewBufferU32(K))
+		NewBufferUint32s(d, words), NewBufferU16s(d, scalesH), NewBufferInt8(d, aq),
+		NewBufferFloats(d, []float32{aSc}), out, NewBufferU32(d, K))
 	got := out.Floats()
 
 	var dot, na, nb, maxRel float64

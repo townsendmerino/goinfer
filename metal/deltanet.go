@@ -99,13 +99,13 @@ func buildDeltaNetLayer(d *Device, m *decoder.Model, l int, dnet *dnetParams, mk
 	if L.aW, L.aS, e2 = int8Buf(d, &aWM); e2 != nil {
 		return nil, e2
 	}
-	L.convW = d.NewBufferFloats(convW)
-	L.dtBias = d.NewBufferFloats(dtBias)
-	L.negExpA = d.NewBufferFloats(negExpA)
-	L.normW = d.NewBufferFloats(normW)
+	L.convW = NewBufferFloats(d, convW)
+	L.dtBias = NewBufferFloats(d, dtBias)
+	L.negExpA = NewBufferFloats(d, negExpA)
+	L.normW = NewBufferFloats(d, normW)
 	// PERSISTENT, zeroed — matching newDeltaState (decoder/deltanet.go) and cuda's up(make(...)).
-	L.win = d.NewBufferFloats(make([]float32, (dnet.convK-1)*dnet.convDim))
-	L.state = d.NewBufferFloats(make([]float32, dnet.stateElems))
+	L.win = NewBufferFloats(d, make([]float32, (dnet.convK-1)*dnet.convDim))
+	L.state = NewBufferFloats(d, make([]float32, dnet.stateElems))
 	return L, nil
 }
 

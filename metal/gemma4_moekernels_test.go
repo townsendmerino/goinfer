@@ -59,10 +59,10 @@ func TestGemma4Kernels_rmsnormNW(t *testing.T) {
 		want[i] = src[i] * inv
 	}
 
-	srcBuf := d.NewBufferFloats(src)
+	srcBuf := NewBufferFloats(d, src)
 	dstBuf := d.NewBufferLen(H)
 	q := d.NewCommandQueue()
-	q.Run1D(pipe, 256, 256, srcBuf, dstBuf, d.NewBufferU32(H), d.NewBufferFloats([]float32{eps}))
+	q.Run1D(pipe, 256, 256, srcBuf, dstBuf, NewBufferU32(d, H), NewBufferFloats(d, []float32{eps}))
 	got := dstBuf.Floats()
 	gotSrc := srcBuf.Floats()
 
@@ -107,9 +107,9 @@ func TestGemma4Kernels_scaleWgtByExpert(t *testing.T) {
 	for k := range K {
 		want[k] = wgt[k] * perExpertScale[idx[k]] // 0.6*2.0=1.2 ; 0.4*1.5=0.6
 	}
-	wgtBuf := d.NewBufferFloats(wgt)
+	wgtBuf := NewBufferFloats(d, wgt)
 	q := d.NewCommandQueue()
-	q.Run1D(pipe, K, K, wgtBuf, d.NewBufferUint32s(idx), d.NewBufferFloats(perExpertScale), d.NewBufferU32(uint32(K)))
+	q.Run1D(pipe, K, K, wgtBuf, NewBufferUint32s(d, idx), NewBufferFloats(d, perExpertScale), NewBufferU32(d, uint32(K)))
 	got := wgtBuf.Floats()
 	for k := range K {
 		if dd := math.Abs(float64(got[k] - want[k])); dd > 1e-6 {
@@ -147,8 +147,8 @@ func TestGemma4Kernels_scaleVec_zeroVec(t *testing.T) {
 	const s = 0.375
 	q := d.NewCommandQueue()
 
-	xBuf := d.NewBufferFloats(x)
-	q.Run1D(pScale, H, 256, xBuf, d.NewBufferFloats([]float32{s}))
+	xBuf := NewBufferFloats(d, x)
+	q.Run1D(pScale, H, 256, xBuf, NewBufferFloats(d, []float32{s}))
 	gotScale := xBuf.Floats()
 	for i := range x {
 		if dd := math.Abs(float64(gotScale[i] - x[i]*s)); dd > 1e-6 {
@@ -162,7 +162,7 @@ func TestGemma4Kernels_scaleVec_zeroVec(t *testing.T) {
 	for i := range poison {
 		poison[i] = nan
 	}
-	zBuf := d.NewBufferFloats(poison)
+	zBuf := NewBufferFloats(d, poison)
 	q.Run1D(pZero, H, 256, zBuf)
 	gotZero := zBuf.Floats()
 	for i := range gotZero {

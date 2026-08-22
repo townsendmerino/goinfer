@@ -103,12 +103,12 @@ func gemvCoalDrift(t *testing.T, src string) (worst gemvCoalResult, skip bool) {
 	q := d.NewCommandQueue()
 	out := d.NewBufferLen(gemvCoalN)
 	q.Run1D(pipe, gemvCoalN*32, 32,
-		d.NewBufferInt8(aq),
-		d.NewBufferFloats([]float32{aSc}),
-		d.NewBufferInt8(bq),
-		d.NewBufferFloats(bSc),
+		NewBufferInt8(d, aq),
+		NewBufferFloats(d, []float32{aSc}),
+		NewBufferInt8(d, bq),
+		NewBufferFloats(d, bSc),
 		out,
-		d.NewBufferU32(uint32(gemvCoalK)),
+		NewBufferU32(d, uint32(gemvCoalK)),
 	)
 	got := out.Floats()
 
@@ -162,12 +162,12 @@ func BenchmarkGemvW8A8Coal(b *testing.B) {
 		}
 		return s
 	}
-	dAq := d.NewBufferInt8(rnd8(gemvCoalK))
-	dAsc := d.NewBufferFloats([]float32{0.01})
-	dBq := d.NewBufferInt8(rnd8(gemvCoalN * gemvCoalK))
-	dBsc := d.NewBufferFloats(rndf(gemvCoalN))
+	dAq := NewBufferInt8(d, rnd8(gemvCoalK))
+	dAsc := NewBufferFloats(d, []float32{0.01})
+	dBq := NewBufferInt8(d, rnd8(gemvCoalN*gemvCoalK))
+	dBsc := NewBufferFloats(d, rndf(gemvCoalN))
 	dOut := d.NewBufferLen(gemvCoalN)
-	uK := d.NewBufferU32(uint32(gemvCoalK))
+	uK := NewBufferU32(d, uint32(gemvCoalK))
 
 	q_ := d.NewCommandQueue()
 	const reps = 2 // starting point mirroring BenchmarkDeltaRule's bisected-safe reps; re-bisect if this crashes

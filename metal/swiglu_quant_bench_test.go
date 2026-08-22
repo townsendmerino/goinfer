@@ -61,12 +61,12 @@ func TestSwigluQuant_cpuParity(t *testing.T) {
 	dqBuf := d.NewBufferBytes(sgI)
 	dsBuf := d.NewBufferLen(1)
 	q.Run1D(pipe, 256, 256,
-		d.NewBufferFloats(g),
-		d.NewBufferFloats(u),
+		NewBufferFloats(d, g),
+		NewBufferFloats(d, u),
 		dqBuf,
 		dsBuf,
-		d.NewBufferU32(uint32(sgI)),
-		d.NewBufferU32(actSilu),
+		NewBufferU32(d, uint32(sgI)),
+		NewBufferU32(d, actSilu),
 	)
 	gotQ := dqBuf.Int8s()
 	gotSc := dsBuf.Floats()[0]
@@ -115,12 +115,12 @@ func BenchmarkSwigluQuant(b *testing.B) {
 		}
 		return s
 	}
-	dG := d.NewBufferFloats(rndf(sgI))
-	dU := d.NewBufferFloats(rndf(sgI))
+	dG := NewBufferFloats(d, rndf(sgI))
+	dU := NewBufferFloats(d, rndf(sgI))
 	dDq := d.NewBufferBytes(sgI)
 	dDs := d.NewBufferLen(1)
-	uI := d.NewBufferU32(uint32(sgI))
-	uAct := d.NewBufferU32(1)
+	uI := NewBufferU32(d, uint32(sgI))
+	uAct := NewBufferU32(d, 1)
 
 	q_ := d.NewCommandQueue()
 	const reps = 8

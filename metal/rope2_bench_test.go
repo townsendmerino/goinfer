@@ -38,15 +38,15 @@ func BenchmarkRope2(b *testing.B) {
 		}
 		return s
 	}
-	dX := d.NewBufferFloats(rndf(nH*hd + nKV*hd*2)) // qkv fused: Q + K + V, only Q/K rotated
-	dInvf := d.NewBufferFloats(rndf(half))
-	uHd := d.NewBufferU32(hd)
-	uPos := d.NewBufferU32(3)
-	uQtotal := d.NewBufferU32(qTotal)
-	uKtotal := d.NewBufferU32(kTotal)
-	uHalf := d.NewBufferU32(half)
-	uScale := d.NewBufferFloats([]float32{1.0})
-	uNHhd := d.NewBufferU32(uint32(nHhd))
+	dX := NewBufferFloats(d, rndf(nH*hd+nKV*hd*2)) // qkv fused: Q + K + V, only Q/K rotated
+	dInvf := NewBufferFloats(d, rndf(half))
+	uHd := NewBufferU32(d, hd)
+	uPos := NewBufferU32(d, 3)
+	uQtotal := NewBufferU32(d, qTotal)
+	uKtotal := NewBufferU32(d, kTotal)
+	uHalf := NewBufferU32(d, half)
+	uScale := NewBufferFloats(d, []float32{1.0})
+	uNHhd := NewBufferU32(d, uint32(nHhd))
 
 	q_ := d.NewCommandQueue()
 	const reps = 8

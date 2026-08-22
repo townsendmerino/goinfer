@@ -59,11 +59,11 @@ func TestActQuant_cpuParity(t *testing.T) {
 	dqBuf := d.NewBufferBytes(aqI)
 	dsBuf := d.NewBufferLen(1)
 	q.Run1D(pipe, 256, 256,
-		d.NewBufferFloats(u),
+		NewBufferFloats(d, u),
 		dqBuf,
 		dsBuf,
-		d.NewBufferU32(uint32(aqI)),
-		d.NewBufferU32(actGeluTanh),
+		NewBufferU32(d, uint32(aqI)),
+		NewBufferU32(d, actGeluTanh),
 	)
 	gotQ := dqBuf.Int8s()
 	gotSc := dsBuf.Floats()[0]
@@ -112,11 +112,11 @@ func BenchmarkActQuant(b *testing.B) {
 		}
 		return s
 	}
-	dU := d.NewBufferFloats(rndf(aqI))
+	dU := NewBufferFloats(d, rndf(aqI))
 	dDq := d.NewBufferBytes(aqI)
 	dDs := d.NewBufferLen(1)
-	uI := d.NewBufferU32(uint32(aqI))
-	uAct := d.NewBufferU32(0)
+	uI := NewBufferU32(d, uint32(aqI))
+	uAct := NewBufferU32(d, 0)
 
 	q_ := d.NewCommandQueue()
 	const reps = 8

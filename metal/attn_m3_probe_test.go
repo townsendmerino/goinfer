@@ -42,9 +42,9 @@ func TestZZ_attnM3ThreadWidth(t *testing.T) {
 	q := d.NewBufferBytes(nH * hd * 4)
 	out := d.NewBufferBytes(nH * hd * 4)
 	kc, vc := d.NewBufferBytes(nKeys*kvDim*2), d.NewBufferBytes(nKeys*kvDim*2)
-	uNH, uNKV, uHd := d.NewBufferU32(nH), d.NewBufferU32(nKV), d.NewBufferU32(hd)
-	uNKeys, uWindow := d.NewBufferU32(nKeys), d.NewBufferU32(0)
-	uScale := d.NewBufferFloats([]float32{1.0 / 11.3137})
+	uNH, uNKV, uHd := NewBufferU32(d, nH), NewBufferU32(d, nKV), NewBufferU32(d, hd)
+	uNKeys, uWindow := NewBufferU32(d, nKeys), NewBufferU32(d, 0)
+	uScale := NewBufferFloats(d, []float32{1.0 / 11.3137})
 
 	qu := d.NewCommandQueue()
 	arp := NewARPool()

@@ -54,7 +54,7 @@ func TestLayerB_fullLayerForward(t *testing.T) {
 	// rmsnorm_quant/swiglu_quant are parameterized for Gemma: addOne selects the (1+w) RMS offset
 	// and act selects SiLU vs GELU-tanh. This layer is a Llama/Qwen block — plain w, SwiGLU. These
 	// MUST be bound: an unbound uniform reads garbage, and a nonzero act silently runs GeGLU.
-	uAddOne0, uActSiLU := d.NewBufferU32(0), d.NewBufferU32(1)
+	uAddOne0, uActSiLU := NewBufferU32(d, 0), NewBufferU32(d, 1)
 
 	const H, nH, nKV, hd, I, pos = 256, 4, 2, 64, 512, 5
 	const eps = 1e-6
@@ -95,7 +95,7 @@ func TestLayerB_fullLayerForward(t *testing.T) {
 			copy(bq[n*in:(n+1)*in], q)
 			bs[n] = s
 		}
-		return d.NewBufferInt8(bq), d.NewBufferFloats(bs)
+		return NewBufferInt8(d, bq), NewBufferFloats(d, bs)
 	}
 	qqW, qqS := packMat(Wq, nH*hd, H)
 	kqW, kqS := packMat(Wk, kvDim, H)
@@ -106,7 +106,7 @@ func TestLayerB_fullLayerForward(t *testing.T) {
 	dqW, dqS := packMat(Wd, H, I)
 
 	byteBuf := func(n int) Buffer { return d.NewBufferBytes(n) }
-	x := d.NewBufferFloats(x0)
+	x := NewBufferFloats(d, x0)
 	aq, aSc := byteBuf(H), d.NewBufferLen(1)
 	qB, kB, vB := d.NewBufferLen(nH*hd), d.NewBufferLen(kvDim), d.NewBufferLen(kvDim)
 	// f16 KV cache: history uploaded as half, room for the new position (kv_store writes it).
@@ -114,7 +114,7 @@ func TestLayerB_fullLayerForward(t *testing.T) {
 	for i := 0; i < pos*kvDim; i++ {
 		kh[i], vh[i] = f32ToF16(kcHist[i]), f32ToF16(vcHist[i])
 	}
-	kc, vc := d.NewBufferU16s(kh), d.NewBufferU16s(vh)
+	kc, vc := NewBufferU16s(d, kh), NewBufferU16s(d, vh)
 	ctx := d.NewBufferLen(nH * hd)
 	cq, cSc := byteBuf(nH*hd), d.NewBufferLen(1)
 	oO := d.NewBufferLen(H)
@@ -122,20 +122,20 @@ func TestLayerB_fullLayerForward(t *testing.T) {
 	gO, uO := d.NewBufferLen(I), d.NewBufferLen(I)
 	dq, dSc := byteBuf(I), d.NewBufferLen(1)
 	dO := d.NewBufferLen(H)
-	uHd, uKvDim := d.NewBufferU32(hd), d.NewBufferU32(uint32(kvDim))
-	uPos, uH, uI := d.NewBufferU32(pos), d.NewBufferU32(H), d.NewBufferU32(I)
-	uHH := d.NewBufferU32(uint32(nH * hd))
-	uNH, uNKV, uNKeys := d.NewBufferU32(nH), d.NewBufferU32(nKV), d.NewBufferU32(pos+1)
-	uWindow0 := d.NewBufferU32(0) // full causal — the attention kernel's window arg (buffer 9)
-	uScale, uEps := d.NewBufferFloats([]float32{scale}), d.NewBufferFloats([]float32{eps})
-	uInvf := d.NewBufferFloats(invf)
-	uQtotal, uKtotal := d.NewBufferU32(uint32(nH*half)), d.NewBufferU32(uint32(nKV*half))
-	uHalf := d.NewBufferU32(uint32(half))           // rope rhalf (buffer 5): rotaryDim/2, full rotary here
-	uRopeScale := d.NewBufferFloats([]float32{1.0}) // rope mscale (buffer 6): no YaRN here
+	uHd, uKvDim := NewBufferU32(d, hd), NewBufferU32(d, uint32(kvDim))
+	uPos, uH, uI := NewBufferU32(d, pos), NewBufferU32(d, H), NewBufferU32(d, I)
+	uHH := NewBufferU32(d, uint32(nH*hd))
+	uNH, uNKV, uNKeys := NewBufferU32(d, nH), NewBufferU32(d, nKV), NewBufferU32(d, pos+1)
+	uWindow0 := NewBufferU32(d, 0) // full causal — the attention kernel's window arg (buffer 9)
+	uScale, uEps := NewBufferFloats(d, []float32{scale}), NewBufferFloats(d, []float32{eps})
+	uInvf := NewBufferFloats(d, invf)
+	uQtotal, uKtotal := NewBufferU32(d, uint32(nH*half)), NewBufferU32(d, uint32(nKV*half))
+	uHalf := NewBufferU32(d, uint32(half))           // rope rhalf (buffer 5): rotaryDim/2, full rotary here
+	uRopeScale := NewBufferFloats(d, []float32{1.0}) // rope mscale (buffer 6): no YaRN here
 
 	q := d.NewCommandQueue()
 	enc := q.Begin()
-	enc.Dispatch(pRms, 256, 256, x, d.NewBufferFloats(attnNorm), aq, aSc, uH, uEps, uAddOne0)
+	enc.Dispatch(pRms, 256, 256, x, NewBufferFloats(d, attnNorm), aq, aSc, uH, uEps, uAddOne0)
 	enc.Dispatch(pGemv, nH*hd, 64, aq, aSc, qqW, qqS, qB, uH)
 	enc.Dispatch(pGemv, kvDim, 64, aq, aSc, kqW, kqS, kB, uH)
 	enc.Dispatch(pGemv, kvDim, 64, aq, aSc, vqW, vqS, vB, uH)
@@ -146,7 +146,7 @@ func TestLayerB_fullLayerForward(t *testing.T) {
 	enc.Dispatch(pQv, 256, 256, ctx, cq, cSc, uHH)
 	enc.Dispatch(pGemv, H, 64, cq, cSc, oqW, oqS, oO, uHH)
 	enc.Dispatch(pRes, H, 64, x, oO)
-	enc.Dispatch(pRms, 256, 256, x, d.NewBufferFloats(mlpNorm), mq, mSc, uH, uEps, uAddOne0)
+	enc.Dispatch(pRms, 256, 256, x, NewBufferFloats(d, mlpNorm), mq, mSc, uH, uEps, uAddOne0)
 	enc.Dispatch(pGemv, I, 64, mq, mSc, gqW, gqS, gO, uH)
 	enc.Dispatch(pGemv, I, 64, mq, mSc, uqW, uqS, uO, uH)
 	enc.Dispatch(pSw, 256, 256, gO, uO, dq, dSc, uI, uActSiLU)

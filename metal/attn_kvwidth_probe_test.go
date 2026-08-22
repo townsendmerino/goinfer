@@ -61,9 +61,9 @@ func TestZZ_attnKVWidthProbe(t *testing.T) {
 	out := d.NewBufferBytes(nH * hd * 4)
 	kc16, vc16 := d.NewBufferBytes(nKeys*kvDim*2), d.NewBufferBytes(nKeys*kvDim*2) // f16
 	kc8, vc8 := d.NewBufferBytes(nKeys*kvDim*1), d.NewBufferBytes(nKeys*kvDim*1)   // int8 (half the bytes)
-	uNH, uNKV, uHd := d.NewBufferU32(nH), d.NewBufferU32(nKV), d.NewBufferU32(hd)
-	uNKeys, uWindow := d.NewBufferU32(nKeys), d.NewBufferU32(0)
-	uScale := d.NewBufferFloats([]float32{scale})
+	uNH, uNKV, uHd := NewBufferU32(d, nH), NewBufferU32(d, nKV), NewBufferU32(d, hd)
+	uNKeys, uWindow := NewBufferU32(d, nKeys), NewBufferU32(d, 0)
+	uScale := NewBufferFloats(d, []float32{scale})
 
 	qu := d.NewCommandQueue()
 	arp := NewARPool()

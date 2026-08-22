@@ -93,8 +93,8 @@ func TestSAGemv_OutlierRegime(t *testing.T) {
 	q := d.NewCommandQueue()
 	out := d.NewBufferLen(N)
 	q.Run1DBatchTG(pipe, N*32, 256, 1, K*2,
-		d.NewBufferUint32s(words), d.NewBufferU16s(scalesH), d.NewBufferInt8(aq),
-		d.NewBufferFloats([]float32{aSc}), out, d.NewBufferU32(K))
+		NewBufferUint32s(d, words), NewBufferU16s(d, scalesH), NewBufferInt8(d, aq),
+		NewBufferFloats(d, []float32{aSc}), out, NewBufferU32(d, K))
 	got := out.Floats()
 
 	// Worst per-row divergence AND the worst on the small-output rows (the ones the flip hits).

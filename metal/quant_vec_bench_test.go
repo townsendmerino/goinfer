@@ -53,10 +53,10 @@ func TestQuantVec_cpuParity(t *testing.T) {
 	aqBuf := d.NewBufferBytes(qvH)
 	ascBuf := d.NewBufferLen(1)
 	q.Run1D(pipe, 256, 256,
-		d.NewBufferFloats(x),
+		NewBufferFloats(d, x),
 		aqBuf,
 		ascBuf,
-		d.NewBufferU32(uint32(qvH)),
+		NewBufferU32(d, uint32(qvH)),
 	)
 	gotQ := aqBuf.Int8s()
 	gotSc := ascBuf.Floats()[0]
@@ -106,10 +106,10 @@ func BenchmarkQuantVec(b *testing.B) {
 		}
 		return s
 	}
-	dX := d.NewBufferFloats(rndf(qvH))
+	dX := NewBufferFloats(d, rndf(qvH))
 	dAq := d.NewBufferBytes(qvH)
 	dAsc := d.NewBufferLen(1)
-	uH := d.NewBufferU32(uint32(qvH))
+	uH := NewBufferU32(d, uint32(qvH))
 
 	q_ := d.NewCommandQueue()
 	const reps = 8

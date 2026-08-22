@@ -136,13 +136,13 @@ func runAttnCase(t *testing.T, d *Device, pAttn Pipeline, nH, nKV, hd, nKeys int
 
 	ref := cpuAttention(q, kf, vf, nH, nKV, hd, nKeys, int(window), scale)
 
-	qB := d.NewBufferFloats(q)
-	kc, vc := d.NewBufferU16s(kh), d.NewBufferU16s(vh)
+	qB := NewBufferFloats(d, q)
+	kc, vc := NewBufferU16s(d, kh), NewBufferU16s(d, vh)
 	out := d.NewBufferLen(nH * hd)
-	uNH, uNKV := d.NewBufferU32(uint32(nH)), d.NewBufferU32(uint32(nKV))
-	uHd, uNKeys := d.NewBufferU32(uint32(hd)), d.NewBufferU32(uint32(nKeys))
-	uScale := d.NewBufferFloats([]float32{scale})
-	uWin := d.NewBufferU32(window)
+	uNH, uNKV := NewBufferU32(d, uint32(nH)), NewBufferU32(d, uint32(nKV))
+	uHd, uNKeys := NewBufferU32(d, uint32(hd)), NewBufferU32(d, uint32(nKeys))
+	uScale := NewBufferFloats(d, []float32{scale})
+	uWin := NewBufferU32(d, window)
 
 	cq := d.NewCommandQueue()
 	enc := cq.Begin()

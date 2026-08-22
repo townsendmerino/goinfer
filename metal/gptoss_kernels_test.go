@@ -107,23 +107,23 @@ func TestGptOssAttnSink_metal(t *testing.T) {
 	}
 
 	q_ := d.NewCommandQueue()
-	dQ := d.NewBufferFloats(q)
-	dK := d.NewBufferU16s(kcH)
-	dV := d.NewBufferU16s(vcH)
-	uNH, uNKV, uHd, uNKeys := d.NewBufferU32(uint32(nH)), d.NewBufferU32(uint32(nKV)), d.NewBufferU32(uint32(hd)), d.NewBufferU32(uint32(nKeys))
-	uScale, uWindow0 := d.NewBufferFloats([]float32{scale}), d.NewBufferU32(0)
+	dQ := NewBufferFloats(d, q)
+	dK := NewBufferU16s(d, kcH)
+	dV := NewBufferU16s(d, vcH)
+	uNH, uNKV, uHd, uNKeys := NewBufferU32(d, uint32(nH)), NewBufferU32(d, uint32(nKV)), NewBufferU32(d, uint32(hd)), NewBufferU32(d, uint32(nKeys))
+	uScale, uWindow0 := NewBufferFloats(d, []float32{scale}), NewBufferU32(d, 0)
 
 	run := func(sinks []float32) []float32 {
 		dOut := d.NewBufferLen(qDim)
 		var dSink Buffer
 		var hasSink uint32
 		if sinks != nil {
-			dSink = d.NewBufferFloats(sinks)
+			dSink = NewBufferFloats(d, sinks)
 			hasSink = 1
 		} else {
 			dSink = d.NewBufferLen(nH) // unused placeholder — hasSink=0 means the kernel never reads it
 		}
-		q_.Run1D(pipe, nH*tgs, tgs, dQ, dK, dV, dOut, uNH, uNKV, uHd, uNKeys, uScale, uWindow0, dSink, d.NewBufferU32(hasSink))
+		q_.Run1D(pipe, nH*tgs, tgs, dQ, dK, dV, dOut, uNH, uNKV, uHd, uNKeys, uScale, uWindow0, dSink, NewBufferU32(d, hasSink))
 		return dOut.Floats()
 	}
 
@@ -237,9 +237,9 @@ func TestGptOssSwigluQuant_metal(t *testing.T) {
 	dQ := d.NewBufferBytes(I)
 	dS := d.NewBufferLen(1)
 	q_.Run1D(pipe, 256, 256,
-		d.NewBufferFloats(g), d.NewBufferFloats(u), dQ, dS, d.NewBufferU32(uint32(I)),
-		d.NewBufferFloats(biasGU), d.NewBufferUint32s([]uint32{1}), d.NewBufferU32(uint32(slot)),
-		d.NewBufferU32(1), d.NewBufferFloats([]float32{alpha}), d.NewBufferFloats([]float32{limit}))
+		NewBufferFloats(d, g), NewBufferFloats(d, u), dQ, dS, NewBufferU32(d, uint32(I)),
+		NewBufferFloats(d, biasGU), NewBufferUint32s(d, []uint32{1}), NewBufferU32(d, uint32(slot)),
+		NewBufferU32(d, 1), NewBufferFloats(d, []float32{alpha}), NewBufferFloats(d, []float32{limit}))
 	qs := dQ.Int8s()
 	sc := dS.Floats()[0]
 
@@ -313,8 +313,8 @@ func TestGptOssRoute_metal(t *testing.T) {
 	dIdx := d.NewBufferLen(k) // uint32-sized scratch reused as a uint buffer (4 bytes/elt)
 	dW := d.NewBufferLen(k)
 	q_.Run1D(pipe, 1, 1,
-		d.NewBufferFloats(logits), d.NewBufferFloats(bias), dIdx, dW,
-		d.NewBufferU32(uint32(nE)), d.NewBufferU32(uint32(k)))
+		NewBufferFloats(d, logits), NewBufferFloats(d, bias), dIdx, dW,
+		NewBufferU32(d, uint32(nE)), NewBufferU32(d, uint32(k)))
 	gotIdx := dIdx.U32s()
 	gotW := dW.Floats()
 
@@ -460,12 +460,12 @@ func TestGptOssMoEDownBias_metal(t *testing.T) {
 	}
 
 	q := d.NewCommandQueue()
-	out := d.NewBufferFloats(resid0)
+	out := NewBufferFloats(d, resid0)
 	q.Run1DTG(pipe, N*32, 256, K*2,
-		d.NewBufferUint32s(words), d.NewBufferU16s(scalesH), d.NewBufferInt8(aq),
-		d.NewBufferFloats([]float32{aSc}), out,
-		d.NewBufferU32(uint32(K)), d.NewBufferUint32s([]uint32{1}), d.NewBufferFloats(wgt),
-		d.NewBufferU32(uint32(slot)), d.NewBufferU32(uint32(N)), d.NewBufferFloats(bias))
+		NewBufferUint32s(d, words), NewBufferU16s(d, scalesH), NewBufferInt8(d, aq),
+		NewBufferFloats(d, []float32{aSc}), out,
+		NewBufferU32(d, uint32(K)), NewBufferUint32s(d, []uint32{1}), NewBufferFloats(d, wgt),
+		NewBufferU32(d, uint32(slot)), NewBufferU32(d, uint32(N)), NewBufferFloats(d, bias))
 	got := out.Floats()
 
 	var dot, na, nb, maxRel float64

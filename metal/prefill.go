@@ -330,37 +330,37 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 			xh[m*H+i] = f32ToF16(embs[m][i])
 		}
 	}
-	xF := d.NewBufferU16s(xh)
-	normF := d.NewBufferU16s(make([]uint16, Mpad*H))
-	qkvF := d.NewBufferU16s(make([]uint16, Mpad*qkvDim))
-	ctxF := d.NewBufferU16s(make([]uint16, Mpad*qDim))
-	guF := d.NewBufferU16s(make([]uint16, Mpad*2*I))
-	dqF := d.NewBufferU16s(make([]uint16, Mpad*I))
+	xF := NewBufferU16s(d, xh)
+	normF := NewBufferU16s(d, make([]uint16, Mpad*H))
+	qkvF := NewBufferU16s(d, make([]uint16, Mpad*qkvDim))
+	ctxF := NewBufferU16s(d, make([]uint16, Mpad*qDim))
+	guF := NewBufferU16s(d, make([]uint16, Mpad*2*I))
+	dqF := NewBufferU16s(d, make([]uint16, Mpad*I))
 	posv := make([]uint32, Mpad)
 	for m := range M {
 		posv[m] = uint32(startPos + m)
 	}
-	posB := d.NewBufferUint32s(posv)
+	posB := NewBufferUint32s(d, posv)
 
 	// uniforms
-	uM := d.NewBufferU32(uint32(Mpad))
+	uM := NewBufferU32(d, uint32(Mpad))
 	uH := r.uH
-	uI := d.NewBufferU32(uint32(I))
-	u2I := d.NewBufferU32(uint32(2 * I))
-	uQkv := d.NewBufferU32(uint32(qkvDim))
-	uQDim := d.NewBufferU32(uint32(qDim))
+	uI := NewBufferU32(d, uint32(I))
+	u2I := NewBufferU32(d, uint32(2*I))
+	uQkv := NewBufferU32(d, uint32(qkvDim))
+	uQDim := NewBufferU32(d, uint32(qDim))
 	uKvDim := g0.uKvDim
 	uHd := g0.uHd
-	uStride := d.NewBufferU32(uint32(qkvDim))
-	uKOff := d.NewBufferU32(uint32(nHhd))
-	uVOff := d.NewBufferU32(uint32(nHhd + kvDim))
-	uStartPos := d.NewBufferU32(uint32(startPos))
-	uTotalQ := d.NewBufferU32(uint32(nHhd))
-	uTotalK := d.NewBufferU32(uint32(kvDim))
-	uBase0 := d.NewBufferU32(0)
-	uBaseK := d.NewBufferU32(uint32(nHhd))
-	m0, m1, m2 := d.NewBufferU32(0), d.NewBufferU32(1), d.NewBufferU32(2)
-	dummyBias := d.NewBufferFloats(make([]float32, 1))
+	uStride := NewBufferU32(d, uint32(qkvDim))
+	uKOff := NewBufferU32(d, uint32(nHhd))
+	uVOff := NewBufferU32(d, uint32(nHhd+kvDim))
+	uStartPos := NewBufferU32(d, uint32(startPos))
+	uTotalQ := NewBufferU32(d, uint32(nHhd))
+	uTotalK := NewBufferU32(d, uint32(kvDim))
+	uBase0 := NewBufferU32(d, 0)
+	uBaseK := NewBufferU32(d, uint32(nHhd))
+	m0, m1, m2 := NewBufferU32(d, 0), NewBufferU32(d, 1), NewBufferU32(d, 2)
+	dummyBias := NewBufferFloats(d, make([]float32, 1))
 
 	// C5: every buffer above is per-call scratch/uniform allocated onto the device ledger, which
 	// ReleaseAll frees only at Close — so before this fix each PrefillLast leaked ~24 buffers

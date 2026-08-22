@@ -109,9 +109,9 @@ kernel void attention(device const float* q      [[buffer(0)]],  // [nH*hd] (pos
 	cq := d.NewCommandQueue()
 	out := d.NewBufferLen(nH * hd)
 	cq.Run1D(pipe, nH, 32,
-		d.NewBufferFloats(q), d.NewBufferFloats(kc), d.NewBufferFloats(vc), out,
-		d.NewBufferU32(nH), d.NewBufferU32(nKV), d.NewBufferU32(hd), d.NewBufferU32(nKeys),
-		d.NewBufferFloats([]float32{scale}),
+		NewBufferFloats(d, q), NewBufferFloats(d, kc), NewBufferFloats(d, vc), out,
+		NewBufferU32(d, nH), NewBufferU32(d, nKV), NewBufferU32(d, hd), NewBufferU32(d, nKeys),
+		NewBufferFloats(d, []float32{scale}),
 	)
 	got := out.Floats()
 

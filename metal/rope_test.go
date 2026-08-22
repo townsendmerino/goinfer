@@ -71,10 +71,10 @@ kernel void rope(device float*        x    [[buffer(0)]],  // [nH*hd] in place
 	}
 
 	q := d.NewCommandQueue()
-	xb := d.NewBufferFloats(x)
+	xb := NewBufferFloats(d, x)
 	q.Run1D(pipe, nH*half, 64,
-		xb, d.NewBufferFloats(invf),
-		d.NewBufferU32(uint32(hd)), d.NewBufferU32(uint32(pos)), d.NewBufferU32(uint32(nH*half)),
+		xb, NewBufferFloats(d, invf),
+		NewBufferU32(d, uint32(hd)), NewBufferU32(d, uint32(pos)), NewBufferU32(d, uint32(nH*half)),
 	)
 	got := xb.Floats()
 
@@ -139,11 +139,11 @@ func TestRope_mscale(t *testing.T) {
 
 	q := d.NewCommandQueue()
 	run := func(x0 []float32, scale float32) []float32 {
-		xb := d.NewBufferFloats(x0)
+		xb := NewBufferFloats(d, x0)
 		q.Run1D(pipe, nH*half, 64,
-			xb, d.NewBufferFloats(invf),
-			d.NewBufferU32(uint32(hd)), d.NewBufferU32(uint32(pos)), d.NewBufferU32(uint32(nH*half)),
-			d.NewBufferU32(uint32(half)), d.NewBufferFloats([]float32{scale}))
+			xb, NewBufferFloats(d, invf),
+			NewBufferU32(d, uint32(hd)), NewBufferU32(d, uint32(pos)), NewBufferU32(d, uint32(nH*half)),
+			NewBufferU32(d, uint32(half)), NewBufferFloats(d, []float32{scale}))
 		return xb.Floats()
 	}
 

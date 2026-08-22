@@ -45,18 +45,18 @@ func BenchmarkAttention(b *testing.B) {
 		return s
 	}
 
-	q := d.NewBufferFloats(rndf(nH * hd))
-	kc := d.NewBufferU16s(rndf16(nKeys * kvDim))
-	vc := d.NewBufferU16s(rndf16(nKeys * kvDim))
+	q := NewBufferFloats(d, rndf(nH*hd))
+	kc := NewBufferU16s(d, rndf16(nKeys*kvDim))
+	vc := NewBufferU16s(d, rndf16(nKeys*kvDim))
 	out := d.NewBufferLen(nH * hd)
-	uNH := d.NewBufferU32(uint32(nH))
-	uNKV := d.NewBufferU32(uint32(nKV))
-	uHd := d.NewBufferU32(uint32(hd))
-	uNKeys := d.NewBufferU32(uint32(nKeys))
-	uScale := d.NewBufferFloats([]float32{1.0 / 11.3137})
-	uWindow := d.NewBufferU32(0)
-	sinks := d.NewBufferFloats(make([]float32, nH))
-	uHasSink := d.NewBufferU32(0)
+	uNH := NewBufferU32(d, uint32(nH))
+	uNKV := NewBufferU32(d, uint32(nKV))
+	uHd := NewBufferU32(d, uint32(hd))
+	uNKeys := NewBufferU32(d, uint32(nKeys))
+	uScale := NewBufferFloats(d, []float32{1.0 / 11.3137})
+	uWindow := NewBufferU32(d, 0)
+	sinks := NewBufferFloats(d, make([]float32, nH))
+	uHasSink := NewBufferU32(d, 0)
 
 	q_ := d.NewCommandQueue()
 	const reps = 2

@@ -66,13 +66,13 @@ func TestRmsnormQuant_cpuParity(t *testing.T) {
 	aqBuf := d.NewBufferBytes(rqH)
 	ascBuf := d.NewBufferLen(1)
 	q.Run1D(pipe, 256, 256,
-		d.NewBufferFloats(x),
-		d.NewBufferFloats(w),
+		NewBufferFloats(d, x),
+		NewBufferFloats(d, w),
 		aqBuf,
 		ascBuf,
-		d.NewBufferU32(uint32(rqH)),
-		d.NewBufferFloats([]float32{eps}),
-		d.NewBufferU32(addOne),
+		NewBufferU32(d, uint32(rqH)),
+		NewBufferFloats(d, []float32{eps}),
+		NewBufferU32(d, addOne),
 	)
 	gotQ := aqBuf.Int8s()
 	gotSc := ascBuf.Floats()[0]
@@ -121,13 +121,13 @@ func BenchmarkRmsnormQuant(b *testing.B) {
 		}
 		return s
 	}
-	dX := d.NewBufferFloats(rndf(rqH))
-	dW := d.NewBufferFloats(rndf(rqH))
+	dX := NewBufferFloats(d, rndf(rqH))
+	dW := NewBufferFloats(d, rndf(rqH))
 	dAq := d.NewBufferBytes(rqH)
 	dAsc := d.NewBufferLen(1)
-	uH := d.NewBufferU32(uint32(rqH))
-	uEps := d.NewBufferFloats([]float32{1e-6})
-	uAddOne := d.NewBufferU32(1)
+	uH := NewBufferU32(d, uint32(rqH))
+	uEps := NewBufferFloats(d, []float32{1e-6})
+	uAddOne := NewBufferU32(d, 1)
 
 	q_ := d.NewCommandQueue()
 	const reps = 8

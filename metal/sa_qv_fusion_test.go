@@ -83,15 +83,15 @@ func TestSAQVFusion_correctnessAndThroughput(t *testing.T) {
 	}
 
 	q_ := d.NewCommandQueue()
-	wqb := d.NewBufferUint32s(wq)
-	sctb := d.NewBufferU16s(sct)
-	xb := d.NewBufferFloats(x)
-	uK := d.NewBufferU32(uint32(K))
+	wqb := NewBufferUint32s(d, wq)
+	sctb := NewBufferU16s(d, sct)
+	xb := NewBufferFloats(d, x)
+	uK := NewBufferU32(d, uint32(K))
 
 	// --- correctness: fused vs two-dispatch, must match to int4/int8 quant precision ---
 	twoDispatchOut := func() []float32 {
 		aq := byteBuf(d, K)
-		asc := d.NewBufferFloats([]float32{0})
+		asc := NewBufferFloats(d, []float32{0})
 		out := d.NewBufferLen(N)
 		e := q_.Begin()
 		e.Dispatch(pQv, 256, 256, xb, aq, asc, uK)
@@ -136,7 +136,7 @@ func TestSAQVFusion_correctnessAndThroughput(t *testing.T) {
 	// Worth its own investigation separately; out of scope here.
 	const reps = 20
 	aq := byteBuf(d, K)
-	asc := d.NewBufferFloats([]float32{0})
+	asc := NewBufferFloats(d, []float32{0})
 	out1 := d.NewBufferLen(N)
 	runTwoDispatch := func(r int) {
 		e := q_.Begin()

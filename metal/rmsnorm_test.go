@@ -107,12 +107,12 @@ kernel void rmsnorm_quant(device const float* x  [[buffer(0)]],  // [H]
 	aqBuf := d.NewBufferBytes(H) // H int8 bytes
 	ascBuf := d.NewBufferLen(1)
 	q.Run1D(pipe, 256, 256,
-		d.NewBufferFloats(x),
-		d.NewBufferFloats(w),
+		NewBufferFloats(d, x),
+		NewBufferFloats(d, w),
 		aqBuf,
 		ascBuf,
-		d.NewBufferU32(uint32(H)),
-		d.NewBufferFloats([]float32{float32(eps)}),
+		NewBufferU32(d, uint32(H)),
+		NewBufferFloats(d, []float32{float32(eps)}),
 	)
 	gotQ := aqBuf.Int8s()
 	gotSc := ascBuf.Floats()[0]

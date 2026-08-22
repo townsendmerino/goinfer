@@ -48,12 +48,12 @@ func BenchmarkGemvW4A8Sa(b *testing.B) {
 		}
 		return s
 	}
-	dWq := d.NewBufferUint32s(rndWords(N * (K / 8)))
-	dSct := d.NewBufferU16s(rndHalf(N * (K / 32)))
-	dAq := d.NewBufferInt8(rnd8(K))
-	dAsc := d.NewBufferFloats([]float32{0.01})
+	dWq := NewBufferUint32s(d, rndWords(N*(K/8)))
+	dSct := NewBufferU16s(d, rndHalf(N*(K/32)))
+	dAq := NewBufferInt8(d, rnd8(K))
+	dAsc := NewBufferFloats(d, []float32{0.01})
 	dOut := d.NewBufferLen(N)
-	uK := d.NewBufferU32(uint32(K))
+	uK := NewBufferU32(d, uint32(K))
 
 	q_ := d.NewCommandQueue()
 	const reps = 4

@@ -77,8 +77,8 @@ func TestLayerNormQuant(t *testing.T) {
 		if hasBias {
 			hb = 1
 		}
-		q.Run1D(pipe, 256, 256, d.NewBufferFloats(x), d.NewBufferFloats(w), d.NewBufferFloats(b),
-			aq, asc, d.NewBufferU32(uint32(H)), d.NewBufferFloats([]float32{eps}), d.NewBufferU32(hb))
+		q.Run1D(pipe, 256, 256, NewBufferFloats(d, x), NewBufferFloats(d, w), NewBufferFloats(d, b),
+			aq, asc, NewBufferU32(d, uint32(H)), NewBufferFloats(d, []float32{eps}), NewBufferU32(d, hb))
 		sc := asc.Floats()[0]
 		out := make([]float32, H)
 		for i, v := range aq.Int8s() {
@@ -151,7 +151,7 @@ func TestActQuant(t *testing.T) {
 	q := d.NewCommandQueue()
 	dq := d.NewBufferBytes(I)
 	ds := d.NewBufferLen(1)
-	q.Run1D(pipe, 256, 256, d.NewBufferFloats(u), dq, ds, d.NewBufferU32(uint32(I)), d.NewBufferU32(0)) // act=0 (GELU-tanh)
+	q.Run1D(pipe, 256, 256, NewBufferFloats(d, u), dq, ds, NewBufferU32(d, uint32(I)), NewBufferU32(d, 0)) // act=0 (GELU-tanh)
 	gotQ := dq.Int8s()
 	gotSc := ds.Floats()[0]
 

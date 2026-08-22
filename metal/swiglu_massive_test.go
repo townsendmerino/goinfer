@@ -36,15 +36,15 @@ func TestSwigluQuant_MassiveChannel(t *testing.T) {
 	gu[ch] = 12.14    // the BOS massive gate
 	gu[I+ch] = -18.49 // the BOS massive up
 
-	guB := d.NewBufferFloats(gu)
-	dq := d.NewBufferInt8(make([]int8, I))
+	guB := NewBufferFloats(d, gu)
+	dq := NewBufferInt8(d, make([]int8, I))
 	dSc := d.NewBufferLen(1)
-	uI := d.NewBufferU32(I)
+	uI := NewBufferU32(d, I)
 	for _, act := range []struct {
 		name string
 		v    uint32
 	}{{"GELU_TANH", 0}, {"SILU", 1}} {
-		uAct := d.NewBufferU32(act.v)
+		uAct := NewBufferU32(d, act.v)
 		q := d.NewCommandQueue()
 		e := q.Begin()
 		e.Dispatch(pSw, 256, 256, guB, guB.At(I*4), dq, dSc, uI, uAct)

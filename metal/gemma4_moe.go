@@ -183,19 +183,19 @@ func buildGemma4MoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H, 
 		pScaleVec: pipe("scale_vec"), pZero: pipe("zero_vec"),
 		nE: b.NE, topK: b.TopK, denseInter: b.DenseInter, moeInter: b.MoeInter,
 	}
-	g.uNE, g.uK = d.NewBufferU32(uint32(b.NE)), d.NewBufferU32(uint32(b.TopK))
-	g.uHidden = d.NewBufferU32(uint32(H))
-	g.uDenseInter, g.uMoeInter = d.NewBufferU32(uint32(b.DenseInter)), d.NewBufferU32(uint32(b.MoeInter))
-	g.uMoeGU = d.NewBufferU32(uint32(2 * b.MoeInter))
-	g.uSig0, g.uNorm1 = d.NewBufferU32(0), d.NewBufferU32(1)
-	g.uScale1 = d.NewBufferFloats([]float32{1})
-	g.uOne = d.NewBufferU32(1)
+	g.uNE, g.uK = NewBufferU32(d, uint32(b.NE)), NewBufferU32(d, uint32(b.TopK))
+	g.uHidden = NewBufferU32(d, uint32(H))
+	g.uDenseInter, g.uMoeInter = NewBufferU32(d, uint32(b.DenseInter)), NewBufferU32(d, uint32(b.MoeInter))
+	g.uMoeGU = NewBufferU32(d, uint32(2*b.MoeInter))
+	g.uSig0, g.uNorm1 = NewBufferU32(d, 0), NewBufferU32(d, 1)
+	g.uScale1 = NewBufferFloats(d, []float32{1})
+	g.uOne = NewBufferU32(d, 1)
 	g.uSlot = make([]Buffer, b.TopK)
 	for j := range g.uSlot {
-		g.uSlot[j] = d.NewBufferU32(uint32(j))
+		g.uSlot[j] = NewBufferU32(d, uint32(j))
 	}
 	g.rLogits = d.NewBufferLen(b.NE)
-	g.rIdx = d.NewBufferUint32s(make([]uint32, b.TopK))
+	g.rIdx = NewBufferUint32s(d, make([]uint32, b.TopK))
 	g.rWgt = d.NewBufferLen(b.TopK)
 	g.g4x1, g.g4x2, g.g4rn = d.NewBufferLen(H), d.NewBufferLen(H), d.NewBufferLen(H)
 
@@ -211,7 +211,7 @@ func buildGemma4MoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H, 
 		}
 		if n < b.NE { // n>=nE would hold every expert — no paging, just build the stacked path
 			g.paged, g.slots = true, n
-			g.idxZeros = d.NewBufferUint32s(make([]uint32, b.TopK))
+			g.idxZeros = NewBufferUint32s(d, make([]uint32, b.TopK))
 		}
 	}
 	// Stage experts by pread'ing their nibbles straight into the slot buffers instead of a byte-copy
@@ -252,9 +252,9 @@ func buildGemma4MoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H, 
 // gemv_f32_f32(RouterProjScaled) — the algebraic dual of the CPU's scaled-rn · raw-proj.
 func buildGemma4MoELayer(d *Device, m *decoder.Model, b *decoder.Gemma4MoEResidentBundle, g *gemma4MoeResident) *gemma4MoeLayer {
 	ml := &gemma4MoeLayer{}
-	ml.routerW = d.NewBufferFloats(b.RouterProjScaled)
-	ml.routerBias = d.NewBufferFloats(make([]float32, b.NE)) // zeros → sel = score (no e_score_correction_bias)
-	ml.perExpertScale = d.NewBufferFloats(b.PerExpertScale)
+	ml.routerW = NewBufferFloats(d, b.RouterProjScaled)
+	ml.routerBias = NewBufferFloats(d, make([]float32, b.NE)) // zeros → sel = score (no e_score_correction_bias)
+	ml.perExpertScale = NewBufferFloats(d, b.PerExpertScale)
 	ml.denseGuW, ml.denseGuS = int4Concat(d, b.MlpGate, b.MlpUp)
 	var e error
 	if ml.denseDW, ml.denseDS, e = int4Buf(d, b.MlpDown); e != nil {
@@ -346,12 +346,12 @@ func buildGemma4MoELayer(d *Device, m *decoder.Model, b *decoder.Gemma4MoEReside
 		ml.expGuW, ml.expGuS = int4Concat(d, b.ExpertsGateUp...) // per expert already fused [2*moeInter, hidden]
 		ml.expDW, ml.expDS = int4Concat(d, b.ExpertsDown...)
 	}
-	ml.preFFN = d.NewBufferFloats(b.PreFFNNorm)
-	ml.postFFN1 = d.NewBufferFloats(b.PostFFNNorm1)
-	ml.preFFN2 = d.NewBufferFloats(b.PreFFNNorm2)
-	ml.postFFN2 = d.NewBufferFloats(b.PostFFNNorm2)
-	ml.postFFN = d.NewBufferFloats(b.PostFFNNorm)
-	ml.uLayerScalar = d.NewBufferFloats([]float32{b.LayerScalar})
+	ml.preFFN = NewBufferFloats(d, b.PreFFNNorm)
+	ml.postFFN1 = NewBufferFloats(d, b.PostFFNNorm1)
+	ml.preFFN2 = NewBufferFloats(d, b.PreFFNNorm2)
+	ml.postFFN2 = NewBufferFloats(d, b.PostFFNNorm2)
+	ml.postFFN = NewBufferFloats(d, b.PostFFNNorm)
+	ml.uLayerScalar = NewBufferFloats(d, []float32{b.LayerScalar})
 	return ml
 }
 

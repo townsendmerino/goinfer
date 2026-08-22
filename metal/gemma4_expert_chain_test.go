@@ -86,21 +86,21 @@ func TestGemma4Expert_geluTanhChain(t *testing.T) {
 	}
 
 	q := d.NewCommandQueue()
-	uHidden, uMoeInter := d.NewBufferU32(uint32(hidden)), d.NewBufferU32(uint32(moeInter))
-	idx0, slot0 := d.NewBufferUint32s([]uint32{0}), d.NewBufferU32(0)
-	uRowsGU, uRowsDown := d.NewBufferU32(uint32(2*moeInter)), d.NewBufferU32(uint32(hidden))
+	uHidden, uMoeInter := NewBufferU32(d, uint32(hidden)), NewBufferU32(d, uint32(moeInter))
+	idx0, slot0 := NewBufferUint32s(d, []uint32{0}), NewBufferU32(d, 0)
+	uRowsGU, uRowsDown := NewBufferU32(d, uint32(2*moeInter)), NewBufferU32(d, uint32(hidden))
 
 	// The full resident expert chain, activation selectable so the negative control can flip it.
 	runChain := func(act uint32) []float32 {
 		mq, mSc := byteBuf(d, hidden), d.NewBufferLen(1)
-		q.Run1D(pQv, 256, 256, d.NewBufferFloats(xe), mq, mSc, uHidden)
+		q.Run1D(pQv, 256, 256, NewBufferFloats(d, xe), mq, mSc, uHidden)
 		// gate‖up: idx[0]*rowsPerExpert + row, rowsPerExpert = 2*moeInter, K = hidden.
 		moeGU := d.NewBufferLen(2 * moeInter)
 		q.Run1DBatchTG(pMoE, (2*moeInter)*32, 256, 1, hidden*2,
 			guW, guS, mq, mSc, moeGU, uHidden, idx0, slot0, uRowsGU)
 		// swiglu: gate @0, up @moeInter → dq/dSc.
 		dq, dSc := byteBuf(d, moeInter), d.NewBufferLen(1)
-		q.Run1D(pSw, 256, 256, moeGU, moeGU.At(moeInter*4), dq, dSc, uMoeInter, d.NewBufferU32(act))
+		q.Run1D(pSw, 256, 256, moeGU, moeGU.At(moeInter*4), dq, dSc, uMoeInter, NewBufferU32(d, act))
 		// down: rowsPerExpert = hidden, K = moeInter → edown[hidden].
 		edown := d.NewBufferLen(hidden)
 		q.Run1DBatchTG(pMoE, hidden*32, 256, 1, moeInter*2,

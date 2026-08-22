@@ -49,10 +49,10 @@ func TestRopePartial(t *testing.T) {
 		}
 	}
 	q := d.NewCommandQueue()
-	buf := d.NewBufferFloats(x)
-	q.Run1D(pipe, nH*rhalf, 64, buf, d.NewBufferFloats(invf), d.NewBufferU32(hd),
-		d.NewBufferU32(pos), d.NewBufferU32(uint32(nH*rhalf)), d.NewBufferU32(uint32(rhalf)),
-		d.NewBufferFloats([]float32{1.0}))
+	buf := NewBufferFloats(d, x)
+	q.Run1D(pipe, nH*rhalf, 64, buf, NewBufferFloats(d, invf), NewBufferU32(d, hd),
+		NewBufferU32(d, pos), NewBufferU32(d, uint32(nH*rhalf)), NewBufferU32(d, uint32(rhalf)),
+		NewBufferFloats(d, []float32{1.0}))
 	got := buf.Floats()
 
 	var maxAbs float64

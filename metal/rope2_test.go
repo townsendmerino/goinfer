@@ -56,24 +56,24 @@ func TestRope2_matchesTwoRope(t *testing.T) {
 	// (a) TWO dispatches — the pattern every production call site uses today: rope on Q at
 	// buffer offset 0, then rope again on K at a Metal bind-time offset (aikit/gpu Buffer.At).
 	twoDispatch := func() []float32 {
-		xb := d.NewBufferFloats(src)
-		invfb := d.NewBufferFloats(invf)
+		xb := NewBufferFloats(d, src)
+		invfb := NewBufferFloats(d, invf)
 		q_.Run1D(pRope, nH*half, 64,
-			xb, invfb, d.NewBufferU32(uint32(hd)), d.NewBufferU32(uint32(pos)),
-			d.NewBufferU32(uint32(nH*half)), d.NewBufferU32(uint32(half)), d.NewBufferFloats([]float32{scale}))
+			xb, invfb, NewBufferU32(d, uint32(hd)), NewBufferU32(d, uint32(pos)),
+			NewBufferU32(d, uint32(nH*half)), NewBufferU32(d, uint32(half)), NewBufferFloats(d, []float32{scale}))
 		q_.Run1D(pRope, nKV*half, 64,
-			xb.At(qDim*4), invfb, d.NewBufferU32(uint32(hd)), d.NewBufferU32(uint32(pos)),
-			d.NewBufferU32(uint32(nKV*half)), d.NewBufferU32(uint32(half)), d.NewBufferFloats([]float32{scale}))
+			xb.At(qDim*4), invfb, NewBufferU32(d, uint32(hd)), NewBufferU32(d, uint32(pos)),
+			NewBufferU32(d, uint32(nKV*half)), NewBufferU32(d, uint32(half)), NewBufferFloats(d, []float32{scale}))
 		return xb.Floats()
 	}
 
 	// (b) ONE dispatch — rope2 on the whole, UNOFFSET buffer.
 	oneDispatch := func() []float32 {
-		xb := d.NewBufferFloats(src)
+		xb := NewBufferFloats(d, src)
 		q_.Run1D(pRope2, nH*half+nKV*half, 64,
-			xb, d.NewBufferFloats(invf), d.NewBufferU32(uint32(hd)), d.NewBufferU32(uint32(pos)),
-			d.NewBufferU32(uint32(nH*half)), d.NewBufferU32(uint32(nKV*half)),
-			d.NewBufferU32(uint32(half)), d.NewBufferFloats([]float32{scale}), d.NewBufferU32(uint32(qDim)))
+			xb, NewBufferFloats(d, invf), NewBufferU32(d, uint32(hd)), NewBufferU32(d, uint32(pos)),
+			NewBufferU32(d, uint32(nH*half)), NewBufferU32(d, uint32(nKV*half)),
+			NewBufferU32(d, uint32(half)), NewBufferFloats(d, []float32{scale}), NewBufferU32(d, uint32(qDim)))
 		return xb.Floats()
 	}
 
@@ -106,11 +106,11 @@ func TestRope2_matchesTwoRope(t *testing.T) {
 
 	// Real YaRN-class scale (not 1.0) must actually differ from the unscaled result — same
 	// discipline as TestRope_mscale, so a scale parameter silently dropped in the merge would fail.
-	unscaledXb := d.NewBufferFloats(src)
+	unscaledXb := NewBufferFloats(d, src)
 	q_.Run1D(pRope2, nH*half+nKV*half, 64,
-		unscaledXb, d.NewBufferFloats(invf), d.NewBufferU32(uint32(hd)), d.NewBufferU32(uint32(pos)),
-		d.NewBufferU32(uint32(nH*half)), d.NewBufferU32(uint32(nKV*half)),
-		d.NewBufferU32(uint32(half)), d.NewBufferFloats([]float32{1.0}), d.NewBufferU32(uint32(qDim)))
+		unscaledXb, NewBufferFloats(d, invf), NewBufferU32(d, uint32(hd)), NewBufferU32(d, uint32(pos)),
+		NewBufferU32(d, uint32(nH*half)), NewBufferU32(d, uint32(nKV*half)),
+		NewBufferU32(d, uint32(half)), NewBufferFloats(d, []float32{1.0}), NewBufferU32(d, uint32(qDim)))
 	unscaled := unscaledXb.Floats()
 	same := true
 	for i := 0; i < qDim+kvDim; i++ {

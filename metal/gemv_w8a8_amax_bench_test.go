@@ -108,12 +108,12 @@ func TestGemvW8A8Amax_cpuParity(t *testing.T) {
 	// AmaxPart is {float32 v; uint32 i;} = 8 bytes/tile.
 	part := d.NewBufferLen(nTiles * 2)
 	q.Run1D(pipe, nTiles*256, 256,
-		d.NewBufferInt8(aq),
-		d.NewBufferFloats([]float32{aSc}),
-		d.NewBufferInt8(bq),
-		d.NewBufferFloats(bSc),
+		NewBufferInt8(d, aq),
+		NewBufferFloats(d, []float32{aSc}),
+		NewBufferInt8(d, bq),
+		NewBufferFloats(d, bSc),
 		part,
-		d.NewBufferU32(uint32(amaxK)),
+		NewBufferU32(d, uint32(amaxK)),
 	)
 	got := part.Floats()
 
@@ -168,12 +168,12 @@ func BenchmarkGemvW8A8Amax(b *testing.B) {
 	}
 	const rowsPerTile = 8
 	nTiles := (amaxN + rowsPerTile - 1) / rowsPerTile
-	dAq := d.NewBufferInt8(rnd8(amaxK))
-	dAsc := d.NewBufferFloats([]float32{0.01})
-	dBq := d.NewBufferInt8(rnd8(amaxN * amaxK))
-	dBsc := d.NewBufferFloats(rndf(amaxN))
+	dAq := NewBufferInt8(d, rnd8(amaxK))
+	dAsc := NewBufferFloats(d, []float32{0.01})
+	dBq := NewBufferInt8(d, rnd8(amaxN*amaxK))
+	dBsc := NewBufferFloats(d, rndf(amaxN))
 	dPart := d.NewBufferLen(nTiles * 2)
-	uK := d.NewBufferU32(uint32(amaxK))
+	uK := NewBufferU32(d, uint32(amaxK))
 
 	q_ := d.NewCommandQueue()
 	const reps = 2 // matching gemv_w8a8_coal's conservative bisected point (same per-dispatch GPU work scale)

@@ -38,17 +38,17 @@ func BenchmarkAttentionPrefill(b *testing.B) {
 		}
 		return s
 	}
-	dQkv := d.NewBufferU16s(rndHalf(M * qStride))
-	dKc := d.NewBufferU16s(rndHalf(M * kvDim))
-	dVc := d.NewBufferU16s(rndHalf(M * kvDim))
-	dOut := d.NewBufferU16s(make([]uint16, M*qDim))
-	uNH := d.NewBufferU32(nH)
-	uNKV := d.NewBufferU32(nKV)
-	uHd := d.NewBufferU32(hd)
-	uStartPos := d.NewBufferU32(0)
-	uScale := d.NewBufferFloats([]float32{1.0 / 11.3137}) // 1/sqrt(128)
-	uQStride := d.NewBufferU32(uint32(qStride))
-	uWindow := d.NewBufferU32(0)
+	dQkv := NewBufferU16s(d, rndHalf(M*qStride))
+	dKc := NewBufferU16s(d, rndHalf(M*kvDim))
+	dVc := NewBufferU16s(d, rndHalf(M*kvDim))
+	dOut := NewBufferU16s(d, make([]uint16, M*qDim))
+	uNH := NewBufferU32(d, nH)
+	uNKV := NewBufferU32(d, nKV)
+	uHd := NewBufferU32(d, hd)
+	uStartPos := NewBufferU32(d, 0)
+	uScale := NewBufferFloats(d, []float32{1.0 / 11.3137}) // 1/sqrt(128)
+	uQStride := NewBufferU32(d, uint32(qStride))
+	uWindow := NewBufferU32(d, 0)
 
 	q_ := d.NewCommandQueue()
 	const reps = 4
