@@ -2,6 +2,11 @@
 
 ![goinfer chat — an entire LLM in one file](docs/assets/demo.gif)
 
+Recorded on an Apple M1 Pro (the visible `linux-amd64` filename is a leftover from the tape's
+usual render target — a `darwin-arm64` binary is what actually ran); a desktop x86 CPU measures
+roughly half the on-screen tok/s on the identical harness — see
+`docs/measurements/demo-chat-macbook-2026-08-22.md`.
+
 *An entire 1.5B LLM in one file — instant boot (~0.4s), <100 MB heap, runs offline. Writes correct generic Go and **cannot** emit invalid JSON. No cgo, no Python, no model download.*
 
 **Run open-weight LLMs in pure Go — one cgo-free static binary, portable by default and

@@ -32,7 +32,9 @@ Speed figures below are measured, not estimated: Apple M1 Pro, int8int8,
 (`docs/measurements/demo-chat-macbook-2026-08-22.md`). **A desktop CPU is not faster here** — a
 Ryzen 7 3700X measures roughly half on the identical harness, 28.1 / 12.1
 (`docs/measurements/demo-chat-incumbent-2026-08-22.md`), so treat these as Apple Silicon numbers
-rather than a floor.
+rather than a floor. Size figures are measured too: `build-embed.sh --name goinfer-chat-{0.5b,1.5b}`
+darwin/arm64 prequant builds at the same commit came out 618 MiB and 1.68 GiB (`ls -l`), i.e. exactly
+the ~617 MB / ~1.7 GB below under the binary-MB convention `ls -lh` uses on macOS.
 
 **0.5B — the headline: tiny + fast** (~617 MB, **~52 tok/s** on an M1 Pro; the five runs
 spanned 46–58, so treat it as a band rather than a point):
