@@ -361,3 +361,71 @@ func benchSplitkvSoftmax(b *testing.B, nH, nWin int) {
 
 func BenchmarkSplitkvSoftmax512(b *testing.B)  { benchSplitkvSoftmax(b, 32, 512) }
 func BenchmarkSplitkvSoftmax2048(b *testing.B) { benchSplitkvSoftmax(b, 32, 2048) }
+
+// attn_block_full is the DFlash drafter's non-causal attention: grid nH x M, BlockX 128, a two-pass
+// softmax over nKeys = startPos + M. Its own comment records the kernel as L1TEX-throughput-saturated
+// (the float4 K read was added for exactly that reason), so the reduction is a smaller share here
+// than in any quant kernel — which is the prediction this benchmark exists to test rather than assume.
+func benchAttnBlock(b *testing.B, nH, nKV, hd, startPos, M int) {
+	b.Helper()
+	dev, err := CreateSystemDefaultDevice()
+	if err != nil {
+		b.Skipf("no CUDA device: %v", err)
+	}
+	bg := context.Background()
+	ctx := dev.Context()
+	mod, err := ctx.LoadModule(attnBlockPTX)
+	if err != nil {
+		b.Fatalf("LoadModule(attnBlockPTX): %v", err)
+	}
+	fn, err := mod.Function("attn_block_full")
+	if err != nil {
+		b.Fatalf("attn_block_full: %v", err)
+	}
+	stream := mustStream(b, ctx)
+	nKeys := startPos + M
+	qDim, kvDim := nH*hd, nKV*hd
+	rng := rand.New(rand.NewSource(int64(startPos)))
+	fill := func(n int) []float32 {
+		v := make([]float32, n)
+		for i := range v {
+			v[i] = float32(rng.NormFloat64())
+		}
+		return v
+	}
+	dq := mustAlloc[float32](b, ctx, M*qDim)
+	dk := mustAlloc[float32](b, ctx, nKeys*kvDim)
+	dv := mustAlloc[float32](b, ctx, nKeys*kvDim)
+	dout := mustAlloc[float32](b, ctx, M*qDim)
+	for buf, n := range map[*gc.Buffer[float32]]int{dq: M * qDim, dk: nKeys * kvDim, dv: nKeys * kvDim} {
+		if err := gc.CopyHtoD(bg, buf, fill(n)); err != nil {
+			b.Fatalf("CopyHtoD: %v", err)
+		}
+	}
+	cfg := gc.LaunchConfig{GridX: uint32(nH), GridY: uint32(M), GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1,
+		SharedMemBytes: uint32((nKeys + 128) * 4)}
+	launch := func() error {
+		return fn.LaunchOn(bg, stream, cfg, gc.Arg(dq), gc.Arg(dk), gc.Arg(dv),
+			gc.ArgValue(int32(nH)), gc.ArgValue(int32(nKV)), gc.ArgValue(int32(hd)),
+			gc.ArgValue(int32(startPos)), gc.ArgValue(float32(1.0/11.3137)),
+			gc.ArgValue(int32(0)), gc.ArgValue(int32(M)), gc.Arg(dout))
+	}
+	if err := launch(); err != nil {
+		b.Fatalf("warm launch: %v", err)
+	}
+	if err := stream.Synchronize(bg); err != nil {
+		b.Fatalf("warm sync: %v", err)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := launch(); err != nil {
+			b.Fatalf("launch: %v", err)
+		}
+	}
+	if err := stream.Synchronize(bg); err != nil {
+		b.Fatalf("sync: %v", err)
+	}
+	b.StopTimer()
+}
+
+func BenchmarkAttnBlockFull512(b *testing.B) { benchAttnBlock(b, 32, 8, 128, 512, 8) }
