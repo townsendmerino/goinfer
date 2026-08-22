@@ -1,0 +1,134 @@
+//go:build cuda && goinfer_testhooks
+
+package cuda
+
+import (
+	"context"
+	"os"
+	"slices"
+	"testing"
+
+	"github.com/townsendmerino/goinfer/decoder"
+)
+
+// The CUDA half of optimistic-forward (6a4e0ae), which was designed and verified entirely on Metal.
+// Ported from metal/optfwd_test.go almost verbatim: the assertions ARE the Metal ones, because the
+// claim under test is that the mechanism carries over unchanged, and a test rewritten while porting
+// cannot answer that.
+//
+// WHY IT SHOULD CARRY OVER, stated so the test knows what it is checking: TruncateTo
+// (cuda/resident.go) is the identical no-op for the identical reason — KV is positional, so a second
+// Forward at the same pos just overwrites — and Forward is an ordinary blocking channel round-trip
+// through r.do/reqCh/ackCh, the same "safe to launch from a goroutine and block-receive" shape as
+// Metal's execReq/execAck. "Should" is the part being tested.
+//
+// This package's convention for a real checkpoint is GOINFER_CUDA_MODEL falling back to the 1.5B
+// (see backend_wired_test.go), and it is followed here. Point GOINFER_CUDA_MODEL at
+// qwen2.5-coder-0.5b-instruct-q4_k_m.gguf to make hit-rate numbers directly comparable with the
+// Metal run, which used the 0.5B.
+func loadOptFwdModel(t *testing.T) *decoder.Model {
+	t.Helper()
+	requireHeavyModel(t)
+	path := os.Getenv("GOINFER_CUDA_MODEL")
+	if path == "" {
+		path = os.ExpandEnv("$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Skipf("model not present: %v", err)
+	}
+	m, err := decoder.Load(path, decoder.Options{Quant: "int4", Backend: "cuda"})
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if !m.ResidentActive() {
+		t.Skip("resident backend not active on this box -- optFwd never engages without it")
+	}
+	return m
+}
+
+// TestOptFwd_bitIdenticalStream is THE gate for this feature: the optimistic-forward overlap
+// changes ONLY scheduling, never what gets sampled. With the SAME seed, the token stream (and the
+// reported logprobs) must be identical whether the feature is on (default) or forced off via
+// GOINFER_NO_OPTFWD -- regardless of how many steps hit or miss the argmax guess internally.
+func TestOptFwd_bitIdenticalStream(t *testing.T) {
+	m := loadOptFwdModel(t)
+	defer m.Close()
+	ctx := context.Background()
+	prompt := []int{1, 7, 42, 100, 5}
+	const n = 40
+
+	run := func(disable bool) ([]int, []decoder.SampleInfo, *decoder.Generation) {
+		if disable {
+			t.Setenv("GOINFER_NO_OPTFWD", "1")
+		}
+		sp := decoder.SamplingParams{Temperature: 0.7, TopP: 0.9, Seed: 1234, Logprobs: true}
+		ch, g := m.Generate(ctx, prompt, n, sp)
+		var toks []int
+		for id := range ch {
+			toks = append(toks, id)
+		}
+		if err := g.Err(); err != nil {
+			t.Fatalf("disable=%v: stream err %v", disable, err)
+		}
+		return toks, g.Logprobs, g
+	}
+
+	onToks, onLP, onGen := run(false)
+	offToks, offLP, _ := run(true)
+
+	if !slices.Equal(onToks, offToks) {
+		t.Fatalf("optFwd changed the emitted token stream\n  on:  %v\n  off: %v", onToks, offToks)
+	}
+	if len(onLP) != len(offLP) {
+		t.Fatalf("logprob count differs: on=%d off=%d", len(onLP), len(offLP))
+	}
+	for i := range onLP {
+		if onLP[i].ID != offLP[i].ID || onLP[i].Logprob != offLP[i].Logprob {
+			t.Fatalf("logprob[%d] differs: on=%+v off=%+v", i, onLP[i], offLP[i])
+		}
+	}
+
+	if onGen.OptFwd == nil {
+		t.Fatal("OptFwd stats missing on the enabled run -- optFwdEligible should have held for this config")
+	}
+	t.Logf("stream identical (%d tokens); OptFwd: guessed=%d hit=%d rate=%.1f%%",
+		len(onToks), onGen.OptFwd.Guessed, onGen.OptFwd.Hit, 100*onGen.OptFwd.HitRate())
+	if onGen.OptFwd.Guessed == 0 {
+		t.Error("optFwd never attempted a guess over 40 tokens at T=0.7 -- feature did not engage at all")
+	}
+}
+
+// TestOptFwd_lowTempHighHitRate is a coarse sanity check that the real measured shape (hit rate
+// rising as temperature drops) holds through this exact code path.
+//
+// The hit-rate economics are backend-agnostic pure Go — the sampler and the argmax guess do not know
+// which device produced the logits — so this ordering is one of the few things that SHOULD be
+// identical to Metal's, and a disagreement here would point at the port rather than at the hardware.
+func TestOptFwd_lowTempHighHitRate(t *testing.T) {
+	m := loadOptFwdModel(t)
+	defer m.Close()
+	ctx := context.Background()
+	prompt := []int{1, 7, 42}
+	const n = 100
+
+	rate := func(temp float64) float64 {
+		sp := decoder.SamplingParams{Temperature: temp, TopP: 0.9, Seed: 7}
+		ch, g := m.Generate(ctx, prompt, n, sp)
+		for range ch {
+		}
+		if err := g.Err(); err != nil {
+			t.Fatalf("T=%.1f: stream err %v", temp, err)
+		}
+		if g.OptFwd == nil || g.OptFwd.Guessed == 0 {
+			t.Fatalf("T=%.1f: optFwd did not engage", temp)
+		}
+		return g.OptFwd.HitRate()
+	}
+
+	low := rate(0.2)
+	high := rate(1.0)
+	t.Logf("hit rate: T=0.2 -> %.1f%%, T=1.0 -> %.1f%%", 100*low, 100*high)
+	if low <= high {
+		t.Errorf("expected T=0.2's hit rate (%.1f%%) to exceed T=1.0's (%.1f%%), matching the design-phase measurement", 100*low, 100*high)
+	}
+}

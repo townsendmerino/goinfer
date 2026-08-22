@@ -43,6 +43,11 @@ type optFwdGate struct {
 	alpha  float64
 	on     bool
 	inited bool
+
+	// scratch holds a COPY of the current position's logits for the duration of the overlap. It
+	// lives here only because optFwdGate is the one per-Generate value optFwdStep already receives;
+	// see the copy in optFwdStep for why it is needed at all.
+	scratch []float32
 }
 
 // The dead band is wide (0.90/0.75), not the tight one a first cut assumed (0.90/0.85): an EMA
@@ -124,6 +129,35 @@ type optFwdResult struct {
 // which goroutine computed which logits, and in what order, differs.
 func (m *Model) optFwdStep(sampler *Sampler, logits []float32, gpuPos int, gate *optFwdGate, stats *OptFwdStats) (optFwdResult, error) {
 	guess := argmax(logits)
+
+	// COPY THE LOGITS BEFORE STARTING THE OVERLAP. This is not defensive tidiness; without it the
+	// feature is silently wrong on CUDA.
+	//
+	// A resident backend may legitimately return a slice that ALIASES its own reusable host buffer,
+	// valid only until the next Forward — cuda/resident.go returns r.logitsHost, "a zero-copy view
+	// of logitsPinned". The overlap then has the speculative Forward's device->host DMA writing that
+	// exact buffer while SampleWithInfo is reading it, so the sampler sees a torn mixture of this
+	// position's logits and the next one's.
+	//
+	// MEASURED on the CUDA box before this copy existed: same token id, logprob -2.6463 vs -2.6266
+	// (feature on vs GOINFER_NO_OPTFWD=1) — and under `-race`, where the timing shifts, the emitted
+	// TOKEN STREAM diverged outright. Severity tracking timing is what identified it as a race
+	// rather than an arithmetic difference.
+	//
+	// `go test -race` CANNOT SEE THIS and reported nothing: the write is a driver DMA into pinned
+	// memory, not a Go memory access, so the detector is structurally blind to it. That is the
+	// reason this comment is long — the next person to touch the overlap will not get a warning.
+	//
+	// Metal was unaffected because its Forward hands back a per-call slice, which is why the feature
+	// verified clean there. The copy fixes every backend, including ones that do not exist yet, and
+	// costs one vocab-sized memcpy against a full forward.
+	if cap(gate.scratch) < len(logits) {
+		gate.scratch = make([]float32, len(logits))
+	}
+	gate.scratch = gate.scratch[:len(logits)]
+	copy(gate.scratch, logits)
+	logits = gate.scratch
+
 	type fres struct {
 		logits []float32
 		err    error
