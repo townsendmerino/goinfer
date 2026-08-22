@@ -164,7 +164,27 @@ func TestQwen35GGUF_gate(t *testing.T) {
 	if argmaxHits < 66 {
 		t.Errorf("argmax %d/80 < 66 — below the GGUF Q8_0 coherence floor", argmaxHits)
 	}
-	if minCos < 0.992 {
-		t.Errorf("min cosine %.5f < 0.992 — below the GGUF Q8_0 coherence floor", minCos)
+	// RE-BASELINED 2026-08-22 for v0.15.0. The 0.992 min floor was set at 2583a2b and
+	// never revisited; `6d4fc79` ("qwen35 family: quantize the projections that were f32
+	// at every quant") crossed it. That commit is a DELIBERATE bandwidth trade — 1.60x
+	// decode, 7.4x TTFT — and it re-baked its SIBLING gate (TestQwen35Real_gate2FullModel,
+	// int8-vs-bf16, floor ≥0.98: 0.99333 -> 0.99069) while this one was missed. Bisected
+	// on this box at `5bcaf53`, adjacent pair, same toolchain both sides; the Go 1.27 bump
+	// was the obvious suspect and is REFUTED (bit-identical 0.98740 at go 1.26.6 and 1.27.0):
+	//
+	//	33879dd (parent)  argmax 69/80  min 0.99298  mean 0.99846   PASS
+	//	6d4fc79           argmax 68/80  min 0.98740  mean 0.99608   FAIL vs 0.992
+	//
+	// The MEAN now carries the systematic-drift duty and the min only catches catastrophic
+	// single steps — the same split TestQwen35GGUF_vsSafetensors was resolved to, and for
+	// the same reason: min is box-sensitive here (~0.0015 across CPUs, per the note above)
+	// so it cannot also police drift. Both bars sit below the measured value with margin
+	// rather than at it; nudging a floor to just-clear the observation is how a real
+	// regression gets blessed, which is the standard 6d4fc79's own message set.
+	if minCos < 0.985 {
+		t.Errorf("min cosine %.5f < 0.985 — below the GGUF Q8_0 coherence floor", minCos)
+	}
+	if meanCos < 0.995 {
+		t.Errorf("mean cosine %.5f < 0.995 — systematic drift across the 80 compared steps", meanCos)
 	}
 }
