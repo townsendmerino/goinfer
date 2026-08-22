@@ -67,8 +67,30 @@ __global__ void quant_vec(const float* __restrict__ x, int N, int* __restrict__ 
     int t = threadIdx.x, nt = blockDim.x;
     float ma = 0.f;
     for (int k = t; k < N; k += nt) ma = fmaxf(ma, fabsf(x[k]));
-    red[t] = ma; __syncthreads();
-    for (int o = nt >> 1; o > 0; o >>= 1) { if (t < o) red[t] = fmaxf(red[t], red[t + o]); __syncthreads(); }
+    // WARP-SHUFFLE MAXABS. The __syncthreads() ladder this replaces cost 8 barriers at the
+    // production width (blockDim 256), and ncu named both of its stall reasons: warps stalled on
+    // BARRIER 0.62-0.72 per active issue, and SHORT_SCOREBOARD 0.93-0.95 — the shared-memory red[]
+    // round trips. A shuffle removes both: the intra-warp steps live in registers with no barrier
+    // and no shared traffic, leaving one partial per warp and a single __syncthreads().
+    //
+    // SAFE BECAUSE THE OPERATOR IS MAX, and only because of that. max is exact and
+    // order-independent, so ANY reduction tree yields the identical float — which is what
+    // TestQuantVec_scaleIsExactMaxabs asserts as EQUALITY, not tolerance. The sum reductions in
+    // this same file (rmsnorm_quant's pass 1, attention's denominator) are float-non-associative
+    // and MUST keep their tree; do not copy this pattern onto them.
+    //
+    // 0.f is the correct identity: ma is a fabsf, so it is never negative, and lanes beyond the
+    // warp count contribute a value that cannot win.
+    for (int o = 16; o > 0; o >>= 1) ma = fmaxf(ma, __shfl_down_sync(0xffffffff, ma, o));
+    int lane = t & 31, warp = t >> 5, nWarps = (nt + 31) >> 5;
+    if (lane == 0) red[warp] = ma;
+    __syncthreads();
+    if (warp == 0) {
+        float v = (lane < nWarps) ? red[lane] : 0.f;
+        for (int o = 16; o > 0; o >>= 1) v = fmaxf(v, __shfl_down_sync(0xffffffff, v, o));
+        if (lane == 0) red[0] = v;
+    }
+    __syncthreads();
     float sc = red[0] / 127.f; float inv = sc > 0.f ? 1.f / sc : 0.f;
     if (t == 0) *scale = sc;
     for (int j = t; j < N / 4; j += nt) {

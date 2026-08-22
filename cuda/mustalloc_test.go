@@ -62,7 +62,7 @@ func mustAlloc[T gc.Supported](t testing.TB, cx *gc.Context, n int) *gc.Buffer[T
 
 // mustStream creates a stream or fails loudly. A dropped error here surfaces later as
 // "cuda: nil stream" from an unrelated launch, which reads as a kernel problem.
-func mustStream(t *testing.T, cx *gc.Context) *gc.Stream {
+func mustStream(t testing.TB, cx *gc.Context) *gc.Stream {
 	t.Helper()
 	s, err := cx.NewStream()
 	if err != nil {
