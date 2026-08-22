@@ -238,7 +238,15 @@ func TestInt4_forwardParity(t *testing.T) {
 	// documented to do this to real checkpoints. Holding gpt2 to the same tight per-sample
 	// absolute gate as the tiny fixtures was never appropriate; argmax-exactness + a floor on
 	// centered cosine similarity (the same bar TestGPT2_forwardParity's f32 golden uses) is.
-	const gpt2CosFloor = 0.99 // observed centered cosine ~0.9995 on the 32 recorded samples; ample margin
+	// Mutation-checked (gate mutation, 2026-08-22): int4GroupSize 32->64 moves individual samples
+	// by up to 7.39 (the old 5e-3 absolute gate would have caught it by ~1500x) while argmax stays
+	// unchanged. That mutation drops centered cosine to 0.9938 on BOTH boxes (arm64 Mac and the
+	// Linux box independently), while the real cross-arch baseline sits at 0.9995 on both — a 20x
+	// margin. 0.99 (the first cut of this floor) had ~20x MORE headroom than the natural cross-arch
+	// variation, wide enough to let that mutation slip through undetected. 0.999 sits between the
+	// two with room on both sides: passes the measured baseline (0.9995 Mac, ~0.9995 Linux) and
+	// fails the group-size mutation (0.9938) on both.
+	const gpt2CosFloor = 0.999
 	ran := 0
 	for _, d := range dirs {
 		name := filepath.Base(d)
