@@ -237,8 +237,13 @@ kernel void attention_prefill(device const half* qkv[[buffer(0)]], device const 
     }
     threadgroup_barrier(mem_flags::mem_threadgroup);
     float mmax=-INFINITY; for (uint s=winStart+tid;s<nKeys;s+=tgs) mmax=max(mmax,sc[s]);
-    red[tid]=mmax; threadgroup_barrier(mem_flags::mem_threadgroup);
-    for (uint st=tgs/2u; st>0u; st>>=1u){ if(tid<st) red[tid]=max(red[tid],red[tid+st]); threadgroup_barrier(mem_flags::mem_threadgroup); }
+    mmax = simd_max(mmax);
+    uint sgidA = tid >> 5u, laneA = tid & 31u;
+    if (laneA == 0) red[sgidA] = mmax;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    uint nsgA = tgs >> 5u;
+    if (tid == 0) { float v = red[0]; for (uint k=1; k<nsgA; k++) v = max(v, red[k]); red[0] = v; }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
     float mx=red[0]; threadgroup_barrier(mem_flags::mem_threadgroup);
     float ls=0; for (uint s=winStart+tid;s<nKeys;s+=tgs){ float p=exp(sc[s]-mx); sc[s]=p; ls+=p; }
     red[tid]=ls; threadgroup_barrier(mem_flags::mem_threadgroup);
