@@ -150,3 +150,68 @@ func benchRmsnormQuant(b *testing.B, h int) {
 func BenchmarkRmsnormQuant2048(b *testing.B) { benchRmsnormQuant(b, 2048) }
 func BenchmarkRmsnormQuant4096(b *testing.B) { benchRmsnormQuant(b, 4096) }
 func BenchmarkRmsnormQuant5120(b *testing.B) { benchRmsnormQuant(b, 5120) }
+
+// glu_quant fuses the gated activation with the int8 quantize: d = act(g)*u, then maxabs, then pack.
+// Only the maxabs reduction is restructured; the activation and the pack are untouched.
+//
+// act=1 is SwiGLU (llama/mistral/qwen), act=0 GeGLU (gemma). The benchmark runs SwiGLU because that
+// is what the resident families on this box use; the reduction is identical either way.
+func benchGluQuant(b *testing.B, inter int) {
+	b.Helper()
+	dev, err := CreateSystemDefaultDevice()
+	if err != nil {
+		b.Skipf("no CUDA device: %v", err)
+	}
+	bg := context.Background()
+	ctx := dev.Context()
+	mod, err := ctx.LoadModule(gluePTX)
+	if err != nil {
+		b.Fatalf("LoadModule(gluePTX): %v", err)
+	}
+	fn, err := mod.Function("glu_quant")
+	if err != nil {
+		b.Fatalf("glu_quant: %v", err)
+	}
+	stream := mustStream(b, ctx)
+	rng := rand.New(rand.NewSource(int64(inter)))
+	gu := make([]float32, 2*inter)
+	for i := range gu {
+		gu[i] = float32(rng.NormFloat64())
+	}
+	dgu := mustAlloc[float32](b, ctx, 2*inter)
+	dscr := mustAlloc[float32](b, ctx, inter)
+	dq := mustAlloc[int32](b, ctx, inter/4)
+	dsc := mustAlloc[float32](b, ctx, 1)
+	if err := gc.CopyHtoD(bg, dgu, gu); err != nil {
+		b.Fatalf("CopyHtoD: %v", err)
+	}
+	cfg := gc.LaunchConfig{GridX: 1, GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4}
+	launch := func() error {
+		// (g, u, gOff, uOff, I, act, q, scale, dscratch) — MoE passes one buffer twice with
+		// uOff=I, which is the shape exercised here.
+		return fn.LaunchOn(bg, stream, cfg, gc.Arg(dgu), gc.Arg(dgu), gc.ArgValue(int32(0)),
+			gc.ArgValue(int32(inter)), gc.ArgValue(int32(inter)), gc.ArgValue(int32(1)),
+			gc.Arg(dq), gc.Arg(dsc), gc.Arg(dscr))
+	}
+	// Fatalf, NOT Skipf: a benchmark that silently skips on a launch error reports "ok" and measures
+	// nothing, which is the skip-is-not-a-pass trap wearing a benchmark's clothes.
+	if err := launch(); err != nil {
+		b.Fatalf("warm launch: %v", err)
+	}
+	if err := stream.Synchronize(bg); err != nil {
+		b.Fatalf("warm sync: %v", err)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := launch(); err != nil {
+			b.Fatalf("launch: %v", err)
+		}
+	}
+	if err := stream.Synchronize(bg); err != nil {
+		b.Fatalf("sync: %v", err)
+	}
+	b.StopTimer()
+}
+
+func BenchmarkGluQuant4096(b *testing.B)  { benchGluQuant(b, 4096) }
+func BenchmarkGluQuant11008(b *testing.B) { benchGluQuant(b, 11008) }

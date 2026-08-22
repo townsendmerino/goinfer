@@ -82,3 +82,75 @@ func TestQuantVec_scaleIsExactMaxabs(t *testing.T) {
 		}
 	}
 }
+
+// TestGluQuant_scaleIsExactMaxabs is the same invariant for glu_quant, and it can be a PERMANENT
+// gate rather than a one-shot instrument for one reason: glu_quant writes its pre-quantization
+// values to dscratch in GLOBAL memory. So the oracle needs no knowledge of the activation, no
+// replication of silu/gelu-tanh, and no dependence on a non-IEEE intrinsic — read back what the
+// kernel itself produced and take its maximum in a different order.
+//
+// (rmsnorm_quant gets no equivalent: its normed[] never leaves shared memory, and CUDA's rsqrtf is
+// not IEEE-exact, so its bit-identity was proven by before/after capture at change time instead.)
+func TestGluQuant_scaleIsExactMaxabs(t *testing.T) {
+	dev, err := CreateSystemDefaultDevice()
+	if err != nil {
+		t.Skipf("no CUDA device: %v", err)
+	}
+	bg := context.Background()
+	ctx := dev.Context()
+	mod, err := ctx.LoadModule(gluePTX)
+	if err != nil {
+		t.Fatalf("LoadModule(gluePTX): %v", err)
+	}
+	fn, err := mod.Function("glu_quant")
+	if err != nil {
+		t.Fatalf("glu_quant: %v", err)
+	}
+	stream := mustStream(t, ctx)
+	// Both activations: ACT_GELU_TANH(0) is gemma's, ACT_SILU(1) everyone else's. The reduction is
+	// identical either way, but a maxabs bug that only shows on one sign distribution would not be.
+	for _, act := range []int32{0, 1} {
+		for _, inter := range []int{64, 255, 4096} {
+			rng := rand.New(rand.NewSource(int64(inter) + int64(act)*101))
+			gu := make([]float32, 2*inter)
+			for i := range gu {
+				gu[i] = float32(rng.NormFloat64() * 2)
+			}
+			dgu := mustAlloc[float32](t, ctx, 2*inter)
+			dscr := mustAlloc[float32](t, ctx, inter)
+			dq := mustAlloc[int32](t, ctx, inter/4+1)
+			dsc := mustAlloc[float32](t, ctx, 1)
+			if err := gc.CopyHtoD(bg, dgu, gu); err != nil {
+				t.Fatalf("CopyHtoD: %v", err)
+			}
+			cfg := gc.LaunchConfig{GridX: 1, GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4}
+			if e := fn.LaunchOn(bg, stream, cfg, gc.Arg(dgu), gc.Arg(dgu), gc.ArgValue(int32(0)),
+				gc.ArgValue(int32(inter)), gc.ArgValue(int32(inter)), gc.ArgValue(act),
+				gc.Arg(dq), gc.Arg(dsc), gc.Arg(dscr)); e != nil {
+				t.Fatalf("act=%d inter=%d launch: %v", act, inter, e)
+			}
+			if e := stream.Synchronize(bg); e != nil {
+				t.Fatalf("sync: %v", e)
+			}
+			scale := make([]float32, 1)
+			scratch := make([]float32, inter)
+			if e := gc.CopyDtoH(bg, scale, dsc); e != nil {
+				t.Fatalf("CopyDtoH scale: %v", e)
+			}
+			if e := gc.CopyDtoH(bg, scratch, dscr); e != nil {
+				t.Fatalf("CopyDtoH scratch: %v", e)
+			}
+			want := float32(0)
+			for _, v := range scratch {
+				if a := float32(math.Abs(float64(v))); a > want {
+					want = a
+				}
+			}
+			if got, wantScale := scale[0], want/127.0; got != wantScale {
+				t.Errorf("act=%d inter=%d: scale %v, want EXACTLY %v — the kernel's OWN dscratch has "+
+					"maxabs %v, and max is order-independent, so any correct reduction must agree "+
+					"bit-for-bit", act, inter, got, wantScale, want)
+			}
+		}
+	}
+}

@@ -213,8 +213,24 @@ __global__ void glu_quant(const float* __restrict__ g, const float* __restrict__
         }
         float d = a * u[uOff + k]; dscratch[k] = d; ma = fmaxf(ma, fabsf(d));
     }
-    red[t] = ma; __syncthreads();
-    for (int o = nt >> 1; o > 0; o >>= 1) { if (t < o) red[t] = fmaxf(red[t], red[t + o]); __syncthreads(); }
+    // WARP-SHUFFLE MAXABS — third and last of the safe MAX reductions in this file (quant_vec,
+    // rmsnorm_quant pass 2, and this). Same justification: max is exact and order-independent.
+    // The remaining tree reductions here are SUMS (rmsnorm_quant pass 1, attention's denominator)
+    // and must keep their ladders.
+    //
+    // The activation above is untouched. dscratch[] already holds the elementwise act(g)*u values
+    // and this only changes how their maximum is found, so the scale — and therefore every packed
+    // int8 below — is bit-identical.
+    for (int o = 16; o > 0; o >>= 1) ma = fmaxf(ma, __shfl_down_sync(0xffffffff, ma, o));
+    int lane = t & 31, warp = t >> 5, nWarps = (nt + 31) >> 5;
+    if (lane == 0) red[warp] = ma;
+    __syncthreads();
+    if (warp == 0) {
+        float mv = (lane < nWarps) ? red[lane] : 0.f;
+        for (int o = 16; o > 0; o >>= 1) mv = fmaxf(mv, __shfl_down_sync(0xffffffff, mv, o));
+        if (lane == 0) red[0] = mv;
+    }
+    __syncthreads();
     float sc = red[0] / 127.f; float inv = sc > 0.f ? 1.f / sc : 0.f;
     if (t == 0) *scale = sc;
     for (int j = t; j < I / 4; j += nt) {
