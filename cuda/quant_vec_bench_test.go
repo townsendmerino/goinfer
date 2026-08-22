@@ -298,3 +298,66 @@ func BenchmarkGluQuantBatched(b *testing.B) {
 			gc.ArgValue(int32(8))}
 	})
 }
+
+// splitkv_softmax is step 2 of the decode split-KV attention path: nH blocks of 128 threads, a
+// softmax over nWin scores in place. It carries TWO tree reductions — a max and a sum — and only the
+// max is safe to restructure; the sum is the softmax denominator, float-non-associative, and
+// resident.go pins this kernel's block width at 128 to keep it byte-identical to attn_batched.
+//
+// nWin is the context window, so it is the variable that decides whether the reductions matter at
+// all: the two strided passes are O(nWin) while the ladders are O(log 128) regardless.
+func benchSplitkvSoftmax(b *testing.B, nH, nWin int) {
+	b.Helper()
+	dev, err := CreateSystemDefaultDevice()
+	if err != nil {
+		b.Skipf("no CUDA device: %v", err)
+	}
+	bg := context.Background()
+	ctx := dev.Context()
+	mod, err := ctx.LoadModule(decodeSplitKVPTX)
+	if err != nil {
+		b.Fatalf("LoadModule(decodeSplitKVPTX): %v", err)
+	}
+	fn, err := mod.Function("splitkv_softmax")
+	if err != nil {
+		b.Fatalf("splitkv_softmax: %v", err)
+	}
+	stream := mustStream(b, ctx)
+	rng := rand.New(rand.NewSource(int64(nWin)))
+	host := make([]float32, nH*nWin)
+	for i := range host {
+		host[i] = float32(rng.NormFloat64() * 3)
+	}
+	dsc := mustAlloc[float32](b, ctx, nH*nWin)
+	dinv := mustAlloc[float32](b, ctx, nH)
+	if err := gc.CopyHtoD(bg, dsc, host); err != nil {
+		b.Fatalf("CopyHtoD: %v", err)
+	}
+	cfg := gc.LaunchConfig{GridX: uint32(nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1,
+		SharedMemBytes: 128 * 4}
+	// sinks is nullptr in every resident caller today (only gpt-oss has one and it is not
+	// resident-eligible), so the benchmark measures the shipped path.
+	launch := func() error {
+		return fn.LaunchOn(bg, stream, cfg, gc.Arg(dsc), gc.ArgValue(int32(nH)),
+			gc.ArgValue(int32(nWin)), gc.Arg(dinv), gc.ArgDevicePtr(0))
+	}
+	if err := launch(); err != nil {
+		b.Fatalf("warm launch: %v", err)
+	}
+	if err := stream.Synchronize(bg); err != nil {
+		b.Fatalf("warm sync: %v", err)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := launch(); err != nil {
+			b.Fatalf("launch: %v", err)
+		}
+	}
+	if err := stream.Synchronize(bg); err != nil {
+		b.Fatalf("sync: %v", err)
+	}
+	b.StopTimer()
+}
+
+func BenchmarkSplitkvSoftmax512(b *testing.B)  { benchSplitkvSoftmax(b, 32, 512) }
+func BenchmarkSplitkvSoftmax2048(b *testing.B) { benchSplitkvSoftmax(b, 32, 2048) }

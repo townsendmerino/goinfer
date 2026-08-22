@@ -64,8 +64,26 @@ extern "C" __global__ void splitkv_softmax(
     float* sc = scStore + (long)h * nWin;
     float lm = -1e30f;
     for (int i = t; i < nWin; i += nt) lm = fmaxf(lm, sc[i]);
-    red[t] = lm; __syncthreads();
-    for (int o = nt >> 1; o > 0; o >>= 1) { if (t < o) red[t] = fmaxf(red[t], red[t + o]); __syncthreads(); }
+    // WARP-SHUFFLE the MAX only. The identity -1e30f (not 0.f) is required here: these are raw
+    // attention scores, which are freely negative, so a 0.f identity would floor the maximum of an
+    // all-negative window at zero and silently change the softmax.
+    //
+    // The SUM below keeps its ladder — it is the softmax denominator and float-non-associative — and
+    // resident.go pins this kernel to blockDim 128 "MUST match attn_batched for byte-identical
+    // max/denominator". That pin survives: restructuring a MAX tree does not change the max, so the
+    // value handed to attn_batched's comparison is the same float it was.
+    for (int o = 16; o > 0; o >>= 1) lm = fmaxf(lm, __shfl_down_sync(0xffffffff, lm, o));
+    {
+        int lane = t & 31, warp = t >> 5, nWarps = (nt + 31) >> 5;
+        if (lane == 0) red[warp] = lm;
+        __syncthreads();
+        if (warp == 0) {
+            float mv = (lane < nWarps) ? red[lane] : -1e30f;
+            for (int o = 16; o > 0; o >>= 1) mv = fmaxf(mv, __shfl_down_sync(0xffffffff, mv, o));
+            if (lane == 0) red[0] = mv;
+        }
+        __syncthreads();
+    }
     float mx = red[0]; __syncthreads();
     float sink = 0.f; bool hasSink = (sinks != nullptr);
     if (hasSink) { sink = sinks[h]; mx = fmaxf(mx, sink); }  // the sink competes for the max
