@@ -1,5 +1,30 @@
 # Plan: demo refresh — new models in the existing demos, one tape, no new modules
 
+> **STATUS 2026-08-22 — Tier 1 SHIPPED; Tier 2 gates 1–4 run, gate 4 KILLS the straight swap.**
+> Full numbers: `docs/measurements/demo-chat-tier2-gates-2026-08-22.md` and
+> `docs/measurements/demo-chat-incumbent-2026-08-22.md`.
+>
+> - **Tier 1 done** — and it was a correctness fix, not a currency one: every Gemma 3 checkpoint
+>   these READMEs told users to download is `gated=manual`, so the first copy-pasteable command on
+>   the page did not run for a new user. Gemma 4 E2B is ungated.
+> - **Gate 1 PASS** (apache-2.0, per-repo). **Gate 2 PASS** — loads and generates through the
+>   existing dense `qwen3_5` adapter with NO loader work; the multimodal wrapper, `text_config`
+>   nesting, `model.language_model.*` prefix and 3:1 `DDDS…` hybrid are all already handled.
+> - **Gate 3**: the template is thinking-capable (11 `think` markers) — needs the non-thinking render.
+> - **Gate 4 KILL**: 13.5 tok/s against the incumbent 0.5B's 28.1 — **2.08× slower**, and barely
+>   ahead of the 1.5B tier. The doc's own fallback applies: keep the Qwen2.5 tier rather than
+>   replacing it.
+>
+> **One correction to this doc's own reasoning.** The pre-registered risk blamed "the hybrid's
+> DeltaNet layers". The arithmetic says otherwise: Qwen3.5's vocabulary is 248 320 against
+> qwen2.5's 151 936, making the LM head alone **1.87× larger** against a measured 2.08× slowdown.
+> Since that vocabulary is shared across the whole Qwen3.5 line, **no member of the family escapes
+> it** — so "try the 2B instead" is not a way out. If Tier 2 is still wanted, Gemma 4 E2B is the
+> better candidate: dense, no vocab penalty, apache-2.0 and ungated (which also retires this doc's
+> "Gemma stays flag-loaded, never embedded" constraint for Gemma 4 specifically — that constraint is
+> a Gemma 3 fact).
+
+
 > **Audience:** internal planning (2026-08-20). The demos' example and embedded models are
 > 2024–early-2025 releases, while `docs/capability-matrix.md` now carries Gemma 4, Qwen3.5/3.6/3.8,
 > Qwen3-Next, GLM-4.5/4.6, Llama 4, Kimi K2.x, gpt-oss, Nemotron-H, Granite-4.0-H, Laguna and
