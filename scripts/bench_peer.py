@@ -13,7 +13,10 @@ WHAT IT GUARANTEES
     accounting is trusted
   - INTERLEAVED cell by cell, with a server RESTART between cells
   - sampling sent EXPLICITLY to both engines and echoed into the results file (never assumed)
-  - the same GGUF file on both sides (verify by md5 before trusting a run)
+  - the same WEIGHTS on both sides, verified per-tensor by scripts/gguf_same_weights.py.
+    NOT by file md5: `ollama create` repacks the container in a different tensor ORDER, so the
+    file hash always differs even when every tensor is bit-identical (measured 2026-08-22 on all
+    three models here: 339/339, 339/339, 291/291 tensors identical, whole-file md5 different)
 
   decode tok/s = (n_tokens - 1) / (t_last_token - t_first_token)
 
@@ -32,6 +35,20 @@ OLLAMA_MODELS = os.environ.get("OLLAMA_MODELS", os.path.expanduser("~/ollama-032
 MODELS = {
     "0.5B": (os.path.expanduser("~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"), "q05"),
     "1.5B": (os.path.expanduser("~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"), "q15"),
+    # 7B added 2026-08-22. Both other rows are TINY, and this repo has already been burned by
+    # that exactly once: CUDA graphs measured 1.4-1.7x on a small model and 1.01x at real size,
+    # because CPU dispatch overlaps GPU compute once the model is big enough. A peer number
+    # published off 0.5B/1.5B alone does not transfer.
+    "7B":   (os.path.expanduser("~/models/qwen2.5-7b-instruct-q4_k_m.gguf"), "q7b"),
+}
+
+# One goinfer binary per backend. Ollama has no WebGPU build, so the webgpu row is compared
+# against ollama's CUDA row and MUST be labelled cross-backend rather than presented as a
+# like-for-like peer cell.
+SERVE = {
+    "cpu":    os.environ.get("GOINFER_SERVE_CPU",    "/home/francis/bench-v0.15.0/serve-cpu"),
+    "cuda":   os.environ.get("GOINFER_SERVE_CUDA",   "/home/francis/bench-v0.15.0/serve-cuda"),
+    "webgpu": os.environ.get("GOINFER_SERVE_WEBGPU", "/home/francis/bench-v0.15.0/serve-webgpu"),
 }
 GPORT, OPORT = 8099, 11499
 NGEN = 64          # tokens generated per completion
@@ -111,10 +128,12 @@ def goinfer_payload(model_path, prompt, cfg):
     p.update(cfg.get("goinfer", {}))
     return p
 
-def ollama_payload(tag, prompt, cfg):
+def ollama_payload(tag, prompt, cfg, backend="cuda"):
     p = {"model": tag, "stream": True,
          "messages": [{"role": "user", "content": prompt}],
          "options": {"num_predict": NGEN, "num_ctx": 4096}}
+    if backend == "cpu":
+        p["options"]["num_gpu"] = 0     # force CPU; ollama defaults to CUDA when present
     p["options"].update(cfg.get("ollama", {}))
     return p
 
@@ -142,8 +161,12 @@ CONFIGS = {
     },
 }
 
-def run_cell(engine, model_key, depth, cfg_name):
-    """Restart the server, do NRUNS runs of NCOMP completions, return per-run rates."""
+def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
+    """Restart the server, do NRUNS runs of NCOMP completions, return per-run rates.
+
+    `backend` selects the goinfer binary AND, for the ollama side, whether the model is forced
+    onto the CPU (options.num_gpu=0). Without that force ollama silently uses CUDA, which would
+    have made the 'CPU' row a GPU number on both engines and nobody would have seen it."""
     path, tag = MODELS[model_key]
     cfg = CONFIGS[cfg_name]
     prompt = prompt_for_depth(depth, model_key)
@@ -151,7 +174,7 @@ def run_cell(engine, model_key, depth, cfg_name):
     try:
         if engine == "goinfer":
             proc = subprocess.Popen(
-                [GOINFER, "-model", f"bench={path}", "-backend", "cuda",
+                [SERVE[backend], "-model", f"bench={path}", "-backend", backend,
                  "-addr", f"127.0.0.1:{GPORT}", "-quant", "int4"],
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 preexec_fn=os.setsid)
@@ -164,7 +187,7 @@ def run_cell(engine, model_key, depth, cfg_name):
                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                     preexec_fn=os.setsid)
             port, url, parse, mk = OPORT, f"http://127.0.0.1:{OPORT}/api/chat", parse_ollama, \
-                (lambda: ollama_payload(tag, prompt, cfg))
+                (lambda: ollama_payload(tag, prompt, cfg, backend))
         if not wait_port(port):
             return None, "server did not come up"
         # warm: one discarded completion (model load + first-run outlier)
@@ -198,32 +221,59 @@ def run_cell(engine, model_key, depth, cfg_name):
             time.sleep(3)  # let VRAM settle before the next engine loads
 
 def main():
+    """Plan. Phase A is the headline BACKEND table -- every backend at one depth, so the
+    cross-backend row is apples-to-apples. Phase B is the depth curve, CUDA only, because
+    running four depths x five backend-cells x three models does not fit in a release window
+    and the depth axis is about the engine's prefill/attention scaling, not the backend.
+
+    RESUMABLE: results are keyed and reloaded from the output file, so a killed or
+    disconnected run is restarted with the same command and skips completed cells."""
+    outpath = sys.argv[1]
     out = []
+    if os.path.exists(outpath):
+        try:
+            out = json.load(open(outpath))
+            print(f"# resuming: {len(out)} cells already recorded in {outpath}", flush=True)
+        except Exception:
+            out = []
+    done = {(r["phase"], r["engine"], r.get("backend"), r["model"], r["depth"], r["config"])
+            for r in out if r.get("runs")}
+
     plan = []
-    # A) depth curve, greedy
-    for mk in ["0.5B", "1.5B"]:
-        for d in [128, 512, 2048, 3900]:
-            plan.append(("A", mk, d, "greedy"))
-    # B) config sweep at 128
-    for mk in ["0.5B", "1.5B"]:
-        for c in ["temp0.8_topp0.95", "temp0.8_topk40", "own_defaults"]:
-            plan.append(("B", mk, 128, c))
-    for phase, mk, depth, cfg in plan:
-        for engine in ("goinfer", "ollama"):   # INTERLEAVED cell by cell
-            t0 = time.time()
-            rates, err = run_cell(engine, mk, depth, cfg)
-            rec = {"phase": phase, "engine": engine, "model": mk, "depth": depth,
-                   "prompt_tokens": prompt_tokens(depth, mk),
-                   "config": cfg, "sent": CONFIGS[cfg].get(engine, {}),
-                   "note": CONFIGS[cfg]["note"], "runs": rates, "error": err,
-                   "secs": round(time.time() - t0, 1)}
-            if rates:
-                rec["mean"] = round(statistics.mean(rates), 1)
-                rec["spread"] = round(max(rates) - min(rates), 1)
-            out.append(rec)
-            print(json.dumps(rec), flush=True)
-            with open(sys.argv[1], "w") as f:
-                json.dump(out, f, indent=1)
+    # A) the backend table, greedy, one depth. goinfer on all three backends; ollama on the
+    #    two it actually has. webgpu has NO ollama counterpart -- it is scored against the
+    #    ollama CUDA row and labelled cross-backend in the writeup, never as a peer cell.
+    for mk in ["0.5B", "1.5B", "7B"]:
+        for eng, be in [("goinfer","cpu"), ("ollama","cpu"),
+                        ("goinfer","cuda"), ("ollama","cuda"),
+                        ("goinfer","webgpu")]:
+            plan.append(("A", eng, be, mk, 128, "greedy"))
+    # B) depth curve, CUDA only, both engines
+    for mk in ["0.5B", "1.5B", "7B"]:
+        for d in [512, 2048, 3900]:
+            for eng in ["goinfer", "ollama"]:
+                plan.append(("B", eng, "cuda", mk, d, "greedy"))
+
+    print(f"# {len(plan)} cells planned, {len(done)} already done", flush=True)
+    for phase, engine, backend, mk, depth, cfg in plan:
+        key = (phase, engine, backend, mk, depth, cfg)
+        if key in done:
+            print(f"# skip (done): {key}", flush=True)
+            continue
+        t0 = time.time()
+        rates, err = run_cell(engine, mk, depth, cfg, backend)
+        rec = {"phase": phase, "engine": engine, "backend": backend, "model": mk,
+               "depth": depth, "prompt_tokens": prompt_tokens(depth, mk),
+               "config": cfg, "sent": CONFIGS[cfg].get(engine, {}),
+               "note": CONFIGS[cfg]["note"], "runs": rates, "error": err,
+               "secs": round(time.time() - t0, 1)}
+        if rates:
+            rec["mean"] = round(statistics.mean(rates), 1)
+            rec["spread"] = round(max(rates) - min(rates), 1)
+        out.append(rec)
+        print(json.dumps(rec), flush=True)
+        with open(outpath, "w") as f:
+            json.dump(out, f, indent=1)
 
 if __name__ == "__main__":
     main()
