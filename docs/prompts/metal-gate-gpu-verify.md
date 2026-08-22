@@ -1,5 +1,17 @@
 # MacBook task: verify the Metal half of `gate gpu` against the script it replaced
 
+> **STATUS: DONE 2026-08-21. Do not re-run this as a task.** The Metal half agrees with the retired
+> script to the CUDA half's standard — identical verdict and exit code, 7 declared → 7 reported,
+> 6 pass / 2 skip / 1 fail, every verdict line matching including the evidence lines. The Homebrew-bash
+> dependency is confirmed gone. One bug was found IN THE RETIRED SCRIPT (`-darwin$` parsed as grep
+> flags, so its CI-hygiene block reported a green having reproduced 0 of 8 checks); the port is
+> correct at 8 pass / 14 skip. Full record: `docs/task-gate-runner.md` §12.
+>
+> **One loose end, deliberately not closed:** the INCONCLUSIVE verdict arm was read from source but
+> never demonstrated live, because every fresh-clone attempt hit the pre-existing Metal `fault 0x10`
+> crash (6 of 7 attempts that day). It needs no GPU and no dedicated run — `touch` a tracked file
+> before any future `gate gpu` invocation and check for `INCONCLUSIVE` and rc 1.
+
 ## Why this is owed
 
 E8 replaced six tallying shell/Python gates with one Go runner, `cmd/gate`. The last and largest was

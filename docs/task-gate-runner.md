@@ -1,10 +1,9 @@
 # Task: one Go gate-runner over `go test -json` — collapse the tallying shell + census Python
 
 > **Status: ALL SIX MIGRATED, PLUS `mutation_check` (2026-08-20/21).** `cmd/gate` carries `census`,
-> `heavy`, `parity`, `composition`, `selector`, `gpu` and `mutation`; all seven scripts are deleted. **The Metal half of `gate gpu` is
-> ported but NOT yet verified against the script it replaces** — no machine here has a Metal device,
-> so its four groups need one run on the Mac before that half is trustworthy. See §8–§10 for what
-> each migration found.
+> `heavy`, `parity`, `composition`, `selector`, `gpu` and `mutation`; all seven scripts are deleted.
+> **Both halves of `gate gpu` are now verified against the script they replace** — CUDA on the Linux
+> box (§10), Metal on the Mac (§12). See §8–§12 for what each migration found.
 >
 > Tracked as QUEUE **E8**. Sibling of E7 (no-Python) but a distinct idea: E7 migrates scripts
 > one-for-one; **E8 recognizes that several scripts are one program** and consolidates them.
@@ -325,10 +324,7 @@ last three explanations became someone's wasted afternoon.
 **One dependency died with the script:** the Mac needed Homebrew bash to run this gate at all, because
 macOS's stock `/bin/bash` 3.2 cannot run `declare -A`. A Go binary has no such requirement.
 
-**Still owed: the Metal half.** Its four groups (suite, cgo-free, lifecycle, prefill) are ported from
-the same source but have never run — this box has no Metal device. Until someone runs
-`go run ./cmd/gate gpu` on the Mac and compares it against the deleted script's last known output,
-that half is code review, not evidence.
+**The Metal half was still owed at this point and has since been done — see §12.**
 
 ## 11. `gate mutation` — the gate's own gate
 
@@ -389,3 +385,66 @@ one machine" to "run by CI on both".
 against this script. It was never fixed, and the finding died with the file. That is the outcome §6
 predicted, recorded here because it is cheap evidence for a sequencing rule that otherwise reads as
 a matter of taste.
+
+## 12. The Metal half, verified on the Mac — and a fourth latent shell bug
+
+**Done 2026-08-21 on the MacBook**, by the method §11's prompt specified: the retired script
+extracted from git (`git show 16a8084^:scripts/gpu_gate.sh`) and run against the CURRENT tree, so the
+seven `metal/` commits that landed after the deletion could not confound the comparison.
+
+| | shell | Go |
+|---|---|---|
+| final verdict + exit code | `FAIL — metal on Darwin @ e2a7fd1 +dirty. Do not tag.` rc 1 | **identical**, rc 1 |
+| check groups | 7 declared → 7 reported | **identical** |
+| verdicts | 6 pass, 2 skip, 1 fail | **identical** |
+| each PASS/FAIL/SKIP line | matches, **including the evidence lines** | `ok …/metal 115.3s` vs `114.3s` — wall clock only |
+| skip-notes block | matches | **identical** |
+
+Both sides fail for the same reason and it is not a Metal fact: `docs/QUEUE.md`'s `c8b65ba` citation
+is orphaned in that machine's local object store. It is correctly allowlisted and resolves on a real
+clone, so the red is the citation lint's own documented machine-dependence — *"a gate whose answer
+depends on which box ran it"* — showing up exactly where its header says it will.
+
+### The fourth latent shell bug the migration exposed
+
+The retired script's Darwin branch (line 617 of the deleted `scripts/gpu_gate.sh`): `MINE='-darwin$'`, passed to `grep -Eq "$MINE"` **without `--`**.
+The leading dash makes grep parse the pattern as FLAGS (BSD grep: *unknown `--directories` option*),
+so the match errors rather than returning false, every job takes the not-mine branch, and the block
+prints:
+
+    PASS  0 CI hygiene check(s) reproduced locally, derived from ci.yml
+
+**A green having run nothing — in the block written specifically to stop CI checks going unreproduced
+locally.** The Linux branch's pattern (`^(root|gpu|cuda)$`) has no leading dash, so this was invisible
+everywhere the script was ever actually run. The Go port never builds an argv from the pattern
+(`regexp.MustCompile`), and reports the correct **8 pass / 14 skip** — independently corroborated
+against `ci_checks.py`'s raw rows on the Linux box: 22 rows total, 8 in `-darwin` jobs
+(`metal-darwin` 3, `gpu-darwin` 3, `root-darwin` 2), 14 elsewhere.
+
+That makes **four** latent bugs this migration exposed rather than introduced — the `.giw` tokenizer
+arm, `sed -i`, the `(Package, Test)` undercount, and now `-darwin$`. Each was invisible for the same
+structural reason: a hand-run tool is only ever run one way, on one machine, by someone who already
+knows what it should say.
+
+### The other results
+
+- **Homebrew-bash dependency: gone, confirmed.** `go run ./cmd/gate gpu` runs under macOS's stock
+  `/bin/bash` 3.2. A compiled binary has no `declare -A`.
+- **Three-state verdict:** FAIL demonstrated live; the logic read from source
+  (`fail>0 → FAIL`, else `dirty → INCONCLUSIVE`, else `PASS`). **INCONCLUSIVE was NOT demonstrated
+  live** — every attempt on a fresh non-dirty clone hit the pre-existing Metal `fault 0x10` crash
+  first. Recorded as an open loose end rather than waved through: the arm is one `touch` away from a
+  live demonstration whenever a run happens to survive.
+- **`fault 0x10` crash rate: 6 of 7 attempts**, well above the ~50% baseline observed earlier the
+  same day, and it reproduces outside either harness via plain `go test`. Consistent with the known
+  flaky purego-objc/no-ARC tail (`skip_census`'s NATIVE CRASH note), but the RATE is new information
+  and the operator's read is cumulative GPU dispatch volume from a heavy day of testing.
+- **Census on the Mac: 734 pass / 2 fail / 127 skip.** The two failures are a pre-existing CPU-only
+  `TestInt4_forwardParity/gpt2` gap, unrelated to Metal. **Worth a look on its own:** an int4 forward
+  parity failing on arm64 and not amd64 is the shape of the recorded-but-unmeasured Mac-vs-Linux FMA
+  divergence (`bb98e92`), and nobody has connected the two. Stated as a question, not a finding.
+- **A process error, caught and corrected by the operator:** a `census` run (which also runs
+  `go test ./metal/...`) briefly overlapped a `gate gpu` run, violating the sequential-only rule.
+  Caught via `ps aux`, confirmed nothing overlapped afterwards, re-run in verified isolation.
+  Recorded because a concurrency violation that is noticed and re-run is evidence the rule works;
+  one that is not noticed is how the poisoned-control history in this gate's header began.
