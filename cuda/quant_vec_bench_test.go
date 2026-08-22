@@ -85,3 +85,68 @@ func BenchmarkQuantVec2048(b *testing.B)  { benchQuantVec(b, 2048) }
 func BenchmarkQuantVec4096(b *testing.B)  { benchQuantVec(b, 4096) }
 func BenchmarkQuantVec5120(b *testing.B)  { benchQuantVec(b, 5120) }
 func BenchmarkQuantVec16384(b *testing.B) { benchQuantVec(b, 16384) }
+
+// rmsnorm_quant is the fused norm+quantize on the decode path — pass 1 a sum of squares (untouched,
+// float-non-associative), pass 2 a maxabs, pass 3 the pack. Only pass 2's reduction is safe to
+// restructure, so only pass 2 is what this benchmark's number moves.
+//
+// Shared memory here is (H+256)*4, not 256*4: normed[] lives in shared alongside the reduction
+// scratch, which is also why H cannot simply be raised without checking the launch's smem budget.
+func benchRmsnormQuant(b *testing.B, h int) {
+	b.Helper()
+	dev, err := CreateSystemDefaultDevice()
+	if err != nil {
+		b.Skipf("no CUDA device: %v", err)
+	}
+	bg := context.Background()
+	ctx := dev.Context()
+	mod, err := ctx.LoadModule(gluePTX)
+	if err != nil {
+		b.Fatalf("LoadModule(gluePTX): %v", err)
+	}
+	fn, err := mod.Function("rmsnorm_quant")
+	if err != nil {
+		b.Fatalf("rmsnorm_quant: %v", err)
+	}
+	stream := mustStream(b, ctx)
+	rng := rand.New(rand.NewSource(int64(h)))
+	x, w := make([]float32, h), make([]float32, h)
+	for i := range x {
+		x[i], w[i] = float32(rng.NormFloat64()), float32(rng.NormFloat64())
+	}
+	dx, dw := mustAlloc[float32](b, ctx, h), mustAlloc[float32](b, ctx, h)
+	dq := mustAlloc[int32](b, ctx, h/4)
+	dsc := mustAlloc[float32](b, ctx, 1)
+	if err := gc.CopyHtoD(bg, dx, x); err != nil {
+		b.Fatalf("CopyHtoD: %v", err)
+	}
+	if err := gc.CopyHtoD(bg, dw, w); err != nil {
+		b.Fatalf("CopyHtoD: %v", err)
+	}
+	cfg := gc.LaunchConfig{GridX: 1, GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1,
+		SharedMemBytes: uint32((h + 256) * 4)}
+	launch := func() error {
+		return fn.LaunchOn(bg, stream, cfg, gc.Arg(dx), gc.Arg(dw), gc.ArgValue(int32(h)),
+			gc.ArgValue(float32(1e-6)), gc.ArgValue(int32(0)), gc.Arg(dq), gc.Arg(dsc))
+	}
+	if err := launch(); err != nil {
+		b.Fatalf("warm launch: %v", err)
+	}
+	if err := stream.Synchronize(bg); err != nil {
+		b.Fatalf("warm sync: %v", err)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := launch(); err != nil {
+			b.Fatalf("launch: %v", err)
+		}
+	}
+	if err := stream.Synchronize(bg); err != nil {
+		b.Fatalf("sync: %v", err)
+	}
+	b.StopTimer()
+}
+
+func BenchmarkRmsnormQuant2048(b *testing.B) { benchRmsnormQuant(b, 2048) }
+func BenchmarkRmsnormQuant4096(b *testing.B) { benchRmsnormQuant(b, 4096) }
+func BenchmarkRmsnormQuant5120(b *testing.B) { benchRmsnormQuant(b, 5120) }

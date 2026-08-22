@@ -26,8 +26,23 @@ __global__ void rmsnorm_quant(const float* __restrict__ x, const float* __restri
     // pass 2: normed + maxabs
     float ma = 0.f;
     for (int k = t; k < H; k += nt) { float g = addOne ? (1.f + w[k]) : w[k]; float v = x[k] * g * rnorm; normed[k] = v; ma = fmaxf(ma, fabsf(v)); }
-    red[t] = ma; __syncthreads();
-    for (int o = nt >> 1; o > 0; o >>= 1) { if (t < o) red[t] = fmaxf(red[t], red[t + o]); __syncthreads(); }
+    // WARP-SHUFFLE MAXABS — same rewrite as quant_vec, same justification: max is exact and
+    // order-independent, so the tree may be restructured freely and the scale is bit-identical.
+    //
+    // NOTE WHAT IS *NOT* TOUCHED. Pass 1 above is a SUM (float-non-associative) and keeps its
+    // __syncthreads() ladder; rnorm therefore stays bit-identical, normed[] stays bit-identical, and
+    // this reduction runs over exactly the same values as before. That is the whole safety argument,
+    // and it is why only pass 2 moved.
+    for (int o = 16; o > 0; o >>= 1) ma = fmaxf(ma, __shfl_down_sync(0xffffffff, ma, o));
+    int lane = t & 31, warp = t >> 5, nWarps = (nt + 31) >> 5;
+    if (lane == 0) red[warp] = ma;
+    __syncthreads();
+    if (warp == 0) {
+        float mv = (lane < nWarps) ? red[lane] : 0.f;
+        for (int o = 16; o > 0; o >>= 1) mv = fmaxf(mv, __shfl_down_sync(0xffffffff, mv, o));
+        if (lane == 0) red[0] = mv;
+    }
+    __syncthreads();
     float sc = red[0] / 127.f; float inv = sc > 0.f ? 1.f / sc : 0.f;
     if (t == 0) *aScale = sc;
     // pass 3: quant + pack 4 int8 per int
