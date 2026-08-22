@@ -643,7 +643,30 @@ kernel void attention(device const float* q[[buffer(0)]], device const half* kc[
     float sum=red[0];
     if (hasS) sum += exp(sink-mx); // sink joins the denominator only — no value vector, numerator untouched
     threadgroup_barrier(mem_flags::mem_threadgroup);
-    for (uint d=tid; d<hd; d+=tgs){ float a=0; for(uint s=winStart;s<nKeys;s++) a += sc[s]*float(vb[s*kvDim+d]); out[qh*hd+d]=a/sum; }
+    // V-READ: order-preserving 8-wide load-batch unroll. Each thread walks nKeys serially at
+    // stride kvDim (the same "distinct per-key, latency-exposed" shape the K-read's half4 fix
+    // (1.79x @2048, above) already treats) -- issue 8 independent loads ahead, retire the adds in
+    // the SAME sequential order as the plain scalar loop, so this is bit-identical by construction
+    // (float accumulation order unchanged, only load scheduling). Scalar tail for nKeys not a
+    // multiple of 8. Measured (2026-08-21, git-stash A/B, tight-alternated, 2048 ctx): ~26.6%
+    // faster than scalar; width-4 also won (~17-18%) but 8 measured further ahead of it.
+    for (uint d=tid; d<hd; d+=tgs){
+        float a=0; uint s=winStart; uint nMain = winStart + ((nKeys-winStart) & ~7u);
+        for (; s<nMain; s+=8u) {
+            float v0=float(vb[(s+0u)*kvDim+d]);
+            float v1=float(vb[(s+1u)*kvDim+d]);
+            float v2=float(vb[(s+2u)*kvDim+d]);
+            float v3=float(vb[(s+3u)*kvDim+d]);
+            float v4=float(vb[(s+4u)*kvDim+d]);
+            float v5=float(vb[(s+5u)*kvDim+d]);
+            float v6=float(vb[(s+6u)*kvDim+d]);
+            float v7=float(vb[(s+7u)*kvDim+d]);
+            a += sc[s+0u]*v0; a += sc[s+1u]*v1; a += sc[s+2u]*v2; a += sc[s+3u]*v3;
+            a += sc[s+4u]*v4; a += sc[s+5u]*v5; a += sc[s+6u]*v6; a += sc[s+7u]*v7;
+        }
+        for (; s<nKeys; s++) a += sc[s]*float(vb[s*kvDim+d]);
+        out[qh*hd+d]=a/sum;
+    }
 }
 // attention_f32 — identical to attention but reads an f32 KV cache (Gemma sandwich path). Same
 // math (the f16 version already accumulated in f32); only the cache element type changes.
