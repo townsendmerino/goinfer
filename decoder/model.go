@@ -937,6 +937,19 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		(sampler.ArgmaxEquivalent() || sampler.GreedyEquivalent()) &&
 		os.Getenv("GOINFER_NO_GREEDY_FASTPATH") == ""
 
+	// Optimistic forward: sampled decode's (Temperature>0) sibling of the greedy fast path
+	// above, but overlapping rather than skipping the CPU sampler -- see spec_optfwd.go.
+	// Excludes fastGreedy's own (rare: Temperature>0 AND top_k==1) overlap with this predicate
+	// so the two mechanisms never both try to drive the same step. GOINFER_NO_OPTFWD forces
+	// the plain sequential path (escape hatch / A-B check), same convention as
+	// GOINFER_NO_GREEDY_FASTPATH.
+	optFwd := useGPU && !fastGreedy && m.optFwdEligible(sp) && os.Getenv("GOINFER_NO_OPTFWD") == ""
+	var optGate *optFwdGate
+	if optFwd {
+		optGate = &optFwdGate{}
+		g.OptFwd = &OptFwdStats{}
+	}
+
 	// Clamp the decode length to the resident KV cap up front (C3/M20). A Forward past
 	// the cap is refused mid-generation (the silent-corruption guard), but a resident
 	// backend that exposes its cap lets us stop cleanly AT it instead of erroring after
@@ -973,11 +986,29 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		}
 		var next int
 		var info SampleInfo
+		var optResolved bool
+		var optNextLogits []float32
 		if fastNext >= 0 {
 			// The resident already picked this token's argmax on-device (greedy fast
 			// path): nothing reads logits this step, so there is nothing to process or
 			// sample. Identical to the logits path — guarded by ArgmaxEquivalent/GreedyEquivalent.
 			next = fastNext
+		} else if optFwd && optGate.Should() {
+			// Optimistic forward (spec_optfwd.go): samples AND resolves gpuPos+1's logits
+			// together, overlapping the real sampler with a speculative Forward on a free
+			// argmax guess. decodeTiming intentionally does not split this into
+			// tProc/tSample/tEmbed — the whole overlapped operation folds into tFwd below
+			// (t0 was set at the top of this iteration, untouched here), since sample and
+			// forward no longer have a clean sequential boundary to attribute separately.
+			res, operr := m.optFwdStep(sampler, logits, gpuPos, optGate, g.OptFwd)
+			if operr != nil {
+				g.err = operr
+				return
+			}
+			info = res.info
+			next = info.ID
+			optNextLogits = res.nextLogits
+			optResolved = true
 		} else {
 			// Constrained decoding: let the processor mask this step's logits
 			// (based on what's been generated) before sampling and the stop check.
@@ -1017,7 +1048,12 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		case out <- next:
 		}
 		generated = append(generated, next)
-		if useGPU {
+		if optResolved {
+			// optFwdStep already produced (or redid) this position's Forward and its
+			// result logits for gpuPos+1 — nothing left to do but advance the position.
+			logits = optNextLogits
+			gpuPos++
+		} else if useGPU {
 			var emb []float32
 			if decodeTiming {
 				t0 = time.Now()
@@ -1070,8 +1106,9 @@ func (m *Model) isStop(id int, sp SamplingParams) bool {
 // Generation carries the terminal status of a Generate stream. Spec is non-nil
 // for GenerateSpeculative and carries acceptance telemetry.
 type Generation struct {
-	err  error
-	Spec *SpecStats
+	err    error
+	Spec   *SpecStats
+	OptFwd *OptFwdStats // non-nil when optFwdEligible held for this run; see spec_optfwd.go
 	// Logprobs holds one entry per emitted token (in order) when
 	// SamplingParams.Logprobs was set — the chosen token's log-probability and
 	// any requested top alternatives. Complete once the stream has closed.
