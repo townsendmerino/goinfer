@@ -1,5 +1,56 @@
 # Linux-box task: autoresearch kernel-optimization loop over cuda/
 
+> **STATUS: FIRST PASS DONE 2026-08-22 — 7 rounds, 7 landed wins, 1 honest negative, and a decode
+> profile that says where to go next.** Results below; the method in this file is unchanged and still
+> the one to follow.
+>
+> | round | kernel | result |
+> |---|---|---|
+> | 1 | `quant_vec` | **1.079×** |
+> | 2 | `rmsnorm_quant` | **1.052×** |
+> | 3 | `glu_quant` | **1.040×** |
+> | 4 | `quant_vec_batched` / `glu_quant_batched` / `rmsnorm_quant_batched` | **1.086× / 1.037× / 1.026×** |
+> | 5 | `splitkv_softmax` | **1.068×** |
+> | 6 | `attn_block_full` | **REFUTED** (0.41%, ranges overlap) — reverted, benchmark kept |
+> | 7 | `delta_rule` (8-wide unroll) | **1.060×**, non-overlapping ranges, largest absolute saving |
+>
+> All order-alternated, 24 ncu samples per side, all bit-identical, all gated correctness-first.
+>
+> **THE CENTRAL FINDING: the win tracks the reduction's share of the kernel, not the kernel's size.**
+> It holds across kernels (7.9% where the kernel is almost nothing but the reduction, 2.5–4% where
+> real work dominates), across two files independently, and *within* one kernel across a parameter
+> (`splitkv_softmax` 6.4% at nWin=512 → 4.0% at nWin=2048). Round 6 confirmed it at the boundary:
+> `attn_block_full` is L1TEX-saturated and got nothing. Use it to choose the next target instead of
+> measuring it.
+>
+> **WHERE DECODE TIME ACTUALLY GOES** (ncu over a real resident 1.5B decode, 1200 launches; shares,
+> not absolutes):
+>
+> ```
+>   gemv_w4a8_fwd   59.1%      glu_quant       12.8%  ← optimized
+>   gemv_w8a8_fwd   12.9%      rmsnorm_quant    6.7%  ← optimized
+>   attention        4.4%      quant_vec        2.1%  ← optimized
+>   rope_kv          1.6%      argmax_reduce    0.5%
+> ```
+>
+> So this pass improved kernels covering ~21.6% of decode GPU time by 3.8–7.3% each — call it **~1%
+> of decode**, which is the honest end-to-end figure and was worth measuring rather than implying.
+> **72% of decode GPU time is the GEMV family**, where the prompt already notes warp-shuffle is
+> broadly applied — so the next real gain needs a *different lever* there, not another reduction
+> rewrite. That is the single most useful thing this pass produced.
+>
+> **Exhausted, do not re-scout:** every safe MAX reduction in `glue.cu`, `prefill_batched.cu`,
+> `decode_splitkv.cu` and `attn_block.cu`. `router_f32.cu` is a NO-GO (both reductions are sums,
+> audit-pinned). `glue.cu`'s `attention` and `prefill_batched.cu`'s `attn_batched` are deliberately
+> untouched inside the closed decode-attention lever — and round 6 is direct evidence for them, since
+> `attn_block_full` is a verbatim copy of `attn_batched` and measured 0.41%.
+>
+> **A trap the method should carry:** `attn_block_full`'s own two tests SKIP by default
+> (`GOINFER_HEAVY_TESTS`), so the kernel suite and resident parity gates both went GREEN on a modified
+> kernel without executing it once. For any drafter-path kernel the default suite is not a correctness
+> gate; the heavy tier is.
+
+
 > **STATUS: OPEN, not started — and it is addressed to THIS box.** Arrived 2026-08-21 from the
 > Mac (`3fadf13`) after the prompts audit had already taken its inventory, which is how it nearly
 > slipped through: an audit is a snapshot, and this directory has two writers. Nothing in `cuda/`
