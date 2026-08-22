@@ -30,21 +30,21 @@
       "quant": "int4",
       "depth": 130,
       "argmax": 2,
-      "sha256": "45d656a60d24e291e349e6a8d267ab7991b49f7f6e425cd2f6de7332f1ac12a0"
+      "sha256": "6bd242547d4addcb60d2a400202886065730841c1f0e64b7018453a3fae80046"
     },
     {
       "model": "gemma4-dense-scaled",
       "quant": "int4",
       "depth": 260,
       "argmax": 2,
-      "sha256": "0ef611178313c093190395415f3737460679ed4ae921465b1ed4fe48158bb40c"
+      "sha256": "bbdb293c5740cbd2d54698b6add08988c4681b360e67a855a015f387c5762af4"
     },
     {
       "model": "gemma4-dense-scaled",
       "quant": "int4",
       "depth": 320,
       "argmax": 2,
-      "sha256": "7936a61375005a504601daadd71d3acf597b9cef4257ca7f57bc95cb9645b2be"
+      "sha256": "481b69dad8235fa6f171f3772da3ce370b1610fa750a4c85db6e2629d88d10d0"
     }
   ]
 }

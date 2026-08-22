@@ -695,24 +695,33 @@ inline float glu_act(float x, uint act) {
     float a = 0.7978845608028654f*(x+0.044715f*x*x*x); // sqrt(2/pi)
     return 0.5f*x*(1.0f+tanh(clamp(a, -15.0f, 15.0f)));
 }
+// glu_act_pinned: swiglu_quant-only variant, precise::tanh instead of tanh -- PROBE testing
+// whether pinning the transcendental removes swiglu_quant's cross-code-shape drift, the same
+// mechanism confirmed for rmsnorm_quant's rsqrt (see that round's commit). Not used by act_quant.
+inline float glu_act_pinned(float x, uint act) {
+    if (act == ACT_SILU) return x/(1.0f+exp(-x));
+    float a = 0.7978845608028654f*(x+0.044715f*x*x*x);
+    return 0.5f*x*(1.0f+precise::tanh(clamp(a, -15.0f, 15.0f)));
+}
 kernel void swiglu_quant(device const float* g[[buffer(0)]], device const float* u[[buffer(1)]],
     device char* dq[[buffer(2)]], device float* ds[[buffer(3)]], constant uint& I[[buffer(4)]],
     constant uint& act[[buffer(5)]],
     uint tid[[thread_position_in_threadgroup]], uint tgs[[threads_per_threadgroup]]) {
     threadgroup float red[256]; float mx=0;
-    for(uint i=tid;i<I;i+=tgs){ float s=glu_act(g[i],act)*u[i]; mx=max(mx,fabs(s)); }
-    // 2-level SIMD-shuffle reduction instead of the 8-step threadgroup-barrier tree -- max is
-    // exact/order-independent regardless of reduction structure (verified safe on
-    // quant_vec/layernorm_quant/act_quant this session). Deliberately does NOT touch the maxabs-
-    // scan/quantize-write loops' glu_act call sites at all (scalar, one call per iteration,
-    // unchanged) -- an earlier attempt THAT vectorized the load around glu_act drifted on Gemma's
-    // GELU-tanh path (see scripts/autoresearch_swiglu_results.tsv); this isolates whether the
-    // reduction mechanism alone is safe, independent of that. A LATER, narrower attempt tried
-    // vectorizing ONLY the quantize-write loop's g/u load (float4, leaving this scan loop
-    // untouched) and ALSO drifted on TestMetalSnapshotGolden's gemma4-dense-scaled fixture --
-    // so the fragility is not specific to the scan loop's element-to-thread redistribution, it's
-    // any vectorized (float4) read of g/u near Gemma's massive-activation values. Do not retry
-    // vectorizing either g/u load site without a real root-cause fix (needs AIR disassembly).
+    // PROBE: vectorized float4 load of g/u (batch 4 scalar reads), glu_act_pinned kept scalar-per-
+    // lane -- tanh is pinned via precise:: above, so this is stable regardless of load shape.
+    {
+        uint I4v = I >> 2u;
+        device const float4* g4v = (device const float4*)g;
+        device const float4* u4v = (device const float4*)u;
+        for(uint i4=tid;i4<I4v;i4+=tgs){
+            float4 gv=g4v[i4], uv=u4v[i4];
+            float4 sv = float4(glu_act_pinned(gv.x,act),glu_act_pinned(gv.y,act),glu_act_pinned(gv.z,act),glu_act_pinned(gv.w,act)) * uv;
+            float4 av = fabs(sv);
+            mx=max(mx,av.x); mx=max(mx,av.y); mx=max(mx,av.z); mx=max(mx,av.w);
+        }
+        for(uint i=(I4v<<2u)+tid;i<I;i+=tgs){ float s=glu_act_pinned(g[i],act)*u[i]; mx=max(mx,fabs(s)); }
+    }
     mx = simd_max(mx);
     uint sgid = tid >> 5u, lane = tid & 31u;
     if (lane == 0) red[sgid] = mx;
@@ -721,7 +730,19 @@ kernel void swiglu_quant(device const float* g[[buffer(0)]], device const float*
     if (tid == 0) { float v = red[0]; for (uint k=1; k<nsg; k++) v = max(v, red[k]); red[0] = v; }
     threadgroup_barrier(mem_flags::mem_threadgroup);
     float sc=red[0]/127.0f; if(sc==0)sc=1; if(tid==0)ds[0]=sc; float inv=1/sc;
-    for(uint i=tid;i<I;i+=tgs){ float s=glu_act(g[i],act)*u[i]; dq[i]=char(clamp(int(round(s*inv)),-127,127)); }
+    {
+        uint I4w = I >> 2u;
+        device const float4* g4w = (device const float4*)g;
+        device const float4* u4w = (device const float4*)u;
+        device char4* dq4w = (device char4*)dq;
+        for(uint i4=tid;i4<I4w;i4+=tgs){
+            float4 gv=g4w[i4], uv=u4w[i4];
+            float4 sv = float4(glu_act_pinned(gv.x,act),glu_act_pinned(gv.y,act),glu_act_pinned(gv.z,act),glu_act_pinned(gv.w,act)) * uv;
+            dq4w[i4] = char4(char(clamp(int(round(sv.x*inv)),-127,127)), char(clamp(int(round(sv.y*inv)),-127,127)),
+                              char(clamp(int(round(sv.z*inv)),-127,127)), char(clamp(int(round(sv.w*inv)),-127,127)));
+        }
+        for(uint i=(I4w<<2u)+tid;i<I;i+=tgs){ float s=glu_act_pinned(g[i],act)*u[i]; dq[i]=char(clamp(int(round(s*inv)),-127,127)); }
+    }
 }
 // act_quant: FeatNonGatedMLP's fused activation+quant — up->act->down (GPT-2, Nemotron relu²),
 // no gate multiply, unlike swiglu_quant. Reuses glu_act (same ordinals), so it inherits the
