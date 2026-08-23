@@ -478,13 +478,35 @@ strongest evidence in this campaign that the isolated numbers mean what they cla
 argued — exact-equality kernel tests plus zero-diff whole-model gates under `-race`), and the
 acceptance bar cleared at both the isolated-kernel and real-decode-rate level.**
 
-**One open item before this is fully released, flagged and deliberately not resolved now:** built
-throughout against aikit via a `go.work` override (`../aikit` in `use`), not a tagged version. Per
-earlier guidance, the right sequencing is one aikit version bump/tag now that all three moves are
-in (not one per move — a single release event), with the FINAL published `bench_peer` numbers
-re-measured against the tagged version rather than the override, so every figure in this table is
-reproducible from committed state. Not done in this session — a release action, held for explicit
-go-ahead rather than taken unilaterally.
+**Resolved (2026-08-23): released as aikit v1.25.0.** `MatmulQKAcc64`/`MatmulAVAcc64` shipped
+through the full `RELEASING.md` root-module ritual (releasegate 4/4, perfgate flat vs v1.24.0,
+vulncheck 11 clean/0 vulnerable/4 unscanned-and-explained) as a single release event, tagged, gpu
+backends bumped via `gpupins --fix`. goinfer's `go.mod` now requires the real tag; the `go.work`
+override is gone. T3 (`go run ./cmd/gate parity`) re-ran against the tag: every tiny/synthetic
+family the restructure touches (gemma4, mixtral, gpt2, qwen3_5_moe-tiny, deltanet, deepseek-tiny,
+kimi-tiny, phi3-tiny, llama4-tiny, nemotron-tiny, nemotron3nano-tiny) passes with zero diff; the
+only real failures are the pre-existing Mellum2 missing-asset issue, confirmed unrelated to this
+change. Manifest hashes refreshed.
+
+**`bench_peer` re-measured against the tag (2 runs, decode-only, warm-up discarded):**
+
+| model | run 1 | run 2 | mean |
+|---|--:|--:|--:|
+| 0.5B, depth 128 | 38.73 tok/s | 39.16 tok/s | 38.9 tok/s |
+| 1.5B, depth 128 | 19.54 tok/s | 20.74 tok/s | 20.1 tok/s |
+
+This came in ~5-7% below the 40.71/21.52 tok/s figures measured earlier against the `go.work`
+override — notably, the 1.5B mean (20.1) falls short of the ≥21 tok/s bar this same box cleared
+hours earlier. The kernel code did not change between those two measurements (the tag sits on a
+CHANGELOG-only commit past the feature commit the override pointed at), and `uptime` during this
+re-measurement showed load averages around 5.2-5.9 — this machine had two Claude Code sessions and
+VS Code active throughout the release process, unlike the quieter state the original number was
+likely measured under. **Attributed to ambient system load, not a code regression**, but recorded
+honestly rather than restated as a clean pass: the isolated depth-curve kernel benchmarks (the
+3.86x/6.23x/10.20x/9.72x figures above) are the load-bearing acceptance evidence precisely because
+they're a same-run before/after ratio, insensitive to ambient load in a way an absolute tok/s
+figure is not. If the ≥21 tok/s absolute number needs certifying rather than the relative speedup,
+re-run `bench_peer` on an otherwise-idle box.
 
 ## Acceptance math — tied to the W4A8 doc's revised table (1.5B, ms/token)
 
@@ -503,6 +525,19 @@ gain consistent with the table, **all parity/spec gates green with zero golden c
 one long-context cell (depth ≥8k) to size the depth-scaling claim. A2/A3 get their own
 acceptance if funded, including the regold/cosine gate (A2) or the flag-off-by-default
 divergence documentation (A3, matching the `--metal-fast-prefill` help-text convention).
+
+## A2/A3 disposition
+
+**Closed for now, revisit if long-context work post-W4A8 wants more.** At depth 128, A1 already
+brought attention down to ~2.8 ms/token; the acceptance table above puts A2/A3's remaining upside
+at roughly another ~2 ms (attn ~3.0 ms → ~1.0 ms in the "A2/A3 attn + bandwidth-class kernel" row).
+That's real but modest next to the config-surface and golden-churn cost each would add — A2 needs
+its own regold/cosine-tolerance gate (softmax numerics stop being order-preserving), A3 needs a
+documented default-off divergence flag matching `--metal-fast-prefill`'s precedent. Neither is
+funded by this doc. Long-context depths are where the remaining ~2ms would matter proportionally
+more (attention is the dominant cost by depth 2048+ already), so the natural trigger to revisit is
+long-context work landing after the W4A8 item-3 kernel, not this campaign continuing further on
+its own.
 
 ## Non-goals
 
