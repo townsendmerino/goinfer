@@ -26,12 +26,12 @@ type decodeScratch struct {
 	attnGate []float32 // [>=nH or nH*hd] Laguna attention output-gate scratch (g_proj result, pre-softplus); nil for every other family
 	logits   []float32 // [vocab]
 
-	// Gather buffers for the MoE decode path, which routes single-token attention
-	// through attendBatchedHeads (K=1) so it uses the SAME acc64 matmul as the
-	// batched MoE prefill — bit-identical, so the discrete router never sees a
-	// prefill↔decode numerical discontinuity. akh/avt grow with context like scores.
-	aqh, akh, avt, ach []float32
-	aAVAcc             []float64 // [hd] f64 accumulator scratch for linalg.MatmulAVAcc64 (A1 move c)
+	// Per-head worker scratch for the MoE decode path, which routes single-token
+	// attention through attendBatchedHeads (K=1) so it uses the SAME acc64 matmul
+	// as the batched MoE prefill — bit-identical, so the discrete router never
+	// sees a prefill↔decode numerical discontinuity. A1 move (a): a POOL, not a
+	// single set, so concurrent per-head workers never share mutable scratch.
+	headPool []headWorkerScratch
 
 	// localK/localV assemble a local (ring) layer's [base, pos] read window for the
 	// K=1 MoE decode path (resident ring history + this token's K/V); ≤ W rows.
@@ -123,31 +123,86 @@ func (s *decodeScratch) gateBuf(n int) []float32 {
 	return s.attnGate[:n]
 }
 
-// attnBatchBufs returns the K=1 scratch slices attendBatchedHeads needs for the
-// MoE decode path (qh[hd], kh[nKeys*hd], vt[nKeys*hd], scores[nKeys], ch[hd]),
-// growing the context-sized backings once as decode extends.
-func (s *decodeScratch) attnBatchBufs(nKeys, hd int) (qh, kh, vt, scores, ch []float32) {
-	if cap(s.aqh) < hd {
-		s.aqh = make([]float32, hd)
-		s.ach = make([]float32, hd)
-	}
-	if n := nKeys * hd; cap(s.akh) < n {
-		g := max(2*cap(s.akh), n) // headroom: nKeys grows by 1 each decode step, so exact-fit reallocs+zeroes this multi-KB buffer every token
-		s.akh = make([]float32, g)
-		s.avt = make([]float32, g)
-	}
-	return s.aqh[:hd], s.akh[:nKeys*hd], s.avt[:nKeys*hd], s.scoresBuf(nKeys), s.ach[:hd]
+// headWorkerScratch holds one worker's per-head attention scratch: qh/scores/ch
+// (+ avAcc, A1 move c) for the acc64 path's independent per-head compute, and
+// kh/vt for the f32-fallback's shared-per-kvh gather (test-only in practice —
+// every live caller passes useAcc64=true, so kh/vt sit unused there; kept so
+// the fallback keeps working through the same pool rather than a second
+// scratch scheme).
+type headWorkerScratch struct {
+	qh, kh, vt, scores, ch []float32
+	avAcc                  []float64
 }
 
-// avAccBuf returns the [hd]-float64 accumulator scratch linalg.MatmulAVAcc64
-// (A1 move c) needs, growing it once as hd's ceiling across layers/families
-// requires (headsAt can vary per layer, but hd itself is architecture-uniform
-// today; grown defensively all the same).
-func (s *decodeScratch) avAccBuf(hd int) []float64 {
-	if cap(s.aAVAcc) < hd {
-		s.aAVAcc = make([]float64, hd)
+// maxAttnWorkers caps A1 move (a)'s head-parallel fan-out at the P-core count,
+// not GOMAXPROCS (this machine's 2 E-cores measured harmful for this class of
+// work — docs/measurements/mac-cpu-decode-vs-ollama-2026-08-22.md).
+const maxAttnWorkers = 6
+
+// headWorkerPool returns n (capped at maxAttnWorkers) independent per-head
+// scratch sets sized for this call's K/nKeys/hd, growing each slot's backing
+// arrays once as decode extends — the same grow-only discipline the single-
+// buffer attnBatchBufs used, replicated per pool slot so A1 move (a)'s
+// concurrent per-head workers never share mutable scratch.
+func (s *decodeScratch) headWorkerPool(n, K, nKeys, hd int) []headWorkerScratch {
+	if n > maxAttnWorkers {
+		n = maxAttnWorkers
 	}
-	return s.aAVAcc[:hd]
+	if n < 1 {
+		n = 1
+	}
+	if len(s.headPool) < n {
+		grown := make([]headWorkerScratch, n)
+		copy(grown, s.headPool)
+		s.headPool = grown
+	}
+	for i := range s.headPool[:n] {
+		p := &s.headPool[i]
+		if c := K * hd; cap(p.qh) < c {
+			p.qh = make([]float32, c)
+			p.ch = make([]float32, c)
+		}
+		if cap(p.avAcc) < hd {
+			p.avAcc = make([]float64, hd)
+		}
+		if c := nKeys * hd; cap(p.kh) < c {
+			g := max(2*cap(p.kh), c) // headroom: nKeys grows by 1 each decode step
+			p.kh = make([]float32, g)
+			p.vt = make([]float32, g)
+		}
+		if c := K * nKeys; cap(p.scores) < c {
+			g := max(2*cap(p.scores), c)
+			p.scores = make([]float32, g)
+		}
+	}
+	return s.headPool[:n]
+}
+
+// newHeadWorkerPool builds n (capped at maxAttnWorkers) fresh headWorkerScratch
+// entries sized for one call's K/nKeys/hd — the batched (M=K>1) forward's
+// one-shot sibling of decodeScratch.headWorkerPool: that path already
+// allocates its per-call scratch fresh (no cache.scr to grow-and-reuse across
+// calls the way per-token decode does), so this mirrors that, not the
+// grow-once discipline.
+func newHeadWorkerPool(n, K, nKeys, hd int) []headWorkerScratch {
+	if n > maxAttnWorkers {
+		n = maxAttnWorkers
+	}
+	if n < 1 {
+		n = 1
+	}
+	pool := make([]headWorkerScratch, n)
+	for i := range pool {
+		pool[i] = headWorkerScratch{
+			qh:     make([]float32, K*hd),
+			kh:     make([]float32, nKeys*hd),
+			vt:     make([]float32, nKeys*hd),
+			scores: make([]float32, K*nKeys),
+			ch:     make([]float32, K*hd),
+			avAcc:  make([]float64, hd),
+		}
+	}
+	return pool
 }
 
 // localBufs returns two length-n scratch slices (grown once on demand) for

@@ -98,12 +98,14 @@ func TestRing_batchedBitExact(t *testing.T) {
 	full.keys[0] = append(full.keys[0], k...)
 	full.vals[0] = append(full.vals[0], v...)
 	full.pos = K
-	bufs := func(maxKeys int) (qh, kh, vt, sc, ch []float32) {
-		return make([]float32, K*hd), make([]float32, maxKeys*hd), make([]float32, maxKeys*hd), make([]float32, K*maxKeys), make([]float32, K*hd)
+	bufs := func(maxKeys int) []headWorkerScratch {
+		return []headWorkerScratch{{
+			qh: make([]float32, K*hd), kh: make([]float32, maxKeys*hd), vt: make([]float32, maxKeys*hd),
+			scores: make([]float32, K*maxKeys), ch: make([]float32, K*hd),
+		}}
 	}
 	fCtx := make([]float32, K*qDim)
-	qh, kh, vt, sc, ch := bufs(K)
-	attendBatchedHeads(q, fCtx, full.keys[0], full.vals[0], 0, full, 0, 0, K, false, arch, false, qh, kh, vt, sc, ch, nil)
+	attendBatchedHeads(q, fCtx, full.keys[0], full.vals[0], 0, full, 0, 0, K, false, arch, false, bufs(K))
 
 	// Ring: empty cache (startPos 0), assemble [base, K) from (empty history + new).
 	ring := NewKVCache(1, nKV, hd, W, K)
@@ -112,8 +114,7 @@ func TestRing_batchedBitExact(t *testing.T) {
 	alv := make([]float32, K*kvDim)
 	base, nRows := ring.batchReadLocal(0, 0, K, k, v, alk, alv)
 	rCtx := make([]float32, K*qDim)
-	qh, kh, vt, sc, ch = bufs(nRows)
-	attendBatchedHeads(q, rCtx, alk[:nRows*kvDim], alv[:nRows*kvDim], base, ring, 0, 0, K, false, arch, false, qh, kh, vt, sc, ch, nil)
+	attendBatchedHeads(q, rCtx, alk[:nRows*kvDim], alv[:nRows*kvDim], base, ring, 0, 0, K, false, arch, false, bufs(nRows))
 
 	for j := range fCtx {
 		if rCtx[j] != fCtx[j] {
@@ -143,8 +144,11 @@ func TestRing_moeDecodeBitExact(t *testing.T) {
 	ring.enableRings(W, arch.isGlobalLayer)
 	full := NewKVCache(1, nKV, hd, W, N+1)
 
-	mkbufs := func(nKeys int) (qh, kh, vt, sc, ch []float32) {
-		return make([]float32, hd), make([]float32, nKeys*hd), make([]float32, nKeys*hd), make([]float32, nKeys), make([]float32, hd)
+	mkbufs := func(nKeys int) []headWorkerScratch {
+		return []headWorkerScratch{{
+			qh: make([]float32, hd), kh: make([]float32, nKeys*hd), vt: make([]float32, nKeys*hd),
+			scores: make([]float32, nKeys), ch: make([]float32, hd), avAcc: make([]float64, hd),
+		}}
 	}
 	rng := rand.New(rand.NewSource(31))
 	for pos := range N {
@@ -157,8 +161,7 @@ func TestRing_moeDecodeBitExact(t *testing.T) {
 		lv := make([]float32, rows*kvDim)
 		base, nKeys := ring.batchReadLocal(0, pos, 1, rk, rv, lk, lv)
 		rCtx := make([]float32, qDim)
-		qh, kh, vt, sc, ch := mkbufs(nKeys)
-		attendBatchedHeads(q, rCtx, lk[:nKeys*kvDim], lv[:nKeys*kvDim], base, ring, 0, pos, 1, false, arch, true, qh, kh, vt, sc, ch, make([]float64, hd))
+		attendBatchedHeads(q, rCtx, lk[:nKeys*kvDim], lv[:nKeys*kvDim], base, ring, 0, pos, 1, false, arch, true, mkbufs(nKeys))
 		ring.commitBatch(0, pos, 1, rk, rv)
 
 		// Reference: append-forever, attend K=1 base 0 over all stored keys.
@@ -167,8 +170,7 @@ func TestRing_moeDecodeBitExact(t *testing.T) {
 		full.pos = pos + 1
 		fCtx := make([]float32, qDim)
 		nf := pos + 1
-		qh, kh, vt, sc, ch = mkbufs(nf)
-		attendBatchedHeads(q, fCtx, full.keys[0], full.vals[0], 0, full, 0, pos, 1, false, arch, true, qh, kh, vt, sc, ch, make([]float64, hd))
+		attendBatchedHeads(q, fCtx, full.keys[0], full.vals[0], 0, full, 0, pos, 1, false, arch, true, mkbufs(nf))
 
 		for j := range fCtx {
 			if rCtx[j] != fCtx[j] {

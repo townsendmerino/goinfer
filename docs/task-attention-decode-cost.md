@@ -401,6 +401,91 @@ design note) is the remaining multiplier; acceptance is measured after all three
 
 **Disposition:** wired into production, same as (c) — a clean, unconditional win, nothing to gate.
 
+## A1 implementation — move (a) landed, A1 COMPLETE (2026-08-23, same day)
+
+**Recalibration applied before building** (per feedback on the (c)+(b) results): (c)+(b) shrank
+per-call work ~2.4x, so per-head chunks at depth 130 are ~13-14 µs, not the ~34 µs the brief
+estimated — still comfortably above goroutine fan-out overhead, but with a thinner margin than
+originally scoped. Built and measured against that, not the original estimate.
+
+**Built:** a `headWorkerScratch` pool (`decoder/scratch.go`) — qh/scores/ch/avAcc per worker (kh/vt
+included only for the untouched f32-fallback path, which stays serial and test-only), capped at
+`maxAttnWorkers = 6` (P-core match). `attendBatchedHeads` (`decoder/forwardn.go`) now extracts a
+closure, `attendOneHead`, and fans the nH independent query heads across `min(len(pool), nH)`
+goroutines when `useAcc64` — the acc64 path only, since kh/vt (needed by the f32 fallback) aren't
+touched there at all. Below `attnHeadsParThreshold` (or with nH≤1 or a 1-slot pool), it runs
+serially through `pool[0]` — no fork-join for work too small to amortize it, the same discipline
+`int4ParThreshold` already established one level down. **Threshold left at 0 (always parallelize
+when possible)** — measured rather than guessed: even at depth 128 the fork-join paid for itself
+clearly (see below), so no floor was needed in practice on this box/shape.
+
+Batched (M=K>1) attention deliberately gets a 1-element pool (serial by construction) — threading
+prefill/verify's heads is explicitly out of scope (the brief: "no M>1-specific work here"); batching
+already amortizes the weight-matmul cost the way threading amortizes decode's per-token fork-join,
+so there's no equivalent pressure to relieve there.
+
+**The two named traps, both handled:**
+- **Shared scratch** — solved by the pool itself; each worker's qh/scores/ch/avAcc are its own,
+  never touched by another goroutine.
+- **The local-ring path's deferred KV write** — untouched: `attendBatchedHeads` never writes KV
+  (that's the caller's `cache.Append`/`commitBatch`, outside this function entirely), and this
+  parallelizes an existing loop's iterations, not the surrounding call order — nothing about when
+  the ring write happens relative to the read changed.
+
+**Correctness:** `go test -race` on `TestForwardN_matchesSequential`, `TestSpeculativeGreedyParity`,
+the ring-parity suite, `TestAttendBatchedHeads_vsNaive`, `TestAttendStrided_matchesGatherReference` —
+**all green, no races detected, still zero logit difference.** The race detector is the load-bearing
+check for a genuinely concurrent change; it ran clean, not just the bit-identity gates.
+
+**Performance — the depth-aware shape held, and then some:**
+
+| depth | before | after (c)+(b) | after (c)+(b)+(a) | cumulative speedup | (a)-only factor |
+|--:|--:|--:|--:|--:|--:|
+| 128 | 10.84 ms | 4.54 ms | 2.81 ms | **3.86x** | 1.62x |
+| 512 | 48.57 ms | 17.70 ms | 7.80 ms | **6.23x** | 2.27x |
+| 2048 | 200.39 ms | 72.03 ms | 19.65 ms | **10.20x** | 3.66x |
+| 8192 | 828.77 ms | 298.36 ms | 85.23 ms | **9.72x** | 3.50x |
+
+**Clears the ≥3x acceptance bar at depth 130 with room to spare (3.86x), and the long-context
+payoff is exactly where the campaign said it would be** — 10.2x/9.72x at 2048/8192, not a "modest
+factor," because per-head chunks at those depths (≈700 µs–~7 ms) sit far above any fan-out floor.
+Even at depth 128, where the recalibrated ~13-14 µs chunks left a real question, threading still
+delivered 1.62x cleanly — no threshold was needed to avoid a regression there.
+
+**Real end-to-end confirmation (`bench_peer` method, decode-only, warm-up discarded, greedy, real
+serve binary):**
+
+| model | before (original diagnosis) | after A1 | speedup |
+|---|--:|--:|--:|
+| 0.5B, depth 128 | 34.5 tok/s | 40.71 tok/s | 1.18x |
+| 1.5B, depth 128 | 17.0 tok/s | **21.52 tok/s** | **1.27x** |
+
+**Clears the acceptance table's ≥21 tok/s target.** The depth-2048 end-to-end cell was abandoned
+mid-run — not a stall, but a benchmark-design mistake: the harness independently re-prefills the
+full 2048-token prompt for all 17 completions (1 warmup + 2×8), and batched prefill's O(L²)
+attention is untouched by A1 by design, so that cost (not decode) dominated and made the cell take
+tens of minutes for no additional information the isolated depth curve above didn't already give
+more cheaply. Killed after ~40 minutes once the CPU-time/wall-time ratio made clear it was real,
+unproductive work, not a hang.
+
+**Cross-validation, not just two separate measurements agreeing by luck:** Amdahl's law on the
+1.5B/depth-128 numbers — 43.6 ms (matmul, untouched by any A1 move) + 2.81 ms (new attention,
+isolated) = 46.41 ms/token → **21.55 tok/s predicted**, against **21.52 tok/s measured**. The
+isolated kernel benchmarks and the real server's end-to-end rate agree to within 0.03 tok/s — the
+strongest evidence in this campaign that the isolated numbers mean what they claim to mean.
+
+**A1 is complete: all three moves landed, wired into production, bit-identical (proven, not
+argued — exact-equality kernel tests plus zero-diff whole-model gates under `-race`), and the
+acceptance bar cleared at both the isolated-kernel and real-decode-rate level.**
+
+**One open item before this is fully released, flagged and deliberately not resolved now:** built
+throughout against aikit via a `go.work` override (`../aikit` in `use`), not a tagged version. Per
+earlier guidance, the right sequencing is one aikit version bump/tag now that all three moves are
+in (not one per move — a single release event), with the FINAL published `bench_peer` numbers
+re-measured against the tagged version rather than the override, so every figure in this table is
+reproducible from committed state. Not done in this session — a release action, held for explicit
+go-ahead rather than taken unilaterally.
+
 ## Acceptance math — tied to the W4A8 doc's revised table (1.5B, ms/token)
 
 | scenario | matmul | attn | other | total | tok/s | vs ollama |
