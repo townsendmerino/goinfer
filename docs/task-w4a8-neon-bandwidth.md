@@ -417,6 +417,33 @@ user will see it (env-vars/quant docs, maybe the README perf note). Whether to m
 darwin/arm64 CPU *default* is a product call — RAM cost is real — but the guidance costs
 nothing today. If Gate 1 ships, this note gets retired.
 
+## Item-3 campaign — Step 0 quiet-box baseline (2026-08-23)
+
+Per `docs/prompts/w4a8-item3-harness.md`'s Step 0: `bench_peer` method, 2 runs each, quiet box
+(1-min load average settled to 2.73 after closing other VS Code windows/sessions; the campaign's
+own two prior load-contamination incidents made this worth waiting out rather than skipping),
+against the tagged aikit v1.25.0 (fresh `go build`, no `go.work` override) — a fresh serve binary,
+not the one used for the A1 close-out.
+
+| model | quant | run 1 | run 2 | mean | vs ollama |
+|---|---|--:|--:|--:|--:|
+| 0.5B, depth 128 | int4 | 40.49 tok/s | 41.68 tok/s | **41.09 tok/s** | 0.38x (ollama 109.0) |
+| 1.5B, depth 128 | int4 | 21.63 tok/s | 21.73 tok/s | **21.68 tok/s** | 0.32x (ollama 68.3) |
+| 0.5B, depth 128 | int8int8 | 83.83 tok/s | 86.67 tok/s | **85.25 tok/s** | 0.78x (ollama 109.0) |
+| 1.5B, depth 128 | int8int8 | 37.51 tok/s | 37.61 tok/s | **37.56 tok/s** | 0.55x (ollama 68.3) |
+
+**Certifies the A1 close-out's load-caveated int4 numbers, on a quiet box.** 21.68 tok/s (1.5B)
+clears the ≥21 tok/s bar cleanly — the campaign doc's load-5.9 re-measurement (20.1 tok/s mean)
+is confirmed as ambient-load noise, not a real regression; these numbers, not that one, are the
+correct A1-era figures now that both exist. 41.09 tok/s (0.5B) likewise slightly exceeds the
+override-era 40.71 tok/s figure.
+
+**Upgrades the zero-cost `int8int8` guidance from projection to measurement.** The item-3 brief
+projected ~40 tok/s (~0.59x ollama) at 1.5B post-A1; measured **37.56 tok/s (0.55x)** — close to
+projection, real headroom still on the table for a kernel that closes the rest of the gap. These
+four cells are this campaign's *before* baseline: the item-3 harness's projected end-to-end numbers
+get compared against this table, not the load-5.9 one.
+
 ## Non-goals — measured or reasoned dead ends, do not reopen without new evidence
 
 - **An Accelerate/vecLib/AMX kernel path.** Retired above; decode GEMV never went through it.
