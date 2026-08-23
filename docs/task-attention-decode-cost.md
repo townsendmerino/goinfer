@@ -1,0 +1,298 @@
+# Task: decode attention's f64 cost — cut the ~26% floor without breaking bit-identity
+
+> Scoping doc. Opened 2026-08-23 from `docs/task-w4a8-neon-bandwidth.md` § "Probes 1+2 result"
+> (attention = 99-115% of the non-matmul decode floor at both model sizes) — the follow-up that
+> probe flagged as "the standout candidate for a task doc of its own." Sibling to the W4A8
+> campaign, not part of it: this lever is independent of and multiplicative with that doc's
+> kernel work. **Status: Gate A0 CLOSED, all four items answered, 2026-08-23 — GO. A1 (thread
+> across heads + interleave independent outputs + fix AV's memory order) is cleared to build.**
+
+## The measurement (probe 1, 2026-08-23, `apple-m1pro`, depth ~130)
+
+| | 0.5B | 1.5B |
+|---|--:|--:|
+| attention (RoPE+QK^T+softmax+AV), per token | 8.47 ms (28.7% of decode) | 15.16 ms (26.0%) |
+| everything else non-matmul (norms+sampler+KV-append) | noise-level | noise-level |
+| ollama's ENTIRE token, same model, same box | 9.17 ms | 14.64 ms |
+
+goinfer's attention alone costs about what ollama spends on a whole token. And this is at depth
+~130 — attention cost scales with nKeys while the weight matmuls don't, so this same path is the
+prime suspect for the long-context deficit (ollama ahead 5.54x at 32k — figure and the
+"FA-class attention rewrite" lever both live in `docs/completed/task-decode-attention-fa.md`,
+citation corrected 2026-08-23 from an earlier plan-still-slow attribution). That FA campaign
+was scoped **GPU-only and explicitly excluded CPU** (task-decode-attention-fa.md:189, "Not in
+scope: ... CPU") — so the CPU side of this lever is genuinely new territory, not a re-tread.
+**Whatever this doc wins at depth 130 multiplies at depth 32k.**
+
+## Why it costs this much — mechanism hypothesis, for Gate A0 to confirm
+
+Not a forgotten loop. Decode deliberately routes through `attendBatchedHeads` at K=1 with
+`acc64 := true` (`decoder/attention.go` ~130 and its comment block) so that decode is
+bit-identical to batched prefill/verify. The cost structure, from reading
+`decoder/forwardn.go:396` (`attendBatchedHeads`) and the arithmetic:
+
+- **The work is tiny; the rate is the problem.** At 1.5B, depth ~130: QK^T + AV ≈ 2 × 28 layers
+  × 12 Q-heads × 130 keys × 128 dims ≈ 11M MACs, plus ~44K exps. 15.16 ms for 11M MACs is
+  **~1.4 ns/MAC** — three orders of magnitude below the same box's int8 dot rate, and right at
+  the speed of a serial f64 FMA dependency chain (~4 cycles/MAC at ~3 GHz). The floor is not
+  f64 arithmetic per se; it is *unoverlapped* f64 arithmetic.
+- **Single-threaded.** `attendBatchedHeads` runs `for kvh { for g { ... } }` serially — no
+  goroutines anywhere in the function. 12 independent query heads × 28 layers of exploitable
+  parallelism, none used.
+- **Serial chains per output.** `MatmulBTAcc64Strided` runs "the SAME sequential f64 reduction
+  as `MatmulBTAcc64`" (comment at forwardn.go:443). Whether it interleaves *independent
+  outputs* (different keys' dots in QK, different dims in AV — legal without touching any
+  single output's order) is an aikit-internal question Gate A0 must answer by reading the
+  kernel.
+- **AV's element reads are 1KB-strided.** The scores·V call reads `vals` with element stride
+  `kvDim` (forwardn.go:538) — each successive f64 MAC touches a new cache line. The f32 path's
+  gather/transpose that fixed this is skipped on the acc64 path (and the f32 path itself is
+  test-only today: "every live caller passes useAcc64=true").
+- RoPE and softmax ride along in the measured number but are O(heads·hd) and O(nKeys)
+  respectively — almost certainly minor. Gate A0 splits them out.
+
+## The invariant, precisely — enumerate before designing
+
+What `acc64` actually buys (all from the attention.go comment block, verbatim claims):
+
+1. **Same-model speculative decoding**: batched verify must reproduce sequential greedy
+   exactly. The old f32 dense path flipped ~11% of argmaxes and left spec acceptance at 0.93.
+   Gates: `TestSpeculativeGreedyParity`, `TestForwardN_matchesSequential`.
+2. **decode == prefill == verify bit-identity** for both dense and MoE, including tree
+   attention (05).
+3. **MoE router stability**: attention output feeds the router; f32 QK^T reassociation
+   (~4.6e-5) flips a top-k expert at a near-tie and cascades.
+4. **Confirmed by an explore pass (2026-08-23):** the consumer list is these two gates plus
+   several docs and measurement logs that cite the bit-identity guarantee. A1 touches none of
+   them; any A2/A3 change must sweep those docs too, per the parity-coverage policy.
+5. The root cause of the f32 problem is stated precisely: **f32's QK^T/AV reduction order is
+   M-dependent (K=1 decode ≠ M=K verify) at every aikit version; f64 is order-independent ⇒
+   exact.** This is the sentence the whole design space pivots on: the invariant is
+   *M-independence of each output's reduction*, and f64 is the current mechanism for it, not
+   the requirement itself.
+
+## The option ladder — cheapest-invariant-preserving first
+
+**A1 — bit-identical restructuring: change no numerics at all.** Three independent moves, all
+preserving every output's exact f64 fold order, so every gate above passes unchanged and no
+golden shifts:
+
+- **(a) Thread across query heads** (and layers' two KV heads): each head's outputs are
+  computed by an unchanged serial fold; distributing heads across cores reorders nothing
+  within any output. Up to ~6x on this box at 12 heads.
+- **(b) Interleave independent outputs inside the f64 kernel**: run 4-8 keys' dots (QK) or
+  dims' folds (AV) as concurrent accumulator chains in one pass. Each output's own summation
+  order is untouched; the FMA latency chain stops serializing the whole call. Classic 3-5x on
+  latency-bound loops.
+- **(c) Fix AV's memory order**: iterate keys-outer/dims-inner with hd accumulators — the
+  per-dim sums see keys in exactly today's ascending order (bit-identical by construction —
+  `docs/task-decode-splitkv-attention.md:36`'s own principle: "The split that IS bit-identical:
+  split the independent axes, never the reduction"),
+  while V rows are read contiguously once instead of 1KB-strided per element.
+
+(a)×(b) multiply; plausible combined ceiling 5-15x → attention ~1-3 ms. **This is the default
+plan.** It also speeds up batched verify and CPU prefill for free (same kernel, same fold).
+
+**A2 — an M-independent-order f32 kernel, only if A1 measures short.** Build the aikit kernel
+the comment says has never existed: f32 QK^T/AV whose per-output reduction order is fixed
+regardless of M, used by BOTH decode and verify — the invariant (decode==verify) is preserved
+by construction, in f32. Goldens shift once (cosine re-gate + regold, the f16-scales-task
+shape); spec parity gates still pass. MoE router stability (item 3) needs its own check — the
+near-tie flip argument is about f32 *error* vs the f64 reference, not about M-dependence, so
+A2 may be dense-only. Roughly another 2-4x over A1's f64.
+
+**A3 — the gated FA-class f32 fast path (the plan-still-slow lever), last resort.** Precedent
+exists and is exactly on point: `--metal-fast-prefill` (internal/serveapp/main.go:339) already
+gates a documented not-bit-identical speed path, off by default, with the divergence spelled
+out in the flag help. A `--cpu-fast-attention` twin would be off by default, refused or
+ignored when speculative decoding is active, and excluded for MoE unless item 3 clears. Only
+worth its config surface if A1(+A2) leave real money on the table — at ~1-3 ms post-A1, they
+probably don't at decode depths; the 32k regime is where A3 might still earn its keep
+(revisit with A1's long-context numbers in hand).
+
+## Gate A0 — confirm the mechanism (cheap, before any kernel work)
+
+1. Split the 15.16 ms: QK vs softmax vs AV vs RoPE, via the same env-gated-stub method as the
+   W4A8 doc's probe 1. Confirms where (b) and (c) should land first.
+2. Read `MatmulBTAcc64Strided` in aikit: does it already interleave independent outputs? If
+   yes, (b) is spent and A1's ceiling drops — know before promising.
+3. Single-call microbenchmark of `attendBatchedHeads` at the real 1.5B shape (nKV=2, group=6,
+   hd=128) at nKeys = 128 / 512 / 2048 / 8192 — the depth curve is the baseline the
+   long-context claim gets measured against later.
+4. Confirm single-threadedness empirically (CPU utilization during a decode with matmuls
+   stubbed) — the code read says yes; make the number say it too.
+
+**Go/no-go:** if A0 finds the time is NOT dominated by chain-serialized/strided f64 matmul
+work (e.g. softmax/exp dominates, or aikit already interleaves and the ceiling is small), stop
+and re-scope — the ladder above assumes the mechanism the arithmetic points to.
+
+### Gate A0, partial results (2026-08-23, same day, `apple-m1pro`) — items 3+4 answered
+
+An isolated benchmark of `attendBatchedHeads` alone (real 1.5B shape: nKV=2, group=6, hd=128;
+K=1 decode query against 130 keys, f64 path), run before this doc landed and folded in:
+
+- **One layer: 404.1 µs ⇒ 11.10 ms/token across 28 layers** — independently consistent with
+  the HTTP-stub method's 15.16 ms. **Correction (component split below): the gap is NOT
+  RoPE** — RoPE measures at 0.053 ms/token, far too small to explain a ~4 ms difference. The
+  real explanation is almost certainly the stub's averaging over the actual 64-token
+  generation, where depth grows 130→193 (this benchmark holds depth fixed at 130): QK+AV scale
+  ~linearly with nKeys, so the true per-token average over that range lands meaningfully above
+  the depth-130 figure — roughly consistent with the gap once scaled (~161 average depth ⇒
+  ~12.4 ms QK+AV alone, plus softmax/RoPE/gather bookkeeping, lands close to 15.16 ms).
+- **The rate hypothesis holds almost exactly:** ~399K MACs + ~1,560 exps per layer at
+  404.1 µs ⇒ **~1.0 ns/MAC** — serial-f64-FMA-chain speed, as § "Why it costs this much"
+  predicted (~1.4 ns/MAC from the coarser stub number). The mechanism is confirmed at the
+  order-of-magnitude level that matters: unoverlapped f64 chains, not exp/softmax cost.
+- **Single-threadedness structurally confirmed:** no goroutines, no `sync.WaitGroup`, no
+  worker pool anywhere in `attendBatchedHeads` or its call sites — plain nested loops over
+  kv-head/query-head/position/dim.
+
+### Gate A0 item 1, answered (2026-08-23, same day) — QK and AV are ~equal and dominant; softmax
+### and RoPE are noise
+
+Isolated benchmarks of each component alone, real 1.5B shape, depth 130, 28 layers/token:
+
+| component | ns/token | ms/token | share |
+|---|--:|--:|--:|
+| QK (`MatmulBTAcc64Strided`, keys-strided) | 5,144,401 | 5.14 | 47.1% |
+| AV (`MatmulBTAcc64Strided`, vals-strided) | 5,342,013 | 5.34 | 48.9% |
+| softmax (max/exp/normalize, 3 passes over nKeys) | 390,607 | 0.39 | 3.6% |
+| RoPE (both `ropeAt` calls) | 53,447 | 0.05 | 0.5% |
+| **sum** | **10,930,468** | **10.92** | — |
+
+Sum matches the whole-function isolated measurement (11.10 ms) to within ~2% — the residual is
+plausibly per-call gather/scatter bookkeeping (`copy` into `qh`, scatter out of `ch`) that these
+isolated benchmarks skip. **QK and AV are within 4% of each other and together are 96% of
+attention's cost; softmax and RoPE are exactly as minor as § "Why it costs this much" predicted.**
+AV running very slightly slower than QK (5.34 vs 5.14 ms) is directionally consistent with this
+doc's own item (c) — AV's element reads are the ones that are 1KB-strided (`vals` read with
+element stride `kvDim`), while QK's keys read is row-strided but element-contiguous.
+
+**Answer to what this decides: (b) (interleave independent outputs, latency-chain fix) and (c)
+(AV's memory order) both matter, roughly equally, and both land on real cost — this is not a
+"fix one and move on" split.** A1(a) (thread across heads) benefits both QK and AV equally since
+it parallelizes the outer loop both live inside; (b) should be applied to both dot-product
+kernels, not just one; (c) is AV-specific and should recover AV's small excess over QK plus
+whatever the strided-read cache-line cost actually is at longer depths (untested at 130 keys,
+which fits comfortably in L1 either way — the real test of (c) is at the depth-curve cells below,
+where the strided/contiguous distinction should matter far more).
+
+### Gate A0 item 3, answered (2026-08-23, same day) — the depth curve, and it is worse than the
+### depth-130 numbers hinted
+
+Same isolated `attendBatchedHeads` benchmark, real 1.5B shape, 28 layers/token, at nKeys =
+128/512/2048/8192 (matmul+other held at their measured 43.6 ms/token — no reason for that to
+move with depth, since decode's weight-matmul cost is depth-independent):
+
+| depth | attention ms/token | µs/key | ratio to depth-128 | est. total ms/token | est. tok/s | attn share of total |
+|--:|--:|--:|--:|--:|--:|--:|
+| 128 | 10.84 | 84.7 | 1.00x | 54.4 | 18.4 | 19.9% |
+| 512 | 48.57 | 94.9 | 4.48x (4x depth) | 92.2 | 10.9 | 52.7% |
+| 2048 | 200.39 | 97.9 | 18.5x (16x depth) | 244.0 | 4.1 | 82.1% |
+| 8192 | 828.77 | 101.2 | 76.5x (64x depth) | 872.4 | **1.15** | **95.0%** |
+
+**Two findings, both bad news for today and good news for this doc's payoff.** First, per-key
+cost is not flat — it rises **~19.5%** from depth 128 to 8192 (84.7 → 101.2 µs/key), consistent
+with the keys/vals arrays (8.39 MB each at depth 8192, 16.8 MB combined) outgrowing a cache tier
+that held them comfortably at depth 128 (262 KB combined) — a cost ollama's flash-attention
+tiling is specifically designed to avoid, and neither this doc's A1 nor A2 fixes (they parallelize
+and reorder, but don't tile). Second, and more importantly: **attention's share of total decode
+time is 20% at depth 128 and 95% at depth 8192** — by 32k (extrapolating the measured per-key
+trend conservatively flat past 8192, almost certainly an underestimate given the rising trend) the
+non-attention 43.6 ms/token is noise against an attention cost in the seconds. **This confirms, with
+a number instead of an inference, that decode attention is very plausibly THE long-context
+deficit** (§ "The measurement" above cited the GPU-side 5.54x-at-32k figure as circumstantial; this
+is the CPU-side mechanism measured directly, and it is not subtle — an estimated 1.15 tok/s at
+depth 8192 is not a usable server at that depth today).
+
+**This changes the acceptance framing for A1/A2 at long context: fixing the 20%-of-token cost at
+depth 130 is worthwhile on its own terms, but fixing the SAME code path is worth vastly more at
+long context, where it is not one lever among several — it is nearly the whole token.** Whether
+A1's thread-across-heads win (a constant-factor speedup, independent of depth) is enough on its
+own at 8k+, or whether the memory-order/cache-tier problem (c) plus eventually a tiling scheme
+becomes load-bearing at that regime, is the natural next question once A1 ships and this depth
+curve gets re-measured against it.
+
+### Gate A0 item 2, answered (2026-08-23, same day) — existing infra doesn't compete with A1;
+### it's a third instance of a known bug class
+
+`MatmulBTAcc64Strided` (`aikit/linalg/matmul_strided.go:30`) DOES call `parallelCols(M*N*K, N,
+...)` internally — it has real parallel capability. But at the shape `attendBatchedHeads` calls it
+with (`decoder/forwardn.go`'s QKᵀ call: `M=K=1, N=nKeys=130, K=hd=128` ⇒ **M·N·K = 16,640 MACs**;
+the scores·V call is the same magnitude), against aikit's package-default threshold
+(`parThreshold = 1<<24 = 16,777,216`, `aikit/linalg/linalg.go:58`): **16,640 is ~1000x below
+threshold.** Every one of these calls takes `parallelCols`'s serial fast path, every time, with
+no exception.
+
+**This is the third confirmed instance of the identical bug class** `decoder/weightmat.go`'s
+`int4ParThreshold` comment already documents twice over (Gemma-4 decode matmuls, then W4A8): a
+kernel with real parallel capability, gated behind a default threshold tuned for prefill-sized
+work, silently never firing for decode-sized calls.
+
+**But the fix is NOT "lower this threshold"** — parallelizing *inside* one 16,640-MAC call (attn
+has 24 of these per layer: 12 heads × {QK, AV} × 28 layers = 672/token) would spawn a fork-join
+around a sliver of work each time; the aikit int4 story's own lesson (thr=0 "over-parallelizes"
+on the Ryzen box) says this shape is exactly wrong for that. **The correct fix is still A1(a) as
+scoped: parallelize ACROSS the 12 independent per-head chains** (one goroutine per head/group,
+each running its OWN unchanged serial QKᵀ→softmax→AV), not within any single call's N dimension.
+That is a `decoder/attention.go`/`forwardn.go` restructuring, not an aikit threshold change.
+
+**Answer to Gate A0 item 2's stated concern: existing infra does not already interleave in a way
+that competes with or shrinks A1's ceiling.** If anything this strengthens the diagnosis — it
+independently confirms WHY today's path is serial (threshold, not a hand-written serial loop
+lacking any parallel primitive) without touching A1(a)'s available parallelism at all. The go/no-go
+was waiting on this; **it resolves GO, ceiling unchanged.**
+
+### Gate A0 closed (2026-08-23) — GO, all four items answered
+
+| item | question | answer |
+|---|---|---|
+| 1 | QK vs softmax vs AV vs RoPE split | QK 47.1% / AV 48.9% / softmax 3.6% / RoPE 0.5% — (b) and (c) both matter, roughly equally |
+| 2 | does existing infra already interleave (shrinks A1's ceiling)? | No — 1000x under aikit's default threshold, never fires; A1(a)'s ceiling is untouched, and this is a third instance of a known threshold-mismatch bug class |
+| 3 | depth curve, long-context baseline | 20% of token at depth 128 → 95% at depth 8192 (est. 1.15 tok/s); per-key cost itself rises ~19.5% over that range (cache-tier effects) — this is very plausibly the long-context deficit's mechanism, not just correlated with it |
+| 4 | single-threaded? | Confirmed structurally (no goroutines anywhere) and by rate (~1.0 ns/MAC, serial-f64-chain speed) |
+
+**Mechanism confirmed exactly as hypothesized: unoverlapped, single-threaded f64 chains in QK and
+AV equally, not softmax/RoPE, not existing-but-unused parallel infrastructure.** A1's three moves
+(thread across heads, interleave independent outputs in both QK and AV, fix AV's strided memory
+order) are cleared to build against the acceptance table below, with the added, sharper framing
+from item 3: the long-context payoff is not a bonus on top of the depth-130 win, it is where most
+of the value actually is.
+
+## Acceptance math — tied to the W4A8 doc's revised table (1.5B, ms/token)
+
+| scenario | matmul | attn | other | total | tok/s | vs ollama |
+|---|--:|--:|--:|--:|--:|--:|
+| today | 43.2 | 15.2 | ~0.4 | 58.8 | 17.0 | 0.25x |
+| A1 alone (attn ~3 ms) | 43.2 | 3.0 | 0.4 | 46.6 | 21.5 | 0.31x |
+| A1 + W4A8 item-3 kernel at 2x | 21.6 | 3.0 | 0.4 | 25.0 | 40.0 | 0.59x |
+| A1 + bandwidth-class kernel (~12.5 ms) | 12.5 | 3.0 | 0.4 | 15.9 | 62.9 | 0.92x |
+| A2/A3 attn (~1 ms) + bandwidth-class kernel | 12.5 | 1.0 | 0.4 | 13.9 | 71.9 | ~1.05x |
+
+**With this lever real, parity stops being out of reach** — the W4A8 doc's "0.84x is what
+close-the-gap realistically means" was computed with a 5 ms non-matmul guess; A1's target beats
+that. Acceptance for A1: attention component ≥3x faster at depth ~130, `bench_peer` decode
+gain consistent with the table, **all parity/spec gates green with zero golden changes**, plus
+one long-context cell (depth ≥8k) to size the depth-scaling claim. A2/A3 get their own
+acceptance if funded, including the regold/cosine gate (A2) or the flag-off-by-default
+divergence documentation (A3, matching the `--metal-fast-prefill` help-text convention).
+
+## Non-goals
+
+- **Norms, sampler, KV-append.** Measured noise-level (probe 1); the KV-append number
+  (4.29 µs/token) is already isolated and filed.
+- **GPU/Metal attention.** `task-decode-splitkv-attention.md` owns that; this doc borrows its
+  independent-axis argument, not its scope.
+- **Softmax numerics, exp approximations.** Order-preserving restructuring only, until A2 is
+  explicitly funded.
+- **The W4A8 kernel items.** Other doc; the only coupling is the acceptance table above.
+- **Changing what `acc64` guarantees.** A1 preserves it outright; A2/A3 renegotiate it only
+  through their own gates, never silently.
+
+## Done looks like
+
+A0's split + kernel-read + depth curve recorded here with a go/no-go. If go: A1's three moves
+in aikit/goinfer, gates green with zero golden churn, before/after `bench_peer` at depth ~130
+and one ≥8k cell, and the acceptance table above re-filled with measured numbers. Then a
+recorded decision on A2/A3 — funded with their own gates, or closed with the measured reason. A
+negative at any step is filed at the same standard as the W4A8 doc's.
