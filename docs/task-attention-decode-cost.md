@@ -79,7 +79,13 @@ golden shifts:
 
 - **(a) Thread across query heads** (and layers' two KV heads): each head's outputs are
   computed by an unchanged serial fold; distributing heads across cores reorders nothing
-  within any output. Up to ~6x on this box at 12 heads.
+  within any output. Up to ~6x on this box at 12 heads. **Depth-aware, not heads-only** (Gate
+  A0's depth curve below): at short depth each QK/AV call is too small (~16.6K MACs) for
+  within-call splitting to pay for its own fork-join, so heads-parallel is the whole story —
+  but past whatever depth makes one call's own work clear a real threshold (~1M MACs by 8192
+  keys), (b)'s within-call independent-axis split becomes a second, additive axis. Heads-parallel
+  alone caps near 6x; the depth regime where attention is 90%+ of the token is exactly where more
+  than 6x is worth having.
 - **(b) Interleave independent outputs inside the f64 kernel**: run 4-8 keys' dots (QK) or
   dims' folds (AV) as concurrent accumulator chains in one pass. Each output's own summation
   order is untouched; the FMA latency chain stops serializing the whole call. Classic 3-5x on
@@ -182,7 +188,16 @@ where the strided/contiguous distinction should matter far more).
 
 Same isolated `attendBatchedHeads` benchmark, real 1.5B shape, 28 layers/token, at nKeys =
 128/512/2048/8192 (matmul+other held at their measured 43.6 ms/token — no reason for that to
-move with depth, since decode's weight-matmul cost is depth-independent):
+move with depth, since decode's weight-matmul cost is depth-independent).
+
+**Reproducibility check (same day, quiet-box lesson from the STREAM/swap incident applied):**
+this box was under real, visible contention when the table below was first measured (other
+sessions active; a naive spot-check attempt during that contention hung twice — 16 min and 2h38m
+of wall time for ~15s of real CPU work each time, a benchmark-composition bug in the throwaway
+recheck code itself, not a box problem, fixed by reverting to the same plain `b.Run`-subtest shape
+as the original). Re-run clean on a quiet box (other sessions closed): **depth 128 → 10.93 ms
+(original 10.84, +0.8%), depth 8192 → 858.8 ms (original 828.8, +3.6%)** — both within normal
+run-to-run noise. The table's numbers hold.
 
 | depth | attention ms/token | µs/key | ratio to depth-128 | est. total ms/token | est. tok/s | attn share of total |
 |--:|--:|--:|--:|--:|--:|--:|
@@ -195,8 +210,13 @@ move with depth, since decode's weight-matmul cost is depth-independent):
 cost is not flat — it rises **~19.5%** from depth 128 to 8192 (84.7 → 101.2 µs/key), consistent
 with the keys/vals arrays (8.39 MB each at depth 8192, 16.8 MB combined) outgrowing a cache tier
 that held them comfortably at depth 128 (262 KB combined) — a cost ollama's flash-attention
-tiling is specifically designed to avoid, and neither this doc's A1 nor A2 fixes (they parallelize
-and reorder, but don't tile). Second, and more importantly: **attention's share of total decode
+tiling is specifically designed to avoid. **This drift is partially A1(c)'s problem, not purely a
+future tiling question**: AV's 1KB-strided element reads are exactly worst at 17 MB/layer, well
+past L2 — the keys-outer/dims-inner reorder (c) proposes turns that into contiguous row
+streaming, so (c) should recover some (not necessarily all) of the 19.5% as a side effect of a
+move already scoped for a different reason. Whatever residual remains after (c) ships and gets
+measured is the genuine tiling question — kept a named non-goal below rather than pulled into
+this doc's ladder now. Second, and more importantly: **attention's share of total decode
 time is 20% at depth 128 and 95% at depth 8192** — by 32k (extrapolating the measured per-key
 trend conservatively flat past 8192, almost certainly an underestimate given the rising trend) the
 non-attention 43.6 ms/token is noise against an attention cost in the seconds. **This confirms, with
@@ -204,6 +224,20 @@ a number instead of an inference, that decode attention is very plausibly THE lo
 deficit** (§ "The measurement" above cited the GPU-side 5.54x-at-32k figure as circumstantial; this
 is the CPU-side mechanism measured directly, and it is not subtle — an estimated 1.15 tok/s at
 depth 8192 is not a usable server at that depth today).
+
+**The depth curve also flips which parallel axis A1(a) should use, and this is load-bearing for
+the design, not a footnote.** At depth 130 each QK/AV call is ~16.6K MACs (item 2's own number) —
+too small for within-call splitting, heads-parallel only, as scoped. At depth 8192 each call is
+~1M MACs — past the fork-join economics that made within-call parallelism the wrong move at short
+depth, and now a real target: QK's per-key scores are independent outputs (split across keys, per
+`task-decode-splitkv-attention.md:36`'s own principle — split the independent axis, never the
+reduction) and AV's per-dim folds are equally independent (split across dims), neither touching
+any output's reduction order. **A1(a) should be depth-aware — heads-parallel at short depth, plus
+within-call independent-axis splits once a call's own work clears its own threshold — not
+heads-only.** This matters concretely: heads-parallel alone caps near 6x on this box (this
+session's own P/E-core findings), and the 95%-share regime at 8k+ is exactly where more than 6x is
+worth having. (Same threshold-awareness item 2 already established — check M·N·K against a real
+threshold before assuming a shape either parallelizes or doesn't.)
 
 **This changes the acceptance framing for A1/A2 at long context: fixing the 20%-of-token cost at
 depth 130 is worthwhile on its own terms, but fixing the SAME code path is worth vastly more at
@@ -214,7 +248,7 @@ becomes load-bearing at that regime, is the natural next question once A1 ships 
 curve gets re-measured against it.
 
 ### Gate A0 item 2, answered (2026-08-23, same day) — existing infra doesn't compete with A1;
-### it's a third instance of a known bug class
+### it's a second instance of a known bug class
 
 `MatmulBTAcc64Strided` (`aikit/linalg/matmul_strided.go:30`) DOES call `parallelCols(M*N*K, N,
 ...)` internally — it has real parallel capability. But at the shape `attendBatchedHeads` calls it
@@ -224,10 +258,18 @@ the scores·V call is the same magnitude), against aikit's package-default thres
 threshold.** Every one of these calls takes `parallelCols`'s serial fast path, every time, with
 no exception.
 
-**This is the third confirmed instance of the identical bug class** `decoder/weightmat.go`'s
-`int4ParThreshold` comment already documents twice over (Gemma-4 decode matmuls, then W4A8): a
-kernel with real parallel capability, gated behind a default threshold tuned for prefill-sized
-work, silently never firing for decode-sized calls.
+**This is the SECOND confirmed instance of a named bug class — same pattern, different kernel.**
+`decoder/weightmat.go`'s `int4ParThreshold` comment documents the FIRST instance precisely: on
+Gemma-4's int4/W4A8 decode matmuls (M=1), every real shape (expert gate‖up 3.96M, down 1.98M,
+dense ~5.9M, attention-proj ~11.5M MACs) fell under this SAME `parThreshold = 1<<24` default and
+ran serial, capping 8-core scaling at 1.61x — fixed by introducing `int4ParThreshold = 1<<20` as a
+lower, decode-appropriate threshold for that one call path. This finding is not "W4A8 again" — it
+is the identical class (a kernel with real parallel capability, gated on aikit's one
+prefill-tuned default, never firing for decode-sized calls) recurring in a completely different
+kernel (`MatmulBTAcc64Strided`, attention's QK/AV, not any weight matmul). **Two confirmed
+instances now; grep `parThreshold = 1<<24` (aikit) and `int4ParThreshold` (goinfer) before adding
+a third decode-time matmul/kernel call anywhere in this codebase — check its own M·N·K against
+the default before assuming it parallelizes.**
 
 **But the fix is NOT "lower this threshold"** — parallelizing *inside* one 16,640-MAC call (attn
 has 24 of these per layer: 12 heads × {QK, AV} × 28 layers = 672/token) would spawn a fork-join
@@ -248,7 +290,7 @@ was waiting on this; **it resolves GO, ceiling unchanged.**
 | item | question | answer |
 |---|---|---|
 | 1 | QK vs softmax vs AV vs RoPE split | QK 47.1% / AV 48.9% / softmax 3.6% / RoPE 0.5% — (b) and (c) both matter, roughly equally |
-| 2 | does existing infra already interleave (shrinks A1's ceiling)? | No — 1000x under aikit's default threshold, never fires; A1(a)'s ceiling is untouched, and this is a third instance of a known threshold-mismatch bug class |
+| 2 | does existing infra already interleave (shrinks A1's ceiling)? | No — 1000x under aikit's default threshold, never fires; A1(a)'s ceiling is untouched, and this is the second confirmed instance of the same threshold-mismatch bug class `int4ParThreshold` first fixed for Gemma-4's W4A8 decode matmuls |
 | 3 | depth curve, long-context baseline | 20% of token at depth 128 → 95% at depth 8192 (est. 1.15 tok/s); per-key cost itself rises ~19.5% over that range (cache-tier effects) — this is very plausibly the long-context deficit's mechanism, not just correlated with it |
 | 4 | single-threaded? | Confirmed structurally (no goroutines anywhere) and by rate (~1.0 ns/MAC, serial-f64-chain speed) |
 
@@ -288,6 +330,10 @@ divergence documentation (A3, matching the `--metal-fast-prefill` help-text conv
 - **The W4A8 kernel items.** Other doc; the only coupling is the acceptance table above.
 - **Changing what `acc64` guarantees.** A1 preserves it outright; A2/A3 renegotiate it only
   through their own gates, never silently.
+- **Tiling the long-context cache-tier drift.** A1(c)'s memory-order fix should recover some of
+  the measured ~19.5% per-key cost rise past L2, as a side effect. Whatever residual remains after
+  (c) ships and gets re-measured is a genuine flash-attention-style tiling question — real, but
+  explicitly out of this doc's ladder, not scope creep to absorb here.
 
 ## Done looks like
 
