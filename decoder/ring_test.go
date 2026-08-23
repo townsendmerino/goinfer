@@ -103,7 +103,7 @@ func TestRing_batchedBitExact(t *testing.T) {
 	}
 	fCtx := make([]float32, K*qDim)
 	qh, kh, vt, sc, ch := bufs(K)
-	attendBatchedHeads(q, fCtx, full.keys[0], full.vals[0], 0, full, 0, 0, K, false, arch, false, qh, kh, vt, sc, ch)
+	attendBatchedHeads(q, fCtx, full.keys[0], full.vals[0], 0, full, 0, 0, K, false, arch, false, qh, kh, vt, sc, ch, nil)
 
 	// Ring: empty cache (startPos 0), assemble [base, K) from (empty history + new).
 	ring := NewKVCache(1, nKV, hd, W, K)
@@ -113,7 +113,7 @@ func TestRing_batchedBitExact(t *testing.T) {
 	base, nRows := ring.batchReadLocal(0, 0, K, k, v, alk, alv)
 	rCtx := make([]float32, K*qDim)
 	qh, kh, vt, sc, ch = bufs(nRows)
-	attendBatchedHeads(q, rCtx, alk[:nRows*kvDim], alv[:nRows*kvDim], base, ring, 0, 0, K, false, arch, false, qh, kh, vt, sc, ch)
+	attendBatchedHeads(q, rCtx, alk[:nRows*kvDim], alv[:nRows*kvDim], base, ring, 0, 0, K, false, arch, false, qh, kh, vt, sc, ch, nil)
 
 	for j := range fCtx {
 		if rCtx[j] != fCtx[j] {
@@ -158,7 +158,7 @@ func TestRing_moeDecodeBitExact(t *testing.T) {
 		base, nKeys := ring.batchReadLocal(0, pos, 1, rk, rv, lk, lv)
 		rCtx := make([]float32, qDim)
 		qh, kh, vt, sc, ch := mkbufs(nKeys)
-		attendBatchedHeads(q, rCtx, lk[:nKeys*kvDim], lv[:nKeys*kvDim], base, ring, 0, pos, 1, false, arch, true, qh, kh, vt, sc, ch)
+		attendBatchedHeads(q, rCtx, lk[:nKeys*kvDim], lv[:nKeys*kvDim], base, ring, 0, pos, 1, false, arch, true, qh, kh, vt, sc, ch, make([]float64, hd))
 		ring.commitBatch(0, pos, 1, rk, rv)
 
 		// Reference: append-forever, attend K=1 base 0 over all stored keys.
@@ -168,7 +168,7 @@ func TestRing_moeDecodeBitExact(t *testing.T) {
 		fCtx := make([]float32, qDim)
 		nf := pos + 1
 		qh, kh, vt, sc, ch = mkbufs(nf)
-		attendBatchedHeads(q, fCtx, full.keys[0], full.vals[0], 0, full, 0, pos, 1, false, arch, true, qh, kh, vt, sc, ch)
+		attendBatchedHeads(q, fCtx, full.keys[0], full.vals[0], 0, full, 0, pos, 1, false, arch, true, qh, kh, vt, sc, ch, make([]float64, hd))
 
 		for j := range fCtx {
 			if rCtx[j] != fCtx[j] {

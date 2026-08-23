@@ -126,6 +126,7 @@ func (m *Model) runLayersFromEmbedN(h []float32, cache *KVCache) ([]float32, err
 	avt := make([]float32, maxKeys*hd)
 	ascores := make([]float32, K*maxKeys)
 	ach := make([]float32, K*hd)
+	aAcc := make([]float64, hd) // A1 move (c): MatmulAVAcc64's per-row f64 accumulator scratch
 	// f32 scratch for the assembled local window (ring history + new rows) AND for
 	// dequantizing int8 layers into for the f32 attention; ≤ maxKeys rows wide.
 	// Allocated when the model has ring layers or an int8 cache.
@@ -217,15 +218,15 @@ func (m *Model) runLayersFromEmbedN(h []float32, cache *KVCache) ([]float32, err
 		// a K>W batch can't evict in-batch history. Global layers read append-forever.
 		if isLocal {
 			base, nRows := cache.batchReadLocal(l, startPos, K, k, v, alk, alv)
-			attendBatchedHeads(q, ctx, alk[:nRows*kvDim], alv[:nRows*kvDim], base, cache, l, startPos, K, global, arch, true, aqh, akh, avt, ascores, ach)
+			attendBatchedHeads(q, ctx, alk[:nRows*kvDim], alv[:nRows*kvDim], base, cache, l, startPos, K, global, arch, true, aqh, akh, avt, ascores, ach, aAcc)
 			cache.commitBatch(l, startPos, K, k, v)
 		} else if cache.quant == kvI8 {
 			// int8 global: the Append loop above already quantized the new K/V into
 			// the layer; dequant the full history into f32 scratch for the matmul.
 			nKeys := cache.dequantGlobalLayer(l, kvDim, alk, alv)
-			attendBatchedHeads(q, ctx, alk[:nKeys*kvDim], alv[:nKeys*kvDim], 0, cache, l, startPos, K, global, arch, true, aqh, akh, avt, ascores, ach)
+			attendBatchedHeads(q, ctx, alk[:nKeys*kvDim], alv[:nKeys*kvDim], 0, cache, l, startPos, K, global, arch, true, aqh, akh, avt, ascores, ach, aAcc)
 		} else {
-			attendBatchedHeads(q, ctx, cache.Keys(l), cache.Vals(l), 0, cache, l, startPos, K, global, arch, true, aqh, akh, avt, ascores, ach)
+			attendBatchedHeads(q, ctx, cache.Keys(l), cache.Vals(l), 0, cache, l, startPos, K, global, arch, true, aqh, akh, avt, ascores, ach, aAcc)
 		}
 		// Laguna output gating, per row, BEFORE o_proj — the batched twin of the K=1
 		// call in causalAttention, sharing applyGateRow so the two cannot diverge.
@@ -393,7 +394,7 @@ func (m *Model) runLayersFromEmbedN(h []float32, cache *KVCache) ([]float32, err
 // invisible here and the math is byte-identical to append-forever. Per-query
 // masking stays in absolute positions (WindowStart/attendHi) and maps to physical
 // columns s-base.
-func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, layer, startPos, K int, global bool, arch *Architecture, useAcc64 bool, qh, kh, vt, scores, ch []float32) {
+func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, layer, startPos, K int, global bool, arch *Architecture, useAcc64 bool, qh, kh, vt, scores, ch []float32, avAcc []float64) {
 	// headsAt, not NumHeads: Laguna varies the QUERY head count per layer (its KV
 	// heads stay uniform, so `group` below is per-layer too). Every other family's
 	// headsAt returns NumHeads, leaving this identical.
@@ -443,8 +444,15 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 			// MatmulBTAcc64Strided runs the SAME sequential f64 reduction as
 			// MatmulBTAcc64, only b's addressing differs), verified at goinfer's own
 			// stride parameters by TestAttendStrided_matchesGatherReference.
+			//
+			// A1 move (b): MatmulQKAcc64 interleaves 8 keys' dot products as 8
+			// concurrent f64 accumulator chains, hiding FMA latency the single-chain
+			// dotF32Acc64 leaves idle (each key's own d-order fold is unchanged, so
+			// this is bit-identical, not just close — docs/task-attention-decode-cost.md).
+			// Measured 4.4x in isolation (both depth 130 and 8192 — a pure latency
+			// fix, not depth-dependent, unlike move (c)'s memory-order fix).
 			if useAcc64 {
-				linalg.MatmulBTAcc64Strided(qh[:K*hd], keys, scores[:K*nKeys], K, hd, nKeys, kvh*hd, kvDim, 1)
+				linalg.MatmulQKAcc64(qh[:K*hd], keys, scores[:K*nKeys], K, hd, nKeys, kvh*hd, kvDim)
 			} else {
 				matmul(qh[:K*hd], kh[:nKeys*hd], scores[:K*nKeys], K, hd, nKeys)
 			}
@@ -534,8 +542,18 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 			// floats are contiguous, and vt's row index IS that offset), element
 			// stride kvDim (vt's column index steps by a whole KV row) — skipping
 			// the vt gather+transpose above. Same bit-identity argument as QKᵀ.
+			//
+			// A1 move (c): MatmulAVAcc64 reads V rows contiguously (keys-outer,
+			// dims-inner) into hd independent f64 accumulators, instead of
+			// MatmulBTAcc64Strided's dims-outer/keys-inner walk (one cache line
+			// per f64 MAC at kvDim stride). Bit-identical by construction — each
+			// dim's accumulator sees the same key-ascending sequence of adds
+			// either way (docs/task-attention-decode-cost.md, docs/task-decode-
+			// splitkv-attention.md:36's "split the independent axis" principle).
+			// Measured 1.81x at depth 130, 2.39x at depth 8192 (aikit
+			// MatmulAVAcc64_ABBench).
 			if useAcc64 {
-				linalg.MatmulBTAcc64Strided(scores[:K*nKeys], vals, ch[:K*hd], K, nKeys, hd, kvh*hd, 1, kvDim)
+				linalg.MatmulAVAcc64(scores[:K*nKeys], vals, ch[:K*hd], avAcc, K, nKeys, hd, kvh*hd, kvDim)
 			} else {
 				matmul(scores[:K*nKeys], vt[:hd*nKeys], ch[:K*hd], K, nKeys, hd)
 			}

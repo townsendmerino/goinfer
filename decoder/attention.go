@@ -136,7 +136,8 @@ func causalAttention(
 		lk, lv := scr.localBufs(rows * kvDim)
 		base, nKeys := cache.batchReadLocal(layer, pos, 1, k, v, lk, lv)
 		qh, kh, vt, sc, ch := scr.attnBatchBufs(nKeys, hd)
-		attendBatchedHeads(q, ctx, lk[:nKeys*kvDim], lv[:nKeys*kvDim], base, cache, layer, pos, 1, global, arch, acc64, qh, kh, vt, sc, ch)
+		avAcc := scr.avAccBuf(hd)
+		attendBatchedHeads(q, ctx, lk[:nKeys*kvDim], lv[:nKeys*kvDim], base, cache, layer, pos, 1, global, arch, acc64, qh, kh, vt, sc, ch, avAcc)
 		cache.commitBatch(layer, pos, 1, k, v)
 		if !cache.manualPos && layer == cache.numLayers-1 {
 			cache.pos++ // commitBatch doesn't step pos; mirror Append's last-layer advance
@@ -148,13 +149,15 @@ func causalAttention(
 		lk, lv := scr.localBufs(cache.storedRows(layer, kvDim) * kvDim)
 		nKeys := cache.dequantGlobalLayer(layer, kvDim, lk, lv)
 		qh, kh, vt, sc, ch := scr.attnBatchBufs(nKeys, hd)
-		attendBatchedHeads(q, ctx, lk[:nKeys*kvDim], lv[:nKeys*kvDim], 0, cache, layer, pos, 1, global, arch, acc64, qh, kh, vt, sc, ch)
+		avAcc := scr.avAccBuf(hd)
+		attendBatchedHeads(q, ctx, lk[:nKeys*kvDim], lv[:nKeys*kvDim], 0, cache, layer, pos, 1, global, arch, acc64, qh, kh, vt, sc, ch, avAcc)
 	default:
 		// f32 global (append-forever): read the whole stored history.
 		cache.Append(layer, k, v)
 		nKeys := cache.storedRows(layer, kvDim)
 		qh, kh, vt, sc, ch := scr.attnBatchBufs(nKeys, hd)
-		attendBatchedHeads(q, ctx, cache.Keys(layer), cache.Vals(layer), 0, cache, layer, pos, 1, global, arch, acc64, qh, kh, vt, sc, ch)
+		avAcc := scr.avAccBuf(hd)
+		attendBatchedHeads(q, ctx, cache.Keys(layer), cache.Vals(layer), 0, cache, layer, pos, 1, global, arch, acc64, qh, kh, vt, sc, ch, avAcc)
 	}
 
 	// 6b. Laguna output gating, applied to the attention context BEFORE o_proj:

@@ -31,6 +31,7 @@ type decodeScratch struct {
 	// batched MoE prefill — bit-identical, so the discrete router never sees a
 	// prefill↔decode numerical discontinuity. akh/avt grow with context like scores.
 	aqh, akh, avt, ach []float32
+	aAVAcc             []float64 // [hd] f64 accumulator scratch for linalg.MatmulAVAcc64 (A1 move c)
 
 	// localK/localV assemble a local (ring) layer's [base, pos] read window for the
 	// K=1 MoE decode path (resident ring history + this token's K/V); ≤ W rows.
@@ -136,6 +137,17 @@ func (s *decodeScratch) attnBatchBufs(nKeys, hd int) (qh, kh, vt, scores, ch []f
 		s.avt = make([]float32, g)
 	}
 	return s.aqh[:hd], s.akh[:nKeys*hd], s.avt[:nKeys*hd], s.scoresBuf(nKeys), s.ach[:hd]
+}
+
+// avAccBuf returns the [hd]-float64 accumulator scratch linalg.MatmulAVAcc64
+// (A1 move c) needs, growing it once as hd's ceiling across layers/families
+// requires (headsAt can vary per layer, but hd itself is architecture-uniform
+// today; grown defensively all the same).
+func (s *decodeScratch) avAccBuf(hd int) []float64 {
+	if cap(s.aAVAcc) < hd {
+		s.aAVAcc = make([]float64, hd)
+	}
+	return s.aAVAcc[:hd]
 }
 
 // localBufs returns two length-n scratch slices (grown once on demand) for

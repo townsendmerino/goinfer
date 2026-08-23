@@ -301,6 +301,106 @@ order) are cleared to build against the acceptance table below, with the added, 
 from item 3: the long-context payoff is not a bonus on top of the depth-130 win, it is where most
 of the value actually is.
 
+## A1 implementation — move (c) landed (2026-08-23, same day)
+
+Per `docs/prompts/attention-a1-bit-identical-restructure.md`'s build order: (c) first.
+
+**Built:** `aikit/linalg/matmul_av_acc64.go`'s `MatmulAVAcc64` — keys-outer/dims-inner, hd
+independent f64 accumulators, replacing `MatmulBTAcc64Strided`'s dims-outer/keys-inner walk at
+the AV call site only (`decoder/forwardn.go`'s `attendBatchedHeads`). QK is untouched (still
+`MatmulBTAcc64Strided`) — that's move (b). Threaded `avAcc []float64` scratch through
+`attendBatchedHeads`'s signature and all 6 call sites (3 decode in `attention.go`, 3 batched in
+`forwardn.go`); goinfer's `decodeScratch` grew one new field (`avAccBuf`), forwardn.go's batched
+scratch grew one new local. Developed against aikit via `go.work` (`../aikit` added to `use`) — a
+local-dev convenience, not yet an aikit version bump; that's still owed before this fully lands,
+per the brief's "Done looks like."
+
+**Correctness — the bit-identity contract held exactly, not approximately:**
+- `TestMatmulAVAcc64_exactMatchesStrided` (aikit `linalg`): exact `==` against
+  `MatmulBTAcc64Strided` across 10 shapes (every nKeys mod-4 residue, hd ∈ {16,64,80,96,128}, M=1
+  decode and M>1 batched, nKeys up to 8192). All pass.
+- `TestForwardN_matchesSequential`, `TestSpeculativeGreedyParity`: **zero** logit difference
+  (`worst max logit diff 0.00e+00`) — not "still under the cosine bar," genuinely unchanged.
+- Full `go test ./decoder/...`: green except the pre-existing, unrelated `TestParityManifest_fresh`
+  staleness flag (expected on any core-file touch) and `TestMellum2_logitParity`/
+  `TestMellum2_windowParity`, confirmed to fail IDENTICALLY on the unmodified baseline (a missing
+  safetensors shard on this box, `~/models/mellum2-unq/model-00002-of-00005.safetensors` does not
+  exist) — reproduced before restoring the change, not assumed. T3 (`go run ./cmd/gate parity -v`):
+  every gate that had its asset present passed (gemma4-E2B/E4B, gemma4-12B, mixtral, gpt2,
+  qwen3_5_moe-tiny, deltanet, deepseek-tiny, kimi-tiny, phi3-tiny, llama4-tiny, nemotron-tiny,
+  nemotron3nano-tiny); the other 28 registered assets are simply not on this Mac (documented,
+  pre-existing, not this change's concern).
+
+**Performance measured, isolated AV kernel first** (real 1.5B shape, order-alternated best-of-3):
+
+| depth | before (`MatmulBTAcc64Strided`) | after (`MatmulAVAcc64`) | speedup |
+|--:|--:|--:|--:|
+| 130 | 16,157 ns | 8,929 ns | **1.81x** |
+| 8192 | 1,353,207 ns | 565,038 ns | **2.39x** |
+
+Then the full wired-in `attendBatchedHeads` depth curve (same shape as Gate A0's baseline table):
+
+| depth | before (ms/token) | after move (c) (ms/token) | speedup | attn share was |
+|--:|--:|--:|--:|--:|
+| 128 | 10.84 | 8.74 | 1.24x | 19.9% |
+| 512 | 48.57 | 35.12 | 1.38x | 52.7% |
+| 2048 | 200.39 | 137.86 | 1.45x | 82.1% |
+| 8192 | 828.77 | 558.62 | 1.48x | 95.0% |
+
+**Speedup grows with depth, as predicted** — AV's strided reads are worst exactly where the
+cache-tier drift lives, so (c) claws back part of the +19.5% per-key cost rise alongside its base
+win. The full-call speedup (1.24-1.48x) is smaller than AV-alone's (1.81-2.39x) because QK
+(unfixed until move (b)) is still ~47% of the cost — consistent with item 1's finding that QK and
+AV are co-equal and neither move alone reaches the ≥3x acceptance bar. **(c) alone is not the
+acceptance target; it's the first of three multiplying factors.**
+
+**Disposition:** wired into production (not a side-by-side kept-for-comparison kernel like the
+W4A8 doc's items 1+2 attempt) — this one is a clean, unconditional win with the bit-identity
+gates green, so there was nothing to gate behind a flag. Uncommitted pending moves (b) and (a),
+per the brief's per-move measurement discipline.
+
+## A1 implementation — move (b) landed (2026-08-23, same day)
+
+**Built:** `aikit/linalg/matmul_qk_acc64.go`'s `MatmulQKAcc64` — 8 keys' dot products run as 8
+concurrent f64 accumulator chains in one pass over d, replacing `MatmulBTAcc64Strided` at the QK
+call site only. Unlike move (c), QK's row reads were already contiguous (`bElemStride=1`) — the
+lever here is pure FMA-latency hiding, not memory layout: `dotF32Acc64`'s single sequential
+accumulator can't issue its next add until the previous one resolves, even though each key's dot
+is fully independent of every other key's. **Measured 4 vs 8 wide before picking**, per the
+brief's "4 (or 8) — measure": 4-wide gave 3.03-3.05x, 8-wide gave 4.41-4.42x (both depths,
+isolated kernel bench) — 8-wide shipped, the 4-wide file removed rather than kept alongside.
+
+**Correctness:** `TestMatmulQKAcc64_exactMatchesStrided` (aikit `linalg`), exact `==` across every
+nKeys residue mod 8 (128-135), hd ∈ {16,64,80,128}, M=1 and M>1, nKeys up to 8192 — all pass.
+Re-ran `TestForwardN_matchesSequential`/`TestSpeculativeGreedyParity`/the ring-parity suite with
+both (c) and (b) wired in: **still zero logit difference.**
+
+**Performance, isolated kernel** (real 1.5B shape, order-alternated best-of-3):
+
+| depth | before (`MatmulBTAcc64Strided`) | after (`MatmulQKAcc64`, 8-wide) | speedup |
+|--:|--:|--:|--:|
+| 130 | 15,266 ns | 3,463 ns | **4.41x** |
+| 8192 | 970,823 ns | 219,500 ns | **4.42x** |
+
+**Depth-independent, unlike move (c)** — confirms the diagnosis: this is a pure latency fix (the
+same win at every depth), where (c) was a memory-order fix (a bigger win at long depth, where the
+strided-read penalty is worse).
+
+**Cumulative depth curve, both moves (c)+(b) wired in** (same shape as Gate A0's baseline table):
+
+| depth | before | after (c) | after (c)+(b) | cumulative speedup |
+|--:|--:|--:|--:|--:|
+| 128 | 10.84 ms | 8.74 ms | 4.54 ms | **2.39x** |
+| 512 | 48.57 ms | 35.12 ms | 17.70 ms | **2.74x** |
+| 2048 | 200.39 ms | 137.86 ms | 72.03 ms | **2.78x** |
+| 8192 | 828.77 ms | 558.62 ms | 298.36 ms | **2.78x** |
+
+**Already close to the ≥3x acceptance bar at depth 130 with one move still to go.** Move (a)
+(thread across the 12 independent heads — up to ~6x more on this box, depth-aware per the earlier
+design note) is the remaining multiplier; acceptance is measured after all three land, not per-move.
+
+**Disposition:** wired into production, same as (c) — a clean, unconditional win, nothing to gate.
+
 ## Acceptance math — tied to the W4A8 doc's revised table (1.5B, ms/token)
 
 | scenario | matmul | attn | other | total | tok/s | vs ollama |
