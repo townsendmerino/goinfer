@@ -131,7 +131,22 @@ peer commands are how you fill it.
 Rig: **Apple M1 Pro** (6P+2E), prequant `.giw` int8, greedy + fixed prompt/seed,
 plugged in. Source: `docs/ARCHITECTURE.md` §2 + `docs/completed/perf-campaign.md`, "after the
 v0.5.0 perf work." goinfer commit for these: the v0.5.0-era CPU campaign (see
-completed/perf-campaign.md). Peers were **not** run on this rig → `—` (use the script).
+completed/perf-campaign.md). Peers were **not** run on this rig at the time → `—` (use the script).
+
+**Peer run added 2026-08-22** (`docs/measurements/mac-cpu-decode-vs-ollama-2026-08-22.md`,
+`bench_peer.py` method, decode-only, GGUF weights verified tensor-identical): ollama/llama.cpp
+CPU (native Q4_K_M, its own default 6 threads) vs goinfer CPU at depth 128, same two models —
+
+| model | goinfer int4 (default) | goinfer int8int8 | ollama Q4_K_M | int4 ratio | int8int8 ratio |
+|---|---|---|---|---|---|
+| 0.5B | 34.5 tok/s | 56.3 tok/s | 109.0 tok/s | 0.32x | 0.52x |
+| 1.5B | 17.0 tok/s | 26.7 tok/s | 68.3 tok/s | 0.25x | 0.39x |
+
+Diagnosis: the gap is not thread-count/E-core related (measured — capping goinfer to 6 threads
+made no real difference) and only partly a quant-format artifact (int4→int8int8 recovers ~60% by
+itself, reproducing a 2026-06-14 aikit finding that W4A8's NEON kernel is compute-bound on its
+nibble-unpack). A residual ~2x gap survives even at the closest comparable format; see the
+measurement doc for the bandwidth analysis and open questions.
 
 **Re-measured under load 2026-08-02 (`14dfc47`) — consistent with the baseline.** The
 table's ~70/~36 remain the headline: they were measured on a clean rig (v0.5.0 campaign).

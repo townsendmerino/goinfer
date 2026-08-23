@@ -233,6 +233,13 @@ go run ./cmd/serve --model ~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
 > `--backend metal`** (int4 declines to CPU there). All quantized modes get batched CUDA prefill
 > (fast TTFT); only native f32 falls back to the sequential path. `--quant -h` explains all five.
 > A prequantized `.giw` model ignores `--quant` (it carries its own).
+>
+> **On `--backend cpu` on Apple Silicon, `int4` is the wrong default for speed.** Measured on an
+> M1 Pro (`docs/measurements/mac-cpu-decode-vs-ollama-2026-08-22.md`): `--quant int8int8` decodes
+> **~60% faster than the `int4` default** (e.g. 26.7 vs 17.0 tok/s at 1.5B) — the NEON W4A8 kernel
+> is compute-bound on its nibble-unpack, not bandwidth-bound, so the smaller int4 weight footprint
+> doesn't translate into more speed here. `int8int8` costs ~2× the RAM; worth it on CPU-only Mac
+> deployments where RAM isn't the binding constraint.
 
 `/v1/chat/completions`, `/v1/completions`, `/v1/responses`, `/v1/messages`
 (Anthropic — see below), `/v1/models`;
