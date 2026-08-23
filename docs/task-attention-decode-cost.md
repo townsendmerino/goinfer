@@ -505,8 +505,14 @@ likely measured under. **Attributed to ambient system load, not a code regressio
 honestly rather than restated as a clean pass: the isolated depth-curve kernel benchmarks (the
 3.86x/6.23x/10.20x/9.72x figures above) are the load-bearing acceptance evidence precisely because
 they're a same-run before/after ratio, insensitive to ambient load in a way an absolute tok/s
-figure is not. If the ≥21 tok/s absolute number needs certifying rather than the relative speedup,
-re-run `bench_peer` on an otherwise-idle box.
+figure is not.
+
+**Not left indefinitely optional.** Re-running `bench_peer` on an otherwise-idle box isn't only
+about re-certifying the ≥21 tok/s absolute number for A1 — these load-5.9 cells would otherwise
+become the *before* baseline for the W4A8 item-3 campaign, and a contaminated baseline there would
+repeat the swap-incident risk that nearly compromised this campaign's own Gate 0. **Do this as the
+first act of the W4A8 item-3 work**, on an idle box: it re-certifies A1's absolute number and
+establishes a clean before baseline for item-3 in the same run.
 
 ## Acceptance math — tied to the W4A8 doc's revised table (1.5B, ms/token)
 
