@@ -94,6 +94,28 @@ on this 16 GB Mac, producing a real (non-stub) `.giw`. Peak RSS during the real 
 logging even though there's no fixed target — the generic path's own "~one layer" framing sets the
 expectation, not a specific number.
 
+**DONE, 2026-08-24.** No tiny qwen35 GGUF fixture exists (`qwen3_5_moe-tiny` is safetensors), so
+the round-trip gate ran against the real 22 GB GGUF with `NumLayers` clamped to 2
+(`decoder/qwen35_streaming_test.go`, `TestQwen35StreamingTranscode_matchesResident`) — a genuine
+subset of the real model's real tensors, small enough to safely also run the old resident path for
+comparison. It found one real, designed (not buggy) difference: the old resident-then-serialize
+path bakes a resolved `quantLabel` ("int4mix") into the header because `w` is fully materialized
+before `writeHeadGlobals` runs; the new streaming path calls `writeHeadGlobals` before any layer
+streams in, so `hasPopulatedLayers()` correctly defers the label to "" (pre-existing B11 logic,
+`decoder/serialize.go:170-185`) — exactly how every other already-streaming family already behaves.
+Every other byte agrees, and both bundles resolve to the same live-inferred label once loaded. All
+qwen35-family goldens (`TestQwen35_forwardParity`, `TestQwen3_5_textParity`,
+`TestSerializeQwen35_roundTrip`) stayed green, and the change is provably non-numeric (proven by the
+above), so `scripts/refresh_parity_hashes.sh` was used for T3 rather than the full 12-minute gate —
+27 goldens green, 0 failed (one heavy Mellum2 checkpoint was skipped for a missing local shard,
+unrelated to this change and to any family this fix touches).
+
+Real conversion: `go run ./cmd/prequant -o ~/models/qwen3.5-35b-a3b-int4.giw -quant int4
+~/models/Qwen3.5-35B-A3B-Q4_K_M.gguf` completed in a few minutes, peak observed RSS **~7.9 GB**
+(vs. the 40.5 GB OOM kill before this fix), producing a real 22,146,331,551-byte `.giw`
+(`wrote ...: 21120 MB (int4)`). Verified loadable: read back through the `internal/giw` bundle
+reader + `decoder.LoadSerializedWeights` — 40 layers, `NumLayers=40`, `VocabSize=248320`, no error.
+
 ## Go/no-go for Phase 1
 
 **NO-GO, as of 2026-08-24** — the real checkpoint has not been loaded, paged, or decoded, so Part A

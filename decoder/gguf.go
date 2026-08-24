@@ -1233,8 +1233,15 @@ func StreamTranscodeGGUF(ctx context.Context, path string, out io.Writer, quant 
 	if serr := canSerialize(arch); serr != nil {
 		return 0, serr
 	}
-	// Dedicated-loader families (qwen35) can't stream; they fit resident.
-	if arch.qwen35 != nil {
+	// gemma4's fused PLE/MoE tail can't stream incrementally; it falls back to a
+	// resident build + one-shot serialize. qwen35 no longer needs this fallback
+	// (2026-08-24, docs/task-zeno-compare.md): its own loadQ35 already builds one
+	// layer at a time internally, so buildWeightsFromGGUF's sink!=nil branch below
+	// streams it like every other family — a control-flow fix (write + release
+	// each layer instead of holding all of them until one final serialize), not a
+	// numerics one. A 35B-A3B MoE OOM'd at 40.5GB resident on a 16GB Mac under the
+	// old resident-then-serialize path; this bounds peak RSS to ~one layer.
+	if arch.gemma4 != nil {
 		w, berr := buildWeightsFromGGUF(cfg, arch, g, q, embedInt4, nil, "")
 		if berr != nil {
 			return 0, berr
@@ -1505,7 +1512,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 	// Streaming transcode: emit the header + globals now; each layer is written and
 	// freed as it loads (below), so the whole model never sits resident.
 	if sink != nil {
-		if arch.qwen35 != nil || arch.gemma4 != nil {
+		if arch.gemma4 != nil {
 			return nil, fmt.Errorf("decoder(gguf): streaming transcode unsupported for %s (load resident + prequant instead)", arch.Name)
 		}
 		if err := sink.writeHeadGlobals(w, id); err != nil {
@@ -1700,6 +1707,29 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			}
 			l.SharedGate = linalg.WrapF32(sg, 1, hidden)
 			return nil
+		}
+		// Streaming (sink != nil, e.g. cmd/prequant): loadQ35 already builds one
+		// layer's data independently of every other layer — parallelLayers's own
+		// concurrency is an unrelated speed choice, not a correctness dependency —
+		// so a sequential build-then-write-then-release loop produces bit-identical
+		// per-layer output while bounding peak RSS to ~one layer instead of all of
+		// them (docs/task-zeno-compare.md, 2026-08-24: the old always-parallel,
+		// always-resident path OOM'd a 35B-A3B MoE at 40.5GB on a 16GB Mac).
+		// Non-streaming (sink == nil, regular resident load): unchanged, still
+		// parallel — every qwen35-family model tried before now fits resident, and
+		// there is no reason to slow that path down.
+		if sink != nil {
+			for i := range arch.NumLayers {
+				if err := loadQ35(i); err != nil {
+					return nil, err
+				}
+				sink.layer(&w.Layers[i])
+				if sink.err != nil {
+					return nil, sink.err
+				}
+				w.Layers[i] = LayerWeights{} // release before the next layer
+			}
+			return w, nil
 		}
 		if err := parallelLayers(arch.NumLayers, loadQ35); err != nil {
 			return nil, err
