@@ -707,15 +707,87 @@ Not decided here — recorded as the first measured input to that decision, per 
 rule (harness-final layout → arm64 load-time repack shipped, load cost and RAM delta measured →
 only then cut the kind). Both conditions are now met.
 
+## End-to-end measurement (2026-08-24) — a real dispatch bug, then a genuine projection correction
+
+**First measurement caught a real bug, not a disappointing result.** The initial `bench_peer` run
+after wiring the repack showed 1.5B int4 barely moving (21.68→22.5 tok/s, +3.7%) despite the
+isolated kernel measuring 1.6-1.8x — the mismatch was the tell. `matmul`/`matmulInto` had the
+arm64 repack populating `WeightMat.q4Row4` at load time, but **still called the raw
+`linalg.MatmulBTW4A8Into` free function directly with the canonical bytes** instead of
+`w.MatmulBTW4A8Into` (the method that actually dispatches to row4). The repacked bytes were built,
+paying their full +100ms load-time and +223.6 MB memory cost, and never read. Fixed (both call
+sites now use `w.MatmulBTW4A8Into`); T3 re-run and green, manifest refreshed, M-independence and
+the paged-fallback proof re-verified against the **actually-active** dispatch (the paged-fallback
+test's "identical greedy token" check was accidentally vacuous before this fix, since both sides
+of that comparison had silently been using canonical the whole time).
+
+**With the real dispatch active, a clean A/B within one harness** (a throwaway
+`w4a8Row4RepackEnabled`-gated stub-probe measuring real per-token time and bytes inside the W4A8
+matmul specifically, reverted after use — same convention as Gate 0's probe 1) on the real 1.5B
+GGUF, 64 decode steps:
+
+| | canonical | row4 | ratio |
+|---|--:|--:|--:|
+| W4A8-only time/token | 24.5-24.6 ms | 18.2-18.3 ms | **1.31-1.35x** |
+| W4A8 achieved rate | 33.3-34.3 GB/s | 44.7-44.9 GB/s | 1.31-1.35x |
+| total time/token | 46.4-47.1 ms | 42.5-43.7 ms | 1.08-1.09x (**+7.3-8.5%**) |
+
+The real kernel-level gain (1.31-1.35x) is somewhat below the isolated harness's 1.40-1.41x
+(6-worker) — real/isolated efficiency here is ~75-81%, actually *better* than the campaign's
+historical ~60% reference point, so **the real-vs-isolated gap is not what capped the end-to-end
+number.**
+
+**The actual cause: the campaign's own Amdahl projection was built on a stale cost breakdown.**
+It assumed ~43.6 ms matmul / ~2.8 ms attention / ~0.4 ms other, i.e. non-W4A8-matmul overhead of
+only ~3.2 ms (plus an assumed ~9.6 ms for the int8-pinned LM head, folded into "matmul"). The real
+canonical breakdown measured here: W4A8 24.5 ms (52%), **LM head 18.2 ms (39%)**, everything else
+(attention+norms+sampler+KV) only 4.2 ms (9%) — attention is fine, right around what A1 left it at.
+**The LM head — not attention, not the W4A8 kernel — is the component the old projection got
+wrong**, extending the stub-probe to the LM head's own dispatch found it: the int8-pinned LM head
+runs through `linalg.MatmulBTQ8` — **weight-only Q8, no `Workspace`, a fresh vocab-sized
+(151936-row) scratch allocation every single token** — not the full-integer W8A8 path
+(`quantInt8I8`) the embedding policy's own name suggests. Achieved rate: **only 11-13 GB/s**
+against the ~0.234 GB/token it streams (matching the doc's own earlier "~0.23 GB of the 1.05
+GB/token" citation exactly) — a small fraction of the 40+ GB/s a proper W8A8 kernel reaches
+elsewhere in this doc. **The LM head is now the single largest per-token cost in this model,
+bigger than the entire W4A8 matmul it was supposed to be a minor addendum to.**
+
+**This is a real, separate finding — not this campaign's to fix.** `embedding()`'s policy
+(`docs/task-w4a8-neon-bandwidth.md`'s own reasoning: int4 quantizing embeddings "flips the argmax
+and tanks the cosine") deliberately chose weight-only Q8 over W8A8 for precision, and that choice
+predates this campaign — whether it can move to the full-integer W8A8 kernel (bit-identical output
+question: does weight-only Q8's f32-dequant activation path differ numerically from W8A8's
+int8-activation path enough to matter for a logit-critical tensor?) or whether the Q8 path itself
+just needs a `Workspace`-based scratch-reuse fix (the vocab-sized per-call allocation alone is
+worth checking) is a new, well-scoped follow-up task, not scope creep to absorb here.
+
+**Corrected numbers, not the ~27 tok/s projection:** 1.5B int4 21.68 → 22.9-23.5 tok/s (real
+`bench_peer`, +8-9%; the exact figure depends on ambient LM-head-path noise, itself now identified
+rather than mysterious), 0.5B int4 41.09 → 45.31 tok/s (+10.3%). Both real, both reproduced, both
+honestly short of the original projection — because the projection's non-W4A8 floor was wrong, not
+because this campaign's kernel work underperformed. The W4A8 lever itself delivered almost exactly
+what the harness said it would (1.31-1.35x real vs 1.40-1.41x isolated); the ceiling on the
+end-to-end number was always the LM head, sitting undiagnosed in the old Amdahl model's "~9.6 ms
+matmul" line.
+
 ## Done looks like
 
 Gate 0: done (GO — result recorded above, with a correction: the issue-width probe's original
 "issue-limited" reading did not reproduce). Gate 1 items 1+2 (decoupled shape): done (measured
 negative). Non-matmul breakdown and the parallelization probe: done. Item 3+4 harness: **done,
 GO** — layout winner is split-half + 4-row interleave, both GO criteria cleared (single-call
-42.4-42.7 GMAC/s, 6-worker aggregate 1.40-1.41x). Remaining: the arm64 load-time `WeightMat`
-repack (plumbing phase, hand-off is the next brief), parity green, and a before/after `bench_peer`
-table against the REVISED acceptance math — both levers reported side by side, kernel and
-non-matmul. The uncentered-correction retry (items 1+2's sanctioned retry) is optional, deferred
-without cost. The format follow-on ships last or never, per its own sequencing rule. A negative
+42.4-42.7 GMAC/s, 6-worker aggregate 1.40-1.41x). **Plumbing phase: done.** The arm64 load-time
+`WeightMat` repack shipped (`RepackInt4Row4`/`Int4Row4`/`WeightMat.MatmulBTW4A8Into`), the
+paged-MoE carve-out proven by test, M-independence reconfirmed with the real dispatch active,
+load-time/resident-memory deltas measured (+100ms/+5.1%, +223.6MB/+100%), and the end-to-end
+`bench_peer` table filled in with the REAL numbers: 1.5B int4 21.68→22.9-23.5 tok/s, 0.5B int4
+41.09→45.31 tok/s — real, reproduced, and honestly short of the original ~27 tok/s projection
+because that projection's non-W4A8 floor was stale, not because the kernel underperformed (real
+kernel gain 1.31-1.35x lands close to the isolated 1.40-1.41x). **New finding, out of this
+campaign's scope but recorded for whoever picks it up next: the int8-pinned LM head (weight-only
+Q8, no `Workspace`, a fresh vocab-sized allocation every token, achieving only 11-13 GB/s) is now
+the single largest per-token cost in 1.5B decode — bigger than the W4A8 matmul this whole campaign
+was about.** The uncentered-correction retry (items 1+2's sanctioned retry) is optional, deferred
+without cost. The format follow-on ships last or never, per its own sequencing rule. Release
+(aikit version bump, gpu pins, goinfer retag) is the one remaining step, not yet done. A negative
 result at any step costs the same to obtain and is worth as much.
