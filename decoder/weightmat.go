@@ -239,7 +239,7 @@ var matmulWSPool = sync.Pool{New: func() any { return new(linalg.Workspace) }}
 // (be.MatmulBT / QuantBackend.MatmulW8A8); int4 (W4A8) and weight-only int8 (Q8)
 // stay CPU. (The old weightMat.matmul, now a free function over linalg.WeightMat.)
 func matmul(be Backend, w *linalg.WeightMat, a, dst []float32, M int) {
-	if q4, q4s, group, ok := w.Int4(); ok {
+	if _, _, _, ok := w.Int4(); ok {
 		// int4 weights run the int8-activation W4A8 integer kernel at EVERY M (decode
 		// AND prefill): it stays integer (int4 weight × int8 activation) and benchmarks
 		// faster than the dequant-to-f32 Q4 path at every M, and its per-output result
@@ -250,10 +250,15 @@ func matmul(be Backend, w *linalg.WeightMat, a, dst []float32, M int) {
 		// int4ParThreshold. Each Get is exclusive to this call (Put deferred until
 		// return), so concurrent decode streams never share one — same race-freedom as
 		// the old per-call ws, just with its buffers surviving between calls.
+		//
+		// w.MatmulBTW4A8Into (not the raw linalg.MatmulBTW4A8Into free function) so the
+		// arm64 split-half + 4-row-interleave repack (docs/task-w4a8-neon-bandwidth.md),
+		// when RepackInt4Row4 populated it at load time, actually gets used here — the
+		// repack alone does nothing without this call using it.
 		ws := matmulWSPool.Get().(*linalg.Workspace)
 		defer matmulWSPool.Put(ws)
 		ws.SetThreshold(int4ParThreshold)
-		linalg.MatmulBTW4A8Into(ws, a, q4, q4s, dst, M, w.Cols(), w.Rows(), group)
+		w.MatmulBTW4A8Into(ws, a, dst, M)
 		return
 	}
 	if q8, scales, w8a8, ok := w.Int8(); ok {
@@ -306,11 +311,12 @@ func matmulInto(ws *linalg.Workspace, be Backend, w *linalg.WeightMat, a, dst []
 		linalg.MatmulBTW8A8Into(ws, a, q8, scales, dst, M, w.Cols(), w.Rows())
 		return
 	}
-	if q4, q4s, group, ok := w.Int4(); ok {
+	if _, _, _, ok := w.Int4(); ok {
 		// Same threshold matmul's fresh Workspace sets — the point of the reuse is to stop
 		// allocating one per projection per token, not to change how the work is fanned out.
+		// w.MatmulBTW4A8Into, not the raw free function — see matmul's own comment above.
 		ws.SetThreshold(int4ParThreshold)
-		linalg.MatmulBTW4A8Into(ws, a, q4, q4s, dst, M, w.Cols(), w.Rows(), group)
+		w.MatmulBTW4A8Into(ws, a, dst, M)
 		return
 	}
 	matmul(be, w, a, dst, M)
