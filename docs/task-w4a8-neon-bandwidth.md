@@ -540,24 +540,63 @@ combined with the shorter unpack?** `dotW4A8SplitHalf4Acc` (split-half layout + 
 this shape, with or without the layout fix. A confirmatory null, not a new finding — worth having
 asked given it was one benchmark run, not worth building further on.
 
-**Disposition: effectively GO, on the numbers as measured, with real upside still on the table.**
-Both criteria sit close enough to their bars that calling this NO-GO on a ~3-4% shortfall against
-one baseline reading (while clearing the same bar against the other reading of the same baseline)
-would be splitting a hair narrower than this campaign's own measurement noise supports. The
-remaining grid cells — item 4's row-interleave and the uncentered-correction retry — are now
-**optional upside, not required to clear the bar**: item 4 in particular is expected to add real
-further headroom (more activation reuse, more independent chains, unlike the 4-accumulator check
-above which added chains without touching the actual resource item 4 targets), which would turn
-a borderline pass into a clean one. Held open for that reason, not because the current result is
-inconclusive.
+**Item 4 harness result (2026-08-23, same day) — real, and it changes which reading of the GO bar
+is correct.** `dotW4A8SplitHalf4Row` computes 4 REAL output rows per call (unlike the 2/4-accumulator
+checks above, which split ONE row's own fold into artificial lanes): `repackSplitHalf4RowBlock`
+interleaves 4 rows' split-half-packed groups contiguously (row0's 16 bytes, row1's, row2's, row3's,
+per group — a "Q4_0_4x4-style" repack, matching the brief's own description), and the kernel loads
+the activation chunk ONCE per group, reusing it across all 4 rows' SDOT instead of reloading it 4
+times. Correctness proven exact against a per-row scalar oracle across every nGroups 1-37 (no
+internal residue of its own — one group per outer iteration, unlike the artificial-lane kernels'
+mod-2/mod-4 requirement).
 
-**What this means for items 4/1-2's remaining open questions:** item 4's row-interleave (reusing
-activation registers across output rows) was motivated by the same issue-limited premise as item
-3 and may need re-examination once its own effect is isolated the same way — worth checking whether
-it ALSO does nothing alone and something combined, the same pattern found here. The items-1+2
-uncentered-correction retry inside the repacked kernel (flagged as still-open in the original
-negative-result writeup) is a natural next combination to try given the accumulator fix now frees a
-different resource than the one items 1+2 originally reasoned about.
+Measured against 4 separate calls to both the production kernel and the current-best single-row
+combo (`dotW4A8SplitHalf2Acc`), reproduced twice: **1.036-1.083x on top of the combo kernel** (hot
+1.036x, cold 1.076-1.083x), for a **total 1.78-1.83x vs the original production kernel** — real,
+modest, and additive, exactly as expected for a lever targeting a genuinely different resource
+(activation-load/instruction-count amortization across real outputs) than the one the
+2-vs-4-accumulator check already settled. Uses a single accumulator per real row (4 total, not an
+additional per-row 2-way split) — the 4 genuinely independent output chains already provide at
+least as much latency-hiding as the artificial split did, which the measured result confirms rather
+than assumes.
+
+**6-worker aggregate, re-measured with item 4 in the mix, reproduced twice:**
+
+| workers | orig GB/s | combo (2acc, no row4) GB/s | row4 GB/s | row4/orig |
+|--:|--:|--:|--:|--:|
+| 1 | 14.6-14.8 | 24.1-24.4 | 25.9-26.2 | 1.77-1.78x |
+| 2 | 27.0-26.6 | 41.8-41.8 | 44.0-44.0 | 1.63-1.65x |
+| 4 | 41.5-40.6 | 54.5-54.6 | 56.5-56.5 | 1.36-1.39x |
+| 6 | 43.3-42.3 | 58.5-58.8 | **59.6-60.6** | **1.40-1.41x** |
+| 8 | 45.3-44.7 | 56.9-60.2 | 58.0-62.1 | 1.28-1.39x |
+
+**Item 4 turns the borderline 6-worker reading into a clean pass: 1.40-1.41x, consistently ≥1.4x
+across both runs** (against combo alone's 1.387-1.389x, which sat just under against this
+session's own baseline). At workers=8 the combined kernel no longer collapses as sharply as combo
+alone did in the earlier reading (which dropped to 1.246-1.259x) — item 4 relieves exactly the
+memory-pressure resource that capped combo's own scaling, as predicted before this ran.
+
+**FINAL DISPOSITION: GO, with the completed grid.** Both criteria now clear cleanly and
+reproducibly: single-call cold 42.37-42.67 GMAC/s (bar ≥40) and 6-worker aggregate 1.40-1.41x
+(bar ≥1.4x). **The layout winner is split-half (item 3) + 4-row interleave (item 4), signed
+centering, single accumulator per real row** — this is the layout the plumbing phase should build
+against; it is settled now rather than left to be discovered mid-plumbing, which is the entire
+reason item 4 was run now instead of deferred (a load-time repack's byte arrangement is what the
+`WeightMat` path, its tests, and eventually a `.giw` kind would all inherit — a one-shot decision,
+unlike the uncentered-correction question below).
+
+**The items-1+2 uncentered-correction retry remains genuinely optional, deferred without cost.**
+Unlike the layout, centering changes no weight bytes at all — the canonical format already stores
+nibbles as value+8, so dropping the in-kernel centering subtract only changes the kernel and the
+Σact calling convention, never the repack. It can be tried in the plumbing phase or later without
+foreclosing anything decided here, and is left there rather than run now.
+
+**Hand-off point: the plumbing brief**, once written, should build the arm64 load-time repack in
+goinfer's `WeightMat` against exactly this layout (`repackSplitHalf4RowBlock` +
+`interleaveScales4Row`'s interleaving, `dotW4A8SplitHalf4Row`'s kernel shape), per the campaign
+doc's Gate-1 correction (canonical `.giw`/`quant.go` untouched, GPU-backend-style upload-time
+repack). All harness code (kernels, repack functions, tests) lives in `aikit/linalg`, uncommitted
+per this campaign's convention pending the plumbing decision.
 
 ## Non-goals — measured or reasoned dead ends, do not reopen without new evidence
 
@@ -588,11 +627,13 @@ different resource than the one items 1+2 originally reasoned about.
 
 ## Done looks like
 
-Gate 0: done (GO — result recorded above). Gate 1 items 1+2: done (measured negative, recorded
-above). Remaining, in the resequenced order: the non-matmul breakdown and the parallelization
-probe, each landing their numbers in this doc; then item 3+4 as a harness-measured GMAC/s
-number *before* any `WeightMat` plumbing; then (if the harness says go) the arm64 load-time
-repack, parity green, and a before/after `bench_peer` table against the REVISED acceptance
-math — both levers reported side by side, kernel and non-matmul. The format follow-on ships
-last or never, per its own sequencing rule. A negative result at any step costs the same to
-obtain and is worth as much.
+Gate 0: done (GO — result recorded above, with a correction: the issue-width probe's original
+"issue-limited" reading did not reproduce). Gate 1 items 1+2 (decoupled shape): done (measured
+negative). Non-matmul breakdown and the parallelization probe: done. Item 3+4 harness: **done,
+GO** — layout winner is split-half + 4-row interleave, both GO criteria cleared (single-call
+42.4-42.7 GMAC/s, 6-worker aggregate 1.40-1.41x). Remaining: the arm64 load-time `WeightMat`
+repack (plumbing phase, hand-off is the next brief), parity green, and a before/after `bench_peer`
+table against the REVISED acceptance math — both levers reported side by side, kernel and
+non-matmul. The uncentered-correction retry (items 1+2's sanctioned retry) is optional, deferred
+without cost. The format follow-on ships last or never, per its own sequencing rule. A negative
+result at any step costs the same to obtain and is worth as much.
