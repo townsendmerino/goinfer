@@ -159,13 +159,23 @@ page-fault away would mean touching aikit's `mmap.SpanCache`, explicitly out of 
 during a real decode run measured **~400-630 MB/s sustained, ~24.8 GB total read for one 79-token
 request** — **1.52x** the entire 16.36 GB expert pool, against a 6 GB pager budget. Naive warm/cold
 reruns (same prompt, back-to-back) showed no speed difference (~1017 vs ~1044 ms/token before this
-correction) — NOT evidence of a compute-bound path, as first assumed; the pager evicts via
-`MADV_DONTNEED`, which drops physical pages from the OS page cache too, so repeated identical
-requests don't get to reuse them. The observed 24.8 GB also exceeds a naive miss-count estimate
-(logical miss rate 79-84 GB, ~1.6 MB/expert ⇒ ~8-10 GB) by a real margin — either read amplification
-(fetching more than the touched bytes per fault) or faults invisible to the pager's own hit/miss
-counter (a logical "hit" not guaranteeing the physical page survived external memory pressure).
-Worth sizing further before any fix, not concluded here.
+correction) — NOT evidence of a compute-bound path, as first assumed.
+
+**CORRECTED (2026-08-24, before the paging campaign started):** the original explanation here —
+"the pager evicts via `MADV_DONTNEED`, which drops physical pages from the OS page cache too" — is
+**wrong on darwin**, this machine's platform. `aikit/mmap/madvise_darwin.go` (confirmed current at
+v1.26.0) documents `MADV_DONTNEED` as a deliberate no-op on this OS: there is no syscall that forces
+a resident drop on this read-only mapping, so the pager's budget is bookkeeping, not an enforced
+cap, and the real replacement decision belongs to macOS's Unified Buffer Cache reclaiming under
+genuine system memory pressure — independent of the pager's own LRU signal. This was already
+documented in `docs/task-moe-streaming.md`, missed here for want of a prior-art check before
+writing the explanation (see `docs/prompts/qwen35b-paging-campaign.md`'s own prior-art correction).
+The observation itself (no warm/cold difference despite heavy real I/O) stands; only the mechanism
+was wrong. The observed 24.8 GB also exceeds a naive miss-count estimate (logical miss rate 79-84%,
+~1.6 MB/expert ⇒ ~8-10 GB) by a real margin — either read amplification (fetching more than the
+touched bytes per fault) or faults invisible to the pager's own hit/miss counter (a logical "hit"
+not guaranteeing the physical page survived pressure-driven reclaim). Worth sizing further before
+any fix, not concluded here.
 
 **Pager stats vs gemma4:** hit rate 79.0% → 82.4% → 83.6% across three back-to-back identical-prompt
 runs (popular-expert reuse climbing slightly) — genuinely close to gemma4's reported 81.6%. Similar
@@ -179,6 +189,48 @@ top lever (70.5% of forward, and the read-amplification finding suggests real he
 naive "more cache" fix); DeltaNet's scalar-Go recurrence is the clear second (19%, "never been on
 any perf campaign" per the brief — the A1 attention-threading wins do not reach it). LM head and
 softmax attention are both already fast and not worth further chasing here.
+
+## Paging campaign, Step 0: the read-rate probe and ceiling math (2026-08-24)
+
+`docs/prompts/qwen35b-paging-campaign.md` (rescoped after a prior-art correction — see
+`[[qwen35-paging-campaign-rescoped]]` in memory; two of its four levers were already answered by
+`docs/task-moe-streaming.md`) asked for a cheap three-way read-rate probe before committing to any
+owned-buffer engineering. Real spans from the real 35B-A3B `.giw` (900 experts/set, ~472 MB/set,
+disjoint), same file, same box:
+
+| method | rate | vs. today |
+|---|---|---|
+| A) fault-driven mmap touch (today's production path) | **0.322 GB/s** | 1.0x |
+| B) single-threaded `pread` | 1.211 GB/s | 3.8x |
+| C) async `pread`, queue depth 8 | **1.785 GB/s** | 5.5x |
+| D) async `pread`, queue depth 16 | 1.414 GB/s | 4.4x (worse than C — diminishing returns past QD8 on this SSD) |
+| SEQ) 1 GB single contiguous read | 2.679 GB/s | 8.3x (the real ceiling; random small reads cost more than sequential, expected) |
+
+Confirms the hypothesis cleanly: page-fault-driven reads are effectively queue-depth-1 I/O, and
+QD8 `pread` (not QD16) is this box's sweet spot for ~1.6 MB random reads.
+
+**Ceiling math, honestly bounded — the campaign's own required step before building.** The MoE
+bucket (~540 ms/token, 70.5% of forward) is not cleanly separable into I/O-wait vs. compute time
+without instrumenting inside `aikit/mmap.SpanCache` (out of scope), so the projected win is a band
+over plausible I/O fractions (50/75/90%) and two baseline rates (this probe's clean 0.32 GB/s vs.
+the live diagnostic's 0.4-0.6 GB/s average), applying the QD8 rate (1.785 GB/s) only to the assumed
+I/O portion:
+
+| I/O fraction of MoE bucket | projected tok/s | vs. today's ~1.29 |
+|---|---|---|
+| 50% | 1.67-1.80 | 1.3-1.4x |
+| 75% | 1.97-2.25 | 1.5-1.8x |
+| 90% | 2.20-2.65 | 1.7-2.1x |
+
+**This falls short of the campaign's own ≥3x/≥4 tok/s working target on the read-path lever alone**
+— exactly the "if that ceiling comes out under ~4 tok/s, say so before spending the week" case the
+brief itself anticipated. The router-time prefetch/overlap lever (WILLNEED the next layer's routed
+experts while the current layer computes) composes with this and was described in the brief as
+"multiplicative" — reaching 3x+ likely needs both, not the read-path fix alone, and that
+composition is unmeasured. Building the owned-buffer `pread` path itself (new pager internals,
+threading through `moeMLP`, bit-identical gates, `-race`, the gemma4 regression gate) is a real,
+multi-file engineering effort that this ceiling math does not unambiguously justify on its own —
+recorded here as the checkpoint the campaign's own Step 0 called for, before committing to it.
 
 ## Streaming-transcode fix — scoped as its own task, not folded into Phase 0
 
