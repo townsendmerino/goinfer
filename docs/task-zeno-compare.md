@@ -80,13 +80,16 @@ settled to **~2.4-2.7 GB** after load, well inside the 6 GB expert-cache budget 
 A real chat completion (`POST /v1/chat/completions`, 19-token prompt, `max_tokens: 40`,
 `temperature: 0`) returned coherent, on-topic prose (a legible reasoning trace opening
 `<think>\nThinking Process:\n\n1. **Analyze the Request:**...`) in **46.57 s wall time** —
-**~0.86 tok/s** completion-token rate (40 completion tokens / wall time; prefill's 19 tokens are a
-small fraction of that total but not separately isolated here). No crash, no OOM, no incoherent
-output — Part A's original blocking question ("can goinfer run the actual model at all") is now
-answered **yes**.
+reported at the time as ~0.86 tok/s (completion tokens only). **Corrected below** (see "Diagnostic:
+the ~1160 ms/token gap"): this architecture's prefill is unbatched and costs the same per-token as
+decode, so dividing only by completion tokens smears prefill's one-time cost into the denominator.
+The correct steady-state figure, dividing by every forward pass (prompt + completion), is
+**~1.2-1.4 tok/s** across five real runs. No crash, no OOM, no incoherent output — Part A's
+original blocking question ("can goinfer run the actual model at all") is now answered **yes**;
+the rate itself is characterized fully in the diagnostic section below, not re-derived here.
 
 Against the brief's own reference points: Zeno's own posted 8.7 tok/s decode (10k-prompt row) and
-llama.cpp's best-config 3.5 tok/s decode are both well above this ~0.86 tok/s. goinfer's
+llama.cpp's best-config 3.5 tok/s decode are both above this corrected ~1.2-1.4 tok/s. goinfer's
 expert-demand-paging path here is synchronous, per-token, per-miss disk faults against a 6 GB
 cache over 15.6 GB of experts — unsurprising that it's the slowest of the three; this is a first
 real number, not a tuned one (no cache-budget sweep, no speculative/prefetch paging attempted).
@@ -96,6 +99,86 @@ real number, not a tuned one (no cache-budget sweep, no speculative/prefetch pag
 case; whether any f32-scratch cost still measurably taxes THIS specific streamed/paged qwen35 path
 is a distinct, sizing-only question the brief flagged as owed, not answered here — this pass's
 budget went to proving the model runs at all (step 3) rather than to isolating that cost.
+
+## Diagnostic: the ~1160 ms/token gap (2026-08-24, `docs/prompts/qwen35b-paged-decode-diagnostic.md`)
+
+**Fixes nothing — diagnosis only, per that brief.** Closes Phase 0's last open item (the
+f32-scratch handicap) and answers where the real per-token cost goes. Method: the fourth outing of
+this repo's env-gated component-stub/timing approach (piggybacked on the existing
+`GOINFER_DECODE_TIMING` flag), plus a static weight-kind inspection and an `iostat` cross-check.
+All instrumentation was added, used to record the numbers below, then reverted — the working tree
+carries only the permanent, env-gated `decoder/qwen35_paged_diag_probe_test.go` (a static inspector,
+no hot-path cost, same disposition as the existing `*_probe_test.go` files).
+
+**Headline number corrected first.** Part A's "~0.86 tok/s" divided wall-clock by completion tokens
+alone. This architecture's prefill is NOT batched — "prefill path: sequential... this arch has its
+own per-token forward" (its own startup log) — so a prompt token costs the same as a completion
+token, and dividing only by completion tokens smears the one-time prefill cost into that smaller
+denominator, understating the steady-state rate. Dividing by ALL forward passes (19 prompt + N
+completion) across 5 real runs gives **703-817 ms/token, 1.22-1.42 tok/s** (avg ~1.30 tok/s) — the
+correct steady-state figure, ~50% faster than the original framing. Still a ~13x gap to gemma4's
+16.98 tok/s, not the ~20x the uncorrected number implied, but not a small one either.
+
+**f32-scratch handicap: SIZED, and CLOSED for this checkpoint.** Direct inspection of the real
+loaded `.giw` (`TestQwen35PagedDiag_weightKinds`, 245s to load+walk 40 layers) found every dominant
+projection genuinely `int4`: DeltaNet's `inProjQKV`/`inProjZ`/`outProj` (506.8 MB across all 30
+DeltaNet layers), the 10 softmax layers' q/k/v/oProj (137.2 MB), and all 10240 experts (16.36 GB).
+The ONLY non-quantized body weight is the router (f32, 83.9 MB across 40 layers — this is also
+why the load-time label reads "int4mix": `quantLabel()`'s `hasOther` case, not a mixed body) plus
+small per-layer gate/norm vectors (~20 MB). Together under 0.6% of 18.19 GB total resident weight
+bytes. P12's 2026-08-19 fix holds for this real streamed prequant checkpoint — **this is not the
+gap's explanation**, closing the Phase 0 brief's last open item with a clean negative.
+
+**LM head: verified fast, by tracing the actual load call, not just reading the fix.** `embMat`
+(`decoder/gguf.go:1402`), the SAME shared closure used by every family including qwen35 for
+`w.Embed`/`w.LMHead`, calls `quant.embeddingWith(embedInt4)` — the exact function the 2026-08-24
+W8A8 fix (`a11c56b`) changed to tag int4-mode embed/head `quantInt8I8` instead of weight-only
+`quantInt8`. Confirmed by tracing the call site this model's load actually goes through (the
+dispatch-inertness lesson: a fix existing in the code is not the same as this model's load path
+calling it) — not independently re-measured by field inspection this pass, which would need one
+more 4-minute reload; the code-path trace is strong enough evidence to not spend it.
+
+**The stub split** (three real decode runs, `GOINFER_DECODE_TIMING=1`, component sums cross-checked
+against the framework's own independent "forward" timer — reconciled to within 2.3%, matching the
+A0 splits' bar):
+
+| bucket | ms/token | % of forward | method |
+|---|---|---|---|
+| MoE (paged routing + expert matmul + I/O) | ~540 | **70.5%** | wrap `moeMLP` call |
+| DeltaNet recurrence (30 of 40 layers) | ~146 | 19.0% | wrap `gatedDeltaNetStep` call |
+| LM head | ~53 | 7.0% | wrap `logitsFromHidden`'s matmul |
+| Softmax attention (10 of 40 layers) | ~27 | 3.5% | wrap `qwen35Attention` call |
+| sample / logitProc / embed | <2 | <0.3% | existing `decodeTiming` buckets, confirmed negligible |
+
+Sum ≈ 766 ms/token vs the framework's own independently-measured "forward" average of 764 ms/token
+(0.26% off) — the four qwen35 buckets plus existing overhead buckets account for essentially all
+of it, no missing component.
+
+**MoE's 70.5% is dominated by I/O, not compute — cross-checked, not stubbed** (stubbing the actual
+page-fault away would mean touching aikit's `mmap.SpanCache`, explicitly out of scope). `iostat`
+during a real decode run measured **~400-630 MB/s sustained, ~24.8 GB total read for one 79-token
+request** — **1.52x** the entire 16.36 GB expert pool, against a 6 GB pager budget. Naive warm/cold
+reruns (same prompt, back-to-back) showed no speed difference (~1017 vs ~1044 ms/token before this
+correction) — NOT evidence of a compute-bound path, as first assumed; the pager evicts via
+`MADV_DONTNEED`, which drops physical pages from the OS page cache too, so repeated identical
+requests don't get to reuse them. The observed 24.8 GB also exceeds a naive miss-count estimate
+(logical miss rate 79-84 GB, ~1.6 MB/expert ⇒ ~8-10 GB) by a real margin — either read amplification
+(fetching more than the touched bytes per fault) or faults invisible to the pager's own hit/miss
+counter (a logical "hit" not guaranteeing the physical page survived external memory pressure).
+Worth sizing further before any fix, not concluded here.
+
+**Pager stats vs gemma4:** hit rate 79.0% → 82.4% → 83.6% across three back-to-back identical-prompt
+runs (popular-expert reuse climbing slightly) — genuinely close to gemma4's reported 81.6%. Similar
+hit rate, ~13x slower steady-state tok/s: the gap is NOT primarily "worse cache behavior" the way a
+naive first guess would have it. Likely candidates left open for the next campaign: per-fault byte
+cost, total working-set size relative to cache (qwen35's 16.36 GB pool vs gemma4's, not compared
+here), and DeltaNet's ~19% tax that gemma4 (no recurrent layers) simply doesn't carry.
+
+**Closing recommendation, sizing only — not attempted here:** the paged-MoE I/O path is the clear
+top lever (70.5% of forward, and the read-amplification finding suggests real headroom beyond a
+naive "more cache" fix); DeltaNet's scalar-Go recurrence is the clear second (19%, "never been on
+any perf campaign" per the brief — the A1 attention-threading wins do not reach it). LM head and
+softmax attention are both already fast and not worth further chasing here.
 
 ## Streaming-transcode fix — scoped as its own task, not folded into Phase 0
 
@@ -153,20 +236,25 @@ reader + `decoder.LoadSerializedWeights` — 40 layers, `NumLayers=40`, `VocabSi
 
 **Part A: CLEARS, as of 2026-08-24** — the streaming fix landed, the real 35B-A3B checkpoint now
 loads (mmap + expert demand-paging, ~2.4-2.7 GB resident, 6 GB budget) and decodes coherent prose
-at ~0.86 tok/s, well under both of the brief's reference points (Zeno 8.7, llama.cpp 3.5) but a
-real, working number rather than a blocked one. Step 4 (sizing the f32-scratch handicap on this
-specific path) is still owed — not a blocker, an open sizing question.
+at a corrected **~1.2-1.4 tok/s steady-state** (see "Diagnostic: the ~1160 ms/token gap" — the
+original ~0.86 tok/s conflated prefill's cost into the completion-token divisor), below both of the
+brief's reference points (Zeno 8.7, llama.cpp 3.5) but a real, working, now fully-diagnosed number
+rather than a blocked one. Step 4 (sizing the f32-scratch handicap) is DONE — sized and closed
+(not the gap's explanation); the diagnostic also ranked where the remaining time goes (paged MoE
+I/O ~70%, DeltaNet recurrence ~19%).
 
 **Overall: still NO-GO for Phase 1, gated on Part B alone.** Part A no longer blocks; Part B (Zeno
 install feasibility) has not been pursued and gates on Francis's explicit checkpoint before
 installing anything, independent of Part A's outcome — that checkpoint has not happened. Nothing in
-this pass changes that gate.
+this pass changes that gate. Should Phase 1 proceed later, it inherits a known, ranked cost profile
+rather than an unexamined one — a fix campaign for the paged-MoE I/O path and/or the DeltaNet
+recurrence would be the natural precursor to a headline benchmark, not a requirement to run one.
 
 ## Not in scope (this doc, both phases)
 
 - Any Phase 1 benchmarking, before Part A clears.
-- Fixing the P12-adjacent f32-scratch handicap (sizing it is still owed once Part A clears — see
-  Phase 0's own step 4).
+- Fixing anything the diagnostic found (paged-MoE I/O, DeltaNet recurrence) — sizing only, per both
+  the Phase 0 brief and the diagnostic's own brief.
 - Batched MoE prefill work, Qwen3.6 (wrong match for this comparison), anything W4A8 (that campaign
   owns its own files and box time — this is a side quest and shares no files with it).
 - gemma4's identical carve-out — noted, not touched, unless it independently blocks something.
