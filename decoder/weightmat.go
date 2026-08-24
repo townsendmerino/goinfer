@@ -195,9 +195,21 @@ func quantizeWM(w linalg.WeightMat, mode quantMode) linalg.WeightMat {
 // which specific experts it's managing, not made at load time before that
 // decision exists.
 func repackW4A8Row4IfEligible(wm linalg.WeightMat) linalg.WeightMat {
+	if !w4a8Row4RepackEnabled {
+		return wm
+	}
 	wm.RepackInt4Row4()
 	return wm
 }
+
+// w4a8Row4RepackEnabled is a load-time-measurement toggle ONLY — production
+// code never sets it, so it stays true always in a real build. A test
+// measuring the repack's load-time/resident-memory delta (the two numbers
+// the parked .giw-kind decision is waiting on, docs/task-w4a8-neon-
+// bandwidth.md) flips it off to get an apples-to-apples "without repack"
+// baseline from the exact same load path, rather than comparing against a
+// differently-built binary.
+var w4a8Row4RepackEnabled = true
 
 // isW8A8 reports whether w uses the int8×int8 (W8A8) path — the only one with a
 // zero-alloc Workspace + batched-dispatch kernel.
