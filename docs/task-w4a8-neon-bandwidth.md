@@ -585,23 +585,45 @@ reason item 4 was run now instead of deferred (a load-time repack's byte arrange
 `WeightMat` path, its tests, and eventually a `.giw` kind would all inherit — a one-shot decision,
 unlike the uncentered-correction question below).
 
-**Correction to the plumbing brief's numerics framing (2026-08-24) — the winning kernel is
-bit-identical to canonical, not merely rel-err-close.** `dotW4A8SplitHalf4Row` uses ONE accumulator
-per real output row (cross-row independence alone was sufficient — see the 2-vs-4-accumulator
-finding above), so its per-output fold is the same monotonic group-by-group order
-`dotW4A8FoldSDOT`'s is. This is NOT the same situation as `dotW4A8SplitHalf2Acc`'s within-row 2-way
-split (which folds two independent partial sums together only at the end — a genuinely different
-float reduction tree, and the shape the plumbing brief's numerics section was written against).
-Verified exact (`==`, not tolerance) against `dotW4A8FoldSDOT` across 800 random comparisons: zero
-mismatches (`TestDotW4A8SplitHalf4Row_bitIdenticalToCanonical`, `aikit/linalg/w4a8_sdotv2_test.go`).
+**Correction to the plumbing brief's numerics framing (2026-08-24) — SUPERSEDES that brief's §4
+("Numerics — this is the phase's real risk section"): the winning kernel is bit-identical to
+canonical, not merely rel-err-close.** Argued first, then proven, matching the A1 standard:
+
+- **The mechanism.** Split-half's repack pairs group *g*'s two 16-weight blocks (k_local 0-15 and
+  16-31) so ONE 16-byte load feeds both — but the SDOT consumption order within that load is
+  unchanged: block0 (k=0-15) is still folded before block1 (k=16-31), the same as canonical's
+  interleaved layout after its VZIP unpack. One load feeding two blocks changed *which
+  instructions* extract the bytes, not *the order the values enter the fold*. Group order across
+  the whole K-loop (g=0,1,2,…) is also unchanged. Since int32 accumulation within a group is
+  order-independent (exact addition) and the only place float rounding enters is the once-per-group
+  scale-fold — which happens in the identical g=0,1,2,… sequence — the per-output float32 result is
+  the same reduction tree as canonical's, not a different one.
+- **Why one accumulator per row was enough.** `dotW4A8SplitHalf2Acc`'s within-row 2-way split
+  (splitting ONE row's own fold into two chains, combined via `FADDS` only at the very end) is what
+  breaks bit-identity — that genuinely reorders the reduction. `dotW4A8SplitHalf4Row` doesn't need
+  that: 4 REAL output rows processed together already supply 4 independent FMLA chains (one per
+  row), and the 2-vs-4-accumulator finding above already established that 2 independent chains fully
+  saturate the latency-hiding this kernel needs. Four genuine chains is more than enough on its own,
+  so each row keeps its own single, canonical-order fold — the artificial split was never load-bearing
+  once real cross-row independence was available, which is exactly what that earlier null result
+  pointed toward.
+- **The trial result.** Verified exact (`==`, not tolerance) against `dotW4A8FoldSDOT` across 800
+  random comparisons: zero mismatches (`TestDotW4A8SplitHalf4Row_bitIdenticalToCanonical`,
+  `aikit/linalg/w4a8_sdotv2_test.go`) — argument and measurement agree.
+
 **Consequence: the plumbing phase owes no golden regeneration and no cosine re-gate for this
 specific kernel swap** — the existing decode == prefill == verify bit-identity guarantees carry
 over unchanged, because the per-output arithmetic literally didn't change, only which bytes it
-reads from and which rows share one activation load. The plumbing brief's numerics section (item
-4 there) should be read against this correction, not its original framing — M-independence still
-needs proving through `TestForwardN_matchesSequential`/`TestSpeculativeGreedyParity` with the new
-dispatch active (that part of the brief stands), but as a confirmation of an already-exact
-property, not a re-golding exercise.
+reads from and which rows share one activation load. **This also quietly upgrades the paged-MoE
+carve-out** (`w4a8-plumbing.md` §3) **from a correctness requirement to a pure performance
+matter** — there was never a numerics reason paged tensors couldn't eventually use this kernel,
+only the load-time-repack mismatch with `expertPager`'s read-only canonical mapping, which stands
+on its own regardless of this finding. **Whoever picks up `docs/prompts/w4a8-plumbing.md` next:
+its §4 numerics section is superseded by this entry — read this before that section, not after.**
+M-independence still needs proving through `TestForwardN_matchesSequential`/
+`TestSpeculativeGreedyParity` with the new dispatch active (that part of the brief stands, and
+should still be run rather than assumed — "should hold" always gets measured in this campaign),
+but as confirmation of an already-exact property, not a re-golding exercise.
 
 **The items-1+2 uncentered-correction retry remains genuinely optional, deferred without cost.**
 Unlike the layout, centering changes no weight bytes at all — the canonical format already stores
