@@ -279,7 +279,14 @@ func matmul(be Backend, w *linalg.WeightMat, a, dst []float32, M int) {
 			linalg.MatmulBTW8A8Into(ws, a, q8, scales, dst, M, w.Cols(), w.Rows())
 			return
 		}
-		linalg.MatmulBTQ8(a, q8, scales, dst, M, w.Cols(), w.Rows())
+		// Pooled Workspace, same reason as the W8A8 case just above — the bare
+		// linalg.MatmulBTQ8 wrapper builds a fresh, non-pooled Workspace every call
+		// (docs/prompts/lmhead-workspace-fix.md, Step 1: the LM head's own weight-only
+		// Q8 path, the largest per-token cost measured in the W4A8 plumbing phase).
+		ws := matmulWSPool.Get().(*linalg.Workspace)
+		defer matmulWSPool.Put(ws)
+		ws.SetThreshold(DefaultDecodeParallelThreshold)
+		linalg.MatmulBTQ8Into(ws, a, q8, scales, dst, M, w.Cols(), w.Rows())
 		return
 	}
 	f32, _ := w.F32()
@@ -309,6 +316,15 @@ func matmulInto(ws *linalg.Workspace, be Backend, w *linalg.WeightMat, a, dst []
 			return
 		}
 		linalg.MatmulBTW8A8Into(ws, a, q8, scales, dst, M, w.Cols(), w.Rows())
+		return
+	}
+	if q8, scales, w8a8, ok := w.Int8(); ok && !w8a8 {
+		// Weight-only Q8 (the int8-pinned LM head, in int4 mode): thread the
+		// caller's own scratch Workspace directly, the same as the branches
+		// above/below, instead of falling through to matmul()'s pool round-trip.
+		// docs/prompts/lmhead-workspace-fix.md Step 1.
+		ws.SetThreshold(DefaultDecodeParallelThreshold)
+		linalg.MatmulBTQ8Into(ws, a, q8, scales, dst, M, w.Cols(), w.Rows())
 		return
 	}
 	if _, _, _, ok := w.Int4(); ok {
