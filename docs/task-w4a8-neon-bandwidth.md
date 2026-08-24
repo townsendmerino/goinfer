@@ -416,13 +416,19 @@ has shipped and been measured.** Reasons, so they don't get relitigated:
 delta measured → only then cut the kind, with the paged-MoE need as the forcing function. A
 serialized format frozen around an unmeasured kernel layout is the one clearly wrong order.
 
-## Zero-cost item, ship regardless of the gates
+## Zero-cost item — RETIRED 2026-08-24, per its own line above ("if Gate 1 ships, this note gets
+## retired")
 
-Surface the already-measured fact: on Apple Silicon CPU decode, `-quant int8int8` is ~60%
-faster than the int4 default at roughly double the weight RAM. Doc it where a CPU-only Mac
-user will see it (env-vars/quant docs, maybe the README perf note). Whether to make it the
-darwin/arm64 CPU *default* is a product call — RAM cost is real — but the guidance costs
-nothing today. If Gate 1 ships, this note gets retired.
+Surfaced the then-true fact that `-quant int8int8` was ~60% faster than the int4 default on
+Apple Silicon CPU decode (`README.md`, `internal/serveapp/main.go`'s `--quant` help,
+`docs/benchmarks.md`). That premise no longer holds: with the W4A8 kernel (item-3+4 harness) and
+the int4-mode LM head (LM-head follow-up section above) both shipped, `int4` now decodes at or
+above `int8int8`'s rate at half the RAM (1.5B: 39.1-40.7 vs 37.56 tok/s; 0.5B: 81.9-83.75 vs
+85.25 tok/s — same Apple M1 Pro, goinfer `a11c56b`, 2026-08-24). All three surfaced locations
+have been corrected to state the current guidance while keeping the original 2026-08-22 finding
+on record with a superseded note (`docs/benchmarks.md`'s own provenance rule: no figure without
+box/quant/commit) — the old guidance was a correct reading of the box at the time; what it was
+measuring around no longer exists.
 
 ## Item-3 campaign — Step 0 quiet-box baseline (2026-08-23)
 

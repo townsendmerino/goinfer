@@ -322,14 +322,15 @@ func Main() {
 	flag.StringVar(&cfg.drafter, "drafter", "", "directory of a pretrained BLOCK drafter (z-lab DFlash) paired with --model: the drafter proposes a whole block of tokens per round and the target verifies them in ONE batched pass, measured 1.6-1.8x on code/math and ~0.96x on open chat (docs/spec/08). LOSSLESS — every emitted token is one the target's own argmax produced, so output is identical to plain greedy. Greedy only: a request with temperature, penalties or logit bias falls back to normal decoding automatically. Requires a resident GPU backend (--backend cuda); declines with a reason otherwise")
 	flag.StringVar(&cfg.backend, "backend", "cpu", "compute backend: cpu | webgpu | cuda | metal (process-wide; cuda/metal: dense-only, cgo-free native, -tags cuda|metal)")
 	flag.StringVar(&cfg.quant, "quant", "int4", "default decoder weight quant — the accuracy/speed/RAM tradeoff (per-model override: --model name=path,quant=…):\n"+
-		"  int4      W4A8 (int4 weights, int8 activations): smallest, and fastest on the GPU backends. Lossier than int8 (4-bit weights). THE DEFAULT.\n"+
+		"  int4      W4A8 (int4 weights, int8 activations): smallest, and fastest on every backend including\n"+
+		"            Apple Silicon CPU (measured M1 Pro, goinfer a11c56b 2026-08-24, docs/benchmarks.md: at or\n"+
+		"            above int8int8's decode rate at half the RAM -- an earlier reading had int8int8 ~60%\n"+
+		"            faster on Apple Silicon CPU, which was correct at the time but diagnosed a since-fixed LM\n"+
+		"            head, not the W4A8 kernel; see docs/task-w4a8-neon-bandwidth.md). Lossier than int8\n"+
+		"            (4-bit weights). THE DEFAULT.\n"+
 		"  int4mix   attn int8 + FFN int4 (GGUF only): near-int8 quality at below-int8 RAM.\n"+
 		"  int8int8  W8A8 (int8 weights + int8 activations, native SDOT): higher accuracy, ~2x the RAM of int4.\n"+
 		"            REQUIRED for --backend metal (int4 declines to CPU on the dense Metal resident path).\n"+
-		"            On --backend cpu on Apple Silicon, int8int8 also decodes ~60% FASTER than int4 (measured\n"+
-		"            M1 Pro, docs/measurements/mac-cpu-decode-vs-ollama-2026-08-22.md) -- the NEON W4A8 kernel\n"+
-		"            is compute-bound on its nibble-unpack, not bandwidth-bound, so int4's smaller footprint\n"+
-		"            doesn't buy more speed there. Prefer int8int8 on Apple Silicon CPU unless RAM is tight.\n"+
 		"  int8      int8 weights with wider activations: between int8int8 and native.\n"+
 		"  \"\"        native (no quantization, f32): most accurate, largest, slowest.\n"+
 		"All quantized modes (int4/int4mix/int8/int8int8) get batched CUDA prefill (fast TTFT); only native f32\n"+

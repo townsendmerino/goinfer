@@ -148,6 +148,32 @@ itself, reproducing a 2026-06-14 aikit finding that W4A8's NEON kernel is comput
 nibble-unpack). A residual ~2x gap survives even at the closest comparable format; see the
 measurement doc for the bandwidth analysis and open questions.
 
+**SUPERSEDED 2026-08-24 — the ranking flipped, do not use the int4/int8int8 ratio above.** The
+diagnosis above was correct when written: at that point the int8int8 ratio (0.52x/0.39x) beat the
+int4 ratio (0.32x/0.25x) specifically because int8int8's own LM head happened to already run the
+fast W8A8 path, while int4's LM head ran a slow weight-only-Q8 path that was, at the time,
+undiagnosed — int8int8 wasn't faster because int4 was slow at matmul, it was faster because int4's
+*head* was slow and int8int8's wasn't. Once the W4A8 NEON kernel (`docs/task-w4a8-neon-bandwidth.md`,
+item-3+4 harness) and the int4-mode LM head (same doc's LM-head follow-up, `embedding()` moved from
+weight-only Q8 to full W8A8) both shipped, that asymmetry closed. Provenance: **Apple M1 Pro**,
+`bench_peer.py` method, decode-only, greedy, depth 128, quiet box, goinfer commit **`a11c56b`**
+(2026-08-24, the LM-head W8A8 default) —
+
+| model | goinfer int4 | goinfer int8int8 | ollama Q4_K_M | int4 ratio | int8int8 ratio |
+|---|---|---|---|---|---|
+| 0.5B | 81.9-83.75 tok/s | 85.25 tok/s (Step-0 cell, unaffected by the LM-head fix — see below) | 109.0 tok/s | 0.75-0.77x | 0.78x |
+| 1.5B | 39.1-40.7 tok/s | 37.56 tok/s (Step-0 cell, unaffected) | 68.3 tok/s | 0.57-0.60x | 0.55x |
+
+**int4 now matches or beats int8int8 at both sizes, at half the weight RAM.** The int8int8 cells
+here are the item-3+4 harness's own Step-0 baseline (`docs/task-w4a8-neon-bandwidth.md`), not
+re-measured for this correction: the LM-head fix only touches `embedding()`'s `quantInt4`/
+`quantInt4Mix` branch — int8int8's base mode passes through unchanged, so its LM head was already
+full W8A8 before and after that fix, and its decode rate did not move. **Current guidance: `int4`
+is the right default on Apple Silicon CPU decode** — equal-or-better speed at half the RAM, the
+inverse of what this section said as of `d469c7c`. That advice is not deleted (above) because it
+was an honest, correctly-diagnosed reading of the box at the time; it is superseded because the
+thing it was measuring around — the LM head's drag — no longer exists.
+
 **Re-measured under load 2026-08-02 (`14dfc47`) — consistent with the baseline.** The
 table's ~70/~36 remain the headline: they were measured on a clean rig (v0.5.0 campaign).
 A spot re-run of `BenchmarkDecode` this pass came back at ~68 (best 69.8) tok/s for 0.5B

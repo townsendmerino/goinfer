@@ -234,12 +234,17 @@ go run ./cmd/serve --model ~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
 > (fast TTFT); only native f32 falls back to the sequential path. `--quant -h` explains all five.
 > A prequantized `.giw` model ignores `--quant` (it carries its own).
 >
-> **On `--backend cpu` on Apple Silicon, `int4` is the wrong default for speed.** Measured on an
-> M1 Pro (`docs/measurements/mac-cpu-decode-vs-ollama-2026-08-22.md`): `--quant int8int8` decodes
-> **~60% faster than the `int4` default** (e.g. 26.7 vs 17.0 tok/s at 1.5B) — the NEON W4A8 kernel
-> is compute-bound on its nibble-unpack, not bandwidth-bound, so the smaller int4 weight footprint
-> doesn't translate into more speed here. `int8int8` costs ~2× the RAM; worth it on CPU-only Mac
-> deployments where RAM isn't the binding constraint.
+> **On `--backend cpu` on Apple Silicon, `int4` is now the right default for speed, not the wrong
+> one.** A 2026-08-22 measurement (below, kept for the record) found `int8int8` ~60% faster than
+> `int4` — correct at the time, but for a reason that has since been fixed: `int4`'s LM head ran a
+> slow weight-only-Q8 path while `int8int8`'s happened to already run full W8A8, so the gap was the
+> head's drag, not the W4A8 matmul kernel. Both the NEON W4A8 kernel and the `int4`-mode LM head
+> shipped (`docs/task-w4a8-neon-bandwidth.md`) and the ranking flipped: measured on the same M1 Pro,
+> goinfer commit `a11c56b` (2026-08-24), `int4` now decodes **at or above `int8int8`'s speed** (1.5B:
+> 39.1-40.7 vs 37.56 tok/s; 0.5B: 81.9-83.75 vs 85.25 tok/s) at **half the weight RAM** — see
+> `docs/benchmarks.md` for the full table. `int8int8` remains **required for `--backend metal`**
+> (int4 declines to CPU there) and is still the higher-accuracy choice if precision matters more
+> than either speed or RAM.
 
 `/v1/chat/completions`, `/v1/completions`, `/v1/responses`, `/v1/messages`
 (Anthropic — see below), `/v1/models`;
