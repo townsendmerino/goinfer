@@ -752,14 +752,48 @@ GB/token" citation exactly) — a small fraction of the 40+ GB/s a proper W8A8 k
 elsewhere in this doc. **The LM head is now the single largest per-token cost in this model,
 bigger than the entire W4A8 matmul it was supposed to be a minor addendum to.**
 
-**This is a real, separate finding — not this campaign's to fix.** `embedding()`'s policy
-(`docs/task-w4a8-neon-bandwidth.md`'s own reasoning: int4 quantizing embeddings "flips the argmax
-and tanks the cosine") deliberately chose weight-only Q8 over W8A8 for precision, and that choice
-predates this campaign — whether it can move to the full-integer W8A8 kernel (bit-identical output
-question: does weight-only Q8's f32-dequant activation path differ numerically from W8A8's
-int8-activation path enough to matter for a logit-critical tensor?) or whether the Q8 path itself
-just needs a `Workspace`-based scratch-reuse fix (the vocab-sized per-call allocation alone is
-worth checking) is a new, well-scoped follow-up task, not scope creep to absorb here.
+**This is a real, separate finding — not this campaign's to fix, and its scope is now sharper than
+"investigate."** `decoder/weightmat.go`'s `embedding()` policy deliberately chose weight-only Q8
+over W8A8 for precision (int4 quantizing embeddings "flips the argmax and tanks the cosine"), and
+that choice predates this campaign. A quick isolated check during release prep ruled out the
+cheap hypothesis: `MatmulBTQ8` vs `MatmulBTQ8Into` (a persistent `Workspace`) measured
+**identically** (18.53 vs 18.44 ms/call, 12.6 GB/s either way) at the real LM-head shape
+(K=1536, N=151936) — allocation is not the bottleneck. `MatmulBTW8A8Into` (full-integer W8A8,
+already exists in aikit, no new kernel needed) measured **97.12 GB/s at the same shape — 7.7x
+faster**. **The follow-up is a goinfer-side quant-policy change (moving the LM head from
+`quantInt8` to `quantInt8I8`), calling an aikit entry point that already exists — this release
+closes the aikit side of the W4A8 campaign entirely, nothing here needs another aikit bump.** The
+real open question the follow-up owns is precision, not performance: W8A8 additionally quantizes
+the *activation* to int8 (weight-only Q8 doesn't), and whether that costs argmax/cosine on a
+logit-critical tensor the way int4-weight quantization already does is untested — needs its own
+quality gate before shipping, not assumed safe by analogy.
+
+**This likely retro-explains probe 2's "real vs isolated ~60%" mystery, closing a loop this doc
+left open.** Probe 2 (Gate 0's own section, above) computed the real/isolated parallel-efficiency
+ratio from a BLENDED per-token matmul rate that included the LM head's bytes alongside the W4A8
+bytes. A component crawling at 11-13 GB/s pulls exactly this kind of blend down; with the LM head
+now measured separately, the W4A8 portion alone reaches 75-81% real/isolated efficiency — much
+closer to isolated than the old blended ~60% suggested. Probe 2's own hedge ("real but partially
+unexplained... more likely real [big weight-matrix churn] than a single dominant cause... not
+chased further") reads differently in hindsight: the LM head was very plausibly that single
+dominant cause the whole time, not the 196-distinct-matrices rotation hypothesis it was compared
+against. Not re-litigating probe 2's own conclusion retroactively — recording that its open
+question now has a much more likely answer than it had when it was written.
+
+**Named lesson, because it will recur: bit-identity hides dispatch inertness, so a performance
+delta IS the correctness test for whether a bit-identical swap is actually wired in.** The
+dispatch bug above (`matmul`/`matmulInto` computing the repacked bytes and then never reading
+them) passed every gate this campaign has — T3, the paged-fallback proof, M-independence — because
+all of them test *numeric correctness*, and an inert dispatch calling the old kernel is, by
+definition, numerically identical to a correctly-wired one calling a bit-identical replacement.
+The only observable that an inert dispatch gets wrong is the ABSENT speedup. This is exactly the
+scenario the campaign doc's own "do not silently accept a shortfall the projection says shouldn't
+exist" discipline was written for, and it caught two things at once here: the wiring bug itself,
+and the fact that the paged-fallback test's "identical greedy token" check had been accidentally
+vacuous (both sides of that comparison were silently using canonical the whole time, so of course
+they matched). Whenever a future change ships as "bit-identical, so no golden churn" — exactly the
+framing this campaign used for the row4 kernel — the performance number is the ONLY thing left
+that can catch an unwired dispatch. Measure it before declaring done.
 
 **Corrected numbers, not the ~27 tok/s projection:** 1.5B int4 21.68 → 22.9-23.5 tok/s (real
 `bench_peer`, +8-9%; the exact figure depends on ambient LM-head-path noise, itself now identified
@@ -768,7 +802,9 @@ honestly short of the original projection — because the projection's non-W4A8 
 because this campaign's kernel work underperformed. The W4A8 lever itself delivered almost exactly
 what the harness said it would (1.31-1.35x real vs 1.40-1.41x isolated); the ceiling on the
 end-to-end number was always the LM head, sitting undiagnosed in the old Amdahl model's "~9.6 ms
-matmul" line.
+matmul" line. **0.5B's smaller model makes the LM head proportionally larger** (same 151936-vocab
+head over a smaller hidden dim/FFN), so the follow-up fixing it should move the 0.5B number more
+than the 1.5B one — worth re-measuring both once it ships.
 
 ## Done looks like
 
