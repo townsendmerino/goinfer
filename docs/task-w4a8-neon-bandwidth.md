@@ -665,6 +665,48 @@ per this campaign's convention pending the plumbing decision.
   opt-in kind or nothing.
 - **The CUDA depth curve.** Tracked separately, as before.
 
+## Plumbing phase — production wiring (2026-08-24)
+
+Per `docs/prompts/w4a8-plumbing.md`. aikit: `RepackInt4Row4`/`Int4Row4` on `WeightMat` plus a
+`WeightMat.MatmulBTW4A8Into` method that dispatches to the row4 kernel when present and M=1,
+falling back to the canonical per-row kernel otherwise (chosen over mirroring the GPU backends'
+separate `ResidentW4A8` pattern — `WeightMat` is already the single choke point goinfer's
+`matmul`/`matmulInto` funnel through, and attaching state to the struct that owns the lifetime
+avoids external pointer-keyed bookkeeping against WeightMats with the paged-MoE path's
+transient-over-mmap lifecycle). goinfer: wired into `streamQuantized`/`quantizeWM` (the
+GGUF/safetensors streaming choke points), never into the `.giw` loader — every GGUF/safetensors
+int4 tensor is heap-backed and therefore never paged regardless, so the paged-MoE carve-out falls
+out of *where* the repack is wired, not a runtime check. Proven, not asserted: a real
+`.giw`-round-trip test confirms zero repacked weights on that path and an identical greedy token
+between the row4-eligible and fallback-only dispatch of the same real model. M-independence
+(decode == prefill == verify) reconfirmed with the new dispatch active under `-race`. All commits
+green through aikit's full CI matrix and goinfer's T3 gate.
+
+**Load-time and resident-memory deltas (2026-08-24), the two numbers the parked `.giw`-kind
+decision needs — real 0.5B GGUF fixture, order-alternated best-of-3:**
+
+| | value |
+|---|--:|
+| load time, repack disabled | 1.968s |
+| load time, repack enabled | 2.069s |
+| **load-time delta** | **+100ms (+5.1%)** |
+| canonical int4 resident bytes | 223.6 MB |
+| **row4 resident bytes added** | **+223.6 MB (+100%, doubling)** |
+
+**The memory number is real and non-trivial — every repacked tensor keeps its canonical bytes AND
+gains a same-size row4 copy** (by design: `RepackInt4Row4` never drops canonical, per this doc's own
+earlier note that the drop-vs-keep tradeoff is a decision to make once measured, not assumed). On
+this 0.5B model that's +223.6 MB; the doubling ratio should hold roughly proportionally on larger
+models' int4 weight set, which is a real cost against RAM-constrained decode — exactly the kind of
+number `docs/ideas-weight-memory.md`'s original framing (idea #2, MoE paging) was written to bound.
+The load-time cost is small and one-time. **First real evidence for the parked `.giw`-kind
+decision:** the resident-memory cost alone is a reason a future `.giw` kind (storing the row4 layout
+on disk, per the Format follow-on section above) would be worth its own effort — it would let a
+future load skip building the second copy at all, at the cost of an ISA-specific on-disk format.
+Not decided here — recorded as the first measured input to that decision, per its own sequencing
+rule (harness-final layout → arm64 load-time repack shipped, load cost and RAM delta measured →
+only then cut the kind). Both conditions are now met.
+
 ## Done looks like
 
 Gate 0: done (GO — result recorded above, with a correction: the issue-width probe's original
