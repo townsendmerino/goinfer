@@ -46,8 +46,20 @@ import (
 // f32  = uint32 len + len*4 LE-float32 bytes   (len 0 ⇒ nil on load)
 // i8   = uint32 len + len bytes                (aliased on load)
 // raw  = uint32 len + len bytes                (aliased on load)
-// weightMat = uint8 kind (0 empty|1 f32|2 q8|3 q4); if non-empty:
+// weightMat = uint8 kind (0 empty|1 f32|2 q8|3 q4|4 q4-row4); if non-empty:
 //             int32 rows, cols, group; uint8 w8a8; then the kind's arrays.
+//             kind 4 (v7+) is kind 3's arrays (q4s, q4 — canonical, always present
+//             and always authoritative) followed by q4Row4Scales, q4Row4 (the arm64
+//             split-half + 4-row-interleaved layout, docs/task-w4a8-neon-bandwidth.md
+//             "Format follow-on") — the on-disk form of the row4 layout the load-time
+//             repack (decoder/weightmat.go's repackW4A8Row4IfEligible) otherwise
+//             builds in RAM. Opt-in at prequant time (SerializeWeightsRow4/
+//             SerializeWeightsToRow4/StreamTranscodeGGUF's row4 param) for shapes
+//             RepackW4A8Row4/RepackW4A8Row4Scales accept; every other int4 tensor
+//             still writes kind 3. Bit-identical dispatch either way
+//             (TestDotW4A8SplitHalf4Row_bitIdenticalToCanonical) — this is a storage
+//             choice, not a numerics one, so no golden depends on which kind a
+//             tensor took.
 //
 // v2 added the per-layer hybrid tail so the qwen3_5_moe (DeltaNet + gated-softmax)
 // family round-trips through .giw; v1 blobs (no tail) are rejected by the version
@@ -55,8 +67,8 @@ import (
 
 const (
 	giwMagic    = "GINFW"
-	giwVersion  = 6 // v6: the completeness tail — GProj, AttnSinks, per-expert biases, and the MLA / Mamba-2 sub-structs, so every registered family is representable
-	giwMinReadV = 3 // read v3/v4 too (each version only ADDS: v4 the gemma4-gated tail, v5 the quant-label field; older bundles stay valid and fall back to inference)
+	giwVersion  = 7 // v7: weightMat kind 4 (int4 split-half + 4-row-interleave on disk, opt-in) — see the format comment above
+	giwMinReadV = 3 // read v3/v4 too (each version only ADDS: v4 the gemma4-gated tail, v5 the quant-label field, v7 kind 4; older bundles stay valid and fall back to inference)
 	giwV4Gemma4 = 4 // the version at/after which the gemma4 tail is present
 	giwV6Tail   = 6 // the version at/after which the completeness tail is present (GProj / AttnSinks / expert biases / MLA / Mamba-2)
 	// v3: per-layer RouterBias (DeepSeek/GLM e_score_correction_bias); v2: qwen3_5_moe hybrid tail
@@ -125,6 +137,39 @@ func SerializeWeightsTo(out io.Writer, w *Weights, id string) (int64, error) {
 	}
 	var crc [4]byte
 	binary.LittleEndian.PutUint32(crc[:], wr.crc) // running CRC over the body
+	if _, err := out.Write(crc[:]); err != nil {
+		return wr.n, err
+	}
+	return wr.n + 4, nil
+}
+
+// SerializeWeightsRow4 is SerializeWeights, but ALSO opts every eligible int4
+// tensor into weightMat kind 4 — the on-disk arm64 split-half + 4-row-
+// interleaved layout (docs/task-w4a8-neon-bandwidth.md's "Format follow-on"),
+// so the paged-MoE path can use the faster kernel without an in-RAM repack.
+// Never the default: SerializeWeights (kind 3 only) is what every existing
+// caller gets and stays unaffected by this function's existence. A tensor
+// whose shape RepackW4A8Row4/RepackW4A8Row4Scales reject (the router, or any
+// int4 tensor not a multiple of 4 rows / group cols), or a run on a non-arm64
+// build, falls back to kind 3 automatically — this is always safe to call.
+func SerializeWeightsRow4(w *Weights, id string) ([]byte, error) {
+	wr := &giwWriter{row4: true}
+	if err := wr.writeBundle(w, id); err != nil {
+		return nil, err
+	}
+	wr.u32(crc32.ChecksumIEEE(wr.buf))
+	return wr.buf, nil
+}
+
+// SerializeWeightsToRow4 is SerializeWeightsTo with the same kind-4 opt-in as
+// SerializeWeightsRow4 — see that function's doc for the fallback contract.
+func SerializeWeightsToRow4(out io.Writer, w *Weights, id string) (int64, error) {
+	wr := &giwWriter{sink: out, row4: true}
+	if err := wr.writeBundle(w, id); err != nil {
+		return wr.n, err
+	}
+	var crc [4]byte
+	binary.LittleEndian.PutUint32(crc[:], wr.crc)
 	if _, err := out.Write(crc[:]); err != nil {
 		return wr.n, err
 	}
@@ -698,6 +743,16 @@ type giwWriter struct {
 	n    int64         // bytes written (stream mode)
 	err  error         // first sink error (stream mode)
 	arch *Architecture // set in writeBundle; gates the v4 gemma4 model-level + per-layer tail
+
+	// row4 opts weightMat into emitting kind 4 (the on-disk split-half + 4-row
+	// layout) for every eligible int4 tensor, instead of always kind 3. Never the
+	// default: set only by SerializeWeightsRow4/SerializeWeightsToRow4/
+	// StreamTranscodeGGUF's row4 parameter — docs/task-w4a8-neon-bandwidth.md's
+	// "Format follow-on" requires this be opt-in, since a tensor's WeightMat may
+	// ALREADY carry an in-RAM row4 repack (repackW4A8Row4IfEligible, wired into
+	// the GGUF/safetensors streaming loaders unconditionally) that has nothing to
+	// do with whether THIS serialize call should bake it onto disk.
+	row4 bool
 }
 
 func (w *giwWriter) raw(b []byte) {
@@ -753,9 +808,24 @@ func (w *giwWriter) weightMat(m *linalg.WeightMat) {
 	q8, scales, w8a8, isQ8 := m.Int8()
 	f32, _ := m.F32()
 	var kind byte
+	var q4Row4 []byte
+	var q4Row4Scales []float32
 	switch {
 	case isQ4:
 		kind = 3
+		// row4 emission is purely a function of the opt-in flag + this tensor's
+		// shape — NEVER of whatever repack state already happens to sit in RAM
+		// (repackW4A8Row4IfEligible populates q4Row4 unconditionally for every
+		// GGUF/safetensors-streamed int4 tensor on an arm64 box, regardless of
+		// whether THIS serialize call is the opt-in prequant path). Recomputing
+		// from canonical q4/q4s here, rather than reading m.Int4Row4(), keeps
+		// kind 3 the default for every existing caller unless w.row4 is set.
+		if w.row4 {
+			if r4, r4s, ok := repackRow4ForEmit(q4, q4s, m.Rows(), m.Cols(), group); ok {
+				kind = 4
+				q4Row4, q4Row4Scales = r4, r4s
+			}
+		}
 	case isQ8:
 		kind = 2
 	default:
@@ -779,6 +849,11 @@ func (w *giwWriter) weightMat(m *linalg.WeightMat) {
 	case 3:
 		w.f32(q4s)
 		w.bytesField(q4)
+	case 4:
+		w.f32(q4s)
+		w.bytesField(q4)
+		w.f32(q4Row4Scales)
+		w.bytesField(q4Row4)
 	}
 }
 
@@ -1096,6 +1171,27 @@ func (r *giwReader) weightMat() linalg.WeightMat {
 			return linalg.WeightMat{}
 		}
 		return linalg.WrapInt4(q4, q4s, rows, cols, group)
+	case 4:
+		q4s := r.f32()
+		q4 := r.rawAlias() // canonical bytes stay authoritative — same as kind 3
+		if group <= 0 {
+			r.fail(fmt.Sprintf("int4-row4 weightMat group %d ≤ 0", group))
+			return linalg.WeightMat{}
+		}
+		wantQ4, wantScales := rows*((cols+1)/2), rows*((cols+group-1)/group)
+		if len(q4) != wantQ4 || len(q4s) != wantScales {
+			r.fail(fmt.Sprintf("int4-row4 weightMat %d×%d group=%d: q4=%d (want %d) q4s=%d (want %d)", rows, cols, group, len(q4), wantQ4, len(q4s), wantScales))
+			return linalg.WeightMat{}
+		}
+		q4Row4Scales := r.f32()
+		q4Row4 := r.rawAlias() // zero-copy — the whole point of kind 4 (WrapInt4Row4 gates on row4Usable() before aliasing it in)
+		// RepackW4A8Row4/RepackW4A8Row4Scales preserve length exactly (a repack,
+		// not a requant), so the row4 arrays share kind 3's own want* values.
+		if len(q4Row4) != wantQ4 || len(q4Row4Scales) != wantScales {
+			r.fail(fmt.Sprintf("int4-row4 weightMat %d×%d group=%d: q4Row4=%d (want %d) q4Row4Scales=%d (want %d)", rows, cols, group, len(q4Row4), wantQ4, len(q4Row4Scales), wantScales))
+			return linalg.WeightMat{}
+		}
+		return linalg.WrapInt4Row4(q4, q4s, rows, cols, group, q4Row4, q4Row4Scales)
 	default:
 		r.fail(fmt.Sprintf("unknown weightMat kind %d", kind))
 		return linalg.WeightMat{}

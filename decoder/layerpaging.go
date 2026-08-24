@@ -77,12 +77,19 @@ func newLayerPager(w *Weights, mapping []byte, budget int64) *layerPager {
 			&lw.QProj, &lw.KProj, &lw.VProj, &lw.OProj,
 			&lw.GateProj, &lw.UpProj, &lw.DownProj,
 		} {
-			s := wm.MappedSpan(base, end)
-			if len(s) == 0 {
-				continue
+			// MappedSpanRow4 is the on-disk row4 layout's span (weightMat kind 4,
+			// docs/task-w4a8-neon-bandwidth.md's "Format follow-on"), a separate
+			// byte range from the canonical span above — same reasoning as
+			// moepaging.go's addExpert: without registering it too, a kind-4
+			// layer's row4 bytes would be un-windowed (never prefetched or
+			// released), pinning exactly the bytes the M=1 decode kernel reads.
+			for _, s := range [2][]byte{wm.MappedSpan(base, end), wm.MappedSpanRow4(base, end)} {
+				if len(s) == 0 {
+					continue
+				}
+				ss = append(ss, s)
+				b += int64(len(s))
 			}
-			ss = append(ss, s)
-			b += int64(len(s))
 		}
 		spans[l] = ss
 		if b > maxLayer {

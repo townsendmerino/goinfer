@@ -58,16 +58,27 @@ func newExpertPager(w *Weights, mapping []byte, budget int64) *expertPager {
 	// weight struct — the same value the forward touches), collecting only the projections
 	// that actually alias the mapping. MappedSpan returns nil for heap-backed (GGUF)
 	// weights and the always-on shared expert, so those are silently skipped.
+	//
+	// MappedSpanRow4 collects the SAME weight's on-disk row4 layout (weightMat kind 4,
+	// docs/task-w4a8-neon-bandwidth.md's "Format follow-on") as a SEPARATE span — it is
+	// a different byte range in the same file, not the canonical bytes twice. Without
+	// this, a kind-4 expert's row4 half would never be registered with the pager: its
+	// bytes would go uncounted against the budget (silently under-sizing it) and never
+	// be evicted under pressure (paging the wrong half of the tensor, pinning exactly
+	// the bytes the M=1 decode kernel actually reads). nil for a kind-3 tensor (no row4
+	// layout) or on a non-arm64/non-DotProd build (linalg.WrapInt4Row4 never populates
+	// q4Row4 there) — the same "returns nil, silently skipped" shape as MappedSpan.
 	addExpert := func(key unsafe.Pointer, wms ...*linalg.WeightMat) {
 		var spans [][]byte
 		var n int64
 		for _, wm := range wms {
-			s := wm.MappedSpan(base, end)
-			if len(s) == 0 {
-				continue
+			for _, s := range [2][]byte{wm.MappedSpan(base, end), wm.MappedSpanRow4(base, end)} {
+				if len(s) == 0 {
+					continue
+				}
+				spans = append(spans, s)
+				n += int64(len(s))
 			}
-			spans = append(spans, s)
-			n += int64(len(s))
 		}
 		if n == 0 {
 			return // heap-backed — nothing to page

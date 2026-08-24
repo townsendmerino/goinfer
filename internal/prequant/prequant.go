@@ -34,9 +34,18 @@ const metaPrefixCap = 64 << 20
 // the path for safetensors-only models like Mellum2). A failed write removes the partial
 // output. A cancelled ctx aborts a long streaming transcode at the next layer boundary
 // (audit M-21) and removes the partial output.
-func Transcode(ctx context.Context, in, out, quant string, embedInt4 bool) error {
+//
+// row4 opts every eligible int4 tensor into weightMat kind 4 — the on-disk arm64
+// split-half + 4-row-interleaved layout (docs/task-w4a8-neon-bandwidth.md's "Format
+// follow-on") — instead of kind 3. Requires running on an arm64 box (the repack
+// functions are NEON-only in aikit); a shape the repack rejects, or a non-arm64
+// build, falls back to kind 3 automatically for that tensor. Never implied by
+// quant alone — this is cmd/prequant's own opt-in flag, separate from EnsureCachedGIW's
+// serve-side auto-cache, which always emits kind 3 (a user who wants row4 in that
+// cache runs cmd/prequant explicitly, per the format doc's "opt-in" decision).
+func Transcode(ctx context.Context, in, out, quant string, embedInt4, row4 bool) error {
 	if fi, err := os.Stat(in); err == nil && fi.IsDir() {
-		return transcodeDir(ctx, in, out, quant, embedInt4)
+		return transcodeDir(ctx, in, out, quant, embedInt4, row4)
 	}
 	// 1) Tokenizer half: the source GGUF truncated at the tensor-data boundary —
 	// metadata + tensor infos, no weight bytes. Only the file's head is read.
@@ -63,7 +72,7 @@ func Transcode(ctx context.Context, in, out, quant string, embedInt4 bool) error
 		return fmt.Errorf("create %s: %w", out, err)
 	}
 	werr := giw.WriteStream(f, tokBytes, func(w io.Writer) (int64, error) {
-		return decoder.StreamTranscodeGGUF(ctx, in, w, quant, false, filepath.Base(in))
+		return decoder.StreamTranscodeGGUF(ctx, in, w, quant, false, row4, filepath.Base(in))
 	})
 	runtime.GC()
 	if cerr := f.Close(); werr == nil {
@@ -89,7 +98,7 @@ func Transcode(ctx context.Context, in, out, quant string, embedInt4 bool) error
 // verbatim as the tok half (the serve side loads it via tokenizer.LoadJSONBytes when the
 // blob isn't GGUF metadata). Peak RAM ≈ the resident weight size, since the whole model
 // is loaded rather than layer-streamed — acceptable for the models this targets.
-func transcodeDir(ctx context.Context, dir, out, quant string, embedInt4 bool) error {
+func transcodeDir(ctx context.Context, dir, out, quant string, embedInt4, row4 bool) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -116,6 +125,9 @@ func transcodeDir(ctx context.Context, dir, out, quant string, embedInt4 bool) e
 		return fmt.Errorf("create %s: %w", out, err)
 	}
 	werr := giw.WriteStream(f, tokBytes, func(w io.Writer) (int64, error) {
+		if row4 {
+			return decoder.SerializeWeightsToRow4(w, m.Weights(), filepath.Base(dir))
+		}
 		return decoder.SerializeWeightsTo(w, m.Weights(), filepath.Base(dir))
 	})
 	runtime.GC()
@@ -147,7 +159,7 @@ func EnsureCachedGIW(ctx context.Context, ggufPath, quant string) (string, error
 	fmt.Fprintf(os.Stderr, "stream-weights: transcoding %s → %s (%s, one-time — minutes + ~model-size on disk)…\n",
 		filepath.Base(ggufPath), filepath.Base(cache), quantLabel(quant))
 	t0 := time.Now()
-	if err := Transcode(ctx, ggufPath, cache, quant, false); err != nil {
+	if err := Transcode(ctx, ggufPath, cache, quant, false, false); err != nil {
 		return "", err
 	}
 	if fi, e := os.Stat(cache); e == nil {

@@ -418,6 +418,70 @@ has shipped and been measured.** Reasons, so they don't get relitigated:
 delta measured → only then cut the kind, with the paged-MoE need as the forcing function. A
 serialized format frozen around an unmeasured kernel layout is the one clearly wrong order.
 
+## `.giw` kind 4 — SHIPPED 2026-08-24 (`docs/task-zeno-compare.md`'s paging campaign, the forcing function arrived)
+
+Both sequencing-rule conditions were met (layout harness-final, load-time repack shipped and
+measured) when `b6a5387` found the actual forcing function: 91.6% of the 35B-A3B paged-MoE
+compute bucket is genuine GEMV time on the OLDER, canonical kernel, because paged experts can
+never take the in-RAM repack — exactly the carve-out this section's own "why on disk at all"
+bullet named in advance.
+
+**What shipped, and what didn't from the fold-in list above.** Kind 4 is
+weightMat kind 3's bytes (`q4s`, `q4` — canonical, always present and authoritative) followed
+by `q4Row4Scales`, `q4Row4` (the row4 layout), both zero-copy mmap-aliased at load — a pure
+storage-format addition. **Neither fold-in landed**: no f16 scales (`docs/task-giw-f16-scales.md`
+stays open, on its own schedule), no centering-convention change. This is deliberate, not a
+scope cut — the shipped split-half+4-row kernel is bit-identical to canonical
+(`TestDotW4A8SplitHalf4Row_bitIdenticalToCanonical`, and the "Correction to the plumbing
+brief's numerics framing" entry above), and keeping kind 4 to EXACTLY that layout means it
+inherits that bit-identity for free: no cosine re-gate, no golden churn, ever, for this kind.
+Folding in a numerics-changing lever later would still need its own re-gate regardless of the
+disk format, so there was no reason to couple them.
+
+**aikit v1.27.0** (additive): `WeightMat.WrapInt4Row4` (construct from bytes computed
+elsewhere — a loader's job, not `RepackInt4Row4`'s in-RAM-derivation job) and
+`WeightMat.MappedSpanRow4` (the row4 layout's own pageable span, alongside `MappedSpan`'s
+canonical one). `WrapInt4Row4` gates on the same `hasDotProd` check `RepackInt4Row4` already
+applies — a real gap found while building this: before `WrapInt4Row4` existed, `RepackInt4Row4`
+was the ONLY way `q4Row4` got populated, so the CPU-feature gate lived entirely there; a second
+way in (bytes that may have been computed on a different machine) needed its own gate, via a
+new `row4Usable()` helper shared by both arch builds.
+
+**goinfer:** `giwVersion` 7 (kind 4 is a pure enum addition; the version bump is defense in
+depth so an old reader refuses the file outright rather than ever reaching an unknown kind
+byte). Opt-in only, per this section's own decision — `SerializeWeightsRow4`/
+`SerializeWeightsToRow4`/`StreamTranscodeGGUF`'s `row4` param, `cmd/prequant -row4`. Kind 3
+(the default every existing caller gets) is completely unaffected; a shape the repack rejects,
+or a non-arm64 build, falls back to kind 3 per-tensor automatically. `expertPager`/`layerPager`
+were both widened to register the row4 span alongside the canonical one — an easy-to-miss
+correctness gap (found by tracing the code, not by a test failing): without it, a paged kind-4
+tensor's row4 bytes would go uncounted against the budget and never be evicted, pinning exactly
+the bytes the M=1 kernel reads.
+
+**Verified, real fixture (0.5B GGUF, matching the load-time/RAM-delta test's own precedent):**
+
+| | canonical (in-RAM repack) | kind-4 `.giw` (row4 on disk) |
+|---|--:|--:|
+| load time | 2.01s (GGUF, +87-100ms for the repack) | 0.111s |
+| resident memory added | +223.6 MB (100%, a heap copy) | ~0 (mmap-aliased, not heap-copied) |
+| on-disk size | 497.4 MB (kind 3) | 721.1 MB (+223.6 MB, +45.0%) |
+
+Bit-identical greedy decode proven across three paths on the same real fixture — GGUF-load
+(row4 built in RAM), kind-3 `.giw` (fallback-only), kind-4 `.giw` (row4 read from disk) — all
+produce the same token (`TestSerializedInt4Weights_row4Kind_matchesCanonical`). T3 green via
+the goldens-gated refresh (provably non-numeric: kind 4 is new, unreachable code for every
+existing caller; `default` behavior is untouched).
+
+**NOT verified: the real 35B-A3B end to end.** The projected ~1.3x end-to-end
+(`docs/task-zeno-compare.md`'s "compute was a location, not an attribution" section) and the
+gemma4 26B regression cell are both still sized-not-measured-at-scale — a full-model kind-4
+`.giw` for the 35B turned out larger than expected (still growing past 43 GB when the attempt
+was stopped to avoid filling the disk, a real near-miss recorded rather than glossed over) and
+this box did not have the headroom to complete it this pass. Scaled down to the small-fixture
+numbers above on Francis's own direction. Re-running the full 35B prequant + paged-decode
+re-measurement + gemma4 regression is the concrete next step once disk headroom exists — the
+format and the code are done; only the at-scale confirmation is owed.
+
 ## Zero-cost item — RETIRED 2026-08-24, per its own line above ("if Gate 1 ships, this note gets
 ## retired")
 

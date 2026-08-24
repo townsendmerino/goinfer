@@ -1196,7 +1196,7 @@ func buildGGUFWeights(g *embed.GGUFFile, quant quantMode, embedInt4 bool) (*Weig
 // the qwen35/gemma4 dedicated loaders fall back to a resident build + serialize
 // (those models fit). Returns the bytes written. Typically invoked inside
 // giw.WriteStream as the weights half of a .giw bundle.
-func StreamTranscodeGGUF(ctx context.Context, path string, out io.Writer, quant string, embedInt4 bool, id string) (int64, error) {
+func StreamTranscodeGGUF(ctx context.Context, path string, out io.Writer, quant string, embedInt4, row4 bool, id string) (int64, error) {
 	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
@@ -1246,9 +1246,12 @@ func StreamTranscodeGGUF(ctx context.Context, path string, out io.Writer, quant 
 		if berr != nil {
 			return 0, berr
 		}
+		if row4 {
+			return SerializeWeightsToRow4(out, w, id)
+		}
 		return SerializeWeightsTo(out, w, id)
 	}
-	wr := &giwWriter{sink: out}
+	wr := &giwWriter{sink: out, row4: row4}
 	if _, err := buildWeightsFromGGUF(cfg, arch, g, q, embedInt4, wr, id); err != nil {
 		return wr.n, err
 	}

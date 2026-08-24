@@ -29,7 +29,7 @@ func TestGIWRoundTripPreservesRouterBias(t *testing.T) {
 	// directly (StreamTranscodeGGUF → LoadSerializedWeights) rather than the full
 	// .giw bundle — it's the serialize round-trip we're guarding.
 	var body bytes.Buffer
-	if _, err := decoder.StreamTranscodeGGUF(context.Background(), gguf, &body, "int4", false, "glm-tiny"); err != nil {
+	if _, err := decoder.StreamTranscodeGGUF(context.Background(), gguf, &body, "int4", false, false, "glm-tiny"); err != nil {
 		t.Fatalf("StreamTranscodeGGUF: %v", err)
 	}
 	w, err := decoder.LoadSerializedWeights(body.Bytes())
@@ -59,7 +59,7 @@ func TestStreamTranscode_ctxCancel_M21(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // pre-cancelled
 	var body bytes.Buffer
-	n, err := decoder.StreamTranscodeGGUF(ctx, gguf, &body, "int4", false, "glm-tiny")
+	n, err := decoder.StreamTranscodeGGUF(ctx, gguf, &body, "int4", false, false, "glm-tiny")
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("StreamTranscodeGGUF with a cancelled ctx = (%d, %v); want a context.Canceled error", n, err)
 	}
@@ -143,7 +143,7 @@ func transcodeBothWays(t *testing.T, gguf, quant string) (resident, streamed []b
 		t.Fatalf("SerializeWeights: %v", err)
 	}
 	var buf bytes.Buffer
-	if _, err := decoder.StreamTranscodeGGUF(context.Background(), gguf, &buf, quant, false, "glm-tiny.gguf"); err != nil {
+	if _, err := decoder.StreamTranscodeGGUF(context.Background(), gguf, &buf, quant, false, false, "glm-tiny.gguf"); err != nil {
 		t.Fatalf("StreamTranscodeGGUF: %v", err)
 	}
 	return resident, buf.Bytes(), label

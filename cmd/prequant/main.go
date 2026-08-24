@@ -28,6 +28,7 @@ func main() {
 	out := flag.String("o", "", "output .giw bundle path (required)")
 	quant := flag.String("quant", "int8int8", "weight quant baked into the bundle: int8int8 | int8 | int4")
 	embedInt4 := flag.Bool("embed-int4", false, "in int4 mode, quantize the token-embedding/LM-head to int4 too (else int8-pinned); ~½ the head's per-token traffic, coherence-safe on big-vocab models (verified on gemma4-26b: trigram 0.911, Paris survives)")
+	row4 := flag.Bool("row4", false, "in int4 mode, ALSO bake the arm64 split-half + 4-row-interleaved layout onto disk (weightMat kind 4) for every eligible tensor, so the paged-MoE path can use the faster W4A8 kernel without an in-RAM repack (docs/task-w4a8-neon-bandwidth.md's \"Format follow-on\"). Requires building/running on an arm64 box; a shape the repack rejects (or a non-arm64 build) falls back to kind 3 for that tensor automatically. Bit-identical dispatch either way — this changes the bundle's size and load characteristics, never decode output. Roughly doubles the bytes of each eligible int4 tensor on disk")
 	flag.Parse()
 	in := flag.Arg(0)
 	if in == "" || *out == "" {
@@ -39,7 +40,7 @@ func main() {
 	// partial .giw, instead of running to completion after the user gives up (audit M-21).
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := prequant.Transcode(ctx, in, *out, *quant, *embedInt4); err != nil {
+	if err := prequant.Transcode(ctx, in, *out, *quant, *embedInt4, *row4); err != nil {
 		fmt.Fprintf(os.Stderr, "prequant: %v\n", err)
 		os.Exit(1)
 	}

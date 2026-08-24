@@ -43,7 +43,7 @@ and the streaming branch itself refuses the family outright (`decoder/gguf.go:15
 > `if arch.qwen35 != nil || arch.gemma4 != nil { return nil, fmt.Errorf("...streaming transcode
 > unsupported for %s (load resident + prequant instead)", arch.Name) }`
 
-`cmd/prequant`'s own doc comment names the assumption directly (`internal/prequant/prequant.go:56-60`):
+`cmd/prequant`'s own doc comment names the assumption directly (`internal/prequant/prequant.go:65-69`):
 "transcode the GGUF straight into the bundle, ONE LAYER at a time... peak RAM is ~one layer rather
 than the whole resident model... The dedicated qwen35/gemma4 loaders fall back to a resident build
 inside StreamTranscodeGGUF (**those models fit**)." **That assumption is what broke**: it held for
@@ -130,7 +130,7 @@ bytes. P12's 2026-08-19 fix holds for this real streamed prequant checkpoint —
 gap's explanation**, closing the Phase 0 brief's last open item with a clean negative.
 
 **LM head: verified fast, by tracing the actual load call, not just reading the fix.** `embMat`
-(`decoder/gguf.go:1402`), the SAME shared closure used by every family including qwen35 for
+(`decoder/gguf.go:1405`), the SAME shared closure used by every family including qwen35 for
 `w.Embed`/`w.LMHead`, calls `quant.embeddingWith(embedInt4)` — the exact function the 2026-08-24
 W8A8 fix (`a11c56b`) changed to tag int4-mode embed/head `quantInt8I8` instead of weight-only
 `quantInt8`. Confirmed by tracing the call site this model's load actually goes through (the
@@ -353,6 +353,33 @@ I/O speed (weak, 1.09x) to being the enabling plumbing for this kernel fix (stro
 engineering effort, different and stronger reason to build it. Not built in this pass; sized and
 handed to the next one.
 
+## The .giw kind-4 lever — SHIPPED 2026-08-24 (`docs/task-w4a8-neon-bandwidth.md`'s "Format follow-on")
+
+Built the same day the split picked it: a new on-disk weightMat kind carrying the split-half +
+4-row-interleaved layout alongside the canonical bytes, both zero-copy mmap-aliased at load —
+full details, numbers, and code pointers in `docs/task-w4a8-neon-bandwidth.md`'s own "`.giw` kind
+4 — SHIPPED" section (aikit v1.27.0's `WrapInt4Row4`/`MappedSpanRow4`, goinfer `giwVersion` 7,
+`cmd/prequant -row4`, the `expertPager`/`layerPager` span-registration fix).
+
+**Simpler than this doc anticipated: the owned-buffer `pread` architecture turned out NOT to be
+required.** The paragraph above predicted the repack-vs-paging conflict would need pread's
+owned-copy semantics to resolve. It doesn't — writing the row4 bytes to DISK at prequant time and
+mmap-aliasing them back (exactly like the canonical bytes already are) sidesteps the conflict
+entirely: there is no "repack in place" step to worry about, because the correctly-shaped bytes
+are already sitting in the file before the pager ever touches them. The pread lever's
+justification reverts to what it was before this finding — I/O speed alone, measured at 1.09x —
+since the kernel-upgrade payoff (the stronger reason floated above) is now available without it.
+
+**Verified at small scale, not yet at the 35B-A3B scale this campaign is about.** Bit-identical
+dispatch proven on a real fixture; load-time and RAM-delta numbers measured (kind-4 load is 0.111s
+and adds ~0 resident memory vs. GGUF's in-RAM-repack 2.01s/+223.6MB). The 35B re-prequant hit a
+real, honestly-recorded disk-space near-miss (a full-model kind-4 bundle grew past 43GB, larger
+than the ~38GB estimate, before the attempt was stopped to avoid filling the disk) — scaled down
+to the small-fixture numbers on explicit direction rather than force it. **The projected ~1.3x
+end-to-end and the gemma4 26B regression re-run are both still owed at full scale** — the format
+and code are done and gated (T3 green, aikit released), only the at-scale confirmation remains,
+next time there's enough disk headroom for a ~40-50GB bundle alongside its 22GB source.
+
 ## Streaming-transcode fix — scoped as its own task, not folded into Phase 0
 
 Deliberately **not attempted as part of Phase 0** — "feasibility only, no benchmarking yet" is this
@@ -365,8 +392,8 @@ scoping), a roadmap target regardless of any Zeno comparison.
 **Shape:** mirror the generic path's per-layer stream-and-free inside qwen35's dedicated loader —
 both call sites that currently hit the `sink=nil`/resident-fallback branch (`StreamTranscodeGGUF`'s
 own qwen35 carve-out, which both the general load path and `cmd/prequant` route through, per
-`internal/prequant/prequant.go:56-60`'s own comment — there is exactly one code path to fix, not
-two). gemma4 shares the same carve-out (`decoder/gguf.go:1509`) but is NOT in scope here — it fits
+`internal/prequant/prequant.go:65-69`'s own comment — there is exactly one code path to fix, not
+two). gemma4 shares the same carve-out (`decoder/gguf.go:1244`) but is NOT in scope here — it fits
 resident on the boxes it's been run on; touch only the qwen35 branch unless a gemma4-specific
 gap surfaces independently.
 
