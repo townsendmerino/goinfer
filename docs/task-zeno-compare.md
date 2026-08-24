@@ -64,6 +64,39 @@ that gap. Cleanup done: the 17-byte stub `.giw` removed, disk back to ~50 GB fre
 **Steps 3 (coherent decode) and 4 (size the f32-scratch handicap) — not reached.** Both depend on
 the model loading at all; deferred until the streaming fix (below) lands and this step is re-run.
 
+**Step 3 (coherent decode), re-run 2026-08-24 after the streaming fix landed:**
+
+```
+go run ./cmd/serve -addr 127.0.0.1:8099 \
+  -model "zeno-test=~/models/qwen3.5-35b-a3b-int4.giw,stream,weight-cache=6"
+```
+
+Loaded successfully — no OOM. `decoder: expert paging: 10240 experts, 15.6 GB total, 6.0 GB
+budget`; `loaded "zeno-test": 40-layer model (vocab 248320) in 1m17.066s`; `decode path: cpu
+(int4mix)`; `prefill path: sequential` (this arch has no batched CPU prefill). Resident RSS
+settled to **~2.4-2.7 GB** after load, well inside the 6 GB expert-cache budget and far under the
+16 GB ceiling.
+
+A real chat completion (`POST /v1/chat/completions`, 19-token prompt, `max_tokens: 40`,
+`temperature: 0`) returned coherent, on-topic prose (a legible reasoning trace opening
+`<think>\nThinking Process:\n\n1. **Analyze the Request:**...`) in **46.57 s wall time** —
+**~0.86 tok/s** completion-token rate (40 completion tokens / wall time; prefill's 19 tokens are a
+small fraction of that total but not separately isolated here). No crash, no OOM, no incoherent
+output — Part A's original blocking question ("can goinfer run the actual model at all") is now
+answered **yes**.
+
+Against the brief's own reference points: Zeno's own posted 8.7 tok/s decode (10k-prompt row) and
+llama.cpp's best-config 3.5 tok/s decode are both well above this ~0.86 tok/s. goinfer's
+expert-demand-paging path here is synchronous, per-token, per-miss disk faults against a 6 GB
+cache over 15.6 GB of experts — unsurprising that it's the slowest of the three; this is a first
+real number, not a tuned one (no cache-budget sweep, no speculative/prefetch paging attempted).
+
+**Step 4 (size the f32-scratch handicap): not run this pass.** The P12 fix already closed the
+"f32 attention/DeltaNet scratch regardless of Options.Quant" finding (2026-08-19) for the general
+case; whether any f32-scratch cost still measurably taxes THIS specific streamed/paged qwen35 path
+is a distinct, sizing-only question the brief flagged as owed, not answered here — this pass's
+budget went to proving the model runs at all (step 3) rather than to isolating that cost.
+
 ## Streaming-transcode fix — scoped as its own task, not folded into Phase 0
 
 Deliberately **not attempted as part of Phase 0** — "feasibility only, no benchmarking yet" is this
@@ -118,11 +151,16 @@ reader + `decoder.LoadSerializedWeights` — 40 layers, `NumLayers=40`, `VocabSi
 
 ## Go/no-go for Phase 1
 
-**NO-GO, as of 2026-08-24** — the real checkpoint has not been loaded, paged, or decoded, so Part A
-has not cleared. Part B (Zeno install feasibility) was not pursued: it gates on Francis's explicit
-checkoint before installing anything regardless of Part A's outcome, and Part A's own result already
-determines the overall verdict without needing Part B's answer. Re-run Part A once the streaming fix
-above lands; Part B's checkpoint stands unchanged whenever that becomes relevant.
+**Part A: CLEARS, as of 2026-08-24** — the streaming fix landed, the real 35B-A3B checkpoint now
+loads (mmap + expert demand-paging, ~2.4-2.7 GB resident, 6 GB budget) and decodes coherent prose
+at ~0.86 tok/s, well under both of the brief's reference points (Zeno 8.7, llama.cpp 3.5) but a
+real, working number rather than a blocked one. Step 4 (sizing the f32-scratch handicap on this
+specific path) is still owed — not a blocker, an open sizing question.
+
+**Overall: still NO-GO for Phase 1, gated on Part B alone.** Part A no longer blocks; Part B (Zeno
+install feasibility) has not been pursued and gates on Francis's explicit checkpoint before
+installing anything, independent of Part A's outcome — that checkpoint has not happened. Nothing in
+this pass changes that gate.
 
 ## Not in scope (this doc, both phases)
 
