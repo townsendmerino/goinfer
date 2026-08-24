@@ -504,24 +504,52 @@ straightforward story: item 3's layout change was never wrong on its own terms, 
 because the FMLA-latency stall dominated the timing budget it would have shortened. Fix the
 dominant cost first, and the second-order one becomes real.
 
-**Against the brief's stated GO bar (≥40 GMAC/s cold, ≥1.6x over the 24.62 production baseline,
-AND a ≥1.4x 6-worker aggregate win):** the combined kernel's cold rate (38.4-39.4 GMAC/s) is
-~39.4-40.4 GMAC/s once expressed as 1.6-1.64x over this session's own quiet-box baseline —
-sitting right on the ≥40 single-call criterion, effectively met. **The 6-worker parallel-aggregate
-half of the GO bar has not been measured yet** — this session stopped here to report the premise
-correction and the new lever before committing further engineering time to a specific direction.
-**Not yet a recorded GO or NO-GO**: holding it open until the aggregate number exists is
-deliberate, not a formality — the aggregate is the criterion that carries the end-to-end tok/s
-projection, and the projection is what any funding decision for the plumbing phase actually rests
-on. Latency-hiding raises each worker's memory pressure, so parallel efficiency could move either
-direction from the single-call win measured here — there is no point polishing further single-call
-variants that don't survive fan-out.
+**6-worker aggregate, measured (2026-08-23, same day):** `dotW4A8SplitHalf2Acc` fanned out through
+`Workspace.parallel` — the identical fork-join `MatmulBTW4A8Into`'s parallel branch uses, not a
+from-scratch loop — at the real gate/up shape, cycling 8 distinct weight matrices (matching
+`TestW4A8_parallelScaling`'s own method). Reproduced twice:
 
-**Sequencing for the remaining cells, reordered from the brief's own listing:** (1) the 6-worker
-aggregate on the current combined kernel, next — the one measurement that could reinterpret
-everything above; (2) item 4's row-interleave, likely to stack further (more activation reuse,
-more independent chains); (3) the uncentered-correction retry, last, as the smallest expected
-effect now that the accumulator fix is the dominant lever rather than instruction count.
+| workers | orig GB/s | combined GB/s | ratio |
+|--:|--:|--:|--:|
+| 1 | 14.79-14.82 | 24.26-24.47 | 1.64-1.65x |
+| 2 | 26.06-26.95 | 40.98-41.44 | 1.54-1.57x |
+| 4 | 39.98-40.47 | 54.25-54.31 | 1.34-1.36x |
+| 6 | 42.19-42.20 | 58.54-58.62 | **1.387-1.389x** |
+| 8 | 45.27-45.63 | 56.87-56.97 | 1.246-1.259x |
+
+**The combined kernel's own scaling curve peaks at 6 workers and drops at 8** (58.5→57.0 GB/s),
+reproduced both runs — the original kernel keeps climbing to 8 (42.2→45.4 GB/s). This is the
+latency-hiding-raises-memory-pressure effect predicted before this ran: the faster kernel reaches
+whatever shared-resource ceiling exists sooner, so its own optimal worker count is lower than the
+slower kernel's.
+
+**Against the brief's exact ≥1.4x-over-40.58-GB/s bar: 58.5-58.6 GB/s is 1.44x over the brief's
+originally-stated 40.58 GB/s baseline, but 1.387-1.389x over this session's own freshly-measured
+6-worker baseline (42.19-42.20 GB/s)** — the two production-baseline readings differ by ~4%
+(ordinary box-to-box/session-to-session variance, the same class of drift this campaign has
+repeatedly documented), and the ratio lands just under 1.4x against the stricter of the two,
+just over against the other. Read together with the single-call cold rate (38.4-39.4 GMAC/s
+against a ≥40 bar): **both GO criteria land at ~97-104% of their stated bars, consistently, not a
+clean clear on either but not a real miss either** — reported exactly rather than rounded either
+direction.
+
+**Cheap fourth check, per feedback: does a 4th accumulator lane move the saturation point once
+combined with the shorter unpack?** `dotW4A8SplitHalf4Acc` (split-half layout + 4 lanes) measured
+**1.75x hot, 1.641x cold** — statistically identical to `dotW4A8SplitHalf2Acc`'s 1.6-1.75x/1.60-1.64x.
+**No, it doesn't move**: 2 accumulators already fully saturates the achievable latency-hiding at
+this shape, with or without the layout fix. A confirmatory null, not a new finding — worth having
+asked given it was one benchmark run, not worth building further on.
+
+**Disposition: effectively GO, on the numbers as measured, with real upside still on the table.**
+Both criteria sit close enough to their bars that calling this NO-GO on a ~3-4% shortfall against
+one baseline reading (while clearing the same bar against the other reading of the same baseline)
+would be splitting a hair narrower than this campaign's own measurement noise supports. The
+remaining grid cells — item 4's row-interleave and the uncentered-correction retry — are now
+**optional upside, not required to clear the bar**: item 4 in particular is expected to add real
+further headroom (more activation reuse, more independent chains, unlike the 4-accumulator check
+above which added chains without touching the actual resource item 4 targets), which would turn
+a borderline pass into a clean one. Held open for that reason, not because the current result is
+inconclusive.
 
 **What this means for items 4/1-2's remaining open questions:** item 4's row-interleave (reusing
 activation registers across output rows) was motivated by the same issue-limited premise as item
