@@ -184,11 +184,11 @@ naive first guess would have it. Likely candidates left open for the next campai
 cost, total working-set size relative to cache (qwen35's 16.36 GB pool vs gemma4's, not compared
 here), and DeltaNet's ~19% tax that gemma4 (no recurrent layers) simply doesn't carry.
 
-**Closing recommendation, sizing only — not attempted here:** the paged-MoE I/O path is the clear
-top lever (70.5% of forward, and the read-amplification finding suggests real headroom beyond a
-naive "more cache" fix); DeltaNet's scalar-Go recurrence is the clear second (19%, "never been on
-any perf campaign" per the brief — the A1 attention-threading wins do not reach it). LM head and
-softmax attention are both already fast and not worth further chasing here.
+**Closing recommendation — SUPERSEDED, see below.** This originally read "the paged-MoE I/O path
+is the clear top lever," reasoning from the `iostat`-measured ~25 GB/request headline number alone.
+The admit-time instrumentation below (2026-08-24) found that conclusion wrong: MoE's bucket is
+compute-dominated (~86%), not I/O-dominated. DeltaNet's scalar-Go recurrence (19%) and LM head/
+attention being already fast still stand.
 
 ## Paging campaign, Step 0: the read-rate probe and ceiling math (2026-08-24)
 
@@ -224,13 +224,57 @@ I/O portion:
 
 **This falls short of the campaign's own ≥3x/≥4 tok/s working target on the read-path lever alone**
 — exactly the "if that ceiling comes out under ~4 tok/s, say so before spending the week" case the
-brief itself anticipated. The router-time prefetch/overlap lever (WILLNEED the next layer's routed
-experts while the current layer computes) composes with this and was described in the brief as
-"multiplicative" — reaching 3x+ likely needs both, not the read-path fix alone, and that
-composition is unmeasured. Building the owned-buffer `pread` path itself (new pager internals,
+brief itself anticipated. Building the owned-buffer `pread` path itself (new pager internals,
 threading through `moeMLP`, bit-identical gates, `-race`, the gemma4 regression gate) is a real,
-multi-file engineering effort that this ceiling math does not unambiguously justify on its own —
-recorded here as the checkpoint the campaign's own Step 0 called for, before committing to it.
+multi-file engineering effort that this band-based ceiling math did not unambiguously justify on
+its own — which is exactly why the next step (below) measured the split directly instead of
+banding it.
+
+## Paging campaign: the admit-time I/O-vs-compute split, measured directly (2026-08-24)
+
+The band above assumed an I/O fraction rather than measuring one, because separating I/O from
+compute inside the MoE bucket looked like it needed instrumenting inside `aikit/mmap.SpanCache`
+(out of scope). It doesn't: the admit point is visible at goinfer's own pager layer
+(`decoder/moepaging.go`'s `touch`), which is where `moeMLP` calls in before the expert matmuls run.
+
+**The trap this had to avoid:** with mmap, I/O time doesn't happen where you look for it. Pages
+fault lazily, inside the expert matmuls that read them — so naively timing just the admit call
+(`cache.Touch`, a `WILLNEED` hint, not a real read) would undercount I/O to near zero, with the
+real fault-wait hiding inside what looks like "compute." The instrument forced materialization at
+admit instead: a timed byte-per-page touch loop over the just-admitted span, converting the hidden
+fault-wait into an explicit number and leaving the subsequent matmul timing as genuine compute.
+This changes execution shape (I/O serializes at admit instead of interleaving with compute) —
+acceptable for a diagnostic, not for production, and the absolute per-token numbers under this
+instrumentation are NOT comparable to the uninstrumented baseline for that reason; only the I/O-
+vs-compute ratio within a run is trustworthy. Added, used, reverted (same disposition as
+`GOINFER_STUB_MATMUL`) — `decoder/moepaging.go`, `decoder/forward_qwen35.go`, `decoder/model.go`,
+none of it shipped.
+
+**Result, two consecutive real requests, same box:**
+
+| run | total(moeMLP) | io (admit, forced) | compute (residual) |
+|---|---|---|---|
+| 1 | 860.0 ms/tok | 143.3 ms (16.7%) | 716.7 ms (83.3%) |
+| 2 (isolated delta) | 843.7 ms/tok | 94.1 ms (11.2%) | 749.6 ms (88.8%) |
+| average | — | **13.9%** | **86.1%** |
+
+**The MoE bucket is compute-dominated, not I/O-dominated — the opposite of the `iostat`-based
+conclusion above, which is corrected, not merely superseded.** Applying this split to the
+diagnostic's own clean 540 ms MoE bucket: ~75 ms I/O, ~465 ms compute. Re-running the read-path
+projection with the REAL split instead of a band: even the QD8 `pread` win (5.5x, from the probe
+above) applied to just the 75 ms I/O slice yields a new MoE bucket of ~479 ms — a **1.09x**
+end-to-end improvement, not the 1.3-2.1x the band suggested and nowhere near the campaign's ≥3x
+target.
+
+**Decision, per the branch this instrumentation exists to resolve:** compute-heavy routes away from
+the owned-buffer `pread` build — its real, measured 5.5x I/O speedup barely moves the total, so it
+does not fund a multi-file pager rewrite on its own merits (the darwin firm-cap product value from
+`docs/task-moe-streaming.md`'s Lever 1b is independent of this and may still justify it separately,
+but not as a tok/s lever). The lever this now points to is compute: the parked candidate in
+`docs/task-moe-streaming.md` ("int32-per-group GEMV, opens IMMA, at a parity-refresh price") is the
+paged path's kernel upgrade — the next campaign's opening fact, not built here (it changes decode
+bits for every int4 model, a full T3 parity re-validation, not a mechanical pager change like
+everything measured in this pass).
 
 ## Streaming-transcode fix — scoped as its own task, not folded into Phase 0
 
