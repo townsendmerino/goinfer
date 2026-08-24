@@ -806,24 +806,63 @@ matmul" line. **0.5B's smaller model makes the LM head proportionally larger** (
 head over a smaller hidden dim/FFN), so the follow-up fixing it should move the 0.5B number more
 than the 1.5B one — worth re-measuring both once it ships.
 
+## LM-head follow-up shipped (2026-08-24) — `docs/prompts/lmhead-workspace-fix.md`
+
+**Step 1 (allocation): measured, no effect, confirming the release-prep suspicion exactly.**
+Threading the caller's persistent `Workspace` into the weight-only Q8 dispatch (`matmulInto`'s LM
+head branch fell through to a bare, non-pooled `linalg.MatmulBTQ8`) is now fixed and shipped as a
+harmless correctness-neutral cleanup, but real per-token time was unchanged within noise
+(42.6-42.7 ms/token before and after) — allocation was never the bottleneck, matching the isolated
+`MatmulBTQ8` vs `MatmulBTQ8Into` check from release prep exactly.
+
+**Step 2 (quant policy): shipped as the new unconditional int4-mode default.** `embedding()` now
+returns `quantInt8I8` (full W8A8) instead of `quantInt8` (weight-only) for int4/int4Mix. Precision
+gate run first, per house discipline — teacher-forced comparison of the old pin against the W8A8
+candidate on a real greedy continuation (200 positions, both real model sizes, avoiding the
+free-running-divergence confound): **1.5% argmax flip rate, mean cosine 0.9998+ at both sizes.**
+Small and real, nowhere near the int4-weight case ("flips the argmax and tanks the cosine") that
+motivated pinning these tensors away from int4 in the first place — shipped unconditionally rather
+than opt-in, given the size of the win against the size of the cost. M-independence reconfirmed
+under `-race` with the new default active. The int4 forward goldens (`TestInt4_forwardParity`,
+self-comparison against recorded int4 output, tight tolerance) correctly failed on the real numeric
+shift and were regenerated — not eligible for the cheap non-numeric refresh path, since the output
+genuinely changed; full T3 gate re-run and green (only the pre-existing Mellum2 asset gap).
+
+**End-to-end, real and reproduced across two separate runs:**
+
+| | before (post-row4) | after (LM head fixed) | vs ollama |
+|---|--:|--:|--:|
+| 1.5B int4 | ~22.9-23.5 tok/s | **39.1-40.7 tok/s** | 0.57-0.60x (was 0.32x at campaign start) |
+| 0.5B int4 | 45.31 tok/s | **81.9-83.75 tok/s** | 0.75-0.77x (was 0.38x at campaign start) |
+
+Both int4 cells now nearly double, and **int4 matches or beats int8int8 at both sizes for the
+first time** (1.5B: 39.1-40.7 vs int8int8's 36.3-37.5; 0.5B: 81.9-83.75 vs int8int8's 82.6-84.9,
+essentially tied) — with both the W4A8 kernel and the LM head fixed, int4's smaller weight
+footprint finally shows the advantage it was always supposed to have over int8int8, closing the
+loop this whole campaign opened. This also confirms the doc's own earlier prediction: the 0.5B
+number moved more proportionally (+85%) than the 1.5B one (+70-78%), matching the LM head's larger
+share of a smaller model's per-token cost.
+
+**Whoever picks up Zeno Phase 1 next: this was the blocker, it's cleared.** Qwen3.5-35B-A3B shares
+the ~152k vocab this fix was proportional to — the LM-head defect that would have handicapped that
+comparison no longer exists.
+
 ## Done looks like
 
 Gate 0: done (GO — result recorded above, with a correction: the issue-width probe's original
 "issue-limited" reading did not reproduce). Gate 1 items 1+2 (decoupled shape): done (measured
 negative). Non-matmul breakdown and the parallelization probe: done. Item 3+4 harness: **done,
 GO** — layout winner is split-half + 4-row interleave, both GO criteria cleared (single-call
-42.4-42.7 GMAC/s, 6-worker aggregate 1.40-1.41x). **Plumbing phase: done.** The arm64 load-time
-`WeightMat` repack shipped (`RepackInt4Row4`/`Int4Row4`/`WeightMat.MatmulBTW4A8Into`), the
-paged-MoE carve-out proven by test, M-independence reconfirmed with the real dispatch active,
-load-time/resident-memory deltas measured (+100ms/+5.1%, +223.6MB/+100%), and the end-to-end
-`bench_peer` table filled in with the REAL numbers: 1.5B int4 21.68→22.9-23.5 tok/s, 0.5B int4
-41.09→45.31 tok/s — real, reproduced, and honestly short of the original ~27 tok/s projection
-because that projection's non-W4A8 floor was stale, not because the kernel underperformed (real
-kernel gain 1.31-1.35x lands close to the isolated 1.40-1.41x). **New finding, out of this
-campaign's scope but recorded for whoever picks it up next: the int8-pinned LM head (weight-only
-Q8, no `Workspace`, a fresh vocab-sized allocation every token, achieving only 11-13 GB/s) is now
-the single largest per-token cost in 1.5B decode — bigger than the W4A8 matmul this whole campaign
-was about.** The uncentered-correction retry (items 1+2's sanctioned retry) is optional, deferred
-without cost. The format follow-on ships last or never, per its own sequencing rule. Release
-(aikit version bump, gpu pins, goinfer retag) is the one remaining step, not yet done. A negative
-result at any step costs the same to obtain and is worth as much.
+42.4-42.7 GMAC/s, 6-worker aggregate 1.40-1.41x). **Plumbing phase: done**, released as aikit
+v1.26.0, WeightMat repack shipped, paged-MoE carve-out proven by test. **LM-head follow-up: done**
+(Step 1 allocation — measured no effect; Step 2 quant policy — shipped as the new int4-mode
+default, precision-gated at 1.5% argmax flips / 0.9998+ cosine). **Final end-to-end numbers, real
+and reproduced: 1.5B int4 21.68→39.1-40.7 tok/s (0.57-0.60x ollama), 0.5B int4 41.09→81.9-83.75
+tok/s (0.75-0.77x ollama)** — nearly double the plumbing phase's own close-out numbers, and int4
+now matches or beats int8int8 at both sizes for the first time. The original campaign's own ~27
+tok/s projection is beaten, not missed — the LM-head diagnosis (a byproduct of holding to
+"measure, don't accept an unexplained shortfall") turned out to be the campaign's biggest lever,
+bigger than the kernel work that started it. The uncentered-correction retry (items 1+2's
+sanctioned retry) is optional, deferred without cost. The format follow-on ships last or never,
+per its own sequencing rule. Zeno Phase 1 is unblocked. A negative result at any step costs the
+same to obtain and is worth as much — and here, so did a positive one nobody was looking for.
