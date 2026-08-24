@@ -136,7 +136,7 @@ func streamQuantized(rows, cols int, mode quantMode, rowInto func(r int, dst []f
 			}
 			linalg.QuantizeGroupInt4Row(scratch, cols, group, q4[r*bpr:(r+1)*bpr], q4s[r*nGroups:(r+1)*nGroups])
 		}
-		return maybeF16RoundInt4Scales(linalg.WrapInt4(q4, q4s, rows, cols, group)), nil
+		return repackW4A8Row4IfEligible(maybeF16RoundInt4Scales(linalg.WrapInt4(q4, q4s, rows, cols, group))), nil
 	default: // quantNone — no quant target, keep the full f32
 		f32 := make([]float32, rows*cols)
 		for r := range rows {
@@ -166,10 +166,37 @@ func quantizeWM(w linalg.WeightMat, mode quantMode) linalg.WeightMat {
 		if fakeQuantScheme != "" { // DIAGNOSTIC (default-off, single load-time env read): see fakequant.go
 			return fakeInt4WM(f32, w.Rows(), w.Cols(), fakeQuantScheme)
 		}
-		return maybeF16RoundInt4Scales(linalg.QuantizeInt4(f32, w.Rows(), w.Cols(), int4GroupSize)) // GOINFER_INT4_F16_SCALES diagnostic
+		return repackW4A8Row4IfEligible(maybeF16RoundInt4Scales(linalg.QuantizeInt4(f32, w.Rows(), w.Cols(), int4GroupSize))) // GOINFER_INT4_F16_SCALES diagnostic
 	default:
 		return w
 	}
+}
+
+// repackW4A8Row4IfEligible opts wm into the arm64 split-half + 4-row-interleaved
+// W4A8 layout (docs/task-w4a8-neon-bandwidth.md's item-3+4 harness, GO
+// 2026-08-23/24) by calling linalg.WeightMat.RepackInt4Row4 — a no-op on
+// non-int4 WeightMats, non-arm64 builds, and any shape the repack rejects
+// (rows not a multiple of 4, cols not a multiple of the int4 group size), so
+// always safe to call unconditionally.
+//
+// ONLY wired into streamQuantized/quantizeWM — the GGUF/safetensors streaming
+// paths, which always allocate fresh heap-backed q4/q4s. Deliberately NOT
+// wired into the .giw loader (decoder/serialize.go): .giw tensors zero-copy
+// mmap-alias their packed bytes, and SOME of those (MoE experts, when
+// newExpertPager's paging is active) are later released from RAM on demand
+// via madvise DONTNEED (moepaging.go) — a heap-resident row4 copy sitting
+// alongside a pageable mmap alias would pin that memory permanently, defeating
+// paging's whole point for exactly the tensors it exists to bound. Every
+// GGUF/safetensors-streamed int4 tensor is heap-backed regardless (never
+// paged — moepaging.go's own MappedSpan check silently skips heap-backed
+// weights), so repacking here adds no new pageability constraint. Extending
+// this to non-paged .giw tensors is a real follow-up, out of scope for this
+// pass: it needs the repack decision sequenced after newExpertPager decides
+// which specific experts it's managing, not made at load time before that
+// decision exists.
+func repackW4A8Row4IfEligible(wm linalg.WeightMat) linalg.WeightMat {
+	wm.RepackInt4Row4()
+	return wm
 }
 
 // isW8A8 reports whether w uses the int8×int8 (W8A8) path — the only one with a
