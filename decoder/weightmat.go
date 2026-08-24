@@ -48,13 +48,22 @@ func matmulQuant(base quantMode, name string) quantMode {
 }
 
 // embedding returns the precision to use for the token-embedding table (and the
-// LM head, tied or not). These are logit-critical: at int4 they flip the argmax
-// and tank the cosine (the tied head dots every logit against them), so int4
-// mode keeps them at int8 — mirroring how GGUF Q4_K_M keeps token_embd/output at
-// Q6_K while the projections go 4-bit. int8 and f32 modes use themselves.
+// LM head, tied or not). Full W8A8 (int8 weights AND int8 activations), not
+// weight-only Q8 — changed 2026-08-24 (docs/prompts/lmhead-workspace-fix.md Step
+// 2, after the W4A8 plumbing phase found the LM head running weight-only Q8 was
+// the single largest per-token cost in int4 decode, achieving only 11-13 GB/s
+// against W8A8's 97.12 GB/s at the same shape — 7.7x). Precision measured before
+// switching, teacher-forced real-continuation comparison against the old
+// weight-only-Q8 pin, both real model sizes: 1.5% argmax flip rate, mean cosine
+// 0.9998+ (200 positions each, docs/task-w4a8-neon-bandwidth.md). Small and real,
+// nowhere near int4-weight quantizing these same tensors ("flips the argmax and
+// tanks the cosine" — mirrors why GGUF Q4_K_M keeps token_embd/output at Q6_K
+// while the projections go 4-bit) — kept as the unconditional int4-mode default,
+// not opt-in, given the size of the win against the size of the cost. int8 and
+// f32 modes use themselves, unaffected.
 func (q quantMode) embedding() quantMode {
 	if q == quantInt4 || q == quantInt4Mix {
-		return quantInt8
+		return quantInt8I8
 	}
 	return q
 }
