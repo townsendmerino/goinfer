@@ -472,15 +472,18 @@ produce the same token (`TestSerializedInt4Weights_row4Kind_matchesCanonical`). 
 the goldens-gated refresh (provably non-numeric: kind 4 is new, unreachable code for every
 existing caller; `default` behavior is untouched).
 
-**NOT verified: the real 35B-A3B end to end.** The projected ~1.3x end-to-end
-(`docs/task-zeno-compare.md`'s "compute was a location, not an attribution" section) and the
-gemma4 26B regression cell are both still sized-not-measured-at-scale — a full-model kind-4
-`.giw` for the 35B turned out larger than expected (still growing past 43 GB when the attempt
-was stopped to avoid filling the disk, a real near-miss recorded rather than glossed over) and
-this box did not have the headroom to complete it this pass. Scaled down to the small-fixture
-numbers above on Francis's own direction. Re-running the full 35B prequant + paged-decode
-re-measurement + gemma4 regression is the concrete next step once disk headroom exists — the
-format and the code are done; only the at-scale confirmation is owed.
+**Verified at scale, 2026-08-24 — and the projection was WRONG.** Both real bundles
+(gemma4-26b-int4-row4.giw, qwen3.5-35b-a3b-int4-row4.giw) were built and measured end-to-end;
+full numbers, methodology, and the ruled-out hypotheses are in `docs/task-zeno-compare.md`'s
+"At-scale acceptance run" section. Correctness is fully green (byte-identical dispatch, real
+non-vacuous paged eviction, T3 green) — but throughput is a **~25-30% REGRESSION**, not the
+projected ~1.3x gain, on both models, at both a fixed budget and a budget matched to the kind-3
+baseline's residency fraction. The dispatch-inertness trap this whole campaign stayed alert for
+did NOT happen (the row4 kernel is confirmed reached and reads only its own bytes) — the
+regression is real kernel-is-slower-on-cold-paged-reads behavior, not dead wiring. **Do not quote
+the ~1.3x number, and do not recommend `-row4` for models that will run with `-stream-weights`**
+until this is understood and fixed; the resident-path gain (1.6-1.75x, proven above and via the
+GGUF/safetensors streaming loaders) is untouched and still stands.
 
 ## Zero-cost item — RETIRED 2026-08-24, per its own line above ("if Gate 1 ships, this note gets
 ## retired")

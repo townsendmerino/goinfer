@@ -370,15 +370,93 @@ are already sitting in the file before the pager ever touches them. The pread le
 justification reverts to what it was before this finding — I/O speed alone, measured at 1.09x —
 since the kernel-upgrade payoff (the stronger reason floated above) is now available without it.
 
-**Verified at small scale, not yet at the 35B-A3B scale this campaign is about.** Bit-identical
-dispatch proven on a real fixture; load-time and RAM-delta numbers measured (kind-4 load is 0.111s
-and adds ~0 resident memory vs. GGUF's in-RAM-repack 2.01s/+223.6MB). The 35B re-prequant hit a
-real, honestly-recorded disk-space near-miss (a full-model kind-4 bundle grew past 43GB, larger
-than the ~38GB estimate, before the attempt was stopped to avoid filling the disk) — scaled down
-to the small-fixture numbers on explicit direction rather than force it. **The projected ~1.3x
-end-to-end and the gemma4 26B regression re-run are both still owed at full scale** — the format
-and code are done and gated (T3 green, aikit released), only the at-scale confirmation remains,
-next time there's enough disk headroom for a ~40-50GB bundle alongside its 22GB source.
+**Verified at small scale first** (0.5B fixture, 2026-08-24): bit-identical dispatch proven; load-time
+and RAM-delta numbers measured (kind-4 load is 0.111s and adds ~0 resident memory vs. GGUF's
+in-RAM-repack 2.01s/+223.6MB). The first 35B re-prequant attempt hit a real, honestly-recorded
+disk-space near-miss (a full-model kind-4 bundle grew past 43GB, larger than the ~38GB estimate,
+before the attempt was stopped to avoid filling the disk) — the at-scale run was deferred at that
+point rather than forced.
+
+## At-scale acceptance run — both real checkpoints, same day (2026-08-24)
+
+Disk headroom cleared (rebuildable build output, caches, and unrelated model checkpoints freed;
+see the session record for the full list) and both real bundles were re-prequanted to kind 4:
+**gemma4-26b-int4-row4.giw** (31,422,003,214 bytes, +94.9% vs. kind-3's 16,119,795,238 — built via
+a giw-to-giw re-serialize since the 26B's original safetensors source is not present on this box,
+reusing the exact same `SerializeWeightsToRow4` path `cmd/prequant` uses) and
+**qwen3.5-35b-a3b-int4-row4.giw** (43,157,420,911 bytes / 41,158 MB, +94.9% vs. kind-3's
+22,146,331,551 — direct one-pass `cmd/prequant -row4` from the GGUF, peak RSS 5.66 GB, 555s). The
+near-identical +94.9% growth on two structurally different MoE models (3,840 vs. 10,240 experts)
+says the ratio is a property of the format (every eligible int4 tensor roughly doubles), not of a
+particular model's shape.
+
+**Correctness: fully green, both models, both real files.**
+- `TestRow4GiwKind_gemma4_identicalToCanonical`: kind-3 vs. kind-4, resident, byte-identical over 24
+  tokens (383s).
+- `TestRow4GiwKind_gemma4_pagedEviction`: full-resident vs. paged (1 GB budget against the kind-4
+  bundle's 22.6 GB pageable total — canonical + row4 spans both count), byte-identical, `hits=0
+  misses=7680 evictions=7498` (573s). Zero hits is a real, if extreme, non-vacuous eviction proof —
+  worth a second look at a realistic budget before trusting it as representative (see below).
+- `TestRow4GiwKind_qwen35_pagedEviction`: full-resident vs. paged (6 GB budget against 31.2 GB
+  pageable total), byte-identical over 40 tokens, `hits=12939 misses=2421 evictions=307` — real
+  eviction at a realistic operating point (1735s; an earlier attempt at 8 tokens/6 GB budget found
+  the working set fit entirely inside the budget with zero evictions — too short a run to be a
+  useful proof, not a failure, and an even-smaller 2-GB-budget attempt on 16 tokens ran over an
+  hour without finishing before being abandoned in favor of the realistic-budget rerun).
+- Kind-3 gemma4 loads and decodes correctly throughout (it's the baseline every kind-3-vs-kind-4
+  comparison above uses) — version-aware read confirmed, both kinds live side by side on disk.
+- T3: green (`TestParityManifest_fresh`, 27/27 families enforced) — expected, since kind-4 dispatch
+  is unreachable for any pre-existing caller and touches no canonical bytes.
+
+**Throughput: a real regression, not the projected ~1.3x — the headline finding of this run.**
+Measured via `cmd/serve` + `/v1/chat/completions`, steady state (`total_tokens / wall_time`,
+prompt+completion together, matching this doc's own corrected method above), 3 runs each, greedy
+(`temperature: 0`), fixed prompt:
+
+| model | kind | budget | pageable total | residency | tok/s (3 runs) | avg |
+|---|---|--:|--:|--:|---|--:|
+| gemma4-26b | 3 | 4 GB | 11.3 GB | 35.4% | 1.162 / 1.119 / 1.104 | **1.13** |
+| gemma4-26b | 4 | 4 GB | 22.6 GB | 17.7% | 0.714 / 0.784 / 0.742 | **0.75** (−34%) |
+| gemma4-26b | 4 | 8 GB | 22.6 GB | 35.4% (matched) | 0.854 / 0.837 / 0.797 | **0.83** (−27%) |
+| qwen3.5-35b-a3b | 3 | 6 GB | 15.6 GB | 38.5% | *(documented above: 1.22-1.42, avg ~1.30)* | **1.30** |
+| qwen3.5-35b-a3b | 4 | 12 GB | 31.2 GB | 38.5% (matched) | 0.872 / 1.044 / 0.890 | **0.94** (−28%) |
+
+**The doubled-footprint-at-fixed-budget explanation is ruled out as the sole cause, not just a
+confound.** Kind 4 registers BOTH the canonical and row4 spans as pageable
+(`decoder/moepaging.go`'s `addExpert` collects `MappedSpan` and `MappedSpanRow4` as separate
+entries), so at a fixed absolute budget its residency fraction is roughly half of kind-3's — that
+alone would predict a slowdown from more misses. But re-running gemma4 at a budget matched to
+kind-3's *residency fraction* (8 GB, same 35.4%) only closed part of the gap (−27% instead of
+−34%) — it did not come close to parity, and the 35B run at its own matched fraction (38.5%,
+mirroring the documented kind-3 config exactly) shows the same ~28% regression. Two structurally
+different models, two different budgets, matched-fraction methodology, same ~25-30% result: this
+is a real, repeatable effect, not a paging-budget artifact and not run-to-run noise.
+
+**What this is NOT**, ruled out by the correctness gates above: it is not the dispatch-inertness
+bug this whole campaign has been alert for — `MatmulBTW4A8Row4Into` is confirmed reached (the
+correctness gates prove kind-4's bytes are read and produce identical output; the aikit dispatch
+code reads only `q4Row4`/`q4Row4Scales` when present, never touching canonical bytes in that
+branch, so this is not a hidden double-read either). The kernel is being exercised; it is exercised
+*slower*, end-to-end, than not using it, on the paged path specifically.
+
+**Leading hypothesis, unconfirmed — flagged for the next pass, not chased here** (would require new
+instrumentation, out of scope for this proof-running task per its own brief): the split-half +
+4-row-interleaved layout was designed for SIMD throughput on already-resident data; its byte
+ordering may have measurably worse spatial locality for a page-fault-driven cold read than the
+canonical row-major layout, so page-fault-bound demand paging (this repo's own documented
+"effectively queue-depth-1 I/O" regime) could pay a real per-fault cost premium the resident-loader
+path never sees. This would explain why the SAME kernel measured 1.6-1.75x on already-resident
+GGUF/safetensors weights (the plumbing phase, `docs/task-w4a8-neon-bandwidth.md`) and a REGRESSION
+on paged `.giw` weights: the layout's cost/benefit trade depends on whether the bytes are already
+warm, and paging is definitionally the cold case.
+
+**Standing recommendation:** the kind-4 format and its resident-path gain (1.6-1.75x, already
+shipped via the GGUF/safetensors streaming loaders, untouched by this finding) stand. **Do NOT
+recommend `-row4` for paged-MoE decode based on the ~1.3x projection — that projection is now
+measured wrong, in the wrong direction, on the one path it was built for.** Any future work that
+wants the paged path faster needs to either fix the layout's cold-fault locality or find a
+different lever; `cmd/prequant -row4` should carry a note that it does not currently help (and may
+hurt) models that will be loaded with `-stream-weights`.
 
 ## Streaming-transcode fix — scoped as its own task, not folded into Phase 0
 
