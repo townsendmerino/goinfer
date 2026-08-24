@@ -436,27 +436,48 @@ is a real, repeatable effect, not a paging-budget artifact and not run-to-run no
 bug this whole campaign has been alert for — `MatmulBTW4A8Row4Into` is confirmed reached (the
 correctness gates prove kind-4's bytes are read and produce identical output; the aikit dispatch
 code reads only `q4Row4`/`q4Row4Scales` when present, never touching canonical bytes in that
-branch, so this is not a hidden double-read either). The kernel is being exercised; it is exercised
-*slower*, end-to-end, than not using it, on the paged path specifically.
+branch, so this is not a hidden double-read at the KERNEL level). The kernel is being exercised; it
+is exercised *slower*, end-to-end, than not using it, on the paged path specifically.
 
-**Leading hypothesis, unconfirmed — flagged for the next pass, not chased here** (would require new
-instrumentation, out of scope for this proof-running task per its own brief): the split-half +
-4-row-interleaved layout was designed for SIMD throughput on already-resident data; its byte
-ordering may have measurably worse spatial locality for a page-fault-driven cold read than the
-canonical row-major layout, so page-fault-bound demand paging (this repo's own documented
-"effectively queue-depth-1 I/O" regime) could pay a real per-fault cost premium the resident-loader
-path never sees. This would explain why the SAME kernel measured 1.6-1.75x on already-resident
-GGUF/safetensors weights (the plumbing phase, `docs/task-w4a8-neon-bandwidth.md`) and a REGRESSION
-on paged `.giw` weights: the layout's cost/benefit trade depends on whether the bytes are already
-warm, and paging is definitionally the cold case.
+**CONFIRMED, not a hypothesis — the file-size check that comes first found the real mechanism
+directly (Francis's own redirect: check expected-vs-actual bytes before locality).** The size
+arithmetic itself came back exact — every eligible expert (7680/7680 on the gemma4 fixture checked)
+duplicates at precisely the designed 1:1 ratio (nibbles 1.0000x, f32 scales 1.0000x, no unexpected
+bloat; the f16-scale compaction in `docs/task-giw-f16-scales.md` really was never folded in, by
+design) — so the on-disk growth is not itself a bug. But re-reading `decoder/moepaging.go`'s
+`addExpert` with that confirmed in hand exposed the REAL mechanism one layer up, at the PAGER, not
+the kernel: `addExpert` registers BOTH a kind-4 expert's canonical span AND its row4 span under the
+SAME cache key (`spans = append(spans, wm.MappedSpan(...), wm.MappedSpanRow4(...))`), and
+`aikit/mmap.SpanCache.Touch` iterates **every** span under a key and issues `Advise(s, true)`
+(`MADV_WILLNEED`) on **all of them**, unconditionally — it has no concept of "this span won't
+actually be read this dispatch." `aikit/mmap/madvise_darwin.go` confirms `MADV_WILLNEED` is a real,
+working prefetch hint on this platform (unlike `MADV_DONTNEED`, a documented no-op here) — so
+**every cold touch of a kind-4 expert schedules a real disk read-ahead of BOTH copies**, even
+though the row4-preferring kernel (`M == 1 && w.q4Row4 != nil`) only ever reads the row4 half. Every
+miss pays for reading ~2x the bytes it needs — a per-touch I/O tax that survives matched-residency-
+fraction budgets exactly because it isn't a hit-rate effect at all; it's a fixed multiplier on every
+miss, consistent with the ~25-30% measured across both models and both budget configurations, and
+consistent with this repo's own prior finding that the paged MoE bucket is I/O-heavy, not
+compute-heavy, on this box.
+
+**The fix, not implemented here** (real pager code, its own dedicated pass — out of scope for this
+proof-running task per its own brief, same as the original acceptance brief's "no new pager work"):
+`addExpert`/the pager's registration should register (and therefore `Touch`/WILLNEED/DONTNEED) only
+the span the dispatch will actually read for that expert — row4 when `Int4Row4()` reports `ok`
+(the M==1 case this decode path always is; both prefill and decode are unbatched single-token
+forwards here, confirmed by "prefill path: sequential" in every load banner above), canonical
+otherwise — not both indiscriminately. That is a real, well-understood, one-mechanism fix, not a
+speculative rewrite: the confirmed cause is a stale span-registration list, not a kernel or layout
+problem.
 
 **Standing recommendation:** the kind-4 format and its resident-path gain (1.6-1.75x, already
 shipped via the GGUF/safetensors streaming loaders, untouched by this finding) stand. **Do NOT
 recommend `-row4` for paged-MoE decode based on the ~1.3x projection — that projection is now
-measured wrong, in the wrong direction, on the one path it was built for.** Any future work that
-wants the paged path faster needs to either fix the layout's cold-fault locality or find a
-different lever; `cmd/prequant -row4` should carry a note that it does not currently help (and may
-hurt) models that will be loaded with `-stream-weights`.
+measured wrong, in the wrong direction, on the one path it was built for**, and the cause is
+understood: the pager WILLNEEDs both representations per touch instead of only the one the kernel
+reads. The paged-GEMV lever is real, not dead — it's unrealized pending the pager fix identified
+above, which is a scoped, well-understood follow-on, not a re-investigation. `cmd/prequant -row4`'s
+help text now carries a warning against pairing it with `-stream-weights` until that fix lands.
 
 ## Streaming-transcode fix — scoped as its own task, not folded into Phase 0
 
