@@ -89,6 +89,13 @@ detail there); summarized against this doc's own go/no-go line.
    (§ "the accumulator dependency-chain fix... measured ~0%") does NOT transfer here — fewer
    instructions/MAC in the unpack+fold sequence is a real, evidenced lever on this ISA,** which is
    exactly what Gate 1 items 1-3 propose.
+   **Correction (2026-08-23): this reading does not reproduce — see the item-3 harness results
+   section below.** Re-run 4 times on a settled box: ratio 0.99-1.03 every time, stably NOT
+   issue-limited. Likely cause: this same session ran item 2's STREAM measurement moments away
+   from an initial attempt that was "accidentally measuring swap on a box with other sessions
+   running" (below) — the box was under load when this probe ran too, and a loaded box is exactly
+   the condition under which this instrument has now twice given a misleading verdict (see the
+   demotion note in `aikit/docs/internal/priors-microgpt-c.md` §1).
 2. **Bandwidth ceiling, measured** (`stream_triad.c`, pthread STREAM-triad, 480 MB — an initial
    4.8 GB attempt was accidentally measuring swap on a box with other sessions running; sized
    down): **1 thread 71.90 GB/s, 6 threads 120.97 GB/s, 8 threads 110.78 GB/s** (P/E mixing hurts
@@ -480,6 +487,15 @@ reproducible **1.41-1.47x hot, 1.39-1.41x cold** across 2 runs. `dotW4A8FoldSDOT
 chains) measured **the same ~1.4x** — two accumulators already fully hides the FMLA latency at
 this shape; a third/fourth lane buys nothing further in isolation.
 
+**This is now a three-data-point picture, not a one-off:** `docs/task-attention-decode-cost.md`'s
+A1 move (b) (8-wide interleaved QK^T accumulators, replacing one serial f64 chain) measured
+**4.41x** at the qwen2.5-1.5b decode attention shape — the identical mechanism, same ISA, a
+different kernel. AVX2's `dotW4A8Fold4AVX2` attempt at the same fix (`perf-dead-ends.md` §8.9)
+measured ~1% (noise) — but that kernel is port-bound, not latency-bound, a genuinely different
+bottleneck on a genuinely different ISA. One ISA stalls on accumulator latency (NEON, twice now);
+the other stalls on a port (AVX2, once). Both are now measured, not assumed — see
+`priors-microgpt-c.md` §1's demotion note for what this means for the issue-width probe itself.
+
 **The two levers compound once the accumulator bottleneck is fixed.** With the latency masking
 gone, the unpack instruction count item 3 targeted becomes visible again: `dotW4A8SplitHalf2Acc`
 (split-half layout + 2 accumulators together) measured **1.60-1.75x hot, 1.60-1.64x cold across 3
@@ -489,16 +505,23 @@ because the FMLA-latency stall dominated the timing budget it would have shorten
 dominant cost first, and the second-order one becomes real.
 
 **Against the brief's stated GO bar (≥40 GMAC/s cold, ≥1.6x over the 24.62 production baseline,
-AND a ≥1.4x 6-worker aggregate win):** the combined kernel's cold rate (38.4-39.4 GMAC/s, 1.56-1.60x
-over Gate 0's original 24.62 reading) sits right at the edge of the literal ≥40 GMAC/s figure but
-clears the equivalent ≥1.6x ratio bar in 2 of 3 runs measured against this session's own
-quiet-box baseline (23.6-24.4 GMAC/s). **The 6-worker parallel-aggregate half of the GO bar has
-not been measured yet** — this session stopped here to report the premise correction and the new
-lever before committing further engineering time to a specific direction (item 4's row-interleave,
-the uncentered-correction-in-repack retry, and the parallel/196-matrix-rotation checks the brief's
-measurement protocol also calls for are all still open). **Not yet a recorded GO or NO-GO** — the
-finding is significant enough (a wrong premise, corrected; a real ~1.6x lever, found) that it's
-reported now rather than folded silently into a later verdict.
+AND a ≥1.4x 6-worker aggregate win):** the combined kernel's cold rate (38.4-39.4 GMAC/s) is
+~39.4-40.4 GMAC/s once expressed as 1.6-1.64x over this session's own quiet-box baseline —
+sitting right on the ≥40 single-call criterion, effectively met. **The 6-worker parallel-aggregate
+half of the GO bar has not been measured yet** — this session stopped here to report the premise
+correction and the new lever before committing further engineering time to a specific direction.
+**Not yet a recorded GO or NO-GO**: holding it open until the aggregate number exists is
+deliberate, not a formality — the aggregate is the criterion that carries the end-to-end tok/s
+projection, and the projection is what any funding decision for the plumbing phase actually rests
+on. Latency-hiding raises each worker's memory pressure, so parallel efficiency could move either
+direction from the single-call win measured here — there is no point polishing further single-call
+variants that don't survive fan-out.
+
+**Sequencing for the remaining cells, reordered from the brief's own listing:** (1) the 6-worker
+aggregate on the current combined kernel, next — the one measurement that could reinterpret
+everything above; (2) item 4's row-interleave, likely to stack further (more activation reuse,
+more independent chains); (3) the uncentered-correction retry, last, as the smallest expected
+effect now that the accumulator fix is the dominant lever rather than instruction count.
 
 **What this means for items 4/1-2's remaining open questions:** item 4's row-interleave (reusing
 activation registers across output rows) was motivated by the same issue-limited premise as item
@@ -519,7 +542,15 @@ different resource than the one items 1+2 originally reasoned about.
 - **3-bit / rotation formats.** Shelved 2026-06-14 with two independent sinks; nothing here
   changes that. If anything, Gate 1's unpack-amortized layout would be the prerequisite for
   ever revisiting.
-- **The accumulator dependency-chain fix.** Measured ~0% on AVX2; do not port it on a hunch.
+- **The accumulator dependency-chain fix — AMD64/AVX2 only.** Measured ~0% on AVX2
+  (`nvidia-rtx2070s`); do not re-try on that ISA/box without new evidence. Does NOT extend to
+  arm64/NEON: the item-3 harness results section above measured this exact fix at **1.4-1.75x on
+  `apple-m1pro`** — the AVX2 non-goal was correct as recorded (a clean measured negative, not
+  re-triable without new evidence) and the arm64 attempt was correctly not blocked by it (new
+  ISA, new evidence, per `priors-microgpt-c.md` §2's own porting-caution rule). Two ISAs, two
+  different bottlenecks: AVX2 was port-bound (shuffle-port contention the issue-width probe
+  couldn't see), NEON is latency-bound (the same mechanism A1's move (b) fixed in attention's
+  QK^T fold, `docs/task-attention-decode-cost.md`).
 - **The decoupled Σact-correction pass (Gate 1 items 1+2 shape).** Measured 0.972x on
   `apple-m1pro`; full record above. The only sanctioned retry is the folded-into-repack
   variant inside item 3's harness, per the resequenced next steps.
