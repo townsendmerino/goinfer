@@ -585,6 +585,24 @@ reason item 4 was run now instead of deferred (a load-time repack's byte arrange
 `WeightMat` path, its tests, and eventually a `.giw` kind would all inherit — a one-shot decision,
 unlike the uncentered-correction question below).
 
+**Correction to the plumbing brief's numerics framing (2026-08-24) — the winning kernel is
+bit-identical to canonical, not merely rel-err-close.** `dotW4A8SplitHalf4Row` uses ONE accumulator
+per real output row (cross-row independence alone was sufficient — see the 2-vs-4-accumulator
+finding above), so its per-output fold is the same monotonic group-by-group order
+`dotW4A8FoldSDOT`'s is. This is NOT the same situation as `dotW4A8SplitHalf2Acc`'s within-row 2-way
+split (which folds two independent partial sums together only at the end — a genuinely different
+float reduction tree, and the shape the plumbing brief's numerics section was written against).
+Verified exact (`==`, not tolerance) against `dotW4A8FoldSDOT` across 800 random comparisons: zero
+mismatches (`TestDotW4A8SplitHalf4Row_bitIdenticalToCanonical`, `aikit/linalg/w4a8_sdotv2_test.go`).
+**Consequence: the plumbing phase owes no golden regeneration and no cosine re-gate for this
+specific kernel swap** — the existing decode == prefill == verify bit-identity guarantees carry
+over unchanged, because the per-output arithmetic literally didn't change, only which bytes it
+reads from and which rows share one activation load. The plumbing brief's numerics section (item
+4 there) should be read against this correction, not its original framing — M-independence still
+needs proving through `TestForwardN_matchesSequential`/`TestSpeculativeGreedyParity` with the new
+dispatch active (that part of the brief stands), but as a confirmation of an already-exact
+property, not a re-golding exercise.
+
 **The items-1+2 uncentered-correction retry remains genuinely optional, deferred without cost.**
 Unlike the layout, centering changes no weight bytes at all — the canonical format already stores
 nibbles as value+8, so dropping the in-kernel centering subtract only changes the kernel and the
