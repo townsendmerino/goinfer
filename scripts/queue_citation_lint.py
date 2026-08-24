@@ -601,6 +601,19 @@ def main() -> int:
                              "reporting citations as unresolved from here would be a false red.\n")
             return 2
         if s is ORPHANED:
+            # An allowlisted orphan is exactly the c8b65ba shape the annotation exists for: it
+            # resolves locally (this machine fetched the branch before it was rebased away) but
+            # is unreachable from any ref, on ANY machine — a fresh CI clone never fetches it at
+            # all and reports it as unresolved (None) instead, which the `elif s is None` branch
+            # below already checks against `allowed`. Before this fix, ORPHANED skipped that check
+            # entirely, so the same allowlisted SHA read green in a fresh clone (None -> allowed)
+            # and red on any machine that happened to have the orphan in its object store — the
+            # exact machine-dependent false-red this lint's own docstring warns is worse than a
+            # false green (found via c8b65ba itself, allowlisted since 2026-08-12 but never
+            # actually honored here).
+            if sha in allowed:
+                resolved[sha] = f"(unresolvable here) {allowed[sha]}"
+                continue
             orphaned.append(sha)
         elif s is None:
             if sha in allowed:

@@ -127,10 +127,11 @@ this diagnosis). Either way: **not the cause of goinfer's gap**, so §4 does not
 ## per-token overhead check, all run
 
 The recommendation above held off on §3's ops-per-byte profile pending priority. It turned out to
-be cheap enough to just run, plus two more checks a second pass through this doc (and prior art —
-`aikit`'s `docs/internal/cpu-acceleration.md`/`perf-dead-ends.md`, both with **uncommitted local
-work from the same 2026-08-19/20 amd64 investigation this doc's §2 already cited**) surfaced as
-worth doing. Net effect: **the Accelerate hypothesis above is walked back — probably not it** — and
+be cheap enough to just run, plus two more checks a second pass through this doc (and prior art in
+aikit's own gitignored internal notes — **uncommitted local work from the same 2026-08-19/20 amd64
+investigation this doc's §2 already cited**, unlinked here since a committed document cannot cite an
+uncommitted path) surfaced as worth doing. Net effect: **the Accelerate hypothesis above is walked
+back — probably not it** — and
 the "hold, no clear next step" verdict is replaced by a concrete, evidenced lever that's specific to
 arm64 and does NOT inherit amd64's dead end.
 
@@ -170,7 +171,7 @@ DRAM-streaming, and it did not reproduce** under a targeted re-check (order swap
 explicit warm-up: all gave ~205ns regardless). Root cause not fully pinned down (this box had two
 other Claude Code sessions running concurrently, and the first run also carried `-bench .`, pulling
 in unrelated benchmarks) but almost certainly contention, not a real effect. Fixed by adopting this
-repo's own standing convention (`docs/internal/measuring-performance.md`'s P6a clock-ramp lesson):
+repo's own standing convention (this repo's gitignored internal notes' P6a clock-ramp lesson):
 three repeats, rotating which measurement runs first, min-of-N per measurement. **Report only the
 corrected numbers below** — this is exactly the kind of single-fixed-order trap the convention exists
 to catch, and it caught it.

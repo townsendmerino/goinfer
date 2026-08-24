@@ -141,9 +141,11 @@ path.** `QuantizeGroupInt4Row`/`QuantizeGroupsInt4` (aikit `quant.go`) produce a
 architecture-shared packed byte layout (interleaved even/odd nibbles) that is NOT always
 load-time-transient — goinfer's `.giw` prequant format (`decoder/serialize.go`, kind=3) writes
 these exact packed bytes to disk and **zero-copy mmap-aliases them straight back on load, with no
-requantization and no version tag distinguishing packing schemes.** `internal/chatapp/model.giw`
-(638 MB) is a real checked-in artifact in this format. Changing the canonical packer would silently
-misdecode any existing `.giw` file — no error, just wrong numbers. amd64 and arm64 currently share
+requantization and no version tag distinguishing packing schemes.** A real 638 MB `.giw` in this
+format exists locally (`*.giw` is gitignored, so it is not itself a committed artifact — the format
+and its zero-copy load path are what's committed and load-bearing). Changing the canonical packer
+would silently misdecode any existing `.giw` file — no error, just wrong numbers. amd64 and arm64
+currently share
 this one convention (only the unpack *instructions* differ, not the byte layout), and
 `dotW4A8Scalar` (the cross-arch correctness oracle) hardcodes it too.
 
@@ -373,8 +375,8 @@ from-scratch NEON kernel redesign.
 
 Scoped in conversation before Gate 1 started; recorded here so the design isn't re-derived.
 Context: the Gate 1 correction above already establishes that the canonical packed layout is
-load-bearing on disk (`.giw` kind 3 zero-copy mmap-aliases it; `internal/chatapp/model.giw`
-is a checked-in artifact; the scalar oracle hardcodes it), and that Gate 1 therefore ships as
+load-bearing on disk (`.giw` kind 3 zero-copy mmap-aliases it against a real, local (gitignored,
+not committed) `.giw` artifact; the scalar oracle hardcodes it), and that Gate 1 therefore ships as
 an arm64-only load-time repack, GPU-style. This section is about the step after that: whether
 the repacked layout eventually goes *on disk*.
 

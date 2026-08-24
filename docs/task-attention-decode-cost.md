@@ -40,12 +40,12 @@ bit-identical to batched prefill/verify. The cost structure, from reading
   goroutines anywhere in the function. 12 independent query heads × 28 layers of exploitable
   parallelism, none used.
 - **Serial chains per output.** `MatmulBTAcc64Strided` runs "the SAME sequential f64 reduction
-  as `MatmulBTAcc64`" (comment at forwardn.go:443). Whether it interleaves *independent
+  as `MatmulBTAcc64`" (comment at decoder/forwardn.go:448). Whether it interleaves *independent
   outputs* (different keys' dots in QK, different dims in AV — legal without touching any
   single output's order) is an aikit-internal question Gate A0 must answer by reading the
   kernel.
 - **AV's element reads are 1KB-strided.** The scores·V call reads `vals` with element stride
-  `kvDim` (forwardn.go:538) — each successive f64 MAC touches a new cache line. The f32 path's
+  `kvDim` (decoder/forwardn.go:547) — each successive f64 MAC touches a new cache line. The f32 path's
   gather/transpose that fixed this is skipped on the acc64 path (and the f32 path itself is
   test-only today: "every live caller passes useAcc64=true").
 - RoPE and softmax ride along in the measured number but are O(heads·hd) and O(nKeys)
@@ -250,11 +250,11 @@ curve gets re-measured against it.
 ### Gate A0 item 2, answered (2026-08-23, same day) — existing infra doesn't compete with A1;
 ### it's a second instance of a known bug class
 
-`MatmulBTAcc64Strided` (`aikit/linalg/matmul_strided.go:30`) DOES call `parallelCols(M*N*K, N,
+`MatmulBTAcc64Strided` (`linalg/matmul_strided.go:30` in aikit) DOES call `parallelCols(M*N*K, N,
 ...)` internally — it has real parallel capability. But at the shape `attendBatchedHeads` calls it
 with (`decoder/forwardn.go`'s QKᵀ call: `M=K=1, N=nKeys=130, K=hd=128` ⇒ **M·N·K = 16,640 MACs**;
 the scores·V call is the same magnitude), against aikit's package-default threshold
-(`parThreshold = 1<<24 = 16,777,216`, `aikit/linalg/linalg.go:58`): **16,640 is ~1000x below
+(`parThreshold = 1<<24 = 16,777,216`, `linalg/linalg.go:58` in aikit): **16,640 is ~1000x below
 threshold.** Every one of these calls takes `parallelCols`'s serial fast path, every time, with
 no exception.
 
