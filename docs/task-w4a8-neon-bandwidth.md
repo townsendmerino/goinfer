@@ -444,6 +444,70 @@ projection, real headroom still on the table for a kernel that closes the rest o
 four cells are this campaign's *before* baseline: the item-3 harness's projected end-to-end numbers
 get compared against this table, not the load-5.9 one.
 
+## Item-3 harness results (2026-08-23) — Gate 0's "issue-limited" verdict corrected, real lever found
+
+Per `docs/prompts/w4a8-item3-harness.md`. All kernels live in `aikit/linalg` (uncommitted,
+harness-only per the brief — `dot_w4a8_arm64.s`, `quant_w4a8_arm64.go`, `w4a8_item3_harness_test.go`,
+`w4a8_item3_bench_arm64_test.go`, `w4a8_sdotv2_test.go`); every kernel below is proven bit-exact or
+rel-err ≤1e-3 against a scalar oracle first, then benchmarked — no perf number below comes from an
+unverified kernel. All measurements: quiet box (VS Code + all other sessions closed, 1-min load
+average 1.3-2.0 throughout), real 1.5B gate/up shape (K=1536, N=8960), order-alternated best-of-3,
+hot (L1-resident) and cold (streaming N distinct rows).
+
+**Correction to Gate 0: the "issue-limited, ratio 1.11" verdict does not reproduce.** Item 3's
+first cell — `dotW4A8SplitHalfSDOT`, a repacked layout (`repackSplitHalfRow`, harness-only, no
+`quant.go`/`.giw` change) that drops `dotW4A8FoldSDOT`'s two `VZIP1`/`VZIP2` unpack instructions per
+group — measured a **flat 1.000x against the production kernel, both hot and cold, reproduced
+across 2 independent runs.** Zero effect from removing 2 of ~10 instructions/group is inconsistent
+with an issue-limited kernel. Re-running `TestW4A8IssueWidthProbeARM64` (the same test Gate 0 used)
+4 times on this settled box gave ratio 0.99-1.03 every time — stably **NOT issue-limited**, the
+opposite of Gate 0's recorded 1.11. The original reading was very likely a single noisy
+measurement (this exact box has a documented history of this — the ops-per-byte harness's own
+comment records a prior "hot 12x slower than cold" reading that "did not reproduce under
+repetition"). This retroactively changes the read of items 1+2's negative result too: the 3%
+regression there is better explained by the decoupled correction pass's extra memory reads/loop
+overhead than by "an issue-limited kernel taxes instructions wherever they land" — the latter
+explanation assumed a premise that doesn't hold up.
+
+**The real bottleneck: a serial accumulator chain, the same failure mode the attention A1 campaign
+already found and fixed.** `dotW4A8FoldSDOT` folds every group's contribution into ONE 4-lane f32
+accumulator (`V20`) via `VFMLA`, a cross-iteration RAW dependency — group *g*'s fold must wait for
+group *g-1*'s to retire. `dotI8SDOT` (`dot_i8dp_arm64.s`, the reference kernel this whole doc
+compares against) already avoids exactly this with **four independent accumulators**, by its own
+comment, specifically "to hide SDOT latency." Building `dotW4A8FoldSDOT2Acc` (two independent
+`VFMLA` chains, canonical layout and centering otherwise unchanged) measured a real,
+reproducible **1.41-1.47x hot, 1.39-1.41x cold** across 2 runs. `dotW4A8FoldSDOT4Acc` (four
+chains) measured **the same ~1.4x** — two accumulators already fully hides the FMLA latency at
+this shape; a third/fourth lane buys nothing further in isolation.
+
+**The two levers compound once the accumulator bottleneck is fixed.** With the latency masking
+gone, the unpack instruction count item 3 targeted becomes visible again: `dotW4A8SplitHalf2Acc`
+(split-half layout + 2 accumulators together) measured **1.60-1.75x hot, 1.60-1.64x cold across 3
+runs** — real GMAC/s: orig 23.6-24.4 → combined 38.4-42.7 (hot) / 38.4-39.4 (cold). This is a
+straightforward story: item 3's layout change was never wrong on its own terms, it was invisible
+because the FMLA-latency stall dominated the timing budget it would have shortened. Fix the
+dominant cost first, and the second-order one becomes real.
+
+**Against the brief's stated GO bar (≥40 GMAC/s cold, ≥1.6x over the 24.62 production baseline,
+AND a ≥1.4x 6-worker aggregate win):** the combined kernel's cold rate (38.4-39.4 GMAC/s, 1.56-1.60x
+over Gate 0's original 24.62 reading) sits right at the edge of the literal ≥40 GMAC/s figure but
+clears the equivalent ≥1.6x ratio bar in 2 of 3 runs measured against this session's own
+quiet-box baseline (23.6-24.4 GMAC/s). **The 6-worker parallel-aggregate half of the GO bar has
+not been measured yet** — this session stopped here to report the premise correction and the new
+lever before committing further engineering time to a specific direction (item 4's row-interleave,
+the uncentered-correction-in-repack retry, and the parallel/196-matrix-rotation checks the brief's
+measurement protocol also calls for are all still open). **Not yet a recorded GO or NO-GO** — the
+finding is significant enough (a wrong premise, corrected; a real ~1.6x lever, found) that it's
+reported now rather than folded silently into a later verdict.
+
+**What this means for items 4/1-2's remaining open questions:** item 4's row-interleave (reusing
+activation registers across output rows) was motivated by the same issue-limited premise as item
+3 and may need re-examination once its own effect is isolated the same way — worth checking whether
+it ALSO does nothing alone and something combined, the same pattern found here. The items-1+2
+uncentered-correction retry inside the repacked kernel (flagged as still-open in the original
+negative-result writeup) is a natural next combination to try given the accumulator fix now frees a
+different resource than the one items 1+2 originally reasoned about.
+
 ## Non-goals — measured or reasoned dead ends, do not reopen without new evidence
 
 - **An Accelerate/vecLib/AMX kernel path.** Retired above; decode GEMV never went through it.
