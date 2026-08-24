@@ -266,15 +266,92 @@ above) applied to just the 75 ms I/O slice yields a new MoE bucket of ~479 ms �
 end-to-end improvement, not the 1.3-2.1x the band suggested and nowhere near the campaign's ≥3x
 target.
 
-**Decision, per the branch this instrumentation exists to resolve:** compute-heavy routes away from
-the owned-buffer `pread` build — its real, measured 5.5x I/O speedup barely moves the total, so it
-does not fund a multi-file pager rewrite on its own merits (the darwin firm-cap product value from
-`docs/task-moe-streaming.md`'s Lever 1b is independent of this and may still justify it separately,
-but not as a tok/s lever). The lever this now points to is compute: the parked candidate in
-`docs/task-moe-streaming.md` ("int32-per-group GEMV, opens IMMA, at a parity-refresh price") is the
-paged path's kernel upgrade — the next campaign's opening fact, not built here (it changes decode
-bits for every int4 model, a full T3 parity re-validation, not a mechanical pager change like
-everything measured in this pass).
+**Decision, per the branch this instrumentation exists to resolve — SUPERSEDED, see the section
+below.** This originally routed away from the owned-buffer `pread` build (I/O is only ~14% of the
+bucket) toward the parked int32-per-group GEMV as "the next campaign's opening fact." A finer,
+fifth-level split (below) found the actual "compute" attribution, and it changes which lever
+funds: the paged path is provably running the WRONG kernel, not a slow one — a much cheaper,
+lower-risk fix than a numerics-affecting kernel rewrite, and the pread work's justification shifts
+from I/O speed (weak) to being the enabling plumbing for this fix (strong).
+
+## Paging campaign, one level finer: compute was a location, not an attribution (2026-08-24)
+
+Francis's own catch: ~86% of the 540 ms MoE bucket is ~465 ms/token of "compute" over the touched
+expert bytes — an effective ~3 GB/s, an order of magnitude below the canonical W4A8 kernel's own
+measured ~40 GB/s at 6 workers. That gap meant "compute" was a location, not yet an attribution —
+the same position the A0 split was in before it found the non-matmul floor was all attention.
+
+**Fifth outing of the stub method, one level inside the MoE bucket.** Timed router / gather /
+GEMV-by-projection-shape (Gate+Up vs. Down) / shared-expert, on the real 35B-A3B, same disjoint-
+instrumentation discipline as every split before it (added, measured, reverted —
+`decoder/mlp.go`, `decoder/moepaging.go`, `decoder/model.go`, `decoder/forward_qwen35.go`):
+
+| bucket | ms/token | % of compute |
+|---|---|---|
+| Gate+Up (2 matmuls/expert call) | 513.6 | 62.7% |
+| Down (1 matmul/expert call) | 237.3 | 28.9% |
+| shared-expert block | 37.2 | 4.5% |
+| router (matmul + top-k select) | 28.3 | 3.5% |
+| SiLU activation + gather/accumulate | 2.9 | 0.35% |
+| **sum** | **819.3** | (vs. compute 819.8 — 99.94% accounted) |
+
+91.6% of "compute" is genuinely GEMV time — no missing component, no surprise concentration in
+routing or gather glue. Per call: **~609 µs for a Gate/Up matmul, ~563 µs for Down** — both real
+int4 W4A8 GEMVs at similar MAC counts, no shape-specific asymmetry.
+
+**The threshold-bug-class hypothesis (this campaign's leading suspect) was tested directly and
+REFUTED.** `int4ParThreshold` (the fan-out cutover for int4 matmuls) was temporarily forced to
+`1<<30` — guaranteed above any single expert projection's MAC count, so every call would run
+serial instead of parallel — and re-measured on the same real request. Result: **slower, not
+faster** (Gate+Up 513.6→761.1 ms, Down 237.3→363.5 ms, +48%/+53%). Parallelization is already
+helping here, not hurting; this is not a fourth instance of the threshold bug class, and forcing
+serial made the case decisively rather than ambiguously. Threshold reverted immediately after
+measuring.
+
+**The actual mechanism, found by reading the code the numbers pointed at.** `decoder/weightmat.go`
+documents it directly: the arm64 split-half + 4-row-interleaved W4A8 kernel
+(`dotW4A8SplitHalf4Row`, shipped and measured 1.6-1.75x over the canonical kernel,
+`docs/task-w4a8-neon-bandwidth.md`) requires a load-time repack (`RepackInt4Row4`) that is wired
+into the GGUF/safetensors streaming loaders but **deliberately NOT into the `.giw` loader** — a
+paged MoE expert's heap-resident repacked copy would sit alongside its pageable mmap alias and pin
+that memory permanently, defeating paging for exactly the tensors it exists to bound. aikit's own
+`MatmulBTW4A8Into` dispatch confirms the consequence in its own doc comment: *"a WeightMat that was
+never repacked (paged tensors, by construction, since a read-only mmap span has no load-time
+repack step) simply always takes the fallback branch here."* This model loads via `.giw` +
+`-stream-weights` — exactly that path. **Every one of the ~25,280 per-token expert GEMV calls
+measured above is running the older, canonical kernel — never the shipped, proven, 1.6-1.75x
+faster one.** This is a known, deliberate, already-documented gap, not a new bug — but it had never
+been sized against a real paged 35B-A3B before this split.
+
+Whether the remaining gap to the bulk 40 GB/s figure fully closes even with the row4 kernel is NOT
+established here — some of it is plausibly inherent to M=1 single-vector GEMVs (Workspace setup,
+per-call activation quantization) that a bulk multi-row benchmark amortizes away and no kernel
+choice eliminates. What IS established: a real, sizeable, already-shipped, bit-identical lever is
+sitting unused specifically on the paged path.
+
+**Projected win, applied to the diagnostic's clean 540 ms MoE bucket** (91.6% of the 465 ms compute
+share is GEMV-attributable → ~426 ms; the measured 1.6-1.75x split-half range applied to only that
+slice, io and non-GEMV compute unaffected):
+
+| split-half speedup | new MoE bucket | new forward | tok/s | vs. today's ~1.29 |
+|---|---|---|---|---|
+| 1.6x (measured low) | 380 ms | 607 ms | 1.62 | 1.26x |
+| 1.75x (measured high) | 358 ms | 584 ms | 1.68 | 1.31x |
+
+**Weighed against the parked int32-per-group GEMV, per Francis's own framing — let the split pick:**
+the int32-per-group GEMV is numerics-affecting (changes decode bits for every int4 model, full T3
+re-validation) with an unmeasured payoff. Wiring the split-half kernel to the paged path reuses an
+**already-shipped, already-proven-bit-identical** kernel (`TestDotW4A8SplitHalf4Row_bitIdenticalToCanonical`
+already gates it), a **known ~1.3x** projected here — bigger than the read-path/pread lever's own
+measured 1.09x — with **zero golden churn**, and its two gating numbers (load-time and resident-
+memory cost of the repack) already measured in the W4A8 item-3+4 harness phase. The split picks
+this lever, not the kernel rewrite. Design note for whoever builds it: the repack-vs-paging conflict
+(`decoder/weightmat.go`'s own comment) is exactly what the owned-buffer `pread` architecture
+resolves as a side effect — a pread'd fill is already an owned copy, not an mmap alias, so
+repacking it in place adds no new pin-vs-page conflict. The pread work's justification shifts from
+I/O speed (weak, 1.09x) to being the enabling plumbing for this kernel fix (strong, ~1.3x) — same
+engineering effort, different and stronger reason to build it. Not built in this pass; sized and
+handed to the next one.
 
 ## Streaming-transcode fix — scoped as its own task, not folded into Phase 0
 
