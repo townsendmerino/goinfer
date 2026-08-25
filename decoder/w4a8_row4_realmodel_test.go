@@ -83,6 +83,7 @@ func TestRow4GiwKind_gemma4_pagedEviction(t *testing.T) {
 	if evictions == 0 {
 		t.Fatalf("pager evicted nothing (hits=%d misses=%d) -- budget too large to exercise eviction", hits, misses)
 	}
+	assertAdvisedBytesSane(t, paged.pager, misses)
 	t.Logf("gemma4-26b kind-4 paged decode byte-identical over %d tokens at %d MB budget; hits=%d misses=%d evictions=%d",
 		len(a), budget>>20, hits, misses, evictions)
 }
@@ -126,8 +127,36 @@ func TestRow4GiwKind_qwen35_pagedEviction(t *testing.T) {
 	if evictions == 0 {
 		t.Fatalf("pager evicted nothing (hits=%d misses=%d) -- budget too large to exercise eviction", hits, misses)
 	}
+	assertAdvisedBytesSane(t, paged.pager, misses)
 	t.Logf("qwen3.5-35b-a3b kind-4 paged decode byte-identical over %d tokens at %d MB budget; hits=%d misses=%d evictions=%d",
 		len(a), budget>>20, hits, misses, evictions)
+}
+
+// assertAdvisedBytesSane is the durable, contamination-proof I/O-waste check the
+// campaign's original acceptance run had no way to make (docs/task-zeno-compare.md's
+// "At-scale acceptance run"/"Pass 1"): bytes actually passed to WILLNEED per miss
+// should track the pager's own average per-expert size, not exceed it by a wide
+// margin -- a member registering redundant spans (the exact kind-4 double-WILLNEED
+// bug this exists to catch) shows up here directly as roughly double, regardless of
+// what else the machine's disk is doing (aikit's SpanCache.AdvisedBytes counts what
+// THIS cache requested, not physical reads shared with every other process).
+func assertAdvisedBytesSane(t *testing.T, p *expertPager, misses int64) {
+	t.Helper()
+	if misses == 0 {
+		t.Fatal("no misses recorded -- cannot check bytes-per-miss")
+	}
+	advised := p.advisedBytes()
+	avgExpert := p.total / int64(p.nExperts)
+	perMiss := advised / misses
+	// Generous ceiling (1.5x the average expert size): eviction thrash and uneven
+	// expert sizes both add real variance above the mean, but a genuine double-
+	// registration bug inflates this by ~2x, well outside this margin.
+	if ceiling := avgExpert * 3 / 2; perMiss > ceiling {
+		t.Fatalf("advised bytes/miss = %d, want <= %d (1.5x the %d-byte average expert size) -- "+
+			"looks like a member is registering redundant spans again", perMiss, ceiling, avgExpert)
+	}
+	t.Logf("advised bytes: %.2f GB over %d misses (%.1f MB/miss avg expert %.1f MB)",
+		float64(advised)/1e9, misses, float64(perMiss)/1e6, float64(avgExpert)/1e6)
 }
 
 func envOr(key, def string) string {

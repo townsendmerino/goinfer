@@ -151,6 +151,19 @@ func (p *expertPager) stats() (hits, misses, evictions int64) {
 	return p.cache.Stats()
 }
 
+// advisedBytes returns cumulative bytes passed to the WILLNEED residency hint over
+// every miss — what THIS pager asked the OS to fetch, independent of whatever else
+// the machine's disk is doing. A durable, contamination-proof I/O check: a member
+// registering redundant spans (the kind-4 double-WILLNEED bug this exists to catch,
+// docs/task-zeno-compare.md's "At-scale acceptance run") shows up here directly as
+// bytes-per-miss exceeding the expected per-expert working set, immune to whatever an
+// external tool like iostat would also be counting on a shared machine.
+func (p *expertPager) advisedBytes() int64 {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.cache.AdvisedBytes()
+}
+
 // pagerSummary is a one-line description of a built pager for the load banner.
 func pagerSummary(p *expertPager) string {
 	if p == nil {
