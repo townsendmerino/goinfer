@@ -75,15 +75,34 @@ real, and the same order of magnitude as several other levers this campaign has 
 should be sized honestly against the effort of a new NEON kernel + threading path before committing
 further, not oversold on the 42.1%-of-DeltaNet figure alone.
 
-## D0 status: GO for D1(a), effort-vs-payoff decision point before building
+## PARKED, 2026-08-25 — not worth building blind at this ceiling
 
-D0's own bar is met — scalar-chain speed confirmed, exactness surface enumerated, projection derived
-and stated. D1(a) (SIMD across independent `vd` lanes, bit-identical by construction) is the next
-concrete step per the brief's ladder, followed by D1(b) (thread across value heads) if (a) alone
-doesn't clear the projected band. Held here pending a scope decision: the projected ~5-7% end-to-end
-gain is real but modest against the cost of a new hand-written NEON kernel in `aikit/linalg` plus its
-own release/threading/cross-family-golden discipline — the same kind of call this repo made explicitly
-for W4A8 Gate 1's items 3+4 (bigger win, still its own scoped pass, not rushed).
+D0's own bar is fully met — scalar-chain speed confirmed, exactness surface enumerated, projection
+derived and stated. But the ~6-7% end-to-end ceiling on the 35B is below this repo's own bar for
+building a kernel without a stronger number: `docs/task-w4a8-neon-bandwidth.md`'s uncentered-Σact
+retry was judged not-worth-building-blind at ~10% — this sits below that, with MORE implementation
+cost (a new hand-tuned NEON kernel in `aikit/linalg`, its own threading path, its own
+release/cross-family-golden discipline, permanent maintenance), not less. **Parked, not abandoned:**
+the diagnosis is banked value — exactness settled, the scalar-chain confirmation, the 42.1% split all
+stand — so if this lever is ever funded, D1(a) starts shovel-ready, not from zero.
+
+**The revisit trigger is family-dependent, not "if the 35B needs 6% someday."** 8.0% is the 35B-A3B's
+own number — a MoE model where DeltaNet's own layers are a large share of the token but the *whole
+token* is dominated by MoE routing/GEMV, diluting the recurrence's share of the total. Qwen3.8-27B is
+a **dense** DeltaNet hybrid with no MoE bucket to dilute against, and its own quantization entry
+(`docs/queue-performance.md`'s P12) already recorded the symptom directly: decode gained only 1.60x
+from quantizing the big projections, against the ~2.4x the byte count alone predicted, "because the
+DeltaNet recurrence is scalar work that did not change" (P12 also names W4A8's own activation-quant
+overhead as a second, un-split contributor to that same shortfall). Backing out the Amdahl arithmetic
+from those measured numbers (`0.411 → 0.656 tok/s`, i.e. `2.433s → 1.524s`/token) against the ideal
+2.4x prediction (`1.014s`/token) puts the **combined unshrunk cost (recurrence + W4A8 quant overhead,
+not separately split by this arithmetic) at ~33.5% of Qwen3.8's post-quantization token** — several
+times the 35B's clean, isolated 8.0% figure, consistent with "almost certainly a multiple." This is a
+real signal from real numbers, not a guess, but it conflates two costs; it is NOT a clean recurrence-
+only share the way the 35B's 42.1%-of-DeltaTet split is. **The honest revisit trigger: Qwen3.8 (or any
+dense Gated-DeltaNet hybrid) becoming a priority** — at that point, re-run this exact sixth-split
+method (`GOINFER_DELTANET_TIMING=1`, already built and committed) directly on that checkpoint to get
+the clean, isolated number before deciding, the same discipline this parked entry itself followed.
 
 ## Not in scope (unchanged from the brief)
 
