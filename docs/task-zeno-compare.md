@@ -590,16 +590,74 @@ kernel, the same fix, two different real checkpoints, two very different outcome
 (gemma4's fused gate‖up experts vs. 35B's separate gate/up/down, different hidden dims, different
 expert counts) likely matters and isn't understood yet.
 
-**Where this leaves Pass 2 (giw v8, single representation):** the quiet number is now real,
-clean, and does NOT say "it was just noise" for gemma4 — a genuine, large, budget-independent gap
-remains on one of the two real models this campaign tested. **Pass 2 as currently scoped (store
-row4 only, reconstruct canonical on demand at load) does not obviously address this**: it changes
-what's stored on disk and how canonical gets rebuilt for non-CPU consumers, not how the row4
-bytes themselves are accessed during paged CPU decode — the mmap-vs-heap distinction that's the
-leading candidate here would be untouched by it. Before committing to Pass 2's breaking format
-change, the compute-side gap needs its own investigation (real profiling, not spans-and-bytes) —
-otherwise Pass 2 ships a disk/reconstruction improvement while leaving gemma4's actual paged-decode
-regression exactly where it is.
+**Superseded by the cold-touch investigation below**, which found the actual mechanism.
+
+## The cold-touch investigation: found it (2026-08-24)
+
+Three cheap, discriminating experiments, in the order the prior finding suggested them.
+
+**1. Memory source (mmap vs. heap), warm data — ruled out.** Loaded gemma4 kind-4 resident, timed
+24 sample experts' row4 kernel calls (mmap-backed), then heap-copied the same bytes in place
+(`linalg.WrapInt4Row4` with fresh `[]byte`/`[]float32` allocations — same values, different backing
+store) and re-timed. A warm-up control (repeating the mmap measurement before touching anything)
+separated real memory-source effects from ordinary second-run speedup. Result: **+1.7%,
+warm-up-adjusted — noise.** Identical bytes decode at the same speed whether mmap-paged or
+heap-resident, once warm. (First attempt at this test heapified ALL ~7680 expert tensors at once
+— ~14 GB of fresh heap on a 16 GB box — and drove the machine to 15/16 GB swap before being killed;
+redesigned to heapify 24 samples and time direct kernel calls instead of full decode, keeping the
+extra footprint under 100 MB.)
+
+**2. Row4 vs. canonical kernel speed, gemma4's actual shapes, warm data — also ruled out (row4 is
+faster, as originally claimed).** Called both free-function kernels (`linalg.MatmulBTW4A8Into`,
+`linalg.MatmulBTW4A8Row4Into`) directly on the same real bytes, same activation, same shapes
+(`gateUp`: 1408×2816 fused; `down`: 2816×704), order-alternated to cancel warm-up bias. Row4 is
+**+57.6%** faster on `gateUp` and **+67.4%** faster on `down` — landing right in the claimed
+1.6-1.75x range. The kernel is not slow on gemma4's specific dimensions; if anything it's exactly
+as fast as promised, once warm.
+
+**3. Cold-touch latency through the real production path — this is it.** Both prior experiments
+reused the same small set of already-resident samples thousands of times, measuring warm
+steady-state speed. Real decode touches ~240 DISTINCT experts per token under a real cache budget,
+most of them NOT already resident. This experiment replicates that: loaded both kind-3 and kind-4
+gemma4 paged (512 MB budget, forcing near-total misses), and for 187 distinct, never-before-touched
+experts each, timed `expertPager.touch(key)` (the real pager call: mutex, LRU, `MADV_WILLNEED`)
+immediately followed by the real `MatmulBTW4A8Into` call — the exact sequence real decode runs,
+once per expert, no repeats.
+
+| component | kind-3 (total, 187 touches) | kind-4 (total, 187 touches) | delta |
+|---|--:|--:|--:|
+| `touch()` (pager: mutex, LRU, WILLNEED) | 363.4ms | 385.4ms | +6.1% (noise) |
+| `matmul` (the kernel itself) | 137.1ms | 231.7ms | **+69.0%** |
+| total per-touch | 2.68ms/touch | 3.30ms/touch | +23.3% |
+
+**The pager is exonerated a second way** — `touch()` costs the same regardless of kind, confirming
+(independently of `AdvisedBytes`) that the fix from the prior section is complete and the pager
+itself isn't the source of anything. **The kernel is where it lives, and the direction inverted
+from experiment 2**: row4 was +57-67% FASTER than canonical on warm, repeatedly-touched data: it is
+**69% SLOWER on cold, first-touched data**. Two different, physically coherent regimes, not a
+contradiction: canonical's plain row-major layout is friendly to a hardware prefetcher on a first,
+cold read from memory — it can predict "the next address" trivially. Row4's split-half +
+4-row-interleaved layout was designed for SIMD throughput once data sits in L1/L2/L3 cache, and its
+non-sequential byte ordering plausibly defeats simple prefetching on that same cold read, costing
+real stalls the warm-data benchmarks never see. Real paged decode is dominated by exactly this cold
+regime — many distinct experts, a real budget, limited cross-token reuse — which is why kind-4
+regresses end-to-end even though its own kernel is proven faster in isolation once warm.
+
+**This also explains 35B's much smaller gap.** 35B's separate gate/up/down experts and different
+shapes may simply be less sensitive to this cold-prefetch cost than gemma4's fused gate‖up layout —
+consistent with (though not yet separately confirmed against) the two models' very different
+regression sizes (gemma4 −47 to −49% vs. 35B −12.3%).
+
+**Where this leaves Pass 2 (giw v8, single representation):** the mechanism is now understood, not
+just characterized. **v8's reconstruct-canonical-at-load design does not address this** — the row4
+bytes are still read cold, in their interleaved layout, during paged decode either way; nothing
+about storing one representation instead of two changes the memory-access pattern that costs 69%
+on a first touch. Fixing THIS needs either a layout change (a row4 variant with better cold-read
+locality, if one exists without giving up the warm-data win) or accepting that row4 belongs only on
+the resident path (never dispatch it under `-stream-weights`) until such a variant exists. v8's
+surviving justifications (disk halving, structurally eliminating the double-fetch bug class,
+the no-bigger-files ruling) are independent of this finding and still stand on their own — but its
+paged-decode story, if it has one, needs this fixed first, not the other way around.
 
 ## Streaming-transcode fix — scoped as its own task, not folded into Phase 0
 

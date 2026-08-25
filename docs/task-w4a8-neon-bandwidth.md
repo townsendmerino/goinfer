@@ -482,12 +482,19 @@ gain — CONFIRMED (not merely hypothesized) as `decoder/moepaging.go`/`layerpag
 kind-4 tensor's canonical AND row4 spans under one cache key, so `SpanCache.Touch`'s `MADV_WILLNEED`
 prefetched both copies from disk on every cold touch though the kernel only ever read one — a fixed
 ~2x I/O tax per miss. Fixed by registering only the span the kernel will actually read. Post-fix,
-the regression is gone (one cell reaches kind-3 parity, the others land ~11-16% behind instead of
-~27-34%) — **the ~1.3x GAIN over kind-3 is still not reached**, and the residual gap needs a
-quiet-machine re-measurement (this session's numbers were taken alongside real, acknowledged
-concurrent load on the same box) before deciding whether it's noise or a smaller real cost. The
-resident-path gain (1.6-1.75x, proven above and via the GGUF/safetensors streaming loaders) was
-never affected by any of this.
+the pager itself was proven correct via `aikit` v1.28.0's `SpanCache.AdvisedBytes` (exact 1.0000x
+bytes-per-miss on both real models) — but a quiet-machine re-measure found gemma4's gap did NOT
+shrink, it grew (−47 to −49%, budget-invariant), while 35B's shrank to −12.3%. **Root cause found
+(`docs/task-zeno-compare.md`'s "cold-touch investigation"):** the row4 kernel is 1.6-1.75x faster
+than canonical on WARM, repeatedly-touched data (confirmed again directly on gemma4's own shapes:
++57-67%) but **~69% SLOWER on a cold, first-touched page** — real paged decode is dominated by cold
+touches (many distinct experts, a real budget, little cross-token reuse), which is exactly the
+regime the kernel loses in despite being proven faster in isolation. Canonical's row-major layout
+is hardware-prefetcher-friendly on a cold read; row4's interleaving plausibly defeats that, costing
+real stalls the warm-data benchmarks (including this doc's own Gate 1 measurements) never see. **The
+resident-path gain (1.6-1.75x, proven above and via the GGUF/safetensors streaming loaders) stands
+UNCHANGED and is now understood to be specifically a warm-data result — do not extend it to any
+model that will be paged.**
 
 ## Zero-cost item — RETIRED 2026-08-24, per its own line above ("if Gate 1 ships, this note gets
 ## retired")
