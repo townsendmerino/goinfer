@@ -34,6 +34,8 @@ A measurement enters a table **only if it satisfies all of**:
 - **Greedy decode, fixed seed** (we measure the engine, not sampling luck).
 - **Pinned versions**: goinfer commit + each peer's version, inline.
 - **Date** of the run, and a **thermal note** (plugged in, warm, repeated runs, median).
+- **Local disk only** — the checkpoint is read from local NVMe/SSD. A model read from the
+  SMB archive mount is **not a measurement**; see *Model storage* below.
 
 Anything not matching all of these is `—` and a re-measure, never a guess. This page
 exists *because* a sloppy comparison is worse than none: `docs/completed/gpu-assessment.md`
@@ -66,6 +68,48 @@ full-logits prefill, no batched `PrefillLast`) plus context-depth growth — *no
 way §B2 already prints Ollama's decode-only rate alongside its wall clock — with the wall-clock number
 remaining the one that counts for a peer comparison. Existing rows (incl. §B4's 16.98 tok/s, re-confirmed)
 are correctly measured and unchanged.
+
+---
+
+## Model storage — archive remote, benchmark local
+
+**Models are stored on the Linux box and benchmarked from local disk only. Nothing that
+produces a number is ever read over the network mount.** Paged decode over SMB turns
+weight loading into network round-trips at arbitrary times during the run, so the result
+silently measures the LAN and the server's disk instead of the engine — and it fails
+*quietly*, producing a plausible-looking number rather than an error. That is exactly the
+class of bad row the Methodology gate above exists to reject.
+
+| | Path | Role |
+|---|---|---|
+| Archive | `//192.168.1.240/models` → `/srv/models` (5.5 TB ext4) | **Cold storage. A bench surface for neither machine** — it is a 5400 rpm SMR disk. |
+| MacBook bench set | `~/models` (internal SSD) | The only place a darwin/Metal row may be measured from. |
+| Linux bench set | `/home/francis/models` (NVMe) | The only place an amd64/CUDA row may be measured from. Unchanged by the archive. |
+
+Note the Linux box benches from its **own NVMe `~/models`**, not from `/srv/models`. The
+archive is storage on both machines, never a read path for a timed run.
+
+### Working from the archive
+
+`~/bin/models-pull` copies a checkpoint from the archive onto local disk before you
+benchmark it; `models-push` archives a local one and refuses to report success unless the
+byte counts match on both sides. Both ride **rsync over SSH**, not SMB, so the share does
+not need to be mounted.
+
+```sh
+models-pull -l                     # list the archive
+models-pull -l qwen                # filtered
+models-pull qwen3.6-35b-a3b-int4.giw   # archive -> ~/models, resumable
+models-push my-new-download.gguf       # ~/models -> archive, size-verified
+```
+
+They honour `MODELS_HOST` (default `nobara`), `MODELS_ARCHIVE` (`/srv/models`) and
+`MODELS_LOCAL` (`~/models`).
+
+**Mount the share only to browse it, and unmount when done.** It is deliberately not
+automounted: a permanently-present `/Volumes/models` is precisely how a checkpoint path on
+the mount ends up in a benchmark by accident. If a row's model path ever starts with
+`/Volumes/`, the row is void — re-measure it after a `models-pull`.
 
 ---
 
