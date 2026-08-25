@@ -405,7 +405,7 @@ supports.
 | `docs/task-moe-streaming.md|decoder/forwardn.go:275` | goinfer | `// Sequential: add the attention residual, then re-norm the updated stream for the MLP.` |
 | `docs/task-moe-streaming.md|decoder/mlp.go:81` | goinfer | `// Only the chosen experts are evaluated — the point of MoE.` |
 | `docs/task-moe-streaming.md|decoder/moepaging.go:15` | goinfer | `// only K·L per token; the router's top-k selection is the demand signal. The` |
-| `docs/task-moe-streaming.md|decoder/moepaging_test.go:11` | goinfer | `// it with the frequency-aware policy (TestSpanCache_evictsLeastRecentWithPolicy),` |
+| `docs/task-moe-streaming.md|decoder/moepaging_test.go:13` | goinfer | `// it with the frequency-aware policy (TestSpanCache_evictsLeastRecentWithPolicy),` |
 | `docs/task-moe-streaming.md|decoder/residency.go:130` | goinfer | `return m.residentProjsInt4()` |
 | `docs/task-zeno-compare.md|decoder/gguf.go:1236` | goinfer | `// gemma4's fused PLE/MoE tail can't stream incrementally; it falls back to a` |
 | `docs/task-zeno-compare.md|decoder/gguf.go:1244` | goinfer | `if arch.gemma4 != nil {` |

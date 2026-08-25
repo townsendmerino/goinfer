@@ -59,26 +59,30 @@ func newExpertPager(w *Weights, mapping []byte, budget int64) *expertPager {
 	// that actually alias the mapping. MappedSpan returns nil for heap-backed (GGUF)
 	// weights and the always-on shared expert, so those are silently skipped.
 	//
-	// MappedSpanRow4 collects the SAME weight's on-disk row4 layout (weightMat kind 4,
-	// docs/task-w4a8-neon-bandwidth.md's "Format follow-on") as a SEPARATE span — it is
-	// a different byte range in the same file, not the canonical bytes twice. Without
-	// this, a kind-4 expert's row4 half would never be registered with the pager: its
-	// bytes would go uncounted against the budget (silently under-sizing it) and never
-	// be evicted under pressure (paging the wrong half of the tensor, pinning exactly
-	// the bytes the M=1 decode kernel actually reads). nil for a kind-3 tensor (no row4
-	// layout) or on a non-arm64/non-DotProd build (linalg.WrapInt4Row4 never populates
-	// q4Row4 there) — the same "returns nil, silently skipped" shape as MappedSpan.
+	// A kind-4 tensor carries TWO on-disk representations (canonical + row4,
+	// docs/task-w4a8-neon-bandwidth.md's "Format follow-on"), but the M==1 decode kernel
+	// (MatmulBTW4A8Into) reads ONLY row4 whenever it's present — this arch's forward is
+	// always M==1, decode and prefill alike (confirmed by "prefill path: sequential" on
+	// every load). Registering both spans under one cache key was a real, measured bug
+	// (docs/task-zeno-compare.md's "At-scale acceptance run"): SpanCache.Touch issues
+	// MADV_WILLNEED on EVERY span under a key, unconditionally, so a cold kind-4 touch
+	// prefetched both copies from disk though only one was ever read — a fixed ~2x I/O
+	// tax per miss that produced a ~25-30% throughput regression instead of the row4
+	// kernel's proven gain. Fix: register only the span that will actually be read —
+	// row4 when present, canonical otherwise. Never both.
 	addExpert := func(key unsafe.Pointer, wms ...*linalg.WeightMat) {
 		var spans [][]byte
 		var n int64
 		for _, wm := range wms {
-			for _, s := range [2][]byte{wm.MappedSpan(base, end), wm.MappedSpanRow4(base, end)} {
-				if len(s) == 0 {
-					continue
-				}
-				spans = append(spans, s)
-				n += int64(len(s))
+			s := wm.MappedSpanRow4(base, end)
+			if len(s) == 0 {
+				s = wm.MappedSpan(base, end)
 			}
+			if len(s) == 0 {
+				continue
+			}
+			spans = append(spans, s)
+			n += int64(len(s))
 		}
 		if n == 0 {
 			return // heap-backed — nothing to page

@@ -470,14 +470,73 @@ otherwise — not both indiscriminately. That is a real, well-understood, one-me
 speculative rewrite: the confirmed cause is a stale span-registration list, not a kernel or layout
 problem.
 
-**Standing recommendation:** the kind-4 format and its resident-path gain (1.6-1.75x, already
-shipped via the GGUF/safetensors streaming loaders, untouched by this finding) stand. **Do NOT
-recommend `-row4` for paged-MoE decode based on the ~1.3x projection — that projection is now
-measured wrong, in the wrong direction, on the one path it was built for**, and the cause is
-understood: the pager WILLNEEDs both representations per touch instead of only the one the kernel
-reads. The paged-GEMV lever is real, not dead — it's unrealized pending the pager fix identified
-above, which is a scoped, well-understood follow-on, not a re-investigation. `cmd/prequant -row4`'s
-help text now carries a warning against pairing it with `-stream-weights` until that fix lands.
+**Superseded by Pass 1 below** (same day) — the fix identified here landed and was measured.
+
+## Pass 1: the pager fix, measured (2026-08-24)
+
+**The fix** (`decoder/moepaging.go`'s `addExpert`, `decoder/layerpaging.go`'s per-layer equivalent):
+register only the span the M==1 decode kernel will actually read — row4 when `MappedSpanRow4`
+returns non-empty, canonical otherwise — never both. Same existing `.giw` files (no re-prequant
+needed; the bug was in the pager's runtime registration, not the on-disk format).
+
+**Correctness re-confirmed, all three gates green:**
+- `TestRow4GiwKind_gemma4_identicalToCanonical`: byte-identical, 385s (unchanged from before the fix
+  — this gate doesn't touch the pager at all, resident-only).
+- `TestRow4GiwKind_gemma4_pagedEviction`: byte-identical, 1GB budget against the now-correctly-halved
+  **11.3 GB** pageable total (was 22.6 GB pre-fix) — `hits=4256 misses=3424 evictions=3059`, a real
+  55.4% hit rate (was `hits=0` pre-fix at the same budget — the fix didn't just speed things up, it
+  measurably changed cache behavior for the better, since the budget now buys real coverage instead
+  of being split across two copies of everything).
+- `TestRow4GiwKind_qwen35_pagedEviction`: byte-identical over 40 tokens. Pageable total correctly
+  halved to **15.6 GB** (was 31.2 GB) — the original 6GB budget (sized for the old doubled total, a
+  38.5% fraction) no longer forced eviction post-fix (`hits=12949 misses=2411`, zero evictions) and
+  the test correctly FAILED rather than pass vacuously; re-run at 3GB (the same 19.2% fraction
+  against the corrected total) restored real eviction, `hits=12939 misses=2421 evictions=307` —
+  identical hit/miss counts to the pre-fix run at matched fraction, as expected (same logical access
+  pattern; only the bytes moved per miss changed). Wall time (2269s) was longer than the pre-fix
+  run at this config, an anomaly attributed to a genuinely busy machine during this specific run
+  (another concurrent process was doing heavy work on the same box) rather than to the fix itself —
+  flagged honestly rather than smoothed over, and superseded by the throughput cells below, which
+  are the actual test of the fix and were measured with iostat cross-checked for the same
+  contamination risk.
+
+**Throughput: the regression is gone. The projection is not yet reached.**
+
+| model | budget | kind-3 | kind-4 pre-fix | kind-4 post-fix | post-fix vs kind-3 | post-fix vs pre-fix |
+|---|--:|--:|--:|--:|--:|--:|
+| gemma4-26b | 4 GB | 1.128 | 0.747 (−34%) | **1.008** | −11% | **+35%** |
+| gemma4-26b | 8 GB | 1.128 | 0.829 (−27%) | **1.121** | −0.6% (parity) | **+35%** |
+| qwen3.5-35b-a3b | 12 GB | ~1.30 | 0.935 (−28%) | **1.088** | −16% | **+16%** |
+
+All tok/s figures are 3-run averages, same method as the original acceptance run (steady-state,
+`total_tokens / wall_time`). The 8GB gemma4 cell lands at kind-3 parity; the 4GB gemma4 and 12GB
+qwen3.5-35b cells land noticeably closer but still measurably behind kind-3 — not the projected
+1.3x GAIN over kind-3, just most of the way back from a 27-34% loss to roughly even. **This
+machine was under real, acknowledged concurrent load from an unrelated process during this
+session** (confirmed mid-run), which plausibly adds noise to both the pre- and post-fix numbers —
+the direction and rough magnitude of the improvement (fixing a real, confirmed 2x-I/O-per-miss bug)
+is not in doubt, but the exact residual gap to kind-3 (and whether it fully closes on a quiet
+machine) is not yet a clean, noise-free number.
+
+**Physical-bytes-read-per-token check: attempted, contaminated, not trustworthy this pass.**
+`iostat -Id disk0`-bracketed byte counts around each benchmark cell were collected as planned, but
+the same concurrent unrelated process contaminates disk0's cumulative counters — the deltas include
+bytes neither this decode nor this box's other test activity can account for cleanly. Recorded
+here as an honest negative rather than reported as a number: **re-run this specific check on a
+quiet machine** before trusting a bytes/token figure, or (better, per the original ask) add a
+proper counter to `aikit/mmap.SpanCache` itself (bytes actually WILLNEEDed, summed inside `Touch`)
+so the check doesn't depend on external tool contamination at all — that would also make it a
+permanent, durable assertion inside the heavy-gated tests rather than a one-off shell script,
+closing the original "so I/O waste can't hide behind byte-identical gates again" ask properly. Not
+done this pass — flagged as the concrete next step alongside re-measuring on a quiet machine.
+
+**Where this leaves Pass 2 (giw v8, single representation):** the fix already recovers most of the
+lost ground without touching the on-disk format at all. Whether Pass 2's bigger, breaking change
+(store row4 only, reconstruct canonical on demand) is still worth doing depends on whether the
+residual −11%/−0.6%/−16% gap is real signal (a genuine remaining format-driven cost, e.g. the row4
+layout's cold-fault locality after all, now at a much smaller scale) or mostly machine noise from
+this specific run. That's a quiet-machine re-measurement question, not an implementation question
+— Pass 2 is deliberately held pending that number, per its own brief.
 
 ## Streaming-transcode fix — scoped as its own task, not folded into Phase 0
 

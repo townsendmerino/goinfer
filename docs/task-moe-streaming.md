@@ -96,7 +96,7 @@ Work:
 3. Stale artifacts to fix in the same pass: `aikit/mmap/spancache.go`'s type doc still says
    Touch "releases the least-recently-touched members"; `decoder/moepaging.go:15–16`
    describes "the generic span-residency LRU … release the budget tail";
-   `decoder/moepaging_test.go:11` cites `TestSpanCache_evictsLRUTailOverBudget`, renamed in
+   `decoder/moepaging_test.go:13` cites `TestSpanCache_evictsLRUTailOverBudget`, renamed in
    aikit to `TestSpanCache_evictsMostRecentOverBudget`.
 
 **Gate:** the bump does not land until the expert-pager hit rate on the replayed trace is

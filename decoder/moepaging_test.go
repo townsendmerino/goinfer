@@ -2,8 +2,10 @@ package decoder
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"testing"
+	"time"
 )
 
 // The pager's generic span-residency cache (eviction over budget, WILLNEED/DONTNEED,
@@ -66,12 +68,19 @@ func TestExpertPaging_bitExact(t *testing.T) {
 		len(a), budget>>20, hits, misses, evictions, "35B-class")
 }
 
+// greedyN generates n tokens and, per-token, writes a live progress line straight to
+// stderr (not t.Logf, which the testing package buffers until the whole test function
+// returns — useless for a heavy-model test that can run tens of minutes with zero
+// visibility otherwise). One line per token, cheap relative to the multi-second-per-token
+// cost these paged/resident real-checkpoint tests already pay.
 func greedyN(t *testing.T, m *Model, prompt []int, n int) []int {
 	t.Helper()
+	start := time.Now()
 	out, gen := m.Generate(context.Background(), prompt, n, SamplingParams{Temperature: 0})
 	var got []int
 	for tok := range out {
 		got = append(got, tok)
+		fmt.Fprintf(os.Stderr, "  [%s] token %d/%d (id %d)\n", time.Since(start).Round(time.Second), len(got), n, tok)
 	}
 	if err := gen.Err(); err != nil {
 		t.Fatalf("generate: %v", err)

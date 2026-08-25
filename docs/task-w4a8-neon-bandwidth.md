@@ -472,18 +472,22 @@ produce the same token (`TestSerializedInt4Weights_row4Kind_matchesCanonical`). 
 the goldens-gated refresh (provably non-numeric: kind 4 is new, unreachable code for every
 existing caller; `default` behavior is untouched).
 
-**Verified at scale, 2026-08-24 — and the projection was WRONG.** Both real bundles
-(gemma4-26b-int4-row4.giw, qwen3.5-35b-a3b-int4-row4.giw) were built and measured end-to-end;
-full numbers, methodology, and the ruled-out hypotheses are in `docs/task-zeno-compare.md`'s
-"At-scale acceptance run" section. Correctness is fully green (byte-identical dispatch, real
-non-vacuous paged eviction, T3 green) — but throughput is a **~25-30% REGRESSION**, not the
-projected ~1.3x gain, on both models, at both a fixed budget and a budget matched to the kind-3
-baseline's residency fraction. The dispatch-inertness trap this whole campaign stayed alert for
-did NOT happen (the row4 kernel is confirmed reached and reads only its own bytes) — the
-regression is real kernel-is-slower-on-cold-paged-reads behavior, not dead wiring. **Do not quote
-the ~1.3x number, and do not recommend `-row4` for models that will run with `-stream-weights`**
-until this is understood and fixed; the resident-path gain (1.6-1.75x, proven above and via the
-GGUF/safetensors streaming loaders) is untouched and still stands.
+**Verified at scale, 2026-08-24 — the projection was wrong, the cause was found and fixed, Pass 1
+recovers most of it.** Both real bundles (gemma4-26b-int4-row4.giw, qwen3.5-35b-a3b-int4-row4.giw)
+were built and measured end-to-end; full numbers, methodology, and the confirmed root cause are in
+`docs/task-zeno-compare.md`'s "At-scale acceptance run" and "Pass 1: the pager fix, measured"
+sections. Correctness was fully green throughout (byte-identical dispatch, real non-vacuous paged
+eviction, T3 green). Throughput first came back a **~25-30% regression**, not the projected ~1.3x
+gain — CONFIRMED (not merely hypothesized) as `decoder/moepaging.go`/`layerpaging.go` registering a
+kind-4 tensor's canonical AND row4 spans under one cache key, so `SpanCache.Touch`'s `MADV_WILLNEED`
+prefetched both copies from disk on every cold touch though the kernel only ever read one — a fixed
+~2x I/O tax per miss. Fixed by registering only the span the kernel will actually read. Post-fix,
+the regression is gone (one cell reaches kind-3 parity, the others land ~11-16% behind instead of
+~27-34%) — **the ~1.3x GAIN over kind-3 is still not reached**, and the residual gap needs a
+quiet-machine re-measurement (this session's numbers were taken alongside real, acknowledged
+concurrent load on the same box) before deciding whether it's noise or a smaller real cost. The
+resident-path gain (1.6-1.75x, proven above and via the GGUF/safetensors streaming loaders) was
+never affected by any of this.
 
 ## Zero-cost item — RETIRED 2026-08-24, per its own line above ("if Gate 1 ships, this note gets
 ## retired")

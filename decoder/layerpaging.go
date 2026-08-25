@@ -77,16 +77,17 @@ func newLayerPager(w *Weights, mapping []byte, budget int64) *layerPager {
 			&lw.QProj, &lw.KProj, &lw.VProj, &lw.OProj,
 			&lw.GateProj, &lw.UpProj, &lw.DownProj,
 		} {
-			// MappedSpanRow4 is the on-disk row4 layout's span (weightMat kind 4,
-			// docs/task-w4a8-neon-bandwidth.md's "Format follow-on"), a separate
-			// byte range from the canonical span above — same reasoning as
-			// moepaging.go's addExpert: without registering it too, a kind-4
-			// layer's row4 bytes would be un-windowed (never prefetched or
-			// released), pinning exactly the bytes the M=1 decode kernel reads.
-			for _, s := range [2][]byte{wm.MappedSpan(base, end), wm.MappedSpanRow4(base, end)} {
-				if len(s) == 0 {
-					continue
-				}
+			// Register only the span the M=1 decode kernel will actually read: row4
+			// when present, canonical otherwise — never both. Registering both under
+			// one cache key was a real, measured bug (moepaging.go's addExpert,
+			// docs/task-zeno-compare.md's "At-scale acceptance run"): SpanCache.Touch
+			// WILLNEEDs every span under a key unconditionally, so a cold kind-4 touch
+			// prefetched the unread canonical copy too — a fixed ~2x I/O tax per miss.
+			s := wm.MappedSpanRow4(base, end)
+			if len(s) == 0 {
+				s = wm.MappedSpan(base, end)
+			}
+			if len(s) > 0 {
 				ss = append(ss, s)
 				b += int64(len(s))
 			}
