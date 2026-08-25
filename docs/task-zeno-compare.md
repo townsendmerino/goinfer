@@ -527,16 +527,79 @@ quiet machine** before trusting a bytes/token figure, or (better, per the origin
 proper counter to `aikit/mmap.SpanCache` itself (bytes actually WILLNEEDed, summed inside `Touch`)
 so the check doesn't depend on external tool contamination at all — that would also make it a
 permanent, durable assertion inside the heavy-gated tests rather than a one-off shell script,
-closing the original "so I/O waste can't hide behind byte-identical gates again" ask properly. Not
-done this pass — flagged as the concrete next step alongside re-measuring on a quiet machine.
+closing the original "so I/O waste can't hide behind byte-identical gates again" ask properly.
+**Done in the quiet re-measure below** (`aikit` v1.28.0's `SpanCache.AdvisedBytes`).
 
-**Where this leaves Pass 2 (giw v8, single representation):** the fix already recovers most of the
-lost ground without touching the on-disk format at all. Whether Pass 2's bigger, breaking change
-(store row4 only, reconstruct canonical on demand) is still worth doing depends on whether the
-residual −11%/−0.6%/−16% gap is real signal (a genuine remaining format-driven cost, e.g. the row4
-layout's cold-fault locality after all, now at a much smaller scale) or mostly machine noise from
-this specific run. That's a quiet-machine re-measurement question, not an implementation question
-— Pass 2 is deliberately held pending that number, per its own brief.
+## Quiet-machine re-measure (2026-08-24): I/O is exonerated, a real compute-side gap remains
+
+Built the durable byte-counter (`aikit` v1.28.0, `SpanCache.AdvisedBytes()` — cumulative bytes
+passed to `MADV_WILLNEED` over every miss, wired into `expertPager.advisedBytes()` and a new
+`assertAdvisedBytesSane` check in the heavy-gated tests), then re-ran everything with other
+processes closed.
+
+**How much noise there actually was, measured directly:** re-running kind-3 gemma4 at the exact
+same 4GB config on a quiet machine gave **2.917 tok/s**, against the earlier reading of 1.128 —
+**2.6x**, from machine load alone. Every absolute number in the sections above this one was taken
+on a busy box (confirmed mid-session: an unrelated process was doing heavy concurrent work) and
+should be read as directionally informative, not as calibrated absolutes.
+
+**Correctness, re-confirmed with the new byte check:** both models' correctness gates re-ran clean
+— gemma4 kind-3 vs. kind-4 still byte-identical (290.96s); gemma4 paged eviction byte-identical,
+`hits=4256 misses=3424 evictions=3059`, **`AdvisedBytes` = 2.9 MB/miss against a 2.9 MB average
+expert size — an exact 1.0000x ratio**; 35B paged eviction byte-identical over 40 tokens,
+`hits=12939 misses=2421 evictions=307` (identical to every prior run at this config — fully
+deterministic), **`AdvisedBytes` = 1.5 MB/miss against a 1.5 MB average expert — again exact**.
+**The pager fix is complete and provably non-wasteful on both real models** — this is no longer a
+hypothesis or an approximation, it is a direct assertion inside the test suite now.
+
+**Throughput, quiet machine, both models fresh (kind-3 also re-measured fresh — its own
+old numbers were equally noise-contaminated, including the previously-documented ~1.2-1.4 range
+for the 35B):**
+
+| model | kind | budget | tok/s (3-run avg) | vs kind-3 |
+|---|---|---|--:|--:|
+| gemma4-26b | 3 | 4 GB | **2.917** | — |
+| gemma4-26b | 4 | 4 GB | **1.546** | **−47.0%** |
+| gemma4-26b | 4 | 8 GB | **1.487** | **−49.0%** |
+| qwen3.5-35b-a3b | 3 | 6 GB | **1.605** | — |
+| qwen3.5-35b-a3b | 4 | 12 GB | **1.408** | **−12.3%** |
+
+**This is the opposite of what the earlier noisy readings suggested for gemma4.** On the busy
+machine, gemma4's kind-4 gap looked smaller (−11% to −27%) and improving with budget. Quiet, it is
+LARGER (−47% to −49%) and **budget-invariant** — doubling the cache from 4GB to 8GB (35.4% → 70.8%
+residency) made no measurable difference. 35B's gap, by contrast, shrank on the quiet machine
+(−12.3%, vs. −16% noisy) and stayed roughly consistent with its own fresh kind-3 baseline.
+
+**What this rules out, definitively:**
+- **I/O waste** — `AdvisedBytes` proves exactly the expected bytes are requested per miss, on both
+  models, at the ratio a correctly-fixed pager should produce (1.0000x). The double-WILLNEED bug is
+  fully closed; nothing hides behind the byte-identical gates on this axis anymore.
+- **Cache/hit-rate effects** — gemma4's regression is identical within noise at both 35.4% and
+  70.8% residency. If the gap were about miss rate, more cache would have closed it partway; it
+  didn't move at all.
+
+**What remains, unconfirmed:** a genuine compute-side cost specific to the row4 kernel running
+against **mmap-paged** bytes rather than the **heap-resident** bytes the original 1.6-1.75x
+figure was measured against (`docs/task-w4a8-neon-bandwidth.md`'s plumbing phase, GGUF/safetensors
+streaming loaders — heap-backed, never paged). Candidate mechanism, not verified: cold TLB entries
+for freshly-mapped pages vs. a long-lived heap allocation whose translation stays warm across a
+whole decode session, even once the underlying bytes are page-cache-resident (a real distinction
+this repo hasn't instrumented — perf counters, not spans/bytes, would be needed). **35B's much
+smaller gap (−12.3% vs. gemma4's −47-49%) argues this isn't purely mechanical either** — the same
+kernel, the same fix, two different real checkpoints, two very different outcomes; model shape
+(gemma4's fused gate‖up experts vs. 35B's separate gate/up/down, different hidden dims, different
+expert counts) likely matters and isn't understood yet.
+
+**Where this leaves Pass 2 (giw v8, single representation):** the quiet number is now real,
+clean, and does NOT say "it was just noise" for gemma4 — a genuine, large, budget-independent gap
+remains on one of the two real models this campaign tested. **Pass 2 as currently scoped (store
+row4 only, reconstruct canonical on demand at load) does not obviously address this**: it changes
+what's stored on disk and how canonical gets rebuilt for non-CPU consumers, not how the row4
+bytes themselves are accessed during paged CPU decode — the mmap-vs-heap distinction that's the
+leading candidate here would be untouched by it. Before committing to Pass 2's breaking format
+change, the compute-side gap needs its own investigation (real profiling, not spans-and-bytes) —
+otherwise Pass 2 ships a disk/reconstruction improvement while leaving gemma4's actual paged-decode
+regression exactly where it is.
 
 ## Streaming-transcode fix — scoped as its own task, not folded into Phase 0
 
