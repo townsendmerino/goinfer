@@ -54,7 +54,8 @@ func loadQwen35GGUFSlice(t *testing.T, path string, nLayer int) (*Weights, func(
 		g.Close()
 		t.Fatalf("resolveArchitecture: %v", err)
 	}
-	quant, _ := parseQuant("int8int8") // experts int8; the compared attn tensors stay f32
+	quant, _ := parseQuant("int8int8") // experts int8; since 6d4fc79 the attn/delta
+	// projections honour this too, so the compared tensors are int8 and wmDense dequantizes them.
 	w, err := buildWeightsFromGGUF(cfg, arch, g, quant, false, nil, "")
 	if err != nil {
 		g.Close()
@@ -142,28 +143,28 @@ func TestQwen35GGUF_weightDiff(t *testing.T) {
 		// every other tensor means the flips are quant noise on near-tied experts; anything worse
 		// means the router itself is mis-read and the flips are a defect.
 		if lr.Router.Rows() > 0 || lg.Router.Rows() > 0 {
-			check("router(mlp.gate)", wmF32(t, &lg.Router), wmF32(t, &lr.Router))
+			check("router(mlp.gate)", wmDense(t, "router", &lg.Router), wmDense(t, "router", &lr.Router))
 		}
 		if lr.RouterBias != nil || lg.RouterBias != nil {
 			check("router_bias", lg.RouterBias, lr.RouterBias)
 		}
 		if lr.delta != nil && lg.delta != nil {
 			dr, dg := lr.delta, lg.delta
-			check("in_proj_qkv", wmF32(t, &dg.inProjQKV), wmF32(t, &dr.inProjQKV)) // V-block un-tile
-			check("in_proj_z", wmF32(t, &dg.inProjZ), wmF32(t, &dr.inProjZ))       // full un-tile
+			check("in_proj_qkv", wmDense(t, "in_proj_qkv", &dg.inProjQKV), wmDense(t, "in_proj_qkv", &dr.inProjQKV)) // V-block un-tile
+			check("in_proj_z", wmDense(t, "in_proj_z", &dg.inProjZ), wmDense(t, "in_proj_z", &dr.inProjZ))           // full un-tile
 			check("in_proj_a", dg.inProjA, dr.inProjA)
 			check("in_proj_b", dg.inProjB, dr.inProjB)
 			check("conv1d", dg.convW, dr.convW) // V-channel un-tile
 			check("dt_bias", dg.dtBias, dr.dtBias)
-			check("negExpA", dg.negExpA, dr.negExpA)                        // −exp(A_log) bake vs computed
-			check("ssm_norm", dg.normW, dr.normW)                           // NOT (1+w)'d — raw load
-			check("out_proj", wmF32(t, &dg.outProj), wmF32(t, &dr.outProj)) // column un-tile
+			check("negExpA", dg.negExpA, dr.negExpA)                                                    // −exp(A_log) bake vs computed
+			check("ssm_norm", dg.normW, dr.normW)                                                       // NOT (1+w)'d — raw load
+			check("out_proj", wmDense(t, "out_proj", &dg.outProj), wmDense(t, "out_proj", &dr.outProj)) // column un-tile
 		} else if lr.qattn != nil && lg.qattn != nil {
 			ar, ag := lr.qattn, lg.qattn
-			check("q_proj(query‖gate)", wmF32(t, &ag.qProj), wmF32(t, &ar.qProj)) // fused double-width — prime suspect
-			check("k_proj", wmF32(t, &ag.kProj), wmF32(t, &ar.kProj))
-			check("v_proj", wmF32(t, &ag.vProj), wmF32(t, &ar.vProj))
-			check("o_proj", wmF32(t, &ag.oProj), wmF32(t, &ar.oProj))
+			check("q_proj(query‖gate)", wmDense(t, "q_proj", &ag.qProj), wmDense(t, "q_proj", &ar.qProj)) // fused double-width — prime suspect
+			check("k_proj", wmDense(t, "k_proj", &ag.kProj), wmDense(t, "k_proj", &ar.kProj))
+			check("v_proj", wmDense(t, "v_proj", &ag.vProj), wmDense(t, "v_proj", &ar.vProj))
+			check("o_proj", wmDense(t, "o_proj", &ag.oProj), wmDense(t, "o_proj", &ar.oProj))
 			check("q_norm", ag.qNorm, ar.qNorm)
 			check("k_norm", ag.kNorm, ar.kNorm)
 		} else {
@@ -185,12 +186,29 @@ func layerKind(arch *Architecture, i int) string {
 // both paths, so this is a read rather than a dequant; it fails loudly if that ever changes,
 // because comparing a quantized router against an f32 one would manufacture a difference this
 // probe would report as a loader bug.
-func wmF32(t *testing.T, w *linalg.WeightMat) []float32 {
+// wmDense reconstructs w as dense f32 whatever precision it is stored in.
+//
+// It used to be an f32-ONLY accessor whose failure message hardcoded "router". That held
+// until `6d4fc79` made the qwen35 projections honour Options.Quant, after which this gate
+// died on a PRECONDITION instead of a measurement — and blamed the wrong tensor while doing
+// it, because t.Helper() reports the caller's line but the message named a tensor the helper
+// knew nothing about. The tensor name is now a parameter for that reason.
+//
+// Dequantizing is sound for this probe: both sides run through the SAME quantizer from the
+// same source values, so a real transform bug (wrong un-tile, q‖gate, un-bake) still craters
+// cosine. Only the noise floor moves, and it moves for both columns equally.
+func wmDense(t *testing.T, name string, w *linalg.WeightMat) []float32 {
 	t.Helper()
-	f, ok := w.F32()
-	if !ok {
-		t.Fatalf("router is not f32 (kind changed) — this probe compares raw values and would "+
-			"otherwise report a quantization delta as a transform bug; rows=%d", w.Rows())
+	if f, ok := w.F32(); ok {
+		return f
 	}
-	return f
+	if w.Kind() == "" {
+		t.Fatalf("%s: empty WeightMat (rows=%d cols=%d) — nothing to compare", name, w.Rows(), w.Cols())
+	}
+	rows, cols := w.Rows(), w.Cols()
+	out := make([]float32, rows*cols)
+	for i := 0; i < rows; i++ {
+		w.Row(i, out[i*cols:(i+1)*cols])
+	}
+	return out
 }
