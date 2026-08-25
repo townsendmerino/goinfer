@@ -107,6 +107,26 @@ Expose per-request accept-rate and tok/verify in `serve`'s response metadata/met
 rate first, then tok/s" is the debugging norm the thread converged on, and we already compute
 both. Cheap, and it makes every later report checkable by users.
 
+## Filed, NOT built: a third shape — the DERIVED default
+
+Opened by the width sweep (`docs/measurements/default-verify-width-2026-08-25.md`), which found
+the optimum is **7 at int4 and 6 at int8** on one pairing — and found a *mechanism* for it, not
+just a correlation: optimal width is set by the ratio between a plain decode step and a batched
+verify, and target quant moves exactly that ratio (int8 decode ran ~half int4's rate here).
+
+If that ratio is what determines width, then the right long-term shape may be **neither a
+constant nor Phase 1's feedback controller**, but a width **derived once at startup** from the
+measured-or-estimated cost ratio for the active config. No runtime adaptation, none of the
+controller's failure modes (it measured worse than both endpoints it moved between), and it
+dissolves the "no single constant is right" problem the sweep pre-registered and then hit.
+
+**Scoped, not scheduled.** It becomes interesting the moment the Mac pairing
+(`mac-default-verify-width.md`) lands and either confirms the ratio story or breaks it — if a
+second pairing's optimum does NOT track its cost ratio, the mechanism is wrong and this idea
+dies with it. Cheap first probe if it survives: a startup micro-benchmark of one decode step
+against one k-wide batched verify, width chosen from the measured ratio, scored against the best
+static width per config on the same harness the ship-gates already use.
+
 ## Non-goals
 
 Metal batched verify (NO-GO stands) · CPU **sidecar** drafting (settled; only 3.3's MTP variant
