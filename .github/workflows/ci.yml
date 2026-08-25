@@ -43,6 +43,15 @@ jobs:
       - name: vet
         run: go vet -tags goinfer_testhooks ./...
 
+      # The release parity sweep builds with `-tags realckpt`, and CI never did — so a
+      # realckpt-only compile error reached main and broke the sweep before it could run a
+      # single gate (f49be07: two incompatible `envOr` in one package, untagged vet clean).
+      # This is COMPILE-ONLY and needs no checkpoints: the heavy tests skip without their
+      # assets, but they must still type-check. Same lesson as the standalone-build gate in
+      # RELEASING.md — a configuration nothing builds is a configuration that breaks silently.
+      - name: vet (realckpt — the release sweep's build)
+        run: go vet -tags 'realckpt goinfer_testhooks' ./...
+
       # staticcheck (incl. the unused/U1000 check) — mirrors the go vet tag matrix
       # across the three module jobs (no-tag / gpu / cuda). Pinned like fin/ken.
       - name: staticcheck
