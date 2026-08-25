@@ -39,7 +39,7 @@ func TestDFlashDraftScaling(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
 		t.Skip("heavy: set GOINFER_HEAVY_TESTS=1")
 	}
-	ddir := envOr(os.Getenv("GOINFER_DFLASH_DRAFTER"), func() string { return assetPath(t, "GOINFER_DFLASH_F32") })
+	ddir := overrideOr(os.Getenv("GOINFER_DFLASH_DRAFTER"), func() string { return assetPath(t, "GOINFER_DFLASH_F32") })
 	d, err := LoadDFlashDrafter(ddir)
 	if err != nil {
 		t.Fatalf("LoadDFlashDrafter: %v", err)

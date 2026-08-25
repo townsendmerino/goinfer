@@ -48,9 +48,9 @@ var dflashSuites = map[string][]string{
 	},
 }
 
-// envOr returns v when set, else the fallback — deferred so assetPath (which can Skip) only
+// overrideOr returns the explicit override v when set, else the fallback — deferred so assetPath (which can Skip) only
 // runs when the override is absent.
-func envOr(v string, fallback func() string) string {
+func overrideOr(v string, fallback func() string) string {
 	if v != "" {
 		return v
 	}
@@ -68,9 +68,9 @@ func TestDFlashAcceptance(t *testing.T) {
 	// GOINFER_DFLASH_DRAFTER / _TARGET / _TOKENIZER are PATHS, not asset names — the second
 	// pairing's target is a 36 GB .gguf whose tokenizer lives in the separate safetensors
 	// directory, a split the asset registry has no entry shape for.
-	ddir := envOr(os.Getenv("GOINFER_DFLASH_DRAFTER"), func() string { return assetPath(t, "GOINFER_DFLASH_F32") })
-	tdir := envOr(os.Getenv("GOINFER_DFLASH_TARGET"), func() string { return assetPath(t, "GOINFER_QWEN3_4B") })
-	tokDir := envOr(os.Getenv("GOINFER_DFLASH_TOKENIZER"), func() string { return tdir })
+	ddir := overrideOr(os.Getenv("GOINFER_DFLASH_DRAFTER"), func() string { return assetPath(t, "GOINFER_DFLASH_F32") })
+	tdir := overrideOr(os.Getenv("GOINFER_DFLASH_TARGET"), func() string { return assetPath(t, "GOINFER_QWEN3_4B") })
+	tokDir := overrideOr(os.Getenv("GOINFER_DFLASH_TOKENIZER"), func() string { return tdir })
 
 	d, err := LoadDFlashDrafter(ddir)
 	if err != nil {
