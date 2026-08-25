@@ -576,7 +576,7 @@
         "decoder/qwen3_5_test.go",
         "scripts/pin_qwen3_5_forward.py"
       ],
-      "deps_hash": "sha256:8b72c7725d636f32e061d98f3e34b89d15a8ca833e93e7b97b675168e1fea71b",
+      "deps_hash": "sha256:379088a94981b682cb7ea202bd0725c8232076c321bc1e7bf0de76cd0f98af37",
       "status": "experimental",
       "validated_at": "e295fcd",
       "date": "2026-08-18",
@@ -601,7 +601,7 @@
         "decoder/forward_qwen35.go",
         "decoder/gguf_qwen35.go"
       ],
-      "deps_hash": "sha256:05162603145070e0a0470c73244b7f7bffb35ccd7851aa095db36834f8c63917",
+      "deps_hash": "sha256:5a9ca494a30a20d325887bedac3efbbec11f6e3efbc633aac4323ecc1f850e9c",
       "status": "validated",
       "validated_at": "ff80959",
       "date": "2026-08-22",
@@ -631,7 +631,7 @@
         "scripts/pin_qwen3next_tiny.py",
         "scripts/pin_slice_oracle.py"
       ],
-      "deps_hash": "sha256:4bb84a13c4400a0de810aad8a0fd01498ad60daff9db5fb033e7a5e62dccd54a",
+      "deps_hash": "sha256:2f6ee5aac404fbd36d8888268e76cb4a71536c32f1c47770403e198c96902f72",
       "status": "experimental",
       "validated_at": "10751bf",
       "date": "2026-08-17",

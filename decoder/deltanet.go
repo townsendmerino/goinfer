@@ -1,10 +1,63 @@
 package decoder
 
 import (
+	"fmt"
 	"math"
+	"os"
+	"sync/atomic"
+	"time"
 
 	"github.com/townsendmerino/aikit/linalg"
 )
+
+// deltaNetTiming env-gates the sixth outing of this repo's component-stub timing
+// method (GOINFER_DELTANET_TIMING=1): splits gatedDeltaNetStep's ~19%-of-decode-token
+// cost (docs/task-zeno-compare.md's diagnostic) into the three dominant projections
+// (already W4A8/W8A8-quantized, presumably fast), the delta-rule recurrence proper
+// (section 3 below — plain scalar Go, the DeltaNet-CPU-recurrence brief's suspect),
+// and everything else (conv, gates, gated RMSNorm). Atomic accumulators, not
+// Generate-loop-locals, so concurrent decode streams don't race on them — added,
+// used to record the split, then reverted, per this repo's own discipline.
+var deltaNetTiming = os.Getenv("GOINFER_DELTANET_TIMING") != ""
+
+var (
+	dnProjNs     atomic.Int64
+	dnRecurNs    atomic.Int64
+	dnOtherNs    atomic.Int64
+	dnStateElems atomic.Int64 // Σ (nv·hk·hv) over every step — the recurrence's own rate-check denominator
+	dnCalls      atomic.Int64
+)
+
+// PrintDeltaNetTiming reports the accumulated split (no-op, zero cost, if
+// GOINFER_DELTANET_TIMING was never set or gatedDeltaNetStep was never called).
+// Call after a real decode run.
+func PrintDeltaNetTiming() {
+	if !deltaNetTiming {
+		return
+	}
+	n := dnCalls.Load()
+	if n == 0 {
+		return
+	}
+	proj := time.Duration(dnProjNs.Load())
+	recur := time.Duration(dnRecurNs.Load())
+	other := time.Duration(dnOtherNs.Load())
+	total := proj + recur + other
+	elems := dnStateElems.Load()
+	msPer := func(d time.Duration) float64 { return float64(d.Microseconds()) / 1000 / float64(n) }
+	pct := func(d time.Duration) float64 {
+		if total == 0 {
+			return 0
+		}
+		return float64(d) / float64(total) * 100
+	}
+	var nsPerElem float64
+	if elems > 0 {
+		nsPerElem = float64(recur.Nanoseconds()) / float64(elems)
+	}
+	fmt.Printf("DELTANET TIMING (%d steps): proj %.3f ms/step (%.1f%%) | recurrence %.3f ms/step (%.1f%%) | other %.3f ms/step (%.1f%%) | recurrence %.3f ns/state-elem (Σ %d elems)\n",
+		n, msPer(proj), pct(proj), msPer(recur), pct(recur), msPer(other), pct(other), nsPerElem, elems)
+}
 
 // Gated DeltaNet — the linear-attention primitive of Qwen3.5/3.6-MoE
 // (qwen3_5_moe). It replaces softmax attention on most layers with a gated
@@ -115,9 +168,18 @@ func gatedDeltaNetStep(be Backend, h []float32, w *deltaNetWeights, p qwen35Para
 	rep := nv / nk
 	qScale := float32(1 / math.Sqrt(float64(hk)))
 
+	var t0 time.Time
+	if deltaNetTiming {
+		t0 = time.Now()
+	}
+
 	// 1. Projection + depthwise causal conv (+ SiLU). Taps t-K+1..t: the last K-1
 	// come from convWin (zero-padded early), the K-th is this token.
 	mixed := matvecWM(be, &w.inProjQKV, h)
+	if deltaNetTiming {
+		dnProjNs.Add(int64(time.Since(t0)))
+		t0 = time.Now()
+	}
 	conv := make([]float32, convDim)
 	win := st.convWin
 	for c := range convDim {
@@ -139,10 +201,16 @@ func gatedDeltaNetStep(be Backend, h []float32, w *deltaNetWeights, p qwen35Para
 	bt := matvec(w.inProjB, nv, hidden, h)
 	at := matvec(w.inProjA, nv, hidden, h)
 	z := matvecWM(be, &w.inProjZ, h)
+	if deltaNetTiming {
+		dnOtherNs.Add(int64(time.Since(t0))) // conv (above) + gates (this block)
+	}
 
 	// 3. Gated delta-rule recurrence, per value head; state persists in st.s.
 	core := make([]float32, valueDim)
 	for headV := range nv {
+		if deltaNetTiming {
+			t0 = time.Now()
+		}
 		headK := headV / rep
 		q := l2normScaled(conv[headK*hk:headK*hk+hk], qScale)
 		k := l2normScaled(conv[keyDim+headK*hk:keyDim+headK*hk+hk], 1)
@@ -150,6 +218,10 @@ func gatedDeltaNetStep(be Backend, h []float32, w *deltaNetWeights, p qwen35Para
 		g := w.negExpA[headV] * softplusf(at[headV]+w.dtBias[headV]) // log-decay (negExpA = −exp(A_log))
 		gt := float32(math.Exp(float64(g)))
 		beta := sigmoidf(bt[headV])
+		if deltaNetTiming {
+			dnOtherNs.Add(int64(time.Since(t0))) // l2normScaled × 2 + gate scalars
+			t0 = time.Now()
+		}
 
 		S := st.s[headV*hk*hv : (headV+1)*hk*hv] // [hk, hv]
 		for i := range S {
@@ -169,6 +241,10 @@ func gatedDeltaNetStep(be Backend, h []float32, w *deltaNetWeights, p qwen35Para
 			}
 			out[vd] = o
 		}
+		if deltaNetTiming {
+			dnRecurNs.Add(int64(time.Since(t0)))
+			dnStateElems.Add(int64(hk * hv))
+		}
 	}
 
 	var capPre, capGate []float32
@@ -183,6 +259,9 @@ func gatedDeltaNetStep(be Backend, h []float32, w *deltaNetWeights, p qwen35Para
 	}
 
 	// 4. Gated RMSNorm (over head_v_dim, × SiLU(z)) then out_proj.
+	if deltaNetTiming {
+		t0 = time.Now()
+	}
 	for headV := range nv {
 		seg := core[headV*hv : headV*hv+hv]
 		zt := z[headV*hv : headV*hv+hv]
@@ -195,10 +274,21 @@ func gatedDeltaNetStep(be Backend, h []float32, w *deltaNetWeights, p qwen35Para
 			seg[vd] = seg[vd] * inv * w.normW[vd] * silu(zt[vd])
 		}
 	}
+	if deltaNetTiming {
+		dnOtherNs.Add(int64(time.Since(t0)))
+	}
 	if deltaCapHook != nil {
 		deltaCapHook(mixed, conv, append(append([]float32(nil), bt...), at...), capGate, capPre, core, z)
 	}
-	return matvecWM(be, &w.outProj, core)
+	if deltaNetTiming {
+		t0 = time.Now()
+	}
+	out := matvecWM(be, &w.outProj, core)
+	if deltaNetTiming {
+		dnProjNs.Add(int64(time.Since(t0)))
+		dnCalls.Add(1)
+	}
+	return out
 }
 
 // deltaCapHook (test seam, gpu/deltanet_test.go) hands a backend every intermediate its kernels
